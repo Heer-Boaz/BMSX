@@ -1,7 +1,7 @@
 import { repeatedAccessChainPatternRule } from './repeated_access_chain_pattern';
-import { cppTokenText, normalizedTokenText, type Token } from '../../../../src/bmsx/language/cpp/syntax/tokens';
-import { collectStatementRanges, cppRangeHas, isAccessSeparator, isClockNowCallTarget, isComparisonOperator } from '../../../../src/bmsx/language/cpp/syntax/syntax';
-import type { FunctionInfo } from '../../../../src/bmsx/language/cpp/syntax/declarations';
+import { cppTokenText, normalizedTokenText, type Token } from '../../../../packages/bmsx-console/src/language/cpp/syntax/tokens';
+import { collectStatementRanges, cppRangeHas, isAccessSeparator, isClockNowCallTarget, isComparisonOperator } from '../../../../packages/bmsx-console/src/language/cpp/syntax/syntax';
+import type { FunctionInfo } from '../../../../packages/bmsx-console/src/language/cpp/syntax/declarations';
 import type { LintIssue } from '../ts/support/ast';
 import { defineLintRule } from '../../rule';
 import { compactSampleText } from '../../text';

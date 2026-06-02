@@ -1,10 +1,10 @@
 import { defineLintRule } from '../../rule';
-import { type LuaCallExpression as CallExpression, LuaSyntaxKind as SyntaxKind } from '../../../../src/bmsx/lua/syntax/ast';
+import { type LuaCallExpression as CallExpression, LuaSyntaxKind as SyntaxKind } from '../../../../packages/bmsx-console/src/lua/syntax/ast';
 import { type CartLintIssue } from '../../lua_rule';
 import { lintEventHandlerFlagProxyPattern } from './event_handler_flag_proxy_pattern';
 import { lintEventHandlerStateDispatchPattern } from './event_handler_state_dispatch_pattern';
 import { forbiddenDispatchPatternRule } from './forbidden_dispatch_pattern';
-import { findCallExpressionInStatements } from '../../../../src/bmsx/lua/syntax/calls';
+import { findCallExpressionInStatements } from '../../../../packages/bmsx-console/src/lua/syntax/calls';
 import { isStateControllerDispatchCallExpression } from './impl/support/fsm_core';
 import { isEventsOnCallExpression } from './impl/support/fsm_events';
 import { findTableFieldByKey } from './impl/support/table_fields';

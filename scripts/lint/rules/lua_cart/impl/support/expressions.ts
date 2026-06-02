@@ -1,4 +1,4 @@
-import { type LuaExpression as Expression, LuaSyntaxKind as SyntaxKind } from '../../../../../../src/bmsx/lua/syntax/ast';
+import { type LuaExpression as Expression, LuaSyntaxKind as SyntaxKind } from '../../../../../../packages/bmsx-console/src/lua/syntax/ast';
 import { isConstantSourceIdentifierName } from './bindings';
 import { isConstantModuleRequireExpression } from './require_aliases';
 import { ConstantCopyContext } from './types';

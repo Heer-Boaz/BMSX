@@ -1,5 +1,5 @@
-import { LuaBinaryOperator as BinaryOperator, type LuaExpression as Expression } from '../../../../src/bmsx/lua/syntax/ast';
-import { isLuaEmptyStringLiteral as isEmptyStringLiteral, luaBinaryExpressionHasOperand } from '../../../../src/bmsx/lua/syntax/literals';
+import { LuaBinaryOperator as BinaryOperator, type LuaExpression as Expression } from '../../../../packages/bmsx-console/src/lua/syntax/ast';
+import { isLuaEmptyStringLiteral as isEmptyStringLiteral, luaBinaryExpressionHasOperand } from '../../../../packages/bmsx-console/src/lua/syntax/literals';
 import {
 	cppRangeIsNull,
 	cppRangeHas,
@@ -8,8 +8,8 @@ import {
 	findPreviousDelimiter,
 	isEmptyStringToken,
 	trimmedExpressionText,
-} from '../../../../src/bmsx/language/cpp/syntax/syntax';
-import type { Token } from '../../../../src/bmsx/language/cpp/syntax/tokens';
+} from '../../../../packages/bmsx-console/src/language/cpp/syntax/syntax';
+import type { Token } from '../../../../packages/bmsx-console/src/language/cpp/syntax/tokens';
 import { pushTokenLintIssue, type LintIssue } from '../cpp/support/diagnostics';
 import { nullishNullNormalizationPatternRule } from '../code_quality/nullish_null_normalization_pattern';
 import { redundantConditionalPatternRule } from '../code_quality/redundant_conditional_pattern';

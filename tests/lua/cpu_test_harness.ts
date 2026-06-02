@@ -1,11 +1,11 @@
 import assert from 'node:assert/strict';
 
-import { splitText } from '../../src/bmsx/common/text_lines';
-import { LuaLexer } from '../../src/bmsx/lua/syntax/lexer';
-import { LuaParser } from '../../src/bmsx/lua/syntax/parser';
-import { CPU, RunResult, type Value } from '../../src/bmsx/machine/cpu/cpu';
-import { Memory } from '../../src/bmsx/machine/memory/memory';
-import { compileLuaChunkToProgram } from '../../src/bmsx/machine/program/compiler';
+import { splitText } from '../../packages/bmsx-console/src/common/text_lines';
+import { LuaLexer } from '../../packages/bmsx-console/src/lua/syntax/lexer';
+import { LuaParser } from '../../packages/bmsx-console/src/lua/syntax/parser';
+import { CPU, RunResult, type Value } from '../../packages/bmsx-console/src/machine/cpu/cpu';
+import { Memory } from '../../packages/bmsx-console/src/machine/memory/memory';
+import { compileLuaChunkToProgram } from '../../packages/bmsx-console/src/machine/program/compiler';
 
 export function runCompiledLua(source: string, path = 'test.lua'): Value[] {
 	const lexer = new LuaLexer(source, path);

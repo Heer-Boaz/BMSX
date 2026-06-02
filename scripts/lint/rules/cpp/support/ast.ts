@@ -1,5 +1,5 @@
-import { CPP_CONTROL_CALL_KEYWORDS, findAccessChainStart, findNextTokenText, hasDeclarationPrefix, isAccessSeparator, isComparisonOperator, previousIdentifier, trimmedExpressionText } from '../../../../../src/bmsx/language/cpp/syntax/syntax';
-import { type Token, cppTokenText } from '../../../../../src/bmsx/language/cpp/syntax/tokens';
+import { CPP_CONTROL_CALL_KEYWORDS, findAccessChainStart, findNextTokenText, hasDeclarationPrefix, isAccessSeparator, isComparisonOperator, previousIdentifier, trimmedExpressionText } from '../../../../../packages/bmsx-console/src/language/cpp/syntax/syntax';
+import { type Token, cppTokenText } from '../../../../../packages/bmsx-console/src/language/cpp/syntax/tokens';
 import { hasDeclarationPrefixNoise, isIgnoredName } from './bindings';
 import { HOT_PATH_TEMPORARY_TYPES } from './numeric';
 import { LocalBinding } from './types';

@@ -1,4 +1,4 @@
-import type { Token } from '../../../../../src/bmsx/language/cpp/syntax/tokens';
+import type { Token } from '../../../../../packages/bmsx-console/src/language/cpp/syntax/tokens';
 import { type LintIssue, type LintRuleName } from '../../../rule';
 import { type NormalizedBodyInfo } from '../../../normalized_body';
 

@@ -77,7 +77,7 @@ Split repositories only after all of these are true:
 
 The package boundary is `machine`, `adapters`, `hosts`, `tools`, `carts`, and
 `tests`. Carts are software for the machine, not part of the machine package.
-Current `src/carts/<name>` folders are cart collections with cart-local
+Current `carts/<name>` folders are cart collections with cart-local
 resources. If cart source moves during a package split, it should move toward a
 top-level `carts/` collection, not under `machine`.
 
@@ -87,8 +87,8 @@ machine firmware owner. That is not a general cart collection.
 
 ## Mirrored core contract
 
-The TypeScript core under `src/bmsx/machine` and the native core under
-`src/bmsx_cpp/machine` are mirrored implementations of the same machine.
+The TypeScript core under `packages/bmsx-console/src/machine` and the native core under
+`native/machine/machine` are mirrored implementations of the same machine.
 
 Rules:
 
@@ -109,14 +109,14 @@ ROM data is CPU-visible source material.
 
 Owners:
 
-- ROM package wire layout: `src/bmsx/rompack/format.ts` and
-  `src/bmsx_cpp/rompack/format.h/.cpp`.
-- ROM TOC wire layout: `src/bmsx/rompack/toc.ts` and
-  `src/bmsx_cpp/rompack/toc.h/.cpp`.
-- Layered ROM lookup: `src/bmsx/rompack/source.ts` and
-  `src/bmsx_cpp/rompack/source.h/.cpp`.
+- ROM package wire layout: `packages/bmsx-console/src/rompack/format.ts` and
+  `native/machine/rompack/format.h/.cpp`.
+- ROM TOC wire layout: `packages/bmsx-console/src/rompack/toc.ts` and
+  `native/machine/rompack/toc.h/.cpp`.
+- Layered ROM lookup: `packages/bmsx-console/src/rompack/source.ts` and
+  `native/machine/rompack/source.h/.cpp`.
 - Program image layout/loading/linking:
-  `src/bmsx/machine/program/*` and `src/bmsx_cpp/machine/program/*`.
+  `packages/bmsx-console/src/machine/program/*` and `native/machine/machine/program/*`.
 
 The ROM package and program image use the current wire records only. There is no
 old-format reader and no decode path for obsolete records.

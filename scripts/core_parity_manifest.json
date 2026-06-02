@@ -1,551 +1,551 @@
 {
 	"patterns": [
 		{
-			"pattern": "src/bmsx/ide/terminal/**",
+			"pattern": "packages/bmsx-console/src/ide/terminal/**",
 			"category": "terminal",
 			"reason": "terminal_ui_not_core"
 		},
 		{
-			"pattern": "src/bmsx/ide/language/**",
+			"pattern": "packages/bmsx-console/src/ide/language/**",
 			"category": "language",
 			"reason": "language_tooling"
 		},
 		{
-			"pattern": "src/bmsx/ide/**",
+			"pattern": "packages/bmsx-console/src/ide/**",
 			"category": "ide",
 			"reason": "ide_only"
 		},
 		{
-			"pattern": "src/bmsx/language/**",
+			"pattern": "packages/bmsx-console/src/language/**",
 			"category": "language",
 			"reason": "language_tooling"
 		},
 		{
-			"pattern": "src/bmsx/lua/**",
+			"pattern": "packages/bmsx-console/src/lua/**",
 			"category": "cpu_interpreter_exception",
 			"reason": "cpu_interpreter_exception; semantics tested, file parity not required"
 		},
 		{
-			"pattern": "src/bmsx/machine/program/optimizer/**",
+			"pattern": "packages/bmsx-console/src/machine/program/optimizer/**",
 			"category": "compiler_tooling",
 			"reason": "compiler_optimizer_excluded"
 		},
 		{
-			"pattern": "src/bmsx/machine/program/compiler.ts",
+			"pattern": "packages/bmsx-console/src/machine/program/compiler.ts",
 			"category": "compiler_tooling",
 			"reason": "full_compiler_excluded"
 		},
 		{
-			"pattern": "src/bmsx/machine/program/compile_value_flow.ts",
+			"pattern": "packages/bmsx-console/src/machine/program/compile_value_flow.ts",
 			"category": "compiler_tooling",
 			"reason": "compiler_tooling_excluded"
 		},
 		{
-			"pattern": "src/bmsx/machine/program/control_flow.ts",
+			"pattern": "packages/bmsx-console/src/machine/program/control_flow.ts",
 			"category": "compiler_tooling",
 			"reason": "compiler_tooling_excluded"
 		},
 		{
-			"pattern": "src/bmsx/machine/program/bound_reference.ts",
+			"pattern": "packages/bmsx-console/src/machine/program/bound_reference.ts",
 			"category": "compiler_tooling",
 			"reason": "compiler_tooling_excluded"
 		},
 		{
-			"pattern": "src/bmsx/machine/program/source_range.ts",
+			"pattern": "packages/bmsx-console/src/machine/program/source_range.ts",
 			"category": "compiler_tooling",
 			"reason": "compiler_tooling_excluded"
 		},
 		{
-			"pattern": "src/bmsx/machine/program/sourcemap_minimal.ts",
+			"pattern": "packages/bmsx-console/src/machine/program/sourcemap_minimal.ts",
 			"category": "compiler_tooling",
 			"reason": "compiler_tooling_excluded"
 		},
 		{
-			"pattern": "src/bmsx/machine/program/target_semantics.ts",
+			"pattern": "packages/bmsx-console/src/machine/program/target_semantics.ts",
 			"category": "compiler_tooling",
 			"reason": "compiler_tooling_excluded"
 		},
 		{
-			"pattern": "src/bmsx/machine/program/console_entry.ts",
+			"pattern": "packages/bmsx-browser-host/src/engine.ts",
 			"category": "compiler_tooling",
-			"reason": "compiler_tooling_console_entry_not_runtime_core"
+			"reason": "compiler_tooling_browser_engine_not_runtime_core"
 		},
 		{
-			"pattern": "src/bmsx/machine/program/sources.ts",
+			"pattern": "packages/bmsx-console/src/machine/program/sources.ts",
 			"category": "compiler_tooling",
 			"reason": "compiler_source_registry_not_native_core"
 		},
 		{
-			"pattern": "src/bmsx/machine/program/start_cart.ts",
+			"pattern": "packages/bmsx-console/src/machine/program/start_cart.ts",
 			"category": "host",
 			"reason": "browser_console_bootstrap_not_native_core"
 		},
 		{
-			"pattern": "src/bmsx/input/host/assignment_processor.ts",
+			"pattern": "packages/bmsx-console/src/input/host/assignment_processor.ts",
 			"category": "host",
 			"reason": "host_input_assignment_ui_not_core"
 		},
 		{
-			"pattern": "src/bmsx/input/dualsense_hid.ts",
+			"pattern": "packages/bmsx-console/src/input/dualsense_hid.ts",
 			"category": "host",
 			"reason": "host_input_hid_not_core"
 		},
 		{
-			"pattern": "src/bmsx/input/onscreen_gamepad.ts",
+			"pattern": "packages/bmsx-console/src/input/onscreen_gamepad.ts",
 			"category": "host",
 			"reason": "browser_ui_not_core"
 		},
 		{
-			"pattern": "src/bmsx/input/shortcuts.ts",
+			"pattern": "packages/bmsx-console/src/input/shortcuts.ts",
 			"category": "host",
 			"reason": "host_input_shortcuts_not_core"
 		},
 		{
-			"pattern": "src/bmsx/platform/index.ts",
+			"pattern": "packages/bmsx-console/src/platform/index.ts",
 			"category": "barrel",
 			"reason": "ts_barrel"
 		},
 		{
-			"pattern": "src/bmsx/platform/**",
+			"pattern": "packages/bmsx-console/src/platform/**",
 			"category": "host",
 			"reason": "host_platform_not_core"
 		},
 		{
-			"pattern": "src/bmsx/audio/startup.ts",
+			"pattern": "packages/bmsx-console/src/audio/startup.ts",
 			"category": "host",
 			"reason": "browser_audio_unlock_not_core"
 		},
 		{
-			"pattern": "src/bmsx/audio/**",
+			"pattern": "packages/bmsx-console/src/audio/**",
 			"category": "host",
 			"reason": "host_audio_not_core"
 		},
 		{
-			"pattern": "src/bmsx/common/rect.ts",
+			"pattern": "packages/bmsx-console/src/common/rect.ts",
 			"category": "ide",
 			"reason": "ide_geometry_helper_not_runtime_core"
 		},
 		{
-			"pattern": "src/bmsx/common/pool.ts",
+			"pattern": "packages/bmsx-console/src/common/pool.ts",
 			"category": "host",
 			"reason": "host_render_pool_not_runtime_core"
 		},
 		{
-			"pattern": "src/bmsx/common/image_decode.ts",
+			"pattern": "packages/bmsx-console/src/common/image_decode.ts",
 			"category": "host",
 			"reason": "host_or_tooling_image_decode_not_core"
 		},
 		{
-			"pattern": "src/bmsx/common/wav.ts",
+			"pattern": "packages/bmsx-console/src/common/wav.ts",
 			"category": "host",
 			"reason": "host_or_tooling_audio_decode_not_core"
 		},
 		{
-			"pattern": "src/bmsx/common/text_lines.ts",
+			"pattern": "packages/bmsx-console/src/common/text_lines.ts",
 			"category": "host",
 			"reason": "host_text_layout_not_core"
 		},
 		{
-			"pattern": "src/bmsx/common/arrayify.ts",
+			"pattern": "packages/bmsx-console/src/common/arrayify.ts",
 			"category": "host",
 			"reason": "host_or_tooling_collection_helper_not_core"
 		},
 		{
-			"pattern": "src/bmsx/common/shallowcopy.ts",
+			"pattern": "packages/bmsx-console/src/common/shallowcopy.ts",
 			"category": "host",
 			"reason": "host_or_tooling_collection_helper_not_core"
 		},
 		{
-			"pattern": "src/bmsx/runtime/assets/**",
+			"pattern": "packages/bmsx-console/src/runtime/assets/**",
 			"category": "host",
 			"reason": "host_asset_runtime_not_machine_core"
 		},
 		{
-			"pattern": "src/bmsx/render/backend/webgl/**",
+			"pattern": "packages/bmsx-console/src/render/backend/webgl/**",
 			"category": "host",
 			"reason": "browser_render_backend_not_core"
 		},
 		{
-			"pattern": "src/bmsx/render/backend/**",
+			"pattern": "packages/bmsx-console/src/render/backend/**",
 			"category": "host",
 			"reason": "host_render_backend_not_core"
 		},
 		{
-			"pattern": "src/bmsx/render/headless/**",
+			"pattern": "packages/bmsx-console/src/render/headless/**",
 			"category": "host",
 			"reason": "headless_host_not_core"
 		},
 		{
-			"pattern": "src/bmsx/render/debug/**",
+			"pattern": "packages/bmsx-console/src/render/debug/**",
 			"category": "host",
 			"reason": "debug_render_host_not_core"
 		},
 		{
-			"pattern": "src/bmsx/render/post/**",
+			"pattern": "packages/bmsx-console/src/render/post/**",
 			"category": "host",
 			"reason": "host_postprocess_not_core"
 		},
 		{
-			"pattern": "src/bmsx/render/host_overlay/webgl/**",
+			"pattern": "packages/bmsx-console/src/render/host_overlay/webgl/**",
 			"category": "host",
 			"reason": "browser_host_overlay_not_core"
 		},
 		{
-			"pattern": "src/bmsx/render/host_overlay/headless/**",
+			"pattern": "packages/bmsx-console/src/render/host_overlay/headless/**",
 			"category": "host",
 			"reason": "headless_host_overlay_not_core"
 		},
 		{
-			"pattern": "src/bmsx/render/2d/**/*.wgpu.ts",
+			"pattern": "packages/bmsx-console/src/render/2d/**/*.wgpu.ts",
 			"category": "host",
 			"reason": "webgpu_render_backend_not_core"
 		},
 		{
-			"pattern": "src/bmsx/render/2d/**",
+			"pattern": "packages/bmsx-console/src/render/2d/**",
 			"category": "host",
 			"reason": "host_2d_render_pipeline_not_core"
 		},
 		{
-			"pattern": "src/bmsx/render/3d/**/*.wgpu.ts",
+			"pattern": "packages/bmsx-console/src/render/3d/**/*.wgpu.ts",
 			"category": "host",
 			"reason": "webgpu_render_backend_not_core"
 		},
 		{
-			"pattern": "src/bmsx/render/3d/axis_gizmo_pipeline.ts",
+			"pattern": "packages/bmsx-console/src/render/3d/axis_gizmo_pipeline.ts",
 			"category": "host",
 			"reason": "debug_render_gizmo_not_core"
 		},
 		{
-			"pattern": "src/bmsx/render/3d/material.ts",
+			"pattern": "packages/bmsx-console/src/render/3d/material.ts",
 			"category": "host",
 			"reason": "host_render_material_not_core"
 		},
 		{
-			"pattern": "src/bmsx/render/3d/shadowmap.ts",
+			"pattern": "packages/bmsx-console/src/render/3d/shadowmap.ts",
 			"category": "host",
 			"reason": "host_render_shadowmap_not_core"
 		},
 		{
-			"pattern": "src/bmsx/render/texture_load_barrier.ts",
+			"pattern": "packages/bmsx-console/src/render/texture_load_barrier.ts",
 			"category": "host",
 			"reason": "host_texture_loading_not_core"
 		},
 		{
-			"pattern": "src/bmsx/render/vdp/blitter/webgl.ts",
+			"pattern": "packages/bmsx-console/src/render/vdp/blitter/webgl.ts",
 			"category": "host",
 			"reason": "browser_vdp_blitter_backend_not_core"
 		},
 		{
-			"pattern": "src/bmsx/render/vdp/blitter/headless.ts",
+			"pattern": "packages/bmsx-console/src/render/vdp/blitter/headless.ts",
 			"category": "host",
 			"reason": "headless_vdp_blitter_backend_not_core"
 		},
 		{
-			"pattern": "src/bmsx/render/vdp/blitter/index.ts",
+			"pattern": "packages/bmsx-console/src/render/vdp/blitter/index.ts",
 			"category": "host",
 			"reason": "ts_blitter_backend_selector_not_core"
 		},
 		{
-			"pattern": "src/bmsx/render/graph/**",
+			"pattern": "packages/bmsx-console/src/render/graph/**",
 			"category": "host",
 			"reason": "host_render_graph_not_core"
 		},
 		{
-			"pattern": "src/bmsx/machine/runtime/handler_cache.ts",
+			"pattern": "packages/bmsx-console/src/machine/runtime/handler_cache.ts",
 			"category": "host",
 			"reason": "ts_js_handler_cache_host_bridge_not_core"
 		},
 		{
-			"pattern": "src/bmsx/machine/runtime/contracts.ts",
+			"pattern": "packages/bmsx-console/src/machine/runtime/contracts.ts",
 			"category": "host",
 			"reason": "ts_type_contracts_not_cpp_file_parity_surface"
 		},
 		{
-			"pattern": "src/bmsx/machine/runtime/host_fault.ts",
+			"pattern": "packages/bmsx-console/src/machine/runtime/host_fault.ts",
 			"category": "host",
 			"reason": "ts_host_fault_bridge_not_cpp_file_parity_surface"
 		},
 		{
-			"pattern": "src/bmsx/machine/bus/registers.ts",
+			"pattern": "packages/bmsx-console/src/machine/bus/registers.ts",
 			"category": "compiler_tooling",
 			"reason": "compiler_mmio_metadata_not_runtime_core"
 		},
 		{
-			"pattern": "src/bmsx/machine/cpu/profiler.ts",
+			"pattern": "packages/bmsx-console/src/machine/cpu/profiler.ts",
 			"category": "host",
 			"reason": "devtool_cpu_profiler_not_core_parity_surface"
 		},
 		{
-			"pattern": "src/bmsx/rompack/tooling/**",
+			"pattern": "packages/bmsx-console/src/rompack/tooling/**",
 			"category": "rompacker_tooling",
 			"reason": "rompacker_authoring_schema_not_runtime_core"
 		},
 		{
-			"pattern": "src/bmsx/.bmsx/**",
+			"pattern": "packages/bmsx-console/src/.bmsx/**",
 			"category": "host",
 			"reason": "workspace_data_not_source"
 		},
 		{
-			"pattern": "src/bmsx/glsl.d.ts",
+			"pattern": "packages/bmsx-console/src/glsl.d.ts",
 			"category": "barrel",
 			"reason": "ambient_declaration_not_core"
 		}
 	],
 	"core_roots": [
-		"src/bmsx/input/manager.ts",
-		"src/bmsx/machine/cpu/disassembler.ts",
-		"src/bmsx/machine/firmware/globals.ts",
-		"src/bmsx/machine/firmware/system_globals.ts",
-		"src/bmsx/machine/machine.ts",
-		"src/bmsx/machine/runtime/cpu_state.ts",
-		"src/bmsx/machine/runtime/debug.ts",
-		"src/bmsx/machine/runtime/machine_state.ts",
-		"src/bmsx/machine/runtime/resume_snapshot.ts",
-		"src/bmsx/machine/runtime/runtime.ts",
-		"src/bmsx/machine/runtime/save_machine_state.ts",
-		"src/bmsx/machine/runtime/save_state.ts",
-		"src/bmsx/machine/runtime/save_state/codec.ts",
-		"src/bmsx/machine/runtime/save_state/schema.ts",
-		"src/bmsx/machine/runtime/system_irq.ts",
-		"src/bmsx/render/host_overlay/pipeline.ts",
-		"src/bmsx/render/runtime_state.ts",
-		"src/bmsx/render/shared/glyph_runs.ts",
-		"src/bmsx/render/vdp/source_pixels.ts",
-		"src/bmsx/rompack/format.ts",
-		"src/bmsx/machine/program/linker.ts",
-		"src/bmsx/machine/program/loader.ts",
-		"src/bmsx/render/shared/submissions.ts",
-		"src/bmsx/render/shared/solid_pixels.ts"
+		"packages/bmsx-console/src/input/manager.ts",
+		"packages/bmsx-console/src/machine/cpu/disassembler.ts",
+		"packages/bmsx-console/src/machine/firmware/globals.ts",
+		"packages/bmsx-console/src/machine/firmware/system_globals.ts",
+		"packages/bmsx-console/src/machine/machine.ts",
+		"packages/bmsx-console/src/machine/runtime/cpu_state.ts",
+		"packages/bmsx-console/src/machine/runtime/debug.ts",
+		"packages/bmsx-console/src/machine/runtime/machine_state.ts",
+		"packages/bmsx-console/src/machine/runtime/resume_snapshot.ts",
+		"packages/bmsx-console/src/machine/runtime/runtime.ts",
+		"packages/bmsx-console/src/machine/runtime/save_machine_state.ts",
+		"packages/bmsx-console/src/machine/runtime/save_state.ts",
+		"packages/bmsx-console/src/machine/runtime/save_state/codec.ts",
+		"packages/bmsx-console/src/machine/runtime/save_state/schema.ts",
+		"packages/bmsx-console/src/machine/runtime/system_irq.ts",
+		"packages/bmsx-console/src/render/host_overlay/pipeline.ts",
+		"packages/bmsx-console/src/render/runtime_state.ts",
+		"packages/bmsx-console/src/render/shared/glyph_runs.ts",
+		"packages/bmsx-console/src/render/vdp/source_pixels.ts",
+		"packages/bmsx-console/src/rompack/format.ts",
+		"packages/bmsx-console/src/machine/program/linker.ts",
+		"packages/bmsx-console/src/machine/program/loader.ts",
+		"packages/bmsx-console/src/render/shared/submissions.ts",
+		"packages/bmsx-console/src/render/shared/solid_pixels.ts"
 	],
 	"must_have_cpp": [
-		"src/bmsx/common/arrays_equal.ts",
-		"src/bmsx/common/vector.ts",
-		"src/bmsx/common/lower_bound.ts",
-		"src/bmsx/common/scratchstack.ts",
-		"src/bmsx/machine/common/hash.ts",
-		"src/bmsx/machine/devices/audio/biquad_filter.ts",
-		"src/bmsx/machine/devices/audio/output.ts",
-		"src/bmsx/machine/devices/vdp/rpu.ts",
-		"src/bmsx/machine/memory/access_kind.ts",
-		"src/bmsx/machine/cpu/string_pool.ts",
-		"src/bmsx/machine/cpu/opcode_info.ts",
-		"src/bmsx/machine/runtime/timing/state.ts",
-		"src/bmsx/render/runtime_state.ts",
-		"src/bmsx/rompack/tokens.ts",
-		"src/bmsx/rompack/toc.ts",
-		"src/bmsx/rompack/source.ts",
-		"src/bmsx/rompack/metadata.ts",
-		"src/bmsx/render/shared/solid_pixels.ts",
-		"src/bmsx/render/3d/light.ts"
+		"packages/bmsx-console/src/common/arrays_equal.ts",
+		"packages/bmsx-console/src/common/vector.ts",
+		"packages/bmsx-console/src/common/lower_bound.ts",
+		"packages/bmsx-console/src/common/scratchstack.ts",
+		"packages/bmsx-console/src/machine/common/hash.ts",
+		"packages/bmsx-console/src/machine/devices/audio/biquad_filter.ts",
+		"packages/bmsx-console/src/machine/devices/audio/output.ts",
+		"packages/bmsx-console/src/machine/devices/vdp/rpu.ts",
+		"packages/bmsx-console/src/machine/memory/access_kind.ts",
+		"packages/bmsx-console/src/machine/cpu/string_pool.ts",
+		"packages/bmsx-console/src/machine/cpu/opcode_info.ts",
+		"packages/bmsx-console/src/machine/runtime/timing/state.ts",
+		"packages/bmsx-console/src/render/runtime_state.ts",
+		"packages/bmsx-console/src/rompack/tokens.ts",
+		"packages/bmsx-console/src/rompack/toc.ts",
+		"packages/bmsx-console/src/rompack/source.ts",
+		"packages/bmsx-console/src/rompack/metadata.ts",
+		"packages/bmsx-console/src/render/shared/solid_pixels.ts",
+		"packages/bmsx-console/src/render/3d/light.ts"
 	],
 	"strict_runtime_symbol_parity": [
 		{
-			"ts": "src/bmsx/machine/devices/vdp/device_output.ts",
+			"ts": "packages/bmsx-console/src/machine/devices/vdp/device_output.ts",
 			"cpp": [
-				"src/bmsx_cpp/machine/devices/vdp/device_output.h"
+				"native/machine/machine/devices/vdp/device_output.h"
 			],
 			"reason": "vdp_output_host_surface_contract"
 		},
 		{
-			"ts": "src/bmsx/machine/devices/vdp/contracts.ts",
+			"ts": "packages/bmsx-console/src/machine/devices/vdp/contracts.ts",
 			"cpp": [
-				"src/bmsx_cpp/machine/devices/vdp/contracts.h"
+				"native/machine/machine/devices/vdp/contracts.h"
 			],
 			"reason": "vdp_shared_register_and_surface_constant_contract"
 		},
 		{
-			"ts": "src/bmsx/machine/devices/vdp/rpu.ts",
+			"ts": "packages/bmsx-console/src/machine/devices/vdp/rpu.ts",
 			"cpp": [
-				"src/bmsx_cpp/machine/devices/vdp/rpu.h",
-				"src/bmsx_cpp/machine/devices/vdp/rpu.cpp"
+				"native/machine/machine/devices/vdp/rpu.h",
+				"native/machine/machine/devices/vdp/rpu.cpp"
 			],
 			"reason": "rpu_device_runtime_contract"
 		},
 		{
-			"ts": "src/bmsx/machine/devices/vdp/xf.ts",
+			"ts": "packages/bmsx-console/src/machine/devices/vdp/xf.ts",
 			"cpp": [
-				"src/bmsx_cpp/machine/devices/vdp/xf.h",
-				"src/bmsx_cpp/machine/devices/vdp/xf.cpp"
+				"native/machine/machine/devices/vdp/xf.h",
+				"native/machine/machine/devices/vdp/xf.cpp"
 			],
 			"reason": "rpu_hardware_matrix_xf_contract"
 		},
 		{
-			"ts": "src/bmsx/machine/devices/vdp/lpu.ts",
+			"ts": "packages/bmsx-console/src/machine/devices/vdp/lpu.ts",
 			"cpp": [
-				"src/bmsx_cpp/machine/devices/vdp/lpu.h",
-				"src/bmsx_cpp/machine/devices/vdp/lpu.cpp"
+				"native/machine/machine/devices/vdp/lpu.h",
+				"native/machine/machine/devices/vdp/lpu.cpp"
 			],
 			"reason": "rpu_lighting_registerfile_contract"
 		},
 		{
-			"ts": "src/bmsx/machine/devices/vdp/mfu.ts",
+			"ts": "packages/bmsx-console/src/machine/devices/vdp/mfu.ts",
 			"cpp": [
-				"src/bmsx_cpp/machine/devices/vdp/mfu.h",
-				"src/bmsx_cpp/machine/devices/vdp/mfu.cpp"
+				"native/machine/machine/devices/vdp/mfu.h",
+				"native/machine/machine/devices/vdp/mfu.cpp"
 			],
 			"reason": "rpu_morph_weight_registerfile_contract"
 		},
 		{
-			"ts": "src/bmsx/machine/devices/vdp/jtu.ts",
+			"ts": "packages/bmsx-console/src/machine/devices/vdp/jtu.ts",
 			"cpp": [
-				"src/bmsx_cpp/machine/devices/vdp/jtu.h",
-				"src/bmsx_cpp/machine/devices/vdp/jtu.cpp"
+				"native/machine/machine/devices/vdp/jtu.h",
+				"native/machine/machine/devices/vdp/jtu.cpp"
 			],
 			"reason": "rpu_joint_matrix_registerfile_contract"
 		},
 		{
-			"ts": "src/bmsx/machine/devices/vdp/unit_register_port.ts",
+			"ts": "packages/bmsx-console/src/machine/devices/vdp/unit_register_port.ts",
 			"cpp": [
-				"src/bmsx_cpp/machine/devices/vdp/unit_register_port.h",
-				"src/bmsx_cpp/machine/devices/vdp/unit_register_port.cpp"
+				"native/machine/machine/devices/vdp/unit_register_port.h",
+				"native/machine/machine/devices/vdp/unit_register_port.cpp"
 			],
 			"reason": "rpu_registerfile_packet_boundary_contract"
 		},
 		{
-			"ts": "src/bmsx/render/backend/webgl/vdp_rpu.ts",
+			"ts": "packages/bmsx-console/src/render/backend/webgl/vdp_rpu.ts",
 			"cpp": [
-				"src/bmsx_cpp/render/backend/gles2/vdp_rpu.h",
-				"src/bmsx_cpp/render/backend/gles2/vdp_rpu.cpp"
+				"native/machine/render/backend/gles2/vdp_rpu.h",
+				"native/machine/render/backend/gles2/vdp_rpu.cpp"
 			],
 			"reason": "rpu_webgl_gles2_backend_contract"
 		},
 		{
-			"ts": "src/bmsx/machine/devices/vdp/vout.ts",
+			"ts": "packages/bmsx-console/src/machine/devices/vdp/vout.ts",
 			"cpp": [
-				"src/bmsx_cpp/machine/devices/vdp/vout.h",
-				"src/bmsx_cpp/machine/devices/vdp/vout.cpp"
+				"native/machine/machine/devices/vdp/vout.h",
+				"native/machine/machine/devices/vdp/vout.cpp"
 			],
 			"reason": "rpu_vout_presentation_contract"
 		},
 		{
-			"ts": "src/bmsx/machine/devices/vdp/fbm.ts",
+			"ts": "packages/bmsx-console/src/machine/devices/vdp/fbm.ts",
 			"cpp": [
-				"src/bmsx_cpp/machine/devices/vdp/fbm.h",
-				"src/bmsx_cpp/machine/devices/vdp/fbm.cpp"
+				"native/machine/machine/devices/vdp/fbm.h",
+				"native/machine/machine/devices/vdp/fbm.cpp"
 			],
 			"reason": "rpu_framebuffer_presentation_contract"
 		},
 		{
-			"ts": "src/bmsx/machine/devices/vdp/vram.ts",
+			"ts": "packages/bmsx-console/src/machine/devices/vdp/vram.ts",
 			"cpp": [
-				"src/bmsx_cpp/machine/devices/vdp/vram.h",
-				"src/bmsx_cpp/machine/devices/vdp/vram.cpp"
+				"native/machine/machine/devices/vdp/vram.h",
+				"native/machine/machine/devices/vdp/vram.cpp"
 			],
 			"reason": "rpu_vram_surface_upload_contract"
 		},
 		{
-			"ts": "src/bmsx/render/vdp/view_snapshot.ts",
+			"ts": "packages/bmsx-console/src/render/vdp/view_snapshot.ts",
 			"cpp": [
-				"src/bmsx_cpp/render/vdp/view_snapshot.h",
-				"src/bmsx_cpp/render/vdp/view_snapshot.cpp"
+				"native/machine/render/vdp/view_snapshot.h",
+				"native/machine/render/vdp/view_snapshot.cpp"
 			],
 			"reason": "rpu_view_snapshot_commit_contract"
 		},
 		{
-			"ts": "src/bmsx/machine/devices/vdp/ingress.ts",
+			"ts": "packages/bmsx-console/src/machine/devices/vdp/ingress.ts",
 			"cpp": [
-				"src/bmsx_cpp/machine/devices/vdp/ingress.h",
-				"src/bmsx_cpp/machine/devices/vdp/ingress.cpp"
+				"native/machine/machine/devices/vdp/ingress.h",
+				"native/machine/machine/devices/vdp/ingress.cpp"
 			],
 			"reason": "vdp_stream_ingress_runtime_contract"
 		},
 		{
-			"ts": "src/bmsx/machine/devices/vdp/registers.ts",
+			"ts": "packages/bmsx-console/src/machine/devices/vdp/registers.ts",
 			"cpp": [
-				"src/bmsx_cpp/machine/devices/vdp/registers.h",
-				"src/bmsx_cpp/machine/devices/vdp/registers.cpp"
+				"native/machine/machine/devices/vdp/registers.h",
+				"native/machine/machine/devices/vdp/registers.cpp"
 			],
 			"reason": "vdp_registerfile_constant_and_decode_contract"
 		},
 		{
-			"ts": "src/bmsx/machine/devices/vdp/packet.ts",
+			"ts": "packages/bmsx-console/src/machine/devices/vdp/packet.ts",
 			"cpp": [
-				"src/bmsx_cpp/machine/devices/vdp/packet.h"
+				"native/machine/machine/devices/vdp/packet.h"
 			],
 			"reason": "vdp_unit_packet_header_contract"
 		},
 		{
-			"ts": "src/bmsx/machine/devices/vdp/budget.ts",
+			"ts": "packages/bmsx-console/src/machine/devices/vdp/budget.ts",
 			"cpp": [
-				"src/bmsx_cpp/machine/devices/vdp/budget.h"
+				"native/machine/machine/devices/vdp/budget.h"
 			],
 			"reason": "vdp_render_budget_math_contract"
 		},
 		{
-			"ts": "src/bmsx/common/fixed_point.ts",
+			"ts": "packages/bmsx-console/src/common/fixed_point.ts",
 			"cpp": [
-				"src/bmsx_cpp/common/fixed_point.h"
+				"native/machine/common/fixed_point.h"
 			],
 			"reason": "common_fixed_point_decode_contract"
 		},
 		{
-			"ts": "src/bmsx/machine/devices/vdp/matrix_words.ts",
+			"ts": "packages/bmsx-console/src/machine/devices/vdp/matrix_words.ts",
 			"cpp": [
-				"src/bmsx_cpp/machine/devices/vdp/matrix_words.h"
+				"native/machine/machine/devices/vdp/matrix_words.h"
 			],
 			"reason": "vdp_matrix_word_contract"
 		},
 		{
-			"ts": "src/bmsx/machine/devices/vdp/vram_garbage.ts",
+			"ts": "packages/bmsx-console/src/machine/devices/vdp/vram_garbage.ts",
 			"cpp": [
-				"src/bmsx_cpp/machine/devices/vdp/vram_garbage.h",
-				"src/bmsx_cpp/machine/devices/vdp/vram_garbage.cpp"
+				"native/machine/machine/devices/vdp/vram_garbage.h",
+				"native/machine/machine/devices/vdp/vram_garbage.cpp"
 			],
 			"reason": "vdp_vram_garbage_stream_contract"
 		},
 		{
-			"ts": "src/bmsx/machine/devices/vdp/readback.ts",
+			"ts": "packages/bmsx-console/src/machine/devices/vdp/readback.ts",
 			"cpp": [
-				"src/bmsx_cpp/machine/devices/vdp/readback.h",
-				"src/bmsx_cpp/machine/devices/vdp/readback.cpp"
+				"native/machine/machine/devices/vdp/readback.h",
+				"native/machine/machine/devices/vdp/readback.cpp"
 			],
 			"reason": "vdp_readback_runtime_contract"
 		},
 		{
-			"ts": "src/bmsx/machine/devices/vdp/slot_surface.ts",
+			"ts": "packages/bmsx-console/src/machine/devices/vdp/slot_surface.ts",
 			"cpp": [
-				"src/bmsx_cpp/machine/devices/vdp/slot_surface.h",
-				"src/bmsx_cpp/machine/devices/vdp/slot_surface.cpp"
+				"native/machine/machine/devices/vdp/slot_surface.h",
+				"native/machine/machine/devices/vdp/slot_surface.cpp"
 			],
 			"reason": "vdp_slot_surface_port_runtime_contract"
 		},
 		{
-			"ts": "src/bmsx/machine/devices/vdp/frame.ts",
+			"ts": "packages/bmsx-console/src/machine/devices/vdp/frame.ts",
 			"cpp": [
-				"src/bmsx_cpp/machine/devices/vdp/frame.h",
-				"src/bmsx_cpp/machine/devices/vdp/frame.cpp"
+				"native/machine/machine/devices/vdp/frame.h",
+				"native/machine/machine/devices/vdp/frame.cpp"
 			],
 			"reason": "vdp_submitted_frame_runtime_contract"
 		},
 		{
-			"ts": "src/bmsx/machine/devices/vdp/save_state.ts",
+			"ts": "packages/bmsx-console/src/machine/devices/vdp/save_state.ts",
 			"cpp": [
-				"src/bmsx_cpp/machine/devices/vdp/save_state.h"
+				"native/machine/machine/devices/vdp/save_state.h"
 			],
 			"reason": "vdp_device_save_state_type_contract"
 		},
 		{
-			"ts": "src/bmsx/machine/devices/vdp/vdp.ts",
+			"ts": "packages/bmsx-console/src/machine/devices/vdp/vdp.ts",
 			"cpp": [
-				"src/bmsx_cpp/machine/devices/vdp/vdp.h",
-				"src/bmsx_cpp/machine/devices/vdp/vdp.cpp"
+				"native/machine/machine/devices/vdp/vdp.h",
+				"native/machine/machine/devices/vdp/vdp.cpp"
 			],
 			"reason": "vdp_device_runtime_contract"
 		},
 		{
-			"ts": "src/bmsx/render/backend/webgl/fullscreen_quad.ts",
+			"ts": "packages/bmsx-console/src/render/backend/webgl/fullscreen_quad.ts",
 			"cpp": [
-				"src/bmsx_cpp/render/backend/gles2/fullscreen_quad.h",
-				"src/bmsx_cpp/render/backend/gles2/fullscreen_quad.cpp"
+				"native/machine/render/backend/gles2/fullscreen_quad.h",
+				"native/machine/render/backend/gles2/fullscreen_quad.cpp"
 			],
 			"reason": "fullscreen_quad_backend_symbol_parity"
 		}
 	],
 	"strict_runtime_shape_parity": [
 		{
-			"ts": "src/bmsx/machine/devices/vdp/device_output.ts",
+			"ts": "packages/bmsx-console/src/machine/devices/vdp/device_output.ts",
 			"cpp": [
-				"src/bmsx_cpp/machine/devices/vdp/device_output.h"
+				"native/machine/machine/devices/vdp/device_output.h"
 			],
 			"symbols": [
 				"VdpDirtySpan",
@@ -557,9 +557,9 @@
 			"reason": "vdp_host_output_contract"
 		},
 		{
-			"ts": "src/bmsx/machine/devices/vdp/contracts.ts",
+			"ts": "packages/bmsx-console/src/machine/devices/vdp/contracts.ts",
 			"cpp": [
-				"src/bmsx_cpp/machine/devices/vdp/contracts.h"
+				"native/machine/machine/devices/vdp/contracts.h"
 			],
 			"symbols": [
 				"VdpSlotSource"
@@ -567,9 +567,9 @@
 			"reason": "vdp_shared_register_shape_contract"
 		},
 		{
-			"ts": "src/bmsx/machine/devices/vdp/frame.ts",
+			"ts": "packages/bmsx-console/src/machine/devices/vdp/frame.ts",
 			"cpp": [
-				"src/bmsx_cpp/machine/devices/vdp/frame.h"
+				"native/machine/machine/devices/vdp/frame.h"
 			],
 			"symbols": [
 				"VdpBuildingFrameSaveState",
@@ -578,9 +578,9 @@
 			"reason": "vdp_submitted_frame_snapshot_shape_contract"
 		},
 		{
-			"ts": "src/bmsx/machine/devices/vdp/save_state.ts",
+			"ts": "packages/bmsx-console/src/machine/devices/vdp/save_state.ts",
 			"cpp": [
-				"src/bmsx_cpp/machine/devices/vdp/save_state.h"
+				"native/machine/machine/devices/vdp/save_state.h"
 			],
 			"symbols": [
 				"VdpState",
@@ -589,9 +589,9 @@
 			"reason": "vdp_device_save_state_shape_contract"
 		},
 		{
-			"ts": "src/bmsx/machine/devices/vdp/rpu.ts",
+			"ts": "packages/bmsx-console/src/machine/devices/vdp/rpu.ts",
 			"cpp": [
-				"src/bmsx_cpp/machine/devices/vdp/rpu.h"
+				"native/machine/machine/devices/vdp/rpu.h"
 			],
 			"symbols": [
 				"VdpRpuFrameBufferRefs",
@@ -617,9 +617,9 @@
 			"reason": "rpu_retained_command_buffer_shape_contract"
 		},
 		{
-			"ts": "src/bmsx/machine/devices/vdp/xf.ts",
+			"ts": "packages/bmsx-console/src/machine/devices/vdp/xf.ts",
 			"cpp": [
-				"src/bmsx_cpp/machine/devices/vdp/xf.h"
+				"native/machine/machine/devices/vdp/xf.h"
 			],
 			"symbols": [
 				"VdpXfState"
@@ -627,9 +627,9 @@
 			"reason": "xf_hardware_matrix_state_shape_contract"
 		},
 		{
-			"ts": "src/bmsx/machine/devices/vdp/lpu.ts",
+			"ts": "packages/bmsx-console/src/machine/devices/vdp/lpu.ts",
 			"cpp": [
-				"src/bmsx_cpp/machine/devices/vdp/lpu.h"
+				"native/machine/machine/devices/vdp/lpu.h"
 			],
 			"symbols": [
 				"VdpLpuUnit"
@@ -637,9 +637,9 @@
 			"reason": "rpu_lighting_registerfile_shape_contract"
 		},
 		{
-			"ts": "src/bmsx/machine/devices/vdp/mfu.ts",
+			"ts": "packages/bmsx-console/src/machine/devices/vdp/mfu.ts",
 			"cpp": [
-				"src/bmsx_cpp/machine/devices/vdp/mfu.h"
+				"native/machine/machine/devices/vdp/mfu.h"
 			],
 			"symbols": [
 				"VdpMfuUnit"
@@ -647,9 +647,9 @@
 			"reason": "rpu_morph_weight_registerfile_shape_contract"
 		},
 		{
-			"ts": "src/bmsx/machine/devices/vdp/jtu.ts",
+			"ts": "packages/bmsx-console/src/machine/devices/vdp/jtu.ts",
 			"cpp": [
-				"src/bmsx_cpp/machine/devices/vdp/jtu.h"
+				"native/machine/machine/devices/vdp/jtu.h"
 			],
 			"symbols": [
 				"VdpJtuUnit"
@@ -657,9 +657,9 @@
 			"reason": "rpu_joint_matrix_registerfile_shape_contract"
 		},
 		{
-			"ts": "src/bmsx/render/backend/webgl/vdp_rpu.ts",
+			"ts": "packages/bmsx-console/src/render/backend/webgl/vdp_rpu.ts",
 			"cpp": [
-				"src/bmsx_cpp/render/backend/gles2/vdp_rpu.h"
+				"native/machine/render/backend/gles2/vdp_rpu.h"
 			],
 			"symbols": [
 				"VdpRpuRuntime"
@@ -667,9 +667,9 @@
 			"reason": "rpu_backend_runtime_shape_contract"
 		},
 		{
-			"ts": "src/bmsx/render/backend/backend.ts",
+			"ts": "packages/bmsx-console/src/render/backend/backend.ts",
 			"cpp": [
-				"src/bmsx_cpp/render/backend/pass/library.h"
+				"native/machine/render/backend/pass/library.h"
 			],
 			"symbols": [
 				"VdpRpuPipelineState",
@@ -678,9 +678,9 @@
 			"reason": "render_pass_pipeline_state_shape_contract"
 		},
 		{
-			"ts": "src/bmsx/machine/devices/vdp/vout.ts",
+			"ts": "packages/bmsx-console/src/machine/devices/vdp/vout.ts",
 			"cpp": [
-				"src/bmsx_cpp/machine/devices/vdp/vout.h"
+				"native/machine/machine/devices/vdp/vout.h"
 			],
 			"symbols": [
 				"VdpVoutFrameOutput"
@@ -688,9 +688,9 @@
 			"reason": "vout_frame_output_shape_contract"
 		},
 		{
-			"ts": "src/bmsx/machine/devices/vdp/vram.ts",
+			"ts": "packages/bmsx-console/src/machine/devices/vdp/vram.ts",
 			"cpp": [
-				"src/bmsx_cpp/machine/devices/vdp/vram.h"
+				"native/machine/machine/devices/vdp/vram.h"
 			],
 			"symbols": [
 				"VdpFrameBufferSize",
@@ -702,9 +702,9 @@
 			"reason": "vram_surface_upload_state_shape_contract"
 		},
 		{
-			"ts": "src/bmsx/machine/devices/vdp/ingress.ts",
+			"ts": "packages/bmsx-console/src/machine/devices/vdp/ingress.ts",
 			"cpp": [
-				"src/bmsx_cpp/machine/devices/vdp/ingress.h"
+				"native/machine/machine/devices/vdp/ingress.h"
 			],
 			"symbols": [
 				"VdpStreamIngressState",
@@ -713,9 +713,9 @@
 			"reason": "vdp_stream_ingress_state_shape_contract"
 		},
 		{
-			"ts": "src/bmsx/machine/devices/vdp/registers.ts",
+			"ts": "packages/bmsx-console/src/machine/devices/vdp/registers.ts",
 			"cpp": [
-				"src/bmsx_cpp/machine/devices/vdp/registers.h"
+				"native/machine/machine/devices/vdp/registers.h"
 			],
 			"symbols": [
 				"VdpLatchedGeometry",
@@ -724,9 +724,9 @@
 			"reason": "vdp_registerfile_shape_contract"
 		},
 		{
-			"ts": "src/bmsx/machine/devices/vdp/vram_garbage.ts",
+			"ts": "packages/bmsx-console/src/machine/devices/vdp/vram_garbage.ts",
 			"cpp": [
-				"src/bmsx_cpp/machine/devices/vdp/vram_garbage.h"
+				"native/machine/machine/devices/vdp/vram_garbage.h"
 			],
 			"symbols": [
 				"VramGarbageStream"
@@ -734,9 +734,9 @@
 			"reason": "vdp_vram_garbage_stream_shape_contract"
 		},
 		{
-			"ts": "src/bmsx/machine/devices/vdp/readback.ts",
+			"ts": "packages/bmsx-console/src/machine/devices/vdp/readback.ts",
 			"cpp": [
-				"src/bmsx_cpp/machine/devices/vdp/readback.h"
+				"native/machine/machine/devices/vdp/readback.h"
 			],
 			"symbols": [
 				"VdpReadbackState"
@@ -747,71 +747,71 @@
 	"strict_runtime_no_churn": [
 		{
 			"files": [
-				"src/bmsx/render/backend/webgl/vdp_rpu.ts",
-				"src/bmsx_cpp/render/backend/gles2/vdp_rpu.cpp",
-				"src/bmsx/machine/devices/vdp/contracts.ts",
-				"src/bmsx/machine/devices/vdp/rpu.ts",
-				"src/bmsx_cpp/machine/devices/vdp/contracts.h",
-				"src/bmsx_cpp/machine/devices/vdp/rpu.cpp",
+				"packages/bmsx-console/src/render/backend/webgl/vdp_rpu.ts",
+				"native/machine/render/backend/gles2/vdp_rpu.cpp",
+				"packages/bmsx-console/src/machine/devices/vdp/contracts.ts",
+				"packages/bmsx-console/src/machine/devices/vdp/rpu.ts",
+				"native/machine/machine/devices/vdp/contracts.h",
+				"native/machine/machine/devices/vdp/rpu.cpp",
 				"system/vdp_rpu.lua",
 				"system/vdp_rpu_quads.lua",
 				"system/vdp_xf.lua",
 				"system/vdp_lpu.lua",
 				"system/vdp_mfu.lua",
 				"system/vdp_jtu.lua",
-				"src/carts/bare_metal_cart/cart.lua",
-				"src/bmsx/render/backend/webgl/instanced_buffers.ts",
-				"src/bmsx/render/host_overlay/webgl/pipeline.ts",
-				"src/bmsx/machine/devices/vdp/vout.ts",
-				"src/bmsx_cpp/machine/devices/vdp/vout.cpp",
-				"src/bmsx/render/vdp/view_snapshot.ts",
-				"src/bmsx_cpp/render/vdp/view_snapshot.cpp",
-				"src/bmsx/machine/devices/vdp/vdp.ts",
-				"src/bmsx/machine/devices/vdp/frame.ts",
-				"src/bmsx/machine/devices/vdp/save_state.ts",
-				"src/bmsx/machine/devices/vdp/ingress.ts",
-				"src/bmsx/machine/devices/vdp/unit_register_port.ts",
-				"src/bmsx/machine/devices/vdp/xf.ts",
-				"src/bmsx/machine/devices/vdp/lpu.ts",
-				"src/bmsx/machine/devices/vdp/mfu.ts",
-				"src/bmsx/machine/devices/vdp/jtu.ts",
-				"src/bmsx_cpp/machine/devices/vdp/vdp.cpp",
-				"src/bmsx_cpp/machine/devices/vdp/frame.cpp",
-				"src/bmsx_cpp/machine/devices/vdp/ingress.cpp",
-				"src/bmsx_cpp/machine/devices/vdp/unit_register_port.cpp",
-				"src/bmsx_cpp/machine/devices/vdp/xf.cpp",
-				"src/bmsx_cpp/machine/devices/vdp/lpu.cpp",
-				"src/bmsx_cpp/machine/devices/vdp/mfu.cpp",
-				"src/bmsx_cpp/machine/devices/vdp/jtu.cpp",
-				"src/bmsx_cpp/machine/devices/vdp/save_state.h",
-				"src/bmsx/machine/devices/vdp/vram.ts",
-				"src/bmsx/machine/devices/vdp/fbm.ts",
-				"src/bmsx/machine/devices/vdp/readback.ts",
-				"src/bmsx/machine/devices/vdp/vram_garbage.ts",
-				"src/bmsx_cpp/machine/devices/vdp/vram.cpp",
-				"src/bmsx_cpp/machine/devices/vdp/fbm.cpp",
-				"src/bmsx_cpp/machine/devices/vdp/readback.cpp",
-				"src/bmsx_cpp/machine/devices/vdp/vram_garbage.cpp",
-				"src/bmsx/machine/devices/vdp/registers.ts",
-				"src/bmsx_cpp/machine/devices/vdp/registers.cpp",
-				"src/bmsx_cpp/machine/devices/vdp/registers.h",
-				"src/bmsx/machine/devices/vdp/packet.ts",
-				"src/bmsx_cpp/machine/devices/vdp/packet.h",
-				"src/bmsx/machine/devices/vdp/budget.ts",
-				"src/bmsx_cpp/machine/devices/vdp/budget.h",
-				"src/bmsx/common/fixed_point.ts",
-				"src/bmsx_cpp/common/fixed_point.h",
-				"src/bmsx/machine/devices/vdp/matrix_words.ts",
-				"src/bmsx_cpp/machine/devices/vdp/matrix_words.h",
-				"src/bmsx/render/headless/passes.ts",
-				"src/bmsx/render/headless/view.ts"
+				"carts/bare_metal_cart/cart.lua",
+				"packages/bmsx-console/src/render/backend/webgl/instanced_buffers.ts",
+				"packages/bmsx-console/src/render/host_overlay/webgl/pipeline.ts",
+				"packages/bmsx-console/src/machine/devices/vdp/vout.ts",
+				"native/machine/machine/devices/vdp/vout.cpp",
+				"packages/bmsx-console/src/render/vdp/view_snapshot.ts",
+				"native/machine/render/vdp/view_snapshot.cpp",
+				"packages/bmsx-console/src/machine/devices/vdp/vdp.ts",
+				"packages/bmsx-console/src/machine/devices/vdp/frame.ts",
+				"packages/bmsx-console/src/machine/devices/vdp/save_state.ts",
+				"packages/bmsx-console/src/machine/devices/vdp/ingress.ts",
+				"packages/bmsx-console/src/machine/devices/vdp/unit_register_port.ts",
+				"packages/bmsx-console/src/machine/devices/vdp/xf.ts",
+				"packages/bmsx-console/src/machine/devices/vdp/lpu.ts",
+				"packages/bmsx-console/src/machine/devices/vdp/mfu.ts",
+				"packages/bmsx-console/src/machine/devices/vdp/jtu.ts",
+				"native/machine/machine/devices/vdp/vdp.cpp",
+				"native/machine/machine/devices/vdp/frame.cpp",
+				"native/machine/machine/devices/vdp/ingress.cpp",
+				"native/machine/machine/devices/vdp/unit_register_port.cpp",
+				"native/machine/machine/devices/vdp/xf.cpp",
+				"native/machine/machine/devices/vdp/lpu.cpp",
+				"native/machine/machine/devices/vdp/mfu.cpp",
+				"native/machine/machine/devices/vdp/jtu.cpp",
+				"native/machine/machine/devices/vdp/save_state.h",
+				"packages/bmsx-console/src/machine/devices/vdp/vram.ts",
+				"packages/bmsx-console/src/machine/devices/vdp/fbm.ts",
+				"packages/bmsx-console/src/machine/devices/vdp/readback.ts",
+				"packages/bmsx-console/src/machine/devices/vdp/vram_garbage.ts",
+				"native/machine/machine/devices/vdp/vram.cpp",
+				"native/machine/machine/devices/vdp/fbm.cpp",
+				"native/machine/machine/devices/vdp/readback.cpp",
+				"native/machine/machine/devices/vdp/vram_garbage.cpp",
+				"packages/bmsx-console/src/machine/devices/vdp/registers.ts",
+				"native/machine/machine/devices/vdp/registers.cpp",
+				"native/machine/machine/devices/vdp/registers.h",
+				"packages/bmsx-console/src/machine/devices/vdp/packet.ts",
+				"native/machine/machine/devices/vdp/packet.h",
+				"packages/bmsx-console/src/machine/devices/vdp/budget.ts",
+				"native/machine/machine/devices/vdp/budget.h",
+				"packages/bmsx-console/src/common/fixed_point.ts",
+				"native/machine/common/fixed_point.h",
+				"packages/bmsx-console/src/machine/devices/vdp/matrix_words.ts",
+				"native/machine/machine/devices/vdp/matrix_words.h",
+				"packages/bmsx-console/src/render/headless/passes.ts",
+				"packages/bmsx-console/src/render/headless/view.ts"
 			],
 			"reason": "rpu_backend_bios_cart_hot_paths"
 		}
 	],
 	"strict_runtime_no_churn_regions": [
 		{
-			"file": "src/bmsx/machine/devices/vdp/rpu.ts",
+			"file": "packages/bmsx-console/src/machine/devices/vdp/rpu.ts",
 			"start": "public consumePacketFromMemory(frame: VdpRpuFrameOutput, headerWord: number, cursor: number, end: number): number {",
 			"end": "type VdpRpuSaveArray = Uint32Array | Uint16Array | Uint8Array;",
 			"reason": "rpu_device_packet_consume_and_retained_command_buffer_hot_path"
@@ -819,8 +819,8 @@
 	],
 	"strict_rpu_table_parity": [
 		{
-			"ts": "src/bmsx/machine/devices/vdp/rpu.ts",
-			"cpp": "src/bmsx_cpp/machine/devices/vdp/rpu.h",
+			"ts": "packages/bmsx-console/src/machine/devices/vdp/rpu.ts",
+			"cpp": "native/machine/machine/devices/vdp/rpu.h",
 			"tables": [
 				"VDP_RPU_STREAM_LAYOUTS",
 				"VDP_RPU_SHADER_VARIANTS"
@@ -830,23 +830,23 @@
 	],
 	"strict_shader_parity": [
 		{
-			"webgl": "src/bmsx/render/backend/webgl/shaders/vdp_rpu.vert.glsl",
-			"gles2": "src/bmsx_cpp/render/backend/gles2/shaders/vdp_rpu.vert.glsl",
+			"webgl": "packages/bmsx-console/src/render/backend/webgl/shaders/vdp_rpu.vert.glsl",
+			"gles2": "native/machine/render/backend/gles2/shaders/vdp_rpu.vert.glsl",
 			"reason": "fixed_rpu_vertex_shader_variant_contract"
 		},
 		{
-			"webgl": "src/bmsx/render/backend/webgl/shaders/vdp_rpu.frag.glsl",
-			"gles2": "src/bmsx_cpp/render/backend/gles2/shaders/vdp_rpu.frag.glsl",
+			"webgl": "packages/bmsx-console/src/render/backend/webgl/shaders/vdp_rpu.frag.glsl",
+			"gles2": "native/machine/render/backend/gles2/shaders/vdp_rpu.frag.glsl",
 			"reason": "fixed_rpu_fragment_shader_variant_contract"
 		},
 		{
-			"webgl": "src/bmsx/render/2d/shaders/2d.vert.glsl",
-			"gles2": "src/bmsx_cpp/render/2d/shaders/2d.vert.glsl",
+			"webgl": "packages/bmsx-console/src/render/2d/shaders/2d.vert.glsl",
+			"gles2": "native/machine/render/2d/shaders/2d.vert.glsl",
 			"reason": "host_framebuffer_texture_vertex_shader_contract"
 		},
 		{
-			"webgl": "src/bmsx/render/2d/shaders/2d.frag.glsl",
-			"gles2": "src/bmsx_cpp/render/2d/shaders/2d.frag.glsl",
+			"webgl": "packages/bmsx-console/src/render/2d/shaders/2d.frag.glsl",
+			"gles2": "native/machine/render/2d/shaders/2d.frag.glsl",
 			"reason": "host_framebuffer_texture_fragment_shader_contract"
 		}
 	],
@@ -854,8 +854,8 @@
 		{
 			"lua": "system/vdp_rpu.lua",
 			"ts": [
-				"src/bmsx/machine/devices/vdp/rpu.ts",
-				"src/bmsx/machine/devices/vdp/contracts.ts"
+				"packages/bmsx-console/src/machine/devices/vdp/rpu.ts",
+				"packages/bmsx-console/src/machine/devices/vdp/contracts.ts"
 			],
 			"exports": "vdp_rpu",
 			"symbols": [
@@ -1282,7 +1282,7 @@
 		{
 			"lua": "system/vdp_xf.lua",
 			"ts": [
-				"src/bmsx/machine/devices/vdp/xf.ts"
+				"packages/bmsx-console/src/machine/devices/vdp/xf.ts"
 			],
 			"exports": "vdp_xf",
 			"symbols": [
@@ -1323,7 +1323,7 @@
 		{
 			"lua": "system/vdp_lpu.lua",
 			"ts": [
-				"src/bmsx/machine/devices/vdp/lpu.ts"
+				"packages/bmsx-console/src/machine/devices/vdp/lpu.ts"
 			],
 			"exports": "vdp_lpu",
 			"symbols": [
@@ -1337,7 +1337,7 @@
 		{
 			"lua": "system/vdp_mfu.lua",
 			"ts": [
-				"src/bmsx/machine/devices/vdp/mfu.ts"
+				"packages/bmsx-console/src/machine/devices/vdp/mfu.ts"
 			],
 			"exports": "vdp_mfu",
 			"symbols": [
@@ -1351,8 +1351,8 @@
 		{
 			"lua": "system/vdp_jtu.lua",
 			"ts": [
-				"src/bmsx/machine/devices/vdp/jtu.ts",
-				"src/bmsx/machine/devices/vdp/contracts.ts"
+				"packages/bmsx-console/src/machine/devices/vdp/jtu.ts",
+				"packages/bmsx-console/src/machine/devices/vdp/contracts.ts"
 			],
 			"exports": "vdp_jtu",
 			"symbols": [
@@ -1381,12 +1381,12 @@
 	"strict_forbidden_substrings": [
 		{
 			"roots": [
-				"src/bmsx/machine/devices/vdp",
-				"src/bmsx_cpp/machine/devices/vdp",
-				"src/bmsx/render",
-				"src/bmsx_cpp/render",
+				"packages/bmsx-console/src/machine/devices/vdp",
+				"native/machine/machine/devices/vdp",
+				"packages/bmsx-console/src/render",
+				"native/machine/render",
 				"bios",
-				"src/carts/bare_metal_cart",
+				"carts/bare_metal_cart",
 				"tests/cpp",
 				"tests/lua"
 			],
@@ -1413,10 +1413,10 @@
 		},
 		{
 			"roots": [
-				"src/bmsx/render/backend/webgl/vdp_rpu.ts",
-				"src/bmsx_cpp/render/backend/gles2/vdp_rpu.cpp",
-				"src/bmsx/render/rpu",
-				"src/bmsx_cpp/render/rpu"
+				"packages/bmsx-console/src/render/backend/webgl/vdp_rpu.ts",
+				"native/machine/render/backend/gles2/vdp_rpu.cpp",
+				"packages/bmsx-console/src/render/rpu",
+				"native/machine/render/rpu"
 			],
 			"substrings": [
 				"#version 300 es",
@@ -1431,8 +1431,8 @@
 		},
 		{
 			"roots": [
-				"src/bmsx/render/backend/webgl/vdp_rpu.ts",
-				"src/bmsx_cpp/render/backend/gles2/vdp_rpu.cpp"
+				"packages/bmsx-console/src/render/backend/webgl/vdp_rpu.ts",
+				"native/machine/render/backend/gles2/vdp_rpu.cpp"
 			],
 			"substrings": [
 				"consoleCore",
@@ -1443,8 +1443,8 @@
 		},
 		{
 			"roots": [
-				"src/bmsx/render/backend/webgl/vdp_rpu.ts",
-				"src/bmsx_cpp/render/backend/gles2/vdp_rpu.cpp"
+				"packages/bmsx-console/src/render/backend/webgl/vdp_rpu.ts",
+				"native/machine/render/backend/gles2/vdp_rpu.cpp"
 			],
 			"substrings": [
 				"SoftwareBackend",
@@ -1462,8 +1462,8 @@
 		},
 		{
 			"roots": [
-				"src/bmsx/machine/devices/vdp/rpu.ts",
-				"src/bmsx_cpp/machine/devices/vdp/rpu.cpp"
+				"packages/bmsx-console/src/machine/devices/vdp/rpu.ts",
+				"native/machine/machine/devices/vdp/rpu.cpp"
 			],
 			"substrings": [
 				"indexCount > 0xffffffff",
@@ -1475,9 +1475,9 @@
 		},
 		{
 			"roots": [
-				"src/bmsx/machine/devices/vdp/rpu.ts",
-				"src/bmsx_cpp/machine/devices/vdp/rpu.h",
-				"src/bmsx_cpp/machine/devices/vdp/rpu.cpp",
+				"packages/bmsx-console/src/machine/devices/vdp/rpu.ts",
+				"native/machine/machine/devices/vdp/rpu.h",
+				"native/machine/machine/devices/vdp/rpu.cpp",
 				"docs/vdp_rpu_abi_draft.md",
 				"docs/vdp_rpu_resume_handoff.md",
 				"docs/video_display_processor.md"
@@ -1494,11 +1494,11 @@
 		},
 		{
 			"roots": [
-				"src/bmsx/render/backend/webgl/backend.ts",
-				"src/bmsx/render/backend/webgl/fullscreen_quad.ts",
-				"src/bmsx_cpp/render/backend/gles2/backend.cpp",
-				"src/bmsx_cpp/render/backend/gles2/fullscreen_quad.h",
-				"src/bmsx_cpp/render/backend/gles2/fullscreen_quad.cpp"
+				"packages/bmsx-console/src/render/backend/webgl/backend.ts",
+				"packages/bmsx-console/src/render/backend/webgl/fullscreen_quad.ts",
+				"native/machine/render/backend/gles2/backend.cpp",
+				"native/machine/render/backend/gles2/fullscreen_quad.h",
+				"native/machine/render/backend/gles2/fullscreen_quad.cpp"
 			],
 			"substrings": [
 				"new Array(32).fill(null)",
@@ -1520,7 +1520,7 @@
 		},
 		{
 			"roots": [
-				"src/bmsx_cpp/render/backend/gles2/vdp_rpu.cpp"
+				"native/machine/render/backend/gles2/vdp_rpu.cpp"
 			],
 			"substrings": [
 				"glBufferData(target, refs.byteLength[refIndex], refs.bytes[refIndex]"
@@ -1529,8 +1529,8 @@
 		},
 		{
 			"roots": [
-				"src/bmsx/render/post/crt/pipeline.ts",
-				"src/bmsx/render/post/device_quantize_pipeline.ts"
+				"packages/bmsx-console/src/render/post/crt/pipeline.ts",
+				"packages/bmsx-console/src/render/post/device_quantize_pipeline.ts"
 			],
 			"substrings": [
 				"new Float32Array(opts.colorBleed)",
@@ -1545,7 +1545,7 @@
 		},
 		{
 			"roots": [
-				"src/bmsx/render/backend/pass/library.ts"
+				"packages/bmsx-console/src/render/backend/pass/library.ts"
 			],
 			"substrings": [
 				"const stubPass",
@@ -1556,9 +1556,9 @@
 		},
 		{
 			"roots": [
-				"src/bmsx/render/headless/present_surface.ts",
-				"src/bmsx/render/headless/view.ts",
-				"src/bmsx/render/headless/backend.ts",
+				"packages/bmsx-console/src/render/headless/present_surface.ts",
+				"packages/bmsx-console/src/render/headless/view.ts",
+				"packages/bmsx-console/src/render/headless/backend.ts",
 				"scripts/bootrom/platforms/headless_capture.ts"
 			],
 			"substrings": [
@@ -1580,7 +1580,7 @@
 		},
 		{
 			"roots": [
-				"src/bmsx/render/headless/backend.ts"
+				"packages/bmsx-console/src/render/headless/backend.ts"
 			],
 			"substrings": [
 				".subarray(",
@@ -1592,11 +1592,11 @@
 		{
 			"roots": [
 				"bios",
-				"src/carts",
-				"src/bmsx/machine/firmware",
-				"src/bmsx/machine/runtime",
-				"src/bmsx_cpp/machine/firmware",
-				"src/bmsx_cpp/machine/runtime/runtime.cpp"
+				"carts",
+				"packages/bmsx-console/src/machine/firmware",
+				"packages/bmsx-console/src/machine/runtime",
+				"native/machine/machine/firmware",
+				"native/machine/machine/runtime/runtime.cpp"
 			],
 			"substrings": [
 				"surface_framebuffer",
@@ -1623,7 +1623,7 @@
 		},
 		{
 			"roots": [
-				"src/carts/pietious/room/index.lua"
+				"carts/pietious/room/index.lua"
 			],
 			"substrings": [
 				"vdp_stream.batch_blit_item"
@@ -1632,7 +1632,7 @@
 		},
 		{
 			"roots": [
-				"src/bmsx/render/graph/graph.ts"
+				"packages/bmsx-console/src/render/graph/graph.ts"
 			],
 			"substrings": [
 				"let extFrameIndex",
@@ -1644,8 +1644,8 @@
 		},
 		{
 			"roots": [
-				"src/bmsx/render/backend/webgl/backend.ts",
-				"src/bmsx/render/headless/backend.ts"
+				"packages/bmsx-console/src/render/backend/webgl/backend.ts",
+				"packages/bmsx-console/src/render/headless/backend.ts"
 			],
 			"substrings": [
 				"return { fbo, desc }",
@@ -1656,7 +1656,7 @@
 		},
 		{
 			"roots": [
-				"src/bmsx/render/headless/passes.ts"
+				"packages/bmsx-console/src/render/headless/passes.ts"
 			],
 			"substrings": [
 				"registerSkyboxPass",
@@ -1671,8 +1671,8 @@
 		},
 		{
 			"roots": [
-				"src/bmsx/machine/devices/vdp/rpu.ts",
-				"src/bmsx_cpp/machine/devices/vdp/rpu.cpp"
+				"packages/bmsx-console/src/machine/devices/vdp/rpu.ts",
+				"native/machine/machine/devices/vdp/rpu.cpp"
 			],
 			"substrings": [
 				"indexRef < 0",
@@ -1686,7 +1686,7 @@
 		},
 		{
 			"roots": [
-				"src/carts/bare_metal_cart/cart.lua"
+				"carts/bare_metal_cart/cart.lua"
 			],
 			"substrings": [
 				"vdp_rpu.constant_upload_dma(0",
@@ -1698,10 +1698,10 @@
 		},
 		{
 			"roots": [
-				"src/bmsx/render/3d",
-				"src/bmsx_cpp/render/3d",
-				"src/bmsx/render/backend/webgl",
-				"src/bmsx_cpp/render/backend/gles2"
+				"packages/bmsx-console/src/render/3d",
+				"native/machine/render/3d",
+				"packages/bmsx-console/src/render/backend/webgl",
+				"native/machine/render/backend/gles2"
 			],
 			"substrings": [
 				"registerMeshPass",
@@ -1716,10 +1716,10 @@
 		},
 		{
 			"roots": [
-				"src/bmsx/machine/devices/vdp/device_output.ts",
-				"src/bmsx_cpp/machine/devices/vdp/device_output.h",
-				"src/bmsx/render/vdp/view_snapshot.ts",
-				"src/bmsx_cpp/render/vdp/view_snapshot.cpp"
+				"packages/bmsx-console/src/machine/devices/vdp/device_output.ts",
+				"native/machine/machine/devices/vdp/device_output.h",
+				"packages/bmsx-console/src/render/vdp/view_snapshot.ts",
+				"native/machine/render/vdp/view_snapshot.cpp"
 			],
 			"substrings": [
 				"billboards",
@@ -1750,9 +1750,9 @@
 		{
 			"roots": [
 				"bios",
-				"src/carts",
-				"src/bmsx/machine/firmware",
-				"src/bmsx_cpp/machine/firmware"
+				"carts",
+				"packages/bmsx-console/src/machine/firmware",
+				"native/machine/machine/firmware"
 			],
 			"substrings": [
 				"VDP_CMD_FILL_RECT",
@@ -1771,9 +1771,9 @@
 		},
 		{
 			"roots": [
-				"src/bmsx/machine/devices/vdp/vdp.ts",
-				"src/bmsx_cpp/machine/devices/vdp/vdp.cpp",
-				"src/bmsx_cpp/machine/devices/vdp/vdp.h"
+				"packages/bmsx-console/src/machine/devices/vdp/vdp.ts",
+				"native/machine/machine/devices/vdp/vdp.cpp",
+				"native/machine/machine/devices/vdp/vdp.h"
 			],
 			"substrings": [
 				"case VDP_CMD_CLEAR:",
@@ -1792,8 +1792,8 @@
 		},
 		{
 			"roots": [
-				"src/bmsx/machine/firmware/builtin_descriptors.ts",
-				"src/bmsx_cpp/machine/firmware/builtin_descriptors.cpp"
+				"packages/bmsx-console/src/machine/firmware/builtin_descriptors.ts",
+				"native/machine/machine/firmware/builtin_descriptors.cpp"
 			],
 			"substrings": [
 				"blitter command",
@@ -1805,18 +1805,18 @@
 		},
 		{
 			"roots": [
-				"src/bmsx/render/presentation_state.ts",
-				"src/bmsx_cpp/render/presentation_state.h",
-				"src/bmsx_cpp/render/presentation_state.cpp",
-				"src/bmsx/machine/runtime/vblank.ts",
-				"src/bmsx_cpp/machine/runtime/vblank.cpp",
-				"src/bmsx/render/backend/backend.ts",
-				"src/bmsx_cpp/render/backend/backend.h",
-				"src/bmsx/render/backend/webgl/backend.ts",
-				"src/bmsx_cpp/render/backend/gles2/backend.h",
-				"src/bmsx_cpp/render/backend/gles2/backend.cpp",
-				"src/bmsx/render/backend/webgpu/backend.ts",
-				"src/bmsx/render/headless/backend.ts"
+				"packages/bmsx-console/src/render/presentation_state.ts",
+				"native/machine/render/presentation_state.h",
+				"native/machine/render/presentation_state.cpp",
+				"packages/bmsx-console/src/machine/runtime/vblank.ts",
+				"native/machine/machine/runtime/vblank.cpp",
+				"packages/bmsx-console/src/render/backend/backend.ts",
+				"native/machine/render/backend/backend.h",
+				"packages/bmsx-console/src/render/backend/webgl/backend.ts",
+				"native/machine/render/backend/gles2/backend.h",
+				"native/machine/render/backend/gles2/backend.cpp",
+				"packages/bmsx-console/src/render/backend/webgpu/backend.ts",
+				"packages/bmsx-console/src/render/headless/backend.ts"
 			],
 			"substrings": [
 				"executeReadyVdpFrameBuffer",
@@ -1831,7 +1831,7 @@
 			"roots": [
 				"bios",
 				"system",
-				"src/carts"
+				"carts"
 			],
 			"substrings": [
 				"require('bios/vdp_stream')",
@@ -1845,9 +1845,9 @@
 		{
 			"roots": [
 				"system/vdp_rpu_quads.lua",
-				"src/carts/bare_metal_cart/cart.lua",
-				"src/carts/2025",
-				"src/carts/pietious"
+				"carts/bare_metal_cart/cart.lua",
+				"carts/2025",
+				"carts/pietious"
 			],
 			"substrings": [
 				"ensure_resources",
@@ -1860,7 +1860,7 @@
 		{
 			"roots": [
 				"system/vdp_rpu_quads.lua",
-				"src/carts"
+				"carts"
 			],
 			"substrings": [
 				"batch_blit_begin",
@@ -1871,35 +1871,35 @@
 	],
 	"strict_required_substrings": [
 		{
-			"file": "src/bmsx/machine/devices/vdp/rpu.ts",
+			"file": "packages/bmsx-console/src/machine/devices/vdp/rpu.ts",
 			"substrings": [
 				"export const VDP_RPU_REQUIRED_FEATURES = VDP_RPU_FEATURE_INSTANCED_ARRAYS | VDP_RPU_FEATURE_UINT_INDEX;"
 			],
 			"reason": "u32_index_draws_are_part_of_the_baseline_rpu_backend_feature_contract"
 		},
 		{
-			"file": "src/bmsx_cpp/machine/devices/vdp/rpu.h",
+			"file": "native/machine/machine/devices/vdp/rpu.h",
 			"substrings": [
 				"constexpr u32 VDP_RPU_REQUIRED_FEATURES = VDP_RPU_FEATURE_INSTANCED_ARRAYS | VDP_RPU_FEATURE_UINT_INDEX;"
 			],
 			"reason": "u32_index_draws_are_part_of_the_baseline_rpu_backend_feature_contract"
 		},
 		{
-			"file": "src/bmsx_cpp/render/backend/gles2/backend.cpp",
+			"file": "native/machine/render/backend/gles2/backend.cpp",
 			"substrings": [
 				"m_supports_uint_indices = hasExtensionToken(extensions, \"GL_OES_element_index_uint\");"
 			],
 			"reason": "gles2_backend_initialization_must_own_required_rpu_uint_index_feature_detection"
 		},
 		{
-			"file": "src/bmsx_cpp/render/backend/gles2/vdp_rpu.cpp",
+			"file": "native/machine/render/backend/gles2/vdp_rpu.cpp",
 			"substrings": [
 				"if (!backend.supportsUintIndices()) {"
 			],
 			"reason": "gles2_rpu_backend_must_reject_host_initialization_without_required_uint_index_support"
 		},
 		{
-			"file": "src/bmsx/render/backend/pass/library.ts",
+			"file": "packages/bmsx-console/src/render/backend/pass/library.ts",
 			"substrings": [
 				"passEncoder: { fbo: null, desc: { label: idStr } as RenderPassDesc }",
 				"passEncoder.fbo = fbo;",
@@ -1929,7 +1929,7 @@
 			"reason": "rpu_bios_exposes_fixed_shader_and_device_constant_contracts"
 		},
 		{
-			"file": "src/carts/bare_metal_cart/cart.lua",
+			"file": "carts/bare_metal_cart/cart.lua",
 			"substrings": [
 				"bm_xf_matrix_packet_header",
 				"bm_lpu_register_packet_header",
@@ -1961,7 +1961,7 @@
 			"reason": "bare_metal_cart_must_demonstrate_legacy_render_features_through_rpu_and_vdp_devices"
 		},
 		{
-			"file": "src/bmsx/render/backend/webgl/backend.ts",
+			"file": "packages/bmsx-console/src/render/backend/webgl/backend.ts",
 			"substrings": [
 				"import { registerVdpRpuPass } from './vdp_rpu';",
 				"registerVdpRpuPass(registry);"
@@ -1969,7 +1969,7 @@
 			"reason": "webgl_backend_owns_rpu_pass_registration"
 		},
 		{
-			"file": "src/bmsx/render/backend/webgl/vdp_rpu.ts",
+			"file": "packages/bmsx-console/src/render/backend/webgl/vdp_rpu.ts",
 			"substrings": [
 				"import vdpRpuVertexShader from './shaders/vdp_rpu.vert.glsl';",
 				"import vdpRpuFragmentShader from './shaders/vdp_rpu.frag.glsl';",
@@ -1978,7 +1978,7 @@
 			"reason": "webgl_rpu_backend_must_load_external_shader_files"
 		},
 		{
-			"file": "src/bmsx_cpp/render/backend/gles2/backend.cpp",
+			"file": "native/machine/render/backend/gles2/backend.cpp",
 			"substrings": [
 				"#include \"render/backend/gles2/vdp_rpu.h\"",
 				"registerVdpRpuPass(registry);"
@@ -1986,7 +1986,7 @@
 			"reason": "gles2_backend_owns_rpu_pass_registration"
 		},
 		{
-			"file": "src/bmsx_cpp/render/backend/gles2/vdp_rpu.cpp",
+			"file": "native/machine/render/backend/gles2/vdp_rpu.cpp",
 			"substrings": [
 				"#include \"render/backend/gles2/shaders/vdp_rpu_shaders.h\"",
 				"backend.buildProgram(kVdpRpuVertexShader, kVdpRpuFragmentShader, \"vdp_rpu\")",
@@ -1995,7 +1995,7 @@
 			"reason": "gles2_rpu_backend_must_load_generated_external_shader_sources"
 		},
 		{
-			"file": "src/bmsx_cpp/CMakeLists.txt",
+			"file": "native/machine/CMakeLists.txt",
 			"substrings": [
 				"\"${CMAKE_CURRENT_SOURCE_DIR}/render/backend/gles2/shaders/vdp_rpu.vert.glsl\"",
 				"\"${CMAKE_CURRENT_SOURCE_DIR}/render/backend/gles2/shaders/vdp_rpu.frag.glsl\"",
@@ -2006,7 +2006,7 @@
 			"reason": "gles2_rpu_shader_files_and_backend_source_must_be_in_native_build"
 		},
 		{
-			"file": "src/bmsx/render/backend/browser_factory.ts",
+			"file": "packages/bmsx-console/src/render/backend/browser_factory.ts",
 			"substrings": [
 				"const WEBGPU_RENDERER_SUPPORT = false;",
 				"const webglBackend = createWebGLBackend(canvas);",
@@ -2015,28 +2015,28 @@
 			"reason": "browser_rpu_gpu_route_must_be_webgl_until_webgpu_has_an_rpu_backend"
 		},
 		{
-			"file": "src/bmsx/render/gameview.ts",
+			"file": "packages/bmsx-console/src/render/gameview.ts",
 			"substrings": [
 				"public presentWorkbenchFrameBufferTexture = false;"
 			],
 			"reason": "workbench_framebuffer_texture_presentation_is_not_cart_or_bios_visible"
 		},
 		{
-			"file": "src/bmsx_cpp/render/gameview.h",
+			"file": "native/machine/render/gameview.h",
 			"substrings": [
 				"bool presentWorkbenchFrameBufferTexture = false;"
 			],
 			"reason": "workbench_framebuffer_texture_presentation_is_not_cart_or_bios_visible"
 		},
 		{
-			"file": "src/bmsx/ide/workbench/overlay_modes.ts",
+			"file": "packages/bmsx-console/src/ide/workbench/overlay_modes.ts",
 			"substrings": [
 				"consoleCore.view.presentWorkbenchFrameBufferTexture = overlayActive;"
 			],
 			"reason": "workbench_framebuffer_texture_presentation_is_enabled_only_by_ide_terminal_overlay_state"
 		},
 		{
-			"file": "src/bmsx/render/2d/framebuffer_pipeline.ts",
+			"file": "packages/bmsx-console/src/render/2d/framebuffer_pipeline.ts",
 			"substrings": [
 				"shouldExecute: () => registry.view.presentWorkbenchFrameBufferTexture && registry.view.vdpRpuFrame.commands.passCount === 0",
 				"const framebuffer2DStateScratch: RenderPassStateRegistry['framebuffer_2d']",
@@ -2045,7 +2045,7 @@
 			"reason": "browser_workbench_framebuffer_texture_presentation_must_not_run_for_rpu_cart_frames_and_must_keep_retained_state"
 		},
 		{
-			"file": "src/bmsx_cpp/render/2d/framebuffer_pipeline.cpp",
+			"file": "native/machine/render/2d/framebuffer_pipeline.cpp",
 			"substrings": [
 				"return view->presentWorkbenchFrameBufferTexture && view->vdpRpuFrame->commands.passCount == 0u;"
 			],
@@ -2071,7 +2071,7 @@
 			"reason": "bios_rpu_quad_batcher_must_encode_cart_authored_layer_priority_as_gpu_depth_not_host_sorting"
 		},
 		{
-			"file": "src/carts/bare_metal_cart/cart.lua",
+			"file": "carts/bare_metal_cart/cart.lua",
 			"substrings": [
 				"local instance_stride<const> = sizeof(sprite_instance)",
 				"rpu_pipeline_depth_alpha<const> = sys_rpu_blend_alpha | (sys_rpu_depth_lequal << 4) | (sys_rpu_cull_none << 8) | sys_rpu_pipe_depth_write | sys_rpu_pipe_color_write_rgba"
@@ -2079,14 +2079,14 @@
 			"reason": "bare_metal_cart_affine_sprite_instances_must_demonstrate_gpu_depth_ordering_with_new_rpu"
 		},
 		{
-			"file": "src/bmsx/render/backend/webgl/shaders/vdp_rpu.vert.glsl",
+			"file": "packages/bmsx-console/src/render/backend/webgl/shaders/vdp_rpu.vert.glsl",
 			"substrings": [
 				"position = vec4(p, a_instance0.w, 1.0);"
 			],
 			"reason": "webgl_rpu_affine_instance_layout_must_carry_cart_authored_depth"
 		},
 		{
-			"file": "src/bmsx_cpp/render/backend/gles2/shaders/vdp_rpu.vert.glsl",
+			"file": "native/machine/render/backend/gles2/shaders/vdp_rpu.vert.glsl",
 			"substrings": [
 				"position = vec4(p, a_instance0.w, 1.0);"
 			],
@@ -2101,7 +2101,7 @@
 			"reason": "bios_rpu_quad_batcher_must_have_direct_tile_run_instance_writer"
 		},
 		{
-			"file": "src/carts/pietious/room/index.lua",
+			"file": "carts/pietious/room/index.lua",
 			"substrings": [
 				"vdp_tile_run_sources(self.room_tile_sources, tile_count, self.tile_columns, self.tile_size, self.tile_origin_x, self.tile_origin_y, empty_tile_source)",
 				"vdp_tile_run_sources(self.water_tile_sources, tile_count, self.tile_columns, self.tile_size, self.tile_origin_x, self.tile_origin_y + ((self.water.surface_row - 1) * self.tile_size), empty_tile_source)"
@@ -2109,7 +2109,7 @@
 			"reason": "pietious_room_tiles_must_use_rpu_tile_run_path"
 		},
 		{
-			"file": "src/carts/2025/combat.lua",
+			"file": "carts/2025/combat.lua",
 			"substrings": [
 				"local draw_combat_parallax_sprite<const> = function(obj, weight, offset_base_y)",
 				"vdp_blit_img_affine_color(",
@@ -2118,7 +2118,7 @@
 			"reason": "game_2025_parallax_must_use_cart_authored_rpu_affine_image_commands"
 		},
 		{
-			"file": "src/bmsx/render/headless/passes.ts",
+			"file": "packages/bmsx-console/src/render/headless/passes.ts",
 			"substrings": [
 				"registerHeadlessRpuPass(registry);",
 				"function registerHeadlessRpuPass(registry: RenderPassLibrary): void",
@@ -2129,7 +2129,7 @@
 			"reason": "headless_explicit_software_backend_must_present_rpu_frames_without_reintroducing_legacy_scene_passes"
 		},
 		{
-			"file": "src/bmsx/render/graph/graph.ts",
+			"file": "packages/bmsx-console/src/render/graph/graph.ts",
 			"substrings": [
 				"const externalFrameData: FrameData = {",
 				"return externalFrameData;"
@@ -2137,7 +2137,7 @@
 			"reason": "render_graph_frame_data_must_reuse_retained_frame_object"
 		},
 		{
-			"file": "src/bmsx/render/backend/webgl/backend.ts",
+			"file": "packages/bmsx-console/src/render/backend/webgl/backend.ts",
 			"substrings": [
 				"private readonly passEncoderScratch: PassEncoder = { fbo: null, desc: {} };",
 				"const key = cid * FBO_CACHE_DEPTH_ID_STRIDE + did;",
@@ -2146,7 +2146,7 @@
 			"reason": "webgl_render_pass_begin_must_reuse_encoder_and_avoid_per_pass_key_strings"
 		},
 		{
-			"file": "src/bmsx/render/headless/backend.ts",
+			"file": "packages/bmsx-console/src/render/headless/backend.ts",
 			"substrings": [
 				"private readonly passEncoderScratch: PassEncoder = { fbo: null, desc: {} };",
 				"return this.passEncoderScratch;"
@@ -2154,7 +2154,7 @@
 			"reason": "headless_render_pass_begin_must_reuse_encoder"
 		},
 		{
-			"file": "src/bmsx/machine/devices/vdp/rpu.ts",
+			"file": "packages/bmsx-console/src/machine/devices/vdp/rpu.ts",
 			"substrings": [
 				"indexRef = this.pinBuffer(frame, indexBufferId, indexByteOffset, indexByteLength, VDP_RPU_BUFFER_USAGE_INDEX);\n\t\t}",
 				"const bufferRef = this.pinBuffer(frame, bufferId, byteOffset, byteLength, VDP_RPU_BUFFER_USAGE_VERTEX);\n\t\tconst bindingIndex = frame.commands.streamBindingCount;",
@@ -2166,7 +2166,7 @@
 			"reason": "cart_visible_rpu_draw_resource_refs_must_retain_ref_none_instead_of_device_faulting"
 		},
 		{
-			"file": "src/bmsx_cpp/machine/devices/vdp/rpu.cpp",
+			"file": "native/machine/machine/devices/vdp/rpu.cpp",
 			"substrings": [
 				"indexRef = pinBuffer(frame, indexBufferId, indexByteOffset, indexByteLength, VDP_RPU_BUFFER_USAGE_INDEX);\n\t}",
 				"const i32 bufferRef = pinBuffer(frame, bufferId, byteOffset, byteLength, VDP_RPU_BUFFER_USAGE_VERTEX);\n\tconst size_t bindingIndex = frame.commands.streamBindingCount;",
@@ -2178,7 +2178,7 @@
 			"reason": "native_cart_visible_rpu_draw_resource_refs_must_retain_ref_none_instead_of_device_faulting"
 		},
 		{
-			"file": "src/bmsx/render/backend/webgl/vdp_rpu.ts",
+			"file": "packages/bmsx-console/src/render/backend/webgl/vdp_rpu.ts",
 			"substrings": [
 				"if (refIndex === VDP_RPU_REF_NONE) {\n\t\treturn;\n\t}",
 				"if (constantBank === VDP_RPU_REF_NONE) {\n\t\t\t\tgl.uniformMatrix4fv(vdpRpuC0Location, false, vdpRpuIdentityC0);",
@@ -2190,7 +2190,7 @@
 			"reason": "webgl_rpu_backend_must_consume_ref_none_draw_bindings_without_oob_resource_indexing"
 		},
 		{
-			"file": "src/bmsx_cpp/render/backend/gles2/vdp_rpu.cpp",
+			"file": "native/machine/render/backend/gles2/vdp_rpu.cpp",
 			"substrings": [
 				"if (refIndex == VDP_RPU_REF_NONE) {\n\t\treturn;\n\t}",
 				"if (constantBank == VDP_RPU_REF_NONE) {\n\t\t\t\tglUniformMatrix4fv(runtime.uniformC0, 1, GL_FALSE, runtime.identityC0.data());",
@@ -2202,7 +2202,7 @@
 			"reason": "gles2_rpu_backend_must_consume_ref_none_draw_bindings_without_oob_resource_indexing"
 		},
 		{
-			"file": "src/carts/bare_metal_cart/cart.lua",
+			"file": "carts/bare_metal_cart/cart.lua",
 			"substrings": [
 				"packet->header = desc->packet_kind | ((1 + desc->matrix_word_count) << 16)",
 				"packet->matrix_word_offset = desc->matrix_index * desc->matrix_word_count",
@@ -2218,7 +2218,7 @@
 			"reason": "bare_metal_mesh_matrices_must_flow_through_xf_and_jtu_devices_before_rpu_constant_binding"
 		},
 		{
-			"file": "src/carts/bare_metal_cart/cart.lua",
+			"file": "carts/bare_metal_cart/cart.lua",
 			"substrings": [
 				"register_uploads[0].packet_kind = sys_vdp_lpu_packet_kind",
 				"register_uploads[0].src_addr = c1_addr",
@@ -2234,7 +2234,7 @@
 			"reason": "bare_metal_lighting_and_morph_constants_must_flow_through_lpu_and_mfu_devices_before_rpu_constant_binding"
 		},
 		{
-			"file": "src/bmsx/machine/devices/vdp/device_output.ts",
+			"file": "packages/bmsx-console/src/machine/devices/vdp/device_output.ts",
 			"substrings": [
 				"import type { VdpRpuFrameOutput } from './rpu';",
 				"export type VdpDeviceOutput = Readonly<{",
@@ -2243,7 +2243,7 @@
 			"reason": "vdp_device_output_must_publish_only_retained_rpu_frame_for_cart_visible_rendering"
 		},
 		{
-			"file": "src/bmsx_cpp/machine/devices/vdp/device_output.h",
+			"file": "native/machine/machine/devices/vdp/device_output.h",
 			"substrings": [
 				"#include \"machine/devices/vdp/rpu.h\"",
 				"struct VdpDeviceOutput {",
@@ -2252,7 +2252,7 @@
 			"reason": "native_vdp_device_output_must_publish_only_retained_rpu_frame_for_cart_visible_rendering"
 		},
 		{
-			"file": "src/bmsx/render/vdp/view_snapshot.ts",
+			"file": "packages/bmsx-console/src/render/vdp/view_snapshot.ts",
 			"substrings": [
 				"view.vdpRpuFrame = output.rpu;",
 				"view.vdpDirectionalLightCount = 0;",
@@ -2261,7 +2261,7 @@
 			"reason": "host_view_snapshot_must_consume_retained_rpu_frame_without_legacy_render_categories"
 		},
 		{
-			"file": "src/bmsx_cpp/render/vdp/view_snapshot.cpp",
+			"file": "native/machine/render/vdp/view_snapshot.cpp",
 			"substrings": [
 				"view.vdpRpuFrame = output.rpu;",
 				"view.vdpDirectionalLightCount = 0;",
@@ -2277,14 +2277,14 @@
 			"reason": "headless_entrypoint_must_remain_generic_rom_parameter_not_bare_metal_alias"
 		},
 		{
-			"file": "src/bmsx/machine/firmware/builtin_descriptors.ts",
+			"file": "packages/bmsx-console/src/machine/firmware/builtin_descriptors.ts",
 			"substrings": [
 				"{ name: 'rom_data', params: ['id'], signature: 'rom_data(id)'"
 			],
 			"reason": "ts_firmware_system_builtins_must_stay_tiny_after_engine_split"
 		},
 		{
-			"file": "src/bmsx_cpp/machine/firmware/builtin_descriptors.cpp",
+			"file": "native/machine/machine/firmware/builtin_descriptors.cpp",
 			"substrings": [
 				"constexpr std::array<LuaBuiltinDescriptor, 1> kSystemLuaBuiltinFunctions",
 				"LuaBuiltinDescriptor{\"rom_data\", \"rom_data(id)\""
@@ -2311,292 +2311,292 @@
 	"strict_file_layout": [
 		{
 			"present": [
-				"src/bmsx/render/backend/webgl/vdp_rpu.ts",
-				"src/bmsx/render/backend/webgl/shaders/vdp_rpu.vert.glsl",
-				"src/bmsx/render/backend/webgl/shaders/vdp_rpu.frag.glsl",
-				"src/bmsx_cpp/render/backend/gles2/vdp_rpu.h",
-				"src/bmsx_cpp/render/backend/gles2/vdp_rpu.cpp",
-				"src/bmsx_cpp/render/backend/gles2/shaders/vdp_rpu.vert.glsl",
-				"src/bmsx_cpp/render/backend/gles2/shaders/vdp_rpu.frag.glsl",
-				"src/bmsx_cpp/render/backend/gles2/shaders/vdp_rpu_shaders.h.in",
-				"src/bmsx/render/2d/framebuffer_pipeline.ts",
-				"src/bmsx_cpp/render/2d/framebuffer_pipeline.h",
-				"src/bmsx_cpp/render/2d/framebuffer_pipeline.cpp"
+				"packages/bmsx-console/src/render/backend/webgl/vdp_rpu.ts",
+				"packages/bmsx-console/src/render/backend/webgl/shaders/vdp_rpu.vert.glsl",
+				"packages/bmsx-console/src/render/backend/webgl/shaders/vdp_rpu.frag.glsl",
+				"native/machine/render/backend/gles2/vdp_rpu.h",
+				"native/machine/render/backend/gles2/vdp_rpu.cpp",
+				"native/machine/render/backend/gles2/shaders/vdp_rpu.vert.glsl",
+				"native/machine/render/backend/gles2/shaders/vdp_rpu.frag.glsl",
+				"native/machine/render/backend/gles2/shaders/vdp_rpu_shaders.h.in",
+				"packages/bmsx-console/src/render/2d/framebuffer_pipeline.ts",
+				"native/machine/render/2d/framebuffer_pipeline.h",
+				"native/machine/render/2d/framebuffer_pipeline.cpp"
 			],
 			"absent": [
-				"src/bmsx/render/rpu/pipeline.ts",
-				"src/bmsx_cpp/render/rpu/pipeline.h",
-				"src/bmsx_cpp/render/rpu/pipeline.cpp",
-				"src/bmsx/render/3d/mesh/index.ts",
-				"src/bmsx/render/3d/mesh/pipeline.ts",
-				"src/bmsx/render/3d/mesh/vertex_stream.ts",
-				"src/bmsx/render/3d/particles/pipeline.ts",
-				"src/bmsx/render/3d/particles/pipeline.wgpu.ts",
-				"src/bmsx/render/3d/skybox/pipeline.ts",
-				"src/bmsx/render/3d/skybox/pipeline.wgpu.ts",
-				"src/bmsx/render/3d/shaders/mesh.vert.glsl",
-				"src/bmsx/render/3d/shaders/mesh.frag.glsl",
-				"src/bmsx/render/3d/shaders/particle.vert.glsl",
-				"src/bmsx/render/3d/shaders/particle.frag.glsl",
-				"src/bmsx/render/3d/shaders/skybox.vert.glsl",
-				"src/bmsx/render/3d/shaders/skybox.frag.glsl",
-				"src/bmsx_cpp/render/3d/mesh/pipeline.h",
-				"src/bmsx_cpp/render/3d/mesh/pipeline.cpp",
-				"src/bmsx_cpp/render/3d/mesh/vertex_stream.h",
-				"src/bmsx_cpp/render/3d/mesh/vertex_stream.cpp",
-				"src/bmsx_cpp/render/3d/particles/pipeline.h",
-				"src/bmsx_cpp/render/3d/particles/pipeline.cpp",
-				"src/bmsx_cpp/render/3d/skybox/pipeline.h",
-				"src/bmsx_cpp/render/3d/skybox/pipeline.cpp",
-				"src/bmsx_cpp/render/3d/shaders/mesh.vert.glsl",
-				"src/bmsx_cpp/render/3d/shaders/mesh.frag.glsl",
-				"src/bmsx_cpp/render/3d/shaders/particle.vert.glsl",
-				"src/bmsx_cpp/render/3d/shaders/particle.frag.glsl",
-				"src/bmsx_cpp/render/3d/shaders/skybox.vert.glsl",
-				"src/bmsx_cpp/render/3d/shaders/skybox.frag.glsl",
-				"src/bmsx_cpp/render/backend/pass/software_scene.h",
-				"src/bmsx_cpp/render/backend/pass/software_scene.cpp",
-				"src/bmsx/render/2d/vdp_blit_pipeline.ts",
-				"src/bmsx/render/backend/webgl/vdp_2d_blit.ts",
-				"src/bmsx_cpp/render/2d/vdp_blit_pipeline.cpp",
-				"src/bmsx_cpp/render/2d/vdp_blit_pipeline.h",
-				"src/bmsx_cpp/render/backend/gles2/vdp_2d_blit.cpp",
-				"src/bmsx_cpp/render/backend/pass/framebuffer_execution.cpp",
-				"src/bmsx_cpp/render/backend/pass/framebuffer_execution.h",
+				"packages/bmsx-console/src/render/rpu/pipeline.ts",
+				"native/machine/render/rpu/pipeline.h",
+				"native/machine/render/rpu/pipeline.cpp",
+				"packages/bmsx-console/src/render/3d/mesh/index.ts",
+				"packages/bmsx-console/src/render/3d/mesh/pipeline.ts",
+				"packages/bmsx-console/src/render/3d/mesh/vertex_stream.ts",
+				"packages/bmsx-console/src/render/3d/particles/pipeline.ts",
+				"packages/bmsx-console/src/render/3d/particles/pipeline.wgpu.ts",
+				"packages/bmsx-console/src/render/3d/skybox/pipeline.ts",
+				"packages/bmsx-console/src/render/3d/skybox/pipeline.wgpu.ts",
+				"packages/bmsx-console/src/render/3d/shaders/mesh.vert.glsl",
+				"packages/bmsx-console/src/render/3d/shaders/mesh.frag.glsl",
+				"packages/bmsx-console/src/render/3d/shaders/particle.vert.glsl",
+				"packages/bmsx-console/src/render/3d/shaders/particle.frag.glsl",
+				"packages/bmsx-console/src/render/3d/shaders/skybox.vert.glsl",
+				"packages/bmsx-console/src/render/3d/shaders/skybox.frag.glsl",
+				"native/machine/render/3d/mesh/pipeline.h",
+				"native/machine/render/3d/mesh/pipeline.cpp",
+				"native/machine/render/3d/mesh/vertex_stream.h",
+				"native/machine/render/3d/mesh/vertex_stream.cpp",
+				"native/machine/render/3d/particles/pipeline.h",
+				"native/machine/render/3d/particles/pipeline.cpp",
+				"native/machine/render/3d/skybox/pipeline.h",
+				"native/machine/render/3d/skybox/pipeline.cpp",
+				"native/machine/render/3d/shaders/mesh.vert.glsl",
+				"native/machine/render/3d/shaders/mesh.frag.glsl",
+				"native/machine/render/3d/shaders/particle.vert.glsl",
+				"native/machine/render/3d/shaders/particle.frag.glsl",
+				"native/machine/render/3d/shaders/skybox.vert.glsl",
+				"native/machine/render/3d/shaders/skybox.frag.glsl",
+				"native/machine/render/backend/pass/software_scene.h",
+				"native/machine/render/backend/pass/software_scene.cpp",
+				"packages/bmsx-console/src/render/2d/vdp_blit_pipeline.ts",
+				"packages/bmsx-console/src/render/backend/webgl/vdp_2d_blit.ts",
+				"native/machine/render/2d/vdp_blit_pipeline.cpp",
+				"native/machine/render/2d/vdp_blit_pipeline.h",
+				"native/machine/render/backend/gles2/vdp_2d_blit.cpp",
+				"native/machine/render/backend/pass/framebuffer_execution.cpp",
+				"native/machine/render/backend/pass/framebuffer_execution.h",
 				"bios/vdp_stream.lua",
 				"system/vdp_stream.lua",
-				"src/bmsx/machine/devices/vdp/blitter.ts",
-				"src/bmsx/machine/devices/vdp/blitter_source.ts",
-				"src/bmsx_cpp/machine/devices/vdp/blitter.h",
-				"src/bmsx_cpp/machine/devices/vdp/blitter.cpp",
-				"src/bmsx_cpp/machine/devices/vdp/blitter_source.h",
-				"src/bmsx_cpp/machine/devices/vdp/blitter_source.cpp",
-				"src/bmsx/render/backend/software/vdp_framebuffer_execution.ts",
-				"src/bmsx/render/backend/software/vdp_framebuffer_rasterizer.ts",
-				"src/bmsx_cpp/render/backend/software/vdp_framebuffer_execution.h",
-				"src/bmsx_cpp/render/backend/software/vdp_framebuffer_execution.cpp",
-				"src/bmsx_cpp/render/backend/software/vdp_framebuffer_rasterizer.h",
-				"src/bmsx_cpp/render/backend/software/vdp_framebuffer_rasterizer.cpp"
+				"packages/bmsx-console/src/machine/devices/vdp/blitter.ts",
+				"packages/bmsx-console/src/machine/devices/vdp/blitter_source.ts",
+				"native/machine/machine/devices/vdp/blitter.h",
+				"native/machine/machine/devices/vdp/blitter.cpp",
+				"native/machine/machine/devices/vdp/blitter_source.h",
+				"native/machine/machine/devices/vdp/blitter_source.cpp",
+				"packages/bmsx-console/src/render/backend/software/vdp_framebuffer_execution.ts",
+				"packages/bmsx-console/src/render/backend/software/vdp_framebuffer_rasterizer.ts",
+				"native/machine/render/backend/software/vdp_framebuffer_execution.h",
+				"native/machine/render/backend/software/vdp_framebuffer_execution.cpp",
+				"native/machine/render/backend/software/vdp_framebuffer_rasterizer.h",
+				"native/machine/render/backend/software/vdp_framebuffer_rasterizer.cpp"
 			],
 			"reason": "rpu_gpu_backend_files_replace_retired_common_rpu_and_legacy_mesh_particle_skybox_and_framebuffer_execution_passes_while_ide_terminal_framebuffer_texture_presentation_remains"
 		}
 	],
 	"strict_file_pair_parity": [
 		{
-			"ts": "src/bmsx/machine/devices/vdp/device_output.ts",
+			"ts": "packages/bmsx-console/src/machine/devices/vdp/device_output.ts",
 			"cpp": [
-				"src/bmsx_cpp/machine/devices/vdp/device_output.h"
+				"native/machine/machine/devices/vdp/device_output.h"
 			],
 			"reason": "vdp_output_host_contract_filename_parity"
 		},
 		{
-			"ts": "src/bmsx/machine/devices/vdp/contracts.ts",
+			"ts": "packages/bmsx-console/src/machine/devices/vdp/contracts.ts",
 			"cpp": [
-				"src/bmsx_cpp/machine/devices/vdp/contracts.h"
+				"native/machine/machine/devices/vdp/contracts.h"
 			],
 			"reason": "vdp_contracts_filename_parity"
 		},
 		{
-			"ts": "src/bmsx/machine/devices/vdp/frame.ts",
+			"ts": "packages/bmsx-console/src/machine/devices/vdp/frame.ts",
 			"cpp": [
-				"src/bmsx_cpp/machine/devices/vdp/frame.h",
-				"src/bmsx_cpp/machine/devices/vdp/frame.cpp"
+				"native/machine/machine/devices/vdp/frame.h",
+				"native/machine/machine/devices/vdp/frame.cpp"
 			],
 			"reason": "vdp_frame_snapshot_filename_parity"
 		},
 		{
-			"ts": "src/bmsx/machine/devices/vdp/save_state.ts",
+			"ts": "packages/bmsx-console/src/machine/devices/vdp/save_state.ts",
 			"cpp": [
-				"src/bmsx_cpp/machine/devices/vdp/save_state.h"
+				"native/machine/machine/devices/vdp/save_state.h"
 			],
 			"reason": "vdp_save_state_filename_parity"
 		},
 		{
-			"ts": "src/bmsx/machine/devices/vdp/rpu.ts",
+			"ts": "packages/bmsx-console/src/machine/devices/vdp/rpu.ts",
 			"cpp": [
-				"src/bmsx_cpp/machine/devices/vdp/rpu.h",
-				"src/bmsx_cpp/machine/devices/vdp/rpu.cpp"
+				"native/machine/machine/devices/vdp/rpu.h",
+				"native/machine/machine/devices/vdp/rpu.cpp"
 			],
 			"reason": "rpu_device_filename_parity"
 		},
 		{
-			"ts": "src/bmsx/machine/devices/vdp/xf.ts",
+			"ts": "packages/bmsx-console/src/machine/devices/vdp/xf.ts",
 			"cpp": [
-				"src/bmsx_cpp/machine/devices/vdp/xf.h",
-				"src/bmsx_cpp/machine/devices/vdp/xf.cpp"
+				"native/machine/machine/devices/vdp/xf.h",
+				"native/machine/machine/devices/vdp/xf.cpp"
 			],
 			"reason": "xf_hardware_matrix_filename_parity"
 		},
 		{
-			"ts": "src/bmsx/machine/devices/vdp/lpu.ts",
+			"ts": "packages/bmsx-console/src/machine/devices/vdp/lpu.ts",
 			"cpp": [
-				"src/bmsx_cpp/machine/devices/vdp/lpu.h",
-				"src/bmsx_cpp/machine/devices/vdp/lpu.cpp"
+				"native/machine/machine/devices/vdp/lpu.h",
+				"native/machine/machine/devices/vdp/lpu.cpp"
 			],
 			"reason": "lpu_registerfile_filename_parity"
 		},
 		{
-			"ts": "src/bmsx/machine/devices/vdp/mfu.ts",
+			"ts": "packages/bmsx-console/src/machine/devices/vdp/mfu.ts",
 			"cpp": [
-				"src/bmsx_cpp/machine/devices/vdp/mfu.h",
-				"src/bmsx_cpp/machine/devices/vdp/mfu.cpp"
+				"native/machine/machine/devices/vdp/mfu.h",
+				"native/machine/machine/devices/vdp/mfu.cpp"
 			],
 			"reason": "mfu_registerfile_filename_parity"
 		},
 		{
-			"ts": "src/bmsx/machine/devices/vdp/jtu.ts",
+			"ts": "packages/bmsx-console/src/machine/devices/vdp/jtu.ts",
 			"cpp": [
-				"src/bmsx_cpp/machine/devices/vdp/jtu.h",
-				"src/bmsx_cpp/machine/devices/vdp/jtu.cpp"
+				"native/machine/machine/devices/vdp/jtu.h",
+				"native/machine/machine/devices/vdp/jtu.cpp"
 			],
 			"reason": "jtu_registerfile_filename_parity"
 		},
 		{
-			"ts": "src/bmsx/machine/devices/vdp/unit_register_port.ts",
+			"ts": "packages/bmsx-console/src/machine/devices/vdp/unit_register_port.ts",
 			"cpp": [
-				"src/bmsx_cpp/machine/devices/vdp/unit_register_port.h",
-				"src/bmsx_cpp/machine/devices/vdp/unit_register_port.cpp"
+				"native/machine/machine/devices/vdp/unit_register_port.h",
+				"native/machine/machine/devices/vdp/unit_register_port.cpp"
 			],
 			"reason": "unit_register_port_filename_parity"
 		},
 		{
-			"ts": "src/bmsx/machine/devices/vdp/vout.ts",
+			"ts": "packages/bmsx-console/src/machine/devices/vdp/vout.ts",
 			"cpp": [
-				"src/bmsx_cpp/machine/devices/vdp/vout.h",
-				"src/bmsx_cpp/machine/devices/vdp/vout.cpp"
+				"native/machine/machine/devices/vdp/vout.h",
+				"native/machine/machine/devices/vdp/vout.cpp"
 			],
 			"reason": "vout_presentation_filename_parity"
 		},
 		{
-			"ts": "src/bmsx/machine/devices/vdp/fbm.ts",
+			"ts": "packages/bmsx-console/src/machine/devices/vdp/fbm.ts",
 			"cpp": [
-				"src/bmsx_cpp/machine/devices/vdp/fbm.h",
-				"src/bmsx_cpp/machine/devices/vdp/fbm.cpp"
+				"native/machine/machine/devices/vdp/fbm.h",
+				"native/machine/machine/devices/vdp/fbm.cpp"
 			],
 			"reason": "fbm_presentation_filename_parity"
 		},
 		{
-			"ts": "src/bmsx/machine/devices/vdp/vram.ts",
+			"ts": "packages/bmsx-console/src/machine/devices/vdp/vram.ts",
 			"cpp": [
-				"src/bmsx_cpp/machine/devices/vdp/vram.h",
-				"src/bmsx_cpp/machine/devices/vdp/vram.cpp"
+				"native/machine/machine/devices/vdp/vram.h",
+				"native/machine/machine/devices/vdp/vram.cpp"
 			],
 			"reason": "vram_surface_upload_filename_parity"
 		},
 		{
-			"ts": "src/bmsx/render/backend/webgl/fullscreen_quad.ts",
+			"ts": "packages/bmsx-console/src/render/backend/webgl/fullscreen_quad.ts",
 			"cpp": [
-				"src/bmsx_cpp/render/backend/gles2/fullscreen_quad.h",
-				"src/bmsx_cpp/render/backend/gles2/fullscreen_quad.cpp"
+				"native/machine/render/backend/gles2/fullscreen_quad.h",
+				"native/machine/render/backend/gles2/fullscreen_quad.cpp"
 			],
 			"reason": "fullscreen_quad_backend_filename_parity"
 		},
 		{
-			"ts": "src/bmsx/render/backend/webgl/vdp_rpu.ts",
+			"ts": "packages/bmsx-console/src/render/backend/webgl/vdp_rpu.ts",
 			"cpp": [
-				"src/bmsx_cpp/render/backend/gles2/vdp_rpu.h",
-				"src/bmsx_cpp/render/backend/gles2/vdp_rpu.cpp"
+				"native/machine/render/backend/gles2/vdp_rpu.h",
+				"native/machine/render/backend/gles2/vdp_rpu.cpp"
 			],
 			"reason": "rpu_gpu_backend_filename_parity"
 		},
 		{
-			"ts": "src/bmsx/render/vdp/view_snapshot.ts",
+			"ts": "packages/bmsx-console/src/render/vdp/view_snapshot.ts",
 			"cpp": [
-				"src/bmsx_cpp/render/vdp/view_snapshot.h",
-				"src/bmsx_cpp/render/vdp/view_snapshot.cpp"
+				"native/machine/render/vdp/view_snapshot.h",
+				"native/machine/render/vdp/view_snapshot.cpp"
 			],
 			"reason": "vdp_view_snapshot_filename_parity"
 		},
 		{
-			"ts": "src/bmsx/render/2d/framebuffer_pipeline.ts",
+			"ts": "packages/bmsx-console/src/render/2d/framebuffer_pipeline.ts",
 			"cpp": [
-				"src/bmsx_cpp/render/2d/framebuffer_pipeline.h",
-				"src/bmsx_cpp/render/2d/framebuffer_pipeline.cpp"
+				"native/machine/render/2d/framebuffer_pipeline.h",
+				"native/machine/render/2d/framebuffer_pipeline.cpp"
 			],
 			"reason": "workbench_framebuffer_texture_presentation_filename_parity"
 		},
 		{
-			"ts": "src/bmsx/machine/devices/vdp/ingress.ts",
+			"ts": "packages/bmsx-console/src/machine/devices/vdp/ingress.ts",
 			"cpp": [
-				"src/bmsx_cpp/machine/devices/vdp/ingress.h",
-				"src/bmsx_cpp/machine/devices/vdp/ingress.cpp"
+				"native/machine/machine/devices/vdp/ingress.h",
+				"native/machine/machine/devices/vdp/ingress.cpp"
 			],
 			"reason": "vdp_stream_ingress_filename_parity"
 		},
 		{
-			"ts": "src/bmsx/machine/devices/vdp/registers.ts",
+			"ts": "packages/bmsx-console/src/machine/devices/vdp/registers.ts",
 			"cpp": [
-				"src/bmsx_cpp/machine/devices/vdp/registers.h",
-				"src/bmsx_cpp/machine/devices/vdp/registers.cpp"
+				"native/machine/machine/devices/vdp/registers.h",
+				"native/machine/machine/devices/vdp/registers.cpp"
 			],
 			"reason": "vdp_registerfile_constant_and_decode_filename_parity"
 		},
 		{
-			"ts": "src/bmsx/machine/devices/vdp/packet.ts",
+			"ts": "packages/bmsx-console/src/machine/devices/vdp/packet.ts",
 			"cpp": [
-				"src/bmsx_cpp/machine/devices/vdp/packet.h"
+				"native/machine/machine/devices/vdp/packet.h"
 			],
 			"reason": "vdp_unit_packet_header_filename_parity"
 		},
 		{
-			"ts": "src/bmsx/machine/devices/vdp/budget.ts",
+			"ts": "packages/bmsx-console/src/machine/devices/vdp/budget.ts",
 			"cpp": [
-				"src/bmsx_cpp/machine/devices/vdp/budget.h"
+				"native/machine/machine/devices/vdp/budget.h"
 			],
 			"reason": "vdp_render_budget_math_filename_parity"
 		},
 		{
-			"ts": "src/bmsx/common/fixed_point.ts",
+			"ts": "packages/bmsx-console/src/common/fixed_point.ts",
 			"cpp": [
-				"src/bmsx_cpp/common/fixed_point.h"
+				"native/machine/common/fixed_point.h"
 			],
 			"reason": "common_fixed_point_decode_filename_parity"
 		},
 		{
-			"ts": "src/bmsx/machine/devices/vdp/matrix_words.ts",
+			"ts": "packages/bmsx-console/src/machine/devices/vdp/matrix_words.ts",
 			"cpp": [
-				"src/bmsx_cpp/machine/devices/vdp/matrix_words.h"
+				"native/machine/machine/devices/vdp/matrix_words.h"
 			],
 			"reason": "vdp_matrix_word_filename_parity"
 		},
 		{
-			"ts": "src/bmsx/machine/devices/vdp/vram_garbage.ts",
+			"ts": "packages/bmsx-console/src/machine/devices/vdp/vram_garbage.ts",
 			"cpp": [
-				"src/bmsx_cpp/machine/devices/vdp/vram_garbage.h",
-				"src/bmsx_cpp/machine/devices/vdp/vram_garbage.cpp"
+				"native/machine/machine/devices/vdp/vram_garbage.h",
+				"native/machine/machine/devices/vdp/vram_garbage.cpp"
 			],
 			"reason": "vdp_vram_garbage_filename_parity"
 		},
 		{
-			"ts": "src/bmsx/machine/devices/vdp/slot_surface.ts",
+			"ts": "packages/bmsx-console/src/machine/devices/vdp/slot_surface.ts",
 			"cpp": [
-				"src/bmsx_cpp/machine/devices/vdp/slot_surface.h",
-				"src/bmsx_cpp/machine/devices/vdp/slot_surface.cpp"
+				"native/machine/machine/devices/vdp/slot_surface.h",
+				"native/machine/machine/devices/vdp/slot_surface.cpp"
 			],
 			"reason": "vdp_slot_surface_port_filename_parity"
 		},
 		{
-			"ts": "src/bmsx/machine/devices/vdp/readback.ts",
+			"ts": "packages/bmsx-console/src/machine/devices/vdp/readback.ts",
 			"cpp": [
-				"src/bmsx_cpp/machine/devices/vdp/readback.h",
-				"src/bmsx_cpp/machine/devices/vdp/readback.cpp"
+				"native/machine/machine/devices/vdp/readback.h",
+				"native/machine/machine/devices/vdp/readback.cpp"
 			],
 			"reason": "vdp_readback_filename_parity"
 		},
 		{
-			"ts": "src/bmsx/machine/devices/vdp/vdp.ts",
+			"ts": "packages/bmsx-console/src/machine/devices/vdp/vdp.ts",
 			"cpp": [
-				"src/bmsx_cpp/machine/devices/vdp/vdp.h",
-				"src/bmsx_cpp/machine/devices/vdp/vdp.cpp"
+				"native/machine/machine/devices/vdp/vdp.h",
+				"native/machine/machine/devices/vdp/vdp.cpp"
 			],
 			"reason": "vdp_device_filename_parity"
 		}
 	],
 	"public_symbol_parity": [
 		{
-			"ts": "src/bmsx/rompack/toc.ts",
+			"ts": "packages/bmsx-console/src/rompack/toc.ts",
 			"cpp": [
-				"src/bmsx_cpp/rompack/toc.h"
+				"native/machine/rompack/toc.h"
 			],
 			"shape_exclude": [
 				{
@@ -2616,9 +2616,9 @@
 			]
 		},
 		{
-			"ts": "src/bmsx/rompack/source.ts",
+			"ts": "packages/bmsx-console/src/rompack/source.ts",
 			"cpp": [
-				"src/bmsx_cpp/rompack/source.h"
+				"native/machine/rompack/source.h"
 			],
 			"exclude": [
 				{
@@ -2696,15 +2696,15 @@
 			]
 		},
 		{
-			"ts": "src/bmsx/machine/program/layout.ts",
+			"ts": "packages/bmsx-console/src/machine/program/layout.ts",
 			"cpp": [
-				"src/bmsx_cpp/machine/program/layout.h"
+				"native/machine/machine/program/layout.h"
 			]
 		},
 		{
-			"ts": "src/bmsx/machine/program/linker.ts",
+			"ts": "packages/bmsx-console/src/machine/program/linker.ts",
 			"cpp": [
-				"src/bmsx_cpp/machine/program/linker.h"
+				"native/machine/machine/program/linker.h"
 			],
 			"shape_exclude": [
 				{
@@ -2724,21 +2724,21 @@
 			]
 		},
 		{
-			"ts": "src/bmsx/machine/runtime/save_state/schema.ts",
+			"ts": "packages/bmsx-console/src/machine/runtime/save_state/schema.ts",
 			"cpp": [
-				"src/bmsx_cpp/machine/runtime/save_state/schema.h"
+				"native/machine/machine/runtime/save_state/schema.h"
 			]
 		},
 		{
-			"ts": "src/bmsx/machine/runtime/save_state/codec.ts",
+			"ts": "packages/bmsx-console/src/machine/runtime/save_state/codec.ts",
 			"cpp": [
-				"src/bmsx_cpp/machine/runtime/save_state/codec.h"
+				"native/machine/machine/runtime/save_state/codec.h"
 			]
 		},
 		{
-			"ts": "src/bmsx/machine/machine.ts",
+			"ts": "packages/bmsx-console/src/machine/machine.ts",
 			"cpp": [
-				"src/bmsx_cpp/machine/machine.h"
+				"native/machine/machine/machine.h"
 			],
 			"shape_exclude": [
 				{
@@ -2748,9 +2748,9 @@
 			]
 		},
 		{
-			"ts": "src/bmsx/machine/cpu/string_pool.ts",
+			"ts": "packages/bmsx-console/src/machine/cpu/string_pool.ts",
 			"cpp": [
-				"src/bmsx_cpp/machine/cpu/string_pool.h"
+				"native/machine/machine/cpu/string_pool.h"
 			],
 			"shape_exclude": [
 				{
@@ -2760,9 +2760,9 @@
 			]
 		},
 		{
-			"ts": "src/bmsx/machine/program/loader.ts",
+			"ts": "packages/bmsx-console/src/machine/program/loader.ts",
 			"cpp": [
-				"src/bmsx_cpp/machine/program/loader.h"
+				"native/machine/machine/program/loader.h"
 			],
 			"exclude": [
 				{
@@ -2818,9 +2818,9 @@
 			]
 		},
 		{
-			"ts": "src/bmsx/common/arrays_equal.ts",
+			"ts": "packages/bmsx-console/src/common/arrays_equal.ts",
 			"cpp": [
-				"src/bmsx_cpp/common/arrays_equal.h"
+				"native/machine/common/arrays_equal.h"
 			],
 			"shape_exclude": [
 				{
@@ -2830,9 +2830,9 @@
 			]
 		},
 		{
-			"ts": "src/bmsx/common/lower_bound.ts",
+			"ts": "packages/bmsx-console/src/common/lower_bound.ts",
 			"cpp": [
-				"src/bmsx_cpp/common/lower_bound.h"
+				"native/machine/common/lower_bound.h"
 			],
 			"shape_exclude": [
 				{
@@ -2842,21 +2842,21 @@
 			]
 		},
 		{
-			"ts": "src/bmsx/machine/common/hash.ts",
+			"ts": "packages/bmsx-console/src/machine/common/hash.ts",
 			"cpp": [
-				"src/bmsx_cpp/machine/common/hash.h"
+				"native/machine/machine/common/hash.h"
 			]
 		},
 		{
-			"ts": "src/bmsx/machine/memory/access_kind.ts",
+			"ts": "packages/bmsx-console/src/machine/memory/access_kind.ts",
 			"cpp": [
-				"src/bmsx_cpp/machine/memory/access_kind.h"
+				"native/machine/machine/memory/access_kind.h"
 			]
 		},
 		{
-			"ts": "src/bmsx/machine/cpu/opcode_info.ts",
+			"ts": "packages/bmsx-console/src/machine/cpu/opcode_info.ts",
 			"cpp": [
-				"src/bmsx_cpp/machine/cpu/opcode_info.h"
+				"native/machine/machine/cpu/opcode_info.h"
 			],
 			"exclude": [
 				{
@@ -2867,9 +2867,9 @@
 			]
 		},
 		{
-			"ts": "src/bmsx/rompack/metadata.ts",
+			"ts": "packages/bmsx-console/src/rompack/metadata.ts",
 			"cpp": [
-				"src/bmsx_cpp/rompack/metadata.h"
+				"native/machine/rompack/metadata.h"
 			],
 			"shape_exclude": [
 				{
@@ -2879,9 +2879,9 @@
 			]
 		},
 		{
-			"ts": "src/bmsx/rompack/tokens.ts",
+			"ts": "packages/bmsx-console/src/rompack/tokens.ts",
 			"cpp": [
-				"src/bmsx_cpp/rompack/tokens.h"
+				"native/machine/rompack/tokens.h"
 			],
 			"exclude": [
 				{
@@ -2947,21 +2947,21 @@
 			]
 		},
 		{
-			"ts": "src/bmsx/common/scratchstack.ts",
+			"ts": "packages/bmsx-console/src/common/scratchstack.ts",
 			"cpp": [
-				"src/bmsx_cpp/common/scratchstack.h"
+				"native/machine/common/scratchstack.h"
 			]
 		},
 		{
-			"ts": "src/bmsx/machine/runtime/timing/state.ts",
+			"ts": "packages/bmsx-console/src/machine/runtime/timing/state.ts",
 			"cpp": [
-				"src/bmsx_cpp/machine/runtime/timing/state.h"
+				"native/machine/machine/runtime/timing/state.h"
 			]
 		},
 		{
-			"ts": "src/bmsx/render/runtime_state.ts",
+			"ts": "packages/bmsx-console/src/render/runtime_state.ts",
 			"cpp": [
-				"src/bmsx_cpp/render/runtime_state.h"
+				"native/machine/render/runtime_state.h"
 			],
 			"shape_exclude": [
 				{
@@ -2987,9 +2987,9 @@
 			]
 		},
 		{
-			"ts": "src/bmsx/render/shared/submissions.ts",
+			"ts": "packages/bmsx-console/src/render/shared/submissions.ts",
 			"cpp": [
-				"src/bmsx_cpp/render/shared/submissions.h"
+				"native/machine/render/shared/submissions.h"
 			],
 			"shape_exclude": [
 				{
@@ -3010,15 +3010,15 @@
 			]
 		},
 		{
-			"ts": "src/bmsx/render/shared/solid_pixels.ts",
+			"ts": "packages/bmsx-console/src/render/shared/solid_pixels.ts",
 			"cpp": [
-				"src/bmsx_cpp/render/shared/solid_pixels.h"
+				"native/machine/render/shared/solid_pixels.h"
 			]
 		},
 		{
-			"ts": "src/bmsx/common/vector.ts",
+			"ts": "packages/bmsx-console/src/common/vector.ts",
 			"cpp": [
-				"src/bmsx_cpp/common/vector.h"
+				"native/machine/common/vector.h"
 			],
 			"shape_exclude": [
 				{
@@ -3032,9 +3032,9 @@
 			]
 		},
 		{
-			"ts": "src/bmsx/render/shared/glyph_runs.ts",
+			"ts": "packages/bmsx-console/src/render/shared/glyph_runs.ts",
 			"cpp": [
-				"src/bmsx_cpp/render/shared/glyph_runs.h"
+				"native/machine/render/shared/glyph_runs.h"
 			],
 			"shape_exclude": [
 				{
@@ -3044,9 +3044,9 @@
 			]
 		},
 		{
-			"ts": "src/bmsx/render/vdp/source_pixels.ts",
+			"ts": "packages/bmsx-console/src/render/vdp/source_pixels.ts",
 			"cpp": [
-				"src/bmsx_cpp/render/vdp/source_pixels.h"
+				"native/machine/render/vdp/source_pixels.h"
 			],
 			"shape_exclude": [
 				{
@@ -3057,46 +3057,46 @@
 			]
 		},
 		{
-			"ts": "src/bmsx/machine/runtime/system_irq.ts",
+			"ts": "packages/bmsx-console/src/machine/runtime/system_irq.ts",
 			"cpp": [
-				"src/bmsx_cpp/machine/runtime/system_irq.h"
+				"native/machine/machine/runtime/system_irq.h"
 			]
 		},
 		{
-			"ts": "src/bmsx/machine/runtime/cpu_state.ts",
+			"ts": "packages/bmsx-console/src/machine/runtime/cpu_state.ts",
 			"cpp": [
-				"src/bmsx_cpp/machine/runtime/cpu_state.h"
+				"native/machine/machine/runtime/cpu_state.h"
 			]
 		},
 		{
-			"ts": "src/bmsx/machine/runtime/machine_state.ts",
+			"ts": "packages/bmsx-console/src/machine/runtime/machine_state.ts",
 			"cpp": [
-				"src/bmsx_cpp/machine/runtime/machine_state.h"
+				"native/machine/machine/runtime/machine_state.h"
 			]
 		},
 		{
-			"ts": "src/bmsx/machine/runtime/save_machine_state.ts",
+			"ts": "packages/bmsx-console/src/machine/runtime/save_machine_state.ts",
 			"cpp": [
-				"src/bmsx_cpp/machine/runtime/save_machine_state.h"
+				"native/machine/machine/runtime/save_machine_state.h"
 			]
 		},
 		{
-			"ts": "src/bmsx/machine/runtime/save_state.ts",
+			"ts": "packages/bmsx-console/src/machine/runtime/save_state.ts",
 			"cpp": [
-				"src/bmsx_cpp/machine/runtime/save_state.h"
+				"native/machine/machine/runtime/save_state.h"
 			]
 		},
 		{
-			"ts": "src/bmsx/render/backend/texture_params.ts",
+			"ts": "packages/bmsx-console/src/render/backend/texture_params.ts",
 			"cpp": [
-				"src/bmsx_cpp/render/backend/texture_params.h"
+				"native/machine/render/backend/texture_params.h"
 			]
 		}
 	],
 	"strict_save_state_schema_parity": [
 		{
-			"ts": "src/bmsx/machine/runtime/save_state/schema.ts",
-			"cpp": "src/bmsx_cpp/machine/runtime/save_state/schema.cpp",
+			"ts": "packages/bmsx-console/src/machine/runtime/save_state/schema.ts",
+			"cpp": "native/machine/machine/runtime/save_state/schema.cpp",
 			"symbol": "RUNTIME_SAVE_STATE_PROP_NAMES",
 			"reason": "save_state_property_table_indices_are_wire_format_and_must_match_exactly"
 		}
@@ -3187,67 +3187,67 @@
 			"reason": "vdp_device_constant_upload_helpers_must_write_words_without_per_frame_heap_or_gc_work"
 		},
 		{
-			"file": "src/carts/bare_metal_cart/cart.lua",
+			"file": "carts/bare_metal_cart/cart.lua",
 			"start": "\tlocal used_bytes<const> = vdp_stream_cursor - vdp_stream_base",
 			"end": "\nend\n\nlocal wait_dma",
 			"reason": "bare_metal_cart_rpu_submit_hot_helper_must_not_allocate_tables_closures_or_strings"
 		},
 		{
-			"file": "src/carts/bare_metal_cart/cart.lua",
+			"file": "carts/bare_metal_cart/cart.lua",
 			"start": "\tlocal flags = 0\n\trepeat\n\t\thalt_until_irq\n\t\tflags = *irq_flags_register\n\t\t*irq_ack_register = flags\n\tuntil (flags & (irq_dma_done | irq_dma_error)) ~= 0",
 			"end": "\nend\n\nlocal wait_vblank",
 			"reason": "bare_metal_cart_dma_wait_hot_helper_must_not_allocate_tables_closures_or_strings"
 		},
 		{
-			"file": "src/carts/bare_metal_cart/cart.lua",
+			"file": "carts/bare_metal_cart/cart.lua",
 			"start": "\tlocal flags = 0\n\trepeat\n\t\thalt_until_irq\n\t\tflags = *irq_flags_register\n\t\t*irq_ack_register = flags\n\tuntil (flags & irq_vblank) ~= 0",
 			"end": "\nend\n\nlocal build_lua_atlas",
 			"reason": "bare_metal_cart_vblank_wait_hot_helper_must_not_allocate_tables_closures_or_strings"
 		},
 		{
-			"file": "src/carts/bare_metal_cart/cart.lua",
+			"file": "carts/bare_metal_cart/cart.lua",
 			"start": "\tlocal top_y<const> = 0.62 + morph_a",
 			"end": "\nend\n\nlocal write_mesh_indices",
 			"reason": "bare_metal_cart_mesh_vertex_hot_helper_must_not_allocate_tables_closures_or_strings"
 		},
 		{
-			"file": "src/carts/bare_metal_cart/cart.lua",
+			"file": "carts/bare_metal_cart/cart.lua",
 			"start": "\tlocal proj_fx<const>, proj_fy<const>, proj_a<const>, proj_b<const> =\n\t\tcam_proj_terms(active)",
 			"end": "\nend\n\nlocal write_joint_constants",
 			"reason": "bare_metal_cart_xf_matrix_hot_helper_must_not_allocate_tables_closures_or_strings"
 		},
 		{
-			"file": "src/carts/bare_metal_cart/cart.lua",
+			"file": "carts/bare_metal_cart/cart.lua",
 			"start": "\tlocal joint_phase<const> = frame % 8",
 			"end": "\nend\n\nlocal write_mfu_constants",
 			"reason": "bare_metal_cart_jtu_matrix_hot_helper_must_not_allocate_tables_closures_or_strings"
 		},
 		{
-			"file": "src/carts/bare_metal_cart/cart.lua",
+			"file": "carts/bare_metal_cart/cart.lua",
 			"start": "\tlocal mfu<const>: *word = mfu_addr",
 			"end": "\nend\n\nlocal setup_camera_input",
 			"reason": "bare_metal_cart_mfu_hot_helper_must_not_allocate_tables_closures_or_strings"
 		},
 		{
-			"file": "src/carts/bare_metal_cart/cart.lua",
+			"file": "carts/bare_metal_cart/cart.lua",
 			"start": "\tlocal instances<const>: *sprite_instance[instance_count] = instance_addr\n\tlocal parallax_x<const> = -32.0 + ((frame % 96) * 0.5)",
 			"end": "\nend\n\nlocal write_mat4_instances",
 			"reason": "bare_metal_cart_instance_hot_helper_must_not_allocate_tables_closures_or_strings"
 		},
 		{
-			"file": "src/carts/bare_metal_cart/cart.lua",
+			"file": "carts/bare_metal_cart/cart.lua",
 			"start": "\t-- Projection terms from active camera.\n\tlocal proj_fx<const>, proj_fy<const>, proj_a<const>, proj_b<const> =",
 			"end": "\nend\n\nlocal write_vdp_command_descriptors",
 			"reason": "bare_metal_cart_mat4_instance_hot_helper_must_not_allocate_tables_closures_or_strings"
 		},
 		{
-			"file": "src/carts/bare_metal_cart/cart.lua",
+			"file": "carts/bare_metal_cart/cart.lua",
 			"start": "\tlocal morph_phase<const> = frame % 32",
 			"end": "\nend\n\n\n*vdp_dither_register = 0",
 			"reason": "bare_metal_cart_rpu_frame_build_must_not_allocate_tables_closures_or_strings_per_frame"
 		},
 		{
-			"file": "src/carts/bare_metal_cart/cart.lua",
+			"file": "carts/bare_metal_cart/cart.lua",
 			"start": "while true do",
 			"end": "\nend\n",
 			"reason": "bare_metal_cart_main_loop_must_not_allocate_tables_closures_or_strings_per_frame"
@@ -3331,13 +3331,13 @@
 			"reason": "vdp_rpu_quads_tile_run_must_write_instances_without_heap_or_gc_work"
 		},
 		{
-			"file": "src/carts/pietious/room/index.lua",
+			"file": "carts/pietious/room/index.lua",
 			"start": "\tlocal tile_count<const> = self.room_tile_count",
 			"end": "\nend\n\nfunction room_object:render_water",
 			"reason": "pietious_room_tile_run_callsite_must_not_allocate_or_emit_per_tile_stream_blits"
 		},
 		{
-			"file": "src/carts/pietious/room/index.lua",
+			"file": "carts/pietious/room/index.lua",
 			"start": "\tlocal tile_count<const> = self.water_tile_count",
 			"end": "\nend\n\nfunction room_object:render_room",
 			"reason": "pietious_water_tile_run_callsite_must_not_allocate_or_emit_per_tile_stream_blits"
@@ -3345,49 +3345,49 @@
 	],
 	"strict_runtime_no_heap_regions": [
 		{
-			"file": "src/bmsx/machine/devices/vdp/rpu.ts",
+			"file": "packages/bmsx-console/src/machine/devices/vdp/rpu.ts",
 			"start": "public consumePacketFromMemory(frame: VdpRpuFrameOutput, headerWord: number, cursor: number, end: number): number {",
 			"end": "type VdpRpuSaveArray = Uint32Array | Uint16Array | Uint8Array;",
 			"reason": "rpu_device_packet_consume_and_retained_command_buffer_hot_path_must_not_allocate"
 		},
 		{
-			"file": "src/bmsx/render/backend/webgl/vdp_rpu.ts",
+			"file": "packages/bmsx-console/src/render/backend/webgl/vdp_rpu.ts",
 			"start": "export function renderVdpRpuFrame(runtime: VdpRpuRuntime, framebuffer: WebGLFramebuffer, state: RenderPassStateRegistry['vdp_rpu']): void {",
 			"end": "export function registerVdpRpuPass(registry: RenderPassLibrary): void {",
 			"reason": "webgl_rpu_draw_execution_must_not_allocate_or_use_heap_collections"
 		},
 		{
-			"file": "src/bmsx/machine/devices/vdp/vout.ts",
+			"file": "packages/bmsx-console/src/machine/devices/vdp/vout.ts",
 			"start": "public presentFrame(frame: VdpSubmittedFrame): void {",
 			"end": "private setVblankBeamPosition(cyclesIntoFrame: number): void {",
 			"reason": "vout_presentation_and_device_output_hot_path_must_swap_retained_rpu_frames_without_allocating"
 		},
 		{
-			"file": "src/bmsx/render/vdp/view_snapshot.ts",
+			"file": "packages/bmsx-console/src/render/vdp/view_snapshot.ts",
 			"start": "export function commitVdpViewSnapshot(view: GameView, output: VdpDeviceOutput): void {",
 			"end": "\n}\n",
 			"reason": "host_view_snapshot_commit_must_publish_retained_rpu_frame_without_allocating_or_copying"
 		},
 		{
-			"file": "src/bmsx_cpp/machine/devices/vdp/rpu.cpp",
+			"file": "native/machine/machine/devices/vdp/rpu.cpp",
 			"start": "u32 VdpRpuUnit::consumePacketFromMemory(VdpRpuFrameOutput& frame, u32 headerWord, u32 cursor, u32 end) {",
 			"end": "std::unique_ptr<VdpRpuFrameOutput> createVdpRpuFrameOutput() {",
 			"reason": "rpu_device_packet_consume_and_retained_command_buffer_hot_path_must_not_allocate"
 		},
 		{
-			"file": "src/bmsx_cpp/render/backend/gles2/vdp_rpu.cpp",
+			"file": "native/machine/render/backend/gles2/vdp_rpu.cpp",
 			"start": "void renderVdpRpuFrame(VdpRpuRuntime& runtime, void* framebuffer, const VdpRpuPipelineState& state) {",
 			"end": "void registerVdpRpuPass(RenderPassLibrary& registry) {",
 			"reason": "gles2_rpu_draw_execution_must_not_allocate_or_use_heap_containers"
 		},
 		{
-			"file": "src/bmsx_cpp/machine/devices/vdp/vout.cpp",
+			"file": "native/machine/machine/devices/vdp/vout.cpp",
 			"start": "void VdpVoutUnit::presentFrame(VdpSubmittedFrame& frame) {",
 			"end": "void VdpVoutUnit::setVblankBeamPosition(int cyclesIntoFrame) {",
 			"reason": "vout_presentation_and_device_output_hot_path_must_swap_retained_rpu_frames_without_allocating"
 		},
 		{
-			"file": "src/bmsx_cpp/render/vdp/view_snapshot.cpp",
+			"file": "native/machine/render/vdp/view_snapshot.cpp",
 			"start": "void commitVdpViewSnapshot(GameView& view, const VdpDeviceOutput& output) {",
 			"end": "\n}\n\n} // namespace bmsx",
 			"reason": "host_view_snapshot_commit_must_publish_retained_rpu_frame_without_allocating_or_copying"
@@ -3395,7 +3395,7 @@
 	],
 	"strict_runtime_no_heap_functions": [
 		{
-			"file": "src/bmsx/render/backend/webgl/vdp_rpu.ts",
+			"file": "packages/bmsx-console/src/render/backend/webgl/vdp_rpu.ts",
 			"functions": [
 				"vdpRpuPrimitive",
 				"vdpRpuIndexType",
@@ -3423,7 +3423,7 @@
 			"reason": "webgl_rpu_hot_backend_helpers_must_remain_heap_and_gc_free"
 		},
 		{
-			"file": "src/bmsx_cpp/render/backend/gles2/vdp_rpu.cpp",
+			"file": "native/machine/render/backend/gles2/vdp_rpu.cpp",
 			"functions": [
 				"vdpRpuPrimitive",
 				"vdpRpuIndexType",
@@ -3451,7 +3451,7 @@
 			"reason": "gles2_rpu_hot_backend_helpers_must_remain_heap_and_gc_free"
 		},
 		{
-			"file": "src/bmsx/machine/devices/vdp/vram_garbage.ts",
+			"file": "packages/bmsx-console/src/machine/devices/vdp/vram_garbage.ts",
 			"functions": [
 				"makeBiasConfig",
 				"initBlockGen",
@@ -3460,7 +3460,7 @@
 			"reason": "vram_garbage_generation_must_use_retained_scratch_without_heap_churn"
 		},
 		{
-			"file": "src/bmsx_cpp/machine/devices/vdp/vram_garbage.cpp",
+			"file": "native/machine/machine/devices/vdp/vram_garbage.cpp",
 			"functions": [
 				"makeBiasConfig",
 				"initBlockGen",
@@ -3469,7 +3469,7 @@
 			"reason": "vram_garbage_generation_must_use_stack_or_retained_state_without_heap_churn"
 		},
 		{
-			"file": "src/bmsx/render/post/crt/pipeline.ts",
+			"file": "packages/bmsx-console/src/render/post/crt/pipeline.ts",
 			"functions": [
 				"writeCrtVec3",
 				"bindCRTUniforms",
@@ -3478,7 +3478,7 @@
 			"reason": "webgl_crt_hot_path_must_not_allocate_arrays_or_runtime_wrappers"
 		},
 		{
-			"file": "src/bmsx/render/post/device_quantize_pipeline.ts",
+			"file": "packages/bmsx-console/src/render/post/device_quantize_pipeline.ts",
 			"functions": [
 				"buildDeviceQuantizeState",
 				"bindDeviceQuantizeUniforms",
@@ -3487,7 +3487,7 @@
 			"reason": "webgl_device_quantize_hot_path_must_reuse_retained_state_without_runtime_wrappers"
 		},
 		{
-			"file": "src/bmsx/render/headless/passes.ts",
+			"file": "packages/bmsx-console/src/render/headless/passes.ts",
 			"functions": [
 				"commitHeadlessFrame",
 				"fillHeadlessFrame",
@@ -3497,7 +3497,7 @@
 			"reason": "headless_rpu_and_present_hot_helpers_must_not_allocate_per_frame"
 		},
 		{
-			"file": "src/bmsx/render/headless/backend.ts",
+			"file": "packages/bmsx-console/src/render/headless/backend.ts",
 			"functions": [
 				"resetFrameStats",
 				"beginFrame",
@@ -3506,7 +3506,7 @@
 			"reason": "headless_backend_frame_stats_reset_must_not_allocate_per_frame"
 		},
 		{
-			"file": "src/bmsx/render/graph/graph.ts",
+			"file": "packages/bmsx-console/src/render/graph/graph.ts",
 			"functions": [
 				"updateExternalFrameTiming",
 				"buildFrameData"
@@ -3514,21 +3514,21 @@
 			"reason": "render_graph_frame_timing_must_mutate_retained_frame_object"
 		},
 		{
-			"file": "src/bmsx/render/backend/webgl/backend.ts",
+			"file": "packages/bmsx-console/src/render/backend/webgl/backend.ts",
 			"functions": [
 				"beginRenderPass"
 			],
 			"reason": "webgl_render_pass_begin_must_not_allocate_encoder_or_cache_key"
 		},
 		{
-			"file": "src/bmsx/render/headless/present_surface.ts",
+			"file": "packages/bmsx-console/src/render/headless/present_surface.ts",
 			"functions": [
 				"borrowPixels"
 			],
 			"reason": "headless_present_surface_must_expose_borrowed_pixels_without_copying"
 		},
 		{
-			"file": "src/bmsx/render/headless/view.ts",
+			"file": "packages/bmsx-console/src/render/headless/view.ts",
 			"functions": [
 				"presentFrameBuffer",
 				"borrowPresentedFramePixels"

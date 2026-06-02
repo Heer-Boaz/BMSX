@@ -1,8 +1,8 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 
-import { LuaDebuggerController } from '../../src/bmsx/lua/debugger';
-import type { LuaDebuggerPauseSignal } from '../../src/bmsx/lua/value';
+import { LuaDebuggerController } from '../../packages/bmsx-console/src/lua/debugger';
+import type { LuaDebuggerPauseSignal } from '../../packages/bmsx-console/src/lua/value';
 
 function pauseSignal(reason: LuaDebuggerPauseSignal['reason'], line = 1, depth = 1): LuaDebuggerPauseSignal {
 	return {

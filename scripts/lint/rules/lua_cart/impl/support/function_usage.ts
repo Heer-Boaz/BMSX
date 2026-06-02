@@ -1,4 +1,4 @@
-import { type LuaExpression as Expression, type LuaStatement as Statement, LuaSyntaxKind as SyntaxKind, LuaTableFieldKind as TableFieldKind } from '../../../../../../src/bmsx/lua/syntax/ast';
+import { type LuaExpression as Expression, type LuaStatement as Statement, LuaSyntaxKind as SyntaxKind, LuaTableFieldKind as TableFieldKind } from '../../../../../../packages/bmsx-console/src/lua/syntax/ast';
 import { FunctionUsageInfo, incrementUsageCount } from '../../../../function_usage';
 import { getExpressionKeyName } from './expression_signatures';
 

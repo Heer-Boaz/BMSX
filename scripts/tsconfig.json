@@ -12,7 +12,7 @@
 	},
 	"include": [
 	"**/*.ts",
-	"../src/bmsx/**/*.d.ts"
+	"../packages/bmsx-console/src/**/*.d.ts"
 	],
-	"exclude": ["../bmsx/bmsx.js", "../bmsx/bmsx.d.ts", "../tests/**.*", "./scripts/**.*"]
+	"exclude": ["../packages/bmsx-console/src/bmsx.js", "../packages/bmsx-console/src/bmsx.d.ts", "../tests/**.*", "./scripts/**.*"]
 }

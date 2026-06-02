@@ -1,13 +1,13 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 
-import type { RawRomSource } from '../../src/bmsx/rompack/source';
-import type { CartridgeIndex, CartridgeLayerId, RomAsset } from '../../src/bmsx/rompack/format';
-import { buildLuaSources } from '../../src/bmsx/machine/program/sources';
-import { PROGRAM_IMAGE_ID, toLuaModulePath } from '../../src/bmsx/machine/program/loader';
-import { SYSTEM_BOOT_ENTRY_PATH } from '../../src/bmsx/core/system';
-import { decodeRomToc } from '../../src/bmsx/rompack/toc';
-import { encodeRomToc } from '../../src/bmsx/rompack/tooling/toc_encode';
+import type { RawRomSource } from '../../packages/bmsx-console/src/rompack/source';
+import type { CartridgeIndex, CartridgeLayerId, RomAsset } from '../../packages/bmsx-console/src/rompack/format';
+import { buildLuaSources } from '../../packages/bmsx-console/src/machine/program/sources';
+import { PROGRAM_IMAGE_ID, toLuaModulePath } from '../../packages/bmsx-console/src/machine/program/loader';
+import { SYSTEM_BOOT_ENTRY_PATH } from '../../packages/bmsx-console/src/core/system';
+import { decodeRomToc } from '../../packages/bmsx-console/src/rompack/toc';
+import { encodeRomToc } from '../../packages/bmsx-console/src/rompack/tooling/toc_encode';
 
 const textEncoder = new TextEncoder();
 
@@ -59,7 +59,7 @@ class TestRomSource implements RawRomSource {
 function makeIndex(entryPath: string, entries: RomAsset[]): CartridgeIndex {
 	return {
 		entries,
-		projectRootPath: 'src/carts/test',
+		projectRootPath: 'carts/test',
 		cart_manifest: null,
 		machine: { namespace: 'test' } as CartridgeIndex['machine'],
 		entry_path: entryPath,
@@ -104,7 +104,7 @@ test('ROM TOC decode gives Lua assets an explicit zero update timestamp', () => 
 				{ resid: 'main', type: 'lua', source_path: 'cart.lua' },
 				{ resid: PROGRAM_IMAGE_ID, type: 'code' },
 			],
-		projectRootPath: 'src/carts/test',
+		projectRootPath: 'carts/test',
 	});
 	const decoded = decodeRomToc(toc);
 
@@ -117,9 +117,9 @@ test('toLuaModulePath normalizes source paths through the loader contract', () =
 	assert.equal(toLuaModulePath('system/font.lua'), 'system/font');
 	assert.equal(SYSTEM_BOOT_ENTRY_PATH, 'bios/bootrom.lua');
 	assert.equal(toLuaModulePath(SYSTEM_BOOT_ENTRY_PATH), 'bios/bootrom');
-	assert.equal(toLuaModulePath('src/carts/pietious/cart.lua'), 'cart');
-	assert.equal(toLuaModulePath('src/carts/pietious/room/index.lua'), 'room/index');
+	assert.equal(toLuaModulePath('carts/pietious/cart.lua'), 'cart');
+	assert.equal(toLuaModulePath('carts/pietious/room/index.lua'), 'room/index');
 	assert.equal(toLuaModulePath('src\\carts\\pietious\\room\\index.lua'), 'room/index');
-	assert.equal(toLuaModulePath('src/bmsx/res/_ignore/ide/source_text.lua'), '_ignore/ide/source_text');
+	assert.equal(toLuaModulePath('packages/bmsx-console/src/res/_ignore/ide/source_text.lua'), '_ignore/ide/source_text');
 	assert.equal(toLuaModulePath('res/_ignore/ide/source_text.lua'), '_ignore/ide/source_text');
 });

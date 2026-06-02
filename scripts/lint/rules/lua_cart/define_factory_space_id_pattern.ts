@@ -1,5 +1,5 @@
 import { defineLintRule } from '../../rule';
-import { type LuaTableField as TableField } from '../../../../src/bmsx/lua/syntax/ast';
+import { type LuaTableField as TableField } from '../../../../packages/bmsx-console/src/lua/syntax/ast';
 import { type CartLintIssue } from '../../lua_rule';
 import { getTableFieldKey } from './impl/support/table_fields';
 import { pushIssue } from './impl/support/lint_context';

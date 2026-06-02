@@ -54,8 +54,10 @@
 		"allowImportingTsExtensions": true,
 		"baseUrl": ".",
 		"paths": {
-			"bmsx": ["src/bmsx/index.ts"],
-			"bmsx/*": ["src/bmsx/*"]
+			"bmsx": ["packages/bmsx-console/src/index.ts"],
+			"bmsx/*": ["packages/bmsx-console/src/*"],
+			"bmsx-browser-host/*": ["packages/bmsx-browser-host/src/*"],
+			"bmsx-node-host/*": ["packages/bmsx-node-host/src/*"]
 		}
 	}
 }

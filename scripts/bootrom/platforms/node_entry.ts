@@ -3,17 +3,17 @@ import * as fs from 'node:fs/promises';
 
 import { createCanvas, Image, loadImage } from 'canvas';
 
-import { type BootArgs } from '../../../src/bmsx/rompack/format';
-import { HeadlessPlatformServices } from '../../../src/bmsx_hostplatform/headless/platform_headless';
-import { CLIPlatformServices } from '../../../src/bmsx_hostplatform/cli/platform_cli';
-import type { Platform, InputEvt } from '../../../src/bmsx_hostplatform/platform';
-import { HeadlessGameViewHost } from '../../../src/bmsx/render/headless/view';
+import { type BootArgs } from '../../../packages/bmsx-console/src/rompack/format';
+import { HeadlessPlatformServices } from '../../../packages/bmsx-node-host/src/headless/platform_headless';
+import { CLIPlatformServices } from '../../../packages/bmsx-node-host/src/cli/platform_cli';
+import type { Platform, InputEvt } from 'bmsx/platform';
+import { HeadlessGameViewHost } from '../../../packages/bmsx-console/src/render/headless/view';
 import { HeadlessCaptureCoordinator, deriveHeadlessCaptureOutputDir, type ScheduledHeadlessCapture, type ScheduledHeadlessFrameCapture } from './headless_capture';
 import { printHeadlessCpuProfile } from './cpu_profile_report';
 import { runHostTest } from './hostrunner/host_test_runner';
-import { installNativeGlobal, runConsoleChunkToNative } from '../../../src/bmsx/machine/program/executor';
-import { raiseSystemIrq } from '../../../src/bmsx/machine/runtime/system_irq';
-import { IRQ_NEWGAME } from '../../../src/bmsx/machine/bus/io';
+import { installNativeGlobal, runConsoleChunkToNative } from '../../../packages/bmsx-console/src/machine/program/executor';
+import { raiseSystemIrq } from '../../../packages/bmsx-console/src/machine/runtime/system_irq';
+import { IRQ_NEWGAME } from '../../../packages/bmsx-console/src/machine/bus/io';
 
 declare const __BOOTROM_TARGET__: 'cli' | 'headless';
 declare const __BOOTROM_DEBUG__: boolean;
@@ -36,7 +36,7 @@ interface BootGlobals {
 }
 
 type ConsoleNamespace = {
-	startCart: typeof import('../../../src/bmsx/machine/program/start_cart').startCart;
+	startCart: typeof import('../../../packages/bmsx-console/src/machine/program/start_cart').startCart;
 };
 
 interface InputTimelineEntry {
@@ -555,7 +555,7 @@ async function resolveCartRoot(romFolder: string): Promise<string> {
 		await fs.access(candidate);
 		return candidate;
 	} catch {
-		throw new Error(`Cart folder "${romFolder}" not found under src/carts.`);
+		throw new Error(`Cart folder "${romFolder}" not found under carts.`);
 	}
 }
 

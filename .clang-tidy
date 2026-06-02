@@ -9,7 +9,7 @@ Checks: '-*,
   readability-*,
   portability-*'
 WarningsAsErrors: ''
-HeaderFilterRegex: 'src/bmsx_cpp/.*'
+HeaderFilterRegex: 'native/machine/.*'
 FormatStyle: file
 
 CheckOptions:

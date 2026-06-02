@@ -44,21 +44,21 @@ import {
 	IRQ_DMA_ERROR,
 		IRQ_IMG_ERROR,
 	IRQ_VBLANK,
-	} from '../../src/bmsx/machine/bus/io';
-import { transformFixed16 } from '../../src/bmsx/machine/common/numeric';
-	import { CPU } from '../../src/bmsx/machine/cpu/cpu';
-import { DmaController } from '../../src/bmsx/machine/devices/dma/controller';
-	import { ImgDecController } from '../../src/bmsx/machine/devices/imgdec/controller';
-import { IrqController } from '../../src/bmsx/machine/devices/irq/controller';
-import { Memory, type VramWriteSink } from '../../src/bmsx/machine/memory/memory';
-import { GEO_SCRATCH_BASE, RAM_BASE, RAM_END, SYSTEM_ROM_BASE, VRAM_PRIMARY_SLOT_BASE, VRAM_STAGING_BASE } from '../../src/bmsx/machine/memory/map';
-	import type { VDP } from '../../src/bmsx/machine/devices/vdp/vdp';
-import type { Runtime } from '../../src/bmsx/machine/runtime/runtime';
-import { VblankState } from '../../src/bmsx/machine/runtime/vblank';
-import { cyclesUntilBudgetUnits } from '../../src/bmsx/machine/scheduler/budget';
-import { DeviceScheduler } from '../../src/bmsx/machine/scheduler/device';
-import { HeadlessGPUBackend } from '../../src/bmsx/render/headless/backend';
-import { TextureManager } from '../../src/bmsx/render/texture_manager';
+	} from '../../packages/bmsx-console/src/machine/bus/io';
+import { transformFixed16 } from '../../packages/bmsx-console/src/machine/common/numeric';
+	import { CPU } from '../../packages/bmsx-console/src/machine/cpu/cpu';
+import { DmaController } from '../../packages/bmsx-console/src/machine/devices/dma/controller';
+	import { ImgDecController } from '../../packages/bmsx-console/src/machine/devices/imgdec/controller';
+import { IrqController } from '../../packages/bmsx-console/src/machine/devices/irq/controller';
+import { Memory, type VramWriteSink } from '../../packages/bmsx-console/src/machine/memory/memory';
+import { GEO_SCRATCH_BASE, RAM_BASE, RAM_END, SYSTEM_ROM_BASE, VRAM_PRIMARY_SLOT_BASE, VRAM_STAGING_BASE } from '../../packages/bmsx-console/src/machine/memory/map';
+	import type { VDP } from '../../packages/bmsx-console/src/machine/devices/vdp/vdp';
+import type { Runtime } from '../../packages/bmsx-console/src/machine/runtime/runtime';
+import { VblankState } from '../../packages/bmsx-console/src/machine/runtime/vblank';
+import { cyclesUntilBudgetUnits } from '../../packages/bmsx-console/src/machine/scheduler/budget';
+import { DeviceScheduler } from '../../packages/bmsx-console/src/machine/scheduler/device';
+import { HeadlessGPUBackend } from '../../packages/bmsx-console/src/render/headless/backend';
+import { TextureManager } from '../../packages/bmsx-console/src/render/texture_manager';
 
 const TRANSFORM_CASES: ReadonlyArray<readonly [number, number, number, number, number, number]> = [
 	[0, 0, 0, 0, 0, 0],

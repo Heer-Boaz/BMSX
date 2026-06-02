@@ -7,7 +7,7 @@ const fs = require('fs');
 const path = require('path');
 const { PNG } = require('pngjs');
 
-const root = 'src/carts/pietious/res/img';
+const root = 'carts/pietious/res/img';
 const palette = [
 	[0, 0, 0],
 	[0, 241, 20], [68, 249, 86], [85, 79, 255], [128, 111, 255], [250, 80, 51], [12, 255, 255],
@@ -105,7 +105,7 @@ function walk(dir) {
 	else if (e.isFile() && p.endsWith('.png')) files.push(p);
 	}
 }
-walk('src/carts/pietious/res/img');
+walk('carts/pietious/res/img');
 let offTotal = 0;
 let pxTotal = 0;
 for (const f of files) {

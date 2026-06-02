@@ -1,6 +1,6 @@
-import { type FunctionInfo } from '../../../../../src/bmsx/language/cpp/syntax/declarations';
-import { cppCallTarget, isFunctionDeclaratorParen, splitArgumentRanges } from '../../../../../src/bmsx/language/cpp/syntax/syntax';
-import { type Token } from '../../../../../src/bmsx/language/cpp/syntax/tokens';
+import { type FunctionInfo } from '../../../../../packages/bmsx-console/src/language/cpp/syntax/declarations';
+import { cppCallTarget, isFunctionDeclaratorParen, splitArgumentRanges } from '../../../../../packages/bmsx-console/src/language/cpp/syntax/syntax';
+import { type Token } from '../../../../../packages/bmsx-console/src/language/cpp/syntax/tokens';
 import { type LintIssue, pushTokenLintIssue } from '../support/diagnostics';
 import { type AnalysisRegion } from '../../../../analysis/lint_suppressions';
 import { hotPathClosureArgumentPatternRule } from '../../code_quality/hot_path_closure_argument_pattern';

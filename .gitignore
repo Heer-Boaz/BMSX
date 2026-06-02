@@ -31,9 +31,9 @@ bmsx/**.js
 dist/game_debug.html
 dist/game.html
 dist/manifest.json
-!src/bmsx/**.d.ts
-src/bmsx/bmsx.d.ts
-!src/bmsx/types/globals.d.ts
+!packages/bmsx-console/src/**.d.ts
+packages/bmsx-console/src/bmsx.d.ts
+!packages/bmsx-console/src/types/globals.d.ts
 src/testrom/res/_ignore/detective_piet/**
 tsconfig.buildinfo
 scripts/tmp
@@ -81,7 +81,7 @@ temp/**
 # !CMakeLists.txt
 
 # Build directories
-src/bmsx_cpp/build/
+native/machine/build/
 **/build/
 /build-*/
 /build-win/
@@ -95,13 +95,13 @@ tools/retroarch-gles2
 .external/**
 
 # Don't ignore special files that are needed for development
-!src/carts/esther/res/_ignore/dkc1_physics_reference.asm
-!src/carts/esther/res/_ignore/Routine_Macros_DKC1.asm
+!carts/esther/res/_ignore/dkc1_physics_reference.asm
+!carts/esther/res/_ignore/Routine_Macros_DKC1.asm
 
-src/carts/pietious/res/_ignore/**
-!src/carts/pietious/res/_ignore/
-!src/carts/pietious/res/_ignore/c++/
-# !src/carts/pietious/res/_ignore/c++/**.cpp
-# !src/carts/pietious/res/_ignore/c++/gameinteractions.cpp
-# !src/carts/pietious/res/_ignore/**.py
+carts/pietious/res/_ignore/**
+!carts/pietious/res/_ignore/
+!carts/pietious/res/_ignore/c++/
+# !carts/pietious/res/_ignore/c++/**.cpp
+# !carts/pietious/res/_ignore/c++/gameinteractions.cpp
+# !carts/pietious/res/_ignore/**.py
 !tmp/**

@@ -1,8 +1,8 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 
-import { DEFAULT_LUA_BUILTIN_NAMES } from '../../src/bmsx/machine/firmware/builtin_descriptors';
-import { SYSTEM_ROM_GLOBAL_NAME_SET } from '../../src/bmsx/machine/firmware/system_globals';
+import { DEFAULT_LUA_BUILTIN_NAMES } from '../../packages/bmsx-console/src/machine/firmware/builtin_descriptors';
+import { SYSTEM_ROM_GLOBAL_NAME_SET } from '../../packages/bmsx-console/src/machine/firmware/system_globals';
 import {
 	IO_GEO_CMD,
 	IO_GEO_COUNT,
@@ -24,7 +24,7 @@ import {
 	IO_GEO_STRIDE2,
 	IO_IRQ_FLAGS,
 	IRQ_GEO_DONE,
-} from '../../src/bmsx/machine/bus/io';
+} from '../../packages/bmsx-console/src/machine/bus/io';
 import {
 	GEO_CTRL_ABORT,
 	GEOMETRY_CONTROLLER_PHASE_BUSY,
@@ -100,13 +100,13 @@ import {
 	IO_CMD_GEO_OVERLAP2D_PASS,
 	IO_CMD_GEO_SAT2_BATCH,
 	IO_CMD_GEO_XFORM2_BATCH,
-} from '../../src/bmsx/machine/devices/geometry/contracts';
-import { Machine } from '../../src/bmsx/machine/machine';
-import { captureMachineSaveState, restoreMachineSaveState } from '../../src/bmsx/machine/save_state';
-import { Memory } from '../../src/bmsx/machine/memory/memory';
-import { RAM_BASE } from '../../src/bmsx/machine/memory/map';
-import type { GeometryController } from '../../src/bmsx/machine/devices/geometry/controller';
-import type { GeometryControllerState } from '../../src/bmsx/machine/devices/geometry/save_state';
+} from '../../packages/bmsx-console/src/machine/devices/geometry/contracts';
+import { Machine } from '../../packages/bmsx-console/src/machine/machine';
+import { captureMachineSaveState, restoreMachineSaveState } from '../../packages/bmsx-console/src/machine/save_state';
+import { Memory } from '../../packages/bmsx-console/src/machine/memory/memory';
+import { RAM_BASE } from '../../packages/bmsx-console/src/machine/memory/map';
+import type { GeometryController } from '../../packages/bmsx-console/src/machine/devices/geometry/controller';
+import type { GeometryControllerState } from '../../packages/bmsx-console/src/machine/devices/geometry/save_state';
 
 
 function makeMachine(): Machine {

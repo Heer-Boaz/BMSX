@@ -3,7 +3,7 @@ import path from 'path';
 import { PNG } from 'pngjs';
 
 const workspaceRoot = process.cwd();
-const outputDir = path.join(workspaceRoot, 'src/carts/pietious/res/img/castle_stuff');
+const outputDir = path.join(workspaceRoot, 'carts/pietious/res/img/castle_stuff');
 const basePath = path.join(outputDir, 'water_surface_msx.png');
 const frameCount = 64;
 

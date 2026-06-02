@@ -1,19 +1,19 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 
-import { AcceptedInterruptKind, CPU, createNativeFunction, OpCode, RunResult, type Program, type ProgramMetadata, type Proto, type Value } from '../../src/bmsx/machine/cpu/cpu';
-import { writeInstruction, INSTRUCTION_BYTES } from '../../src/bmsx/machine/cpu/instruction_format';
-import { BASE_CYCLES } from '../../src/bmsx/machine/cpu/opcode_info';
-import { IO_IRQ_FLAGS, IRQ_VBLANK } from '../../src/bmsx/machine/bus/io';
-import { IrqController } from '../../src/bmsx/machine/devices/irq/controller';
-import { Machine } from '../../src/bmsx/machine/machine';
-import { captureMachineSaveState, captureMachineState, restoreMachineSaveState, restoreMachineState } from '../../src/bmsx/machine/save_state';
-import { Memory } from '../../src/bmsx/machine/memory/memory';
-import { callClosureInto, callClosureIntoWithScheduler } from '../../src/bmsx/machine/program/executor';
-import { CpuExecutionState } from '../../src/bmsx/machine/runtime/cpu_executor';
-import { FrameLoopState } from '../../src/bmsx/machine/runtime/frame/loop';
-import { FrameSchedulerState } from '../../src/bmsx/machine/scheduler/frame';
-import type { Runtime } from '../../src/bmsx/machine/runtime/runtime';
+import { AcceptedInterruptKind, CPU, createNativeFunction, OpCode, RunResult, type Program, type ProgramMetadata, type Proto, type Value } from '../../packages/bmsx-console/src/machine/cpu/cpu';
+import { writeInstruction, INSTRUCTION_BYTES } from '../../packages/bmsx-console/src/machine/cpu/instruction_format';
+import { BASE_CYCLES } from '../../packages/bmsx-console/src/machine/cpu/opcode_info';
+import { IO_IRQ_FLAGS, IRQ_VBLANK } from '../../packages/bmsx-console/src/machine/bus/io';
+import { IrqController } from '../../packages/bmsx-console/src/machine/devices/irq/controller';
+import { Machine } from '../../packages/bmsx-console/src/machine/machine';
+import { captureMachineSaveState, captureMachineState, restoreMachineSaveState, restoreMachineState } from '../../packages/bmsx-console/src/machine/save_state';
+import { Memory } from '../../packages/bmsx-console/src/machine/memory/memory';
+import { callClosureInto, callClosureIntoWithScheduler } from '../../packages/bmsx-console/src/machine/program/executor';
+import { CpuExecutionState } from '../../packages/bmsx-console/src/machine/runtime/cpu_executor';
+import { FrameLoopState } from '../../packages/bmsx-console/src/machine/runtime/frame/loop';
+import { FrameSchedulerState } from '../../packages/bmsx-console/src/machine/scheduler/frame';
+import type { Runtime } from '../../packages/bmsx-console/src/machine/runtime/runtime';
 
 function makeProto(codeLen: number): Proto {
 	return {

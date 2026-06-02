@@ -1,9 +1,9 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
-import { splitText } from '../../src/bmsx/common/text_lines';
-import { LuaLexer } from '../../src/bmsx/lua/syntax/lexer';
-import { LuaParser } from '../../src/bmsx/lua/syntax/parser';
-import { LuaSyntaxKind, LuaBinaryOperator, LuaAssignmentOperator, LuaUnaryOperator } from '../../src/bmsx/lua/syntax/ast';
+import { splitText } from '../../packages/bmsx-console/src/common/text_lines';
+import { LuaLexer } from '../../packages/bmsx-console/src/lua/syntax/lexer';
+import { LuaParser } from '../../packages/bmsx-console/src/lua/syntax/parser';
+import { LuaSyntaxKind, LuaBinaryOperator, LuaAssignmentOperator, LuaUnaryOperator } from '../../packages/bmsx-console/src/lua/syntax/ast';
 import type {
 	LuaChunk,
 	LuaCallStatement,
@@ -23,7 +23,7 @@ import type {
 	LuaStringLiteralExpression,
 	LuaTableConstructorExpression,
 	LuaIndexExpression,
-} from '../../src/bmsx/lua/syntax/ast';
+} from '../../packages/bmsx-console/src/lua/syntax/ast';
 
 function parseChunk(source: string): LuaChunk {
 	const lexer = new LuaLexer(source, 'path');

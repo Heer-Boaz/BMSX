@@ -7,8 +7,8 @@ Primary disassembly anchors (as documented in this repo history):
 - routines: `CODE_BFB538`, `CODE_BFB573`, `CODE_BFB159`, `DATA_BFB255`, `CODE_BFBD4F`, `CODE_BFBDA9`, `CODE_BFBDE7`
 
 Local source snapshots used:
-- `src/carts/esther/constants.lua` at commit `1c4122d5`
-- `src/carts/esther/player.lua` at commit `1c4122d5`
+- `carts/esther/constants.lua` at commit `1c4122d5`
+- `carts/esther/player.lua` at commit `1c4122d5`
 
 Rules used for the frame tables:
 - Speeds are in subpixels/frame (`0x0100 = 256 = 1 px/frame`).

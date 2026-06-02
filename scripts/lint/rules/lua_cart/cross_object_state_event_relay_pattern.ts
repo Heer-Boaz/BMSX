@@ -1,8 +1,8 @@
 import { defineLintRule } from '../../rule';
-import { type LuaCallExpression as CallExpression, LuaSyntaxKind as SyntaxKind } from '../../../../src/bmsx/lua/syntax/ast';
+import { type LuaCallExpression as CallExpression, LuaSyntaxKind as SyntaxKind } from '../../../../packages/bmsx-console/src/lua/syntax/ast';
 import { type CartLintIssue } from '../../lua_rule';
 import { forbiddenDispatchPatternRule } from './forbidden_dispatch_pattern';
-import { getCallReceiverExpression } from '../../../../src/bmsx/lua/syntax/calls';
+import { getCallReceiverExpression } from '../../../../packages/bmsx-console/src/lua/syntax/calls';
 import { isCrossObjectDispatchStateEventCallExpression, isObjectOrServiceResolverCallExpression } from './impl/support/object_ownership';
 import { activeLintRules, pushIssue } from './impl/support/lint_context';
 

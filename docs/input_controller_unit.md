@@ -173,27 +173,27 @@ Selected-player output support is a host capability bit and is not saved.
 
 ## Owners
 
-- TS: `src/bmsx/machine/devices/input/controller.ts`
-- TS registerfile: `src/bmsx/machine/devices/input/registers.ts`
-- TS control port: `src/bmsx/machine/devices/input/control_port.ts`
-- TS sample latch: `src/bmsx/machine/devices/input/sample_latch.ts`
-- TS sample edge: `src/bmsx/machine/devices/input/sample_edge.ts`
-- TS action table: `src/bmsx/machine/devices/input/action_table.ts`
-- TS query port: `src/bmsx/machine/devices/input/query_port.ts`
-- TS constants: `src/bmsx/machine/devices/input/contracts.ts`
-- TS FIFO: `src/bmsx/machine/devices/input/event_fifo.ts`
-- TS output port: `src/bmsx/machine/devices/input/output_port.ts`
-- TS aggregate save state: `src/bmsx/machine/devices/input/save_state.ts`
-- C++: `src/bmsx_cpp/machine/devices/input/controller.cpp/.h`
-- C++ registerfile: `src/bmsx_cpp/machine/devices/input/registers.cpp/.h`
-- C++ control port: `src/bmsx_cpp/machine/devices/input/control_port.cpp/.h`
-- C++ sample latch: `src/bmsx_cpp/machine/devices/input/sample_latch.cpp/.h`
-- C++ sample edge: `src/bmsx_cpp/machine/devices/input/sample_edge.cpp/.h`
-- C++ action table: `src/bmsx_cpp/machine/devices/input/action_table.cpp/.h`
-- C++ query port: `src/bmsx_cpp/machine/devices/input/query_port.cpp/.h`
-- C++ constants: `src/bmsx_cpp/machine/devices/input/contracts.h`
-- C++ FIFO: `src/bmsx_cpp/machine/devices/input/event_fifo.cpp/.h`
-- C++ output port: `src/bmsx_cpp/machine/devices/input/output_port.cpp/.h`
-- C++ aggregate save state: `src/bmsx_cpp/machine/devices/input/save_state.cpp/.h`
-- Runtime byte codec: `src/bmsx/machine/runtime/save_state/*` and
-  `src/bmsx_cpp/machine/runtime/save_state/*`
+- TS: `packages/bmsx-console/src/machine/devices/input/controller.ts`
+- TS registerfile: `packages/bmsx-console/src/machine/devices/input/registers.ts`
+- TS control port: `packages/bmsx-console/src/machine/devices/input/control_port.ts`
+- TS sample latch: `packages/bmsx-console/src/machine/devices/input/sample_latch.ts`
+- TS sample edge: `packages/bmsx-console/src/machine/devices/input/sample_edge.ts`
+- TS action table: `packages/bmsx-console/src/machine/devices/input/action_table.ts`
+- TS query port: `packages/bmsx-console/src/machine/devices/input/query_port.ts`
+- TS constants: `packages/bmsx-console/src/machine/devices/input/contracts.ts`
+- TS FIFO: `packages/bmsx-console/src/machine/devices/input/event_fifo.ts`
+- TS output port: `packages/bmsx-console/src/machine/devices/input/output_port.ts`
+- TS aggregate save state: `packages/bmsx-console/src/machine/devices/input/save_state.ts`
+- C++: `native/machine/machine/devices/input/controller.cpp/.h`
+- C++ registerfile: `native/machine/machine/devices/input/registers.cpp/.h`
+- C++ control port: `native/machine/machine/devices/input/control_port.cpp/.h`
+- C++ sample latch: `native/machine/machine/devices/input/sample_latch.cpp/.h`
+- C++ sample edge: `native/machine/machine/devices/input/sample_edge.cpp/.h`
+- C++ action table: `native/machine/machine/devices/input/action_table.cpp/.h`
+- C++ query port: `native/machine/machine/devices/input/query_port.cpp/.h`
+- C++ constants: `native/machine/machine/devices/input/contracts.h`
+- C++ FIFO: `native/machine/machine/devices/input/event_fifo.cpp/.h`
+- C++ output port: `native/machine/machine/devices/input/output_port.cpp/.h`
+- C++ aggregate save state: `native/machine/machine/devices/input/save_state.cpp/.h`
+- Runtime byte codec: `packages/bmsx-console/src/machine/runtime/save_state/*` and
+  `native/machine/machine/runtime/save_state/*`

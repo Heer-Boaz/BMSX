@@ -15,26 +15,27 @@ See `docs/architecture.md` for the machine/host boundary rules.
 
 ## Project Layout
 
-- `src/bmsx/machine`: CPU, memory, MMIO bus, device controllers, firmware, program loader, and runtime lifecycle
-- `src/bmsx/core`: shared runtime coordination and system bootstrap
-- `src/bmsx/common`: low-level shared helpers
-- `src/bmsx/audio`: host-side audio playback/output code, not the machine audio device
-- `src/bmsx/ide`: editor, terminal, workbench, and IDE runtime tooling
-- `src/bmsx/res`: BIOS/system ROM resources
-- `src/bmsx_hostplatform`: browser, headless, and CLI host services
-- `src/bmsx_cpp/machine`: C++ machine/runtime implementation
-- `src/bmsx_cpp/platform/libretro`: native libretro adapter exposing BMSX as a libretro core
-- `src/bmsx_cpp/platform/libretro_host`: native host executable that loads a libretro adapter/core
-- `src/carts`: Lua cart software for the machine and cart-local resources
+- `packages/bmsx-console/src/machine`: CPU, memory, MMIO bus, device controllers, firmware, program loader, and runtime lifecycle
+- `packages/bmsx-console/src/core`: shared runtime coordination and system bootstrap
+- `packages/bmsx-console/src/common`: low-level shared helpers
+- `packages/bmsx-console/src/audio`: host-side audio playback/output code, not the machine audio device
+- `packages/bmsx-console/src/ide`: editor, terminal, workbench, and IDE runtime tooling
+- `packages/bmsx-console/src/res`: BIOS/system ROM resources
+- `packages/bmsx-browser-host/src`: browser host services
+- `packages/bmsx-node-host/src`: headless and CLI host services
+- `native/machine`: C++ machine/runtime implementation
+- `native/adapters/libretro`: native libretro adapter exposing BMSX as a libretro core
+- `native/hosts/libretro_host`: native host executable that loads a libretro adapter/core
+- `carts`: Lua cart software for the machine and cart-local resources
 - `scripts/rompacker`: BIOS/cart/platform builders
 - `scripts/bootrom`: browser and Node boot entrypoints
 - `dist`: generated ROMs and runtime artifacts
 
 ## Build Model
 
-- BIOS/system assets live in `src/bmsx/res`
-- current carts live in `src/carts/<cart-folder>`
-- current cart resources live in `src/carts/<cart-folder>/res`
+- BIOS/system assets live in `packages/bmsx-console/src/res`
+- current carts live in `carts/<cart-folder>`
+- current cart resources live in `carts/<cart-folder>/res`
 - `build:game` takes the cart folder name, not the ROM manifest name
 - headless/CLI use debug artifacts
 - libretro/custom-host runs require non-debug BIOS and non-debug cart ROMs
@@ -205,6 +206,6 @@ Important:
 ## Notes
 
 - `build:game` means “build a Lua cart ROM”
-- cart folder resolution is `src/carts/<name>`
+- cart folder resolution is `carts/<name>`
 - old TypeScript full-game projects were removed instead of being kept as compatibility fallbacks
 - the last complete branch that still contains the old TypeScript full-game runtime lives at `archive/ts-full-engine`

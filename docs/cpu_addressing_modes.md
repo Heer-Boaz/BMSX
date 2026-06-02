@@ -212,20 +212,20 @@ This is a **mirrored ISA change** and must land in both cores simultaneously.
 
 | File | Change |
 |------|--------|
-| `src/bmsx/machine/cpu/opcode_info.ts` | Replace the 7 dead slots (see Opcode cleanup section) |
-| `src/bmsx/machine/cpu/cpu.ts` | Remove 7 dead dispatch cases; add dispatch for `LOAD_MEM_D`, `STORE_MEM_D`, `STORE_MEM_WORDS_D`: decode `ext` as displacement, compute `base + (ext << 2)`, dispatch to existing memory access helpers |
-| `src/bmsx/machine/cpu/disassembler.ts` | Replace name/format entries for all removed opcodes |
-| `src/bmsx/machine/cpu/profiler.ts` | Include new memory opcodes in memory-opcode detection |
-| `src/bmsx/machine/program/compiler.ts` | Rename `BR_TRUE`→`JMPIF`, `BR_FALSE`→`JMPIFNOT`; remove `GETG`/`SETG` from `isConstBxOp`/`isGlobalSlotOp`; add compiler-side emit path: fold `base_reg + word_aligned_const ≤ 1020` into the `_D` variant |
-| `src/bmsx/machine/program/control_flow.ts` | Remove `LOADBOOL`; replace `BR_TRUE`/`BR_FALSE` with `JMPIF`/`JMPIFNOT` |
-| `src/bmsx/machine/program/optimizer/ssa.ts` | Remove all `LOADBOOL`, `TEST`, `TESTSET` handling; replace `BR_TRUE`/`BR_FALSE` with `JMPIF`/`JMPIFNOT` |
+| `packages/bmsx-console/src/machine/cpu/opcode_info.ts` | Replace the 7 dead slots (see Opcode cleanup section) |
+| `packages/bmsx-console/src/machine/cpu/cpu.ts` | Remove 7 dead dispatch cases; add dispatch for `LOAD_MEM_D`, `STORE_MEM_D`, `STORE_MEM_WORDS_D`: decode `ext` as displacement, compute `base + (ext << 2)`, dispatch to existing memory access helpers |
+| `packages/bmsx-console/src/machine/cpu/disassembler.ts` | Replace name/format entries for all removed opcodes |
+| `packages/bmsx-console/src/machine/cpu/profiler.ts` | Include new memory opcodes in memory-opcode detection |
+| `packages/bmsx-console/src/machine/program/compiler.ts` | Rename `BR_TRUE`→`JMPIF`, `BR_FALSE`→`JMPIFNOT`; remove `GETG`/`SETG` from `isConstBxOp`/`isGlobalSlotOp`; add compiler-side emit path: fold `base_reg + word_aligned_const ≤ 1020` into the `_D` variant |
+| `packages/bmsx-console/src/machine/program/control_flow.ts` | Remove `LOADBOOL`; replace `BR_TRUE`/`BR_FALSE` with `JMPIF`/`JMPIFNOT` |
+| `packages/bmsx-console/src/machine/program/optimizer/ssa.ts` | Remove all `LOADBOOL`, `TEST`, `TESTSET` handling; replace `BR_TRUE`/`BR_FALSE` with `JMPIF`/`JMPIFNOT` |
 
 ### C++
 
 | File | Change |
 |------|--------|
-| `src/bmsx_cpp/machine/cpu/opcode_info.h` | Same replacements |
-| `src/bmsx_cpp/machine/cpu/cpu.cpp` | Same dispatch changes |
+| `native/machine/machine/cpu/opcode_info.h` | Same replacements |
+| `native/machine/machine/cpu/cpu.cpp` | Same dispatch changes |
 
 ### Tests
 

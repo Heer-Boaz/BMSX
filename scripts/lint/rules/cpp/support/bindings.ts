@@ -1,6 +1,6 @@
-import { type FunctionInfo } from '../../../../../src/bmsx/language/cpp/syntax/declarations';
-import { isAssignmentOperator } from '../../../../../src/bmsx/language/cpp/syntax/syntax';
-import { type Token } from '../../../../../src/bmsx/language/cpp/syntax/tokens';
+import { type FunctionInfo } from '../../../../../packages/bmsx-console/src/language/cpp/syntax/declarations';
+import { isAssignmentOperator } from '../../../../../packages/bmsx-console/src/language/cpp/syntax/syntax';
+import { type Token } from '../../../../../packages/bmsx-console/src/language/cpp/syntax/tokens';
 import { type AnalysisRegion, lineInAnalysisRegion } from '../../../../analysis/lint_suppressions';
 import { DECLARATION_PREFIX_ALLOWED_OPERATORS, DECLARATION_PREFIX_ALLOWED_PUNCTUATION, isSingleUseSuppressingToken, isTokenTemporalSnapshotName } from './ast';
 import { isHotPathFunction } from './numeric';

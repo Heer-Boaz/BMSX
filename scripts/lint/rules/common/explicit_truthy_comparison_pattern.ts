@@ -1,6 +1,6 @@
-import { LuaBinaryOperator as BinaryOperator, LuaSyntaxKind as SyntaxKind, type LuaExpression as Expression } from '../../../../src/bmsx/lua/syntax/ast';
-import { isBooleanToken } from '../../../../src/bmsx/language/cpp/syntax/syntax';
-import type { Token } from '../../../../src/bmsx/language/cpp/syntax/tokens';
+import { LuaBinaryOperator as BinaryOperator, LuaSyntaxKind as SyntaxKind, type LuaExpression as Expression } from '../../../../packages/bmsx-console/src/lua/syntax/ast';
+import { isBooleanToken } from '../../../../packages/bmsx-console/src/language/cpp/syntax/syntax';
+import type { Token } from '../../../../packages/bmsx-console/src/language/cpp/syntax/tokens';
 import { lintAdjacentEqualityComparison } from '../cpp/support/comparison';
 import type { LintIssue } from '../cpp/support/diagnostics';
 import type { CartLintIssue, CartLintIssuePusher } from '../../lua_rule';

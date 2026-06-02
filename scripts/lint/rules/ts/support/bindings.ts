@@ -1,6 +1,6 @@
 import ts from 'typescript';
-import { getPropertyName, isVariableImportExportName } from '../../../../../src/bmsx/language/ts/ast/expressions';
-import { isAssignmentOperator } from '../../../../../src/bmsx/language/ts/ast/operators';
+import { getPropertyName, isVariableImportExportName } from '../../../../../packages/bmsx-console/src/language/ts/ast/expressions';
+import { isAssignmentOperator } from '../../../../../packages/bmsx-console/src/language/ts/ast/operators';
 
 export function getClassScopePath(node: ts.Node): string | null {
 	const parts: string[] = [];

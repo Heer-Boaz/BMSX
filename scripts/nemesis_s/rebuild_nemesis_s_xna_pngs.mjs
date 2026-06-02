@@ -5,7 +5,7 @@ import path from 'node:path';
 import { PNG } from 'pngjs';
 
 const workspaceRoot = process.cwd();
-const outputDir = path.join(workspaceRoot, 'src/carts/nemesis_s/res/img');
+const outputDir = path.join(workspaceRoot, 'carts/nemesis_s/res/img');
 const sourceRoot = path.join(
 	workspaceRoot,
 	'.external/nemesis-s-bdx/UltimateMechSpaceWar/UltimateMechSpaceWarContent/Images',

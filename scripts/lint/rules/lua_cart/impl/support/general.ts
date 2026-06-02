@@ -1,6 +1,6 @@
-import { LuaBinaryOperator as BinaryOperator, type LuaBooleanLiteralExpression as BooleanLiteralExpression, type LuaExpression as Expression, type LuaFunctionExpression as CartFunctionExpression, type LuaIdentifierExpression as IdentifierExpression, type LuaIfStatement as IfStatement, type LuaIndexExpression as IndexExpression, type LuaMemberExpression as MemberExpression, type LuaNumericLiteralExpression as NumericLiteralExpression, type LuaStatement as Statement, type LuaStringLiteralExpression as StringLiteralExpression, LuaSyntaxKind as SyntaxKind } from '../../../../../../src/bmsx/lua/syntax/ast';
+import { LuaBinaryOperator as BinaryOperator, type LuaBooleanLiteralExpression as BooleanLiteralExpression, type LuaExpression as Expression, type LuaFunctionExpression as CartFunctionExpression, type LuaIdentifierExpression as IdentifierExpression, type LuaIfStatement as IfStatement, type LuaIndexExpression as IndexExpression, type LuaMemberExpression as MemberExpression, type LuaNumericLiteralExpression as NumericLiteralExpression, type LuaStatement as Statement, type LuaStringLiteralExpression as StringLiteralExpression, LuaSyntaxKind as SyntaxKind } from '../../../../../../packages/bmsx-console/src/lua/syntax/ast';
 import { conditionComparesIdentifierWithValue, getReturnedCallToIdentifier, isIdentifier } from './bindings';
-import { isErrorCallExpression } from '../../../../../../src/bmsx/lua/syntax/calls';
+import { isErrorCallExpression } from '../../../../../../packages/bmsx-console/src/lua/syntax/calls';
 import { isNilExpression } from './conditions';
 import { getLocalAssignmentIfFunctionBody } from './function_shapes';
 import { removeLabel } from './fsm_labels';

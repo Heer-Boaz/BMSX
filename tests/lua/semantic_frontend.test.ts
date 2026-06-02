@@ -1,9 +1,9 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 
-import { buildLuaSemanticFrontend } from '../../src/bmsx/lua/semantic/frontend';
-import { createLuaSemanticFrontendFromSnapshot } from '../../src/bmsx/ide/editor/contrib/intellisense/semantic/workspace';
-import { LuaSemanticWorkspace } from '../../src/bmsx/lua/semantic/model';
+import { buildLuaSemanticFrontend } from '../../packages/bmsx-console/src/lua/semantic/frontend';
+import { createLuaSemanticFrontendFromSnapshot } from '../../packages/bmsx-console/src/ide/editor/contrib/intellisense/semantic/workspace';
+import { LuaSemanticWorkspace } from '../../packages/bmsx-console/src/lua/semantic/model';
 
 test('LuaSemanticFrontend accepts shared runtime globals without diagnostics', () => {
 	const source = 'return sys_boot_cart, sys_vdp_stream_base, cart_manifest';

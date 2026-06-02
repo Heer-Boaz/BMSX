@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 
-import { createNativeFunction } from '../../src/bmsx/machine/cpu/cpu';
+import { createNativeFunction } from '../../packages/bmsx-console/src/machine/cpu/cpu';
 
 test('native cost resolution uses flat tiers by function category', () => {
 	assert.deepEqual(createNativeFunction('clock_now', () => {}).cost, { base: 0, perArg: 0, perRet: 0 });

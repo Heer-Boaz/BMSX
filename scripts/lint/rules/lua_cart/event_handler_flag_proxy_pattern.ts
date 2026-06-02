@@ -1,5 +1,5 @@
 import { defineLintRule } from '../../rule';
-import { type LuaStatement as Statement } from '../../../../src/bmsx/lua/syntax/ast';
+import { type LuaStatement as Statement } from '../../../../packages/bmsx-console/src/lua/syntax/ast';
 import { type CartLintIssue } from '../../lua_rule';
 import { isEventProxyFlagPropertyName } from './impl/support/general';
 import { pushIssue } from './impl/support/lint_context';

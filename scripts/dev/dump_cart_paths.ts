@@ -1,4 +1,4 @@
-import { normalizeCartridgeBlob, parseCartridgeIndex } from '../../src/bmsx/rompack/loader';
+import { normalizeCartridgeBlob, parseCartridgeIndex } from '../../packages/bmsx-console/src/rompack/loader';
 import { readFile } from 'node:fs/promises';
 import path from 'node:path';
 

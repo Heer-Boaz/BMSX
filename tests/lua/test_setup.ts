@@ -30,12 +30,12 @@ if (!extensions['.glsl']) {
 
 const originalLoad = (Module as any)._load;
 const resolveFilename = (Module as any)._resolveFilename;
-const registryModulePath = path.resolve(__dirname, '../../src/bmsx/core/registry.ts');
-const fsmlibraryModulePath = path.resolve(__dirname, '../../src/bmsx/fsm/fsmlibrary.ts');
-const stateModulePath = path.resolve(__dirname, '../../src/bmsx/fsm/state.ts');
-const gameModulePath = path.resolve(__dirname, '../../src/bmsx/core/console.ts');
-const worldModulePath = path.resolve(__dirname, '../../src/bmsx/core/world.ts');
-const spaceModulePath = path.resolve(__dirname, '../../src/bmsx/core/space.ts');
+const registryModulePath = path.resolve(__dirname, '../../packages/bmsx-console/src/core/registry.ts');
+const fsmlibraryModulePath = path.resolve(__dirname, '../../packages/bmsx-console/src/fsm/fsmlibrary.ts');
+const stateModulePath = path.resolve(__dirname, '../../packages/bmsx-console/src/fsm/state.ts');
+const gameModulePath = path.resolve(__dirname, '../../packages/bmsx-console/src/core/console.ts');
+const worldModulePath = path.resolve(__dirname, '../../packages/bmsx-console/src/core/world.ts');
+const spaceModulePath = path.resolve(__dirname, '../../packages/bmsx-console/src/core/space.ts');
 
 const worldStub = {
 	objToSpaceMap: new Map<string, string>(),
@@ -146,13 +146,13 @@ const stateExports = {
 };
 
 (Module as any)._load = function (request: string, parent: any, isMain: boolean) {
-	if (request.includes('/src/bmsx/core/registry')) {
+	if (request.includes('/packages/bmsx-console/src/core/registry')) {
 		return { Registry: TestRegistry, default: TestRegistry };
 	}
-	if (request.includes('/src/bmsx/fsm/fsmlibrary')) {
+	if (request.includes('/packages/bmsx-console/src/fsm/fsmlibrary')) {
 		return fsmlibraryExports;
 	}
-	if (request.includes('/src/bmsx/fsm/state')) {
+	if (request.includes('/packages/bmsx-console/src/fsm/state')) {
 		return stateExports;
 	}
 	const resolved = resolveFilename.call(this, request, parent, isMain);

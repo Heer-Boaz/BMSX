@@ -1,4 +1,4 @@
-import { LuaAssignmentOperator as AssignmentOperator, LuaBinaryOperator as BinaryOperator, type LuaCallExpression as CallExpression, type LuaExpression as Expression, type LuaFunctionExpression as CartFunctionExpression, type LuaIdentifierExpression as IdentifierExpression, type LuaStatement as Statement, LuaSyntaxKind as SyntaxKind } from '../../../../../../src/bmsx/lua/syntax/ast';
+import { LuaAssignmentOperator as AssignmentOperator, LuaBinaryOperator as BinaryOperator, type LuaCallExpression as CallExpression, type LuaExpression as Expression, type LuaFunctionExpression as CartFunctionExpression, type LuaIdentifierExpression as IdentifierExpression, type LuaStatement as Statement, LuaSyntaxKind as SyntaxKind } from '../../../../../../packages/bmsx-console/src/lua/syntax/ast';
 import { evaluateTopLevelStringConstantExpression } from './conditions';
 import { getConstantCopyBinding } from './constant_copy';
 import { getExpressionKeyName } from './expression_signatures';

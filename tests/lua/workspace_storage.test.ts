@@ -1,12 +1,12 @@
 import './test_setup';
 import assert from 'node:assert/strict';
 import { test, type TestContext } from 'node:test';
-import type { CodeTabContext } from '../../src/bmsx/ide/common/models';
-import type { StorageService } from '../../src/bmsx/platform/platform';
-import { consoleCore as $ } from '../../src/bmsx/core/console';
-import { PieceTreeBuffer } from '../../src/bmsx/ide/editor/text/piece_tree_buffer';
-import { getTextSnapshot } from '../../src/bmsx/ide/editor/text/source_text';
-import { workspaceSourceCache } from '../../src/bmsx/ide/workspace/cache';
+import type { CodeTabContext } from '../../packages/bmsx-console/src/ide/common/models';
+import type { StorageService } from '../../packages/bmsx-console/src/platform/platform';
+import { consoleCore as $ } from '../../packages/bmsx-console/src/core/console';
+import { PieceTreeBuffer } from '../../packages/bmsx-console/src/ide/editor/text/piece_tree_buffer';
+import { getTextSnapshot } from '../../packages/bmsx-console/src/ide/editor/text/source_text';
+import { workspaceSourceCache } from '../../packages/bmsx-console/src/ide/workspace/cache';
 import {
 	WORKSPACE_METADATA_DIR,
 	WORKSPACE_MARKER_FILE,
@@ -14,15 +14,15 @@ import {
 	buildWorkspaceDirtyEntryPath,
 	buildWorkspaceStorageKey,
 	joinWorkspacePaths,
-} from '../../src/bmsx/ide/workspace/files';
+} from '../../packages/bmsx-console/src/ide/workspace/files';
 import {
 	clearOpenWorkspacePathDirtyState,
 	collectUnsavedWorkspaceSourcePaths,
 	setOpenWorkspacePathDirty,
-} from '../../src/bmsx/ide/workspace/open_dirty';
-import { codeTabSessionState } from '../../src/bmsx/ide/workbench/ui/code_tab/session_state';
-import { tabSessionState } from '../../src/bmsx/ide/workbench/ui/tab/session_state';
-import { collectDirtyContextEntries, persistDirtyContextEntries } from '../../src/bmsx/ide/workbench/workspace/autosave';
+} from '../../packages/bmsx-console/src/ide/workspace/open_dirty';
+import { codeTabSessionState } from '../../packages/bmsx-console/src/ide/workbench/ui/code_tab/session_state';
+import { tabSessionState } from '../../packages/bmsx-console/src/ide/workbench/ui/tab/session_state';
+import { collectDirtyContextEntries, persistDirtyContextEntries } from '../../packages/bmsx-console/src/ide/workbench/workspace/autosave';
 import {
 	buildDirtyFilePath,
 	configureWorkspaceStorage,
@@ -30,13 +30,13 @@ import {
 	readWorkspaceStateFile,
 	writeWorkspaceFile,
 	writeWorkspaceStateFile,
-} from '../../src/bmsx/ide/workbench/workspace/io';
-import { hydrateDirtyFiles } from '../../src/bmsx/ide/workbench/workspace/restore';
-import { captureActiveCodeTabSource } from '../../src/bmsx/ide/workbench/ui/code_tab/activation';
-import { captureContextText } from '../../src/bmsx/ide/workbench/workspace/context_snapshot';
-import { editorDocumentState } from '../../src/bmsx/ide/editor/editing/document_state';
-import type { LuaSourceRegistry } from '../../src/bmsx/machine/program/sources';
-import { saveLuaResourceSource } from '../../src/bmsx/ide/workspace/workspace';
+} from '../../packages/bmsx-console/src/ide/workbench/workspace/io';
+import { hydrateDirtyFiles } from '../../packages/bmsx-console/src/ide/workbench/workspace/restore';
+import { captureActiveCodeTabSource } from '../../packages/bmsx-console/src/ide/workbench/ui/code_tab/activation';
+import { captureContextText } from '../../packages/bmsx-console/src/ide/workbench/workspace/context_snapshot';
+import { editorDocumentState } from '../../packages/bmsx-console/src/ide/editor/editing/document_state';
+import type { LuaSourceRegistry } from '../../packages/bmsx-console/src/machine/program/sources';
+import { saveLuaResourceSource } from '../../packages/bmsx-console/src/ide/workspace/workspace';
 
 class MockStorage implements StorageService {
 	private readonly store = new Map<string, string>();
@@ -444,7 +444,7 @@ test('explicit lua save promotes canonical source and removes dirty entry', asyn
 		systemLuaSources: null,
 		activeLuaSources: registry,
 		cartProjectRootPath: 'offline-cart',
-		systemProjectRootPath: 'src/bmsx',
+		systemProjectRootPath: 'packages/bmsx-console/src',
 		storageService: storage,
 		clock: { dateNow: () => 42 },
 		luaGenericChunksExecuted: new Set<string>(),

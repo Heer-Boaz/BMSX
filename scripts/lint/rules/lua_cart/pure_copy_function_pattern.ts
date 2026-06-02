@@ -1,5 +1,5 @@
 import { defineLintRule } from '../../rule';
-import { type LuaFunctionExpression as CartFunctionExpression } from '../../../../src/bmsx/lua/syntax/ast';
+import { type LuaFunctionExpression as CartFunctionExpression } from '../../../../packages/bmsx-console/src/lua/syntax/ast';
 import { type CartLintIssue } from '../../lua_rule';
 import { matchesPureCopyFunctionPattern } from './impl/support/functions';
 import { pushIssue } from './impl/support/lint_context';

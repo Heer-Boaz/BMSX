@@ -1,10 +1,10 @@
 {
 	"files": [],
 	"references": [
-	{ "path": "./src/bmsx" }
+	{ "path": "./packages/bmsx-console" }
 	],
 	"exclude": [
-	"./src/tests/**.*",
-	"./src/scripts/ast-transform/**.*",
+	"./tests/**.*",
+	"./scripts/ast-transform/**.*",
 	],
 }

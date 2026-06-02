@@ -1,4 +1,4 @@
-import { LuaAssignmentOperator as AssignmentOperator, type LuaAssignmentStatement as AssignmentStatement, LuaBinaryOperator as BinaryOperator, type LuaExpression as Expression, type LuaIfStatement as IfStatement, type LuaStatement as Statement, LuaSyntaxKind as SyntaxKind, LuaUnaryOperator as UnaryOperator } from '../../../../../../src/bmsx/lua/syntax/ast';
+import { LuaAssignmentOperator as AssignmentOperator, type LuaAssignmentStatement as AssignmentStatement, LuaBinaryOperator as BinaryOperator, type LuaExpression as Expression, type LuaIfStatement as IfStatement, type LuaStatement as Statement, LuaSyntaxKind as SyntaxKind, LuaUnaryOperator as UnaryOperator } from '../../../../../../packages/bmsx-console/src/lua/syntax/ast';
 import { getRootIdentifier, isIdentifier } from './bindings';
 import { isFalseOrNilExpression, isNilExpression } from './conditions';
 import { getExpressionKeyName } from './expression_signatures';

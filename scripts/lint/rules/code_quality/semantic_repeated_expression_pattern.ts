@@ -1,8 +1,8 @@
 import type { RepeatedExpressionInfo } from '../ts/support/ast';
 import { defineLintRule } from '../../rule';
-import { type FunctionInfo } from '../../../../src/bmsx/language/cpp/syntax/declarations';
-import { cppCallTarget, findAccessChainStart } from '../../../../src/bmsx/language/cpp/syntax/syntax';
-import { type Token, normalizedTokenText } from '../../../../src/bmsx/language/cpp/syntax/tokens';
+import { type FunctionInfo } from '../../../../packages/bmsx-console/src/language/cpp/syntax/declarations';
+import { cppCallTarget, findAccessChainStart } from '../../../../packages/bmsx-console/src/language/cpp/syntax/syntax';
+import { type Token, normalizedTokenText } from '../../../../packages/bmsx-console/src/language/cpp/syntax/tokens';
 import { compactSampleText } from '../../text';
 import { type LintIssue } from '../cpp/support/diagnostics';
 import { isNumericSanitizationCall } from '../cpp/support/numeric';

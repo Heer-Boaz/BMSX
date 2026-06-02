@@ -1,10 +1,10 @@
-import type { FunctionInfo } from '../../../../src/bmsx/language/cpp/syntax/declarations';
+import type { FunctionInfo } from '../../../../packages/bmsx-console/src/language/cpp/syntax/declarations';
 import {
 	cppRangeHas,
 	findTopLevelSemicolon,
 	trimmedExpressionText,
-} from '../../../../src/bmsx/language/cpp/syntax/syntax';
-import type { Token } from '../../../../src/bmsx/language/cpp/syntax/tokens';
+} from '../../../../packages/bmsx-console/src/language/cpp/syntax/syntax';
+import type { Token } from '../../../../packages/bmsx-console/src/language/cpp/syntax/tokens';
 import { pushTokenLintIssue } from '../cpp/support/diagnostics';
 import { defineLintRule } from '../../rule';
 import { type LintIssue } from '../ts/support/ast';

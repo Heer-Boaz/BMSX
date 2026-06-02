@@ -8,7 +8,7 @@ const sourcePath = path.join(
 	workspaceRoot,
 	'.external/nemesis-s-bdx/UltimateMechSpaceWar/UltimateMechSpaceWar/Models/Stages/StageFactory.cs',
 );
-const outputPath = path.join(workspaceRoot, 'src/carts/nemesis_s/res/data/nemesis_s_stage.yaml');
+const outputPath = path.join(workspaceRoot, 'carts/nemesis_s/res/data/nemesis_s_stage.yaml');
 
 function assert(condition, message) {
 	if (!condition) {

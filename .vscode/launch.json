@@ -21,7 +21,7 @@
 				"/home/boaz/BMSX/scripts/*": "${workspaceFolder}/scripts/*",
 				// "file:///B:/BMSX/scripts/*": "${workspaceFolder}/scripts/*",
 				// "../scripts/*": "${workspaceFolder}/scripts/*",
-				"*": "${workspaceFolder}/src/*"
+				"*": "${workspaceFolder}/*"
 			},
 			"showAsyncStacks": true,
 			"smartStep": true,
@@ -79,7 +79,7 @@
 			"sourceMapPathOverrides": {
 				"file:///home/boaz/BMSX/scripts/*": "${workspaceFolder}/scripts/*",
 				"/home/boaz/BMSX/scripts/*": "${workspaceFolder}/scripts/*",
-				"*": "${workspaceFolder}/src/*"
+				"*": "${workspaceFolder}/*"
 			},
 			"showAsyncStacks": true,
 			"smartStep": true,
@@ -104,7 +104,7 @@
 			"sourceMapPathOverrides": {
 				"file:///home/boaz/BMSX/scripts/*": "${workspaceFolder}/scripts/*",
 				"/home/boaz/BMSX/scripts/*": "${workspaceFolder}/scripts/*",
-				"*": "${workspaceFolder}/src/*"
+				"*": "${workspaceFolder}/*"
 			},
 			"showAsyncStacks": false,
 			"smartStep": true,
@@ -128,7 +128,7 @@
 			"sourceMapPathOverrides": {
 				"file:///home/boaz/BMSX/scripts/*": "${workspaceFolder}/scripts/*",
 				"/home/boaz/BMSX/scripts/*": "${workspaceFolder}/scripts/*",
-				"*": "${workspaceFolder}/src/*"
+				"*": "${workspaceFolder}/*"
 			},
 			"showAsyncStacks": false,
 			"smartStep": true,
@@ -153,7 +153,7 @@
 			"sourceMapPathOverrides": {
 				"file:///home/boaz/BMSX/scripts/*": "${workspaceFolder}/scripts/*",
 				"/home/boaz/BMSX/scripts/*": "${workspaceFolder}/scripts/*",
-				"*": "${workspaceFolder}/src/*"
+				"*": "${workspaceFolder}/*"
 			},
 			"showAsyncStacks": false,
 			"smartStep": true,

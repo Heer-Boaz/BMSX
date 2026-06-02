@@ -1,4 +1,4 @@
-import { type LuaExpression as Expression, type LuaIdentifierExpression as IdentifierExpression } from '../../../../../../src/bmsx/lua/syntax/ast';
+import { type LuaExpression as Expression, type LuaIdentifierExpression as IdentifierExpression } from '../../../../../../packages/bmsx-console/src/lua/syntax/ast';
 import { type CartLintIssue } from '../../../../lua_rule';
 import { type LintRuleName } from '../../../../rule';
 

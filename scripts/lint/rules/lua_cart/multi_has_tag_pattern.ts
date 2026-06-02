@@ -1,5 +1,5 @@
 import { defineLintRule } from '../../rule';
-import { type LuaExpression as Expression, type LuaIfStatement as IfStatement } from '../../../../src/bmsx/lua/syntax/ast';
+import { type LuaExpression as Expression, type LuaIfStatement as IfStatement } from '../../../../packages/bmsx-console/src/lua/syntax/ast';
 import { type CartLintIssue } from '../../lua_rule';
 import { countHasTagCalls, countSplitNestedIfHasTagCalls } from './impl/support/tags';
 import { pushIssue } from './impl/support/lint_context';

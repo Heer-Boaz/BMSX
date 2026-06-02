@@ -50,10 +50,10 @@ import {
 	collectClassRanges,
 	collectFunctionDefinitions,
 	collectTypeDeclarations,
-} from '../../../src/bmsx/language/cpp/syntax/declarations';
+} from '../../../packages/bmsx-console/src/language/cpp/syntax/declarations';
 import { addTokenRepeatedStatementSequenceIssues, collectTokenRepeatedStatementSequences, type TokenStatementSequenceInfo } from '../../lint/rules/common/repeated_statement_sequence_pattern';
-import { buildPairMap, tokenize } from '../../../src/bmsx/language/cpp/syntax/tokens';
-import type { ClassRange, FunctionInfo, TypeDeclarationInfo } from '../../../src/bmsx/language/cpp/syntax/declarations';
+import { buildPairMap, tokenize } from '../../../packages/bmsx-console/src/language/cpp/syntax/tokens';
+import type { ClassRange, FunctionInfo, TypeDeclarationInfo } from '../../../packages/bmsx-console/src/language/cpp/syntax/declarations';
 
 type FileAnalysis = {
 	file: string;

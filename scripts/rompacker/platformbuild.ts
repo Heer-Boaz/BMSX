@@ -96,7 +96,7 @@ function ensureLibretroCoreBuilt(debug: boolean, platform: RomPackerTarget, logg
 	const buildDir = getLibretroBuildDir(platform);
 	logger.info(`Using build dir ${pc.white(buildDir)} (${buildType})`);
 	const cmakeArgs = [
-		'-S', 'src/bmsx_cpp', '-B', buildDir,
+		'-S', 'native/machine', '-B', buildDir,
 		'-G', 'Ninja',
 		`-DCMAKE_BUILD_TYPE=${buildType}`,
 		'-DBMSX_BUILD_LIBRETRO=ON',
@@ -174,7 +174,7 @@ export async function runPlatformBuild(options: PlatformBuildOptions, logger: Bu
 
 	await runStep('Build host system atlas', async () => {
 		const updated = await ensureHostSystemAtlasArtifacts();
-		logger.ok(`Host system atlas → ${pc.white('src/bmsx*/rompack/host_system_atlas.generated')} ${updated ? '' : pc.dim('(up-to-date)')}`);
+		logger.ok(`Host system atlas → ${pc.white('packages/bmsx-console/src/rompack/host_system_atlas.generated')} ${updated ? '' : pc.dim('(up-to-date)')}`);
 	});
 
 	if (platform.startsWith('libretro')) {
@@ -228,7 +228,7 @@ export async function runBrowserDeploy(options: BrowserDeployOptions, logger: Bu
 		throw new Error('Deploy requires -romname <cart-folder>.');
 	}
 	if (!respath || respath.length === 0) {
-		throw new Error('Deploy requires a resolved -respath (expected "./src/<cart>/res").');
+		throw new Error('Deploy requires a resolved -respath (expected "carts/<cart>/res").');
 	}
 
 	const romManifest = await getRomManifest(respath);

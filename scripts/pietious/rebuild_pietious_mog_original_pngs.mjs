@@ -6,7 +6,7 @@ import vm from 'node:vm';
 import { PNG } from 'pngjs';
 
 const workspaceRoot = process.cwd();
-const outputDir = path.join(workspaceRoot, 'src/carts/pietious/res/img');
+const outputDir = path.join(workspaceRoot, 'carts/pietious/res/img');
 const mogRoot = process.env.MOG_EMSCRIPTEN_ROOT ?? '/tmp/mog-emscripten-ref';
 const xnaRoot = process.env.MAZE_OF_NICOLAAS_XNA_ROOT ?? '/tmp/Maze-of-Nicolaas-XNA-ref/Maze of Nicolaas XNA';
 const xnaSourceRoots = [

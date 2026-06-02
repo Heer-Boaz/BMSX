@@ -1,8 +1,8 @@
 import * as fs from 'node:fs/promises';
 import * as path from 'node:path';
 
-import { extractErrorMessage } from '../../../../src/bmsx/lua/value';
-import type { InputEvt } from '../../../../src/bmsx_hostplatform/platform';
+import { extractErrorMessage } from '../../../../packages/bmsx-console/src/lua/value';
+import type { InputEvt } from 'bmsx/platform';
 
 export interface HostTestRunnerClock {
 	scheduleOnce(delayMs: number, cb: (timestampMs: number) => void): void;

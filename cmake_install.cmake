@@ -1,4 +1,4 @@
-# Install script for directory: /src/src/bmsx_cpp
+# Install script for directory: /src/native/machine
 
 # Set the install prefix
 if(NOT DEFINED CMAKE_INSTALL_PREFIX)
@@ -47,7 +47,7 @@ if("x${CMAKE_INSTALL_COMPONENT}x" STREQUAL "xUnspecifiedx" OR NOT CMAKE_INSTALL_
 endif()
 
 if("x${CMAKE_INSTALL_COMPONENT}x" STREQUAL "xUnspecifiedx" OR NOT CMAKE_INSTALL_COMPONENT)
-	file(INSTALL DESTINATION "${CMAKE_INSTALL_PREFIX}/include/bmsx" TYPE DIRECTORY FILES "/src/src/bmsx_cpp/" FILES_MATCHING REGEX "/[^/]*\\.h$")
+	file(INSTALL DESTINATION "${CMAKE_INSTALL_PREFIX}/include/bmsx" TYPE DIRECTORY FILES "/src/native/machine/" FILES_MATCHING REGEX "/[^/]*\\.h$")
 endif()
 
 if(CMAKE_INSTALL_COMPONENT)

@@ -1,9 +1,9 @@
 import ts from 'typescript';
-import { unwrapExpression } from '../../../../../src/bmsx/language/ts/ast/expressions';
-import { isBooleanLiteral, isStringLiteralLike } from '../../../../../src/bmsx/language/ts/ast/literals';
-import { isBooleanProducingOperator, isEqualityOperator, isPositiveEqualityOperator } from '../../../../../src/bmsx/language/ts/ast/operators';
+import { unwrapExpression } from '../../../../../packages/bmsx-console/src/language/ts/ast/expressions';
+import { isBooleanLiteral, isStringLiteralLike } from '../../../../../packages/bmsx-console/src/language/ts/ast/literals';
+import { isBooleanProducingOperator, isEqualityOperator, isPositiveEqualityOperator } from '../../../../../packages/bmsx-console/src/language/ts/ast/operators';
 import { isExpressionInScopeFingerprint } from './bindings';
-import { isFunctionLikeWithParameters } from '../../../../../src/bmsx/language/ts/ast/functions';
+import { isFunctionLikeWithParameters } from '../../../../../packages/bmsx-console/src/language/ts/ast/functions';
 import { ExplicitValueCheck } from './types';
 
 export type SingleLiteralComparison<T> = {

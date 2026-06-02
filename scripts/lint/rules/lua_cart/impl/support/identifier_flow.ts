@@ -1,4 +1,4 @@
-import { LuaAssignmentOperator as AssignmentOperator, LuaBinaryOperator as BinaryOperator, type LuaExpression as Expression, type LuaIfStatement as IfStatement, type LuaStatement as Statement, LuaSyntaxKind as SyntaxKind, LuaTableFieldKind as TableFieldKind, LuaUnaryOperator as UnaryOperator } from '../../../../../../src/bmsx/lua/syntax/ast';
+import { LuaAssignmentOperator as AssignmentOperator, LuaBinaryOperator as BinaryOperator, type LuaExpression as Expression, type LuaIfStatement as IfStatement, type LuaStatement as Statement, LuaSyntaxKind as SyntaxKind, LuaTableFieldKind as TableFieldKind, LuaUnaryOperator as UnaryOperator } from '../../../../../../packages/bmsx-console/src/lua/syntax/ast';
 import { assignmentDirectlyTargetsIdentifier } from './bindings';
 
 export function countIdentifierMentionsInExpression(expression: Expression | null, identifierName: string): number {

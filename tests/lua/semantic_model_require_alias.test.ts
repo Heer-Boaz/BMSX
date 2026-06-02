@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 
-const semanticModelModulePromise = import('../../src/bmsx/lua/semantic/model');
+const semanticModelModulePromise = import('../../packages/bmsx-console/src/lua/semantic/model');
 
 test('semantic file data records direct and chained require aliases', async () => {
 	const { buildLuaFileSemanticData } = await semanticModelModulePromise;

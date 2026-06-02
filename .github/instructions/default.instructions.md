@@ -11,7 +11,7 @@ Coding policies: *no defensive checks, trust the types, trust proper initializat
    npm run headless:game <gameromname> # WARNING: `<gameromname>` must be replaced with the folder name of the rompack (game) you want to test, e.g. `ella2023` or `testrom`! This is different from the rom name specified in the `rommanifest.json` file inside the `res` directory! The `rominspector` tool uses the rom name specified in the `rommanifest.json` file, so that is different from this!
    ```
    This command will pack the resources and build the specified rompack (game). The built rompack will be available in the `dist` directory. It will also run the rompack in a headless mode (without a graphical interface) to validate that it works correctly. If there are any errors during the build or runtime, they will be displayed in the console.
-   > Important: The given <romname> must match the name of a directory under `./src/` that contains a `res` subdirectory with the resources for that rompack (game). For example, for the `testrom`, the resources should be located in `./src/testrom/res`. However, the result romfile will be named based on the rommanifest.json file inside the `res` directory!! For example, if the `rommanifest.json` file specifies the name as `yiear`, the resulting romfile will be named `yiear.rom` (or `yiear.debug.rom`) even if the directory is named `ella2023`!
+   > Important: The given <romname> must match the name of a directory under `./carts/` that contains a `res` subdirectory with the resources for that rompack (game). For example, for the `testrom`, the resources should be located in `./carts/testrom/res`. However, the result romfile will be named based on the rommanifest.json file inside the `res` directory!! For example, if the `rommanifest.json` file specifies the name as `yiear`, the resulting romfile will be named `yiear.rom` (or `yiear.debug.rom`) even if the directory is named `ella2023`!
 * **Project Structure**: Understand the overall structure of the project, including key directories and files.
 * **No legacy fallback**: Avoid adding legacy code or fallbacks.
 * **No defensive coding**: Prevent any bug-concealing techniques, silent failures and defensive coding. For example:
@@ -196,9 +196,9 @@ Coding policies: *no defensive checks, trust the types, trust proper initializat
     }
     ```
 * Don't worry about indentation styles. I will take care of formatting the code using Prettier before committing.
-* `clamp` is a utility function available that you can find in the folder `/src/bmsx/util/`; use it instead of writing your own!
-* Scratch buffers are available in `/src/bmsx/util/scratchbuffer.ts`; use them for temporary data storage instead of allocating new arrays or buffers.
-* Look at other utility functions available in `/src/bmsx/util/` before writing your own utility functions!
+* `clamp` is a utility function available that you can find in the folder `/packages/bmsx-console/src/common/`; use it instead of writing your own!
+* Scratch buffers are available in `/packages/bmsx-console/src/common/scratchbuffer.ts`; use them for temporary data storage instead of allocating new arrays or buffers.
+* Look at other utility functions available in `/packages/bmsx-console/src/common/` before writing your own utility functions!
 * Don't use `require` in non-script code (e.g. `rompacker-core.ts` and `rominspector.ts` can have `require`, but core engine files or game source files cannot).
 * Ensure that registry persistent objects are not serialized.
 * Use the annotations provided in the codebase to maintain consistency, these include:
@@ -216,4 +216,4 @@ Coding policies: *no defensive checks, trust the types, trust proper initializat
 * Don't unnecessarily override methods.
 * **Performance**:
   - Consider the performance implications of generated code, especially in critical areas of the application, noting that the engine is supposed to perform well on lower-end hardware such as iPhone 10/11/12.
-  - Use scratch buffers and object pooling to minimize memory allocations and improve performance. There are several scratch buffers available in `src/bmsx/core/scratchbuffer.ts` that can be used for temporary data storage to avoid frequent allocations.
+  - Use scratch buffers and object pooling to minimize memory allocations and improve performance. There are several scratch buffers available in `packages/bmsx-console/src/common/scratchbuffer.ts` that can be used for temporary data storage to avoid frequent allocations.

@@ -1,4 +1,4 @@
-import { LuaAssignmentOperator as AssignmentOperator, type LuaAssignmentStatement as AssignmentStatement, LuaBinaryOperator as BinaryOperator, type LuaFunctionExpression as CartFunctionExpression, type LuaLocalAssignmentStatement as LocalAssignmentStatement, LuaSyntaxKind as SyntaxKind } from '../../../../../../src/bmsx/lua/syntax/ast';
+import { LuaAssignmentOperator as AssignmentOperator, type LuaAssignmentStatement as AssignmentStatement, LuaBinaryOperator as BinaryOperator, type LuaFunctionExpression as CartFunctionExpression, type LuaLocalAssignmentStatement as LocalAssignmentStatement, LuaSyntaxKind as SyntaxKind } from '../../../../../../packages/bmsx-console/src/lua/syntax/ast';
 import { isIdentifier } from './bindings';
 import { isNilExpression } from './conditions';
 import { isAssignableStorageExpression } from './expressions';

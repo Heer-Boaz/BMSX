@@ -64,8 +64,8 @@ function parseOptions(args: string[]): ParsedDeployOptions {
 	const romLeaf = romSegments.length > 0 ? romSegments[romSegments.length - 1] : cartFolder;
 	const resCandidates: Array<string> = [
 		respathRaw,
-		cartFolder ? `./src/carts/${cartFolder}/res` : undefined,
-		romLeaf ? `./src/carts/${romLeaf}/res` : undefined,
+		cartFolder ? `./carts/${cartFolder}/res` : undefined,
+		romLeaf ? `./carts/${romLeaf}/res` : undefined,
 	];
 	const resolvedResPath = findExistingDirectory(resCandidates);
 	if (!resolvedResPath) {

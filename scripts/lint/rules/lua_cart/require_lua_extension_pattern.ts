@@ -1,4 +1,4 @@
-import { LuaSyntaxKind as SyntaxKind, type LuaCallExpression as CallExpression } from '../../../../src/bmsx/lua/syntax/ast';
+import { LuaSyntaxKind as SyntaxKind, type LuaCallExpression as CallExpression } from '../../../../packages/bmsx-console/src/lua/syntax/ast';
 import type { CartLintIssue, CartLintIssuePusher } from '../../lua_rule';
 import { defineLintRule } from '../../rule';
 import { lintForbiddenRenderModuleRequirePattern } from './forbidden_render_module_require_pattern';

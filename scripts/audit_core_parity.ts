@@ -45,8 +45,8 @@ type Manifest = {
 type ClassifiedFile = { file: string; category: Category; reason: string };
 
 const repoRoot = process.cwd();
-const sourceRoot = 'src/bmsx';
-const cppRoot = 'src/bmsx_cpp';
+const sourceRoot = 'packages/bmsx-console/src';
+const cppRoot = 'native/machine';
 const manifestPath = 'scripts/core_parity_manifest.json';
 
 function repoPath(value: string): string {

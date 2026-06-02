@@ -1,6 +1,6 @@
 import { defineLintRule } from '../../rule';
 import ts from 'typescript';
-import { isNullOrUndefined } from '../../../../src/bmsx/language/ts/ast/literals';
+import { isNullOrUndefined } from '../../../../packages/bmsx-console/src/language/ts/ast/literals';
 import { LintIssue, pushLintIssue } from '../ts/support/ast';
 import { isConditionalNullishNormalization } from '../ts/support/nullish';
 

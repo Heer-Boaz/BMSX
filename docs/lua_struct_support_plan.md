@@ -361,7 +361,7 @@ Files likely touched:
 Work:
 
 1. Pick one representative manual packet-writing section from
-   `src/carts/bare_metal_cart/cart.lua`.
+   `carts/bare_metal_cart/cart.lua`.
 2. Rewrite that section as intended future Lua using `struct`, typed address
    bindings, field writes, `sizeof`, and `&struct_lvalue`.
 3. Include the expected lowered memory operations next to the sketch.
@@ -376,12 +376,12 @@ judge the future `bare_metal_cart` migration before implementation cost is paid.
 
 Files likely touched:
 
-- `src/bmsx/lua/syntax/token.ts`
-- `src/bmsx/lua/syntax/lexer.ts`
-- `src/bmsx/lua/syntax/parser.ts`
-- `src/bmsx/lua/semantic/model.ts`
-- `src/bmsx/lua/semantic/frontend.ts`
-- `src/bmsx/lua/semantic/diagnostics.ts`
+- `packages/bmsx-console/src/lua/syntax/token.ts`
+- `packages/bmsx-console/src/lua/syntax/lexer.ts`
+- `packages/bmsx-console/src/lua/syntax/parser.ts`
+- `packages/bmsx-console/src/lua/semantic/model.ts`
+- `packages/bmsx-console/src/lua/semantic/frontend.ts`
+- `packages/bmsx-console/src/lua/semantic/diagnostics.ts`
 
 Work:
 
@@ -400,9 +400,9 @@ Deliverable: parser/semantic tests that prove `sizeof`/`offsetof` and field offs
 
 Files likely touched:
 
-- `src/bmsx/machine/program/compile_value_flow.ts`
-- `src/bmsx/machine/program/target_semantics.ts`
-- `src/bmsx/machine/program/compiler.ts`
+- `packages/bmsx-console/src/machine/program/compile_value_flow.ts`
+- `packages/bmsx-console/src/machine/program/target_semantics.ts`
+- `packages/bmsx-console/src/machine/program/compiler.ts`
 
 Work:
 
@@ -418,8 +418,8 @@ Deliverable: compiled Lua tests that field reads/writes produce exact RAM bytes.
 
 Files likely touched:
 
-- `src/bmsx/machine/program/compiler.ts`
-- `src/bmsx/machine/program/optimizer/index.ts`
+- `packages/bmsx-console/src/machine/program/compiler.ts`
+- `packages/bmsx-console/src/machine/program/optimizer/index.ts`
 
 Work:
 
@@ -473,7 +473,7 @@ Deliverable: focused VDP/RPU test that proves struct array -> DMA -> VDP packet 
 
 Files likely touched:
 
-- `src/carts/bare_metal_cart/cart.lua`
+- `carts/bare_metal_cart/cart.lua`
 - central BIOS/system RPU contract files, if they already own public constants
 
 Work:

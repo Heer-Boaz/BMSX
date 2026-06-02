@@ -3,15 +3,15 @@
 import pc from 'picocolors';
 import { Presets, SingleBar } from 'cli-progress';
 
-import { SYSTEM_BOOT_ENTRY_PATH, SYSTEM_ROM_NAME } from '../../src/bmsx/core/system';
+import { SYSTEM_BOOT_ENTRY_PATH, SYSTEM_ROM_NAME } from '../../packages/bmsx-console/src/core/system';
 import { createCliUi, findExistingDirectory, getParamOrEnv, normalizePathKey, parseArgsVector } from './cli';
 import { validateAudioEventReferences } from './audioeventvalidator';
 import { lintCartSources } from './cart_lua_linter_runtime';
 import { appendProgramImage, biosLuaPath, buildLuaProgramContextAssets, commonResPath, engineLuaPath, systemLuaPath, createAtlasses, finalizeRompack, GENERATE_AND_USE_TEXTURE_ATLAS, generateRomAssets, getResMetaList, getResourcesList, getRomManifest, isRebuildRequired, setAtlasFlag } from './rombuilder';
 import { generateHostSystemAtlasArtifactsFromAssets } from './host_system_atlas';
 import type { RomPackerOptions } from './rompacker.rompack';
-import type { RomAsset } from '../../src/bmsx/rompack/format';
-import { LuaError } from '../../src/bmsx/lua/errors';
+import type { RomAsset } from '../../packages/bmsx-console/src/rompack/format';
+import { LuaError } from '../../packages/bmsx-console/src/lua/errors';
 
 import { join } from 'node:path';
 import { existsSync, readFileSync } from 'node:fs';
@@ -139,13 +139,13 @@ function resolveCartRoot(romName: string): string {
 	const romSegments = normalizedRomName.split('/').filter(Boolean);
 	const romLeaf = romSegments.length > 0 ? romSegments[romSegments.length - 1] : normalizedRomName;
 	const cartCandidates = [
-		normalizedRomName ? `./src/carts/${normalizedRomName}` : undefined,
-		romLeaf && romLeaf !== normalizedRomName ? `./src/carts/${romLeaf}` : undefined,
+		normalizedRomName ? `./carts/${normalizedRomName}` : undefined,
+		romLeaf && romLeaf !== normalizedRomName ? `./carts/${romLeaf}` : undefined,
 	];
 	const cartRoot = findExistingDirectory(cartCandidates);
 	if (!cartRoot) {
 		const attempted = cartCandidates.filter(Boolean).map(normalizePathKey).join(', ');
-		throw new Error(`Cart folder "${romName}" not found under src/carts. Tried: ${attempted || '<none>'}.`);
+		throw new Error(`Cart folder "${romName}" not found under carts. Tried: ${attempted || '<none>'}.`);
 	}
 	return normalizePathKey(cartRoot);
 }
@@ -180,7 +180,7 @@ function parseOptions(args: string[]): ParsedOptions {
 	if (seenFlags.has('-h') || seenFlags.has('--help')) {
 		writeOut(`Usage: <command> [options]\n`, 'warning');
 		writeOut(`Options:\n`, 'warning');
-		writeOut(`  -romname <name>          Cart folder under src/carts (required for rompack mode)\n`, 'warning');
+		writeOut(`  -romname <name>          Cart folder under carts (required for rompack mode)\n`, 'warning');
 		writeOut(`  -title <title>           Title override\n`, 'warning');
 		writeOut(`  -bootloaderpath <path>   BIOS-only bootloader path override\n`, 'warning');
 		writeOut(`  -respath <path>          Resource path override\n`, 'warning');
@@ -224,15 +224,15 @@ function parseOptions(args: string[]): ParsedOptions {
 
 	const rom_name = getParamOrEnv(args, '-romname', 'ROM_NAME', '', KNOWN_FLAGS);
 	const title = getParamOrEnv(args, '-title', 'TITLE', rom_name, KNOWN_FLAGS);
-	const defaultBootloaderPath = './src/bmsx/machine/firmware/default_cart';
+	const defaultBootloaderPath = './packages/bmsx-console/src/machine/firmware/default_cart';
 	let bootloader_path = getParamOrEnv(args, '-bootloaderpath', 'BOOTLOADER_PATH', defaultBootloaderPath, KNOWN_FLAGS);
 	const respathOverride = getOptionalParam(args, '-respath', 'RES_PATH');
-	let respath = mode === 'bios' ? './src/bmsx/res' : '';
+	let respath = mode === 'bios' ? './packages/bmsx-console/src/res' : '';
 
 	let extraLuaRoots: string[] = [];
 	let libraryLuaRoots: string[] = [];
 	if (mode === 'bios') {
-		respath = getParamOrEnv(args, '-respath', 'RES_PATH', './src/bmsx/res', KNOWN_FLAGS);
+		respath = getParamOrEnv(args, '-respath', 'RES_PATH', './packages/bmsx-console/src/res', KNOWN_FLAGS);
 		bootloader_path = normalizePathKey(bootloader_path);
 		respath = normalizePathKey(respath);
 	} else {
@@ -240,7 +240,7 @@ function parseOptions(args: string[]): ParsedOptions {
 			throw new Error('Rompack mode requires -romname <cart-folder> or -respath <cart-respath>.');
 		}
 		if (seenFlags.has('-bootloaderpath')) {
-			throw new Error('Rompack mode no longer supports -bootloaderpath. Carts always boot through src/bmsx/machine/firmware/default_cart.');
+			throw new Error('Rompack mode no longer supports -bootloaderpath. Carts always boot through packages/bmsx-console/src/machine/firmware/default_cart.');
 		}
 		const resolvedCart = resolveCartResPath(rom_name, respathOverride);
 		bootloader_path = normalizePathKey(defaultBootloaderPath);
@@ -503,7 +503,7 @@ async function runBIOSBuild(options: ParsedOptions, progress?: ProgressReporter)
 
 	const BIOSResPath = respath || commonResPath;
 	if (!BIOSResPath) {
-		throw new Error('Missing BIOS respath (expected ./src/bmsx/res).');
+		throw new Error('Missing BIOS respath (expected ./packages/bmsx-console/src/res).');
 	}
 	const BIOSRomName = SYSTEM_ROM_NAME;
 

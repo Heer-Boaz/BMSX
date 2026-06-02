@@ -1,6 +1,6 @@
-import { type FunctionInfo } from '../../../../../src/bmsx/language/cpp/syntax/declarations';
-import { cppAccessChainLeafName, cppCallTarget, isFunctionDeclaratorParen } from '../../../../../src/bmsx/language/cpp/syntax/syntax';
-import { type Token } from '../../../../../src/bmsx/language/cpp/syntax/tokens';
+import { type FunctionInfo } from '../../../../../packages/bmsx-console/src/language/cpp/syntax/declarations';
+import { cppAccessChainLeafName, cppCallTarget, isFunctionDeclaratorParen } from '../../../../../packages/bmsx-console/src/language/cpp/syntax/syntax';
+import { type Token } from '../../../../../packages/bmsx-console/src/language/cpp/syntax/tokens';
 import { type AnalysisRegion, lineInAnalysisRegion } from '../../../../analysis/lint_suppressions';
 import { incrementUsageCount } from '../../../function_usage';
 import { isConstructorLike } from './bindings';

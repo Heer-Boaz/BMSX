@@ -1,12 +1,12 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 
-import type { LuaDebuggerPauseSignal } from '../../src/bmsx/lua/value';
+import type { LuaDebuggerPauseSignal } from '../../packages/bmsx-console/src/lua/value';
 import {
 	emitDebuggerLifecycleEvent,
 	getDebuggerExecutionState,
 	subscribeDebuggerLifecycleEvents,
-} from '../../src/bmsx/ide/workbench/contrib/debugger/controller';
+} from '../../packages/bmsx-console/src/ide/workbench/contrib/debugger/controller';
 
 function pauseSignal(): LuaDebuggerPauseSignal {
 	return {

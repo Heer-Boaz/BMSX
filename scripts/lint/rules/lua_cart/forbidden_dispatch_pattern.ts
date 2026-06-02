@@ -1,5 +1,5 @@
 import { defineLintRule } from '../../rule';
-import { type LuaCallExpression as CallExpression } from '../../../../src/bmsx/lua/syntax/ast';
+import { type LuaCallExpression as CallExpression } from '../../../../packages/bmsx-console/src/lua/syntax/ast';
 import { type CartLintIssue } from '../../lua_rule';
 import { isDispatchStateEventCallExpression } from './impl/support/calls';
 import { isStateControllerDispatchCallExpression } from './impl/support/fsm_core';

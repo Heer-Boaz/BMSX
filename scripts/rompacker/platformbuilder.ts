@@ -195,7 +195,8 @@ function resolvePlatformDependencyRoots(platform: RomPackerTarget): string[] {
 		join(process.cwd(), 'scripts', 'rompacker'),
 		join(process.cwd(), 'scripts', 'bootrom'),
 		join(process.cwd(), 'src', 'bmsx', 'res'),
-		join(process.cwd(), 'src', 'bmsx_hostplatform'),
+		join(process.cwd(), 'packages', 'bmsx-browser-host', 'src'),
+		join(process.cwd(), 'packages', 'bmsx-node-host', 'src'),
 		join(process.cwd(), 'src', 'bmsx', 'platform'),
 	];
 }

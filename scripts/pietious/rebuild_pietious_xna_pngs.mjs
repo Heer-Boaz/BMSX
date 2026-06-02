@@ -5,7 +5,7 @@ import path from 'node:path';
 import { PNG } from 'pngjs';
 
 const workspaceRoot = process.cwd();
-const outputDir = path.join(workspaceRoot, 'src/carts/pietious/res/img');
+const outputDir = path.join(workspaceRoot, 'carts/pietious/res/img');
 const sourceProjectRoot = process.env.MAZE_OF_NICOLAAS_XNA_ROOT ?? '/tmp/Maze-of-Nicolaas-XNA-ref/Maze of Nicolaas XNA';
 const cppSourceRoot = path.join(sourceProjectRoot, 'Images');
 const xnaSourceRoot = path.join(sourceProjectRoot, 'Maze of Nicolaas XNAContent');

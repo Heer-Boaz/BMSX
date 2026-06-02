@@ -88,7 +88,7 @@
 ## Stage data loading model
 
 - `nemesis_s` now loads stage geometry from a ROM data asset instead of hardcoded Lua math:
-  - asset file: `src/carts/nemesis_s/res/data/nemesis_s_stage.yaml`
+  - asset file: `carts/nemesis_s/res/data/nemesis_s_stage.yaml`
   - source of map rows: `nemesis-s-bdx` `StageFactory.Stage0Map` (22 rows, 554 columns)
 - Runtime loader:
   - `stage.lua` reads `assets.data['nemesis_s_stage']`
@@ -133,7 +133,7 @@
   - missile gravity/floor-crawl model,
   - option follow-delay queue.
 
-## ASM -> Lua mapping now applied (`src/carts/nemesis_s/player/index.lua`)
+## ASM -> Lua mapping now applied (`carts/nemesis_s/player/index.lua`)
 
 - `AEB7`:
   - `SUB 6` on `(IY+5)` -> `uplaser.y = uplaser.y - 6` every update tick.

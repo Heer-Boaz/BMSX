@@ -1,10 +1,10 @@
 import ts from 'typescript';
-import { callAnyArgumentHasToken, callFirstArgumentHasToken, cppCallTarget, cppQualifiedNameHasLeaf } from '../../../../src/bmsx/language/cpp/syntax/syntax';
-import type { Token } from '../../../../src/bmsx/language/cpp/syntax/tokens';
-import { getCallTargetLeafName } from '../../../../src/bmsx/language/ts/ast/expressions';
-import { getCallLeafName } from '../../../../src/bmsx/lua/syntax/calls';
-import { stringLiteralValue } from '../../../../src/bmsx/lua/syntax/literals';
-import type { LuaCallExpression as CallExpression, LuaExpression as Expression } from '../../../../src/bmsx/lua/syntax/ast';
+import { callAnyArgumentHasToken, callFirstArgumentHasToken, cppCallTarget, cppQualifiedNameHasLeaf } from '../../../../packages/bmsx-console/src/language/cpp/syntax/syntax';
+import type { Token } from '../../../../packages/bmsx-console/src/language/cpp/syntax/tokens';
+import { getCallTargetLeafName } from '../../../../packages/bmsx-console/src/language/ts/ast/expressions';
+import { getCallLeafName } from '../../../../packages/bmsx-console/src/lua/syntax/calls';
+import { stringLiteralValue } from '../../../../packages/bmsx-console/src/lua/syntax/literals';
+import type { LuaCallExpression as CallExpression, LuaExpression as Expression } from '../../../../packages/bmsx-console/src/lua/syntax/ast';
 import { lineInAnalysisRegion, type AnalysisRegion } from '../../../analysis/lint_suppressions';
 import type { CartLintIssue, CartLintIssuePusher } from '../../lua_rule';
 import { defineLintRule } from '../../rule';

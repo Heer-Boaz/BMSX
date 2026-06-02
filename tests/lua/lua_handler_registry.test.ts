@@ -1,8 +1,8 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 
-import { LuaFunctionRedirectCache } from '../../src/bmsx/machine/firmware/handler_registry';
-import type { LuaFunctionValue, LuaValue } from '../../src/bmsx/lua/value';
+import { LuaFunctionRedirectCache } from '../../packages/bmsx-console/src/machine/firmware/handler_registry';
+import type { LuaFunctionValue, LuaValue } from '../../packages/bmsx-console/src/lua/value';
 
 function handler(name: string, value: LuaValue): LuaFunctionValue {
 	return {

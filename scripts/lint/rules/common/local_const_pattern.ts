@@ -1,7 +1,7 @@
 import { defineLintRule } from '../../rule';
-import { type FunctionInfo } from '../../../../src/bmsx/language/cpp/syntax/declarations';
-import { collectStatementRanges } from '../../../../src/bmsx/language/cpp/syntax/syntax';
-import { type Token } from '../../../../src/bmsx/language/cpp/syntax/tokens';
+import { type FunctionInfo } from '../../../../packages/bmsx-console/src/language/cpp/syntax/declarations';
+import { collectStatementRanges } from '../../../../packages/bmsx-console/src/language/cpp/syntax/syntax';
+import { type Token } from '../../../../packages/bmsx-console/src/language/cpp/syntax/tokens';
 import { type LintIssue, pushTokenLintIssue } from '../cpp/support/diagnostics';
 import { type AnalysisRegion } from '../../../analysis/lint_suppressions';
 import { noteQualityLedger, type QualityLedger } from '../../../analysis/quality_ledger';

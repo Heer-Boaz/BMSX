@@ -1,0 +1,9 @@
+{
+	"extends": "../../tsconfig.base.json",
+	"compilerOptions": {
+		"noEmit": true,
+		"composite": false
+	},
+	"include": ["src/**/*.ts", "src/**/*.d.ts", "../bmsx-console/src/glsl.d.ts"],
+	"exclude": ["node_modules"]
+}

@@ -1,56 +1,56 @@
 Goed punt. Laat me eerst begrijpen hoe `require` nu werkt in de compiler en runtime:
 
-Searched for regex `require|module|import` (`**/src/bmsx/emulator/program_compiler.ts`), 30 results
+Searched for regex `require|module|import` (`**/packages/bmsx-console/src/emulator/program_compiler.ts`), 30 results
 
-Searched for regex `require|module|appendLuaChunk|compileChunk` (`**/src/bmsx/emulator/lua_pipeline.ts`), 30 results
+Searched for regex `require|module|appendLuaChunk|compileChunk` (`**/packages/bmsx-console/src/emulator/lua_pipeline.ts`), 30 results
 
-Searched for regex `resolveGlobal|resolveRequire|compileCall.*require|RequireExpression|require` (`**/src/bmsx/emulator/program_compiler.ts`), 20 results
+Searched for regex `resolveGlobal|resolveRequire|compileCall.*require|RequireExpression|require` (`**/packages/bmsx-console/src/emulator/program_compiler.ts`), 20 results
 
-Searched for regex `moduleProtoMap|module.*proto|compileLuaChunkToProgram` (`**/src/bmsx/emulator/program_compiler.ts`), 12 results
+Searched for regex `moduleProtoMap|module.*proto|compileLuaChunkToProgram` (`**/packages/bmsx-console/src/emulator/program_compiler.ts`), 12 results
 
-Read [](file:///home/boaz/BMSX/src/bmsx/emulator/program_compiler.ts#2870-2870), lines 2870 to 2960
+Read [](file:///home/boaz/BMSX/packages/bmsx-console/src/emulator/program_compiler.ts#2870-2870), lines 2870 to 2960
 
 Now let me look at how `require` actually works at runtime — when a cart does `local foo = require("bar")`:
 
-Read [](file:///home/boaz/BMSX/src/bmsx/emulator/globals.ts#1430-1430), lines 1430 to 1445
+Read [](file:///home/boaz/BMSX/packages/bmsx-console/src/emulator/globals.ts#1430-1430), lines 1430 to 1445
 
-Searched for regex `requireModule|function require` (`**/src/bmsx/emulator/lua_pipeline.ts`), 4 results
+Searched for regex `requireModule|function require` (`**/packages/bmsx-console/src/emulator/lua_pipeline.ts`), 4 results
 
-Read [](file:///home/boaz/BMSX/src/bmsx/emulator/lua_pipeline.ts#1422-1422), lines 1422 to 1508
+Read [](file:///home/boaz/BMSX/packages/bmsx-console/src/emulator/lua_pipeline.ts#1422-1422), lines 1422 to 1508
 
 Now let me understand the semantic frontend and how it resolves cross-module references:
 
-Searched for regex `resolveGlobalAccess|systemGlobal|isSystemGlobal|SYSTEM_GLOBAL` (`**/src/bmsx/emulator/program_compiler.ts`), 20 results
+Searched for regex `resolveGlobalAccess|systemGlobal|isSystemGlobal|SYSTEM_GLOBAL` (`**/packages/bmsx-console/src/emulator/program_compiler.ts`), 20 results
 
 Now let me look at how variables from required modules are accessed — what happens after `local m = require("foo")` and then `m.bar()`:
 
-Read [](file:///home/boaz/BMSX/src/bmsx/emulator/program_compiler.ts#215-215), lines 215 to 260
+Read [](file:///home/boaz/BMSX/packages/bmsx-console/src/emulator/program_compiler.ts#215-215), lines 215 to 260
 
 Now let me look at the semantic frontend to see if it has cross-module resolution:
 
-Searched for regex `require|module|cross.*file|inter.*module|import|export` (`**/src/bmsx/emulator/lua_frontend.ts`), 15 results
+Searched for regex `require|module|cross.*file|inter.*module|import|export` (`**/packages/bmsx-console/src/emulator/lua_frontend.ts`), 15 results
 
 Now let me look at how modules are currently compiled and how `require` is handled at compile time. Let me look at the code around how the compiler actually compiles a call to `require(...)`:
 
-Read [](file:///home/boaz/BMSX/src/bmsx/emulator/program_compiler.ts#1035-1035), lines 1035 to 1100
+Read [](file:///home/boaz/BMSX/packages/bmsx-console/src/emulator/program_compiler.ts#1035-1035), lines 1035 to 1100
 
 Now I understand the full picture. Let me check how modules are actually structured — does a cart typically do `local m = require("foo")` and then `m.bar()`, or are there other patterns?
 
-Searched for regex `require\(` (`**/src/carts/**/*.lua`), 30 results
+Searched for regex `require\(` (`**/carts/**/*.lua`), 30 results
 
 Now let me see how a module like `constants.lua` returns its table, and how it's used:
 
-Searched for regex `constants\.\w+` (`**/src/carts/pietious/*.lua`), 20 results
+Searched for regex `constants\.\w+` (`**/carts/pietious/*.lua`), 20 results
 
-Read [](file:///home/boaz/BMSX/src/carts/pietious/constants.lua#1-1), lines 1 to 20
+Read [](file:///home/boaz/BMSX/carts/pietious/constants.lua#1-1), lines 1 to 20
 
 Now I understand the complete picture. Let me look at a typical module return pattern:
 
-Searched for regex `^return|^local function` (`**/src/carts/pietious/combat/overlap.lua`), 1 result
+Searched for regex `^return|^local function` (`**/carts/pietious/combat/overlap.lua`), 1 result
 
-Searched for regex `^return|^local function` (`**/src/carts/pietious/worldobject.lua`), no results
+Searched for regex `^return|^local function` (`**/carts/pietious/worldobject.lua`), no results
 
-Read [](file:///home/boaz/BMSX/src/carts/pietious/combat/overlap.lua#1-1), lines 1 to 18
+Read [](file:///home/boaz/BMSX/carts/pietious/combat/overlap.lua#1-1), lines 1 to 18
 
 Now I have a complete understanding. Here's the analysis:
 

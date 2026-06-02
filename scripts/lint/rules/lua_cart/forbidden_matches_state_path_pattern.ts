@@ -1,7 +1,7 @@
 import { defineLintRule } from '../../rule';
-import { type LuaCallExpression as CallExpression } from '../../../../src/bmsx/lua/syntax/ast';
+import { type LuaCallExpression as CallExpression } from '../../../../packages/bmsx-console/src/lua/syntax/ast';
 import { type CartLintIssue } from '../../lua_rule';
-import { getCallMethodName, getCallReceiverName } from '../../../../src/bmsx/lua/syntax/calls';
+import { getCallMethodName, getCallReceiverName } from '../../../../packages/bmsx-console/src/lua/syntax/calls';
 import { FORBIDDEN_STATE_CALL_RECEIVERS } from './impl/support/general';
 import { pushIssue } from './impl/support/lint_context';
 

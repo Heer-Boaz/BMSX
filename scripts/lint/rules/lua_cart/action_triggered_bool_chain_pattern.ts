@@ -1,5 +1,5 @@
 import { defineLintRule } from '../../rule';
-import { LuaBinaryOperator as BinaryOperator, type LuaExpression as Expression, LuaSyntaxKind as SyntaxKind } from '../../../../src/bmsx/lua/syntax/ast';
+import { LuaBinaryOperator as BinaryOperator, type LuaExpression as Expression, LuaSyntaxKind as SyntaxKind } from '../../../../packages/bmsx-console/src/lua/syntax/ast';
 import { type CartLintIssue } from '../../lua_rule';
 import { isDirectActionTriggeredCallExpression } from './impl/support/calls';
 import { pushIssue } from './impl/support/lint_context';

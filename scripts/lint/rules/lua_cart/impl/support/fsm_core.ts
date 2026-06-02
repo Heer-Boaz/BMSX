@@ -1,7 +1,7 @@
-import { type LuaCallExpression as CallExpression, type LuaExpression as Expression, LuaSyntaxKind as SyntaxKind, LuaTableFieldKind as TableFieldKind } from '../../../../../../src/bmsx/lua/syntax/ast';
+import { type LuaCallExpression as CallExpression, type LuaExpression as Expression, LuaSyntaxKind as SyntaxKind, LuaTableFieldKind as TableFieldKind } from '../../../../../../packages/bmsx-console/src/lua/syntax/ast';
 import { type CartLintIssue } from '../../../../lua_rule';
 import { lintFsmDirectStateHandlerMapValue } from '../../fsm_direct_state_handler_shorthand_pattern';
-import { getCallMethodName, getCallReceiverExpression, isGlobalCall } from '../../../../../../src/bmsx/lua/syntax/calls';
+import { getCallMethodName, getCallReceiverExpression, isGlobalCall } from '../../../../../../packages/bmsx-console/src/lua/syntax/calls';
 import { FSM_STATE_HANDLER_MAP_KEYS } from './fsm_transitions';
 import { isSelfExpressionRoot } from './self_properties';
 import { getTableFieldKey } from './table_fields';

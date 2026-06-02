@@ -1,16 +1,16 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 
-import { splitText } from '../../src/bmsx/common/text_lines';
-import { LuaLexer } from '../../src/bmsx/lua/syntax/lexer';
-import { LuaParser } from '../../src/bmsx/lua/syntax/parser';
-import { CPU, OpCode, RunResult, type Program, type ProgramMetadata, type Proto } from '../../src/bmsx/machine/cpu/cpu';
-import { disassembleProgram } from '../../src/bmsx/machine/cpu/disassembler';
-import { writeInstruction, INSTRUCTION_BYTES } from '../../src/bmsx/machine/cpu/instruction_format';
-import { MemoryAccessKind } from '../../src/bmsx/machine/memory/access_kind';
-import { RAM_BASE } from '../../src/bmsx/machine/memory/map';
-import { Memory } from '../../src/bmsx/machine/memory/memory';
-import { compileLuaChunkToProgram } from '../../src/bmsx/machine/program/compiler';
+import { splitText } from '../../packages/bmsx-console/src/common/text_lines';
+import { LuaLexer } from '../../packages/bmsx-console/src/lua/syntax/lexer';
+import { LuaParser } from '../../packages/bmsx-console/src/lua/syntax/parser';
+import { CPU, OpCode, RunResult, type Program, type ProgramMetadata, type Proto } from '../../packages/bmsx-console/src/machine/cpu/cpu';
+import { disassembleProgram } from '../../packages/bmsx-console/src/machine/cpu/disassembler';
+import { writeInstruction, INSTRUCTION_BYTES } from '../../packages/bmsx-console/src/machine/cpu/instruction_format';
+import { MemoryAccessKind } from '../../packages/bmsx-console/src/machine/memory/access_kind';
+import { RAM_BASE } from '../../packages/bmsx-console/src/machine/memory/map';
+import { Memory } from '../../packages/bmsx-console/src/machine/memory/memory';
+import { compileLuaChunkToProgram } from '../../packages/bmsx-console/src/machine/program/compiler';
 import { runCompiledLua } from './cpu_test_harness';
 
 const TEST_RAM_BASE = RAM_BASE + 0x20000;

@@ -4,9 +4,9 @@
 
 import * as fs from 'fs/promises';
 import * as pako from 'pako';
-import type { RomAsset, CartRomHeader, RomManifest } from '../../src/bmsx/rompack/format';
-import { PROGRAM_IMAGE_ID } from '../../src/bmsx/machine/program/loader';
-import { getZippedRomAndRomLabelFromBlob, loadRomAssetList, parseCartridgeIndex, parseCartHeader } from '../../src/bmsx/rompack/loader';
+import type { RomAsset, CartRomHeader, RomManifest } from '../../packages/bmsx-console/src/rompack/format';
+import { PROGRAM_IMAGE_ID } from '../../packages/bmsx-console/src/machine/program/loader';
+import { getZippedRomAndRomLabelFromBlob, loadRomAssetList, parseCartridgeIndex, parseCartHeader } from '../../packages/bmsx-console/src/rompack/loader';
 import {
 	buildManifestAsset,
 	disassembleProgramImage,

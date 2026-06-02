@@ -1,5 +1,5 @@
 import { defineLintRule } from '../../rule';
-import { type LuaExpression as Expression, LuaSyntaxKind as SyntaxKind, LuaTableFieldKind as TableFieldKind } from '../../../../src/bmsx/lua/syntax/ast';
+import { type LuaExpression as Expression, LuaSyntaxKind as SyntaxKind, LuaTableFieldKind as TableFieldKind } from '../../../../packages/bmsx-console/src/lua/syntax/ast';
 import { type CartLintIssue } from '../../lua_rule';
 import { FORBIDDEN_FSM_LEGACY_FIELDS } from './impl/support/fsm_transitions';
 import { getTableFieldKey } from './impl/support/table_fields';

@@ -6,7 +6,7 @@ import {
 	HOST_SYSTEM_ATLAS_WIDTH,
 	hostSystemAtlasImage,
 	hostSystemAtlasPixels,
-} from '../../src/bmsx/rompack/host_system_atlas';
+} from '../../packages/bmsx-console/src/rompack/host_system_atlas';
 
 test('host system atlas decodes generated RGBA bytes deterministically', () => {
 	const pixels = hostSystemAtlasPixels();

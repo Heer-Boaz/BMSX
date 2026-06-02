@@ -1,12 +1,12 @@
 // IMPORTANT: IMPORTS TO `bmsx/blabla` ARE NOT ALLOWED!!!!!! THIS WILL CAUSE PROBLEMS WITH .GLSL FILES BEING INCLUDED AND THE ROMPACKER CANNOT HANDLE THIS!!!!!
-import type { BootArgs } from '../../src/bmsx/rompack/format';
+import type { BootArgs } from '../../packages/bmsx-console/src/rompack/format';
 import { createAudioContext, startAudioOnIos } from './bootaudio';
 
 const HAS_DOM_ENVIRONMENT = typeof document !== 'undefined' && document !== null;
 const initialStartingGamepadIndex: number = null;
 type BMSX = {
 	constructPlatformFromViewHostHandle: (handle: HTMLCanvasElement, options: { audioContext: AudioContext; debug: boolean }) => BootArgs['platform'];
-	startCart: typeof import('../../src/bmsx/machine/program/start_cart').startCart;
+	startCart: typeof import('../../packages/bmsx-console/src/machine/program/start_cart').startCart;
 };
 
 declare global {

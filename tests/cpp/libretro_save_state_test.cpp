@@ -5,7 +5,7 @@
 #include "machine/devices/vdp/registers.h"
 #include "machine/memory/map.h"
 #include "machine/runtime/runtime.h"
-#include "platform/libretro/platform.h"
+#include "platform.h"
 #include "support/program_cart_fixture.h"
 
 #include <array>

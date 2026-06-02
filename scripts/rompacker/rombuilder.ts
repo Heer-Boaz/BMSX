@@ -1,11 +1,11 @@
 import { glsl } from "esbuild-plugin-glsl";
 // @ts-ignore
 import type { Stats } from 'fs';
-import { CART_ROM_HEADER_SIZE, CART_ROM_MAGIC_BYTES } from '../../src/bmsx/rompack/format';
-import type { asset_type, AudioMeta, BoundingBoxPrecalc, GLTFMesh, HitPolygonsPrecalc, ImgMeta, Polygon, RectBounds, RomAsset, RomManifest, vec2arr } from '../../src/bmsx/rompack/format';
-import { SYSTEM_BOOT_ENTRY_PATH } from '../../src/bmsx/core/system';
-import { encodeRomToc } from '../../src/bmsx/rompack/tooling/toc_encode';
-import type { LuaChunk } from '../../src/bmsx/lua/syntax/ast';
+import { CART_ROM_HEADER_SIZE, CART_ROM_MAGIC_BYTES } from '../../packages/bmsx-console/src/rompack/format';
+import type { asset_type, AudioMeta, BoundingBoxPrecalc, GLTFMesh, HitPolygonsPrecalc, ImgMeta, Polygon, RectBounds, RomAsset, RomManifest, vec2arr } from '../../packages/bmsx-console/src/rompack/format';
+import { SYSTEM_BOOT_ENTRY_PATH } from '../../packages/bmsx-console/src/core/system';
+import { encodeRomToc } from '../../packages/bmsx-console/src/rompack/tooling/toc_encode';
+import type { LuaChunk } from '../../packages/bmsx-console/src/lua/syntax/ast';
 import { encodeAudioAssetToAdpcm } from './adpcm';
 import { resolveTargetAtlasId, createOptimizedAtlas, generateAtlasAssetId } from './atlasbuilder';
 import { BoundingBoxExtractor } from './boundingbox_extractor';
@@ -30,17 +30,17 @@ const { finished } = require('stream/promises');
 // Import encodeBinary from the public API surface
 // Use direct path to avoid pulling the console runtime via public alias during Node execution.
 // @ts-ignore
-const { encodeBinary, decodeBinary } = require('../../src/bmsx/common/serializer/binencoder');
+const { encodeBinary, decodeBinary } = require('../../packages/bmsx-console/src/common/serializer/binencoder');
 // @ts-ignore
-const { buildRomMetadataSection } = require('../../src/bmsx/rompack/tooling/metadata_encode');
+const { buildRomMetadataSection } = require('../../packages/bmsx-console/src/rompack/tooling/metadata_encode');
 // @ts-ignore
-const { LuaLexer } = require('../../src/bmsx/lua/syntax/lexer');
+const { LuaLexer } = require('../../packages/bmsx-console/src/lua/syntax/lexer');
 // @ts-ignore
-const { LuaParser } = require('../../src/bmsx/lua/syntax/parser');
+const { LuaParser } = require('../../packages/bmsx-console/src/lua/syntax/parser');
 // @ts-ignore
-const { splitText } = require('../../src/bmsx/common/text_lines');
+const { splitText } = require('../../packages/bmsx-console/src/common/text_lines');
 // @ts-ignore
-const { compileLuaChunkToProgram, isLuaCompileError } = require('../../src/bmsx/machine/program/compiler');
+const { compileLuaChunkToProgram, isLuaCompileError } = require('../../packages/bmsx-console/src/machine/program/compiler');
 // @ts-ignore
 const {
 	PROGRAM_IMAGE_ID,
@@ -49,7 +49,7 @@ const {
 	encodeProgramImage,
 	encodeProgramObjectSections,
 	toLuaModulePath,
-} = require('../../src/bmsx/machine/program/loader');
+} = require('../../packages/bmsx-console/src/machine/program/loader');
 // @ts-ignore
 // @ts-ignore
 const pako = require('pako');
@@ -139,9 +139,9 @@ export function normalizeWorkspacePath(input: string): string {
 	return stack.join('/');
 }
 
-const CART_ROOT_SEGMENT = 'src/carts/';
-const ENGINE_RES_SEGMENT = 'src/bmsx/res';
-const DEFAULT_CART_BOOTLOADER_SEGMENT = 'src/bmsx/machine/firmware/default_cart';
+const CART_ROOT_SEGMENT = 'carts/';
+const ENGINE_RES_SEGMENT = 'packages/bmsx-console/src/res';
+const DEFAULT_CART_BOOTLOADER_SEGMENT = 'packages/bmsx-console/src/machine/firmware/default_cart';
 
 function isCartPath(path?: string): boolean {
 	if (!path || path.length === 0) return false;
@@ -270,7 +270,7 @@ export async function buildConsoleRuntime(debug: boolean): Promise<void> {
 
 	const buildRuntime = async (outfile: string, buildDebug: boolean): Promise<void> => {
 		await build({
-			entryPoints: ['./src/bmsx/machine/program/console_entry.ts'],
+			entryPoints: ['./packages/bmsx-browser-host/src/engine.ts'],
 			bundle: true,
 			platform: 'browser',
 			format: 'iife',
@@ -2079,7 +2079,7 @@ export async function isRebuildRequired(romname: string, bootloaderPath: string,
 
 	const bootloaderNeedsRebuild = cartProject ? false : await anyFileNewerThan(collectSourceFiles([bootloaderPath], CODE_FILE_EXTENSION_SET), romMtimeMs);
 	const resNeedsRebuild = await anyFileNewerThan(await getFiles(resPath), romMtimeMs);
-	const consoleRuntimeNeedsRebuild = cartProject ? false : await anyFileNewerThan(collectSourceFiles(['src/bmsx'], CODE_FILE_EXTENSION_SET), romMtimeMs);
+	const consoleRuntimeNeedsRebuild = cartProject ? false : await anyFileNewerThan(collectSourceFiles(['packages/bmsx-console/src'], CODE_FILE_EXTENSION_SET), romMtimeMs);
 
 	return extraNeedsRebuild ||
 		bootloaderNeedsRebuild ||
@@ -2095,7 +2095,7 @@ export async function isConsoleRuntimeRebuildRequired(outFilePath: string = './d
 		return true;
 	}
 
-	return anyFileNewerThan(collectSourceFiles(['src/bmsx'], CODE_FILE_EXTENSION_SET), outputStats.mtimeMs);
+	return anyFileNewerThan(collectSourceFiles(['packages/bmsx-console/src'], CODE_FILE_EXTENSION_SET), outputStats.mtimeMs);
 }
 export function setAtlasFlag(enabled: boolean): void {
 	GENERATE_AND_USE_TEXTURE_ATLAS = enabled;
@@ -2103,7 +2103,7 @@ export function setAtlasFlag(enabled: boolean): void {
 
 export let GENERATE_AND_USE_TEXTURE_ATLAS = true;
 // Define common assets path
-export const commonResPath = `./src/bmsx/res`;
+export const commonResPath = `./packages/bmsx-console/src/res`;
 export const biosLuaPath = './bios';
 export const systemLuaPath = './system';
 export const engineLuaPath = './engine';

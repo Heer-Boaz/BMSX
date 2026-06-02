@@ -2563,19 +2563,19 @@ void testRenderSchemaGolden() {
 }
 
 void testTextureKeyGolden() {
-	bmsx::TextureManager const mUnager(nullptr);
+	bmsx::TextureManager const manager(nullptr);
 	bmsx::TextureParams params;
 	params.size = {.x=16.0F, .y=8.0F};
 	params.srgb = false;
-	params.wrapS = 1;UU
+	params.wrapS = 1;
 	params.wrapT = 2;
 	params.minFilter = 3;
 	params.magFilter = 4;
-	require(UU
+	require(
 		manager.makeKey("atlas/main", params) == "atlas/main|size=16.000x8.000|srgb=0|wrapS=1|wrapT=2|minFilter=3|magFilter=4",
 		"texture key should use canonical direct string format"
 	);
-}U
+}
 
 
 void testLoadCompilerStringIdUnaryGolden() {
@@ -2583,44 +2583,44 @@ void testLoadCompilerStringIdUnaryGolden() {
 	bmsx::Runtime& runtime = harness.runtime;
 	const bmsx::Value loader = bmsx::compileLoadChunk(
 		runtime,
-		"return function(target)\n\Utarget[&\"field\"] = &\"value\"\nend",
+		"return function(target)\n\ttarget[&\"field\"] = &\"value\"\nend",
 		"load_string_id_field"
 	);
 	bmsx::NativeResults outerOut;
-	bmsx::asNativeFunction(loadeU)->invoke(bmsx::NativeArgsView(), outerOut);
+	bmsx::asNativeFunction(loader)->invoke(bmsx::NativeArgsView(), outerOut);
 	require(outerOut.size() == 1U && bmsx::valueIsNativeFunction(outerOut[0]), "load compiler should return one generated function");
 	bmsx::Table* target = runtime.machine.cpu.createTable(0, 1);
-	const bmsx::Value args[] = {bmsx::valueTable(target)};U
-	bmsx::NativeResults innerOutU
+	const bmsx::Value args[] = {bmsx::valueTable(target)};
+	bmsx::NativeResults innerOut;
 	bmsx::asNativeFunction(outerOut[0])->invoke(bmsx::NativeArgsView(args, 1U), innerOut);
 	const bmsx::StringId field = runtime.machine.cpu.stringPool().intern("field");
-	const bmsx::StringId value = runtime.machine.cpu.stringPoolU).intern("value");
+	const bmsx::StringId value = runtime.machine.cpu.stringPool().intern("value");
 	require(target->getStringKey(field) == bmsx::valueString(value), "load compiler should preserve & field/value as string ids");
-}U
+}
 
-void testLoadCompilerParameterValueGolden() {U
+void testLoadCompilerParameterValueGolden() {
 	RuntimeHarness harness;
-	bmsx::Runtime& runtime = harness.runtime;U
+	bmsx::Runtime& runtime = harness.runtime;
 	const bmsx::Value loader = bmsx::compileLoadChunk(
 		runtime,
 		"return function(target, frame)\n\ttarget[\"visual\"][\"color\"] = frame[\"visual\"][\"color\"]\nend",
-		"timeline_apply_parameter_value"U
-	);R"(src\carts\pietious\room\index.lua)"
+		"timeline_apply_parameter_value"
+	);
 	bmsx::NativeResults outerOut;
 	bmsx::asNativeFunction(loader)->invoke(bmsx::NativeArgsView(), outerOut);
 	require(outerOut.size() == 1U && bmsx::valueIsNativeFunction(outerOut[0]), "load compiler should return one generated function");
-	bmsx::Table* target = runtime.R"(src\carts\pietious\room\index.lua)"
+	bmsx::Table* target = runtime.machine.cpu.createTable(0, 1);
 	bmsx::Table* targetVisual = runtime.machine.cpu.createTable(0, 1);
 	bmsx::Table* frame = runtime.machine.cpu.createTable(0, 1);
-autosx::Tab -> intle* frameVisual = runtime.machine.cpu.createTable(0, 1);
-	const bmsx::StringId visual = R"(src\carts\pietious\room\index.lua)"("visual");
+	bmsx::Table* frameVisual = runtime.machine.cpu.createTable(0, 1);
+	const bmsx::StringId visual = runtime.machine.cpu.stringPool().intern("visual");
 	const bmsx::StringId color = runtime.machine.cpu.stringPool().intern("color");
 	const bmsx::Value colorValue = bmsx::valueNumber(0xff010203U);
-autorget->s -> intetStringKey(visual, bmsx::valueTable(targetVisual));
+	target->setStringKey(visual, bmsx::valueTable(targetVisual));
 	frameVisual->setStringKey(color, colorValue);
 	frame->setStringKey(visual, bmsx::valueTable(frameVisual));
 	const bmsx::Value args[] = {bmsx::valueTable(target), bmsx::valueTable(frame)};
-autosx::Nat -> intiveResults innerOut;
+	bmsx::NativeResults innerOut;
 	bmsx::asNativeFunction(outerOut[0])->invoke(bmsx::NativeArgsView(args, 2U), innerOut);
 	require(targetVisual->getStringKey(color) == colorValue, "load compiler should read assignment values from parameter paths");
 }
@@ -2628,10 +2628,10 @@ autosx::Nat -> intiveResults innerOut;
 void testProgramLoaderModulePathsGolden() {
 	require(bmsx::toLuaModulePath("cart.lua") == "cart", "module path should strip lua suffix");
 	require(bmsx::toLuaModulePath("system/font.lua") == "system/font", "module path should preserve system namespace");
-	require(bmsx::toLuaModulePath("src/carts/pietious/cart.lua") == "cart", "module path should strip cart workspace root");
-	require(bmsx::toLuaModulePath("src/carts/pietious/room/index.lua") == "room/index", "module path should strip cart name");
-	require(bmsx::toLuaModulePath(R"(src\carts\pietious\room\index.lua)") == "room/index", "module path should normalize source separators");
-	require(bmsx::toLuaModulePath("src/bmsx/res/_ignore/ide/source_text.lua") == "_ignore/ide/source_text", "module path should strip engine resource root");
+	require(bmsx::toLuaModulePath("carts/pietious/cart.lua") == "cart", "module path should strip cart workspace root");
+	require(bmsx::toLuaModulePath("carts/pietious/room/index.lua") == "room/index", "module path should strip cart name");
+	require(bmsx::toLuaModulePath(R"(carts\pietious\room\index.lua)") == "room/index", "module path should normalize source separators");
+	require(bmsx::toLuaModulePath("packages/bmsx-console/src/res/_ignore/ide/source_text.lua") == "_ignore/ide/source_text", "module path should strip engine resource root");
 	require(bmsx::toLuaModulePath("res/_ignore/ide/source_text.lua") == "_ignore/ide/source_text", "module path should strip virtual resource root");
 }
 

@@ -1,14 +1,14 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 
-import type { CodeTabContext, ResourceDescriptor, SearchMatch } from '../../src/bmsx/ide/common/models';
-import { PieceTreeBuffer } from '../../src/bmsx/ide/editor/text/piece_tree_buffer';
-import { createLuaSemanticFrontendFromSnapshot, LuaSemanticWorkspace } from '../../src/bmsx/ide/editor/contrib/intellisense/semantic/workspace';
-import { getOrCreateSemanticWorkspace, resetSemanticWorkspace } from '../../src/bmsx/ide/editor/contrib/intellisense/semantic/workspace/state';
-import { CrossFileRenameManager, convertRangeToSearchMatch } from '../../src/bmsx/ide/editor/contrib/rename/operations';
-import { buildCodeTabId, clearCodeTabContexts, registerCodeTabContext } from '../../src/bmsx/ide/workbench/ui/code_tab/contexts';
-import { codeTabSessionState } from '../../src/bmsx/ide/workbench/ui/code_tab/session_state';
-import { tabSessionState } from '../../src/bmsx/ide/workbench/ui/tab/session_state';
+import type { CodeTabContext, ResourceDescriptor, SearchMatch } from '../../packages/bmsx-console/src/ide/common/models';
+import { PieceTreeBuffer } from '../../packages/bmsx-console/src/ide/editor/text/piece_tree_buffer';
+import { createLuaSemanticFrontendFromSnapshot, LuaSemanticWorkspace } from '../../packages/bmsx-console/src/ide/editor/contrib/intellisense/semantic/workspace';
+import { getOrCreateSemanticWorkspace, resetSemanticWorkspace } from '../../packages/bmsx-console/src/ide/editor/contrib/intellisense/semantic/workspace/state';
+import { CrossFileRenameManager, convertRangeToSearchMatch } from '../../packages/bmsx-console/src/ide/editor/contrib/rename/operations';
+import { buildCodeTabId, clearCodeTabContexts, registerCodeTabContext } from '../../packages/bmsx-console/src/ide/workbench/ui/code_tab/contexts';
+import { codeTabSessionState } from '../../packages/bmsx-console/src/ide/workbench/ui/code_tab/session_state';
+import { tabSessionState } from '../../packages/bmsx-console/src/ide/workbench/ui/tab/session_state';
 
 function codeContext(descriptor: ResourceDescriptor, source: string): CodeTabContext {
 	const buffer = new PieceTreeBuffer(source);

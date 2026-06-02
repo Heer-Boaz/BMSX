@@ -1,5 +1,5 @@
 import { defineLintRule } from '../../rule';
-import { type LuaIfStatement as IfStatement } from '../../../../src/bmsx/lua/syntax/ast';
+import { type LuaIfStatement as IfStatement } from '../../../../packages/bmsx-console/src/lua/syntax/ast';
 import { type CartLintIssue } from '../../lua_rule';
 import { matchesUselessAssertPattern } from './impl/support/general';
 import { pushIssue } from './impl/support/lint_context';

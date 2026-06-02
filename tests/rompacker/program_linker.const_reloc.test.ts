@@ -1,16 +1,16 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 
-import { splitText } from '../../src/bmsx/common/text_lines';
-import { LuaLexer } from '../../src/bmsx/lua/syntax/lexer';
-import { LuaParser } from '../../src/bmsx/lua/syntax/parser';
-import { CPU, OpCode, RunResult, StringValue, Table, asStringId, createNativeFunction, valueIsString, type Proto } from '../../src/bmsx/machine/cpu/cpu';
-import { INSTRUCTION_BYTES, readInstructionWord, writeInstruction, writeInstructionWord } from '../../src/bmsx/machine/cpu/instruction_format';
-import { appendLuaChunkToProgram, compileLuaChunkToProgram } from '../../src/bmsx/machine/program/compiler';
-import { buildProgramBootHeader, inflateProgram, type ProgramImage, type ProgramConstReloc, type ProgramSymbolsImage } from '../../src/bmsx/machine/program/loader';
-import { linkProgramImages } from '../../src/bmsx/machine/program/linker';
-import { CART_BASE_PC, CART_PROGRAM_VECTOR_PC, CART_PROGRAM_VECTOR_VALUE } from '../../src/bmsx/machine/program/layout';
-import { Memory } from '../../src/bmsx/machine/memory/memory';
+import { splitText } from '../../packages/bmsx-console/src/common/text_lines';
+import { LuaLexer } from '../../packages/bmsx-console/src/lua/syntax/lexer';
+import { LuaParser } from '../../packages/bmsx-console/src/lua/syntax/parser';
+import { CPU, OpCode, RunResult, StringValue, Table, asStringId, createNativeFunction, valueIsString, type Proto } from '../../packages/bmsx-console/src/machine/cpu/cpu';
+import { INSTRUCTION_BYTES, readInstructionWord, writeInstruction, writeInstructionWord } from '../../packages/bmsx-console/src/machine/cpu/instruction_format';
+import { appendLuaChunkToProgram, compileLuaChunkToProgram } from '../../packages/bmsx-console/src/machine/program/compiler';
+import { buildProgramBootHeader, inflateProgram, type ProgramImage, type ProgramConstReloc, type ProgramSymbolsImage } from '../../packages/bmsx-console/src/machine/program/loader';
+import { linkProgramImages } from '../../packages/bmsx-console/src/machine/program/linker';
+import { CART_BASE_PC, CART_PROGRAM_VECTOR_PC, CART_PROGRAM_VECTOR_VALUE } from '../../packages/bmsx-console/src/machine/program/layout';
+import { Memory } from '../../packages/bmsx-console/src/machine/memory/memory';
 
 type EncodedWord = {
 	op: OpCode;
@@ -460,15 +460,15 @@ test('ProgramCompiler canonicalizes raw module source paths at the API boundary'
 	const compiled = compileLuaChunkToProgram(
 		parseChunk(entrySource, 'cart.lua'),
 		[{
-			path: 'src/carts/pietious/room/index.lua',
-			chunk: parseChunk(moduleSource, 'src/carts/pietious/room/index.lua'),
+			path: 'carts/pietious/room/index.lua',
+			chunk: parseChunk(moduleSource, 'carts/pietious/room/index.lua'),
 			source: moduleSource,
 		}],
 		{ entrySource },
 	);
 
 	assert.equal(compiled.moduleProtoMap.has('room/index'), true);
-	assert.equal(compiled.moduleProtoMap.has('src/carts/pietious/room/index.lua'), false);
+	assert.equal(compiled.moduleProtoMap.has('carts/pietious/room/index.lua'), false);
 	assert.ok(compiled.metadata.protoIds.some(id => id.includes('module:room/index')));
 });
 

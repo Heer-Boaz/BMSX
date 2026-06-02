@@ -1,6 +1,6 @@
 import ts from 'typescript';
-import { callTargetText, isExpressionChildOfLargerExpression } from '../../../../../src/bmsx/language/ts/ast/expressions';
-import { isNumericSanitizerCall, isSemanticTransformTarget, isSemanticValidationPredicateTarget, semanticBodyCallSignature, semanticTransformFamily } from '../../../../../src/bmsx/language/ts/ast/semantic';
+import { callTargetText, isExpressionChildOfLargerExpression } from '../../../../../packages/bmsx-console/src/language/ts/ast/expressions';
+import { isNumericSanitizerCall, isSemanticTransformTarget, isSemanticValidationPredicateTarget, semanticBodyCallSignature, semanticTransformFamily } from '../../../../../packages/bmsx-console/src/language/ts/ast/semantic';
 import { TEXT_SEMANTIC_SIGNATURE_PREFIX } from '../../common/semantic_signature';
 import { normalizedAstFingerprint } from './declarations';
 
