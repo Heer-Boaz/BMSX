@@ -1,6 +1,7 @@
 # BMSX C++ Console Runtime
 
-This directory contains the C++ implementation of the BMSX console runtime, designed to run as a libretro core for RetroArch and other libretro-compatible frontends.
+This directory contains the C++ implementation of the BMSX machine runtime. It
+builds the native machine library used by adapters such as libretro.
 
 BMSX is a fantasy console with real console discipline. The C++ tree mirrors the TypeScript machine layout where possible: cart-visible behavior belongs in the machine, memory map, and device controllers; host/platform code presents the result to libretro or custom frontends.
 
@@ -120,7 +121,8 @@ cmake .. -DCMAKE_BUILD_TYPE=Release
 cmake --build . --config Release
 
 # The output will be:
-# - libretro: bmsx_libretro.so (Linux), bmsx_libretro.dll (Windows), bmsx_libretro.dylib (macOS)
+# - machine: lib/libbmsx.a
+# - libretro adapter: libretro_bmsx.so (Linux), libretro_bmsx.dll (Windows), libretro_bmsx.dylib (macOS)
 ```
 
 ### Build Options
@@ -200,7 +202,7 @@ The libretro implementation provides:
 ## Testing with RetroArch
 
 1. Build the libretro core
-2. Copy `bmsx_libretro.so` to RetroArch's cores directory
+2. Copy `libretro_bmsx.so` to RetroArch's cores directory
 3. Load a `.rom` or `.bmsx` file through RetroArch
 
 ## Notes

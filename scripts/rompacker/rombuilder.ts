@@ -28,7 +28,7 @@ const { once } = require('events');
 const { finished } = require('stream/promises');
 // @ts-ignore
 // Import encodeBinary from the public API surface
-// Use direct path to avoid pulling the console runtime via public alias during Node execution.
+// Use direct path to avoid pulling the machine runtime via public alias during Node execution.
 // @ts-ignore
 const { encodeBinary, decodeBinary } = require('../../packages/bmsx-console/src/common/serializer/binencoder');
 // @ts-ignore
@@ -98,13 +98,25 @@ export const BOOTROM_JS_FILENAME = 'bootrom.js';
 export const BOOTROM_TS_RELATIVE_PATH = `../../scripts/bootrom/${BOOTROM_TS_FILENAME}`;
 export const BOOTROM_JS_RELATIVE_PATH = `../../rom/${BOOTROM_JS_FILENAME}`;
 export const NODE_BOOTROM_ENTRY_RELATIVE_PATH = `../../scripts/bootrom/platforms/node_entry.ts`;
+export const MACHINE_RUNTIME_BASENAME = 'libbmsx';
+export const BROWSER_HOST_BASENAME = 'engine';
+export const NODE_HEADLESS_HOST_BASENAME = 'host_headless';
+export const NODE_CLI_HOST_BASENAME = 'host_cli';
+
+export function getMachineRuntimeFilename(debug: boolean): string {
+	return debug ? `${MACHINE_RUNTIME_BASENAME}.debug.js` : `${MACHINE_RUNTIME_BASENAME}.js`;
+}
+
+export function getBrowserHostFilename(debug: boolean): string {
+	return debug ? `${BROWSER_HOST_BASENAME}.debug.js` : `${BROWSER_HOST_BASENAME}.js`;
+}
 
 export function getNodeLauncherFilename(platform: RomPackerTarget, debug: boolean): string {
 	switch (platform) {
 		case 'headless':
-			return debug ? 'headless_debug.js' : 'headless.js';
+			return debug ? `${NODE_HEADLESS_HOST_BASENAME}.debug.js` : `${NODE_HEADLESS_HOST_BASENAME}.js`;
 		case 'cli':
-			return debug ? 'cli_debug.js' : 'cli.js';
+			return debug ? `${NODE_CLI_HOST_BASENAME}.debug.js` : `${NODE_CLI_HOST_BASENAME}.js`;
 		case 'browser':
 			throw new Error('Browser platform does not require a Node launcher filename.');
 		default:
@@ -265,48 +277,53 @@ export async function getRomManifest(dirPath: string): Promise<RomManifest> {
 	else return null;
 }
 
-export async function buildConsoleRuntime(debug: boolean): Promise<void> {
+async function buildBrowserIife(entryPoint: string, outfile: string, debug: boolean): Promise<void> {
+	await build({
+		entryPoints: [entryPoint],
+		bundle: true,
+		platform: 'browser',
+		format: 'iife',
+		target: 'es2020',
+		outfile,
+		keepNames: true,
+		minify: !debug,
+		sourcemap: debug ? 'inline' : false,
+		sourcesContent: debug,
+		define: {
+			'process.env.NODE_ENV': debug ? '"development"' : '"production"',
+		},
+		plugins: [
+			glsl({ minify: !debug }),
+		],
+		loader: {
+			'.png': 'dataurl',
+			'.glsl': 'text',
+			'.json': 'json',
+			'.html': 'text',
+		},
+	});
+}
+
+export async function buildMachineRuntime(debug: boolean): Promise<void> {
 	await mkdir('./rom', { recursive: true });
-
-	const buildRuntime = async (outfile: string, buildDebug: boolean): Promise<void> => {
-		await build({
-			entryPoints: ['./packages/bmsx-browser-host/src/engine.ts'],
-			bundle: true,
-			platform: 'browser',
-			format: 'iife',
-			target: 'es2020',
-			outfile,
-			keepNames: true,
-			minify: !buildDebug,
-			sourcemap: buildDebug ? 'inline' : false,
-			sourcesContent: buildDebug,
-			define: {
-				'process.env.NODE_ENV': buildDebug ? '"development"' : '"production"',
-			},
-			plugins: [
-				glsl({ minify: !buildDebug }),
-			],
-			loader: {
-				'.png': 'dataurl',
-				'.glsl': 'text',
-				'.json': 'json',
-				'.html': 'text',
-			},
-		});
-	};
-
-	if (debug) {
-		await buildRuntime('./rom/console.debug.js', true);
-	} else {
-		await buildRuntime('./rom/console.js', false);
-	}
-
 	await mkdir('./dist', { recursive: true });
-	if (debug) {
-		await copyFile('./rom/console.debug.js', './dist/console.debug.js');
-	} else {
-		await copyFile('./rom/console.js', './dist/console.js');
-	}
+
+	const runtimeFilename = getMachineRuntimeFilename(debug);
+	const runtimeRomPath = `./rom/${runtimeFilename}`;
+	const runtimeDistPath = `./dist/${runtimeFilename}`;
+	await buildBrowserIife('./packages/bmsx-console/src/machine_runtime.ts', runtimeRomPath, debug);
+	await copyFile(runtimeRomPath, runtimeDistPath);
+}
+
+export async function buildBrowserHost(debug: boolean): Promise<void> {
+	await mkdir('./rom', { recursive: true });
+	await mkdir('./dist', { recursive: true });
+
+	const hostFilename = getBrowserHostFilename(debug);
+	const hostRomPath = `./rom/${hostFilename}`;
+	const hostDistPath = `./dist/${hostFilename}`;
+	await buildBrowserIife('./packages/bmsx-browser-host/src/engine.ts', hostRomPath, debug);
+	await copyFile(hostRomPath, hostDistPath);
 }
 
 /**
@@ -406,7 +423,8 @@ export async function buildGameHtmlAndManifest(rom_name: string, title: string, 
 			'//#zipjs': zipjs,
 			'/*#css*/': cssMinified,
 			'#title': title,
-			'#consolejs': debug ? 'console.debug.js' : 'console.js',
+			'#machineruntimejs': getMachineRuntimeFilename(debug),
+			'#browserhostjs': getBrowserHostFilename(debug),
 			'//#debug': `bootrom.debug = ${debug};\n`,
 			'#biospath': `./bmsx-bios.${debug ? 'debug.' : ''}rom`,
 			'__DEFAULT_ROM__': defaultRom,
@@ -1914,7 +1932,7 @@ async function buildNodeBootrom(options: BootromBuildOptions): Promise<void> {
 		rebuild = !outStats || !entryStats || entryStats.mtime > outStats.mtime;
 	}
 	if (!rebuild) {
-		rebuild = await isConsoleRuntimeRebuildRequired(outPath);
+		rebuild = await isMachineRuntimeRebuildRequired(outPath);
 	}
 
 	if (!rebuild) return;
@@ -2079,15 +2097,15 @@ export async function isRebuildRequired(romname: string, bootloaderPath: string,
 
 	const bootloaderNeedsRebuild = cartProject ? false : await anyFileNewerThan(collectSourceFiles([bootloaderPath], CODE_FILE_EXTENSION_SET), romMtimeMs);
 	const resNeedsRebuild = await anyFileNewerThan(await getFiles(resPath), romMtimeMs);
-	const consoleRuntimeNeedsRebuild = cartProject ? false : await anyFileNewerThan(collectSourceFiles(['packages/bmsx-console/src'], CODE_FILE_EXTENSION_SET), romMtimeMs);
+	const machineRuntimeNeedsRebuild = cartProject ? false : await anyFileNewerThan(collectSourceFiles(['packages/bmsx-console/src'], CODE_FILE_EXTENSION_SET), romMtimeMs);
 
 	return extraNeedsRebuild ||
 		bootloaderNeedsRebuild ||
 		resNeedsRebuild ||
-		consoleRuntimeNeedsRebuild;
+		machineRuntimeNeedsRebuild;
 }
 
-export async function isConsoleRuntimeRebuildRequired(outFilePath: string = './dist/console.js'): Promise<boolean> {
+export async function isMachineRuntimeRebuildRequired(outFilePath: string = `./dist/${getMachineRuntimeFilename(false)}`): Promise<boolean> {
 	let outputStats: Stats;
 	try {
 		outputStats = await stat(outFilePath);
@@ -2096,6 +2114,20 @@ export async function isConsoleRuntimeRebuildRequired(outFilePath: string = './d
 	}
 
 	return anyFileNewerThan(collectSourceFiles(['packages/bmsx-console/src'], CODE_FILE_EXTENSION_SET), outputStats.mtimeMs);
+}
+
+export async function isBrowserHostRebuildRequired(outFilePath: string = `./dist/${getBrowserHostFilename(false)}`): Promise<boolean> {
+	let outputStats: Stats;
+	try {
+		outputStats = await stat(outFilePath);
+	} catch {
+		return true;
+	}
+
+	return anyFileNewerThan(collectSourceFiles([
+		'packages/bmsx-browser-host/src',
+		'packages/bmsx-console/src',
+	], CODE_FILE_EXTENSION_SET), outputStats.mtimeMs);
 }
 export function setAtlasFlag(enabled: boolean): void {
 	GENERATE_AND_USE_TEXTURE_ATLAS = enabled;

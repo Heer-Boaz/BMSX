@@ -4,7 +4,9 @@ BMSX is a fantasy console with real console discipline.
 
 It is fictional hardware, but the architecture is treated like a real machine: carts run against CPU, RAM/ROM, MMIO registers, and device controllers. Host code exists to present audio, video, input, files, and platform entrypoints; it should not become the cart-facing hardware contract.
 
-The TypeScript implementation is the canonical browser/headless/CLI machine runtime and host stack. The C++ implementation mirrors the machine structure and supplies native adapter/host build artifacts.
+The TypeScript implementation builds a JavaScript machine runtime plus browser
+and Node hosts. The C++ implementation mirrors the machine structure and
+supplies native machine, adapter, and host artifacts.
 
 See `docs/architecture.md` for the machine/host boundary rules.
 
@@ -56,7 +58,15 @@ Avoid this for new hardware-facing behavior:
 cart Lua -> native host/runtime shortcut
 ```
 
-The host may accelerate implementation details, but it must not own the semantics of console hardware. Use the architecture roles precisely: the machine owns cart-observable semantics, an adapter exposes the machine through a foreign ABI, a host owns the process and physical services, and a mode is a behavior variant inside one host. Names such as `engine.debug.js` identify current artifacts only; they are not ownership terms.
+The host may accelerate implementation details, but it must not own the semantics of console hardware. Use the architecture roles precisely: the machine owns cart-observable semantics, an adapter exposes the machine through a foreign ABI, a host owns the process and physical services, and a mode is a behavior variant inside one host.
+
+Current artifact names encode that split:
+
+- `dist/libbmsx.js`: JavaScript machine/runtime.
+- `dist/engine.js`: browser host/bootstrap.
+- `lib/libbmsx.a`: native machine/runtime.
+- `dist/libretro_bmsx.so`: libretro adapter around the native machine runtime.
+- `dist/host_headless.js` and `dist/host_cli.js`: Node host modes.
 
 ## Runtime Timing
 
@@ -148,7 +158,7 @@ Important:
 
 - `headless:forcebuildallrun` and `headless:game` take the cart folder name
 - `headless:bare-metal` force-builds and runs `bare_metal_cart` through TS headless and the C++ libretro host
-- headless uses `dist/headless_debug.js`, `dist/engine.debug.js`, and `dist/bmsx-bios.debug.rom`
+- headless uses `dist/host_headless.debug.js`, `dist/libbmsx.debug.js`, and `dist/bmsx-bios.debug.rom`
 - host tests are always explicit; `headless:game` does not auto-load assert modules
 - if no explicit test is provided, `headless:game` falls back to `<cart>_demo.json`
 - headless timelines run unpaced, so the full scenario completes as fast as the emulator can simulate it

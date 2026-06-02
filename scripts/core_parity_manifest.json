@@ -71,6 +71,16 @@
 			"reason": "compiler_tooling_browser_engine_not_runtime_core"
 		},
 		{
+			"pattern": "packages/bmsx-console/src/index.ts",
+			"category": "barrel",
+			"reason": "machine_runtime_public_barrel"
+		},
+		{
+			"pattern": "packages/bmsx-console/src/machine_runtime.ts",
+			"category": "host",
+			"reason": "machine_runtime_js_artifact_entrypoint"
+		},
+		{
 			"pattern": "packages/bmsx-console/src/machine/program/sources.ts",
 			"category": "compiler_tooling",
 			"reason": "compiler_source_registry_not_native_core"
@@ -78,7 +88,7 @@
 		{
 			"pattern": "packages/bmsx-console/src/machine/program/start_cart.ts",
 			"category": "host",
-			"reason": "browser_console_bootstrap_not_native_core"
+			"reason": "js_machine_runtime_startcart_entrypoint"
 		},
 		{
 			"pattern": "packages/bmsx-console/src/input/host/assignment_processor.ts",
@@ -2129,7 +2139,7 @@
 		{
 			"file": "package.json",
 			"substrings": [
-				"\"headless:game\": \"node dist/headless_debug.js"
+				"\"headless:game\": \"node dist/host_headless.debug.js"
 			],
 			"reason": "headless_entrypoint_must_remain_generic_rom_parameter_not_bare_metal_alias"
 		},

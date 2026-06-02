@@ -1,6 +1,6 @@
 # BMSX Architecture Contract
 
-Last checked: 2026-06-01.
+Last checked: 2026-06-02.
 
 This document is the current machine/host boundary contract. It is not a work
 log, a prompt, or a migration diary. If implementation changes land, this file
@@ -46,15 +46,19 @@ Ownership terms are architectural roles, not interchangeable directory labels:
 
 Current artifact roles:
 
-- `bmsx_core` / a future installed `libbmsx.a`: machine library.
-- `bmsx_libretro.so` / `.dll` / `.dylib`: adapter exposing the libretro ABI.
+- `dist/libbmsx.js` / `.debug.js`: importable JavaScript machine/runtime
+  artifact. It owns `startCart`; it does not own browser, Node, SDL, ALSA, EGL,
+  or libretro host services.
+- `dist/engine.js` / `.debug.js`: browser host/bootstrap artifact. It wires
+  browser video, audio, input, and view-host construction around the machine
+  runtime.
+- `lib/libbmsx.a`: native machine/runtime static library.
+- `dist/libretro_bmsx.so` / `.dll` / `.dylib`: adapter exposing the libretro ABI.
 - `bmsx_libretro_host`: host executable that loads a libretro adapter/core and
   owns SDL, ALSA, EGL/fbdev, input devices, screenshots, and the process loop.
-- `engine.debug.js` and related browser artifacts: browser host/bootstrap
-  artifacts that import the console runtime; the `engine` filename is not an
-  ownership category.
-- headless and CLI entrypoints: Node host modes unless a future split gives them
-  separate host packages.
+- `dist/host_headless.js` / `.debug.js` and `dist/host_cli.js` / `.debug.js`:
+  Node host executables/modes that load the machine runtime artifact and own
+  their process/runtime environment.
 
 Do not use `platform` as an architecture category for both `libretro` and
 `libretro_host`. The first is an adapter; the second is a host. Current path
@@ -81,7 +85,7 @@ Current `carts/<name>` folders are cart collections with cart-local
 resources. If cart source moves during a package split, it should move toward a
 top-level `carts/` collection, not under `machine`.
 
-The exception is firmware/source material that ships with the console runtime:
+The exception is firmware/source material that ships with the machine runtime:
 BIOS, system-ROM helpers, and default boot/source assets belong under the
 machine firmware owner. That is not a general cart collection.
 

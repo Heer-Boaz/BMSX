@@ -1,5 +1,5 @@
 /**
- * Type definitions shared between the rompacker CLI and the console runtime.
+ * Type definitions shared between the rompacker CLI and the machine runtime.
  */
 import { Buffer } from 'buffer';
 import type { Canvas, Image as NodeCanvasImage } from 'canvas';

@@ -37,7 +37,6 @@ import {
 	createSubscriptionHandle,
 } from 'bmsx/platform';
 import { HZ_SCALE } from 'bmsx/machine/runtime/timing/constants';
-import { ensureBrowserBackendFactory } from 'bmsx/render/backend/browser_factory';
 import { WorkerStreamingAudioService } from './worker_audio';
 import type { GamepadControlHandle, GameViewCanvas, GameViewHost, HostEventListenerTarget, HostEventOptions, HostWindowEventType, OnscreenGamepadHandles, OverlayHandle, SurfaceBounds, ViewportDimensions } from 'bmsx/platform';
 import { type vec2 } from 'bmsx/rompack/format';
@@ -1634,7 +1633,6 @@ function resolveBackendFactory(): BackendFactory {
 }
 
 export async function createBackend(host: BrowserGameViewHost): Promise<unknown> {
-	ensureBrowserBackendFactory();
 	const factory = resolveBackendFactory();
 	return factory(host);
 }

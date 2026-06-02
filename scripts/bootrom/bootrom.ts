@@ -198,7 +198,7 @@ export const bootrom = {
 		const fetchRom = () => {
 			return fetchBuffer(url).catch(err => {
 				console.error(`Error while fetching ROM: "${err.message}"`);
-				// We do not reject here, allowing the console core to handle the missing cartridge by itself (showing a blank screen, like a retro-style computer with no cart inserted).
+				// We do not reject here, allowing the machine runtime to handle the missing cartridge by itself (showing a blank screen, like a retro-style computer with no cart inserted).
 			});
 		};
 

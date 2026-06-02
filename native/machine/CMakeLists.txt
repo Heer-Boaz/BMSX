@@ -81,7 +81,7 @@ elseif(MSVC)
 endif()
 
 # =============================================================================
-# Core engine library (static)
+# Machine library (static)
 # =============================================================================
 
 set_property(DIRECTORY APPEND PROPERTY CMAKE_CONFIGURE_DEPENDS
@@ -344,8 +344,16 @@ add_library(bmsx_core STATIC
 
 # stb is plain C; compile it as C to avoid libstdc++'s legacy C wrappers (e.g. <math.h>)
 
-# Required for linking static library into shared library
-set_target_properties(bmsx_core PROPERTIES POSITION_INDEPENDENT_CODE ON)
+# Required for linking static library into shared library.
+set(BMSX_NATIVE_ARTIFACT_DIR "${CMAKE_CURRENT_SOURCE_DIR}/../../lib")
+file(MAKE_DIRECTORY "${BMSX_NATIVE_ARTIFACT_DIR}")
+set_target_properties(bmsx_core PROPERTIES
+	POSITION_INDEPENDENT_CODE ON
+	OUTPUT_NAME "bmsx"
+	ARCHIVE_OUTPUT_DIRECTORY "${BMSX_NATIVE_ARTIFACT_DIR}"
+	ARCHIVE_OUTPUT_DIRECTORY_DEBUG "${BMSX_NATIVE_ARTIFACT_DIR}"
+	ARCHIVE_OUTPUT_DIRECTORY_RELEASE "${BMSX_NATIVE_ARTIFACT_DIR}"
+)
 
 target_include_directories(bmsx_core PUBLIC
 	${CMAKE_CURRENT_SOURCE_DIR}
@@ -393,7 +401,7 @@ if(BMSX_BUILD_LIBRETRO)
 	# Libretro naming convention
 	set_target_properties(bmsx_libretro PROPERTIES
 		PREFIX ""
-		OUTPUT_NAME "bmsx_libretro"
+		OUTPUT_NAME "libretro_bmsx"
 	)
 
 	# Platform-specific extensions

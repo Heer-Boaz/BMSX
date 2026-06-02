@@ -37,16 +37,16 @@ libretro-host-snesmini-debug:
 		"$(CURDIR)/scripts/setup-snesmini-local-core.sh" "$(SNESMINI_SYSROOT)"
 
 libretro-host-wsl-debug:
-	cmake -S native/machine -B build-libretro-host \
+	cmake -S native/machine -B build-libretro-host-wsl \
 		-G Ninja \
 		-DCMAKE_C_COMPILER_LAUNCHER=ccache \
 		-DCMAKE_CXX_COMPILER_LAUNCHER=ccache \
 		-DCMAKE_BUILD_TYPE=Debug \
 		-DBMSX_BUILD_LIBRETRO_HOST=ON \
 		-DBMSX_BUILD_LIBRETRO=OFF
-	cmake --build build-libretro-host --config Debug --parallel "$(nproc)" --target bmsx_libretro_host
+	cmake --build build-libretro-host-wsl --config Debug --parallel "$$(nproc)" --target bmsx_libretro_host
 	@mkdir -p "$(SNESMINI_DIST_DIR)"
-	cp build-libretro-host/bmsx_libretro_host "$(SNESMINI_DIST_DIR)/bmsx_libretro_host.wsl"
+	cp build-libretro-host-wsl/bmsx_libretro_host "$(SNESMINI_DIST_DIR)/bmsx_libretro_host.wsl"
 
 snesmini-sysroot:
 	@if [ -f "$(SNESMINI_SYSROOT)/.snesmini-ready" ]; then \
@@ -61,20 +61,20 @@ libretro-snesmini-debug-inner: snesmini-sysroot
 		cmake -S native/machine -B "$(SNESMINI_BUILD_DIR)" \
 			-DCMAKE_BUILD_TYPE="$(SNESMINI_BUILD_TYPE)" \
 			$(SNESMINI_CMAKE_ARGS)
-	cmake --build "$(SNESMINI_BUILD_DIR)" --config "$(SNESMINI_BUILD_TYPE)" --parallel "$(nproc)" --target bmsx_libretro
+	cmake --build "$(SNESMINI_BUILD_DIR)" --config "$(SNESMINI_BUILD_TYPE)" --parallel "$$(nproc)" --target bmsx_libretro
 	@mkdir -p "$(SNESMINI_DIST_DIR)"
-	cp "$(SNESMINI_BUILD_DIR)/bmsx_libretro.so" "$(SNESMINI_DIST_DIR)/bmsx_libretro.so"
+	cp "$(SNESMINI_BUILD_DIR)/libretro_bmsx.so" "$(SNESMINI_DIST_DIR)/libretro_bmsx.so"
 ifeq ($(SNESMINI_VALIDATE_LIBDEPS),1)
-	./scripts/check_snesmini_libdeps.sh "$(SNESMINI_DIST_DIR)/bmsx_libretro.so" "$(SNESMINI_ALLOWED_LIBDEPS)"
+	./scripts/check_snesmini_libdeps.sh "$(SNESMINI_DIST_DIR)/libretro_bmsx.so" "$(SNESMINI_ALLOWED_LIBDEPS)"
 endif
 	@core_name=$$(sed -nE 's/.*CORE_NAME = "([^"]*)".*/\1/p' "$(SNESMINI_LIBRETRO_ENTRY)"); \
 	core_version=$$(sed -nE 's/.*CORE_VERSION = "([^"]*)".*/\1/p' "$(SNESMINI_LIBRETRO_ENTRY)"); \
 	extensions=$$(sed -nE 's/.*VALID_EXTENSIONS = "([^"]*)".*/\1/p' "$(SNESMINI_LIBRETRO_ENTRY)"); \
-	printf 'display_name = "%s"\n' "$$core_name" > "$(SNESMINI_DIST_DIR)/bmsx_libretro.info"; \
-	printf 'display_version = "%s"\n' "$$core_version" >> "$(SNESMINI_DIST_DIR)/bmsx_libretro.info"; \
-	printf 'corename = "%s"\n' "$$core_name" >> "$(SNESMINI_DIST_DIR)/bmsx_libretro.info"; \
-	printf 'supported_extensions = "%s"\n' "$$extensions" >> "$(SNESMINI_DIST_DIR)/bmsx_libretro.info"; \
-	printf 'supports_no_game = "true"\n' >> "$(SNESMINI_DIST_DIR)/bmsx_libretro.info"
+	printf 'display_name = "%s"\n' "$$core_name" > "$(SNESMINI_DIST_DIR)/libretro_bmsx.info"; \
+	printf 'display_version = "%s"\n' "$$core_version" >> "$(SNESMINI_DIST_DIR)/libretro_bmsx.info"; \
+	printf 'corename = "%s"\n' "$$core_name" >> "$(SNESMINI_DIST_DIR)/libretro_bmsx.info"; \
+	printf 'supported_extensions = "%s"\n' "$$extensions" >> "$(SNESMINI_DIST_DIR)/libretro_bmsx.info"; \
+	printf 'supports_no_game = "true"\n' >> "$(SNESMINI_DIST_DIR)/libretro_bmsx.info"
 
 libretro-host-snesmini-debug-host: snesmini-sysroot
 	BMSX_SYSROOT="$(SNESMINI_SYSROOT)" BMSX_TOOLCHAIN_PREFIX="$(SNESMINI_TOOLCHAIN_PREFIX)" \
@@ -86,6 +86,6 @@ libretro-host-snesmini-debug-host: snesmini-sysroot
 			-DCMAKE_CXX_FLAGS="$(SNESMINI_CXX_FLAGS) -isystem /usr/include" \
 			-DBMSX_BUILD_LIBRETRO=OFF \
 			-DBMSX_BUILD_LIBRETRO_HOST=ON
-	cmake --build "$(SNESMINI_BUILD_DIR_HOST)" --config "$(SNESMINI_BUILD_TYPE)" --parallel "$(nproc)" --target bmsx_libretro_host
+	cmake --build "$(SNESMINI_BUILD_DIR_HOST)" --config "$(SNESMINI_BUILD_TYPE)" --parallel "$$(nproc)" --target bmsx_libretro_host
 	@mkdir -p "$(SNESMINI_DIST_DIR)"
 	cp "$(SNESMINI_BUILD_DIR_HOST)/bmsx_libretro_host" "$(SNESMINI_DIST_DIR)/bmsx_libretro_host"

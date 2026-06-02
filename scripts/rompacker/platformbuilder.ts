@@ -4,7 +4,7 @@ import { stat } from 'node:fs/promises';
 import { join } from 'node:path';
 
 import { runPlatformBuild } from './platformbuild';
-import { getNodeLauncherFilename } from './rombuilder';
+import { getBrowserHostFilename, getNodeLauncherFilename } from './rombuilder';
 import type { RomPackerTarget } from './rompacker.rompack';
 import { collectSourceFiles } from '../analysis/file_scan';
 
@@ -19,18 +19,27 @@ const KNOWN_FLAGS = new Set<string>([
 ]);
 
 const TASK = {
-	CONSOLE_RUNTIME: 'Build console runtime',
+	HOST_SYSTEM_ATLAS: 'Build host system atlas',
+	MACHINE_RUNTIME: 'Build machine runtime',
+	BROWSER_HOST: 'Build browser host',
 	PLATFORM_ARTIFACTS: 'Build platform artifacts',
-	DONE: 'PLATFORM BUILD COMPLETE',
 } as const;
 
 type TaskName = typeof TASK[keyof typeof TASK];
 
-const platformTaskList: TaskName[] = [
-	TASK.CONSOLE_RUNTIME,
-	TASK.PLATFORM_ARTIFACTS,
-	TASK.DONE,
-];
+function getPlatformTaskList(platform: RomPackerTarget): TaskName[] {
+	const tasks: TaskName[] = [
+		TASK.HOST_SYSTEM_ATLAS,
+	];
+	if (platform === 'browser' || platform === 'headless' || platform === 'cli') {
+		tasks.push(TASK.MACHINE_RUNTIME);
+	}
+	if (platform === 'browser') {
+		tasks.push(TASK.BROWSER_HOST);
+	}
+	tasks.push(TASK.PLATFORM_ARTIFACTS);
+	return tasks;
+}
 
 function timer(ms: number) {
 	return new Promise(res => setTimeout(res, ms));
@@ -179,7 +188,7 @@ async function getNewestInputMtimeMs(path: string): Promise<number> {
 
 function resolvePlatformArtifactPath(platform: RomPackerTarget, debug: boolean): string {
 	if (platform === 'browser') {
-		return join(process.cwd(), 'rom', 'bootrom.js');
+		return join(process.cwd(), 'dist', getBrowserHostFilename(debug));
 	}
 	if (platform === 'headless' || platform === 'cli') {
 		return join(process.cwd(), 'dist', getNodeLauncherFilename(platform, debug));
@@ -191,14 +200,18 @@ function resolvePlatformDependencyRoots(platform: RomPackerTarget): string[] {
 	if (platform !== 'browser' && platform !== 'headless' && platform !== 'cli') {
 		return [];
 	}
-	return [
+	const roots = [
 		join(process.cwd(), 'scripts', 'rompacker'),
 		join(process.cwd(), 'scripts', 'bootrom'),
-		join(process.cwd(), 'src', 'bmsx', 'res'),
-		join(process.cwd(), 'packages', 'bmsx-browser-host', 'src'),
-		join(process.cwd(), 'packages', 'bmsx-node-host', 'src'),
-		join(process.cwd(), 'src', 'bmsx', 'platform'),
+		join(process.cwd(), 'packages', 'bmsx-console', 'src'),
 	];
+	if (platform === 'browser') {
+		roots.push(join(process.cwd(), 'packages', 'bmsx-browser-host', 'src'));
+	}
+	if (platform === 'headless' || platform === 'cli') {
+		roots.push(join(process.cwd(), 'packages', 'bmsx-node-host', 'src'));
+	}
+	return roots;
 }
 
 async function shouldForceRebuildForPlatformSources(options: ParsedPlatformOptions): Promise<boolean> {
@@ -269,8 +282,8 @@ async function main(): Promise<void> {
 		ok: ui.ok,
 		progress: undefined,
 	};
-	if (options.platform === 'browser' || options.platform === 'headless') {
-		const progress = new ProgressReporter(platformTaskList);
+	if (options.platform === 'browser' || options.platform === 'headless' || options.platform === 'cli') {
+		const progress = new ProgressReporter(getPlatformTaskList(options.platform));
 		logger.progress = progress;
 	}
 	await runPlatformBuild(options, logger);

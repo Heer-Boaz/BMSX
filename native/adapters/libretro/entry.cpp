@@ -2,7 +2,7 @@
  * entry.cpp - Libretro core entry points
  *
  * This file implements all the required libretro callbacks that RetroArch
- * uses to communicate with the BMSX console core.
+ * uses to communicate with the BMSX machine runtime.
  */
 
 #include <cstdarg>

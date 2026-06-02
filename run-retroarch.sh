@@ -4,7 +4,7 @@ set -euo pipefail
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 
 # Gebruik direct het gebouwde core bestand in dist, geen rare copy of build folder referenties meer
-CORE_PATH="$ROOT_DIR/dist/bmsx_libretro.so"
+CORE_PATH="$ROOT_DIR/dist/libretro_bmsx.so"
 
 # Zoek naar retroarch lokaal of op het systeem
 if [[ -f "$ROOT_DIR/tools/retroarch-gles2/retroarch" ]]; then

@@ -1,9 +1,7 @@
 import { constructPlatformFromViewHostHandle } from './platform';
-import { startCart } from 'bmsx/machine/program/start_cart';
 
 type BmsxGlobal = {
 	constructPlatformFromViewHostHandle: typeof constructPlatformFromViewHostHandle;
-	startCart: typeof startCart;
 };
 
 declare global {
@@ -12,5 +10,7 @@ declare global {
 }
 
 const globalTarget = globalThis as typeof globalThis & { bmsx?: BmsxGlobal };
+const namespace = globalTarget.bmsx || {} as BmsxGlobal;
 
-globalTarget.bmsx = { constructPlatformFromViewHostHandle, startCart };
+namespace.constructPlatformFromViewHostHandle = constructPlatformFromViewHostHandle;
+globalTarget.bmsx = namespace;

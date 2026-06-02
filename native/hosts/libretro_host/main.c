@@ -3679,8 +3679,8 @@ static void load_core(LibretroCore* core, const char* path) {
 static void usage(const char* argv0) {
 	fprintf(stderr,
 		    "Usage:\n"
-		    "  %s --core ./bmsx_libretro.so --no-game [--backend software|gles2] [--video fb|sdl] [--system-dir PATH] [--save-dir PATH] [--rom-folder FOLDER] [--input-timeline FILE] [--auto-timeline] [--input-debug] [--no-audio] [--max-frames N] [--crt-postprocessing on|off]\n"
-		    "  %s --core ./bmsx_libretro.so GAME.rom [--backend software|gles2] [--video fb|sdl] [--system-dir PATH] [--save-dir PATH] [--rom-folder FOLDER] [--input-timeline FILE] [--auto-timeline] [--input-debug] [--no-audio] [--max-frames N] [--crt-postprocessing on|off]\n",
+		    "  %s --core ./libretro_bmsx.so --no-game [--backend software|gles2] [--video fb|sdl] [--system-dir PATH] [--save-dir PATH] [--rom-folder FOLDER] [--input-timeline FILE] [--auto-timeline] [--input-debug] [--no-audio] [--max-frames N] [--crt-postprocessing on|off]\n"
+		    "  %s --core ./libretro_bmsx.so GAME.rom [--backend software|gles2] [--video fb|sdl] [--system-dir PATH] [--save-dir PATH] [--rom-folder FOLDER] [--input-timeline FILE] [--auto-timeline] [--input-debug] [--no-audio] [--max-frames N] [--crt-postprocessing on|off]\n",
 		    argv0, argv0);
 	exit(2);
 }
@@ -3707,7 +3707,7 @@ static uint64_t parse_positive_u64_arg(const char* text, const char* option_name
 
 int main(int argc, char** argv) {
 	install_crash_handlers();
-	const char* core_path = "./bmsx_libretro.so";
+	const char* core_path = "./libretro_bmsx.so";
 	const char* game_path = NULL;
 	bool no_game = false;
 	const char* system_dir = "";

@@ -1,12 +1,16 @@
 import pc from 'picocolors';
 
 import {
+	buildBrowserHost,
 	buildBootromScriptIfNewer,
-	buildConsoleRuntime,
+	buildMachineRuntime,
 	buildGameHtmlAndManifest,
+	getBrowserHostFilename,
+	getMachineRuntimeFilename,
 	getNodeLauncherFilename,
 	getRomManifest,
-	isConsoleRuntimeRebuildRequired,
+	isBrowserHostRebuildRequired,
+	isMachineRuntimeRebuildRequired,
 } from './rombuilder';
 import { ensureHostSystemAtlasArtifacts } from './host_system_atlas';
 import type { RomPackerOptions, RomPackerTarget } from './rompacker.rompack';
@@ -35,8 +39,8 @@ export interface BuilderLogger {
 type PlatformBuildOptions = Pick<RomPackerOptions, 'platform' | 'debug' | 'force'>;
 type BrowserDeployOptions = Pick<RomPackerOptions, 'platform' | 'debug' | 'force' | 'respath' | 'title' | 'rom_name'>;
 
-const LIBRETRO_CORE_BASENAME = 'bmsx_libretro';
-const LIBRETRO_ENTRY_PATH = join(process.cwd(), 'src', 'bmsx_cpp', 'platform', 'libretro', 'entry.cpp');
+const LIBRETRO_CORE_BASENAME = 'libretro_bmsx';
+const LIBRETRO_ENTRY_PATH = join(process.cwd(), 'native', 'adapters', 'libretro', 'entry.cpp');
 
 function runCommand(command: string, args: string[]): void {
 	const result = spawnSync(command, args, { stdio: 'inherit' });
@@ -46,10 +50,7 @@ function runCommand(command: string, args: string[]): void {
 }
 
 function getLibretroBuildDir(platform: RomPackerTarget): string {
-	// Use a single build directory per platform. The build type (Debug/Release)
-	// is passed to CMake via -DCMAKE_BUILD_TYPE rather than using separate
-	// build folders like build-debug/build-release.
-	return platform === 'libretro-win' ? 'build-win' : 'build';
+	return platform === 'libretro-win' ? 'build-libretro-win' : 'build-libretro-wsl';
 }
 
 function getLibretroCoreFilename(platform: RomPackerTarget): string {
@@ -187,16 +188,28 @@ export async function runPlatformBuild(options: PlatformBuildOptions, logger: Bu
 		return;
 	}
 
-	if (platform === 'browser' || platform === 'headless') {
-		await runStep('Build console runtime', async () => {
-			const consoleRuntimeOut = debug ? './dist/console.debug.js' : './dist/console.js';
-			const runtimeNeedsRebuild = force || await isConsoleRuntimeRebuildRequired(consoleRuntimeOut);
+	if (platform === 'browser' || platform === 'headless' || platform === 'cli') {
+		await runStep('Build machine runtime', async () => {
+			const machineRuntimeOut = `./dist/${getMachineRuntimeFilename(debug)}`;
+			const runtimeNeedsRebuild = force || await isMachineRuntimeRebuildRequired(machineRuntimeOut);
 			if (runtimeNeedsRebuild) {
-				await buildConsoleRuntime(debug);
-				logger.ok(`Console runtime ready -> ${pc.white(consoleRuntimeOut.replace('./dist/', 'dist/'))}`);
+				await buildMachineRuntime(debug);
+				logger.ok(`Machine runtime ready -> ${pc.white(machineRuntimeOut.replace('./dist/', 'dist/'))}`);
 			}
 			else {
-				logger.ok(`Console runtime ready -> ${pc.white(consoleRuntimeOut.replace('./dist/', 'dist/'))} (up-to-date)`);
+				logger.ok(`Machine runtime ready -> ${pc.white(machineRuntimeOut.replace('./dist/', 'dist/'))} (up-to-date)`);
+			}
+		});
+	}
+	if (platform === 'browser') {
+		await runStep('Build browser host', async () => {
+			const browserHostOut = `./dist/${getBrowserHostFilename(debug)}`;
+			const hostNeedsRebuild = force || await isBrowserHostRebuildRequired(browserHostOut);
+			if (hostNeedsRebuild) {
+				await buildBrowserHost(debug);
+				logger.ok(`Browser host ready -> ${pc.white(browserHostOut.replace('./dist/', 'dist/'))}`);
+			} else {
+				logger.ok(`Browser host ready -> ${pc.white(browserHostOut.replace('./dist/', 'dist/'))} (up-to-date)`);
 			}
 		});
 	}
@@ -248,12 +261,19 @@ export async function runBrowserDeploy(options: BrowserDeployOptions, logger: Bu
 	logger.bullet('Title', pc.white(resolvedTitle));
 	logger.bullet('Debug', debug ? pc.green('enabled') : pc.dim('disabled'));
 
-	const consoleRuntimeOut = debug ? './dist/console.debug.js' : './dist/console.js';
-	const runtimeNeedsRebuild = force || await isConsoleRuntimeRebuildRequired(consoleRuntimeOut);
+	const machineRuntimeOut = `./dist/${getMachineRuntimeFilename(debug)}`;
+	const runtimeNeedsRebuild = force || await isMachineRuntimeRebuildRequired(machineRuntimeOut);
 	if (runtimeNeedsRebuild) {
-		logger.info('Build console runtime');
-		await buildConsoleRuntime(debug);
-		logger.ok(`Console runtime ready -> ${pc.white(consoleRuntimeOut.replace('./dist/', 'dist/'))}`);
+		logger.info('Build machine runtime');
+		await buildMachineRuntime(debug);
+		logger.ok(`Machine runtime ready -> ${pc.white(machineRuntimeOut.replace('./dist/', 'dist/'))}`);
+	}
+	const browserHostOut = `./dist/${getBrowserHostFilename(debug)}`;
+	const hostNeedsRebuild = force || await isBrowserHostRebuildRequired(browserHostOut);
+	if (hostNeedsRebuild) {
+		logger.info('Build browser host');
+		await buildBrowserHost(debug);
+		logger.ok(`Browser host ready -> ${pc.white(browserHostOut.replace('./dist/', 'dist/'))}`);
 	}
 
 	await buildBootromScriptIfNewer({ debug, forceBuild: force, platform });

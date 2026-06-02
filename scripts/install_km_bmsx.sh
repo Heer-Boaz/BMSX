@@ -3,7 +3,7 @@ cat >/root/install_km_bmsx.sh <<'EOF'
 set -eu
 
 # --- Configuration (adjust if you want different names/paths) ---
-CORE_SRC="/etc/libretro/core/bmsx_libretro.so"
+CORE_SRC="/etc/libretro/core/libretro_bmsx.so"
 CORE_ID="km_bmsx"
 CORE_DST="/etc/libretro/core/${CORE_ID}_libretro.so"
 INFO_DST="/etc/libretro/info/${CORE_ID}_libretro.info"
@@ -24,7 +24,7 @@ BMSX_SYSTEM_ROM_NAME="${BMSX_SYSTEM_ROM_NAME:-}"
 echo "[1/7] Core check..."
 if [ ! -f "$CORE_SRC" ]; then
 	echo "ERROR: $CORE_SRC not found."
-	echo "Upload your core to /etc/libretro/core/bmsx_libretro.so first."
+	echo "Upload your core to /etc/libretro/core/libretro_bmsx.so first."
 	exit 1
 fi
 

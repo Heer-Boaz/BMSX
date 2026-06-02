@@ -6,7 +6,7 @@ BMSX now builds Lua carts only:
 
 - carts live under `carts/<name>`
 - cart resources live under `carts/<name>/res`
-- the TypeScript runtime is the console host, not a standalone TypeScript game engine
+- the TypeScript runtime is a BMSX machine/host stack, not a standalone TypeScript game engine
 
 If you need the removed package-mode workflow, use:
 

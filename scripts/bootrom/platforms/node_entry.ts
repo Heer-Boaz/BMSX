@@ -26,16 +26,16 @@ interface LaunchOptions {
 	inputTimelinePath?: string;
 	testPath?: string;
 	ttlMs?: number;
-	consoleRuntimePath?: string;
+	machineRuntimePath?: string;
 	systemRomPath?: string;
 	cpuProfile?: boolean;
 }
 
 interface BootGlobals {
-	bmsx?: ConsoleNamespace;
+	bmsx?: MachineNamespace;
 }
 
-type ConsoleNamespace = {
+type MachineNamespace = {
 	startCart: typeof import('../../../packages/bmsx-console/src/machine/program/start_cart').startCart;
 };
 
@@ -271,7 +271,8 @@ function printHelp(): void {
 	console.log('  --ttl <seconds>          Auto-terminate after the given number of seconds (default 10).');
 	console.log('  --input-timeline <file>  JSON timeline of InputEvt entries to schedule; headless capture markers write screenshots next to the timeline.');
 	console.log('  --test <file>            Host test file executed by the headless test runner.');
-	console.log('  --console-runtime <path> JS runtime bundle for the console core (defaults to dist/console(.debug).js).');
+	console.log('  --machine-runtime <path> JS machine runtime bundle (defaults to dist/libbmsx(.debug).js).');
+	console.log('  --console-runtime <path> Alias for --machine-runtime.');
 	console.log('  --system-rom <path>      System ROM (defaults to dist/bmsx-bios(.debug).rom).');
 	console.log('  --cpu-profile            Enable fantasy CPU profiling and print a report on exit.');
 	console.log('  --help, -h               Show this help message.');
@@ -344,10 +345,10 @@ function parseArgs(argv: string[]): LaunchOptions {
 			index += 2;
 			continue;
 		}
-		if (arg === '--console-runtime') {
+		if (arg === '--machine-runtime' || arg === '--console-runtime') {
 			const next = argv[index + 1];
-			if (!next) throw new Error('Expected path after --console-runtime.');
-			options.consoleRuntimePath = next;
+			if (!next) throw new Error(`Expected path after ${arg}.`);
+			options.machineRuntimePath = next;
 			index += 2;
 			continue;
 		}
@@ -550,7 +551,7 @@ function resolveRomPath(options: LaunchOptions, debugFlag: boolean): string {
 }
 
 async function resolveCartRoot(romFolder: string): Promise<string> {
-	const candidate = path.resolve('src', 'carts', romFolder);
+	const candidate = path.resolve('carts', romFolder);
 	try {
 		await fs.access(candidate);
 		return candidate;
@@ -766,13 +767,17 @@ function sanitizeTime(value: number, index: number): number {
 	return value;
 }
 
-async function loadConsoleRuntimeFromFile(filePath: string): Promise<void> {
+function getMachineRuntimeFilename(debug: boolean): string {
+	return debug ? 'libbmsx.debug.js' : 'libbmsx.js';
+}
+
+async function loadMachineRuntimeFromFile(filePath: string): Promise<void> {
 	try {
 		const script = await fs.readFile(filePath, 'utf8');
 		const wrapped = new Function('globalScope', `${script}\n//# sourceURL=${filePath}`);
 		wrapped(globalThis as Record<string, unknown>);
 	} catch (err: any) {
-		throw new Error(`Failed to load console runtime from "${filePath}": ${err?.message ?? err}`);
+		throw new Error(`Failed to load machine runtime from "${filePath}": ${err?.message ?? err}`);
 	}
 }
 
@@ -877,18 +882,18 @@ function createPlatform(frameIntervalMs: number): Platform {
 	throw new Error(`Unsupported boot platform: ${__BOOTROM_TARGET__}`);
 }
 
-async function prepareRuntime(cliOptions: LaunchOptions, romPath: string, debugFlag: boolean): Promise<ConsoleNamespace> {
+async function prepareRuntime(cliOptions: LaunchOptions, romPath: string, debugFlag: boolean): Promise<MachineNamespace> {
 	ensureHostEnvironment();
 	const globals = globalThis as unknown as BootGlobals;
 	const romDirectory = path.resolve(path.dirname(romPath));
-	const consoleRuntimePath = cliOptions.consoleRuntimePath
-		? path.resolve(cliOptions.consoleRuntimePath)
-		: path.join(romDirectory, debugFlag ? 'console.debug.js' : 'console.js');
+	const machineRuntimePath = cliOptions.machineRuntimePath
+		? path.resolve(cliOptions.machineRuntimePath)
+		: path.join(romDirectory, getMachineRuntimeFilename(debugFlag));
 
-	await loadConsoleRuntimeFromFile(consoleRuntimePath);
+	await loadMachineRuntimeFromFile(machineRuntimePath);
 	const runtime = globals.bmsx;
 	if (!runtime) {
-		throw new Error('Console runtime did not register the bmsx namespace.');
+		throw new Error('Machine runtime did not register the bmsx namespace.');
 	}
 	return runtime;
 }
@@ -906,12 +911,12 @@ async function main(): Promise<void> {
 	}
 
 	console.log(`[bootrom:${__BOOTROM_TARGET__}] Loading ROM: ${romPath}`);
-	const consoleRuntime = await prepareRuntime(cliOptions, romPath, debugFlag);
+	const machineRuntime = await prepareRuntime(cliOptions, romPath, debugFlag);
 	const romDirectory = path.resolve(path.dirname(romPath));
 	const systemRomPath = cliOptions.systemRomPath
 		? path.resolve(cliOptions.systemRomPath)
 		: path.join(romDirectory, debugFlag ? 'bmsx-bios.debug.rom' : 'bmsx-bios.rom');
-	assertDebugArtifacts('Console runtime', debugFlag, cliOptions.consoleRuntimePath ?? path.join(romDirectory, debugFlag ? 'console.debug.js' : 'console.js'));
+	assertDebugArtifacts('Machine runtime', debugFlag, cliOptions.machineRuntimePath ?? path.join(romDirectory, getMachineRuntimeFilename(debugFlag)));
 	assertDebugArtifacts('System ROM', debugFlag, systemRomPath);
 	const workspaceRoot = path.resolve(romDirectory, '..');
 	console.log(`[bootrom:${__BOOTROM_TARGET__}] Loading system ROM: ${systemRomPath}`);
@@ -1012,7 +1017,7 @@ async function main(): Promise<void> {
 	}
 
 	console.log(`[bootrom:${__BOOTROM_TARGET__}] Starting game (debug=${debugFlag}, frameIntervalMs=${frameInterval}).`);
-	const runtime = await consoleRuntime.startCart(bootArgs);
+	const runtime = await machineRuntime.startCart(bootArgs);
 	const requestExit = (code: number): void => {
 		if (!cpuProfileDumped && cpuProfileActive) {
 			cpuProfileDumped = true;
