@@ -433,7 +433,14 @@ void Input::shutdown() {
 		m_focusChangeSub.unsubscribe();
 	}
 
-	// Clear device bindings
+	for (auto& [deviceId, binding] : m_deviceBindings) {
+		(void)deviceId;
+		if (binding.assignedPlayer.has_value()) {
+			auto* player = m_playerInputs[binding.assignedPlayer.value() - 1].get();
+			player->inputHandlers[static_cast<size_t>(binding.source)] = nullptr;
+		}
+		binding.handler->reset();
+	}
 	m_deviceBindings.clear();
 	m_activePressIds.clear();
 	m_nextPressId = 1;

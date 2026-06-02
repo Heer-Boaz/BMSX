@@ -9,7 +9,6 @@ class OpenGLES2Backend;
 
 struct VdpRpuRuntime {
 	OpenGLES2Backend& backend;
-	GameView& context;
 };
 
 void initVdpRpuPipeline(OpenGLES2Backend& backend);

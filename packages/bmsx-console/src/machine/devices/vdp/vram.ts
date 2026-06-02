@@ -133,10 +133,10 @@ export class VdpVramUnit {
 		this.bootSeed = entropySeeds.bootSeed >>> 0;
 	}
 
-	public setExternalStaging(buffer: Uint8Array, pageRevisions: Uint32Array): void {
-		this.staging = buffer;
+	public setExternalStaging(bytes: Uint8Array, length: number, pageRevisions: Uint32Array): void {
+		this.staging = bytes;
 		this.stagingPageRevisions = pageRevisions;
-		this.markStagingDirty(0, this.staging.byteLength);
+		this.markStagingDirty(0, length);
 	}
 
 	public get slots(): VdpSurfaceUploadSlot[] {

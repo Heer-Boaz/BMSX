@@ -3,12 +3,15 @@
 #include "input/player.h"
 #include "machine/bus/io.h"
 #include "machine/devices/vdp/registers.h"
+#include "machine/devices/vdp/rpu.h"
+#include "machine/devices/vdp/rpu_desc.h"
 #include "machine/memory/map.h"
 #include "machine/runtime/runtime.h"
 #include "platform.h"
 #include "support/program_cart_fixture.h"
 
 #include <array>
+#include <cstdint>
 #include <stdexcept>
 #include <vector>
 
@@ -60,21 +63,38 @@ void testLibretroSaveStateRoundTrip() {
 	require(runtime.machine.irqController.hasAssertedMaskableInterruptLine(), "libretro loadState should restore asserted IRQ line state");
 	require((memory.readIoU32(bmsx::IO_IRQ_FLAGS) & bmsx::IRQ_VBLANK) != 0u, "libretro loadState should restore cart-visible IRQ flags");
 
-	constexpr uint32_t rpuHeader = 0x18000000u;
-	constexpr uint32_t resourceNone = 0xffffffffu;
-	constexpr uint32_t opBeginPass = 32u;
-	constexpr uint32_t opEndPass = 33u;
-	constexpr uint32_t opBeginDraw = 40u;
-	constexpr uint32_t opEndDraw = 44u;
-	constexpr uint32_t shaderV2C4 = 0u;
-	constexpr uint32_t primitiveTriangles = 0u;
-	constexpr uint32_t indexNone = 0u;
-	constexpr uint32_t pipeColorWriteRgba = 0x000f0000u;
+	constexpr uint32_t passDescAddr = 0x100u;
+	constexpr uint32_t drawDescAddr = 0x140u;
+	constexpr uint32_t streamDescAddr = 0x200u;
+	constexpr uint32_t streamVramAddr = 0x300u;
+	memory.writeMappedU32LE(bmsx::VRAM_STAGING_BASE + streamVramAddr, 0x00112233u);
+	memory.writeMappedU32LE(bmsx::VRAM_STAGING_BASE + streamVramAddr + 4u, 0x44556677u);
+	memory.writeMappedU32LE(bmsx::VRAM_STAGING_BASE + streamVramAddr + 8u, 0x8899aabbu);
+	memory.writeMappedU32LE(bmsx::VRAM_STAGING_BASE + streamDescAddr + bmsx::RPU_STREAM_DESC_VRAM_ADDR_OFFSET, streamVramAddr);
+	memory.writeMappedU32LE(bmsx::VRAM_STAGING_BASE + streamDescAddr + bmsx::RPU_STREAM_DESC_BYTE_LENGTH_OFFSET, 36u);
+	memory.writeMappedU32LE(bmsx::VRAM_STAGING_BASE + streamDescAddr + bmsx::RPU_STREAM_DESC_LAYOUT_ID_OFFSET, bmsx::VDP_RPU_LAYOUT_V2_C4);
+	memory.writeMappedU32LE(bmsx::VRAM_STAGING_BASE + drawDescAddr + bmsx::RPU_DRAW_DESC_SHADER_VARIANT_OFFSET, bmsx::VDP_RPU_SHADER_V2_C4 | (bmsx::VDP_RPU_PRIM_TRIANGLES << 16u));
+	memory.writeMappedU32LE(bmsx::VRAM_STAGING_BASE + drawDescAddr + bmsx::RPU_DRAW_DESC_PIPELINE_WORD_OFFSET, bmsx::VDP_RPU_PIPE_COLOR_WRITE_MASK);
+	memory.writeMappedU32LE(bmsx::VRAM_STAGING_BASE + drawDescAddr + bmsx::RPU_DRAW_DESC_VERTEX_COUNT_OFFSET, 3u);
+	memory.writeMappedU32LE(bmsx::VRAM_STAGING_BASE + drawDescAddr + bmsx::RPU_DRAW_DESC_INSTANCE_COUNT_OFFSET, 1u);
+	memory.writeMappedU32LE(bmsx::VRAM_STAGING_BASE + drawDescAddr + bmsx::RPU_DRAW_DESC_INDEX_VRAM_ADDR_OFFSET, 0u);
+	memory.writeMappedU32LE(bmsx::VRAM_STAGING_BASE + drawDescAddr + bmsx::RPU_DRAW_DESC_INDEX_COUNT_OFFSET, 0u);
+	memory.writeMappedU32LE(bmsx::VRAM_STAGING_BASE + drawDescAddr + bmsx::RPU_DRAW_DESC_INDEX_TYPE_OFFSET, bmsx::VDP_RPU_INDEX_NONE | (1u << 8u));
+	memory.writeMappedU32LE(bmsx::VRAM_STAGING_BASE + drawDescAddr + bmsx::RPU_DRAW_DESC_STREAM_DESCS_ADDR_OFFSET, streamDescAddr);
+	memory.writeMappedU32LE(bmsx::VRAM_STAGING_BASE + drawDescAddr + bmsx::RPU_DRAW_DESC_CONSTANT_DESCS_ADDR_OFFSET, 0u);
+	memory.writeMappedU32LE(bmsx::VRAM_STAGING_BASE + drawDescAddr + bmsx::RPU_DRAW_DESC_TEXTURE_DESCS_ADDR_OFFSET, 0u);
+	memory.writeMappedU32LE(bmsx::VRAM_STAGING_BASE + passDescAddr + bmsx::RPU_PASS_DESC_COLOR_SURFACE_DESC_ADDR_OFFSET, 0u);
+	memory.writeMappedU32LE(bmsx::VRAM_STAGING_BASE + passDescAddr + bmsx::RPU_PASS_DESC_DEPTH_SURFACE_DESC_ADDR_OFFSET, 0u);
+	memory.writeMappedU32LE(bmsx::VRAM_STAGING_BASE + passDescAddr + bmsx::RPU_PASS_DESC_VIEWPORT_XY_OFFSET, 0u);
+	memory.writeMappedU32LE(bmsx::VRAM_STAGING_BASE + passDescAddr + bmsx::RPU_PASS_DESC_VIEWPORT_WH_OFFSET, 256u | (212u << 16u));
+	memory.writeMappedU32LE(bmsx::VRAM_STAGING_BASE + passDescAddr + bmsx::RPU_PASS_DESC_OPS_OFFSET, bmsx::VDP_RPU_PASS_COLOR_CLEAR);
+	memory.writeMappedU32LE(bmsx::VRAM_STAGING_BASE + passDescAddr + bmsx::RPU_PASS_DESC_CLEAR_COLOR_OFFSET, 0xff112233u);
+	memory.writeMappedU32LE(bmsx::VRAM_STAGING_BASE + passDescAddr + bmsx::RPU_PASS_DESC_CLEAR_DEPTH_WORD_OFFSET, 0xffffffffu);
+	memory.writeMappedU32LE(bmsx::VRAM_STAGING_BASE + passDescAddr + bmsx::RPU_PASS_DESC_DRAW_DESCS_ADDR_OFFSET, drawDescAddr);
+	memory.writeMappedU32LE(bmsx::VRAM_STAGING_BASE + passDescAddr + bmsx::RPU_PASS_DESC_DRAW_COUNT_OFFSET, 1u);
 	const uint32_t rpuWords[] = {
-		rpuHeader | (8u << 16u), opBeginPass, resourceNone, resourceNone, 0u, 256u | (212u << 16u), 1u, 0xff112233u, 0xffffffffu,
-		rpuHeader | (9u << 16u), opBeginDraw, shaderV2C4, primitiveTriangles | (indexNone << 8u), pipeColorWriteRgba, 3u, 1u, resourceNone, 0u, 0u,
-		rpuHeader | (1u << 16u), opEndDraw,
-		rpuHeader | (1u << 16u), opEndPass,
+		bmsx::VDP_RPU_PACKET_KIND | (bmsx::VDP_RPU_EXEC_PASS_LIST_WORDS << 16u), bmsx::VDP_RPU_OP_EXEC_PASS_LIST | (1u << 8u), passDescAddr,
+		bmsx::VDP_RPU_PACKET_KIND | (bmsx::VDP_RPU_SEAL_FRAME_WORDS << 16u), bmsx::VDP_RPU_OP_SEAL_FRAME,
 		bmsx::VDP_PKT_END,
 	};
 	for (const uint32_t word : rpuWords) {

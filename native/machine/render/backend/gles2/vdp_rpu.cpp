@@ -799,7 +799,7 @@ void registerVdpRpuPass(RenderPassLibrary& registry) {
 		return view->vdpRpuFrame->commands.passCount != 0u;
 	};
 	desc.exec = [view](GPUBackend* backend, void* framebuffer, std::any&) {
-		VdpRpuRuntime runtime{*static_cast<OpenGLES2Backend*>(backend), *view};
+		VdpRpuRuntime runtime{*static_cast<OpenGLES2Backend*>(backend)};
 		VdpRpuPipelineState state;
 		state.width = static_cast<i32>(view->offscreenCanvasSize.x);
 		state.height = static_cast<i32>(view->offscreenCanvasSize.y);

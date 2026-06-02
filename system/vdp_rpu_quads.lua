@@ -17,29 +17,44 @@ local screen_height<const> = machine_manifest.render_size.height
 local ndc_x_scale<const> = 2.0 / screen_width
 local ndc_y_scale<const> = 2.0 / screen_height
 
-local quad_buffer<const> = 900
-local instance_buffer<const> = 901
 local quad_vertex_stride<const> = sizeof(rpu_quad_vertex)
 local quad_vertex_count<const> = 4
 local quad_vertex_bytes<const> = quad_vertex_stride * quad_vertex_count
 local instance_stride<const> = sizeof(rpu_quad_instance)
-local staging_bytes<const> = 0x30000
-local quad_addr<const> = sys_geo_scratch_base + sys_geo_scratch_size - staging_bytes
-local instance_addr<const> = quad_addr + quad_vertex_bytes
-local instance_frame_bytes<const> = staging_bytes - quad_vertex_bytes
-local instance_frame_capacity<const> = instance_frame_bytes // instance_stride
 local instance_batch_capacity<const> = 1024
-local instance_buffer_bytes<const> = instance_stride * instance_batch_capacity
-local instance_frame_end<const> = instance_addr + (instance_stride * instance_frame_capacity)
+local instance_frame_capacity<const> = 4096
+local instance_frame_bytes<const> = instance_stride * instance_frame_capacity
+local draw_frame_capacity<const> = 4096
+local surface_desc_count<const> = 3
+local vram_staging_base<const> = sys_vram_staging_base
+local rpu_quad_vertex_vram_addr<const> = 0
+local rpu_instance_vram_addr<const> = rpu_quad_vertex_vram_addr + quad_vertex_bytes
+local rpu_surface_desc_vram_addr<const> = rpu_instance_vram_addr + instance_frame_bytes
+local rpu_pass_desc_vram_addr<const> = rpu_surface_desc_vram_addr + surface_desc_count * sys_rpu_surface_desc_bytes
+local rpu_draw_desc_vram_addr<const> = rpu_pass_desc_vram_addr + 64 * sys_rpu_pass_desc_bytes
+local rpu_stream_desc_vram_addr<const> = rpu_draw_desc_vram_addr + draw_frame_capacity * sys_rpu_draw_desc_bytes
+local rpu_texture_desc_vram_addr<const> = rpu_stream_desc_vram_addr + draw_frame_capacity * 2 * sys_rpu_stream_desc_bytes
+local rpu_texture_region_vram_addr<const> = rpu_texture_desc_vram_addr + draw_frame_capacity * sys_rpu_texture_desc_bytes
+local rpu_slot_texture_bytes<const> = (sys_vram_staging_size - rpu_texture_region_vram_addr) // 3
+local rpu_system_texture_vram_addr<const> = rpu_texture_region_vram_addr
+local rpu_primary_texture_vram_addr<const> = rpu_system_texture_vram_addr + rpu_slot_texture_bytes
+local rpu_secondary_texture_vram_addr<const> = rpu_primary_texture_vram_addr + rpu_slot_texture_bytes
+local quad_addr<const> = vram_staging_base + rpu_quad_vertex_vram_addr
+local instance_addr<const> = vram_staging_base + rpu_instance_vram_addr
+local instance_frame_end<const> = instance_addr + instance_frame_bytes
 local quad_primitive_index<const> = vdp_rpu.prim_triangle_strip | (vdp_rpu.index_none << 8)
 local quad_pipeline<const> = vdp_rpu.blend_alpha | (vdp_rpu.depth_lequal << 4) | (vdp_rpu.cull_none << 8) | vdp_rpu.pipe_depth_write | vdp_rpu.pipe_color_write_rgba
 local white<const> = 0xffffffff
 local draw_order_depth_scale<const> = 2.0 / 1048576.0
 local tile_run_depth<const> = 1.0 - ((sys_vdp_layer_world * 4096.0) * draw_order_depth_scale)
-local slot_surface<const> = {}
-slot_surface[sys_vdp_slot_system] = vdp_rpu.surface_system
-slot_surface[sys_vdp_slot_primary] = vdp_rpu.surface_primary
-slot_surface[sys_vdp_slot_secondary] = vdp_rpu.surface_secondary
+local slot_surface_desc<const> = {}
+slot_surface_desc[sys_vdp_slot_system] = rpu_surface_desc_vram_addr
+slot_surface_desc[sys_vdp_slot_primary] = rpu_surface_desc_vram_addr + sys_rpu_surface_desc_bytes
+slot_surface_desc[sys_vdp_slot_secondary] = rpu_surface_desc_vram_addr + (sys_rpu_surface_desc_bytes * 2)
+local slot_texture_vram_addr<const> = {}
+slot_texture_vram_addr[sys_vdp_slot_system] = rpu_system_texture_vram_addr
+slot_texture_vram_addr[sys_vdp_slot_primary] = rpu_primary_texture_vram_addr
+slot_texture_vram_addr[sys_vdp_slot_secondary] = rpu_secondary_texture_vram_addr
 
 local surface_width<const> = {}
 local surface_height<const> = {}
@@ -49,11 +64,18 @@ local pending_clear
 local pending_clear_color
 local instance_count
 local instance_batch_addr
-local current_surface
+local current_surface_desc
+local pass_count
+local draw_count
+local current_pass_first_draw
+local current_pass_ops
+local current_pass_clear_color
 
 instance_count = 0
 instance_batch_addr = instance_addr
-current_surface = vdp_rpu.resource_none
+current_surface_desc = vdp_rpu.resource_none
+pass_count = 0
+draw_count = 0
 
 local write_quad_vertices<const> = function()
 	local vertices<const>: *rpu_quad_vertex[quad_vertex_count] = quad_addr
@@ -79,11 +101,33 @@ local write_quad_vertices<const> = function()
 	vertices[3].color = white
 end
 
-local define_static_resources<const> = function()
-	write_quad_vertices()
-	vdp_rpu.buffer_define(quad_buffer, quad_vertex_bytes, vdp_rpu.usage_vertex)
-	vdp_rpu.buffer_upload_dma(quad_buffer, 0, quad_addr, quad_vertex_bytes)
-	vdp_rpu.buffer_define(instance_buffer, instance_buffer_bytes, vdp_rpu.usage_vertex)
+local write_surface_desc<const> = function(slot)
+	local surface_desc_addr<const> = slot_surface_desc[slot]
+	local texture_vram_addr<const> = slot_texture_vram_addr[slot]
+	local width<const> = surface_width[surface_desc_addr]
+	local height<const> = surface_height[surface_desc_addr]
+	local word_base<const> = (surface_desc_addr - rpu_surface_desc_vram_addr) // 4
+	local surface_words<const>: *word = vram_staging_base + rpu_surface_desc_vram_addr
+	surface_words[word_base] = texture_vram_addr
+	surface_words[word_base + 1] = (width * 4) | (width << 16)
+	surface_words[word_base + 2] = height | (vdp_rpu.surface_format_rgba8 << 16)
+	surface_words[word_base + 3] = 0
+end
+
+local end_pass<const> = function()
+	local pass_words<const>: *word = vram_staging_base + rpu_pass_desc_vram_addr
+	local word_base<const> = (pass_count * sys_rpu_pass_desc_bytes) // 4
+	pass_words[word_base] = 0
+	pass_words[word_base + 1] = 0
+	pass_words[word_base + 2] = 0
+	pass_words[word_base + 3] = screen_width | (screen_height << 16)
+	pass_words[word_base + 4] = current_pass_ops
+	pass_words[word_base + 5] = current_pass_clear_color
+	pass_words[word_base + 6] = 0xffffffff
+	pass_words[word_base + 7] = rpu_draw_desc_vram_addr + current_pass_first_draw * sys_rpu_draw_desc_bytes
+	pass_words[word_base + 8] = draw_count - current_pass_first_draw
+	pass_count = pass_count + 1
+	frame_active = nil
 end
 
 local begin_pass<const> = function()
@@ -99,7 +143,9 @@ local begin_pass<const> = function()
 	else
 		clear_color = 0
 	end
-	vdp_rpu.begin_pass(vdp_rpu.resource_none, vdp_rpu.resource_none, 0, 0, screen_width, screen_height, pass_ops, clear_color, 0xffffffff)
+	current_pass_first_draw = draw_count
+	current_pass_ops = pass_ops
+	current_pass_clear_color = clear_color
 	frame_active = true
 end
 
@@ -108,25 +154,50 @@ local flush_instances<const> = function()
 		return
 	end
 	local byte_length<const> = instance_count * instance_stride
+	local draw_word_base<const> = (draw_count * sys_rpu_draw_desc_bytes) // 4
+	local stream_word_base<const> = (draw_count * 2 * sys_rpu_stream_desc_bytes) // 4
+	local texture_word_base<const> = (draw_count * sys_rpu_texture_desc_bytes) // 4
+	local instance_batch_vram_addr<const> = instance_batch_addr - vram_staging_base
+	local texture_count = 0
 	begin_pass()
-	vdp_rpu.buffer_upload_dma(instance_buffer, 0, instance_batch_addr, byte_length)
-	vdp_rpu.begin_draw(vdp_rpu.shader_v2_t2_c4_i_affine2, quad_primitive_index, quad_pipeline, quad_vertex_count, instance_count, vdp_rpu.resource_none, 0, 0)
-	vdp_rpu.bind_stream(0, vdp_rpu.layout_v2_t2_c4, quad_buffer, 0, 0)
-	vdp_rpu.bind_stream(1, vdp_rpu.layout_i_affine2_trect_c4, instance_buffer, 0, 1)
-	if current_surface ~= vdp_rpu.resource_none then
-		vdp_rpu.bind_texture(0, current_surface)
+	if current_surface_desc ~= vdp_rpu.resource_none then
+		texture_count = 1
 	end
-	vdp_rpu.end_draw()
+	local draw_words<const>: *word = vram_staging_base + rpu_draw_desc_vram_addr
+	draw_words[draw_word_base] = vdp_rpu.shader_v2_t2_c4_i_affine2 | ((quad_primitive_index & 0xff) << 16)
+	draw_words[draw_word_base + 1] = quad_pipeline
+	draw_words[draw_word_base + 2] = quad_vertex_count
+	draw_words[draw_word_base + 3] = instance_count
+	draw_words[draw_word_base + 4] = 0
+	draw_words[draw_word_base + 5] = 0
+	draw_words[draw_word_base + 6] = ((quad_primitive_index >> 8) & 0xff) | (2 << 8) | (texture_count << 24)
+	draw_words[draw_word_base + 7] = rpu_stream_desc_vram_addr + draw_count * 2 * sys_rpu_stream_desc_bytes
+	draw_words[draw_word_base + 8] = 0
+	draw_words[draw_word_base + 9] = rpu_texture_desc_vram_addr + draw_count * sys_rpu_texture_desc_bytes
+	draw_words[draw_word_base + 10] = 0
+	local stream_words<const>: *word = vram_staging_base + rpu_stream_desc_vram_addr
+	stream_words[stream_word_base] = rpu_quad_vertex_vram_addr
+	stream_words[stream_word_base + 1] = quad_vertex_bytes
+	stream_words[stream_word_base + 2] = vdp_rpu.layout_v2_t2_c4
+	stream_words[stream_word_base + 3] = instance_batch_vram_addr
+	stream_words[stream_word_base + 4] = byte_length
+	stream_words[stream_word_base + 5] = vdp_rpu.layout_i_affine2_trect_c4 | (1 << 16) | (1 << 24)
+	if texture_count ~= 0 then
+		local texture_words<const>: *word = vram_staging_base + rpu_texture_desc_vram_addr
+		texture_words[texture_word_base] = current_surface_desc
+		texture_words[texture_word_base + 1] = 0
+	end
+	draw_count = draw_count + 1
 	instance_batch_addr = instance_batch_addr + byte_length
 	instance_count = 0
 end
 
-local switch_surface<const> = function(surface_id)
-	if current_surface == surface_id then
+local switch_surface<const> = function(surface_desc_addr)
+	if current_surface_desc == surface_desc_addr then
 		return
 	end
 	flush_instances()
-	current_surface = surface_id
+	current_surface_desc = surface_desc_addr
 end
 
 local write_instance<const> = function(origin_x, origin_y, depth_z, axis_xx, axis_xy, axis_yx, axis_yy, u0, v0, du, dv, color)
@@ -154,17 +225,12 @@ local write_instance<const> = function(origin_x, origin_y, depth_z, axis_xx, axi
 end
 
 function vdp_rpu_quads.set_slot_dim(slot, width, height)
-	local surface_id<const> = slot_surface[slot]
-	surface_width[surface_id] = width
-	surface_height[surface_id] = height
-end
-
-function vdp_rpu_quads.submit_slot_resources(slot)
-	vdp_stream_cursor = sys_vdp_stream_base
-	define_static_resources()
-	local surface_id<const> = slot_surface[slot]
-	vdp_rpu.surface_define(surface_id, surface_width[surface_id], surface_height[surface_id], vdp_rpu.surface_format_rgba8 | (vdp_rpu.surface_usage_texture << vdp_rpu.usage_shift))
-	vdp_stream_submit_cpu_fifo()
+	local surface_desc_addr<const> = slot_surface_desc[slot]
+	surface_width[surface_desc_addr] = width
+	surface_height[surface_desc_addr] = height
+	write_quad_vertices()
+	write_surface_desc(slot)
+	return vram_staging_base + slot_texture_vram_addr[slot], width * height * 4
 end
 
 function vdp_rpu_quads.clear_color(color)
@@ -172,8 +238,7 @@ function vdp_rpu_quads.clear_color(color)
 		flush_instances()
 	end
 	if frame_active then
-		vdp_rpu.end_pass()
-		frame_active = nil
+		end_pass()
 	end
 	pending_clear = true
 	pending_clear_color = color
@@ -242,9 +307,9 @@ function vdp_rpu_quads.draw_line_color(x0, y0, x1, y1, z, layer, color, thicknes
 end
 
 function vdp_rpu_quads.blit_source_affine_color(slot, u, v, w, h, origin_x, origin_y, z, layer, axis_xx, axis_xy, axis_yx, axis_yy, flip_flags, color)
-	local surface_id<const> = slot_surface[slot]
-	local inv_w<const> = 1.0 / surface_width[surface_id]
-	local inv_h<const> = 1.0 / surface_height[surface_id]
+	local surface_desc_addr<const> = slot_surface_desc[slot]
+	local inv_w<const> = 1.0 / surface_width[surface_desc_addr]
+	local inv_h<const> = 1.0 / surface_height[surface_desc_addr]
 	local u0 = u * inv_w
 	local v0 = v * inv_h
 	local du = w * inv_w
@@ -257,7 +322,7 @@ function vdp_rpu_quads.blit_source_affine_color(slot, u, v, w, h, origin_x, orig
 		v0 = v0 + dv
 		dv = -dv
 	end
-	switch_surface(surface_id)
+	switch_surface(surface_desc_addr)
 	write_instance(
 		origin_x * ndc_x_scale - 1.0,
 		1.0 - origin_y * ndc_y_scale,
@@ -275,9 +340,9 @@ function vdp_rpu_quads.blit_source_affine_color(slot, u, v, w, h, origin_x, orig
 end
 
 function vdp_rpu_quads.blit_source_color(slot, u, v, w, h, x, y, z, layer, scale_x, scale_y, flip_flags, color)
-	local texture_surface_id<const> = slot_surface[slot]
-	local inv_w<const> = 1.0 / surface_width[texture_surface_id]
-	local inv_h<const> = 1.0 / surface_height[texture_surface_id]
+	local texture_surface_desc_addr<const> = slot_surface_desc[slot]
+	local inv_w<const> = 1.0 / surface_width[texture_surface_desc_addr]
+	local inv_h<const> = 1.0 / surface_height[texture_surface_desc_addr]
 	local u0 = u * inv_w
 	local v0 = v * inv_h
 	local du = w * inv_w
@@ -290,7 +355,7 @@ function vdp_rpu_quads.blit_source_color(slot, u, v, w, h, x, y, z, layer, scale
 		v0 = v0 + dv
 		dv = -dv
 	end
-	switch_surface(texture_surface_id)
+	switch_surface(texture_surface_desc_addr)
 	write_instance(
 		x * ndc_x_scale - 1.0,
 		1.0 - y * ndc_y_scale,
@@ -312,10 +377,10 @@ function vdp_rpu_quads.tile_run_sources(sources, tile_count, cols, tile_size, or
 	while index <= tile_count do
 		local source<const> = sources[index]
 		if source ~= empty_source then
-			local surface_id<const> = slot_surface[source.slot]
-			switch_surface(surface_id)
-			local inv_w<const> = 1.0 / surface_width[surface_id]
-			local inv_h<const> = 1.0 / surface_height[surface_id]
+			local surface_desc_addr<const> = slot_surface_desc[source.slot]
+			switch_surface(surface_desc_addr)
+			local inv_w<const> = 1.0 / surface_width[surface_desc_addr]
+			local inv_h<const> = 1.0 / surface_height[surface_desc_addr]
 			local tile_index<const> = index - 1
 			local tile_x<const> = tile_index % cols
 			local tile_y<const> = tile_index // cols
@@ -345,18 +410,21 @@ function vdp_rpu_quads.finish_frame()
 		begin_pass()
 	end
 	if frame_active then
-		vdp_rpu.end_pass()
-		frame_active = nil
+		end_pass()
 	end
 	pending_clear = nil
 	pending_clear_color = nil
 	instance_count = 0
 	instance_batch_addr = instance_addr
-	current_surface = vdp_rpu.resource_none
-	if vdp_stream_cursor ~= sys_vdp_stream_base then
+	current_surface_desc = vdp_rpu.resource_none
+	if pass_count ~= 0 then
+		vdp_rpu.exec_pass_list(pass_count, rpu_pass_desc_vram_addr)
+		vdp_rpu.seal_frame()
 		local end_packet<const>: *word = vdp_stream_claim(1)
 		*end_packet = sys_vdp_pkt_end
 	end
+	pass_count = 0
+	draw_count = 0
 end
 
 return vdp_rpu_quads

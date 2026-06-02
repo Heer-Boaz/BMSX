@@ -594,10 +594,6 @@
 				"native/machine/machine/devices/vdp/rpu.h"
 			],
 			"symbols": [
-				"VdpRpuFrameBufferRefs",
-				"VdpRpuFrameSurfaceRefs",
-				"VdpRpuConstantBankTable",
-				"VdpRpuFrameResources",
 				"VdpRpuCommandBuffer",
 				"VdpRpuFrameOutput",
 				"VdpRpuStreamAttributeSpec",
@@ -605,13 +601,7 @@
 				"VdpRpuShaderConstantSlotSpec",
 				"VdpRpuShaderVariantSpec",
 				"VdpRpuCommandBufferSaveState",
-				"VdpRpuFrameBufferRefSaveState",
-				"VdpRpuFrameSurfaceRefSaveState",
-				"VdpRpuConstantBankSaveState",
 				"VdpRpuFrameSaveState",
-				"VdpRpuBufferRecordSaveState",
-				"VdpRpuBufferImageSaveState",
-				"VdpRpuSurfaceRecordSaveState",
 				"VdpRpuSaveState"
 			],
 			"reason": "rpu_retained_command_buffer_shape_contract"
@@ -855,7 +845,8 @@
 			"lua": "system/vdp_rpu.lua",
 			"ts": [
 				"packages/bmsx-console/src/machine/devices/vdp/rpu.ts",
-				"packages/bmsx-console/src/machine/devices/vdp/contracts.ts"
+				"packages/bmsx-console/src/machine/devices/vdp/contracts.ts",
+				"packages/bmsx-console/src/machine/devices/vdp/rpu_desc.ts"
 			],
 			"exports": "vdp_rpu",
 			"symbols": [
@@ -864,146 +855,28 @@
 					"ts": "VDP_RPU_PACKET_KIND"
 				},
 				{
-					"lua": "op_buffer_define",
-					"ts": "VDP_RPU_OP_BUFFER_DEFINE"
-				},
-				{
-					"lua": "op_buffer_upload_dma",
-					"ts": "VDP_RPU_OP_BUFFER_UPLOAD_DMA"
-				},
-				{
-					"lua": "op_buffer_upload_inline",
-					"ts": "VDP_RPU_OP_BUFFER_UPLOAD_INLINE"
-				},
-				{
-					"lua": "op_buffer_discard",
-					"ts": "VDP_RPU_OP_BUFFER_DISCARD"
-				},
-				{
-					"lua": "op_surface_define",
-					"ts": "VDP_RPU_OP_SURFACE_DEFINE"
-				},
-				{
-					"lua": "op_constant_bank_define",
-					"ts": "VDP_RPU_OP_CONSTANT_BANK_DEFINE"
-				},
-				{
-					"lua": "op_constant_upload_dma",
-					"ts": "VDP_RPU_OP_CONSTANT_UPLOAD_DMA"
-				},
-				{
-					"lua": "op_constant_upload_inline",
-					"ts": "VDP_RPU_OP_CONSTANT_UPLOAD_INLINE"
-				},
-				{
-					"lua": "op_constant_upload_device",
-					"ts": "VDP_RPU_OP_CONSTANT_UPLOAD_DEVICE"
-				},
-				{
-					"lua": "op_begin_pass",
-					"ts": "VDP_RPU_OP_BEGIN_PASS"
-				},
-				{
-					"lua": "op_end_pass",
-					"ts": "VDP_RPU_OP_END_PASS"
-				},
-				{
-					"lua": "op_begin_draw",
-					"ts": "VDP_RPU_OP_BEGIN_DRAW"
-				},
-				{
-					"lua": "op_bind_stream",
-					"ts": "VDP_RPU_OP_BIND_STREAM"
-				},
-				{
-					"lua": "op_bind_constants",
-					"ts": "VDP_RPU_OP_BIND_CONSTANTS"
-				},
-				{
-					"lua": "op_bind_texture",
-					"ts": "VDP_RPU_OP_BIND_TEXTURE"
-				},
-				{
-					"lua": "op_end_draw",
-					"ts": "VDP_RPU_OP_END_DRAW"
-				},
-				{
-					"lua": "words_buffer_define",
-					"ts": "VDP_RPU_BUFFER_DEFINE_WORDS"
-				},
-				{
-					"lua": "words_buffer_upload_dma",
-					"ts": "VDP_RPU_BUFFER_UPLOAD_DMA_WORDS"
-				},
-				{
-					"lua": "words_buffer_discard",
-					"ts": "VDP_RPU_BUFFER_DISCARD_WORDS"
-				},
-				{
-					"lua": "words_surface_define",
-					"ts": "VDP_RPU_SURFACE_DEFINE_WORDS"
-				},
-				{
-					"lua": "words_constant_bank_define",
-					"ts": "VDP_RPU_CONSTANT_BANK_DEFINE_WORDS"
-				},
-				{
-					"lua": "words_constant_upload_dma",
-					"ts": "VDP_RPU_CONSTANT_UPLOAD_DMA_WORDS"
-				},
-				{
-					"lua": "words_constant_upload_device",
-					"ts": "VDP_RPU_CONSTANT_UPLOAD_DEVICE_WORDS"
-				},
-				{
-					"lua": "words_begin_pass",
-					"ts": "VDP_RPU_BEGIN_PASS_WORDS"
-				},
-				{
-					"lua": "words_end_pass",
-					"ts": "VDP_RPU_END_PASS_WORDS"
-				},
-				{
-					"lua": "words_begin_draw",
-					"ts": "VDP_RPU_BEGIN_DRAW_WORDS"
-				},
-				{
-					"lua": "words_bind_stream",
-					"ts": "VDP_RPU_BIND_STREAM_WORDS"
-				},
-				{
-					"lua": "words_bind_constants",
-					"ts": "VDP_RPU_BIND_CONSTANTS_WORDS"
-				},
-				{
-					"lua": "words_bind_texture",
-					"ts": "VDP_RPU_BIND_TEXTURE_WORDS"
-				},
-				{
-					"lua": "words_end_draw",
-					"ts": "VDP_RPU_END_DRAW_WORDS"
-				},
-				{
-					"lua": "words_buffer_upload_inline_min",
-					"ts": "VDP_RPU_BUFFER_UPLOAD_INLINE_MIN_WORDS"
-				},
-				{
-					"lua": "words_constant_upload_inline_min",
-					"ts": "VDP_RPU_CONSTANT_UPLOAD_INLINE_MIN_WORDS"
-				},
-				{
-					"lua": "usage_vertex",
-					"ts": "VDP_RPU_BUFFER_USAGE_VERTEX",
+					"lua": "op_exec_pass_list",
+					"ts": "VDP_RPU_OP_EXEC_PASS_LIST",
 					"exported": true
 				},
 				{
-					"lua": "usage_index",
-					"ts": "VDP_RPU_BUFFER_USAGE_INDEX",
+					"lua": "op_seal_frame",
+					"ts": "VDP_RPU_OP_SEAL_FRAME",
 					"exported": true
 				},
 				{
-					"lua": "usage_constant",
-					"ts": "VDP_RPU_BUFFER_USAGE_CONSTANT",
+					"lua": "words_exec_pass_list",
+					"ts": "VDP_RPU_EXEC_PASS_LIST_WORDS",
+					"exported": true
+				},
+				{
+					"lua": "words_seal_frame",
+					"ts": "VDP_RPU_SEAL_FRAME_WORDS",
+					"exported": true
+				},
+				{
+					"lua": "resource_none",
+					"ts": "VDP_RPU_RESOURCE_NONE",
 					"exported": true
 				},
 				{
@@ -1017,23 +890,33 @@
 					"exported": true
 				},
 				{
-					"lua": "surface_usage_color",
-					"ts": "VDP_RPU_SURFACE_USAGE_COLOR",
+					"lua": "surface_desc_bytes",
+					"ts": "RPU_SURFACE_DESC_SIZE",
 					"exported": true
 				},
 				{
-					"lua": "surface_usage_depth",
-					"ts": "VDP_RPU_SURFACE_USAGE_DEPTH",
+					"lua": "stream_desc_bytes",
+					"ts": "RPU_STREAM_DESC_SIZE",
 					"exported": true
 				},
 				{
-					"lua": "surface_usage_texture",
-					"ts": "VDP_RPU_SURFACE_USAGE_TEXTURE",
+					"lua": "constant_desc_bytes",
+					"ts": "RPU_CONSTANT_DESC_SIZE",
 					"exported": true
 				},
 				{
-					"lua": "usage_shift",
-					"ts": "VDP_RPU_USAGE_SHIFT",
+					"lua": "texture_desc_bytes",
+					"ts": "RPU_TEXTURE_DESC_SIZE",
+					"exported": true
+				},
+				{
+					"lua": "draw_desc_bytes",
+					"ts": "RPU_DRAW_DESC_SIZE",
+					"exported": true
+				},
+				{
+					"lua": "pass_desc_bytes",
+					"ts": "RPU_PASS_DESC_SIZE",
 					"exported": true
 				},
 				{
@@ -1147,11 +1030,6 @@
 					"exported": true
 				},
 				{
-					"lua": "resource_none",
-					"ts": "VDP_RPU_RESOURCE_NONE",
-					"exported": true
-				},
-				{
 					"lua": "layout_v2_c4",
 					"ts": "VDP_RPU_LAYOUT_V2_C4",
 					"exported": true
@@ -1184,6 +1062,11 @@
 				{
 					"lua": "layout_v3_n3_t2_c4_j4_w4",
 					"ts": "VDP_RPU_LAYOUT_V3_N3_T2_C4_J4_W4",
+					"exported": true
+				},
+				{
+					"lua": "layout_v3_dm3",
+					"ts": "VDP_RPU_LAYOUT_V3_DM3",
 					"exported": true
 				},
 				{
@@ -1242,6 +1125,16 @@
 					"exported": true
 				},
 				{
+					"lua": "shader_flag_morph",
+					"ts": "VDP_RPU_SHADER_FLAG_MORPH",
+					"exported": true
+				},
+				{
+					"lua": "shader_flag_t1",
+					"ts": "VDP_RPU_SHADER_FLAG_T1",
+					"exported": true
+				},
+				{
 					"lua": "constant_source_xf_q16",
 					"ts": "VDP_RPU_CONSTANT_SOURCE_XF_Q16",
 					"exported": true
@@ -1260,24 +1153,9 @@
 					"lua": "constant_source_jtu_q16",
 					"ts": "VDP_RPU_CONSTANT_SOURCE_JTU_Q16",
 					"exported": true
-				},
-				{
-					"lua": "surface_system",
-					"ts": "VDP_RD_SURFACE_SYSTEM",
-					"exported": true
-				},
-				{
-					"lua": "surface_primary",
-					"ts": "VDP_RD_SURFACE_PRIMARY",
-					"exported": true
-				},
-				{
-					"lua": "surface_secondary",
-					"ts": "VDP_RD_SURFACE_SECONDARY",
-					"exported": true
 				}
 			],
-			"reason": "rpu_bios_packet_constants_and_cart_visible_public_helpers_must_match_the_ts_cpp_device_abi"
+			"reason": "rpu_bios_descriptor_packet_constants_must_match_the_ts_cpp_device_abi"
 		},
 		{
 			"lua": "system/vdp_xf.lua",
@@ -1910,11 +1788,11 @@
 		{
 			"file": "system/vdp_rpu.lua",
 			"substrings": [
-				"function vdp_rpu.buffer_upload_inline",
-				"function vdp_rpu.buffer_discard",
-				"function vdp_rpu.constant_upload_inline",
-				"function vdp_rpu.constant_upload_device",
-				"vdp_rpu.shader_v2_c4 = shader_v2_c4",
+				"function vdp_rpu.exec_pass_list",
+				"function vdp_rpu.seal_frame",
+				"vdp_rpu.op_exec_pass_list = op_exec_pass_list",
+				"vdp_rpu.words_exec_pass_list = words_exec_pass_list",
+				"vdp_rpu.surface_desc_bytes = surface_desc_bytes",
 				"vdp_rpu.shader_v2_t2_c4_i_affine2 = shader_v2_t2_c4_i_affine2",
 				"vdp_rpu.shader_v3_c4_i_mat4 = shader_v3_c4_i_mat4",
 				"vdp_rpu.shader_v3_n3_t2_c4_j4_w4_c0_c1 = shader_v3_n3_t2_c4_j4_w4_c0_c1",
@@ -1934,16 +1812,11 @@
 				"bm_xf_matrix_packet_header",
 				"bm_lpu_register_packet_header",
 				"bm_jtu_matrix_packet_header",
-				"bm_mfu_register_packet_header",
-				"sys_rpu_constant_source_xf_q16",
-				"sys_rpu_constant_source_lpu_raw",
-				"sys_rpu_constant_source_mfu_q16",
-				"sys_rpu_constant_source_jtu_q16",
-				"pass_packet->op = sys_rpu_op_begin_pass",
-				"passes[0].color_surface_id = scene_color_surface",
-				"passes[0].depth_surface_id = scene_depth_surface",
-				"packet->op = sys_rpu_op_bind_texture",
-				"sampled_surface_binds[3].surface_id = scene_color_surface",
+				"bm_rpu_exec_pass_list_packet",
+				"bm_rpu_seal_frame_packet",
+				"passes[0].color_surface_desc_addr = scene_color_surface",
+				"passes[0].depth_surface_desc_addr = scene_depth_surface",
+				"sampled_surface_binds[3].surface_desc_addr = scene_color_surface",
 				"sys_rpu_shader_v2_c4",
 				"rpu_primitive_lines",
 				"rpu_primitive_points",
@@ -1952,13 +1825,12 @@
 				"sys_rpu_layout_i_mat4_c4",
 				"sys_rpu_shader_v3_n3_t2_c4_j4_w4_c0_c1",
 				"sys_rpu_index_u16",
-				"sys_rpu_surface_primary",
 				"parallax_x * inv_half_screen_width - 1.0",
-				"streams[5].stream_slot = 1\n\tstreams[5].layout_id = sys_rpu_layout_i_affine2_trect_c4\n\tstreams[5].buffer_id = instance_buffer\n\tstreams[5].byte_offset = 0\n\tstreams[5].step_rate = 1",
-				"streams[7].stream_slot = 1\n\tstreams[7].layout_id = sys_rpu_layout_i_mat4_c4\n\tstreams[7].buffer_id = mat4_instance_buffer\n\tstreams[7].byte_offset = 0\n\tstreams[7].step_rate = 1",
-				"streams[9].stream_slot = 0\n\tstreams[9].layout_id = sys_rpu_layout_v3_n3_t2_c4_j4_w4\n\tstreams[9].buffer_id = mesh_buffer\n\tstreams[9].byte_offset = 0\n\tstreams[9].step_rate = 0"
+				"streams[5].stream_slot = 1; streams[5].layout_id = sys_rpu_layout_i_affine2_trect_c4; streams[5].vram_addr = rpu_instance_vram_addr; streams[5].byte_length = instance_bytes; streams[5].step_rate = 1",
+				"streams[7].stream_slot = 1; streams[7].layout_id = sys_rpu_layout_i_mat4_c4; streams[7].vram_addr = rpu_mat4_instance_vram_addr; streams[7].byte_length = mat4_instance_bytes; streams[7].step_rate = 1",
+				"streams[9].stream_slot = 0; streams[9].layout_id = sys_rpu_layout_v3_n3_t2_c4_j4_w4; streams[9].vram_addr = rpu_mesh_vertex_vram_addr; streams[9].byte_length = mesh_vertex_bytes; streams[9].step_rate = 0"
 			],
-			"reason": "bare_metal_cart_must_demonstrate_legacy_render_features_through_rpu_and_vdp_devices"
+			"reason": "bare_metal_cart_must_demonstrate_descriptor_render_features_through_rpu_and_vdp_devices"
 		},
 		{
 			"file": "packages/bmsx-console/src/render/backend/webgl/backend.ts",
@@ -1973,7 +1845,7 @@
 			"substrings": [
 				"import vdpRpuVertexShader from './shaders/vdp_rpu.vert.glsl';",
 				"import vdpRpuFragmentShader from './shaders/vdp_rpu.frag.glsl';",
-				"gl.bufferSubData(target, 0, refs.bytes[refIndex], refs.byteOffset[refIndex], byteLength);"
+				"gl.bufferSubData(target, 0, frame.vdpVram, vramAddr, byteLength);"
 			],
 			"reason": "webgl_rpu_backend_must_load_external_shader_files"
 		},
@@ -1990,7 +1862,7 @@
 			"substrings": [
 				"#include \"render/backend/gles2/shaders/vdp_rpu_shaders.h\"",
 				"backend.buildProgram(kVdpRpuVertexShader, kVdpRpuFragmentShader, \"vdp_rpu\")",
-				"glBufferSubData(target, 0, refs.byteLength[refIndex], refs.bytes[refIndex] + refs.byteOffset[refIndex]);"
+				"glBufferSubData(target, 0, static_cast<GLsizeiptr>(byteLength), frame.vdpVram->data() + vramAddr);"
 			],
 			"reason": "gles2_rpu_backend_must_load_generated_external_shader_sources"
 		},
@@ -2054,11 +1926,11 @@
 		{
 			"file": "system/vdp_rpu_quads.lua",
 			"substrings": [
-				"vdp_rpu.begin_draw(vdp_rpu.shader_v2_t2_c4_i_affine2",
-				"vdp_rpu.bind_stream(1, vdp_rpu.layout_i_affine2_trect_c4, instance_buffer, 0, 1)",
-				"vdp_rpu.buffer_upload_dma(instance_buffer, 0, instance_batch_addr, byte_length)"
+				"draw_words[draw_word_base] = vdp_rpu.shader_v2_t2_c4_i_affine2 | ((quad_primitive_index & 0xff) << 16)",
+				"stream_words[stream_word_base + 5] = vdp_rpu.layout_i_affine2_trect_c4 | (1 << 16) | (1 << 24)",
+				"local instance_batch_vram_addr<const> = instance_batch_addr - vram_staging_base"
 			],
-			"reason": "bios_rpu_quad_batcher_must_emit_instanced_gpu_draws_with_preserved_dma_sources_for_cart_bios_quad_work"
+			"reason": "bios_rpu_quad_batcher_must_emit_descriptor_backed_instanced_gpu_draws"
 		},
 		{
 			"file": "system/vdp_rpu_quads.lua",
@@ -2156,82 +2028,67 @@
 		{
 			"file": "packages/bmsx-console/src/machine/devices/vdp/rpu.ts",
 			"substrings": [
-				"indexRef = this.pinBuffer(frame, indexBufferId, indexByteOffset, indexByteLength, VDP_RPU_BUFFER_USAGE_INDEX);\n\t\t}",
-				"const bufferRef = this.pinBuffer(frame, bufferId, byteOffset, byteLength, VDP_RPU_BUFFER_USAGE_VERTEX);\n\t\tconst bindingIndex = frame.commands.streamBindingCount;",
-				"if (!this.acceptConstantRange(frame, bankId, firstWord, wordCount)) {\n\t\t\tboundBankId = VDP_RPU_REF_NONE;",
-				"const surfaceRef = this.pinSurface(frame, surfaceId);\n\t\tconst bindingIndex = frame.commands.textureBindingCount;",
-				"return VDP_RPU_REF_NONE;\n\t\t}\n\t\tconst refs = frame.resources.bufferRefs;",
-				"return VDP_RPU_REF_NONE;\n\t\t}\n\t\tconst refIndex = frame.resources.surfaceRefs.length;"
+				"cmd.passColorSurfaceDescAddr[pi] = readRpuDescU32(vram, pb + RPU_PASS_DESC_COLOR_SURFACE_DESC_ADDR_OFFSET);",
+				"cmd.streamVramAddr[si] = readRpuDescU32(vram, sb + RPU_STREAM_DESC_VRAM_ADDR_OFFSET);",
+				"cmd.constantVramAddr[ci] = readRpuDescU32(vram, cb + RPU_CONSTANT_DESC_VRAM_ADDR_OFFSET);",
+				"cmd.textureSurfaceDescAddr[ti] = readRpuDescU32(vram, tb + RPU_TEXTURE_DESC_SURFACE_DESC_ADDR_OFFSET);"
 			],
-			"reason": "cart_visible_rpu_draw_resource_refs_must_retain_ref_none_instead_of_device_faulting"
+			"reason": "cart_visible_rpu_draw_descriptors_must_decode_raw_vdp_local_addresses"
 		},
 		{
 			"file": "native/machine/machine/devices/vdp/rpu.cpp",
 			"substrings": [
-				"indexRef = pinBuffer(frame, indexBufferId, indexByteOffset, indexByteLength, VDP_RPU_BUFFER_USAGE_INDEX);\n\t}",
-				"const i32 bufferRef = pinBuffer(frame, bufferId, byteOffset, byteLength, VDP_RPU_BUFFER_USAGE_VERTEX);\n\tconst size_t bindingIndex = frame.commands.streamBindingCount;",
-				"if (!acceptConstantRange(frame, bankId, firstWord, wordCount)) {\n\t\tboundBankId = VDP_RPU_REF_NONE;",
-				"const i32 surfaceRef = pinSurface(frame, surfaceId);\n\tconst size_t bindingIndex = frame.commands.textureBindingCount;",
-				"return static_cast<i32>(VDP_RPU_REF_NONE);\n\t}\n\tVdpRpuFrameBufferRefs& refs = frame.resources.bufferRefs;",
-				"return static_cast<i32>(VDP_RPU_REF_NONE);\n\t}\n\tconst size_t refIndex = frame.resources.surfaceRefs.length;"
+				"cmd.passColorSurfaceDescAddr[pi] = readRpuDescU32(vram, pb + RPU_PASS_DESC_COLOR_SURFACE_DESC_ADDR_OFFSET);",
+				"cmd.streamVramAddr[si] = readRpuDescU32(vram, sb + RPU_STREAM_DESC_VRAM_ADDR_OFFSET);",
+				"cmd.constantVramAddr[ci] = readRpuDescU32(vram, cb + RPU_CONSTANT_DESC_VRAM_ADDR_OFFSET);",
+				"cmd.textureSurfaceDescAddr[ti] = readRpuDescU32(vram, tb + RPU_TEXTURE_DESC_SURFACE_DESC_ADDR_OFFSET);"
 			],
-			"reason": "native_cart_visible_rpu_draw_resource_refs_must_retain_ref_none_instead_of_device_faulting"
+			"reason": "native_cart_visible_rpu_draw_descriptors_must_decode_raw_vdp_local_addresses"
 		},
 		{
 			"file": "packages/bmsx-console/src/render/backend/webgl/vdp_rpu.ts",
 			"substrings": [
-				"if (refIndex === VDP_RPU_REF_NONE) {\n\t\treturn;\n\t}",
-				"if (constantBank === VDP_RPU_REF_NONE) {\n\t\t\t\tgl.uniformMatrix4fv(vdpRpuC0Location, false, vdpRpuIdentityC0);",
-				"if (constantBank === VDP_RPU_REF_NONE) {\n\t\t\t\tgl.uniform4fv(vdpRpuC1Location, vdpRpuDefaultC1Floats);",
-				"if (constantBank === VDP_RPU_REF_NONE) {\n\t\t\t\tgl.uniformMatrix4fv(vdpRpuJointLocation, false, vdpRpuDefaultJointFloats);",
-				"if (surfaceRef === VDP_RPU_REF_NONE) {\n\t\t\t\tbindVdpRpuNeutralTexture(backend);",
-				"if (indexType === VDP_RPU_INDEX_NONE || indexRef === VDP_RPU_REF_NONE) {\n\t\tif (instanceMode !== VDP_RPU_INSTANCE_MODE_NONE) {"
+				"uploadVdpRpuBuffer(frame, gl.ARRAY_BUFFER, commands.streamVramAddr[streamBindingIndex], commands.streamByteLength[streamBindingIndex]);",
+				"const surfaceDescAddr = commands.textureSurfaceDescAddr[bindingIndex];",
+				"if (surfaceDescAddr === 0) {",
+				"if (indexType === VDP_RPU_INDEX_NONE || indexVramAddr === 0) {"
 			],
-			"reason": "webgl_rpu_backend_must_consume_ref_none_draw_bindings_without_oob_resource_indexing"
+			"reason": "webgl_rpu_backend_must_consume_descriptor_addresses_without_resource_indexing"
 		},
 		{
 			"file": "native/machine/render/backend/gles2/vdp_rpu.cpp",
 			"substrings": [
-				"if (refIndex == VDP_RPU_REF_NONE) {\n\t\treturn;\n\t}",
-				"if (constantBank == VDP_RPU_REF_NONE) {\n\t\t\t\tglUniformMatrix4fv(runtime.uniformC0, 1, GL_FALSE, runtime.identityC0.data());",
-				"if (constantBank == VDP_RPU_REF_NONE) {\n\t\t\t\tglUniform4fv(runtime.uniformC1, 17, runtime.defaultC1Floats.data());",
-				"if (constantBank == VDP_RPU_REF_NONE) {\n\t\t\t\tglUniformMatrix4fv(runtime.uniformJoint, 24, GL_FALSE, runtime.defaultJointFloats.data());",
-				"if (surfaceRef == VDP_RPU_REF_NONE) {\n\t\t\t\tbindVdpRpuNeutralTexture(runtime.backend);",
-				"if (indexType == VDP_RPU_INDEX_NONE || indexRef == VDP_RPU_REF_NONE) {\n\t\tif (instanceMode != VDP_RPU_INSTANCE_MODE_NONE) {"
+				"uploadVdpRpuBuffer(frame, GL_ARRAY_BUFFER, commands.streamVramAddr[streamBindingIndex], commands.streamByteLength[streamBindingIndex]);",
+				"const u32 surfaceDescAddr = commands.textureSurfaceDescAddr[bindingIndex];",
+				"if (surfaceDescAddr == 0u) {",
+				"if (indexType == VDP_RPU_INDEX_NONE || indexVramAddr == 0u) {"
 			],
-			"reason": "gles2_rpu_backend_must_consume_ref_none_draw_bindings_without_oob_resource_indexing"
+			"reason": "gles2_rpu_backend_must_consume_descriptor_addresses_without_resource_indexing"
 		},
 		{
 			"file": "carts/bare_metal_cart/cart.lua",
 			"substrings": [
-				"packet->header = desc->packet_kind | ((1 + desc->matrix_word_count) << 16)",
-				"packet->matrix_word_offset = desc->matrix_index * desc->matrix_word_count",
-				"matrix_uploads[0].packet_kind = sys_vdp_xf_packet_kind",
-				"matrix_uploads[0].matrix_index = mesh_matrix_index",
-				"matrix_uploads[2].packet_kind = sys_vdp_jtu_packet_kind",
-				"matrix_uploads[2].matrix_index = mesh_joint_matrix_index",
-				"device_uploads[0].source = sys_rpu_constant_source_xf_q16",
-				"device_uploads[0].source_word_offset = mesh_matrix_index * sys_vdp_xf_matrix_words",
-				"device_uploads[3].source = sys_rpu_constant_source_jtu_q16",
-				"device_uploads[3].word_count = joint_words"
+				"constant_uploads[0].vram_addr = rpu_c0_vram_addr",
+				"constant_uploads[1].vram_addr = rpu_c1_vram_addr",
+				"constant_uploads[2].vram_addr = rpu_joint_vram_addr",
+				"constants[0].binding_slot = 0; constants[0].vram_addr = rpu_c0_vram_addr; constants[0].byte_length = c0_bytes",
+				"constants[2].binding_slot = 1; constants[2].vram_addr = rpu_joint_vram_addr; constants[2].byte_length = joint_bytes",
+				"constants[3].binding_slot = 2; constants[3].vram_addr = rpu_c1_vram_addr; constants[3].byte_length = c1_bytes"
 			],
-			"reason": "bare_metal_mesh_matrices_must_flow_through_xf_and_jtu_devices_before_rpu_constant_binding"
+			"reason": "bare_metal_mesh_constants_must_flow_through_vdp_local_descriptor_bindings"
 		},
 		{
 			"file": "carts/bare_metal_cart/cart.lua",
 			"substrings": [
-				"register_uploads[0].packet_kind = sys_vdp_lpu_packet_kind",
-				"register_uploads[0].src_addr = c1_addr",
-				"register_uploads[1].packet_kind = sys_vdp_mfu_packet_kind",
-				"register_uploads[1].src_addr = mfu_addr",
-				"device_uploads[1].source = sys_rpu_constant_source_lpu_raw",
-				"device_uploads[1].source_word_offset = 0",
-				"device_uploads[1].word_count = c1_words",
-				"device_uploads[2].source = sys_rpu_constant_source_mfu_q16",
-				"device_uploads[2].dst_word_offset = 8",
-				"device_uploads[2].word_count = mfu_words"
+				"local write_lighting_constants<const> = function()",
+				"local write_mesh_constants<const> = function()",
+				"local write_joint_constants<const> = function()",
+				"constant_uploads[1].vram_addr = rpu_c1_vram_addr",
+				"constant_uploads[2].vram_addr = rpu_joint_vram_addr",
+				"constants[2].binding_slot = 1; constants[2].vram_addr = rpu_joint_vram_addr; constants[2].byte_length = joint_bytes",
+				"constants[3].binding_slot = 2; constants[3].vram_addr = rpu_c1_vram_addr; constants[3].byte_length = c1_bytes"
 			],
-			"reason": "bare_metal_lighting_and_morph_constants_must_flow_through_lpu_and_mfu_devices_before_rpu_constant_binding"
+			"reason": "bare_metal_lighting_and_joint_constants_must_flow_through_vdp_local_rpu_constant_descriptors"
 		},
 		{
 			"file": "packages/bmsx-console/src/machine/devices/vdp/device_output.ts",
@@ -3104,63 +2961,15 @@
 	"strict_lua_no_heap_regions": [
 		{
 			"file": "system/vdp_rpu.lua",
-			"start": "\tlocal packet<const>: *rpu_buffer_upload_dma_packet = vdp_stream_claim(sizeof(rpu_buffer_upload_dma_packet) // sys_vdp_arg_stride)",
-			"end": "\nend\n\nfunction vdp_rpu.buffer_upload_inline",
-			"reason": "vdp_rpu_hot_packet_helpers_must_not_allocate_tables_closures_or_strings"
+			"start": "\tlocal packet<const>: *rpu_exec_pass_list_packet = vdp_stream_claim(sizeof(rpu_exec_pass_list_packet) // sys_vdp_arg_stride)",
+			"end": "\nend\n\nfunction vdp_rpu.seal_frame",
+			"reason": "vdp_rpu_descriptor_packet_submit_helper_must_not_allocate_tables_closures_or_strings"
 		},
 		{
 			"file": "system/vdp_rpu.lua",
-			"start": "\tlocal packet<const>: *rpu_constant_bank_define_packet = vdp_stream_claim(sizeof(rpu_constant_bank_define_packet) // sys_vdp_arg_stride)",
-			"end": "\nend\n\nfunction vdp_rpu.constant_upload_dma",
-			"reason": "vdp_rpu_hot_packet_helpers_must_not_allocate_tables_closures_or_strings"
-		},
-		{
-			"file": "system/vdp_rpu.lua",
-			"start": "\tlocal packet<const>: *rpu_constant_upload_device_packet = vdp_stream_claim(sizeof(rpu_constant_upload_device_packet) // sys_vdp_arg_stride)",
-			"end": "\nend\n\nfunction vdp_rpu.begin_pass",
-			"reason": "vdp_rpu_hot_packet_helpers_must_not_allocate_tables_closures_or_strings"
-		},
-		{
-			"file": "system/vdp_rpu.lua",
-			"start": "\tlocal packet<const>: *rpu_begin_pass_packet = vdp_stream_claim(sizeof(rpu_begin_pass_packet) // sys_vdp_arg_stride)",
-			"end": "\nend\n\nfunction vdp_rpu.end_pass",
-			"reason": "vdp_rpu_hot_packet_helpers_must_not_allocate_tables_closures_or_strings"
-		},
-		{
-			"file": "system/vdp_rpu.lua",
-			"start": "\tlocal packet<const>: *rpu_end_pass_packet = vdp_stream_claim(sizeof(rpu_end_pass_packet) // sys_vdp_arg_stride)",
-			"end": "\nend\n\nfunction vdp_rpu.begin_draw",
-			"reason": "vdp_rpu_hot_packet_helpers_must_not_allocate_tables_closures_or_strings"
-		},
-		{
-			"file": "system/vdp_rpu.lua",
-			"start": "\tlocal packet<const>: *rpu_begin_draw_packet = vdp_stream_claim(sizeof(rpu_begin_draw_packet) // sys_vdp_arg_stride)",
-			"end": "\nend\n\nfunction vdp_rpu.bind_stream",
-			"reason": "vdp_rpu_hot_packet_helpers_must_not_allocate_tables_closures_or_strings"
-		},
-		{
-			"file": "system/vdp_rpu.lua",
-			"start": "\tlocal packet<const>: *rpu_bind_stream_packet = vdp_stream_claim(sizeof(rpu_bind_stream_packet) // sys_vdp_arg_stride)",
-			"end": "\nend\n\nfunction vdp_rpu.bind_constants",
-			"reason": "vdp_rpu_hot_packet_helpers_must_not_allocate_tables_closures_or_strings"
-		},
-		{
-			"file": "system/vdp_rpu.lua",
-			"start": "\tlocal packet<const>: *rpu_bind_constants_packet = vdp_stream_claim(sizeof(rpu_bind_constants_packet) // sys_vdp_arg_stride)",
-			"end": "\nend\n\nfunction vdp_rpu.bind_texture",
-			"reason": "vdp_rpu_hot_packet_helpers_must_not_allocate_tables_closures_or_strings"
-		},
-		{
-			"file": "system/vdp_rpu.lua",
-			"start": "\tlocal packet<const>: *rpu_bind_texture_packet = vdp_stream_claim(sizeof(rpu_bind_texture_packet) // sys_vdp_arg_stride)",
-			"end": "\nend\n\nfunction vdp_rpu.end_draw",
-			"reason": "vdp_rpu_hot_packet_helpers_must_not_allocate_tables_closures_or_strings"
-		},
-		{
-			"file": "system/vdp_rpu.lua",
-			"start": "\tlocal packet<const>: *rpu_end_draw_packet = vdp_stream_claim(sizeof(rpu_end_draw_packet) // sys_vdp_arg_stride)",
-			"end": "\nend\n\n\nvdp_rpu.usage_vertex",
-			"reason": "vdp_rpu_hot_packet_helpers_must_not_allocate_tables_closures_or_strings"
+			"start": "\tlocal packet<const>: *rpu_seal_frame_packet = vdp_stream_claim(sizeof(rpu_seal_frame_packet) // sys_vdp_arg_stride)",
+			"end": "\nend\n\nvdp_rpu.packet_kind",
+			"reason": "vdp_rpu_descriptor_packet_submit_helper_must_not_allocate_tables_closures_or_strings"
 		},
 		{
 			"file": "system/vdp_xf.lua",
@@ -3189,20 +2998,8 @@
 		{
 			"file": "carts/bare_metal_cart/cart.lua",
 			"start": "\tlocal used_bytes<const> = vdp_stream_cursor - vdp_stream_base",
-			"end": "\nend\n\nlocal wait_dma",
+			"end": "\nend\n\nlocal wait_interrupt",
 			"reason": "bare_metal_cart_rpu_submit_hot_helper_must_not_allocate_tables_closures_or_strings"
-		},
-		{
-			"file": "carts/bare_metal_cart/cart.lua",
-			"start": "\tlocal flags = 0\n\trepeat\n\t\thalt_until_irq\n\t\tflags = *irq_flags_register\n\t\t*irq_ack_register = flags\n\tuntil (flags & (irq_dma_done | irq_dma_error)) ~= 0",
-			"end": "\nend\n\nlocal wait_vblank",
-			"reason": "bare_metal_cart_dma_wait_hot_helper_must_not_allocate_tables_closures_or_strings"
-		},
-		{
-			"file": "carts/bare_metal_cart/cart.lua",
-			"start": "\tlocal flags = 0\n\trepeat\n\t\thalt_until_irq\n\t\tflags = *irq_flags_register\n\t\t*irq_ack_register = flags\n\tuntil (flags & irq_vblank) ~= 0",
-			"end": "\nend\n\nlocal build_lua_atlas",
-			"reason": "bare_metal_cart_vblank_wait_hot_helper_must_not_allocate_tables_closures_or_strings"
 		},
 		{
 			"file": "carts/bare_metal_cart/cart.lua",
@@ -3219,14 +3016,8 @@
 		{
 			"file": "carts/bare_metal_cart/cart.lua",
 			"start": "\tlocal joint_phase<const> = frame % 8",
-			"end": "\nend\n\nlocal write_mfu_constants",
-			"reason": "bare_metal_cart_jtu_matrix_hot_helper_must_not_allocate_tables_closures_or_strings"
-		},
-		{
-			"file": "carts/bare_metal_cart/cart.lua",
-			"start": "\tlocal mfu<const>: *word = mfu_addr",
 			"end": "\nend\n\nlocal setup_camera_input",
-			"reason": "bare_metal_cart_mfu_hot_helper_must_not_allocate_tables_closures_or_strings"
+			"reason": "bare_metal_cart_jtu_matrix_hot_helper_must_not_allocate_tables_closures_or_strings"
 		},
 		{
 			"file": "carts/bare_metal_cart/cart.lua",
@@ -3253,16 +3044,28 @@
 			"reason": "bare_metal_cart_main_loop_must_not_allocate_tables_closures_or_strings_per_frame"
 		},
 		{
-			"file": "system/vdp_rpu_quads.lua",
-			"start": "\twrite_quad_vertices()",
-			"end": "\nend\n\nlocal begin_pass",
-			"reason": "vdp_rpu_quads_resource_setup_must_not_allocate_after_module_init"
+			"file": "carts/pietious/room/index.lua",
+			"start": "\tlocal tile_count<const> = self.room_tile_count",
+			"end": "\nend\n\nfunction room_object:render_water",
+			"reason": "pietious_room_tile_run_callsite_must_not_allocate_or_emit_per_tile_stream_blits"
+		},
+		{
+			"file": "carts/pietious/room/index.lua",
+			"start": "\tlocal tile_count<const> = self.water_tile_count",
+			"end": "\nend\n\nfunction room_object:render_room",
+			"reason": "pietious_water_tile_run_callsite_must_not_allocate_or_emit_per_tile_stream_blits"
 		},
 		{
 			"file": "system/vdp_rpu_quads.lua",
-			"start": "\tvdp_rpu.surface_define(surface_id, surface_width[surface_id], surface_height[surface_id], vdp_rpu.surface_format_rgba8 | (vdp_rpu.surface_usage_texture << vdp_rpu.usage_shift))",
-			"end": "\nend\n\nfunction vdp_rpu_quads.clear_color",
+			"start": "\tlocal texture_vram_addr<const> = slot_texture_vram_addr[slot]",
+			"end": "\nend\n\nlocal end_pass",
 			"reason": "vdp_rpu_quads_surface_setup_must_not_allocate_after_module_init"
+		},
+		{
+			"file": "system/vdp_rpu_quads.lua",
+			"start": "\tlocal pass_words<const>: *word = vram_staging_base + rpu_pass_desc_vram_addr",
+			"end": "\nend\n\nlocal begin_pass",
+			"reason": "vdp_rpu_quads_pass_end_must_not_allocate"
 		},
 		{
 			"file": "system/vdp_rpu_quads.lua",
@@ -3278,7 +3081,7 @@
 		},
 		{
 			"file": "system/vdp_rpu_quads.lua",
-			"start": "\tif current_surface == surface_id then",
+			"start": "\tif current_surface_desc == surface_desc_addr then",
 			"end": "\nend\n\nlocal write_instance",
 			"reason": "vdp_rpu_quads_surface_switch_must_not_allocate"
 		},
@@ -3287,6 +3090,12 @@
 			"start": "\tif instance_count == instance_batch_capacity then",
 			"end": "\nend\n\nfunction vdp_rpu_quads.set_slot_dim",
 			"reason": "vdp_rpu_quads_instance_write_must_not_allocate"
+		},
+		{
+			"file": "system/vdp_rpu_quads.lua",
+			"start": "\tsurface_width[surface_desc_addr] = width\n\tsurface_height[surface_desc_addr] = height",
+			"end": "\nend\n\nfunction vdp_rpu_quads.clear_color",
+			"reason": "vdp_rpu_quads_set_slot_dim_must_not_allocate"
 		},
 		{
 			"file": "system/vdp_rpu_quads.lua",
@@ -3308,21 +3117,15 @@
 		},
 		{
 			"file": "system/vdp_rpu_quads.lua",
-			"start": "\tlocal inv_w<const> = 1.0 / surface_width[surface_id]",
+			"start": "\tlocal inv_w<const> = 1.0 / surface_width[surface_desc_addr]",
 			"end": "\nend\n\nfunction vdp_rpu_quads.blit_source_color",
 			"reason": "vdp_rpu_quads_blit_must_not_allocate"
 		},
 		{
 			"file": "system/vdp_rpu_quads.lua",
-			"start": "\tlocal texture_surface_id<const> = slot_surface[slot]",
+			"start": "\tlocal texture_surface_desc_addr<const> = slot_surface_desc[slot]",
 			"end": "\nend\n\nfunction vdp_rpu_quads.tile_run_sources",
 			"reason": "vdp_rpu_quads_axis_aligned_blit_must_not_allocate"
-		},
-		{
-			"file": "system/vdp_rpu_quads.lua",
-			"start": "\tif instance_count ~= 0 then\n\t\tflush_instances()\n\telseif pending_clear then",
-			"end": "\nend\n\nreturn vdp_rpu_quads",
-			"reason": "vdp_rpu_quads_finish_frame_must_not_allocate"
 		},
 		{
 			"file": "system/vdp_rpu_quads.lua",
@@ -3331,16 +3134,10 @@
 			"reason": "vdp_rpu_quads_tile_run_must_write_instances_without_heap_or_gc_work"
 		},
 		{
-			"file": "carts/pietious/room/index.lua",
-			"start": "\tlocal tile_count<const> = self.room_tile_count",
-			"end": "\nend\n\nfunction room_object:render_water",
-			"reason": "pietious_room_tile_run_callsite_must_not_allocate_or_emit_per_tile_stream_blits"
-		},
-		{
-			"file": "carts/pietious/room/index.lua",
-			"start": "\tlocal tile_count<const> = self.water_tile_count",
-			"end": "\nend\n\nfunction room_object:render_room",
-			"reason": "pietious_water_tile_run_callsite_must_not_allocate_or_emit_per_tile_stream_blits"
+			"file": "system/vdp_rpu_quads.lua",
+			"start": "\tif instance_count ~= 0 then\n\t\tflush_instances()\n\telseif pending_clear then",
+			"end": "\nend\n\nreturn vdp_rpu_quads",
+			"reason": "vdp_rpu_quads_finish_frame_must_not_allocate"
 		}
 	],
 	"strict_runtime_no_heap_regions": [
@@ -3400,8 +3197,9 @@
 				"vdpRpuPrimitive",
 				"vdpRpuIndexType",
 				"deleteVdpRpuSurfaceStorage",
-				"ensureVdpRpuBufferStorage",
+				"uploadVdpRpuBuffer",
 				"ensureVdpRpuSurfaceStorage",
+				"uploadVdpRpuTextureSurface",
 				"bindVdpRpuPassFramebuffer",
 				"setVdpRpuPipelineState",
 				"vdpRpuAttributeLocation",
@@ -3411,6 +3209,7 @@
 				"setVdpRpuDefaultVertexAttributes",
 				"setVdpRpuDefaultInstanceAttributes",
 				"bindVdpRpuInstanceStream",
+				"bindVdpRpuMorphStream",
 				"bindVdpRpuDrawStreams",
 				"setVdpRpuC0Constants",
 				"setVdpRpuC1Constants",
@@ -3428,8 +3227,9 @@
 				"vdpRpuPrimitive",
 				"vdpRpuIndexType",
 				"deleteVdpRpuSurfaceStorage",
-				"ensureVdpRpuBufferStorage",
+				"uploadVdpRpuBuffer",
 				"ensureVdpRpuSurfaceStorage",
+				"uploadVdpRpuTextureSurface",
 				"bindVdpRpuPassFramebuffer",
 				"setVdpRpuPipelineState",
 				"vdpRpuAttributeLocation",
@@ -3439,6 +3239,7 @@
 				"setVdpRpuDefaultVertexAttributes",
 				"setVdpRpuDefaultInstanceAttributes",
 				"bindVdpRpuInstanceStream",
+				"bindVdpRpuMorphStream",
 				"bindVdpRpuDrawStreams",
 				"setVdpRpuC0Constants",
 				"setVdpRpuC1Constants",

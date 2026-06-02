@@ -47,19 +47,7 @@ function vdp_image.load_slot(slot, atlas_id)
 	local name<const> = string.format('_atlas_%02d', atlas_id)
 	local atlas<const> = romdir.cart_atlas(name)
 	local atlas_meta<const> = romdir.image(name).imgmeta
-	local dst
-	local cap
-	if slot == sys_vdp_slot_primary then
-		dst = sys_vram_primary_slot_base
-		cap = sys_vram_primary_slot_size
-	elseif slot == sys_vdp_slot_secondary then
-		dst = sys_vram_secondary_slot_base
-		cap = sys_vram_secondary_slot_size
-	else
-		error('vdp_load_slot: invalid slot ' .. tostring(slot))
-	end
-	vdp_rpu_quads.set_slot_dim(slot, atlas_meta.width, atlas_meta.height)
-	vdp_rpu_quads.submit_slot_resources(slot)
+	local dst<const>, cap<const> = vdp_rpu_quads.set_slot_dim(slot, atlas_meta.width, atlas_meta.height)
 	bind_slot_atlas(slot, atlas_id)
 	start_decode(atlas.addr, atlas.len, dst, cap)
 end
@@ -68,9 +56,8 @@ function vdp_image.load_system_slot()
 	local name<const> = string.format('_atlas_%02d', system_atlas_id)
 	local atlas<const> = romdir.system_rom_atlas(name)
 	local atlas_meta<const> = romdir.system_image(name).imgmeta
-	vdp_rpu_quads.set_slot_dim(sys_vdp_slot_system, atlas_meta.width, atlas_meta.height)
-	vdp_rpu_quads.submit_slot_resources(sys_vdp_slot_system)
-	start_decode(atlas.addr, atlas.len, sys_vram_system_slot_base, sys_vram_system_slot_size)
+	local dst<const>, cap<const> = vdp_rpu_quads.set_slot_dim(sys_vdp_slot_system, atlas_meta.width, atlas_meta.height)
+	start_decode(atlas.addr, atlas.len, dst, cap)
 end
 
 local require_meta<const> = function(imgid)
