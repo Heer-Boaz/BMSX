@@ -255,7 +255,7 @@ void ImgDecController::startJob(std::vector<uint8_t>&& buffer, uint32_t dst, uin
 	m_signalIrq = signalIrq;
 	writeJobRegisters(IMG_STATUS_BUSY, 0u, src, len, dst, cap);
 
-	const uint32_t targetCapacity = decodeTargetCapacity(dst);
+	const uint32_t targetCapacity = vramMappedRemainingBytes(dst);
 	if (targetCapacity == 0u) {
 		finishError(nullptr);
 		return;
@@ -306,19 +306,6 @@ void ImgDecController::writeJobRegisters(uint32_t status, uint32_t written, uint
 	m_memory.writeValue(IO_IMG_CAP, valueNumber(static_cast<double>(cap)));
 }
 
-uint32_t ImgDecController::decodeTargetCapacity(uint32_t dst) const {
-	if (dst == VRAM_PRIMARY_SLOT_BASE) {
-		return VRAM_PRIMARY_SLOT_SIZE;
-	}
-	if (dst == VRAM_SECONDARY_SLOT_BASE) {
-		return VRAM_SECONDARY_SLOT_SIZE;
-	}
-	if (dst == VRAM_SYSTEM_SLOT_BASE) {
-		return VRAM_SYSTEM_SLOT_SIZE;
-	}
-	return 0u;
-}
-
 void ImgDecController::beginDecode(DecodedImage&& result, uint32_t targetBaseAddr, uint32_t targetCapacity) {
 	m_decodePlan = planImageCopy(targetBaseAddr, targetCapacity, result, m_activeCapacityLimit);
 	m_activeCapacityLimit = 0;
@@ -330,7 +317,12 @@ void ImgDecController::beginDecode(DecodedImage&& result, uint32_t targetBaseAdd
 	m_availableDecodeBytes = 0;
 	m_decodeActive = true;
 	m_decodeQueued = false;
-	if (m_decodePlan.writeWidth > 0u && m_decodePlan.writeHeight > 0u) {
+	if (m_decodePlan.writeWidth > 0u && m_decodePlan.writeHeight > 0u && (
+		targetBaseAddr == VRAM_SYSTEM_SLOT_BASE
+		|| targetBaseAddr == VRAM_PRIMARY_SLOT_BASE
+		|| targetBaseAddr == VRAM_SECONDARY_SLOT_BASE
+		|| targetBaseAddr == VRAM_FRAMEBUFFER_BASE
+	)) {
 		m_vdp.setDecodedVramSurfaceDimensions(targetBaseAddr, m_decodePlan.writeWidth, m_decodePlan.writeHeight);
 	}
 	if (m_decodePlan.writeLen == 0) {

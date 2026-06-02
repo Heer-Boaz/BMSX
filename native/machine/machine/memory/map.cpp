@@ -20,6 +20,14 @@ bool vramRegionMatches(size_t start, size_t end, uint32_t base, uint32_t size, V
 	return start < regionEnd && end > regionStart;
 }
 
+uint32_t vramRegionRemainingBytes(uint32_t addr, uint32_t base, uint32_t size) {
+	const uint32_t end = base + size;
+	if (addr >= base && addr < end) {
+		return end - addr;
+	}
+	return 0u;
+}
+
 bool vramMappedRangeMatches(uint32_t addr, size_t length, VramRangeMatch match) {
 	if (length == 0) {
 		return false;
@@ -72,6 +80,22 @@ bool isVramMappedRange(uint32_t addr, size_t length) {
 
 bool isVramMappedContiguousRange(uint32_t addr, size_t length) {
 	return vramMappedRangeMatches(addr, length, VramRangeMatch::Contiguous);
+}
+
+uint32_t vramMappedRemainingBytes(uint32_t addr) {
+	if (const uint32_t remaining = vramRegionRemainingBytes(addr, VRAM_STAGING_BASE, VRAM_STAGING_SIZE)) {
+		return remaining;
+	}
+	if (const uint32_t remaining = vramRegionRemainingBytes(addr, VRAM_SYSTEM_SLOT_BASE, VRAM_SYSTEM_SLOT_SIZE)) {
+		return remaining;
+	}
+	if (const uint32_t remaining = vramRegionRemainingBytes(addr, VRAM_PRIMARY_SLOT_BASE, VRAM_PRIMARY_SLOT_SIZE)) {
+		return remaining;
+	}
+	if (const uint32_t remaining = vramRegionRemainingBytes(addr, VRAM_SECONDARY_SLOT_BASE, VRAM_SECONDARY_SLOT_SIZE)) {
+		return remaining;
+	}
+	return vramRegionRemainingBytes(addr, VRAM_FRAMEBUFFER_BASE, VRAM_FRAMEBUFFER_SIZE);
 }
 
 struct MemoryMapInitializer {

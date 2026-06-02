@@ -74,6 +74,14 @@ function vramRegionContains(addr: number, end: number, base: number, size: numbe
 	return addr >= base && end <= base + size;
 }
 
+function vramRegionRemainingBytes(addr: number, base: number, size: number): number {
+	const end = base + size;
+	if (addr >= base && addr < end) {
+		return end - addr;
+	}
+	return 0;
+}
+
 function vramMappedRangeMatchesNonEmpty(addr: number, length: number, contiguous: boolean): boolean {
 	const end = addr + length;
 	const matches = contiguous ? vramRegionContains : vramRegionOverlaps;
@@ -96,6 +104,14 @@ export function isVramMappedContiguousRange(addr: number, length: number): boole
 		return false;
 	}
 	return vramMappedRangeMatchesNonEmpty(addr, length, true);
+}
+
+export function vramMappedRemainingBytes(addr: number): number {
+	return vramRegionRemainingBytes(addr, VRAM_STAGING_BASE, VRAM_STAGING_SIZE)
+		|| vramRegionRemainingBytes(addr, VRAM_SYSTEM_SLOT_BASE, VRAM_SYSTEM_SLOT_SIZE)
+		|| vramRegionRemainingBytes(addr, VRAM_PRIMARY_SLOT_BASE, VRAM_PRIMARY_SLOT_SIZE)
+		|| vramRegionRemainingBytes(addr, VRAM_SECONDARY_SLOT_BASE, VRAM_SECONDARY_SLOT_SIZE)
+		|| vramRegionRemainingBytes(addr, VRAM_FRAMEBUFFER_BASE, VRAM_FRAMEBUFFER_SIZE);
 }
 
 function recomputeMemoryLayout(config: {

@@ -17,12 +17,11 @@ import {
 	IRQ_IMG_ERROR,
 } from '../../bus/io';
 import {
+	VRAM_FRAMEBUFFER_BASE,
 	VRAM_PRIMARY_SLOT_BASE,
-	VRAM_PRIMARY_SLOT_SIZE,
 	VRAM_SECONDARY_SLOT_BASE,
-	VRAM_SECONDARY_SLOT_SIZE,
 	VRAM_SYSTEM_SLOT_BASE,
-	VRAM_SYSTEM_SLOT_SIZE,
+	vramMappedRemainingBytes,
 } from '../../memory/map';
 import { Memory } from '../../memory/memory';
 import type { DecodedImage } from '../../../common/image_decode';
@@ -285,19 +284,6 @@ export class ImgDecController {
 		return true;
 	}
 
-	private decodeTargetCapacity(dst: number): number {
-		if (dst === VRAM_PRIMARY_SLOT_BASE) {
-			return VRAM_PRIMARY_SLOT_SIZE;
-		}
-		if (dst === VRAM_SECONDARY_SLOT_BASE) {
-			return VRAM_SECONDARY_SLOT_SIZE;
-		}
-		if (dst === VRAM_SYSTEM_SLOT_BASE) {
-			return VRAM_SYSTEM_SLOT_SIZE;
-		}
-		return 0;
-	}
-
 	private startJob(buffer: Uint8Array, dst: number, cap: number, src: number, len: number, signalIrq: boolean): void {
 		this.pendingResult = null;
 		this.pendingError = null;
@@ -307,7 +293,7 @@ export class ImgDecController {
 		this.signalIrq = signalIrq;
 		this.writeJobRegisters(IMG_STATUS_BUSY, 0, src, len, dst, cap);
 
-		const targetCapacity = this.decodeTargetCapacity(dst);
+		const targetCapacity = vramMappedRemainingBytes(dst);
 		if (targetCapacity === 0) {
 			this.finishError(null);
 			return;
@@ -363,7 +349,12 @@ export class ImgDecController {
 		this.decodeWidth = result.width;
 		this.decodeHeight = result.height;
 		this.decodeRemaining = plan.writeSize;
-		if (plan.writeWidth > 0 && plan.writeHeight > 0) {
+		if (plan.writeWidth > 0 && plan.writeHeight > 0 && (
+			targetBase === VRAM_SYSTEM_SLOT_BASE
+			|| targetBase === VRAM_PRIMARY_SLOT_BASE
+			|| targetBase === VRAM_SECONDARY_SLOT_BASE
+			|| targetBase === VRAM_FRAMEBUFFER_BASE
+		)) {
 			this.vdp.setDecodedVramSurfaceDimensions(targetBase, plan.writeWidth, plan.writeHeight);
 		}
 		this.decodeCarry = 0;
