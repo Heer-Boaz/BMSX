@@ -43,36 +43,35 @@ void FrameLoopState::finalizeUpdateSlice(Runtime& runtime) {
 	abandonFrameState(runtime);
 }
 
-bool FrameLoopState::runActiveFrameState(Runtime& runtime) {
+void FrameLoopState::runActiveFrameState(Runtime& runtime) {
 	if (runtime.m_pendingCall == Runtime::PendingCall::Entry) {
-		const bool haltedUntilIrq = runUpdatePhase(runtime);
+		runUpdatePhase(runtime);
 		frameState.updateExecuted = runtime.m_pendingCall != Runtime::PendingCall::Entry;
 		finalizeUpdateSlice(runtime);
-		return haltedUntilIrq;
+		return;
 	}
 	finalizeUpdateSlice(runtime);
-	return false;
 }
 
-bool FrameLoopState::runUpdatePhase(Runtime& runtime) {
+void FrameLoopState::runUpdatePhase(Runtime& runtime) {
 	auto& cpu = runtime.machine.cpu;
 	try {
 		while (true) {
 			if (cpu.isHaltedUntilIrq()) {
 				const bool tickCompleted = runtime.cpuExecution.runHaltedUntilIrq(runtime, frameState);
 				if (tickCompleted || cpu.isHaltedUntilIrq()) {
-					return true;
+					return;
 				}
 				continue;
 			}
 			if (runtime.m_pendingCall != Runtime::PendingCall::Entry) {
-				return false;
+				return;
 			}
 			runtime.cpuExecution.runWithBudget(runtime, frameState);
 			if (cpu.isHaltedUntilIrq()) {
-				return true;
+				return;
 			}
-			return false;
+			return;
 		}
 	} catch (...) {
 		frameState.luaFaulted = true;
@@ -111,10 +110,7 @@ bool FrameLoopState::tickUpdate(Runtime& runtime) {
 		runtime.m_debugUpdateCountTotal += 1;
 	}
 
-	const bool haltedUntilIrq = runActiveFrameState(runtime);
-	if (haltedUntilIrq) {
-		return false;
-	}
+	runActiveFrameState(runtime);
 	const bool nextFrameActive = frameActive;
 	if (nextFrameActive != previousFrameActive) {
 		return true;

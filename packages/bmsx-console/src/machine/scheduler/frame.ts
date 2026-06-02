@@ -92,7 +92,7 @@ export class FrameSchedulerState {
 		if (!runtime.luaInitialized || !runtime.tickEnabled || runtime.luaRuntimeFailed) {
 			return false;
 		}
-		return (runtime.frameLoop.frameActive && runtime.frameLoop.frameState.cycleBudgetRemaining > 0 && !runtime.machine.cpu.isHaltedUntilIrq())
+		return (runtime.frameLoop.frameActive && runtime.frameLoop.frameState.cycleBudgetRemaining > 0)
 			|| this.hasScheduledFrame();
 	}
 

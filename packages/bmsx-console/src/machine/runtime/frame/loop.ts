@@ -90,10 +90,7 @@ export class FrameLoopState {
 				return false;
 			}
 		}
-		const haltedUntilIrq = this.runActiveFrameState();
-		if (haltedUntilIrq) {
-			return false;
-		}
+		this.runActiveFrameState();
 		const nextFrameActive = this.frameActive;
 		if (nextFrameActive !== previousFrameActive) {
 			return true;
@@ -115,17 +112,16 @@ export class FrameLoopState {
 		runtime.vblank.abandonTick();
 	}
 
-	private runActiveFrameState(): boolean {
+	private runActiveFrameState(): void {
 		const runtime = this.runtime;
 		const state = this.frameState;
 		if (runtime.pendingCall === 'entry') {
-			const haltedUntilIrq = this.runUpdatePhase();
+			this.runUpdatePhase();
 			state.updateExecuted = runtime.pendingCall !== 'entry';
 			this.finalizeUpdateSlice();
-			return haltedUntilIrq;
+			return;
 		}
 		this.finalizeUpdateSlice();
-		return false;
 	}
 
 	private finalizeUpdateSlice(): void {
@@ -136,41 +132,41 @@ export class FrameLoopState {
 		this.abandonFrameState();
 	}
 
-	private runUpdatePhase(): boolean {
+	private runUpdatePhase(): void {
 		const runtime = this.runtime;
 		const state = this.frameState;
 		const cpu = runtime.machine.cpu;
 		const cpuExecution = runtime.cpuExecution;
 		if (!runtime.cartEntryAvailable) {
-			return false;
+			return;
 		}
 		if (!runtime.luaGate.ready) {
-			return false;
+			return;
 		}
 		if (state.luaFaulted || runtime.luaRuntimeFailed) {
 			state.luaFaulted = true;
-			return false;
+			return;
 		}
 		if (state.haltGame) {
-			return false;
+			return;
 		}
 		try {
 			while (true) {
 				if (cpu.isHaltedUntilIrq()) {
 					const tickCompleted = cpuExecution.runHaltedUntilIrq(state);
 					if (tickCompleted || cpu.isHaltedUntilIrq()) {
-						return true;
+						return;
 					}
 					continue;
 				}
 				if (runtime.pendingCall !== 'entry') {
-					return false;
+					return;
 				}
 				runtime.cpuExecution.runWithBudget(state);
 				if (cpu.isHaltedUntilIrq()) {
-					return true;
+					return;
 				}
-				return false;
+				return;
 			}
 		} catch (error) {
 			state.luaFaulted = true;
