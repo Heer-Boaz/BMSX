@@ -1,7 +1,8 @@
 import pc from 'picocolors';
 
 import { runBrowserDeploy } from './platformbuild';
-import { createCliUi, findExistingDirectory, getParamOrEnv, normalizePathKey, parseArgsVector } from './cli';
+import { findExistingDirectory, getParamOrEnv, normalizePathKey, parseArgsVector } from './cli';
+import { createCliUi } from './display';
 
 const KNOWN_FLAGS = new Set<string>([
 	'-romname',

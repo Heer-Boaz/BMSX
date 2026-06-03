@@ -46,7 +46,6 @@ import type { RawRomSource } from '../../rompack/source';
 import { Table, type Closure, type Program, type ProgramMetadata, type Value, isNativeFunction, isNativeObject } from '../../machine/cpu/cpu';
 import { asStringId, valueIsString } from '../../machine/cpu/cpu';
 import type { Runtime } from '../../machine/runtime/runtime';
-import { callClosure } from '../../machine/program/executor';
 
 const SYSTEM_BUILTIN_PRELUDE_PATH = 'bios/system_builtin_prelude.lua';
 const REQUIRED_SYSTEM_ROM_HELPERS: ReadonlyArray<string> = ['clock_now'];
@@ -305,7 +304,11 @@ export function runSystemBuiltinPrelude(runtime: Runtime, program: Program, meta
 	});
 	runtime.machine.cpu.setProgram(compiled.program, compiled.metadata);
 	runtime.programMetadata = compiled.metadata;
-	callClosure(runtime, { protoIndex: compiled.entryProtoIndex, upvalues: [] }, []);
+	runtime.machine.cpu.start(compiled.entryProtoIndex);
+	runtime.machine.cpu.runUntilDepth(0, Number.MAX_SAFE_INTEGER);
+	if (runtime.machine.cpu.isHaltedUntilIrq()) {
+		throw new Error('system builtin prelude cannot halt for IRQ.');
+	}
 	applySystemBuiltinGlobals(runtime);
 	return { program: compiled.program, metadata: compiled.metadata };
 }

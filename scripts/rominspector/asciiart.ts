@@ -27,6 +27,10 @@ export type BufferSegmentGlyph = {
 	ch: string;
 	align: 'none' | 'full' | 'left' | 'right';
 };
+export type ProgressBarGlyphs = {
+	complete: string;
+	incomplete: string;
+};
 type RenderedBufferBarCell = {
 	ch: string;
 	fgColorTag: string;
@@ -72,6 +76,17 @@ const K_DITHER_THRESHOLD_BY_BIT = (() => {
 	}
 	return lut;
 })();
+
+export function renderProgressBar(
+	value: number,
+	total: number,
+	barLength: number,
+	glyphs: ProgressBarGlyphs = { complete: '█', incomplete: '░' },
+): string {
+	const boundedValue = clamp(value, 0, total);
+	const completeLength = Math.round((boundedValue / total) * barLength);
+	return glyphs.complete.repeat(completeLength) + glyphs.incomplete.repeat(barLength - completeLength);
+}
 
 /**
  * Renders a buffer bar with fractional rendering at the boundaries and full blocks in the interior.

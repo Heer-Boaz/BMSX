@@ -29,6 +29,16 @@ test('hotResumeProgramEntry keeps interpreter resident', () => {
 	const nextExport = src.indexOf('\nexport function ', start + 1);
 	const snippet = src.slice(start, nextExport === -1 ? undefined : nextExport);
 	assert.equal(snippet.includes('createLuaInterpreter('), false, 'hotResumeProgramEntry should not create a new interpreter');
-	assert.equal(snippet.includes('beginEntryExecution(runtime, entryProtoIndex)'), true, 'hotResumeProgramEntry must execute the updated path');
+	assert.equal(snippet.includes('runtime.startLoadedProgram(entryProtoIndex, [], false, false)'), true, 'hotResumeProgramEntry must execute the updated path');
 	assert.equal(snippet.includes('clearCartModuleCacheForHotResume'), true, 'hotResumeProgramEntry should reuse the hot-resume cache path');
+});
+
+test('system builtin prelude starts from fresh CPU entry state', () => {
+	const src = readFileSync('packages/bmsx-console/src/ide/runtime/lua_pipeline.ts', 'utf8');
+	const start = src.indexOf('export function runSystemBuiltinPrelude');
+	assert.ok(start > -1, 'runSystemBuiltinPrelude not found');
+	const nextExport = src.indexOf('\nexport function ', start + 1);
+	const snippet = src.slice(start, nextExport === -1 ? undefined : nextExport);
+	assert.equal(snippet.includes('runtime.machine.cpu.start(compiled.entryProtoIndex)'), true, 'prelude should reset stale active CPU/HALT state before executing setup code');
+	assert.equal(snippet.includes('callClosure(runtime, { protoIndex: compiled.entryProtoIndex'), false, 'prelude must not enter through the previous CPU call stack');
 });

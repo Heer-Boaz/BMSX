@@ -4,11 +4,14 @@ import { stat } from 'node:fs/promises';
 import { join } from 'node:path';
 
 import { runPlatformBuild } from './platformbuild';
+import type { BuilderLogger } from './platformbuild';
 import { getBrowserHostFilename, getNodeLauncherFilename } from './rombuilder';
 import type { RomPackerTarget } from './rompacker.rompack';
 import { collectSourceFiles } from '../analysis/file_scan';
 
-import { createCliUi, getParamOrEnv, parseArgsVector } from './cli';
+import { getParamOrEnv, parseArgsVector } from './cli';
+import { createCliUi } from './display';
+import type { TaskProgressReporter } from './progress';
 
 const KNOWN_FLAGS = new Set<string>([
 	'--debug',
@@ -39,109 +42,6 @@ function getPlatformTaskList(platform: RomPackerTarget): TaskName[] {
 	}
 	tasks.push(TASK.PLATFORM_ARTIFACTS);
 	return tasks;
-}
-
-function timer(ms: number) {
-	return new Promise(res => setTimeout(res, ms));
-}
-
-class ProgressReporter {
-	private tasks: string[];
-	private totalTasks: number;
-	private completedTasks = 0;
-	private started = false;
-	private detail = '';
-	private lastLineLength = 0;
-	private readonly barSize = 80;
-	private readonly barComplete = '█';
-	private readonly barIncomplete = '░';
-
-	constructor(tasks: string[]) {
-		this.tasks = [...tasks];
-		this.totalTasks = this.tasks.length;
-	}
-	private currentTask(): string {
-		return this.tasks[0] as string;
-	}
-
-	private draw(label: string): void {
-		if (!this.started) return;
-		const total = Math.max(1, this.totalTasks);
-		const clampedCompleted = Math.min(this.completedTasks, total);
-		const pct = Math.round((clampedCompleted / total) * 100);
-		const filled = Math.round((clampedCompleted / total) * this.barSize);
-		const bar = pc.green(this.barComplete.repeat(filled))
-			+ pc.dim(this.barIncomplete.repeat(this.barSize - filled));
-		const detail = this.detail ? pc.dim(` · ${this.detail}`) : '';
-		const line = `${pc.dim('[')}${bar}${pc.dim(']')} ${pc.dim(`${clampedCompleted}/${total}`)} ${pc.cyan(`${pct}%`)} ${pc.cyan(label)}${detail}`;
-		const pad = Math.max(0, this.lastLineLength - line.length);
-		process.stdout.write(`\r${line}${pad ? ' '.repeat(pad) : ''}`);
-		this.lastLineLength = line.length;
-	}
-
-	private recalcTotals(): void {
-		this.totalTasks = this.completedTasks + this.tasks.length;
-	}
-
-	public async taskCompleted() {
-		const finishedTask = this.tasks.shift() as string;
-		this.completedTasks++;
-		this.detail = '';
-		this.recalcTotals();
-		this.draw(this.currentTask() || finishedTask);
-		await this.pulse();
-	}
-
-	public showInitial() {
-		if (this.started) return;
-		this.started = true;
-		this.draw(this.currentTask());
-	}
-
-	public async showDone() {
-		if (!this.started) return;
-		this.draw('Gereed');
-		await this.pulse();
-		process.stdout.write('\n');
-	}
-
-	public async pulse() {
-		await timer(100);
-	}
-
-	public setDetail(detail: string) {
-		this.detail = detail;
-		this.draw(this.currentTask());
-	}
-
-	public clearDetail() {
-		this.detail = '';
-		this.draw(this.currentTask());
-	}
-
-	public async runWithOutput<T>(detail: string, action: () => Promise<T>): Promise<T> {
-		this.suspend();
-		this.setDetail(detail);
-		try {
-			return await action();
-		} finally {
-			this.clearDetail();
-		}
-	}
-
-	public async runWithDetail<T>(detail: string, action: () => Promise<T>): Promise<T> {
-		this.setDetail(detail);
-		try {
-			return await action();
-		} finally {
-			this.clearDetail();
-		}
-	}
-
-	public suspend() {
-		if (!this.started) return;
-		process.stdout.write('\n');
-	}
 }
 
 const FLAGS_WITH_VALUES = new Set<string>([
@@ -275,18 +175,25 @@ async function main(): Promise<void> {
 			force: true,
 		};
 	}
-	const logger = {
+	const logger: BuilderLogger = {
 		divider: ui.divider,
 		bullet: ui.bullet,
 		info: ui.info,
 		ok: ui.ok,
 		progress: undefined,
 	};
+	let progress: TaskProgressReporter | undefined;
 	if (options.platform === 'browser' || options.platform === 'headless' || options.platform === 'cli') {
-		const progress = new ProgressReporter(getPlatformTaskList(options.platform));
+		progress = ui.createProgress(getPlatformTaskList(options.platform));
 		logger.progress = progress;
 	}
-	await runPlatformBuild(options, logger);
+	try {
+		await runPlatformBuild(options, logger);
+	} finally {
+		if (progress) {
+			progress.stop();
+		}
+	}
 	ui.writeOut('\n');
 }
 

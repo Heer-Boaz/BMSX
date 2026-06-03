@@ -32,7 +32,6 @@ export interface BuilderLogger {
 		taskCompleted(): Promise<void>;
 		showDone(): Promise<void>;
 		showInitial(): void;
-		suspend(): void;
 	};
 }
 

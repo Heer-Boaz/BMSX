@@ -1,14 +1,15 @@
 // IMPORTANT: IMPORTS TO `bmsx/blabla` ARE NOT ALLOWED!!!!!! THIS WILL CAUSE PROBLEMS WITH .GLSL FILES BEING INCLUDED AND THE BUILDER CANNOT HANDLE THIS!!!!!
 
 import pc from 'picocolors';
-import { Presets, SingleBar } from 'cli-progress';
 
 import { SYSTEM_BOOT_ENTRY_PATH, SYSTEM_ROM_NAME } from '../../packages/bmsx-console/src/core/system';
-import { createCliUi, findExistingDirectory, getParamOrEnv, normalizePathKey, parseArgsVector } from './cli';
+import { findExistingDirectory, getParamOrEnv, normalizePathKey, parseArgsVector } from './cli';
+import { createCliUi } from './display';
 import { validateAudioEventReferences } from './audioeventvalidator';
 import { lintCartSources } from './cart_lua_linter_runtime';
 import { appendProgramImage, biosLuaPath, buildLuaProgramContextAssets, commonResPath, engineLuaPath, systemLuaPath, createAtlasses, finalizeRompack, GENERATE_AND_USE_TEXTURE_ATLAS, generateRomAssets, getResMetaList, getResourcesList, getRomManifest, isRebuildRequired, setAtlasFlag } from './rombuilder';
 import { generateHostSystemAtlasArtifactsFromAssets } from './host_system_atlas';
+import type { TaskProgressReporter as ProgressReporter } from './progress';
 import type { RomPackerOptions } from './rompacker.rompack';
 import type { RomAsset } from '../../packages/bmsx-console/src/rompack/format';
 import { LuaError } from '../../packages/bmsx-console/src/lua/errors';
@@ -267,10 +268,6 @@ function parseOptions(args: string[]): ParsedOptions {
 	};
 }
 
-function timer(ms: number) {
-	return new Promise(res => setTimeout(res, ms));
-}
-
 function formatEsbuildErrors(err: any): string[] {
 	const result: string[] = [];
 	const errors = (err?.errors ?? []) as Array<{ text?: string; location?: { file?: string; line?: number; column?: number }; notes?: Array<{ text?: string; location?: { file?: string; line?: number; column?: number } }> }>;
@@ -333,169 +330,6 @@ function formatLuaBuildError(err: LuaError, virtualRoots: ReadonlyArray<string>)
 	}
 }
 
-class ProgressReporter {
-	private bar: SingleBar;
-	private tasks: string[];
-	private totalTasks: number;
-	private completedTasks = 0;
-	private started = false;
-	private detail = '';
-	private suspended = false;
-	private failed = false;
-
-	constructor(tasks: string[]) {
-		this.tasks = [...tasks];
-		this.totalTasks = this.tasks.length;
-		this.bar = new SingleBar({
-			format: `${pc.dim('[')}${pc.green('{bar}')}${pc.dim(']')} ${pc.dim('{value}/{total}')} ${pc.cyan('{percentage}%')} {task} {detail}`,
-			barCompleteChar: '█',
-			barIncompleteChar: '░',
-			barsize: 80,
-			hideCursor: true,
-			stopOnComplete: false,
-			align: 'left',
-			fps: 10,
-			clearOnComplete: false,
-		}, Presets.shades_classic);
-	}
-	private currentTask(): string {
-		return this.tasks[0] as string;
-	}
-	public getCurrentTask(): string {
-		return this.currentTask();
-	}
-
-	private recalcTotals(): void {
-		this.totalTasks = this.completedTasks + this.tasks.length;
-	}
-
-	private sync(label?: string): void {
-		if (!this.started) return;
-		const total = this.totalTasks || 1;
-		this.bar.setTotal(total);
-		const taskLabel = label ?? this.currentTask();
-		const detailLabel = this.detail ? pc.dim(`· ${this.detail}`) : '';
-		this.bar.update(this.completedTasks, { task: taskLabel, detail: detailLabel });
-	}
-
-	public async taskCompleted() {
-		const finishedTask = this.tasks.shift() as string;
-		this.completedTasks++;
-		this.detail = '';
-		this.recalcTotals();
-		this.sync(this.currentTask() || finishedTask);
-		await this.pulse();
-		if (!this.tasks.length) {
-			this.bar.update(this.completedTasks, { task: finishedTask });
-		}
-	}
-
-	public showInitial() {
-		if (this.started) return;
-		this.started = true;
-		const total = this.totalTasks || 1;
-		this.bar.start(total, this.completedTasks, { task: this.currentTask() });
-	}
-
-	public skipTasks(count: number) {
-		for (let i = 0; i < count && this.tasks.length; i++) {
-			this.tasks.shift();
-			this.completedTasks++;
-		}
-		this.recalcTotals();
-		this.sync();
-	}
-
-	public removeTask(task: string) {
-		const index = this.tasks.indexOf(task);
-		if (index === -1) {
-			throw new Error(`ProgressReporter cannot remove unknown task "${task}".`);
-		}
-		this.tasks.splice(index, 1);
-		this.recalcTotals();
-		this.sync();
-	}
-
-	public removeTasks(tasks: string[]) {
-		for (const task of tasks) {
-			this.removeTask(task);
-		}
-	}
-
-	public async showDone() {
-		if (this.started && !this.suspended && !this.failed) {
-			this.bar.update(this.totalTasks || this.completedTasks, { task: 'Gereed' });
-			this.bar.stop();
-		}
-		await this.pulse();
-	}
-
-	public async pulse() {
-		await timer(100);
-	}
-
-	public setDetail(detail: string) {
-		this.detail = detail;
-		this.sync();
-	}
-
-	public clearDetail() {
-		this.detail = '';
-		this.sync();
-	}
-
-	public async runWithDetail<T>(detail: string, action: () => Promise<T>): Promise<T> {
-		this.setDetail(detail);
-		try {
-			return await action();
-		} finally {
-			this.clearDetail();
-		}
-	}
-
-	public suspend() {
-		if (!this.started || this.suspended) return;
-		this.bar.stop();
-		this.suspended = true;
-		process.stdout.write('\n');
-	}
-
-	public resume(label?: string) {
-		if (!this.started || !this.suspended) return;
-		this.suspended = false;
-		const total = this.totalTasks || 1;
-		this.bar.start(total, this.completedTasks, {
-			task: label ?? this.currentTask(),
-			detail: this.detail ? pc.dim(`· ${this.detail}`) : '',
-		});
-	}
-
-	public async runWithOutput<T>(detail: string, action: () => Promise<T>): Promise<T> {
-		this.setDetail(detail);
-		try {
-			return await action();
-		} finally {
-			this.clearDetail();
-		}
-	}
-
-	public stop() {
-		if (!this.started) return;
-		if (!this.suspended) this.bar.stop();
-		this.started = false;
-	}
-
-	public fail(task: string, summary: string) {
-		if (!this.started) return;
-		this.failed = true;
-		const taskLabel = task || 'Pipeline';
-		const detailLabel = pc.red(`✘ ${summary}`);
-		this.bar.update(this.completedTasks, { task: pc.red(taskLabel), detail: detailLabel });
-		this.bar.stop();
-		this.suspended = true;
-	}
-}
-
 async function runBIOSBuild(options: ParsedOptions, progress?: ProgressReporter): Promise<void> {
 	const { respath, bootloader_path, force, debug, optLevel, useTextureAtlas } = options;
 
@@ -540,7 +374,6 @@ async function runBIOSBuild(options: ParsedOptions, progress?: ProgressReporter)
 		if (progress) {
 			progress.skipTasks(biosPipelineTasks.length);
 			await progress.showDone();
-			progress.suspend();
 		}
 		return;
 	}
@@ -574,13 +407,12 @@ async function runBIOSBuild(options: ParsedOptions, progress?: ProgressReporter)
 	await runBIOSStep(TASK.BIOS_FINALIZE, () => finalizeRompack(BIOSRomAssets, BIOSRomName, { projectRootPath: '', manifest: null, zipRom: false, debug, programBoot: BIOSProgramBoot }));
 	if (progress) {
 		await progress.showDone();
-		progress.suspend();
 	}
 	logOk(`BIOS assets ready → ${pc.white(`dist/${BIOSRomName}${debug ? '.debug' : ''}.rom`)}`);
 }
 
 async function main() {
-	let progress: ProgressReporter;
+	let progress: ProgressReporter | undefined;
 	let romOutputPath = '';
 	let luaErrorVirtualRoots: string[] = [];
 	const bufferedLogs: string[] = [];
@@ -593,13 +425,13 @@ async function main() {
 		let { title, rom_name, bootloader_path, respath, force, debug, useTextureAtlas, optLevel, mode, extraLuaRoots, libraryLuaRoots } = options;
 
 		if (mode === 'bios') {
-			progress = new ProgressReporter(biosBuildTasks);
+			progress = ui.createProgress(biosBuildTasks);
 			await runBIOSBuild(options, progress);
 			writeOut('\n');
 			return;
 		}
 
-		progress = new ProgressReporter(taskList);
+		progress = ui.createProgress(taskList);
 		const isBIOSMode = false; // We keep this flag around for some options that still apply to the cart build (e.g. resource roots) and to avoid accidentally skipping code that should run in both modes. We know we are not in BIOS mode if we are in this branch, but we keep the flag for clarity.
 		const romPackDebug = debug;
 		const normalizedBootloader = normalizePathKey(bootloader_path);
