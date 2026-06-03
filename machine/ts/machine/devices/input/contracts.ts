@@ -1,5 +1,32 @@
-import type { ActionState } from '../../../input/models';
 import { decodeSignedFix16, encodeSignedFix16, FIX16_SCALE } from '../../common/numeric';
+
+export type ButtonState = {
+	pressed: boolean;
+	justpressed: boolean;
+	justreleased: boolean;
+	waspressed: boolean;
+	wasreleased: boolean;
+	repeatpressed: boolean;
+	repeatcount: number;
+	consumed: boolean;
+	presstime: number;
+	timestamp: number;
+	pressedAtMs?: number;
+	releasedAtMs?: number;
+	pressId?: number;
+	value?: number;
+	value2d?: [number, number] | null;
+};
+
+export type ActionState = {
+	action: string;
+	alljustpressed: boolean;
+	allwaspressed: boolean;
+	alljustreleased: boolean;
+	guardedjustpressed: boolean;
+	repeatpressed: boolean;
+	repeatcount: number;
+} & ButtonState;
 
 export const INP_STATUS_PRESSED = 1 << 0;
 export const INP_STATUS_JUST_PRESSED = 1 << 1;

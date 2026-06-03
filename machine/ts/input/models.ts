@@ -6,6 +6,8 @@
  */
 
 import type { VibrationParams } from "../platform";
+import type { ButtonState } from "../machine/devices/input/contracts";
+export type { ActionState, ButtonState } from "../machine/devices/input/contracts";
 import type { Input } from "./manager";
 
 export type ActionStateQuery = {
@@ -95,32 +97,6 @@ export interface InputMap {
 export type BGamepadButton = (typeof Input.BUTTON_IDS)[number];
 
 /**
- * Represents the state of a button.
- */
-export type ButtonState = {
-	// Binary/edge fields
-	pressed: boolean;
-	justpressed: boolean;
-	justreleased: boolean;
-	waspressed: boolean;
-	wasreleased: boolean;
-	repeatpressed: boolean;
-	repeatcount: number;
-	// Consumption fields
-	consumed: boolean;
-	// Timing fields
-	presstime: number; // ms since pressed
-	timestamp: number; // last transition timestamp (ms)
-	pressedAtMs?: number; // absolute press timestamp (ms)
-	releasedAtMs?: number; // absolute release timestamp (ms)
-	// Identity of this press cycle, increases monotonically per-device
-	pressId?: number;
-	// Analog values
-	value?: number; // 1D analog value in [-1,1] or [0,1]
-	value2d?: [number, number] | null; // 2D analog value
-};
-
-/**
  * Represents the input event that is stored when a key or button is pressed or released.
  */
 export type InputEvent = {
@@ -130,19 +106,6 @@ export type InputEvent = {
 	consumed: boolean;
 	pressId?: number; // identity of the press this event belongs to
 };
-
-/**
- * Represents the state of an action, including the action name and button state.
- */
-export type ActionState = {
-	action: string;
-	alljustpressed: boolean;
-	allwaspressed: boolean;
-	alljustreleased: boolean;
-	guardedjustpressed: boolean;
-	repeatpressed: boolean;
-	repeatcount: number;
-} & ButtonState;
 
 /**
  * Represents an input handler that provides methods for polling input, getting button states,
