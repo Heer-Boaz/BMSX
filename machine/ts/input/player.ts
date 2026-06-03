@@ -5,6 +5,10 @@ import type { VibrationParams } from '../platform';
 import { ContextStack, MappingContext } from './context';
 import { consoleCore } from '../core/console';
 import { clamp } from '../common/clamp';
+import { INPUT_SOURCES, type InputSource } from '../machine/devices/input/contracts';
+
+export { INPUT_SOURCES };
+export type { InputSource };
 
 const ACTION_GUARD_MIN_MS = 24;
 const ACTION_GUARD_MAX_MS = 120;
@@ -36,9 +40,6 @@ type RawActionRepeatRecord = {
 	lastResult: boolean;
 	lastRepeatAtMs: number;
 };
-
-export const INPUT_SOURCES = ['keyboard', 'gamepad', 'pointer'] as const;
-export type InputSource = typeof INPUT_SOURCES[number];
 
 function getOrCreateMapValue<K, V>(map: Map<K, V>, key: K, create: () => V): V {
 	let value = map.get(key);

@@ -1,17 +1,21 @@
 import { ActionDefinitionEvaluator } from '../../../input/action_parser';
 import { Input, makeActionState } from '../../../input/manager';
-import type { InputSource, PlayerInput } from '../../../input/player';
-import { inputBindingId, type ActionState, type BGamepadButton, type ButtonId, type ButtonState } from '../../../input/models';
+import type { PlayerInput } from '../../../input/player';
 import type { StringId, StringPool } from '../../cpu/string_pool';
 import { InputControllerEventFifo } from './event_fifo';
 import {
 	INP_EVENT_ACTION_STATUS_MASK,
 	INP_STATUS_CONSUMED,
 	INPUT_CONTROLLER_PLAYER_COUNT,
+	inputBindingId,
 	encodeInputActionValueQ16,
 	encodeInputActionValueXQ16,
 	encodeInputActionValueYQ16,
 	packInputActionStatus,
+	type ActionState,
+	type ButtonId,
+	type ButtonState,
+	type InputSource,
 } from './contracts';
 
 type InputControllerPlayerSlot = {
@@ -387,12 +391,12 @@ export class InputControllerActionTable {
 			if (index !== bindingsText.length && bindingsText.charCodeAt(index) !== 44) {
 				continue;
 			}
-			this.appendTokenBindings(state, actionName, bindingsText.slice(bindingStart, index) as BGamepadButton);
+			this.appendTokenBindings(state, actionName, bindingsText.slice(bindingStart, index));
 			bindingStart = index + 1;
 		}
 	}
 
-	private appendTokenBindings(state: InputControllerPlayerSlot, actionName: string, binding: BGamepadButton): void {
+	private appendTokenBindings(state: InputControllerPlayerSlot, actionName: string, binding: string): void {
 		if (binding.length > 2 && binding.charCodeAt(1) === 58) {
 			const button = binding.slice(2);
 			const sourceKind = binding.charCodeAt(0);

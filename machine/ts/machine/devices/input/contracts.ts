@@ -1,5 +1,14 @@
 import { decodeSignedFix16, encodeSignedFix16, FIX16_SCALE } from '../../common/numeric';
 
+export const INPUT_SOURCES = ['keyboard', 'gamepad', 'pointer'] as const;
+export type InputSource = typeof INPUT_SOURCES[number];
+
+export type ButtonId = string;
+
+export function inputBindingId(binding: ButtonId | { id: ButtonId }): ButtonId {
+	return typeof binding === 'string' ? binding : binding.id;
+}
+
 export type ButtonState = {
 	pressed: boolean;
 	justpressed: boolean;

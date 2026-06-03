@@ -6,8 +6,9 @@
  */
 
 import type { VibrationParams } from "../platform";
-import type { ButtonState } from "../machine/devices/input/contracts";
-export type { ActionState, ButtonState } from "../machine/devices/input/contracts";
+import type { ButtonId, ButtonState } from "../machine/devices/input/contracts";
+export { inputBindingId } from "../machine/devices/input/contracts";
+export type { ActionState, ButtonId, ButtonState, InputSource } from "../machine/devices/input/contracts";
 import type { Input } from "./manager";
 
 export type ActionStateQuery = {
@@ -52,7 +53,6 @@ export type ActionStateQuery = {
  * or a custom Key value.
  */
 export type KeyboardButtonId = 'BTN1' | 'BTN2' | 'BTN3' | 'BTN4';
-export type ButtonId = string;
 /**
  * Represents the state of an button-press-index in the Index2State type. Used for tracking the state of a button.
  */
@@ -76,10 +76,6 @@ export type PointerBinding = string | { id: string; scale?: number; invert?: boo
 export type PointerInputMapping = {
 	[action: string]: PointerBinding[];
 };
-
-export function inputBindingId(binding: ButtonId | { id: ButtonId }): ButtonId {
-	return typeof binding === 'string' ? binding : binding.id;
-}
 
 /**
  * Host default input mapping bundle installed as the base context.
