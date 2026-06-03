@@ -2631,7 +2631,7 @@ void testProgramLoaderModulePathsGolden() {
 	require(bmsx::toLuaModulePath("carts/pietious/cart.lua") == "cart", "module path should strip cart workspace root");
 	require(bmsx::toLuaModulePath("carts/pietious/room/index.lua") == "room/index", "module path should strip cart name");
 	require(bmsx::toLuaModulePath(R"(carts\pietious\room\index.lua)") == "room/index", "module path should normalize source separators");
-	require(bmsx::toLuaModulePath("packages/bmsx-console/src/res/_ignore/ide/source_text.lua") == "_ignore/ide/source_text", "module path should strip engine resource root");
+	require(bmsx::toLuaModulePath("machine/firmware/res/_ignore/ide/source_text.lua") == "_ignore/ide/source_text", "module path should strip firmware resource root");
 	require(bmsx::toLuaModulePath("res/_ignore/ide/source_text.lua") == "_ignore/ide/source_text", "module path should strip virtual resource root");
 }
 

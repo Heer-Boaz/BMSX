@@ -16,7 +16,7 @@ cart Lua / BIOS helper -> CPU-visible RAM or MMIO -> machine device -> host outp
 
 Forbidden cart-visible shapes:
 
-- cart or BIOS calls into `engine.*`, renderer, audio backend, IDE, platform, or
+- cart or BIOS calls into renderer, audio backend, IDE, platform, host, or
   workspace objects;
 - runtime shortcuts that mutate device-visible state without RAM/MMIO;
 - host registries that duplicate cart-visible ROM, resource, input, video,
@@ -435,10 +435,10 @@ device still sees raw string-id words rather than a high-level input API.
 
 ## Firmware and Lua layer
 
-`bios/` is the system ROM entry layer: `bootrom.lua`, `system.lua`, and shared
-common/util helpers. Device-facing system-ROM Lua helpers that are also useful
-to cart libraries live in `system/` instead of pretending to be BIOS entry
-points. They remain firmware code: helpers emit RAM/MMIO words and do not own
+`machine/firmware/bios` is the system ROM entry layer: `bootrom.lua`,
+`system.lua`, and shared common/util helpers. Device-facing system-ROM Lua
+helpers that are also useful to cart libraries live in `machine/firmware/system`
+instead of pretending to be BIOS entry points. They remain firmware code: helpers emit RAM/MMIO words and do not own
 host renderer/audio state.
 
 BIOS and cart libraries may hide register programming behind helpers, but those

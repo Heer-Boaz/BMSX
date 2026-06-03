@@ -20,8 +20,10 @@ bmsx_cpp/
 │   ├── primitives.cpp
 │   ├── registry.h              # Global object registry (mirrors TS Registry)
 │   ├── registry.cpp
-│   ├── engine.h           # System bootstrap and runtime ownership
-│   ├── engine.cpp
+│   ├── console.h          # Runtime console facade
+│   ├── console.cpp
+│   ├── system.h           # System bootstrap contract
+│   ├── system.cpp
 │   ├── font.h                  # Font rendering helpers
 │   ├── font.cpp
 │   ├── taskgate.h              # Async gate (mirrors TS TaskGate)

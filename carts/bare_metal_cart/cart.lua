@@ -1,5 +1,5 @@
 local numeric<const>          = require('bios/common/numeric')
-local camobj<const>           = require('engine/camera_object')
+local camobj<const>           = require('cartlib/camera_object')
 local cam_view_terms<const>   = camobj.cam_view_terms
 local cam_proj_terms<const>   = camobj.cam_proj_terms
 local cam_screen_look<const>  = camobj.cam_screen_look

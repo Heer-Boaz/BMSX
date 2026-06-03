@@ -2,7 +2,7 @@
 	"$schema": "http://json-schema.org/draft-07/schema#",
 	"$id": "https://bmsx.dev/schemas/audio-events.schema.json",
 	"title": "BMSX Audio Event Map",
-	"description": "Schema describing audio event maps consumed by the BMSX engine.",
+	"description": "Schema describing audio event maps consumed by the BMSX ROM tooling.",
 	"type": "object",
 	"properties": {
 		"events": {

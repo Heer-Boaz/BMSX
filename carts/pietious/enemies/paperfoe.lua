@@ -1,4 +1,4 @@
-local behaviourtree<const> = require('engine/behaviourtree')
+local behaviourtree<const> = require('cartlib/behaviourtree')
 local enemy_base<const> = require('enemies/enemy_base')
 
 local paperfoe<const> = {}

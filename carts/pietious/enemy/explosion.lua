@@ -1,5 +1,5 @@
 local constants<const> = require('constants')
-local worldobject<const> = require('engine/world/object')
+local worldobject<const> = require('cartlib/world/object')
 
 local enemy_explosion<const> = {}
 enemy_explosion.__index = enemy_explosion

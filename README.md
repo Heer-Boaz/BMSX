@@ -17,12 +17,13 @@ See `docs/architecture.md` for the machine/host boundary rules.
 
 ## Project Layout
 
-- `packages/bmsx-console/src/machine`: CPU, memory, MMIO bus, device controllers, firmware, program loader, and runtime lifecycle
+- `packages/bmsx-console/src/machine`: TypeScript CPU, memory, MMIO bus, device controllers, program loader, and runtime lifecycle
 - `packages/bmsx-console/src/core`: shared runtime coordination and system bootstrap
 - `packages/bmsx-console/src/common`: low-level shared helpers
 - `packages/bmsx-console/src/audio`: host-side audio playback/output code, not the machine audio device
 - `packages/bmsx-console/src/ide`: editor, terminal, workbench, and IDE runtime tooling
-- `packages/bmsx-console/src/res`: BIOS/system ROM resources
+- `machine/firmware`: BIOS/system ROM Lua, default cart boot source, and BIOS/system resources
+- `cartlib`: shared Lua library for carts; bundled into cart ROMs when required
 - `packages/bmsx-browser-host/src`: browser host services
 - `packages/bmsx-node-host/src`: headless and CLI host services
 - `native/machine`: C++ machine/runtime implementation
@@ -35,7 +36,9 @@ See `docs/architecture.md` for the machine/host boundary rules.
 
 ## Build Model
 
-- BIOS/system assets live in `packages/bmsx-console/src/res`
+- BIOS/system assets live in `machine/firmware/res`
+- BIOS/system Lua lives in `machine/firmware/bios` and `machine/firmware/system`
+- shared cart Lua lives in `cartlib`
 - current carts live in `carts/<cart-folder>`
 - current cart resources live in `carts/<cart-folder>/res`
 - `build:game` takes the cart folder name, not the ROM manifest name
@@ -44,7 +47,7 @@ See `docs/architecture.md` for the machine/host boundary rules.
 
 ## Architecture Doctrine
 
-BMSX can be playful at the product level, but the machine layer is not an engine-service grab bag. New cart-visible hardware should be represented as memory-mapped devices under `machine/devices`, with register addresses in `machine/bus/io`.
+BMSX can be playful at the product level, but the machine layer is not a service grab bag. New cart-visible hardware should be represented as memory-mapped devices under `machine/devices`, with register addresses in `machine/bus/io`.
 
 Preferred direction for cart-visible features:
 

@@ -1,7 +1,7 @@
-local ecs<const> = require('engine/ecs/index')
-local ecs_builtin<const> = require('engine/ecs/builtin')
-local ecs_pipeline<const> = require('engine/ecs/pipeline')
-local world_instance<const> = require('engine/world/index').instance
+local ecs<const> = require('cartlib/ecs/index')
+local ecs_builtin<const> = require('cartlib/ecs/builtin')
+local ecs_pipeline<const> = require('cartlib/ecs/pipeline')
+local world_instance<const> = require('cartlib/world/index').instance
 
 local tickgroup<const> = ecs.tickgroup
 local ecsystem<const> = ecs.ecsystem

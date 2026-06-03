@@ -152,8 +152,8 @@ export function normalizeWorkspacePath(input: string): string {
 }
 
 const CART_ROOT_SEGMENT = 'carts/';
-const ENGINE_RES_SEGMENT = 'packages/bmsx-console/src/res';
-const DEFAULT_CART_BOOTLOADER_SEGMENT = 'packages/bmsx-console/src/machine/firmware/default_cart';
+const FIRMWARE_RES_SEGMENT = 'machine/firmware/res';
+const DEFAULT_CART_BOOTLOADER_SEGMENT = 'machine/firmware/default_cart';
 
 function isCartPath(path?: string): boolean {
 	if (!path || path.length === 0) return false;
@@ -161,10 +161,10 @@ function isCartPath(path?: string): boolean {
 	return normalized.includes(CART_ROOT_SEGMENT);
 }
 
-function isEngineResPath(path?: string): boolean {
+function isFirmwareResPath(path?: string): boolean {
 	if (!path || path.length === 0) return false;
 	const normalized = normalizeWorkspacePath(path);
-	return normalized === ENGINE_RES_SEGMENT || normalized.startsWith(`${ENGINE_RES_SEGMENT}/`);
+	return normalized === FIRMWARE_RES_SEGMENT || normalized.startsWith(`${FIRMWARE_RES_SEGMENT}/`);
 }
 
 function isDefaultCartBootloader(path?: string): boolean {
@@ -1015,7 +1015,7 @@ export async function getResMetaList(respaths: string[], _romname?: string, opti
 	const virtualRoot = normalizeVirtualRootPath(options.virtualRoot);
 	const cartProject = isCartPath(virtualRoot) || respaths.some(isCartPath);
 	const scanRoots = cartProject
-		? respaths.filter(path => !isEngineResPath(path))
+		? respaths.filter(path => !isFirmwareResPath(path))
 		: respaths;
 	const extraLuaRoots = options.extraLuaPaths;
 	const seenPaths = new Set<string>();
@@ -2135,7 +2135,7 @@ export function setAtlasFlag(enabled: boolean): void {
 
 export let GENERATE_AND_USE_TEXTURE_ATLAS = true;
 // Define common assets path
-export const commonResPath = `./packages/bmsx-console/src/res`;
-export const biosLuaPath = './bios';
-export const systemLuaPath = './system';
-export const engineLuaPath = './engine';
+export const commonResPath = `./machine/firmware/res`;
+export const biosLuaPath = './machine/firmware/bios';
+export const systemLuaPath = './machine/firmware/system';
+export const cartlibLuaPath = './cartlib';

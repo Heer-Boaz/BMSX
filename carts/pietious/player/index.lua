@@ -76,8 +76,8 @@
 
 local constants<const> = require('constants')
 local castle_map<const> = require('castle/map')
-local components<const> = require('engine/components')
-local collision2d<const> = require('engine/collision2d')
+local components<const> = require('cartlib/components')
+local collision2d<const> = require('cartlib/collision2d')
 local player_abilities<const> = require('player/abilities')
 
 local player<const> = {}

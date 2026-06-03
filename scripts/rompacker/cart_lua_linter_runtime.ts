@@ -315,7 +315,7 @@ export function lintFunctionBody(
 	isMethodDeclaration: boolean,
 ): void {
 	const isNamedFunction = functionName !== '<anonymous>';
-	if (functionExpression.range.path.startsWith('system/vdp') && functionExpression.body.body.length !== 0) {
+	if (functionExpression.range.path.startsWith('machine/firmware/system/vdp') && functionExpression.body.body.length !== 0) {
 		const bodyLineCount = functionExpression.body.range.end.line - functionExpression.body.range.start.line + 1;
 		if (bodyLineCount <= 2) {
 			pushIssue(

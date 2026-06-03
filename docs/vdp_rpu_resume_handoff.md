@@ -83,8 +83,8 @@ Belangrijkste gerealiseerde stappen:
    - `CONSTANT_UPLOAD_DEVICE` kopieert XF/LPU/MFU/JTU-registerwoorden naar normale RPU constant banks;
    - XF/MFU/JTU Q16.16 words worden bij de RPU-boundary naar f32-constantwords gedecodeerd;
    - LPU-registerwoorden blijven raw;
-   - `bare_metal_cart` routeert de mesh C0-matrix via een centrale `system/vdp_xf.lua` helper en uploadt daarna vanuit XF naar de RPU;
-   - `bare_metal_cart` routeert C1 lighting constants via een centrale `system/vdp_lpu.lua` helper en uploadt daarna raw vanuit LPU naar de RPU;
+   - `bare_metal_cart` routeert de mesh C0-matrix via een centrale `machine/firmware/system/vdp_xf.lua` helper en uploadt daarna vanuit XF naar de RPU;
+   - `bare_metal_cart` routeert C1 lighting constants via een centrale `machine/firmware/system/vdp_lpu.lua` helper en uploadt daarna raw vanuit LPU naar de RPU;
    - BIOS/cart buffer writes gebruiken typed pointers met expliciete scalar field/index stores (`ptr->field = ...`, `ptr[i].field = ...`, `*word_ptr = ...`) in plaats van oude raw-write intrinsics of typed aggregate stores.
 
 ## Laatste validatie die groen was
@@ -101,7 +101,7 @@ cmake --build build-debug --target bmsx_core --parallel 2
 npm run audit:core-parity
 npm run build:bios -- --force
 npm run build:game -- bare_metal_cart --force
-rg -n "Number\\.isFinite|Number\\.isNaN|isNaN|typeof .*number|Math\\.floor|Math\\.ceil" packages/bmsx-console/src/machine/devices/vdp packages/bmsx-console/src/render/backend/webgl native/machine/machine/devices/vdp native/machine/render/backend/gles2 system/vdp_rpu.lua system/vdp_rpu_quads.lua system/vdp_xf.lua system/vdp_lpu.lua carts/bare_metal_cart/cart.lua && exit 1 || true
+rg -n "Number\\.isFinite|Number\\.isNaN|isNaN|typeof .*number|Math\\.floor|Math\\.ceil" packages/bmsx-console/src/machine/devices/vdp packages/bmsx-console/src/render/backend/webgl native/machine/machine/devices/vdp native/machine/render/backend/gles2 machine/firmware/system/vdp_rpu.lua machine/firmware/system/vdp_rpu_quads.lua machine/firmware/system/vdp_xf.lua machine/firmware/system/vdp_lpu.lua carts/bare_metal_cart/cart.lua && exit 1 || true
 git diff --check
 ```
 
@@ -109,7 +109,7 @@ Let op: dit handoff-bestand zelf blijft een tussensnapshot; vertrouw bij resume
 op `git status` en herhaal de validatie.
 
 Headless runtime-smoke is geprobeerd, maar niet als groen bewijs meegenomen: de
-huidige BIOS runtime faalt al bij boot op bestaande `bios/input/action_effect/*`
+huidige BIOS runtime faalt al bij boot op bestaande `cartlib/input/action_effect/*`
 bron met dynamische `&(...)` string-id syntax. Dat staat los van de RPU-cart
 migratie en moet apart worden opgelost voordat een visuele headless smoke als
 validatie kan tellen.
@@ -175,7 +175,7 @@ cmake --build build-debug --target bmsx_core --parallel 2
 cmake --build build-cpp-tests-make --target bmsx_vdp_ingress_tests --parallel 2
 ./build-cpp-tests-make/bmsx_vdp_ingress_tests
 npm run audit:core-parity
-rg -n "Number\\.isFinite|Number\\.isNaN|isNaN|typeof .*number|Math\\.floor|Math\\.ceil" packages/bmsx-console/src/machine/devices/vdp packages/bmsx-console/src/render/backend/webgl native/machine/machine/devices/vdp native/machine/render/backend/gles2 system/vdp_rpu.lua system/vdp_rpu_quads.lua system/vdp_xf.lua system/vdp_lpu.lua carts/bare_metal_cart/cart.lua && exit 1 || true
+rg -n "Number\\.isFinite|Number\\.isNaN|isNaN|typeof .*number|Math\\.floor|Math\\.ceil" packages/bmsx-console/src/machine/devices/vdp packages/bmsx-console/src/render/backend/webgl native/machine/machine/devices/vdp native/machine/render/backend/gles2 machine/firmware/system/vdp_rpu.lua machine/firmware/system/vdp_rpu_quads.lua machine/firmware/system/vdp_xf.lua machine/firmware/system/vdp_lpu.lua carts/bare_metal_cart/cart.lua && exit 1 || true
 git diff --check
 ```
 

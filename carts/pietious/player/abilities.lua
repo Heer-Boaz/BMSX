@@ -1,5 +1,5 @@
 local constants<const> = require('constants')
-local action_effects<const> = require('engine/action_effects')
+local action_effects<const> = require('cartlib/action_effects')
 
 local player_abilities<const> = {}
 

@@ -13,9 +13,9 @@
 -- ║                                                                     ───── ║
 -- ║                                              Total: 19 cycles / read      ║
 -- ║                                                                            ║
--- ║  Cost reference for the engine's CPU opcodes:                              ║
+-- ║  Cost reference for the BMSX CPU opcodes:                              ║
 -- ║      KSMI / LOADK  =  1 cycle   (inline constant)                         ║
--- ║      GETSYS        =  2 cycles  (system global slot — engine reserved)     ║
+-- ║      GETSYS        =  2 cycles  (system global slot — runtime reserved)     ║
 -- ║      GETGL         =  4 cycles  (cart global slot — flat array lookup)     ║
 -- ║      GETG          =  6 cycles  (named global — Map lookup, slow)         ║
 -- ║      GETT          =  8 cycles  (table field lookup)                       ║
@@ -27,7 +27,7 @@
 -- ║  REFACTORING STRATEGY                                                      ║
 -- ╠══════════════════════════════════════════════════════════════════════════════╣
 -- ║                                                                            ║
--- ║  Replace nested tables with bare <const> globals. The engine has no        ║
+-- ║  Replace nested tables with bare <const> globals. The runtime has no        ║
 -- ║  real _G; every bare global gets a GETGL slot (a flat Value[] array        ║
 -- ║  indexed by compile-time slot number). This costs 4 cycles/read.           ║
 -- ║                                                                            ║

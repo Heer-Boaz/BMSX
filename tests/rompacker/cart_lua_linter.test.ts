@@ -53,7 +53,7 @@ test('cart lua linter rejects math.floor references in cart and bios profiles', 
 });
 
 test('cart lua linter rejects tiny Lua VDP functions in system VDP modules', async () => {
-	const root = join(process.cwd(), 'system', 'vdp_lint_fixture');
+	const root = join(process.cwd(), 'machine', 'firmware', 'system', 'vdp_lint_fixture');
 	const filePath = join(root, 'sample.lua');
 	try {
 		await rm(root, { recursive: true, force: true });

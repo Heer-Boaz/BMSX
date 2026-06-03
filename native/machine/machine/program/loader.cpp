@@ -421,7 +421,8 @@ std::string stripLuaExtension(std::string_view candidate) {
 std::string toLuaModulePath(std::string_view sourcePath) {
 	static constexpr std::string_view CART_SOURCE_PREFIX = "carts/";
 	static constexpr std::string_view MODULE_PATH_SOURCE_PREFIXES[] = {
-		"packages/bmsx-console/src/res/",
+		"machine/firmware/res/",
+		"machine/firmware/",
 		"res/",
 	};
 	std::string path = stripLuaExtension(sourcePath);

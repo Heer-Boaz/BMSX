@@ -11,8 +11,8 @@
 -- automatic state restoration.
 
 local constants<const> = require('constants')
-local components<const> = require('engine/components')
-local worldobject<const> = require('engine/world/object')
+local components<const> = require('cartlib/components')
+local worldobject<const> = require('cartlib/world/object')
 
 local pepernoot_projectile<const> = {}
 pepernoot_projectile.__index = pepernoot_projectile

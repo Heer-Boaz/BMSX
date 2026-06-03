@@ -1,6 +1,6 @@
 local constants<const> = require('constants')
 local combat_overlap<const> = require('combat/overlap')
-local progression<const> = require('engine/progression')
+local progression<const> = require('cartlib/progression')
 local world_item<const> = {}
 world_item.__index = world_item
 

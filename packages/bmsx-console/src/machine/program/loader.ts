@@ -232,10 +232,12 @@ export function stripLuaExtension(candidate: string): string {
 }
 
 const CART_SOURCE_PREFIX = 'carts/';
-const ENGINE_RESOURCE_SOURCE_PREFIX = 'packages/bmsx-console/src/res/';
+const FIRMWARE_RESOURCE_SOURCE_PREFIX = 'machine/firmware/res/';
+const FIRMWARE_SOURCE_PREFIX = 'machine/firmware/';
 const RESOURCE_SOURCE_PREFIX = 'res/';
 const MODULE_PATH_SOURCE_PREFIXES = [
-	ENGINE_RESOURCE_SOURCE_PREFIX,
+	FIRMWARE_RESOURCE_SOURCE_PREFIX,
+	FIRMWARE_SOURCE_PREFIX,
 	RESOURCE_SOURCE_PREFIX,
 ];
 

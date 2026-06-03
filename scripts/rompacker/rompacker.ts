@@ -7,7 +7,7 @@ import { findExistingDirectory, getParamOrEnv, normalizePathKey, parseArgsVector
 import { createCliUi } from './display';
 import { validateAudioEventReferences } from './audioeventvalidator';
 import { lintCartSources } from './cart_lua_linter_runtime';
-import { appendProgramImage, biosLuaPath, buildLuaProgramContextAssets, commonResPath, engineLuaPath, systemLuaPath, createAtlasses, finalizeRompack, GENERATE_AND_USE_TEXTURE_ATLAS, generateRomAssets, getResMetaList, getResourcesList, getRomManifest, isRebuildRequired, setAtlasFlag } from './rombuilder';
+import { appendProgramImage, biosLuaPath, buildLuaProgramContextAssets, commonResPath, cartlibLuaPath, systemLuaPath, createAtlasses, finalizeRompack, GENERATE_AND_USE_TEXTURE_ATLAS, generateRomAssets, getResMetaList, getResourcesList, getRomManifest, isRebuildRequired, setAtlasFlag } from './rombuilder';
 import { generateHostSystemAtlasArtifactsFromAssets } from './host_system_atlas';
 import type { TaskProgressReporter as ProgressReporter } from './progress';
 import type { RomPackerOptions } from './rompacker.rompack';
@@ -225,15 +225,15 @@ function parseOptions(args: string[]): ParsedOptions {
 
 	const rom_name = getParamOrEnv(args, '-romname', 'ROM_NAME', '', KNOWN_FLAGS);
 	const title = getParamOrEnv(args, '-title', 'TITLE', rom_name, KNOWN_FLAGS);
-	const defaultBootloaderPath = './packages/bmsx-console/src/machine/firmware/default_cart';
+	const defaultBootloaderPath = './machine/firmware/default_cart';
 	let bootloader_path = getParamOrEnv(args, '-bootloaderpath', 'BOOTLOADER_PATH', defaultBootloaderPath, KNOWN_FLAGS);
 	const respathOverride = getOptionalParam(args, '-respath', 'RES_PATH');
-	let respath = mode === 'bios' ? './packages/bmsx-console/src/res' : '';
+	let respath = mode === 'bios' ? './machine/firmware/res' : '';
 
 	let extraLuaRoots: string[] = [];
 	let libraryLuaRoots: string[] = [];
 	if (mode === 'bios') {
-		respath = getParamOrEnv(args, '-respath', 'RES_PATH', './packages/bmsx-console/src/res', KNOWN_FLAGS);
+		respath = getParamOrEnv(args, '-respath', 'RES_PATH', './machine/firmware/res', KNOWN_FLAGS);
 		bootloader_path = normalizePathKey(bootloader_path);
 		respath = normalizePathKey(respath);
 	} else {
@@ -241,13 +241,13 @@ function parseOptions(args: string[]): ParsedOptions {
 			throw new Error('Rompack mode requires -romname <cart-folder> or -respath <cart-respath>.');
 		}
 		if (seenFlags.has('-bootloaderpath')) {
-			throw new Error('Rompack mode no longer supports -bootloaderpath. Carts always boot through packages/bmsx-console/src/machine/firmware/default_cart.');
+			throw new Error('Rompack mode no longer supports -bootloaderpath. Carts always boot through machine/firmware/default_cart.');
 		}
 		const resolvedCart = resolveCartResPath(rom_name, respathOverride);
 		bootloader_path = normalizePathKey(defaultBootloaderPath);
 		respath = resolvedCart.respath;
 		extraLuaRoots = [resolvedCart.cartRoot];
-		libraryLuaRoots = [normalizePathKey(engineLuaPath)];
+		libraryLuaRoots = [normalizePathKey(cartlibLuaPath)];
 	}
 
 	return {
@@ -337,7 +337,7 @@ async function runBIOSBuild(options: ParsedOptions, progress?: ProgressReporter)
 
 	const BIOSResPath = respath || commonResPath;
 	if (!BIOSResPath) {
-		throw new Error('Missing BIOS respath (expected ./packages/bmsx-console/src/res).');
+		throw new Error('Missing BIOS respath (expected ./machine/firmware/res).');
 	}
 	const BIOSRomName = SYSTEM_ROM_NAME;
 
@@ -553,11 +553,11 @@ async function main() {
 			await progress.taskCompleted();
 			if (!isBIOSMode) {
 				const cartLuaRoots = Array.from(extraLuaPathSet);
-				const engineLuaRoots = Array.from(libraryLuaPathSet);
+				const cartlibLuaRoots = Array.from(libraryLuaPathSet);
 				const systemRomLuaRoots = [normalizePathKey(biosLuaPath), normalizePathKey(systemLuaPath)];
-				await progress.runWithDetail('Lint cart + engine + system-ROM Lua', async () => {
+				await progress.runWithDetail('Lint cart + cartlib + system-ROM Lua', async () => {
 					await lintCartSources({ roots: cartLuaRoots, profile: 'cart' });
-					await lintCartSources({ roots: engineLuaRoots, profile: 'bios' });
+					await lintCartSources({ roots: cartlibLuaRoots, profile: 'bios' });
 					await lintCartSources({ roots: systemRomLuaRoots, profile: 'bios' });
 				});
 				await progress.taskCompleted();

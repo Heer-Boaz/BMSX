@@ -2,7 +2,7 @@
 
 ## Target
 
-Add first-class `struct` support to BMSX Lua so cart, BIOS, and engine code can describe packed machine records once and then fill RAM, read RAM/ROM, or submit contiguous record arrays through DMA without table objects, string blobs, packet-builder wrappers, or cart-local encoding helpers.
+Add first-class `struct` support to BMSX Lua so cart, BIOS, and cart-library code can describe packed machine records once and then fill RAM, read RAM/ROM, or submit contiguous record arrays through DMA without table objects, string blobs, packet-builder wrappers, or cart-local encoding helpers.
 
 The feature is a compiler and ABI feature. A struct value is not a Lua table and does not allocate a runtime object. A struct reference is a typed address view over BMSX memory. Field reads and writes lower to existing memory loads and stores at deterministic byte offsets.
 
@@ -439,7 +439,7 @@ Files likely touched:
 
 - `scripts/rompacker/rompacker.ts`
 - `scripts/rompacker/rombuilder.ts`
-- `system/romdir.lua`
+- `machine/firmware/system/romdir.lua`
 - cart resource manifest generation
 
 Work:

@@ -1,7 +1,7 @@
 local constants<const> = require('constants')
 local castle_map<const> = require('castle/map')
-local timeline<const> = require('engine/timeline/index')
-local vdp_tile_run_sources<const> = require('engine/system').vdp_tile_run_sources
+local timeline<const> = require('cartlib/timeline/index')
+local vdp_tile_run_sources<const> = require('cartlib/system').vdp_tile_run_sources
 
 local room<const> = {}
 local water_surface_timeline_id<const> = 'r.ws'

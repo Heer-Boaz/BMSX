@@ -162,7 +162,7 @@ De compiler weet dat `require('constants')` verwijst naar de proto voor constant
 | **Circulaire requires** | Worden al niet ondersteund in de huidige compiler (module protos worden lineair gecompileerd). Geen probleem. |
 | **Runtime require (string variabel)** | Al niet ondersteund — `require` verwacht een string literal. Geen probleem. |
 | **Hot reload** | Module globals worden gewoon overschreven bij hot reload, net als nu met de module cache. |
-| **BIOS modules vs cart modules** | BIOS modules (engine code) worden al als Lua closures in GETSYS slots gezet. Cart modules zouden GETGL slots gebruiken. Consistent. |
+| **BIOS modules vs cart modules** | BIOS modules (system-runtime code) worden al als Lua closures in GETSYS slots gezet. Cart modules zouden GETGL slots gebruiken. Consistent. |
 | **Geneste tabellen in constants** | `constants.physics.walk_dx` wordt `constants__physics__walk_dx`. De compiler moet recursief door de return-tabel van constants.lua gaan. Dit is een compile-time operatie. |
 
 ### De echte winst

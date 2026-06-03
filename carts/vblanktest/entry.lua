@@ -1,4 +1,4 @@
-require('engine/prelude')
+require('cartlib/prelude')
 local target<const> = 50
 local vblank_count = 0
 local fail_reason = nil

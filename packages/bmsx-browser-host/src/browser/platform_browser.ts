@@ -870,7 +870,7 @@ function removeDpadClasses(target: Element): void {
 /**
  * Web-backed implementation of the onscreen gamepad platform.
  *
- * The engine treats this class as the authoritative bridge between gameplay code and whichever DOM
+ * The browser host treats this class as the authoritative bridge between machine output and whichever DOM
  * nodes represent the virtual controls. It is responsible for normalising pointer input, preserving
  * the canonical element identifiers, and ensuring the controls can be measured/scaled so the GameView
  * can negotiate space for them. When the onscreen gamepad is visible, every layout calculation in the
@@ -1627,7 +1627,7 @@ function resolveBackendFactory(): BackendFactory {
 	const holder = globalThis as BackendFactoryHolder;
 	const factory = holder[backendFactoryKey];
 	if (typeof factory !== 'function') {
-		throw new Error('[BrowserPlatform] GPU backend factory not installed. Make sure the engine registers one before requesting it.');
+		throw new Error('[BrowserPlatform] GPU backend factory not installed. Make sure the browser host registers one before requesting it.');
 	}
 	return factory;
 }

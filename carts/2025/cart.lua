@@ -1,4 +1,4 @@
-require('engine/prelude')
+require('cartlib/prelude')
 local globals<const> = require('globals')
 local story<const> = require('story')
 local start_node<const> = 'title'

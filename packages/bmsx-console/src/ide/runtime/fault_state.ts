@@ -51,8 +51,8 @@ function resolveEditorSourceWorkspacePath(runtime: Runtime, source: string): str
 	if (cart && cart.path2lua[source]) {
 		return resolveWorkspacePath(source, runtime.cartProjectRootPath);
 	}
-	const engine = runtime.systemLuaSources;
-	if (engine && engine.path2lua[source]) {
+	const systemSources = runtime.systemLuaSources;
+	if (systemSources && systemSources.path2lua[source]) {
 		return resolveWorkspacePath(source, runtime.systemProjectRootPath);
 	}
 	return resolveWorkspacePath(source, runtime.cartProjectRootPath);
