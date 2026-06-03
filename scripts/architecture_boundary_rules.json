@@ -1,0 +1,71 @@
+{
+	"roots": [
+		"machine/ts",
+		"machine/cpp",
+		"hosts/browser",
+		"hosts/node",
+		"hosts/libretro"
+	],
+	"tsAliases": [
+		{ "from": "bmsx", "to": "machine/ts/index.ts" },
+		{ "from": "bmsx/", "to": "machine/ts/" },
+		{ "from": "bmsx-browser-host/", "to": "hosts/browser/" },
+		{ "from": "bmsx-node-host/", "to": "hosts/node/" }
+	],
+	"cppIncludeRoots": [
+		"machine/cpp",
+		"hosts/libretro",
+		"hosts/libretro_host"
+	],
+	"layers": [
+		{ "name": "ts-machine", "paths": ["machine/ts/machine/**"] },
+		{ "name": "ts-rompack", "paths": ["machine/ts/rompack/**"] },
+		{ "name": "ts-root-entry", "paths": ["machine/ts/*.ts"] },
+		{ "name": "ts-core", "paths": ["machine/ts/core/**"] },
+		{ "name": "ts-ide", "paths": ["machine/ts/ide/**"] },
+		{ "name": "ts-render", "paths": ["machine/ts/render/**"] },
+		{ "name": "ts-platform", "paths": ["machine/ts/platform/**"] },
+		{ "name": "ts-input", "paths": ["machine/ts/input/**"] },
+		{ "name": "ts-audio", "paths": ["machine/ts/audio/**"] },
+		{ "name": "ts-language", "paths": ["machine/ts/language/**"] },
+		{ "name": "ts-lua", "paths": ["machine/ts/lua/**"] },
+		{ "name": "ts-common", "paths": ["machine/ts/common/**"] },
+
+		{ "name": "cpp-machine", "paths": ["machine/cpp/machine/**"] },
+		{ "name": "cpp-rompack", "paths": ["machine/cpp/rompack/**"] },
+		{ "name": "cpp-core", "paths": ["machine/cpp/core/**"] },
+		{ "name": "cpp-render", "paths": ["machine/cpp/render/**"] },
+		{ "name": "cpp-platform", "paths": ["machine/cpp/platform/**"] },
+		{ "name": "cpp-input", "paths": ["machine/cpp/input/**"] },
+		{ "name": "cpp-audio", "paths": ["machine/cpp/audio/**"] },
+		{ "name": "cpp-lua", "paths": ["machine/cpp/lua/**"] },
+		{ "name": "cpp-common", "paths": ["machine/cpp/common/**"] }
+	],
+	"rules": [
+		{
+			"from": "ts-machine",
+			"deny": ["ts-core", "ts-ide", "ts-render", "ts-platform", "ts-input", "ts-audio", "ts-language"],
+			"reason": "TS machine code must stay below host, IDE, render, input, audio, and language layers."
+		},
+		{
+			"from": "ts-rompack",
+			"deny": ["ts-core", "ts-ide", "ts-render", "ts-platform", "ts-input", "ts-audio", "ts-language"],
+			"reason": "TS ROM wire-format code must not depend on host, IDE, render, input, audio, or language layers."
+		},
+		{
+			"from": "ts-root-entry",
+			"deny": ["ts-core", "ts-ide", "ts-render", "ts-platform", "ts-input", "ts-audio", "ts-language"],
+			"reason": "TS root entrypoints must stay host-neutral; hosts compose render/platform behavior outside the machine artifact."
+		},
+		{
+			"from": "cpp-machine",
+			"deny": ["cpp-core", "cpp-render", "cpp-platform", "cpp-input", "cpp-audio"],
+			"reason": "C++ machine code must stay below host, render, platform, input, and audio edge layers."
+		},
+		{
+			"from": "cpp-rompack",
+			"deny": ["cpp-core", "cpp-render", "cpp-platform", "cpp-input", "cpp-audio"],
+			"reason": "C++ ROM wire-format code must not depend on host, render, platform, input, or audio edge layers."
+		}
+	]
+}

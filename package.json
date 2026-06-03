@@ -83,7 +83,9 @@
 		"fix:indent": "node scripts/fix-ts-indentation-safe.js",
 		"check:indent": "node scripts/fix-ts-indentation-safe.js --check",
 		"analyze:code-quality": "npx tsx scripts/analysis/code_quality.ts",
-		"audit:core-parity": "tsx scripts/audit_core_parity.ts"
+		"audit:core-parity": "tsx scripts/audit_core_parity.ts",
+		"audit:architecture-boundaries": "npx tsx scripts/audit_architecture_boundaries.ts",
+		"audit:architecture-boundaries:strict": "npx tsx scripts/audit_architecture_boundaries.ts --fail-on-issues"
 	},
 	"repository": {
 		"type": "git",
