@@ -1,5 +1,5 @@
 import { defineLintRule } from '../../rule';
-import { LuaAssignmentOperator as AssignmentOperator, type LuaExpression as Expression, type LuaFunctionDeclarationStatement as FunctionDeclarationStatement, type LuaLocalFunctionStatement as LocalFunctionStatement, type LuaStatement as Statement, LuaSyntaxKind as SyntaxKind } from '../../../../machine/ts/src/lua/syntax/ast';
+import { LuaAssignmentOperator as AssignmentOperator, type LuaExpression as Expression, type LuaFunctionDeclarationStatement as FunctionDeclarationStatement, type LuaLocalFunctionStatement as LocalFunctionStatement, type LuaStatement as Statement, LuaSyntaxKind as SyntaxKind } from '../../../../machine/ts/lua/syntax/ast';
 import { declareConstantCopyBinding, enterConstantCopyScope, isForbiddenConstantCopyExpression, leaveConstantCopyScope, lintConstantCopyInAssignmentTarget, lintConstantCopyInExpression, setConstantCopyBindingByName } from './impl/support/constant_copy';
 import { isConstantSourceExpression } from './impl/support/expressions';
 import { ConstantCopyContext } from './impl/support/types';

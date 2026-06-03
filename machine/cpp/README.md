@@ -10,18 +10,17 @@ BMSX is a fantasy console with real console discipline. The C++ tree mirrors the
 ```
 machine/cpp/
 ├── README.md
-└── src/
-    ├── CMakeLists.txt
-    ├── audio/                 # C++ host audio edge
-    ├── common/                # Shared low-level C++ helpers
-    ├── core/                  # Runtime coordination and system bootstrap
-    ├── input/                 # Host input models and mapping
-    ├── lua/                   # Lua syntax/runtime support
-    ├── machine/               # CPU, memory, MMIO, devices, firmware, scheduler
-    ├── platform/              # C++ platform service interfaces
-    ├── render/                # C++ render backends and presentation edge
-    ├── rompack/               # ROM package format/loaders
-    └── vendor/                # C/C++ third-party implementation files
+├── CMakeLists.txt
+├── audio/                 # C++ host audio edge
+├── common/                # Shared low-level C++ helpers
+├── core/                  # Runtime coordination and system bootstrap
+├── input/                 # Host input models and mapping
+├── lua/                   # Lua syntax/runtime support
+├── machine/               # CPU, memory, MMIO, devices, firmware, scheduler
+├── platform/              # C++ platform service interfaces
+├── render/                # C++ render backends and presentation edge
+├── rompack/               # ROM package format/loaders
+└── vendor/                # C/C++ third-party implementation files
 ```
 
 The libretro core entrypoint lives in `hosts/libretro`. The local executable
@@ -50,7 +49,7 @@ The C++ runtime focuses on mirroring the console machine boundary from the TypeS
 mkdir build && cd build
 
 # Configure (libretro core)
-cmake ../src -DCMAKE_BUILD_TYPE=Release
+cmake .. -DCMAKE_BUILD_TYPE=Release
 
 # Build
 cmake --build . --config Release
@@ -68,13 +67,13 @@ cmake --build . --config Release
 
 ```bash
 # Build with SDL2 test app
-cmake ../src -DBMSX_BUILD_SDL=ON
+cmake .. -DBMSX_BUILD_SDL=ON
 
 # Build only static library (no libretro)
-cmake ../src -DBMSX_BUILD_LIBRETRO=OFF
+cmake .. -DBMSX_BUILD_LIBRETRO=OFF
 
 # Build the local libretro frontend executable (Linux)
-cmake ../src -DBMSX_BUILD_LIBRETRO_HOST=ON
+cmake .. -DBMSX_BUILD_LIBRETRO_HOST=ON
 ```
 
 ## Architecture

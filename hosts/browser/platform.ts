@@ -1,8 +1,8 @@
-import { BrowserGameViewHost, BrowserPlatform } from './browser/platform_browser';
+import { BrowserGameViewHost, BrowserPlatform } from './platform_browser';
 import type { GameViewHostHandle, Platform } from 'bmsx/platform';
 
 export * from 'bmsx/platform';
-export { BrowserGameViewHost, BrowserPlatform, type BrowserPlatformOptions } from './browser/platform_browser';
+export { BrowserGameViewHost, BrowserPlatform, type BrowserPlatformOptions } from './platform_browser';
 
 export interface ConstructPlatformOptions {
 	audioContext: AudioContext;

@@ -1,19 +1,19 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 
-import { AcceptedInterruptKind, CPU, createNativeFunction, OpCode, RunResult, type Program, type ProgramMetadata, type Proto, type Value } from '../../machine/ts/src/machine/cpu/cpu';
-import { writeInstruction, INSTRUCTION_BYTES } from '../../machine/ts/src/machine/cpu/instruction_format';
-import { BASE_CYCLES } from '../../machine/ts/src/machine/cpu/opcode_info';
-import { IO_IRQ_FLAGS, IRQ_VBLANK } from '../../machine/ts/src/machine/bus/io';
-import { IrqController } from '../../machine/ts/src/machine/devices/irq/controller';
-import { Machine } from '../../machine/ts/src/machine/machine';
-import { captureMachineSaveState, captureMachineState, restoreMachineSaveState, restoreMachineState } from '../../machine/ts/src/machine/save_state';
-import { Memory } from '../../machine/ts/src/machine/memory/memory';
-import { callClosureInto, callClosureIntoWithScheduler } from '../../machine/ts/src/machine/program/executor';
-import { CpuExecutionState } from '../../machine/ts/src/machine/runtime/cpu_executor';
-import { FrameLoopState } from '../../machine/ts/src/machine/runtime/frame/loop';
-import { FrameSchedulerState } from '../../machine/ts/src/machine/scheduler/frame';
-import type { Runtime } from '../../machine/ts/src/machine/runtime/runtime';
+import { AcceptedInterruptKind, CPU, createNativeFunction, OpCode, RunResult, type Program, type ProgramMetadata, type Proto, type Value } from '../../machine/ts/machine/cpu/cpu';
+import { writeInstruction, INSTRUCTION_BYTES } from '../../machine/ts/machine/cpu/instruction_format';
+import { BASE_CYCLES } from '../../machine/ts/machine/cpu/opcode_info';
+import { IO_IRQ_FLAGS, IRQ_VBLANK } from '../../machine/ts/machine/bus/io';
+import { IrqController } from '../../machine/ts/machine/devices/irq/controller';
+import { Machine } from '../../machine/ts/machine/machine';
+import { captureMachineSaveState, captureMachineState, restoreMachineSaveState, restoreMachineState } from '../../machine/ts/machine/save_state';
+import { Memory } from '../../machine/ts/machine/memory/memory';
+import { callClosureInto, callClosureIntoWithScheduler } from '../../machine/ts/machine/program/executor';
+import { CpuExecutionState } from '../../machine/ts/machine/runtime/cpu_executor';
+import { FrameLoopState } from '../../machine/ts/machine/runtime/frame/loop';
+import { FrameSchedulerState } from '../../machine/ts/machine/scheduler/frame';
+import type { Runtime } from '../../machine/ts/machine/runtime/runtime';
 
 function makeProto(codeLen: number): Proto {
 	return {

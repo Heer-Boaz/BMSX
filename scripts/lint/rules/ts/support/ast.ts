@@ -2,8 +2,8 @@ import { noteQualityLedger, type QualityLedger } from '../../../../analysis/qual
 import { lineInAnalysisRegion, type AnalysisRegion } from '../../../../analysis/lint_suppressions';
 import { type LintIssue, type LintRuleName } from '../../../rule';
 import ts from 'typescript';
-import { getCallTargetLeafName, getExpressionText, unwrapExpression } from '../../../../../machine/ts/src/language/ts/ast/expressions';
-import { isAssignmentOperator } from '../../../../../machine/ts/src/language/ts/ast/operators';
+import { getCallTargetLeafName, getExpressionText, unwrapExpression } from '../../../../../machine/ts/language/ts/ast/expressions';
+import { isAssignmentOperator } from '../../../../../machine/ts/language/ts/ast/operators';
 import { falseLiteralComparison } from './conditions';
 import { expressionAccessFingerprint } from './declarations';
 import { nullishLiteralComparison } from './nullish';

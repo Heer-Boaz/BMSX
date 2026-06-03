@@ -1,5 +1,5 @@
-import { type LuaCallExpression as CallExpression, type LuaExpression as Expression, type LuaStatement as Statement, LuaSyntaxKind as SyntaxKind } from '../../../../../../machine/ts/src/lua/syntax/ast';
-import { findCallExpressionInStatements, getCallMethodName, getCallReceiverExpression, isGlobalCall, visitCallExpressionsInStatements } from '../../../../../../machine/ts/src/lua/syntax/calls';
+import { type LuaCallExpression as CallExpression, type LuaExpression as Expression, type LuaStatement as Statement, LuaSyntaxKind as SyntaxKind } from '../../../../../../machine/ts/lua/syntax/ast';
+import { findCallExpressionInStatements, getCallMethodName, getCallReceiverExpression, isGlobalCall, visitCallExpressionsInStatements } from '../../../../../../machine/ts/lua/syntax/calls';
 import { getFunctionLeafName } from './functions';
 import { isSelfExpressionRoot } from './self_properties';
 import { findTableFieldByKey, readBooleanFieldValueFromTable, readStringFieldValueFromTable } from './table_fields';

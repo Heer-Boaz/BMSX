@@ -88,8 +88,8 @@ machine firmware owner. That is not a general cart collection.
 
 ## Mirrored core contract
 
-The TypeScript core under `machine/ts/src/machine` and the C++ core under
-`machine/cpp/src/machine` are mirrored implementations of the same machine.
+The TypeScript core under `machine/ts/machine` and the C++ core under
+`machine/cpp/machine` are mirrored implementations of the same machine.
 
 Rules:
 
@@ -110,14 +110,14 @@ ROM data is CPU-visible source material.
 
 Owners:
 
-- ROM package wire layout: `machine/ts/src/rompack/format.ts` and
-  `machine/cpp/src/rompack/format.h/.cpp`.
-- ROM TOC wire layout: `machine/ts/src/rompack/toc.ts` and
-  `machine/cpp/src/rompack/toc.h/.cpp`.
-- Layered ROM lookup: `machine/ts/src/rompack/source.ts` and
-  `machine/cpp/src/rompack/source.h/.cpp`.
+- ROM package wire layout: `machine/ts/rompack/format.ts` and
+  `machine/cpp/rompack/format.h/.cpp`.
+- ROM TOC wire layout: `machine/ts/rompack/toc.ts` and
+  `machine/cpp/rompack/toc.h/.cpp`.
+- Layered ROM lookup: `machine/ts/rompack/source.ts` and
+  `machine/cpp/rompack/source.h/.cpp`.
 - Program image layout/loading/linking:
-  `machine/ts/src/machine/program/*` and `machine/cpp/src/machine/program/*`.
+  `machine/ts/machine/program/*` and `machine/cpp/machine/program/*`.
 
 The ROM package and program image use the current wire records only. There is no
 old-format reader and no decode path for obsolete records.

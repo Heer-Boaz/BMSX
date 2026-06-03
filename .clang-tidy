@@ -9,7 +9,7 @@ Checks: '-*,
   readability-*,
   portability-*'
 WarningsAsErrors: ''
-HeaderFilterRegex: 'machine/cpp/src/.*'
+HeaderFilterRegex: 'machine/cpp/.*'
 FormatStyle: file
 
 CheckOptions:

@@ -45,8 +45,8 @@ type Manifest = {
 type ClassifiedFile = { file: string; category: Category; reason: string };
 
 const repoRoot = process.cwd();
-const sourceRoot = 'machine/ts/src';
-const cppRoot = 'machine/cpp/src';
+const sourceRoot = 'machine/ts';
+const cppRoot = 'machine/cpp';
 const manifestPath = 'scripts/core_parity_manifest.json';
 
 function repoPath(value: string): string {

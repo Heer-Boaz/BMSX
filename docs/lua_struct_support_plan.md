@@ -376,12 +376,12 @@ judge the future `bare_metal_cart` migration before implementation cost is paid.
 
 Files likely touched:
 
-- `machine/ts/src/lua/syntax/token.ts`
-- `machine/ts/src/lua/syntax/lexer.ts`
-- `machine/ts/src/lua/syntax/parser.ts`
-- `machine/ts/src/lua/semantic/model.ts`
-- `machine/ts/src/lua/semantic/frontend.ts`
-- `machine/ts/src/lua/semantic/diagnostics.ts`
+- `machine/ts/lua/syntax/token.ts`
+- `machine/ts/lua/syntax/lexer.ts`
+- `machine/ts/lua/syntax/parser.ts`
+- `machine/ts/lua/semantic/model.ts`
+- `machine/ts/lua/semantic/frontend.ts`
+- `machine/ts/lua/semantic/diagnostics.ts`
 
 Work:
 
@@ -400,9 +400,9 @@ Deliverable: parser/semantic tests that prove `sizeof`/`offsetof` and field offs
 
 Files likely touched:
 
-- `machine/ts/src/machine/program/compile_value_flow.ts`
-- `machine/ts/src/machine/program/target_semantics.ts`
-- `machine/ts/src/machine/program/compiler.ts`
+- `machine/ts/machine/program/compile_value_flow.ts`
+- `machine/ts/machine/program/target_semantics.ts`
+- `machine/ts/machine/program/compiler.ts`
 
 Work:
 
@@ -418,8 +418,8 @@ Deliverable: compiled Lua tests that field reads/writes produce exact RAM bytes.
 
 Files likely touched:
 
-- `machine/ts/src/machine/program/compiler.ts`
-- `machine/ts/src/machine/program/optimizer/index.ts`
+- `machine/ts/machine/program/compiler.ts`
+- `machine/ts/machine/program/optimizer/index.ts`
 
 Work:
 

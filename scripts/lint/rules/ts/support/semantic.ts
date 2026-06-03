@@ -1,6 +1,6 @@
 import ts from 'typescript';
-import { callTargetText, isExpressionChildOfLargerExpression } from '../../../../../machine/ts/src/language/ts/ast/expressions';
-import { isNumericSanitizerCall, isSemanticTransformTarget, isSemanticValidationPredicateTarget, semanticBodyCallSignature, semanticTransformFamily } from '../../../../../machine/ts/src/language/ts/ast/semantic';
+import { callTargetText, isExpressionChildOfLargerExpression } from '../../../../../machine/ts/language/ts/ast/expressions';
+import { isNumericSanitizerCall, isSemanticTransformTarget, isSemanticValidationPredicateTarget, semanticBodyCallSignature, semanticTransformFamily } from '../../../../../machine/ts/language/ts/ast/semantic';
 import { TEXT_SEMANTIC_SIGNATURE_PREFIX } from '../../common/semantic_signature';
 import { normalizedAstFingerprint } from './declarations';
 

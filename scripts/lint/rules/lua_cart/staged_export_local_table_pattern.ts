@@ -1,5 +1,5 @@
 import { defineLintRule } from '../../rule';
-import { LuaAssignmentOperator as AssignmentOperator, type LuaIdentifierExpression as IdentifierExpression, type LuaStatement as Statement, LuaSyntaxKind as SyntaxKind } from '../../../../machine/ts/src/lua/syntax/ast';
+import { LuaAssignmentOperator as AssignmentOperator, type LuaIdentifierExpression as IdentifierExpression, type LuaStatement as Statement, LuaSyntaxKind as SyntaxKind } from '../../../../machine/ts/lua/syntax/ast';
 import { type CartLintIssue } from '../../lua_rule';
 import { countIdentifierMentionsInStatements } from './impl/support/identifier_flow';
 import { getModuleFieldAssignmentBaseIdentifier, isModuleFieldAssignmentTarget } from './impl/support/object_ownership';

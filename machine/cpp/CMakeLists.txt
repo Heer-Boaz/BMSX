@@ -345,7 +345,7 @@ add_library(bmsx_core STATIC
 # stb is plain C; compile it as C to avoid libstdc++'s legacy C wrappers (e.g. <math.h>)
 
 # Required for linking static library into shared library.
-set(BMSX_MACHINE_ARTIFACT_DIR "${CMAKE_CURRENT_SOURCE_DIR}/../../../lib")
+set(BMSX_MACHINE_ARTIFACT_DIR "${CMAKE_CURRENT_SOURCE_DIR}/../../lib")
 file(MAKE_DIRECTORY "${BMSX_MACHINE_ARTIFACT_DIR}")
 set_target_properties(bmsx_core PROPERTIES
 	POSITION_INDEPENDENT_CODE ON
@@ -385,8 +385,8 @@ endif()
 # Libretro core (shared library)
 # =============================================================================
 
-set(BMSX_LIBRETRO_DIR "${CMAKE_CURRENT_SOURCE_DIR}/../../../hosts/libretro")
-set(BMSX_LIBRETRO_HOST_DIR "${CMAKE_CURRENT_SOURCE_DIR}/../../../hosts/libretro_host")
+set(BMSX_LIBRETRO_DIR "${CMAKE_CURRENT_SOURCE_DIR}/../../hosts/libretro")
+set(BMSX_LIBRETRO_HOST_DIR "${CMAKE_CURRENT_SOURCE_DIR}/../../hosts/libretro_host")
 
 if(BMSX_BUILD_LIBRETRO)
 	add_library(bmsx_libretro SHARED
@@ -477,20 +477,20 @@ endif()
 if(BMSX_BUILD_TESTS)
 	enable_testing()
 	add_executable(bmsx_vdp_ingress_tests
-		${CMAKE_CURRENT_SOURCE_DIR}/../../../tests/cpp/vdp_ingress_test.cpp
+		${CMAKE_CURRENT_SOURCE_DIR}/../../tests/cpp/vdp_ingress_test.cpp
 	)
 	target_link_libraries(bmsx_vdp_ingress_tests PRIVATE bmsx_core)
 	add_test(NAME bmsx_vdp_ingress_tests COMMAND bmsx_vdp_ingress_tests)
 
 	add_executable(bmsx_core_golden_tests
-		${CMAKE_CURRENT_SOURCE_DIR}/../../../tests/cpp/core_golden_test.cpp
+		${CMAKE_CURRENT_SOURCE_DIR}/../../tests/cpp/core_golden_test.cpp
 	)
 	target_link_libraries(bmsx_core_golden_tests PRIVATE bmsx_core)
 	add_test(NAME bmsx_core_golden_tests COMMAND bmsx_core_golden_tests)
 
 	add_executable(bmsx_libretro_save_state_tests
-		${CMAKE_CURRENT_SOURCE_DIR}/../../../tests/cpp/libretro_save_state_test.cpp
-		${CMAKE_CURRENT_SOURCE_DIR}/../../../tests/cpp/support/program_cart_fixture.cpp
+		${CMAKE_CURRENT_SOURCE_DIR}/../../tests/cpp/libretro_save_state_test.cpp
+		${CMAKE_CURRENT_SOURCE_DIR}/../../tests/cpp/support/program_cart_fixture.cpp
 		${BMSX_LIBRETRO_DIR}/platform.cpp
 	)
 	target_link_libraries(bmsx_libretro_save_state_tests PRIVATE bmsx_core)

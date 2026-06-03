@@ -1,4 +1,4 @@
-import { type LuaExpression as Expression, type LuaStatement as Statement, LuaSyntaxKind as SyntaxKind, type LuaTableField as TableField, LuaTableFieldKind as TableFieldKind } from '../../../../../../machine/ts/src/lua/syntax/ast';
+import { type LuaExpression as Expression, type LuaStatement as Statement, LuaSyntaxKind as SyntaxKind, type LuaTableField as TableField, LuaTableFieldKind as TableFieldKind } from '../../../../../../machine/ts/lua/syntax/ast';
 import { type LintRuleName } from '../../../../rule';
 import { type CartLintIssue } from '../../../../lua_rule';
 import { getExpressionKeyName } from './expression_signatures';

@@ -30,12 +30,12 @@ if (!extensions['.glsl']) {
 
 const originalLoad = (Module as any)._load;
 const resolveFilename = (Module as any)._resolveFilename;
-const registryModulePath = path.resolve(__dirname, '../../machine/ts/src/core/registry.ts');
-const fsmlibraryModulePath = path.resolve(__dirname, '../../machine/ts/src/fsm/fsmlibrary.ts');
-const stateModulePath = path.resolve(__dirname, '../../machine/ts/src/fsm/state.ts');
-const gameModulePath = path.resolve(__dirname, '../../machine/ts/src/core/console.ts');
-const worldModulePath = path.resolve(__dirname, '../../machine/ts/src/core/world.ts');
-const spaceModulePath = path.resolve(__dirname, '../../machine/ts/src/core/space.ts');
+const registryModulePath = path.resolve(__dirname, '../../machine/ts/core/registry.ts');
+const fsmlibraryModulePath = path.resolve(__dirname, '../../machine/ts/fsm/fsmlibrary.ts');
+const stateModulePath = path.resolve(__dirname, '../../machine/ts/fsm/state.ts');
+const gameModulePath = path.resolve(__dirname, '../../machine/ts/core/console.ts');
+const worldModulePath = path.resolve(__dirname, '../../machine/ts/core/world.ts');
+const spaceModulePath = path.resolve(__dirname, '../../machine/ts/core/space.ts');
 
 const worldStub = {
 	objToSpaceMap: new Map<string, string>(),
@@ -146,13 +146,13 @@ const stateExports = {
 };
 
 (Module as any)._load = function (request: string, parent: any, isMain: boolean) {
-	if (request.includes('/machine/ts/src/core/registry')) {
+	if (request.includes('/machine/ts/core/registry')) {
 		return { Registry: TestRegistry, default: TestRegistry };
 	}
-	if (request.includes('/machine/ts/src/fsm/fsmlibrary')) {
+	if (request.includes('/machine/ts/fsm/fsmlibrary')) {
 		return fsmlibraryExports;
 	}
-	if (request.includes('/machine/ts/src/fsm/state')) {
+	if (request.includes('/machine/ts/fsm/state')) {
 		return stateExports;
 	}
 	const resolved = resolveFilename.call(this, request, parent, isMain);

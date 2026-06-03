@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 
-import { InputController } from '../../machine/ts/src/machine/devices/input/controller';
+import { InputController } from '../../machine/ts/machine/devices/input/controller';
 import {
 	INP_CTRL_ARM,
 	INP_CTRL_COMMIT,
@@ -27,13 +27,13 @@ import {
 	IO_INP_VALUE,
 	IO_INP_VALUE_X,
 	IO_INP_VALUE_Y,
-} from '../../machine/ts/src/machine/bus/io';
-import { CPU, asStringId, StringValue } from '../../machine/ts/src/machine/cpu/cpu';
-import { Memory } from '../../machine/ts/src/machine/memory/memory';
-import { Input, makeButtonState } from '../../machine/ts/src/input/manager';
-import { PlayerInput } from '../../machine/ts/src/input/player';
-import type { ButtonState, GamepadInputMapping, KeyboardInputMapping, PointerInputMapping } from '../../machine/ts/src/input/models';
-import type { VibrationParams } from '../../machine/ts/src/platform';
+} from '../../machine/ts/machine/bus/io';
+import { CPU, asStringId, StringValue } from '../../machine/ts/machine/cpu/cpu';
+import { Memory } from '../../machine/ts/machine/memory/memory';
+import { Input, makeButtonState } from '../../machine/ts/input/manager';
+import { PlayerInput } from '../../machine/ts/input/player';
+import type { ButtonState, GamepadInputMapping, KeyboardInputMapping, PointerInputMapping } from '../../machine/ts/input/models';
+import type { VibrationParams } from '../../machine/ts/platform';
 import {
 	INP_EVENT_CTRL_POP,
 	INP_EVENT_STATUS_EMPTY,
@@ -46,8 +46,8 @@ import {
 	INP_STATUS_PRESSED,
 	INP_STATUS_WAS_PRESSED,
 	INPUT_CONTROLLER_OUTPUT_INTENSITY_Q16_ONE,
-} from '../../machine/ts/src/machine/devices/input/contracts';
-import { DEFAULT_LUA_BUILTIN_NAMES } from '../../machine/ts/src/machine/firmware/builtin_descriptors';
+} from '../../machine/ts/machine/devices/input/contracts';
+import { DEFAULT_LUA_BUILTIN_NAMES } from '../../machine/ts/machine/firmware/builtin_descriptors';
 
 type PushedContext = {
 	id: string;

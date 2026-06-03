@@ -1,4 +1,4 @@
-import { type LuaExpression as Expression, type LuaIdentifierExpression as IdentifierExpression } from '../../../../../../machine/ts/src/lua/syntax/ast';
+import { type LuaExpression as Expression, type LuaIdentifierExpression as IdentifierExpression } from '../../../../../../machine/ts/lua/syntax/ast';
 import { type CartLintIssue } from '../../../../lua_rule';
 import { type LintRuleName } from '../../../../rule';
 

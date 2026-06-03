@@ -1,5 +1,5 @@
-import { clamp } from '../../machine/ts/src/common/clamp';
-import { decodeWavToPcm } from '../../machine/ts/src/common/wav';
+import { clamp } from '../../machine/ts/common/clamp';
+import { decodeWavToPcm } from '../../machine/ts/common/wav';
 
 export type AudioPreviewPcm = {
 	samples: Int16Array;

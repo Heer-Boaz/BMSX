@@ -1,10 +1,10 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 
-import { CPU, OpCode, RunResult, type Program, type ProgramMetadata, type Proto } from '../../machine/ts/src/machine/cpu/cpu';
-import { collectCpuProfilerHotPcs } from '../../machine/ts/src/machine/cpu/profiler';
-import { writeInstruction, INSTRUCTION_BYTES } from '../../machine/ts/src/machine/cpu/instruction_format';
-import { Memory } from '../../machine/ts/src/machine/memory/memory';
+import { CPU, OpCode, RunResult, type Program, type ProgramMetadata, type Proto } from '../../machine/ts/machine/cpu/cpu';
+import { collectCpuProfilerHotPcs } from '../../machine/ts/machine/cpu/profiler';
+import { writeInstruction, INSTRUCTION_BYTES } from '../../machine/ts/machine/cpu/instruction_format';
+import { Memory } from '../../machine/ts/machine/memory/memory';
 
 function makeProto(codeLen: number): Proto {
 	return {

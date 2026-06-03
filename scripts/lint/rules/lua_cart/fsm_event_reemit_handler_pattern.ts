@@ -1,5 +1,5 @@
 import { defineLintRule } from '../../rule';
-import { type LuaExpression as Expression, LuaSyntaxKind as SyntaxKind } from '../../../../machine/ts/src/lua/syntax/ast';
+import { type LuaExpression as Expression, LuaSyntaxKind as SyntaxKind } from '../../../../machine/ts/lua/syntax/ast';
 import { type CartLintIssue } from '../../lua_rule';
 import { getGoFunctionFromHandlerEntryValue, isSelfEventsEmitCallExpression } from './impl/support/fsm_events';
 import { pushIssue } from './impl/support/lint_context';

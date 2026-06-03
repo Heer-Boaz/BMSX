@@ -317,12 +317,12 @@ export const VDP_RPU_STREAM_LAYOUTS: readonly VdpRpuStreamLayoutSpec[] = [
 
 ## Files to modify in implementation phase
 
-- `machine/ts/src/machine/devices/vdp/rpu_desc.ts` — descriptor byte-offset constants (new)
-- `machine/cpp/src/machine/devices/vdp/rpu_desc.h` — C++ descriptor byte offsets (new)
-- `machine/ts/src/machine/devices/vdp/rpu.ts` — VdpRpuUnit, VdpRpuCommandBuffer, new opcodes
-- `machine/cpp/src/machine/devices/vdp/rpu.h` / `rpu.cpp` — C++ mirror
-- `machine/ts/src/render/backend/webgl/vdp_rpu.ts` — read from vdpVram
-- `machine/cpp/src/render/backend/gles2/vdp_rpu.cpp` — read from vdpVram
-- `machine/cpp/src/render/backend/software/vdp_rpu.cpp` — read from vdpVram
+- `machine/ts/machine/devices/vdp/rpu_desc.ts` — descriptor byte-offset constants (new)
+- `machine/cpp/machine/devices/vdp/rpu_desc.h` — C++ descriptor byte offsets (new)
+- `machine/ts/machine/devices/vdp/rpu.ts` — VdpRpuUnit, VdpRpuCommandBuffer, new opcodes
+- `machine/cpp/machine/devices/vdp/rpu.h` / `rpu.cpp` — C++ mirror
+- `machine/ts/render/backend/webgl/vdp_rpu.ts` — read from vdpVram
+- `machine/cpp/render/backend/gles2/vdp_rpu.cpp` — read from vdpVram
+- `machine/cpp/render/backend/software/vdp_rpu.cpp` — read from vdpVram
 - `carts/bare_metal_cart/cart.lua` — descriptor-in-memory model
 - `tests/cpp/vdp_ingress_test.cpp`, `tests/lua/vdp_ingress.test.ts` — new test cases

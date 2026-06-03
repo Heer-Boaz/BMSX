@@ -212,20 +212,20 @@ This is a **mirrored ISA change** and must land in both cores simultaneously.
 
 | File | Change |
 |------|--------|
-| `machine/ts/src/machine/cpu/opcode_info.ts` | Replace the 7 dead slots (see Opcode cleanup section) |
-| `machine/ts/src/machine/cpu/cpu.ts` | Remove 7 dead dispatch cases; add dispatch for `LOAD_MEM_D`, `STORE_MEM_D`, `STORE_MEM_WORDS_D`: decode `ext` as displacement, compute `base + (ext << 2)`, dispatch to existing memory access helpers |
-| `machine/ts/src/machine/cpu/disassembler.ts` | Replace name/format entries for all removed opcodes |
-| `machine/ts/src/machine/cpu/profiler.ts` | Include new memory opcodes in memory-opcode detection |
-| `machine/ts/src/machine/program/compiler.ts` | Rename `BR_TRUE`→`JMPIF`, `BR_FALSE`→`JMPIFNOT`; remove `GETG`/`SETG` from `isConstBxOp`/`isGlobalSlotOp`; add compiler-side emit path: fold `base_reg + word_aligned_const ≤ 1020` into the `_D` variant |
-| `machine/ts/src/machine/program/control_flow.ts` | Remove `LOADBOOL`; replace `BR_TRUE`/`BR_FALSE` with `JMPIF`/`JMPIFNOT` |
-| `machine/ts/src/machine/program/optimizer/ssa.ts` | Remove all `LOADBOOL`, `TEST`, `TESTSET` handling; replace `BR_TRUE`/`BR_FALSE` with `JMPIF`/`JMPIFNOT` |
+| `machine/ts/machine/cpu/opcode_info.ts` | Replace the 7 dead slots (see Opcode cleanup section) |
+| `machine/ts/machine/cpu/cpu.ts` | Remove 7 dead dispatch cases; add dispatch for `LOAD_MEM_D`, `STORE_MEM_D`, `STORE_MEM_WORDS_D`: decode `ext` as displacement, compute `base + (ext << 2)`, dispatch to existing memory access helpers |
+| `machine/ts/machine/cpu/disassembler.ts` | Replace name/format entries for all removed opcodes |
+| `machine/ts/machine/cpu/profiler.ts` | Include new memory opcodes in memory-opcode detection |
+| `machine/ts/machine/program/compiler.ts` | Rename `BR_TRUE`→`JMPIF`, `BR_FALSE`→`JMPIFNOT`; remove `GETG`/`SETG` from `isConstBxOp`/`isGlobalSlotOp`; add compiler-side emit path: fold `base_reg + word_aligned_const ≤ 1020` into the `_D` variant |
+| `machine/ts/machine/program/control_flow.ts` | Remove `LOADBOOL`; replace `BR_TRUE`/`BR_FALSE` with `JMPIF`/`JMPIFNOT` |
+| `machine/ts/machine/program/optimizer/ssa.ts` | Remove all `LOADBOOL`, `TEST`, `TESTSET` handling; replace `BR_TRUE`/`BR_FALSE` with `JMPIF`/`JMPIFNOT` |
 
 ### C++
 
 | File | Change |
 |------|--------|
-| `machine/cpp/src/machine/cpu/opcode_info.h` | Same replacements |
-| `machine/cpp/src/machine/cpu/cpu.cpp` | Same dispatch changes |
+| `machine/cpp/machine/cpu/opcode_info.h` | Same replacements |
+| `machine/cpp/machine/cpu/cpu.cpp` | Same dispatch changes |
 
 ### Tests
 

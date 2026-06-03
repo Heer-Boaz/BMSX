@@ -1,8 +1,8 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 
-import { DEFAULT_LUA_BUILTIN_NAMES } from '../../machine/ts/src/machine/firmware/builtin_descriptors';
-import { SYSTEM_ROM_GLOBAL_NAME_SET } from '../../machine/ts/src/machine/firmware/system_globals';
+import { DEFAULT_LUA_BUILTIN_NAMES } from '../../machine/ts/machine/firmware/builtin_descriptors';
+import { SYSTEM_ROM_GLOBAL_NAME_SET } from '../../machine/ts/machine/firmware/system_globals';
 import {
 	IO_GEO_CMD,
 	IO_GEO_COUNT,
@@ -24,7 +24,7 @@ import {
 	IO_GEO_STRIDE2,
 	IO_IRQ_FLAGS,
 	IRQ_GEO_DONE,
-} from '../../machine/ts/src/machine/bus/io';
+} from '../../machine/ts/machine/bus/io';
 import {
 	GEO_CTRL_ABORT,
 	GEOMETRY_CONTROLLER_PHASE_BUSY,
@@ -100,13 +100,13 @@ import {
 	IO_CMD_GEO_OVERLAP2D_PASS,
 	IO_CMD_GEO_SAT2_BATCH,
 	IO_CMD_GEO_XFORM2_BATCH,
-} from '../../machine/ts/src/machine/devices/geometry/contracts';
-import { Machine } from '../../machine/ts/src/machine/machine';
-import { captureMachineSaveState, restoreMachineSaveState } from '../../machine/ts/src/machine/save_state';
-import { Memory } from '../../machine/ts/src/machine/memory/memory';
-import { RAM_BASE } from '../../machine/ts/src/machine/memory/map';
-import type { GeometryController } from '../../machine/ts/src/machine/devices/geometry/controller';
-import type { GeometryControllerState } from '../../machine/ts/src/machine/devices/geometry/save_state';
+} from '../../machine/ts/machine/devices/geometry/contracts';
+import { Machine } from '../../machine/ts/machine/machine';
+import { captureMachineSaveState, restoreMachineSaveState } from '../../machine/ts/machine/save_state';
+import { Memory } from '../../machine/ts/machine/memory/memory';
+import { RAM_BASE } from '../../machine/ts/machine/memory/map';
+import type { GeometryController } from '../../machine/ts/machine/devices/geometry/controller';
+import type { GeometryControllerState } from '../../machine/ts/machine/devices/geometry/save_state';
 
 
 function makeMachine(): Machine {

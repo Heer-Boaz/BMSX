@@ -1,4 +1,4 @@
-import { type Token } from '../../../../../machine/ts/src/language/cpp/syntax/tokens';
+import { type Token } from '../../../../../machine/ts/language/cpp/syntax/tokens';
 import { isCallIdentifier } from './ast';
 
 export function normalizedBodyFingerprint(tokens: readonly Token[], start: number, end: number): string {

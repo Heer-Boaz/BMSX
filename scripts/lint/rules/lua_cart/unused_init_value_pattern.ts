@@ -1,5 +1,5 @@
 import { defineLintRule } from '../../rule';
-import { type LuaIdentifierExpression as IdentifierExpression } from '../../../../machine/ts/src/lua/syntax/ast';
+import { type LuaIdentifierExpression as IdentifierExpression } from '../../../../machine/ts/lua/syntax/ast';
 import { UnusedInitValueContext } from './impl/support/types';
 import { resolveUnusedInitValueBinding } from './impl/support/unused_init';
 import { pushIssue } from './impl/support/lint_context';

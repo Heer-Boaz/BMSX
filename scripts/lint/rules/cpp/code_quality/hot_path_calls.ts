@@ -1,6 +1,6 @@
-import { type FunctionInfo } from '../../../../../machine/ts/src/language/cpp/syntax/declarations';
-import { cppCallTarget, isFunctionDeclaratorParen, splitArgumentRanges } from '../../../../../machine/ts/src/language/cpp/syntax/syntax';
-import { type Token } from '../../../../../machine/ts/src/language/cpp/syntax/tokens';
+import { type FunctionInfo } from '../../../../../machine/ts/language/cpp/syntax/declarations';
+import { cppCallTarget, isFunctionDeclaratorParen, splitArgumentRanges } from '../../../../../machine/ts/language/cpp/syntax/syntax';
+import { type Token } from '../../../../../machine/ts/language/cpp/syntax/tokens';
 import { type LintIssue, pushTokenLintIssue } from '../support/diagnostics';
 import { type AnalysisRegion } from '../../../../analysis/lint_suppressions';
 import { hotPathClosureArgumentPatternRule } from '../../code_quality/hot_path_closure_argument_pattern';

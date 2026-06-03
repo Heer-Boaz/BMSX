@@ -1,6 +1,6 @@
 import fs from 'fs';
-import { decodeBinary } from '../machine/ts/src/common/serializer/binencoder';
-import { PROGRAM_SYMBOLS_IMAGE_ID } from '../machine/ts/src/machine/program/loader';
+import { decodeBinary } from '../machine/ts/common/serializer/binencoder';
+import { PROGRAM_SYMBOLS_IMAGE_ID } from '../machine/ts/machine/program/loader';
 
 function findAssetEntries(bytes: Uint8Array) {
 	// The rompack format is custom; we'll scan for the program symbols image by searching for the id string in the binary and then decode near it.

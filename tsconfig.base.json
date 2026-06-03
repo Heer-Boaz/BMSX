@@ -54,10 +54,10 @@
 		"allowImportingTsExtensions": true,
 		"baseUrl": ".",
 		"paths": {
-			"bmsx": ["machine/ts/src/index.ts"],
-			"bmsx/*": ["machine/ts/src/*"],
-			"bmsx-browser-host/*": ["hosts/browser/src/*"],
-			"bmsx-node-host/*": ["hosts/node/src/*"]
+			"bmsx": ["machine/ts/index.ts"],
+			"bmsx/*": ["machine/ts/*"],
+			"bmsx-browser-host/*": ["hosts/browser/*"],
+			"bmsx-node-host/*": ["hosts/node/*"]
 		}
 	}
 }

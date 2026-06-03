@@ -1,5 +1,5 @@
-import { type LuaExpression as Expression, type LuaIfStatement as IfStatement, LuaSyntaxKind as SyntaxKind, LuaTableFieldKind as TableFieldKind } from '../../../../../../machine/ts/src/lua/syntax/ast';
-import { getCallMethodName } from '../../../../../../machine/ts/src/lua/syntax/calls';
+import { type LuaExpression as Expression, type LuaIfStatement as IfStatement, LuaSyntaxKind as SyntaxKind, LuaTableFieldKind as TableFieldKind } from '../../../../../../machine/ts/lua/syntax/ast';
+import { getCallMethodName } from '../../../../../../machine/ts/lua/syntax/calls';
 import { getExpressionKeyName } from './expression_signatures';
 import { isSelfExpressionRoot } from './self_properties';
 

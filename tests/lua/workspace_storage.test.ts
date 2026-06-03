@@ -1,12 +1,12 @@
 import './test_setup';
 import assert from 'node:assert/strict';
 import { test, type TestContext } from 'node:test';
-import type { CodeTabContext } from '../../machine/ts/src/ide/common/models';
-import type { StorageService } from '../../machine/ts/src/platform/platform';
-import { consoleCore as $ } from '../../machine/ts/src/core/console';
-import { PieceTreeBuffer } from '../../machine/ts/src/ide/editor/text/piece_tree_buffer';
-import { getTextSnapshot } from '../../machine/ts/src/ide/editor/text/source_text';
-import { workspaceSourceCache } from '../../machine/ts/src/ide/workspace/cache';
+import type { CodeTabContext } from '../../machine/ts/ide/common/models';
+import type { StorageService } from '../../machine/ts/platform/platform';
+import { consoleCore as $ } from '../../machine/ts/core/console';
+import { PieceTreeBuffer } from '../../machine/ts/ide/editor/text/piece_tree_buffer';
+import { getTextSnapshot } from '../../machine/ts/ide/editor/text/source_text';
+import { workspaceSourceCache } from '../../machine/ts/ide/workspace/cache';
 import {
 	WORKSPACE_METADATA_DIR,
 	WORKSPACE_MARKER_FILE,
@@ -14,15 +14,15 @@ import {
 	buildWorkspaceDirtyEntryPath,
 	buildWorkspaceStorageKey,
 	joinWorkspacePaths,
-} from '../../machine/ts/src/ide/workspace/files';
+} from '../../machine/ts/ide/workspace/files';
 import {
 	clearOpenWorkspacePathDirtyState,
 	collectUnsavedWorkspaceSourcePaths,
 	setOpenWorkspacePathDirty,
-} from '../../machine/ts/src/ide/workspace/open_dirty';
-import { codeTabSessionState } from '../../machine/ts/src/ide/workbench/ui/code_tab/session_state';
-import { tabSessionState } from '../../machine/ts/src/ide/workbench/ui/tab/session_state';
-import { collectDirtyContextEntries, persistDirtyContextEntries } from '../../machine/ts/src/ide/workbench/workspace/autosave';
+} from '../../machine/ts/ide/workspace/open_dirty';
+import { codeTabSessionState } from '../../machine/ts/ide/workbench/ui/code_tab/session_state';
+import { tabSessionState } from '../../machine/ts/ide/workbench/ui/tab/session_state';
+import { collectDirtyContextEntries, persistDirtyContextEntries } from '../../machine/ts/ide/workbench/workspace/autosave';
 import {
 	buildDirtyFilePath,
 	configureWorkspaceStorage,
@@ -30,13 +30,13 @@ import {
 	readWorkspaceStateFile,
 	writeWorkspaceFile,
 	writeWorkspaceStateFile,
-} from '../../machine/ts/src/ide/workbench/workspace/io';
-import { hydrateDirtyFiles } from '../../machine/ts/src/ide/workbench/workspace/restore';
-import { captureActiveCodeTabSource } from '../../machine/ts/src/ide/workbench/ui/code_tab/activation';
-import { captureContextText } from '../../machine/ts/src/ide/workbench/workspace/context_snapshot';
-import { editorDocumentState } from '../../machine/ts/src/ide/editor/editing/document_state';
-import type { LuaSourceRegistry } from '../../machine/ts/src/machine/program/sources';
-import { saveLuaResourceSource } from '../../machine/ts/src/ide/workspace/workspace';
+} from '../../machine/ts/ide/workbench/workspace/io';
+import { hydrateDirtyFiles } from '../../machine/ts/ide/workbench/workspace/restore';
+import { captureActiveCodeTabSource } from '../../machine/ts/ide/workbench/ui/code_tab/activation';
+import { captureContextText } from '../../machine/ts/ide/workbench/workspace/context_snapshot';
+import { editorDocumentState } from '../../machine/ts/ide/editor/editing/document_state';
+import type { LuaSourceRegistry } from '../../machine/ts/machine/program/sources';
+import { saveLuaResourceSource } from '../../machine/ts/ide/workspace/workspace';
 
 class MockStorage implements StorageService {
 	private readonly store = new Map<string, string>();
@@ -444,7 +444,7 @@ test('explicit lua save promotes canonical source and removes dirty entry', asyn
 		systemLuaSources: null,
 		activeLuaSources: registry,
 		cartProjectRootPath: 'offline-cart',
-		systemProjectRootPath: 'machine/ts/src',
+		systemProjectRootPath: 'machine/ts',
 		storageService: storage,
 		clock: { dateNow: () => 42 },
 		luaGenericChunksExecuted: new Set<string>(),

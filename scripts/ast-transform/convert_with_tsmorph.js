@@ -228,7 +228,7 @@ function main() {
 		global.__tsmorph_project = new Project({ tsConfigFilePath: tsconfigPath });
 		// Ensure we load source files for rewiring across the project
 		try {
-			global.__tsmorph_project.addSourceFilesAtPaths('machine/ts/src/**/*.ts');
+			global.__tsmorph_project.addSourceFilesAtPaths('machine/ts/**/*.ts');
 		} catch { }
 	} else {
 		global.__tsmorph_project = new Project({ useInMemoryFileSystem: false, skipAddingFilesFromTsConfig: true });

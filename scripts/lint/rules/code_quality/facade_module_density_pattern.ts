@@ -1,11 +1,11 @@
-import type { FunctionInfo } from '../../../../machine/ts/src/language/cpp/syntax/declarations';
-import type { Token } from '../../../../machine/ts/src/language/cpp/syntax/tokens';
+import type { FunctionInfo } from '../../../../machine/ts/language/cpp/syntax/declarations';
+import type { Token } from '../../../../machine/ts/language/cpp/syntax/tokens';
 import { pushTokenLintIssue } from '../cpp/support/diagnostics';
 import { defineLintRule } from '../../rule';
 import { type LintIssue, pushLintIssue } from '../ts/support/ast';
 import ts from 'typescript';
-import { isFunctionLikeValue } from '../../../../machine/ts/src/language/ts/ast/functions';
-import { getCallExpressionTarget, hasExportModifier } from '../../../../machine/ts/src/language/ts/ast/expressions';
+import { isFunctionLikeValue } from '../../../../machine/ts/language/ts/ast/functions';
+import { getCallExpressionTarget, hasExportModifier } from '../../../../machine/ts/language/ts/ast/expressions';
 import { getFunctionWrapperTarget } from '../ts/support/declarations';
 import { getDelegationCallExpression } from '../ts/support/statements';
 

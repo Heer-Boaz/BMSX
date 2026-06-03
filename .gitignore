@@ -31,9 +31,9 @@ bmsx/**.js
 dist/game_debug.html
 dist/game.html
 dist/manifest.json
-!machine/ts/src/**.d.ts
-machine/ts/src/bmsx.d.ts
-!machine/ts/src/types/globals.d.ts
+!machine/ts/**.d.ts
+machine/ts/bmsx.d.ts
+!machine/ts/types/globals.d.ts
 src/testrom/res/_ignore/detective_piet/**
 tsconfig.buildinfo
 scripts/tmp

@@ -1,8 +1,8 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 
-import { LuaDebuggerController } from '../../machine/ts/src/lua/debugger';
-import type { LuaDebuggerPauseSignal } from '../../machine/ts/src/lua/value';
+import { LuaDebuggerController } from '../../machine/ts/lua/debugger';
+import type { LuaDebuggerPauseSignal } from '../../machine/ts/lua/value';
 
 function pauseSignal(reason: LuaDebuggerPauseSignal['reason'], line = 1, depth = 1): LuaDebuggerPauseSignal {
 	return {

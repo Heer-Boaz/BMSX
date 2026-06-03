@@ -1,5 +1,5 @@
 import { defineLintRule } from '../../rule';
-import { type LuaCallExpression as CallExpression, type LuaStatement as Statement, LuaSyntaxKind as SyntaxKind } from '../../../../machine/ts/src/lua/syntax/ast';
+import { type LuaCallExpression as CallExpression, type LuaStatement as Statement, LuaSyntaxKind as SyntaxKind } from '../../../../machine/ts/lua/syntax/ast';
 import { type CartLintIssue } from '../../lua_rule';
 import { isEventsEmitCallExpression } from './impl/support/fsm_events';
 import { pushIssue } from './impl/support/lint_context';

@@ -32,10 +32,10 @@ import {
 	IO_VDP_SLOT_PRIMARY,
 	IO_VDP_SLOT_SECONDARY,
 	IO_VDP_STATUS,
-} from '../../machine/ts/src/machine/bus/io';
-import { CPU } from '../../machine/ts/src/machine/cpu/cpu';
-import type { VdpFrameBufferPresentation, VdpFrameBufferPresentationSink, VdpSurfaceUpload } from '../../machine/ts/src/machine/devices/vdp/device_output';
-import { VDP, VDP_FRAMEBUFFER_PAGE_DISPLAY } from '../../machine/ts/src/machine/devices/vdp/vdp';
+} from '../../machine/ts/machine/bus/io';
+import { CPU } from '../../machine/ts/machine/cpu/cpu';
+import type { VdpFrameBufferPresentation, VdpFrameBufferPresentationSink, VdpSurfaceUpload } from '../../machine/ts/machine/devices/vdp/device_output';
+import { VDP, VDP_FRAMEBUFFER_PAGE_DISPLAY } from '../../machine/ts/machine/devices/vdp/vdp';
 import {
 	VDP_FIFO_CTRL_SEAL,
 	VDP_FAULT_CMD_BAD_DOORBELL,
@@ -55,12 +55,12 @@ import {
 	VDP_SLOT_PRIMARY,
 	VDP_STATUS_FAULT,
 	VDP_STATUS_VBLANK,
-} from '../../machine/ts/src/machine/devices/vdp/contracts';
+} from '../../machine/ts/machine/devices/vdp/contracts';
 import {
 	VDP_DEX_FRAME_IDLE,
 	VDP_SUBMITTED_FRAME_EMPTY,
 	VDP_SUBMITTED_FRAME_READY,
-} from '../../machine/ts/src/machine/devices/vdp/frame';
+} from '../../machine/ts/machine/devices/vdp/frame';
 import {
 	VDP_CMD_BEGIN_FRAME,
 	VDP_CMD_CLEAR,
@@ -75,8 +75,8 @@ import {
 	VDP_REG_DRAW_PRIORITY,
 	VDP_REG_SLOT_INDEX,
 	VDP_REG_SRC_SLOT,
-} from '../../machine/ts/src/machine/devices/vdp/registers';
-import { VDP_VOUT_SCANOUT_PHASE_ACTIVE, VDP_VOUT_SCANOUT_PHASE_VBLANK } from '../../machine/ts/src/machine/devices/vdp/vout';
+} from '../../machine/ts/machine/devices/vdp/registers';
+import { VDP_VOUT_SCANOUT_PHASE_ACTIVE, VDP_VOUT_SCANOUT_PHASE_VBLANK } from '../../machine/ts/machine/devices/vdp/vout';
 import {
 	VDP_RPU_EXEC_PASS_LIST_WORDS,
 	VDP_RPU_INDEX_NONE,
@@ -93,7 +93,7 @@ import {
 	VDP_RPU_SHADER_FLAG_T1,
 	VDP_RPU_SHADER_V3_N3_T2_C4_J4_W4_C0_C1,
 	vdpRpuVramRangeRevision,
-} from '../../machine/ts/src/machine/devices/vdp/rpu';
+} from '../../machine/ts/machine/devices/vdp/rpu';
 import {
 	RPU_DRAW_DESC_CONSTANT_DESCS_ADDR_OFFSET,
 	RPU_DRAW_DESC_INDEX_COUNT_OFFSET,
@@ -118,7 +118,7 @@ import {
 	RPU_STREAM_DESC_LAYOUT_ID_OFFSET,
 	RPU_STREAM_DESC_VRAM_ADDR_OFFSET,
 	readRpuDescU32,
-} from '../../machine/ts/src/machine/devices/vdp/rpu_desc';
+} from '../../machine/ts/machine/devices/vdp/rpu_desc';
 import {
 	VDP_XF_MATRIX_COUNT,
 	VDP_XF_MATRIX_PACKET_PAYLOAD_WORDS,
@@ -127,11 +127,11 @@ import {
 	VDP_XF_PACKET_KIND,
 	VDP_XF_SELECT_PACKET_PAYLOAD_WORDS,
 	VDP_XF_VIEW_MATRIX_INDEX_REGISTER,
-} from '../../machine/ts/src/machine/devices/vdp/xf';
-import { Memory } from '../../machine/ts/src/machine/memory/memory';
-import { IO_WORD_SIZE, VDP_STREAM_BUFFER_BASE, VRAM_FRAMEBUFFER_BASE, VRAM_PRIMARY_SLOT_BASE, VRAM_STAGING_BASE } from '../../machine/ts/src/machine/memory/map';
-import { DeviceScheduler } from '../../machine/ts/src/machine/scheduler/device';
-import { createVdpTransformSnapshot, resolveVdpTransformSnapshot } from '../../machine/ts/src/render/vdp/transform';
+} from '../../machine/ts/machine/devices/vdp/xf';
+import { Memory } from '../../machine/ts/machine/memory/memory';
+import { IO_WORD_SIZE, VDP_STREAM_BUFFER_BASE, VRAM_FRAMEBUFFER_BASE, VRAM_PRIMARY_SLOT_BASE, VRAM_STAGING_BASE } from '../../machine/ts/machine/memory/map';
+import { DeviceScheduler } from '../../machine/ts/machine/scheduler/device';
+import { createVdpTransformSnapshot, resolveVdpTransformSnapshot } from '../../machine/ts/render/vdp/transform';
 
 const VDP_XF_MATRIX_HEADER = VDP_XF_PACKET_KIND | (VDP_XF_MATRIX_PACKET_PAYLOAD_WORDS << 16);
 const VDP_XF_SELECT_HEADER = VDP_XF_PACKET_KIND | (VDP_XF_SELECT_PACKET_PAYLOAD_WORDS << 16);

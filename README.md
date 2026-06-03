@@ -16,16 +16,16 @@ See `docs/architecture.md` for the machine/host boundary rules.
 
 ## Project Layout
 
-- `machine/ts/src/machine`: TypeScript CPU, memory, MMIO bus, device controllers, program loader, and runtime lifecycle
-- `machine/ts/src/core`: shared runtime coordination and system bootstrap
-- `machine/ts/src/common`: low-level shared helpers
-- `machine/ts/src/audio`: host-side audio playback/output code, not the machine audio device
-- `machine/ts/src/ide`: editor, terminal, workbench, and IDE runtime tooling
+- `machine/ts/machine`: TypeScript CPU, memory, MMIO bus, device controllers, program loader, and runtime lifecycle
+- `machine/ts/core`: shared runtime coordination and system bootstrap
+- `machine/ts/common`: low-level shared helpers
+- `machine/ts/audio`: host-side audio playback/output code, not the machine audio device
+- `machine/ts/ide`: editor, terminal, workbench, and IDE runtime tooling
 - `machine/firmware`: BIOS/system ROM Lua, default cart boot source, and BIOS/system resources
 - `cartlib`: shared Lua library for carts; bundled into cart ROMs when required
-- `hosts/browser/src`: browser host services
-- `hosts/node/src`: headless and CLI host services
-- `machine/cpp/src`: C++ machine/runtime implementation
+- `hosts/browser`: browser host services
+- `hosts/node`: headless and CLI host services
+- `machine/cpp`: C++ machine/runtime implementation
 - `hosts/libretro`: libretro core host entrypoint for BMSX
 - `hosts/libretro_host`: local libretro frontend executable, an alternative to RetroArch
 - `carts`: Lua cart software for the machine and cart-local resources

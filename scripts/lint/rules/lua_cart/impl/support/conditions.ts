@@ -1,4 +1,4 @@
-import { LuaBinaryOperator as BinaryOperator, type LuaExpression as Expression, type LuaFunctionExpression as CartFunctionExpression, type LuaStatement as Statement, LuaSyntaxKind as SyntaxKind, LuaUnaryOperator as UnaryOperator } from '../../../../../../machine/ts/src/lua/syntax/ast';
+import { LuaBinaryOperator as BinaryOperator, type LuaExpression as Expression, type LuaFunctionExpression as CartFunctionExpression, type LuaStatement as Statement, LuaSyntaxKind as SyntaxKind, LuaUnaryOperator as UnaryOperator } from '../../../../../../machine/ts/lua/syntax/ast';
 import { isBuiltinCallExpression } from './calls';
 import { isDelegationCallCandidate, isDirectValueGetterExpression } from './functions';
 import { getFunctionSingleReturnExpression } from './function_shapes';

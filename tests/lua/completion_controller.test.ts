@@ -1,12 +1,12 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 
-import type { LuaCompletionItem, LuaCompletionKind } from '../../machine/ts/src/ide/common/models';
+import type { LuaCompletionItem, LuaCompletionKind } from '../../machine/ts/ide/common/models';
 import {
 	buildCanonicalCompletionItems,
 	filterCompletionItems,
 	resolveCompletionWordRange,
-} from '../../machine/ts/src/ide/editor/contrib/suggest/completion_model';
+} from '../../machine/ts/ide/editor/contrib/suggest/completion_model';
 
 function completionItem(label: string, kind: LuaCompletionKind, sortKey = `${kind}:${label}`, insertText = label): LuaCompletionItem {
 	return {

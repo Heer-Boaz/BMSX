@@ -1,13 +1,13 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 
-import type { RawRomSource } from '../../machine/ts/src/rompack/source';
-import type { CartridgeIndex, CartridgeLayerId, RomAsset } from '../../machine/ts/src/rompack/format';
-import { buildLuaSources } from '../../machine/ts/src/machine/program/sources';
-import { PROGRAM_IMAGE_ID, toLuaModulePath } from '../../machine/ts/src/machine/program/loader';
-import { SYSTEM_BOOT_ENTRY_PATH } from '../../machine/ts/src/core/system';
-import { decodeRomToc } from '../../machine/ts/src/rompack/toc';
-import { encodeRomToc } from '../../machine/ts/src/rompack/tooling/toc_encode';
+import type { RawRomSource } from '../../machine/ts/rompack/source';
+import type { CartridgeIndex, CartridgeLayerId, RomAsset } from '../../machine/ts/rompack/format';
+import { buildLuaSources } from '../../machine/ts/machine/program/sources';
+import { PROGRAM_IMAGE_ID, toLuaModulePath } from '../../machine/ts/machine/program/loader';
+import { SYSTEM_BOOT_ENTRY_PATH } from '../../machine/ts/core/system';
+import { decodeRomToc } from '../../machine/ts/rompack/toc';
+import { encodeRomToc } from '../../machine/ts/rompack/tooling/toc_encode';
 
 const textEncoder = new TextEncoder();
 

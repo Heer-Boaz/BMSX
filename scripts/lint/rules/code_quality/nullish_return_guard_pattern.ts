@@ -1,12 +1,12 @@
-import type { FunctionInfo } from '../../../../machine/ts/src/language/cpp/syntax/declarations';
+import type { FunctionInfo } from '../../../../machine/ts/language/cpp/syntax/declarations';
 import {
 	cppExpressionUsesAccessedValue,
 	cppNullishGuardExpression,
 	cppStatementReturnsNull,
 	findTopLevelSemicolon,
 	trimmedExpressionText,
-} from '../../../../machine/ts/src/language/cpp/syntax/syntax';
-import type { Token } from '../../../../machine/ts/src/language/cpp/syntax/tokens';
+} from '../../../../machine/ts/language/cpp/syntax/syntax';
+import type { Token } from '../../../../machine/ts/language/cpp/syntax/tokens';
 import { pushTokenLintIssue } from '../cpp/support/diagnostics';
 import { defineLintRule } from '../../rule';
 import { type LintIssue, pushLintIssue } from '../ts/support/ast';

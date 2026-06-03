@@ -96,7 +96,7 @@ function ensureLibretroCoreBuilt(debug: boolean, platform: RomPackerTarget, logg
 	const buildDir = getLibretroBuildDir(platform);
 	logger.info(`Using build dir ${pc.white(buildDir)} (${buildType})`);
 	const cmakeArgs = [
-		'-S', 'machine/cpp/src', '-B', buildDir,
+		'-S', 'machine/cpp', '-B', buildDir,
 		'-G', 'Ninja',
 		`-DCMAKE_BUILD_TYPE=${buildType}`,
 		'-DBMSX_BUILD_LIBRETRO=ON',
@@ -174,7 +174,7 @@ export async function runPlatformBuild(options: PlatformBuildOptions, logger: Bu
 
 	await runStep('Build host system atlas', async () => {
 		const updated = await ensureHostSystemAtlasArtifacts();
-		logger.ok(`Host system atlas → ${pc.white('machine/ts/src/rompack/host_system_atlas.generated')} ${updated ? '' : pc.dim('(up-to-date)')}`);
+		logger.ok(`Host system atlas → ${pc.white('machine/ts/rompack/host_system_atlas.generated')} ${updated ? '' : pc.dim('(up-to-date)')}`);
 	});
 
 	if (platform.startsWith('libretro')) {

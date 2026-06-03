@@ -1,5 +1,5 @@
-import { cppCallTarget, cppQualifiedNameHasLeaf } from '../../../../machine/ts/src/language/cpp/syntax/syntax';
-import type { Token } from '../../../../machine/ts/src/language/cpp/syntax/tokens';
+import { cppCallTarget, cppQualifiedNameHasLeaf } from '../../../../machine/ts/language/cpp/syntax/syntax';
+import type { Token } from '../../../../machine/ts/language/cpp/syntax/tokens';
 import { pushTokenLintIssue, type LintIssue } from '../cpp/support/diagnostics';
 import { lineInAnalysisRegion, type AnalysisRegion } from '../../../analysis/lint_suppressions';
 import { noteQualityLedger, type QualityLedger } from '../../../analysis/quality_ledger';

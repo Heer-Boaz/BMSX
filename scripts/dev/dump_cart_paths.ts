@@ -1,4 +1,4 @@
-import { normalizeCartridgeBlob, parseCartridgeIndex } from '../../machine/ts/src/rompack/loader';
+import { normalizeCartridgeBlob, parseCartridgeIndex } from '../../machine/ts/rompack/loader';
 import { readFile } from 'node:fs/promises';
 import path from 'node:path';
 

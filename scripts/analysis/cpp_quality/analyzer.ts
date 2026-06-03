@@ -50,10 +50,10 @@ import {
 	collectClassRanges,
 	collectFunctionDefinitions,
 	collectTypeDeclarations,
-} from '../../../machine/ts/src/language/cpp/syntax/declarations';
+} from '../../../machine/ts/language/cpp/syntax/declarations';
 import { addTokenRepeatedStatementSequenceIssues, collectTokenRepeatedStatementSequences, type TokenStatementSequenceInfo } from '../../lint/rules/common/repeated_statement_sequence_pattern';
-import { buildPairMap, tokenize } from '../../../machine/ts/src/language/cpp/syntax/tokens';
-import type { ClassRange, FunctionInfo, TypeDeclarationInfo } from '../../../machine/ts/src/language/cpp/syntax/declarations';
+import { buildPairMap, tokenize } from '../../../machine/ts/language/cpp/syntax/tokens';
+import type { ClassRange, FunctionInfo, TypeDeclarationInfo } from '../../../machine/ts/language/cpp/syntax/declarations';
 
 type FileAnalysis = {
 	file: string;

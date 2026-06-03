@@ -2,10 +2,10 @@ import './test_setup';
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 
-import { ActiveStateMachines, StateDefinitions, applyPreparedStateMachine, rebuildStateMachine } from '../../machine/ts/src/fsm/fsmlibrary';
-import { State } from '../../machine/ts/src/fsm/state';
-import type { StateMachineBlueprint, Stateful } from '../../machine/ts/src/fsm/fsmtypes';
-import { Registry } from '../../machine/ts/src/core/registry';
+import { ActiveStateMachines, StateDefinitions, applyPreparedStateMachine, rebuildStateMachine } from '../../machine/ts/fsm/fsmlibrary';
+import { State } from '../../machine/ts/fsm/state';
+import type { StateMachineBlueprint, Stateful } from '../../machine/ts/fsm/fsmtypes';
+import { Registry } from '../../machine/ts/core/registry';
 
 function cleanupDefinitions(machineId: string): void {
 	delete StateDefinitions[machineId];

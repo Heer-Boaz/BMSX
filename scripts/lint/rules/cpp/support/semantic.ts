@@ -1,5 +1,5 @@
-import { cppAccessChainLeafName, cppCallTarget, findAccessChainStart, splitArgumentRanges } from '../../../../../machine/ts/src/language/cpp/syntax/syntax';
-import { type Token } from '../../../../../machine/ts/src/language/cpp/syntax/tokens';
+import { cppAccessChainLeafName, cppCallTarget, findAccessChainStart, splitArgumentRanges } from '../../../../../machine/ts/language/cpp/syntax/syntax';
+import { type Token } from '../../../../../machine/ts/language/cpp/syntax/tokens';
 import { TEXT_SEMANTIC_SIGNATURE_PREFIX } from '../../common/semantic_signature';
 import { isNumericSanitizationCall } from './numeric';
 

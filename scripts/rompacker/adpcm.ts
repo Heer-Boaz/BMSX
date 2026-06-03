@@ -1,5 +1,5 @@
-import type { AudioMeta } from '../../machine/ts/src/rompack/format';
-import { decodeWavToPcm } from '../../machine/ts/src/common/wav';
+import type { AudioMeta } from '../../machine/ts/rompack/format';
+import { decodeWavToPcm } from '../../machine/ts/common/wav';
 import { OggVorbisDecoder } from '@wasm-audio-decoders/ogg-vorbis';
 
 const ADPCM_MAGIC = 'BADP';

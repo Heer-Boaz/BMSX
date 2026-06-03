@@ -1,4 +1,4 @@
-import { LuaAssignmentOperator as AssignmentOperator, type LuaExpression as Expression, type LuaIdentifierExpression as IdentifierExpression, type LuaStatement as Statement, LuaSyntaxKind as SyntaxKind } from '../../../../../../machine/ts/src/lua/syntax/ast';
+import { LuaAssignmentOperator as AssignmentOperator, type LuaExpression as Expression, type LuaIdentifierExpression as IdentifierExpression, type LuaStatement as Statement, LuaSyntaxKind as SyntaxKind } from '../../../../../../machine/ts/lua/syntax/ast';
 import { type CartLintIssue } from '../../../../lua_rule';
 import { lintRuntimeTagLookupInExpression } from '../../runtime_tag_table_access_pattern';
 import { declareBinding, discardBindingScope, enterBindingScope, lintNullBindingFunctionScope, lintScopedBindingStatements, resolveBinding, setBinding } from './bindings';

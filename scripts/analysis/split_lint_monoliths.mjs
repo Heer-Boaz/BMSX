@@ -691,10 +691,10 @@ function tsSupportModuleForName(name) {
 		return resolve(root, 'scripts/lint/rules/ts/support/semantic.ts');
 	}
 	if (/NumericLiteral/.test(name)) {
-		return resolve(root, 'machine/ts/src/language/ts/ast/literals.ts');
+		return resolve(root, 'machine/ts/language/ts/ast/literals.ts');
 	}
 	if (/Numeric|numeric|CONTRACT|Contract|Sanitiz/.test(name)) {
-		return resolve(root, 'machine/ts/src/language/ts/ast/semantic.ts');
+		return resolve(root, 'machine/ts/language/ts/ast/semantic.ts');
 	}
 	if (/Nullish|nullish|Undefined|undefined|Guard|guard/.test(name)) {
 		return resolve(root, 'scripts/lint/rules/ts/support/nullish.ts');
@@ -709,13 +709,13 @@ function tsSupportModuleForName(name) {
 		return resolve(root, 'scripts/lint/rules/ts/support/bindings.ts');
 	}
 	if (/AssignmentOperator|BooleanProducingOperator|Comparison|Equality|Ordering|PositiveEquality|NullishEquality|NullishInequality/.test(name)) {
-		return resolve(root, 'machine/ts/src/language/ts/ast/operators.ts');
+		return resolve(root, 'machine/ts/language/ts/ast/operators.ts');
 	}
 	if (/OptionalChain|Allocation|Closure|DirectMutation|PrimitivePredicate|TrivialDelegation|PrivateOrProtected|PublicContract|Boundary|WrapperName|ExportModifier/.test(name)) {
 		return resolve(root, 'scripts/lint/rules/ts/support/runtime_patterns.ts');
 	}
 	if (/FunctionLike|FunctionSignature|FunctionExpression|FunctionBody|FunctionUsageExpression|UsageCountForNames/.test(name)) {
-		return resolve(root, 'machine/ts/src/language/ts/ast/functions.ts');
+		return resolve(root, 'machine/ts/language/ts/ast/functions.ts');
 	}
 	if (/Statement|LoopCondition|ParentAndSibling/.test(name)) {
 		return resolve(root, 'scripts/lint/rules/ts/support/statements.ts');
@@ -724,7 +724,7 @@ function tsSupportModuleForName(name) {
 		return resolve(root, 'scripts/lint/rules/ts/support/split_join.ts');
 	}
 	if (/CallTarget|LookupCall|ExpressionRoot|QuestionDot|TargetLeaf|callTargetText/.test(name)) {
-		return resolve(root, 'machine/ts/src/language/ts/ast/expressions.ts');
+		return resolve(root, 'machine/ts/language/ts/ast/expressions.ts');
 	}
 	if (/String|Switch|OrChain|Literal|truthy|Boolean|Comparison|Equality|Fallback|Container/.test(name)) {
 		return resolve(root, 'scripts/lint/rules/ts/support/conditions.ts');
@@ -1185,7 +1185,7 @@ function extractCppDiagnosticsSupport() {
 	writeFile(
 		diagnosticsPath,
 		[
-			"import type { CppToken } from '../../../../../machine/ts/src/language/cpp/syntax/tokens';",
+			"import type { CppToken } from '../../../../../machine/ts/language/cpp/syntax/tokens';",
 			'',
 			'type CodeQualityLintRule = string;',
 			'',

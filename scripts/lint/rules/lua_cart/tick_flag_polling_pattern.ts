@@ -1,5 +1,5 @@
 import { defineLintRule } from '../../rule';
-import { type LuaFunctionExpression as CartFunctionExpression, LuaSyntaxKind as SyntaxKind } from '../../../../machine/ts/src/lua/syntax/ast';
+import { type LuaFunctionExpression as CartFunctionExpression, LuaSyntaxKind as SyntaxKind } from '../../../../machine/ts/lua/syntax/ast';
 import { type CartLintIssue } from '../../lua_rule';
 import { hasTransitionReturnInStatements } from './impl/support/fsm_transitions';
 import { isEventProxyFlagPropertyName } from './impl/support/general';

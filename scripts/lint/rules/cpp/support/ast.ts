@@ -1,5 +1,5 @@
-import { CPP_CONTROL_CALL_KEYWORDS, findAccessChainStart, findNextTokenText, hasDeclarationPrefix, isAccessSeparator, isComparisonOperator, previousIdentifier, trimmedExpressionText } from '../../../../../machine/ts/src/language/cpp/syntax/syntax';
-import { type Token, cppTokenText } from '../../../../../machine/ts/src/language/cpp/syntax/tokens';
+import { CPP_CONTROL_CALL_KEYWORDS, findAccessChainStart, findNextTokenText, hasDeclarationPrefix, isAccessSeparator, isComparisonOperator, previousIdentifier, trimmedExpressionText } from '../../../../../machine/ts/language/cpp/syntax/syntax';
+import { type Token, cppTokenText } from '../../../../../machine/ts/language/cpp/syntax/tokens';
 import { hasDeclarationPrefixNoise, isIgnoredName } from './bindings';
 import { HOT_PATH_TEMPORARY_TYPES } from './numeric';
 import { LocalBinding } from './types';

@@ -1,4 +1,4 @@
-import { type LuaExpression as Expression, LuaSyntaxKind as SyntaxKind } from '../../../../../../machine/ts/src/lua/syntax/ast';
+import { type LuaExpression as Expression, LuaSyntaxKind as SyntaxKind } from '../../../../../../machine/ts/lua/syntax/ast';
 import { getExpressionKeyName } from './expression_signatures';
 
 export function isInjectedServiceIdPropertyName(propertyName: string): boolean {

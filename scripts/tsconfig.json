@@ -12,7 +12,7 @@
 	},
 	"include": [
 	"**/*.ts",
-	"../machine/ts/src/**/*.d.ts"
+	"../machine/ts/**/*.d.ts"
 	],
-	"exclude": ["../machine/ts/src/bmsx.js", "../machine/ts/src/bmsx.d.ts", "../tests/**.*", "./scripts/**.*"]
+	"exclude": ["../machine/ts/bmsx.js", "../machine/ts/bmsx.d.ts", "../tests/**.*", "./scripts/**.*"]
 }

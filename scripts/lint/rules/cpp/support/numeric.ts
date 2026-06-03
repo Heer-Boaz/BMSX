@@ -1,6 +1,6 @@
-import { type FunctionInfo } from '../../../../../machine/ts/src/language/cpp/syntax/declarations';
-import { cppCallTarget, cppRangeIsOrderingComparisonWithIdentifierAndNumericLiteral, cppStatementOrBlockAssignsIdentifier, cppStatementOrBlockEnd, findAccessChainStart, findPreviousDelimiter, findTopLevelOperator, findTopLevelSemicolon, isExpressionScanBoundary, previousIdentifier } from '../../../../../machine/ts/src/language/cpp/syntax/syntax';
-import { type Token } from '../../../../../machine/ts/src/language/cpp/syntax/tokens';
+import { type FunctionInfo } from '../../../../../machine/ts/language/cpp/syntax/declarations';
+import { cppCallTarget, cppRangeIsOrderingComparisonWithIdentifierAndNumericLiteral, cppStatementOrBlockAssignsIdentifier, cppStatementOrBlockEnd, findAccessChainStart, findPreviousDelimiter, findTopLevelOperator, findTopLevelSemicolon, isExpressionScanBoundary, previousIdentifier } from '../../../../../machine/ts/language/cpp/syntax/syntax';
+import { type Token } from '../../../../../machine/ts/language/cpp/syntax/tokens';
 import { type AnalysisRegion, lineInAnalysisRegion } from '../../../../analysis/lint_suppressions';
 import { NUMERIC_DEFENSIVE_CALLS } from './ast';
 import { isSemanticFloorDivisionCall } from './semantic';

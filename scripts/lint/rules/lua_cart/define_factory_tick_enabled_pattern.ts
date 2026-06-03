@@ -1,8 +1,8 @@
 import { defineLintRule } from '../../rule';
-import { type LuaCallExpression as CallExpression, LuaSyntaxKind as SyntaxKind } from '../../../../machine/ts/src/lua/syntax/ast';
+import { type LuaCallExpression as CallExpression, LuaSyntaxKind as SyntaxKind } from '../../../../machine/ts/lua/syntax/ast';
 import { type CartLintIssue } from '../../lua_rule';
 import { lintDefineFactorySpaceIdPattern } from './define_factory_space_id_pattern';
-import { isGlobalCall } from '../../../../machine/ts/src/lua/syntax/calls';
+import { isGlobalCall } from '../../../../machine/ts/lua/syntax/calls';
 import { getTableFieldKey, visitTableFieldsRecursively } from './impl/support/table_fields';
 import { pushIssue } from './impl/support/lint_context';
 

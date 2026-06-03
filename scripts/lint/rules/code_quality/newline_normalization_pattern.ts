@@ -1,10 +1,10 @@
 import ts from 'typescript';
-import { callAnyArgumentHasToken, callFirstArgumentHasToken, cppCallTarget, cppQualifiedNameHasLeaf } from '../../../../machine/ts/src/language/cpp/syntax/syntax';
-import type { Token } from '../../../../machine/ts/src/language/cpp/syntax/tokens';
-import { getCallTargetLeafName } from '../../../../machine/ts/src/language/ts/ast/expressions';
-import { getCallLeafName } from '../../../../machine/ts/src/lua/syntax/calls';
-import { stringLiteralValue } from '../../../../machine/ts/src/lua/syntax/literals';
-import type { LuaCallExpression as CallExpression, LuaExpression as Expression } from '../../../../machine/ts/src/lua/syntax/ast';
+import { callAnyArgumentHasToken, callFirstArgumentHasToken, cppCallTarget, cppQualifiedNameHasLeaf } from '../../../../machine/ts/language/cpp/syntax/syntax';
+import type { Token } from '../../../../machine/ts/language/cpp/syntax/tokens';
+import { getCallTargetLeafName } from '../../../../machine/ts/language/ts/ast/expressions';
+import { getCallLeafName } from '../../../../machine/ts/lua/syntax/calls';
+import { stringLiteralValue } from '../../../../machine/ts/lua/syntax/literals';
+import type { LuaCallExpression as CallExpression, LuaExpression as Expression } from '../../../../machine/ts/lua/syntax/ast';
 import { lineInAnalysisRegion, type AnalysisRegion } from '../../../analysis/lint_suppressions';
 import type { CartLintIssue, CartLintIssuePusher } from '../../lua_rule';
 import { defineLintRule } from '../../rule';

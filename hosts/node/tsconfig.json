@@ -4,6 +4,6 @@
 		"noEmit": true,
 		"composite": false
 	},
-	"include": ["src/**/*.ts", "src/**/*.d.ts", "../../machine/ts/src/glsl.d.ts"],
+	"include": ["**/*.ts", "**/*.d.ts", "../../machine/ts/glsl.d.ts"],
 	"exclude": ["node_modules"]
 }

@@ -1,5 +1,5 @@
 import { defineLintRule } from '../../rule';
-import { type LuaFunctionExpression as CartFunctionExpression } from '../../../../machine/ts/src/lua/syntax/ast';
+import { type LuaFunctionExpression as CartFunctionExpression } from '../../../../machine/ts/lua/syntax/ast';
 import { type CartLintIssue } from '../../lua_rule';
 import { matchesGetterPattern, matchesSetterPattern } from './impl/support/functions';
 import { pushIssue } from './impl/support/lint_context';

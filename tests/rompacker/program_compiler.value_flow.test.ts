@@ -1,13 +1,13 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 
-import { splitText } from '../../machine/ts/src/common/text_lines';
-import { LuaLexer } from '../../machine/ts/src/lua/syntax/lexer';
-import { LuaParser } from '../../machine/ts/src/lua/syntax/parser';
-import { IO_INP_ACTION, IO_INP_BIND, IO_INP_CONSUME, IO_INP_QUERY } from '../../machine/ts/src/machine/bus/io';
-import { valueIsString } from '../../machine/ts/src/machine/cpu/cpu';
-import { compileLuaChunkToProgram } from '../../machine/ts/src/machine/program/compiler';
-import { MMIO_REGISTER_SPEC_BY_ADDRESS } from '../../machine/ts/src/machine/bus/registers';
+import { splitText } from '../../machine/ts/common/text_lines';
+import { LuaLexer } from '../../machine/ts/lua/syntax/lexer';
+import { LuaParser } from '../../machine/ts/lua/syntax/parser';
+import { IO_INP_ACTION, IO_INP_BIND, IO_INP_CONSUME, IO_INP_QUERY } from '../../machine/ts/machine/bus/io';
+import { valueIsString } from '../../machine/ts/machine/cpu/cpu';
+import { compileLuaChunkToProgram } from '../../machine/ts/machine/program/compiler';
+import { MMIO_REGISTER_SPEC_BY_ADDRESS } from '../../machine/ts/machine/bus/registers';
 import { runCompiledLua } from '../lua/cpu_test_harness';
 
 function parseChunk(source: string, path: string = 'value_flow.lua') {

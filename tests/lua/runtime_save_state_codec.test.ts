@@ -14,22 +14,22 @@ import {
 	APU_SLOT_PHASE_PLAYING,
 	APU_SLOT_REGISTER_WORD_COUNT,
 	apuSlotRegisterWordIndex,
-} from '../../machine/ts/src/machine/devices/audio/contracts';
-import { VDP_JTU_REGISTER_WORDS, VDP_MFU_WEIGHT_COUNT } from '../../machine/ts/src/machine/devices/vdp/contracts';
-import { GEOMETRY_CONTROLLER_PHASE_BUSY, GEOMETRY_CONTROLLER_REGISTER_COUNT } from '../../machine/ts/src/machine/devices/geometry/contracts';
-import { VDP_REGISTER_COUNT } from '../../machine/ts/src/machine/devices/vdp/registers';
-import { VDP_LPU_REGISTER_WORDS } from '../../machine/ts/src/machine/devices/vdp/lpu';
-import { VDP_XF_MATRIX_REGISTER_WORDS, VDP_XF_PROJECTION_MATRIX_RESET_INDEX, VDP_XF_VIEW_MATRIX_RESET_INDEX } from '../../machine/ts/src/machine/devices/vdp/xf';
+} from '../../machine/ts/machine/devices/audio/contracts';
+import { VDP_JTU_REGISTER_WORDS, VDP_MFU_WEIGHT_COUNT } from '../../machine/ts/machine/devices/vdp/contracts';
+import { GEOMETRY_CONTROLLER_PHASE_BUSY, GEOMETRY_CONTROLLER_REGISTER_COUNT } from '../../machine/ts/machine/devices/geometry/contracts';
+import { VDP_REGISTER_COUNT } from '../../machine/ts/machine/devices/vdp/registers';
+import { VDP_LPU_REGISTER_WORDS } from '../../machine/ts/machine/devices/vdp/lpu';
+import { VDP_XF_MATRIX_REGISTER_WORDS, VDP_XF_PROJECTION_MATRIX_RESET_INDEX, VDP_XF_VIEW_MATRIX_RESET_INDEX } from '../../machine/ts/machine/devices/vdp/xf';
 import {
 	VDP_DEX_FRAME_IDLE,
 	VDP_SUBMITTED_FRAME_EMPTY,
 	VDP_SUBMITTED_FRAME_EXECUTING,
-} from '../../machine/ts/src/machine/devices/vdp/frame';
-import { captureVdpRpuFrameState, createVdpRpuFrameOutput, VDP_RPU_FRAME_IDLE } from '../../machine/ts/src/machine/devices/vdp/rpu';
-import type { RuntimeSaveState } from '../../machine/ts/src/machine/runtime/contracts';
-import { decodeRuntimeSaveState, encodeRuntimeSaveState } from '../../machine/ts/src/machine/runtime/save_state/codec';
-import { decodeBinaryWithPropTable } from '../../machine/ts/src/common/serializer/binencoder';
-import { RUNTIME_SAVE_STATE_PROP_NAMES } from '../../machine/ts/src/machine/runtime/save_state/schema';
+} from '../../machine/ts/machine/devices/vdp/frame';
+import { captureVdpRpuFrameState, createVdpRpuFrameOutput, VDP_RPU_FRAME_IDLE } from '../../machine/ts/machine/devices/vdp/rpu';
+import type { RuntimeSaveState } from '../../machine/ts/machine/runtime/contracts';
+import { decodeRuntimeSaveState, encodeRuntimeSaveState } from '../../machine/ts/machine/runtime/save_state/codec';
+import { decodeBinaryWithPropTable } from '../../machine/ts/common/serializer/binencoder';
+import { RUNTIME_SAVE_STATE_PROP_NAMES } from '../../machine/ts/machine/runtime/save_state/schema';
 
 function numberedWords(count: number): number[] {
 	const words = new Array<number>(count);

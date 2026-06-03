@@ -1,4 +1,4 @@
-import { LuaSyntaxKind as SyntaxKind, LuaTableFieldKind as TableFieldKind, type LuaTableField as TableField } from '../../../../machine/ts/src/lua/syntax/ast';
+import { LuaSyntaxKind as SyntaxKind, LuaTableFieldKind as TableFieldKind, type LuaTableField as TableField } from '../../../../machine/ts/lua/syntax/ast';
 import type { CartLintIssue, CartLintIssuePusher } from '../../lua_rule';
 import { defineLintRule } from '../../rule';
 

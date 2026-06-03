@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 
-import { Table } from '../../machine/ts/src/machine/cpu/cpu';
+import { Table } from '../../machine/ts/machine/cpu/cpu';
 import { runCompiledLua } from './cpu_test_harness';
 
 test('Table stores sparse unsigned integer keys in the hash part', () => {

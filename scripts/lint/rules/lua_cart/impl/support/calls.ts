@@ -1,5 +1,5 @@
-import { type LuaCallExpression as CallExpression, type LuaExpression as Expression, LuaSyntaxKind as SyntaxKind } from '../../../../../../machine/ts/src/lua/syntax/ast';
-import { getCallMethodName } from '../../../../../../machine/ts/src/lua/syntax/calls';
+import { type LuaCallExpression as CallExpression, type LuaExpression as Expression, LuaSyntaxKind as SyntaxKind } from '../../../../../../machine/ts/lua/syntax/ast';
+import { getCallMethodName } from '../../../../../../machine/ts/lua/syntax/calls';
 import { BUILTIN_GLOBAL_FUNCTIONS, BUILTIN_TABLE_NAMES } from './general';
 
 export function isBuiltinCallExpression(expression: CallExpression): boolean {

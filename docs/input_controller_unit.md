@@ -173,27 +173,27 @@ Selected-player output support is a host capability bit and is not saved.
 
 ## Owners
 
-- TS: `machine/ts/src/machine/devices/input/controller.ts`
-- TS registerfile: `machine/ts/src/machine/devices/input/registers.ts`
-- TS control port: `machine/ts/src/machine/devices/input/control_port.ts`
-- TS sample latch: `machine/ts/src/machine/devices/input/sample_latch.ts`
-- TS sample edge: `machine/ts/src/machine/devices/input/sample_edge.ts`
-- TS action table: `machine/ts/src/machine/devices/input/action_table.ts`
-- TS query port: `machine/ts/src/machine/devices/input/query_port.ts`
-- TS constants: `machine/ts/src/machine/devices/input/contracts.ts`
-- TS FIFO: `machine/ts/src/machine/devices/input/event_fifo.ts`
-- TS output port: `machine/ts/src/machine/devices/input/output_port.ts`
-- TS aggregate save state: `machine/ts/src/machine/devices/input/save_state.ts`
-- C++: `machine/cpp/src/machine/devices/input/controller.cpp/.h`
-- C++ registerfile: `machine/cpp/src/machine/devices/input/registers.cpp/.h`
-- C++ control port: `machine/cpp/src/machine/devices/input/control_port.cpp/.h`
-- C++ sample latch: `machine/cpp/src/machine/devices/input/sample_latch.cpp/.h`
-- C++ sample edge: `machine/cpp/src/machine/devices/input/sample_edge.cpp/.h`
-- C++ action table: `machine/cpp/src/machine/devices/input/action_table.cpp/.h`
-- C++ query port: `machine/cpp/src/machine/devices/input/query_port.cpp/.h`
-- C++ constants: `machine/cpp/src/machine/devices/input/contracts.h`
-- C++ FIFO: `machine/cpp/src/machine/devices/input/event_fifo.cpp/.h`
-- C++ output port: `machine/cpp/src/machine/devices/input/output_port.cpp/.h`
-- C++ aggregate save state: `machine/cpp/src/machine/devices/input/save_state.cpp/.h`
-- Runtime byte codec: `machine/ts/src/machine/runtime/save_state/*` and
-  `machine/cpp/src/machine/runtime/save_state/*`
+- TS: `machine/ts/machine/devices/input/controller.ts`
+- TS registerfile: `machine/ts/machine/devices/input/registers.ts`
+- TS control port: `machine/ts/machine/devices/input/control_port.ts`
+- TS sample latch: `machine/ts/machine/devices/input/sample_latch.ts`
+- TS sample edge: `machine/ts/machine/devices/input/sample_edge.ts`
+- TS action table: `machine/ts/machine/devices/input/action_table.ts`
+- TS query port: `machine/ts/machine/devices/input/query_port.ts`
+- TS constants: `machine/ts/machine/devices/input/contracts.ts`
+- TS FIFO: `machine/ts/machine/devices/input/event_fifo.ts`
+- TS output port: `machine/ts/machine/devices/input/output_port.ts`
+- TS aggregate save state: `machine/ts/machine/devices/input/save_state.ts`
+- C++: `machine/cpp/machine/devices/input/controller.cpp/.h`
+- C++ registerfile: `machine/cpp/machine/devices/input/registers.cpp/.h`
+- C++ control port: `machine/cpp/machine/devices/input/control_port.cpp/.h`
+- C++ sample latch: `machine/cpp/machine/devices/input/sample_latch.cpp/.h`
+- C++ sample edge: `machine/cpp/machine/devices/input/sample_edge.cpp/.h`
+- C++ action table: `machine/cpp/machine/devices/input/action_table.cpp/.h`
+- C++ query port: `machine/cpp/machine/devices/input/query_port.cpp/.h`
+- C++ constants: `machine/cpp/machine/devices/input/contracts.h`
+- C++ FIFO: `machine/cpp/machine/devices/input/event_fifo.cpp/.h`
+- C++ output port: `machine/cpp/machine/devices/input/output_port.cpp/.h`
+- C++ aggregate save state: `machine/cpp/machine/devices/input/save_state.cpp/.h`
+- Runtime byte codec: `machine/ts/machine/runtime/save_state/*` and
+  `machine/cpp/machine/runtime/save_state/*`

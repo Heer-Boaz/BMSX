@@ -1,6 +1,6 @@
 // import { Buffer } from "buffer";
 // import { FFTComplexRadix2 } from "./fft";
-// import { clamp, clamp01 } from "../../machine/ts/src/common/clamp";
+// import { clamp, clamp01 } from "../../machine/ts/common/clamp";
 
 // export type opus_int32 = number;
 // export type opus_uint32 = number;

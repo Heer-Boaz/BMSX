@@ -37,7 +37,7 @@ libretro-host-snesmini-debug:
 		"$(CURDIR)/scripts/setup-snesmini-local-core.sh" "$(SNESMINI_SYSROOT)"
 
 libretro-host-wsl-debug:
-	cmake -S machine/cpp/src -B build-libretro-host-wsl \
+	cmake -S machine/cpp -B build-libretro-host-wsl \
 		-G Ninja \
 		-DCMAKE_C_COMPILER_LAUNCHER=ccache \
 		-DCMAKE_CXX_COMPILER_LAUNCHER=ccache \
@@ -58,7 +58,7 @@ snesmini-sysroot:
 libretro-snesmini-debug-inner: snesmini-sysroot
 	BMSX_SYSROOT="$(SNESMINI_SYSROOT)" BMSX_TOOLCHAIN_PREFIX="$(SNESMINI_TOOLCHAIN_PREFIX)" \
 		CC="$(SNESMINI_TOOLCHAIN_PREFIX)-gcc" CXX="$(SNESMINI_TOOLCHAIN_PREFIX)-g++" \
-		cmake -S machine/cpp/src -B "$(SNESMINI_BUILD_DIR)" \
+		cmake -S machine/cpp -B "$(SNESMINI_BUILD_DIR)" \
 			-DCMAKE_BUILD_TYPE="$(SNESMINI_BUILD_TYPE)" \
 			$(SNESMINI_CMAKE_ARGS)
 	cmake --build "$(SNESMINI_BUILD_DIR)" --config "$(SNESMINI_BUILD_TYPE)" --parallel "$$(nproc)" --target bmsx_libretro
@@ -79,7 +79,7 @@ endif
 libretro-host-snesmini-debug-host: snesmini-sysroot
 	BMSX_SYSROOT="$(SNESMINI_SYSROOT)" BMSX_TOOLCHAIN_PREFIX="$(SNESMINI_TOOLCHAIN_PREFIX)" \
 		CC="$(SNESMINI_TOOLCHAIN_PREFIX)-gcc" CXX="$(SNESMINI_TOOLCHAIN_PREFIX)-g++" \
-		cmake -S machine/cpp/src -B "$(SNESMINI_BUILD_DIR_HOST)" \
+		cmake -S machine/cpp -B "$(SNESMINI_BUILD_DIR_HOST)" \
 			-DCMAKE_BUILD_TYPE="$(SNESMINI_BUILD_TYPE)" \
 			$(SNESMINI_CMAKE_ARGS) \
 			-DCMAKE_C_FLAGS="$(SNESMINI_C_FLAGS) -isystem /usr/include" \
