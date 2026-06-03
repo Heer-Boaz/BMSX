@@ -92,7 +92,7 @@ The C++ implementation mirrors the TypeScript platform abstraction layer, making
 
 ### Key Patterns
 
-1. **Machine-first ownership**: CPU, RAM/ROM, MMIO, device state, firmware, and save-state live under `src/machine`.
+1. **Machine-first ownership**: CPU, RAM/ROM, MMIO, device state, firmware, and save-state live under `machine/cpp/machine`.
 2. **Host edges stay outside the machine**: libretro entrypoint code lives in `hosts/libretro`; the local frontend executable lives in `hosts/libretro_host`.
 3. **Mirrored contracts**: TS and C++ runtime slices are audited by `npm run audit:core-parity`.
 
