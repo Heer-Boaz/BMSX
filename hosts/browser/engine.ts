@@ -1,4 +1,5 @@
 import { constructPlatformFromViewHostHandle } from './platform';
+import { ensureBrowserBackendFactory } from 'bmsx/render/backend/browser_factory';
 
 type BmsxGlobal = {
 	constructPlatformFromViewHostHandle: typeof constructPlatformFromViewHostHandle;
@@ -14,3 +15,5 @@ const namespace = globalTarget.bmsx || {} as BmsxGlobal;
 
 namespace.constructPlatformFromViewHostHandle = constructPlatformFromViewHostHandle;
 globalTarget.bmsx = namespace;
+
+ensureBrowserBackendFactory();
