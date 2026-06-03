@@ -1,13 +1,13 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 
-import { splitText } from '../../packages/bmsx-console/src/common/text_lines';
-import { LuaLexer } from '../../packages/bmsx-console/src/lua/syntax/lexer';
-import { LuaParser } from '../../packages/bmsx-console/src/lua/syntax/parser';
-import { IO_INP_ACTION, IO_INP_BIND, IO_INP_CONSUME, IO_INP_QUERY } from '../../packages/bmsx-console/src/machine/bus/io';
-import { valueIsString } from '../../packages/bmsx-console/src/machine/cpu/cpu';
-import { compileLuaChunkToProgram } from '../../packages/bmsx-console/src/machine/program/compiler';
-import { MMIO_REGISTER_SPEC_BY_ADDRESS } from '../../packages/bmsx-console/src/machine/bus/registers';
+import { splitText } from '../../machine/ts/src/common/text_lines';
+import { LuaLexer } from '../../machine/ts/src/lua/syntax/lexer';
+import { LuaParser } from '../../machine/ts/src/lua/syntax/parser';
+import { IO_INP_ACTION, IO_INP_BIND, IO_INP_CONSUME, IO_INP_QUERY } from '../../machine/ts/src/machine/bus/io';
+import { valueIsString } from '../../machine/ts/src/machine/cpu/cpu';
+import { compileLuaChunkToProgram } from '../../machine/ts/src/machine/program/compiler';
+import { MMIO_REGISTER_SPEC_BY_ADDRESS } from '../../machine/ts/src/machine/bus/registers';
 import { runCompiledLua } from '../lua/cpu_test_harness';
 
 function parseChunk(source: string, path: string = 'value_flow.lua') {

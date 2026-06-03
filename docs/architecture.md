@@ -27,9 +27,9 @@ Forbidden cart-visible shapes:
 Host code may load files, build ROMs, display frames, play samples, edit source,
 and inject input events. It must not be the owner of cart-observable semantics.
 
-A BMSX host owns the process and physical host services. A BMSX adapter exposes
-the machine through a foreign embedding ABI. Neither owns cart-observable
-machine semantics.
+A BMSX host owns the embedding/process edge and physical host services. It may be
+a browser bootstrap, a Node executable, a libretro core entrypoint, or a local
+frontend executable. It never owns cart-observable machine semantics.
 
 ## Runtime container vocabulary
 
@@ -37,10 +37,8 @@ Ownership terms are architectural roles, not interchangeable directory labels:
 
 - `machine` owns cart-observable semantics: CPU, memory, MMIO, firmware,
   scheduler, devices, ROM/program formats, and deterministic save-state.
-- `adapter` exposes the machine through an external ABI or embedding contract.
-  It translates that ABI at the edge and then consumes the BMSX machine/runtime.
 - `host` owns the process, window/device/runtime environment, files, physical
-  input, audio/video presentation, and execution loop.
+  input, audio/video presentation, external ABI callbacks, and execution loop.
 - `mode` is a behavior variant inside one host. A mode may choose pacing,
   capture, CLI, headless, or test-runner behavior; it is not a separate machine.
 
@@ -52,35 +50,34 @@ Current artifact roles:
 - `dist/engine.js` / `.debug.js`: browser host/bootstrap artifact. It wires
   browser video, audio, input, and view-host construction around the machine
   runtime.
-- `lib/libbmsx.a`: native machine/runtime static library.
-- `dist/libretro_bmsx.so` / `.dll` / `.dylib`: adapter exposing the libretro ABI.
-- `bmsx_libretro_host`: host executable that loads a libretro adapter/core and
+- `lib/libbmsx.a`: C++ machine/runtime static library.
+- `dist/libretro_bmsx.so` / `.dll` / `.dylib`: libretro core entrypoint around the C++ machine runtime.
+- `bmsx_libretro_host`: local frontend executable that loads a libretro core and
   owns SDL, ALSA, EGL/fbdev, input devices, screenshots, and the process loop.
 - `dist/host_headless.js` / `.debug.js` and `dist/host_cli.js` / `.debug.js`:
   Node host executables/modes that load the machine runtime artifact and own
   their process/runtime environment.
 
 Do not use `platform` as an architecture category for both `libretro` and
-`libretro_host`. The first is an adapter; the second is a host. Current path
-names do not override these roles.
+`libretro_host`. `hosts/libretro` is the libretro core entrypoint;
+`hosts/libretro_host` is the local frontend executable that can run that core.
 
 ## Repository and package boundary policy
 
 Keep this repository as one monorepo while TS and C++ machine implementations
 need lockstep parity, the public machine API still moves, ROM/program/save-state
-wire formats still change, adapters still move with machine internals, and
+wire formats still change, host entrypoints still move with machine internals, and
 cross-language parity/golden cases need one CI slice.
 
 Split repositories only after all of these are true:
 
-- `bmsx-console` / native machine libraries have a stable public API.
-- Adapters use only that public API, not internal imports/includes.
+- `bmsx-machine` / C++ machine libraries have a stable public API.
+- Host entrypoints use only that public API, not internal imports/includes.
 - ROM, program, and save-state formats are releasable with explicit versions.
 - Parity audits and golden cases can run as a published conformance suite.
 - External consumers exist that need independent versioning.
 
-The package boundary is `machine`, `adapters`, `hosts`, `tools`, `carts`, and
-`tests`. Carts are software for the machine, not part of the machine package.
+The package boundary is `machine`, `hosts`, `tools`, `carts`, and `tests`. Carts are software for the machine, not part of the machine package.
 Current `carts/<name>` folders are cart collections with cart-local
 resources. If cart source moves during a package split, it should move toward a
 top-level `carts/` collection, not under `machine`.
@@ -91,8 +88,8 @@ machine firmware owner. That is not a general cart collection.
 
 ## Mirrored core contract
 
-The TypeScript core under `packages/bmsx-console/src/machine` and the native core under
-`native/machine/machine` are mirrored implementations of the same machine.
+The TypeScript core under `machine/ts/src/machine` and the C++ core under
+`machine/cpp/src/machine` are mirrored implementations of the same machine.
 
 Rules:
 
@@ -113,14 +110,14 @@ ROM data is CPU-visible source material.
 
 Owners:
 
-- ROM package wire layout: `packages/bmsx-console/src/rompack/format.ts` and
-  `native/machine/rompack/format.h/.cpp`.
-- ROM TOC wire layout: `packages/bmsx-console/src/rompack/toc.ts` and
-  `native/machine/rompack/toc.h/.cpp`.
-- Layered ROM lookup: `packages/bmsx-console/src/rompack/source.ts` and
-  `native/machine/rompack/source.h/.cpp`.
+- ROM package wire layout: `machine/ts/src/rompack/format.ts` and
+  `machine/cpp/src/rompack/format.h/.cpp`.
+- ROM TOC wire layout: `machine/ts/src/rompack/toc.ts` and
+  `machine/cpp/src/rompack/toc.h/.cpp`.
+- Layered ROM lookup: `machine/ts/src/rompack/source.ts` and
+  `machine/cpp/src/rompack/source.h/.cpp`.
 - Program image layout/loading/linking:
-  `packages/bmsx-console/src/machine/program/*` and `native/machine/machine/program/*`.
+  `machine/ts/src/machine/program/*` and `machine/cpp/src/machine/program/*`.
 
 The ROM package and program image use the current wire records only. There is no
 old-format reader and no decode path for obsolete records.
@@ -241,7 +238,7 @@ as render-pass viewport state, framebuffer attachment ownership, shader program
 objects, VAO/buffer binding, `vertexAttribPointer`/`glVertexAttribPointer`
 calls, texture-unit binding, and draw-call issue remain concrete backend
 ownership. The browser WebGL RPU pass lives in
-`render/backend/webgl/vdp_rpu.ts`; the native GLES2 RPU pass lives in
+`render/backend/webgl/vdp_rpu.ts`; the C++ GLES2 RPU pass lives in
 `render/backend/gles2/vdp_rpu.cpp`; both consume external `vdp_rpu` shader
 files. There is no shared render/rpu pipeline and no shared `GPUBackend`
 vertex-layout facade.
@@ -466,7 +463,7 @@ A machine-boundary slice is not done without proof appropriate to the touched
 surface:
 
 - TS build/typecheck for touched TS core;
-- native build/tests for touched C++ core;
+- C++ build/tests for touched core;
 - focused unit/integration tests that exercise RAM/MMIO/device state rather than
   only private helper calls;
 - scoped code-quality scanner with zero issues for touched files;

@@ -1,5 +1,5 @@
 import { defineLintRule } from '../../rule';
-import { type LuaExpression as Expression, LuaSyntaxKind as SyntaxKind } from '../../../../packages/bmsx-console/src/lua/syntax/ast';
+import { type LuaExpression as Expression, LuaSyntaxKind as SyntaxKind } from '../../../../machine/ts/src/lua/syntax/ast';
 import { type CartLintIssue } from '../../lua_rule';
 import { getRootIdentifier } from './impl/support/bindings';
 import { isSelfExpressionRoot, isSpriteComponentImageIdAssignmentTarget } from './impl/support/self_properties';

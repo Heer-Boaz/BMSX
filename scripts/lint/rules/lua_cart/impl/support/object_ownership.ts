@@ -1,5 +1,5 @@
-import { type LuaCallExpression as CallExpression, type LuaExpression as Expression, LuaSyntaxKind as SyntaxKind } from '../../../../../../packages/bmsx-console/src/lua/syntax/ast';
-import { getCallReceiverExpression } from '../../../../../../packages/bmsx-console/src/lua/syntax/calls';
+import { type LuaCallExpression as CallExpression, type LuaExpression as Expression, LuaSyntaxKind as SyntaxKind } from '../../../../../../machine/ts/src/lua/syntax/ast';
+import { getCallReceiverExpression } from '../../../../../../machine/ts/src/lua/syntax/calls';
 import { isIdentifierExpression } from './bindings';
 import { isDispatchStateEventCallExpression } from './calls';
 import { isSelfExpressionRoot } from './self_properties';

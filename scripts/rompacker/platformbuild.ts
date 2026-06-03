@@ -39,7 +39,7 @@ type PlatformBuildOptions = Pick<RomPackerOptions, 'platform' | 'debug' | 'force
 type BrowserDeployOptions = Pick<RomPackerOptions, 'platform' | 'debug' | 'force' | 'respath' | 'title' | 'rom_name'>;
 
 const LIBRETRO_CORE_BASENAME = 'libretro_bmsx';
-const LIBRETRO_ENTRY_PATH = join(process.cwd(), 'native', 'adapters', 'libretro', 'entry.cpp');
+const LIBRETRO_ENTRY_PATH = join(process.cwd(), 'hosts', 'libretro', 'entry.cpp');
 
 function runCommand(command: string, args: string[]): void {
 	const result = spawnSync(command, args, { stdio: 'inherit' });
@@ -96,7 +96,7 @@ function ensureLibretroCoreBuilt(debug: boolean, platform: RomPackerTarget, logg
 	const buildDir = getLibretroBuildDir(platform);
 	logger.info(`Using build dir ${pc.white(buildDir)} (${buildType})`);
 	const cmakeArgs = [
-		'-S', 'native/machine', '-B', buildDir,
+		'-S', 'machine/cpp/src', '-B', buildDir,
 		'-G', 'Ninja',
 		`-DCMAKE_BUILD_TYPE=${buildType}`,
 		'-DBMSX_BUILD_LIBRETRO=ON',
@@ -174,7 +174,7 @@ export async function runPlatformBuild(options: PlatformBuildOptions, logger: Bu
 
 	await runStep('Build host system atlas', async () => {
 		const updated = await ensureHostSystemAtlasArtifacts();
-		logger.ok(`Host system atlas → ${pc.white('packages/bmsx-console/src/rompack/host_system_atlas.generated')} ${updated ? '' : pc.dim('(up-to-date)')}`);
+		logger.ok(`Host system atlas → ${pc.white('machine/ts/src/rompack/host_system_atlas.generated')} ${updated ? '' : pc.dim('(up-to-date)')}`);
 	});
 
 	if (platform.startsWith('libretro')) {

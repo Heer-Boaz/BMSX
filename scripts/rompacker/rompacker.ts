@@ -2,7 +2,7 @@
 
 import pc from 'picocolors';
 
-import { SYSTEM_BOOT_ENTRY_PATH, SYSTEM_ROM_NAME } from '../../packages/bmsx-console/src/core/system';
+import { SYSTEM_BOOT_ENTRY_PATH, SYSTEM_ROM_NAME } from '../../machine/ts/src/core/system';
 import { findExistingDirectory, getParamOrEnv, normalizePathKey, parseArgsVector } from './cli';
 import { createCliUi } from './display';
 import { validateAudioEventReferences } from './audioeventvalidator';
@@ -11,8 +11,8 @@ import { appendProgramImage, biosLuaPath, buildLuaProgramContextAssets, commonRe
 import { generateHostSystemAtlasArtifactsFromAssets } from './host_system_atlas';
 import type { TaskProgressReporter as ProgressReporter } from './progress';
 import type { RomPackerOptions } from './rompacker.rompack';
-import type { RomAsset } from '../../packages/bmsx-console/src/rompack/format';
-import { LuaError } from '../../packages/bmsx-console/src/lua/errors';
+import type { RomAsset } from '../../machine/ts/src/rompack/format';
+import { LuaError } from '../../machine/ts/src/lua/errors';
 
 import { join } from 'node:path';
 import { existsSync, readFileSync } from 'node:fs';

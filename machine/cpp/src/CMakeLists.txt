@@ -345,14 +345,14 @@ add_library(bmsx_core STATIC
 # stb is plain C; compile it as C to avoid libstdc++'s legacy C wrappers (e.g. <math.h>)
 
 # Required for linking static library into shared library.
-set(BMSX_NATIVE_ARTIFACT_DIR "${CMAKE_CURRENT_SOURCE_DIR}/../../lib")
-file(MAKE_DIRECTORY "${BMSX_NATIVE_ARTIFACT_DIR}")
+set(BMSX_MACHINE_ARTIFACT_DIR "${CMAKE_CURRENT_SOURCE_DIR}/../../../lib")
+file(MAKE_DIRECTORY "${BMSX_MACHINE_ARTIFACT_DIR}")
 set_target_properties(bmsx_core PROPERTIES
 	POSITION_INDEPENDENT_CODE ON
 	OUTPUT_NAME "bmsx"
-	ARCHIVE_OUTPUT_DIRECTORY "${BMSX_NATIVE_ARTIFACT_DIR}"
-	ARCHIVE_OUTPUT_DIRECTORY_DEBUG "${BMSX_NATIVE_ARTIFACT_DIR}"
-	ARCHIVE_OUTPUT_DIRECTORY_RELEASE "${BMSX_NATIVE_ARTIFACT_DIR}"
+	ARCHIVE_OUTPUT_DIRECTORY "${BMSX_MACHINE_ARTIFACT_DIR}"
+	ARCHIVE_OUTPUT_DIRECTORY_DEBUG "${BMSX_MACHINE_ARTIFACT_DIR}"
+	ARCHIVE_OUTPUT_DIRECTORY_RELEASE "${BMSX_MACHINE_ARTIFACT_DIR}"
 )
 
 target_include_directories(bmsx_core PUBLIC
@@ -385,13 +385,13 @@ endif()
 # Libretro core (shared library)
 # =============================================================================
 
-set(BMSX_LIBRETRO_ADAPTER_DIR "${CMAKE_CURRENT_SOURCE_DIR}/../adapters/libretro")
-set(BMSX_LIBRETRO_HOST_DIR "${CMAKE_CURRENT_SOURCE_DIR}/../hosts/libretro_host")
+set(BMSX_LIBRETRO_DIR "${CMAKE_CURRENT_SOURCE_DIR}/../../../hosts/libretro")
+set(BMSX_LIBRETRO_HOST_DIR "${CMAKE_CURRENT_SOURCE_DIR}/../../../hosts/libretro_host")
 
 if(BMSX_BUILD_LIBRETRO)
 	add_library(bmsx_libretro SHARED
-		${BMSX_LIBRETRO_ADAPTER_DIR}/platform.cpp
-		${BMSX_LIBRETRO_ADAPTER_DIR}/entry.cpp
+		${BMSX_LIBRETRO_DIR}/platform.cpp
+		${BMSX_LIBRETRO_DIR}/entry.cpp
 	)
 
 	target_link_libraries(bmsx_libretro PRIVATE bmsx_core)
@@ -415,7 +415,7 @@ if(BMSX_BUILD_LIBRETRO)
 
 	# Libretro header
 	target_include_directories(bmsx_libretro PRIVATE
-		${BMSX_LIBRETRO_ADAPTER_DIR}
+		${BMSX_LIBRETRO_DIR}
 	)
 
 	if(BMSX_ENABLE_PERFORMANCE_LOGS)
@@ -447,7 +447,7 @@ if(BMSX_BUILD_LIBRETRO_HOST)
 	endif()
 	target_link_libraries(bmsx_libretro_host PRIVATE dl rt pthread m ZLIB::ZLIB)
 	target_include_directories(bmsx_libretro_host PRIVATE
-		${BMSX_LIBRETRO_ADAPTER_DIR}
+		${BMSX_LIBRETRO_DIR}
 	)
 
 	if(NOT CMAKE_CROSSCOMPILING)
@@ -477,25 +477,25 @@ endif()
 if(BMSX_BUILD_TESTS)
 	enable_testing()
 	add_executable(bmsx_vdp_ingress_tests
-		${CMAKE_CURRENT_SOURCE_DIR}/../../tests/cpp/vdp_ingress_test.cpp
+		${CMAKE_CURRENT_SOURCE_DIR}/../../../tests/cpp/vdp_ingress_test.cpp
 	)
 	target_link_libraries(bmsx_vdp_ingress_tests PRIVATE bmsx_core)
 	add_test(NAME bmsx_vdp_ingress_tests COMMAND bmsx_vdp_ingress_tests)
 
 	add_executable(bmsx_core_golden_tests
-		${CMAKE_CURRENT_SOURCE_DIR}/../../tests/cpp/core_golden_test.cpp
+		${CMAKE_CURRENT_SOURCE_DIR}/../../../tests/cpp/core_golden_test.cpp
 	)
 	target_link_libraries(bmsx_core_golden_tests PRIVATE bmsx_core)
 	add_test(NAME bmsx_core_golden_tests COMMAND bmsx_core_golden_tests)
 
 	add_executable(bmsx_libretro_save_state_tests
-		${CMAKE_CURRENT_SOURCE_DIR}/../../tests/cpp/libretro_save_state_test.cpp
-		${CMAKE_CURRENT_SOURCE_DIR}/../../tests/cpp/support/program_cart_fixture.cpp
-		${BMSX_LIBRETRO_ADAPTER_DIR}/platform.cpp
+		${CMAKE_CURRENT_SOURCE_DIR}/../../../tests/cpp/libretro_save_state_test.cpp
+		${CMAKE_CURRENT_SOURCE_DIR}/../../../tests/cpp/support/program_cart_fixture.cpp
+		${BMSX_LIBRETRO_DIR}/platform.cpp
 	)
 	target_link_libraries(bmsx_libretro_save_state_tests PRIVATE bmsx_core)
 	target_include_directories(bmsx_libretro_save_state_tests PRIVATE
-		${BMSX_LIBRETRO_ADAPTER_DIR}
+		${BMSX_LIBRETRO_DIR}
 	)
 	add_test(NAME bmsx_libretro_save_state_tests COMMAND bmsx_libretro_save_state_tests)
 endif()

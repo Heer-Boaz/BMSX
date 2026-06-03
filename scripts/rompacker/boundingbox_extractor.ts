@@ -1,7 +1,7 @@
 // @ts-ignore
 const { createCanvas } = require('canvas');
 import type { Image } from 'canvas';
-import type { RectBounds, Polygon, vec2arr } from '../../packages/bmsx-console/src/rompack/format';
+import type { RectBounds, Polygon, vec2arr } from '../../machine/ts/src/rompack/format';
 import type { ImageResource } from './rompacker.rompack';
 import earcut from 'earcut';
 

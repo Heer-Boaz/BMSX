@@ -1,8 +1,8 @@
 // Fantasy CPU cycle cost analysis for ROM programs.
 // Works directly with the Program/Proto bytecode — no text parsing.
 
-import { BASE_CYCLES, OPCODE_CATEGORY, OPCODE_COUNT, OPCODE_NAMES, OpCode } from '../../packages/bmsx-console/src/machine/cpu/opcode_info';
-import { INSTRUCTION_BYTES, readInstructionWord } from '../../packages/bmsx-console/src/machine/cpu/instruction_format';
+import { BASE_CYCLES, OPCODE_CATEGORY, OPCODE_COUNT, OPCODE_NAMES, OpCode } from '../../machine/ts/src/machine/cpu/opcode_info';
+import { INSTRUCTION_BYTES, readInstructionWord } from '../../machine/ts/src/machine/cpu/instruction_format';
 
 type ProgramProto = {
 	entryPC: number;

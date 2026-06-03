@@ -13,7 +13,7 @@ if (-not $RetroArchDir) {
 	$RetroArchDir = 'C:\RetroArch-Win64'
 }
 
-$CppDir = Join-Path $RootDir 'native\machine'
+$CppDir = Join-Path $RootDir 'machine\cpp\src'
 $BuildDir = Join-Path $RootDir 'build-libretro-win'
 $LocalCfg = Join-Path $RootDir 'scripts\retroarch.local.cfg'
 $CoreName = 'libretro_bmsx.dll'

@@ -1,5 +1,5 @@
 import { defineLintRule } from '../../rule';
-import { type LuaLocalAssignmentStatement as LocalAssignmentStatement } from '../../../../packages/bmsx-console/src/lua/syntax/ast';
+import { type LuaLocalAssignmentStatement as LocalAssignmentStatement } from '../../../../machine/ts/src/lua/syntax/ast';
 import { type CartLintIssue } from '../../lua_rule';
 import { isStateLikeAliasName } from './impl/support/general';
 import { getSelfPropertyNameFromAliasExpression } from './impl/support/self_properties';

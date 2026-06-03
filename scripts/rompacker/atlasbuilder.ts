@@ -1,7 +1,7 @@
 import type { Canvas, CanvasRenderingContext2D } from 'canvas';
 import { resolve as resolvePath, sep as pathSep } from 'path';
 import { commonResPath } from './rombuilder';
-import { BIOS_ATLAS_ID, generateAtlasAssetId } from '../../packages/bmsx-console/src/rompack/format';
+import { BIOS_ATLAS_ID, generateAtlasAssetId } from '../../machine/ts/src/rompack/format';
 import { AtlasTexcoords, ImageResource } from './rompacker.rompack';
 export { generateAtlasAssetId };
 

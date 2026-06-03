@@ -1,4 +1,4 @@
-import { type LuaExpression as Expression, type LuaFunctionExpression as CartFunctionExpression, type LuaIfClause as IfClause, type LuaIfStatement as IfStatement, type LuaLocalAssignmentStatement as LocalAssignmentStatement, type LuaStatement as Statement, LuaSyntaxKind as SyntaxKind } from '../../../../../../packages/bmsx-console/src/lua/syntax/ast';
+import { type LuaExpression as Expression, type LuaFunctionExpression as CartFunctionExpression, type LuaIfClause as IfClause, type LuaIfStatement as IfStatement, type LuaLocalAssignmentStatement as LocalAssignmentStatement, type LuaStatement as Statement, LuaSyntaxKind as SyntaxKind } from '../../../../../../machine/ts/src/lua/syntax/ast';
 
 export type ThreeStatementFunctionBody = {
 	readonly first: Statement;

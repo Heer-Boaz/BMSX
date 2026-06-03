@@ -1,7 +1,7 @@
 /*
  * frame_uniforms.h - Shared per-frame uniform layout (GL3-ready)
  *
- * Matches packages/bmsx-console/src/render/backend/frame_uniforms.ts layout.
+ * Matches machine/ts/src/render/backend/frame_uniforms.ts layout.
  */
 
 #ifndef BMSX_FRAME_UNIFORMS_H

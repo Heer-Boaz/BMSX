@@ -1,7 +1,7 @@
 import { defineLintRule } from '../../rule';
-import { type LuaCallExpression as CallExpression } from '../../../../packages/bmsx-console/src/lua/syntax/ast';
+import { type LuaCallExpression as CallExpression } from '../../../../machine/ts/src/lua/syntax/ast';
 import { type CartLintIssue } from '../../lua_rule';
-import { getCallMethodName } from '../../../../packages/bmsx-console/src/lua/syntax/calls';
+import { getCallMethodName } from '../../../../machine/ts/src/lua/syntax/calls';
 import { isGetSpaceCallExpression } from './impl/support/calls';
 import { pushIssue } from './impl/support/lint_context';
 

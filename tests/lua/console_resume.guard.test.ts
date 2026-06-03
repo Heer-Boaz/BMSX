@@ -3,7 +3,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 
 test('resumeFromSnapshot applies machine state before hot-resuming Lua code', () => {
-	const src = readFileSync('packages/bmsx-console/src/ide/runtime/lua_pipeline.ts', 'utf8');
+	const src = readFileSync('machine/ts/src/ide/runtime/lua_pipeline.ts', 'utf8');
 	const start = src.indexOf('export async function resumeFromSnapshot');
 	assert.ok(start > -1, 'resumeFromSnapshot not found');
 	const nextExport = src.indexOf('\nexport function ', start + 1);
@@ -13,7 +13,7 @@ test('resumeFromSnapshot applies machine state before hot-resuming Lua code', ()
 });
 
 test('reloadLuaProgramState applies hot-resume without reinitialising interpreter', () => {
-	const src = readFileSync('packages/bmsx-console/src/ide/runtime/lua_pipeline.ts', 'utf8');
+	const src = readFileSync('machine/ts/src/ide/runtime/lua_pipeline.ts', 'utf8');
 	const start = src.indexOf('export function reloadLuaProgramState');
 	assert.ok(start > -1, 'reloadLuaProgramState not found');
 	const nextExport = src.indexOf('\nexport function ', start + 1);
@@ -23,7 +23,7 @@ test('reloadLuaProgramState applies hot-resume without reinitialising interprete
 });
 
 test('hotResumeProgramEntry keeps interpreter resident', () => {
-	const src = readFileSync('packages/bmsx-console/src/ide/runtime/lua_pipeline.ts', 'utf8');
+	const src = readFileSync('machine/ts/src/ide/runtime/lua_pipeline.ts', 'utf8');
 	const start = src.indexOf('export function hotResumeProgramEntry');
 	assert.ok(start > -1, 'hotResumeProgramEntry not found');
 	const nextExport = src.indexOf('\nexport function ', start + 1);
@@ -34,7 +34,7 @@ test('hotResumeProgramEntry keeps interpreter resident', () => {
 });
 
 test('system builtin prelude starts from fresh CPU entry state', () => {
-	const src = readFileSync('packages/bmsx-console/src/ide/runtime/lua_pipeline.ts', 'utf8');
+	const src = readFileSync('machine/ts/src/ide/runtime/lua_pipeline.ts', 'utf8');
 	const start = src.indexOf('export function runSystemBuiltinPrelude');
 	assert.ok(start > -1, 'runSystemBuiltinPrelude not found');
 	const nextExport = src.indexOf('\nexport function ', start + 1);

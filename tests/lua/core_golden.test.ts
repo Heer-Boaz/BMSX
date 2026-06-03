@@ -44,21 +44,21 @@ import {
 	IRQ_DMA_ERROR,
 		IRQ_IMG_ERROR,
 	IRQ_VBLANK,
-	} from '../../packages/bmsx-console/src/machine/bus/io';
-import { transformFixed16 } from '../../packages/bmsx-console/src/machine/common/numeric';
-	import { CPU } from '../../packages/bmsx-console/src/machine/cpu/cpu';
-import { DmaController } from '../../packages/bmsx-console/src/machine/devices/dma/controller';
-	import { ImgDecController } from '../../packages/bmsx-console/src/machine/devices/imgdec/controller';
-import { IrqController } from '../../packages/bmsx-console/src/machine/devices/irq/controller';
-import { Memory, type VramWriteSink } from '../../packages/bmsx-console/src/machine/memory/memory';
-import { GEO_SCRATCH_BASE, RAM_BASE, RAM_END, SYSTEM_ROM_BASE, VRAM_PRIMARY_SLOT_BASE, VRAM_STAGING_BASE } from '../../packages/bmsx-console/src/machine/memory/map';
-	import type { VDP } from '../../packages/bmsx-console/src/machine/devices/vdp/vdp';
-import type { Runtime } from '../../packages/bmsx-console/src/machine/runtime/runtime';
-import { VblankState } from '../../packages/bmsx-console/src/machine/runtime/vblank';
-import { cyclesUntilBudgetUnits } from '../../packages/bmsx-console/src/machine/scheduler/budget';
-import { DeviceScheduler } from '../../packages/bmsx-console/src/machine/scheduler/device';
-import { HeadlessGPUBackend } from '../../packages/bmsx-console/src/render/headless/backend';
-import { TextureManager } from '../../packages/bmsx-console/src/render/texture_manager';
+	} from '../../machine/ts/src/machine/bus/io';
+import { transformFixed16 } from '../../machine/ts/src/machine/common/numeric';
+	import { CPU } from '../../machine/ts/src/machine/cpu/cpu';
+import { DmaController } from '../../machine/ts/src/machine/devices/dma/controller';
+	import { ImgDecController } from '../../machine/ts/src/machine/devices/imgdec/controller';
+import { IrqController } from '../../machine/ts/src/machine/devices/irq/controller';
+import { Memory, type VramWriteSink } from '../../machine/ts/src/machine/memory/memory';
+import { GEO_SCRATCH_BASE, RAM_BASE, RAM_END, SYSTEM_ROM_BASE, VRAM_PRIMARY_SLOT_BASE, VRAM_STAGING_BASE } from '../../machine/ts/src/machine/memory/map';
+	import type { VDP } from '../../machine/ts/src/machine/devices/vdp/vdp';
+import type { Runtime } from '../../machine/ts/src/machine/runtime/runtime';
+import { VblankState } from '../../machine/ts/src/machine/runtime/vblank';
+import { cyclesUntilBudgetUnits } from '../../machine/ts/src/machine/scheduler/budget';
+import { DeviceScheduler } from '../../machine/ts/src/machine/scheduler/device';
+import { HeadlessGPUBackend } from '../../machine/ts/src/render/headless/backend';
+import { TextureManager } from '../../machine/ts/src/render/texture_manager';
 
 const TRANSFORM_CASES: ReadonlyArray<readonly [number, number, number, number, number, number]> = [
 	[0, 0, 0, 0, 0, 0],

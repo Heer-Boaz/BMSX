@@ -2,8 +2,8 @@ import * as fs from 'node:fs/promises';
 import * as path from 'node:path';
 import { PNG } from 'pngjs';
 
-import { taskGate } from '../../../packages/bmsx-console/src/core/taskgate';
-import { HeadlessGameViewHost, type HeadlessPresentedFrame } from '../../../packages/bmsx-console/src/render/headless/view';
+import { taskGate } from '../../../machine/ts/src/core/taskgate';
+import { HeadlessGameViewHost, type HeadlessPresentedFrame } from '../../../machine/ts/src/render/headless/view';
 
 export interface ScheduledHeadlessCapture {
 	dueTimeMs: number;

@@ -1,7 +1,7 @@
 import { defineLintRule } from '../../rule';
-import { type LuaExpression as Expression, LuaSyntaxKind as SyntaxKind, LuaTableFieldKind as TableFieldKind } from '../../../../packages/bmsx-console/src/lua/syntax/ast';
+import { type LuaExpression as Expression, LuaSyntaxKind as SyntaxKind, LuaTableFieldKind as TableFieldKind } from '../../../../machine/ts/src/lua/syntax/ast';
 import { type CartLintIssue } from '../../lua_rule';
-import { getCallMethodName } from '../../../../packages/bmsx-console/src/lua/syntax/calls';
+import { getCallMethodName } from '../../../../machine/ts/src/lua/syntax/calls';
 import { FSM_DELEGATE_HANDLER_KEYS } from './impl/support/fsm_core';
 import { getLifecycleWrapperCallExpression } from './impl/support/fsm_events';
 import { getTableFieldKey } from './impl/support/table_fields';

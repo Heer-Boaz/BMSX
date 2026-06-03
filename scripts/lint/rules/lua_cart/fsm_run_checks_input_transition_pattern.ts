@@ -1,7 +1,7 @@
 import { defineLintRule } from '../../rule';
-import { type LuaExpression as Expression, LuaSyntaxKind as SyntaxKind, LuaTableFieldKind as TableFieldKind } from '../../../../packages/bmsx-console/src/lua/syntax/ast';
+import { type LuaExpression as Expression, LuaSyntaxKind as SyntaxKind, LuaTableFieldKind as TableFieldKind } from '../../../../machine/ts/src/lua/syntax/ast';
 import { type CartLintIssue } from '../../lua_rule';
-import { findCallExpressionInStatements } from '../../../../packages/bmsx-console/src/lua/syntax/calls';
+import { findCallExpressionInStatements } from '../../../../machine/ts/src/lua/syntax/calls';
 import { isTickInputCheckCallExpression } from './impl/support/fsm_core';
 import { hasTransitionReturnInStatements } from './impl/support/fsm_transitions';
 import { getRunCheckGoFunction } from './impl/support/functions';

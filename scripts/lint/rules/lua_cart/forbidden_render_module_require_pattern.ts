@@ -1,5 +1,5 @@
 import { defineLintRule } from '../../rule';
-import { type LuaStringLiteralExpression as StringLiteralExpression } from '../../../../packages/bmsx-console/src/lua/syntax/ast';
+import { type LuaStringLiteralExpression as StringLiteralExpression } from '../../../../machine/ts/src/lua/syntax/ast';
 import { type CartLintIssue, type CartLintIssuePusher } from '../../lua_rule';
 
 export const forbiddenRenderModuleRequirePatternRule = defineLintRule('cart', 'forbidden_render_module_require_pattern');

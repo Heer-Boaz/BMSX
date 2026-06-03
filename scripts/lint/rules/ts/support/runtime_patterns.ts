@@ -1,8 +1,8 @@
 import { type AnalysisRegion } from '../../../../analysis/lint_suppressions';
 import ts from 'typescript';
 import { nodeIsInAnalysisRegion } from '../../../../analysis/code_quality/source_scan';
-import { expressionRootName, getCallTargetLeafName, unwrapExpression } from '../../../../../packages/bmsx-console/src/language/ts/ast/expressions';
-import { isFunctionExpressionLike, isFunctionLikeWithParameters, isPredicateFunctionName } from '../../../../../packages/bmsx-console/src/language/ts/ast/functions';
+import { expressionRootName, getCallTargetLeafName, unwrapExpression } from '../../../../../machine/ts/src/language/ts/ast/expressions';
+import { isFunctionExpressionLike, isFunctionLikeWithParameters, isPredicateFunctionName } from '../../../../../machine/ts/src/language/ts/ast/functions';
 import { DIRECT_MUTATION_METHOD_NAMES } from './declarations';
 
 export function isAllocationExpression(node: ts.Expression): boolean {

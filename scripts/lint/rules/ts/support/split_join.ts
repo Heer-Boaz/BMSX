@@ -1,5 +1,5 @@
 import ts from 'typescript';
-import { getCallTargetLeafName, unwrapExpression } from '../../../../../packages/bmsx-console/src/language/ts/ast/expressions';
+import { getCallTargetLeafName, unwrapExpression } from '../../../../../machine/ts/src/language/ts/ast/expressions';
 
 export function splitJoinDelimiterFingerprint(expression: ts.Expression | undefined): string | null {
 	if (expression === undefined) {

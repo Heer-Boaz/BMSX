@@ -1,7 +1,7 @@
 import { defineLintRule } from '../../rule';
 import ts from 'typescript';
-import { unwrapExpression } from '../../../../packages/bmsx-console/src/language/ts/ast/expressions';
-import { isFunctionExpressionLike } from '../../../../packages/bmsx-console/src/language/ts/ast/functions';
+import { unwrapExpression } from '../../../../machine/ts/src/language/ts/ast/expressions';
+import { isFunctionExpressionLike } from '../../../../machine/ts/src/language/ts/ast/functions';
 import { LintIssue, pushLintIssue } from '../ts/support/ast';
 import { containsClosureExpression } from '../ts/support/runtime_patterns';
 

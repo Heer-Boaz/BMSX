@@ -1,5 +1,5 @@
 import fs from 'fs';
-import { ProgramSymbolsImage } from '../packages/bmsx-console/src/machine/program/loader';
+import { ProgramSymbolsImage } from '../machine/ts/src/machine/program/loader';
 import { decodeBinary} from 'bmsx/common/serializer/binencoder';
 
 function dump(romPath: string, resourcesJson: string) {

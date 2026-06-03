@@ -1,5 +1,5 @@
-import { LuaBinaryOperator as BinaryOperator, type LuaExpression as Expression } from '../../../../packages/bmsx-console/src/lua/syntax/ast';
-import { isLuaNilLiteral as isNilLiteral, luaBinaryExpressionHasOperand } from '../../../../packages/bmsx-console/src/lua/syntax/literals';
+import { LuaBinaryOperator as BinaryOperator, type LuaExpression as Expression } from '../../../../machine/ts/src/lua/syntax/ast';
+import { isLuaNilLiteral as isNilLiteral, luaBinaryExpressionHasOperand } from '../../../../machine/ts/src/lua/syntax/literals';
 import type { CartLintIssue, CartLintIssuePusher } from '../../lua_rule';
 import { defineLintRule } from '../../rule';
 

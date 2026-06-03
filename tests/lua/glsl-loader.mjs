@@ -1,11 +1,11 @@
 const STUB_MODULES = new Map([
-	['packages/bmsx-console/src/machine/api.ts', `
+	['machine/ts/src/machine/api.ts', `
 export class Api {
 	emit(_eventName, _payload, _emitterId) {}
 	emit_gameplay(_eventName, _emitterId, _payload) {}
 }
 `],
-	['packages/bmsx-console/src/common/serializer/gameserializer.ts', `
+	['machine/ts/src/common/serializer/gameserializer.ts', `
 export class Serializer {
 	static onSaves = Object.create(null);
 	static excludedProperties = Object.create(null);
@@ -20,7 +20,7 @@ export class Reviver {
 }
 export const ConstructorWithSaveGame = class {};
 `],
-	['packages/bmsx-console/src/core/engine.ts', `
+	['machine/ts/src/core/engine.ts', `
 const globalScope = typeof globalThis !== 'undefined' ? globalThis : {};
 export const $ = {
 	paused: false,

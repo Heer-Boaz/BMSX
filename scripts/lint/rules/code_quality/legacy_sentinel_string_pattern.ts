@@ -1,5 +1,5 @@
 import ts from 'typescript';
-import type { Token } from '../../../../packages/bmsx-console/src/language/cpp/syntax/tokens';
+import type { Token } from '../../../../machine/ts/src/language/cpp/syntax/tokens';
 import { pushTokenLintIssue } from '../cpp/support/diagnostics';
 import { defineLintRule } from '../../rule';
 import { pushLintIssue, type LintIssue } from '../ts/support/ast';

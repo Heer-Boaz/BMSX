@@ -1,12 +1,12 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 
-import { splitText } from '../../packages/bmsx-console/src/common/text_lines';
-import { LuaLexer } from '../../packages/bmsx-console/src/lua/syntax/lexer';
-import { LuaParser } from '../../packages/bmsx-console/src/lua/syntax/parser';
-import { CPU, RunResult, StringValue, Table, createNativeFunction, createNativeObject, type CpuRuntimeState } from '../../packages/bmsx-console/src/machine/cpu/cpu';
-import { Memory } from '../../packages/bmsx-console/src/machine/memory/memory';
-import { compileLuaChunkToProgram } from '../../packages/bmsx-console/src/machine/program/compiler';
+import { splitText } from '../../machine/ts/src/common/text_lines';
+import { LuaLexer } from '../../machine/ts/src/lua/syntax/lexer';
+import { LuaParser } from '../../machine/ts/src/lua/syntax/parser';
+import { CPU, RunResult, StringValue, Table, createNativeFunction, createNativeObject, type CpuRuntimeState } from '../../machine/ts/src/machine/cpu/cpu';
+import { Memory } from '../../machine/ts/src/machine/memory/memory';
+import { compileLuaChunkToProgram } from '../../machine/ts/src/machine/program/compiler';
 
 function parseChunk(source: string, path = 'ram_accounting.lua') {
 	const lexer = new LuaLexer(source, path);

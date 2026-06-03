@@ -1,5 +1,5 @@
 import { defineLintRule } from '../../rule';
-import { LuaAssignmentOperator as AssignmentOperator, type LuaStatement as Statement, LuaSyntaxKind as SyntaxKind } from '../../../../packages/bmsx-console/src/lua/syntax/ast';
+import { LuaAssignmentOperator as AssignmentOperator, type LuaStatement as Statement, LuaSyntaxKind as SyntaxKind } from '../../../../machine/ts/src/lua/syntax/ast';
 import { type CartLintIssue } from '../../lua_rule';
 import { isIdentifier } from './impl/support/bindings';
 import { pushIssue } from './impl/support/lint_context';

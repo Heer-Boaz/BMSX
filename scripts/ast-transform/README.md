@@ -17,16 +17,16 @@ npm install
 2. Run the transform for one or more files:
 
 ```bash
-npm run ast-transform:convert -- packages/bmsx-console/src/ide/console_cart_editor.ts
+npm run ast-transform:convert -- machine/ts/src/ide/console_cart_editor.ts
 # or
-node scripts/ast-transform/convert_class_members.js packages/bmsx-console/src/ide/console_cart_editor.ts
+node scripts/ast-transform/convert_class_members.js machine/ts/src/ide/console_cart_editor.ts
 
 # ts-morph converter (recommended for cross-file rewiring)
-npm run ast-transform:morph -- packages/bmsx-console/src/ide/console_cart_editor.ts
+npm run ast-transform:morph -- machine/ts/src/ide/console_cart_editor.ts
 # or, with project awareness and cross-file rewiring (updates imports/usages)
-npm run ast-transform:morph:project -- packages/bmsx-console/src/ide/console_cart_editor.ts
+npm run ast-transform:morph:project -- machine/ts/src/ide/console_cart_editor.ts
 # optionally, conservatively flatten simple instance usages in project mode
-npm run ast-transform:morph:project -- --flatten-instances packages/bmsx-console/src/ide/console_cart_editor.ts
+npm run ast-transform:morph:project -- --flatten-instances machine/ts/src/ide/console_cart_editor.ts
 ```
 
 Output

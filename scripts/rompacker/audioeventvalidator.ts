@@ -1,4 +1,4 @@
-import { assertValidAemDocument, buildAemValidationLookup, parseStructuredTextDocument } from '../../packages/bmsx-console/src/rompack/tooling/aem';
+import { assertValidAemDocument, buildAemValidationLookup, parseStructuredTextDocument } from '../../machine/ts/src/rompack/tooling/aem';
 import { Resource } from './rompacker.rompack';
 
 export function validateAudioEventReferences(resources: Resource[]): void {

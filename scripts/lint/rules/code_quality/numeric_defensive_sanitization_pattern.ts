@@ -1,7 +1,7 @@
 import { defineLintRule } from '../../rule';
 import ts from 'typescript';
 import { lineInAnalysisRegion, type AnalysisRegion } from '../../../analysis/lint_suppressions';
-import { isNumericSanitizerCall } from '../../../../packages/bmsx-console/src/language/ts/ast/semantic';
+import { isNumericSanitizerCall } from '../../../../machine/ts/src/language/ts/ast/semantic';
 import { LintIssue, nodeStartLine, pushLintIssue } from '../ts/support/ast';
 
 export const numericDefensiveSanitizationPatternRule = defineLintRule('code_quality', 'numeric_defensive_sanitization_pattern');

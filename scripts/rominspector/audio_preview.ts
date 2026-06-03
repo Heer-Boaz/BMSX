@@ -1,5 +1,5 @@
-import { clamp } from '../../packages/bmsx-console/src/common/clamp';
-import { decodeWavToPcm } from '../../packages/bmsx-console/src/common/wav';
+import { clamp } from '../../machine/ts/src/common/clamp';
+import { decodeWavToPcm } from '../../machine/ts/src/common/wav';
 
 export type AudioPreviewPcm = {
 	samples: Int16Array;

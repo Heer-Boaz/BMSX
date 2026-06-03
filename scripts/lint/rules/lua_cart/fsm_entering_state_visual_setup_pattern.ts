@@ -1,7 +1,7 @@
 import { defineLintRule } from '../../rule';
-import { type LuaStatement as Statement, LuaSyntaxKind as SyntaxKind } from '../../../../packages/bmsx-console/src/lua/syntax/ast';
+import { type LuaStatement as Statement, LuaSyntaxKind as SyntaxKind } from '../../../../machine/ts/src/lua/syntax/ast';
 import { type CartLintIssue } from '../../lua_rule';
-import { findCallExpressionInStatements, isGlobalCall, visitCallExpressionsInStatements } from '../../../../packages/bmsx-console/src/lua/syntax/calls';
+import { findCallExpressionInStatements, isGlobalCall, visitCallExpressionsInStatements } from '../../../../machine/ts/src/lua/syntax/calls';
 import { getStateNameFromStateField } from './impl/support/fsm_labels';
 import { collectPrefabVisualDefaultsById, getSelfGfxStringLiteralArgument, isSelfGfxCallExpression, stateTimelinesDriveSelfGfx } from './impl/support/fsm_visual';
 import { findSelfBooleanPropertyAssignmentInStatements } from './impl/support/self_properties';

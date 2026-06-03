@@ -1,11 +1,11 @@
 import { glsl } from "esbuild-plugin-glsl";
 // @ts-ignore
 import type { Stats } from 'fs';
-import { CART_ROM_HEADER_SIZE, CART_ROM_MAGIC_BYTES } from '../../packages/bmsx-console/src/rompack/format';
-import type { asset_type, AudioMeta, BoundingBoxPrecalc, GLTFMesh, HitPolygonsPrecalc, ImgMeta, Polygon, RectBounds, RomAsset, RomManifest, vec2arr } from '../../packages/bmsx-console/src/rompack/format';
-import { SYSTEM_BOOT_ENTRY_PATH } from '../../packages/bmsx-console/src/core/system';
-import { encodeRomToc } from '../../packages/bmsx-console/src/rompack/tooling/toc_encode';
-import type { LuaChunk } from '../../packages/bmsx-console/src/lua/syntax/ast';
+import { CART_ROM_HEADER_SIZE, CART_ROM_MAGIC_BYTES } from '../../machine/ts/src/rompack/format';
+import type { asset_type, AudioMeta, BoundingBoxPrecalc, GLTFMesh, HitPolygonsPrecalc, ImgMeta, Polygon, RectBounds, RomAsset, RomManifest, vec2arr } from '../../machine/ts/src/rompack/format';
+import { SYSTEM_BOOT_ENTRY_PATH } from '../../machine/ts/src/core/system';
+import { encodeRomToc } from '../../machine/ts/src/rompack/tooling/toc_encode';
+import type { LuaChunk } from '../../machine/ts/src/lua/syntax/ast';
 import { encodeAudioAssetToAdpcm } from './adpcm';
 import { resolveTargetAtlasId, createOptimizedAtlas, generateAtlasAssetId } from './atlasbuilder';
 import { BoundingBoxExtractor } from './boundingbox_extractor';
@@ -30,17 +30,17 @@ const { finished } = require('stream/promises');
 // Import encodeBinary from the public API surface
 // Use direct path to avoid pulling the machine runtime via public alias during Node execution.
 // @ts-ignore
-const { encodeBinary, decodeBinary } = require('../../packages/bmsx-console/src/common/serializer/binencoder');
+const { encodeBinary, decodeBinary } = require('../../machine/ts/src/common/serializer/binencoder');
 // @ts-ignore
-const { buildRomMetadataSection } = require('../../packages/bmsx-console/src/rompack/tooling/metadata_encode');
+const { buildRomMetadataSection } = require('../../machine/ts/src/rompack/tooling/metadata_encode');
 // @ts-ignore
-const { LuaLexer } = require('../../packages/bmsx-console/src/lua/syntax/lexer');
+const { LuaLexer } = require('../../machine/ts/src/lua/syntax/lexer');
 // @ts-ignore
-const { LuaParser } = require('../../packages/bmsx-console/src/lua/syntax/parser');
+const { LuaParser } = require('../../machine/ts/src/lua/syntax/parser');
 // @ts-ignore
-const { splitText } = require('../../packages/bmsx-console/src/common/text_lines');
+const { splitText } = require('../../machine/ts/src/common/text_lines');
 // @ts-ignore
-const { compileLuaChunkToProgram, isLuaCompileError } = require('../../packages/bmsx-console/src/machine/program/compiler');
+const { compileLuaChunkToProgram, isLuaCompileError } = require('../../machine/ts/src/machine/program/compiler');
 // @ts-ignore
 const {
 	PROGRAM_IMAGE_ID,
@@ -49,7 +49,7 @@ const {
 	encodeProgramImage,
 	encodeProgramObjectSections,
 	toLuaModulePath,
-} = require('../../packages/bmsx-console/src/machine/program/loader');
+} = require('../../machine/ts/src/machine/program/loader');
 // @ts-ignore
 // @ts-ignore
 const pako = require('pako');
@@ -311,7 +311,7 @@ export async function buildMachineRuntime(debug: boolean): Promise<void> {
 	const runtimeFilename = getMachineRuntimeFilename(debug);
 	const runtimeRomPath = `./rom/${runtimeFilename}`;
 	const runtimeDistPath = `./dist/${runtimeFilename}`;
-	await buildBrowserIife('./packages/bmsx-console/src/machine_runtime.ts', runtimeRomPath, debug);
+	await buildBrowserIife('./machine/ts/src/machine_runtime.ts', runtimeRomPath, debug);
 	await copyFile(runtimeRomPath, runtimeDistPath);
 }
 
@@ -322,7 +322,7 @@ export async function buildBrowserHost(debug: boolean): Promise<void> {
 	const hostFilename = getBrowserHostFilename(debug);
 	const hostRomPath = `./rom/${hostFilename}`;
 	const hostDistPath = `./dist/${hostFilename}`;
-	await buildBrowserIife('./packages/bmsx-browser-host/src/engine.ts', hostRomPath, debug);
+	await buildBrowserIife('./hosts/browser/src/engine.ts', hostRomPath, debug);
 	await copyFile(hostRomPath, hostDistPath);
 }
 
@@ -2097,7 +2097,7 @@ export async function isRebuildRequired(romname: string, bootloaderPath: string,
 
 	const bootloaderNeedsRebuild = cartProject ? false : await anyFileNewerThan(collectSourceFiles([bootloaderPath], CODE_FILE_EXTENSION_SET), romMtimeMs);
 	const resNeedsRebuild = await anyFileNewerThan(await getFiles(resPath), romMtimeMs);
-	const machineRuntimeNeedsRebuild = cartProject ? false : await anyFileNewerThan(collectSourceFiles(['packages/bmsx-console/src'], CODE_FILE_EXTENSION_SET), romMtimeMs);
+	const machineRuntimeNeedsRebuild = cartProject ? false : await anyFileNewerThan(collectSourceFiles(['machine/ts/src'], CODE_FILE_EXTENSION_SET), romMtimeMs);
 
 	return extraNeedsRebuild ||
 		bootloaderNeedsRebuild ||
@@ -2113,7 +2113,7 @@ export async function isMachineRuntimeRebuildRequired(outFilePath: string = `./d
 		return true;
 	}
 
-	return anyFileNewerThan(collectSourceFiles(['packages/bmsx-console/src'], CODE_FILE_EXTENSION_SET), outputStats.mtimeMs);
+	return anyFileNewerThan(collectSourceFiles(['machine/ts/src'], CODE_FILE_EXTENSION_SET), outputStats.mtimeMs);
 }
 
 export async function isBrowserHostRebuildRequired(outFilePath: string = `./dist/${getBrowserHostFilename(false)}`): Promise<boolean> {
@@ -2125,8 +2125,8 @@ export async function isBrowserHostRebuildRequired(outFilePath: string = `./dist
 	}
 
 	return anyFileNewerThan(collectSourceFiles([
-		'packages/bmsx-browser-host/src',
-		'packages/bmsx-console/src',
+		'hosts/browser/src',
+		'machine/ts/src',
 	], CODE_FILE_EXTENSION_SET), outputStats.mtimeMs);
 }
 export function setAtlasFlag(enabled: boolean): void {

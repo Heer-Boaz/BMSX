@@ -1,10 +1,10 @@
-import { LuaAssignmentOperator as AssignmentOperator, type LuaAssignmentStatement as AssignmentStatement, LuaBinaryOperator as BinaryOperator, type LuaCallExpression as CallExpression, type LuaExpression as Expression, type LuaStatement as Statement, LuaSyntaxKind as SyntaxKind } from '../../../../../../packages/bmsx-console/src/lua/syntax/ast';
+import { LuaAssignmentOperator as AssignmentOperator, type LuaAssignmentStatement as AssignmentStatement, LuaBinaryOperator as BinaryOperator, type LuaCallExpression as CallExpression, type LuaExpression as Expression, type LuaStatement as Statement, LuaSyntaxKind as SyntaxKind } from '../../../../../../machine/ts/src/lua/syntax/ast';
 import { type CartLintIssue } from '../../../../lua_rule';
 import { lintFsmForbiddenLegacyFieldsInTable } from '../../fsm_forbidden_legacy_fields_pattern';
 import { lintFsmProcessInputPollingTransitionPatternInTable } from '../../fsm_process_input_polling_transition_pattern';
 import { lintFsmRunChecksInputTransitionPatternInTable } from '../../fsm_run_checks_input_transition_pattern';
 import { lintFsmTickCounterTransitionPatternInTable } from '../../fsm_tick_counter_transition_pattern';
-import { isGlobalCall } from '../../../../../../packages/bmsx-console/src/lua/syntax/calls';
+import { isGlobalCall } from '../../../../../../machine/ts/src/lua/syntax/calls';
 import { getSelfAssignedPropertyNameFromTarget, isSelfPropertyReferenceByName } from './self_properties';
 
 export function hasTransitionReturnInStatements(statements: ReadonlyArray<Statement>): boolean {

@@ -1,5 +1,5 @@
 import { defineLintRule } from '../../rule';
-import { type LuaIfStatement as IfStatement } from '../../../../packages/bmsx-console/src/lua/syntax/ast';
+import { type LuaIfStatement as IfStatement } from '../../../../machine/ts/src/lua/syntax/ast';
 import { type CartLintIssue } from '../../lua_rule';
 import { matchesImgIdNilFallbackPattern } from './impl/support/self_properties';
 import { pushIssue } from './impl/support/lint_context';

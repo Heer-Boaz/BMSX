@@ -1,8 +1,8 @@
 import { defineLintRule } from '../../rule';
-import { type LuaCallExpression as CallExpression, LuaSyntaxKind as SyntaxKind, type LuaTableField as TableField, LuaTableFieldKind as TableFieldKind } from '../../../../packages/bmsx-console/src/lua/syntax/ast';
+import { type LuaCallExpression as CallExpression, LuaSyntaxKind as SyntaxKind, type LuaTableField as TableField, LuaTableFieldKind as TableFieldKind } from '../../../../machine/ts/src/lua/syntax/ast';
 import { type CartLintIssue } from '../../lua_rule';
 import { btIdLabelPatternRule } from './bt_id_label_pattern';
-import { isGlobalCall } from '../../../../packages/bmsx-console/src/lua/syntax/calls';
+import { isGlobalCall } from '../../../../machine/ts/src/lua/syntax/calls';
 import { containsLabel, lintCollectionStringValuesForLabel } from './impl/support/fsm_labels';
 import { appendSuggestionMessage } from './impl/support/general';
 import { pushIssue } from './impl/support/lint_context';

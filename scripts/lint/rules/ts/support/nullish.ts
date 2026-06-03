@@ -1,7 +1,7 @@
 import ts from 'typescript';
-import { unwrapExpression } from '../../../../../packages/bmsx-console/src/language/ts/ast/expressions';
-import { isEmptyStringLiteral, isNullOrUndefined, isNumericLiteralLike, isNumericLiteralText, nullishLiteralKind } from '../../../../../packages/bmsx-console/src/language/ts/ast/literals';
-import { isNullishEqualityOperator, isNullishInequalityOperator, isPositiveEqualityOperator } from '../../../../../packages/bmsx-console/src/language/ts/ast/operators';
+import { unwrapExpression } from '../../../../../machine/ts/src/language/ts/ast/expressions';
+import { isEmptyStringLiteral, isNullOrUndefined, isNumericLiteralLike, isNumericLiteralText, nullishLiteralKind } from '../../../../../machine/ts/src/language/ts/ast/literals';
+import { isNullishEqualityOperator, isNullishInequalityOperator, isPositiveEqualityOperator } from '../../../../../machine/ts/src/language/ts/ast/operators';
 import { isEmptyContainerLiteral, isLookupFallbackExpression, isOptionalParameterFallback, isSharedConstantFallbackExpression, singleLiteralComparison } from './conditions';
 import { expressionAccessFingerprint } from './declarations';
 import { isAllocationExpression } from './runtime_patterns';

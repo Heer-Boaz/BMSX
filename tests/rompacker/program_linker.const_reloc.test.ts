@@ -1,16 +1,16 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 
-import { splitText } from '../../packages/bmsx-console/src/common/text_lines';
-import { LuaLexer } from '../../packages/bmsx-console/src/lua/syntax/lexer';
-import { LuaParser } from '../../packages/bmsx-console/src/lua/syntax/parser';
-import { CPU, OpCode, RunResult, StringValue, Table, asStringId, createNativeFunction, valueIsString, type Proto } from '../../packages/bmsx-console/src/machine/cpu/cpu';
-import { INSTRUCTION_BYTES, readInstructionWord, writeInstruction, writeInstructionWord } from '../../packages/bmsx-console/src/machine/cpu/instruction_format';
-import { appendLuaChunkToProgram, compileLuaChunkToProgram } from '../../packages/bmsx-console/src/machine/program/compiler';
-import { buildProgramBootHeader, inflateProgram, type ProgramImage, type ProgramConstReloc, type ProgramSymbolsImage } from '../../packages/bmsx-console/src/machine/program/loader';
-import { linkProgramImages } from '../../packages/bmsx-console/src/machine/program/linker';
-import { CART_BASE_PC, CART_PROGRAM_VECTOR_PC, CART_PROGRAM_VECTOR_VALUE } from '../../packages/bmsx-console/src/machine/program/layout';
-import { Memory } from '../../packages/bmsx-console/src/machine/memory/memory';
+import { splitText } from '../../machine/ts/src/common/text_lines';
+import { LuaLexer } from '../../machine/ts/src/lua/syntax/lexer';
+import { LuaParser } from '../../machine/ts/src/lua/syntax/parser';
+import { CPU, OpCode, RunResult, StringValue, Table, asStringId, createNativeFunction, valueIsString, type Proto } from '../../machine/ts/src/machine/cpu/cpu';
+import { INSTRUCTION_BYTES, readInstructionWord, writeInstruction, writeInstructionWord } from '../../machine/ts/src/machine/cpu/instruction_format';
+import { appendLuaChunkToProgram, compileLuaChunkToProgram } from '../../machine/ts/src/machine/program/compiler';
+import { buildProgramBootHeader, inflateProgram, type ProgramImage, type ProgramConstReloc, type ProgramSymbolsImage } from '../../machine/ts/src/machine/program/loader';
+import { linkProgramImages } from '../../machine/ts/src/machine/program/linker';
+import { CART_BASE_PC, CART_PROGRAM_VECTOR_PC, CART_PROGRAM_VECTOR_VALUE } from '../../machine/ts/src/machine/program/layout';
+import { Memory } from '../../machine/ts/src/machine/memory/memory';
 
 type EncodedWord = {
 	op: OpCode;

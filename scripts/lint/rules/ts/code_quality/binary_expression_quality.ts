@@ -6,9 +6,9 @@ import { lintDefensiveTypeofFunctionPattern } from '../../code_quality/defensive
 import { lintNullishCounterIncrementPattern } from '../../code_quality/nullish_counter_increment_pattern';
 import { lintNullishNullNormalizationPattern } from '../../code_quality/nullish_null_normalization_pattern';
 import { lintEmptyContainerFallbackPattern } from '../../common/empty_container_fallback_pattern';
-import { unwrapExpression } from '../../../../../packages/bmsx-console/src/language/ts/ast/expressions';
-import { isBooleanLiteral, isEmptyStringLiteral, isNullOrUndefined } from '../../../../../packages/bmsx-console/src/language/ts/ast/literals';
-import { isEqualityOperator } from '../../../../../packages/bmsx-console/src/language/ts/ast/operators';
+import { unwrapExpression } from '../../../../../machine/ts/src/language/ts/ast/expressions';
+import { isBooleanLiteral, isEmptyStringLiteral, isNullOrUndefined } from '../../../../../machine/ts/src/language/ts/ast/literals';
+import { isEqualityOperator } from '../../../../../machine/ts/src/language/ts/ast/operators';
 import { LintIssue, isExplicitNonJsTruthinessPair, pushLintIssue } from '../support/ast';
 import { collectStringOrChainSubjects, isBooleanLiteralComparisonSmell } from '../support/conditions';
 import { nullishFallbackLedgerKind } from '../support/nullish';

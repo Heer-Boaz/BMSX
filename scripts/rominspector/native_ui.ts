@@ -1,8 +1,8 @@
-import type { RomAsset } from '../../packages/bmsx-console/src/rompack/format';
-import { PROGRAM_IMAGE_ID, PROGRAM_SYMBOLS_IMAGE_ID } from '../../packages/bmsx-console/src/machine/program/loader';
-import { parseCartHeader } from '../../packages/bmsx-console/src/rompack/loader';
-import { parseRomMetadataSection } from '../../packages/bmsx-console/src/rompack/metadata';
-import { clamp } from '../../packages/bmsx-console/src/common/clamp';
+import type { RomAsset } from '../../machine/ts/src/rompack/format';
+import { PROGRAM_IMAGE_ID, PROGRAM_SYMBOLS_IMAGE_ID } from '../../machine/ts/src/machine/program/loader';
+import { parseCartHeader } from '../../machine/ts/src/rompack/loader';
+import { parseRomMetadataSection } from '../../machine/ts/src/rompack/metadata';
+import { clamp } from '../../machine/ts/src/common/clamp';
 import { bufferSegmentGlyph, buildBufferBarModel, type BufferBarCell, type BufferBarModel, type BufferHitRegion, type BufferLegendEntry, type BufferRegion } from './asciiart';
 import { buildAssetModalView, renderPreviewSectionWindow, type AssetModalView, type AssetPreviewSection } from './asset_modal_view';
 import { TuiInput, type TuiMouseEvent } from './tui_input';

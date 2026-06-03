@@ -1,8 +1,8 @@
 import { PNG } from 'pngjs';
-import { generateAtlasAssetId, type GLTFModel, type ImgMeta, type RomAsset, type RomManifest } from '../../packages/bmsx-console/src/rompack/format';
-import { decodeBinary } from '../../packages/bmsx-console/src/common/serializer/binencoder';
-import { loadModelFromBuffer as loadGLTFModelFromBuffer } from '../../packages/bmsx-console/src/rompack/loader';
-import { PROGRAM_IMAGE_ID, PROGRAM_SYMBOLS_IMAGE_ID, ProgramSymbolsImage } from '../../packages/bmsx-console/src/machine/program/loader';
+import { generateAtlasAssetId, type GLTFModel, type ImgMeta, type RomAsset, type RomManifest } from '../../machine/ts/src/rompack/format';
+import { decodeBinary } from '../../machine/ts/src/common/serializer/binencoder';
+import { loadModelFromBuffer as loadGLTFModelFromBuffer } from '../../machine/ts/src/rompack/loader';
+import { PROGRAM_IMAGE_ID, PROGRAM_SYMBOLS_IMAGE_ID, ProgramSymbolsImage } from '../../machine/ts/src/machine/program/loader';
 import { asciiWaveBraille, generateBrailleAsciiArt, generatePixelPerfectAsciiArt, renderBufferBar } from './asciiart';
 import { decodeAudioPreviewToPcm } from './audio_preview';
 import {

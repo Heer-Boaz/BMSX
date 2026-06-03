@@ -1,4 +1,4 @@
-import { LuaAssignmentOperator as AssignmentOperator, type LuaExpression as Expression, type LuaFunctionDeclarationStatement as FunctionDeclarationStatement, type LuaFunctionExpression as CartFunctionExpression, type LuaIdentifierExpression as IdentifierExpression, type LuaLocalFunctionStatement as LocalFunctionStatement, type LuaStatement as Statement, LuaSyntaxKind as SyntaxKind, LuaTableFieldKind as TableFieldKind } from '../../../../../../packages/bmsx-console/src/lua/syntax/ast';
+import { LuaAssignmentOperator as AssignmentOperator, type LuaExpression as Expression, type LuaFunctionDeclarationStatement as FunctionDeclarationStatement, type LuaFunctionExpression as CartFunctionExpression, type LuaIdentifierExpression as IdentifierExpression, type LuaLocalFunctionStatement as LocalFunctionStatement, type LuaStatement as Statement, LuaSyntaxKind as SyntaxKind, LuaTableFieldKind as TableFieldKind } from '../../../../../../machine/ts/src/lua/syntax/ast';
 import { type CartLintIssue } from '../../../../lua_rule';
 import { leaveSingleUseLocalScope } from '../../../common/single_use_local_pattern';
 import { declareBinding, enterBindingScope } from './bindings';

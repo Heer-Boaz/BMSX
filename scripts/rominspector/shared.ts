@@ -1,13 +1,13 @@
-import type { RomAsset, CartRomHeader } from '../../packages/bmsx-console/src/rompack/format';
-import { disassembleProgram } from '../../packages/bmsx-console/src/machine/cpu/disassembler';
-import type { Program, ProgramMetadata } from '../../packages/bmsx-console/src/machine/cpu/cpu';
+import type { RomAsset, CartRomHeader } from '../../machine/ts/src/rompack/format';
+import { disassembleProgram } from '../../machine/ts/src/machine/cpu/disassembler';
+import type { Program, ProgramMetadata } from '../../machine/ts/src/machine/cpu/cpu';
 import {
 	decodeProgramImage,
 	inflateProgram,
 	PROGRAM_IMAGE_ID,
 	PROGRAM_SYMBOLS_IMAGE_ID,
-} from '../../packages/bmsx-console/src/machine/program/loader';
-import { decodeBinary } from '../../packages/bmsx-console/src/common/serializer/binencoder';
+} from '../../machine/ts/src/machine/program/loader';
+import { decodeBinary } from '../../machine/ts/src/common/serializer/binencoder';
 
 export const ROM_MANIFEST_ASSET_ID = '__rom_manifest__';
 export const ROM_MANIFEST_SOURCE_PATH = 'manifest.rommanifest';

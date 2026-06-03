@@ -1,7 +1,7 @@
-import { LuaBinaryOperator as BinaryOperator, LuaSyntaxKind as SyntaxKind, type LuaExpression as Expression } from '../../../../packages/bmsx-console/src/lua/syntax/ast';
-import { isLuaEmptyStringLiteral as isEmptyStringLiteral } from '../../../../packages/bmsx-console/src/lua/syntax/literals';
-import { isEmptyStringToken } from '../../../../packages/bmsx-console/src/language/cpp/syntax/syntax';
-import type { Token } from '../../../../packages/bmsx-console/src/language/cpp/syntax/tokens';
+import { LuaBinaryOperator as BinaryOperator, LuaSyntaxKind as SyntaxKind, type LuaExpression as Expression } from '../../../../machine/ts/src/lua/syntax/ast';
+import { isLuaEmptyStringLiteral as isEmptyStringLiteral } from '../../../../machine/ts/src/lua/syntax/literals';
+import { isEmptyStringToken } from '../../../../machine/ts/src/language/cpp/syntax/syntax';
+import type { Token } from '../../../../machine/ts/src/language/cpp/syntax/tokens';
 import { lintAdjacentEqualityComparison } from '../cpp/support/comparison';
 import type { LintIssue } from '../cpp/support/diagnostics';
 import type { CartLintIssue, CartLintIssuePusher } from '../../lua_rule';

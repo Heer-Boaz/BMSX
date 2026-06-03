@@ -2,7 +2,7 @@
 set -euo pipefail
 
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
-CPP_DIR="$ROOT_DIR/native/machine"
+CPP_DIR="$ROOT_DIR/machine/cpp/src"
 LOCAL_CFG="$ROOT_DIR/scripts/retroarch.local.cfg"
 
 # Default build type; user can pass --debug or --release

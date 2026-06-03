@@ -196,9 +196,9 @@ Coding policies: *no defensive checks, trust the types, trust proper initializat
     }
     ```
 * Don't worry about indentation styles. I will take care of formatting the code using Prettier before committing.
-* `clamp` is a utility function available that you can find in the folder `/packages/bmsx-console/src/common/`; use it instead of writing your own!
-* Scratch buffers are available in `/packages/bmsx-console/src/common/scratchbuffer.ts`; use them for temporary data storage instead of allocating new arrays or buffers.
-* Look at other utility functions available in `/packages/bmsx-console/src/common/` before writing your own utility functions!
+* `clamp` is a utility function available that you can find in the folder `/machine/ts/src/common/`; use it instead of writing your own!
+* Scratch buffers are available in `/machine/ts/src/common/scratchbuffer.ts`; use them for temporary data storage instead of allocating new arrays or buffers.
+* Look at other utility functions available in `/machine/ts/src/common/` before writing your own utility functions!
 * Don't use `require` in non-script code (e.g. `rompacker-core.ts` and `rominspector.ts` can have `require`, but core engine files or game source files cannot).
 * Ensure that registry persistent objects are not serialized.
 * Use the annotations provided in the codebase to maintain consistency, these include:
@@ -216,4 +216,4 @@ Coding policies: *no defensive checks, trust the types, trust proper initializat
 * Don't unnecessarily override methods.
 * **Performance**:
   - Consider the performance implications of generated code, especially in critical areas of the application, noting that the engine is supposed to perform well on lower-end hardware such as iPhone 10/11/12.
-  - Use scratch buffers and object pooling to minimize memory allocations and improve performance. There are several scratch buffers available in `packages/bmsx-console/src/common/scratchbuffer.ts` that can be used for temporary data storage to avoid frequent allocations.
+  - Use scratch buffers and object pooling to minimize memory allocations and improve performance. There are several scratch buffers available in `machine/ts/src/common/scratchbuffer.ts` that can be used for temporary data storage to avoid frequent allocations.

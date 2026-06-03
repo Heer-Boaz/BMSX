@@ -1,9 +1,9 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 
-import { compileLoadChunk } from '../../packages/bmsx-console/src/machine/program/load_compiler';
-import { StringValue, Table } from '../../packages/bmsx-console/src/machine/cpu/cpu';
-import { StringPool } from '../../packages/bmsx-console/src/machine/cpu/string_pool';
+import { compileLoadChunk } from '../../machine/ts/src/machine/program/load_compiler';
+import { StringValue, Table } from '../../machine/ts/src/machine/cpu/cpu';
+import { StringPool } from '../../machine/ts/src/machine/cpu/string_pool';
 
 test('compileLoadChunk supports negative numeric literals in generated assignments', () => {
 	const stringPool = new StringPool();

@@ -1,7 +1,7 @@
 import { defineLintRule } from '../../rule';
 import { type LintIssue, pushLintIssue } from '../ts/support/ast';
 import ts from 'typescript';
-import { isLookupCallExpression, unwrapExpression } from '../../../../packages/bmsx-console/src/language/ts/ast/expressions';
+import { isLookupCallExpression, unwrapExpression } from '../../../../machine/ts/src/language/ts/ast/expressions';
 import { expressionAccessFingerprint } from '../ts/support/declarations';
 import { isNullishReturnStatement } from '../ts/support/nullish';
 import { nextStatementAfter, previousStatementBefore } from '../ts/support/statements';

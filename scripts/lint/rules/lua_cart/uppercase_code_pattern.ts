@@ -1,4 +1,4 @@
-import { LuaTokenType as TokenType, type LuaToken as Token } from '../../../../packages/bmsx-console/src/lua/syntax/token';
+import { LuaTokenType as TokenType, type LuaToken as Token } from '../../../../machine/ts/src/lua/syntax/token';
 import type { CartLintIssue, CartLintLocationPusher } from '../../lua_rule';
 import { defineLintRule } from '../../rule';
 

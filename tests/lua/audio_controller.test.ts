@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 
-import { writeLE16, writeLE32 } from '../../packages/bmsx-console/src/common/endian';
+import { writeLE16, writeLE32 } from '../../machine/ts/src/common/endian';
 import {
 	APU_COMMAND_FIFO_CAPACITY,
 	APU_CMD_PLAY,
@@ -40,7 +40,7 @@ import {
 	APU_STATUS_OUTPUT_FULL,
 	APU_STATUS_SELECTED_SLOT_ACTIVE,
 	apuSlotRegisterWordIndex,
-} from '../../packages/bmsx-console/src/machine/devices/audio/contracts';
+} from '../../machine/ts/src/machine/devices/audio/contracts';
 import {
 	IO_APU_CMD,
 	IO_APU_CMD_CAPACITY,
@@ -85,17 +85,17 @@ import {
 	IO_ARG_STRIDE,
 	IO_IRQ_FLAGS,
 	IRQ_APU,
-} from '../../packages/bmsx-console/src/machine/bus/io';
-import { AudioController } from '../../packages/bmsx-console/src/machine/devices/audio/controller';
-import { ApuOutputMixer } from '../../packages/bmsx-console/src/machine/devices/audio/output';
-import type { ApuOutputState, ApuOutputVoiceState } from '../../packages/bmsx-console/src/machine/devices/audio/save_state';
-import { CPU } from '../../packages/bmsx-console/src/machine/cpu/cpu';
-import { IrqController } from '../../packages/bmsx-console/src/machine/devices/irq/controller';
-import { DEFAULT_LUA_BUILTIN_NAMES } from '../../packages/bmsx-console/src/machine/firmware/builtin_descriptors';
-import { SYSTEM_ROM_GLOBAL_NAME_SET } from '../../packages/bmsx-console/src/machine/firmware/system_globals';
-import { RAM_BASE } from '../../packages/bmsx-console/src/machine/memory/map';
-import { Memory } from '../../packages/bmsx-console/src/machine/memory/memory';
-import { DeviceScheduler } from '../../packages/bmsx-console/src/machine/scheduler/device';
+} from '../../machine/ts/src/machine/bus/io';
+import { AudioController } from '../../machine/ts/src/machine/devices/audio/controller';
+import { ApuOutputMixer } from '../../machine/ts/src/machine/devices/audio/output';
+import type { ApuOutputState, ApuOutputVoiceState } from '../../machine/ts/src/machine/devices/audio/save_state';
+import { CPU } from '../../machine/ts/src/machine/cpu/cpu';
+import { IrqController } from '../../machine/ts/src/machine/devices/irq/controller';
+import { DEFAULT_LUA_BUILTIN_NAMES } from '../../machine/ts/src/machine/firmware/builtin_descriptors';
+import { SYSTEM_ROM_GLOBAL_NAME_SET } from '../../machine/ts/src/machine/firmware/system_globals';
+import { RAM_BASE } from '../../machine/ts/src/machine/memory/map';
+import { Memory } from '../../machine/ts/src/machine/memory/memory';
+import { DeviceScheduler } from '../../machine/ts/src/machine/scheduler/device';
 
 type FakeVoiceInfo = { slot: number; voiceId: number; sourceAddr: number; registerWords: readonly number[]; playbackCursorQ16: number; stopFadeSamples: number };
 

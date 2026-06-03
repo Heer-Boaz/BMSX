@@ -44,7 +44,7 @@ import type { RenderPassLibrary } from './pass/library';
  *   owners instead of the common interface. There is intentionally no
  *   GPUBackend vertex-layout API; attribute packing and pointer setup belong to
  *   concrete pass code.
- * - C++-only public symbols in backend.h are native/libretro backend storage
+ * - C++-only public symbols in backend.h are C++/libretro backend storage
  *   and ownership: BackendType, FrameStats, SoftwareTexture, DitherParams,
  *   SoftwareBackend, and readyForTextureUpload().
  */

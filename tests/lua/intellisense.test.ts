@@ -1,18 +1,18 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 
-import type { CodeTabContext, ResourceDescriptor } from '../../packages/bmsx-console/src/ide/common/models';
-import { splitText } from '../../packages/bmsx-console/src/common/text_lines';
-import { PieceTreeBuffer } from '../../packages/bmsx-console/src/ide/editor/text/piece_tree_buffer';
-import type { ProjectReferenceEnvironment } from '../../packages/bmsx-console/src/ide/editor/contrib/references/sources';
+import type { CodeTabContext, ResourceDescriptor } from '../../machine/ts/src/ide/common/models';
+import { splitText } from '../../machine/ts/src/common/text_lines';
+import { PieceTreeBuffer } from '../../machine/ts/src/ide/editor/text/piece_tree_buffer';
+import type { ProjectReferenceEnvironment } from '../../machine/ts/src/ide/editor/contrib/references/sources';
 
-const semanticFrontendModulePromise = import('../../packages/bmsx-console/src/lua/semantic/frontend');
-const semanticDiagnosticsModulePromise = import('../../packages/bmsx-console/src/lua/semantic/diagnostics');
-const semanticModelModulePromise = import('../../packages/bmsx-console/src/lua/semantic/model');
-const referenceSourcesModulePromise = import('../../packages/bmsx-console/src/ide/editor/contrib/references/sources');
-const workspaceModulePromise = import('../../packages/bmsx-console/src/ide/editor/contrib/intellisense/semantic/workspace');
-const workspaceStateModulePromise = import('../../packages/bmsx-console/src/ide/editor/contrib/intellisense/semantic/workspace/state');
-const referenceNavigationModulePromise = import('../../packages/bmsx-console/src/ide/editor/contrib/references/lookup');
+const semanticFrontendModulePromise = import('../../machine/ts/src/lua/semantic/frontend');
+const semanticDiagnosticsModulePromise = import('../../machine/ts/src/lua/semantic/diagnostics');
+const semanticModelModulePromise = import('../../machine/ts/src/lua/semantic/model');
+const referenceSourcesModulePromise = import('../../machine/ts/src/ide/editor/contrib/references/sources');
+const workspaceModulePromise = import('../../machine/ts/src/ide/editor/contrib/intellisense/semantic/workspace');
+const workspaceStateModulePromise = import('../../machine/ts/src/ide/editor/contrib/intellisense/semantic/workspace/state');
+const referenceNavigationModulePromise = import('../../machine/ts/src/ide/editor/contrib/references/lookup');
 
 function runtimeStub(files: Record<string, string> = {}) {
 	const path2lua: Record<string, any> = {};

@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
-import { Table, type Value } from '../../packages/bmsx-console/src/machine/cpu/cpu';
+import { Table, type Value } from '../../machine/ts/src/machine/cpu/cpu';
 
 function keyLabel(value: Value): string {
 	if (value === true) {

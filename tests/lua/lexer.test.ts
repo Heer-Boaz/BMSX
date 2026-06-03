@@ -1,8 +1,8 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
-import { LuaLexer } from '../../packages/bmsx-console/src/lua/syntax/lexer';
-import { LuaSyntaxError } from '../../packages/bmsx-console/src/lua/errors';
-import { LuaTokenType, type LuaToken } from '../../packages/bmsx-console/src/lua/syntax/token';
+import { LuaLexer } from '../../machine/ts/src/lua/syntax/lexer';
+import { LuaSyntaxError } from '../../machine/ts/src/lua/errors';
+import { LuaTokenType, type LuaToken } from '../../machine/ts/src/lua/syntax/token';
 
 function lex(source: string): LuaToken[] {
 	const lexer = new LuaLexer(source, 'path');

@@ -5,8 +5,7 @@ BMSX is a fantasy console with real console discipline.
 It is fictional hardware, but the architecture is treated like a real machine: carts run against CPU, RAM/ROM, MMIO registers, and device controllers. Host code exists to present audio, video, input, files, and platform entrypoints; it should not become the cart-facing hardware contract.
 
 The TypeScript implementation builds a JavaScript machine runtime plus browser
-and Node hosts. The C++ implementation mirrors the machine structure and
-supplies native machine, adapter, and host artifacts.
+and Node hosts. The C++ implementation mirrors the machine structure and supplies C++ machine and host artifacts.
 
 See `docs/architecture.md` for the machine/host boundary rules.
 
@@ -17,18 +16,18 @@ See `docs/architecture.md` for the machine/host boundary rules.
 
 ## Project Layout
 
-- `packages/bmsx-console/src/machine`: TypeScript CPU, memory, MMIO bus, device controllers, program loader, and runtime lifecycle
-- `packages/bmsx-console/src/core`: shared runtime coordination and system bootstrap
-- `packages/bmsx-console/src/common`: low-level shared helpers
-- `packages/bmsx-console/src/audio`: host-side audio playback/output code, not the machine audio device
-- `packages/bmsx-console/src/ide`: editor, terminal, workbench, and IDE runtime tooling
+- `machine/ts/src/machine`: TypeScript CPU, memory, MMIO bus, device controllers, program loader, and runtime lifecycle
+- `machine/ts/src/core`: shared runtime coordination and system bootstrap
+- `machine/ts/src/common`: low-level shared helpers
+- `machine/ts/src/audio`: host-side audio playback/output code, not the machine audio device
+- `machine/ts/src/ide`: editor, terminal, workbench, and IDE runtime tooling
 - `machine/firmware`: BIOS/system ROM Lua, default cart boot source, and BIOS/system resources
 - `cartlib`: shared Lua library for carts; bundled into cart ROMs when required
-- `packages/bmsx-browser-host/src`: browser host services
-- `packages/bmsx-node-host/src`: headless and CLI host services
-- `native/machine`: C++ machine/runtime implementation
-- `native/adapters/libretro`: native libretro adapter exposing BMSX as a libretro core
-- `native/hosts/libretro_host`: native host executable that loads a libretro adapter/core
+- `hosts/browser/src`: browser host services
+- `hosts/node/src`: headless and CLI host services
+- `machine/cpp/src`: C++ machine/runtime implementation
+- `hosts/libretro`: libretro core host entrypoint for BMSX
+- `hosts/libretro_host`: local libretro frontend executable, an alternative to RetroArch
 - `carts`: Lua cart software for the machine and cart-local resources
 - `scripts/rompacker`: BIOS/cart/platform builders
 - `scripts/bootrom`: browser and Node boot entrypoints
@@ -58,17 +57,17 @@ cart Lua -> BIOS/firmware or cart library -> MMIO/RAM -> machine device -> host 
 Avoid this for new hardware-facing behavior:
 
 ```text
-cart Lua -> native host/runtime shortcut
+cart Lua -> C++ host/runtime shortcut
 ```
 
-The host may accelerate implementation details, but it must not own the semantics of console hardware. Use the architecture roles precisely: the machine owns cart-observable semantics, an adapter exposes the machine through a foreign ABI, a host owns the process and physical services, and a mode is a behavior variant inside one host.
+The host may accelerate implementation details, but it must not own the semantics of console hardware. Use the architecture roles precisely: the machine owns cart-observable semantics, a host owns the embedding/process and physical services, and a mode is a behavior variant inside one host.
 
 Current artifact names encode that split:
 
 - `dist/libbmsx.js`: JavaScript machine/runtime.
 - `dist/engine.js`: browser host/bootstrap.
-- `lib/libbmsx.a`: native machine/runtime.
-- `dist/libretro_bmsx.so`: libretro adapter around the native machine runtime.
+- `lib/libbmsx.a`: C++ machine/runtime.
+- `dist/libretro_bmsx.so`: libretro core built around the C++ machine runtime.
 - `dist/host_headless.js` and `dist/host_cli.js`: Node host modes.
 
 ## Runtime Timing

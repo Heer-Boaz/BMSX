@@ -1,5 +1,5 @@
 import { defineLintRule } from '../../rule';
-import { type LuaFunctionExpression as CartFunctionExpression, type LuaStatement as Statement, LuaSyntaxKind as SyntaxKind } from '../../../../packages/bmsx-console/src/lua/syntax/ast';
+import { type LuaFunctionExpression as CartFunctionExpression, type LuaStatement as Statement, LuaSyntaxKind as SyntaxKind } from '../../../../machine/ts/src/lua/syntax/ast';
 import { lintScopedBindingStatements } from './impl/support/bindings';
 import { declareDuplicateInitializerBinding, enterDuplicateInitializerScope, leaveDuplicateInitializerScope, lintDuplicateInitializerInExpression, resolveDuplicateInitializerBinding } from './impl/support/duplicate_initializers';
 import { getExpressionSignature } from './impl/support/expression_signatures';

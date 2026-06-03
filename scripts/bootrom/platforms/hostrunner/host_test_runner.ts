@@ -1,7 +1,7 @@
 import * as fs from 'node:fs/promises';
 import * as path from 'node:path';
 
-import { extractErrorMessage } from '../../../../packages/bmsx-console/src/lua/value';
+import { extractErrorMessage } from '../../../../machine/ts/src/lua/value';
 import type { InputEvt } from 'bmsx/platform';
 
 export interface HostTestRunnerClock {

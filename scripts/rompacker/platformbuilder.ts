@@ -103,13 +103,13 @@ function resolvePlatformDependencyRoots(platform: RomPackerTarget): string[] {
 	const roots = [
 		join(process.cwd(), 'scripts', 'rompacker'),
 		join(process.cwd(), 'scripts', 'bootrom'),
-		join(process.cwd(), 'packages', 'bmsx-console', 'src'),
+		join(process.cwd(), 'machine', 'ts', 'src'),
 	];
 	if (platform === 'browser') {
-		roots.push(join(process.cwd(), 'packages', 'bmsx-browser-host', 'src'));
+		roots.push(join(process.cwd(), 'hosts', 'browser', 'src'));
 	}
 	if (platform === 'headless' || platform === 'cli') {
-		roots.push(join(process.cwd(), 'packages', 'bmsx-node-host', 'src'));
+		roots.push(join(process.cwd(), 'hosts', 'node', 'src'));
 	}
 	return roots;
 }

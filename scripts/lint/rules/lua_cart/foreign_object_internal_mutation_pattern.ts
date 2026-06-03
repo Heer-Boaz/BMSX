@@ -1,5 +1,5 @@
 import { defineLintRule } from '../../rule';
-import { LuaAssignmentOperator as AssignmentOperator, type LuaStatement as Statement, LuaSyntaxKind as SyntaxKind } from '../../../../packages/bmsx-console/src/lua/syntax/ast';
+import { LuaAssignmentOperator as AssignmentOperator, type LuaStatement as Statement, LuaSyntaxKind as SyntaxKind } from '../../../../machine/ts/src/lua/syntax/ast';
 import { getAssignmentTargetInfo, lintNullBindingFunctionScope, lintScopedBindingStatements } from './impl/support/bindings';
 import { declareForeignObjectBinding, enterForeignObjectMutationScope, isForeignObjectAliasInitializer, leaveForeignObjectMutationScope, lintForeignObjectMutationInExpression, resolveForeignObjectBinding, setForeignObjectBinding } from './impl/support/foreign_object';
 import { ForeignObjectMutationContext } from './impl/support/types';

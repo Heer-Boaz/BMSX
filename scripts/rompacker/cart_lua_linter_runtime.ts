@@ -1,7 +1,7 @@
-import { type LuaExpression as Expression, type LuaFunctionDeclarationStatement as FunctionDeclarationStatement, type LuaFunctionExpression as CartFunctionExpression, type LuaLocalFunctionStatement as LocalFunctionStatement, type LuaStatement as Statement, LuaSyntaxKind as SyntaxKind } from '../../packages/bmsx-console/src/lua/syntax/ast';
-import { LuaSyntaxError as ParserSyntaxError } from '../../packages/bmsx-console/src/lua/errors';
-import { LuaLexer as Lexer } from '../../packages/bmsx-console/src/lua/syntax/lexer';
-import { LuaParser as Parser } from '../../packages/bmsx-console/src/lua/syntax/parser';
+import { type LuaExpression as Expression, type LuaFunctionDeclarationStatement as FunctionDeclarationStatement, type LuaFunctionExpression as CartFunctionExpression, type LuaLocalFunctionStatement as LocalFunctionStatement, type LuaStatement as Statement, LuaSyntaxKind as SyntaxKind } from '../../machine/ts/src/lua/syntax/ast';
+import { LuaSyntaxError as ParserSyntaxError } from '../../machine/ts/src/lua/errors';
+import { LuaLexer as Lexer } from '../../machine/ts/src/lua/syntax/lexer';
+import { LuaParser as Parser } from '../../machine/ts/src/lua/syntax/parser';
 import { type LintRuleName } from '../lint/rule';
 import { type CartLintIssue } from '../lint/lua_rule';
 import { lintAstEmptyStringConditionPattern } from '../lint/rules/common/empty_string_condition_pattern';

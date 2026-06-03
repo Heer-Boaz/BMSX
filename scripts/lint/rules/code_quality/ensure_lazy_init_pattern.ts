@@ -1,11 +1,11 @@
-import type { FunctionInfo } from '../../../../packages/bmsx-console/src/language/cpp/syntax/declarations';
+import type { FunctionInfo } from '../../../../machine/ts/src/language/cpp/syntax/declarations';
 import {
 	collectStatementRanges,
 	cppCallTarget,
 	cppCallTargetFromStatement,
 	findTopLevelSemicolon,
-} from '../../../../packages/bmsx-console/src/language/cpp/syntax/syntax';
-import type { Token } from '../../../../packages/bmsx-console/src/language/cpp/syntax/tokens';
+} from '../../../../machine/ts/src/language/cpp/syntax/syntax';
+import type { Token } from '../../../../machine/ts/src/language/cpp/syntax/tokens';
 import { pushTokenLintIssue, type LintIssue } from '../cpp/support/diagnostics';
 import { lineInAnalysisRegion, type AnalysisRegion } from '../../../analysis/lint_suppressions';
 import { defineLintRule } from '../../rule';

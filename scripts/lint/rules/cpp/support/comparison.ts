@@ -1,4 +1,4 @@
-import type { Token } from '../../../../../packages/bmsx-console/src/language/cpp/syntax/tokens';
+import type { Token } from '../../../../../machine/ts/src/language/cpp/syntax/tokens';
 import { pushTokenLintIssue, type LintIssue } from './diagnostics';
 
 export function lintAdjacentEqualityComparison(

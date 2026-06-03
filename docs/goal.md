@@ -66,7 +66,7 @@ Use the smallest relevant set while iterating, then the broader set before a
 slice lands:
 
 - `npx tsc --noEmit --pretty false`
-- `npm run compile:console -- --pretty false`
+- `npm run compile:machine -- --pretty false`
 - `cmake --build build-cpp-tests --target bmsx_core_golden_tests -j2`
 - `./build-cpp-tests/bmsx_core_golden_tests`
 - focused `npx tsx --test --import ./tests/lua/test_setup.ts ...`

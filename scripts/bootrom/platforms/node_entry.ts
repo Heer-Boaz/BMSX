@@ -3,17 +3,17 @@ import * as fs from 'node:fs/promises';
 
 import { createCanvas, Image, loadImage } from 'canvas';
 
-import { type BootArgs } from '../../../packages/bmsx-console/src/rompack/format';
-import { HeadlessPlatformServices } from '../../../packages/bmsx-node-host/src/headless/platform_headless';
-import { CLIPlatformServices } from '../../../packages/bmsx-node-host/src/cli/platform_cli';
+import { type BootArgs } from '../../../machine/ts/src/rompack/format';
+import { HeadlessPlatformServices } from '../../../hosts/node/src/headless/platform_headless';
+import { CLIPlatformServices } from '../../../hosts/node/src/cli/platform_cli';
 import type { Platform, InputEvt } from 'bmsx/platform';
-import { HeadlessGameViewHost } from '../../../packages/bmsx-console/src/render/headless/view';
+import { HeadlessGameViewHost } from '../../../machine/ts/src/render/headless/view';
 import { HeadlessCaptureCoordinator, deriveHeadlessCaptureOutputDir, type ScheduledHeadlessCapture, type ScheduledHeadlessFrameCapture } from './headless_capture';
 import { printHeadlessCpuProfile } from './cpu_profile_report';
 import { runHostTest } from './hostrunner/host_test_runner';
-import { installNativeGlobal, runConsoleChunkToNative } from '../../../packages/bmsx-console/src/machine/program/executor';
-import { raiseSystemIrq } from '../../../packages/bmsx-console/src/machine/runtime/system_irq';
-import { IRQ_NEWGAME } from '../../../packages/bmsx-console/src/machine/bus/io';
+import { installNativeGlobal, runConsoleChunkToNative } from '../../../machine/ts/src/machine/program/executor';
+import { raiseSystemIrq } from '../../../machine/ts/src/machine/runtime/system_irq';
+import { IRQ_NEWGAME } from '../../../machine/ts/src/machine/bus/io';
 
 declare const __BOOTROM_TARGET__: 'cli' | 'headless';
 declare const __BOOTROM_DEBUG__: boolean;
@@ -36,7 +36,7 @@ interface BootGlobals {
 }
 
 type MachineNamespace = {
-	startCart: typeof import('../../../packages/bmsx-console/src/machine/program/start_cart').startCart;
+	startCart: typeof import('../../../machine/ts/src/machine/program/start_cart').startCart;
 };
 
 interface InputTimelineEntry {

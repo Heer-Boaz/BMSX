@@ -1,11 +1,11 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 
-import { Table, StringValue } from '../../packages/bmsx-console/src/machine/cpu/cpu';
-import { StringPool } from '../../packages/bmsx-console/src/machine/cpu/string_pool';
-import type { LuaSourceRegistry } from '../../packages/bmsx-console/src/machine/program/sources';
-import type { Runtime } from '../../packages/bmsx-console/src/machine/runtime/runtime';
-import { listSymbols } from '../../packages/bmsx-console/src/ide/runtime/lua_pipeline';
+import { Table, StringValue } from '../../machine/ts/src/machine/cpu/cpu';
+import { StringPool } from '../../machine/ts/src/machine/cpu/string_pool';
+import type { LuaSourceRegistry } from '../../machine/ts/src/machine/program/sources';
+import type { Runtime } from '../../machine/ts/src/machine/runtime/runtime';
+import { listSymbols } from '../../machine/ts/src/ide/runtime/lua_pipeline';
 
 function makeRegistry(sourcePaths: readonly string[]): LuaSourceRegistry {
 	const path2lua: LuaSourceRegistry['path2lua'] = {};

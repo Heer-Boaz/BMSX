@@ -1,5 +1,5 @@
 import { defineLintRule } from '../../rule';
-import { type LuaExpression as Expression, LuaSyntaxKind as SyntaxKind, LuaTableFieldKind as TableFieldKind } from '../../../../packages/bmsx-console/src/lua/syntax/ast';
+import { type LuaExpression as Expression, LuaSyntaxKind as SyntaxKind, LuaTableFieldKind as TableFieldKind } from '../../../../machine/ts/src/lua/syntax/ast';
 import { declareRuntimeTagLookupBinding, enterRuntimeTagLookupScope, isRuntimeTagLookupExpression, leaveRuntimeTagLookupScope, lintRuntimeTagLookupInStatements } from './impl/support/runtime_tag';
 import { RuntimeTagLookupContext } from './impl/support/types';
 import { pushIssue } from './impl/support/lint_context';

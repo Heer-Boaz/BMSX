@@ -144,11 +144,11 @@ no record, in which case the index is `GEO_FAULT_RECORD_INDEX_NONE`.
 
 ## Owners
 
-- TS controller: `packages/bmsx-console/src/machine/devices/geometry/controller.ts`
-- TS command implementation: `packages/bmsx-console/src/machine/devices/geometry/overlap2d.ts`
-- TS constants/job/save-state: `packages/bmsx-console/src/machine/devices/geometry/contracts.ts`,
+- TS controller: `machine/ts/src/machine/devices/geometry/controller.ts`
+- TS command implementation: `machine/ts/src/machine/devices/geometry/overlap2d.ts`
+- TS constants/job/save-state: `machine/ts/src/machine/devices/geometry/contracts.ts`,
   `job.ts`, and `save_state.ts`
-- C++ controller: `native/machine/machine/devices/geometry/controller.cpp/.h`
-- C++ command implementation: `native/machine/machine/devices/geometry/overlap2d.cpp/.h`
-- C++ constants/job/save-state: `native/machine/machine/devices/geometry/contracts.h`,
+- C++ controller: `machine/cpp/src/machine/devices/geometry/controller.cpp/.h`
+- C++ command implementation: `machine/cpp/src/machine/devices/geometry/overlap2d.cpp/.h`
+- C++ constants/job/save-state: `machine/cpp/src/machine/devices/geometry/contracts.h`,
   `job.h`, and `save_state.h/.cpp`

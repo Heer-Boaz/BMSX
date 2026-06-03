@@ -140,7 +140,7 @@ BEGIN/END stream commands, and unknown packet kinds fault with
 | Direct command | BEGIN/END/doorbell writes execute admission immediately. Cart/BIOS draw payloads are RPU packets. | `VDP_STATUS_SUBMIT_BUSY`, `VDP_STATUS_SUBMIT_REJECTED`, and fault registers. |
 | FIFO stream | `IO_VDP_FIFO` collects words through the stream-ingress unit. `VDP_FIFO_CTRL_SEAL` decodes/replays the sealed stream immediately into submitted-frame state. | Stream-ingress partial words and submitted frames keep submit busy set. |
 | DMA stream | DMA owner opens the stream-ingress DMA submit latch, copies bytes into VDP stream memory, then seals. The VDP decodes the stream on seal. | Submit busy remains set while DMA submit is active. |
-| IDE/terminal framebuffer texture presentation | Host-managed IDE/terminal presentation may display the old framebuffer texture when explicitly enabled by the host overlay mode. Cart and BIOS code do not target this path. | `packages/bmsx-console/src/render/2d/framebuffer_pipeline.ts`, `native/machine/render/2d/framebuffer_pipeline.cpp`. |
+| IDE/terminal framebuffer texture presentation | Host-managed IDE/terminal presentation may display the old framebuffer texture when explicitly enabled by the host overlay mode. Cart and BIOS code do not target this path. | `machine/ts/src/render/2d/framebuffer_pipeline.ts`, `machine/cpp/src/render/2d/framebuffer_pipeline.cpp`. |
 | XF/LPU/MFU/JTU register port | Stream unit packets write raw live register words during sealed stream replay. RPU `CONSTANT_UPLOAD_DEVICE` copies those register words into RPU constant banks. | Bad register ranges fault and abort the sealed stream frame. |
 | RPU | Packet admission retains raw buffers, surfaces, constants, passes, draws, and bindings. Host GPU backends execute the retained command buffer. | Malformed packets and structural resource ranges fault; representable weird state renders weirdly. |
 | FBM | Framebuffer page transitions happen on VBlank for display/readback state. | Framebuffer presentation and display readback page. |
@@ -202,28 +202,28 @@ restore.
 
 ## Owners
 
-- TS VDP device: `packages/bmsx-console/src/machine/devices/vdp/vdp.ts`
+- TS VDP device: `machine/ts/src/machine/devices/vdp/vdp.ts`
 - TS VDP save-state, stream ingress, VRAM/surface memory, and readback:
   `save_state.ts`, `ingress.ts`, `vram.ts`, and `readback.ts`
-- TS VDP constants/registers: `packages/bmsx-console/src/machine/devices/vdp/contracts.ts` and
+- TS VDP constants/registers: `machine/ts/src/machine/devices/vdp/contracts.ts` and
   `registers.ts`
 - TS subunits: `fbm.ts`, `frame.ts`, `jtu.ts`, `lpu.ts`, `mfu.ts`,
   `rpu.ts`, `vout.ts`, and `xf.ts`
-- C++ VDP device: `native/machine/machine/devices/vdp/vdp.cpp/.h`
+- C++ VDP device: `machine/cpp/src/machine/devices/vdp/vdp.cpp/.h`
 - C++ VDP save-state, stream ingress, VRAM/surface memory, and readback:
   `save_state.cpp/.h`, `ingress.cpp/.h`, `vram.cpp/.h`, and `readback.cpp/.h`
-- C++ VDP constants/registers: `native/machine/machine/devices/vdp/contracts.h`
+- C++ VDP constants/registers: `machine/cpp/src/machine/devices/vdp/contracts.h`
   and `registers.h`
 - C++ subunits: `fbm.cpp/.h`, `frame.cpp/.h`, `jtu.cpp/.h`, `lpu.cpp/.h`,
   `mfu.cpp/.h`, `rpu.cpp/.h`, `vout.cpp/.h`, and `xf.cpp/.h`
 - Host framebuffer/RPU execution passes and software framebuffer rasterizers:
-  `packages/bmsx-console/src/render/backend/software/*`,
-  `packages/bmsx-console/src/render/backend/webgl/vdp_2d_blit.ts`,
-  `packages/bmsx-console/src/render/backend/webgl/vdp_rpu.ts`,
-  `native/machine/render/backend/software/*`,
-  `native/machine/render/backend/gles2/vdp_2d_blit.cpp`, and
-  `native/machine/render/backend/gles2/vdp_rpu.cpp`
-- Host render output consumers: `packages/bmsx-console/src/render/vdp/*` and
-  `native/machine/render/vdp/*`
-- Runtime save-state codecs: `packages/bmsx-console/src/machine/runtime/save_state/*` and
-  `native/machine/machine/runtime/save_state/*`
+  `machine/ts/src/render/backend/software/*`,
+  `machine/ts/src/render/backend/webgl/vdp_2d_blit.ts`,
+  `machine/ts/src/render/backend/webgl/vdp_rpu.ts`,
+  `machine/cpp/src/render/backend/software/*`,
+  `machine/cpp/src/render/backend/gles2/vdp_2d_blit.cpp`, and
+  `machine/cpp/src/render/backend/gles2/vdp_rpu.cpp`
+- Host render output consumers: `machine/ts/src/render/vdp/*` and
+  `machine/cpp/src/render/vdp/*`
+- Runtime save-state codecs: `machine/ts/src/machine/runtime/save_state/*` and
+  `machine/cpp/src/machine/runtime/save_state/*`

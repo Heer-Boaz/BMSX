@@ -1,5 +1,5 @@
 import ts from 'typescript';
-import { unwrapExpression } from '../../../../../packages/bmsx-console/src/language/ts/ast/expressions';
+import { unwrapExpression } from '../../../../../machine/ts/src/language/ts/ast/expressions';
 import { FunctionUsageInfo, incrementUsageCount } from '../../../function_usage';
 import { functionUsageExpressionName } from './ast';
 

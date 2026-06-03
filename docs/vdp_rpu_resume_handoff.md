@@ -26,16 +26,16 @@ Belangrijkste gerealiseerde stappen:
 1. `docs/vdp_rpu_abi_draft.md` toegevoegd.
    - Beschrijft RPU host-output shape, packet schema, fixed capacities, stream layouts, shader variants, buffer/resource model, fault model, frame handoff en save-state shapes.
 2. Nieuwe RPU datafiles toegevoegd:
-   - `packages/bmsx-console/src/machine/devices/vdp/rpu.ts`
-   - `native/machine/machine/devices/vdp/rpu.h`
-   - `native/machine/machine/devices/vdp/rpu.cpp`
+   - `machine/ts/src/machine/devices/vdp/rpu.ts`
+   - `machine/cpp/src/machine/devices/vdp/rpu.h`
+   - `machine/cpp/src/machine/devices/vdp/rpu.cpp`
 3. `VdpDeviceOutput` is versmald naar scanout metadata plus `rpu`:
-   - TS: `packages/bmsx-console/src/machine/devices/vdp/device_output.ts`
-   - C++: `native/machine/machine/devices/vdp/device_output.h`
+   - TS: `machine/ts/src/machine/devices/vdp/device_output.ts`
+   - C++: `machine/cpp/src/machine/devices/vdp/device_output.h`
    - Legacy outputvelden zoals `billboards`, `meshes`, `skyboxSamples`, XF/LPU/MFU/JTU snapshots zijn uit `VdpDeviceOutput` gehaald.
 4. Host snapshot schrijft nu alleen de RPU frame pointer/reference door:
-   - `packages/bmsx-console/src/render/vdp/view_snapshot.ts`
-   - `native/machine/render/vdp/view_snapshot.cpp`
+   - `machine/ts/src/render/vdp/view_snapshot.ts`
+   - `machine/cpp/src/render/vdp/view_snapshot.cpp`
    - Oude host-side semantic render counts worden op nul gezet zodat legacy scene state niet meer uit `VdpDeviceOutput` wordt opgebouwd.
 5. RPU frame payload is door de frame pipeline getrokken:
    - `VdpBuildingFrameState.rpu`
@@ -54,7 +54,7 @@ Belangrijkste gerealiseerde stappen:
    - live RPU buffer arena save/restore plus frame ref rebinding;
    - constant words/banks.
 9. C++ buildsystem en parity manifest zijn aangepast:
-   - `native/machine/CMakeLists.txt`
+   - `machine/cpp/src/CMakeLists.txt`
    - `scripts/core_parity_manifest.json`
 10. TS en C++ ingress tests zijn aangepast aan de RPU-breaking change:
    - obsolete SBX/BBU `VdpDeviceOutput` assertions zijn verwijderd;
@@ -92,7 +92,7 @@ Belangrijkste gerealiseerde stappen:
 Laatst groen gedraaid in deze werkboom:
 
 ```bash
-npx tsc --noEmit --project packages/bmsx-console/tsconfig.json
+npx tsc --noEmit --project machine/ts/tsconfig.json
 npx tsx --test --import ./tests/lua/test_setup.ts tests/lua/vdp_ingress.test.ts
 npx tsx --test --import ./tests/lua/test_setup.ts tests/lua/runtime_save_state_codec.test.ts
 cmake --build build-cpp-tests-make --target bmsx_vdp_ingress_tests --parallel 2
@@ -101,7 +101,7 @@ cmake --build build-debug --target bmsx_core --parallel 2
 npm run audit:core-parity
 npm run build:bios -- --force
 npm run build:game -- bare_metal_cart --force
-rg -n "Number\\.isFinite|Number\\.isNaN|isNaN|typeof .*number|Math\\.floor|Math\\.ceil" packages/bmsx-console/src/machine/devices/vdp packages/bmsx-console/src/render/backend/webgl native/machine/machine/devices/vdp native/machine/render/backend/gles2 machine/firmware/system/vdp_rpu.lua machine/firmware/system/vdp_rpu_quads.lua machine/firmware/system/vdp_xf.lua machine/firmware/system/vdp_lpu.lua carts/bare_metal_cart/cart.lua && exit 1 || true
+rg -n "Number\\.isFinite|Number\\.isNaN|isNaN|typeof .*number|Math\\.floor|Math\\.ceil" machine/ts/src/machine/devices/vdp machine/ts/src/render/backend/webgl machine/cpp/src/machine/devices/vdp machine/cpp/src/render/backend/gles2 machine/firmware/system/vdp_rpu.lua machine/firmware/system/vdp_rpu_quads.lua machine/firmware/system/vdp_xf.lua machine/firmware/system/vdp_lpu.lua carts/bare_metal_cart/cart.lua && exit 1 || true
 git diff --check
 ```
 
@@ -116,7 +116,7 @@ validatie kan tellen.
 
 ## Huidige git status bij handoff
 
-Deze eerdere snapshot is niet langer betrouwbaar na de backend-split. Gebruik `git status --short` als actuele bron; de RPU backendfiles staan nu onder `packages/bmsx-console/src/render/backend/webgl/` en `native/machine/render/backend/gles2/`, niet onder een gedeelde `render/rpu` map.
+Deze eerdere snapshot is niet langer betrouwbaar na de backend-split. Gebruik `git status --short` als actuele bron; de RPU backendfiles staan nu onder `machine/ts/src/render/backend/webgl/` en `machine/cpp/src/render/backend/gles2/`, niet onder een gedeelde `render/rpu` map.
 
 ## Belangrijke ontwerpbeslissing in huidige worktree
 
@@ -166,7 +166,7 @@ Aanbevolen resume-volgorde:
 1. Re-run validatie na deze handoff-file:
 
 ```bash
-npx tsc --noEmit --project packages/bmsx-console/tsconfig.json
+npx tsc --noEmit --project machine/ts/tsconfig.json
 npx tsx --test --import ./tests/lua/test_setup.ts tests/lua/vdp_ingress.test.ts
 npx tsx --test --import ./tests/lua/test_setup.ts tests/lua/runtime_save_state_codec.test.ts
 npm run build:bios -- --force
@@ -175,7 +175,7 @@ cmake --build build-debug --target bmsx_core --parallel 2
 cmake --build build-cpp-tests-make --target bmsx_vdp_ingress_tests --parallel 2
 ./build-cpp-tests-make/bmsx_vdp_ingress_tests
 npm run audit:core-parity
-rg -n "Number\\.isFinite|Number\\.isNaN|isNaN|typeof .*number|Math\\.floor|Math\\.ceil" packages/bmsx-console/src/machine/devices/vdp packages/bmsx-console/src/render/backend/webgl native/machine/machine/devices/vdp native/machine/render/backend/gles2 machine/firmware/system/vdp_rpu.lua machine/firmware/system/vdp_rpu_quads.lua machine/firmware/system/vdp_xf.lua machine/firmware/system/vdp_lpu.lua carts/bare_metal_cart/cart.lua && exit 1 || true
+rg -n "Number\\.isFinite|Number\\.isNaN|isNaN|typeof .*number|Math\\.floor|Math\\.ceil" machine/ts/src/machine/devices/vdp machine/ts/src/render/backend/webgl machine/cpp/src/machine/devices/vdp machine/cpp/src/render/backend/gles2 machine/firmware/system/vdp_rpu.lua machine/firmware/system/vdp_rpu_quads.lua machine/firmware/system/vdp_xf.lua machine/firmware/system/vdp_lpu.lua carts/bare_metal_cart/cart.lua && exit 1 || true
 git diff --check
 ```
 
