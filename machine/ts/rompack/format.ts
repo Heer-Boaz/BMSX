@@ -1,7 +1,3 @@
-import type { quat } from '../render/3d/math';
-import type { TextureKey } from '../render/texture_manager';
-import type { GameViewHost, Platform } from '../platform';
-
 export const CART_ROM_MAGIC = 0x58534D42;
 export const CART_ROM_MAGIC_BYTES = new Uint8Array([0x42, 0x4d, 0x53, 0x58]);
 export const CART_ROM_BASE_HEADER_SIZE = 32;
@@ -111,22 +107,6 @@ export type CartridgeIndex = {
 	entry_path: string;
 };
 
-/**
- * Arguments passed from the bootloader to the game constructor.
- */
-export interface BootArgs {
-	cartridge?: Uint8Array;
-	systemRom: Uint8Array;
-	workspaceOverlay?: Uint8Array;
-	sndcontext?: AudioContext;
-	gainnode?: GainNode;
-	debug?: boolean;
-	startingGamepadIndex?: number;
-	enableOnscreenGamepad?: boolean;
-	platform: Platform;
-	viewHost?: GameViewHost;
-}
-
 export type Identifier = string | 'model';
 export interface Identifiable {
 	id: Identifier;
@@ -227,7 +207,7 @@ export type RectBounds = {
 export type Polygon = number[];
 
 export interface Oriented {
-	rotationQ: quat;
+	rotationQ: vec4;
 }
 
 export interface Scaled {
@@ -320,7 +300,8 @@ export interface GLTFAnimation {
 	channels: GLTFAnimationChannel[];
 }
 
-export type Index2GpuTexture = Record<number, TextureKey>;
+export type GpuTextureKey = string;
+export type Index2GpuTexture = Record<number, GpuTextureKey>;
 export interface GLTFNode {
 	mesh?: number;
 	children?: number[];

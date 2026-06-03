@@ -1,5 +1,5 @@
 // IMPORTANT: IMPORTS TO `bmsx/blabla` ARE NOT ALLOWED!!!!!! THIS WILL CAUSE PROBLEMS WITH .GLSL FILES BEING INCLUDED AND THE ROMPACKER CANNOT HANDLE THIS!!!!!
-import type { BootArgs } from '../../machine/ts/rompack/format';
+import type { BootArgs } from '../../machine/ts/machine/program/start_cart';
 import { createAudioContext, startAudioOnIos } from './bootaudio';
 
 const HAS_DOM_ENVIRONMENT = typeof document !== 'undefined' && document !== null;

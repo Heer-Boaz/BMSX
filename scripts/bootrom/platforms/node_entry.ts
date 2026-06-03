@@ -3,7 +3,7 @@ import * as fs from 'node:fs/promises';
 
 import { createCanvas, Image, loadImage } from 'canvas';
 
-import { type BootArgs } from '../../../machine/ts/rompack/format';
+import { type BootArgs } from '../../../machine/ts/machine/program/start_cart';
 import { HeadlessPlatformServices } from '../../../hosts/node/headless/platform_headless';
 import { CLIPlatformServices } from '../../../hosts/node/cli/platform_cli';
 import type { Platform, InputEvt } from 'bmsx/platform';

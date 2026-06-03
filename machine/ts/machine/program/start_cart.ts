@@ -1,6 +1,7 @@
-import { consoleCore } from '../../core/console';
-import type { BootArgs } from '../../rompack/format';
+import { consoleCore, type ConsoleStartupOptions } from '../../core/console';
 import type { Runtime } from '../runtime/runtime';
+
+export type BootArgs = ConsoleStartupOptions;
 
 export async function startCart(args: BootArgs): Promise<Runtime> {
 	return await consoleCore.init({
