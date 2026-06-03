@@ -1,5 +1,4 @@
 import { getMachinePerfSpecs } from '../../../rompack/format';
-import { Input } from '../../../input/manager';
 import { calcCyclesPerFrameScaled, resolveVblankCycles } from './index';
 import { resolvePositiveSafeInteger, resolveRuntimeRenderSize } from '../../specs';
 import type { Runtime } from '../runtime';
@@ -42,7 +41,6 @@ export function setFrameTiming(runtime: Runtime, cpuHz: number, cycleBudgetPerFr
 		runtime.machine.cpu.setGlobalByKey(runtime.internString('sys_max_cycles_per_frame'), cycleBudgetPerFrame);
 	}
 	runtime.vblank.setVblankCycles(vblankCycles);
-	Input.instance.setFrameDurationMs(timing.frameDurationMs);
 }
 
 function setRenderWorkUnitsPerSec(runtime: Runtime, vdpValue: number, geoValue: number): void {

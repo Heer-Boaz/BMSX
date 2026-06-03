@@ -768,6 +768,7 @@ export class Runtime {
 		this.timing.applyUfpsScaled(resolveUfpsScaled(perfSpecs.ufps));
 		const cpuHz = resolvePositiveSafeInteger(perfSpecs.cpu_freq_hz, 'machine.specs.cpu.cpu_freq_hz');
 		applyActiveMachineTiming(this, cpuHz);
+		Input.instance.setFrameDurationMs(this.timing.frameDurationMs);
 		setTransferRatesFromManifest(this, perfSpecs);
 	}
 
