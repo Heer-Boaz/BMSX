@@ -1,4 +1,4 @@
-import type { ActionState } from './models';
+import type { ActionState } from './contracts';
 
 /**
  * Represents the different types of tokens that can be identified

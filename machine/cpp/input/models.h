@@ -6,6 +6,7 @@
 #define BMSX_INPUTTYPES_H
 
 #include "common/primitives.h"
+#include "machine/devices/input/contracts.h"
 #include <string>
 #include <unordered_map>
 #include <utility>
@@ -29,24 +30,6 @@ constexpr i32 INITIAL_REPEAT_DELAY_FRAMES = 15;
 constexpr i32 REPEAT_INTERVAL_FRAMES = 4;
 constexpr f64 INITIAL_REPEAT_DELAY_MS = INITIAL_REPEAT_DELAY_FRAMES * (1000.0 / 60.0);  // ~250ms
 constexpr f64 REPEAT_INTERVAL_MS = REPEAT_INTERVAL_FRAMES * (1000.0 / 60.0);             // ~66ms
-
-/* ============================================================================
- * Input source types
- * ============================================================================ */
-
-enum class InputSource {
-	Keyboard,
-	Gamepad,
-	Pointer
-};
-
-inline const InputSource INPUT_SOURCES[] = {
-	InputSource::Keyboard,
-	InputSource::Gamepad,
-	InputSource::Pointer
-};
-
-constexpr size_t INPUT_SOURCE_COUNT = 3;
 
 /* ============================================================================
  * Key modifier flags
@@ -125,133 +108,6 @@ inline auto gamepadButtonToString(GamepadButton btn) -> std::string {
 		"rightstick_x", "rightstick_y"
 	};
 	return names[static_cast<size_t>(btn)];
-}
-
-// Generic button identifier
-using ButtonId = std::string;
-
-/* ============================================================================
- * Button state
- *
- * Represents the current state of a button/key.
- * ============================================================================ */
-
-struct ButtonState {
-	bool pressed = false;           // Currently pressed
-	bool justpressed = false;       // Pressed this frame
-	bool justreleased = false;      // Released this frame
-	bool waspressed = false;        // Was pressed in recent window
-	bool wasreleased = false;       // Was released in recent window
-	bool consumed = false;          // Event has been consumed
-	
-	std::optional<f64> presstime;   // How long pressed (frames or ms)
-	std::optional<f64> timestamp;   // When state changed
-	std::optional<f64> pressedAtMs; // Timestamp when pressed
-	std::optional<f64> releasedAtMs;// Timestamp when released
-	std::optional<i32> pressId;     // Unique press identifier
-	
-	f32 value = 0.0F;               // Analog value (0-1 for buttons, full range for axes)
-	std::optional<Vec2> value2d;    // 2D value for sticks
-	
-	// Default constructor
-	ButtonState() = default;
-	
-	// Reset to default state
-	void reset() {
-		pressed = false;
-		justpressed = false;
-		justreleased = false;
-		waspressed = false;
-		wasreleased = false;
-		consumed = false;
-		presstime.reset();
-		timestamp.reset();
-		pressedAtMs.reset();
-		releasedAtMs.reset();
-		pressId.reset();
-		value = 0.0F;
-		value2d.reset();
-	}
-};
-
-inline auto buttonTimestampOr(const ButtonState& state, f64 fallback) -> f64 {
-	if (state.timestamp.has_value()) {
-		return state.timestamp.value();
-	}
-	return fallback;
-}
-
-inline auto buttonPressedAtOr(const ButtonState& state, f64 fallback) -> f64 {
-	if (state.pressedAtMs.has_value()) {
-		return state.pressedAtMs.value();
-	}
-	return buttonTimestampOr(state, fallback);
-}
-
-inline auto buttonReleasedAtOr(const ButtonState& state, f64 fallback) -> f64 {
-	if (state.releasedAtMs.has_value()) {
-		return state.releasedAtMs.value();
-	}
-	return buttonTimestampOr(state, fallback);
-}
-
-inline auto buttonPressIdOr(const ButtonState& state, i32 fallback) -> i32 {
-	if (state.pressId.has_value()) {
-		return state.pressId.value();
-	}
-	return fallback;
-}
-
-inline auto resolveButtonPressId(const std::optional<i32>& incoming, const ButtonState& state, i32& nextPressId) -> i32 {
-	if (incoming.has_value()) {
-		return incoming.value();
-	}
-	if (state.pressId.has_value()) {
-		return state.pressId.value();
-	}
-	return nextPressId++;
-}
-
-inline auto buttonPressTimeOrZero(const ButtonState& state) -> f64 {
-	if (state.presstime.has_value()) {
-		return state.presstime.value();
-	}
-	return 0.0;
-}
-
-/* ============================================================================
- * Action state
- *
- * Extended button state for logical actions.
- * ============================================================================ */
-
-struct ActionState : ButtonState {
-	std::string action;                     // Action name
-	bool alljustpressed = false;            // All bindings just pressed
-	bool allwaspressed = false;             // All bindings were pressed in window
-	bool alljustreleased = false;           // All bindings just released
-	std::optional<bool> guardedjustpressed; // Guarded press (debounced)
-	std::optional<bool> repeatpressed;      // Repeat pulse
-	std::optional<i32> repeatcount;         // Repeat count
-	
-	ActionState() = default;
-	
-	explicit ActionState(std::string  actionName)
-		: action(std::move(actionName)) {}
-	
-	ActionState(std::string  actionName, const ButtonState& state)
-		: ButtonState(state), action(std::move(actionName)) {}
-};
-
-inline auto actionFlag(const std::optional<bool>& flag) -> bool {
-	return flag.has_value() && flag.value();
-}
-
-inline auto actionRepeatCount(const ActionState& state) -> i32 {
-	if (state.repeatcount.has_value()) {
-		return state.repeatcount.value();
-	}
-	return 0;
 }
 
 /* ============================================================================

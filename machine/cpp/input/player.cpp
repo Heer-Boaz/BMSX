@@ -3,7 +3,7 @@
  */
 
 #include "player.h"
-#include "action_parser.h"
+#include "machine/devices/input/action_parser.h"
 #include "common/clamp.h"
 #include <algorithm>
 #include <cmath>

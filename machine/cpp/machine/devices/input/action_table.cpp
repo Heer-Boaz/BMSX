@@ -1,6 +1,6 @@
 #include "machine/devices/input/action_table.h"
 
-#include "input/action_parser.h"
+#include "machine/devices/input/action_parser.h"
 #include "input/manager.h"
 #include "input/player.h"
 #include "machine/devices/input/event_fifo.h"

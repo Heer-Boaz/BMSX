@@ -1,4 +1,4 @@
-import { ActionDefinitionEvaluator } from './action_parser';
+import { ActionDefinitionEvaluator } from '../machine/devices/input/action_parser';
 import { InputStateManager, makeActionState, makeButtonState } from './manager';
 import { inputBindingId, type ActionState, type ActionStateQuery, type ButtonId, type ButtonState, type GamepadInputMapping, type InputEvent, type InputHandler, type KeyboardInputMapping, type PointerInputMapping } from './models';
 import type { VibrationParams } from '../platform';

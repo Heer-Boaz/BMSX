@@ -1,9 +1,138 @@
 #pragma once
 
-#include "input/models.h"
 #include "machine/common/numeric.h"
 
+#include <optional>
+#include <string>
+#include <utility>
+
 namespace bmsx {
+
+enum class InputSource {
+	Keyboard,
+	Gamepad,
+	Pointer
+};
+
+inline const InputSource INPUT_SOURCES[] = {
+	InputSource::Keyboard,
+	InputSource::Gamepad,
+	InputSource::Pointer
+};
+
+constexpr size_t INPUT_SOURCE_COUNT = 3;
+
+using ButtonId = std::string;
+
+struct ButtonState {
+	bool pressed = false;
+	bool justpressed = false;
+	bool justreleased = false;
+	bool waspressed = false;
+	bool wasreleased = false;
+	bool consumed = false;
+
+	std::optional<f64> presstime;
+	std::optional<f64> timestamp;
+	std::optional<f64> pressedAtMs;
+	std::optional<f64> releasedAtMs;
+	std::optional<i32> pressId;
+
+	f32 value = 0.0F;
+	std::optional<Vec2> value2d;
+
+	ButtonState() = default;
+
+	void reset() {
+		pressed = false;
+		justpressed = false;
+		justreleased = false;
+		waspressed = false;
+		wasreleased = false;
+		consumed = false;
+		presstime.reset();
+		timestamp.reset();
+		pressedAtMs.reset();
+		releasedAtMs.reset();
+		pressId.reset();
+		value = 0.0F;
+		value2d.reset();
+	}
+};
+
+inline auto buttonTimestampOr(const ButtonState& state, f64 fallback) -> f64 {
+	if (state.timestamp.has_value()) {
+		return state.timestamp.value();
+	}
+	return fallback;
+}
+
+inline auto buttonPressedAtOr(const ButtonState& state, f64 fallback) -> f64 {
+	if (state.pressedAtMs.has_value()) {
+		return state.pressedAtMs.value();
+	}
+	return buttonTimestampOr(state, fallback);
+}
+
+inline auto buttonReleasedAtOr(const ButtonState& state, f64 fallback) -> f64 {
+	if (state.releasedAtMs.has_value()) {
+		return state.releasedAtMs.value();
+	}
+	return buttonTimestampOr(state, fallback);
+}
+
+inline auto buttonPressIdOr(const ButtonState& state, i32 fallback) -> i32 {
+	if (state.pressId.has_value()) {
+		return state.pressId.value();
+	}
+	return fallback;
+}
+
+inline auto resolveButtonPressId(const std::optional<i32>& incoming, const ButtonState& state, i32& nextPressId) -> i32 {
+	if (incoming.has_value()) {
+		return incoming.value();
+	}
+	if (state.pressId.has_value()) {
+		return state.pressId.value();
+	}
+	return nextPressId++;
+}
+
+inline auto buttonPressTimeOrZero(const ButtonState& state) -> f64 {
+	if (state.presstime.has_value()) {
+		return state.presstime.value();
+	}
+	return 0.0;
+}
+
+struct ActionState : ButtonState {
+	std::string action;
+	bool alljustpressed = false;
+	bool allwaspressed = false;
+	bool alljustreleased = false;
+	std::optional<bool> guardedjustpressed;
+	std::optional<bool> repeatpressed;
+	std::optional<i32> repeatcount;
+
+	ActionState() = default;
+
+	explicit ActionState(std::string actionName)
+		: action(std::move(actionName)) {}
+
+	ActionState(std::string actionName, const ButtonState& state)
+		: ButtonState(state), action(std::move(actionName)) {}
+};
+
+inline auto actionFlag(const std::optional<bool>& flag) -> bool {
+	return flag.has_value() && flag.value();
+}
+
+inline auto actionRepeatCount(const ActionState& state) -> i32 {
+	if (state.repeatcount.has_value()) {
+		return state.repeatcount.value();
+	}
+	return 0;
+}
 
 constexpr u32 INP_STATUS_PRESSED = 1u << 0u;
 constexpr u32 INP_STATUS_JUST_PRESSED = 1u << 1u;

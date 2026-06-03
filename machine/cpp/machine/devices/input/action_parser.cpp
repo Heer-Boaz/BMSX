@@ -2,7 +2,7 @@
  * action_parser.cpp - Action definition parser implementation
  */
 
-#include "action_parser.h"
+#include "machine/devices/input/action_parser.h"
 #include <array>
 #include <stdexcept>
 #include <regex>

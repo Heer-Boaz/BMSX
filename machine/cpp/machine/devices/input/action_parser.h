@@ -8,7 +8,7 @@
 #ifndef BMSX_ACTIONPARSER_H
 #define BMSX_ACTIONPARSER_H
 
-#include "models.h"
+#include "machine/devices/input/contracts.h"
 #include <string>
 #include <string_view>
 #include <vector>

@@ -1,4 +1,4 @@
-import { ActionDefinitionEvaluator } from '../../../input/action_parser';
+import { ActionDefinitionEvaluator } from './action_parser';
 import { Input, makeActionState } from '../../../input/manager';
 import type { PlayerInput } from '../../../input/player';
 import type { StringId, StringPool } from '../../cpu/string_pool';
