@@ -1,4 +1,5 @@
 import type { RenderPassLibrary } from '../../backend/pass/library';
+import type { GameView } from '../../gameview';
 import type {
 	Host2DPipelineState,
 	HostOverlayPipelineState,
@@ -17,7 +18,6 @@ import {
 	type WebGLInstancedFloatAttribute,
 	type WebGLSpriteQuadUniforms,
 } from '../../backend/webgl/instanced_buffers';
-import { consoleCore } from '../../../core/console';
 import { ZCOORD_MAX } from '../../backend/webgl/constants';
 import { bootstrapAxisGizmo_WebGL, renderAxisGizmo_WebGL, shouldRenderAxisGizmo } from '../../3d/axis_gizmo_pipeline';
 import type {
@@ -188,12 +188,12 @@ function resolveImageSource(cache: Map<string, HostOverlayImageSource>, imgid: s
 	return source;
 }
 
-function bindHostTexture(texture: WebGLTexture, boundTextures: BoundTextureState): BoundTextureState {
+function bindHostTexture(backend: WebGLBackend, texture: WebGLTexture, boundTextures: BoundTextureState): BoundTextureState {
 	if (boundTextures === texture) {
 		return boundTextures;
 	}
-	consoleCore.view.activeTexUnit = HOST_OVERLAY_TEXTURE_UNIT;
-	consoleCore.view.bind2DTex(texture);
+	backend.setActiveTexture(HOST_OVERLAY_TEXTURE_UNIT);
+	backend.bindTexture2D(texture);
 	return texture;
 }
 
@@ -213,7 +213,7 @@ function captureAxisGizmoImage(imgid: string, x: number, y: number, z: number, s
 
 function drawHostImage(backend: WebGLBackend, state: HostOverlayRuntime, cache: Map<string, HostOverlayImageSource>, imgid: string, x: number, y: number, z: number, scaleX: number, scaleY: number, flipH: boolean, flipV: boolean, colorValue: color, boundTextures: BoundTextureState): BoundTextureState {
 	const source = resolveImageSource(cache, imgid);
-	const nextBoundTextures = bindHostTexture(state.hostAtlasTexture, boundTextures);
+	const nextBoundTextures = bindHostTexture(backend, state.hostAtlasTexture, boundTextures);
 	let { u0, v0, u1, v1 } = source;
 	if (flipH) {
 		const swap = u0;
@@ -275,7 +275,7 @@ function pushFillRect(state: HostOverlayRuntime, index: number, leftValue: numbe
 }
 
 function drawRectCommand(backend: WebGLBackend, state: HostOverlayRuntime, command: RectRenderSubmission, boundTextures: BoundTextureState): BoundTextureState {
-	const nextBoundTextures = bindHostTexture(state.whiteTexture, boundTextures);
+	const nextBoundTextures = bindHostTexture(backend, state.whiteTexture, boundTextures);
 	if (command.kind === RectRenderKind.Fill) {
 		const written = pushFillRect(state, 0, command.area.left, command.area.top, command.area.right, command.area.bottom, command.area.z, command.color);
 		if (written !== 0) {
@@ -324,7 +324,7 @@ function pushLine(state: HostOverlayRuntime, index: number, x0: number, y0: numb
 }
 
 function drawPolyCommand(backend: WebGLBackend, state: HostOverlayRuntime, command: PolyRenderSubmission, boundTextures: BoundTextureState): BoundTextureState {
-	const nextBoundTextures = bindHostTexture(state.whiteTexture, boundTextures);
+	const nextBoundTextures = bindHostTexture(backend, state.whiteTexture, boundTextures);
 	let count = 0;
 	const points = command.points;
 	for (let index = 0; index + 3 < points.length; index += 2) {
@@ -343,7 +343,7 @@ function drawBatchBlitBackgrounds(backend: WebGLBackend, state: HostOverlayRunti
 	}
 	const font = command.font;
 	const lineHeight = font.lineHeight;
-	const nextBoundTextures = bindHostTexture(state.whiteTexture, boundTextures);
+	const nextBoundTextures = bindHostTexture(backend, state.whiteTexture, boundTextures);
 	let count = 0;
 	forEachBatchBlitGlyph(command, (item, x, y) => {
 		ensureWebGLInstanceBufferCapacity(backend, state, count + 1, INSTANCE_FLOATS);
@@ -356,7 +356,7 @@ function drawBatchBlitBackgrounds(backend: WebGLBackend, state: HostOverlayRunti
 }
 
 function drawBatchBlitGlyphs(backend: WebGLBackend, state: HostOverlayRuntime, cache: Map<string, HostOverlayImageSource>, command: GlyphRenderSubmission, boundTextures: BoundTextureState): BoundTextureState {
-	const currentBoundTextures = bindHostTexture(state.hostAtlasTexture, boundTextures);
+	const currentBoundTextures = bindHostTexture(backend, state.hostAtlasTexture, boundTextures);
 	let count = 0;
 	forEachBatchBlitGlyph(command, (item, x, y) => {
 		const source = resolveImageSource(cache, item.imgid);
@@ -481,7 +481,7 @@ function renderAxisGizmoLabels(backend: WebGLBackend, state: HostOverlayRuntime,
 	backend.setDepthMask(true);
 }
 
-function renderHostPass(backend: WebGLBackend, state: HostOverlayRuntime, passState: HostOverlayPipelineState): void {
+function renderHostPass(backend: WebGLBackend, state: HostOverlayRuntime, passState: HostOverlayPipelineState, view: GameView): void {
 	if (passState.commands.length !== 0) {
 		renderOverlay(backend, state, passState);
 	}
@@ -489,7 +489,7 @@ function renderHostPass(backend: WebGLBackend, state: HostOverlayRuntime, passSt
 		return;
 	}
 	axisLabelCount = 0;
-	renderAxisGizmo_WebGL(backend, captureAxisGizmoImage);
+	renderAxisGizmo_WebGL(backend, view, captureAxisGizmoImage);
 	if (axisLabelCount !== 0) {
 		renderAxisGizmoLabels(backend, state, passState);
 	}
@@ -502,17 +502,15 @@ export function registerHostOverlayPass_WebGL(registry: RenderPassLibrary): void
 		vsCode: vertexShaderCode,
 		fsCode: fragmentShaderCode,
 		present: true,
+		graph: { buildState: buildHostOverlayState },
 		bootstrap: (backend) => {
 			const webglBackend = backend as WebGLBackend;
 			bootstrapRuntime(webglBackend);
 			bootstrapAxisGizmo_WebGL(webglBackend);
 		},
 		shouldExecute: () => hasPendingOverlayFrame() || shouldRenderAxisGizmo(),
-		prepare: () => {
-			registry.setState('host_overlay', buildHostOverlayState());
-		},
 		exec: (backend: WebGLBackend, _fbo, state: RenderPassStateRegistry['host_overlay']) => {
-			renderHostPass(backend, runtime!, state);
+			renderHostPass(backend, runtime!, state, registry.view);
 		},
 	});
 }
@@ -532,10 +530,8 @@ export function registerHostMenuPass_WebGL(registry: RenderPassLibrary): void {
 		name: 'HostMenu',
 		sharedPipelineWith: 'host_overlay',
 		present: true,
+		graph: { buildState: buildHostMenuState },
 		shouldExecute: () => hostOverlayMenu.queuedCommandCount() !== 0,
-		prepare: () => {
-			registry.setState('host_menu', buildHostMenuState());
-		},
 		exec: (backend: WebGLBackend, _fbo, state: RenderPassStateRegistry['host_menu']) => {
 			renderHostMenuPass(backend, runtime!, state);
 		},

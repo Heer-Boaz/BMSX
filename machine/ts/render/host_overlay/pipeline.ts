@@ -1,12 +1,11 @@
-import type { HostMenuPipelineState, HostOverlayPipelineState } from '../backend/backend';
-import { consoleCore } from '../../core/console';
+import type { HostMenuPipelineState, HostOverlayPipelineState, RenderGraphPassContext } from '../backend/backend';
 import type { Host2DSubmission } from '../shared/submissions';
 import { consumeOverlayFrame, hasPendingOverlayFrame } from './overlay_queue';
 
 const EMPTY_HOST_OVERLAY_COMMANDS: Host2DSubmission[] = [];
 
-export function buildHostOverlayState(): HostOverlayPipelineState {
-	const view = consoleCore.view;
+export function buildHostOverlayState(ctx: RenderGraphPassContext): HostOverlayPipelineState {
+	const view = ctx.view;
 	if (hasPendingOverlayFrame()) {
 		const frame = consumeOverlayFrame();
 		return {
@@ -14,8 +13,8 @@ export function buildHostOverlayState(): HostOverlayPipelineState {
 			height: view.offscreenCanvasSize.y,
 			overlayWidth: frame.width,
 			overlayHeight: frame.height,
-			time: consoleCore.platform.clock.now() / 1000,
-			delta: consoleCore.deltatime_seconds,
+			time: ctx.time,
+			delta: ctx.delta,
 			commands: frame.commands,
 		};
 	}
@@ -24,20 +23,20 @@ export function buildHostOverlayState(): HostOverlayPipelineState {
 		height: view.offscreenCanvasSize.y,
 		overlayWidth: view.viewportSize.x,
 		overlayHeight: view.viewportSize.y,
-		time: consoleCore.platform.clock.now() / 1000,
-		delta: consoleCore.deltatime_seconds,
+		time: ctx.time,
+		delta: ctx.delta,
 		commands: EMPTY_HOST_OVERLAY_COMMANDS,
 	};
 }
 
-export function buildHostMenuState(): HostMenuPipelineState {
-	const view = consoleCore.view;
+export function buildHostMenuState(ctx: RenderGraphPassContext): HostMenuPipelineState {
+	const view = ctx.view;
 	return {
 		width: view.offscreenCanvasSize.x,
 		height: view.offscreenCanvasSize.y,
 		overlayWidth: view.viewportSize.x,
 		overlayHeight: view.viewportSize.y,
-		time: consoleCore.platform.clock.now() / 1000,
-		delta: consoleCore.deltatime_seconds,
+		time: ctx.time,
+		delta: ctx.delta,
 	};
 }

@@ -10,22 +10,41 @@ export type HostOverlayFrame = {
 	commands: Host2DSubmission[];
 };
 
-let pendingFrame: HostOverlayFrame = null;
+const HOST_OVERLAY_QUEUE_GLOBAL = '__bmsxHostOverlayQueue';
+
+type HostOverlayQueueState = {
+	pendingFrame: HostOverlayFrame;
+};
+
+type HostOverlayQueueGlobal = typeof globalThis & {
+	__bmsxHostOverlayQueue?: HostOverlayQueueState;
+};
+
+function hostOverlayQueueState(): HostOverlayQueueState {
+	const globalScope = globalThis as HostOverlayQueueGlobal;
+	let state = globalScope[HOST_OVERLAY_QUEUE_GLOBAL];
+	if (state === undefined) {
+		state = { pendingFrame: null };
+		globalScope[HOST_OVERLAY_QUEUE_GLOBAL] = state;
+	}
+	return state;
+}
 
 export function publishOverlayFrame(frame: HostOverlayFrame): void {
-	pendingFrame = frame;
+	hostOverlayQueueState().pendingFrame = frame;
 }
 
 export function hasPendingOverlayFrame(): boolean {
-	return pendingFrame !== null;
+	return hostOverlayQueueState().pendingFrame !== null;
 }
 
 export function consumeOverlayFrame(): HostOverlayFrame {
-	const frame = pendingFrame;
-	pendingFrame = null;
+	const state = hostOverlayQueueState();
+	const frame = state.pendingFrame;
+	state.pendingFrame = null;
 	return frame;
 }
 
 export function clearOverlayFrame(): void {
-	pendingFrame = null;
+	hostOverlayQueueState().pendingFrame = null;
 }

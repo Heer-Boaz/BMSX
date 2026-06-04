@@ -112,6 +112,9 @@ export type RenderGraphSlot = 'frame_color' | 'frame_depth' | 'frame_history_a' 
 
 export interface RenderGraphPassContext {
 	view: RenderContext;
+	frameIndex: number;
+	time: number;
+	delta: number;
 	getTex(slot: RenderGraphSlot): TextureHandle;
 	deviceColorEnabled: boolean;
 }

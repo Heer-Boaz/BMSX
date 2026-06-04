@@ -170,6 +170,9 @@ export class RenderPassLibrary {
 		};
 		const graphCtx: RenderGraphPassContext = {
 			view,
+			frameIndex: 0,
+			time: 0,
+			delta: 0,
 			getTex: (slot: RenderGraphSlot) => activePassContext.getTex(getHandle(slot)),
 			deviceColorEnabled,
 		};
@@ -299,6 +302,9 @@ export class RenderPassLibrary {
 					const graph = desc.graph;
 					if (graph?.buildState) {
 						activePassContext = ctx;
+						graphCtx.frameIndex = _frame.frameIndex;
+						graphCtx.time = _frame.time;
+						graphCtx.delta = _frame.delta;
 						const builtState = graph.buildState(graphCtx) as RenderPassStateRegistry[RenderPassStateId];
 						const passId = desc.id as RenderPassStateId;
 						this.setState(passId, builtState);
