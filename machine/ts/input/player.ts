@@ -5,7 +5,7 @@ import type { VibrationParams } from '../platform';
 import { ContextStack, MappingContext } from './context';
 import { consoleCore } from '../core/console';
 import { clamp } from '../common/clamp';
-import { INPUT_SOURCES, type InputSource } from '../machine/devices/input/contracts';
+import { INPUT_SOURCES, type InputControllerPlayerInputSource, type InputSource } from '../machine/devices/input/contracts';
 
 export { INPUT_SOURCES };
 export type { InputSource };
@@ -62,7 +62,7 @@ export enum KeyModifier {
 /**
  * Represents the Input class responsible for handling user input.
  */
-export class PlayerInput {
+export class PlayerInput implements InputControllerPlayerInputSource {
 	private frameDurationMs = 1000 / 60;
 	/**
 	 * Represents the input handlers for the player.
@@ -114,6 +114,14 @@ export class PlayerInput {
 
 	private getStateManager(source: InputSource): InputStateManager {
 		return this._stateManagers[source];
+	}
+
+	public sampleInputControllerButton(source: InputSource, button: ButtonId): ButtonState {
+		return this.getButtonState(button, source);
+	}
+
+	public consumeInputControllerButton(source: InputSource, button: ButtonId): void {
+		this.consumeRawButton(button, source);
 	}
 
 	private getContextBindingIds(action: string, source: InputSource): ButtonId[] | null {

@@ -46,6 +46,7 @@ import {
 	INP_STATUS_PRESSED,
 	INP_STATUS_WAS_PRESSED,
 	INPUT_CONTROLLER_OUTPUT_INTENSITY_Q16_ONE,
+	type InputSource,
 } from '../../machine/ts/machine/devices/input/contracts';
 import { DEFAULT_LUA_BUILTIN_NAMES } from '../../machine/ts/machine/firmware/builtin_descriptors';
 
@@ -64,6 +65,8 @@ type FakePlayerInput = {
 	supportsVibrationEffect: boolean;
 	getButtonState(button: string): ButtonState;
 	consumeRawButton(button: string, source: 'keyboard' | 'gamepad' | 'pointer'): void;
+	sampleInputControllerButton(source: InputSource, button: string): ButtonState;
+	consumeInputControllerButton(source: InputSource, button: string): void;
 	applyVibrationEffect(params: VibrationParams): void;
 	pushContext(id: string, keyboard: KeyboardInputMapping, gamepad: GamepadInputMapping, pointer: PointerInputMapping): void;
 	clearContext(id: string): void;
@@ -87,6 +90,12 @@ function createFakePlayer(): FakePlayerInput {
 		consumeRawButton(button, source) {
 			this.consumed.push(`${source}:${button}`);
 		},
+		sampleInputControllerButton(source, button) {
+			return this.getButtonState(button);
+		},
+		consumeInputControllerButton(source, button) {
+			this.consumeRawButton(button, source);
+		},
 		applyVibrationEffect(params) {
 			this.vibrations.push(params);
 		},
@@ -109,6 +118,9 @@ function createHarness(): { memory: Memory; cpu: CPU; controller: InputControlle
 			sampleCount += 1;
 		},
 		getPlayerInput(playerIndex: number) {
+			return players[playerIndex - 1]!;
+		},
+		inputControllerPlayer(playerIndex: number) {
 			return players[playerIndex - 1]!;
 		},
 	};
@@ -135,6 +147,9 @@ function createRealPlayerHarness(): { memory: Memory; cpu: CPU; controller: Inpu
 			}
 		},
 		getPlayerInput(playerIndex: number) {
+			return players[playerIndex - 1]!;
+		},
+		inputControllerPlayer(playerIndex: number) {
 			return players[playerIndex - 1]!;
 		},
 	};

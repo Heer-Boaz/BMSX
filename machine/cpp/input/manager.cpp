@@ -463,6 +463,10 @@ PlayerInput* Input::getPlayerInput(i32 playerIndex) {
 	return m_playerInputs[playerIndex - 1].get();
 }
 
+InputControllerPlayerInputSource& Input::inputControllerPlayer(i32 playerIndex) {
+	return *getPlayerInput(playerIndex);
+}
+
 void Input::setFrameDurationMs(f64 frameDurationMs) {
 	m_frameDurationMs = frameDurationMs;
 	for (auto& player : m_playerInputs) {
@@ -579,58 +583,25 @@ bool Input::isPlayerIndexAvailableForGamepadAssignment(i32 playerIndex) {
 
 static InputMap createDefaultInputMapping() {
 	InputMap map;
-	auto& pointer = map.pointer;
-	auto& keyboard = map.keyboard;
-	auto& gamepad = map.gamepad;
-
-	// Keyboard mappings
-	pointer["pointer_primary"] = {PointerBinding{"pointer_primary"}};
-	pointer["pointer_secondary"] = {PointerBinding{"pointer_secondary"}};
-	pointer["pointer_aux"] = {PointerBinding{"pointer_aux"}};
-	pointer["pointer_back"] = {PointerBinding{"pointer_back"}};
-	pointer["pointer_forward"] = {PointerBinding{"pointer_forward"}};
-	pointer["pointer_delta"] = {PointerBinding{"pointer_delta"}};
-	pointer["pointer_position"] = {PointerBinding{"pointer_position"}};
-	pointer["pointer_wheel"] = {PointerBinding{"pointer_wheel"}};
-
-	keyboard["a"] = {KeyboardBinding{"KeyX", std::nullopt}};
-	keyboard["b"] = {KeyboardBinding{"KeyC", std::nullopt}};
-	keyboard["x"] = {KeyboardBinding{"KeyZ", std::nullopt}};
-	keyboard["y"] = {KeyboardBinding{"KeyS", std::nullopt}};
-	keyboard["lb"] = {KeyboardBinding{"ShiftLeft", std::nullopt}};
-	keyboard["rb"] = {KeyboardBinding{"ShiftRight", std::nullopt}};
-	keyboard["lt"] = {KeyboardBinding{"CtrlLeft", std::nullopt}};
-	keyboard["rt"] = {KeyboardBinding{"CtrlRight", std::nullopt}};
-	keyboard["select"] = {KeyboardBinding{"Backspace", std::nullopt}};
-	keyboard["start"] = {KeyboardBinding{"Enter", std::nullopt}};
-	keyboard["ls"] = {KeyboardBinding{"KeyQ", std::nullopt}};
-	keyboard["rs"] = {KeyboardBinding{"KeyE", std::nullopt}};
-	keyboard["up"] = {KeyboardBinding{"ArrowUp", std::nullopt}};
-	keyboard["down"] = {KeyboardBinding{"ArrowDown", std::nullopt}};
-	keyboard["left"] = {KeyboardBinding{"ArrowLeft", std::nullopt}};
-	keyboard["right"] = {KeyboardBinding{"ArrowRight", std::nullopt}};
-	keyboard["home"] = {KeyboardBinding{"Escape", std::nullopt}};
-	keyboard["touch"] = {KeyboardBinding{"Space", std::nullopt}};
-
-	// Gamepad mappings (direct 1:1)
-	gamepad["up"] = {GamepadBinding{"up", std::nullopt}};
-	gamepad["down"] = {GamepadBinding{"down", std::nullopt}};
-	gamepad["left"] = {GamepadBinding{"left", std::nullopt}};
-	gamepad["right"] = {GamepadBinding{"right", std::nullopt}};
-	gamepad["a"] = {GamepadBinding{"a", std::nullopt}};
-	gamepad["b"] = {GamepadBinding{"b", std::nullopt}};
-	gamepad["x"] = {GamepadBinding{"x", std::nullopt}};
-	gamepad["y"] = {GamepadBinding{"y", std::nullopt}};
-	gamepad["lb"] = {GamepadBinding{"lb", std::nullopt}};
-	gamepad["rb"] = {GamepadBinding{"rb", std::nullopt}};
-	gamepad["lt"] = {GamepadBinding{"lt", std::nullopt}};
-	gamepad["rt"] = {GamepadBinding{"rt", std::nullopt}};
-	gamepad["start"] = {GamepadBinding{"start", std::nullopt}};
-	gamepad["select"] = {GamepadBinding{"select", std::nullopt}};
-	gamepad["ls"] = {GamepadBinding{"ls", std::nullopt}};
-	gamepad["rs"] = {GamepadBinding{"rs", std::nullopt}};
-	gamepad["home"] = {GamepadBinding{"home", std::nullopt}};
-	gamepad["touch"] = {GamepadBinding{"touch", std::nullopt}};
+	const InputControllerDefaultMapping& defaults = inputControllerDefaultMapping();
+	for (const auto& [action, bindings] : defaults.pointer) {
+		auto& dst = map.pointer[action];
+		for (const std::string& binding : bindings) {
+			dst.push_back(PointerBinding{binding});
+		}
+	}
+	for (const auto& [action, bindings] : defaults.keyboard) {
+		auto& dst = map.keyboard[action];
+		for (const std::string& binding : bindings) {
+			dst.push_back(KeyboardBinding{binding, std::nullopt});
+		}
+	}
+	for (const auto& [action, bindings] : defaults.gamepad) {
+		auto& dst = map.gamepad[action];
+		for (const std::string& binding : bindings) {
+			dst.push_back(GamepadBinding{binding, std::nullopt});
+		}
+	}
 
 	return map;
 }

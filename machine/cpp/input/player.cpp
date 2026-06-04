@@ -348,6 +348,14 @@ ButtonState PlayerInput::getButtonState(const std::string& button, InputSource s
 	return getStateManager(source).getButtonState(button, windowFrames);
 }
 
+ButtonState PlayerInput::sampleInputControllerButton(InputSource source, const std::string& button) {
+	return getButtonState(button, source);
+}
+
+void PlayerInput::consumeInputControllerButton(InputSource source, const std::string& button) {
+	consumeRawButton(button, source);
+}
+
 ButtonState PlayerInput::getRawButtonState(const std::string& button, InputSource source) {
 	auto* handler = inputHandlers[sourceIndex(source)];
 	return handler ? handler->getButtonState(button) : ButtonState{};

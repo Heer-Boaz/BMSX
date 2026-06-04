@@ -5,6 +5,64 @@ export type InputSource = typeof INPUT_SOURCES[number];
 
 export type ButtonId = string;
 
+export const INPUT_CONTROLLER_GAMEPAD_BUTTON_IDS = [
+	'a',
+	'b',
+	'x',
+	'y',
+	'lb',
+	'rb',
+	'lt',
+	'rt',
+	'select',
+	'start',
+	'ls',
+	'rs',
+	'up',
+	'down',
+	'left',
+	'right',
+	'home',
+	'touch',
+] as const;
+export type BGamepadButton = (typeof INPUT_CONTROLLER_GAMEPAD_BUTTON_IDS)[number];
+
+export type KeyboardBinding = string | { id: string; scale?: number; invert?: boolean };
+export type KeyboardInputMapping = {
+	[action: string]: KeyboardBinding[];
+};
+
+export type GamepadBinding = BGamepadButton | { id: BGamepadButton; scale?: number; invert?: boolean };
+export type GamepadInputMapping = {
+	[action: string]: GamepadBinding[];
+};
+
+export type PointerBinding = string | { id: string; scale?: number; invert?: boolean };
+export type PointerInputMapping = {
+	[action: string]: PointerBinding[];
+};
+
+export type InputControllerDefaultMapping = {
+	keyboard: KeyboardInputMapping;
+	gamepad: GamepadInputMapping;
+	pointer: PointerInputMapping;
+};
+
+export interface InputMap {
+	keyboard: KeyboardInputMapping;
+	gamepad: GamepadInputMapping;
+	pointer: PointerInputMapping;
+}
+
+export interface InputControllerPlayerInputSource {
+	sampleInputControllerButton(source: InputSource, button: ButtonId): ButtonState;
+	consumeInputControllerButton(source: InputSource, button: ButtonId): void;
+}
+
+export interface InputControllerInputSource {
+	inputControllerPlayer(playerIndex: number): InputControllerPlayerInputSource;
+}
+
 export function inputBindingId(binding: ButtonId | { id: ButtonId }): ButtonId {
 	return typeof binding === 'string' ? binding : binding.id;
 }
@@ -36,6 +94,90 @@ export type ActionState = {
 	repeatpressed: boolean;
 	repeatcount: number;
 } & ButtonState;
+
+export const INPUT_CONTROLLER_DEFAULT_POINTER_MAPPING: PointerInputMapping = Object.freeze({
+	pointer_primary: ['pointer_primary'],
+	pointer_secondary: ['pointer_secondary'],
+	pointer_aux: ['pointer_aux'],
+	pointer_back: ['pointer_back'],
+	pointer_forward: ['pointer_forward'],
+	pointer_delta: ['pointer_delta'],
+	pointer_position: ['pointer_position'],
+	pointer_wheel: ['pointer_wheel'],
+});
+
+export const INPUT_CONTROLLER_DEFAULT_KEYBOARD_MAPPING: KeyboardInputMapping = Object.freeze({
+	a: ['KeyX'],
+	b: ['KeyC'],
+	x: ['KeyZ'],
+	y: ['KeyS'],
+	lb: ['ShiftLeft'],
+	rb: ['ShiftRight'],
+	lt: ['CtrlLeft'],
+	rt: ['CtrlRight'],
+	select: ['Backspace'],
+	start: ['Enter'],
+	ls: ['KeyQ'],
+	rs: ['KeyE'],
+	up: ['ArrowUp'],
+	down: ['ArrowDown'],
+	left: ['ArrowLeft'],
+	right: ['ArrowRight'],
+	home: ['Escape'],
+	touch: ['Space'],
+});
+
+export const INPUT_CONTROLLER_DEFAULT_GAMEPAD_MAPPING: GamepadInputMapping = Object.freeze({
+	a: ['a'],
+	b: ['b'],
+	x: ['x'],
+	y: ['y'],
+	lb: ['lb'],
+	rb: ['rb'],
+	lt: ['lt'],
+	rt: ['rt'],
+	select: ['select'],
+	start: ['start'],
+	ls: ['ls'],
+	rs: ['rs'],
+	up: ['up'],
+	down: ['down'],
+	left: ['left'],
+	right: ['right'],
+	home: ['home'],
+	touch: ['touch'],
+});
+
+export const INPUT_CONTROLLER_DEFAULT_MAPPING: InputControllerDefaultMapping = Object.freeze({
+	keyboard: INPUT_CONTROLLER_DEFAULT_KEYBOARD_MAPPING,
+	gamepad: INPUT_CONTROLLER_DEFAULT_GAMEPAD_MAPPING,
+	pointer: INPUT_CONTROLLER_DEFAULT_POINTER_MAPPING,
+});
+
+export function createInputControllerActionState(action: string): ActionState {
+	return {
+		action,
+		pressed: false,
+		justpressed: false,
+		justreleased: false,
+		waspressed: false,
+		wasreleased: false,
+		consumed: false,
+		presstime: null,
+		timestamp: null,
+		pressedAtMs: null,
+		releasedAtMs: null,
+		pressId: null,
+		value: null,
+		value2d: null,
+		alljustpressed: false,
+		allwaspressed: false,
+		alljustreleased: false,
+		guardedjustpressed: false,
+		repeatpressed: false,
+		repeatcount: 0,
+	};
+}
 
 export const INP_STATUS_PRESSED = 1 << 0;
 export const INP_STATUS_JUST_PRESSED = 1 << 1;

@@ -4,7 +4,9 @@
 
 #include <optional>
 #include <string>
+#include <unordered_map>
 #include <utility>
+#include <vector>
 
 namespace bmsx {
 
@@ -23,6 +25,16 @@ inline const InputSource INPUT_SOURCES[] = {
 constexpr size_t INPUT_SOURCE_COUNT = 3;
 
 using ButtonId = std::string;
+
+using InputControllerBindingMap = std::unordered_map<std::string, std::vector<std::string>>;
+
+struct InputControllerDefaultMapping {
+	InputControllerBindingMap keyboard;
+	InputControllerBindingMap gamepad;
+	InputControllerBindingMap pointer;
+};
+
+const InputControllerDefaultMapping& inputControllerDefaultMapping();
 
 struct ButtonState {
 	bool pressed = false;
@@ -58,6 +70,19 @@ struct ButtonState {
 		value = 0.0F;
 		value2d.reset();
 	}
+};
+
+class InputControllerPlayerInputSource {
+public:
+	virtual ~InputControllerPlayerInputSource() = default;
+	virtual ButtonState sampleInputControllerButton(InputSource source, const std::string& button) = 0;
+	virtual void consumeInputControllerButton(InputSource source, const std::string& button) = 0;
+};
+
+class InputControllerInputSource {
+public:
+	virtual ~InputControllerInputSource() = default;
+	virtual InputControllerPlayerInputSource& inputControllerPlayer(i32 playerIndex) = 0;
 };
 
 inline auto buttonTimestampOr(const ButtonState& state, f64 fallback) -> f64 {

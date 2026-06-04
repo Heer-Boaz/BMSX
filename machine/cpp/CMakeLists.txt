@@ -220,6 +220,7 @@ add_library(bmsx_core STATIC
 	# Input systems
 	input/player.cpp
 	machine/devices/input/action_parser.cpp
+	machine/devices/input/default_mapping.cpp
 	input/manager.cpp
 	input/keyboard.cpp
 	input/gamepad.cpp

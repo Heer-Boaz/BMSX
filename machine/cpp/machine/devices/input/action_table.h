@@ -9,9 +9,7 @@
 
 namespace bmsx {
 
-class Input;
 class InputControllerEventFifo;
-class PlayerInput;
 
 struct InputControllerActionState {
 	StringId actionStringId = 0;
@@ -41,7 +39,7 @@ struct InputControllerQueryResult {
 
 class InputControllerActionTable {
 public:
-	InputControllerActionTable(Input& input, const StringPool& strings);
+	InputControllerActionTable(InputControllerInputSource& input, const StringPool& strings);
 
 	void reset();
 	std::array<InputControllerPlayerState, INPUT_CONTROLLER_PLAYER_COUNT> capturePlayers() const;
@@ -66,7 +64,7 @@ private:
 		size_t sampledButtonCount = 0;
 	};
 
-	Input& m_input;
+	InputControllerInputSource& m_input;
 	const StringPool& m_strings;
 	std::array<PlayerSlot, INPUT_CONTROLLER_PLAYER_COUNT> m_playerStates;
 
@@ -74,13 +72,13 @@ private:
 	void restorePlayerActions(PlayerSlot& state, const std::vector<InputControllerActionState>& actions);
 	void installActionMapping(PlayerSlot& state, StringId actionStringId, StringId bindStringId);
 	void upsertAction(PlayerSlot& state, StringId actionStringId, StringId bindStringId);
-	void sampleLoadedBindings(PlayerInput& playerInput, PlayerSlot& state);
+	void sampleLoadedBindings(InputControllerPlayerInputSource& playerInput, PlayerSlot& state);
 	void writeSampledButton(PlayerSlot& state, InputSource source, const std::string& button, const ButtonState& buttonState);
 	ActionState createSampledActionState(const PlayerSlot& state, const std::string& actionName) const;
 	u32 mergeSourceActionState(ActionState& result, const PlayerSlot& state, const std::string& actionName, InputSource source) const;
 	const InputControllerSampledButtonState* findSampledButton(const PlayerSlot& state, InputSource source, const std::string& button) const;
 	InputControllerSampledButtonState* findSampledButton(PlayerSlot& state, InputSource source, const std::string& button);
-	void consumeActionButtons(PlayerInput& playerInput, PlayerSlot& state, const std::string& actionName);
+	void consumeActionButtons(InputControllerPlayerInputSource& playerInput, PlayerSlot& state, const std::string& actionName);
 	void markSnapshotActionConsumed(PlayerSlot& state, const std::string& actionName);
 	void appendBindings(PlayerSlot& state, const std::string& actionName, const std::string& bindingsText) const;
 	void appendTokenBindings(PlayerSlot& state, const std::string& actionName, const std::string& binding) const;

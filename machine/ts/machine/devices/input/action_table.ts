@@ -1,12 +1,12 @@
 import { ActionDefinitionEvaluator } from './action_parser';
-import { Input, makeActionState } from '../../../input/manager';
-import type { PlayerInput } from '../../../input/player';
 import type { StringId, StringPool } from '../../cpu/string_pool';
 import { InputControllerEventFifo } from './event_fifo';
 import {
 	INP_EVENT_ACTION_STATUS_MASK,
 	INP_STATUS_CONSUMED,
 	INPUT_CONTROLLER_PLAYER_COUNT,
+	INPUT_CONTROLLER_DEFAULT_MAPPING,
+	createInputControllerActionState,
 	inputBindingId,
 	encodeInputActionValueQ16,
 	encodeInputActionValueXQ16,
@@ -15,6 +15,8 @@ import {
 	type ActionState,
 	type ButtonId,
 	type ButtonState,
+	type InputControllerInputSource,
+	type InputControllerPlayerInputSource,
 	type InputSource,
 } from './contracts';
 
@@ -74,7 +76,7 @@ export class InputControllerActionTable {
 	private readonly playerStates = createPlayerSlots();
 
 	public constructor(
-		private readonly input: Input,
+		private readonly input: InputControllerInputSource,
 		private readonly strings: StringPool,
 	) {
 		this.reset();
@@ -115,7 +117,7 @@ export class InputControllerActionTable {
 	public sampleButtons(eventFifo: InputControllerEventFifo): void {
 		for (let playerIndex = 1; playerIndex <= INPUT_CONTROLLER_PLAYER_COUNT; playerIndex += 1) {
 			const state = this.playerStates[playerIndex - 1]!;
-			const playerInput = this.input.getPlayerInput(playerIndex);
+			const playerInput = this.input.inputControllerPlayer(playerIndex);
 			state.sampledButtonCount = 0;
 			this.sampleLoadedBindings(playerInput, state);
 			for (let actionIndex = 0; actionIndex < state.actions.length; actionIndex += 1) {
@@ -177,8 +179,8 @@ export class InputControllerActionTable {
 	}
 
 	public consumeActions(playerIndex: number, actionNames: string): void {
-		const playerInput = this.input.getPlayerInput(playerIndex);
 		const state = this.playerStates[playerIndex - 1]!;
+		const playerInput = this.input.inputControllerPlayer(playerIndex);
 		let actionStart = 0;
 		for (let index = 0; index <= actionNames.length; index += 1) {
 			if (index !== actionNames.length && actionNames.charCodeAt(index) !== 44) {
@@ -227,11 +229,11 @@ export class InputControllerActionTable {
 		state.actions.push({ actionStringId, bindStringId, statusWord: 0, valueQ16: 0, pressTime: 0, repeatCount: 0 });
 	}
 
-	private sampleLoadedBindings(playerInput: PlayerInput, state: InputControllerPlayerSlot): void {
+	private sampleLoadedBindings(playerInput: InputControllerPlayerInputSource, state: InputControllerPlayerSlot): void {
 		for (let index = 0; index < state.bindings.length; index += 1) {
 			const binding = state.bindings[index]!;
 			if (this.findSampledButton(state, binding.source, binding.button) === undefined) {
-				this.writeSampledButton(state, binding.source, binding.button, playerInput.getButtonState(binding.button, binding.source));
+				this.writeSampledButton(state, binding.source, binding.button, playerInput.sampleInputControllerButton(binding.source, binding.button));
 			}
 		}
 	}
@@ -250,7 +252,7 @@ export class InputControllerActionTable {
 	}
 
 	private createSampledActionState(state: InputControllerPlayerSlot, actionName: string): ActionState {
-		const result = makeActionState(actionName);
+		const result = createInputControllerActionState(actionName);
 		let sourceCount = 0;
 		sourceCount += this.mergeSourceActionState(result, state, actionName, 'keyboard');
 		sourceCount += this.mergeSourceActionState(result, state, actionName, 'gamepad');
@@ -361,7 +363,7 @@ export class InputControllerActionTable {
 		return undefined;
 	}
 
-	private consumeActionButtons(playerInput: PlayerInput, state: InputControllerPlayerSlot, actionName: string): void {
+	private consumeActionButtons(playerInput: InputControllerPlayerInputSource, state: InputControllerPlayerSlot, actionName: string): void {
 		for (let index = 0; index < state.bindings.length; index += 1) {
 			const binding = state.bindings[index]!;
 			if (binding.actionName !== actionName) {
@@ -369,7 +371,7 @@ export class InputControllerActionTable {
 			}
 			const sampled = this.findSampledButton(state, binding.source, binding.button);
 			if (sampled !== undefined && sampled.state.pressed && !sampled.state.consumed) {
-				playerInput.consumeRawButton(binding.button, binding.source);
+				playerInput.consumeInputControllerButton(binding.source, binding.button);
 				sampled.state.consumed = true;
 			}
 		}
@@ -417,15 +419,15 @@ export class InputControllerActionTable {
 			this.addBinding(state, actionName, 'keyboard', binding);
 			return;
 		}
-		const defaultPointerBindings = Input.DEFAULT_INPUT_MAPPING.pointer[binding];
+		const defaultPointerBindings = INPUT_CONTROLLER_DEFAULT_MAPPING.pointer[binding];
 		if (defaultPointerBindings) {
 			for (let bindingIndex = 0; bindingIndex < defaultPointerBindings.length; bindingIndex += 1) {
 				this.addBinding(state, actionName, 'pointer', inputBindingId(defaultPointerBindings[bindingIndex]!));
 			}
 			return;
 		}
-		const defaultKeyboardBindings = Input.DEFAULT_INPUT_MAPPING.keyboard[binding];
-		const defaultGamepadBindings = Input.DEFAULT_INPUT_MAPPING.gamepad[binding];
+		const defaultKeyboardBindings = INPUT_CONTROLLER_DEFAULT_MAPPING.keyboard[binding];
+		const defaultGamepadBindings = INPUT_CONTROLLER_DEFAULT_MAPPING.gamepad[binding];
 		if (defaultKeyboardBindings || defaultGamepadBindings) {
 			if (defaultKeyboardBindings) {
 				for (let bindingIndex = 0; bindingIndex < defaultKeyboardBindings.length; bindingIndex += 1) {
@@ -458,20 +460,20 @@ export class InputControllerActionTable {
 	}
 
 	private loadDefaultBindings(state: InputControllerPlayerSlot): void {
-		for (const actionName in Input.DEFAULT_INPUT_MAPPING.keyboard) {
-			const bindings = Input.DEFAULT_INPUT_MAPPING.keyboard[actionName]!;
+		for (const actionName in INPUT_CONTROLLER_DEFAULT_MAPPING.keyboard) {
+			const bindings = INPUT_CONTROLLER_DEFAULT_MAPPING.keyboard[actionName]!;
 			for (let index = 0; index < bindings.length; index += 1) {
 				this.addBinding(state, actionName, 'keyboard', inputBindingId(bindings[index]!));
 			}
 		}
-		for (const actionName in Input.DEFAULT_INPUT_MAPPING.gamepad) {
-			const bindings = Input.DEFAULT_INPUT_MAPPING.gamepad[actionName]!;
+		for (const actionName in INPUT_CONTROLLER_DEFAULT_MAPPING.gamepad) {
+			const bindings = INPUT_CONTROLLER_DEFAULT_MAPPING.gamepad[actionName]!;
 			for (let index = 0; index < bindings.length; index += 1) {
 				this.addBinding(state, actionName, 'gamepad', inputBindingId(bindings[index]!));
 			}
 		}
-		for (const actionName in Input.DEFAULT_INPUT_MAPPING.pointer) {
-			const bindings = Input.DEFAULT_INPUT_MAPPING.pointer[actionName]!;
+		for (const actionName in INPUT_CONTROLLER_DEFAULT_MAPPING.pointer) {
+			const bindings = INPUT_CONTROLLER_DEFAULT_MAPPING.pointer[actionName]!;
 			for (let index = 0; index < bindings.length; index += 1) {
 				this.addBinding(state, actionName, 'pointer', inputBindingId(bindings[index]!));
 			}

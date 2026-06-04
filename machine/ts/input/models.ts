@@ -8,8 +8,20 @@
 import type { VibrationParams } from "../platform";
 import type { ButtonId, ButtonState } from "../machine/devices/input/contracts";
 export { inputBindingId } from "../machine/devices/input/contracts";
-export type { ActionState, ButtonId, ButtonState, InputSource } from "../machine/devices/input/contracts";
-import type { Input } from "./manager";
+export type {
+	ActionState,
+	BGamepadButton,
+	ButtonId,
+	ButtonState,
+	GamepadBinding,
+	GamepadInputMapping,
+	InputMap,
+	InputSource,
+	KeyboardBinding,
+	KeyboardInputMapping,
+	PointerBinding,
+	PointerInputMapping,
+} from "../machine/devices/input/contracts";
 
 export type ActionStateQuery = {
 	/**
@@ -57,41 +69,6 @@ export type KeyboardButtonId = 'BTN1' | 'BTN2' | 'BTN3' | 'BTN4';
  * Represents the state of an button-press-index in the Index2State type. Used for tracking the state of a button.
  */
 export type KeyOrButtonId2ButtonState = { [index: ButtonId]: ButtonState; };
-/**
- * Represents a mapping of keyboard inputs to actions.
- */
-export type KeyboardBinding = string | { id: string; scale?: number; invert?: boolean };
-export type KeyboardInputMapping = {
-	[action: string]: KeyboardBinding[];
-};
-
-/**
- * Represents a mapping of gamepad inputs to gamepad buttons.
- */
-export type GamepadBinding = BGamepadButton | { id: BGamepadButton; scale?: number; invert?: boolean };
-export type GamepadInputMapping = {
-	[action: string]: GamepadBinding[];
-};
-export type PointerBinding = string | { id: string; scale?: number; invert?: boolean };
-export type PointerInputMapping = {
-	[action: string]: PointerBinding[];
-};
-
-/**
- * Host default input mapping bundle installed as the base context.
- */
-export interface InputMap {
-	keyboard: KeyboardInputMapping;
-	gamepad: GamepadInputMapping;
-	pointer: PointerInputMapping;
-}
-
-/**
- * Represents a gamepad button.
- * @typedef {keyof typeof Input.BUTTON2INDEX } BGamepadButton
- */
-export type BGamepadButton = (typeof Input.BUTTON_IDS)[number];
-
 /**
  * Represents the input event that is stored when a key or button is pressed or released.
  */

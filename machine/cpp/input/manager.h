@@ -95,7 +95,7 @@ struct DeviceBinding {
  * Singleton managing all input for the game.
  * ============================================================================ */
 
-class Input {
+class Input : public InputControllerInputSource {
 public:
 	// ─────────────────────────────────────────────────────────────────────────
 	// Constants
@@ -125,6 +125,7 @@ public:
 	
 	// Get player input for a specific player index
 	auto getPlayerInput(i32 playerIndex) -> PlayerInput*;
+	InputControllerPlayerInputSource& inputControllerPlayer(i32 playerIndex) override;
 	
 	// ─────────────────────────────────────────────────────────────────────────
 	// Device management

@@ -1,7 +1,7 @@
 ﻿import { consoleCore } from '../core/console';
 import type { Identifier, RegisterablePersistent } from '../rompack/format';
 import { GamepadInput } from './gamepad';
-import type { ActionState, ButtonId, ButtonState, GamepadInputMapping, InputEvent, InputHandler, InputMap, KeyboardInputMapping, KeyOrButtonId2ButtonState, PointerInputMapping } from './models';
+import type { ActionState, ButtonId, ButtonState, InputEvent, InputHandler, InputMap, KeyboardInputMapping, KeyOrButtonId2ButtonState } from './models';
 import { KeyboardInput } from './keyboard';
 import { OnscreenGamepad } from './onscreen_gamepad';
 import { GlobalShortcutRegistry } from './shortcuts';
@@ -10,6 +10,7 @@ import { PendingAssignmentProcessor } from './host/assignment_processor';
 import { PlayerInput, InputSource } from './player';
 import { PointerInput } from './pointer';
 import type { DeviceKind, InputDevice, InputEvt, SubscriptionHandle, GameViewCanvas } from '../platform';
+import { INPUT_CONTROLLER_DEFAULT_MAPPING, INPUT_CONTROLLER_GAMEPAD_BUTTON_IDS, type InputControllerInputSource, type InputControllerPlayerInputSource } from '../machine/devices/input/contracts';
 
 const EMPTY_BUTTON_STATE_PATCH: Readonly<Partial<ButtonState>> = Object.freeze({});
 const EMPTY_ACTION_STATE_PATCH: Readonly<Partial<ActionState>> = Object.freeze({});
@@ -517,7 +518,7 @@ export class InputStateManager {
  * Represents the Input class, which manages player inputs and gamepad assignments.
  * Implements the singleton pattern to ensure only one instance exists.
  */
-export class Input implements RegisterablePersistent {
+export class Input implements RegisterablePersistent, InputControllerInputSource {
 	get registrypersistent(): true {
 		return true;
 	}
@@ -641,6 +642,10 @@ export class Input implements RegisterablePersistent {
 		return this.playerInputs[index];
 	}
 
+	public inputControllerPlayer(playerIndex: number): InputControllerPlayerInputSource {
+		return this.getPlayerInput(playerIndex);
+	}
+
 	public setFrameDurationMs(frameDurationMs: number): void {
 		this.frameDurationMs = frameDurationMs;
 		for (const player of this.playerInputs) {
@@ -655,26 +660,7 @@ export class Input implements RegisterablePersistent {
 	 * We use this mapping to get a list of all gamepad buttons.
 	 * @see BGamepadButton
 	 */
-	public static readonly BUTTON_IDS = [
-		'a', // Bottom face button
-		'b', // Right face button
-		'x', // Left face button
-		'y', // Top face button
-		'lb', // Left shoulder button
-		'rb', // Right shoulder button
-		'lt', // Left trigger button
-		'rt', // Right trigger button
-		'select', // Select button
-		'start', // Start button
-		'ls', // Left stick button
-		'rs', // Right stick button
-		'up', // D-pad up
-		'down', // D-pad down
-		'left', // D-pad left
-		'right', // D-pad right
-		'home', // Xbox button
-		'touch', // Touchpad button
-	] as const;
+	public static readonly BUTTON_IDS = INPUT_CONTROLLER_GAMEPAD_BUTTON_IDS;
 
 	private static createKeyboardToGamepadMap(keyboard: KeyboardInputMapping): Record<string, string> {
 		const inverse: Record<string, string> = {};
@@ -689,66 +675,9 @@ export class Input implements RegisterablePersistent {
 		return inverse;
 	}
 
-	private static readonly DEFAULT_POINTER_INPUT_MAPPING: PointerInputMapping = Object.freeze({
-		pointer_primary: ['pointer_primary'],
-		pointer_secondary: ['pointer_secondary'],
-		pointer_aux: ['pointer_aux'],
-		pointer_back: ['pointer_back'],
-		pointer_forward: ['pointer_forward'],
-		pointer_delta: ['pointer_delta'],
-		pointer_position: ['pointer_position'],
-		pointer_wheel: ['pointer_wheel'],
-	});
+	public static readonly DEFAULT_INPUT_MAPPING: InputMap = INPUT_CONTROLLER_DEFAULT_MAPPING;
 
-	private static readonly DEFAULT_KEYBOARD_INPUT_MAPPING: KeyboardInputMapping = Object.freeze({
-		a: ['KeyX'],
-		b: ['KeyC'],
-		x: ['KeyZ'],
-		y: ['KeyS'],
-		lb: ['ShiftLeft'],
-		rb: ['ShiftRight'],
-		lt: ['CtrlLeft'],
-		rt: ['CtrlRight'],
-		select: ['Backspace'],
-		start: ['Enter'],
-		ls: ['KeyQ'],
-		rs: ['KeyE'],
-		up: ['ArrowUp'],
-		down: ['ArrowDown'],
-		left: ['ArrowLeft'],
-		right: ['ArrowRight'],
-		home: ['Escape'],
-		touch: ['Space'],
-	});
-
-	private static readonly DEFAULT_GAMEPAD_INPUT_MAPPING: GamepadInputMapping = Object.freeze({
-		a: ['a'],
-		b: ['b'],
-		x: ['x'],
-		y: ['y'],
-		lb: ['lb'],
-		rb: ['rb'],
-		lt: ['lt'],
-		rt: ['rt'],
-		select: ['select'],
-		start: ['start'],
-		ls: ['ls'],
-		rs: ['rs'],
-		up: ['up'],
-		down: ['down'],
-		left: ['left'],
-		right: ['right'],
-		home: ['home'],
-		touch: ['touch'],
-	});
-
-	public static readonly DEFAULT_INPUT_MAPPING: InputMap = Object.freeze({
-		keyboard: Input.DEFAULT_KEYBOARD_INPUT_MAPPING,
-		gamepad: Input.DEFAULT_GAMEPAD_INPUT_MAPPING,
-		pointer: Input.DEFAULT_POINTER_INPUT_MAPPING,
-	});
-
-	public static readonly KEYBOARDKEY2GAMEPADBUTTON = Object.freeze(Input.createKeyboardToGamepadMap(Input.DEFAULT_KEYBOARD_INPUT_MAPPING));
+	public static readonly KEYBOARDKEY2GAMEPADBUTTON = Object.freeze(Input.createKeyboardToGamepadMap(Input.DEFAULT_INPUT_MAPPING.keyboard));
 
 	private static readonly DEBUG_CAPTURE_KEYS = new Set(['F11']);
 

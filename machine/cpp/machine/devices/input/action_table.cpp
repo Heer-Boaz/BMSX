@@ -1,8 +1,6 @@
 #include "machine/devices/input/action_table.h"
 
 #include "machine/devices/input/action_parser.h"
-#include "input/manager.h"
-#include "input/player.h"
 #include "machine/devices/input/event_fifo.h"
 
 #include <cmath>
@@ -92,7 +90,7 @@ void mergeSourceAccumulator(ActionState& result, const SourceActionAccumulator& 
 
 } // namespace
 
-InputControllerActionTable::InputControllerActionTable(Input& input, const StringPool& strings)
+InputControllerActionTable::InputControllerActionTable(InputControllerInputSource& input, const StringPool& strings)
 	: m_input(input)
 	, m_strings(strings) {
 	reset();
@@ -137,9 +135,9 @@ void InputControllerActionTable::resetActions(i32 playerIndex) {
 void InputControllerActionTable::sampleButtons(InputControllerEventFifo& eventFifo) {
 	for (i32 playerIndex = 1; playerIndex <= INPUT_CONTROLLER_PLAYER_COUNT; playerIndex += 1) {
 		PlayerSlot& state = m_playerStates[static_cast<size_t>(playerIndex - 1)];
-		PlayerInput* const playerInput = m_input.getPlayerInput(playerIndex);
+		InputControllerPlayerInputSource& playerInput = m_input.inputControllerPlayer(playerIndex);
 		state.sampledButtonCount = 0;
-		sampleLoadedBindings(*playerInput, state);
+		sampleLoadedBindings(playerInput, state);
 		for (InputControllerActionState& action : state.actions) {
 			const ActionState actionState = createSampledActionState(state, m_strings.toString(action.actionStringId));
 			action.statusWord = packInputActionStatus(actionState);
@@ -202,15 +200,15 @@ void InputControllerActionTable::queryAction(i32 playerIndex, const std::string&
 }
 
 void InputControllerActionTable::consumeActions(i32 playerIndex, const std::string& actionNames) {
-	PlayerInput* const playerInput = m_input.getPlayerInput(playerIndex);
 	PlayerSlot& state = m_playerStates[static_cast<size_t>(playerIndex - 1)];
+	InputControllerPlayerInputSource& playerInput = m_input.inputControllerPlayer(playerIndex);
 	size_t start = 0;
 	for (size_t index = 0; index <= actionNames.size(); index += 1) {
 		if (index != actionNames.size() && actionNames[index] != ',') {
 			continue;
 		}
 		const std::string actionName = actionNames.substr(start, index - start);
-		consumeActionButtons(*playerInput, state, actionName);
+		consumeActionButtons(playerInput, state, actionName);
 		markSnapshotActionConsumed(state, actionName);
 		start = index + 1;
 	}
@@ -250,10 +248,10 @@ void InputControllerActionTable::upsertAction(PlayerSlot& state, StringId action
 	state.actions.push_back(InputControllerActionState{ actionStringId, bindStringId });
 }
 
-void InputControllerActionTable::sampleLoadedBindings(PlayerInput& playerInput, PlayerSlot& state) {
+void InputControllerActionTable::sampleLoadedBindings(InputControllerPlayerInputSource& playerInput, PlayerSlot& state) {
 	for (const InputControllerActionBinding& binding : state.bindings) {
 		if (!findSampledButton(state, binding.source, binding.button)) {
-			writeSampledButton(state, binding.source, binding.button, playerInput.getButtonState(binding.button, binding.source));
+			writeSampledButton(state, binding.source, binding.button, playerInput.sampleInputControllerButton(binding.source, binding.button));
 		}
 	}
 }
@@ -324,14 +322,14 @@ InputControllerSampledButtonState* InputControllerActionTable::findSampledButton
 	return nullptr;
 }
 
-void InputControllerActionTable::consumeActionButtons(PlayerInput& playerInput, PlayerSlot& state, const std::string& actionName) {
+void InputControllerActionTable::consumeActionButtons(InputControllerPlayerInputSource& playerInput, PlayerSlot& state, const std::string& actionName) {
 	for (const InputControllerActionBinding& binding : state.bindings) {
 		if (binding.actionName != actionName) {
 			continue;
 		}
 		InputControllerSampledButtonState* const sampled = findSampledButton(state, binding.source, binding.button);
 		if (sampled && sampled->state.pressed && !sampled->state.consumed) {
-			playerInput.consumeRawButton(binding.button, binding.source);
+			playerInput.consumeInputControllerButton(binding.source, binding.button);
 			sampled->state.consumed = true;
 		}
 	}
@@ -376,27 +374,28 @@ void InputControllerActionTable::appendTokenBindings(PlayerSlot& state, const st
 		addBinding(state, actionName, InputSource::Keyboard, binding);
 		return;
 	}
-	const auto& defaultPointer = Input::DEFAULT_INPUT_MAPPING.pointer;
+	const auto& defaultMapping = inputControllerDefaultMapping();
+	const auto& defaultPointer = defaultMapping.pointer;
 	const auto pointerIt = defaultPointer.find(binding);
 	if (pointerIt != defaultPointer.end()) {
-		for (const PointerBinding& defaultBinding : pointerIt->second) {
-			addBinding(state, actionName, InputSource::Pointer, defaultBinding.id);
+		for (const std::string& defaultBinding : pointerIt->second) {
+			addBinding(state, actionName, InputSource::Pointer, defaultBinding);
 		}
 		return;
 	}
-	const auto& defaultKeyboard = Input::DEFAULT_INPUT_MAPPING.keyboard;
+	const auto& defaultKeyboard = defaultMapping.keyboard;
 	const auto keyboardIt = defaultKeyboard.find(binding);
-	const auto& defaultGamepad = Input::DEFAULT_INPUT_MAPPING.gamepad;
+	const auto& defaultGamepad = defaultMapping.gamepad;
 	const auto gamepadIt = defaultGamepad.find(binding);
 	if (keyboardIt != defaultKeyboard.end() || gamepadIt != defaultGamepad.end()) {
 		if (keyboardIt != defaultKeyboard.end()) {
-			for (const KeyboardBinding& defaultBinding : keyboardIt->second) {
-				addBinding(state, actionName, InputSource::Keyboard, defaultBinding.id);
+			for (const std::string& defaultBinding : keyboardIt->second) {
+				addBinding(state, actionName, InputSource::Keyboard, defaultBinding);
 			}
 		}
 		if (gamepadIt != defaultGamepad.end()) {
-			for (const GamepadBinding& defaultBinding : gamepadIt->second) {
-				addBinding(state, actionName, InputSource::Gamepad, defaultBinding.id);
+			for (const std::string& defaultBinding : gamepadIt->second) {
+				addBinding(state, actionName, InputSource::Gamepad, defaultBinding);
 			}
 		}
 		return;
@@ -420,19 +419,20 @@ bool InputControllerActionTable::isKeyboardButtonToken(const std::string& bindin
 }
 
 void InputControllerActionTable::loadDefaultBindings(PlayerSlot& state) const {
-	for (const auto& [actionName, bindings] : Input::DEFAULT_INPUT_MAPPING.keyboard) {
-		for (const KeyboardBinding& binding : bindings) {
-			addBinding(state, actionName, InputSource::Keyboard, binding.id);
+	const auto& defaultMapping = inputControllerDefaultMapping();
+	for (const auto& [actionName, bindings] : defaultMapping.keyboard) {
+		for (const std::string& binding : bindings) {
+			addBinding(state, actionName, InputSource::Keyboard, binding);
 		}
 	}
-	for (const auto& [actionName, bindings] : Input::DEFAULT_INPUT_MAPPING.gamepad) {
-		for (const GamepadBinding& binding : bindings) {
-			addBinding(state, actionName, InputSource::Gamepad, binding.id);
+	for (const auto& [actionName, bindings] : defaultMapping.gamepad) {
+		for (const std::string& binding : bindings) {
+			addBinding(state, actionName, InputSource::Gamepad, binding);
 		}
 	}
-	for (const auto& [actionName, bindings] : Input::DEFAULT_INPUT_MAPPING.pointer) {
-		for (const PointerBinding& binding : bindings) {
-			addBinding(state, actionName, InputSource::Pointer, binding.id);
+	for (const auto& [actionName, bindings] : defaultMapping.pointer) {
+		for (const std::string& binding : bindings) {
+			addBinding(state, actionName, InputSource::Pointer, binding);
 		}
 	}
 }

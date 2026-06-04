@@ -24,7 +24,7 @@ namespace bmsx {
  * sources (keyboard, gamepad, pointer) and evaluating actions.
  * ============================================================================ */
 
-class PlayerInput {
+class PlayerInput : public InputControllerPlayerInputSource {
 public:
 	// ─────────────────────────────────────────────────────────────────────────
 	// Constructor / Destructor
@@ -81,6 +81,8 @@ public:
 
 	// Get button state from specific source
 	ButtonState getButtonState(const std::string& button, InputSource source, std::optional<i32> windowFrames = std::nullopt);
+	ButtonState sampleInputControllerButton(InputSource source, const std::string& button) override;
+	void consumeInputControllerButton(InputSource source, const std::string& button) override;
 
 	ButtonState getRawButtonState(const std::string& button, InputSource source);
 
