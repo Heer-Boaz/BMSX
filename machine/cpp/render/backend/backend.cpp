@@ -5,6 +5,13 @@
 #include "backend.h"
 #include "common/clamp.h"
 #include "render/shared/software_pixels.h"
+#include "render/2d/framebuffer_pipeline.h"
+#include "render/backend/pass/library.h"
+#include "render/backend/software/vdp_rpu.h"
+#include "render/host_overlay/pass_registration.h"
+#include "render/host_overlay/software/renderer.h"
+#include "render/post/crt/software/pipeline.h"
+#include "render/post/device_quantize/software/pipeline.h"
 #include <array>
 #include <algorithm>
 #include <cmath>
@@ -235,6 +242,15 @@ SoftwareBackend::SoftwareBackend(u32* framebuffer, i32 width, i32 height, i32 pi
 }
 
 SoftwareBackend::~SoftwareBackend() = default;
+
+void SoftwareBackend::registerBuiltinPasses(RenderPassLibrary& registry) {
+	registerFrameStatePasses(registry);
+	registerVdpRpuPassSoftware(registry);
+	registerFramebuffer2DPass_Software(registry);
+	DeviceQuantizePipeline::Software::registerPass(registry);
+	CRTPipeline::registerCRTPostSoftwarePass(registry);
+	registerHostOverlayBackendPasses<SoftwareBackend, nullptr, beginHostOverlaySoftware, renderHost2DEntrySoftware, endHostOverlaySoftware>(registry);
+}
 
 void SoftwareBackend::setFramebuffer(u32* fb, i32 width, i32 height, i32 pitch) {
 	m_framebuffer = fb;

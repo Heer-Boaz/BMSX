@@ -3,10 +3,10 @@
  */
 
 #include "backend.h"
-#include "render/post/crt/pipeline.h"
+#include "render/post/crt/gles2/pipeline.h"
+#include "render/post/device_quantize/gles2/pipeline.h"
 #include "render/host_overlay/pass_registration.h"
 #include "render/host_overlay/gles2/pipeline.h"
-#include "render/gameview.h"
 #include "render/backend/pass/library.h"
 #include "render/backend/gles2/vdp_rpu.h"
 #include "render/3d/axis_gizmo_pipeline.h"
@@ -109,6 +109,12 @@ bool hasExtensionToken(const char* extensions, const char* needle) {
 
 namespace bmsx {
 
+struct OpenGLES2PostPipelines {
+	DeviceQuantizePipeline::GLES2::State deviceQuantize;
+	CRTPipeline::PresentGLES2State present;
+	CRTPipeline::CRTGLES2State crt;
+};
+
 static size_t rgba8ByteCount(i32 width, i32 height) {
 	return static_cast<size_t>(width) * static_cast<size_t>(height) * 4u;
 }
@@ -141,89 +147,15 @@ static const u8* prepareGLES2TextureStorageData(const u8* data, i32 width, i32 h
 	debug mode.
 */
 
-namespace {
-
-DeviceQuantizePipelineState buildDeviceQuantizeState(const RenderPassDef::RenderGraphPassContext& ctx) {
-	auto* view = ctx.view;
-	DeviceQuantizePipelineState state;
-	writeRenderPassViewportSize(state.width, state.height, state.baseWidth, state.baseHeight, *view);
-	state.colorTex = ctx.getTexture(RenderPassDef::RenderGraphSlot::FrameColor);
-	state.ditherType = static_cast<i32>(view->dither_type);
-	return state;
-}
-
-} // namespace
-
 void OpenGLES2Backend::registerBuiltinPasses(RenderPassLibrary& registry) {
-	GameView* const view = registry.view();
-
 	registerFrameStatePasses(registry);
 
 	registerVdpRpuPass(registry);
 	registerFramebuffer2DPass_GLES2(registry);
+	DeviceQuantizePipeline::GLES2::registerPass(registry, m_post_pipelines->deviceQuantize);
 
-	// Device quantize/dither pass (GLES2)
-	{
-		RenderPassDef desc;
-		desc.id = "device_quantize";
-		desc.name = "DeviceQuantize";
-		desc.graph = RenderPassDef::RenderPassGraphDef{};
-		desc.graph->reads = { RenderPassDef::RenderGraphSlot::FrameColor };
-		desc.graph->writes = { RenderPassDef::RenderGraphSlot::DeviceColor };
-		desc.graph->buildState = [](const RenderPassDef::RenderGraphPassContext& ctx) -> std::any {
-			return buildDeviceQuantizeState(ctx);
-		};
-		desc.bootstrap = [](GPUBackend* backend) {
-			CRTPipeline::initDeviceQuantizeGLES2(static_cast<OpenGLES2Backend*>(backend));
-		};
-		desc.exec = [view](GPUBackend* backend, void* fbo, std::any& state) {
-			(void)fbo;
-			auto& deviceState = std::any_cast<DeviceQuantizePipelineState&>(state);
-			CRTPipeline::renderDeviceQuantizeGLES2(static_cast<OpenGLES2Backend*>(backend), view, deviceState);
-		};
-		desc.shouldExecute = [view]() {
-			return static_cast<i32>(view->dither_type) != 0;
-		};
-		registry.registerPass(desc);
-	}
-
-	// Present pass (GLES2, no CRT)
-	{
-		RenderPassDef desc;
-		desc.id = "present";
-		desc.name = "Present";
-		setAutoPresentGraph(desc);
-		desc.bootstrap = [](GPUBackend* backend) {
-			CRTPipeline::initPresentGLES2(static_cast<OpenGLES2Backend*>(backend));
-		};
-		desc.exec = [view](GPUBackend* backend, void*, std::any& state) {
-			auto& crtState = std::any_cast<CRTPipelineState&>(state);
-			CRTPipeline::renderPresentGLES2(static_cast<OpenGLES2Backend*>(backend), view, crtState);
-		};
-		desc.shouldExecute = [view]() {
-			return !view->crt_postprocessing_enabled;
-		};
-		registry.registerPass(desc);
-	}
-
-	// CRT post-processing / present pass (GLES2)
-	{
-		RenderPassDef desc;
-		desc.id = "crt";
-		desc.name = "Present/CRT";
-		setAutoPresentGraph(desc);
-		desc.bootstrap = [](GPUBackend* backend) {
-			CRTPipeline::initGLES2(static_cast<OpenGLES2Backend*>(backend));
-		};
-		desc.exec = [view](GPUBackend* backend, void*, std::any& state) {
-			auto& crtState = std::any_cast<CRTPipelineState&>(state);
-			CRTPipeline::renderCRTGLES2(static_cast<OpenGLES2Backend*>(backend), view, crtState);
-		};
-		desc.shouldExecute = [view]() {
-			return view->crt_postprocessing_enabled;
-		};
-		registry.registerPass(desc);
-	}
+	CRTPipeline::registerPresentGLES2Pass(registry, m_post_pipelines->present);
+	CRTPipeline::registerCRTGLES2Pass(registry, m_post_pipelines->crt);
 
 	registerHostOverlayBackendPasses<OpenGLES2Backend, bootstrapHostOverlayGLES2, beginHostOverlayGLES2, renderHost2DEntryGLES2, endHostOverlayGLES2, shouldRenderAxisGizmo>(registry);
 }
@@ -259,7 +191,9 @@ void* OpenGLES2Backend::resolveProcAddress(const char* coreName, const char* ang
 }
 
 OpenGLES2Backend::OpenGLES2Backend(i32 width, i32 height)
-	: m_width(width), m_height(height) {}
+	: m_width(width)
+	, m_height(height)
+	, m_post_pipelines(std::make_unique<OpenGLES2PostPipelines>()) {}
 
 OpenGLES2Backend::~OpenGLES2Backend() = default;
 
@@ -552,6 +486,9 @@ void OpenGLES2Backend::onContextReset() {
 	m_supports_srgb_textures = hasExtensionToken(extensions, "GL_EXT_sRGB");
 	m_supports_uint_indices = hasExtensionToken(extensions, "GL_OES_element_index_uint");
 	glGenFramebuffers(1, &m_readback_fbo);
+	DeviceQuantizePipeline::GLES2::init(*this, m_post_pipelines->deviceQuantize);
+	CRTPipeline::initPresentGLES2(*this, m_post_pipelines->present);
+	CRTPipeline::initCRTGLES2(*this, m_post_pipelines->crt);
 	if (kGLES2VerboseLog) {
 		std::fprintf(stderr, "[BMSX][GLES2] EXT_sRGB=%d OES_element_index_uint=%d\n",
 			m_supports_srgb_textures ? 1 : 0,
@@ -560,6 +497,9 @@ void OpenGLES2Backend::onContextReset() {
 }
 
 void OpenGLES2Backend::onContextDestroy() {
+	CRTPipeline::shutdownCRTGLES2(m_post_pipelines->crt);
+	CRTPipeline::shutdownPresentGLES2(m_post_pipelines->present);
+	DeviceQuantizePipeline::GLES2::shutdown(m_post_pipelines->deviceQuantize);
 	m_context_ready = false;
 	m_context_generation += 1u;
 	invalidateTextureBindingCache();

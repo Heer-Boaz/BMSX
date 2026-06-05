@@ -57,6 +57,7 @@ const PLATFORM_REBUILD_FILE_EXTENSIONS = new Set<string>([
 	'.jsx',
 	'.json',
 	'.glsl',
+	'.wgsl',
 	'.css',
 	'.html',
 	'.xml',

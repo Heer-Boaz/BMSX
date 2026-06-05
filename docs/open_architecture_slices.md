@@ -20,24 +20,8 @@ Al afgerond en daarom niet opnieuw als open slice opgenomen:
 - ROM-format types losgetrokken van host layers
 - browser backend factory verplaatst naar browser host
 - TS input identity/action-state/action-parser/action-table onder ICU-eigenaarschap gebracht
-
-## 0. Browser/runtime view-singleton lek afronden
-
-Status: in progress, nog niet gecommit.
-
-Aanleiding: browser-host `engine.js` en machine/runtime `libbmsx.js` kunnen elk hun eigen `consoleCore` singleton in de bundle hebben. WebGL post-passes mogen daarom niet via een geïmporteerde `consoleCore.view` naar de actieve view grijpen.
-
-Huidige wijziging:
-
-- `machine/ts/render/post/device_quantize_pipeline.ts`
-- `machine/ts/render/post/crt/pipeline.ts`
-
-Acceptatie:
-
-- post-passes gebruiken de actieve `RenderPassLibrary.view`
-- browser debug/release build groen
-- TS headless en C++ headless boot + screenshots blijven groen
-- geen nieuwe architecture-boundary issues
+- browser/runtime view-singleton lek uit WebGL post-passes gehaald
+- C++ GLES2 CRT/device/present post-pass resources onder pass-lifecycle gebracht
 
 ## 1. ICU input-device source boundary
 

@@ -897,7 +897,7 @@ export function registerVdpRpuPass(registry: RenderPassLibrary): void {
 			initVdpRpuPipeline(webglBackend);
 			setupVdpRpuLocations(webglBackend);
 		},
-		shouldExecute: () => view.vdpRpuFrame.commands.passCount !== 0,
+		shouldExecute: (view) => view.vdpRpuFrame.commands.passCount !== 0,
 		exec: (backend, fbo) => {
 			vdpRpuRuntimeScratch.backend = backend as WebGLBackend;
 			vdpRpuPipelineStateScratch.width = view.offscreenCanvasSize.x;

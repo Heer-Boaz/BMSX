@@ -203,13 +203,6 @@ public:
 	// ─────────────────────────────────────────────────────────────────────────
 	void rebuildGraph();
 	RenderGraphRuntime* renderGraph() { return m_renderGraph.get(); }
-	void applyCRTPostProcessing(const u32* src,
-								i32 srcWidth,
-								i32 srcHeight,
-								u32* dst,
-								i32 dstWidth,
-								i32 dstHeight,
-								i32 dstPitch);
 
 	// ─────────────────────────────────────────────────────────────────────────
 	// Ambient control API
@@ -229,9 +222,6 @@ private:
 	std::unique_ptr<VdpSlotTextures> m_vdpSlotTextures;
 
 	i32 m_activeTexUnit = -1;
-
-	// CRT post-processing scratch buffer
-	std::vector<u32> m_crtScratchBuffer;
 
 	// Frame timing
 	i32 m_renderFrameIndex = 0;

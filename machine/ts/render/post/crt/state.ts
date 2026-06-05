@@ -1,46 +1,95 @@
-import type { CRTPipelineState, RenderGraphPassContext } from '../../backend/backend';
+import type { CRTPipelineState, PresentPipelineState, RenderGraphPassContext } from '../../backend/backend';
 import type { GameView } from '../../gameview';
 
-const crtPassState: CRTPipelineState = {
-	width: 0,
-	height: 0,
-	baseWidth: 0,
-	baseHeight: 0,
-	colorTex: null,
-	options: {
-		enableNoise: false,
-		noiseIntensity: 0,
-		enableColorBleed: false,
-		colorBleed: [0, 0, 0],
-		enableScanlines: false,
-		enableBlur: false,
-		enableGlow: false,
-		enableFringing: false,
-		enableAperture: false,
-		blurIntensity: 0,
-		glowColor: [0, 0, 0],
-	},
-};
+export function hasEnabledCrtEffects(view: GameView): boolean {
+	return view.crt_postprocessing_enabled
+		&& (view.enable_noise
+			|| view.enable_colorbleed
+			|| view.enable_scanlines
+			|| view.enable_blur
+			|| view.enable_glow
+			|| view.enable_fringing
+			|| view.enable_aperture);
+}
 
-export function buildCrtPassState(ctx: RenderGraphPassContext): CRTPipelineState {
+export function shouldExecuteAutoPresentPass(view: GameView): boolean {
+	return !hasEnabledCrtEffects(view);
+}
+
+export function shouldExecuteAutoCrtPass(view: GameView): boolean {
+	return hasEnabledCrtEffects(view);
+}
+
+export function createPresentPassState(): PresentPipelineState {
+	return {
+		width: 0,
+		height: 0,
+		srcWidth: 0,
+		srcHeight: 0,
+		colorTex: null,
+	};
+}
+
+export function writePresentPassState(ctx: RenderGraphPassContext, state: PresentPipelineState): void {
+	const view = ctx.view as GameView;
+	state.width = view.canvasSize.x;
+	state.height = view.canvasSize.y;
+	state.srcWidth = view.offscreenCanvasSize.x;
+	state.srcHeight = view.offscreenCanvasSize.y;
+	state.colorTex = ctx.deviceColorEnabled && view.dither_type !== 0 ? ctx.getTex('device_color') : ctx.getTex('frame_color');
+}
+
+export function createCrtPassState(): CRTPipelineState {
+	return {
+		width: 0,
+		height: 0,
+		baseWidth: 0,
+		baseHeight: 0,
+		srcWidth: 0,
+		srcHeight: 0,
+		time: 0,
+		colorTex: null,
+		options: {
+			applyNoise: false,
+			noiseIntensity: 0,
+			applyColorBleed: false,
+			colorBleed: [0, 0, 0],
+			applyScanlines: false,
+			applyBlur: false,
+			applyGlow: false,
+			applyFringing: false,
+			applyAperture: false,
+			blurIntensity: 0,
+			glowColor: [0, 0, 0],
+		},
+	};
+}
+
+export function writeCrtPassState(ctx: RenderGraphPassContext, state: CRTPipelineState): void {
 	const view = ctx.view as GameView;
 	const applyCrt = view.crt_postprocessing_enabled;
-	crtPassState.width = view.offscreenCanvasSize.x;
-	crtPassState.height = view.offscreenCanvasSize.y;
-	crtPassState.baseWidth = view.viewportSize.x;
-	crtPassState.baseHeight = view.viewportSize.y;
-	crtPassState.colorTex = ctx.deviceColorEnabled && view.dither_type !== 0 ? ctx.getTex('device_color') : ctx.getTex('frame_color');
-	const options = crtPassState.options;
-	options.enableNoise = applyCrt && view.enable_noise;
-	options.enableColorBleed = applyCrt && view.enable_colorbleed;
-	options.enableScanlines = applyCrt && view.enable_scanlines;
-	options.enableBlur = applyCrt && view.enable_blur;
-	options.enableGlow = applyCrt && view.enable_glow;
-	options.enableFringing = applyCrt && view.enable_fringing;
-	options.enableAperture = applyCrt && view.enable_aperture;
+	state.width = view.canvasSize.x;
+	state.height = view.canvasSize.y;
+	state.baseWidth = view.viewportSize.x;
+	state.baseHeight = view.viewportSize.y;
+	state.srcWidth = view.offscreenCanvasSize.x;
+	state.srcHeight = view.offscreenCanvasSize.y;
+	state.time = ctx.time;
+	state.colorTex = ctx.deviceColorEnabled && view.dither_type !== 0 ? ctx.getTex('device_color') : ctx.getTex('frame_color');
+	const options = state.options;
+	options.applyNoise = applyCrt && view.enable_noise;
+	options.applyColorBleed = applyCrt && view.enable_colorbleed;
+	options.applyScanlines = applyCrt && view.enable_scanlines;
+	options.applyBlur = applyCrt && view.enable_blur;
+	options.applyGlow = applyCrt && view.enable_glow;
+	options.applyFringing = applyCrt && view.enable_fringing;
+	options.applyAperture = applyCrt && view.enable_aperture;
 	options.noiseIntensity = view.noiseIntensity;
-	options.colorBleed = view.colorBleed;
+	options.colorBleed[0] = view.colorBleed[0];
+	options.colorBleed[1] = view.colorBleed[1];
+	options.colorBleed[2] = view.colorBleed[2];
 	options.blurIntensity = view.blurIntensity;
-	options.glowColor = view.glowColor;
-	return crtPassState;
+	options.glowColor[0] = view.glowColor[0];
+	options.glowColor[1] = view.glowColor[1];
+	options.glowColor[2] = view.glowColor[2];
 }

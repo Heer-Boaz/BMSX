@@ -95,6 +95,12 @@ set_property(DIRECTORY APPEND PROPERTY CMAKE_CONFIGURE_DEPENDS
 	"${CMAKE_CURRENT_SOURCE_DIR}/render/2d/shaders/framebuffer_2d.frag.glsl"
 	"${CMAKE_CURRENT_SOURCE_DIR}/render/backend/gles2/shaders/vdp_rpu.vert.glsl"
 	"${CMAKE_CURRENT_SOURCE_DIR}/render/backend/gles2/shaders/vdp_rpu.frag.glsl"
+	"${CMAKE_CURRENT_SOURCE_DIR}/render/post/gles2/shaders/fullscreen.vert.glsl"
+	"${CMAKE_CURRENT_SOURCE_DIR}/render/post/crt/gles2/shaders/present.frag.glsl"
+	"${CMAKE_CURRENT_SOURCE_DIR}/render/post/crt/gles2/shaders/crt.frag.glsl"
+	"${CMAKE_CURRENT_SOURCE_DIR}/render/post/crt/gles2/shaders/crt_post_shaders.h.in"
+	"${CMAKE_CURRENT_SOURCE_DIR}/render/post/device_quantize/gles2/shaders/device_quantize.frag.glsl"
+	"${CMAKE_CURRENT_SOURCE_DIR}/render/post/device_quantize/gles2/shaders/device_quantize_shaders.h.in"
 )
 
 file(READ
@@ -160,6 +166,32 @@ file(READ
 configure_file(
 	"${CMAKE_CURRENT_SOURCE_DIR}/render/backend/gles2/shaders/vdp_rpu_shaders.h.in"
 	"${CMAKE_CURRENT_BINARY_DIR}/generated/render/backend/gles2/shaders/vdp_rpu_shaders.h"
+	@ONLY
+)
+file(READ
+	"${CMAKE_CURRENT_SOURCE_DIR}/render/post/gles2/shaders/fullscreen.vert.glsl"
+	BMSX_POST_GLES2_FULLSCREEN_VERTEX_SHADER
+)
+file(READ
+	"${CMAKE_CURRENT_SOURCE_DIR}/render/post/crt/gles2/shaders/present.frag.glsl"
+	BMSX_PRESENT_FRAGMENT_SHADER
+)
+file(READ
+	"${CMAKE_CURRENT_SOURCE_DIR}/render/post/crt/gles2/shaders/crt.frag.glsl"
+	BMSX_CRT_FRAGMENT_SHADER
+)
+file(READ
+	"${CMAKE_CURRENT_SOURCE_DIR}/render/post/device_quantize/gles2/shaders/device_quantize.frag.glsl"
+	BMSX_DEVICE_QUANTIZE_FRAGMENT_SHADER
+)
+configure_file(
+	"${CMAKE_CURRENT_SOURCE_DIR}/render/post/crt/gles2/shaders/crt_post_shaders.h.in"
+	"${CMAKE_CURRENT_BINARY_DIR}/generated/render/post/crt/gles2/shaders/crt_post_shaders.h"
+	@ONLY
+)
+configure_file(
+	"${CMAKE_CURRENT_SOURCE_DIR}/render/post/device_quantize/gles2/shaders/device_quantize_shaders.h.in"
+	"${CMAKE_CURRENT_BINARY_DIR}/generated/render/post/device_quantize/gles2/shaders/device_quantize_shaders.h"
 	@ONLY
 )
 
@@ -233,6 +265,9 @@ add_library(bmsx_core STATIC
 	render/3d/math.cpp
 	render/3d/axis_gizmo_pipeline.cpp
 	render/gameview.cpp
+	render/post/crt/software/pipeline.cpp
+	render/post/crt/software/crt_processor.cpp
+	render/post/device_quantize/software/pipeline.cpp
 	render/backend/frame_uniforms.cpp
 	render/lighting/system.cpp
 	render/host_overlay/pipeline.cpp
@@ -372,7 +407,8 @@ if(BMSX_ENABLE_GLES2)
 		render/backend/gles2/backend.cpp
 		render/backend/gles2/fullscreen_quad.cpp
 		render/backend/gles2/vdp_rpu.cpp
-		render/post/crt/pipeline.cpp
+		render/post/crt/gles2/pipeline.cpp
+		render/post/device_quantize/gles2/pipeline.cpp
 	)
 	find_library(GLESV2_LIBRARY GLESv2 REQUIRED)
 	target_link_libraries(bmsx_core PUBLIC ${GLESV2_LIBRARY})

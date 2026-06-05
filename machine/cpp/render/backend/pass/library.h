@@ -8,26 +8,27 @@
 #define BMSX_RENDERPASSLIB_H
 
 #include "../backend.h"
+#include "../../graph/graph.h"
 #include "../../lighting/system.h"
 #include "../../shared/submissions.h"
 #include <array>
 #include <string>
 #include <vector>
 #include <unordered_map>
-#include <functional>
 #include <memory>
-#include <any>
 #include <optional>
 #include <stdexcept>
+#include <type_traits>
 #include <utility>
 
 namespace bmsx {
 
 class GameView;
 class RenderGraphRuntime;
-class RenderGraphContext;
 class Runtime;
 struct VdpRpuFrameOutput;
+enum class Host2DKind : u8;
+using Host2DRef = const void*;
 
 void writeRenderPassViewportSize(i32& width, i32& height, i32& baseWidth, i32& baseHeight, const GameView& view);
 
@@ -63,6 +64,14 @@ struct CRTPipelineOptions {
 	std::array<f32, 3> glowColor = {0.12f, 0.10f, 0.09f};
 };
 
+struct PresentPipelineState {
+	i32 width = 0;
+	i32 height = 0;
+	i32 srcWidth = 0;
+	i32 srcHeight = 0;
+	TextureHandle colorTex = nullptr;
+};
+
 struct CRTPipelineState {
 	i32 width = 0;
 	i32 height = 0;
@@ -70,6 +79,7 @@ struct CRTPipelineState {
 	i32 baseHeight = 0;
 	i32 srcWidth = 0;
 	i32 srcHeight = 0;
+	f32 time = 0.0f;
 	TextureHandle colorTex = nullptr;
 	CRTPipelineOptions options;
 };
@@ -84,7 +94,6 @@ struct DeviceQuantizePipelineState {
 };
 
 struct FrameSharedState {
-	// View state
 	struct {
 		std::array<f32, 3> camPos;
 		std::array<f32, 16> viewProj;
@@ -94,7 +103,6 @@ struct FrameSharedState {
 
 	LightingFrameState lighting;
 
-	// Fog state
 	struct {
 		f32 fogD50;
 		f32 fogStart;
@@ -103,6 +111,33 @@ struct FrameSharedState {
 		f32 fogYMin;
 		f32 fogYMax;
 	} fog;
+};
+
+struct Host2DPipelineState {
+	i32 width = 0;
+	i32 height = 0;
+	i32 overlayWidth = 0;
+	i32 overlayHeight = 0;
+	f64 time = 0.0;
+	f64 delta = 0.0;
+};
+
+struct HostOverlayPipelineState : Host2DPipelineState {
+	const Host2DKind* commandKinds = nullptr;
+	const Host2DRef* commandRefs = nullptr;
+	size_t commandCount = 0;
+};
+
+using HostMenuPipelineState = Host2DPipelineState;
+
+struct RenderPassStateStorage {
+	Framebuffer2DPipelineState framebuffer2D;
+	PresentPipelineState present;
+	CRTPipelineState crt;
+	DeviceQuantizePipelineState deviceQuantize;
+	FrameSharedState frameShared;
+	HostOverlayPipelineState hostOverlay;
+	HostMenuPipelineState hostMenu;
 };
 
 /* ============================================================================
@@ -116,12 +151,9 @@ struct RenderPassDef {
 	RenderPassId id;
 	std::string name;
 
-	// Shader code (optional)
 	std::string vsCode;
 	std::string fsCode;
 
-	// Shader resource binding description. Vertex attribute layout is owned by
-	// the concrete WebGL/GLES pass code, not by RenderPassLibrary or GPUBackend.
 	struct BindingLayout {
 		std::vector<std::string> uniforms;
 		std::vector<std::string> textures;
@@ -129,65 +161,35 @@ struct RenderPassDef {
 	};
 	std::optional<BindingLayout> bindingLayout;
 
-	enum class RenderGraphSlot {
-		FrameColor,
-		FrameDepth,
-		FrameHistoryA,
-		FrameHistoryB,
-		DeviceColor,
-	};
-
-	struct RenderGraphPassContext {
-		GameView* view = nullptr;
-		bool deviceColorEnabled = false;
-		std::function<TextureHandle(RenderGraphSlot)> getTexture;
-	};
+	using RenderGraphSlot = bmsx::RenderGraphSlot;
+	using RenderGraphPassContext = bmsx::RenderGraphPassContext;
 
 	struct RenderPassGraphDef {
-		enum class PresentInput {
-			Auto,
-			FrameColor,
-			DeviceColor,
-		};
-		std::vector<RenderGraphSlot> reads;
-		std::vector<RenderGraphSlot> writes;
+		using PresentInput = bmsx::RenderGraphPresentInput;
+		std::vector<bmsx::RenderGraphSlot> reads;
+		std::vector<bmsx::RenderGraphSlot> writes;
 		PresentInput presentInput = PresentInput::Auto;
 		bool skip = false;
-		std::function<std::any(const RenderGraphPassContext&)> buildState;
+		void (*writeState)(const RenderGraphPassContext&, RenderPassStateStorage&) = nullptr;
 	};
 	std::optional<RenderPassGraphDef> graph;
 
-	// Execution callbacks
-	std::function<void(GPUBackend*, void*, std::any&)> exec;
-	std::function<void(GPUBackend*, std::any&)> prepare;
-	std::function<void(GPUBackend*)> bootstrap;
+	void (*exec)(GPUBackend*, GameView*, void*, RenderPassStateStorage&, void*) = nullptr;
+	void (*bootstrap)(GPUBackend*, void*) = nullptr;
+	bool (*shouldExecute)(GameView*, void*) = nullptr;
+	void* context = nullptr;
 
-	// Pass behavior flags
-	bool stateOnly = false;     // No rendering, just state management
-	bool present = false;       // Is this a presentation pass
+	bool stateOnly = false;
+	bool present = false;
 	bool writesDepth = false;
 	bool depthTest = false;
 	bool depthWrite = false;
-
-	// Should this pass execute this frame
-	std::function<bool()> shouldExecute;
-};
-
-/* ============================================================================
- * Render pass token
- *
- * Handle for enabling/disabling passes at runtime.
- * ============================================================================ */
-
-struct RenderPassToken {
-	RenderPassId id;
-	std::function<void()> enable;
-	std::function<void()> disable;
-	std::function<void(bool)> set;
-	std::function<bool()> isEnabled;
 };
 
 void setAutoPresentGraph(RenderPassDef& desc);
+void setAutoCRTGraph(RenderPassDef& desc);
+bool shouldExecuteAutoPresentPass(GameView* view, void*);
+bool shouldExecuteAutoCRTPass(GameView* view, void*);
 void registerFrameStatePasses(RenderPassLibrary& registry);
 
 /* ============================================================================
@@ -201,18 +203,16 @@ public:
 
 	GameView* view() const { return m_view; }
 
-	// Pass registration
 	void registerPass(const RenderPassDef& desc);
 	bool has(const std::string& id) const;
 
-	// State management
 	template<typename T>
-	void setState(const std::string& id, T&& state) {
+	void setState(const std::string& id, const T& state) {
 		auto it = m_registered.find(id);
 		if (it == m_registered.end()) {
 			throw BMSX_RUNTIME_ERROR("Render pass '" + id + "' not found");
 		}
-		it->second.state = std::forward<T>(state);
+		stateRef<T>(it->second.state) = state;
 	}
 
 	template<typename T>
@@ -221,7 +221,7 @@ public:
 		if (it == m_registered.end()) {
 			throw BMSX_RUNTIME_ERROR("Render pass '" + id + "' not found");
 		}
-		return std::any_cast<T>(it->second.state);
+		return stateRef<T>(it->second.state);
 	}
 
 	template<typename T>
@@ -230,7 +230,7 @@ public:
 		if (it == m_registered.end()) {
 			throw BMSX_RUNTIME_ERROR("Render pass '" + id + "' not found");
 		}
-		return std::any_cast<T&>(it->second.state);
+		return stateRef<T>(it->second.state);
 	}
 
 	template<typename T>
@@ -239,44 +239,53 @@ public:
 		if (it == m_registered.end()) {
 			throw BMSX_RUNTIME_ERROR("Render pass '" + id + "' not found");
 		}
-		return std::any_cast<const T&>(it->second.state);
+		return stateRef<T>(it->second.state);
 	}
 
-	// Pass execution
 	void execute(const std::string& id, void* fbo);
+	void writeGraphState(const std::string& id, const RenderPassDef::RenderGraphPassContext& ctx, void (*writeState)(const RenderGraphPassContext&, RenderPassStateStorage&));
 
-	// Pass list access
 	const std::vector<RenderPassDef>& getPipelinePasses() const { return m_passes; }
 	i32 findPipelinePassIndex(const std::string& id) const;
 
-	// Enable/disable passes
 	void setPassEnabled(const std::string& id, bool enabled);
 	bool isPassEnabled(const std::string& id) const;
 
-	// Create pass token for runtime control
-	RenderPassToken createPassToken(const std::string& id, bool initialEnabled = true);
-
-	// Build render graph from current pass registry
 	std::unique_ptr<RenderGraphRuntime> buildRenderGraph(GameView* view, LightingSystem& lightingSystem);
 
 private:
 	struct RegisteredPassRec {
 		std::string id;
-		std::function<void(GPUBackend*, void*, std::any&)> exec;
-		std::function<void(GPUBackend*, std::any&)> prepare;
+		void (*exec)(GPUBackend*, GameView*, void*, RenderPassStateStorage&, void*) = nullptr;
+		void* context = nullptr;
 		RenderPassInstanceHandle pipelineHandle = nullptr;
-		std::any state;
+		RenderPassStateStorage state;
 		std::optional<RenderPassDef::BindingLayout> bindingLayout;
 		bool present = false;
 	};
 
+	template<typename T>
+	static T& stateRef(RenderPassStateStorage& state) {
+		if constexpr (std::is_same_v<T, Framebuffer2DPipelineState>) return state.framebuffer2D;
+		else if constexpr (std::is_same_v<T, PresentPipelineState>) return state.present;
+		else if constexpr (std::is_same_v<T, CRTPipelineState>) return state.crt;
+		else if constexpr (std::is_same_v<T, DeviceQuantizePipelineState>) return state.deviceQuantize;
+		else if constexpr (std::is_same_v<T, FrameSharedState>) return state.frameShared;
+		else if constexpr (std::is_same_v<T, HostOverlayPipelineState>) return state.hostOverlay;
+		else if constexpr (std::is_same_v<T, HostMenuPipelineState>) return state.hostMenu;
+		else static_assert(!std::is_same_v<T, T>, "Unsupported render pass state type");
+	}
+
+	template<typename T>
+	static const T& stateRef(const RenderPassStateStorage& state) {
+		return stateRef<T>(const_cast<RenderPassStateStorage&>(state));
+	}
 
 	GPUBackend* m_backend;
 	GameView* m_view;
 	std::vector<RenderPassDef> m_passes;
 	std::unordered_map<std::string, RegisteredPassRec> m_registered;
 	std::unordered_map<std::string, bool> m_passEnabled;
-	std::unordered_map<std::string, RenderPassToken> m_tokensById;
 };
 
 } // namespace bmsx

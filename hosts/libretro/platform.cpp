@@ -20,7 +20,6 @@
 #if BMSX_ENABLE_GLES2
 #include "render/2d/framebuffer_pipeline.h"
 #include "render/backend/gles2/backend.h"
-#include "render/post/crt/pipeline.h"
 #endif
 #include <chrono>
 #include <cstring>
@@ -266,9 +265,8 @@ void LibretroPlatform::onContextDestroy() {
 	m_console->texmanager()->clear();
 	m_render_surfaces_need_refresh = true;
 	shutdownFramebuffer2DGLES2();
-	CRTPipeline::shutdownGLES2(backend);
-	backend->onContextDestroy();
 	view->setPipelineRegistry(std::unique_ptr<RenderPassLibrary>());
+	backend->onContextDestroy();
 #else
 	throw BMSX_RUNTIME_ERROR("[LibretroPlatform] OpenGLES2 backend disabled at compile time.");
 #endif

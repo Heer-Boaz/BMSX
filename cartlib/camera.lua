@@ -7,9 +7,9 @@
 -- Quaternion multiply: a * b.  Matches Q.mul() in math3d.ts.
 local q_mul<const> = function(ax, ay, az, aw, bx, by, bz, bw)
 	return aw*bx + ax*bw + ay*bz - az*by,
-	       aw*by - ax*bz + ay*bw + az*bx,
-	       aw*bz + ax*by - ay*bx + az*bw,
-	       aw*bw - ax*bx - ay*by - az*bz
+			aw*by - ax*bz + ay*bw + az*bx,
+			aw*bz + ax*by - ay*bx + az*bw,
+			aw*bw - ax*bx - ay*by - az*bz
 end
 
 -- ── q_norm ────────────────────────────────────────────────────────────────────
@@ -44,9 +44,9 @@ local q_from_euler<const> = function(ex, ey, ez)
 	local cy<const> = math.cos(ey * 0.5);  local sy<const> = math.sin(ey * 0.5)
 	local cz<const> = math.cos(ez * 0.5);  local sz<const> = math.sin(ez * 0.5)
 	return cz*cy*sx - sz*sy*cx,
-	       cz*sy*cx + sz*cy*sx,
-	       sz*cy*cx - cz*sy*sx,
-	       cz*cy*cx + sz*sy*sx
+			cz*sy*cx + sz*cy*sx,
+			sz*cy*cx - cz*sy*sx,
+			cz*cy*cx + sz*sy*sx
 end
 
 -- ── q_to_euler ────────────────────────────────────────────────────────────────

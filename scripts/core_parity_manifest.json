@@ -191,9 +191,24 @@
 			"reason": "debug_render_host_not_core"
 		},
 		{
-			"pattern": "machine/ts/render/post/**",
+			"pattern": "machine/ts/render/post/crt/state.ts",
 			"category": "host",
-			"reason": "host_postprocess_not_core"
+			"reason": "host_crt_present_state_mirrored_by_cpp_render_backend_pass_library"
+		},
+		{
+			"pattern": "machine/ts/render/post/crt/webgl/pipeline.ts",
+			"category": "host",
+			"reason": "webgl_crt_postprocess_peer_of_cpp_gles2_backend"
+		},
+		{
+			"pattern": "machine/ts/render/post/crt/webgpu/pipeline.ts",
+			"category": "host",
+			"reason": "webgpu_crt_postprocess_backend_has_no_cpp_webgpu_peer"
+		},
+		{
+			"pattern": "machine/ts/render/post/device_quantize/webgl/pipeline.ts",
+			"category": "host",
+			"reason": "host_device_quantize_postprocess_backend"
 		},
 		{
 			"pattern": "machine/ts/render/host_overlay/webgl/**",
@@ -673,7 +688,11 @@
 			],
 			"symbols": [
 				"VdpRpuPipelineState",
-				"Framebuffer2DPipelineState"
+				"Framebuffer2DPipelineState",
+				"PresentPipelineState",
+				"CRTPipelineOptions",
+				"CRTPipelineState",
+				"DeviceQuantizePipelineState"
 			],
 			"reason": "render_pass_pipeline_state_shape_contract"
 		},
@@ -848,6 +867,26 @@
 			"webgl": "machine/ts/render/2d/shaders/2d.frag.glsl",
 			"gles2": "machine/cpp/render/2d/shaders/2d.frag.glsl",
 			"reason": "host_framebuffer_texture_fragment_shader_contract"
+		},
+		{
+			"webgl": "machine/ts/render/post/crt/webgl/shaders/present.frag.glsl",
+			"gles2": "machine/cpp/render/post/crt/gles2/shaders/present.frag.glsl",
+			"reason": "crt_present_copy_shader_contract"
+		},
+		{
+			"webgl": "machine/ts/render/post/crt/webgl/shaders/crt.frag.glsl",
+			"gles2": "machine/cpp/render/post/crt/gles2/shaders/crt.frag.glsl",
+			"reason": "crt_postprocess_shader_contract"
+		},
+		{
+			"webgl": "machine/ts/render/post/device_quantize/webgl/shaders/device_quantize.frag.glsl",
+			"gles2": "machine/cpp/render/post/device_quantize/gles2/shaders/device_quantize.frag.glsl",
+			"reason": "device_quantize_shader_contract"
+		},
+		{
+			"webgl": "machine/ts/render/post/webgl/shaders/fullscreen.vert.glsl",
+			"gles2": "machine/cpp/render/post/gles2/shaders/fullscreen.vert.glsl",
+			"reason": "postprocess_fullscreen_vertex_shader_contract"
 		}
 	],
 	"strict_lua_vdp_abi_parity": [
@@ -1417,8 +1456,8 @@
 		},
 		{
 			"roots": [
-				"machine/ts/render/post/crt/pipeline.ts",
-				"machine/ts/render/post/device_quantize_pipeline.ts"
+				"machine/ts/render/post/crt/webgl/pipeline.ts",
+				"machine/ts/render/post/device_quantize/webgl/pipeline.ts"
 			],
 			"substrings": [
 				"new Float32Array(opts.colorBleed)",
@@ -1441,6 +1480,18 @@
 				"const passEncoder: PassEncoder = {"
 			],
 			"reason": "render_pass_execute_must_reuse_registered_pass_encoder_instead_of_allocating_per_execute"
+		},
+		{
+			"roots": [
+				"machine/ts/render/backend/webgpu/backend.ts",
+				"machine/ts/render/post/crt/webgpu/pipeline.ts"
+			],
+			"substrings": [
+				"pipelineBindGroups",
+				"createPipelineBindGroup",
+				"setPipelineBindGroup"
+			],
+			"reason": "webgpu_postprocess_must_use_declared_binding_layout_instead_of_pass_local_bind_group_side_channels"
 		},
 		{
 			"roots": [
@@ -1926,7 +1977,7 @@
 		{
 			"file": "machine/ts/render/2d/framebuffer_pipeline.ts",
 			"substrings": [
-				"shouldExecute: () => registry.view.presentWorkbenchFrameBufferTexture && registry.view.vdpRpuFrame.commands.passCount === 0",
+				"shouldExecute: (view) => view.presentWorkbenchFrameBufferTexture && view.vdpRpuFrame.commands.passCount === 0",
 				"const framebuffer2DStateScratch: RenderPassStateRegistry['framebuffer_2d']",
 				"function bootstrapFramebuffer2DPass(backend: WebGLBackend): void"
 			],
@@ -2011,7 +2062,7 @@
 				"registerHeadlessRpuPass(registry);",
 				"function registerHeadlessRpuPass(registry: RenderPassLibrary): void",
 				"id: 'vdp_rpu'",
-				"shouldExecute: () => (registry.view as GameView).vdpRpuFrame.commands.passCount !== 0",
+				"shouldExecute: (view) => view.vdpRpuFrame.commands.passCount !== 0",
 				"commitHeadlessFrame(width, height, view.canvasSize.x, view.canvasSize.y)"
 			],
 			"reason": "headless_explicit_software_backend_must_present_rpu_frames_without_reintroducing_legacy_scene_passes"
@@ -2255,6 +2306,22 @@
 		}
 	],
 	"strict_file_pair_parity": [
+		{
+			"ts": "machine/ts/render/post/crt/webgl/pipeline.ts",
+			"cpp": [
+				"machine/cpp/render/post/crt/gles2/pipeline.h",
+				"machine/cpp/render/post/crt/gles2/pipeline.cpp"
+			],
+			"reason": "webgl_crt_pipeline_mirrors_cpp_gles2_crt_pipeline"
+		},
+		{
+			"ts": "machine/ts/render/post/device_quantize/webgl/pipeline.ts",
+			"cpp": [
+				"machine/cpp/render/post/device_quantize/gles2/pipeline.h",
+				"machine/cpp/render/post/device_quantize/gles2/pipeline.cpp"
+			],
+			"reason": "webgl_device_quantize_pipeline_mirrors_cpp_gles2_device_quantize_pipeline"
+		},
 		{
 			"ts": "machine/ts/machine/devices/vdp/device_output.ts",
 			"cpp": [
@@ -3286,18 +3353,18 @@
 			"reason": "vram_garbage_generation_must_use_stack_or_retained_state_without_heap_churn"
 		},
 		{
-			"file": "machine/ts/render/post/crt/pipeline.ts",
+			"file": "machine/ts/render/post/crt/webgl/pipeline.ts",
 			"functions": [
 				"writeCrtVec3",
 				"bindCRTUniforms",
-				"renderCRT"
+				"renderFullscreenToBackbuffer"
 			],
 			"reason": "webgl_crt_hot_path_must_not_allocate_arrays_or_runtime_wrappers"
 		},
 		{
-			"file": "machine/ts/render/post/device_quantize_pipeline.ts",
+			"file": "machine/ts/render/post/device_quantize/webgl/pipeline.ts",
 			"functions": [
-				"buildDeviceQuantizeState",
+				"writeDeviceQuantizeState",
 				"bindDeviceQuantizeUniforms",
 				"renderDeviceQuantize"
 			],

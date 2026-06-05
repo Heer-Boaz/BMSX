@@ -298,6 +298,7 @@ async function buildBrowserIife(entryPoint: string, outfile: string, debug: bool
 		loader: {
 			'.png': 'dataurl',
 			'.glsl': 'text',
+			'.wgsl': 'text',
 			'.json': 'json',
 			'.html': 'text',
 		},
@@ -1225,7 +1226,7 @@ export async function getResourcesList(resMetaList: Resource[]): Promise<Resourc
 
 	// Parallelize buffer and image loading
 	const resourcePromises = resMetaList.map(async (meta): Promise<Resource> => {
-		const metaObject = meta as unknown as Record<string, unknown>;
+		const metaObject = meta as Record<string, unknown>;
 		const buffer = meta.filepath ? await readFile(meta.filepath) : undefined;
 		switch (meta.type) {
 			case 'image': {

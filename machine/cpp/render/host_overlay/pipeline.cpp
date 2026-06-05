@@ -16,14 +16,16 @@ void fillHost2DState(Host2DPipelineState& state, GameView& view) {
 
 } // namespace
 
-HostOverlayPipelineState buildHostOverlayState() {
-	HostOverlayPipelineState state;
+void writeHostOverlayState(HostOverlayPipelineState& state) {
 	state.time = ConsoleCore::instance().totalTime();
 	state.delta = ConsoleCore::instance().deltaTime();
 	if (!hasPendingOverlayFrame()) {
 		GameView& view = *ConsoleCore::instance().view();
 		fillHost2DState(state, view);
-		return state;
+		state.commandKinds = nullptr;
+		state.commandRefs = nullptr;
+		state.commandCount = 0;
+		return;
 	}
 	const HostOverlayFrame frame = consumeOverlayFrame();
 	state.width = frame.renderWidth;
@@ -33,13 +35,10 @@ HostOverlayPipelineState buildHostOverlayState() {
 	state.commandKinds = frame.commandKinds;
 	state.commandRefs = frame.commandRefs;
 	state.commandCount = frame.commandCount;
-	return state;
 }
 
-HostMenuPipelineState buildHostMenuState(GameView& view) {
-	HostMenuPipelineState state;
+void writeHostMenuState(HostMenuPipelineState& state, GameView& view) {
 	fillHost2DState(state, view);
-	return state;
 }
 
 } // namespace bmsx

@@ -24,10 +24,10 @@ local round_number<const> = function(x)
 end
 
 return {
-    q8_scale = q8_scale,
-    q16_scale = q16_scale,
-    trunc = trunc,
-    q16 = q16,
-    pack_low_high = pack_low_high,
-    round_number = round_number,
+	q8_scale = q8_scale,
+	q16_scale = q16_scale,
+	trunc = trunc,
+	q16 = q16,
+	pack_low_high = pack_low_high,
+	round_number = round_number,
 }

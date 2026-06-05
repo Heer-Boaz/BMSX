@@ -7,7 +7,6 @@
 #include "render/backend/pass/library.h"
 #include "render/gameview.h"
 #include "render/vdp/framebuffer.h"
-#include <any>
 
 #if BMSX_ENABLE_GLES2
 #include "render/backend/gles2/backend.h"
@@ -20,11 +19,13 @@ namespace {
 
 constexpr i32 kFramebuffer2DTextureUnit = 3;
 
-Framebuffer2DPipelineState buildFramebuffer2DState(const RenderPassDef::RenderGraphPassContext& ctx) {
-	Framebuffer2DPipelineState state;
+void writeFramebuffer2DState(Framebuffer2DPipelineState& state, const RenderPassDef::RenderGraphPassContext& ctx) {
 	writeRenderPassViewportSize(state.width, state.height, state.baseWidth, state.baseHeight, *ctx.view);
 	state.colorTex = ctx.view->vdpFrameBufferTextures().displayTexture();
-	return state;
+}
+
+void writeFramebuffer2DState(const RenderPassDef::RenderGraphPassContext& ctx, RenderPassStateStorage& state) {
+	writeFramebuffer2DState(state.framebuffer2D, ctx);
 }
 
 #if BMSX_ENABLE_GLES2
@@ -74,64 +75,65 @@ void renderFramebuffer2DGLES2(OpenGLES2Backend& backend, const Framebuffer2DPipe
 }
 #endif
 
+bool shouldExecuteFramebuffer2D(GameView* view, void*) {
+	return view->presentWorkbenchFrameBufferTexture && view->vdpRpuFrame->commands.passCount == 0u;
+}
+
+void renderFramebuffer2DSoftware(GPUBackend* backend, GameView*, void*, RenderPassStateStorage& state, void*) {
+	const auto& fbState = state.framebuffer2D;
+	auto* softBackend = static_cast<SoftwareBackend*>(backend);
+	softBackend->blitTexture(fbState.colorTex,
+		0,
+		0,
+		fbState.baseWidth,
+		fbState.baseHeight,
+		0,
+		0,
+		fbState.width,
+		fbState.height,
+		0.0f,
+		0xffffffffu,
+		false,
+		false,
+		DitherParams{},
+		false);
+}
+
+#if BMSX_ENABLE_GLES2
+void bootstrapFramebuffer2DGLES2(GPUBackend* backend, void*) {
+	initFramebuffer2DGLES2(*static_cast<OpenGLES2Backend*>(backend));
+}
+
+void renderFramebuffer2DGLES2(GPUBackend* backend, GameView*, void*, RenderPassStateStorage& state, void*) {
+	renderFramebuffer2DGLES2(*static_cast<OpenGLES2Backend*>(backend), state.framebuffer2D);
+}
+#endif
+
 } // namespace
 
 void registerFramebuffer2DPass_Software(RenderPassLibrary& registry) {
-	GameView* const view = registry.view();
 	RenderPassDef desc;
 	desc.id = "framebuffer_2d";
 	desc.name = "Framebuffer2D";
 	desc.graph = RenderPassDef::RenderPassGraphDef{};
 	desc.graph->writes = { RenderPassDef::RenderGraphSlot::FrameColor };
-	desc.graph->buildState = [](const RenderPassDef::RenderGraphPassContext& ctx) -> std::any {
-		return buildFramebuffer2DState(ctx);
-	};
-	desc.shouldExecute = [view]() {
-		return view->presentWorkbenchFrameBufferTexture && view->vdpRpuFrame->commands.passCount == 0u;
-	};
-	desc.exec = [](GPUBackend* backend, void*, std::any& state) {
-		auto& fbState = std::any_cast<Framebuffer2DPipelineState&>(state);
-		auto* softBackend = static_cast<SoftwareBackend*>(backend);
-		softBackend->blitTexture(fbState.colorTex,
-			0,
-			0,
-			fbState.baseWidth,
-			fbState.baseHeight,
-			0,
-			0,
-			fbState.width,
-			fbState.height,
-			0.0f,
-			0xffffffffu,
-			false,
-			false,
-			DitherParams{},
-			false);
-	};
+	desc.graph->writeState = writeFramebuffer2DState;
+	desc.shouldExecute = shouldExecuteFramebuffer2D;
+	desc.exec = renderFramebuffer2DSoftware;
 	registry.registerPass(desc);
 }
 
 #if BMSX_ENABLE_GLES2
 void registerFramebuffer2DPass_GLES2(RenderPassLibrary& registry) {
-	GameView* const view = registry.view();
 	RenderPassDef desc;
 	desc.id = "framebuffer_2d";
 	desc.name = "Framebuffer2D";
 	desc.graph = RenderPassDef::RenderPassGraphDef{};
 	desc.graph->writes = { RenderPassDef::RenderGraphSlot::FrameColor };
-	desc.graph->buildState = [](const RenderPassDef::RenderGraphPassContext& ctx) -> std::any {
-		return buildFramebuffer2DState(ctx);
-	};
-	desc.shouldExecute = [view]() {
-		return view->presentWorkbenchFrameBufferTexture && view->vdpRpuFrame->commands.passCount == 0u;
-	};
-	desc.bootstrap = [](GPUBackend* backend) {
-		initFramebuffer2DGLES2(*static_cast<OpenGLES2Backend*>(backend));
-	};
-	desc.exec = [](GPUBackend* backend, void*, std::any& state) {
-		auto& fbState = std::any_cast<Framebuffer2DPipelineState&>(state);
-		renderFramebuffer2DGLES2(*static_cast<OpenGLES2Backend*>(backend), fbState);
-	};
+	desc.graph->writeState = writeFramebuffer2DState;
+	desc.shouldExecute = shouldExecuteFramebuffer2D;
+	desc.bootstrap = bootstrapFramebuffer2DGLES2;
+	desc.exec = renderFramebuffer2DGLES2;
 	registry.registerPass(desc);
 }
 

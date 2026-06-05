@@ -84,7 +84,7 @@ export function registerFramebuffer2DPass_WebGL(registry: RenderPassLibrary): vo
 		name: 'Framebuffer2D',
 		vsCode: vertexShaderCode,
 		fsCode: fragmentShaderCode,
-		shouldExecute: () => registry.view.presentWorkbenchFrameBufferTexture && registry.view.vdpRpuFrame.commands.passCount === 0,
+		shouldExecute: (view) => view.presentWorkbenchFrameBufferTexture && view.vdpRpuFrame.commands.passCount === 0,
 		bootstrap: (backend) => {
 			bootstrapFramebuffer2DPass(backend as WebGLBackend);
 		},

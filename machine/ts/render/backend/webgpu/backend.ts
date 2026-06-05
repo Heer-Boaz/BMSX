@@ -4,7 +4,7 @@ import { BackendCaps, ColorAttachmentSpec, GPUBackend, GraphicsPipelineBuildDesc
 import type { TextureParams } from '../texture_params';
 import { createSolidRgba8Pixels, writeSolidRgba8Pixels } from '../../shared/solid_pixels';
 import { consoleCore } from '../../../core/console';
-import { registerCRT_WebGPU } from '../../post/crt/pipeline.wgpu';
+import { registerCRT_WebGPU } from '../../post/crt/webgpu/pipeline';
 import { updateAndBindFrameUniforms } from '../frame_uniforms';
 import type { RenderPassLibrary } from '../pass/library';
 
@@ -548,21 +548,21 @@ export class WebGPUBackend implements GPUBackend {
 		this._bytesUploaded += data.byteLength;
 	}
 	bindUniformBufferBase(bindingIndex: number, buf: GPUBuffer): void {
+		if (this.uniformBindings.get(bindingIndex) === buf) return;
 		this.uniformBindings.set(bindingIndex, buf);
 		// Invalidate cached bind groups to reflect new resources
 		this.bindGroupCache.clear();
 	}
 
-	bindTextureWithSampler(texBinding: number, samplerBinding: number, texture: GPUTexture, samplerDesc?: { mag?: 'nearest' | 'linear'; min?: 'nearest' | 'linear'; wrapS?: 'clamp' | 'repeat'; wrapT?: 'clamp' | 'repeat' }): void {
-		const view = texture.createView();
-		const mag = samplerDesc && samplerDesc.mag === 'linear' ? 'linear' : 'nearest';
-		const min = samplerDesc && samplerDesc.min === 'linear' ? 'linear' : 'nearest';
-		const address = (wrap?: 'clamp' | 'repeat'): GPUAddressMode => wrap === 'repeat' ? 'repeat' : 'clamp-to-edge';
-		const wrapS = samplerDesc?.wrapS;
-		const wrapT = samplerDesc?.wrapT;
-		const sampler = this.device.createSampler({ magFilter: mag, minFilter: min, addressModeU: address(wrapS), addressModeV: address(wrapT) });
-		this.textureBindings.set(texBinding, view);
-		this.samplerBindings.set(samplerBinding, sampler);
+	bindTextureView(bindingIndex: number, view: GPUTextureView): void {
+		if (this.textureBindings.get(bindingIndex) === view) return;
+		this.textureBindings.set(bindingIndex, view);
+		this.bindGroupCache.clear();
+	}
+
+	bindSampler(bindingIndex: number, sampler: GPUSampler): void {
+		if (this.samplerBindings.get(bindingIndex) === sampler) return;
+		this.samplerBindings.set(bindingIndex, sampler);
 		this.bindGroupCache.clear();
 	}
 

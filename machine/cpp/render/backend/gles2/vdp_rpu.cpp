@@ -784,28 +784,33 @@ void renderVdpRpuFrame(VdpRpuRuntime& runtime, void* framebuffer, const VdpRpuPi
 	backend.invalidateTextureBindingCache();
 }
 
+constexpr auto bootstrapVdpRpuPass = [](GPUBackend* backend, void*) {
+	initVdpRpuPipeline(*static_cast<OpenGLES2Backend*>(backend));
+};
+
+constexpr auto shouldExecuteVdpRpuPass = [](GameView* view, void*) {
+	return view->vdpRpuFrame->commands.passCount != 0u;
+};
+
+constexpr auto renderVdpRpuPass = [](GPUBackend* backend, GameView* view, void* framebuffer, RenderPassStateStorage&, void*) {
+	VdpRpuRuntime runtime{*static_cast<OpenGLES2Backend*>(backend)};
+	VdpRpuPipelineState state;
+	state.width = static_cast<i32>(view->offscreenCanvasSize.x);
+	state.height = static_cast<i32>(view->offscreenCanvasSize.y);
+	state.frame = view->vdpRpuFrame;
+	renderVdpRpuFrame(runtime, framebuffer, state);
+};
+
 void registerVdpRpuPass(RenderPassLibrary& registry) {
-	GameView* const view = registry.view();
 	RenderPassDef desc;
 	desc.id = "vdp_rpu";
 	desc.name = "VDPRPU";
 	desc.graph = RenderPassDef::RenderPassGraphDef{};
 	desc.graph->writes = { RenderPassDef::RenderGraphSlot::FrameColor, RenderPassDef::RenderGraphSlot::FrameDepth };
 	desc.writesDepth = true;
-	desc.bootstrap = [](GPUBackend* backend) {
-		initVdpRpuPipeline(*static_cast<OpenGLES2Backend*>(backend));
-	};
-	desc.shouldExecute = [view]() {
-		return view->vdpRpuFrame->commands.passCount != 0u;
-	};
-	desc.exec = [view](GPUBackend* backend, void* framebuffer, std::any&) {
-		VdpRpuRuntime runtime{*static_cast<OpenGLES2Backend*>(backend)};
-		VdpRpuPipelineState state;
-		state.width = static_cast<i32>(view->offscreenCanvasSize.x);
-		state.height = static_cast<i32>(view->offscreenCanvasSize.y);
-		state.frame = view->vdpRpuFrame;
-		renderVdpRpuFrame(runtime, framebuffer, state);
-	};
+	desc.bootstrap = bootstrapVdpRpuPass;
+	desc.shouldExecute = shouldExecuteVdpRpuPass;
+	desc.exec = renderVdpRpuPass;
 	registry.registerPass(desc);
 }
 

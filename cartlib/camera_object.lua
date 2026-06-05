@@ -107,10 +107,10 @@ end
 -- Mirrors Camera.screenLook() in camera3d.ts.
 local cam_screen_look<const> = function(cam, dyaw, dpitch, droll)
 	local rx<const>, ry<const>, rz<const>,
-	      ux<const>, uy<const>, uz<const> = q_basis(cam.qx, cam.qy, cam.qz, cam.qw)
+			ux<const>, uy<const>, uz<const> = q_basis(cam.qx, cam.qy, cam.qz, cam.qw)
 	local nqx<const>, nqy<const>, nqz<const>, nqw<const> =
 		screen_look(cam.qx, cam.qy, cam.qz, cam.qw,
-		            rx, ry, rz, ux, uy, uz, dyaw, dpitch, droll)
+					rx, ry, rz, ux, uy, uz, dyaw, dpitch, droll)
 	cam.qx = nqx;  cam.qy = nqy;  cam.qz = nqz;  cam.qw = nqw
 end
 
@@ -131,8 +131,8 @@ end
 -- Combines Camera.moveForward / strafeRight / strafeUp from camera3d.ts.
 local cam_move<const> = function(cam, fwd, right, up)
 	local rx<const>, ry<const>, rz<const>,
-	      ux<const>, uy<const>, uz<const>,
-	      fx<const>, fy<const>, fz<const> = q_basis(cam.qx, cam.qy, cam.qz, cam.qw)
+			ux<const>, uy<const>, uz<const>,
+			fx<const>, fy<const>, fz<const> = q_basis(cam.qx, cam.qy, cam.qz, cam.qw)
 	cam.x = cam.x + fx * fwd + rx * right + ux * up
 	cam.y = cam.y + fy * fwd + ry * right + uy * up
 	cam.z = cam.z + fz * fwd + rz * right + uz * up
@@ -147,8 +147,8 @@ end
 -- (standard right-handed OpenGL view convention, same as M4.viewFromBasisInto in TS).
 local cam_view_terms<const> = function(cam)
 	local crx<const>, cry<const>, crz<const>,
-	      cux<const>, cuy<const>, cuz<const>,
-	      cfx<const>, cfy<const>, cfz<const> = q_basis(cam.qx, cam.qy, cam.qz, cam.qw)
+			cux<const>, cuy<const>, cuz<const>,
+			cfx<const>, cfy<const>, cfz<const> = q_basis(cam.qx, cam.qy, cam.qz, cam.qw)
 	local v_tx<const> = -(crx * cam.x + cry * cam.y + crz * cam.z)
 	local v_ty<const> = -(cux * cam.x + cuy * cam.y + cuz * cam.z)
 	local v_tz<const> =   cfx * cam.x + cfy * cam.y + cfz * cam.z

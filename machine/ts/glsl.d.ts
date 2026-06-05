@@ -38,6 +38,12 @@ declare module '*.fs' {
 	export const source: string;
 }
 
+declare module '*.wgsl' {
+	const value: string;
+	export default value;
+	export const source: string;
+}
+
 // Vite-style raw imports: `import s from './shader.glsl?raw'`
 declare module '*?raw' {
 	const content: string;

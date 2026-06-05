@@ -587,14 +587,14 @@ void ApuOutputMixer::fillOutputQueueTo(size_t targetFrames, i32 outputSampleRate
 }
 
 ApuOutputMixer::VoiceRecord ApuOutputMixer::buildVoiceFromData(ApuAudioSlot slot,
-														 ApuVoiceId voiceId,
-														 const ApuAudioSource& source,
-														 const std::vector<u8>& sourceBytes,
-														 std::vector<u32> badpSeekFrames,
-														 std::vector<u32> badpSeekOffsets,
-														 const ApuOutputPlayback& playback,
-														 i64 playbackCursorQ16,
-														 f32 initialGain) {
+															ApuVoiceId voiceId,
+															const ApuAudioSource& source,
+															const std::vector<u8>& sourceBytes,
+															std::vector<u32> badpSeekFrames,
+															std::vector<u32> badpSeekOffsets,
+															const ApuOutputPlayback& playback,
+															i64 playbackCursorQ16,
+															f32 initialGain) {
 	VoiceRecord record;
 	record.voiceId = voiceId;
 	record.sampleRate = static_cast<i32>(source.sampleRateHz);

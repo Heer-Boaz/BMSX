@@ -101,7 +101,7 @@ function registerHeadlessRpuPass(registry: RenderPassLibrary): void {
 		name: 'HeadlessRPU',
 		stateOnly: true,
 		graph: { writes: ['frame_color'] },
-		shouldExecute: () => (registry.view as GameView).vdpRpuFrame.commands.passCount !== 0,
+		shouldExecute: (view) => view.vdpRpuFrame.commands.passCount !== 0,
 		exec: () => {
 			const view = registry.view as GameView;
 			const frame = view.vdpRpuFrame;
@@ -148,7 +148,7 @@ function registerFrameBuffer2DPass(registry: RenderPassLibrary): void {
 		name: 'HeadlessFramebuffer2D',
 		stateOnly: true,
 		graph: { writes: ['frame_color'] },
-		shouldExecute: () => (registry.view as GameView).presentWorkbenchFrameBufferTexture && (registry.view as GameView).vdpRpuFrame.commands.passCount === 0,
+		shouldExecute: (view) => view.presentWorkbenchFrameBufferTexture && view.vdpRpuFrame.commands.passCount === 0,
 		prepare: () => {
 			const view = registry.view as GameView;
 			registry.setState('framebuffer_2d', {

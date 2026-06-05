@@ -89,6 +89,7 @@ export class RenderPassLibrary {
 			prepare: desc.prepare,
 			pipelineHandle,
 			passEncoder: { fbo: null, desc: { label: idStr } as RenderPassDesc },
+			state: desc.initialState,
 			bindingLayout: desc.bindingLayout,
 			present: !!desc.present,
 		};
@@ -297,17 +298,23 @@ export class RenderPassLibrary {
 				},
 				execute: (ctx, _frame, data: { width: number; height: number; present: boolean }) => {
 					const enabled = this.isPassEnabled(desc.id);
-					const willRun = enabled && (!desc.shouldExecute || desc.shouldExecute());
+					const willRun = enabled && (!desc.shouldExecute || desc.shouldExecute(view));
 					if (!willRun) return;
 					const graph = desc.graph;
-					if (graph?.buildState) {
+					if (graph?.writeState) {
+						activePassContext = ctx;
+						graphCtx.frameIndex = _frame.frameIndex;
+						graphCtx.time = _frame.time;
+						graphCtx.delta = _frame.delta;
+						const passId = desc.id as RenderPassStateId;
+						graph.writeState(graphCtx, this.getState(passId));
+					} else if (graph?.buildState) {
 						activePassContext = ctx;
 						graphCtx.frameIndex = _frame.frameIndex;
 						graphCtx.time = _frame.time;
 						graphCtx.delta = _frame.delta;
 						const builtState = graph.buildState(graphCtx) as RenderPassStateRegistry[RenderPassStateId];
-						const passId = desc.id as RenderPassStateId;
-						this.setState(passId, builtState);
+						this.setState(desc.id as RenderPassStateId, builtState);
 					}
 					if (data.present) {
 						this.execute(desc.id, null);

@@ -28,18 +28,18 @@ If a descriptor field contains a system bus address instead of a VDP-local addre
 
 ```ts
 export type VdpDeviceOutput = Readonly<{
-	ditherType: number;
-	scanoutPhase: number;
-	scanoutX: number;
-	scanoutY: number;
-	frameBufferWidth: number;
-	frameBufferHeight: number;
-	rpu: VdpRpuFrameOutput;
+    ditherType: number;
+    scanoutPhase: number;
+    scanoutX: number;
+    scanoutY: number;
+    frameBufferWidth: number;
+    frameBufferHeight: number;
+    rpu: VdpRpuFrameOutput;
 }>;
 
 export type VdpRpuFrameOutput = Readonly<{
-	commands: VdpRpuCommandBuffer;
-	vdpVram: Uint8Array;
+    commands: VdpRpuCommandBuffer;
+    vdpVram: Uint8Array;
 }>;
 ```
 

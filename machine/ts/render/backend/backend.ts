@@ -4,6 +4,7 @@ import { type color_arr, type TextureSource, type vec2 } from '../../rompack/for
 import type { VdpRpuFrameOutput } from '../../machine/devices/vdp/rpu';
 import type { Host2DSubmission } from '../shared/submissions';
 import type { LightingFrameState } from '../lighting/system';
+import type { GameView } from '../gameview';
 import type { WebGLBackend } from './webgl/backend';
 import type { WebGPUBackend } from './webgpu/backend';
 import type { TextureParams } from './texture_params';
@@ -85,6 +86,7 @@ export type RenderPassId =
 	| 'host_overlay'
 	| 'host_menu'
 	| 'device_quantize'
+	| 'present'
 	| 'crt'
 	| 'frame_shared'
 	| 'frame_resolve'
@@ -125,6 +127,7 @@ export interface RenderPassGraphDef<S = unknown> {
 	presentInput?: 'auto' | RenderGraphSlot;
 	skip?: boolean;
 	buildState?: (ctx: RenderGraphPassContext) => S;
+	writeState?: (ctx: RenderGraphPassContext, state: S) => void;
 }
 
 // Attachments for a render pass instance (runtime execution)
@@ -160,7 +163,8 @@ export interface RenderPassDef<S = unknown> {
 	depthWrite?: boolean;  // pipeline writes depth (separate from writesDepth graph hint)
 	stateOnly?: boolean;
 	present?: boolean;
-	shouldExecute?(): boolean;
+	initialState?: S;
+	shouldExecute?(view: GameView): boolean;
 	/**
 	 * Optional one-time initializer to create permanent GPU resources for this pass
 	 * (e.g., buffers, VAOs, default textures). Called once at registration time.
@@ -261,6 +265,7 @@ export interface RenderPassStateRegistry {
 	['host_overlay']: HostOverlayPipelineState;
 	['host_menu']: HostMenuPipelineState;
 	['device_quantize']: DeviceQuantizePipelineState;
+	['present']: PresentPipelineState;
 	['crt']: CRTPipelineState;
 	['frame_shared']: FrameSharedState;
 	['frame_resolve']: never;
@@ -342,25 +347,38 @@ export interface DeviceQuantizePipelineState {
 	ditherType: CRTDitherType;
 }
 
+export type PresentPipelineState = {
+	width: number;
+	height: number;
+	srcWidth: number;
+	srcHeight: number;
+	colorTex: TextureHandle;
+};
+
+export interface CRTPipelineOptions {
+	applyNoise: boolean;
+	noiseIntensity: number;
+	applyColorBleed: boolean;
+	colorBleed: [number, number, number];
+	applyScanlines: boolean;
+	applyBlur: boolean;
+	applyGlow: boolean;
+	applyFringing: boolean;
+	applyAperture: boolean;
+	blurIntensity: number;
+	glowColor: [number, number, number];
+}
+
 export interface CRTPipelineState {
 	width: number;
 	height: number;
 	baseWidth: number;
 	baseHeight: number;
+	srcWidth: number;
+	srcHeight: number;
+	time: number;
 	colorTex: TextureHandle;
-	options: {
-		enableNoise: boolean;
-		noiseIntensity: number;
-		enableColorBleed: boolean;
-		colorBleed: [number, number, number];
-		enableScanlines: boolean;
-		enableBlur: boolean;
-		enableGlow: boolean;
-		enableFringing: boolean;
-		enableAperture: boolean;
-		blurIntensity: number;
-		glowColor: [number, number, number];
-	};
+	options: CRTPipelineOptions;
 }
 export interface FrameSharedState {
 	view: {

@@ -85,7 +85,7 @@ function drawLine(target: Uint8Array, width: number, height: number, x0: number,
 	let err = dx - dy;
 	const thicknessPixels = thickness;
 	const half = thicknessPixels >> 1;
-	for (;;) {
+	for (; ;) {
 		fillRect(target, width, height, ix0 - half, iy0 - half, ix0 - half + thicknessPixels, iy0 - half + thicknessPixels, colorValue);
 		if (ix0 === ix1 && iy0 === iy1) {
 			return;

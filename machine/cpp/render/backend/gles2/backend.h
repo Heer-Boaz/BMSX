@@ -8,6 +8,7 @@
 #include "render/backend/backend.h"
 #include <cstdint>
 #include <array>
+#include <memory>
 
 #include <GLES2/gl2.h>
 
@@ -20,6 +21,8 @@ struct GLES2Texture {
 	bool srgb = false;
 	bool logicalSrgb = false;
 };
+
+struct OpenGLES2PostPipelines;
 
 class OpenGLES2Backend : public GPUBackend {
 public:
@@ -81,6 +84,7 @@ private:
 	FrameStats m_stats{};
 	i32 m_active_texture_unit = -1;
 	std::array<GLuint, kTrackedTextureUnits> m_bound_texture_2d_by_unit{};
+	std::unique_ptr<OpenGLES2PostPipelines> m_post_pipelines;
 	GLuint m_readback_fbo = 0;
 	u32 m_context_generation = 0;
 	bool m_context_ready = false;

@@ -58,18 +58,18 @@ Use a contextual `struct` declaration that defines a BMSX memory layout, not a h
 
 ```lua
 struct RpuDraw
-	header: u32
-	shader: u32
-	primitive: u32
-	pipeline: u32
-	vertex_count: u32
+    header: u32
+    shader: u32
+    primitive: u32
+    pipeline: u32
+    vertex_count: u32
 end
 
 struct VertexP3C4
-	x: f32
-	y: f32
-	z: f32
-	color: u32
+    x: f32
+    y: f32
+    z: f32
+    color: u32
 end
 ```
 
@@ -89,9 +89,9 @@ Arrays are part of the layout:
 
 ```lua
 struct RpuTriangle
-	header: word
-	xy: word[3]
-	color: word
+    header: word
+    xy: word[3]
+    color: word
 end
 ```
 
@@ -163,17 +163,17 @@ Nested struct and array-field view, after nested structs are enabled:
 
 ```lua
 struct CameraConstants
-	view_proj: word[16]
-	eye: f32[4]
+    view_proj: word[16]
+    eye: f32[4]
 end
 
 struct DrawRecord
-	header: word
-	shader: word
-	primitive: word
-	pipeline: word
-	vertex_count: word
-	constants: CameraConstants
+    header: word
+    shader: word
+    primitive: word
+    pipeline: word
+    vertex_count: word
+    constants: CameraConstants
 end
 
 local draws<const>: *DrawRecord[pass_count][draw_capacity] = scene_draw_buffer_addr

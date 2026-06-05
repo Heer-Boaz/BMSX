@@ -3,9 +3,12 @@
  */
 
 #include "graph.h"
+#include "../backend/pass/library.h"
+#include "../gameview.h"
 #if BMSX_ENABLE_GLES2
 #include "../backend/gles2/backend.h"
 #endif
+#include "../lighting/system.h"
 #include <algorithm>
 #include <cstdint>
 #include <cstdio>
@@ -129,6 +132,21 @@ RenderGraphRuntime::~RenderGraphRuntime() {
 	destroyResources();
 }
 
+RenderGraphTexHandle RenderGraphRuntime::graphHandle(RenderGraphSlot slot) const {
+	switch (slot) {
+		case RenderGraphSlot::FrameColor:
+			return m_frameColorHandle;
+		case RenderGraphSlot::FrameDepth:
+			return m_frameDepthHandle;
+		case RenderGraphSlot::FrameHistoryA:
+		case RenderGraphSlot::FrameHistoryB:
+			return -1;
+		case RenderGraphSlot::DeviceColor:
+			return m_deviceColorHandle;
+	}
+	return -1;
+}
+
 void RenderGraphRuntime::addPass(const RenderGraphPass& pass) {
 	if (m_compiled) {
 		throw BMSX_RUNTIME_ERROR("Cannot add passes after compilation");
@@ -136,12 +154,151 @@ void RenderGraphRuntime::addPass(const RenderGraphPass& pass) {
 	m_passes.push_back(pass);
 }
 
+void RenderGraphRuntime::setupPass(const RenderGraphPass& pass, RenderGraphIO& io, FrameData*) {
+	switch (pass.kind) {
+		case RenderGraphPass::Kind::FrameTargets: {
+			const i32 width = static_cast<i32>(pass.view->offscreenCanvasSize.x);
+			const i32 height = static_cast<i32>(pass.view->offscreenCanvasSize.y);
+			TexDesc colorDesc;
+			colorDesc.width = width;
+			colorDesc.height = height;
+			colorDesc.name = "FrameColor";
+			TexDesc depthDesc;
+			depthDesc.width = width;
+			depthDesc.height = height;
+			depthDesc.name = "FrameDepth";
+			depthDesc.depth = true;
+			m_frameColorHandle = io.createTex(colorDesc);
+			m_frameDepthHandle = io.createTex(depthDesc);
+			m_deviceColorHandle = -1;
+			if (pass.deviceColorEnabled) {
+				TexDesc deviceDesc;
+				deviceDesc.width = width;
+				deviceDesc.height = height;
+				deviceDesc.name = "DeviceColor";
+				deviceDesc.transient = true;
+				m_deviceColorHandle = io.createTex(deviceDesc);
+			}
+			io.exportToBackbuffer(m_frameColorHandle);
+			break;
+		}
+		case RenderGraphPass::Kind::FrameClear:
+		case RenderGraphPass::Kind::FrameResolve:
+		case RenderGraphPass::Kind::FrameShared:
+			io.writeTex(m_frameColorHandle);
+			if (pass.kind == RenderGraphPass::Kind::FrameClear) {
+				io.writeTex(m_frameDepthHandle);
+			}
+			break;
+		case RenderGraphPass::Kind::Registered:
+			if (pass.isPresent) {
+				io.readTex(m_frameColorHandle);
+				if (pass.deviceColorEnabled && pass.presentInput != RenderGraphPresentInput::FrameColor) {
+					io.readTex(m_deviceColorHandle);
+				}
+			} else if (!pass.reads.empty() || !pass.writes.empty()) {
+				for (const auto& slot : pass.reads) io.readTex(graphHandle(slot));
+				for (const auto& slot : pass.writes) io.writeTex(graphHandle(slot));
+			} else if (!pass.isStateOnly) {
+				io.writeTex(m_frameColorHandle);
+				if (pass.writesDepth) io.writeTex(m_frameDepthHandle);
+				else if (pass.depthTest) io.readTex(m_frameDepthHandle);
+			}
+			break;
+	}
+}
+
+void RenderGraphRuntime::executePass(RenderGraphPass& pass, RenderGraphContext& ctx, FrameData* frame) {
+	switch (pass.kind) {
+		case RenderGraphPass::Kind::FrameTargets:
+			break;
+		case RenderGraphPass::Kind::FrameClear: {
+			RenderPassDesc clearDesc;
+			ColorAttachmentSpec colorSpec;
+			colorSpec.tex = ctx.getTexture(m_frameColorHandle);
+			colorSpec.clear = std::array<f32, 4>{0.0f, 0.0f, 0.0f, 1.0f};
+			clearDesc.color = colorSpec;
+			DepthAttachmentSpec depthSpec;
+			depthSpec.tex = ctx.getTexture(m_frameDepthHandle);
+			depthSpec.clearDepth = 1.0f;
+			clearDesc.depth = depthSpec;
+			auto clearPass = pass.view->backend()->beginRenderPass(clearDesc);
+			pass.view->backend()->endRenderPass(clearPass);
+			break;
+		}
+		case RenderGraphPass::Kind::FrameResolve:
+			pass.registry->execute("frame_resolve", nullptr);
+			break;
+		case RenderGraphPass::Kind::FrameShared: {
+			GameView* view = pass.view;
+			const VdpTransformSnapshot& transform = view->vdpTransform;
+			FrameSharedState& frameShared = pass.registry->getStateRef<FrameSharedState>("frame_shared");
+			frameShared.view.camPos = {
+				transform.eye.x,
+				transform.eye.y,
+				transform.eye.z,
+			};
+			frameShared.view.viewProj = transform.viewProj;
+			frameShared.view.viewRotationInverse = transform.viewRotationInverse;
+			frameShared.view.proj = transform.proj;
+			frameShared.lighting = pass.lightingSystem->update(*view);
+			frameShared.fog.fogD50 = view->atmosphere.fogD50;
+			frameShared.fog.fogStart = view->atmosphere.fogStart;
+			frameShared.fog.fogColorLow = view->atmosphere.fogColorLow;
+			frameShared.fog.fogColorHigh = view->atmosphere.fogColorHigh;
+			frameShared.fog.fogYMin = view->atmosphere.fogYMin;
+			frameShared.fog.fogYMax = view->atmosphere.fogYMax;
+			break;
+		}
+		case RenderGraphPass::Kind::Registered: {
+			if (!pass.registry->isPassEnabled(pass.passId)) return;
+			if (pass.shouldExecute && !pass.shouldExecute(pass.view, pass.passContext)) return;
+
+			if (pass.writeState) {
+				RenderGraphPassContext passCtx;
+				passCtx.view = pass.view;
+				passCtx.time = frame->time;
+				passCtx.delta = frame->delta;
+				passCtx.frameIndex = frame->frameIndex;
+				passCtx.deviceColorEnabled = pass.deviceColorEnabled;
+				passCtx.graphContext = &ctx;
+				passCtx.textureHandles = {
+					m_frameColorHandle,
+					m_frameDepthHandle,
+					-1,
+					-1,
+					m_deviceColorHandle,
+				};
+				pass.registry->writeGraphState(pass.passId, passCtx, pass.writeState);
+			}
+
+			if (pass.isPresent || pass.isStateOnly) {
+				pass.registry->execute(pass.passId, nullptr);
+				return;
+			}
+
+			RenderGraphTexHandle colorHandle = m_frameColorHandle;
+			RenderGraphTexHandle depthHandle = (pass.writesDepth || pass.depthTest) ? m_frameDepthHandle : -1;
+			if (!pass.writes.empty()) {
+				colorHandle = -1;
+				depthHandle = -1;
+				for (const auto& slot : pass.writes) {
+					if (slot == RenderGraphSlot::FrameDepth) depthHandle = m_frameDepthHandle;
+					else colorHandle = graphHandle(slot);
+				}
+			}
+			pass.registry->execute(pass.passId, ctx.getFBO(colorHandle, depthHandle));
+			break;
+		}
+	}
+	(void)frame;
+}
+
 void RenderGraphRuntime::compile(FrameData* frame) {
 	if (m_compiled) return;
 
 	m_passReads.assign(m_passes.size(), {});
 	m_passWrites.assign(m_passes.size(), {});
-	m_setupData.clear();
 
 	m_texResources.clear();
 	m_texResources.resize(1);
@@ -151,8 +308,7 @@ void RenderGraphRuntime::compile(FrameData* frame) {
 	for (i32 i = 0; i < static_cast<i32>(m_passes.size()); ++i) {
 		RenderGraphIO io(this, i);
 		const auto& pass = m_passes[i];
-		std::any data = pass.setup ? pass.setup(io, frame) : std::any{};
-		m_setupData.push_back(data);
+		setupPass(pass, io, frame);
 	}
 
 	i32 presentCount = 0;
@@ -173,14 +329,17 @@ void RenderGraphRuntime::compile(FrameData* frame) {
 	const i32 passCount = static_cast<i32>(m_passes.size());
 	m_reachable.assign(passCount, false);
 
-	std::function<void(i32)> markPass = [&](i32 p) {
-		if (m_reachable[p]) return;
-		m_reachable[p] = true;
-
-		for (RenderGraphTexHandle h : m_passReads[p]) {
-			const auto& res = m_texResources[h];
-			for (i32 wp : res.writerPasses) {
-				markPass(wp);
+	auto markPass = [&](i32 start) {
+		std::vector<i32> stack;
+		stack.push_back(start);
+		while (!stack.empty()) {
+			const i32 p = stack.back();
+			stack.pop_back();
+			if (m_reachable[p]) continue;
+			m_reachable[p] = true;
+			for (RenderGraphTexHandle h : m_passReads[p]) {
+				const auto& res = m_texResources[h];
+				for (i32 wp : res.writerPasses) stack.push_back(wp);
 			}
 		}
 	};
@@ -253,7 +412,6 @@ bool RenderGraphRuntime::resolveExecutablePass(i32 orderIndex, bool hasOrder, Ex
 		return false;
 	}
 	out.pass = &m_passes[out.index];
-	out.data = &m_setupData[out.index];
 	out.targets = writeTargetsForPass(out.index);
 	if (kRenderGraphVerboseLog) {
 		std::fprintf(stderr, "[BMSX][RG] execute pass index=%d name=%s\n",
@@ -351,7 +509,7 @@ void RenderGraphRuntime::execute(FrameData* frame) {
 				break;
 		}
 
-		exec.pass->execute(ctx, frame, *exec.data);
+		executePass(*exec.pass, ctx, frame);
 		if (didBegin) {
 			m_backend->endRenderPass(passEnc);
 		}

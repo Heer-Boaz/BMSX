@@ -12,18 +12,18 @@ import {
 	BUS_FAULT_READ_ONLY,
 	BUS_FAULT_UNALIGNED_IO,
 	BUS_FAULT_UNMAPPED,
-		BUS_FAULT_VRAM_RANGE,
+	BUS_FAULT_VRAM_RANGE,
 	DMA_CTRL_START,
 	DMA_STATUS_DONE,
 	DMA_STATUS_ERROR,
-		IMG_CTRL_START,
-		IMG_STATUS_DONE,
-		IMG_STATUS_ERROR,
-		IO_DMA_CTRL,
+	IMG_CTRL_START,
+	IMG_STATUS_DONE,
+	IMG_STATUS_ERROR,
+	IO_DMA_CTRL,
 	IO_DMA_DST,
 	IO_DMA_LEN,
 	IO_DMA_SRC,
-		IO_DMA_STATUS,
+	IO_DMA_STATUS,
 	IO_DMA_WRITTEN,
 	IO_IMG_CAP,
 	IO_IMG_CTRL,
@@ -40,19 +40,19 @@ import {
 	IO_SYS_BUS_FAULT_ACCESS,
 	IO_SYS_BUS_FAULT_ACK,
 	IO_SYS_BUS_FAULT_ADDR,
-		IO_SYS_BUS_FAULT_CODE,
+	IO_SYS_BUS_FAULT_CODE,
 	IRQ_DMA_ERROR,
-		IRQ_IMG_ERROR,
+	IRQ_IMG_ERROR,
 	IRQ_VBLANK,
-	} from '../../machine/ts/machine/bus/io';
+} from '../../machine/ts/machine/bus/io';
 import { transformFixed16 } from '../../machine/ts/machine/common/numeric';
-	import { CPU } from '../../machine/ts/machine/cpu/cpu';
+import { CPU } from '../../machine/ts/machine/cpu/cpu';
 import { DmaController } from '../../machine/ts/machine/devices/dma/controller';
-	import { ImgDecController } from '../../machine/ts/machine/devices/imgdec/controller';
+import { ImgDecController } from '../../machine/ts/machine/devices/imgdec/controller';
 import { IrqController } from '../../machine/ts/machine/devices/irq/controller';
 import { Memory, type VramWriteSink } from '../../machine/ts/machine/memory/memory';
 import { GEO_SCRATCH_BASE, RAM_BASE, RAM_END, SYSTEM_ROM_BASE, VRAM_PRIMARY_SLOT_BASE, VRAM_STAGING_BASE } from '../../machine/ts/machine/memory/map';
-	import type { VDP } from '../../machine/ts/machine/devices/vdp/vdp';
+import type { VDP } from '../../machine/ts/machine/devices/vdp/vdp';
 import type { Runtime } from '../../machine/ts/machine/runtime/runtime';
 import { VblankState } from '../../machine/ts/machine/runtime/vblank';
 import { cyclesUntilBudgetUnits } from '../../machine/ts/machine/scheduler/budget';

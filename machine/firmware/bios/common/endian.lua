@@ -3,5 +3,5 @@ local read_u16le<const> = function(addr)
 end
 
 return {
-    read_u16le = read_u16le,
+	read_u16le = read_u16le,
 }

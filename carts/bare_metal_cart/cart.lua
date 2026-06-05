@@ -910,7 +910,7 @@ local write_mesh_constants<const> = function()
 		cam_proj_terms(active)
 	-- View basis and translation from active camera position + quaternion.
 	local rx<const>, ry<const>, rz<const>, ux<const>, uy<const>, uz<const>, fx<const>, fy<const>, fz<const>,
-	      v_tx<const>, v_ty<const>, v_tz<const> = cam_view_terms(active)
+			v_tx<const>, v_ty<const>, v_tz<const> = cam_view_terms(active)
 	-- Model: slow Y-axis auto-rotation (column-major)
 	-- col0=(mc,0,-ms,0), col1=(0,1,0,0), col2=(ms,0,mc,0), col3=(0,0,0,1)
 	local model_yaw<const> = frame * 0.02
@@ -1177,7 +1177,7 @@ local write_mat4_instances<const> = function()
 		cam_proj_terms(active)
 	-- View basis and translation from active camera.
 	local crx<const>, cry<const>, crz<const>, cux<const>, cuy<const>, cuz<const>, cfx<const>, cfy<const>, cfz<const>,
-	      v_tx<const>, v_ty<const>, v_tz<const> = cam_view_terms(active)
+			v_tx<const>, v_ty<const>, v_tz<const> = cam_view_terms(active)
 	-- Precomputed P*V col0-2 components (shared, scale applied per-instance below)
 	-- P * V_col0 = P*(crx,cux,-cfx,0) = (proj_fx*crx, proj_fy*cux, -proj_a*cfx, cfx)
 	-- P * V_col1 = P*(cry,cuy,-cfy,0) = (proj_fx*cry, proj_fy*cuy, -proj_a*cfy, cfy)

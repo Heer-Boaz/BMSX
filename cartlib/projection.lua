@@ -114,10 +114,10 @@ local proj_isometric<const> = function(scale)
 	local b<const>     = scale * sqrt2 / sqrt6
 	local c<const>     = scale * 2.0  / sqrt6
 	return
-		 a, -a, 0.0, 0.0,   -- col 0
-		 b,  b, -c,  0.0,   -- col 1
-		 0.0, 0.0, 0.0, 0.0,  -- col 2
-		 0.0, 0.0, 0.0, 1.0   -- col 3
+			a, -a, 0.0, 0.0,   -- col 0
+			b,  b, -c,  0.0,   -- col 1
+			0.0, 0.0, 0.0, 0.0,  -- col 2
+			0.0, 0.0, 0.0, 1.0   -- col 3
 end
 
 -- ── proj_infinite_perspective ─────────────────────────────────────────────────

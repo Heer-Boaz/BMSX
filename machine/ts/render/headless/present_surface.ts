@@ -12,16 +12,6 @@ export class HeadlessPresentSurface {
 	}
 
 	public present2D(srcPixels: Uint8Array, srcWidth: number, srcHeight: number, dstWidth: number, dstHeight: number): void {
-		if (srcWidth <= 0 || srcHeight <= 0) {
-			throw new Error(`[HeadlessPresentSurface] Invalid source size ${srcWidth}x${srcHeight}.`);
-		}
-		if (dstWidth <= 0 || dstHeight <= 0) {
-			throw new Error(`[HeadlessPresentSurface] Invalid destination size ${dstWidth}x${dstHeight}.`);
-		}
-		const expectedBytes = srcWidth * srcHeight * 4;
-		if (srcPixels.byteLength !== expectedBytes) {
-			throw new Error(`[HeadlessPresentSurface] Source pixel byte length mismatch (${srcPixels.byteLength} != ${expectedBytes}).`);
-		}
 		this.ensureSize(dstWidth, dstHeight);
 		let srcY = 0;
 		let srcYStep = 0;

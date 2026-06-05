@@ -7,9 +7,7 @@
 
 #include "../backend/backend.h"
 #include "../shared/submissions.h"
-#include <any>
 #include <array>
-#include <functional>
 #include <memory>
 #include <optional>
 #include <string>
@@ -43,6 +41,10 @@ struct TexDesc {
 using RenderGraphTexHandle = i32;
 
 class RenderGraphRuntime;
+class GameView;
+class LightingSystem;
+class RenderPassLibrary;
+struct RenderPassStateStorage;
 
 class RenderGraphIO {
 public:
@@ -75,16 +77,65 @@ private:
 	RenderGraphRuntime* m_runtime;
 };
 
+enum class RenderGraphSlot {
+	FrameColor,
+	FrameDepth,
+	FrameHistoryA,
+	FrameHistoryB,
+	DeviceColor,
+};
+
+enum class RenderGraphPresentInput {
+	Auto,
+	FrameColor,
+	DeviceColor,
+};
+
+struct RenderGraphPassContext {
+	GameView* view = nullptr;
+	f64 time = 0.0;
+	f64 delta = 0.0;
+	u32 frameIndex = 0;
+	bool deviceColorEnabled = false;
+	RenderGraphContext* graphContext = nullptr;
+	std::array<RenderGraphTexHandle, 5> textureHandles{};
+
+	TextureHandle getTexture(RenderGraphSlot slot) const {
+		return graphContext->getTexture(textureHandles[static_cast<size_t>(slot)]);
+	}
+};
+
 /* ============================================================================
  * Render graph pass definition
  * ============================================================================ */
 
 struct RenderGraphPass {
+	enum class Kind {
+		FrameTargets,
+		FrameClear,
+		FrameResolve,
+		FrameShared,
+		Registered,
+	};
+
 	std::string name;
 	bool alwaysExecute = false;
-
-	std::function<std::any(RenderGraphIO&, FrameData*)> setup;
-	std::function<void(RenderGraphContext&, FrameData*, const std::any&)> execute;
+	Kind kind = Kind::Registered;
+	GameView* view = nullptr;
+	RenderPassLibrary* registry = nullptr;
+	LightingSystem* lightingSystem = nullptr;
+	std::string passId;
+	void* passContext = nullptr;
+	bool (*shouldExecute)(GameView*, void*) = nullptr;
+	void (*writeState)(const RenderGraphPassContext&, RenderPassStateStorage&) = nullptr;
+	std::vector<RenderGraphSlot> reads;
+	std::vector<RenderGraphSlot> writes;
+	RenderGraphPresentInput presentInput = RenderGraphPresentInput::Auto;
+	bool deviceColorEnabled = false;
+	bool isPresent = false;
+	bool isStateOnly = false;
+	bool writesDepth = false;
+	bool depthTest = false;
 };
 
 /* ============================================================================
@@ -137,7 +188,6 @@ private:
 	struct ExecutablePass {
 		i32 index = -1;
 		RenderGraphPass* pass = nullptr;
-		const std::any* data = nullptr;
 		WriteTargets targets;
 	};
 
@@ -146,6 +196,9 @@ private:
 
 	void realizeAll();
 	void destroyResources();
+	void setupPass(const RenderGraphPass& pass, RenderGraphIO& io, FrameData* frame);
+	void executePass(RenderGraphPass& pass, RenderGraphContext& ctx, FrameData* frame);
+	RenderGraphTexHandle graphHandle(RenderGraphSlot slot) const;
 	bool resolveExecutablePass(i32 orderIndex, bool hasOrder, ExecutablePass& out);
 	WriteTargets writeTargetsForPass(i32 passIndex) const;
 	InternalTexResource& colorResourceForDepthAttachment(RenderGraphTexHandle colorHandle, RenderGraphTexHandle depthHandle);
@@ -153,12 +206,14 @@ private:
 
 	GPUBackend* m_backend;
 	std::vector<RenderGraphPass> m_passes;
-	std::vector<std::any> m_setupData;
 	std::vector<std::vector<RenderGraphTexHandle>> m_passReads;
 	std::vector<std::vector<RenderGraphTexHandle>> m_passWrites;
 	std::vector<i32> m_passOrder;
 	std::vector<bool> m_reachable;
 	std::vector<InternalTexResource> m_texResources;
+	RenderGraphTexHandle m_frameColorHandle = -1;
+	RenderGraphTexHandle m_frameDepthHandle = -1;
+	RenderGraphTexHandle m_deviceColorHandle = -1;
 
 	bool m_compiled = false;
 	bool m_realized = false;

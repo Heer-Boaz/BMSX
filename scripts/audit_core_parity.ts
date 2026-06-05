@@ -509,6 +509,22 @@ function auditStrictRuntimeSymbolParity(manifest: Manifest): string[] {
 
 function collectTsShapeFields(file: string, symbol: string): string[] | null {
 	const text = fs.readFileSync(path.join(repoRoot, file), 'utf8');
+	const collectObjectFields = (body: string): string[] => {
+		const fields: string[] = [];
+		let depth = 0;
+		for (const rawLine of body.split('\n')) {
+			const line = rawLine.replace(/\/\/.*$/, '').trim();
+			if (depth === 0) {
+				const match = /^([A-Za-z_]\w*)\??\s*:/.exec(line);
+				if (match) fields.push(match[1]);
+			}
+			for (const char of line) {
+				if (char === '{' || char === '<') depth += 1;
+				else if (char === '}' || char === '>') depth -= 1;
+			}
+		}
+		return fields;
+	};
 	const classMatch = new RegExp(`(?:export\\s+)?class\\s+${symbol}\\s*\\{([\\s\\S]*?)\\n\\}`).exec(text);
 	if (classMatch) {
 		const fields: string[] = [];
@@ -522,20 +538,16 @@ function collectTsShapeFields(file: string, symbol: string): string[] | null {
 	const intersectionMatch = new RegExp(`export\\s+type\\s+${symbol}\\s*=\\s*([A-Za-z_]\\w*)\\s*&\\s*(?:Readonly<)?\\{([\\s\\S]*?)\\}\\s*>?;`).exec(text);
 	if (intersectionMatch) {
 		const fields = collectTsShapeFields(file, intersectionMatch[1]) ?? [];
-		for (const line of intersectionMatch[2].split('\n')) {
-			const match = /^\s*([A-Za-z_]\w*)\??\s*:/.exec(line);
-			if (match) fields.push(match[1]);
-		}
+		fields.push(...collectObjectFields(intersectionMatch[2]));
 		return fields;
 	}
 	const typeMatch = new RegExp(`export\\s+type\\s+${symbol}\\s*=\\s*(?:Readonly<)?\\{([\\s\\S]*?)\\}\\s*>?;`).exec(text);
 	if (typeMatch) {
-		const fields: string[] = [];
-		for (const line of typeMatch[1].split('\n')) {
-			const match = /^\s*([A-Za-z_]\w*)\??\s*:/.exec(line);
-			if (match) fields.push(match[1]);
-		}
-		return fields;
+		return collectObjectFields(typeMatch[1]);
+	}
+	const interfaceMatch = new RegExp(`export\\s+interface\\s+${symbol}\\s*\\{([\\s\\S]*?)\\n\\}`).exec(text);
+	if (interfaceMatch) {
+		return collectObjectFields(interfaceMatch[1]);
 	}
 	return null;
 }

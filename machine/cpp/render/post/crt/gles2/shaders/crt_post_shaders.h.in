@@ -1,0 +1,9 @@
+#pragma once
+
+namespace bmsx {
+
+constexpr const char* kPostGLES2FullscreenVertexShader = R"glsl(@BMSX_POST_GLES2_FULLSCREEN_VERTEX_SHADER@)glsl";
+constexpr const char* kPresentFragmentShader = R"glsl(@BMSX_PRESENT_FRAGMENT_SHADER@)glsl";
+constexpr const char* kCRTFragmentShader = R"glsl(@BMSX_CRT_FRAGMENT_SHADER@)glsl";
+
+} // namespace bmsx

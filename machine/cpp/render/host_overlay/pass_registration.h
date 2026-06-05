@@ -7,6 +7,57 @@
 
 namespace bmsx {
 
+inline void writeHostOverlayPassState(const RenderPassDef::RenderGraphPassContext&, RenderPassStateStorage& state) {
+	writeHostOverlayState(state.hostOverlay);
+}
+
+inline void writeHostMenuPassState(const RenderPassDef::RenderGraphPassContext& ctx, RenderPassStateStorage& state) {
+	writeHostMenuState(state.hostMenu, *ctx.view);
+}
+
+template<typename Backend, auto Bootstrap>
+void bootstrapHostOverlayPass(GPUBackend* backend, void*) {
+	if constexpr (Bootstrap != nullptr) {
+		Bootstrap(*static_cast<Backend*>(backend));
+	}
+}
+
+template<auto ShouldExecuteExtra>
+bool shouldExecuteHostOverlayPass(GameView*, void*) {
+	if constexpr (ShouldExecuteExtra != nullptr) {
+		return hasPendingOverlayFrame() || ShouldExecuteExtra();
+	} else {
+		return hasPendingOverlayFrame();
+	}
+}
+
+inline bool shouldExecuteHostMenuPass(GameView*, void*) {
+	return hostOverlayMenu().queuedCommandCount() != 0U;
+}
+
+template<typename Backend, auto Begin, auto RenderEntry, auto End>
+void renderHostOverlayPass(GPUBackend* backend, GameView*, void*, RenderPassStateStorage& stateStorage, void*) {
+	Backend& typedBackend = *static_cast<Backend*>(backend);
+	const HostOverlayPipelineState& state = stateStorage.hostOverlay;
+	Begin(typedBackend, state);
+	for (size_t index = 0; index < state.commandCount; index += 1) {
+		RenderEntry(typedBackend, state.commandKinds[index], state.commandRefs[index]);
+	}
+	End(typedBackend);
+}
+
+template<typename Backend, auto Begin, auto RenderEntry, auto End>
+void renderHostMenuPass(GPUBackend* backend, GameView*, void*, RenderPassStateStorage& stateStorage, void*) {
+	Backend& typedBackend = *static_cast<Backend*>(backend);
+	HostOverlayMenu const& menu = hostOverlayMenu();
+	Begin(typedBackend, stateStorage.hostMenu);
+	const size_t commandCount = menu.queuedCommandCount();
+	for (size_t index = 0; index < commandCount; index += 1) {
+		RenderEntry(typedBackend, menu.commandKind(index), menu.commandRef(index));
+	}
+	End(typedBackend);
+}
+
 template<typename Backend, auto Bootstrap, auto Begin, auto RenderEntry, auto End, auto ShouldExecuteExtra = nullptr>
 void registerHostOverlayPass(RenderPassLibrary& registry) {
 	RenderPassDef desc;
@@ -15,30 +66,12 @@ void registerHostOverlayPass(RenderPassLibrary& registry) {
 	desc.present = true;
 	desc.graph = RenderPassDef::RenderPassGraphDef{};
 	desc.graph->presentInput = RenderPassDef::RenderPassGraphDef::PresentInput::Auto;
-	desc.graph->buildState = [](const RenderPassDef::RenderGraphPassContext&) -> std::any {
-		return buildHostOverlayState();
-	};
+	desc.graph->writeState = writeHostOverlayPassState;
 	if constexpr (Bootstrap != nullptr) {
-		desc.bootstrap = [](GPUBackend* backend) -> auto {
-			Bootstrap(*static_cast<Backend*>(backend));
-		};
+		desc.bootstrap = bootstrapHostOverlayPass<Backend, Bootstrap>;
 	}
-	desc.shouldExecute = []() -> auto {
-		if constexpr (ShouldExecuteExtra != nullptr) {
-			return hasPendingOverlayFrame() || ShouldExecuteExtra();
-		} else {
-			return hasPendingOverlayFrame();
-		}
-	};
-	desc.exec = [](GPUBackend* backend, void*, std::any& stateAny) -> auto {
-		Backend& typedBackend = *static_cast<Backend*>(backend);
-		const HostOverlayPipelineState& state = std::any_cast<HostOverlayPipelineState&>(stateAny);
-		Begin(typedBackend, state);
-		for (size_t index = 0; index < state.commandCount; index += 1) {
-			RenderEntry(typedBackend, state.commandKinds[index], state.commandRefs[index]);
-		}
-		End(typedBackend);
-	};
+	desc.shouldExecute = shouldExecuteHostOverlayPass<ShouldExecuteExtra>;
+	desc.exec = renderHostOverlayPass<Backend, Begin, RenderEntry, End>;
 	registry.registerPass(desc);
 }
 
@@ -50,22 +83,9 @@ void registerHostMenuPass(RenderPassLibrary& registry) {
 	desc.present = true;
 	desc.graph = RenderPassDef::RenderPassGraphDef{};
 	desc.graph->presentInput = RenderPassDef::RenderPassGraphDef::PresentInput::Auto;
-	desc.graph->buildState = [](const RenderPassDef::RenderGraphPassContext& ctx) -> std::any {
-		return buildHostMenuState(*ctx.view);
-	};
-	desc.shouldExecute = []() -> auto {
-		return hostOverlayMenu().queuedCommandCount() != 0U;
-	};
-	desc.exec = [](GPUBackend* backend, void*, std::any& stateAny) -> auto {
-		Backend& typedBackend = *static_cast<Backend*>(backend);
-		HostOverlayMenu const& menu = hostOverlayMenu();
-		Begin(typedBackend, std::any_cast<HostMenuPipelineState&>(stateAny));
-		const size_t commandCount = menu.queuedCommandCount();
-		for (size_t index = 0; index < commandCount; index += 1) {
-			RenderEntry(typedBackend, menu.commandKind(index), menu.commandRef(index));
-		}
-		End(typedBackend);
-	};
+	desc.graph->writeState = writeHostMenuPassState;
+	desc.shouldExecute = shouldExecuteHostMenuPass;
+	desc.exec = renderHostMenuPass<Backend, Begin, RenderEntry, End>;
 	registry.registerPass(desc);
 }
 

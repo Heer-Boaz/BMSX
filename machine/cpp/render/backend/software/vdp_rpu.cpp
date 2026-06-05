@@ -825,20 +825,23 @@ void renderVdpRpuSoftwareFrame(SoftwareBackend& backend, GameView&, const VdpRpu
 	}
 }
 
+constexpr auto shouldExecuteVdpRpuPassSoftware = [](GameView* view, void*) {
+	return view->vdpRpuFrame->commands.passCount != 0u;
+};
+
+constexpr auto renderVdpRpuPassSoftware = [](GPUBackend* backend, GameView* view, void*, RenderPassStateStorage&, void*) {
+	renderVdpRpuSoftwareFrame(*static_cast<SoftwareBackend*>(backend), *view, *view->vdpRpuFrame);
+};
+
 void registerVdpRpuPassSoftware(RenderPassLibrary& registry) {
-	GameView* const view = registry.view();
 	RenderPassDef desc;
 	desc.id = "vdp_rpu";
 	desc.name = "VDPRPU";
 	desc.graph = RenderPassDef::RenderPassGraphDef{};
 	desc.graph->writes = { RenderPassDef::RenderGraphSlot::FrameColor, RenderPassDef::RenderGraphSlot::FrameDepth };
 	desc.writesDepth = true;
-	desc.shouldExecute = [view]() {
-		return view->vdpRpuFrame->commands.passCount != 0u;
-	};
-	desc.exec = [view](GPUBackend* backend, void*, std::any&) {
-		renderVdpRpuSoftwareFrame(*static_cast<SoftwareBackend*>(backend), *view, *view->vdpRpuFrame);
-	};
+	desc.shouldExecute = shouldExecuteVdpRpuPassSoftware;
+	desc.exec = renderVdpRpuPassSoftware;
 	registry.registerPass(desc);
 }
 
