@@ -19,7 +19,7 @@ import { runConsoleHostFrame } from './host_frame';
 const globalScope: any = typeof window !== 'undefined' ? window : globalThis;
 global = globalScope; // Ensure global is defined
 
-export interface ConsoleStartupOptions {
+export interface ConsoleBootOptions {
 	systemRom: Uint8Array;
 	cartridge?: Uint8Array;
 	workspaceOverlay?: Uint8Array;
@@ -104,8 +104,8 @@ export class ConsoleCore {
 		this.sndmaster.bootstrapRuntimeAudio(this.runtime.timing.ufpsScaled, DEFAULT_MASTER_VOLUME);
 	}
 
-	public async init(init: ConsoleStartupOptions): Promise<Runtime> {
-		const { systemRom, cartridge, workspaceOverlay, debug = false, startingGamepadIndex = null, enableOnscreenGamepad = false, platform, viewHost } = init;
+	public async boot(options: ConsoleBootOptions): Promise<Runtime> {
+		const { systemRom, cartridge, workspaceOverlay, debug = false, startingGamepadIndex = null, enableOnscreenGamepad = false, platform, viewHost } = options;
 		if (!platform) {
 			throw new Error('[ConsoleCore] Platform services not provided.');
 		}

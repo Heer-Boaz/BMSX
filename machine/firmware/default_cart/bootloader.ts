@@ -1,2 +1,2 @@
-import { startCart } from '../../../machine/ts/machine/program/start_cart';
-export { startCart };
+export { ConsoleCore, consoleCore } from '../../../machine/ts/core/console';
+export type { ConsoleBootOptions } from '../../../machine/ts/core/console';

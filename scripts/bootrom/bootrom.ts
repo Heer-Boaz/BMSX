@@ -1,12 +1,12 @@
 // IMPORTANT: IMPORTS TO `bmsx/blabla` ARE NOT ALLOWED!!!!!! THIS WILL CAUSE PROBLEMS WITH .GLSL FILES BEING INCLUDED AND THE ROMPACKER CANNOT HANDLE THIS!!!!!
-import type { BootArgs } from '../../machine/ts/machine/program/start_cart';
+import type { ConsoleBootOptions } from '../../machine/ts/core/console';
 import { createAudioContext, startAudioOnIos } from './bootaudio';
 
 const HAS_DOM_ENVIRONMENT = typeof document !== 'undefined' && document !== null;
 const initialStartingGamepadIndex: number = null;
 type BMSX = {
-	constructPlatformFromViewHostHandle: (handle: HTMLCanvasElement, options: { audioContext: AudioContext; debug: boolean }) => BootArgs['platform'];
-	startCart: typeof import('../../machine/ts/machine/program/start_cart').startCart;
+	constructPlatformFromViewHostHandle: (handle: HTMLCanvasElement, options: { audioContext: AudioContext; debug: boolean }) => ConsoleBootOptions['platform'];
+	consoleCore: typeof import('../../machine/ts/core/console').consoleCore;
 };
 
 declare global {
@@ -75,10 +75,10 @@ export const bootrom = {
 	snd_unlocked: false,
 	gainnode: null as GainNode,
 	theshowsover: false,
-	startingGamepadIndex: initialStartingGamepadIndex as BootArgs['startingGamepadIndex'],
-	enableOnscreenGamepad: false as BootArgs['enableOnscreenGamepad'],
-	platform: null as BootArgs['platform'],
-	viewHost: null as BootArgs['viewHost'],
+	startingGamepadIndex: initialStartingGamepadIndex as ConsoleBootOptions['startingGamepadIndex'],
+	enableOnscreenGamepad: false as ConsoleBootOptions['enableOnscreenGamepad'],
+	platform: null as ConsoleBootOptions['platform'],
+	viewHost: null as ConsoleBootOptions['viewHost'],
 
 	/**
 	 * Starts the game.
@@ -110,7 +110,7 @@ export const bootrom = {
 				document.body.classList.add('game-started'); // Change background color of body
 			};
 
-			const entry = globalThis.bmsx.startCart;
+			const consoleCore = globalThis.bmsx.consoleCore;
 			if (HAS_DOM_ENVIRONMENT) {
 				createAudioContext(bootrom);
 				const gamescreen = document.getElementById('gamescreen');
@@ -138,7 +138,7 @@ export const bootrom = {
 			if (!platform) {
 				throw new Error('[bootrom] Platform not initialized before starting the game.');
 			}
-			return Promise.resolve(entry({
+			return Promise.resolve(consoleCore.boot({
 				cartridge: bootrom.cartridge,
 				systemRom: bootrom.systemRom,
 				sndcontext: bootrom.sndcontext,
@@ -148,7 +148,7 @@ export const bootrom = {
 				enableOnscreenGamepad: bootrom.enableOnscreenGamepad,
 				platform,
 				viewHost: bootrom.viewHost,
-			} as BootArgs)).then(() => {
+			} as ConsoleBootOptions)).then(() => {
 				wrapup();
 				bootrom.cartridge = undefined;
 				delete bootrom.cartridge;

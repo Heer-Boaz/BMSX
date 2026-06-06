@@ -86,11 +86,6 @@
 			"reason": "compiler_source_registry_not_native_core"
 		},
 		{
-			"pattern": "machine/ts/machine/program/start_cart.ts",
-			"category": "host",
-			"reason": "js_machine_runtime_startcart_entrypoint"
-		},
-		{
 			"pattern": "machine/ts/input/host/assignment_processor.ts",
 			"category": "host",
 			"reason": "host_input_assignment_ui_not_core"

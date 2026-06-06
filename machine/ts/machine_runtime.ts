@@ -1,10 +1,11 @@
-import { startCart } from './machine/program/start_cart';
+import { consoleCore } from './core/console';
+import type { ConsoleCore } from './core/console';
 
 type BmsxMachineGlobal = {
-	startCart: typeof startCart;
+	consoleCore: ConsoleCore;
 };
 
 const globalTarget = globalThis as typeof globalThis & { bmsx?: Partial<BmsxMachineGlobal> };
 const namespace = globalTarget.bmsx || {};
-namespace.startCart = startCart;
+namespace.consoleCore = consoleCore;
 globalTarget.bmsx = namespace;

@@ -3,14 +3,14 @@
 Baseline na de laatste boundary-slices:
 
 ```txt
-architecture_boundary_issues,38
+architecture_boundary_issues,37
 ts-machine -> ts-ide,11
 cpp-machine -> cpp-input,6
 ts-machine -> ts-input,5
 cpp-machine -> cpp-platform,4
-ts-machine -> ts-core,4
 ts-machine -> ts-render,4
 cpp-machine -> cpp-render,3
+ts-machine -> ts-core,3
 ts-machine -> ts-platform,1
 ```
 
@@ -22,6 +22,7 @@ Al afgerond en daarom niet opnieuw als open slice opgenomen:
 - TS input identity/action-state/action-parser/action-table onder ICU-eigenaarschap gebracht
 - browser/runtime view-singleton lek uit WebGL post-passes gehaald
 - C++ GLES2 CRT/device/present post-pass resources onder pass-lifecycle gebracht
+- publieke JS runtime API gebruikt direct `ConsoleCore.boot`; `startCart`-wrapper verwijderd
 
 ## 1. ICU input-device source boundary
 
@@ -77,21 +78,7 @@ Acceptatie:
 - host/core bezit process/frame-loop scheduling
 - machine runtime consumeert alleen de host-services port
 
-## 4. Program start/bootstrap uit machine halen
-
-Doel: `start_cart` is host/bootstrap API, geen machine module. De machine-runtime levert een runtime/machine API; browser/headless/libretro host kiezen hoe die gestart wordt.
-
-Open audit-evidence:
-
-- `machine/ts/machine/program/start_cart.ts -> core/console`
-
-Acceptatie:
-
-- start/bootstrap entrypoint leeft onder host/bootstrap ownership
-- machine/program bevat alleen program/ROM/compiler/runtime primitives
-- browser en headless blijven dezelfde public startup kunnen gebruiken
-
-## 5. IDE/workbench/hot-reload uit machine runtime trekken
+## 4. IDE/workbench/hot-reload uit machine runtime trekken
 
 Doel: machine runtime mag programma's laden, uitvoeren, pauzeren en state leveren; IDE/workbench/editor/hot-reload UI is host/tooling ownership.
 
@@ -112,7 +99,7 @@ Acceptatie:
 - host/IDE laag bezit hot reload, overlays en UI-fault rendering
 - machine exposeert expliciete program-load/resume/fault data
 
-## 6. Firmware/prelude/global registration ownership
+## 5. Firmware/prelude/global registration ownership
 
 Doel: firmware/global registration hoort bij machine firmware/runtime ownership, niet bij IDE runtime helpers.
 
@@ -127,7 +114,7 @@ Acceptatie:
 - IDE lua-pipeline is geen dependency van machine firmware
 - BIOS/game builds en Lua tests blijven groen
 
-## 7. Render/presentation boundary uit machine runtime halen
+## 6. Render/presentation boundary uit machine runtime halen
 
 Doel: machine produceert VDP/VOUT/RPU output; host/render consumeert die output. Machine runtime bezit geen `GameView`, presentation state of render context restore.
 
@@ -147,7 +134,7 @@ Acceptatie:
 - host/render owns presentation, view snapshots and context restore
 - save/resume machine state remains render-host independent
 
-## 8. C++ platform dependencies in machine firmware/IMGDEC
+## 7. C++ platform dependencies in machine firmware/IMGDEC
 
 Doel: C++ machine code mag geen concrete platform header nodig hebben voor firmware builtins of IMGDEC. Als host services nodig zijn, lopen die via een expliciete machine service boundary.
 
@@ -164,7 +151,7 @@ Acceptatie:
 - host-owned IO/resources blijven buiten cart-observable semantics
 - native build + libretro headless blijft groen
 
-## 9. Save-state/resume render-context split
+## 8. Save-state/resume render-context split
 
 Doel: machine save-state/resume bevat machine state; render-context herstel is host/render follow-up werk.
 
@@ -182,7 +169,7 @@ Acceptatie:
 - host voert render-context restore uit na machine-state restore
 - TS/C++ save-state tests blijven groen
 
-## 10. Audit naar echte gate brengen
+## 9. Audit naar echte gate brengen
 
 Doel: de audit blijft generiek en gaat pas strict zodra de open slices weg zijn. Geen hardcoded uitzonderingen toevoegen om huidige fouten wit te wassen.
 
@@ -192,7 +179,7 @@ Acceptatie:
 - daarna `audit:architecture-boundaries:strict` bruikbaar als CI-gate
 - nieuwe regels blijven patroon-/layer-gebaseerd, niet file-by-file hardcoded
 
-## 11. Rendering parity later apart oppakken
+## 10. Rendering parity later apart oppakken
 
 Doel: TS headless en C++ software screenshots zijn nu allebei correct bootend/nonblank, maar niet pixel-identiek. Dit is geen blocker voor de boundary-slices, wel een aparte rendering-parity slice.
 

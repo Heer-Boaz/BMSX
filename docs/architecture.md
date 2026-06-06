@@ -45,7 +45,7 @@ Ownership terms are architectural roles, not interchangeable directory labels:
 Current artifact roles:
 
 - `dist/libbmsx.js` / `.debug.js`: importable JavaScript machine/runtime
-  artifact. It owns `startCart`; it does not own browser, Node, SDL, ALSA, EGL,
+  artifact. It exposes `ConsoleCore.boot(...)`; it does not own browser, Node, SDL, ALSA, EGL,
   or libretro host services.
 - `dist/engine.js` / `.debug.js`: browser host/bootstrap artifact. It wires
   browser video, audio, input, and view-host construction around the machine

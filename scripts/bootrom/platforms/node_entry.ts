@@ -3,7 +3,7 @@ import * as fs from 'node:fs/promises';
 
 import { createCanvas, Image, loadImage } from 'canvas';
 
-import { type BootArgs } from '../../../machine/ts/machine/program/start_cart';
+import { type ConsoleBootOptions } from '../../../machine/ts/core/console';
 import { HeadlessPlatformServices } from '../../../hosts/node/headless/platform_headless';
 import { CLIPlatformServices } from '../../../hosts/node/cli/platform_cli';
 import type { Platform, InputEvt } from 'bmsx/platform';
@@ -36,7 +36,7 @@ interface BootGlobals {
 }
 
 type MachineNamespace = {
-	startCart: typeof import('../../../machine/ts/machine/program/start_cart').startCart;
+	consoleCore: typeof import('../../../machine/ts/core/console').consoleCore;
 };
 
 interface InputTimelineEntry {
@@ -1006,7 +1006,7 @@ async function main(): Promise<void> {
 	if (romFolder) {
 		cartRoot = await resolveCartRoot(romFolder);
 	}
-	const bootArgs: BootArgs = {
+	const bootArgs: ConsoleBootOptions = {
 		cartridge: buffer,
 		systemRom: systemRomBuffer,
 		platform,
@@ -1017,7 +1017,7 @@ async function main(): Promise<void> {
 	}
 
 	console.log(`[bootrom:${__BOOTROM_TARGET__}] Starting game (debug=${debugFlag}, frameIntervalMs=${frameInterval}).`);
-	const runtime = await machineRuntime.startCart(bootArgs);
+	const runtime = await machineRuntime.consoleCore.boot(bootArgs);
 	const requestExit = (code: number): void => {
 		if (!cpuProfileDumped && cpuProfileActive) {
 			cpuProfileDumped = true;
