@@ -1,11 +1,11 @@
-import { consoleCore } from './core/console';
-import type { ConsoleCore } from './core/console';
+import { machineManager } from './core/machine_manager';
+import type { MachineManager } from './core/machine_manager';
 
 type BmsxMachineGlobal = {
-	consoleCore: ConsoleCore;
+	machineManager: MachineManager;
 };
 
 const globalTarget = globalThis as typeof globalThis & { bmsx?: Partial<BmsxMachineGlobal> };
 const namespace = globalTarget.bmsx || {};
-namespace.consoleCore = consoleCore;
+namespace.machineManager = machineManager;
 globalTarget.bmsx = namespace;

@@ -1,4 +1,4 @@
-import { consoleCore } from '../../../../core/console';
+import { machineManager } from '../../../../core/machine_manager';
 import { lower_bound } from '../../../../common/lower_bound';
 import { EditorFont } from './font';
 import type { Runtime } from '../../../../machine/runtime/runtime';
@@ -177,7 +177,7 @@ export function refreshViewportLayout(): void {
 }
 
 export function mapScreenPointToViewport(screenX: number, screenY: number): { x: number; y: number; inside: boolean; valid: boolean } {
-	const view = consoleCore.view;
+	const view = machineManager.view;
 	if (!view) {
 		return { x: 0, y: 0, inside: false, valid: false };
 	}

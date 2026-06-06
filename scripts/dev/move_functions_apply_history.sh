@@ -11,10 +11,10 @@ set -euo pipefail
 
 # diagnostics -> diagnostics.ts
 node scripts/move_functions.js \
-	--source machine/ts/ide/console_cart_editor.ts \
+	--source machine/ts/ide/cart_editor.ts \
 	--dest machine/ts/ide/diagnostics.ts \
 	-n enqueueDiagnosticsJob -n executeDiagnosticsComputation -n findContextByChunk \
-	-n getActiveSemanticDefinitions -n getConsoleRuntime -n getDiagnosticsForRow \
+	-n getActiveSemanticDefinitions -n getMachineRuntime -n getDiagnosticsForRow \
 	-n getLuaModuleAliases -n handleRuntimeTaskError -n buildRuntimeErrorLines \
 	-n clearAllRuntimeErrorOverlays -n clearExecutionStopHighlights -n clearRuntimeErrorOverlay \
 	-n collectDiagnosticsBatch -n copyRuntimeErrorOverlayToClipboard -n createDiagnosticProviders \
@@ -26,7 +26,7 @@ node scripts/move_functions.js \
 
 # search_ui -> search_ui.ts
 node scripts/move_functions.js \
-	--source machine/ts/ide/console_cart_editor.ts \
+	--source machine/ts/ide/cart_editor.ts \
 	--dest machine/ts/ide/search_ui.ts \
 	-n searchVisibleResultCount -n searchResultEntryHeight \
 	-n renderSearchResults -n openSearch -n closeSearch -n toggleSearch -n focusSearchField \
@@ -34,14 +34,14 @@ node scripts/move_functions.js \
 
 # window_listeners -> window_listeners.ts
 node scripts/move_functions.js \
-	--source machine/ts/ide/console_cart_editor.ts \
+	--source machine/ts/ide/cart_editor.ts \
 	--dest machine/ts/ide/window_listeners.ts \
 	-n installPlatformVisibilityListener -n installWindowEventListeners \
 	-n resetInputFocusState -n requestWindowFocusState -n flushWindowFocusState
 
 # runtime_overlay -> runtime_overlay.ts
 node scripts/move_functions.js \
-	--source machine/ts/ide/console_cart_editor.ts \
+	--source machine/ts/ide/cart_editor.ts \
 	--dest machine/ts/ide/runtime_overlay.ts \
 	-n syncRuntimeErrorOverlayFromContext -n updateRuntimeErrorOverlay \
 	-n showRuntimeOverlay -n hideRuntimeOverlay -n computeOverlayBounds -n renderRuntimeOverlay \
@@ -49,41 +49,41 @@ node scripts/move_functions.js \
 
 # draw -> draw.ts
 node scripts/move_functions.js \
-	--source machine/ts/ide/console_cart_editor.ts \
+	--source machine/ts/ide/cart_editor.ts \
 	--dest machine/ts/ide/draw.ts \
 	-n drawCodeArea -n drawRuntimeErrorOverlay -n drawTopBar -n drawStatusArea
 
 # ui_layout -> ui_layout.ts
 node scripts/move_functions.js \
-	--source machine/ts/ide/console_cart_editor.ts \
+	--source machine/ts/ide/cart_editor.ts \
 	--dest machine/ts/ide/ui_layout.ts \
 	-n computeEditorBounds -n getSymbolSearchBarHeight -n computeInlineBarBounds \
 	-n topBarHeight -n computeTabBarHeight -n visibleRowCount -n statusAreaHeight -n computeProblemsPanelHeight
 
 # topbar -> topbar.ts
 node scripts/move_functions.js \
-	--source machine/ts/ide/console_cart_editor.ts \
+	--source machine/ts/ide/cart_editor.ts \
 	--dest machine/ts/ide/topbar.ts \
 	-n renderTopBar -n handleTopBarButtonClick -n updateTopBarState -n openActionPrompt \
 	-n closeActionPrompt -n computeTopBarButtonBounds -n topBarPointerHandler -n drawTopBarButtons -n updateTopBarTooltip
 
 # pointer -> pointer.ts
 node scripts/move_functions.js \
-	--source machine/ts/ide/console_cart_editor.ts \
+	--source machine/ts/ide/cart_editor.ts \
 	--dest machine/ts/ide/pointer.ts \
 	-n registerPointerClick -n resetPointerClickTracking -n handlePointerMove -n handlePointerDown \
 	-n handlePointerUp -n handlePointerLeave -n updateHoverState -n pointerHoverTooltip -n processPointerWheel -n computePointerPosition -n handlePointerDoubleClick
 
 # navigation -> navigation.ts
 node scripts/move_functions.js \
-	--source machine/ts/ide/console_cart_editor.ts \
+	--source machine/ts/ide/cart_editor.ts \
 	--dest machine/ts/ide/navigation.ts \
 	-n beginNavigationCapture -n completeNavigation -n setActiveTab -n closeTab -n navigateToSymbol \
 	-n navigateBackward -n navigateForward -n computeNavigationCheckpoint -n saveNavigationState -n restoreNavigationState
 
 # editor_core -> editor_core.ts
 node scripts/move_functions.js \
-	--source machine/ts/ide/console_cart_editor.ts \
+	--source machine/ts/ide/cart_editor.ts \
 	--dest machine/ts/ide/editor_core.ts \
 	-n invalidateLineRange -n findWordLeft -n findWordRight -n getLineRangeForMovement \
 	-n getTabBarTotalHeight -n topMargin -n statusAreaHeight -n bottomMargin -n getVisibleProblemsPanelHeight \
@@ -92,34 +92,34 @@ node scripts/move_functions.js \
 
 # lifecycle -> lifecycle.ts
 node scripts/move_functions.js \
-	--source machine/ts/ide/console_cart_editor.ts \
+	--source machine/ts/ide/cart_editor.ts \
 	--dest machine/ts/ide/lifecycle.ts \
 	-n serializeState -n restoreState -n shutdown -n getKeyboard -n handleEscapeShortcut \
 	-n toggleEditorFromShortcut -n handleEscapeKey -n activate -n applyEditorCrtDimming -n restoreCrtOptions -n deactivate \
 	-n applyCaseNormalizationIfNeeded -n applyDocumentFormatting -n applySourceToDocument -n bumpTextVersion \
-	-n capturePreMutationSource -n computeDocumentOffset -n computeEditContextFromSources -n createConsoleCartEditor \
+	-n capturePreMutationSource -n computeDocumentOffset -n computeEditContextFromSources -n createRuntimeCartEditor \
 	-n ensureVisualLines -n flushWindowFocusState -n getBuiltinIdentifierSet -n handlePostEditMutation \
-	-n initializeConsoleCartEditor -n installPlatformVisibilityListener -n installWindowEventListeners -n markTextMutated \
+	-n initializeRuntimeCartEditor -n installPlatformVisibilityListener -n installWindowEventListeners -n markTextMutated \
 	-n recordEditContext -n requestSemanticRefresh -n requestWindowFocusState -n resetActionPromptState \
 	-n resetBlink -n resetEditorContent -n resetInputFocusState -n scheduleNextFrame -n serializeCurrentSource \
 	-n splitLines -n update -n updateBlink
 
 # input_and_prompt -> input_and_prompt.ts
 node scripts/move_functions.js \
-	--source machine/ts/ide/console_cart_editor.ts \
+	--source machine/ts/ide/cart_editor.ts \
 	--dest machine/ts/ide/input_and_prompt.ts \
 	-n splitLines -n handleActionPromptInput -n handleEditorInput -n handleCustomKeybinding \
 	-n handleCreateResourceInput -n openCreateResourcePrompt -n closeCreateResourcePrompt -n cancelCreateResourcePrompt
 
 # symbols_focus -> symbols_focus.ts
 node scripts/move_functions.js \
-	--source machine/ts/ide/console_cart_editor.ts \
+	--source machine/ts/ide/cart_editor.ts \
 	--dest machine/ts/ide/symbols_focus.ts \
 	-n symbolPriority -n symbolKindLabel -n symbolSourceLabel -n focusEditorFromProblemsPanel -n focusEditorFromResourcePanel
 
 # topbar_pointer_actions -> topbar_pointer_actions.ts
 node scripts/move_functions.js \
-	--source machine/ts/ide/console_cart_editor.ts \
+	--source machine/ts/ide/cart_editor.ts \
 	--dest machine/ts/ide/topbar_pointer_actions.ts \
 	-n handleActionPromptPointer -n handleTopBarPointer -n handleTabBarPointer -n handleTabBarMiddleClick \
 	-n handlePointerWheel -n handleTopBarButtonPress -n openActionPrompt -n executePendingAction -n performAction -n performResume -n performReboot \
@@ -128,14 +128,14 @@ node scripts/move_functions.js \
 
 # pointer_inline -> pointer_inline.ts
 node scripts/move_functions.js \
-	--source machine/ts/ide/console_cart_editor.ts \
+	--source machine/ts/ide/cart_editor.ts \
 	--dest machine/ts/ide/pointer_inline.ts \
 	-n applySymbolSearchFieldText -n inlineFieldMetrics -n createInlineFieldEditingHandlers \
 	-n processInlineFieldEditing -n processInlineFieldPointer -n updateRuntimeErrorOverlay -n pasteFromClipboard -n registerPointerClick -n resetPointerClickTracking
 
 # resource_panel -> resource_panel.ts
 node scripts/move_functions.js \
-	--source machine/ts/ide/console_cart_editor.ts \
+	--source machine/ts/ide/cart_editor.ts \
 	--dest machine/ts/ide/resource_panel.ts \
 	-n findFunctionDefinitionRowInActiveFile -n notifyReadOnlyEdit -n toggleResourcePanel -n toggleProblemsPanel \
 	-n showProblemsPanel -n hideProblemsPanel -n toggleResourcePanelFilterMode -n updateViewport -n toggleResolutionMode -n toggleWordWrap \
@@ -152,7 +152,7 @@ node scripts/move_functions.js \
 
 # text_editing -> text_editing.ts
 node scripts/move_functions.js \
-	--source machine/ts/ide/console_cart_editor.ts \
+	--source machine/ts/ide/cart_editor.ts \
 	--dest machine/ts/ide/text_editing.ts \
 	-n addLineComments -n countLeadingIndent -n currentLine -n deleteActiveLines \
 	-n deleteCharLeft -n deleteCharRight -n deleteSelection -n deleteWordBackward \
@@ -163,14 +163,14 @@ node scripts/move_functions.js \
 
 # undo_snapshot -> undo_snapshot.ts
 node scripts/move_functions.js \
-	--source machine/ts/ide/console_cart_editor.ts \
+	--source machine/ts/ide/cart_editor.ts \
 	--dest machine/ts/ide/undo_snapshot.ts \
 	-n breakUndoSequence -n captureSnapshot -n prepareUndo -n recordSnapshotPre \
 	-n recordSnapshotPost -n redo -n restoreSnapshot -n undo
 
 # viewport -> viewport.ts
 node scripts/move_functions.js \
-	--source machine/ts/ide/console_cart_editor.ts \
+	--source machine/ts/ide/cart_editor.ts \
 	--dest machine/ts/ide/viewport.ts \
 	-n applyScrollbarScroll -n clampScrollColumn -n clampScrollRow -n codeViewportTop \
 	-n computeMaximumScrollColumn -n computeWrapWidth -n ensureCursorVisible -n getCodeAreaBounds \
@@ -179,7 +179,7 @@ node scripts/move_functions.js \
 
 # cursor -> cursor.ts
 node scripts/move_functions.js \
-	--source machine/ts/ide/console_cart_editor.ts \
+	--source machine/ts/ide/cart_editor.ts \
 	--dest machine/ts/ide/cursor.ts \
 	-n centerCursorVertically -n clampCursorColumn -n clampCursorRow -n clampSelectionPosition \
 	-n moveCursorDown -n moveCursorEnd -n moveCursorHome -n moveCursorHorizontal -n moveCursorLeft \
@@ -189,7 +189,7 @@ node scripts/move_functions.js \
 
 # search_navigation -> search_navigation.ts
 node scripts/move_functions.js \
-	--source machine/ts/ide/console_cart_editor.ts \
+	--source machine/ts/ide/cart_editor.ts \
 	--dest machine/ts/ide/search_navigation.ts \
 	-n applyDefinitionSelection -n applyLineJump -n applySearchFieldText -n applySymbolSearchSelection \
 	-n buildReferenceCatalogForExpression -n cancelSearchJob -n clearGotoHoverHighlight -n clearReferenceHighlights \
@@ -206,7 +206,7 @@ node scripts/move_functions.js \
 
 # resources -> resources.ts
 node scripts/move_functions.js \
-	--source machine/ts/ide/console_cart_editor.ts \
+	--source machine/ts/ide/cart_editor.ts \
 	--dest machine/ts/ide/resources.ts \
 	-n applyCreateResourceFieldText -n applyResourceSearchFieldText -n applyResourceSearchSelection \
 	-n buildDefaultResourceContents -n buildResourceViewerState -n determineCreateResourceDefaultPath \
@@ -220,7 +220,7 @@ node scripts/move_functions.js \
 
 # ui_render -> ui_render.ts
 node scripts/move_functions.js \
-	--source machine/ts/ide/console_cart_editor.ts \
+	--source machine/ts/ide/cart_editor.ts \
 	--dest machine/ts/ide/ui_render.ts \
 	-n adjustHoverTooltipScroll -n assertMonospace -n buildHoverContentLines -n buildStatusLeftInfo \
 	-n clearHoverTooltip -n columnToDisplay -n computeCursorScreenInfo -n draw -n drawActionPromptOverlay \
@@ -242,7 +242,7 @@ node scripts/move_functions.js \
 
 # input_handlers -> input_handlers.ts
 node scripts/move_functions.js \
-	--source machine/ts/ide/console_cart_editor.ts \
+	--source machine/ts/ide/cart_editor.ts \
 	--dest machine/ts/ide/input_handlers.ts \
 	-n createInlineFieldEditingHandlers -n handleActionPromptInput -n handleActionPromptPointer \
 	-n handleCodeFormattingShortcut -n handleCreateResourceInput -n handleCustomKeybinding -n handleEditorInput \
@@ -253,7 +253,7 @@ node scripts/move_functions.js \
 
 # tabs_nav -> tabs_nav.ts
 node scripts/move_functions.js \
-	--source machine/ts/ide/console_cart_editor.ts \
+	--source machine/ts/ide/cart_editor.ts \
 	--dest machine/ts/ide/tabs_nav.ts \
 	-n applyNavigationEntry -n areNavigationEntriesEqual -n beginNavigationCapture -n cloneNavigationEntry \
 	-n completeNavigation -n createNavigationEntry -n goBackwardInNavigationHistory -n goForwardInNavigationHistory \
@@ -262,7 +262,7 @@ node scripts/move_functions.js \
 
 # utils_editor -> utils_editor.ts
 node scripts/move_functions.js \
-	--source machine/ts/ide/console_cart_editor.ts \
+	--source machine/ts/ide/cart_editor.ts \
 	--dest machine/ts/ide/utils_editor.ts \
 	-n bottomMargin -n buildDebugPanelLines -n buildProjectReferenceContext -n debugPanelTabId \
 	-n digitFilter -n findWordLeft -n findWordRight -n getLineRangeForMovement -n lowerBound \
@@ -270,7 +270,7 @@ node scripts/move_functions.js \
 
 # search_helpers -> search_helpers.ts
 node scripts/move_functions.js \
-	--source machine/ts/ide/console_cart_editor.ts \
+	--source machine/ts/ide/cart_editor.ts \
 	--dest machine/ts/ide/search_helpers.ts \
 	-n isResourceSearchCompactMode -n isSymbolSearchCompactMode -n resourceSearchEntryHeight \
 	-n resourceSearchPageSize -n resourceSearchVisibleResultCount -n resourceSearchWindowCapacity \

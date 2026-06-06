@@ -1,4 +1,4 @@
-import { consoleCore } from '../../core/console';
+import { machineManager } from '../../core/machine_manager';
 import { Input } from '../../input/manager';
 import type { Runtime } from '../../machine/runtime/runtime';
 
@@ -27,7 +27,7 @@ function getRenderTargetState(runtime: Runtime): RenderTargetState {
 }
 
 function captureCurrentTargets(): RenderTargetSnapshot {
-	const view = consoleCore.view;
+	const view = machineManager.view;
 	return {
 		viewportSize: { x: view.viewportSize.x, y: view.viewportSize.y },
 		canvasSize: { x: view.canvasSize.x, y: view.canvasSize.y },
@@ -36,7 +36,7 @@ function captureCurrentTargets(): RenderTargetSnapshot {
 }
 
 function applyFixedEditorTargets(runtime: Runtime): void {
-	consoleCore.view.configureRenderTargets({
+	machineManager.view.configureRenderTargets({
 		viewportSize: EDITOR_TARGET,
 		canvasSize: EDITOR_TARGET,
 		offscreenSize: EDITOR_TARGET,
@@ -45,7 +45,7 @@ function applyFixedEditorTargets(runtime: Runtime): void {
 }
 
 function restoreTargets(runtime: Runtime, snapshot: RenderTargetSnapshot): void {
-	consoleCore.view.configureRenderTargets({
+	machineManager.view.configureRenderTargets({
 		viewportSize: snapshot.viewportSize,
 		canvasSize: snapshot.canvasSize,
 		offscreenSize: snapshot.offscreenSize,
@@ -106,19 +106,19 @@ export function isManagedOverlayEditorActive(runtime: Runtime): boolean {
 export function updateGamePipelineExts(runtime: Runtime): void {
 	const overlayActive = runtime.terminal.isActive || isManagedOverlayEditorActive(runtime);
 	runtime.executionOverlayActive = overlayActive;
-	consoleCore.view.presentWorkbenchFrameBufferTexture = overlayActive;
+	machineManager.view.presentWorkbenchFrameBufferTexture = overlayActive;
 	Input.instance.setGameplayCaptureEnabled(!overlayActive);
 	updateOverlayAudioSuspension(runtime);
 }
 
 function updateOverlayAudioSuspension(runtime: Runtime): void {
-	if (!consoleCore.sndmaster.isRuntimeAudioReady()) {
+	if (!machineManager.sndmaster.isRuntimeAudioReady()) {
 		return;
 	}
 	if (isOverlayActive(runtime)) {
-		consoleCore.sndmaster.suspendAll('overlay');
+		machineManager.sndmaster.suspendAll('overlay');
 	} else {
-		consoleCore.sndmaster.resumeAll('overlay');
+		machineManager.sndmaster.resumeAll('overlay');
 	}
 }
 

@@ -1,4 +1,4 @@
-import { consoleCore } from '../../../../core/console';
+import { machineManager } from '../../../../core/machine_manager';
 import type { Runtime } from '../../../../machine/runtime/runtime';
 import type { CodeTabContext, PointerSnapshot } from '../../../common/models';
 import * as constants from '../../../common/constants';
@@ -18,7 +18,7 @@ export function handleCodeAreaPointerInput(
 	gotoModifierActive: boolean,
 	activeContext: CodeTabContext,
 	pointerSecondaryJustPressed: boolean,
-	playerInput: ReturnType<typeof consoleCore.input.getPlayerInput>
+	playerInput: ReturnType<typeof machineManager.input.getPlayerInput>
 ): void {
 	const bounds = getCodeAreaBounds();
 	const contentBottom = editorViewState.codeHorizontalScrollbarVisible

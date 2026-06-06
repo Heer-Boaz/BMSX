@@ -1,4 +1,4 @@
-import { consoleCore } from '../../core/console';
+import { machineManager } from '../../core/machine_manager';
 import type { LuaChunk } from '../../lua/syntax/ast';
 import { LuaInterpreter } from '../../lua/runtime';
 import { convertToError } from '../../lua/value';
@@ -701,8 +701,8 @@ export async function reloadProgramAndResetWorld(runtime: Runtime, runInit = tru
 		runtime.luaGenericChunksExecuted.clear();
 
 		const reloadPlan = buildRuntimeReloadPlan(runtime);
-		await consoleCore.resetRuntime(reloadPlan.resetFreshWorldOptions.preserve_textures);
-		consoleCore.bootstrapStartupAudio();
+		await machineManager.resetRuntime(reloadPlan.resetFreshWorldOptions.preserve_textures);
+		machineManager.bootstrapStartupAudio();
 		try {
 			runtime.enterCartProgram();
 			resetRuntimeState(runtime);

@@ -1,13 +1,13 @@
 /*
- * console.h - C++ host shell for BMSX
+ * machine_manager.h - BMSX machine manager
  *
  * Owns libretro-facing platform state and runtime boot handoff.
  * ROM loading and boot orchestration live here; RomBootManager is a stateless plan builder.
  * Cart-visible hardware belongs under machine.
  */
 
-#ifndef BMSX_CONSOLE_CORE_H
-#define BMSX_CONSOLE_CORE_H
+#ifndef BMSX_MACHINE_MANAGER_H
+#define BMSX_MACHINE_MANAGER_H
 
 #include "common/primitives.h"
 #include "common/registry.h"
@@ -24,7 +24,7 @@
 namespace bmsx {
 
 class BFont;
-class ConsoleCore;
+class MachineManager;
 class RomBootManager;
 class TextureManager;
 class Runtime;
@@ -34,10 +34,10 @@ struct ProgramMetadata;
 struct ResolvedRuntimeTiming;
 
 /* ============================================================================
- * Console state
+ * Machine manager state
  * ============================================================================ */
 
-enum class ConsoleState {
+enum class MachineManagerState {
 	Uninitialized,
 	Initialized,
 	Running,
@@ -46,10 +46,10 @@ enum class ConsoleState {
 };
 
 /* ============================================================================
- * ConsoleCore - libretro host shell and runtime bootstrap owner
+ * MachineManager - runtime bootstrap and host-frame owner
  * ============================================================================ */
 
-class ConsoleCore {
+class MachineManager {
 public:
 	friend class FrameLoopState;
 	friend class RenderPresentationState;
@@ -75,8 +75,8 @@ public:
 		f64 endFrameMs = 0.0;
 	};
 
-	ConsoleCore();
-	~ConsoleCore();
+	MachineManager();
+	~MachineManager();
 
 	// Lifecycle
 	bool initialize(Platform* platform);
@@ -98,9 +98,9 @@ public:
 	);
 
 	// State accessors
-	ConsoleState state() const { return m_state; }
-	bool isRunning() const { return m_state == ConsoleState::Running; }
-	bool isPaused() const { return m_state == ConsoleState::Paused; }
+	MachineManagerState state() const { return m_state; }
+	bool isRunning() const { return m_state == MachineManagerState::Running; }
+	bool isPaused() const { return m_state == MachineManagerState::Paused; }
 
 	// Core host subsystems
 	Platform* platform() { return m_platform; }
@@ -156,7 +156,7 @@ public:
 	}
 
 	// Singleton access
-	static ConsoleCore& instance();
+	static MachineManager& instance();
 
 private:
 	Platform* m_platform = nullptr;
@@ -194,7 +194,7 @@ private:
 	Runtime& prepareRuntimeForActiveCart(const ResolvedRuntimeTiming& timing, const MachineManifest& machine);
 	void bootRuntimeFromProgram();
 
-	ConsoleState m_state = ConsoleState::Uninitialized;
+	MachineManagerState m_state = MachineManagerState::Uninitialized;
 
 	f64 m_total_time = 0.0;
 	f64 m_delta_time = 0.0;
@@ -209,22 +209,13 @@ private:
 	TickTiming m_last_tick_timing;
 	RenderTiming m_last_render_timing;
 
-	static ConsoleCore* s_instance;
+	static MachineManager* s_instance;
 
 	f32 m_viewport_scale = 1.0f;
 	f32 m_canvas_scale = 1.0f;
 	SubscriptionHandle m_resize_sub;
 };
 
-/* ============================================================================
- * Global console accessor
- * ============================================================================ */
-
-// Usage: $().view(), $().runtime(), etc.
-inline ConsoleCore& $() {
-	return ConsoleCore::instance();
-}
-
 } // namespace bmsx
 
-#endif // BMSX_CONSOLE_CORE_H
+#endif // BMSX_MACHINE_MANAGER_H

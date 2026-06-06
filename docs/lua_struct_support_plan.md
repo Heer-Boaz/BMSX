@@ -6,7 +6,7 @@ Add first-class `struct` support to BMSX Lua so cart, BIOS, and cart-library cod
 
 The feature is a compiler and ABI feature. A struct value is not a Lua table and does not allocate a runtime object. A struct reference is a typed address view over BMSX memory. Field reads and writes lower to existing memory loads and stores at deterministic byte offsets.
 
-## Design invariant: retained console-style scene memory
+## Design invariant: retained machine-style scene memory
 
 The purpose of BMSX Lua structs is to make RAM/ROM-resident machine layouts the
 owned representation. After the feature is complete, code must be able to define
@@ -17,7 +17,7 @@ buffer or any byte-contiguous dirty subrange to VRAM/VDP/RPU by passing a raw
 address and byte count.
 
 The intended programming model is similar to programming fixed-layout
-console/arcade graphics memory: static records can remain resident, dynamic
+machine/arcade graphics memory: static records can remain resident, dynamic
 records such as camera constants or transforms can be overwritten in place, and
 submission is a copy of already-owned machine memory rather than construction of
 Lua tables, temporary strings, packet builders, or cart-local encoding wrappers.
@@ -534,6 +534,6 @@ The feature is ready when all of these are true:
 - A changed subrange, such as one pass row, one transform table, one camera
   constant block, or one record range, can be patched in RAM and DMA-submitted
   without rebuilding unrelated records.
-- The programming model supports retained console-style scene memory: prepare
+- The programming model supports retained machine-style scene memory: prepare
   stable records once, mutate changed fields in place, and DMA either the whole
   buffer or only dirty contiguous regions.

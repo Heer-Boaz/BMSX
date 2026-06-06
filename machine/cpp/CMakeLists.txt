@@ -205,7 +205,7 @@ add_library(bmsx_core STATIC
 
 	# Core systems
 	common/vector.cpp
-	core/console.cpp
+	core/machine_manager.cpp
 	core/rom_boot_manager.cpp
 	core/host_frame.cpp
 	core/host_overlay_menu.cpp

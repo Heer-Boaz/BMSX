@@ -3,7 +3,7 @@ import { assertValidAemDocument, buildAemValidationLookup, parseStructuredTextDo
 import type { ResourceDescriptor } from '../../../rompack/tooling/resource';
 import { formatAemYamlDocument } from './yaml_formatter';
 import type { Runtime } from '../../../machine/runtime/runtime';
-import { runConsoleChunkToNative } from '../../../machine/program/executor';
+import { runHostEvalChunkToNative } from '../../../machine/program/executor';
 
 function resolveAemSourceFormat(path: string): StructuredTextDocumentFormat {
 	return path.endsWith('.json') ? 'json' : 'yaml';
@@ -25,7 +25,7 @@ function buildRuntimeAemValidationLookup(runtime: Runtime) {
 }
 
 function reloadAem(runtime: Runtime): void {
-	runConsoleChunkToNative(runtime, `rget('aem'):reload()`);
+	runHostEvalChunkToNative(runtime, `rget('aem'):reload()`);
 }
 
 export function listAemResourceDescriptors(runtime: Runtime): ResourceDescriptor[] {

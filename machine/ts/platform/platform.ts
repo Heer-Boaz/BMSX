@@ -76,7 +76,7 @@ export function setMicrotaskQueue(queue: MicrotaskQueue): void {
 	activeMicrotaskQueue = queue;
 }
 
-// disable-next-line single_line_method_pattern -- callers schedule through the active platform microtask queue selected by ConsoleCore.
+// disable-next-line single_line_method_pattern -- callers schedule through the active platform microtask queue selected by MachineManager.
 export function scheduleMicrotask(task: () => void): void {
 	activeMicrotaskQueue.schedule(task);
 }

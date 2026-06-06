@@ -12,7 +12,7 @@
 #include "backend/pass/library.h"
 #include "graph/graph.h"
 #include "lighting/system.h"
-#include "core/console.h"
+#include "core/machine_manager.h"
 #include "rompack/format.h"
 #include "texture_manager.h"
 #include "vdp/framebuffer.h"
@@ -167,8 +167,8 @@ void GameView::drawgame() {
 
 	FrameData frame;
 	frame.frameIndex = static_cast<u32>(m_renderFrameIndex);
-	frame.time = ConsoleCore::instance().totalTime();
-	frame.delta = ConsoleCore::instance().deltaTime();
+	frame.time = MachineManager::instance().totalTime();
+	frame.delta = MachineManager::instance().deltaTime();
 	m_renderGraph->execute(&frame);
 	finalizePresentation();
 	m_backend->endFrame();

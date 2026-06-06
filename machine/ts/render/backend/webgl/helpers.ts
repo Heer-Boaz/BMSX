@@ -1,4 +1,4 @@
-import { consoleCore } from '../../../core/console';
+import { machineManager } from '../../../core/machine_manager';
 
 // Global toggle for WebGL error checking. Disabled in normal builds.
 export const CATCH_WEBGL_ERROR = false;
@@ -7,7 +7,7 @@ export function checkWebGLError(infoText: string): number {
 	if (!CATCH_WEBGL_ERROR) {
 		return 0;
 	}
-	const gl = consoleCore.view.nativeCtx as WebGLRenderingContext;
+	const gl = machineManager.view.nativeCtx as WebGLRenderingContext;
 	const error = gl.getError();
 	if (error !== gl.NO_ERROR) {
 		console.error(`WebGL error: ${webGLErrorName(gl, error)}: ${infoText}`);

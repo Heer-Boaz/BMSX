@@ -1,7 +1,7 @@
 import { RectRenderKind, TextAlign, TextBaseline, type GlyphRenderSubmission, type RectRenderSubmission } from '../render/shared/submissions';
 import { LAYER_2D_IDE } from '../machine/devices/vdp/contracts';
 import type { Host2DKind, Host2DRef } from '../render/shared/submissions';
-import { consoleCore } from './console';
+import { machineManager } from './machine_manager';
 import { Input } from '../input/manager';
 import type { PlayerInput } from '../input/player';
 import { IO_VDP_DITHER } from '../machine/bus/io';
@@ -186,88 +186,88 @@ export class HostOverlayMenu {
 			kind: 'value',
 			label: 'Show Usage Gizmo',
 			values: TOGGLE_VALUES,
-			getIndex: () => boolIndex(consoleCore.view.show_resource_usage_gizmo),
-			setIndex: index => { consoleCore.view.show_resource_usage_gizmo = boolFromIndex(index); },
+			getIndex: () => boolIndex(machineManager.view.show_resource_usage_gizmo),
+			setIndex: index => { machineManager.view.show_resource_usage_gizmo = boolFromIndex(index); },
 		},
 		{
 			kind: 'value',
 			label: 'CRT Post-processing',
 			values: TOGGLE_VALUES,
-			getIndex: () => boolIndex(consoleCore.view.crt_postprocessing_enabled),
-			setIndex: index => { consoleCore.view.crt_postprocessing_enabled = boolFromIndex(index); },
+			getIndex: () => boolIndex(machineManager.view.crt_postprocessing_enabled),
+			setIndex: index => { machineManager.view.crt_postprocessing_enabled = boolFromIndex(index); },
 		},
 		{
 			kind: 'value',
 			label: 'CRT Noise',
 			values: TOGGLE_VALUES,
-			getIndex: () => boolIndex(consoleCore.view.enable_noise),
-			setIndex: index => { consoleCore.view.enable_noise = boolFromIndex(index); },
+			getIndex: () => boolIndex(machineManager.view.enable_noise),
+			setIndex: index => { machineManager.view.enable_noise = boolFromIndex(index); },
 		},
 		{
 			kind: 'value',
 			label: 'CRT Color Bleed',
 			values: TOGGLE_VALUES,
-			getIndex: () => boolIndex(consoleCore.view.enable_colorbleed),
-			setIndex: index => { consoleCore.view.enable_colorbleed = boolFromIndex(index); },
+			getIndex: () => boolIndex(machineManager.view.enable_colorbleed),
+			setIndex: index => { machineManager.view.enable_colorbleed = boolFromIndex(index); },
 		},
 		{
 			kind: 'value',
 			label: 'CRT Scanlines',
 			values: TOGGLE_VALUES,
-			getIndex: () => boolIndex(consoleCore.view.enable_scanlines),
-			setIndex: index => { consoleCore.view.enable_scanlines = boolFromIndex(index); },
+			getIndex: () => boolIndex(machineManager.view.enable_scanlines),
+			setIndex: index => { machineManager.view.enable_scanlines = boolFromIndex(index); },
 		},
 		{
 			kind: 'value',
 			label: 'CRT Blur',
 			values: TOGGLE_VALUES,
-			getIndex: () => boolIndex(consoleCore.view.enable_blur),
-			setIndex: index => { consoleCore.view.enable_blur = boolFromIndex(index); },
+			getIndex: () => boolIndex(machineManager.view.enable_blur),
+			setIndex: index => { machineManager.view.enable_blur = boolFromIndex(index); },
 		},
 		{
 			kind: 'value',
 			label: 'CRT Glow',
 			values: TOGGLE_VALUES,
-			getIndex: () => boolIndex(consoleCore.view.enable_glow),
-			setIndex: index => { consoleCore.view.enable_glow = boolFromIndex(index); },
+			getIndex: () => boolIndex(machineManager.view.enable_glow),
+			setIndex: index => { machineManager.view.enable_glow = boolFromIndex(index); },
 		},
 		{
 			kind: 'value',
 			label: 'CRT Fringing',
 			values: TOGGLE_VALUES,
-			getIndex: () => boolIndex(consoleCore.view.enable_fringing),
-			setIndex: index => { consoleCore.view.enable_fringing = boolFromIndex(index); },
+			getIndex: () => boolIndex(machineManager.view.enable_fringing),
+			setIndex: index => { machineManager.view.enable_fringing = boolFromIndex(index); },
 		},
 		{
 			kind: 'value',
 			label: 'CRT Aperture',
 			values: TOGGLE_VALUES,
-			getIndex: () => boolIndex(consoleCore.view.enable_aperture),
-			setIndex: index => { consoleCore.view.enable_aperture = boolFromIndex(index); },
+			getIndex: () => boolIndex(machineManager.view.enable_aperture),
+			setIndex: index => { machineManager.view.enable_aperture = boolFromIndex(index); },
 		},
 		{
 			kind: 'value',
 			label: 'Dither',
 			values: DITHER_VALUES,
-			getIndex: () => consoleCore.runtime.machine.memory.readIoU32(IO_VDP_DITHER),
-			setIndex: index => { consoleCore.runtime.machine.memory.writeValue(IO_VDP_DITHER, index); },
+			getIndex: () => machineManager.runtime.machine.memory.readIoU32(IO_VDP_DITHER),
+			setIndex: index => { machineManager.runtime.machine.memory.writeValue(IO_VDP_DITHER, index); },
 		},
 		{
 			kind: 'value',
 			label: 'HOST: SHOW FPS',
 			values: TOGGLE_VALUES,
-			getIndex: () => boolIndex(consoleCore.host_show_fps),
-			setIndex: index => { consoleCore.host_show_fps = boolFromIndex(index); },
+			getIndex: () => boolIndex(machineManager.host_show_fps),
+			setIndex: index => { machineManager.host_show_fps = boolFromIndex(index); },
 		},
 		{
 			kind: 'action',
 			label: 'REBOOT CART',
-			execute: () => { void consoleCore.runtime.rebootToBootRom(); },
+			execute: () => { void machineManager.runtime.rebootToBootRom(); },
 		},
 		{
 			kind: 'action',
 			label: 'EXIT GAME',
-			execute: () => { consoleCore.platform.requestShutdown(); },
+			execute: () => { machineManager.platform.requestShutdown(); },
 		},
 	];
 
@@ -369,7 +369,7 @@ export class HostOverlayMenu {
 		if (this.dirtyText) {
 			this.rebuildText();
 		}
-		const view = consoleCore.view;
+		const view = machineManager.view;
 		const font = view.default_font;
 		const lineHeight = font.lineHeight > 10 ? 10 : font.lineHeight;
 		const padding = 4;
@@ -420,11 +420,11 @@ export class HostOverlayMenu {
 		if (this.active) {
 			return false;
 		}
-		const view = consoleCore.view;
+		const view = machineManager.view;
 		const font = view.default_font;
 		let queued = false;
-		if (consoleCore.host_show_fps) {
-			const fpsTenths = ((consoleCore.host_fps * 10) + 0.5) | 0;
+		if (machineManager.host_show_fps) {
+			const fpsTenths = ((machineManager.host_fps * 10) + 0.5) | 0;
 			const fpsTextChanged = this.fpsTextTenths !== fpsTenths || this.fpsGlyphs.font !== font;
 			this.fpsGlyphs.font = font;
 			if (fpsTextChanged) {
@@ -442,7 +442,7 @@ export class HostOverlayMenu {
 			queued = true;
 		}
 		if (view.show_resource_usage_gizmo) {
-			const runtime = consoleCore.runtime;
+			const runtime = machineManager.runtime;
 			const vdpBudget = ((runtime.timing.vdpWorkUnitsPerSec * 1000000 / runtime.timing.ufpsScaled) + 0.5) | 0;
 			this.queueCommand('rect', this.usagePanelRect);
 			this.queueUsageBar(0, runtime.cpuUsageCyclesUsed(), runtime.cpuUsageCyclesGranted(), font);

@@ -1,4 +1,4 @@
-import { consoleCore } from '../../core/console';
+import { machineManager } from '../../core/machine_manager';
 import { Input } from '../../input/manager';
 import { KeyModifier } from '../../input/player';
 import type { ExecutionSignal } from '../../lua/runtime';
@@ -70,7 +70,7 @@ export function registerRuntimeShortcuts(runtime: Runtime): void {
 		setActiveIdeFontVariant(runtime, next);
 	}, KeyModifier.ctrl | KeyModifier.shift));
 	disposers.push(registry.registerKeyboardShortcut(1, 'F8', () => {
-		const modifiers = consoleCore.input.getPlayerInput(1).getModifiersState();
+		const modifiers = machineManager.input.getPlayerInput(1).getModifiersState();
 		if (modifiers.ctrl) {
 			return;
 		}
@@ -97,7 +97,7 @@ export function tickIdeInput(runtime: Runtime): void {
 	if (!editorBlocksRuntimePipeline(runtime) || !runtime.editor.isActive) {
 		return;
 	}
-	const pollFrame = consoleCore.input.getPlayerInput(1).pollFrame;
+	const pollFrame = machineManager.input.getPlayerInput(1).pollFrame;
 	if (pollFrame === runtime.lastIdeInputFrame) {
 		return;
 	}
@@ -109,7 +109,7 @@ export function tickTerminalInput(runtime: Runtime): void {
 	if (!runtime.terminal.isActive) {
 		return;
 	}
-	const pollFrame = consoleCore.input.getPlayerInput(1).pollFrame;
+	const pollFrame = machineManager.input.getPlayerInput(1).pollFrame;
 	if (pollFrame === runtime.lastTerminalInputFrame) {
 		return;
 	}

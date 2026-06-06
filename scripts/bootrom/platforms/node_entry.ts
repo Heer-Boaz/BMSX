@@ -3,7 +3,7 @@ import * as fs from 'node:fs/promises';
 
 import { createCanvas, Image, loadImage } from 'canvas';
 
-import { type ConsoleBootOptions } from '../../../machine/ts/core/console';
+import { type MachineBootOptions } from '../../../machine/ts/core/machine_manager';
 import { HeadlessPlatformServices } from '../../../hosts/node/headless/platform_headless';
 import { CLIPlatformServices } from '../../../hosts/node/cli/platform_cli';
 import type { Platform, InputEvt } from 'bmsx/platform';
@@ -11,7 +11,7 @@ import { HeadlessGameViewHost } from '../../../machine/ts/render/headless/view';
 import { HeadlessCaptureCoordinator, deriveHeadlessCaptureOutputDir, type ScheduledHeadlessCapture, type ScheduledHeadlessFrameCapture } from './headless_capture';
 import { printHeadlessCpuProfile } from './cpu_profile_report';
 import { runHostTest } from './hostrunner/host_test_runner';
-import { installNativeGlobal, runConsoleChunkToNative } from '../../../machine/ts/machine/program/executor';
+import { installNativeGlobal, runHostEvalChunkToNative } from '../../../machine/ts/machine/program/executor';
 import { raiseSystemIrq } from '../../../machine/ts/machine/runtime/system_irq';
 import { IRQ_NEWGAME } from '../../../machine/ts/machine/bus/io';
 
@@ -36,7 +36,7 @@ interface BootGlobals {
 }
 
 type MachineNamespace = {
-	consoleCore: typeof import('../../../machine/ts/core/console').consoleCore;
+	machineManager: typeof import('../../../machine/ts/core/machine_manager').machineManager;
 };
 
 interface InputTimelineEntry {
@@ -272,7 +272,6 @@ function printHelp(): void {
 	console.log('  --input-timeline <file>  JSON timeline of InputEvt entries to schedule; headless capture markers write screenshots next to the timeline.');
 	console.log('  --test <file>            Host test file executed by the headless test runner.');
 	console.log('  --machine-runtime <path> JS machine runtime bundle (defaults to dist/libbmsx(.debug).js).');
-	console.log('  --console-runtime <path> Alias for --machine-runtime.');
 	console.log('  --system-rom <path>      System ROM (defaults to dist/bmsx-bios(.debug).rom).');
 	console.log('  --cpu-profile            Enable fantasy CPU profiling and print a report on exit.');
 	console.log('  --help, -h               Show this help message.');
@@ -345,7 +344,7 @@ function parseArgs(argv: string[]): LaunchOptions {
 			index += 2;
 			continue;
 		}
-		if (arg === '--machine-runtime' || arg === '--console-runtime') {
+		if (arg === '--machine-runtime') {
 			const next = argv[index + 1];
 			if (!next) throw new Error(`Expected path after ${arg}.`);
 			options.machineRuntimePath = next;
@@ -1006,7 +1005,7 @@ async function main(): Promise<void> {
 	if (romFolder) {
 		cartRoot = await resolveCartRoot(romFolder);
 	}
-	const bootArgs: ConsoleBootOptions = {
+	const bootArgs: MachineBootOptions = {
 		cartridge: buffer,
 		systemRom: systemRomBuffer,
 		platform,
@@ -1017,7 +1016,7 @@ async function main(): Promise<void> {
 	}
 
 	console.log(`[bootrom:${__BOOTROM_TARGET__}] Starting game (debug=${debugFlag}, frameIntervalMs=${frameInterval}).`);
-	const runtime = await machineRuntime.consoleCore.boot(bootArgs);
+	const runtime = await machineRuntime.machineManager.boot(bootArgs);
 	const requestExit = (code: number): void => {
 		if (!cpuProfileDumped && cpuProfileActive) {
 			cpuProfileDumped = true;
@@ -1046,7 +1045,7 @@ async function main(): Promise<void> {
 			frameIntervalMs: frameInterval,
 			logger: inputLogger,
 			isCartProgramActive,
-			evaluateLua: (source) => runConsoleChunkToNative(runtime, source),
+			evaluateLua: (source) => runHostEvalChunkToNative(runtime, source),
 			installNativeGlobal: (name, value) => installNativeGlobal(runtime, name, value),
 			requestNewGame: () => raiseSystemIrq(runtime, IRQ_NEWGAME),
 			postInput,

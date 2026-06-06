@@ -1,7 +1,7 @@
 #include "render/host_overlay/gles2/pipeline.h"
 
 #if BMSX_ENABLE_GLES2
-#include "core/console.h"
+#include "core/machine_manager.h"
 #include "render/3d/axis_gizmo_pipeline.h"
 #include "render/host_overlay/gles2/host_overlay_shaders.h"
 #include "render/shared/glyph_runs.h"
@@ -251,7 +251,7 @@ void renderHost2DEntryGLES2(OpenGLES2Backend& backend, Host2DKind kind, Host2DRe
 
 void endHostOverlayGLES2(OpenGLES2Backend& backend) {
 	if (shouldRenderAxisGizmo()) {
-		const GameView& view = *ConsoleCore::instance().view();
+		const GameView& view = *MachineManager::instance().view();
 		backend.setRenderTarget(backend.backbuffer(), static_cast<i32>(view.offscreenCanvasSize.x), static_cast<i32>(view.offscreenCanvasSize.y));
 		glDisable(GL_DEPTH_TEST);
 		glDisable(GL_CULL_FACE);

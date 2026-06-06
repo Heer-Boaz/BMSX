@@ -3,7 +3,7 @@ import { color_arr, type TextureSource } from '../../../rompack/format';
 import { BackendCaps, ColorAttachmentSpec, GPUBackend, GraphicsPipelineBuildDesc, PassEncoder, RenderPassDesc, RenderPassInstanceHandle, RenderPassStateId, TextureFormat, TextureHandle } from '../backend';
 import type { TextureParams } from '../texture_params';
 import { createSolidRgba8Pixels, writeSolidRgba8Pixels } from '../../shared/solid_pixels';
-import { consoleCore } from '../../../core/console';
+import { machineManager } from '../../../core/machine_manager';
 import { registerCRT_WebGPU } from '../../post/crt/webgpu/pipeline';
 import { updateAndBindFrameUniforms } from '../frame_uniforms';
 import type { RenderPassLibrary } from '../pass/library';
@@ -60,7 +60,7 @@ export class WebGPUBackend implements GPUBackend {
 			graph: { skip: true },
 			exec: () => { },
 			prepare: (backend) => {
-				const gv = consoleCore.view;
+				const gv = machineManager.view;
 				updateAndBindFrameUniforms(backend, gv.offscreenCanvasSize.x, gv.offscreenCanvasSize.y, gv.viewportSize.x, gv.viewportSize.y);
 			},
 		});

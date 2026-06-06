@@ -1,4 +1,4 @@
-import { consoleCore } from '../../../core/console';
+import { machineManager } from '../../../core/machine_manager';
 import { Runtime } from '../../../machine/runtime/runtime';
 import { getTrackedLuaHeapBytes } from '../../../machine/memory/lua_heap_usage';
 import { buildWorkspaceDirtyEntryPath, buildWorkspaceStorageKey, readWorkspaceTextStorageEntry } from '../../workspace/workspace';
@@ -29,7 +29,7 @@ const HELP_TEXT = [
 	' REBOOT           Reboot game (cold start; recompiles in Lua source mode)',
 	' EXIT / QUIT      Close this application',
 	' PRINT / ?        Print value or expression',
-	' JSSTACK [ON/OFF] Toggle JS stack frames in console errors',
+	' JSSTACK [ON/OFF] Toggle JS stack frames in runtime errors',
 	' OPTLEVEL [0-3]   Show/set real-time Lua compile optimization',
 	' SYS              Show system information',
 	' SYS FAULT        Show faulted state',
@@ -96,7 +96,7 @@ export class TerminalCommandDispatcher {
 			return true;
 		}
 		if (upper === 'EXIT' || upper === 'QUIT') {
-			consoleCore.platform.requestShutdown();
+			machineManager.platform.requestShutdown();
 			return true;
 		}
 		if (upper === 'IDE') {

@@ -1,4 +1,4 @@
-import { consoleCore } from '../core/console';
+import { machineManager } from '../core/machine_manager';
 import type { Runtime } from '../machine/runtime/runtime';
 import type { TickCompletion } from '../machine/scheduler/frame';
 import * as workbenchMode from '../ide/workbench/mode';
@@ -59,7 +59,7 @@ export class RenderPresentationState {
 		if (!Boolean((globalThis as any).__bmsx_debug_presentrate)) {
 			return;
 		}
-		if (consoleCore.paused) {
+		if (machineManager.paused) {
 			this.debugPresentPausedPresents += 1;
 			return;
 		}
@@ -89,14 +89,14 @@ export class RenderPresentationState {
 
 	private presentFrame(hostDeltaMs: number, mode: RenderPresentationMode, commitFrame = mode === 'completed'): void {
 		const runtime = this.runtime;
-		consoleCore.deltatime = hostDeltaMs;
-		runtime.machine.vdp.drainFrameBufferPresentation(consoleCore.view.vdpFrameBufferTextures);
-		runtime.machine.vdp.drainSurfaceUploads(consoleCore.view.vdpSlotTextures);
-		commitVdpViewSnapshot(consoleCore.view, runtime.machine.vdp.readDeviceOutput());
-		consoleCore.view.configurePresentation(mode, commitFrame);
+		machineManager.deltatime = hostDeltaMs;
+		runtime.machine.vdp.drainFrameBufferPresentation(machineManager.view.vdpFrameBufferTextures);
+		runtime.machine.vdp.drainSurfaceUploads(machineManager.view.vdpSlotTextures);
+		commitVdpViewSnapshot(machineManager.view, runtime.machine.vdp.readDeviceOutput());
+		machineManager.view.configurePresentation(mode, commitFrame);
 		this.recordPresentation(mode, commitFrame);
-		consoleCore.sndmaster.finishFrame();
-		consoleCore.view.drawgame();
+		machineManager.sndmaster.finishFrame();
+		machineManager.view.drawgame();
 	}
 
 	private markPresentation(mode: RenderPresentationMode, commitFrame: boolean): void {

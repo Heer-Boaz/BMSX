@@ -1,4 +1,4 @@
-#include "core/console.h"
+#include "core/machine_manager.h"
 #include "input/manager.h"
 #include "input/player.h"
 #include "machine/bus/io.h"
@@ -33,10 +33,10 @@ void testLibretroSaveStateRoundTrip() {
 
 	const std::vector<bmsx::u8> rom = bmsx::test::makeMinimalProgramCartRom();
 	require(platform.loadRom(rom.data(), rom.size()), "libretro should load and boot a program cart ROM");
-	require(platform.console()->romLoaded(), "ConsoleCore should mark the cart ROM loaded");
-	require(platform.console()->hasRuntime(), "ConsoleCore should own a runtime after cart boot");
+	require(platform.machineManager()->romLoaded(), "MachineManager should mark the cart ROM loaded");
+	require(platform.machineManager()->hasRuntime(), "MachineManager should own a runtime after cart boot");
 
-	bmsx::Runtime& runtime = platform.console()->runtime();
+	bmsx::Runtime& runtime = platform.machineManager()->runtime();
 	require(runtime.isInitialized(), "cart program boot should initialize the runtime");
 	const size_t stateSize = platform.getStateSize();
 	require(stateSize > 0u, "libretro state size should come from initialized runtime state");

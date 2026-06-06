@@ -1,6 +1,6 @@
 #include "render/host_overlay/pipeline.h"
 
-#include "core/console.h"
+#include "core/machine_manager.h"
 #include "render/gameview.h"
 #include "render/host_overlay/overlay_queue.h"
 
@@ -17,10 +17,10 @@ void fillHost2DState(Host2DPipelineState& state, GameView& view) {
 } // namespace
 
 void writeHostOverlayState(HostOverlayPipelineState& state) {
-	state.time = ConsoleCore::instance().totalTime();
-	state.delta = ConsoleCore::instance().deltaTime();
+	state.time = MachineManager::instance().totalTime();
+	state.delta = MachineManager::instance().deltaTime();
 	if (!hasPendingOverlayFrame()) {
-		GameView& view = *ConsoleCore::instance().view();
+		GameView& view = *MachineManager::instance().view();
 		fillHost2DState(state, view);
 		state.commandKinds = nullptr;
 		state.commandRefs = nullptr;

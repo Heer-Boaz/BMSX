@@ -1,4 +1,4 @@
-import { consoleCore } from '../../../core/console';
+import { machineManager } from '../../../core/machine_manager';
 import type { Runtime } from '../../../machine/runtime/runtime';
 import type { PointerSnapshot } from '../../common/models';
 import { handleInvalidEditorPointerSnapshot } from './invalid_snapshot';
@@ -13,7 +13,7 @@ export function handleEditorChromePointerDispatch(
 	snapshot: PointerSnapshot,
 	justPressed: boolean,
 	pointerAuxJustPressed: boolean,
-	playerInput: ReturnType<typeof consoleCore.input.getPlayerInput>
+	playerInput: ReturnType<typeof machineManager.input.getPlayerInput>
 ): boolean {
 	if (handleEditorTabDragPointer(snapshot)) {
 		return true;

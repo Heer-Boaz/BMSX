@@ -1,8 +1,8 @@
 /*
- * console.cpp - Console core implementation
+ * machine_manager.cpp - Machine manager implementation
  */
 
-#include "console.h"
+#include "machine_manager.h"
 #include "render/shared/bitmap_font.h"
 #include "rom_boot_manager.h"
 #include "system.h"
@@ -30,28 +30,28 @@
 
 namespace bmsx {
 
-ConsoleCore* ConsoleCore::s_instance = nullptr;
+MachineManager* MachineManager::s_instance = nullptr;
 
-ConsoleCore::ConsoleCore() {
+MachineManager::MachineManager() {
 	s_instance = this;
 	machine_manifest = &defaultSystemMachineManifest();
 	m_active_rom = &m_system_rom;
 	m_rom_boot_manager = std::make_unique<RomBootManager>();
 }
 
-ConsoleCore::~ConsoleCore() {
+MachineManager::~MachineManager() {
 	shutdown();
 	if (s_instance == this) {
 		s_instance = nullptr;
 	}
 }
 
-ConsoleCore& ConsoleCore::instance() {
+MachineManager& MachineManager::instance() {
 	return *s_instance;
 }
 
-bool ConsoleCore::initialize(Platform* platform) {
-	if (m_state != ConsoleState::Uninitialized) {
+bool MachineManager::initialize(Platform* platform) {
+	if (m_state != MachineManagerState::Uninitialized) {
 		return false;
 	}
 
@@ -107,12 +107,12 @@ bool ConsoleCore::initialize(Platform* platform) {
 	m_sound_master = std::make_unique<SoundMaster>();
 	registry().registerObject(m_sound_master.get());
 
-	m_state = ConsoleState::Initialized;
+	m_state = MachineManagerState::Initialized;
 	return true;
 }
 
-void ConsoleCore::shutdown() {
-	if (m_state == ConsoleState::Uninitialized) {
+void MachineManager::shutdown() {
+	if (m_state == MachineManagerState::Uninitialized) {
 		return;
 	}
 
@@ -133,14 +133,14 @@ void ConsoleCore::shutdown() {
 	registry().clear();
 
 	m_platform = nullptr;
-	m_state = ConsoleState::Uninitialized;
+	m_state = MachineManagerState::Uninitialized;
 }
 
-void ConsoleCore::start() {
+void MachineManager::start() {
 	switch (m_state) {
-		case ConsoleState::Initialized:
-		case ConsoleState::Stopped:
-			m_state = ConsoleState::Running;
+		case MachineManagerState::Initialized:
+		case MachineManagerState::Stopped:
+			m_state = MachineManagerState::Running;
 			runtime().frameScheduler.clearQueuedTime();
 			break;
 		default:
@@ -149,10 +149,10 @@ void ConsoleCore::start() {
 }
 
 // start normalized-body-acceptable -- pause/resume deliberately mirror state-transition symmetry.
-void ConsoleCore::pause() {
+void MachineManager::pause() {
 	switch (m_state) {
-		case ConsoleState::Running:
-			m_state = ConsoleState::Paused;
+		case MachineManagerState::Running:
+			m_state = MachineManagerState::Paused;
 			runtime().screen.clearPresentation();
 			break;
 		default:
@@ -160,10 +160,10 @@ void ConsoleCore::pause() {
 	}
 }
 
-void ConsoleCore::resume() {
+void MachineManager::resume() {
 	switch (m_state) {
-		case ConsoleState::Paused:
-			m_state = ConsoleState::Running;
+		case MachineManagerState::Paused:
+			m_state = MachineManagerState::Running;
 			runtime().frameScheduler.clearQueuedTime();
 			break;
 		default:
@@ -172,47 +172,47 @@ void ConsoleCore::resume() {
 }
 // end normalized-body-acceptable
 
-void ConsoleCore::stop() {
+void MachineManager::stop() {
 	switch (m_state) {
-		case ConsoleState::Running:
-		case ConsoleState::Paused:
-			m_state = ConsoleState::Stopped;
+		case MachineManagerState::Running:
+		case MachineManagerState::Paused:
+			m_state = MachineManagerState::Stopped;
 			break;
 		default:
 			break;
 	}
 }
 
-bool ConsoleCore::acceptHostFrame(f64 deltaTime) const {
+bool MachineManager::acceptHostFrame(f64 deltaTime) const {
 	switch (m_state) {
-		case ConsoleState::Running:
-		case ConsoleState::Paused:
+		case MachineManagerState::Running:
+		case MachineManagerState::Paused:
 			return deltaTime > 0.0;
 		default:
 			return false;
 	}
 }
 
-void ConsoleCore::startLoadedRuntimeFrame(bool romLoaded) {
-	if (romLoaded && m_state == ConsoleState::Initialized) {
+void MachineManager::startLoadedRuntimeFrame(bool romLoaded) {
+	if (romLoaded && m_state == MachineManagerState::Initialized) {
 		start();
 	}
 }
 
-void ConsoleCore::setHostPaused(bool paused, bool romLoaded) {
+void MachineManager::setHostPaused(bool paused, bool romLoaded) {
 	if (paused) {
 		pause();
 		return;
 	}
 
-	if (m_state == ConsoleState::Paused) {
+	if (m_state == MachineManagerState::Paused) {
 		resume();
 	} else {
 		startLoadedRuntimeFrame(romLoaded);
 	}
 }
 
-void ConsoleCore::refreshRenderSurfaces() {
+void MachineManager::refreshRenderSurfaces() {
 	if (m_texture_manager) {
 		m_texture_manager->setBackend(m_view ? m_view->backend() : nullptr);
 	}
@@ -227,7 +227,7 @@ void ConsoleCore::refreshRenderSurfaces() {
 	restoreVdpContextState(runtime().machine.vdp, *m_view);
 }
 
-void ConsoleCore::log(LogLevel level, const char* fmt, ...) {
+void MachineManager::log(LogLevel level, const char* fmt, ...) {
 	va_list args;
 	va_start(args, fmt);
 	va_list args_copy;
@@ -245,7 +245,7 @@ void ConsoleCore::log(LogLevel level, const char* fmt, ...) {
 
 	std::string message;
 	if (written < 0) {
-		message = "ConsoleCore::log: formatting error";
+		message = "MachineManager::log: formatting error";
 	} else {
 		message.resize(static_cast<size_t>(written) + 1);
 		vsnprintf(message.data(), message.size(), fmt, args_copy);
@@ -255,15 +255,15 @@ void ConsoleCore::log(LogLevel level, const char* fmt, ...) {
 	m_platform->log(level, message);
 }
 
-Runtime& ConsoleCore::runtime() {
+Runtime& MachineManager::runtime() {
 	return *m_runtime;
 }
 
-const Runtime& ConsoleCore::runtime() const {
+const Runtime& MachineManager::runtime() const {
 	return *m_runtime;
 }
 
-Runtime& ConsoleCore::ensureRuntime(const RuntimeOptions& options) {
+Runtime& MachineManager::ensureRuntime(const RuntimeOptions& options) {
 	if (!m_runtime) {
 		m_runtime = std::make_unique<Runtime>(
 			options,
@@ -280,19 +280,19 @@ Runtime& ConsoleCore::ensureRuntime(const RuntimeOptions& options) {
 // ROM loading and boot orchestration (moved from RomBootManager)
 // ============================================================================
 
-void ConsoleCore::activateSystemRom() {
+void MachineManager::activateSystemRom() {
 	m_active_rom = &m_system_rom;
 }
 
-void ConsoleCore::activateCartRom() {
+void MachineManager::activateCartRom() {
 	m_active_rom = &m_cart_rom;
 }
 
-void ConsoleCore::setMachineManifest(const MachineManifest& manifest) {
+void MachineManager::setMachineManifest(const MachineManifest& manifest) {
 	machine_manifest = &manifest;
 }
 
-void ConsoleCore::configureViewForMachine(const MachineManifest& manifest) {
+void MachineManager::configureViewForMachine(const MachineManifest& manifest) {
 	Vec2 viewportSize{
 		static_cast<f32>(manifest.viewportWidth),
 		static_cast<f32>(manifest.viewportHeight)
@@ -301,7 +301,7 @@ void ConsoleCore::configureViewForMachine(const MachineManifest& manifest) {
 	m_view->configureRenderTargets(&viewportSize, &viewportSize, &offscreenSize, &m_viewport_scale, &m_canvas_scale);
 }
 
-bool ConsoleCore::loadSystemRomInternal(const u8* data, size_t size) {
+bool MachineManager::loadSystemRomInternal(const u8* data, size_t size) {
 		if (m_texture_manager) {
 				m_texture_manager->setBackend(m_view ? m_view->backend() : nullptr);
 		}
@@ -315,7 +315,7 @@ bool ConsoleCore::loadSystemRomInternal(const u8* data, size_t size) {
 	return true;
 }
 
-Runtime& ConsoleCore::prepareRuntimeForActiveCart(const ResolvedRuntimeTiming& timing, const MachineManifest& machine) {
+Runtime& MachineManager::prepareRuntimeForActiveCart(const ResolvedRuntimeTiming& timing, const MachineManifest& machine) {
 	Runtime& runtime = ensureRuntime(RuntimeOptions{
 		1,
 		Vec2{ static_cast<f32>(timing.viewportWidth), static_cast<f32>(timing.viewportHeight) },
@@ -343,7 +343,7 @@ Runtime& ConsoleCore::prepareRuntimeForActiveCart(const ResolvedRuntimeTiming& t
 	return runtime;
 }
 
-void ConsoleCore::bootRuntimeFromProgram() {
+void MachineManager::bootRuntimeFromProgram() {
 	if (!activeRom().programImage) {
 		return;
 	}
@@ -395,7 +395,7 @@ void ConsoleCore::bootRuntimeFromProgram() {
 	rt.boot(*romPackage.programImage, romPackage.programSymbols.get(), romPackage.programImage->entryProtoIndex, romPackage.programImage->sections.rodata.staticModulePaths);
 }
 
-bool ConsoleCore::bootSystemStartupProgram(const MachineManifest& runtimeMachine) {
+bool MachineManager::bootSystemStartupProgram(const MachineManifest& runtimeMachine) {
 	if (!m_system_rom_loaded) return false;
 	if (!m_system_rom.programImage) return false;
 
@@ -452,7 +452,7 @@ bool ConsoleCore::bootSystemStartupProgram(const MachineManifest& runtimeMachine
 	return true;
 }
 
-bool ConsoleCore::loadRomInternal(const u8* data, size_t size) {
+bool MachineManager::loadRomInternal(const u8* data, size_t size) {
 	if (m_texture_manager) {
 		m_texture_manager->setBackend(m_view ? m_view->backend() : nullptr);
 	}
@@ -473,9 +473,9 @@ bool ConsoleCore::loadRomInternal(const u8* data, size_t size) {
 		if (!m_system_rom_loaded
 			|| !tryResolveCpuHz(m_system_rom.machine, systemCpuHz)
 			|| !tryResolveUfpsScaled(m_system_rom.machine, systemUfpsScaled)) {
-			throw std::runtime_error("[ConsoleCore] machine.specs.cpu.cpu_freq_hz is required.");
+			throw std::runtime_error("[MachineManager] machine.specs.cpu.cpu_freq_hz is required.");
 		}
-		std::cerr << "[ConsoleCore] Cart manifest machine.specs.cpu.cpu_freq_hz is required; booting BIOS only." << std::endl;
+		std::cerr << "[MachineManager] Cart manifest machine.specs.cpu.cpu_freq_hz is required; booting BIOS only." << std::endl;
 		cpuHz = systemCpuHz;
 		runtimeUfpsScaled = systemUfpsScaled;
 	}
@@ -491,7 +491,7 @@ bool ConsoleCore::loadRomInternal(const u8* data, size_t size) {
 		}
 	} else {
 		if (!cartCpuValid) {
-			std::cerr << "[ConsoleCore] Cart manifest machine.specs.cpu.cpu_freq_hz is required; cannot boot cart without BIOS." << std::endl;
+			std::cerr << "[MachineManager] Cart manifest machine.specs.cpu.cpu_freq_hz is required; cannot boot cart without BIOS." << std::endl;
 			return false;
 		}
 		activateCartRom();
@@ -508,7 +508,7 @@ bool ConsoleCore::loadRomInternal(const u8* data, size_t size) {
 	return true;
 }
 
-bool ConsoleCore::loadSystemRomOwned(std::vector<u8>&& data) {
+bool MachineManager::loadSystemRomOwned(std::vector<u8>&& data) {
 	m_runtime.reset();
 	m_system_rom_owned = std::move(data);
 	m_system_rom_data = m_system_rom_owned.data();
@@ -516,7 +516,7 @@ bool ConsoleCore::loadSystemRomOwned(std::vector<u8>&& data) {
 	return loadSystemRomInternal(m_system_rom_data, m_system_rom_size);
 }
 
-bool ConsoleCore::loadRom(const u8* data, size_t size) {
+bool MachineManager::loadRom(const u8* data, size_t size) {
 	unloadRom();
 	m_runtime.reset();
 	m_cart_rom_owned.clear();
@@ -525,7 +525,7 @@ bool ConsoleCore::loadRom(const u8* data, size_t size) {
 	return loadRomInternal(data, size);
 }
 
-bool ConsoleCore::loadRomOwned(std::vector<u8>&& data) {
+bool MachineManager::loadRomOwned(std::vector<u8>&& data) {
 	unloadRom();
 	m_runtime.reset();
 	m_cart_rom_owned = std::move(data);
@@ -534,7 +534,7 @@ bool ConsoleCore::loadRomOwned(std::vector<u8>&& data) {
 	return loadRomInternal(m_cart_rom_data, m_cart_rom_size);
 }
 
-void ConsoleCore::unloadRom() {
+void MachineManager::unloadRom() {
 	if (m_rom_loaded) {
 		m_runtime.reset();
 		m_active_rom = &m_system_rom;
@@ -554,7 +554,7 @@ void ConsoleCore::unloadRom() {
 	}
 }
 
-bool ConsoleCore::rebootLoadedRom() {
+bool MachineManager::rebootLoadedRom() {
 	if (!m_rom_loaded) return false;
 
 	if (m_texture_manager) m_texture_manager->clear();
@@ -569,7 +569,7 @@ bool ConsoleCore::rebootLoadedRom() {
 	return bootSystemStartupProgram(*runtimeMachine);
 }
 
-bool ConsoleCore::bootWithoutCart() {
+bool MachineManager::bootWithoutCart() {
 	if (!m_system_rom_loaded) {
 		throw std::runtime_error("[BMSX] bootWithoutCart: system ROM not loaded");
 	}

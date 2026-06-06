@@ -1,4 +1,4 @@
-import { consoleCore } from '../../core/console';
+import { machineManager } from '../../core/machine_manager';
 import { taskGate } from '../../core/taskgate';
 import { Input } from '../../input/manager';
 import type { LuaDefinitionInfo } from '../../lua/syntax/ast';
@@ -166,7 +166,7 @@ export class Runtime {
 	}
 
 	public programMetadata: ProgramMetadata | null = null;
-	public consoleMetadata: ProgramMetadata | null = null;
+	public hostEvalMetadata: ProgramMetadata | null = null;
 	public _luaPath: string = null;
 	public get currentPath(): string {
 		return this._luaPath;
@@ -233,7 +233,7 @@ export class Runtime {
 	public nativeMemberCompletionCache: WeakMap<object, { dot?: LuaMemberCompletion[]; colon?: LuaMemberCompletion[] }> = new WeakMap();
 	public readonly pathSemanticCache: Map<string, { source: string; model?: LuaSemanticModel; definitions?: ReadonlyArray<LuaDefinitionInfo>; parsed?: ParsedLuaChunk; lines?: readonly string[]; analysis?: FileSemanticData }> = new Map();
 
-	public readonly luaGate = taskGate.group('console:lua');
+	public readonly luaGate = taskGate.group('machine:lua');
 	private hasCompletedInitialBoot = false;
 	public cartEntryAvailable = true;
 	public readonly hostFault: HostFaultState;
@@ -376,7 +376,7 @@ export class Runtime {
 			projectRootPath: this.systemProjectRootPath,
 		});
 		await this.prepareBootRomStartupState();
-		await consoleCore.refreshRenderSurfaces();
+		await machineManager.refreshRenderSurfaces();
 		this.view.default_font = new Font();
 		await this.boot();
 	}
@@ -581,9 +581,9 @@ export class Runtime {
 		const initialGeoWorkUnits = options.geoWorkUnitsPerSec ?? DEFAULT_GEO_WORK_UNITS_PER_SEC;
 		this.timing.vdpWorkUnitsPerSec = resolvePositiveSafeInteger(initialVdpWorkUnits, 'machine.specs.vdp.work_units_per_sec');
 		this.timing.geoWorkUnitsPerSec = resolvePositiveSafeInteger(initialGeoWorkUnits, 'machine.specs.geo.work_units_per_sec');
-		this.storageService = consoleCore.platform.storage;
-		this.frames = consoleCore.platform.frames;
-		this.clock = consoleCore.platform.clock;
+		this.storageService = machineManager.platform.storage;
+		this.frames = machineManager.platform.frames;
+		this.clock = machineManager.platform.clock;
 		this.activeMachineManifest = options.activeMachineManifest;
 		this.cartManifest = options.cartManifest;
 		this.cartProjectRootPath = options.cartProjectRootPath;
@@ -660,7 +660,7 @@ export class Runtime {
 
 	public assignInterpreter(interpreter: LuaInterpreter): void {
 		this.luaInterpreter = interpreter;
-		this.consoleMetadata = null;
+		this.hostEvalMetadata = null;
 		this.pendingCall = null;
 		this.luaRuntimeFailed = false;
 		this.luaInitialized = false;
@@ -687,8 +687,8 @@ export class Runtime {
 			this.clearBootFaults();
 			this.clearLuaBootState();
 			if (this.hasCompletedInitialBoot) { // Subsequent boot: reset the runtime state
-				await consoleCore.resetRuntime();
-				consoleCore.bootstrapStartupAudio();
+				await machineManager.resetRuntime();
+				machineManager.bootstrapStartupAudio();
 			}
 			luaPipeline.bootActiveProgram(this);
 			this.hasCompletedInitialBoot = true;
@@ -723,10 +723,10 @@ export class Runtime {
 	}
 
 	private async restartBootRomStartupState(): Promise<void> {
-		await consoleCore.resetRuntime();
+		await machineManager.resetRuntime();
 		await this.prepareBootRomStartupState();
-		await consoleCore.refreshRenderSurfaces();
-		consoleCore.bootstrapStartupAudio();
+		await machineManager.refreshRenderSurfaces();
+		machineManager.bootstrapStartupAudio();
 	}
 
 	public async rebootToBootRom(): Promise<void> {

@@ -1,4 +1,4 @@
-import { consoleCore } from '../../../core/console';
+import { machineManager } from '../../../core/machine_manager';
 import { scheduleIdeOnce } from '../../common/background_tasks';
 import { taskGate } from '../../../core/taskgate';
 import type { Runtime } from '../../../machine/runtime/runtime';
@@ -20,7 +20,7 @@ function detachWorkspaceExitHandler(): void {
 
 function attachWorkspaceExitHandler(runtime: Runtime): void {
 	detachWorkspaceExitHandler();
-	workspaceState.disposeExitListener = consoleCore.platform.lifecycle.onWillExit(() => {
+	workspaceState.disposeExitListener = machineManager.platform.lifecycle.onWillExit(() => {
 		if (!workspaceState.autosaveEnabled) {
 			return;
 		}

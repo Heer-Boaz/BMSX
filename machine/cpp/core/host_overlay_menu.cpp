@@ -1,6 +1,6 @@
 #include "core/host_overlay_menu.h"
 
-#include "core/console.h"
+#include "core/machine_manager.h"
 #include "render/shared/bitmap_font.h"
 #include "core/rom_boot_manager.h"
 #include "input/manager.h"
@@ -129,7 +129,7 @@ bool boolFromIndex(i32 index) {
 	return index != 0;
 }
 
-i32 optionIndex(ConsoleCore& console, GameView& view, i32 option) {
+i32 optionIndex(MachineManager& manager, GameView& view, i32 option) {
 	switch (kOptions[static_cast<size_t>(option)].id) {
 		case HostMenuOptionId::ShowUsageGizmo: return boolIndex(view.showResourceUsageGizmo);
 		case HostMenuOptionId::CrtPost: return boolIndex(view.crt_postprocessing_enabled);
@@ -140,15 +140,15 @@ i32 optionIndex(ConsoleCore& console, GameView& view, i32 option) {
 		case HostMenuOptionId::CrtGlow: return boolIndex(view.applyGlow);
 		case HostMenuOptionId::CrtFringing: return boolIndex(view.applyFringing);
 		case HostMenuOptionId::CrtAperture: return boolIndex(view.applyAperture);
-		case HostMenuOptionId::Dither: return static_cast<i32>(console.runtime().machine.memory.readIoU32(IO_VDP_DITHER));
-		case HostMenuOptionId::HostShowFps: return boolIndex(console.hostShowFps);
+		case HostMenuOptionId::Dither: return static_cast<i32>(manager.runtime().machine.memory.readIoU32(IO_VDP_DITHER));
+		case HostMenuOptionId::HostShowFps: return boolIndex(manager.hostShowFps);
 		case HostMenuOptionId::RebootCart: return 0;
 		case HostMenuOptionId::ExitGame: return 0;
 	}
 	return 0;
 }
 
-void setOptionIndex(ConsoleCore& console, GameView& view, i32 option, i32 value) {
+void setOptionIndex(MachineManager& manager, GameView& view, i32 option, i32 value) {
 	switch (kOptions[static_cast<size_t>(option)].id) {
 		case HostMenuOptionId::ShowUsageGizmo: view.showResourceUsageGizmo = boolFromIndex(value); break;
 		case HostMenuOptionId::CrtPost: view.crt_postprocessing_enabled = boolFromIndex(value); break;
@@ -159,8 +159,8 @@ void setOptionIndex(ConsoleCore& console, GameView& view, i32 option, i32 value)
 		case HostMenuOptionId::CrtGlow: view.applyGlow = boolFromIndex(value); break;
 		case HostMenuOptionId::CrtFringing: view.applyFringing = boolFromIndex(value); break;
 		case HostMenuOptionId::CrtAperture: view.applyAperture = boolFromIndex(value); break;
-		case HostMenuOptionId::Dither: console.runtime().machine.memory.writeValue(IO_VDP_DITHER, valueNumber(static_cast<double>(value))); break;
-		case HostMenuOptionId::HostShowFps: console.hostShowFps = boolFromIndex(value); break;
+		case HostMenuOptionId::Dither: manager.runtime().machine.memory.writeValue(IO_VDP_DITHER, valueNumber(static_cast<double>(value))); break;
+		case HostMenuOptionId::HostShowFps: manager.hostShowFps = boolFromIndex(value); break;
 		case HostMenuOptionId::RebootCart: break;
 		case HostMenuOptionId::ExitGame: break;
 	}
@@ -310,8 +310,8 @@ void HostOverlayMenu::queueCommand(Host2DKind kind, Host2DRef ref) {
 	m_commandCount += 1;
 }
 
-bool HostOverlayMenu::tickInput(ConsoleCore& console) {
-	GameView* view = console.view();
+bool HostOverlayMenu::tickInput(MachineManager& manager) {
+	GameView* view = manager.view();
 	PlayerInput& player = *Input::instance().getPlayerInput(1);
 	const bool comboEdge = buttonPressed(player, kButtonStart) &&
 		buttonPressed(player, kButtonSelect) &&
@@ -342,24 +342,24 @@ bool HostOverlayMenu::tickInput(ConsoleCore& console) {
 		m_dirtyText = true;
 	}
 	if (buttonEdge(player, kButtonLeft)) {
-		changeSelected(console, *view, -1);
+		changeSelected(manager, *view, -1);
 	}
 	if (buttonEdge(player, kButtonRight)) {
-		changeSelected(console, *view, 1);
+		changeSelected(manager, *view, 1);
 	}
 	if (buttonJustPressed(player, kButtonA)) {
-		activateSelected(console);
+		activateSelected(manager);
 	}
 	consumeButtons(player, kMenuButtons);
 	return true;
 }
 
-void HostOverlayMenu::queueRenderCommands(ConsoleCore& console, GameView& view) {
+void HostOverlayMenu::queueRenderCommands(MachineManager& manager, GameView& view) {
 	clearRenderCommands();
 	const Host2DKind rectKind = Host2DKind::Rect;
 	const Host2DKind itemsKind = Host2DKind::Glyphs;
 	if (m_dirtyText) {
-		rebuildText(console, view);
+		rebuildText(manager, view);
 	}
 	BFont* font = view.default_font;
 	const i32 lineHeight = font->lineHeight() > 10 ? 10 : font->lineHeight();
@@ -400,7 +400,7 @@ void HostOverlayMenu::queueRenderCommands(ConsoleCore& console, GameView& view) 
 	}
 }
 
-bool HostOverlayMenu::queueFrameOverlayCommands(ConsoleCore& console, GameView& view) {
+bool HostOverlayMenu::queueFrameOverlayCommands(MachineManager& manager, GameView& view) {
 	clearRenderCommands();
 	const Host2DKind rectKind = Host2DKind::Rect;
 	const Host2DKind itemsKind = Host2DKind::Glyphs;
@@ -409,8 +409,8 @@ bool HostOverlayMenu::queueFrameOverlayCommands(ConsoleCore& console, GameView& 
 	}
 	bool queued = false;
 	BFont* font = view.default_font;
-	if (console.hostShowFps) {
-		const i32 fpsTenths = static_cast<i32>((console.fps() * 10.0) + 0.5);
+	if (manager.hostShowFps) {
+		const i32 fpsTenths = static_cast<i32>((manager.fps() * 10.0) + 0.5);
 		if (m_fpsTextTenths != fpsTenths || m_fpsGlyphs.font != font) {
 			m_fpsTextTenths = fpsTenths;
 			const i32 whole = fpsTenths / 10;
@@ -428,7 +428,7 @@ bool HostOverlayMenu::queueFrameOverlayCommands(ConsoleCore& console, GameView& 
 		queued = true;
 	}
 	if (view.showResourceUsageGizmo) {
-		Runtime& runtime = console.runtime();
+		Runtime& runtime = manager.runtime();
 		const i32 vdpBudget = static_cast<i32>(
 			(static_cast<double>(runtime.timing.vdpWorkUnitsPerSec) * 1000000.0 / static_cast<double>(runtime.timing.ufpsScaled)) + 0.5
 		);
@@ -488,39 +488,39 @@ void HostOverlayMenu::close() {
 	m_dirtyText = true;
 }
 
-void HostOverlayMenu::changeSelected(ConsoleCore& console, GameView& view, i32 direction) {
+void HostOverlayMenu::changeSelected(MachineManager& manager, GameView& view, i32 direction) {
 	if (kOptions[static_cast<size_t>(m_selected)].valueCount == 0) {
 		return;
 	}
 	const i32 valueCount = kOptions[static_cast<size_t>(m_selected)].valueCount;
-	const i32 current = optionIndex(console, view, m_selected);
+	const i32 current = optionIndex(manager, view, m_selected);
 	const i32 next = (current + valueCount + direction) % valueCount;
-	setOptionIndex(console, view, m_selected, next);
+	setOptionIndex(manager, view, m_selected, next);
 	m_dirtyText = true;
 }
 
-void HostOverlayMenu::activateSelected(ConsoleCore& console) {
+void HostOverlayMenu::activateSelected(MachineManager& manager) {
 	switch (kOptions[static_cast<size_t>(m_selected)].id) {
 		case HostMenuOptionId::RebootCart:
 			close();
-			console.rebootLoadedRom();
+			manager.rebootLoadedRom();
 			return;
 		case HostMenuOptionId::ExitGame:
 			close();
-			console.platform()->requestShutdown();
+			manager.platform()->requestShutdown();
 			return;
 		default:
 			return;
 	}
 }
 
-void HostOverlayMenu::rebuildText(ConsoleCore& console, GameView& view) {
+void HostOverlayMenu::rebuildText(MachineManager& manager, GameView& view) {
 	for (i32 index = 0; index < kMenuOptionCount; index += 1) {
 		const HostMenuOptionDef& option = kOptions[static_cast<size_t>(index)];
 		if (option.valueCount == 0) {
 			m_lineText[static_cast<size_t>(index)] = option.label;
 		} else {
-			m_lineText[static_cast<size_t>(index)] = std::string(option.label) + "  " + option.values[optionIndex(console, view, index)];
+			m_lineText[static_cast<size_t>(index)] = std::string(option.label) + "  " + option.values[optionIndex(manager, view, index)];
 		}
 		GlyphRenderSubmission& items = m_optionGlyphs[static_cast<size_t>(index)];
 		items.items[0] = m_lineText[static_cast<size_t>(index)];

@@ -1,5 +1,5 @@
 /**
- * Comprehensive text editing and selection module for the console cart editor.
+ * Comprehensive text editing and selection module for the runtime cart editor.
  * Handles ALL text manipulation, selection state, clipboard operations, and editing commands.
  *
  * This module consolidates:
@@ -11,7 +11,7 @@
  * - Multi-line editing with selection support
  */
 
-import { consoleCore } from '../../../core/console';
+import { machineManager } from '../../../core/machine_manager';
 import { showEditorMessage } from '../../common/feedback_state';
 import type { EditContext, Position } from '../../common/models';
 import { getActiveCodeTabContext } from '../../workbench/ui/code_tab/contexts';
@@ -970,7 +970,7 @@ export function pasteFromClipboard(): void {
  */
 export async function writeClipboard(text: string, successMessage: string): Promise<void> {
 	editorDocumentState.customClipboard = text;
-	const clipboard = consoleCore.platform.clipboard;
+	const clipboard = machineManager.platform.clipboard;
 	if (!clipboard.isSupported()) {
 		const message = successMessage + ' (Editor clipboard only)';
 		showEditorMessage(message, constants.COLOR_STATUS_SUCCESS, 1.5);

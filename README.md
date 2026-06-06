@@ -1,6 +1,6 @@
 # BMSX
 
-BMSX is a fantasy console with real console discipline.
+BMSX is an emulated machine with real emulator discipline.
 
 It is fictional hardware, but the architecture is treated like a real machine: carts run against CPU, RAM/ROM, MMIO registers, and device controllers. Host code exists to present audio, video, input, files, and platform entrypoints; it should not become the cart-facing hardware contract.
 
@@ -60,7 +60,7 @@ Avoid this for new hardware-facing behavior:
 cart Lua -> C++ host/runtime shortcut
 ```
 
-The host may accelerate implementation details, but it must not own the semantics of console hardware. Use the architecture roles precisely: the machine owns cart-observable semantics, a host owns the embedding/process and physical services, and a mode is a behavior variant inside one host.
+The host may accelerate implementation details, but it must not own the semantics of machine hardware. Use the architecture roles precisely: the machine owns cart-observable semantics, a host owns the embedding/process and physical services, and a mode is a behavior variant inside one host.
 
 Current artifact names encode that split:
 

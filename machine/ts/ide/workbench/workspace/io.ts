@@ -1,4 +1,4 @@
-import { consoleCore } from '../../../core/console';
+import { machineManager } from '../../../core/machine_manager';
 import type { StorageService, TimerHandle } from '../../../platform/platform';
 import { scheduleIdeOnce } from '../../common/background_tasks';
 import {
@@ -189,7 +189,7 @@ export async function configureWorkspaceStorage(projectRootPath: string): Promis
 		dirtyDir,
 		stateFile,
 	};
-	const storage = consoleCore.platform.storage;
+	const storage = machineManager.platform.storage;
 	if (storage) {
 		try {
 			const backend = new LocalWorkspaceBackend(projectRootPath, storage);

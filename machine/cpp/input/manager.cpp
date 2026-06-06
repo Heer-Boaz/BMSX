@@ -7,7 +7,7 @@
 #include "gamepad.h"
 #include "keyboard.h"
 #include "pointer.h"
-#include "core/console.h"
+#include "core/machine_manager.h"
 #include <cmath>
 
 namespace bmsx {
@@ -419,7 +419,7 @@ void Input::initialize() {
 		DEFAULT_INPUT_MAPPING.pointer,
 		0
 	);
-	m_focusChangeSub = ConsoleCore::instance().platform()->gameviewHost()->onFocusChange([this](bool focused) {
+	m_focusChangeSub = MachineManager::instance().platform()->gameviewHost()->onFocusChange([this](bool focused) {
 		handleFocusChange(focused);
 	});
 
@@ -623,9 +623,9 @@ const std::unordered_map<std::string, std::string> Input::KEYBOARD_TO_GAMEPAD = 
  * ============================================================================ */
 
 void Input::pollInput() {
-	m_currentTimeMs = $().clock()->now();
+	m_currentTimeMs = MachineManager::instance().clock()->now();
 	// 1. Process events from hub
-	auto* hub = $().platform()->inputHub();
+	auto* hub = MachineManager::instance().platform()->inputHub();
 	std::optional<InputEvt> evt = hub->nextEvt();
 	while (evt.has_value()) {
 		const InputEvt& input = evt.value();

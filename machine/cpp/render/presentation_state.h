@@ -7,7 +7,7 @@
 
 namespace bmsx {
 
-class ConsoleCore;
+class MachineManager;
 class Runtime;
 
 struct RenderPresentation {
@@ -25,7 +25,7 @@ public:
 	void reset();
 	void requestHeldPresentation();
 	void syncAfterRuntimeUpdate(Runtime& runtime, i64 previousTickSequence);
-	bool render(ConsoleCore& console, Runtime& runtime, bool heldPresent = false);
+	bool render(MachineManager& manager, Runtime& runtime, bool heldPresent = false);
 
 private:
 	void recordTickCompletion(bool visualCommitted, bool vdpFrameHeld);

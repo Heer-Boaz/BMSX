@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import { test, type TestContext } from 'node:test';
 import type { CodeTabContext } from '../../machine/ts/ide/common/models';
 import type { StorageService } from '../../machine/ts/platform/platform';
-import { consoleCore as $ } from '../../machine/ts/core/console';
+import { machineManager } from '../../machine/ts/core/machine_manager';
 import { PieceTreeBuffer } from '../../machine/ts/ide/editor/text/piece_tree_buffer';
 import { getTextSnapshot } from '../../machine/ts/ide/editor/text/source_text';
 import { workspaceSourceCache } from '../../machine/ts/ide/workspace/cache';
@@ -74,14 +74,14 @@ function createPlatformStub(storage: MockStorage) {
 	} as const;
 }
 
-const ORIGINAL_PLATFORM = ($ as any).platform;
+const ORIGINAL_PLATFORM = (machineManager as any).platform;
 const ORIGINAL_FETCH = globalThis.fetch;
 // disable-next-line legacy_sentinel_string_pattern -- seeds and verifies removal of the obsolete local-only workspace marker.
 const LEGACY_LOCAL_WORKSPACE_MARKER = '__marker__';
 
 function useOfflinePlatform(storage: MockStorage): void {
 	const platformStub = createPlatformStub(storage);
-	($ as any).platform = platformStub;
+	(machineManager as any).platform = platformStub;
 	const offlineFetch: typeof globalThis.fetch = async () => {
 		throw new Error('offline');
 	};
@@ -99,7 +99,7 @@ async function resetEnvironment(storage: MockStorage): Promise<void> {
 	tabSessionState.tabs = [];
 	tabSessionState.activeTabId = null;
 	editorDocumentState.buffer = new PieceTreeBuffer('');
-	($ as any).platform = ORIGINAL_PLATFORM;
+	(machineManager as any).platform = ORIGINAL_PLATFORM;
 	globalThis.fetch = ORIGINAL_FETCH;
 }
 

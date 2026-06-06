@@ -1,4 +1,4 @@
-#include "core/console.h"
+#include "core/machine_manager.h"
 
 #include "core/host_overlay_menu.h"
 #include "common/time.h"
@@ -13,7 +13,7 @@ namespace {
 constexpr double MAX_FRAME_DELTA_MS = 250.0;
 }
 
-bool ConsoleCore::runHostFrame(
+bool MachineManager::runHostFrame(
 	Runtime& runtime,
 	MicrotaskQueue& microtasks,
 	f64 deltaTime,
@@ -43,7 +43,7 @@ bool ConsoleCore::runHostFrame(
 		runtime.screen.clearPresentation();
 		if (!platformPaused && !hostMenuActive) {
 			m_delta_time = runtime.timing.frameDurationMs / 1000.0;
-			// Handle program reload request at the frame boundary (TS parity: no ConsoleCore in CartBootState)
+			// Handle program reload request at the frame boundary (TS parity: no MachineManager in CartBootState)
 			if (runtime.isRebootRequested()) {
 				runtime.clearRebootRequest();
 				runtime.frameScheduler.clearQueuedTime();

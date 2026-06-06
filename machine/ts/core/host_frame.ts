@@ -1,4 +1,4 @@
-import { consoleCore } from './console';
+import { machineManager } from './machine_manager';
 import { hostOverlayMenu } from './host_overlay_menu';
 import * as workbenchMode from '../ide/workbench/mode';
 import type { Runtime } from '../machine/runtime/runtime';
@@ -11,21 +11,21 @@ const hostFrameStepResult: RuntimeFrameStepResult = {
 	tickAdvanced: false,
 };
 
-export function runConsoleHostFrame(runtime: Runtime, currentTime: number, runReady: boolean): void {
-	const console = consoleCore;
-	if (!console.running) {
+export function runMachineHostFrame(runtime: Runtime, currentTime: number, runReady: boolean): void {
+	const manager = machineManager;
+	if (!manager.running) {
 		return;
 	}
 	const screen = runtime.screen;
 	let hostDeltaMs = 0;
 	try {
-		console.input.pollInput();
+		manager.input.pollInput();
 		screen.beginHostFrame(currentTime);
 		workbenchMode.tickIdeInput(runtime);
 		workbenchMode.tickTerminalInput(runtime);
 		hostDeltaMs = Math.min(currentTime - runtime.frameLoop.currentTimeMs, MAX_HOST_FRAME_DELTA_MS);
 		runtime.frameLoop.currentTimeMs = currentTime;
-		console.host_fps = 1000 / hostDeltaMs;
+		manager.host_fps = 1000 / hostDeltaMs;
 		const hostMenuActive = hostOverlayMenu.tickInput();
 
 		if (hostMenuActive) {
@@ -34,7 +34,7 @@ export function runConsoleHostFrame(runtime: Runtime, currentTime: number, runRe
 			hostOverlayMenu.queueRenderCommands();
 			screen.requestHeldPresentation();
 			screen.presentPending(hostDeltaMs);
-		} else if (console.paused) {
+		} else if (manager.paused) {
 			hostOverlayMenu.queueFrameOverlayCommands();
 			screen.presentPausedFrame(hostDeltaMs);
 		} else {
@@ -45,7 +45,7 @@ export function runConsoleHostFrame(runtime: Runtime, currentTime: number, runRe
 			} else if (!runReady) {
 				runtime.frameScheduler.clearQueuedTime();
 			} else {
-				console.deltatime = runtime.timing.frameDurationMs;
+				manager.deltatime = runtime.timing.frameDurationMs;
 				runRuntimeFrameStepInto(hostFrameStepResult, runtime, hostDeltaMs);
 				screen.syncAfterRuntimeUpdate(hostFrameStepResult.previousTickSequence);
 			}

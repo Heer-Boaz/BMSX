@@ -1,4 +1,4 @@
-import { consoleCore } from '../../core/console';
+import { machineManager } from '../../core/machine_manager';
 import { editorRuntimeState } from '../editor/common/runtime_state';
 import { scheduleRuntimeTask } from '../common/background_tasks';
 import { applyWorkspaceOverridesToCart, applyWorkspaceOverridesToRegistry } from '../workspace/workspace';
@@ -88,7 +88,7 @@ export function performHotResume(runtime: Runtime): boolean {
 			console.log('[IDE] Updating applied generation after resume');
 			editorDocumentState.appliedGeneration = targetGeneration;
 		}
-		consoleCore.paused = false;
+		machineManager.paused = false;
 		}, (error) => {
 			console.error(error);
 			handleLuaError(runtime, error);
@@ -105,7 +105,7 @@ export function performReboot(runtime: Runtime): boolean {
 		console.info('[IDE] Performing cold reboot through bootrom');
 		await runtime.rebootToBootRom();
 		editorDocumentState.appliedGeneration = targetGeneration;
-		consoleCore.paused = false;
+		machineManager.paused = false;
 	}, (error) => {
 		runtime.editor.handleRuntimeTaskError(error, 'Failed to reboot game');
 	});

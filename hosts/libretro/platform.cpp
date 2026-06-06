@@ -3,7 +3,7 @@
  */
 
 #include "platform.h"
-#include "core/console.h"
+#include "core/machine_manager.h"
 #include "common/primitives.h"
 #include "core/rom_boot_manager.h"
 #include "core/system.h"
@@ -151,12 +151,12 @@ LibretroPlatform::LibretroPlatform(BackendType backend_type)
 	// Initialize controller devices
 	m_controller_devices.fill(RETRO_DEVICE_JOYPAD);
 
-	// Create and initialize the console
-	m_console = std::make_unique<ConsoleCore>();
-	m_console->initialize(this);
-	m_console->view()->crt_postprocessing_enabled = m_crt_postprocessing_enabled;
+	// Create and initialize the machine manager
+	m_machine_manager = std::make_unique<MachineManager>();
+	m_machine_manager->initialize(this);
+	m_machine_manager->view()->crt_postprocessing_enabled = m_crt_postprocessing_enabled;
 	if (m_backend_type == BackendType::Software) {
-		auto* view = m_console->view();
+		auto* view = m_machine_manager->view();
 		auto* backend = view->backend();
 		installBuiltinRenderPipeline(view, backend);
 	}
@@ -181,10 +181,10 @@ LibretroPlatform::~LibretroPlatform() {
 	unloadRom();
 	Input::instance().shutdown();
 
-	// Shutdown console before destroying platform components
-	if (m_console) {
-		m_console->shutdown();
-		m_console.reset();
+	// Shutdown the machine manager before destroying platform components
+	if (m_machine_manager) {
+		m_machine_manager->shutdown();
+		m_machine_manager.reset();
 	}
 
 	log(RETRO_LOG_INFO, "[BMSX] Platform destroyed\n");
@@ -223,7 +223,7 @@ void LibretroPlatform::notifyFocusChange(bool focused) {
 void LibretroPlatform::setHwRenderCallbacks(retro_hw_get_current_framebuffer_t get_current_framebuffer) {
 #if BMSX_ENABLE_GLES2
 	m_hw_get_current_framebuffer = get_current_framebuffer;
-	auto* backend = static_cast<OpenGLES2Backend*>(m_console->view()->backend());
+	auto* backend = static_cast<OpenGLES2Backend*>(m_machine_manager->view()->backend());
 	backend->setFramebufferGetter(m_hw_get_current_framebuffer);
 #else
 	(void)get_current_framebuffer;
@@ -234,7 +234,7 @@ void LibretroPlatform::setHwRenderCallbacks(retro_hw_get_current_framebuffer_t g
 void LibretroPlatform::onContextReset() {
 #if BMSX_ENABLE_GLES2
 	log(RETRO_LOG_INFO, "[BMSX] onContextReset: begin\n");
-	auto* view = m_console->view();
+	auto* view = m_machine_manager->view();
 	auto* backend = static_cast<OpenGLES2Backend*>(view->backend());
 	log(RETRO_LOG_INFO, "[BMSX] onContextReset: set framebuffer getter\n");
 	backend->setFramebufferGetter(m_hw_get_current_framebuffer);
@@ -249,7 +249,7 @@ void LibretroPlatform::onContextReset() {
 	installBuiltinRenderPipeline(view, backend);
 	if (m_render_surfaces_need_refresh) {
 		log(RETRO_LOG_INFO, "[BMSX] onContextReset: refresh render surfaces\n");
-		m_console->refreshRenderSurfaces();
+		m_machine_manager->refreshRenderSurfaces();
 		m_render_surfaces_need_refresh = false;
 	}
 	log(RETRO_LOG_INFO, "[BMSX] onContextReset: done\n");
@@ -260,9 +260,9 @@ void LibretroPlatform::onContextReset() {
 
 void LibretroPlatform::onContextDestroy() {
 #if BMSX_ENABLE_GLES2
-	auto* view = m_console->view();
+	auto* view = m_machine_manager->view();
 	auto* backend = static_cast<OpenGLES2Backend*>(view->backend());
-	m_console->texmanager()->clear();
+	m_machine_manager->texmanager()->clear();
 	m_render_surfaces_need_refresh = true;
 	shutdownFramebuffer2DGLES2();
 	view->setPipelineRegistry(std::unique_ptr<RenderPassLibrary>());
@@ -297,7 +297,7 @@ void LibretroPlatform::setAVInfo(const retro_system_av_info& info) {
 		info.timing.fps
 	);
 
-	auto* view = m_console->view();
+	auto* view = m_machine_manager->view();
 	Vec2 renderTargetSize{
 		static_cast<f32>(baseWidth),
 		static_cast<f32>(baseHeight)
@@ -318,7 +318,7 @@ void LibretroPlatform::setPostProcessOptions(bool enableCrt, bool highDetail) {
 	m_crt_postprocessing_enabled = enableCrt;
 	m_postprocess_scale = highDetail ? 2 : 1;
 
-	auto* view = m_console->view();
+	auto* view = m_machine_manager->view();
 	view->crt_postprocessing_enabled = enableCrt;
 	const Vec2 offscreenSize{
 		view->viewportSize.x * static_cast<f32>(m_postprocess_scale),
@@ -334,7 +334,7 @@ void LibretroPlatform::setCrtEffectOptions(bool applyNoise,
 											bool applyGlow,
 											bool applyFringing,
 											bool applyAperture) {
-	auto* view = m_console->view();
+	auto* view = m_machine_manager->view();
 	view->applyNoise = applyNoise;
 	view->applyColorBleed = applyColorBleed;
 	view->applyScanlines = applyScanlines;
@@ -346,14 +346,14 @@ void LibretroPlatform::setCrtEffectOptions(bool applyNoise,
 
 void LibretroPlatform::setDitherType(i32 type) {
 	m_dither_type = type;
-	if (!m_console->hasRuntime()) {
+	if (!m_machine_manager->hasRuntime()) {
 		return;
 	}
-	m_console->runtime().machine.memory.writeValue(IO_VDP_DITHER, valueNumber(static_cast<double>(m_dither_type)));
+	m_machine_manager->runtime().machine.memory.writeValue(IO_VDP_DITHER, valueNumber(static_cast<double>(m_dither_type)));
 }
 
 void LibretroPlatform::setResourceUsageGizmo(bool enabled) {
-	m_console->view()->showResourceUsageGizmo = enabled;
+	m_machine_manager->view()->showResourceUsageGizmo = enabled;
 }
 
 void LibretroPlatform::requestShutdown() {
@@ -377,7 +377,7 @@ void LibretroPlatform::setControllerDevice(unsigned port, unsigned device) {
 }
 
 void LibretroPlatform::applyManifestViewport() {
-	const auto& manifest = m_console->machineManifest();
+	const auto& manifest = m_machine_manager->machineManifest();
 	m_pending_viewport = {
 		static_cast<f32>(manifest.viewportWidth),
 		static_cast<f32>(manifest.viewportHeight)
@@ -417,7 +417,7 @@ bool LibretroPlatform::loadRomOwned(std::vector<uint8_t>&& data) {
 		}
 	}
 
-	if (!m_console->loadRomOwned(std::move(data))) {
+	if (!m_machine_manager->loadRomOwned(std::move(data))) {
 		log(RETRO_LOG_ERROR, "[BMSX] Failed to load ROM\n");
 		return false;
 	}
@@ -510,7 +510,7 @@ bool LibretroPlatform::loadEmptyCart() {
 	}
 
 	// Boot system ROM (runs bootrom.lua)
-	if (systemRomLoaded && m_console && m_console->bootWithoutCart()) {
+	if (systemRomLoaded && m_machine_manager && m_machine_manager->bootWithoutCart()) {
 		log(RETRO_LOG_INFO, "[BMSX] Booted system ROM program\n");
 		m_rom_loaded = true;
 		return true;
@@ -540,7 +540,7 @@ bool LibretroPlatform::loadSystemRomFromFile(const std::string& path) {
 		return false;
 	}
 
-	if (!m_console->loadSystemRomOwned(std::move(data))) {
+	if (!m_machine_manager->loadSystemRomOwned(std::move(data))) {
 		log(RETRO_LOG_WARN, "[BMSX] Failed to parse system ROM: %s\n", path.c_str());
 		return false;
 	}
@@ -552,8 +552,8 @@ bool LibretroPlatform::loadSystemRomFromFile(const std::string& path) {
 void LibretroPlatform::unloadRom() {
 	if (m_rom_loaded) {
 		// Unload ROM from host core
-		if (m_console) {
-			m_console->unloadRom();
+		if (m_machine_manager) {
+			m_machine_manager->unloadRom();
 		}
 		m_rom_loaded = false;
 		log(RETRO_LOG_INFO, "[BMSX] ROM unloaded\n");
@@ -561,12 +561,12 @@ void LibretroPlatform::unloadRom() {
 }
 
 void LibretroPlatform::reset() {
-	m_console->stop();
+	m_machine_manager->stop();
 	m_audio_service->resetQueue();
 	m_audio_buffer.clear();
 
-	if (m_console && m_console->romLoaded()) {
-		if (!m_console->rebootLoadedRom()) {
+	if (m_machine_manager && m_machine_manager->romLoaded()) {
+		if (!m_machine_manager->rebootLoadedRom()) {
 			log(RETRO_LOG_ERROR, "[BMSX] Reset failed: runtime reset failed\n");
 			return;
 		}
@@ -575,12 +575,12 @@ void LibretroPlatform::reset() {
 		return;
 	}
 
-	m_console->start();
+	m_machine_manager->start();
 	log(RETRO_LOG_INFO, "[BMSX] Game reset (runtime rebooted)\n");
 }
 
 bool LibretroPlatform::runFrame() {
-	if (!m_rom_loaded || !m_console) return false;
+	if (!m_rom_loaded || !m_machine_manager) return false;
 
 #if ENABLE_PERFORMANCE_LOGS
 	const auto frameStart = std::chrono::steady_clock::now();
@@ -598,14 +598,14 @@ bool LibretroPlatform::runFrame() {
 	static_cast<LibretroFrameLoop*>(m_frame_loop.get())->runPushedFrame(m_clock->now(), dt);
 
 	if (!m_platform_paused) {
-		m_console->startLoadedRuntimeFrame(m_rom_loaded);
+		m_machine_manager->startLoadedRuntimeFrame(m_rom_loaded);
 	}
 
 	// Poll the platform hub before the runtime frame loop consumes and latches
 	// input for this host frame.
 	pollInput();
 
-	const bool presented = m_console->runHostFrame(m_console->runtime(), *m_microtask_queue, dt, m_platform_paused);
+	const bool presented = m_machine_manager->runHostFrame(m_machine_manager->runtime(), *m_microtask_queue, dt, m_platform_paused);
 	m_audio_service->collectSamples(m_audio_buffer);
 	return presented;
 }
@@ -615,10 +615,10 @@ void LibretroPlatform::setPlatformPaused(bool paused) {
 		return;
 	}
 	m_platform_paused = paused;
-	if (!m_console) {
+	if (!m_machine_manager) {
 		return;
 	}
-	m_console->setHostPaused(paused, m_rom_loaded);
+	m_machine_manager->setHostPaused(paused, m_rom_loaded);
 }
 
 // disable-next-line single_line_method_pattern -- frame input polling stays on the platform API while the libretro hub owns device polling.
@@ -657,10 +657,10 @@ void LibretroPlatform::log(retro_log_level level, const char* fmt, ...) {
 }
 
 size_t LibretroPlatform::getStateSize() const {
-	if (!m_rom_loaded || !m_console->hasRuntime()) {
+	if (!m_rom_loaded || !m_machine_manager->hasRuntime()) {
 		return 0;
 	}
-	Runtime& runtime = m_console->runtime();
+	Runtime& runtime = m_machine_manager->runtime();
 	if (!runtime.isInitialized()) {
 		return 0;
 	}
@@ -669,10 +669,10 @@ size_t LibretroPlatform::getStateSize() const {
 
 // start fallible-boundary -- libretro serialization callbacks report failure as false after logging.
 bool LibretroPlatform::saveState(void* data, size_t size) {
-	if (!m_rom_loaded || !m_console->hasRuntime()) {
+	if (!m_rom_loaded || !m_machine_manager->hasRuntime()) {
 		return false;
 	}
-	Runtime& runtime = m_console->runtime();
+	Runtime& runtime = m_machine_manager->runtime();
 	if (!runtime.isInitialized()) {
 		return false;
 	}
@@ -694,10 +694,10 @@ bool LibretroPlatform::saveState(void* data, size_t size) {
 }
 
 bool LibretroPlatform::loadState(const void* data, size_t size) {
-	if (!m_rom_loaded || !m_console->hasRuntime()) {
+	if (!m_rom_loaded || !m_machine_manager->hasRuntime()) {
 		return false;
 	}
-	Runtime& runtime = m_console->runtime();
+	Runtime& runtime = m_machine_manager->runtime();
 	if (!runtime.isInitialized()) {
 		return false;
 	}
@@ -1069,7 +1069,7 @@ void LibretroAudioService::resetQueue() {
 }
 
 void LibretroAudioService::refreshTargetBufferFrames() {
-	const SoundMaster* soundMaster = m_platform->console()->soundMaster();
+	const SoundMaster* soundMaster = m_platform->machineManager()->soundMaster();
 	const size_t framesPerFrame = static_cast<size_t>(std::ceil(m_sample_rate * soundMaster->mixFrameTimeSec()));
 	const size_t requested = static_cast<size_t>(std::ceil(m_sample_rate * soundMaster->mixTargetAheadSec()))
 		+ kAudioRequestAheadFrames
@@ -1079,7 +1079,7 @@ void LibretroAudioService::refreshTargetBufferFrames() {
 }
 
 void LibretroAudioService::collectSamples(AudioBuffer& buffer) {
-	SoundMaster* soundMaster = m_platform->console()->soundMaster();
+	SoundMaster* soundMaster = m_platform->machineManager()->soundMaster();
 	const double samplesPerFrame = m_sample_rate * soundMaster->mixFrameTimeSec();
 	m_sample_accumulator += samplesPerFrame;
 	const size_t frames = static_cast<size_t>(m_sample_accumulator);
@@ -1091,7 +1091,7 @@ void LibretroAudioService::collectSamples(AudioBuffer& buffer) {
 
 	const size_t targetFrames = frames + m_target_buffer_frames;
 	int16_t* output = buffer.beginWrite(frames);
-	m_platform->console()->runtime().machine.audioOutput.pullOutputFrames(output, frames, static_cast<i32>(m_sample_rate), soundMaster->masterVolume(), targetFrames - frames);
+	m_platform->machineManager()->runtime().machine.audioOutput.pullOutputFrames(output, frames, static_cast<i32>(m_sample_rate), soundMaster->masterVolume(), targetFrames - frames);
 }
 
 /* ============================================================================

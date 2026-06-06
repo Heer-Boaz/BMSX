@@ -4,7 +4,7 @@
 
 #include "pointer.h"
 #include "manager.h"
-#include "core/console.h"
+#include "core/machine_manager.h"
 #include <algorithm>
 #include <cmath>
 
@@ -34,7 +34,7 @@ PointerInput::PointerInput(const std::string& deviceId)
 }
 
 void PointerInput::pollInput() {
-	const f64 now = ConsoleCore::instance().clock()->now();
+	const f64 now = MachineManager::instance().clock()->now();
 	const f64 prevPollTime = m_lastPollTimeMs;
 	m_lastPollTimeMs = now;
 

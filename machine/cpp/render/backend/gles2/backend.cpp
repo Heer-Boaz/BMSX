@@ -11,7 +11,7 @@
 #include "render/backend/gles2/vdp_rpu.h"
 #include "render/3d/axis_gizmo_pipeline.h"
 #include "render/2d/framebuffer_pipeline.h"
-#include "core/console.h"
+#include "core/machine_manager.h"
 #include "render/shared/solid_pixels.h"
 
 #include <array>

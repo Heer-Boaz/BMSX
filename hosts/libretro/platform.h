@@ -1,8 +1,8 @@
 /*
  * platform.h - BMSX Platform implementation for libretro
  *
- * This header defines the LibretroPlatform class that bridges the BMSX console
- * with the libretro API, allowing the console to run in RetroArch and other
+ * This header defines the LibretroPlatform class that bridges the BMSX machine runtime
+ * with the libretro API, allowing the machine to run in RetroArch and other
  * libretro frontends.
  */
 
@@ -29,7 +29,7 @@ class KeyboardInput;
 class PointerInput;
 class LibretroInputHub;
 class LibretroAudioService;
-class ConsoleCore;
+class MachineManager;
 
 /* ============================================================================
  * Framebuffer for video output
@@ -204,8 +204,8 @@ public:
 	const AudioBuffer& getAudioBuffer() const { return m_audio_buffer; }
 	double frameTimeSec() const { return m_frame_time_sec; }
 
-	// Console access
-	ConsoleCore* console() { return m_console.get(); }
+	// Machine manager access
+	MachineManager* machineManager() { return m_machine_manager.get(); }
 
 	// Save states
 	size_t getStateSize() const;
@@ -267,8 +267,8 @@ private:
 	// Controller configuration
 	std::array<unsigned, 4> m_controller_devices{};
 
-	// Console instance
-	std::unique_ptr<ConsoleCore> m_console;
+	// Machine manager instance
+	std::unique_ptr<MachineManager> m_machine_manager;
 
 	// Platform components
 	std::unique_ptr<Clock> m_clock;

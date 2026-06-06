@@ -548,12 +548,12 @@ test('flattened module export slots survive program append swaps', () => {
 	const slotKey = StringValue.get(cpu.stringPool.intern('constants__room__tile_size'));
 	assert.equal(cpu.getGlobalByKey(slotKey), 8);
 
-	const consoleSource = 'return 1';
+	const hostEvalSource = 'return 1';
 	const appended = appendLuaChunkToProgram(
 		compiled.program,
 		compiled.metadata,
-		parseChunk(consoleSource, 'console'),
-		{ entrySource: consoleSource },
+		parseChunk(hostEvalSource, 'host_eval'),
+		{ entrySource: hostEvalSource },
 	);
 	cpu.setProgram(appended.program, appended.metadata);
 	assert.equal(cpu.getGlobalByKey(slotKey), 8);
@@ -647,7 +647,7 @@ test('appendLuaChunkToProgram preserves absolute program ROM bytes', () => {
 	assert.equal(readInstructionWord(program.code, CART_BASE_PC / INSTRUCTION_BYTES), readInstructionWord(cartImage.sections.text.code, 0));
 
 	const source = 'return 1';
-	const appended = appendLuaChunkToProgram(program, metadata!, parseChunk(source, 'console'), { entrySource: source });
+	const appended = appendLuaChunkToProgram(program, metadata!, parseChunk(source, 'host_eval'), { entrySource: source });
 
 	assert.equal(readInstructionWord(appended.program.code, vectorWord), CART_PROGRAM_VECTOR_VALUE);
 	assert.equal(readInstructionWord(appended.program.code, freeWord), 0x12345678);

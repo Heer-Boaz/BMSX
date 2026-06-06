@@ -1,5 +1,5 @@
 #include "render/presentation_state.h"
-#include "core/console.h"
+#include "core/machine_manager.h"
 #include "core/rom_boot_manager.h"
 #include "common/time.h"
 #include "machine/runtime/runtime.h"
@@ -168,19 +168,19 @@ void RenderPresentationState::syncAfterRuntimeUpdate(Runtime& runtime, i64 previ
 	}
 }
 
-bool RenderPresentationState::render(ConsoleCore& console, Runtime& runtime, bool heldPresent) {
-	if (console.m_state != ConsoleState::Running && console.m_state != ConsoleState::Paused) {
+bool RenderPresentationState::render(MachineManager& manager, Runtime& runtime, bool heldPresent) {
+	if (manager.m_state != MachineManagerState::Running && manager.m_state != MachineManagerState::Paused) {
 		return false;
 	}
 
-	const bool pausedPresent = console.m_state == ConsoleState::Paused || heldPresent;
+	const bool pausedPresent = manager.m_state == MachineManagerState::Paused || heldPresent;
 	const bool runtimePresentPending = !pausedPresent && consumePresentation(m_presentationScratch);
 	const bool shouldPresent = pausedPresent || runtimePresentPending;
 	if (!shouldPresent) {
 		return false;
 	}
 
-	if (console.m_view) {
+	if (manager.m_view) {
 		const GameView::PresentationMode presentMode = pausedPresent
 			? GameView::PresentationMode::Completed
 			: m_presentationScratch.mode;
@@ -189,15 +189,15 @@ bool RenderPresentationState::render(ConsoleCore& console, Runtime& runtime, boo
 			: m_presentationScratch.commitFrame;
 		recordPresentation(presentMode, commitFrame, pausedPresent);
 
-		runtime.machine.vdp.drainFrameBufferPresentation(console.m_view->vdpFrameBufferTextures());
-		runtime.machine.vdp.drainSurfaceUploads(console.m_view->vdpSlotTextures());
-		commitVdpViewSnapshot(*console.m_view, runtime.machine.vdp.readDeviceOutput());
-		console.m_view->configurePresentation(presentMode, commitFrame);
-		console.m_view->drawgame();
+		runtime.machine.vdp.drainFrameBufferPresentation(manager.m_view->vdpFrameBufferTextures());
+		runtime.machine.vdp.drainSurfaceUploads(manager.m_view->vdpSlotTextures());
+		commitVdpViewSnapshot(*manager.m_view, runtime.machine.vdp.readDeviceOutput());
+		manager.m_view->configurePresentation(presentMode, commitFrame);
+		manager.m_view->drawgame();
 	}
 
 	flushDebugReport(runtime);
-	return console.m_view != nullptr;
+	return manager.m_view != nullptr;
 }
 
 } // namespace bmsx

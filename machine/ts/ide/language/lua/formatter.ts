@@ -28,7 +28,7 @@ export function formatLuaDocument(source: string, lines: readonly string[]): str
 	if (source.length === 0) {
 		return '';
 	}
-	const lexer = new LuaLexer(source, 'console-editor');
+	const lexer = new LuaLexer(source, 'lua-editor');
 	const tokens = lexer.scanTokens();
 	const tokensByLine = buildTokensByLine(tokens);
 	const preservedLines = determinePreservedLines(source, tokens, lines);

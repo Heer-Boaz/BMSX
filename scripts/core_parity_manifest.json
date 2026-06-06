@@ -1357,11 +1357,11 @@
 				"machine/cpp/render/backend/gles2/vdp_rpu.cpp"
 			],
 			"substrings": [
-				"consoleCore",
-				"ConsoleCore::instance",
-				"core/console.h"
+				"machineManager",
+				"MachineManager::instance",
+				"core/machine_manager.h"
 			],
-			"reason": "rpu_backend_pass_execution_must_use_registry_view_not_global_console_singleton"
+			"reason": "rpu_backend_pass_execution_must_use_registry_view_not_global_machine_singleton"
 		},
 		{
 			"roots": [
@@ -1965,7 +1965,7 @@
 		{
 			"file": "machine/ts/ide/workbench/overlay_modes.ts",
 			"substrings": [
-				"consoleCore.view.presentWorkbenchFrameBufferTexture = overlayActive;"
+				"machineManager.view.presentWorkbenchFrameBufferTexture = overlayActive;"
 			],
 			"reason": "workbench_framebuffer_texture_presentation_is_enabled_only_by_ide_terminal_overlay_state"
 		},

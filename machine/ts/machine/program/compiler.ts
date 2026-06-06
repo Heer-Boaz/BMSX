@@ -1400,9 +1400,9 @@ class FunctionBuilder {
 
 	private tryResolveStaticModuleBinding(expression: LuaExpression, allowRequireRoot: boolean): ModuleBinding | null {
 		/*
-			Note: fantasy-console semantics and link-time placeholders
+			Note: emulated-machine semantics and link-time placeholders
 
-			- This project targets a fantasy-console-style ABI based on flat machine instructions; Lua
+			- This project targets a emulated-machine-style ABI based on flat machine instructions; Lua
 			runtime concepts such as live module tables are not part of the ABI. The compiler treats
 			certain system ROM modules as compile-time descriptors and records their paths in metadata
 			(e.g. `staticModulePaths` / `staticExternalModulePaths`).
@@ -1490,7 +1490,7 @@ class FunctionBuilder {
 		- Returns true when a local binding is associated with a moduleBinding and that module is
 		marked `external` (compile-time-only) and the moduleBinding is the module root.
 		- This detection prevents treating the module root as a runtime value (local or upvalue) under
-		the fantasy-console semantics used by this project.
+		the emulated-machine semantics used by this project.
 	 */
 	private isExternalModuleRootBinding(binding: LocalBinding | null | undefined): boolean {
 		return !!binding?.moduleBinding?.external && binding.moduleBinding.exportDepth === 0;
@@ -1499,7 +1499,7 @@ class FunctionBuilder {
 	/*
 		Error on attempts to use a compile-time-only module root as a runtime value
 
-		- Under the fantasy-console semantics, external modules used for ABI/BIOS are compile-time-only
+		- Under the emulated-machine semantics, external modules used for ABI/BIOS are compile-time-only
 		descriptors and not runtime Lua tables. Storing or returning a whole module (for example
 		`local m = require('bios')`) is therefore invalid and is rejected with a compile-time error.
 		- This makes the failure explicit and directs the developer to access specific exported slots
@@ -1516,7 +1516,7 @@ class FunctionBuilder {
 			Prevent leaking a compile-time-only module root as a runtime value
 
 			- If `binding` refers to a compile-time-only module root, it must not be used as a runtime
-			value (stored in a local or captured as an upvalue) under the project's fantasy-console ABI.
+			value (stored in a local or captured as an upvalue) under the project's emulated-machine ABI.
 			- We detect that here and raise a compile-time error via `failExternalModuleRootRuntimeUse` to
 			prevent generating runtime references to a non-existent module table.
 		 */

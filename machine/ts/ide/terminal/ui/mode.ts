@@ -35,7 +35,7 @@ import { CompletionController } from '../../editor/contrib/suggest/completion_co
 import type { ModuleAliasEntry } from '../../../lua/semantic/model';
 import type { Viewport } from '../../../rompack/format';
 import type { Runtime } from '../../../machine/runtime/runtime';
-import { runConsoleChunk } from '../../../machine/program/executor';
+import { runHostEvalChunk } from '../../../machine/program/executor';
 import * as luaPipeline from '../../runtime/lua_pipeline';
 import { TerminalCommandDispatcher as TerminalCommandDispatcher, type TerminalCommandAction } from './commands';
 import { extractErrorMessage } from '../../../lua/value';
@@ -535,7 +535,7 @@ export class TerminalMode {
 			}
 		}
 		try {
-			const results: Value[] = runConsoleChunk(this.runtime, source);
+			const results: Value[] = runHostEvalChunk(this.runtime, source);
 			if (results.length > 0) {
 				const summary = results.map(value => valueToString(value, this.runtime.machine.cpu.stringPool)).join('\t');
 				this.appendStdout(summary);

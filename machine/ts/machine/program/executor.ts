@@ -32,7 +32,7 @@ function callLuaFunctionPrepared(runtime: Runtime, fn: LuaFunctionValue, luaArgs
 	return output;
 }
 
-export function buildConsoleMetadata(baseProgram: Program): ProgramMetadata {
+export function buildHostEvalMetadata(baseProgram: Program): ProgramMetadata {
 	const instructionCount = Math.floor(baseProgram.code.length / INSTRUCTION_BYTES);
 	const debugRanges: Array<ProgramMetadata['debugRanges'][number]> = new Array(instructionCount);
 	for (let index = 0; index < debugRanges.length; index += 1) {
@@ -47,13 +47,13 @@ export function buildConsoleMetadata(baseProgram: Program): ProgramMetadata {
 	return { debugRanges, protoIds, localSlotsByProto, globalNames: [], systemGlobalNames: [] };
 }
 
-export function runConsoleChunk(runtime: Runtime, source: string): Value[] {
-	const chunk = runtime.interpreter.compileChunk(source, 'console');
+export function runHostEvalChunk(runtime: Runtime, source: string): Value[] {
+	const chunk = runtime.interpreter.compileChunk(source, 'host_eval');
 	const currentProgram = runtime.machine.cpu.program;
 	if (!currentProgram) {
-		throw new Error('console execution requires active program.');
+		throw new Error('host-eval execution requires active program.');
 	}
-	const baseMetadata = runtime.programMetadata ?? runtime.consoleMetadata ?? buildConsoleMetadata(currentProgram);
+	const baseMetadata = runtime.programMetadata ?? runtime.hostEvalMetadata ?? buildHostEvalMetadata(currentProgram);
 	const compiled = appendLuaChunkToProgram(currentProgram, baseMetadata, chunk, {
 		optLevel: runtime.realtimeCompileOptLevel,
 		entrySource: source,
@@ -62,7 +62,7 @@ export function runConsoleChunk(runtime: Runtime, source: string): Value[] {
 	if (runtime.programMetadata) {
 		runtime.programMetadata = compiled.metadata;
 	} else {
-		runtime.consoleMetadata = compiled.metadata;
+		runtime.hostEvalMetadata = compiled.metadata;
 	}
 	const results = runtime.luaScratch.values.acquire();
 	try {
@@ -73,8 +73,8 @@ export function runConsoleChunk(runtime: Runtime, source: string): Value[] {
 	}
 }
 
-export function runConsoleChunkToNative(runtime: Runtime, source: string): unknown[] {
-	const results = runConsoleChunk(runtime, source);
+export function runHostEvalChunkToNative(runtime: Runtime, source: string): unknown[] {
+	const results = runHostEvalChunk(runtime, source);
 	const baseCtx = buildMarshalContext(runtime);
 	const output: unknown[] = [];
 	for (let i = 0; i < results.length; i += 1) {
@@ -85,7 +85,7 @@ export function runConsoleChunkToNative(runtime: Runtime, source: string): unkno
 
 export function installNativeGlobal(runtime: Runtime, name: string, value: unknown): void {
 	runtime.machine.cpu.setGlobalByKey(runtime.internString(name), toRuntimeValue(runtime, value));
-	const metadata = runtime.programMetadata ?? runtime.consoleMetadata;
+	const metadata = runtime.programMetadata ?? runtime.hostEvalMetadata;
 	if (metadata && !metadata.globalNames.includes(name)) {
 		metadata.globalNames.push(name);
 	}

@@ -9,15 +9,15 @@
 
 namespace bmsx {
 
-class ConsoleCore;
+class MachineManager;
 class GameView;
 
 class HostOverlayMenu {
 public:
 	HostOverlayMenu();
-	bool tickInput(ConsoleCore& console);
-	void queueRenderCommands(ConsoleCore& console, GameView& view);
-	bool queueFrameOverlayCommands(ConsoleCore& console, GameView& view);
+	bool tickInput(MachineManager& manager);
+	void queueRenderCommands(MachineManager& manager, GameView& view);
+	bool queueFrameOverlayCommands(MachineManager& manager, GameView& view);
 	size_t queuedCommandCount() const;
 	Host2DKind commandKind(size_t index) const;
 	Host2DRef commandRef(size_t index) const;
@@ -32,9 +32,9 @@ private:
 	void queueCommand(Host2DKind kind, Host2DRef ref);
 	void toggle();
 	void close();
-	void changeSelected(ConsoleCore& console, GameView& view, i32 direction);
-	void activateSelected(ConsoleCore& console);
-	void rebuildText(ConsoleCore& console, GameView& view);
+	void changeSelected(MachineManager& manager, GameView& view, i32 direction);
+	void activateSelected(MachineManager& manager);
+	void rebuildText(MachineManager& manager, GameView& view);
 
 	bool m_active = false;
 	i32 m_selected = 0;

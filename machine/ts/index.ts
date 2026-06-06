@@ -1,3 +1,3 @@
-export { ConsoleCore, consoleCore } from './core/console';
-export type { ConsoleBootOptions } from './core/console';
+export { MachineManager, machineManager } from './core/machine_manager';
+export type { MachineBootOptions } from './core/machine_manager';
 export type { Runtime } from './machine/runtime/runtime';

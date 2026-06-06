@@ -1,23 +1,23 @@
-import { consoleCore } from '../core/console';
+import { machineManager } from '../core/machine_manager';
 
 let _debuggerControlsVisible: boolean = false;
 
 export function toggleDebuggerControls(): void {
 	if (_debuggerControlsVisible) {
-		consoleCore.paused = false;
+		machineManager.paused = false;
 		hideDebuggerControls();
 	} else {
-		consoleCore.paused = true;
+		machineManager.paused = true;
 		showDebuggerControls();
 	}
 }
 
 function showDebuggerControls(): void {
 	_debuggerControlsVisible = true;
-	consoleCore.view.showFadingOverlay('⏸️');
+	machineManager.view.showFadingOverlay('⏸️');
 }
 
 function hideDebuggerControls(): void {
 	_debuggerControlsVisible = false;
-	consoleCore.view.hideFadingOverlay();
+	machineManager.view.hideFadingOverlay();
 }

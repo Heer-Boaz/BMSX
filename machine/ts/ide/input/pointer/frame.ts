@@ -1,4 +1,4 @@
-import { consoleCore } from '../../../core/console';
+import { machineManager } from '../../../core/machine_manager';
 import { applyScrollbarScroll } from './scrollbar';
 import { clearHoverTooltip, clearGotoHoverHighlight } from '../../editor/contrib/intellisense/engine';
 import { mapScreenPointToViewport } from '../../editor/ui/view/view';
@@ -12,7 +12,7 @@ import { createResourceState, resourceSearchState } from '../../workbench/contri
 import type { ResourcePanelController } from '../../workbench/contrib/resources/panel/controller';
 
 export function readEditorPointerSnapshot(): PointerSnapshot {
-	const playerInput = consoleCore.input.getPlayerInput(1);
+	const playerInput = machineManager.input.getPlayerInput(1);
 	const primaryState = playerInput.getRawButtonState('pointer_primary', 'pointer');
 	const primaryPressed = primaryState.pressed && !primaryState.consumed;
 	const positionState = playerInput.getRawButtonState('pointer_position', 'pointer');

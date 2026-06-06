@@ -10,7 +10,7 @@ Coding policies: *no defensive checks, trust the types, trust proper initializat
    ```bash
    npm run headless:game <gameromname> # WARNING: `<gameromname>` must be replaced with the folder name of the rompack (game) you want to test, e.g. `ella2023` or `testrom`! This is different from the rom name specified in the `rommanifest.json` file inside the `res` directory! The `rominspector` tool uses the rom name specified in the `rommanifest.json` file, so that is different from this!
    ```
-   This command will pack the resources and build the specified rompack (game). The built rompack will be available in the `dist` directory. It will also run the rompack in a headless mode (without a graphical interface) to validate that it works correctly. If there are any errors during the build or runtime, they will be displayed in the console.
+   This command will pack the resources and build the specified rompack (game). The built rompack will be available in the `dist` directory. It will also run the rompack in a headless mode (without a graphical interface) to validate that it works correctly. If there are any errors during the build or runtime, they will be displayed in the terminal.
    > Important: The given <romname> must match the name of a directory under `./carts/` that contains a `res` subdirectory with the resources for that rompack (game). For example, for the `testrom`, the resources should be located in `./carts/testrom/res`. However, the result romfile will be named based on the rommanifest.json file inside the `res` directory!! For example, if the `rommanifest.json` file specifies the name as `yiear`, the resulting romfile will be named `yiear.rom` (or `yiear.debug.rom`) even if the directory is named `ella2023`!
 * **Project Structure**: Understand the overall structure of the project, including key directories and files.
 * **No legacy fallback**: Avoid adding legacy code or fallbacks.
@@ -212,7 +212,7 @@ Coding policies: *no defensive checks, trust the types, trust proper initializat
     * `@excludefromsavegame`: Indicates that the decorated class is excluded from the serialized game state.
     * `@excludepropfromsavegame`: Indicates that the decorated class-property is excluded from the serialized game state.
 * When introducing new features, consider how they can be serialized and deserialized as part of the game state. Also consider that many objects/properties should be *excluded* from serialization.
-* When working on the code file `console_cart_editor.ts`, ensure that the functionality you work on is moved into its own code file, to ensure that the `console_cart_editor.ts` file becomes smaller and more manageable.
+* When working on the code file `cart_editor.ts`, ensure that the functionality you work on is moved into its own code file, to ensure that the `cart_editor.ts` file becomes smaller and more manageable.
 * Don't unnecessarily override methods.
 * **Performance**:
   - Consider the performance implications of generated code, especially in critical areas of the application, noting that the engine is supposed to perform well on lower-end hardware such as iPhone 10/11/12.

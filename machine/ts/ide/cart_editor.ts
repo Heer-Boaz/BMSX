@@ -1,4 +1,4 @@
-import { consoleCore } from '../core/console';
+import { machineManager } from '../core/machine_manager';
 import type { Runtime } from '../machine/runtime/runtime';
 import type { Viewport } from '../rompack/format';
 import { api } from './runtime/overlay_api';
@@ -462,7 +462,7 @@ class RuntimeCartEditor implements CartEditor {
 
 	public handleRuntimeTaskError(error: unknown, fallbackMessage: string): void {
 		const errormsg = error instanceof Error ? error.message : String(error);
-		consoleCore.paused = true;
+		machineManager.paused = true;
 		this.activate();
 		const message = `${fallbackMessage}: ${errormsg}`;
 		this.runtime.terminal.appendStderr(message);
@@ -552,8 +552,8 @@ class RuntimeCartEditor implements CartEditor {
 		if (this.crtPostprocessingEnabledBeforeEditor !== null) {
 			return;
 		}
-		this.crtPostprocessingEnabledBeforeEditor = consoleCore.view.crt_postprocessing_enabled;
-		consoleCore.view.crt_postprocessing_enabled = false;
+		this.crtPostprocessingEnabledBeforeEditor = machineManager.view.crt_postprocessing_enabled;
+		machineManager.view.crt_postprocessing_enabled = false;
 	}
 
 	private restoreCrtPostprocessingFromEditor(): void {
@@ -561,7 +561,7 @@ class RuntimeCartEditor implements CartEditor {
 		if (enabled === null) {
 			return;
 		}
-		consoleCore.view.crt_postprocessing_enabled = enabled;
+		machineManager.view.crt_postprocessing_enabled = enabled;
 		this.crtPostprocessingEnabledBeforeEditor = null;
 	}
 }

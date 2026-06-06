@@ -1,4 +1,4 @@
-import { consoleCore } from '../../../core/console';
+import { machineManager } from '../../../core/machine_manager';
 import type { Runtime } from '../../../machine/runtime/runtime';
 import * as luaPipeline from '../../runtime/lua_pipeline';
 import { workspaceSourceCache } from '../../workspace/cache';
@@ -72,7 +72,7 @@ export function buildWorkspaceAutosavePayload(runtime: Runtime, entries: Map<str
 		});
 	}
 	return {
-		savedAt: consoleCore.platform.clock.dateNow(),
+		savedAt: machineManager.platform.clock.dateNow(),
 		dirtyFiles,
 		breakpoints: serializeBreakpoints(),
 		fontVariant: runtime.activeIdeFontVariant,

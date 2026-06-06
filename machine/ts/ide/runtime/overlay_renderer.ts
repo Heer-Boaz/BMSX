@@ -1,7 +1,7 @@
 import type { BFont } from '../../render/shared/bitmap_font';
 import { RectRenderKind, TextAlign, TextBaseline, type Host2DSubmission, type color } from '../../render/shared/submissions';
 import { LAYER_2D_IDE, type Layer2D } from '../../machine/devices/vdp/contracts';
-import { consoleCore } from '../../core/console';
+import { machineManager } from '../../core/machine_manager';
 import { clearOverlayFrame, publishOverlayFrame, type HostOverlayFrame } from '../../render/host_overlay/overlay_queue';
 import type { GameView } from '../../render/gameview';
 import type { Viewport } from '../../rompack/format';
@@ -117,7 +117,7 @@ export class OverlayRenderer {
 		buffer.rectCount = 0;
 		buffer.imageCount = 0;
 		buffer.itemCount = 0;
-		const view = consoleCore.view;
+		const view = machineManager.view;
 		const offscreen = view.offscreenCanvasSize;
 		const logical = view.viewportSize;
 		const renderWidth = this.overrideSize ? this.overrideSize.width : offscreen.x;

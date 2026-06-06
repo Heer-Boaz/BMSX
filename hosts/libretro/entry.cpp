@@ -19,7 +19,7 @@
 
 #include "libretro.h"
 #include "platform.h"
-#include "core/console.h"
+#include "core/machine_manager.h"
 #include "core/system.h"
 #include "machine/runtime/timing/constants.h"
 #include "machine/runtime/runtime.h"
@@ -126,8 +126,8 @@ extern "C" RETRO_API void bmsx_focus_changed(bool focused) {
 
 extern "C" RETRO_API bool bmsx_is_cart_program_active(void) {
 	// disable-next-line or_nil_fallback_pattern -- libretro may query this before platform creation; nullptr is the external host boundary.
-	auto* console = g_platform ? g_platform->console() : nullptr;
-	return console && console->hasRuntime() && console->runtime().isCartProgramStarted() && console->runtime().isInitialized();
+	auto* manager = g_platform ? g_platform->machineManager() : nullptr;
+	return manager && manager->hasRuntime() && manager->runtime().isCartProgramStarted() && manager->runtime().isInitialized();
 }
 
 static constexpr const char* kOptionRenderBackend = "bmsx_render_backend";
@@ -1210,8 +1210,8 @@ extern "C" void bmsx_set_frame_time_usec(retro_usec_t usec) {
 
 extern "C" int64_t bmsx_get_ufps(void) {
 	// disable-next-line or_nil_fallback_pattern -- libretro may ask timing before game load; nullptr means use default timing.
-	auto* console = g_platform ? g_platform->console() : nullptr;
-	return console ? console->machineManifest().ufpsScaled.value() : bmsx::DEFAULT_UFPS_SCALED;
+	auto* manager = g_platform ? g_platform->machineManager() : nullptr;
+	return manager ? manager->machineManifest().ufpsScaled.value() : bmsx::DEFAULT_UFPS_SCALED;
 }
 
 void retro_set_controller_port_device(unsigned port, unsigned device) {
@@ -1261,7 +1261,7 @@ bool retro_load_game(const struct retro_game_info* game) {
 	if (!g_cached_av_info_valid) {
 		initialize_default_av_info(av);
 	}
-	const auto& manifest = g_platform->console()->machineManifest();
+	const auto& manifest = g_platform->machineManager()->machineManifest();
 	apply_manifest_av_info(av, manifest, ufps_scaled);
 	g_cached_av_info = av;
 	g_cached_av_info_valid = true;
@@ -1456,8 +1456,8 @@ void retro_run(void) {
 	const bool video_frame_presented = g_platform->runFrame();
 //   const auto runEnd = std::chrono::steady_clock::now();
 //   const double runMs = std::chrono::duration<double, std::milli>(runEnd - runStart).count();
-//   const auto& tickTiming = g_platform->console()->lastTickTiming();
-//   const auto& renderTiming = g_platform->console()->lastRenderTiming();
+//   const auto& tickTiming = g_platform->machineManager()->lastTickTiming();
+//   const auto& renderTiming = g_platform->machineManager()->lastRenderTiming();
 //   const double overheadMs = runMs - tickTiming.totalMs - renderTiming.totalMs;
 
 //   accRunMs += runMs;

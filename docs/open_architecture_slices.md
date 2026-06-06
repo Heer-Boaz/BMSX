@@ -22,7 +22,7 @@ Al afgerond en daarom niet opnieuw als open slice opgenomen:
 - TS input identity/action-state/action-parser/action-table onder ICU-eigenaarschap gebracht
 - browser/runtime view-singleton lek uit WebGL post-passes gehaald
 - C++ GLES2 CRT/device/present post-pass resources onder pass-lifecycle gebracht
-- publieke JS runtime API gebruikt direct `ConsoleCore.boot`; `startCart`-wrapper verwijderd
+- publieke JS runtime API gebruikt direct `MachineManager.boot`; `startCart`-wrapper verwijderd
 
 ## 1. ICU input-device source boundary
 
@@ -62,14 +62,14 @@ Acceptatie:
 
 ## 3. Runtime host-services port
 
-Doel: machine runtime gebruikt een kleine machine-owned host-services port voor clock/storage/frame-loop/gates, niet `core/console`, `core/taskgate` of concrete `platform` modules.
+Doel: machine runtime gebruikt een kleine machine-owned host-services port voor clock/storage/frame-loop/gates, niet `core/machine_manager`, `core/taskgate` of concrete `platform` modules.
 
 Open audit-evidence:
 
-- `machine/ts/machine/runtime/runtime.ts -> core/console`
+- `machine/ts/machine/runtime/runtime.ts -> core/machine_manager`
 - `machine/ts/machine/runtime/runtime.ts -> core/taskgate`
 - `machine/ts/machine/runtime/runtime.ts -> platform/platform`
-- `machine/ts/machine/runtime/timing/state.ts -> core/console`
+- `machine/ts/machine/runtime/timing/state.ts -> core/machine_manager`
 - `machine/cpp/machine/runtime/runtime.cpp -> platform/platform.h`
 
 Acceptatie:

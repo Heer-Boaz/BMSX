@@ -1,6 +1,6 @@
-import { consoleCore } from '../core/console';
+import { machineManager } from '../core/machine_manager';
 
 export function startEngineWithStartupAudio(): void {
-	consoleCore.bootstrapStartupAudio();
-	consoleCore.start();
+	machineManager.bootstrapStartupAudio();
+	machineManager.start();
 }

@@ -1,2 +1,2 @@
-export { ConsoleCore, consoleCore } from '../../../machine/ts/core/console';
-export type { ConsoleBootOptions } from '../../../machine/ts/core/console';
+export { MachineManager, machineManager } from '../../../machine/ts/core/machine_manager';
+export type { MachineBootOptions } from '../../../machine/ts/core/machine_manager';

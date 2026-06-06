@@ -2,7 +2,7 @@
 
 #if BMSX_ENABLE_GLES2
 #include "common/clamp.h"
-#include "core/console.h"
+#include "core/machine_manager.h"
 #include "render/3d/math.h"
 #include "render/3d/shaders/render_3d_shaders.h"
 #include "render/backend/gles2/backend.h"
@@ -72,7 +72,7 @@ void placeAxisLabel(AxisGizmoHostImageSink emitHostImage, void* emitHostImageCon
 	}
 	const f32 x = clamp(tipPixelX + dx * AXIS_LABEL_PAD_PX, AXIS_LABEL_INSET_PX, width - AXIS_LABEL_INSET_PX);
 	const f32 y = clamp(tipPixelY + dy * AXIS_LABEL_PAD_PX, AXIS_LABEL_INSET_PX, height - AXIS_LABEL_INSET_PX);
-	const std::string& imageId = ConsoleCore::instance().view()->default_font->char_to_img(letter);
+	const std::string& imageId = MachineManager::instance().view()->default_font->char_to_img(letter);
 	emitHostImage(emitHostImageContext, imageId, x, y, 999.0f, scale, col);
 }
 
@@ -121,7 +121,7 @@ void renderAxisGizmo_GLES2(OpenGLES2Backend& backend, AxisGizmoHostImageSink emi
 		return;
 	}
 	auto& state = g_axisGizmo;
-	const GameView& view = *ConsoleCore::instance().view();
+	const GameView& view = *MachineManager::instance().view();
 	const VdpTransformSnapshot& transform = view.vdpTransform;
 	const f32 aspect = view.offscreenCanvasSize.x / view.offscreenCanvasSize.y;
 	const f32 w = view.viewportSize.x;

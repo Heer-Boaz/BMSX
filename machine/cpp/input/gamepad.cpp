@@ -4,7 +4,7 @@
 
 #include "gamepad.h"
 #include "manager.h"
-#include "core/console.h"
+#include "core/machine_manager.h"
 #include <cmath>
 
 namespace bmsx {
@@ -28,7 +28,7 @@ void GamepadInput::pollInput() {
 	// This is called each frame to update edge flags and press times
 	// The actual button state changes come from ingestButton/ingestAxis2
 	
-	f64 now = ConsoleCore::instance().clock()->now();
+	f64 now = MachineManager::instance().clock()->now();
 	f64 prevPollTime = m_lastPollTimeMs;
 	m_lastPollTimeMs = now;
 	

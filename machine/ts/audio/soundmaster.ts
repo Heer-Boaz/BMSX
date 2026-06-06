@@ -1,4 +1,4 @@
-import { consoleCore } from '../core/console';
+import { machineManager } from '../core/machine_manager';
 import { type AudioOutputPuller, type AudioService } from '../platform';
 import { DEFAULT_UFPS_SCALED, HZ_SCALE } from '../machine/runtime/timing/constants';
 import { clamp01 } from '../common/clamp';
@@ -19,7 +19,7 @@ export class SoundMaster {
 	private mixLatencyProfile: MixLatencyProfile;
 	private mixTargetAheadSec: number;
 	private readonly pullRuntimeOutput: AudioOutputPuller = (output, frameCount, sampleRate, targetQueuedFrames): void => {
-		consoleCore.runtime.machine.audioOutput.pullOutputFrames(output, frameCount, sampleRate, 1, targetQueuedFrames);
+		machineManager.runtime.machine.audioOutput.pullOutputFrames(output, frameCount, sampleRate, 1, targetQueuedFrames);
 	};
 
 	private constructor() {
@@ -40,7 +40,7 @@ export class SoundMaster {
 	}
 
 	public bootstrapRuntimeAudio(ufpsScaled: number, startingVolume: number): void {
-		this.audio = consoleCore.platform.audio;
+		this.audio = machineManager.platform.audio;
 		this.setMixerUfpsScaled(ufpsScaled);
 		this.volume = clamp01(startingVolume);
 		this.startMixer();

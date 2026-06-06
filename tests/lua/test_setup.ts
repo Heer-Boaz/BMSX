@@ -33,7 +33,7 @@ const resolveFilename = (Module as any)._resolveFilename;
 const registryModulePath = path.resolve(__dirname, '../../machine/ts/core/registry.ts');
 const fsmlibraryModulePath = path.resolve(__dirname, '../../machine/ts/fsm/fsmlibrary.ts');
 const stateModulePath = path.resolve(__dirname, '../../machine/ts/fsm/state.ts');
-const gameModulePath = path.resolve(__dirname, '../../machine/ts/core/console.ts');
+const gameModulePath = path.resolve(__dirname, '../../machine/ts/core/machine_manager.ts');
 const worldModulePath = path.resolve(__dirname, '../../machine/ts/core/world.ts');
 const spaceModulePath = path.resolve(__dirname, '../../machine/ts/core/space.ts');
 
@@ -64,7 +64,7 @@ const gameStub = {
 	emitGameplay: () => {},
 };
 
-const gameExports = { Game: class {}, ConsoleCore: class {}, consoleCore: gameStub, default: gameStub, $: gameStub };
+const gameExports = { Game: class {}, MachineManager: class {}, machineManager: gameStub, default: gameStub };
 const worldExports = {
 	World: class {},
 	WorldConfiguration: class {},

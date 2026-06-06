@@ -14,12 +14,12 @@ import { clearOverlayFrame } from '../render/host_overlay/overlay_queue';
 import { restoreVdpContextState } from '../render/vdp/context_state';
 import { VdpFrameBufferTextures } from '../render/vdp/framebuffer';
 import { VdpSlotTextures } from '../render/vdp/slot_textures';
-import { runConsoleHostFrame } from './host_frame';
+import { runMachineHostFrame } from './host_frame';
 
 const globalScope: any = typeof window !== 'undefined' ? window : globalThis;
 global = globalScope; // Ensure global is defined
 
-export interface ConsoleBootOptions {
+export interface MachineBootOptions {
 	systemRom: Uint8Array;
 	cartridge?: Uint8Array;
 	workspaceOverlay?: Uint8Array;
@@ -34,7 +34,7 @@ export interface ConsoleBootOptions {
 
 const DEFAULT_MASTER_VOLUME = 1;
 
-export class ConsoleCore {
+export class MachineManager {
 	private initialized = false;
 	private readonly romBootManager = new RomBootManager();
 
@@ -104,14 +104,14 @@ export class ConsoleCore {
 		this.sndmaster.bootstrapRuntimeAudio(this.runtime.timing.ufpsScaled, DEFAULT_MASTER_VOLUME);
 	}
 
-	public async boot(options: ConsoleBootOptions): Promise<Runtime> {
+	public async boot(options: MachineBootOptions): Promise<Runtime> {
 		const { systemRom, cartridge, workspaceOverlay, debug = false, startingGamepadIndex = null, enableOnscreenGamepad = false, platform, viewHost } = options;
 		if (!platform) {
-			throw new Error('[ConsoleCore] Platform services not provided.');
+			throw new Error('[MachineManager] Platform services not provided.');
 		}
 		const resolvedViewHost = viewHost ?? platform.gameviewHost;
 		if (!resolvedViewHost) {
-			throw new Error('[ConsoleCore] Platform did not expose a GameViewHost.');
+			throw new Error('[MachineManager] Platform did not expose a GameViewHost.');
 		}
 		const bootPlan = await this.romBootManager.buildBootPlan({ systemRom, cartridge });
 		const { systemLayer, viewportSize } = bootPlan;
@@ -181,7 +181,7 @@ export class ConsoleCore {
 
 	public async resetRuntime(preserveTextures = false): Promise<void> {
 		if (!this.initialized) {
-			throw new Error('[ConsoleCore] Cannot reset runtime before initialization.');
+			throw new Error('[MachineManager] Cannot reset runtime before initialization.');
 		}
 		const gateToken = renderGate.begin({ blocking: true, tag: 'runtime-reset' });
 		const runToken = runGate.begin({ blocking: true, tag: 'runtime-reset' });
@@ -225,15 +225,14 @@ export class ConsoleCore {
 		runtime.frameLoop.currentTimeMs = now;
 		runtime.frameScheduler.clearQueuedTime();
 		platform.frames.start((currentTime: number) => {
-			runConsoleHostFrame(runtime, currentTime, runGate.ready);
+			runMachineHostFrame(runtime, currentTime, runGate.ready);
 		});
 		this.running = true;
 	}
 
 }
 
-export var consoleCore: ConsoleCore = new ConsoleCore()!;
+export var machineManager: MachineManager = new MachineManager()!;
 
-// Browser and node-headless boot glue share this global console handle.
-(globalScope as any).consoleCore = consoleCore;
-(globalScope as any).$ = consoleCore;
+// Browser and node-headless boot glue share this global machine manager handle.
+(globalScope as any).machineManager = machineManager;

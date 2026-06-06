@@ -3,7 +3,7 @@
 This directory contains the C++ implementation of the BMSX machine runtime. It
 builds the C++ machine library used by hosts such as the libretro core entrypoint.
 
-BMSX is a fantasy console with real console discipline. The C++ tree mirrors the TypeScript machine layout where possible: cart-visible behavior belongs in the machine, memory map, and device controllers; host code presents the result to libretro or local frontends.
+BMSX is an emulated machine with emulator discipline. The C++ tree mirrors the TypeScript machine layout where possible: cart-visible behavior belongs in the machine, memory map, and device controllers; host code presents the result to libretro or local frontends.
 
 ## Directory Structure
 
@@ -28,7 +28,7 @@ that can run a libretro core lives in `hosts/libretro_host`.
 
 ## Architecture (Machine-first)
 
-The C++ runtime focuses on mirroring the console machine boundary from the TypeScript implementation.
+The C++ runtime focuses on mirroring the machine boundary from the TypeScript implementation.
 
 - `machine/` owns CPU, memory, MMIO registers, device controllers, firmware, program loading, timing, and runtime state.
 - `render/`, `audio/`, `input/`, and `platform/` adapt machine state to C++ host edges.

@@ -6,7 +6,7 @@
  * 0x0DF2 = DualSense Edge
  * 0x09cc = DualShock 4
  */
-import { consoleCore } from '../core/console';
+import { machineManager } from '../core/machine_manager';
 import type { PlatformHIDDevice, PlatformHIDInputReportEvent } from '../platform';
 import { formatNumberAsHex } from '../common/byte_hex_string';
 
@@ -49,18 +49,18 @@ export class DualSenseHID {
 
 
 	private static async requestHidPermission(ids?: { vendorId: number; productId: number }): Promise<PlatformHIDDevice[]> {
-		const hid = consoleCore.platform.hid;
+		const hid = machineManager.platform.hid;
 		if (!hid?.isSupported()) {
 			throw new Error('[DualSenseHID] HID API not available on this platform.');
 		}
 		if (!DualSenseHID.pendingRequest) {
 			// Pause the game while the browser permission dialog is visible
-			if (!consoleCore) {
+			if (!machineManager) {
 				throw new Error('[DualSenseHID] Global game state not initialised when requesting HID permissions.');
 			}
-			const wasPaused = !!consoleCore.paused;
+			const wasPaused = !!machineManager.paused;
 			if (!wasPaused) {
-				consoleCore.paused = true;
+				machineManager.paused = true;
 			}
 
 			const filters = ids
@@ -71,7 +71,7 @@ export class DualSenseHID {
 				.finally(() => {
 					DualSenseHID.pendingRequest = null;
 					if (!wasPaused) {
-						consoleCore.paused = false;
+						machineManager.paused = false;
 					}
 				});
 		}
@@ -134,7 +134,7 @@ export class DualSenseHID {
 
 	/** Requests the Sony HID device and initializes it. */
 	public async initForDevice(gamepadIndex: number, description: string): Promise<void> {
-		const hid = consoleCore.platform.hid;
+		const hid = machineManager.platform.hid;
 		if (!hid?.isSupported()) {
 			console.warn("HID API not supported on this platform.");
 			return; // HID not supported (e.g. Safari)
@@ -390,9 +390,9 @@ export class DualSenseHID {
 
 	private scheduleRumbleStop(duration: number): void {
 		this.clearRumbleTimer();
-		const start = consoleCore.platform.clock.now();
-		const handle = consoleCore.platform.frames.start(() => {
-			if (consoleCore.platform.clock.now() - start >= duration) {
+		const start = machineManager.platform.clock.now();
+		const handle = machineManager.platform.frames.start(() => {
+			if (machineManager.platform.clock.now() - start >= duration) {
 				handle.stop();
 				this.rumbleTimer = null;
 				this.stop();

@@ -417,9 +417,9 @@ const mergeMetadata = (
 
 
 /*
-	Fantasy-console linking note
+	Emulated-machine linking note
 
-	- This codebase targets a fantasy-console ABI where certain system ROM modules are compile-time
+	- This codebase targets a emulated-machine ABI where certain system ROM modules are compile-time
 		descriptors (recorded in metadata like `staticModulePaths` / `staticExternalModulePaths`) rather
 		than runtime Lua tables.
 	- The compiler enforces that these compile-time modules are not treated as runtime values and
