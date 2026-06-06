@@ -3,8 +3,8 @@
 Baseline na de laatste boundary-slices:
 
 ```txt
-architecture_boundary_issues,37
-ts-machine -> ts-ide,11
+architecture_boundary_issues,36
+ts-machine -> ts-ide,10
 cpp-machine -> cpp-input,6
 ts-machine -> ts-input,5
 cpp-machine -> cpp-platform,4
@@ -23,6 +23,7 @@ Al afgerond en daarom niet opnieuw als open slice opgenomen:
 - browser/runtime view-singleton lek uit WebGL post-passes gehaald
 - C++ GLES2 CRT/device/present post-pass resources onder pass-lifecycle gebracht
 - publieke JS runtime API gebruikt direct `MachineManager.boot`; `startCart`-wrapper verwijderd
+- TS firmware/prelude/global registration losgetrokken van IDE lua-pipeline
 
 ## 1. ICU input-device source boundary
 
@@ -98,21 +99,6 @@ Acceptatie:
 - runtime heeft geen editor/workbench imports
 - host/IDE laag bezit hot reload, overlays en UI-fault rendering
 - machine exposeert expliciete program-load/resume/fault data
-
-## 5. Firmware/prelude/global registration ownership
-
-Doel: firmware/global registration hoort bij machine firmware/runtime ownership, niet bij IDE runtime helpers.
-
-Open audit-evidence:
-
-- `machine/ts/machine/firmware/globals.ts -> ide/runtime/lua_pipeline`
-- overlap met `machine/ts/machine/runtime/runtime.ts -> ide/runtime/lua_pipeline`
-
-Acceptatie:
-
-- prelude/global registration kan door machine runtime zelf draaien
-- IDE lua-pipeline is geen dependency van machine firmware
-- BIOS/game builds en Lua tests blijven groen
 
 ## 6. Render/presentation boundary uit machine runtime halen
 

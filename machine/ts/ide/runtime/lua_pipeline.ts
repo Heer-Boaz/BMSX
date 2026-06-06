@@ -4,10 +4,9 @@ import { LuaInterpreter } from '../../lua/runtime';
 import { convertToError } from '../../lua/value';
 import type { LuaValue } from '../../lua/value';
 import { clearOverlayFrame } from '../../render/host_overlay/overlay_queue';
-import { SYSTEM_LUA_BUILTIN_FUNCTIONS, SYSTEM_LUA_BUILTIN_GLOBALS } from '../../machine/firmware/builtin_descriptors';
+import { applySystemBuiltinGlobals, runSystemBuiltinPrelude } from '../../machine/firmware/runtime';
 import { seedLuaGlobals } from '../../machine/firmware/globals';
-import { SYSTEM_ROM_HELPER_NAMES } from '../../machine/firmware/system_globals';
-import { compileLuaChunkToProgram, appendLuaChunkToProgram, type CompiledProgram } from '../../machine/program/compiler';
+import { compileLuaChunkToProgram, type CompiledProgram } from '../../machine/program/compiler';
 import { linkProgramImages } from '../../machine/program/linker';
 import { readWorkspaceLuaSourceText } from '../workspace/files';
 import { RuntimeResumeSnapshot, SymbolEntry, SymbolKind } from '../../machine/runtime/contracts';
@@ -43,12 +42,9 @@ import {
 } from '../../machine/bus/io';
 import { getMachinePerfSpecs } from '../../rompack/format';
 import type { RawRomSource } from '../../rompack/source';
-import { Table, type Closure, type Program, type ProgramMetadata, type Value, isNativeFunction, isNativeObject } from '../../machine/cpu/cpu';
+import { Table, type ProgramMetadata, type Value, isNativeFunction, isNativeObject } from '../../machine/cpu/cpu';
 import { asStringId, valueIsString } from '../../machine/cpu/cpu';
 import type { Runtime } from '../../machine/runtime/runtime';
-
-const SYSTEM_BUILTIN_PRELUDE_PATH = 'bios/system_builtin_prelude.lua';
-const REQUIRED_SYSTEM_ROM_HELPERS: ReadonlyArray<string> = ['clock_now'];
 
 function applyUfpsScaled(runtime: Runtime, ufps: number): number {
 	const ufpsScaled = resolveUfpsScaled(ufps);
@@ -271,81 +267,6 @@ export function resetRuntimeState(runtime: Runtime): void {
 export function resetHardwareState(runtime: Runtime): void {
 	runtime.machine.resetDevices();
 	runtime.vblank.reset();
-}
-
-export function registerGlobal(runtime: Runtime, name: string, value: Value): void {
-	runtime.machine.cpu.setGlobalByKey(runtime.internString(name), value);
-}
-
-export function buildSystemBuiltinPreludeSource(): string {
-	const lines: string[] = [
-		'local system<const> = require("bios/system")',
-	];
-	for (let index = 0; index < SYSTEM_LUA_BUILTIN_FUNCTIONS.length; index += 1) {
-		const name = SYSTEM_LUA_BUILTIN_FUNCTIONS[index].name;
-		lines.push(`${name} = system.${name}`);
-	}
-	for (let index = 0; index < SYSTEM_LUA_BUILTIN_GLOBALS.length; index += 1) {
-		const name = SYSTEM_LUA_BUILTIN_GLOBALS[index].name;
-		lines.push(`${name} = system.${name}`);
-	}
-	return lines.join('\n');
-}
-
-export function runSystemBuiltinPrelude(runtime: Runtime, program: Program, metadata: ProgramMetadata): { program: Program; metadata: ProgramMetadata } {
-	const source = buildSystemBuiltinPreludeSource();
-	const interpreter = runtime.interpreter;
-	interpreter.setReservedIdentifiers([]);
-	const chunk = interpreter.compileChunk(source, SYSTEM_BUILTIN_PRELUDE_PATH);
-	interpreter.setReservedIdentifiers(runtime.getReservedLuaIdentifiers());
-	const compiled = appendLuaChunkToProgram(program, metadata, chunk, {
-		optLevel: runtime.realtimeCompileOptLevel,
-		entrySource: source,
-	});
-	runtime.machine.cpu.setProgram(compiled.program, compiled.metadata);
-	runtime.programMetadata = compiled.metadata;
-	runtime.machine.cpu.start(compiled.entryProtoIndex);
-	runtime.machine.cpu.runUntilDepth(0, Number.MAX_SAFE_INTEGER);
-	if (runtime.machine.cpu.isHaltedUntilIrq()) {
-		throw new Error('system builtin prelude cannot halt for IRQ.');
-	}
-	applySystemBuiltinGlobals(runtime);
-	return { program: compiled.program, metadata: compiled.metadata };
-}
-
-export function applySystemBuiltinGlobals(runtime: Runtime): void {
-	const helperCount = SYSTEM_ROM_HELPER_NAMES.length;
-	for (let index = 0; index < REQUIRED_SYSTEM_ROM_HELPERS.length; index += 1) {
-		const name = REQUIRED_SYSTEM_ROM_HELPERS[index];
-		const key = runtime.internString(name);
-		if (runtime.machine.cpu.globals.get(key) === null) {
-			seedLuaGlobals(runtime);
-			break;
-		}
-	}
-	const system = runtime.requireModule('bios/system') as Table;
-	for (let index = 0; index < SYSTEM_LUA_BUILTIN_FUNCTIONS.length; index += 1) {
-		const name = SYSTEM_LUA_BUILTIN_FUNCTIONS[index].name;
-		const member = system.get(runtime.internString(name)) as Closure;
-		registerGlobal(runtime, name, member);
-	}
-	for (let index = 0; index < SYSTEM_LUA_BUILTIN_GLOBALS.length; index += 1) {
-		const name = SYSTEM_LUA_BUILTIN_GLOBALS[index].name;
-		registerGlobal(runtime, name, system.get(runtime.internString(name)));
-	}
-	for (let index = 0; index < helperCount; index += 1) {
-		const name = SYSTEM_ROM_HELPER_NAMES[index];
-		const key = runtime.internString(name);
-		const value = runtime.machine.cpu.globals.get(key);
-		if (value !== null) {
-			registerGlobal(runtime, name, value);
-		}
-	}
-}
-
-export function nextRandom(runtime: Runtime): number {
-	runtime.randomSeedValue = (runtime.randomSeedValue * 1664525 + 1013904223) % 4294967296;
-	return runtime.randomSeedValue / 4294967296;
 }
 
 export function describeSymbolValue(value: Value): { kind: SymbolKind; valueType: string } {

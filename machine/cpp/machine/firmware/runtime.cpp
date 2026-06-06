@@ -95,21 +95,12 @@ void Runtime::runSystemBuiltinPrelude() {
 	static const std::array systemBuiltinNames = {
 		"rom_data",
 	};
-	const Value systemValue = requireModule("bios/system");
-	Table* systemModule = nullptr;
-	if (valueIsTable(systemValue)) {
-		systemModule = asTable(systemValue);
-	}
+	Table* systemModule = asTable(requireModule("bios/system"));
 	machine.cpu.syncGlobalSlotsToTable();
 	for (const char* name : systemBuiltinNames) {
-		std::string exportName = "res__bios__system__";
-		exportName += name;
-		Value value = machine.cpu.getGlobalByKey(internString(exportName));
-		if (isNil(value) && systemModule) {
-			value = systemModule->get(internString(name));
-		}
+		Value value = systemModule->get(internString(name));
 		if (isNil(value)) {
-			throw BMSX_RUNTIME_ERROR("System ROM builtin export '" + exportName + "' is missing.");
+			throw BMSX_RUNTIME_ERROR(std::string("System ROM builtin '") + name + "' is missing.");
 		}
 		machine.cpu.setGlobalByKey(internString(name), value);
 	}

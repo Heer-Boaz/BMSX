@@ -793,6 +793,14 @@ export class Runtime {
 		return StringValue.get(this.machine.cpu.stringPool.intern(value));
 	}
 
+	public setGlobal(name: string, value: Value): void {
+		this.machine.cpu.setGlobalByKey(this.internString(name), value);
+	}
+
+	public nextRandom(): number {
+		this.randomSeedValue = (this.randomSeedValue * 1664525 + 1013904223) % 4294967296;
+		return this.randomSeedValue / 4294967296;
+	}
 
 	private prepareHandlerError(error: unknown, meta?: { hid: string; moduleId: string; path?: string }): Error {
 		const wrappedError = convertToError(error);

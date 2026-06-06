@@ -34,7 +34,7 @@ test('hotResumeProgramEntry keeps interpreter resident', () => {
 });
 
 test('system builtin prelude starts from fresh CPU entry state', () => {
-	const src = readFileSync('machine/ts/ide/runtime/lua_pipeline.ts', 'utf8');
+	const src = readFileSync('machine/ts/machine/firmware/runtime.ts', 'utf8');
 	const start = src.indexOf('export function runSystemBuiltinPrelude');
 	assert.ok(start > -1, 'runSystemBuiltinPrelude not found');
 	const nextExport = src.indexOf('\nexport function ', start + 1);

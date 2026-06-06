@@ -6,7 +6,6 @@ const SYSTEM_LUA_BUILTIN_GLOBAL_NAMES = [
 ] as const;
 
 export const SYSTEM_ROM_HELPER_NAMES = [
-	'$',
 	'cart_manifest',
 	'machine_manifest',
 	'cart_project_root_path',

@@ -315,6 +315,7 @@
 		"machine/ts/input/manager.ts",
 		"machine/ts/machine/cpu/disassembler.ts",
 		"machine/ts/machine/firmware/globals.ts",
+		"machine/ts/machine/firmware/runtime.ts",
 		"machine/ts/machine/firmware/system_globals.ts",
 		"machine/ts/machine/machine.ts",
 		"machine/ts/machine/runtime/cpu_state.ts",
