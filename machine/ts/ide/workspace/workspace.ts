@@ -1,3 +1,4 @@
+import { machineManager } from '../../core/machine_manager';
 import { resolveLuaSourceRecord, type LuaSourceRecord, type LuaSourceRegistry } from '../../machine/program/sources';
 import { toLuaModulePath } from '../../machine/program/loader';
 import type { StorageService } from '../../platform';
@@ -46,7 +47,7 @@ export async function saveLuaResourceSource(runtime: Runtime, path: string, sour
 	const sourcePath = asset.source_path;
 	const projectRootPath = registry.projectRootPath;
 	await persistWorkspaceSourceFile(sourcePath, source, projectRootPath);
-	const updatedAt = runtime.clock.dateNow();
+	const updatedAt = machineManager.platform.clock.dateNow();
 	asset.src = source;
 	asset.base_update_timestamp = updatedAt;
 	asset.update_timestamp = updatedAt;
@@ -70,15 +71,16 @@ export async function createLuaResource(runtime: Runtime, request: LuaResourceCr
 	const slashIndex = path.lastIndexOf('/');
 	const fileName = slashIndex === -1 ? path : path.slice(slashIndex + 1);
 	const baseName = fileName.endsWith('.lua') ? fileName.slice(0, -4) : fileName;
+	const updatedAt = machineManager.platform.clock.dateNow();
 	const asset: LuaSourceRecord = {
 		resid: baseName,
 		type: 'lua',
 		src: contents,
 		base_src: contents,
-		base_update_timestamp: runtime.clock.dateNow(),
+		base_update_timestamp: updatedAt,
 		source_path: path,
 		module_path: toLuaModulePath(path),
-		update_timestamp: runtime.clock.dateNow(),
+		update_timestamp: updatedAt,
 	};
 	const registerAsset = (registry: LuaSourceRegistry): void => {
 		registry.path2lua[asset.source_path] = asset;
@@ -104,7 +106,7 @@ export async function applyWorkspaceOverridesToRegistry(runtime: Runtime, params
 		storage: params.storage,
 		includeServer: params.includeServer,
 		projectRootPath: params.projectRootPath ?? runtime.cartProjectRootPath,
-		timestampNow: runtime.clock.dateNow(),
+		timestampNow: machineManager.platform.clock.dateNow(),
 	});
 }
 
@@ -163,7 +165,7 @@ export async function resetWorkspaceDirtyBuffersAndStorage(runtime: Runtime): Pr
 		storage: runtime.storageService,
 		includeServer: false,
 		projectRootPath: runtime.cartProjectRootPath,
-		timestampNow: runtime.clock.dateNow(),
+		timestampNow: machineManager.platform.clock.dateNow(),
 	});
 	clearWorkspaceDirtyBuffers(runtime);
 }
@@ -176,7 +178,7 @@ export async function nukeWorkspaceState(runtime: Runtime): Promise<void> {
 		storage: runtime.storageService,
 		includeServer: false,
 		projectRootPath: runtime.cartProjectRootPath,
-		timestampNow: runtime.clock.dateNow(),
+		timestampNow: machineManager.platform.clock.dateNow(),
 	});
 	clearWorkspaceDirtyBuffers(runtime);
 }

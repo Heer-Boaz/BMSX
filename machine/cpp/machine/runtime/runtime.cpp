@@ -6,10 +6,10 @@
 #include "machine/program/loader.h"
 #include "machine/runtime/system_irq.h"
 #include "machine/runtime/timing/config.h"
+#include "machine/runtime/clock.h"
 #include "rompack/format.h"
 #include "rompack/loader.h"
 #include "input/manager.h"
-#include "platform/platform.h"
 #include <array>
 #include <stdexcept>
 #include <utility>

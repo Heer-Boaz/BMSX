@@ -7,7 +7,7 @@
 #include "machine/bus/io.h"
 #include "machine/memory/memory.h"
 #include "machine/scheduler/budget.h"
-#include "platform/platform.h"
+#include "machine/scheduler/microtask_queue.h"
 
 #include <stdexcept>
 #include <string>

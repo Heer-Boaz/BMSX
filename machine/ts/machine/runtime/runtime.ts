@@ -10,7 +10,8 @@ import {
 	convertToError,
 	type LuaDebuggerPauseSignal
 } from '../../lua/value';
-import type { Clock, FrameLoop, StorageService } from '../../platform/platform';
+import type { Clock } from './clock';
+import type { StorageService } from './storage';
 import type { CartManifest, MachineManifest, RuntimeRomPackage, Viewport } from '../../rompack/format';
 import {
 	CART_ROM_HEADER_SIZE,
@@ -95,7 +96,6 @@ export type FrameState = {
 
 export class Runtime {
 	public readonly storageService: StorageService;
-	public readonly frames: FrameLoop;
 	public readonly clock: Clock;
 	public readonly luaJsBridge!: LuaJsBridge;
 	public readonly apiFunctionNames = new Set<string>();
@@ -582,7 +582,6 @@ export class Runtime {
 		this.timing.vdpWorkUnitsPerSec = resolvePositiveSafeInteger(initialVdpWorkUnits, 'machine.specs.vdp.work_units_per_sec');
 		this.timing.geoWorkUnitsPerSec = resolvePositiveSafeInteger(initialGeoWorkUnits, 'machine.specs.geo.work_units_per_sec');
 		this.storageService = machineManager.platform.storage;
-		this.frames = machineManager.platform.frames;
 		this.clock = machineManager.platform.clock;
 		this.activeMachineManifest = options.activeMachineManifest;
 		this.cartManifest = options.cartManifest;

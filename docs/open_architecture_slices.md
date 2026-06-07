@@ -3,15 +3,13 @@
 Baseline na de laatste boundary-slices:
 
 ```txt
-architecture_boundary_issues,36
+architecture_boundary_issues,31
 ts-machine -> ts-ide,10
 cpp-machine -> cpp-input,6
 ts-machine -> ts-input,5
-cpp-machine -> cpp-platform,4
 ts-machine -> ts-render,4
 cpp-machine -> cpp-render,3
 ts-machine -> ts-core,3
-ts-machine -> ts-platform,1
 ```
 
 Al afgerond en daarom niet opnieuw als open slice opgenomen:
@@ -24,6 +22,10 @@ Al afgerond en daarom niet opnieuw als open slice opgenomen:
 - C++ GLES2 CRT/device/present post-pass resources onder pass-lifecycle gebracht
 - publieke JS runtime API gebruikt direct `MachineManager.boot`; `startCart`-wrapper verwijderd
 - TS firmware/prelude/global registration losgetrokken van IDE lua-pipeline
+- C++ machine firmware/IMGDEC/runtime gebruikt machine-owned `Clock` en
+  `MicrotaskQueue` contracts in plaats van concrete `platform/platform.h`
+- TS runtime gebruikt machine-owned `Clock` en `StorageService`
+  contracts in plaats van concrete `platform/platform` types
 
 ## 1. ICU input-device source boundary
 
@@ -69,9 +71,7 @@ Open audit-evidence:
 
 - `machine/ts/machine/runtime/runtime.ts -> core/machine_manager`
 - `machine/ts/machine/runtime/runtime.ts -> core/taskgate`
-- `machine/ts/machine/runtime/runtime.ts -> platform/platform`
 - `machine/ts/machine/runtime/timing/state.ts -> core/machine_manager`
-- `machine/cpp/machine/runtime/runtime.cpp -> platform/platform.h`
 
 Acceptatie:
 
@@ -120,28 +120,11 @@ Acceptatie:
 - host/render owns presentation, view snapshots and context restore
 - save/resume machine state remains render-host independent
 
-## 7. C++ platform dependencies in machine firmware/IMGDEC
-
-Doel: C++ machine code mag geen concrete platform header nodig hebben voor firmware builtins of IMGDEC. Als host services nodig zijn, lopen die via een expliciete machine service boundary.
-
-Open audit-evidence:
-
-- `machine/cpp/machine/devices/imgdec/controller.cpp -> platform/platform.h`
-- `machine/cpp/machine/firmware/builtins.cpp -> platform/platform.h`
-- `machine/cpp/machine/firmware/globals.cpp -> platform/platform.h`
-- `machine/cpp/machine/runtime/runtime.cpp -> platform/platform.h`
-
-Acceptatie:
-
-- machine firmware/IMGDEC include geen `platform/platform.h`
-- host-owned IO/resources blijven buiten cart-observable semantics
-- native build + libretro headless blijft groen
-
 ## 8. Save-state/resume render-context split
 
 Doel: machine save-state/resume bevat machine state; render-context herstel is host/render follow-up werk.
 
-Deze slice overlapt met slice 7, maar is klein genoeg om los te doen.
+Deze slice overlapt met slice 6, maar is klein genoeg om los te doen.
 
 Open audit-evidence:
 

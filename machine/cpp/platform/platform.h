@@ -9,12 +9,15 @@
 
 #include "common/subscription.h"
 #include "common/primitives.h"
+#include "machine/runtime/clock.h"
+#include "machine/scheduler/microtask_queue.h"
 #include "render/backend/backend.h"
 #include <functional>
 #include <optional>
 #include <string>
 #include <string_view>
 #include <memory>
+#include <vector>
 
 namespace bmsx {
 
@@ -66,18 +69,6 @@ enum class LogLevel {
 };
 
 /* ============================================================================
- * Clock - Time management
- * ============================================================================ */
-
-class Clock {
-public:
-	virtual ~Clock() = default;
-	virtual auto now() -> f64 = 0;       // Current time in milliseconds
-	virtual auto origin() -> f64 = 0;    // Start time
-	virtual auto elapsed() -> f64 = 0;   // Time since origin
-};
-
-/* ============================================================================
  * FrameLoop - Animation/game loop
  * ============================================================================ */
 
@@ -126,17 +117,6 @@ public:
 	// Create a GPU backend for rendering (platform-specific implementation)
 	// Returns nullptr if the platform doesn't provide its own backend
 	virtual auto createBackend() -> std::unique_ptr<GPUBackend> { return nullptr; } // Dummy implementation
-};
-
-/* ============================================================================
- * MicrotaskQueue - Deferred task execution
- * ============================================================================ */
-
-class MicrotaskQueue {
-public:
-	virtual ~MicrotaskQueue() = default;
-	virtual void queueMicrotask(std::function<void()> task) = 0;
-	virtual void flush() = 0;
 };
 
 /* ============================================================================

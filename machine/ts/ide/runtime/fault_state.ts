@@ -1,4 +1,5 @@
 import { LuaError, LuaSyntaxError } from '../../lua/errors';
+import { machineManager } from '../../core/machine_manager';
 import type { LuaCallFrame } from '../../lua/runtime';
 import {
 	convertToError,
@@ -134,7 +135,7 @@ function setRuntimeFault(runtime: Runtime, payload: {
 	const state = runtime.workbenchFaultState;
 	runtime.luaRuntimeFailed = true;
 	state.faultSnapshot = payload;
-	state.faultSnapshot.timestampMs = runtime.clock.dateNow();
+	state.faultSnapshot.timestampMs = machineManager.platform.clock.dateNow();
 	state.faultOverlayNeedsFlush = true;
 }
 

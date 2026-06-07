@@ -3,7 +3,7 @@
 #include "common/clamp.h"
 #include "machine/common/number_format.h"
 #include "machine/runtime/runtime.h"
-#include "platform/platform.h"
+#include "machine/runtime/clock.h"
 
 #include <algorithm>
 #include <cmath>

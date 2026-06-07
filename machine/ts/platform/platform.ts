@@ -1,4 +1,9 @@
 import { type vec2 } from 'bmsx/rompack/format';
+import type { Clock as MachineClock, MonoTime } from '../machine/runtime/clock';
+import type { StorageService } from '../machine/runtime/storage';
+
+export type { MonoTime } from '../machine/runtime/clock';
+export type { StorageService } from '../machine/runtime/storage';
 
 /**
  * Core platform contract.
@@ -81,6 +86,21 @@ export function scheduleMicrotask(task: () => void): void {
 	activeMicrotaskQueue.schedule(task);
 }
 
+export interface TimerHandle {
+	cancel(): void;
+	isActive(): boolean;
+}
+
+export interface Clock extends MachineClock {
+	perf_now(): MonoTime;
+	dateNow(): number;
+	scheduleOnce: (delay_ms: number, cb: (t: MonoTime) => void) => TimerHandle;
+}
+
+export interface FrameLoop {
+	start(tick: (t: MonoTime) => void): { stop(): void };
+}
+
 export interface Platform {
 	clock: Clock;
 	frames: FrameLoop;
@@ -95,41 +115,6 @@ export interface Platform {
 	audio: AudioService;
 	rng: RngService;
 	gameviewHost: GameViewHost;
-}
-
-export type MonoTime = number;
-
-/**
- * Generic handle returned by the platform when scheduling a delayed callback.
- * Intentionally minimal and non-browser-like (no IDs or global timer names).
- */
-export interface TimerHandle {
-	/**
-	 * Cancel the scheduled callback if it hasn't fired yet. Safe to call multiple times.
-	 */
-	cancel(): void;
-
-	/**
-	 * Returns true if the timer is still active (not yet fired or cancelled).
-	 */
-	isActive(): boolean;
-}
-
-/**
- * Clock provides monotonic time and optional scheduling helpers. Implementations may
- * provide `scheduleOnce` to request a single delayed callback. The method is optional
- * to avoid forcing all Clock implementers to adopt platforms that don't support timers
- * (for example, some headless or test harnesses).
- */
-export interface Clock {
-	now(): MonoTime;
-	perf_now(): MonoTime;
-	dateNow(): number;
-	scheduleOnce: (delay_ms: number, cb: (t: MonoTime) => void) => TimerHandle;
-}
-
-export interface FrameLoop {
-	start(tick: (t: MonoTime) => void): { stop(): void };
 }
 
 export type AudioOutputPuller = (output: Int16Array, frameCount: number, sampleRate: number, targetQueuedFrames: number) => void;
@@ -242,12 +227,6 @@ export interface PlatformExitEvent {
 export interface Lifecycle {
 	onVisibilityChange(cb: (visible: boolean) => void): SubscriptionHandle;
 	onWillExit(cb: (event: PlatformExitEvent) => void): SubscriptionHandle;
-}
-
-export interface StorageService {
-	getItem(k: string): string;
-	setItem(k: string, v: string): void;
-	removeItem(k: string): void;
 }
 
 export const enum ClipboardPermissionState {

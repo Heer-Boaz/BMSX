@@ -366,8 +366,6 @@ public:
 
 	// Clock interface
 	double now() override { return m_current_time; }
-	double origin() override { return 0.0; }
-	double elapsed() override { return m_current_time; }
 
 private:
 	double m_current_time = 0.0;
