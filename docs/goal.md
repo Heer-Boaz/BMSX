@@ -24,8 +24,10 @@ persistence of that live state, not a parallel object model.
 - Use raw register words, integer fixed-point words, addresses, opcodes, slots,
   surface ids, packet fields, and render commands directly at their hardware
   boundaries.
-- Keep cart/gameplay Lua at intent level; BIOS/system utilities may emit raw
-  MMIO/RAM words, but gameplay files must not invent local hardware ABI helpers.
+- Keep cart/gameplay Lua at intent level. Cart code may name documented numeric
+  ABI constants it uses; BIOS/system utilities may emit raw MMIO/RAM words, but
+  gameplay files must not invent helper layers that reinterpret the hardware
+  ABI.
 
 ## Completion criteria
 

@@ -25,25 +25,8 @@ void seedSystemGlobals(Runtime& runtime) {
 	runtime.setGlobal("sys_bus_fault_addr", valueNumber(static_cast<double>(IO_SYS_BUS_FAULT_ADDR)));
 	runtime.setGlobal("sys_bus_fault_access", valueNumber(static_cast<double>(IO_SYS_BUS_FAULT_ACCESS)));
 	runtime.setGlobal("sys_bus_fault_ack", valueNumber(static_cast<double>(IO_SYS_BUS_FAULT_ACK)));
-	runtime.setGlobal("sys_bus_fault_none", valueNumber(static_cast<double>(BUS_FAULT_NONE)));
-	runtime.setGlobal("sys_bus_fault_unmapped", valueNumber(static_cast<double>(BUS_FAULT_UNMAPPED)));
-	runtime.setGlobal("sys_bus_fault_unaligned_io", valueNumber(static_cast<double>(BUS_FAULT_UNALIGNED_IO)));
-	runtime.setGlobal("sys_bus_fault_read_only", valueNumber(static_cast<double>(BUS_FAULT_READ_ONLY)));
-	runtime.setGlobal("sys_bus_fault_vram_range", valueNumber(static_cast<double>(BUS_FAULT_VRAM_RANGE)));
-	runtime.setGlobal("sys_bus_fault_access_read", valueNumber(static_cast<double>(BUS_FAULT_ACCESS_READ)));
-	runtime.setGlobal("sys_bus_fault_access_write", valueNumber(static_cast<double>(BUS_FAULT_ACCESS_WRITE)));
-	runtime.setGlobal("sys_bus_fault_access_u8", valueNumber(static_cast<double>(BUS_FAULT_ACCESS_U8)));
-	runtime.setGlobal("sys_bus_fault_access_u16", valueNumber(static_cast<double>(BUS_FAULT_ACCESS_U16)));
-	runtime.setGlobal("sys_bus_fault_access_u32", valueNumber(static_cast<double>(BUS_FAULT_ACCESS_U32)));
-	runtime.setGlobal("sys_bus_fault_access_word", valueNumber(static_cast<double>(BUS_FAULT_ACCESS_WORD)));
-	runtime.setGlobal("sys_bus_fault_access_f32", valueNumber(static_cast<double>(BUS_FAULT_ACCESS_F32)));
-	runtime.setGlobal("sys_bus_fault_access_f64", valueNumber(static_cast<double>(BUS_FAULT_ACCESS_F64)));
 	runtime.setGlobal("sys_host_fault_flags", valueNumber(static_cast<double>(IO_SYS_HOST_FAULT_FLAGS)));
 	runtime.setGlobal("sys_host_fault_stage", valueNumber(static_cast<double>(IO_SYS_HOST_FAULT_STAGE)));
-	runtime.setGlobal("sys_host_fault_flag_active", valueNumber(static_cast<double>(HOST_FAULT_FLAG_ACTIVE)));
-	runtime.setGlobal("sys_host_fault_flag_startup_blocking", valueNumber(static_cast<double>(HOST_FAULT_FLAG_STARTUP_BLOCKING)));
-	runtime.setGlobal("sys_host_fault_stage_none", valueNumber(static_cast<double>(HOST_FAULT_STAGE_NONE)));
-	runtime.setGlobal("sys_host_fault_stage_startup_refresh", valueNumber(static_cast<double>(HOST_FAULT_STAGE_STARTUP_AUDIO_REFRESH)));
 	runtime.setGlobal("sys_host_fault_message", machine.cpu.createNativeFunction("sys_host_fault_message", [&runtime, &machine](NativeArgsView, NativeResults& out) {
 		if (!runtime.m_hostFaultMessage.has_value()) {
 			out.push_back(valueNil());
@@ -178,8 +161,6 @@ void seedSystemGlobals(Runtime& runtime) {
 	runtime.setGlobal("sys_vdp_layer_ui", valueNumber(1.0));
 	runtime.setGlobal("sys_vdp_layer_ide", valueNumber(2.0));
 	runtime.setGlobal("sys_vdp_arg_stride", valueNumber(static_cast<double>(IO_ARG_STRIDE)));
-	runtime.setGlobal("sys_irq_flags", valueNumber(static_cast<double>(IO_IRQ_FLAGS)));
-	runtime.setGlobal("sys_irq_ack", valueNumber(static_cast<double>(IO_IRQ_ACK)));
 	runtime.setGlobal("sys_dma_src", valueNumber(static_cast<double>(IO_DMA_SRC)));
 	runtime.setGlobal("sys_dma_dst", valueNumber(static_cast<double>(IO_DMA_DST)));
 	runtime.setGlobal("sys_dma_len", valueNumber(static_cast<double>(IO_DMA_LEN)));
@@ -277,16 +258,6 @@ void seedSystemGlobals(Runtime& runtime) {
 	runtime.setGlobal("sys_rom_overlay_base", valueNumber(static_cast<double>(OVERLAY_ROM_BASE)));
 	runtime.setGlobal("sys_rom_overlay_size", valueNumber(static_cast<double>(machine.memory.getOverlayRomSize())));
 	runtime.refreshMemoryMapGlobals();
-	runtime.setGlobal("irq_dma_done", valueNumber(static_cast<double>(IRQ_DMA_DONE)));
-	runtime.setGlobal("irq_dma_error", valueNumber(static_cast<double>(IRQ_DMA_ERROR)));
-	runtime.setGlobal("irq_geo_done", valueNumber(static_cast<double>(IRQ_GEO_DONE)));
-	runtime.setGlobal("irq_geo_error", valueNumber(static_cast<double>(IRQ_GEO_ERROR)));
-	runtime.setGlobal("irq_img_done", valueNumber(static_cast<double>(IRQ_IMG_DONE)));
-	runtime.setGlobal("irq_img_error", valueNumber(static_cast<double>(IRQ_IMG_ERROR)));
-	runtime.setGlobal("irq_vblank", valueNumber(static_cast<double>(IRQ_VBLANK)));
-	runtime.setGlobal("irq_reinit", valueNumber(static_cast<double>(IRQ_REINIT)));
-	runtime.setGlobal("irq_newgame", valueNumber(static_cast<double>(IRQ_NEWGAME)));
-	runtime.setGlobal("irq_apu", valueNumber(static_cast<double>(IRQ_APU)));
 	runtime.setGlobal("apu_cmd_play", valueNumber(static_cast<double>(APU_CMD_PLAY)));
 	runtime.setGlobal("apu_cmd_stop_slot", valueNumber(static_cast<double>(APU_CMD_STOP_SLOT)));
 	runtime.setGlobal("apu_cmd_set_slot_gain", valueNumber(static_cast<double>(APU_CMD_SET_SLOT_GAIN)));

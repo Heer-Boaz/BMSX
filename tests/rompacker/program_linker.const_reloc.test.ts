@@ -294,6 +294,15 @@ test('ProgramCompiler accepts shared runtime globals when source is provided', (
 	assert.ok(compiled.program.code.length > 0);
 });
 
+test('ProgramCompiler rejects machine ABI value constants as implicit runtime globals', () => {
+	const source = 'return sys_bus_fault_access_word, sys_host_fault_flag_active, irq_vblank, sys_irq_flags, sys_irq_ack';
+	const chunk = parseChunk(source);
+	assert.throws(
+		() => compileLuaChunkToProgram(chunk, [], { entrySource: source }),
+		/error\(s\):[\s\S]*'sys_bus_fault_access_word' is not defined\.[\s\S]*'sys_host_fault_flag_active' is not defined\.[\s\S]*'irq_vblank' is not defined\.[\s\S]*'sys_irq_flags' is not defined\.[\s\S]*'sys_irq_ack' is not defined\./,
+	);
+});
+
 test('ProgramCompiler does not confuse shadowed locals with outer const bindings', () => {
 	const source = [
 		'local outer<const> = 1',

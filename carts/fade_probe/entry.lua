@@ -1,5 +1,7 @@
 require('cartlib/prelude')
 local frame = 0
+local irq_flags_addr<const> = 0x08000108
+local irq_vblank<const> = 0x0010
 
 local width<const> = 160
 local height<const> = 120
@@ -12,7 +14,7 @@ local green<const> = 0xff20ff20
 local yellow<const> = 0xffffff20
 
 local dispatch_irqs<const> = function()
-	local flags<const> = mem[sys_irq_flags]
+	local flags<const> = mem[irq_flags_addr]
 	if flags ~= 0 then
 		irq(flags)
 	end

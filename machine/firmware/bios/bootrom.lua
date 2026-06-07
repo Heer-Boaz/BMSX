@@ -61,6 +61,12 @@ local cart_rom_base<const> = 0x01000000
 local cart_program_start_addr<const> = 0x10080000
 local cart_program_vector_addr<const> = cart_program_start_addr - 4
 local cart_rom_magic<const> = 0x58534d42
+local irq_flags_addr<const> = 0x08000108
+local irq_img_done<const> = 0x0004
+local irq_img_error<const> = 0x0008
+local irq_vblank<const> = 0x0010
+local irq_reinit<const> = 0x0020
+local irq_newgame<const> = 0x0040
 
 local boot_start
 local boot_requested
@@ -458,7 +464,7 @@ render_boot_screen = function(scroll_delta)
 end
 
 local service_irqs<const> = function()
-	local flags<const> = mem[sys_irq_flags]
+	local flags<const> = mem[irq_flags_addr]
 	if flags ~= 0 then
 		system.irq(flags)
 	end

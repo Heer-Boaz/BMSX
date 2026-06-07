@@ -3,6 +3,11 @@
 
 local collision2d<const> = {}
 
+local irq_flags_addr<const> = 0x08000108
+local irq_ack_addr<const> = 0x0800010c
+local irq_geo_done<const> = 0x0080
+local irq_geo_error<const> = 0x0100
+
 local geo_overlap_candidate_param0<const> = sys_geo_overlap_mode_candidate_pairs | sys_geo_overlap_broadphase_none | sys_geo_overlap_contact_clipped_feature | sys_geo_overlap_output_stop_on_overflow
 local geo_overlap_full_pass_param0<const> = sys_geo_overlap_mode_full_pass | sys_geo_overlap_broadphase_local_bounds_aabb | sys_geo_overlap_contact_clipped_feature | sys_geo_overlap_output_stop_on_overflow
 local geo_irq_mask<const> = irq_geo_done | irq_geo_error
@@ -74,8 +79,8 @@ end
 
 local geo_batch_token = 0
 local geo_fault_register<const>: *word = sys_geo_fault
-local irq_flags_register<const>: *word = sys_irq_flags
-local irq_ack_register<const>: *word = sys_irq_ack
+local irq_flags_register<const>: *word = irq_flags_addr
+local irq_ack_register<const>: *word = irq_ack_addr
 local geo_cmd_register<const>: *word = sys_geo_cmd
 local geo_status_register<const>: *word = sys_geo_status
 

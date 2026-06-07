@@ -2,7 +2,10 @@
 
 BMSX is an emulated machine with real emulator discipline.
 
-It is fictional hardware, but the architecture is treated like a real machine: carts run against CPU, RAM/ROM, MMIO registers, and device controllers. Host code exists to present audio, video, input, files, and platform entrypoints; it should not become the cart-facing hardware contract.
+BMSX is documented and implemented as if it were an obscure physical console:
+carts run against CPU, RAM/ROM, MMIO registers, and device controllers. Host
+code exists to present audio, video, input, files, and platform entrypoints; it
+should not become the cart-facing hardware contract.
 
 The TypeScript implementation builds a JavaScript machine runtime plus browser
 and Node hosts. The C++ implementation mirrors the machine structure and supplies C++ machine and host artifacts.
@@ -47,6 +50,12 @@ See `docs/architecture.md` for the machine/host boundary rules.
 ## Architecture Doctrine
 
 BMSX can be playful at the product level, but the machine layer is not a service grab bag. New cart-visible hardware should be represented as memory-mapped devices under `machine/devices`, with register addresses in `machine/bus/io`.
+
+The documentation is the hardware manual. Machine ABI values such as register
+addresses, status bits, IRQ flags, packet fields, opcodes, fixed-point words,
+and device constants are numbers in that manual and in the owning TS/C++
+machine constants. They are not fantasy-console convenience globals injected by
+the emulator runtime.
 
 Preferred direction for cart-visible features:
 

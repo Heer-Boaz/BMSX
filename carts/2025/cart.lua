@@ -3,6 +3,10 @@ local globals<const> = require('globals')
 local story<const> = require('story')
 local start_node<const> = 'title'
 -- local start_node<const> = 'combat_wekker'
+local irq_flags_addr<const> = 0x08000108
+local irq_vblank<const> = 0x0010
+local irq_reinit<const> = 0x0020
+local irq_newgame<const> = 0x0040
 
 local combat_module<const> = require('combat')
 local dialogue_module<const> = require('dialogue')
@@ -337,7 +341,7 @@ function new_game()
 end
 
 local service_irqs<const> = function()
-	local flags<const> = mem[sys_irq_flags]
+	local flags<const> = mem[irq_flags_addr]
 	if flags ~= 0 then
 		irq(flags)
 	end

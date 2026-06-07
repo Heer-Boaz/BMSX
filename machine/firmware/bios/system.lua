@@ -2,6 +2,7 @@ local romdir<const> = require('system/romdir')
 
 local system<const> = {}
 local irq_handlers<const> = {}
+local irq_ack_addr<const> = 0x0800010c
 
 system.rom_data = romdir.data
 
@@ -13,7 +14,7 @@ function system.irq(flags)
 			ack = ack | (flags & mask)
 		end
 	end
-	mem[sys_irq_ack] = ack
+	mem[irq_ack_addr] = ack
 	return ack
 end
 

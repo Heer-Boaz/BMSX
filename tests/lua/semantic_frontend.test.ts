@@ -11,6 +11,18 @@ test('LuaSemanticFrontend accepts shared runtime globals without diagnostics', (
 	assert.deepEqual(frontend.getFile('globals.lua').diagnostics, []);
 });
 
+test('LuaSemanticFrontend rejects machine ABI value constants as implicit runtime globals', () => {
+	const source = 'return sys_bus_fault_access_word, sys_host_fault_flag_active, irq_vblank, sys_irq_flags, sys_irq_ack';
+	const frontend = buildLuaSemanticFrontend([{ path: 'abi_constant.lua', source }]);
+	const diagnostics = frontend.getFile('abi_constant.lua').diagnostics;
+	assert.equal(diagnostics.length, 5);
+	assert.equal(diagnostics[0].message, `'sys_bus_fault_access_word' is not defined.`);
+	assert.equal(diagnostics[1].message, `'sys_host_fault_flag_active' is not defined.`);
+	assert.equal(diagnostics[2].message, `'irq_vblank' is not defined.`);
+	assert.equal(diagnostics[3].message, `'sys_irq_flags' is not defined.`);
+	assert.equal(diagnostics[4].message, `'sys_irq_ack' is not defined.`);
+});
+
 test('LuaSemanticFrontend preserves shadowed locals instead of retargeting them to outer const bindings', () => {
 	const source = [
 		'local outer<const> = 1',

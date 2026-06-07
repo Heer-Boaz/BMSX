@@ -6,6 +6,40 @@ This document is the current machine/host boundary contract. It is not a work
 log, a prompt, or a migration diary. If implementation changes land, this file
 must be updated in the same slice.
 
+## Machine identity
+
+BMSX is documented and implemented as if it were an obscure physical console.
+The repository is the surviving hardware manual and emulator source for that
+machine. Product language may be playful, but architecture work must not treat
+the cart runtime as a fantasy-console service API.
+
+Cart-observable facts are hardware facts: CPU-visible words, RAM/ROM bytes,
+MMIO registers, registerfiles, FIFOs, IRQ lines, status/fault latches, device
+memory, command packets, fixed-point formats, opcodes, and timing edges. A cart
+may use BIOS or cart-library helpers, but those helpers must ultimately program
+the same machine-visible bytes and registers the cart could use directly.
+
+## ABI symbol policy
+
+Machine ABI symbols are numeric facts about the machine, not emulator-injected
+Lua globals. This includes:
+
+- MMIO register addresses;
+- status, control, IRQ, and fault bit values;
+- command words, opcodes, packet fields, and descriptor layouts;
+- fixed-point formats, record sizes, offsets, and capacities;
+- ROM/program/header constants and memory-map addresses.
+
+The owning TS/C++ machine files define those constants for the emulator. The
+hardware documentation lists cart-visible values. Cart, BIOS, or cart-library
+source defines the constants it uses. The emulator runtime must not make a
+value observable merely by seeding a friendly global name.
+
+Runtime-injected Lua globals are reserved for language/runtime builtins,
+BIOS/firmware entrypoints, manifest/runtime objects, and explicit helper
+functions whose behavior is part of the firmware contract. Raw hardware values
+that still exist as globals are architecture debt, not precedent for new code.
+
 ## Hard boundary
 
 BMSX carts observe a machine, not the host application:
@@ -172,6 +206,75 @@ capture/restore bodies in the matching save-state translation units.
 
 ## Device contracts
 
+### Memory map and bus faults
+
+The mapped-memory bus exposes sticky fault registers for the first visible bus
+fault: code, address, access flags, and acknowledgement. The register addresses
+are MMIO words; fault codes and access flags are machine ABI values. ABI values
+are documented constants, not runtime-injected Lua globals. Cart code that
+tests them defines the constants it uses.
+
+Bus fault registers:
+
+| Register | Address | Meaning |
+| --- | ---: | --- |
+| `BUS_FAULT_CODE` | `0x080102d0` | Sticky fault code for the first visible bus fault. |
+| `BUS_FAULT_ADDR` | `0x080102d4` | Address captured with the sticky bus fault. |
+| `BUS_FAULT_ACCESS` | `0x080102d8` | Access flags captured with the sticky bus fault. |
+| `BUS_FAULT_ACK` | `0x080102dc` | Write nonzero to clear the sticky bus fault. |
+
+Bus fault code values:
+
+| Name | Value | Meaning |
+| --- | ---: | --- |
+| `BUS_FAULT_NONE` | `0` | No bus fault is latched. |
+| `BUS_FAULT_UNMAPPED` | `1` | The mapped-memory access targeted no mapped bus owner. |
+| `BUS_FAULT_UNALIGNED_IO` | `2` | A non-word access targeted word-only MMIO. |
+| `BUS_FAULT_READ_ONLY` | `3` | A mapped-memory write targeted a read-only MMIO register. |
+| `BUS_FAULT_VRAM_RANGE` | `4` | A mapped VRAM access fell outside the selected VRAM aperture. |
+
+Bus fault access flag values:
+
+| Name | Value | Meaning |
+| --- | ---: | --- |
+| `BUS_FAULT_ACCESS_READ` | `0x0001` | The access was a read. |
+| `BUS_FAULT_ACCESS_WRITE` | `0x0002` | The access was a write. |
+| `BUS_FAULT_ACCESS_U8` | `0x0100` | The access width was byte. |
+| `BUS_FAULT_ACCESS_U16` | `0x0200` | The access width was little-endian 16-bit. |
+| `BUS_FAULT_ACCESS_U32` | `0x0400` | The access width was little-endian 32-bit. |
+| `BUS_FAULT_ACCESS_WORD` | `0x0800` | The access width was Lua word. |
+| `BUS_FAULT_ACCESS_F32` | `0x1000` | The access width was little-endian 32-bit float. |
+| `BUS_FAULT_ACCESS_F64` | `0x2000` | The access width was little-endian 64-bit float. |
+
+### Host fault publication
+
+The host fault registers publish host startup fault state into the machine
+without making the host own cart-observable behavior. `sys_host_fault_message`
+is a runtime call for the current published message. Register addresses, flag
+values, and stage values are machine ABI values; they are documented constants,
+not runtime-injected Lua globals.
+
+Host fault registers:
+
+| Register | Address | Meaning |
+| --- | ---: | --- |
+| `HOST_FAULT_FLAGS` | `0x08000004` | Sticky host fault flags published by the host runtime during startup. |
+| `HOST_FAULT_STAGE` | `0x08000008` | Host startup fault stage code. |
+
+Host fault flag values:
+
+| Name | Value | Meaning |
+| --- | ---: | --- |
+| `HOST_FAULT_FLAG_ACTIVE` | `0x0001` | A host fault is currently published. |
+| `HOST_FAULT_FLAG_STARTUP_BLOCKING` | `0x0002` | The published fault blocks startup. |
+
+Host fault stage values:
+
+| Name | Value | Meaning |
+| --- | ---: | --- |
+| `HOST_FAULT_STAGE_NONE` | `0` | No host fault stage is active. |
+| `HOST_FAULT_STAGE_STARTUP_AUDIO_REFRESH` | `1` | Deferred startup audio-refresh failure. |
+
 ### IRQ
 
 IRQ is a machine device with flag/status words. Devices raise/clear IRQ state
@@ -179,6 +282,29 @@ through the IRQ owner. Cart-originated faults surface as status/fault bits and
 IRQ flags when the device contract says so; they do not escape as host
 exceptions. IRQ save-state is the pending flag register word only, owned by
 `machine/devices/irq/save_state`.
+
+IRQ exposes two MMIO registers. IRQ register addresses and flag bits are machine
+ABI values; they are documented constants, not runtime-injected Lua globals.
+Cart and firmware code that tests or acknowledges them defines the constants it
+uses.
+
+| Register | Address | Meaning |
+| --- | ---: | --- |
+| `IRQ_FLAGS` | `0x08000108` | Read pending IRQ bits. |
+| `IRQ_ACK` | `0x0800010c` | Write bits to clear. |
+
+| Name | Value | Meaning |
+| --- | ---: | --- |
+| `IRQ_DMA_DONE` | `0x0001` | DMA completion. |
+| `IRQ_DMA_ERROR` | `0x0002` | DMA error. |
+| `IRQ_IMG_DONE` | `0x0004` | Image decode completion. |
+| `IRQ_IMG_ERROR` | `0x0008` | Image decode error. |
+| `IRQ_VBLANK` | `0x0010` | VBLANK entry. |
+| `IRQ_REINIT` | `0x0020` | Cart reinitialization event. |
+| `IRQ_NEWGAME` | `0x0040` | New-game start event. |
+| `IRQ_GEO_DONE` | `0x0080` | Geometry command completion. |
+| `IRQ_GEO_ERROR` | `0x0100` | Geometry command error. |
+| `IRQ_APU` | `0x0200` | APU voice event. |
 
 ### DMA and image decode
 

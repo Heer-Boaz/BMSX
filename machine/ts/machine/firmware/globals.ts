@@ -230,19 +230,6 @@ import {
 	INPUT_CONTROLLER_OUTPUT_INTENSITY_Q16_ONE,
 } from '../devices/input/contracts';
 import {
-	BUS_FAULT_ACCESS_F32,
-	BUS_FAULT_ACCESS_F64,
-	BUS_FAULT_ACCESS_READ,
-	BUS_FAULT_ACCESS_U8,
-	BUS_FAULT_ACCESS_U16,
-	BUS_FAULT_ACCESS_U32,
-	BUS_FAULT_ACCESS_WORD,
-	BUS_FAULT_ACCESS_WRITE,
-	BUS_FAULT_NONE,
-	BUS_FAULT_READ_ONLY,
-	BUS_FAULT_UNALIGNED_IO,
-	BUS_FAULT_UNMAPPED,
-	BUS_FAULT_VRAM_RANGE,
 	DMA_CTRL_START,
 	DMA_CTRL_STRICT,
 	DMA_STATUS_BUSY,
@@ -250,10 +237,6 @@ import {
 	DMA_STATUS_DONE,
 	DMA_STATUS_ERROR,
 	DMA_STATUS_REJECTED,
-	HOST_FAULT_FLAG_ACTIVE,
-	HOST_FAULT_FLAG_STARTUP_BLOCKING,
-	HOST_FAULT_STAGE_NONE,
-	HOST_FAULT_STAGE_STARTUP_AUDIO_REFRESH,
 	IMG_CTRL_START,
 	IMG_STATUS_BUSY,
 	IMG_STATUS_CLIPPED,
@@ -354,8 +337,6 @@ import {
 	IO_INP_QUERY,
 	IO_INP_STATUS,
 	IO_INP_VALUE,
-	IO_IRQ_ACK,
-	IO_IRQ_FLAGS,
 	IO_SYS_BUS_FAULT_ACCESS,
 	IO_SYS_BUS_FAULT_ACK,
 	IO_SYS_BUS_FAULT_ADDR,
@@ -378,16 +359,6 @@ import {
 	IO_VDP_RD_X,
 	IO_VDP_RD_Y,
 	IO_VDP_STATUS,
-	IRQ_DMA_DONE,
-	IRQ_DMA_ERROR,
-	IRQ_APU,
-	IRQ_GEO_DONE,
-	IRQ_GEO_ERROR,
-	IRQ_IMG_DONE,
-	IRQ_IMG_ERROR,
-	IRQ_NEWGAME,
-	IRQ_REINIT,
-	IRQ_VBLANK,
 } from '../bus/io';
 import { VDP_PKT_END } from '../devices/vdp/registers';
 import {
@@ -1439,25 +1410,8 @@ export function seedLuaGlobals(runtime: Runtime): void {
 	runtime.setGlobal('sys_bus_fault_addr', IO_SYS_BUS_FAULT_ADDR);
 	runtime.setGlobal('sys_bus_fault_access', IO_SYS_BUS_FAULT_ACCESS);
 	runtime.setGlobal('sys_bus_fault_ack', IO_SYS_BUS_FAULT_ACK);
-	runtime.setGlobal('sys_bus_fault_none', BUS_FAULT_NONE);
-	runtime.setGlobal('sys_bus_fault_unmapped', BUS_FAULT_UNMAPPED);
-	runtime.setGlobal('sys_bus_fault_unaligned_io', BUS_FAULT_UNALIGNED_IO);
-	runtime.setGlobal('sys_bus_fault_read_only', BUS_FAULT_READ_ONLY);
-	runtime.setGlobal('sys_bus_fault_vram_range', BUS_FAULT_VRAM_RANGE);
-	runtime.setGlobal('sys_bus_fault_access_read', BUS_FAULT_ACCESS_READ);
-	runtime.setGlobal('sys_bus_fault_access_write', BUS_FAULT_ACCESS_WRITE);
-	runtime.setGlobal('sys_bus_fault_access_u8', BUS_FAULT_ACCESS_U8);
-	runtime.setGlobal('sys_bus_fault_access_u16', BUS_FAULT_ACCESS_U16);
-	runtime.setGlobal('sys_bus_fault_access_u32', BUS_FAULT_ACCESS_U32);
-	runtime.setGlobal('sys_bus_fault_access_word', BUS_FAULT_ACCESS_WORD);
-	runtime.setGlobal('sys_bus_fault_access_f32', BUS_FAULT_ACCESS_F32);
-	runtime.setGlobal('sys_bus_fault_access_f64', BUS_FAULT_ACCESS_F64);
 	runtime.setGlobal('sys_host_fault_flags', IO_SYS_HOST_FAULT_FLAGS);
 	runtime.setGlobal('sys_host_fault_stage', IO_SYS_HOST_FAULT_STAGE);
-	runtime.setGlobal('sys_host_fault_flag_active', HOST_FAULT_FLAG_ACTIVE);
-	runtime.setGlobal('sys_host_fault_flag_startup_blocking', HOST_FAULT_FLAG_STARTUP_BLOCKING);
-	runtime.setGlobal('sys_host_fault_stage_none', HOST_FAULT_STAGE_NONE);
-	runtime.setGlobal('sys_host_fault_stage_startup_refresh', HOST_FAULT_STAGE_STARTUP_AUDIO_REFRESH);
 	runtime.setGlobal('sys_host_fault_message', createNativeFunction('sys_host_fault_message', (_args, out) => {
 		const message = runtime.hostFault.getMessage();
 		out.push(message === null ? null : runtime.internString(message));
@@ -1589,8 +1543,6 @@ export function seedLuaGlobals(runtime: Runtime): void {
 	runtime.setGlobal('sys_vdp_layer_ui', 1);
 	runtime.setGlobal('sys_vdp_layer_ide', 2);
 	runtime.setGlobal('sys_vdp_arg_stride', IO_ARG_STRIDE);
-	runtime.setGlobal('sys_irq_flags', IO_IRQ_FLAGS);
-	runtime.setGlobal('sys_irq_ack', IO_IRQ_ACK);
 	runtime.setGlobal('sys_dma_src', IO_DMA_SRC);
 	runtime.setGlobal('sys_dma_dst', IO_DMA_DST);
 	runtime.setGlobal('sys_dma_len', IO_DMA_LEN);
@@ -1762,16 +1714,6 @@ export function seedLuaGlobals(runtime: Runtime): void {
 	runtime.setGlobal('sys_vram_secondary_slot_size', VRAM_SECONDARY_SLOT_SIZE);
 	runtime.setGlobal('sys_vram_staging_size', VRAM_STAGING_SIZE);
 	runtime.setGlobal('sys_vram_size', runtime.vramTotalBytes());
-	runtime.setGlobal('irq_dma_done', IRQ_DMA_DONE);
-	runtime.setGlobal('irq_dma_error', IRQ_DMA_ERROR);
-	runtime.setGlobal('irq_geo_done', IRQ_GEO_DONE);
-	runtime.setGlobal('irq_geo_error', IRQ_GEO_ERROR);
-	runtime.setGlobal('irq_img_done', IRQ_IMG_DONE);
-	runtime.setGlobal('irq_img_error', IRQ_IMG_ERROR);
-	runtime.setGlobal('irq_vblank', IRQ_VBLANK);
-	runtime.setGlobal('irq_reinit', IRQ_REINIT);
-	runtime.setGlobal('irq_newgame', IRQ_NEWGAME);
-	runtime.setGlobal('irq_apu', IRQ_APU);
 	runtime.setGlobal('dma_ctrl_start', DMA_CTRL_START);
 	runtime.setGlobal('dma_ctrl_strict', DMA_CTRL_STRICT);
 	runtime.setGlobal('dma_status_busy', DMA_STATUS_BUSY);

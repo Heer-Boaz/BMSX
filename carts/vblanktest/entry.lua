@@ -1,4 +1,7 @@
 require('cartlib/prelude')
+local irq_flags_addr<const> = 0x08000108
+local irq_ack_addr<const> = 0x0800010c
+local irq_vblank<const> = 0x0010
 local target<const> = 50
 local vblank_count = 0
 local fail_reason = nil
@@ -50,7 +53,7 @@ local wait_for_vblank_set<const> = function()
 		if (status & sys_vdp_status_vblank) ~= 0 then
 			return true
 		end
-		local flags<const> = mem[sys_irq_flags]
+		local flags<const> = mem[irq_flags_addr]
 		if (flags & irq_vblank) ~= 0 then
 			saw_irq = true
 		end
@@ -73,7 +76,7 @@ on_irq(irq_vblank, function(_, flags)
 			fail("irq_vblank seen but VDP_STATUS_VBLANK not set")
 		end
 
-		mem[sys_irq_ack] = irq_vblank
+		mem[irq_ack_addr] = irq_vblank
 	end
 end)
 
@@ -123,7 +126,7 @@ local draw_cart<const> = function()
 end
 
 local dispatch_irqs<const> = function()
-	local flags<const> = mem[sys_irq_flags]
+	local flags<const> = mem[irq_flags_addr]
 	if flags ~= 0 then
 		irq(flags)
 	end

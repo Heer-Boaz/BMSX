@@ -8,10 +8,12 @@ local cam_move<const>         = camobj.cam_move
 local vdp_stream_base<const> = sys_vdp_stream_base
 local vram_staging_base<const> = sys_vram_staging_base
 local scratch_base<const> = sys_geo_scratch_base
+local irq_flags_addr<const> = 0x08000108
+local irq_ack_addr<const> = 0x0800010c
 
 local vdp_dither_register<const>: *word = sys_vdp_dither
-local irq_flags_register<const>: *word = sys_irq_flags
-local irq_ack_register<const>: *word = sys_irq_ack
+local irq_flags_register<const>: *word = irq_flags_addr
+local irq_ack_register<const>: *word = irq_ack_addr
 local dma_src_register<const>: *word = sys_dma_src
 local dma_dst_register<const>: *word = sys_dma_dst
 local dma_len_register<const>: *word = sys_dma_len

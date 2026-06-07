@@ -31,6 +31,8 @@ local castle_map<const> = require('castle/map')
 local init_epoch = 0
 local pending_title_boot_epoch = -1
 
+local irq_flags_addr<const> = 0x08000108
+
 local register_collision_profiles<const> = function()
 	collision_profiles.define('player', {
 		layer = constants.collision.player_layer,
@@ -51,7 +53,7 @@ local register_collision_profiles<const> = function()
 end
 
 local dispatch_irqs<const> = function()
-	local flags<const> = mem[sys_irq_flags]
+	local flags<const> = mem[irq_flags_addr]
 	if flags ~= 0 then
 		irq(flags)
 	end
@@ -60,6 +62,9 @@ end
 
 local irq_dma_done<const> = 0x01
 local irq_dma_error<const> = 0x02
+local irq_vblank<const> = 0x0010
+local irq_reinit<const> = 0x0020
+local irq_newgame<const> = 0x0040
 
 local wait_dma<const> = function()
 	local flags = 0
