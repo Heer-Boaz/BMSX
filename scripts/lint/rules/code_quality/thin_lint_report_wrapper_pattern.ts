@@ -1,7 +1,7 @@
 import { defineLintRule } from '../../rule';
 import ts from 'typescript';
 import { type AnalysisStatement } from '../../../analysis/lint_suppressions';
-import { getFunctionLikeName } from '../../../../machine/ts/language/ts/ast/functions';
+import { getFunctionLikeName } from '../../language/ts/ast/functions';
 import { sourceFileIsLintRuleFile } from './empty_lint_rule_file_pattern';
 import { LintIssue, pushLintIssue } from '../ts/support/ast';
 

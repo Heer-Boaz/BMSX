@@ -1,6 +1,6 @@
 import ts from 'typescript';
-import { getExpressionText, getPropertyName, hasExportModifier } from '../../../machine/ts/language/ts/ast/expressions';
-import { getFunctionSignature, isFunctionLikeValue } from '../../../machine/ts/language/ts/ast/functions';
+import { getExpressionText, getPropertyName, hasExportModifier } from '../../lint/language/ts/ast/expressions';
+import { getFunctionSignature, isFunctionLikeValue } from '../../lint/language/ts/ast/functions';
 import { getClassScopePath } from '../../lint/rules/ts/support/bindings';
 import { getFunctionWrapperTarget, isAbstractClass, isIgnoredMethod } from '../../lint/rules/ts/support/declarations';
 import { type ExportedTypeInfo } from '../../lint/rules/code_quality/duplicate_exported_type_name_pattern';

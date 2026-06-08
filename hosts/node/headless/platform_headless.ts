@@ -1,7 +1,7 @@
 import { new_vec2 } from 'bmsx/common/vector';
 import {
 	AudioService,
-	Clock,
+	HostClock,
 	DeviceKind,
 	FrameLoop,
 	HIDService,
@@ -37,7 +37,7 @@ import { HZ_SCALE } from 'bmsx/machine/runtime/timing/constants';
 import { HeadlessGameViewHost } from 'bmsx/render/headless/view';
 import { SilentAudioService } from '../common/silent_audio';
 
-class RealtimeHeadlessClock implements Clock {
+class RealtimeHeadlessHostClock implements HostClock {
 	private readonly origin = performance.now();
 	public scheduleOnce(delayMs: number, cb: (t: MonoTime) => void) {
 		let active = true;
@@ -74,7 +74,7 @@ type VirtualTimer = {
 	active: boolean;
 };
 
-class VirtualHeadlessClock implements Clock {
+class VirtualHeadlessHostClock implements HostClock {
 	private currentMs = 0;
 	private readonly epochMs = Date.now();
 	private readonly timers: VirtualTimer[] = [];
@@ -147,7 +147,7 @@ class VirtualHeadlessClock implements Clock {
 }
 
 class RealtimeHeadlessFrameLoop implements FrameLoop {
-	constructor(private readonly clock: Clock, private readonly stepMs: number) { }
+	constructor(private readonly clock: HostClock, private readonly stepMs: number) { }
 	start(tick: (t: MonoTime) => void): { stop(): void } {
 		let active = true;
 		const handle = setInterval(() => {
@@ -165,7 +165,7 @@ class RealtimeHeadlessFrameLoop implements FrameLoop {
 }
 
 class UnpacedHeadlessFrameLoop implements FrameLoop {
-	constructor(private readonly clock: VirtualHeadlessClock, private readonly stepMs: number) { }
+	constructor(private readonly clock: VirtualHeadlessHostClock, private readonly stepMs: number) { }
 
 	start(tick: (t: MonoTime) => void): { stop(): void } {
 		let active = true;
@@ -283,7 +283,7 @@ class HeadlessInputDevice implements InputDevice {
 	description = 'headless-input';
 	supportsVibration = false;
 	setVibration(_p: VibrationParams): void { }
-	poll(_clock: Clock): void { }
+	poll(_clock: HostClock): void { }
 }
 
 class HeadlessInputHub implements InputHub {
@@ -362,7 +362,7 @@ class HeadlessGameViewHostWithWindowEvents extends HeadlessGameViewHost {
 }
 
 export class HeadlessPlatformServices implements Platform {
-	readonly clock: Clock;
+	readonly clock: HostClock;
 	readonly frames: FrameLoop;
 	readonly lifecycle: Lifecycle;
 	readonly input: InputHub;
@@ -383,11 +383,11 @@ export class HeadlessPlatformServices implements Platform {
 		const step = options.frameIntervalMs ?? 20;
 		this.ufpsScaled = Math.round((1000 / step) * HZ_SCALE);
 		if (options.unpaced) {
-			const clock = new VirtualHeadlessClock();
+			const clock = new VirtualHeadlessHostClock();
 			this.clock = clock;
 			this.frames = new UnpacedHeadlessFrameLoop(clock, step);
 		} else {
-			this.clock = new RealtimeHeadlessClock();
+			this.clock = new RealtimeHeadlessHostClock();
 			this.frames = new RealtimeHeadlessFrameLoop(this.clock, step);
 		}
 		this.lifecycle = new HeadlessLifecycle();

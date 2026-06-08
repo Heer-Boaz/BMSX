@@ -22,10 +22,15 @@ Al afgerond en daarom niet opnieuw als open slice opgenomen:
 - C++ GLES2 CRT/device/present post-pass resources onder pass-lifecycle gebracht
 - publieke JS runtime API gebruikt direct `MachineManager.boot`; `startCart`-wrapper verwijderd
 - TS firmware/prelude/global registration losgetrokken van IDE lua-pipeline
-- C++ machine firmware/IMGDEC/runtime gebruikt machine-owned `Clock` en
-  `MicrotaskQueue` contracts in plaats van concrete `platform/platform.h`
-- TS runtime gebruikt machine-owned `Clock` en `StorageService`
-  contracts in plaats van concrete `platform/platform` types
+- C++ machine firmware/IMGDEC/runtime gebruikt machine-owned `MicrotaskQueue`
+  contracts in plaats van concrete `platform/platform.h`
+- TS runtime gebruikt machine-owned `StorageService` contracts in plaats van
+  concrete `platform/platform` types
+- cart-zichtbare `clock_now`, `os.clock`, default `os.time`/`os.date` en default
+  `math.randomseed()` gebruiken machine-scheduler tijd in plaats van host/platform clock
+- ICU VBlank sampling gebruikt machine-scheduler tijd voor sampled action
+  `pressTime`/timestamps; host input timestamps blijven host-side physical event
+  metadata en worden niet doorgegeven als cart-zichtbare sampletijd
 
 ## 1. ICU input-device source boundary
 
@@ -65,7 +70,7 @@ Acceptatie:
 
 ## 3. Runtime host-services port
 
-Doel: machine runtime gebruikt een kleine machine-owned host-services port voor clock/storage/frame-loop/gates, niet `core/machine_manager`, `core/taskgate` of concrete `platform` modules.
+Doel: machine runtime gebruikt een kleine machine-owned host-services port voor storage/frame-loop/gates, niet `core/machine_manager`, `core/taskgate` of concrete `platform` modules. HostClock blijft host/IDE/input scheduling en is geen cart-zichtbare machine-tijd.
 
 Open audit-evidence:
 

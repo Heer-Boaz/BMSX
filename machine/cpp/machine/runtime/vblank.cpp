@@ -58,7 +58,8 @@ void VblankState::reset(Runtime& runtime) {
 
 RuntimeVblankSnapshot VblankState::capture(const Runtime& runtime) const {
 	RuntimeVblankSnapshot state;
-	state.cyclesIntoFrame = getCyclesIntoFrame(runtime);
+	state.nowCycles = runtime.machine.scheduler.currentNowCycles();
+	state.cyclesIntoFrame = static_cast<int>(state.nowCycles - m_frameStartCycle);
 	return state;
 }
 
@@ -67,8 +68,8 @@ void VblankState::restore(Runtime& runtime, const RuntimeVblankSnapshot& state) 
 	runtime.frameLoop.reset();
 	runtime.screen.reset();
 	resetScheduler(runtime);
-	runtime.machine.scheduler.setNowCycles(state.cyclesIntoFrame);
-	m_frameStartCycle = 0;
+	runtime.machine.scheduler.setNowCycles(state.nowCycles);
+	m_frameStartCycle = state.nowCycles - state.cyclesIntoFrame;
 	m_vblankSequence = 0;
 	m_lastCompletedVblankSequence = 0;
 	m_activeTickCompleted = false;
@@ -121,7 +122,7 @@ void VblankState::publishVblankTiming(Runtime& runtime, bool active) {
 void VblankState::enterVblank(Runtime& runtime) {
 	m_vblankSequence += 1;
 	runtime.machine.vdp.presentReadyFrameOnVblankEdge();
-	runtime.machine.inputController.onVblankEdge(runtime.frameLoop.currentTimeSeconds * 1000.0, static_cast<u32>(runtime.machine.scheduler.nowCycles()));
+	runtime.machine.inputController.onVblankEdge(runtime.machineElapsedMs(), static_cast<u32>(runtime.machine.scheduler.nowCycles()));
 	publishVblankTiming(runtime, true);
 	runtime.machine.irqController.raise(IRQ_VBLANK);
 	if (runtime.frameLoop.frameActive) {

@@ -64,6 +64,7 @@ const std::vector<std::string> RUNTIME_SAVE_STATE_PROP_NAMES = {
 	"negy",
 	"negz",
 	"next",
+	"nowCycles",
 	"objects",
 	"open",
 	"openUpvalues",

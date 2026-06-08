@@ -2,9 +2,9 @@ import { defineLintRule } from '../../rule';
 import { type LintIssue, pushLintIssue } from '../ts/support/ast';
 import ts from 'typescript';
 import { lineHasAnalysisRegionLabel, type AnalysisRegion } from '../../../analysis/lint_suppressions';
-import { callTargetText, expressionContainsPropertyAccess, getPropertyAccessName } from '../../../../machine/ts/language/ts/ast/expressions';
-import { isEqualityOperator, isOrderingComparisonOperator } from '../../../../machine/ts/language/ts/ast/operators';
-import { isNumericContractSentinelExpression, isNumericSanitizerTarget } from '../../../../machine/ts/language/ts/ast/semantic';
+import { callTargetText, expressionContainsPropertyAccess, getPropertyAccessName } from '../../language/ts/ast/expressions';
+import { isEqualityOperator, isOrderingComparisonOperator } from '../../language/ts/ast/operators';
+import { isNumericContractSentinelExpression, isNumericSanitizerTarget } from '../../language/ts/ast/semantic';
 import { nodeStartLine } from '../ts/support/ast';
 
 export const contractNumericDefensiveSanitizationPatternRule = defineLintRule('code_quality', 'contract_numeric_defensive_sanitization_pattern');

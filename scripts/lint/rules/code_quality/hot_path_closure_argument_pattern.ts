@@ -1,7 +1,7 @@
 import { defineLintRule } from '../../rule';
 import ts from 'typescript';
-import { unwrapExpression } from '../../../../machine/ts/language/ts/ast/expressions';
-import { isFunctionExpressionLike } from '../../../../machine/ts/language/ts/ast/functions';
+import { unwrapExpression } from '../../language/ts/ast/expressions';
+import { isFunctionExpressionLike } from '../../language/ts/ast/functions';
 import { LintIssue, pushLintIssue } from '../ts/support/ast';
 import { containsClosureExpression } from '../ts/support/runtime_patterns';
 

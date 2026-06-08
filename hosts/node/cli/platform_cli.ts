@@ -1,6 +1,6 @@
 import {
 	AudioService,
-	Clock,
+	HostClock,
 	FrameLoop,
 	HIDService,
 	InputHub,
@@ -144,7 +144,7 @@ export interface CLIPlatformOptions extends HeadlessPlatformOptions {
 }
 
 export class CLIPlatformServices implements Platform {
-	readonly clock: Clock;
+	readonly clock: HostClock;
 	readonly frames: FrameLoop;
 	readonly lifecycle: Lifecycle;
 	readonly input: InputHub;

@@ -223,7 +223,7 @@ public:
 	size_t getSystemRAMSize() const;
 
 	// Platform interface implementation
-	Clock* clock() override { return m_clock.get(); }
+	HostClock* clock() override { return m_clock.get(); }
 	FrameLoop* frameLoop() override { return m_frame_loop.get(); }
 	Lifecycle* lifecycle() override { return m_lifecycle.get(); }
 	InputHub* inputHub() override { return m_input_hub.get(); }
@@ -271,7 +271,7 @@ private:
 	std::unique_ptr<MachineManager> m_machine_manager;
 
 	// Platform components
-	std::unique_ptr<Clock> m_clock;
+	std::unique_ptr<HostClock> m_clock;
 	std::unique_ptr<FrameLoop> m_frame_loop;
 	std::unique_ptr<Lifecycle> m_lifecycle;
 	std::unique_ptr<InputHub> m_input_hub;
@@ -355,16 +355,16 @@ private:
 };
 
 /* ============================================================================
- * LibretroClock - Time management for libretro
+ * LibretroHostClock - Time management for libretro
  * ============================================================================ */
 
-class LibretroClock : public Clock {
+class LibretroHostClock : public HostClock {
 public:
-	LibretroClock();
+	LibretroHostClock();
 
 	void advanceFrame(double fps);
 
-	// Clock interface
+	// HostClock interface
 	double now() override { return m_current_time; }
 
 private:

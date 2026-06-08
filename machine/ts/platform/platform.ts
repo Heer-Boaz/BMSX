@@ -1,16 +1,16 @@
 import { type vec2 } from 'bmsx/rompack/format';
-import type { Clock as MachineClock, MonoTime } from '../machine/runtime/clock';
 import type { StorageService } from '../machine/runtime/storage';
 
-export type { MonoTime } from '../machine/runtime/clock';
 export type { StorageService } from '../machine/runtime/storage';
+
+export type MonoTime = number;
 
 /**
  * Core platform contract.
  *
- * Every host environment (desktop shell, mobile wrapper, browser runtime, etc.) wires the machine runtime
+ * Every host environment (desktop shell, mobile wrapper, browser runtime, etc.) wires BMSX
  * to native services by implementing this interface. The properties deliberately mirror the systems
- * the machine runtime expects to exist at runtime: timing (`clock`/`frames`), persistence (`storage`), audio,
+ * the host owns at runtime: host timing (`clock`/`frames`), persistence (`storage`), audio,
  * human input, onscreen controls, and the high-level `gameviewHost` bridge that couples rendering
  * to the platform's windowing model.
  *
@@ -91,7 +91,8 @@ export interface TimerHandle {
 	isActive(): boolean;
 }
 
-export interface Clock extends MachineClock {
+export interface HostClock {
+	now(): MonoTime;
 	perf_now(): MonoTime;
 	dateNow(): number;
 	scheduleOnce: (delay_ms: number, cb: (t: MonoTime) => void) => TimerHandle;
@@ -102,7 +103,7 @@ export interface FrameLoop {
 }
 
 export interface Platform {
-	clock: Clock;
+	clock: HostClock;
 	frames: FrameLoop;
 	lifecycle: Lifecycle;
 	input: InputHub;
@@ -165,7 +166,7 @@ export interface InputDevice {
 	description: string;
 	supportsVibration: boolean;
 	setVibration(p: VibrationParams): void;
-	poll(clock: Clock): void;
+	poll(clock: HostClock): void;
 }
 
 export interface InputHub {

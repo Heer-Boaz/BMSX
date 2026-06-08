@@ -254,12 +254,14 @@ function decodeFrameSchedulerState(value: unknown, label: string): FrameSchedule
 
 function encodeRuntimeVblankState(state: RuntimeSaveMachineState['vblank']): RuntimeSaveMachineState['vblank'] {
 	return {
+		nowCycles: state.nowCycles,
 		cyclesIntoFrame: state.cyclesIntoFrame,
 	};
 }
 
 function decodeRuntimeVblankState(value: unknown, label: string): RuntimeSaveMachineState['vblank'] {
 	return {
+		nowCycles: requireI64(decodeNumberObjectField(value, label, 'nowCycles', 'vblank.nowCycles'), 'vblank.nowCycles'),
 		cyclesIntoFrame: decodeNumberObjectField(value, label, 'cyclesIntoFrame', 'vblank.cyclesIntoFrame'),
 	};
 }

@@ -1,6 +1,6 @@
 import ts from 'typescript';
-import { previousIdentifier, trimmedExpressionText } from '../../../../machine/ts/language/cpp/syntax/syntax';
-import type { Token } from '../../../../machine/ts/language/cpp/syntax/tokens';
+import { previousIdentifier, trimmedExpressionText } from '../../language/cpp/syntax/syntax';
+import type { Token } from '../../language/cpp/syntax/tokens';
 import { pushTokenLintIssue } from '../cpp/support/diagnostics';
 import { defineLintRule } from '../../rule';
 import { pushLintIssue, type LintIssue } from '../ts/support/ast';

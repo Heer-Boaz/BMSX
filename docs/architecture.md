@@ -19,6 +19,21 @@ memory, command packets, fixed-point formats, opcodes, and timing edges. A cart
 may use BIOS or cart-library helpers, but those helpers must ultimately program
 the same machine-visible bytes and registers the cart could use directly.
 
+Host wall clocks, browser performance counters, UI timers, and process scheduling
+are host services. Cart-visible time is BMSX machine time derived from emulated
+CPU/scheduler progress unless the machine specification defines a concrete RTC
+device. Firmware helpers must not expose host wall-clock time as machine state.
+`os.time`/`os.date` use the BMSX civil-time conversion, not the host timezone,
+DST rules, JavaScript `Date`, or libc local-time functions. `os.time(table)`
+consumes integer `year`, `month`, and `day` fields plus optional integer
+`hour`, `min`, and `sec` fields. Lua's standard defaults and normalization are
+preserved: omitted `hour` is noon, omitted `min`/`sec` are zero, and out-of-range
+calendar/time fields normalize deterministically through BMSX civil time.
+`os.time(table)` writes those normalized Lua date fields back to the supplied
+table, matching Lua's documented table-normalization contract. `os.date` and
+`os.difftime` consume integer BMSX time values; fractional time arguments are
+not silently truncated.
+
 ## ABI symbol policy
 
 Machine ABI symbols are numeric facts about the machine, not emulator-injected
@@ -526,6 +541,11 @@ queries enter
 the query port and evaluate against that ICU snapshot. A root action query
 returns the sampled action status/value words; a compound expression returns
 boolean `1`/`0` in `sys_inp_status` and zero in `sys_inp_value`.
+
+The VBlank sample edge timestamps sampled action state with BMSX machine time
+derived from the scheduler. Host input event timestamps are physical host
+metadata used by the host input owner; they must not become sampled
+cart-visible `pressTime` or action timestamp semantics.
 
 `sys_inp_ctrl` writes enter the control port. The control port latches the raw
 command word through the registerfile, then commits selected action/bind words,

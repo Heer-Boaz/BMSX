@@ -3,7 +3,6 @@ import { InputStateManager, makeActionState, makeButtonState } from './manager';
 import { inputBindingId, type ActionState, type ActionStateQuery, type ButtonId, type ButtonState, type GamepadInputMapping, type InputEvent, type InputHandler, type KeyboardInputMapping, type PointerInputMapping } from './models';
 import type { VibrationParams } from '../platform';
 import { ContextStack, MappingContext } from './context';
-import { machineManager } from '../core/machine_manager';
 import { clamp } from '../common/clamp';
 import { INPUT_SOURCES, type InputControllerPlayerInputSource, type InputSource } from '../machine/devices/input/contracts';
 
@@ -95,7 +94,7 @@ export class PlayerInput implements InputControllerPlayerInputSource {
 	private readonly actionGuardRecords: Map<string, ActionGuardRecord> = new Map();
 	private readonly simActionRepeatRecords: Map<string, SimActionRepeatRecord> = new Map();
 	private readonly rawActionRepeatRecords: Map<string, RawActionRepeatRecord> = new Map();
-	private lastPollTimestampMs: number = null;
+	private lastPollTimestampMs = 0;
 	private frameCounter = 0;
 
 	/**
@@ -728,7 +727,7 @@ export class PlayerInput implements InputControllerPlayerInputSource {
 		let result = false;
 		const pressed = state.pressed;
 		const justpressed = state.justpressed;
-		const now = this.lastPollTimestampMs ?? machineManager.platform.clock.now();
+		const now = this.lastPollTimestampMs;
 		const startMs = state.pressedAtMs ?? state.timestamp ?? now;
 		const frameMs = this.frameDurationMs;
 		const initialDelayMs = INITIAL_REPEAT_DELAY_FRAMES * frameMs;
@@ -841,7 +840,7 @@ export class PlayerInput implements InputControllerPlayerInputSource {
 			this.inputHandlers[source]?.reset(except);
 		}
 		this.rawActionRepeatRecords.clear();
-		this.lastPollTimestampMs = null;
+		this.lastPollTimestampMs = 0;
 		this.frameCounter = 0;
 	}
 }

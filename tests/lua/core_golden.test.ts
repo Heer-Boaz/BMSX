@@ -291,6 +291,7 @@ test('core golden: runtime VBlank end publishes scanout at the new frame origin'
 	const memory = new Memory({ systemRom: new Uint8Array() });
 	const scheduler = new DeviceScheduler(new CPU(memory));
 	const scanoutCalls: Array<{ active: boolean; cyclesIntoFrame: number }> = [];
+	const inputSampleEdges: Array<{ currentTimeMs: number; nowCycles: number }> = [];
 	let raisedIrq = 0;
 	const runtime = {
 		timing: {
@@ -306,7 +307,9 @@ test('core golden: runtime VBlank end publishes scanout at the new frame origin'
 			scheduler,
 			inputController: {
 				cancelSampleArm() { },
-				onVblankEdge(_currentTimeMs: number, _nowCycles: number) { },
+				onVblankEdge(currentTimeMs: number, nowCycles: number) {
+					inputSampleEdges.push({ currentTimeMs, nowCycles });
+				},
 			},
 			irqController: {
 				postLoad() { },
@@ -328,6 +331,9 @@ test('core golden: runtime VBlank end publishes scanout at the new frame origin'
 		frameLoop: {
 			currentFrameState: null,
 		},
+		machineElapsedMs() {
+			return scheduler.currentNowCycles() * 1000 / 5000;
+		},
 	} as unknown as Runtime;
 	const vblank = new VblankState(runtime);
 	vblank.setVblankCycles(20);
@@ -335,6 +341,7 @@ test('core golden: runtime VBlank end publishes scanout at the new frame origin'
 	scheduler.setNowCycles(80);
 	vblank.handleBeginTimer();
 	assert.equal(raisedIrq, IRQ_VBLANK);
+	assert.deepEqual(inputSampleEdges[0], { currentTimeMs: 16, nowCycles: 80 });
 	assert.deepEqual(scanoutCalls[0], { active: true, cyclesIntoFrame: 80 });
 
 	scheduler.setNowCycles(100);

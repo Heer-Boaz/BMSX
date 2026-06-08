@@ -1,6 +1,6 @@
-import { type FunctionInfo } from '../../../../../machine/ts/language/cpp/syntax/declarations';
-import { cppAccessChainLeafName, cppCallTarget, isFunctionDeclaratorParen } from '../../../../../machine/ts/language/cpp/syntax/syntax';
-import { type Token } from '../../../../../machine/ts/language/cpp/syntax/tokens';
+import { type FunctionInfo } from '../../../language/cpp/syntax/declarations';
+import { cppAccessChainLeafName, cppCallTarget, isFunctionDeclaratorParen } from '../../../language/cpp/syntax/syntax';
+import { type Token } from '../../../language/cpp/syntax/tokens';
 import { type AnalysisRegion, lineInAnalysisRegion } from '../../../../analysis/lint_suppressions';
 import { incrementUsageCount } from '../../../function_usage';
 import { isConstructorLike } from './bindings';

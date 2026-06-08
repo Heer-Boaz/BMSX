@@ -9,7 +9,6 @@
 
 #include "common/subscription.h"
 #include "common/primitives.h"
-#include "machine/runtime/clock.h"
 #include "machine/scheduler/microtask_queue.h"
 #include "render/backend/backend.h"
 #include <functional>
@@ -66,6 +65,12 @@ enum class LogLevel {
 	Info,
 	Warn,
 	Error
+};
+
+class HostClock {
+public:
+	virtual ~HostClock() = default;
+	virtual auto now() -> f64 = 0;
 };
 
 /* ============================================================================
@@ -127,7 +132,7 @@ class Platform {
 public:
 	virtual ~Platform() = default;
 
-	virtual auto clock() -> Clock* = 0;
+	virtual auto clock() -> HostClock* = 0;
 	virtual auto frameLoop() -> FrameLoop* = 0;
 	virtual auto lifecycle() -> Lifecycle* = 0;
 	virtual auto inputHub() -> InputHub* = 0;

@@ -111,7 +111,7 @@ public:
 	Runtime& ensureRuntime(const RuntimeOptions& options);
 	Registry& registry() { return Registry::instance(); }
 	const MachineManifest& machineManifest() const { return *machine_manifest; }
-	Clock* clock() { return m_platform->clock(); }
+	HostClock* clock() { return m_platform->clock(); }
 	SoundMaster* soundMaster() { return m_sound_master.get(); }
 	TextureManager* texmanager() { return m_texture_manager.get(); }
 	RomBootManager& romBootManager() { return *m_rom_boot_manager; }

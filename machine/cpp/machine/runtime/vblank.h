@@ -8,6 +8,7 @@ namespace bmsx {
 class Runtime;
 
 struct RuntimeVblankSnapshot {
+	i64 nowCycles = 0;
 	int cyclesIntoFrame = 0;
 };
 

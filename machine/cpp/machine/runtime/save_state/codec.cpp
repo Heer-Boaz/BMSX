@@ -275,6 +275,7 @@ FrameSchedulerStateSnapshot decodeFrameSchedulerState(const BinValue& value, con
 
 BinValue encodeRuntimeVblankState(const RuntimeVblankSnapshot& state) {
 	BinObject object;
+	object["nowCycles"] = static_cast<i64>(state.nowCycles);
 	object["cyclesIntoFrame"] = static_cast<i64>(state.cyclesIntoFrame);
 	return BinValue(std::move(object));
 }
@@ -282,6 +283,7 @@ BinValue encodeRuntimeVblankState(const RuntimeVblankSnapshot& state) {
 RuntimeVblankSnapshot decodeRuntimeVblankState(const BinValue& value, const char* label) {
 	const BinObject& object = requireObject(value, label);
 	RuntimeVblankSnapshot state;
+	state.nowCycles = requireI64(requireField(object, "nowCycles", label), "vblank.nowCycles");
 	state.cyclesIntoFrame = requireI32(requireField(object, "cyclesIntoFrame", label), "vblank.cyclesIntoFrame");
 	return state;
 }

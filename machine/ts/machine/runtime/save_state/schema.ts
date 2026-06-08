@@ -59,6 +59,7 @@ export const RUNTIME_SAVE_STATE_PROP_NAMES = [
 	'negy',
 	'negz',
 	'next',
+	'nowCycles',
 	'objects',
 	'open',
 	'openUpvalues',

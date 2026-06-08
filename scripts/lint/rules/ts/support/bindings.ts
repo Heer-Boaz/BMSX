@@ -1,6 +1,6 @@
 import ts from 'typescript';
-import { getPropertyName, isVariableImportExportName } from '../../../../../machine/ts/language/ts/ast/expressions';
-import { isAssignmentOperator } from '../../../../../machine/ts/language/ts/ast/operators';
+import { getPropertyName, isVariableImportExportName } from '../../../language/ts/ast/expressions';
+import { isAssignmentOperator } from '../../../language/ts/ast/operators';
 
 export function getClassScopePath(node: ts.Node): string | null {
 	const parts: string[] = [];

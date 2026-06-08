@@ -39,8 +39,7 @@ void InputStateManager::beginFrame(f64 currentTimeMs) {
 	}
 }
 
-void InputStateManager::update(f64 currentTimeMs) {
-	m_currentTimeMs = currentTimeMs;
+void InputStateManager::update(f64) {
 	pruneOldEvents();
 	pruneBufferedEdges(m_bufferedPressEdges);
 	pruneBufferedEdges(m_bufferedReleaseEdges);
@@ -154,43 +153,38 @@ void InputStateManager::latchButtonState(const std::string& button, const Button
 	const auto bufferedRelease = getBufferedEdgeRecord(m_bufferedReleaseEdges, button, 1);
 	const bool previousPressed = state.pressed;
 	const bool nextPressed = pending ? pending->pressed : rawState.pressed;
-	f64 nextTimestamp = buttonTimestampOr(rawState, buttonTimestampOr(state, currentTimeMs));
-	if (pending && pending->timestamp.has_value()) {
-		nextTimestamp = pending->timestamp.value();
-	}
+	const bool sampledPress = nextPressed && !previousPressed;
+	const bool sampledRelease = !nextPressed && previousPressed;
+	const f64 nextTimestamp = pending || sampledPress || sampledRelease
+		? currentTimeMs
+		: buttonTimestampOr(state, currentTimeMs);
 	std::optional<i32> nextPressId;
-	if (rawState.pressId.has_value()) {
+	if (pending && pending->pressId.has_value()) {
+		nextPressId = pending->pressId;
+	} else if (rawState.pressId.has_value()) {
 		nextPressId = rawState.pressId;
 	} else if (state.pressId.has_value()) {
 		nextPressId = state.pressId;
-	} else if (pending && pending->pressId.has_value()) {
-		nextPressId = pending->pressId;
 	}
 	std::optional<f64> nextPressedAtMs;
 	if (nextPressed) {
-		if (rawState.pressedAtMs.has_value()) {
-			nextPressedAtMs = rawState.pressedAtMs;
-		} else if (pending && pending->pressedAtMs.has_value()) {
-			nextPressedAtMs = pending->pressedAtMs;
-		} else if (state.pressedAtMs.has_value()) {
+		if (previousPressed && state.pressedAtMs.has_value()) {
 			nextPressedAtMs = state.pressedAtMs;
 		} else {
-			nextPressedAtMs = nextTimestamp;
+			nextPressedAtMs = currentTimeMs;
 		}
 	}
 	std::optional<f64> nextReleasedAtMs;
 	if (!nextPressed) {
-		if (rawState.releasedAtMs.has_value()) {
-			nextReleasedAtMs = rawState.releasedAtMs;
+		if (sampledRelease || bufferedRelease.has_value() || (pending && pending->justreleased) || rawState.justreleased) {
+			nextReleasedAtMs = currentTimeMs;
 		} else if (state.releasedAtMs.has_value()) {
 			nextReleasedAtMs = state.releasedAtMs;
-		} else if (bufferedRelease.has_value()) {
-			nextReleasedAtMs = nextTimestamp;
 		}
 	}
 	state.pressed = nextPressed;
-	state.justpressed = bufferedPress.has_value() || (pending && pending->justpressed && !previousPressed);
-	state.justreleased = bufferedRelease.has_value() || (pending && pending->justreleased && previousPressed);
+	state.justpressed = bufferedPress.has_value() || sampledPress || (pending && pending->justpressed && !previousPressed) || (rawState.justpressed && !previousPressed);
+	state.justreleased = bufferedRelease.has_value() || sampledRelease || (pending && pending->justreleased && previousPressed) || (rawState.justreleased && previousPressed);
 	state.consumed = nextPressed && state.consumed;
 	state.timestamp = nextTimestamp;
 	state.pressedAtMs = nextPressedAtMs;

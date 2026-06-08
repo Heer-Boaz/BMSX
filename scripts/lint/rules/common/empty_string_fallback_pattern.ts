@@ -8,8 +8,8 @@ import {
 	findPreviousDelimiter,
 	isEmptyStringToken,
 	trimmedExpressionText,
-} from '../../../../machine/ts/language/cpp/syntax/syntax';
-import type { Token } from '../../../../machine/ts/language/cpp/syntax/tokens';
+} from '../../language/cpp/syntax/syntax';
+import type { Token } from '../../language/cpp/syntax/tokens';
 import { pushTokenLintIssue, type LintIssue } from '../cpp/support/diagnostics';
 import { nullishNullNormalizationPatternRule } from '../code_quality/nullish_null_normalization_pattern';
 import { redundantConditionalPatternRule } from '../code_quality/redundant_conditional_pattern';

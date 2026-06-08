@@ -6,7 +6,6 @@
 #include "machine/program/loader.h"
 #include "machine/runtime/system_irq.h"
 #include "machine/runtime/timing/config.h"
-#include "machine/runtime/clock.h"
 #include "rompack/format.h"
 #include "rompack/loader.h"
 #include "input/manager.h"
@@ -22,7 +21,6 @@ constexpr std::array<u8, CART_ROM_HEADER_SIZE> CART_ROM_EMPTY_HEADER = {};
 
 Runtime::Runtime(
 	const RuntimeOptions& options,
-	Clock& clock,
 	Input& input,
 	MicrotaskQueue& microtasks,
 	GameView& view
@@ -32,7 +30,6 @@ Runtime::Runtime(
 	, m_systemRomBytes(options.systemRomBytes)
 	, m_cartRomBytes(options.cartRomBytes)
 	, m_machineManifest(options.machineManifest)
-	, m_clock(clock)
 	, m_view(view)
 	, m_memory(MemoryInit{
 		{ options.systemRomBytes.data, options.systemRomBytes.size },
@@ -56,7 +53,6 @@ Runtime::Runtime(
 	machine.resetDevices();
 	vblank.setVblankCycles(*this, options.vblankCycles);
 	setRenderWorkUnitsPerSec(*this, options.vdpWorkUnitsPerSec, options.geoWorkUnitsPerSec);
-	m_randomSeedValue = static_cast<uint32_t>(m_clock.now());
 	refreshMemoryMap();
 	machine.cpu.setExternalRootMarker([this](GcHeap& heap) {
 		for (const auto& entry : m_moduleCache) {
@@ -80,6 +76,10 @@ Runtime::Runtime(
 Runtime::~Runtime() {
 	configureLuaHeapUsage({});
 	resetTrackedLuaHeapBytes();
+}
+
+auto Runtime::machineElapsedMs() const -> f64 {
+	return static_cast<f64>(machine.scheduler.currentNowCycles()) * 1000.0 / static_cast<f64>(timing.cpuHz);
 }
 
 uint32_t Runtime::baseRamUsedBytes() const {
@@ -240,7 +240,6 @@ void Runtime::resetRuntimeForProgramReload() {
 	machine.memory.clearIoSlots();
 	machine.initializeSystemIo();
 	resetHardwareState();
-	m_randomSeedValue = static_cast<uint32_t>(m_clock.now());
 }
 
 void Runtime::queueLifecycleHandlers(bool runInit, bool runNewGame) {

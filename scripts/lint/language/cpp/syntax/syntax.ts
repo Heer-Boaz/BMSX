@@ -160,7 +160,7 @@ export function isCppClockNowCallTarget(text: string): boolean {
 		case 'std::chrono::steady_clock::now':
 		case 'std::chrono::system_clock::now':
 		case 'std::chrono::high_resolution_clock::now':
-		case 'Clock::now':
+		case 'HostClock::now':
 		case 'FrameClock::now':
 			return true;
 		default:

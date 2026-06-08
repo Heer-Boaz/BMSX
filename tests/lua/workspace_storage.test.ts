@@ -69,7 +69,10 @@ function createPlatformStub(storage: MockStorage) {
 			onWillExit: () => () => { /* noop */ },
 		},
 		clock: {
-			scheduleOnce: () => ({ cancel() { /* noop */ } }),
+			now: () => 0,
+			perf_now: () => 0,
+			dateNow: () => 42,
+			scheduleOnce: () => ({ cancel() { /* noop */ }, isActive: () => false }),
 		},
 	} as const;
 }
@@ -446,7 +449,6 @@ test('explicit lua save promotes canonical source and removes dirty entry', asyn
 		cartProjectRootPath: 'offline-cart',
 		systemProjectRootPath: 'machine/ts',
 		storageService: storage,
-		clock: { dateNow: () => 42 },
 		luaGenericChunksExecuted: new Set<string>(),
 	} as any;
 

@@ -317,6 +317,7 @@ add_library(bmsx_core STATIC
 	machine/firmware/devtools.cpp
 	machine/firmware/builtin_descriptors.cpp
 	machine/firmware/builtins.cpp
+	machine/firmware/civil_time.cpp
 	machine/firmware/system_globals.cpp
 	machine/firmware/handler_registry.cpp
 	machine/cpu/disassembler.cpp

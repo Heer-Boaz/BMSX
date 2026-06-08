@@ -1,5 +1,5 @@
 import {
-	Clock,
+	HostClock,
 	FrameLoop,
 	Lifecycle,
 	StorageService,
@@ -54,7 +54,7 @@ const ONSCREEN_LAYOUT_MODE: 'canvas' | 'gamepad' = 'canvas';
  * without caring about underlying APIs.
  */
 export class BrowserPlatform implements Platform {
-	clock: Clock;
+	clock: HostClock;
 	frames: FrameLoop;
 	lifecycle: Lifecycle;
 	input: InputHub;
@@ -76,7 +76,7 @@ export class BrowserPlatform implements Platform {
 	microtasks: MicrotaskQueue;
 
 	constructor(surface: HTMLElement, canvas: HTMLCanvasElement, options: BrowserPlatformOptions) {
-		this.clock = new BrowserClock();
+		this.clock = new BrowserHostClock();
 		this.frames = new BrowserFrameLoop();
 		this.lifecycle = new BrowserLifecycle();
 		this.storage = new BrowserStorage();
@@ -121,7 +121,7 @@ export interface BrowserPlatformOptions {
 	debug: boolean;
 }
 
-class BrowserClock implements Clock {
+class BrowserHostClock implements HostClock {
 	now(): number {
 		return performance.now();
 	}
@@ -141,7 +141,7 @@ class BrowserClock implements Clock {
 			active = false;
 			try { cb(this.now()); } catch (e) { /* swallow errors from callbacks */
 				throw e;
-				console.warn(`[BrowserClock] Error in scheduled callback: ${e}`);
+				console.warn(`[BrowserHostClock] Error in scheduled callback: ${e}`);
 			}
 		}, delayMs);
 		return {
@@ -478,7 +478,7 @@ class KeyboardDevice implements InputDevice {
 		throw new Error('Keyboard vibration not supported');
 	}
 
-	poll(_clock: Clock): void { }
+	poll(_clock: HostClock): void { }
 }
 
 class PointerDevice implements InputDevice {
@@ -491,7 +491,7 @@ class PointerDevice implements InputDevice {
 		throw new Error('Pointer vibration not supported');
 	}
 
-	poll(_clock: Clock): void { }
+	poll(_clock: HostClock): void { }
 }
 
 class GamepadDevice implements InputDevice {
@@ -527,7 +527,7 @@ class GamepadDevice implements InputDevice {
 		});
 	}
 
-	poll(clock: Clock): void {
+	poll(clock: HostClock): void {
 		const pads = navigator.getGamepads();
 		if (!pads) return;
 		const pad = pads[this.index];
@@ -593,13 +593,13 @@ function modifiersFrom(event: MouseEvent | PointerEvent | WheelEvent): InputModi
 class BrowserInputHub implements InputHub {
 	private subs = new Set<(e: InputEvt) => void>();
 	private devicesList: InputDevice[] = [];
-	private clock: Clock;
+	private clock: HostClock;
 	private keyboardCapture: ((code: string) => boolean) = null;
 	private nextPressId = 1;
 	private readonly activeKeyPressIds = new Map<string, number>();
 	private readonly activePointerPressIds = new Map<string, number>();
 
-	constructor(surface: HTMLElement, clock: Clock) {
+	constructor(surface: HTMLElement, clock: HostClock) {
 		this.clock = clock;
 
 		const keyboard = new KeyboardDevice();

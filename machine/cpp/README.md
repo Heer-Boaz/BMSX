@@ -86,7 +86,7 @@ The C++ implementation mirrors the TypeScript platform abstraction layer, making
 |------------|-----|
 | `platform.ts` | `platform.h` |
 | `SubscriptionHandle` | `SubscriptionHandle` struct |
-| `Clock`, `FrameLoop`, etc. | Abstract base classes |
+| `HostClock`, `FrameLoop`, etc. | Abstract base classes |
 | `platform_browser.ts` | N/A (web only) |
 | N/A | `platform.cpp` |
 

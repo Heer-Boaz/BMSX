@@ -3,7 +3,6 @@
 #include "common/clamp.h"
 #include "machine/common/number_format.h"
 #include "machine/runtime/runtime.h"
-#include "machine/runtime/clock.h"
 
 #include <algorithm>
 #include <cmath>
@@ -18,7 +17,6 @@ int floorIntArg(NativeArgsView args, size_t index) {
 
 void registerMathAndEasingBuiltins(Runtime& runtime) {
 	CPU& cpu = runtime.machine.cpu;
-	Clock* runtimeClock = &runtime.clock();
 	auto key = [&runtime](std::string_view name) {
 		return runtime.internString(name);
 	};
@@ -194,8 +192,8 @@ void registerMathAndEasingBuiltins(Runtime& runtime) {
 		int span = upper - lower + 1;
 		out.push_back(valueNumber(static_cast<double>(lower + static_cast<int>(randomValue * span))));
 	}));
-	mathTable->set(key("randomseed"), runtime.machine.cpu.createNativeFunction("math.randomseed", [&runtime, runtimeClock](NativeArgsView args, NativeResults& out) {
-		double seedValue = args.empty() ? runtimeClock->now() : asNumber(args.at(0));
+	mathTable->set(key("randomseed"), runtime.machine.cpu.createNativeFunction("math.randomseed", [&runtime](NativeArgsView args, NativeResults& out) {
+		double seedValue = args.empty() ? runtime.machineElapsedMs() : asNumber(args.at(0));
 		uint64_t seed = static_cast<uint64_t>(std::floor(seedValue));
 		runtime.m_randomSeedValue = static_cast<uint32_t>(seed & 0xffffffffu);
 		(void)out;

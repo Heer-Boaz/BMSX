@@ -4,6 +4,7 @@ import { refreshDeviceTimings } from './timing/config';
 import { TIMER_KIND_VBLANK_BEGIN, TIMER_KIND_VBLANK_END } from '../scheduler/device';
 
 export type RuntimeVblankSnapshot = {
+	nowCycles: number;
 	cyclesIntoFrame: number;
 };
 
@@ -78,8 +79,10 @@ export class VblankState {
 	}
 
 	public capture(): RuntimeVblankSnapshot {
+		const nowCycles = this.runtime.machine.scheduler.currentNowCycles();
 		return {
-			cyclesIntoFrame: this.getCyclesIntoFrame(),
+			nowCycles,
+			cyclesIntoFrame: nowCycles - this.frameStartCycle,
 		};
 	}
 
@@ -89,8 +92,8 @@ export class VblankState {
 		runtime.frameLoop.reset();
 		runtime.screen.reset();
 		this.resetScheduler();
-		runtime.machine.scheduler.setNowCycles(state.cyclesIntoFrame);
-		this.frameStartCycle = 0;
+		runtime.machine.scheduler.setNowCycles(state.nowCycles);
+		this.frameStartCycle = state.nowCycles - state.cyclesIntoFrame;
 		this.vblankSequence = 0;
 		this.lastCompletedVblankSequence = 0;
 		this.activeTickCompleted = false;
@@ -146,7 +149,7 @@ export class VblankState {
 		const runtime = this.runtime;
 		this.vblankSequence += 1;
 		runtime.machine.vdp.presentReadyFrameOnVblankEdge();
-		runtime.machine.inputController.onVblankEdge(runtime.frameLoop.currentTimeMs, runtime.machine.scheduler.nowCycles);
+		runtime.machine.inputController.onVblankEdge(runtime.machineElapsedMs(), runtime.machine.scheduler.nowCycles);
 		this.publishVblankTiming(true);
 		runtime.machine.irqController.raise(IRQ_VBLANK);
 		if (runtime.frameLoop.frameActive) {

@@ -1,4 +1,4 @@
-import type { Token } from '../../../../../machine/ts/language/cpp/syntax/tokens';
+import type { Token } from '../../../language/cpp/syntax/tokens';
 import { type LintIssue, type LintRuleName } from '../../../rule';
 import { type NormalizedBodyInfo } from '../../../normalized_body';
 

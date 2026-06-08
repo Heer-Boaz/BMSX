@@ -274,7 +274,7 @@ function createRuntimeSaveState(): RuntimeSaveState {
 				lastTickCompleted: true,
 				lastTickConsumedSequence: 111,
 			},
-			vblank: { cyclesIntoFrame: 0 },
+			vblank: { nowCycles: 0, cyclesIntoFrame: 0 },
 		},
 		cpuState: {
 			globals: [

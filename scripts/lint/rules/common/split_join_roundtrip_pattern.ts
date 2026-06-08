@@ -1,7 +1,7 @@
 import { defineLintRule } from '../../rule';
 import { type LintIssue, pushLintIssue } from '../ts/support/ast';
 import ts from 'typescript';
-import { getCallTargetLeafName, unwrapExpression } from '../../../../machine/ts/language/ts/ast/expressions';
+import { getCallTargetLeafName, unwrapExpression } from '../../language/ts/ast/expressions';
 import { getActiveBinding } from '../ts/support/ast';
 import { findSplitLikeDelimiterInExpression, isJoinLikeCallTarget, splitJoinDelimiterFingerprint } from '../ts/support/split_join';
 import { LintBinding } from '../ts/support/types';

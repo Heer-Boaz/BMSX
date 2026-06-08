@@ -42,7 +42,6 @@ struct ProgramImage;
 struct MachineManifest;
 struct CartManifest;
 class RuntimeRomPackage;
-class Clock;
 class GameView;
 class Input;
 class MicrotaskQueue;
@@ -94,7 +93,6 @@ public:
 
 	Runtime(
 		const RuntimeOptions& options,
-		Clock& clock,
 		Input& input,
 		MicrotaskQueue& microtasks,
 		GameView& view
@@ -142,7 +140,7 @@ public:
 	void startCartProgram();
 
 	auto frameDeltaMs() const -> f64 { return frameLoop.frameDeltaMs; }
-	auto clock() const -> Clock& { return m_clock; }
+	auto machineElapsedMs() const -> f64;
 	auto baseRamUsedBytes() const -> uint32_t;
 	auto ramUsedBytes() const -> uint32_t;
 	auto ramTotalBytes() const -> uint32_t;
@@ -248,7 +246,6 @@ private:
 	RuntimeRomPackage* m_activeRomPackage = nullptr;
 	RuntimeRomPackage* m_systemRomPackage = nullptr;
 	RuntimeRomPackage* m_cartRomPackage = nullptr;
-	Clock& m_clock;
 	GameView& m_view;
 
 	// Runtime core

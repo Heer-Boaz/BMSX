@@ -1,7 +1,7 @@
 import ts from 'typescript';
-import type { FunctionInfo } from '../../../../machine/ts/language/cpp/syntax/declarations';
-import { collectStatementRanges, cppRangeHas } from '../../../../machine/ts/language/cpp/syntax/syntax';
-import type { Token } from '../../../../machine/ts/language/cpp/syntax/tokens';
+import type { FunctionInfo } from '../../language/cpp/syntax/declarations';
+import { collectStatementRanges, cppRangeHas } from '../../language/cpp/syntax/syntax';
+import type { Token } from '../../language/cpp/syntax/tokens';
 import { pushTokenLintIssue } from '../cpp/support/diagnostics';
 import { lineInAnalysisRegion, type AnalysisRegion } from '../../../analysis/lint_suppressions';
 import { noteQualityLedger, type QualityLedger } from '../../../analysis/quality_ledger';

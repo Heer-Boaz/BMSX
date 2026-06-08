@@ -74,7 +74,7 @@ export function makeButtonState(partialState?: Partial<ButtonState>): ButtonStat
 		repeatcount = 0,
 		consumed = false,
 		presstime = null,
-		timestamp = machineManager.platform.clock.now(),
+		timestamp = 0,
 		pressedAtMs = null,
 		releasedAtMs = null,
 		pressId = null,
@@ -145,6 +145,7 @@ export class InputStateManager {
 	private readonly bufferedReleaseEdges = new Map<ButtonId, BufferedEdgeRecord>();
 	private readonly pendingFrameStates = new Map<ButtonId, ButtonState>();
 	private currentFrame = 0;
+	private currentTimeMs = 0;
 
 	/**
 	 * Constructs an instance of the InputStateManager.
@@ -162,6 +163,7 @@ export class InputStateManager {
 
 	/** Prepare per-button edge flags for a new frame. */
 	beginFrame(currentTime: number): void {
+		this.currentTimeMs = currentTime;
 		this.currentFrame += 1;
 		for (const state of this.buttonStates.values()) {
 			state.justpressed = false;
@@ -298,18 +300,22 @@ export class InputStateManager {
 		const bufferedRelease = this.getBufferedEdgeRecord(this.bufferedReleaseEdges, identifier, 1);
 		const previousPressed = state.pressed;
 		const nextPressed = pending?.pressed ?? rawState.pressed ?? false;
-		const nextTimestamp = pending?.timestamp ?? rawState.timestamp ?? state.timestamp ?? currentTime;
-		const nextPressId = rawState.pressId ?? state.pressId ?? pending?.pressId;
+		const sampledPress = nextPressed && !previousPressed;
+		const sampledRelease = !nextPressed && previousPressed;
+		const nextTimestamp = pending !== undefined || sampledPress || sampledRelease
+			? currentTime
+			: (state.timestamp ?? currentTime);
+		const nextPressId = pending?.pressId ?? rawState.pressId ?? state.pressId;
 		const nextPressedAtMs = nextPressed
-			? (rawState.pressedAtMs ?? pending?.pressedAtMs ?? state.pressedAtMs ?? nextTimestamp)
+			? (previousPressed && state.pressedAtMs != null ? state.pressedAtMs : currentTime)
 			: null;
 		const nextReleasedAtMs = nextPressed
 			? null
-			: (rawState.releasedAtMs ?? state.releasedAtMs ?? (bufferedRelease ? nextTimestamp : null));
+			: (sampledRelease || bufferedRelease !== null || !!pending?.justreleased || !!rawState.justreleased ? currentTime : state.releasedAtMs);
 		const nextConsumed = nextPressed && state.consumed;
 		state.pressed = nextPressed;
-		state.justpressed = bufferedPress != null || !!pending?.justpressed && !previousPressed;
-		state.justreleased = bufferedRelease != null || !!pending?.justreleased && previousPressed;
+		state.justpressed = bufferedPress != null || sampledPress || (!!pending?.justpressed && !previousPressed) || (!!rawState.justpressed && !previousPressed);
+		state.justreleased = bufferedRelease != null || sampledRelease || (!!pending?.justreleased && previousPressed) || (!!rawState.justreleased && previousPressed);
 		state.consumed = nextConsumed;
 		state.timestamp = nextTimestamp;
 		state.pressedAtMs = nextPressedAtMs;
@@ -334,7 +340,7 @@ export class InputStateManager {
 		const window = framewindow != null
 			? framewindow
 			: this.bufferframeDuration;
-		const currentTime = machineManager.platform.clock.now();
+		const currentTime = this.currentTimeMs;
 		const baseState = this.buttonStates.get(identifier);
 		const pressed = baseState?.pressed ?? false;
 		const justpressed = !!baseState?.justpressed || this.getBufferedEdgeRecord(this.bufferedPressEdges, identifier, 1) != null;

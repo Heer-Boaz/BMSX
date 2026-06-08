@@ -1,5 +1,5 @@
 import ts from 'typescript';
-import { getCallExpressionTarget, unwrapExpression } from '../../../../../machine/ts/language/ts/ast/expressions';
+import { getCallExpressionTarget, unwrapExpression } from '../../../language/ts/ast/expressions';
 
 export function getDelegationCallExpression(expression: ts.Expression): ts.CallExpression | null {
 	const unwrapped = unwrapExpression(expression);

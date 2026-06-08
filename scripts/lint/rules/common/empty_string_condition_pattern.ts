@@ -1,7 +1,7 @@
 import { LuaBinaryOperator as BinaryOperator, LuaSyntaxKind as SyntaxKind, type LuaExpression as Expression } from '../../../../machine/ts/lua/syntax/ast';
 import { isLuaEmptyStringLiteral as isEmptyStringLiteral } from '../../../../machine/ts/lua/syntax/literals';
-import { isEmptyStringToken } from '../../../../machine/ts/language/cpp/syntax/syntax';
-import type { Token } from '../../../../machine/ts/language/cpp/syntax/tokens';
+import { isEmptyStringToken } from '../../language/cpp/syntax/syntax';
+import type { Token } from '../../language/cpp/syntax/tokens';
 import { lintAdjacentEqualityComparison } from '../cpp/support/comparison';
 import type { LintIssue } from '../cpp/support/diagnostics';
 import type { CartLintIssue, CartLintIssuePusher } from '../../lua_rule';

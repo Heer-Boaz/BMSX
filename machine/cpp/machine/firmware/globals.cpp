@@ -1,11 +1,11 @@
 #include "machine/runtime/runtime.h"
 #include "machine/firmware/builtins.h"
 #include "machine/firmware/system_globals.h"
+#include "machine/firmware/civil_time.h"
 #include "machine/program/load_compiler.h"
 #include "machine/common/number_format.h"
 #include "machine/memory/lua_heap_usage.h"
 #include "machine/memory/map.h"
-#include "machine/runtime/clock.h"
 #include "common/time.h"
 #include "common/utf8.h"
 #include "rompack/format.h"
@@ -19,7 +19,6 @@
 #include <cctype>
 #include <cstdlib>
 #include <cstring>
-#include <ctime>
 #include <iomanip>
 #include <iostream>
 #include <limits>
@@ -29,6 +28,8 @@
 namespace bmsx {
 namespace {
 using StringDifference = std::string::difference_type;
+constexpr double LUA_TIME_SAFE_INT_MIN = -9007199254740991.0;
+constexpr double LUA_TIME_SAFE_INT_MAX = 9007199254740991.0;
 
 struct LuaPcallError final : std::exception {
 	const Value value;
@@ -101,6 +102,48 @@ int normalizeLuaStringIndex(double value, int length) {
 		return length + integer + 1;
 	}
 	return 1;
+}
+
+i64 requireLuaCivilInteger(Value value, std::string_view field, int delta) {
+	if (!valueIsNumber(value)) {
+		throw BMSX_RUNTIME_ERROR("field '" + std::string(field) + "' is not an integer");
+	}
+	const double number = asNumber(value);
+	const double integer = std::trunc(number);
+	if (number - number != 0.0 || integer != number) {
+		throw BMSX_RUNTIME_ERROR("field '" + std::string(field) + "' is not an integer");
+	}
+	if (!(number >= 0.0
+		? number - static_cast<double>(delta) <= static_cast<double>(std::numeric_limits<int>::max())
+		: static_cast<double>(std::numeric_limits<int>::min() + delta) <= number)) {
+		throw BMSX_RUNTIME_ERROR("field '" + std::string(field) + "' is out-of-bound");
+	}
+	return static_cast<i64>(number);
+}
+
+i64 requireLuaCivilTimeField(Value value, std::string_view field, int defaultValue, int delta) {
+	if (isNil(value)) {
+		if (defaultValue < 0) {
+			throw BMSX_RUNTIME_ERROR("field '" + std::string(field) + "' missing in date table");
+		}
+		return defaultValue;
+	}
+	return requireLuaCivilInteger(value, field, delta);
+}
+
+i64 requireLuaTimeValue(Value value) {
+	if (!valueIsNumber(value)) {
+		throw BMSX_RUNTIME_ERROR("time is not an integer");
+	}
+	const double number = asNumber(value);
+	const double integer = std::trunc(number);
+	if (number - number != 0.0 || integer != number) {
+		throw BMSX_RUNTIME_ERROR("time is not an integer");
+	}
+	if (number < LUA_TIME_SAFE_INT_MIN || number > LUA_TIME_SAFE_INT_MAX) {
+		throw BMSX_RUNTIME_ERROR("time is out-of-bound");
+	}
+	return static_cast<i64>(number);
 }
 
 size_t packAlignmentPadding(size_t offset, int align) {
@@ -956,7 +999,6 @@ double Runtime::nextRandom() {
 
 void Runtime::setupBuiltins() {
 	CPU& cpu = machine.cpu;
-	Clock* runtimeClock = &clock();
 	cpu.suspendGc();
 	struct ResumeBuiltinGc {
 		CPU& cpu;
@@ -1015,9 +1057,9 @@ void Runtime::setupBuiltins() {
 		out.push_back(valueNumber(value));
 	});
 
-	registerNativeFunction("clock_now", [runtimeClock](NativeArgsView args, NativeResults& out) {
+	registerNativeFunction("clock_now", [this](NativeArgsView args, NativeResults& out) {
 		(void)args;
-		out.push_back(valueNumber(runtimeClock->now()));
+		out.push_back(valueNumber(machineElapsedMs()));
 	});
 	registerNativeFunction("type", [str](NativeArgsView args, NativeResults& out) {
 		const Value& v = args.empty() ? valueNil() : args.at(0);
@@ -2655,54 +2697,72 @@ const Value secondKey = key("sec");
 const Value wdayKey = key("wday");
 const Value ydayKey = key("yday");
 const Value isdstKey = key("isdst");
-osTable->set(key("clock"), machine.cpu.createNativeFunction("os.clock", [runtimeClock](NativeArgsView args, NativeResults& out) {
+osTable->set(key("clock"), machine.cpu.createNativeFunction("os.clock", [this](NativeArgsView args, NativeResults& out) {
 	(void)args;
-	out.push_back(valueNumber(runtimeClock->now() / 1000.0));
+	out.push_back(valueNumber(machineElapsedMs() / 1000.0));
 }));
-osTable->set(key("time"), machine.cpu.createNativeFunction("os.time", [yearKey, monthKey, dayKey, hourKey, minuteKey, secondKey](NativeArgsView args, NativeResults& out) {
+osTable->set(key("time"), machine.cpu.createNativeFunction("os.time", [this, yearKey, monthKey, dayKey, hourKey, minuteKey, secondKey, wdayKey, ydayKey, isdstKey](NativeArgsView args, NativeResults& out) {
 	if (!args.empty() && !isNil(args.at(0))) {
+		if (!valueIsTable(args.at(0))) {
+			throw BMSX_RUNTIME_ERROR("os.time expects a table or nil.");
+		}
 		auto* table = asTable(args.at(0));
-		std::tm timeInfo{};
-		timeInfo.tm_year = static_cast<int>(asNumber(table->get(yearKey))) - 1900;
-		timeInfo.tm_mon = static_cast<int>(asNumber(table->get(monthKey))) - 1;
-		timeInfo.tm_mday = static_cast<int>(asNumber(table->get(dayKey)));
-		timeInfo.tm_hour = static_cast<int>(asNumber(table->get(hourKey)));
-		timeInfo.tm_min = static_cast<int>(asNumber(table->get(minuteKey)));
-		timeInfo.tm_sec = static_cast<int>(asNumber(table->get(secondKey)));
-		timeInfo.tm_isdst = -1;
-		out.push_back(valueNumber(static_cast<double>(std::mktime(&timeInfo))));
+		const Value hourValue = table->get(hourKey);
+		const Value minuteValue = table->get(minuteKey);
+		const Value secondValue = table->get(secondKey);
+		const i64 timestamp = bmsxTimestampFromLuaCivilTime(
+			requireLuaCivilTimeField(table->get(yearKey), "year", -1, 1900),
+			requireLuaCivilTimeField(table->get(monthKey), "month", -1, 1),
+			requireLuaCivilTimeField(table->get(dayKey), "day", -1, 0),
+			requireLuaCivilTimeField(hourValue, "hour", 12, 0),
+			requireLuaCivilTimeField(minuteValue, "min", 0, 0),
+			requireLuaCivilTimeField(secondValue, "sec", 0, 0)
+		);
+		const BmsxCivilTime timeInfo = bmsxCivilTimeFromTimestamp(timestamp);
+		table->set(yearKey, valueNumber(static_cast<double>(timeInfo.year)));
+		table->set(monthKey, valueNumber(static_cast<double>(timeInfo.month)));
+		table->set(dayKey, valueNumber(static_cast<double>(timeInfo.day)));
+		table->set(hourKey, valueNumber(static_cast<double>(timeInfo.hour)));
+		table->set(minuteKey, valueNumber(static_cast<double>(timeInfo.minute)));
+		table->set(secondKey, valueNumber(static_cast<double>(timeInfo.second)));
+		table->set(wdayKey, valueNumber(static_cast<double>(timeInfo.weekday)));
+		table->set(ydayKey, valueNumber(static_cast<double>(timeInfo.yearday)));
+		table->set(isdstKey, valueBool(timeInfo.isDst));
+		out.push_back(valueNumber(static_cast<double>(timestamp)));
 		return;
 	}
-	out.push_back(valueNumber(static_cast<double>(std::time(nullptr))));
+	out.push_back(valueNumber(static_cast<double>(static_cast<i64>(machineElapsedMs() / 1000.0))));
 }));
 osTable->set(key("difftime"), machine.cpu.createNativeFunction("os.difftime", [](NativeArgsView args, NativeResults& out) {
-	double t2 = asNumber(args.at(0));
-	double t1 = asNumber(args.at(1));
-	out.push_back(valueNumber(t2 - t1));
+	const i64 t2 = requireLuaTimeValue(args.at(0));
+	const i64 t1 = requireLuaTimeValue(args.at(1));
+	out.push_back(valueNumber(static_cast<double>(t2 - t1)));
 }));
 osTable->set(key("date"), machine.cpu.createNativeFunction("os.date", [this, str, yearKey, monthKey, dayKey, hourKey, minuteKey, secondKey, wdayKey, ydayKey, isdstKey](NativeArgsView args, NativeResults& out) {
 	std::string format = args.empty() || isNil(args.at(0)) ? std::string("%c") : machine.cpu.stringPool().toString(asStringId(args.at(0)));
-	std::time_t timeValue = args.size() > 1 && !isNil(args.at(1))
-		? static_cast<std::time_t>(asNumber(args.at(1)))
-		: std::time(nullptr);
-	std::tm timeInfo = *std::localtime(&timeValue);
-	if (format == "*t") {
+	std::string_view bmsxFormat(format);
+	if (!bmsxFormat.empty() && bmsxFormat.front() == '!') {
+		bmsxFormat.remove_prefix(1);
+	}
+	const i64 timeValue = args.size() > 1 && !isNil(args.at(1))
+		? requireLuaTimeValue(args.at(1))
+		: static_cast<i64>(machineElapsedMs() / 1000.0);
+	const BmsxCivilTime timeInfo = bmsxCivilTimeFromTimestamp(timeValue);
+	if (bmsxFormat == "*t") {
 		auto* table = machine.cpu.createTable(0, 9);
-		table->set(yearKey, valueNumber(static_cast<double>(timeInfo.tm_year + 1900)));
-		table->set(monthKey, valueNumber(static_cast<double>(timeInfo.tm_mon + 1)));
-		table->set(dayKey, valueNumber(static_cast<double>(timeInfo.tm_mday)));
-		table->set(hourKey, valueNumber(static_cast<double>(timeInfo.tm_hour)));
-		table->set(minuteKey, valueNumber(static_cast<double>(timeInfo.tm_min)));
-		table->set(secondKey, valueNumber(static_cast<double>(timeInfo.tm_sec)));
-		table->set(wdayKey, valueNumber(static_cast<double>(timeInfo.tm_wday + 1)));
-		table->set(ydayKey, valueNumber(static_cast<double>(timeInfo.tm_yday + 1)));
-		table->set(isdstKey, valueBool(timeInfo.tm_isdst > 0));
+		table->set(yearKey, valueNumber(static_cast<double>(timeInfo.year)));
+		table->set(monthKey, valueNumber(static_cast<double>(timeInfo.month)));
+		table->set(dayKey, valueNumber(static_cast<double>(timeInfo.day)));
+		table->set(hourKey, valueNumber(static_cast<double>(timeInfo.hour)));
+		table->set(minuteKey, valueNumber(static_cast<double>(timeInfo.minute)));
+		table->set(secondKey, valueNumber(static_cast<double>(timeInfo.second)));
+		table->set(wdayKey, valueNumber(static_cast<double>(timeInfo.weekday)));
+		table->set(ydayKey, valueNumber(static_cast<double>(timeInfo.yearday)));
+		table->set(isdstKey, valueBool(timeInfo.isDst));
 		out.push_back(valueTable(table));
 		return;
 	}
-	char buffer[256];
-	size_t size = std::strftime(buffer, sizeof(buffer), format.c_str(), &timeInfo);
-	out.push_back(str(std::string(buffer, size)));
+	out.push_back(str(formatBmsxCivilTime(bmsxFormat, timeInfo)));
 }));
 	setGlobal("os", valueTable(osTable));
 

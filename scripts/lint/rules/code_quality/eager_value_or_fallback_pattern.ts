@@ -1,6 +1,6 @@
 import { defineLintRule } from '../../rule';
-import { cppCallTarget, cppQualifiedNameHasLeaf, splitArgumentRanges } from '../../../../machine/ts/language/cpp/syntax/syntax';
-import { type Token } from '../../../../machine/ts/language/cpp/syntax/tokens';
+import { cppCallTarget, cppQualifiedNameHasLeaf, splitArgumentRanges } from '../../language/cpp/syntax/syntax';
+import { type Token } from '../../language/cpp/syntax/tokens';
 import { type LintIssue, pushTokenLintIssue } from '../cpp/support/diagnostics';
 
 export const eagerValueOrFallbackPatternRule = defineLintRule('code_quality', 'eager_value_or_fallback_pattern');

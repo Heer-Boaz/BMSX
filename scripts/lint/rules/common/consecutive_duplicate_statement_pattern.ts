@@ -1,7 +1,7 @@
 import ts from 'typescript';
-import type { FunctionInfo } from '../../../../machine/ts/language/cpp/syntax/declarations';
-import { collectStatementRanges, cppCallTargetFromStatement, isAccessSpecifier } from '../../../../machine/ts/language/cpp/syntax/syntax';
-import { normalizedTokenText, type Token } from '../../../../machine/ts/language/cpp/syntax/tokens';
+import type { FunctionInfo } from '../../language/cpp/syntax/declarations';
+import { collectStatementRanges, cppCallTargetFromStatement, isAccessSpecifier } from '../../language/cpp/syntax/syntax';
+import { normalizedTokenText, type Token } from '../../language/cpp/syntax/tokens';
 import { pushTokenLintIssue } from '../cpp/support/diagnostics';
 import { defineLintRule } from '../../rule';
 import { compactStatementText } from '../../ts_node';

@@ -3,8 +3,8 @@ import {
 	findNextDelimiter,
 	findPreviousDelimiter,
 	trimmedExpressionText,
-} from '../../../../machine/ts/language/cpp/syntax/syntax';
-import type { Token } from '../../../../machine/ts/language/cpp/syntax/tokens';
+} from '../../language/cpp/syntax/syntax';
+import type { Token } from '../../language/cpp/syntax/tokens';
 import { pushTokenLintIssue, type LintIssue } from '../cpp/support/diagnostics';
 import { defineLintRule } from '../../rule';
 import { type LuaExpression as Expression } from '../../../../machine/ts/lua/syntax/ast';

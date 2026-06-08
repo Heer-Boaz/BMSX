@@ -486,7 +486,7 @@ class RuntimeCartEditor implements CartEditor {
 		setEditorCaseInsensitivity(editorRuntimeState.uppercaseDisplay);
 		editorDocumentState.preMutationSource = null;
 		applyViewportSize(viewport);
-		editorRuntimeState.clockNow = runtime.clock.now;
+		editorRuntimeState.clockNow = () => machineManager.platform.clock.now();
 		resetSemanticWorkspace();
 		editorViewState.scrollbars = {
 			codeVertical: new Scrollbar('codeVertical', 'vertical'),

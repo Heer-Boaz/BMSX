@@ -1,4 +1,5 @@
 import { extractErrorMessage, type StackTraceFrame } from '../../lua/value';
+import { bmsxCivilTimeFromTimestamp, bmsxTimestampFromLuaCivilTime, formatBmsxCivilTime, requireLuaCivilTimeField, requireLuaTimeValue } from './civil_time';
 import { clamp01 } from '../../common/clamp';
 import {
 	createNativeFunction,
@@ -1352,7 +1353,7 @@ export function seedLuaGlobals(runtime: Runtime): void {
 		out.push(lower + Math.floor(randomValue * span));
 	}));
 	setKey(mathTable, 'randomseed', createNativeFunction('math.randomseed', (args, out) => {
-		const seedValue = args.length > 0 ? (args[0] as number) : runtime.clock.now();
+		const seedValue = args.length > 0 ? (args[0] as number) : runtime.machineElapsedMs();
 		runtime.randomSeedValue = Math.floor(seedValue) >>> 0;
 		out.length = 0;
 	}));
@@ -1871,7 +1872,7 @@ export function seedLuaGlobals(runtime: Runtime): void {
 		out.push(bitcastView.getFloat64(0, true));
 	}));
 	runtime.setGlobal('clock_now', createNativeFunction('clock_now', (_args, out) => {
-		out.push(runtime.clock.now());
+		out.push(runtime.machineElapsedMs());
 	}));
 	runtime.setGlobal('type', createNativeFunction('type', (args, out) => {
 		const value = args.length > 0 ? args[0] : null;
@@ -2683,165 +2684,69 @@ export function seedLuaGlobals(runtime: Runtime): void {
 	runtime.setGlobal('table', tableLibrary);
 
 	const osTable = new Table(0, 0);
-	const formatOsDate = (format: string, date: Date): string => {
-		const pad = (value: number, size: number): string => {
-			let text = Math.floor(value).toString();
-			while (text.length < size) {
-				text = `0${text}`;
-			}
-			return text;
-		};
-		const weekdaysShort = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
-		const weekdaysLong = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
-		const monthsShort = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
-		const monthsLong = ['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December'];
-		const year = date.getFullYear();
-		const month = date.getMonth() + 1;
-		const day = date.getDate();
-		const hour = date.getHours();
-		const min = date.getMinutes();
-		const sec = date.getSeconds();
-		const ydayStart = new Date(year, 0, 1);
-		const yday = Math.floor((date.getTime() - ydayStart.getTime()) / 86400000) + 1;
-		const wday = date.getDay();
-		const hour12 = hour % 12 === 0 ? 12 : hour % 12;
-		const ampm = hour < 12 ? 'AM' : 'PM';
-		let output = '';
-		for (let index = 0; index < format.length; index += 1) {
-			const ch = format.charAt(index);
-			if (ch !== '%') {
-				output += ch;
-				continue;
-			}
-			index += 1;
-			const code = format.charAt(index);
-			switch (code) {
-				case 'Y':
-					output += pad(year, 4);
-					break;
-				case 'y':
-					output += pad(year % 100, 2);
-					break;
-				case 'm':
-					output += pad(month, 2);
-					break;
-				case 'd':
-					output += pad(day, 2);
-					break;
-				case 'H':
-					output += pad(hour, 2);
-					break;
-				case 'M':
-					output += pad(min, 2);
-					break;
-				case 'S':
-					output += pad(sec, 2);
-					break;
-				case 'I':
-					output += pad(hour12, 2);
-					break;
-				case 'p':
-					output += ampm;
-					break;
-				case 'a':
-					output += weekdaysShort[wday];
-					break;
-				case 'A':
-					output += weekdaysLong[wday];
-					break;
-				case 'b':
-					output += monthsShort[month - 1];
-					break;
-				case 'B':
-					output += monthsLong[month - 1];
-					break;
-				case 'j':
-					output += pad(yday, 3);
-					break;
-				case 'w':
-					output += wday.toString();
-					break;
-				case 'c':
-					output += date.toLocaleString();
-					break;
-				case 'x':
-					output += date.toLocaleDateString();
-					break;
-				case 'X':
-					output += date.toLocaleTimeString();
-					break;
-				case 'Z': {
-					const tz = date.toTimeString();
-					const start = tz.indexOf('(');
-					const end = tz.lastIndexOf(')');
-					if (start !== -1 && end !== -1 && end > start) {
-						output += tz.slice(start + 1, end);
-					} else {
-						output += 'UTC';
-					}
-					break;
-				}
-				case '%':
-					output += '%';
-					break;
-				default:
-					output += `%${code}`;
-					break;
-			}
-		}
-		return output;
-	};
-	const buildOsDateTable = (date: Date): Table => {
-		const year = date.getFullYear();
-		const ydayStart = new Date(year, 0, 1);
-		const yday = Math.floor((date.getTime() - ydayStart.getTime()) / 86400000) + 1;
-		const jan = new Date(year, 0, 1);
-		const jul = new Date(year, 6, 1);
-		const isDst = date.getTimezoneOffset() < Math.max(jan.getTimezoneOffset(), jul.getTimezoneOffset());
+	const buildOsDateTable = (time: ReturnType<typeof bmsxCivilTimeFromTimestamp>): Table => {
 		const table = new Table(0, 9);
-		setKey(table, 'year', year);
-		setKey(table, 'month', date.getMonth() + 1);
-		setKey(table, 'day', date.getDate());
-		setKey(table, 'hour', date.getHours());
-		setKey(table, 'min', date.getMinutes());
-		setKey(table, 'sec', date.getSeconds());
-		setKey(table, 'wday', date.getDay() + 1);
-		setKey(table, 'yday', yday);
-		setKey(table, 'isdst', isDst);
+		setKey(table, 'year', time.year);
+		setKey(table, 'month', time.month);
+		setKey(table, 'day', time.day);
+		setKey(table, 'hour', time.hour);
+		setKey(table, 'min', time.min);
+		setKey(table, 'sec', time.sec);
+		setKey(table, 'wday', time.wday);
+		setKey(table, 'yday', time.yday);
+		setKey(table, 'isdst', time.isdst);
 		return table;
 	};
 	setKey(osTable, 'clock', createNativeFunction('os.clock', (_args, out) => {
-		out.push(runtime.clock.now() / 1000);
+		out.push(runtime.machineElapsedMs() / 1000);
 	}));
 	setKey(osTable, 'time', createNativeFunction('os.time', (args, out) => {
 		if (args.length > 0 && args[0] !== null) {
-			const table = args[0] as Table;
-			const year = table.get(key('year')) as number;
-			const month = table.get(key('month')) as number;
-			const day = table.get(key('day')) as number;
-			const hour = table.get(key('hour')) as number;
-			const min = table.get(key('min')) as number;
-			const sec = table.get(key('sec')) as number;
-			const date = new Date(year, month - 1, day, hour, min, sec);
-			out.push(Math.floor(date.getTime() / 1000));
+			if (!(args[0] instanceof Table)) {
+				throw runtime.createApiRuntimeError('os.time expects a table or nil.');
+			}
+			const table = args[0];
+			const hourValue = table.get(key('hour'));
+			const minValue = table.get(key('min'));
+			const secValue = table.get(key('sec'));
+			const timestamp = bmsxTimestampFromLuaCivilTime(
+				requireLuaCivilTimeField(table.get(key('year')), 'year', -1, 1900),
+				requireLuaCivilTimeField(table.get(key('month')), 'month', -1, 1),
+				requireLuaCivilTimeField(table.get(key('day')), 'day', -1, 0),
+				requireLuaCivilTimeField(hourValue, 'hour', 12, 0),
+				requireLuaCivilTimeField(minValue, 'min', 0, 0),
+				requireLuaCivilTimeField(secValue, 'sec', 0, 0),
+			);
+			const time = bmsxCivilTimeFromTimestamp(timestamp);
+			setKey(table, 'year', time.year);
+			setKey(table, 'month', time.month);
+			setKey(table, 'day', time.day);
+			setKey(table, 'hour', time.hour);
+			setKey(table, 'min', time.min);
+			setKey(table, 'sec', time.sec);
+			setKey(table, 'wday', time.wday);
+			setKey(table, 'yday', time.yday);
+			setKey(table, 'isdst', time.isdst);
+			out.push(timestamp);
 			return;
 		}
-		out.push(Math.floor(Date.now() / 1000));
+		out.push(Math.trunc(runtime.machineElapsedMs() / 1000));
 	}));
 	setKey(osTable, 'difftime', createNativeFunction('os.difftime', (args, out) => {
-		const t2 = args[0] as number;
-		const t1 = args[1] as number;
+		const t2 = requireLuaTimeValue(args[0]);
+		const t1 = requireLuaTimeValue(args[1]);
 		out.push(t2 - t1);
 	}));
 	setKey(osTable, 'date', createNativeFunction('os.date', (args, out) => {
 		const format = args.length > 0 && args[0] !== null ? strings.toString(asStringId(args[0] as StringValue)) : '%c';
-		const timeValue = args.length > 1 && args[1] !== null ? (args[1] as number) * 1000 : Date.now();
-		const date = new Date(timeValue);
-		if (format === '*t') {
-			out.push(buildOsDateTable(date));
+		const bmsxFormat = format.charCodeAt(0) === 33 ? format.slice(1) : format;
+		const timeValue = args.length > 1 && args[1] !== null ? requireLuaTimeValue(args[1]) : Math.trunc(runtime.machineElapsedMs() / 1000);
+		const time = bmsxCivilTimeFromTimestamp(timeValue);
+		if (bmsxFormat === '*t') {
+			out.push(buildOsDateTable(time));
 			return;
 		}
-		out.push(runtime.internString(formatOsDate(format, date)));
+		out.push(runtime.internString(formatBmsxCivilTime(bmsxFormat, time)));
 	}));
 	runtime.setGlobal('os', osTable);
 

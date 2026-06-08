@@ -49,9 +49,8 @@ import {
 	type LuaNativeMemberHandle
 } from './value';
 import { LuaDebuggerController, type LuaDebuggerPauseReason } from './debugger';
-import { machineManager } from '../core/machine_manager';
 import { isLuaHandlerFunction } from './handler_cache';
-import { LuaInteropAdapter } from '../machine/runtime/host/native_bridge';
+import type { LuaInteropAdapter } from '../machine/runtime/host/native_bridge';
 import { getCachedLuaParse } from './analysis/cache';
 import { ScratchBuffer } from '../common/scratchbuffer';
 import { luaModulo } from './numeric';
@@ -302,7 +301,7 @@ export class LuaInterpreter {
 		this.globals = LuaEnvironment.createRoot();
 		this.adapter = adapter;
 		this.currentChunk = '<path>';
-		this.randomSeedValue = machineManager.platform.clock.now();
+		this.randomSeedValue = 0;
 		this.packageTable = createLuaTable();
 		this.packageLoaded = createLuaTable();
 		this.initializeBuiltins();
@@ -3382,7 +3381,7 @@ export class LuaInterpreter {
 			return [lowerInt + Math.floor(randomValue * span)];
 		}));
 		mathTable.set('randomseed', new LuaNativeFunction('randomseed', (args) => {
-			const seedValue = args.length > 0 ? this.expectNumber(args[0], 'math.randomseed expects a number.', null) : machineManager.platform.clock.now();
+			const seedValue = args.length > 0 ? this.expectNumber(args[0], 'math.randomseed expects a number.', null) : 0;
 			this.randomSeedValue = Math.floor(seedValue) >>> 0;
 			return EMPTY_VALUES;
 		}));
@@ -4533,60 +4532,6 @@ export class LuaInterpreter {
 		}));
 
 		this.globals.set('table', tableLibrary);
-
-		const osTable = createLuaTable();
-		osTable.set('time', new LuaNativeFunction('os.time', (args) => {
-			if (args.length === 0) {
-				return [Math.floor(machineManager.platform.clock.now() / 1000)];
-			}
-			const tableArg = args[0];
-			if (!(isLuaTable(tableArg))) {
-				throw this.runtimeError('os.time expects a table or no arguments.');
-			}
-			const year = tableArg.get('year');
-			const month = tableArg.get('month');
-			const day = tableArg.get('day');
-			const hour = tableArg.get('hour');
-			const min = tableArg.get('min');
-			const sec = tableArg.get('sec');
-			const date = new Date(
-				this.expectNumber(year, 'os.time table requires year.', null),
-				this.expectNumber(month, 'os.time table requires month.', null) - 1,
-				this.expectNumber(day, 'os.time table requires day.', null),
-				this.expectNumber(hour !== null ? hour : 0, 'os.time invalid hour.', null),
-				this.expectNumber(min !== null ? min : 0, 'os.time invalid minute.', null),
-				this.expectNumber(sec !== null ? sec : 0, 'os.time invalid second.', null)
-			);
-			return [Math.floor(date.getTime() / 1000)];
-		}));
-		osTable.set('date', new LuaNativeFunction('os.date', (args) => {
-			const formatValue = args.length > 0 ? args[0] : null;
-			const timestampValue = args.length > 1 ? args[1] : null;
-			const timestamp = timestampValue === null ? Math.floor(machineManager.platform.clock.now() / 1000) : Math.floor(this.expectNumber(timestampValue, 'os.date expects numeric timestamp.', null));
-			const date = new Date(timestamp * 1000);
-			if (formatValue === null) {
-				return [date.toISOString()];
-			}
-			const format = this.expectString(formatValue, 'os.date expects a format string.', null);
-			if (format === '*t') {
-				const table = createLuaTable();
-				table.set('year', date.getUTCFullYear());
-				table.set('month', date.getUTCMonth() + 1);
-				table.set('day', date.getUTCDate());
-				table.set('hour', date.getUTCHours());
-				table.set('min', date.getUTCMinutes());
-				table.set('sec', date.getUTCSeconds());
-				table.set('isdst', false);
-				return [table];
-			}
-			return [date.toISOString()];
-		}));
-		osTable.set('difftime', new LuaNativeFunction('os.difftime', (args) => {
-			const t2 = args.length > 0 ? this.expectNumber(args[0], 'os.difftime expects numeric arguments.', null) : 0;
-			const t1 = args.length > 1 ? this.expectNumber(args[1], 'os.difftime expects numeric arguments.', null) : 0;
-			return [t2 - t1];
-		}));
-		this.globals.set('os', osTable);
 
 		this.globals.set('pairs', new LuaNativeFunction('pairs', (args) => {
 			if (args.length === 0) {

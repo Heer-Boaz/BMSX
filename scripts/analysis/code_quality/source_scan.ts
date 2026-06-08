@@ -29,8 +29,8 @@ import { lintUselessTerminalReturnPattern } from '../../lint/rules/common/useles
 import { lintEnsurePattern } from '../../lint/rules/shared/ensure_pattern';
 import { compactSampleText } from '../../lint/text';
 import { type FunctionUsageInfo } from '../../lint/function_usage';
-import { getCallTargetLeafName, getPropertyName, hasQuestionDotToken, unwrapExpression } from '../../../machine/ts/language/ts/ast/expressions';
-import { isFunctionLikeValue, isFunctionLikeWithParameters } from '../../../machine/ts/language/ts/ast/functions';
+import { getCallTargetLeafName, getPropertyName, hasQuestionDotToken, unwrapExpression } from '../../lint/language/ts/ast/expressions';
+import { isFunctionLikeValue, isFunctionLikeWithParameters } from '../../lint/language/ts/ast/functions';
 import { LOCAL_CONST_PATTERN_ENABLED, LintIssue, REPEATED_EXPRESSION_PAIR_MIN_LENGTH, RepeatedExpressionInfo, getExtendsExpression, isSimpleAliasExpression, lintCatchClausePatterns, nodeStartLine, shouldIgnoreLintName } from '../../lint/rules/ts/support/ast';
 import { getClassScopePath, isDeclarationIdentifier, isIdentifierPropertyName, isInsideLoop, isScopeBoundary, isWriteIdentifier } from '../../lint/rules/ts/support/bindings';
 import { NormalizedBodyInfo, collectNormalizedBody, isExportedVariableDeclaration, isIgnoredMethod, repeatedExpressionFingerprint } from '../../lint/rules/ts/support/declarations';

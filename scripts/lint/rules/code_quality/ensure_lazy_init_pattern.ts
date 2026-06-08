@@ -1,11 +1,11 @@
-import type { FunctionInfo } from '../../../../machine/ts/language/cpp/syntax/declarations';
+import type { FunctionInfo } from '../../language/cpp/syntax/declarations';
 import {
 	collectStatementRanges,
 	cppCallTarget,
 	cppCallTargetFromStatement,
 	findTopLevelSemicolon,
-} from '../../../../machine/ts/language/cpp/syntax/syntax';
-import type { Token } from '../../../../machine/ts/language/cpp/syntax/tokens';
+} from '../../language/cpp/syntax/syntax';
+import type { Token } from '../../language/cpp/syntax/tokens';
 import { pushTokenLintIssue, type LintIssue } from '../cpp/support/diagnostics';
 import { lineInAnalysisRegion, type AnalysisRegion } from '../../../analysis/lint_suppressions';
 import { defineLintRule } from '../../rule';

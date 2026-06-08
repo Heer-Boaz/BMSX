@@ -267,7 +267,6 @@ Runtime& MachineManager::ensureRuntime(const RuntimeOptions& options) {
 	if (!m_runtime) {
 		m_runtime = std::make_unique<Runtime>(
 			options,
-			*clock(),
 			Input::instance(),
 			*platform()->microtaskQueue(),
 			*view()

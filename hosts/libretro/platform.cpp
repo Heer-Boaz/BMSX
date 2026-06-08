@@ -140,7 +140,7 @@ LibretroPlatform::LibretroPlatform(BackendType backend_type)
 	m_audio_buffer.reserve(kAudioReserveFrames);
 
 	// Create platform components
-	m_clock = std::make_unique<LibretroClock>();
+	m_clock = std::make_unique<LibretroHostClock>();
 	m_frame_loop = std::make_unique<LibretroFrameLoop>();
 	m_lifecycle = std::make_unique<DefaultLifecycle>();
 	m_input_hub = std::make_unique<LibretroInputHub>(this);
@@ -592,7 +592,7 @@ bool LibretroPlatform::runFrame() {
 	const f64 dt = m_frame_time_sec;
 
 	// Advance clock
-	if (auto* clock = dynamic_cast<LibretroClock*>(m_clock.get())) {
+	if (auto* clock = dynamic_cast<LibretroHostClock*>(m_clock.get())) {
 		clock->advanceFrame(1.0 / dt);
 	}
 	static_cast<LibretroFrameLoop*>(m_frame_loop.get())->runPushedFrame(m_clock->now(), dt);
@@ -1095,12 +1095,12 @@ void LibretroAudioService::collectSamples(AudioBuffer& buffer) {
 }
 
 /* ============================================================================
- * LibretroClock implementation
+ * LibretroHostClock implementation
  * ============================================================================ */
 
-LibretroClock::LibretroClock() = default;
+LibretroHostClock::LibretroHostClock() = default;
 
-void LibretroClock::advanceFrame(double fps) {
+void LibretroHostClock::advanceFrame(double fps) {
 	m_current_time += 1000.0 / fps;
 }
 

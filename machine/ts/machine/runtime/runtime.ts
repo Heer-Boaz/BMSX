@@ -10,7 +10,6 @@ import {
 	convertToError,
 	type LuaDebuggerPauseSignal
 } from '../../lua/value';
-import type { Clock } from './clock';
 import type { StorageService } from './storage';
 import type { CartManifest, MachineManifest, RuntimeRomPackage, Viewport } from '../../rompack/format';
 import {
@@ -96,7 +95,6 @@ export type FrameState = {
 
 export class Runtime {
 	public readonly storageService: StorageService;
-	public readonly clock: Clock;
 	public readonly luaJsBridge!: LuaJsBridge;
 	public readonly apiFunctionNames = new Set<string>();
 	public readonly luaBuiltinMetadata = new Map<string, LuaBuiltinDescriptor>();
@@ -582,7 +580,6 @@ export class Runtime {
 		this.timing.vdpWorkUnitsPerSec = resolvePositiveSafeInteger(initialVdpWorkUnits, 'machine.specs.vdp.work_units_per_sec');
 		this.timing.geoWorkUnitsPerSec = resolvePositiveSafeInteger(initialGeoWorkUnits, 'machine.specs.geo.work_units_per_sec');
 		this.storageService = machineManager.platform.storage;
-		this.clock = machineManager.platform.clock;
 		this.activeMachineManifest = options.activeMachineManifest;
 		this.cartManifest = options.cartManifest;
 		this.cartProjectRootPath = options.cartProjectRootPath;
@@ -615,7 +612,10 @@ export class Runtime {
 		});
 		refreshDeviceTimings(this, this.machine.scheduler.currentNowCycles());
 		this.vblank.setVblankCycles(options.vblankCycles);
-		this.randomSeedValue = this.clock.now();
+	}
+
+	public machineElapsedMs(): number {
+		return this.machine.scheduler.currentNowCycles() * 1000 / this.timing.cpuHz;
 	}
 
 	public baseRamUsedBytes(): number {

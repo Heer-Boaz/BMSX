@@ -195,16 +195,6 @@ void configureSingleNativeCallProgram(bmsx::Program& program, bmsx::Value native
 	program.protos.push_back(returnProto);
 }
 
-class TestClock final : public bmsx::Clock {
-public:
-	auto now() -> bmsx::f64 override { return currentMs; }
-	auto origin() -> bmsx::f64 override { return originMs; }
-	auto elapsed() -> bmsx::f64 override { return currentMs - originMs; }
-
-	bmsx::f64 originMs = 0.0;
-	bmsx::f64 currentMs = 0.0;
-};
-
 auto makeRuntimeTestManifest() -> bmsx::MachineManifest {
 	bmsx::MachineManifest manifest;
 	manifest.namespaceName = "core_golden";
@@ -216,7 +206,6 @@ auto makeRuntimeTestManifest() -> bmsx::MachineManifest {
 }
 
 struct RuntimeHarness {
-	TestClock clock;
 	bmsx::DefaultMicrotaskQueue microtasks;
 	bmsx::GameView view;
 	bmsx::MachineManifest manifest;
@@ -239,7 +228,6 @@ struct RuntimeHarness {
 				.vdpWorkUnitsPerSec = 25'600,
 				.geoWorkUnitsPerSec = 16'384'000,
 			},
-			clock,
 			bmsx::Input::instance(),
 			microtasks,
 			view
