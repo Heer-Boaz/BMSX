@@ -33,7 +33,6 @@ import { Memory } from '../../machine/ts/machine/memory/memory';
 import { Input, makeButtonState } from '../../machine/ts/input/manager';
 import { PlayerInput } from '../../machine/ts/input/player';
 import type { ButtonState, GamepadInputMapping, KeyboardInputMapping, PointerInputMapping } from '../../machine/ts/input/models';
-import type { VibrationParams } from '../../machine/ts/platform';
 import {
 	INP_EVENT_CTRL_POP,
 	INP_EVENT_STATUS_EMPTY,
@@ -46,6 +45,8 @@ import {
 	INP_STATUS_PRESSED,
 	INP_STATUS_WAS_PRESSED,
 	INPUT_CONTROLLER_OUTPUT_INTENSITY_Q16_ONE,
+	type InputControllerInputSource,
+	type InputControllerPlayerInputSource,
 	type InputSource,
 } from '../../machine/ts/machine/devices/input/contracts';
 import { DEFAULT_LUA_BUILTIN_NAMES } from '../../machine/ts/machine/firmware/builtin_descriptors';
@@ -57,20 +58,42 @@ type PushedContext = {
 	pointer: PointerInputMapping;
 };
 
-type FakePlayerInput = {
+type FakeVibration = {
+	durationMs: number;
+	intensity: number;
+};
+
+type FakePlayerInput = InputControllerPlayerInputSource & {
 	pushed: PushedContext[];
 	cleared: string[];
 	consumed: string[];
-	vibrations: VibrationParams[];
+	vibrations: FakeVibration[];
 	supportsVibrationEffect: boolean;
-	getButtonState(button: string): ButtonState;
-	consumeRawButton(button: string, source: 'keyboard' | 'gamepad' | 'pointer'): void;
-	sampleInputControllerButton(source: InputSource, button: string): ButtonState;
-	consumeInputControllerButton(source: InputSource, button: string): void;
-	applyVibrationEffect(params: VibrationParams): void;
+	readButtonState(button: string): ButtonState;
 	pushContext(id: string, keyboard: KeyboardInputMapping, gamepad: GamepadInputMapping, pointer: PointerInputMapping): void;
 	clearContext(id: string): void;
 };
+
+function makeFakeButtonState(button: string): ButtonState {
+	let pressed = false;
+	let value: number = null;
+	switch (button) {
+		case 'a':
+		case 'KeyX':
+			pressed = true;
+			value = 0.5;
+			break;
+		case 'left':
+		case 'ArrowLeft':
+			pressed = true;
+			break;
+	}
+	return makeButtonState({
+		pressed,
+		waspressed: pressed,
+		value,
+	});
+}
 
 function createFakePlayer(): FakePlayerInput {
 	return {
@@ -79,25 +102,19 @@ function createFakePlayer(): FakePlayerInput {
 		consumed: [],
 		vibrations: [],
 		supportsVibrationEffect: true,
-		getButtonState(button) {
-			const pressed = button === 'a' || button === 'left' || button === 'KeyX' || button === 'ArrowLeft';
-			return makeButtonState({
-				pressed,
-				waspressed: pressed,
-				value: button === 'a' || button === 'KeyX' ? 0.5 : null,
-			});
-		},
-		consumeRawButton(button, source) {
-			this.consumed.push(`${source}:${button}`);
-		},
-		sampleInputControllerButton(source, button) {
-			return this.getButtonState(button);
+		readButtonState: makeFakeButtonState,
+		sampleInputControllerButton(_source, button) {
+			const buttonState = this.readButtonState(button);
+			return buttonState;
 		},
 		consumeInputControllerButton(source, button) {
-			this.consumeRawButton(button, source);
+			this.consumed.push(`${source}:${button}`);
 		},
-		applyVibrationEffect(params) {
-			this.vibrations.push(params);
+		supportsInputControllerVibrationEffect() {
+			return this.supportsVibrationEffect;
+		},
+		applyInputControllerVibrationEffect(durationMs, intensity) {
+			this.vibrations.push({ durationMs, intensity });
 		},
 		pushContext(id, keyboard, gamepad, pointer) {
 			this.pushed.push({ id, keyboard, gamepad, pointer });
@@ -113,18 +130,15 @@ function createHarness(): { memory: Memory; cpu: CPU; controller: InputControlle
 	const cpu = new CPU(memory);
 	const players = [createFakePlayer(), createFakePlayer(), createFakePlayer(), createFakePlayer()];
 	let sampleCount = 0;
-	const input = {
-		samplePlayers() {
+	const input: InputControllerInputSource = {
+		sampleInputControllerPlayers() {
 			sampleCount += 1;
-		},
-		getPlayerInput(playerIndex: number) {
-			return players[playerIndex - 1]!;
 		},
 		inputControllerPlayer(playerIndex: number) {
 			return players[playerIndex - 1]!;
 		},
 	};
-	const controller = new InputController(memory, input as unknown as Input, cpu.stringPool);
+	const controller = new InputController(memory, input, cpu.stringPool);
 	controller.reset();
 	return { memory, cpu, controller, players, samples: () => sampleCount };
 }
@@ -139,21 +153,18 @@ function createRealPlayerHarness(): { memory: Memory; cpu: CPU; controller: Inpu
 		new PlayerInput(4, 1000 / 60),
 	];
 	let frameTime = 0;
-	const input = {
-		samplePlayers(currentTime: number) {
+	const input: InputControllerInputSource = {
+		sampleInputControllerPlayers(currentTime: number) {
 			frameTime = currentTime;
 			for (let index = 0; index < players.length; index += 1) {
 				players[index]!.beginFrame(frameTime);
 			}
 		},
-		getPlayerInput(playerIndex: number) {
-			return players[playerIndex - 1]!;
-		},
 		inputControllerPlayer(playerIndex: number) {
 			return players[playerIndex - 1]!;
 		},
 	};
-	const controller = new InputController(memory, input as unknown as Input, cpu.stringPool);
+	const controller = new InputController(memory, input, cpu.stringPool);
 	controller.reset();
 	return { memory, cpu, controller, players };
 }
@@ -247,7 +258,7 @@ test('input controller output registers emit selected player vibration commands'
 
 	assert.equal(live.memory.readIoU32(IO_INP_OUTPUT_STATUS), INP_OUTPUT_STATUS_SUPPORTED);
 	live.memory.writeValue(IO_INP_OUTPUT_CTRL, INP_OUTPUT_CTRL_APPLY);
-	assert.deepEqual(live.players[1]!.vibrations, [{ effect: 'dual-rumble', duration: 120, intensity: 0.5 }]);
+	assert.deepEqual(live.players[1]!.vibrations, [{ durationMs: 120, intensity: 0.5 }]);
 	assert.equal(live.memory.readIoU32(IO_INP_OUTPUT_CTRL), 0);
 
 	const savedInput = live.controller.captureState();
@@ -257,7 +268,7 @@ test('input controller output registers emit selected player vibration commands'
 	assert.equal(restored.memory.readIoU32(IO_INP_OUTPUT_DURATION_MS), 120);
 	restored.memory.writeValue(IO_INP_PLAYER, 2);
 	restored.memory.writeValue(IO_INP_OUTPUT_CTRL, INP_OUTPUT_CTRL_APPLY);
-	assert.deepEqual(restored.players[1]!.vibrations, [{ effect: 'dual-rumble', duration: 120, intensity: 0.5 }]);
+	assert.deepEqual(restored.players[1]!.vibrations, [{ durationMs: 120, intensity: 0.5 }]);
 });
 
 test('input controller exposes the VBlank sample edge without leaking the sample latch', () => {
@@ -319,7 +330,7 @@ test('input controller treats comma bindings as alternate physical inputs', () =
 
 test('input controller supports chord actions with any-just-pressed edges', () => {
 	const onlyLeft = createHarness();
-	onlyLeft.players[0]!.getButtonState = (button) => makeButtonState({
+	onlyLeft.players[0]!.readButtonState = (button) => makeButtonState({
 		pressed: button === 'left',
 		waspressed: button === 'left',
 		justpressed: button === 'left',
@@ -338,7 +349,7 @@ test('input controller supports chord actions with any-just-pressed edges', () =
 	assert.equal(onlyLeft.memory.readIoU32(IO_INP_STATUS), 0);
 
 	const chord = createHarness();
-	chord.players[0]!.getButtonState = (button) => makeButtonState({
+	chord.players[0]!.readButtonState = (button) => makeButtonState({
 		pressed: button === 'up' || button === 'left',
 		waspressed: button === 'up' || button === 'left',
 		justpressed: button === 'left',
@@ -450,7 +461,7 @@ test('Input.initialize installs host defaults as the base context', () => {
 	try {
 		const playerOne = input.getPlayerInput(Input.DEFAULT_KEYBOARD_PLAYER_INDEX);
 		playerOne.recordButtonEvent('keyboard', 'KeyX', { eventType: 'press', identifier: 'KeyX', timestamp: 0, consumed: false, pressId: 11 });
-		input.samplePlayers(1000 / 60);
+		input.sampleInputControllerPlayers(1000 / 60);
 
 		assert.equal(playerOne.checkActionTriggered('a[jp]'), true);
 		assert.equal(playerOne.getActionState('a').justpressed, true);

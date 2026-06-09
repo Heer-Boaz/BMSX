@@ -17,6 +17,7 @@
 #include "machine/runtime/cpu_executor.h"
 #include "machine/runtime/cpu_state.h"
 #include "machine/runtime/cart_boot.h"
+#include "machine/runtime/options.h"
 #include "machine/runtime/save_state.h"
 #include "machine/runtime/resume_snapshot.h"
 #include "machine/program/scratch.h"
@@ -39,36 +40,10 @@ namespace bmsx {
 
 // Forward declarations
 struct ProgramImage;
-struct MachineManifest;
-struct CartManifest;
 class RuntimeRomPackage;
 class GameView;
-class Input;
+class RuntimeInputSource;
 class MicrotaskQueue;
-
-constexpr int DEFAULT_CYCLE_BUDGET = 1'000'000;
-
-/**
- * Runtime options for initialization.
- */
-struct RuntimeOptions {
-	struct RomSpan {
-		const u8* data = nullptr;
-		size_t size = 0;
-	};
-
-	int playerIndex = 0;
-	Vec2 viewport{.x=0.0F, .y=0.0F};
-	RomSpan systemRomBytes;
-	RomSpan cartRomBytes;
-	const MachineManifest* machineManifest = nullptr;
-	i64 ufpsScaled = DEFAULT_UFPS_SCALED;
-	i64 cpuHz = 0;
-	int cycleBudgetPerFrame = DEFAULT_CYCLE_BUDGET;
-	int vblankCycles = 0;
-	int vdpWorkUnitsPerSec = 25'600;
-	int geoWorkUnitsPerSec = 16'384'000;
-};
 
 /**
  * Runtime owns the live machine, Lua API bindings, hot-resume snapshot state,
@@ -93,7 +68,7 @@ public:
 
 	Runtime(
 		const RuntimeOptions& options,
-		Input& input,
+		RuntimeInputSource& input,
 		MicrotaskQueue& microtasks,
 		GameView& view
 	);

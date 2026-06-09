@@ -3,10 +3,8 @@
 Baseline na de laatste boundary-slices:
 
 ```txt
-architecture_boundary_issues,31
+architecture_boundary_issues,20
 ts-machine -> ts-ide,10
-cpp-machine -> cpp-input,6
-ts-machine -> ts-input,5
 ts-machine -> ts-render,4
 cpp-machine -> cpp-render,3
 ts-machine -> ts-core,3
@@ -31,42 +29,15 @@ Al afgerond en daarom niet opnieuw als open slice opgenomen:
 - ICU VBlank sampling gebruikt machine-scheduler tijd voor sampled action
   `pressTime`/timestamps; host input timestamps blijven host-side physical event
   metadata en worden niet doorgegeven als cart-zichtbare sampletijd
-
-## 1. ICU input-device source boundary
-
-Doel: ICU device-code consumeert machine-owned input source contracts, niet concrete host input managers/spelers.
-
-Open audit-evidence:
-
-- `machine/ts/machine/devices/input/controller.ts`
-- `machine/ts/machine/devices/input/output_port.ts`
-- `machine/ts/machine/devices/input/sample_edge.ts`
-- `machine/cpp/machine/devices/input/controller.h`
-- `machine/cpp/machine/devices/input/output_port.cpp`
-- `machine/cpp/machine/devices/input/sample_edge.cpp`
-
-Acceptatie:
-
-- geen `machine/devices/input/* -> input/manager|player` imports/includes meer
-- TS/C++ input-controller tests groen
-- TS/C++ headless `bare_metal_cart` boot + screenshots groen
-
-## 2. Machine/Runtime input-injectie boundary
-
-Doel: `Machine` en `Runtime` krijgen hun input source expliciet via een machine-owned contract. Ze mogen niet zelf `Input.instance` of host input ownership kennen.
-
-Open audit-evidence:
-
-- `machine/ts/machine/machine.ts`
-- `machine/ts/machine/runtime/runtime.ts`
-- `machine/cpp/machine/machine.cpp`
-- `machine/cpp/machine/runtime/runtime.cpp`
-
-Acceptatie:
-
-- machine constructor/runtime constructor spreken alleen over machine-side input source interfaces
-- host/core maakt de concrete adapter
-- ICU tests + boot/headless blijven groen
+- ICU input-device source boundary: TS/C++ ICU device-code consumeert
+  `machine/devices/input/contracts` input-source ports in plaats van concrete
+  host input manager/player types
+- Machine/Runtime input-injectie boundary: TS/C++ `Machine` en `Runtime`
+  consumeren expliciet het machine-owned ICU input-source contract; host/core
+  geeft de concrete input owner door. Runtime boot-opties zitten in de
+  gemirrorde `machine/runtime/options` contractbestanden. Runtime input-timing
+  configuratie zit in `machine/runtime/input`; ICU input-source ports blijven
+  onder `machine/devices/input/contracts`
 
 ## 3. Runtime host-services port
 

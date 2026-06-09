@@ -77,12 +77,15 @@ public:
 	virtual ~InputControllerPlayerInputSource() = default;
 	virtual ButtonState sampleInputControllerButton(InputSource source, const std::string& button) = 0;
 	virtual void consumeInputControllerButton(InputSource source, const std::string& button) = 0;
+	virtual bool supportsInputControllerVibrationEffect() const = 0;
+	virtual void applyInputControllerVibrationEffect(f64 durationMs, f32 intensity) = 0;
 };
 
 class InputControllerInputSource {
 public:
 	virtual ~InputControllerInputSource() = default;
 	virtual InputControllerPlayerInputSource& inputControllerPlayer(i32 playerIndex) = 0;
+	virtual void sampleInputControllerPlayers(f64 currentTimeMs) = 0;
 };
 
 inline auto buttonTimestampOr(const ButtonState& state, f64 fallback) -> f64 {

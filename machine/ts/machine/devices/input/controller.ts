@@ -1,4 +1,3 @@
-import { Input } from '../../../input/manager';
 import {
 	IO_INP_ACTION,
 	IO_INP_BIND,
@@ -30,6 +29,7 @@ import { InputControllerSampleEdge } from './sample_edge';
 import { InputControllerOutputPort } from './output_port';
 import { InputControllerQueryPort } from './query_port';
 import { InputControllerControlPort } from './control_port';
+import type { InputControllerInputSource } from './contracts';
 
 export class InputController {
 	private readonly actionTable: InputControllerActionTable;
@@ -43,7 +43,7 @@ export class InputController {
 
 	public constructor(
 		private readonly memory: Memory,
-		input: Input,
+		input: InputControllerInputSource,
 		strings: StringPool,
 	) {
 		this.actionTable = new InputControllerActionTable(input, strings);

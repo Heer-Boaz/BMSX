@@ -118,7 +118,7 @@ void testInputInitializeInstallsBaseContext() {
 	bmsx::PlayerInput* const playerOne = input.getPlayerInput(bmsx::Input::DEFAULT_KEYBOARD_PLAYER_INDEX);
 	platform.postKeyboardEvent("KeyX", true);
 	input.pollInput();
-	input.samplePlayers(0.0);
+	input.sampleInputControllerPlayers(0.0);
 
 	require(playerOne->checkActionTriggered("a[p]"), "Input::initialize should install host defaults as the player base context");
 	require(playerOne->getActionState("a").pressed, "default base context should map keyboard KeyX to action a");

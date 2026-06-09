@@ -166,14 +166,15 @@ export class PlayerInput implements InputControllerPlayerInputSource {
 		this.clearActionEvaluationState();
 	}
 
-	public get supportsVibrationEffect(): boolean {
+	public supportsInputControllerVibrationEffect(): boolean {
 		for (const source of INPUT_SOURCES) {
 			if (this.inputHandlers[source]?.supportsVibrationEffect) return true;
 		}
 		return false;
 	}
 
-	public applyVibrationEffect(params: VibrationParams): void {
+	public applyInputControllerVibrationEffect(durationMs: number, intensity: number): void {
+		const params: VibrationParams = { effect: 'dual-rumble', duration: durationMs, intensity };
 		for (const source of INPUT_SOURCES) {
 			if (!this.inputHandlers[source]?.supportsVibrationEffect) continue;
 			this.inputHandlers[source]!.applyVibrationEffect(params);

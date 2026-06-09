@@ -1,12 +1,11 @@
 #include "machine/machine.h"
 
-#include "input/manager.h"
 #include "rompack/format.h"
 
 #include <stdexcept>
 
 namespace bmsx {
-Machine::Machine(Memory& memoryRef, VdpFrameBufferSize frameBufferSizeValue, Input& input, MicrotaskQueue& microtasks)
+Machine::Machine(Memory& memoryRef, VdpFrameBufferSize frameBufferSizeValue, InputControllerInputSource& input, MicrotaskQueue& microtasks)
 	: memory(memoryRef)
 	, frameBufferSize(frameBufferSizeValue)
 	, cpu(memory)

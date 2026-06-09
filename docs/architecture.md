@@ -542,6 +542,19 @@ the query port and evaluate against that ICU snapshot. A root action query
 returns the sampled action status/value words; a compound expression returns
 boolean `1`/`0` in `sys_inp_status` and zero in `sys_inp_value`.
 
+ICU device code consumes only `machine/devices/input/contracts` source ports.
+The host input manager/player layer implements those ports and remains outside
+the device. The sample edge requests one simulation-frame sample through that
+port, the action table consumes per-player button states through that port, and
+the output port emits selected-player vibration commands through that port.
+`Machine` and `Runtime` receive that source port explicitly from the host/core
+owner. They must not fetch the host input singleton or name concrete input
+manager/player types.
+Runtime boot options are owned by the mirrored `machine/runtime/options`
+contract. Runtime-owned input timing configuration is exposed through the
+mirrored `machine/runtime/input` contract, while ICU input source ports remain
+owned by `machine/devices/input/contracts`.
+
 The VBlank sample edge timestamps sampled action state with BMSX machine time
 derived from the scheduler. Host input event timestamps are physical host
 metadata used by the host input owner; they must not become sampled
