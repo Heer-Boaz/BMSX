@@ -92,7 +92,7 @@ export class TerminalCommandDispatcher {
 			return 'deactivate_terminal';
 		}
 		if (upper === 'REBOOT') {
-			await this.runtime.rebootToBootRom();
+			await machineManager.rebootToBootRom();
 			return true;
 		}
 		if (upper === 'EXIT' || upper === 'QUIT') {

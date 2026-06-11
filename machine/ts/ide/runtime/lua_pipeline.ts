@@ -22,8 +22,6 @@ import {
 	clearRuntimeFault,
 	resetHandledLuaErrors,
 } from './fault_state';
-import { calcCyclesPerFrameScaled, resolveUfpsScaled, resolveVblankCycles } from '../../machine/runtime/timing';
-import { setFrameTiming, setTransferRatesFromManifest } from '../../machine/runtime/timing/config';
 import {
 	buildModuleProtoMap,
 	decodeProgramImage,
@@ -40,43 +38,20 @@ import {
 	IRQ_IMG_DONE,
 	IRQ_IMG_ERROR,
 } from '../../machine/bus/io';
-import { getMachinePerfSpecs } from '../../rompack/format';
 import type { RawRomSource } from '../../rompack/source';
 import { Table, type ProgramMetadata, type Value, isNativeFunction, isNativeObject } from '../../machine/cpu/cpu';
 import { asStringId, valueIsString } from '../../machine/cpu/cpu';
 import type { Runtime } from '../../machine/runtime/runtime';
 
-function applyUfpsScaled(runtime: Runtime, ufps: number): number {
-	const ufpsScaled = resolveUfpsScaled(ufps);
-	runtime.timing.applyUfpsScaled(ufpsScaled);
-	return ufpsScaled;
-}
-
-type RuntimeMachineSource = 'system' | 'cart';
-
 interface RuntimeReloadPlan {
-	machineSource: RuntimeMachineSource;
 	resetFreshWorldOptions: { preserve_textures: boolean };
 }
 
 function buildRuntimeReloadPlan(runtime: Runtime): RuntimeReloadPlan {
 	if (runtime.cartRom) {
-		return {
-			machineSource: 'cart',
-			resetFreshWorldOptions: { preserve_textures: true },
-		};
+		return { resetFreshWorldOptions: { preserve_textures: true } };
 	}
-	return {
-		machineSource: 'system',
-		resetFreshWorldOptions: { preserve_textures: false },
-	};
-}
-
-function resolveRuntimeMachineForPlan(runtime: Runtime, plan: RuntimeReloadPlan) {
-	if (plan.machineSource === 'cart') {
-		return runtime.cartRom.index.machine;
-	}
-	return runtime.systemRom.index.machine;
+	return { resetFreshWorldOptions: { preserve_textures: false } };
 }
 
 export async function resumeFromSnapshot(runtime: Runtime, state: RuntimeResumeSnapshot, preserveSystemModules?: boolean): Promise<void> {
@@ -633,15 +608,7 @@ export async function reloadProgramAndResetWorld(runtime: Runtime, runInit = tru
 				bootProgramImage(runtime, { preserveState: true, runInit });
 			}
 			runtime.applyCartProgramTiming();
-			const machine = resolveRuntimeMachineForPlan(runtime, reloadPlan);
-			const perfSpecs = getMachinePerfSpecs(machine);
-			applyUfpsScaled(runtime, perfSpecs.ufps);
-			const cpuHz = perfSpecs.cpu_freq_hz;
-			const cycleBudgetPerFrame = calcCyclesPerFrameScaled(cpuHz, runtime.timing.ufpsScaled);
-			const renderHeight = machine.render_size.height;
-			const vblankCycles = resolveVblankCycles(cpuHz, runtime.timing.ufpsScaled, renderHeight);
-			setFrameTiming(runtime, cpuHz, cycleBudgetPerFrame, vblankCycles);
-			setTransferRatesFromManifest(runtime, perfSpecs);
+			machineManager.syncAudioTiming();
 			} catch (error) {
 				throw convertToError(error);
 			}

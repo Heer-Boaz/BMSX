@@ -29,7 +29,7 @@ import { createVdpTransformSnapshot } from './vdp/transform';
 import type { VdpFrameBufferTextures } from './vdp/framebuffer';
 import type { VdpRpuFrameOutput } from '../machine/devices/vdp/rpu';
 import type { VdpSlotTextures } from './vdp/slot_textures';
-import { renderGate } from 'bmsx/core/taskgate';
+import { renderGate } from '../common/taskgate';
 
 const PRESENTATION_PASS_IDS = ['vdp_rpu', 'framebuffer_2d', 'device_quantize', 'crt', 'host_overlay', 'host_menu'];
 

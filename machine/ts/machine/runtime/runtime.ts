@@ -1,5 +1,3 @@
-import { machineManager } from '../../core/machine_manager';
-import { taskGate } from '../../core/taskgate';
 import type { LuaDefinitionInfo } from '../../lua/syntax/ast';
 import type { LuaEnvironment } from '../../lua/environment';
 import { LuaRuntimeError } from '../../lua/errors';
@@ -31,6 +29,8 @@ import { registerFirmwareBuiltins } from '../firmware/builtins';
 import { LuaFunctionRedirectCache } from '../firmware/handler_registry';
 import { LuaJsBridge } from './host/native_bridge';
 import type { RuntimeOptions } from './options';
+import type { GateGroup } from '../../common/taskgate';
+import { taskGate } from '../../common/taskgate';
 import { applyWorkspaceOverridesToCart, applyWorkspaceOverridesToRegistry, DEFAULT_SYSTEM_PROJECT_ROOT_PATH } from '../../ide/workspace/workspace';
 import {
 	buildLuaSources,
@@ -231,8 +231,7 @@ export class Runtime {
 	public nativeMemberCompletionCache: WeakMap<object, { dot?: LuaMemberCompletion[]; colon?: LuaMemberCompletion[] }> = new WeakMap();
 	public readonly pathSemanticCache: Map<string, { source: string; model?: LuaSemanticModel; definitions?: ReadonlyArray<LuaDefinitionInfo>; parsed?: ParsedLuaChunk; lines?: readonly string[]; analysis?: FileSemanticData }> = new Map();
 
-	public readonly luaGate = taskGate.group('machine:lua');
-	private hasCompletedInitialBoot = false;
+	public readonly luaGate: GateGroup = taskGate.group('machine:lua');
 	public cartEntryAvailable = true;
 	public readonly hostFault: HostFaultState;
 	public readonly machine: Machine;
@@ -245,7 +244,7 @@ export class Runtime {
 		return this.programMetadata !== null;
 	}
 
-	public static async init(systemLayer: RuntimeRomLayer, workspaceOverlay: Uint8Array | undefined, input: RuntimeInputSource, view: GameView, cartridge?: Uint8Array): Promise<Runtime> {
+	public static async init(systemLayer: RuntimeRomLayer, workspaceOverlay: Uint8Array | undefined, input: RuntimeInputSource, view: GameView, storageService: StorageService, cartridge?: Uint8Array): Promise<Runtime> {
 		const systemSource = new RomSourceStack([{ id: systemLayer.id, index: systemLayer.index, payload: systemLayer.payload }]);
 		const systemLuaSources = buildLuaSources(systemSource, systemSource, systemLayer.index, ['system']);
 		const systemMachine = systemLayer.index.machine;
@@ -278,7 +277,7 @@ export class Runtime {
 				vblankCycles,
 				vdpWorkUnitsPerSec: systemPerfSpecs.work_units_per_sec,
 				geoWorkUnitsPerSec: systemPerfSpecs.geo_work_units_per_sec,
-			}, input, view);
+			}, input, view, storageService);
 			setTransferRatesFromManifest(runtime, systemPerfSpecs);
 			runtime.configureProgramSources({
 				systemRom: systemLayer,
@@ -342,7 +341,7 @@ export class Runtime {
 			vblankCycles,
 			vdpWorkUnitsPerSec: cartPerfSpecs.work_units_per_sec,
 			geoWorkUnitsPerSec: cartPerfSpecs.geo_work_units_per_sec,
-		}, input, view);
+		}, input, view, storageService);
 		setTransferRatesFromManifest(runtime, cartPerfSpecs);
 		runtime.configureProgramSources({
 			systemRom: systemLayer,
@@ -370,7 +369,6 @@ export class Runtime {
 			projectRootPath: this.systemProjectRootPath,
 		});
 		await this.prepareBootRomStartupState();
-		await machineManager.refreshRenderSurfaces();
 		this.view.default_font = new Font();
 		await this.boot();
 	}
@@ -564,6 +562,7 @@ export class Runtime {
 		options: RuntimeOptions,
 		private readonly input: RuntimeInputSource,
 		view: GameView,
+		storageService: StorageService,
 	) {
 		this.view = view;
 		this.frameScheduler = new FrameSchedulerState(this);
@@ -579,7 +578,7 @@ export class Runtime {
 		const initialGeoWorkUnits = options.geoWorkUnitsPerSec ?? DEFAULT_GEO_WORK_UNITS_PER_SEC;
 		this.timing.vdpWorkUnitsPerSec = resolvePositiveSafeInteger(initialVdpWorkUnits, 'machine.specs.vdp.work_units_per_sec');
 		this.timing.geoWorkUnitsPerSec = resolvePositiveSafeInteger(initialGeoWorkUnits, 'machine.specs.geo.work_units_per_sec');
-		this.storageService = machineManager.platform.storage;
+		this.storageService = storageService;
 		this.activeMachineManifest = options.activeMachineManifest;
 		this.cartManifest = options.cartManifest;
 		this.cartProjectRootPath = options.cartProjectRootPath;
@@ -685,12 +684,7 @@ export class Runtime {
 			this.hostFault.clear();
 			this.clearBootFaults();
 			this.clearLuaBootState();
-			if (this.hasCompletedInitialBoot) { // Subsequent boot: reset the runtime state
-				await machineManager.resetRuntime();
-				machineManager.bootstrapStartupAudio();
-			}
 			luaPipeline.bootActiveProgram(this);
-			this.hasCompletedInitialBoot = true;
 			}
 			catch (error) {
 				handleLuaError(this, error);
@@ -721,54 +715,40 @@ export class Runtime {
 		}
 	}
 
-	private async restartBootRomStartupState(): Promise<void> {
-		await machineManager.resetRuntime();
-		await this.prepareBootRomStartupState();
-		await machineManager.refreshRenderSurfaces();
-		machineManager.bootstrapStartupAudio();
-	}
-
-	public async rebootToBootRom(): Promise<void> {
-		const gateToken = this.luaGate.begin({ blocking: true, tag: 'reboot_bootrom' });
-		try {
-			this.clearBootFaults();
-			deactivateTerminalMode(this);
-			deactivateEditor(this);
-			this.clearLuaBootState();
-			this.cartBoot.reset();
-			if (this.cartLuaSources && this.cartProjectRootPath) {
-				await applyWorkspaceOverridesToCart(this, {
-					cart: this.cartLuaSources,
-					storage: this.storageService,
-					includeServer: true,
-					projectRootPath: this.cartProjectRootPath,
-				});
-			}
-			await applyWorkspaceOverridesToRegistry(this, {
-				registry: this.systemLuaSources,
+	public async prepareRebootToBootRom(): Promise<void> {
+		this.clearBootFaults();
+		deactivateTerminalMode(this);
+		deactivateEditor(this);
+		this.clearLuaBootState();
+		this.cartBoot.reset();
+		if (this.cartLuaSources && this.cartProjectRootPath) {
+			await applyWorkspaceOverridesToCart(this, {
+				cart: this.cartLuaSources,
 				storage: this.storageService,
 				includeServer: true,
-				projectRootPath: this.systemProjectRootPath,
+				projectRootPath: this.cartProjectRootPath,
 			});
-			await this.restartBootRomStartupState();
-			luaPipeline.bootActiveProgram(this);
 		}
-		catch (error) {
-			handleLuaError(this, error);
-			throw error;
-		}
-		finally {
-			this.luaGate.end(gateToken);
-		}
+		await applyWorkspaceOverridesToRegistry(this, {
+			registry: this.systemLuaSources,
+			storage: this.storageService,
+			includeServer: true,
+			projectRootPath: this.systemProjectRootPath,
+		});
+		await this.prepareBootRomStartupState();
 	}
 
 	public applyCartProgramTiming(): void {
 		const perfSpecs = getMachinePerfSpecs(this.activeMachineManifest);
-		this.timing.applyUfpsScaled(resolveUfpsScaled(perfSpecs.ufps));
+		this.applyUfpsScaled(resolveUfpsScaled(perfSpecs.ufps));
 		const cpuHz = resolvePositiveSafeInteger(perfSpecs.cpu_freq_hz, 'machine.specs.cpu.cpu_freq_hz');
 		applyActiveMachineTiming(this, cpuHz);
-		this.input.setRuntimeInputFrameDurationMs(this.timing.frameDurationMs);
 		setTransferRatesFromManifest(this, perfSpecs);
+	}
+
+	public applyUfpsScaled(ufpsScaled: number): void {
+		this.timing.applyUfpsScaled(ufpsScaled);
+		this.input.setRuntimeInputFrameDurationMs(this.timing.frameDurationMs);
 	}
 
 	public dispose(): void {

@@ -1,4 +1,3 @@
-import { machineManager } from '../../../core/machine_manager';
 import { DEFAULT_FRAME_TIME_MS, DEFAULT_UFPS, DEFAULT_UFPS_SCALED, HZ_SCALE } from './constants';
 import { resolveUfpsScaled } from './index';
 
@@ -19,7 +18,5 @@ export class TimingState {
 		this.ufpsScaled = resolveUfpsScaled(ufpsScaled);
 		this.ufps = this.ufpsScaled / HZ_SCALE;
 		this.frameDurationMs = 1000 / this.ufps;
-		machineManager.platform.audio.setFrameTimeSec(HZ_SCALE / this.ufpsScaled);
-		machineManager.sndmaster.setMixerUfpsScaled(this.ufpsScaled);
 	}
 }

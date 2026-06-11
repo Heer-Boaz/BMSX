@@ -103,7 +103,7 @@ export function performReboot(runtime: Runtime): boolean {
 	deactivateEditor(runtime);
 	scheduleRuntimeTask(async () => {
 		console.info('[IDE] Performing cold reboot through bootrom');
-		await runtime.rebootToBootRom();
+		await machineManager.rebootToBootRom();
 		editorDocumentState.appliedGeneration = targetGeneration;
 		machineManager.paused = false;
 	}, (error) => {

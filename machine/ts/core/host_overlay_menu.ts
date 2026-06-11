@@ -262,7 +262,7 @@ export class HostOverlayMenu {
 		{
 			kind: 'action',
 			label: 'REBOOT CART',
-			execute: () => { void machineManager.runtime.rebootToBootRom(); },
+			execute: () => { void machineManager.rebootToBootRom(); },
 		},
 		{
 			kind: 'action',

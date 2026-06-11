@@ -5,9 +5,11 @@ import { TextureManager } from "../render/texture_manager";
 import { RenderPassLibrary } from "../render/backend/pass/library";
 import { setMicrotaskQueue } from '../platform';
 import type { GameViewHost, Platform } from '../platform';
-import { DEFAULT_UFPS } from '../machine/runtime/timing/constants';
+import { DEFAULT_UFPS, HZ_SCALE } from '../machine/runtime/timing/constants';
 import { RomBootManager } from './rom_boot_manager';
-import { renderGate, runGate } from './taskgate';
+import { renderGate, runGate } from '../common/taskgate';
+import { bootActiveProgram } from '../ide/runtime/lua_pipeline';
+import { handleLuaError } from '../ide/workbench/runtime_errors';
 import { Runtime } from '../machine/runtime/runtime';
 import type { GPUBackend } from '../render/backend/backend';
 import { clearOverlayFrame } from '../render/host_overlay/overlay_queue';
@@ -97,10 +99,16 @@ export class MachineManager {
 		this.initialized = false;
 	}
 
+	public syncAudioTiming(): void {
+		this.platform.audio.setFrameTimeSec(HZ_SCALE / this.runtime.timing.ufpsScaled);
+		this.sndmaster.setMixerUfpsScaled(this.runtime.timing.ufpsScaled);
+	}
+
 	public bootstrapStartupAudio(): void {
 		if (!this.platform.audio.available) {
 			return;
 		}
+		this.syncAudioTiming();
 		this.sndmaster.bootstrapRuntimeAudio(this.runtime.timing.ufpsScaled, DEFAULT_MASTER_VOLUME);
 	}
 
@@ -133,8 +141,9 @@ export class MachineManager {
 			host: resolvedViewHost,
 		});
 		this._view = gview;
-		const runtime = await Runtime.init(systemLayer, workspaceOverlay, Input.instance, gview, cartridge);
+		const runtime = await Runtime.init(systemLayer, workspaceOverlay, Input.instance, gview, platform.storage, cartridge);
 		this._runtime = runtime;
+		this.syncAudioTiming();
 		const gpuBackend = await resolvedViewHost.createBackend() as GPUBackend;
 		gview.backend = gpuBackend;
 		const textureManager = new TextureManager(gpuBackend);
@@ -171,6 +180,24 @@ export class MachineManager {
 		this.start();
 		// SoundMaster.instance.volume = 0;
 		return runtime;
+	}
+
+	public async rebootToBootRom(): Promise<void> {
+		const gateToken = this.runtime.luaGate.begin({ blocking: true, tag: 'reboot_bootrom' });
+		try {
+			await this.resetRuntime();
+			await this.runtime.prepareRebootToBootRom();
+			await this.refreshRenderSurfaces();
+			this.bootstrapStartupAudio();
+			bootActiveProgram(this.runtime);
+		}
+		catch (error) {
+			handleLuaError(this.runtime, error);
+			throw error;
+		}
+		finally {
+			this.runtime.luaGate.end(gateToken);
+		}
 	}
 
 	public async refreshRenderSurfaces(): Promise<void> {

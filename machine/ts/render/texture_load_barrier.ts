@@ -1,4 +1,4 @@
-import { type GateCategory, type GateGroup } from '../core/taskgate';
+import { type GateCategory, type GateGroup } from '../common/taskgate';
 
 type LoaderFn<T> = () => Promise<T>;
 type Disposer<T> = (val: T) => void;

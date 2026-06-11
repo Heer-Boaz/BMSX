@@ -1,6 +1,6 @@
 import { machineManager } from '../../../core/machine_manager';
 import { scheduleIdeOnce } from '../../common/background_tasks';
-import { taskGate } from '../../../core/taskgate';
+import { taskGate } from '../../../common/taskgate';
 import type { Runtime } from '../../../machine/runtime/runtime';
 import { workspaceSourceCache } from '../../workspace/cache';
 import { workspaceState } from './state';

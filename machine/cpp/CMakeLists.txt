@@ -223,7 +223,7 @@ add_library(bmsx_core STATIC
 	common/serializer/binencoder.cpp
 	rompack/format.cpp
 	render/shared/bitmap_font.cpp
-	core/taskgate.cpp
+	common/taskgate.cpp
 	common/byte_hex_string.cpp
 	common/mem_snapshot.cpp
 	common/scratchbuffer.cpp

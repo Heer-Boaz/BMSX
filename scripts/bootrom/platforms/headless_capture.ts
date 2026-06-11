@@ -2,7 +2,7 @@ import * as fs from 'node:fs/promises';
 import * as path from 'node:path';
 import { PNG } from 'pngjs';
 
-import { taskGate } from '../../../machine/ts/core/taskgate';
+import { taskGate } from '../../../machine/ts/common/taskgate';
 import { HeadlessGameViewHost, type HeadlessPresentedFrame } from '../../../machine/ts/render/headless/view';
 
 export interface ScheduledHeadlessCapture {
