@@ -175,7 +175,7 @@ void PlayerInput::clearContext(const std::string& id) {
 	clearActionEvaluationState();
 }
 
-bool PlayerInput::supportsVibrationEffect() const {
+bool PlayerInput::supportsInputControllerVibrationEffect() const {
 	for (InputHandler* handler : inputHandlers) {
 		if (handler && handler->supportsVibrationEffect()) {
 			return true;
@@ -184,7 +184,10 @@ bool PlayerInput::supportsVibrationEffect() const {
 	return false;
 }
 
-void PlayerInput::applyVibrationEffect(const VibrationParams& params) {
+void PlayerInput::applyInputControllerVibrationEffect(f64 durationMs, f32 intensity) {
+	VibrationParams params;
+	params.duration = durationMs;
+	params.intensity = intensity;
 	for (InputHandler* handler : inputHandlers) {
 		if (handler && handler->supportsVibrationEffect()) {
 			handler->applyVibrationEffect(params);

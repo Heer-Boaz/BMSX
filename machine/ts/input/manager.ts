@@ -10,7 +10,8 @@ import { PendingAssignmentProcessor } from './host/assignment_processor';
 import { PlayerInput, InputSource } from './player';
 import { PointerInput } from './pointer';
 import type { DeviceKind, InputDevice, InputEvt, SubscriptionHandle, GameViewCanvas } from '../platform';
-import { INPUT_CONTROLLER_DEFAULT_MAPPING, INPUT_CONTROLLER_GAMEPAD_BUTTON_IDS, type InputControllerInputSource, type InputControllerPlayerInputSource } from '../machine/devices/input/contracts';
+import { INPUT_CONTROLLER_DEFAULT_MAPPING, INPUT_CONTROLLER_GAMEPAD_BUTTON_IDS, type InputControllerPlayerInputSource } from '../machine/devices/input/contracts';
+import type { RuntimeInputSource } from '../machine/runtime/input';
 
 const EMPTY_BUTTON_STATE_PATCH: Readonly<Partial<ButtonState>> = Object.freeze({});
 const EMPTY_ACTION_STATE_PATCH: Readonly<Partial<ActionState>> = Object.freeze({});
@@ -524,7 +525,7 @@ export class InputStateManager {
  * Represents the Input class, which manages player inputs and gamepad assignments.
  * Implements the singleton pattern to ensure only one instance exists.
  */
-export class Input implements RegisterablePersistent, InputControllerInputSource {
+export class Input implements RegisterablePersistent, RuntimeInputSource {
 	get registrypersistent(): true {
 		return true;
 	}
@@ -652,7 +653,7 @@ export class Input implements RegisterablePersistent, InputControllerInputSource
 		return this.getPlayerInput(playerIndex);
 	}
 
-	public setFrameDurationMs(frameDurationMs: number): void {
+	public setRuntimeInputFrameDurationMs(frameDurationMs: number): void {
 		this.frameDurationMs = frameDurationMs;
 		for (const player of this.playerInputs) {
 			if (player) {
@@ -1051,7 +1052,7 @@ export class Input implements RegisterablePersistent, InputControllerInputSource
 		this.pendingGamepadAssignments.forEach(pending => pending.run());
 	}
 
-	public samplePlayers(currentTime: number): void {
+	public sampleInputControllerPlayers(currentTime: number): void {
 		this.playerInputs.forEach(player => {
 			if (!player) return;
 			player.beginFrame(currentTime);

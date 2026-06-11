@@ -1,7 +1,5 @@
 #include "machine/devices/input/output_port.h"
 
-#include "input/manager.h"
-#include "input/player.h"
 #include "machine/bus/io.h"
 #include "machine/devices/input/contracts.h"
 #include "machine/devices/input/registers.h"
@@ -11,7 +9,7 @@
 
 namespace bmsx {
 
-InputControllerOutputPort::InputControllerOutputPort(Input& input, const InputControllerRegisterFile& registers, Memory& memory)
+InputControllerOutputPort::InputControllerOutputPort(InputControllerInputSource& input, const InputControllerRegisterFile& registers, Memory& memory)
 	: m_input(input)
 	, m_registers(registers)
 	, m_memory(memory) {
@@ -28,7 +26,7 @@ void InputControllerOutputPort::writeOutputControlRegisterThunk(void* context, u
 }
 
 u32 InputControllerOutputPort::readStatus(u32 player) const {
-	return m_input.getPlayerInput(static_cast<i32>(player))->supportsVibrationEffect() ? INP_OUTPUT_STATUS_SUPPORTED : 0u;
+	return m_input.inputControllerPlayer(static_cast<i32>(player)).supportsInputControllerVibrationEffect() ? INP_OUTPUT_STATUS_SUPPORTED : 0u;
 }
 
 Value InputControllerOutputPort::readRegister(u32 addr) const {
@@ -55,10 +53,7 @@ void InputControllerOutputPort::writeOutputControlRegister(Value value) {
 }
 
 void InputControllerOutputPort::apply(u32 player, u32 intensityQ16, u32 durationMs) {
-	VibrationParams params;
-	params.duration = static_cast<f64>(durationMs);
-	params.intensity = decodeInputOutputIntensityQ16(intensityQ16);
-	m_input.getPlayerInput(static_cast<i32>(player))->applyVibrationEffect(params);
+	m_input.inputControllerPlayer(static_cast<i32>(player)).applyInputControllerVibrationEffect(static_cast<f64>(durationMs), decodeInputOutputIntensityQ16(intensityQ16));
 }
 
 } // namespace bmsx

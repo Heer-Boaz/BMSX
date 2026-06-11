@@ -5,13 +5,13 @@
 
 namespace bmsx {
 
-class Input;
+class InputControllerInputSource;
 class InputControllerRegisterFile;
 class Memory;
 
 class InputControllerOutputPort {
 public:
-	InputControllerOutputPort(Input& input, const InputControllerRegisterFile& registers, Memory& memory);
+	InputControllerOutputPort(InputControllerInputSource& input, const InputControllerRegisterFile& registers, Memory& memory);
 
 	static Value readRegisterThunk(void* context, u32 addr);
 	static void writeOutputControlRegisterThunk(void* context, u32 addr, Value value);
@@ -23,7 +23,7 @@ public:
 	void apply(u32 player, u32 intensityQ16, u32 durationMs);
 
 private:
-	Input& m_input;
+	InputControllerInputSource& m_input;
 	const InputControllerRegisterFile& m_registers;
 	Memory& m_memory;
 };

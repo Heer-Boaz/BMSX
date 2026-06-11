@@ -57,10 +57,13 @@ export interface InputMap {
 export interface InputControllerPlayerInputSource {
 	sampleInputControllerButton(source: InputSource, button: ButtonId): ButtonState;
 	consumeInputControllerButton(source: InputSource, button: ButtonId): void;
+	supportsInputControllerVibrationEffect(): boolean;
+	applyInputControllerVibrationEffect(durationMs: number, intensity: number): void;
 }
 
 export interface InputControllerInputSource {
 	inputControllerPlayer(playerIndex: number): InputControllerPlayerInputSource;
+	sampleInputControllerPlayers(currentTimeMs: number): void;
 }
 
 export function inputBindingId(binding: ButtonId | { id: ButtonId }): ButtonId {

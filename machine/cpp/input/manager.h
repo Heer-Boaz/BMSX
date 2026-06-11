@@ -9,6 +9,7 @@
 
 #include "models.h"
 #include "common/subscription.h"
+#include "machine/runtime/input.h"
 #include <array>
 #include <deque>
 #include <memory>
@@ -95,7 +96,7 @@ struct DeviceBinding {
  * Singleton managing all input for the game.
  * ============================================================================ */
 
-class Input : public InputControllerInputSource {
+class Input : public RuntimeInputSource {
 public:
 	// ─────────────────────────────────────────────────────────────────────────
 	// Constants
@@ -153,7 +154,7 @@ public:
 	// Input mapping
 	// ─────────────────────────────────────────────────────────────────────────
 	static const InputMap DEFAULT_INPUT_MAPPING;
-	void setFrameDurationMs(f64 frameDurationMs);
+	void setRuntimeInputFrameDurationMs(f64 frameDurationMs) override;
 	
 	// ─────────────────────────────────────────────────────────────────────────
 	// Frame update
@@ -163,7 +164,7 @@ public:
 	void pollInput();
 
 	// Sample player input state for one cart-visible simulation frame
-	void samplePlayers(f64 currentTimeMs);
+	void sampleInputControllerPlayers(f64 currentTimeMs) override;
 	
 	// ─────────────────────────────────────────────────────────────────────────
 	// Button event handling (from platform)

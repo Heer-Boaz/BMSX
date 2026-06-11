@@ -133,7 +133,7 @@ export class MachineManager {
 			host: resolvedViewHost,
 		});
 		this._view = gview;
-		const runtime = await Runtime.init(systemLayer, workspaceOverlay, gview, cartridge);
+		const runtime = await Runtime.init(systemLayer, workspaceOverlay, Input.instance, gview, cartridge);
 		this._runtime = runtime;
 		const gpuBackend = await resolvedViewHost.createBackend() as GPUBackend;
 		gview.backend = gpuBackend;

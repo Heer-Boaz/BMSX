@@ -4,11 +4,11 @@
 #include "machine/memory/lua_heap_usage.h"
 #include "machine/memory/map.h"
 #include "machine/program/loader.h"
+#include "machine/runtime/input.h"
 #include "machine/runtime/system_irq.h"
 #include "machine/runtime/timing/config.h"
 #include "rompack/format.h"
 #include "rompack/loader.h"
-#include "input/manager.h"
 #include <array>
 #include <stdexcept>
 #include <utility>
@@ -21,7 +21,7 @@ constexpr std::array<u8, CART_ROM_HEADER_SIZE> CART_ROM_EMPTY_HEADER = {};
 
 Runtime::Runtime(
 	const RuntimeOptions& options,
-	Input& input,
+	RuntimeInputSource& input,
 	MicrotaskQueue& microtasks,
 	GameView& view
 )
@@ -47,7 +47,7 @@ Runtime::Runtime(
 {
 	configureLuaHeapUsage({});
 	resetTrackedLuaHeapBytes();
-	input.setFrameDurationMs(timing.frameDurationMs);
+	input.setRuntimeInputFrameDurationMs(timing.frameDurationMs);
 	machine.memory.clearIoSlots();
 	machine.initializeSystemIo();
 	machine.resetDevices();

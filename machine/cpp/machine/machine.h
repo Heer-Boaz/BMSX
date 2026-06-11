@@ -15,7 +15,7 @@
 namespace bmsx {
 
 class MicrotaskQueue;
-class Input;
+class InputControllerInputSource;
 
 struct MachineTiming {
 	i64 cpuHz = 0;
@@ -28,7 +28,7 @@ struct MachineTiming {
 
 class Machine {
 public:
-	Machine(Memory& memoryRef, VdpFrameBufferSize frameBufferSizeValue, Input& input, MicrotaskQueue& microtasks);
+	Machine(Memory& memoryRef, VdpFrameBufferSize frameBufferSizeValue, InputControllerInputSource& input, MicrotaskQueue& microtasks);
 
 	Memory& memory;
 	VdpFrameBufferSize frameBufferSize;

@@ -461,7 +461,7 @@ InputControllerPlayerInputSource& Input::inputControllerPlayer(i32 playerIndex) 
 	return *getPlayerInput(playerIndex);
 }
 
-void Input::setFrameDurationMs(f64 frameDurationMs) {
+void Input::setRuntimeInputFrameDurationMs(f64 frameDurationMs) {
 	m_frameDurationMs = frameDurationMs;
 	for (auto& player : m_playerInputs) {
 		if (player) {
@@ -670,7 +670,7 @@ void Input::pollInput() {
 	}
 }
 
-void Input::samplePlayers(f64 currentTimeMs) {
+void Input::sampleInputControllerPlayers(f64 currentTimeMs) {
 	for (auto& player : m_playerInputs) {
 		if (player) {
 			player->beginFrame(currentTimeMs);

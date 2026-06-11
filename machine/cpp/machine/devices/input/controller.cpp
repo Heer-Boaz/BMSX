@@ -2,7 +2,7 @@
 
 namespace bmsx {
 
-InputController::InputController(Memory& memory, Input& input, const StringPool& strings)
+InputController::InputController(Memory& memory, InputControllerInputSource& input, const StringPool& strings)
 	: m_memory(memory)
 	, m_actionTable(input, strings)
 	, m_eventFifo(memory)

@@ -11,14 +11,13 @@
 #include "machine/devices/input/sample_latch.h"
 #include "machine/devices/input/sample_edge.h"
 #include "machine/devices/input/save_state.h"
-#include "input/manager.h"
 #include <string>
 
 namespace bmsx {
 
 class InputController {
 public:
-	InputController(Memory& memory, Input& input, const StringPool& strings);
+	InputController(Memory& memory, InputControllerInputSource& input, const StringPool& strings);
 
 	void reset();
 	void onVblankEdge(f64 currentTimeMs, u32 nowCycles);

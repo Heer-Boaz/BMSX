@@ -316,7 +316,6 @@ bool MachineManager::loadSystemRomInternal(const u8* data, size_t size) {
 
 Runtime& MachineManager::prepareRuntimeForActiveCart(const ResolvedRuntimeTiming& timing, const MachineManifest& machine) {
 	Runtime& runtime = ensureRuntime(RuntimeOptions{
-		1,
 		Vec2{ static_cast<f32>(timing.viewportWidth), static_cast<f32>(timing.viewportHeight) },
 		{ m_system_rom_data, m_system_rom_size },
 		{ m_cart_rom_data, m_cart_rom_size },
@@ -351,7 +350,6 @@ void MachineManager::bootRuntimeFromProgram() {
 	RuntimeRomPackage& romPackage = activeRom();
 	const ResolvedRuntimeTiming timing = resolveRuntimeTiming(romPackage.machine);
 	Runtime& rt = ensureRuntime(RuntimeOptions{
-		1,
 		Vec2{ static_cast<f32>(timing.viewportWidth), static_cast<f32>(timing.viewportHeight) },
 		{ m_system_rom_data, m_system_rom_size },
 		{ m_cart_rom_data, m_cart_rom_size },
@@ -405,7 +403,6 @@ bool MachineManager::bootSystemStartupProgram(const MachineManifest& runtimeMach
 	configureViewForMachine(runtimeMachine);
 
 	Runtime& rt = ensureRuntime(RuntimeOptions{
-		1,
 		Vec2{ static_cast<f32>(timing.viewportWidth), static_cast<f32>(timing.viewportHeight) },
 		{ m_system_rom_data, m_system_rom_size },
 		{ m_cart_rom_data, m_cart_rom_size },

@@ -1,4 +1,3 @@
-import { Input } from '../../../input/manager';
 import {
 	IO_INP_OUTPUT_CTRL,
 	IO_INP_OUTPUT_STATUS,
@@ -10,17 +9,18 @@ import {
 	decodeInputOutputIntensityQ16,
 	INP_OUTPUT_CTRL_APPLY,
 	INP_OUTPUT_STATUS_SUPPORTED,
+	type InputControllerInputSource,
 } from './contracts';
 
 export class InputControllerOutputPort {
 	public constructor(
-		private readonly input: Input,
+		private readonly input: InputControllerInputSource,
 		private readonly registers: InputControllerRegisterFile,
 		private readonly memory: Memory,
 	) {}
 
 	public readStatus(player: number): number {
-		return this.input.getPlayerInput(player).supportsVibrationEffect ? INP_OUTPUT_STATUS_SUPPORTED : 0;
+		return this.input.inputControllerPlayer(player).supportsInputControllerVibrationEffect() ? INP_OUTPUT_STATUS_SUPPORTED : 0;
 	}
 
 	public readRegister(addr: number): number {
@@ -47,10 +47,6 @@ export class InputControllerOutputPort {
 	}
 
 	public apply(player: number, intensityQ16: number, durationMs: number): void {
-		this.input.getPlayerInput(player).applyVibrationEffect({
-			effect: 'dual-rumble',
-			duration: durationMs,
-			intensity: decodeInputOutputIntensityQ16(intensityQ16),
-		});
+		this.input.inputControllerPlayer(player).applyInputControllerVibrationEffect(durationMs, decodeInputOutputIntensityQ16(intensityQ16));
 	}
 }

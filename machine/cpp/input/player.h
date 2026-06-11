@@ -59,8 +59,8 @@ public:
 
 	void clearContext(const std::string& id);
 
-	bool supportsVibrationEffect() const;
-	void applyVibrationEffect(const VibrationParams& params);
+	bool supportsInputControllerVibrationEffect() const override;
+	void applyInputControllerVibrationEffect(f64 durationMs, f32 intensity) override;
 
 	// ─────────────────────────────────────────────────────────────────────────
 	// Action state

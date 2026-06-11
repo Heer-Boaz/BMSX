@@ -216,7 +216,6 @@ struct RuntimeHarness {
 		, manifest(makeRuntimeTestManifest())
 		, runtime(
 			bmsx::RuntimeOptions{
-				.playerIndex = 0,
 				.viewport = {.x=256.0F, .y=212.0F},
 				.systemRomBytes = {},
 				.cartRomBytes = {},

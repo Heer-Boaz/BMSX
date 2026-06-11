@@ -1,6 +1,5 @@
 import { machineManager } from '../../core/machine_manager';
 import { taskGate } from '../../core/taskgate';
-import { Input } from '../../input/manager';
 import type { LuaDefinitionInfo } from '../../lua/syntax/ast';
 import type { LuaEnvironment } from '../../lua/environment';
 import { LuaRuntimeError } from '../../lua/errors';
@@ -31,7 +30,7 @@ import { type LuaSemanticModel, type FileSemanticData } from '../../lua/semantic
 import { registerFirmwareBuiltins } from '../firmware/builtins';
 import { LuaFunctionRedirectCache } from '../firmware/handler_registry';
 import { LuaJsBridge } from './host/native_bridge';
-import { RuntimeOptions } from './contracts';
+import type { RuntimeOptions } from './options';
 import { applyWorkspaceOverridesToCart, applyWorkspaceOverridesToRegistry, DEFAULT_SYSTEM_PROJECT_ROOT_PATH } from '../../ide/workspace/workspace';
 import {
 	buildLuaSources,
@@ -71,6 +70,7 @@ import {
 } from './timing/config';
 import { HandlerCache } from './handler_cache';
 import { Machine } from '../machine';
+import type { RuntimeInputSource } from './input';
 import { Memory } from '../memory/memory';
 import {
 	BASE_RAM_USED_SIZE,
@@ -245,9 +245,7 @@ export class Runtime {
 		return this.programMetadata !== null;
 	}
 
-	public static async init(systemLayer: RuntimeRomLayer, workspaceOverlay: Uint8Array | undefined, view: GameView, cartridge?: Uint8Array): Promise<Runtime> {
-		const playerIndex = Input.instance.startupGamepadIndex ?? 1;
-
+	public static async init(systemLayer: RuntimeRomLayer, workspaceOverlay: Uint8Array | undefined, input: RuntimeInputSource, view: GameView, cartridge?: Uint8Array): Promise<Runtime> {
 		const systemSource = new RomSourceStack([{ id: systemLayer.id, index: systemLayer.index, payload: systemLayer.payload }]);
 		const systemLuaSources = buildLuaSources(systemSource, systemSource, systemLayer.index, ['system']);
 		const systemMachine = systemLayer.index.machine;
@@ -269,7 +267,6 @@ export class Runtime {
 				cartRom: new Uint8Array(CART_ROM_HEADER_SIZE),
 			});
 			const runtime = new Runtime({
-				playerIndex,
 				viewport: systemRenderSize,
 				memory,
 				activeMachineManifest: systemMachine,
@@ -281,7 +278,7 @@ export class Runtime {
 				vblankCycles,
 				vdpWorkUnitsPerSec: systemPerfSpecs.work_units_per_sec,
 				geoWorkUnitsPerSec: systemPerfSpecs.geo_work_units_per_sec,
-			}, view);
+			}, input, view);
 			setTransferRatesFromManifest(runtime, systemPerfSpecs);
 			runtime.configureProgramSources({
 				systemRom: systemLayer,
@@ -334,7 +331,6 @@ export class Runtime {
 			overlayRom: overlayPayload,
 		});
 		const runtime = new Runtime({
-			playerIndex,
 			viewport: cartRenderSize,
 			memory,
 			activeMachineManifest: cartRom.index.machine,
@@ -346,7 +342,7 @@ export class Runtime {
 			vblankCycles,
 			vdpWorkUnitsPerSec: cartPerfSpecs.work_units_per_sec,
 			geoWorkUnitsPerSec: cartPerfSpecs.geo_work_units_per_sec,
-		}, view);
+		}, input, view);
 		setTransferRatesFromManifest(runtime, cartPerfSpecs);
 		runtime.configureProgramSources({
 			systemRom: systemLayer,
@@ -564,7 +560,11 @@ export class Runtime {
 		return null;
 	}
 
-	private constructor(options: RuntimeOptions, view: GameView) {
+	private constructor(
+		options: RuntimeOptions,
+		private readonly input: RuntimeInputSource,
+		view: GameView,
+	) {
 		this.view = view;
 		this.frameScheduler = new FrameSchedulerState(this);
 		this.frameLoop = new FrameLoopState(this);
@@ -574,7 +574,7 @@ export class Runtime {
 		this.hostFault = new HostFaultState(this);
 		this.cartBoot = new CartBootState(this);
 		this.timing = new TimingState(options.ufpsScaled, options.cpuHz, options.cycleBudgetPerFrame);
-		Input.instance.setFrameDurationMs(this.timing.frameDurationMs);
+		this.input.setRuntimeInputFrameDurationMs(this.timing.frameDurationMs);
 		const initialVdpWorkUnits = options.vdpWorkUnitsPerSec ?? DEFAULT_VDP_WORK_UNITS_PER_SEC;
 		const initialGeoWorkUnits = options.geoWorkUnitsPerSec ?? DEFAULT_GEO_WORK_UNITS_PER_SEC;
 		this.timing.vdpWorkUnitsPerSec = resolvePositiveSafeInteger(initialVdpWorkUnits, 'machine.specs.vdp.work_units_per_sec');
@@ -587,7 +587,7 @@ export class Runtime {
 		this.machine = new Machine(
 			options.memory,
 			options.viewport,
-			Input.instance,
+			input,
 		);
 		this.machine.memory.clearIoSlots();
 		this.machine.initializeSystemIo();
@@ -767,7 +767,7 @@ export class Runtime {
 		this.timing.applyUfpsScaled(resolveUfpsScaled(perfSpecs.ufps));
 		const cpuHz = resolvePositiveSafeInteger(perfSpecs.cpu_freq_hz, 'machine.specs.cpu.cpu_freq_hz');
 		applyActiveMachineTiming(this, cpuHz);
-		Input.instance.setFrameDurationMs(this.timing.frameDurationMs);
+		this.input.setRuntimeInputFrameDurationMs(this.timing.frameDurationMs);
 		setTransferRatesFromManifest(this, perfSpecs);
 	}
 

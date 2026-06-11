@@ -1,5 +1,4 @@
 import { ApuOutputMixer } from './devices/audio/output';
-import type { Input } from '../input/manager';
 import {
 	HOST_FAULT_STAGE_NONE,
 	IO_SYS_BOOT_CART,
@@ -12,6 +11,7 @@ import { DmaController } from './devices/dma/controller';
 import { GeometryController } from './devices/geometry/controller';
 import { ImgDecController } from './devices/imgdec/controller';
 import { InputController } from './devices/input/controller';
+import type { InputControllerInputSource } from './devices/input/contracts';
 import { IrqController } from './devices/irq/controller';
 import { VDP } from './devices/vdp/vdp';
 import type { VdpFrameBufferSize } from './devices/vdp/vram';
@@ -49,7 +49,7 @@ export class Machine {
 	public constructor(
 		public readonly memory: Memory,
 		public readonly frameBufferSize: VdpFrameBufferSize,
-		input: Input,
+		input: InputControllerInputSource,
 	) {
 		this.cpu = new CPU(this.memory);
 		this.scheduler = new DeviceScheduler(this.cpu);
