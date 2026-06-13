@@ -405,8 +405,8 @@ function player:spawn_uplaser(vessel_id)
 	else
 		length_units = constants.weapons.uplaser.level1_length_units
 	end
-	local aligned_x<const> = ((vessel_x + constants.weapons.uplaser.spawn_offset_x) // constants.weapons.uplaser.tile_width)
-		* constants.weapons.uplaser.tile_width
+	local aligned_x<const> = ((vessel_x + constants.weapons.uplaser.spawn_offset_x) // constants.weapons.uplaser.tile_width) *
+		constants.weapons.uplaser.tile_width
 	local initial_width<const> = length_units * constants.weapons.uplaser.length_unit_px
 	local uplaser<const> = {
 		vessel_id = vessel_id,
@@ -636,8 +636,8 @@ function player:update_uplasers()
 				end
 				uplaser.length_units = uplaser.length_units + growth_units
 				self:refresh_uplaser_dimensions(uplaser)
-				uplaser.x = ((uplaser.center_x - (uplaser.width * 0.5)) // constants.weapons.uplaser.tile_width)
-					* constants.weapons.uplaser.tile_width
+				uplaser.x = ((uplaser.center_x - (uplaser.width * 0.5)) // constants.weapons.uplaser.tile_width) *
+					constants.weapons.uplaser.tile_width
 			end
 		end
 

@@ -386,37 +386,75 @@ end
 function new_game()
 end
 
+-- USB HID usages (page 0x07): the ICU keyboard bitmap is indexed by these.
+local key_arrow_down<const> = 81
+local key_arrow_up<const> = 82
+local boot_repeat_initial_delay_frames<const> = 15
+local boot_repeat_interval_frames<const> = 4
+local boot_input_frame = 0
+local prev_arrow_down = false
+local prev_arrow_up = false
+local down_next_repeat_frame = 0
+local up_next_repeat_frame = 0
+
+local key_pressed<const> = function(usage)
+	local word<const> = mem[sys_inp_keys + ((usage >> 5) << 2)]
+	return ((word >> (usage & 31)) & 1) ~= 0
+end
+
 local update_boot_screen<const> = function()
 	boot_screen_visible = true
-	mem[sys_inp_player] = 1
-	mem[sys_inp_query] = &'down[rp]'
-	local scroll_delta = mem[sys_inp_status] ~= 0 and 1 or 0
-	if scroll_delta == 0 then
-		mem[sys_inp_query] = &'up[rp]'
-		if mem[sys_inp_status] ~= 0 then
-			scroll_delta = -1
+	boot_input_frame = boot_input_frame + 1
+	local arrow_down<const> = key_pressed(key_arrow_down)
+	local arrow_up<const> = key_pressed(key_arrow_up)
+	local scroll_delta = 0
+	local down_repeat = false
+	if arrow_down then
+		if not prev_arrow_down then
+			down_repeat = true
+			down_next_repeat_frame = boot_input_frame + boot_repeat_initial_delay_frames
+		elseif boot_input_frame >= down_next_repeat_frame then
+			down_repeat = true
+			down_next_repeat_frame = down_next_repeat_frame + boot_repeat_interval_frames
 		end
 	end
-	local cart_header<const> = read_cart_header(cart_rom_base)
-	local cart_present_and_ready<const> = cart_header
-		and mem[cart_rom_base] == cart_rom_magic
-		and mem[cart_program_vector_addr] == cart_program_start_addr
+	local up_repeat = false
+	if arrow_up then
+		if not prev_arrow_up then
+			up_repeat = true
+			up_next_repeat_frame = boot_input_frame + boot_repeat_initial_delay_frames
+		elseif boot_input_frame >= up_next_repeat_frame then
+			up_repeat = true
+			up_next_repeat_frame = up_next_repeat_frame + boot_repeat_interval_frames
+		end
+	end
+	if down_repeat then
+		scroll_delta = 1
+	elseif up_repeat then
+		scroll_delta = -1
+	end
+	prev_arrow_down = arrow_down
+	prev_arrow_up = arrow_up
+local cart_header<const> = read_cart_header(cart_rom_base)
+local cart_present_and_ready<const> = cart_header
+	and mem[cart_rom_base] == cart_rom_magic
+	and mem[cart_program_vector_addr] == cart_program_start_addr
 
-	if cart_present_and_ready and not boot_requested and system_slot_ready and not system_slot_failed then
-		if (mem[sys_vdp_status] & sys_vdp_status_submit_busy) == 0 then
-			boot_requested = true
-			print('Cart boot requested.')
-			mem[sys_boot_cart] = 1
-		end
-		return
+if cart_present_and_ready and not boot_requested and system_slot_ready and not system_slot_failed then
+	if (mem[sys_vdp_status] & sys_vdp_status_submit_busy) == 0 then
+		boot_requested = true
+		print('Cart boot requested.')
+		mem[sys_boot_cart] = 1
 	end
-	if boot_requested and mem[sys_boot_cart] == 0 then
-		return
-	end
-	render_boot_screen(scroll_delta)
-	if not boot_screen_presented then
-		boot_screen_presented = true
-	end
+	return
+end
+if boot_requested and mem[sys_boot_cart] == 0 then
+	return
+end
+render_boot_screen(scroll_delta)
+if not boot_screen_presented then
+	boot_screen_presented = true
+end
 end
 
 render_boot_screen = function(scroll_delta)
@@ -479,7 +517,6 @@ while true do
 		halt_until_irq
 		flags = service_irqs()
 	until (flags & irq_vblank) ~= 0
-	mem[sys_inp_player] = 1
 	vdp_stream_cursor = sys_vdp_stream_base
 	update_boot_screen()
 	vdp_rpu_quads.finish_frame()

@@ -13,7 +13,7 @@ import type { ApuCommandFifoState } from '../../devices/audio/command_fifo';
 import { APU_COMMAND_FIFO_CAPACITY, APU_COMMAND_FIFO_REGISTER_WORD_COUNT, APU_PARAMETER_REGISTER_COUNT, APU_SLOT_COUNT, APU_SLOT_REGISTER_WORD_COUNT } from '../../devices/audio/contracts';
 import type { StringPoolState, StringPoolStateEntry } from '../../cpu/string_pool';
 import type { InputControllerState } from '../../devices/input/save_state';
-import { INPUT_CONTROLLER_EVENT_FIFO_CAPACITY, INPUT_CONTROLLER_PLAYER_COUNT } from '../../devices/input/contracts';
+import { INPUT_CONTROLLER_KEY_WORD_COUNT, INPUT_CONTROLLER_PAD_AXIS_COUNT, INPUT_CONTROLLER_PAD_COUNT } from '../../devices/input/contracts';
 import {
 	GEOMETRY_CONTROLLER_PHASE_REJECTED,
 	GEOMETRY_CONTROLLER_REGISTER_COUNT,
@@ -337,108 +337,56 @@ function encodeInputControllerState(state: InputControllerState): InputControlle
 		sampleSequence: state.sampleSequence >>> 0,
 		lastSampleCycle: state.lastSampleCycle >>> 0,
 		registers: {
-			player: state.registers.player >>> 0,
-			actionStringId: state.registers.actionStringId >>> 0,
-			bindStringId: state.registers.bindStringId >>> 0,
 			ctrl: state.registers.ctrl >>> 0,
-			queryStringId: state.registers.queryStringId >>> 0,
-			status: state.registers.status >>> 0,
-			value: state.registers.value >>> 0,
-			valueX: state.registers.valueX >>> 0,
-			valueY: state.registers.valueY >>> 0,
-			consumeStringId: state.registers.consumeStringId >>> 0,
+			keyWords: encodeVector(state.registers.keyWords, (word) => word >>> 0),
+			pointerButtons: state.registers.pointerButtons >>> 0,
+			pointerXQ16: state.registers.pointerXQ16 >>> 0,
+			pointerYQ16: state.registers.pointerYQ16 >>> 0,
+			pointerWheelQ16: state.registers.pointerWheelQ16 >>> 0,
+			padButtons: encodeVector(state.registers.padButtons, (word) => word >>> 0),
+			padAxesQ16: encodeVector(state.registers.padAxesQ16, (word) => word >>> 0),
+			outputPort: state.registers.outputPort >>> 0,
 			outputIntensityQ16: state.registers.outputIntensityQ16 >>> 0,
 			outputDurationMs: state.registers.outputDurationMs >>> 0,
+			outputStatus: state.registers.outputStatus >>> 0,
 		},
-		players: encodeVector(state.players, (player) => ({
-			actions: encodeVector(player.actions, (action) => ({
-				actionStringId: action.actionStringId >>> 0,
-				bindStringId: action.bindStringId >>> 0,
-				statusWord: action.statusWord >>> 0,
-				valueQ16: action.valueQ16 >>> 0,
-				pressTime: action.pressTime,
-				repeatCount: action.repeatCount >>> 0,
-			})),
-		})),
-		eventFifoEvents: encodeVector(state.eventFifoEvents, (event) => ({
-			player: event.player >>> 0,
-			actionStringId: event.actionStringId >>> 0,
-			statusWord: event.statusWord >>> 0,
-			valueQ16: event.valueQ16 >>> 0,
-			repeatCount: event.repeatCount >>> 0,
-		})),
-		eventFifoOverflow: state.eventFifoOverflow,
 	};
 }
 
 function decodeInputControllerState(value: unknown, label: string): InputControllerState {
 	const object = requireObject(value, label);
 	const registers = requireObject(requireObjectKey(object, 'registers', label, 'machine.input.registers'), 'machine.input.registers');
-	const players = decodeVector(
-		requireObjectKey(object, 'players', label, 'machine.input.players'),
-		'machine.input.players',
-		(playerValue) => {
-			const player = requireObject(playerValue, 'machine.input.players[]');
-			return {
-				actions: decodeVector(
-					requireObjectKey(player, 'actions', 'machine.input.players[]', 'machine.input.players[].actions'),
-					'machine.input.players[].actions',
-					(actionValue) => {
-						const action = requireObject(actionValue, 'machine.input.players[].actions[]');
-						return {
-							actionStringId: requireBoundedU32(requireObjectKey(action, 'actionStringId', 'machine.input.players[].actions[]', 'machine.input.players[].actions[].actionStringId'), 'machine.input.players[].actions[].actionStringId', 0, 0xffffffff),
-							bindStringId: requireBoundedU32(requireObjectKey(action, 'bindStringId', 'machine.input.players[].actions[]', 'machine.input.players[].actions[].bindStringId'), 'machine.input.players[].actions[].bindStringId', 0, 0xffffffff),
-							statusWord: requireBoundedU32(requireObjectKey(action, 'statusWord', 'machine.input.players[].actions[]', 'machine.input.players[].actions[].statusWord'), 'machine.input.players[].actions[].statusWord', 0, 0xffffffff),
-							valueQ16: requireBoundedU32(requireObjectKey(action, 'valueQ16', 'machine.input.players[].actions[]', 'machine.input.players[].actions[].valueQ16'), 'machine.input.players[].actions[].valueQ16', 0, 0xffffffff),
-							pressTime: requireObjectKey(action, 'pressTime', 'machine.input.players[].actions[]', 'machine.input.players[].actions[].pressTime') as number,
-							repeatCount: requireBoundedU32(requireObjectKey(action, 'repeatCount', 'machine.input.players[].actions[]', 'machine.input.players[].actions[].repeatCount'), 'machine.input.players[].actions[].repeatCount', 0, 0xffffffff),
-						};
-					},
-				),
-			};
-		},
-	);
-	if (players.length !== INPUT_CONTROLLER_PLAYER_COUNT) {
-		throw new Error(`machine.input.players must contain ${INPUT_CONTROLLER_PLAYER_COUNT} player entries.`);
-	}
-	const eventFifoEvents = decodeVector(
-		requireObjectKey(object, 'eventFifoEvents', label, 'machine.input.eventFifoEvents'),
-		'machine.input.eventFifoEvents',
-		(eventValue) => {
-			const event = requireObject(eventValue, 'machine.input.eventFifoEvents[]');
-			return {
-				player: requireBoundedU32(requireObjectKey(event, 'player', 'machine.input.eventFifoEvents[]', 'machine.input.eventFifoEvents[].player'), 'machine.input.eventFifoEvents[].player', 0, 0xffffffff),
-				actionStringId: requireBoundedU32(requireObjectKey(event, 'actionStringId', 'machine.input.eventFifoEvents[]', 'machine.input.eventFifoEvents[].actionStringId'), 'machine.input.eventFifoEvents[].actionStringId', 0, 0xffffffff),
-				statusWord: requireBoundedU32(requireObjectKey(event, 'statusWord', 'machine.input.eventFifoEvents[]', 'machine.input.eventFifoEvents[].statusWord'), 'machine.input.eventFifoEvents[].statusWord', 0, 0xffffffff),
-				valueQ16: requireBoundedU32(requireObjectKey(event, 'valueQ16', 'machine.input.eventFifoEvents[]', 'machine.input.eventFifoEvents[].valueQ16'), 'machine.input.eventFifoEvents[].valueQ16', 0, 0xffffffff),
-				repeatCount: requireBoundedU32(requireObjectKey(event, 'repeatCount', 'machine.input.eventFifoEvents[]', 'machine.input.eventFifoEvents[].repeatCount'), 'machine.input.eventFifoEvents[].repeatCount', 0, 0xffffffff),
-			};
-		},
-	);
-	if (eventFifoEvents.length > INPUT_CONTROLLER_EVENT_FIFO_CAPACITY) {
-		throw new Error(`machine.input.eventFifoEvents must contain at most ${INPUT_CONTROLLER_EVENT_FIFO_CAPACITY} entries.`);
-	}
+	const registerWord = (key: string): number =>
+		requireBoundedU32(requireObjectKey(registers, key, 'machine.input.registers', `machine.input.registers.${key}`), `machine.input.registers.${key}`, 0, 0xffffffff);
+	const registerWordVector = (key: string, expectedLength: number): number[] => {
+		const values = decodeVector(
+			requireObjectKey(registers, key, 'machine.input.registers', `machine.input.registers.${key}`),
+			`machine.input.registers.${key}`,
+			(word) => requireBoundedU32(word, `machine.input.registers.${key}[]`, 0, 0xffffffff),
+		);
+		if (values.length !== expectedLength) {
+			throw new Error(`machine.input.registers.${key} has unexpected length.`);
+		}
+		return values;
+	};
 	return {
-		sampleArmed: requireObjectKey(object, 'sampleArmed', label, 'machine.input.sampleArmed') as boolean,
+		sampleArmed: requireBooleanValue(requireObjectKey(object, 'sampleArmed', label, 'machine.input.sampleArmed'), 'machine.input.sampleArmed'),
 		sampleSequence: requireBoundedU32(requireObjectKey(object, 'sampleSequence', label, 'machine.input.sampleSequence'), 'machine.input.sampleSequence', 0, 0xffffffff),
 		lastSampleCycle: requireBoundedU32(requireObjectKey(object, 'lastSampleCycle', label, 'machine.input.lastSampleCycle'), 'machine.input.lastSampleCycle', 0, 0xffffffff),
 		registers: {
-			player: requireBoundedU32(requireObjectKey(registers, 'player', 'machine.input.registers', 'machine.input.registers.player'), 'machine.input.registers.player', 0, 0xffffffff),
-			actionStringId: requireBoundedU32(requireObjectKey(registers, 'actionStringId', 'machine.input.registers', 'machine.input.registers.actionStringId'), 'machine.input.registers.actionStringId', 0, 0xffffffff),
-			bindStringId: requireBoundedU32(requireObjectKey(registers, 'bindStringId', 'machine.input.registers', 'machine.input.registers.bindStringId'), 'machine.input.registers.bindStringId', 0, 0xffffffff),
-			ctrl: requireBoundedU32(requireObjectKey(registers, 'ctrl', 'machine.input.registers', 'machine.input.registers.ctrl'), 'machine.input.registers.ctrl', 0, 0xffffffff),
-			queryStringId: requireBoundedU32(requireObjectKey(registers, 'queryStringId', 'machine.input.registers', 'machine.input.registers.queryStringId'), 'machine.input.registers.queryStringId', 0, 0xffffffff),
-			status: requireBoundedU32(requireObjectKey(registers, 'status', 'machine.input.registers', 'machine.input.registers.status'), 'machine.input.registers.status', 0, 0xffffffff),
-			value: requireBoundedU32(requireObjectKey(registers, 'value', 'machine.input.registers', 'machine.input.registers.value'), 'machine.input.registers.value', 0, 0xffffffff),
-			valueX: requireBoundedU32(requireObjectKey(registers, 'valueX', 'machine.input.registers', 'machine.input.registers.valueX'), 'machine.input.registers.valueX', 0, 0xffffffff),
-			valueY: requireBoundedU32(requireObjectKey(registers, 'valueY', 'machine.input.registers', 'machine.input.registers.valueY'), 'machine.input.registers.valueY', 0, 0xffffffff),
-			consumeStringId: requireBoundedU32(requireObjectKey(registers, 'consumeStringId', 'machine.input.registers', 'machine.input.registers.consumeStringId'), 'machine.input.registers.consumeStringId', 0, 0xffffffff),
-			outputIntensityQ16: requireBoundedU32(requireObjectKey(registers, 'outputIntensityQ16', 'machine.input.registers', 'machine.input.registers.outputIntensityQ16'), 'machine.input.registers.outputIntensityQ16', 0, 0xffffffff),
-			outputDurationMs: requireBoundedU32(requireObjectKey(registers, 'outputDurationMs', 'machine.input.registers', 'machine.input.registers.outputDurationMs'), 'machine.input.registers.outputDurationMs', 0, 0xffffffff),
+			ctrl: registerWord('ctrl'),
+			keyWords: registerWordVector('keyWords', INPUT_CONTROLLER_KEY_WORD_COUNT),
+			pointerButtons: registerWord('pointerButtons'),
+			pointerXQ16: registerWord('pointerXQ16'),
+			pointerYQ16: registerWord('pointerYQ16'),
+			pointerWheelQ16: registerWord('pointerWheelQ16'),
+			padButtons: registerWordVector('padButtons', INPUT_CONTROLLER_PAD_COUNT),
+			padAxesQ16: registerWordVector('padAxesQ16', INPUT_CONTROLLER_PAD_COUNT * INPUT_CONTROLLER_PAD_AXIS_COUNT),
+			outputPort: registerWord('outputPort'),
+			outputIntensityQ16: registerWord('outputIntensityQ16'),
+			outputDurationMs: registerWord('outputDurationMs'),
+			outputStatus: registerWord('outputStatus'),
 		},
-		players,
-		eventFifoEvents,
-		eventFifoOverflow: requireObjectKey(object, 'eventFifoOverflow', label, 'machine.input.eventFifoOverflow') as boolean,
 	};
 }
 

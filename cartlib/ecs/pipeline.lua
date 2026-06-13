@@ -42,13 +42,13 @@ function ecspipelineregistry:build(world_instance, nodes)
 		if not d then
 			error('ecspipelineregistry: unknown system ref "' .. n.ref .. '"')
 		end
-		local create_priority = n.priority
-		if create_priority == nil then
-			create_priority = d.default_priority
-		end
+		-- Default like ecsystem.new (priority or 0): the sort comparator below
+		-- needs numbers on both sides; nil priorities/groups made it
+		-- inconsistent and the resolved order undefined.
+		local create_priority<const> = n.priority or d.default_priority or 0
 		resolved[#resolved + 1] = {
 			ref = n.ref,
-			group = n.group or d.group,
+			group = n.group or d.group or 0,
 			priority = create_priority,
 			create_priority = create_priority,
 			index = i,

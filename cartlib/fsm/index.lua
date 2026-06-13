@@ -136,6 +136,7 @@
 local fsm_trace<const> = require('cartlib/fsm/trace')
 local clear_map<const> = require('bios/util/clear_map')
 local timeline_module<const> = require('cartlib/timeline/index')
+local cart_input<const> = require('cartlib/input/player')
 
 local statedefinition<const> = {}
 statedefinition.__index = statedefinition
@@ -2208,9 +2209,7 @@ function state:update()
 			local entry<const> = handlers[i]
 			local pattern<const> = entry.pattern
 			local handler<const> = entry.handler
-			mem[sys_inp_player] = player_index
-			mem[sys_inp_query] = &(pattern)
-			if mem[sys_inp_status] ~= 0 then
+			if cart_input.query(player_index, pattern) then
 				local handled
 				if trace_transitions then
 					handled = self:run_with_transition_context(

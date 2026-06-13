@@ -1,12 +1,11 @@
 #include "machine/devices/input/registers.h"
 
 #include "machine/bus/io.h"
-#include "machine/devices/input/contracts.h"
+#include "machine/common/numeric.h"
 #include "machine/memory/memory.h"
 
 namespace bmsx {
 
-// disable-next-line single_line_method_pattern -- memory-map callbacks require a C-style thunk into the input registerfile instance.
 void InputControllerRegisterFile::writeThunk(void* context, uint32_t addr, Value value) {
 	static_cast<InputControllerRegisterFile*>(context)->write(addr, value);
 }
@@ -23,29 +22,35 @@ void InputControllerRegisterFile::restoreState(const InputControllerRegisterStat
 	state = restoredState;
 }
 
-i32 InputControllerRegisterFile::selectedPlayerIndex() const {
-	return decodeInputControllerPlayerSelect(state.player);
+i32 InputControllerRegisterFile::selectedPadIndex() const {
+	return static_cast<i32>(state.outputPort & static_cast<u32>(INPUT_CONTROLLER_PAD_COUNT - 1));
+}
+
+void InputControllerRegisterFile::latchSnapshot(const InputControllerSnapshot& snapshot) {
+	for (int i = 0; i < INPUT_CONTROLLER_KEY_WORD_COUNT; i += 1) {
+		state.keyWords[i] = snapshot.keyWords[i];
+	}
+	state.pointerButtons = snapshot.pointerButtons;
+	state.pointerXQ16 = encodeSignedFix16(snapshot.pointerX);
+	state.pointerYQ16 = encodeSignedFix16(snapshot.pointerY);
+	state.pointerWheelQ16 = encodeSignedFix16(snapshot.pointerWheel);
+	state.outputStatus = snapshot.rumbleSupportMask;
+	for (int pad = 0; pad < INPUT_CONTROLLER_PAD_COUNT; pad += 1) {
+		const InputControllerPadSnapshot& padSnapshot = snapshot.pads[pad];
+		state.padButtons[pad] = padSnapshot.buttons;
+		for (int axis = 0; axis < INPUT_CONTROLLER_PAD_AXIS_COUNT; axis += 1) {
+			state.padAxesQ16[pad * INPUT_CONTROLLER_PAD_AXIS_COUNT + axis] = encodeSignedFix16(padSnapshot.axes[axis]);
+		}
+	}
 }
 
 void InputControllerRegisterFile::write(uint32_t addr, Value value) {
 	switch (addr) {
-		case IO_INP_PLAYER:
-			state.player = toU32(value);
-			return;
-		case IO_INP_ACTION:
-			state.actionStringId = asStringId(value);
-			return;
-		case IO_INP_BIND:
-			state.bindStringId = asStringId(value);
-			return;
 		case IO_INP_CTRL:
 			state.ctrl = toU32(value);
 			return;
-		case IO_INP_QUERY:
-			state.queryStringId = asStringId(value);
-			return;
-		case IO_INP_CONSUME:
-			state.consumeStringId = asStringId(value);
+		case IO_INP_OUTPUT_PORT:
+			state.outputPort = toU32(value);
 			return;
 		case IO_INP_OUTPUT_INTENSITY_Q16:
 			state.outputIntensityQ16 = toU32(value);
@@ -56,30 +61,26 @@ void InputControllerRegisterFile::write(uint32_t addr, Value value) {
 	}
 }
 
-void InputControllerRegisterFile::writeResult(Memory& memory, u32 status, u32 value, u32 valueX, u32 valueY) {
-	state.status = status;
-	state.value = value;
-	state.valueX = valueX;
-	state.valueY = valueY;
-	memory.writeIoValue(IO_INP_STATUS, valueNumber(static_cast<double>(status)));
-	memory.writeIoValue(IO_INP_VALUE, valueNumber(static_cast<double>(value)));
-	memory.writeIoValue(IO_INP_VALUE_X, valueNumber(static_cast<double>(valueX)));
-	memory.writeIoValue(IO_INP_VALUE_Y, valueNumber(static_cast<double>(valueY)));
-}
-
 void InputControllerRegisterFile::mirror(Memory& memory) const {
-	memory.writeIoValue(IO_INP_PLAYER, valueNumber(static_cast<double>(state.player)));
-	memory.writeIoValue(IO_INP_ACTION, valueString(state.actionStringId));
-	memory.writeIoValue(IO_INP_BIND, valueString(state.bindStringId));
 	memory.writeIoValue(IO_INP_CTRL, valueNumber(static_cast<double>(state.ctrl)));
-	memory.writeIoValue(IO_INP_QUERY, valueString(state.queryStringId));
-	memory.writeIoValue(IO_INP_STATUS, valueNumber(static_cast<double>(state.status)));
-	memory.writeIoValue(IO_INP_VALUE, valueNumber(static_cast<double>(state.value)));
-	memory.writeIoValue(IO_INP_VALUE_X, valueNumber(static_cast<double>(state.valueX)));
-	memory.writeIoValue(IO_INP_VALUE_Y, valueNumber(static_cast<double>(state.valueY)));
-	memory.writeIoValue(IO_INP_CONSUME, valueString(state.consumeStringId));
+	for (int i = 0; i < INPUT_CONTROLLER_KEY_WORD_COUNT; i += 1) {
+		memory.writeIoValue(IO_INP_KEYS + static_cast<u32>(i) * IO_WORD_SIZE, valueNumber(static_cast<double>(state.keyWords[i])));
+	}
+	memory.writeIoValue(IO_INP_POINTER_BUTTONS, valueNumber(static_cast<double>(state.pointerButtons)));
+	memory.writeIoValue(IO_INP_POINTER_X, valueNumber(static_cast<double>(state.pointerXQ16)));
+	memory.writeIoValue(IO_INP_POINTER_Y, valueNumber(static_cast<double>(state.pointerYQ16)));
+	memory.writeIoValue(IO_INP_POINTER_WHEEL, valueNumber(static_cast<double>(state.pointerWheelQ16)));
+	for (int pad = 0; pad < INPUT_CONTROLLER_PAD_COUNT; pad += 1) {
+		const u32 padBase = IO_INP_PADS + static_cast<u32>(pad) * IO_INP_PAD_STRIDE;
+		memory.writeIoValue(padBase, valueNumber(static_cast<double>(state.padButtons[pad])));
+		for (int axis = 0; axis < INPUT_CONTROLLER_PAD_AXIS_COUNT; axis += 1) {
+			memory.writeIoValue(padBase + static_cast<u32>(axis + 1) * IO_WORD_SIZE, valueNumber(static_cast<double>(state.padAxesQ16[pad * INPUT_CONTROLLER_PAD_AXIS_COUNT + axis])));
+		}
+	}
+	memory.writeIoValue(IO_INP_OUTPUT_PORT, valueNumber(static_cast<double>(state.outputPort)));
 	memory.writeIoValue(IO_INP_OUTPUT_INTENSITY_Q16, valueNumber(static_cast<double>(state.outputIntensityQ16)));
 	memory.writeIoValue(IO_INP_OUTPUT_DURATION_MS, valueNumber(static_cast<double>(state.outputDurationMs)));
+	memory.writeIoValue(IO_INP_OUTPUT_STATUS, valueNumber(static_cast<double>(state.outputStatus)));
 }
 
 } // namespace bmsx

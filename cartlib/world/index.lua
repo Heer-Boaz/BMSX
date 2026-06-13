@@ -32,6 +32,7 @@ local frame_delta_ms<const> = (1000 * sys_hz_scale) / machine_manifest.ufps
 local ecs<const> = require('cartlib/ecs/index')
 local registry<const> = require('cartlib/registry')
 local vdp_rpu_quads<const> = require('system/vdp_rpu_quads')
+local cart_input<const> = require('cartlib/input/player')
 
 local tickgroup<const> = ecs.tickgroup
 local world_instance
@@ -841,6 +842,7 @@ end
 
 function world_class:update()
 	local dt_ms<const> = frame_delta_ms
+	cart_input.update()
 	run_phase(self, tickgroup.input, dt_ms)
 	run_phase(self, tickgroup.actioneffect, dt_ms)
 	run_phase(self, tickgroup.moderesolution, dt_ms)

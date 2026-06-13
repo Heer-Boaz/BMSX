@@ -3,6 +3,7 @@
 
 local action_effects<const> = require('cartlib/action_effects')
 local eventemitter<const> = require('cartlib/eventemitter')
+local cart_input<const> = require('cartlib/input/player')
 
 local compile_effect_list
 
@@ -11,10 +12,7 @@ local execute_effect_trigger<const> = function(env, id, payload)
 	if not effects then
 		error('[inputactioneffectcompiler] effect trigger "' .. id .. '" attempted without actioneffectcomponent on "' .. env.owner_id .. '".')
 	end
-	if payload == nil then
-		return effects:trigger(id)
-	end
-	return effects:trigger(id, { payload = payload })
+	return effects:trigger(id, payload)
 end
 
 local compile_effect<const> = function(effect, slot, analysis)
@@ -38,10 +36,7 @@ local compile_effect<const> = function(effect, slot, analysis)
 			actions = { actions }
 		end
 		return function(env)
-			for i = 1, #actions do
-				mem[sys_inp_player] = env.player_index
-				mem[sys_inp_consume] = &(actions[i])
-			end
+			cart_input.consume(env.player_index, actions)
 		end
 	end
 	if effect['emit.gameplay'] ~= nil then

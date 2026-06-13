@@ -14,6 +14,7 @@ class InputControllerSampleLatch {
 public:
 	void reset();
 	void arm();
+	u32 sequence() const;
 	bool cancel();
 	bool consumeVblankEdge(u32 nowCycles);
 	InputControllerSampleLatchState captureState() const;

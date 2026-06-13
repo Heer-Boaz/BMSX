@@ -1,19 +1,27 @@
 {
 	"version": "0.2.0",
+	// NOTE on the "Unable to attach to browser" race:
+	// The browser launch configs below deliberately DO NOT set a fixed
+	// `--remote-debugging-port` or a fixed `userDataDir`. Pinning both made every
+	// run reuse the same CDP port + profile, so whenever a previous Edge instance
+	// was still lingering (its GPU/Crashpad/background processes survive the window
+	// close by a few seconds) the new launch forwarded its URL to the dying instance
+	// and exited immediately — leaving js-debug nothing to attach to ("Unable to
+	// attach to browser"). Letting js-debug pick a free port and an isolated temp
+	// profile per session makes concurrent/lingering instances unable to collide.
+	// (The `--disable-web-security` / file-access flags still work because the temp
+	// profile is non-default, and the game persists no localStorage/IndexedDB state.)
 	"configurations": [
 		{
 			"type": "msedge",
 			"request": "launch",
 			"name": "Debug the game!",
 			"url": "${workspaceFolder}/dist/index.html?rom=${input:romtobuild}.debug.rom",
-			"userDataDir": "${workspaceFolder}/.vscode/edge-profile",
 			"runtimeArgs": [
 				"--nolazy",
 				"--allow-file-access-from-files",
 				"--disable-session-crashed-bubble",
 				"--disable-features=IsolateOrigins,site-per-process,web-security",
-				"--remote-debugging-port=9222",
-				// "--app=file://${workspaceFolder}/dist/index.html?rom=${input:romtobuild}.debug.rom"
 			],
 			"webRoot": "${workspaceFolder}",
 			"sourceMaps": true,
@@ -26,6 +34,7 @@
 			"showAsyncStacks": true,
 			"smartStep": true,
 			"disableNetworkCache": true,
+			"timeout": 30000,
 		},
 		{
 			"type": "msedge",
@@ -37,13 +46,12 @@
 				"--allow-file-access-from-files",
 				"--disable-session-crashed-bubble",
 				"-inprivate"
-				,
-				"--remote-debugging-port=9222"
 			],
 			"sourceMaps": true,
 			"showAsyncStacks": true,
 			"smartStep": true,
 			"disableNetworkCache": true,
+			"timeout": 30000,
 			"presentation": {
 				"hidden": false,
 				"group": "",
@@ -51,6 +59,9 @@
 			}
 		},
 		{
+			// Manual attach for Edge's own DevTools. Requires a browser already
+			// listening on 9222; the launch configs no longer pin that port, so start
+			// Edge yourself with `--remote-debugging-port=9222` first if you need this.
 			"type": "msedge",
 			"name": "Open Edge DevTools",
 			"request": "attach",
@@ -65,13 +76,11 @@
 			"request": "launch",
 			"name": "Debug the game! (WSL)",
 			"url": "file:////wsl$/Ubuntu/home/boaz/BMSX/dist/index.html?rom=${input:romtobuild}.debug.rom",
-			"userDataDir": "${workspaceFolder}/.vscode/edge-profile-wsl",
 			"runtimeArgs": [
 				"--nolazy",
 				"--allow-file-access-from-files",
 				"--disable-session-crashed-bubble",
 				"--disable-features=IsolateOrigins,site-per-process,web-security",
-				"--remote-debugging-port=9222",
 				"--app=file:////wsl$/Ubuntu/home/boaz/BMSX/dist/index.html?rom=${input:romtobuild}.debug.rom"
 			],
 			"webRoot": "${workspaceFolder}",
@@ -83,20 +92,19 @@
 			},
 			"showAsyncStacks": true,
 			"smartStep": true,
-			"disableNetworkCache": true
+			"disableNetworkCache": true,
+			"timeout": 30000
 		},
 		{
 			"type": "msedge",
 			"request": "launch",
 			"name": "Debug the game from WSL Server!",
 			"url": "http://localhost:8080/index.html?rom=${input:romtobuild}.debug.rom",
-			"userDataDir": "${workspaceFolder}/.vscode/edge-profile-wsl",
 			"runtimeArgs": [
 				"--nolazy",
 				"--allow-file-access-from-files",
 				"--disable-session-crashed-bubble",
 				"--disable-features=IsolateOrigins,site-per-process,web-security",
-				"--remote-debugging-port=9222",
 				"--app=http://localhost:8080/index.html?rom=${input:romtobuild}.debug.rom"
 			],
 			"webRoot": "${workspaceFolder}",
@@ -109,19 +117,18 @@
 			"showAsyncStacks": false,
 			"smartStep": true,
 			"disableNetworkCache": true,
+			"timeout": 30000,
 		},
 		{
 			"type": "msedge",
 			"request": "launch",
 			"name": "Debug the game from WSL Server (NON-APP MODE)!",
 			"url": "http://localhost:8080/index.html?rom=${input:romtobuild}.debug.rom",
-			"userDataDir": "${workspaceFolder}/.vscode/edge-profile-wsl",
 			"runtimeArgs": [
 				"--nolazy",
 				"--allow-file-access-from-files",
 				"--disable-session-crashed-bubble",
 				"--disable-features=IsolateOrigins,site-per-process,web-security",
-				"--remote-debugging-port=9222",
 			],
 			"webRoot": "${workspaceFolder}",
 			"sourceMaps": true,
@@ -133,19 +140,18 @@
 			"showAsyncStacks": false,
 			"smartStep": true,
 			"disableNetworkCache": true,
+			"timeout": 30000,
 		},
 		{
 			"type": "msedge",
 			"request": "launch",
 			"name": "Release the game from WSL Server!",
 			"url": "http://localhost:8080/index.html?rom=${input:romtobuild}.rom",
-			"userDataDir": "${workspaceFolder}/.vscode/edge-profile-wsl",
 			"runtimeArgs": [
 				"--nolazy",
 				"--allow-file-access-from-files",
 				"--disable-session-crashed-bubble",
 				"--disable-features=IsolateOrigins,site-per-process,web-security",
-				"--remote-debugging-port=9222",
 				"--app=http://localhost:8080/index.html?rom=${input:romtobuild}.rom"
 			],
 			"webRoot": "${workspaceFolder}",
@@ -158,6 +164,7 @@
 			"showAsyncStacks": false,
 			"smartStep": true,
 			"disableNetworkCache": true,
+			"timeout": 30000,
 		},
 		{
 			"type": "pwa-node",

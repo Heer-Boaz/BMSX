@@ -408,6 +408,8 @@ constants.world_entrance = {
 	open_step_frames = 4,
 	enter_world_midpoint_step = 32,
 	enter_world_total_steps = 64,
+	-- 8-step walk cycle for the shrine-exit transition: 4 steps frame 0, 4 steps frame 1.
+	enter_leave_cycle_steps = 8,
 }
 
 constants.shrine = {

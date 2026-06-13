@@ -236,22 +236,21 @@ function actioneffectcomponent:has_effect(id)
 	return self.definitions[id] ~= nil
 end
 
--- actioneffectcomponent:trigger(id, opts?)
+-- actioneffectcomponent:trigger(id, payload?, args?)
 --   Attempts to activate the named effect on this object.
---   opts.payload — passed to the effect handler as context.payload
---   opts.args    — array of extra arguments forwarded to the handler
+--   payload — passed to the effect handler as context.payload
+--   args    — array of extra arguments forwarded to the handler
 --   Returns a string result:
 --     'ok'          — effect executed successfully
 --     'on_cooldown' — effect is cooling down; try again later
 --     'blocked'     — effect conditions / tag requirements not met
 --     'failed'      — effect id is not granted to this component
-function actioneffectcomponent:trigger(id, opts)
+function actioneffectcomponent:trigger(id, payload, args)
 	local definition<const> = self.definitions[id]
 	if not definition then
 		return 'failed'
 	end
-	local payload<const> = opts and opts.payload
-	local args<const> = opts and opts.args or {}
+	args = args or {}
 	actioneffects.validate(id, payload)
 
 	local now<const> = self.time_ms

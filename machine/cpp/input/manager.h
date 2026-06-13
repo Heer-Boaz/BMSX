@@ -126,7 +126,7 @@ public:
 	
 	// Get player input for a specific player index
 	auto getPlayerInput(i32 playerIndex) -> PlayerInput*;
-	InputControllerPlayerInputSource& inputControllerPlayer(i32 playerIndex) override;
+	void applyInputControllerVibrationEffect(i32 padIndex, f64 durationMs, f32 intensity) override;
 	
 	// ─────────────────────────────────────────────────────────────────────────
 	// Device management
@@ -163,8 +163,8 @@ public:
 	// Poll all inputs (call once per frame)
 	void pollInput();
 
-	// Sample player input state for one cart-visible simulation frame
-	void sampleInputControllerPlayers(f64 currentTimeMs) override;
+	// Latch the raw input snapshot for one cart-visible simulation frame
+	void sampleInputControllerSnapshot(f64 currentTimeMs, InputControllerSnapshot& snapshot) override;
 	
 	// ─────────────────────────────────────────────────────────────────────────
 	// Button event handling (from platform)
@@ -227,10 +227,11 @@ private:
 	// ─────────────────────────────────────────────────────────────────────────
 	
 	void handleFocusChange(bool focused);
-	void enqueueButtonEvent(i32 playerIndex, InputSource source, const std::string& code, 
-							InputEvent::Type type, f64 timestamp, 
+	void enqueueButtonEvent(i32 playerIndex, InputSource source, const std::string& code,
+							InputEvent::Type type, f64 timestamp,
 							std::optional<i32> pressId);
 	auto resolvePlatformPressId(const std::string& deviceId, const std::string& code, bool down) -> i32;
+	void samplePadSnapshot(i32 pad, InputControllerSnapshot& snapshot);
 };
 
 /* ============================================================================

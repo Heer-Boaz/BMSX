@@ -251,8 +251,8 @@ add_library(bmsx_core STATIC
 
 	# Input systems
 	input/player.cpp
-	machine/devices/input/action_parser.cpp
-	machine/devices/input/default_mapping.cpp
+	input/hid_keys.cpp
+	input/gamepad_buttons.cpp
 	input/manager.cpp
 	input/keyboard.cpp
 	input/gamepad.cpp
@@ -301,12 +301,9 @@ add_library(bmsx_core STATIC
 	machine/devices/geometry/controller.cpp
 	machine/devices/geometry/save_state.cpp
 	machine/devices/imgdec/controller.cpp
-	machine/devices/input/action_table.cpp
 	machine/devices/input/control_port.cpp
 	machine/devices/input/controller.cpp
-	machine/devices/input/event_fifo.cpp
 	machine/devices/input/output_port.cpp
-	machine/devices/input/query_port.cpp
 	machine/devices/input/registers.cpp
 	machine/devices/input/sample_latch.cpp
 	machine/devices/input/sample_edge.cpp
@@ -519,12 +516,6 @@ if(BMSX_BUILD_TESTS)
 	)
 	target_link_libraries(bmsx_vdp_ingress_tests PRIVATE bmsx_core)
 	add_test(NAME bmsx_vdp_ingress_tests COMMAND bmsx_vdp_ingress_tests)
-
-	add_executable(bmsx_core_golden_tests
-		${CMAKE_CURRENT_SOURCE_DIR}/../../tests/cpp/core_golden_test.cpp
-	)
-	target_link_libraries(bmsx_core_golden_tests PRIVATE bmsx_core)
-	add_test(NAME bmsx_core_golden_tests COMMAND bmsx_core_golden_tests)
 
 	add_executable(bmsx_libretro_save_state_tests
 		${CMAKE_CURRENT_SOURCE_DIR}/../../tests/cpp/libretro_save_state_test.cpp

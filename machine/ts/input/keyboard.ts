@@ -2,6 +2,8 @@ import { machineManager } from '../core/machine_manager';
 import { getPressedState, Input, makeButtonState, resetObject } from './manager';
 import type { ButtonState, InputHandler, KeyboardButtonId, KeyOrButtonId2ButtonState } from './models';
 import type { VibrationParams } from '../platform';
+import { INPUT_CONTROLLER_KEY_WORD_COUNT, type InputControllerPadSnapshot, type InputControllerSnapshot } from '../machine/devices/input/contracts';
+import { hidKeyUsageForCode } from './hid_keys';
 
 
 /**
@@ -18,6 +20,7 @@ export class KeyboardInput implements InputHandler {
 	 * The state of each keyboard key.
 	 */
 	public keyStates: KeyOrButtonId2ButtonState = {};
+	private readonly keyUsageWords = new Uint32Array(INPUT_CONTROLLER_KEY_WORD_COUNT);
 	private readonly pendingPresses = new Set<string>();
 	private readonly pendingReleases = new Set<string>();
 
@@ -54,6 +57,7 @@ export class KeyboardInput implements InputHandler {
 			this.gamepadButtonStates = {};
 			this.pendingPresses.clear();
 			this.pendingReleases.clear();
+			this.keyUsageWords.fill(0);
 		}
 		else {
 			resetObject(this.keyStates, except);
@@ -67,6 +71,24 @@ export class KeyboardInput implements InputHandler {
 				if (!except.includes(key)) {
 					this.pendingReleases.delete(key);
 				}
+			}
+			this.rebuildKeyUsageWords();
+		}
+	}
+
+	private setKeyUsageWord(code: string, pressed: boolean): void {
+		const usage = hidKeyUsageForCode(code);
+		if (usage < 0) return;
+		const word = usage >>> 5;
+		const mask = 1 << (usage & 31);
+		this.keyUsageWords[word] = pressed ? ((this.keyUsageWords[word] | mask) >>> 0) : ((this.keyUsageWords[word] & ~mask) >>> 0);
+	}
+
+	private rebuildKeyUsageWords(): void {
+		this.keyUsageWords.fill(0);
+		for (const code in this.keyStates) {
+			if (this.keyStates[code].pressed) {
+				this.setKeyUsageWord(code, true);
 			}
 		}
 	}
@@ -101,6 +123,16 @@ export class KeyboardInput implements InputHandler {
 		// const convertedKey = Input.KEYBOARDKEY2GAMEPADBUTTON[key] ? Input.KEYBOARDKEY2GAMEPADBUTTON[key] : key;
 		// return getPressedState(this.gamepadButtonStates, convertedKey);
 	}
+
+	public writeInputControllerKeyWords(keyWords: Uint32Array): void {
+		for (let i = 0; i < INPUT_CONTROLLER_KEY_WORD_COUNT; i += 1) {
+			keyWords[i] = (keyWords[i] | this.keyUsageWords[i]) >>> 0;
+		}
+	}
+
+	public writeInputControllerPointerSnapshot(_snapshot: InputControllerSnapshot): void { }
+
+	public writeInputControllerPadSnapshot(_snapshot: InputControllerPadSnapshot): void { }
 
 	/**
 	 * Polls the input from the keyboard.
@@ -206,6 +238,7 @@ export class KeyboardInput implements InputHandler {
 			state.releasedAtMs = null;
 			state.pressId = this.nextPressId++;
 			this.pendingPresses.add(key_code);
+			this.setKeyUsageWord(key_code, true);
 		}
 	}
 
@@ -220,6 +253,7 @@ export class KeyboardInput implements InputHandler {
 		state.timestamp = machineManager.platform.clock.now();
 		state.releasedAtMs = state.timestamp;
 		this.pendingReleases.add(key_code);
+		this.setKeyUsageWord(key_code, false);
 	}
 
 }

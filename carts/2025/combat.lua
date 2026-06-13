@@ -4,6 +4,7 @@ local story<const> = require('story')
 local timeline_builders<const> = require('timeline_builders')
 local stagger<const> = require('stagger')
 local round_number<const> = require('bios/common/numeric').round_number
+local cart_input<const> = require('cartlib/input/player')
 
 local stat_label<const> = function(stat_id)
 	if stat_id == 'planning' then
@@ -199,7 +200,7 @@ end
 function combat_director:skip_typing()
 	if oget(globals.text_main_id):is_typing() then
 		oget(globals.text_main_id):reveal_text()
-		mem[sys_inp_consume] = &'b'
+		cart_input.consume(1, 'b')
 		return true
 	end
 	return false

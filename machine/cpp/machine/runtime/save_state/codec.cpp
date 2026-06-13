@@ -360,43 +360,31 @@ BinValue encodeInputControllerState(const InputControllerState& state) {
 	object["sampleSequence"] = static_cast<i64>(state.sampleSequence);
 	object["lastSampleCycle"] = static_cast<i64>(state.lastSampleCycle);
 	BinObject registers;
-	registers["player"] = static_cast<i64>(state.registers.player);
-	registers["actionStringId"] = static_cast<i64>(state.registers.actionStringId);
-	registers["bindStringId"] = static_cast<i64>(state.registers.bindStringId);
 	registers["ctrl"] = static_cast<i64>(state.registers.ctrl);
-	registers["queryStringId"] = static_cast<i64>(state.registers.queryStringId);
-	registers["status"] = static_cast<i64>(state.registers.status);
-	registers["value"] = static_cast<i64>(state.registers.value);
-	registers["valueX"] = static_cast<i64>(state.registers.valueX);
-	registers["valueY"] = static_cast<i64>(state.registers.valueY);
-	registers["consumeStringId"] = static_cast<i64>(state.registers.consumeStringId);
+	BinArray keyWords;
+	for (const u32 word : state.registers.keyWords) {
+		keyWords.emplace_back(static_cast<i64>(word));
+	}
+	registers["keyWords"] = BinValue(std::move(keyWords));
+	registers["pointerButtons"] = static_cast<i64>(state.registers.pointerButtons);
+	registers["pointerXQ16"] = static_cast<i64>(state.registers.pointerXQ16);
+	registers["pointerYQ16"] = static_cast<i64>(state.registers.pointerYQ16);
+	registers["pointerWheelQ16"] = static_cast<i64>(state.registers.pointerWheelQ16);
+	BinArray padButtons;
+	for (const u32 word : state.registers.padButtons) {
+		padButtons.emplace_back(static_cast<i64>(word));
+	}
+	registers["padButtons"] = BinValue(std::move(padButtons));
+	BinArray padAxesQ16;
+	for (const u32 word : state.registers.padAxesQ16) {
+		padAxesQ16.emplace_back(static_cast<i64>(word));
+	}
+	registers["padAxesQ16"] = BinValue(std::move(padAxesQ16));
+	registers["outputPort"] = static_cast<i64>(state.registers.outputPort);
 	registers["outputIntensityQ16"] = static_cast<i64>(state.registers.outputIntensityQ16);
 	registers["outputDurationMs"] = static_cast<i64>(state.registers.outputDurationMs);
+	registers["outputStatus"] = static_cast<i64>(state.registers.outputStatus);
 	object["registers"] = BinValue(std::move(registers));
-	object["players"] = encodeFixedArray(state.players, [](const InputControllerPlayerState& player) {
-		BinObject playerObject;
-		playerObject["actions"] = encodeVector(player.actions, [](const InputControllerActionState& action) {
-			BinObject actionObject;
-			actionObject["actionStringId"] = static_cast<i64>(action.actionStringId);
-			actionObject["bindStringId"] = static_cast<i64>(action.bindStringId);
-			actionObject["statusWord"] = static_cast<i64>(action.statusWord);
-			actionObject["valueQ16"] = static_cast<i64>(action.valueQ16);
-			actionObject["pressTime"] = action.pressTime;
-			actionObject["repeatCount"] = static_cast<i64>(action.repeatCount);
-			return BinValue(std::move(actionObject));
-		});
-		return BinValue(std::move(playerObject));
-	});
-	object["eventFifoEvents"] = encodeVector(state.eventFifoEvents, [](const InputControllerEventState& event) {
-		BinObject eventObject;
-		eventObject["player"] = static_cast<i64>(event.player);
-		eventObject["actionStringId"] = static_cast<i64>(event.actionStringId);
-		eventObject["statusWord"] = static_cast<i64>(event.statusWord);
-		eventObject["valueQ16"] = static_cast<i64>(event.valueQ16);
-		eventObject["repeatCount"] = static_cast<i64>(event.repeatCount);
-		return BinValue(std::move(eventObject));
-	});
-	object["eventFifoOverflow"] = state.eventFifoOverflow;
 	return BinValue(std::move(object));
 }
 
@@ -407,58 +395,27 @@ InputControllerState decodeInputControllerState(const BinValue& value, const cha
 	state.sampleArmed = requireBool(requireField(object, "sampleArmed", label), "machine.input.sampleArmed");
 	state.sampleSequence = requireU32(requireField(object, "sampleSequence", label), "machine.input.sampleSequence");
 	state.lastSampleCycle = requireU32(requireField(object, "lastSampleCycle", label), "machine.input.lastSampleCycle");
-	state.registers.player = requireU32(requireField(registers, "player", "machine.input.registers"), "machine.input.registers.player");
-	state.registers.actionStringId = requireU32(requireField(registers, "actionStringId", "machine.input.registers"), "machine.input.registers.actionStringId");
-	state.registers.bindStringId = requireU32(requireField(registers, "bindStringId", "machine.input.registers"), "machine.input.registers.bindStringId");
 	state.registers.ctrl = requireU32(requireField(registers, "ctrl", "machine.input.registers"), "machine.input.registers.ctrl");
-	state.registers.queryStringId = requireU32(requireField(registers, "queryStringId", "machine.input.registers"), "machine.input.registers.queryStringId");
-	state.registers.status = requireU32(requireField(registers, "status", "machine.input.registers"), "machine.input.registers.status");
-	state.registers.value = requireU32(requireField(registers, "value", "machine.input.registers"), "machine.input.registers.value");
-	state.registers.valueX = requireU32(requireField(registers, "valueX", "machine.input.registers"), "machine.input.registers.valueX");
-	state.registers.valueY = requireU32(requireField(registers, "valueY", "machine.input.registers"), "machine.input.registers.valueY");
-	state.registers.consumeStringId = requireU32(requireField(registers, "consumeStringId", "machine.input.registers"), "machine.input.registers.consumeStringId");
+	const auto decodeWordArray = [&registers](const char* key, u32* out, size_t count) {
+		const BinArray& array = requireArray(requireField(registers, key, "machine.input.registers"), key);
+		if (array.size() != count) {
+			throw std::runtime_error(std::string("machine.input.registers.") + key + " has unexpected length.");
+		}
+		for (size_t i = 0; i < count; i += 1) {
+			out[i] = requireU32(array[i], key);
+		}
+	};
+	decodeWordArray("keyWords", state.registers.keyWords.data(), state.registers.keyWords.size());
+	state.registers.pointerButtons = requireU32(requireField(registers, "pointerButtons", "machine.input.registers"), "machine.input.registers.pointerButtons");
+	state.registers.pointerXQ16 = requireU32(requireField(registers, "pointerXQ16", "machine.input.registers"), "machine.input.registers.pointerXQ16");
+	state.registers.pointerYQ16 = requireU32(requireField(registers, "pointerYQ16", "machine.input.registers"), "machine.input.registers.pointerYQ16");
+	state.registers.pointerWheelQ16 = requireU32(requireField(registers, "pointerWheelQ16", "machine.input.registers"), "machine.input.registers.pointerWheelQ16");
+	decodeWordArray("padButtons", state.registers.padButtons.data(), state.registers.padButtons.size());
+	decodeWordArray("padAxesQ16", state.registers.padAxesQ16.data(), state.registers.padAxesQ16.size());
+	state.registers.outputPort = requireU32(requireField(registers, "outputPort", "machine.input.registers"), "machine.input.registers.outputPort");
 	state.registers.outputIntensityQ16 = requireU32(requireField(registers, "outputIntensityQ16", "machine.input.registers"), "machine.input.registers.outputIntensityQ16");
 	state.registers.outputDurationMs = requireU32(requireField(registers, "outputDurationMs", "machine.input.registers"), "machine.input.registers.outputDurationMs");
-	const BinArray& players = requireArray(requireField(object, "players", label), "machine.input.players");
-	if (players.size() != state.players.size()) {
-		throw BMSX_RUNTIME_ERROR("machine.input.players must contain " + std::to_string(state.players.size()) + " player entries.");
-	}
-	for (size_t playerIndex = 0; playerIndex < state.players.size(); playerIndex += 1) {
-		const BinObject& player = requireObject(players[playerIndex], "machine.input.players[]");
-		state.players[playerIndex].actions = decodeVector<InputControllerActionState>(
-			requireField(player, "actions", "machine.input.players[]"),
-			"machine.input.players[].actions",
-			[](const BinValue& actionValue, size_t) {
-				const BinObject& action = requireObject(actionValue, "machine.input.players[].actions[]");
-				InputControllerActionState stateAction;
-				stateAction.actionStringId = requireU32(requireField(action, "actionStringId", "machine.input.players[].actions[]"), "machine.input.players[].actions[].actionStringId");
-				stateAction.bindStringId = requireU32(requireField(action, "bindStringId", "machine.input.players[].actions[]"), "machine.input.players[].actions[].bindStringId");
-				stateAction.statusWord = requireU32(requireField(action, "statusWord", "machine.input.players[].actions[]"), "machine.input.players[].actions[].statusWord");
-				stateAction.valueQ16 = requireU32(requireField(action, "valueQ16", "machine.input.players[].actions[]"), "machine.input.players[].actions[].valueQ16");
-				stateAction.pressTime = requireNumber(requireField(action, "pressTime", "machine.input.players[].actions[]"), "machine.input.players[].actions[].pressTime");
-				stateAction.repeatCount = requireU32(requireField(action, "repeatCount", "machine.input.players[].actions[]"), "machine.input.players[].actions[].repeatCount");
-				return stateAction;
-			}
-		);
-	}
-	state.eventFifoEvents = decodeVector<InputControllerEventState>(
-		requireField(object, "eventFifoEvents", label),
-		"machine.input.eventFifoEvents",
-		[](const BinValue& eventValue, size_t) {
-			const BinObject& event = requireObject(eventValue, "machine.input.eventFifoEvents[]");
-			InputControllerEventState stateEvent;
-			stateEvent.player = requireU32(requireField(event, "player", "machine.input.eventFifoEvents[]"), "machine.input.eventFifoEvents[].player");
-			stateEvent.actionStringId = requireU32(requireField(event, "actionStringId", "machine.input.eventFifoEvents[]"), "machine.input.eventFifoEvents[].actionStringId");
-			stateEvent.statusWord = requireU32(requireField(event, "statusWord", "machine.input.eventFifoEvents[]"), "machine.input.eventFifoEvents[].statusWord");
-			stateEvent.valueQ16 = requireU32(requireField(event, "valueQ16", "machine.input.eventFifoEvents[]"), "machine.input.eventFifoEvents[].valueQ16");
-			stateEvent.repeatCount = requireU32(requireField(event, "repeatCount", "machine.input.eventFifoEvents[]"), "machine.input.eventFifoEvents[].repeatCount");
-			return stateEvent;
-		}
-	);
-	if (state.eventFifoEvents.size() > INPUT_CONTROLLER_EVENT_FIFO_CAPACITY) {
-		throw BMSX_RUNTIME_ERROR("machine.input.eventFifoEvents must contain at most " + std::to_string(INPUT_CONTROLLER_EVENT_FIFO_CAPACITY) + " entries.");
-	}
-	state.eventFifoOverflow = requireBool(requireField(object, "eventFifoOverflow", label), "machine.input.eventFifoOverflow");
+	state.registers.outputStatus = requireU32(requireField(registers, "outputStatus", "machine.input.registers"), "machine.input.registers.outputStatus");
 	return state;
 }
 

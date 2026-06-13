@@ -42,16 +42,10 @@ import {
 	IO_GEO_STATUS,
 	IO_IMG_STATUS,
 	IO_IMG_WRITTEN,
-	IO_INP_EVENT_ACTION,
-	IO_INP_EVENT_COUNT,
-	IO_INP_EVENT_FLAGS,
-	IO_INP_EVENT_PLAYER,
-	IO_INP_EVENT_REPEAT_COUNT,
-	IO_INP_EVENT_STATUS,
-	IO_INP_EVENT_VALUE,
+	IO_INP_KEYS,
+	IO_INP_OUTPUT_PORT,
 	IO_INP_OUTPUT_STATUS,
 	IO_INP_STATUS,
-	IO_INP_VALUE,
 	IO_IRQ_FLAGS,
 	IO_SLOT_COUNT,
 	IO_SYS_BUS_FAULT_ACCESS,
@@ -868,6 +862,9 @@ export class Memory {
 	}
 
 	private isLuaReadOnlyIoAddress(addr: number): boolean {
+		if (addr >= IO_INP_KEYS && addr < IO_INP_OUTPUT_PORT) {
+			return true; // latched keyboard/pointer/pad snapshot words
+		}
 		switch (addr) {
 			case IO_SYS_BUS_FAULT_CODE:
 			case IO_SYS_BUS_FAULT_ADDR:
@@ -883,14 +880,6 @@ export class Memory {
 			case IO_IMG_STATUS:
 			case IO_IMG_WRITTEN:
 			case IO_INP_STATUS:
-			case IO_INP_VALUE:
-			case IO_INP_EVENT_STATUS:
-			case IO_INP_EVENT_COUNT:
-			case IO_INP_EVENT_PLAYER:
-			case IO_INP_EVENT_ACTION:
-			case IO_INP_EVENT_FLAGS:
-			case IO_INP_EVENT_VALUE:
-			case IO_INP_EVENT_REPEAT_COUNT:
 			case IO_INP_OUTPUT_STATUS:
 			case IO_APU_STATUS:
 			case IO_APU_FAULT_CODE:

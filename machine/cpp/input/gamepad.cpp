@@ -4,6 +4,7 @@
 
 #include "gamepad.h"
 #include "manager.h"
+#include "gamepad_buttons.h"
 #include "core/machine_manager.h"
 #include <cmath>
 
@@ -75,10 +76,33 @@ void GamepadInput::consumeButton(const ButtonId& button) {
 void GamepadInput::reset(const std::vector<std::string>* except) {
 	if (!except) {
 		m_buttonStates.clear();
+		m_inputControllerButtons = 0u;
+		m_inputControllerAxes.fill(0.0F);
 		m_lastPollTimeMs = 0.0;
 		return;
 	}
 	resetObject(m_buttonStates, except);
+	m_inputControllerButtons = 0u;
+	m_inputControllerAxes.fill(0.0F);
+	for (const auto& [code, state] : m_buttonStates) {
+		if (state.pressed) {
+			const i32 bit = inputControllerGamepadButtonBit(code);
+			if (bit >= 0) {
+				m_inputControllerButtons |= 1u << static_cast<u32>(bit);
+			}
+		}
+		if (code == "ls" && state.value2d.has_value()) {
+			m_inputControllerAxes[0] = state.value2d->x;
+			m_inputControllerAxes[1] = state.value2d->y;
+		} else if (code == "rs" && state.value2d.has_value()) {
+			m_inputControllerAxes[2] = state.value2d->x;
+			m_inputControllerAxes[3] = state.value2d->y;
+		} else if (code == "lt") {
+			m_inputControllerAxes[4] = state.value;
+		} else if (code == "rt") {
+			m_inputControllerAxes[5] = state.value;
+		}
+	}
 }
 
 i32 GamepadInput::gamepadIndex() const {
@@ -143,6 +167,16 @@ void GamepadInput::ingestButton(const std::string& code, bool down, f32 value,
 		}
 		state.consumed = false;
 	}
+	const i32 bit = inputControllerGamepadButtonBit(code);
+	if (bit >= 0) {
+		const u32 mask = 1u << static_cast<u32>(bit);
+		m_inputControllerButtons = down ? (m_inputControllerButtons | mask) : (m_inputControllerButtons & ~mask);
+	}
+	if (code == "lt") {
+		m_inputControllerAxes[4] = down ? value : 0.0F;
+	} else if (code == "rt") {
+		m_inputControllerAxes[5] = down ? value : 0.0F;
+	}
 }
 
 void GamepadInput::ingestAxis2(const std::string& code, f32 x, f32 y, f64 timestamp) {
@@ -150,6 +184,18 @@ void GamepadInput::ingestAxis2(const std::string& code, f32 x, f32 y, f64 timest
 	state.value2d = Vec2{x, y};
 	state.value = std::hypot(x, y);
 	state.timestamp = timestamp;
+	if (code == "ls") {
+		m_inputControllerAxes[0] = x;
+		m_inputControllerAxes[1] = y;
+	} else if (code == "rs") {
+		m_inputControllerAxes[2] = x;
+		m_inputControllerAxes[3] = y;
+	}
+}
+
+void GamepadInput::writeInputControllerPadSnapshot(InputControllerPadSnapshot& snapshot) const {
+	snapshot.buttons = m_inputControllerButtons;
+	snapshot.axes = m_inputControllerAxes;
 }
 
 } // namespace bmsx

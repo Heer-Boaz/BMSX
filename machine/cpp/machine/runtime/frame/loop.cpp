@@ -2,6 +2,9 @@
 #include "machine/runtime/cart_boot.h"
 #include "machine/runtime/cpu_executor.h"
 #include "machine/runtime/runtime.h"
+#include "machine/scheduler/device.h"
+
+#include <limits>
 
 namespace bmsx {
 void FrameLoopState::reset() {
@@ -111,6 +114,13 @@ bool FrameLoopState::tickUpdate(Runtime& runtime) {
 	}
 
 	runActiveFrameState(runtime);
+	if (frameActive
+		&& runtime.machine.cpu.isHaltedUntilIrq()
+		&& runtime.machine.scheduler.nextDeadline() == std::numeric_limits<i64>::max()) {
+		// Cart parked waiting for an interrupt that nothing has scheduled: report
+		// no progress so the scheduler yields the host slice instead of spinning.
+		return false;
+	}
 	const bool nextFrameActive = frameActive;
 	if (nextFrameActive != previousFrameActive) {
 		return true;

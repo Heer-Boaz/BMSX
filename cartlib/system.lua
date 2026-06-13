@@ -33,6 +33,7 @@ local romdir<const> = require('system/romdir')
 local font_module<const> = require('cartlib/font')
 local vdp_rpu_quads<const> = require('system/vdp_rpu_quads')
 local vdp_image<const> = require('system/vdp_image')
+local cart_input<const> = require('cartlib/input/player')
 
 local irq_ack_addr<const> = 0x0800010c
 local irq_reinit<const> = 0x0020
@@ -223,6 +224,7 @@ system.vdp_img_source = vdp_image.source
 system.vdp_write_source = vdp_image.write_source
 system.rom_data = romdir.data
 system.font = font_module
+system.input = cart_input
 system.consume_axis_accum = velocity.consume_axis_accum
 system.deep_clone = deep_clone
 system.set_velocity = velocity.set_velocity
@@ -545,11 +547,7 @@ function system.trigger_effect(object_id, effect_id, options)
 	if not component then
 		error('world object "' .. object_id .. '" does not have an actioneffectcomponent.')
 	end
-	local payload<const> = options and options.payload
-	if payload ~= nil then
-		return component:trigger(effect_id, { payload = payload })
-	end
-	return component:trigger(effect_id)
+	return component:trigger(effect_id, options and options.payload)
 end
 
 system.on_irq(irq_apu, function()

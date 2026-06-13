@@ -2,25 +2,27 @@
 
 #include "common/types.h"
 #include "machine/cpu/cpu.h"
-#include "machine/cpu/string_pool.h"
+#include "machine/devices/input/contracts.h"
+
+#include <array>
 
 namespace bmsx {
 
 class Memory;
 
 struct InputControllerRegisterState {
-	u32 player = 1;
-	StringId actionStringId = 0;
-	StringId bindStringId = 0;
 	u32 ctrl = 0;
-	StringId queryStringId = 0;
-	u32 status = 0;
-	u32 value = 0;
-	u32 valueX = 0;
-	u32 valueY = 0;
-	StringId consumeStringId = 0;
+	std::array<u32, INPUT_CONTROLLER_KEY_WORD_COUNT> keyWords{};
+	u32 pointerButtons = 0;
+	u32 pointerXQ16 = 0;
+	u32 pointerYQ16 = 0;
+	u32 pointerWheelQ16 = 0;
+	std::array<u32, INPUT_CONTROLLER_PAD_COUNT> padButtons{};
+	std::array<u32, INPUT_CONTROLLER_PAD_COUNT * INPUT_CONTROLLER_PAD_AXIS_COUNT> padAxesQ16{};
+	u32 outputPort = 0;
 	u32 outputIntensityQ16 = 0;
 	u32 outputDurationMs = 0;
+	u32 outputStatus = 0; // bit per pad: rumble supported
 };
 
 class InputControllerRegisterFile {
@@ -32,9 +34,9 @@ public:
 	void reset();
 	InputControllerRegisterState captureState() const;
 	void restoreState(const InputControllerRegisterState& restoredState);
-	i32 selectedPlayerIndex() const;
+	i32 selectedPadIndex() const;
+	void latchSnapshot(const InputControllerSnapshot& snapshot);
 	void write(uint32_t addr, Value value);
-	void writeResult(Memory& memory, u32 status, u32 value, u32 valueX, u32 valueY);
 	void mirror(Memory& memory) const;
 };
 

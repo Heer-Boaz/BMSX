@@ -18,7 +18,6 @@ end
 
 function init()
 	mem[sys_vdp_dither] = 0
-	mem[sys_inp_player] = 1
 	on_irq(irq_reinit, function()
 		init()
 	end)
@@ -35,7 +34,6 @@ function init()
 end
 
 function new_game()
-	mem[sys_inp_player] = 1
 	reset()
 	inst_subsystem(stage_module.stage_def_id, {
 		id = stage_module.stage_instance_id,

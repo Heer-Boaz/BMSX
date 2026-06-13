@@ -64,5 +64,6 @@ find_any_by_tag = system.find_any_by_tag
 timeline = system.timeline
 eventemitter = system.eventemitter
 font = system.font
+input = system.input
 
 return system

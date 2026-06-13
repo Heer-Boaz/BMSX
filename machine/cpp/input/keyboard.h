@@ -6,6 +6,8 @@
 #define BMSX_KEYBOARDINPUT_H
 
 #include "models.h"
+#include "machine/devices/input/contracts.h"
+#include <array>
 #include <unordered_map>
 #include <unordered_set>
 
@@ -52,14 +54,19 @@ public:
 	// State access
 	// ─────────────────────────────────────────────────────────────────────────
 	
-	// Direct access to key states (for advanced queries)
-	const std::unordered_map<std::string, ButtonState>& keyStates() const { return m_keyStates; }
+	void writeInputControllerKeyWords(std::array<u32, INPUT_CONTROLLER_KEY_WORD_COUNT>& keyWords) const override;
+	void writeInputControllerPointerSnapshot(InputControllerSnapshot& snapshot) const override { (void)snapshot; }
+	void writeInputControllerPadSnapshot(InputControllerPadSnapshot& snapshot) const override { (void)snapshot; }
 	
 private:
 	std::string m_deviceId;
 	
+	void setKeyUsageWord(const std::string& keyCode, bool pressed);
+	void rebuildKeyUsageWords();
+
 	// Raw key states (direct keyboard key codes)
 	std::unordered_map<std::string, ButtonState> m_keyStates;
+	std::array<u32, INPUT_CONTROLLER_KEY_WORD_COUNT> m_keyUsageWords{};
 	std::unordered_set<std::string> m_pendingPresses;
 	std::unordered_set<std::string> m_pendingReleases;
 

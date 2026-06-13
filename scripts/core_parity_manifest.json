@@ -3095,7 +3095,7 @@
 		{
 			"file": "carts/bare_metal_cart/cart.lua",
 			"start": "\tlocal joint_phase<const> = frame % 8",
-			"end": "\nend\n\nlocal setup_camera_input",
+			"end": "\nend\n\nlocal update_camera",
 			"reason": "bare_metal_cart_jtu_matrix_hot_helper_must_not_allocate_tables_closures_or_strings"
 		},
 		{

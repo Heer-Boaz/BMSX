@@ -12,6 +12,10 @@ void InputControllerSampleLatch::arm() {
 	m_sampleArmed = true;
 }
 
+u32 InputControllerSampleLatch::sequence() const {
+	return m_sampleSequence;
+}
+
 bool InputControllerSampleLatch::cancel() {
 	const bool wasArmed = m_sampleArmed;
 	m_sampleArmed = false;

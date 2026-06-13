@@ -319,36 +319,12 @@ DISPATCH_LABEL(LT) {
 	const Value& leftValue = readRK(FRAME, rkB);
 	const Value& rightValue = readRK(FRAME, rkC);
 	bool ok = false;
-	if (valueIsString(leftValue) && valueIsString(rightValue)) {
+	if (valueIsNumber(leftValue) && valueIsNumber(rightValue)) {
+		ok = asNumber(leftValue) < asNumber(rightValue);
+	} else if (valueIsString(leftValue) && valueIsString(rightValue)) {
 		ok = m_stringPool.toString(asStringId(leftValue)) < m_stringPool.toString(asStringId(rightValue));
 	} else {
-		auto toNumber = [this](const Value& value) -> double {
-			if (valueIsNumber(value)) {
-				return asNumber(value);
-			}
-			if (valueIsTagged(value)) {
-				switch (valueTag(value)) {
-					case ValueTag::False: return 0.0;
-					case ValueTag::True: return 1.0;
-					case ValueTag::Nil: return 0.0;
-					case ValueTag::String: {
-						const std::string& text = m_stringPool.toString(asStringId(value));
-						char* end = nullptr;
-						double parsed = std::strtod(text.c_str(), &end);
-						if (end == text.c_str()) {
-							return std::numeric_limits<double>::quiet_NaN();
-						}
-						return parsed;
-					}
-					default:
-						return std::numeric_limits<double>::quiet_NaN();
-				}
-			}
-			return std::numeric_limits<double>::quiet_NaN();
-		};
-		double left = toNumber(leftValue);
-		double right = toNumber(rightValue);
-		ok = left < right;
+		throw BMSX_RUNTIME_ERROR(std::string("Attempted to compare ") + valueTypeName(leftValue) + " with " + valueTypeName(rightValue) + ".");
 	}
 	if (ok != (a != 0)) {
 		SKIP_NEXT_INSTRUCTION();
@@ -360,36 +336,12 @@ DISPATCH_LABEL(LE) {
 	const Value& leftValue = readRK(FRAME, rkB);
 	const Value& rightValue = readRK(FRAME, rkC);
 	bool ok = false;
-	if (valueIsString(leftValue) && valueIsString(rightValue)) {
+	if (valueIsNumber(leftValue) && valueIsNumber(rightValue)) {
+		ok = asNumber(leftValue) <= asNumber(rightValue);
+	} else if (valueIsString(leftValue) && valueIsString(rightValue)) {
 		ok = m_stringPool.toString(asStringId(leftValue)) <= m_stringPool.toString(asStringId(rightValue));
 	} else {
-		auto toNumber = [this](const Value& value) -> double {
-			if (valueIsNumber(value)) {
-				return asNumber(value);
-			}
-			if (valueIsTagged(value)) {
-				switch (valueTag(value)) {
-					case ValueTag::False: return 0.0;
-					case ValueTag::True: return 1.0;
-					case ValueTag::Nil: return 0.0;
-					case ValueTag::String: {
-						const std::string& text = m_stringPool.toString(asStringId(value));
-						char* end = nullptr;
-						double parsed = std::strtod(text.c_str(), &end);
-						if (end == text.c_str()) {
-							return std::numeric_limits<double>::quiet_NaN();
-						}
-						return parsed;
-					}
-					default:
-						return std::numeric_limits<double>::quiet_NaN();
-				}
-			}
-			return std::numeric_limits<double>::quiet_NaN();
-		};
-		double left = toNumber(leftValue);
-		double right = toNumber(rightValue);
-		ok = left <= right;
+		throw BMSX_RUNTIME_ERROR(std::string("Attempted to compare ") + valueTypeName(leftValue) + " with " + valueTypeName(rightValue) + ".");
 	}
 	if (ok != (a != 0)) {
 		SKIP_NEXT_INSTRUCTION();

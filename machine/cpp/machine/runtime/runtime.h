@@ -23,6 +23,7 @@
 #include "machine/program/scratch.h"
 #include "machine/memory/memory.h"
 #include "machine/runtime/frame/loop.h"
+#include "machine/runtime/input.h"
 #include "machine/scheduler/frame.h"
 #include "machine/devices/vdp/vdp.h"
 #include "common/primitives.h"
@@ -42,7 +43,6 @@ namespace bmsx {
 struct ProgramImage;
 class RuntimeRomPackage;
 class GameView;
-class RuntimeInputSource;
 class MicrotaskQueue;
 
 /**

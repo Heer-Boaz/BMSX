@@ -26,6 +26,15 @@ constexpr const char* kPointerDefaultCodes[] = {
 	kPointerWheel,
 };
 
+i32 pointerButtonBit(const std::string& code) {
+	if (code == "pointer_primary") return INP_POINTER_BUTTON_PRIMARY;
+	if (code == "pointer_aux") return INP_POINTER_BUTTON_AUX;
+	if (code == "pointer_secondary") return INP_POINTER_BUTTON_SECONDARY;
+	if (code == "pointer_back") return INP_POINTER_BUTTON_BACK;
+	if (code == "pointer_forward") return INP_POINTER_BUTTON_FORWARD;
+	return -1;
+}
+
 }
 
 PointerInput::PointerInput(const std::string& deviceId)
@@ -68,6 +77,7 @@ void PointerInput::pollInput() {
 			if (timestamp == m_lastWheelTimestamp) {
 				state.justreleased = state.pressed;
 				state.value = 0.0f;
+				m_inputControllerWheel = 0.0F;
 				state.pressed = false;
 				state.justpressed = false;
 			} else {
@@ -115,9 +125,32 @@ void PointerInput::reset(const std::vector<std::string>* except) {
 		m_lastPollTimeMs = 0.0;
 		m_lastDeltaTimestamp = 0.0;
 		m_lastWheelTimestamp = 0.0;
+		m_inputControllerButtons = 0u;
+		m_inputControllerX = 0.0F;
+		m_inputControllerY = 0.0F;
+		m_inputControllerWheel = 0.0F;
 		return;
 	}
 	resetObject(m_buttonStates, except);
+	m_inputControllerButtons = 0u;
+	for (const auto& [code, state] : m_buttonStates) {
+		if (state.pressed) {
+			const i32 bit = pointerButtonBit(code);
+			if (bit >= 0) {
+				m_inputControllerButtons |= 1u << static_cast<u32>(bit);
+			}
+		}
+	}
+	const auto position = m_buttonStates.find(kPointerPosition);
+	if (position != m_buttonStates.end() && position->second.value2d.has_value()) {
+		m_inputControllerX = position->second.value2d->x;
+		m_inputControllerY = position->second.value2d->y;
+	} else {
+		m_inputControllerX = 0.0F;
+		m_inputControllerY = 0.0F;
+	}
+	const auto wheel = m_buttonStates.find(kPointerWheel);
+	m_inputControllerWheel = wheel != m_buttonStates.end() ? wheel->second.value : 0.0F;
 }
 
 void PointerInput::ingestButton(const std::string& code, bool down, f32 value,
@@ -151,6 +184,11 @@ void PointerInput::ingestButton(const std::string& code, bool down, f32 value,
 		}
 		state.consumed = false;
 	}
+	const i32 bit = pointerButtonBit(code);
+	if (bit >= 0) {
+		const u32 mask = 1u << static_cast<u32>(bit);
+		m_inputControllerButtons = down ? (m_inputControllerButtons | mask) : (m_inputControllerButtons & ~mask);
+	}
 }
 
 void PointerInput::ingestAxis2(const std::string& code, f32 x, f32 y, f64 timestamp) {
@@ -163,6 +201,10 @@ void PointerInput::ingestAxis2(const std::string& code, f32 x, f32 y, f64 timest
 
 	state.value2d = Vec2{x, y};
 	state.timestamp = timestamp;
+	if (code == kPointerPosition) {
+		m_inputControllerX = x;
+		m_inputControllerY = y;
+	}
 
 	auto& delta = m_buttonStates[kPointerDelta];
 	const bool moved = dx != 0.0f || dy != 0.0f;
@@ -182,8 +224,12 @@ void PointerInput::ingestAxis1(const std::string& code, f32 value, f64 timestamp
 	state.value = value;
 	state.timestamp = timestamp;
 	if (code != kPointerWheel || value == 0.0f) {
+		if (code == kPointerWheel) {
+			m_inputControllerWheel = value;
+		}
 		return;
 	}
+	m_inputControllerWheel = value;
 	state.pressed = true;
 	state.justpressed = true;
 	state.justreleased = false;
@@ -192,6 +238,13 @@ void PointerInput::ingestAxis1(const std::string& code, f32 value, f64 timestamp
 	state.pressedAtMs = timestamp;
 	state.releasedAtMs = std::nullopt;
 	state.pressId = m_nextPressId++;
+}
+
+void PointerInput::writeInputControllerPointerSnapshot(InputControllerSnapshot& snapshot) const {
+	snapshot.pointerButtons |= m_inputControllerButtons;
+	snapshot.pointerX = m_inputControllerX;
+	snapshot.pointerY = m_inputControllerY;
+	snapshot.pointerWheel = m_inputControllerWheel;
 }
 
 } // namespace bmsx

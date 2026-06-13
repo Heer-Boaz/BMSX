@@ -44,7 +44,15 @@ bool CpuExecutionState::runHaltedUntilIrq(Runtime& runtime, FrameState& frameSta
 			return true;
 		}
 		if (cycleBudgetRemaining > 0) {
-			const i64 cyclesToTarget = scheduler.nextDeadline() - scheduler.nowCycles();
+			const i64 nextDeadline = scheduler.nextDeadline();
+			if (nextDeadline == std::numeric_limits<i64>::max()) {
+				// Parked with no interrupt scheduled to wake the CPU: yield without
+				// burning the CPU instruction budget. A parked CPU executes nothing,
+				// so it must not draw down the per-frame budget; the host resumes on
+				// a later tick once an interrupt is scheduled.
+				return tickCompleted;
+			}
+			const i64 cyclesToTarget = nextDeadline - scheduler.nowCycles();
 			if (cyclesToTarget <= 0) {
 				tickCompleted = runDueRuntimeTimers(runtime);
 				continue;

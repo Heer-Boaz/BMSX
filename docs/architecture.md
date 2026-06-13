@@ -500,94 +500,69 @@ capture/restore bodies in the matching save-state translation unit.
 
 ICU is the Input Controller Unit.
 
-Cart-visible ingress:
+Cart-visible ingress is a raw 47-word MMIO registerfile:
 
-- `sys_inp_player`, `sys_inp_action`, `sys_inp_bind`, `sys_inp_ctrl`,
-  `sys_inp_query`, and `sys_inp_consume` writes;
-- `sys_inp_status` and `sys_inp_value` reads;
-- `sys_inp_event_*` FIFO status/front-entry reads and event control writes;
-- `sys_inp_output_intensity_q16`, `sys_inp_output_duration_ms`,
-  `sys_inp_output_status`, and `sys_inp_output_ctrl` output registers;
-- `inp_ctrl_commit`, `inp_ctrl_arm`, `inp_ctrl_reset`,
-  `inp_event_ctrl_pop`, `inp_event_ctrl_clear`, and
-  `inp_output_ctrl_apply` command words.
+- `sys_inp_ctrl` / `sys_inp_status` for sample control and the latched sample
+  sequence;
+- `sys_inp_keys`, eight words of USB HID keyboard usage bits;
+- `sys_inp_pointer_buttons`, `sys_inp_pointer_x`, `sys_inp_pointer_y`, and
+  `sys_inp_pointer_wheel` for pointer state;
+- `sys_inp_pads`, four seven-word pad blocks containing `buttons`, `lx`, `ly`,
+  `rx`, `ry`, `lt`, and `rt`;
+- `sys_inp_output_port`, `sys_inp_output_intensity_q16`,
+  `sys_inp_output_duration_ms`, `sys_inp_output_status`, and
+  `sys_inp_output_ctrl` for output hardware.
 
 State owned by ICU:
 
-- selected player/action/bind/query/consume register words,
-  `sys_inp_status`/`sys_inp_value` result words, and reset/restore register
-  mirroring owned by `machine/devices/input/registers`;
-- `sys_inp_ctrl` command latch side effects owned by
+- raw control, keyboard, pointer, pad, and output latch words plus reset/restore
+  register mirroring owned by `machine/devices/input/registers`;
+- `sys_inp_ctrl` command side effects owned by
   `machine/devices/input/control_port`;
 - private sample arm, sequence, and last-cycle latches owned by
   `machine/devices/input/sample_latch`;
 - VBlank sample-edge datapath owned by `machine/devices/input/sample_edge`;
-- per-player committed action records and mapping contexts owned by
-  `machine/devices/input/action_table`;
-- per-action sampled `statusWord`, signed-Q16.16 `valueQ16`, `pressTime`, and
-  `repeatCount` words owned by the action table;
-- `sys_inp_query`/`sys_inp_consume` write side effects and query-result
-  datapath owned by `machine/devices/input/query_port`;
-- event FIFO hardware state: retained event slots, read/write pointers, queued
-  count, overflow latch, and pop/clear control doorbells;
-- output intensity and duration latch words; the output command datapath is
-  owned by `machine/devices/input/output_port`.
+- output command datapath owned by `machine/devices/input/output_port`.
 
 The runtime VBlank owner enters through the ICU controller edge. The sample
 latch subunit remains private and only consumes the arm latch into sample
-sequence/last-cycle state. The mirrored sample-edge datapath then asks the
-input owner to sample players once and snapshots committed actions. Later MMIO
-queries enter
-the query port and evaluate against that ICU snapshot. A root action query
-returns the sampled action status/value words; a compound expression returns
-boolean `1`/`0` in `sys_inp_status` and zero in `sys_inp_value`.
+sequence/last-cycle state. The mirrored sample-edge datapath asks the host input
+owner to fill one raw `InputControllerSnapshot`. The ICU then decodes that
+snapshot into raw MMIO words at the datapath boundary. Later cart reads consume
+only the mirrored register words. The ICU does not own action maps,
+action-expression parsing, button-name string ids, consume state, repeat
+windows, guarded presses, or a high-level event FIFO.
 
 ICU device code consumes only `machine/devices/input/contracts` source ports.
 The host input manager/player layer implements those ports and remains outside
-the device. The sample edge requests one simulation-frame sample through that
-port, the action table consumes per-player button states through that port, and
-the output port emits selected-player vibration commands through that port.
-`Machine` and `Runtime` receive that source port explicitly from the host/core
-owner. They must not fetch the host input singleton or name concrete input
-manager/player types.
-Runtime boot options are owned by the mirrored `machine/runtime/options`
-contract. Runtime-owned input timing configuration is exposed through the
-mirrored `machine/runtime/input` contract, while ICU input source ports remain
-owned by `machine/devices/input/contracts`.
+the device. The host side may keep its richer keyboard/gamepad/pointer mapping,
+shortcut, IDE, terminal, quick-menu, onscreen gamepad, and device-assignment
+logic under `machine/{ts,cpp}/input`; that complexity is not exposed as ICU
+hardware.
 
-The VBlank sample edge timestamps sampled action state with BMSX machine time
-derived from the scheduler. Host input event timestamps are physical host
-metadata used by the host input owner; they must not become sampled
-cart-visible `pressTime` or action timestamp semantics.
+Gameplay/cart PlayerInput semantics live in `cartlib/input/player.lua` and
+`cartlib/input/action_parser.lua`: cartlib reads the raw ICU MMIO snapshot,
+owns per-player mapping contexts, action state, consume state, guarded/repeat
+evaluation, parser caches, and scratch buffers. Normal carts use this Lua engine
+layer. Bare-metal carts may intentionally read the raw keyboard/pointer/pad MMIO
+words directly and must not route through cartlib for ICU access. BIOS code may
+use raw ICU reads for boot UI, but it must not grow a gameplay PlayerInput
+framework.
 
 `sys_inp_ctrl` writes enter the control port. The control port latches the raw
-command word through the registerfile, then commits selected action/bind words,
-arms the VBlank sample latch, or resets the selected player's committed action
-records and result words.
-
-The event FIFO is filled at the same sample edge. It queues action edge/repeat
-snapshots and exposes a front-entry register bank plus pop/clear doorbells.
-`machine/devices/input/event_fifo` owns the retained ring slots, pointers, count,
-and overflow latch on both runtimes. The queue is saved as visible device state;
-it is not a host queue.
+command word through the registerfile, then arms the VBlank sample latch or
+resets the raw ICU registerfile.
 
 `machine/devices/input/save_state` is only the aggregate persistence boundary.
-Live ICU register, action-table, and FIFO record shapes stay in their hardware
-owner files rather than in a parallel save-state contract.
+Live ICU register and sample-latch record shapes stay in their hardware owner
+files rather than in a parallel save-state contract.
 
-The output register bank is a selected-player output datapath. Carts write an
-unsigned-Q16.16 intensity word and a duration word, then ring the output
-doorbell. The ICU decodes those latch words at the output datapath boundary and
-passes one output command to the selected player's input hardware. Status reads
-expose host output support for the selected player; that support bit is runtime
-capability, not save-state payload.
-
-ICU string ingress is a raw interned-string-id MMIO contract. The register
-metadata marks action, bind, query, and consume writes as interned string ids;
-normal Lua strings are rejected before program image emission. The ICU consumes
-interned string-id words directly. Dynamic producers use the existing `&`
-operator at the producer boundary, for example `&(action .. '[p]')`, so the
-device still sees raw string-id words rather than a high-level input API.
+The output register bank is a raw pad-output datapath. Carts write an output
+port, an unsigned-Q16.16 intensity word, and a duration word, then ring the
+output doorbell. The ICU decodes those latch words at the output datapath
+boundary and passes one output command to the selected pad's input hardware.
+Status reads expose a bitmask of host output support by pad; that support mirror
+is restored with the registerfile but is not gameplay state.
 
 ## Firmware and Lua layer
 

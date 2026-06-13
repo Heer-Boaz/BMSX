@@ -5,6 +5,7 @@ local ecs<const> = require('cartlib/ecs/index')
 local action_effects<const> = require('cartlib/action_effects')
 local compiler<const> = require('cartlib/input/action_effect/compiler')
 local dsl<const> = require('cartlib/input/action_effect/dsl')
+local cart_input<const> = require('cartlib/input/player')
 local romdir<const> = require('system/romdir')
 local scratchbatch<const> = require('bios/util/scratchbatch')
 local world_instance<const> = require('cartlib/world/index').instance
@@ -33,7 +34,6 @@ function inputactioneffectsystem.new(priority)
 	self.resolved_programs = {}
 	self.missing_program_ids = {}
 	self.pattern_cache = {}
-	self.pattern_cache_max = 256
 	self.custom_match_scratch = scratchbatch.new()
 	self.runtime_by_component = setmetatable({}, { __mode = 'k' })
 	self.frame_serial = 0
@@ -107,24 +107,14 @@ function inputactioneffectsystem:evaluate_intent_binding(owner, player_index, bi
 	if not action then
 		return
 	end
-	mem[sys_inp_player] = player_index
-	if binding.press then
-		mem[sys_inp_query] = &(action .. '[jp]')
-		if mem[sys_inp_status] ~= 0 then
-			self:run_intent_assignments(owner, player_index, binding, 'press', binding.press)
-		end
+	if binding.press and cart_input.just_pressed(player_index, action) then
+		self:run_intent_assignments(owner, player_index, binding, 'press', binding.press)
 	end
-	if binding.hold then
-		mem[sys_inp_query] = &(action .. '[p]')
-		if mem[sys_inp_status] ~= 0 then
-			self:run_intent_assignments(owner, player_index, binding, 'hold', binding.hold)
-		end
+	if binding.hold and cart_input.pressed(player_index, action) then
+		self:run_intent_assignments(owner, player_index, binding, 'hold', binding.hold)
 	end
-	if binding.release then
-		mem[sys_inp_query] = &(action .. '[jr]')
-		if mem[sys_inp_status] ~= 0 then
-			self:run_intent_assignments(owner, player_index, binding, 'release', binding.release)
-		end
+	if binding.release and cart_input.just_released(player_index, action) then
+		self:run_intent_assignments(owner, player_index, binding, 'release', binding.release)
 	end
 end
 
@@ -142,8 +132,7 @@ function inputactioneffectsystem:run_intent_assignments(owner, player_index, bin
 			local resolved_value<const> = should_clear and nil or (assignment.value == nil and assigned_value_edges[edge] or assignment.value)
 		self:assign_owner_path(owner, path, resolved_value, should_clear)
 		if (assignment.consume) then
-			mem[sys_inp_player] = player_index
-			mem[sys_inp_consume] = &(binding.action)
+			cart_input.consume(player_index, binding.action)
 		end
 	end
 end
@@ -388,29 +377,14 @@ function inputactioneffectsystem:resolve_program_by_id(program_id)
 end
 
 function inputactioneffectsystem:parse_pattern(pattern)
+	-- Patterns come from compiled programs (a closed set), so the predicate
+	-- closures are memoized unbounded; cart_input.query owns the AST cache.
 	local predicate = self.pattern_cache[pattern]
-	if predicate then
-		return predicate
-	end
-	predicate = function(env)
-		mem[sys_inp_player] = env.player_index
-		mem[sys_inp_query] = &(pattern)
-		return mem[sys_inp_status] ~= 0
-	end
-	self.pattern_cache[pattern] = predicate
-	if self.pattern_cache_max and (function()
-		local count = 0
-		for _ in pairs(self.pattern_cache) do
-			count = count + 1
+	if not predicate then
+		predicate = function(env)
+			return cart_input.query(env.player_index, pattern)
 		end
-		return count
-	end)() > self.pattern_cache_max then
-		for key in pairs(self.pattern_cache) do
-			if key ~= pattern then
-				self.pattern_cache[key] = nil
-				break
-			end
-		end
+		self.pattern_cache[pattern] = predicate
 	end
 	return predicate
 end

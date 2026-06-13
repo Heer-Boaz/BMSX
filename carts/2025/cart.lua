@@ -234,7 +234,6 @@ end
 
 function init()
 	mem[sys_vdp_dither] = 2
-	mem[sys_inp_player] = 1
 	on_irq(irq_reinit, function()
 		init()
 	end)
@@ -250,7 +249,6 @@ end
 
 function new_game()
 	reset()
-	mem[sys_inp_player] = 1
 	local w<const> = machine_manifest.render_size.width
 	local h<const> = machine_manifest.render_size.height
 	local line_height<const> = 16

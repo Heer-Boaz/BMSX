@@ -4,14 +4,13 @@
 
 namespace bmsx {
 
-class InputControllerActionTable;
 class InputControllerRegisterFile;
 class InputControllerSampleLatch;
 class Memory;
 
 class InputControllerControlPort {
 public:
-	InputControllerControlPort(Memory& memory, InputControllerRegisterFile& registers, InputControllerActionTable& actionTable, InputControllerSampleLatch& sampleLatch);
+	InputControllerControlPort(Memory& memory, InputControllerRegisterFile& registers, InputControllerSampleLatch& sampleLatch);
 
 	static void writeControlThunk(void* context, u32 addr, Value value);
 
@@ -20,7 +19,6 @@ public:
 private:
 	Memory& m_memory;
 	InputControllerRegisterFile& m_registers;
-	InputControllerActionTable& m_actionTable;
 	InputControllerSampleLatch& m_sampleLatch;
 };
 

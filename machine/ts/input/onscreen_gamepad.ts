@@ -1,7 +1,8 @@
 import { getPressedState, Input, makeButtonState, resetObject } from './manager';
-import type { BGamepadButton } from './models';
+import type { BGamepadButton, ButtonState, InputHandler, KeyOrButtonId2ButtonState } from './models';
+import { inputControllerGamepadButtonBit } from './gamepad_buttons';
 import type { VibrationParams } from '../platform';
-import { ButtonState, InputHandler, KeyOrButtonId2ButtonState } from './models';
+import type { InputControllerPadSnapshot, InputControllerSnapshot } from '../machine/devices/input/contracts';
 
 import type {
 	OnscreenGamepadControlKind,
@@ -38,6 +39,7 @@ export class OnscreenGamepad implements InputHandler {
 	private pointer2Elements = new Map<number, Set<string>>();
 	private elementActiveCount = new Map<string, number>();
 	private gamepadButtonStates: KeyOrButtonId2ButtonState = {};
+	private inputControllerButtons = 0;
 	private nextPressId = 1;
 	private handlesProvider: OnscreenGamepadHandleProvider = null;
 
@@ -74,10 +76,19 @@ export class OnscreenGamepad implements InputHandler {
 		return getPressedState(this.gamepadButtonStates, btn);
 	}
 
+	public writeInputControllerPadSnapshot(snapshot: InputControllerPadSnapshot): void {
+		snapshot.buttons = this.inputControllerButtons;
+	}
+
+	public writeInputControllerKeyWords(_keyWords: Uint32Array): void { }
+
+	public writeInputControllerPointerSnapshot(_snapshot: InputControllerSnapshot): void { }
+
 	public pollInput(): void {
 		const defaultState = makeButtonState();
 		const now = machineManager.platform.clock.now();
 		const newStates: KeyOrButtonId2ButtonState = {};
+		let inputControllerButtons = 0;
 		for (let i = 0; i < Input.BUTTON_IDS.length; i++) {
 			const button = Input.BUTTON_IDS[i];
 			const existing = this.gamepadButtonStates[button];
@@ -85,6 +96,12 @@ export class OnscreenGamepad implements InputHandler {
 			const countValue = this.activeCounts[button];
 			const count = typeof countValue === 'number' ? countValue : 0;
 			const isDown = count > 0;
+			if (isDown) {
+				const bit = inputControllerGamepadButtonBit(button);
+				if (bit >= 0) {
+					inputControllerButtons = (inputControllerButtons | (1 << bit)) >>> 0;
+				}
+			}
 			if (isDown) {
 				const wasPressed = previous.pressed;
 				let previousPressId: number | undefined;
@@ -126,6 +143,7 @@ export class OnscreenGamepad implements InputHandler {
 			}
 		}
 		this.gamepadButtonStates = newStates;
+		this.inputControllerButtons = inputControllerButtons;
 	}
 
 	public consumeButton(button: string): void {
@@ -387,21 +405,33 @@ export class OnscreenGamepad implements InputHandler {
 		this.platform.updateDpadRing(active);
 	}
 
-	public reset(except?: string[]): void {
-		if (!except) {
-			for (let i = 0; i < Input.BUTTON_IDS.length; i++) {
-				const buttonId = Input.BUTTON_IDS[i];
-				this.gamepadButtonStates[buttonId] = makeButtonState();
+		public reset(except?: string[]): void {
+			if (!except) {
+				this.inputControllerButtons = 0;
+				for (let i = 0; i < Input.BUTTON_IDS.length; i++) {
+					const buttonId = Input.BUTTON_IDS[i];
+					this.gamepadButtonStates[buttonId] = makeButtonState();
 			}
 			this.activeCounts = {};
 			this.pointer2Buttons.clear();
 			this.pointer2Elements.clear();
 			this.elementActiveCount.clear();
 			this.resetUI();
-		} else {
-			resetObject(this.gamepadButtonStates, except);
+			} else {
+				resetObject(this.gamepadButtonStates, except);
+				this.inputControllerButtons = 0;
+				for (let i = 0; i < Input.BUTTON_IDS.length; i++) {
+					const button = Input.BUTTON_IDS[i];
+					const state = this.gamepadButtonStates[button];
+					if (state && state.pressed) {
+						const bit = inputControllerGamepadButtonBit(button);
+						if (bit >= 0) {
+							this.inputControllerButtons = (this.inputControllerButtons | (1 << bit)) >>> 0;
+						}
+					}
+				}
+			}
 		}
-	}
 
 	public resetUI(elementsToFilterById?: string[]): void {
 		if (elementsToFilterById && elementsToFilterById.length > 0) {

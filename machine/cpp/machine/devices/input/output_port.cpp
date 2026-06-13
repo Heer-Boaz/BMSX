@@ -5,8 +5,6 @@
 #include "machine/devices/input/registers.h"
 #include "machine/memory/memory.h"
 
-#include <stdexcept>
-
 namespace bmsx {
 
 InputControllerOutputPort::InputControllerOutputPort(InputControllerInputSource& input, const InputControllerRegisterFile& registers, Memory& memory)
@@ -15,45 +13,20 @@ InputControllerOutputPort::InputControllerOutputPort(InputControllerInputSource&
 	, m_memory(memory) {
 }
 
-// disable-next-line single_line_method_pattern -- memory-map callbacks require a C-style thunk into the input output-port instance.
-Value InputControllerOutputPort::readRegisterThunk(void* context, u32 addr) {
-	return static_cast<InputControllerOutputPort*>(context)->readRegister(addr);
-}
-
-// disable-next-line single_line_method_pattern -- memory-map callbacks require a C-style thunk into the input output-port instance.
 void InputControllerOutputPort::writeOutputControlRegisterThunk(void* context, u32, Value value) {
 	static_cast<InputControllerOutputPort*>(context)->writeOutputControlRegister(value);
 }
 
-u32 InputControllerOutputPort::readStatus(u32 player) const {
-	return m_input.inputControllerPlayer(static_cast<i32>(player)).supportsInputControllerVibrationEffect() ? INP_OUTPUT_STATUS_SUPPORTED : 0u;
-}
-
-Value InputControllerOutputPort::readRegister(u32 addr) const {
-	switch (addr) {
-		case IO_INP_OUTPUT_STATUS:
-			return valueNumber(static_cast<double>(readStatus(static_cast<u32>(m_registers.selectedPlayerIndex()))));
-		case IO_INP_OUTPUT_CTRL:
-			return valueNumber(0.0);
-	}
-	throw std::runtime_error("ICU output register read is not mapped.");
-}
-
-void InputControllerOutputPort::writeControl(u32 command) {
-	switch (command) {
-		case INP_OUTPUT_CTRL_APPLY:
-			apply(static_cast<u32>(m_registers.selectedPlayerIndex()), m_registers.state.outputIntensityQ16, m_registers.state.outputDurationMs);
-			return;
-	}
-}
-
 void InputControllerOutputPort::writeOutputControlRegister(Value value) {
-	writeControl(toU32(value));
+	const u32 command = toU32(value);
+	if (command == INP_OUTPUT_CTRL_APPLY) {
+		m_input.applyInputControllerVibrationEffect(
+			m_registers.selectedPadIndex(),
+			static_cast<f64>(m_registers.state.outputDurationMs),
+			decodeInputOutputIntensityQ16(m_registers.state.outputIntensityQ16)
+		);
+	}
 	m_memory.writeIoValue(IO_INP_OUTPUT_CTRL, valueNumber(0.0));
-}
-
-void InputControllerOutputPort::apply(u32 player, u32 intensityQ16, u32 durationMs) {
-	m_input.inputControllerPlayer(static_cast<i32>(player)).applyInputControllerVibrationEffect(static_cast<f64>(durationMs), decodeInputOutputIntensityQ16(intensityQ16));
 }
 
 } // namespace bmsx

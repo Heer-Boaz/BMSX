@@ -4,6 +4,7 @@
 
 #include "keyboard.h"
 #include "manager.h"
+#include "hid_keys.h"
 #include "core/machine_manager.h"
 #include <algorithm>
 
@@ -144,6 +145,7 @@ void KeyboardInput::reset(const std::vector<std::string>* except) {
 		m_gamepadButtonStates.clear();
 		m_pendingPresses.clear();
 		m_pendingReleases.clear();
+		m_keyUsageWords.fill(0u);
 	} else {
 		resetObject(m_keyStates, except);
 		resetObject(m_gamepadButtonStates, except);
@@ -161,6 +163,36 @@ void KeyboardInput::reset(const std::vector<std::string>* except) {
 				++it;
 			}
 		}
+		rebuildKeyUsageWords();
+	}
+}
+
+void KeyboardInput::setKeyUsageWord(const std::string& keyCode, bool pressed) {
+	const i32 usage = hidKeyUsageForCode(keyCode);
+	if (usage < 0) {
+		return;
+	}
+	const auto word = static_cast<size_t>(usage) >> 5u;
+	const u32 mask = 1u << (static_cast<u32>(usage) & 31u);
+	if (pressed) {
+		m_keyUsageWords[word] |= mask;
+	} else {
+		m_keyUsageWords[word] &= ~mask;
+	}
+}
+
+void KeyboardInput::rebuildKeyUsageWords() {
+	m_keyUsageWords.fill(0u);
+	for (const auto& [keyCode, state] : m_keyStates) {
+		if (state.pressed) {
+			setKeyUsageWord(keyCode, true);
+		}
+	}
+}
+
+void KeyboardInput::writeInputControllerKeyWords(std::array<u32, INPUT_CONTROLLER_KEY_WORD_COUNT>& keyWords) const {
+	for (size_t i = 0; i < m_keyUsageWords.size(); i += 1) {
+		keyWords[i] |= m_keyUsageWords[i];
 	}
 }
 
@@ -177,6 +209,7 @@ void KeyboardInput::keydown(const std::string& keyCode, i32 pressId, f64 timesta
 		state.releasedAtMs = std::nullopt;
 		state.pressId = pressId != 0 ? std::optional<i32>(pressId) : std::optional<i32>(m_nextPressId++);
 		m_pendingPresses.insert(keyCode);
+		setKeyUsageWord(keyCode, true);
 	}
 }
 
@@ -196,6 +229,7 @@ void KeyboardInput::keyup(const std::string& keyCode, i32 pressId, f64 timestamp
 		state.pressId = pressId;
 	}
 	m_pendingReleases.insert(keyCode);
+	setKeyUsageWord(keyCode, false);
 }
 
 } // namespace bmsx

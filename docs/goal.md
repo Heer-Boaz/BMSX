@@ -69,8 +69,8 @@ slice lands:
 
 - `npx tsc --noEmit --pretty false`
 - `npm run compile:machine -- --pretty false`
-- `cmake --build build-cpp-tests --target bmsx_core_golden_tests -j2`
-- `./build-cpp-tests/bmsx_core_golden_tests`
+- `cmake --build build-cpp-tests -j2`
+- `ctest --test-dir build-cpp-tests --output-on-failure`
 - focused `npx tsx --test --import ./tests/lua/test_setup.ts ...`
 - `npm run analyze:code-quality -- --root <touched TS/C++ roots>`
 - `npm run audit:core-parity`

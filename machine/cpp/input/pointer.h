@@ -28,10 +28,17 @@ public:
 	void ingestButton(const std::string& code, bool down, f32 value, f64 timestamp, std::optional<i32> pressId = std::nullopt);
 	void ingestAxis2(const std::string& code, f32 x, f32 y, f64 timestamp);
 	void ingestAxis1(const std::string& code, f32 value, f64 timestamp);
+	void writeInputControllerKeyWords(std::array<u32, INPUT_CONTROLLER_KEY_WORD_COUNT>& keyWords) const override { (void)keyWords; }
+	void writeInputControllerPointerSnapshot(InputControllerSnapshot& snapshot) const override;
+	void writeInputControllerPadSnapshot(InputControllerPadSnapshot& snapshot) const override { (void)snapshot; }
 
 private:
 	std::string m_deviceId;
 	std::unordered_map<std::string, ButtonState> m_buttonStates;
+	u32 m_inputControllerButtons = 0;
+	f32 m_inputControllerX = 0.0F;
+	f32 m_inputControllerY = 0.0F;
+	f32 m_inputControllerWheel = 0.0F;
 	i32 m_nextPressId = 1;
 	f32 m_lastPositionX = 0.0f;
 	f32 m_lastPositionY = 0.0f;

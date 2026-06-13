@@ -35,7 +35,15 @@ export class CpuExecutionState {
 				return true;
 			}
 			if (cycleBudgetRemaining > 0) {
-				const cyclesToTarget = scheduler.nextDeadline() - scheduler.nowCycles;
+				const nextDeadline = scheduler.nextDeadline();
+				if (nextDeadline === Number.MAX_SAFE_INTEGER) {
+					// Parked with no interrupt scheduled to wake the CPU: yield without
+					// burning the CPU instruction budget. A parked CPU executes nothing,
+					// so it must not draw down the per-frame budget; the host resumes on
+					// a later tick once an interrupt is scheduled.
+					return tickCompleted;
+				}
+				const cyclesToTarget = nextDeadline - scheduler.nowCycles;
 				if (cyclesToTarget <= 0) {
 					tickCompleted = runDueRuntimeTimers(runtime);
 					continue;

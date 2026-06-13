@@ -208,26 +208,13 @@ import {
 	APU_STATUS_SELECTED_SLOT_ACTIVE,
 } from '../devices/audio/contracts';
 import {
-	INP_EVENT_CTRL_CLEAR,
-	INP_EVENT_CTRL_POP,
-	INP_EVENT_STATUS_EMPTY,
-	INP_EVENT_STATUS_FULL,
-	INP_EVENT_STATUS_OVERFLOW,
 	INP_OUTPUT_CTRL_APPLY,
-	INP_OUTPUT_STATUS_SUPPORTED,
-	INP_STATUS_ALL_JUST_PRESSED,
-	INP_STATUS_ALL_JUST_RELEASED,
-	INP_STATUS_ALL_WAS_PRESSED,
-	INP_STATUS_CONSUMED,
-	INP_STATUS_GUARDED_JUST_PRESSED,
-	INP_STATUS_HAS_VALUE,
-	INP_STATUS_JUST_PRESSED,
-	INP_STATUS_JUST_RELEASED,
-	INP_STATUS_PRESSED,
-	INP_STATUS_REPEAT_PRESSED,
-	INP_STATUS_WAS_PRESSED,
-	INP_STATUS_WAS_RELEASED,
-	INPUT_CONTROLLER_EVENT_FIFO_CAPACITY,
+	INP_POINTER_BUTTON_AUX,
+	INP_POINTER_BUTTON_BACK,
+	INP_POINTER_BUTTON_FORWARD,
+	INP_POINTER_BUTTON_PRIMARY,
+	INP_POINTER_BUTTON_SECONDARY,
+	INPUT_CONTROLLER_GAMEPAD_BUTTON_BIT_IDS,
 	INPUT_CONTROLLER_OUTPUT_INTENSITY_Q16_ONE,
 } from '../devices/input/contracts';
 import {
@@ -244,7 +231,6 @@ import {
 	IMG_STATUS_DONE,
 	IMG_STATUS_ERROR,
 	IMG_STATUS_REJECTED,
-	INP_CTRL_COMMIT,
 	INP_CTRL_ARM,
 	INP_CTRL_RESET,
 	IO_ARG_STRIDE,
@@ -318,26 +304,29 @@ import {
 	IO_IMG_SRC,
 	IO_IMG_STATUS,
 	IO_IMG_WRITTEN,
-	IO_INP_ACTION,
-	IO_INP_BIND,
-	IO_INP_CONSUME,
 	IO_INP_CTRL,
-	IO_INP_EVENT_ACTION,
-	IO_INP_EVENT_COUNT,
-	IO_INP_EVENT_CTRL,
-	IO_INP_EVENT_FLAGS,
-	IO_INP_EVENT_PLAYER,
-	IO_INP_EVENT_REPEAT_COUNT,
-	IO_INP_EVENT_STATUS,
-	IO_INP_EVENT_VALUE,
+	IO_INP_KEYS,
 	IO_INP_OUTPUT_CTRL,
 	IO_INP_OUTPUT_DURATION_MS,
 	IO_INP_OUTPUT_INTENSITY_Q16,
+	IO_INP_OUTPUT_PORT,
 	IO_INP_OUTPUT_STATUS,
-	IO_INP_PLAYER,
-	IO_INP_QUERY,
+	IO_INP_PAD_BUTTONS_OFFSET,
+	IO_INP_PAD_COUNT,
+	IO_INP_PAD_LT_OFFSET,
+	IO_INP_PAD_LX_OFFSET,
+	IO_INP_PAD_LY_OFFSET,
+	IO_INP_PAD_RT_OFFSET,
+	IO_INP_PAD_RX_OFFSET,
+	IO_INP_PAD_RY_OFFSET,
+	IO_INP_PAD_STRIDE,
+	IO_INP_PADS,
+	IO_INP_POINTER_BUTTONS,
+	IO_INP_POINTER_WHEEL,
+	IO_INP_POINTER_X,
+	IO_INP_POINTER_Y,
+	IO_INP_KEY_WORD_COUNT,
 	IO_INP_STATUS,
-	IO_INP_VALUE,
 	IO_SYS_BUS_FAULT_ACCESS,
 	IO_SYS_BUS_FAULT_ACK,
 	IO_SYS_BUS_FAULT_ADDR,
@@ -1574,22 +1563,15 @@ export function seedLuaGlobals(runtime: Runtime): void {
 	runtime.setGlobal('sys_img_ctrl', IO_IMG_CTRL);
 	runtime.setGlobal('sys_img_status', IO_IMG_STATUS);
 	runtime.setGlobal('sys_img_written', IO_IMG_WRITTEN);
-	runtime.setGlobal('sys_inp_player', IO_INP_PLAYER);
-	runtime.setGlobal('sys_inp_action', IO_INP_ACTION);
-	runtime.setGlobal('sys_inp_bind', IO_INP_BIND);
 	runtime.setGlobal('sys_inp_ctrl', IO_INP_CTRL);
-	runtime.setGlobal('sys_inp_query', IO_INP_QUERY);
 	runtime.setGlobal('sys_inp_status', IO_INP_STATUS);
-	runtime.setGlobal('sys_inp_value', IO_INP_VALUE);
-	runtime.setGlobal('sys_inp_consume', IO_INP_CONSUME);
-	runtime.setGlobal('sys_inp_event_status', IO_INP_EVENT_STATUS);
-	runtime.setGlobal('sys_inp_event_count', IO_INP_EVENT_COUNT);
-	runtime.setGlobal('sys_inp_event_player', IO_INP_EVENT_PLAYER);
-	runtime.setGlobal('sys_inp_event_action', IO_INP_EVENT_ACTION);
-	runtime.setGlobal('sys_inp_event_flags', IO_INP_EVENT_FLAGS);
-	runtime.setGlobal('sys_inp_event_value', IO_INP_EVENT_VALUE);
-	runtime.setGlobal('sys_inp_event_repeat_count', IO_INP_EVENT_REPEAT_COUNT);
-	runtime.setGlobal('sys_inp_event_ctrl', IO_INP_EVENT_CTRL);
+	runtime.setGlobal('sys_inp_keys', IO_INP_KEYS);
+	runtime.setGlobal('sys_inp_pointer_buttons', IO_INP_POINTER_BUTTONS);
+	runtime.setGlobal('sys_inp_pointer_x', IO_INP_POINTER_X);
+	runtime.setGlobal('sys_inp_pointer_y', IO_INP_POINTER_Y);
+	runtime.setGlobal('sys_inp_pointer_wheel', IO_INP_POINTER_WHEEL);
+	runtime.setGlobal('sys_inp_pads', IO_INP_PADS);
+	runtime.setGlobal('sys_inp_output_port', IO_INP_OUTPUT_PORT);
 	runtime.setGlobal('sys_inp_output_intensity_q16', IO_INP_OUTPUT_INTENSITY_Q16);
 	runtime.setGlobal('sys_inp_output_duration_ms', IO_INP_OUTPUT_DURATION_MS);
 	runtime.setGlobal('sys_inp_output_status', IO_INP_OUTPUT_STATUS);
@@ -1678,28 +1660,26 @@ export function seedLuaGlobals(runtime: Runtime): void {
 	runtime.setGlobal('apu_filter_highshelf', APU_FILTER_HIGHSHELF);
 	runtime.setGlobal('apu_event_none', APU_EVENT_NONE);
 	runtime.setGlobal('apu_event_slot_ended', APU_EVENT_SLOT_ENDED);
-	runtime.setGlobal('inp_ctrl_commit', INP_CTRL_COMMIT);
 	runtime.setGlobal('inp_ctrl_arm', INP_CTRL_ARM);
 	runtime.setGlobal('inp_ctrl_reset', INP_CTRL_RESET);
-	runtime.setGlobal('inp_status_pressed', INP_STATUS_PRESSED);
-	runtime.setGlobal('inp_status_justpressed', INP_STATUS_JUST_PRESSED);
-	runtime.setGlobal('inp_status_justreleased', INP_STATUS_JUST_RELEASED);
-	runtime.setGlobal('inp_status_waspressed', INP_STATUS_WAS_PRESSED);
-	runtime.setGlobal('inp_status_wasreleased', INP_STATUS_WAS_RELEASED);
-	runtime.setGlobal('inp_status_consumed', INP_STATUS_CONSUMED);
-	runtime.setGlobal('inp_status_alljustpressed', INP_STATUS_ALL_JUST_PRESSED);
-	runtime.setGlobal('inp_status_alljustreleased', INP_STATUS_ALL_JUST_RELEASED);
-	runtime.setGlobal('inp_status_allwaspressed', INP_STATUS_ALL_WAS_PRESSED);
-	runtime.setGlobal('inp_status_guardedjustpressed', INP_STATUS_GUARDED_JUST_PRESSED);
-	runtime.setGlobal('inp_status_repeatpressed', INP_STATUS_REPEAT_PRESSED);
-	runtime.setGlobal('inp_status_has_value', INP_STATUS_HAS_VALUE);
-	runtime.setGlobal('inp_event_status_empty', INP_EVENT_STATUS_EMPTY);
-	runtime.setGlobal('inp_event_status_full', INP_EVENT_STATUS_FULL);
-	runtime.setGlobal('inp_event_status_overflow', INP_EVENT_STATUS_OVERFLOW);
-	runtime.setGlobal('inp_event_ctrl_pop', INP_EVENT_CTRL_POP);
-	runtime.setGlobal('inp_event_ctrl_clear', INP_EVENT_CTRL_CLEAR);
-	runtime.setGlobal('inp_event_fifo_capacity', INPUT_CONTROLLER_EVENT_FIFO_CAPACITY);
-	runtime.setGlobal('inp_output_status_supported', INP_OUTPUT_STATUS_SUPPORTED);
+	runtime.setGlobal('inp_key_word_count', IO_INP_KEY_WORD_COUNT);
+	runtime.setGlobal('inp_pad_count', IO_INP_PAD_COUNT);
+	runtime.setGlobal('inp_pad_stride', IO_INP_PAD_STRIDE);
+	runtime.setGlobal('inp_pad_buttons', IO_INP_PAD_BUTTONS_OFFSET);
+	runtime.setGlobal('inp_pad_lx', IO_INP_PAD_LX_OFFSET);
+	runtime.setGlobal('inp_pad_ly', IO_INP_PAD_LY_OFFSET);
+	runtime.setGlobal('inp_pad_rx', IO_INP_PAD_RX_OFFSET);
+	runtime.setGlobal('inp_pad_ry', IO_INP_PAD_RY_OFFSET);
+	runtime.setGlobal('inp_pad_lt', IO_INP_PAD_LT_OFFSET);
+	runtime.setGlobal('inp_pad_rt', IO_INP_PAD_RT_OFFSET);
+	for (let bit = 0; bit < INPUT_CONTROLLER_GAMEPAD_BUTTON_BIT_IDS.length; bit += 1) {
+		runtime.setGlobal(`inp_btn_${INPUT_CONTROLLER_GAMEPAD_BUTTON_BIT_IDS[bit]}`, bit);
+	}
+	runtime.setGlobal('inp_pointer_primary', INP_POINTER_BUTTON_PRIMARY);
+	runtime.setGlobal('inp_pointer_aux', INP_POINTER_BUTTON_AUX);
+	runtime.setGlobal('inp_pointer_secondary', INP_POINTER_BUTTON_SECONDARY);
+	runtime.setGlobal('inp_pointer_back', INP_POINTER_BUTTON_BACK);
+	runtime.setGlobal('inp_pointer_forward', INP_POINTER_BUTTON_FORWARD);
 	runtime.setGlobal('inp_output_ctrl_apply', INP_OUTPUT_CTRL_APPLY);
 	runtime.setGlobal('inp_output_intensity_q16_one', INPUT_CONTROLLER_OUTPUT_INTENSITY_Q16_ONE);
 	runtime.setGlobal('sys_rom_system_base', SYSTEM_ROM_BASE);

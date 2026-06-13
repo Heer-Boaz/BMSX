@@ -2498,9 +2498,14 @@ export class CPU {
 				case OpCode.LT: {
 					const left = this.readRK(frame, rkB);
 					const right = this.readRK(frame, rkC);
-					const ok = (valueIsString(left) && valueIsString(right))
-						? this.stringPool.toString(asStringId(left)) < this.stringPool.toString(asStringId(right))
-						: (left as number) < (right as number);
+					let ok: boolean;
+					if (typeof left === 'number' && typeof right === 'number') {
+						ok = left < right;
+					} else if (valueIsString(left) && valueIsString(right)) {
+						ok = this.stringPool.toString(asStringId(left)) < this.stringPool.toString(asStringId(right));
+					} else {
+						throw new Error(`Attempted to compare ${valueTypeName(left)} with ${valueTypeName(right)}. at ${this.formatLastSourceLocation()}`);
+					}
 					if (ok !== (a !== 0)) {
 						this.skipNextInstruction(frame);
 					}
@@ -2509,9 +2514,14 @@ export class CPU {
 				case OpCode.LE: {
 					const left = this.readRK(frame, rkB);
 					const right = this.readRK(frame, rkC);
-					const ok = (valueIsString(left) && valueIsString(right))
-						? this.stringPool.toString(asStringId(left)) <= this.stringPool.toString(asStringId(right))
-						: (left as number) <= (right as number);
+					let ok: boolean;
+					if (typeof left === 'number' && typeof right === 'number') {
+						ok = left <= right;
+					} else if (valueIsString(left) && valueIsString(right)) {
+						ok = this.stringPool.toString(asStringId(left)) <= this.stringPool.toString(asStringId(right));
+					} else {
+						throw new Error(`Attempted to compare ${valueTypeName(left)} with ${valueTypeName(right)}. at ${this.formatLastSourceLocation()}`);
+					}
 					if (ok !== (a !== 0)) {
 						this.skipNextInstruction(frame);
 					}

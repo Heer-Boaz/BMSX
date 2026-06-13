@@ -6,6 +6,7 @@
 #define BMSX_GAMEPADINPUT_H
 
 #include "models.h"
+#include <array>
 #include <unordered_map>
 
 namespace bmsx {
@@ -47,6 +48,10 @@ public:
 	
 	// Ingest 2D axis values (for sticks)
 	void ingestAxis2(const std::string& code, f32 x, f32 y, f64 timestamp);
+
+	void writeInputControllerKeyWords(std::array<u32, INPUT_CONTROLLER_KEY_WORD_COUNT>& keyWords) const override { (void)keyWords; }
+	void writeInputControllerPointerSnapshot(InputControllerSnapshot& snapshot) const override { (void)snapshot; }
+	void writeInputControllerPadSnapshot(InputControllerPadSnapshot& snapshot) const override;
 	
 	// ─────────────────────────────────────────────────────────────────────────
 	// Device info
@@ -74,6 +79,8 @@ private:
 	
 	// Button states
 	std::unordered_map<std::string, ButtonState> m_buttonStates;
+	u32 m_inputControllerButtons = 0;
+	std::array<f32, INPUT_CONTROLLER_PAD_AXIS_COUNT> m_inputControllerAxes{};
 	
 	// Press ID counter
 	i32 m_nextPressId = 1;

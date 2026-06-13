@@ -1,24 +1,26 @@
 #include "machine/devices/input/sample_edge.h"
 
-#include "machine/devices/input/action_table.h"
-#include "machine/devices/input/contracts.h"
-#include "machine/devices/input/event_fifo.h"
+#include "machine/bus/io.h"
+#include "machine/devices/input/registers.h"
 #include "machine/devices/input/sample_latch.h"
+#include "machine/memory/memory.h"
 
 namespace bmsx {
 
-InputControllerSampleEdge::InputControllerSampleEdge(InputControllerInputSource& input, InputControllerSampleLatch& sampleLatch, InputControllerActionTable& actionTable, InputControllerEventFifo& eventFifo)
+InputControllerSampleEdge::InputControllerSampleEdge(InputControllerInputSource& input, InputControllerSampleLatch& sampleLatch, InputControllerRegisterFile& registers, Memory& memory)
 	: m_input(input)
 	, m_sampleLatch(sampleLatch)
-	, m_actionTable(actionTable)
-	, m_eventFifo(eventFifo) {}
+	, m_registers(registers)
+	, m_memory(memory) {}
 
 void InputControllerSampleEdge::onVblankEdge(f64 currentTimeMs, u32 nowCycles) {
 	if (!m_sampleLatch.consumeVblankEdge(nowCycles)) {
 		return;
 	}
-	m_input.sampleInputControllerPlayers(currentTimeMs);
-	m_actionTable.sampleButtons(m_eventFifo);
+	m_input.sampleInputControllerSnapshot(currentTimeMs, m_snapshot);
+	m_registers.latchSnapshot(m_snapshot);
+	m_registers.mirror(m_memory);
+	m_memory.writeIoValue(IO_INP_STATUS, valueNumber(static_cast<double>(m_sampleLatch.sequence())));
 }
 
 } // namespace bmsx

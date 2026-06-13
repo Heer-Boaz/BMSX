@@ -406,13 +406,6 @@ Input::~Input() {
 void Input::initialize() {
 	if (m_initialized) return;
 
-	m_playerInputs[DEFAULT_KEYBOARD_PLAYER_INDEX - 1]->pushContext(
-		"base",
-		DEFAULT_INPUT_MAPPING.keyboard,
-		DEFAULT_INPUT_MAPPING.gamepad,
-		DEFAULT_INPUT_MAPPING.pointer,
-		0
-	);
 	m_focusChangeSub = MachineManager::instance().platform()->gameviewHost()->onFocusChange([this](bool focused) {
 		handleFocusChange(focused);
 	});
@@ -457,8 +450,8 @@ PlayerInput* Input::getPlayerInput(i32 playerIndex) {
 	return m_playerInputs[playerIndex - 1].get();
 }
 
-InputControllerPlayerInputSource& Input::inputControllerPlayer(i32 playerIndex) {
-	return *getPlayerInput(playerIndex);
+void Input::applyInputControllerVibrationEffect(i32 padIndex, f64 durationMs, f32 intensity) {
+	getPlayerInput(padIndex + 1)->applyInputControllerVibrationEffect(durationMs, intensity);
 }
 
 void Input::setRuntimeInputFrameDurationMs(f64 frameDurationMs) {
@@ -577,25 +570,56 @@ bool Input::isPlayerIndexAvailableForGamepadAssignment(i32 playerIndex) {
 
 static InputMap createDefaultInputMapping() {
 	InputMap map;
-	const InputControllerDefaultMapping& defaults = inputControllerDefaultMapping();
-	for (const auto& [action, bindings] : defaults.pointer) {
-		auto& dst = map.pointer[action];
-		for (const std::string& binding : bindings) {
-			dst.push_back(PointerBinding{binding});
-		}
-	}
-	for (const auto& [action, bindings] : defaults.keyboard) {
-		auto& dst = map.keyboard[action];
-		for (const std::string& binding : bindings) {
-			dst.push_back(KeyboardBinding{binding, std::nullopt});
-		}
-	}
-	for (const auto& [action, bindings] : defaults.gamepad) {
-		auto& dst = map.gamepad[action];
-		for (const std::string& binding : bindings) {
-			dst.push_back(GamepadBinding{binding, std::nullopt});
-		}
-	}
+	auto& keyboard = map.keyboard;
+	auto& gamepad = map.gamepad;
+	auto& pointer = map.pointer;
+
+	keyboard["a"] = {KeyboardBinding{"KeyX", std::nullopt}};
+	keyboard["b"] = {KeyboardBinding{"KeyC", std::nullopt}};
+	keyboard["x"] = {KeyboardBinding{"KeyZ", std::nullopt}};
+	keyboard["y"] = {KeyboardBinding{"KeyS", std::nullopt}};
+	keyboard["lb"] = {KeyboardBinding{"ShiftLeft", std::nullopt}};
+	keyboard["rb"] = {KeyboardBinding{"ShiftRight", std::nullopt}};
+	keyboard["lt"] = {KeyboardBinding{"ControlLeft", std::nullopt}};
+	keyboard["rt"] = {KeyboardBinding{"ControlRight", std::nullopt}};
+	keyboard["select"] = {KeyboardBinding{"Backspace", std::nullopt}};
+	keyboard["start"] = {KeyboardBinding{"Enter", std::nullopt}};
+	keyboard["ls"] = {KeyboardBinding{"KeyQ", std::nullopt}};
+	keyboard["rs"] = {KeyboardBinding{"KeyE", std::nullopt}};
+	keyboard["up"] = {KeyboardBinding{"ArrowUp", std::nullopt}};
+	keyboard["down"] = {KeyboardBinding{"ArrowDown", std::nullopt}};
+	keyboard["left"] = {KeyboardBinding{"ArrowLeft", std::nullopt}};
+	keyboard["right"] = {KeyboardBinding{"ArrowRight", std::nullopt}};
+	keyboard["home"] = {KeyboardBinding{"Escape", std::nullopt}};
+	keyboard["touch"] = {KeyboardBinding{"Space", std::nullopt}};
+
+	gamepad["a"] = {GamepadBinding{"a", std::nullopt}};
+	gamepad["b"] = {GamepadBinding{"b", std::nullopt}};
+	gamepad["x"] = {GamepadBinding{"x", std::nullopt}};
+	gamepad["y"] = {GamepadBinding{"y", std::nullopt}};
+	gamepad["lb"] = {GamepadBinding{"lb", std::nullopt}};
+	gamepad["rb"] = {GamepadBinding{"rb", std::nullopt}};
+	gamepad["lt"] = {GamepadBinding{"lt", std::nullopt}};
+	gamepad["rt"] = {GamepadBinding{"rt", std::nullopt}};
+	gamepad["select"] = {GamepadBinding{"select", std::nullopt}};
+	gamepad["start"] = {GamepadBinding{"start", std::nullopt}};
+	gamepad["ls"] = {GamepadBinding{"ls", std::nullopt}};
+	gamepad["rs"] = {GamepadBinding{"rs", std::nullopt}};
+	gamepad["up"] = {GamepadBinding{"up", std::nullopt}};
+	gamepad["down"] = {GamepadBinding{"down", std::nullopt}};
+	gamepad["left"] = {GamepadBinding{"left", std::nullopt}};
+	gamepad["right"] = {GamepadBinding{"right", std::nullopt}};
+	gamepad["home"] = {GamepadBinding{"home", std::nullopt}};
+	gamepad["touch"] = {GamepadBinding{"touch", std::nullopt}};
+
+	pointer["pointer_primary"] = {PointerBinding{"pointer_primary"}};
+	pointer["pointer_secondary"] = {PointerBinding{"pointer_secondary"}};
+	pointer["pointer_aux"] = {PointerBinding{"pointer_aux"}};
+	pointer["pointer_back"] = {PointerBinding{"pointer_back"}};
+	pointer["pointer_forward"] = {PointerBinding{"pointer_forward"}};
+	pointer["pointer_delta"] = {PointerBinding{"pointer_delta"}};
+	pointer["pointer_position"] = {PointerBinding{"pointer_position"}};
+	pointer["pointer_wheel"] = {PointerBinding{"pointer_wheel"}};
 
 	return map;
 }
@@ -670,12 +694,43 @@ void Input::pollInput() {
 	}
 }
 
-void Input::sampleInputControllerPlayers(f64 currentTimeMs) {
+void Input::sampleInputControllerSnapshot(f64 currentTimeMs, InputControllerSnapshot& snapshot) {
 	for (auto& player : m_playerInputs) {
 		if (player) {
 			player->beginFrame(currentTimeMs);
 		}
 	}
+	snapshot.keyWords.fill(0u);
+	snapshot.pointerButtons = 0u;
+	snapshot.pointerX = 0.0F;
+	snapshot.pointerY = 0.0F;
+	snapshot.pointerWheel = 0.0F;
+	snapshot.rumbleSupportMask = 0u;
+	for (auto& [deviceId, binding] : m_deviceBindings) {
+		(void)deviceId;
+		if (binding.source == InputSource::Keyboard) {
+			binding.handler->writeInputControllerKeyWords(snapshot.keyWords);
+		} else if (binding.source == InputSource::Pointer) {
+			binding.handler->writeInputControllerPointerSnapshot(snapshot);
+		}
+	}
+	for (i32 pad = 0; pad < INPUT_CONTROLLER_PAD_COUNT; pad += 1) {
+		samplePadSnapshot(pad, snapshot);
+	}
+}
+
+void Input::samplePadSnapshot(i32 pad, InputControllerSnapshot& snapshot) {
+	InputControllerPadSnapshot& padSnapshot = snapshot.pads[pad];
+	padSnapshot.buttons = 0u;
+	padSnapshot.axes.fill(0.0F);
+	InputHandler* handler = m_playerInputs[pad]->inputHandlers[static_cast<size_t>(InputSource::Gamepad)];
+	if (handler == nullptr) {
+		return;
+	}
+	if (handler->supportsVibrationEffect()) {
+		snapshot.rumbleSupportMask |= 1u << static_cast<u32>(pad);
+	}
+	handler->writeInputControllerPadSnapshot(padSnapshot);
 }
 
 /* ============================================================================

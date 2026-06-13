@@ -110,3 +110,33 @@ test('supports bitwise and floor division operators', () => {
 	assert.equal(result[5], 3);
 	assert.equal(result[6], -1);
 });
+
+test('string ordering compares lexicographically', () => {
+	const result = run(`
+local values = { 'apple', 'banana' }
+return values[1] < values[2], values[2] < values[1], values[1] <= 'apple'
+`);
+	assert.equal(result.length, 3);
+	assert.equal(result[0], true);
+	assert.equal(result[1], false);
+	assert.equal(result[2], true);
+});
+
+test('ordering comparisons fault on mixed operand types', () => {
+	assert.throws(() => run(`
+local values = { 1, 'x' }
+return values[1] < values[2]
+`), /Attempted to compare number with string/);
+	assert.throws(() => run(`
+local values = { '30', 5 }
+return values[2] <= values[1]
+`), /Attempted to compare number with string/);
+	assert.throws(() => run(`
+local values = { 'x', 1 }
+return values[1] < values[2]
+`), /Attempted to compare string with number/);
+	assert.throws(() => run(`
+local values = { nil, 1 }
+return values[1] < values[2]
+`), /Attempted to compare nil with number/);
+});

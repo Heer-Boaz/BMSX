@@ -1,35 +1,12 @@
-import { ActionDefinitionEvaluator } from '../machine/devices/input/action_parser';
 import { InputStateManager, makeActionState, makeButtonState } from './manager';
-import { inputBindingId, type ActionState, type ActionStateQuery, type ButtonId, type ButtonState, type GamepadInputMapping, type InputEvent, type InputHandler, type KeyboardInputMapping, type PointerInputMapping } from './models';
+import { INPUT_SOURCES, type ButtonId, type ButtonState, type InputEvent, type InputHandler, type InputSource } from './models';
 import type { VibrationParams } from '../platform';
-import { ContextStack, MappingContext } from './context';
-import { clamp } from '../common/clamp';
-import { INPUT_SOURCES, type InputControllerPlayerInputSource, type InputSource } from '../machine/devices/input/contracts';
 
 export { INPUT_SOURCES };
 export type { InputSource };
 
-const ACTION_GUARD_MIN_MS = 24;
-const ACTION_GUARD_MAX_MS = 120;
 const INITIAL_REPEAT_DELAY_FRAMES = 15;
 const REPEAT_INTERVAL_FRAMES = 4;
-
-type ActionGuardRecord = {
-	lastAcceptedFrame: number;
-	lastObservedFrame: number;
-	lastResultAccepted: boolean;
-	lastWindowFrames: number;
-	lastPressId: number;
-};
-
-type SimActionRepeatRecord = {
-	active: boolean;
-	repeatCount: number;
-	pressStartFrame: number;
-	lastFrameEvaluated: number;
-	lastResult: boolean;
-	lastRepeatFrame: number;
-};
 
 type RawActionRepeatRecord = {
 	active: boolean;
@@ -39,15 +16,6 @@ type RawActionRepeatRecord = {
 	lastResult: boolean;
 	lastRepeatAtMs: number;
 };
-
-function getOrCreateMapValue<K, V>(map: Map<K, V>, key: K, create: () => V): V {
-	let value = map.get(key);
-	if (value === undefined) {
-		value = create();
-		map.set(key, value);
-	}
-	return value;
-}
 
 /** Bitwise flags representing keyboard modifier keys. */
 export enum KeyModifier {
@@ -59,16 +27,14 @@ export enum KeyModifier {
 }
 
 /**
- * Represents the Input class responsible for handling user input.
+ * Host-side per-player input view. The machine ICU reads a raw snapshot directly
+ * from the device handlers; this class owns the host's buffered button state,
+ * raw-button repeat cadence, and vibration output used by the IDE and overlays.
  */
-export class PlayerInput implements InputControllerPlayerInputSource {
+export class PlayerInput {
 	private frameDurationMs = 1000 / 60;
-	/**
-	 * Represents the input handlers for the player.
-	 *
-	 * @property {IInputHandler} keyboard - The handler for keyboard input, or null if not set.
-	 * @property {IInputHandler} gamepad - The handler for gamepad input, or null if not set.
-	 */
+
+	/** Input handlers keyed by source (keyboard / gamepad / pointer), or null if unbound. */
 	public inputHandlers: { [source in InputSource]: InputHandler } = {
 		keyboard: null,
 		gamepad: null,
@@ -87,90 +53,12 @@ export class PlayerInput implements InputControllerPlayerInputSource {
 		pointer: new Set(),
 	};
 
-	/** Context stack for layered action maps */
-	private contexts: ContextStack = new ContextStack();
-
-
-	private readonly actionGuardRecords: Map<string, ActionGuardRecord> = new Map();
-	private readonly simActionRepeatRecords: Map<string, SimActionRepeatRecord> = new Map();
 	private readonly rawActionRepeatRecords: Map<string, RawActionRepeatRecord> = new Map();
 	private lastPollTimestampMs = 0;
 	private frameCounter = 0;
 
-	/**
-	 * Checks if all actions defined in the action definition string have been triggered.
-	 * Supports both AND (•) and OR (+) operators.
-	 * @param actionDefinition The action definition string to check.
-	 * @returns True if the action definition is satisfied, false otherwise.
-	 */
-	public checkActionTriggered(actionDefinition: string): boolean {
-		return ActionDefinitionEvaluator.checkActionTriggered(actionDefinition, this.getActionState.bind(this));
-	}
-
-	public checkActionsTriggered(...actions: { id: string; def: string; }[]): string[] {
-		return actions.filter(action => this.checkActionTriggered(action.def)).map(action => action.id);
-	}
-
 	private getStateManager(source: InputSource): InputStateManager {
 		return this._stateManagers[source];
-	}
-
-	public sampleInputControllerButton(source: InputSource, button: ButtonId): ButtonState {
-		return this.getButtonState(button, source);
-	}
-
-	public consumeInputControllerButton(source: InputSource, button: ButtonId): void {
-		this.consumeRawButton(button, source);
-	}
-
-	private getContextBindingIds(action: string, source: InputSource): ButtonId[] | null {
-		const bindings = this.contexts.getBindings(action, source);
-		if (bindings.length === 0) {
-			return null;
-		}
-		const ids: ButtonId[] = [];
-		for (let i = 0; i < bindings.length; i += 1) {
-			ids.push(inputBindingId(bindings[i]));
-		}
-		return ids;
-	}
-
-	private trackBindings(source: InputSource, bindings: Array<ButtonId | { id: ButtonId }>): void {
-		for (let i = 0; i < bindings.length; i += 1) {
-			this.trackedButtons[source].add(inputBindingId(bindings[i]));
-		}
-	}
-
-	private trackContextBindings(keyboard: KeyboardInputMapping, gamepad: GamepadInputMapping, pointer: PointerInputMapping): void {
-		for (const action in keyboard) {
-			this.trackBindings('keyboard', keyboard[action]);
-		}
-		for (const action in gamepad) {
-			this.trackBindings('gamepad', gamepad[action]);
-		}
-		for (const action in pointer) {
-			this.trackBindings('pointer', pointer[action]);
-		}
-	}
-
-	/** Add a higher-priority mapping context */
-	public pushContext(id: string, keyboard: KeyboardInputMapping, gamepad: GamepadInputMapping, pointer: PointerInputMapping, priority = 100, enabled = true): void {
-		this.contexts.pop(id);
-		this.trackContextBindings(keyboard, gamepad, pointer);
-		this.contexts.push(new MappingContext(id, priority, enabled, keyboard, gamepad, pointer));
-		this.clearActionEvaluationState();
-	}
-
-	public clearContext(id: string): void {
-		this.contexts.pop(id);
-		this.clearActionEvaluationState();
-	}
-
-	public supportsInputControllerVibrationEffect(): boolean {
-		for (const source of INPUT_SOURCES) {
-			if (this.inputHandlers[source]?.supportsVibrationEffect) return true;
-		}
-		return false;
 	}
 
 	public applyInputControllerVibrationEffect(durationMs: number, intensity: number): void {
@@ -181,293 +69,9 @@ export class PlayerInput implements InputControllerPlayerInputSource {
 		}
 	}
 
-	/**
-	 * Retrieves the state of an action.
-	 *
-	 * @param action - The name of the action.
-	 * @param framewindow - Optional simulation-frame window for `waspressed` / `wasreleased` style queries.
-	 * @returns The state of the action, including whether it is pressed, consumed, the press time, and the timestamp.
-	 */
-	public getActionState(action: string, framewindow: number = null): ActionState {
-		const keyboardKeys = this.getContextBindingIds(action, 'keyboard');
-		const gamepadButtons = this.getContextBindingIds(action, 'gamepad');
-		const pointerButtons = this.getContextBindingIds(action, 'pointer');
-
-		/**
-		 * Retrieves the state of the specified action, which can be a combination of keyboard keys or gamepad buttons or a single key/button.
-		 *
-		 * @param keys_or_buttons - An array of keys or button identifiers that make up the action.
-		 * @param getStateFunc - A function that takes a button identifier and returns its state.
-		 * @returns An object containing:
-		 *  - `allPressed`: A boolean indicating if all specified keys/buttons are currently pressed.
-		 *  - `anyConsumed`: A boolean indicating if any of the specified keys/buttons have been consumed.
-		 *  - `anyJustPressed`: A boolean indicating if any of the specified keys/buttons were just pressed in the current frame, but only if all are pressed.
-		 *  - `allJustPressed`: A boolean indicating if all specified keys/buttons were just pressed in the current frame.
-		 *  - `leastPressTime`: The minimum press time among the specified keys/buttons, or `null` if none are pressed.
-		 *  - `recentestTimestamp`: The maximum timestamp among the specified keys/buttons, or `null` if none are pressed.
-		 */
-		type Agg = {
-			allPressed: boolean; anyPressed: boolean; anyJustPressed: boolean; allJustPressed: boolean;
-			anyWasPressed: boolean; allWasPressed: boolean; anyJustReleased: boolean;
-			allJustReleased: boolean; anyWasReleased: boolean; allWasReleased: boolean;
-			anyConsumed: boolean; leastPressTime: number; recentestTimestamp: number;
-			lastPressId: number; best1DVal: number; best1DAbs: number; best2DVal: [number, number]; best2DAbs: number;
-			bufferPressId: number;
-		};
-		// Aggregate a single action across multiple bindings (keyboard / gamepad / pointer).
-		// Treat bindings as an OR: anyPressed drives `pressed`, while `all*` flags stay true only when every binding matches.
-		// Track the freshest pressId so guardedjustpressed can distinguish a fresh edge even when multiple buttons map to one action.
-		// More complex OR-of-AND expressions should use ActionDefinitionEvaluator (ActionParser); getActionState is the raw per-binding reader.
-		const getStates = (
-			keys_or_buttons: ButtonId[],
-			getStateFunc: (key: ButtonId, framewindow?: number) => ButtonState,
-			stateManager: InputStateManager
-		): Agg => {
-			let allPressed = true;
-			let allJustPressed = true;
-			let anyJustPressed = false;
-			let allJustReleased = true;
-			let anyJustReleased = false;
-			let allWasPressed = true;
-			let anyWasPressed = false;
-			let anyWasReleased = false;
-			let allWasReleased = true;
-			let anyConsumed = false;
-			let anyPressed = false;
-			let leastPressTime: number = null;
-			let recentestTimestamp: number = null;
-			let lastPressId: number = null;
-			let bufferPressId: number = null;
-			let best1DVal: number = null; let best1DAbs = -Infinity;
-			let best2DVal: [number, number] = null; let best2DAbs = -Infinity;
-
-			if (keys_or_buttons && keys_or_buttons.length > 0) {
-				for (const key of keys_or_buttons) {
-					const state = getStateFunc(key, framewindow);
-					allPressed = allPressed && (state?.pressed ?? false);
-					anyPressed = anyPressed || (state?.pressed ?? false);
-					allJustPressed = allJustPressed && (state?.justpressed ?? false);
-					anyJustPressed = anyJustPressed || (state?.justpressed ?? false);
-					allJustReleased = allJustReleased && (state?.justreleased ?? false);
-					anyJustReleased = anyJustReleased || (state?.justreleased ?? false);
-					allWasPressed = allWasPressed && (state?.waspressed ?? false);
-					anyWasPressed = anyWasPressed || (state?.waspressed ?? false);
-					allWasReleased = allWasReleased && (state?.wasreleased ?? false);
-					anyWasReleased = anyWasReleased || (state?.wasreleased ?? false);
-					anyConsumed = anyConsumed || (state?.consumed ?? false);
-					if (state && state.presstime != null) {
-						leastPressTime = (leastPressTime == null) ? state.presstime : Math.min(leastPressTime, state.presstime);
-					}
-					if (state && state.timestamp != null) {
-						recentestTimestamp = (recentestTimestamp == null) ? state.timestamp : Math.max(recentestTimestamp, state.timestamp);
-					}
-					if (state?.pressId != null && (state.justpressed || lastPressId === null || (state.timestamp != null && recentestTimestamp != null && state.timestamp >= recentestTimestamp))) {
-						lastPressId = state.pressId;
-					}
-					const bufferedPress = stateManager.getLatestUnconsumedEdgeId(key, 'press');
-					if (bufferedPress != null && (bufferPressId == null || bufferedPress > bufferPressId)) {
-						bufferPressId = bufferedPress;
-					}
-					if (typeof state?.value === 'number') {
-						const abs = Math.abs(state.value);
-						if (abs > best1DAbs) { best1DAbs = abs; best1DVal = state.value; }
-					}
-					if (state?.value2d) {
-						const [vx, vy] = state.value2d;
-						const mag = Math.hypot(vx, vy);
-						if (mag > best2DAbs) { best2DAbs = mag; best2DVal = [vx, vy]; }
-					}
-				}
-			} else {
-				allPressed = allJustPressed = allWasPressed = allJustReleased = anyWasReleased = allJustReleased = false;
-				leastPressTime = recentestTimestamp = null;
-			}
-
-			// Only consider anyJustReleased if none of the buttons are pressed, because if any button is pressed then the action is not just released
-			anyJustReleased = anyJustReleased && !anyPressed;
-
-			return { allPressed, anyPressed, anyJustPressed, allJustPressed, anyWasPressed, allWasPressed, anyJustReleased, allJustReleased, anyWasReleased, allWasReleased, anyConsumed, leastPressTime, recentestTimestamp, lastPressId, best1DVal, best1DAbs, best2DVal, best2DAbs, bufferPressId };
-		};
-
-		const keyboardState = getStates(
-			keyboardKeys,
-			(key: ButtonId, framewindow?: number) => this.getButtonState(key, 'keyboard', framewindow),
-			this.getStateManager('keyboard')
-		);
-		const gamepadState = getStates(
-			gamepadButtons,
-			(button: ButtonId, framewindow?: number) => this.getButtonState(button, 'gamepad', framewindow),
-			this.getStateManager('gamepad')
-		);
-		const pointerState = getStates(
-			pointerButtons,
-			(button: ButtonId, framewindow?: number) => this.getButtonState(button, 'pointer', framewindow),
-			this.getStateManager('pointer')
-		);
-		const deviceStates = [keyboardState, gamepadState, pointerState];
-		const pressed = deviceStates.some(state => state.anyPressed);
-		const justpressed = deviceStates.some(state => state.anyJustPressed);
-		const alljustpressed = deviceStates.some(state => state.allJustPressed);
-		const justreleased = deviceStates.some(state => state.anyJustReleased);
-		const alljustreleased = deviceStates.some(state => state.allJustReleased);
-		const waspressed = deviceStates.some(state => state.anyWasPressed);
-		const wasreleased = deviceStates.some(state => state.anyWasReleased);
-		const allwaspressed = deviceStates.some(state => state.allWasPressed);
-		const consumed = deviceStates.some(state => state.anyConsumed);
-		const minPresstimeRaw = deviceStates
-			.map(state => state.leastPressTime)
-			.filter((value): value is number => value != null)
-			.reduce((min, value) => Math.min(min, value), Infinity);
-		const maxTimestamp = deviceStates
-			.map(state => state.recentestTimestamp)
-			.filter((value): value is number => value != null)
-			.reduce((max, value) => Math.max(max, value), -Infinity);
-		let merged1D: number = null;
-		let best1DAbs = -Infinity;
-		for (const state of deviceStates) {
-			if (state.best1DAbs > best1DAbs) {
-				best1DAbs = state.best1DAbs;
-				merged1D = state.best1DVal;
-			}
-		}
-		let merged2D: [number, number] = null;
-		let best2DAbs = -Infinity;
-		for (const state of deviceStates) {
-			if (state.best2DAbs > best2DAbs) {
-				best2DAbs = state.best2DAbs;
-				merged2D = state.best2DVal;
-			}
-		}
-		const minPresstime = minPresstimeRaw === Infinity ? null : minPresstimeRaw;
-
-		let bufferedPressId: number = null;
-		for (const state of deviceStates) {
-			if (state.bufferPressId != null && (bufferedPressId == null || state.bufferPressId > bufferedPressId)) {
-				bufferedPressId = state.bufferPressId;
-			}
-		}
-
-		let pressId: number = null;
-		let pressTimestamp: number = null;
-		for (const state of deviceStates) {
-			if (state.lastPressId == null || state.recentestTimestamp == null) continue;
-			if (pressTimestamp == null || state.recentestTimestamp >= pressTimestamp) {
-				pressTimestamp = state.recentestTimestamp;
-				pressId = state.lastPressId;
-			}
-		}
-		// Keep jp/jr sourced directly from the button-level simframe buffer.
-		// Re-surfacing edges at action level lets host-side reads steal a future simframe edge during slowdown.
-		if (justpressed && bufferedPressId != null && (pressId == null || bufferedPressId > pressId)) {
-			pressId = bufferedPressId;
-		}
-
-		const timestamp = maxTimestamp === -Infinity ? null : maxTimestamp;
-		const result: ActionState = {
-			action,
-			pressed,
-			justpressed,
-			alljustpressed,
-			justreleased,
-			alljustreleased,
-			waspressed,
-			wasreleased,
-			allwaspressed,
-			consumed,
-			presstime: minPresstime,
-			timestamp,
-			pressId,
-			value: typeof merged1D === 'number' ? merged1D : null,
-			value2d: merged2D,
-			guardedjustpressed: false,
-			repeatpressed: false,
-			repeatcount: 0,
-		};
-
-		const guarded = this.evaluateActionGuard(action, result);
-		const repeat = this.evaluateActionRepeat(action, result, this.simFrame);
-		result.guardedjustpressed = guarded;
-		result.repeatpressed = repeat.triggered;
-		result.repeatcount = repeat.count;
-
-		return result;
-	}
-
-	/**
-	 * Returns all actions that have been pressed for a given player index.
-	 * Retrieves an array of pressed ActionStates based on the provided filter.
-	 * If no filter is provided, all pressed ActionStates are returned.
-	 * if `actionsByPriority` is given, it retrieves the priority actions for a given player index based on the action priority list.
-	 * @deprecated Prefer {@link checkActionTriggered} with an ActionParser definition to query actions.
-	 * @param filter - An optional array of strings representing the actions to filter.
-	 * @returns An array of pressed ActionStates.
-	 */
-	public getPressedActions(query?: ActionStateQuery): ActionState[] {
-		const pressedActions: ActionState[] = [];
-		const seen = new Set<string>();
-		const considerAction = (action: string): void => {
-			if (seen.has(action)) return;
-			if (query?.filter && !query.filter.includes(action)) return;
-			const actionState = this.getActionState(action);
-			const justPressedMatches = !query?.justPressed || actionState.justpressed;
-			let consumedMatches = true;
-			if (query && 'consumed' in query) {
-				consumedMatches = query.consumed ? actionState.consumed : !actionState.consumed;
-			}
-			const pressedMatches = query && 'pressed' in query
-				? query.pressed ? actionState.pressed : !actionState.pressed
-				: actionState.pressed;
-			if (pressedMatches &&
-				justPressedMatches &&
-				consumedMatches &&
-				((actionState.presstime ?? 0) >= (query?.pressTime ?? 0))) {
-				pressedActions.push(actionState);
-				seen.add(action);
-			}
-		};
-
-		for (const source of INPUT_SOURCES) {
-			this.contexts.forEachAction(source, considerAction);
-		}
-
-		if (query?.actionsByPriority) {
-			const priorityActions: ActionState[] = [];
-			for (const priorityAction of query.actionsByPriority) {
-				const actionObject = pressedActions.find(action => action.action === priorityAction);
-
-				if (actionObject) {
-					priorityActions.push(actionObject);
-				}
-			}
-			return priorityActions;
-		}
-
-		return pressedActions;
-	}
-
-	/**
-	 * Consumes the input action for the specified player index.
-	 * @param actionToConsume The name of the input action to consume.
-	 */
-	public consumeAction(action: string): void {
-		for (const source of INPUT_SOURCES) {
-			const bindings = this.contexts.getBindings(action, source);
-			for (const binding of bindings) {
-				const key = inputBindingId(binding);
-				const buttonState = this.getButtonState(key, source);
-				if (buttonState.pressed && !buttonState.consumed) {
-					this.consumeGameplayButton(key, source);
-				}
-			}
-		}
-	}
-
 	public consumeRawButton(button: ButtonId, source: InputSource): void {
 		this.consumeGameplayButton(button, source);
-		const handler = this.inputHandlers[source];
-		if (handler) {
-			handler.consumeButton(button);
-		}
+		this.inputHandlers[source]?.consumeButton(button);
 	}
 
 	private consumeGameplayButton(button: ButtonId, source: InputSource): void {
@@ -475,59 +79,23 @@ export class PlayerInput implements InputControllerPlayerInputSource {
 		this.getStateManager(source).consumeBufferedEvent(button, state?.pressId);
 	}
 
-	private clearActionEvaluationState(): void {
-		this.actionGuardRecords.clear();
-		this.simActionRepeatRecords.clear();
-	}
-
 	public getModifiersState(): { shift: boolean; ctrl: boolean; alt: boolean; meta: boolean } {
-		const keyboardHandler = this.inputHandlers['keyboard'];
-		if (!keyboardHandler) return { shift: false, ctrl: false, alt: false, meta: false };
-
-		const ctrl = keyboardHandler.getButtonState('ControlLeft')?.pressed || keyboardHandler.getButtonState('ControlRight')?.pressed;
-		const alt = keyboardHandler.getButtonState('AltLeft')?.pressed || keyboardHandler.getButtonState('AltRight')?.pressed;
-		const shift = keyboardHandler.getButtonState('ShiftLeft')?.pressed || keyboardHandler.getButtonState('ShiftRight')?.pressed;
-		const meta = keyboardHandler.getButtonState('MetaLeft')?.pressed || keyboardHandler.getButtonState('MetaRight')?.pressed;
-		return { shift, ctrl, alt, meta };
-	}
-
-	/** Returns current pressed modifiers as a bitmask composed of KeyModifier flags. */
-	public getModifiersMask(): KeyModifier {
-		const { shift, ctrl, alt, meta } = this.getModifiersState();
-		let mask: KeyModifier = KeyModifier.none;
-		if (shift) mask |= KeyModifier.shift;
-		if (ctrl) mask |= KeyModifier.ctrl;
-		if (alt) mask |= KeyModifier.alt;
-		if (meta) mask |= KeyModifier.meta;
-		return mask;
-	}
-
-	/** Utility to expand a KeyModifier mask back into an object form. */
-	public static modifiersFromMask(mask: KeyModifier): { shift: boolean; ctrl: boolean; alt: boolean; meta: boolean } {
+		const keyboard = this.inputHandlers['keyboard'];
+		if (!keyboard) return { shift: false, ctrl: false, alt: false, meta: false };
 		return {
-			shift: (mask & KeyModifier.shift) !== 0,
-			ctrl: (mask & KeyModifier.ctrl) !== 0,
-			alt: (mask & KeyModifier.alt) !== 0,
-			meta: (mask & KeyModifier.meta) !== 0,
+			shift: keyboard.getButtonState('ShiftLeft')?.pressed || keyboard.getButtonState('ShiftRight')?.pressed,
+			ctrl: keyboard.getButtonState('ControlLeft')?.pressed || keyboard.getButtonState('ControlRight')?.pressed,
+			alt: keyboard.getButtonState('AltLeft')?.pressed || keyboard.getButtonState('AltRight')?.pressed,
+			meta: keyboard.getButtonState('MetaLeft')?.pressed || keyboard.getButtonState('MetaRight')?.pressed,
 		};
 	}
 
-	/**
-	 * Retrieves the state of a gamepad button.
-	 * @param button - The gamepad button identifier.
-	 * @returns The state of the button.
-	 */
+	/** Simulation-frame button state from the per-source buffer (consume-aware). */
 	public getButtonState(button: ButtonId, source: InputSource, framewindow: number = null): ButtonState {
-		switch (source) {
-			case 'keyboard':
-				return this._stateManagers.keyboard.getButtonState(button, framewindow);
-			case 'gamepad':
-				return this._stateManagers.gamepad.getButtonState(button, framewindow);
-			case 'pointer':
-				return this._stateManagers.pointer.getButtonState(button, framewindow);
-		}
+		return this._stateManagers[source].getButtonState(button, framewindow);
 	}
 
+	/** Live button state straight from the device handler. */
 	public getRawButtonState(button: ButtonId, source: InputSource): ButtonState {
 		return this.inputHandlers[source]?.getButtonState(button) ?? makeButtonState();
 	}
@@ -547,33 +115,6 @@ export class PlayerInput implements InputControllerPlayerInputSource {
 		return actionState;
 	}
 
-	public getKeyState(key: ButtonId, modifiers: KeyModifier): ButtonState {
-		const state = this.getButtonState(key, 'keyboard');
-		// If no modifiers are required, return the state as is
-		if (modifiers === KeyModifier.none) return state;
-
-		// Check the current state of each modifier key
-		const { shift, ctrl, alt, meta } = PlayerInput.modifiersFromMask(modifiers);
-		const modState = this.getModifiersState();
-
-		// Verify that the current modifier states match the required modifiers
-		if ((shift && !modState.shift) ||
-			(ctrl && !modState.ctrl) ||
-			(alt && !modState.alt) ||
-			(meta && !modState.meta)) {
-			// If any required modifier is not active, return a non-pressed state
-			return makeButtonState();
-		}
-
-		return state;
-	}
-
-	/**
-	 * Assigns a gamepad to a player and returns the player index.
-	 * If no player index is available, returns null.
-	 * @param gamepad The gamepad to assign to a player.
-	 * @returns The player index the gamepad was assigned to, or null if no player index was available.
-	 */
 	assignGamepadToPlayer(gamepadInput: InputHandler): void {
 		if (this.inputHandlers['gamepad'] && this.inputHandlers['gamepad'] !== gamepadInput) {
 			console.warn(`Replacing existing gamepad for player ${this.playerIndex} with gamepad ${gamepadInput.gamepadIndex}.`);
@@ -589,16 +130,12 @@ export class PlayerInput implements InputControllerPlayerInputSource {
 		handler.reset();
 	}
 
-	/**
-	 * Polls the input for the player for each input source (e.g., keyboard, gamepad, ...)
-	 */
+	/** Polls the input for the player for each input source (keyboard, gamepad, ...). */
 	pollInput(currentTime: number): void {
 		this.frameCounter += 1;
 		this.lastPollTimestampMs = currentTime;
 		for (const source of INPUT_SOURCES) {
-			const handler = this.inputHandlers[source];
-			if (!handler) continue;
-			handler.pollInput();
+			this.inputHandlers[source]?.pollInput();
 		}
 	}
 
@@ -628,118 +165,24 @@ export class PlayerInput implements InputControllerPlayerInputSource {
 		}
 	}
 
-	private evaluateActionGuard(action: string, state: ActionState, windowOverride?: number): boolean {
-		if (!state.justpressed) {
-			return false;
-		}
-
-		const frameId = this.simFrame;
-		const guardFrames = this.normalizeGuardWindow(windowOverride);
-		const existing = this.actionGuardRecords.get(action);
-		const pressId = state.pressId;
-		if (existing) {
-			if (existing.lastPressId !== null && pressId !== null && existing.lastPressId === pressId) {
-				return existing.lastResultAccepted;
-			}
-			if (existing.lastObservedFrame === frameId && existing.lastWindowFrames === guardFrames) {
-				return existing.lastResultAccepted;
-			}
-		}
-
-		const previousAcceptedFrame = existing?.lastAcceptedFrame;
-		let accepted = true;
-		if (previousAcceptedFrame !== undefined) {
-			const delta = frameId - previousAcceptedFrame;
-			if (delta <= guardFrames) {
-				accepted = false;
-			}
-		}
-
-		const nextRecord: ActionGuardRecord = {
-			lastAcceptedFrame: accepted ? frameId : (previousAcceptedFrame ?? frameId),
-			lastObservedFrame: frameId,
-			lastResultAccepted: accepted,
-			lastWindowFrames: guardFrames,
-			lastPressId: pressId,
-		};
-		this.actionGuardRecords.set(action, nextRecord);
-		return accepted;
-	}
-
-	private get simFrame(): number {
-		return this.getStateManager('keyboard').frame;
-	}
-
-	private normalizeGuardWindow(windowOverride?: number): number {
-		const guardMs = windowOverride >= 0
-			? clamp(windowOverride, ACTION_GUARD_MIN_MS, ACTION_GUARD_MAX_MS)
-			: ACTION_GUARD_MIN_MS;
-		const frames = Math.ceil(guardMs / this.frameDurationMs);
-		return frames < 1 ? 1 : frames;
-	}
-
-	private evaluateActionRepeat(action: string, state: ActionState, frameId: number): { triggered: boolean; count: number } {
-		const repeat = this.ensureSimRepeatState(action);
-		const cached = this.cachedRepeatResult(repeat, frameId);
-		if (cached) return cached;
-
-		let result = false;
-		const pressed = state.pressed;
-		const justpressed = state.justpressed;
-
-		if (justpressed) {
-			repeat.active = true;
-			repeat.repeatCount = 0;
-			repeat.pressStartFrame = frameId;
-			repeat.lastRepeatFrame = frameId;
-		} else if (!pressed) {
-			repeat.active = false;
-			repeat.repeatCount = 0;
-			repeat.pressStartFrame = -1;
-			repeat.lastRepeatFrame = -1;
-		} else {
-			if (!repeat.active) {
-				repeat.active = true;
-				repeat.repeatCount = 0;
-				repeat.pressStartFrame = frameId;
-				repeat.lastRepeatFrame = frameId;
-			}
-			if (repeat.pressStartFrame < 0) {
-				repeat.pressStartFrame = frameId;
-			}
-			const nextFrame = repeat.repeatCount === 0
-				? repeat.pressStartFrame + INITIAL_REPEAT_DELAY_FRAMES
-				: repeat.lastRepeatFrame + REPEAT_INTERVAL_FRAMES;
-			if (frameId >= nextFrame) {
-				repeat.repeatCount += 1;
-				repeat.lastRepeatFrame = nextFrame;
-				result = true;
-			}
-		}
-
-		return this.finishRepeatResult(repeat, frameId, result);
-	}
-
 	private evaluateRawActionRepeat(action: string, state: ButtonState, frameId: number): { triggered: boolean; count: number } {
 		const repeat = this.ensureRawRepeatState(action);
-		const cached = this.cachedRepeatResult(repeat, frameId);
-		if (cached) return cached;
+		if (repeat.lastFrameEvaluated === frameId) {
+			return { triggered: repeat.lastResult, count: repeat.repeatCount };
+		}
 
 		let result = false;
-		const pressed = state.pressed;
-		const justpressed = state.justpressed;
 		const now = this.lastPollTimestampMs;
 		const startMs = state.pressedAtMs ?? state.timestamp ?? now;
-		const frameMs = this.frameDurationMs;
-		const initialDelayMs = INITIAL_REPEAT_DELAY_FRAMES * frameMs;
-		const repeatIntervalMs = REPEAT_INTERVAL_FRAMES * frameMs;
+		const initialDelayMs = INITIAL_REPEAT_DELAY_FRAMES * this.frameDurationMs;
+		const repeatIntervalMs = REPEAT_INTERVAL_FRAMES * this.frameDurationMs;
 
-		if (justpressed) {
+		if (state.justpressed) {
 			repeat.active = true;
 			repeat.repeatCount = 0;
 			repeat.pressStartMs = startMs;
 			repeat.lastRepeatAtMs = startMs;
-		} else if (!pressed) {
+		} else if (!state.pressed) {
 			repeat.active = false;
 			repeat.repeatCount = 0;
 			repeat.pressStartMs = -1;
@@ -764,42 +207,18 @@ export class PlayerInput implements InputControllerPlayerInputSource {
 			}
 		}
 
-		return this.finishRepeatResult(repeat, frameId, result);
-	}
-
-	private cachedRepeatResult(repeat: { lastFrameEvaluated: number; lastResult: boolean; repeatCount: number }, frameId: number): { triggered: boolean; count: number } | null {
-		if (repeat.lastFrameEvaluated !== frameId) {
-			return null;
-		}
-		return { triggered: repeat.lastResult, count: repeat.repeatCount };
-	}
-
-	private finishRepeatResult(repeat: { lastFrameEvaluated: number; lastResult: boolean; repeatCount: number }, frameId: number, result: boolean): { triggered: boolean; count: number } {
 		repeat.lastFrameEvaluated = frameId;
 		repeat.lastResult = result;
 		return { triggered: result, count: repeat.repeatCount };
 	}
 
-	private ensureSimRepeatState(action: string): SimActionRepeatRecord {
-		return getOrCreateMapValue(this.simActionRepeatRecords, action, () => ({
-			active: false,
-			repeatCount: 0,
-			pressStartFrame: -1,
-			lastFrameEvaluated: -1,
-			lastResult: false,
-			lastRepeatFrame: -1,
-		}));
-	}
-
 	private ensureRawRepeatState(action: string): RawActionRepeatRecord {
-		return getOrCreateMapValue(this.rawActionRepeatRecords, action, () => ({
-			active: false,
-			repeatCount: 0,
-			pressStartMs: -1,
-			lastFrameEvaluated: -1,
-			lastResult: false,
-			lastRepeatAtMs: -1,
-		}));
+		let record = this.rawActionRepeatRecords.get(action);
+		if (record === undefined) {
+			record = { active: false, repeatCount: 0, pressStartMs: -1, lastFrameEvaluated: -1, lastResult: false, lastRepeatAtMs: -1 };
+			this.rawActionRepeatRecords.set(action, record);
+		}
+		return record;
 	}
 
 	/** Updates aggregated button states and cleans up stale events. */
@@ -809,12 +228,8 @@ export class PlayerInput implements InputControllerPlayerInputSource {
 		}
 	}
 
-	/**
-	 * Initializes the input system.
-	 */
 	public constructor(public playerIndex: number, frameDurationMs: number) {
 		this.frameDurationMs = frameDurationMs;
-		this.inputHandlers['gamepad'] = null;
 		this.reset();
 	}
 
@@ -827,8 +242,6 @@ export class PlayerInput implements InputControllerPlayerInputSource {
 		for (const source of INPUT_SOURCES) {
 			this.getStateManager(source).resetEdgeState();
 		}
-		this.actionGuardRecords.clear();
-		this.simActionRepeatRecords.clear();
 	}
 
 	/**

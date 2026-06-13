@@ -60,7 +60,7 @@ export class Machine {
 		this.dmaController = new DmaController(this.memory, this.irqController, this.vdp, this.scheduler);
 		this.imgDecController = new ImgDecController(this.memory, this.dmaController, this.vdp, this.irqController, this.scheduler);
 		this.geometryController = new GeometryController(this.memory, this.irqController, this.scheduler);
-		this.inputController = new InputController(this.memory, input, this.cpu.stringPool);
+		this.inputController = new InputController(this.memory, input);
 	}
 
 	public initializeSystemIo(): void {

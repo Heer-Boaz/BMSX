@@ -17,6 +17,11 @@ void runHaltedClosureUntilInterrupt(Runtime& runtime) {
 			continue;
 		}
 		const i64 nextDeadline = scheduler.nextDeadline();
+		if (nextDeadline == std::numeric_limits<i64>::max()) {
+			// Halted with no pending interrupt and nothing scheduled to wake it:
+			// fail fast instead of spinning the host forever.
+			throw BMSX_RUNTIME_ERROR("CPU halted with no scheduled interrupt");
+		}
 		const i64 cyclesToDeadline = nextDeadline - scheduler.nowCycles();
 		if (cyclesToDeadline <= 0) {
 			continue;

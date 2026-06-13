@@ -14,6 +14,11 @@ export class FrameLoopState {
 	};
 	public frameActive = false;
 
+	/** The in-flight frame state while a frame is active, or null when idle. */
+	public get currentFrameState(): FrameState | null {
+		return this.frameActive ? this.frameState : null;
+	}
+
 	constructor(private readonly runtime: Runtime) {
 	}
 
@@ -91,6 +96,13 @@ export class FrameLoopState {
 			}
 		}
 		this.runActiveFrameState();
+		if (this.frameActive
+			&& runtime.machine.cpu.isHaltedUntilIrq()
+			&& runtime.machine.scheduler.nextDeadline() === Number.MAX_SAFE_INTEGER) {
+			// Cart parked waiting for an interrupt that nothing has scheduled: report
+			// no progress so the scheduler yields the host slice instead of spinning.
+			return false;
+		}
 		const nextFrameActive = this.frameActive;
 		if (nextFrameActive !== previousFrameActive) {
 			return true;

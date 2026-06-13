@@ -19,13 +19,73 @@
 namespace bmsx {
 
 /* ============================================================================
+ * Host-owned input vocabulary
+ * The machine ICU only sees raw snapshot words; key names, button names, and
+ * rich button state live at the host layer. Mirrors machine/ts/input/models.ts.
+ * ============================================================================ */
+
+enum class InputSource {
+	Keyboard,
+	Gamepad,
+	Pointer
+};
+
+inline const InputSource INPUT_SOURCES[] = {
+	InputSource::Keyboard,
+	InputSource::Gamepad,
+	InputSource::Pointer
+};
+
+constexpr size_t INPUT_SOURCE_COUNT = 3;
+
+using ButtonId = std::string;
+
+struct ButtonState {
+	bool pressed = false;
+	bool justpressed = false;
+	bool justreleased = false;
+	bool waspressed = false;
+	bool wasreleased = false;
+	bool repeatpressed = false;
+	i32 repeatcount = 0;
+	bool consumed = false;
+
+	std::optional<f64> presstime;
+	std::optional<f64> timestamp;
+	std::optional<f64> pressedAtMs;
+	std::optional<f64> releasedAtMs;
+	std::optional<i32> pressId;
+
+	f32 value = 0.0F;
+	std::optional<Vec2> value2d;
+
+	ButtonState() = default;
+
+	void reset() {
+		pressed = false;
+		justpressed = false;
+		justreleased = false;
+		waspressed = false;
+		wasreleased = false;
+		repeatpressed = false;
+		repeatcount = 0;
+		consumed = false;
+		presstime.reset();
+		timestamp.reset();
+		pressedAtMs.reset();
+		releasedAtMs.reset();
+		pressId.reset();
+		value = 0.0F;
+		value2d.reset();
+	}
+};
+
+/* ============================================================================
  * Constants
  * ============================================================================ */
 
 constexpr i32 PLAYERS_MAX = 4;
 constexpr i32 DEFAULT_KEYBOARD_PLAYER_INDEX = 1;
-constexpr f64 ACTION_GUARD_MIN_MS = 24.0;
-constexpr f64 ACTION_GUARD_MAX_MS = 120.0;
 constexpr i32 INITIAL_REPEAT_DELAY_FRAMES = 15;
 constexpr i32 REPEAT_INTERVAL_FRAMES = 4;
 constexpr f64 INITIAL_REPEAT_DELAY_MS = INITIAL_REPEAT_DELAY_FRAMES * (1000.0 / 60.0);  // ~250ms
@@ -134,6 +194,10 @@ public:
 	
 	// Get state of a specific button
 	virtual auto getButtonState(const ButtonId& button) -> ButtonState = 0;
+
+	virtual void writeInputControllerKeyWords(std::array<u32, INPUT_CONTROLLER_KEY_WORD_COUNT>& keyWords) const = 0;
+	virtual void writeInputControllerPointerSnapshot(InputControllerSnapshot& snapshot) const = 0;
+	virtual void writeInputControllerPadSnapshot(InputControllerPadSnapshot& snapshot) const = 0;
 	
 	// Mark a button as consumed
 	virtual void consumeButton(const ButtonId& button) = 0;
@@ -205,29 +269,8 @@ struct InputEvent {
 };
 
 /* ============================================================================
- * Action guard record (for debouncing)
+ * Raw button repeat record (for repeat pulse)
  * ============================================================================ */
-
-struct ActionGuardRecord {
-	i64 lastAcceptedFrame = -1;
-	i64 lastObservedFrame = -1;
-	bool lastResultAccepted = false;
-	i64 lastWindowFrames = 0;
-	std::optional<i32> lastPressId;
-};
-
-/* ============================================================================
- * Action repeat record (for repeat pulse)
- * ============================================================================ */
-
-struct SimActionRepeatRecord {
-	bool active = false;
-	i32 repeatCount = 0;
-	i64 pressStartFrame = -1;
-	i64 lastFrameEvaluated = -1;
-	bool lastResult = false;
-	i64 lastRepeatFrame = -1;
-};
 
 struct RawActionRepeatRecord {
 	bool active = false;
@@ -239,17 +282,86 @@ struct RawActionRepeatRecord {
 };
 
 /* ============================================================================
- * Pressed actions query
+ * Button state helpers (input subsystem internal use)
  * ============================================================================ */
 
-struct PressedActionsQuery {
-	std::vector<std::string> filter;
-	std::optional<bool> pressed;
-	std::optional<bool> justPressed;
-	std::optional<bool> consumed;
-	std::optional<f64> pressTime;
-	std::vector<std::string> actionsByPriority;
+inline auto buttonTimestampOr(const ButtonState& state, f64 fallback) -> f64 {
+	if (state.timestamp.has_value()) {
+		return state.timestamp.value();
+	}
+	return fallback;
+}
+
+inline auto buttonPressedAtOr(const ButtonState& state, f64 fallback) -> f64 {
+	if (state.pressedAtMs.has_value()) {
+		return state.pressedAtMs.value();
+	}
+	return buttonTimestampOr(state, fallback);
+}
+
+inline auto buttonReleasedAtOr(const ButtonState& state, f64 fallback) -> f64 {
+	if (state.releasedAtMs.has_value()) {
+		return state.releasedAtMs.value();
+	}
+	return buttonTimestampOr(state, fallback);
+}
+
+inline auto buttonPressIdOr(const ButtonState& state, i32 fallback) -> i32 {
+	if (state.pressId.has_value()) {
+		return state.pressId.value();
+	}
+	return fallback;
+}
+
+inline auto resolveButtonPressId(const std::optional<i32>& incoming, const ButtonState& state, i32& nextPressId) -> i32 {
+	if (incoming.has_value()) {
+		return incoming.value();
+	}
+	if (state.pressId.has_value()) {
+		return state.pressId.value();
+	}
+	return nextPressId++;
+}
+
+inline auto buttonPressTimeOrZero(const ButtonState& state) -> f64 {
+	if (state.presstime.has_value()) {
+		return state.presstime.value();
+	}
+	return 0.0;
+}
+
+/* ============================================================================
+ * ActionState (input subsystem internal)
+ * ============================================================================ */
+
+struct ActionState : ButtonState {
+	std::string action;
+	bool alljustpressed = false;
+	bool allwaspressed = false;
+	bool alljustreleased = false;
+	std::optional<bool> guardedjustpressed;
+	std::optional<bool> repeatpressed;
+	std::optional<i32> repeatcount;
+
+	ActionState() = default;
+
+	explicit ActionState(std::string actionName)
+		: action(std::move(actionName)) {}
+
+	ActionState(std::string actionName, const ButtonState& state)
+		: ButtonState(state), action(std::move(actionName)) {}
 };
+
+inline auto actionFlag(const std::optional<bool>& flag) -> bool {
+	return flag.has_value() && flag.value();
+}
+
+inline auto actionRepeatCount(const ActionState& state) -> i32 {
+	if (state.repeatcount.has_value()) {
+		return state.repeatcount.value();
+	}
+	return 0;
+}
 
 /* ============================================================================
  * Action state getter function type

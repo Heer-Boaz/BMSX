@@ -17,6 +17,7 @@ import {
 } from '../../machine/ts/machine/devices/audio/contracts';
 import { VDP_JTU_REGISTER_WORDS, VDP_MFU_WEIGHT_COUNT } from '../../machine/ts/machine/devices/vdp/contracts';
 import { GEOMETRY_CONTROLLER_PHASE_BUSY, GEOMETRY_CONTROLLER_REGISTER_COUNT } from '../../machine/ts/machine/devices/geometry/contracts';
+import { INPUT_CONTROLLER_KEY_WORD_COUNT, INPUT_CONTROLLER_PAD_AXIS_COUNT, INPUT_CONTROLLER_PAD_COUNT } from '../../machine/ts/machine/devices/input/contracts';
 import { VDP_REGISTER_COUNT } from '../../machine/ts/machine/devices/vdp/registers';
 import { VDP_LPU_REGISTER_WORDS } from '../../machine/ts/machine/devices/vdp/lpu';
 import { VDP_XF_MATRIX_REGISTER_WORDS, VDP_XF_PROJECTION_MATRIX_RESET_INDEX, VDP_XF_VIEW_MATRIX_RESET_INDEX } from '../../machine/ts/machine/devices/vdp/xf';
@@ -184,29 +185,19 @@ function createRuntimeSaveState(): RuntimeSaveState {
 					sampleSequence: 3,
 					lastSampleCycle: 77,
 					registers: {
-						player: 2,
-						actionStringId: 0,
-						bindStringId: 1,
 						ctrl: 1,
-						queryStringId: 0,
-						status: 1,
-						value: 0,
-						valueX: 0,
-						valueY: 0,
-						consumeStringId: 0,
+						keyWords: numberedWords(INPUT_CONTROLLER_KEY_WORD_COUNT),
+						pointerButtons: 3,
+						pointerXQ16: 0x000c8000,
+						pointerYQ16: 0xfffcc000,
+						pointerWheelQ16: 0x00018000,
+						padButtons: numberedWords(INPUT_CONTROLLER_PAD_COUNT),
+						padAxesQ16: numberedWords(INPUT_CONTROLLER_PAD_COUNT * INPUT_CONTROLLER_PAD_AXIS_COUNT),
+						outputPort: 2,
 						outputIntensityQ16: 0x8000,
 						outputDurationMs: 120,
+						outputStatus: 4,
 					},
-					players: [
-						{ actions: [] },
-						{ actions: [{ actionStringId: 0, bindStringId: 1, statusWord: 0x809, valueQ16: 0x8000, pressTime: 12.5, repeatCount: 2 }] },
-						{ actions: [] },
-						{ actions: [] },
-					],
-					eventFifoEvents: [
-						{ player: 2, actionStringId: 0, statusWord: 0x80a, valueQ16: 0x8000, repeatCount: 2 },
-					],
-					eventFifoOverflow: true,
 				},
 				vdp: {
 					xf: {

@@ -1,64 +1,72 @@
 /**
- * Represents a query to retrieve the state of one or more actions.
- * Used to query the state of actions in the input system, such as whether a button is pressed or consumed or whether there is a long-press.
- * @see ActionState for the structure of the query result.
- * @see PlayerInput.checkActionTriggered for the preferred way to evaluate action patterns.
+ * Host-side input vocabulary: button/action state shapes, source mappings, and
+ * the InputHandler contract. The machine ICU only sees raw snapshot words.
  */
 
 import type { VibrationParams } from "../platform";
-import type { ButtonId, ButtonState } from "../machine/devices/input/contracts";
-export { inputBindingId } from "../machine/devices/input/contracts";
-export type {
-	ActionState,
-	BGamepadButton,
-	ButtonId,
-	ButtonState,
-	GamepadBinding,
-	GamepadInputMapping,
-	InputMap,
-	InputSource,
-	KeyboardBinding,
-	KeyboardInputMapping,
-	PointerBinding,
-	PointerInputMapping,
-} from "../machine/devices/input/contracts";
+import { INPUT_CONTROLLER_GAMEPAD_BUTTON_BIT_IDS, type InputControllerPadSnapshot, type InputControllerSnapshot } from "../machine/devices/input/contracts";
 
-export type ActionStateQuery = {
-	/**
-	 * An optional array of filters to apply when querying for action states.
-	 */
-	filter?: string[];
+// Host-owned input vocabulary. The machine ICU only sees raw snapshot words;
+// key names, button names, and rich button state live at the host layer.
+export const INPUT_SOURCES = ['keyboard', 'gamepad', 'pointer'] as const;
+export type InputSource = typeof INPUT_SOURCES[number];
 
-	/**
-	 * Specifies whether the action is currently pressed.
-	 */
-	pressed?: boolean;
+export type ButtonId = string;
+export type BGamepadButton = (typeof INPUT_CONTROLLER_GAMEPAD_BUTTON_BIT_IDS)[number];
 
-	/**
-	 * Specifies whether the action was just released
-	 */
-	justReleased?: boolean;
-
-	/**
-	 * Specifies whether the action was not pressed before (i.e., it was just pressed).
-	 */
-	justPressed?: boolean;
-
-	/**
-	 * Specifies whether the action has been consumed.
-	 */
-	consumed?: boolean;
-
-	/**
-	 * The time at which the action was pressed, in milliseconds.
-	 */
-	pressTime?: number;
-
-	/**
-	 * An optional array of action names, ordered by priority, to use when querying for action states.
-	 */
-	actionsByPriority?: string[];
+export type ButtonState = {
+	pressed: boolean;
+	justpressed: boolean;
+	justreleased: boolean;
+	waspressed: boolean;
+	wasreleased: boolean;
+	repeatpressed: boolean;
+	repeatcount: number;
+	consumed: boolean;
+	presstime: number;
+	timestamp: number;
+	pressedAtMs?: number;
+	releasedAtMs?: number;
+	pressId?: number;
+	value?: number;
+	value2d?: [number, number] | null;
 };
+
+export type KeyboardBinding = string | { id: string; scale?: number; invert?: boolean };
+export type KeyboardInputMapping = {
+	[action: string]: KeyboardBinding[];
+};
+
+export type GamepadBinding = string | { id: string; scale?: number; invert?: boolean };
+export type GamepadInputMapping = {
+	[action: string]: GamepadBinding[];
+};
+
+export type PointerBinding = string | { id: string; scale?: number; invert?: boolean };
+export type PointerInputMapping = {
+	[action: string]: PointerBinding[];
+};
+
+export type InputMap = {
+	keyboard: KeyboardInputMapping;
+	gamepad: GamepadInputMapping;
+	pointer: PointerInputMapping;
+};
+
+export function inputBindingId(binding: string | { id: string }): string {
+	return typeof binding === 'string' ? binding : binding.id;
+}
+
+export type ActionState = {
+	action: string;
+	alljustpressed: boolean;
+	allwaspressed: boolean;
+	alljustreleased: boolean;
+	guardedjustpressed: boolean;
+	repeatpressed: boolean;
+	repeatcount: number;
+} & ButtonState;
+
 /**
  * Represents the ID of a button.
  * It can be one of the predefined values 'BTN1', 'BTN2', 'BTN3', 'BTN4',
@@ -96,6 +104,12 @@ export interface InputHandler {
 	 * @returns The state of the button.
 	 */
 	getButtonState(btn: ButtonId): ButtonState;
+
+	writeInputControllerKeyWords(keyWords: Uint32Array): void;
+
+	writeInputControllerPointerSnapshot(snapshot: InputControllerSnapshot): void;
+
+	writeInputControllerPadSnapshot(snapshot: InputControllerPadSnapshot): void;
 
 	/**
 	 * Consumes the specified button, marking it as processed.

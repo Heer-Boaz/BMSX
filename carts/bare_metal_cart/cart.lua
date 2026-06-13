@@ -18,12 +18,23 @@ local dma_src_register<const>: *word = sys_dma_src
 local dma_dst_register<const>: *word = sys_dma_dst
 local dma_len_register<const>: *word = sys_dma_len
 local dma_ctrl_register<const>: *word = sys_dma_ctrl
-local inp_player_register<const>: *word = sys_inp_player
-local inp_action_register<const>: *word = sys_inp_action
-local inp_bind_register<const>: *word = sys_inp_bind
+local inp_keys<const>: *word[8] = sys_inp_keys
 local inp_ctrl_register<const>: *word = sys_inp_ctrl
-local inp_query_register<const>: *word = sys_inp_query
-local inp_status_register<const>: *word = sys_inp_status
+
+-- USB HID usages (page 0x07); the ICU keyboard bitmap is indexed by these.
+local key_digit1<const> = 30
+local key_digit2<const> = 31
+local key_q<const> = 20
+local key_e<const> = 8
+local key_t<const> = 23
+local key_g<const> = 10
+local key_w<const> = 26
+local key_s<const> = 22
+local key_a<const> = 4
+local key_d<const> = 7
+local key_r<const> = 21
+local key_f<const> = 9
+local key_shift_left<const> = 225
 
 local dma_ctrl_start<const> = 1
 local irq_dma_done<const> = 0x01
@@ -988,65 +999,17 @@ local write_joint_constants<const> = function()
 	joints[16 + 12] = joint_translate_x
 end
 
-local setup_camera_input<const> = function()
-	*inp_player_register = 1
-	*inp_action_register = &'moveforward'
-	*inp_bind_register = &'KeyW'
-	*inp_ctrl_register = inp_ctrl_commit
-	*inp_action_register = &'movebackward'
-	*inp_bind_register = &'KeyS'
-	*inp_ctrl_register = inp_ctrl_commit
-	*inp_action_register = &'moveleft'
-	*inp_bind_register = &'KeyA'
-	*inp_ctrl_register = inp_ctrl_commit
-	*inp_action_register = &'moveright'
-	*inp_bind_register = &'KeyD'
-	*inp_ctrl_register = inp_ctrl_commit
-	*inp_action_register = &'panup'
-	*inp_bind_register = &'KeyR'
-	*inp_ctrl_register = inp_ctrl_commit
-	*inp_action_register = &'pandown'
-	*inp_bind_register = &'KeyF'
-	*inp_ctrl_register = inp_ctrl_commit
-	*inp_action_register = &'turnleft'
-	*inp_bind_register = &'KeyQ'
-	*inp_ctrl_register = inp_ctrl_commit
-	*inp_action_register = &'turnright'
-	*inp_bind_register = &'KeyE'
-	*inp_ctrl_register = inp_ctrl_commit
-	*inp_action_register = &'pitchup'
-	*inp_bind_register = &'KeyT'
-	*inp_ctrl_register = inp_ctrl_commit
-	*inp_action_register = &'pitchdown'
-	*inp_bind_register = &'KeyG'
-	*inp_ctrl_register = inp_ctrl_commit
-	*inp_action_register = &'boost'
-	*inp_bind_register = &'ShiftLeft'
-	*inp_ctrl_register = inp_ctrl_commit
-	-- Camera selection: 1 = free_cam, 2 = side_cam (mirrors world.activeCameraId in TS)
-	*inp_action_register = &'camsel1'
-	*inp_bind_register = &'Digit1'
-	*inp_ctrl_register = inp_ctrl_commit
-	*inp_action_register = &'camsel2'
-	*inp_bind_register = &'Digit2'
-	*inp_ctrl_register = inp_ctrl_commit
-end
-
 local update_camera<const> = function()
-	*inp_player_register = 1
 	-- Camera selection (mirrors world.activeCameraId setter in TypeScript)
-	*inp_query_register = &'camsel1[p]'
-	if *inp_status_register ~= 0 then active_cam_id = free_cam.id end
-	*inp_query_register = &'camsel2[p]'
-	if *inp_status_register ~= 0 then active_cam_id = side_cam.id end
+	if (inp_keys[key_digit1 >> 5] & (1 << (key_digit1 & 31))) ~= 0 then active_cam_id = free_cam.id end
+	if (inp_keys[key_digit2 >> 5] & (1 << (key_digit2 & 31))) ~= 0 then active_cam_id = side_cam.id end
 	-- Resolve active camera from id (mirrors world.activeCamera3D getter).
 	local active<const> = active_cam_id == side_cam.id and side_cam or free_cam
 	-- Speed settings
 	local yaw_step = 0.035
 	local pitch_step = 0.035
 	local move = 0.075
-	*inp_query_register = &'boost[p]'
-	if *inp_status_register ~= 0 then
+	if (inp_keys[key_shift_left >> 5] & (1 << (key_shift_left & 31))) ~= 0 then
 		yaw_step = 0.055
 		pitch_step = 0.055
 		move = 0.18
@@ -1054,34 +1017,23 @@ local update_camera<const> = function()
 	-- Rotation: screen-space look (yaw around camera-up, pitch around camera-right)
 	local dyaw = 0.0
 	local dpitch = 0.0
-	*inp_query_register = &'turnleft[p]'
-	if *inp_status_register ~= 0 then dyaw = yaw_step end
-	*inp_query_register = &'turnright[p]'
-	if *inp_status_register ~= 0 then dyaw = -yaw_step end
-	*inp_query_register = &'pitchup[p]'
-	if *inp_status_register ~= 0 then dpitch = pitch_step end
-	*inp_query_register = &'pitchdown[p]'
-	if *inp_status_register ~= 0 then dpitch = -pitch_step end
+	if (inp_keys[key_q >> 5] & (1 << (key_q & 31))) ~= 0 then dyaw = yaw_step end
+	if (inp_keys[key_e >> 5] & (1 << (key_e & 31))) ~= 0 then dyaw = -yaw_step end
+	if (inp_keys[key_t >> 5] & (1 << (key_t & 31))) ~= 0 then dpitch = pitch_step end
+	if (inp_keys[key_g >> 5] & (1 << (key_g & 31))) ~= 0 then dpitch = -pitch_step end
 	if dyaw ~= 0.0 or dpitch ~= 0.0 then
 		cam_screen_look(active, dyaw, dpitch, 0.0)
 	end
 	-- Translation: accumulate per-axis amounts, then apply in one cam_move call.
-	-- cam_move calls q_basis once internally, covering all three body axes.
 	local dfwd   = 0.0
 	local dright = 0.0
 	local dup    = 0.0
-	*inp_query_register = &'moveforward[p]'
-	if *inp_status_register ~= 0 then dfwd = move end
-	*inp_query_register = &'movebackward[p]'
-	if *inp_status_register ~= 0 then dfwd = -move end
-	*inp_query_register = &'moveleft[p]'
-	if *inp_status_register ~= 0 then dright = -move end
-	*inp_query_register = &'moveright[p]'
-	if *inp_status_register ~= 0 then dright = move end
-	*inp_query_register = &'panup[p]'
-	if *inp_status_register ~= 0 then dup = move end
-	*inp_query_register = &'pandown[p]'
-	if *inp_status_register ~= 0 then dup = -move end
+	if (inp_keys[key_w >> 5] & (1 << (key_w & 31))) ~= 0 then dfwd = move end
+	if (inp_keys[key_s >> 5] & (1 << (key_s & 31))) ~= 0 then dfwd = -move end
+	if (inp_keys[key_a >> 5] & (1 << (key_a & 31))) ~= 0 then dright = -move end
+	if (inp_keys[key_d >> 5] & (1 << (key_d & 31))) ~= 0 then dright = move end
+	if (inp_keys[key_r >> 5] & (1 << (key_r & 31))) ~= 0 then dup = move end
+	if (inp_keys[key_f >> 5] & (1 << (key_f & 31))) ~= 0 then dup = -move end
 	if dfwd ~= 0.0 or dright ~= 0.0 or dup ~= 0.0 then
 		cam_move(active, dfwd, dright, dup)
 	end
@@ -1663,7 +1615,6 @@ end
 build_lua_atlas()
 initialize_vdp_resources()
 upload_atlas_to_vram()
-setup_camera_input()
 *inp_ctrl_register = inp_ctrl_arm
 
 while true do

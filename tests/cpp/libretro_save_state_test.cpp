@@ -3,6 +3,7 @@
 #include "input/player.h"
 #include "machine/bus/io.h"
 #include "machine/devices/vdp/registers.h"
+#include "machine/devices/input/contracts.h"
 #include "machine/devices/vdp/rpu.h"
 #include "machine/devices/vdp/rpu_desc.h"
 #include "machine/memory/map.h"
@@ -110,24 +111,26 @@ void testLibretroSaveStateRoundTrip() {
 	require(output.rpu->commands.passClearColor[0u] == 0xff112233u, "restored runtime should retain RPU clear constants");
 }
 
-void testInputInitializeInstallsBaseContext() {
+void testInputSnapshotReflectsHeldKey() {
 	bmsx::LibretroPlatform platform(bmsx::BackendType::Software);
 	platform.setLogCallback(discardRetroLog);
 
 	bmsx::Input& input = bmsx::Input::instance();
-	bmsx::PlayerInput* const playerOne = input.getPlayerInput(bmsx::Input::DEFAULT_KEYBOARD_PLAYER_INDEX);
 	platform.postKeyboardEvent("KeyX", true);
 	input.pollInput();
-	input.sampleInputControllerPlayers(0.0);
+	bmsx::InputControllerSnapshot snapshot;
+	input.sampleInputControllerSnapshot(0.0, snapshot);
 
-	require(playerOne->checkActionTriggered("a[p]"), "Input::initialize should install host defaults as the player base context");
-	require(playerOne->getActionState("a").pressed, "default base context should map keyboard KeyX to action a");
+	// KeyX is USB HID usage 27; the raw ICU keyboard bitmap indexes by usage.
+	constexpr uint32_t usage = 27u;
+	require((snapshot.keyWords[usage >> 5u] & (1u << (usage & 31u))) != 0u,
+		"raw ICU snapshot should set the keyboard bit for a held key");
 }
 
 } // namespace
 
 int main() {
 	testLibretroSaveStateRoundTrip();
-	testInputInitializeInstallsBaseContext();
+	testInputSnapshotReflectsHeldKey();
 	return 0;
 }

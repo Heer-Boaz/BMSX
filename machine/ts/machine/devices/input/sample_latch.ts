@@ -19,6 +19,10 @@ export class InputControllerSampleLatch {
 		this.sampleArmed = true;
 	}
 
+	public sequence(): number {
+		return this.sampleSequence;
+	}
+
 	public cancel(): boolean {
 		const wasArmed = this.sampleArmed;
 		this.sampleArmed = false;

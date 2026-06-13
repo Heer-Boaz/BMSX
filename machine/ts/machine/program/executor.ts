@@ -103,6 +103,11 @@ function runHaltedClosureUntilInterrupt(runtime: Runtime): void {
 			continue;
 		}
 		const nextDeadline = scheduler.nextDeadline();
+		if (nextDeadline === Number.MAX_SAFE_INTEGER) {
+			// Halted with no pending interrupt and nothing scheduled to wake it:
+			// fail fast instead of spinning the host forever.
+			throw new Error('CPU halted with no scheduled interrupt');
+		}
 		const cyclesToDeadline = nextDeadline - scheduler.nowCycles;
 		if (cyclesToDeadline <= 0) {
 			continue;
