@@ -1,22 +1,31 @@
 {
 	"version": "0.2.0",
-	// NOTE on the "Unable to attach to browser" race:
-	// The browser launch configs below deliberately DO NOT set a fixed
-	// `--remote-debugging-port` or a fixed `userDataDir`. Pinning both made every
-	// run reuse the same CDP port + profile, so whenever a previous Edge instance
-	// was still lingering (its GPU/Crashpad/background processes survive the window
-	// close by a few seconds) the new launch forwarded its URL to the dying instance
-	// and exited immediately — leaving js-debug nothing to attach to ("Unable to
-	// attach to browser"). Letting js-debug pick a free port and an isolated temp
-	// profile per session makes concurrent/lingering instances unable to collide.
-	// (The `--disable-web-security` / file-access flags still work because the temp
-	// profile is non-default, and the game persists no localStorage/IndexedDB state.)
+	// NOTE — "Unable to attach to browser" fix (Windows VSCode + WSL workspace):
+	// Root cause: browser launches were routed across the Windows<->WSL boundary via
+	// js-debug-companion to your *Windows* Edge. With that Edge already running, the
+	// new launch just forwarded its URL to the existing process and exited, so
+	// js-debug had nothing to attach to ("Unable to attach to browser").
+	// Fix: the Linux-side configs set "browserLaunchLocation": "workspace" (force the
+	// browser onto the WSL/server side instead of the Windows UI side) together with
+	// "runtimeExecutable" pointing at Microsoft Edge for Linux (installed in WSL).
+	// js-debug then launches the browser *inside WSL* via WSLg, fully independent of
+	// your Windows Edge — so you can leave your normal Edge open. No companion, no
+	// cross-OS profile race. (Without browserLaunchLocation the runtimeExecutable path
+	// is resolved on the Windows UI side → "spawn /usr/bin/microsoft-edge ENOENT".)
+	// Configs also avoid a fixed `--remote-debugging-port` / `userDataDir`, so js-debug
+	// uses a fresh free port + isolated temp profile each run. The `--disable-web-security`
+	// / file-access flags still work (temp profile is non-default; the game persists no
+	// localStorage/IndexedDB state).
+	// NB: the `(WSL)` and `--app=\\wsl$\...` configs still target *Windows* Edge via the
+	// companion and remain race-prone — prefer the runtimeExecutable ones below.
 	"configurations": [
 		{
 			"type": "msedge",
 			"request": "launch",
 			"name": "Debug the game!",
-			"url": "${workspaceFolder}/dist/index.html?rom=${input:romtobuild}.debug.rom",
+			"url": "file://${workspaceFolder}/dist/index.html?rom=${input:romtobuild}.debug.rom",
+			"runtimeExecutable": "/usr/bin/microsoft-edge",
+			"browserLaunchLocation": "workspace",
 			"runtimeArgs": [
 				"--nolazy",
 				"--allow-file-access-from-files",
@@ -40,7 +49,9 @@
 			"type": "msedge",
 			"request": "launch",
 			"name": "Run the game in non-debug mode!",
-			"url": "${workspaceFolder}/dist/index.html?rom=${input:romtobuild}.rom",
+			"url": "file://${workspaceFolder}/dist/index.html?rom=${input:romtobuild}.rom",
+			"runtimeExecutable": "/usr/bin/microsoft-edge",
+			"browserLaunchLocation": "workspace",
 			"runtimeArgs": [
 				"--nolazy",
 				"--allow-file-access-from-files",
@@ -100,6 +111,8 @@
 			"request": "launch",
 			"name": "Debug the game from WSL Server!",
 			"url": "http://localhost:8080/index.html?rom=${input:romtobuild}.debug.rom",
+			// "runtimeExecutable": "/usr/bin/microsoft-edge",
+			// "browserLaunchLocation": "workspace",
 			"runtimeArgs": [
 				"--nolazy",
 				"--allow-file-access-from-files",
@@ -124,6 +137,8 @@
 			"request": "launch",
 			"name": "Debug the game from WSL Server (NON-APP MODE)!",
 			"url": "http://localhost:8080/index.html?rom=${input:romtobuild}.debug.rom",
+			// "runtimeExecutable": "/usr/bin/microsoft-edge",
+			// "browserLaunchLocation": "workspace",
 			"runtimeArgs": [
 				"--nolazy",
 				"--allow-file-access-from-files",
@@ -147,6 +162,8 @@
 			"request": "launch",
 			"name": "Release the game from WSL Server!",
 			"url": "http://localhost:8080/index.html?rom=${input:romtobuild}.rom",
+			"runtimeExecutable": "/usr/bin/microsoft-edge",
+			"browserLaunchLocation": "workspace",
 			"runtimeArgs": [
 				"--nolazy",
 				"--allow-file-access-from-files",
