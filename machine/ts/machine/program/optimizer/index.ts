@@ -786,6 +786,12 @@ const propagateValues = (set: InstructionSet, context: OptimizationContext): Ins
 						const constant = constants.get(instruction.b);
 						if (constant && isConstPoolValue(constant.value) && !valueIsString(constant.value)) {
 							replaceWithConst(instruction, instruction.a, constant.value, context);
+							// The MOV is now an immediate const load. The tracking switch below
+							// dispatches on the rewritten opcode (e.g. K0/KSMI) and would not
+							// refresh constants[dst], leaving a stale constant from an earlier
+							// use of this (reused) register and corrupting later folds. Record
+							// the new constant for dst here.
+							setConst(constants, copies, instruction.a, constant);
 						}
 						break;
 					}
