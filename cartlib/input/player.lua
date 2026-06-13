@@ -603,8 +603,6 @@ function input.update()
 			sample_player(player)
 		end
 	end
-	-- Arm the ICU so the next VBlank edge latches a fresh snapshot.
-	mem[sys_inp_ctrl] = inp_ctrl_arm
 end
 
 function input.push_context(player_index, id, keyboard, gamepad, pointer, priority, enabled)
