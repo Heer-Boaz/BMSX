@@ -11,5 +11,7 @@
 		"./schemas/rommanifest.schema.json": "**.rommanifest",
 	},
 	"cmake.sourceDirectory": "${workspaceFolder}/machine/cpp"
-	,"js_repl_node_path": "node"
+	,
+	"js_repl_node_path": "node",
+	"typescript.native-preview.tsdk": "node_modules/@typescript/native-preview"
 }

@@ -38,6 +38,34 @@ test('ProgramCompiler still emits & expression as a single string-id result expr
 	assert.equal(valueIsString(passed[0]), true);
 });
 
+test('ProgramCompiler -O3 folds a conditional increment after reusing the register for a string', () => {
+	// Regression: propagateValues rewrote `MOV dst, src` (src = const) into an
+	// immediate const load but failed to refresh dst's tracked constant, so a
+	// register reused (here r holding the call argument string 'a', then the
+	// counter) kept a stale string constant. The conditional `s = s + 1` then
+	// folded `'a' + 1` to NaN. This mirrors pietious' sync_input_state_from_runtime.
+	const source = [
+		"local function q(pi, pat) if pat == 'up' then return true end return false end",
+		'local t = {}',
+		'function t.sync(self)',
+		"\tself.left_held = q(self, 'left')",
+		"\tlocal up_primary <const> = q(self, 'up')",
+		"\tlocal up_alt <const> = q(self, 'a')",
+		'\tlocal s = 0',
+		'\tif up_primary then s = s + 1 end',
+		'\tif up_alt then s = s + 1 end',
+		'\tself.up_input_sources = s',
+		'\tself.up_held = s > 0',
+		'\treturn self.up_input_sources, self.up_held',
+		'end',
+		'return t.sync({})',
+	].join('\n');
+	for (const opt of [0, 1, 2, 3] as const) {
+		const returned = runCompiledLua(source, 'reused_register_counter.lua', opt);
+		assert.deepEqual(Array.from(returned), [1, true], `optLevel ${opt} miscompiled the counter`);
+	}
+});
+
 test('ProgramCompiler treats raw ICU MMIO writes as plain word writes', () => {
 	const source = [
 		'mem[sys_inp_ctrl] = inp_ctrl_arm',
