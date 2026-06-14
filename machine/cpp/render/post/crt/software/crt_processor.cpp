@@ -49,25 +49,8 @@ inline f32 smoothstep(f32 edge0, f32 edge1, f32 x) {
 	return t * t * (3.0f - 2.0f * t);
 }
 
-constexpr f32 kLinearToSrgbByteScale = 4095.0f;
-
-std::array<u8, 4096> buildLinearToSrgbByteTable() {
-	std::array<u8, 4096> table{};
-	for (i32 i = 0; i < 4096; i += 1) {
-		const f32 c = static_cast<f32>(i) / kLinearToSrgbByteScale;
-		const f32 encoded = c <= 0.0031308f
-			? 12.92f * c
-			: 1.055f * std::pow(c, 1.0f / 2.4f) - 0.055f;
-		table[static_cast<size_t>(i)] = static_cast<u8>(encoded * 255.0f + 0.5f);
-	}
-	return table;
-}
-
-const std::array<u8, 4096> kLinearToSrgbByteTable = buildLinearToSrgbByteTable();
-
-inline u8 linearToSrgbByte(const std::array<u8, 4096>& table, f32 c) {
-	const f32 clamped = clamp(c, 0.0f, 1.0f);
-	return table[static_cast<size_t>(clamped * kLinearToSrgbByteScale + 0.5f)];
+inline u8 signalByte(f32 c) {
+	return static_cast<u8>(clamp(c, 0.0f, 1.0f) * 255.0f + 0.5f);
 }
 
 inline f32 fract(f32 v) {
@@ -183,7 +166,6 @@ void renderCRT(SoftwareBackend& backend, const CRTPipelineState& state) {
 	const i32 dstPixelsPerRow = dstPitch / sizeof(u32);
 
 	const auto& table = kByteToLinearTable;
-	const auto& linearToSrgb = kLinearToSrgbByteTable;
 	const f32 invOutW = 1.0f / static_cast<f32>(dstWidth);
 	const f32 invOutH = 1.0f / static_cast<f32>(dstHeight);
 	const f32 srcWf = static_cast<f32>(srcWidth);
@@ -330,9 +312,9 @@ void renderCRT(SoftwareBackend& backend, const CRTPipelineState& state) {
 			color.g *= keep;
 			color.b *= keep;
 
-			const u8 r = linearToSrgbByte(linearToSrgb, color.r);
-			const u8 g = linearToSrgbByte(linearToSrgb, color.g);
-			const u8 b = linearToSrgbByte(linearToSrgb, color.b);
+			const u8 r = signalByte(color.r);
+			const u8 g = signalByte(color.g);
+			const u8 b = signalByte(color.b);
 			dst[dstIdx] = (0xFF << 24) | (r << 16) | (g << 8) | b;
 		}
 	}

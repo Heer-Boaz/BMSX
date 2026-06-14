@@ -33,16 +33,6 @@ fn enabled(flag: f32) -> bool {
 	return flag != 0.0;
 }
 
-fn linearToSrgbChannel(c: f32) -> f32 {
-	if (c <= 0.0031308) {
-		return c * 12.92;
-	}
-	return 1.055 * pow(c, 1.0 / 2.4) - 0.055;
-}
-
-fn linearToSrgb(c: vec3<f32>) -> vec3<f32> {
-	return vec3<f32>(linearToSrgbChannel(c.r), linearToSrgbChannel(c.g), linearToSrgbChannel(c.b));
-}
 
 fn hashNoise(uv: vec2<f32>, t: f32) -> f32 {
 	let wrappedUV = uv - floor(uv / vec2<f32>(1024.0)) * vec2<f32>(1024.0);
@@ -199,5 +189,5 @@ fn main(@location(0) uv: vec2<f32>) -> @location(0) vec4<f32> {
 
 	let keep = smoothstep(BLACK_CUTOFF, BLACK_SOFT, dot(color, LUMA));
 	color *= keep;
-	return vec4<f32>(linearToSrgb(color), 1.0);
+	return vec4<f32>(color, 1.0);
 }

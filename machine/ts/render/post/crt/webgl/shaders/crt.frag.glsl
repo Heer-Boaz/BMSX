@@ -39,18 +39,6 @@ const float BLACK_SOFT   = 0.060;
 in vec2 v_texcoord;
 out vec4 outputColor;
 
-float linear_to_srgb_channel(float c) {
-	if (c <= 0.0031308) return c * 12.92;
-	return 1.055 * pow(c, 1.0 / 2.4) - 0.055;
-}
-
-vec3 linear_to_srgb(vec3 c) {
-	return vec3(
-		linear_to_srgb_channel(c.r),
-		linear_to_srgb_channel(c.g),
-		linear_to_srgb_channel(c.b)
-	);
-}
 
 float hashNoise(vec2 uv, float t){
 	vec2 wrappedUV = mod(uv, vec2(1024.0));
@@ -253,5 +241,5 @@ void main(){
 	float keep     = smoothstep(BLACK_CUTOFF, BLACK_SOFT, lumFinal);
 	color *= keep;
 
-outputColor = vec4(linear_to_srgb(color), 1.0);
+outputColor = vec4(color, 1.0);
 }
