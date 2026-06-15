@@ -786,6 +786,9 @@ void GcHeap::markValue(Value v) {
 		case ValueTag::Upvalue:
 			markObject(asUpvalue(v));
 			break;
+		case ValueTag::String:
+			m_stringPool.markReachable(asStringId(v));
+			break;
 		default:
 			break;
 	}
@@ -895,11 +898,13 @@ void GcHeap::collect() {
 		return;
 	}
 	m_collectRequested = false;
+	m_stringPool.beginReachabilityEpoch();
 	if (m_rootMarker) {
 		m_rootMarker(*this);
 	}
 	trace();
 	sweep();
+	m_stringPool.reclaimUnreachableTracked();
 	m_nextGC = m_bytesAllocated * 2;
 }
 
@@ -942,7 +947,8 @@ CPU::NativeLocalRootsScope::~NativeLocalRootsScope() {
 
 CPU::CPU(Memory& memory)
 	: m_memory(memory)
-	, m_stringPool(true) {
+	, m_stringPool(true)
+	, m_heap(m_stringPool) {
 	m_heap.setRootMarker([this](GcHeap& heap) { markRoots(heap); });
 	m_externalRootMarker = [](GcHeap&) {};
 	globals = m_heap.allocate<Table>(ObjType::Table, 0, 0);
@@ -2590,8 +2596,8 @@ void CPU::writeMappedMemoryValue(uint32_t addr, MemoryAccessKind accessKind, con
 			}
 			m_memory.writeMappedF64LE(addr, asNumber(value));
 			return;
+		default: throw std::runtime_error("Unknown memory access kind.");
 	}
-	throw std::runtime_error("Unknown memory access kind.");
 }
 
 void CPU::writeMappedWordSequence(CallFrame& frame, uint32_t addr, int valueBase, int valueCount) {
@@ -2978,6 +2984,8 @@ void CPU::markRoots(GcHeap& heap) {
 	if (globals) {
 		heap.markObject(globals);
 	}
+	// Keep the interned "__index" key tracked even while no live metatable uses it.
+	heap.markValue(m_indexKey);
 	if (m_stringIndexTable) {
 		heap.markObject(m_stringIndexTable);
 	}

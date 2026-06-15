@@ -3510,12 +3510,22 @@ export class CPU {
 
 	public collectTrackedHeapBytes(extraRoots: ReadonlyArray<Value> = []): number {
 		const seen = new WeakSet<object>();
-		let total = this.stringPool.trackedLuaHeapBytes();
+		let total = 0;
 		const valueStack: Value[] = [];
 		const upvalueStack: Upvalue[] = [];
+		// Strings reached during the sweep; everything else in the append-only pool
+		// is garbage and its tracked-heap accounting is reclaimed at the end.
+		const reachableStringIds = new Set<StringId>();
+		if (this.indexKey !== null) {
+			reachableStringIds.add(asStringId(this.indexKey));
+		}
 
 		const pushValue = (value: Value): void => {
-			if (value === null || typeof value === 'boolean' || typeof value === 'number' || valueIsString(value)) {
+			if (value === null || typeof value === 'boolean' || typeof value === 'number') {
+				return;
+			}
+			if (valueIsString(value)) {
+				reachableStringIds.add(asStringId(value));
 				return;
 			}
 			valueStack.push(value);
@@ -3616,6 +3626,7 @@ export class CPU {
 				upvalueStack.push(closure.upvalues[index]);
 			}
 		}
+		total += this.stringPool.retainTrackedStrings(reachableStringIds);
 		return total;
 	}
 

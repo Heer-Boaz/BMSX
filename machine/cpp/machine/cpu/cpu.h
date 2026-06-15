@@ -772,7 +772,11 @@ private:
 
 class GcHeap {
 public:
-	GcHeap() = default;
+	// Strings live in an append-only pool rather than as GC objects, so the heap
+	// reclaims their tracked-byte accounting by marking reachable ids during the
+	// mark phase and dropping the rest after the sweep. The pool outlives the heap
+	// (declared before it in CPU), so a reference is always valid.
+	explicit GcHeap(StringPool& stringPool) : m_stringPool(stringPool) {}
 
 	template <typename T, typename... Args>
 	T* allocate(ObjType type, Args&&... args) {
@@ -818,6 +822,7 @@ private:
 	bool m_collectRequested = false;
 	int m_collectionSuspendDepth = 0;
 	std::function<void(GcHeap&)> m_rootMarker;
+	StringPool& m_stringPool;
 };
 
 class CPU {

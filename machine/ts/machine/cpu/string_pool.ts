@@ -62,6 +62,35 @@ export class StringPool {
 		return this.trackLuaHeap ? this.trackedBytes : 0;
 	}
 
+	/**
+	 * Drops the tracked-heap accounting for interned strings that are no longer
+	 * reachable from the live value graph, and returns the retained tracked byte
+	 * total. The interned values and ids are kept intact so existing string ids
+	 * stay valid and identical text re-interns to the same id; only the heap
+	 * accounting is reclaimed. Without this, the pool is append-only and the heap
+	 * collector counts every runtime string ever created, so churning unique
+	 * strings (e.g. repeated hot-resume) leaks the tracked Lua heap until OOM.
+	 */
+	public retainTrackedStrings(reachableIds: ReadonlySet<StringId>): number {
+		if (!this.trackLuaHeap) {
+			return 0;
+		}
+		let retained = 0;
+		for (let id = 0; id < this.trackedByteLengths.length; id += 1) {
+			const byteLength = this.trackedByteLengths[id];
+			if (byteLength === 0) {
+				continue;
+			}
+			if (reachableIds.has(id)) {
+				retained += byteLength;
+			} else {
+				this.trackedByteLengths[id] = 0;
+			}
+		}
+		this.trackedBytes = retained;
+		return retained;
+	}
+
 	public captureState(): StringPoolState {
 		const entries: StringPoolStateEntry[] = [];
 		for (let id = 0; id < this.values.length; id += 1) {

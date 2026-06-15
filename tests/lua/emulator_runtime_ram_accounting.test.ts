@@ -139,9 +139,26 @@ test('runtime string materialization tracks RAM even when the same text exists i
 	cpu.stringPool.intern('rom literal', false);
 	const before = cpu.collectTrackedHeapBytes();
 
-	cpu.stringPool.intern('rom literal');
+	// A materialized runtime string is always held somewhere live (here: a global).
+	// It must count as RAM even though the identical text already exists in ROM as
+	// an untracked literal.
+	const runtimeString = StringValue.get(cpu.stringPool.intern('rom literal'));
+	cpu.globals.set(StringValue.get(cpu.stringPool.intern('held', false)), runtimeString);
 
 	assert.ok(cpu.collectTrackedHeapBytes() > before);
+});
+
+test('unreachable runtime strings are reclaimed by the heap collector', () => {
+	const memory = new Memory({ systemRom: new Uint8Array(0) });
+	const cpu = new CPU(memory);
+	const before = cpu.collectTrackedHeapBytes();
+
+	// Intern a tracked runtime string but never root it. The append-only string
+	// pool must not let it count against RAM forever, otherwise churning unique
+	// strings (e.g. repeated hot-resume) leaks the tracked heap until OOM.
+	cpu.stringPool.intern('transient garbage string');
+
+	assert.equal(cpu.collectTrackedHeapBytes(), before);
 });
 
 test('non-capturing const functions materialize as static proto references', () => {

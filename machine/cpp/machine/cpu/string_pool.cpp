@@ -84,6 +84,46 @@ void StringPool::restoreState(const StringPoolState& state) {
 	}
 }
 
+void StringPool::beginReachabilityEpoch() {
+	if (!m_trackLuaHeap) {
+		return;
+	}
+	m_reachable.assign(m_entries.size(), false);
+}
+
+void StringPool::markReachable(StringId id) {
+	if (!m_trackLuaHeap) {
+		return;
+	}
+	if (static_cast<size_t>(id) < m_reachable.size()) {
+		m_reachable[static_cast<size_t>(id)] = true;
+	}
+}
+
+void StringPool::reclaimUnreachableTracked() {
+	if (!m_trackLuaHeap) {
+		return;
+	}
+	size_t reclaimed = 0;
+	for (size_t id = 0; id < m_entries.size(); ++id) {
+		InternedString* stringEntry = m_entries[id].get();
+		if (!stringEntry || stringEntry->trackedByteLength == 0) {
+			continue;
+		}
+		const bool reachable = id < m_reachable.size() && m_reachable[id];
+		if (reachable) {
+			continue;
+		}
+		reclaimed += stringEntry->trackedByteLength;
+		stringEntry->trackedByteLength = 0;
+	}
+	if (reclaimed == 0) {
+		return;
+	}
+	m_trackedBytes -= reclaimed;
+	addTrackedLuaHeapBytes(-static_cast<ptrdiff_t>(reclaimed));
+}
+
 const StringPool::InternedString& StringPool::entry(StringId id) const {
 	const auto* stringEntry = m_entries.at(static_cast<size_t>(id)).get();
 	return *stringEntry;
