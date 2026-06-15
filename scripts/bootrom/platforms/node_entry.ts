@@ -11,6 +11,7 @@ import { HeadlessGameViewHost } from '../../../machine/ts/render/headless/view';
 import { HeadlessCaptureCoordinator, deriveHeadlessCaptureOutputDir, type ScheduledHeadlessCapture, type ScheduledHeadlessFrameCapture } from './headless_capture';
 import { printHeadlessCpuProfile } from './cpu_profile_report';
 import { runHostTest } from './hostrunner/host_test_runner';
+import { runIdeTest } from './hostrunner/ide_test_runner';
 import { installNativeGlobal, runHostEvalChunkToNative } from '../../../machine/ts/machine/program/executor';
 import { raiseSystemIrq } from '../../../machine/ts/machine/runtime/system_irq';
 import { IRQ_NEWGAME } from '../../../machine/ts/machine/bus/io';
@@ -25,6 +26,7 @@ interface LaunchOptions {
 	debugOverride?: boolean;
 	inputTimelinePath?: string;
 	testPath?: string;
+	ideTestPath?: string;
 	ttlMs?: number;
 	machineRuntimePath?: string;
 	systemRomPath?: string;
@@ -37,6 +39,7 @@ interface BootGlobals {
 
 type MachineNamespace = {
 	machineManager: typeof import('../../../machine/ts/core/machine_manager').machineManager;
+	ide: import('../../../machine/ts/ide/testing/headless_harness').HeadlessIdeHarness;
 };
 
 interface InputTimelineEntry {
@@ -271,6 +274,7 @@ function printHelp(): void {
 	console.log('  --ttl <seconds>          Auto-terminate after the given number of seconds (default 10).');
 	console.log('  --input-timeline <file>  JSON timeline of InputEvt entries to schedule; headless capture markers write screenshots next to the timeline.');
 	console.log('  --test <file>            Host test file executed by the headless test runner.');
+	console.log('  --ide-test <file>        Host-side IDE test (JS) driving editor/terminal/hot-resume.');
 	console.log('  --machine-runtime <path> JS machine runtime bundle (defaults to dist/libbmsx(.debug).js).');
 	console.log('  --system-rom <path>      System ROM (defaults to dist/bmsx-bios(.debug).rom).');
 	console.log('  --cpu-profile            Enable fantasy CPU profiling and print a report on exit.');
@@ -341,6 +345,13 @@ function parseArgs(argv: string[]): LaunchOptions {
 			const next = argv[index + 1];
 			if (!next) throw new Error('Expected path after --test.');
 			options.testPath = next;
+			index += 2;
+			continue;
+		}
+		if (arg === '--ide-test') {
+			const next = argv[index + 1];
+			if (!next) throw new Error('Expected path after --ide-test.');
+			options.ideTestPath = next;
 			index += 2;
 			continue;
 		}
@@ -1033,7 +1044,20 @@ async function main(): Promise<void> {
 	const isCartProgramActive = (): boolean => runtime.cartProgramStarted && runtime.isInitialized;
 	const autoTimelinePath = await resolveAutoTimelinePath(romFolder);
 	let scheduledTimeline = false;
-	if (cliOptions.testPath) {
+	if (cliOptions.ideTestPath) {
+		const ide = machineRuntime.ide;
+		if (!ide) {
+			throw new Error('Machine runtime did not expose the IDE harness (bmsx.ide).');
+		}
+		await runIdeTest({
+			testPath: cliOptions.ideTestPath,
+			frameIntervalMs: frameInterval,
+			ide,
+			logger: inputLogger,
+			scheduleOnce: (delayMs, cb) => scheduler.scheduleOnce(delayMs, () => cb()),
+			requestExit,
+		});
+	} else if (cliOptions.testPath) {
 		hostTestRunState = {
 			moduleLabel: path.basename(cliOptions.testPath),
 			requireExplicitFinish: true,
@@ -1065,7 +1089,7 @@ async function main(): Promise<void> {
 		scheduledTimeline = true;
 	}
 	const hasTimelineRun = scheduledTimeline;
-	const defaultTtl = hostTestRunState || hasTimelineRun ? 60_000 : 1_000;
+	const defaultTtl = hostTestRunState || hasTimelineRun || cliOptions.ideTestPath ? 60_000 : 1_000;
 	const pendingExitSettleMs = hostTestRunState ? 15_000 : 5_000;
 	const minTtl = Math.max(defaultTtl, getPendingScheduledDelayMs(scheduler.nowMs(), pendingExitSettleMs));
 	const requestedTtl = typeof cliOptions.ttlMs === 'number' && cliOptions.ttlMs > 0 ? Math.round(cliOptions.ttlMs) : defaultTtl;

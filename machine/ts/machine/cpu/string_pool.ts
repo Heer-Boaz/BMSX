@@ -47,11 +47,7 @@ export class StringPool {
 	}
 
 	public toString(id: StringId): string {
-		const value = this.values[id];
-		if (value === undefined) {
-			throw new Error(`[StringPool] Unknown string id ${id}.`);
-		}
-		return value;
+		return this.values[id];
 	}
 
 	public codepointCount(id: StringId): number {
@@ -59,7 +55,7 @@ export class StringPool {
 	}
 
 	public trackedLuaHeapBytes(): number {
-		return this.trackLuaHeap ? this.trackedBytes : 0;
+		return this.trackedBytes;
 	}
 
 	/**
@@ -73,6 +69,7 @@ export class StringPool {
 	 */
 	public retainTrackedStrings(reachableIds: ReadonlySet<StringId>): number {
 		if (!this.trackLuaHeap) {
+			this.trackedBytes = 0;
 			return 0;
 		}
 		let retained = 0;
