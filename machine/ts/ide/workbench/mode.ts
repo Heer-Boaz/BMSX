@@ -94,6 +94,15 @@ export function disposeShortcutHandlers(runtime: Runtime): void {
 }
 
 export function tickIdeInput(runtime: Runtime): void {
+	// The terminal overlay draws on top of the editor and, during a fault, both
+	// can be active at once (handleLuaError opens the terminal while the fault
+	// overlay re-activates the editor via showRuntimeErrorInChunk). Keyboard
+	// input must follow the same precedence as drawing: the terminal owns it.
+	// Without this guard, characters typed into the terminal (e.g. "reboot") are
+	// also processed by the editor and inserted into the open source file.
+	if (runtime.terminal.isActive) {
+		return;
+	}
 	if (!editorBlocksRuntimePipeline(runtime) || !runtime.editor.isActive) {
 		return;
 	}
