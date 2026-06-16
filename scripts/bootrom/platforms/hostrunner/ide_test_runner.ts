@@ -61,7 +61,6 @@ export async function runIdeTest(options: IdeTestRunnerOptions): Promise<void> {
 		runtime: () => options.ide.getRuntime(),
 		heapBytes: () => options.ide.getTrackedLuaHeapBytes(),
 		debugStats: () => options.ide.debugStats(),
-		debugGlobalKeys: () => options.ide.debugGlobalKeys(),
 		isCartActive: () => options.ide.isCartActive(),
 		waitForCart,
 		frames: waitFrames,

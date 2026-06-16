@@ -4,7 +4,7 @@ import { scheduleRuntimeTask } from '../common/background_tasks';
 import { applyWorkspaceOverridesToCart, applyWorkspaceOverridesToRegistry } from '../workspace/workspace';
 import type { Runtime } from '../../machine/runtime/runtime';
 import { captureRuntimeResumeSnapshot } from '../../machine/runtime/resume_snapshot';
-import * as luaPipeline from '../runtime/lua_pipeline';
+import { resumeFromSnapshot } from '../runtime/hot_resume';
 import * as workbenchMode from '../workbench/mode';
 import { deactivateEditor } from '../workbench/overlay_modes';
 import { handleLuaError } from '../workbench/runtime_errors';
@@ -58,7 +58,6 @@ export function performHotResume(runtime: Runtime): boolean {
 	deactivateEditor(runtime);
 	console.log('[IDE] Performing hot-resume');
 	scheduleRuntimeTask(async () => {
-		console.log('[IDE] Applying workspace overrides to cart before resume');
 		if (runtime.cartLuaSources) {
 			await applyWorkspaceOverridesToCart(runtime, {
 				cart: runtime.cartLuaSources,
@@ -67,7 +66,6 @@ export function performHotResume(runtime: Runtime): boolean {
 				projectRootPath: runtime.cartProjectRootPath,
 			});
 		}
-		console.log('[IDE] Applying workspace overrides to BIOS before resume');
 		const engineChanged = await applyWorkspaceOverridesToRegistry(runtime, {
 			registry: runtime.systemLuaSources,
 			storage: runtime.storageService,
@@ -75,17 +73,13 @@ export function performHotResume(runtime: Runtime): boolean {
 			projectRootPath: runtime.systemProjectRootPath,
 		});
 		const preserveSystemModules =
-				runtime.cartProgramStarted
+			runtime.cartProgramStarted
 			&& engineChanged.size === 0
 			&& !hasPendingSystemModuleReload(runtime);
-		console.log('[IDE] Capturing runtime snapshot for resume');
 		const snapshot = captureRuntimeResumeSnapshot(runtime);
-		console.log('[IDE] Clear execution stop highlights before resume');
 		workbenchMode.clearFaultState(runtime);
-		console.log('[IDE] Resuming from snapshot after hot-resume');
-		await luaPipeline.resumeFromSnapshot(runtime, snapshot, preserveSystemModules);
+		await resumeFromSnapshot(runtime, snapshot, preserveSystemModules);
 		if (shouldUpdateGeneration) {
-			console.log('[IDE] Updating applied generation after resume');
 			editorDocumentState.appliedGeneration = targetGeneration;
 		}
 		machineManager.paused = false;

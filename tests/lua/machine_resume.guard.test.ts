@@ -3,7 +3,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 
 test('resumeFromSnapshot applies machine state before hot-resuming Lua code', () => {
-	const src = readFileSync('machine/ts/ide/runtime/lua_pipeline.ts', 'utf8');
+	const src = readFileSync('machine/ts/ide/runtime/hot_resume.ts', 'utf8');
 	const start = src.indexOf('export async function resumeFromSnapshot');
 	assert.ok(start > -1, 'resumeFromSnapshot not found');
 	const nextExport = src.indexOf('\nexport function ', start + 1);
@@ -12,25 +12,18 @@ test('resumeFromSnapshot applies machine state before hot-resuming Lua code', ()
 	assert.equal(snippet.includes('resumeLuaProgramState(runtime, snapshot'), true, 'snapshot path should resume through the Lua owner');
 });
 
-test('reloadLuaProgramState applies hot-resume without reinitialising interpreter', () => {
-	const src = readFileSync('machine/ts/ide/runtime/lua_pipeline.ts', 'utf8');
-	const start = src.indexOf('export function reloadLuaProgramState');
-	assert.ok(start > -1, 'reloadLuaProgramState not found');
-	const nextExport = src.indexOf('\nexport function ', start + 1);
-	const snippet = src.slice(start, nextExport === -1 ? undefined : nextExport);
-	assert.equal(snippet.includes('reinitializeLuaProgramFromSnapshot'), false, 'reloadLuaProgramState should not reset interpreter');
-	assert.equal(snippet.includes('hotResumeProgramEntry'), true, 'reloadLuaProgramState should apply hot-resume');
-});
-
 test('hotResumeProgramEntry keeps interpreter resident', () => {
-	const src = readFileSync('machine/ts/ide/runtime/lua_pipeline.ts', 'utf8');
+	const src = readFileSync('machine/ts/ide/runtime/hot_resume.ts', 'utf8');
 	const start = src.indexOf('export function hotResumeProgramEntry');
 	assert.ok(start > -1, 'hotResumeProgramEntry not found');
-	const nextExport = src.indexOf('\nexport function ', start + 1);
+	// Bound to the next function declaration (exported or not) so the snippet
+	// stays scoped to hotResumeProgramEntry regardless of neighbouring helpers.
+	const boundaries = [src.indexOf('\nexport function ', start + 1), src.indexOf('\nfunction ', start + 1)].filter(index => index > -1);
+	const nextExport = boundaries.length > 0 ? Math.min(...boundaries) : -1;
 	const snippet = src.slice(start, nextExport === -1 ? undefined : nextExport);
 	assert.equal(snippet.includes('createLuaInterpreter('), false, 'hotResumeProgramEntry should not create a new interpreter');
 	assert.equal(snippet.includes('runtime.startLoadedProgram(entryProtoIndex, [], false, false)'), true, 'hotResumeProgramEntry must execute the updated path');
-	assert.equal(snippet.includes('clearCartModuleCacheForHotResume'), true, 'hotResumeProgramEntry should reuse the hot-resume cache path');
+	assert.equal(snippet.includes('if (!params.preserveSystemModules)'), true, 'hot-resume must preserve live module objects (single generation); only a full reload clears the module cache');
 });
 
 test('system builtin prelude starts from fresh CPU entry state', () => {

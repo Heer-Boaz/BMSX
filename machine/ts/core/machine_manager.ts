@@ -175,10 +175,9 @@ export class MachineManager {
 		if (this.debug) {
 			Input.instance.enableDebugMode(this.view.surface);
 		}
-		this.initialized = true; // Mark the game as initialized
+		this.initialized = true;
 		this.bootstrapStartupAudio();
 		this.start();
-		// SoundMaster.instance.volume = 0;
 		return runtime;
 	}
 

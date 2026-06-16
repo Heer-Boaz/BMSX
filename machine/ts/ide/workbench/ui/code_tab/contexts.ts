@@ -91,7 +91,7 @@ export function upsertCodeEditorTab(context: CodeTabContext): EditorTabDescripto
 
 export function createEntryTabContext(runtime: Runtime): CodeTabContext {
 	const luaDescriptors = listResources(runtime).filter(r => r.type === 'lua');
-	const preferredRegistry = luaPipeline.listLuaSourceRegistries(runtime)[0].registry;
+	const preferredRegistry = luaPipeline.listLuaSourceRegistries(runtime)[0];
 	const descriptor = luaDescriptors.find(r => r.path === preferredRegistry.entry_path)!;
 	return createLuaCodeTabContext(runtime, descriptor);
 }

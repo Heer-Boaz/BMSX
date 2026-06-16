@@ -157,9 +157,9 @@ async function clearWorkspaceDirtyFiles(runtime: Runtime, cart: LuaSourceRegistr
 	}
 }
 
-export async function resetWorkspaceDirtyBuffersAndStorage(runtime: Runtime): Promise<void> {
-	const registry = resolveEditableCartLuaSources(runtime);
-	await clearWorkspaceDirtyFiles(runtime, registry, runtime.storageService);
+// Re-applies the saved (canonical) sources and clears dirty buffers, returning the
+// workspace to its on-disk baseline. Shared tail of the reset/nuke flows.
+async function reapplyWorkspaceBaseline(runtime: Runtime, registry: LuaSourceRegistry): Promise<void> {
 	await applyWorkspaceSourceOverrides({
 		registry,
 		storage: runtime.storageService,
@@ -168,33 +168,30 @@ export async function resetWorkspaceDirtyBuffersAndStorage(runtime: Runtime): Pr
 		timestampNow: machineManager.platform.clock.dateNow(),
 	});
 	clearWorkspaceDirtyBuffers(runtime);
+}
+
+export async function resetWorkspaceDirtyBuffersAndStorage(runtime: Runtime): Promise<void> {
+	const registry = resolveEditableCartLuaSources(runtime);
+	await clearWorkspaceDirtyFiles(runtime, registry, runtime.storageService);
+	await reapplyWorkspaceBaseline(runtime, registry);
 }
 
 export async function nukeWorkspaceState(runtime: Runtime): Promise<void> {
 	const registry = resolveEditableCartLuaSources(runtime);
 	await clearWorkspaceArtifacts(runtime, registry, runtime.storageService);
-	await applyWorkspaceSourceOverrides({
-		registry,
-		storage: runtime.storageService,
-		includeServer: false,
-		projectRootPath: runtime.cartProjectRootPath,
-		timestampNow: machineManager.platform.clock.dateNow(),
-	});
-	clearWorkspaceDirtyBuffers(runtime);
+	await reapplyWorkspaceBaseline(runtime, registry);
 }
 
 export function listResources(runtime: Runtime): ResourceDescriptor[] {
 	const descriptorsByPath = new Map<string, ResourceDescriptor>();
 	const registries = luaPipeline.listLuaSourceRegistries(runtime);
-	for (const entry of registries) {
-		const registry = entry.registry;
-		const readOnly = entry.readOnly;
+	for (const registry of registries) {
 		for (const asset of Object.values(registry.path2lua)) {
 			const path = asset.source_path;
 			if (descriptorsByPath.has(path)) {
 				continue;
 			}
-			descriptorsByPath.set(path, { path, type: asset.type, asset_id: asset.resid, readOnly });
+			descriptorsByPath.set(path, { path, type: asset.type, asset_id: asset.resid, readOnly: false });
 		}
 	}
 	const descriptors = Array.from(descriptorsByPath.values());

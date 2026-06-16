@@ -1,27 +1,17 @@
-import { machineManager } from '../../core/machine_manager';
 import type { LuaChunk } from '../../lua/syntax/ast';
 import { LuaInterpreter } from '../../lua/runtime';
 import { convertToError } from '../../lua/value';
 import type { LuaValue } from '../../lua/value';
-import { clearOverlayFrame } from '../../render/host_overlay/overlay_queue';
 import { applySystemBuiltinGlobals, runSystemBuiltinPrelude } from '../../machine/firmware/runtime';
 import { seedLuaGlobals } from '../../machine/firmware/globals';
 import { compileLuaChunkToProgram, type CompiledProgram } from '../../machine/program/compiler';
 import { linkProgramImages } from '../../machine/program/linker';
 import { readWorkspaceLuaSourceText } from '../workspace/files';
-import { RuntimeResumeSnapshot, SymbolEntry, SymbolKind } from '../../machine/runtime/contracts';
+import { SymbolEntry, SymbolKind } from '../../machine/runtime/contracts';
 import { resolveLuaSourceRecord, type LuaSourceRegistry } from '../../machine/program/sources';
 import { logDebugState } from '../../machine/runtime/debug';
 import { addTrackedLuaHeapBytes, resetTrackedLuaHeapBytes } from '../../machine/memory/lua_heap_usage';
-import { restoreRuntimeLuaSnapshot } from '../../machine/runtime/resume_snapshot';
-import { applyRuntimeMachineState } from '../../machine/runtime/machine_state';
-import { restoreVdpContextState } from '../../render/vdp/context_state';
-import { clearRuntimeDebuggerPause } from './debug_pause';
-import {
-	clearFaultSnapshot,
-	clearRuntimeFault,
-	resetHandledLuaErrors,
-} from './fault_state';
+import { resetHandledLuaErrors } from './fault_state';
 import {
 	buildModuleProtoMap,
 	decodeProgramImage,
@@ -34,101 +24,16 @@ import {
 	type ProgramImage,
 	type ProgramSymbolsImage,
 } from '../../machine/program/loader';
-import {
-	IRQ_IMG_DONE,
-	IRQ_IMG_ERROR,
-} from '../../machine/bus/io';
 import type { RawRomSource } from '../../rompack/source';
 import { Table, type ProgramMetadata, type Value, isNativeFunction, isNativeObject } from '../../machine/cpu/cpu';
 import { asStringId, valueIsString } from '../../machine/cpu/cpu';
 import type { Runtime } from '../../machine/runtime/runtime';
 
-interface RuntimeReloadPlan {
-	resetFreshWorldOptions: { preserve_textures: boolean };
-}
-
-function buildRuntimeReloadPlan(runtime: Runtime): RuntimeReloadPlan {
-	if (runtime.cartRom) {
-		return { resetFreshWorldOptions: { preserve_textures: true } };
-	}
-	return { resetFreshWorldOptions: { preserve_textures: false } };
-}
-
-export async function resumeFromSnapshot(runtime: Runtime, state: RuntimeResumeSnapshot, preserveSystemModules?: boolean): Promise<void> {
-	clearRuntimeDebuggerPause(runtime);
-	if (!state) {
-		runtime.luaRuntimeFailed = false;
-		throw new Error('cannot resume from invalid state snapshot.');
-	}
-	const snapshot: RuntimeResumeSnapshot = { ...state, luaRuntimeFailed: false };
-	runtime.interpreter.clearLastFaultEnvironment();
-	clearFaultSnapshot(runtime);
-
-	resetHandledLuaErrors(runtime);
-	runtime.luaRuntimeFailed = false;
-	clearOverlayFrame();
-	applyRuntimeMachineState(runtime, snapshot.machineState);
-	restoreVdpContextState(runtime.machine.vdp, runtime.view);
-	resumeLuaProgramState(runtime, snapshot, preserveSystemModules);
-}
-
-export function hotResumeProgramEntry(runtime: Runtime, params: { path: string; source: string; preserveSystemModules?: boolean }): void {
-	const preserveRuntimeFailure = runtime.luaRuntimeFailed || (runtime.pauseCoordinator.hasSuspension() && runtime.pauseCoordinator.getPendingException() !== null);
-	const binding = params.path;
-	const baseMetadata = runtime.programMetadata;
-	if (!baseMetadata) {
-		throw new Error('hot reload requires program symbols.');
-	}
-	const interpreter = runtime.interpreter;
-	interpreter.clearLastFaultEnvironment();
-	const chunk = interpreter.compileChunk(params.source, binding);
-	const { modules } = buildModuleChunks(runtime, toLuaModulePath(binding));
-	const baseProgram = runtime.machine.cpu.program;
-	if (!baseProgram) {
-		throw new Error('hot reload requires active program.');
-	}
-	const { program, metadata, entryProtoIndex, moduleProtoMap } = compileLuaChunkToProgram(chunk, modules, {
-		baseProgram,
-		baseMetadata,
-		optLevel: runtime.realtimeCompileOptLevel,
-		entrySource: params.source,
-	});
-	replaceMapEntries(runtime.moduleProtos, moduleProtoMap);
-	if (params.preserveSystemModules) {
-		clearCartModuleCacheForHotResume(runtime);
-	} else {
-		runtime.moduleCache.clear();
-		runtime.machine.imgDecController.reset();
-		runtime.machine.irqController.acknowledge(IRQ_IMG_DONE | IRQ_IMG_ERROR);
-	}
-	runtime.machine.vdp.resetIngressState();
-	const prelude = runSystemBuiltinPrelude(runtime, program, metadata);
-	const finalizedMetadata = prelude.metadata;
-	runtime.startLoadedProgram(entryProtoIndex, [], false, false);
-	runtime.luaRuntimeFailed = preserveRuntimeFailure;
-	runtime._luaPath = binding;
-	runtime.programMetadata = finalizedMetadata;
-	clearEditorCompletionCache(runtime);
-}
-
-export function clearCartModuleCacheForHotResume(runtime: Runtime): void {
-	for (const path of Array.from(runtime.moduleCache.keys())) {
-		if (!runtime.systemLuaSources.path2lua[path]) {
-			runtime.moduleCache.delete(path);
-		}
-	}
-}
-
-function replaceMapEntries<TKey, TValue>(target: Map<TKey, TValue>, entries: Iterable<[TKey, TValue]>): void {
+export function replaceMapEntries<TKey, TValue>(target: Map<TKey, TValue>, entries: Iterable<[TKey, TValue]>): void {
 	target.clear();
 	for (const [key, value] of entries) {
 		target.set(key, value);
 	}
-}
-
-function finishProgramModuleInstall(runtime: Runtime): void {
-	runtime.moduleCache.clear();
-	runtime.machine.vdp.resetIngressState();
 }
 
 function installFreshLuaInterpreter(runtime: Runtime): LuaInterpreter {
@@ -140,78 +45,16 @@ function installFreshLuaInterpreter(runtime: Runtime): LuaInterpreter {
 
 function installProgramModules(runtime: Runtime, moduleProtos: Iterable<[string, number]>): void {
 	replaceMapEntries(runtime.moduleProtos, moduleProtos);
-	finishProgramModuleInstall(runtime);
+	runtime.moduleCache.clear();
+	runtime.machine.vdp.resetIngressState();
 }
 
-function editorSourceForChunk(runtime: Runtime, path: string): string {
-	return runtime.editor ? runtime.editor.getSourceForChunk(path) : resourceSourceForChunk(runtime, path);
-}
-
-function clearEditorCompletionCache(runtime: Runtime): void {
+export function clearEditorCompletionCache(runtime: Runtime): void {
 	const editor = runtime.editor;
 	if (!editor) {
 		return;
 	}
 	editor.clearNativeMemberCompletionCache();
-}
-
-export function reloadLuaProgramState(runtime: Runtime, runInit = true): void {
-	const record = resolveLuaSourceRecord(runtime.activeLuaSources, runtime.activeLuaSources.entry_path);
-	if (!record) {
-		console.info('No Lua entry point defined; cannot reload program. Please save the entry point and try again.');
-		return;
-	}
-	runtime._luaPath = record.source_path;
-	if (!runtime.interpreter) {
-		if (!bootLuaProgram(runtime)) {
-			console.info('Lua boot failed.');
-			return;
-		}
-	} else {
-		const sourcePath = record.source_path;
-		hotResumeProgramEntry(runtime, { source: editorSourceForChunk(runtime, sourcePath), path: sourcePath });
-		if (runInit) {
-			runtime.finishLuaEntryLifecycle(true, true);
-		}
-	}
-}
-
-export function resumeLuaProgramState(runtime: Runtime, snapshot: RuntimeResumeSnapshot, preserveSystemModules?: boolean): void {
-	const savedRuntimeFailed = !!snapshot.luaRuntimeFailed;
-	const binding = snapshot.luaPath;
-	let source: string;
-	try {
-		source = resourceSourceForChunk(runtime, binding);
-	}
-	catch (error) {
-		throw convertToError(error);
-	}
-	runtime._luaPath = binding;
-	try {
-		const shouldPreserveSystemModules = preserveSystemModules ?? runtime.cartProgramStarted;
-		hotResumeProgramEntry(runtime, { source, path: binding, preserveSystemModules: shouldPreserveSystemModules });
-	}
-	catch (error) {
-		throw convertToError(error);
-	}
-	refreshLuaModulesOnResume(runtime, binding);
-	clearEditorCompletionCache(runtime);
-	runtime.finishLuaEntryLifecycle(true, false);
-	restoreRuntimeLuaSnapshot(runtime, snapshot);
-	if (savedRuntimeFailed) {
-		runtime.luaRuntimeFailed = true;
-	}
-}
-
-export function refreshLuaModulesOnResume(runtime: Runtime, resumeModuleId: string): void {
-	const paths = Object.keys(runtime.activeLuaSources.path2lua);
-	for (let index = 0; index < paths.length; index += 1) {
-		const moduleId = paths[index];
-		if (resumeModuleId && moduleId === resumeModuleId) {
-			continue;
-		}
-		refreshLuaHandlersForChunk(runtime, moduleId);
-	}
 }
 
 export function markSourceChunkAsDirty(runtime: Runtime, path: string): void {
@@ -331,10 +174,6 @@ export function listSymbols(runtime: Runtime): SymbolEntry[] {
 	return Array.from(symbolsByName.values());
 }
 
-export function shouldBootLuaProgramFromSources(runtime: Runtime): boolean {
-	return runtime.activeLuaSources.can_boot_from_source;
-}
-
 export function resolveProgramImageSourceFor(runtime: Runtime, source: 'system' | 'cart'): RawRomSource {
 	if (source === 'system') {
 		if (!runtime.systemRomSource) {
@@ -382,13 +221,13 @@ export function buildModuleChunks(
 				continue;
 			}
 			const key = asset.module_path;
-				if (!key || seen.has(key)) {
-					continue;
-				}
-				seen.add(key);
-				if (key === entryModulePath) {
-					continue;
-				}
+			if (!key || seen.has(key)) {
+				continue;
+			}
+			seen.add(key);
+			if (key === entryModulePath) {
+				continue;
+			}
 			const source = readWorkspaceLuaSourceText(registry, asset);
 			const chunk = interpreter.compileChunk(source, key);
 			modules.push({ path: key, chunk, source });
@@ -479,10 +318,7 @@ export function bootProgramImage(runtime: Runtime, options?: { preserveState?: b
 	const bootingCart = runtime.cartProgramStarted;
 	const systemImages = loadProgramImagesForSource(runtime, 'system');
 	let programImage = systemImages.program;
-	let metadata: ProgramMetadata | null = null;
-	if (systemImages.symbols) {
-		metadata = systemImages.symbols;
-	}
+	let metadata: ProgramMetadata | null = systemImages.symbols;
 	let entryProtoIndex = systemImages.program.entryProtoIndex;
 	let staticModulePaths: ReadonlyArray<string> = systemImages.program.sections.rodata.staticModulePaths;
 	runtime.cartEntryProtoIndex = null;
@@ -530,10 +366,9 @@ export function bootProgramImage(runtime: Runtime, options?: { preserveState?: b
 }
 
 export function bootActiveProgram(runtime: Runtime, options?: { preserveState?: boolean; runInit?: boolean }): boolean {
-	const ok = shouldBootLuaProgramFromSources(runtime)
+	return runtime.activeLuaSources.can_boot_from_source
 		? bootLuaProgram(runtime, { preserveState: options?.preserveState })
 		: bootProgramImage(runtime, options);
-	return ok;
 }
 
 export function bootLuaProgram(runtime: Runtime, options?: { preserveState?: boolean; sourceOverride?: { path: string; source: string } }): boolean {
@@ -564,10 +399,10 @@ export function bootLuaProgram(runtime: Runtime, options?: { preserveState?: boo
 		const entrySource = options?.sourceOverride?.source ?? readWorkspaceLuaSourceText(runtime.activeLuaSources, entryRecord);
 		const entryModulePath = options?.sourceOverride ? toLuaModulePath(entryPath) : path;
 		const entryChunk = interpreter.compileChunk(entrySource, entryPath);
-			const { modules } = buildModuleChunks(runtime, entryModulePath);
+		const { modules } = buildModuleChunks(runtime, entryModulePath);
 		const { program, metadata, entryProtoIndex, moduleProtoMap, staticModulePaths } = compileLuaChunkToProgram(entryChunk, modules, {
 			optLevel: runtime.realtimeCompileOptLevel,
-			entrySource: entrySource,
+			entrySource,
 		});
 		installProgramModules(runtime, moduleProtoMap);
 		const prelude = runSystemBuiltinPrelude(runtime, program, metadata);
@@ -582,42 +417,6 @@ export function bootLuaProgram(runtime: Runtime, options?: { preserveState?: boo
 	}
 }
 
-export async function reloadProgramAndResetWorld(runtime: Runtime, runInit = true): Promise<void> {
-	const gateToken = runtime.luaGate.begin({ blocking: true, tag: 'reload_and_reset' });
-	try {
-		const preservingSuspension = runtime.pauseCoordinator.hasSuspension();
-		if (!preservingSuspension) {
-			runtime.pauseCoordinator.clearSuspension();
-			runtime.debuggerPaused = false;
-			clearRuntimeFault(runtime);
-		}
-		runtime.luaInitialized = false;
-
-		runtime.luaChunkEnvironmentsByPath.clear();
-		runtime.luaGenericChunksExecuted.clear();
-
-		const reloadPlan = buildRuntimeReloadPlan(runtime);
-		await machineManager.resetRuntime(reloadPlan.resetFreshWorldOptions.preserve_textures);
-		machineManager.bootstrapStartupAudio();
-		try {
-			runtime.enterCartProgram();
-			resetRuntimeState(runtime);
-			if (shouldBootLuaProgramFromSources(runtime)) {
-				reloadLuaProgramState(runtime, runInit);
-			} else {
-				bootProgramImage(runtime, { preserveState: true, runInit });
-			}
-			runtime.applyCartProgramTiming();
-			machineManager.syncAudioTiming();
-			} catch (error) {
-				throw convertToError(error);
-			}
-	}
-	finally {
-		runtime.luaGate.end(gateToken);
-	}
-}
-
 export function resourceSourceForChunk(runtime: Runtime, path: string): string {
 	const luaSource = runtime.resolveLuaSource(path);
 	if (!luaSource) {
@@ -626,12 +425,12 @@ export function resourceSourceForChunk(runtime: Runtime, path: string): string {
 	return readWorkspaceLuaSourceText(luaSource.registry, luaSource.record);
 }
 
-export function listLuaSourceRegistries(runtime: Runtime): Array<{ registry: LuaSourceRegistry; readOnly: boolean }> {
-	const registries: Array<{ registry: LuaSourceRegistry; readOnly: boolean }> = [];
+export function listLuaSourceRegistries(runtime: Runtime): LuaSourceRegistry[] {
+	const registries: LuaSourceRegistry[] = [];
 	if (runtime.cartLuaSources) {
-		registries.push({ registry: runtime.cartLuaSources, readOnly: false });
+		registries.push(runtime.cartLuaSources);
 	}
-	registries.push({ registry: runtime.systemLuaSources, readOnly: false });
+	registries.push(runtime.systemLuaSources);
 	return registries;
 }
 
@@ -653,7 +452,7 @@ export function refreshLuaHandlersForChunk(runtime: Runtime, path: string, sourc
 }
 
 export function reloadGenericLuaChunk(runtime: Runtime, path: string, sourceOverride?: string): void {
-	const source = sourceOverride !== undefined ? sourceOverride : resourceSourceForChunk(runtime, path);
+	const source = sourceOverride ?? resourceSourceForChunk(runtime, path);
 	runtime.interpreter.compileChunk(source, path);
 	runtime.luaGenericChunksExecuted.add(path);
 }

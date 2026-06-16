@@ -1,10 +1,9 @@
 import { machineManager } from '../../core/machine_manager';
 import { getTrackedLuaHeapBytes } from '../../machine/memory/lua_heap_usage';
 import { captureRuntimeResumeSnapshot } from '../../machine/runtime/resume_snapshot';
-import { resumeFromSnapshot } from '../runtime/lua_pipeline';
+import { resumeFromSnapshot } from '../runtime/hot_resume';
 import { performHotResume } from '../commands/actions';
 import { activateTerminalMode, deactivateTerminalMode } from '../workbench/overlay_modes';
-import { asStringId, valueIsString } from '../../machine/cpu/cpu';
 import type { Runtime } from '../../machine/runtime/runtime';
 
 /**
@@ -34,8 +33,6 @@ export type HeadlessIdeHarness = {
 	isTerminalActive(): boolean;
 	/** Diagnostic breakdown of tracked-heap contributors, for leak hunting. */
 	debugStats(): HeadlessIdeHeapStats;
-	/** Diagnostic: current global key names (for diffing what hot-resume adds). */
-	debugGlobalKeys(): string[];
 };
 
 export type HeadlessIdeHeapStats = {
@@ -93,13 +90,5 @@ export const headlessIdeHarness: HeadlessIdeHarness = {
 			constPool: program ? program.constPool.length : 0,
 			globals,
 		};
-	},
-	debugGlobalKeys: () => {
-		const cpu = requireRuntime().machine.cpu;
-		const keys: string[] = [];
-		cpu.globals.forEachEntry((key) => {
-			keys.push(valueIsString(key) ? cpu.stringPool.toString(asStringId(key)) : String(key));
-		});
-		return keys;
 	},
 };
