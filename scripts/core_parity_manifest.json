@@ -1304,6 +1304,16 @@
 	"strict_forbidden_substrings": [
 		{
 			"roots": [
+				"machine/cpp/render/post/crt",
+				"machine/ts/render/post/crt"
+			],
+			"substrings": [
+				"step(0.0, 1.0 - abs(p"
+			],
+			"reason": "crt_aperture_grille_must_stay_exclusive; step(0.0,..) bleeds neighbouring rgb columns because step(0,0)==1 at the |p-N|==1 boundary. Use step(0.5,..). Software crt_processor.cpp uses an exclusive triad; all four CRT impls must agree."
+		},
+		{
+			"roots": [
 				"machine/ts/machine/devices/vdp",
 				"machine/cpp/machine/devices/vdp",
 				"machine/ts/render",
@@ -1811,6 +1821,14 @@
 		}
 	],
 	"strict_required_substrings": [
+		{
+			"file": "machine/cpp/render/post/crt/software/crt_processor.cpp",
+			"substrings": [
+				"wt * 0.0001f * 43758.5453f",
+				"aperturePhase == 0"
+			],
+			"reason": "software_crt_must_mirror_gpu_shader_hashnoise_z_scale_1e-4_and_keep_exclusive_aperture_triad"
+		},
 		{
 			"file": "machine/ts/machine/devices/vdp/rpu.ts",
 			"substrings": [

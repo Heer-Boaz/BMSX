@@ -101,9 +101,9 @@ fn applyScanlines(colorLinear: vec3<f32>, uv: vec2<f32>, srcPxRes: vec2<f32>) ->
 fn applyApertureMask(colorLinear: vec3<f32>, uv: vec2<f32>, srcPxRes: vec2<f32>) -> vec3<f32> {
 	let x = floor(uv.x * srcPxRes.x);
 	let p = x - floor(x / 3.0) * 3.0;
-	let r = step(0.0, 1.0 - abs(p - 0.0));
-	let g = step(0.0, 1.0 - abs(p - 1.0));
-	let b = step(0.0, 1.0 - abs(p - 2.0));
+	let r = step(0.5, 1.0 - abs(p - 0.0));
+	let g = step(0.5, 1.0 - abs(p - 1.0));
+	let b = step(0.5, 1.0 - abs(p - 2.0));
 	let mask = vec3<f32>(1.0) + APERTURE_STRENGTH * (vec3<f32>(r, g, b) * 2.0 - vec3<f32>(1.0));
 	let lum = dot(colorLinear, LUMA);
 	let k = sqrt(smoothstep(0.0, 0.25, lum));

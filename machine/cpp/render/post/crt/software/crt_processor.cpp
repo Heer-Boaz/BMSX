@@ -138,10 +138,17 @@ inline BlurContrast applyBlurAndContrast(const u32* src, i32 width, i32 height,
 	return out;
 }
 
+// Mirrors the GPU CRT shader hash exactly (crt.frag.glsl / crt.frag.wgsl
+// hashNoise): wrap the inputs for precision, scale the z/time term by 1e-4
+// (NOT 0.1), then the same dot/fract mix. Inputs here are non-negative, so the
+// truncating fract() above matches GLSL fract().
 inline f32 hashNoise(f32 u, f32 v, f32 t) {
-	f32 px = fract(u * 0.1f * 12.9898f);
-	f32 py = fract(v * 0.1f * 78.233f);
-	f32 pz = fract(t * 0.1f * 43758.5453f);
+	const f32 wu = u - 1024.0f * std::floor(u / 1024.0f);
+	const f32 wv = v - 1024.0f * std::floor(v / 1024.0f);
+	const f32 wt = t - 4096.0f * std::floor(t / 4096.0f);
+	f32 px = fract(wu * 0.1f * 12.9898f);
+	f32 py = fract(wv * 0.1f * 78.233f);
+	f32 pz = fract(wt * 0.0001f * 43758.5453f);
 	const f32 dotp = px * (py + 19.19f) + py * (pz + 19.19f) + pz * (px + 19.19f);
 	px += dotp;
 	py += dotp;

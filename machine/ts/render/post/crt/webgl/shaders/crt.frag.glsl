@@ -150,9 +150,9 @@ vec3 applyScanlines(vec3 colorLinear, vec2 uv, vec2 srcPxRes){
 vec3 applyApertureMask(vec3 colorLinear, vec2 uv, vec2 srcPxRes){
 	float x = floor(uv.x * srcPxRes.x);
 	float p = mod(x, 3.0);
-	float r = step(0.0, 1.0 - abs(p - 0.0));
-	float g = step(0.0, 1.0 - abs(p - 1.0));
-	float b = step(0.0, 1.0 - abs(p - 2.0));
+	float r = step(0.5, 1.0 - abs(p - 0.0));
+	float g = step(0.5, 1.0 - abs(p - 1.0));
+	float b = step(0.5, 1.0 - abs(p - 2.0));
 	vec3 mask = vec3(1.0) + APERTURE_STRENGTH * (vec3(r, g, b) * 2.0 - 1.0);
 
 	float lum = dot(colorLinear, LUMA);
