@@ -523,18 +523,7 @@ export class Runtime {
 	}
 
 	public resolveLuaSourceRecord(path: string): LuaSourceRecord | null {
-		const activeRecord = resolveRegistryLuaSourceRecord(this.activeLuaSources, path);
-		if (activeRecord) {
-			return activeRecord;
-		}
-		const cartSources = this.cartLuaSources;
-		if (cartSources) {
-			const cartRecord = resolveRegistryLuaSourceRecord(cartSources, path);
-			if (cartRecord) {
-				return cartRecord;
-			}
-		}
-		return resolveRegistryLuaSourceRecord(this.systemLuaSources, path);
+		return this.resolveLuaSource(path)?.record ?? null;
 	}
 
 	public resolveLuaSource(path: string): LuaSourceMatch | null {
@@ -685,11 +674,11 @@ export class Runtime {
 			this.clearBootFaults();
 			this.clearLuaBootState();
 			luaPipeline.bootActiveProgram(this);
-			}
-			catch (error) {
-				handleLuaError(this, error);
-				throw new Error(`failed to boot runtime: ${error}`);
-			}
+		}
+		catch (error) {
+			handleLuaError(this, error);
+			throw new Error(`failed to boot runtime: ${error}`);
+		}
 		finally {
 			this.luaGate.end(gateToken);
 		}
@@ -755,7 +744,7 @@ export class Runtime {
 		this.machine.audioController.dispose();
 		workbenchMode.disposeShortcutHandlers(this);
 		this.terminal.deactivate();
-			deactivateEditor(this);
+		deactivateEditor(this);
 		this.luaInitialized = false;
 		this.editor.shutdown();
 		this.luaInterpreter = null;
