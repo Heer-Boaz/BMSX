@@ -2513,6 +2513,11 @@ class FunctionBuilder {
 		const base = this.allocTemp();
 		const wantsMulti = expressions.length === 1 && this.isMultiReturnExpression(expressions[0]);
 		if (expressions.length === 1) {
+			if (!wantsMulti && this.moduleCompileInfo !== undefined && expressions[0] === this.moduleCompileInfo.returnExpression
+				&& expressions[0].kind === LuaSyntaxKind.TableConstructorExpression
+				&& this.tryEmitDirectModuleExportReturn(expressions[0] as LuaTableConstructorExpression)) {
+				return;
+			}
 			this.compileExpressionInto(expressions[0], base, wantsMulti ? 0 : 1);
 			if (!wantsMulti && this.moduleCompileInfo !== undefined && expressions[0] === this.moduleCompileInfo.returnExpression) {
 				this.emitModuleExportGlobalStores(base, this.moduleCompileInfo);
@@ -2525,6 +2530,67 @@ class FunctionBuilder {
 			this.compileExpressionInto(expressions[i], base + i, 1);
 		}
 		this.emitABC(OpCode.RET, base, expressions.length, 0);
+	}
+
+	/*
+		Source ABI: a module's `return { a = a, b = b }` is an export manifest, not a
+		runtime table. The source-level module namespace has no runtime identity, so a
+		flat export map can write its export slots directly instead of materializing a
+		throwaway table and scraping the fields back out (NEWT + SETFIELD + GETFIELD).
+		Note this only removes the table scaffolding: the VM backend still represents
+		exported values as global slots loaded via GETGL — it is not yet a direct linked
+		call. Anything that is not a clean flat export map (nested namespaces, array
+		part, computed/non-literal keys) falls back to the table path. Returns true when
+		it fully handled the return.
+	*/
+	private tryEmitDirectModuleExportReturn(table: LuaTableConstructorExpression): boolean {
+		const moduleInfo = this.moduleCompileInfo;
+		if (moduleInfo === undefined) {
+			return false;
+		}
+		// Flat only: every export must be a leaf (no nested sub-namespaces).
+		for (const child of moduleInfo.exportRoot.children.values()) {
+			if (child.children.size > 0) {
+				return false;
+			}
+		}
+		// Collect statically-keyed export fields. Only `a = v` and `["a"] = v` qualify;
+		// a computed key like `[k] = v` must NOT be read as the literal key "k", so it
+		// falls back to the table path. Array parts fall back too.
+		const exportFields: Array<{ key: string; value: LuaExpression }> = [];
+		for (let i = 0; i < table.fields.length; i += 1) {
+			const field = table.fields[i];
+			let key: string;
+			if (field.kind === LuaTableFieldKind.IdentifierKey) {
+				key = field.name;
+			} else if (field.kind === LuaTableFieldKind.ExpressionKey && field.key.kind === LuaSyntaxKind.StringLiteralExpression) {
+				key = (field.key as LuaStringLiteralExpression).value;
+			} else {
+				return false;
+			}
+			if (!moduleInfo.exportRoot.children.has(key)) {
+				return false;
+			}
+			exportFields.push({ key, value: field.value });
+		}
+		// Two phases: evaluate every export value first, then emit the slot stores, so
+		// an export slot is never observable before all values have been computed
+		// (matching the old build-the-table-then-scrape ordering).
+		const tempBase = this.tempTop;
+		const valueRegs: number[] = [];
+		for (let i = 0; i < exportFields.length; i += 1) {
+			const valueReg = this.allocTemp();
+			this.compileExpressionInto(exportFields[i].value, valueReg, 1);
+			valueRegs.push(valueReg);
+		}
+		for (let i = 0; i < exportFields.length; i += 1) {
+			this.emitModuleExportStore(buildModuleExportSlotName(moduleInfo.path, [exportFields[i].key]), valueRegs[i]);
+		}
+		this.tempTop = tempBase;
+		const nilReg = this.allocTemp();
+		this.emitLoadNil(nilReg, 1);
+		this.emitABC(OpCode.RET, nilReg, 1, 0);
+		return true;
 	}
 
 	private compileIf(statement: LuaIfStatement): void {
