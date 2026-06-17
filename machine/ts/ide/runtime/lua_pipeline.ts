@@ -253,6 +253,7 @@ function compileRegistryProgramImage(
 	registry: LuaSourceRegistry,
 	interpreter: LuaInterpreter,
 	externalModules: ReadonlyArray<{ path: string; chunk: LuaChunk; source: string }> = [],
+	enableExportSymbols = false,
 ): { image: ProgramImage; symbols: ProgramSymbolsImage; entryPath: string; modules: Array<{ path: string; chunk: LuaChunk; source: string }> } {
 	const entryRecord = resolveLuaSourceRecord(registry, registry.entry_path);
 	if (entryRecord === null) {
@@ -266,6 +267,10 @@ function compileRegistryProgramImage(
 		optLevel: runtime.realtimeCompileOptLevel,
 		entrySource,
 		externalModules,
+		// Only the cart image may use link-time export symbols: it is the cart relocs
+		// that linkProgramImages() rewrites. The system image is placed raw, so it must
+		// keep the original global-slot mechanism.
+		enableExportSymbols,
 	});
 	return {
 		image: programImageFromCompiled(compiled),
@@ -286,6 +291,10 @@ function bootSystemSourceProgram(runtime: Runtime, interpreter: LuaInterpreter, 
 	let cartProgramImage: ProgramImage | null = null;
 	let cartSymbols: ProgramSymbolsImage | null = null;
 	if (runtime.cartLuaSources?.can_boot_from_source) {
+		// NOTE: enabling export symbols here (5th arg = true) activates M2 for the cart,
+		// but step-4 namespace-table elimination (RET nil) then breaks runtime
+		// `require(x).field` patterns (e.g. cartlib/ecs/systems:61). Keep OFF until step-3
+		// (symbol resolution) is decoupled from step-4 (table elimination). See memory.
 		const cart = compileRegistryProgramImage(runtime, runtime.cartLuaSources, interpreter, system.modules);
 		cartProgramImage = cart.image;
 		cartSymbols = cart.symbols;

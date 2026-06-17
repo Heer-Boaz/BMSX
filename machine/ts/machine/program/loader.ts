@@ -36,7 +36,11 @@ export type ProgramObjectSections = {
 	bss: ProgramBssSection;
 };
 
-export type ProgramConstRelocKind = 'bx' | 'rk_b' | 'rk_c' | 'const_b' | 'const_c' | 'gl' | 'sys' | 'module';
+// 'export_proto': a CLOSURE operand that references a module's exported function by
+// name; the linker resolves the const-string export id to the producer's final proto
+// index. This is how an exported function becomes a link-time symbol (a static
+// closure) instead of a value loaded from a runtime global slot.
+export type ProgramConstRelocKind = 'bx' | 'rk_b' | 'rk_c' | 'const_b' | 'const_c' | 'gl' | 'sys' | 'module' | 'export_proto';
 
 export type ProgramConstReloc = {
 	wordIndex: number;
@@ -183,8 +187,8 @@ function decodeProgramLink(value: unknown): ProgramLink {
 	for (let index = 0; index < relocValues.length; index += 1) {
 		const entry = requireObject(relocValues[index], `ProgramImage.link.constRelocs[${index}]`);
 		const kind = requireObjectKey(entry, 'kind', `ProgramImage.link.constRelocs[${index}]`, `ProgramImage.link.constRelocs[${index}].kind`) as string;
-		if (kind !== 'bx' && kind !== 'rk_b' && kind !== 'rk_c' && kind !== 'const_b' && kind !== 'const_c' && kind !== 'gl' && kind !== 'sys' && kind !== 'module') {
-			throw new Error(`ProgramImage.link.constRelocs[${index}].kind must be 'bx', 'rk_b', 'rk_c', 'const_b', 'const_c', 'gl', 'sys' or 'module'.`);
+		if (kind !== 'bx' && kind !== 'rk_b' && kind !== 'rk_c' && kind !== 'const_b' && kind !== 'const_c' && kind !== 'gl' && kind !== 'sys' && kind !== 'module' && kind !== 'export_proto') {
+			throw new Error(`ProgramImage.link.constRelocs[${index}].kind must be 'bx', 'rk_b', 'rk_c', 'const_b', 'const_c', 'gl', 'sys', 'module' or 'export_proto'.`);
 		}
 		constRelocs[index] = {
 			wordIndex: requireObjectKey(entry, 'wordIndex', `ProgramImage.link.constRelocs[${index}]`, `ProgramImage.link.constRelocs[${index}].wordIndex`) as number,

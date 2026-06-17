@@ -19,7 +19,7 @@ function compileWithModule(entrySource: string, modulePath: string, moduleSource
 	const compiled = compileLuaChunkToProgram(
 		entryChunk,
 		[{ path: modulePath, chunk: moduleChunk, source: moduleSource }],
-		{ entrySource },
+		{ entrySource, enableExportSymbols: true },
 	);
 	return disassembleProgram(compiled.program, compiled.metadata, { showProtoHeaders: false });
 }

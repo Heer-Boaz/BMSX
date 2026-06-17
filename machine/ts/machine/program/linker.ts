@@ -144,6 +144,8 @@ const rewriteConstRelocations = (
 	mergedConstPool: ReadonlyArray<EncodedValue>,
 	mergedGlobalNames: ReadonlyArray<string>,
 	mergedSystemGlobalNames: ReadonlyArray<string>,
+	exportProtoIdBySlot: { readonly [slotName: string]: string },
+	mergedProtoIds: ReadonlyArray<string>,
 ): void => {
 	for (let index = 0; index < relocs.length; index += 1) {
 		const reloc = relocs[index];
@@ -205,6 +207,55 @@ const rewriteConstRelocations = (
 					writeInstruction(code, wordIndex - 1, OpCode.WIDE, wideA, wideB, wideC);
 				}
 				writeInstruction(code, wordIndex, useSystem ? OpCode.GETSYS : OpCode.GETGL, aLow, bLow, cLow, ext);
+				continue;
+			}
+			case 'export_proto': {
+				const mappedConstIndex = cartConstRemap[reloc.constIndex];
+				const constVal = mappedConstIndex >= 0 ? mergedConstPool[mappedConstIndex] : undefined;
+				if (typeof constVal !== 'string') {
+					throw new Error(`[ProgramLinker] export_proto reloc at word ${wordIndex} references a non-string const.`);
+				}
+				const slotName = constVal.startsWith('exportproto:') ? constVal.slice('exportproto:'.length) : constVal;
+				const protoId = exportProtoIdBySlot[slotName];
+				let targetOp: number;
+				let value: number;
+				if (protoId !== undefined) {
+					// Static-closure function export resolves directly to a CLOSURE of the
+					// producer's proto: a link-time symbol, no runtime slot load.
+					value = mergedProtoIds.indexOf(protoId);
+					if (value < 0) {
+						throw new Error(`[ProgramLinker] export_proto reloc cannot resolve proto '${protoId}' for slot '${slotName}'.`);
+					}
+					targetOp = OpCode.CLOSURE;
+				} else {
+					// Non-symbol export (data, or a function that captures upvalues) stays a
+					// global-slot load, identical to a 'module' reloc.
+					let slotIndex = mergedSystemGlobalNames.indexOf(slotName);
+					if (slotIndex >= 0) {
+						targetOp = OpCode.GETSYS;
+					} else {
+						slotIndex = mergedGlobalNames.indexOf(slotName);
+						targetOp = OpCode.GETGL;
+					}
+					if (slotIndex < 0) {
+						throw new Error(`[ProgramLinker] export_proto reloc cannot resolve export slot '${slotName}'.`);
+					}
+					value = slotIndex;
+				}
+				const nextWide = value >> BASE_BX_BITS;
+				if (!hasWide && nextWide !== 0) {
+					throw new Error(`[ProgramLinker] Reloc at word ${wordIndex} requires WIDE prefix.`);
+				}
+				const nextExt = (value >> MAX_BX_BITS) & 0xff;
+				const nextLow = value & MAX_LOW_BX;
+				bLow = (nextLow >>> 6) & 0x3f;
+				cLow = nextLow & 0x3f;
+				ext = nextExt;
+				if (hasWide) {
+					wideB = nextWide & 0x3f;
+					writeInstruction(code, wordIndex - 1, OpCode.WIDE, wideA, wideB, wideC);
+				}
+				writeInstruction(code, wordIndex, targetOp, aLow, bLow, cLow, ext);
 				continue;
 			}
 			case 'bx':
@@ -472,22 +523,23 @@ export const linkProgramImages = (
 	// name tables) can be resolved. Do not silently default to empty lists in that case;
 	// surface a clear diagnostic so the caller can fix the pipeline (compiler/rompacker)
 	// instead of letting the linker fabricate names.
-	const hasModuleRelocs = cartImage.link.constRelocs.some(r => r.kind === 'module');
-	if (hasModuleRelocs) {
+	const needsSymbols = cartImage.link.constRelocs.some(r => r.kind === 'module' || r.kind === 'export_proto');
+	if (needsSymbols) {
 		if (!systemMetadata || !cartMetadata) {
-			throw new Error('[ProgramLinker] Missing program symbols metadata required to resolve module relocations. Provide both systemSymbols and cartSymbols with metadata when linking a cart that contains module placeholders.');
+			throw new Error('[ProgramLinker] Missing program symbols metadata required to resolve module/export relocations. Provide both systemSymbols and cartSymbols with metadata when linking a cart that contains module placeholders.');
 		}
 		if (!Array.isArray(systemMetadata.systemGlobalNames) || !Array.isArray(cartMetadata.systemGlobalNames) || !Array.isArray(systemMetadata.globalNames) || !Array.isArray(cartMetadata.globalNames)) {
 			throw new Error('[ProgramLinker] Incomplete program symbols metadata: expected globalNames and systemGlobalNames arrays in both system and cart symbols.');
 		}
 	}
 
-	const mergedSystemGlobals = hasModuleRelocs
+	const mergedSystemGlobals = needsSymbols
 		? mergeNamedSlots(systemMetadata!.systemGlobalNames, cartMetadata!.systemGlobalNames)
 		: mergeNamedSlots(systemMetadata?.systemGlobalNames ?? EMPTY_SLOT_NAMES, cartMetadata?.systemGlobalNames ?? EMPTY_SLOT_NAMES);
-	const mergedGlobals = hasModuleRelocs
+	const mergedGlobals = needsSymbols
 		? mergeNamedSlots(systemMetadata!.globalNames, cartMetadata!.globalNames)
 		: mergeNamedSlots(systemMetadata?.globalNames ?? EMPTY_SLOT_NAMES, cartMetadata?.globalNames ?? EMPTY_SLOT_NAMES);
+	const mergedProtoIds = (systemMetadata?.protoIds ?? []).concat(cartMetadata?.protoIds ?? []);
 	rewriteConstRelocations(
 		cartCode,
 		cartImage.link.constRelocs,
@@ -497,6 +549,8 @@ export const linkProgramImages = (
 		mergedConsts.constPool,
 		mergedGlobals.names,
 		mergedSystemGlobals.names,
+		cartMetadata?.exportProtoIdBySlot ?? {},
+		mergedProtoIds,
 	);
 
 	const systemProtos = systemText.protos;
