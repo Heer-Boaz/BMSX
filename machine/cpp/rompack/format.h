@@ -22,6 +22,7 @@ constexpr std::array<u8, 4> CART_ROM_MAGIC_BYTES = { 0x42, 0x4d, 0x53, 0x58 };
 constexpr size_t CART_ROM_BASE_HEADER_SIZE = 32;
 constexpr size_t CART_ROM_PROGRAM_HEADER_SIZE = 64;
 constexpr size_t CART_ROM_HEADER_SIZE = 72;
+constexpr u32 PROGRAM_BOOT_HEADER_VERSION = 1;
 constexpr i32 BIOS_ATLAS_ID = 254;
 constexpr const char* SYSTEM_SLOT_TEXTURE_KEY = "_system_slot";
 constexpr const char* FRAMEBUFFER_TEXTURE_KEY = "_framebuffer_2d";

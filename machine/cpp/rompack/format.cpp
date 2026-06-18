@@ -187,7 +187,6 @@ std::vector<u8> encodeCartManifest(const CartManifest& cart, const MachineManife
 }
 
 std::vector<u8> encodeProgramCartRom(const CartManifest& cart, const MachineManifest& machine, const ProgramImage& image) {
-	const ProgramBootHeader bootHeader = buildProgramBootHeader(image);
 	const std::vector<u8> program = encodeProgramImage(image);
 	const std::vector<u8> manifest = encodeCartManifest(cart, machine);
 
@@ -198,13 +197,13 @@ std::vector<u8> encodeProgramCartRom(const CartManifest& cart, const MachineMani
 	header.tocOffset = header.manifestOffset + header.manifestLength;
 	header.dataOffset = header.tocOffset;
 	header.dataLength = static_cast<u32>(program.size());
-	header.programBootVersion = bootHeader.version;
-	header.programBootFlags = bootHeader.flags;
-	header.programEntryProtoIndex = static_cast<u32>(bootHeader.entryProtoIndex);
-	header.programCodeByteCount = static_cast<u32>(bootHeader.codeByteCount);
-	header.programConstPoolCount = static_cast<u32>(bootHeader.constPoolCount);
-	header.programProtoCount = static_cast<u32>(bootHeader.protoCount);
-	header.programConstRelocCount = static_cast<u32>(bootHeader.constRelocCount);
+	header.programBootVersion = PROGRAM_BOOT_HEADER_VERSION;
+	header.programBootFlags = 0;
+	header.programEntryProtoIndex = static_cast<u32>(image.entryProtoIndex);
+	header.programCodeByteCount = static_cast<u32>(image.sections.text.code.size());
+	header.programConstPoolCount = static_cast<u32>(image.sections.rodata.constPool.size());
+	header.programProtoCount = static_cast<u32>(image.sections.text.protos.size());
+	header.programConstRelocCount = static_cast<u32>(image.link.constRelocs.size());
 
 	RomSourceEntry programEntry;
 	programEntry.resid = PROGRAM_IMAGE_ID;

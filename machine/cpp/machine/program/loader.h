@@ -14,7 +14,8 @@ namespace bmsx {
 
 constexpr const char* PROGRAM_IMAGE_ID = "__program__";
 constexpr const char* PROGRAM_SYMBOLS_IMAGE_ID = "__program_symbols__";
-constexpr uint32_t PROGRAM_BOOT_HEADER_VERSION = 1;
+std::string_view parseProgramModuleSlotRelocText(std::string_view text);
+std::string_view parseProgramExportProtoRelocText(std::string_view text);
 
 using EncodedValue = std::variant<std::nullptr_t, bool, double, std::string>;
 
@@ -80,20 +81,9 @@ struct ProgramImage {
 
 using ProgramSymbolsImage = ProgramMetadata;
 
-struct ProgramBootHeader {
-	uint32_t version = 0;
-	uint32_t flags = 0;
-	int entryProtoIndex = 0;
-	size_t codeByteCount = 0;
-	size_t constPoolCount = 0;
-	size_t protoCount = 0;
-	size_t constRelocCount = 0;
-};
-
 std::unique_ptr<ProgramImage> decodeProgramImage(const uint8_t* data, size_t size);
 std::vector<uint8_t> encodeProgramImage(const ProgramImage& asset);
 std::unique_ptr<ProgramSymbolsImage> decodeProgramSymbolsImage(const uint8_t* data, size_t size);
-ProgramBootHeader buildProgramBootHeader(const ProgramImage& asset);
 std::unique_ptr<Program> inflateProgram(const ProgramObjectSections& sections);
 std::unordered_map<std::string, int> buildModuleProtoMap(const std::vector<std::pair<std::string, int>>& entries);
 std::string stripLuaExtension(std::string_view candidate);

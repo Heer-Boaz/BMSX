@@ -6,6 +6,7 @@ import { LuaLexer } from '../../machine/ts/lua/syntax/lexer';
 import { LuaParser } from '../../machine/ts/lua/syntax/parser';
 import { disassembleProgram } from '../../machine/ts/machine/cpu/disassembler';
 import { compileLuaChunkToProgram } from '../../machine/ts/machine/program/compiler';
+import { makeProgramExportProtoRelocText } from '../../machine/ts/machine/program/loader';
 
 function parseSource(source: string, path: string) {
 	const lexer = new LuaLexer(source, path);
@@ -19,7 +20,7 @@ function compileWithModule(entrySource: string, modulePath: string, moduleSource
 	const compiled = compileLuaChunkToProgram(
 		entryChunk,
 		[{ path: modulePath, chunk: moduleChunk, source: moduleSource }],
-		{ entrySource, enableExportSymbols: true },
+		{ entrySource },
 	);
 	return disassembleProgram(compiled.program, compiled.metadata, { showProtoHeaders: false });
 }
@@ -35,10 +36,10 @@ test('static module function calls use export-proto relocations while preserving
 		'return api',
 	].join('\n');
 	const disasm = compileWithModule('local api<const> = require("foo")\napi.update()', 'foo', moduleSource);
-	assert.match(disasm, /exportproto:foo__update/, 'static module-root call must emit an export-proto relocation');
+	assert.match(disasm, new RegExp(makeProgramExportProtoRelocText('foo__update')), 'static module-root call must emit an export-proto relocation');
 	assert.match(disasm, /\bNEWT\b/, 'module runtime table must still be materialized for require() consumers');
 	assert.match(disasm, /\bSETFIELD\b/, 'exported function must still be stored on the returned table');
-	assert.match(disasm, /\bSET(GL|SYS)\b/, 'export slot must remain populated for value reads and non-symbol fallbacks');
+	assert.match(disasm, /\bSET(GL|SYS)\b/, 'export slot must remain populated for value reads and non-symbol exports');
 });
 
 // Non-call value reads must not use export_proto placeholders: the optimizer treats
@@ -49,29 +50,28 @@ test('static module data reads use global slots, not export-proto placeholders',
 		'return api',
 	].join('\n');
 	const disasm = compileWithModule('local api<const> = require("foo")\nreturn api.value + 1', 'foo', moduleSource);
-	assert.doesNotMatch(disasm, /exportproto:foo__value/, 'data reads must not leave export-proto strings in optimized code');
+	assert.doesNotMatch(disasm, new RegExp(makeProgramExportProtoRelocText('foo__value')), 'data reads must not leave export-proto strings in optimized code');
 	assert.match(disasm, /\bGET(GL|SYS)\b.*foo__value/, 'data read must use the export slot directly');
 });
 
-// Nesting is not (yet) destructurable into flat slots, so it must fall back to the
-// table path rather than silently dropping the sub-namespace.
-test('nested module export namespace falls back to the table path', () => {
+// Nested namespaces are runtime tables; flat export slots only represent direct fields.
+test('nested module export namespace uses the table path', () => {
 	const moduleSource = [
 		'local function a() end',
 		'return { sub = { a = a } }',
 	].join('\n');
 	const disasm = compileWithModule('local m<const> = require("bar")\nm.sub.a()', 'bar', moduleSource);
-	assert.match(disasm, /\bNEWT\b/, 'nested export namespace still builds a table (fallback path)');
+	assert.match(disasm, /\bNEWT\b/, 'nested export namespace still builds a table');
 });
 
-// A computed key `[k] = v` must not be misread as the literal key "k"; it falls
-// back to the table path rather than writing the wrong export slot directly.
-test('computed (non-literal) export key falls back to the table path', () => {
+// A computed key `[k] = v` must not be misread as the literal key "k"; computed
+// field ownership stays with the table value.
+test('computed (non-literal) export key uses the table path', () => {
 	const moduleSource = [
 		'local function update() end',
 		'local k<const> = "update"',
 		'return { [k] = update }',
 	].join('\n');
 	const disasm = compileWithModule('local m<const> = require("baz")\nm.update()', 'baz', moduleSource);
-	assert.match(disasm, /\bNEWT\b/, 'computed export key must fall back to the table path');
+	assert.match(disasm, /\bNEWT\b/, 'computed export key stays on the table path');
 });

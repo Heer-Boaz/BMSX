@@ -1,5 +1,5 @@
 // start repeated-sequence-acceptable -- Program linker rewrites packed instruction fields directly to preserve bit-level clarity.
-import { asStringId, OpCode, valueIsString, type LocalSlotDebug, type Program, type ProgramMetadata, type Proto, type SourceRange } from '../cpu/cpu';
+import { asStringId, OpCode, valueIsString, type Program, type ProgramMetadata, type Proto, type SourceRange } from '../cpu/cpu';
 import {
 	BASE_BX_BITS,
 	EXT_B_BITS,
@@ -21,6 +21,7 @@ import {
 	CART_BASE_PC,
 	type ProgramLayout,
 } from './layout';
+import { parseProgramExportProtoRelocText, parseProgramModuleSlotRelocText } from './loader';
 import type {
 	EncodedValue,
 	ProgramImage,
@@ -40,10 +41,6 @@ export type LinkedProgramImage = {
 const NUMBER_KEY_BUFFER = new ArrayBuffer(8);
 const NUMBER_KEY_VIEW = new DataView(NUMBER_KEY_BUFFER);
 const NAN_KEY = 'n:0x7ff8000000000000';
-const EMPTY_SLOT_NAMES: ReadonlyArray<string> = [];
-const EMPTY_LOCAL_SLOTS_BY_PROTO: ReadonlyArray<ReadonlyArray<LocalSlotDebug>> = [];
-const EMPTY_UPVALUE_NAMES_BY_PROTO: ReadonlyArray<ReadonlyArray<string>> = [];
-const EMPTY_EXPORT_PROTO_ID_BY_SLOT: { readonly [slotName: string]: string } = {};
 
 const makeNumberKey = (value: number): string => {
 	if (Number.isNaN(value)) {
@@ -136,6 +133,48 @@ const fitsSignedRaw = (value: number, bits: number): boolean => {
 	return value >= min && value <= max;
 };
 
+const writeBcRelocatedInstruction = (
+	code: Uint8Array,
+	wordIndex: number,
+	op: number,
+	aLow: number,
+	bLow: number,
+	cLow: number,
+	ext: number,
+	hasWide: boolean,
+	wideA: number,
+	wideB: number,
+	wideC: number,
+	relocOnB: boolean,
+	raw: number,
+	extBits: number,
+): void => {
+	const low = raw & 0x3f;
+	const extPartMask = (1 << extBits) - 1;
+	const extPart = (raw >> MAX_OPERAND_BITS) & extPartMask;
+	const widePart = raw >> (MAX_OPERAND_BITS + extBits);
+	const extA = (ext >>> 6) & 0x3;
+	let extB = (ext >>> 3) & 0x7;
+	let extC = ext & 0x7;
+	if (relocOnB) {
+		bLow = low;
+		extB = extPart;
+		if (hasWide) {
+			wideB = widePart & 0x3f;
+		}
+	} else {
+		cLow = low;
+		extC = extPart;
+		if (hasWide) {
+			wideC = widePart & 0x3f;
+		}
+	}
+	const relocatedExt = (extA << 6) | (extB << 3) | extC;
+	if (hasWide) {
+		writeInstruction(code, wordIndex - 1, OpCode.WIDE, wideA, wideB, wideC);
+	}
+	writeInstruction(code, wordIndex, op, aLow, bLow, cLow, relocatedExt);
+};
 
 const resolveLinkedExportSlot = (
 	slotName: string,
@@ -152,6 +191,12 @@ const resolveLinkedExportSlot = (
 	}
 	throw new Error(`[ProgramLinker] Unable to resolve module export slot '${slotName}' during linking.`);
 };
+
+const relocRequiresSymbolMetadata = (reloc: ProgramConstReloc): boolean =>
+	reloc.kind === 'module' || reloc.kind === 'export_proto';
+
+const cartRelocRequiresMetadata = (reloc: ProgramConstReloc): boolean =>
+	relocRequiresSymbolMetadata(reloc) || reloc.kind === 'gl' || reloc.kind === 'sys';
 
 const rewriteResolvedABx = (
 	code: Uint8Array,
@@ -201,7 +246,6 @@ export const resolveRuntimeProgramRelocations = (
 	metadata: ProgramMetadata,
 	relocs: ReadonlyArray<ProgramConstReloc>,
 ): void => {
-	const exportProtoIdBySlot = metadata.exportProtoIdBySlot ?? EMPTY_EXPORT_PROTO_ID_BY_SLOT;
 	for (let index = 0; index < relocs.length; index += 1) {
 		const reloc = relocs[index];
 		if (reloc.kind !== 'module' && reloc.kind !== 'export_proto') {
@@ -213,31 +257,57 @@ export const resolveRuntimeProgramRelocations = (
 		}
 		const constText = program.constPoolStringPool.toString(asStringId(constValue));
 		if (reloc.kind === 'module') {
-			const slotName = constText.startsWith('modslot:') ? constText.slice('modslot:'.length) : constText;
+			const slotName = parseProgramModuleSlotRelocText(constText);
 			const resolvedSlot = resolveLinkedExportSlot(slotName, metadata.globalNames, metadata.systemGlobalNames);
 			rewriteResolvedABx(program.code, reloc.wordIndex, resolvedSlot.op, resolvedSlot.slot);
 			continue;
 		}
-		const slotName = constText.startsWith('exportproto:') ? constText.slice('exportproto:'.length) : constText;
-		const target = resolveExportProtoRelocTarget(slotName, metadata.globalNames, metadata.systemGlobalNames, exportProtoIdBySlot, metadata.protoIds);
+		const slotName = parseProgramExportProtoRelocText(constText);
+		const target = resolveExportProtoRelocTarget(slotName, metadata.globalNames, metadata.systemGlobalNames, metadata.exportProtoIdBySlot, metadata.protoIds);
 		rewriteResolvedABx(program.code, reloc.wordIndex, target.op, target.value);
 	}
 };
 
-const rewriteConstRelocations = (
+const rewriteSymbolicConstRelocations = (
 	code: Uint8Array,
 	relocs: ReadonlyArray<ProgramConstReloc>,
-	cartConstRemap: ReadonlyArray<number>,
-	cartGlobalRemap: ReadonlyArray<number>,
-	cartSystemGlobalRemap: ReadonlyArray<number>,
-	mergedConstPool: ReadonlyArray<EncodedValue>,
-	mergedGlobalNames: ReadonlyArray<string>,
-	mergedSystemGlobalNames: ReadonlyArray<string>,
+	constPool: ReadonlyArray<EncodedValue>,
+	globalNames: ReadonlyArray<string>,
+	systemGlobalNames: ReadonlyArray<string>,
 	exportProtoIdBySlot: { readonly [slotName: string]: string },
-	mergedProtoIds: ReadonlyArray<string>,
+	protoIds: ReadonlyArray<string>,
 ): void => {
 	for (let index = 0; index < relocs.length; index += 1) {
 		const reloc = relocs[index];
+		if (reloc.kind !== 'module' && reloc.kind !== 'export_proto') {
+			continue;
+		}
+		const constVal = constPool[reloc.constIndex];
+		if (typeof constVal !== 'string') {
+			throw new Error(`[ProgramLinker] ${reloc.kind} reloc at word ${reloc.wordIndex} references a non-string const.`);
+		}
+		if (reloc.kind === 'module') {
+			const slotName = parseProgramModuleSlotRelocText(constVal);
+			const resolvedSlot = resolveLinkedExportSlot(slotName, globalNames, systemGlobalNames);
+			rewriteResolvedABx(code, reloc.wordIndex, resolvedSlot.op, resolvedSlot.slot);
+			continue;
+		}
+		const slotName = parseProgramExportProtoRelocText(constVal);
+		const target = resolveExportProtoRelocTarget(slotName, globalNames, systemGlobalNames, exportProtoIdBySlot, protoIds);
+		rewriteResolvedABx(code, reloc.wordIndex, target.op, target.value);
+	}
+};
+
+const rewriteConstPoolRelocations = (
+	code: Uint8Array,
+	relocs: ReadonlyArray<ProgramConstReloc>,
+	cartConstRemap: ReadonlyArray<number>,
+): void => {
+	for (let index = 0; index < relocs.length; index += 1) {
+		const reloc = relocs[index];
+		if (reloc.kind === 'module' || reloc.kind === 'export_proto' || reloc.kind === 'gl' || reloc.kind === 'sys') {
+			continue;
+		}
 		const wordIndex = reloc.wordIndex;
 		const word = readInstructionWord(code, wordIndex);
 		const op = (word >>> 18) & 0x3f;
@@ -256,71 +326,15 @@ const rewriteConstRelocations = (
 		let cLow = word & 0x3f;
 		let ext = word >>> 24;
 
-		const mappedIndex = reloc.kind === 'gl'
-			? cartGlobalRemap[reloc.constIndex]
-			: reloc.kind === 'sys'
-				? cartSystemGlobalRemap[reloc.constIndex]
-				: cartConstRemap[reloc.constIndex];
+		const mappedIndex = cartConstRemap[reloc.constIndex];
 		switch (reloc.kind) {
-			case 'module': {
-				const mappedConstIndex = cartConstRemap[reloc.constIndex];
-				const constVal = mappedConstIndex >= 0 ? mergedConstPool[mappedConstIndex] : undefined;
-				if (typeof constVal !== 'string') {
-					throw new Error(`[ProgramLinker] Module reloc at word ${wordIndex} references a non-string const.`);
-				}
-				let slotName = constVal;
-				if (slotName.startsWith('modslot:')) {
-					slotName = slotName.slice('modslot:'.length);
-				}
-				const resolvedSlot = resolveLinkedExportSlot(slotName, mergedGlobalNames, mergedSystemGlobalNames);
-				const mappedIndex2 = resolvedSlot.slot;
-				const nextWide2 = mappedIndex2 >> BASE_BX_BITS;
-				if (!hasWide && nextWide2 !== 0) {
-					throw new Error(`[ProgramLinker] Reloc at word ${wordIndex} requires WIDE prefix.`);
-				}
-				const nextExt2 = (mappedIndex2 >> MAX_BX_BITS) & 0xff;
-				const nextLow2 = mappedIndex2 & MAX_LOW_BX;
-				bLow = (nextLow2 >>> 6) & 0x3f;
-				cLow = nextLow2 & 0x3f;
-				ext = nextExt2;
-				if (hasWide) {
-					wideB = nextWide2 & 0x3f;
-					writeInstruction(code, wordIndex - 1, OpCode.WIDE, wideA, wideB, wideC);
-				}
-				writeInstruction(code, wordIndex, resolvedSlot.op, aLow, bLow, cLow, ext);
-				continue;
-			}
-			case 'export_proto': {
-				const mappedConstIndex = cartConstRemap[reloc.constIndex];
-				const constVal = mappedConstIndex >= 0 ? mergedConstPool[mappedConstIndex] : undefined;
-				if (typeof constVal !== 'string') {
-					throw new Error(`[ProgramLinker] export_proto reloc at word ${wordIndex} references a non-string const.`);
-				}
-				const slotName = constVal.startsWith('exportproto:') ? constVal.slice('exportproto:'.length) : constVal;
-				const protoId = exportProtoIdBySlot[slotName];
-				let targetOp: number;
-				let value: number;
-				if (protoId !== undefined) {
-					// Static-closure function export resolves directly to a CLOSURE of the
-					// producer's proto: a link-time symbol, no runtime slot load.
-					value = mergedProtoIds.indexOf(protoId);
-					if (value < 0) {
-						throw new Error(`[ProgramLinker] export_proto reloc cannot resolve proto '${protoId}' for slot '${slotName}'.`);
-					}
-					targetOp = OpCode.CLOSURE;
-				} else {
-					// Non-symbol export (data, or a function that captures upvalues) stays a
-					// global-slot load, identical to a 'module' reloc.
-					const resolvedSlot = resolveLinkedExportSlot(slotName, mergedGlobalNames, mergedSystemGlobalNames);
-					targetOp = resolvedSlot.op;
-					value = resolvedSlot.slot;
-				}
-				const nextWide = value >> BASE_BX_BITS;
+			case 'bx': {
+				const nextWide = mappedIndex >> BASE_BX_BITS;
 				if (!hasWide && nextWide !== 0) {
 					throw new Error(`[ProgramLinker] Reloc at word ${wordIndex} requires WIDE prefix.`);
 				}
-				const nextExt = (value >> MAX_BX_BITS) & 0xff;
-				const nextLow = value & MAX_LOW_BX;
+				const nextExt = (mappedIndex >> MAX_BX_BITS) & 0xff;
+				const nextLow = mappedIndex & MAX_LOW_BX;
 				bLow = (nextLow >>> 6) & 0x3f;
 				cLow = nextLow & 0x3f;
 				ext = nextExt;
@@ -328,69 +342,25 @@ const rewriteConstRelocations = (
 					wideB = nextWide & 0x3f;
 					writeInstruction(code, wordIndex - 1, OpCode.WIDE, wideA, wideB, wideC);
 				}
-				writeInstruction(code, wordIndex, targetOp, aLow, bLow, cLow, ext);
+				writeInstruction(code, wordIndex, op, aLow, bLow, cLow, ext);
 				continue;
-			}
-			case 'bx':
-			case 'gl':
-			case 'sys': {
-			const nextWide = mappedIndex >> BASE_BX_BITS;
-			if (!hasWide && nextWide !== 0) {
-				throw new Error(`[ProgramLinker] Reloc at word ${wordIndex} requires WIDE prefix.`);
-			}
-			const nextExt = (mappedIndex >> MAX_BX_BITS) & 0xff;
-			const nextLow = mappedIndex & MAX_LOW_BX;
-			bLow = (nextLow >>> 6) & 0x3f;
-			cLow = nextLow & 0x3f;
-			ext = nextExt;
-			if (hasWide) {
-				wideB = nextWide & 0x3f;
-				writeInstruction(code, wordIndex - 1, OpCode.WIDE, wideA, wideB, wideC);
-			}
-			writeInstruction(code, wordIndex, op, aLow, bLow, cLow, ext);
-			continue;
 			}
 			case 'const_b':
 			case 'const_c': {
-			const relocOnB = reloc.kind === 'const_b';
-			const extBits = relocOnB ? EXT_B_BITS : EXT_C_BITS;
-			const baseBits = MAX_OPERAND_BITS + extBits;
-			const maxBase = (1 << baseBits) - 1;
-			if (!hasWide && mappedIndex > maxBase) {
-				throw new Error(`[ProgramLinker] Reloc at word ${wordIndex} requires WIDE prefix.`);
-			}
-			const totalBits = baseBits + (hasWide ? MAX_OPERAND_BITS : 0);
-			const maxValue = (1 << totalBits) - 1;
-			if (mappedIndex > maxValue) {
-				throw new Error(`[ProgramLinker] Reloc at word ${wordIndex} exceeds operand range.`);
-			}
-			const low = mappedIndex & 0x3f;
-			const extPartMask = (1 << extBits) - 1;
-			const extPart = (mappedIndex >> MAX_OPERAND_BITS) & extPartMask;
-			const widePart = mappedIndex >> baseBits;
-
-			const extA = (ext >>> 6) & 0x3;
-			let extB = (ext >>> 3) & 0x7;
-			let extC = ext & 0x7;
-			if (relocOnB) {
-				bLow = low;
-				extB = extPart;
-				if (hasWide) {
-					wideB = widePart & 0x3f;
+				const relocOnB = reloc.kind === 'const_b';
+				const extBits = relocOnB ? EXT_B_BITS : EXT_C_BITS;
+				const baseBits = MAX_OPERAND_BITS + extBits;
+				const maxBase = (1 << baseBits) - 1;
+				if (!hasWide && mappedIndex > maxBase) {
+					throw new Error(`[ProgramLinker] Reloc at word ${wordIndex} requires WIDE prefix.`);
 				}
-			} else {
-				cLow = low;
-				extC = extPart;
-				if (hasWide) {
-					wideC = widePart & 0x3f;
+				const totalBits = baseBits + (hasWide ? MAX_OPERAND_BITS : 0);
+				const maxValue = (1 << totalBits) - 1;
+				if (mappedIndex > maxValue) {
+					throw new Error(`[ProgramLinker] Reloc at word ${wordIndex} exceeds operand range.`);
 				}
-			}
-			ext = (extA << 6) | (extB << 3) | extC;
-			if (hasWide) {
-				writeInstruction(code, wordIndex - 1, OpCode.WIDE, wideA, wideB, wideC);
-			}
-			writeInstruction(code, wordIndex, op, aLow, bLow, cLow, ext);
-			continue;
+				writeBcRelocatedInstruction(code, wordIndex, op, aLow, bLow, cLow, ext, hasWide, wideA, wideB, wideC, relocOnB, mappedIndex, extBits);
+				continue;
 			}
 		}
 
@@ -403,32 +373,27 @@ const rewriteConstRelocations = (
 		}
 		const totalBits = baseBits + (hasWide ? MAX_OPERAND_BITS : 0);
 		const raw = encodeSignedRaw(rkValue, totalBits);
-		const low = raw & 0x3f;
-		const extPartMask = (1 << extBits) - 1;
-		const extPart = (raw >> MAX_OPERAND_BITS) & extPartMask;
-		const widePart = raw >> baseBits;
+		writeBcRelocatedInstruction(code, wordIndex, op, aLow, bLow, cLow, ext, hasWide, wideA, wideB, wideC, relocOnB, raw, extBits);
+	}
+};
 
-		const extA = (ext >>> 6) & 0x3;
-		let extB = (ext >>> 3) & 0x7;
-		let extC = ext & 0x7;
-		if (relocOnB) {
-			bLow = low;
-			extB = extPart;
-			if (hasWide) {
-				wideB = widePart & 0x3f;
-			}
-		} else {
-			cLow = low;
-			extC = extPart;
-			if (hasWide) {
-				wideC = widePart & 0x3f;
-			}
+const rewriteNamedSlotRelocations = (
+	code: Uint8Array,
+	relocs: ReadonlyArray<ProgramConstReloc>,
+	cartGlobalRemap: ReadonlyArray<number>,
+	cartSystemGlobalRemap: ReadonlyArray<number>,
+): void => {
+	for (let index = 0; index < relocs.length; index += 1) {
+		const reloc = relocs[index];
+		if (reloc.kind !== 'gl' && reloc.kind !== 'sys') {
+			continue;
 		}
-		ext = (extA << 6) | (extB << 3) | extC;
-		if (hasWide) {
-			writeInstruction(code, wordIndex - 1, OpCode.WIDE, wideA, wideB, wideC);
-		}
-		writeInstruction(code, wordIndex, op, aLow, bLow, cLow, ext);
+		const word = readInstructionWord(code, reloc.wordIndex);
+		const op = (word >>> 18) & 0x3f;
+		const mappedIndex = reloc.kind === 'gl'
+			? cartGlobalRemap[reloc.constIndex]
+			: cartSystemGlobalRemap[reloc.constIndex];
+		rewriteResolvedABx(code, reloc.wordIndex, op, mappedIndex);
 	}
 };
 
@@ -521,20 +486,17 @@ const mergeMetadata = (
 	for (let index = 0; index < cartInstructionCount; index += 1) {
 		debugRanges[cartBaseWord + index] = cart.debugRanges[index];
 	}
-	const cartLocalSlotsByProto = cart.localSlotsByProto ?? EMPTY_LOCAL_SLOTS_BY_PROTO;
-	const localSlotsByProto = system.localSlotsByProto
-		? system.localSlotsByProto.concat(cartLocalSlotsByProto)
-		: cartLocalSlotsByProto;
-	const cartUpvalueNamesByProto = cart.upvalueNamesByProto ?? EMPTY_UPVALUE_NAMES_BY_PROTO;
 	return {
 		debugRanges,
 		protoIds: system.protoIds.concat(cart.protoIds),
-		localSlotsByProto,
-		upvalueNamesByProto: system.upvalueNamesByProto
-			? system.upvalueNamesByProto.concat(cartUpvalueNamesByProto)
-			: cartUpvalueNamesByProto,
+		localSlotsByProto: system.localSlotsByProto.concat(cart.localSlotsByProto),
+		upvalueNamesByProto: system.upvalueNamesByProto.concat(cart.upvalueNamesByProto),
 		systemGlobalNames: mergedSystemGlobals.names,
 		globalNames: mergedGlobals.names,
+		exportProtoIdBySlot: {
+			...system.exportProtoIdBySlot,
+			...cart.exportProtoIdBySlot,
+		},
 	};
 };
 
@@ -549,13 +511,13 @@ const mergeMetadata = (
 	- The compiler enforces that these compile-time modules are not treated as runtime values and
 		lowers/validates uses (for example rejecting `local m = require('bios')`). When the compiler
 		cannot resolve an export it emits an explicit link-time placeholder into the instruction stream
-		(the current emitter uses a nil-load sentinel). The linker MUST detect and resolve these
-		placeholders into the final relocated operand or concrete machine-level access; they are not
-		intended to be left as runtime `nil` values.
+		(the current emitter uses loader-owned relocation text in a const operand). The linker MUST
+		detect and resolve these placeholders into the final relocated operand or concrete
+		machine-level access; they are not intended to be left as runtime values.
 	- The linker's responsibility is to combine system and cart images and remap proto/const/global
 		indices to the final layout while preserving metadata. Functions such as `rewriteClosureIndices`
-		and `rewriteConstRelocations` update indices/operands and must preserve encoding semantics when
-		rewriting the linked buffer.
+		`rewriteConstPoolRelocations`, and `rewriteNamedSlotRelocations` update indices/operands
+		and must preserve encoding semantics when rewriting the linked buffer.
 
 */
 
@@ -585,46 +547,62 @@ export const linkProgramImages = (
 	code.set(systemText.code, resolvedLayout.systemBasePc);
 	code.set(cartText.code, resolvedLayout.cartBasePc);
 	writeInstructionWord(code, CART_PROGRAM_VECTOR_PC / INSTRUCTION_BYTES, CART_PROGRAM_VECTOR_VALUE);
+	const systemCode = code.subarray(resolvedLayout.systemBasePc, resolvedLayout.systemBasePc + systemCodeBytes);
 	const cartCode = code.subarray(resolvedLayout.cartBasePc, resolvedLayout.cartBasePc + cartCodeBytes);
 	rewriteClosureIndices(cartCode, baseProtoCount);
 	const mergedConsts = mergeConstPools(systemRodata.constPool, cartRodata.constPool);
 	const systemMetadata = systemSymbols;
 	const cartMetadata = cartSymbols;
 
-	// If the cart contains any 'module' const-relocs we must have full symbol metadata
-	// available from both system and cart so module export slot names (in global/system
-	// name tables) can be resolved. Do not silently default to empty lists in that case;
-	// surface a clear diagnostic so the caller can fix the pipeline (compiler/rompacker)
-	// instead of letting the linker fabricate names.
-	const needsSymbols = cartImage.link.constRelocs.some(r => r.kind === 'module' || r.kind === 'export_proto');
-	if (needsSymbols) {
-		if (!systemMetadata || !cartMetadata) {
-			throw new Error('[ProgramLinker] Missing program symbols metadata required to resolve module/export relocations. Provide both systemSymbols and cartSymbols with metadata when linking a cart that contains module placeholders.');
-		}
-		if (!Array.isArray(systemMetadata.systemGlobalNames) || !Array.isArray(cartMetadata.systemGlobalNames) || !Array.isArray(systemMetadata.globalNames) || !Array.isArray(cartMetadata.globalNames)) {
-			throw new Error('[ProgramLinker] Incomplete program symbols metadata: expected globalNames and systemGlobalNames arrays in both system and cart symbols.');
-		}
+	// Module/export relocations are symbolic object-code records. The linker resolves
+	// them for every input image before the program becomes executable.
+	const systemNeedsSymbols = systemImage.link.constRelocs.some(relocRequiresSymbolMetadata);
+	const cartNeedsSymbols = cartImage.link.constRelocs.some(relocRequiresSymbolMetadata);
+	const cartNeedsMetadata = cartImage.link.constRelocs.some(cartRelocRequiresMetadata);
+	if ((systemNeedsSymbols || cartNeedsMetadata) && !systemMetadata) {
+		throw new Error('[ProgramLinker] Missing system symbols metadata required to resolve relocations.');
+	}
+	if (cartNeedsMetadata && !cartMetadata) {
+		throw new Error('[ProgramLinker] Missing cart symbols metadata required to resolve cart relocations.');
 	}
 
-	const mergedSystemGlobals = needsSymbols
-		? mergeNamedSlots(systemMetadata!.systemGlobalNames, cartMetadata!.systemGlobalNames)
-		: mergeNamedSlots(systemMetadata?.systemGlobalNames ?? EMPTY_SLOT_NAMES, cartMetadata?.systemGlobalNames ?? EMPTY_SLOT_NAMES);
-	const mergedGlobals = needsSymbols
-		? mergeNamedSlots(systemMetadata!.globalNames, cartMetadata!.globalNames)
-		: mergeNamedSlots(systemMetadata?.globalNames ?? EMPTY_SLOT_NAMES, cartMetadata?.globalNames ?? EMPTY_SLOT_NAMES);
-	const mergedProtoIds = (systemMetadata?.protoIds ?? []).concat(cartMetadata?.protoIds ?? []);
-	rewriteConstRelocations(
+	if (systemNeedsSymbols) {
+		rewriteSymbolicConstRelocations(
+			systemCode,
+			systemImage.link.constRelocs,
+			systemRodata.constPool,
+			systemMetadata!.globalNames,
+			systemMetadata!.systemGlobalNames,
+			systemMetadata!.exportProtoIdBySlot,
+			systemMetadata!.protoIds,
+		);
+	}
+	rewriteConstPoolRelocations(
 		cartCode,
 		cartImage.link.constRelocs,
 		mergedConsts.cartConstRemap,
-		mergedGlobals.cartRemap,
-		mergedSystemGlobals.cartRemap,
-		mergedConsts.constPool,
-		mergedGlobals.names,
-		mergedSystemGlobals.names,
-		cartMetadata?.exportProtoIdBySlot ?? {},
-		mergedProtoIds,
 	);
+	if (cartNeedsMetadata) {
+		const mergedSystemGlobals = mergeNamedSlots(systemMetadata!.systemGlobalNames, cartMetadata!.systemGlobalNames);
+		const mergedGlobals = mergeNamedSlots(systemMetadata!.globalNames, cartMetadata!.globalNames);
+		rewriteNamedSlotRelocations(
+			cartCode,
+			cartImage.link.constRelocs,
+			mergedGlobals.cartRemap,
+			mergedSystemGlobals.cartRemap,
+		);
+		if (cartNeedsSymbols) {
+			rewriteSymbolicConstRelocations(
+				cartCode,
+				cartImage.link.constRelocs,
+				cartRodata.constPool,
+				mergedGlobals.names,
+				mergedSystemGlobals.names,
+				cartMetadata!.exportProtoIdBySlot,
+				systemMetadata!.protoIds.concat(cartMetadata!.protoIds),
+			);
+		}
+	}
 
 	const systemProtos = systemText.protos;
 	const cartProtos = cartText.protos;

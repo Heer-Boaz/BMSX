@@ -7,18 +7,6 @@ import { advanceRuntimeTime, runDueRuntimeTimers } from '../runtime/cpu_executor
 import type { Runtime } from '../runtime/runtime';
 import { appendLuaChunkToProgram } from './compiler';
 
-export function callLuaFunction(runtime: Runtime, fn: LuaFunctionValue, args: unknown[]): unknown[] {
-	const luaArgs = runtime.luaScratch.values.acquire() as unknown as LuaValue[];
-	try {
-		for (let index = 0; index < args.length; index += 1) {
-			luaArgs.push(runtime.luaJsBridge.toLua(args[index]));
-		}
-		return callLuaFunctionPrepared(runtime, fn, luaArgs);
-	} finally {
-		runtime.luaScratch.values.release(luaArgs as unknown as Value[]);
-	}
-}
-
 function callLuaFunctionPrepared(runtime: Runtime, fn: LuaFunctionValue, luaArgs: ReadonlyArray<LuaValue>): unknown[] {
 	const results = fn.call(luaArgs);
 	if (isLuaCallSignal(results)) {
@@ -32,19 +20,21 @@ function callLuaFunctionPrepared(runtime: Runtime, fn: LuaFunctionValue, luaArgs
 	return output;
 }
 
-export function buildHostEvalMetadata(baseProgram: Program): ProgramMetadata {
-	const instructionCount = Math.floor(baseProgram.code.length / INSTRUCTION_BYTES);
+function buildHostEvalMetadata(baseProgram: Program): ProgramMetadata {
+	const instructionCount = baseProgram.code.length / INSTRUCTION_BYTES;
 	const debugRanges: Array<ProgramMetadata['debugRanges'][number]> = new Array(instructionCount);
 	for (let index = 0; index < debugRanges.length; index += 1) {
 		debugRanges[index] = null;
 	}
 	const protoIds = new Array<string>(baseProgram.protos.length);
-	const localSlotsByProto: Array<NonNullable<ProgramMetadata['localSlotsByProto']>[number]> = new Array(baseProgram.protos.length);
+	const localSlotsByProto: Array<ProgramMetadata['localSlotsByProto'][number]> = new Array(baseProgram.protos.length);
+	const upvalueNamesByProto: Array<ProgramMetadata['upvalueNamesByProto'][number]> = new Array(baseProgram.protos.length);
 	for (let index = 0; index < protoIds.length; index += 1) {
 		protoIds[index] = `proto:${index}`;
 		localSlotsByProto[index] = [];
+		upvalueNamesByProto[index] = [];
 	}
-	return { debugRanges, protoIds, localSlotsByProto, globalNames: [], systemGlobalNames: [] };
+	return { debugRanges, protoIds, localSlotsByProto, upvalueNamesByProto, globalNames: [], systemGlobalNames: [], exportProtoIdBySlot: {} };
 }
 
 export function runHostEvalChunk(runtime: Runtime, source: string): Value[] {

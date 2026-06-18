@@ -3,6 +3,7 @@ export const CART_ROM_MAGIC_BYTES = new Uint8Array([0x42, 0x4d, 0x53, 0x58]);
 export const CART_ROM_BASE_HEADER_SIZE = 32;
 export const CART_ROM_PROGRAM_HEADER_SIZE = 64;
 export const CART_ROM_HEADER_SIZE = 72;
+export const PROGRAM_BOOT_HEADER_VERSION = 1;
 
 export type CartRomHeader = {
 	headerSize: number;

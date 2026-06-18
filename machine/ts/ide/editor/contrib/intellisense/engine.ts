@@ -41,6 +41,7 @@ import { Pool } from '../../../../common/pool';
 import { KEYWORDS, LuaTokenType, type LuaToken } from '../../../../lua/syntax/token';
 import { splitText } from '../../../../common/text_lines';
 import { getLinesSnapshot, getTextSnapshot } from '../../text/source_text';
+import type { TextBuffer } from '../../text/text_buffer';
 import { editorDocumentState } from '../../editing/document_state';
 import { clearSingleCursorSelection } from '../../editing/cursor/state';
 import { editorViewState } from '../../ui/view/state';
@@ -680,18 +681,22 @@ export function findDefinitionAtPosition(
 }
 
 export function extractHoverExpression(row: number, column: number, path: string): { expression: string; startColumn: number; endColumn: number; } {
-	if (row < 0 || row >= editorDocumentState.buffer.getLineCount()) {
+	return extractHoverExpressionFromBuffer(editorDocumentState.buffer, row, column, path);
+}
+
+export function extractHoverExpressionFromBuffer(buffer: TextBuffer, row: number, column: number, path: string): { expression: string; startColumn: number; endColumn: number; } {
+	if (row < 0 || row >= buffer.getLineCount()) {
 		return null;
 	}
-	const line = editorDocumentState.buffer.getLineContent(row);
+	const line = buffer.getLineContent(row);
 	const safeColumn = clamp(column, 0, line.length);
-	if (isLuaCommentContext(editorDocumentState.buffer, row, safeColumn)) {
+	if (isLuaCommentContext(buffer, row, safeColumn)) {
 		return null;
 	}
 	if (line.length === 0) {
 		return null;
 	}
-	const source = getTextSnapshot(editorDocumentState.buffer);
+	const source = getTextSnapshot(buffer);
 	const tokenMatch = findContextMenuTokenMatch(row, safeColumn, path, source);
 	if (tokenMatch && tokenMatch.token.type === LuaTokenType.String) {
 		return null;
@@ -1113,7 +1118,7 @@ export function inspectLuaExpression(runtime: Runtime, expression: string, path:
 	const isBuiltin = isFunction && chain.length === 1 && isLuaBuiltinFunctionName(runtime, chain[0]);
 	let definition: LuaDefinitionLocation = null;
 	if (!isBuiltin) {
-		definition = resolveLuaDefinitionMetadata(resolved.value, resolved.definitionRange);
+		definition = resolveLuaDefinitionMetadata(runtime, resolved.value, resolved.definitionRange);
 		if (!definition) {
 			definition = staticDefinition;
 		}
@@ -1158,7 +1163,7 @@ export function listLuaObjectMembers(runtime: Runtime, expression: string, path:
 	return [];
 }
 
-export function resolveLuaDefinitionMetadata(value: LuaValue, definitionRange: LuaSourceRange): LuaDefinitionLocation {
+export function resolveLuaDefinitionMetadata(runtime: Runtime, value: LuaValue, definitionRange: LuaSourceRange): LuaDefinitionLocation {
 	let range: LuaSourceRange = definitionRange;
 	if (!range && value && typeof value === 'object') {
 		const candidate = value as { getSourceRange?: () => LuaSourceRange };
@@ -1166,6 +1171,14 @@ export function resolveLuaDefinitionMetadata(value: LuaValue, definitionRange: L
 	}
 	if (!range) {
 		return null;
+	}
+	const record = runtime.resolveLuaSourceRecord(range.path);
+	if (record && record.source_path !== range.path) {
+		range = {
+			path: record.source_path,
+			start: range.start,
+			end: range.end,
+		};
 	}
 	return buildDefinitionLocationFromRange(range);
 }
@@ -1588,7 +1601,7 @@ export type FrameLocal = {
 
 export function collectFrameLocals(runtime: Runtime, snapshot: CpuFrameSnapshot[], cpuFrameIndex: number): FrameLocal[] {
 	const metadata = runtime.programMetadata;
-	if (!metadata?.localSlotsByProto) {
+	if (!metadata) {
 		return [];
 	}
 	const frame = snapshot[cpuFrameIndex];
@@ -1597,7 +1610,7 @@ export function collectFrameLocals(runtime: Runtime, snapshot: CpuFrameSnapshot[
 		return [];
 	}
 	const slots = metadata.localSlotsByProto[frame.protoIndex];
-	if (!slots || slots.length === 0) {
+	if (slots.length === 0) {
 		return [];
 	}
 	const byName = new Map<string, LocalSlotDebug>();
@@ -1680,11 +1693,11 @@ function resolveRuntimeLocalChainValue(
 		return null;
 	}
 	const metadata = runtime.programMetadata;
-	if (!metadata?.localSlotsByProto) {
+	if (!metadata) {
 		return null;
 	}
 	const requestedRecord = runtime.resolveLuaSourceRecord(path);
-	const requestedPath = requestedRecord ? requestedRecord.source_path : path;
+	const requestedPath = requestedRecord ? requestedRecord.module_path : path;
 	const cpu = runtime.machine.cpu;
 	// Use the fault snapshot when the fault overlay is active — by hover time, the crash
 	// frame has been popped from the live CPU stack, so we must use the saved registers.
@@ -1705,7 +1718,7 @@ function resolveRuntimeLocalChainValue(
 			continue;
 		}
 		const slots = metadata.localSlotsByProto[frame.protoIndex];
-		if (!slots || slots.length === 0) {
+		if (slots.length === 0) {
 			continue;
 		}
 		let frameBest: LocalSlotDebug = null;
@@ -1737,27 +1750,22 @@ function resolveRuntimeLocalChainValue(
 	}
 	if (selectedFrameIndex < 0 || !selectedSlot) {
 		const upvalueNamesByProto = metadata.upvalueNamesByProto;
-		if (upvalueNamesByProto) {
-			for (let frameIndex = callStack.length - 1; frameIndex >= 0; frameIndex -= 1) {
-				const frame = callStack[frameIndex];
-				const frameRange = cpu.getDebugRange(frame.pc);
-				if (!isFrameRangeForPath(frameRange, requestedPath)) {
-					continue;
-				}
-				const frameUpvalueNames = upvalueNamesByProto[frame.protoIndex];
-				if (!frameUpvalueNames) {
-					continue;
-				}
-				const upvalueIndex = frameUpvalueNames.indexOf(rootName);
-				if (upvalueIndex === -1 || !cpu.hasFrameUpvalue(frameIndex, upvalueIndex)) {
-					continue;
-				}
-				const chained = walkValueChain(runtime, wrapRuntimeValueForIntellisense(runtime, cpu.readFrameUpvalue(frameIndex, upvalueIndex)), parts, 1);
-				if (chained === null) {
-					return { kind: 'not_defined' };
-				}
-				return { kind: 'value', value: chained, definitionRange: null };
+		for (let frameIndex = callStack.length - 1; frameIndex >= 0; frameIndex -= 1) {
+			const frame = callStack[frameIndex];
+			const frameRange = cpu.getDebugRange(frame.pc);
+			if (!isFrameRangeForPath(frameRange, requestedPath)) {
+				continue;
 			}
+			const frameUpvalueNames = upvalueNamesByProto[frame.protoIndex];
+			const upvalueIndex = frameUpvalueNames.indexOf(rootName);
+			if (upvalueIndex === -1 || !cpu.hasFrameUpvalue(frameIndex, upvalueIndex)) {
+				continue;
+			}
+			const chained = walkValueChain(runtime, wrapRuntimeValueForIntellisense(runtime, cpu.readFrameUpvalue(frameIndex, upvalueIndex)), parts, 1);
+			if (chained === null) {
+				return { kind: 'not_defined' };
+			}
+			return { kind: 'value', value: chained, definitionRange: null };
 		}
 		return null;
 	}

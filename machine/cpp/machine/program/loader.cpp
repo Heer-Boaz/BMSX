@@ -9,6 +9,9 @@ namespace bmsx {
 
 namespace {
 
+constexpr std::string_view PROGRAM_MODULE_SLOT_RELOC_PREFIX = "modslot:";
+constexpr std::string_view PROGRAM_EXPORT_PROTO_RELOC_PREFIX = "exportproto:";
+
 struct ConstRelocKindEntry {
 	const char* name;
 	ProgramConstRelocKind kind;
@@ -238,12 +241,10 @@ std::unique_ptr<ProgramMetadata> extractProgramMetadata(const BinValue& metadata
 
 	metadata->systemGlobalNames = readStringArray(metadataObj.require("systemGlobalNames"), "ProgramImage: systemGlobalNames");
 	metadata->globalNames = readStringArray(metadataObj.require("globalNames"), "ProgramImage: globalNames");
-	if (metadataObj.has("exportProtoIdBySlot")) {
-		const BinObject& exportObj = metadataObj.require("exportProtoIdBySlot").asObject();
-		metadata->exportProtoIdBySlot.reserve(exportObj.size());
-		for (const auto& entry : exportObj) {
-			metadata->exportProtoIdBySlot.emplace(entry.first, entry.second.asString());
-		}
+	const BinObject& exportObj = metadataObj.require("exportProtoIdBySlot").asObject();
+	metadata->exportProtoIdBySlot.reserve(exportObj.size());
+	for (const auto& entry : exportObj) {
+		metadata->exportProtoIdBySlot.emplace(entry.first, entry.second.asString());
 	}
 	return metadata;
 }
@@ -287,6 +288,20 @@ BinValue encodeConstReloc(const ProgramConstReloc& reloc) {
 }
 
 } // namespace
+
+std::string_view parseProgramModuleSlotRelocText(std::string_view text) {
+	if (text.substr(0, PROGRAM_MODULE_SLOT_RELOC_PREFIX.size()) != PROGRAM_MODULE_SLOT_RELOC_PREFIX) {
+		throw BMSX_RUNTIME_ERROR("[ProgramLoader] module reloc text missing 'modslot:' prefix.");
+	}
+	return text.substr(PROGRAM_MODULE_SLOT_RELOC_PREFIX.size());
+}
+
+std::string_view parseProgramExportProtoRelocText(std::string_view text) {
+	if (text.substr(0, PROGRAM_EXPORT_PROTO_RELOC_PREFIX.size()) != PROGRAM_EXPORT_PROTO_RELOC_PREFIX) {
+		throw BMSX_RUNTIME_ERROR("[ProgramLoader] export_proto reloc text missing 'exportproto:' prefix.");
+	}
+	return text.substr(PROGRAM_EXPORT_PROTO_RELOC_PREFIX.size());
+}
 
 std::unique_ptr<Program> inflateProgram(const ProgramObjectSections& sections) {
 	auto program = std::make_unique<Program>();
@@ -397,18 +412,6 @@ std::unique_ptr<ProgramMetadata> decodeProgramSymbolsImage(const uint8_t* data, 
 	}
 
 	return extractProgramMetadata(root.require("metadata"));
-}
-
-ProgramBootHeader buildProgramBootHeader(const ProgramImage& asset) {
-	ProgramBootHeader header;
-	header.version = PROGRAM_BOOT_HEADER_VERSION;
-	header.flags = 0;
-	header.entryProtoIndex = asset.entryProtoIndex;
-	header.codeByteCount = asset.sections.text.code.size();
-	header.constPoolCount = asset.sections.rodata.constPool.size();
-	header.protoCount = asset.sections.text.protos.size();
-	header.constRelocCount = asset.link.constRelocs.size();
-	return header;
 }
 
 std::unordered_map<std::string, int> buildModuleProtoMap(const std::vector<std::pair<std::string, int>>& entries) {

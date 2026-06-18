@@ -1,6 +1,7 @@
 __bmsx_host_test = __bmsx_host_test or {
 	frame_count = 0,
 	stable_frames = 0,
+	phase = 'boot_room',
 }
 
 function __bmsx_host_test.ready()
@@ -8,51 +9,70 @@ function __bmsx_host_test.ready()
 end
 
 function __bmsx_host_test.setup()
-	local castle_map<const> = require('castle/map')
-	local world_transition<const> = castle_map.world_transitions.world_1
-	local castle<const> = oget('c')
-	local room<const> = oget('room')
-	local castle_room_number<const> = 8
-	local selected_entrance<const> = castle_map.room_templates[castle_room_number].world_entrances[1]
-
-	room:load_room(castle_room_number)
-	castle.current_room_number = castle_room_number
-	castle.world_entrance_states = {}
-	castle:sync_world_entrance_states_for_room(room)
-	room.map_id = 0
-	room.map_x = world_transition.castle_map_x
-	room.map_y = world_transition.castle_map_y
-	room.last_room_switch = nil
-	castle.world_entrance_states[world_transition.target].state = 'open'
-
-	local player<const> = oget('pietolon')
-	player:clear_input_state()
-	player:zero_motion()
-	player:reset_fall_substate_sequence()
-	player:cancel_sword()
-	player.jump_substate = 0
-	player.jump_inertia = 0
-	player.on_vertical_elevator = false
-	player.jumping_from_elevator = false
-	player.stairs_landing_sound_pending = false
-
-	player.x = selected_entrance.stair_x
-	player.y = selected_entrance.stair_y
-	player.facing = 1
-	player.events:emit('landed_to_quiet')
-	return {
-		host.at(0, host.press('ArrowDown', 2)),
-	}
+	return host.new_game()
 end
 
 function __bmsx_host_test.update(_frame, _current_music)
 	local constants<const> = require('constants')
 	local castle_map<const> = require('castle/map')
 	local world_transition<const> = castle_map.world_transitions.world_1
+
+	if __bmsx_host_test.phase == 'boot_room' then
+		__bmsx_host_test.frame_count = __bmsx_host_test.frame_count + 1
+		assert(__bmsx_host_test.frame_count < 120,
+			'room boot timed out'
+				.. ' space=' .. tostring(get_space()))
+		if not __bmsx_host_test.ready() then
+			return false
+		end
+		local director<const> = oget('d')
+		if get_space() ~= 'main' or director.boot_mode == 'title_screen' then
+			return false
+		end
+
+		local castle<const> = oget('c')
+		local room<const> = oget('room')
+		local player<const> = oget('pietolon')
+		local castle_room_number<const> = 8
+		local selected_entrance<const> = castle_map.room_templates[castle_room_number].world_entrances[1]
+
+		room:load_room(castle_room_number)
+		castle.current_room_number = castle_room_number
+		castle.world_entrance_states = {}
+		castle:sync_world_entrance_states_for_room(room)
+		room.map_id = 0
+		room.map_x = world_transition.castle_map_x
+		room.map_y = world_transition.castle_map_y
+		room.last_room_switch = nil
+		castle.world_entrance_states[world_transition.target].state = 'open'
+
+		player:clear_input_state()
+		player:zero_motion()
+		player:reset_fall_substate_sequence()
+		player:cancel_sword()
+		player.jump_substate = 0
+		player.jump_inertia = 0
+		player.on_vertical_elevator = false
+		player.jumping_from_elevator = false
+		player.stairs_landing_sound_pending = false
+
+		player.x = selected_entrance.stair_x
+		player.y = selected_entrance.stair_y
+		player.facing = 1
+		player.events:emit('landed_to_quiet')
+		__bmsx_host_test.phase = 'send_input'
+		__bmsx_host_test.frame_count = 0
+		return false
+	end
+
+	if __bmsx_host_test.phase == 'send_input' then
+		__bmsx_host_test.phase = 'assert_outcome'
+		return host.press('ArrowDown', 2)
+	end
+
 	local castle<const> = oget('c')
 	local room<const> = oget('room')
 	local player<const> = oget('pietolon')
-
 	local feet_y<const> = player.y + player.height
 	local left_x<const> = player.x + 1
 	local right_x<const> = player.x + player.width - 2

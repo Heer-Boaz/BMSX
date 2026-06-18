@@ -40,7 +40,14 @@ import {
 } from '../../lua/syntax/ast';
 import { OpCode, StringValue, asStringId, valueIsString, type Program, type ProgramMetadata, type Proto, type UpvalueDesc, type Value, type SourceRange, type LocalSlotDebug } from '../cpu/cpu';
 import { optimizeInstructions, type Instruction, type InstructionSet, type OptimizationLevel } from './optimizer';
-import { toLuaModulePath, type ProgramConstReloc } from './loader';
+import {
+	isProgramExportProtoRelocText,
+	isProgramModuleSlotRelocText,
+	makeProgramExportProtoRelocText,
+	makeProgramModuleSlotRelocText,
+	toLuaModulePath,
+	type ProgramConstReloc,
+} from './loader';
 import { StringPool } from '../cpu/string_pool';
 import { EXT_A_BITS, EXT_B_BITS, EXT_BX_BITS, EXT_C_BITS, INSTRUCTION_BYTES, MAX_BX_BITS, MAX_EXT_CONST, MAX_EXT_REGISTER_BC, MAX_OPERAND_BITS, MAX_SIGNED_BX, MIN_SIGNED_BX, writeInstruction } from '../cpu/instruction_format';
 import { buildLuaSemanticFrontend, type LuaBoundReference, type LuaSemanticFrontend, type LuaSemanticFrontendFile } from '../../lua/semantic/frontend';
@@ -99,16 +106,9 @@ type CompileOptions = {
 	optLevel?: OptimizationLevel;
 	entrySource?: string;
 	externalModules?: ReadonlyArray<ProgramModule>;
-	// Opt in to link-time module-export symbols (exported functions resolve to a direct
-	// CLOSURE of their proto instead of a runtime global-slot load). OFF by default: it
-	// requires the resulting image to be linked AND not re-compiled from source by a raw
-	// runtime path, so only a context that controls linking should enable it.
-	enableExportSymbols?: boolean;
 };
 
-const EMPTY_LOCAL_SLOTS: ReadonlyArray<LocalSlotDebug> = [];
 const EMPTY_PROGRAM_MODULES: ReadonlyArray<ProgramModule> = [];
-const EMPTY_UPVALUE_NAMES: ReadonlyArray<string> = [];
 
 type LoopContext = {
 	breakJumps: number[];
@@ -203,13 +203,6 @@ type StructAddress = {
 	pointerIndex: boolean;
 };
 
-function isExternalRootModuleBinding(binding: ModuleBinding): boolean {
-	if (!binding.external) {
-		return false;
-	}
-	return binding.exportDepth === 0;
-}
-
 type AssignmentTarget =
 	| { kind: 'local'; reg: number }
 	| { kind: 'upvalue'; upvalue: number }
@@ -283,10 +276,6 @@ class ProgramBuilder {
 	public readonly protoFixedEntryPC: boolean[] = [];
 	public readonly protoIds: string[] = [];
 	private readonly exportProtoIdBySlot: { [slotName: string]: string } = {};
-	// Off by default: module exports use the original global-slot mechanism, so any
-	// image is runnable without link-time reloc resolution. Opt in (cart link context)
-	// to resolve exported functions to direct link-time symbols instead.
-	public moduleExportsAsSymbols = false;
 	public readonly structDeclarations = new Map<string, LuaStructDeclarationStatement>();
 	public readonly structLayouts = new Map<string, StructLayout>();
 	private readonly protoIdMap: Map<string, number> = new Map();
@@ -437,10 +426,6 @@ class ProgramBuilder {
 		this.protos[protoIndex].staticClosure = true;
 	}
 
-	public isStaticClosureProto(protoIndex: number): boolean {
-		return this.protos[protoIndex].staticClosure;
-	}
-
 	public protoHasNoUpvalues(protoIndex: number): boolean {
 		return this.protos[protoIndex].upvalueDescs.length === 0;
 	}
@@ -450,10 +435,6 @@ class ProgramBuilder {
 	// the proto (a link-time symbol) instead of a runtime global-slot load.
 	public recordExportProto(slotName: string, protoId: string): void {
 		this.exportProtoIdBySlot[slotName] = protoId;
-	}
-
-	public hasExportProto(slotName: string): boolean {
-		return Object.prototype.hasOwnProperty.call(this.exportProtoIdBySlot, slotName);
 	}
 
 	public seedProto(
@@ -1134,9 +1115,9 @@ class FunctionBuilder {
 					const constVal = this.program.constPool[instr.b];
 					if (valueIsString(constVal)) {
 						const s = this.program.stringPool.toString(asStringId(constVal));
-						if (s.startsWith('modslot:')) {
+						if (isProgramModuleSlotRelocText(s)) {
 							constRelocs.push({ wordIndex: instrWordIndex[index], kind: 'module', constIndex: instr.b });
-						} else if (s.startsWith('exportproto:')) {
+						} else if (isProgramExportProtoRelocText(s)) {
 							constRelocs.push({ wordIndex: instrWordIndex[index], kind: 'export_proto', constIndex: instr.b });
 						} else {
 							constRelocs.push({ wordIndex: instrWordIndex[index], kind: 'bx', constIndex: instr.b });
@@ -1446,9 +1427,8 @@ class FunctionBuilder {
 			(e.g. `staticModulePaths` / `staticExternalModulePaths`).
 			- The compiler must not fabricate runtime tables. When a module export cannot be resolved at
 			compile time, the compiler emits an explicit link-time placeholder into the instruction
-			stream (current implementation uses a nil-load as the sentinel). That placeholder signals the
-			linker to resolve or rewrite the operand/instruction during linking. It is NOT intended to be
-			a silently returned runtime value.
+			stream as loader-owned relocation text. That placeholder signals the linker/runtime
+			relocation resolver to rewrite the operand/instruction before execution.
 			- This function detects static module bindings and marks them `external` so later compiler and
 			linker phases can preserve semantics and perform link-time resolution of placeholders.
 		 */
@@ -1510,17 +1490,17 @@ class FunctionBuilder {
 		return this.moduleCompileContext?.modulesByPath.get(binding.modulePath)?.exportSlotsByPathKey.get(appendModuleExportPathKey(binding.exportPathKey, methodName));
 	}
 
-	/*
-		Check for direct fields on compile-time-only module roots
-
-		- Detect patterns like `MODULE_ROOT.<key>` or `MODULE_ROOT['<key>']` where the module root is
-		flagged as compile-time-only and `<key>` is not exported.
-		- The compiler does not emit runtime table-accesses for these cases. Instead it emits an
-		explicit link-time placeholder into the instruction stream (the current emitter uses a nil
-		load as the sentinel). The linker is responsible for resolving those placeholders into the
-		final relocated operand or emitting the appropriate machine-level access. The placeholder
-		SHOULD NOT be interpreted as a final runtime `nil` by downstream code.
-	 */
+	private tryResolveExternalModuleRootFieldSlotName(baseExpression: LuaExpression, key: string): string | undefined {
+		const binding = this.tryResolveStaticModuleBinding(baseExpression, false);
+		if (!binding || !binding.external || binding.exportDepth !== 0) {
+			return undefined;
+		}
+		const moduleInfo = this.moduleCompileContext!.modulesByPath.get(binding.modulePath)!;
+		if (moduleInfo.exportSlotsByPathKey.get(key) !== undefined) {
+			return undefined;
+		}
+		return buildModuleRootFieldSlotName(binding.modulePath, key);
+	}
 
 	/*
 		Detect a compile-time-only module root binding
@@ -1597,15 +1577,16 @@ class FunctionBuilder {
 	}
 
 	private emitModuleExportCallTargetLoad(slotName: string, target: number): void {
-		if (!this.usesExportSymbols()) {
-			this.emitModuleExportValueLoad(slotName, target);
-			return;
-		}
 		// Call targets may be link-time function symbols. The linker rewrites this
 		// placeholder to CLOSURE(proto) for static function exports, or to a normal
 		// global-slot load for data/upvalue-capturing exports. Non-call value reads keep
 		// direct global loads so the optimizer never sees export placeholders as strings.
-		const constIndex = this.program.constIndexString(`exportproto:${slotName}`);
+		const constIndex = this.program.constIndexString(makeProgramExportProtoRelocText(slotName));
+		this.emitABx(OpCode.LOADK, target, constIndex);
+	}
+
+	private emitModuleSlotRelocLoad(slotName: string, target: number): void {
+		const constIndex = this.program.constIndexString(makeProgramModuleSlotRelocText(slotName));
 		this.emitABx(OpCode.LOADK, target, constIndex);
 	}
 
@@ -2854,14 +2835,6 @@ class FunctionBuilder {
 		this.emitTableSetConst(baseReg, keyConst, closureReg);
 	}
 
-	// Whether this module participates in the link-time export-symbol mechanism. Only
-	// cart-own modules do: the system/BIOS image runs raw, and external system modules
-	// re-compiled into a cart must also keep the original global-slot mechanism, since
-	// link-time export-proto placeholders would otherwise reach them unresolved.
-	private usesExportSymbols(): boolean {
-		return this.program.moduleExportsAsSymbols && !this.moduleCompileInfo?.external;
-	}
-
 	// The symbol handle of this module's exported namespace local: the local that the
 	// module returns (e.g. `room` in `return room`). null when the module does not
 	// return a bare local. Cached because it is consulted per export definition.
@@ -2885,7 +2858,7 @@ class FunctionBuilder {
 	// instead of a runtime global-slot load. No-op for anything that does not qualify.
 	private maybeRecordModuleExportProto(baseReference: LuaBoundReference | null, exportPath: ReadonlyArray<string>, protoId: string, protoIndex: number): boolean {
 		const moduleInfo = this.moduleCompileInfo;
-		if (!this.usesExportSymbols() || moduleInfo === undefined || !baseReference) {
+		if (moduleInfo === undefined || !baseReference) {
 			return false;
 		}
 		const baseHandle = getResolvedReferenceSymbolHandle(baseReference);
@@ -2973,23 +2946,10 @@ class FunctionBuilder {
 			this.emitMemoryLoad(target, structAddress.type.accessKind!, undefined, structAddress.baseReg, structAddress.byteOffset);
 			return;
 		}
-		/*
-			If a direct read targets a non-exported field on a compile-time-only module root,
-			emit a link-time placeholder (const string 'modslot:<slotName>') that the linker will
-			resolve into a GETGL/GETSYS instruction. Do not fabricate a runtime table.
-		 */
-		{
-			const binding = this.tryResolveStaticModuleBinding(expression.base, false);
-			if (binding && binding.external && binding.exportDepth === 0) {
-				const key = expression.identifier;
-				if (this.moduleCompileContext?.modulesByPath.get(binding.modulePath)?.exportSlotsByPathKey.get(key) === undefined) {
-					const slotName = buildModuleRootFieldSlotName(binding.modulePath, key);
-					const placeholder = `modslot:${slotName}`;
-					const constIndex = this.program.constIndexString(placeholder);
-					this.emitABx(OpCode.LOADK, target, constIndex);
-					return;
-				}
-			}
+		const rootFieldSlot = this.tryResolveExternalModuleRootFieldSlotName(expression.base, expression.identifier);
+		if (rootFieldSlot !== undefined) {
+			this.emitModuleSlotRelocLoad(rootFieldSlot, target);
+			return;
 		}
 		const baseReg = this.allocTemp();
 		this.compileExpressionInto(expression.base, baseReg, 1);
@@ -3008,22 +2968,13 @@ class FunctionBuilder {
 			this.emitMemoryLoad(target, structAddress.type.accessKind!, undefined, structAddress.baseReg, structAddress.byteOffset);
 			return;
 		}
-		/*
-			For index access on compile-time-only module roots, if the key is statically known and not
-			exported, emit a link-time placeholder so the linker can resolve it to a global slot.
-		 */
-		{
-				const keyStatic = extractTableKeyFromExpression((expression as LuaIndexExpression).index);
-			const binding = this.tryResolveStaticModuleBinding(expression.base, false);
-			if (keyStatic && binding && binding.external && binding.exportDepth === 0) {
-				if (this.moduleCompileContext?.modulesByPath.get(binding.modulePath)?.exportSlotsByPathKey.get(keyStatic) === undefined) {
-					const slotName = buildModuleRootFieldSlotName(binding.modulePath, keyStatic);
-					const placeholder = `modslot:${slotName}`;
-					const constIndex = this.program.constIndexString(placeholder);
-					this.emitABx(OpCode.LOADK, target, constIndex);
-					return;
-				}
-			}
+		const keyStatic = extractTableKeyFromExpression((expression as LuaIndexExpression).index);
+		const rootFieldSlot = keyStatic !== undefined
+			? this.tryResolveExternalModuleRootFieldSlotName(expression.base, keyStatic)
+			: undefined;
+		if (rootFieldSlot !== undefined) {
+			this.emitModuleSlotRelocLoad(rootFieldSlot, target);
+			return;
 		}
 		const targetPreparation = classifyAssignmentTargetPreparation(this.semantics, expression as LuaIndexExpression);
 		if (targetPreparation.kind === 'memory') {
@@ -4246,17 +4197,14 @@ function createProgramBuilderFromProgram(
 		const start = proto.entryPC;
 		const end = start + proto.codeLen;
 		const code = base.code.subarray(start, end);
-		const startWord = Math.floor(start / INSTRUCTION_BYTES);
-		const endWord = Math.floor(end / INSTRUCTION_BYTES);
+		const startWord = start / INSTRUCTION_BYTES;
+		const endWord = end / INSTRUCTION_BYTES;
 		const ranges: Array<SourceRange | null> = new Array(endWord - startWord);
 		for (let rangeIndex = startWord; rangeIndex < endWord; rangeIndex += 1) {
 			ranges[rangeIndex - startWord] = metadata.debugRanges[rangeIndex];
 		}
-		const localSlotsByProto = metadata.localSlotsByProto;
-		const localSlots = localSlotsByProto && localSlotsByProto[index]
-			? localSlotsByProto[index]
-			: EMPTY_LOCAL_SLOTS;
-		const upvalueNames = metadata.upvalueNamesByProto?.[index] ?? EMPTY_UPVALUE_NAMES;
+		const localSlots = metadata.localSlotsByProto[index];
+		const upvalueNames = metadata.upvalueNamesByProto[index];
 		builder.seedProto(proto, code, ranges, [], localSlots, upvalueNames, protoIds[index]);
 	}
 	return builder;
@@ -4282,7 +4230,6 @@ export function compileLuaChunkToProgram(chunk: LuaChunk, modules: ReadonlyArray
 	} else {
 		programBuilder = new ProgramBuilder(null, null, optLevel);
 	}
-	programBuilder.moduleExportsAsSymbols = options.enableExportSymbols === true;
 	const moduleId = chunk.range.path;
 	const entryProtoId = buildEntryProtoId(moduleId);
 	let entryProtoIndex = -1;
@@ -4359,20 +4306,18 @@ export function compileLuaChunkToProgram(chunk: LuaChunk, modules: ReadonlyArray
 	const { program, metadata, constRelocs } = programBuilder.buildProgram();
 
 	// Ensure module export slot names (built during module compile-info collection)
-	// are present in the program metadata so linkers can resolve 'modslot:' placeholders.
+	// are present in the program metadata so linkers can resolve module-slot placeholders.
 	// Externals (system ROM modules passed as externalModules) are treated as
 	// system globals so they are preferred when resolving placeholders.
-	if (metadata) {
-		for (const [, info] of moduleCompileContext.modulesByPath) {
-			for (const slotName of info.exportSlotsByPathKey.values()) {
-				if (info.external) {
-					if (!metadata.systemGlobalNames.includes(slotName)) {
-						metadata.systemGlobalNames.push(slotName);
-					}
-				} else {
-					if (!metadata.globalNames.includes(slotName)) {
-						metadata.globalNames.push(slotName);
-					}
+	for (const [, info] of moduleCompileContext.modulesByPath) {
+		for (const slotName of info.exportSlotsByPathKey.values()) {
+			if (info.external) {
+				if (!metadata.systemGlobalNames.includes(slotName)) {
+					metadata.systemGlobalNames.push(slotName);
+				}
+			} else {
+				if (!metadata.globalNames.includes(slotName)) {
+					metadata.globalNames.push(slotName);
 				}
 			}
 		}
@@ -4401,9 +4346,6 @@ export function appendLuaChunkToProgram(base: Program, programMetadata: ProgramM
 		throw new Error(buildCompileFailureMessage(semanticErrors));
 	}
 	const programBuilder = createProgramBuilderFromProgram(base, programMetadata, optLevel);
-	// Appended (hot-resume / runtime load) chunks keep the original slot mechanism: they
-	// are not re-linked, so link-time export-proto placeholders would not be resolved.
-	programBuilder.moduleExportsAsSymbols = false;
 	const compileErrors: CompileError[] = [];
 	const moduleId = chunk.range.path;
 	const entryProtoId = buildEntryProtoId(moduleId);

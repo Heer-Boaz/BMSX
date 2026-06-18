@@ -5,6 +5,11 @@ import type { CodeTabContext, ResourceDescriptor } from '../../machine/ts/ide/co
 import { splitText } from '../../machine/ts/common/text_lines';
 import { PieceTreeBuffer } from '../../machine/ts/ide/editor/text/piece_tree_buffer';
 import type { ProjectReferenceEnvironment } from '../../machine/ts/ide/editor/contrib/references/sources';
+import { LuaLexer } from '../../machine/ts/lua/syntax/lexer';
+import { LuaParser } from '../../machine/ts/lua/syntax/parser';
+import { CPU, RunResult, StringValue } from '../../machine/ts/machine/cpu/cpu';
+import { Memory } from '../../machine/ts/machine/memory/memory';
+import { compileLuaChunkToProgram } from '../../machine/ts/machine/program/compiler';
 
 const semanticFrontendModulePromise = import('../../machine/ts/lua/semantic/frontend');
 const semanticDiagnosticsModulePromise = import('../../machine/ts/lua/semantic/diagnostics');
@@ -13,6 +18,7 @@ const referenceSourcesModulePromise = import('../../machine/ts/ide/editor/contri
 const workspaceModulePromise = import('../../machine/ts/ide/editor/contrib/intellisense/semantic/workspace');
 const workspaceStateModulePromise = import('../../machine/ts/ide/editor/contrib/intellisense/semantic/workspace/state');
 const referenceNavigationModulePromise = import('../../machine/ts/ide/editor/contrib/references/lookup');
+const intellisenseEngineModulePromise = import('../../machine/ts/ide/editor/contrib/intellisense/engine');
 
 function runtimeStub(files: Record<string, string> = {}) {
 	const path2lua: Record<string, any> = {};
@@ -45,6 +51,10 @@ function runtimeStub(files: Record<string, string> = {}) {
 		},
 		cartLuaSources: null,
 		activeLuaSources: null,
+		resolveLuaSource(path: string) {
+			const record = path2lua[path] ?? module2lua[path];
+			return record ? { registry: this.systemLuaSources, record } : null;
+		},
 	} as any;
 }
 
@@ -74,6 +84,89 @@ function codeContext(descriptor: ResourceDescriptor, source: string): CodeTabCon
 		runtimeSyncState: 'synced',
 		runtimeSyncMessage: '',
 		textVersion: 1,
+	};
+}
+
+function parseLuaChunk(source: string, path: string) {
+	const lexer = new LuaLexer(source, path);
+	const tokens = lexer.scanTokens();
+	const parser = new LuaParser(tokens, path, splitText(source));
+	return parser.parseChunk();
+}
+
+function runtimeWithPausedCpuLocal(source: string) {
+	const sourcePath = 'cart.lua';
+	const modulePath = 'cart';
+	const compiled = compileLuaChunkToProgram(parseLuaChunk(source, modulePath), [], {
+		entrySource: source,
+		optLevel: 0,
+	});
+	const cpu = new CPU(new Memory({ systemRom: new Uint8Array(0) }));
+	cpu.setProgram(compiled.program, compiled.metadata);
+	cpu.start(compiled.entryProtoIndex);
+	assert.equal(cpu.runUntilDepth(0, 100), RunResult.Halted);
+	const record = {
+		resid: sourcePath,
+		type: 'lua',
+		src: source,
+		base_src: source,
+		source_path: sourcePath,
+		module_path: modulePath,
+		update_timestamp: 0,
+		base_update_timestamp: 0,
+	};
+	return {
+		runtime: {
+			programMetadata: compiled.metadata,
+			machine: { cpu },
+			interpreter: {
+				globalEnvironment: new Map(),
+				lastFaultEnvironment: null,
+				resolveValueName: () => null,
+				getOrCreateNativeValue: () => {
+					throw new Error('unexpected native value in intellisense live-local test');
+				},
+			},
+			workbenchFaultState: { faultSnapshot: null, lastCpuFaultSnapshot: [] },
+			luaChunkEnvironmentsByPath: new Map(),
+			currentPath: null,
+			luaBuiltinMetadata: new Map(),
+			nativeMemberCompletionCache: new WeakMap(),
+			pathSemanticCache: new Map(),
+			cartLuaSources: {
+				path2lua: { [sourcePath]: record },
+				module2lua: { [modulePath]: record },
+				entry_path: sourcePath,
+				namespace: 'tests',
+				projectRootPath: '',
+				can_boot_from_source: true,
+			},
+			activeLuaSources: null,
+			systemLuaSources: {
+				path2lua: {},
+				module2lua: {},
+				entry_path: '',
+				namespace: 'system',
+				projectRootPath: '',
+				can_boot_from_source: false,
+			},
+			resolveLuaSourceRecord(path: string) {
+				if (path === sourcePath || path === modulePath) {
+					return record;
+				}
+				return null;
+			},
+			resolveLuaSource(path: string) {
+				if (path === sourcePath || path === modulePath) {
+					return { registry: this.cartLuaSources, record };
+				}
+				return null;
+			},
+			internString(value: string) {
+				return StringValue.get(cpu.stringPool.intern(value));
+			},
+		} as any,
+		sourcePath,
 	};
 }
 
@@ -152,6 +245,31 @@ test('intellisense recognizes shared runtime globals without false positives', a
 		{ builtinDescriptors: getDefaultLuaBuiltinDescriptors() },
 	).getFile('testpath').diagnostics;
 	assert.equal(diagnostics.length, 0);
+});
+
+test('intellisense live locals resolve editor source paths against CPU module paths', async () => {
+	const { resolveLuaChainValue, resolveLuaDefinitionMetadata } = await intellisenseEngineModulePromise;
+	const source = [
+		'local counter = 42',
+		'halt_until_irq',
+		'return counter',
+	].join('\n');
+	const { runtime, sourcePath } = runtimeWithPausedCpuLocal(source);
+	const counterColumn = source.indexOf('counter') + 1;
+
+	const resolved = resolveLuaChainValue(runtime, ['counter'], sourcePath, 1, counterColumn);
+	assert.ok(resolved);
+	assert.equal(resolved.kind, 'value');
+	if (resolved.kind !== 'value') {
+		return;
+	}
+	assert.equal(resolved.value, 42);
+
+	const definition = resolveLuaDefinitionMetadata(runtime, resolved.value, resolved.definitionRange);
+	assert.ok(definition);
+	assert.equal(definition.path, sourcePath);
+	assert.equal(definition.range.startLine, 1);
+	assert.equal(definition.range.startColumn, counterColumn);
 });
 
 test('intellisense preserves shadowed local bindings during workspace retargeting', async () => {

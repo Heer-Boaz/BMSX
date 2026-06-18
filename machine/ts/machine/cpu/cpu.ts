@@ -274,15 +274,15 @@ export function isNativeObject(value: Value): value is NativeObject {
 export type ProgramMetadata = {
 	debugRanges: ReadonlyArray<SourceRange | null>;
 	protoIds: string[];
-	localSlotsByProto?: ReadonlyArray<ReadonlyArray<LocalSlotDebug>>;
-	upvalueNamesByProto?: ReadonlyArray<ReadonlyArray<string>>;
+	localSlotsByProto: ReadonlyArray<ReadonlyArray<LocalSlotDebug>>;
+	upvalueNamesByProto: ReadonlyArray<ReadonlyArray<string>>;
 	globalNames: string[];
 	systemGlobalNames: string[];
 	// BLua module exports: maps a module export slot name (e.g. "foo__update") to the
 	// proto id of the exported function, but ONLY for static closures (no upvalues).
 	// The linker uses this to resolve an export reference directly to that proto (a
 	// link-time symbol / static closure) instead of a runtime global-slot load.
-	exportProtoIdBySlot?: { [slotName: string]: string };
+	exportProtoIdBySlot: { [slotName: string]: string };
 };
 
 export type CpuFrameSnapshot = {
@@ -1792,7 +1792,7 @@ export class CPU {
 
 	private decodeProgram(program: Program): void {
 		const code = program.code;
-		const instructionCount = Math.floor(code.length / INSTRUCTION_BYTES);
+		const instructionCount = code.length / INSTRUCTION_BYTES;
 		const decodedWidths = new Uint8Array(instructionCount);
 		const decodedOps = new Uint8Array(instructionCount);
 		const decodedA = new Uint16Array(instructionCount);

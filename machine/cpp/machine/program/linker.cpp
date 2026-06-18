@@ -16,6 +16,14 @@ struct MergedNamedSlots {
 	std::vector<int> cartRemap;
 };
 
+bool relocRequiresSymbolMetadata(const ProgramConstReloc& reloc) {
+	return reloc.kind == ProgramConstRelocKind::Module || reloc.kind == ProgramConstRelocKind::ExportProto;
+}
+
+bool cartRelocRequiresMetadata(const ProgramConstReloc& reloc) {
+	return relocRequiresSymbolMetadata(reloc) || reloc.kind == ProgramConstRelocKind::Gl || reloc.kind == ProgramConstRelocKind::Sys;
+}
+
 // disable-next-line single_line_method_pattern -- WIDE is the named prefix encoder used by relocation rewriting.
 void writeWideInstruction(std::vector<uint8_t>& code, int index, uint8_t a, uint8_t b, uint8_t c) {
 	writeInstruction(code, index, static_cast<uint8_t>(OpCode::WIDE), a, b, c);
@@ -305,20 +313,19 @@ void rewriteClosureIndices(std::vector<uint8_t>& code, int protoOffset) {
 	}
 }
 
-void rewriteConstRelocations(
+void rewriteConstPoolRelocations(
 	std::vector<uint8_t>& code,
 	const std::vector<ProgramConstReloc>& relocs,
-	const std::vector<int>& cartConstRemap,
-	const std::vector<int>& cartGlobalRemap,
-	const std::vector<int>& cartSystemGlobalRemap,
-	const std::vector<EncodedValue>& mergedConstValues,
-	const std::vector<std::string>& mergedGlobalNames,
-	const std::vector<std::string>& mergedSystemGlobalNames,
-	const std::unordered_map<std::string, std::string>& exportProtoIdBySlot,
-	const std::vector<std::string>& mergedProtoIds
+	const std::vector<int>& cartConstRemap
 ) {
 	for (size_t i = 0; i < relocs.size(); ++i) {
 		const ProgramConstReloc& reloc = relocs[i];
+		if (reloc.kind == ProgramConstRelocKind::Module
+			|| reloc.kind == ProgramConstRelocKind::ExportProto
+			|| reloc.kind == ProgramConstRelocKind::Gl
+			|| reloc.kind == ProgramConstRelocKind::Sys) {
+			continue;
+		}
 		const int wordIndex = reloc.wordIndex;
 		uint32_t word = readInstructionWord(code, wordIndex);
 		uint8_t op = static_cast<uint8_t>((word >> 18) & 0x3f);
@@ -338,103 +345,9 @@ void rewriteConstRelocations(
 		uint8_t cLow = static_cast<uint8_t>(word & 0x3f);
 		uint8_t ext = static_cast<uint8_t>(word >> 24);
 
-		const int mappedIndex = reloc.kind == ProgramConstRelocKind::Gl
-			? cartGlobalRemap[static_cast<size_t>(reloc.constIndex)]
-			: reloc.kind == ProgramConstRelocKind::Sys
-				? cartSystemGlobalRemap[static_cast<size_t>(reloc.constIndex)]
-				: cartConstRemap[static_cast<size_t>(reloc.constIndex)];
+		const int mappedIndex = cartConstRemap[static_cast<size_t>(reloc.constIndex)];
 
-		// Handle module-placeholder relocations emitted by the TS compiler.
-		// These store a string sentinel in the merged const pool of the form
-		// "modslot:<slotName>". Resolve that string to a merged global/system
-		// global slot index and rewrite the instruction into GETSYS/GETGL.
-		if (reloc.kind == ProgramConstRelocKind::Module) {
-			if (mappedIndex < 0 || static_cast<size_t>(mappedIndex) >= mergedConstValues.size()) {
-				throw std::runtime_error("[ProgramLinker] Module const index out of range.");
-			}
-			const EncodedValue& cv = mergedConstValues[static_cast<size_t>(mappedIndex)];
-			const auto* moduleSlotValue = std::get_if<std::string>(&cv);
-			if (!moduleSlotValue) {
-				throw std::runtime_error("[ProgramLinker] Module reloc must refer to a string const.");
-			}
-			const std::string& text = *moduleSlotValue;
-			const std::string prefix = "modslot:";
-			std::string slotName = text;
-			if (text.rfind(prefix, 0) == 0) {
-				slotName = text.substr(prefix.size());
-			}
-			const ResolvedExportSlot resolvedSlot = resolveLinkedExportSlot(slotName, mergedGlobalNames, mergedSystemGlobalNames);
-			const int foundIndex = resolvedSlot.slot;
-			// disable-next-line repeated_statement_sequence_pattern -- module and direct Bx relocations encode the same operand shape with different source indices.
-			const uint32_t nextWide = static_cast<uint32_t>(foundIndex) >> (MAX_BX_BITS + EXT_BX_BITS);
-			if (!hasWide && nextWide != 0) {
-				throw std::runtime_error("[ProgramLinker] Const reloc requires WIDE prefix.");
-			}
-			const uint8_t nextExt = static_cast<uint8_t>((static_cast<uint32_t>(foundIndex) >> MAX_BX_BITS) & 0xff);
-			const uint16_t nextLow = static_cast<uint16_t>(static_cast<uint32_t>(foundIndex) & MAX_LOW_BX);
-			bLow = static_cast<uint8_t>((nextLow >> 6) & 0x3f);
-			cLow = static_cast<uint8_t>(nextLow & 0x3f);
-			ext = nextExt;
-			op = static_cast<uint8_t>(resolvedSlot.op);
-			if (hasWide) {
-				// disable-next-line repeated_statement_sequence_pattern -- WIDE-B rewrite mirrors direct Bx relocation encoding by instruction ABI.
-				wideB = static_cast<uint8_t>(nextWide & 0x3f);
-				writeWideInstruction(code, wordIndex - 1, wideA, wideB, wideC);
-			}
-			writeInstruction(code, wordIndex, op, aLow, bLow, cLow, ext);
-			continue;
-		}
-
-		if (reloc.kind == ProgramConstRelocKind::ExportProto) {
-			if (mappedIndex < 0 || static_cast<size_t>(mappedIndex) >= mergedConstValues.size()) {
-				throw std::runtime_error("[ProgramLinker] export_proto const index out of range.");
-			}
-			const EncodedValue& cv = mergedConstValues[static_cast<size_t>(mappedIndex)];
-			const auto* exportSlotValue = std::get_if<std::string>(&cv);
-			if (!exportSlotValue) {
-				throw std::runtime_error("[ProgramLinker] export_proto reloc must refer to a string const.");
-			}
-			const std::string prefix = "exportproto:";
-			std::string slotName = *exportSlotValue;
-			if (slotName.rfind(prefix, 0) == 0) {
-				slotName = slotName.substr(prefix.size());
-			}
-			uint8_t targetOp = static_cast<uint8_t>(OpCode::GETGL);
-			int targetIndex = -1;
-			const auto protoIt = exportProtoIdBySlot.find(slotName);
-			if (protoIt != exportProtoIdBySlot.end()) {
-				const auto protoFound = std::find(mergedProtoIds.begin(), mergedProtoIds.end(), protoIt->second);
-				if (protoFound == mergedProtoIds.end()) {
-					throw std::runtime_error("[ProgramLinker] export_proto reloc cannot resolve proto '" + protoIt->second + "' for slot '" + slotName + "'.");
-				}
-				targetIndex = static_cast<int>(protoFound - mergedProtoIds.begin());
-				targetOp = static_cast<uint8_t>(OpCode::CLOSURE);
-			} else {
-				const ResolvedExportSlot resolvedSlot = resolveLinkedExportSlot(slotName, mergedGlobalNames, mergedSystemGlobalNames);
-				targetIndex = resolvedSlot.slot;
-				targetOp = static_cast<uint8_t>(resolvedSlot.op);
-			}
-			const uint32_t nextWide = static_cast<uint32_t>(targetIndex) >> (MAX_BX_BITS + EXT_BX_BITS);
-			if (!hasWide && nextWide != 0) {
-				throw std::runtime_error("[ProgramLinker] Const reloc requires WIDE prefix.");
-			}
-			const uint8_t nextExt = static_cast<uint8_t>((static_cast<uint32_t>(targetIndex) >> MAX_BX_BITS) & 0xff);
-			const uint16_t nextLow = static_cast<uint16_t>(static_cast<uint32_t>(targetIndex) & MAX_LOW_BX);
-			bLow = static_cast<uint8_t>((nextLow >> 6) & 0x3f);
-			cLow = static_cast<uint8_t>(nextLow & 0x3f);
-			ext = nextExt;
-			op = targetOp;
-			if (hasWide) {
-				wideB = static_cast<uint8_t>(nextWide & 0x3f);
-				writeWideInstruction(code, wordIndex - 1, wideA, wideB, wideC);
-			}
-			writeInstruction(code, wordIndex, op, aLow, bLow, cLow, ext);
-			continue;
-		}
-
-		if (reloc.kind == ProgramConstRelocKind::Bx
-			|| reloc.kind == ProgramConstRelocKind::Gl
-			|| reloc.kind == ProgramConstRelocKind::Sys) {
+		if (reloc.kind == ProgramConstRelocKind::Bx) {
 			// disable-next-line repeated_statement_sequence_pattern -- direct Bx relocations share operand encoding with module slot rewrites by ABI contract.
 			const uint32_t nextWide = static_cast<uint32_t>(mappedIndex) >> (MAX_BX_BITS + EXT_BX_BITS);
 			if (!hasWide && nextWide != 0) {
@@ -518,6 +431,61 @@ void rewriteConstRelocations(
 	}
 }
 
+void rewriteNamedSlotRelocations(
+	std::vector<uint8_t>& code,
+	const std::vector<ProgramConstReloc>& relocs,
+	const std::vector<int>& cartGlobalRemap,
+	const std::vector<int>& cartSystemGlobalRemap
+) {
+	for (const ProgramConstReloc& reloc : relocs) {
+		if (reloc.kind != ProgramConstRelocKind::Gl && reloc.kind != ProgramConstRelocKind::Sys) {
+			continue;
+		}
+		const uint32_t word = readInstructionWord(code, reloc.wordIndex);
+		const OpCode op = static_cast<OpCode>((word >> 18) & 0x3f);
+		const int mappedIndex = reloc.kind == ProgramConstRelocKind::Gl
+			? cartGlobalRemap[static_cast<size_t>(reloc.constIndex)]
+			: cartSystemGlobalRemap[static_cast<size_t>(reloc.constIndex)];
+		writeResolvedABx(code, reloc.wordIndex, op, mappedIndex);
+	}
+}
+
+void rewriteSymbolicConstRelocations(
+	std::vector<uint8_t>& code,
+	const std::vector<ProgramConstReloc>& relocs,
+	const std::vector<EncodedValue>& constValues,
+	const std::vector<std::string>& globalNames,
+	const std::vector<std::string>& systemGlobalNames,
+	const std::unordered_map<std::string, std::string>& exportProtoIdBySlot,
+	const std::vector<std::string>& protoIds
+) {
+	for (const ProgramConstReloc& reloc : relocs) {
+		if (reloc.kind != ProgramConstRelocKind::Module && reloc.kind != ProgramConstRelocKind::ExportProto) {
+			continue;
+		}
+		const EncodedValue& cv = constValues[static_cast<size_t>(reloc.constIndex)];
+		const auto* text = std::get_if<std::string>(&cv);
+		if (!text) {
+			throw std::runtime_error("[ProgramLinker] symbolic reloc must refer to a string const.");
+		}
+		if (reloc.kind == ProgramConstRelocKind::Module) {
+			const std::string slotName(parseProgramModuleSlotRelocText(*text));
+			const ResolvedExportSlot resolvedSlot = resolveLinkedExportSlot(slotName, globalNames, systemGlobalNames);
+			writeResolvedABx(code, reloc.wordIndex, resolvedSlot.op, resolvedSlot.slot);
+			continue;
+		}
+		const std::string slotName(parseProgramExportProtoRelocText(*text));
+		const ResolvedExportProtoTarget target = resolveExportProtoRelocTarget(
+			slotName,
+			globalNames,
+			systemGlobalNames,
+			exportProtoIdBySlot,
+			protoIds
+		);
+		writeResolvedABx(code, reloc.wordIndex, target.op, target.value);
+	}
+}
+
 std::unique_ptr<ProgramMetadata> mergeMetadata(
 	const ProgramMetadata* system,
 	const ProgramMetadata* cart,
@@ -578,6 +546,10 @@ std::unique_ptr<ProgramMetadata> mergeMetadata(
 	const MergedNamedSlots globalNames = mergeNamedSlots(system->globalNames, cart->globalNames);
 	merged->systemGlobalNames = systemGlobalNames.names;
 	merged->globalNames = globalNames.names;
+	merged->exportProtoIdBySlot = system->exportProtoIdBySlot;
+	for (const auto& entry : cart->exportProtoIdBySlot) {
+		merged->exportProtoIdBySlot[entry.first] = entry.second;
+	}
 	return merged;
 }
 
@@ -598,20 +570,12 @@ void resolveRuntimeProgramRelocations(
 		}
 		const std::string& constText = program.constPoolStringPool->toString(static_cast<StringId>(valuePayload(value)));
 		if (reloc.kind == ProgramConstRelocKind::Module) {
-			const std::string prefix = "modslot:";
-			std::string slotName = constText;
-			if (constText.rfind(prefix, 0) == 0) {
-				slotName = constText.substr(prefix.size());
-			}
+			const std::string slotName(parseProgramModuleSlotRelocText(constText));
 			const ResolvedExportSlot resolvedSlot = resolveLinkedExportSlot(slotName, metadata.globalNames, metadata.systemGlobalNames);
 			writeResolvedABx(program.code, reloc.wordIndex, resolvedSlot.op, resolvedSlot.slot);
 			continue;
 		}
-		const std::string prefix = "exportproto:";
-		std::string slotName = constText;
-		if (slotName.rfind(prefix, 0) == 0) {
-			slotName = slotName.substr(prefix.size());
-		}
+		const std::string slotName(parseProgramExportProtoRelocText(constText));
 		const ResolvedExportProtoTarget target = resolveExportProtoRelocTarget(
 			slotName,
 			metadata.globalNames,
@@ -632,12 +596,13 @@ void resolveRuntimeProgramRelocations(
 	- The compiler enforces that these compile-time modules are not treated as runtime values and
 		validates/lowers their uses accordingly (for example rejecting `local m = require('bios')`).
 		When the compiler cannot resolve an export it emits an explicit link-time placeholder into the
-		instruction stream (the current implementation uses a nil-load sentinel).
+		instruction stream (loader-owned relocation text in a const operand).
 	- The linker MUST detect and resolve these placeholders: replace placeholder loads with the
 		appropriate relocated operand, slot access, or machine-level instruction. It must not leave
-		placeholders as runtime `nil` values or fabricate high-level Lua tables.
-	- `rewriteClosureIndices` and `rewriteConstRelocations` update indices and operand fields and must
-		preserve encoding semantics when rewriting the linked buffer.
+		placeholders as runtime values or fabricate high-level Lua tables.
+	- `rewriteClosureIndices`, `rewriteConstPoolRelocations`, and `rewriteNamedSlotRelocations`
+		update indices and operand fields and must preserve encoding semantics when rewriting the
+		linked buffer.
 
 */
 
@@ -659,38 +624,62 @@ LinkedProgramImage linkProgramImages(
 	const int systemProtoCount = static_cast<int>(systemProtoSize);
 	ProgramLayout layout = resolveProgramLayout(systemCodeBytes, systemBasePc, cartBasePc);
 
+	std::vector<uint8_t> systemCode = systemText.code;
 	std::vector<uint8_t> cartCode = cartText.code;
 	rewriteClosureIndices(cartCode, systemProtoCount);
 
 	ProgramObjectSections linkedSections;
 	MergedConstPool merged = mergeConstPools(systemRodata, cartRodata);
-	const MergedNamedSlots mergedSystemGlobals = mergeNamedSlots(
-		systemSymbols ? systemSymbols->systemGlobalNames : std::vector<std::string>{},
-		cartSymbols ? cartSymbols->systemGlobalNames : std::vector<std::string>{}
-	);
-	const MergedNamedSlots mergedGlobals = mergeNamedSlots(
-		systemSymbols ? systemSymbols->globalNames : std::vector<std::string>{},
-		cartSymbols ? cartSymbols->globalNames : std::vector<std::string>{}
-	);
-	std::vector<std::string> mergedProtoIds;
-	if (systemSymbols) {
-		mergedProtoIds.insert(mergedProtoIds.end(), systemSymbols->protoIds.begin(), systemSymbols->protoIds.end());
+	const bool systemNeedsSymbols = std::any_of(systemImage.link.constRelocs.begin(), systemImage.link.constRelocs.end(), relocRequiresSymbolMetadata);
+	const bool cartNeedsSymbols = std::any_of(cartImage.link.constRelocs.begin(), cartImage.link.constRelocs.end(), relocRequiresSymbolMetadata);
+	const bool cartNeedsMetadata = std::any_of(cartImage.link.constRelocs.begin(), cartImage.link.constRelocs.end(), cartRelocRequiresMetadata);
+	if ((systemNeedsSymbols || cartNeedsMetadata) && !systemSymbols) {
+		throw std::runtime_error("[ProgramLinker] Missing system symbols metadata required to resolve relocations.");
 	}
-	if (cartSymbols) {
-		mergedProtoIds.insert(mergedProtoIds.end(), cartSymbols->protoIds.begin(), cartSymbols->protoIds.end());
+	if (cartNeedsMetadata && !cartSymbols) {
+		throw std::runtime_error("[ProgramLinker] Missing cart symbols metadata required to resolve cart relocations.");
 	}
-	rewriteConstRelocations(
+	if (systemNeedsSymbols) {
+		rewriteSymbolicConstRelocations(
+			systemCode,
+			systemImage.link.constRelocs,
+			systemRodata.constPool,
+			systemSymbols->globalNames,
+			systemSymbols->systemGlobalNames,
+			systemSymbols->exportProtoIdBySlot,
+			systemSymbols->protoIds
+		);
+	}
+	rewriteConstPoolRelocations(
 		cartCode,
 		cartImage.link.constRelocs,
-		merged.cartRemap,
-		mergedGlobals.cartRemap,
-		mergedSystemGlobals.cartRemap,
-		merged.values,
-		mergedGlobals.names,
-		mergedSystemGlobals.names,
-		cartSymbols ? cartSymbols->exportProtoIdBySlot : std::unordered_map<std::string, std::string>{},
-		mergedProtoIds
+		merged.cartRemap
 	);
+	if (cartNeedsMetadata) {
+		const MergedNamedSlots mergedSystemGlobals = mergeNamedSlots(systemSymbols->systemGlobalNames, cartSymbols->systemGlobalNames);
+		const MergedNamedSlots mergedGlobals = mergeNamedSlots(systemSymbols->globalNames, cartSymbols->globalNames);
+		rewriteNamedSlotRelocations(
+			cartCode,
+			cartImage.link.constRelocs,
+			mergedGlobals.cartRemap,
+			mergedSystemGlobals.cartRemap
+		);
+		if (cartNeedsSymbols) {
+			std::vector<std::string> mergedProtoIds;
+			mergedProtoIds.reserve(systemSymbols->protoIds.size() + cartSymbols->protoIds.size());
+			mergedProtoIds.insert(mergedProtoIds.end(), systemSymbols->protoIds.begin(), systemSymbols->protoIds.end());
+			mergedProtoIds.insert(mergedProtoIds.end(), cartSymbols->protoIds.begin(), cartSymbols->protoIds.end());
+			rewriteSymbolicConstRelocations(
+				cartCode,
+				cartImage.link.constRelocs,
+				cartRodata.constPool,
+				mergedGlobals.names,
+				mergedSystemGlobals.names,
+				cartSymbols->exportProtoIdBySlot,
+				mergedProtoIds
+			);
+		}
+	}
 	linkedSections.rodata.constPool = std::move(merged.values);
 
 	linkedSections.text.protos.reserve(systemProtoSize + cartText.protos.size());
@@ -705,7 +694,7 @@ LinkedProgramImage linkProgramImages(
 
 	const int totalBytes = std::max(layout.systemBasePc + systemCodeBytes, layout.cartBasePc + cartCodeBytes);
 	linkedSections.text.code.assign(static_cast<size_t>(totalBytes), 0);
-	std::copy(systemText.code.begin(), systemText.code.end(), linkedSections.text.code.begin() + layout.systemBasePc);
+	std::copy(systemCode.begin(), systemCode.end(), linkedSections.text.code.begin() + layout.systemBasePc);
 	std::copy(cartCode.begin(), cartCode.end(), linkedSections.text.code.begin() + layout.cartBasePc);
 	writeInstructionWord(linkedSections.text.code, CART_PROGRAM_VECTOR_PC / INSTRUCTION_BYTES, CART_PROGRAM_VECTOR_VALUE);
 

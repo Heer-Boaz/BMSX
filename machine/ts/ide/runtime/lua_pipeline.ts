@@ -61,7 +61,7 @@ export function markSourceChunkAsDirty(runtime: Runtime, path: string): void {
 	runtime.luaGenericChunksExecuted.delete(path);
 }
 
-export function resetLuaInteroperabilityState(runtime: Runtime): void {
+function resetLuaInteroperabilityState(runtime: Runtime): void {
 	runtime.luaGenericChunksExecuted.clear();
 	resetHandledLuaErrors(runtime);
 	runtime.luaFunctionRedirectCache.clear();
@@ -87,7 +87,7 @@ export function resetHardwareState(runtime: Runtime): void {
 	runtime.vblank.reset();
 }
 
-export function describeSymbolValue(value: Value): { kind: SymbolKind; valueType: string } {
+function describeSymbolValue(value: Value): { kind: SymbolKind; valueType: string } {
 	if (value === null) {
 		return { kind: 'constant', valueType: 'nil' };
 	}
@@ -174,7 +174,7 @@ export function listSymbols(runtime: Runtime): SymbolEntry[] {
 	return Array.from(symbolsByName.values());
 }
 
-export function resolveProgramImageSourceFor(runtime: Runtime, source: 'system' | 'cart'): RawRomSource {
+function resolveProgramImageSourceFor(runtime: Runtime, source: 'system' | 'cart'): RawRomSource {
 	if (source === 'system') {
 		if (!runtime.systemRomSource) {
 			throw new Error('system ROM source is not configured.');
@@ -187,7 +187,7 @@ export function resolveProgramImageSourceFor(runtime: Runtime, source: 'system' 
 	return runtime.cartRomSource;
 }
 
-export function loadProgramImagesForSource(runtime: Runtime, source: 'system' | 'cart'): { program: ProgramImage; symbols: ProgramSymbolsImage | null } {
+function loadProgramImagesForSource(runtime: Runtime, source: 'system' | 'cart'): { program: ProgramImage; symbols: ProgramSymbolsImage | null } {
 	const romSource = resolveProgramImageSourceFor(runtime, source);
 	const programEntry = romSource.getEntry(PROGRAM_IMAGE_ID);
 	if (!programEntry) {
@@ -253,7 +253,6 @@ function compileRegistryProgramImage(
 	registry: LuaSourceRegistry,
 	interpreter: LuaInterpreter,
 	externalModules: ReadonlyArray<{ path: string; chunk: LuaChunk; source: string }> = [],
-	enableExportSymbols = false,
 ): { image: ProgramImage; symbols: ProgramSymbolsImage; entryPath: string; modules: Array<{ path: string; chunk: LuaChunk; source: string }> } {
 	const entryRecord = resolveLuaSourceRecord(registry, registry.entry_path);
 	if (entryRecord === null) {
@@ -267,10 +266,6 @@ function compileRegistryProgramImage(
 		optLevel: runtime.realtimeCompileOptLevel,
 		entrySource,
 		externalModules,
-		// Only the cart image may use link-time export symbols: it is the cart relocs
-		// that linkProgramImages() rewrites. The system image is placed raw, so it must
-		// keep the original global-slot mechanism.
-		enableExportSymbols,
 	});
 	return {
 		image: programImageFromCompiled(compiled),
@@ -291,7 +286,7 @@ function bootSystemSourceProgram(runtime: Runtime, interpreter: LuaInterpreter, 
 	let cartProgramImage: ProgramImage | null = null;
 	let cartSymbols: ProgramSymbolsImage | null = null;
 	if (runtime.cartLuaSources?.can_boot_from_source) {
-		const cart = compileRegistryProgramImage(runtime, runtime.cartLuaSources, interpreter, system.modules, true);
+		const cart = compileRegistryProgramImage(runtime, runtime.cartLuaSources, interpreter, system.modules);
 		cartProgramImage = cart.image;
 		cartSymbols = cart.symbols;
 	} else if (runtime.cartRomSource && runtime.cartRomSource.getEntry(PROGRAM_IMAGE_ID)) {
@@ -313,13 +308,15 @@ function bootSystemSourceProgram(runtime: Runtime, interpreter: LuaInterpreter, 
 		resetRuntimeState(runtime);
 	}
 	installProgramModules(runtime, buildModuleProtoMap(programImage.sections.rodata.moduleProtos));
-	const prelude = runSystemBuiltinPrelude(runtime, inflateProgram(programImage.sections), metadata);
+	const program = inflateProgram(programImage.sections);
+	resolveRuntimeProgramRelocations(program, metadata, programImage.link.constRelocs);
+	const prelude = runSystemBuiltinPrelude(runtime, program, metadata);
 	runtime.programMetadata = prelude.metadata;
 	runtime.startLoadedProgram(entryProtoIndex, staticModulePaths, options?.runInit !== false, true);
 	return true;
 }
 
-export function bootProgramImage(runtime: Runtime, options?: { preserveState?: boolean; runInit?: boolean }): boolean {
+function bootProgramImage(runtime: Runtime, options?: { preserveState?: boolean; runInit?: boolean }): boolean {
 	const bootingCart = runtime.cartProgramStarted;
 	const systemImages = loadProgramImagesForSource(runtime, 'system');
 	let programImage = systemImages.program;
@@ -357,6 +354,12 @@ export function bootProgramImage(runtime: Runtime, options?: { preserveState?: b
 	installProgramModules(runtime, protoMap);
 
 	const inflated = inflateProgram(programImage.sections);
+	if (programImage.link.constRelocs.length > 0) {
+		if (metadata === null) {
+			throw new Error('program image relocations require metadata.');
+		}
+		resolveRuntimeProgramRelocations(inflated, metadata, programImage.link.constRelocs);
+	}
 	try {
 		runtime.machine.cpu.setProgram(inflated, metadata);
 		runtime.programMetadata = metadata;
@@ -376,7 +379,7 @@ export function bootActiveProgram(runtime: Runtime, options?: { preserveState?: 
 		: bootProgramImage(runtime, options);
 }
 
-export function bootLuaProgram(runtime: Runtime, options?: { preserveState?: boolean; sourceOverride?: { path: string; source: string } }): boolean {
+function bootLuaProgram(runtime: Runtime, options?: { preserveState?: boolean; sourceOverride?: { path: string; source: string } }): boolean {
 	const entryRecord = resolveLuaSourceRecord(runtime.activeLuaSources, runtime.activeLuaSources.entry_path);
 	runtime.cartEntryAvailable = entryRecord !== null;
 
@@ -405,15 +408,11 @@ export function bootLuaProgram(runtime: Runtime, options?: { preserveState?: boo
 		const entryModulePath = options?.sourceOverride ? toLuaModulePath(entryPath) : path;
 		const entryChunk = interpreter.compileChunk(entrySource, entryPath);
 		const { modules } = buildModuleChunks(runtime, entryModulePath);
-		const enableExportSymbols = runtime.activeLuaSources === runtime.cartLuaSources;
 		const { program, metadata, entryProtoIndex, moduleProtoMap, staticModulePaths, constRelocs } = compileLuaChunkToProgram(entryChunk, modules, {
 			optLevel: runtime.realtimeCompileOptLevel,
 			entrySource,
-			enableExportSymbols,
 		});
-		if (enableExportSymbols) {
-			resolveRuntimeProgramRelocations(program, metadata, constRelocs);
-		}
+		resolveRuntimeProgramRelocations(program, metadata, constRelocs);
 		installProgramModules(runtime, moduleProtoMap);
 		const prelude = runSystemBuiltinPrelude(runtime, program, metadata);
 		runtime.programMetadata = prelude.metadata;
@@ -444,7 +443,7 @@ export function listLuaSourceRegistries(runtime: Runtime): LuaSourceRegistry[] {
 	return registries;
 }
 
-export function resolveModuleRegistries(runtime: Runtime): LuaSourceRegistry[] {
+function resolveModuleRegistries(runtime: Runtime): LuaSourceRegistry[] {
 	const registries: LuaSourceRegistry[] = [];
 	if (runtime.activeLuaSources) {
 		registries.push(runtime.activeLuaSources);
@@ -461,7 +460,7 @@ export function refreshLuaHandlersForChunk(runtime: Runtime, path: string, sourc
 	clearEditorCompletionCache(runtime);
 }
 
-export function reloadGenericLuaChunk(runtime: Runtime, path: string, sourceOverride?: string): void {
+function reloadGenericLuaChunk(runtime: Runtime, path: string, sourceOverride?: string): void {
 	const source = sourceOverride ?? resourceSourceForChunk(runtime, path);
 	runtime.interpreter.compileChunk(source, path);
 	runtime.luaGenericChunksExecuted.add(path);

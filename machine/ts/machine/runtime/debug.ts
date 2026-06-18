@@ -130,18 +130,18 @@ function resolveRootExpressionValue(
 ): { found: boolean; value: Value } {
 	const cpu = runtime.machine.cpu;
 	const metadata = runtime.programMetadata;
-	const slots = metadata?.localSlotsByProto?.[protoIndex];
-	if (slots && slots.length > 0) {
-		const slot = selectLocalSlot(slots, rootName, range);
-		if (slot) {
-			return {
-				found: true,
-				value: slot.register < registers.length ? registers[slot.register] : cpu.readFrameRegister(frameIndex, slot.register),
-			};
+	if (metadata) {
+		const slots = metadata.localSlotsByProto[protoIndex];
+		if (slots.length > 0) {
+			const slot = selectLocalSlot(slots, rootName, range);
+			if (slot) {
+				return {
+					found: true,
+					value: slot.register < registers.length ? registers[slot.register] : cpu.readFrameRegister(frameIndex, slot.register),
+				};
+			}
 		}
-	}
-	const upvalueNames = metadata?.upvalueNamesByProto?.[protoIndex];
-	if (upvalueNames) {
+		const upvalueNames = metadata.upvalueNamesByProto[protoIndex];
 		const upvalueIndex = upvalueNames.indexOf(rootName);
 		if (upvalueIndex >= 0 && cpu.hasFrameUpvalue(frameIndex, upvalueIndex)) {
 			return { found: true, value: cpu.readFrameUpvalue(frameIndex, upvalueIndex) };

@@ -1,7 +1,7 @@
 import { glsl } from "esbuild-plugin-glsl";
 // @ts-ignore
 import type { Stats } from 'fs';
-import { CART_ROM_HEADER_SIZE, CART_ROM_MAGIC_BYTES } from '../../machine/ts/rompack/format';
+import { CART_ROM_HEADER_SIZE, CART_ROM_MAGIC_BYTES, PROGRAM_BOOT_HEADER_VERSION } from '../../machine/ts/rompack/format';
 import type { asset_type, AudioMeta, BoundingBoxPrecalc, GLTFMesh, HitPolygonsPrecalc, ImgMeta, Polygon, RectBounds, RomAsset, RomManifest, vec2arr } from '../../machine/ts/rompack/format';
 import { SYSTEM_BOOT_ENTRY_PATH } from '../../machine/ts/core/system';
 import { encodeRomToc } from '../../machine/ts/rompack/tooling/toc_encode';
@@ -45,8 +45,6 @@ const { compileLuaChunkToProgram, isLuaCompileError } = require('../../machine/t
 const {
 	PROGRAM_IMAGE_ID,
 	PROGRAM_SYMBOLS_IMAGE_ID,
-	buildProgramBootHeader,
-	encodeProgramImage,
 	encodeProgramObjectSections,
 	toLuaModulePath,
 } = require('../../machine/ts/machine/program/loader');
@@ -1583,7 +1581,6 @@ export function appendProgramImage(
 		optLevel,
 		entrySource: entryAsset.buffer.toString('utf8'),
 		externalModules,
-		enableExportSymbols: entryPath !== SYSTEM_BOOT_ENTRY_PATH,
 	});
 	const program = compiled.program;
 	const programImage = {
@@ -1598,7 +1595,7 @@ export function appendProgramImage(
 		},
 	};
 
-	const buffer = Buffer.from(encodeProgramImage(programImage));
+	const buffer = Buffer.from(encodeBinary(programImage));
 	assetList.push({
 		resid: PROGRAM_IMAGE_ID,
 		type: 'code',
@@ -1617,7 +1614,15 @@ export function appendProgramImage(
 			source_path: PROGRAM_SYMBOLS_IMAGE_ID,
 		});
 	}
-	return buildProgramBootHeader(programImage);
+	return {
+		version: PROGRAM_BOOT_HEADER_VERSION,
+		flags: 0,
+		entryProtoIndex: programImage.entryProtoIndex,
+		codeByteCount: programImage.sections.text.code.length,
+		constPoolCount: programImage.sections.rodata.constPool.length,
+		protoCount: programImage.sections.text.protos.length,
+		constRelocCount: programImage.link.constRelocs.length,
+	};
 }
 
 export function buildImgMetaForAtlas(res: TextureAtlasResource): ImgMeta {

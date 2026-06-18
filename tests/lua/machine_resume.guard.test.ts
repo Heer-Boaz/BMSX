@@ -23,7 +23,6 @@ test('hotResumeProgramEntry keeps interpreter resident', () => {
 	const snippet = src.slice(start, nextExport === -1 ? undefined : nextExport);
 	assert.equal(snippet.includes('createLuaInterpreter('), false, 'hotResumeProgramEntry should not create a new interpreter');
 	assert.equal(snippet.includes('runtime.startLoadedProgram(entryProtoIndex, [], false, false)'), true, 'hotResumeProgramEntry must execute the updated path');
-	assert.equal(snippet.includes('enableExportSymbols: true'), true, 'hotResumeProgramEntry must compile the replacement cart with the same export-symbol lane as source boot');
 	assert.equal(snippet.includes('resolveRuntimeProgramRelocations(program, metadata, constRelocs)'), true, 'hotResumeProgramEntry must resolve export-symbol placeholders before installing the replacement program');
 	assert.equal(snippet.includes('if (!params.preserveSystemModules)'), true, 'hot-resume must preserve live module objects (single generation); only a full reload clears the module cache');
 });

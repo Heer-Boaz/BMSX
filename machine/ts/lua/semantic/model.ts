@@ -17,6 +17,7 @@ import {
 	type LuaAssignmentStatement,
 	type LuaLocalAssignmentStatement,
 	type LuaStringLiteralExpression,
+	type LuaReturnStatement,
 	type LuaStructDeclarationStatement,
 	type LuaFunctionDeclarationStatement,
 	type LuaDefinitionInfo,
@@ -31,6 +32,7 @@ import { sourcePositionInRange, type SourcePosition } from './source_range';
 import { semanticNamePathMatches, type SemanticSymbolKind } from './symbols';
 import type { SemanticAnnotations, SemanticRole } from './tokens';
 import { methodPathToPropertyPath } from './common';
+import { toLuaModulePath } from '../../machine/program/loader';
 
 export type SymbolID = string;
 
@@ -973,6 +975,7 @@ export class LuaProjectIndex {
 		const previousDeclPathHints = this.declPathHints;
 		const orderedFiles = this.listFiles();
 		orderedFiles.sort((left, right) => this.fileOrder.get(left)! - this.fileOrder.get(right)!);
+		const moduleFiles = buildModuleFileMap(orderedFiles);
 
 		const nextPrefabHintsById = new Map<string, SemanticHintKey>();
 		for (let fileIndex = 0; fileIndex < orderedFiles.length; fileIndex += 1) {
@@ -1010,6 +1013,7 @@ export class LuaProjectIndex {
 					nextDeclPathHints.set(entry.declId, pathHintKey);
 				}
 			}
+			recordModuleAliasPathHints(data, this.files, moduleFiles, nextDeclPathHints);
 		}
 
 		this.collectDirtyHintKeys(previousPrefabHintsById, nextPrefabHintsById, buildPrefabHintKey, dirtyReceiverHintKeys);
@@ -2468,6 +2472,107 @@ function resolveReferenceReceiverPathHintKey(
 	}
 	const hintKey = declHints.get(globalDeclId);
 	return hintKey;
+}
+
+function buildModuleFileMap(files: readonly string[]): Map<string, string> {
+	const modules = new Map<string, string>();
+	for (let index = 0; index < files.length; index += 1) {
+		const file = files[index];
+		const modulePath = toLuaModulePath(file);
+		if (!modules.has(modulePath)) {
+			modules.set(modulePath, file);
+		}
+	}
+	return modules;
+}
+
+function recordModuleAliasPathHints(
+	data: FileSemanticData,
+	files: ReadonlyMap<string, FileRecord>,
+	moduleFiles: ReadonlyMap<string, string>,
+	hints: Map<SymbolID, SemanticHintKey>,
+): void {
+	if (data.moduleAliases.length === 0) {
+		return;
+	}
+	const declsByName = buildTopLevelDeclsByName(data.decls);
+	for (let index = 0; index < data.moduleAliases.length; index += 1) {
+		const alias = data.moduleAliases[index];
+		const decl = declsByName.get(alias.alias);
+		if (!decl) {
+			continue;
+		}
+		const moduleFile = moduleFiles.get(alias.module);
+		if (!moduleFile) {
+			continue;
+		}
+		const moduleRecord = files.get(moduleFile)!;
+		const moduleRoot = resolveModuleReturnNamePath(moduleRecord.data.chunk);
+		if (!moduleRoot) {
+			continue;
+		}
+		const symbolPath = moduleRoot.slice();
+		const memberPath = alias.memberPath ?? [];
+		for (let memberIndex = 0; memberIndex < memberPath.length; memberIndex += 1) {
+			symbolPath.push(memberPath[memberIndex]);
+		}
+		hints.set(decl.id, buildPathHintKey(moduleFile, joinNamePath(symbolPath)));
+	}
+}
+
+function buildTopLevelDeclsByName(decls: readonly Decl[]): Map<string, Decl> {
+	const result = new Map<string, Decl>();
+	for (let index = 0; index < decls.length; index += 1) {
+		const decl = decls[index];
+		if (decl.namePath.length !== 1 || decl.scope.start.line !== 1 || decl.scope.start.column !== 1 || result.has(decl.name)) {
+			continue;
+		}
+		result.set(decl.name, decl);
+	}
+	return result;
+}
+
+function resolveModuleReturnNamePath(chunk: LuaChunk): string[] | null {
+	const statements = chunk.body;
+	if (statements.length === 0) {
+		return null;
+	}
+	const last = statements[statements.length - 1];
+	if (last.kind !== LuaSyntaxKind.ReturnStatement) {
+		return null;
+	}
+	const returnStatement = last as LuaReturnStatement;
+	if (returnStatement.expressions.length !== 1) {
+		return null;
+	}
+	return extractStaticMemberPath(returnStatement.expressions[0]);
+}
+
+function extractStaticMemberPath(expression: LuaExpression): string[] | null {
+	if (expression.kind === LuaSyntaxKind.IdentifierExpression) {
+		return [expression.name];
+	}
+	if (expression.kind === LuaSyntaxKind.MemberExpression) {
+		const base = extractStaticMemberPath(expression.base);
+		if (!base) {
+			return null;
+		}
+		base.push(expression.identifier);
+		return base;
+	}
+	if (expression.kind === LuaSyntaxKind.IndexExpression) {
+		const base = extractStaticMemberPath(expression.base);
+		if (!base) {
+			return null;
+		}
+		const key = tryExtractStringLiteral(expression.index);
+		if (!key) {
+			return null;
+		}
+		base.push(key);
+		return base;
+	}
+	return null;
 }
 
 function definitionLookupKey(range: LuaSourceRange, namePath: readonly string[]): string {

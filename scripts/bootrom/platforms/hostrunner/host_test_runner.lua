@@ -72,6 +72,9 @@ local function apply_command(command)
 	if command.press ~= nil then
 		press_button(command.press, command.hold_frames or 1)
 	end
+	if command.new_game == true then
+		bridge.request_new_game()
+	end
 end
 
 local function apply_commands(commands)
@@ -82,7 +85,7 @@ local function apply_commands(commands)
 		bridge.log(commands)
 		return
 	end
-	if commands.press ~= nil or commands.down ~= nil or commands.up ~= nil or commands.capture ~= nil or commands.log ~= nil then
+	if commands.press ~= nil or commands.down ~= nil or commands.up ~= nil or commands.capture ~= nil or commands.log ~= nil or commands.new_game == true then
 		if commands.frame ~= nil and commands.frame > 0 then
 			schedule_command(commands.frame, commands)
 		else
@@ -129,6 +132,9 @@ host = {
 	end,
 	log = function(message)
 		return { log = message }
+	end,
+	new_game = function()
+		return { new_game = true }
 	end,
 }
 

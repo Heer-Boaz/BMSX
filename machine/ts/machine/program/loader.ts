@@ -1,4 +1,4 @@
-import { decodeBinary, encodeBinary, requireObject, requireObjectKey } from '../../common/serializer/binencoder';
+import { decodeBinary, requireObject, requireObjectKey } from '../../common/serializer/binencoder';
 import { StringValue, asStringId, valueIsString, type Program, type ProgramMetadata, type Proto, type Value } from '../cpu/cpu';
 import { StringPool } from '../cpu/string_pool';
 
@@ -6,7 +6,38 @@ import { StringPool } from '../cpu/string_pool';
 export const PROGRAM_IMAGE_ID = '__program__';
 // disable-next-line legacy_sentinel_string_pattern -- Program symbols image id is a TS/C++/bootrom binary contract, not an alias fallback.
 export const PROGRAM_SYMBOLS_IMAGE_ID = '__program_symbols__';
-export const PROGRAM_BOOT_HEADER_VERSION = 1;
+const PROGRAM_MODULE_SLOT_RELOC_PREFIX = 'modslot:';
+const PROGRAM_EXPORT_PROTO_RELOC_PREFIX = 'exportproto:';
+
+export function makeProgramModuleSlotRelocText(slotName: string): string {
+	return `${PROGRAM_MODULE_SLOT_RELOC_PREFIX}${slotName}`;
+}
+
+export function makeProgramExportProtoRelocText(slotName: string): string {
+	return `${PROGRAM_EXPORT_PROTO_RELOC_PREFIX}${slotName}`;
+}
+
+export function isProgramModuleSlotRelocText(text: string): boolean {
+	return text.startsWith(PROGRAM_MODULE_SLOT_RELOC_PREFIX);
+}
+
+export function isProgramExportProtoRelocText(text: string): boolean {
+	return text.startsWith(PROGRAM_EXPORT_PROTO_RELOC_PREFIX);
+}
+
+export function parseProgramModuleSlotRelocText(text: string): string {
+	if (!isProgramModuleSlotRelocText(text)) {
+		throw new Error(`[ProgramLoader] module reloc text missing '${PROGRAM_MODULE_SLOT_RELOC_PREFIX}' prefix.`);
+	}
+	return text.slice(PROGRAM_MODULE_SLOT_RELOC_PREFIX.length);
+}
+
+export function parseProgramExportProtoRelocText(text: string): string {
+	if (!isProgramExportProtoRelocText(text)) {
+		throw new Error(`[ProgramLoader] export_proto reloc text missing '${PROGRAM_EXPORT_PROTO_RELOC_PREFIX}' prefix.`);
+	}
+	return text.slice(PROGRAM_EXPORT_PROTO_RELOC_PREFIX.length);
+}
 
 export type EncodedValue = null | boolean | number | string;
 
@@ -60,16 +91,6 @@ export type ProgramImage = {
 
 export type ProgramSymbolsImage = ProgramMetadata;
 
-export type ProgramBootHeader = {
-	version: number;
-	flags: number;
-	entryProtoIndex: number;
-	codeByteCount: number;
-	constPoolCount: number;
-	protoCount: number;
-	constRelocCount: number;
-};
-
 function encodeProgramRodataConstPool(program: Program): EncodedValue[] {
 	const constPool: EncodedValue[] = new Array(program.constPool.length);
 	for (let index = 0; index < program.constPool.length; index += 1) {
@@ -119,26 +140,17 @@ export function decodeProgramImage(bytes: Uint8Array): ProgramImage {
 	};
 }
 
-// disable-next-line single_line_method_pattern -- ProgramImage binary encoding is owned by the program loader/producer boundary.
-export function encodeProgramImage(asset: ProgramImage): Uint8Array {
-	return encodeBinary(asset);
-}
-
 export function decodeProgramSymbolsImage(bytes: Uint8Array): ProgramSymbolsImage {
 	const root = requireObject(decodeBinary(bytes), 'ProgramSymbolsImage');
-	return requireObjectKey(root, 'metadata', 'ProgramSymbolsImage', 'ProgramSymbolsImage.metadata') as ProgramMetadata;
-}
-
-export function buildProgramBootHeader(asset: ProgramImage): ProgramBootHeader {
-	return {
-		version: PROGRAM_BOOT_HEADER_VERSION,
-		flags: 0,
-		entryProtoIndex: asset.entryProtoIndex,
-		codeByteCount: asset.sections.text.code.length,
-		constPoolCount: asset.sections.rodata.constPool.length,
-		protoCount: asset.sections.text.protos.length,
-		constRelocCount: asset.link.constRelocs.length,
-	};
+	const metadata = requireObject(requireObjectKey(root, 'metadata', 'ProgramSymbolsImage', 'ProgramSymbolsImage.metadata'), 'ProgramSymbolsImage.metadata');
+	requireObjectKey(metadata, 'debugRanges', 'ProgramSymbolsImage.metadata', 'ProgramSymbolsImage.metadata.debugRanges');
+	requireObjectKey(metadata, 'protoIds', 'ProgramSymbolsImage.metadata', 'ProgramSymbolsImage.metadata.protoIds');
+	requireObjectKey(metadata, 'localSlotsByProto', 'ProgramSymbolsImage.metadata', 'ProgramSymbolsImage.metadata.localSlotsByProto');
+	requireObjectKey(metadata, 'upvalueNamesByProto', 'ProgramSymbolsImage.metadata', 'ProgramSymbolsImage.metadata.upvalueNamesByProto');
+	requireObjectKey(metadata, 'globalNames', 'ProgramSymbolsImage.metadata', 'ProgramSymbolsImage.metadata.globalNames');
+	requireObjectKey(metadata, 'systemGlobalNames', 'ProgramSymbolsImage.metadata', 'ProgramSymbolsImage.metadata.systemGlobalNames');
+	requireObject(requireObjectKey(metadata, 'exportProtoIdBySlot', 'ProgramSymbolsImage.metadata', 'ProgramSymbolsImage.metadata.exportProtoIdBySlot'), 'ProgramSymbolsImage.metadata.exportProtoIdBySlot');
+	return metadata as ProgramMetadata;
 }
 
 function decodeProgramObjectSections(value: unknown): ProgramObjectSections {

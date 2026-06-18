@@ -44,8 +44,10 @@ function makeMetadata(): ProgramMetadata {
 		],
 		protoIds: ['main'],
 		localSlotsByProto: [[]],
+		upvalueNamesByProto: [[]],
 		globalNames: [],
 		systemGlobalNames: [],
+		exportProtoIdBySlot: {},
 	};
 }
 

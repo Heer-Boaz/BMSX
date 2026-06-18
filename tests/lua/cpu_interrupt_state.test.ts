@@ -32,8 +32,10 @@ function makeMetadata(): ProgramMetadata {
 		debugRanges: [null, null],
 		protoIds: ['main', 'external'],
 		localSlotsByProto: [[], []],
+		upvalueNamesByProto: [[], []],
 		globalNames: [],
 		systemGlobalNames: [],
+		exportProtoIdBySlot: {},
 	};
 }
 

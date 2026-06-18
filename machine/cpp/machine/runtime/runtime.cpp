@@ -3,6 +3,7 @@
 #include "machine/bus/io.h"
 #include "machine/memory/lua_heap_usage.h"
 #include "machine/memory/map.h"
+#include "machine/program/linker.h"
 #include "machine/program/loader.h"
 #include "machine/runtime/input.h"
 #include "machine/runtime/system_irq.h"
@@ -193,6 +194,12 @@ void Runtime::boot(const ProgramImage& image, ProgramMetadata* metadata, int ent
 	m_moduleProtos = buildModuleProtoMap(image.sections.rodata.moduleProtos);
 	m_moduleCache.clear();
 	m_programStorage = inflateProgram(image.sections);
+	if (!image.link.constRelocs.empty()) {
+		if (!metadata) {
+			throw std::runtime_error("program image relocations require metadata.");
+		}
+		resolveRuntimeProgramRelocations(*m_programStorage, *metadata, image.link.constRelocs);
+	}
 	try {
 		setupBuiltins();
 		registerRuntimeDevtoolsTable(*this);

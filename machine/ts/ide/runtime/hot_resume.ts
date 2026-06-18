@@ -91,7 +91,6 @@ export function hotResumeProgramEntry(runtime: Runtime, params: { path: string; 
 		baseMetadata,
 		optLevel: runtime.realtimeCompileOptLevel,
 		entrySource: source,
-		enableExportSymbols: true,
 	});
 	resolveRuntimeProgramRelocations(program, metadata, constRelocs);
 	replaceMapEntries(runtime.moduleProtos, moduleProtoMap);
@@ -114,7 +113,7 @@ export function hotResumeProgramEntry(runtime: Runtime, params: { path: string; 
 	clearEditorCompletionCache(runtime);
 }
 
-export function refreshLuaModulesOnResume(runtime: Runtime, resumeModuleId: string): void {
+function refreshLuaModulesOnResume(runtime: Runtime, resumeModuleId: string): void {
 	const paths = Object.keys(runtime.activeLuaSources.path2lua);
 	for (let index = 0; index < paths.length; index += 1) {
 		const moduleId = paths[index];

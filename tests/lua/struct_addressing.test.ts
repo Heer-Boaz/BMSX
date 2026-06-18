@@ -42,8 +42,10 @@ function makeMetadata(instructionCount: number): ProgramMetadata {
 		debugRanges: new Array(instructionCount).fill(null),
 		protoIds: ['main'],
 		localSlotsByProto: [[]],
+		upvalueNamesByProto: [[]],
 		globalNames: [],
 		systemGlobalNames: [],
+		exportProtoIdBySlot: {},
 	};
 }
 

@@ -1,5 +1,5 @@
 import { buildEditorSemanticFrontend } from '../intellisense/frontend';
-import { extractHoverExpression } from '../intellisense/engine';
+import { extractHoverExpressionFromBuffer } from '../intellisense/engine';
 import type { ReferenceMatchInfo } from './state';
 import type { TextBuffer } from '../../text/text_buffer';
 import type { SearchMatch } from '../../../common/models';
@@ -19,7 +19,7 @@ export type ReferenceLookupResult =
 	| { kind: 'error'; message: string; duration: number; };
 
 export function resolveReferenceLookup(options: ReferenceLookupOptions): ReferenceLookupResult {
-	const identifier = extractHoverExpression(options.cursorRow, options.cursorColumn, options.path);
+	const identifier = extractHoverExpressionFromBuffer(options.buffer, options.cursorRow, options.cursorColumn, options.path);
 	if (!identifier) {
 		return { kind: 'error', message: 'No identifier at cursor', duration: 1.6 };
 	}
