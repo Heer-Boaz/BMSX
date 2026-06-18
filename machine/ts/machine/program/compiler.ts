@@ -1591,18 +1591,20 @@ class FunctionBuilder {
 		this.emitABx(access.system ? OpCode.GETSYS : OpCode.GETGL, target, access.slot);
 	}
 
-	private emitModuleExportLoad(slotName: string, target: number): void {
+	private emitModuleExportValueLoad(slotName: string, target: number): void {
+		const access = this.program.resolveGlobalAccess(slotName);
+		this.emitABx(access.system ? OpCode.GETSYS : OpCode.GETGL, target, access.slot);
+	}
+
+	private emitModuleExportCallTargetLoad(slotName: string, target: number): void {
 		if (!this.usesExportSymbols()) {
-			// System/raw image: load directly from the global slot (no link-time reloc).
-			const access = this.program.resolveGlobalAccess(slotName);
-			this.emitABx(access.system ? OpCode.GETSYS : OpCode.GETGL, target, access.slot);
+			this.emitModuleExportValueLoad(slotName, target);
 			return;
 		}
-		// Emit a link-time placeholder rather than a fixed global-slot load. The linker
-		// resolves it to a CLOSURE of the exported function's proto when the export is a
-		// static-closure function (a link-time symbol), otherwise to a GETGL/GETSYS of
-		// the export slot. This lets idiomatic `m.fn` resolve to the function directly,
-		// with no runtime module namespace and no slot lookup for function exports.
+		// Call targets may be link-time function symbols. The linker rewrites this
+		// placeholder to CLOSURE(proto) for static function exports, or to a normal
+		// global-slot load for data/upvalue-capturing exports. Non-call value reads keep
+		// direct global loads so the optimizer never sees export placeholders as strings.
 		const constIndex = this.program.constIndexString(`exportproto:${slotName}`);
 		this.emitABx(OpCode.LOADK, target, constIndex);
 	}
@@ -1626,13 +1628,6 @@ class FunctionBuilder {
 		for (const [key, child] of node.children) {
 			path.push(key);
 			const slotName = buildModuleExportSlotName(modulePath, path);
-			if (child.children.size === 0 && this.program.hasExportProto(slotName)) {
-				// Static-closure function export: the linker resolves references to it
-				// as a direct CLOSURE of the proto (a link-time symbol), so no runtime
-				// global-slot store is needed — skip the scrape entirely for this leaf.
-				path.pop();
-				continue;
-			}
 			const childReg = this.allocTemp();
 			const keyConst = this.program.constIndexString(key);
 			this.emitTableGetConst(childReg, baseReg, keyConst);
@@ -2193,11 +2188,15 @@ class FunctionBuilder {
 				if (i < names.length && attributes[i] === 'const') {
 					const moduleBinding = this.tryResolveStaticModuleBinding(expr, true);
 					if (moduleBinding !== null) {
-						initializerModuleBindings[i] = moduleBinding;
-							if (isExternalRootModuleBinding(moduleBinding)) {
+						if (moduleBinding.external) {
 							this.markStaticExternalModulePath(moduleBinding.modulePath);
-							initializerValues[i] = null;
-							continue;
+						}
+						if (moduleBinding.exportDepth === 0) {
+							initializerModuleBindings[i] = moduleBinding;
+							if (moduleBinding.external) {
+								initializerValues[i] = null;
+								continue;
+							}
 						}
 					}
 				}
@@ -2231,10 +2230,14 @@ class FunctionBuilder {
 			if (lastHasName && attributes[lastIndex] === 'const' && !wantsMulti) {
 				const moduleBinding = this.tryResolveStaticModuleBinding(lastExpr, true);
 				if (moduleBinding !== null) {
-					initializerModuleBindings[lastIndex] = moduleBinding;
-						if (isExternalRootModuleBinding(moduleBinding)) {
+					if (moduleBinding.external) {
 						this.markStaticExternalModulePath(moduleBinding.modulePath);
-						initializerValues[lastIndex] = null;
+					}
+					if (moduleBinding.exportDepth === 0) {
+						initializerModuleBindings[lastIndex] = moduleBinding;
+						if (moduleBinding.external) {
+							initializerValues[lastIndex] = null;
+						}
 					}
 				}
 			}
@@ -2570,32 +2573,10 @@ class FunctionBuilder {
 		const base = this.allocTemp();
 		const wantsMulti = expressions.length === 1 && this.isMultiReturnExpression(expressions[0]);
 		if (expressions.length === 1) {
-			if (!wantsMulti && this.moduleCompileInfo !== undefined && expressions[0] === this.moduleCompileInfo.returnExpression
-				&& expressions[0].kind === LuaSyntaxKind.TableConstructorExpression
-				&& this.tryEmitDirectModuleExportReturn(expressions[0] as LuaTableConstructorExpression)) {
-				return;
-			}
 			if (!wantsMulti && this.moduleCompileInfo !== undefined && expressions[0] === this.moduleCompileInfo.returnExpression) {
-				if (!this.usesExportSymbols()) {
-					// System/raw image: original behaviour — build the namespace table,
-					// populate all export slots, and return the table as a runtime value.
-					this.compileExpressionInto(expressions[0], base, 1);
-					this.emitModuleExportGlobalStores(base, this.moduleCompileInfo);
-					this.emitABC(OpCode.RET, base, 1, 0);
-					return;
-				}
-				// A module's namespace has no runtime identity. Populate runtime export
-				// slots only for non-symbol exports (data / upvalue-capturing functions) —
-				// symbol functions resolve to their proto at link time — and return nil.
-				// When every export is a symbol the namespace table is never read or
-				// written, so the optimizer removes it.
-				if (this.moduleHasNonSymbolExports()) {
-					this.compileExpressionInto(expressions[0], base, 1);
-					this.emitModuleExportGlobalStores(base, this.moduleCompileInfo);
-				}
-				const nilReg = this.allocTemp();
-				this.emitLoadNil(nilReg, 1);
-				this.emitABC(OpCode.RET, nilReg, 1, 0);
+				this.compileExpressionInto(expressions[0], base, 1);
+				this.emitModuleExportGlobalStores(base, this.moduleCompileInfo);
+				this.emitABC(OpCode.RET, base, 1, 0);
 				return;
 			}
 			this.compileExpressionInto(expressions[0], base, wantsMulti ? 0 : 1);
@@ -2607,67 +2588,6 @@ class FunctionBuilder {
 			this.compileExpressionInto(expressions[i], base + i, 1);
 		}
 		this.emitABC(OpCode.RET, base, expressions.length, 0);
-	}
-
-	/*
-		Source ABI: a module's `return { a = a, b = b }` is an export manifest, not a
-		runtime table. The source-level module namespace has no runtime identity, so a
-		flat export map can write its export slots directly instead of materializing a
-		throwaway table and scraping the fields back out (NEWT + SETFIELD + GETFIELD).
-		Note this only removes the table scaffolding: the VM backend still represents
-		exported values as global slots loaded via GETGL — it is not yet a direct linked
-		call. Anything that is not a clean flat export map (nested namespaces, array
-		part, computed/non-literal keys) falls back to the table path. Returns true when
-		it fully handled the return.
-	*/
-	private tryEmitDirectModuleExportReturn(table: LuaTableConstructorExpression): boolean {
-		const moduleInfo = this.moduleCompileInfo;
-		if (!this.usesExportSymbols() || moduleInfo === undefined) {
-			return false;
-		}
-		// Flat only: every export must be a leaf (no nested sub-namespaces).
-		for (const child of moduleInfo.exportRoot.children.values()) {
-			if (child.children.size > 0) {
-				return false;
-			}
-		}
-		// Collect statically-keyed export fields. Only `a = v` and `["a"] = v` qualify;
-		// a computed key like `[k] = v` must NOT be read as the literal key "k", so it
-		// falls back to the table path. Array parts fall back too.
-		const exportFields: Array<{ key: string; value: LuaExpression }> = [];
-		for (let i = 0; i < table.fields.length; i += 1) {
-			const field = table.fields[i];
-			let key: string;
-			if (field.kind === LuaTableFieldKind.IdentifierKey) {
-				key = field.name;
-			} else if (field.kind === LuaTableFieldKind.ExpressionKey && field.key.kind === LuaSyntaxKind.StringLiteralExpression) {
-				key = (field.key as LuaStringLiteralExpression).value;
-			} else {
-				return false;
-			}
-			if (!moduleInfo.exportRoot.children.has(key)) {
-				return false;
-			}
-			exportFields.push({ key, value: field.value });
-		}
-		// Two phases: evaluate every export value first, then emit the slot stores, so
-		// an export slot is never observable before all values have been computed
-		// (matching the old build-the-table-then-scrape ordering).
-		const tempBase = this.tempTop;
-		const valueRegs: number[] = [];
-		for (let i = 0; i < exportFields.length; i += 1) {
-			const valueReg = this.allocTemp();
-			this.compileExpressionInto(exportFields[i].value, valueReg, 1);
-			valueRegs.push(valueReg);
-		}
-		for (let i = 0; i < exportFields.length; i += 1) {
-			this.emitModuleExportStore(buildModuleExportSlotName(moduleInfo.path, [exportFields[i].key]), valueRegs[i]);
-		}
-		this.tempTop = tempBase;
-		const nilReg = this.allocTemp();
-		this.emitLoadNil(nilReg, 1);
-		this.emitABC(OpCode.RET, nilReg, 1, 0);
-		return true;
 	}
 
 	private compileIf(statement: LuaIfStatement): void {
@@ -2902,14 +2822,8 @@ class FunctionBuilder {
 		const hint = buildDeclarationHint(identifiers, methodName);
 		const protoId = buildProtoId(this.protoId, hint);
 		const protoIndex = compileFunctionExpression(this.program, fnExpr, this, methodName && methodName.length > 0, protoId, this.moduleId, this.semantics, this.frontend);
-		if (target.kind === 'path' && !this.exportRootEscapes()
-			&& this.maybeRecordModuleExportProto(target.baseReference, [...target.intermediateKeys, target.finalKey], protoId, protoIndex)) {
-			// Static-closure function export on a non-escaping namespace: the proto is
-			// the link-time symbol. Emit no closure value and no namespace-table store;
-			// references resolve to the proto directly, leaving the namespace table dead
-			// (removed by the optimizer). If the namespace escapes as a runtime value we
-			// keep the table store so the bare value stays correct.
-			return;
+		if (target.kind === 'path') {
+			this.maybeRecordModuleExportProto(target.baseReference, [...target.intermediateKeys, target.finalKey], protoId, protoIndex);
 		}
 		const closureReg = this.allocTemp();
 		this.emitABx(OpCode.CLOSURE, closureReg, protoIndex);
@@ -2963,70 +2877,6 @@ class FunctionBuilder {
 		}
 		this.exportRootSymbolHandleCache = handle;
 		return handle;
-	}
-
-	// If `expression` reads `<exported-namespace>.key` on this module's own returned
-	// namespace local, return its export slot name. The read is then resolved through
-	// the link-time export mechanism (CLOSURE symbol for a function export, GETGL slot
-	// for data) rather than a field load on the namespace table — which lets the table
-	// itself become dead (and be removed) when nothing keeps it alive.
-	private tryResolveOwnExportSlot(expression: LuaExpression): string | undefined {
-		const moduleInfo = this.moduleCompileInfo;
-		if (!this.usesExportSymbols() || moduleInfo === undefined) {
-			return undefined;
-		}
-		const rootHandle = this.getExportRootSymbolHandle();
-		if (rootHandle === null) {
-			return undefined;
-		}
-		let baseExpr: LuaExpression;
-		let key: string | null;
-		if (expression.kind === LuaSyntaxKind.MemberExpression) {
-			baseExpr = (expression as LuaMemberExpression).base;
-			key = (expression as LuaMemberExpression).identifier;
-		} else if (expression.kind === LuaSyntaxKind.IndexExpression) {
-			baseExpr = (expression as LuaIndexExpression).base;
-			key = extractTableKeyFromExpression((expression as LuaIndexExpression).index);
-		} else {
-			return undefined;
-		}
-		if (!key || baseExpr.kind !== LuaSyntaxKind.IdentifierExpression) {
-			return undefined;
-		}
-		const baseRef = getResolvedIdentifierReference(this.semantics, baseExpr as LuaIdentifierExpression);
-		const baseHandle = baseRef ? getResolvedReferenceSymbolHandle(baseRef) : undefined;
-		if (!baseHandle || baseHandle !== rootHandle) {
-			return undefined;
-		}
-		return moduleInfo.exportSlotsByPathKey.get(buildModuleExportPathKey([key])) ?? undefined;
-	}
-
-	// Whether this module's exported namespace local escapes as a runtime value (used
-	// anywhere other than `<root>.member` access or the module return). When it does,
-	// the namespace table must stay populated, so function-export table stores are NOT
-	// skipped. NOTE: a precise escape analysis (walking the module for bare uses of the
-	// export-root symbol) is the remaining hardening; today this returns false, which is
-	// correct for cart code that only uses its namespace as `ns.member` + return (the
-	// idiomatic form, verified on pietious). A module that passes its namespace as a
-	// bare value would need this to report true.
-	private exportRootEscapes(): boolean {
-		return false;
-	}
-
-	// Whether any export of this module is not a static-closure function symbol (i.e.
-	// is data or an upvalue-capturing function), and therefore still needs the runtime
-	// namespace table + scrape to be populated at module init.
-	private moduleHasNonSymbolExports(): boolean {
-		const moduleInfo = this.moduleCompileInfo;
-		if (moduleInfo === undefined) {
-			return false;
-		}
-		for (const slot of moduleInfo.exportSlotsByPathKey.values()) {
-			if (!this.program.hasExportProto(slot)) {
-				return true;
-			}
-		}
-		return false;
 	}
 
 	// Record a static-closure function export defined as `function <ns>.path()` (or
@@ -3113,14 +2963,9 @@ class FunctionBuilder {
 	}
 
 	private compileMemberExpression(expression: any, target: number): void {
-		const ownSlot = this.tryResolveOwnExportSlot(expression as LuaExpression);
-		if (ownSlot !== undefined) {
-			this.emitModuleExportLoad(ownSlot, target);
-			return;
-		}
 		const slotName = this.tryResolveModuleExportSlotFromExpression(expression as LuaMemberExpression);
 		if (slotName !== undefined) {
-			this.emitModuleExportLoad(slotName, target);
+			this.emitModuleExportValueLoad(slotName, target);
 			return;
 		}
 		const structAddress = this.tryResolveStructScalarAddress(expression as LuaMemberExpression);
@@ -3153,14 +2998,9 @@ class FunctionBuilder {
 	}
 
 	private compileIndexExpression(expression: any, target: number): void {
-		const ownSlot = this.tryResolveOwnExportSlot(expression as LuaExpression);
-		if (ownSlot !== undefined) {
-			this.emitModuleExportLoad(ownSlot, target);
-			return;
-		}
 		const slotName = this.tryResolveModuleExportSlotFromExpression(expression as LuaIndexExpression);
 		if (slotName !== undefined) {
-			this.emitModuleExportLoad(slotName, target);
+			this.emitModuleExportValueLoad(slotName, target);
 			return;
 		}
 		const structAddress = this.tryResolveStructScalarAddress(expression as LuaIndexExpression);
@@ -3773,6 +3613,7 @@ class FunctionBuilder {
 		const methodName = expression.methodName;
 		const hasMethod = methodName !== null && methodName.length > 0;
 		const moduleMethodSlot = hasMethod ? this.tryResolveModuleExportMethodSlot(expression.callee, methodName) : undefined;
+		const moduleCallSlot = !hasMethod ? this.tryResolveModuleExportSlotFromExpression(expression.callee) : undefined;
 		const constClosureBinding = !hasMethod && expression.callee.kind === LuaSyntaxKind.IdentifierExpression
 			? this.resolveReferenceConstClosureBinding(getResolvedIdentifierReference(this.semantics, expression.callee as LuaIdentifierExpression))
 			: null;
@@ -3791,7 +3632,7 @@ class FunctionBuilder {
 			this.reserveTempRange(callBase, requiredSlots);
 		}
 		if (moduleMethodSlot !== undefined) {
-			this.emitModuleExportLoad(moduleMethodSlot, callBase);
+			this.emitModuleExportCallTargetLoad(moduleMethodSlot, callBase);
 			const selfReg = this.allocTemp();
 			this.compileExpressionInto(expression.callee, selfReg, 1);
 			if (selfReg !== callBase + 1) {
@@ -3802,6 +3643,8 @@ class FunctionBuilder {
 			this.compileExpressionInto(expression.callee, callBase, 1);
 			const methodKey = this.program.constIndexString(methodName);
 			this.emitSelf(callBase, callBase, methodKey);
+		} else if (moduleCallSlot !== undefined) {
+			this.emitModuleExportCallTargetLoad(moduleCallSlot, callBase);
 		} else {
 			this.compileExpressionInto(expression.callee, callBase, 1);
 		}

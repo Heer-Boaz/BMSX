@@ -59,6 +59,7 @@ enum class ProgramConstRelocKind {
 	// compiler when an external module export cannot be resolved at compile time.
 	// The linker must resolve these into GETSYS/GETGL accesses.
 	Module,
+	ExportProto,
 };
 
 struct ProgramConstReloc {

@@ -135,6 +135,23 @@ const fitsSignedRaw = (value: number, bits: number): boolean => {
 	return value >= min && value <= max;
 };
 
+
+const resolveLinkedExportSlot = (
+	slotName: string,
+	mergedGlobalNames: ReadonlyArray<string>,
+	mergedSystemGlobalNames: ReadonlyArray<string>,
+): { op: OpCode.GETGL | OpCode.GETSYS; slot: number } => {
+	const globalSlot = mergedGlobalNames.indexOf(slotName);
+	if (globalSlot >= 0) {
+		return { op: OpCode.GETGL, slot: globalSlot };
+	}
+	const systemSlot = mergedSystemGlobalNames.indexOf(slotName);
+	if (systemSlot >= 0) {
+		return { op: OpCode.GETSYS, slot: systemSlot };
+	}
+	throw new Error(`[ProgramLinker] Unable to resolve module export slot '${slotName}' during linking.`);
+};
+
 const rewriteConstRelocations = (
 	code: Uint8Array,
 	relocs: ReadonlyArray<ProgramConstReloc>,
@@ -183,16 +200,8 @@ const rewriteConstRelocations = (
 				if (slotName.startsWith('modslot:')) {
 					slotName = slotName.slice('modslot:'.length);
 				}
-				let slotIndex = mergedSystemGlobalNames.indexOf(slotName);
-				let useSystem = true;
-				if (slotIndex < 0) {
-					slotIndex = mergedGlobalNames.indexOf(slotName);
-					useSystem = false;
-				}
-				if (slotIndex < 0) {
-					throw new Error(`[ProgramLinker] Unable to resolve module export slot '${slotName}' during linking.`);
-				}
-				const mappedIndex2 = slotIndex;
+				const resolvedSlot = resolveLinkedExportSlot(slotName, mergedGlobalNames, mergedSystemGlobalNames);
+				const mappedIndex2 = resolvedSlot.slot;
 				const nextWide2 = mappedIndex2 >> BASE_BX_BITS;
 				if (!hasWide && nextWide2 !== 0) {
 					throw new Error(`[ProgramLinker] Reloc at word ${wordIndex} requires WIDE prefix.`);
@@ -206,7 +215,7 @@ const rewriteConstRelocations = (
 					wideB = nextWide2 & 0x3f;
 					writeInstruction(code, wordIndex - 1, OpCode.WIDE, wideA, wideB, wideC);
 				}
-				writeInstruction(code, wordIndex, useSystem ? OpCode.GETSYS : OpCode.GETGL, aLow, bLow, cLow, ext);
+				writeInstruction(code, wordIndex, resolvedSlot.op, aLow, bLow, cLow, ext);
 				continue;
 			}
 			case 'export_proto': {
@@ -230,17 +239,9 @@ const rewriteConstRelocations = (
 				} else {
 					// Non-symbol export (data, or a function that captures upvalues) stays a
 					// global-slot load, identical to a 'module' reloc.
-					let slotIndex = mergedSystemGlobalNames.indexOf(slotName);
-					if (slotIndex >= 0) {
-						targetOp = OpCode.GETSYS;
-					} else {
-						slotIndex = mergedGlobalNames.indexOf(slotName);
-						targetOp = OpCode.GETGL;
-					}
-					if (slotIndex < 0) {
-						throw new Error(`[ProgramLinker] export_proto reloc cannot resolve export slot '${slotName}'.`);
-					}
-					value = slotIndex;
+					const resolvedSlot = resolveLinkedExportSlot(slotName, mergedGlobalNames, mergedSystemGlobalNames);
+					targetOp = resolvedSlot.op;
+					value = resolvedSlot.slot;
 				}
 				const nextWide = value >> BASE_BX_BITS;
 				if (!hasWide && nextWide !== 0) {

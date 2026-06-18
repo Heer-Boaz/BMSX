@@ -173,6 +173,30 @@ MergedConstPool mergeConstPools(
 	return merged;
 }
 
+
+struct ResolvedExportSlot {
+	OpCode op = OpCode::GETGL;
+	int slot = -1;
+};
+
+ResolvedExportSlot resolveLinkedExportSlot(
+	const std::string& slotName,
+	const std::vector<std::string>& mergedGlobalNames,
+	const std::vector<std::string>& mergedSystemGlobalNames
+) {
+	for (size_t index = 0; index < mergedGlobalNames.size(); ++index) {
+		if (mergedGlobalNames[index] == slotName) {
+			return {OpCode::GETGL, static_cast<int>(index)};
+		}
+	}
+	for (size_t index = 0; index < mergedSystemGlobalNames.size(); ++index) {
+		if (mergedSystemGlobalNames[index] == slotName) {
+			return {OpCode::GETSYS, static_cast<int>(index)};
+		}
+	}
+	throw std::runtime_error("[ProgramLinker] Missing module export slot '" + slotName + "' in merged globals.");
+}
+
 void rewriteClosureIndices(std::vector<uint8_t>& code, int protoOffset) {
 	if (protoOffset == 0) {
 		return;
@@ -236,7 +260,9 @@ void rewriteConstRelocations(
 	const std::vector<int>& cartSystemGlobalRemap,
 	const std::vector<EncodedValue>& mergedConstValues,
 	const std::vector<std::string>& mergedGlobalNames,
-	const std::vector<std::string>& mergedSystemGlobalNames
+	const std::vector<std::string>& mergedSystemGlobalNames,
+	const std::unordered_map<std::string, std::string>& exportProtoIdBySlot,
+	const std::vector<std::string>& mergedProtoIds
 ) {
 	for (size_t i = 0; i < relocs.size(); ++i) {
 		const ProgramConstReloc& reloc = relocs[i];
@@ -284,26 +310,8 @@ void rewriteConstRelocations(
 			if (text.rfind(prefix, 0) == 0) {
 				slotName = text.substr(prefix.size());
 			}
-			int foundIndex = -1;
-			bool system = false;
-			for (size_t j = 0; j < mergedSystemGlobalNames.size(); ++j) {
-				if (mergedSystemGlobalNames[j] == slotName) {
-					foundIndex = static_cast<int>(j);
-					system = true;
-					break;
-				}
-			}
-			if (foundIndex < 0) {
-				for (size_t j = 0; j < mergedGlobalNames.size(); ++j) {
-					if (mergedGlobalNames[j] == slotName) {
-						foundIndex = static_cast<int>(j);
-						break;
-					}
-				}
-			}
-			if (foundIndex < 0) {
-				throw std::runtime_error("[ProgramLinker] Missing module export slot '" + slotName + "' in merged globals.");
-			}
+			const ResolvedExportSlot resolvedSlot = resolveLinkedExportSlot(slotName, mergedGlobalNames, mergedSystemGlobalNames);
+			const int foundIndex = resolvedSlot.slot;
 			// disable-next-line repeated_statement_sequence_pattern -- module and direct Bx relocations encode the same operand shape with different source indices.
 			const uint32_t nextWide = static_cast<uint32_t>(foundIndex) >> (MAX_BX_BITS + EXT_BX_BITS);
 			if (!hasWide && nextWide != 0) {
@@ -314,9 +322,56 @@ void rewriteConstRelocations(
 			bLow = static_cast<uint8_t>((nextLow >> 6) & 0x3f);
 			cLow = static_cast<uint8_t>(nextLow & 0x3f);
 			ext = nextExt;
-			op = static_cast<uint8_t>(system ? OpCode::GETSYS : OpCode::GETGL);
+			op = static_cast<uint8_t>(resolvedSlot.op);
 			if (hasWide) {
 				// disable-next-line repeated_statement_sequence_pattern -- WIDE-B rewrite mirrors direct Bx relocation encoding by instruction ABI.
+				wideB = static_cast<uint8_t>(nextWide & 0x3f);
+				writeWideInstruction(code, wordIndex - 1, wideA, wideB, wideC);
+			}
+			writeInstruction(code, wordIndex, op, aLow, bLow, cLow, ext);
+			continue;
+		}
+
+		if (reloc.kind == ProgramConstRelocKind::ExportProto) {
+			if (mappedIndex < 0 || static_cast<size_t>(mappedIndex) >= mergedConstValues.size()) {
+				throw std::runtime_error("[ProgramLinker] export_proto const index out of range.");
+			}
+			const EncodedValue& cv = mergedConstValues[static_cast<size_t>(mappedIndex)];
+			const auto* exportSlotValue = std::get_if<std::string>(&cv);
+			if (!exportSlotValue) {
+				throw std::runtime_error("[ProgramLinker] export_proto reloc must refer to a string const.");
+			}
+			const std::string prefix = "exportproto:";
+			std::string slotName = *exportSlotValue;
+			if (slotName.rfind(prefix, 0) == 0) {
+				slotName = slotName.substr(prefix.size());
+			}
+			uint8_t targetOp = static_cast<uint8_t>(OpCode::GETGL);
+			int targetIndex = -1;
+			const auto protoIt = exportProtoIdBySlot.find(slotName);
+			if (protoIt != exportProtoIdBySlot.end()) {
+				const auto protoFound = std::find(mergedProtoIds.begin(), mergedProtoIds.end(), protoIt->second);
+				if (protoFound == mergedProtoIds.end()) {
+					throw std::runtime_error("[ProgramLinker] export_proto reloc cannot resolve proto '" + protoIt->second + "' for slot '" + slotName + "'.");
+				}
+				targetIndex = static_cast<int>(protoFound - mergedProtoIds.begin());
+				targetOp = static_cast<uint8_t>(OpCode::CLOSURE);
+			} else {
+				const ResolvedExportSlot resolvedSlot = resolveLinkedExportSlot(slotName, mergedGlobalNames, mergedSystemGlobalNames);
+				targetIndex = resolvedSlot.slot;
+				targetOp = static_cast<uint8_t>(resolvedSlot.op);
+			}
+			const uint32_t nextWide = static_cast<uint32_t>(targetIndex) >> (MAX_BX_BITS + EXT_BX_BITS);
+			if (!hasWide && nextWide != 0) {
+				throw std::runtime_error("[ProgramLinker] Const reloc requires WIDE prefix.");
+			}
+			const uint8_t nextExt = static_cast<uint8_t>((static_cast<uint32_t>(targetIndex) >> MAX_BX_BITS) & 0xff);
+			const uint16_t nextLow = static_cast<uint16_t>(static_cast<uint32_t>(targetIndex) & MAX_LOW_BX);
+			bLow = static_cast<uint8_t>((nextLow >> 6) & 0x3f);
+			cLow = static_cast<uint8_t>(nextLow & 0x3f);
+			ext = nextExt;
+			op = targetOp;
+			if (hasWide) {
 				wideB = static_cast<uint8_t>(nextWide & 0x3f);
 				writeWideInstruction(code, wordIndex - 1, wideA, wideB, wideC);
 			}
@@ -524,7 +579,14 @@ LinkedProgramImage linkProgramImages(
 	const MergedNamedSlots mergedGlobals = mergeNamedSlots(
 		systemSymbols ? systemSymbols->globalNames : std::vector<std::string>{},
 		cartSymbols ? cartSymbols->globalNames : std::vector<std::string>{}
-		);
+	);
+	std::vector<std::string> mergedProtoIds;
+	if (systemSymbols) {
+		mergedProtoIds.insert(mergedProtoIds.end(), systemSymbols->protoIds.begin(), systemSymbols->protoIds.end());
+	}
+	if (cartSymbols) {
+		mergedProtoIds.insert(mergedProtoIds.end(), cartSymbols->protoIds.begin(), cartSymbols->protoIds.end());
+	}
 	rewriteConstRelocations(
 		cartCode,
 		cartImage.link.constRelocs,
@@ -533,7 +595,9 @@ LinkedProgramImage linkProgramImages(
 		mergedSystemGlobals.cartRemap,
 		merged.values,
 		mergedGlobals.names,
-		mergedSystemGlobals.names
+		mergedSystemGlobals.names,
+		cartSymbols ? cartSymbols->exportProtoIdBySlot : std::unordered_map<std::string, std::string>{},
+		mergedProtoIds
 	);
 	linkedSections.rodata.constPool = std::move(merged.values);
 

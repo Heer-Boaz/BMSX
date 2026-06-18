@@ -220,8 +220,9 @@ while true do
 	wait_dma()
 
 	mem[sys_inp_ctrl] = inp_ctrl_arm
-	repeat
-		halt_until_irq
-		flags = dispatch_irqs()
-	until (flags & irq_vblank) ~= 0
+	print('test')
+	-- repeat
+		-- halt_until_irq
+		-- flags = dispatch_irqs()
+	-- until (flags & irq_vblank) ~= 0
 end

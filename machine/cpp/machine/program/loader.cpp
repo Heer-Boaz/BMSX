@@ -23,6 +23,7 @@ constexpr ConstRelocKindEntry CONST_RELOC_KIND_ENTRIES[] = {
 	{"gl", ProgramConstRelocKind::Gl},
 	{"sys", ProgramConstRelocKind::Sys},
 	{"module", ProgramConstRelocKind::Module},
+	{"export_proto", ProgramConstRelocKind::ExportProto},
 };
 
 ProgramConstRelocKind parseConstRelocKind(const std::string& kind) {
@@ -237,6 +238,13 @@ std::unique_ptr<ProgramMetadata> extractProgramMetadata(const BinValue& metadata
 
 	metadata->systemGlobalNames = readStringArray(metadataObj.require("systemGlobalNames"), "ProgramImage: systemGlobalNames");
 	metadata->globalNames = readStringArray(metadataObj.require("globalNames"), "ProgramImage: globalNames");
+	if (metadataObj.has("exportProtoIdBySlot")) {
+		const BinObject& exportObj = metadataObj.require("exportProtoIdBySlot").asObject();
+		metadata->exportProtoIdBySlot.reserve(exportObj.size());
+		for (const auto& entry : exportObj) {
+			metadata->exportProtoIdBySlot.emplace(entry.first, entry.second.asString());
+		}
+	}
 	return metadata;
 }
 
@@ -265,6 +273,7 @@ const char* constRelocKindName(ProgramConstRelocKind kind) {
 		case ProgramConstRelocKind::Gl: return "gl";
 		case ProgramConstRelocKind::Sys: return "sys";
 		case ProgramConstRelocKind::Module: return "module";
+		case ProgramConstRelocKind::ExportProto: return "export_proto";
 	}
 	throw BMSX_RUNTIME_ERROR("ProgramImage: unsupported const reloc kind.");
 }

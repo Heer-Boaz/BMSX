@@ -1583,10 +1583,7 @@ export function appendProgramImage(
 		optLevel,
 		entrySource: entryAsset.buffer.toString('utf8'),
 		externalModules,
-		// NOTE: link-time export symbols stay OFF for rom builds. The headless/IDE runtime
-		// re-compiles modules from workspace source on a path that does not resolve
-		// export-proto placeholders, so enabling them here would crash at boot. Enabling
-		// per-cart safely requires that runtime path to also link/resolve (follow-up).
+		enableExportSymbols: entryPath !== SYSTEM_BOOT_ENTRY_PATH,
 	});
 	const program = compiled.program;
 	const programImage = {

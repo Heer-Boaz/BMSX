@@ -291,11 +291,7 @@ function bootSystemSourceProgram(runtime: Runtime, interpreter: LuaInterpreter, 
 	let cartProgramImage: ProgramImage | null = null;
 	let cartSymbols: ProgramSymbolsImage | null = null;
 	if (runtime.cartLuaSources?.can_boot_from_source) {
-		// NOTE: enabling export symbols here (5th arg = true) activates M2 for the cart,
-		// but step-4 namespace-table elimination (RET nil) then breaks runtime
-		// `require(x).field` patterns (e.g. cartlib/ecs/systems:61). Keep OFF until step-3
-		// (symbol resolution) is decoupled from step-4 (table elimination). See memory.
-		const cart = compileRegistryProgramImage(runtime, runtime.cartLuaSources, interpreter, system.modules);
+		const cart = compileRegistryProgramImage(runtime, runtime.cartLuaSources, interpreter, system.modules, true);
 		cartProgramImage = cart.image;
 		cartSymbols = cart.symbols;
 	} else if (runtime.cartRomSource && runtime.cartRomSource.getEntry(PROGRAM_IMAGE_ID)) {

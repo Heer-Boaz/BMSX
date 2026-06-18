@@ -24,24 +24,33 @@ function compileWithModule(entrySource: string, modulePath: string, moduleSource
 	return disassembleProgram(compiled.program, compiled.metadata, { showProtoHeaders: false });
 }
 
-// A module's `return { a = a, b = b }` is an export manifest, not a runtime table.
-// It must lower to direct export-slot stores, never a materialized-and-scraped table.
-test('flat module export return lowers to direct export-slot stores (no scaffold table)', () => {
+// Module return values remain real runtime tables so direct `require(x).field` and
+// dynamic consumers keep Lua semantics. Static module-root calls still lower their
+// call target to an export_proto relocation so the linker can replace function
+// exports with direct CLOSURE operands.
+test('static module function calls use export-proto relocations while preserving runtime tables', () => {
 	const moduleSource = [
-		'local function update() end',
-		'local function draw() end',
-		'return { update = update, draw = draw }',
+		'local api = {}',
+		'function api.update() end',
+		'return api',
 	].join('\n');
-	// Idiomatic import: `local m<const> = require(...)` binds statically, so members
-	// resolve to export slots (GETGL) and the module's return value is never consumed.
-	const disasm = compileWithModule('local m<const> = require("foo")\nm.update()\nm.draw()', 'foo', moduleSource);
-	// No table is materialized or filled, and nothing is scraped back out of one.
-	assert.doesNotMatch(disasm, /\bNEWT\b/, 'flat export return must not materialize a runtime table');
-	assert.doesNotMatch(disasm, /\bSETFIELD\b/, 'flat export return must not fill a table');
-	assert.doesNotMatch(disasm, /\bGETFIELD\b/, 'flat export return must not scrape fields back out');
-	assert.doesNotMatch(disasm, /\bSETT\b/, 'flat export return must not use generic table set');
-	assert.doesNotMatch(disasm, /\bGETT\b/, 'flat export return must not use generic table get');
-	assert.match(disasm, /\bSET(GL|SYS)\b/, 'exports must be written directly to export slots');
+	const disasm = compileWithModule('local api<const> = require("foo")\napi.update()', 'foo', moduleSource);
+	assert.match(disasm, /exportproto:foo__update/, 'static module-root call must emit an export-proto relocation');
+	assert.match(disasm, /\bNEWT\b/, 'module runtime table must still be materialized for require() consumers');
+	assert.match(disasm, /\bSETFIELD\b/, 'exported function must still be stored on the returned table');
+	assert.match(disasm, /\bSET(GL|SYS)\b/, 'export slot must remain populated for value reads and non-symbol fallbacks');
+});
+
+// Non-call value reads must not use export_proto placeholders: the optimizer treats
+// LOADK strings as normal values before linking, so data exports use direct slots.
+test('static module data reads use global slots, not export-proto placeholders', () => {
+	const moduleSource = [
+		'local api = { value = 7 }',
+		'return api',
+	].join('\n');
+	const disasm = compileWithModule('local api<const> = require("foo")\nreturn api.value + 1', 'foo', moduleSource);
+	assert.doesNotMatch(disasm, /exportproto:foo__value/, 'data reads must not leave export-proto strings in optimized code');
+	assert.match(disasm, /\bGET(GL|SYS)\b.*foo__value/, 'data read must use the export slot directly');
 });
 
 // Nesting is not (yet) destructurable into flat slots, so it must fall back to the

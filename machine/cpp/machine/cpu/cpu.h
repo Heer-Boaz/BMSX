@@ -533,6 +533,7 @@ struct ProgramMetadata {
 	std::vector<std::vector<std::string>> upvalueNamesByProto;
 	std::vector<std::string> globalNames;
 	std::vector<std::string> systemGlobalNames;
+	std::unordered_map<std::string, std::string> exportProtoIdBySlot;
 };
 
 struct DecodedInstruction {
