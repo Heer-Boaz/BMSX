@@ -176,6 +176,92 @@ read_value = function(reader)
 	return value
 end
 
+-- Advance the cursor past one value without materializing it. Mirrors read_value's
+-- structure so a typed reader can skip subtrees it does not need.
+local skip_value
+
+skip_value = function(reader)
+	reader.depth = reader.depth + 1
+	if reader.depth > 32768 then
+		error(reader.label .. ' nesting is too deep.')
+	end
+	local tag<const> = read_u8(reader, 'tag')
+	if tag == tag_null or tag == tag_true or tag == tag_false then
+		-- inline tags carry no payload
+	elseif tag == tag_f64 then
+		need(reader, 8, 'float64')
+		reader.pos = reader.pos + 8
+	elseif tag == tag_f32 then
+		need(reader, 4, 'float32')
+		reader.pos = reader.pos + 4
+	elseif tag == tag_int then
+		read_varint(reader, 'int')
+	elseif tag == tag_str then
+		local length<const> = read_varuint(reader, 'string')
+		need(reader, length, 'string')
+		reader.pos = reader.pos + length
+	elseif tag == tag_bin then
+		local length<const> = read_varuint(reader, 'binary length')
+		need(reader, length, 'binary payload')
+		reader.pos = reader.pos + length
+	elseif tag == tag_arr or tag == tag_set then
+		local count<const> = read_varuint(reader, 'array length')
+		for _ = 1, count do
+			skip_value(reader)
+		end
+	elseif tag == tag_obj then
+		local count<const> = read_varuint(reader, 'object property count')
+		for _ = 1, count do
+			read_varuint(reader, 'property id')
+			skip_value(reader)
+		end
+	elseif tag == tag_ref then
+		read_varuint(reader, 'ref id')
+	else
+		error('Unsupported bin tag ' .. tostring(tag) .. '.')
+	end
+	reader.depth = reader.depth - 1
+end
+
+-- Walk the value at the cursor along path[idx..], skipping siblings, and materialize
+-- only the value at the end of the path. Returns nil when the path is absent. Type
+-- mismatches (string key into an array, number key into an object) simply miss.
+local navigate
+
+navigate = function(reader, path, idx)
+	if idx > #path then
+		return read_value(reader)
+	end
+	local key<const> = path[idx]
+	local tag<const> = read_u8(reader, 'tag')
+	if tag == tag_obj then
+		local count<const> = read_varuint(reader, 'object property count')
+		local names<const> = reader.prop_names
+		for _ = 1, count do
+			local prop_id<const> = read_varuint(reader, 'property id')
+			local name<const> = names[prop_id + 1]
+			if name == nil then
+				error('bin object has invalid property id ' .. tostring(prop_id) .. '.')
+			end
+			if name == key then
+				return navigate(reader, path, idx + 1)
+			end
+			skip_value(reader)
+		end
+		return nil
+	elseif tag == tag_arr or tag == tag_set then
+		local count<const> = read_varuint(reader, 'array length')
+		for index = 1, count do
+			if index == key then
+				return navigate(reader, path, idx + 1)
+			end
+			skip_value(reader)
+		end
+		return nil
+	end
+	return nil
+end
+
 local finish<const> = function(reader)
 	if reader.pos ~= reader.limit then
 		error(reader.label .. ' has trailing bytes.')
@@ -200,6 +286,19 @@ function bin.decode_with_props(addr, len, prop_names, label)
 	local value<const> = read_value(reader)
 	finish(reader)
 	return value
+end
+
+-- Typed reader: decode only the value at `path` (an array of string keys / integer
+-- indices) from a self-described payload, materializing the spine to the target and
+-- the target itself instead of the whole nested tree. Returns nil when absent.
+function bin.decode_path(addr, len, path, label)
+	local reader<const> = new_reader(addr, len, label)
+	local actual_version<const> = read_u8(reader, 'bin version')
+	if actual_version ~= version then
+		error('Unsupported binary payload version.')
+	end
+	reader.prop_names = read_prop_names(reader)
+	return navigate(reader, path, 1)
 end
 
 function bin.read_metadata_prop_names(addr, len)

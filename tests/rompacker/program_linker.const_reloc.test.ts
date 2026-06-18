@@ -9,7 +9,7 @@ import { CPU, OpCode, RunResult, StringValue, Table, asStringId, createNativeFun
 import { INSTRUCTION_BYTES, readInstructionWord, writeInstruction, writeInstructionWord } from '../../machine/ts/machine/cpu/instruction_format';
 import { appendLuaChunkToProgram, compileLuaChunkToProgram } from '../../machine/ts/machine/program/compiler';
 import { decodeProgramSymbolsImage, inflateProgram, makeProgramExportProtoRelocText, makeProgramModuleSlotRelocText, type ProgramImage, type ProgramConstReloc, type ProgramSymbolsImage } from '../../machine/ts/machine/program/loader';
-import { linkProgramImages } from '../../machine/ts/machine/program/linker';
+import { findUnresolvedRelocViolations, linkProgramImages, resolveRuntimeProgramRelocations } from '../../machine/ts/machine/program/linker';
 import { CART_BASE_PC, CART_PROGRAM_VECTOR_PC, CART_PROGRAM_VECTOR_VALUE, SYSTEM_BASE_PC } from '../../machine/ts/machine/program/layout';
 import { Memory } from '../../machine/ts/machine/memory/memory';
 
@@ -705,6 +705,89 @@ test('ProgramLinker resolves system export-proto relocations before layout merge
 	const word = readInstructionWord(linked.programImage.sections.text.code, systemBaseWord);
 	assert.equal(((word >>> 18) & 0x3f) as OpCode, OpCode.CLOSURE);
 	assert.equal(decodeBx(linked.programImage.sections.text.code, systemBaseWord), 0);
+});
+
+test('ProgramLinker scrubs resolved symbolic reloc-text from linked rodata', () => {
+	const systemImage = makeProgramImage(
+		[
+			{ op: OpCode.WIDE, a: 0, b: 0, c: 0 },
+			{ op: OpCode.LOADK, a: 0, b: 0, c: 0 },
+			{ op: OpCode.RET, a: 0, b: 1, c: 0 },
+		],
+		[makeProgramExportProtoRelocText('system__boot')],
+		[{ wordIndex: 1, kind: 'export_proto', constIndex: 0 }],
+	);
+	const cartImage = makeProgramImage(
+		[{ op: OpCode.RET, a: 0, b: 1, c: 0 }],
+		[],
+		[],
+	);
+	const systemSymbols = makeProgramSymbols('system', systemImage.sections.text.code.length / INSTRUCTION_BYTES);
+	const cartSymbols = makeProgramSymbols('cart', cartImage.sections.text.code.length / INSTRUCTION_BYTES);
+	systemSymbols.exportProtoIdBySlot = { system__boot: 'system' };
+
+	const linked = linkProgramImages(systemImage, systemSymbols, cartImage, cartSymbols);
+
+	// The instruction is resolved to a concrete CLOSURE, so the placeholder const
+	// is dead and must be scrubbed: the linked rodata carries no reloc-text.
+	const constPool = linked.programImage.sections.rodata.constPool;
+	assert.equal(constPool.includes(makeProgramExportProtoRelocText('system__boot')), false);
+	assert.equal(constPool[0], null);
+});
+
+test('resolveRuntimeProgramRelocations scrubs resolved reloc-text from the program const pool', () => {
+	const image = makeProgramImage(
+		[
+			{ op: OpCode.WIDE, a: 0, b: 0, c: 0 },
+			{ op: OpCode.LOADK, a: 0, b: 0, c: 0 },
+			{ op: OpCode.RET, a: 0, b: 1, c: 0 },
+		],
+		[makeProgramExportProtoRelocText('main__entry')],
+		[{ wordIndex: 1, kind: 'export_proto', constIndex: 0 }],
+	);
+	const program = inflateProgram(image.sections);
+	const metadata = makeProgramSymbols('main', image.sections.text.code.length / INSTRUCTION_BYTES);
+	metadata.exportProtoIdBySlot = { main__entry: 'main' };
+
+	resolveRuntimeProgramRelocations(program, metadata, image.link.constRelocs);
+
+	// Code rewritten to a concrete CLOSURE(proto 0); the placeholder const scrubbed to nil.
+	assert.equal(((readInstructionWord(program.code, 1) >>> 18) & 0x3f) as OpCode, OpCode.CLOSURE);
+	assert.equal(valueIsString(program.constPool[0]), false);
+	assert.equal(program.constPool[0], null);
+});
+
+test('findUnresolvedRelocViolations passes a clean linked image and flags leftover reloc state', () => {
+	const systemImage = makeProgramImage(
+		[
+			{ op: OpCode.WIDE, a: 0, b: 0, c: 0 },
+			{ op: OpCode.LOADK, a: 0, b: 0, c: 0 },
+			{ op: OpCode.RET, a: 0, b: 1, c: 0 },
+		],
+		[makeProgramExportProtoRelocText('system__boot')],
+		[{ wordIndex: 1, kind: 'export_proto', constIndex: 0 }],
+	);
+	const cartImage = makeProgramImage([{ op: OpCode.RET, a: 0, b: 1, c: 0 }], [], []);
+	const systemSymbols = makeProgramSymbols('system', systemImage.sections.text.code.length / INSTRUCTION_BYTES);
+	const cartSymbols = makeProgramSymbols('cart', cartImage.sections.text.code.length / INSTRUCTION_BYTES);
+	systemSymbols.exportProtoIdBySlot = { system__boot: 'system' };
+
+	// A real link produces a clean executable: no violations.
+	const linked = linkProgramImages(systemImage, systemSymbols, cartImage, cartSymbols);
+	assert.deepEqual(findUnresolvedRelocViolations(linked.programImage), []);
+
+	// An object image still carrying a module reloc + its reloc-text const is not an
+	// executable: both leftover-state checks must fire.
+	const dirty = makeProgramImage(
+		[
+			{ op: OpCode.WIDE, a: 0, b: 0, c: 0 },
+			{ op: OpCode.LOADK, a: 0, b: 0, c: 0 },
+			{ op: OpCode.RET, a: 0, b: 1, c: 0 },
+		],
+		[makeProgramModuleSlotRelocText('mod__x')],
+		[{ wordIndex: 1, kind: 'module', constIndex: 0 }],
+	);
+	assert.equal(findUnresolvedRelocViolations(dirty).length, 2);
 });
 
 test('ProgramLinker resolves system symbolic relocations against system symbols only', () => {
