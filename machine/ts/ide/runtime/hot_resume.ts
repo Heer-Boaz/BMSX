@@ -2,6 +2,7 @@ import { convertToError } from '../../lua/value';
 import { clearOverlayFrame } from '../../render/host_overlay/overlay_queue';
 import { runSystemBuiltinPrelude } from '../../machine/firmware/runtime';
 import { compileLuaChunkToProgram } from '../../machine/program/compiler';
+import { resolveRuntimeProgramRelocations } from '../../machine/program/linker';
 import { RuntimeResumeSnapshot } from '../../machine/runtime/contracts';
 import { restoreRuntimeLuaSnapshot } from '../../machine/runtime/resume_snapshot';
 import { applyRuntimeMachineState } from '../../machine/runtime/machine_state';
@@ -85,12 +86,14 @@ export function hotResumeProgramEntry(runtime: Runtime, params: { path: string; 
 	if (!baseProgram) {
 		throw new Error('hot reload requires active program.');
 	}
-	const { program, metadata, entryProtoIndex, moduleProtoMap } = compileLuaChunkToProgram(chunk, modules, {
+	const { program, metadata, entryProtoIndex, moduleProtoMap, constRelocs } = compileLuaChunkToProgram(chunk, modules, {
 		baseProgram,
 		baseMetadata,
 		optLevel: runtime.realtimeCompileOptLevel,
 		entrySource: source,
+		enableExportSymbols: true,
 	});
+	resolveRuntimeProgramRelocations(program, metadata, constRelocs);
 	replaceMapEntries(runtime.moduleProtos, moduleProtoMap);
 	if (!params.preserveSystemModules) {
 		runtime.moduleCache.clear();

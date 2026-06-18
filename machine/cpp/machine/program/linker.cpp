@@ -197,6 +197,59 @@ ResolvedExportSlot resolveLinkedExportSlot(
 	throw std::runtime_error("[ProgramLinker] Missing module export slot '" + slotName + "' in merged globals.");
 }
 
+void writeResolvedABx(std::vector<uint8_t>& code, int wordIndex, OpCode targetOp, int value) {
+	const uint32_t word = readInstructionWord(code, wordIndex);
+	const bool hasWide = wordIndex > 0
+		&& static_cast<OpCode>((readInstructionWord(code, wordIndex - 1) >> 18) & 0x3f) == OpCode::WIDE;
+	const uint8_t aLow = static_cast<uint8_t>((word >> 12) & 0x3f);
+	const uint32_t unsignedValue = static_cast<uint32_t>(value);
+	const uint32_t nextWide = unsignedValue >> (MAX_BX_BITS + EXT_BX_BITS);
+	if (!hasWide && nextWide != 0) {
+		throw std::runtime_error("[ProgramLinker] Const reloc requires WIDE prefix.");
+	}
+	const uint8_t nextExt = static_cast<uint8_t>((unsignedValue >> MAX_BX_BITS) & 0xff);
+	const uint16_t nextLow = static_cast<uint16_t>(unsignedValue & MAX_LOW_BX);
+	if (hasWide) {
+		const uint32_t wideWord = readInstructionWord(code, wordIndex - 1);
+		const uint8_t wideA = static_cast<uint8_t>((wideWord >> 12) & 0x3f);
+		const uint8_t wideC = static_cast<uint8_t>(wideWord & 0x3f);
+		writeWideInstruction(code, wordIndex - 1, wideA, static_cast<uint8_t>(nextWide & 0x3f), wideC);
+	}
+	writeInstruction(
+		code,
+		wordIndex,
+		static_cast<uint8_t>(targetOp),
+		aLow,
+		static_cast<uint8_t>((nextLow >> 6) & 0x3f),
+		static_cast<uint8_t>(nextLow & 0x3f),
+		nextExt
+	);
+}
+
+struct ResolvedExportProtoTarget {
+	OpCode op = OpCode::GETGL;
+	int value = -1;
+};
+
+ResolvedExportProtoTarget resolveExportProtoRelocTarget(
+	const std::string& slotName,
+	const std::vector<std::string>& globalNames,
+	const std::vector<std::string>& systemGlobalNames,
+	const std::unordered_map<std::string, std::string>& exportProtoIdBySlot,
+	const std::vector<std::string>& protoIds
+) {
+	const auto protoIt = exportProtoIdBySlot.find(slotName);
+	if (protoIt != exportProtoIdBySlot.end()) {
+		const auto protoFound = std::find(protoIds.begin(), protoIds.end(), protoIt->second);
+		if (protoFound == protoIds.end()) {
+			throw std::runtime_error("[ProgramLinker] export_proto reloc cannot resolve proto '" + protoIt->second + "' for slot '" + slotName + "'.");
+		}
+		return {OpCode::CLOSURE, static_cast<int>(protoFound - protoIds.begin())};
+	}
+	const ResolvedExportSlot resolvedSlot = resolveLinkedExportSlot(slotName, globalNames, systemGlobalNames);
+	return {resolvedSlot.op, resolvedSlot.slot};
+}
+
 void rewriteClosureIndices(std::vector<uint8_t>& code, int protoOffset) {
 	if (protoOffset == 0) {
 		return;
@@ -530,6 +583,45 @@ std::unique_ptr<ProgramMetadata> mergeMetadata(
 
 } // namespace
 
+void resolveRuntimeProgramRelocations(
+	Program& program,
+	const ProgramMetadata& metadata,
+	const std::vector<ProgramConstReloc>& relocs
+) {
+	for (const ProgramConstReloc& reloc : relocs) {
+		if (reloc.kind != ProgramConstRelocKind::Module && reloc.kind != ProgramConstRelocKind::ExportProto) {
+			continue;
+		}
+		const Value value = program.constPool[static_cast<size_t>(reloc.constIndex)];
+		if (!valueIsTagged(value) || valueTag(value) != ValueTag::String) {
+			throw std::runtime_error("[ProgramLinker] Runtime module/export reloc must refer to a string const.");
+		}
+		const std::string& constText = program.constPoolStringPool->toString(static_cast<StringId>(valuePayload(value)));
+		if (reloc.kind == ProgramConstRelocKind::Module) {
+			const std::string prefix = "modslot:";
+			std::string slotName = constText;
+			if (constText.rfind(prefix, 0) == 0) {
+				slotName = constText.substr(prefix.size());
+			}
+			const ResolvedExportSlot resolvedSlot = resolveLinkedExportSlot(slotName, metadata.globalNames, metadata.systemGlobalNames);
+			writeResolvedABx(program.code, reloc.wordIndex, resolvedSlot.op, resolvedSlot.slot);
+			continue;
+		}
+		const std::string prefix = "exportproto:";
+		std::string slotName = constText;
+		if (slotName.rfind(prefix, 0) == 0) {
+			slotName = slotName.substr(prefix.size());
+		}
+		const ResolvedExportProtoTarget target = resolveExportProtoRelocTarget(
+			slotName,
+			metadata.globalNames,
+			metadata.systemGlobalNames,
+			metadata.exportProtoIdBySlot,
+			metadata.protoIds
+		);
+		writeResolvedABx(program.code, reloc.wordIndex, target.op, target.value);
+	}
+}
 
 /*
 	Emulated-machine linking note

@@ -5,7 +5,7 @@ import type { LuaValue } from '../../lua/value';
 import { applySystemBuiltinGlobals, runSystemBuiltinPrelude } from '../../machine/firmware/runtime';
 import { seedLuaGlobals } from '../../machine/firmware/globals';
 import { compileLuaChunkToProgram, type CompiledProgram } from '../../machine/program/compiler';
-import { linkProgramImages } from '../../machine/program/linker';
+import { linkProgramImages, resolveRuntimeProgramRelocations } from '../../machine/program/linker';
 import { readWorkspaceLuaSourceText } from '../workspace/files';
 import { SymbolEntry, SymbolKind } from '../../machine/runtime/contracts';
 import { resolveLuaSourceRecord, type LuaSourceRegistry } from '../../machine/program/sources';
@@ -405,10 +405,15 @@ export function bootLuaProgram(runtime: Runtime, options?: { preserveState?: boo
 		const entryModulePath = options?.sourceOverride ? toLuaModulePath(entryPath) : path;
 		const entryChunk = interpreter.compileChunk(entrySource, entryPath);
 		const { modules } = buildModuleChunks(runtime, entryModulePath);
-		const { program, metadata, entryProtoIndex, moduleProtoMap, staticModulePaths } = compileLuaChunkToProgram(entryChunk, modules, {
+		const enableExportSymbols = runtime.activeLuaSources === runtime.cartLuaSources;
+		const { program, metadata, entryProtoIndex, moduleProtoMap, staticModulePaths, constRelocs } = compileLuaChunkToProgram(entryChunk, modules, {
 			optLevel: runtime.realtimeCompileOptLevel,
 			entrySource,
+			enableExportSymbols,
 		});
+		if (enableExportSymbols) {
+			resolveRuntimeProgramRelocations(program, metadata, constRelocs);
+		}
 		installProgramModules(runtime, moduleProtoMap);
 		const prelude = runSystemBuiltinPrelude(runtime, program, metadata);
 		runtime.programMetadata = prelude.metadata;

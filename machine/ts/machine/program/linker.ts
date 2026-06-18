@@ -1,5 +1,5 @@
 // start repeated-sequence-acceptable -- Program linker rewrites packed instruction fields directly to preserve bit-level clarity.
-import { OpCode, type LocalSlotDebug, type ProgramMetadata, type Proto, type SourceRange } from '../cpu/cpu';
+import { asStringId, OpCode, valueIsString, type LocalSlotDebug, type Program, type ProgramMetadata, type Proto, type SourceRange } from '../cpu/cpu';
 import {
 	BASE_BX_BITS,
 	EXT_B_BITS,
@@ -43,6 +43,7 @@ const NAN_KEY = 'n:0x7ff8000000000000';
 const EMPTY_SLOT_NAMES: ReadonlyArray<string> = [];
 const EMPTY_LOCAL_SLOTS_BY_PROTO: ReadonlyArray<ReadonlyArray<LocalSlotDebug>> = [];
 const EMPTY_UPVALUE_NAMES_BY_PROTO: ReadonlyArray<ReadonlyArray<string>> = [];
+const EMPTY_EXPORT_PROTO_ID_BY_SLOT: { readonly [slotName: string]: string } = {};
 
 const makeNumberKey = (value: number): string => {
 	if (Number.isNaN(value)) {
@@ -150,6 +151,77 @@ const resolveLinkedExportSlot = (
 		return { op: OpCode.GETSYS, slot: systemSlot };
 	}
 	throw new Error(`[ProgramLinker] Unable to resolve module export slot '${slotName}' during linking.`);
+};
+
+const rewriteResolvedABx = (
+	code: Uint8Array,
+	wordIndex: number,
+	targetOp: number,
+	value: number,
+): void => {
+	const word = readInstructionWord(code, wordIndex);
+	const hasWide = wordIndex > 0 && ((readInstructionWord(code, wordIndex - 1) >>> 18) & 0x3f) === OpCode.WIDE;
+	const aLow = (word >>> 12) & 0x3f;
+	const nextWide = value >> BASE_BX_BITS;
+	if (!hasWide && nextWide !== 0) {
+		throw new Error(`[ProgramLinker] Reloc at word ${wordIndex} requires WIDE prefix.`);
+	}
+	const nextExt = (value >> MAX_BX_BITS) & 0xff;
+	const nextLow = value & MAX_LOW_BX;
+	if (hasWide) {
+		const wideWord = readInstructionWord(code, wordIndex - 1);
+		const wideA = (wideWord >>> 12) & 0x3f;
+		const wideC = wideWord & 0x3f;
+		writeInstruction(code, wordIndex - 1, OpCode.WIDE, wideA, nextWide & 0x3f, wideC);
+	}
+	writeInstruction(code, wordIndex, targetOp, aLow, (nextLow >>> 6) & 0x3f, nextLow & 0x3f, nextExt);
+};
+
+const resolveExportProtoRelocTarget = (
+	slotName: string,
+	globalNames: ReadonlyArray<string>,
+	systemGlobalNames: ReadonlyArray<string>,
+	exportProtoIdBySlot: { readonly [slotName: string]: string },
+	protoIds: ReadonlyArray<string>,
+): { op: number; value: number } => {
+	const protoId = exportProtoIdBySlot[slotName];
+	if (protoId !== undefined) {
+		const protoIndex = protoIds.indexOf(protoId);
+		if (protoIndex < 0) {
+			throw new Error(`[ProgramLinker] export_proto reloc cannot resolve proto '${protoId}' for slot '${slotName}'.`);
+		}
+		return { op: OpCode.CLOSURE, value: protoIndex };
+	}
+	const resolvedSlot = resolveLinkedExportSlot(slotName, globalNames, systemGlobalNames);
+	return { op: resolvedSlot.op, value: resolvedSlot.slot };
+};
+
+export const resolveRuntimeProgramRelocations = (
+	program: Program,
+	metadata: ProgramMetadata,
+	relocs: ReadonlyArray<ProgramConstReloc>,
+): void => {
+	const exportProtoIdBySlot = metadata.exportProtoIdBySlot ?? EMPTY_EXPORT_PROTO_ID_BY_SLOT;
+	for (let index = 0; index < relocs.length; index += 1) {
+		const reloc = relocs[index];
+		if (reloc.kind !== 'module' && reloc.kind !== 'export_proto') {
+			continue;
+		}
+		const constValue = program.constPool[reloc.constIndex];
+		if (!valueIsString(constValue)) {
+			throw new Error(`[ProgramLinker] ${reloc.kind} reloc at word ${reloc.wordIndex} references a non-string const.`);
+		}
+		const constText = program.constPoolStringPool.toString(asStringId(constValue));
+		if (reloc.kind === 'module') {
+			const slotName = constText.startsWith('modslot:') ? constText.slice('modslot:'.length) : constText;
+			const resolvedSlot = resolveLinkedExportSlot(slotName, metadata.globalNames, metadata.systemGlobalNames);
+			rewriteResolvedABx(program.code, reloc.wordIndex, resolvedSlot.op, resolvedSlot.slot);
+			continue;
+		}
+		const slotName = constText.startsWith('exportproto:') ? constText.slice('exportproto:'.length) : constText;
+		const target = resolveExportProtoRelocTarget(slotName, metadata.globalNames, metadata.systemGlobalNames, exportProtoIdBySlot, metadata.protoIds);
+		rewriteResolvedABx(program.code, reloc.wordIndex, target.op, target.value);
+	}
 };
 
 const rewriteConstRelocations = (

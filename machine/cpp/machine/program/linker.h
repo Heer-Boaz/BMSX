@@ -26,4 +26,10 @@ LinkedProgramImage linkProgramImages(
 	int cartBasePc = CART_BASE_PC
 );
 
+void resolveRuntimeProgramRelocations(
+	Program& program,
+	const ProgramMetadata& metadata,
+	const std::vector<ProgramConstReloc>& relocs
+);
+
 } // namespace bmsx
