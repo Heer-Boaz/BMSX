@@ -102,6 +102,10 @@ type CompileOptions = {
 	optLevel?: OptimizationLevel;
 	entrySource?: string;
 	externalModules?: ReadonlyArray<ProgramModule>;
+	// Module paths that are const modules: their exports are compile-time constants
+	// inlined at use sites (e.g. the generated `bmsx/assets` ROM symbol module). They
+	// produce no proto, no global slots, no `require` call and no runtime table.
+	constModulePaths?: ReadonlyArray<string>;
 };
 
 const EMPTY_PROGRAM_MODULES: ReadonlyArray<ProgramModule> = [];
@@ -140,12 +144,22 @@ type ModuleExportNode = {
 	children: Map<string, ModuleExportNode>;
 };
 
+// Compile-time constant export value of a const module (the `bmsx/assets` ABI).
+// These are the only value forms a const module may export; each use site inlines
+// the value directly instead of going through a runtime table or global slot.
+type ConstExportValue = number | boolean | string | null;
+
 type ModuleCompileInfo = {
 	path: string;
 	external: boolean;
+	// A const module exports only compile-time constants. It has no runtime
+	// presence: no proto, no global slots, no `require` call. Every export read is
+	// inlined to its constant value at the use site.
+	constModule: boolean;
 	returnExpression: LuaExpression;
 	exportRoot: ModuleExportNode;
 	exportSlotsByPathKey: Map<string, string>;
+	exportConstValueByPathKey: Map<string, ConstExportValue>;
 };
 
 type ModuleCompileContext = {
@@ -1473,6 +1487,29 @@ class FunctionBuilder {
 		};
 	}
 
+	private isConstModulePath(modulePath: string): boolean {
+		return !!this.moduleCompileContext?.modulesByPath.get(modulePath)?.constModule;
+	}
+
+	// Resolve a const module export (e.g. `assets.data_x_addr`) to its compile-time
+	// constant value. Returns a wrapper so a `nil`/`false`/`0` export is distinguished
+	// from "not a const export". The value is inlined at the use site.
+	private tryResolveModuleExportConstValue(expression: LuaExpression): { value: ConstExportValue } | null {
+		const binding = this.tryResolveStaticModuleBinding(expression, false);
+		if (!binding || binding.exportDepth === 0) {
+			return null;
+		}
+		const info = this.moduleCompileContext?.modulesByPath.get(binding.modulePath);
+		if (!info || !info.constModule || !info.exportConstValueByPathKey.has(binding.exportPathKey)) {
+			return null;
+		}
+		return { value: info.exportConstValueByPathKey.get(binding.exportPathKey)! };
+	}
+
+	private emitLoadConstExportValue(target: number, value: ConstExportValue): void {
+		this.emitLoadConst(target, typeof value === 'string' ? this.program.internString(value) : value);
+	}
+
 	private tryResolveModuleExportSlotFromExpression(expression: LuaExpression): string | undefined {
 		const binding = this.tryResolveStaticModuleBinding(expression, false);
 		if (!binding || binding.exportDepth === 0) {
@@ -1492,6 +1529,11 @@ class FunctionBuilder {
 	private tryResolveExternalModuleRootFieldSlotName(baseExpression: LuaExpression, key: string): string | undefined {
 		const binding = this.tryResolveStaticModuleBinding(baseExpression, false);
 		if (!binding || !binding.external || binding.exportDepth !== 0) {
+			return undefined;
+		}
+		// Const modules export only the symbols in their return table; an unknown field
+		// is not a runtime global-slot reference (it surfaces as a module-root misuse).
+		if (this.isConstModulePath(binding.modulePath)) {
 			return undefined;
 		}
 		const moduleInfo = this.moduleCompileContext!.modulesByPath.get(binding.modulePath)!;
@@ -2167,7 +2209,7 @@ class FunctionBuilder {
 				if (i < names.length && attributes[i] === 'const') {
 					const moduleBinding = this.tryResolveStaticModuleBinding(expr, true);
 					if (moduleBinding !== null) {
-						if (moduleBinding.external) {
+						if (moduleBinding.external && !this.isConstModulePath(moduleBinding.modulePath)) {
 							this.markStaticExternalModulePath(moduleBinding.modulePath);
 						}
 						if (moduleBinding.exportDepth === 0) {
@@ -2209,7 +2251,7 @@ class FunctionBuilder {
 			if (lastHasName && attributes[lastIndex] === 'const' && !wantsMulti) {
 				const moduleBinding = this.tryResolveStaticModuleBinding(lastExpr, true);
 				if (moduleBinding !== null) {
-					if (moduleBinding.external) {
+					if (moduleBinding.external && !this.isConstModulePath(moduleBinding.modulePath)) {
 						this.markStaticExternalModulePath(moduleBinding.modulePath);
 					}
 					if (moduleBinding.exportDepth === 0) {
@@ -2934,6 +2976,11 @@ class FunctionBuilder {
 	}
 
 	private compileMemberExpression(expression: any, target: number): void {
+		const constExport = this.tryResolveModuleExportConstValue(expression as LuaMemberExpression);
+		if (constExport !== null) {
+			this.emitLoadConstExportValue(target, constExport.value);
+			return;
+		}
 		const slotName = this.tryResolveModuleExportSlotFromExpression(expression as LuaMemberExpression);
 		if (slotName !== undefined) {
 			this.emitModuleExportValueLoad(slotName, target);
@@ -2956,6 +3003,11 @@ class FunctionBuilder {
 	}
 
 	private compileIndexExpression(expression: any, target: number): void {
+		const constExport = this.tryResolveModuleExportConstValue(expression as LuaIndexExpression);
+		if (constExport !== null) {
+			this.emitLoadConstExportValue(target, constExport.value);
+			return;
+		}
 		const slotName = this.tryResolveModuleExportSlotFromExpression(expression as LuaIndexExpression);
 		if (slotName !== undefined) {
 			this.emitModuleExportValueLoad(slotName, target);
@@ -3946,10 +3998,95 @@ const buildTopLevelLocalModuleShapes = (
 	return localShapes;
 };
 
+// Evaluate a const module initializer expression to its constant value. Only the
+// Lua-standard constant forms are accepted (literals, negation of a numeric literal,
+// and references to a previously declared top-level `local <const>`); anything else
+// returns undefined so the caller can reject it.
+const evaluateModuleConstLiteral = (
+	expression: LuaExpression,
+	topLevelConsts: ReadonlyMap<string, ConstExportValue>,
+): ConstExportValue | undefined => {
+	switch (expression.kind) {
+		case LuaSyntaxKind.NumericLiteralExpression:
+			return (expression as LuaNumericLiteralExpression).value;
+		case LuaSyntaxKind.StringLiteralExpression:
+			return (expression as LuaStringLiteralExpression).value;
+		case LuaSyntaxKind.BooleanLiteralExpression:
+			return (expression as LuaBooleanLiteralExpression).value;
+		case LuaSyntaxKind.NilLiteralExpression:
+			return null;
+		case LuaSyntaxKind.IdentifierExpression: {
+			const name = (expression as LuaIdentifierExpression).name;
+			return topLevelConsts.has(name) ? topLevelConsts.get(name)! : undefined;
+		}
+		case LuaSyntaxKind.UnaryExpression: {
+			const unary = expression as LuaUnaryExpression;
+			if (unary.operator !== LuaUnaryOperator.Negate) {
+				return undefined;
+			}
+			const operand = evaluateModuleConstLiteral(unary.operand, topLevelConsts);
+			return typeof operand === 'number' ? -operand : undefined;
+		}
+		default:
+			return undefined;
+	}
+};
+
+const collectTopLevelConstLocals = (chunk: LuaChunk): Map<string, ConstExportValue> => {
+	const consts = new Map<string, ConstExportValue>();
+	for (let index = 0; index < chunk.body.length; index += 1) {
+		const statement = chunk.body[index];
+		if (statement.kind !== LuaSyntaxKind.LocalAssignmentStatement) {
+			continue;
+		}
+		const local = statement as LuaLocalAssignmentStatement;
+		if (local.names.length !== 1 || local.attributes[0] !== 'const' || local.values.length !== 1) {
+			continue;
+		}
+		const value = evaluateModuleConstLiteral(local.values[0], consts);
+		if (value !== undefined) {
+			consts.set(local.names[0].name, value);
+		}
+	}
+	return consts;
+};
+
+const collectModuleExportConstValues = (
+	expression: LuaExpression,
+	topLevelConsts: ReadonlyMap<string, ConstExportValue>,
+	out: Map<string, ConstExportValue>,
+	path: string[],
+): void => {
+	if (expression.kind === LuaSyntaxKind.TableConstructorExpression) {
+		const table = expression as LuaTableConstructorExpression;
+		for (let index = 0; index < table.fields.length; index += 1) {
+			const field = table.fields[index];
+			if (field.kind === LuaTableFieldKind.Array) {
+				continue;
+			}
+			const key = field.kind === LuaTableFieldKind.IdentifierKey
+				? field.name
+				: extractTableKeyFromExpression(field.key);
+			if (!key) {
+				continue;
+			}
+			path.push(key);
+			collectModuleExportConstValues(field.value, topLevelConsts, out, path);
+			path.pop();
+		}
+		return;
+	}
+	const value = evaluateModuleConstLiteral(expression, topLevelConsts);
+	if (value !== undefined) {
+		out.set(buildModuleExportPathKey(path), value);
+	}
+};
+
 const buildModuleCompileInfo = (
 	modulePath: string,
 	chunk: LuaChunk,
 	external: boolean,
+	constModule: boolean,
 ): ModuleCompileInfo | null => {
 	if (chunk.body.length === 0) {
 		return null;
@@ -3982,23 +4119,61 @@ const buildModuleCompileInfo = (
 		visiting.delete(node);
 	};
 	assignSlots(exportRoot, [], new WeakSet());
+	const exportConstValueByPathKey = new Map<string, ConstExportValue>();
+	if (constModule) {
+		const topLevelConsts = collectTopLevelConstLocals(chunk);
+		collectModuleExportConstValues(returnStatement.expressions[0], topLevelConsts, exportConstValueByPathKey, []);
+		assertConstModuleExportsAreConstant(modulePath, exportRoot, exportConstValueByPathKey);
+	}
 	return {
 		path: modulePath,
 		external,
+		constModule,
 		returnExpression: returnStatement.expressions[0],
 		exportRoot,
 		exportSlotsByPathKey,
+		exportConstValueByPathKey,
 	};
+};
+
+// A const module contract: every leaf export must resolve to a compile-time
+// constant. A missing value means the generated/declared module is not a pure
+// const symbol table, which is a build error rather than a silent fallback.
+const assertConstModuleExportsAreConstant = (
+	modulePath: string,
+	exportRoot: ModuleExportNode,
+	exportConstValueByPathKey: ReadonlyMap<string, ConstExportValue>,
+): void => {
+	const visit = (node: ModuleExportNode, path: string[], visiting: WeakSet<ModuleExportNode>): void => {
+		if (visiting.has(node)) {
+			return;
+		}
+		visiting.add(node);
+		for (const [key, child] of node.children) {
+			path.push(key);
+			if (child.children.size === 0 && !exportConstValueByPathKey.has(buildModuleExportPathKey(path))) {
+				throw new Error(`[Compiler] Const module '${modulePath}' export '${buildModuleExportPathKey(path)}' is not a compile-time constant.`);
+			}
+			visit(child, path, visiting);
+			path.pop();
+		}
+		visiting.delete(node);
+	};
+	visit(exportRoot, [], new WeakSet());
 };
 
 const buildModuleCompileContext = (
 	modules: ReadonlyArray<ProgramModule>,
 	externalModules: ReadonlyArray<ProgramModule>,
+	constModulePaths: ReadonlySet<string>,
 ): ModuleCompileContext => {
 	const modulesByPath = new Map<string, ModuleCompileInfo>();
 	for (let index = 0; index < modules.length; index += 1) {
 		const module = modules[index];
-		const info = buildModuleCompileInfo(module.path, module.chunk, false);
+		const constModule = constModulePaths.has(module.path);
+		// A const module is a compile-time symbol table, so it is treated as external
+		// (no proto, no runtime require) even when it ships in the module source list.
+		const info = buildModuleCompileInfo(module.path, module.chunk, constModule, constModule);
 		if (info) {
 			modulesByPath.set(module.path, info);
 		}
@@ -4008,7 +4183,7 @@ const buildModuleCompileContext = (
 		if (modulesByPath.has(module.path)) {
 			continue;
 		}
-		const info = buildModuleCompileInfo(module.path, module.chunk, true);
+		const info = buildModuleCompileInfo(module.path, module.chunk, true, constModulePaths.has(module.path));
 		if (info) {
 			modulesByPath.set(module.path, info);
 		}
@@ -4213,7 +4388,8 @@ export function compileLuaChunkToProgram(chunk: LuaChunk, modules: ReadonlyArray
 	const canonicalModules = canonicalizeProgramModules(modules, 'program');
 	const canonicalExternalModules = canonicalizeProgramModules(options.externalModules ?? EMPTY_PROGRAM_MODULES, 'external');
 	const frontend = buildCompilerSemanticFrontend(chunk, canonicalModules, canonicalExternalModules, options);
-	const moduleCompileContext = buildModuleCompileContext(canonicalModules, canonicalExternalModules);
+	const constModulePaths = new Set<string>(options.constModulePaths ?? []);
+	const moduleCompileContext = buildModuleCompileContext(canonicalModules, canonicalExternalModules, constModulePaths);
 	const semanticErrors = collectSemanticCompileErrors(frontend, chunk.range.path);
 	if (semanticErrors.length > 0) {
 		throw new Error(buildCompileFailureMessage(semanticErrors));
@@ -4264,6 +4440,11 @@ export function compileLuaChunkToProgram(chunk: LuaChunk, modules: ReadonlyArray
 	const moduleProtoMap = new Map<string, number>();
 	for (let i = 0; i < canonicalModules.length; i += 1) {
 		const module = canonicalModules[i];
+		// Const modules are compile-time symbol tables: their exports are inlined at
+		// use sites, so they carry no runtime proto and are never required at runtime.
+		if (moduleCompileContext.modulesByPath.get(module.path)?.constModule) {
+			continue;
+		}
 		const moduleProtoId = buildModuleProtoId(module.path);
 		const builder = new FunctionBuilder(programBuilder, null, {
 			moduleId: module.path,
@@ -4308,6 +4489,11 @@ export function compileLuaChunkToProgram(chunk: LuaChunk, modules: ReadonlyArray
 	// Externals (system ROM modules passed as externalModules) are treated as
 	// system globals so they are preferred when resolving symbolic slots.
 	for (const [, info] of moduleCompileContext.modulesByPath) {
+		// Const module exports are inlined as constants and never resolved through a
+		// global slot, so they do not register slot names.
+		if (info.constModule) {
+			continue;
+		}
 		for (const slotName of info.exportSlotsByPathKey.values()) {
 			if (info.external) {
 				if (!metadata.systemGlobalNames.includes(slotName)) {

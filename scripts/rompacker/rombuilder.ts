@@ -1570,6 +1570,10 @@ export function appendProgramImage(
 		modules.push({ path, chunk, source: asset.buffer.toString('utf8') });
 	}
 	const generatedLuaModules = options.generatedLuaModules ?? [];
+	// Generated Lua modules in this pipeline are const symbol modules (e.g. the
+	// `bmsx/assets` ROM address/length table). The compiler inlines their exports as
+	// constants and emits no proto/slots/require for them.
+	const constModulePaths: string[] = [];
 	for (const generated of generatedLuaModules) {
 		if (chunksByPath.has(generated.path)) {
 			throw new Error(`[RomPacker] Generated Lua module '${generated.path}' conflicts with a ROM Lua asset.`);
@@ -1580,6 +1584,7 @@ export function appendProgramImage(
 		const chunk = parser.parseChunk();
 		chunksByPath.set(generated.path, chunk);
 		modules.push({ path: generated.path, chunk, source: generated.source });
+		constModulePaths.push(generated.path);
 	}
 	const externalModules: Array<{ path: string; chunk: LuaChunk; source: string }> = [];
 	const externalModulePaths: string[] = [];
@@ -1603,6 +1608,7 @@ export function appendProgramImage(
 		optLevel,
 		entrySource: entryAsset.buffer.toString('utf8'),
 		externalModules,
+		constModulePaths,
 	});
 	const program = compiled.program;
 	const programImage = {

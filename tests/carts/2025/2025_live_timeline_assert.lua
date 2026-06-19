@@ -10,7 +10,7 @@ end
 
 function __bmsx_host_test.setup()
 	local director<const> = oget('p3.director')
-	local timeline<const> = require('timeline/index')
+	local timeline<const> = require('cartlib/timeline/index')
 	director:define_timeline(timeline.new({
 		id = host_timeline_id,
 		frames = timeline.range(4),

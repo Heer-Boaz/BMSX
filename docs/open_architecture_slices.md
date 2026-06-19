@@ -65,6 +65,11 @@ Al afgerond en daarom niet opnieuw als open slice opgenomen:
 - rompacker en IDE/source-compile genereren dezelfde `bmsx/assets` module met
   per-asset adres/lengte-symbolen. Dat houdt ROM-symbolen een build/link
   product in plaats van een runtime-directory of host-facade.
+- `bmsx/assets` is een const module: standaard-Lua bron (`local <const>` +
+  `return`-tabel), maar de compiler inlinet elke `assets.<symbol>` op de use-site
+  als constante (`KSMI`/`LOADK`). De module krijgt geen proto, geen global slots,
+  geen `require`-call en staat niet in `staticModulePaths`; er is geen runtime
+  module-tabel meer. Geldt voor rompack, IDE/source-compile en hot-resume.
 - compiler/linker symbolische module/function-relocs zijn TS/C++-parity:
   reloc-records dragen het symbool, executable const-pools krijgen geen
   `modslot:`/`exportproto:` placeholder strings als runtimewaarden.
@@ -84,6 +89,7 @@ Actuele validatie voor de ROM/data/compiler-linker status:
 - `npm run build:platform:libretro-wsl -- --force`
 - `npm run headless:forcebuildalltest -- pietious tests/carts/pietious/pietious_enter_world_assert.lua`
 - `npm run headless:forcebuildalltest -- nemesis_s tests/carts/nemesis_s/nemesis_s_stage_boot_assert.lua`
+- `npm run headless:forcebuildalltest -- 2025 tests/carts/2025/2025_live_timeline_assert.lua`
 - `npm run ide:test -- pietious tests/ide/hot_resume_entry_edit.idetest.js`
 
 Referentie-model voor verdere ROM/data-slices:
@@ -97,9 +103,10 @@ Referentie-model voor verdere ROM/data-slices:
 
 Status na de laatste ROM/data-slice:
 
-- `pietious` en `nemesis_s` draaien op echte cart-tests zonder `rom_data`.
-- `castle_map` en `nemesis_s_stage` gebruiken nu `bmsx/assets` adres/lengte
-  symbolen en `bin.decode(addr, len, id)`.
+- `pietious`, `nemesis_s` en `2025` draaien op echte cart-tests zonder `rom_data`.
+- `castle_map`, `nemesis_s_stage` en `2025`'s `transition_config` gebruiken nu
+  `bmsx/assets` adres/lengte symbolen en `bin.decode(addr, len, id)`; de adressen
+  inlinen als constants op de use-site (const moduleklasse).
 - De pure retro-route is aanwezig en getest via een `.bin` struct-ROM test.
 - Nog niet afgerond: de twee gemigreerde legacy data-assets decoden nog
   structured/YAML payloads naar Lua-tabellen bij load. Dat is geen runtime
@@ -113,7 +120,7 @@ Cart-representatie roadmap/status:
 | echte `data`/`bss` secties | Deels: het image-format en de TS/C++ linker behouden `rodata`/`data`/`bss`; open: producers vullen `data`/`bss` nog niet als cart ABI voor static config, registries, prefab-data en initialized RAM. |
 | één object-file/linker pipeline | Deels: program images hebben reloc-records en TS/C++ linkers; open: BIOS/system/engine/cart/source-compile/hot-resume moeten door exact dezelfde object → reloc → executable semantiek. |
 | runtime relocaties als load/link stap | Deels: `module`/`export_proto` placeholders zijn uit runtimewaarden gehaald; open: harde verifier-gate voor alle executable images. |
-| static module/data ABI | Deels: M2 call-targets kunnen link-time naar `CLOSURE(proto)`; open: expliciete static moduleklasse met functies, constants en rodata/data-symbolen zonder runtime module-table. |
+| static module/data ABI | Deels: M2 call-targets kunnen link-time naar `CLOSURE(proto)` en de const-moduleklasse bestaat (`bmsx/assets` exporteert compile-time constants die op de use-site worden geïnlined, zonder runtime module-table); open: static moduleklasse met functies en rodata/data-symbolen breder dan alleen const-scalars. |
 | dynamic Lua-opcodes weren uit systems/static modules | Open: dit moet een compiler-contract worden, geen discipline of losse linter. |
 | CPU objectwereld loshalen van machine-code ABI | Open: `CPU.Value` is nog Lua-objectwereld; echte cart ABI moet primair words, registers, addresses, memory, sections en symbols zijn. |
 | assets/`rom_data` binair maken | Deels: `rom_data`-familie is weg en `.bin` raw ROM path is getest; open: maps, rooms, timelines, registries en asset records naar vaste binaire layouts. |
@@ -163,8 +170,13 @@ Open punten:
 - documenteer het `bmsx/assets` symboolformaat bij het ROM/program image format
 - voeg rominspector-output toe voor asset-symbolen zodat address/length contracts
   direct zichtbaar zijn zonder disassembly-grep
-- voorkom dat toekomstige code `bmsx/assets` als handgeschreven cartlib-module
-  of runtime registry behandelt
+
+Afgerond binnen deze slice:
+
+- `bmsx/assets` kan niet meer als runtime registry/cartlib-module gedragen worden:
+  het is een const moduleklasse die op de use-site naar constants inlinet en geen
+  runtime module-table, proto of global slots meer heeft. De hele module als
+  waarde gebruiken is een compile-error (module-root misuse).
 
 Acceptatie:
 
@@ -259,17 +271,25 @@ Status:
 
 - M2 call-targets kunnen direct naar `CLOSURE(proto)` linken
 - gewone waardelezingen houden terecht Lua-semantiek
-- static data/constants hebben nog geen complete module-export ABI
+- const moduleklasse bestaat: een module in `constModulePaths` exporteert alleen
+  compile-time constants; elke export-read wordt op de use-site geïnlined
+  (`KSMI`/`LOADK`) en de module heeft geen proto, global slots, `require`-call of
+  `staticModulePaths`-entry. `bmsx/assets` gebruikt deze klasse.
+- open: static moduleklasse met functie-exports en rodata/data/bss-symbolen naast
+  const-scalars
 
 Acceptatie:
 
 - moduleclass is expliciet: dynamic Lua module of static systems module
+  (const module is de eerste static klasse; designatie via `constModulePaths`
+  bij de compile-input, bron blijft standaard-Lua)
 - static exports zijn linkbare symbolen: functies, constants, rodata/data/bss
   addresses en sizes
-- namespace-als-waarde is voor static modules een compile-error
+- namespace-als-waarde is voor static modules een compile-error (klaar voor de
+  const module: de hele `bmsx/assets`-tabel als waarde gebruiken faalt compile-time)
 - dynamic modules blijven Lua-semantiek houden waar gameplay die lane expliciet
   kiest
-- generated `bmsx/assets` past in dezelfde static-symbol ABI
+- generated `bmsx/assets` past in dezelfde static-symbol ABI (klaar: const module)
 
 ## 20. Compiler-contract voor systems/static modules
 

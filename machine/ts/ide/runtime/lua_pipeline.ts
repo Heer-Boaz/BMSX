@@ -8,6 +8,7 @@ import { linkProgramImages, resolveRuntimeProgramRelocations } from '../../machi
 import { readWorkspaceLuaSourceText } from '../workspace/files';
 import { SymbolEntry, SymbolKind } from '../../machine/runtime/contracts';
 import { resolveLuaSourceRecord, type LuaSourceRegistry } from '../../machine/program/sources';
+import { ROM_ASSET_SYMBOL_MODULE_PATH } from '../../rompack/asset_symbols';
 import { logDebugState } from '../../machine/runtime/debug';
 import { addTrackedLuaHeapBytes, resetTrackedLuaHeapBytes } from '../../machine/memory/lua_heap_usage';
 import { resetHandledLuaErrors } from './fault_state';
@@ -265,6 +266,7 @@ function compileRegistryProgramImage(
 		optLevel: runtime.realtimeCompileOptLevel,
 		entrySource,
 		externalModules,
+		constModulePaths: [ROM_ASSET_SYMBOL_MODULE_PATH],
 	});
 	return {
 		image: programImageFromCompiled(compiled),
@@ -409,6 +411,7 @@ function bootLuaProgram(runtime: Runtime, options?: { preserveState?: boolean; s
 		const { program, metadata, entryProtoIndex, moduleProtoMap, staticModulePaths, constRelocs } = compileLuaChunkToProgram(entryChunk, modules, {
 			optLevel: runtime.realtimeCompileOptLevel,
 			entrySource,
+			constModulePaths: [ROM_ASSET_SYMBOL_MODULE_PATH],
 		});
 		resolveRuntimeProgramRelocations(program, metadata, constRelocs);
 		installProgramModules(runtime, moduleProtoMap);

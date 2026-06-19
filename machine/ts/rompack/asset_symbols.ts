@@ -26,14 +26,29 @@ function sanitizeAssetSymbolSegment(value: string): string {
 	return first >= 48 && first <= 57 ? `_${out}` : out;
 }
 
-function appendAssetSymbol(lines: string[], asset: RomAsset, address: number, byteLength: number): void {
+function appendAssetSymbol(decls: string[], exports: string[], asset: RomAsset, address: number, byteLength: number): void {
 	const symbol = `${sanitizeAssetSymbolSegment(asset.type)}_${sanitizeAssetSymbolSegment(asset.resid)}`;
-	lines.push(`assets.${symbol}_addr = ${address}`);
-	lines.push(`assets.${symbol}_len = ${byteLength}`);
+	decls.push(`local ${symbol}_addr <const> = ${address}`);
+	decls.push(`local ${symbol}_len <const> = ${byteLength}`);
+	exports.push(`${symbol}_addr`);
+	exports.push(`${symbol}_len`);
 }
 
+/*
+	ROM asset-symbol module (the `bmsx/assets` const module ABI)
+
+	- This is a generated build/link product, not a hand-written cartlib module. Every
+		symbol is a per-asset ROM address/length resolved at pack/link time.
+	- The emitted source is standard Lua: top-level `local <const>` declarations (the only
+		Lua-standard constant form) plus a `return` table that exports them by name.
+	- The compiler treats `bmsx/assets` as a const module (see `constModulePaths`): the
+		return table is a compile-time export descriptor, never a runtime table. Every
+		`assets.<symbol>` read is inlined to the constant value at its use site, so the module
+		emits no proto, no global slots, no `require` call and no runtime table construction.
+*/
 export function buildRomAssetSymbolModuleSource(assetList: ReadonlyArray<RomAsset>, includeLuaAssets: boolean): string {
-	const lines = ['local assets<const> = {}'];
+	const decls: string[] = [];
+	const exports: string[] = [];
 	let offset = CART_ROM_HEADER_SIZE;
 	for (let index = 0; index < assetList.length; index += 1) {
 		const asset = assetList[index];
@@ -44,26 +59,32 @@ export function buildRomAssetSymbolModuleSource(assetList: ReadonlyArray<RomAsse
 		const exportSymbol = asset.type !== 'lua' && asset.type !== 'code' && asset.type !== 'romlabel';
 		if (asset.start !== undefined) {
 			if (exportSymbol) {
-				appendAssetSymbol(lines, asset, romBaseByPayloadId[asset.payload_id] + asset.start, asset.end - asset.start);
+				appendAssetSymbol(decls, exports, asset, romBaseByPayloadId[asset.payload_id] + asset.start, asset.end - asset.start);
 			}
 			continue;
 		}
-		if (asset.buffer && asset.buffer.length > 0) {
+		if (asset.buffer?.length > 0) {
 			if (exportSymbol) {
-				appendAssetSymbol(lines, asset, CART_ROM_BASE + offset, asset.buffer.length);
+				appendAssetSymbol(decls, exports, asset, CART_ROM_BASE + offset, asset.buffer.length);
 			}
 			offset += asset.buffer.length;
 		}
-		if (asset.compiled_buffer && asset.compiled_buffer.length > 0) {
+		if (asset.compiled_buffer?.length > 0) {
 			offset += asset.compiled_buffer.length;
 		}
-		if (asset.texture_buffer && asset.texture_buffer.length > 0) {
+		if (asset.texture_buffer?.length > 0) {
 			offset += asset.texture_buffer.length;
 		}
-		if (asset.collision_bin_buffer && asset.collision_bin_buffer.length > 0) {
+		if (asset.collision_bin_buffer?.length > 0) {
 			offset += asset.collision_bin_buffer.length;
 		}
 	}
-	lines.push('return assets');
+	const lines = decls.slice();
+	lines.push('return {');
+	for (let index = 0; index < exports.length; index += 1) {
+		const name = exports[index];
+		lines.push(`\t${name} = ${name},`);
+	}
+	lines.push('}');
 	return lines.join('\n');
 }

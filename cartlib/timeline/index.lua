@@ -477,6 +477,9 @@ function timeline:apply_frame(target, reason, event_time_ms, preserve_ticks)
 			end
 			emit_end = true
 			self.direction = 1
+			-- A 'once' timeline stops at the last frame: mark it ended so update()
+			-- short-circuits instead of re-emitting the terminal end event every tick.
+			self.ended = true
 		end
 	end
 

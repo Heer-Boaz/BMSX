@@ -18,25 +18,32 @@ local combat_director_def_id<const> = 'p3.combat.director'
 local combat_director_instance_id<const> = 'p3.combat.director'
 local combat_director_fsm_id<const> = 'p3.combat.director.fsm'
 
-overgang_timeline_id = 'overgang'
-overgang_in_frames = 24
-overgang_hold_frames = 48
-overgang_out_frames = 24
+-- Transition/overgang timing is authored as a ROM data asset and read back via
+-- the build/link `bmsx/assets` symbols: the addresses inline to constants at this
+-- use site and `bin.decode` reads the packed bytes (no PICO-style runtime lookup).
+local bin<const> = require('system/bin')
+local assets<const> = require('bmsx/assets')
+local transition_config<const> = bin.decode(assets.data_transition_config_addr, assets.data_transition_config_len, 'transition_config')
+
+overgang_timeline_id = transition_config.overgang_timeline_id
+overgang_in_frames = transition_config.overgang_in_frames
+overgang_hold_frames = transition_config.overgang_hold_frames
+overgang_out_frames = transition_config.overgang_out_frames
 overgang_frame_count = overgang_in_frames + overgang_hold_frames + overgang_out_frames
-overgang_ticks_per_frame = 20
-overgang_fade_out_frames = 18
-overgang_fade_in_frames = 18
-overgang_post_fade_in_timeline_id = 'overgang_post_fade_in'
-transition_panel_in_frames = 6
-transition_panel_hold_frames = 10
-transition_panel_out_frames = 6
-transition_panel_gap_frames = 4
-transition_accent_in_frames = 4
-transition_accent_hold_frames = 8
-transition_accent_out_frames = 4
-transition_text_in_frames = 6
-transition_text_hold_frames = 32
-transition_text_out_frames = 5
+overgang_ticks_per_frame = transition_config.overgang_ticks_per_frame
+overgang_fade_out_frames = transition_config.overgang_fade_out_frames
+overgang_fade_in_frames = transition_config.overgang_fade_in_frames
+overgang_post_fade_in_timeline_id = transition_config.overgang_post_fade_in_timeline_id
+transition_panel_in_frames = transition_config.transition_panel_in_frames
+transition_panel_hold_frames = transition_config.transition_panel_hold_frames
+transition_panel_out_frames = transition_config.transition_panel_out_frames
+transition_panel_gap_frames = transition_config.transition_panel_gap_frames
+transition_accent_in_frames = transition_config.transition_accent_in_frames
+transition_accent_hold_frames = transition_config.transition_accent_hold_frames
+transition_accent_out_frames = transition_config.transition_accent_out_frames
+transition_text_in_frames = transition_config.transition_text_in_frames
+transition_text_hold_frames = transition_config.transition_text_hold_frames
+transition_text_out_frames = transition_config.transition_text_out_frames
 
 combat_fade_timeline_id = 'combat_fade'
 combat_fade_out_frames = 10

@@ -1,6 +1,7 @@
 import { convertToError } from '../../lua/value';
 import { clearOverlayFrame } from '../../render/host_overlay/overlay_queue';
 import { compileLuaChunkToProgram } from '../../machine/program/compiler';
+import { ROM_ASSET_SYMBOL_MODULE_PATH } from '../../rompack/asset_symbols';
 import { resolveRuntimeProgramRelocations } from '../../machine/program/linker';
 import { RuntimeResumeSnapshot } from '../../machine/runtime/contracts';
 import { restoreRuntimeLuaSnapshot } from '../../machine/runtime/resume_snapshot';
@@ -90,6 +91,7 @@ export function hotResumeProgramEntry(runtime: Runtime, params: { path: string; 
 		baseMetadata,
 		optLevel: runtime.realtimeCompileOptLevel,
 		entrySource: source,
+		constModulePaths: [ROM_ASSET_SYMBOL_MODULE_PATH],
 	});
 	resolveRuntimeProgramRelocations(program, metadata, constRelocs);
 	replaceMapEntries(runtime.moduleProtos, moduleProtoMap);
