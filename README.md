@@ -224,6 +224,39 @@ Important:
 - screenshots are written to a `screenshots/` subfolder next to the timeline file
 - when a cart folder name differs from the generated ROM filename, use `--rom-folder <cart-folder>` or an explicit `--input-timeline <file>` when running the custom libretro host manually
 
+## ROM Inspection
+
+`scripts/rominspector/rominspector.ts` is a CLI for inspecting a built `.rom`
+file. It loads (and transparently decompresses) the ROM, parses the cart header
+and TOC, and reports asset layout, manifest, and program/link details. This is
+the tool for confirming the `bmsx/assets` address/length symbols and the rest of
+the ROM layout without disassembling by hand.
+
+Run it directly with `tsx`:
+
+```bash
+npx tsx scripts/rominspector/rominspector.ts dist/nemesis_s.debug.rom --list-assets
+```
+
+Options:
+
+- `--list-assets` print the asset table to stdout (id, type, path, size, and
+  buffer/metabuffer start/end offsets in hex); this is the default when no other
+  output flag is given
+- `--manifest` print the cart manifest (and project root path) as JSON
+- `--program-asm` print the program image disassembly and exit; source-line
+  comments are included when the ROM is not stripped
+- `--program-asm-bias <value>` add a base PC to the disassembly addresses,
+  accepts decimal or hex (`0x80000` or `80000h`)
+- `--program-link-info` print const-pool size, const-reloc count, and any
+  symbolic `module`/`export_proto` relocations
+- `--cycle-cost` print a fantasy-CPU cycle-cost analysis of the program
+- `--ui` / `--ui-native` open the interactive native inspector UI
+
+The header line printed on every run shows header/manifest/toc/data/metadata
+offsets and lengths plus the program boot entry, proto count, and code byte
+count, so the section layout is visible at a glance.
+
 ## Notes
 
 - `build:game` means “build a Lua cart ROM”

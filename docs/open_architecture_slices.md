@@ -399,7 +399,7 @@ Acceptatie:
 - host/render owns presentation, view snapshots and context restore
 - save/resume machine state remains render-host independent
 
-## 8. Save-state/resume render-context split
+## 8. Save-state/resume render-context split (OUT OF SCOPE! Save-state/resume pakken we pas aan nadat alle andere slices klaar zijn, omdat dit anders een moving target is die we steeds moeten aanpassen zolang er nog andere dependencies zijn)
 
 Doel: machine save-state/resume bevat machine state; render-context herstel is host/render follow-up werk.
 
