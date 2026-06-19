@@ -108,10 +108,12 @@ Status na de laatste ROM/data-slice:
   `bmsx/assets` adres/lengte symbolen en `bin.decode(addr, len, id)`; de adressen
   inlinen als constants op de use-site (const moduleklasse).
 - De pure retro-route is aanwezig en getest via een `.bin` struct-ROM test.
-- Nog niet afgerond: de twee gemigreerde legacy data-assets decoden nog
-  structured/YAML payloads naar Lua-tabellen bij load. Dat is geen runtime
-  lookup meer, maar het is ook nog niet de eindvorm voor echte retro-console
-  data.
+- `castle_map`, `nemesis_s_stage` en `transition_config` decoden hun payload via
+  `bin.decode` bij cart-init. Dat is een accepteerde eindvorm: het is een
+  geheugen-read op een link-adres (geen runtime lookup), op een koud load-time
+  pad, voor authoring/gameplay-data. Het format waarin een cart zijn data legt is
+  een authoring-keuze, niet iets dat tooling mandateert. Zie de geschrapte
+  slice 14.
 
 Cart-representatie roadmap/status:
 
@@ -127,31 +129,32 @@ Cart-representatie roadmap/status:
 | cart startup/vector model | Open: entry/init/new_game/reinit/IRQ handlers moeten een expliciete vector/handler ABI krijgen in plaats van ad-hoc Lua global lifecycle. |
 | verifier/audit voor echte carts | Deels: test/parity/rominspector-validatie bestaat; open: één harde cart-verifier voor relocaties, dynamic opcodes, data/bss mapping, source-only dependencies en hot-resume/ROM-build equivalentie. |
 
-## 14. Legacy cart-data naar vaste binaire ROM-layouts
+## 14. Legacy cart-data naar vaste binaire ROM-layouts — GESCHRAPT
 
-Doel: de resterende cart-data die nu nog als structured/YAML blob naar Lua-tabellen
-wordt gedecodeerd, vervangen door producer-owned vaste binaire layouts die cartcode
-direct via ROM-adressen, typed pointers en integer velden consumeert.
+Verworpen; geen open slice meer. De winst die ertoe deed is al binnen: geen
+PICO-achtige runtime string-lookup, data-toegang via `bmsx/assets` link-symbolen
+op absolute adressen, en `bin.decode(addr, len, id)` is een geheugen-read op ROM —
+geen lookup-facade.
 
-Open audit-evidence:
+Wat slice 14 daarbovenop wilde — het *format* van de payload omzetten naar
+producer-owned vaste binaire layouts — heeft geen platform-rechtvaardiging:
 
-- `carts/pietious/castle/map.lua` leest `castle_map` via
-  `bin.decode(assets.data_castle_map_addr, assets.data_castle_map_len, 'castle_map')`
-- `carts/nemesis_s/stage.lua` leest `nemesis_s_stage` via
-  `bin.decode(assets.data_nemesis_s_stage_addr, assets.data_nemesis_s_stage_len, ...)`
-- `machine/firmware/system/bin.lua` bezit nog de structured payload decoder die
-  Lua-tabellen produceert
+- De doel-assets (`castle_map`, `nemesis_s_stage`, `transition_config`) decoden
+  één keer bij cart-init. Dat is een koud load-time pad; het format maakt geen
+  meetbaar verschil.
+- Het is authoring/gameplay-data met geneste, variabel-lengte vorm — precies de
+  carve-out die dit document zelf vrijstelt (zie referentie-model: Lua-tabellen
+  acceptabel bij echte gameplay/authoring-semantiek).
+- Capability vs. mandate: de tooling levert al de primitieven voor wie fixed
+  layouts wíl (`.bin` raw-ROM struct-pad + displaced load/store-opcodes, getest).
+  Het *format* waarin een cart zijn data legt — en of die data hot is — is een
+  authoring-keuze van de cart-author, niet iets dat runtime of tooling mandateert
+  of preventief omzet.
 
-Acceptatie:
-
-- producer/rompacker emit voor deze assets vaste binaire layouts
-- cartcode gebruikt `assets.*_addr`, `assets.*_len`, typed structs of directe
-  `mem[]`-reads; geen Lua-table decode als ROM ABI
-- asset-ID strings blijven alleen build/debug/diagnose metadata, niet de runtime
-  toegangsmethode
-- `pietious` en `nemesis_s` headless cart-tests blijven groen
-- `rominspector.ts --program-asm` toont adres/lengte-symbolen en geen
-  `rom_data`-familie of data-directory calls
+Er is dus geen hot-path- of section-voorwaarde die deze slice later doet
+herleven. Als een concrete asset ooit in `data`/`bss` moet leven, ontstaat dat
+binnen slice 17 als capability-werk, niet als format-conversie van bestaande
+carts.
 
 ## 15. ROM asset-symbol contract vastleggen als linker/ROM ABI
 
