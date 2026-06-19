@@ -165,18 +165,19 @@ Status:
 - IDE/source-compile injecteert dezelfde module op basis van de actieve ROM TOC
 - echte cart-tests en IDE hot-resume test zijn groen
 
-Open punten:
-
-- documenteer het `bmsx/assets` symboolformaat bij het ROM/program image format
-- voeg rominspector-output toe voor asset-symbolen zodat address/length contracts
-  direct zichtbaar zijn zonder disassembly-grep
-
 Afgerond binnen deze slice:
 
 - `bmsx/assets` kan niet meer als runtime registry/cartlib-module gedragen worden:
   het is een const moduleklasse die op de use-site naar constants inlinet en geen
   runtime module-table, proto of global slots meer heeft. De hele module als
   waarde gebruiken is een compile-error (module-root misuse).
+- `rominspector.ts --asset-symbols` toont dezelfde generated ROM-symbolen
+  direct als `symbol/type/asset/payload/address/length`, zonder disassembly-grep.
+- `docs/architecture.md` legt het `bmsx/assets` symboolformaat vast als
+  compile/link ABI: `<asset-type>_<asset-id>_{addr,len}` met absolute
+  CPU-zichtbare ROM-adressen en byte-lengtes.
+- ROM-pack build verifieert dat de gegenereerde `bmsx/assets` adressen exact
+  overeenkomen met de uiteindelijke TOC ranges; layoutdrift faalt de build.
 
 Acceptatie:
 

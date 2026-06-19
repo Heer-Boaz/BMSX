@@ -5,6 +5,7 @@
 import * as fs from 'fs/promises';
 import * as pako from 'pako';
 import type { RomAsset, CartRomHeader, RomManifest } from '../../machine/ts/rompack/format';
+import { collectRomAssetSymbols } from '../../machine/ts/rompack/asset_symbols';
 import { PROGRAM_IMAGE_ID } from '../../machine/ts/machine/program/loader';
 import { getZippedRomAndRomLabelFromBlob, loadRomAssetList, parseCartridgeIndex, parseCartHeader } from '../../machine/ts/rompack/loader';
 import {
@@ -205,30 +206,7 @@ async function loadRompackFromFile(romfile: string): Promise<Uint8Array> {
 /**
  * Print asset list to stdout in a tabular format (CLI mode).
  */
-function printAssetList(assets: RomAsset[], romByteLength: number): void {
-	const offsetHexWidth = romByteLength > 1 ? (romByteLength - 1).toString(16).length : 1;
-	const headers = ['id', 'type', 'path', 'size', 'buffer-start', 'buffer-end', 'metabuffer-start', 'metabuffer-end'];
-	const rows = sortAssetsById(assets).map(asset => {
-		const sourcePath = asset.source_path ?? asset.normalized_source_path;
-		const path = sourcePath === undefined ? '<none>' : sourcePath;
-		const hasBufferRange = typeof asset.start === 'number' && typeof asset.end === 'number';
-		const hasMetaRange = typeof asset.metabuffer_start === 'number' && typeof asset.metabuffer_end === 'number';
-		const size = (hasBufferRange ? asset.end - asset.start : 0) + (hasMetaRange ? asset.metabuffer_end - asset.metabuffer_start : 0);
-		const bufferStart = typeof asset.start === 'number' ? formatNumberAsHex(asset.start, offsetHexWidth) : '';
-		const bufferEnd = typeof asset.end === 'number' ? formatNumberAsHex(asset.end, offsetHexWidth) : '';
-		const metaStart = typeof asset.metabuffer_start === 'number' ? formatNumberAsHex(asset.metabuffer_start, offsetHexWidth) : '';
-		const metaEnd = typeof asset.metabuffer_end === 'number' ? formatNumberAsHex(asset.metabuffer_end, offsetHexWidth) : '';
-		return [
-			String(asset.resid),
-			String(asset.type),
-			path,
-			(hasBufferRange || hasMetaRange) ? formatByteSize(size) : '',
-			bufferStart,
-			bufferEnd,
-			metaStart,
-			metaEnd,
-		];
-	});
+function printTable(headers: string[], rows: string[][]): void {
 	const colWidths = headers.map((header, idx) => {
 		let max = header.length;
 		for (const row of rows) {
@@ -244,6 +222,53 @@ function printAssetList(assets: RomAsset[], romByteLength: number): void {
 	for (const row of rows) {
 		console.log(formatRow(row));
 	}
+}
+
+function printAssetList(assets: RomAsset[], romByteLength: number): void {
+	const offsetHexWidth = romByteLength > 1 ? (romByteLength - 1).toString(16).length : 1;
+	const headers = ['id', 'type', 'path', 'size', 'buffer-start', 'buffer-end', 'metabuffer-start', 'metabuffer-end'];
+	const rows = sortAssetsById(assets).map(asset => {
+		const sourcePath = asset.source_path ?? asset.normalized_source_path;
+		const path = sourcePath === undefined ? '<none>' : sourcePath;
+		const hasBufferRange = asset.start !== undefined && asset.end !== undefined;
+		const hasMetaRange = asset.metabuffer_start !== undefined && asset.metabuffer_end !== undefined;
+		const size = (hasBufferRange ? asset.end - asset.start : 0) + (hasMetaRange ? asset.metabuffer_end - asset.metabuffer_start : 0);
+		const bufferStart = asset.start !== undefined ? formatNumberAsHex(asset.start, offsetHexWidth) : '';
+		const bufferEnd = asset.end !== undefined ? formatNumberAsHex(asset.end, offsetHexWidth) : '';
+		const metaStart = asset.metabuffer_start !== undefined ? formatNumberAsHex(asset.metabuffer_start, offsetHexWidth) : '';
+		const metaEnd = asset.metabuffer_end !== undefined ? formatNumberAsHex(asset.metabuffer_end, offsetHexWidth) : '';
+		return [
+			String(asset.resid),
+			String(asset.type),
+			path,
+			(hasBufferRange || hasMetaRange) ? formatByteSize(size) : '',
+			bufferStart,
+			bufferEnd,
+			metaStart,
+			metaEnd,
+		];
+	});
+	printTable(headers, rows);
+}
+
+function printAssetSymbols(assets: RomAsset[]): void {
+	const symbols = collectRomAssetSymbols(assets, false, 'cart');
+	let addressHexWidth = 1;
+	for (let index = 0; index < symbols.length; index += 1) {
+		const endAddressWidth = (symbols[index].address + symbols[index].byteLength).toString(16).length;
+		if (endAddressWidth > addressHexWidth) {
+			addressHexWidth = endAddressWidth;
+		}
+	}
+	const rows = symbols.map(symbol => [
+		symbol.name,
+		symbol.assetType,
+		symbol.assetId,
+		symbol.payloadId,
+		formatNumberAsHex(symbol.address, addressHexWidth),
+		formatByteSize(symbol.byteLength),
+	]);
+	printTable(['symbol', 'type', 'asset', 'payload', 'address', 'length'], rows);
 }
 
 function printManifest(manifest: RomManifest | null, projectRootPath: string | null): void {
@@ -285,6 +310,7 @@ async function main() {
 	const uiFlag = argSet.has('--ui');
 	const nativeUiFlag = argSet.has('--ui-native');
 	const listAssetsFlag = argSet.has('--list-assets');
+	const assetSymbolsFlag = argSet.has('--asset-symbols');
 	const manifestFlag = argSet.has('--manifest');
 	const programAsmFlag = argSet.has('--program-asm');
 	const programLinkInfoFlag = argSet.has('--program-link-info');
@@ -293,11 +319,12 @@ async function main() {
 	const romfile = args.find(arg => !arg.startsWith('--'));
 
 	if (!romfile) {
-		console.error('Usage: npx tsx scripts/rominspector.ts <romfile> [--ui] [--ui-native] [--list-assets] [--program-asm] [--program-asm-bias <value>] [--program-link-info] [--cycle-cost]');
+		console.error('Usage: npx tsx scripts/rominspector.ts <romfile> [--ui] [--ui-native] [--list-assets] [--asset-symbols] [--program-asm] [--program-asm-bias <value>] [--program-link-info] [--cycle-cost]');
 		console.error('Options:');
 		console.error('  --ui            Open the native interactive UI');
 		console.error('  --ui-native     Alias for the native interactive UI');
 		console.error('  --list-assets   Print asset list to stdout (default)');
+		console.error('  --asset-symbols Print generated bmsx/assets ROM address symbols');
 		console.error('  --manifest      Print cart manifest details to stdout');
 		console.error('  --cycle-cost    Print fantasy CPU cycle cost analysis');
 		console.error('  --program-asm   Print program disassembly and exit');
@@ -356,6 +383,13 @@ async function main() {
 
 	if (manifestFlag) {
 		printManifest(romManifest, romProjectRootPath);
+		if (!uiFlag && !listAssetsFlag && !assetSymbolsFlag) {
+			process.exit(0);
+		}
+	}
+
+	if (assetSymbolsFlag) {
+		printAssetSymbols(assetList);
 		if (!uiFlag && !listAssetsFlag) {
 			process.exit(0);
 		}

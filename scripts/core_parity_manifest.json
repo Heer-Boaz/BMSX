@@ -314,6 +314,11 @@
 			"pattern": "machine/ts/rompack/asset_symbols.ts",
 			"category": "rompacker_tooling",
 			"reason": "generated_cart_asset_symbol_source_for_rompacker_and_ide_source_compile_native_consumes_compiled_rom"
+		},
+		{
+			"pattern": "machine/ts/rompack/asset_layout.ts",
+			"category": "rompacker_tooling",
+			"reason": "rompacker_payload_layout_for_generated_cart_asset_symbols_native_consumes_compiled_rom"
 		}
 	],
 	"core_roots": [

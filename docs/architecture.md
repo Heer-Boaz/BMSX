@@ -175,6 +175,28 @@ Compiled Lua/YAML is source/program material, not mutable machine state.
 `__program__` is a linked object image. `__program_symbols__` is debug metadata
 and never counts as RAM.
 
+ROM asset symbols are a compile/link contract, not a runtime registry. The
+rompack owner emits the generated const module `bmsx/assets`; the compiler
+recognises that module as compile-time only and inlines exported constants at
+each use site. The module never produces a runtime Lua table, module proto,
+global slot, or `require` call in executable cart code. Using the module root as
+a value is a compile-time error; cart code must read concrete exports such as
+`assets.data_transition_config_addr` and `assets.data_transition_config_len`.
+
+Asset symbol names are generated as `<asset-type>_<asset-id>_{addr,len}` after
+sanitising non-alphanumeric characters to underscores and prefixing a leading
+digit with an underscore. Public symbols are generated for ROM-backed asset
+records except Lua/code records and the ROM label. Address values are absolute
+CPU-visible ROM addresses: `SYSTEM_ROM_BASE`, `CART_ROM_BASE`, or
+`OVERLAY_ROM_BASE` plus the record offset in the corresponding ROM payload. For
+pack-time cart assets that do not yet have a TOC range, the address is computed
+from `CART_ROM_BASE + CART_ROM_HEADER_SIZE` plus the same packed-byte order the
+ROM writer uses, and the build verifies those generated addresses against the
+final TOC ranges before accepting the ROM. Length values are byte counts.
+`rominspector.ts
+--asset-symbols` prints the generated symbol table so the ROM address ABI can be
+checked without disassembling program code.
+
 ## Memory, CPU, and scheduler
 
 - `Memory` owns RAM, ROM windows, IO slots, and MMIO callback dispatch.

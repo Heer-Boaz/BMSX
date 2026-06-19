@@ -12,7 +12,7 @@ import { generateHostSystemAtlasArtifactsFromAssets } from './host_system_atlas'
 import type { TaskProgressReporter as ProgressReporter } from './progress';
 import type { RomPackerOptions } from './rompacker.rompack';
 import type { RomAsset } from '../../machine/ts/rompack/format';
-import { buildRomAssetSymbolModuleSource, ROM_ASSET_SYMBOL_MODULE_PATH } from '../../machine/ts/rompack/asset_symbols';
+import { buildRomAssetSymbolModuleSourceFromSymbols, collectRomAssetSymbols, ROM_ASSET_SYMBOL_MODULE_PATH } from '../../machine/ts/rompack/asset_symbols';
 import { LuaError } from '../../machine/ts/lua/errors';
 
 import { join } from 'node:path';
@@ -549,7 +549,8 @@ async function main() {
 
 			const romAssets = await progress.runWithDetail('Generate ROM assets', () => generateRomAssets(resources, message => progress.setDetail(message)));
 			const biosProgramContextAssets = await buildLuaProgramContextAssets([biosLuaPath, systemLuaPath], '');
-			const assetSymbolModuleSource = buildRomAssetSymbolModuleSource(romAssets, romPackDebug);
+			const assetSymbols = collectRomAssetSymbols(romAssets, romPackDebug, 'cart');
+			const assetSymbolModuleSource = buildRomAssetSymbolModuleSourceFromSymbols(assetSymbols);
 			const programBoot = appendProgramImage(romAssets, romManifest.lua.entry_path, {
 				includeSymbols: true,
 				optLevel,
@@ -570,7 +571,19 @@ async function main() {
 				await progress.taskCompleted();
 			}
 
-			await progress.runWithDetail('Finalize ROM pack', () => finalizeRompack(romAssets, rom_name, { projectRootPath, manifest: romManifest, status: message => progress.setDetail(message), debug: romPackDebug, zipRom: false, programBoot }));
+			await progress.runWithDetail('Finalize ROM pack', () => finalizeRompack(romAssets, rom_name, {
+				projectRootPath,
+				manifest: romManifest,
+				status: message => progress.setDetail(message),
+				debug: romPackDebug,
+				zipRom: false,
+				programBoot,
+				assetSymbolVerification: {
+					expected: assetSymbols,
+					includeLuaAssets: romPackDebug,
+					defaultPayloadId: 'cart',
+				},
+			}));
 			await progress.taskCompleted();
 		}
 

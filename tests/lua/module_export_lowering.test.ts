@@ -6,7 +6,7 @@ import { LuaLexer } from '../../machine/ts/lua/syntax/lexer';
 import { LuaParser } from '../../machine/ts/lua/syntax/parser';
 import { disassembleProgram } from '../../machine/ts/machine/cpu/disassembler';
 import type { ProgramConstReloc } from '../../machine/ts/machine/program/loader';
-import { compileLuaChunkToProgram } from '../../machine/ts/machine/program/compiler';
+import { compileLuaChunkToProgram, type CompiledProgram } from '../../machine/ts/machine/program/compiler';
 
 function parseSource(source: string, path: string) {
 	const lexer = new LuaLexer(source, path);
@@ -14,7 +14,7 @@ function parseSource(source: string, path: string) {
 	return parser.parseChunk();
 }
 
-function compileWithModule(entrySource: string, modulePath: string, moduleSource: string): { disasm: string; constRelocs: ProgramConstReloc[] } {
+function compileWithModule(entrySource: string, modulePath: string, moduleSource: string): { compiled: CompiledProgram; disasm: string; constRelocs: ProgramConstReloc[] } {
 	const entryChunk = parseSource(entrySource, 'entry.lua');
 	const moduleChunk = parseSource(moduleSource, `${modulePath}.lua`);
 	const compiled = compileLuaChunkToProgram(
@@ -23,8 +23,23 @@ function compileWithModule(entrySource: string, modulePath: string, moduleSource
 		{ entrySource },
 	);
 	return {
+		compiled,
 		disasm: disassembleProgram(compiled.program, compiled.metadata, { showProtoHeaders: false }),
 		constRelocs: compiled.constRelocs,
+	};
+}
+
+function compileWithConstModule(entrySource: string, modulePath: string, moduleSource: string): { compiled: CompiledProgram; disasm: string } {
+	const entryChunk = parseSource(entrySource, 'entry.lua');
+	const moduleChunk = parseSource(moduleSource, `${modulePath}.lua`);
+	const compiled = compileLuaChunkToProgram(
+		entryChunk,
+		[{ path: modulePath, chunk: moduleChunk, source: moduleSource }],
+		{ entrySource, constModulePaths: [modulePath] },
+	);
+	return {
+		compiled,
+		disasm: disassembleProgram(compiled.program, compiled.metadata, { showProtoHeaders: true }),
 	};
 }
 
@@ -78,4 +93,61 @@ test('computed (non-literal) export key uses the table path', () => {
 	].join('\n');
 	const { disasm } = compileWithModule('local m<const> = require("baz")\nm.update()', 'baz', moduleSource);
 	assert.match(disasm, /\bNEWT\b/, 'computed export key stays on the table path');
+});
+
+test('const modules inline export constants without runtime module state', () => {
+	const moduleSource = [
+		'local addr<const> = 4096',
+		'local len<const> = 32',
+		'local neg<const> = -addr',
+		'return { addr = addr, len = len, neg = neg, name = "asset", enabled = true, none = nil }',
+	].join('\n');
+	const { compiled, disasm } = compileWithConstModule(
+		'local assets<const> = require("assets")\nreturn assets.addr, assets.len, assets.neg, assets.name, assets.enabled, assets.none',
+		'assets',
+		moduleSource,
+	);
+	assert.equal(compiled.moduleProtoMap.has('assets'), false, 'const module must not produce a runtime module proto');
+	assert.equal(compiled.staticModulePaths.includes('assets'), false, 'const module must not be required at runtime');
+	assert.doesNotMatch(disasm, /\bCALL\b/, 'const module import must not call require');
+	assert.doesNotMatch(disasm, /\bNEWT\b/, 'const module must not build a runtime export table');
+	assert.doesNotMatch(disasm, /\bGET(GL|SYS)\b.*assets/, 'const module reads must not use module export slots');
+});
+
+test('const modules inline direct require member reads', () => {
+	const moduleSource = [
+		'local addr<const> = 4096',
+		'return { addr = addr }',
+	].join('\n');
+	const { compiled, disasm } = compileWithConstModule(
+		'return require("assets").addr',
+		'assets',
+		moduleSource,
+	);
+	assert.equal(compiled.moduleProtoMap.has('assets'), false, 'const module must not produce a runtime module proto');
+	assert.doesNotMatch(disasm, /\bCALL\b/, 'direct const module member read must not call require');
+	assert.doesNotMatch(disasm, /\bNEWT\b/, 'direct const module member read must not build a runtime export table');
+});
+
+test('const modules reject non-constant exports', () => {
+	const moduleSource = [
+		'local function read() return 1 end',
+		'return { value = read() }',
+	].join('\n');
+	assert.throws(
+		() => compileWithConstModule('local m<const> = require("assets")\nreturn m.value', 'assets', moduleSource),
+		/Const module 'assets' export 'value' is not a compile-time constant/,
+	);
+});
+
+test('const modules reject runtime root values', () => {
+	const moduleSource = 'return { value = 7 }';
+	assert.throws(
+		() => compileWithConstModule('return require("assets")', 'assets', moduleSource),
+		/External module 'assets' is compile-time only/,
+	);
+	assert.throws(
+		() => compileWithConstModule('local assets = require("assets")\nreturn assets', 'assets', moduleSource),
+		/External module 'assets' is compile-time only/,
+	);
 });

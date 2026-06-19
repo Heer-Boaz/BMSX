@@ -2,8 +2,9 @@ import { glsl } from "esbuild-plugin-glsl";
 // @ts-ignore
 import type { Stats } from 'fs';
 import { CART_ROM_HEADER_SIZE, CART_ROM_MAGIC_BYTES, PROGRAM_BOOT_HEADER_VERSION } from '../../machine/ts/rompack/format';
-import { buildRomAssetSymbolModuleSource, ROM_ASSET_SYMBOL_MODULE_PATH } from '../../machine/ts/rompack/asset_symbols';
-import type { asset_type, AudioMeta, BoundingBoxPrecalc, GLTFMesh, HitPolygonsPrecalc, ImgMeta, Polygon, ProgramBootHeader, RectBounds, RomAsset, RomManifest, vec2arr } from '../../machine/ts/rompack/format';
+import { assertRomAssetSymbolsMatchToc, type RomAssetSymbol } from '../../machine/ts/rompack/asset_symbols';
+import type { asset_type, AudioMeta, BoundingBoxPrecalc, CartridgeLayerId, GLTFMesh, HitPolygonsPrecalc, ImgMeta, Polygon, ProgramBootHeader, RectBounds, RomAsset, RomManifest, vec2arr } from '../../machine/ts/rompack/format';
+import { collectRomAssetPayloadRanges } from '../../machine/ts/rompack/asset_layout';
 import { SYSTEM_BOOT_ENTRY_PATH } from '../../machine/ts/core/system';
 import { encodeRomToc } from '../../machine/ts/rompack/tooling/toc_encode';
 import type { LuaChunk } from '../../machine/ts/lua/syntax/ast';
@@ -1714,6 +1715,11 @@ export async function finalizeRompack(
 		zipRom: boolean,
 		debug: boolean,
 		programBoot: ProgramBootHeader,
+		assetSymbolVerification?: {
+			expected: ReadonlyArray<RomAssetSymbol>,
+			includeLuaAssets: boolean,
+			defaultPayloadId: CartridgeLayerId,
+		},
 	}
 ) {
 	const outfileBasename = `${rom_name}${options.debug ? '.debug' : ''}.rom`;
@@ -1751,31 +1757,35 @@ export async function finalizeRompack(
 	try {
 		await writeBuffer(Buffer.alloc(CART_ROM_HEADER_SIZE));
 		const dataOffset = offset;
+		const payloadRanges = collectRomAssetPayloadRanges(assetList, true);
+		let payloadRangeIndex = 0;
 		for (const asset of assetList) {
 			status?.(`pack ${asset.type}:${asset.resid}`);
-			if (asset.buffer && asset.buffer.length > 0) {
-				const mainBuffer = Buffer.from(asset.buffer);
-				asset.start = offset;
-				asset.end = offset + mainBuffer.length;
-				await writeBuffer(mainBuffer);
-			}
-			if (asset.compiled_buffer && asset.compiled_buffer.length > 0) {
-				const compiledBuffer = Buffer.from(asset.compiled_buffer);
-				asset.compiled_start = offset;
-				asset.compiled_end = offset + compiledBuffer.length;
-				await writeBuffer(compiledBuffer);
-			}
-			if (asset.texture_buffer && asset.texture_buffer.length > 0) {
-				const textureBuffer = Buffer.from(asset.texture_buffer);
-				asset.texture_start = offset;
-				asset.texture_end = offset + textureBuffer.length;
-				await writeBuffer(textureBuffer);
-			}
-			if (asset.collision_bin_buffer && asset.collision_bin_buffer.length > 0) {
-				const collisionBinBuffer = Buffer.from(asset.collision_bin_buffer);
-				asset.collision_bin_start = offset;
-				asset.collision_bin_end = offset + collisionBinBuffer.length;
-				await writeBuffer(collisionBinBuffer);
+			while (payloadRangeIndex < payloadRanges.length && payloadRanges[payloadRangeIndex].asset === asset) {
+				const range = payloadRanges[payloadRangeIndex];
+				if (range.start !== offset) {
+					throw new Error(`[RomPacker] ROM payload layout mismatch at ${asset.type}:${asset.resid}:${range.kind}; expected offset ${range.start}, writer offset ${offset}.`);
+				}
+				switch (range.kind) {
+					case 'buffer':
+						asset.start = range.start;
+						asset.end = range.end;
+						break;
+					case 'compiled':
+						asset.compiled_start = range.start;
+						asset.compiled_end = range.end;
+						break;
+					case 'texture':
+						asset.texture_start = range.start;
+						asset.texture_end = range.end;
+						break;
+					case 'collision_bin':
+						asset.collision_bin_start = range.start;
+						asset.collision_bin_end = range.end;
+						break;
+				}
+				await writeBuffer(Buffer.from(range.buffer));
+				payloadRangeIndex += 1;
 			}
 			const perMeta = asset.imgmeta ?? asset.audiometa;
 			if (perMeta) {
@@ -1790,6 +1800,15 @@ export async function finalizeRompack(
 		}
 
 		const dataLength = offset - dataOffset;
+		const assetSymbolVerification = options.assetSymbolVerification;
+		if (assetSymbolVerification !== undefined) {
+			assertRomAssetSymbolsMatchToc(
+				assetSymbolVerification.expected,
+				assetList,
+				assetSymbolVerification.includeLuaAssets,
+				assetSymbolVerification.defaultPayloadId,
+			);
+		}
 		let metadataOffset = 0;
 		let metadataLength = 0;
 		if (metadataEntries.length > 0) {

@@ -147,7 +147,11 @@ type ModuleExportNode = {
 // Compile-time constant export value of a const module (the `bmsx/assets` ABI).
 // These are the only value forms a const module may export; each use site inlines
 // the value directly instead of going through a runtime table or global slot.
-type ConstExportValue = number | boolean | string | null;
+type ConstExportValue =
+	| { kind: 'nil' }
+	| { kind: 'boolean'; value: boolean }
+	| { kind: 'number'; value: number }
+	| { kind: 'string'; value: string };
 
 type ModuleCompileInfo = {
 	path: string;
@@ -1495,7 +1499,7 @@ class FunctionBuilder {
 	// constant value. Returns a wrapper so a `nil`/`false`/`0` export is distinguished
 	// from "not a const export". The value is inlined at the use site.
 	private tryResolveModuleExportConstValue(expression: LuaExpression): { value: ConstExportValue } | null {
-		const binding = this.tryResolveStaticModuleBinding(expression, false);
+		const binding = this.tryResolveStaticModuleBinding(expression, true);
 		if (!binding || binding.exportDepth === 0) {
 			return null;
 		}
@@ -1507,7 +1511,18 @@ class FunctionBuilder {
 	}
 
 	private emitLoadConstExportValue(target: number, value: ConstExportValue): void {
-		this.emitLoadConst(target, typeof value === 'string' ? this.program.internString(value) : value);
+		switch (value.kind) {
+			case 'nil':
+				this.emitLoadConst(target, null);
+				return;
+			case 'boolean':
+			case 'number':
+				this.emitLoadConst(target, value.value);
+				return;
+			case 'string':
+				this.emitLoadConst(target, this.program.internString(value.value));
+				return;
+		}
 	}
 
 	private tryResolveModuleExportSlotFromExpression(expression: LuaExpression): string | undefined {
@@ -1551,8 +1566,13 @@ class FunctionBuilder {
 		- This detection prevents treating the module root as a runtime value (local or upvalue) under
 		the emulated-machine semantics used by this project.
 	 */
-	private isExternalModuleRootBinding(binding: LocalBinding | null | undefined): boolean {
-		return !!binding?.moduleBinding?.external && binding.moduleBinding.exportDepth === 0;
+	private tryGetCompileTimeModuleRootBinding(binding: LocalBinding | null | undefined): ModuleBinding | null {
+		if (!binding || binding.moduleBinding === null) {
+			return null;
+		}
+		return binding.moduleBinding.external && binding.moduleBinding.exportDepth === 0
+			? binding.moduleBinding
+			: null;
 	}
 
 	/*
@@ -1564,8 +1584,8 @@ class FunctionBuilder {
 		- This makes the failure explicit and directs the developer to access specific exported slots
 		instead of treating the module as a runtime table.
 	 */
-	private failExternalModuleRootRuntimeUse(binding: LocalBinding): never {
-		throw new Error(`[Compiler] External module '${binding.moduleBinding!.modulePath}' is compile-time only; access an exported field instead of using the module table as a runtime value.`);
+	private failCompileTimeModuleRootRuntimeUse(modulePath: string): never {
+		throw new Error(`[Compiler] External module '${modulePath}' is compile-time only; access an exported field instead of using the module table as a runtime value.`);
 	}
 
 	private emitReferenceLoad(reference: LuaBoundReference, target: number): void {
@@ -1579,8 +1599,9 @@ class FunctionBuilder {
 			- We detect that here and raise a compile-time error via `failExternalModuleRootRuntimeUse` to
 			prevent generating runtime references to a non-existent module table.
 		 */
-		if (this.isExternalModuleRootBinding(binding)) {
-			this.failExternalModuleRootRuntimeUse(binding!);
+		const compileTimeModuleRoot = this.tryGetCompileTimeModuleRootBinding(binding);
+		if (compileTimeModuleRoot !== null) {
+			this.failCompileTimeModuleRootRuntimeUse(compileTimeModuleRoot.modulePath);
 		}
 		const constBinding = this.resolveReferenceConstBinding(reference);
 		if (constBinding !== null) {
@@ -3611,6 +3632,10 @@ class FunctionBuilder {
 	}
 
 	private compileCallExpression(expression: LuaCallExpression, target: number, resultCount: number): void {
+		const requireBinding = this.tryResolveRequireModuleBinding(expression);
+		if (requireBinding !== null && this.isConstModulePath(requireBinding.modulePath)) {
+			this.failCompileTimeModuleRootRuntimeUse(requireBinding.modulePath);
+		}
 		const methodName = expression.methodName;
 		const hasMethod = methodName !== null && methodName.length > 0;
 		const moduleMethodSlot = hasMethod ? this.tryResolveModuleExportMethodSlot(expression.callee, methodName) : undefined;
@@ -4008,13 +4033,13 @@ const evaluateModuleConstLiteral = (
 ): ConstExportValue | undefined => {
 	switch (expression.kind) {
 		case LuaSyntaxKind.NumericLiteralExpression:
-			return (expression as LuaNumericLiteralExpression).value;
+			return { kind: 'number', value: (expression as LuaNumericLiteralExpression).value };
 		case LuaSyntaxKind.StringLiteralExpression:
-			return (expression as LuaStringLiteralExpression).value;
+			return { kind: 'string', value: (expression as LuaStringLiteralExpression).value };
 		case LuaSyntaxKind.BooleanLiteralExpression:
-			return (expression as LuaBooleanLiteralExpression).value;
+			return { kind: 'boolean', value: (expression as LuaBooleanLiteralExpression).value };
 		case LuaSyntaxKind.NilLiteralExpression:
-			return null;
+			return { kind: 'nil' };
 		case LuaSyntaxKind.IdentifierExpression: {
 			const name = (expression as LuaIdentifierExpression).name;
 			return topLevelConsts.has(name) ? topLevelConsts.get(name)! : undefined;
@@ -4025,7 +4050,9 @@ const evaluateModuleConstLiteral = (
 				return undefined;
 			}
 			const operand = evaluateModuleConstLiteral(unary.operand, topLevelConsts);
-			return typeof operand === 'number' ? -operand : undefined;
+			return operand !== undefined && operand.kind === 'number'
+				? { kind: 'number', value: -operand.value }
+				: undefined;
 		}
 		default:
 			return undefined;
