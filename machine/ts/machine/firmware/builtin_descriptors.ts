@@ -1,7 +1,6 @@
 import type { LuaBuiltinDescriptor } from '../../lua/semantic_contracts';
 
 export const SYSTEM_LUA_BUILTIN_FUNCTIONS: ReadonlyArray<LuaBuiltinDescriptor> = [
-	{ name: 'rom_data', params: ['id'], signature: 'rom_data(id)', description: 'Decodes a data entry from the active mapped ROM.' },
 ];
 
 export const SYSTEM_LUA_BUILTIN_GLOBALS: ReadonlyArray<LuaBuiltinDescriptor> = [

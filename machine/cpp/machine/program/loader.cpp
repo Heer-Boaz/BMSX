@@ -9,27 +9,24 @@ namespace bmsx {
 
 namespace {
 
-constexpr std::string_view PROGRAM_MODULE_SLOT_RELOC_PREFIX = "modslot:";
-constexpr std::string_view PROGRAM_EXPORT_PROTO_RELOC_PREFIX = "exportproto:";
-
 struct ConstRelocKindEntry {
 	const char* name;
-	ProgramConstRelocKind kind;
+	std::variant<ProgramIndexedConstRelocKind, ProgramSymbolicConstRelocKind> kind;
 };
 
 constexpr ConstRelocKindEntry CONST_RELOC_KIND_ENTRIES[] = {
-	{"bx", ProgramConstRelocKind::Bx},
-	{"rk_b", ProgramConstRelocKind::RkB},
-	{"rk_c", ProgramConstRelocKind::RkC},
-	{"const_b", ProgramConstRelocKind::ConstB},
-	{"const_c", ProgramConstRelocKind::ConstC},
-	{"gl", ProgramConstRelocKind::Gl},
-	{"sys", ProgramConstRelocKind::Sys},
-	{"module", ProgramConstRelocKind::Module},
-	{"export_proto", ProgramConstRelocKind::ExportProto},
+	{"bx", ProgramIndexedConstRelocKind::Bx},
+	{"rk_b", ProgramIndexedConstRelocKind::RkB},
+	{"rk_c", ProgramIndexedConstRelocKind::RkC},
+	{"const_b", ProgramIndexedConstRelocKind::ConstB},
+	{"const_c", ProgramIndexedConstRelocKind::ConstC},
+	{"gl", ProgramIndexedConstRelocKind::Gl},
+	{"sys", ProgramIndexedConstRelocKind::Sys},
+	{"module", ProgramSymbolicConstRelocKind::Module},
+	{"export_proto", ProgramSymbolicConstRelocKind::ExportProto},
 };
 
-ProgramConstRelocKind parseConstRelocKind(const std::string& kind) {
+std::variant<ProgramIndexedConstRelocKind, ProgramSymbolicConstRelocKind> parseConstRelocKind(const std::string& kind) {
 	for (const auto& entry : CONST_RELOC_KIND_ENTRIES) {
 		if (kind == entry.name) {
 			return entry.kind;
@@ -264,44 +261,42 @@ bool hasLuaExtension(std::string_view candidate) {
 		&& (candidate[dotIndex + 3] == 'a' || candidate[dotIndex + 3] == 'A');
 }
 
-const char* constRelocKindName(ProgramConstRelocKind kind) {
+const char* constRelocKindName(ProgramIndexedConstRelocKind kind) {
 	switch (kind) {
-		case ProgramConstRelocKind::Bx: return "bx";
-		case ProgramConstRelocKind::RkB: return "rk_b";
-		case ProgramConstRelocKind::RkC: return "rk_c";
-		case ProgramConstRelocKind::ConstB: return "const_b";
-		case ProgramConstRelocKind::ConstC: return "const_c";
-		case ProgramConstRelocKind::Gl: return "gl";
-		case ProgramConstRelocKind::Sys: return "sys";
-		case ProgramConstRelocKind::Module: return "module";
-		case ProgramConstRelocKind::ExportProto: return "export_proto";
+		case ProgramIndexedConstRelocKind::Bx: return "bx";
+		case ProgramIndexedConstRelocKind::RkB: return "rk_b";
+		case ProgramIndexedConstRelocKind::RkC: return "rk_c";
+		case ProgramIndexedConstRelocKind::ConstB: return "const_b";
+		case ProgramIndexedConstRelocKind::ConstC: return "const_c";
+		case ProgramIndexedConstRelocKind::Gl: return "gl";
+		case ProgramIndexedConstRelocKind::Sys: return "sys";
 	}
-	throw BMSX_RUNTIME_ERROR("ProgramImage: unsupported const reloc kind.");
+	throw BMSX_RUNTIME_ERROR("ProgramImage: unsupported indexed const reloc kind.");
+}
+
+const char* constRelocKindName(ProgramSymbolicConstRelocKind kind) {
+	switch (kind) {
+		case ProgramSymbolicConstRelocKind::Module: return "module";
+		case ProgramSymbolicConstRelocKind::ExportProto: return "export_proto";
+	}
+	throw BMSX_RUNTIME_ERROR("ProgramImage: unsupported symbolic const reloc kind.");
 }
 
 BinValue encodeConstReloc(const ProgramConstReloc& reloc) {
 	BinObject object;
 	object["wordIndex"] = BinValue(reloc.wordIndex);
-	object["kind"] = BinValue(constRelocKindName(reloc.kind));
-	object["constIndex"] = BinValue(reloc.constIndex);
+	if (const auto* symbolic = std::get_if<ProgramSymbolicConstReloc>(&reloc.target)) {
+		object["kind"] = BinValue(constRelocKindName(symbolic->kind));
+		object["symbol"] = BinValue(symbolic->symbol);
+	} else {
+		const auto& indexed = std::get<ProgramIndexedConstReloc>(reloc.target);
+		object["kind"] = BinValue(constRelocKindName(indexed.kind));
+		object["constIndex"] = BinValue(indexed.constIndex);
+	}
 	return BinValue(std::move(object));
 }
 
 } // namespace
-
-std::string_view parseProgramModuleSlotRelocText(std::string_view text) {
-	if (text.substr(0, PROGRAM_MODULE_SLOT_RELOC_PREFIX.size()) != PROGRAM_MODULE_SLOT_RELOC_PREFIX) {
-		throw BMSX_RUNTIME_ERROR("[ProgramLoader] module reloc text missing 'modslot:' prefix.");
-	}
-	return text.substr(PROGRAM_MODULE_SLOT_RELOC_PREFIX.size());
-}
-
-std::string_view parseProgramExportProtoRelocText(std::string_view text) {
-	if (text.substr(0, PROGRAM_EXPORT_PROTO_RELOC_PREFIX.size()) != PROGRAM_EXPORT_PROTO_RELOC_PREFIX) {
-		throw BMSX_RUNTIME_ERROR("[ProgramLoader] export_proto reloc text missing 'exportproto:' prefix.");
-	}
-	return text.substr(PROGRAM_EXPORT_PROTO_RELOC_PREFIX.size());
-}
 
 std::unique_ptr<Program> inflateProgram(const ProgramObjectSections& sections) {
 	auto program = std::make_unique<Program>();
@@ -337,9 +332,13 @@ std::unique_ptr<ProgramImage> decodeProgramImage(const uint8_t* data, size_t siz
 	for (const auto& relocObj : constRelocsArr) {
 		ProgramConstReloc reloc;
 		reloc.wordIndex = relocObj.require("wordIndex").toI32();
-		reloc.constIndex = relocObj.require("constIndex").toI32();
-		reloc.kind = parseConstRelocKind(relocObj.require("kind").asString());
-		image->link.constRelocs.push_back(reloc);
+		auto kind = parseConstRelocKind(relocObj.require("kind").asString());
+		if (const auto* symbolicKind = std::get_if<ProgramSymbolicConstRelocKind>(&kind)) {
+			reloc.target = ProgramSymbolicConstReloc{*symbolicKind, relocObj.require("symbol").asString()};
+		} else {
+			reloc.target = ProgramIndexedConstReloc{std::get<ProgramIndexedConstRelocKind>(kind), relocObj.require("constIndex").toI32()};
+		}
+		image->link.constRelocs.push_back(std::move(reloc));
 	}
 
 	return image;

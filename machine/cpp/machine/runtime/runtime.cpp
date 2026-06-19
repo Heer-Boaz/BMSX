@@ -207,9 +207,6 @@ void Runtime::boot(const ProgramImage& image, ProgramMetadata* metadata, int ent
 		m_program = m_programStorage.get();
 		m_programMetadata = metadata;
 		machine.cpu.setProgram(m_program, metadata);
-		if (systemRom().hasProgram()) {
-			runSystemBuiltinPrelude();
-		}
 		startLoadedProgram(entryProtoIndex, staticModulePaths, true, true);
 	} catch (const std::exception& e) {
 		handleLuaError(e.what());

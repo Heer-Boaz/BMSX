@@ -5,8 +5,7 @@
 
 namespace bmsx {
 namespace {
-constexpr std::array<LuaBuiltinDescriptor, 1> kSystemLuaBuiltinFunctions{{
-	LuaBuiltinDescriptor{"rom_data", "rom_data(id)", "Decodes a data entry from the active mapped ROM."},
+constexpr std::array<LuaBuiltinDescriptor, 0> kSystemLuaBuiltinFunctions{{
 }};
 
 constexpr std::array<LuaBuiltinDescriptor, 0> kSystemLuaBuiltinGlobals{{

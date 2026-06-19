@@ -1,6 +1,7 @@
 import type { RawRomSource } from '../../rompack/source';
-import type { CartridgeIndex, CartridgeLayerId, RomLuaAsset } from '../../rompack/format';
+import type { CartridgeIndex, CartridgeLayerId, RomAsset, RomLuaAsset } from '../../rompack/format';
 import { utf8FatalDecoder } from '../../common/serializer/binencoder';
+import { buildRomAssetSymbolModuleSource, ROM_ASSET_SYMBOL_MODULE_PATH, ROM_ASSET_SYMBOL_SOURCE_PATH } from '../../rompack/asset_symbols';
 import { PROGRAM_IMAGE_ID, toLuaModulePath } from './loader';
 
 export type LuaSourceRecord = RomLuaAsset & { base_src: string; base_update_timestamp: number; module_path: string };
@@ -52,6 +53,12 @@ export function buildLuaSources(cartSource: RawRomSource, romSource: RawRomSourc
 	};
 
 	let sourceCount = 0;
+	let emitAssetSymbolModule = false;
+	for (let index = 0; index < allowedPayloadIds.length; index += 1) {
+		if (allowedPayloadIds[index] !== 'system') {
+			emitAssetSymbolModule = true;
+		}
+	}
 	for (const entry of romSource.list('lua') as PackedLuaSourceAsset[]) {
 		if (!isAllowedPayloadId(entry.payload_id, allowedPayloadIds)) {
 			continue;
@@ -69,6 +76,30 @@ export function buildLuaSources(cartSource: RawRomSource, romSource: RawRomSourc
 		registry.module2lua[luaRecord.module_path] = luaRecord;
 	}
 	registry.can_boot_from_source = sourceCount > 0;
+
+	if (emitAssetSymbolModule) {
+		const assetEntries: RomAsset[] = [];
+		const entries = romSource.list();
+		for (let index = 0; index < entries.length; index += 1) {
+			const entry = entries[index];
+			if (isAllowedPayloadId(entry.payload_id, allowedPayloadIds)) {
+				assetEntries.push(entry);
+			}
+		}
+		const source = buildRomAssetSymbolModuleSource(assetEntries, false);
+		const assetSymbols: LuaSourceRecord = {
+			resid: ROM_ASSET_SYMBOL_MODULE_PATH,
+			type: 'lua',
+			src: source,
+			base_src: source,
+			base_update_timestamp: 0,
+			source_path: ROM_ASSET_SYMBOL_SOURCE_PATH,
+			module_path: ROM_ASSET_SYMBOL_MODULE_PATH,
+			update_timestamp: 0,
+		};
+		registry.path2lua[assetSymbols.source_path] = assetSymbols;
+		registry.module2lua[assetSymbols.module_path] = assetSymbols;
+	}
 
 	if (sourceCount === 0) {
 		const entryPath = registry.entry_path;

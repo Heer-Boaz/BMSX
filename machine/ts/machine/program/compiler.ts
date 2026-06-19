@@ -41,10 +41,6 @@ import {
 import { OpCode, StringValue, asStringId, valueIsString, type Program, type ProgramMetadata, type Proto, type UpvalueDesc, type Value, type SourceRange, type LocalSlotDebug } from '../cpu/cpu';
 import { optimizeInstructions, type Instruction, type InstructionSet, type OptimizationLevel } from './optimizer';
 import {
-	isProgramExportProtoRelocText,
-	isProgramModuleSlotRelocText,
-	makeProgramExportProtoRelocText,
-	makeProgramModuleSlotRelocText,
 	toLuaModulePath,
 	type ProgramConstReloc,
 } from './loader';
@@ -511,11 +507,23 @@ class ProgramBuilder {
 			const relocs = this.protoConstRelocs[i];
 			for (let j = 0; j < relocs.length; j += 1) {
 				const reloc = relocs[j];
-				fullConstRelocs.push({
-					wordIndex: targetOffsetWords + reloc.wordIndex,
-					kind: reloc.kind,
-					constIndex: reloc.constIndex,
-				});
+				switch (reloc.kind) {
+					case 'module':
+					case 'export_proto':
+						fullConstRelocs.push({
+							wordIndex: targetOffsetWords + reloc.wordIndex,
+							kind: reloc.kind,
+							symbol: reloc.symbol,
+						});
+						continue;
+					default:
+						fullConstRelocs.push({
+							wordIndex: targetOffsetWords + reloc.wordIndex,
+							kind: reloc.kind,
+							constIndex: reloc.constIndex,
+						});
+						continue;
+				}
 			}
 			if (!this.protoFixedEntryPC[i]) {
 				appendOffsetBytes += chunk.length;
@@ -1112,16 +1120,8 @@ class FunctionBuilder {
 				finalRanges[cursor] = range;
 				cursor += 1;
 				if (isConstBxOp(instr.op)) {
-					const constVal = this.program.constPool[instr.b];
-					if (valueIsString(constVal)) {
-						const s = this.program.stringPool.toString(asStringId(constVal));
-						if (isProgramModuleSlotRelocText(s)) {
-							constRelocs.push({ wordIndex: instrWordIndex[index], kind: 'module', constIndex: instr.b });
-						} else if (isProgramExportProtoRelocText(s)) {
-							constRelocs.push({ wordIndex: instrWordIndex[index], kind: 'export_proto', constIndex: instr.b });
-						} else {
-							constRelocs.push({ wordIndex: instrWordIndex[index], kind: 'bx', constIndex: instr.b });
-						}
+					if (instr.symbolicReloc !== undefined) {
+						constRelocs.push({ wordIndex: instrWordIndex[index], kind: instr.symbolicReloc.kind, symbol: instr.symbolicReloc.symbol });
 					} else {
 						constRelocs.push({ wordIndex: instrWordIndex[index], kind: 'bx', constIndex: instr.b });
 					}
@@ -1419,18 +1419,17 @@ class FunctionBuilder {
 
 	private tryResolveStaticModuleBinding(expression: LuaExpression, allowRequireRoot: boolean): ModuleBinding | null {
 		/*
-			Note: emulated-machine semantics and link-time placeholders
+			Note: emulated-machine semantics and symbolic link-time relocations
 
 			- This project targets a emulated-machine-style ABI based on flat machine instructions; Lua
 			runtime concepts such as live module tables are not part of the ABI. The compiler treats
-			certain system ROM modules as compile-time descriptors and records their paths in metadata
-			(e.g. `staticModulePaths` / `staticExternalModulePaths`).
+			certain system ROM modules as compile-time descriptors and records initializer paths in the
+			program image's static module path list.
 			- The compiler must not fabricate runtime tables. When a module export cannot be resolved at
-			compile time, the compiler emits an explicit link-time placeholder into the instruction
-			stream as loader-owned relocation text. That placeholder signals the linker/runtime
-			relocation resolver to rewrite the operand/instruction before execution.
+			compile time, the compiler emits an explicit symbolic relocation on the instruction.
+			The relocation resolver rewrites the operand/instruction before execution.
 			- This function detects static module bindings and marks them `external` so later compiler and
-			linker phases can preserve semantics and perform link-time resolution of placeholders.
+			linker phases can preserve semantics and perform link-time resolution of symbolic relocations.
 		 */
 		if (allowRequireRoot) {
 			const requireBinding = this.tryResolveRequireModuleBinding(expression);
@@ -1578,16 +1577,14 @@ class FunctionBuilder {
 
 	private emitModuleExportCallTargetLoad(slotName: string, target: number): void {
 		// Call targets may be link-time function symbols. The linker rewrites this
-		// placeholder to CLOSURE(proto) for static function exports, or to a normal
-		// global-slot load for data/upvalue-capturing exports. Non-call value reads keep
-		// direct global loads so the optimizer never sees export placeholders as strings.
-		const constIndex = this.program.constIndexString(makeProgramExportProtoRelocText(slotName));
-		this.emitABx(OpCode.LOADK, target, constIndex);
+		// symbolic relocation to CLOSURE(proto) for static function exports, or to a
+		// normal global-slot load for data/upvalue-capturing exports. Non-call value
+		// reads keep direct global loads so export symbols never enter value-flow.
+		this.emitABx(OpCode.LOADK, target, 0, { kind: 'export_proto', symbol: slotName });
 	}
 
 	private emitModuleSlotRelocLoad(slotName: string, target: number): void {
-		const constIndex = this.program.constIndexString(makeProgramModuleSlotRelocText(slotName));
-		this.emitABx(OpCode.LOADK, target, constIndex);
+		this.emitABx(OpCode.LOADK, target, 0, { kind: 'module', symbol: slotName });
 	}
 
 	private emitModuleExportStore(slotName: string, valueReg: number): void {
@@ -1734,7 +1731,7 @@ class FunctionBuilder {
 		this.ranges.push(this.currentRange);
 	}
 
-	private emitABx(op: OpCode, a: number, bx: number): void {
+	private emitABx(op: OpCode, a: number, bx: number, symbolicReloc?: Instruction['symbolicReloc']): void {
 		this.code.push({
 			op,
 			a,
@@ -1743,6 +1740,7 @@ class FunctionBuilder {
 			format: 'ABx',
 			rkMask: 0,
 			target: null,
+			symbolicReloc,
 		});
 		this.ranges.push(this.currentRange);
 	}
@@ -4306,9 +4304,9 @@ export function compileLuaChunkToProgram(chunk: LuaChunk, modules: ReadonlyArray
 	const { program, metadata, constRelocs } = programBuilder.buildProgram();
 
 	// Ensure module export slot names (built during module compile-info collection)
-	// are present in the program metadata so linkers can resolve module-slot placeholders.
+	// are present in the program metadata so linkers can resolve symbolic module slots.
 	// Externals (system ROM modules passed as externalModules) are treated as
-	// system globals so they are preferred when resolving placeholders.
+	// system globals so they are preferred when resolving symbolic slots.
 	for (const [, info] of moduleCompileContext.modulesByPath) {
 		for (const slotName of info.exportSlotsByPathKey.values()) {
 			if (info.external) {

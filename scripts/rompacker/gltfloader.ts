@@ -1,11 +1,45 @@
 import { Buffer } from 'buffer';
 import type { GLTFIndexArray, GLTFMesh, GLTFModel, GLTFNode, GLTFScene, GLTFSkin } from '../../machine/ts/rompack/format';
 // @ts-ignore
-const { join } = require('path');
+const { join, parse, resolve } = require('path');
 // @ts-ignore
 const { readFile } = require('fs/promises');
+// @ts-ignore
+const { readFileSync } = require('fs');
 
 type GLBParseResult = { json: any; bin?: Uint8Array };
+
+type GLTFBufferDefinition = {
+	uri?: string;
+};
+
+type GLTFJsonDefinition = {
+	buffers?: GLTFBufferDefinition[];
+};
+
+function isDataUri(uri: string): boolean {
+	return uri.startsWith('data:');
+}
+
+export function collectGLTFExternalBufferFileSet(files: readonly string[]): Set<string> {
+	const out = new Set<string>();
+	for (let fileIndex = 0; fileIndex < files.length; fileIndex += 1) {
+		const filepath = files[fileIndex];
+		if (parse(filepath).ext.toLowerCase() !== '.gltf') {
+			continue;
+		}
+		const json = JSON.parse(readFileSync(filepath, 'utf8')) as GLTFJsonDefinition;
+		const buffers = json.buffers || [];
+		const dir = parse(filepath).dir;
+		for (let bufferIndex = 0; bufferIndex < buffers.length; bufferIndex += 1) {
+			const uri = buffers[bufferIndex].uri;
+			if (uri && !isDataUri(uri)) {
+				out.add(resolve(join(dir, uri)));
+			}
+		}
+	}
+	return out;
+}
 
 type AccessorRawArray = Float32Array | Uint8Array | Uint16Array | Uint32Array | Int8Array | Int16Array;
 
@@ -61,7 +95,7 @@ export async function loadGLTFModel(data: string | ArrayBuffer, dir: string, res
 	}
 
 	async function getExternal(uri: string): Promise<Uint8Array> {
-		if (uri.startsWith('data:')) {
+		if (isDataUri(uri)) {
 			const base64 = uri.split(',')[1];
 			const buffer = Buffer.from(base64, 'base64');
 			return new Uint8Array(buffer.buffer, buffer.byteOffset, buffer.byteLength);

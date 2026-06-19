@@ -1,5 +1,4 @@
 const SYSTEM_LUA_BUILTIN_FUNCTION_NAMES = [
-	'rom_data',
 ] as const;
 
 const SYSTEM_LUA_BUILTIN_GLOBAL_NAMES = [

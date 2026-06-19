@@ -2,14 +2,15 @@ import { glsl } from "esbuild-plugin-glsl";
 // @ts-ignore
 import type { Stats } from 'fs';
 import { CART_ROM_HEADER_SIZE, CART_ROM_MAGIC_BYTES, PROGRAM_BOOT_HEADER_VERSION } from '../../machine/ts/rompack/format';
-import type { asset_type, AudioMeta, BoundingBoxPrecalc, GLTFMesh, HitPolygonsPrecalc, ImgMeta, Polygon, RectBounds, RomAsset, RomManifest, vec2arr } from '../../machine/ts/rompack/format';
+import { buildRomAssetSymbolModuleSource, ROM_ASSET_SYMBOL_MODULE_PATH } from '../../machine/ts/rompack/asset_symbols';
+import type { asset_type, AudioMeta, BoundingBoxPrecalc, GLTFMesh, HitPolygonsPrecalc, ImgMeta, Polygon, ProgramBootHeader, RectBounds, RomAsset, RomManifest, vec2arr } from '../../machine/ts/rompack/format';
 import { SYSTEM_BOOT_ENTRY_PATH } from '../../machine/ts/core/system';
 import { encodeRomToc } from '../../machine/ts/rompack/tooling/toc_encode';
 import type { LuaChunk } from '../../machine/ts/lua/syntax/ast';
 import { encodeAudioAssetToAdpcm } from './adpcm';
 import { resolveTargetAtlasId, createOptimizedAtlas, generateAtlasAssetId } from './atlasbuilder';
 import { BoundingBoxExtractor } from './boundingbox_extractor';
-import { loadGLTFModel } from './gltfloader';
+import { collectGLTFExternalBufferFileSet, loadGLTFModel } from './gltfloader';
 import type { TextureAtlasResource, ImageResource, Resource, resourcetype, RomPackerTarget } from './rompacker.rompack';
 import { collectSourceFiles } from '../analysis/file_scan';
 import { collectCartSourceFiles } from './cart_source_files';
@@ -894,6 +895,9 @@ export function getResMetaByFilename(filepath: string): { name: string, ext: str
 			type = getDataSubtype(name);
 			name = removeExtension(name);
 			break;
+		case '.bin':
+			type = 'bin';
+			break;
 		case '.lua':
 			type = 'lua';
 			update_timestamp = stats.mtimeMs;
@@ -1049,7 +1053,9 @@ export async function getResMetaList(respaths: string[], _romname?: string, opti
 			pushFile(libraryFiles[index]);
 		}
 	}
-	arrayOfFiles.sort((a, b) => a.localeCompare(b));
+	const gltfBufferFiles = collectGLTFExternalBufferFileSet(arrayOfFiles);
+	const resourceFiles = arrayOfFiles.filter(file => parse(file).ext.toLowerCase() !== '.bin' || !gltfBufferFiles.has(resolve(file)));
+	resourceFiles.sort((a, b) => a.localeCompare(b));
 
 	const result: Array<Resource> = [];
 	const targetAtlasIdSet = new Set<number>();
@@ -1060,8 +1066,9 @@ export async function getResMetaList(respaths: string[], _romname?: string, opti
 	let dataid = 1;
 	let modelid = 1;
 	let luaid = 1;
-	for (let i = 0; i < arrayOfFiles.length; i++) {
-		const filepath = arrayOfFiles[i];
+	let binid = 1;
+	for (let i = 0; i < resourceFiles.length; i++) {
+		const filepath = resourceFiles[i];
 		const meta = getResMetaByFilename(filepath);
 
 		const type = meta.type;
@@ -1138,6 +1145,10 @@ export async function getResMetaList(respaths: string[], _romname?: string, opti
 				result.push({ filepath, name, ext, type, id: modelid, datatype: meta.datatype, sourcePath });
 				++modelid;
 				break;
+			case 'bin':
+				result.push({ filepath, name, ext, type, id: binid, sourcePath });
+				++binid;
+				break;
 			case 'atlas':
 				// Generated texture atlas resources are added below.
 				break;
@@ -1193,11 +1204,13 @@ export async function getResMetaList(respaths: string[], _romname?: string, opti
 	checkDuplicateIds('audio');
 	checkDuplicateIds('data');
 	checkDuplicateIds('model');
+	checkDuplicateIds('bin');
 	checkDuplicateNames('data');
 	checkDuplicateNames('image');
 	checkDuplicateNames('audio');
 	checkDuplicateNames('model');
 	checkDuplicateNames('lua');
+	checkDuplicateNames('bin');
 
 	return result;
 }
@@ -1395,6 +1408,10 @@ export async function generateRomAssets(resources: Resource[], reportProgress?: 
 				}
 				romAssets.push({ resid, type, buffer, source_path: sourcePath });
 				break;
+			case 'bin':
+				// Raw binary asset: emit owner-defined packed bytes as-is for typed struct-array reads.
+				romAssets.push({ resid, type, buffer, source_path: sourcePath });
+				break;
 			case 'model': {
 				const pathInfo = parse(res.filepath);
 				const dir = pathInfo.dir;
@@ -1479,20 +1496,13 @@ export function appendProgramImage(
 	assetList: RomAsset[],
 	entryPath: string = SYSTEM_BOOT_ENTRY_PATH,
 	options: {
-		extraLuaAssets?: RomAsset[];
-		externalLuaAssets?: RomAsset[];
-		includeSymbols?: boolean;
-		optLevel?: 0 | 1 | 2 | 3;
+	extraLuaAssets?: RomAsset[];
+	externalLuaAssets?: RomAsset[];
+	generatedLuaModules?: Array<{ path: string; source: string }>;
+	includeSymbols?: boolean;
+	optLevel?: 0 | 1 | 2 | 3;
 	} = {},
-): {
-	version: number;
-	flags: number;
-	entryProtoIndex: number;
-	codeByteCount: number;
-	constPoolCount: number;
-	protoCount: number;
-	constRelocCount: number;
-} {
+): ProgramBootHeader {
 	const hasProgramImage = assetList.some(asset => asset.resid === PROGRAM_IMAGE_ID);
 	const hasSymbolsAsset = assetList.some(asset => asset.resid === PROGRAM_SYMBOLS_IMAGE_ID);
 	const includeSymbols = options.includeSymbols;
@@ -1558,6 +1568,18 @@ export function appendProgramImage(
 		const path = toLuaModulePath(asset.source_path);
 		const chunk = chunksByPath.get(path);
 		modules.push({ path, chunk, source: asset.buffer.toString('utf8') });
+	}
+	const generatedLuaModules = options.generatedLuaModules ?? [];
+	for (const generated of generatedLuaModules) {
+		if (chunksByPath.has(generated.path)) {
+			throw new Error(`[RomPacker] Generated Lua module '${generated.path}' conflicts with a ROM Lua asset.`);
+		}
+		const lexer = new LuaLexer(generated.source, `${generated.path}.lua`);
+		const tokens = lexer.scanTokens();
+		const parser = new LuaParser(tokens, `${generated.path}.lua`, splitText(generated.source));
+		const chunk = parser.parseChunk();
+		chunksByPath.set(generated.path, chunk);
+		modules.push({ path: generated.path, chunk, source: generated.source });
 	}
 	const externalModules: Array<{ path: string; chunk: LuaChunk; source: string }> = [];
 	const externalModulePaths: string[] = [];
@@ -1685,15 +1707,7 @@ export async function finalizeRompack(
 		manifest?: RomManifest | null,
 		zipRom: boolean,
 		debug: boolean,
-		programBoot: {
-			version: number;
-			flags: number;
-			entryProtoIndex: number;
-			codeByteCount: number;
-			constPoolCount: number;
-			protoCount: number;
-			constRelocCount: number;
-		},
+		programBoot: ProgramBootHeader,
 	}
 ) {
 	const outfileBasename = `${rom_name}${options.debug ? '.debug' : ''}.rom`;

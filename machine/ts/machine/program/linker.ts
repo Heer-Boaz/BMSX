@@ -1,5 +1,5 @@
 // start repeated-sequence-acceptable -- Program linker rewrites packed instruction fields directly to preserve bit-level clarity.
-import { asStringId, OpCode, valueIsString, type Program, type ProgramMetadata, type Proto, type SourceRange } from '../cpu/cpu';
+import { OpCode, type Program, type ProgramMetadata, type Proto, type SourceRange } from '../cpu/cpu';
 import {
 	BASE_BX_BITS,
 	EXT_B_BITS,
@@ -21,7 +21,6 @@ import {
 	CART_BASE_PC,
 	type ProgramLayout,
 } from './layout';
-import { isProgramExportProtoRelocText, isProgramModuleSlotRelocText, parseProgramExportProtoRelocText, parseProgramModuleSlotRelocText } from './loader';
 import type {
 	EncodedValue,
 	ProgramImage,
@@ -249,54 +248,25 @@ type SymbolicRelocSymbols = {
 };
 
 // Shared resolver for the two symbolic reloc kinds ('module', 'export_proto').
-// Both the link path (object-code EncodedValue const pool) and the single-image
-// runtime path (Program string-pool const pool) feed their const access through
-// `getConstText`, so the resolution logic lives in one place and the two paths
-// cannot drift. Each resolved reloc rewrites its referencing instruction to the
-// final concrete operand (slot or proto index); returns the number resolved.
+// The reloc record owns the symbolic export name; resolved relocs rewrite their
+// referencing instruction to the final concrete operand (slot or proto index).
 const applySymbolicRelocations = (
 	code: Uint8Array,
 	relocs: ReadonlyArray<ProgramConstReloc>,
-	getConstText: (reloc: ProgramConstReloc) => string,
 	symbols: SymbolicRelocSymbols,
-): number => {
-	let resolved = 0;
+): void => {
 	for (let index = 0; index < relocs.length; index += 1) {
 		const reloc = relocs[index];
 		if (reloc.kind !== 'module' && reloc.kind !== 'export_proto') {
 			continue;
 		}
-		const constText = getConstText(reloc);
 		if (reloc.kind === 'module') {
-			const slotName = parseProgramModuleSlotRelocText(constText);
-			const resolvedSlot = resolveLinkedExportSlot(slotName, symbols.globalNames, symbols.systemGlobalNames);
+			const resolvedSlot = resolveLinkedExportSlot(reloc.symbol, symbols.globalNames, symbols.systemGlobalNames);
 			rewriteResolvedABx(code, reloc.wordIndex, resolvedSlot.op, resolvedSlot.slot);
-			resolved += 1;
 			continue;
 		}
-		const slotName = parseProgramExportProtoRelocText(constText);
-		const target = resolveExportProtoRelocTarget(slotName, symbols.globalNames, symbols.systemGlobalNames, symbols.exportProtoIdBySlot, symbols.protoIds);
+		const target = resolveExportProtoRelocTarget(reloc.symbol, symbols.globalNames, symbols.systemGlobalNames, symbols.exportProtoIdBySlot, symbols.protoIds);
 		rewriteResolvedABx(code, reloc.wordIndex, target.op, target.value);
-		resolved += 1;
-	}
-	return resolved;
-};
-
-// Once symbolic relocations are resolved, the placeholder reloc-text consts they
-// referenced are dead: the rewritten instructions load a concrete slot/proto, not
-// the const. Scrub those placeholders to nil so the executable rodata carries no
-// source-only symbolic reloc-text. The reloc-text predicate lives here once, used
-// by both the link path and the runtime path.
-const scrubRelocTextConsts = (
-	length: number,
-	readText: (index: number) => string | null,
-	clear: (index: number) => void,
-): void => {
-	for (let index = 0; index < length; index += 1) {
-		const text = readText(index);
-		if (text !== null && (isProgramModuleSlotRelocText(text) || isProgramExportProtoRelocText(text))) {
-			clear(index);
-		}
 	}
 };
 
@@ -305,34 +275,16 @@ export const resolveRuntimeProgramRelocations = (
 	metadata: ProgramMetadata,
 	relocs: ReadonlyArray<ProgramConstReloc>,
 ): void => {
-	const resolved = applySymbolicRelocations(
+	applySymbolicRelocations(
 		program.code,
 		relocs,
-		(reloc) => {
-			const constValue = program.constPool[reloc.constIndex];
-			if (!valueIsString(constValue)) {
-				throw new Error(`[ProgramLinker] ${reloc.kind} reloc at word ${reloc.wordIndex} references a non-string const.`);
-			}
-			return program.constPoolStringPool.toString(asStringId(constValue));
-		},
 		metadata,
 	);
-	if (resolved > 0) {
-		scrubRelocTextConsts(
-			program.constPool.length,
-			(index) => {
-				const value = program.constPool[index];
-				return valueIsString(value) ? program.constPoolStringPool.toString(asStringId(value)) : null;
-			},
-			(index) => { program.constPool[index] = null; },
-		);
-	}
 };
 
 const rewriteSymbolicConstRelocations = (
 	code: Uint8Array,
 	relocs: ReadonlyArray<ProgramConstReloc>,
-	constPool: ReadonlyArray<EncodedValue>,
 	globalNames: ReadonlyArray<string>,
 	systemGlobalNames: ReadonlyArray<string>,
 	exportProtoIdBySlot: { readonly [slotName: string]: string },
@@ -341,13 +293,6 @@ const rewriteSymbolicConstRelocations = (
 	applySymbolicRelocations(
 		code,
 		relocs,
-		(reloc) => {
-			const constVal = constPool[reloc.constIndex];
-			if (typeof constVal !== 'string') {
-				throw new Error(`[ProgramLinker] ${reloc.kind} reloc at word ${reloc.wordIndex} references a non-string const.`);
-			}
-			return constVal;
-		},
 		{ globalNames, systemGlobalNames, exportProtoIdBySlot, protoIds },
 	);
 };
@@ -359,8 +304,12 @@ const rewriteConstPoolRelocations = (
 ): void => {
 	for (let index = 0; index < relocs.length; index += 1) {
 		const reloc = relocs[index];
-		if (reloc.kind === 'module' || reloc.kind === 'export_proto' || reloc.kind === 'gl' || reloc.kind === 'sys') {
-			continue;
+		switch (reloc.kind) {
+			case 'module':
+			case 'export_proto':
+			case 'gl':
+			case 'sys':
+				continue;
 		}
 		const wordIndex = reloc.wordIndex;
 		const word = readInstructionWord(code, wordIndex);
@@ -560,13 +509,13 @@ const mergeMetadata = (
 	Emulated-machine linking note
 
 	- This codebase targets a emulated-machine ABI where certain system ROM modules are compile-time
-		descriptors (recorded in metadata like `staticModulePaths` / `staticExternalModulePaths`) rather
-		than runtime Lua tables.
+		descriptors (recorded in the program image's static module path list) rather than runtime
+		Lua tables.
 	- The compiler enforces that these compile-time modules are not treated as runtime values and
 		lowers/validates uses (for example rejecting `local m = require('bios')`). When the compiler
-		cannot resolve an export it emits an explicit link-time placeholder into the instruction stream
-		(the current emitter uses loader-owned relocation text in a const operand). The linker MUST
-		detect and resolve these placeholders into the final relocated operand or concrete
+		cannot resolve an export it emits an explicit symbolic relocation on the instruction
+		(the relocation record owns the export-slot name). The linker MUST resolve these records
+		into the final relocated operand or concrete
 		machine-level access; they are not intended to be left as runtime values.
 	- The linker's responsibility is to combine system and cart images and remap proto/const/global
 		indices to the final layout while preserving metadata. Functions such as `rewriteClosureIndices`
@@ -574,25 +523,6 @@ const mergeMetadata = (
 		and must preserve encoding semantics when rewriting the linked buffer.
 
 */
-
-// Audit gate for the "fully linked executable" invariant that the link and runtime
-// resolve paths establish: a clean executable carries no unresolved const
-// relocations and no symbolic reloc-text in its rodata. Pure — returns the list of
-// violations so callers choose how to react; `linkProgramImages` throws on any.
-export const findUnresolvedRelocViolations = (image: ProgramImage): string[] => {
-	const violations: string[] = [];
-	if (image.link.constRelocs.length > 0) {
-		violations.push(`${image.link.constRelocs.length} unresolved const relocation(s) remain.`);
-	}
-	const constPool = image.sections.rodata.constPool;
-	for (let index = 0; index < constPool.length; index += 1) {
-		const value = constPool[index];
-		if (typeof value === 'string' && (isProgramModuleSlotRelocText(value) || isProgramExportProtoRelocText(value))) {
-			violations.push(`rodata const[${index}] still holds symbolic reloc-text '${value}'.`);
-		}
-	}
-	return violations;
-};
 
 export const linkProgramImages = (
 	systemImage: ProgramImage,
@@ -643,7 +573,6 @@ export const linkProgramImages = (
 		rewriteSymbolicConstRelocations(
 			systemCode,
 			systemImage.link.constRelocs,
-			systemRodata.constPool,
 			systemMetadata!.globalNames,
 			systemMetadata!.systemGlobalNames,
 			systemMetadata!.exportProtoIdBySlot,
@@ -668,7 +597,6 @@ export const linkProgramImages = (
 			rewriteSymbolicConstRelocations(
 				cartCode,
 				cartImage.link.constRelocs,
-				cartRodata.constPool,
 				mergedGlobals.names,
 				mergedSystemGlobals.names,
 				cartMetadata!.exportProtoIdBySlot,
@@ -677,16 +605,6 @@ export const linkProgramImages = (
 		}
 	}
 
-	if (systemNeedsSymbols || cartNeedsSymbols) {
-		scrubRelocTextConsts(
-			mergedConsts.constPool.length,
-			(index) => {
-				const value = mergedConsts.constPool[index];
-				return typeof value === 'string' ? value : null;
-			},
-			(index) => { mergedConsts.constPool[index] = null; },
-		);
-	}
 
 	const systemProtos = systemText.protos;
 	const cartProtos = cartText.protos;
@@ -729,6 +647,9 @@ export const linkProgramImages = (
 	const systemStaticModulePaths = systemRodata.staticModulePaths;
 	const cartStaticModulePaths = cartRodata.staticModulePaths;
 	const staticModulePaths = systemStaticModulePaths.concat(cartStaticModulePaths);
+	const dataBytes = new Uint8Array(systemImage.sections.data.bytes.length + cartImage.sections.data.bytes.length);
+	dataBytes.set(systemImage.sections.data.bytes, 0);
+	dataBytes.set(cartImage.sections.data.bytes, systemImage.sections.data.bytes.length);
 	const systemEntryProtoIndex = systemImage.entryProtoIndex;
 	const cartEntryProtoIndex = cartImage.entryProtoIndex + baseProtoCount;
 	const metadata = mergeMetadata(
@@ -751,16 +672,11 @@ export const linkProgramImages = (
 				moduleProtos,
 				staticModulePaths,
 			},
-			data: { bytes: new Uint8Array(0) },
-			bss: { byteCount: 0 },
+			data: { bytes: dataBytes },
+			bss: { byteCount: systemImage.sections.bss.byteCount + cartImage.sections.bss.byteCount },
 		},
 		link: { constRelocs: [] },
 	};
-
-	const relocViolations = findUnresolvedRelocViolations(linkedProgramImage);
-	if (relocViolations.length > 0) {
-		throw new Error(`[ProgramLinker] Linked program is not a clean executable:\n  ${relocViolations.join('\n  ')}`);
-	}
 
 	return {
 		programImage: linkedProgramImage,

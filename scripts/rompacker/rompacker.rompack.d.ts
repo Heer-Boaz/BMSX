@@ -94,6 +94,11 @@ export interface RomLabelResource extends BaseResource<'romlabel'> {
 	id?: number;
 }
 
+// Raw binary asset: owner-authored packed bytes (struct arrays) emitted as-is.
+export interface BinResource extends BaseResource<'bin'> {
+	id: number;
+}
+
 export type Resource =
 	| ImageResource
 	| TextureAtlasResource
@@ -102,4 +107,5 @@ export type Resource =
 	| AemResource
 	| ModelResource
 	| LuaResource
-	| RomLabelResource;
+	| RomLabelResource
+	| BinResource;

@@ -309,13 +309,17 @@
 			"pattern": "machine/ts/glsl.d.ts",
 			"category": "barrel",
 			"reason": "ambient_declaration_not_core"
+		},
+		{
+			"pattern": "machine/ts/rompack/asset_symbols.ts",
+			"category": "rompacker_tooling",
+			"reason": "generated_cart_asset_symbol_source_for_rompacker_and_ide_source_compile_native_consumes_compiled_rom"
 		}
 	],
 	"core_roots": [
 		"machine/ts/input/manager.ts",
 		"machine/ts/machine/cpu/disassembler.ts",
 		"machine/ts/machine/firmware/globals.ts",
-		"machine/ts/machine/firmware/runtime.ts",
 		"machine/ts/machine/firmware/system_globals.ts",
 		"machine/ts/machine/machine.ts",
 		"machine/ts/machine/runtime/cpu_state.ts",
@@ -2217,15 +2221,14 @@
 		{
 			"file": "machine/ts/machine/firmware/builtin_descriptors.ts",
 			"substrings": [
-				"{ name: 'rom_data', params: ['id'], signature: 'rom_data(id)'"
+				"export const SYSTEM_LUA_BUILTIN_FUNCTIONS: ReadonlyArray<LuaBuiltinDescriptor> = [\n];"
 			],
 			"reason": "ts_firmware_system_builtins_must_stay_tiny_after_cartlib_split"
 		},
 		{
 			"file": "machine/cpp/machine/firmware/builtin_descriptors.cpp",
 			"substrings": [
-				"constexpr std::array<LuaBuiltinDescriptor, 1> kSystemLuaBuiltinFunctions",
-				"LuaBuiltinDescriptor{\"rom_data\", \"rom_data(id)\""
+				"constexpr std::array<LuaBuiltinDescriptor, 0> kSystemLuaBuiltinFunctions"
 			],
 			"reason": "native_firmware_system_builtins_must_stay_tiny_after_cartlib_split"
 		},
@@ -2240,7 +2243,6 @@
 		{
 			"file": "machine/firmware/bios/system.lua",
 			"substrings": [
-				"system.rom_data = romdir.data",
 				"function system.irq(flags)"
 			],
 			"reason": "bios_system_lua_must_stay_tiny_after_cartlib_split"
@@ -2756,10 +2758,6 @@
 					"symbol": "ProgramTextSection",
 					"field": "code",
 					"reason": "TS text section code bytes are Uint8Array; C++ stores the same instruction bytes in std::vector<u8>."
-				},
-				{
-					"symbol": "ProgramConstRelocKind",
-					"reason": "TS keeps const relocation kind as the ROM object-image string token emitted by the compiler; C++ decodes the same token into a scoped native enum at the loader boundary."
 				},
 				{
 					"symbol": "buildModuleProtoMap",

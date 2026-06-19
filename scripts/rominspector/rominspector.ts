@@ -5,7 +5,7 @@
 import * as fs from 'fs/promises';
 import * as pako from 'pako';
 import type { RomAsset, CartRomHeader, RomManifest } from '../../machine/ts/rompack/format';
-import { PROGRAM_IMAGE_ID, isProgramExportProtoRelocText, isProgramModuleSlotRelocText } from '../../machine/ts/machine/program/loader';
+import { PROGRAM_IMAGE_ID } from '../../machine/ts/machine/program/loader';
 import { getZippedRomAndRomLabelFromBlob, loadRomAssetList, parseCartridgeIndex, parseCartHeader } from '../../machine/ts/rompack/loader';
 import {
 	buildManifestAsset,
@@ -255,10 +255,6 @@ function printManifest(manifest: RomManifest | null, projectRootPath: string | n
 	console.log(JSON.stringify(payload, null, 2));
 }
 
-function formatConstPoolValue(value: unknown): string {
-	return typeof value === 'string' ? `'${value}'` : String(value);
-}
-
 function printProgramLinkInfo(rombin: Uint8Array, assets: RomAsset[]): void {
 	const programAsset = assets.find(asset => asset.resid === PROGRAM_IMAGE_ID);
 	if (!programAsset || programAsset.start === undefined || programAsset.end === undefined) {
@@ -269,24 +265,12 @@ function printProgramLinkInfo(rombin: Uint8Array, assets: RomAsset[]): void {
 	const constRelocs = programImage.link.constRelocs;
 	console.log(`Program asset: start=${programAsset.start} end=${programAsset.end} size=${programAsset.end - programAsset.start}`);
 	console.log(`constPool length: ${constPool.length}`);
-	let symbolicConstCount = 0;
-	for (let index = 0; index < constPool.length; index += 1) {
-		const value = constPool[index];
-		if (typeof value === 'string' && (isProgramModuleSlotRelocText(value) || isProgramExportProtoRelocText(value))) {
-			console.log(`const[${index}] = ${value}`);
-			symbolicConstCount += 1;
-		}
-	}
-	if (symbolicConstCount === 0) {
-		console.log('symbolic relocation constants: <none>');
-	}
 	console.log(`constRelocs length: ${constRelocs.length}`);
 	let symbolicRelocCount = 0;
 	for (let index = 0; index < constRelocs.length; index += 1) {
 		const reloc = constRelocs[index];
 		if (reloc.kind === 'module' || reloc.kind === 'export_proto') {
-			const value = constPool[reloc.constIndex];
-			console.log(`reloc[${index}] wordIndex=${reloc.wordIndex} kind=${reloc.kind} constIndex=${reloc.constIndex} -> const=${formatConstPoolValue(value)}`);
+			console.log(`reloc[${index}] wordIndex=${reloc.wordIndex} kind=${reloc.kind} symbol=${reloc.symbol}`);
 			symbolicRelocCount += 1;
 		}
 	}

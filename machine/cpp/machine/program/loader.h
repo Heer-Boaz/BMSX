@@ -14,9 +14,6 @@ namespace bmsx {
 
 constexpr const char* PROGRAM_IMAGE_ID = "__program__";
 constexpr const char* PROGRAM_SYMBOLS_IMAGE_ID = "__program_symbols__";
-std::string_view parseProgramModuleSlotRelocText(std::string_view text);
-std::string_view parseProgramExportProtoRelocText(std::string_view text);
-
 using EncodedValue = std::variant<std::nullptr_t, bool, double, std::string>;
 
 struct ProgramTextSection {
@@ -45,7 +42,7 @@ struct ProgramObjectSections {
 	ProgramBssSection bss;
 };
 
-enum class ProgramConstRelocKind {
+enum class ProgramIndexedConstRelocKind {
 	Bx,
 	RkB,
 	RkC,
@@ -56,17 +53,28 @@ enum class ProgramConstRelocKind {
 	ConstC,
 	Gl,
 	Sys,
-	// Reloc kind for module export placeholders emitted by the TypeScript
-	// compiler when an external module export cannot be resolved at compile time.
-	// The linker must resolve these into GETSYS/GETGL accesses.
+};
+
+enum class ProgramSymbolicConstRelocKind {
+	// Symbolic module/export relocations carry the export-slot name in the reloc
+	// record. The linker resolves them into GETSYS/GETGL or CLOSURE operands.
 	Module,
 	ExportProto,
 };
 
+struct ProgramIndexedConstReloc {
+	ProgramIndexedConstRelocKind kind = ProgramIndexedConstRelocKind::Bx;
+	int constIndex = 0;
+};
+
+struct ProgramSymbolicConstReloc {
+	ProgramSymbolicConstRelocKind kind = ProgramSymbolicConstRelocKind::Module;
+	std::string symbol;
+};
+
 struct ProgramConstReloc {
 	int wordIndex = 0;
-	ProgramConstRelocKind kind = ProgramConstRelocKind::Bx;
-	int constIndex = 0;
+	std::variant<ProgramIndexedConstReloc, ProgramSymbolicConstReloc> target;
 };
 
 struct ProgramLink {

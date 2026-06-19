@@ -1,4 +1,6 @@
 local constants<const> = require('constants')
+local bin<const> = require('system/bin')
+local assets<const> = require('bmsx/assets')
 
 local stage_subsystem<const> = {}
 stage_subsystem.__index = stage_subsystem
@@ -379,7 +381,7 @@ function stage_subsystem:apply_stage_config(stage_data)
 end
 
 function stage_subsystem:build_tape()
-	local stage_data<const> = rom_data(constants.stage.asset_id)
+	local stage_data<const> = bin.decode(assets.data_nemesis_s_stage_addr, assets.data_nemesis_s_stage_len, constants.stage.asset_id)
 	self:apply_stage_config(stage_data)
 	local map_rows<const> = stage_data.map_rows
 

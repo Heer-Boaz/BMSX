@@ -25,6 +25,16 @@ export type CartRomHeader = {
 	metadataLength: number;
 };
 
+export type ProgramBootHeader = {
+	version: number;
+	flags: number;
+	entryProtoIndex: number;
+	codeByteCount: number;
+	constPoolCount: number;
+	protoCount: number;
+	constRelocCount: number;
+};
+
 export type CartridgeLayerId = 'system' | 'cart' | 'overlay';
 
 export type RomAssetOp = 'delete';

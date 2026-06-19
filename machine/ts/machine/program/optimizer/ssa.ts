@@ -165,6 +165,7 @@ const replaceWithUnm = (instruction: Instruction, dst: number, src: number): voi
 	instruction.rkMask = 0;
 	instruction.target = null;
 	instruction.callProtoIndex = null;
+	instruction.symbolicReloc = undefined;
 };
 
 const replaceWithNop = (instruction: Instruction): void => {

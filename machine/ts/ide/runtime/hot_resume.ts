@@ -1,6 +1,5 @@
 import { convertToError } from '../../lua/value';
 import { clearOverlayFrame } from '../../render/host_overlay/overlay_queue';
-import { runSystemBuiltinPrelude } from '../../machine/firmware/runtime';
 import { compileLuaChunkToProgram } from '../../machine/program/compiler';
 import { resolveRuntimeProgramRelocations } from '../../machine/program/linker';
 import { RuntimeResumeSnapshot } from '../../machine/runtime/contracts';
@@ -105,11 +104,11 @@ export function hotResumeProgramEntry(runtime: Runtime, params: { path: string; 
 	// Re-requiring would build a redundant second module generation (the heap
 	// doubling that pushed resume over the RAM budget) and discard live state.
 	runtime.machine.vdp.resetIngressState();
-	const prelude = runSystemBuiltinPrelude(runtime, program, metadata);
+	runtime.machine.cpu.setProgram(program, metadata);
 	runtime.startLoadedProgram(entryProtoIndex, [], false, false);
 	runtime.luaRuntimeFailed = preserveRuntimeFailure;
 	runtime._luaPath = binding;
-	runtime.programMetadata = prelude.metadata;
+	runtime.programMetadata = metadata;
 	clearEditorCompletionCache(runtime);
 }
 

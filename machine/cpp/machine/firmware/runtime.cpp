@@ -1,5 +1,4 @@
 #include "machine/runtime/runtime.h"
-#include <array>
 #include <iostream>
 
 namespace bmsx {
@@ -90,21 +89,5 @@ void Runtime::handleLuaError(const std::string& message) {
 	m_runtimeFailed = true;
 }
 
-void Runtime::runSystemBuiltinPrelude() {
-	std::cout << "[Runtime] prelude: binding system ROM builtins" << std::endl;
-	static const std::array systemBuiltinNames = {
-		"rom_data",
-	};
-	Table* systemModule = asTable(requireModule("bios/system"));
-	machine.cpu.syncGlobalSlotsToTable();
-	for (const char* name : systemBuiltinNames) {
-		Value value = systemModule->get(internString(name));
-		if (isNil(value)) {
-			throw BMSX_RUNTIME_ERROR(std::string("System ROM builtin '") + name + "' is missing.");
-		}
-		machine.cpu.setGlobalByKey(internString(name), value);
-	}
-	std::cout << "[Runtime] prelude: system ROM builtins bound" << std::endl;
-}
 
 } // namespace bmsx

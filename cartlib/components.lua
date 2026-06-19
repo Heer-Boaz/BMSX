@@ -898,7 +898,6 @@ function inputactioneffectcomponent.new(opts)
 	opts.type_name = 'inputactioneffectcomponent'
 	opts.unique = true
 	local self<const> = setmetatable(component.new(opts), inputactioneffectcomponent)
-	self.program_id = opts.program_id
 	self.program = opts.program
 	return self
 end

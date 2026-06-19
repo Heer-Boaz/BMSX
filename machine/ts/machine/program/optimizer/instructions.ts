@@ -18,6 +18,7 @@ export const cloneInstruction = (instruction: Instruction): Instruction => ({
 	rkMask: instruction.rkMask,
 	target: instruction.target,
 	callProtoIndex: instruction.callProtoIndex,
+	symbolicReloc: instruction.symbolicReloc,
 });
 
 export const computeMaxRegister = (instructions: Instruction[]): number => {
@@ -154,6 +155,9 @@ export const computeMaxRegister = (instructions: Instruction[]): number => {
 };
 
 export const isPureInstruction = (instruction: Instruction): boolean => {
+	if (instruction.symbolicReloc !== undefined) {
+		return false;
+	}
 	switch (instruction.op) {
 		case OpCode.MOV:
 		case OpCode.KNIL:

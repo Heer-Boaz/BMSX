@@ -2,7 +2,6 @@ import type { LuaChunk } from '../../lua/syntax/ast';
 import { LuaInterpreter } from '../../lua/runtime';
 import { convertToError } from '../../lua/value';
 import type { LuaValue } from '../../lua/value';
-import { applySystemBuiltinGlobals, runSystemBuiltinPrelude } from '../../machine/firmware/runtime';
 import { seedLuaGlobals } from '../../machine/firmware/globals';
 import { compileLuaChunkToProgram, type CompiledProgram } from '../../machine/program/compiler';
 import { linkProgramImages, resolveRuntimeProgramRelocations } from '../../machine/program/linker';
@@ -310,8 +309,8 @@ function bootSystemSourceProgram(runtime: Runtime, interpreter: LuaInterpreter, 
 	installProgramModules(runtime, buildModuleProtoMap(programImage.sections.rodata.moduleProtos));
 	const program = inflateProgram(programImage.sections);
 	resolveRuntimeProgramRelocations(program, metadata, programImage.link.constRelocs);
-	const prelude = runSystemBuiltinPrelude(runtime, program, metadata);
-	runtime.programMetadata = prelude.metadata;
+	runtime.machine.cpu.setProgram(program, metadata);
+	runtime.programMetadata = metadata;
 	runtime.startLoadedProgram(entryProtoIndex, staticModulePaths, options?.runInit !== false, true);
 	return true;
 }
@@ -363,7 +362,6 @@ function bootProgramImage(runtime: Runtime, options?: { preserveState?: boolean;
 	try {
 		runtime.machine.cpu.setProgram(inflated, metadata);
 		runtime.programMetadata = metadata;
-		applySystemBuiltinGlobals(runtime);
 		runtime.startLoadedProgram(entryProtoIndex, staticModulePaths, options?.runInit !== false, true);
 		return true;
 	} catch (error) {
@@ -414,8 +412,8 @@ function bootLuaProgram(runtime: Runtime, options?: { preserveState?: boolean; s
 		});
 		resolveRuntimeProgramRelocations(program, metadata, constRelocs);
 		installProgramModules(runtime, moduleProtoMap);
-		const prelude = runSystemBuiltinPrelude(runtime, program, metadata);
-		runtime.programMetadata = prelude.metadata;
+		runtime.machine.cpu.setProgram(program, metadata);
+		runtime.programMetadata = metadata;
 		runtime.startLoadedProgram(entryProtoIndex, staticModulePaths, true, true);
 		return true;
 	}

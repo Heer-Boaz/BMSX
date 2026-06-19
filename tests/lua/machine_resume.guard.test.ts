@@ -23,16 +23,6 @@ test('hotResumeProgramEntry keeps interpreter resident', () => {
 	const snippet = src.slice(start, nextExport === -1 ? undefined : nextExport);
 	assert.equal(snippet.includes('createLuaInterpreter('), false, 'hotResumeProgramEntry should not create a new interpreter');
 	assert.equal(snippet.includes('runtime.startLoadedProgram(entryProtoIndex, [], false, false)'), true, 'hotResumeProgramEntry must execute the updated path');
-	assert.equal(snippet.includes('resolveRuntimeProgramRelocations(program, metadata, constRelocs)'), true, 'hotResumeProgramEntry must resolve export-symbol placeholders before installing the replacement program');
+	assert.equal(snippet.includes('resolveRuntimeProgramRelocations(program, metadata, constRelocs)'), true, 'hotResumeProgramEntry must resolve export-symbol relocations before installing the replacement program');
 	assert.equal(snippet.includes('if (!params.preserveSystemModules)'), true, 'hot-resume must preserve live module objects (single generation); only a full reload clears the module cache');
-});
-
-test('system builtin prelude starts from fresh CPU entry state', () => {
-	const src = readFileSync('machine/ts/machine/firmware/runtime.ts', 'utf8');
-	const start = src.indexOf('export function runSystemBuiltinPrelude');
-	assert.ok(start > -1, 'runSystemBuiltinPrelude not found');
-	const nextExport = src.indexOf('\nexport function ', start + 1);
-	const snippet = src.slice(start, nextExport === -1 ? undefined : nextExport);
-	assert.equal(snippet.includes('runtime.machine.cpu.start(compiled.entryProtoIndex)'), true, 'prelude should reset stale active CPU/HALT state before executing setup code');
-	assert.equal(snippet.includes('callClosure(runtime, { protoIndex: compiled.entryProtoIndex'), false, 'prelude must not enter through the previous CPU call stack');
 });

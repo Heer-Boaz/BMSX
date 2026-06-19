@@ -12,6 +12,7 @@ import { generateHostSystemAtlasArtifactsFromAssets } from './host_system_atlas'
 import type { TaskProgressReporter as ProgressReporter } from './progress';
 import type { RomPackerOptions } from './rompacker.rompack';
 import type { RomAsset } from '../../machine/ts/rompack/format';
+import { buildRomAssetSymbolModuleSource, ROM_ASSET_SYMBOL_MODULE_PATH } from '../../machine/ts/rompack/asset_symbols';
 import { LuaError } from '../../machine/ts/lua/errors';
 
 import { join } from 'node:path';
@@ -548,7 +549,13 @@ async function main() {
 
 			const romAssets = await progress.runWithDetail('Generate ROM assets', () => generateRomAssets(resources, message => progress.setDetail(message)));
 			const biosProgramContextAssets = await buildLuaProgramContextAssets([biosLuaPath, systemLuaPath], '');
-			const programBoot = appendProgramImage(romAssets, romManifest.lua.entry_path, { includeSymbols: true, optLevel, externalLuaAssets: biosProgramContextAssets });
+			const assetSymbolModuleSource = buildRomAssetSymbolModuleSource(romAssets, romPackDebug);
+			const programBoot = appendProgramImage(romAssets, romManifest.lua.entry_path, {
+				includeSymbols: true,
+				optLevel,
+				externalLuaAssets: biosProgramContextAssets,
+				generatedLuaModules: [{ path: ROM_ASSET_SYMBOL_MODULE_PATH, source: assetSymbolModuleSource }],
+			});
 			stripLuaAssets(romAssets, romPackDebug);
 			await progress.taskCompleted();
 			if (!isBIOSMode) {

@@ -4,9 +4,7 @@
 local ecs<const> = require('cartlib/ecs/index')
 local action_effects<const> = require('cartlib/action_effects')
 local compiler<const> = require('cartlib/input/action_effect/compiler')
-local dsl<const> = require('cartlib/input/action_effect/dsl')
 local cart_input<const> = require('cartlib/input/player')
-local romdir<const> = require('system/romdir')
 local scratchbatch<const> = require('bios/util/scratchbatch')
 local world_instance<const> = require('cartlib/world/index').instance
 local inputintentcomponent<const> = 'inputintentcomponent'
@@ -28,11 +26,8 @@ setmetatable(inputactioneffectsystem, { __index = ecs.ecsystem })
 
 function inputactioneffectsystem.new(priority)
 	local self<const> = setmetatable(ecs.ecsystem.new(ecs.tickgroup.input, priority), inputactioneffectsystem)
-	self.compiled_by_id = {}
 	self.inline_compiled = setmetatable({}, { __mode = 'k' })
 	self.validated_inline = setmetatable({}, { __mode = 'k' })
-	self.resolved_programs = {}
-	self.missing_program_ids = {}
 	self.pattern_cache = {}
 	self.custom_match_scratch = scratchbatch.new()
 	self.runtime_by_component = setmetatable({}, { __mode = 'k' })
@@ -168,10 +163,7 @@ function inputactioneffectsystem:resolve_intent_player_index(component, owner)
 	return resolved
 end
 
-function inputactioneffectsystem:resolve_program_key(component, owner)
-	if component.program_id then
-		return component.program_id
-	end
+function inputactioneffectsystem:resolve_program_key(_component, owner)
 	return 'inline:' .. owner.id
 end
 
@@ -341,39 +333,7 @@ function inputactioneffectsystem:resolve_compiled_program(component)
 		return compiled
 	end
 
-	local program_id<const> = component.program_id
-	if not program_id then
-		error('[inputactioneffectsystem] component on "' .. (component.parent and component.parent.id or '<unknown>') .. '" is missing program_id.')
-	end
-
-	local compiled = self.compiled_by_id[program_id]
-	if compiled then
-		return compiled
-	end
-
-	local program<const> = self:resolve_program_by_id(program_id)
-	compiled = compiler.compile_program(program, function(pattern)
-		return self:parse_pattern(pattern)
-	end)
-	self.compiled_by_id[program_id] = compiled
-	return compiled
-end
-
-function inputactioneffectsystem:resolve_program_by_id(program_id)
-	if self.resolved_programs[program_id] then
-		return self.resolved_programs[program_id]
-	end
-	if self.missing_program_ids[program_id] then
-		error('[inputactioneffectsystem] program "' .. program_id .. '" is marked as missing.')
-	end
-	local data<const> = romdir.data(program_id)
-	if not dsl.is_input_action_effect_program(data) then
-		self.missing_program_ids[program_id] = true
-		error('[inputactioneffectsystem] program "' .. program_id .. '" not found or invalid.')
-	end
-	compiler.validate_program_effects(data, program_id)
-	self.resolved_programs[program_id] = data
-	return data
+	error('[inputactioneffectsystem] component on "' .. (component.parent and component.parent.id or '<unknown>') .. '" is missing inline program.')
 end
 
 function inputactioneffectsystem:parse_pattern(pattern)

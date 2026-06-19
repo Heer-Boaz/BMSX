@@ -45,6 +45,7 @@ export const replaceWithJump = (instruction: Instruction, target: number): void 
 	instruction.rkMask = 0;
 	instruction.target = target;
 	instruction.callProtoIndex = null;
+	instruction.symbolicReloc = undefined;
 };
 
 export const replaceWithMov = (instruction: Instruction, dst: number, src: number): void => {
@@ -56,12 +57,14 @@ export const replaceWithMov = (instruction: Instruction, dst: number, src: numbe
 	instruction.rkMask = 0;
 	instruction.target = null;
 	instruction.callProtoIndex = null;
+	instruction.symbolicReloc = undefined;
 };
 
 export const replaceWithConst = (instruction: Instruction, target: number, value: Value, context: OptimizationContext): ConstValue => {
 	instruction.target = null;
 	instruction.rkMask = 0;
 	instruction.callProtoIndex = null;
+	instruction.symbolicReloc = undefined;
 	if (value === null) {
 		instruction.op = OpCode.KNIL;
 		instruction.a = target;

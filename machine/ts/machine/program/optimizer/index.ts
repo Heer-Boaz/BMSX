@@ -28,6 +28,7 @@ export type Instruction = {
 	rkMask: number;
 	target: number | null;
 	callProtoIndex?: number | null;
+	symbolicReloc?: { kind: 'module' | 'export_proto'; symbol: string };
 };
 
 export type OptimizationLevel = 0 | 1 | 2 | 3;
@@ -1853,6 +1854,8 @@ const buildInlineExpansion = (
 					mapped.format = 'ABC';
 					mapped.rkMask = 0;
 					mapped.target = null;
+					mapped.callProtoIndex = null;
+					mapped.symbolicReloc = undefined;
 					break;
 				}
 				mapped.a = mapRegister(mapped.a);
@@ -1873,6 +1876,8 @@ const buildInlineExpansion = (
 					mapped.format = 'ABC';
 					mapped.rkMask = 0;
 					mapped.target = null;
+					mapped.callProtoIndex = null;
+					mapped.symbolicReloc = undefined;
 					break;
 				}
 				mapped.a = mapRegister(mapped.a);

@@ -6,39 +6,6 @@ import { StringPool } from '../cpu/string_pool';
 export const PROGRAM_IMAGE_ID = '__program__';
 // disable-next-line legacy_sentinel_string_pattern -- Program symbols image id is a TS/C++/bootrom binary contract, not an alias fallback.
 export const PROGRAM_SYMBOLS_IMAGE_ID = '__program_symbols__';
-const PROGRAM_MODULE_SLOT_RELOC_PREFIX = 'modslot:';
-const PROGRAM_EXPORT_PROTO_RELOC_PREFIX = 'exportproto:';
-
-export function makeProgramModuleSlotRelocText(slotName: string): string {
-	return `${PROGRAM_MODULE_SLOT_RELOC_PREFIX}${slotName}`;
-}
-
-export function makeProgramExportProtoRelocText(slotName: string): string {
-	return `${PROGRAM_EXPORT_PROTO_RELOC_PREFIX}${slotName}`;
-}
-
-export function isProgramModuleSlotRelocText(text: string): boolean {
-	return text.startsWith(PROGRAM_MODULE_SLOT_RELOC_PREFIX);
-}
-
-export function isProgramExportProtoRelocText(text: string): boolean {
-	return text.startsWith(PROGRAM_EXPORT_PROTO_RELOC_PREFIX);
-}
-
-export function parseProgramModuleSlotRelocText(text: string): string {
-	if (!isProgramModuleSlotRelocText(text)) {
-		throw new Error(`[ProgramLoader] module reloc text missing '${PROGRAM_MODULE_SLOT_RELOC_PREFIX}' prefix.`);
-	}
-	return text.slice(PROGRAM_MODULE_SLOT_RELOC_PREFIX.length);
-}
-
-export function parseProgramExportProtoRelocText(text: string): string {
-	if (!isProgramExportProtoRelocText(text)) {
-		throw new Error(`[ProgramLoader] export_proto reloc text missing '${PROGRAM_EXPORT_PROTO_RELOC_PREFIX}' prefix.`);
-	}
-	return text.slice(PROGRAM_EXPORT_PROTO_RELOC_PREFIX.length);
-}
-
 export type EncodedValue = null | boolean | number | string;
 
 export type ProgramTextSection = {
@@ -67,17 +34,23 @@ export type ProgramObjectSections = {
 	bss: ProgramBssSection;
 };
 
-// 'export_proto': a CLOSURE operand that references a module's exported function by
-// name; the linker resolves the const-string export id to the producer's final proto
-// index. This is how an exported function becomes a link-time symbol (a static
-// closure) instead of a value loaded from a runtime global slot.
-export type ProgramConstRelocKind = 'bx' | 'rk_b' | 'rk_c' | 'const_b' | 'const_c' | 'gl' | 'sys' | 'module' | 'export_proto';
+// 'module' and 'export_proto' carry symbolic export-slot names directly in the
+// relocation record. The instruction operand is scratch storage until the linker
+// resolves it to the final slot or proto index.
+export type ProgramIndexedConstRelocKind = 'bx' | 'rk_b' | 'rk_c' | 'const_b' | 'const_c' | 'gl' | 'sys';
+export type ProgramSymbolicConstRelocKind = 'module' | 'export_proto';
 
-export type ProgramConstReloc = {
-	wordIndex: number;
-	kind: ProgramConstRelocKind;
-	constIndex: number;
-};
+export type ProgramConstReloc =
+	| {
+		wordIndex: number;
+		kind: ProgramIndexedConstRelocKind;
+		constIndex: number;
+	}
+	| {
+		wordIndex: number;
+		kind: ProgramSymbolicConstRelocKind;
+		symbol: string;
+	};
 
 export type ProgramLink = {
 	constRelocs: ProgramConstReloc[];
@@ -202,8 +175,17 @@ function decodeProgramLink(value: unknown): ProgramLink {
 		if (kind !== 'bx' && kind !== 'rk_b' && kind !== 'rk_c' && kind !== 'const_b' && kind !== 'const_c' && kind !== 'gl' && kind !== 'sys' && kind !== 'module' && kind !== 'export_proto') {
 			throw new Error(`ProgramImage.link.constRelocs[${index}].kind must be 'bx', 'rk_b', 'rk_c', 'const_b', 'const_c', 'gl', 'sys', 'module' or 'export_proto'.`);
 		}
+		const wordIndex = requireObjectKey(entry, 'wordIndex', `ProgramImage.link.constRelocs[${index}]`, `ProgramImage.link.constRelocs[${index}].wordIndex`) as number;
+		if (kind === 'module' || kind === 'export_proto') {
+			constRelocs[index] = {
+				wordIndex,
+				kind,
+				symbol: requireObjectKey(entry, 'symbol', `ProgramImage.link.constRelocs[${index}]`, `ProgramImage.link.constRelocs[${index}].symbol`) as string,
+			};
+			continue;
+		}
 		constRelocs[index] = {
-			wordIndex: requireObjectKey(entry, 'wordIndex', `ProgramImage.link.constRelocs[${index}]`, `ProgramImage.link.constRelocs[${index}].wordIndex`) as number,
+			wordIndex,
 			kind,
 			constIndex: requireObjectKey(entry, 'constIndex', `ProgramImage.link.constRelocs[${index}]`, `ProgramImage.link.constRelocs[${index}].constIndex`) as number,
 		};

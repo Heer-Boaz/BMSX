@@ -35,28 +35,6 @@ local slot_play_queue
 local slot_queue_head
 local slot_queue_tail
 
-local resolve_data_path<const> = function(path)
-	local dot = string.find(path, '.', 1, true)
-	if not dot then
-		return romdir.data(path)
-	end
-	local cursor = romdir.data(string.sub(path, 1, dot - 1))
-	local start = dot + 1
-	while true do
-		dot = string.find(path, '.', start, true)
-		local key
-		if dot then
-			key = string.sub(path, start, dot - 1)
-		else
-			key = string.sub(path, start)
-		end
-		cursor = cursor[key]
-		if not dot then
-			return cursor
-		end
-		start = dot + 1
-	end
-end
 
 local compile_apu_defaults<const> = function(action)
 	action.__aem_priority = action.priority
@@ -134,7 +112,7 @@ local compile_action<const> = function(action)
 		if action.modulation_params ~= nil then
 			compile_modulation(action, action.modulation_params)
 		elseif action.modulation_preset ~= nil then
-			compile_modulation(action, resolve_data_path(action.modulation_preset))
+			error('AEM modulation_preset is not supported; put modulation_params in the AEM action.')
 		end
 	end
 	if action.music_transition ~= nil then

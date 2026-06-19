@@ -495,23 +495,6 @@ function romdir.audio(id)
 	return record_for_entry(entry)
 end
 
-function romdir.data(id)
-	local entry<const> = find_in_roms(active_roms, id, kind_data)
-	if entry == nil then
-		return nil
-	end
-	return decode_payload(entry)
-end
-
--- Typed reader: read only the value at `path` from a data entry without materializing
--- its whole nested table. The data owner expresses layout via the path it requests.
-function romdir.data_field(id, path)
-	local entry<const> = find_in_roms(active_roms, id, kind_data)
-	if entry == nil then
-		return nil
-	end
-	return bin.decode_path(entry.addr, entry.len, path, entry.id)
-end
 
 function romdir.audioevents()
 	local entries<const> = list_entries(active_roms, kind_aem)

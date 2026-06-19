@@ -202,7 +202,6 @@ private:
 		Entry,
 	};
 	void setupBuiltins();
-	void runSystemBuiltinPrelude();
 	void runStaticModuleInitializers(const std::vector<std::string>& paths);
 	void runStaticModuleInitializer(const std::string& path);
 	void queueLifecycleHandlers(bool runInit, bool runNewGame);
