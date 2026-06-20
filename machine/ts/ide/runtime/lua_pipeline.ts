@@ -4,7 +4,7 @@ import { convertToError } from '../../lua/value';
 import type { LuaValue } from '../../lua/value';
 import { seedLuaGlobals } from '../../machine/firmware/globals';
 import { compileLuaChunkToProgram, type CompiledProgram } from '../../machine/program/compiler';
-import { linkProgramImages, resolveRuntimeProgramRelocations } from '../../machine/program/linker';
+import { inflateExecutableProgramImage, linkProgramImages, resolveRuntimeProgramRelocations } from '../../machine/program/linker';
 import { readWorkspaceLuaSourceText } from '../workspace/files';
 import { SymbolEntry, SymbolKind } from '../../machine/runtime/contracts';
 import { resolveLuaSourceRecord, type LuaSourceRegistry } from '../../machine/program/sources';
@@ -17,7 +17,6 @@ import {
 	decodeProgramImage,
 	decodeProgramSymbolsImage,
 	encodeProgramObjectSections,
-	inflateProgram,
 	PROGRAM_IMAGE_ID,
 	PROGRAM_SYMBOLS_IMAGE_ID,
 	toLuaModulePath,
@@ -309,8 +308,7 @@ function bootSystemSourceProgram(runtime: Runtime, interpreter: LuaInterpreter, 
 		resetRuntimeState(runtime);
 	}
 	installProgramModules(runtime, buildModuleProtoMap(programImage.sections.rodata.moduleProtos));
-	const program = inflateProgram(programImage.sections);
-	resolveRuntimeProgramRelocations(program, metadata, programImage.link.constRelocs);
+	const program = inflateExecutableProgramImage(programImage, metadata);
 	runtime.machine.cpu.setProgram(program, metadata);
 	runtime.programMetadata = metadata;
 	runtime.startLoadedProgram(entryProtoIndex, staticModulePaths, options?.runInit !== false, true);
@@ -354,13 +352,7 @@ function bootProgramImage(runtime: Runtime, options?: { preserveState?: boolean;
 	const protoMap = buildModuleProtoMap(programImage.sections.rodata.moduleProtos);
 	installProgramModules(runtime, protoMap);
 
-	const inflated = inflateProgram(programImage.sections);
-	if (programImage.link.constRelocs.length > 0) {
-		if (metadata === null) {
-			throw new Error('program image relocations require metadata.');
-		}
-		resolveRuntimeProgramRelocations(inflated, metadata, programImage.link.constRelocs);
-	}
+	const inflated = inflateExecutableProgramImage(programImage, metadata);
 	try {
 		runtime.machine.cpu.setProgram(inflated, metadata);
 		runtime.programMetadata = metadata;

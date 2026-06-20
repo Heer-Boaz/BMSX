@@ -561,6 +561,20 @@ void resolveRuntimeProgramRelocations(
 	}
 }
 
+std::unique_ptr<Program> inflateExecutableProgramImage(
+	const ProgramImage& image,
+	const ProgramMetadata* metadata
+) {
+	auto program = inflateProgram(image.sections);
+	if (!image.link.constRelocs.empty()) {
+		if (!metadata) {
+			throw std::runtime_error("program image relocations require metadata.");
+		}
+		resolveRuntimeProgramRelocations(*program, *metadata, image.link.constRelocs);
+	}
+	return program;
+}
+
 /*
 	Emulated-machine linking note
 

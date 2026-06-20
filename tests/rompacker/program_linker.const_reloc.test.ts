@@ -9,7 +9,7 @@ import { CPU, OpCode, RunResult, StringValue, Table, asStringId, createNativeFun
 import { INSTRUCTION_BYTES, readInstructionWord, writeInstruction, writeInstructionWord } from '../../machine/ts/machine/cpu/instruction_format';
 import { appendLuaChunkToProgram, compileLuaChunkToProgram } from '../../machine/ts/machine/program/compiler';
 import { decodeProgramSymbolsImage, inflateProgram, type ProgramImage, type ProgramConstReloc, type ProgramSymbolsImage } from '../../machine/ts/machine/program/loader';
-import { linkProgramImages, resolveRuntimeProgramRelocations } from '../../machine/ts/machine/program/linker';
+import { inflateExecutableProgramImage, linkProgramImages, resolveRuntimeProgramRelocations } from '../../machine/ts/machine/program/linker';
 import { replaceWithJump, replaceWithMov } from '../../machine/ts/machine/program/optimizer/values';
 import type { Instruction } from '../../machine/ts/machine/program/optimizer';
 import { CART_BASE_PC, CART_PROGRAM_VECTOR_PC, CART_PROGRAM_VECTOR_VALUE, SYSTEM_BASE_PC } from '../../machine/ts/machine/program/layout';
@@ -780,6 +780,43 @@ test('resolveRuntimeProgramRelocations resolves symbolic relocations without con
 	const runtimeConst = program.constPool[0];
 	assert.ok(valueIsString(runtimeConst));
 	assert.equal(program.constPoolStringPool.toString(asStringId(runtimeConst)), 'runtime literal');
+});
+
+test('inflateExecutableProgramImage resolves object relocs before runtime install', () => {
+	const image = makeProgramImage(
+		[
+			{ op: OpCode.WIDE, a: 0, b: 0, c: 0 },
+			{ op: OpCode.LOADK, a: 0, b: 0, c: 0 },
+			{ op: OpCode.RET, a: 0, b: 1, c: 0 },
+		],
+		['runtime literal'],
+		[{ wordIndex: 1, kind: 'export_proto', symbol: 'main__entry' }],
+	);
+	const metadata = makeProgramSymbols('main', image.sections.text.code.length / INSTRUCTION_BYTES);
+	metadata.exportProtoIdBySlot = { main__entry: 'main' };
+
+	const program = inflateExecutableProgramImage(image, metadata);
+
+	assert.equal(((readInstructionWord(program.code, 1) >>> 18) & 0x3f) as OpCode, OpCode.CLOSURE);
+	const runtimeConst = program.constPool[0];
+	assert.ok(valueIsString(runtimeConst));
+	assert.equal(program.constPoolStringPool.toString(asStringId(runtimeConst)), 'runtime literal');
+});
+
+test('inflateExecutableProgramImage rejects object relocs without metadata', () => {
+	const image = makeProgramImage(
+		[
+			{ op: OpCode.LOADK, a: 0, b: 0, c: 0 },
+			{ op: OpCode.RET, a: 0, b: 1, c: 0 },
+		],
+		[],
+		[{ wordIndex: 0, kind: 'module', symbol: 'main__entry' }],
+	);
+
+	assert.throws(
+		() => inflateExecutableProgramImage(image, null),
+		/program image relocations require metadata/,
+	);
 });
 
 test('ProgramCompiler treats old reloc marker text as ordinary string literals', () => {

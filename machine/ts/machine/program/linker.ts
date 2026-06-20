@@ -27,6 +27,7 @@ import type {
 	ProgramConstReloc,
 	ProgramSymbolsImage,
 } from './loader';
+import { inflateProgram } from './loader';
 
 export type LinkedProgramImage = {
 	programImage: ProgramImage;
@@ -280,6 +281,20 @@ export const resolveRuntimeProgramRelocations = (
 		relocs,
 		metadata,
 	);
+};
+
+export const inflateExecutableProgramImage = (
+	programImage: ProgramImage,
+	metadata: ProgramMetadata | null,
+): Program => {
+	const program = inflateProgram(programImage.sections);
+	if (programImage.link.constRelocs.length !== 0) {
+		if (metadata === null) {
+			throw new Error('program image relocations require metadata.');
+		}
+		resolveRuntimeProgramRelocations(program, metadata, programImage.link.constRelocs);
+	}
+	return program;
 };
 
 const rewriteSymbolicConstRelocations = (

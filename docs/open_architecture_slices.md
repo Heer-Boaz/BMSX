@@ -120,14 +120,14 @@ Cart-representatie roadmap/status:
 | Punt | Status |
 | --- | --- |
 | echte `data`/`bss` secties | Deels: het image-format en de TS/C++ linker behouden `rodata`/`data`/`bss`; open: producers vullen `data`/`bss` nog niet als cart ABI voor static config, registries, prefab-data en initialized RAM. |
-| één object-file/linker pipeline | Deels: program images hebben reloc-records en TS/C++ linkers; open: BIOS/system/engine/cart/source-compile/hot-resume moeten door exact dezelfde object → reloc → executable semantiek. |
+| één object-file/linker pipeline | Deels: program images hebben reloc-records en TS/C++ linkers; eerste install-seam staat nu in de program/linker-eigenaar (`inflateExecutableProgramImage`) voor object-image → executable program; open: source-compile, hot-resume en executor-append volledig door dezelfde object/link/install-semantiek trekken. |
 | runtime relocaties als load/link stap | Deels: `module`/`export_proto` placeholders zijn uit runtimewaarden gehaald; open: harde verifier-gate voor alle executable images. |
 | static module/data ABI | Deels: M2 call-targets kunnen link-time naar `CLOSURE(proto)` en de const-moduleklasse bestaat (`bmsx/assets` exporteert compile-time constants die op de use-site worden geïnlined, zonder runtime module-table); open: static moduleklasse met functies en rodata/data-symbolen breder dan alleen const-scalars. |
 | dynamic Lua-opcodes weren uit systems/static modules | Open: dit moet een compiler-contract worden, geen discipline of losse linter. |
 | CPU objectwereld loshalen van machine-code ABI | Open: `CPU.Value` is nog Lua-objectwereld; echte cart ABI moet primair words, registers, addresses, memory, sections en symbols zijn. |
 | assets/`rom_data` binair maken | Deels: `rom_data`-familie is weg en `.bin` raw ROM path is getest; open: maps, rooms, timelines, registries en asset records naar vaste binaire layouts. |
 | cart startup/vector model | Open: entry/init/new_game/reinit/IRQ handlers moeten een expliciete vector/handler ABI krijgen in plaats van ad-hoc Lua global lifecycle. |
-| verifier/audit voor echte carts | Deels: test/parity/rominspector-validatie bestaat; open: één harde cart-verifier voor relocaties, dynamic opcodes, data/bss mapping, source-only dependencies en hot-resume/ROM-build equivalentie. |
+| verifier/audit voor echte carts | GESCHRAPT in deze vorm: een los retro-cart verifier-script is een slechte slice. De echte gates horen bij de producer/linker/compiler/runtime-eigenaren zelf, niet in een achteraf-scanner die ROMs opnieuw interpreteert. |
 
 ## 14. Legacy cart-data naar vaste binaire ROM-layouts — GESCHRAPT
 
@@ -250,6 +250,11 @@ hebben.
 Status:
 
 - program images dragen linkmetadata en reloc-records
+- TS/C++ program/linker bezit nu de eerste install-boundary:
+  `inflateExecutableProgramImage` inflate een `ProgramImage` naar runtime
+  `Program` en past object-relocs toe vóór CPU-install
+- TS `bootProgramImage`/`bootSystemSourceProgram` en C++ `Runtime::boot`
+  gebruiken die program/linker-eigenaar voor object-image install
 - ROM-build en source-compile hebben nog aparte paden en lifecycle-eigenaren
 - hot-resume compileert opnieuw, maar moet expliciet hetzelfde object/link-resultaat
   als de ROM-build produceren
@@ -359,28 +364,40 @@ Acceptatie:
 - hot-resume behoudt dezelfde vector ABI als ROM boot
 - oude Lua-global lifecycle is geen console ABI meer
 
-## 23. Harde verifier/audit voor echte retro-carts
+## 23. Harde verifier/audit voor echte retro-carts — GESCHRAPT
 
-Doel: "echte cart" is een checkbare invariant. Een cart die door de verifier komt
-heeft geen PICO-style runtime lookup, geen onopgeloste linker-placeholders en
-geen dynamische Lua-opcodes in systems/static modules.
+Verworpen; geen open slice meer. Deze slice was een verkeerde richting: een
+los "retro-cart verifier"-script dat achteraf ROMs scant is geen
+retro-console-architectuur en geen best-practice. Het creëert een tweede,
+afgeleide waarheid naast compiler/linker/loader/runtime, precies de soort
+tooling-facade die ownership verbergt in plaats van de producer te repareren.
 
-Verifier-gates:
+Waarom dit bullshit was:
 
-- geen onopgeloste reloc-text of placeholder strings in executable program state
-- geen dynamic opcodes in systems/static modules
-- `rodata`/`data`/`bss` correct gemapt en consistent met symbols/relocs
-- TS/C++ linker/loader parity groen
-- ROM bevat geen source-only runtime afhankelijkheden
-- hot-resume/source-mode produceert hetzelfde object/link-resultaat als ROM-build
-- rominspector toont concrete ROM/data symbols, vectors en section layout
+- Een ROM achteraf opnieuw linken of scannen bewijst niet dat de echte
+  boot/load/hot-resume keten dezelfde object → reloc → executable semantiek
+  gebruikt. Die invariant hoort in de linker/runtime-pipeline zelf.
+- Placeholder-strings of legacy symbolen achteraf in const-pools zoeken is een
+  symptoomscan. De compiler/linker moeten zulke runtimewaarden by construction
+  onmogelijk maken.
+- Dynamic-opcode-, `data`/`bss`-, vector- en source-mode-equivalentie zijn
+  producer/compiler/linker-contracten. Een generiek script dat alles op één hoop
+  gooit wijst niet scherp genoeg naar de echte eigenaar.
+- Een los projectscript kan makkelijk stale `dist/` artefacts controleren en dan
+  valse zekerheid geven. Echte gates moeten aan build/link/load/hot-resume
+  hangen waar de executable state daadwerkelijk ontstaat.
 
-Acceptatie:
+Wat in plaats daarvan moet gebeuren:
 
-- één projectscript voert de verifier op echte carts uit
-- `pietious` en `nemesis_s` zijn onderdeel van de gate
-- verifier-failures wijzen naar eigenaar: producer, compiler, linker, loader,
-  runtime of cart data layout
+- `module`/`export_proto`/const/global relocaties moeten in de object/linker
+  contracten zelf volledig verdwijnen vóór executable install.
+- Static/systems modules moeten een compiler-contract krijgen dat dynamische Lua
+  opcodes niet kan emitten.
+- `data`/`bss`, vectors en ROM/data-symbolen moeten door hun eigen producers en
+  linkers gevalideerd worden, niet door een late facade-check.
+- Source-mode en hot-resume moeten dezelfde compile/link semantics gebruiken als
+  ROM-build; als dat niet zo is, is dat een runtime-pipeline bug, geen
+  verifier-feature.
 
 ## 4. IDE/workbench/hot-reload uit machine runtime trekken
 

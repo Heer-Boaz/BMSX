@@ -32,4 +32,9 @@ void resolveRuntimeProgramRelocations(
 	const std::vector<ProgramConstReloc>& relocs
 );
 
+std::unique_ptr<Program> inflateExecutableProgramImage(
+	const ProgramImage& image,
+	const ProgramMetadata* metadata
+);
+
 } // namespace bmsx
