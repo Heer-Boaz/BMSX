@@ -98,11 +98,10 @@ Referentie-model voor verdere ROM/data-slices:
   typed structs op adressen.
 - build/link vertaalt namen naar adressen/relocs; runtime doet geen
   string-directory lookup voor gameplay-data.
-- Asset-producers bezitten content-layouts. Een diepe contentgraph zoals
-  `2025/story` is geen compiler-aggregate en geen module-ABI-probleem: de
-  story-producer valideert schema, strings, varianten en `next`-links en emit
-  een named ROM blob; gamecode consumeert alleen de gelinkte adres/lengte-
-  symbolen.
+- Structured content kan nu al via bestaande JSON/YAML `data` assets naar ROM
+  bytes. Het platform mist hier geen generieke producer-slice; een concrete
+  schema-layout/reader voor story, maps of registries is asset-kind/cart-eigen
+  werk tenzij meerdere carts hetzelfde schema als platformcontract delen.
 - Geen `rom_asset()` of vergelijkbare runtime/string lookup-laag. Ook een
   compile-time functie met die naam is de verkeerde semantiek: het lokt
   asset-registries, module-root values en `.addr`/`.len` objecten uit. Gebruik
@@ -128,13 +127,12 @@ Cart-representatie roadmap/status:
 
 | Punt | Status |
 | --- | --- |
-| echte `data`/`bss` secties | Deels: het image-format en de TS/C++ linker behouden `rodata`/`data`/`bss`; open: producers vullen `data`/`bss` nog niet als cart ABI voor static config, registries, prefab-data en initialized RAM. |
+| echte `rodata`/`data`/`bss` secties | Deels: het image-format en de TS/C++ linker behouden `rodata`/`data`/`bss`; open: het section-model moet `.rodata`, `.data` en `.bss` onderscheiden, maar v1-implementatie blijft `.bss`-only met compiler/linker-generated startup-code. |
 | één object-file/linker pipeline | Deels: program images hebben reloc-records en TS/C++ linkers; eerste install-seam staat nu in de program/linker-eigenaar (`inflateExecutableProgramImage`) voor object-image → executable program; gewone Lua source-boot, hot-resume en host-eval append lopen ook via de compiler-owned `ProgramImage` encoding; system+cart boot-entry selectie loopt via de program/linker-eigenaar (`linkBootProgramImages`) in TS en C++; ROM-build en source-compile zijn geaudit als legitieme input-producers die op dezelfde compiler/linker objectgrens convergeren, niet als resterende split-brain. |
 | runtime relocaties als load/link stap | Deels: `module`/`export_proto` placeholders zijn uit runtimewaarden gehaald; open: harde verifier-gate voor alle executable images. |
 | static module/data ABI | Deels: M2 call-targets kunnen link-time naar `CLOSURE(proto)` en de const-moduleklasse bestaat (`bmsx/assets` exporteert compile-time constants die op de use-site worden geïnlined, zonder runtime module-table); open: static moduleklasse met functies en rodata/data-symbolen breder dan alleen const-scalars. |
 | dynamic Lua-opcodes weren uit systems/static modules | Open: dit moet een compiler-contract worden, geen discipline of losse linter. |
 | CPU objectwereld loshalen van machine-code ABI | Open: `CPU.Value` is nog Lua-objectwereld; echte cart ABI moet primair words, registers, addresses, memory, sections en symbols zijn. |
-| schema-specifieke content ROM blobs | Open: `2025/story` en vergelijkbare contentgraphs moeten door asset-producers naar named ROM blobs met adres/lengte-symbolen gaan; niet via arbitrary Lua const-aggregate lowering. |
 | assets/`rom_data` binair maken | Deels: `rom_data`-familie is weg en `.bin` raw ROM path is getest; open: maps, rooms, timelines, registries en asset records naar vaste binaire layouts. |
 | cart startup/vector model | Open: entry/init/new_game/reinit/IRQ handlers moeten een expliciete vector/handler ABI krijgen in plaats van ad-hoc Lua global lifecycle. |
 | verifier/audit voor echte carts | GESCHRAPT in deze vorm: een los retro-cart verifier-script is een slechte slice. De echte gates horen bij de producer/linker/compiler/runtime-eigenaren zelf, niet in een achteraf-scanner die ROMs opnieuw interpreteert. |
@@ -223,31 +221,62 @@ Acceptatie:
 - `tests/rompacker/program_linker.const_reloc.test.ts` dekt runtime-resolve,
   full-link en optimizer-rewrite cases
 
-## 17. Echte `data`/`bss` secties als cart-RAM ABI
+## 17. BLua section-model met `.bss` als v1
 
-Doel: `data` en `bss` zijn geen lege image-format belofte meer, maar echte
-cart-RAM secties. ROM bevat immutable bytes; load/link initialiseert RAM-data en
-zeroed bss; static runtime-data wordt niet als Lua-tabel gebouwd.
+Doel: het section-model onderscheidt `.rodata`, `.data` en `.bss`, maar de eerste
+implementatieslice blijft `.bss`-only. `.rodata` is conceptueel immutable
+CPU-leesbare ROM-storage; `.data` is mutable RAM-storage met een ROM-load-image;
+`.bss` is mutable zeroed RAM-storage zonder load-image. V1 bewijst alleen de
+cart-RAM kant: BLua declareert `.bss`, de linker wijst een RAM VMA toe, en
+linker/BLua-startup emit instructies die bij cold cart-start die range zeroen.
+De emulator/runtime parse't geen secties en initialiseert geen cart-data namens
+het spel. Dit is geen rompacker-conversie van JSON/YAML assets en geen generic
+content-serializer.
 
 Status:
 
 - image-format heeft `rodata`, `data` en `bss`
 - TS/C++ linker behoudt en merge't `data`/`bss`
-- producers gebruiken `data`/`bss` nog niet als primaire static-data ABI
+- de huidige `rodata` is const-pool/module metadata; er is nog geen raw
+  BLua-declared `.rodata` byte storage met symbols
+- `encodeProgramObjectSections` emit momenteel lege `data` en `bss`; BLua heeft
+  nog geen source-level storage-declaraties voor deze drie section-klassen
+- er is nog geen compiler/linker-generated startup-proloog dat `.bss` via gewone
+  CPU/memory-instructies initialiseert
+- runtime start nu static module initializers vóór `cpu.start(entryProtoIndex)`;
+  dat mag niet langs de toekomstige section-init-proloog heen blijven lopen
 
 Open audit-evidence:
 
-- mapdata, registries, prefab-data en static config worden nog op meerdere
-  plekken als Lua-tabellen geconstrueerd of uit structured data gedecodeerd
-- `data`/`bss` hebben nog geen cart-zichtbare allocatie/symbooldiscipline
+- static mutable state en persistent scratch storage worden nog in Lua-objecten
+  of handgekozen `mem[...]` ranges gelegd in plaats van in door de compiler
+  toegewezen secties
+- `.rodata`/`.data`/`.bss` hebben nog geen BLua-syntax, symboolnamen, alignment- en
+  relocation-discipline
+- `.data` init-bytes hebben nog geen echte LMA in een CPU-leesbare ROM-window;
+  bytes die alleen in `ProgramImage.sections.data.bytes` blijven zitten zijn
+  metadata, geen geheugen
 
 Acceptatie:
 
-- compiler/rompacker kan initialized cart-data in `data` emitten
-- compiler/rompacker kan zeroed mutable cart-state in `bss` reserveren
-- linker mapt secties naar concrete RAM-adressen en emit symbolen/relocs
-- carts consumeren `data`/`bss` via addresses/pointers/words, niet via
-  runtime Lua-table construction
+- BLua heeft expliciete declaraties voor zeroed cart-RAM (`.bss`) met typed
+  size/alignment
+- de compiler emit `.bss` reservations en linkbare symbolen voor die declarations
+- linker wijst `.bss` RAM VMA's toe en resolved `.bss` symbolen naar die
+  RAM-adressen
+- BLua-startup/proloog voert de init uit als cartcode: zero `.bss` vóór de user
+  entry; runtime/rompacker doen dit niet
+- BLua-startup/proloog draait vóór static module initializers die section-symbolen
+  kunnen raken, of static initializers worden onderdeel van de startup-flow:
+  section init → static module init → user entry
+- `.rodata` blijft in v1 alleen onderdeel van het model: raw BLua-declared
+  `.rodata` is gescheiden van de bestaande VM constPool/module metadata en
+  gescheiden van asset blobs; implementatie volgt pas met een concrete
+  typed-storage consumer
+- `.data` blijft in v1 buiten scope: het volgt pas wanneer de mapped LMA klopt
+  en startup-copy nodig is
+- BLua code consumeert `.bss` via addresses/pointers/words, niet via
+  runtime Lua-table construction of asset-decoder calls
 - TS/C++ loader/linker parity blijft groen
 
 ## 18. Eén object-file/linker pipeline voor BIOS, system, engine en cart
@@ -308,8 +337,8 @@ Status:
   `staticModulePaths`-entry. `bmsx/assets` gebruikt deze klasse.
 - open: static moduleklasse met functie-exports en rodata/data/bss-symbolen naast
   const-scalars
-- geen doel: diepe contentgraphs zoals `2025/story` als Lua const-aggregaten naar
-  rodata-bytes verlagen. Dat is content-packaging en hoort bij een
+- geen doel: diepe contentgraphs als Lua const-aggregaten naar rodata-bytes
+  verlagen. Dat is content-packaging en hoort bij een
   schema-specifieke asset-producer.
 
 Acceptatie:
@@ -325,58 +354,28 @@ Acceptatie:
   kiest
 - generated `bmsx/assets` past in dezelfde static-symbol ABI (klaar: const module)
 
-## 24. Story/content als schema-specifieke ROM blob
-
-Doel: diepe content-data wordt geen runtime Lua-table en geen compiler-owned
-const-aggregate. `2025/story` is een contentdatabase met node-varianten,
-strings, keuzes, combat/reward-records en `next`-links. De story asset-producer
-bezit dat schema en emit één of meer immutable ROM blobs met platte link-symbolen.
-
-Contract:
-
-- authoring mag Lua-data, YAML, JSON of een editor-output zijn; het authoring-
-  format is input voor de story-producer, niet de cart runtime ABI
-- de producer valideert het story-schema: node kinds, `next`-targets,
-  achtergrond-/monster-/assetreferenties, string encoding, choice/effect/reward-
-  vormen en schema-versie
-- de output is bytes in ROM plus symbolen zoals `__story_addr` en `__story_len`
-  (eventueel bank/overlay-symbolen wanneer de memory-map dat vereist)
-- cartcode roept de story-reader aan met die concrete woorden/adressen, bijv.
-  `story_open(__story_addr, __story_len)`; er is geen `rom_asset("story")`, geen
-  string lookup, geen registry-object en geen `.addr`/`.len` table
-- de runtime story-reader leest vaste records/stringtabellen/variant-tabellen op
-  ROM-adressen; Lua-tabellen mogen alleen aan de authoring-kant bestaan
-
-Acceptatie:
-
-- `carts/2025/story.lua` wordt niet meer als dynamic Lua module gebouwd voor de
-  game-runtime
-- `cart.lua`, `dialogue.lua`, `combat.lua` en `transition.lua` lezen story-data
-  via de story-reader op ROM-adressen in plaats van `story[node_id]` table lookups
-- ROM-build, IDE/source-compile en hot-resume krijgen dezelfde story-symbolen via
-  de bestaande asset-symbol owner
-- `2025_live_timeline_assert` blijft groen en `rominspector.ts --asset-symbols`
-  toont de story blob-adres/lengte-symbolen
-
 ## 20. Compiler-contract voor systems/static modules
 
-Doel: hot/system cart code wordt niet door discipline snel gehouden. De compiler
-garandeert voor systems/static modules dat dynamische Lua-runtime-opcodes niet
-worden geëmit.
+Doel: hot/system cart code wordt niet door discipline snel gehouden. Zodra BLua
+een expliciete systems/static moduleklasse heeft, garandeert de compiler voor
+die moduleklasse dat dynamische Lua-runtime-opcodes niet worden geëmit. Dit is
+wel relevant, maar pas als moduleklasse/section-declaraties een echte
+compiler-semantiek zijn; het is geen losse linter en geen cart-specifieke stijlregel.
 
 Verboden in systems/static modules:
 
 - table-allocatie en table-dispatch op de ABI/hot path (`NEWT`, `GETT`, `SETT`
   en afgeleiden)
-- closure-allocatie in steady-state code
+- runtime closure-allocatie in steady-state code
 - `VARARG`, dynamische concat/dispatch en runtime module-table escape
 - impliciete data-parser of nested Lua-table construction voor ROM ABI
 
 Acceptatie:
 
 - module marker/klasse zit in compiler-semantiek
-- compiler faalt de build wanneer systems/static modules dynamische opcodes
-  emitten
+- compiler controleert de uiteindelijke geoptimaliseerde protos van gemarkeerde
+  systems/static modules en faalt de build wanneer verboden dynamische opcodes
+  overblijven
 - opcode-mix rapportage per module/proto is beschikbaar voor audit
 - gameplay/dynamic lane blijft mogelijk, maar niet voor console ABI of hot path
 
