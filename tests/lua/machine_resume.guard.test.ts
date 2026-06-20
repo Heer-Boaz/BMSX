@@ -51,3 +51,9 @@ test('host eval append installs through the program-image executable boundary', 
 	assert.equal(snippet.includes('inflateExecutableProgramImage(programImage, compiled.metadata)'), true, 'host eval append must install through the program/linker executable boundary');
 	assert.equal(snippet.includes('resolveRuntimeProgramRelocations('), false, 'host eval append must not own raw relocation resolution');
 });
+
+test('runtime boot asks the program linker for linked boot images', () => {
+	const src = readFileSync('machine/ts/ide/runtime/lua_pipeline.ts', 'utf8');
+	assert.equal(src.includes('linkBootProgramImages('), true, 'runtime boot must route system+cart linking through the program/linker boot owner');
+	assert.equal(src.includes('linkProgramImages('), false, 'runtime boot must not own raw multi-image link orchestration');
+});

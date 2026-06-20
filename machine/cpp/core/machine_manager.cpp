@@ -375,17 +375,18 @@ void MachineManager::bootRuntimeFromProgram() {
 	rt.resetRuntimeForProgramReload();
 	refreshRenderSurfaces();
 	if (m_system_rom_loaded && m_system_rom.programImage) {
-		auto linked = linkProgramImages(
+		auto linked = linkBootProgramImages(
 			*m_system_rom.programImage,
 			m_system_rom.programSymbols.get(),
 			*romPackage.programImage,
-			romPackage.programSymbols.get()
+			romPackage.programSymbols.get(),
+			ProgramBootTarget::Cart
 		);
 		m_linked_program = std::move(linked.programImage);
 		m_linked_program_symbols = std::move(linked.metadata);
 		rt.setLinkedCartEntry(linked.cartEntryProtoIndex, std::move(linked.cartStaticModulePaths));
 		rt.enterCartProgram();
-		rt.boot(*m_linked_program, m_linked_program_symbols.get(), m_linked_program->entryProtoIndex, m_linked_program->sections.rodata.staticModulePaths);
+		rt.boot(*m_linked_program, m_linked_program_symbols.get(), linked.entryProtoIndex, linked.staticModulePaths);
 		return;
 	}
 	rt.enterCartProgram();
@@ -431,16 +432,17 @@ bool MachineManager::bootSystemStartupProgram(const MachineManifest& runtimeMach
 	m_linked_program.reset();
 	m_linked_program_symbols.reset();
 	if (m_cart_rom_size > 0 && m_cart_rom.programImage) {
-		auto linked = linkProgramImages(
+		auto linked = linkBootProgramImages(
 			*m_system_rom.programImage,
 			m_system_rom.programSymbols.get(),
 			*m_cart_rom.programImage,
-			m_cart_rom.programSymbols.get()
+			m_cart_rom.programSymbols.get(),
+			ProgramBootTarget::System
 		);
 		m_linked_program = std::move(linked.programImage);
 		m_linked_program_symbols = std::move(linked.metadata);
 		rt.setLinkedCartEntry(linked.cartEntryProtoIndex, std::move(linked.cartStaticModulePaths));
-		rt.boot(*m_linked_program, m_linked_program_symbols.get(), linked.systemEntryProtoIndex, linked.systemStaticModulePaths);
+		rt.boot(*m_linked_program, m_linked_program_symbols.get(), linked.entryProtoIndex, linked.staticModulePaths);
 	} else {
 		rt.boot(*m_system_rom.programImage, m_system_rom.programSymbols.get(), m_system_rom.programImage->entryProtoIndex, m_system_rom.programImage->sections.rodata.staticModulePaths);
 	}

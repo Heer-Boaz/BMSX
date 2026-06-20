@@ -717,4 +717,32 @@ LinkedProgramImage linkProgramImages(
 	return output;
 }
 
+LinkedBootProgramImage linkBootProgramImages(
+	const ProgramImage& systemImage,
+	const ProgramMetadata* systemSymbols,
+	const ProgramImage& cartImage,
+	const ProgramMetadata* cartSymbols,
+	ProgramBootTarget bootTarget,
+	int systemBasePc,
+	int cartBasePc
+) {
+	LinkedProgramImage linked = linkProgramImages(systemImage, systemSymbols, cartImage, cartSymbols, systemBasePc, cartBasePc);
+	LinkedBootProgramImage output;
+	output.cartEntryProtoIndex = linked.cartEntryProtoIndex;
+	output.cartStaticModulePaths = std::move(linked.cartStaticModulePaths);
+	switch (bootTarget) {
+		case ProgramBootTarget::System:
+			output.entryProtoIndex = linked.systemEntryProtoIndex;
+			output.staticModulePaths = std::move(linked.systemStaticModulePaths);
+			break;
+		case ProgramBootTarget::Cart:
+			output.entryProtoIndex = linked.cartEntryProtoIndex;
+			output.staticModulePaths = linked.programImage->sections.rodata.staticModulePaths;
+			break;
+	}
+	output.programImage = std::move(linked.programImage);
+	output.metadata = std::move(linked.metadata);
+	return output;
+}
+
 } // namespace bmsx

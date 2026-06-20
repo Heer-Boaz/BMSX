@@ -17,11 +17,35 @@ struct LinkedProgramImage {
 	std::vector<std::string> cartStaticModulePaths;
 };
 
+enum class ProgramBootTarget {
+	System,
+	Cart,
+};
+
+struct LinkedBootProgramImage {
+	std::unique_ptr<ProgramImage> programImage;
+	std::unique_ptr<ProgramMetadata> metadata;
+	int entryProtoIndex = 0;
+	std::vector<std::string> staticModulePaths;
+	int cartEntryProtoIndex = 0;
+	std::vector<std::string> cartStaticModulePaths;
+};
+
 LinkedProgramImage linkProgramImages(
 	const ProgramImage& systemImage,
 	const ProgramMetadata* systemSymbols,
 	const ProgramImage& cartImage,
 	const ProgramMetadata* cartSymbols,
+	int systemBasePc = SYSTEM_BASE_PC,
+	int cartBasePc = CART_BASE_PC
+);
+
+LinkedBootProgramImage linkBootProgramImages(
+	const ProgramImage& systemImage,
+	const ProgramMetadata* systemSymbols,
+	const ProgramImage& cartImage,
+	const ProgramMetadata* cartSymbols,
+	ProgramBootTarget bootTarget,
 	int systemBasePc = SYSTEM_BASE_PC,
 	int cartBasePc = CART_BASE_PC
 );

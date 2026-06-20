@@ -4,7 +4,7 @@ import { convertToError } from '../../lua/value';
 import type { LuaValue } from '../../lua/value';
 import { seedLuaGlobals } from '../../machine/firmware/globals';
 import { compileLuaChunkToProgram, encodeCompiledProgramImage } from '../../machine/program/compiler';
-import { inflateExecutableProgramImage, linkProgramImages } from '../../machine/program/linker';
+import { inflateExecutableProgramImage, linkBootProgramImages } from '../../machine/program/linker';
 import { readWorkspaceLuaSourceText } from '../workspace/files';
 import { SymbolEntry, SymbolKind } from '../../machine/runtime/contracts';
 import { resolveLuaSourceRecord, type LuaSourceRegistry } from '../../machine/program/sources';
@@ -282,11 +282,11 @@ function bootSystemSourceProgram(runtime: Runtime, interpreter: LuaInterpreter, 
 		cartSymbols = cart.symbols;
 	}
 	if (cartProgramImage) {
-		const linked = linkProgramImages(system.image, system.symbols, cartProgramImage, cartSymbols);
+		const linked = linkBootProgramImages(system.image, system.symbols, cartProgramImage, cartSymbols, 'system');
 		programImage = linked.programImage;
 		metadata = linked.metadata;
-		entryProtoIndex = linked.systemEntryProtoIndex;
-		staticModulePaths = linked.systemStaticModulePaths;
+		entryProtoIndex = linked.entryProtoIndex;
+		staticModulePaths = linked.staticModulePaths;
 		runtime.setLinkedCartEntry(linked.cartEntryProtoIndex, linked.cartStaticModulePaths);
 	}
 	runtime.cartEntryAvailable = true;
@@ -315,17 +315,12 @@ function bootProgramImage(runtime: Runtime, options?: { preserveState?: boolean;
 		const cartEntry = runtime.cartRomSource.getEntry(PROGRAM_IMAGE_ID);
 		if (cartEntry) {
 			const cartImages = loadProgramImagesForSource(runtime, 'cart');
-			const linked = linkProgramImages(systemImages.program, systemImages.symbols, cartImages.program, cartImages.symbols);
+			const linked = linkBootProgramImages(systemImages.program, systemImages.symbols, cartImages.program, cartImages.symbols, bootingCart ? 'cart' : 'system');
 			programImage = linked.programImage;
 			metadata = linked.metadata;
+			entryProtoIndex = linked.entryProtoIndex;
+			staticModulePaths = linked.staticModulePaths;
 			runtime.setLinkedCartEntry(linked.cartEntryProtoIndex, linked.cartStaticModulePaths);
-			if (bootingCart) {
-				entryProtoIndex = linked.cartEntryProtoIndex;
-				staticModulePaths = programImage.sections.rodata.staticModulePaths;
-			} else {
-				entryProtoIndex = linked.systemEntryProtoIndex;
-				staticModulePaths = linked.systemStaticModulePaths;
-			}
 		}
 	}
 	runtime.cartEntryAvailable = true;

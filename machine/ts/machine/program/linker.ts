@@ -38,6 +38,17 @@ export type LinkedProgramImage = {
 	cartStaticModulePaths: ReadonlyArray<string>;
 };
 
+export type ProgramBootTarget = 'system' | 'cart';
+
+export type LinkedBootProgramImage = {
+	programImage: ProgramImage;
+	metadata: ProgramMetadata | null;
+	entryProtoIndex: number;
+	staticModulePaths: ReadonlyArray<string>;
+	cartEntryProtoIndex: number;
+	cartStaticModulePaths: ReadonlyArray<string>;
+};
+
 const NUMBER_KEY_BUFFER = new ArrayBuffer(8);
 const NUMBER_KEY_VIEW = new DataView(NUMBER_KEY_BUFFER);
 const NAN_KEY = 'n:0x7ff8000000000000';
@@ -700,6 +711,32 @@ export const linkProgramImages = (
 		cartEntryProtoIndex,
 		systemStaticModulePaths,
 		cartStaticModulePaths,
+	};
+};
+
+export const linkBootProgramImages = (
+	systemImage: ProgramImage,
+	systemSymbols: ProgramSymbolsImage | null,
+	cartImage: ProgramImage,
+	cartSymbols: ProgramSymbolsImage | null,
+	bootTarget: ProgramBootTarget,
+	systemBasePc: number = SYSTEM_BASE_PC,
+	cartBasePc: number = CART_BASE_PC,
+): LinkedBootProgramImage => {
+	const linked = linkProgramImages(systemImage, systemSymbols, cartImage, cartSymbols, systemBasePc, cartBasePc);
+	let entryProtoIndex = linked.systemEntryProtoIndex;
+	let staticModulePaths = linked.systemStaticModulePaths;
+	if (bootTarget === 'cart') {
+		entryProtoIndex = linked.cartEntryProtoIndex;
+		staticModulePaths = linked.programImage.sections.rodata.staticModulePaths;
+	}
+	return {
+		programImage: linked.programImage,
+		metadata: linked.metadata,
+		entryProtoIndex,
+		staticModulePaths,
+		cartEntryProtoIndex: linked.cartEntryProtoIndex,
+		cartStaticModulePaths: linked.cartStaticModulePaths,
 	};
 };
 // end repeated-sequence-acceptable

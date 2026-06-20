@@ -9,7 +9,7 @@ import { CPU, OpCode, RunResult, StringValue, Table, asStringId, createNativeFun
 import { INSTRUCTION_BYTES, readInstructionWord, writeInstruction, writeInstructionWord } from '../../machine/ts/machine/cpu/instruction_format';
 import { appendLuaChunkToProgram, compileLuaChunkToProgram, encodeAppendedProgramImage, encodeCompiledProgramImage } from '../../machine/ts/machine/program/compiler';
 import { decodeProgramSymbolsImage, inflateProgram, type ProgramImage, type ProgramConstReloc, type ProgramSymbolsImage } from '../../machine/ts/machine/program/loader';
-import { inflateExecutableProgramImage, linkProgramImages, resolveRuntimeProgramRelocations } from '../../machine/ts/machine/program/linker';
+import { inflateExecutableProgramImage, linkBootProgramImages, linkProgramImages, resolveRuntimeProgramRelocations } from '../../machine/ts/machine/program/linker';
 import { replaceWithJump, replaceWithMov } from '../../machine/ts/machine/program/optimizer/values';
 import type { Instruction } from '../../machine/ts/machine/program/optimizer';
 import { CART_BASE_PC, CART_PROGRAM_VECTOR_PC, CART_PROGRAM_VECTOR_VALUE, SYSTEM_BASE_PC } from '../../machine/ts/machine/program/layout';
@@ -709,6 +709,32 @@ test('ProgramLinker rejects cart global relocations without symbols metadata', (
 		() => linkProgramImages(systemImage, systemSymbols, cartImage, null),
 		/Missing cart symbols metadata required to resolve cart relocations/,
 	);
+});
+
+test('ProgramLinker owns linked boot entry selection', () => {
+	const systemImage = makeProgramImage(
+		[{ op: OpCode.RET, a: 0, b: 1, c: 0 }],
+		[],
+		[],
+	);
+	systemImage.sections.rodata.staticModulePaths = ['system/init'];
+	const cartImage = makeProgramImage(
+		[{ op: OpCode.RET, a: 0, b: 1, c: 0 }],
+		[],
+		[],
+	);
+	cartImage.sections.rodata.staticModulePaths = ['cart/init'];
+	const systemBoot = linkBootProgramImages(systemImage, null, cartImage, null, 'system');
+	assert.equal(systemBoot.entryProtoIndex, systemImage.entryProtoIndex);
+	assert.deepEqual(systemBoot.staticModulePaths, ['system/init']);
+	assert.equal(systemBoot.cartEntryProtoIndex, 1);
+	assert.deepEqual(systemBoot.cartStaticModulePaths, ['cart/init']);
+
+	const cartBoot = linkBootProgramImages(systemImage, null, cartImage, null, 'cart');
+	assert.equal(cartBoot.entryProtoIndex, 1);
+	assert.deepEqual(cartBoot.staticModulePaths, ['system/init', 'cart/init']);
+	assert.equal(cartBoot.cartEntryProtoIndex, 1);
+	assert.deepEqual(cartBoot.cartStaticModulePaths, ['cart/init']);
 });
 
 test('ProgramLinker resolves system export-proto relocations before layout merge', () => {
