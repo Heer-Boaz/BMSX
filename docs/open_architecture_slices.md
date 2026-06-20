@@ -120,7 +120,7 @@ Cart-representatie roadmap/status:
 | Punt | Status |
 | --- | --- |
 | echte `data`/`bss` secties | Deels: het image-format en de TS/C++ linker behouden `rodata`/`data`/`bss`; open: producers vullen `data`/`bss` nog niet als cart ABI voor static config, registries, prefab-data en initialized RAM. |
-| één object-file/linker pipeline | Deels: program images hebben reloc-records en TS/C++ linkers; eerste install-seam staat nu in de program/linker-eigenaar (`inflateExecutableProgramImage`) voor object-image → executable program; gewone Lua source-boot, hot-resume en host-eval append lopen ook via de compiler-owned `ProgramImage` encoding; system+cart boot-entry selectie loopt via de program/linker-eigenaar (`linkBootProgramImages`) in TS en C++; open: ROM-build en source-compile blijven aparte producer-lifecycles. |
+| één object-file/linker pipeline | Deels: program images hebben reloc-records en TS/C++ linkers; eerste install-seam staat nu in de program/linker-eigenaar (`inflateExecutableProgramImage`) voor object-image → executable program; gewone Lua source-boot, hot-resume en host-eval append lopen ook via de compiler-owned `ProgramImage` encoding; system+cart boot-entry selectie loopt via de program/linker-eigenaar (`linkBootProgramImages`) in TS en C++; ROM-build en source-compile zijn geaudit als legitieme input-producers die op dezelfde compiler/linker objectgrens convergeren, niet als resterende split-brain. |
 | runtime relocaties als load/link stap | Deels: `module`/`export_proto` placeholders zijn uit runtimewaarden gehaald; open: harde verifier-gate voor alle executable images. |
 | static module/data ABI | Deels: M2 call-targets kunnen link-time naar `CLOSURE(proto)` en de const-moduleklasse bestaat (`bmsx/assets` exporteert compile-time constants die op de use-site worden geïnlined, zonder runtime module-table); open: static moduleklasse met functies en rodata/data-symbolen breder dan alleen const-scalars. |
 | dynamic Lua-opcodes weren uit systems/static modules | Open: dit moet een compiler-contract worden, geen discipline of losse linter. |
@@ -260,21 +260,27 @@ Status:
   `encodeAppendedProgramImage`) en installeren daarna via dezelfde executable
   install-boundary; IDE/runtime live paths bezitten die ruwe reloc-resolve stap
   niet meer
-- ROM-build en source-compile hebben nog aparte producer-paden en lifecycle-eigenaren
 - system+cart link-orchestratie bezit nu in TS en C++ ook de boot-entry selectie
   (`linkBootProgramImages`); runtime boot-code vraagt de program/linker-eigenaar om
   het concrete linked boot image in plaats van zelf system/cart entrypaden te kiezen
+- ROM-build en source-compile zijn verschillende input-producers, maar geen
+  resterende pipeline-ziekte: ROM-build bezit resource-scan/asset layout/stripping en
+  generated const-modules; source-compile bezit workspace/overlay/live-source input.
+  Beide leveren via `compileLuaChunkToProgram` + `encodeCompiledProgramImage` een
+  `ProgramImage` met reloc-records aan dezelfde linker/install-boundaries.
 
 Acceptatie:
 
 - BIOS, system, engine, cart en generated modules worden allemaal als object
   modules behandeld
 - één linkerpad produceert executable program state
-- source-mode/IDE/hot-resume gebruikt dezelfde object/linker entrypoints als
-  ROM-build
+- source-mode/IDE/hot-resume gebruikt dezelfde compiler-owned `ProgramImage` en
+  program/linker install-entrypoints als ROM-build
 - geen `systemImage`/`cart` semantiek als compiler-special-case; verschillen
   zitten in input objecten, memory map en link script/layout
-- tests vergelijken ROM-build en source/hot-resume output voor dezelfde cart
+- tests bewaken de eigenaar-boundaries: ROM/source/hot-resume/host-eval installeren via
+  `ProgramImage` en runtime boot gebruikt `linkBootProgramImages` voor linked boot
+  targets
 
 ## 19. Static module/data ABI afmaken
 
