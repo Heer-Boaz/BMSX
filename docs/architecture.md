@@ -182,6 +182,9 @@ each use site. The module never produces a runtime Lua table, module proto,
 global slot, or `require` call in executable cart code. Using the module root as
 a value is a compile-time error; cart code must read concrete exports such as
 `assets.data_transition_config_addr` and `assets.data_transition_config_len`.
+Do not add a `rom_asset("name")`-style API, even as a compile-time builtin: the
+cart-visible contract is plain address/length/bank symbols, not a string lookup,
+registry object, or `{ addr, len }` value.
 
 Asset symbol names are generated as `<asset-type>_<asset-id>_{addr,len}` after
 sanitising non-alphanumeric characters to underscores and prefixing a leading
@@ -196,6 +199,13 @@ final TOC ranges before accepting the ROM. Length values are byte counts.
 `rominspector.ts
 --asset-symbols` prints the generated symbol table so the ROM address ABI can be
 checked without disassembling program code.
+
+Schema-rich content, such as story graphs with dialogue nodes, choices, combat
+rounds, rewards, strings, and `next` links, is owned by a schema-specific asset
+producer. The compiler must not become a general serializer for arbitrary Lua
+const aggregates. The producer validates the schema and emits immutable ROM
+bytes plus named symbols; runtime/game code consumes those concrete
+address/length symbols through the content reader.
 
 ## Memory, CPU, and scheduler
 

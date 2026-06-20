@@ -98,6 +98,15 @@ Referentie-model voor verdere ROM/data-slices:
   typed structs op adressen.
 - build/link vertaalt namen naar adressen/relocs; runtime doet geen
   string-directory lookup voor gameplay-data.
+- Asset-producers bezitten content-layouts. Een diepe contentgraph zoals
+  `2025/story` is geen compiler-aggregate en geen module-ABI-probleem: de
+  story-producer valideert schema, strings, varianten en `next`-links en emit
+  een named ROM blob; gamecode consumeert alleen de gelinkte adres/lengte-
+  symbolen.
+- Geen `rom_asset()` of vergelijkbare runtime/string lookup-laag. Ook een
+  compile-time functie met die naam is de verkeerde semantiek: het lokt
+  asset-registries, module-root values en `.addr`/`.len` objecten uit. Gebruik
+  platte link-symbolen.
 - hot-path code krijgt woorden, adressen, pointers en vaste layouts; Lua-tabellen
   zijn alleen acceptabel bij echte gameplay/authoring-semantiek, niet als ROM ABI.
 
@@ -125,6 +134,7 @@ Cart-representatie roadmap/status:
 | static module/data ABI | Deels: M2 call-targets kunnen link-time naar `CLOSURE(proto)` en de const-moduleklasse bestaat (`bmsx/assets` exporteert compile-time constants die op de use-site worden geïnlined, zonder runtime module-table); open: static moduleklasse met functies en rodata/data-symbolen breder dan alleen const-scalars. |
 | dynamic Lua-opcodes weren uit systems/static modules | Open: dit moet een compiler-contract worden, geen discipline of losse linter. |
 | CPU objectwereld loshalen van machine-code ABI | Open: `CPU.Value` is nog Lua-objectwereld; echte cart ABI moet primair words, registers, addresses, memory, sections en symbols zijn. |
+| schema-specifieke content ROM blobs | Open: `2025/story` en vergelijkbare contentgraphs moeten door asset-producers naar named ROM blobs met adres/lengte-symbolen gaan; niet via arbitrary Lua const-aggregate lowering. |
 | assets/`rom_data` binair maken | Deels: `rom_data`-familie is weg en `.bin` raw ROM path is getest; open: maps, rooms, timelines, registries en asset records naar vaste binaire layouts. |
 | cart startup/vector model | Open: entry/init/new_game/reinit/IRQ handlers moeten een expliciete vector/handler ABI krijgen in plaats van ad-hoc Lua global lifecycle. |
 | verifier/audit voor echte carts | GESCHRAPT in deze vorm: een los retro-cart verifier-script is een slechte slice. De echte gates horen bij de producer/linker/compiler/runtime-eigenaren zelf, niet in een achteraf-scanner die ROMs opnieuw interpreteert. |
@@ -298,6 +308,9 @@ Status:
   `staticModulePaths`-entry. `bmsx/assets` gebruikt deze klasse.
 - open: static moduleklasse met functie-exports en rodata/data/bss-symbolen naast
   const-scalars
+- geen doel: diepe contentgraphs zoals `2025/story` als Lua const-aggregaten naar
+  rodata-bytes verlagen. Dat is content-packaging en hoort bij een
+  schema-specifieke asset-producer.
 
 Acceptatie:
 
@@ -311,6 +324,39 @@ Acceptatie:
 - dynamic modules blijven Lua-semantiek houden waar gameplay die lane expliciet
   kiest
 - generated `bmsx/assets` past in dezelfde static-symbol ABI (klaar: const module)
+
+## 24. Story/content als schema-specifieke ROM blob
+
+Doel: diepe content-data wordt geen runtime Lua-table en geen compiler-owned
+const-aggregate. `2025/story` is een contentdatabase met node-varianten,
+strings, keuzes, combat/reward-records en `next`-links. De story asset-producer
+bezit dat schema en emit één of meer immutable ROM blobs met platte link-symbolen.
+
+Contract:
+
+- authoring mag Lua-data, YAML, JSON of een editor-output zijn; het authoring-
+  format is input voor de story-producer, niet de cart runtime ABI
+- de producer valideert het story-schema: node kinds, `next`-targets,
+  achtergrond-/monster-/assetreferenties, string encoding, choice/effect/reward-
+  vormen en schema-versie
+- de output is bytes in ROM plus symbolen zoals `__story_addr` en `__story_len`
+  (eventueel bank/overlay-symbolen wanneer de memory-map dat vereist)
+- cartcode roept de story-reader aan met die concrete woorden/adressen, bijv.
+  `story_open(__story_addr, __story_len)`; er is geen `rom_asset("story")`, geen
+  string lookup, geen registry-object en geen `.addr`/`.len` table
+- de runtime story-reader leest vaste records/stringtabellen/variant-tabellen op
+  ROM-adressen; Lua-tabellen mogen alleen aan de authoring-kant bestaan
+
+Acceptatie:
+
+- `carts/2025/story.lua` wordt niet meer als dynamic Lua module gebouwd voor de
+  game-runtime
+- `cart.lua`, `dialogue.lua`, `combat.lua` en `transition.lua` lezen story-data
+  via de story-reader op ROM-adressen in plaats van `story[node_id]` table lookups
+- ROM-build, IDE/source-compile en hot-resume krijgen dezelfde story-symbolen via
+  de bestaande asset-symbol owner
+- `2025_live_timeline_assert` blijft groen en `rominspector.ts --asset-symbols`
+  toont de story blob-adres/lengte-symbolen
 
 ## 20. Compiler-contract voor systems/static modules
 
