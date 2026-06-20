@@ -41,8 +41,10 @@ import {
 import { OpCode, StringValue, asStringId, valueIsString, type Program, type ProgramMetadata, type Proto, type UpvalueDesc, type Value, type SourceRange, type LocalSlotDebug } from '../cpu/cpu';
 import { optimizeInstructions, type Instruction, type InstructionSet, type OptimizationLevel } from './optimizer';
 import {
+	encodeProgramObjectSections,
 	toLuaModulePath,
 	type ProgramConstReloc,
+	type ProgramImage,
 } from './loader';
 import { StringPool } from '../cpu/string_pool';
 import { EXT_A_BITS, EXT_B_BITS, EXT_BX_BITS, EXT_C_BITS, INSTRUCTION_BYTES, MAX_BX_BITS, MAX_EXT_CONST, MAX_EXT_REGISTER_BC, MAX_OPERAND_BITS, MAX_SIGNED_BX, MIN_SIGNED_BX, writeInstruction } from '../cpu/instruction_format';
@@ -73,6 +75,18 @@ export type CompiledProgram = {
 	staticModulePaths: string[];
 	constRelocs: ProgramConstReloc[];
 };
+
+export function encodeCompiledProgramImage(compiled: CompiledProgram): ProgramImage {
+	return {
+		entryProtoIndex: compiled.entryProtoIndex,
+		sections: encodeProgramObjectSections(
+			compiled.program,
+			Array.from(compiled.moduleProtoMap, ([path, protoIndex]) => ({ path, protoIndex })),
+			compiled.staticModulePaths,
+		),
+		link: { constRelocs: compiled.constRelocs },
+	};
+}
 
 export type LuaCompileError = {
 	path: string;

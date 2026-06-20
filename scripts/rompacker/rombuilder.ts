@@ -42,12 +42,11 @@ const { LuaParser } = require('../../machine/ts/lua/syntax/parser');
 // @ts-ignore
 const { splitText } = require('../../machine/ts/common/text_lines');
 // @ts-ignore
-const { compileLuaChunkToProgram, isLuaCompileError } = require('../../machine/ts/machine/program/compiler');
+const { compileLuaChunkToProgram, encodeCompiledProgramImage, isLuaCompileError } = require('../../machine/ts/machine/program/compiler');
 // @ts-ignore
 const {
 	PROGRAM_IMAGE_ID,
 	PROGRAM_SYMBOLS_IMAGE_ID,
-	encodeProgramObjectSections,
 	toLuaModulePath,
 } = require('../../machine/ts/machine/program/loader');
 // @ts-ignore
@@ -1611,18 +1610,7 @@ export function appendProgramImage(
 		externalModules,
 		constModulePaths,
 	});
-	const program = compiled.program;
-	const programImage = {
-		entryProtoIndex: compiled.entryProtoIndex,
-		sections: encodeProgramObjectSections(
-			program,
-			Array.from(compiled.moduleProtoMap.entries(), ([path, protoIndex]) => ({ path, protoIndex })),
-			compiled.staticModulePaths,
-		),
-		link: {
-			constRelocs: compiled.constRelocs,
-		},
-	};
+	const programImage = encodeCompiledProgramImage(compiled);
 
 	const buffer = Buffer.from(encodeBinary(programImage));
 	assetList.push({

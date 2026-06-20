@@ -26,3 +26,14 @@ test('hotResumeProgramEntry keeps interpreter resident', () => {
 	assert.equal(snippet.includes('resolveRuntimeProgramRelocations(program, metadata, constRelocs)'), true, 'hotResumeProgramEntry must resolve export-symbol relocations before installing the replacement program');
 	assert.equal(snippet.includes('if (!params.preserveSystemModules)'), true, 'hot-resume must preserve live module objects (single generation); only a full reload clears the module cache');
 });
+
+test('Lua source boot installs through the program-image executable boundary', () => {
+	const src = readFileSync('machine/ts/ide/runtime/lua_pipeline.ts', 'utf8');
+	const start = src.indexOf('function bootLuaProgram');
+	assert.ok(start > -1, 'bootLuaProgram not found');
+	const nextExport = src.indexOf('\nexport function ', start + 1);
+	const snippet = src.slice(start, nextExport === -1 ? undefined : nextExport);
+	assert.equal(snippet.includes('encodeCompiledProgramImage(compiled)'), true, 'source boot must pass through the compiler-owned ProgramImage object boundary');
+	assert.equal(snippet.includes('inflateExecutableProgramImage(programImage, compiled.metadata)'), true, 'source boot must install through the program/linker executable boundary');
+	assert.equal(snippet.includes('resolveRuntimeProgramRelocations('), false, 'source boot must not own raw relocation resolution');
+});

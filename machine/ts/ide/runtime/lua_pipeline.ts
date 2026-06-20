@@ -3,8 +3,8 @@ import { LuaInterpreter } from '../../lua/runtime';
 import { convertToError } from '../../lua/value';
 import type { LuaValue } from '../../lua/value';
 import { seedLuaGlobals } from '../../machine/firmware/globals';
-import { compileLuaChunkToProgram, type CompiledProgram } from '../../machine/program/compiler';
-import { inflateExecutableProgramImage, linkProgramImages, resolveRuntimeProgramRelocations } from '../../machine/program/linker';
+import { compileLuaChunkToProgram, encodeCompiledProgramImage } from '../../machine/program/compiler';
+import { inflateExecutableProgramImage, linkProgramImages } from '../../machine/program/linker';
 import { readWorkspaceLuaSourceText } from '../workspace/files';
 import { SymbolEntry, SymbolKind } from '../../machine/runtime/contracts';
 import { resolveLuaSourceRecord, type LuaSourceRegistry } from '../../machine/program/sources';
@@ -16,7 +16,6 @@ import {
 	buildModuleProtoMap,
 	decodeProgramImage,
 	decodeProgramSymbolsImage,
-	encodeProgramObjectSections,
 	PROGRAM_IMAGE_ID,
 	PROGRAM_SYMBOLS_IMAGE_ID,
 	toLuaModulePath,
@@ -235,18 +234,6 @@ export function buildModuleChunks(
 	return { modules };
 }
 
-function programImageFromCompiled(compiled: CompiledProgram): ProgramImage {
-	return {
-		entryProtoIndex: compiled.entryProtoIndex,
-		sections: encodeProgramObjectSections(
-			compiled.program,
-			Array.from(compiled.moduleProtoMap, ([path, protoIndex]) => ({ path, protoIndex })),
-			compiled.staticModulePaths,
-		),
-		link: { constRelocs: compiled.constRelocs },
-	};
-}
-
 function compileRegistryProgramImage(
 	runtime: Runtime,
 	registry: LuaSourceRegistry,
@@ -268,7 +255,7 @@ function compileRegistryProgramImage(
 		constModulePaths: [ROM_ASSET_SYMBOL_MODULE_PATH],
 	});
 	return {
-		image: programImageFromCompiled(compiled),
+		image: encodeCompiledProgramImage(compiled),
 		symbols: compiled.metadata,
 		entryPath,
 		modules,
@@ -400,16 +387,17 @@ function bootLuaProgram(runtime: Runtime, options?: { preserveState?: boolean; s
 		const entryModulePath = options?.sourceOverride ? toLuaModulePath(entryPath) : path;
 		const entryChunk = interpreter.compileChunk(entrySource, entryPath);
 		const { modules } = buildModuleChunks(runtime, entryModulePath);
-		const { program, metadata, entryProtoIndex, moduleProtoMap, staticModulePaths, constRelocs } = compileLuaChunkToProgram(entryChunk, modules, {
+		const compiled = compileLuaChunkToProgram(entryChunk, modules, {
 			optLevel: runtime.realtimeCompileOptLevel,
 			entrySource,
 			constModulePaths: [ROM_ASSET_SYMBOL_MODULE_PATH],
 		});
-		resolveRuntimeProgramRelocations(program, metadata, constRelocs);
-		installProgramModules(runtime, moduleProtoMap);
-		runtime.machine.cpu.setProgram(program, metadata);
-		runtime.programMetadata = metadata;
-		runtime.startLoadedProgram(entryProtoIndex, staticModulePaths, true, true);
+		const programImage = encodeCompiledProgramImage(compiled);
+		const program = inflateExecutableProgramImage(programImage, compiled.metadata);
+		installProgramModules(runtime, buildModuleProtoMap(programImage.sections.rodata.moduleProtos));
+		runtime.machine.cpu.setProgram(program, compiled.metadata);
+		runtime.programMetadata = compiled.metadata;
+		runtime.startLoadedProgram(programImage.entryProtoIndex, programImage.sections.rodata.staticModulePaths, true, true);
 		return true;
 	}
 	catch (error) {
