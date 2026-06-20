@@ -1,15 +1,15 @@
 import { convertToError } from '../../lua/value';
 import { clearOverlayFrame } from '../../render/host_overlay/overlay_queue';
-import { compileLuaChunkToProgram } from '../../machine/program/compiler';
+import { compileLuaChunkToProgram, encodeCompiledProgramImage } from '../../machine/program/compiler';
 import { ROM_ASSET_SYMBOL_MODULE_PATH } from '../../rompack/asset_symbols';
-import { resolveRuntimeProgramRelocations } from '../../machine/program/linker';
+import { inflateExecutableProgramImage } from '../../machine/program/linker';
 import { RuntimeResumeSnapshot } from '../../machine/runtime/contracts';
 import { restoreRuntimeLuaSnapshot } from '../../machine/runtime/resume_snapshot';
 import { applyRuntimeMachineState } from '../../machine/runtime/machine_state';
 import { restoreVdpContextState } from '../../render/vdp/context_state';
 import { clearRuntimeDebuggerPause } from './debug_pause';
 import { clearFaultSnapshot, resetHandledLuaErrors } from './fault_state';
-import { toLuaModulePath } from '../../machine/program/loader';
+import { buildModuleProtoMap, toLuaModulePath } from '../../machine/program/loader';
 import { IRQ_IMG_DONE, IRQ_IMG_ERROR } from '../../machine/bus/io';
 import {
 	buildModuleChunks,
@@ -86,15 +86,16 @@ export function hotResumeProgramEntry(runtime: Runtime, params: { path: string; 
 	if (!baseProgram) {
 		throw new Error('hot reload requires active program.');
 	}
-	const { program, metadata, entryProtoIndex, moduleProtoMap, constRelocs } = compileLuaChunkToProgram(chunk, modules, {
+	const compiled = compileLuaChunkToProgram(chunk, modules, {
 		baseProgram,
 		baseMetadata,
 		optLevel: runtime.realtimeCompileOptLevel,
 		entrySource: source,
 		constModulePaths: [ROM_ASSET_SYMBOL_MODULE_PATH],
 	});
-	resolveRuntimeProgramRelocations(program, metadata, constRelocs);
-	replaceMapEntries(runtime.moduleProtos, moduleProtoMap);
+	const programImage = encodeCompiledProgramImage(compiled);
+	const program = inflateExecutableProgramImage(programImage, compiled.metadata);
+	replaceMapEntries(runtime.moduleProtos, buildModuleProtoMap(programImage.sections.rodata.moduleProtos));
 	if (!params.preserveSystemModules) {
 		runtime.moduleCache.clear();
 		runtime.machine.imgDecController.reset();
@@ -106,11 +107,11 @@ export function hotResumeProgramEntry(runtime: Runtime, params: { path: string; 
 	// Re-requiring would build a redundant second module generation (the heap
 	// doubling that pushed resume over the RAM budget) and discard live state.
 	runtime.machine.vdp.resetIngressState();
-	runtime.machine.cpu.setProgram(program, metadata);
-	runtime.startLoadedProgram(entryProtoIndex, [], false, false);
+	runtime.machine.cpu.setProgram(program, compiled.metadata);
+	runtime.startLoadedProgram(programImage.entryProtoIndex, [], false, false);
 	runtime.luaRuntimeFailed = preserveRuntimeFailure;
 	runtime._luaPath = binding;
-	runtime.programMetadata = metadata;
+	runtime.programMetadata = compiled.metadata;
 	clearEditorCompletionCache(runtime);
 }
 

@@ -7,7 +7,7 @@ import { LuaLexer } from '../../machine/ts/lua/syntax/lexer';
 import { LuaParser } from '../../machine/ts/lua/syntax/parser';
 import { CPU, OpCode, RunResult, StringValue, Table, asStringId, createNativeFunction, valueIsString, type Proto } from '../../machine/ts/machine/cpu/cpu';
 import { INSTRUCTION_BYTES, readInstructionWord, writeInstruction, writeInstructionWord } from '../../machine/ts/machine/cpu/instruction_format';
-import { appendLuaChunkToProgram, compileLuaChunkToProgram } from '../../machine/ts/machine/program/compiler';
+import { appendLuaChunkToProgram, compileLuaChunkToProgram, encodeCompiledProgramImage } from '../../machine/ts/machine/program/compiler';
 import { decodeProgramSymbolsImage, inflateProgram, type ProgramImage, type ProgramConstReloc, type ProgramSymbolsImage } from '../../machine/ts/machine/program/loader';
 import { inflateExecutableProgramImage, linkProgramImages, resolveRuntimeProgramRelocations } from '../../machine/ts/machine/program/linker';
 import { replaceWithJump, replaceWithMov } from '../../machine/ts/machine/program/optimizer/values';
@@ -817,6 +817,38 @@ test('inflateExecutableProgramImage rejects object relocs without metadata', () 
 		() => inflateExecutableProgramImage(image, null),
 		/program image relocations require metadata/,
 	);
+});
+
+test('compiled program images resolve hot-resume export relocs through the executable boundary', () => {
+	const baseSource = 'return 1';
+	const baseCompiled = compileLuaChunkToProgram(parseChunk(baseSource, 'cart.lua'), [], { entrySource: baseSource });
+	const baseProgram = inflateExecutableProgramImage(encodeCompiledProgramImage(baseCompiled), baseCompiled.metadata);
+	const moduleSource = [
+		'local mod<const> = {}',
+		'function mod.foo()',
+		'	return 7',
+		'end',
+		'return mod',
+	].join('\n');
+	const entrySource = [
+		'local mod<const> = require("mod")',
+		'return mod.foo()',
+	].join('\n');
+	const compiled = compileLuaChunkToProgram(
+		parseChunk(entrySource, 'cart.lua'),
+		[{ path: 'mod', chunk: parseChunk(moduleSource, 'mod'), source: moduleSource }],
+		{
+			baseProgram,
+			baseMetadata: baseCompiled.metadata,
+			entrySource,
+		},
+	);
+	const image = encodeCompiledProgramImage(compiled);
+	const reloc = image.link.constRelocs.find(record => record.kind === 'export_proto' && record.symbol === 'mod__foo');
+	assert.ok(reloc);
+	const executable = inflateExecutableProgramImage(image, compiled.metadata);
+
+	assert.equal(((readInstructionWord(executable.code, reloc.wordIndex) >>> 18) & 0x3f) as OpCode, OpCode.CLOSURE);
 });
 
 test('ProgramCompiler treats old reloc marker text as ordinary string literals', () => {

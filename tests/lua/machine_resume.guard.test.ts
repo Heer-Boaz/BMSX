@@ -22,8 +22,10 @@ test('hotResumeProgramEntry keeps interpreter resident', () => {
 	const nextExport = boundaries.length > 0 ? Math.min(...boundaries) : -1;
 	const snippet = src.slice(start, nextExport === -1 ? undefined : nextExport);
 	assert.equal(snippet.includes('createLuaInterpreter('), false, 'hotResumeProgramEntry should not create a new interpreter');
-	assert.equal(snippet.includes('runtime.startLoadedProgram(entryProtoIndex, [], false, false)'), true, 'hotResumeProgramEntry must execute the updated path');
-	assert.equal(snippet.includes('resolveRuntimeProgramRelocations(program, metadata, constRelocs)'), true, 'hotResumeProgramEntry must resolve export-symbol relocations before installing the replacement program');
+	assert.equal(snippet.includes('runtime.startLoadedProgram(programImage.entryProtoIndex, [], false, false)'), true, 'hotResumeProgramEntry must execute the updated path');
+	assert.equal(snippet.includes('encodeCompiledProgramImage(compiled)'), true, 'hotResumeProgramEntry must pass compiled code through the compiler-owned ProgramImage object boundary');
+	assert.equal(snippet.includes('inflateExecutableProgramImage(programImage, compiled.metadata)'), true, 'hotResumeProgramEntry must install through the program/linker executable boundary');
+	assert.equal(snippet.includes('resolveRuntimeProgramRelocations('), false, 'hotResumeProgramEntry must not own raw relocation resolution');
 	assert.equal(snippet.includes('if (!params.preserveSystemModules)'), true, 'hot-resume must preserve live module objects (single generation); only a full reload clears the module cache');
 });
 

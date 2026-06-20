@@ -120,7 +120,7 @@ Cart-representatie roadmap/status:
 | Punt | Status |
 | --- | --- |
 | echte `data`/`bss` secties | Deels: het image-format en de TS/C++ linker behouden `rodata`/`data`/`bss`; open: producers vullen `data`/`bss` nog niet als cart ABI voor static config, registries, prefab-data en initialized RAM. |
-| één object-file/linker pipeline | Deels: program images hebben reloc-records en TS/C++ linkers; eerste install-seam staat nu in de program/linker-eigenaar (`inflateExecutableProgramImage`) voor object-image → executable program; gewone Lua source-boot loopt ook via de compiler-owned `ProgramImage` encoding; open: hot-resume, executor-append en de resterende link-orchestratie volledig door dezelfde object/link/install-semantiek trekken. |
+| één object-file/linker pipeline | Deels: program images hebben reloc-records en TS/C++ linkers; eerste install-seam staat nu in de program/linker-eigenaar (`inflateExecutableProgramImage`) voor object-image → executable program; gewone Lua source-boot en hot-resume lopen ook via de compiler-owned `ProgramImage` encoding; open: executor-append en de resterende link-orchestratie volledig door dezelfde object/link/install-semantiek trekken. |
 | runtime relocaties als load/link stap | Deels: `module`/`export_proto` placeholders zijn uit runtimewaarden gehaald; open: harde verifier-gate voor alle executable images. |
 | static module/data ABI | Deels: M2 call-targets kunnen link-time naar `CLOSURE(proto)` en de const-moduleklasse bestaat (`bmsx/assets` exporteert compile-time constants die op de use-site worden geïnlined, zonder runtime module-table); open: static moduleklasse met functies en rodata/data-symbolen breder dan alleen const-scalars. |
 | dynamic Lua-opcodes weren uit systems/static modules | Open: dit moet een compiler-contract worden, geen discipline of losse linter. |
@@ -255,13 +255,14 @@ Status:
   `Program` en past object-relocs toe vóór CPU-install
 - TS `bootProgramImage`/`bootSystemSourceProgram` en C++ `Runtime::boot`
   gebruiken die program/linker-eigenaar voor object-image install
-- gewone TS Lua source-boot compileert nu eerst naar `ProgramImage` via de
-  compiler-eigenaar (`encodeCompiledProgramImage`) en installeert daarna via
-  dezelfde executable install-boundary; `lua_pipeline.ts` bezit die ruwe
-  reloc-resolve stap niet meer
+- gewone TS Lua source-boot en hot-resume compileren nu eerst naar
+  `ProgramImage` via de compiler-eigenaar (`encodeCompiledProgramImage`) en
+  installeren daarna via dezelfde executable install-boundary; IDE runtime paden
+  bezitten die ruwe reloc-resolve stap niet meer
 - ROM-build en source-compile hebben nog aparte paden en lifecycle-eigenaren
-- hot-resume compileert opnieuw en executor-append blijft een live-program pad;
-  die moeten nog expliciet naar dezelfde object/link/install-semantiek convergeren
+- executor-append blijft een live-program pad en de system+cart link-orchestratie
+  zit nog in de runtime boot code; die moeten nog expliciet naar dezelfde
+  object/link/install-semantiek convergeren
 
 Acceptatie:
 
