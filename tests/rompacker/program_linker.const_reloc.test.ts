@@ -7,7 +7,7 @@ import { LuaLexer } from '../../machine/ts/lua/syntax/lexer';
 import { LuaParser } from '../../machine/ts/lua/syntax/parser';
 import { CPU, OpCode, RunResult, StringValue, Table, asStringId, createNativeFunction, valueIsString, type Proto } from '../../machine/ts/machine/cpu/cpu';
 import { INSTRUCTION_BYTES, readInstructionWord, writeInstruction, writeInstructionWord } from '../../machine/ts/machine/cpu/instruction_format';
-import { appendLuaChunkToProgram, compileLuaChunkToProgram, encodeCompiledProgramImage } from '../../machine/ts/machine/program/compiler';
+import { appendLuaChunkToProgram, compileLuaChunkToProgram, encodeAppendedProgramImage, encodeCompiledProgramImage } from '../../machine/ts/machine/program/compiler';
 import { decodeProgramSymbolsImage, inflateProgram, type ProgramImage, type ProgramConstReloc, type ProgramSymbolsImage } from '../../machine/ts/machine/program/loader';
 import { inflateExecutableProgramImage, linkProgramImages, resolveRuntimeProgramRelocations } from '../../machine/ts/machine/program/linker';
 import { replaceWithJump, replaceWithMov } from '../../machine/ts/machine/program/optimizer/values';
@@ -849,6 +849,30 @@ test('compiled program images resolve hot-resume export relocs through the execu
 	const executable = inflateExecutableProgramImage(image, compiled.metadata);
 
 	assert.equal(((readInstructionWord(executable.code, reloc.wordIndex) >>> 18) & 0x3f) as OpCode, OpCode.CLOSURE);
+});
+
+test('appended program images install host-eval code through the executable boundary', () => {
+	const baseSource = 'return 1';
+	const baseCompiled = compileLuaChunkToProgram(parseChunk(baseSource, 'cart.lua'), [], { entrySource: baseSource });
+	const baseProgram = inflateExecutableProgramImage(encodeCompiledProgramImage(baseCompiled), baseCompiled.metadata);
+	const entrySource = 'return "host eval literal"';
+	const appended = appendLuaChunkToProgram(
+		baseProgram,
+		baseCompiled.metadata,
+		parseChunk(entrySource, 'host_eval'),
+		{ entrySource },
+	);
+	const image = encodeAppendedProgramImage(appended);
+	const executable = inflateExecutableProgramImage(image, appended.metadata);
+	const memory = new Memory({ systemRom: new Uint8Array(0) });
+	const cpu = new CPU(memory);
+	cpu.setProgram(executable, appended.metadata);
+	cpu.start(image.entryProtoIndex);
+
+	assert.equal(cpu.runUntilDepth(0, 100000), RunResult.Halted);
+	const returned = cpu.lastReturnValues[0];
+	assert.ok(valueIsString(returned));
+	assert.equal(cpu.stringPool.toString(asStringId(returned)), 'host eval literal');
 });
 
 test('ProgramCompiler treats old reloc marker text as ordinary string literals', () => {

@@ -39,3 +39,15 @@ test('Lua source boot installs through the program-image executable boundary', (
 	assert.equal(snippet.includes('inflateExecutableProgramImage(programImage, compiled.metadata)'), true, 'source boot must install through the program/linker executable boundary');
 	assert.equal(snippet.includes('resolveRuntimeProgramRelocations('), false, 'source boot must not own raw relocation resolution');
 });
+
+
+test('host eval append installs through the program-image executable boundary', () => {
+	const src = readFileSync('machine/ts/machine/program/executor.ts', 'utf8');
+	const start = src.indexOf('export function runHostEvalChunk');
+	assert.ok(start > -1, 'runHostEvalChunk not found');
+	const nextExport = src.indexOf('\nexport function ', start + 1);
+	const snippet = src.slice(start, nextExport === -1 ? undefined : nextExport);
+	assert.equal(snippet.includes('encodeAppendedProgramImage(compiled)'), true, 'host eval append must pass through the compiler-owned ProgramImage object boundary');
+	assert.equal(snippet.includes('inflateExecutableProgramImage(programImage, compiled.metadata)'), true, 'host eval append must install through the program/linker executable boundary');
+	assert.equal(snippet.includes('resolveRuntimeProgramRelocations('), false, 'host eval append must not own raw relocation resolution');
+});

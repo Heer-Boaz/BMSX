@@ -76,16 +76,40 @@ export type CompiledProgram = {
 	constRelocs: ProgramConstReloc[];
 };
 
+export type AppendedProgram = {
+	program: Program;
+	metadata: ProgramMetadata;
+	entryProtoIndex: number;
+	constRelocs: ProgramConstReloc[];
+};
+
+const encodeCompilerProgramImage = (
+	program: Program,
+	entryProtoIndex: number,
+	moduleProtos: Array<{ path: string; protoIndex: number }>,
+	staticModulePaths: string[],
+	constRelocs: ProgramConstReloc[],
+): ProgramImage => ({
+	entryProtoIndex,
+	sections: encodeProgramObjectSections(program, moduleProtos, staticModulePaths),
+	link: { constRelocs },
+});
+
 export function encodeCompiledProgramImage(compiled: CompiledProgram): ProgramImage {
-	return {
-		entryProtoIndex: compiled.entryProtoIndex,
-		sections: encodeProgramObjectSections(
-			compiled.program,
-			Array.from(compiled.moduleProtoMap, ([path, protoIndex]) => ({ path, protoIndex })),
-			compiled.staticModulePaths,
-		),
-		link: { constRelocs: compiled.constRelocs },
-	};
+	return encodeCompilerProgramImage(
+		compiled.program,
+		compiled.entryProtoIndex,
+		Array.from(compiled.moduleProtoMap, ([path, protoIndex]) => ({ path, protoIndex })),
+		compiled.staticModulePaths,
+		compiled.constRelocs,
+	);
+}
+
+// A host-eval append compiles a one-shot chunk against an already-installed base
+// program, so it introduces no module/static-module protos of its own: the executable
+// image carries an empty module map and no static-module paths.
+export function encodeAppendedProgramImage(compiled: AppendedProgram): ProgramImage {
+	return encodeCompilerProgramImage(compiled.program, compiled.entryProtoIndex, [], [], compiled.constRelocs);
 }
 
 export type LuaCompileError = {
@@ -4557,7 +4581,7 @@ export function compileLuaChunkToProgram(chunk: LuaChunk, modules: ReadonlyArray
 	};
 }
 
-export function appendLuaChunkToProgram(base: Program, programMetadata: ProgramMetadata, chunk: LuaChunk, options: CompileOptions = {}): { program: Program; metadata: ProgramMetadata; entryProtoIndex: number } {
+export function appendLuaChunkToProgram(base: Program, programMetadata: ProgramMetadata, chunk: LuaChunk, options: CompileOptions = {}): AppendedProgram {
 	const optLevel = options.optLevel;
 	const externalModules = canonicalizeProgramModules(options.externalModules ?? EMPTY_PROGRAM_MODULES, 'external');
 	const frontend = buildCompilerSemanticFrontend(chunk, EMPTY_PROGRAM_MODULES, externalModules, {
@@ -4607,8 +4631,8 @@ export function appendLuaChunkToProgram(base: Program, programMetadata: ProgramM
 	if (compileErrors.length > 0) {
 		throw new Error(buildCompileFailureMessage(compileErrors));
 	}
-	const { program, metadata } = programBuilder.buildProgram();
-	return { program, metadata, entryProtoIndex };
+	const { program, metadata, constRelocs } = programBuilder.buildProgram();
+	return { program, metadata, entryProtoIndex, constRelocs };
 }
 // end normalized-body-acceptable
 // end repeated-sequence-acceptable
