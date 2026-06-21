@@ -1,5 +1,6 @@
 #include "machine/program/linker.h"
 #include "machine/cpu/instruction_format.h"
+#include "machine/memory/map.h"
 #include <algorithm>
 #include <cstring>
 #include <iomanip>
@@ -142,11 +143,11 @@ struct MergedConstPool {
 };
 
 MergedConstPool mergeConstPools(
-	const ProgramRodataSection& systemRodata,
-	const ProgramRodataSection& cartRodata
+	const std::vector<EncodedValue>& systemConstPool,
+	const std::vector<EncodedValue>& cartConstPool
 ) {
-	const size_t systemConstCount = systemRodata.constPool.size();
-	const size_t cartConstCount = cartRodata.constPool.size();
+	const size_t systemConstCount = systemConstPool.size();
+	const size_t cartConstCount = cartConstPool.size();
 	MergedConstPool merged;
 	merged.values.reserve(systemConstCount + cartConstCount);
 	merged.cartRemap.resize(cartConstCount, -1);
@@ -155,7 +156,7 @@ MergedConstPool mergeConstPools(
 	keyToIndex.reserve(systemConstCount + cartConstCount);
 
 	for (size_t i = 0; i < systemConstCount; ++i) {
-		const EncodedValue& value = systemRodata.constPool[i];
+		const EncodedValue& value = systemConstPool[i];
 		merged.values.push_back(value);
 		const std::string key = makeConstKey(value);
 		if (keyToIndex.find(key) == keyToIndex.end()) {
@@ -164,7 +165,7 @@ MergedConstPool mergeConstPools(
 	}
 
 	for (size_t i = 0; i < cartConstCount; ++i) {
-		const EncodedValue& value = cartRodata.constPool[i];
+		const EncodedValue& value = cartConstPool[i];
 		const std::string key = makeConstKey(value);
 		const auto existing = keyToIndex.find(key);
 		if (existing != keyToIndex.end()) {
@@ -178,6 +179,44 @@ MergedConstPool mergeConstPools(
 	}
 
 	return merged;
+}
+
+
+void assertBssFitsRam(uint32_t baseAddress, size_t byteCount) {
+	if (baseAddress > RAM_END || byteCount > static_cast<size_t>(RAM_END - baseAddress)) {
+		throw std::runtime_error("[ProgramLinker] .bss range " + std::to_string(baseAddress) + "+" + std::to_string(byteCount) + " exceeds RAM end " + std::to_string(RAM_END) + ".");
+	}
+}
+
+double resolveBssSymbolAddress(
+	const std::vector<ProgramBssSection::Symbol>& symbols,
+	uint32_t baseAddress,
+	const std::string& symbolName,
+	int addend
+) {
+	for (const ProgramBssSection::Symbol& symbol : symbols) {
+		if (symbol.name == symbolName) {
+			return static_cast<double>(static_cast<int64_t>(baseAddress) + static_cast<int64_t>(symbol.offset) + addend);
+		}
+	}
+	throw std::runtime_error("[ProgramLinker] Missing .bss symbol '" + symbolName + "'.");
+}
+
+std::vector<EncodedValue> resolveConstValueRelocations(
+	const std::vector<EncodedValue>& constPool,
+	const std::vector<ProgramConstValueReloc>& relocs,
+	const std::vector<ProgramBssSection::Symbol>& bssSymbols,
+	uint32_t bssBaseAddress
+) {
+	std::vector<EncodedValue> out = constPool;
+	for (const ProgramConstValueReloc& reloc : relocs) {
+		switch (reloc.kind) {
+			case ProgramConstValueRelocKind::BssAddr:
+				out[static_cast<size_t>(reloc.constIndex)] = resolveBssSymbolAddress(bssSymbols, bssBaseAddress, reloc.symbol, reloc.addend);
+				break;
+		}
+	}
+	return out;
 }
 
 
@@ -563,9 +602,18 @@ void resolveRuntimeProgramRelocations(
 
 std::unique_ptr<Program> inflateExecutableProgramImage(
 	const ProgramImage& image,
-	const ProgramMetadata* metadata
+	const ProgramMetadata* metadata,
+	uint32_t bssBaseAddress
 ) {
-	auto program = inflateProgram(image.sections);
+	assertBssFitsRam(bssBaseAddress, image.sections.bss.byteCount);
+	ProgramObjectSections executableSections = image.sections;
+	executableSections.rodata.constPool = resolveConstValueRelocations(
+		image.sections.rodata.constPool,
+		image.link.constValueRelocs,
+		image.sections.bss.symbols,
+		bssBaseAddress
+	);
+	auto program = inflateProgram(executableSections);
 	if (!image.link.constRelocs.empty()) {
 		if (!metadata) {
 			throw std::runtime_error("program image relocations require metadata.");
@@ -610,13 +658,20 @@ LinkedProgramImage linkProgramImages(
 	const size_t systemProtoSize = systemText.protos.size();
 	const int systemProtoCount = static_cast<int>(systemProtoSize);
 	ProgramLayout layout = resolveProgramLayout(systemCodeBytes, systemBasePc, cartBasePc);
+	const uint32_t systemBssBase = PROGRAM_BSS_BASE;
+	const uint32_t cartBssBase = PROGRAM_BSS_BASE + static_cast<uint32_t>(systemImage.sections.bss.byteCount);
+	const size_t linkedBssByteCount = systemImage.sections.bss.byteCount + cartImage.sections.bss.byteCount;
+	assertBssFitsRam(systemBssBase, linkedBssByteCount);
 
 	std::vector<uint8_t> systemCode = systemText.code;
 	std::vector<uint8_t> cartCode = cartText.code;
 	rewriteClosureIndices(cartCode, systemProtoCount);
 
 	ProgramObjectSections linkedSections;
-	MergedConstPool merged = mergeConstPools(systemRodata, cartRodata);
+	MergedConstPool merged = mergeConstPools(
+		resolveConstValueRelocations(systemRodata.constPool, systemImage.link.constValueRelocs, systemImage.sections.bss.symbols, systemBssBase),
+		resolveConstValueRelocations(cartRodata.constPool, cartImage.link.constValueRelocs, cartImage.sections.bss.symbols, cartBssBase)
+	);
 	const bool systemNeedsSymbols = std::any_of(systemImage.link.constRelocs.begin(), systemImage.link.constRelocs.end(), relocRequiresSymbolMetadata);
 	const bool cartNeedsSymbols = std::any_of(cartImage.link.constRelocs.begin(), cartImage.link.constRelocs.end(), relocRequiresSymbolMetadata);
 	const bool cartNeedsMetadata = std::any_of(cartImage.link.constRelocs.begin(), cartImage.link.constRelocs.end(), cartRelocRequiresMetadata);
@@ -684,8 +739,10 @@ LinkedProgramImage linkProgramImages(
 	writeInstructionWord(linkedSections.text.code, CART_PROGRAM_VECTOR_PC / INSTRUCTION_BYTES, CART_PROGRAM_VECTOR_VALUE);
 
 	const int cartEntryProtoIndex = cartImage.entryProtoIndex + systemProtoCount;
+	const int cartSectionInitProtoIndex = cartImage.sectionInitProtoIndex + systemProtoCount;
 	auto linkedImage = std::make_unique<ProgramImage>();
 	linkedImage->entryProtoIndex = cartEntryProtoIndex;
+	linkedImage->sectionInitProtoIndex = cartSectionInitProtoIndex;
 	linkedSections.rodata.moduleProtos.reserve(cartRodata.moduleProtos.size() + systemRodata.moduleProtos.size());
 	for (const auto& entry : cartRodata.moduleProtos) {
 		linkedSections.rodata.moduleProtos.emplace_back(entry.first, entry.second + systemProtoCount);
@@ -699,9 +756,17 @@ LinkedProgramImage linkProgramImages(
 	linkedSections.data.bytes.reserve(systemImage.sections.data.bytes.size() + cartImage.sections.data.bytes.size());
 	linkedSections.data.bytes.insert(linkedSections.data.bytes.end(), systemImage.sections.data.bytes.begin(), systemImage.sections.data.bytes.end());
 	linkedSections.data.bytes.insert(linkedSections.data.bytes.end(), cartImage.sections.data.bytes.begin(), cartImage.sections.data.bytes.end());
-	linkedSections.bss.byteCount = systemImage.sections.bss.byteCount + cartImage.sections.bss.byteCount;
+	linkedSections.bss.byteCount = linkedBssByteCount;
+	linkedSections.bss.symbols = systemImage.sections.bss.symbols;
+	linkedSections.bss.symbols.reserve(systemImage.sections.bss.symbols.size() + cartImage.sections.bss.symbols.size());
+	for (const auto& symbol : cartImage.sections.bss.symbols) {
+		ProgramBssSection::Symbol linkedSymbol = symbol;
+		linkedSymbol.offset += systemImage.sections.bss.byteCount;
+		linkedSections.bss.symbols.push_back(std::move(linkedSymbol));
+	}
 	linkedImage->sections = std::move(linkedSections);
 	linkedImage->link.constRelocs.clear();
+	linkedImage->link.constValueRelocs.clear();
 
 	const int systemInstructionCount = systemCodeBytes / INSTRUCTION_BYTES;
 	const int cartInstructionCount = cartCodeBytes / INSTRUCTION_BYTES;
@@ -712,6 +777,10 @@ LinkedProgramImage linkProgramImages(
 	output.metadata = std::move(mergedMetadata);
 	output.systemEntryProtoIndex = systemImage.entryProtoIndex;
 	output.cartEntryProtoIndex = cartEntryProtoIndex;
+	output.systemSectionInitProtoIndex = systemImage.sectionInitProtoIndex;
+	output.cartSectionInitProtoIndex = cartSectionInitProtoIndex;
+	output.systemBssBaseAddress = systemBssBase;
+	output.cartBssBaseAddress = cartBssBase;
 	output.systemStaticModulePaths = systemRodata.staticModulePaths;
 	output.cartStaticModulePaths = cartRodata.staticModulePaths;
 	return output;
@@ -729,14 +798,20 @@ LinkedBootProgramImage linkBootProgramImages(
 	LinkedProgramImage linked = linkProgramImages(systemImage, systemSymbols, cartImage, cartSymbols, systemBasePc, cartBasePc);
 	LinkedBootProgramImage output;
 	output.cartEntryProtoIndex = linked.cartEntryProtoIndex;
+	output.cartSectionInitProtoIndex = linked.cartSectionInitProtoIndex;
+	output.cartBssBaseAddress = linked.cartBssBaseAddress;
 	output.cartStaticModulePaths = std::move(linked.cartStaticModulePaths);
 	switch (bootTarget) {
 		case ProgramBootTarget::System:
 			output.entryProtoIndex = linked.systemEntryProtoIndex;
+			output.sectionInitProtoIndex = linked.systemSectionInitProtoIndex;
+			output.bssBaseAddress = linked.systemBssBaseAddress;
 			output.staticModulePaths = std::move(linked.systemStaticModulePaths);
 			break;
 		case ProgramBootTarget::Cart:
 			output.entryProtoIndex = linked.cartEntryProtoIndex;
+			output.sectionInitProtoIndex = linked.cartSectionInitProtoIndex;
+			output.bssBaseAddress = linked.cartBssBaseAddress;
 			output.staticModulePaths = linked.programImage->sections.rodata.staticModulePaths;
 			break;
 	}

@@ -384,13 +384,13 @@ void MachineManager::bootRuntimeFromProgram() {
 		);
 		m_linked_program = std::move(linked.programImage);
 		m_linked_program_symbols = std::move(linked.metadata);
-		rt.setLinkedCartEntry(linked.cartEntryProtoIndex, std::move(linked.cartStaticModulePaths));
+		rt.setLinkedCartEntry(linked.cartEntryProtoIndex, linked.cartSectionInitProtoIndex, linked.cartBssBaseAddress, std::move(linked.cartStaticModulePaths));
 		rt.enterCartProgram();
-		rt.boot(*m_linked_program, m_linked_program_symbols.get(), linked.entryProtoIndex, linked.staticModulePaths);
+		rt.boot(*m_linked_program, m_linked_program_symbols.get(), linked.entryProtoIndex, linked.sectionInitProtoIndex, linked.staticModulePaths);
 		return;
 	}
 	rt.enterCartProgram();
-	rt.boot(*romPackage.programImage, romPackage.programSymbols.get(), romPackage.programImage->entryProtoIndex, romPackage.programImage->sections.rodata.staticModulePaths);
+	rt.boot(*romPackage.programImage, romPackage.programSymbols.get(), romPackage.programImage->entryProtoIndex, romPackage.programImage->sectionInitProtoIndex, romPackage.programImage->sections.rodata.staticModulePaths);
 }
 
 bool MachineManager::bootSystemStartupProgram(const MachineManifest& runtimeMachine) {
@@ -441,10 +441,10 @@ bool MachineManager::bootSystemStartupProgram(const MachineManifest& runtimeMach
 		);
 		m_linked_program = std::move(linked.programImage);
 		m_linked_program_symbols = std::move(linked.metadata);
-		rt.setLinkedCartEntry(linked.cartEntryProtoIndex, std::move(linked.cartStaticModulePaths));
-		rt.boot(*m_linked_program, m_linked_program_symbols.get(), linked.entryProtoIndex, linked.staticModulePaths);
+		rt.setLinkedCartEntry(linked.cartEntryProtoIndex, linked.cartSectionInitProtoIndex, linked.cartBssBaseAddress, std::move(linked.cartStaticModulePaths));
+		rt.boot(*m_linked_program, m_linked_program_symbols.get(), linked.entryProtoIndex, linked.sectionInitProtoIndex, linked.staticModulePaths);
 	} else {
-		rt.boot(*m_system_rom.programImage, m_system_rom.programSymbols.get(), m_system_rom.programImage->entryProtoIndex, m_system_rom.programImage->sections.rodata.staticModulePaths);
+		rt.boot(*m_system_rom.programImage, m_system_rom.programSymbols.get(), m_system_rom.programImage->entryProtoIndex, m_system_rom.programImage->sectionInitProtoIndex, m_system_rom.programImage->sections.rodata.staticModulePaths);
 	}
 	rt.cartBoot.reset();
 	return true;

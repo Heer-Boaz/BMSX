@@ -94,7 +94,7 @@ export function hotResumeProgramEntry(runtime: Runtime, params: { path: string; 
 		constModulePaths: [ROM_ASSET_SYMBOL_MODULE_PATH],
 	});
 	const programImage = encodeCompiledProgramImage(compiled);
-	const program = inflateExecutableProgramImage(programImage, compiled.metadata);
+	const program = inflateExecutableProgramImage(programImage, compiled.metadata, runtime.programBssBaseAddress);
 	replaceMapEntries(runtime.moduleProtos, buildModuleProtoMap(programImage.sections.rodata.moduleProtos));
 	if (!params.preserveSystemModules) {
 		runtime.moduleCache.clear();
@@ -108,7 +108,7 @@ export function hotResumeProgramEntry(runtime: Runtime, params: { path: string; 
 	// doubling that pushed resume over the RAM budget) and discard live state.
 	runtime.machine.vdp.resetIngressState();
 	runtime.machine.cpu.setProgram(program, compiled.metadata);
-	runtime.startLoadedProgram(programImage.entryProtoIndex, [], false, false);
+	runtime.startLoadedProgram(programImage.entryProtoIndex, null, [], false, false);
 	runtime.luaRuntimeFailed = preserveRuntimeFailure;
 	runtime._luaPath = binding;
 	runtime.programMetadata = compiled.metadata;

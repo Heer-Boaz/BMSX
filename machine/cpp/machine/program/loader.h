@@ -33,6 +33,13 @@ struct ProgramDataSection {
 
 struct ProgramBssSection {
 	size_t byteCount = 0;
+	struct Symbol {
+		std::string name;
+		size_t offset = 0;
+		size_t byteCount = 0;
+		size_t alignment = 1;
+	};
+	std::vector<Symbol> symbols;
 };
 
 struct ProgramObjectSections {
@@ -77,12 +84,25 @@ struct ProgramConstReloc {
 	std::variant<ProgramIndexedConstReloc, ProgramSymbolicConstReloc> target;
 };
 
+enum class ProgramConstValueRelocKind {
+	BssAddr,
+};
+
+struct ProgramConstValueReloc {
+	int constIndex = 0;
+	ProgramConstValueRelocKind kind = ProgramConstValueRelocKind::BssAddr;
+	std::string symbol;
+	int addend = 0;
+};
+
 struct ProgramLink {
 	std::vector<ProgramConstReloc> constRelocs;
+	std::vector<ProgramConstValueReloc> constValueRelocs;
 };
 
 struct ProgramImage {
 	int entryProtoIndex = 0;
+	int sectionInitProtoIndex = 0;
 	ProgramObjectSections sections;
 	ProgramLink link;
 };

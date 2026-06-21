@@ -25,6 +25,14 @@ export type ProgramDataSection = {
 
 export type ProgramBssSection = {
 	byteCount: number;
+	symbols: ProgramBssSymbol[];
+};
+
+export type ProgramBssSymbol = {
+	name: string;
+	offset: number;
+	byteCount: number;
+	alignment: number;
 };
 
 export type ProgramObjectSections = {
@@ -52,12 +60,21 @@ export type ProgramConstReloc =
 		symbol: string;
 	};
 
+export type ProgramConstValueReloc = {
+	constIndex: number;
+	kind: 'bss_addr';
+	symbol: string;
+	addend: number;
+};
+
 export type ProgramLink = {
 	constRelocs: ProgramConstReloc[];
+	constValueRelocs: ProgramConstValueReloc[];
 };
 
 export type ProgramImage = {
 	entryProtoIndex: number;
+	sectionInitProtoIndex: number;
 	sections: ProgramObjectSections;
 	link: ProgramLink;
 };
@@ -85,6 +102,7 @@ export function encodeProgramObjectSections(
 	program: Program,
 	moduleProtos: Array<{ path: string; protoIndex: number }>,
 	staticModulePaths: string[],
+	bss: ProgramBssSection,
 ): ProgramObjectSections {
 	return {
 		text: {
@@ -97,17 +115,19 @@ export function encodeProgramObjectSections(
 			staticModulePaths,
 		},
 		data: { bytes: new Uint8Array(0) },
-		bss: { byteCount: 0 },
+		bss,
 	};
 }
 
 export function decodeProgramImage(bytes: Uint8Array): ProgramImage {
 	const root = requireObject(decodeBinary(bytes), 'ProgramImage');
 	const entryProtoIndex = requireObjectKey(root, 'entryProtoIndex', 'ProgramImage', 'ProgramImage.entryProtoIndex') as number;
+	const sectionInitProtoIndex = requireObjectKey(root, 'sectionInitProtoIndex', 'ProgramImage', 'ProgramImage.sectionInitProtoIndex') as number;
 	const sections = decodeProgramObjectSections(requireObjectKey(root, 'sections', 'ProgramImage', 'ProgramImage.sections'));
 	const link = decodeProgramLink(requireObjectKey(root, 'link', 'ProgramImage'));
 	return {
 		entryProtoIndex,
+		sectionInitProtoIndex,
 		sections,
 		link,
 	};
@@ -147,8 +167,25 @@ function decodeProgramObjectSections(value: unknown): ProgramObjectSections {
 		},
 		bss: {
 			byteCount: requireObjectKey(bss, 'byteCount', 'ProgramImage.sections.bss', 'ProgramImage.sections.bss.byteCount') as number,
+			symbols: decodeBssSymbols(requireObjectKey(bss, 'symbols', 'ProgramImage.sections.bss')),
 		},
 	};
+}
+
+function decodeBssSymbols(value: unknown): ProgramBssSymbol[] {
+	const array = value as [];
+	const out: ProgramBssSymbol[] = new Array(array.length);
+	for (let index = 0; index < array.length; index += 1) {
+		const entryLabel = `ProgramImage.sections.bss.symbols[${index}]`;
+		const entry = requireObject(array[index], entryLabel);
+		out[index] = {
+			name: requireObjectKey(entry, 'name', entryLabel, `${entryLabel}.name`) as string,
+			offset: requireObjectKey(entry, 'offset', entryLabel, `${entryLabel}.offset`) as number,
+			byteCount: requireObjectKey(entry, 'byteCount', entryLabel, `${entryLabel}.byteCount`) as number,
+			alignment: requireObjectKey(entry, 'alignment', entryLabel, `${entryLabel}.alignment`) as number,
+		};
+	}
+	return out;
 }
 
 function decodeModuleProtos(value: unknown): Array<{ path: string; protoIndex: number }> {
@@ -190,7 +227,23 @@ function decodeProgramLink(value: unknown): ProgramLink {
 			constIndex: requireObjectKey(entry, 'constIndex', `ProgramImage.link.constRelocs[${index}]`, `ProgramImage.link.constRelocs[${index}].constIndex`) as number,
 		};
 	}
-	return { constRelocs };
+	const constValueRelocValues = requireObjectKey(link, 'constValueRelocs', 'ProgramImage.link') as [];
+	const constValueRelocs: ProgramConstValueReloc[] = new Array(constValueRelocValues.length);
+	for (let index = 0; index < constValueRelocValues.length; index += 1) {
+		const entryLabel = `ProgramImage.link.constValueRelocs[${index}]`;
+		const entry = requireObject(constValueRelocValues[index], entryLabel);
+		const kind = requireObjectKey(entry, 'kind', entryLabel, `${entryLabel}.kind`) as string;
+		if (kind !== 'bss_addr') {
+			throw new Error(`${entryLabel}.kind must be 'bss_addr'.`);
+		}
+		constValueRelocs[index] = {
+			constIndex: requireObjectKey(entry, 'constIndex', entryLabel, `${entryLabel}.constIndex`) as number,
+			kind,
+			symbol: requireObjectKey(entry, 'symbol', entryLabel, `${entryLabel}.symbol`) as string,
+			addend: requireObjectKey(entry, 'addend', entryLabel, `${entryLabel}.addend`) as number,
+		};
+	}
+	return { constRelocs, constValueRelocs };
 }
 
 export function inflateProgram(sections: ProgramObjectSections): Program {

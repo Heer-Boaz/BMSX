@@ -163,8 +163,10 @@ void Runtime::setRuntimeEnvironment(
 	m_cartRomPackage = cartRom;
 }
 
-void Runtime::setLinkedCartEntry(int entryProtoIndex, std::vector<std::string> staticModulePaths) {
+void Runtime::setLinkedCartEntry(int entryProtoIndex, int sectionInitProtoIndex, uint32_t bssBaseAddress, std::vector<std::string> staticModulePaths) {
 	m_cartEntryProtoIndex = entryProtoIndex;
+	m_cartSectionInitProtoIndex = sectionInitProtoIndex;
+	m_cartBssBaseAddress = bssBaseAddress;
 	m_cartStaticModulePaths = std::move(staticModulePaths);
 }
 
@@ -185,11 +187,17 @@ void Runtime::startCartProgram() {
 	if (!m_cartEntryProtoIndex) {
 		throw std::runtime_error("cannot start cart: no cart entry point is loaded.");
 	}
+	if (!m_cartSectionInitProtoIndex) {
+		throw std::runtime_error("cannot start cart: no cart section init is loaded.");
+	}
+	if (!m_cartBssBaseAddress) {
+		throw std::runtime_error("cannot start cart: no cart bss base is loaded.");
+	}
 	enterCartProgram();
-	startLoadedProgram(*m_cartEntryProtoIndex, m_cartStaticModulePaths, true, true);
+	startLoadedProgram(*m_cartEntryProtoIndex, *m_cartSectionInitProtoIndex, m_cartStaticModulePaths, true, true);
 }
 
-void Runtime::boot(const ProgramImage& image, ProgramMetadata* metadata, int entryProtoIndex, const std::vector<std::string>& staticModulePaths) {
+void Runtime::boot(const ProgramImage& image, ProgramMetadata* metadata, int entryProtoIndex, int sectionInitProtoIndex, const std::vector<std::string>& staticModulePaths) {
 	m_moduleProtos = buildModuleProtoMap(image.sections.rodata.moduleProtos);
 	m_moduleCache.clear();
 	m_programStorage = inflateExecutableProgramImage(image, metadata);
@@ -200,13 +208,15 @@ void Runtime::boot(const ProgramImage& image, ProgramMetadata* metadata, int ent
 		m_program = m_programStorage.get();
 		m_programMetadata = metadata;
 		machine.cpu.setProgram(m_program, metadata);
-		startLoadedProgram(entryProtoIndex, staticModulePaths, true, true);
+		startLoadedProgram(entryProtoIndex, sectionInitProtoIndex, staticModulePaths, true, true);
 	} catch (const std::exception& e) {
 		handleLuaError(e.what());
 	}
 }
 
-void Runtime::startLoadedProgram(int entryProtoIndex, const std::vector<std::string>& staticModulePaths, bool runInit, bool runNewGame) {
+void Runtime::startLoadedProgram(int entryProtoIndex, int sectionInitProtoIndex, const std::vector<std::string>& staticModulePaths, bool runInit, bool runNewGame) {
+	NativeResults sectionResults;
+	callLuaFunctionInto(machine.cpu.createRootClosure(sectionInitProtoIndex), NativeArgsView(), sectionResults);
 	runStaticModuleInitializers(staticModulePaths);
 	enforceLuaHeapBudget();
 	machine.cpu.start(entryProtoIndex);
@@ -228,6 +238,8 @@ void Runtime::resetRuntimeForProgramReload() {
 	m_luaInitialized = false;
 	m_pendingCall = PendingCall::None;
 	m_cartEntryProtoIndex.reset();
+	m_cartSectionInitProtoIndex.reset();
+	m_cartBssBaseAddress.reset();
 	m_cartStaticModulePaths.clear();
 	cartBoot.reset();
 	m_hostFaultMessage.reset();

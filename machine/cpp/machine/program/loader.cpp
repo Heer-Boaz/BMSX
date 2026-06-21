@@ -184,6 +184,16 @@ ProgramDataSection extractDataSection(const BinValue& dataObj) {
 ProgramBssSection extractBssSection(const BinValue& bssObj) {
 	ProgramBssSection bss;
 	bss.byteCount = static_cast<size_t>(bssObj.require("byteCount").toI32());
+	const auto& symbols = bssObj.require("symbols").asArray();
+	bss.symbols.reserve(symbols.size());
+	for (const auto& symbolValue : symbols) {
+		ProgramBssSection::Symbol symbol;
+		symbol.name = symbolValue.require("name").asString();
+		symbol.offset = static_cast<size_t>(symbolValue.require("offset").toI32());
+		symbol.byteCount = static_cast<size_t>(symbolValue.require("byteCount").toI32());
+		symbol.alignment = static_cast<size_t>(symbolValue.require("alignment").toI32());
+		bss.symbols.push_back(std::move(symbol));
+	}
 	return bss;
 }
 
@@ -322,6 +332,7 @@ std::unique_ptr<ProgramImage> decodeProgramImage(const uint8_t* data, size_t siz
 
 	// Extract entryProtoIndex
 	image->entryProtoIndex = root.require("entryProtoIndex").toI32();
+	image->sectionInitProtoIndex = root.require("sectionInitProtoIndex").toI32();
 
 	image->sections = extractProgramObjectSections(root.require("sections"));
 
@@ -339,6 +350,20 @@ std::unique_ptr<ProgramImage> decodeProgramImage(const uint8_t* data, size_t siz
 			reloc.target = ProgramIndexedConstReloc{std::get<ProgramIndexedConstRelocKind>(kind), relocObj.require("constIndex").toI32()};
 		}
 		image->link.constRelocs.push_back(std::move(reloc));
+	}
+	const auto& constValueRelocsArr = linkObj.require("constValueRelocs").asArray();
+	image->link.constValueRelocs.reserve(constValueRelocsArr.size());
+	for (const auto& relocObj : constValueRelocsArr) {
+		const std::string kind = relocObj.require("kind").asString();
+		if (kind != "bss_addr") {
+			throw BMSX_RUNTIME_ERROR("ProgramImage.link.constValueRelocs kind must be bss_addr.");
+		}
+		ProgramConstValueReloc reloc;
+		reloc.constIndex = relocObj.require("constIndex").toI32();
+		reloc.kind = ProgramConstValueRelocKind::BssAddr;
+		reloc.symbol = relocObj.require("symbol").asString();
+		reloc.addend = relocObj.require("addend").toI32();
+		image->link.constValueRelocs.push_back(std::move(reloc));
 	}
 
 	return image;
@@ -381,6 +406,17 @@ std::vector<uint8_t> encodeProgramImage(const ProgramImage& asset) {
 
 	BinObject bss;
 	bss["byteCount"] = BinValue(static_cast<i64>(asset.sections.bss.byteCount));
+	BinArray bssSymbols;
+	bssSymbols.reserve(asset.sections.bss.symbols.size());
+	for (const auto& symbol : asset.sections.bss.symbols) {
+		BinObject object;
+		object["name"] = BinValue(symbol.name);
+		object["offset"] = BinValue(static_cast<i64>(symbol.offset));
+		object["byteCount"] = BinValue(static_cast<i64>(symbol.byteCount));
+		object["alignment"] = BinValue(static_cast<i64>(symbol.alignment));
+		bssSymbols.push_back(BinValue(std::move(object)));
+	}
+	bss["symbols"] = BinValue(std::move(bssSymbols));
 
 	BinObject sections;
 	sections["text"] = BinValue(std::move(text));
@@ -393,11 +429,23 @@ std::vector<uint8_t> encodeProgramImage(const ProgramImage& asset) {
 	for (const ProgramConstReloc& reloc : asset.link.constRelocs) {
 		constRelocs.push_back(encodeConstReloc(reloc));
 	}
+	BinArray constValueRelocs;
+	constValueRelocs.reserve(asset.link.constValueRelocs.size());
+	for (const ProgramConstValueReloc& reloc : asset.link.constValueRelocs) {
+		BinObject object;
+		object["constIndex"] = BinValue(reloc.constIndex);
+		object["kind"] = BinValue("bss_addr");
+		object["symbol"] = BinValue(reloc.symbol);
+		object["addend"] = BinValue(reloc.addend);
+		constValueRelocs.push_back(BinValue(std::move(object)));
+	}
 	BinObject link;
 	link["constRelocs"] = BinValue(std::move(constRelocs));
+	link["constValueRelocs"] = BinValue(std::move(constValueRelocs));
 
 	BinObject root;
 	root["entryProtoIndex"] = BinValue(asset.entryProtoIndex);
+	root["sectionInitProtoIndex"] = BinValue(asset.sectionInitProtoIndex);
 	root["sections"] = BinValue(std::move(sections));
 	root["link"] = BinValue(std::move(link));
 	return encodeBinary(BinValue(std::move(root)));

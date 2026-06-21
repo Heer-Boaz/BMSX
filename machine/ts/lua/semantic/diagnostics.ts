@@ -122,6 +122,7 @@ function walkLuaStatementChildren(statement: LuaStatement, visitStatement: (stat
 			walkLuaStatementTree(statement.block.body, visitStatement);
 			return;
 		case LuaSyntaxKind.StructDeclarationStatement:
+		case LuaSyntaxKind.BssDeclarationStatement:
 			return;
 		default:
 			return;

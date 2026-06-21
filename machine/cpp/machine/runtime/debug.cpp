@@ -25,12 +25,12 @@ void Runtime::logDebugState() const {
 			summary << '(' << valueToString(machine.cpu.readFrameRegister(topFrameIndex, *operand.registerIndex)) << ')';
 		}
 	}
-	std::cout << summary.str() << std::endl;
-	std::cout << "[Runtime] debug: instr=" << instruction.pcText << ": " << instruction.instructionText << std::endl;
+	std::cerr << summary.str() << std::endl;
+	std::cerr << "[Runtime] debug: instr=" << instruction.pcText << ": " << instruction.instructionText << std::endl;
 	if (instruction.sourceRange.has_value()) {
 		const SourceRange& range = *instruction.sourceRange;
 		std::string sourceLine = range.path + ":" + std::to_string(range.startLine) + ":" + std::to_string(range.startColumn);
-		std::cout << "[Runtime] debug: source=" << sourceLine << std::endl;
+		std::cerr << "[Runtime] debug: source=" << sourceLine << std::endl;
 	}
 }
 

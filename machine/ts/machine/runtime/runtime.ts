@@ -75,6 +75,7 @@ import { Memory } from '../memory/memory';
 import {
 	BASE_RAM_USED_SIZE,
 	DEFAULT_VRAM_IMAGE_SLOT_SIZE,
+	PROGRAM_BSS_BASE,
 	RAM_SIZE,
 	configureMemoryMap,
 } from '../memory/map';
@@ -196,6 +197,9 @@ export class Runtime {
 	public activeLuaSources: LuaSourceRegistry = null;
 	public cartProgramStarted = false;
 	public cartEntryProtoIndex: number | null = null;
+	public cartSectionInitProtoIndex: number | null = null;
+	public programBssBaseAddress = PROGRAM_BSS_BASE;
+	public cartBssBaseAddress: number | null = null;
 	public cartStaticModulePaths: ReadonlyArray<string> = [];
 	public systemRomSource: RawRomSource = null;
 	public cartRomSource: RawRomSource | null = null;
@@ -392,6 +396,9 @@ export class Runtime {
 		this.activeLuaSources = params.systemSources;
 		this.cartProgramStarted = false;
 		this.cartEntryProtoIndex = null;
+		this.cartSectionInitProtoIndex = null;
+		this.programBssBaseAddress = PROGRAM_BSS_BASE;
+		this.cartBssBaseAddress = null;
 		this.cartStaticModulePaths = [];
 		this.systemRomSource = params.systemRomSource;
 		this.cartRomSource = params.cartRomSource;
@@ -400,8 +407,10 @@ export class Runtime {
 		this.cartBoot.reset();
 	}
 
-	public setLinkedCartEntry(entryProtoIndex: number, staticModulePaths: ReadonlyArray<string>): void {
+	public setLinkedCartEntry(entryProtoIndex: number, sectionInitProtoIndex: number, bssBaseAddress: number, staticModulePaths: ReadonlyArray<string>): void {
 		this.cartEntryProtoIndex = entryProtoIndex;
+		this.cartSectionInitProtoIndex = sectionInitProtoIndex;
+		this.cartBssBaseAddress = bssBaseAddress;
 		this.cartStaticModulePaths = staticModulePaths;
 	}
 
@@ -433,15 +442,27 @@ export class Runtime {
 
 	public startCartProgram(): void {
 		const entryProtoIndex = this.cartEntryProtoIndex;
+		const sectionInitProtoIndex = this.cartSectionInitProtoIndex;
+		const bssBaseAddress = this.cartBssBaseAddress;
 		if (entryProtoIndex === null) {
 			throw new Error('cannot start cart: no cart entry point is loaded.');
 		}
+		if (sectionInitProtoIndex === null) {
+			throw new Error('cannot start cart: no cart section init is loaded.');
+		}
+		if (bssBaseAddress === null) {
+			throw new Error('cannot start cart: no cart bss base is loaded.');
+		}
+		this.programBssBaseAddress = bssBaseAddress;
 		this.enterCartProgram();
 		this._luaPath = this.activeLuaSources.entry_path;
-		this.startLoadedProgram(entryProtoIndex, this.cartStaticModulePaths, true, true);
+		this.startLoadedProgram(entryProtoIndex, sectionInitProtoIndex, this.cartStaticModulePaths, true, true);
 	}
 
-	public startLoadedProgram(entryProtoIndex: number, staticModulePaths: ReadonlyArray<string>, runInit: boolean, runNewGame: boolean): void {
+	public startLoadedProgram(entryProtoIndex: number, sectionInitProtoIndex: number | null, staticModulePaths: ReadonlyArray<string>, runInit: boolean, runNewGame: boolean): void {
+		if (sectionInitProtoIndex !== null) {
+			this.runSectionInitializer(sectionInitProtoIndex);
+		}
 		this.runStaticModuleInitializers(staticModulePaths);
 		this.machine.cpu.start(entryProtoIndex);
 		this.pendingCall = 'entry';
@@ -453,6 +474,15 @@ export class Runtime {
 			this.queueLifecycleHandlers(true, runNewGame);
 		}
 		this.luaInitialized = true;
+	}
+
+	private runSectionInitializer(protoIndex: number): void {
+		const results = this.luaScratch.values.acquire();
+		try {
+			callClosureInto(this, { protoIndex, upvalues: [] }, [], results);
+		} finally {
+			this.luaScratch.values.release(results);
+		}
 	}
 
 	private runStaticModuleInitializers(paths: ReadonlyArray<string>): void {

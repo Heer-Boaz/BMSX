@@ -23,15 +23,6 @@ function comparePosition(line: number, column: number, otherLine: number, otherC
 	return 0;
 }
 
-function positionWithinRange(line: number, column: number, range: SourceRange): boolean {
-	return comparePosition(line, column, range.start.line, range.start.column) >= 0
-		&& comparePosition(line, column, range.end.line, range.end.column) <= 0;
-}
-
-function positionAfterOrEqual(line: number, column: number, otherLine: number, otherColumn: number): boolean {
-	return comparePosition(line, column, otherLine, otherColumn) >= 0;
-}
-
 function rangeArea(range: SourceRange): number {
 	return ((range.end.line - range.start.line) * 1_000_000) + (range.end.column - range.start.column);
 }
@@ -107,10 +98,11 @@ function selectLocalSlot(slots: ReadonlyArray<LocalSlotDebug>, name: string, ran
 		if (slot.name !== name) {
 			continue;
 		}
-		if (!positionWithinRange(range.start.line, range.start.column, slot.scope)) {
+		if (comparePosition(range.start.line, range.start.column, range.start.line, range.start.column) >= 0
+		&& comparePosition(range.start.line, range.start.column, range.end.line, range.end.column) <= 0) {
 			continue;
 		}
-		if (!positionAfterOrEqual(range.start.line, range.start.column, slot.definition.start.line, slot.definition.start.column)) {
+		if (!(comparePosition(range.start.line, range.start.column, slot.definition.start.line, slot.definition.start.column) >= 0)) {
 			continue;
 		}
 		if (!best || rangeArea(slot.scope) < rangeArea(best.scope)) {
@@ -211,8 +203,9 @@ export function logDebugState(runtime: Runtime): void {
 	if (debug.pc < 0 || debug.pc >= program.code.length) {
 		return;
 	}
-	const instruction = describeInstructionAtPc(program, debug.pc, runtime.programMetadata, { formatStyle: 'assembly' });
+	const instruction = describeInstructionAtPc(program, debug.pc, runtime.programMetadata);
 	const operandSummary = instruction.operands.map(operand => formatInstructionOperandDebug(runtime, operand, debug.registers)).join(' ');
+
 	console.error(`\tpc=${instruction.pcText} op=${instruction.opName}${operandSummary.length > 0 ? ` ${operandSummary}` : ''}`);
 	console.error(`\tinstr=${instruction.pcText}: ${instruction.instructionText}`);
 	if (instruction.sourceRange) {

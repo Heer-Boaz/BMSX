@@ -4,6 +4,7 @@ export type SemanticSymbolKind =
 	| 'constant'
 	| 'function'
 	| 'global'
+	| 'bss'
 	| 'property'
 	| 'module'
 	| 'type'

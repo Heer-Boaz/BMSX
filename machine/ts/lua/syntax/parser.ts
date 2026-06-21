@@ -12,6 +12,7 @@ import type {
 	LuaAssignableExpression,
 	LuaAssignmentStatement,
 	LuaBlock,
+	LuaBssDeclarationStatement,
 	LuaBinaryExpression,
 	LuaBooleanLiteralExpression,
 	LuaBreakStatement,
@@ -208,6 +209,9 @@ export class LuaParser {
 		if (token.type === LuaTokenType.Identifier && token.lexeme === 'struct') {
 			return this.parseStructDeclaration();
 		}
+		if (token.type === LuaTokenType.Identifier && token.lexeme === 'bss') {
+			return this.parseBssDeclaration();
+		}
 		switch (token.type) {
 			case LuaTokenType.Local:
 				return this.parseLocalStatement();
@@ -266,6 +270,25 @@ export class LuaParser {
 			range: this.rangeFromTokenAndToken(structToken, endToken),
 			name,
 			fields,
+		};
+	}
+
+	private parseBssDeclaration(): LuaBssDeclarationStatement {
+		const bssToken = this.advance();
+		const nameToken = this.consume(LuaTokenType.Identifier, 'Expected bss symbol name.');
+		const name = this.createIdentifierExpression(nameToken);
+		this.consume(LuaTokenType.Colon, 'Expected ":" after bss symbol name.');
+		const typeRef = this.parseTypeReference();
+		this.match(LuaTokenType.Semicolon);
+		return {
+			kind: LuaSyntaxKind.BssDeclarationStatement,
+			range: {
+				path: this.path,
+				start: this.positionFromToken(bssToken),
+				end: typeRef.range.end,
+			},
+			name,
+			typeRef,
 		};
 	}
 
@@ -1462,6 +1485,14 @@ export class LuaParser {
 					for (const lengthExpression of field.typeRef.arrayLengths) {
 						visitExpression(lengthExpression);
 					}
+				}
+				break;
+			}
+			case LuaSyntaxKind.BssDeclarationStatement: {
+				const bssDeclaration = statement as LuaBssDeclarationStatement;
+				pushDefinition([bssDeclaration.name.name], bssDeclaration.name.range, currentScope, 'variable');
+				for (const lengthExpression of bssDeclaration.typeRef.arrayLengths) {
+					visitExpression(lengthExpression);
 				}
 				break;
 			}

@@ -14,6 +14,7 @@ import { replaceWithJump, replaceWithMov } from '../../machine/ts/machine/progra
 import type { Instruction } from '../../machine/ts/machine/program/optimizer';
 import { CART_BASE_PC, CART_PROGRAM_VECTOR_PC, CART_PROGRAM_VECTOR_VALUE, SYSTEM_BASE_PC } from '../../machine/ts/machine/program/layout';
 import { Memory } from '../../machine/ts/machine/memory/memory';
+import { PROGRAM_BSS_BASE, RAM_END } from '../../machine/ts/machine/memory/map';
 
 type EncodedWord = {
 	op: OpCode;
@@ -58,6 +59,7 @@ function makeProgramImage(
 	const code = buildCode(words);
 	return {
 		entryProtoIndex: 0,
+		sectionInitProtoIndex: 0,
 		sections: {
 			text: {
 				code,
@@ -69,10 +71,11 @@ function makeProgramImage(
 				staticModulePaths: [],
 			},
 			data: { bytes: new Uint8Array(0) },
-			bss: { byteCount: 0 },
+			bss: { byteCount: 0, symbols: [] },
 		},
 		link: {
 			constRelocs: Array.from(constRelocs),
+			constValueRelocs: [],
 		},
 	};
 }
@@ -726,15 +729,95 @@ test('ProgramLinker owns linked boot entry selection', () => {
 	cartImage.sections.rodata.staticModulePaths = ['cart/init'];
 	const systemBoot = linkBootProgramImages(systemImage, null, cartImage, null, 'system');
 	assert.equal(systemBoot.entryProtoIndex, systemImage.entryProtoIndex);
+	assert.equal(systemBoot.bssBaseAddress, PROGRAM_BSS_BASE);
 	assert.deepEqual(systemBoot.staticModulePaths, ['system/init']);
 	assert.equal(systemBoot.cartEntryProtoIndex, 1);
 	assert.deepEqual(systemBoot.cartStaticModulePaths, ['cart/init']);
 
 	const cartBoot = linkBootProgramImages(systemImage, null, cartImage, null, 'cart');
 	assert.equal(cartBoot.entryProtoIndex, 1);
+	assert.equal(cartBoot.bssBaseAddress, PROGRAM_BSS_BASE);
 	assert.deepEqual(cartBoot.staticModulePaths, ['system/init', 'cart/init']);
 	assert.equal(cartBoot.cartEntryProtoIndex, 1);
 	assert.deepEqual(cartBoot.cartStaticModulePaths, ['cart/init']);
+});
+
+test('ProgramLinker resolves .bss address constants and boot section-init indices', () => {
+	const systemImage = makeProgramImage(
+		[{ op: OpCode.RET, a: 0, b: 1, c: 0 }],
+		[0],
+		[],
+	);
+	systemImage.sections.bss = {
+		byteCount: 4,
+		symbols: [{ name: 'system_counter', offset: 0, byteCount: 4, alignment: 4 }],
+	};
+	systemImage.link.constValueRelocs = [{ constIndex: 0, kind: 'bss_addr', symbol: 'system_counter', addend: 0 }];
+	const cartImage = makeProgramImage(
+		[{ op: OpCode.RET, a: 0, b: 1, c: 0 }],
+		[0],
+		[],
+	);
+	cartImage.sections.bss = {
+		byteCount: 8,
+		symbols: [{ name: 'cart_state', offset: 0, byteCount: 8, alignment: 4 }],
+	};
+	cartImage.link.constValueRelocs = [{ constIndex: 0, kind: 'bss_addr', symbol: 'cart_state', addend: 4 }];
+
+	const linked = linkProgramImages(systemImage, null, cartImage, null);
+	assert.deepEqual(linked.programImage.sections.rodata.constPool, [PROGRAM_BSS_BASE, PROGRAM_BSS_BASE + 8]);
+	assert.equal(linked.programImage.sections.bss.byteCount, 12);
+	assert.deepEqual(linked.programImage.sections.bss.symbols, [
+		{ name: 'system_counter', offset: 0, byteCount: 4, alignment: 4 },
+		{ name: 'cart_state', offset: 4, byteCount: 8, alignment: 4 },
+	]);
+	assert.deepEqual(linked.programImage.link.constValueRelocs, []);
+	assert.equal(linked.systemBssBaseAddress, PROGRAM_BSS_BASE);
+	assert.equal(linked.cartBssBaseAddress, PROGRAM_BSS_BASE + 4);
+	assert.equal(linked.systemSectionInitProtoIndex, 0);
+	assert.equal(linked.cartSectionInitProtoIndex, 1);
+
+	const systemBoot = linkBootProgramImages(systemImage, null, cartImage, null, 'system');
+	assert.equal(systemBoot.sectionInitProtoIndex, 0);
+	assert.equal(systemBoot.bssBaseAddress, PROGRAM_BSS_BASE);
+	const cartBoot = linkBootProgramImages(systemImage, null, cartImage, null, 'cart');
+	assert.equal(cartBoot.sectionInitProtoIndex, 1);
+	assert.equal(cartBoot.bssBaseAddress, PROGRAM_BSS_BASE + 4);
+});
+
+test('inflateExecutableProgramImage resolves .bss constants against the image bss base', () => {
+	const image = makeProgramImage(
+		[{ op: OpCode.RET, a: 0, b: 1, c: 0 }],
+		[0],
+		[],
+	);
+	image.sections.bss = {
+		byteCount: 8,
+		symbols: [{ name: 'cart_state', offset: 4, byteCount: 4, alignment: 4 }],
+	};
+	image.link.constValueRelocs = [{ constIndex: 0, kind: 'bss_addr', symbol: 'cart_state', addend: 0 }];
+
+	const program = inflateExecutableProgramImage(image, null, PROGRAM_BSS_BASE + 16);
+	assert.deepEqual(program.constPool, [PROGRAM_BSS_BASE + 20]);
+});
+
+test('ProgramLinker rejects .bss ranges outside RAM', () => {
+	const systemImage = makeProgramImage(
+		[{ op: OpCode.RET, a: 0, b: 1, c: 0 }],
+		[],
+		[],
+	);
+	systemImage.sections.bss.byteCount = RAM_END - PROGRAM_BSS_BASE + 4;
+	const cartImage = makeProgramImage(
+		[{ op: OpCode.RET, a: 0, b: 1, c: 0 }],
+		[],
+		[],
+	);
+
+	assert.throws(
+		() => linkProgramImages(systemImage, null, cartImage, null),
+		/\.bss range .* exceeds RAM end/,
+	);
 });
 
 test('ProgramLinker resolves system export-proto relocations before layout merge', () => {

@@ -11,6 +11,7 @@ import { resolveLuaSourceRecord, type LuaSourceRegistry } from '../../machine/pr
 import { ROM_ASSET_SYMBOL_MODULE_PATH } from '../../rompack/asset_symbols';
 import { logDebugState } from '../../machine/runtime/debug';
 import { addTrackedLuaHeapBytes, resetTrackedLuaHeapBytes } from '../../machine/memory/lua_heap_usage';
+import { PROGRAM_BSS_BASE } from '../../machine/memory/map';
 import { resetHandledLuaErrors } from './fault_state';
 import {
 	buildModuleProtoMap,
@@ -267,8 +268,12 @@ function bootSystemSourceProgram(runtime: Runtime, interpreter: LuaInterpreter, 
 	let programImage = system.image;
 	let metadata: ProgramMetadata = system.symbols;
 	let entryProtoIndex = system.image.entryProtoIndex;
+	let sectionInitProtoIndex = system.image.sectionInitProtoIndex;
 	let staticModulePaths: ReadonlyArray<string> = system.image.sections.rodata.staticModulePaths;
 	runtime.cartEntryProtoIndex = null;
+	runtime.cartSectionInitProtoIndex = null;
+	runtime.cartBssBaseAddress = null;
+	runtime.programBssBaseAddress = PROGRAM_BSS_BASE;
 	runtime.cartStaticModulePaths = [];
 	let cartProgramImage: ProgramImage | null = null;
 	let cartSymbols: ProgramSymbolsImage | null = null;
@@ -286,8 +291,10 @@ function bootSystemSourceProgram(runtime: Runtime, interpreter: LuaInterpreter, 
 		programImage = linked.programImage;
 		metadata = linked.metadata;
 		entryProtoIndex = linked.entryProtoIndex;
+		sectionInitProtoIndex = linked.sectionInitProtoIndex;
 		staticModulePaths = linked.staticModulePaths;
-		runtime.setLinkedCartEntry(linked.cartEntryProtoIndex, linked.cartStaticModulePaths);
+		runtime.programBssBaseAddress = linked.bssBaseAddress;
+		runtime.setLinkedCartEntry(linked.cartEntryProtoIndex, linked.cartSectionInitProtoIndex, linked.cartBssBaseAddress, linked.cartStaticModulePaths);
 	}
 	runtime.cartEntryAvailable = true;
 	runtime._luaPath = system.entryPath;
@@ -295,10 +302,10 @@ function bootSystemSourceProgram(runtime: Runtime, interpreter: LuaInterpreter, 
 		resetRuntimeState(runtime);
 	}
 	installProgramModules(runtime, buildModuleProtoMap(programImage.sections.rodata.moduleProtos));
-	const program = inflateExecutableProgramImage(programImage, metadata);
+	const program = inflateExecutableProgramImage(programImage, metadata, runtime.programBssBaseAddress);
 	runtime.machine.cpu.setProgram(program, metadata);
 	runtime.programMetadata = metadata;
-	runtime.startLoadedProgram(entryProtoIndex, staticModulePaths, options?.runInit !== false, true);
+	runtime.startLoadedProgram(entryProtoIndex, sectionInitProtoIndex, staticModulePaths, options?.runInit !== false, true);
 	return true;
 }
 
@@ -308,8 +315,12 @@ function bootProgramImage(runtime: Runtime, options?: { preserveState?: boolean;
 	let programImage = systemImages.program;
 	let metadata: ProgramMetadata | null = systemImages.symbols;
 	let entryProtoIndex = systemImages.program.entryProtoIndex;
+	let sectionInitProtoIndex = systemImages.program.sectionInitProtoIndex;
 	let staticModulePaths: ReadonlyArray<string> = systemImages.program.sections.rodata.staticModulePaths;
 	runtime.cartEntryProtoIndex = null;
+	runtime.cartSectionInitProtoIndex = null;
+	runtime.cartBssBaseAddress = null;
+	runtime.programBssBaseAddress = PROGRAM_BSS_BASE;
 	runtime.cartStaticModulePaths = [];
 	if (runtime.cartRomSource) {
 		const cartEntry = runtime.cartRomSource.getEntry(PROGRAM_IMAGE_ID);
@@ -319,8 +330,10 @@ function bootProgramImage(runtime: Runtime, options?: { preserveState?: boolean;
 			programImage = linked.programImage;
 			metadata = linked.metadata;
 			entryProtoIndex = linked.entryProtoIndex;
+			sectionInitProtoIndex = linked.sectionInitProtoIndex;
 			staticModulePaths = linked.staticModulePaths;
-			runtime.setLinkedCartEntry(linked.cartEntryProtoIndex, linked.cartStaticModulePaths);
+			runtime.programBssBaseAddress = linked.bssBaseAddress;
+			runtime.setLinkedCartEntry(linked.cartEntryProtoIndex, linked.cartSectionInitProtoIndex, linked.cartBssBaseAddress, linked.cartStaticModulePaths);
 		}
 	}
 	runtime.cartEntryAvailable = true;
@@ -334,11 +347,11 @@ function bootProgramImage(runtime: Runtime, options?: { preserveState?: boolean;
 	const protoMap = buildModuleProtoMap(programImage.sections.rodata.moduleProtos);
 	installProgramModules(runtime, protoMap);
 
-	const inflated = inflateExecutableProgramImage(programImage, metadata);
+	const inflated = inflateExecutableProgramImage(programImage, metadata, runtime.programBssBaseAddress);
 	try {
 		runtime.machine.cpu.setProgram(inflated, metadata);
 		runtime.programMetadata = metadata;
-		runtime.startLoadedProgram(entryProtoIndex, staticModulePaths, options?.runInit !== false, true);
+		runtime.startLoadedProgram(entryProtoIndex, sectionInitProtoIndex, staticModulePaths, options?.runInit !== false, true);
 		return true;
 	} catch (error) {
 		console.info('Program-image boot failed.');
@@ -388,15 +401,16 @@ function bootLuaProgram(runtime: Runtime, options?: { preserveState?: boolean; s
 			constModulePaths: [ROM_ASSET_SYMBOL_MODULE_PATH],
 		});
 		const programImage = encodeCompiledProgramImage(compiled);
-		const program = inflateExecutableProgramImage(programImage, compiled.metadata);
+		runtime.programBssBaseAddress = PROGRAM_BSS_BASE;
+		const program = inflateExecutableProgramImage(programImage, compiled.metadata, runtime.programBssBaseAddress);
 		installProgramModules(runtime, buildModuleProtoMap(programImage.sections.rodata.moduleProtos));
 		runtime.machine.cpu.setProgram(program, compiled.metadata);
 		runtime.programMetadata = compiled.metadata;
-		runtime.startLoadedProgram(programImage.entryProtoIndex, programImage.sections.rodata.staticModulePaths, true, true);
+		runtime.startLoadedProgram(programImage.entryProtoIndex, programImage.sectionInitProtoIndex, programImage.sections.rodata.staticModulePaths, true, true);
 		return true;
 	}
 	catch (error) {
-		console.info(`Lua boot '${path}' failed.`);
+		console.error(`Lua boot '${path}' failed.`);
 		logDebugState(runtime);
 		throw convertToError(error);
 	}

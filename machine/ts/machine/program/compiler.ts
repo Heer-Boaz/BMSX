@@ -29,6 +29,7 @@ import {
 	type LuaSizeOfExpression,
 	type LuaStringLiteralExpression,
 	type LuaStructDeclarationStatement,
+	type LuaBssDeclarationStatement,
 	type LuaStructFieldDeclaration,
 	type LuaReturnStatement,
 	type LuaTypeReference,
@@ -44,6 +45,9 @@ import {
 	encodeProgramObjectSections,
 	toLuaModulePath,
 	type ProgramConstReloc,
+	type ProgramConstValueReloc,
+	type ProgramBssSection,
+	type ProgramBssSymbol,
 	type ProgramImage,
 } from './loader';
 import { StringPool } from '../cpu/string_pool';
@@ -71,37 +75,50 @@ export type CompiledProgram = {
 	program: Program;
 	metadata: ProgramMetadata;
 	entryProtoIndex: number;
+	sectionInitProtoIndex: number;
 	moduleProtoMap: Map<string, number>;
 	staticModulePaths: string[];
 	constRelocs: ProgramConstReloc[];
+	constValueRelocs: ProgramConstValueReloc[];
+	bss: ProgramBssSection;
 };
 
 export type AppendedProgram = {
 	program: Program;
 	metadata: ProgramMetadata;
 	entryProtoIndex: number;
+	sectionInitProtoIndex: number;
 	constRelocs: ProgramConstReloc[];
+	constValueRelocs: ProgramConstValueReloc[];
+	bss: ProgramBssSection;
 };
 
 const encodeCompilerProgramImage = (
 	program: Program,
 	entryProtoIndex: number,
+	sectionInitProtoIndex: number,
 	moduleProtos: Array<{ path: string; protoIndex: number }>,
 	staticModulePaths: string[],
 	constRelocs: ProgramConstReloc[],
+	constValueRelocs: ProgramConstValueReloc[],
+	bss: ProgramBssSection,
 ): ProgramImage => ({
 	entryProtoIndex,
-	sections: encodeProgramObjectSections(program, moduleProtos, staticModulePaths),
-	link: { constRelocs },
+	sectionInitProtoIndex,
+	sections: encodeProgramObjectSections(program, moduleProtos, staticModulePaths, bss),
+	link: { constRelocs, constValueRelocs },
 });
 
 export function encodeCompiledProgramImage(compiled: CompiledProgram): ProgramImage {
 	return encodeCompilerProgramImage(
 		compiled.program,
 		compiled.entryProtoIndex,
+		compiled.sectionInitProtoIndex,
 		Array.from(compiled.moduleProtoMap, ([path, protoIndex]) => ({ path, protoIndex })),
 		compiled.staticModulePaths,
 		compiled.constRelocs,
+		compiled.constValueRelocs,
+		compiled.bss,
 	);
 }
 
@@ -109,7 +126,7 @@ export function encodeCompiledProgramImage(compiled: CompiledProgram): ProgramIm
 // program, so it introduces no module/static-module protos of its own: the executable
 // image carries an empty module map and no static-module paths.
 export function encodeAppendedProgramImage(compiled: AppendedProgram): ProgramImage {
-	return encodeCompilerProgramImage(compiled.program, compiled.entryProtoIndex, [], [], compiled.constRelocs);
+	return encodeCompilerProgramImage(compiled.program, compiled.entryProtoIndex, compiled.sectionInitProtoIndex, [], [], compiled.constRelocs, compiled.constValueRelocs, compiled.bss);
 }
 
 export type LuaCompileError = {
@@ -248,6 +265,16 @@ type StructView = {
 	type: StructResolvedType;
 };
 
+type BssBinding = {
+	symbolHandle: string;
+	name: string;
+	symbol: string;
+	offset: number;
+	byteCount: number;
+	alignment: number;
+	type: StructResolvedType;
+};
+
 type StructAddress = {
 	baseReg: number;
 	byteOffset: number;
@@ -330,6 +357,9 @@ class ProgramBuilder {
 	private readonly exportProtoIdBySlot: { [slotName: string]: string } = {};
 	public readonly structDeclarations = new Map<string, LuaStructDeclarationStatement>();
 	public readonly structLayouts = new Map<string, StructLayout>();
+	private readonly bssBindingsBySymbolHandle = new Map<string, BssBinding>();
+	private readonly constValueRelocs: ProgramConstValueReloc[] = [];
+	private bssByteCount = 0;
 	private readonly protoIdMap: Map<string, number> = new Map();
 	private readonly assignedProtoIds: Set<string> = new Set();
 
@@ -399,11 +429,79 @@ class ProgramBuilder {
 		return index;
 	}
 
+	public constValueRelocIndex(kind: ProgramConstValueReloc['kind'], symbol: string, addend: number): number {
+		const index = this.constPool.length;
+		this.constPool.push(0);
+		this.constValueRelocs.push({
+			constIndex: index,
+			kind,
+			symbol,
+			addend,
+		});
+		return index;
+	}
+
 	public resolveGlobalAccess(name: string): { system: boolean; slot: number } {
 		if (this.systemGlobalNameSet.has(name)) {
 			return { system: true, slot: this.resolveSystemGlobalSlot(name) };
 		}
 		return { system: false, slot: this.resolveGlobalSlot(name) };
+	}
+
+	public recordBss(symbolHandle: string, moduleId: string, name: string, type: StructResolvedType): BssBinding {
+		const existing = this.bssBindingsBySymbolHandle.get(symbolHandle);
+		if (existing !== undefined) {
+			return existing;
+		}
+		const offset = this.alignBssOffset(this.bssByteCount, type.alignment);
+		const binding: BssBinding = {
+			symbolHandle,
+			name,
+			symbol: `${buildModuleRootId(moduleId)}/bss:${name}`,
+			offset,
+			byteCount: type.size,
+			alignment: type.alignment,
+			type,
+		};
+		this.bssBindingsBySymbolHandle.set(symbolHandle, binding);
+		this.bssByteCount = this.alignBssOffset(offset + type.size, 4);
+		return binding;
+	}
+
+	public resolveBss(symbolHandle: string): BssBinding | null {
+		const binding = this.bssBindingsBySymbolHandle.get(symbolHandle);
+		return binding === undefined ? null : binding;
+	}
+
+	public buildBssSection(): ProgramBssSection {
+		const symbols: ProgramBssSymbol[] = [];
+		for (const binding of this.bssBindingsBySymbolHandle.values()) {
+			symbols.push({
+				name: binding.symbol,
+				offset: binding.offset,
+				byteCount: binding.byteCount,
+				alignment: binding.alignment,
+			});
+		}
+		return {
+			byteCount: this.bssByteCount,
+			symbols,
+		};
+	}
+
+	public bssInitBinding(): BssBinding | null {
+		for (const binding of this.bssBindingsBySymbolHandle.values()) {
+			return binding;
+		}
+		return null;
+	}
+
+	public getBssByteCount(): number {
+		return this.bssByteCount;
+	}
+
+	private alignBssOffset(offset: number, alignment: number): number {
+		return (offset + alignment - 1) & ~(alignment - 1);
 	}
 
 	public registerStructDeclaration(statement: LuaStructDeclarationStatement): void {
@@ -511,7 +609,7 @@ class ProgramBuilder {
 		this.protoIdMap.set(protoId, index);
 	}
 
-	public buildProgram(): { program: Program; metadata: ProgramMetadata; constRelocs: ProgramConstReloc[] } {
+	public buildProgram(): { program: Program; metadata: ProgramMetadata; constRelocs: ProgramConstReloc[]; constValueRelocs: ProgramConstValueReloc[]; bss: ProgramBssSection } {
 		let fixedEndBytes = this.baseCode ? this.baseCode.byteLength : 0;
 		let appendedBytes = 0;
 		for (let i = 0; i < this.protoCode.length; i += 1) {
@@ -604,6 +702,8 @@ class ProgramBuilder {
 			},
 			metadata,
 			constRelocs: fullConstRelocs,
+			constValueRelocs: this.constValueRelocs.slice(),
+			bss: this.buildBssSection(),
 		};
 	}
 
@@ -678,6 +778,8 @@ const buildModuleRootId = (moduleId: string): string => `module:${moduleId}`;
 const buildEntryProtoId = (moduleId: string): string => `${buildModuleRootId(moduleId)}/entry`;
 
 const buildModuleProtoId = (moduleId: string): string => `${buildModuleRootId(moduleId)}/module`;
+
+const buildSectionInitProtoId = (moduleId: string): string => `${buildModuleRootId(moduleId)}/section_init`;
 
 const buildAnonymousHint = (range: LuaSourceRange): string =>
 	`anon:${range.start.line}:${range.start.column}:${range.end.line}:${range.end.column}`;
@@ -777,6 +879,35 @@ class FunctionBuilder {
 		}
 		this.popScope();
 		this.withRange(expression.range, () => this.emitDefaultReturn());
+		this.finalizeLabels();
+	}
+
+	public compileSectionInit(range: LuaSourceRange): void {
+		this.withRange(range, () => {
+			const bssByteCount = this.program.getBssByteCount();
+			const bssInit = this.program.bssInitBinding();
+			if (bssByteCount !== 0 && bssInit !== null) {
+				const addrReg = this.allocTemp();
+				const countReg = this.allocTemp();
+				const zeroReg = this.allocTemp();
+				const wordBytesReg = this.allocTemp();
+				const oneReg = this.allocTemp();
+				this.emitLoadBssAddress(addrReg, bssInit, -bssInit.offset);
+				this.emitLoadConst(countReg, bssByteCount >> 2);
+				this.emitLoadConst(zeroReg, 0);
+				this.emitLoadConst(wordBytesReg, 4);
+				this.emitLoadConst(oneReg, 1);
+				const loopStart = this.code.length;
+				this.emitABC(OpCode.EQ, 1, countReg, zeroReg);
+				const jumpOut = this.emitJumpPlaceholder();
+				this.emitABC(OpCode.STORE_MEM, zeroReg, addrReg, MemoryAccessKind.Word);
+				this.emitABC(OpCode.ADD, addrReg, addrReg, wordBytesReg);
+				this.emitABC(OpCode.SUB, countReg, countReg, oneReg);
+				this.emitAsBx(OpCode.JMP, 0, loopStart - (this.code.length + 1));
+				this.patchJump(jumpOut, this.code.length);
+			}
+			this.emitDefaultReturn();
+		});
 		this.finalizeLabels();
 	}
 
@@ -1429,6 +1560,17 @@ class FunctionBuilder {
 		return this.resolveCompileTimeConstBinding(symbolHandle);
 	}
 
+	private resolveReferenceBssBinding(reference: LuaBoundReference): BssBinding | null {
+		if (reference.decl?.kind === 'bss') {
+			return this.program.resolveBss(reference.decl.id);
+		}
+		const symbolHandle = getResolvedReferenceSymbolHandle(reference);
+		if (!symbolHandle) {
+			return null;
+		}
+		return this.program.resolveBss(symbolHandle);
+	}
+
 	private resolveReferenceConstClosureBinding(reference: LuaBoundReference): LocalBinding | null {
 		const symbolHandle = getResolvedReferenceSymbolHandle(reference);
 		if (!symbolHandle) {
@@ -1646,6 +1788,11 @@ class FunctionBuilder {
 			this.emitLoadConst(target, constBinding.constValue);
 			return;
 		}
+		const bssBinding = this.resolveReferenceBssBinding(reference);
+		if (bssBinding !== null) {
+			this.emitLoadBssAddress(target, bssBinding, 0);
+			return;
+		}
 		const localReg = this.resolveReferenceLocal(reference);
 		if (localReg !== null) {
 			if (localReg !== target) {
@@ -1733,6 +1880,9 @@ class FunctionBuilder {
 		const visibleBinding = this.resolveReferenceVisibleBinding(reference);
 		if (visibleBinding !== null && visibleBinding.kind === 'const') {
 			throw new Error(`[Compiler] '${name}' is a constant local and cannot be assigned.`);
+		}
+		if (this.resolveReferenceBssBinding(reference) !== null) {
+			throw new Error(`[Compiler] '${name}' is .bss storage; assign through a typed pointer or field.`);
 		}
 		const upvalue = this.resolveReferenceUpvalue(reference);
 		if (upvalue !== null) {
@@ -1956,6 +2106,11 @@ class FunctionBuilder {
 			}
 		}
 		const index = this.program.constIndex(normalizedValue);
+		this.emitABx(OpCode.LOADK, target, index);
+	}
+
+	private emitLoadBssAddress(target: number, binding: BssBinding, byteOffset: number): void {
+		const index = this.program.constValueRelocIndex('bss_addr', binding.symbol, byteOffset);
 		this.emitABx(OpCode.LOADK, target, index);
 	}
 
@@ -2229,10 +2384,19 @@ class FunctionBuilder {
 					return;
 				case LuaSyntaxKind.StructDeclarationStatement:
 					return;
+				case LuaSyntaxKind.BssDeclarationStatement:
+					this.compileBssDeclaration(statement as LuaBssDeclarationStatement);
+					return;
 				default:
 					throw new Error(`Unsupported statement kind: ${(statement as LuaStatement).kind}`);
 			}
 		});
+	}
+
+	private compileBssDeclaration(statement: LuaBssDeclarationStatement): void {
+		const decl = this.requireBoundDeclaration(statement.name.range, `bss '${statement.name.name}'`);
+		const type = this.resolveStructTypeReference(statement.typeRef);
+		this.program.recordBss(decl.id, this.moduleId, statement.name.name, type);
 	}
 
 	private compileLocalAssignment(statement: LuaLocalAssignmentStatement): void {
@@ -2483,6 +2647,9 @@ class FunctionBuilder {
 				const visibleBinding = this.resolveReferenceVisibleBinding(reference);
 				if (visibleBinding !== null && visibleBinding.kind === 'const') {
 					throw new Error(`[Compiler] '${name}' is a constant local and cannot be assigned.`);
+				}
+				if (this.resolveReferenceBssBinding(reference) !== null) {
+					throw new Error(`[Compiler] '${name}' is .bss storage; assign through a typed pointer or field.`);
 				}
 				const upvalue = this.resolveReferenceUpvalue(reference);
 				if (upvalue !== null) {
@@ -3274,6 +3441,17 @@ class FunctionBuilder {
 		switch (expression.kind) {
 			case LuaSyntaxKind.IdentifierExpression: {
 				const reference = getResolvedIdentifierReference(this.semantics, expression as LuaIdentifierExpression);
+				const bssBinding = this.resolveReferenceBssBinding(reference);
+				if (bssBinding !== null) {
+					const baseReg = this.allocTemp();
+					this.emitLoadBssAddress(baseReg, bssBinding, 0);
+					return {
+						baseReg,
+						byteOffset: 0,
+						type: bssBinding.type,
+						pointerIndex: true,
+					};
+				}
 				const binding = this.resolveReferenceVisibleBinding(reference);
 				if (binding === null || binding.structView === null) {
 					return null;
@@ -4416,7 +4594,34 @@ function compileFunctionExpression(
 			maxStack: builder.getMaxStack(),
 			upvalueDescs: builder.getUpvalueDescs(),
 			staticClosure: false,
-		}, code, ranges, constRelocs, localSlots, builder.getUpvalueNames(), protoId, instructionSet);
+	}, code, ranges, constRelocs, localSlots, builder.getUpvalueNames(), protoId, instructionSet);
+	return protoIndex;
+}
+
+function compileSectionInitProto(
+	program: ProgramBuilder,
+	moduleId: string,
+	range: LuaSourceRange,
+	semantics: LuaSemanticFrontendFile,
+	frontend: LuaSemanticFrontend,
+): number {
+	const protoId = buildSectionInitProtoId(moduleId);
+	const builder = new FunctionBuilder(program, null, { moduleId, protoId, semantics, frontend });
+	builder.compileSectionInit(range);
+	const code = builder.getCode();
+	const ranges = builder.getRanges();
+	const constRelocs = builder.getConstRelocs();
+	const instructionSet = builder.getInstructionSet();
+	const protoIndex = program.addProto({
+		entryPC: 0,
+		codeLen: ranges.length * INSTRUCTION_BYTES,
+		numParams: 0,
+		isVararg: false,
+		maxStack: builder.getMaxStack(),
+		upvalueDescs: [],
+		staticClosure: true,
+	}, code, ranges, constRelocs, [], [], protoId, instructionSet);
+	program.markStaticClosureProto(protoIndex);
 	return protoIndex;
 }
 
@@ -4472,6 +4677,7 @@ export function compileLuaChunkToProgram(chunk: LuaChunk, modules: ReadonlyArray
 	const moduleId = chunk.range.path;
 	const entryProtoId = buildEntryProtoId(moduleId);
 	let entryProtoIndex = -1;
+	let sectionInitProtoIndex = -1;
 	const entryBuilder = new FunctionBuilder(programBuilder, null, {
 		moduleId,
 		protoId: entryProtoId,
@@ -4547,7 +4753,8 @@ export function compileLuaChunkToProgram(chunk: LuaChunk, modules: ReadonlyArray
 	if (compileErrors.length > 0) {
 		throw new Error(buildCompileFailureMessage(compileErrors));
 	}
-	const { program, metadata, constRelocs } = programBuilder.buildProgram();
+	sectionInitProtoIndex = compileSectionInitProto(programBuilder, moduleId, chunk.range, frontend.getFile(chunk.range.path), frontend);
+	const { program, metadata, constRelocs, constValueRelocs, bss } = programBuilder.buildProgram();
 
 	// Ensure module export slot names (built during module compile-info collection)
 	// are present in the program metadata so linkers can resolve symbolic module slots.
@@ -4575,9 +4782,12 @@ export function compileLuaChunkToProgram(chunk: LuaChunk, modules: ReadonlyArray
 		program,
 		metadata,
 		entryProtoIndex,
+		sectionInitProtoIndex,
 		moduleProtoMap,
 		staticModulePaths: moduleCompileContext.staticExternalModulePaths,
 		constRelocs,
+		constValueRelocs,
+		bss,
 	};
 }
 
@@ -4599,6 +4809,7 @@ export function appendLuaChunkToProgram(base: Program, programMetadata: ProgramM
 	const moduleId = chunk.range.path;
 	const entryProtoId = buildEntryProtoId(moduleId);
 	let entryProtoIndex = -1;
+	let sectionInitProtoIndex = -1;
 	const entryBuilder = new FunctionBuilder(programBuilder, null, {
 		moduleId,
 		protoId: entryProtoId,
@@ -4631,8 +4842,9 @@ export function appendLuaChunkToProgram(base: Program, programMetadata: ProgramM
 	if (compileErrors.length > 0) {
 		throw new Error(buildCompileFailureMessage(compileErrors));
 	}
-	const { program, metadata, constRelocs } = programBuilder.buildProgram();
-	return { program, metadata, entryProtoIndex, constRelocs };
+	sectionInitProtoIndex = compileSectionInitProto(programBuilder, moduleId, chunk.range, frontend.getFile(chunk.range.path), frontend);
+	const { program, metadata, constRelocs, constValueRelocs, bss } = programBuilder.buildProgram();
+	return { program, metadata, entryProtoIndex, sectionInitProtoIndex, constRelocs, constValueRelocs, bss };
 }
 // end normalized-body-acceptable
 // end repeated-sequence-acceptable

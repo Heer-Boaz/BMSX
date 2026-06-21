@@ -25,15 +25,22 @@ import type {
 	EncodedValue,
 	ProgramImage,
 	ProgramConstReloc,
+	ProgramConstValueReloc,
+	ProgramBssSymbol,
 	ProgramSymbolsImage,
 } from './loader';
 import { inflateProgram } from './loader';
+import { PROGRAM_BSS_BASE, RAM_END } from '../memory/map';
 
 export type LinkedProgramImage = {
 	programImage: ProgramImage;
 	metadata: ProgramMetadata | null;
 	systemEntryProtoIndex: number;
 	cartEntryProtoIndex: number;
+	systemSectionInitProtoIndex: number;
+	cartSectionInitProtoIndex: number;
+	systemBssBaseAddress: number;
+	cartBssBaseAddress: number;
 	systemStaticModulePaths: ReadonlyArray<string>;
 	cartStaticModulePaths: ReadonlyArray<string>;
 };
@@ -44,8 +51,12 @@ export type LinkedBootProgramImage = {
 	programImage: ProgramImage;
 	metadata: ProgramMetadata | null;
 	entryProtoIndex: number;
+	sectionInitProtoIndex: number;
+	bssBaseAddress: number;
 	staticModulePaths: ReadonlyArray<string>;
 	cartEntryProtoIndex: number;
+	cartSectionInitProtoIndex: number;
+	cartBssBaseAddress: number;
 	cartStaticModulePaths: ReadonlyArray<string>;
 };
 
@@ -103,6 +114,48 @@ const mergeConstPools = (
 		cartConstRemap[index] = nextIndex;
 	}
 	return { constPool, cartConstRemap };
+};
+
+const assertBssFitsRam = (baseAddress: number, byteCount: number): void => {
+	if (baseAddress > RAM_END || byteCount > RAM_END - baseAddress) {
+		throw new Error(`[ProgramLinker] .bss range ${baseAddress}+${byteCount} exceeds RAM end ${RAM_END}.`);
+	}
+};
+
+const resolveBssSymbolAddress = (
+	symbols: ReadonlyArray<ProgramBssSymbol>,
+	baseAddress: number,
+	symbolName: string,
+	addend: number,
+): number => {
+	for (let index = 0; index < symbols.length; index += 1) {
+		const symbol = symbols[index];
+		if (symbol.name === symbolName) {
+			return baseAddress + symbol.offset + addend;
+		}
+	}
+	throw new Error(`[ProgramLinker] Missing .bss symbol '${symbolName}'.`);
+};
+
+const resolveConstValueRelocations = (
+	constPool: ReadonlyArray<EncodedValue>,
+	relocs: ReadonlyArray<ProgramConstValueReloc>,
+	bssSymbols: ReadonlyArray<ProgramBssSymbol>,
+	bssBaseAddress: number,
+): EncodedValue[] => {
+	if (relocs.length === 0) {
+		return constPool.slice();
+	}
+	const out = constPool.slice();
+	for (let index = 0; index < relocs.length; index += 1) {
+		const reloc = relocs[index];
+		switch (reloc.kind) {
+			case 'bss_addr':
+				out[reloc.constIndex] = resolveBssSymbolAddress(bssSymbols, bssBaseAddress, reloc.symbol, reloc.addend);
+				break;
+		}
+	}
+	return out;
 };
 
 const mergeNamedSlots = (
@@ -297,8 +350,21 @@ export const resolveRuntimeProgramRelocations = (
 export const inflateExecutableProgramImage = (
 	programImage: ProgramImage,
 	metadata: ProgramMetadata | null,
+	bssBaseAddress: number = PROGRAM_BSS_BASE,
 ): Program => {
-	const program = inflateProgram(programImage.sections);
+	assertBssFitsRam(bssBaseAddress, programImage.sections.bss.byteCount);
+	const program = inflateProgram({
+		...programImage.sections,
+		rodata: {
+			...programImage.sections.rodata,
+			constPool: resolveConstValueRelocations(
+				programImage.sections.rodata.constPool,
+				programImage.link.constValueRelocs,
+				programImage.sections.bss.symbols,
+				bssBaseAddress,
+			),
+		},
+	});
 	if (programImage.link.constRelocs.length !== 0) {
 		if (metadata === null) {
 			throw new Error('program image relocations require metadata.');
@@ -568,6 +634,10 @@ export const linkProgramImages = (
 	const systemInstructionCount = systemCodeBytes / INSTRUCTION_BYTES;
 	const cartInstructionCount = cartCodeBytes / INSTRUCTION_BYTES;
 	const resolvedLayout = resolveProgramLayout(systemCodeBytes, systemBasePc, cartBasePc);
+	const systemBssBase = PROGRAM_BSS_BASE;
+	const cartBssBase = PROGRAM_BSS_BASE + systemImage.sections.bss.byteCount;
+	const linkedBssByteCount = systemImage.sections.bss.byteCount + cartImage.sections.bss.byteCount;
+	assertBssFitsRam(systemBssBase, linkedBssByteCount);
 	const totalBytes = Math.max(
 		resolvedLayout.systemBasePc + systemCodeBytes,
 		resolvedLayout.cartBasePc + cartCodeBytes,
@@ -579,7 +649,10 @@ export const linkProgramImages = (
 	const systemCode = code.subarray(resolvedLayout.systemBasePc, resolvedLayout.systemBasePc + systemCodeBytes);
 	const cartCode = code.subarray(resolvedLayout.cartBasePc, resolvedLayout.cartBasePc + cartCodeBytes);
 	rewriteClosureIndices(cartCode, baseProtoCount);
-	const mergedConsts = mergeConstPools(systemRodata.constPool, cartRodata.constPool);
+	const mergedConsts = mergeConstPools(
+		resolveConstValueRelocations(systemRodata.constPool, systemImage.link.constValueRelocs, systemImage.sections.bss.symbols, systemBssBase),
+		resolveConstValueRelocations(cartRodata.constPool, cartImage.link.constValueRelocs, cartImage.sections.bss.symbols, cartBssBase),
+	);
 	const systemMetadata = systemSymbols;
 	const cartMetadata = cartSymbols;
 
@@ -678,6 +751,8 @@ export const linkProgramImages = (
 	dataBytes.set(cartImage.sections.data.bytes, systemImage.sections.data.bytes.length);
 	const systemEntryProtoIndex = systemImage.entryProtoIndex;
 	const cartEntryProtoIndex = cartImage.entryProtoIndex + baseProtoCount;
+	const systemSectionInitProtoIndex = systemImage.sectionInitProtoIndex;
+	const cartSectionInitProtoIndex = cartImage.sectionInitProtoIndex + baseProtoCount;
 	const metadata = mergeMetadata(
 		systemMetadata,
 		cartMetadata,
@@ -688,6 +763,7 @@ export const linkProgramImages = (
 
 	const linkedProgramImage: ProgramImage = {
 		entryProtoIndex: cartEntryProtoIndex,
+		sectionInitProtoIndex: cartSectionInitProtoIndex,
 		sections: {
 			text: {
 				code,
@@ -699,9 +775,17 @@ export const linkProgramImages = (
 				staticModulePaths,
 			},
 			data: { bytes: dataBytes },
-			bss: { byteCount: systemImage.sections.bss.byteCount + cartImage.sections.bss.byteCount },
+			bss: {
+				byteCount: linkedBssByteCount,
+				symbols: systemImage.sections.bss.symbols.concat(cartImage.sections.bss.symbols.map(symbol => ({
+					name: symbol.name,
+					offset: symbol.offset + systemImage.sections.bss.byteCount,
+					byteCount: symbol.byteCount,
+					alignment: symbol.alignment,
+				}))),
+			},
 		},
-		link: { constRelocs: [] },
+		link: { constRelocs: [], constValueRelocs: [] },
 	};
 
 	return {
@@ -709,6 +793,10 @@ export const linkProgramImages = (
 		metadata,
 		systemEntryProtoIndex,
 		cartEntryProtoIndex,
+		systemSectionInitProtoIndex,
+		cartSectionInitProtoIndex,
+		systemBssBaseAddress: systemBssBase,
+		cartBssBaseAddress: cartBssBase,
 		systemStaticModulePaths,
 		cartStaticModulePaths,
 	};
@@ -725,17 +813,25 @@ export const linkBootProgramImages = (
 ): LinkedBootProgramImage => {
 	const linked = linkProgramImages(systemImage, systemSymbols, cartImage, cartSymbols, systemBasePc, cartBasePc);
 	let entryProtoIndex = linked.systemEntryProtoIndex;
+	let sectionInitProtoIndex = linked.systemSectionInitProtoIndex;
+	let bssBaseAddress = linked.systemBssBaseAddress;
 	let staticModulePaths = linked.systemStaticModulePaths;
 	if (bootTarget === 'cart') {
 		entryProtoIndex = linked.cartEntryProtoIndex;
+		sectionInitProtoIndex = linked.cartSectionInitProtoIndex;
+		bssBaseAddress = linked.cartBssBaseAddress;
 		staticModulePaths = linked.programImage.sections.rodata.staticModulePaths;
 	}
 	return {
 		programImage: linked.programImage,
 		metadata: linked.metadata,
 		entryProtoIndex,
+		sectionInitProtoIndex,
+		bssBaseAddress,
 		staticModulePaths,
 		cartEntryProtoIndex: linked.cartEntryProtoIndex,
+		cartSectionInitProtoIndex: linked.cartSectionInitProtoIndex,
+		cartBssBaseAddress: linked.cartBssBaseAddress,
 		cartStaticModulePaths: linked.cartStaticModulePaths,
 	};
 };

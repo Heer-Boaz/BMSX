@@ -235,29 +235,35 @@ content-serializer.
 
 Status:
 
-- image-format heeft `rodata`, `data` en `bss`
-- TS/C++ linker behoudt en merge't `data`/`bss`
-- de huidige `rodata` is const-pool/module metadata; er is nog geen raw
+- `.bss` v1 is geïmplementeerd in TS en C++: BLua accepteert `bss name: Type`
+  declarations, de compiler reserveert typed zeroed RAM, en het object-image
+  draagt `.bss` symbols plus `bss_addr` const-value relocaties
+- linker/inflate resolven `.bss` symbolen naar concrete RAM VMA's;
+  single-image install krijgt een expliciete `.bss` base en bij een system+cart
+  link krijgt de cart `.bss` een VMA na de system `.bss`
+- de compiler genereert een static section-init proto; cold boot draait die proto
+  vóór static module initializers en user entry, zodat `.bss` zeroing gewone
+  CPU/memory-instructies is en geen runtime/installer section-parser
+- hot-resume geeft expliciet geen section-init proto door en reïnitialiseert live
+  cart-RAM dus niet
+- de huidige `rodata` blijft VM const-pool/module metadata; er is nog geen raw
   BLua-declared `.rodata` byte storage met symbols
-- `encodeProgramObjectSections` emit momenteel lege `data` en `bss`; BLua heeft
-  nog geen source-level storage-declaraties voor deze drie section-klassen
-- er is nog geen compiler/linker-generated startup-proloog dat `.bss` via gewone
-  CPU/memory-instructies initialiseert
-- runtime start nu static module initializers vóór `cpu.start(entryProtoIndex)`;
-  dat mag niet langs de toekomstige section-init-proloog heen blijven lopen
+- `.data` blijft leeg modelwerk: er is nog geen mapped ROM LMA en geen
+  startup-copy
+- linker/inflate weigeren `.bss` ranges die buiten RAM vallen
 
 Open audit-evidence:
 
-- static mutable state en persistent scratch storage worden nog in Lua-objecten
-  of handgekozen `mem[...]` ranges gelegd in plaats van in door de compiler
-  toegewezen secties
-- `.rodata`/`.data`/`.bss` hebben nog geen BLua-syntax, symboolnamen, alignment- en
+- static mutable state en persistent scratch storage worden nog vaak in
+  Lua-objecten of handgekozen `mem[...]` ranges gelegd; nieuwe code kan nu naar
+  compiler-toegewezen `.bss`, maar carts zijn nog niet breed gemigreerd
+- `.rodata` en `.data` hebben nog geen BLua-syntax, symboolnamen, alignment- en
   relocation-discipline
 - `.data` init-bytes hebben nog geen echte LMA in een CPU-leesbare ROM-window;
   bytes die alleen in `ProgramImage.sections.data.bytes` blijven zitten zijn
   metadata, geen geheugen
 
-Acceptatie:
+Acceptatie v1:
 
 - BLua heeft expliciete declaraties voor zeroed cart-RAM (`.bss`) met typed
   size/alignment

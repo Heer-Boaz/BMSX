@@ -81,7 +81,7 @@ public:
 	/**
 	 * Boot the runtime with a compiled program.
 	 */
-	void boot(const ProgramImage& image, ProgramMetadata* metadata, int entryProtoIndex, const std::vector<std::string>& staticModulePaths);
+	void boot(const ProgramImage& image, ProgramMetadata* metadata, int entryProtoIndex, int sectionInitProtoIndex, const std::vector<std::string>& staticModulePaths);
 	void handleLuaError(const std::string& message);
 
 	/**
@@ -109,7 +109,7 @@ public:
 	auto isRebootRequested() const -> bool { return m_rebootRequested; }
 	void clearRebootRequest() { m_rebootRequested = false; }
 	auto hasCartEntry() const -> bool { return m_cartEntryProtoIndex.has_value(); }
-	void setLinkedCartEntry(int entryProtoIndex, std::vector<std::string> staticModulePaths);
+	void setLinkedCartEntry(int entryProtoIndex, int sectionInitProtoIndex, uint32_t bssBaseAddress, std::vector<std::string> staticModulePaths);
 	void enterSystemFirmware();
 	void enterCartProgram();
 	void startCartProgram();
@@ -162,7 +162,7 @@ public:
 	 */
 	void registerNativeFunction(std::string_view name, NativeFunctionInvoke fn, std::optional<NativeFnCost> cost = std::nullopt);
 
-	void startLoadedProgram(int entryProtoIndex, const std::vector<std::string>& staticModulePaths, bool runInit, bool runNewGame);
+	void startLoadedProgram(int entryProtoIndex, int sectionInitProtoIndex, const std::vector<std::string>& staticModulePaths, bool runInit, bool runNewGame);
 	void finishLuaEntryLifecycle(bool runInit, bool runNewGame);
 	auto requireModule(const std::string& moduleName) -> Value;
 
@@ -234,6 +234,8 @@ private:
 	ProgramMetadata* m_programMetadata = nullptr;
 
 	std::optional<int> m_cartEntryProtoIndex;
+	std::optional<int> m_cartSectionInitProtoIndex;
+	std::optional<uint32_t> m_cartBssBaseAddress;
 	std::vector<std::string> m_cartStaticModulePaths;
 	bool m_cartProgramStarted = false;
 

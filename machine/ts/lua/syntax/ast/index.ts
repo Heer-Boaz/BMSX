@@ -30,6 +30,7 @@ export const enum LuaSyntaxKind {
 	DoStatement,
 	HaltUntilIrqStatement,
 	StructDeclarationStatement,
+	BssDeclarationStatement,
 	CallStatement,
 	GotoStatement,
 	LabelStatement,
@@ -87,6 +88,7 @@ export type LuaStatement =
 	| LuaDoStatement
 	| LuaHaltUntilIrqStatement
 	| LuaStructDeclarationStatement
+	| LuaBssDeclarationStatement
 	| LuaGotoStatement
 	| LuaLabelStatement
 	| LuaCallStatement;
@@ -235,6 +237,12 @@ export type LuaStructDeclarationStatement = LuaNode & {
 	readonly kind: LuaSyntaxKind.StructDeclarationStatement;
 	readonly name: LuaIdentifierExpression;
 	readonly fields: ReadonlyArray<LuaStructFieldDeclaration>;
+};
+
+export type LuaBssDeclarationStatement = LuaNode & {
+	readonly kind: LuaSyntaxKind.BssDeclarationStatement;
+	readonly name: LuaIdentifierExpression;
+	readonly typeRef: LuaTypeReference;
 };
 
 export type LuaCallStatement = LuaNode & {

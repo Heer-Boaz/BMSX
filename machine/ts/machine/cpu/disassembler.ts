@@ -10,7 +10,6 @@ export type DisassemblyOptions = {
 	showProtoHeaders?: boolean;
 	showSourceComments?: boolean;
 	sourceTextForPath?: (path: string) => string;
-	formatStyle?: 'default' | 'assembly';
 	pcPrefix?: string;
 	pcSuffix?: string;
 	pcRadix?: 10 | 16;
@@ -33,22 +32,6 @@ type DecodedInstruction = {
 	rawWords: number[];
 };
 
-type ResolvedOptions = {
-	showPc: boolean;
-	showRaw: boolean;
-	showConsts: boolean;
-	showProtoHeaders: boolean;
-	showSourceComments: boolean;
-	sourceTextForPath?: (path: string) => string;
-	formatStyle: 'default' | 'assembly';
-	pcPrefix: string;
-	pcSuffix: string;
-	pcRadix: 10 | 16;
-	pcFormatter?: (pc: number, width: number) => string;
-	protoAddressOp?: string;
-	pcBias: number;
-};
-
 type OperandField = 'a' | 'b' | 'c' | 'bx' | 'sbx' | 'disp' | 'mode';
 
 export type InstructionOperandDebugInfo = {
@@ -68,14 +51,12 @@ export type InstructionDebugInfo = {
 	sourceRange: SourceRange | null;
 };
 
-const normalizeOptions = (options: DisassemblyOptions): ResolvedOptions => {
-	const formatStyle = options.formatStyle ?? 'default';
-	const assembly = formatStyle === 'assembly';
-	const showPc = options.showPc ?? !assembly;
-	const pcRadix = options.pcRadix ?? (assembly ? 16 : 10);
-	const pcPrefix = options.pcPrefix === undefined ? '' : options.pcPrefix;
-	const pcSuffix = options.pcSuffix ?? (assembly ? 'h' : '');
-	const protoAddressOp = options.protoAddressOp ?? (assembly ? '.ORG' : undefined);
+const normalizeOptions = (options: DisassemblyOptions): DisassemblyOptions => {
+	const showPc = options.showPc ?? true;
+	const pcRadix = options.pcRadix ?? 10;
+	const pcPrefix = options.pcPrefix ?? '';
+	const pcSuffix = options.pcSuffix ?? '';
+	const protoAddressOp = options.protoAddressOp ?? undefined;
 	return {
 		showPc,
 		showRaw: !!options.showRaw,
@@ -83,7 +64,6 @@ const normalizeOptions = (options: DisassemblyOptions): ResolvedOptions => {
 		showProtoHeaders: options.showProtoHeaders !== false,
 		showSourceComments: !!options.showSourceComments,
 		sourceTextForPath: options.sourceTextForPath,
-		formatStyle,
 		pcPrefix,
 		pcSuffix,
 		pcRadix,
@@ -93,12 +73,11 @@ const normalizeOptions = (options: DisassemblyOptions): ResolvedOptions => {
 	};
 };
 
-const formatHexWord = (word: number, options: ResolvedOptions): string => {
+const formatHexWord = (word: number, options: DisassemblyOptions): string => {
 	const hex = word.toString(16);
-	const assembly = options.formatStyle === 'assembly';
-	const upper = assembly ? hex.toUpperCase() : hex;
-	const prefix = assembly ? options.pcPrefix : '0x';
-	const suffix = assembly ? options.pcSuffix : '';
+	const upper = hex.toUpperCase();
+	const prefix = options.pcPrefix;
+	const suffix = options.pcSuffix;
 	return `${prefix}${upper.padStart(INSTRUCTION_BYTES * 2, '0')}${suffix}`;
 };
 
@@ -143,7 +122,7 @@ const formatValue = (program: Program, value: Value): string => {
 };
 // end repeated-sequence-acceptable
 
-const formatConst = (program: Program, index: number, options: ResolvedOptions): string => {
+const formatConst = (program: Program, index: number, options: DisassemblyOptions): string => {
 	const base = `k${index}`;
 	if (!options.showConsts) {
 		return base;
@@ -151,7 +130,7 @@ const formatConst = (program: Program, index: number, options: ResolvedOptions):
 	return `${base}(${formatValue(program, program.constPool[index])})`;
 };
 
-const describeRK = (program: Program, raw: number, bits: number, options: ResolvedOptions): { text: string; registerIndex?: number } => {
+const describeRK = (program: Program, raw: number, bits: number, options: DisassemblyOptions): { text: string; registerIndex?: number } => {
 	const rk = signExtend(raw, bits);
 	if (rk < 0) {
 		return { text: formatConst(program, -1 - rk, options) };
@@ -159,17 +138,17 @@ const describeRK = (program: Program, raw: number, bits: number, options: Resolv
 	return { text: `r${rk}`, registerIndex: rk };
 };
 
-const formatRK = (program: Program, raw: number, bits: number, options: ResolvedOptions): string => {
+const formatRK = (program: Program, raw: number, bits: number, options: DisassemblyOptions): string => {
 	return describeRK(program, raw, bits, options).text;
 };
 
-const formatSignedOffset = (value: number, width: number, options: ResolvedOptions): string => {
+const formatSignedOffset = (value: number, width: number, options: DisassemblyOptions): string => {
 	const sign = value < 0 ? '-' : '+';
 	const absValue = Math.abs(value);
 	return `${sign}${formatPc(absValue, width, options, false)}`;
 };
 
-const formatJump = (pc: number, sbx: number, pcWidth: number, options: ResolvedOptions): string => {
+const formatJump = (pc: number, sbx: number, pcWidth: number, options: DisassemblyOptions): string => {
 	const offset = sbx * INSTRUCTION_BYTES;
 	const target = pc + INSTRUCTION_BYTES + offset;
 	const offsetText = formatSignedOffset(offset, pcWidth, options);
@@ -177,7 +156,7 @@ const formatJump = (pc: number, sbx: number, pcWidth: number, options: ResolvedO
 	return `${offsetText} -> ${targetText}`;
 };
 
-const requireSourceCommentInputs = (metadata: ProgramMetadata | null, options: ResolvedOptions): void => {
+const requireSourceCommentInputs = (metadata: ProgramMetadata | null, options: DisassemblyOptions): void => {
 	if (!options.showSourceComments) {
 		return;
 	}
@@ -209,7 +188,7 @@ const appendProtoHeader = (lines: string[], proto: Proto, protoIndex: number, me
 	lines.push(`; ${headerParts.join(' ')}`);
 };
 
-const formatPc = (pc: number, width: number, options: ResolvedOptions, applyBias = true): string => {
+const formatPc = (pc: number, width: number, options: DisassemblyOptions, applyBias = true): string => {
 	const value = applyBias ? pc + options.pcBias : pc;
 	const formatter = options.pcFormatter;
 	if (formatter) {
@@ -222,7 +201,7 @@ const formatPc = (pc: number, width: number, options: ResolvedOptions, applyBias
 	return `${options.pcPrefix}${text.padStart(width, '0')}${options.pcSuffix}`;
 };
 
-const getSourceLines = (path: string, options: ResolvedOptions, cache: Map<string, string[]>): string[] => {
+const getSourceLines = (path: string, options: DisassemblyOptions, cache: Map<string, string[]>): string[] => {
 	const cached = cache.get(path);
 	if (cached) {
 		return cached;
@@ -274,7 +253,7 @@ export const formatSourceSnippet = (range: SourceRange, sourceText: string, maxC
 	return compact.slice(0, maxChars - 3) + '...';
 };
 
-const formatSourceComment = (range: SourceRange, options: ResolvedOptions, cache: Map<string, string[]>): string => {
+const formatSourceComment = (range: SourceRange, options: DisassemblyOptions, cache: Map<string, string[]>): string => {
 	const lines = getSourceLines(range.path, options, cache);
 	return formatSourceSnippet(range, lines.join('\n'));
 };
@@ -399,7 +378,7 @@ const rkOperand = (
 	program: Program,
 	raw: number,
 	bits: number,
-	options: ResolvedOptions,
+	options: DisassemblyOptions,
 ): InstructionOperandDebugInfo => {
 	const rk = describeRK(program, raw, bits, options);
 	return {
@@ -438,7 +417,7 @@ const buildInstructionOperands = (
 	decoded: DecodedInstruction,
 	program: Program,
 	metadata: ProgramMetadata | null,
-	options: ResolvedOptions,
+	options: DisassemblyOptions,
 	pcWidth: number,
 ): InstructionOperandDebugInfo[] => {
 	const { op, a, b, c, bx, sbx, pc } = decoded;
@@ -550,7 +529,7 @@ const buildInstructionOperands = (
 	}
 };
 
-const getProgramPcWidth = (program: Program, options: ResolvedOptions): number => {
+const getProgramPcWidth = (program: Program, options: DisassemblyOptions): number => {
 	const lastPc = program.code.length - INSTRUCTION_BYTES;
 	const maxPc = lastPc + options.pcBias;
 	return Math.max(1, maxPc.toString(options.pcRadix).length);
@@ -581,7 +560,7 @@ const formatInstruction = (
 	decoded: DecodedInstruction,
 	program: Program,
 	metadata: ProgramMetadata | null,
-	options: ResolvedOptions,
+	options: DisassemblyOptions,
 	pcWidth: number,
 ): string => {
 	const { op, a, b, c, bx, sbx, pc } = decoded;
@@ -724,7 +703,7 @@ const disassembleRange = (
 	start: number,
 	end: number,
 	metadata: ProgramMetadata | null,
-	options: ResolvedOptions,
+	options: DisassemblyOptions,
 	pcWidth: number,
 	lines: string[],
 	sourceCache: Map<string, string[]>,
