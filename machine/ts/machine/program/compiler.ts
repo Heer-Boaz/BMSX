@@ -19,6 +19,7 @@ import {
 	type LuaIndexExpression,
 	type LuaLabelStatement,
 	type LuaLocalAssignmentStatement,
+	type LuaLocalFunctionStatement,
 	type LuaMemberExpression,
 	type LuaNumericLiteralExpression,
 	type LuaOffsetOfExpression,
@@ -49,6 +50,7 @@ import {
 import { extractAssignmentPath, extractTableKeyFromExpression } from './compiler/expression_paths';
 import { appendModuleExportPathKey, buildModuleExportPathKey, buildModuleExportSlotName, buildModuleRootFieldSlotName } from './compiler/module_names';
 import { collectStaticStorageDeclarations, type StaticStorageDeclaration } from './compiler/static_storage';
+import { collectStaticFunctionExports } from './compiler/static_functions';
 import {
 	encodeProgramObjectSections,
 	toLuaModulePath,
@@ -569,6 +571,10 @@ class ProgramBuilder {
 		return this.protos[protoIndex].upvalueDescs.length === 0;
 	}
 
+	public getProtoUpvalueNames(protoIndex: number): ReadonlyArray<string> {
+		return this.protoUpvalueNames[protoIndex];
+	}
+
 	// Record that a module export slot is backed by an exported static-closure
 	// function (proto id). The linker resolves references to this slot directly to
 	// the proto (a link-time symbol) instead of a runtime global-slot load.
@@ -861,6 +867,39 @@ class FunctionBuilder {
 				case 'bss':
 					this.recordBssDeclaration(declaration.statement, declaration.declaration);
 					break;
+			}
+		}
+	}
+
+	public compileStaticFunctionModuleScope(chunk: LuaChunk): void {
+		this.registerStructDeclarations(chunk.body);
+		this.pushScope(chunk.range);
+		for (let index = 0; index < chunk.body.length; index += 1) {
+			const statement = chunk.body[index];
+			if (statement.kind === LuaSyntaxKind.LocalFunctionStatement) {
+				const localFunction = statement as LuaLocalFunctionStatement;
+				const decl = this.requireBoundDeclaration(localFunction.name.range, `local function '${localFunction.name.name}'`);
+				this.declareLocalFromDecl(decl, localFunction.name.range);
+				continue;
+			}
+			if (statement.kind !== LuaSyntaxKind.LocalAssignmentStatement) {
+				continue;
+			}
+			const local = statement as LuaLocalAssignmentStatement;
+			const initializerValues: Array<Value | undefined> = new Array(local.names.length);
+			for (let valueIndex = 0; valueIndex < local.values.length && valueIndex < local.names.length; valueIndex += 1) {
+				if (local.attributes[valueIndex] === 'const') {
+					initializerValues[valueIndex] = this.evaluateCompileTimeExpression(local.values[valueIndex]);
+				}
+			}
+			for (let nameIndex = 0; nameIndex < local.names.length; nameIndex += 1) {
+				const decl = this.requireBoundDeclaration(local.names[nameIndex].range, `local '${local.names[nameIndex].name}'`);
+				const constValue = initializerValues[nameIndex];
+				if (constValue !== undefined) {
+					this.declareLocalFromDecl(decl, local.names[nameIndex].range, undefined, constValue, true);
+				} else {
+					this.declareLocalFromDecl(decl, local.names[nameIndex].range);
+				}
 			}
 		}
 	}
@@ -1710,6 +1749,9 @@ class FunctionBuilder {
 				this.emitLoadBssAddress(target, binding, 0);
 				return;
 			}
+			case 'function':
+				this.emitModuleExportCallTargetLoad(value.slotName, target);
+				return;
 		}
 	}
 
@@ -4251,6 +4293,46 @@ export function compileLuaChunkToProgram(chunk: LuaChunk, modules: ReadonlyArray
 		});
 		try {
 			builder.compileStaticStorage(collectStaticStorageDeclarations(module.chunk, frontend.getFile(module.path)));
+		} catch (error) {
+			compileErrors.push({
+				path: module.path,
+				stage: 'module',
+				message: extractCompileErrorMessage(error, module.path),
+			});
+		}
+	}
+	for (let index = 0; index < canonicalModules.length; index += 1) {
+		const module = canonicalModules[index];
+		const info = moduleCompileContext.modulesByPath.get(module.path);
+		if (info === undefined || !info.constModule) {
+			continue;
+		}
+		try {
+			const semantics = frontend.getFile(module.path);
+			const moduleProtoId = buildModuleProtoId(module.path);
+			const staticScope = new FunctionBuilder(programBuilder, null, {
+				moduleId: module.path,
+				protoId: moduleProtoId,
+				semantics,
+				frontend,
+				moduleCompileContext,
+				moduleCompileInfo: info,
+			});
+			staticScope.compileStaticFunctionModuleScope(module.chunk);
+			const exports = collectStaticFunctionExports(module.chunk, semantics, info.exportConstValueByPathKey);
+			for (let exportIndex = 0; exportIndex < exports.length; exportIndex += 1) {
+				const fn = exports[exportIndex];
+				const protoId = buildProtoId(moduleProtoId, `static:${fn.symbolHandle}`);
+				const protoIndex = compileFunctionExpression(programBuilder, fn.expression, staticScope, false, protoId, module.path, semantics, frontend);
+				if (!programBuilder.protoHasNoUpvalues(protoIndex)) {
+					const upvalueNames = programBuilder.getProtoUpvalueNames(protoIndex);
+					throw new Error(`[Compiler] Const module '${module.path}' function export '${fn.symbolHandle}' captures runtime local '${upvalueNames[0]}'; static function exports may use globals, compile-time constants, parameters, function-local declarations, and .bss storage only.`);
+				}
+				programBuilder.markStaticClosureProto(protoIndex);
+				for (let slotIndex = 0; slotIndex < fn.slotNames.length; slotIndex += 1) {
+					programBuilder.recordExportProto(fn.slotNames[slotIndex], protoId);
+				}
+			}
 		} catch (error) {
 			compileErrors.push({
 				path: module.path,

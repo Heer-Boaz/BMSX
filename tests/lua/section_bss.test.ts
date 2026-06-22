@@ -115,6 +115,78 @@ return *counter, state.counter
 	assert.equal(result.memory.readMappedU32LE(PROGRAM_BSS_BASE), 77);
 });
 
+test('const modules export static functions without runtime module state', () => {
+	const moduleSource = `
+bss counter: word
+local function read()
+	return *counter
+end
+return { counter = counter, read = read }
+`;
+	const entrySource = `
+local state<const> = require("state")
+local counter<const>: *word = state.counter
+local read<const> = state.read
+*counter = 41
+return read(), state.read()
+`;
+	const compiled = compileWithConstModule(entrySource, 'state', moduleSource);
+	const image = encodeCompiledProgramImage(compiled);
+	assert.equal(compiled.moduleProtoMap.has('state'), false);
+	assert.equal(compiled.staticModulePaths.includes('state'), false);
+	assert.match(compiled.metadata.exportProtoIdBySlot.state__read, /\/static:/);
+	const disasm = disassembleProgram(compiled.program, compiled.metadata, { showProtoHeaders: true });
+	assert.doesNotMatch(disasm, /\bNEWT\b/);
+	assert.doesNotMatch(disasm, /\bGET(GL|SYS)\b.*state__read/);
+	assert.equal(image.link.constRelocs.some(reloc => reloc.kind === 'export_proto' && reloc.symbol === 'state__read'), true);
+
+	const result = runColdCompiled(compiled);
+	assert.deepEqual(result.values, [41, 41]);
+	assert.equal(result.memory.readMappedU32LE(PROGRAM_BSS_BASE), 41);
+});
+
+test('const module static functions cannot capture module locals', () => {
+	const moduleSource = `
+local value = 7
+local function read()
+	return value
+end
+return { read = read }
+`;
+	assert.throws(
+		() => compileWithConstModule('local state<const> = require("state")\nreturn state.read()', 'state', moduleSource),
+		/captures runtime local 'value'/,
+	);
+});
+
+test('const module static functions use module compile-time constants without captures', () => {
+	const moduleSource = `
+local tile_size<const> = 8
+local function tiles_per_row()
+	return 256 // tile_size
+end
+return { tiles_per_row = tiles_per_row }
+`;
+	const result = runColdCompiled(compileWithConstModule('local state<const> = require("state")\nreturn state.tiles_per_row()', 'state', moduleSource));
+	assert.deepEqual(result.values, [32]);
+});
+
+test('external const modules cannot export static functions', () => {
+	const moduleSource = 'local function read() return 1 end\nreturn { read = read }';
+	assert.throws(
+		() => compileLuaChunkToProgram(
+			parseSource('return require("state").read()', 'entry.lua'),
+			[],
+			{
+				entrySource: 'return require("state").read()',
+				externalModules: [{ path: 'state', chunk: parseSource(moduleSource, 'state.lua'), source: moduleSource }],
+				constModulePaths: ['state'],
+			},
+		),
+		/Const module 'state' exports static functions but is not compiled as a source module/,
+	);
+});
+
 test('multiple const modules reserve distinct .bss storage symbols in one program', () => {
 	const entrySource = `
 local a<const> = require("state_a")

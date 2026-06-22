@@ -136,7 +136,7 @@ test('const modules reject non-constant exports', () => {
 	].join('\n');
 	assert.throws(
 		() => compileWithConstModule('local m<const> = require("assets")\nreturn m.value', 'assets', moduleSource),
-		/Const module 'assets' export 'value' is not a compile-time constant or static storage symbol/,
+		/Const module 'assets' export 'value' is not a compile-time constant or static symbol/,
 	);
 });
 

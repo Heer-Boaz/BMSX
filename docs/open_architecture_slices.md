@@ -338,9 +338,11 @@ Status:
 - M2 call-targets kunnen direct naar `CLOSURE(proto)` linken
 - gewone waardelezingen houden terecht Lua-semantiek
 - const moduleklasse bestaat: een module in `constModulePaths` exporteert compile-time
-  constants en `.bss` storage-symbolen; elke export-read wordt op de use-site
-  geïnlined (`KSMI`/`LOADK` of een `bss_addr` const-value reloc) en de module
-  heeft geen proto, global slots, `require`-call of `staticModulePaths`-entry.
+  constants, `.bss` storage-symbolen en top-level static function exports; elke
+  value-export wordt op de use-site geïnlined (`KSMI`/`LOADK` of een `bss_addr`
+  const-value reloc), en function exports linken via het bestaande `export_proto`
+  pad naar static closures zonder module-tabel, global-slot lookup of
+  `require`-call. De module heeft geen module-proto of `staticModulePaths`-entry.
   `bmsx/assets` gebruikt dezelfde klasse voor ROM asset-symbol constants. De
   module/export-contractanalyse is uit de bytecode-emitter gehaald en leeft in
   de program/module-contract eigenaar; de compiler consumeert dat contract bij
@@ -349,8 +351,14 @@ Status:
   declareren en `return { name = name }`; de compiler reserveert de storage,
   exporteert het adres als link-symbol en cold startup zero't de storage via de
   bestaande section-init proto
-- open: bredere static moduleklasse met functie-exports en raw `.rodata`/`.data`
-  symbolen naast const-scalars en `.bss` addresses
+- klaar als eerste static function increment: const modules kunnen top-level
+  `local function` / `local <const> = function` exports aanbieden; de compiler
+  compileert die als 0-upvalue static closures en weigert module-local captures
+  of externe const-module function exports. Static functions mogen module-level
+  `<const>` waarden gebruiken; sibling static-function calls zijn nog niet
+  gelowered naar `export_proto` en gelden voorlopig als runtime capture.
+- open: raw `.rodata`/`.data` symbolen en bredere static functionregels zoals
+  expliciete dynamic-opcode gates voor static/systems function protos
 - geen doel: diepe contentgraphs als Lua const-aggregaten naar rodata-bytes
   verlagen. Dat is content-packaging en hoort bij een
   schema-specifieke asset-producer.

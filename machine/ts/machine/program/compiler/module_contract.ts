@@ -75,7 +75,14 @@ const buildConstModuleExportValues = (
 	if (!staticStorage && hasStaticBssDeclaration(chunk)) {
 		throw new Error(`[Compiler] Const module '${modulePath}' declares .bss storage but is not compiled as a source module.`);
 	}
-	const values = collectConstModuleExportValues(chunk, returnExpression, semantics, staticStorage);
+	const values = collectConstModuleExportValues(modulePath, chunk, returnExpression, semantics, staticStorage);
+	if (!staticStorage) {
+		for (const value of values.values()) {
+			if (value.kind === 'function') {
+				throw new Error(`[Compiler] Const module '${modulePath}' exports static functions but is not compiled as a source module.`);
+			}
+		}
+	}
 	assertConstModuleExportsAreConstant(modulePath, exportRoot, values);
 	return values;
 };
