@@ -16,7 +16,7 @@ export function runMachineHostFrame(runtime: Runtime, currentTime: number, runRe
 	if (!manager.running) {
 		return;
 	}
-	const screen = runtime.screen;
+	const screen = manager.screen;
 	let hostDeltaMs = 0;
 	try {
 		manager.input.pollInput();
@@ -33,29 +33,29 @@ export function runMachineHostFrame(runtime: Runtime, currentTime: number, runRe
 			runtime.frameScheduler.clearQueuedTime();
 			hostOverlayMenu.queueRenderCommands();
 			screen.requestHeldPresentation();
-			screen.presentPending(hostDeltaMs);
+			screen.presentPending(runtime, hostDeltaMs);
 		} else if (manager.paused) {
 			hostOverlayMenu.queueFrameOverlayCommands();
-			screen.presentPausedFrame(hostDeltaMs);
+			screen.presentPausedFrame(runtime, hostDeltaMs);
 		} else {
 			const hostOverlayQueued = hostOverlayMenu.queueFrameOverlayCommands();
 			screen.clearPresentation();
 			if (runtime.executionOverlayActive) {
-				screen.runOverlay();
+				screen.runOverlay(runtime);
 			} else if (!runReady) {
 				runtime.frameScheduler.clearQueuedTime();
 			} else {
 				manager.deltatime = runtime.timing.frameDurationMs;
 				runRuntimeFrameStepInto(hostFrameStepResult, runtime, hostDeltaMs);
-				screen.syncAfterRuntimeUpdate(hostFrameStepResult.previousTickSequence);
+				screen.syncAfterRuntimeUpdate(runtime, hostFrameStepResult.previousTickSequence);
 			}
 			if (hostOverlayQueued) {
 				screen.requestHeldPresentation();
 			}
-			screen.presentPending(hostDeltaMs);
+			screen.presentPending(runtime, hostDeltaMs);
 		}
 	} catch (error) {
-		workbenchMode.surfaceHostFrameError(runtime, error, hostDeltaMs);
+		workbenchMode.surfaceHostFrameError(runtime, error, hostDeltaMs, screen);
 	}
 	screen.flushDebugReport(currentTime, runtime);
 }

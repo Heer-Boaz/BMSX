@@ -37,9 +37,6 @@ export class RenderPresentationState {
 		vdpFrameHeld: false,
 	};
 
-	constructor(private readonly runtime: Runtime) {
-	}
-
 	private recordTickCompletion(visualCommitted: boolean, vdpFrameHeld: boolean): void {
 		if (!Boolean((globalThis as any).__bmsx_debug_presentrate)) {
 			return;
@@ -87,8 +84,7 @@ export class RenderPresentationState {
 		this.debugPresentPausedPresents = 0;
 	}
 
-	private presentFrame(hostDeltaMs: number, mode: RenderPresentationMode, commitFrame = mode === 'completed'): void {
-		const runtime = this.runtime;
+	private presentFrame(runtime: Runtime, hostDeltaMs: number, mode: RenderPresentationMode, commitFrame = mode === 'completed'): void {
 		machineManager.deltatime = hostDeltaMs;
 		runtime.machine.vdp.drainFrameBufferPresentation(machineManager.view.vdpFrameBufferTextures);
 		runtime.machine.vdp.drainSurfaceUploads(machineManager.view.vdpSlotTextures);
@@ -111,11 +107,10 @@ export class RenderPresentationState {
 		}
 	}
 
-	private consumePresentation(out: RenderPresentation): boolean {
+	private consumePresentation(runtime: Runtime, out: RenderPresentation): boolean {
 		if (!this.pendingPresentation) {
 			return false;
 		}
-		const runtime = this.runtime;
 		const overlayActive = runtime.executionOverlayActive;
 		out.mode = this.presentationMode;
 		out.commitFrame = overlayActive ? false : this.presentationCommitFrame;
@@ -146,8 +141,7 @@ export class RenderPresentationState {
 		this.resetDebugCounters(0);
 	}
 
-	public runOverlay(): void {
-		const runtime = this.runtime;
+	public runOverlay(runtime: Runtime): void {
 		this.clearPresentation();
 		if (runtime.frameLoop.frameActive) {
 			runtime.frameLoop.abandonFrameState();
@@ -158,8 +152,7 @@ export class RenderPresentationState {
 		this.markPresentation('completed', false);
 	}
 
-	public syncAfterRuntimeUpdate(previousTickSequence: number): void {
-		const runtime = this.runtime;
+	public syncAfterRuntimeUpdate(runtime: Runtime, previousTickSequence: number): void {
 		if (runtime.executionOverlayActive) {
 			runtime.frameScheduler.clearQueuedTime();
 			this.markPresentation('completed', false);
@@ -174,35 +167,33 @@ export class RenderPresentationState {
 	}
 
 
-	public presentPausedFrame(hostDeltaMs: number): void {
-		const runtime = this.runtime;
+	public presentPausedFrame(runtime: Runtime, hostDeltaMs: number): void {
 		if (runtime.executionOverlayActive) {
-			this.runOverlay();
-			this.consumePresentation(this.presentationScratch);
-			this.presentFrame(hostDeltaMs, this.presentationScratch.mode, this.presentationScratch.commitFrame);
+			this.runOverlay(runtime);
+			this.consumePresentation(runtime, this.presentationScratch);
+			this.presentFrame(runtime, hostDeltaMs, this.presentationScratch.mode, this.presentationScratch.commitFrame);
 			return;
 		}
 		runtime.frameScheduler.clearQueuedTime();
 		this.clearPresentation();
-		this.presentFrame(hostDeltaMs, 'completed', false);
+		this.presentFrame(runtime, hostDeltaMs, 'completed', false);
 	}
 
-	public presentPending(hostDeltaMs: number): boolean {
-		if (!this.consumePresentation(this.presentationScratch)) {
+	public presentPending(runtime: Runtime, hostDeltaMs: number): boolean {
+		if (!this.consumePresentation(runtime, this.presentationScratch)) {
 			return false;
 		}
-		this.presentFrame(hostDeltaMs, this.presentationScratch.mode, this.presentationScratch.commitFrame);
+		this.presentFrame(runtime, hostDeltaMs, this.presentationScratch.mode, this.presentationScratch.commitFrame);
 		return true;
 	}
 
-	public presentErrorOverlay(hostDeltaMs: number): void {
-		const runtime = this.runtime;
+	public presentErrorOverlay(runtime: Runtime, hostDeltaMs: number): void {
 		if (!runtime.executionOverlayActive) {
 			return;
 		}
-		this.runOverlay();
-		this.consumePresentation(this.presentationScratch);
-		this.presentFrame(hostDeltaMs, this.presentationScratch.mode, this.presentationScratch.commitFrame);
+		this.runOverlay(runtime);
+		this.consumePresentation(runtime, this.presentationScratch);
+		this.presentFrame(runtime, hostDeltaMs, this.presentationScratch.mode, this.presentationScratch.commitFrame);
 	}
 
 	public flushDebugReport(currentTime: number, runtime: Runtime): void {

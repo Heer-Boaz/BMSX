@@ -66,7 +66,6 @@ RuntimeVblankSnapshot VblankState::capture(const Runtime& runtime) const {
 void VblankState::restore(Runtime& runtime, const RuntimeVblankSnapshot& state) {
 	runtime.frameScheduler.reset();
 	runtime.frameLoop.reset();
-	runtime.screen.reset();
 	resetScheduler(runtime);
 	runtime.machine.scheduler.setNowCycles(state.nowCycles);
 	m_frameStartCycle = state.nowCycles - state.cyclesIntoFrame;

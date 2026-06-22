@@ -67,6 +67,8 @@ function resetLuaInteroperabilityState(runtime: Runtime): void {
 }
 
 export function resetRuntimeState(runtime: Runtime): void {
+	// Presentation state is host/core-owned. Non-fresh TS boot paths must reset
+	// MachineManager.screen before calling bootActiveProgram.
 	runtime.frameLoop.resetFrameState();
 	runtime.pendingCall = null;
 	runtime.cartBoot.reset();

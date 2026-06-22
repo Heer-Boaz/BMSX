@@ -90,7 +90,6 @@ export class VblankState {
 		const runtime = this.runtime;
 		runtime.frameScheduler.reset();
 		runtime.frameLoop.reset();
-		runtime.screen.reset();
 		this.resetScheduler();
 		runtime.machine.scheduler.setNowCycles(state.nowCycles);
 		this.frameStartCycle = state.nowCycles - state.cyclesIntoFrame;

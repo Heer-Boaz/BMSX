@@ -16,6 +16,7 @@ import { clearOverlayFrame } from '../render/host_overlay/overlay_queue';
 import { restoreVdpContextState } from '../render/vdp/context_state';
 import { VdpFrameBufferTextures } from '../render/vdp/framebuffer';
 import { VdpSlotTextures } from '../render/vdp/slot_textures';
+import { RenderPresentationState } from '../render/presentation_state';
 import { runMachineHostFrame } from './host_frame';
 
 const globalScope: any = typeof window !== 'undefined' ? window : globalThis;
@@ -61,6 +62,7 @@ export class MachineManager {
 	private _view!: GameView;
 	private _platform!: Platform;
 	private _runtime!: Runtime;
+	public readonly screen = new RenderPresentationState();
 	/**
 	 * Indicates whether the game is currently running.
 	 */
@@ -219,7 +221,7 @@ export class MachineManager {
 			clearOverlayFrame();
 
 			runtime.frameScheduler.clearQueuedTime();
-			runtime.screen.clearPresentation();
+			this.screen.reset();
 			runtime.frameLoop.abandonFrameState();
 			runtime.overlayDrawFrameOwner = null;
 			runtime.machine.cpu.clearHaltUntilIrq();

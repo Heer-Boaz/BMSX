@@ -10,6 +10,7 @@ import { showEditorWarningBanner } from '../common/feedback_state';
 import { seedDefaultLuaBuiltins } from '../../machine/firmware/builtins';
 import { TerminalMode } from '../terminal/ui/mode';
 import type { Runtime } from '../../machine/runtime/runtime';
+import type { RenderPresentationState } from '../../render/presentation_state';
 import type { Viewport } from '../../rompack/format';
 import { api as overlay_api } from '../runtime/overlay_api';
 import { createCartEditor } from '../cart_editor';
@@ -290,12 +291,12 @@ export function clearFaultState(runtime: Runtime): { cleared: boolean; resumedDe
 	return { cleared: hadFault, resumedDebugger: wasPaused };
 }
 
-export function surfaceHostFrameError(runtime: Runtime, error: unknown, hostDeltaMs: number): void {
+export function surfaceHostFrameError(runtime: Runtime, error: unknown, hostDeltaMs: number, screen: RenderPresentationState): void {
 	runtime.frameLoop.abandonFrameState();
 	runtime.overlayDrawFrameOwner = null;
 	runtime.overlayRenderer.abandonFrame();
 	handleLuaError(runtime, error);
-	runtime.screen.presentErrorOverlay(hostDeltaMs);
+	screen.presentErrorOverlay(runtime, hostDeltaMs);
 }
 
 export function tickTerminalMode(runtime: Runtime): void {
