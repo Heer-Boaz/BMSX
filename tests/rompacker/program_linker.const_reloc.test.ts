@@ -785,7 +785,7 @@ test('ProgramLinker resolves .bss address constants and boot section-init indice
 	assert.equal(cartBoot.bssBaseAddress, PROGRAM_BSS_BASE + 4);
 });
 
-test('inflateExecutableProgramImage resolves .bss constants against the image bss base', () => {
+test('inflateExecutableProgramImage resolves .bss constants against explicit non-default image base', () => {
 	const image = makeProgramImage(
 		[{ op: OpCode.RET, a: 0, b: 1, c: 0 }],
 		[0],
@@ -798,6 +798,7 @@ test('inflateExecutableProgramImage resolves .bss constants against the image bs
 	image.link.constValueRelocs = [{ constIndex: 0, kind: 'bss_addr', symbol: 'cart_state', addend: 0 }];
 
 	const program = inflateExecutableProgramImage(image, null, PROGRAM_BSS_BASE + 16);
+	assert.notEqual(program.constPool[0], PROGRAM_BSS_BASE + 4);
 	assert.deepEqual(program.constPool, [PROGRAM_BSS_BASE + 20]);
 });
 

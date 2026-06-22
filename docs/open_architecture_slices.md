@@ -130,7 +130,7 @@ Cart-representatie roadmap/status:
 | echte `rodata`/`data`/`bss` secties | Deels: het image-format en de TS/C++ linker behouden `rodata`/`data`/`bss`; open: het section-model moet `.rodata`, `.data` en `.bss` onderscheiden, maar v1-implementatie blijft `.bss`-only met compiler/linker-generated startup-code. |
 | één object-file/linker pipeline | Deels: program images hebben reloc-records en TS/C++ linkers; eerste install-seam staat nu in de program/linker-eigenaar (`inflateExecutableProgramImage`) voor object-image → executable program; gewone Lua source-boot, hot-resume en host-eval append lopen ook via de compiler-owned `ProgramImage` encoding; system+cart boot-entry selectie loopt via de program/linker-eigenaar (`linkBootProgramImages`) in TS en C++; ROM-build en source-compile zijn geaudit als legitieme input-producers die op dezelfde compiler/linker objectgrens convergeren, niet als resterende split-brain. |
 | runtime relocaties als load/link stap | Deels: `module`/`export_proto` placeholders zijn uit runtimewaarden gehaald; open: harde verifier-gate voor alle executable images. |
-| static module/data ABI | Deels: M2 call-targets kunnen link-time naar `CLOSURE(proto)` en de const-moduleklasse bestaat (`bmsx/assets` exporteert compile-time constants die op de use-site worden geïnlined, zonder runtime module-table); open: static moduleklasse met functies en rodata/data-symbolen breder dan alleen const-scalars. |
+| static module/data ABI | Deels: M2 call-targets kunnen link-time naar `CLOSURE(proto)` en de const-moduleklasse bestaat (`bmsx/assets` exporteert compile-time constants die op de use-site worden geïnlined, zonder runtime module-table); const modules kunnen nu ook `.bss` storage-symbolen exporteren als link-time adressen zonder runtime module-table; open: bredere static moduleklasse met functie-exports en raw `.rodata`/`.data` symbolen. |
 | dynamic Lua-opcodes weren uit systems/static modules | Open: dit moet een compiler-contract worden, geen discipline of losse linter. |
 | CPU objectwereld loshalen van machine-code ABI | Open: `CPU.Value` is nog Lua-objectwereld; echte cart ABI moet primair words, registers, addresses, memory, sections en symbols zijn. |
 | assets/`rom_data` binair maken | Deels: `rom_data`-familie is weg en `.bin` raw ROM path is getest; open: maps, rooms, timelines, registries en asset records naar vaste binaire layouts. |
@@ -337,12 +337,20 @@ Status:
 
 - M2 call-targets kunnen direct naar `CLOSURE(proto)` linken
 - gewone waardelezingen houden terecht Lua-semantiek
-- const moduleklasse bestaat: een module in `constModulePaths` exporteert alleen
-  compile-time constants; elke export-read wordt op de use-site geïnlined
-  (`KSMI`/`LOADK`) en de module heeft geen proto, global slots, `require`-call of
-  `staticModulePaths`-entry. `bmsx/assets` gebruikt deze klasse.
-- open: static moduleklasse met functie-exports en rodata/data/bss-symbolen naast
-  const-scalars
+- const moduleklasse bestaat: een module in `constModulePaths` exporteert compile-time
+  constants en `.bss` storage-symbolen; elke export-read wordt op de use-site
+  geïnlined (`KSMI`/`LOADK` of een `bss_addr` const-value reloc) en de module
+  heeft geen proto, global slots, `require`-call of `staticModulePaths`-entry.
+  `bmsx/assets` gebruikt dezelfde klasse voor ROM asset-symbol constants. De
+  module/export-contractanalyse is uit de bytecode-emitter gehaald en leeft in
+  de program/module-contract eigenaar; de compiler consumeert dat contract bij
+  storage-reservering en use-site-emissie.
+- klaar als eerste static storage increment: const modules kunnen `bss name: Type`
+  declareren en `return { name = name }`; de compiler reserveert de storage,
+  exporteert het adres als link-symbol en cold startup zero't de storage via de
+  bestaande section-init proto
+- open: bredere static moduleklasse met functie-exports en raw `.rodata`/`.data`
+  symbolen naast const-scalars en `.bss` addresses
 - geen doel: diepe contentgraphs als Lua const-aggregaten naar rodata-bytes
   verlagen. Dat is content-packaging en hoort bij een
   schema-specifieke asset-producer.
@@ -352,13 +360,15 @@ Acceptatie:
 - moduleclass is expliciet: dynamic Lua module of static systems module
   (const module is de eerste static klasse; designatie via `constModulePaths`
   bij de compile-input, bron blijft standaard-Lua)
-- static exports zijn linkbare symbolen: functies, constants, rodata/data/bss
-  addresses en sizes
+- static exports zijn linkbare symbolen: functies, constants, `.bss` addresses
+  (klaar voor const modules), en later raw `.rodata`/`.data` addresses en sizes
 - namespace-als-waarde is voor static modules een compile-error (klaar voor de
   const module: de hele `bmsx/assets`-tabel als waarde gebruiken faalt compile-time)
 - dynamic modules blijven Lua-semantiek houden waar gameplay die lane expliciet
   kiest
 - generated `bmsx/assets` past in dezelfde static-symbol ABI (klaar: const module)
+- static `.bss` export heeft geen runtime module-table, geen asset lookup en geen
+  content-serializer; het is gewoon object-storage met een link-time address symbol
 
 ## 20. Compiler-contract voor systems/static modules
 

@@ -607,7 +607,8 @@ function tryExtractRequireModuleName(expression: LuaExpression): string {
 export class LuaProjectIndex {
 	private readonly files: Map<string, FileRecord> = new Map();
 	private readonly symbols: Map<SymbolID, Decl> = new Map();
-	private readonly declByFileAndKey: Map<string, SymbolID> = new Map();
+	private readonly directDeclByFileAndKey: Map<string, SymbolID> = new Map();
+	private readonly memberDeclByFileAndKey: Map<string, SymbolID> = new Map();
 	private readonly globalsByKey: Map<string, SymbolID> = new Map();
 	private readonly refsBySymbol: Map<SymbolID, Ref[]> = new Map();
 	private readonly globalsSources: Map<string, Map<SymbolID, number>> = new Map();
@@ -727,7 +728,11 @@ export class LuaProjectIndex {
 		for (let i = 0; i < data.decls.length; i += 1) {
 			const decl = data.decls[i];
 			this.symbols.set(decl.id, decl);
-			this.declByFileAndKey.set(fileSymbolKey(decl.file, decl.symbolKey), decl.id);
+			if (decl.namePath.length > 1) {
+				this.memberDeclByFileAndKey.set(fileSymbolKey(decl.file, decl.symbolKey), decl.id);
+			} else if (decl.kind !== 'property') {
+				this.directDeclByFileAndKey.set(fileSymbolKey(decl.file, decl.symbolKey), decl.id);
+			}
 		}
 		for (let i = 0; i < data.decls.length; i += 1) {
 			const decl = data.decls[i];
@@ -747,7 +752,11 @@ export class LuaProjectIndex {
 		for (let i = 0; i < data.decls.length; i += 1) {
 			const decl = data.decls[i];
 			this.symbols.delete(decl.id);
-			this.declByFileAndKey.delete(fileSymbolKey(decl.file, decl.symbolKey));
+			if (decl.namePath.length > 1) {
+				this.memberDeclByFileAndKey.delete(fileSymbolKey(decl.file, decl.symbolKey));
+			} else if (decl.kind !== 'property') {
+				this.directDeclByFileAndKey.delete(fileSymbolKey(decl.file, decl.symbolKey));
+			}
 			if (decl.isGlobal) {
 				this.removeGlobalDecl(decl);
 			}
@@ -945,8 +954,9 @@ export class LuaProjectIndex {
 	private resolveReferenceTarget(file: string, ref: Ref): SymbolID {
 		let targetId = ref.lexicalTarget;
 		if (!targetId && ref.symbolKey.length > 0) {
-			targetId = this.declByFileAndKey.get(fileSymbolKey(file, ref.symbolKey))
-				?? this.globalsByKey.get(ref.symbolKey);
+			targetId = ref.referenceKind === 'identifier'
+				? this.directDeclByFileAndKey.get(fileSymbolKey(file, ref.symbolKey)) ?? this.globalsByKey.get(ref.symbolKey)
+				: this.memberDeclByFileAndKey.get(fileSymbolKey(file, ref.symbolKey)) ?? this.globalsByKey.get(ref.symbolKey);
 		}
 		if (targetId) {
 			return targetId;
@@ -954,7 +964,8 @@ export class LuaProjectIndex {
 		const receiverPathHintKey = resolveReferenceReceiverPathHintKey(
 			ref,
 			file,
-			this.declByFileAndKey,
+			this.directDeclByFileAndKey,
+			this.memberDeclByFileAndKey,
 			this.declPathHints,
 			this.prefabHintsById,
 			this.objectHintsById,
@@ -964,7 +975,7 @@ export class LuaProjectIndex {
 			return null;
 		}
 		const targetKey = appendSymbolKey(getPathHintSymbolKey(receiverPathHintKey), ref.name);
-			return this.declByFileAndKey.get(fileSymbolKey(getPathHintFile(receiverPathHintKey), targetKey));
+		return this.memberDeclByFileAndKey.get(fileSymbolKey(getPathHintFile(receiverPathHintKey), targetKey));
 	}
 
 	private refreshResolvedHintMaps(
@@ -2040,6 +2051,7 @@ class SemanticBuilder {
 		const scope = baseDecl ? baseDecl.scopeRef : this.currentScope();
 		const scopeRange = baseDecl ? baseDecl.scope : scope.range;
 		const range = buildRangeFromPosition(start, length, this.path);
+		const isGlobal = baseDecl ? baseDecl.isGlobal : scope.kind === 'path' && namePath.length > 1;
 		const decl = this.createDecl({
 			namePath: namePath,
 			name: namePath[namePath.length - 1],
@@ -2047,11 +2059,11 @@ class SemanticBuilder {
 			range,
 			scopeRange,
 			scopeRef: scope,
-			isGlobal: baseDecl ? baseDecl.isGlobal : scope.kind === 'path',
+			isGlobal,
 			active: true,
 		});
 		this.properties.set(key, decl);
-		if (decl.isGlobal) {
+		if (isGlobal) {
 			this.globalsByKey.set(key, decl);
 		}
 		this.recordDefinitionAnnotation(decl);
@@ -2474,7 +2486,8 @@ function resolveHintKeyToPathHintKey(
 function resolveReferenceReceiverPathHintKey(
 	ref: Ref,
 	file: string,
-	declByFileAndKey: ReadonlyMap<string, SymbolID>,
+	directDeclByFileAndKey: ReadonlyMap<string, SymbolID>,
+	memberDeclByFileAndKey: ReadonlyMap<string, SymbolID>,
 	declHints: ReadonlyMap<SymbolID, SemanticHintKey>,
 	prefabClasses: ReadonlyMap<string, SemanticHintKey>,
 	objectClasses: ReadonlyMap<string, SemanticHintKey>,
@@ -2489,9 +2502,16 @@ function resolveReferenceReceiverPathHintKey(
 	if (!ref.receiverSymbolKey || ref.receiverSymbolKey.length === 0) {
 		return null;
 	}
-	const localDeclId = declByFileAndKey.get(fileSymbolKey(file, ref.receiverSymbolKey));
+	const localDeclId = directDeclByFileAndKey.get(fileSymbolKey(file, ref.receiverSymbolKey));
 	if (localDeclId) {
 		const resolved = declHints.get(localDeclId);
+		if (resolved) {
+			return resolved;
+		}
+	}
+	const memberDeclId = memberDeclByFileAndKey.get(fileSymbolKey(file, ref.receiverSymbolKey));
+	if (memberDeclId) {
+		const resolved = declHints.get(memberDeclId);
 		if (resolved) {
 			return resolved;
 		}

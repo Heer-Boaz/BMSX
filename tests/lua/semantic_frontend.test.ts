@@ -131,6 +131,27 @@ test('LuaSemanticFrontend resolves navigation targets by lexical scope instead o
 	});
 });
 
+test('LuaSemanticFrontend keeps table field definitions out of unqualified storage references', () => {
+	const source = [
+		'bss counter: word',
+		'return { counter = counter }',
+	].join('\n');
+	const frontend = buildLuaSemanticFrontend([{ path: 'storage.lua', source }]);
+	const file = frontend.getFile('storage.lua');
+	const keyTarget = file.getNavigationTargetAt(2, 10);
+	assert.deepEqual(keyTarget.range, {
+		path: 'storage.lua',
+		start: { line: 2, column: 10 },
+		end: { line: 2, column: 16 },
+	});
+	const valueTarget = file.getNavigationTargetAt(2, 20);
+	assert.deepEqual(valueTarget.range, {
+		path: 'storage.lua',
+		start: { line: 1, column: 5 },
+		end: { line: 1, column: 11 },
+	});
+});
+
 test('LuaSemanticFrontend keeps ordinary strings and comments out of identifier navigation', () => {
 	const source = [
 		'local target = 1',

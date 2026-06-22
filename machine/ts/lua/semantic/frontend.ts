@@ -517,14 +517,14 @@ function createBoundFile(
 	}
 	return {
 		diagnostics,
-			getDeclaration(range: LuaSourceRange): Decl {
-				return declarationsByRange.get(sourceRangeKey(range))
-					?? declarationsByStart.get(sourceRangeStartKey(range));
-			},
-			getReference(range: LuaSourceRange): LuaBoundReference {
-				return referencesByRange.get(sourceRangeKey(range))
-					?? referencesByStart.get(sourceRangeStartKey(range));
-			},
+		getDeclaration(range: LuaSourceRange): Decl {
+			return declarationsByRange.get(sourceRangeKey(range))
+				?? declarationsByStart.get(sourceRangeStartKey(range));
+		},
+		getReference(range: LuaSourceRange): LuaBoundReference {
+			return referencesByRange.get(sourceRangeKey(range))
+				?? referencesByStart.get(sourceRangeStartKey(range));
+		},
 		getNavigationTargetAt(line: number, column: number): LuaSemanticNavigationTarget | null {
 			for (let index = 0; index < decls.length; index += 1) {
 				const decl = decls[index];

@@ -13,14 +13,12 @@ import {
 	type LuaChunk,
 	type LuaExpression,
 	type LuaForGenericStatement,
-	type LuaFunctionDeclarationStatement,
 	type LuaFunctionExpression,
 	type LuaIdentifierExpression,
 	type LuaIfStatement,
 	type LuaIndexExpression,
 	type LuaLabelStatement,
 	type LuaLocalAssignmentStatement,
-	type LuaLocalFunctionStatement,
 	type LuaMemberExpression,
 	type LuaNumericLiteralExpression,
 	type LuaOffsetOfExpression,
@@ -31,7 +29,6 @@ import {
 	type LuaStructDeclarationStatement,
 	type LuaBssDeclarationStatement,
 	type LuaStructFieldDeclaration,
-	type LuaReturnStatement,
 	type LuaTypeReference,
 	type LuaUnaryExpression,
 	type LuaSourceRange,
@@ -41,6 +38,17 @@ import {
 } from '../../lua/syntax/ast';
 import { OpCode, StringValue, asStringId, valueIsString, type Program, type ProgramMetadata, type Proto, type UpvalueDesc, type Value, type SourceRange, type LocalSlotDebug } from '../cpu/cpu';
 import { optimizeInstructions, type Instruction, type InstructionSet, type OptimizationLevel } from './optimizer';
+import {
+	buildModuleCompileContext,
+	type ConstExportValue,
+	type ModuleCompileContext,
+	type ModuleCompileInfo,
+	type ModuleExportNode,
+	type ProgramModule,
+} from './compiler/module_contract';
+import { extractAssignmentPath, extractTableKeyFromExpression } from './compiler/expression_paths';
+import { appendModuleExportPathKey, buildModuleExportPathKey, buildModuleExportSlotName, buildModuleRootFieldSlotName } from './compiler/module_names';
+import { collectStaticStorageDeclarations, type StaticStorageDeclaration } from './compiler/static_storage';
 import {
 	encodeProgramObjectSections,
 	toLuaModulePath,
@@ -142,12 +150,6 @@ type CompileError = {
 	message: string;
 };
 
-export type ProgramModule = {
-	path: string;
-	chunk: LuaChunk;
-	source?: string;
-};
-
 export const isLuaCompileError = (value: unknown): value is LuaCompileError =>
 	value instanceof LuaSyntaxError;
 
@@ -157,9 +159,6 @@ type CompileOptions = {
 	optLevel?: OptimizationLevel;
 	entrySource?: string;
 	externalModules?: ReadonlyArray<ProgramModule>;
-	// Module paths that are const modules: their exports are compile-time constants
-	// inlined at use sites (e.g. the generated `bmsx/assets` ROM symbol module). They
-	// produce no proto, no global slots, no `require` call and no runtime table.
 	constModulePaths?: ReadonlyArray<string>;
 };
 
@@ -193,38 +192,6 @@ type ModuleBinding = {
 	exportPathKey: string;
 	exportDepth: number;
 	external: boolean;
-};
-
-type ModuleExportNode = {
-	children: Map<string, ModuleExportNode>;
-};
-
-// Compile-time constant export value of a const module (the `bmsx/assets` ABI).
-// These are the only value forms a const module may export; each use site inlines
-// the value directly instead of going through a runtime table or global slot.
-type ConstExportValue =
-	| { kind: 'nil' }
-	| { kind: 'boolean'; value: boolean }
-	| { kind: 'number'; value: number }
-	| { kind: 'string'; value: string };
-
-type ModuleCompileInfo = {
-	path: string;
-	external: boolean;
-	// A const module exports only compile-time constants. It has no runtime
-	// presence: no proto, no global slots, no `require` call. Every export read is
-	// inlined to its constant value at the use site.
-	constModule: boolean;
-	returnExpression: LuaExpression;
-	exportRoot: ModuleExportNode;
-	exportSlotsByPathKey: Map<string, string>;
-	exportConstValueByPathKey: Map<string, ConstExportValue>;
-};
-
-type ModuleCompileContext = {
-	modulesByPath: Map<string, ModuleCompileInfo>;
-	staticExternalModulePaths: string[];
-	staticExternalModulePathSet: Set<string>;
 };
 
 type PrimitiveStructType = {
@@ -355,13 +322,15 @@ class ProgramBuilder {
 	public readonly protoFixedEntryPC: boolean[] = [];
 	public readonly protoIds: string[] = [];
 	private readonly exportProtoIdBySlot: { [slotName: string]: string } = {};
-	public readonly structDeclarations = new Map<string, LuaStructDeclarationStatement>();
-	public readonly structLayouts = new Map<string, StructLayout>();
+	private readonly structDeclarations = new Map<string, LuaStructDeclarationStatement>();
+	private readonly structLayouts = new Map<string, StructLayout>();
 	private readonly bssBindingsBySymbolHandle = new Map<string, BssBinding>();
 	private readonly constValueRelocs: ProgramConstValueReloc[] = [];
 	private bssByteCount = 0;
 	private readonly protoIdMap: Map<string, number> = new Map();
 	private readonly assignedProtoIds: Set<string> = new Set();
+	private readonly staticModulePaths: string[] = [];
+	private readonly staticModulePathSet: Set<string> = new Set();
 
 	public constructor(
 		baseConstPool: ReadonlyArray<Value> | null = null,
@@ -509,6 +478,18 @@ class ProgramBuilder {
 		this.structLayouts.delete(statement.name.name);
 	}
 
+	public getStructDeclaration(name: string): LuaStructDeclarationStatement | undefined {
+		return this.structDeclarations.get(name);
+	}
+
+	public getStructLayout(name: string): StructLayout | undefined {
+		return this.structLayouts.get(name);
+	}
+
+	public recordStructLayout(layout: StructLayout): void {
+		this.structLayouts.set(layout.name, layout);
+	}
+
 	private resolveSystemGlobalSlot(name: string): number {
 		const existing = this.systemGlobalNameMap.get(name);
 		if (existing !== undefined) {
@@ -572,6 +553,14 @@ class ProgramBuilder {
 		return index;
 	}
 
+	public recordStaticModulePath(path: string): void {
+		if (this.staticModulePathSet.has(path)) {
+			return;
+		}
+		this.staticModulePathSet.add(path);
+		this.staticModulePaths.push(path);
+	}
+
 	public markStaticClosureProto(protoIndex: number): void {
 		this.protos[protoIndex].staticClosure = true;
 	}
@@ -609,7 +598,7 @@ class ProgramBuilder {
 		this.protoIdMap.set(protoId, index);
 	}
 
-	public buildProgram(): { program: Program; metadata: ProgramMetadata; constRelocs: ProgramConstReloc[]; constValueRelocs: ProgramConstValueReloc[]; bss: ProgramBssSection } {
+	public buildProgram(): { program: Program; metadata: ProgramMetadata; constRelocs: ProgramConstReloc[]; constValueRelocs: ProgramConstValueReloc[]; bss: ProgramBssSection; staticModulePaths: string[] } {
 		let fixedEndBytes = this.baseCode ? this.baseCode.byteLength : 0;
 		let appendedBytes = 0;
 		for (let i = 0; i < this.protoCode.length; i += 1) {
@@ -704,6 +693,7 @@ class ProgramBuilder {
 			constRelocs: fullConstRelocs,
 			constValueRelocs: this.constValueRelocs.slice(),
 			bss: this.buildBssSection(),
+			staticModulePaths: this.staticModulePaths.slice(),
 		};
 	}
 
@@ -861,6 +851,20 @@ class FunctionBuilder {
 		this.finalizeLabels();
 	}
 
+	public compileStaticStorage(declarations: readonly StaticStorageDeclaration[]): void {
+		for (let index = 0; index < declarations.length; index += 1) {
+			const declaration = declarations[index];
+			switch (declaration.kind) {
+				case 'struct':
+					this.program.registerStructDeclaration(declaration.statement);
+					break;
+				case 'bss':
+					this.recordBssDeclaration(declaration.statement, declaration.declaration);
+					break;
+			}
+		}
+	}
+
 	public compileFunctionExpression(expression: LuaFunctionExpression, implicitSelf: boolean): void {
 		this.registerStructDeclarations(expression.body.body);
 		this.flowAnalysis = new ValueKindFlowAnalyzer(expression.body.body, this.semantics);
@@ -985,11 +989,11 @@ class FunctionBuilder {
 	}
 
 	private resolveStructLayout(name: string, resolving: Set<string> = new Set()): StructLayout {
-		const existing = this.program.structLayouts.get(name);
+		const existing = this.program.getStructLayout(name);
 		if (existing !== undefined) {
 			return existing;
 		}
-		const declaration = this.program.structDeclarations.get(name);
+		const declaration = this.program.getStructDeclaration(name);
 		if (declaration === undefined) {
 			throw new Error(`[Compiler] Unknown struct type '${name}'.`);
 		}
@@ -1023,7 +1027,7 @@ class FunctionBuilder {
 			alignment,
 			fields,
 		};
-		this.program.structLayouts.set(name, layout);
+		this.program.recordStructLayout(layout);
 		resolving.delete(name);
 		return layout;
 	}
@@ -1580,11 +1584,7 @@ class FunctionBuilder {
 	}
 
 	private markStaticExternalModulePath(path: string): void {
-		if (!this.moduleCompileContext || this.moduleCompileContext.staticExternalModulePathSet.has(path)) {
-			return;
-		}
-		this.moduleCompileContext.staticExternalModulePathSet.add(path);
-		this.moduleCompileContext.staticExternalModulePaths.push(path);
+		this.program.recordStaticModulePath(path);
 	}
 
 	private tryResolveRequireModuleBinding(expression: LuaExpression): ModuleBinding | null {
@@ -1702,6 +1702,14 @@ class FunctionBuilder {
 			case 'string':
 				this.emitLoadConst(target, this.program.internString(value.value));
 				return;
+			case 'bss_addr': {
+				const binding = this.program.resolveBss(value.symbolHandle);
+				if (binding === null) {
+					throw new Error(`[Compiler] Static module .bss symbol '${value.symbolHandle}' was not recorded.`);
+				}
+				this.emitLoadBssAddress(target, binding, 0);
+				return;
+			}
 		}
 	}
 
@@ -2394,9 +2402,12 @@ class FunctionBuilder {
 	}
 
 	private compileBssDeclaration(statement: LuaBssDeclarationStatement): void {
-		const decl = this.requireBoundDeclaration(statement.name.range, `bss '${statement.name.name}'`);
+		this.recordBssDeclaration(statement, this.requireBoundDeclaration(statement.name.range, `bss '${statement.name.name}'`));
+	}
+
+	private recordBssDeclaration(statement: LuaBssDeclarationStatement, declaration: Decl): void {
 		const type = this.resolveStructTypeReference(statement.typeRef);
-		this.program.recordBss(decl.id, this.moduleId, statement.name.name, type);
+		this.program.recordBss(declaration.id, this.moduleId, statement.name.name, type);
 	}
 
 	private compileLocalAssignment(statement: LuaLocalAssignmentStatement): void {
@@ -3988,456 +3999,6 @@ const buildDeclarationHint = (identifiers: ReadonlyArray<string>, methodName: st
 const buildAssignmentHint = (path: ReadonlyArray<string>): string =>
 	`assign:${buildNamePath(path)}`;
 
-const extractTableKeyFromExpression = (expression: LuaExpression): string | null => {
-	switch (expression.kind) {
-		case LuaSyntaxKind.StringLiteralExpression:
-			return (expression as LuaStringLiteralExpression).value;
-		case LuaSyntaxKind.IdentifierExpression:
-			return (expression as LuaIdentifierExpression).name;
-		default:
-			return null;
-	}
-};
-
-const extractAssignmentPath = (expression: LuaAssignableExpression): string[] | null => {
-	switch (expression.kind) {
-		case LuaSyntaxKind.IdentifierExpression:
-			return [(expression as LuaIdentifierExpression).name];
-		case LuaSyntaxKind.MemberExpression: {
-			const member = expression as LuaMemberExpression;
-			const basePath = extractAssignmentPath(member.base as LuaAssignableExpression);
-			if (!basePath) {
-				return null;
-			}
-			basePath.push(member.identifier);
-			return basePath;
-		}
-		case LuaSyntaxKind.IndexExpression: {
-			const indexExpr = expression as LuaIndexExpression;
-			const basePath = extractAssignmentPath(indexExpr.base as LuaAssignableExpression);
-			if (!basePath) {
-				return null;
-			}
-			const key = extractTableKeyFromExpression(indexExpr.index);
-			if (!key) {
-				return null;
-			}
-			basePath.push(key);
-			return basePath;
-		}
-		default:
-			return null;
-	}
-};
-
-const createModuleExportNode = (): ModuleExportNode => ({
-	children: new Map<string, ModuleExportNode>(),
-});
-
-const buildModuleExportPathKey = (path: ReadonlyArray<string>): string =>
-	path.join('.');
-
-const appendModuleExportPathKey = (base: string, key: string): string =>
-	base.length === 0 ? key : `${base}.${key}`;
-
-const sanitizeModuleSlotSegment = (value: string): string =>
-	value.replace(/[^A-Za-z0-9_]/g, '_');
-
-const buildModuleSlotPrefix = (modulePath: string): string => {
-	const compactPath = toLuaModulePath(modulePath);
-	const parts = compactPath.split('/');
-	let out = '';
-	for (let index = 0; index < parts.length; index += 1) {
-		const part = parts[index];
-		if (part.length === 0) {
-			continue;
-		}
-		out += out.length === 0 ? sanitizeModuleSlotSegment(part) : `__${sanitizeModuleSlotSegment(part)}`;
-	}
-	return out.length > 0 ? out : sanitizeModuleSlotSegment(compactPath);
-};
-
-const buildModuleExportSlotName = (
-	modulePath: string,
-	exportPath: ReadonlyArray<string>,
-): string => {
-	let out = buildModuleSlotPrefix(modulePath);
-	for (let index = 0; index < exportPath.length; index += 1) {
-		out += `__${sanitizeModuleSlotSegment(exportPath[index])}`;
-	}
-	return out;
-};
-
-const buildModuleRootFieldSlotName = (modulePath: string, key: string): string =>
-	`${buildModuleSlotPrefix(modulePath)}__${sanitizeModuleSlotSegment(key)}`;
-
-const resolveStaticModuleShapePath = (
-	expression: LuaExpression,
-	localShapes: ReadonlyMap<string, ModuleExportNode>,
-): ModuleExportNode | null => {
-	if (expression.kind === LuaSyntaxKind.IdentifierExpression) {
-		const identifier = expression as LuaIdentifierExpression;
-		const shape = localShapes.get(identifier.name);
-			if (shape === undefined) {
-				return null;
-			}
-			return shape;
-	}
-	if (expression.kind === LuaSyntaxKind.MemberExpression) {
-		const member = expression as LuaMemberExpression;
-		const baseShape = resolveStaticModuleShapePath(member.base, localShapes);
-		if (!baseShape) {
-			return null;
-		}
-		const shape = baseShape.children.get(member.identifier);
-		return shape !== undefined ? shape : null;
-	}
-	if (expression.kind === LuaSyntaxKind.IndexExpression) {
-		const indexExpr = expression as LuaIndexExpression;
-		const baseShape = resolveStaticModuleShapePath(indexExpr.base, localShapes);
-		if (!baseShape) {
-			return null;
-		}
-		const key = extractTableKeyFromExpression(indexExpr.index);
-		if (!key) {
-			return null;
-		}
-		const shape = baseShape.children.get(key);
-		return shape !== undefined ? shape : null;
-	}
-	return null;
-};
-
-const buildModuleShapeFromExpression = (
-	expression: LuaExpression,
-	localShapes: ReadonlyMap<string, ModuleExportNode>,
-): ModuleExportNode | null => {
-	if (expression.kind === LuaSyntaxKind.TableConstructorExpression) {
-		const table = expression as LuaTableConstructorExpression;
-		const node = createModuleExportNode();
-		for (let index = 0; index < table.fields.length; index += 1) {
-			const field = table.fields[index];
-			if (field.kind === LuaTableFieldKind.Array) {
-				continue;
-			}
-			const key = field.kind === LuaTableFieldKind.IdentifierKey
-				? field.name
-				: extractTableKeyFromExpression(field.key);
-			if (!key) {
-				continue;
-			}
-			node.children.set(
-				key,
-				buildModuleShapeOrEmpty(field.value, localShapes),
-			);
-		}
-		return node;
-	}
-	return resolveStaticModuleShapePath(expression, localShapes);
-};
-
-function buildModuleShapeOrEmpty(expression: LuaExpression, localShapes: ReadonlyMap<string, ModuleExportNode>): ModuleExportNode {
-	return buildModuleShapeFromExpression(expression, localShapes) ?? createModuleExportNode();
-}
-
-const assignModuleShapePath = (
-	root: ModuleExportNode,
-	path: ReadonlyArray<string>,
-	startIndex: number,
-	value: ModuleExportNode,
-	methodName: string | null = null,
-): void => {
-	if (startIndex >= path.length && (!methodName || methodName.length === 0)) {
-		root.children = value.children;
-		return;
-	}
-	let cursor = root;
-	const endIndex = methodName && methodName.length > 0 ? path.length : path.length - 1;
-	for (let index = startIndex; index < endIndex; index += 1) {
-		const key = path[index];
-		let child = cursor.children.get(key);
-		if (!child) {
-			child = createModuleExportNode();
-			cursor.children.set(key, child);
-		}
-		cursor = child;
-	}
-	cursor.children.set(methodName && methodName.length > 0 ? methodName : path[path.length - 1], value);
-};
-
-const buildTopLevelLocalModuleShapes = (
-	chunk: LuaChunk,
-): Map<string, ModuleExportNode> => {
-	const localShapes = new Map<string, ModuleExportNode>();
-	for (let index = 0; index < chunk.body.length; index += 1) {
-		const statement = chunk.body[index];
-		if (statement.kind === LuaSyntaxKind.LocalAssignmentStatement) {
-			const localAssignment = statement as LuaLocalAssignmentStatement;
-			const values = localAssignment.values;
-			for (let nameIndex = 0; nameIndex < localAssignment.names.length; nameIndex += 1) {
-				const value = values[nameIndex];
-				if (!value) {
-					continue;
-				}
-				const shape = buildModuleShapeFromExpression(value, localShapes);
-				if (!shape) {
-					continue;
-				}
-				localShapes.set(localAssignment.names[nameIndex].name, shape);
-			}
-			continue;
-		}
-		if (statement.kind === LuaSyntaxKind.AssignmentStatement) {
-			const assignment = statement as LuaAssignmentStatement;
-			if (assignment.operator !== LuaAssignmentOperator.Assign) {
-				continue;
-			}
-			for (let targetIndex = 0; targetIndex < assignment.left.length; targetIndex += 1) {
-				const left = assignment.left[targetIndex];
-				const path = extractAssignmentPath(left);
-				if (!path || path.length === 0) {
-					continue;
-				}
-				const rootName = path[0];
-				const rootShape = localShapes.get(rootName);
-				if (!rootShape) {
-					continue;
-				}
-				const right = assignment.right[targetIndex];
-				if (!right) {
-					continue;
-				}
-				const shape = buildModuleShapeOrEmpty(right, localShapes);
-				assignModuleShapePath(rootShape, path, 1, shape);
-			}
-			continue;
-		}
-		if (statement.kind === LuaSyntaxKind.FunctionDeclarationStatement) {
-			const declaration = statement as LuaFunctionDeclarationStatement;
-			if (declaration.name.identifiers.length === 0) {
-				continue;
-			}
-			const rootName = declaration.name.identifiers[0];
-			const rootShape = localShapes.get(rootName);
-			if (!rootShape) {
-				continue;
-			}
-			if (declaration.name.identifiers.length === 1 && (!declaration.name.methodName || declaration.name.methodName.length === 0)) {
-				continue;
-			}
-			assignModuleShapePath(rootShape, declaration.name.identifiers, 1, createModuleExportNode(), declaration.name.methodName);
-			continue;
-		}
-		if (statement.kind === LuaSyntaxKind.LocalFunctionStatement) {
-			const declaration = statement as LuaLocalFunctionStatement;
-			const existing = localShapes.get(declaration.name.name);
-			if (existing) {
-				localShapes.set(declaration.name.name, existing);
-			}
-		}
-	}
-	return localShapes;
-};
-
-// Evaluate a const module initializer expression to its constant value. Only the
-// Lua-standard constant forms are accepted (literals, negation of a numeric literal,
-// and references to a previously declared top-level `local <const>`); anything else
-// returns undefined so the caller can reject it.
-const evaluateModuleConstLiteral = (
-	expression: LuaExpression,
-	topLevelConsts: ReadonlyMap<string, ConstExportValue>,
-): ConstExportValue | undefined => {
-	switch (expression.kind) {
-		case LuaSyntaxKind.NumericLiteralExpression:
-			return { kind: 'number', value: (expression as LuaNumericLiteralExpression).value };
-		case LuaSyntaxKind.StringLiteralExpression:
-			return { kind: 'string', value: (expression as LuaStringLiteralExpression).value };
-		case LuaSyntaxKind.BooleanLiteralExpression:
-			return { kind: 'boolean', value: (expression as LuaBooleanLiteralExpression).value };
-		case LuaSyntaxKind.NilLiteralExpression:
-			return { kind: 'nil' };
-		case LuaSyntaxKind.IdentifierExpression: {
-			const name = (expression as LuaIdentifierExpression).name;
-			return topLevelConsts.has(name) ? topLevelConsts.get(name)! : undefined;
-		}
-		case LuaSyntaxKind.UnaryExpression: {
-			const unary = expression as LuaUnaryExpression;
-			if (unary.operator !== LuaUnaryOperator.Negate) {
-				return undefined;
-			}
-			const operand = evaluateModuleConstLiteral(unary.operand, topLevelConsts);
-			return operand !== undefined && operand.kind === 'number'
-				? { kind: 'number', value: -operand.value }
-				: undefined;
-		}
-		default:
-			return undefined;
-	}
-};
-
-const collectTopLevelConstLocals = (chunk: LuaChunk): Map<string, ConstExportValue> => {
-	const consts = new Map<string, ConstExportValue>();
-	for (let index = 0; index < chunk.body.length; index += 1) {
-		const statement = chunk.body[index];
-		if (statement.kind !== LuaSyntaxKind.LocalAssignmentStatement) {
-			continue;
-		}
-		const local = statement as LuaLocalAssignmentStatement;
-		if (local.names.length !== 1 || local.attributes[0] !== 'const' || local.values.length !== 1) {
-			continue;
-		}
-		const value = evaluateModuleConstLiteral(local.values[0], consts);
-		if (value !== undefined) {
-			consts.set(local.names[0].name, value);
-		}
-	}
-	return consts;
-};
-
-const collectModuleExportConstValues = (
-	expression: LuaExpression,
-	topLevelConsts: ReadonlyMap<string, ConstExportValue>,
-	out: Map<string, ConstExportValue>,
-	path: string[],
-): void => {
-	if (expression.kind === LuaSyntaxKind.TableConstructorExpression) {
-		const table = expression as LuaTableConstructorExpression;
-		for (let index = 0; index < table.fields.length; index += 1) {
-			const field = table.fields[index];
-			if (field.kind === LuaTableFieldKind.Array) {
-				continue;
-			}
-			const key = field.kind === LuaTableFieldKind.IdentifierKey
-				? field.name
-				: extractTableKeyFromExpression(field.key);
-			if (!key) {
-				continue;
-			}
-			path.push(key);
-			collectModuleExportConstValues(field.value, topLevelConsts, out, path);
-			path.pop();
-		}
-		return;
-	}
-	const value = evaluateModuleConstLiteral(expression, topLevelConsts);
-	if (value !== undefined) {
-		out.set(buildModuleExportPathKey(path), value);
-	}
-};
-
-const buildModuleCompileInfo = (
-	modulePath: string,
-	chunk: LuaChunk,
-	external: boolean,
-	constModule: boolean,
-): ModuleCompileInfo | null => {
-	if (chunk.body.length === 0) {
-		return null;
-	}
-	const lastStatement = chunk.body[chunk.body.length - 1];
-	if (lastStatement.kind !== LuaSyntaxKind.ReturnStatement) {
-		return null;
-	}
-	const returnStatement = lastStatement as LuaReturnStatement;
-	if (returnStatement.expressions.length !== 1) {
-		return null;
-	}
-	const localShapes = buildTopLevelLocalModuleShapes(chunk);
-	const exportRoot = buildModuleShapeFromExpression(returnStatement.expressions[0], localShapes);
-	if (!exportRoot || exportRoot.children.size === 0) {
-		return null;
-	}
-	const exportSlotsByPathKey = new Map<string, string>();
-	const assignSlots = (node: ModuleExportNode, path: string[], visiting: WeakSet<ModuleExportNode>): void => {
-		if (visiting.has(node)) {
-			return;
-		}
-		visiting.add(node);
-		for (const [key, child] of node.children) {
-			path.push(key);
-			exportSlotsByPathKey.set(buildModuleExportPathKey(path), buildModuleExportSlotName(modulePath, path));
-			assignSlots(child, path, visiting);
-			path.pop();
-		}
-		visiting.delete(node);
-	};
-	assignSlots(exportRoot, [], new WeakSet());
-	const exportConstValueByPathKey = new Map<string, ConstExportValue>();
-	if (constModule) {
-		const topLevelConsts = collectTopLevelConstLocals(chunk);
-		collectModuleExportConstValues(returnStatement.expressions[0], topLevelConsts, exportConstValueByPathKey, []);
-		assertConstModuleExportsAreConstant(modulePath, exportRoot, exportConstValueByPathKey);
-	}
-	return {
-		path: modulePath,
-		external,
-		constModule,
-		returnExpression: returnStatement.expressions[0],
-		exportRoot,
-		exportSlotsByPathKey,
-		exportConstValueByPathKey,
-	};
-};
-
-// A const module contract: every leaf export must resolve to a compile-time
-// constant. A missing value means the generated/declared module is not a pure
-// const symbol table, which is a build error rather than a silent fallback.
-const assertConstModuleExportsAreConstant = (
-	modulePath: string,
-	exportRoot: ModuleExportNode,
-	exportConstValueByPathKey: ReadonlyMap<string, ConstExportValue>,
-): void => {
-	const visit = (node: ModuleExportNode, path: string[], visiting: WeakSet<ModuleExportNode>): void => {
-		if (visiting.has(node)) {
-			return;
-		}
-		visiting.add(node);
-		for (const [key, child] of node.children) {
-			path.push(key);
-			if (child.children.size === 0 && !exportConstValueByPathKey.has(buildModuleExportPathKey(path))) {
-				throw new Error(`[Compiler] Const module '${modulePath}' export '${buildModuleExportPathKey(path)}' is not a compile-time constant.`);
-			}
-			visit(child, path, visiting);
-			path.pop();
-		}
-		visiting.delete(node);
-	};
-	visit(exportRoot, [], new WeakSet());
-};
-
-const buildModuleCompileContext = (
-	modules: ReadonlyArray<ProgramModule>,
-	externalModules: ReadonlyArray<ProgramModule>,
-	constModulePaths: ReadonlySet<string>,
-): ModuleCompileContext => {
-	const modulesByPath = new Map<string, ModuleCompileInfo>();
-	for (let index = 0; index < modules.length; index += 1) {
-		const module = modules[index];
-		const constModule = constModulePaths.has(module.path);
-		// A const module is a compile-time symbol table, so it is treated as external
-		// (no proto, no runtime require) even when it ships in the module source list.
-		const info = buildModuleCompileInfo(module.path, module.chunk, constModule, constModule);
-		if (info) {
-			modulesByPath.set(module.path, info);
-		}
-	}
-	for (let index = 0; index < externalModules.length; index += 1) {
-		const module = externalModules[index];
-		if (modulesByPath.has(module.path)) {
-			continue;
-		}
-		const info = buildModuleCompileInfo(module.path, module.chunk, true, constModulePaths.has(module.path));
-		if (info) {
-			modulesByPath.set(module.path, info);
-		}
-	}
-	return {
-		modulesByPath,
-		staticExternalModulePaths: [],
-		staticExternalModulePathSet: new Set<string>(),
-	};
-};
-
 const extractCompileErrorMessage = (error: unknown, path: string): string => {
 	if (error instanceof Error) {
 		return error.message;
@@ -4659,7 +4220,7 @@ export function compileLuaChunkToProgram(chunk: LuaChunk, modules: ReadonlyArray
 	const canonicalExternalModules = canonicalizeProgramModules(options.externalModules ?? EMPTY_PROGRAM_MODULES, 'external');
 	const frontend = buildCompilerSemanticFrontend(chunk, canonicalModules, canonicalExternalModules, options);
 	const constModulePaths = new Set<string>(options.constModulePaths ?? []);
-	const moduleCompileContext = buildModuleCompileContext(canonicalModules, canonicalExternalModules, constModulePaths);
+	const moduleCompileContext = buildModuleCompileContext(canonicalModules, canonicalExternalModules, constModulePaths, frontend);
 	const semanticErrors = collectSemanticCompileErrors(frontend, chunk.range.path);
 	if (semanticErrors.length > 0) {
 		throw new Error(buildCompileFailureMessage(semanticErrors));
@@ -4673,6 +4234,33 @@ export function compileLuaChunkToProgram(chunk: LuaChunk, modules: ReadonlyArray
 		programBuilder = createProgramBuilderFromProgram(options.baseProgram, options.baseMetadata, optLevel);
 	} else {
 		programBuilder = new ProgramBuilder(null, null, optLevel);
+	}
+	for (let index = 0; index < canonicalModules.length; index += 1) {
+		const module = canonicalModules[index];
+		const info = moduleCompileContext.modulesByPath.get(module.path);
+		if (info === undefined || !info.staticStorage) {
+			continue;
+		}
+		const builder = new FunctionBuilder(programBuilder, null, {
+			moduleId: module.path,
+			protoId: buildModuleProtoId(module.path),
+			semantics: frontend.getFile(module.path),
+			frontend,
+			moduleCompileContext,
+			moduleCompileInfo: info,
+		});
+		try {
+			builder.compileStaticStorage(collectStaticStorageDeclarations(module.chunk, frontend.getFile(module.path)));
+		} catch (error) {
+			compileErrors.push({
+				path: module.path,
+				stage: 'module',
+				message: extractCompileErrorMessage(error, module.path),
+			});
+		}
+	}
+	if (compileErrors.length > 0) {
+		throw new Error(buildCompileFailureMessage(compileErrors));
 	}
 	const moduleId = chunk.range.path;
 	const entryProtoId = buildEntryProtoId(moduleId);
@@ -4754,7 +4342,7 @@ export function compileLuaChunkToProgram(chunk: LuaChunk, modules: ReadonlyArray
 		throw new Error(buildCompileFailureMessage(compileErrors));
 	}
 	sectionInitProtoIndex = compileSectionInitProto(programBuilder, moduleId, chunk.range, frontend.getFile(chunk.range.path), frontend);
-	const { program, metadata, constRelocs, constValueRelocs, bss } = programBuilder.buildProgram();
+	const { program, metadata, constRelocs, constValueRelocs, bss, staticModulePaths } = programBuilder.buildProgram();
 
 	// Ensure module export slot names (built during module compile-info collection)
 	// are present in the program metadata so linkers can resolve symbolic module slots.
@@ -4784,7 +4372,7 @@ export function compileLuaChunkToProgram(chunk: LuaChunk, modules: ReadonlyArray
 		entryProtoIndex,
 		sectionInitProtoIndex,
 		moduleProtoMap,
-		staticModulePaths: moduleCompileContext.staticExternalModulePaths,
+		staticModulePaths,
 		constRelocs,
 		constValueRelocs,
 		bss,

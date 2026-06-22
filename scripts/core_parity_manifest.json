@@ -36,6 +36,11 @@
 			"reason": "full_compiler_excluded"
 		},
 		{
+			"pattern": "machine/ts/machine/program/compiler/**",
+			"category": "compiler_tooling",
+			"reason": "compiler_support_excluded"
+		},
+		{
 			"pattern": "machine/ts/machine/program/compile_value_flow.ts",
 			"category": "compiler_tooling",
 			"reason": "compiler_tooling_excluded"
