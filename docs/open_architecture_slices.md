@@ -3,10 +3,10 @@
 Baseline na de laatste boundary-slices:
 
 ```txt
-architecture_boundary_issues,17
+architecture_boundary_issues,15
 ts-machine -> ts-ide,10
-ts-machine -> ts-render,4
-cpp-machine -> cpp-render,3
+ts-machine -> ts-render,3
+cpp-machine -> cpp-render,2
 ```
 
 Slice-nummers worden niet hergebruikt: gaten in de nummering (1–3, 5, 7) zijn
@@ -487,13 +487,20 @@ Acceptatie:
 
 Doel: machine produceert VDP/VOUT/RPU output; host/render consumeert die output. Machine runtime bezit geen `GameView`, presentation state of render context restore.
 
+Status:
+
+- `RenderPresentationState` is host/core-owned in TS en C++; runtime bezit geen
+  presentatie-state meer en `machine/runtime/frame`/`vblank` resetten geen
+  render-presentatie lifecycle-state.
+- Render-context restore voor save/resume blijft bewust open maar valt onder
+  slice 8, dus niet mengen met deze slice zolang save-state/resume out-of-scope
+  is.
+
 Open audit-evidence:
 
 - `machine/ts/machine/runtime/runtime.ts -> render/gameview`
-- `machine/ts/machine/runtime/runtime.ts -> render/presentation_state`
 - `machine/ts/machine/runtime/runtime.ts -> render/shared/bmsx_font`
 - `machine/ts/machine/runtime/save_state.ts -> render/vdp/context_state`
-- `machine/cpp/machine/runtime/runtime.h -> render/presentation_state.h`
 - `machine/cpp/machine/runtime/resume_snapshot.cpp -> render/vdp/context_state.h`
 - `machine/cpp/machine/runtime/save_state.cpp -> render/vdp/context_state.h`
 

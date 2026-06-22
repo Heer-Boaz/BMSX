@@ -15,6 +15,7 @@
 #include "rompack/loader.h"
 #include "platform/platform.h"
 #include "render/gameview.h"
+#include "render/presentation_state.h"
 #include "audio/soundmaster.h"
 #include "machine/runtime/timing/constants.h"
 #include <chrono>
@@ -208,6 +209,7 @@ private:
 	const MachineManifest* machine_manifest = nullptr;
 	TickTiming m_last_tick_timing;
 	RenderTiming m_last_render_timing;
+	RenderPresentationState m_screen;
 
 	static MachineManager* s_instance;
 

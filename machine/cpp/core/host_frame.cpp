@@ -24,7 +24,7 @@ bool MachineManager::runHostFrame(
 	}
 	try {
 		const auto tickStart = std::chrono::steady_clock::now();
-		runtime.screen.recordHostFrame();
+		m_screen.recordHostFrame();
 
 		double hostDeltaMs = deltaTime * 1000.0;
 		if (hostDeltaMs > MAX_FRAME_DELTA_MS) {
@@ -40,7 +40,7 @@ bool MachineManager::runHostFrame(
 		Input::instance().pollInput();
 		const bool hostMenuActive = hostOverlayMenu().tickInput(*this);
 
-		runtime.screen.clearPresentation();
+		m_screen.clearPresentation();
 		if (!platformPaused && !hostMenuActive) {
 			m_delta_time = runtime.timing.frameDurationMs / 1000.0;
 			// Handle program reload request at the frame boundary (TS parity: no MachineManager in CartBootState)
@@ -54,7 +54,7 @@ bool MachineManager::runHostFrame(
 			}
 			RuntimeFrameStepResult stepResult;
 			runRuntimeFrameStepInto(stepResult, runtime, hostDeltaMs);
-			runtime.screen.syncAfterRuntimeUpdate(runtime, stepResult.previousTickSequence);
+			m_screen.syncAfterRuntimeUpdate(runtime, stepResult.previousTickSequence);
 		} else {
 			runtime.frameScheduler.clearQueuedTime();
 		}
@@ -69,13 +69,13 @@ bool MachineManager::runHostFrame(
 		} else {
 			const bool hostOverlayQueued = m_view && hostOverlayMenu().queueFrameOverlayCommands(*this, *m_view);
 			if (hostOverlayQueued) {
-				runtime.screen.requestHeldPresentation();
+				m_screen.requestHeldPresentation();
 			}
 		}
 		if (hostMenuActive) {
-			runtime.screen.requestHeldPresentation();
+			m_screen.requestHeldPresentation();
 		}
-		return runtime.screen.render(*this, runtime, platformPaused);
+		return m_screen.render(*this, runtime, platformPaused);
 	} catch (const std::exception& e) {
 		runtime.frameLoop.abandonFrameState(runtime);
 		runtime.handleLuaError(e.what());

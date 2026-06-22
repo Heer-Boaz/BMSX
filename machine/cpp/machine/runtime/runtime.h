@@ -9,7 +9,6 @@
 #include "machine/devices/irq/controller.h"
 #include "machine/bus/io.h"
 #include "machine/machine.h"
-#include "render/presentation_state.h"
 #include "machine/scheduler/device.h"
 #include "machine/runtime/timing/index.h"
 #include "machine/runtime/timing/state.h"
@@ -187,7 +186,6 @@ public:
 	auto vdpUsageFrameHeld() const -> bool { return machine.vdp.lastFrameHeld(); }
 	auto isDrawPending() const -> bool { return m_runtimeFailed || m_pendingCall == PendingCall::Entry; }
 	void refreshMemoryMap();
-	RenderPresentationState screen;
 	TimingState timing;
 	FrameSchedulerState frameScheduler;
 	CpuExecutionState cpuExecution;

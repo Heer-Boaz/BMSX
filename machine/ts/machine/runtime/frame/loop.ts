@@ -41,7 +41,6 @@ export class FrameLoopState {
 		runtime.machine.cpu.clearHaltUntilIrq();
 		runtime.frameScheduler.reset();
 		this.reset();
-		runtime.screen.reset();
 		runtime.frameScheduler.resetTickTelemetry();
 	}
 

@@ -51,7 +51,6 @@ import type { ParsedLuaChunk } from '../../lua/analysis/parse';
 import { configureLuaHeapUsage, getTrackedLuaHeapBytes } from '../memory/lua_heap_usage';
 import { FrameLoopState } from './frame/loop';
 import { FrameSchedulerState } from '../scheduler/frame';
-import { RenderPresentationState } from '../../render/presentation_state';
 import { calcCyclesPerFrameScaled, resolveUfpsScaled, resolveVblankCycles } from './timing';
 import { TimingState } from './timing/state';
 import { VblankState } from './vblank';
@@ -183,7 +182,6 @@ export class Runtime {
 	public realtimeCompileOptLevel: 0 | 1 | 2 | 3 = 3;
 	public readonly frameScheduler: FrameSchedulerState;
 	public readonly frameLoop: FrameLoopState;
-	public readonly screen: RenderPresentationState;
 	public readonly activeMachineManifest: MachineManifest;
 	public readonly cartManifest: CartManifest | null;
 	public readonly cartProjectRootPath: string | null;
@@ -586,7 +584,6 @@ export class Runtime {
 		this.view = view;
 		this.frameScheduler = new FrameSchedulerState(this);
 		this.frameLoop = new FrameLoopState(this);
-		this.screen = new RenderPresentationState(this);
 		this.vblank = new VblankState(this);
 		this.cpuExecution = new CpuExecutionState(this);
 		this.hostFault = new HostFaultState(this);

@@ -153,7 +153,7 @@ void MachineManager::pause() {
 	switch (m_state) {
 		case MachineManagerState::Running:
 			m_state = MachineManagerState::Paused;
-			runtime().screen.clearPresentation();
+			m_screen.clearPresentation();
 			break;
 		default:
 			break;
@@ -373,6 +373,7 @@ void MachineManager::bootRuntimeFromProgram() {
 	m_sound_master->setMixerUfpsScaled(rt.timing.ufpsScaled);
 	rt.refreshMemoryMap();
 	rt.resetRuntimeForProgramReload();
+	m_screen.reset();
 	refreshRenderSurfaces();
 	if (m_system_rom_loaded && m_system_rom.programImage) {
 		auto linked = linkBootProgramImages(
@@ -427,6 +428,7 @@ bool MachineManager::bootSystemStartupProgram(const MachineManifest& runtimeMach
 	m_sound_master->setMixerUfpsScaled(rt.timing.ufpsScaled);
 	rt.refreshMemoryMap();
 	rt.resetRuntimeForProgramReload();
+	m_screen.reset();
 	rt.enterSystemFirmware();
 	refreshRenderSurfaces();
 	m_linked_program.reset();

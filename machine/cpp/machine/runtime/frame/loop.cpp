@@ -19,7 +19,6 @@ void FrameLoopState::resetFrameState(Runtime& runtime) {
 	runtime.machine.cpu.clearHaltUntilIrq();
 	runtime.frameScheduler.reset();
 	reset();
-	runtime.screen.reset();
 	runtime.frameScheduler.resetTickTelemetry();
 }
 
