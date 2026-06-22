@@ -171,6 +171,72 @@ return { tiles_per_row = tiles_per_row }
 	assert.deepEqual(result.values, [32]);
 });
 
+test('const module static functions reject table allocation opcodes', () => {
+	const moduleSource = `
+local function make()
+	return {}
+end
+return { make = make }
+`;
+	assert.throws(
+		() => compileWithConstModule('local state<const> = require("state")\nreturn state.make()', 'state', moduleSource),
+		/forbidden static opcode NEWT \(table allocation\)/,
+	);
+});
+
+test('const module static functions reject table dispatch opcodes', () => {
+	const moduleSource = `
+local function read(record)
+	return record.value
+end
+return { read = read }
+`;
+	assert.throws(
+		() => compileWithConstModule('local state<const> = require("state")\nreturn state.read({ value = 3 })', 'state', moduleSource),
+		/forbidden static opcode GETFIELD \(table dispatch\)/,
+	);
+});
+
+test('const module static functions reject runtime closure allocation opcodes', () => {
+	const moduleSource = `
+local function outer()
+	local function inner() return 1 end
+	return inner()
+end
+return { outer = outer }
+`;
+	assert.throws(
+		() => compileWithConstModule('local state<const> = require("state")\nreturn state.outer()', 'state', moduleSource),
+		/forbidden static opcode CLOSURE \(runtime closure allocation\)/,
+	);
+});
+
+test('const module static functions reject vararg opcodes', () => {
+	const moduleSource = `
+local function first(...)
+	return ...
+end
+return { first = first }
+`;
+	assert.throws(
+		() => compileWithConstModule('local state<const> = require("state")\nreturn state.first(1)', 'state', moduleSource),
+		/forbidden static opcode VARARG \(vararg dispatch\)/,
+	);
+});
+
+test('const module static functions reject dynamic concat opcodes', () => {
+	const moduleSource = `
+local function suffix(prefix)
+	return prefix .. "_x"
+end
+return { suffix = suffix }
+`;
+	assert.throws(
+		() => compileWithConstModule('local state<const> = require("state")\nreturn state.suffix("a")', 'state', moduleSource),
+		/forbidden static opcode CONCAT \(dynamic string concatenation\)/,
+	);
+});
+
 test('external const modules cannot export static functions', () => {
 	const moduleSource = 'local function read() return 1 end\nreturn { read = read }';
 	assert.throws(

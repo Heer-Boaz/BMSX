@@ -51,6 +51,7 @@ import { extractAssignmentPath, extractTableKeyFromExpression } from './compiler
 import { appendModuleExportPathKey, buildModuleExportPathKey, buildModuleExportSlotName, buildModuleRootFieldSlotName } from './compiler/module_names';
 import { collectStaticStorageDeclarations, type StaticStorageDeclaration } from './compiler/static_storage';
 import { collectStaticFunctionExports } from './compiler/static_functions';
+import { assertStaticFunctionInstructionSet } from './compiler/static_proto_contract';
 import {
 	encodeProgramObjectSections,
 	toLuaModulePath,
@@ -573,6 +574,14 @@ class ProgramBuilder {
 
 	public getProtoUpvalueNames(protoIndex: number): ReadonlyArray<string> {
 		return this.protoUpvalueNames[protoIndex];
+	}
+
+	public getProtoInstructionSet(protoIndex: number): InstructionSet {
+		const instructionSet = this.protoInstructionSets[protoIndex];
+		if (instructionSet === null || instructionSet === undefined) {
+			throw new Error(`[ProgramBuilder] Missing instruction set for proto index ${protoIndex}.`);
+		}
+		return instructionSet;
 	}
 
 	// Record that a module export slot is backed by an exported static-closure
@@ -4328,6 +4337,7 @@ export function compileLuaChunkToProgram(chunk: LuaChunk, modules: ReadonlyArray
 					const upvalueNames = programBuilder.getProtoUpvalueNames(protoIndex);
 					throw new Error(`[Compiler] Const module '${module.path}' function export '${fn.symbolHandle}' captures runtime local '${upvalueNames[0]}'; static function exports may use globals, compile-time constants, parameters, function-local declarations, and .bss storage only.`);
 				}
+				assertStaticFunctionInstructionSet(module.path, fn.symbolHandle, programBuilder.getProtoInstructionSet(protoIndex));
 				programBuilder.markStaticClosureProto(protoIndex);
 				for (let slotIndex = 0; slotIndex < fn.slotNames.length; slotIndex += 1) {
 					programBuilder.recordExportProto(fn.slotNames[slotIndex], protoId);

@@ -394,13 +394,27 @@ Verboden in systems/static modules:
 - `VARARG`, dynamische concat/dispatch en runtime module-table escape
 - impliciete data-parser of nested Lua-table construction voor ROM ABI
 
+Status:
+
+- eerste increment klaar voor const-module static function exports: na codegen en
+  optimalisatie controleert de compiler het daadwerkelijke InstructionSet van
+  elke export-proto en weigert table allocatie/dispatch, runtime closure
+  allocatie, vararg en dynamische concat. Dit is geen linter over source-stijl:
+  alleen opcodes die na optimalisatie in het static proto overblijven tellen.
+- dynamic gameplay modules blijven buiten deze gate; de gate hangt aan de
+  static moduleklasse die al compile-time constants, `.bss` symbols en static
+  function exports bezit.
+- open: dezelfde static-proto gate uitbreiden naar toekomstige systems/static
+  functieklassen buiten const modules, en opcode-mix rapportage per module/proto
+  als audit-output toevoegen wanneer er een echte audit-consumer is.
+
 Acceptatie:
 
-- module marker/klasse zit in compiler-semantiek
+- module marker/klasse zit in compiler-semantiek (klaar voor const modules)
 - compiler controleert de uiteindelijke geoptimaliseerde protos van gemarkeerde
   systems/static modules en faalt de build wanneer verboden dynamische opcodes
-  overblijven
-- opcode-mix rapportage per module/proto is beschikbaar voor audit
+  overblijven (klaar voor const-module static function exports)
+- opcode-mix rapportage per module/proto is beschikbaar voor audit (open)
 - gameplay/dynamic lane blijft mogelijk, maar niet voor console ABI of hot path
 
 ## 21. CPU machine-code ABI loshalen van Lua-objectwereld
