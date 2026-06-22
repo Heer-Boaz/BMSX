@@ -130,8 +130,8 @@ Cart-representatie roadmap/status:
 | echte `rodata`/`data`/`bss` secties | Deels: het image-format en de TS/C++ linker behouden `rodata`/`data`/`bss`; open: het section-model moet `.rodata`, `.data` en `.bss` onderscheiden, maar v1-implementatie blijft `.bss`-only met compiler/linker-generated startup-code. |
 | één object-file/linker pipeline | Deels: program images hebben reloc-records en TS/C++ linkers; eerste install-seam staat nu in de program/linker-eigenaar (`inflateExecutableProgramImage`) voor object-image → executable program; gewone Lua source-boot, hot-resume en host-eval append lopen ook via de compiler-owned `ProgramImage` encoding; system+cart boot-entry selectie loopt via de program/linker-eigenaar (`linkBootProgramImages`) in TS en C++; ROM-build en source-compile zijn geaudit als legitieme input-producers die op dezelfde compiler/linker objectgrens convergeren, niet als resterende split-brain. |
 | runtime relocaties als load/link stap | Deels: `module`/`export_proto` placeholders zijn uit runtimewaarden gehaald; open: harde verifier-gate voor alle executable images. |
-| static module/data ABI | Deels: M2 call-targets kunnen link-time naar `CLOSURE(proto)` en de const-moduleklasse bestaat (`bmsx/assets` exporteert compile-time constants die op de use-site worden geïnlined, zonder runtime module-table); const modules kunnen nu ook `.bss` storage-symbolen exporteren als link-time adressen zonder runtime module-table; open: bredere static moduleklasse met functie-exports en raw `.rodata`/`.data` symbolen. |
-| dynamic Lua-opcodes weren uit systems/static modules | Open: dit moet een compiler-contract worden, geen discipline of losse linter. |
+| static module/data ABI | Deels: M2 call-targets kunnen link-time naar `CLOSURE(proto)` en de const-moduleklasse bestaat; const modules exporteren compile-time constants, `.bss` storage-symbolen en leaf/static function call-targets zonder runtime module-table, global-slot lookup of `require`-call. Static function exports mogen sibling static exports aanroepen via `export_proto` link-symbolen; function exports zijn geen runtime waarden. Open: raw `.rodata`/`.data` symbolen. |
+| dynamic Lua-opcodes weren uit systems/static modules | Deels: const-module static function protos worden na codegen/optimalisatie door de compiler geweigerd als dynamic Lua-opcodes overblijven; open: bredere systems/static functieklassen en audit-output zodra daar een echte consumer voor is. |
 | CPU objectwereld loshalen van machine-code ABI | Open: `CPU.Value` is nog Lua-objectwereld; echte cart ABI moet primair words, registers, addresses, memory, sections en symbols zijn. |
 | assets/`rom_data` binair maken | Deels: `rom_data`-familie is weg en `.bin` raw ROM path is getest; open: maps, rooms, timelines, registries en asset records naar vaste binaire layouts. |
 | cart startup/vector model | Open: entry/init/new_game/reinit/IRQ handlers moeten een expliciete vector/handler ABI krijgen in plaats van ad-hoc Lua global lifecycle. |
@@ -355,10 +355,15 @@ Status:
   `local function` / `local <const> = function` exports aanbieden; de compiler
   compileert die als 0-upvalue static closures en weigert module-local captures
   of externe const-module function exports. Static functions mogen module-level
-  `<const>` waarden gebruiken; sibling static-function calls zijn nog niet
-  gelowered naar `export_proto` en gelden voorlopig als runtime capture.
-- open: raw `.rodata`/`.data` symbolen en bredere static functionregels zoals
-  expliciete dynamic-opcode gates voor static/systems function protos
+  `<const>` waarden gebruiken; sibling static-function calls naar geëxporteerde
+  static functies loweren naar `export_proto` link-symbolen in plaats van
+  runtime upvalues. Static function exports als waarden lezen blijft geen static
+  ABI: alleen call-targets krijgen link-symboliek.
+- klaar als eerste static opcode-contract increment: const-module static function
+  protos worden na codegen/optimalisatie geweigerd wanneer table allocatie of
+  dispatch, runtime closure allocatie, vararg of dynamische concat overblijft.
+- open: raw `.rodata`/`.data` symbolen en bredere static functionregels voor
+  toekomstige systems/static function protos buiten const modules
 - geen doel: diepe contentgraphs als Lua const-aggregaten naar rodata-bytes
   verlagen. Dat is content-packaging en hoort bij een
   schema-specifieke asset-producer.

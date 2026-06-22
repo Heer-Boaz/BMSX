@@ -126,9 +126,8 @@ return { counter = counter, read = read }
 	const entrySource = `
 local state<const> = require("state")
 local counter<const>: *word = state.counter
-local read<const> = state.read
 *counter = 41
-return read(), state.read()
+return state.read()
 `;
 	const compiled = compileWithConstModule(entrySource, 'state', moduleSource);
 	const image = encodeCompiledProgramImage(compiled);
@@ -141,8 +140,32 @@ return read(), state.read()
 	assert.equal(image.link.constRelocs.some(reloc => reloc.kind === 'export_proto' && reloc.symbol === 'state__read'), true);
 
 	const result = runColdCompiled(compiled);
-	assert.deepEqual(result.values, [41, 41]);
+	assert.deepEqual(result.values, [41]);
 	assert.equal(result.memory.readMappedU32LE(PROGRAM_BSS_BASE), 41);
+});
+
+test('const module static function exports are call targets, not runtime values', () => {
+	const moduleSource = `
+local function read()
+	return 1
+end
+return { read = read }
+`;
+	assert.throws(
+		() => compileWithConstModule('local state<const> = require("state")\nlocal read<const> = state.read\nreturn read()', 'state', moduleSource),
+		/function export 'read' is a call target, not a runtime value/,
+	);
+});
+
+test('const module value exports are not lowered as call-target symbols', () => {
+	const moduleSource = `
+local answer<const> = 7
+return { answer = answer }
+`;
+	assert.throws(
+		() => compileWithConstModule('local state<const> = require("state")\nreturn state.answer()', 'state', moduleSource),
+		/value export 'answer' is not a call target/,
+	);
 });
 
 test('const module static functions cannot capture module locals', () => {
@@ -169,6 +192,46 @@ return { tiles_per_row = tiles_per_row }
 `;
 	const result = runColdCompiled(compileWithConstModule('local state<const> = require("state")\nreturn state.tiles_per_row()', 'state', moduleSource));
 	assert.deepEqual(result.values, [32]);
+});
+
+test('const module static functions call sibling static exports through link symbols', () => {
+	const moduleSource = `
+bss counter: word
+local function increment(value)
+	return value + 1
+end
+local function read_next()
+	return increment(*counter)
+end
+return { counter = counter, increment = increment, read_next = read_next }
+`;
+	const entrySource = `
+local state<const> = require("state")
+local counter<const>: *word = state.counter
+*counter = 40
+return state.read_next()
+`;
+	const compiled = compileWithConstModule(entrySource, 'state', moduleSource);
+	const image = encodeCompiledProgramImage(compiled);
+	assert.equal(image.link.constRelocs.some(reloc => reloc.kind === 'export_proto' && reloc.symbol === 'state__increment'), true);
+	assert.deepEqual(runColdCompiled(compiled).values, [41]);
+});
+
+test('const module static functions reject sibling static exports used as values', () => {
+	const moduleSource = `
+local function increment(value)
+	return value + 1
+end
+local function leak()
+	local fn = increment
+	return fn(1)
+end
+return { increment = increment, leak = leak }
+`;
+	assert.throws(
+		() => compileWithConstModule('local state<const> = require("state")\nreturn state.leak()', 'state', moduleSource),
+		/captures runtime local 'increment'/,
+	);
 });
 
 test('const module static functions reject table allocation opcodes', () => {

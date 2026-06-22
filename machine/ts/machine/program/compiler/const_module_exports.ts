@@ -7,7 +7,6 @@ import {
 	type LuaExpression,
 	type LuaIdentifierExpression,
 	type LuaLocalAssignmentStatement,
-	type LuaLocalFunctionStatement,
 	type LuaNumericLiteralExpression,
 	type LuaStringLiteralExpression,
 	type LuaTableConstructorExpression,
@@ -16,16 +15,19 @@ import {
 import type { LuaSemanticFrontendFile } from '../../../lua/semantic/frontend';
 import { getBoundIdentifierReference as getResolvedIdentifierReference } from '../bound_reference';
 import { extractTableKeyFromExpression } from './expression_paths';
-import { buildModuleExportPathKey, buildModuleExportSlotName } from './module_names';
+import { buildModuleExportPathKey } from './module_names';
 import type { ModuleExportNode } from './module_shape';
+
+type ExportPathIndex = {
+	has(pathKey: string): boolean;
+};
 
 export type ConstExportValue =
 	| { kind: 'nil' }
 	| { kind: 'boolean'; value: boolean }
 	| { kind: 'number'; value: number }
 	| { kind: 'string'; value: string }
-	| { kind: 'bss_addr'; symbolHandle: string }
-	| { kind: 'function'; symbolHandle: string; slotName: string };
+	| { kind: 'bss_addr'; symbolHandle: string };
 
 const evaluateModuleConstLiteral = (
 	expression: LuaExpression,
@@ -81,7 +83,6 @@ const evaluateModuleConstExportExpression = (
 		: undefined;
 };
 
-
 const collectTopLevelConstValues = (
 	chunk: LuaChunk,
 	semantics: LuaSemanticFrontendFile,
@@ -89,12 +90,6 @@ const collectTopLevelConstValues = (
 	const consts = new Map<string, ConstExportValue>();
 	for (let index = 0; index < chunk.body.length; index += 1) {
 		const statement = chunk.body[index];
-		if (statement.kind === LuaSyntaxKind.LocalFunctionStatement) {
-			const localFunction = statement as LuaLocalFunctionStatement;
-			const declaration = semantics.getDeclaration(localFunction.name.range);
-			consts.set(declaration.id, { kind: 'function', symbolHandle: declaration.id, slotName: '' });
-			continue;
-		}
 		if (statement.kind !== LuaSyntaxKind.LocalAssignmentStatement) {
 			continue;
 		}
@@ -102,13 +97,12 @@ const collectTopLevelConstValues = (
 		if (local.names.length !== 1 || local.attributes[0] !== 'const' || local.values.length !== 1) {
 			continue;
 		}
-		const declaration = semantics.getDeclaration(local.names[0].range);
 		if (local.values[0].kind === LuaSyntaxKind.FunctionExpression) {
-			consts.set(declaration.id, { kind: 'function', symbolHandle: declaration.id, slotName: '' });
 			continue;
 		}
 		const value = evaluateModuleConstLiteral(local.values[0], consts, semantics);
 		if (value !== undefined) {
+			const declaration = semantics.getDeclaration(local.names[0].range);
 			consts.set(declaration.id, value);
 		}
 	}
@@ -120,7 +114,6 @@ const collectModuleExportConstValues = (
 	constValuesBySymbol: ReadonlyMap<string, ConstExportValue>,
 	semantics: LuaSemanticFrontendFile,
 	allowBssExports: boolean,
-	modulePath: string,
 	out: Map<string, ConstExportValue>,
 	path: string[],
 ): void => {
@@ -138,23 +131,22 @@ const collectModuleExportConstValues = (
 				continue;
 			}
 			path.push(key);
-			collectModuleExportConstValues(field.value, constValuesBySymbol, semantics, allowBssExports, modulePath, out, path);
+			collectModuleExportConstValues(field.value, constValuesBySymbol, semantics, allowBssExports, out, path);
 			path.pop();
 		}
 		return;
 	}
 	const value = evaluateModuleConstExportExpression(expression, constValuesBySymbol, semantics, allowBssExports);
 	if (value !== undefined) {
-		out.set(buildModuleExportPathKey(path), value.kind === 'function'
-			? { kind: 'function', symbolHandle: value.symbolHandle, slotName: buildModuleExportSlotName(modulePath, path) }
-			: value);
+		out.set(buildModuleExportPathKey(path), value);
 	}
 };
 
-export const assertConstModuleExportsAreConstant = (
+export const assertConstModuleExportsAreStatic = (
 	modulePath: string,
 	exportRoot: ModuleExportNode,
 	exportConstValueByPathKey: ReadonlyMap<string, ConstExportValue>,
+	staticFunctionExportByPathKey: ExportPathIndex,
 ): void => {
 	const visit = (node: ModuleExportNode, path: string[], visiting: WeakSet<ModuleExportNode>): void => {
 		if (visiting.has(node)) {
@@ -163,8 +155,9 @@ export const assertConstModuleExportsAreConstant = (
 		visiting.add(node);
 		for (const [key, child] of node.children) {
 			path.push(key);
-			if (child.children.size === 0 && !exportConstValueByPathKey.has(buildModuleExportPathKey(path))) {
-				throw new Error(`[Compiler] Const module '${modulePath}' export '${buildModuleExportPathKey(path)}' is not a compile-time constant or static symbol.`);
+			const pathKey = buildModuleExportPathKey(path);
+			if (child.children.size === 0 && !exportConstValueByPathKey.has(pathKey) && !staticFunctionExportByPathKey.has(pathKey)) {
+				throw new Error(`[Compiler] Const module '${modulePath}' export '${pathKey}' is not a compile-time constant or static symbol.`);
 			}
 			visit(child, path, visiting);
 			path.pop();
@@ -175,13 +168,12 @@ export const assertConstModuleExportsAreConstant = (
 };
 
 export const collectConstModuleExportValues = (
-	modulePath: string,
 	chunk: LuaChunk,
 	expression: LuaExpression,
 	semantics: LuaSemanticFrontendFile,
 	allowBssExports: boolean,
 ): Map<string, ConstExportValue> => {
 	const out = new Map<string, ConstExportValue>();
-	collectModuleExportConstValues(expression, collectTopLevelConstValues(chunk, semantics), semantics, allowBssExports, modulePath, out, []);
+	collectModuleExportConstValues(expression, collectTopLevelConstValues(chunk, semantics), semantics, allowBssExports, out, []);
 	return out;
 };

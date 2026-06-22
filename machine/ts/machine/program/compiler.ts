@@ -1726,7 +1726,7 @@ class FunctionBuilder {
 	// Resolve a const module export (e.g. `assets.data_x_addr`) to its compile-time
 	// constant value. Returns a wrapper so a `nil`/`false`/`0` export is distinguished
 	// from "not a const export". The value is inlined at the use site.
-	private tryResolveModuleExportConstValue(expression: LuaExpression): { value: ConstExportValue } | null {
+	private tryResolveModuleExportConstValue(expression: LuaExpression): { binding: ModuleBinding; value: ConstExportValue } | null {
 		const binding = this.tryResolveStaticModuleBinding(expression, true);
 		if (!binding || binding.exportDepth === 0) {
 			return null;
@@ -1735,7 +1735,7 @@ class FunctionBuilder {
 		if (!info || !info.constModule || !info.exportConstValueByPathKey.has(binding.exportPathKey)) {
 			return null;
 		}
-		return { value: info.exportConstValueByPathKey.get(binding.exportPathKey)! };
+		return { binding, value: info.exportConstValueByPathKey.get(binding.exportPathKey)! };
 	}
 
 	private emitLoadConstExportValue(target: number, value: ConstExportValue): void {
@@ -1758,10 +1758,27 @@ class FunctionBuilder {
 				this.emitLoadBssAddress(target, binding, 0);
 				return;
 			}
-			case 'function':
-				this.emitModuleExportCallTargetLoad(value.slotName, target);
-				return;
 		}
+	}
+
+	private tryResolveStaticFunctionExportBinding(expression: LuaExpression): ModuleBinding | null {
+		const binding = this.tryResolveStaticModuleBinding(expression, true);
+		if (!binding || binding.exportDepth === 0) {
+			return null;
+		}
+		const info = this.moduleCompileContext?.modulesByPath.get(binding.modulePath);
+		if (!info || !info.constModule) {
+			return null;
+		}
+		return info.staticFunctionExportByPathKey.has(binding.exportPathKey) ? binding : null;
+	}
+
+	private failStaticFunctionExportValueUse(binding: ModuleBinding): never {
+		throw new Error(`[Compiler] Const module '${binding.modulePath}' function export '${binding.exportPathKey}' is a call target, not a runtime value.`);
+	}
+
+	private failConstModuleValueCall(binding: ModuleBinding): never {
+		throw new Error(`[Compiler] Const module '${binding.modulePath}' value export '${binding.exportPathKey}' is not a call target.`);
 	}
 
 	private tryResolveModuleExportSlotFromExpression(expression: LuaExpression): string | undefined {
@@ -1772,12 +1789,39 @@ class FunctionBuilder {
 		return this.moduleCompileContext?.modulesByPath.get(binding.modulePath)?.exportSlotsByPathKey.get(binding.exportPathKey);
 	}
 
+	private tryResolveModuleExportCallTargetSlot(expression: LuaExpression): string | undefined {
+		const binding = this.tryResolveStaticModuleBinding(expression, false);
+		if (!binding || binding.exportDepth === 0) {
+			return undefined;
+		}
+		const info = this.moduleCompileContext?.modulesByPath.get(binding.modulePath);
+		if (info === undefined) {
+			return undefined;
+		}
+		if (info.constModule && !info.staticFunctionExportByPathKey.has(binding.exportPathKey)) {
+			return undefined;
+		}
+		return info.exportSlotsByPathKey.get(binding.exportPathKey);
+	}
+
 	private tryResolveModuleExportMethodSlot(baseExpression: LuaExpression, methodName: string): string | undefined {
 		const binding = this.tryResolveStaticModuleBinding(baseExpression, false);
 		if (!binding) {
 			return undefined;
 		}
 		return this.moduleCompileContext?.modulesByPath.get(binding.modulePath)?.exportSlotsByPathKey.get(appendModuleExportPathKey(binding.exportPathKey, methodName));
+	}
+
+	private tryResolveOwnStaticFunctionExportCallSlot(expression: LuaExpression): string | undefined {
+		if (expression.kind !== LuaSyntaxKind.IdentifierExpression || this.moduleCompileInfo === undefined) {
+			return undefined;
+		}
+		const reference = getResolvedIdentifierReference(this.semantics, expression as LuaIdentifierExpression);
+		const symbolHandle = getResolvedReferenceSymbolHandle(reference);
+		if (!symbolHandle) {
+			return undefined;
+		}
+		return this.moduleCompileInfo.staticFunctionExportSlotBySymbolHandle.get(symbolHandle);
 	}
 
 	private tryResolveExternalModuleRootFieldSlotName(baseExpression: LuaExpression, key: string): string | undefined {
@@ -3269,6 +3313,10 @@ class FunctionBuilder {
 			this.emitLoadConstExportValue(target, constExport.value);
 			return;
 		}
+		const staticFunctionExportBinding = this.tryResolveStaticFunctionExportBinding(expression as LuaMemberExpression);
+		if (staticFunctionExportBinding !== null) {
+			this.failStaticFunctionExportValueUse(staticFunctionExportBinding);
+		}
 		const slotName = this.tryResolveModuleExportSlotFromExpression(expression as LuaMemberExpression);
 		if (slotName !== undefined) {
 			this.emitModuleExportValueLoad(slotName, target);
@@ -3295,6 +3343,10 @@ class FunctionBuilder {
 		if (constExport !== null) {
 			this.emitLoadConstExportValue(target, constExport.value);
 			return;
+		}
+		const staticFunctionExportBinding = this.tryResolveStaticFunctionExportBinding(expression as LuaIndexExpression);
+		if (staticFunctionExportBinding !== null) {
+			this.failStaticFunctionExportValueUse(staticFunctionExportBinding);
 		}
 		const slotName = this.tryResolveModuleExportSlotFromExpression(expression as LuaIndexExpression);
 		if (slotName !== undefined) {
@@ -3917,10 +3969,15 @@ class FunctionBuilder {
 		const methodName = expression.methodName;
 		const hasMethod = methodName !== null && methodName.length > 0;
 		const moduleMethodSlot = hasMethod ? this.tryResolveModuleExportMethodSlot(expression.callee, methodName) : undefined;
-		const moduleCallSlot = !hasMethod ? this.tryResolveModuleExportSlotFromExpression(expression.callee) : undefined;
+		const constModuleValueCallee = !hasMethod ? this.tryResolveModuleExportConstValue(expression.callee) : null;
+		const moduleCallSlot = !hasMethod ? this.tryResolveModuleExportCallTargetSlot(expression.callee) : undefined;
+		const ownStaticFunctionExportSlot = !hasMethod ? this.tryResolveOwnStaticFunctionExportCallSlot(expression.callee) : undefined;
 		const constClosureBinding = !hasMethod && expression.callee.kind === LuaSyntaxKind.IdentifierExpression
 			? this.resolveReferenceConstClosureBinding(getResolvedIdentifierReference(this.semantics, expression.callee as LuaIdentifierExpression))
 			: null;
+		if (constModuleValueCallee !== null) {
+			this.failConstModuleValueCall(constModuleValueCallee.binding);
+		}
 		const callProtoIndex = constClosureBinding !== null ? constClosureBinding.constClosureProtoIndex : null;
 		const argCount = expression.arguments.length;
 		const lastArg = argCount > 0 ? expression.arguments[argCount - 1] : null;
@@ -3949,6 +4006,8 @@ class FunctionBuilder {
 			this.emitSelf(callBase, callBase, methodKey);
 		} else if (moduleCallSlot !== undefined) {
 			this.emitModuleExportCallTargetLoad(moduleCallSlot, callBase);
+		} else if (ownStaticFunctionExportSlot !== undefined) {
+			this.emitModuleExportCallTargetLoad(ownStaticFunctionExportSlot, callBase);
 		} else {
 			this.compileExpressionInto(expression.callee, callBase, 1);
 		}
@@ -4328,7 +4387,7 @@ export function compileLuaChunkToProgram(chunk: LuaChunk, modules: ReadonlyArray
 				moduleCompileInfo: info,
 			});
 			staticScope.compileStaticFunctionModuleScope(module.chunk);
-			const exports = collectStaticFunctionExports(module.chunk, semantics, info.exportConstValueByPathKey);
+			const exports = collectStaticFunctionExports(module.chunk, semantics, info.staticFunctionExportByPathKey);
 			for (let exportIndex = 0; exportIndex < exports.length; exportIndex += 1) {
 				const fn = exports[exportIndex];
 				const protoId = buildProtoId(moduleProtoId, `static:${fn.symbolHandle}`);
