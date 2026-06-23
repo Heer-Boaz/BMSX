@@ -1,6 +1,7 @@
 import {
 	LuaSyntaxKind,
 	type LuaBssDeclarationStatement,
+	type LuaRodataDeclarationStatement,
 	type LuaChunk,
 	type LuaStructDeclarationStatement,
 } from '../../../lua/syntax/ast';
@@ -9,7 +10,8 @@ import type { Decl } from '../../../lua/semantic/model';
 
 export type StaticStorageDeclaration =
 	| { kind: 'struct'; statement: LuaStructDeclarationStatement }
-	| { kind: 'bss'; declaration: Decl; statement: LuaBssDeclarationStatement };
+	| { kind: 'bss'; declaration: Decl; statement: LuaBssDeclarationStatement }
+	| { kind: 'rodata'; declaration: Decl; statement: LuaRodataDeclarationStatement };
 
 export const collectStaticStorageDeclarations = (
 	chunk: LuaChunk,
@@ -31,16 +33,29 @@ export const collectStaticStorageDeclarations = (
 				});
 				break;
 			}
+			case LuaSyntaxKind.RodataDeclarationStatement: {
+				const rodataStatement = statement as LuaRodataDeclarationStatement;
+				declarations.push({
+					kind: 'rodata',
+					declaration: semantics.getDeclaration(rodataStatement.name.range),
+					statement: rodataStatement,
+				});
+				break;
+			}
 		}
 	}
 	return declarations;
 };
 
-export const hasStaticBssDeclaration = (chunk: LuaChunk): boolean => {
+export const findStaticStorageDeclarationKind = (chunk: LuaChunk): 'bss' | 'rodata' | null => {
 	for (let index = 0; index < chunk.body.length; index += 1) {
-		if (chunk.body[index].kind === LuaSyntaxKind.BssDeclarationStatement) {
-			return true;
+		const kind = chunk.body[index].kind;
+		if (kind === LuaSyntaxKind.BssDeclarationStatement) {
+			return 'bss';
+		}
+		if (kind === LuaSyntaxKind.RodataDeclarationStatement) {
+			return 'rodata';
 		}
 	}
-	return false;
+	return null;
 };

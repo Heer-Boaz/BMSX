@@ -123,6 +123,7 @@ function walkLuaStatementChildren(statement: LuaStatement, visitStatement: (stat
 			return;
 		case LuaSyntaxKind.StructDeclarationStatement:
 		case LuaSyntaxKind.BssDeclarationStatement:
+		case LuaSyntaxKind.RodataDeclarationStatement:
 			return;
 		default:
 			return;

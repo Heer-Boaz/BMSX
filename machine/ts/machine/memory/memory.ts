@@ -106,7 +106,8 @@ export class Memory {
 	private readonly busFaultAddrSlot = (IO_SYS_BUS_FAULT_ADDR - IO_BASE) / IO_WORD_SIZE;
 	private readonly busFaultAccessSlot = (IO_SYS_BUS_FAULT_ACCESS - IO_BASE) / IO_WORD_SIZE;
 	private readonly busFaultAckSlot = (IO_SYS_BUS_FAULT_ACK - IO_BASE) / IO_WORD_SIZE;
-	private programCode: Uint8Array = new Uint8Array(0);
+	private programRom: Uint8Array = new Uint8Array(0);
+	private programTextByteLength = 0;
 	private vramWriter: VramWriteSink;
 	private readonly vramScratch = new Uint8Array(4);
 	private readonly vramReadScratch = new Uint8Array(4);
@@ -159,11 +160,12 @@ export class Memory {
 		this.ioWriteHandlers[slot] = handler;
 	}
 
-	public setProgramCode(code: Uint8Array): void {
-		if (code.byteLength > PROGRAM_ROM_SIZE) {
-			throw new Error(`[Memory] Program ROM is ${code.byteLength} bytes; maximum is ${PROGRAM_ROM_SIZE}.`);
+	public setProgramRom(rom: Uint8Array, textByteLength: number): void {
+		if (rom.byteLength > PROGRAM_ROM_SIZE) {
+			throw new Error(`[Memory] Program ROM is ${rom.byteLength} bytes; maximum is ${PROGRAM_ROM_SIZE}.`);
 		}
-		this.programCode = code;
+		this.programRom = rom;
+		this.programTextByteLength = textByteLength;
 	}
 
 	public getOverlayRomSize(): number {
@@ -191,8 +193,8 @@ export class Memory {
 	}
 
 	private readMainMemoryU8(addr: number, faultAccess: number): number {
-		if (this.isProgramCodeReadableRange(addr, 1)) {
-			return this.programCode[addr - PROGRAM_ROM_BASE];
+		if (this.isProgramRomReadableRange(addr, 1)) {
+			return this.programRom[addr - PROGRAM_ROM_BASE];
 		}
 		if (addr >= SYSTEM_ROM_BASE && addr < SYSTEM_ROM_BASE + this.systemRom.byteLength) {
 			return this.systemRom[addr - SYSTEM_ROM_BASE];
@@ -288,7 +290,7 @@ export class Memory {
 			return this.readIoSlotValue(slot, addr);
 		}
 		if (addr >= PROGRAM_ROM_BASE && addr + 4 <= PROGRAM_ROM_BASE + PROGRAM_ROM_SIZE) {
-			return this.readProgramCodeWord(addr);
+			return this.readProgramRomWord(addr);
 		}
 		if (addr < RAM_BASE) {
 			return this.readU32FromRegion(addr);
@@ -314,7 +316,7 @@ export class Memory {
 			return 0;
 		}
 		if (addr >= PROGRAM_ROM_BASE && addr + 4 <= PROGRAM_ROM_BASE + PROGRAM_ROM_SIZE) {
-			return this.readProgramCodeWord(addr);
+			return this.readProgramRomWord(addr);
 		}
 		let data: Uint8Array;
 		let offset: number;
@@ -473,7 +475,7 @@ export class Memory {
 			return 0;
 		}
 		if (addr >= PROGRAM_ROM_BASE && addr + 4 <= PROGRAM_ROM_BASE + PROGRAM_ROM_SIZE) {
-			return this.readProgramCodeWord(addr);
+			return this.readProgramRomWord(addr);
 		}
 		if (addr < RAM_BASE) {
 			return this.readU32FromRegion(addr);
@@ -489,8 +491,8 @@ export class Memory {
 	private readU32FromRegion(addr: number): number {
 		let data: Uint8Array;
 		let offset: number;
-		if (this.isProgramCodeReadableRange(addr, 4)) {
-			data = this.programCode;
+		if (this.isProgramRomReadableRange(addr, 4)) {
+			data = this.programRom;
 			offset = addr - PROGRAM_ROM_BASE;
 		}
 		else if (addr >= SYSTEM_ROM_BASE && addr + 4 <= SYSTEM_ROM_BASE + this.systemRom.byteLength) {
@@ -528,8 +530,8 @@ export class Memory {
 		}
 		let data: Uint8Array;
 		let offset: number;
-		if (this.isProgramCodeReadableRange(addr, 2)) {
-			data = this.programCode;
+		if (this.isProgramRomReadableRange(addr, 2)) {
+			data = this.programRom;
 			offset = addr - PROGRAM_ROM_BASE;
 		}
 		else if (addr >= SYSTEM_ROM_BASE && addr + 2 <= SYSTEM_ROM_BASE + this.systemRom.byteLength) {
@@ -579,8 +581,8 @@ export class Memory {
 		}
 		let data: Uint8Array;
 		let offset: number;
-		if (this.isProgramCodeReadableRange(addr, 4)) {
-			data = this.programCode;
+		if (this.isProgramRomReadableRange(addr, 4)) {
+			data = this.programRom;
 			offset = addr - PROGRAM_ROM_BASE;
 		}
 		else if (addr >= SYSTEM_ROM_BASE && addr + 4 <= SYSTEM_ROM_BASE + this.systemRom.byteLength) {
@@ -730,8 +732,8 @@ export class Memory {
 		}
 		let data: Uint8Array | undefined;
 		let offset = 0;
-		if (this.isProgramCodeReadableRange(addr, length)) {
-			data = this.programCode;
+		if (this.isProgramRomReadableRange(addr, length)) {
+			data = this.programRom;
 			offset = addr - PROGRAM_ROM_BASE;
 		}
 		else if (addr >= SYSTEM_ROM_BASE && addr + length <= SYSTEM_ROM_BASE + this.systemRom.byteLength) {
@@ -766,7 +768,7 @@ export class Memory {
 	}
 
 	public isReadableMainMemoryRange(addr: number, length: number): boolean {
-		return this.isProgramCodeReadableRange(addr, length)
+		return this.isProgramRomReadableRange(addr, length)
 			|| this.isRangeWithinRegion(addr, length, SYSTEM_ROM_BASE, this.systemRom.byteLength)
 			|| (!!this.cartRom && this.isRangeWithinRegion(addr, length, CART_ROM_BASE, this.cartRom.byteLength))
 			|| (!!this.overlayRom && this.isRangeWithinRegion(addr, length, OVERLAY_ROM_BASE, this.overlayRom.byteLength))
@@ -927,7 +929,7 @@ export class Memory {
 		if (this.isIoRegionRange(addr, length)) {
 			return length === IO_WORD_SIZE && this.ioAlignedSlot(addr) >= 0;
 		}
-		if (this.isProgramCodeReadableRange(addr, length)) {
+		if (this.isProgramRomReadableRange(addr, length)) {
 			return true;
 		}
 		if (this.isRangeWithinRegion(addr, length, SYSTEM_ROM_BASE, this.systemRom.byteLength)) {
@@ -945,17 +947,20 @@ export class Memory {
 		return addr >= RAM_BASE && addr - RAM_BASE + length <= this.ram.byteLength;
 	}
 
-	private isProgramCodeReadableRange(addr: number, length: number): boolean {
+	private isProgramRomReadableRange(addr: number, length: number): boolean {
 		return addr >= PROGRAM_ROM_BASE
-			&& addr + length <= PROGRAM_ROM_BASE + this.programCode.byteLength;
+			&& addr + length <= PROGRAM_ROM_BASE + this.programRom.byteLength;
 	}
 
-	private readProgramCodeWord(addr: number): number {
+	private readProgramRomWord(addr: number): number {
 		const offset = addr - PROGRAM_ROM_BASE;
-		if (offset < 0 || offset + 4 > this.programCode.byteLength) {
+		if (offset < 0 || offset + 4 > this.programRom.byteLength) {
 			return 0;
 		}
-		const code = this.programCode;
+		if (offset >= this.programTextByteLength) {
+			return readLE32(this.programRom, offset);
+		}
+		const code = this.programRom;
 		return (
 			(code[offset] << 24)
 			| (code[offset + 1] << 16)

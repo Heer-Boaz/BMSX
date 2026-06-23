@@ -188,31 +188,44 @@ void assertBssFitsRam(uint32_t baseAddress, size_t byteCount) {
 	}
 }
 
-double resolveBssSymbolAddress(
-	const std::vector<ProgramBssSection::Symbol>& symbols,
+void assertProgramRomFits(size_t byteCount) {
+	if (byteCount > PROGRAM_ROM_SIZE) {
+		throw std::runtime_error("[ProgramLinker] program ROM range " + std::to_string(byteCount) + " exceeds ROM size " + std::to_string(PROGRAM_ROM_SIZE) + ".");
+	}
+}
+
+template <typename Symbol>
+double resolveStorageSymbolAddress(
+	const std::vector<Symbol>& symbols,
 	uint32_t baseAddress,
 	const std::string& symbolName,
-	int addend
+	int addend,
+	const char* sectionName
 ) {
-	for (const ProgramBssSection::Symbol& symbol : symbols) {
+	for (const Symbol& symbol : symbols) {
 		if (symbol.name == symbolName) {
 			return static_cast<double>(static_cast<int64_t>(baseAddress) + static_cast<int64_t>(symbol.offset) + addend);
 		}
 	}
-	throw std::runtime_error("[ProgramLinker] Missing .bss symbol '" + symbolName + "'.");
+	throw std::runtime_error(std::string("[ProgramLinker] Missing ") + sectionName + " symbol '" + symbolName + "'.");
 }
 
 std::vector<EncodedValue> resolveConstValueRelocations(
 	const std::vector<EncodedValue>& constPool,
 	const std::vector<ProgramConstValueReloc>& relocs,
 	const std::vector<ProgramBssSection::Symbol>& bssSymbols,
-	uint32_t bssBaseAddress
+	uint32_t bssBaseAddress,
+	const std::vector<ProgramRodataSection::Symbol>& rodataSymbols,
+	uint32_t rodataBaseAddress
 ) {
 	std::vector<EncodedValue> out = constPool;
 	for (const ProgramConstValueReloc& reloc : relocs) {
 		switch (reloc.kind) {
 			case ProgramConstValueRelocKind::BssAddr:
-				out[static_cast<size_t>(reloc.constIndex)] = resolveBssSymbolAddress(bssSymbols, bssBaseAddress, reloc.symbol, reloc.addend);
+				out[static_cast<size_t>(reloc.constIndex)] = resolveStorageSymbolAddress(bssSymbols, bssBaseAddress, reloc.symbol, reloc.addend, ".bss");
+				break;
+			case ProgramConstValueRelocKind::RodataAddr:
+				out[static_cast<size_t>(reloc.constIndex)] = resolveStorageSymbolAddress(rodataSymbols, rodataBaseAddress, reloc.symbol, reloc.addend, ".rodata");
 				break;
 		}
 	}
@@ -606,12 +619,16 @@ std::unique_ptr<Program> inflateExecutableProgramImage(
 	uint32_t bssBaseAddress
 ) {
 	assertBssFitsRam(bssBaseAddress, image.sections.bss.byteCount);
+	assertProgramRomFits(image.sections.text.code.size() + image.sections.rodata.bytes.size());
+	const uint32_t rodataBaseAddress = PROGRAM_ROM_BASE + static_cast<uint32_t>(image.sections.text.code.size());
 	ProgramObjectSections executableSections = image.sections;
 	executableSections.rodata.constPool = resolveConstValueRelocations(
 		image.sections.rodata.constPool,
 		image.link.constValueRelocs,
 		image.sections.bss.symbols,
-		bssBaseAddress
+		bssBaseAddress,
+		image.sections.rodata.symbols,
+		rodataBaseAddress
 	);
 	auto program = inflateProgram(executableSections);
 	if (!image.link.constRelocs.empty()) {
@@ -663,14 +680,19 @@ LinkedProgramImage linkProgramImages(
 	const size_t linkedBssByteCount = systemImage.sections.bss.byteCount + cartImage.sections.bss.byteCount;
 	assertBssFitsRam(systemBssBase, linkedBssByteCount);
 
+	const int totalBytes = std::max(layout.systemBasePc + systemCodeBytes, layout.cartBasePc + cartCodeBytes);
+	const size_t linkedRodataByteCount = systemRodata.bytes.size() + cartRodata.bytes.size();
+	assertProgramRomFits(static_cast<size_t>(totalBytes) + linkedRodataByteCount);
+	const uint32_t systemRodataBase = PROGRAM_ROM_BASE + static_cast<uint32_t>(totalBytes);
+	const uint32_t cartRodataBase = systemRodataBase + static_cast<uint32_t>(systemRodata.bytes.size());
 	std::vector<uint8_t> systemCode = systemText.code;
 	std::vector<uint8_t> cartCode = cartText.code;
 	rewriteClosureIndices(cartCode, systemProtoCount);
 
 	ProgramObjectSections linkedSections;
 	MergedConstPool merged = mergeConstPools(
-		resolveConstValueRelocations(systemRodata.constPool, systemImage.link.constValueRelocs, systemImage.sections.bss.symbols, systemBssBase),
-		resolveConstValueRelocations(cartRodata.constPool, cartImage.link.constValueRelocs, cartImage.sections.bss.symbols, cartBssBase)
+		resolveConstValueRelocations(systemRodata.constPool, systemImage.link.constValueRelocs, systemImage.sections.bss.symbols, systemBssBase, systemRodata.symbols, systemRodataBase),
+		resolveConstValueRelocations(cartRodata.constPool, cartImage.link.constValueRelocs, cartImage.sections.bss.symbols, cartBssBase, cartRodata.symbols, cartRodataBase)
 	);
 	const bool systemNeedsSymbols = std::any_of(systemImage.link.constRelocs.begin(), systemImage.link.constRelocs.end(), relocRequiresSymbolMetadata);
 	const bool cartNeedsSymbols = std::any_of(cartImage.link.constRelocs.begin(), cartImage.link.constRelocs.end(), relocRequiresSymbolMetadata);
@@ -732,7 +754,6 @@ LinkedProgramImage linkProgramImages(
 		linkedProto.entryPC += layout.cartBasePc;
 	}
 
-	const int totalBytes = std::max(layout.systemBasePc + systemCodeBytes, layout.cartBasePc + cartCodeBytes);
 	linkedSections.text.code.assign(static_cast<size_t>(totalBytes), 0);
 	std::copy(systemCode.begin(), systemCode.end(), linkedSections.text.code.begin() + layout.systemBasePc);
 	std::copy(cartCode.begin(), cartCode.end(), linkedSections.text.code.begin() + layout.cartBasePc);
@@ -753,6 +774,16 @@ LinkedProgramImage linkProgramImages(
 	linkedSections.rodata.staticModulePaths.reserve(systemRodata.staticModulePaths.size() + cartRodata.staticModulePaths.size());
 	linkedSections.rodata.staticModulePaths.insert(linkedSections.rodata.staticModulePaths.end(), systemRodata.staticModulePaths.begin(), systemRodata.staticModulePaths.end());
 	linkedSections.rodata.staticModulePaths.insert(linkedSections.rodata.staticModulePaths.end(), cartRodata.staticModulePaths.begin(), cartRodata.staticModulePaths.end());
+	linkedSections.rodata.bytes.reserve(linkedRodataByteCount);
+	linkedSections.rodata.bytes.insert(linkedSections.rodata.bytes.end(), systemRodata.bytes.begin(), systemRodata.bytes.end());
+	linkedSections.rodata.bytes.insert(linkedSections.rodata.bytes.end(), cartRodata.bytes.begin(), cartRodata.bytes.end());
+	linkedSections.rodata.symbols = systemRodata.symbols;
+	linkedSections.rodata.symbols.reserve(systemRodata.symbols.size() + cartRodata.symbols.size());
+	for (const auto& symbol : cartRodata.symbols) {
+		ProgramRodataSection::Symbol linkedSymbol = symbol;
+		linkedSymbol.offset += systemRodata.bytes.size();
+		linkedSections.rodata.symbols.push_back(std::move(linkedSymbol));
+	}
 	linkedSections.data.bytes.reserve(systemImage.sections.data.bytes.size() + cartImage.sections.data.bytes.size());
 	linkedSections.data.bytes.insert(linkedSections.data.bytes.end(), systemImage.sections.data.bytes.begin(), systemImage.sections.data.bytes.end());
 	linkedSections.data.bytes.insert(linkedSections.data.bytes.end(), cartImage.sections.data.bytes.begin(), cartImage.sections.data.bytes.end());

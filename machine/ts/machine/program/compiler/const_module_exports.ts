@@ -27,7 +27,8 @@ export type ConstExportValue =
 	| { kind: 'boolean'; value: boolean }
 	| { kind: 'number'; value: number }
 	| { kind: 'string'; value: string }
-	| { kind: 'bss_addr'; symbolHandle: string };
+	| { kind: 'bss_addr'; symbolHandle: string }
+	| { kind: 'rodata_addr'; symbolHandle: string };
 
 const evaluateModuleConstLiteral = (
 	expression: LuaExpression,
@@ -68,18 +69,21 @@ const evaluateModuleConstExportExpression = (
 	expression: LuaExpression,
 	constValuesBySymbol: ReadonlyMap<string, ConstExportValue>,
 	semantics: LuaSemanticFrontendFile,
-	allowBssExports: boolean,
+	allowStaticStorageExports: boolean,
 ): ConstExportValue | undefined => {
 	const value = evaluateModuleConstLiteral(expression, constValuesBySymbol, semantics);
 	if (value !== undefined) {
 		return value;
 	}
-	if (!allowBssExports || expression.kind !== LuaSyntaxKind.IdentifierExpression) {
+	if (!allowStaticStorageExports || expression.kind !== LuaSyntaxKind.IdentifierExpression) {
 		return undefined;
 	}
 	const reference = getResolvedIdentifierReference(semantics, expression as LuaIdentifierExpression);
-	return reference.decl?.kind === 'bss'
-		? { kind: 'bss_addr', symbolHandle: reference.decl.id }
+	if (reference.decl?.kind === 'bss') {
+		return { kind: 'bss_addr', symbolHandle: reference.decl.id };
+	}
+	return reference.decl?.kind === 'rodata'
+		? { kind: 'rodata_addr', symbolHandle: reference.decl.id }
 		: undefined;
 };
 
@@ -113,7 +117,7 @@ const collectModuleExportConstValues = (
 	expression: LuaExpression,
 	constValuesBySymbol: ReadonlyMap<string, ConstExportValue>,
 	semantics: LuaSemanticFrontendFile,
-	allowBssExports: boolean,
+	allowStaticStorageExports: boolean,
 	out: Map<string, ConstExportValue>,
 	path: string[],
 ): void => {
@@ -131,12 +135,12 @@ const collectModuleExportConstValues = (
 				continue;
 			}
 			path.push(key);
-			collectModuleExportConstValues(field.value, constValuesBySymbol, semantics, allowBssExports, out, path);
+			collectModuleExportConstValues(field.value, constValuesBySymbol, semantics, allowStaticStorageExports, out, path);
 			path.pop();
 		}
 		return;
 	}
-	const value = evaluateModuleConstExportExpression(expression, constValuesBySymbol, semantics, allowBssExports);
+	const value = evaluateModuleConstExportExpression(expression, constValuesBySymbol, semantics, allowStaticStorageExports);
 	if (value !== undefined) {
 		out.set(buildModuleExportPathKey(path), value);
 	}
@@ -171,9 +175,9 @@ export const collectConstModuleExportValues = (
 	chunk: LuaChunk,
 	expression: LuaExpression,
 	semantics: LuaSemanticFrontendFile,
-	allowBssExports: boolean,
+	allowStaticStorageExports: boolean,
 ): Map<string, ConstExportValue> => {
 	const out = new Map<string, ConstExportValue>();
-	collectModuleExportConstValues(expression, collectTopLevelConstValues(chunk, semantics), semantics, allowBssExports, out, []);
+	collectModuleExportConstValues(expression, collectTopLevelConstValues(chunk, semantics), semantics, allowStaticStorageExports, out, []);
 	return out;
 };

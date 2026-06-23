@@ -5,6 +5,7 @@ export type SemanticSymbolKind =
 	| 'function'
 	| 'global'
 	| 'bss'
+	| 'rodata'
 	| 'property'
 	| 'module'
 	| 'type'

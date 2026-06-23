@@ -81,8 +81,8 @@ Al afgerond en daarom niet opnieuw als open slice opgenomen:
 Actuele validatie voor de ROM/data/compiler-linker status:
 
 - `npm run compile:machine -- --pretty false`
-- `npm run test:lua` (`223` tests, `222` pass, `1` skipped)
-- `npm run test:rompacker` (`58` pass)
+- `npm run test:lua` (`255` tests, `254` pass, `1` skipped)
+- `npm run test:rompacker` (`68` pass)
 - `npm run audit:core-parity`
 - `npm run check:indent`
 - `git diff --check`
@@ -127,10 +127,10 @@ Cart-representatie roadmap/status:
 
 | Punt | Status |
 | --- | --- |
-| echte `rodata`/`data`/`bss` secties | Deels: het image-format en de TS/C++ linker behouden `rodata`/`data`/`bss`; open: het section-model moet `.rodata`, `.data` en `.bss` onderscheiden, maar v1-implementatie blijft `.bss`-only met compiler/linker-generated startup-code. |
+| echte `rodata`/`data`/`bss` secties | Deels: het image-format en de TS/C++ linker behouden `rodata`/`data`/`bss`; klaar: `.bss` zeroed RAM met compiler/linker-generated startup-code en raw BLua-declared `.rodata` als CPU-leesbare immutable PROGRAM_ROM storage met link-symbolen; open: `.data` RAM VMA plus ROM LMA en startup-copy. |
 | één object-file/linker pipeline | Deels: program images hebben reloc-records en TS/C++ linkers; eerste install-seam staat nu in de program/linker-eigenaar (`inflateExecutableProgramImage`) voor object-image → executable program; gewone Lua source-boot, hot-resume en host-eval append lopen ook via de compiler-owned `ProgramImage` encoding; system+cart boot-entry selectie loopt via de program/linker-eigenaar (`linkBootProgramImages`) in TS en C++; ROM-build en source-compile zijn geaudit als legitieme input-producers die op dezelfde compiler/linker objectgrens convergeren, niet als resterende split-brain. |
 | runtime relocaties als load/link stap | Deels: `module`/`export_proto` placeholders zijn uit runtimewaarden gehaald; open: harde verifier-gate voor alle executable images. |
-| static module/data ABI | Deels: M2 call-targets kunnen link-time naar `CLOSURE(proto)` en de const-moduleklasse bestaat; const modules exporteren compile-time constants, `.bss` storage-symbolen en leaf/static function call-targets zonder runtime module-table, global-slot lookup of `require`-call. Static function exports mogen sibling static exports aanroepen via `export_proto` link-symbolen; function exports zijn geen runtime waarden. Open: raw `.rodata`/`.data` symbolen. |
+| static module/data ABI | Deels: M2 call-targets kunnen link-time naar `CLOSURE(proto)` en de const-moduleklasse bestaat; const modules exporteren compile-time constants, `.bss` en `.rodata` storage-symbolen en leaf/static function call-targets zonder runtime module-table, global-slot lookup of `require`-call. Static function exports mogen sibling static exports aanroepen via `export_proto` link-symbolen; function exports zijn geen runtime waarden. Open: `.data` symbolen en bredere static functionregels buiten const modules. |
 | dynamic Lua-opcodes weren uit systems/static modules | Deels: const-module static function protos worden na codegen/optimalisatie door de compiler geweigerd als dynamic Lua-opcodes overblijven; open: bredere systems/static functieklassen en audit-output zodra daar een echte consumer voor is. |
 | CPU objectwereld loshalen van machine-code ABI | Open: `CPU.Value` is nog Lua-objectwereld; echte cart ABI moet primair words, registers, addresses, memory, sections en symbols zijn. |
 | assets/`rom_data` binair maken | Deels: `rom_data`-familie is weg en `.bin` raw ROM path is getest; open: maps, rooms, timelines, registries en asset records naar vaste binaire layouts. |
@@ -221,15 +221,15 @@ Acceptatie:
 - `tests/rompacker/program_linker.const_reloc.test.ts` dekt runtime-resolve,
   full-link en optimizer-rewrite cases
 
-## 17. BLua section-model met `.bss` als v1
+## 17. BLua section-model met `.bss` en `.rodata`
 
-Doel: het section-model onderscheidt `.rodata`, `.data` en `.bss`, maar de eerste
-implementatieslice blijft `.bss`-only. `.rodata` is conceptueel immutable
-CPU-leesbare ROM-storage; `.data` is mutable RAM-storage met een ROM-load-image;
-`.bss` is mutable zeroed RAM-storage zonder load-image. V1 bewijst alleen de
-cart-RAM kant: BLua declareert `.bss`, de linker wijst een RAM VMA toe, en
-linker/BLua-startup emit instructies die bij cold cart-start die range zeroen.
-De emulator/runtime parse't geen secties en initialiseert geen cart-data namens
+Doel: het section-model onderscheidt `.rodata`, `.data` en `.bss`. `.rodata` is
+immutable CPU-leesbare ROM-storage; `.data` is mutable RAM-storage met een
+ROM-load-image; `.bss` is mutable zeroed RAM-storage zonder load-image. De
+uitgevoerde increments bewijzen twee kanten: BLua declareert `.bss` voor zeroed
+RAM en raw `.rodata` voor immutable PROGRAM_ROM bytes. De linker wijst concrete
+VMA/LMA adressen toe; startup-code nult `.bss` als gewone CPU-code. De
+emulator/runtime parse't geen secties en initialiseert geen cart-data namens
 het spel. Dit is geen rompacker-conversie van JSON/YAML assets en geen generic
 content-serializer.
 
@@ -246,42 +246,49 @@ Status:
   CPU/memory-instructies is en geen runtime/installer section-parser
 - hot-resume geeft expliciet geen section-init proto door en reïnitialiseert live
   cart-RAM dus niet
-- de huidige `rodata` blijft VM const-pool/module metadata; er is nog geen raw
-  BLua-declared `.rodata` byte storage met symbols
-- `.data` blijft leeg modelwerk: er is nog geen mapped ROM LMA en geen
+- raw BLua-declared `.rodata` byte storage is geïmplementeerd in TS en C++:
+  `rodata name: Type = ...` emit primitive typed ROM bytes, `.rodata` symbols en
+  `rodata_addr` const-value relocaties. De CPU-memory map expose't text + raw
+  `.rodata` als PROGRAM_ROM, terwijl de CPU alleen de text-section als
+  instructies decodeert
+- de bestaande VM constPool/module metadata blijft gescheiden van raw `.rodata`
+  bytes; assets blijven ook gescheiden ROM-payloads met hun eigen symbolen
+- `.data` blijft open modelwerk: er is nog geen mapped ROM LMA en geen
   startup-copy
-- linker/inflate weigeren `.bss` ranges die buiten RAM vallen
+- linker/inflate weigeren `.bss` ranges die buiten RAM vallen en PROGRAM_ROM
+  ranges die buiten de ROM-window vallen
 
 Open audit-evidence:
 
 - static mutable state en persistent scratch storage worden nog vaak in
   Lua-objecten of handgekozen `mem[...]` ranges gelegd; nieuwe code kan nu naar
   compiler-toegewezen `.bss`, maar carts zijn nog niet breed gemigreerd
-- `.rodata` en `.data` hebben nog geen BLua-syntax, symboolnamen, alignment- en
+- immutable typed lookup tables kunnen nu naar compiler-toegewezen `.rodata`,
+  maar carts zijn nog niet breed gemigreerd
+- `.data` heeft nog geen BLua-syntax, symboolnamen, alignment- en
   relocation-discipline
 - `.data` init-bytes hebben nog geen echte LMA in een CPU-leesbare ROM-window;
   bytes die alleen in `ProgramImage.sections.data.bytes` blijven zitten zijn
   metadata, geen geheugen
 
-Acceptatie v1:
+Acceptatie:
 
-- BLua heeft expliciete declaraties voor zeroed cart-RAM (`.bss`) met typed
-  size/alignment
-- de compiler emit `.bss` reservations en linkbare symbolen voor die declarations
-- linker wijst `.bss` RAM VMA's toe en resolved `.bss` symbolen naar die
-  RAM-adressen
-- BLua-startup/proloog voert de init uit als cartcode: zero `.bss` vóór de user
-  entry; runtime/rompacker doen dit niet
+- BLua heeft expliciete declaraties voor zeroed cart-RAM (`.bss`) en immutable
+  PROGRAM_ROM storage (`.rodata`) met typed size/alignment
+- de compiler emit `.bss` reservations en `.rodata` bytes met linkbare symbolen
+  voor die declarations
+- linker wijst `.bss` RAM VMA's en `.rodata` PROGRAM_ROM LMA's toe en resolved
+  de symbols naar concrete adressen
+- BLua-startup/proloog voert `.bss` init uit als cartcode: zero `.bss` vóór de
+  user entry; runtime/rompacker doen dit niet
 - BLua-startup/proloog draait vóór static module initializers die section-symbolen
   kunnen raken, of static initializers worden onderdeel van de startup-flow:
   section init → static module init → user entry
-- `.rodata` blijft in v1 alleen onderdeel van het model: raw BLua-declared
-  `.rodata` is gescheiden van de bestaande VM constPool/module metadata en
-  gescheiden van asset blobs; implementatie volgt pas met een concrete
-  typed-storage consumer
-- `.data` blijft in v1 buiten scope: het volgt pas wanneer de mapped LMA klopt
-  en startup-copy nodig is
-- BLua code consumeert `.bss` via addresses/pointers/words, niet via
+- `.rodata` is raw storage, gescheiden van de bestaande VM constPool/module
+  metadata en gescheiden van asset blobs
+- `.data` blijft buiten scope: het volgt pas wanneer de mapped LMA klopt en
+  startup-copy nodig is
+- BLua code consumeert `.bss`/`.rodata` via addresses/pointers/words, niet via
   runtime Lua-table construction of asset-decoder calls
 - TS/C++ loader/linker parity blijft groen
 
@@ -338,9 +345,10 @@ Status:
 - M2 call-targets kunnen direct naar `CLOSURE(proto)` linken
 - gewone waardelezingen houden terecht Lua-semantiek
 - const moduleklasse bestaat: een module in `constModulePaths` exporteert compile-time
-  constants, `.bss` storage-symbolen en top-level static function exports; elke
-  value-export wordt op de use-site geïnlined (`KSMI`/`LOADK` of een `bss_addr`
-  const-value reloc), en function exports linken via het bestaande `export_proto`
+  constants, `.bss`/`.rodata` storage-symbolen en top-level static function
+  exports; elke value-export wordt op de use-site geïnlined (`KSMI`/`LOADK`,
+  `bss_addr` of `rodata_addr` const-value reloc), en function exports linken via
+  het bestaande `export_proto`
   pad naar static closures zonder module-tabel, global-slot lookup of
   `require`-call. De module heeft geen module-proto of `staticModulePaths`-entry.
   `bmsx/assets` gebruikt dezelfde klasse voor ROM asset-symbol constants. De
@@ -362,8 +370,8 @@ Status:
 - klaar als eerste static opcode-contract increment: const-module static function
   protos worden na codegen/optimalisatie geweigerd wanneer table allocatie of
   dispatch, runtime closure allocatie, vararg of dynamische concat overblijft.
-- open: raw `.rodata`/`.data` symbolen en bredere static functionregels voor
-  toekomstige systems/static function protos buiten const modules
+- open: `.data` symbolen en bredere static functionregels voor toekomstige
+  systems/static function protos buiten const modules
 - geen doel: diepe contentgraphs als Lua const-aggregaten naar rodata-bytes
   verlagen. Dat is content-packaging en hoort bij een
   schema-specifieke asset-producer.
@@ -373,15 +381,17 @@ Acceptatie:
 - moduleclass is expliciet: dynamic Lua module of static systems module
   (const module is de eerste static klasse; designatie via `constModulePaths`
   bij de compile-input, bron blijft standaard-Lua)
-- static exports zijn linkbare symbolen: functies, constants, `.bss` addresses
-  (klaar voor const modules), en later raw `.rodata`/`.data` addresses en sizes
+- static exports zijn linkbare symbolen: functies, constants, `.bss` en
+  `.rodata` addresses (klaar voor const modules), en later `.data` addresses en
+  sizes
 - namespace-als-waarde is voor static modules een compile-error (klaar voor de
   const module: de hele `bmsx/assets`-tabel als waarde gebruiken faalt compile-time)
 - dynamic modules blijven Lua-semantiek houden waar gameplay die lane expliciet
   kiest
 - generated `bmsx/assets` past in dezelfde static-symbol ABI (klaar: const module)
-- static `.bss` export heeft geen runtime module-table, geen asset lookup en geen
-  content-serializer; het is gewoon object-storage met een link-time address symbol
+- static `.bss`/`.rodata` export heeft geen runtime module-table, geen asset
+  lookup en geen content-serializer; het is gewoon object-storage met een
+  link-time address symbol
 
 ## 20. Compiler-contract voor systems/static modules
 
@@ -407,8 +417,8 @@ Status:
   allocatie, vararg en dynamische concat. Dit is geen linter over source-stijl:
   alleen opcodes die na optimalisatie in het static proto overblijven tellen.
 - dynamic gameplay modules blijven buiten deze gate; de gate hangt aan de
-  static moduleklasse die al compile-time constants, `.bss` symbols en static
-  function exports bezit.
+  static moduleklasse die al compile-time constants, `.bss`/`.rodata` symbols en
+  static function exports bezit.
 - open: dezelfde static-proto gate uitbreiden naar toekomstige systems/static
   functieklassen buiten const modules, en opcode-mix rapportage per module/proto
   als audit-output toevoegen wanneer er een echte audit-consumer is.

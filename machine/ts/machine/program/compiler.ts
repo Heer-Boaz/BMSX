@@ -29,6 +29,7 @@ import {
 	type LuaStringLiteralExpression,
 	type LuaStructDeclarationStatement,
 	type LuaBssDeclarationStatement,
+	type LuaRodataDeclarationStatement,
 	type LuaStructFieldDeclaration,
 	type LuaTypeReference,
 	type LuaUnaryExpression,
@@ -53,12 +54,14 @@ import { collectStaticStorageDeclarations, type StaticStorageDeclaration } from 
 import { collectStaticFunctionExports } from './compiler/static_functions';
 import { assertStaticFunctionInstructionSet } from './compiler/static_proto_contract';
 import {
+	buildProgramRomImage,
 	encodeProgramObjectSections,
 	toLuaModulePath,
 	type ProgramConstReloc,
 	type ProgramConstValueReloc,
 	type ProgramBssSection,
 	type ProgramBssSymbol,
+	type ProgramRodataSymbol,
 	type ProgramImage,
 } from './loader';
 import { StringPool } from '../cpu/string_pool';
@@ -80,6 +83,7 @@ import {
 } from './target_semantics';
 import { getMemoryAccessKindForName, MemoryAccessKind } from '../memory/access_kind';
 import { luaModulo } from '../../lua/numeric';
+import { writeLE16, writeLE32 } from '../../common/endian';
 import { isReservedIntrinsicName } from '../../lua/semantic/common';
 
 export type CompiledProgram = {
@@ -92,6 +96,8 @@ export type CompiledProgram = {
 	constRelocs: ProgramConstReloc[];
 	constValueRelocs: ProgramConstValueReloc[];
 	bss: ProgramBssSection;
+	rodataBytes: Uint8Array;
+	rodataSymbols: ProgramRodataSymbol[];
 };
 
 export type AppendedProgram = {
@@ -102,6 +108,8 @@ export type AppendedProgram = {
 	constRelocs: ProgramConstReloc[];
 	constValueRelocs: ProgramConstValueReloc[];
 	bss: ProgramBssSection;
+	rodataBytes: Uint8Array;
+	rodataSymbols: ProgramRodataSymbol[];
 };
 
 const encodeCompilerProgramImage = (
@@ -113,10 +121,12 @@ const encodeCompilerProgramImage = (
 	constRelocs: ProgramConstReloc[],
 	constValueRelocs: ProgramConstValueReloc[],
 	bss: ProgramBssSection,
+	rodataBytes: Uint8Array,
+	rodataSymbols: ProgramRodataSymbol[],
 ): ProgramImage => ({
 	entryProtoIndex,
 	sectionInitProtoIndex,
-	sections: encodeProgramObjectSections(program, moduleProtos, staticModulePaths, bss),
+	sections: encodeProgramObjectSections(program, moduleProtos, staticModulePaths, bss, rodataBytes, rodataSymbols),
 	link: { constRelocs, constValueRelocs },
 });
 
@@ -130,6 +140,8 @@ export function encodeCompiledProgramImage(compiled: CompiledProgram): ProgramIm
 		compiled.constRelocs,
 		compiled.constValueRelocs,
 		compiled.bss,
+		compiled.rodataBytes,
+		compiled.rodataSymbols,
 	);
 }
 
@@ -137,7 +149,7 @@ export function encodeCompiledProgramImage(compiled: CompiledProgram): ProgramIm
 // program, so it introduces no module/static-module protos of its own: the executable
 // image carries an empty module map and no static-module paths.
 export function encodeAppendedProgramImage(compiled: AppendedProgram): ProgramImage {
-	return encodeCompilerProgramImage(compiled.program, compiled.entryProtoIndex, compiled.sectionInitProtoIndex, [], [], compiled.constRelocs, compiled.constValueRelocs, compiled.bss);
+	return encodeCompilerProgramImage(compiled.program, compiled.entryProtoIndex, compiled.sectionInitProtoIndex, [], [], compiled.constRelocs, compiled.constValueRelocs, compiled.bss, compiled.rodataBytes, compiled.rodataSymbols);
 }
 
 export type LuaCompileError = {
@@ -245,11 +257,22 @@ type BssBinding = {
 	type: StructResolvedType;
 };
 
+type RodataBinding = {
+	symbolHandle: string;
+	name: string;
+	symbol: string;
+	offset: number;
+	byteCount: number;
+	alignment: number;
+	type: StructResolvedType;
+};
+
 type StructAddress = {
 	baseReg: number;
 	byteOffset: number;
 	type: StructResolvedType;
 	pointerIndex: boolean;
+	readOnly: boolean;
 };
 
 type AssignmentTarget =
@@ -328,8 +351,11 @@ class ProgramBuilder {
 	private readonly structDeclarations = new Map<string, LuaStructDeclarationStatement>();
 	private readonly structLayouts = new Map<string, StructLayout>();
 	private readonly bssBindingsBySymbolHandle = new Map<string, BssBinding>();
+	private readonly rodataBindingsBySymbolHandle = new Map<string, RodataBinding>();
 	private readonly constValueRelocs: ProgramConstValueReloc[] = [];
 	private bssByteCount = 0;
+	private rodataByteCount = 0;
+	private rodataBytes = new Uint8Array(0);
 	private readonly protoIdMap: Map<string, number> = new Map();
 	private readonly assignedProtoIds: Set<string> = new Set();
 	private readonly staticModulePaths: string[] = [];
@@ -425,7 +451,7 @@ class ProgramBuilder {
 		if (existing !== undefined) {
 			return existing;
 		}
-		const offset = this.alignBssOffset(this.bssByteCount, type.alignment);
+		const offset = this.alignStorageOffset(this.bssByteCount, type.alignment);
 		const binding: BssBinding = {
 			symbolHandle,
 			name,
@@ -436,13 +462,56 @@ class ProgramBuilder {
 			type,
 		};
 		this.bssBindingsBySymbolHandle.set(symbolHandle, binding);
-		this.bssByteCount = this.alignBssOffset(offset + type.size, 4);
+		this.bssByteCount = this.alignStorageOffset(offset + type.size, 4);
 		return binding;
 	}
 
 	public resolveBss(symbolHandle: string): BssBinding | null {
 		const binding = this.bssBindingsBySymbolHandle.get(symbolHandle);
 		return binding === undefined ? null : binding;
+	}
+
+	public recordRodata(symbolHandle: string, moduleId: string, name: string, type: StructResolvedType, bytes: Uint8Array): RodataBinding {
+		const existing = this.rodataBindingsBySymbolHandle.get(symbolHandle);
+		if (existing !== undefined) {
+			return existing;
+		}
+		const offset = this.alignStorageOffset(this.rodataByteCount, type.alignment);
+		const nextByteCount = this.alignStorageOffset(offset + bytes.byteLength, 4);
+		const nextBytes = new Uint8Array(nextByteCount);
+		nextBytes.set(this.rodataBytes, 0);
+		nextBytes.set(bytes, offset);
+		this.rodataBytes = nextBytes;
+		const binding: RodataBinding = {
+			symbolHandle,
+			name,
+			symbol: `${buildModuleRootId(moduleId)}/rodata:${name}`,
+			offset,
+			byteCount: type.size,
+			alignment: type.alignment,
+			type,
+		};
+		this.rodataBindingsBySymbolHandle.set(symbolHandle, binding);
+		this.rodataByteCount = nextByteCount;
+		return binding;
+	}
+
+	public resolveRodata(symbolHandle: string): RodataBinding | null {
+		const binding = this.rodataBindingsBySymbolHandle.get(symbolHandle);
+		return binding === undefined ? null : binding;
+	}
+
+	public buildRodataSymbols(): ProgramRodataSymbol[] {
+		const symbols: ProgramRodataSymbol[] = [];
+		for (const binding of this.rodataBindingsBySymbolHandle.values()) {
+			symbols.push({
+				name: binding.symbol,
+				offset: binding.offset,
+				byteCount: binding.byteCount,
+				alignment: binding.alignment,
+			});
+		}
+		return symbols;
 	}
 
 	public buildBssSection(): ProgramBssSection {
@@ -472,7 +541,7 @@ class ProgramBuilder {
 		return this.bssByteCount;
 	}
 
-	private alignBssOffset(offset: number, alignment: number): number {
+	private alignStorageOffset(offset: number, alignment: number): number {
 		return (offset + alignment - 1) & ~(alignment - 1);
 	}
 
@@ -613,7 +682,7 @@ class ProgramBuilder {
 		this.protoIdMap.set(protoId, index);
 	}
 
-	public buildProgram(): { program: Program; metadata: ProgramMetadata; constRelocs: ProgramConstReloc[]; constValueRelocs: ProgramConstValueReloc[]; bss: ProgramBssSection; staticModulePaths: string[] } {
+	public buildProgram(): { program: Program; metadata: ProgramMetadata; constRelocs: ProgramConstReloc[]; constValueRelocs: ProgramConstValueReloc[]; bss: ProgramBssSection; rodataBytes: Uint8Array; rodataSymbols: ProgramRodataSymbol[]; staticModulePaths: string[] } {
 		let fixedEndBytes = this.baseCode ? this.baseCode.byteLength : 0;
 		let appendedBytes = 0;
 		for (let i = 0; i < this.protoCode.length; i += 1) {
@@ -699,6 +768,7 @@ class ProgramBuilder {
 		return {
 			program: {
 				code: fullCode,
+				programRom: buildProgramRomImage(fullCode, this.rodataBytes),
 				constPool: this.constPool,
 				protos,
 				stringPool: this.stringPool,
@@ -708,6 +778,8 @@ class ProgramBuilder {
 			constRelocs: fullConstRelocs,
 			constValueRelocs: this.constValueRelocs.slice(),
 			bss: this.buildBssSection(),
+			rodataBytes: this.rodataBytes,
+			rodataSymbols: this.buildRodataSymbols(),
 			staticModulePaths: this.staticModulePaths.slice(),
 		};
 	}
@@ -875,6 +947,9 @@ class FunctionBuilder {
 					break;
 				case 'bss':
 					this.recordBssDeclaration(declaration.statement, declaration.declaration);
+					break;
+				case 'rodata':
+					this.recordRodataDeclaration(declaration.statement, declaration.declaration);
 					break;
 			}
 		}
@@ -1125,6 +1200,7 @@ class FunctionBuilder {
 			byteOffset: base.byteOffset + field.offset,
 			type: field.type,
 			pointerIndex: false,
+			readOnly: base.readOnly,
 		};
 	}
 
@@ -1623,6 +1699,17 @@ class FunctionBuilder {
 		return this.program.resolveBss(symbolHandle);
 	}
 
+	private resolveReferenceRodataBinding(reference: LuaBoundReference): RodataBinding | null {
+		if (reference.decl?.kind === 'rodata') {
+			return this.program.resolveRodata(reference.decl.id);
+		}
+		const symbolHandle = getResolvedReferenceSymbolHandle(reference);
+		if (!symbolHandle) {
+			return null;
+		}
+		return this.program.resolveRodata(symbolHandle);
+	}
+
 	private resolveReferenceConstClosureBinding(reference: LuaBoundReference): LocalBinding | null {
 		const symbolHandle = getResolvedReferenceSymbolHandle(reference);
 		if (!symbolHandle) {
@@ -1756,6 +1843,14 @@ class FunctionBuilder {
 					throw new Error(`[Compiler] Static module .bss symbol '${value.symbolHandle}' was not recorded.`);
 				}
 				this.emitLoadBssAddress(target, binding, 0);
+				return;
+			}
+			case 'rodata_addr': {
+				const binding = this.program.resolveRodata(value.symbolHandle);
+				if (binding === null) {
+					throw new Error(`[Compiler] Static module .rodata symbol '${value.symbolHandle}' was not recorded.`);
+				}
+				this.emitLoadRodataAddress(target, binding, 0);
 				return;
 			}
 		}
@@ -1896,6 +1991,11 @@ class FunctionBuilder {
 			this.emitLoadBssAddress(target, bssBinding, 0);
 			return;
 		}
+		const rodataBinding = this.resolveReferenceRodataBinding(reference);
+		if (rodataBinding !== null) {
+			this.emitLoadRodataAddress(target, rodataBinding, 0);
+			return;
+		}
 		const localReg = this.resolveReferenceLocal(reference);
 		if (localReg !== null) {
 			if (localReg !== target) {
@@ -1986,6 +2086,9 @@ class FunctionBuilder {
 		}
 		if (this.resolveReferenceBssBinding(reference) !== null) {
 			throw new Error(`[Compiler] '${name}' is .bss storage; assign through a typed pointer or field.`);
+		}
+		if (this.resolveReferenceRodataBinding(reference) !== null) {
+			throw new Error(`[Compiler] '${name}' is .rodata storage and cannot be assigned.`);
 		}
 		const upvalue = this.resolveReferenceUpvalue(reference);
 		if (upvalue !== null) {
@@ -2214,6 +2317,11 @@ class FunctionBuilder {
 
 	private emitLoadBssAddress(target: number, binding: BssBinding, byteOffset: number): void {
 		const index = this.program.constValueRelocIndex('bss_addr', binding.symbol, byteOffset);
+		this.emitABx(OpCode.LOADK, target, index);
+	}
+
+	private emitLoadRodataAddress(target: number, binding: RodataBinding, byteOffset: number): void {
+		const index = this.program.constValueRelocIndex('rodata_addr', binding.symbol, byteOffset);
 		this.emitABx(OpCode.LOADK, target, index);
 	}
 
@@ -2490,6 +2598,9 @@ class FunctionBuilder {
 				case LuaSyntaxKind.BssDeclarationStatement:
 					this.compileBssDeclaration(statement as LuaBssDeclarationStatement);
 					return;
+				case LuaSyntaxKind.RodataDeclarationStatement:
+					this.compileRodataDeclaration(statement as LuaRodataDeclarationStatement);
+					return;
 				default:
 					throw new Error(`Unsupported statement kind: ${(statement as LuaStatement).kind}`);
 			}
@@ -2503,6 +2614,66 @@ class FunctionBuilder {
 	private recordBssDeclaration(statement: LuaBssDeclarationStatement, declaration: Decl): void {
 		const type = this.resolveStructTypeReference(statement.typeRef);
 		this.program.recordBss(declaration.id, this.moduleId, statement.name.name, type);
+	}
+
+	private compileRodataDeclaration(statement: LuaRodataDeclarationStatement): void {
+		this.recordRodataDeclaration(statement, this.requireBoundDeclaration(statement.name.range, `rodata '${statement.name.name}'`));
+	}
+
+	private recordRodataDeclaration(statement: LuaRodataDeclarationStatement, declaration: Decl): void {
+		const type = this.resolveStructTypeReference(statement.typeRef);
+		this.program.recordRodata(declaration.id, this.moduleId, statement.name.name, type, this.encodeRodataInitializer(type, statement.initializer));
+	}
+
+	private encodeRodataInitializer(type: StructResolvedType, expression: LuaExpression): Uint8Array {
+		const bytes = new Uint8Array(type.size);
+		this.writeRodataInitializer(bytes, 0, type, expression);
+		return bytes;
+	}
+
+	private writeRodataInitializer(out: Uint8Array, byteOffset: number, type: StructResolvedType, expression: LuaExpression): void {
+		if (type.dimensions.length !== 0) {
+			if (expression.kind !== LuaSyntaxKind.TableConstructorExpression) {
+				throw new Error(`[Compiler] .rodata array '${type.name}' requires a table initializer.`);
+			}
+			const table = expression as LuaTableConstructorExpression;
+			const elementType = this.typeAfterStructIndex(type);
+			let elementIndex = 0;
+			for (let index = 0; index < table.fields.length; index += 1) {
+				const field = table.fields[index];
+				if (field.kind !== LuaTableFieldKind.Array) {
+					throw new Error('[Compiler] .rodata arrays use positional initializers.');
+				}
+				this.writeRodataInitializer(out, byteOffset + elementIndex * elementType.size, elementType, field.value);
+				elementIndex += 1;
+			}
+			if (elementIndex !== type.dimensions[0]) {
+				throw new Error(`[Compiler] .rodata array '${type.name}' expects ${type.dimensions[0]} elements.`);
+			}
+			return;
+		}
+		if (type.accessKind === null) {
+			throw new Error(`[Compiler] .rodata v1 supports primitive typed storage; '${type.name}' is not a primitive scalar at this initializer position.`);
+		}
+		const value = this.evaluateCompileTimeExpression(expression);
+		if (value === undefined || value === null || value === true || value === false || valueIsString(value) || !Number.isInteger(value)) {
+			throw new Error('[Compiler] .rodata primitive initializer must be a compile-time integer.');
+		}
+		const word = value as number;
+		switch (type.accessKind) {
+			case MemoryAccessKind.U8:
+				out[byteOffset] = word & 0xff;
+				return;
+			case MemoryAccessKind.U16LE:
+				writeLE16(out, byteOffset, word);
+				return;
+			case MemoryAccessKind.U32LE:
+			case MemoryAccessKind.Word:
+				writeLE32(out, byteOffset, word);
+				return;
+			default:
+				throw new Error(`[Compiler] .rodata v1 does not support '${type.name}' initializers.`);
+		}
 	}
 
 	private compileLocalAssignment(statement: LuaLocalAssignmentStatement): void {
@@ -2721,6 +2892,9 @@ class FunctionBuilder {
 			) {
 				const structAddress = this.tryResolveStructAddress(expr);
 				if (structAddress !== null) {
+					if (structAddress.readOnly) {
+						throw new Error('[Compiler] Cannot assign to .rodata storage.');
+					}
 					if (structAddress.type.accessKind === null) {
 						throw new Error(`[Compiler] Whole-struct assignment is not supported for '${structAddress.type.name}'; assign scalar fields directly.`);
 					}
@@ -3531,6 +3705,7 @@ class FunctionBuilder {
 				byteOffset: base.byteOffset + staticIndex * stride,
 				type: elementType,
 				pointerIndex: false,
+				readOnly: base.readOnly,
 			};
 		}
 		const indexReg = this.allocTemp();
@@ -3548,6 +3723,7 @@ class FunctionBuilder {
 			byteOffset: 0,
 			type: elementType,
 			pointerIndex: false,
+			readOnly: base.readOnly,
 		};
 	}
 
@@ -3564,6 +3740,19 @@ class FunctionBuilder {
 						byteOffset: 0,
 						type: bssBinding.type,
 						pointerIndex: true,
+						readOnly: false,
+					};
+				}
+				const rodataBinding = this.resolveReferenceRodataBinding(reference);
+				if (rodataBinding !== null) {
+					const baseReg = this.allocTemp();
+					this.emitLoadRodataAddress(baseReg, rodataBinding, 0);
+					return {
+						baseReg,
+						byteOffset: 0,
+						type: rodataBinding.type,
+						pointerIndex: true,
+						readOnly: true,
 					};
 				}
 				const binding = this.resolveReferenceVisibleBinding(reference);
@@ -3577,6 +3766,7 @@ class FunctionBuilder {
 						byteOffset: 0,
 						type: binding.structView.type,
 						pointerIndex: true,
+						readOnly: false,
 					};
 				}
 				const baseReg = this.allocTemp();
@@ -3586,6 +3776,7 @@ class FunctionBuilder {
 					byteOffset: 0,
 					type: binding.structView.type,
 					pointerIndex: true,
+					readOnly: false,
 				};
 			}
 			case LuaSyntaxKind.MemberExpression: {
@@ -3609,6 +3800,7 @@ class FunctionBuilder {
 					byteOffset: base.byteOffset,
 					type: base.type,
 					pointerIndex: false,
+					readOnly: base.readOnly,
 				};
 			}
 			default:
@@ -4394,7 +4586,7 @@ export function compileLuaChunkToProgram(chunk: LuaChunk, modules: ReadonlyArray
 				const protoIndex = compileFunctionExpression(programBuilder, fn.expression, staticScope, false, protoId, module.path, semantics, frontend);
 				if (!programBuilder.protoHasNoUpvalues(protoIndex)) {
 					const upvalueNames = programBuilder.getProtoUpvalueNames(protoIndex);
-					throw new Error(`[Compiler] Const module '${module.path}' function export '${fn.symbolHandle}' captures runtime local '${upvalueNames[0]}'; static function exports may use globals, compile-time constants, parameters, function-local declarations, and .bss storage only.`);
+					throw new Error(`[Compiler] Const module '${module.path}' function export '${fn.symbolHandle}' captures runtime local '${upvalueNames[0]}'; static function exports may use globals, compile-time constants, parameters, function-local declarations, and static storage only.`);
 				}
 				assertStaticFunctionInstructionSet(module.path, fn.symbolHandle, programBuilder.getProtoInstructionSet(protoIndex));
 				programBuilder.markStaticClosureProto(protoIndex);
@@ -4493,7 +4685,7 @@ export function compileLuaChunkToProgram(chunk: LuaChunk, modules: ReadonlyArray
 		throw new Error(buildCompileFailureMessage(compileErrors));
 	}
 	sectionInitProtoIndex = compileSectionInitProto(programBuilder, moduleId, chunk.range, frontend.getFile(chunk.range.path), frontend);
-	const { program, metadata, constRelocs, constValueRelocs, bss, staticModulePaths } = programBuilder.buildProgram();
+	const { program, metadata, constRelocs, constValueRelocs, bss, rodataBytes, rodataSymbols, staticModulePaths } = programBuilder.buildProgram();
 
 	// Ensure module export slot names (built during module compile-info collection)
 	// are present in the program metadata so linkers can resolve symbolic module slots.
@@ -4527,6 +4719,8 @@ export function compileLuaChunkToProgram(chunk: LuaChunk, modules: ReadonlyArray
 		constRelocs,
 		constValueRelocs,
 		bss,
+		rodataBytes,
+		rodataSymbols,
 	};
 }
 
@@ -4582,8 +4776,8 @@ export function appendLuaChunkToProgram(base: Program, programMetadata: ProgramM
 		throw new Error(buildCompileFailureMessage(compileErrors));
 	}
 	sectionInitProtoIndex = compileSectionInitProto(programBuilder, moduleId, chunk.range, frontend.getFile(chunk.range.path), frontend);
-	const { program, metadata, constRelocs, constValueRelocs, bss } = programBuilder.buildProgram();
-	return { program, metadata, entryProtoIndex, sectionInitProtoIndex, constRelocs, constValueRelocs, bss };
+	const { program, metadata, constRelocs, constValueRelocs, bss, rodataBytes, rodataSymbols } = programBuilder.buildProgram();
+	return { program, metadata, entryProtoIndex, sectionInitProtoIndex, constRelocs, constValueRelocs, bss, rodataBytes, rodataSymbols };
 }
 // end normalized-body-acceptable
 // end repeated-sequence-acceptable

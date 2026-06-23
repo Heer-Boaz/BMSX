@@ -27,6 +27,7 @@ function makeProgram(cpu: CPU): Program {
 	const pool = cpu.stringPool;
 	return {
 		code,
+		programRom: code,
 		constPool: [],
 		protos: [makeProto(code.length)],
 		stringPool: pool,

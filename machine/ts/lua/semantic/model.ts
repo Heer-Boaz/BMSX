@@ -20,6 +20,7 @@ import {
 	type LuaReturnStatement,
 	type LuaStructDeclarationStatement,
 	type LuaBssDeclarationStatement,
+	type LuaRodataDeclarationStatement,
 	type LuaFunctionDeclarationStatement,
 	type LuaDefinitionInfo,
 	type LuaSourceRange,
@@ -1606,6 +1607,15 @@ class SemanticBuilder {
 				}
 				break;
 			}
+			case LuaSyntaxKind.RodataDeclarationStatement: {
+				const rodataDeclaration = statement as LuaRodataDeclarationStatement;
+				this.declareRodata(rodataDeclaration.name);
+				for (const lengthExpression of rodataDeclaration.typeRef.arrayLengths) {
+					this.visitExpression(lengthExpression, { tableBaseDecl: null, tableBasePath: null });
+				}
+				this.visitExpression(rodataDeclaration.initializer, { tableBaseDecl: null, tableBasePath: null });
+				break;
+			}
 			default: {
 				this.visitGenericStatement(statement);
 				break;
@@ -2010,6 +2020,27 @@ class SemanticBuilder {
 			namePath: [name.name],
 			name: name.name,
 			kind: 'bss',
+			range,
+			scopeRange: scope.range,
+			scopeRef: scope,
+			isGlobal: scope.kind === 'path',
+			active: true,
+		});
+		this.addBinding(scope, decl);
+		if (decl.isGlobal) {
+			this.globalsByKey.set(decl.symbolKey, decl);
+		}
+		this.recordDefinitionAnnotation(decl);
+		return decl;
+	}
+
+	private declareRodata(name: LuaIdentifierExpression): InternalDecl {
+		const scope = this.currentScope();
+		const range = buildIdentifierRange(name, this.tokenMap, this.path);
+		const decl = this.createDecl({
+			namePath: [name.name],
+			name: name.name,
+			kind: 'rodata',
 			range,
 			scopeRange: scope.range,
 			scopeRef: scope,

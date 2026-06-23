@@ -46,6 +46,7 @@ function makeProgram(cpu: CPU): Program {
 	const pool = cpu.stringPool;
 	return {
 		code,
+		programRom: code,
 		constPool: [],
 		protos: [makeProto(INSTRUCTION_BYTES), { ...makeProto(INSTRUCTION_BYTES), entryPC: INSTRUCTION_BYTES }],
 		stringPool: pool,
@@ -62,6 +63,7 @@ function makeThrowingNativeProgram(cpu: CPU, nativeFunction: Value): Program {
 	const pool = cpu.stringPool;
 	return {
 		code,
+		programRom: code,
 		constPool: [nativeFunction],
 		protos: [makeProto(3 * INSTRUCTION_BYTES), { ...makeProto(INSTRUCTION_BYTES), entryPC: 3 * INSTRUCTION_BYTES }],
 		stringPool: pool,

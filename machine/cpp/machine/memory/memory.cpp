@@ -53,7 +53,8 @@ Memory::Memory()
 Memory::Memory(const MemoryInit& init)
 	: m_systemRom{ init.systemRom.data, init.systemRom.size }
 	, m_cartRom{ init.cartRom.data, init.cartRom.size }
-	, m_programCode()
+	, m_programRom()
+	, m_programTextByteLength(0)
 	, m_overlayRom{ init.overlayRom.data, init.overlayRom.size }
 	, m_ram(RAM_END - RAM_BASE)
 	, m_ioSlots(IO_SLOT_COUNT, valueNil())
@@ -81,11 +82,12 @@ void Memory::mapIoWrite(uint32_t addr, void* context, IoWriteHandler handler) {
 	m_ioWriteHandlers[static_cast<size_t>(slot)] = { context, handler };
 }
 
-void Memory::setProgramCode(const u8* data, size_t size) {
+void Memory::setProgramRom(const u8* data, size_t size, size_t textByteLength) {
 	if (size > PROGRAM_ROM_SIZE) {
 		throw std::runtime_error("[Memory] Program ROM exceeds mapped range.");
 	}
-	m_programCode = { data, size };
+	m_programRom = { data, size };
+	m_programTextByteLength = textByteLength;
 }
 
 MemorySaveState Memory::captureSaveState() const {
@@ -109,8 +111,8 @@ void Memory::restoreSaveState(const MemorySaveState& state) {
 }
 
 u8 Memory::readMainMemoryU8(uint32_t addr, uint32_t faultAccess) const {
-	if (isProgramCodeReadableRange(addr, 1)) {
-		return m_programCode.data[static_cast<size_t>(addr - PROGRAM_ROM_BASE)];
+	if (isProgramRomReadableRange(addr, 1)) {
+		return m_programRom.data[static_cast<size_t>(addr - PROGRAM_ROM_BASE)];
 	}
 	if (addr >= SYSTEM_ROM_BASE && addr < SYSTEM_ROM_BASE + m_systemRom.size) {
 		return m_systemRom.data[static_cast<size_t>(addr - SYSTEM_ROM_BASE)];
@@ -222,7 +224,7 @@ Value Memory::readValue(uint32_t addr) const {
 		return readIoSlotValue(slot, addr);
 	}
 	if (addressRangeWithin(addr, PROGRAM_ROM_BASE, PROGRAM_ROM_SIZE, 4)) {
-		return valueNumber(static_cast<double>(readProgramCodeWord(addr)));
+		return valueNumber(static_cast<double>(readProgramRomWord(addr)));
 	}
 	if (addr < RAM_BASE) {
 		return valueFromNumber(static_cast<double>(readU32FromRegion(addr)));
@@ -249,7 +251,7 @@ Value Memory::readMappedValue(uint32_t addr) const {
 		return valueNumber(0.0);
 	}
 	if (addressRangeWithin(addr, PROGRAM_ROM_BASE, PROGRAM_ROM_SIZE, 4)) {
-		return valueNumber(static_cast<double>(readProgramCodeWord(addr)));
+		return valueNumber(static_cast<double>(readProgramRomWord(addr)));
 	}
 	const u8* region = nullptr;
 	size_t offset = 0;
@@ -399,7 +401,7 @@ uint32_t Memory::readU32(uint32_t addr) const {
 		return 0;
 	}
 	if (addressRangeWithin(addr, PROGRAM_ROM_BASE, PROGRAM_ROM_SIZE, 4)) {
-		return readProgramCodeWord(addr);
+		return readProgramRomWord(addr);
 	}
 	if (addr < RAM_BASE) {
 		return readU32FromRegion(addr);
@@ -415,8 +417,8 @@ uint32_t Memory::readU32(uint32_t addr) const {
 uint32_t Memory::readU32FromRegion(uint32_t addr) const {
 	const u8* region = nullptr;
 	size_t offset = 0;
-	if (isProgramCodeReadableRange(addr, 4)) {
-		region = m_programCode.data;
+	if (isProgramRomReadableRange(addr, 4)) {
+		region = m_programRom.data;
 		offset = static_cast<size_t>(addr - PROGRAM_ROM_BASE);
 	} else if (addressRangeOffset(addr, SYSTEM_ROM_BASE, m_systemRom.size, 4, offset)) {
 		region = m_systemRom.data;
@@ -447,8 +449,8 @@ uint32_t Memory::readMappedU16LE(uint32_t addr) const {
 	}
 	const u8* region = nullptr;
 	size_t offset = 0;
-	if (isProgramCodeReadableRange(addr, 2)) {
-		region = m_programCode.data;
+	if (isProgramRomReadableRange(addr, 2)) {
+		region = m_programRom.data;
 		offset = static_cast<size_t>(addr - PROGRAM_ROM_BASE);
 	} else if (addressRangeOffset(addr, SYSTEM_ROM_BASE, m_systemRom.size, 2, offset)) {
 		region = m_systemRom.data;
@@ -490,8 +492,8 @@ uint32_t Memory::readMappedU32LE(uint32_t addr) const {
 	}
 	const u8* region = nullptr;
 	size_t offset = 0;
-	if (isProgramCodeReadableRange(addr, 4)) {
-		region = m_programCode.data;
+	if (isProgramRomReadableRange(addr, 4)) {
+		region = m_programRom.data;
 		offset = static_cast<size_t>(addr - PROGRAM_ROM_BASE);
 	} else if (addressRangeOffset(addr, SYSTEM_ROM_BASE, m_systemRom.size, 4, offset)) {
 		region = m_systemRom.data;
@@ -657,8 +659,8 @@ bool Memory::readBytes(uint32_t addr, u8* out, size_t length) const {
 		return false;
 	}
 	size_t offset = 0;
-	if (isProgramCodeReadableRange(addr, length)) {
-		std::memcpy(out, m_programCode.data + static_cast<size_t>(addr - PROGRAM_ROM_BASE), length);
+	if (isProgramRomReadableRange(addr, length)) {
+		std::memcpy(out, m_programRom.data + static_cast<size_t>(addr - PROGRAM_ROM_BASE), length);
 		return true;
 	}
 	if (addressRangeOffset(addr, SYSTEM_ROM_BASE, m_systemRom.size, length, offset)) {
@@ -689,7 +691,7 @@ bool Memory::isReadableMainMemoryRange(uint32_t addr, size_t length) const {
 	const bool isReadableRam = addr >= RAM_BASE
 		&& length <= m_ram.size()
 		&& static_cast<size_t>(addr - RAM_BASE) <= m_ram.size() - length;
-	return isProgramCodeReadableRange(addr, length)
+	return isProgramRomReadableRange(addr, length)
 		|| isRangeWithinRegion(addr, length, SYSTEM_ROM_BASE, static_cast<uint32_t>(m_systemRom.size))
 		|| (m_cartRom.data != nullptr && isRangeWithinRegion(addr, length, CART_ROM_BASE, static_cast<uint32_t>(m_cartRom.size)))
 		|| (m_overlayRom.data != nullptr && isRangeWithinRegion(addr, length, OVERLAY_ROM_BASE, static_cast<uint32_t>(m_overlayRom.size)))
@@ -807,7 +809,7 @@ bool Memory::isMappedReadableRange(uint32_t addr, size_t length) const {
 	if (isIoRegionRange(addr, length)) {
 		return length == IO_WORD_SIZE && ioAlignedSlot(addr) >= 0;
 	}
-	if (isProgramCodeReadableRange(addr, length)) {
+	if (isProgramRomReadableRange(addr, length)) {
 		return true;
 	}
 	if (isRangeWithinRegion(addr, length, SYSTEM_ROM_BASE, static_cast<uint32_t>(m_systemRom.size))) {
@@ -827,17 +829,20 @@ bool Memory::isMappedReadableRange(uint32_t addr, size_t length) const {
 		&& static_cast<size_t>(addr - RAM_BASE) <= m_ram.size() - length;
 }
 
-bool Memory::isProgramCodeReadableRange(uint32_t addr, size_t length) const {
-	return m_programCode.data != nullptr
-		&& addressRangeWithin(addr, PROGRAM_ROM_BASE, m_programCode.size, length);
+bool Memory::isProgramRomReadableRange(uint32_t addr, size_t length) const {
+	return m_programRom.data != nullptr
+		&& addressRangeWithin(addr, PROGRAM_ROM_BASE, m_programRom.size, length);
 }
 
-uint32_t Memory::readProgramCodeWord(uint32_t addr) const {
-	if (!isProgramCodeReadableRange(addr, 4)) {
+uint32_t Memory::readProgramRomWord(uint32_t addr) const {
+	if (!isProgramRomReadableRange(addr, 4)) {
 		return 0;
 	}
 	const size_t offset = static_cast<size_t>(addr - PROGRAM_ROM_BASE);
-	const u8* code = m_programCode.data;
+	if (offset >= m_programTextByteLength) {
+		return readLE32(m_programRom.data + offset);
+	}
+	const u8* code = m_programRom.data;
 	return (static_cast<uint32_t>(code[offset]) << 24)
 		| (static_cast<uint32_t>(code[offset + 1]) << 16)
 		| (static_cast<uint32_t>(code[offset + 2]) << 8)

@@ -520,6 +520,7 @@ function collectNestedClosureWritesFromStatement(
 		case LuaSyntaxKind.HaltUntilIrqStatement:
 		case LuaSyntaxKind.StructDeclarationStatement:
 		case LuaSyntaxKind.BssDeclarationStatement:
+			case LuaSyntaxKind.RodataDeclarationStatement:
 		case LuaSyntaxKind.GotoStatement:
 		case LuaSyntaxKind.LabelStatement:
 			return;
@@ -663,6 +664,7 @@ function collectLexicalWritesInStatement(
 		case LuaSyntaxKind.HaltUntilIrqStatement:
 		case LuaSyntaxKind.StructDeclarationStatement:
 		case LuaSyntaxKind.BssDeclarationStatement:
+			case LuaSyntaxKind.RodataDeclarationStatement:
 		case LuaSyntaxKind.GotoStatement:
 		case LuaSyntaxKind.LabelStatement:
 			return;
@@ -872,6 +874,7 @@ export class ValueKindFlowAnalyzer {
 			case LuaSyntaxKind.HaltUntilIrqStatement:
 			case LuaSyntaxKind.StructDeclarationStatement:
 			case LuaSyntaxKind.BssDeclarationStatement:
+			case LuaSyntaxKind.RodataDeclarationStatement:
 			case LuaSyntaxKind.GotoStatement:
 			case LuaSyntaxKind.LabelStatement:
 				return;

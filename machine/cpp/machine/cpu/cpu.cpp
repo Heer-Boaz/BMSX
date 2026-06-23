@@ -1037,9 +1037,9 @@ void CPU::setProgram(Program* program, ProgramMetadata* metadata) {
 	m_program = program;
 	m_staticClosures.clear();
 	if (m_program) {
-		m_memory.setProgramCode(m_program->code.data(), m_program->code.size());
+		m_memory.setProgramRom(m_program->programRom.data(), m_program->programRom.size(), m_program->code.size());
 	} else {
-		m_memory.setProgramCode(nullptr, 0);
+		m_memory.setProgramRom(nullptr, 0, 0);
 	}
 	m_metadata = metadata;
 	if (!m_program) {

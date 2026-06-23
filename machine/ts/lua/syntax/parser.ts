@@ -13,6 +13,7 @@ import type {
 	LuaAssignmentStatement,
 	LuaBlock,
 	LuaBssDeclarationStatement,
+	LuaRodataDeclarationStatement,
 	LuaBinaryExpression,
 	LuaBooleanLiteralExpression,
 	LuaBreakStatement,
@@ -212,6 +213,9 @@ export class LuaParser {
 		if (token.type === LuaTokenType.Identifier && token.lexeme === 'bss') {
 			return this.parseBssDeclaration();
 		}
+		if (token.type === LuaTokenType.Identifier && token.lexeme === 'rodata') {
+			return this.parseRodataDeclaration();
+		}
 		switch (token.type) {
 			case LuaTokenType.Local:
 				return this.parseLocalStatement();
@@ -289,6 +293,28 @@ export class LuaParser {
 			},
 			name,
 			typeRef,
+		};
+	}
+
+	private parseRodataDeclaration(): LuaRodataDeclarationStatement {
+		const rodataToken = this.advance();
+		const nameToken = this.consume(LuaTokenType.Identifier, 'Expected rodata symbol name.');
+		const name = this.createIdentifierExpression(nameToken);
+		this.consume(LuaTokenType.Colon, 'Expected ":" after rodata symbol name.');
+		const typeRef = this.parseTypeReference();
+		this.consume(LuaTokenType.Equal, 'Expected "=" after rodata type.');
+		const initializer = this.parseExpression();
+		this.match(LuaTokenType.Semicolon);
+		return {
+			kind: LuaSyntaxKind.RodataDeclarationStatement,
+			range: {
+				path: this.path,
+				start: this.positionFromToken(rodataToken),
+				end: initializer.range.end,
+			},
+			name,
+			typeRef,
+			initializer,
 		};
 	}
 
@@ -1494,6 +1520,15 @@ export class LuaParser {
 				for (const lengthExpression of bssDeclaration.typeRef.arrayLengths) {
 					visitExpression(lengthExpression);
 				}
+				break;
+			}
+			case LuaSyntaxKind.RodataDeclarationStatement: {
+				const rodataDeclaration = statement as LuaRodataDeclarationStatement;
+				pushDefinition([rodataDeclaration.name.name], rodataDeclaration.name.range, currentScope, 'variable');
+				for (const lengthExpression of rodataDeclaration.typeRef.arrayLengths) {
+					visitExpression(lengthExpression);
+				}
+				visitExpression(rodataDeclaration.initializer);
 				break;
 			}
 			case LuaSyntaxKind.ForNumericStatement: {

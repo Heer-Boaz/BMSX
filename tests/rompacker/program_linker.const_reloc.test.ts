@@ -69,6 +69,8 @@ function makeProgramImage(
 				constPool: Array.from(constPool),
 				moduleProtos: [],
 				staticModulePaths: [],
+				bytes: new Uint8Array(0),
+				symbols: [],
 			},
 			data: { bytes: new Uint8Array(0) },
 			bss: { byteCount: 0, symbols: [] },
@@ -100,6 +102,7 @@ test('ProgramImage exposes text and rodata as ROM sections', () => {
 	);
 	image.sections.rodata.moduleProtos.push({ path: 'rooms/castle', protoIndex: 0 });
 	image.sections.rodata.staticModulePaths.push('system/init');
+	image.sections.rodata.bytes = new Uint8Array([1, 2, 3, 4]);
 
 	const program = inflateProgram(image.sections);
 
@@ -108,6 +111,7 @@ test('ProgramImage exposes text and rodata as ROM sections', () => {
 	assert.equal(image.sections.rodata.constPool.length, 2);
 	assert.equal(image.sections.text.protos.length, 1);
 	assert.equal(program.code, image.sections.text.code);
+	assert.deepEqual(Array.from(program.programRom), Array.from(image.sections.text.code).concat([1, 2, 3, 4]));
 	assert.equal(program.protos, image.sections.text.protos);
 	assert.equal(image.sections.data.bytes.byteLength, 0);
 	assert.equal(image.sections.bss.byteCount, 0);

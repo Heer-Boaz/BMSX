@@ -17,6 +17,15 @@ export type ProgramRodataSection = {
 	constPool: EncodedValue[];
 	moduleProtos: Array<{ path: string; protoIndex: number }>;
 	staticModulePaths: string[];
+	bytes: Uint8Array;
+	symbols: ProgramRodataSymbol[];
+};
+
+export type ProgramRodataSymbol = {
+	name: string;
+	offset: number;
+	byteCount: number;
+	alignment: number;
 };
 
 export type ProgramDataSection = {
@@ -62,7 +71,7 @@ export type ProgramConstReloc =
 
 export type ProgramConstValueReloc = {
 	constIndex: number;
-	kind: 'bss_addr';
+	kind: 'bss_addr' | 'rodata_addr';
 	symbol: string;
 	addend: number;
 };
@@ -103,6 +112,8 @@ export function encodeProgramObjectSections(
 	moduleProtos: Array<{ path: string; protoIndex: number }>,
 	staticModulePaths: string[],
 	bss: ProgramBssSection,
+	rodataBytes: Uint8Array,
+	rodataSymbols: ProgramRodataSymbol[],
 ): ProgramObjectSections {
 	return {
 		text: {
@@ -113,10 +124,19 @@ export function encodeProgramObjectSections(
 			constPool: encodeProgramRodataConstPool(program),
 			moduleProtos,
 			staticModulePaths,
+			bytes: rodataBytes,
+			symbols: rodataSymbols,
 		},
 		data: { bytes: new Uint8Array(0) },
 		bss,
 	};
+}
+
+export function buildProgramRomImage(textCode: Uint8Array, rodataBytes: Uint8Array): Uint8Array {
+	const programRom = new Uint8Array(textCode.byteLength + rodataBytes.byteLength);
+	programRom.set(textCode, 0);
+	programRom.set(rodataBytes, textCode.byteLength);
+	return programRom;
 }
 
 export function decodeProgramImage(bytes: Uint8Array): ProgramImage {
@@ -161,6 +181,8 @@ function decodeProgramObjectSections(value: unknown): ProgramObjectSections {
 			constPool: requireObjectKey(rodata, 'constPool', 'ProgramImage.sections.rodata', 'ProgramImage.sections.rodata.constPool') as EncodedValue[],
 			moduleProtos: decodeModuleProtos(requireObjectKey(rodata, 'moduleProtos', 'ProgramImage.sections.rodata')),
 			staticModulePaths: requireObjectKey(rodata, 'staticModulePaths', 'ProgramImage.sections.rodata', 'ProgramImage.sections.rodata.staticModulePaths') as string[],
+			bytes: requireObjectKey(rodata, 'bytes', 'ProgramImage.sections.rodata', 'ProgramImage.sections.rodata.bytes') as Uint8Array,
+			symbols: decodeRodataSymbols(requireObjectKey(rodata, 'symbols', 'ProgramImage.sections.rodata')),
 		},
 		data: {
 			bytes: requireObjectKey(data, 'bytes', 'ProgramImage.sections.data', 'ProgramImage.sections.data.bytes') as Uint8Array,
@@ -177,6 +199,22 @@ function decodeBssSymbols(value: unknown): ProgramBssSymbol[] {
 	const out: ProgramBssSymbol[] = new Array(array.length);
 	for (let index = 0; index < array.length; index += 1) {
 		const entryLabel = `ProgramImage.sections.bss.symbols[${index}]`;
+		const entry = requireObject(array[index], entryLabel);
+		out[index] = {
+			name: requireObjectKey(entry, 'name', entryLabel, `${entryLabel}.name`) as string,
+			offset: requireObjectKey(entry, 'offset', entryLabel, `${entryLabel}.offset`) as number,
+			byteCount: requireObjectKey(entry, 'byteCount', entryLabel, `${entryLabel}.byteCount`) as number,
+			alignment: requireObjectKey(entry, 'alignment', entryLabel, `${entryLabel}.alignment`) as number,
+		};
+	}
+	return out;
+}
+
+function decodeRodataSymbols(value: unknown): ProgramRodataSymbol[] {
+	const array = value as [];
+	const out: ProgramRodataSymbol[] = new Array(array.length);
+	for (let index = 0; index < array.length; index += 1) {
+		const entryLabel = `ProgramImage.sections.rodata.symbols[${index}]`;
 		const entry = requireObject(array[index], entryLabel);
 		out[index] = {
 			name: requireObjectKey(entry, 'name', entryLabel, `${entryLabel}.name`) as string,
@@ -233,8 +271,8 @@ function decodeProgramLink(value: unknown): ProgramLink {
 		const entryLabel = `ProgramImage.link.constValueRelocs[${index}]`;
 		const entry = requireObject(constValueRelocValues[index], entryLabel);
 		const kind = requireObjectKey(entry, 'kind', entryLabel, `${entryLabel}.kind`) as string;
-		if (kind !== 'bss_addr') {
-			throw new Error(`${entryLabel}.kind must be 'bss_addr'.`);
+		if (kind !== 'bss_addr' && kind !== 'rodata_addr') {
+			throw new Error(`${entryLabel}.kind must be 'bss_addr' or 'rodata_addr'.`);
 		}
 		constValueRelocs[index] = {
 			constIndex: requireObjectKey(entry, 'constIndex', entryLabel, `${entryLabel}.constIndex`) as number,
@@ -259,6 +297,7 @@ export function inflateProgram(sections: ProgramObjectSections): Program {
 	}
 	return {
 		code: sections.text.code,
+		programRom: buildProgramRomImage(sections.text.code, sections.rodata.bytes),
 		constPool,
 		protos: sections.text.protos,
 		stringPool,

@@ -164,6 +164,18 @@ ProgramRodataSection extractRodataSection(const BinValue& rodataObj) {
 	}
 
 	rodata.staticModulePaths = readStringArray(rodataObj.require("staticModulePaths"), "ProgramImage: ProgramImage.sections.rodata.staticModulePaths");
+	const auto& bytes = rodataObj.require("bytes").asBinary();
+	rodata.bytes.assign(bytes.begin(), bytes.end());
+	const auto& symbols = rodataObj.require("symbols").asArray();
+	rodata.symbols.reserve(symbols.size());
+	for (const auto& symbolValue : symbols) {
+		ProgramRodataSection::Symbol symbol;
+		symbol.name = symbolValue.require("name").asString();
+		symbol.offset = static_cast<size_t>(symbolValue.require("offset").toI32());
+		symbol.byteCount = static_cast<size_t>(symbolValue.require("byteCount").toI32());
+		symbol.alignment = static_cast<size_t>(symbolValue.require("alignment").toI32());
+		rodata.symbols.push_back(std::move(symbol));
+	}
 	return rodata;
 }
 
@@ -311,6 +323,8 @@ BinValue encodeConstReloc(const ProgramConstReloc& reloc) {
 std::unique_ptr<Program> inflateProgram(const ProgramObjectSections& sections) {
 	auto program = std::make_unique<Program>();
 	program->code = sections.text.code;
+	program->programRom = sections.text.code;
+	program->programRom.insert(program->programRom.end(), sections.rodata.bytes.begin(), sections.rodata.bytes.end());
 	program->protos = sections.text.protos;
 	program->constPool.reserve(sections.rodata.constPool.size());
 	for (const EncodedValue& value : sections.rodata.constPool) {
@@ -355,12 +369,12 @@ std::unique_ptr<ProgramImage> decodeProgramImage(const uint8_t* data, size_t siz
 	image->link.constValueRelocs.reserve(constValueRelocsArr.size());
 	for (const auto& relocObj : constValueRelocsArr) {
 		const std::string kind = relocObj.require("kind").asString();
-		if (kind != "bss_addr") {
-			throw BMSX_RUNTIME_ERROR("ProgramImage.link.constValueRelocs kind must be bss_addr.");
+		if (kind != "bss_addr" && kind != "rodata_addr") {
+			throw BMSX_RUNTIME_ERROR("ProgramImage.link.constValueRelocs kind must be bss_addr or rodata_addr.");
 		}
 		ProgramConstValueReloc reloc;
 		reloc.constIndex = relocObj.require("constIndex").toI32();
-		reloc.kind = ProgramConstValueRelocKind::BssAddr;
+		reloc.kind = kind == "bss_addr" ? ProgramConstValueRelocKind::BssAddr : ProgramConstValueRelocKind::RodataAddr;
 		reloc.symbol = relocObj.require("symbol").asString();
 		reloc.addend = relocObj.require("addend").toI32();
 		image->link.constValueRelocs.push_back(std::move(reloc));
@@ -400,6 +414,18 @@ std::vector<uint8_t> encodeProgramImage(const ProgramImage& asset) {
 	rodata["constPool"] = BinValue(std::move(constPool));
 	rodata["moduleProtos"] = BinValue(std::move(moduleProtos));
 	rodata["staticModulePaths"] = BinValue(std::move(staticModulePaths));
+	rodata["bytes"] = BinValue(BinBinary(asset.sections.rodata.bytes.begin(), asset.sections.rodata.bytes.end()));
+	BinArray rodataSymbols;
+	rodataSymbols.reserve(asset.sections.rodata.symbols.size());
+	for (const auto& symbol : asset.sections.rodata.symbols) {
+		BinObject object;
+		object["name"] = BinValue(symbol.name);
+		object["offset"] = BinValue(static_cast<i64>(symbol.offset));
+		object["byteCount"] = BinValue(static_cast<i64>(symbol.byteCount));
+		object["alignment"] = BinValue(static_cast<i64>(symbol.alignment));
+		rodataSymbols.push_back(BinValue(std::move(object)));
+	}
+	rodata["symbols"] = BinValue(std::move(rodataSymbols));
 
 	BinObject data;
 	data["bytes"] = BinValue(BinBinary(asset.sections.data.bytes.begin(), asset.sections.data.bytes.end()));
@@ -434,7 +460,7 @@ std::vector<uint8_t> encodeProgramImage(const ProgramImage& asset) {
 	for (const ProgramConstValueReloc& reloc : asset.link.constValueRelocs) {
 		BinObject object;
 		object["constIndex"] = BinValue(reloc.constIndex);
-		object["kind"] = BinValue("bss_addr");
+		object["kind"] = BinValue(reloc.kind == ProgramConstValueRelocKind::BssAddr ? "bss_addr" : "rodata_addr");
 		object["symbol"] = BinValue(reloc.symbol);
 		object["addend"] = BinValue(reloc.addend);
 		constValueRelocs.push_back(BinValue(std::move(object)));

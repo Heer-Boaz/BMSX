@@ -7,7 +7,7 @@ import { LuaParser } from '../../machine/ts/lua/syntax/parser';
 import { CPU, RunResult, type Value } from '../../machine/ts/machine/cpu/cpu';
 import { disassembleProgram } from '../../machine/ts/machine/cpu/disassembler';
 import { Memory } from '../../machine/ts/machine/memory/memory';
-import { PROGRAM_BSS_BASE } from '../../machine/ts/machine/memory/map';
+import { PROGRAM_BSS_BASE, PROGRAM_ROM_BASE } from '../../machine/ts/machine/memory/map';
 import { compileLuaChunkToProgram, encodeCompiledProgramImage, type CompiledProgram } from '../../machine/ts/machine/program/compiler';
 import { inflateExecutableProgramImage, linkProgramImages } from '../../machine/ts/machine/program/linker';
 
@@ -387,5 +387,107 @@ test('external const modules cannot declare .bss storage', () => {
 			},
 		),
 		/Const module 'state' declares \.bss storage but is not compiled as a source module/,
+	);
+});
+
+
+test('BLua .rodata declarations emit CPU-readable ROM section symbols', () => {
+	const source = `
+rodata values: word[3] = { 11, 22, 33 }
+return values[0], values[1], values[2], values
+`;
+	const compiled = compileSource(source, 'section_rodata.lua');
+	const image = encodeCompiledProgramImage(compiled);
+	const rodataAddr = PROGRAM_ROM_BASE + image.sections.text.code.byteLength;
+	assert.deepEqual(image.sections.rodata.symbols, [{
+		name: 'module:section_rodata.lua/rodata:values',
+		offset: 0,
+		byteCount: 12,
+		alignment: 4,
+	}]);
+	assert.deepEqual(Array.from(image.sections.rodata.bytes), [11, 0, 0, 0, 22, 0, 0, 0, 33, 0, 0, 0]);
+	assert.equal(image.link.constValueRelocs.some(reloc => reloc.kind === 'rodata_addr' && reloc.symbol === 'module:section_rodata.lua/rodata:values'), true);
+	assert.deepEqual(runColdCompiled(compiled).values, [11, 22, 33, rodataAddr]);
+});
+
+test('const modules export .rodata storage symbols without runtime module state', () => {
+	const moduleSource = `
+rodata values: word[2] = { 5, 6 }
+return { values = values }
+`;
+	const entrySource = `
+local data<const> = require("data")
+local values<const>: *word = data.values
+return values[0], values[1], data.values
+`;
+	const compiled = compileWithConstModule(entrySource, 'data', moduleSource);
+	const image = encodeCompiledProgramImage(compiled);
+	const rodataAddr = PROGRAM_ROM_BASE + image.sections.text.code.byteLength;
+	assert.equal(compiled.moduleProtoMap.has('data'), false);
+	assert.equal(compiled.staticModulePaths.includes('data'), false);
+	assert.deepEqual(image.sections.rodata.symbols, [{
+		name: 'module:data/rodata:values',
+		offset: 0,
+		byteCount: 8,
+		alignment: 4,
+	}]);
+	assert.equal(image.link.constValueRelocs.some(reloc => reloc.kind === 'rodata_addr' && reloc.symbol === 'module:data/rodata:values'), true);
+	const disasm = disassembleProgram(compiled.program, compiled.metadata, { showProtoHeaders: true });
+	assert.doesNotMatch(disasm, /\bCALL\b/);
+	assert.doesNotMatch(disasm, /\bNEWT\b/);
+	assert.deepEqual(runColdCompiled(compiled).values, [5, 6, rodataAddr]);
+});
+
+test('linked system and cart const-module .rodata symbols resolve against their ROM ranges', () => {
+	const systemSource = 'local s<const> = require("sys_data")\nreturn s.values';
+	const systemCompiled = compileLuaChunkToProgram(
+		parseSource(systemSource, 'system.lua'),
+		[{ path: 'sys_data', chunk: parseSource('rodata values: word[1] = { 10 }\nreturn { values = values }', 'sys_data.lua'), source: 'rodata values: word[1] = { 10 }\nreturn { values = values }' }],
+		{ entrySource: systemSource, constModulePaths: ['sys_data'] },
+	);
+	const cartSource = 'local s<const> = require("cart_data")\nreturn s.values';
+	const cartCompiled = compileLuaChunkToProgram(
+		parseSource(cartSource, 'cart.lua'),
+		[{ path: 'cart_data', chunk: parseSource('rodata values: word[1] = { 20 }\nreturn { values = values }', 'cart_data.lua'), source: 'rodata values: word[1] = { 20 }\nreturn { values = values }' }],
+		{ entrySource: cartSource, constModulePaths: ['cart_data'] },
+	);
+	const linked = linkProgramImages(
+		encodeCompiledProgramImage(systemCompiled),
+		systemCompiled.metadata,
+		encodeCompiledProgramImage(cartCompiled),
+		cartCompiled.metadata,
+	);
+	const systemRodataAddr = PROGRAM_ROM_BASE + linked.programImage.sections.text.code.byteLength;
+	const cartRodataAddr = systemRodataAddr + 4;
+	assert.deepEqual(Array.from(linked.programImage.sections.rodata.bytes), [10, 0, 0, 0, 20, 0, 0, 0]);
+	assert.deepEqual(linked.programImage.sections.rodata.symbols, [
+		{ name: 'module:sys_data/rodata:values', offset: 0, byteCount: 4, alignment: 4 },
+		{ name: 'module:cart_data/rodata:values', offset: 4, byteCount: 4, alignment: 4 },
+	]);
+	assert.equal(linked.programImage.sections.rodata.constPool.includes(systemRodataAddr), true);
+	assert.equal(linked.programImage.sections.rodata.constPool.includes(cartRodataAddr), true);
+	assert.deepEqual(linked.programImage.link.constValueRelocs, []);
+});
+
+test('external const modules cannot declare .rodata storage', () => {
+	const moduleSource = 'rodata values: word[1] = { 1 }\nreturn { values = values }';
+	assert.throws(
+		() => compileLuaChunkToProgram(
+			parseSource('return require("data").values', 'entry.lua'),
+			[],
+			{
+				entrySource: 'return require("data").values',
+				externalModules: [{ path: 'data', chunk: parseSource(moduleSource, 'data.lua'), source: moduleSource }],
+				constModulePaths: ['data'],
+			},
+		),
+		/Const module 'data' declares \.rodata storage but is not compiled as a source module/,
+	);
+});
+
+test('BLua .rodata storage rejects writes at compile time', () => {
+	assert.throws(
+		() => compileSource('rodata values: word[1] = { 1 }\nvalues[0] = 2\nreturn values[0]', 'rodata_write.lua'),
+		/Cannot assign to \.rodata storage/,
 	);
 });

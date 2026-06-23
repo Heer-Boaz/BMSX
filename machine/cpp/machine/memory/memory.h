@@ -50,7 +50,7 @@ public:
 	void setVramWriter(VramWriter* writer);
 	void mapIoRead(uint32_t addr, void* context, IoReadHandler handler);
 	void mapIoWrite(uint32_t addr, void* context, IoWriteHandler handler);
-	void setProgramCode(const u8* data, size_t size);
+	void setProgramRom(const u8* data, size_t size, size_t textByteLength);
 
 	Value readValue(uint32_t addr) const;
 	Value readMappedValue(uint32_t addr) const;
@@ -106,7 +106,8 @@ private:
 		};
 		RomSpan m_systemRom;
 		RomSpan m_cartRom;
-		RomSpan m_programCode;
+		RomSpan m_programRom;
+		size_t m_programTextByteLength = 0;
 		MutableRomSpan m_overlayRom;
 		std::vector<u8> m_ram;
 		mutable std::vector<Value> m_ioSlots;
@@ -125,8 +126,8 @@ private:
 		}
 		return static_cast<int>(delta / IO_WORD_SIZE);
 	}
-	bool isProgramCodeReadableRange(uint32_t addr, size_t length) const;
-	uint32_t readProgramCodeWord(uint32_t addr) const;
+	bool isProgramRomReadableRange(uint32_t addr, size_t length) const;
+	uint32_t readProgramRomWord(uint32_t addr) const;
 	uint32_t readU32FromRegion(uint32_t addr) const;
 	bool isRangeWithinRegion(uint32_t addr, size_t length, uint32_t base, uint32_t size) const;
 	bool isLuaReadOnlyIoAddress(uint32_t addr) const;

@@ -27,10 +27,11 @@ import type {
 	ProgramConstReloc,
 	ProgramConstValueReloc,
 	ProgramBssSymbol,
+	ProgramRodataSymbol,
 	ProgramSymbolsImage,
 } from './loader';
 import { inflateProgram } from './loader';
-import { PROGRAM_BSS_BASE, RAM_END } from '../memory/map';
+import { PROGRAM_BSS_BASE, PROGRAM_ROM_BASE, PROGRAM_ROM_SIZE, RAM_END } from '../memory/map';
 
 export type LinkedProgramImage = {
 	programImage: ProgramImage;
@@ -122,11 +123,18 @@ const assertBssFitsRam = (baseAddress: number, byteCount: number): void => {
 	}
 };
 
-const resolveBssSymbolAddress = (
-	symbols: ReadonlyArray<ProgramBssSymbol>,
+const assertProgramRomFits = (byteCount: number): void => {
+	if (byteCount > PROGRAM_ROM_SIZE) {
+		throw new Error(`[ProgramLinker] program ROM range ${byteCount} exceeds ROM size ${PROGRAM_ROM_SIZE}.`);
+	}
+};
+
+const resolveStorageSymbolAddress = (
+	symbols: ReadonlyArray<ProgramBssSymbol | ProgramRodataSymbol>,
 	baseAddress: number,
 	symbolName: string,
 	addend: number,
+	sectionName: '.bss' | '.rodata',
 ): number => {
 	for (let index = 0; index < symbols.length; index += 1) {
 		const symbol = symbols[index];
@@ -134,7 +142,7 @@ const resolveBssSymbolAddress = (
 			return baseAddress + symbol.offset + addend;
 		}
 	}
-	throw new Error(`[ProgramLinker] Missing .bss symbol '${symbolName}'.`);
+	throw new Error(`[ProgramLinker] Missing ${sectionName} symbol '${symbolName}'.`);
 };
 
 const resolveConstValueRelocations = (
@@ -142,6 +150,8 @@ const resolveConstValueRelocations = (
 	relocs: ReadonlyArray<ProgramConstValueReloc>,
 	bssSymbols: ReadonlyArray<ProgramBssSymbol>,
 	bssBaseAddress: number,
+	rodataSymbols: ReadonlyArray<ProgramRodataSymbol>,
+	rodataBaseAddress: number,
 ): EncodedValue[] => {
 	if (relocs.length === 0) {
 		return constPool.slice();
@@ -151,7 +161,10 @@ const resolveConstValueRelocations = (
 		const reloc = relocs[index];
 		switch (reloc.kind) {
 			case 'bss_addr':
-				out[reloc.constIndex] = resolveBssSymbolAddress(bssSymbols, bssBaseAddress, reloc.symbol, reloc.addend);
+				out[reloc.constIndex] = resolveStorageSymbolAddress(bssSymbols, bssBaseAddress, reloc.symbol, reloc.addend, '.bss');
+				break;
+			case 'rodata_addr':
+				out[reloc.constIndex] = resolveStorageSymbolAddress(rodataSymbols, rodataBaseAddress, reloc.symbol, reloc.addend, '.rodata');
 				break;
 		}
 	}
@@ -353,6 +366,8 @@ export const inflateExecutableProgramImage = (
 	bssBaseAddress: number = PROGRAM_BSS_BASE,
 ): Program => {
 	assertBssFitsRam(bssBaseAddress, programImage.sections.bss.byteCount);
+	assertProgramRomFits(programImage.sections.text.code.byteLength + programImage.sections.rodata.bytes.byteLength);
+	const rodataBaseAddress = PROGRAM_ROM_BASE + programImage.sections.text.code.byteLength;
 	const program = inflateProgram({
 		...programImage.sections,
 		rodata: {
@@ -362,6 +377,8 @@ export const inflateExecutableProgramImage = (
 				programImage.link.constValueRelocs,
 				programImage.sections.bss.symbols,
 				bssBaseAddress,
+				programImage.sections.rodata.symbols,
+				rodataBaseAddress,
 			),
 		},
 	});
@@ -642,6 +659,10 @@ export const linkProgramImages = (
 		resolvedLayout.systemBasePc + systemCodeBytes,
 		resolvedLayout.cartBasePc + cartCodeBytes,
 	);
+	const linkedRodataByteCount = systemRodata.bytes.byteLength + cartRodata.bytes.byteLength;
+	assertProgramRomFits(totalBytes + linkedRodataByteCount);
+	const systemRodataBase = PROGRAM_ROM_BASE + totalBytes;
+	const cartRodataBase = systemRodataBase + systemRodata.bytes.byteLength;
 	const code = new Uint8Array(totalBytes);
 	code.set(systemText.code, resolvedLayout.systemBasePc);
 	code.set(cartText.code, resolvedLayout.cartBasePc);
@@ -650,8 +671,8 @@ export const linkProgramImages = (
 	const cartCode = code.subarray(resolvedLayout.cartBasePc, resolvedLayout.cartBasePc + cartCodeBytes);
 	rewriteClosureIndices(cartCode, baseProtoCount);
 	const mergedConsts = mergeConstPools(
-		resolveConstValueRelocations(systemRodata.constPool, systemImage.link.constValueRelocs, systemImage.sections.bss.symbols, systemBssBase),
-		resolveConstValueRelocations(cartRodata.constPool, cartImage.link.constValueRelocs, cartImage.sections.bss.symbols, cartBssBase),
+		resolveConstValueRelocations(systemRodata.constPool, systemImage.link.constValueRelocs, systemImage.sections.bss.symbols, systemBssBase, systemRodata.symbols, systemRodataBase),
+		resolveConstValueRelocations(cartRodata.constPool, cartImage.link.constValueRelocs, cartImage.sections.bss.symbols, cartBssBase, cartRodata.symbols, cartRodataBase),
 	);
 	const systemMetadata = systemSymbols;
 	const cartMetadata = cartSymbols;
@@ -746,6 +767,9 @@ export const linkProgramImages = (
 	const systemStaticModulePaths = systemRodata.staticModulePaths;
 	const cartStaticModulePaths = cartRodata.staticModulePaths;
 	const staticModulePaths = systemStaticModulePaths.concat(cartStaticModulePaths);
+	const rodataBytes = new Uint8Array(linkedRodataByteCount);
+	rodataBytes.set(systemRodata.bytes, 0);
+	rodataBytes.set(cartRodata.bytes, systemRodata.bytes.byteLength);
 	const dataBytes = new Uint8Array(systemImage.sections.data.bytes.length + cartImage.sections.data.bytes.length);
 	dataBytes.set(systemImage.sections.data.bytes, 0);
 	dataBytes.set(cartImage.sections.data.bytes, systemImage.sections.data.bytes.length);
@@ -773,6 +797,13 @@ export const linkProgramImages = (
 				constPool: mergedConsts.constPool,
 				moduleProtos,
 				staticModulePaths,
+				bytes: rodataBytes,
+				symbols: systemRodata.symbols.concat(cartRodata.symbols.map(symbol => ({
+					name: symbol.name,
+					offset: symbol.offset + systemRodata.bytes.byteLength,
+					byteCount: symbol.byteCount,
+					alignment: symbol.alignment,
+				}))),
 			},
 			data: { bytes: dataBytes },
 			bss: {

@@ -14,7 +14,7 @@ import {
 	collectStaticFunctionExportSymbolsByPathKey,
 	type StaticFunctionExportSymbol,
 } from './static_functions';
-import { hasStaticBssDeclaration } from './static_storage';
+import { findStaticStorageDeclarationKind } from './static_storage';
 import { buildModuleExportPathKey, buildModuleExportSlotName } from './module_names';
 import {
 	buildModuleShapeFromExpression,
@@ -77,8 +77,11 @@ const buildConstModuleExportValues = (
 	staticStorage: boolean,
 	semantics: LuaSemanticFrontendFile,
 ): Map<string, ConstExportValue> => {
-	if (!staticStorage && hasStaticBssDeclaration(chunk)) {
-		throw new Error(`[Compiler] Const module '${modulePath}' declares .bss storage but is not compiled as a source module.`);
+	if (!staticStorage) {
+		const storageKind = findStaticStorageDeclarationKind(chunk);
+		if (storageKind !== null) {
+			throw new Error(`[Compiler] Const module '${modulePath}' declares .${storageKind} storage but is not compiled as a source module.`);
+		}
 	}
 	return collectConstModuleExportValues(chunk, returnExpression, semantics, staticStorage);
 };
