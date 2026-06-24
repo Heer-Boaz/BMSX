@@ -58,8 +58,10 @@ function makeProgramImage(
 ): ProgramImage {
 	const code = buildCode(words);
 	return {
-		entryProtoIndex: 0,
-		sectionInitProtoIndex: 0,
+		vectors: {
+			resetProtoIndex: 0,
+			sectionInitProtoIndex: 0,
+		},
 		sections: {
 			text: {
 				code,
@@ -106,7 +108,7 @@ test('ProgramImage exposes text and rodata as ROM sections', () => {
 
 	const program = inflateProgram(image.sections);
 
-	assert.equal(image.entryProtoIndex, 0);
+	assert.deepEqual(image.vectors, { resetProtoIndex: 0, sectionInitProtoIndex: 0 });
 	assert.equal(image.sections.text.code.length, INSTRUCTION_BYTES);
 	assert.equal(image.sections.rodata.constPool.length, 2);
 	assert.equal(image.sections.text.protos.length, 1);
@@ -719,7 +721,7 @@ test('ProgramLinker rejects cart global relocations without symbols metadata', (
 	);
 });
 
-test('ProgramLinker owns linked boot entry selection', () => {
+test('ProgramLinker owns linked boot vector selection', () => {
 	const systemImage = makeProgramImage(
 		[{ op: OpCode.RET, a: 0, b: 1, c: 0 }],
 		[],
@@ -733,17 +735,17 @@ test('ProgramLinker owns linked boot entry selection', () => {
 	);
 	cartImage.sections.rodata.staticModulePaths = ['cart/init'];
 	const systemBoot = linkBootProgramImages(systemImage, null, cartImage, null, 'system');
-	assert.equal(systemBoot.entryProtoIndex, systemImage.entryProtoIndex);
+	assert.deepEqual(systemBoot.vectors, systemImage.vectors);
 	assert.equal(systemBoot.bssBaseAddress, PROGRAM_STATIC_RAM_BASE);
 	assert.deepEqual(systemBoot.staticModulePaths, ['system/init']);
-	assert.equal(systemBoot.cartEntryProtoIndex, 1);
+	assert.deepEqual(systemBoot.cartVectors, { resetProtoIndex: 1, sectionInitProtoIndex: 1 });
 	assert.deepEqual(systemBoot.cartStaticModulePaths, ['cart/init']);
 
 	const cartBoot = linkBootProgramImages(systemImage, null, cartImage, null, 'cart');
-	assert.equal(cartBoot.entryProtoIndex, 1);
+	assert.deepEqual(cartBoot.vectors, { resetProtoIndex: 1, sectionInitProtoIndex: 1 });
 	assert.equal(cartBoot.bssBaseAddress, PROGRAM_STATIC_RAM_BASE);
 	assert.deepEqual(cartBoot.staticModulePaths, ['system/init', 'cart/init']);
-	assert.equal(cartBoot.cartEntryProtoIndex, 1);
+	assert.deepEqual(cartBoot.cartVectors, { resetProtoIndex: 1, sectionInitProtoIndex: 1 });
 	assert.deepEqual(cartBoot.cartStaticModulePaths, ['cart/init']);
 });
 
@@ -790,7 +792,7 @@ test('ProgramLinker resolves .data VMA and LMA constants before executable insta
 	assert.deepEqual(linked.programImage.link.constValueRelocs, []);
 });
 
-test('ProgramLinker resolves .bss address constants and boot section-init indices', () => {
+test('ProgramLinker resolves .bss address constants and boot vectors', () => {
 	const systemImage = makeProgramImage(
 		[{ op: OpCode.RET, a: 0, b: 1, c: 0 }],
 		[0],
@@ -822,14 +824,14 @@ test('ProgramLinker resolves .bss address constants and boot section-init indice
 	assert.deepEqual(linked.programImage.link.constValueRelocs, []);
 	assert.equal(linked.systemBssBaseAddress, PROGRAM_STATIC_RAM_BASE);
 	assert.equal(linked.cartBssBaseAddress, PROGRAM_STATIC_RAM_BASE + 4);
-	assert.equal(linked.systemSectionInitProtoIndex, 0);
-	assert.equal(linked.cartSectionInitProtoIndex, 1);
+	assert.deepEqual(linked.systemVectors, { resetProtoIndex: 0, sectionInitProtoIndex: 0 });
+	assert.deepEqual(linked.cartVectors, { resetProtoIndex: 1, sectionInitProtoIndex: 1 });
 
 	const systemBoot = linkBootProgramImages(systemImage, null, cartImage, null, 'system');
-	assert.equal(systemBoot.sectionInitProtoIndex, 0);
+	assert.deepEqual(systemBoot.vectors, { resetProtoIndex: 0, sectionInitProtoIndex: 0 });
 	assert.equal(systemBoot.bssBaseAddress, PROGRAM_STATIC_RAM_BASE);
 	const cartBoot = linkBootProgramImages(systemImage, null, cartImage, null, 'cart');
-	assert.equal(cartBoot.sectionInitProtoIndex, 1);
+	assert.deepEqual(cartBoot.vectors, { resetProtoIndex: 1, sectionInitProtoIndex: 1 });
 	assert.equal(cartBoot.bssBaseAddress, PROGRAM_STATIC_RAM_BASE + 4);
 });
 
@@ -1025,7 +1027,7 @@ test('appended program images install host-eval code through the executable boun
 	const memory = new Memory({ systemRom: new Uint8Array(0) });
 	const cpu = new CPU(memory);
 	cpu.setProgram(executable, appended.metadata);
-	cpu.start(image.entryProtoIndex);
+	cpu.start(image.vectors.resetProtoIndex);
 
 	assert.equal(cpu.runUntilDepth(0, 100000), RunResult.Halted);
 	const returned = cpu.lastReturnValues[0];

@@ -388,7 +388,7 @@ export async function buildAssetModalView(selected: RomAsset, ctx: BuildAssetMod
 			if (selected.resid === PROGRAM_IMAGE_ID) {
 				const { programImage, program, metadata, sourceTextForPath, missingSourcePaths } = loadProgramFromAssets(ctx.rombin, ctx.assetList);
 				disassembly = disassembleProgramImage(program, metadata, sourceTextForPath);
-				metadataLines.push(`Program entry proto: ${programImage.entryProtoIndex}`);
+				metadataLines.push(`Program reset vector proto: ${programImage.vectors.resetProtoIndex}`);
 				metadataLines.push(`Program protos: ${program.protos.length}`);
 				metadataLines.push(`Program consts: ${program.constPool.length}`);
 				metadataLines.push(`Program code bytes: ${program.code.length}`);

@@ -130,8 +130,10 @@ const encodeCompilerProgramImage = (
 	rodataBytes: Uint8Array,
 	rodataSymbols: ProgramRodataSymbol[],
 ): ProgramImage => ({
-	entryProtoIndex,
-	sectionInitProtoIndex,
+	vectors: {
+		resetProtoIndex: entryProtoIndex,
+		sectionInitProtoIndex,
+	},
 	sections: encodeProgramObjectSections(program, moduleProtos, staticModulePaths, data, bss, rodataBytes, rodataSymbols),
 	link: { constRelocs, constValueRelocs },
 });

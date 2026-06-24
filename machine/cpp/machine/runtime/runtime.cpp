@@ -163,9 +163,8 @@ void Runtime::setRuntimeEnvironment(
 	m_cartRomPackage = cartRom;
 }
 
-void Runtime::setLinkedCartEntry(int entryProtoIndex, int sectionInitProtoIndex, uint32_t dataBaseAddress, uint32_t bssBaseAddress, std::vector<std::string> staticModulePaths) {
-	m_cartEntryProtoIndex = entryProtoIndex;
-	m_cartSectionInitProtoIndex = sectionInitProtoIndex;
+void Runtime::setLinkedCartVectors(ProgramVectorTable vectors, uint32_t dataBaseAddress, uint32_t bssBaseAddress, std::vector<std::string> staticModulePaths) {
+	m_cartVectors = vectors;
 	m_cartDataBaseAddress = dataBaseAddress;
 	m_cartBssBaseAddress = bssBaseAddress;
 	m_cartStaticModulePaths = std::move(staticModulePaths);
@@ -185,11 +184,8 @@ void Runtime::enterCartProgram() {
 }
 
 void Runtime::startCartProgram() {
-	if (!m_cartEntryProtoIndex) {
-		throw std::runtime_error("cannot start cart: no cart entry point is loaded.");
-	}
-	if (!m_cartSectionInitProtoIndex) {
-		throw std::runtime_error("cannot start cart: no cart section init is loaded.");
+	if (!m_cartVectors) {
+		throw std::runtime_error("cannot start cart: no cart vector table is loaded.");
 	}
 	if (!m_cartDataBaseAddress) {
 		throw std::runtime_error("cannot start cart: no cart data base is loaded.");
@@ -198,10 +194,10 @@ void Runtime::startCartProgram() {
 		throw std::runtime_error("cannot start cart: no cart bss base is loaded.");
 	}
 	enterCartProgram();
-	startLoadedProgram(*m_cartEntryProtoIndex, *m_cartSectionInitProtoIndex, m_cartStaticModulePaths, true, true);
+	startLoadedProgram(*m_cartVectors, m_cartStaticModulePaths, true, true);
 }
 
-void Runtime::boot(const ProgramImage& image, ProgramMetadata* metadata, int entryProtoIndex, int sectionInitProtoIndex, uint32_t dataBaseAddress, uint32_t bssBaseAddress, const std::vector<std::string>& staticModulePaths) {
+void Runtime::boot(const ProgramImage& image, ProgramMetadata* metadata, ProgramVectorTable vectors, uint32_t dataBaseAddress, uint32_t bssBaseAddress, const std::vector<std::string>& staticModulePaths) {
 	m_moduleProtos = buildModuleProtoMap(image.sections.rodata.moduleProtos);
 	m_moduleCache.clear();
 	m_programStorage = inflateExecutableProgramImage(image, metadata, dataBaseAddress, bssBaseAddress);
@@ -212,18 +208,18 @@ void Runtime::boot(const ProgramImage& image, ProgramMetadata* metadata, int ent
 		m_program = m_programStorage.get();
 		m_programMetadata = metadata;
 		machine.cpu.setProgram(m_program, metadata);
-		startLoadedProgram(entryProtoIndex, sectionInitProtoIndex, staticModulePaths, true, true);
+		startLoadedProgram(vectors, staticModulePaths, true, true);
 	} catch (const std::exception& e) {
 		handleLuaError(e.what());
 	}
 }
 
-void Runtime::startLoadedProgram(int entryProtoIndex, int sectionInitProtoIndex, const std::vector<std::string>& staticModulePaths, bool runInit, bool runNewGame) {
+void Runtime::startLoadedProgram(ProgramVectorTable vectors, const std::vector<std::string>& staticModulePaths, bool runInit, bool runNewGame) {
 	NativeResults sectionResults;
-	callLuaFunctionInto(machine.cpu.createRootClosure(sectionInitProtoIndex), NativeArgsView(), sectionResults);
+	callLuaFunctionInto(machine.cpu.createRootClosure(vectors.sectionInitProtoIndex), NativeArgsView(), sectionResults);
 	runStaticModuleInitializers(staticModulePaths);
 	enforceLuaHeapBudget();
-	machine.cpu.start(entryProtoIndex);
+	machine.cpu.start(vectors.resetProtoIndex);
 	enforceLuaHeapBudget();
 	m_pendingCall = PendingCall::Entry;
 	finishLuaEntryLifecycle(runInit, runNewGame);
@@ -241,8 +237,7 @@ void Runtime::resetRuntimeForProgramReload() {
 	m_runtimeFailed = false;
 	m_luaInitialized = false;
 	m_pendingCall = PendingCall::None;
-	m_cartEntryProtoIndex.reset();
-	m_cartSectionInitProtoIndex.reset();
+	m_cartVectors.reset();
 	m_cartDataBaseAddress.reset();
 	m_cartBssBaseAddress.reset();
 	m_cartStaticModulePaths.clear();

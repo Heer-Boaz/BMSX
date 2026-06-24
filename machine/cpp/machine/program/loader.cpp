@@ -356,9 +356,9 @@ std::unique_ptr<ProgramImage> decodeProgramImage(const uint8_t* data, size_t siz
 
 	auto image = std::make_unique<ProgramImage>();
 
-	// Extract entryProtoIndex
-	image->entryProtoIndex = root.require("entryProtoIndex").toI32();
-	image->sectionInitProtoIndex = root.require("sectionInitProtoIndex").toI32();
+	const auto& vectors = root.require("vectors");
+	image->vectors.resetProtoIndex = vectors.require("resetProtoIndex").toI32();
+	image->vectors.sectionInitProtoIndex = vectors.require("sectionInitProtoIndex").toI32();
 
 	image->sections = extractProgramObjectSections(root.require("sections"));
 
@@ -513,9 +513,12 @@ std::vector<uint8_t> encodeProgramImage(const ProgramImage& asset) {
 	link["constRelocs"] = BinValue(std::move(constRelocs));
 	link["constValueRelocs"] = BinValue(std::move(constValueRelocs));
 
+	BinObject vectors;
+	vectors["resetProtoIndex"] = BinValue(asset.vectors.resetProtoIndex);
+	vectors["sectionInitProtoIndex"] = BinValue(asset.vectors.sectionInitProtoIndex);
+
 	BinObject root;
-	root["entryProtoIndex"] = BinValue(asset.entryProtoIndex);
-	root["sectionInitProtoIndex"] = BinValue(asset.sectionInitProtoIndex);
+	root["vectors"] = BinValue(std::move(vectors));
 	root["sections"] = BinValue(std::move(sections));
 	root["link"] = BinValue(std::move(link));
 	return encodeBinary(BinValue(std::move(root)));

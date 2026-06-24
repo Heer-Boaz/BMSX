@@ -52,6 +52,11 @@ export type ProgramBssSymbol = {
 	alignment: number;
 };
 
+export type ProgramVectorTable = {
+	resetProtoIndex: number;
+	sectionInitProtoIndex: number;
+};
+
 export type ProgramObjectSections = {
 	text: ProgramTextSection;
 	rodata: ProgramRodataSection;
@@ -90,8 +95,7 @@ export type ProgramLink = {
 };
 
 export type ProgramImage = {
-	entryProtoIndex: number;
-	sectionInitProtoIndex: number;
+	vectors: ProgramVectorTable;
 	sections: ProgramObjectSections;
 	link: ProgramLink;
 };
@@ -151,15 +155,21 @@ export function buildProgramRomImage(textCode: Uint8Array, rodataBytes: Uint8Arr
 
 export function decodeProgramImage(bytes: Uint8Array): ProgramImage {
 	const root = requireObject(decodeBinary(bytes), 'ProgramImage');
-	const entryProtoIndex = requireObjectKey(root, 'entryProtoIndex', 'ProgramImage', 'ProgramImage.entryProtoIndex') as number;
-	const sectionInitProtoIndex = requireObjectKey(root, 'sectionInitProtoIndex', 'ProgramImage', 'ProgramImage.sectionInitProtoIndex') as number;
+	const vectors = decodeProgramVectorTable(requireObjectKey(root, 'vectors', 'ProgramImage', 'ProgramImage.vectors'));
 	const sections = decodeProgramObjectSections(requireObjectKey(root, 'sections', 'ProgramImage', 'ProgramImage.sections'));
 	const link = decodeProgramLink(requireObjectKey(root, 'link', 'ProgramImage'));
 	return {
-		entryProtoIndex,
-		sectionInitProtoIndex,
+		vectors,
 		sections,
 		link,
+	};
+}
+
+function decodeProgramVectorTable(value: unknown): ProgramVectorTable {
+	const vectors = requireObject(value, 'ProgramImage.vectors');
+	return {
+		resetProtoIndex: requireObjectKey(vectors, 'resetProtoIndex', 'ProgramImage.vectors', 'ProgramImage.vectors.resetProtoIndex') as number,
+		sectionInitProtoIndex: requireObjectKey(vectors, 'sectionInitProtoIndex', 'ProgramImage.vectors', 'ProgramImage.vectors.sectionInitProtoIndex') as number,
 	};
 }
 

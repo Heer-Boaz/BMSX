@@ -108,7 +108,7 @@ export function hotResumeProgramEntry(runtime: Runtime, params: { path: string; 
 	// doubling that pushed resume over the RAM budget) and discard live state.
 	runtime.machine.vdp.resetIngressState();
 	runtime.machine.cpu.setProgram(program, compiled.metadata);
-	runtime.startLoadedProgram(programImage.entryProtoIndex, null, [], false, false);
+	runtime.startLoadedProgram({ resetProtoIndex: programImage.vectors.resetProtoIndex, sectionInitProtoIndex: null }, [], false, false);
 	runtime.luaRuntimeFailed = preserveRuntimeFailure;
 	runtime._luaPath = binding;
 	runtime.programMetadata = compiled.metadata;

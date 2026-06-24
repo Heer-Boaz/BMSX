@@ -118,9 +118,13 @@ struct ProgramLink {
 	std::vector<ProgramConstValueReloc> constValueRelocs;
 };
 
-struct ProgramImage {
-	int entryProtoIndex = 0;
+struct ProgramVectorTable {
+	int resetProtoIndex = 0;
 	int sectionInitProtoIndex = 0;
+};
+
+struct ProgramImage {
+	ProgramVectorTable vectors;
 	ProgramObjectSections sections;
 	ProgramLink link;
 };

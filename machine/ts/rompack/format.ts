@@ -28,7 +28,7 @@ export type CartRomHeader = {
 export type ProgramBootHeader = {
 	version: number;
 	flags: number;
-	entryProtoIndex: number;
+	resetProtoIndex: number;
 	codeByteCount: number;
 	constPoolCount: number;
 	protoCount: number;

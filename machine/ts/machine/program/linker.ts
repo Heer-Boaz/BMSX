@@ -30,6 +30,7 @@ import type {
 	ProgramDataSymbol,
 	ProgramRodataSymbol,
 	ProgramSymbolsImage,
+	ProgramVectorTable,
 } from './loader';
 import { inflateProgram } from './loader';
 import { PROGRAM_STATIC_RAM_BASE, PROGRAM_ROM_BASE, PROGRAM_ROM_SIZE, RAM_END } from '../memory/map';
@@ -37,10 +38,8 @@ import { PROGRAM_STATIC_RAM_BASE, PROGRAM_ROM_BASE, PROGRAM_ROM_SIZE, RAM_END } 
 export type LinkedProgramImage = {
 	programImage: ProgramImage;
 	metadata: ProgramMetadata | null;
-	systemEntryProtoIndex: number;
-	cartEntryProtoIndex: number;
-	systemSectionInitProtoIndex: number;
-	cartSectionInitProtoIndex: number;
+	systemVectors: ProgramVectorTable;
+	cartVectors: ProgramVectorTable;
 	systemDataBaseAddress: number;
 	cartDataBaseAddress: number;
 	systemBssBaseAddress: number;
@@ -54,13 +53,11 @@ export type ProgramBootTarget = 'system' | 'cart';
 export type LinkedBootProgramImage = {
 	programImage: ProgramImage;
 	metadata: ProgramMetadata | null;
-	entryProtoIndex: number;
-	sectionInitProtoIndex: number;
+	vectors: ProgramVectorTable;
 	dataBaseAddress: number;
 	bssBaseAddress: number;
 	staticModulePaths: ReadonlyArray<string>;
-	cartEntryProtoIndex: number;
-	cartSectionInitProtoIndex: number;
+	cartVectors: ProgramVectorTable;
 	cartDataBaseAddress: number;
 	cartBssBaseAddress: number;
 	cartStaticModulePaths: ReadonlyArray<string>;
@@ -822,10 +819,11 @@ export const linkProgramImages = (
 	const dataBytes = new Uint8Array(linkedDataByteCount);
 	dataBytes.set(systemImage.sections.data.bytes, 0);
 	dataBytes.set(cartImage.sections.data.bytes, systemDataByteCount);
-	const systemEntryProtoIndex = systemImage.entryProtoIndex;
-	const cartEntryProtoIndex = cartImage.entryProtoIndex + baseProtoCount;
-	const systemSectionInitProtoIndex = systemImage.sectionInitProtoIndex;
-	const cartSectionInitProtoIndex = cartImage.sectionInitProtoIndex + baseProtoCount;
+	const systemVectors = systemImage.vectors;
+	const cartVectors = {
+		resetProtoIndex: cartImage.vectors.resetProtoIndex + baseProtoCount,
+		sectionInitProtoIndex: cartImage.vectors.sectionInitProtoIndex + baseProtoCount,
+	};
 	const metadata = mergeMetadata(
 		systemMetadata,
 		cartMetadata,
@@ -835,8 +833,7 @@ export const linkProgramImages = (
 	);
 
 	const linkedProgramImage: ProgramImage = {
-		entryProtoIndex: cartEntryProtoIndex,
-		sectionInitProtoIndex: cartSectionInitProtoIndex,
+		vectors: cartVectors,
 		sections: {
 			text: {
 				code,
@@ -879,10 +876,8 @@ export const linkProgramImages = (
 	return {
 		programImage: linkedProgramImage,
 		metadata,
-		systemEntryProtoIndex,
-		cartEntryProtoIndex,
-		systemSectionInitProtoIndex,
-		cartSectionInitProtoIndex,
+		systemVectors,
+		cartVectors,
 		systemDataBaseAddress: systemDataBase,
 		cartDataBaseAddress: cartDataBase,
 		systemBssBaseAddress: systemBssBase,
@@ -902,14 +897,12 @@ export const linkBootProgramImages = (
 	cartBasePc: number = CART_BASE_PC,
 ): LinkedBootProgramImage => {
 	const linked = linkProgramImages(systemImage, systemSymbols, cartImage, cartSymbols, systemBasePc, cartBasePc);
-	let entryProtoIndex = linked.systemEntryProtoIndex;
-	let sectionInitProtoIndex = linked.systemSectionInitProtoIndex;
+	let vectors = linked.systemVectors;
 	let dataBaseAddress = linked.systemDataBaseAddress;
 	let bssBaseAddress = linked.systemBssBaseAddress;
 	let staticModulePaths = linked.systemStaticModulePaths;
 	if (bootTarget === 'cart') {
-		entryProtoIndex = linked.cartEntryProtoIndex;
-		sectionInitProtoIndex = linked.cartSectionInitProtoIndex;
+		vectors = linked.cartVectors;
 		dataBaseAddress = linked.cartDataBaseAddress;
 		bssBaseAddress = linked.cartBssBaseAddress;
 		staticModulePaths = linked.programImage.sections.rodata.staticModulePaths;
@@ -917,13 +910,11 @@ export const linkBootProgramImages = (
 	return {
 		programImage: linked.programImage,
 		metadata: linked.metadata,
-		entryProtoIndex,
-		sectionInitProtoIndex,
+		vectors,
 		dataBaseAddress,
 		bssBaseAddress,
 		staticModulePaths,
-		cartEntryProtoIndex: linked.cartEntryProtoIndex,
-		cartSectionInitProtoIndex: linked.cartSectionInitProtoIndex,
+		cartVectors: linked.cartVectors,
 		cartDataBaseAddress: linked.cartDataBaseAddress,
 		cartBssBaseAddress: linked.cartBssBaseAddress,
 		cartStaticModulePaths: linked.cartStaticModulePaths,

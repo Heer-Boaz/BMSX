@@ -803,11 +803,11 @@ LinkedProgramImage linkProgramImages(
 	std::copy(cartCode.begin(), cartCode.end(), linkedSections.text.code.begin() + layout.cartBasePc);
 	writeInstructionWord(linkedSections.text.code, CART_PROGRAM_VECTOR_PC / INSTRUCTION_BYTES, CART_PROGRAM_VECTOR_VALUE);
 
-	const int cartEntryProtoIndex = cartImage.entryProtoIndex + systemProtoCount;
-	const int cartSectionInitProtoIndex = cartImage.sectionInitProtoIndex + systemProtoCount;
+	ProgramVectorTable cartVectors;
+	cartVectors.resetProtoIndex = cartImage.vectors.resetProtoIndex + systemProtoCount;
+	cartVectors.sectionInitProtoIndex = cartImage.vectors.sectionInitProtoIndex + systemProtoCount;
 	auto linkedImage = std::make_unique<ProgramImage>();
-	linkedImage->entryProtoIndex = cartEntryProtoIndex;
-	linkedImage->sectionInitProtoIndex = cartSectionInitProtoIndex;
+	linkedImage->vectors = cartVectors;
 	linkedSections.rodata.moduleProtos.reserve(cartRodata.moduleProtos.size() + systemRodata.moduleProtos.size());
 	for (const auto& entry : cartRodata.moduleProtos) {
 		linkedSections.rodata.moduleProtos.emplace_back(entry.first, entry.second + systemProtoCount);
@@ -857,10 +857,8 @@ LinkedProgramImage linkProgramImages(
 	LinkedProgramImage output;
 	output.programImage = std::move(linkedImage);
 	output.metadata = std::move(mergedMetadata);
-	output.systemEntryProtoIndex = systemImage.entryProtoIndex;
-	output.cartEntryProtoIndex = cartEntryProtoIndex;
-	output.systemSectionInitProtoIndex = systemImage.sectionInitProtoIndex;
-	output.cartSectionInitProtoIndex = cartSectionInitProtoIndex;
+	output.systemVectors = systemImage.vectors;
+	output.cartVectors = cartVectors;
 	output.systemDataBaseAddress = systemDataBase;
 	output.cartDataBaseAddress = cartDataBase;
 	output.systemBssBaseAddress = systemBssBase;
@@ -881,22 +879,19 @@ LinkedBootProgramImage linkBootProgramImages(
 ) {
 	LinkedProgramImage linked = linkProgramImages(systemImage, systemSymbols, cartImage, cartSymbols, systemBasePc, cartBasePc);
 	LinkedBootProgramImage output;
-	output.cartEntryProtoIndex = linked.cartEntryProtoIndex;
-	output.cartSectionInitProtoIndex = linked.cartSectionInitProtoIndex;
+	output.cartVectors = linked.cartVectors;
 	output.cartDataBaseAddress = linked.cartDataBaseAddress;
 	output.cartBssBaseAddress = linked.cartBssBaseAddress;
 	output.cartStaticModulePaths = std::move(linked.cartStaticModulePaths);
 	switch (bootTarget) {
 		case ProgramBootTarget::System:
-			output.entryProtoIndex = linked.systemEntryProtoIndex;
-			output.sectionInitProtoIndex = linked.systemSectionInitProtoIndex;
+			output.vectors = linked.systemVectors;
 			output.dataBaseAddress = linked.systemDataBaseAddress;
 			output.bssBaseAddress = linked.systemBssBaseAddress;
 			output.staticModulePaths = std::move(linked.systemStaticModulePaths);
 			break;
 		case ProgramBootTarget::Cart:
-			output.entryProtoIndex = linked.cartEntryProtoIndex;
-			output.sectionInitProtoIndex = linked.cartSectionInitProtoIndex;
+			output.vectors = linked.cartVectors;
 			output.dataBaseAddress = linked.cartDataBaseAddress;
 			output.bssBaseAddress = linked.cartBssBaseAddress;
 			output.staticModulePaths = linked.programImage->sections.rodata.staticModulePaths;

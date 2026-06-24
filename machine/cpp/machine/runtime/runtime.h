@@ -19,6 +19,7 @@
 #include "machine/runtime/options.h"
 #include "machine/runtime/save_state.h"
 #include "machine/runtime/resume_snapshot.h"
+#include "machine/program/loader.h"
 #include "machine/program/scratch.h"
 #include "machine/memory/memory.h"
 #include "machine/runtime/frame/loop.h"
@@ -80,7 +81,7 @@ public:
 	/**
 	 * Boot the runtime with a compiled program.
 	 */
-	void boot(const ProgramImage& image, ProgramMetadata* metadata, int entryProtoIndex, int sectionInitProtoIndex, uint32_t dataBaseAddress, uint32_t bssBaseAddress, const std::vector<std::string>& staticModulePaths);
+	void boot(const ProgramImage& image, ProgramMetadata* metadata, ProgramVectorTable vectors, uint32_t dataBaseAddress, uint32_t bssBaseAddress, const std::vector<std::string>& staticModulePaths);
 	void handleLuaError(const std::string& message);
 
 	/**
@@ -107,8 +108,8 @@ public:
 	auto isCartProgramStarted() const -> bool { return m_cartProgramStarted; }
 	auto isRebootRequested() const -> bool { return m_rebootRequested; }
 	void clearRebootRequest() { m_rebootRequested = false; }
-	auto hasCartEntry() const -> bool { return m_cartEntryProtoIndex.has_value(); }
-	void setLinkedCartEntry(int entryProtoIndex, int sectionInitProtoIndex, uint32_t dataBaseAddress, uint32_t bssBaseAddress, std::vector<std::string> staticModulePaths);
+	auto hasCartEntry() const -> bool { return m_cartVectors.has_value(); }
+	void setLinkedCartVectors(ProgramVectorTable vectors, uint32_t dataBaseAddress, uint32_t bssBaseAddress, std::vector<std::string> staticModulePaths);
 	void enterSystemFirmware();
 	void enterCartProgram();
 	void startCartProgram();
@@ -161,7 +162,7 @@ public:
 	 */
 	void registerNativeFunction(std::string_view name, NativeFunctionInvoke fn, std::optional<NativeFnCost> cost = std::nullopt);
 
-	void startLoadedProgram(int entryProtoIndex, int sectionInitProtoIndex, const std::vector<std::string>& staticModulePaths, bool runInit, bool runNewGame);
+	void startLoadedProgram(ProgramVectorTable vectors, const std::vector<std::string>& staticModulePaths, bool runInit, bool runNewGame);
 	void finishLuaEntryLifecycle(bool runInit, bool runNewGame);
 	auto requireModule(const std::string& moduleName) -> Value;
 
@@ -231,8 +232,7 @@ private:
 	Program* m_program = nullptr;
 	ProgramMetadata* m_programMetadata = nullptr;
 
-	std::optional<int> m_cartEntryProtoIndex;
-	std::optional<int> m_cartSectionInitProtoIndex;
+	std::optional<ProgramVectorTable> m_cartVectors;
 	std::optional<uint32_t> m_cartDataBaseAddress;
 	std::optional<uint32_t> m_cartBssBaseAddress;
 	std::vector<std::string> m_cartStaticModulePaths;

@@ -1634,7 +1634,7 @@ export function appendProgramImage(
 	return {
 		version: PROGRAM_BOOT_HEADER_VERSION,
 		flags: 0,
-		entryProtoIndex: programImage.entryProtoIndex,
+		resetProtoIndex: programImage.vectors.resetProtoIndex,
 		codeByteCount: programImage.sections.text.code.length,
 		constPoolCount: programImage.sections.rodata.constPool.length,
 		protoCount: programImage.sections.text.protos.length,
@@ -1844,7 +1844,7 @@ export async function finalizeRompack(
 		headerBuffer.writeUInt32LE(dataLength, 28);
 		headerBuffer.writeUInt32LE(options.programBoot.version, 32);
 		headerBuffer.writeUInt32LE(options.programBoot.flags, 36);
-		headerBuffer.writeUInt32LE(options.programBoot.entryProtoIndex, 40);
+		headerBuffer.writeUInt32LE(options.programBoot.resetProtoIndex, 40);
 		headerBuffer.writeUInt32LE(options.programBoot.codeByteCount, 44);
 		headerBuffer.writeUInt32LE(options.programBoot.constPoolCount, 48);
 		headerBuffer.writeUInt32LE(options.programBoot.protoCount, 52);

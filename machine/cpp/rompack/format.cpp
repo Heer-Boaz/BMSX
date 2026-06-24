@@ -199,7 +199,7 @@ std::vector<u8> encodeProgramCartRom(const CartManifest& cart, const MachineMani
 	header.dataLength = static_cast<u32>(program.size());
 	header.programBootVersion = PROGRAM_BOOT_HEADER_VERSION;
 	header.programBootFlags = 0;
-	header.programEntryProtoIndex = static_cast<u32>(image.entryProtoIndex);
+	header.programEntryProtoIndex = static_cast<u32>(image.vectors.resetProtoIndex);
 	header.programCodeByteCount = static_cast<u32>(image.sections.text.code.size());
 	header.programConstPoolCount = static_cast<u32>(image.sections.rodata.constPool.size());
 	header.programProtoCount = static_cast<u32>(image.sections.text.protos.size());

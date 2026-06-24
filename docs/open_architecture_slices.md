@@ -134,7 +134,7 @@ Cart-representatie roadmap/status:
 | dynamic Lua-opcodes weren uit systems/static modules | Deels: const-module static function protos worden na codegen/optimalisatie door de compiler geweigerd als dynamic Lua-opcodes overblijven; open: bredere systems/static functieklassen en audit-output zodra daar een echte consumer voor is. |
 | CPU objectwereld loshalen van machine-code ABI | Open: `CPU.Value` is nog Lua-objectwereld; echte cart ABI moet primair words, registers, addresses, memory, sections en symbols zijn. |
 | assets/`rom_data` binair maken | Deels: `rom_data`-familie is weg en `.bin` raw ROM path is getest; open: maps, rooms, timelines, registries en asset records naar vaste binaire layouts. |
-| cart startup/vector model | Open: entry/init/new_game/reinit/IRQ handlers moeten een expliciete vector/handler ABI krijgen in plaats van ad-hoc Lua global lifecycle. |
+| cart startup/vector model | Deels: `ProgramImage` draagt nu een expliciete boot-vector table (`resetProtoIndex`, `sectionInitProtoIndex`) en TS/C++ linker/runtime boot gebruiken die vector table in plaats van losse entry/section-init velden. Open: init/new_game/reinit/IRQ handlers staan nog in de cartlib/Lua IRQ-lifecycle en moeten nog een expliciet handler/vector ABI krijgen. |
 | verifier/audit voor echte carts | GESCHRAPT in deze vorm: een los retro-cart verifier-script is een slechte slice. De echte gates horen bij de producer/linker/compiler/runtime-eigenaren zelf, niet in een achteraf-scanner die ROMs opnieuw interpreteert. |
 
 ## 14. Legacy cart-data naar vaste binaire ROM-layouts — GESCHRAPT
@@ -469,13 +469,23 @@ symbols met vaste calling convention.
 
 Status:
 
-- runtime en tests gebruiken nog Lua lifecycle/global conventions
+- eerste increment klaar: `ProgramImage` heeft een `vectors` object met
+  `resetProtoIndex` en `sectionInitProtoIndex`. TS/C++ loaders, linkers,
+  runtime boot en ROM-header metadata gebruiken de boot-vector table in plaats
+  van losse entry/section-init imagevelden.
+- runtime start via de reset vector; cold startup draait eerst de section-init
+  vector en daarna static module init en reset vector. Hot-resume installeert
+  hetzelfde ProgramImage object maar passeert bewust geen section-init vector,
+  zodat live `.data`/`.bss` niet opnieuw geïnitialiseerd wordt.
+- runtime en tests gebruiken nog Lua lifecycle/global conventions voor
+  init/new_game/reinit
 - IRQ/hardware-model bestaat, maar cart handler ABI is niet als vector table
   vastgelegd
 
 Acceptatie:
 
 - ROM/program metadata bevat entry/init/new_game/reinit/IRQ vector-symbolen
+  (de reset/section-init boot-vectors zijn klaar)
 - linker resolve't vector-symbolen naar concrete proto/adres targets
 - runtime start en interrupt-dispatch gebruiken vector table/calling convention
 - hot-resume behoudt dezelfde vector ABI als ROM boot

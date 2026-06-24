@@ -59,6 +59,7 @@ import { CartBootState } from './cart_boot';
 import { HostFaultState } from './host_fault';
 import { LuaScratchState } from '../program/scratch';
 import { callClosureInto, invokeClosureHandler, invokeLuaHandler } from '../program/executor';
+import type { ProgramVectorTable } from '../program/loader';
 import { resolvePositiveSafeInteger, resolveRuntimeRenderSize } from '../specs';
 import { resolveRuntimeMemoryMapSpecs } from '../memory/specs';
 import { raiseSystemIrq } from './system_irq';
@@ -90,6 +91,11 @@ export type FrameState = {
 	cycleBudgetGranted: number;
 	cycleCarryGranted: number;
 	activeCpuUsedCycles: number;
+};
+
+export type RuntimeProgramVectorTable = {
+	resetProtoIndex: number;
+	sectionInitProtoIndex: number | null;
 };
 
 
@@ -194,8 +200,7 @@ export class Runtime {
 	public cartLuaSources: LuaSourceRegistry | null = null;
 	public activeLuaSources: LuaSourceRegistry = null;
 	public cartProgramStarted = false;
-	public cartEntryProtoIndex: number | null = null;
-	public cartSectionInitProtoIndex: number | null = null;
+	public cartVectors: ProgramVectorTable | null = null;
 	public programDataBaseAddress = PROGRAM_STATIC_RAM_BASE;
 	public programBssBaseAddress = PROGRAM_STATIC_RAM_BASE;
 	public cartDataBaseAddress: number | null = null;
@@ -395,8 +400,7 @@ export class Runtime {
 		this.cartLuaSources = params.cartSources;
 		this.activeLuaSources = params.systemSources;
 		this.cartProgramStarted = false;
-		this.cartEntryProtoIndex = null;
-		this.cartSectionInitProtoIndex = null;
+		this.cartVectors = null;
 		this.programDataBaseAddress = PROGRAM_STATIC_RAM_BASE;
 		this.programBssBaseAddress = PROGRAM_STATIC_RAM_BASE;
 		this.cartDataBaseAddress = null;
@@ -409,9 +413,8 @@ export class Runtime {
 		this.cartBoot.reset();
 	}
 
-	public setLinkedCartEntry(entryProtoIndex: number, sectionInitProtoIndex: number, dataBaseAddress: number, bssBaseAddress: number, staticModulePaths: ReadonlyArray<string>): void {
-		this.cartEntryProtoIndex = entryProtoIndex;
-		this.cartSectionInitProtoIndex = sectionInitProtoIndex;
+	public setLinkedCartVectors(vectors: ProgramVectorTable, dataBaseAddress: number, bssBaseAddress: number, staticModulePaths: ReadonlyArray<string>): void {
+		this.cartVectors = vectors;
 		this.cartDataBaseAddress = dataBaseAddress;
 		this.cartBssBaseAddress = bssBaseAddress;
 		this.cartStaticModulePaths = staticModulePaths;
@@ -444,15 +447,11 @@ export class Runtime {
 	}
 
 	public startCartProgram(): void {
-		const entryProtoIndex = this.cartEntryProtoIndex;
-		const sectionInitProtoIndex = this.cartSectionInitProtoIndex;
+		const vectors = this.cartVectors;
 		const dataBaseAddress = this.cartDataBaseAddress;
 		const bssBaseAddress = this.cartBssBaseAddress;
-		if (entryProtoIndex === null) {
-			throw new Error('cannot start cart: no cart entry point is loaded.');
-		}
-		if (sectionInitProtoIndex === null) {
-			throw new Error('cannot start cart: no cart section init is loaded.');
+		if (vectors === null) {
+			throw new Error('cannot start cart: no cart vector table is loaded.');
 		}
 		if (dataBaseAddress === null) {
 			throw new Error('cannot start cart: no cart data base is loaded.');
@@ -464,15 +463,15 @@ export class Runtime {
 		this.programBssBaseAddress = bssBaseAddress;
 		this.enterCartProgram();
 		this._luaPath = this.activeLuaSources.entry_path;
-		this.startLoadedProgram(entryProtoIndex, sectionInitProtoIndex, this.cartStaticModulePaths, true, true);
+		this.startLoadedProgram(vectors, this.cartStaticModulePaths, true, true);
 	}
 
-	public startLoadedProgram(entryProtoIndex: number, sectionInitProtoIndex: number | null, staticModulePaths: ReadonlyArray<string>, runInit: boolean, runNewGame: boolean): void {
-		if (sectionInitProtoIndex !== null) {
-			this.runSectionInitializer(sectionInitProtoIndex);
+	public startLoadedProgram(vectors: RuntimeProgramVectorTable, staticModulePaths: ReadonlyArray<string>, runInit: boolean, runNewGame: boolean): void {
+		if (vectors.sectionInitProtoIndex !== null) {
+			this.runSectionInitializer(vectors.sectionInitProtoIndex);
 		}
 		this.runStaticModuleInitializers(staticModulePaths);
-		this.machine.cpu.start(entryProtoIndex);
+		this.machine.cpu.start(vectors.resetProtoIndex);
 		this.pendingCall = 'entry';
 		this.finishLuaEntryLifecycle(runInit, runNewGame);
 	}

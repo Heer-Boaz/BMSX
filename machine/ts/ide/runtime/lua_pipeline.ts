@@ -269,11 +269,9 @@ function bootSystemSourceProgram(runtime: Runtime, interpreter: LuaInterpreter, 
 	const system = compileRegistryProgramImage(runtime, runtime.systemLuaSources, interpreter);
 	let programImage = system.image;
 	let metadata: ProgramMetadata = system.symbols;
-	let entryProtoIndex = system.image.entryProtoIndex;
-	let sectionInitProtoIndex = system.image.sectionInitProtoIndex;
+	let vectors = system.image.vectors;
 	let staticModulePaths: ReadonlyArray<string> = system.image.sections.rodata.staticModulePaths;
-	runtime.cartEntryProtoIndex = null;
-	runtime.cartSectionInitProtoIndex = null;
+	runtime.cartVectors = null;
 	runtime.cartDataBaseAddress = null;
 	runtime.cartBssBaseAddress = null;
 	runtime.programDataBaseAddress = PROGRAM_STATIC_RAM_BASE;
@@ -294,12 +292,11 @@ function bootSystemSourceProgram(runtime: Runtime, interpreter: LuaInterpreter, 
 		const linked = linkBootProgramImages(system.image, system.symbols, cartProgramImage, cartSymbols, 'system');
 		programImage = linked.programImage;
 		metadata = linked.metadata;
-		entryProtoIndex = linked.entryProtoIndex;
-		sectionInitProtoIndex = linked.sectionInitProtoIndex;
+		vectors = linked.vectors;
 		staticModulePaths = linked.staticModulePaths;
 		runtime.programDataBaseAddress = linked.dataBaseAddress;
 		runtime.programBssBaseAddress = linked.bssBaseAddress;
-		runtime.setLinkedCartEntry(linked.cartEntryProtoIndex, linked.cartSectionInitProtoIndex, linked.cartDataBaseAddress, linked.cartBssBaseAddress, linked.cartStaticModulePaths);
+		runtime.setLinkedCartVectors(linked.cartVectors, linked.cartDataBaseAddress, linked.cartBssBaseAddress, linked.cartStaticModulePaths);
 	}
 	runtime.cartEntryAvailable = true;
 	runtime._luaPath = system.entryPath;
@@ -310,7 +307,7 @@ function bootSystemSourceProgram(runtime: Runtime, interpreter: LuaInterpreter, 
 	const program = inflateExecutableProgramImage(programImage, metadata, runtime.programDataBaseAddress, runtime.programBssBaseAddress);
 	runtime.machine.cpu.setProgram(program, metadata);
 	runtime.programMetadata = metadata;
-	runtime.startLoadedProgram(entryProtoIndex, sectionInitProtoIndex, staticModulePaths, options?.runInit !== false, true);
+	runtime.startLoadedProgram(vectors, staticModulePaths, options?.runInit !== false, true);
 	return true;
 }
 
@@ -319,11 +316,9 @@ function bootProgramImage(runtime: Runtime, options?: { preserveState?: boolean;
 	const systemImages = loadProgramImagesForSource(runtime, 'system');
 	let programImage = systemImages.program;
 	let metadata: ProgramMetadata | null = systemImages.symbols;
-	let entryProtoIndex = systemImages.program.entryProtoIndex;
-	let sectionInitProtoIndex = systemImages.program.sectionInitProtoIndex;
+	let vectors = systemImages.program.vectors;
 	let staticModulePaths: ReadonlyArray<string> = systemImages.program.sections.rodata.staticModulePaths;
-	runtime.cartEntryProtoIndex = null;
-	runtime.cartSectionInitProtoIndex = null;
+	runtime.cartVectors = null;
 	runtime.cartDataBaseAddress = null;
 	runtime.cartBssBaseAddress = null;
 	runtime.programDataBaseAddress = PROGRAM_STATIC_RAM_BASE;
@@ -336,12 +331,11 @@ function bootProgramImage(runtime: Runtime, options?: { preserveState?: boolean;
 			const linked = linkBootProgramImages(systemImages.program, systemImages.symbols, cartImages.program, cartImages.symbols, bootingCart ? 'cart' : 'system');
 			programImage = linked.programImage;
 			metadata = linked.metadata;
-			entryProtoIndex = linked.entryProtoIndex;
-			sectionInitProtoIndex = linked.sectionInitProtoIndex;
+			vectors = linked.vectors;
 			staticModulePaths = linked.staticModulePaths;
 			runtime.programDataBaseAddress = linked.dataBaseAddress;
 			runtime.programBssBaseAddress = linked.bssBaseAddress;
-			runtime.setLinkedCartEntry(linked.cartEntryProtoIndex, linked.cartSectionInitProtoIndex, linked.cartDataBaseAddress, linked.cartBssBaseAddress, linked.cartStaticModulePaths);
+			runtime.setLinkedCartVectors(linked.cartVectors, linked.cartDataBaseAddress, linked.cartBssBaseAddress, linked.cartStaticModulePaths);
 		}
 	}
 	runtime.cartEntryAvailable = true;
@@ -359,7 +353,7 @@ function bootProgramImage(runtime: Runtime, options?: { preserveState?: boolean;
 	try {
 		runtime.machine.cpu.setProgram(inflated, metadata);
 		runtime.programMetadata = metadata;
-		runtime.startLoadedProgram(entryProtoIndex, sectionInitProtoIndex, staticModulePaths, options?.runInit !== false, true);
+		runtime.startLoadedProgram(vectors, staticModulePaths, options?.runInit !== false, true);
 		return true;
 	} catch (error) {
 		console.info('Program-image boot failed.');
@@ -415,7 +409,7 @@ function bootLuaProgram(runtime: Runtime, options?: { preserveState?: boolean; s
 		installProgramModules(runtime, buildModuleProtoMap(programImage.sections.rodata.moduleProtos));
 		runtime.machine.cpu.setProgram(program, compiled.metadata);
 		runtime.programMetadata = compiled.metadata;
-		runtime.startLoadedProgram(programImage.entryProtoIndex, programImage.sectionInitProtoIndex, programImage.sections.rodata.staticModulePaths, true, true);
+		runtime.startLoadedProgram(programImage.vectors, programImage.sections.rodata.staticModulePaths, true, true);
 		return true;
 	}
 	catch (error) {

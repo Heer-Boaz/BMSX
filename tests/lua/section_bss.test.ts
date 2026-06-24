@@ -33,9 +33,9 @@ function runColdCompiled(compiled: CompiledProgram, memory = new Memory({ system
 	const image = encodeCompiledProgramImage(compiled);
 	const cpu = new CPU(memory);
 	cpu.setProgram(inflateExecutableProgramImage(image, compiled.metadata), compiled.metadata);
-	cpu.start(image.sectionInitProtoIndex);
+	cpu.start(image.vectors.sectionInitProtoIndex);
 	assert.equal(cpu.runUntilDepth(0, 100000), RunResult.Halted);
-	cpu.start(image.entryProtoIndex);
+	cpu.start(image.vectors.resetProtoIndex);
 	assert.equal(cpu.runUntilDepth(0, 100000), RunResult.Halted);
 	return { memory, values: Array.from(cpu.lastReturnValues) };
 }

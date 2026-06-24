@@ -22,7 +22,7 @@ test('hotResumeProgramEntry keeps interpreter resident', () => {
 	const nextExport = boundaries.length > 0 ? Math.min(...boundaries) : -1;
 	const snippet = src.slice(start, nextExport === -1 ? undefined : nextExport);
 	assert.equal(snippet.includes('createLuaInterpreter('), false, 'hotResumeProgramEntry should not create a new interpreter');
-	assert.equal(snippet.includes('runtime.startLoadedProgram(programImage.entryProtoIndex, null, [], false, false)'), true, 'hotResumeProgramEntry must execute the updated path without cold section init');
+	assert.equal(snippet.includes('runtime.startLoadedProgram({ resetProtoIndex: programImage.vectors.resetProtoIndex, sectionInitProtoIndex: null }, [], false, false)'), true, 'hotResumeProgramEntry must execute the updated reset vector without cold section init');
 	assert.equal(snippet.includes('encodeCompiledProgramImage(compiled)'), true, 'hotResumeProgramEntry must pass compiled code through the compiler-owned ProgramImage object boundary');
 	assert.equal(snippet.includes('inflateExecutableProgramImage(programImage, compiled.metadata, runtime.programDataBaseAddress, runtime.programBssBaseAddress)'), true, 'hotResumeProgramEntry must install through the program/linker executable boundary');
 	assert.equal(snippet.includes('resolveRuntimeProgramRelocations('), false, 'hotResumeProgramEntry must not own raw relocation resolution');

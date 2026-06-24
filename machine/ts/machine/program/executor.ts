@@ -59,7 +59,7 @@ export function runHostEvalChunk(runtime: Runtime, source: string): Value[] {
 	}
 	const results = runtime.luaScratch.values.acquire();
 	try {
-		callClosureIntoWithScheduler(runtime, { protoIndex: programImage.entryProtoIndex, upvalues: [] }, [], results);
+		callClosureIntoWithScheduler(runtime, { protoIndex: programImage.vectors.resetProtoIndex, upvalues: [] }, [], results);
 		return results.slice();
 	} finally {
 		runtime.luaScratch.values.release(results);
