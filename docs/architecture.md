@@ -350,7 +350,11 @@ to firmware/cart code: BIOS and cartlib expose `system.irq` / `on_irq` as
 convenience dispatch over registered masks, and bare-metal carts may define
 `irq(flags)` directly. Dispatch code acknowledges only the masks it owns;
 unhandled level bits remain asserted so the owning synchronous wait can observe
-and acknowledge them.
+and acknowledge them. A raised IRQ bit must have exactly one owner that
+acknowledges it: either a `system.irq` / `on_irq` handler or a specialized
+waiter that reads the flag and writes `IRQ_ACK`. An unacknowledged level bit
+will vector again on the next `HALT`, matching hardware interrupt-storm
+semantics rather than being discarded by the emulator.
 
 | Register | Address | Meaning |
 | --- | ---: | --- |

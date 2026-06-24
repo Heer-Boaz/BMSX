@@ -18,7 +18,7 @@ import { inflateExecutableProgramImage } from '../../machine/ts/machine/program/
 import { CpuExecutionState } from '../../machine/ts/machine/runtime/cpu_executor';
 import { FrameLoopState } from '../../machine/ts/machine/runtime/frame/loop';
 import { FrameSchedulerState } from '../../machine/ts/machine/scheduler/frame';
-import type { Runtime } from '../../machine/ts/machine/runtime/runtime';
+import type { FrameState, Runtime } from '../../machine/ts/machine/runtime/runtime';
 
 function parseSource(source: string, path = 'irq_vector.lua') {
 	const lexer = new LuaLexer(source, path);
@@ -200,6 +200,48 @@ function makeHaltFrameRuntime(): Runtime {
 		refillFrameBudget: () => true,
 	} as never;
 	return runtime;
+}
+
+function makeCompiledIrqRuntime(source: string): { cpu: CPU; irqController: IrqController; cpuExecution: CpuExecutionState; state: FrameState } {
+	const compiled = compileLuaChunkToProgram(parseSource(source), [], { entrySource: source });
+	const image = encodeCompiledProgramImage(compiled);
+	const memory = new Memory({ systemRom: new Uint8Array(0) });
+	const cpu = new CPU(memory);
+	cpu.setProgram(inflateExecutableProgramImage(image, compiled.metadata), compiled.metadata);
+	cpu.start(image.vectors.resetProtoIndex);
+	const irqController = new IrqController(memory);
+	const scheduler = {
+		nowCycles: 0,
+		hasDueTimer: () => false,
+		nextDeadline: () => Number.MAX_SAFE_INTEGER,
+		beginCpuSlice: () => {},
+		endCpuSlice: () => {},
+	};
+	const runtime = {
+		machine: {
+			cpu,
+			irqController,
+			scheduler,
+			vdp: { beginFrame: () => {} },
+			advanceDevices: (cycles: number) => { scheduler.nowCycles += cycles; },
+		},
+		vblank: { tickCompleted: false, beginTick: () => {}, abandonTick: () => {}, handleBeginTimer: () => {}, handleEndTimer: () => {} },
+		programVectors: { resetProtoIndex: image.vectors.resetProtoIndex, sectionInitProtoIndex: null, irqProtoIndex: image.vectors.irqProtoIndex },
+	} as unknown as Runtime;
+	return {
+		cpu,
+		irqController,
+		cpuExecution: new CpuExecutionState(runtime),
+		state: {
+			haltGame: false,
+			updateExecuted: false,
+			luaFaulted: false,
+			cycleBudgetRemaining: 100,
+			cycleBudgetGranted: 100,
+			cycleCarryGranted: 0,
+			activeCpuUsedCycles: 0,
+		},
+	};
 }
 
 test('CPU external closure calls cannot wake HALT without an accepted interrupt', () => {
@@ -411,41 +453,7 @@ while true do
 	halt_until_irq
 end
 `;
-	const compiled = compileLuaChunkToProgram(parseSource(source), [], { entrySource: source });
-	const image = encodeCompiledProgramImage(compiled);
-	const memory = new Memory({ systemRom: new Uint8Array(0) });
-	const cpu = new CPU(memory);
-	cpu.setProgram(inflateExecutableProgramImage(image, compiled.metadata), compiled.metadata);
-	cpu.start(image.vectors.resetProtoIndex);
-	const irqController = new IrqController(memory);
-	const scheduler = {
-		nowCycles: 0,
-		hasDueTimer: () => false,
-		nextDeadline: () => Number.MAX_SAFE_INTEGER,
-		beginCpuSlice: () => {},
-		endCpuSlice: () => {},
-	};
-	const runtime = {
-		machine: {
-			cpu,
-			irqController,
-			scheduler,
-			vdp: { beginFrame: () => {} },
-			advanceDevices: (cycles: number) => { scheduler.nowCycles += cycles; },
-		},
-		vblank: { tickCompleted: false, beginTick: () => {}, abandonTick: () => {}, handleBeginTimer: () => {}, handleEndTimer: () => {} },
-		programVectors: { resetProtoIndex: image.vectors.resetProtoIndex, sectionInitProtoIndex: null, irqProtoIndex: image.vectors.irqProtoIndex },
-	} as unknown as Runtime;
-	const cpuExecution = new CpuExecutionState(runtime);
-	const state = {
-		haltGame: false,
-		updateExecuted: false,
-		luaFaulted: false,
-		cycleBudgetRemaining: 100,
-		cycleBudgetGranted: 100,
-		cycleCarryGranted: 0,
-		activeCpuUsedCycles: 0,
-	};
+	const { cpu, irqController, cpuExecution, state } = makeCompiledIrqRuntime(source);
 
 	assert.equal(cpu.runUntilDepth(0, 100), RunResult.Halted);
 	irqController.raise(IRQ_VBLANK);
@@ -455,6 +463,31 @@ end
 	const irqSeen = cpu.getGlobalByKey(StringValue.get(cpu.stringPool.intern('irq_seen')));
 	assert.equal(irqSeen, IRQ_VBLANK);
 	assert.equal((irqController.captureState().pendingFlags & IRQ_VBLANK) === 0, true);
+});
+
+test('compiled IRQ vector re-enters an unacknowledged level line', () => {
+	const source = `
+irq_seen = 0
+function irq(flags)
+	irq_seen = irq_seen + 1
+end
+while true do
+	halt_until_irq
+end
+`;
+	const { cpu, irqController, cpuExecution, state } = makeCompiledIrqRuntime(source);
+
+	assert.equal(cpu.runUntilDepth(0, 100), RunResult.Halted);
+	irqController.raise(IRQ_VBLANK);
+	assert.equal(cpuExecution.runHaltedUntilIrq(state), false);
+	cpuExecution.runWithBudget(state);
+	assert.equal(cpu.getGlobalByKey(StringValue.get(cpu.stringPool.intern('irq_seen'))), 1);
+	assert.equal((irqController.captureState().pendingFlags & IRQ_VBLANK) !== 0, true);
+
+	assert.equal(cpu.isHaltedUntilIrq(), true);
+	assert.equal(cpuExecution.runHaltedUntilIrq(state), false);
+	cpuExecution.runWithBudget(state);
+	assert.equal(cpu.getGlobalByKey(StringValue.get(cpu.stringPool.intern('irq_seen'))), 2);
 });
 
 test('CPU save-state captured inside an interrupt frame restores and returns to the cart frame', () => {

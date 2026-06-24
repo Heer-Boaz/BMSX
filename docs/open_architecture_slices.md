@@ -491,7 +491,9 @@ Status:
   en roept de program-handler `irq(flags)` aan. Firmware/cartlib handlers
   dispatchen via `system.irq`/`on_irq` en acken alleen de maskers die zij
   behandelen; gespecialiseerde waits blijven eigenaar van hun eigen unhandled
-  level-bits. Carts zijn gemigreerd naar ISR-owned latches in plaats van
+  level-bits. Elke raised IRQ-bit moet precies één eigenaar hebben die ack't;
+  een unacknowledged level-bit vector't opnieuw op de volgende `HALT`, zoals
+  hardware. Carts zijn gemigreerd naar ISR-owned latches in plaats van
   post-`HALT` flags-polling als dispatchpad.
 - NMI is expliciet buiten scope zolang er geen NMI-producer is. Instruction-boundary
   preemptie en een cart-zichtbaar EI/DI-register blijven de volgende stap.
@@ -508,6 +510,8 @@ Acceptatie:
 - IRQ-acceptatie bij `HALT` is cartcode-executie: de CPU pusht een handlerframe,
   de handler leest/dispatcht/ackt de pending bits, en `RET` uit dat frame
   hervat de onderbroken PC zonder return values naar het cartframe te schrijven
+- unacknowledged level IRQ's worden niet door de emulator weggegooid; zij
+  blijven pending en re-vectoren totdat de owner `IRQ_ACK` schrijft
 
 ## 23. Harde verifier/audit voor echte retro-carts — GESCHRAPT
 
