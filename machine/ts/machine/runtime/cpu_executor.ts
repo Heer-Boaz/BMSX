@@ -1,4 +1,4 @@
-import { AcceptedInterruptKind, RunResult } from '../cpu/cpu';
+import { RunResult } from '../cpu/cpu';
 import {
 	TIMER_KIND_DEVICE_SERVICE,
 	TIMER_KIND_VBLANK_BEGIN,
@@ -27,8 +27,12 @@ export class CpuExecutionState {
 		}
 		const irqController = runtime.machine.irqController;
 		const scheduler = runtime.machine.scheduler;
+		const vectors = runtime.programVectors;
+		if (vectors === null) {
+			throw new Error('CPU halted without active program vectors.');
+		}
 		while (true) {
-			if (cpu.acceptPendingInterrupt(irqController) !== AcceptedInterruptKind.None) {
+			if (cpu.tryEnterPendingInterrupt(irqController, vectors.irqProtoIndex)) {
 				return tickCompleted;
 			}
 			if (tickCompleted) {

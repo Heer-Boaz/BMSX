@@ -9,7 +9,8 @@ void runHaltedClosureUntilInterrupt(Runtime& runtime) {
 	CPU& cpu = runtime.machine.cpu;
 	DeviceScheduler& scheduler = runtime.machine.scheduler;
 	while (cpu.isHaltedUntilIrq()) {
-		if (cpu.acceptPendingInterrupt(runtime.machine.irqController) != AcceptedInterruptKind::None) {
+		if (cpu.peekPendingInterrupt(runtime.machine.irqController) != AcceptedInterruptKind::None) {
+			cpu.clearHaltUntilIrq();
 			return;
 		}
 		if (scheduler.hasDueTimer()) {

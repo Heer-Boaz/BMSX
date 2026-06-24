@@ -438,6 +438,15 @@ DISPATCH_LABEL(RET) {
 	const int resultOffset = FRAME.stackBase + a;
 	const Value* results = m_stack.data() + resultOffset;
 	closeUpvalues(FRAME);
+	if (FRAME.isInterruptFrame) {
+		m_maskableInterruptsEnabled = FRAME.savedMaskableEnabled;
+		auto finishedInterrupt = std::move(m_frames.back());
+		m_frames.pop_back();
+		m_stackTop = finishedInterrupt->varargBase;
+		m_stack.resize(static_cast<size_t>(m_stackTop));
+		releaseFrame(std::move(finishedInterrupt));
+		DISPATCH_CONTINUE();
+	}
 	auto finished = std::move(m_frames.back());
 	m_frames.pop_back();
 	if (finished->captureReturns) {

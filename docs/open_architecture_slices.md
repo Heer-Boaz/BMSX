@@ -134,7 +134,7 @@ Cart-representatie roadmap/status:
 | dynamic Lua-opcodes weren uit systems/static modules | Deels: const-module static function protos worden na codegen/optimalisatie door de compiler geweigerd als dynamic Lua-opcodes overblijven; open: bredere systems/static functieklassen en audit-output zodra daar een echte consumer voor is. |
 | CPU objectwereld loshalen van machine-code ABI | Open: `CPU.Value` is nog Lua-objectwereld; echte cart ABI moet primair words, registers, addresses, memory, sections en symbols zijn. |
 | assets/`rom_data` binair maken | Deels: `rom_data`-familie is weg en `.bin` raw ROM path is getest; open: maps, rooms, timelines, registries en asset records naar vaste binaire layouts. |
-| cart startup/vector model | Deels: `ProgramImage` draagt nu een expliciete boot-vector table (`resetProtoIndex`, `sectionInitProtoIndex`) en TS/C++ linker/runtime boot gebruiken die vector table in plaats van losse entry/section-init velden. `init()`/`new_game()` zijn bewust cartfuncties, geen console-ABI: de lifecycle-IRQ-transportlaag is verwijderd, cold cart startup roept ze direct aan en hot-resume voert alleen `init()` als IDE/debugger-call uit. Open: echte hardware IRQ handler-vectoren/calling convention. |
+| cart startup/vector model | Deels: `ProgramImage` draagt nu een expliciete vector table (`resetProtoIndex`, `sectionInitProtoIndex`, `irqProtoIndex`) en TS/C++ linker/runtime boot gebruiken die vector table in plaats van losse entry/section-init velden. `init()`/`new_game()` zijn bewust cartfuncties, geen console-ABI: de lifecycle-IRQ-transportlaag is verwijderd, cold cart startup roept ze direct aan en hot-resume voert alleen `init()` als IDE/debugger-call uit. Hardware IRQ's kunnen bij `HALT` een interruptframe boven het cartframe pushen en keren via gewone `RET` terug; open: instruction-boundary preemptie en expliciete EI/DI-MMIO. |
 | verifier/audit voor echte carts | GESCHRAPT in deze vorm: een los retro-cart verifier-script is een slechte slice. De echte gates horen bij de producer/linker/compiler/runtime-eigenaren zelf, niet in een achteraf-scanner die ROMs opnieuw interpreteert. |
 
 ## 14. Legacy cart-data naar vaste binaire ROM-layouts — GESCHRAPT
@@ -470,7 +470,7 @@ met cart/engine-semantiek, geen machine vectors.
 Status:
 
 - eerste increment klaar: `ProgramImage` heeft een `vectors` object met
-  `resetProtoIndex` en `sectionInitProtoIndex`. TS/C++ loaders, linkers,
+  `resetProtoIndex`, `sectionInitProtoIndex` en `irqProtoIndex`. TS/C++ loaders, linkers,
   runtime boot en ROM-header metadata gebruiken de boot-vector table in plaats
   van losse entry/section-init imagevelden.
 - runtime start via de reset vector; cold startup draait eerst de section-init
@@ -481,18 +481,27 @@ Status:
   Cold cart startup roept `init()` en daarna `new_game()` direct aan; hot-resume
   herstart de reset vector niet en roept alleen de huidige `init()` closure via
   de IDE/debugger-call primitive aan nadat live state is hersteld.
-- IRQ/hardware-model bestaat, maar cart handler ABI is niet als vector table
-  vastgelegd
+- hardware IRQ's hebben nu een concrete vector-entry in het imagecontract.
+  De frame-loop accepteert maskable IRQ's bij `HALT` alleen in guest-domain,
+  pusht een interruptframe boven het onderbroken cartframe, schakelt maskable
+  IRQ's uit voor de handler en herstelt de vorige mask-state op `RET`.
+  Host/debugger-calls observeren pending IRQ's alleen om uit `HALT` te komen;
+  zij consumeren/vectoren niet.
+- NMI is expliciet buiten scope zolang er geen NMI-producer is. Instruction-boundary
+  preemptie en een cart-zichtbaar EI/DI-register blijven de volgende stap.
 
 Acceptatie:
 
-- ROM/program metadata bevat de echte boot-vectors (reset/section-init)
+- ROM/program metadata bevat de echte vectors (reset/section-init/IRQ)
 - linker resolve't vector-symbolen naar concrete proto/adres targets
 - runtime start gebruikt de vector table/calling convention
 - hot-resume gebruikt hetzelfde image/link-resultaat als ROM boot en voert
   `init()` als host/debugger-call uit, niet als machine lifecycle interrupt
 - oude Lua-global lifecycle en `reinit`/`new_game` IRQ transport zijn geen
   console ABI meer
+- IRQ-acceptatie bij `HALT` is cartcode-executie: de CPU pusht een handlerframe,
+  `RET` uit dat frame hervat de onderbroken PC en schrijft geen return values
+  naar het cartframe
 
 ## 23. Harde verifier/audit voor echte retro-carts — GESCHRAPT
 

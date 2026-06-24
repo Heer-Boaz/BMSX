@@ -168,6 +168,11 @@ function makeHaltFrameRuntime(): Runtime {
 		executionOverlayActive: false,
 		debuggerPaused: false,
 		cartEntryAvailable: true,
+		programVectors: {
+			resetProtoIndex: 0,
+			sectionInitProtoIndex: null,
+			irqProtoIndex: 1,
+		},
 		luaGate: { ready: true },
 		cartBoot: {
 			processPending: () => false,
@@ -241,6 +246,23 @@ test('CPU closure calls that execute HALT without a scheduled interrupt unwind',
 	);
 	assert.equal(cpu.isHaltedUntilIrq(), true);
 	assert.equal(cpu.getFrameDepth(), 1);
+});
+
+test('host external closure calls wake from pending IRQ without vectoring', () => {
+	const memory = new Memory({ systemRom: new Uint8Array(0) });
+	const cpu = new CPU(memory);
+	cpu.setProgram(makeProgram(cpu), makeMetadata());
+	cpu.start(1);
+	const runtime = makeRuntime(cpu);
+	runtime.machine.irqController.raise(IRQ_VBLANK);
+
+	const out: Value[] = [];
+	callClosureInto(runtime, { protoIndex: 0, upvalues: [] }, [], out);
+
+	assert.deepEqual(out, []);
+	assert.equal(cpu.getFrameDepth(), 1);
+	assert.equal(cpu.isHaltedUntilIrq(), false);
+	assert.equal((runtime.machine.irqController.captureState().pendingFlags & IRQ_VBLANK) !== 0, true);
 });
 
 test('CPU closure calls continue after scheduler yield requests', () => {
@@ -332,6 +354,66 @@ test('frame loop yields after HALT instead of continuing in the same host slice'
 	assert.equal(runtime.pendingCall, 'entry');
 	assert.equal(runtime.machine.cpu.isHaltedUntilIrq(), true);
 	assert.notEqual(runtime.frameLoop.currentFrameState, null);
+});
+
+test('frame loop vectors a pending IRQ above a halted cart frame', () => {
+	const runtime = makeHaltFrameRuntime();
+	const cpu = runtime.machine.cpu;
+
+	assert.equal(cpu.runUntilDepth(0, 100), RunResult.Halted);
+	assert.equal(cpu.isHaltedUntilIrq(), true);
+
+	runtime.machine.irqController.raise(IRQ_VBLANK);
+	const state = {
+		haltGame: false,
+		updateExecuted: false,
+		luaFaulted: false,
+		cycleBudgetRemaining: 100,
+		cycleBudgetGranted: 100,
+		cycleCarryGranted: 0,
+		activeCpuUsedCycles: 0,
+	};
+	const tickCompleted = runtime.cpuExecution.runHaltedUntilIrq(state);
+
+	assert.equal(tickCompleted, false);
+	assert.equal(cpu.isHaltedUntilIrq(), false);
+	assert.equal(cpu.getFrameDepth(), 2);
+	assert.deepEqual(cpu.getCallStack().map(frame => frame.protoIndex), [0, 1]);
+	assert.equal(cpu.canAcceptMaskableInterruptLine(runtime.machine.irqController), false);
+
+	runtime.cpuExecution.runWithBudget(state);
+	assert.equal(cpu.getFrameDepth(), 0);
+	assert.equal(cpu.isHaltedUntilIrq(), false);
+	assert.equal(cpu.canAcceptMaskableInterruptLine(runtime.machine.irqController), true);
+	assert.equal((runtime.machine.irqController.captureState().pendingFlags & IRQ_VBLANK) !== 0, true);
+});
+
+test('CPU save-state captured inside an interrupt frame restores and returns to the cart frame', () => {
+	const runtime = makeHaltFrameRuntime();
+	const cpu = runtime.machine.cpu;
+	const moduleCache = new Map<string, Value>();
+	assert.equal(cpu.runUntilDepth(0, 100), RunResult.Halted);
+	runtime.machine.irqController.raise(IRQ_VBLANK);
+	const state = {
+		haltGame: false,
+		updateExecuted: false,
+		luaFaulted: false,
+		cycleBudgetRemaining: 100,
+		cycleBudgetGranted: 100,
+		cycleCarryGranted: 0,
+		activeCpuUsedCycles: 0,
+	};
+	runtime.cpuExecution.runHaltedUntilIrq(state);
+	assert.deepEqual(cpu.getCallStack().map(frame => frame.protoIndex), [0, 1]);
+
+	const snapshot = cpu.captureRuntimeState(moduleCache);
+	cpu.restoreRuntimeState(snapshot, moduleCache);
+	assert.deepEqual(cpu.getCallStack().map(frame => frame.protoIndex), [0, 1]);
+	assert.equal(cpu.canAcceptMaskableInterruptLine(runtime.machine.irqController), false);
+
+	runtime.cpuExecution.runWithBudget(state);
+	assert.equal(cpu.getFrameDepth(), 0);
+	assert.equal(cpu.canAcceptMaskableInterruptLine(runtime.machine.irqController), true);
 });
 
 

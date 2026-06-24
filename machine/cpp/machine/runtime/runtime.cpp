@@ -214,6 +214,7 @@ void Runtime::boot(const ProgramImage& image, ProgramMetadata* metadata, Program
 }
 
 void Runtime::startLoadedProgram(ProgramVectorTable vectors, const std::vector<std::string>& staticModulePaths) {
+	m_programVectors = vectors;
 	NativeResults sectionResults;
 	callLuaFunctionInto(machine.cpu.createRootClosure(vectors.sectionInitProtoIndex), NativeArgsView(), sectionResults);
 	runStaticModuleInitializers(staticModulePaths);
@@ -229,6 +230,7 @@ void Runtime::resetRuntimeForProgramReload() {
 	m_runtimeFailed = false;
 	m_luaInitialized = false;
 	m_pendingCall = PendingCall::None;
+	m_programVectors.reset();
 	m_cartVectors.reset();
 	m_cartDataBaseAddress.reset();
 	m_cartBssBaseAddress.reset();

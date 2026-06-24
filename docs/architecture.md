@@ -335,6 +335,15 @@ ABI values; they are documented constants, not runtime-injected Lua globals.
 Cart and firmware code that tests or acknowledges them defines the constants it
 uses.
 
+Program images also carry an `irqProtoIndex` vector. On a guest-domain
+`HALT`, an asserted maskable IRQ line makes the CPU push that handler proto as
+an interrupt frame above the halted cart frame. The handler runs as normal CPU
+bytecode and returns with `RET`; interrupt-frame return restores the previous
+maskable-enabled state and resumes the interrupted frame without copying return
+values. Host/debugger closure calls may wake from a pending IRQ, but they do not
+consume or vector it. NMI has no producer today and is not part of the vector
+table.
+
 | Register | Address | Meaning |
 | --- | ---: | --- |
 | `IRQ_FLAGS` | `0x08000108` | Read pending IRQ bits. |

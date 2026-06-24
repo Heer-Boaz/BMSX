@@ -134,6 +134,7 @@ public:
 	auto systemRom() const -> const RuntimeRomPackage&;
 	auto cartRom() -> RuntimeRomPackage*;
 	auto cartRom() const -> const RuntimeRomPackage*;
+	auto programVectors() const -> const ProgramVectorTable& { return *m_programVectors; }
 	void setRuntimeEnvironment(
 		const MachineManifest& machineManifest,
 		RuntimeOptions::RomSpan systemRomBytes,
@@ -231,6 +232,7 @@ private:
 	ProgramMetadata* m_programMetadata = nullptr;
 
 	std::optional<ProgramVectorTable> m_cartVectors;
+	std::optional<ProgramVectorTable> m_programVectors;
 	std::optional<uint32_t> m_cartDataBaseAddress;
 	std::optional<uint32_t> m_cartBssBaseAddress;
 	std::vector<std::string> m_cartStaticModulePaths;

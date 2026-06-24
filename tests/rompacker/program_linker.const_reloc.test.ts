@@ -121,6 +121,23 @@ test('ProgramImage exposes text and rodata as ROM sections', () => {
 	assert.equal(image.sections.bss.byteCount, 0);
 });
 
+test('ProgramCompiler emits a dedicated IRQ vector proto', () => {
+	const source = 'while true do halt_until_irq end';
+	const compiled = compileLuaChunkToProgram(parseChunk(source), [], { entrySource: source });
+	const image = encodeCompiledProgramImage(compiled);
+	const irqProto = image.sections.text.protos[image.vectors.irqProtoIndex];
+	const wordIndex = irqProto.entryPC / INSTRUCTION_BYTES;
+	const irqOps = [
+		(readInstructionWord(image.sections.text.code, wordIndex) >>> 18) & 0x3f,
+		(readInstructionWord(image.sections.text.code, wordIndex + 1) >>> 18) & 0x3f,
+		(readInstructionWord(image.sections.text.code, wordIndex + 2) >>> 18) & 0x3f,
+		(readInstructionWord(image.sections.text.code, wordIndex + 3) >>> 18) & 0x3f,
+	];
+
+	assert.notEqual(image.vectors.irqProtoIndex, image.vectors.sectionInitProtoIndex);
+	assert.deepEqual(irqOps, [OpCode.WIDE, OpCode.LOADK, OpCode.LOAD_MEM, OpCode.RET]);
+});
+
 function makeProgramSymbols(protoId: string, instructionCount: number): ProgramSymbolsImage {
 	return {
 		debugRanges: new Array(instructionCount).fill(null),

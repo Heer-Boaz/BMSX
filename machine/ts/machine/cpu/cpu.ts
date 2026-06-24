@@ -2657,6 +2657,13 @@ export class CPU {
 					const total = b === 0 ? Math.max(frame.top - a, 0) : b;
 					this.closeUpvalues(frame);
 					const frameIndex = this.frames.length - 1;
+					if (frame.isInterruptFrame) {
+						this.maskableInterruptsEnabled = frame.savedMaskableEnabled;
+						this.frames.pop();
+						this.stackTop = frame.varargBase;
+						this.releaseFrame(frame);
+						return;
+					}
 					if (frame.captureReturns) {
 						if (this.externalReturnSink !== null) {
 							this.captureValuesIntoArrayFromRegisters(this.externalReturnSink, registers, a, total);

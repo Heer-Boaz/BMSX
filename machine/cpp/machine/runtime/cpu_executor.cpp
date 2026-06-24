@@ -36,8 +36,9 @@ bool CpuExecutionState::runHaltedUntilIrq(Runtime& runtime, FrameState& frameSta
 		return tickCompleted;
 	}
 	auto& scheduler = runtime.machine.scheduler;
+	const ProgramVectorTable& vectors = runtime.programVectors();
 	while (true) {
-		if (cpu.acceptPendingInterrupt(runtime.machine.irqController) != AcceptedInterruptKind::None) {
+		if (cpu.tryEnterPendingInterrupt(runtime.machine.irqController, vectors.irqProtoIndex)) {
 			return tickCompleted;
 		}
 		if (tickCompleted) {

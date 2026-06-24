@@ -88,7 +88,8 @@ function runHaltedClosureUntilInterrupt(runtime: Runtime): void {
 	const cpu = runtime.machine.cpu;
 	const scheduler = runtime.machine.scheduler;
 	while (cpu.isHaltedUntilIrq()) {
-		if (cpu.acceptPendingInterrupt(runtime.machine.irqController) !== AcceptedInterruptKind.None) {
+		if (cpu.peekPendingInterrupt(runtime.machine.irqController) !== AcceptedInterruptKind.None) {
+			cpu.clearHaltUntilIrq();
 			return;
 		}
 		if (scheduler.hasDueTimer()) {

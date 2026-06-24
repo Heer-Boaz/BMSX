@@ -88,12 +88,14 @@ import { getMemoryAccessKindForName, MemoryAccessKind } from '../memory/access_k
 import { luaModulo } from '../../lua/numeric';
 import { writeLE16, writeLE32 } from '../../common/endian';
 import { isReservedIntrinsicName } from '../../lua/semantic/common';
+import { IO_IRQ_FLAGS } from '../bus/io';
 
 export type CompiledProgram = {
 	program: Program;
 	metadata: ProgramMetadata;
 	entryProtoIndex: number;
 	sectionInitProtoIndex: number;
+	irqProtoIndex: number;
 	moduleProtoMap: Map<string, number>;
 	staticModulePaths: string[];
 	constRelocs: ProgramConstReloc[];
@@ -121,6 +123,7 @@ const encodeCompilerProgramImage = (
 	program: Program,
 	entryProtoIndex: number,
 	sectionInitProtoIndex: number,
+	irqProtoIndex: number,
 	moduleProtos: Array<{ path: string; protoIndex: number }>,
 	staticModulePaths: string[],
 	constRelocs: ProgramConstReloc[],
@@ -133,7 +136,7 @@ const encodeCompilerProgramImage = (
 	vectors: {
 		resetProtoIndex: entryProtoIndex,
 		sectionInitProtoIndex,
-		irqProtoIndex: sectionInitProtoIndex,
+		irqProtoIndex,
 	},
 	sections: encodeProgramObjectSections(program, moduleProtos, staticModulePaths, data, bss, rodataBytes, rodataSymbols),
 	link: { constRelocs, constValueRelocs },
@@ -144,6 +147,7 @@ export function encodeCompiledProgramImage(compiled: CompiledProgram): ProgramIm
 		compiled.program,
 		compiled.entryProtoIndex,
 		compiled.sectionInitProtoIndex,
+		compiled.irqProtoIndex,
 		Array.from(compiled.moduleProtoMap, ([path, protoIndex]) => ({ path, protoIndex })),
 		compiled.staticModulePaths,
 		compiled.constRelocs,
@@ -159,7 +163,7 @@ export function encodeCompiledProgramImage(compiled: CompiledProgram): ProgramIm
 // program, so it introduces no module/static-module protos of its own: the executable
 // image carries an empty module map and no static-module paths.
 export function encodeAppendedProgramImage(compiled: AppendedProgram): ProgramImage {
-	return encodeCompilerProgramImage(compiled.program, compiled.entryProtoIndex, compiled.sectionInitProtoIndex, [], [], compiled.constRelocs, compiled.constValueRelocs, compiled.data, compiled.bss, compiled.rodataBytes, compiled.rodataSymbols);
+	return encodeCompilerProgramImage(compiled.program, compiled.entryProtoIndex, compiled.sectionInitProtoIndex, compiled.sectionInitProtoIndex, [], [], compiled.constRelocs, compiled.constValueRelocs, compiled.data, compiled.bss, compiled.rodataBytes, compiled.rodataSymbols);
 }
 
 export type LuaCompileError = {
@@ -957,6 +961,7 @@ const buildEntryProtoId = (moduleId: string): string => `${buildModuleRootId(mod
 const buildModuleProtoId = (moduleId: string): string => `${buildModuleRootId(moduleId)}/module`;
 
 const buildSectionInitProtoId = (moduleId: string): string => `${buildModuleRootId(moduleId)}/section_init`;
+const buildInterruptProtoId = (moduleId: string): string => `${buildModuleRootId(moduleId)}/irq`;
 
 const buildAnonymousHint = (range: LuaSourceRange): string =>
 	`anon:${range.start.line}:${range.start.column}:${range.end.line}:${range.end.column}`;
@@ -1164,6 +1169,17 @@ class FunctionBuilder {
 				this.patchJump(jumpOut, this.code.length);
 			}
 			this.emitDefaultReturn();
+		});
+		this.finalizeLabels();
+	}
+
+	public compileInterruptEntry(range: LuaSourceRange): void {
+		this.withRange(range, () => {
+			const addrReg = this.allocTemp();
+			const flagsReg = this.allocTemp();
+			this.emitLoadConst(addrReg, IO_IRQ_FLAGS);
+			this.emitABC(OpCode.LOAD_MEM, flagsReg, addrReg, MemoryAccessKind.Word);
+			this.emitABC(OpCode.RET, flagsReg, 1, 0);
 		});
 		this.finalizeLabels();
 	}
@@ -4679,6 +4695,33 @@ function compileSectionInitProto(
 	return protoIndex;
 }
 
+function compileInterruptProto(
+	program: ProgramBuilder,
+	moduleId: string,
+	range: LuaSourceRange,
+	semantics: LuaSemanticFrontendFile,
+	frontend: LuaSemanticFrontend,
+): number {
+	const protoId = buildInterruptProtoId(moduleId);
+	const builder = new FunctionBuilder(program, null, { moduleId, protoId, semantics, frontend });
+	builder.compileInterruptEntry(range);
+	const code = builder.getCode();
+	const ranges = builder.getRanges();
+	const constRelocs = builder.getConstRelocs();
+	const instructionSet = builder.getInstructionSet();
+	const protoIndex = program.addProto({
+		entryPC: 0,
+		codeLen: ranges.length * INSTRUCTION_BYTES,
+		numParams: 0,
+		isVararg: false,
+		maxStack: builder.getMaxStack(),
+		upvalueDescs: [],
+		staticClosure: true,
+	}, code, ranges, constRelocs, [], [], protoId, instructionSet);
+	program.markStaticClosureProto(protoIndex);
+	return protoIndex;
+}
+
 function createProgramBuilderFromProgram(
 	base: Program,
 	metadata: ProgramMetadata,
@@ -4810,6 +4853,7 @@ export function compileLuaChunkToProgram(chunk: LuaChunk, modules: ReadonlyArray
 	const entryProtoId = buildEntryProtoId(moduleId);
 	let entryProtoIndex = -1;
 	let sectionInitProtoIndex = -1;
+	let irqProtoIndex = -1;
 	const entryBuilder = new FunctionBuilder(programBuilder, null, {
 		moduleId,
 		protoId: entryProtoId,
@@ -4885,7 +4929,9 @@ export function compileLuaChunkToProgram(chunk: LuaChunk, modules: ReadonlyArray
 	if (compileErrors.length > 0) {
 		throw new Error(buildCompileFailureMessage(compileErrors));
 	}
-	sectionInitProtoIndex = compileSectionInitProto(programBuilder, moduleId, chunk.range, frontend.getFile(chunk.range.path), frontend);
+	const entrySemantics = frontend.getFile(chunk.range.path);
+	sectionInitProtoIndex = compileSectionInitProto(programBuilder, moduleId, chunk.range, entrySemantics, frontend);
+	irqProtoIndex = compileInterruptProto(programBuilder, moduleId, chunk.range, entrySemantics, frontend);
 	const { program, metadata, constRelocs, constValueRelocs, data, bss, rodataBytes, rodataSymbols, staticModulePaths } = programBuilder.buildProgram();
 
 	// Ensure module export slot names (built during module compile-info collection)
@@ -4915,6 +4961,7 @@ export function compileLuaChunkToProgram(chunk: LuaChunk, modules: ReadonlyArray
 		metadata,
 		entryProtoIndex,
 		sectionInitProtoIndex,
+		irqProtoIndex,
 		moduleProtoMap,
 		staticModulePaths,
 		constRelocs,

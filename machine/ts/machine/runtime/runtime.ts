@@ -94,6 +94,7 @@ export type FrameState = {
 export type RuntimeProgramVectorTable = {
 	resetProtoIndex: number;
 	sectionInitProtoIndex: number | null;
+	irqProtoIndex: number;
 };
 
 
@@ -198,6 +199,7 @@ export class Runtime {
 	public cartLuaSources: LuaSourceRegistry | null = null;
 	public activeLuaSources: LuaSourceRegistry = null;
 	public cartProgramStarted = false;
+	public programVectors: RuntimeProgramVectorTable | null = null;
 	public cartVectors: ProgramVectorTable | null = null;
 	public programDataBaseAddress = PROGRAM_STATIC_RAM_BASE;
 	public programBssBaseAddress = PROGRAM_STATIC_RAM_BASE;
@@ -398,6 +400,7 @@ export class Runtime {
 		this.cartLuaSources = params.cartSources;
 		this.activeLuaSources = params.systemSources;
 		this.cartProgramStarted = false;
+		this.programVectors = null;
 		this.cartVectors = null;
 		this.programDataBaseAddress = PROGRAM_STATIC_RAM_BASE;
 		this.programBssBaseAddress = PROGRAM_STATIC_RAM_BASE;
@@ -465,6 +468,7 @@ export class Runtime {
 	}
 
 	public startLoadedProgram(vectors: RuntimeProgramVectorTable, staticModulePaths: ReadonlyArray<string>): void {
+		this.programVectors = vectors;
 		if (vectors.sectionInitProtoIndex !== null) {
 			this.runSectionInitializer(vectors.sectionInitProtoIndex);
 		}
