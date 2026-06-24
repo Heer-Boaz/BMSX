@@ -823,6 +823,7 @@ export const linkProgramImages = (
 	const cartVectors = {
 		resetProtoIndex: cartImage.vectors.resetProtoIndex + baseProtoCount,
 		sectionInitProtoIndex: cartImage.vectors.sectionInitProtoIndex + baseProtoCount,
+		irqProtoIndex: cartImage.vectors.irqProtoIndex + baseProtoCount,
 	};
 	const metadata = mergeMetadata(
 		systemMetadata,

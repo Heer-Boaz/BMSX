@@ -1253,6 +1253,8 @@ BinValue encodeCpuFrameState(const CpuFrameState& state) {
 	object["top"] = static_cast<i64>(state.top);
 	object["captureReturns"] = state.captureReturns;
 	object["callSitePc"] = static_cast<i64>(state.callSitePc);
+	object["isInterruptFrame"] = state.isInterruptFrame;
+	object["savedMaskableEnabled"] = state.savedMaskableEnabled;
 	return BinValue(std::move(object));
 }
 
@@ -1275,6 +1277,8 @@ CpuFrameState decodeCpuFrameState(const BinValue& value, const char* label) {
 	state.top = requireI32(requireField(object, "top", label), "cpuFrameState.top");
 	state.captureReturns = requireBool(requireField(object, "captureReturns", label), "cpuFrameState.captureReturns");
 	state.callSitePc = requireI32(requireField(object, "callSitePc", label), "cpuFrameState.callSitePc");
+	state.isInterruptFrame = requireBool(requireField(object, "isInterruptFrame", label), "cpuFrameState.isInterruptFrame");
+	state.savedMaskableEnabled = requireBool(requireField(object, "savedMaskableEnabled", label), "cpuFrameState.savedMaskableEnabled");
 	return state;
 }
 

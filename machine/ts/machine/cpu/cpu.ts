@@ -336,6 +336,8 @@ export type CpuFrameState = {
 	top: number;
 	captureReturns: boolean;
 	callSitePc: number;
+	isInterruptFrame: boolean;
+	savedMaskableEnabled: boolean;
 };
 
 export type CpuRootValueState = {
@@ -437,6 +439,8 @@ type CallFrame = {
 	top: number;
 	captureReturns: boolean;
 	callSitePc: number;
+	isInterruptFrame: boolean;
+	savedMaskableEnabled: boolean;
 };
 
 type HashNode = {
@@ -1422,6 +1426,7 @@ export class CPU {
 	private maskableInterruptsEnabled = true;
 	private maskableInterruptsRestoreEnabled = true;
 	private nonMaskableInterruptPending = false;
+	private hostExternalCallDepth = 0;
 	private yieldRequested = false;
 	private readonly frames: CallFrame[] = [];
 	private readonly openUpvalues: OpenUpvalueSlot[] = [];
@@ -1721,6 +1726,8 @@ export class CPU {
 			top: 0,
 			captureReturns: false,
 			callSitePc: 0,
+			isInterruptFrame: false,
+			savedMaskableEnabled: true,
 		};
 	}
 
@@ -1730,6 +1737,8 @@ export class CPU {
 		frame.stackBase = 0;
 		frame.stackCapacity = 0;
 		frame.registers.rebind(this.stackRegisters, 0, 0);
+		frame.isInterruptFrame = false;
+		frame.savedMaskableEnabled = true;
 		if (this.framePool.length < MAX_POOLED_FRAMES) {
 			this.framePool.push(frame);
 		}
@@ -1876,6 +1885,7 @@ export class CPU {
 		this.maskableInterruptsEnabled = true;
 		this.maskableInterruptsRestoreEnabled = true;
 		this.nonMaskableInterruptPending = false;
+		this.hostExternalCallDepth = 0;
 		this.yieldRequested = false;
 		const closure = this.staticClosure(entryProtoIndex);
 		this.pushFrame(closure, args, 0, 0, false, this.program.protos[entryProtoIndex].entryPC);
@@ -1893,6 +1903,18 @@ export class CPU {
 		this.lastReturnValues.length = 0;
 		this.yieldRequested = false;
 		this.pushFrame(closure, args, 0, returnCount, false, this.program.protos[closure.protoIndex].entryPC);
+	}
+
+	public enterHostExternalCall(): void {
+		this.hostExternalCallDepth += 1;
+	}
+
+	public leaveHostExternalCall(): void {
+		this.hostExternalCallDepth -= 1;
+	}
+
+	public isHostExternalCallActive(): boolean {
+		return this.hostExternalCallDepth !== 0;
 	}
 
 	public callExternal(closure: Closure, args: Value[] = []): void {
@@ -1947,6 +1969,29 @@ export class CPU {
 	public canAcceptMaskableInterruptLine(irqController: IrqController): boolean {
 		return this.maskableInterruptsEnabled
 			&& irqController.hasAssertedMaskableInterruptLine();
+	}
+
+	public peekPendingInterrupt(irqController: IrqController): AcceptedInterruptKind {
+		if (this.nonMaskableInterruptPending) {
+			return AcceptedInterruptKind.NonMaskable;
+		}
+		if (this.canAcceptMaskableInterruptLine(irqController)) {
+			return AcceptedInterruptKind.Maskable;
+		}
+		return AcceptedInterruptKind.None;
+	}
+
+	public tryEnterPendingInterrupt(irqController: IrqController, irqProtoIndex: number): boolean {
+		if (!this.canAcceptMaskableInterruptLine(irqController)) {
+			return false;
+		}
+		const savedMaskableEnabled = this.maskableInterruptsEnabled;
+		this.maskableInterruptsEnabled = false;
+		this.clearHaltAfterAcceptedInterrupt();
+		const frame = this.pushFrame(this.staticClosure(irqProtoIndex), [], 0, 0, false, this.program.protos[irqProtoIndex].entryPC);
+		frame.isInterruptFrame = true;
+		frame.savedMaskableEnabled = savedMaskableEnabled;
+		return true;
 	}
 
 	public acceptPendingInterrupt(irqController: IrqController): AcceptedInterruptKind {
@@ -2698,7 +2743,7 @@ export class CPU {
 		return registers;
 	}
 
-	private pushFrame(closure: Closure, args: Value[], returnBase: number, returnCount: number, captureReturns: boolean, callSitePc: number): void {
+	private pushFrame(closure: Closure, args: Value[], returnBase: number, returnCount: number, captureReturns: boolean, callSitePc: number): CallFrame {
 		const proto = this.program.protos[closure.protoIndex];
 		const frame = this.acquireFrame();
 		frame.protoIndex = closure.protoIndex;
@@ -2724,6 +2769,7 @@ export class CPU {
 			}
 		}
 		this.frames.push(frame);
+		return frame;
 	}
 
 	private pushFrameFromCaller(caller: CallFrame, closure: Closure, argBase: number, argCount: number, returnBase: number, returnCount: number, captureReturns: boolean, callSitePc: number): void {
@@ -3241,6 +3287,8 @@ export class CPU {
 				top: frame.top,
 				captureReturns: frame.captureReturns,
 				callSitePc: frame.callSitePc,
+				isInterruptFrame: frame.isInterruptFrame,
+				savedMaskableEnabled: frame.savedMaskableEnabled,
 			};
 		}
 
@@ -3462,6 +3510,8 @@ export class CPU {
 			frame.returnCount = frameState.returnCount;
 			frame.captureReturns = frameState.captureReturns;
 			frame.callSitePc = frameState.callSitePc;
+			frame.isInterruptFrame = frameState.isInterruptFrame;
+			frame.savedMaskableEnabled = frameState.savedMaskableEnabled;
 			frame.varargBase = this.stackTop;
 			frame.varargCount = frameState.varargs.length;
 			const registers = this.prepareFrameRegisters(frame, proto.maxStack);

@@ -806,6 +806,7 @@ LinkedProgramImage linkProgramImages(
 	ProgramVectorTable cartVectors;
 	cartVectors.resetProtoIndex = cartImage.vectors.resetProtoIndex + systemProtoCount;
 	cartVectors.sectionInitProtoIndex = cartImage.vectors.sectionInitProtoIndex + systemProtoCount;
+	cartVectors.irqProtoIndex = cartImage.vectors.irqProtoIndex + systemProtoCount;
 	auto linkedImage = std::make_unique<ProgramImage>();
 	linkedImage->vectors = cartVectors;
 	linkedSections.rodata.moduleProtos.reserve(cartRodata.moduleProtos.size() + systemRodata.moduleProtos.size());

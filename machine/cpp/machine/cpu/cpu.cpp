@@ -1208,6 +1208,7 @@ void CPU::start(int entryProtoIndex, NativeArgsView args) {
 	m_maskableInterruptsRestoreEnabled = true;
 	m_nonMaskableInterruptPending = false;
 	m_yieldRequested = false;
+	m_hostExternalCallDepth = 0;
 	auto* closure = createRootClosure(entryProtoIndex);
 	pushFrame(closure, args.data(), args.size(), 0, 0, false, m_program->protos[entryProtoIndex].entryPC);
 	runHousekeeping();
@@ -1493,6 +1494,8 @@ CpuRuntimeState CPU::captureRuntimeState(const std::unordered_map<std::string, V
 		frameState.top = frame.top;
 		frameState.captureReturns = frame.captureReturns;
 		frameState.callSitePc = frame.callSitePc;
+		frameState.isInterruptFrame = frame.isInterruptFrame;
+		frameState.savedMaskableEnabled = frame.savedMaskableEnabled;
 		frameState.registers.reserve(static_cast<size_t>(frame.top));
 		for (int index = 0; index < frame.top; ++index) {
 			frameState.registers.push_back(captureValueState(frame.registers[static_cast<size_t>(index)]));
@@ -1755,6 +1758,8 @@ void CPU::restoreRuntimeState(const CpuRuntimeState& state, std::unordered_map<s
 		frame->returnCount = frameState.returnCount;
 		frame->captureReturns = frameState.captureReturns;
 		frame->callSitePc = frameState.callSitePc;
+		frame->isInterruptFrame = frameState.isInterruptFrame;
+		frame->savedMaskableEnabled = frameState.savedMaskableEnabled;
 		frame->varargBase = m_stackTop;
 		frame->varargCount = static_cast<int>(frameState.varargs.size());
 		frame->stackBase = frame->varargBase + frame->varargCount;
@@ -1854,6 +1859,29 @@ bool CPU::canAcceptMaskableInterruptLine(const IrqController& irqController) con
 		&& irqController.hasAssertedMaskableInterruptLine();
 }
 
+AcceptedInterruptKind CPU::peekPendingInterrupt(const IrqController& irqController) const {
+	if (m_nonMaskableInterruptPending) {
+		return AcceptedInterruptKind::NonMaskable;
+	}
+	if (canAcceptMaskableInterruptLine(irqController)) {
+		return AcceptedInterruptKind::Maskable;
+	}
+	return AcceptedInterruptKind::None;
+}
+
+bool CPU::tryEnterPendingInterrupt(const IrqController& irqController, int irqProtoIndex) {
+	if (!canAcceptMaskableInterruptLine(irqController)) {
+		return false;
+	}
+	const bool savedMaskableEnabled = m_maskableInterruptsEnabled;
+	m_maskableInterruptsEnabled = false;
+	clearHaltAfterAcceptedInterrupt();
+	CallFrame* frame = pushFrame(staticClosure(irqProtoIndex), nullptr, 0, 0, 0, false, m_program->protos[irqProtoIndex].entryPC);
+	frame->isInterruptFrame = true;
+	frame->savedMaskableEnabled = savedMaskableEnabled;
+	return true;
+}
+
 AcceptedInterruptKind CPU::acceptPendingInterrupt(const IrqController& irqController) {
 	if (m_nonMaskableInterruptPending) {
 		m_nonMaskableInterruptPending = false;
@@ -1868,6 +1896,14 @@ AcceptedInterruptKind CPU::acceptPendingInterrupt(const IrqController& irqContro
 		return AcceptedInterruptKind::Maskable;
 	}
 	return AcceptedInterruptKind::None;
+}
+
+void CPU::enterHostExternalCall() {
+	++m_hostExternalCallDepth;
+}
+
+void CPU::leaveHostExternalCall() {
+	--m_hostExternalCallDepth;
 }
 
 void CPU::requireRunnableForCall() const {
@@ -2390,7 +2426,7 @@ void CPU::writeUpvalue(Upvalue* upvalue, const Value& value) {
 	upvalue->value = value;
 }
 
-void CPU::pushFrame(CallFrame& caller, Closure* closure, int argBase, int argCount,
+CallFrame* CPU::pushFrame(CallFrame& caller, Closure* closure, int argBase, int argCount,
 	int returnBase, int returnCount, bool captureReturns, int callSitePc) {
 	const Proto& proto = m_program->protos[closure->protoIndex];
 	const int callerArgBase = caller.stackBase + argBase;
@@ -2427,10 +2463,12 @@ void CPU::pushFrame(CallFrame& caller, Closure* closure, int argBase, int argCou
 			m_stack[static_cast<size_t>(frame->varargBase + i)] = m_stack[static_cast<size_t>(callerArgBase + proto.numParams + i)];
 		}
 	}
+	CallFrame* pushed = frame.get();
 	m_frames.push_back(std::move(frame));
+	return pushed;
 }
 
-void CPU::pushFrame(Closure* closure, const Value* args, size_t argCount,
+CallFrame* CPU::pushFrame(Closure* closure, const Value* args, size_t argCount,
 	int returnBase, int returnCount, bool captureReturns, int callSitePc) {
 	const Proto& proto = m_program->protos[closure->protoIndex];
 	const uintptr_t stackBegin = reinterpret_cast<uintptr_t>(m_stack.data());
@@ -2473,7 +2511,9 @@ void CPU::pushFrame(Closure* closure, const Value* args, size_t argCount,
 			m_stack[static_cast<size_t>(frame->varargBase + i)] = sourceArgs[static_cast<size_t>(proto.numParams + i)];
 		}
 	}
+	CallFrame* pushed = frame.get();
 	m_frames.push_back(std::move(frame));
+	return pushed;
 }
 
 void CPU::writeReturnValues(CallFrame& frame, int base, int count, const Value* values, int valueCount) {
@@ -2918,6 +2958,8 @@ void CPU::releaseFrame(std::unique_ptr<CallFrame> frame) {
 	frame->registers = nullptr;
 	frame->stackBase = 0;
 	frame->stackCapacity = 0;
+	frame->isInterruptFrame = false;
+	frame->savedMaskableEnabled = true;
 	if (m_framePool.size() < static_cast<size_t>(MAX_POOLED_FRAMES)) {
 		m_framePool.push_back(std::move(frame));
 	}

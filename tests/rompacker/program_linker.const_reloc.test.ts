@@ -61,6 +61,7 @@ function makeProgramImage(
 		vectors: {
 			resetProtoIndex: 0,
 			sectionInitProtoIndex: 0,
+			irqProtoIndex: 0,
 		},
 		sections: {
 			text: {
@@ -108,7 +109,7 @@ test('ProgramImage exposes text and rodata as ROM sections', () => {
 
 	const program = inflateProgram(image.sections);
 
-	assert.deepEqual(image.vectors, { resetProtoIndex: 0, sectionInitProtoIndex: 0 });
+	assert.deepEqual(image.vectors, { resetProtoIndex: 0, sectionInitProtoIndex: 0, irqProtoIndex: 0 });
 	assert.equal(image.sections.text.code.length, INSTRUCTION_BYTES);
 	assert.equal(image.sections.rodata.constPool.length, 2);
 	assert.equal(image.sections.text.protos.length, 1);
@@ -738,14 +739,14 @@ test('ProgramLinker owns linked boot vector selection', () => {
 	assert.deepEqual(systemBoot.vectors, systemImage.vectors);
 	assert.equal(systemBoot.bssBaseAddress, PROGRAM_STATIC_RAM_BASE);
 	assert.deepEqual(systemBoot.staticModulePaths, ['system/init']);
-	assert.deepEqual(systemBoot.cartVectors, { resetProtoIndex: 1, sectionInitProtoIndex: 1 });
+	assert.deepEqual(systemBoot.cartVectors, { resetProtoIndex: 1, sectionInitProtoIndex: 1, irqProtoIndex: 1 });
 	assert.deepEqual(systemBoot.cartStaticModulePaths, ['cart/init']);
 
 	const cartBoot = linkBootProgramImages(systemImage, null, cartImage, null, 'cart');
-	assert.deepEqual(cartBoot.vectors, { resetProtoIndex: 1, sectionInitProtoIndex: 1 });
+	assert.deepEqual(cartBoot.vectors, { resetProtoIndex: 1, sectionInitProtoIndex: 1, irqProtoIndex: 1 });
 	assert.equal(cartBoot.bssBaseAddress, PROGRAM_STATIC_RAM_BASE);
 	assert.deepEqual(cartBoot.staticModulePaths, ['system/init', 'cart/init']);
-	assert.deepEqual(cartBoot.cartVectors, { resetProtoIndex: 1, sectionInitProtoIndex: 1 });
+	assert.deepEqual(cartBoot.cartVectors, { resetProtoIndex: 1, sectionInitProtoIndex: 1, irqProtoIndex: 1 });
 	assert.deepEqual(cartBoot.cartStaticModulePaths, ['cart/init']);
 });
 
@@ -824,14 +825,14 @@ test('ProgramLinker resolves .bss address constants and boot vectors', () => {
 	assert.deepEqual(linked.programImage.link.constValueRelocs, []);
 	assert.equal(linked.systemBssBaseAddress, PROGRAM_STATIC_RAM_BASE);
 	assert.equal(linked.cartBssBaseAddress, PROGRAM_STATIC_RAM_BASE + 4);
-	assert.deepEqual(linked.systemVectors, { resetProtoIndex: 0, sectionInitProtoIndex: 0 });
-	assert.deepEqual(linked.cartVectors, { resetProtoIndex: 1, sectionInitProtoIndex: 1 });
+	assert.deepEqual(linked.systemVectors, { resetProtoIndex: 0, sectionInitProtoIndex: 0, irqProtoIndex: 0 });
+	assert.deepEqual(linked.cartVectors, { resetProtoIndex: 1, sectionInitProtoIndex: 1, irqProtoIndex: 1 });
 
 	const systemBoot = linkBootProgramImages(systemImage, null, cartImage, null, 'system');
-	assert.deepEqual(systemBoot.vectors, { resetProtoIndex: 0, sectionInitProtoIndex: 0 });
+	assert.deepEqual(systemBoot.vectors, { resetProtoIndex: 0, sectionInitProtoIndex: 0, irqProtoIndex: 0 });
 	assert.equal(systemBoot.bssBaseAddress, PROGRAM_STATIC_RAM_BASE);
 	const cartBoot = linkBootProgramImages(systemImage, null, cartImage, null, 'cart');
-	assert.deepEqual(cartBoot.vectors, { resetProtoIndex: 1, sectionInitProtoIndex: 1 });
+	assert.deepEqual(cartBoot.vectors, { resetProtoIndex: 1, sectionInitProtoIndex: 1, irqProtoIndex: 1 });
 	assert.equal(cartBoot.bssBaseAddress, PROGRAM_STATIC_RAM_BASE + 4);
 });
 

@@ -596,6 +596,8 @@ struct CallFrame {
 	int top = 0;
 	bool captureReturns = false;
 	int callSitePc = 0;
+	bool isInterruptFrame = false;
+	bool savedMaskableEnabled = true;
 };
 
 struct TableHashNodeState {
@@ -674,6 +676,8 @@ struct CpuFrameState {
 	int top = 0;
 	bool captureReturns = false;
 	int callSitePc = 0;
+	bool isInterruptFrame = false;
+	bool savedMaskableEnabled = true;
 };
 
 struct CpuRootValueState {
@@ -873,7 +877,12 @@ public:
 	void requestNonMaskableInterrupt();
 	void restoreMaskableInterruptsAfterNonMaskableInterrupt();
 	bool canAcceptMaskableInterruptLine(const IrqController& irqController) const;
+	AcceptedInterruptKind peekPendingInterrupt(const IrqController& irqController) const;
+	bool tryEnterPendingInterrupt(const IrqController& irqController, int irqProtoIndex);
 	AcceptedInterruptKind acceptPendingInterrupt(const IrqController& irqController);
+	void enterHostExternalCall();
+	void leaveHostExternalCall();
+	bool isHostExternalCallActive() const { return m_hostExternalCallDepth != 0; }
 	RunResult run(int instructionBudget);
 	RunResult runUntilDepth(int targetDepth, int instructionBudget);
 	void unwindToDepth(int targetDepth);
@@ -905,9 +914,9 @@ private:
 	void tickHotLoopHousekeeping();
 	void initializeGlobalSlots(ProgramMetadata* metadata);
 	void initializeGlobalSlotList(std::vector<StringId>& names, std::vector<Value>& values, std::unordered_map<StringId, size_t>& slotByKey, const std::vector<std::string>& source);
-	void pushFrame(CallFrame& caller, Closure* closure, int argBase, int argCount,
+	CallFrame* pushFrame(CallFrame& caller, Closure* closure, int argBase, int argCount,
 		int returnBase, int returnCount, bool captureReturns, int callSitePc);
-	void pushFrame(Closure* closure, const Value* args, size_t argCount,
+	CallFrame* pushFrame(Closure* closure, const Value* args, size_t argCount,
 		int returnBase, int returnCount, bool captureReturns, int callSitePc);
 	Closure* staticClosure(int protoIndex);
 	Closure* createTrackedClosure(int protoIndex, size_t upvalueCount);
@@ -977,6 +986,7 @@ private:
 	bool m_maskableInterruptsRestoreEnabled = true;
 	bool m_nonMaskableInterruptPending = false;
 	bool m_yieldRequested = false;
+	int m_hostExternalCallDepth = 0;
 	Memory& m_memory;
 	StringPool m_stringPool;
 	GcHeap m_heap;

@@ -13,6 +13,7 @@ ProgramImage makeMinimalProgramImage() {
 	ProgramImage image;
 	image.vectors.resetProtoIndex = 0;
 	image.vectors.sectionInitProtoIndex = 0;
+	image.vectors.irqProtoIndex = 0;
 	image.sections.text.code.resize(INSTRUCTION_BYTES);
 	writeInstruction(image.sections.text.code, 0, static_cast<u8>(OpCode::RET), 0, 0, 0);
 

@@ -55,6 +55,7 @@ export type ProgramBssSymbol = {
 export type ProgramVectorTable = {
 	resetProtoIndex: number;
 	sectionInitProtoIndex: number;
+	irqProtoIndex: number;
 };
 
 export type ProgramObjectSections = {
@@ -170,6 +171,7 @@ function decodeProgramVectorTable(value: unknown): ProgramVectorTable {
 	return {
 		resetProtoIndex: requireObjectKey(vectors, 'resetProtoIndex', 'ProgramImage.vectors', 'ProgramImage.vectors.resetProtoIndex') as number,
 		sectionInitProtoIndex: requireObjectKey(vectors, 'sectionInitProtoIndex', 'ProgramImage.vectors', 'ProgramImage.vectors.sectionInitProtoIndex') as number,
+		irqProtoIndex: requireObjectKey(vectors, 'irqProtoIndex', 'ProgramImage.vectors', 'ProgramImage.vectors.irqProtoIndex') as number,
 	};
 }
 

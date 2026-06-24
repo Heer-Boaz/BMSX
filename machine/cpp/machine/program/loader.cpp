@@ -359,6 +359,7 @@ std::unique_ptr<ProgramImage> decodeProgramImage(const uint8_t* data, size_t siz
 	const auto& vectors = root.require("vectors");
 	image->vectors.resetProtoIndex = vectors.require("resetProtoIndex").toI32();
 	image->vectors.sectionInitProtoIndex = vectors.require("sectionInitProtoIndex").toI32();
+	image->vectors.irqProtoIndex = vectors.require("irqProtoIndex").toI32();
 
 	image->sections = extractProgramObjectSections(root.require("sections"));
 
@@ -516,6 +517,7 @@ std::vector<uint8_t> encodeProgramImage(const ProgramImage& asset) {
 	BinObject vectors;
 	vectors["resetProtoIndex"] = BinValue(asset.vectors.resetProtoIndex);
 	vectors["sectionInitProtoIndex"] = BinValue(asset.vectors.sectionInitProtoIndex);
+	vectors["irqProtoIndex"] = BinValue(asset.vectors.irqProtoIndex);
 
 	BinObject root;
 	root["vectors"] = BinValue(std::move(vectors));

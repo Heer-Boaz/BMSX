@@ -1184,6 +1184,8 @@ function encodeCpuFrameState(state: CpuFrameState): CpuFrameState {
 		top: state.top,
 		captureReturns: state.captureReturns,
 		callSitePc: state.callSitePc,
+		isInterruptFrame: state.isInterruptFrame,
+		savedMaskableEnabled: state.savedMaskableEnabled,
 	};
 }
 
@@ -1208,6 +1210,8 @@ function decodeCpuFrameState(value: unknown, label: string): CpuFrameState {
 		top: requireObjectKey(object, 'top', label, 'cpuFrameState.top') as number,
 		captureReturns: requireObjectKey(object, 'captureReturns', label, 'cpuFrameState.captureReturns') as boolean,
 		callSitePc: requireObjectKey(object, 'callSitePc', label, 'cpuFrameState.callSitePc') as number,
+		isInterruptFrame: requireObjectKey(object, 'isInterruptFrame', label, 'cpuFrameState.isInterruptFrame') as boolean,
+		savedMaskableEnabled: requireObjectKey(object, 'savedMaskableEnabled', label, 'cpuFrameState.savedMaskableEnabled') as boolean,
 	};
 }
 

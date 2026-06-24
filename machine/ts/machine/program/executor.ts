@@ -119,6 +119,7 @@ export function callClosureInto(runtime: Runtime, fn: Closure, args: Value[], ou
 	let spentBudget = 0;
 	let activeBudget = 0;
 	out.length = 0;
+	cpu.enterHostExternalCall();
 	try {
 		cpu.callExternal(fn, args);
 		while (cpu.getFrameDepth() > depth) {
@@ -139,6 +140,7 @@ export function callClosureInto(runtime: Runtime, fn: Closure, args: Value[], ou
 		}
 		cpu.swapExternalReturnSink(previousSink);
 		cpu.instructionBudgetRemaining = previousBudget - spentBudget;
+		cpu.leaveHostExternalCall();
 	}
 }
 
@@ -151,6 +153,7 @@ export function callClosureIntoWithScheduler(runtime: Runtime, fn: Closure, args
 	const previousSink = cpu.swapExternalReturnSink(out);
 	let spentBudget = 0;
 	out.length = 0;
+	cpu.enterHostExternalCall();
 	try {
 		cpu.callExternal(fn, args);
 		let remaining = budgetSentinel;
@@ -199,6 +202,7 @@ export function callClosureIntoWithScheduler(runtime: Runtime, fn: Closure, args
 	} finally {
 		cpu.swapExternalReturnSink(previousSink);
 		cpu.instructionBudgetRemaining = previousBudget - spentBudget;
+		cpu.leaveHostExternalCall();
 	}
 }
 // end repeated-sequence-acceptable

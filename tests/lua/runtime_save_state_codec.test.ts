@@ -312,6 +312,28 @@ test('runtime save-state codec preserves string pool ROM/runtime ownership', () 
 	assert.deepEqual(decoded.machineState.machine.vdp.vram, state.machineState.machine.vdp.vram);
 });
 
+test('runtime save-state codec preserves interrupt frame metadata', () => {
+	const state = createRuntimeSaveState();
+	state.cpuState.frames = [{
+		protoIndex: 3,
+		pc: 44,
+		closureRef: 7,
+		registers: [{ tag: 'nil' }],
+		varargs: [],
+		returnBase: 1,
+		returnCount: 0,
+		top: 1,
+		captureReturns: false,
+		callSitePc: 41,
+		isInterruptFrame: true,
+		savedMaskableEnabled: false,
+	}];
+
+	const decoded = decodeRuntimeSaveState(encodeRuntimeSaveState(state));
+
+	assert.deepEqual(decoded.cpuState.frames, state.cpuState.frames);
+});
+
 test('runtime save-state bytes start at the current property-table payload', () => {
 	const encoded = encodeRuntimeSaveState(createRuntimeSaveState());
 

@@ -133,6 +133,7 @@ const encodeCompilerProgramImage = (
 	vectors: {
 		resetProtoIndex: entryProtoIndex,
 		sectionInitProtoIndex,
+		irqProtoIndex: sectionInitProtoIndex,
 	},
 	sections: encodeProgramObjectSections(program, moduleProtos, staticModulePaths, data, bss, rodataBytes, rodataSymbols),
 	link: { constRelocs, constValueRelocs },

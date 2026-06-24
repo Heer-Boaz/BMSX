@@ -41,6 +41,7 @@ void Runtime::callLuaFunctionInto(Closure* fn, NativeArgsView args, NativeResult
 	int spentBudget = 0;
 	int activeBudget = 0;
 	out.clear();
+	cpu.enterHostExternalCall();
 	try {
 		cpu.callExternal(fn, args);
 		while (cpu.getFrameDepth() > depthBefore) {
@@ -59,10 +60,12 @@ void Runtime::callLuaFunctionInto(Closure* fn, NativeArgsView args, NativeResult
 		cpu.unwindToDepth(depthBefore);
 		cpu.instructionBudgetRemaining = previousBudget - spentBudget;
 		cpu.swapExternalReturnSink(previousSink);
+		cpu.leaveHostExternalCall();
 		throw;
 	}
 	cpu.instructionBudgetRemaining = previousBudget - spentBudget;
 	cpu.swapExternalReturnSink(previousSink);
+	cpu.leaveHostExternalCall();
 }
 
 } // namespace bmsx
