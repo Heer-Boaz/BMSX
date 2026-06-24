@@ -29,6 +29,14 @@ function compileWithConstModule(entrySource: string, modulePath: string, moduleS
 	);
 }
 
+
+function disassembleProgramWithoutIrqVector(compiled: CompiledProgram): string {
+	return disassembleProgram(compiled.program, compiled.metadata, { showProtoHeaders: true })
+		.split('\\n\\n')
+		.filter(block => !block.includes('/irq entry='))
+		.join('\\n\\n');
+}
+
 function runColdCompiled(compiled: CompiledProgram, memory = new Memory({ systemRom: new Uint8Array(0) })): { memory: Memory; values: Value[] } {
 	const image = encodeCompiledProgramImage(compiled);
 	const cpu = new CPU(memory);
@@ -104,7 +112,7 @@ return *counter, state.counter
 		alignment: 4,
 	}]);
 	assert.equal(image.link.constValueRelocs.some(reloc => reloc.kind === 'bss_addr' && reloc.symbol === 'module:state/bss:counter'), true);
-	const disasm = disassembleProgram(compiled.program, compiled.metadata, { showProtoHeaders: true });
+	const disasm = disassembleProgramWithoutIrqVector(compiled);
 	assert.doesNotMatch(disasm, /\bCALL\b/);
 	assert.doesNotMatch(disasm, /\bNEWT\b/);
 
@@ -134,7 +142,7 @@ return state.read()
 	assert.equal(compiled.moduleProtoMap.has('state'), false);
 	assert.equal(compiled.staticModulePaths.includes('state'), false);
 	assert.match(compiled.metadata.exportProtoIdBySlot.state__read, /\/static:/);
-	const disasm = disassembleProgram(compiled.program, compiled.metadata, { showProtoHeaders: true });
+	const disasm = disassembleProgramWithoutIrqVector(compiled);
 	assert.doesNotMatch(disasm, /\bNEWT\b/);
 	assert.doesNotMatch(disasm, /\bGET(GL|SYS)\b.*state__read/);
 	assert.equal(image.link.constRelocs.some(reloc => reloc.kind === 'export_proto' && reloc.symbol === 'state__read'), true);
@@ -467,7 +475,7 @@ return before, *counter, state.counter
 		alignment: 4,
 	}]);
 	assert.equal(image.link.constValueRelocs.some(reloc => reloc.kind === 'data_addr' && reloc.symbol === 'module:state/data:counter'), true);
-	const disasm = disassembleProgram(compiled.program, compiled.metadata, { showProtoHeaders: true });
+	const disasm = disassembleProgramWithoutIrqVector(compiled);
 	assert.doesNotMatch(disasm, /\bCALL\b/);
 	assert.doesNotMatch(disasm, /\bNEWT\b/);
 	assert.deepEqual(runColdCompiled(compiled).values, [12, 88, PROGRAM_STATIC_RAM_BASE]);
@@ -584,7 +592,7 @@ return values[0], values[1], data.values
 		alignment: 4,
 	}]);
 	assert.equal(image.link.constValueRelocs.some(reloc => reloc.kind === 'rodata_addr' && reloc.symbol === 'module:data/rodata:values'), true);
-	const disasm = disassembleProgram(compiled.program, compiled.metadata, { showProtoHeaders: true });
+	const disasm = disassembleProgramWithoutIrqVector(compiled);
 	assert.doesNotMatch(disasm, /\bCALL\b/);
 	assert.doesNotMatch(disasm, /\bNEWT\b/);
 	assert.deepEqual(runColdCompiled(compiled).values, [5, 6, rodataAddr]);

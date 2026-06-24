@@ -31,7 +31,12 @@ local castle_map<const> = require('castle/map')
 local init_epoch = 0
 local pending_title_boot_epoch = -1
 
-local irq_flags_addr<const> = 0x08000108
+local irq_dma_done<const> = 0x01
+local irq_dma_error<const> = 0x02
+local irq_dma_mask<const> = irq_dma_done | irq_dma_error
+local irq_vblank<const> = 0x0010
+local vblank_count = 0
+local dma_irq_flags = 0
 
 local register_collision_profiles<const> = function()
 	collision_profiles.define('player', {
@@ -52,24 +57,18 @@ local register_collision_profiles<const> = function()
 	})
 end
 
-local dispatch_irqs<const> = function()
-	local flags<const> = mem[irq_flags_addr]
-	if flags ~= 0 then
-		irq(flags)
-	end
-	return flags
-end
-
-local irq_dma_done<const> = 0x01
-local irq_dma_error<const> = 0x02
-local irq_vblank<const> = 0x0010
-
-local wait_dma<const> = function()
-	local flags = 0
+local wait_vblank<const> = function()
+	local observed<const> = vblank_count
 	repeat
 		halt_until_irq
-		flags = dispatch_irqs()
-	until (flags & (irq_dma_done | irq_dma_error)) ~= 0
+	until vblank_count ~= observed
+end
+
+local wait_dma<const> = function()
+	repeat
+		halt_until_irq
+	until (dma_irq_flags & irq_dma_mask) ~= 0
+	dma_irq_flags = dma_irq_flags - (dma_irq_flags & irq_dma_mask)
 end
 
 local grant_starting_loadout<const> = function()
@@ -133,6 +132,12 @@ function new_game()
 end
 
 function init()
+	on_irq(irq_vblank, function()
+		vblank_count = vblank_count + 1
+	end)
+	on_irq(irq_dma_mask, function(_, flags)
+		dma_irq_flags = dma_irq_flags | (flags & irq_dma_mask)
+	end)
 	mem[sys_vdp_dither] = 0
 	pietious_font.register_fonts()
 
@@ -191,19 +196,12 @@ end
 init()
 new_game()
 mem[sys_inp_ctrl] = inp_ctrl_arm
-local flags
-repeat
-	halt_until_irq
-	flags = dispatch_irqs()
-until (flags & irq_vblank) ~= 0
+wait_vblank()
 
 while true do
 	update_world()
 
-	repeat
-		halt_until_irq
-		flags = dispatch_irqs()
-	until (flags & irq_vblank) ~= 0
+	wait_vblank()
 	vdp_stream_cursor = sys_vdp_stream_base
 	draw_world()
 	vdp_stream_finish()
@@ -214,8 +212,5 @@ while true do
 	wait_dma()
 
 	mem[sys_inp_ctrl] = inp_ctrl_arm
-	repeat
-		halt_until_irq
-		flags = dispatch_irqs()
-	until (flags & irq_vblank) ~= 0
+	wait_vblank()
 end

@@ -344,6 +344,14 @@ values. Host/debugger closure calls may wake from a pending IRQ, but they do not
 consume or vector it. NMI has no producer today and is not part of the vector
 table.
 
+The compiler-generated IRQ vector reads `IRQ_FLAGS` and calls the program's
+global `irq(flags)` handler when bits are pending. The shipped handler belongs
+to firmware/cart code: BIOS and cartlib expose `system.irq` / `on_irq` as
+convenience dispatch over registered masks, and bare-metal carts may define
+`irq(flags)` directly. Dispatch code acknowledges only the masks it owns;
+unhandled level bits remain asserted so the owning synchronous wait can observe
+and acknowledge them.
+
 | Register | Address | Meaning |
 | --- | ---: | --- |
 | `IRQ_FLAGS` | `0x08000108` | Read pending IRQ bits. |

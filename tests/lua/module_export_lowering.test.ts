@@ -14,6 +14,14 @@ function parseSource(source: string, path: string) {
 	return parser.parseChunk();
 }
 
+
+function disassembleProgramWithoutIrqVector(compiled: CompiledProgram, showProtoHeaders: boolean): string {
+	return disassembleProgram(compiled.program, compiled.metadata, { showProtoHeaders })
+		.split('\\n\\n')
+		.filter(block => !block.includes('/irq entry='))
+		.join('\\n\\n');
+}
+
 function compileWithModule(entrySource: string, modulePath: string, moduleSource: string): { compiled: CompiledProgram; disasm: string; constRelocs: ProgramConstReloc[] } {
 	const entryChunk = parseSource(entrySource, 'entry.lua');
 	const moduleChunk = parseSource(moduleSource, `${modulePath}.lua`);
@@ -24,7 +32,7 @@ function compileWithModule(entrySource: string, modulePath: string, moduleSource
 	);
 	return {
 		compiled,
-		disasm: disassembleProgram(compiled.program, compiled.metadata, { showProtoHeaders: false }),
+		disasm: disassembleProgramWithoutIrqVector(compiled, false),
 		constRelocs: compiled.constRelocs,
 	};
 }
@@ -39,7 +47,7 @@ function compileWithConstModule(entrySource: string, modulePath: string, moduleS
 	);
 	return {
 		compiled,
-		disasm: disassembleProgram(compiled.program, compiled.metadata, { showProtoHeaders: true }),
+		disasm: disassembleProgramWithoutIrqVector(compiled, true),
 	};
 }
 

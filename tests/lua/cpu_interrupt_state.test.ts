@@ -1,7 +1,10 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 
-import { AcceptedInterruptKind, CPU, createNativeFunction, OpCode, RunResult, type Program, type ProgramMetadata, type Proto, type Value } from '../../machine/ts/machine/cpu/cpu';
+import { AcceptedInterruptKind, CPU, createNativeFunction, OpCode, RunResult, StringValue, type Program, type ProgramMetadata, type Proto, type Value } from '../../machine/ts/machine/cpu/cpu';
+import { splitText } from '../../machine/ts/common/text_lines';
+import { LuaLexer } from '../../machine/ts/lua/syntax/lexer';
+import { LuaParser } from '../../machine/ts/lua/syntax/parser';
 import { writeInstruction, INSTRUCTION_BYTES } from '../../machine/ts/machine/cpu/instruction_format';
 import { BASE_CYCLES } from '../../machine/ts/machine/cpu/opcode_info';
 import { IO_IRQ_FLAGS, IRQ_VBLANK } from '../../machine/ts/machine/bus/io';
@@ -9,11 +12,19 @@ import { IrqController } from '../../machine/ts/machine/devices/irq/controller';
 import { Machine } from '../../machine/ts/machine/machine';
 import { captureMachineSaveState, captureMachineState, restoreMachineSaveState, restoreMachineState } from '../../machine/ts/machine/save_state';
 import { Memory } from '../../machine/ts/machine/memory/memory';
+import { compileLuaChunkToProgram, encodeCompiledProgramImage } from '../../machine/ts/machine/program/compiler';
 import { callClosureInto, callClosureIntoWithScheduler } from '../../machine/ts/machine/program/executor';
+import { inflateExecutableProgramImage } from '../../machine/ts/machine/program/linker';
 import { CpuExecutionState } from '../../machine/ts/machine/runtime/cpu_executor';
 import { FrameLoopState } from '../../machine/ts/machine/runtime/frame/loop';
 import { FrameSchedulerState } from '../../machine/ts/machine/scheduler/frame';
 import type { Runtime } from '../../machine/ts/machine/runtime/runtime';
+
+function parseSource(source: string, path = 'irq_vector.lua') {
+	const lexer = new LuaLexer(source, path);
+	const parser = new LuaParser(lexer.scanTokens(), path, splitText(source));
+	return parser.parseChunk();
+}
 
 function makeProto(codeLen: number): Proto {
 	return {
@@ -386,6 +397,64 @@ test('frame loop vectors a pending IRQ above a halted cart frame', () => {
 	assert.equal(cpu.isHaltedUntilIrq(), false);
 	assert.equal(cpu.canAcceptMaskableInterruptLine(runtime.machine.irqController), true);
 	assert.equal((runtime.machine.irqController.captureState().pendingFlags & IRQ_VBLANK) !== 0, true);
+});
+
+test('compiled IRQ vector dispatches through cart irq and acknowledges the device line', () => {
+	const source = `
+local irq_ack_addr<const> = 0x0800010c
+irq_seen = 0
+function irq(flags)
+	irq_seen = flags
+	mem[irq_ack_addr] = flags
+end
+while true do
+	halt_until_irq
+end
+`;
+	const compiled = compileLuaChunkToProgram(parseSource(source), [], { entrySource: source });
+	const image = encodeCompiledProgramImage(compiled);
+	const memory = new Memory({ systemRom: new Uint8Array(0) });
+	const cpu = new CPU(memory);
+	cpu.setProgram(inflateExecutableProgramImage(image, compiled.metadata), compiled.metadata);
+	cpu.start(image.vectors.resetProtoIndex);
+	const irqController = new IrqController(memory);
+	const scheduler = {
+		nowCycles: 0,
+		hasDueTimer: () => false,
+		nextDeadline: () => Number.MAX_SAFE_INTEGER,
+		beginCpuSlice: () => {},
+		endCpuSlice: () => {},
+	};
+	const runtime = {
+		machine: {
+			cpu,
+			irqController,
+			scheduler,
+			vdp: { beginFrame: () => {} },
+			advanceDevices: (cycles: number) => { scheduler.nowCycles += cycles; },
+		},
+		vblank: { tickCompleted: false, beginTick: () => {}, abandonTick: () => {}, handleBeginTimer: () => {}, handleEndTimer: () => {} },
+		programVectors: { resetProtoIndex: image.vectors.resetProtoIndex, sectionInitProtoIndex: null, irqProtoIndex: image.vectors.irqProtoIndex },
+	} as unknown as Runtime;
+	const cpuExecution = new CpuExecutionState(runtime);
+	const state = {
+		haltGame: false,
+		updateExecuted: false,
+		luaFaulted: false,
+		cycleBudgetRemaining: 100,
+		cycleBudgetGranted: 100,
+		cycleCarryGranted: 0,
+		activeCpuUsedCycles: 0,
+	};
+
+	assert.equal(cpu.runUntilDepth(0, 100), RunResult.Halted);
+	irqController.raise(IRQ_VBLANK);
+	assert.equal(cpuExecution.runHaltedUntilIrq(state), false);
+	cpuExecution.runWithBudget(state);
+
+	const irqSeen = cpu.getGlobalByKey(StringValue.get(cpu.stringPool.intern('irq_seen')));
+	assert.equal(irqSeen, IRQ_VBLANK);
+	assert.equal((irqController.captureState().pendingFlags & IRQ_VBLANK) === 0, true);
 });
 
 test('CPU save-state captured inside an interrupt frame restores and returns to the cart frame', () => {

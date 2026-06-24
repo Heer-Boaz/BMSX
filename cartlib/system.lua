@@ -428,7 +428,7 @@ function system.draw_world()
 end
 
 function system.irq(flags)
-	local ack = flags
+	local ack = 0
 	for mask, handler in pairs(cart_irq_handlers) do
 		if (flags & mask) ~= 0 then
 			handler(flags & mask, flags)

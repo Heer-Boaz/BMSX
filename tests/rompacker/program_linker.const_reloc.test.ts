@@ -127,15 +127,13 @@ test('ProgramCompiler emits a dedicated IRQ vector proto', () => {
 	const image = encodeCompiledProgramImage(compiled);
 	const irqProto = image.sections.text.protos[image.vectors.irqProtoIndex];
 	const wordIndex = irqProto.entryPC / INSTRUCTION_BYTES;
-	const irqOps = [
-		(readInstructionWord(image.sections.text.code, wordIndex) >>> 18) & 0x3f,
-		(readInstructionWord(image.sections.text.code, wordIndex + 1) >>> 18) & 0x3f,
-		(readInstructionWord(image.sections.text.code, wordIndex + 2) >>> 18) & 0x3f,
-		(readInstructionWord(image.sections.text.code, wordIndex + 3) >>> 18) & 0x3f,
-	];
+	const irqOps: OpCode[] = [];
+	for (let index = 0; index < irqProto.codeLen / INSTRUCTION_BYTES; index += 1) {
+		irqOps.push(((readInstructionWord(image.sections.text.code, wordIndex + index) >>> 18) & 0x3f) as OpCode);
+	}
 
 	assert.notEqual(image.vectors.irqProtoIndex, image.vectors.sectionInitProtoIndex);
-	assert.deepEqual(irqOps, [OpCode.WIDE, OpCode.LOADK, OpCode.LOAD_MEM, OpCode.RET]);
+	assert.deepEqual(irqOps, [OpCode.WIDE, OpCode.LOADK, OpCode.LOAD_MEM, OpCode.K0, OpCode.EQ, OpCode.JMP, OpCode.GETGL, OpCode.MOV, OpCode.CALL, OpCode.KNIL, OpCode.RET]);
 });
 
 function makeProgramSymbols(protoId: string, instructionCount: number): ProgramSymbolsImage {

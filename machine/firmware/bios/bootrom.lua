@@ -9,6 +9,10 @@ local vdp_image<const> = require('system/vdp_image')
 local font_module<const> = require('system/font')
 local system<const> = require('bios/system')
 
+function irq(flags)
+	system.irq(flags)
+end
+
 local reset_scroll_state<const> = function(state) state.top = 0 end
 
 local draw_glyph_line_color<const> = function(font, line, x, y, z, layer, color)
@@ -61,10 +65,10 @@ local cart_rom_base<const> = 0x01000000
 local cart_program_start_addr<const> = 0x10080000
 local cart_program_vector_addr<const> = cart_program_start_addr - 4
 local cart_rom_magic<const> = 0x58534d42
-local irq_flags_addr<const> = 0x08000108
 local irq_img_done<const> = 0x0004
 local irq_img_error<const> = 0x0008
 local irq_vblank<const> = 0x0010
+local boot_vblank_count = 0
 
 local boot_start
 local boot_requested
@@ -372,6 +376,9 @@ function init()
 	system.on_irq(irq_img_error, function()
 		system_slot_failed = true
 	end)
+	system.on_irq(irq_vblank, function()
+		boot_vblank_count = boot_vblank_count + 1
+	end)
 	vdp_image.load_system_slot()
 end
 
@@ -493,23 +500,18 @@ render_boot_screen = function(scroll_delta)
 	end
 end
 
-local service_irqs<const> = function()
-	local flags<const> = mem[irq_flags_addr]
-	if flags ~= 0 then
-		system.irq(flags)
-	end
-	return flags
+local wait_vblank<const> = function()
+	local observed<const> = boot_vblank_count
+	repeat
+		halt_until_irq
+	until boot_vblank_count ~= observed
 end
 
 init()
 new_game()
 mem[sys_inp_ctrl] = inp_ctrl_arm
 while true do
-	local flags
-	repeat
-		halt_until_irq
-		flags = service_irqs()
-	until (flags & irq_vblank) ~= 0
+	wait_vblank()
 	vdp_stream_cursor = sys_vdp_stream_base
 	update_boot_screen()
 	vdp_rpu_quads.finish_frame()

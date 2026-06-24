@@ -8,11 +8,10 @@ local cam_move<const>         = camobj.cam_move
 local vdp_stream_base<const> = sys_vdp_stream_base
 local vram_staging_base<const> = sys_vram_staging_base
 local scratch_base<const> = sys_geo_scratch_base
-local irq_flags_addr<const> = 0x08000108
 local irq_ack_addr<const> = 0x0800010c
+local irq_pending_flags = 0
 
 local vdp_dither_register<const>: *word = sys_vdp_dither
-local irq_flags_register<const>: *word = irq_flags_addr
 local irq_ack_register<const>: *word = irq_ack_addr
 local dma_src_register<const>: *word = sys_dma_src
 local dma_dst_register<const>: *word = sys_dma_dst
@@ -40,6 +39,11 @@ local dma_ctrl_start<const> = 1
 local irq_dma_done<const> = 0x01
 local irq_dma_error<const> = 0x02
 local irq_vblank<const> = 0x10
+
+function irq(flags)
+	irq_pending_flags = irq_pending_flags | flags
+	*irq_ack_register = flags
+end
 
 local atlas_width<const> = 16
 local atlas_height<const> = 16
@@ -353,12 +357,10 @@ local submit_current_stream<const> = function()
 end
 
 local wait_interrupt<const> = function(flag_mask)
-	local flags = 0
-	repeat
+	while (irq_pending_flags & flag_mask) == 0 do
 		halt_until_irq
-		flags = *irq_flags_register
-		*irq_ack_register = flags
-	until (flags & flag_mask) ~= 0
+	end
+	irq_pending_flags = irq_pending_flags - (irq_pending_flags & flag_mask)
 end
 
 local build_lua_atlas<const> = function()

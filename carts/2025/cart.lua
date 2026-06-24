@@ -3,8 +3,8 @@ local globals<const> = require('globals')
 local story<const> = require('story')
 local start_node<const> = 'title'
 -- local start_node<const> = 'combat_wekker'
-local irq_flags_addr<const> = 0x08000108
 local irq_vblank<const> = 0x0010
+local vblank_count = 0
 
 local combat_module<const> = require('combat')
 local dialogue_module<const> = require('dialogue')
@@ -231,6 +231,9 @@ local register_director<const> = function()
 end
 
 function init()
+	on_irq(irq_vblank, function()
+		vblank_count = vblank_count + 1
+	end)
 	mem[sys_vdp_dither] = 2
 	vdp_load_slot(sys_vdp_slot_primary, 0)
 	combat_module.define_fsm()
@@ -330,24 +333,18 @@ function new_game()
 	inst(director_def_id, { id = globals.director_instance_id })
 end
 
-local service_irqs<const> = function()
-	local flags<const> = mem[irq_flags_addr]
-	if flags ~= 0 then
-		irq(flags)
-	end
-	return flags
+local wait_vblank<const> = function()
+	local observed<const> = vblank_count
+	repeat
+		halt_until_irq
+	until vblank_count ~= observed
 end
 
 init()
 new_game()
 mem[sys_inp_ctrl] = inp_ctrl_arm
-local flags
-
 while true do
-	repeat
-		halt_until_irq
-		flags = service_irqs()
-	until (flags & irq_vblank) ~= 0
+	wait_vblank()
 
 	update_world()
 	vdp_stream_cursor = sys_vdp_stream_base

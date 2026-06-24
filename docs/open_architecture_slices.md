@@ -134,7 +134,7 @@ Cart-representatie roadmap/status:
 | dynamic Lua-opcodes weren uit systems/static modules | Deels: const-module static function protos worden na codegen/optimalisatie door de compiler geweigerd als dynamic Lua-opcodes overblijven; open: bredere systems/static functieklassen en audit-output zodra daar een echte consumer voor is. |
 | CPU objectwereld loshalen van machine-code ABI | Open: `CPU.Value` is nog Lua-objectwereld; echte cart ABI moet primair words, registers, addresses, memory, sections en symbols zijn. |
 | assets/`rom_data` binair maken | Deels: `rom_data`-familie is weg en `.bin` raw ROM path is getest; open: maps, rooms, timelines, registries en asset records naar vaste binaire layouts. |
-| cart startup/vector model | Deels: `ProgramImage` draagt nu een expliciete vector table (`resetProtoIndex`, `sectionInitProtoIndex`, `irqProtoIndex`) en TS/C++ linker/runtime boot gebruiken die vector table in plaats van losse entry/section-init velden. `init()`/`new_game()` zijn bewust cartfuncties, geen console-ABI: de lifecycle-IRQ-transportlaag is verwijderd, cold cart startup roept ze direct aan en hot-resume voert alleen `init()` als IDE/debugger-call uit. Hardware IRQ's kunnen bij `HALT` een interruptframe boven het cartframe pushen en keren via gewone `RET` terug; open: instruction-boundary preemptie en expliciete EI/DI-MMIO. |
+| cart startup/vector model | Deels: `ProgramImage` draagt nu een expliciete vector table (`resetProtoIndex`, `sectionInitProtoIndex`, `irqProtoIndex`) en TS/C++ linker/runtime boot gebruiken die vector table in plaats van losse entry/section-init velden. `init()`/`new_game()` zijn bewust cartfuncties, geen console-ABI: de lifecycle-IRQ-transportlaag is verwijderd, cold cart startup roept ze direct aan en hot-resume voert alleen `init()` als IDE/debugger-call uit. Hardware IRQ's vectoren bij `HALT` naar cartcode die `irq(flags)` dispatcht en owned masks ackt; gemigreerde carts gebruiken ISR-latches in plaats van post-HALT polling als dispatchpad. Open: instruction-boundary preemptie en expliciete EI/DI-MMIO. |
 | verifier/audit voor echte carts | GESCHRAPT in deze vorm: een los retro-cart verifier-script is een slechte slice. De echte gates horen bij de producer/linker/compiler/runtime-eigenaren zelf, niet in een achteraf-scanner die ROMs opnieuw interpreteert. |
 
 ## 14. Legacy cart-data naar vaste binaire ROM-layouts — GESCHRAPT
@@ -487,6 +487,12 @@ Status:
   IRQ's uit voor de handler en herstelt de vorige mask-state op `RET`.
   Host/debugger-calls observeren pending IRQ's alleen om uit `HALT` te komen;
   zij consumeren/vectoren niet.
+- de IRQ-vector is functioneel: de compiler-generated vector leest `IRQ_FLAGS`
+  en roept de program-handler `irq(flags)` aan. Firmware/cartlib handlers
+  dispatchen via `system.irq`/`on_irq` en acken alleen de maskers die zij
+  behandelen; gespecialiseerde waits blijven eigenaar van hun eigen unhandled
+  level-bits. Carts zijn gemigreerd naar ISR-owned latches in plaats van
+  post-`HALT` flags-polling als dispatchpad.
 - NMI is expliciet buiten scope zolang er geen NMI-producer is. Instruction-boundary
   preemptie en een cart-zichtbaar EI/DI-register blijven de volgende stap.
 
@@ -500,8 +506,8 @@ Acceptatie:
 - oude Lua-global lifecycle en `reinit`/`new_game` IRQ transport zijn geen
   console ABI meer
 - IRQ-acceptatie bij `HALT` is cartcode-executie: de CPU pusht een handlerframe,
-  `RET` uit dat frame hervat de onderbroken PC en schrijft geen return values
-  naar het cartframe
+  de handler leest/dispatcht/ackt de pending bits, en `RET` uit dat frame
+  hervat de onderbroken PC zonder return values naar het cartframe te schrijven
 
 ## 23. Harde verifier/audit voor echte retro-carts — GESCHRAPT
 

@@ -1,6 +1,5 @@
 require('cartlib/prelude')
 local irq_flags_addr<const> = 0x08000108
-local irq_ack_addr<const> = 0x0800010c
 local irq_vblank<const> = 0x0010
 local target<const> = 50
 local vblank_count = 0
@@ -76,7 +75,6 @@ on_irq(irq_vblank, function(_, flags)
 			fail("irq_vblank seen but VDP_STATUS_VBLANK not set")
 		end
 
-		mem[irq_ack_addr] = irq_vblank
 	end
 end)
 
@@ -125,23 +123,14 @@ end
 local draw_cart<const> = function()
 end
 
-local dispatch_irqs<const> = function()
-	local flags<const> = mem[irq_flags_addr]
-	if flags ~= 0 then
-		irq(flags)
-	end
-	return flags
-end
-
 init()
 new_game()
 mem[sys_inp_ctrl] = inp_ctrl_arm
 while true do
-	local flags
+	local last_vblank_count<const> = vblank_count
 	repeat
 		halt_until_irq
-		flags = dispatch_irqs()
-	until (flags & irq_vblank) ~= 0
+	until vblank_count ~= last_vblank_count
 	vdp_stream_cursor = sys_vdp_stream_base
 	update_cart()
 	draw_cart()

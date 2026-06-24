@@ -1177,9 +1177,19 @@ class FunctionBuilder {
 		this.withRange(range, () => {
 			const addrReg = this.allocTemp();
 			const flagsReg = this.allocTemp();
+			const zeroReg = this.allocTemp();
 			this.emitLoadConst(addrReg, IO_IRQ_FLAGS);
 			this.emitABC(OpCode.LOAD_MEM, flagsReg, addrReg, MemoryAccessKind.Word);
-			this.emitABC(OpCode.RET, flagsReg, 1, 0);
+			this.emitLoadConst(zeroReg, 0);
+			this.emitABC(OpCode.EQ, 1, flagsReg, zeroReg);
+			const jumpOut = this.emitJumpPlaceholder();
+			const callBase = this.allocTempBlock(2);
+			const access = this.program.resolveGlobalAccess('irq');
+			this.emitABx(access.system ? OpCode.GETSYS : OpCode.GETGL, callBase, access.slot);
+			this.emitABC(OpCode.MOV, callBase + 1, flagsReg, 0);
+			this.emitABC(OpCode.CALL, callBase, 1, 0);
+			this.patchJump(jumpOut, this.code.length);
+			this.emitDefaultReturn();
 		});
 		this.finalizeLabels();
 	}

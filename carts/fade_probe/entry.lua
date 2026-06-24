@@ -1,7 +1,7 @@
 require('cartlib/prelude')
 local frame = 0
-local irq_flags_addr<const> = 0x08000108
 local irq_vblank<const> = 0x0010
+local vblank_count = 0
 
 local width<const> = 160
 local height<const> = 120
@@ -13,13 +13,16 @@ local red<const> = 0xffff2020
 local green<const> = 0xff20ff20
 local yellow<const> = 0xffffff20
 
-local dispatch_irqs<const> = function()
-	local flags<const> = mem[irq_flags_addr]
-	if flags ~= 0 then
-		irq(flags)
-	end
-	return flags
+local wait_vblank<const> = function()
+	local observed<const> = vblank_count
+	repeat
+		halt_until_irq
+	until vblank_count ~= observed
 end
+
+on_irq(irq_vblank, function()
+	vblank_count = vblank_count + 1
+end)
 
 local draw_static_alpha_ladders<const> = function()
 	local step_w<const> = 16
@@ -53,18 +56,11 @@ local draw_cart<const> = function()
 end
 
 mem[sys_inp_ctrl] = inp_ctrl_arm
-local flags
-repeat
-	halt_until_irq
-	flags = dispatch_irqs()
-until (flags & irq_vblank) ~= 0
+wait_vblank()
 
 while true do
 	mem[sys_inp_ctrl] = inp_ctrl_arm
-	repeat
-		halt_until_irq
-		flags = dispatch_irqs()
-	until (flags & irq_vblank) ~= 0
+	wait_vblank()
 	vdp_stream_cursor = sys_vdp_stream_base
 	draw_cart()
 	vdp_stream_finish()
