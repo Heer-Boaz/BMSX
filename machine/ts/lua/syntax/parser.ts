@@ -13,6 +13,7 @@ import type {
 	LuaAssignmentStatement,
 	LuaBlock,
 	LuaBssDeclarationStatement,
+	LuaDataDeclarationStatement,
 	LuaRodataDeclarationStatement,
 	LuaBinaryExpression,
 	LuaBooleanLiteralExpression,
@@ -207,24 +208,19 @@ export class LuaParser {
 		if (token.type === LuaTokenType.DoubleColon) {
 			return this.parseLabelStatement();
 		}
-		if (token.type === LuaTokenType.Identifier && token.lexeme === 'struct') {
-			return this.parseStructDeclaration();
-		}
-		if (token.type === LuaTokenType.Identifier && token.lexeme === 'bss') {
-			return this.parseBssDeclaration();
-		}
-		if (token.type === LuaTokenType.Identifier && token.lexeme === 'rodata') {
-			return this.parseRodataDeclaration();
+		const bluaDeclaration = this.parseBluaDeclarationStatement();
+		if (bluaDeclaration !== null) {
+			return bluaDeclaration;
 		}
 		switch (token.type) {
 			case LuaTokenType.Local:
 				return this.parseLocalStatement();
 			case LuaTokenType.Function:
 				return this.parseFunctionDeclaration();
-				case LuaTokenType.Return:
-					return this.parseReturnStatement();
-				case LuaTokenType.Break:
-					return this.parseTokenStatement(LuaSyntaxKind.BreakStatement);
+			case LuaTokenType.Return:
+				return this.parseReturnStatement();
+			case LuaTokenType.Break:
+				return this.parseTokenStatement(LuaSyntaxKind.BreakStatement);
 			case LuaTokenType.If:
 				return this.parseIfStatement();
 			case LuaTokenType.While:
@@ -235,12 +231,40 @@ export class LuaParser {
 				return this.parseForStatement();
 			case LuaTokenType.Do:
 				return this.parseDoStatement();
-				case LuaTokenType.HaltUntilIrq:
-					return this.parseTokenStatement(LuaSyntaxKind.HaltUntilIrqStatement);
+			case LuaTokenType.HaltUntilIrq:
+				return this.parseTokenStatement(LuaSyntaxKind.HaltUntilIrqStatement);
 			case LuaTokenType.Goto:
 				return this.parseGotoStatement();
 			default:
 				return this.parseAssignmentOrCall();
+		}
+	}
+
+	private parseBluaDeclarationStatement(): LuaStatement | null {
+		const token = this.current();
+		if (token.type !== LuaTokenType.Identifier || this.peekType(1) !== LuaTokenType.Identifier) {
+			return null;
+		}
+		switch (token.lexeme) {
+			case 'struct':
+				return this.parseStructDeclaration();
+			case 'bss':
+				if (this.peekType(2) === LuaTokenType.Colon) {
+					return this.parseBssDeclaration();
+				}
+				return null;
+			case 'data':
+				if (this.peekType(2) === LuaTokenType.Colon) {
+					return this.parseDataDeclaration();
+				}
+				return null;
+			case 'rodata':
+				if (this.peekType(2) === LuaTokenType.Colon) {
+					return this.parseRodataDeclaration();
+				}
+				return null;
+			default:
+				return null;
 		}
 	}
 
@@ -293,6 +317,28 @@ export class LuaParser {
 			},
 			name,
 			typeRef,
+		};
+	}
+
+	private parseDataDeclaration(): LuaDataDeclarationStatement {
+		const dataToken = this.advance();
+		const nameToken = this.consume(LuaTokenType.Identifier, 'Expected data symbol name.');
+		const name = this.createIdentifierExpression(nameToken);
+		this.consume(LuaTokenType.Colon, 'Expected ":" after data symbol name.');
+		const typeRef = this.parseTypeReference();
+		this.consume(LuaTokenType.Equal, 'Expected "=" after data type.');
+		const initializer = this.parseExpression();
+		this.match(LuaTokenType.Semicolon);
+		return {
+			kind: LuaSyntaxKind.DataDeclarationStatement,
+			range: {
+				path: this.path,
+				start: this.positionFromToken(dataToken),
+				end: initializer.range.end,
+			},
+			name,
+			typeRef,
+			initializer,
 		};
 	}
 
@@ -1520,6 +1566,15 @@ export class LuaParser {
 				for (const lengthExpression of bssDeclaration.typeRef.arrayLengths) {
 					visitExpression(lengthExpression);
 				}
+				break;
+			}
+			case LuaSyntaxKind.DataDeclarationStatement: {
+				const dataDeclaration = statement as LuaDataDeclarationStatement;
+				pushDefinition([dataDeclaration.name.name], dataDeclaration.name.range, currentScope, 'variable');
+				for (const lengthExpression of dataDeclaration.typeRef.arrayLengths) {
+					visitExpression(lengthExpression);
+				}
+				visitExpression(dataDeclaration.initializer);
 				break;
 			}
 			case LuaSyntaxKind.RodataDeclarationStatement: {

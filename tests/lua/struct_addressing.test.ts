@@ -66,6 +66,7 @@ function makeDisplacedMemoryProgram(cpu: CPU): Program {
 	return {
 		code,
 		programRom: code,
+		programRomTextByteLength: code.byteLength,
 		constPool: [TEST_RAM_BASE, 0x11111111, 0x22222222, 0x33333333, 0x44444444],
 		protos: [makeProto(code.length)],
 		stringPool: pool,

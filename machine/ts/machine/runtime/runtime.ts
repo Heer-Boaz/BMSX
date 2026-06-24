@@ -74,7 +74,7 @@ import { Memory } from '../memory/memory';
 import {
 	BASE_RAM_USED_SIZE,
 	DEFAULT_VRAM_IMAGE_SLOT_SIZE,
-	PROGRAM_BSS_BASE,
+	PROGRAM_STATIC_RAM_BASE,
 	RAM_SIZE,
 	configureMemoryMap,
 } from '../memory/map';
@@ -196,7 +196,9 @@ export class Runtime {
 	public cartProgramStarted = false;
 	public cartEntryProtoIndex: number | null = null;
 	public cartSectionInitProtoIndex: number | null = null;
-	public programBssBaseAddress = PROGRAM_BSS_BASE;
+	public programDataBaseAddress = PROGRAM_STATIC_RAM_BASE;
+	public programBssBaseAddress = PROGRAM_STATIC_RAM_BASE;
+	public cartDataBaseAddress: number | null = null;
 	public cartBssBaseAddress: number | null = null;
 	public cartStaticModulePaths: ReadonlyArray<string> = [];
 	public systemRomSource: RawRomSource = null;
@@ -395,7 +397,9 @@ export class Runtime {
 		this.cartProgramStarted = false;
 		this.cartEntryProtoIndex = null;
 		this.cartSectionInitProtoIndex = null;
-		this.programBssBaseAddress = PROGRAM_BSS_BASE;
+		this.programDataBaseAddress = PROGRAM_STATIC_RAM_BASE;
+		this.programBssBaseAddress = PROGRAM_STATIC_RAM_BASE;
+		this.cartDataBaseAddress = null;
 		this.cartBssBaseAddress = null;
 		this.cartStaticModulePaths = [];
 		this.systemRomSource = params.systemRomSource;
@@ -405,9 +409,10 @@ export class Runtime {
 		this.cartBoot.reset();
 	}
 
-	public setLinkedCartEntry(entryProtoIndex: number, sectionInitProtoIndex: number, bssBaseAddress: number, staticModulePaths: ReadonlyArray<string>): void {
+	public setLinkedCartEntry(entryProtoIndex: number, sectionInitProtoIndex: number, dataBaseAddress: number, bssBaseAddress: number, staticModulePaths: ReadonlyArray<string>): void {
 		this.cartEntryProtoIndex = entryProtoIndex;
 		this.cartSectionInitProtoIndex = sectionInitProtoIndex;
+		this.cartDataBaseAddress = dataBaseAddress;
 		this.cartBssBaseAddress = bssBaseAddress;
 		this.cartStaticModulePaths = staticModulePaths;
 	}
@@ -441,6 +446,7 @@ export class Runtime {
 	public startCartProgram(): void {
 		const entryProtoIndex = this.cartEntryProtoIndex;
 		const sectionInitProtoIndex = this.cartSectionInitProtoIndex;
+		const dataBaseAddress = this.cartDataBaseAddress;
 		const bssBaseAddress = this.cartBssBaseAddress;
 		if (entryProtoIndex === null) {
 			throw new Error('cannot start cart: no cart entry point is loaded.');
@@ -448,9 +454,13 @@ export class Runtime {
 		if (sectionInitProtoIndex === null) {
 			throw new Error('cannot start cart: no cart section init is loaded.');
 		}
+		if (dataBaseAddress === null) {
+			throw new Error('cannot start cart: no cart data base is loaded.');
+		}
 		if (bssBaseAddress === null) {
 			throw new Error('cannot start cart: no cart bss base is loaded.');
 		}
+		this.programDataBaseAddress = dataBaseAddress;
 		this.programBssBaseAddress = bssBaseAddress;
 		this.enterCartProgram();
 		this._luaPath = this.activeLuaSources.entry_path;

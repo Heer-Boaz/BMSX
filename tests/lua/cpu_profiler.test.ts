@@ -28,6 +28,7 @@ function makeProgram(cpu: CPU): Program {
 	return {
 		code,
 		programRom: code,
+		programRomTextByteLength: code.byteLength,
 		constPool: [],
 		protos: [makeProto(code.length)],
 		stringPool: pool,

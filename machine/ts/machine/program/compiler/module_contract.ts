@@ -14,7 +14,7 @@ import {
 	collectStaticFunctionExportSymbolsByPathKey,
 	type StaticFunctionExportSymbol,
 } from './static_functions';
-import { findStaticStorageDeclarationKind } from './static_storage';
+import { collectStaticStorageDeclarations } from './static_storage';
 import { buildModuleExportPathKey, buildModuleExportSlotName } from './module_names';
 import {
 	buildModuleShapeFromExpression,
@@ -78,9 +78,12 @@ const buildConstModuleExportValues = (
 	semantics: LuaSemanticFrontendFile,
 ): Map<string, ConstExportValue> => {
 	if (!staticStorage) {
-		const storageKind = findStaticStorageDeclarationKind(chunk);
-		if (storageKind !== null) {
-			throw new Error(`[Compiler] Const module '${modulePath}' declares .${storageKind} storage but is not compiled as a source module.`);
+		const declarations = collectStaticStorageDeclarations(chunk, semantics);
+		for (let index = 0; index < declarations.length; index += 1) {
+			const declaration = declarations[index];
+			if (declaration.kind !== 'struct') {
+				throw new Error(`[Compiler] Const module '${modulePath}' declares .${declaration.kind} storage but is not compiled as a source module.`);
+			}
 		}
 	}
 	return collectConstModuleExportValues(chunk, returnExpression, semantics, staticStorage);

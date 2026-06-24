@@ -50,7 +50,7 @@ export function runHostEvalChunk(runtime: Runtime, source: string): Value[] {
 		entrySource: source,
 	});
 	const programImage = encodeAppendedProgramImage(compiled);
-	const program = inflateExecutableProgramImage(programImage, compiled.metadata, runtime.programBssBaseAddress);
+	const program = inflateExecutableProgramImage(programImage, compiled.metadata, runtime.programDataBaseAddress, runtime.programBssBaseAddress);
 	runtime.machine.cpu.setProgram(program, compiled.metadata);
 	if (runtime.programMetadata) {
 		runtime.programMetadata = compiled.metadata;

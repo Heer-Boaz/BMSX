@@ -369,6 +369,7 @@ export const enum AcceptedInterruptKind {
 export type Program = {
 	code: Uint8Array;
 	programRom: Uint8Array;
+	programRomTextByteLength: number;
 	constPool: Value[];
 	protos: Proto[];
 	stringPool: StringPool;
@@ -1750,7 +1751,7 @@ export class CPU {
 		// slot layout from `globals`, so without this sync flattened module exports can fall back to nil.
 		this.syncGlobalSlotsToTable();
 		this.program = program;
-		this.memory.setProgramRom(program.programRom, program.code.byteLength);
+		this.memory.setProgramRom(program.programRom, program.programRomTextByteLength);
 		this.metadata = metadata;
 		const constPool = program.constPool;
 		const programPool = program.constPoolStringPool;

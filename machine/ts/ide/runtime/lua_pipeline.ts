@@ -11,7 +11,7 @@ import { resolveLuaSourceRecord, type LuaSourceRegistry } from '../../machine/pr
 import { ROM_ASSET_SYMBOL_MODULE_PATH } from '../../rompack/asset_symbols';
 import { logDebugState } from '../../machine/runtime/debug';
 import { addTrackedLuaHeapBytes, resetTrackedLuaHeapBytes } from '../../machine/memory/lua_heap_usage';
-import { PROGRAM_BSS_BASE } from '../../machine/memory/map';
+import { PROGRAM_STATIC_RAM_BASE } from '../../machine/memory/map';
 import { resetHandledLuaErrors } from './fault_state';
 import {
 	buildModuleProtoMap,
@@ -274,8 +274,10 @@ function bootSystemSourceProgram(runtime: Runtime, interpreter: LuaInterpreter, 
 	let staticModulePaths: ReadonlyArray<string> = system.image.sections.rodata.staticModulePaths;
 	runtime.cartEntryProtoIndex = null;
 	runtime.cartSectionInitProtoIndex = null;
+	runtime.cartDataBaseAddress = null;
 	runtime.cartBssBaseAddress = null;
-	runtime.programBssBaseAddress = PROGRAM_BSS_BASE;
+	runtime.programDataBaseAddress = PROGRAM_STATIC_RAM_BASE;
+	runtime.programBssBaseAddress = PROGRAM_STATIC_RAM_BASE + programImage.sections.data.bytes.byteLength;
 	runtime.cartStaticModulePaths = [];
 	let cartProgramImage: ProgramImage | null = null;
 	let cartSymbols: ProgramSymbolsImage | null = null;
@@ -295,8 +297,9 @@ function bootSystemSourceProgram(runtime: Runtime, interpreter: LuaInterpreter, 
 		entryProtoIndex = linked.entryProtoIndex;
 		sectionInitProtoIndex = linked.sectionInitProtoIndex;
 		staticModulePaths = linked.staticModulePaths;
+		runtime.programDataBaseAddress = linked.dataBaseAddress;
 		runtime.programBssBaseAddress = linked.bssBaseAddress;
-		runtime.setLinkedCartEntry(linked.cartEntryProtoIndex, linked.cartSectionInitProtoIndex, linked.cartBssBaseAddress, linked.cartStaticModulePaths);
+		runtime.setLinkedCartEntry(linked.cartEntryProtoIndex, linked.cartSectionInitProtoIndex, linked.cartDataBaseAddress, linked.cartBssBaseAddress, linked.cartStaticModulePaths);
 	}
 	runtime.cartEntryAvailable = true;
 	runtime._luaPath = system.entryPath;
@@ -304,7 +307,7 @@ function bootSystemSourceProgram(runtime: Runtime, interpreter: LuaInterpreter, 
 		resetRuntimeState(runtime);
 	}
 	installProgramModules(runtime, buildModuleProtoMap(programImage.sections.rodata.moduleProtos));
-	const program = inflateExecutableProgramImage(programImage, metadata, runtime.programBssBaseAddress);
+	const program = inflateExecutableProgramImage(programImage, metadata, runtime.programDataBaseAddress, runtime.programBssBaseAddress);
 	runtime.machine.cpu.setProgram(program, metadata);
 	runtime.programMetadata = metadata;
 	runtime.startLoadedProgram(entryProtoIndex, sectionInitProtoIndex, staticModulePaths, options?.runInit !== false, true);
@@ -321,8 +324,10 @@ function bootProgramImage(runtime: Runtime, options?: { preserveState?: boolean;
 	let staticModulePaths: ReadonlyArray<string> = systemImages.program.sections.rodata.staticModulePaths;
 	runtime.cartEntryProtoIndex = null;
 	runtime.cartSectionInitProtoIndex = null;
+	runtime.cartDataBaseAddress = null;
 	runtime.cartBssBaseAddress = null;
-	runtime.programBssBaseAddress = PROGRAM_BSS_BASE;
+	runtime.programDataBaseAddress = PROGRAM_STATIC_RAM_BASE;
+	runtime.programBssBaseAddress = PROGRAM_STATIC_RAM_BASE + programImage.sections.data.bytes.byteLength;
 	runtime.cartStaticModulePaths = [];
 	if (runtime.cartRomSource) {
 		const cartEntry = runtime.cartRomSource.getEntry(PROGRAM_IMAGE_ID);
@@ -334,8 +339,9 @@ function bootProgramImage(runtime: Runtime, options?: { preserveState?: boolean;
 			entryProtoIndex = linked.entryProtoIndex;
 			sectionInitProtoIndex = linked.sectionInitProtoIndex;
 			staticModulePaths = linked.staticModulePaths;
+			runtime.programDataBaseAddress = linked.dataBaseAddress;
 			runtime.programBssBaseAddress = linked.bssBaseAddress;
-			runtime.setLinkedCartEntry(linked.cartEntryProtoIndex, linked.cartSectionInitProtoIndex, linked.cartBssBaseAddress, linked.cartStaticModulePaths);
+			runtime.setLinkedCartEntry(linked.cartEntryProtoIndex, linked.cartSectionInitProtoIndex, linked.cartDataBaseAddress, linked.cartBssBaseAddress, linked.cartStaticModulePaths);
 		}
 	}
 	runtime.cartEntryAvailable = true;
@@ -349,7 +355,7 @@ function bootProgramImage(runtime: Runtime, options?: { preserveState?: boolean;
 	const protoMap = buildModuleProtoMap(programImage.sections.rodata.moduleProtos);
 	installProgramModules(runtime, protoMap);
 
-	const inflated = inflateExecutableProgramImage(programImage, metadata, runtime.programBssBaseAddress);
+	const inflated = inflateExecutableProgramImage(programImage, metadata, runtime.programDataBaseAddress, runtime.programBssBaseAddress);
 	try {
 		runtime.machine.cpu.setProgram(inflated, metadata);
 		runtime.programMetadata = metadata;
@@ -403,8 +409,9 @@ function bootLuaProgram(runtime: Runtime, options?: { preserveState?: boolean; s
 			constModulePaths: [ROM_ASSET_SYMBOL_MODULE_PATH],
 		});
 		const programImage = encodeCompiledProgramImage(compiled);
-		runtime.programBssBaseAddress = PROGRAM_BSS_BASE;
-		const program = inflateExecutableProgramImage(programImage, compiled.metadata, runtime.programBssBaseAddress);
+		runtime.programDataBaseAddress = PROGRAM_STATIC_RAM_BASE;
+		runtime.programBssBaseAddress = PROGRAM_STATIC_RAM_BASE + programImage.sections.data.bytes.byteLength;
+		const program = inflateExecutableProgramImage(programImage, compiled.metadata, runtime.programDataBaseAddress, runtime.programBssBaseAddress);
 		installProgramModules(runtime, buildModuleProtoMap(programImage.sections.rodata.moduleProtos));
 		runtime.machine.cpu.setProgram(program, compiled.metadata);
 		runtime.programMetadata = compiled.metadata;

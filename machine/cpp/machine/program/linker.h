@@ -16,6 +16,8 @@ struct LinkedProgramImage {
 	int cartEntryProtoIndex = 0;
 	int systemSectionInitProtoIndex = 0;
 	int cartSectionInitProtoIndex = 0;
+	uint32_t systemDataBaseAddress = 0;
+	uint32_t cartDataBaseAddress = 0;
 	uint32_t systemBssBaseAddress = 0;
 	uint32_t cartBssBaseAddress = 0;
 	std::vector<std::string> systemStaticModulePaths;
@@ -32,10 +34,12 @@ struct LinkedBootProgramImage {
 	std::unique_ptr<ProgramMetadata> metadata;
 	int entryProtoIndex = 0;
 	int sectionInitProtoIndex = 0;
+	uint32_t dataBaseAddress = 0;
 	uint32_t bssBaseAddress = 0;
 	std::vector<std::string> staticModulePaths;
 	int cartEntryProtoIndex = 0;
 	int cartSectionInitProtoIndex = 0;
+	uint32_t cartDataBaseAddress = 0;
 	uint32_t cartBssBaseAddress = 0;
 	std::vector<std::string> cartStaticModulePaths;
 };
@@ -68,7 +72,8 @@ void resolveRuntimeProgramRelocations(
 std::unique_ptr<Program> inflateExecutableProgramImage(
 	const ProgramImage& image,
 	const ProgramMetadata* metadata,
-	uint32_t bssBaseAddress = PROGRAM_BSS_BASE
+	uint32_t dataBaseAddress,
+	uint32_t bssBaseAddress
 );
 
 } // namespace bmsx

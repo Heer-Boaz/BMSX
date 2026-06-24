@@ -190,6 +190,16 @@ ProgramDataSection extractDataSection(const BinValue& dataObj) {
 	ProgramDataSection data;
 	const auto& bytes = dataObj.require("bytes").asBinary();
 	data.bytes.assign(bytes.begin(), bytes.end());
+	const auto& symbols = dataObj.require("symbols").asArray();
+	data.symbols.reserve(symbols.size());
+	for (const auto& symbolValue : symbols) {
+		ProgramDataSection::Symbol symbol;
+		symbol.name = symbolValue.require("name").asString();
+		symbol.offset = static_cast<size_t>(symbolValue.require("offset").toI32());
+		symbol.byteCount = static_cast<size_t>(symbolValue.require("byteCount").toI32());
+		symbol.alignment = static_cast<size_t>(symbolValue.require("alignment").toI32());
+		data.symbols.push_back(std::move(symbol));
+	}
 	return data;
 }
 
@@ -325,6 +335,8 @@ std::unique_ptr<Program> inflateProgram(const ProgramObjectSections& sections) {
 	program->code = sections.text.code;
 	program->programRom = sections.text.code;
 	program->programRom.insert(program->programRom.end(), sections.rodata.bytes.begin(), sections.rodata.bytes.end());
+	program->programRom.insert(program->programRom.end(), sections.data.bytes.begin(), sections.data.bytes.end());
+	program->programRomTextByteLength = sections.text.code.size();
 	program->protos = sections.text.protos;
 	program->constPool.reserve(sections.rodata.constPool.size());
 	for (const EncodedValue& value : sections.rodata.constPool) {
@@ -369,12 +381,20 @@ std::unique_ptr<ProgramImage> decodeProgramImage(const uint8_t* data, size_t siz
 	image->link.constValueRelocs.reserve(constValueRelocsArr.size());
 	for (const auto& relocObj : constValueRelocsArr) {
 		const std::string kind = relocObj.require("kind").asString();
-		if (kind != "bss_addr" && kind != "rodata_addr") {
-			throw BMSX_RUNTIME_ERROR("ProgramImage.link.constValueRelocs kind must be bss_addr or rodata_addr.");
+		if (kind != "bss_addr" && kind != "data_addr" && kind != "data_lma_addr" && kind != "rodata_addr") {
+			throw BMSX_RUNTIME_ERROR("ProgramImage.link.constValueRelocs kind must be bss_addr, data_addr, data_lma_addr or rodata_addr.");
 		}
 		ProgramConstValueReloc reloc;
 		reloc.constIndex = relocObj.require("constIndex").toI32();
-		reloc.kind = kind == "bss_addr" ? ProgramConstValueRelocKind::BssAddr : ProgramConstValueRelocKind::RodataAddr;
+		if (kind == "bss_addr") {
+			reloc.kind = ProgramConstValueRelocKind::BssAddr;
+		} else if (kind == "data_addr") {
+			reloc.kind = ProgramConstValueRelocKind::DataAddr;
+		} else if (kind == "data_lma_addr") {
+			reloc.kind = ProgramConstValueRelocKind::DataLmaAddr;
+		} else {
+			reloc.kind = ProgramConstValueRelocKind::RodataAddr;
+		}
 		reloc.symbol = relocObj.require("symbol").asString();
 		reloc.addend = relocObj.require("addend").toI32();
 		image->link.constValueRelocs.push_back(std::move(reloc));
@@ -429,6 +449,17 @@ std::vector<uint8_t> encodeProgramImage(const ProgramImage& asset) {
 
 	BinObject data;
 	data["bytes"] = BinValue(BinBinary(asset.sections.data.bytes.begin(), asset.sections.data.bytes.end()));
+	BinArray dataSymbols;
+	dataSymbols.reserve(asset.sections.data.symbols.size());
+	for (const auto& symbol : asset.sections.data.symbols) {
+		BinObject object;
+		object["name"] = BinValue(symbol.name);
+		object["offset"] = BinValue(static_cast<i64>(symbol.offset));
+		object["byteCount"] = BinValue(static_cast<i64>(symbol.byteCount));
+		object["alignment"] = BinValue(static_cast<i64>(symbol.alignment));
+		dataSymbols.push_back(BinValue(std::move(object)));
+	}
+	data["symbols"] = BinValue(std::move(dataSymbols));
 
 	BinObject bss;
 	bss["byteCount"] = BinValue(static_cast<i64>(asset.sections.bss.byteCount));
@@ -460,7 +491,20 @@ std::vector<uint8_t> encodeProgramImage(const ProgramImage& asset) {
 	for (const ProgramConstValueReloc& reloc : asset.link.constValueRelocs) {
 		BinObject object;
 		object["constIndex"] = BinValue(reloc.constIndex);
-		object["kind"] = BinValue(reloc.kind == ProgramConstValueRelocKind::BssAddr ? "bss_addr" : "rodata_addr");
+		switch (reloc.kind) {
+			case ProgramConstValueRelocKind::BssAddr:
+				object["kind"] = BinValue("bss_addr");
+				break;
+			case ProgramConstValueRelocKind::DataAddr:
+				object["kind"] = BinValue("data_addr");
+				break;
+			case ProgramConstValueRelocKind::DataLmaAddr:
+				object["kind"] = BinValue("data_lma_addr");
+				break;
+			case ProgramConstValueRelocKind::RodataAddr:
+				object["kind"] = BinValue("rodata_addr");
+				break;
+		}
 		object["symbol"] = BinValue(reloc.symbol);
 		object["addend"] = BinValue(reloc.addend);
 		constValueRelocs.push_back(BinValue(std::move(object)));

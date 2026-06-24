@@ -37,6 +37,13 @@ struct ProgramRodataSection {
 
 struct ProgramDataSection {
 	std::vector<uint8_t> bytes;
+	struct Symbol {
+		std::string name;
+		size_t offset = 0;
+		size_t byteCount = 0;
+		size_t alignment = 1;
+	};
+	std::vector<Symbol> symbols;
 };
 
 struct ProgramBssSection {
@@ -94,6 +101,8 @@ struct ProgramConstReloc {
 
 enum class ProgramConstValueRelocKind {
 	BssAddr,
+	DataAddr,
+	DataLmaAddr,
 	RodataAddr,
 };
 

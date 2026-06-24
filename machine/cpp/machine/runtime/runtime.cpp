@@ -163,9 +163,10 @@ void Runtime::setRuntimeEnvironment(
 	m_cartRomPackage = cartRom;
 }
 
-void Runtime::setLinkedCartEntry(int entryProtoIndex, int sectionInitProtoIndex, uint32_t bssBaseAddress, std::vector<std::string> staticModulePaths) {
+void Runtime::setLinkedCartEntry(int entryProtoIndex, int sectionInitProtoIndex, uint32_t dataBaseAddress, uint32_t bssBaseAddress, std::vector<std::string> staticModulePaths) {
 	m_cartEntryProtoIndex = entryProtoIndex;
 	m_cartSectionInitProtoIndex = sectionInitProtoIndex;
+	m_cartDataBaseAddress = dataBaseAddress;
 	m_cartBssBaseAddress = bssBaseAddress;
 	m_cartStaticModulePaths = std::move(staticModulePaths);
 }
@@ -190,6 +191,9 @@ void Runtime::startCartProgram() {
 	if (!m_cartSectionInitProtoIndex) {
 		throw std::runtime_error("cannot start cart: no cart section init is loaded.");
 	}
+	if (!m_cartDataBaseAddress) {
+		throw std::runtime_error("cannot start cart: no cart data base is loaded.");
+	}
 	if (!m_cartBssBaseAddress) {
 		throw std::runtime_error("cannot start cart: no cart bss base is loaded.");
 	}
@@ -197,10 +201,10 @@ void Runtime::startCartProgram() {
 	startLoadedProgram(*m_cartEntryProtoIndex, *m_cartSectionInitProtoIndex, m_cartStaticModulePaths, true, true);
 }
 
-void Runtime::boot(const ProgramImage& image, ProgramMetadata* metadata, int entryProtoIndex, int sectionInitProtoIndex, const std::vector<std::string>& staticModulePaths) {
+void Runtime::boot(const ProgramImage& image, ProgramMetadata* metadata, int entryProtoIndex, int sectionInitProtoIndex, uint32_t dataBaseAddress, uint32_t bssBaseAddress, const std::vector<std::string>& staticModulePaths) {
 	m_moduleProtos = buildModuleProtoMap(image.sections.rodata.moduleProtos);
 	m_moduleCache.clear();
-	m_programStorage = inflateExecutableProgramImage(image, metadata);
+	m_programStorage = inflateExecutableProgramImage(image, metadata, dataBaseAddress, bssBaseAddress);
 	try {
 		setupBuiltins();
 		registerRuntimeDevtoolsTable(*this);
@@ -239,6 +243,7 @@ void Runtime::resetRuntimeForProgramReload() {
 	m_pendingCall = PendingCall::None;
 	m_cartEntryProtoIndex.reset();
 	m_cartSectionInitProtoIndex.reset();
+	m_cartDataBaseAddress.reset();
 	m_cartBssBaseAddress.reset();
 	m_cartStaticModulePaths.clear();
 	cartBoot.reset();

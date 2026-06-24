@@ -28,6 +28,7 @@ export type ConstExportValue =
 	| { kind: 'number'; value: number }
 	| { kind: 'string'; value: string }
 	| { kind: 'bss_addr'; symbolHandle: string }
+	| { kind: 'data_addr'; symbolHandle: string }
 	| { kind: 'rodata_addr'; symbolHandle: string };
 
 const evaluateModuleConstLiteral = (
@@ -81,6 +82,9 @@ const evaluateModuleConstExportExpression = (
 	const reference = getResolvedIdentifierReference(semantics, expression as LuaIdentifierExpression);
 	if (reference.decl?.kind === 'bss') {
 		return { kind: 'bss_addr', symbolHandle: reference.decl.id };
+	}
+	if (reference.decl?.kind === 'data') {
+		return { kind: 'data_addr', symbolHandle: reference.decl.id };
 	}
 	return reference.decl?.kind === 'rodata'
 		? { kind: 'rodata_addr', symbolHandle: reference.decl.id }

@@ -94,7 +94,7 @@ export function hotResumeProgramEntry(runtime: Runtime, params: { path: string; 
 		constModulePaths: [ROM_ASSET_SYMBOL_MODULE_PATH],
 	});
 	const programImage = encodeCompiledProgramImage(compiled);
-	const program = inflateExecutableProgramImage(programImage, compiled.metadata, runtime.programBssBaseAddress);
+	const program = inflateExecutableProgramImage(programImage, compiled.metadata, runtime.programDataBaseAddress, runtime.programBssBaseAddress);
 	replaceMapEntries(runtime.moduleProtos, buildModuleProtoMap(programImage.sections.rodata.moduleProtos));
 	if (!params.preserveSystemModules) {
 		runtime.moduleCache.clear();

@@ -6,15 +6,15 @@ import { splitText } from '../../machine/ts/common/text_lines';
 import { LuaLexer } from '../../machine/ts/lua/syntax/lexer';
 import { LuaParser } from '../../machine/ts/lua/syntax/parser';
 import { CPU, OpCode, RunResult, StringValue, Table, asStringId, createNativeFunction, valueIsString, type Proto } from '../../machine/ts/machine/cpu/cpu';
-import { INSTRUCTION_BYTES, readInstructionWord, writeInstruction, writeInstructionWord } from '../../machine/ts/machine/cpu/instruction_format';
+import { INSTRUCTION_BYTES, readInstructionWord, writeInstruction } from '../../machine/ts/machine/cpu/instruction_format';
 import { appendLuaChunkToProgram, compileLuaChunkToProgram, encodeAppendedProgramImage, encodeCompiledProgramImage } from '../../machine/ts/machine/program/compiler';
 import { decodeProgramSymbolsImage, inflateProgram, type ProgramImage, type ProgramConstReloc, type ProgramSymbolsImage } from '../../machine/ts/machine/program/loader';
 import { inflateExecutableProgramImage, linkBootProgramImages, linkProgramImages, resolveRuntimeProgramRelocations } from '../../machine/ts/machine/program/linker';
 import { replaceWithJump, replaceWithMov } from '../../machine/ts/machine/program/optimizer/values';
 import type { Instruction } from '../../machine/ts/machine/program/optimizer';
-import { CART_BASE_PC, CART_PROGRAM_VECTOR_PC, CART_PROGRAM_VECTOR_VALUE, SYSTEM_BASE_PC } from '../../machine/ts/machine/program/layout';
+import { SYSTEM_BASE_PC } from '../../machine/ts/machine/program/layout';
 import { Memory } from '../../machine/ts/machine/memory/memory';
-import { PROGRAM_BSS_BASE, RAM_END } from '../../machine/ts/machine/memory/map';
+import { PROGRAM_ROM_BASE, PROGRAM_STATIC_RAM_BASE, RAM_END } from '../../machine/ts/machine/memory/map';
 
 type EncodedWord = {
 	op: OpCode;
@@ -72,7 +72,7 @@ function makeProgramImage(
 				bytes: new Uint8Array(0),
 				symbols: [],
 			},
-			data: { bytes: new Uint8Array(0) },
+			data: { bytes: new Uint8Array(0), symbols: [] },
 			bss: { byteCount: 0, symbols: [] },
 		},
 		link: {
@@ -112,6 +112,7 @@ test('ProgramImage exposes text and rodata as ROM sections', () => {
 	assert.equal(image.sections.text.protos.length, 1);
 	assert.equal(program.code, image.sections.text.code);
 	assert.deepEqual(Array.from(program.programRom), Array.from(image.sections.text.code).concat([1, 2, 3, 4]));
+	assert.equal(program.programRomTextByteLength, image.sections.text.code.byteLength);
 	assert.equal(program.protos, image.sections.text.protos);
 	assert.equal(image.sections.data.bytes.byteLength, 0);
 	assert.equal(image.sections.bss.byteCount, 0);
@@ -733,17 +734,60 @@ test('ProgramLinker owns linked boot entry selection', () => {
 	cartImage.sections.rodata.staticModulePaths = ['cart/init'];
 	const systemBoot = linkBootProgramImages(systemImage, null, cartImage, null, 'system');
 	assert.equal(systemBoot.entryProtoIndex, systemImage.entryProtoIndex);
-	assert.equal(systemBoot.bssBaseAddress, PROGRAM_BSS_BASE);
+	assert.equal(systemBoot.bssBaseAddress, PROGRAM_STATIC_RAM_BASE);
 	assert.deepEqual(systemBoot.staticModulePaths, ['system/init']);
 	assert.equal(systemBoot.cartEntryProtoIndex, 1);
 	assert.deepEqual(systemBoot.cartStaticModulePaths, ['cart/init']);
 
 	const cartBoot = linkBootProgramImages(systemImage, null, cartImage, null, 'cart');
 	assert.equal(cartBoot.entryProtoIndex, 1);
-	assert.equal(cartBoot.bssBaseAddress, PROGRAM_BSS_BASE);
+	assert.equal(cartBoot.bssBaseAddress, PROGRAM_STATIC_RAM_BASE);
 	assert.deepEqual(cartBoot.staticModulePaths, ['system/init', 'cart/init']);
 	assert.equal(cartBoot.cartEntryProtoIndex, 1);
 	assert.deepEqual(cartBoot.cartStaticModulePaths, ['cart/init']);
+});
+
+
+test('ProgramLinker resolves .data VMA and LMA constants before executable install', () => {
+	const systemImage = makeProgramImage(
+		[{ op: OpCode.RET, a: 0, b: 1, c: 0 }],
+		[0, 0],
+		[],
+	);
+	systemImage.sections.data = {
+		bytes: new Uint8Array([1, 0, 0, 0]),
+		symbols: [{ name: 'system_state', offset: 0, byteCount: 4, alignment: 4 }],
+	};
+	systemImage.link.constValueRelocs = [
+		{ constIndex: 0, kind: 'data_addr', symbol: 'system_state', addend: 0 },
+		{ constIndex: 1, kind: 'data_lma_addr', symbol: 'system_state', addend: 0 },
+	];
+	const cartImage = makeProgramImage(
+		[{ op: OpCode.RET, a: 0, b: 1, c: 0 }],
+		[0, 0],
+		[],
+	);
+	cartImage.sections.data = {
+		bytes: new Uint8Array([2, 0, 0, 0]),
+		symbols: [{ name: 'cart_state', offset: 0, byteCount: 4, alignment: 4 }],
+	};
+	cartImage.link.constValueRelocs = [
+		{ constIndex: 0, kind: 'data_addr', symbol: 'cart_state', addend: 0 },
+		{ constIndex: 1, kind: 'data_lma_addr', symbol: 'cart_state', addend: 0 },
+	];
+
+	const linked = linkProgramImages(systemImage, null, cartImage, null);
+	const systemDataLma = PROGRAM_ROM_BASE + linked.programImage.sections.text.code.byteLength + linked.programImage.sections.rodata.bytes.byteLength;
+	assert.deepEqual(linked.programImage.sections.rodata.constPool, [PROGRAM_STATIC_RAM_BASE, systemDataLma, PROGRAM_STATIC_RAM_BASE + 4, systemDataLma + 4]);
+	assert.equal(linked.systemDataBaseAddress, PROGRAM_STATIC_RAM_BASE);
+	assert.equal(linked.cartDataBaseAddress, PROGRAM_STATIC_RAM_BASE + 4);
+	assert.equal(linked.systemBssBaseAddress, PROGRAM_STATIC_RAM_BASE + 8);
+	assert.deepEqual(Array.from(linked.programImage.sections.data.bytes), [1, 0, 0, 0, 2, 0, 0, 0]);
+	assert.deepEqual(linked.programImage.sections.data.symbols, [
+		{ name: 'system_state', offset: 0, byteCount: 4, alignment: 4 },
+		{ name: 'cart_state', offset: 4, byteCount: 4, alignment: 4 },
+	]);
+	assert.deepEqual(linked.programImage.link.constValueRelocs, []);
 });
 
 test('ProgramLinker resolves .bss address constants and boot section-init indices', () => {
@@ -769,24 +813,24 @@ test('ProgramLinker resolves .bss address constants and boot section-init indice
 	cartImage.link.constValueRelocs = [{ constIndex: 0, kind: 'bss_addr', symbol: 'cart_state', addend: 4 }];
 
 	const linked = linkProgramImages(systemImage, null, cartImage, null);
-	assert.deepEqual(linked.programImage.sections.rodata.constPool, [PROGRAM_BSS_BASE, PROGRAM_BSS_BASE + 8]);
+	assert.deepEqual(linked.programImage.sections.rodata.constPool, [PROGRAM_STATIC_RAM_BASE, PROGRAM_STATIC_RAM_BASE + 8]);
 	assert.equal(linked.programImage.sections.bss.byteCount, 12);
 	assert.deepEqual(linked.programImage.sections.bss.symbols, [
 		{ name: 'system_counter', offset: 0, byteCount: 4, alignment: 4 },
 		{ name: 'cart_state', offset: 4, byteCount: 8, alignment: 4 },
 	]);
 	assert.deepEqual(linked.programImage.link.constValueRelocs, []);
-	assert.equal(linked.systemBssBaseAddress, PROGRAM_BSS_BASE);
-	assert.equal(linked.cartBssBaseAddress, PROGRAM_BSS_BASE + 4);
+	assert.equal(linked.systemBssBaseAddress, PROGRAM_STATIC_RAM_BASE);
+	assert.equal(linked.cartBssBaseAddress, PROGRAM_STATIC_RAM_BASE + 4);
 	assert.equal(linked.systemSectionInitProtoIndex, 0);
 	assert.equal(linked.cartSectionInitProtoIndex, 1);
 
 	const systemBoot = linkBootProgramImages(systemImage, null, cartImage, null, 'system');
 	assert.equal(systemBoot.sectionInitProtoIndex, 0);
-	assert.equal(systemBoot.bssBaseAddress, PROGRAM_BSS_BASE);
+	assert.equal(systemBoot.bssBaseAddress, PROGRAM_STATIC_RAM_BASE);
 	const cartBoot = linkBootProgramImages(systemImage, null, cartImage, null, 'cart');
 	assert.equal(cartBoot.sectionInitProtoIndex, 1);
-	assert.equal(cartBoot.bssBaseAddress, PROGRAM_BSS_BASE + 4);
+	assert.equal(cartBoot.bssBaseAddress, PROGRAM_STATIC_RAM_BASE + 4);
 });
 
 test('inflateExecutableProgramImage resolves .bss constants against explicit non-default image base', () => {
@@ -801,9 +845,9 @@ test('inflateExecutableProgramImage resolves .bss constants against explicit non
 	};
 	image.link.constValueRelocs = [{ constIndex: 0, kind: 'bss_addr', symbol: 'cart_state', addend: 0 }];
 
-	const program = inflateExecutableProgramImage(image, null, PROGRAM_BSS_BASE + 16);
-	assert.notEqual(program.constPool[0], PROGRAM_BSS_BASE + 4);
-	assert.deepEqual(program.constPool, [PROGRAM_BSS_BASE + 20]);
+	const program = inflateExecutableProgramImage(image, null, PROGRAM_STATIC_RAM_BASE, PROGRAM_STATIC_RAM_BASE + 16);
+	assert.notEqual(program.constPool[0], PROGRAM_STATIC_RAM_BASE + 4);
+	assert.deepEqual(program.constPool, [PROGRAM_STATIC_RAM_BASE + 20]);
 });
 
 test('ProgramLinker rejects .bss ranges outside RAM', () => {
@@ -812,7 +856,7 @@ test('ProgramLinker rejects .bss ranges outside RAM', () => {
 		[],
 		[],
 	);
-	systemImage.sections.bss.byteCount = RAM_END - PROGRAM_BSS_BASE + 4;
+	systemImage.sections.bss.byteCount = RAM_END - PROGRAM_STATIC_RAM_BASE + 4;
 	const cartImage = makeProgramImage(
 		[{ op: OpCode.RET, a: 0, b: 1, c: 0 }],
 		[],
@@ -821,7 +865,7 @@ test('ProgramLinker rejects .bss ranges outside RAM', () => {
 
 	assert.throws(
 		() => linkProgramImages(systemImage, null, cartImage, null),
-		/\.bss range .* exceeds RAM end/,
+		/static RAM range .* exceeds RAM end/,
 	);
 });
 
@@ -1047,9 +1091,19 @@ test('ProgramLinker resolves system symbolic relocations against system symbols 
 	);
 });
 
+
+test('appendLuaChunkToProgram rejects new storage sections', () => {
+	const base = makeProgramImage([{ op: OpCode.RET, a: 0, b: 1, c: 0 }], [], []);
+	const program = inflateProgram(base.sections);
+	const metadata = makeProgramSymbols('base', base.sections.text.code.length / INSTRUCTION_BYTES);
+	assert.throws(
+		() => appendLuaChunkToProgram(program, metadata, parseChunk('data value: word = 1\nreturn *value', 'host_eval'), { entrySource: 'data value: word = 1\nreturn *value' }),
+		/host-eval append cannot declare \.data storage/i,
+	);
+});
+
 test('appendLuaChunkToProgram preserves absolute program ROM bytes', () => {
-	const systemImage = makeSystemImage(1);
-	const cartImage = makeProgramImage(
+	const base = makeProgramImage(
 		[
 			{ op: OpCode.MOVE, a: 0, b: 0, c: 0 },
 			{ op: OpCode.RET, a: 0, b: 1, c: 0 },
@@ -1057,23 +1111,16 @@ test('appendLuaChunkToProgram preserves absolute program ROM bytes', () => {
 		[],
 		[],
 	);
-	const systemSymbols = makeProgramSymbols('system', systemImage.sections.text.code.length / INSTRUCTION_BYTES);
-	const cartSymbols = makeProgramSymbols('cart', cartImage.sections.text.code.length / INSTRUCTION_BYTES);
-	const linked = linkProgramImages(systemImage, systemSymbols, cartImage, cartSymbols);
-	const program = inflateProgram(linked.programImage.sections);
-	const metadata = linked.metadata;
-	assert.notEqual(metadata, null);
-
-	const vectorWord = CART_PROGRAM_VECTOR_PC / INSTRUCTION_BYTES;
-	const freeWord = vectorWord - 1;
-	writeInstructionWord(program.code, freeWord, 0x12345678);
-	assert.equal(readInstructionWord(program.code, vectorWord), CART_PROGRAM_VECTOR_VALUE);
-	assert.equal(readInstructionWord(program.code, CART_BASE_PC / INSTRUCTION_BYTES), readInstructionWord(cartImage.sections.text.code, 0));
+	base.sections.rodata.bytes = new Uint8Array([1, 2, 3, 4]);
+	const program = inflateProgram(base.sections);
+	const metadata = makeProgramSymbols('base', base.sections.text.code.length / INSTRUCTION_BYTES);
+	const programRomBytes = Array.from(program.programRom);
+	const programRomTextByteLength = program.programRomTextByteLength;
 
 	const source = 'return 1';
-	const appended = appendLuaChunkToProgram(program, metadata!, parseChunk(source, 'host_eval'), { entrySource: source });
+	const appended = appendLuaChunkToProgram(program, metadata, parseChunk(source, 'host_eval'), { entrySource: source });
 
-	assert.equal(readInstructionWord(appended.program.code, vectorWord), CART_PROGRAM_VECTOR_VALUE);
-	assert.equal(readInstructionWord(appended.program.code, freeWord), 0x12345678);
-	assert.equal(readInstructionWord(appended.program.code, CART_BASE_PC / INSTRUCTION_BYTES), readInstructionWord(cartImage.sections.text.code, 0));
+	assert.equal(appended.program.code.byteLength > program.code.byteLength, true);
+	assert.deepEqual(Array.from(appended.program.programRom), programRomBytes);
+	assert.equal(appended.program.programRomTextByteLength, programRomTextByteLength);
 });

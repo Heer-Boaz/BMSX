@@ -80,7 +80,7 @@ public:
 	/**
 	 * Boot the runtime with a compiled program.
 	 */
-	void boot(const ProgramImage& image, ProgramMetadata* metadata, int entryProtoIndex, int sectionInitProtoIndex, const std::vector<std::string>& staticModulePaths);
+	void boot(const ProgramImage& image, ProgramMetadata* metadata, int entryProtoIndex, int sectionInitProtoIndex, uint32_t dataBaseAddress, uint32_t bssBaseAddress, const std::vector<std::string>& staticModulePaths);
 	void handleLuaError(const std::string& message);
 
 	/**
@@ -108,7 +108,7 @@ public:
 	auto isRebootRequested() const -> bool { return m_rebootRequested; }
 	void clearRebootRequest() { m_rebootRequested = false; }
 	auto hasCartEntry() const -> bool { return m_cartEntryProtoIndex.has_value(); }
-	void setLinkedCartEntry(int entryProtoIndex, int sectionInitProtoIndex, uint32_t bssBaseAddress, std::vector<std::string> staticModulePaths);
+	void setLinkedCartEntry(int entryProtoIndex, int sectionInitProtoIndex, uint32_t dataBaseAddress, uint32_t bssBaseAddress, std::vector<std::string> staticModulePaths);
 	void enterSystemFirmware();
 	void enterCartProgram();
 	void startCartProgram();
@@ -233,6 +233,7 @@ private:
 
 	std::optional<int> m_cartEntryProtoIndex;
 	std::optional<int> m_cartSectionInitProtoIndex;
+	std::optional<uint32_t> m_cartDataBaseAddress;
 	std::optional<uint32_t> m_cartBssBaseAddress;
 	std::vector<std::string> m_cartStaticModulePaths;
 	bool m_cartProgramStarted = false;

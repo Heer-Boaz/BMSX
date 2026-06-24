@@ -513,6 +513,7 @@ struct Proto {
 struct Program {
 	std::vector<uint8_t> code;
 	std::vector<uint8_t> programRom;
+	size_t programRomTextByteLength = 0;
 	std::vector<Value> constPool;
 	StringPool stringPool;
 	StringPool* constPoolStringPool = nullptr;
