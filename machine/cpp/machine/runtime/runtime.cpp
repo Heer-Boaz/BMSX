@@ -5,7 +5,6 @@
 #include "machine/memory/map.h"
 #include "machine/program/linker.h"
 #include "machine/runtime/input.h"
-#include "machine/runtime/system_irq.h"
 #include "machine/runtime/timing/config.h"
 #include "rompack/format.h"
 #include "rompack/loader.h"
@@ -194,7 +193,7 @@ void Runtime::startCartProgram() {
 		throw std::runtime_error("cannot start cart: no cart bss base is loaded.");
 	}
 	enterCartProgram();
-	startLoadedProgram(*m_cartVectors, m_cartStaticModulePaths, true, true);
+	startLoadedProgram(*m_cartVectors, m_cartStaticModulePaths);
 }
 
 void Runtime::boot(const ProgramImage& image, ProgramMetadata* metadata, ProgramVectorTable vectors, uint32_t dataBaseAddress, uint32_t bssBaseAddress, const std::vector<std::string>& staticModulePaths) {
@@ -208,13 +207,13 @@ void Runtime::boot(const ProgramImage& image, ProgramMetadata* metadata, Program
 		m_program = m_programStorage.get();
 		m_programMetadata = metadata;
 		machine.cpu.setProgram(m_program, metadata);
-		startLoadedProgram(vectors, staticModulePaths, true, true);
+		startLoadedProgram(vectors, staticModulePaths);
 	} catch (const std::exception& e) {
 		handleLuaError(e.what());
 	}
 }
 
-void Runtime::startLoadedProgram(ProgramVectorTable vectors, const std::vector<std::string>& staticModulePaths, bool runInit, bool runNewGame) {
+void Runtime::startLoadedProgram(ProgramVectorTable vectors, const std::vector<std::string>& staticModulePaths) {
 	NativeResults sectionResults;
 	callLuaFunctionInto(machine.cpu.createRootClosure(vectors.sectionInitProtoIndex), NativeArgsView(), sectionResults);
 	runStaticModuleInitializers(staticModulePaths);
@@ -222,13 +221,6 @@ void Runtime::startLoadedProgram(ProgramVectorTable vectors, const std::vector<s
 	machine.cpu.start(vectors.resetProtoIndex);
 	enforceLuaHeapBudget();
 	m_pendingCall = PendingCall::Entry;
-	finishLuaEntryLifecycle(runInit, runNewGame);
-}
-
-void Runtime::finishLuaEntryLifecycle(bool runInit, bool runNewGame) {
-	if (runInit) {
-		queueLifecycleHandlers(true, runNewGame);
-	}
 	m_luaInitialized = true;
 }
 
@@ -249,13 +241,6 @@ void Runtime::resetRuntimeForProgramReload() {
 	machine.memory.clearIoSlots();
 	machine.initializeSystemIo();
 	resetHardwareState();
-}
-
-void Runtime::queueLifecycleHandlers(bool runInit, bool runNewGame) {
-	const uint32_t mask = (runInit ? IRQ_REINIT : 0u) | (runNewGame ? IRQ_NEWGAME : 0u);
-	if (mask != 0) {
-		raiseSystemIrq(*this, mask);
-	}
 }
 
 void Runtime::requestProgramReload() {

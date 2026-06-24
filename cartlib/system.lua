@@ -35,8 +35,6 @@ local vdp_image<const> = require('system/vdp_image')
 local cart_input<const> = require('cartlib/input/player')
 
 local irq_ack_addr<const> = 0x0800010c
-local irq_reinit<const> = 0x0020
-local irq_newgame<const> = 0x0040
 local irq_apu<const> = 0x0200
 
 local world_instance<const> = world_module.instance
@@ -432,27 +430,9 @@ end
 function system.irq(flags)
 	local ack = flags
 	for mask, handler in pairs(cart_irq_handlers) do
-		if mask ~= irq_reinit and mask ~= irq_newgame and (flags & mask) ~= 0 then
+		if (flags & mask) ~= 0 then
 			handler(flags & mask, flags)
 			ack = ack | (flags & mask)
-		end
-	end
-	if (flags & irq_reinit) ~= 0 then
-		ack = ack | irq_reinit
-		local reinit_handler<const> = cart_irq_handlers[irq_reinit]
-		if reinit_handler ~= nil then
-			reinit_handler(flags & irq_reinit, flags)
-		else
-			init()
-		end
-	end
-	if (flags & irq_newgame) ~= 0 then
-		ack = ack | irq_newgame
-		local newgame_handler<const> = cart_irq_handlers[irq_newgame]
-		if newgame_handler ~= nil then
-			newgame_handler(flags & irq_newgame, flags)
-		else
-			system.reset()
 		end
 	end
 	if ack ~= 0 then

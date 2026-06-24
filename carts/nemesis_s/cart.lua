@@ -5,8 +5,6 @@ local player_module<const> = require('player/index')
 local director_module<const> = require('director')
 local irq_flags_addr<const> = 0x08000108
 local irq_vblank<const> = 0x0010
-local irq_reinit<const> = 0x0020
-local irq_newgame<const> = 0x0040
 
 local service_irqs<const> = function()
 	local flags<const> = mem[irq_flags_addr]
@@ -18,12 +16,6 @@ end
 
 function init()
 	mem[sys_vdp_dither] = 0
-	on_irq(irq_reinit, function()
-		init()
-	end)
-	on_irq(irq_newgame, function()
-		new_game()
-	end)
 	stage_module.define_stage_fsm()
 	director_module.define_director_fsm()
 	player_module.define_player_fsm()
@@ -49,6 +41,8 @@ function new_game()
 	})
 end
 
+init()
+new_game()
 	mem[sys_inp_ctrl] = inp_ctrl_arm
 	local flags
 	repeat

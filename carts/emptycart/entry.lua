@@ -22,6 +22,8 @@ local dispatch_irqs<const> = function()
 	return flags
 end
 
+init()
+new_game()
 mem[sys_inp_ctrl] = inp_ctrl_arm
 local flags
 repeat

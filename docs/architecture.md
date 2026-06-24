@@ -347,8 +347,6 @@ uses.
 | `IRQ_IMG_DONE` | `0x0004` | Image decode completion. |
 | `IRQ_IMG_ERROR` | `0x0008` | Image decode error. |
 | `IRQ_VBLANK` | `0x0010` | VBLANK entry. |
-| `IRQ_REINIT` | `0x0020` | Cart reinitialization event. |
-| `IRQ_NEWGAME` | `0x0040` | New-game start event. |
 | `IRQ_GEO_DONE` | `0x0080` | Geometry command completion. |
 | `IRQ_GEO_ERROR` | `0x0100` | Geometry command error. |
 | `IRQ_APU` | `0x0200` | APU voice event. |

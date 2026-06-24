@@ -63,8 +63,6 @@ end
 local irq_dma_done<const> = 0x01
 local irq_dma_error<const> = 0x02
 local irq_vblank<const> = 0x0010
-local irq_reinit<const> = 0x0020
-local irq_newgame<const> = 0x0040
 
 local wait_dma<const> = function()
 	local flags = 0
@@ -125,7 +123,7 @@ local create_world<const> = function(director_boot_mode)
 	inst('director', { id = 'd', boot_mode = director_boot_mode, })
 end
 
-local new_game<const> = function()
+function new_game()
 	if pending_title_boot_epoch == init_epoch then
 		pending_title_boot_epoch = init_epoch - 1
 		create_world('title_screen')
@@ -136,12 +134,6 @@ end
 
 function init()
 	mem[sys_vdp_dither] = 0
-	on_irq(irq_reinit, function()
-		init()
-	end)
-	on_irq(irq_newgame, function()
-		new_game()
-	end)
 	pietious_font.register_fonts()
 
 	player_module.define_player_fsm()
@@ -196,6 +188,8 @@ end
 -- VBLANK that samples it, game logic runs during the following visible frame,
 -- rendering/DMA happens in the next VBLANK, and the extra wait keeps the game
 -- tick at half the display refresh rate.
+init()
+new_game()
 mem[sys_inp_ctrl] = inp_ctrl_arm
 local flags
 repeat

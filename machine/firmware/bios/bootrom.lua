@@ -65,8 +65,6 @@ local irq_flags_addr<const> = 0x08000108
 local irq_img_done<const> = 0x0004
 local irq_img_error<const> = 0x0008
 local irq_vblank<const> = 0x0010
-local irq_reinit<const> = 0x0020
-local irq_newgame<const> = 0x0040
 
 local boot_start
 local boot_requested
@@ -374,12 +372,6 @@ function init()
 	system.on_irq(irq_img_error, function()
 		system_slot_failed = true
 	end)
-	system.on_irq(irq_reinit, function()
-		init()
-	end)
-	system.on_irq(irq_newgame, function()
-		new_game()
-	end)
 	vdp_image.load_system_slot()
 end
 
@@ -510,6 +502,7 @@ local service_irqs<const> = function()
 end
 
 init()
+new_game()
 mem[sys_inp_ctrl] = inp_ctrl_arm
 while true do
 	local flags

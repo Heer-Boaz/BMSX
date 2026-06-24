@@ -5,8 +5,6 @@ local start_node<const> = 'title'
 -- local start_node<const> = 'combat_wekker'
 local irq_flags_addr<const> = 0x08000108
 local irq_vblank<const> = 0x0010
-local irq_reinit<const> = 0x0020
-local irq_newgame<const> = 0x0040
 
 local combat_module<const> = require('combat')
 local dialogue_module<const> = require('dialogue')
@@ -234,12 +232,6 @@ end
 
 function init()
 	mem[sys_vdp_dither] = 2
-	on_irq(irq_reinit, function()
-		init()
-	end)
-	on_irq(irq_newgame, function()
-		new_game()
-	end)
 	vdp_load_slot(sys_vdp_slot_primary, 0)
 	combat_module.define_fsm()
 	build_director_fsm()
@@ -346,6 +338,8 @@ local service_irqs<const> = function()
 	return flags
 end
 
+init()
+new_game()
 mem[sys_inp_ctrl] = inp_ctrl_arm
 local flags
 

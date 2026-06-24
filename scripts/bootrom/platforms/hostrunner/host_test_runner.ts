@@ -20,7 +20,6 @@ export interface HostTestRunnerOptions {
 	isCartProgramActive: () => boolean;
 	evaluateLua: (source: string) => unknown[];
 	installNativeGlobal: (name: string, value: unknown) => void;
-	requestNewGame: () => void;
 	postInput: (event: InputEvt) => void;
 	requestExit: (code: number) => void;
 	scheduler: HostTestRunnerClock;
@@ -88,7 +87,6 @@ class HostTestRunner {
 	private installHostBridge(): void {
 		const bridge = {
 			log: (message: string) => this.options.logger(`test:${this.label} ${message}`),
-			request_new_game: () => this.options.requestNewGame(),
 			post_key: (code: string, down: boolean, timestamp: number) => {
 				this.options.postInput(this.keyEvent(code, down, timestamp));
 			},

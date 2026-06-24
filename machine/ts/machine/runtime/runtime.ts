@@ -18,7 +18,6 @@ import {
 import { RomSourceStack, type RawRomSource, type RomSourceLayer } from '../../rompack/source';
 import { buildRuntimeRomLayer, type RuntimeRomLayer } from '../../rompack/loader';
 import { StringValue, Table, type Value, type ProgramMetadata, type NativeFunction, type NativeObject } from '../cpu/cpu';
-import { IRQ_NEWGAME, IRQ_REINIT } from '../bus/io';
 import type { TerminalMode } from '../../ide/terminal/ui/mode';
 import { OverlayRenderer } from '../../ide/runtime/overlay_renderer';
 import { Font, type FontVariant } from '../../render/shared/bmsx_font';
@@ -62,7 +61,6 @@ import { callClosureInto, invokeClosureHandler, invokeLuaHandler } from '../prog
 import type { ProgramVectorTable } from '../program/loader';
 import { resolvePositiveSafeInteger, resolveRuntimeRenderSize } from '../specs';
 import { resolveRuntimeMemoryMapSpecs } from '../memory/specs';
-import { raiseSystemIrq } from './system_irq';
 import {
 	applyActiveMachineTiming,
 	refreshDeviceTimings,
@@ -463,23 +461,16 @@ export class Runtime {
 		this.programBssBaseAddress = bssBaseAddress;
 		this.enterCartProgram();
 		this._luaPath = this.activeLuaSources.entry_path;
-		this.startLoadedProgram(vectors, this.cartStaticModulePaths, true, true);
+		this.startLoadedProgram(vectors, this.cartStaticModulePaths);
 	}
 
-	public startLoadedProgram(vectors: RuntimeProgramVectorTable, staticModulePaths: ReadonlyArray<string>, runInit: boolean, runNewGame: boolean): void {
+	public startLoadedProgram(vectors: RuntimeProgramVectorTable, staticModulePaths: ReadonlyArray<string>): void {
 		if (vectors.sectionInitProtoIndex !== null) {
 			this.runSectionInitializer(vectors.sectionInitProtoIndex);
 		}
 		this.runStaticModuleInitializers(staticModulePaths);
 		this.machine.cpu.start(vectors.resetProtoIndex);
 		this.pendingCall = 'entry';
-		this.finishLuaEntryLifecycle(runInit, runNewGame);
-	}
-
-	public finishLuaEntryLifecycle(runInit: boolean, runNewGame: boolean): void {
-		if (runInit) {
-			this.queueLifecycleHandlers(true, runNewGame);
-		}
 		this.luaInitialized = true;
 	}
 
@@ -518,13 +509,6 @@ export class Runtime {
 			this.luaScratch.values.release(results);
 		}
 		this.moduleCache.delete(path);
-	}
-
-	private queueLifecycleHandlers(runInit: boolean, runNewGame: boolean): void {
-		const irqMask = (runInit ? IRQ_REINIT : 0) | (runNewGame ? IRQ_NEWGAME : 0);
-		if (irqMask !== 0) {
-			raiseSystemIrq(this, irqMask);
-		}
 	}
 
 	public requireModule(moduleName: string): Value {
@@ -704,7 +688,7 @@ export class Runtime {
 	}
 
 	public async boot(): Promise<void> {
-		const gateToken = this.luaGate.begin({ blocking: true, tag: 'new_game' });
+		const gateToken = this.luaGate.begin({ blocking: true, tag: 'boot' });
 		try {
 			this.hostFault.clear();
 			this.clearBootFaults();

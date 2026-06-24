@@ -3,6 +3,8 @@ import { clearOverlayFrame } from '../../render/host_overlay/overlay_queue';
 import { compileLuaChunkToProgram, encodeCompiledProgramImage } from '../../machine/program/compiler';
 import { ROM_ASSET_SYMBOL_MODULE_PATH } from '../../rompack/asset_symbols';
 import { inflateExecutableProgramImage } from '../../machine/program/linker';
+import { callClosureIntoSuspended } from '../../machine/program/executor';
+import type { Closure } from '../../machine/cpu/cpu';
 import { RuntimeResumeSnapshot } from '../../machine/runtime/contracts';
 import { restoreRuntimeLuaSnapshot } from '../../machine/runtime/resume_snapshot';
 import { applyRuntimeMachineState } from '../../machine/runtime/machine_state';
@@ -61,14 +63,14 @@ export function resumeLuaProgramState(runtime: Runtime, snapshot: RuntimeResumeS
 			source,
 			preserveSystemModules: preserveSystemModules ?? runtime.cartProgramStarted,
 		});
+		restoreRuntimeLuaSnapshot(runtime, snapshot);
+		refreshLuaModulesOnResume(runtime, binding);
+		clearEditorCompletionCache(runtime);
+		runHotResumeInit(runtime);
 	}
 	catch (error) {
 		throw convertToError(error);
 	}
-	refreshLuaModulesOnResume(runtime, binding);
-	clearEditorCompletionCache(runtime);
-	runtime.finishLuaEntryLifecycle(true, false);
-	restoreRuntimeLuaSnapshot(runtime, snapshot);
 }
 
 export function hotResumeProgramEntry(runtime: Runtime, params: { path: string; source: string; preserveSystemModules?: boolean }): void {
@@ -108,11 +110,19 @@ export function hotResumeProgramEntry(runtime: Runtime, params: { path: string; 
 	// doubling that pushed resume over the RAM budget) and discard live state.
 	runtime.machine.vdp.resetIngressState();
 	runtime.machine.cpu.setProgram(program, compiled.metadata);
-	runtime.startLoadedProgram({ resetProtoIndex: programImage.vectors.resetProtoIndex, sectionInitProtoIndex: null }, [], false, false);
 	runtime.luaRuntimeFailed = preserveRuntimeFailure;
 	runtime._luaPath = binding;
 	runtime.programMetadata = compiled.metadata;
-	clearEditorCompletionCache(runtime);
+}
+
+function runHotResumeInit(runtime: Runtime): void {
+	const initClosure = runtime.machine.cpu.getGlobalByKey(runtime.internString('init')) as Closure;
+	const results = runtime.luaScratch.values.acquire();
+	try {
+		callClosureIntoSuspended(runtime, initClosure, [], results);
+	} finally {
+		runtime.luaScratch.values.release(results);
+	}
 }
 
 function refreshLuaModulesOnResume(runtime: Runtime, resumeModuleId: string): void {

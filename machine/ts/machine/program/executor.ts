@@ -203,6 +203,21 @@ export function callClosureIntoWithScheduler(runtime: Runtime, fn: Closure, args
 }
 // end repeated-sequence-acceptable
 
+export function callClosureIntoSuspended(runtime: Runtime, fn: Closure, args: Value[], out: Value[]): void {
+	const cpu = runtime.machine.cpu;
+	const restoreHalt = cpu.isHaltedUntilIrq();
+	if (restoreHalt) {
+		cpu.clearHaltUntilIrq();
+	}
+	try {
+		callClosureInto(runtime, fn, args, out);
+	} finally {
+		if (restoreHalt) {
+			cpu.haltUntilIrq();
+		}
+	}
+}
+
 export function callClosure(runtime: Runtime, fn: Closure, args: Value[]): Value[] {
 	callClosureInto(runtime, fn, args, runtime.machine.cpu.lastReturnValues);
 	return runtime.machine.cpu.lastReturnValues;

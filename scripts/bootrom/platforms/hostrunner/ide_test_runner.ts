@@ -8,6 +8,7 @@ export interface IdeTestRunnerOptions {
 	testPath: string;
 	frameIntervalMs: number;
 	ide: HeadlessIdeHarness;
+	evaluateLua: (source: string) => unknown[];
 	logger: (msg: string) => void;
 	scheduleOnce: (delayMs: number, cb: () => void) => void;
 	requestExit: (code: number) => void;
@@ -61,6 +62,7 @@ export async function runIdeTest(options: IdeTestRunnerOptions): Promise<void> {
 		runtime: () => options.ide.getRuntime(),
 		heapBytes: () => options.ide.getTrackedLuaHeapBytes(),
 		debugStats: () => options.ide.debugStats(),
+		evaluateLua: (source: string) => options.evaluateLua(source),
 		isCartActive: () => options.ide.isCartActive(),
 		waitForCart,
 		frames: waitFrames,

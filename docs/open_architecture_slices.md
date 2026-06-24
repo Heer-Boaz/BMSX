@@ -134,7 +134,7 @@ Cart-representatie roadmap/status:
 | dynamic Lua-opcodes weren uit systems/static modules | Deels: const-module static function protos worden na codegen/optimalisatie door de compiler geweigerd als dynamic Lua-opcodes overblijven; open: bredere systems/static functieklassen en audit-output zodra daar een echte consumer voor is. |
 | CPU objectwereld loshalen van machine-code ABI | Open: `CPU.Value` is nog Lua-objectwereld; echte cart ABI moet primair words, registers, addresses, memory, sections en symbols zijn. |
 | assets/`rom_data` binair maken | Deels: `rom_data`-familie is weg en `.bin` raw ROM path is getest; open: maps, rooms, timelines, registries en asset records naar vaste binaire layouts. |
-| cart startup/vector model | Deels: `ProgramImage` draagt nu een expliciete boot-vector table (`resetProtoIndex`, `sectionInitProtoIndex`) en TS/C++ linker/runtime boot gebruiken die vector table in plaats van losse entry/section-init velden. Open: init/new_game/reinit/IRQ handlers staan nog in de cartlib/Lua IRQ-lifecycle en moeten nog een expliciet handler/vector ABI krijgen. |
+| cart startup/vector model | Deels: `ProgramImage` draagt nu een expliciete boot-vector table (`resetProtoIndex`, `sectionInitProtoIndex`) en TS/C++ linker/runtime boot gebruiken die vector table in plaats van losse entry/section-init velden. `init()`/`new_game()` zijn bewust cartfuncties, geen console-ABI: de lifecycle-IRQ-transportlaag is verwijderd, cold cart startup roept ze direct aan en hot-resume voert alleen `init()` als IDE/debugger-call uit. Open: echte hardware IRQ handler-vectoren/calling convention. |
 | verifier/audit voor echte carts | GESCHRAPT in deze vorm: een los retro-cart verifier-script is een slechte slice. De echte gates horen bij de producer/linker/compiler/runtime-eigenaren zelf, niet in een achteraf-scanner die ROMs opnieuw interpreteert. |
 
 ## 14. Legacy cart-data naar vaste binaire ROM-layouts — GESCHRAPT
@@ -463,9 +463,9 @@ Acceptatie:
 
 ## 22. Cart startup/vector model expliciet maken
 
-Doel: cart lifecycle is een ROM/vector contract in plaats van losse Lua globals.
-Entry, init, new_game/reinit en IRQ handlers zijn expliciete vectors of handler
-symbols met vaste calling convention.
+Doel: boot en echte hardware handlers hebben een expliciet consolecontract,
+zonder een nep-lifecycle command bus. `init()` en `new_game()` zijn cartfuncties
+met cart/engine-semantiek, geen machine vectors.
 
 Status:
 
@@ -477,19 +477,22 @@ Status:
   vector en daarna static module init en reset vector. Hot-resume installeert
   hetzelfde ProgramImage object maar passeert bewust geen section-init vector,
   zodat live `.data`/`.bss` niet opnieuw geïnitialiseerd wordt.
-- runtime en tests gebruiken nog Lua lifecycle/global conventions voor
-  init/new_game/reinit
+- `IRQ_REINIT`/`IRQ_NEWGAME` en de runtime lifecycle-raiser zijn verwijderd.
+  Cold cart startup roept `init()` en daarna `new_game()` direct aan; hot-resume
+  herstart de reset vector niet en roept alleen de huidige `init()` closure via
+  de IDE/debugger-call primitive aan nadat live state is hersteld.
 - IRQ/hardware-model bestaat, maar cart handler ABI is niet als vector table
   vastgelegd
 
 Acceptatie:
 
-- ROM/program metadata bevat entry/init/new_game/reinit/IRQ vector-symbolen
-  (de reset/section-init boot-vectors zijn klaar)
+- ROM/program metadata bevat de echte boot-vectors (reset/section-init)
 - linker resolve't vector-symbolen naar concrete proto/adres targets
-- runtime start en interrupt-dispatch gebruiken vector table/calling convention
-- hot-resume behoudt dezelfde vector ABI als ROM boot
-- oude Lua-global lifecycle is geen console ABI meer
+- runtime start gebruikt de vector table/calling convention
+- hot-resume gebruikt hetzelfde image/link-resultaat als ROM boot en voert
+  `init()` als host/debugger-call uit, niet als machine lifecycle interrupt
+- oude Lua-global lifecycle en `reinit`/`new_game` IRQ transport zijn geen
+  console ABI meer
 
 ## 23. Harde verifier/audit voor echte retro-carts — GESCHRAPT
 

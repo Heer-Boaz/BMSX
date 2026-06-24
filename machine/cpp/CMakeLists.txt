@@ -335,7 +335,6 @@ add_library(bmsx_core STATIC
 	machine/runtime/resume_snapshot.cpp
 	machine/runtime/cart_boot.cpp
 	machine/runtime/cpu_executor.cpp
-	machine/runtime/system_irq.cpp
 	machine/runtime/boot_timing.cpp
 	machine/runtime/frame/loop.cpp
 	machine/runtime/frame/step.cpp

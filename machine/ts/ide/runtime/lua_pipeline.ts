@@ -265,7 +265,7 @@ function compileRegistryProgramImage(
 	};
 }
 
-function bootSystemSourceProgram(runtime: Runtime, interpreter: LuaInterpreter, options?: { preserveState?: boolean; runInit?: boolean }): boolean {
+function bootSystemSourceProgram(runtime: Runtime, interpreter: LuaInterpreter, options?: { preserveState?: boolean }): boolean {
 	const system = compileRegistryProgramImage(runtime, runtime.systemLuaSources, interpreter);
 	let programImage = system.image;
 	let metadata: ProgramMetadata = system.symbols;
@@ -307,11 +307,11 @@ function bootSystemSourceProgram(runtime: Runtime, interpreter: LuaInterpreter, 
 	const program = inflateExecutableProgramImage(programImage, metadata, runtime.programDataBaseAddress, runtime.programBssBaseAddress);
 	runtime.machine.cpu.setProgram(program, metadata);
 	runtime.programMetadata = metadata;
-	runtime.startLoadedProgram(vectors, staticModulePaths, options?.runInit !== false, true);
+	runtime.startLoadedProgram(vectors, staticModulePaths);
 	return true;
 }
 
-function bootProgramImage(runtime: Runtime, options?: { preserveState?: boolean; runInit?: boolean }): boolean {
+function bootProgramImage(runtime: Runtime, options?: { preserveState?: boolean }): boolean {
 	const bootingCart = runtime.cartProgramStarted;
 	const systemImages = loadProgramImagesForSource(runtime, 'system');
 	let programImage = systemImages.program;
@@ -353,7 +353,7 @@ function bootProgramImage(runtime: Runtime, options?: { preserveState?: boolean;
 	try {
 		runtime.machine.cpu.setProgram(inflated, metadata);
 		runtime.programMetadata = metadata;
-		runtime.startLoadedProgram(vectors, staticModulePaths, options?.runInit !== false, true);
+		runtime.startLoadedProgram(vectors, staticModulePaths);
 		return true;
 	} catch (error) {
 		console.info('Program-image boot failed.');
@@ -362,7 +362,7 @@ function bootProgramImage(runtime: Runtime, options?: { preserveState?: boolean;
 	}
 }
 
-export function bootActiveProgram(runtime: Runtime, options?: { preserveState?: boolean; runInit?: boolean }): boolean {
+export function bootActiveProgram(runtime: Runtime, options?: { preserveState?: boolean }): boolean {
 	return runtime.activeLuaSources.can_boot_from_source
 		? bootLuaProgram(runtime, { preserveState: options?.preserveState })
 		: bootProgramImage(runtime, options);
@@ -409,7 +409,7 @@ function bootLuaProgram(runtime: Runtime, options?: { preserveState?: boolean; s
 		installProgramModules(runtime, buildModuleProtoMap(programImage.sections.rodata.moduleProtos));
 		runtime.machine.cpu.setProgram(program, compiled.metadata);
 		runtime.programMetadata = compiled.metadata;
-		runtime.startLoadedProgram(programImage.vectors, programImage.sections.rodata.staticModulePaths, true, true);
+		runtime.startLoadedProgram(programImage.vectors, programImage.sections.rodata.staticModulePaths);
 		return true;
 	}
 	catch (error) {

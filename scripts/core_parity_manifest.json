@@ -341,7 +341,6 @@
 		"machine/ts/machine/runtime/save_state.ts",
 		"machine/ts/machine/runtime/save_state/codec.ts",
 		"machine/ts/machine/runtime/save_state/schema.ts",
-		"machine/ts/machine/runtime/system_irq.ts",
 		"machine/ts/render/host_overlay/pipeline.ts",
 		"machine/ts/render/runtime_state.ts",
 		"machine/ts/render/shared/glyph_runs.ts",
@@ -3016,12 +3015,6 @@
 					"field": "pixels",
 					"reason": "TS VDP surface pixels are a Uint8Array view; C++ stores the same pixel buffer as a native u8 pointer."
 				}
-			]
-		},
-		{
-			"ts": "machine/ts/machine/runtime/system_irq.ts",
-			"cpp": [
-				"machine/cpp/machine/runtime/system_irq.h"
 			]
 		},
 		{

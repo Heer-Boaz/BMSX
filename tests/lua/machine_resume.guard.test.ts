@@ -22,11 +22,26 @@ test('hotResumeProgramEntry keeps interpreter resident', () => {
 	const nextExport = boundaries.length > 0 ? Math.min(...boundaries) : -1;
 	const snippet = src.slice(start, nextExport === -1 ? undefined : nextExport);
 	assert.equal(snippet.includes('createLuaInterpreter('), false, 'hotResumeProgramEntry should not create a new interpreter');
-	assert.equal(snippet.includes('runtime.startLoadedProgram({ resetProtoIndex: programImage.vectors.resetProtoIndex, sectionInitProtoIndex: null }, [], false, false)'), true, 'hotResumeProgramEntry must execute the updated reset vector without cold section init');
+	assert.equal(snippet.includes('runtime.startLoadedProgram('), false, 'hotResumeProgramEntry must not restart the reset vector');
+	assert.equal(snippet.includes('runtime.machine.cpu.setProgram(program, compiled.metadata)'), true, 'hotResumeProgramEntry must patch the installed program in place');
 	assert.equal(snippet.includes('encodeCompiledProgramImage(compiled)'), true, 'hotResumeProgramEntry must pass compiled code through the compiler-owned ProgramImage object boundary');
 	assert.equal(snippet.includes('inflateExecutableProgramImage(programImage, compiled.metadata, runtime.programDataBaseAddress, runtime.programBssBaseAddress)'), true, 'hotResumeProgramEntry must install through the program/linker executable boundary');
 	assert.equal(snippet.includes('resolveRuntimeProgramRelocations('), false, 'hotResumeProgramEntry must not own raw relocation resolution');
 	assert.equal(snippet.includes('if (!params.preserveSystemModules)'), true, 'hot-resume must preserve live module objects (single generation); only a full reload clears the module cache');
+});
+
+test('hot-resume restores live state before calling cart init', () => {
+	const src = readFileSync('machine/ts/ide/runtime/hot_resume.ts', 'utf8');
+	const start = src.indexOf('export function resumeLuaProgramState');
+	assert.ok(start > -1, 'resumeLuaProgramState not found');
+	const nextExport = src.indexOf('\nexport function ', start + 1);
+	const snippet = src.slice(start, nextExport === -1 ? undefined : nextExport);
+	const restoreIndex = snippet.indexOf('restoreRuntimeLuaSnapshot(runtime, snapshot)');
+	const initIndex = snippet.indexOf('runHotResumeInit(runtime)');
+	assert.ok(restoreIndex > -1, 'hot-resume must restore the live snapshot');
+	assert.ok(initIndex > -1, 'hot-resume must call cart init directly');
+	assert.ok(restoreIndex < initIndex, 'hot-resume init must run after live-state restore');
+	assert.equal(snippet.includes('finishLuaEntryLifecycle('), false, 'hot-resume must not use lifecycle IRQ transport');
 });
 
 test('Lua source boot installs through the program-image executable boundary', () => {

@@ -73,7 +73,7 @@ local function apply_command(command)
 		press_button(command.press, command.hold_frames or 1)
 	end
 	if command.new_game == true then
-		bridge.request_new_game()
+		new_game()
 	end
 end
 
@@ -160,8 +160,7 @@ function runner.tick(timestamp_ms)
 		if runner.cart_settle_frames < cart_settle_frames then
 			return false
 		end
-		bridge.log('cart active, requesting new_game')
-		bridge.request_new_game()
+		bridge.log('cart active')
 		runner.phase = 'ready'
 		return false
 	end

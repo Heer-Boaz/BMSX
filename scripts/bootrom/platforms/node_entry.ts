@@ -13,8 +13,6 @@ import { printHeadlessCpuProfile } from './cpu_profile_report';
 import { runHostTest } from './hostrunner/host_test_runner';
 import { runIdeTest } from './hostrunner/ide_test_runner';
 import { installNativeGlobal, runHostEvalChunkToNative } from '../../../machine/ts/machine/program/executor';
-import { raiseSystemIrq } from '../../../machine/ts/machine/runtime/system_irq';
-import { IRQ_NEWGAME } from '../../../machine/ts/machine/bus/io';
 
 declare const __BOOTROM_TARGET__: 'cli' | 'headless';
 declare const __BOOTROM_DEBUG__: boolean;
@@ -1053,6 +1051,7 @@ async function main(): Promise<void> {
 			testPath: cliOptions.ideTestPath,
 			frameIntervalMs: frameInterval,
 			ide,
+			evaluateLua: (source) => runHostEvalChunkToNative(runtime, source),
 			logger: inputLogger,
 			scheduleOnce: (delayMs, cb) => scheduler.scheduleOnce(delayMs, () => cb()),
 			requestExit,
@@ -1071,7 +1070,6 @@ async function main(): Promise<void> {
 			isCartProgramActive,
 			evaluateLua: (source) => runHostEvalChunkToNative(runtime, source),
 			installNativeGlobal: (name, value) => installNativeGlobal(runtime, name, value),
-			requestNewGame: () => raiseSystemIrq(runtime, IRQ_NEWGAME),
 			postInput,
 			requestExit,
 			scheduler,
