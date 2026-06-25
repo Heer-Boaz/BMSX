@@ -68,6 +68,7 @@ local cart_rom_magic<const> = 0x58534d42
 local irq_img_done<const> = 0x0004
 local irq_img_error<const> = 0x0008
 local irq_vblank<const> = 0x0010
+local irq_mask_addr<const> = 0x08000110
 local boot_vblank_count = 0
 
 local boot_start
@@ -443,6 +444,7 @@ if cart_present_and_ready and not boot_requested and system_slot_ready and not s
 	if (mem[sys_vdp_status] & sys_vdp_status_submit_busy) == 0 then
 		boot_requested = true
 		print('Cart boot requested.')
+		mem[irq_mask_addr] = 0
 		mem[sys_boot_cart] = 1
 	end
 	return
@@ -501,13 +503,14 @@ render_boot_screen = function(scroll_delta)
 end
 
 local wait_vblank<const> = function()
-	local observed<const> = boot_vblank_count
 	repeat
 		halt_until_irq
-	until boot_vblank_count ~= observed
+	until boot_vblank_count ~= 0
+	boot_vblank_count = boot_vblank_count - 1
 end
 
 init()
+mem[irq_mask_addr] = irq_img_done | irq_img_error | irq_vblank
 new_game()
 mem[sys_inp_ctrl] = inp_ctrl_arm
 while true do

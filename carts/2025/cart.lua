@@ -3,7 +3,9 @@ local globals<const> = require('globals')
 local story<const> = require('story')
 local start_node<const> = 'title'
 -- local start_node<const> = 'combat_wekker'
+local irq_mask_addr<const> = 0x08000110
 local irq_vblank<const> = 0x0010
+local irq_apu<const> = 0x0200
 local vblank_count = 0
 
 local combat_module<const> = require('combat')
@@ -334,13 +336,14 @@ function new_game()
 end
 
 local wait_vblank<const> = function()
-	local observed<const> = vblank_count
 	repeat
 		halt_until_irq
-	until vblank_count ~= observed
+	until vblank_count ~= 0
+	vblank_count = vblank_count - 1
 end
 
 init()
+mem[irq_mask_addr] = irq_vblank | irq_apu
 new_game()
 mem[sys_inp_ctrl] = inp_ctrl_arm
 while true do

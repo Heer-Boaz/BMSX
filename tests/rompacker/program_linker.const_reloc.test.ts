@@ -381,11 +381,11 @@ test('ProgramCompiler accepts shared runtime globals when source is provided', (
 });
 
 test('ProgramCompiler rejects machine ABI value constants as implicit runtime globals', () => {
-	const source = 'return sys_bus_fault_access_word, sys_host_fault_flag_active, irq_vblank, sys_irq_flags, sys_irq_ack';
+	const source = 'return sys_bus_fault_access_word, sys_host_fault_flag_active, irq_vblank, sys_irq_flags, sys_irq_ack, sys_irq_mask';
 	const chunk = parseChunk(source);
 	assert.throws(
 		() => compileLuaChunkToProgram(chunk, [], { entrySource: source }),
-		/error\(s\):[\s\S]*'sys_bus_fault_access_word' is not defined\.[\s\S]*'sys_host_fault_flag_active' is not defined\.[\s\S]*'irq_vblank' is not defined\.[\s\S]*'sys_irq_flags' is not defined\.[\s\S]*'sys_irq_ack' is not defined\./,
+		/error\(s\):[\s\S]*'sys_bus_fault_access_word' is not defined\.[\s\S]*'sys_host_fault_flag_active' is not defined\.[\s\S]*'irq_vblank' is not defined\.[\s\S]*'sys_irq_flags' is not defined\.[\s\S]*'sys_irq_ack' is not defined\.[\s\S]*'sys_irq_mask' is not defined\./,
 	);
 });
 

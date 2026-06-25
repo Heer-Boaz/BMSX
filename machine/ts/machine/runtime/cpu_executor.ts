@@ -76,6 +76,7 @@ export class CpuExecutionState {
 		let result = RunResult.Yielded;
 		const scheduler = runtime.machine.scheduler;
 		const cpu = runtime.machine.cpu;
+		const vectors = runtime.programVectors;
 		let tickCompleted = runDueRuntimeTimers(runtime);
 		if (tickCompleted) {
 			state.cycleBudgetRemaining = remaining;
@@ -100,7 +101,9 @@ export class CpuExecutionState {
 			}
 			scheduler.beginCpuSlice(sliceBudget);
 			try {
-				result = cpu.runUntilDepth(0, sliceBudget);
+				result = vectors === null
+					? cpu.runUntilDepth(0, sliceBudget)
+					: cpu.runUntilDepth(0, sliceBudget, runtime.machine.irqController, vectors.irqProtoIndex);
 			} finally {
 				scheduler.endCpuSlice();
 			}

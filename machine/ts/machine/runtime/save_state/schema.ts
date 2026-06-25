@@ -51,6 +51,7 @@ export const RUNTIME_SAVE_STATE_PROP_NAMES = [
 	'luaRuntimeFailed',
 	'machine',
 	'machineState',
+	'mask',
 	'memory',
 	'metatable',
 	'moduleCache',

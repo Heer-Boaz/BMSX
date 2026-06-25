@@ -3,14 +3,16 @@ local constants<const> = require('constants')
 local stage_module<const> = require('stage')
 local player_module<const> = require('player/index')
 local director_module<const> = require('director')
+local irq_mask_addr<const> = 0x08000110
 local irq_vblank<const> = 0x0010
+local irq_apu<const> = 0x0200
 local vblank_count = 0
 
 local wait_vblank<const> = function()
-	local observed<const> = vblank_count
 	repeat
 		halt_until_irq
-	until vblank_count ~= observed
+	until vblank_count ~= 0
+	vblank_count = vblank_count - 1
 end
 
 function init()
@@ -44,24 +46,25 @@ function new_game()
 end
 
 init()
+mem[irq_mask_addr] = irq_vblank | irq_apu
 new_game()
+mem[sys_inp_ctrl] = inp_ctrl_arm
+wait_vblank()
+
+while true do
+	update_world()
 	mem[sys_inp_ctrl] = inp_ctrl_arm
 	wait_vblank()
-
-	while true do
-		update_world()
-		mem[sys_inp_ctrl] = inp_ctrl_arm
-		wait_vblank()
-		vdp_stream_cursor = sys_vdp_stream_base
-		draw_world()
-		vdp_stream_finish()
-		do
-			local used_bytes<const> = vdp_stream_cursor - sys_vdp_stream_base
-			if used_bytes ~= 0 then
-				mem[sys_dma_src] = sys_vdp_stream_base
-				mem[sys_dma_dst] = sys_vdp_fifo
-				mem[sys_dma_len] = used_bytes
-				mem[sys_dma_ctrl] = dma_ctrl_start
-			end
+	vdp_stream_cursor = sys_vdp_stream_base
+	draw_world()
+	vdp_stream_finish()
+	do
+		local used_bytes<const> = vdp_stream_cursor - sys_vdp_stream_base
+		if used_bytes ~= 0 then
+			mem[sys_dma_src] = sys_vdp_stream_base
+			mem[sys_dma_dst] = sys_vdp_fifo
+			mem[sys_dma_len] = used_bytes
+			mem[sys_dma_ctrl] = dma_ctrl_start
 		end
 	end
+end

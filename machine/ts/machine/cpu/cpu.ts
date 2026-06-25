@@ -1994,22 +1994,6 @@ export class CPU {
 		return true;
 	}
 
-	public acceptPendingInterrupt(irqController: IrqController): AcceptedInterruptKind {
-		if (this.nonMaskableInterruptPending) {
-			this.nonMaskableInterruptPending = false;
-			this.maskableInterruptsRestoreEnabled = this.maskableInterruptsEnabled;
-			this.maskableInterruptsEnabled = false;
-			this.clearHaltAfterAcceptedInterrupt();
-			return AcceptedInterruptKind.NonMaskable;
-		}
-		if (this.canAcceptMaskableInterruptLine(irqController)) {
-			this.maskableInterruptsRestoreEnabled = this.maskableInterruptsEnabled;
-			this.clearHaltAfterAcceptedInterrupt();
-			return AcceptedInterruptKind.Maskable;
-		}
-		return AcceptedInterruptKind.None;
-	}
-
 	private requireRunnableForCall(): void {
 		if (this.haltedUntilIrq) {
 			throw new Error('Cannot enter CPU while halted until IRQ.');
@@ -2031,7 +2015,7 @@ export class CPU {
 		return this.frames.length;
 	}
 
-	public runUntilDepth(targetDepth: number, instructionBudget: number): RunResult {
+	public runUntilDepth(targetDepth: number, instructionBudget: number, irqController: IrqController | null = null, irqProtoIndex = 0): RunResult {
 		this.instructionBudgetRemaining = instructionBudget;
 		const frames = this.frames;
 		const profiler = this.profilerEnabled ? this.profiler : null;
@@ -2057,6 +2041,14 @@ export class CPU {
 			}
 			if (this.instructionBudgetRemaining <= 0) {
 				return RunResult.Yielded;
+			}
+			if (irqController !== null
+				&& this.hostExternalCallDepth === 0
+				&& this.maskableInterruptsEnabled
+				&& irqController.hasAssertedMaskableInterruptLine()
+			) {
+				this.tryEnterPendingInterrupt(irqController, irqProtoIndex);
+				continue;
 			}
 			const frame = frames[frames.length - 1];
 			const pc = frame.pc;

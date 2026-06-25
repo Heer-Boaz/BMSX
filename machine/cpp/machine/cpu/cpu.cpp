@@ -1882,22 +1882,6 @@ bool CPU::tryEnterPendingInterrupt(const IrqController& irqController, int irqPr
 	return true;
 }
 
-AcceptedInterruptKind CPU::acceptPendingInterrupt(const IrqController& irqController) {
-	if (m_nonMaskableInterruptPending) {
-		m_nonMaskableInterruptPending = false;
-		m_maskableInterruptsRestoreEnabled = m_maskableInterruptsEnabled;
-		m_maskableInterruptsEnabled = false;
-		clearHaltAfterAcceptedInterrupt();
-		return AcceptedInterruptKind::NonMaskable;
-	}
-	if (canAcceptMaskableInterruptLine(irqController)) {
-		m_maskableInterruptsRestoreEnabled = m_maskableInterruptsEnabled;
-		clearHaltAfterAcceptedInterrupt();
-		return AcceptedInterruptKind::Maskable;
-	}
-	return AcceptedInterruptKind::None;
-}
-
 void CPU::enterHostExternalCall() {
 	++m_hostExternalCallDepth;
 }
@@ -1917,7 +1901,7 @@ void CPU::clearHaltAfterAcceptedInterrupt() {
 	m_yieldRequested = false;
 }
 
-RunResult CPU::run(int instructionBudget) {
+RunResult CPU::run(int instructionBudget, const IrqController* irqController, int irqProtoIndex) {
 	instructionBudgetRemaining = instructionBudget;
 	auto& frames = m_frames;
 	const DecodedInstruction* decodedProgram = m_decoded.data();
@@ -1959,6 +1943,14 @@ dispatch_loop_check:
 	}
 	if (instructionBudgetRemaining <= 0) {
 		return RunResult::Yielded;
+	}
+	if (irqController != nullptr
+		&& m_hostExternalCallDepth == 0
+		&& m_maskableInterruptsEnabled
+		&& irqController->hasAssertedMaskableInterruptLine()
+	) {
+		tryEnterPendingInterrupt(*irqController, irqProtoIndex);
+		goto dispatch_loop_check;
 	}
 	frame = frames.back().get();
 	registers = frame->registers;
@@ -2059,7 +2051,7 @@ dispatch_INVALID:
 #endif
 }
 
-RunResult CPU::runUntilDepth(int targetDepth, int instructionBudget) {
+RunResult CPU::runUntilDepth(int targetDepth, int instructionBudget, const IrqController* irqController, int irqProtoIndex) {
 	instructionBudgetRemaining = instructionBudget;
 	auto& frames = m_frames;
 	const DecodedInstruction* decodedProgram = m_decoded.data();
@@ -2101,6 +2093,14 @@ dispatch_loop_check:
 	}
 	if (instructionBudgetRemaining <= 0) {
 		return RunResult::Yielded;
+	}
+	if (irqController != nullptr
+		&& m_hostExternalCallDepth == 0
+		&& m_maskableInterruptsEnabled
+		&& irqController->hasAssertedMaskableInterruptLine()
+	) {
+		tryEnterPendingInterrupt(*irqController, irqProtoIndex);
+		goto dispatch_loop_check;
 	}
 	frame = frames.back().get();
 	registers = frame->registers;

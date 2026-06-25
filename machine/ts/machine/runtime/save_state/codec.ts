@@ -287,12 +287,14 @@ function decodeMemorySaveState(value: unknown, label: string): MemorySaveState {
 
 function encodeIrqControllerState(state: IrqControllerState): IrqControllerState {
 	return {
+		mask: state.mask >>> 0,
 		pendingFlags: state.pendingFlags >>> 0,
 	};
 }
 
 function decodeIrqControllerState(value: unknown, label: string): IrqControllerState {
 	return {
+		mask: decodeNumberObjectField(value, label, 'mask', 'machine.irq.mask'),
 		pendingFlags: decodeNumberObjectField(value, label, 'pendingFlags', 'machine.irq.pendingFlags'),
 	};
 }

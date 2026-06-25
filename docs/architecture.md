@@ -327,39 +327,52 @@ Host fault stage values:
 IRQ is a machine device with flag/status words. Devices raise/clear IRQ state
 through the IRQ owner. Cart-originated faults surface as status/fault bits and
 IRQ flags when the device contract says so; they do not escape as host
-exceptions. IRQ save-state is the pending flag register word only, owned by
+exceptions. IRQ save-state is the pending flag word plus `IRQ_MASK`, owned by
 `machine/devices/irq/save_state`.
 
-IRQ exposes two MMIO registers. IRQ register addresses and flag bits are machine
+IRQ exposes three MMIO registers. IRQ register addresses and flag bits are machine
 ABI values; they are documented constants, not runtime-injected Lua globals.
 Cart and firmware code that tests or acknowledges them defines the constants it
 uses.
 
 Program images also carry an `irqProtoIndex` vector. On a guest-domain
-`HALT`, an asserted maskable IRQ line makes the CPU push that handler proto as
-an interrupt frame above the halted cart frame. The handler runs as normal CPU
-bytecode and returns with `RET`; interrupt-frame return restores the previous
-maskable-enabled state and resumes the interrupted frame without copying return
-values. Host/debugger closure calls may wake from a pending IRQ, but they do not
-consume or vector it. NMI has no producer today and is not part of the vector
-table.
+`HALT` or guest instruction boundary, an asserted unmasked maskable IRQ line
+makes the CPU push that handler proto as an interrupt frame above the
+interrupted cart frame. The handler runs as normal CPU bytecode and returns
+with `RET`; interrupt-frame return restores the previous maskable-enabled state
+and resumes the interrupted frame without copying return values. Host/debugger
+closure calls may wake from a pending IRQ, but they do not consume or vector it.
+NMI has no producer today and is not part of the vector table.
+
+The cart-facing IRQ gate is `IRQ_MASK`, a per-source bitmask with the same bit
+layout as `IRQ_FLAGS`. It resets to `0`, so cold boot starts with no source
+vectoring. Firmware and carts unmask only the sources they handle asynchronously.
+The boot ROM masks all sources again immediately before handing control to a
+cart, so firmware-owned mask bits never leak into the cart reset vector.
+The CPU's global maskable-enable state is internal handler serialization: it
+starts enabled, is disabled atomically when a maskable interrupt frame is pushed,
+and is restored from that frame on `RET`. A line vectors when both layers allow it:
+the internal enable is set and `(IRQ_FLAGS & IRQ_MASK) != 0`. A pending source
+is accepted at the first guest instruction boundary after its mask bit is
+written, with no delayed-EI extra instruction.
 
 The compiler-generated IRQ vector reads `IRQ_FLAGS` and calls the program's
 global `irq(flags)` handler when bits are pending. The shipped handler belongs
 to firmware/cart code: BIOS and cartlib expose `system.irq` / `on_irq` as
 convenience dispatch over registered masks, and bare-metal carts may define
-`irq(flags)` directly. Dispatch code acknowledges only the masks it owns;
-unhandled level bits remain asserted so the owning synchronous wait can observe
-and acknowledge them. A raised IRQ bit must have exactly one owner that
-acknowledges it: either a `system.irq` / `on_irq` handler or a specialized
-waiter that reads the flag and writes `IRQ_ACK`. An unacknowledged level bit
-will vector again on the next `HALT`, matching hardware interrupt-storm
-semantics rather than being discarded by the emulator.
+`irq(flags)` directly. Dispatch code acknowledges only the masks it owns. An
+asynchronous source is unmasked and has exactly one vector-handler owner that
+acknowledges it. A synchronous waiter leaves its source masked, polls
+`IRQ_FLAGS` directly while running, and writes `IRQ_ACK` itself; masked pending
+bits remain visible but do not vector or wake `HALT`. An unmasked unacknowledged
+level bit will vector again at the next eligible guest boundary, matching
+hardware interrupt-storm semantics rather than being discarded by the emulator.
 
 | Register | Address | Meaning |
 | --- | ---: | --- |
 | `IRQ_FLAGS` | `0x08000108` | Read pending IRQ bits. |
 | `IRQ_ACK` | `0x0800010c` | Write bits to clear. |
+| `IRQ_MASK` | `0x08000110` | Read/write per-source vector mask; bit set means that pending source may vector. Reset `0`. |
 
 | Name | Value | Meaning |
 | --- | ---: | --- |

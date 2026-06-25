@@ -97,7 +97,14 @@ function __bmsx_host_test.update(_frame, _current_music)
 
 	__bmsx_host_test.stable_frames = 0
 	__bmsx_host_test.frame_count = __bmsx_host_test.frame_count + 1
-	assert(__bmsx_host_test.frame_count < 400,
+	local transition_timeout_frames<const> = (
+		constants.world_entrance.enter_world_total_steps
+		+ constants.flow.banner_prewait_frames
+		+ constants.flow.world_banner_frames
+		+ constants.flow.room_transition_frames
+		+ constants.flow.room_switch_wait_frames
+	) * 3
+	assert(__bmsx_host_test.frame_count < transition_timeout_frames,
 		'enter-world timed out'
 			.. ' room=' .. tostring(castle.current_room_number) .. '/' .. tostring(world_transition.world_room_number)
 			.. ' world=' .. tostring(room.world_number) .. '/' .. tostring(world_transition.world_number)

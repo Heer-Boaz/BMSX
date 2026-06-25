@@ -1,13 +1,13 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 
-import { AcceptedInterruptKind, CPU, createNativeFunction, OpCode, RunResult, StringValue, type Program, type ProgramMetadata, type Proto, type Value } from '../../machine/ts/machine/cpu/cpu';
+import { CPU, createNativeFunction, OpCode, RunResult, StringValue, type Program, type ProgramMetadata, type Proto, type Value } from '../../machine/ts/machine/cpu/cpu';
 import { splitText } from '../../machine/ts/common/text_lines';
 import { LuaLexer } from '../../machine/ts/lua/syntax/lexer';
 import { LuaParser } from '../../machine/ts/lua/syntax/parser';
 import { writeInstruction, INSTRUCTION_BYTES } from '../../machine/ts/machine/cpu/instruction_format';
 import { BASE_CYCLES } from '../../machine/ts/machine/cpu/opcode_info';
-import { IO_IRQ_FLAGS, IRQ_VBLANK } from '../../machine/ts/machine/bus/io';
+import { IO_IRQ_MASK, IO_IRQ_FLAGS, IRQ_VBLANK } from '../../machine/ts/machine/bus/io';
 import { IrqController } from '../../machine/ts/machine/devices/irq/controller';
 import { Machine } from '../../machine/ts/machine/machine';
 import { captureMachineSaveState, captureMachineState, restoreMachineSaveState, restoreMachineState } from '../../machine/ts/machine/save_state';
@@ -89,6 +89,7 @@ function makeRuntime(cpu: CPU, sliceStats?: { begin: number; end: number }): Run
 	return {
 		machine: {
 			cpu,
+			memory: irqMemory,
 			irqController: new IrqController(irqMemory),
 			scheduler: {
 				nowCycles: 0,
@@ -110,6 +111,7 @@ function makeRuntime(cpu: CPU, sliceStats?: { begin: number; end: number }): Run
 		vblank: {
 			tickCompleted: false,
 		},
+		programVectors: null,
 	} as unknown as Runtime;
 }
 
@@ -149,6 +151,7 @@ function makeHaltFrameRuntime(): Runtime {
 	const runtime = {
 		machine: {
 			cpu,
+			memory,
 			irqController: new IrqController(memory),
 			scheduler,
 			vdp: {
@@ -220,6 +223,7 @@ function makeCompiledIrqRuntime(source: string): { cpu: CPU; irqController: IrqC
 	const runtime = {
 		machine: {
 			cpu,
+			memory,
 			irqController,
 			scheduler,
 			vdp: { beginFrame: () => {} },
@@ -308,6 +312,7 @@ test('host external closure calls wake from pending IRQ without vectoring', () =
 	cpu.start(1);
 	const runtime = makeRuntime(cpu);
 	runtime.machine.irqController.raise(IRQ_VBLANK);
+	runtime.machine.memory.writeValue(IO_IRQ_MASK, IRQ_VBLANK);
 
 	const out: Value[] = [];
 	callClosureInto(runtime, { protoIndex: 0, upvalues: [] }, [], out);
@@ -316,6 +321,26 @@ test('host external closure calls wake from pending IRQ without vectoring', () =
 	assert.equal(cpu.getFrameDepth(), 1);
 	assert.equal(cpu.isHaltedUntilIrq(), false);
 	assert.equal((runtime.machine.irqController.captureState().pendingFlags & IRQ_VBLANK) !== 0, true);
+});
+
+test('IRQ mask starts closed and gates pending maskable IRQs', () => {
+	const memory = new Memory({ systemRom: new Uint8Array(0) });
+	const irq = new IrqController(memory);
+	const cpu = new CPU(memory);
+	cpu.setProgram(makeProgram(cpu), makeMetadata());
+	cpu.start(0);
+
+	irq.raise(IRQ_VBLANK);
+	assert.equal(memory.readIoU32(IO_IRQ_MASK), 0);
+	assert.equal(cpu.canAcceptMaskableInterruptLine(irq), false);
+
+	memory.writeValue(IO_IRQ_MASK, IRQ_VBLANK);
+	assert.equal(memory.readIoU32(IO_IRQ_MASK), IRQ_VBLANK);
+	assert.equal(cpu.canAcceptMaskableInterruptLine(irq), true);
+
+	memory.writeValue(IO_IRQ_MASK, 0);
+	assert.equal(memory.readIoU32(IO_IRQ_MASK), 0);
+	assert.equal(cpu.canAcceptMaskableInterruptLine(irq), false);
 });
 
 test('CPU closure calls continue after scheduler yield requests', () => {
@@ -415,6 +440,7 @@ test('frame loop vectors a pending IRQ above a halted cart frame', () => {
 
 	assert.equal(cpu.runUntilDepth(0, 100), RunResult.Halted);
 	assert.equal(cpu.isHaltedUntilIrq(), true);
+	runtime.machine.memory.writeValue(IO_IRQ_MASK, IRQ_VBLANK);
 
 	runtime.machine.irqController.raise(IRQ_VBLANK);
 	const state = {
@@ -434,21 +460,26 @@ test('frame loop vectors a pending IRQ above a halted cart frame', () => {
 	assert.deepEqual(cpu.getCallStack().map(frame => frame.protoIndex), [0, 1]);
 	assert.equal(cpu.canAcceptMaskableInterruptLine(runtime.machine.irqController), false);
 
+	runtime.machine.irqController.acknowledge(IRQ_VBLANK);
 	runtime.cpuExecution.runWithBudget(state);
 	assert.equal(cpu.getFrameDepth(), 0);
 	assert.equal(cpu.isHaltedUntilIrq(), false);
+	assert.equal((runtime.machine.irqController.captureState().pendingFlags & IRQ_VBLANK) === 0, true);
+	runtime.machine.irqController.raise(IRQ_VBLANK);
 	assert.equal(cpu.canAcceptMaskableInterruptLine(runtime.machine.irqController), true);
-	assert.equal((runtime.machine.irqController.captureState().pendingFlags & IRQ_VBLANK) !== 0, true);
 });
 
 test('compiled IRQ vector dispatches through cart irq and acknowledges the device line', () => {
 	const source = `
 local irq_ack_addr<const> = 0x0800010c
+local irq_mask_addr<const> = 0x08000110
+local irq_vblank<const> = 0x0010
 irq_seen = 0
 function irq(flags)
 	irq_seen = flags
 	mem[irq_ack_addr] = flags
 end
+mem[irq_mask_addr] = irq_vblank
 while true do
 	halt_until_irq
 end
@@ -465,12 +496,15 @@ end
 	assert.equal((irqController.captureState().pendingFlags & IRQ_VBLANK) === 0, true);
 });
 
-test('compiled IRQ vector re-enters an unacknowledged level line', () => {
+test('compiled IRQ vector storms on an unacknowledged level line', () => {
 	const source = `
+local irq_mask_addr<const> = 0x08000110
+local irq_vblank<const> = 0x0010
 irq_seen = 0
 function irq(flags)
 	irq_seen = irq_seen + 1
 end
+mem[irq_mask_addr] = irq_vblank
 while true do
 	halt_until_irq
 end
@@ -481,13 +515,32 @@ end
 	irqController.raise(IRQ_VBLANK);
 	assert.equal(cpuExecution.runHaltedUntilIrq(state), false);
 	cpuExecution.runWithBudget(state);
-	assert.equal(cpu.getGlobalByKey(StringValue.get(cpu.stringPool.intern('irq_seen'))), 1);
+	assert.equal((cpu.getGlobalByKey(StringValue.get(cpu.stringPool.intern('irq_seen'))) as number) > 1, true);
 	assert.equal((irqController.captureState().pendingFlags & IRQ_VBLANK) !== 0, true);
+});
 
-	assert.equal(cpu.isHaltedUntilIrq(), true);
-	assert.equal(cpuExecution.runHaltedUntilIrq(state), false);
+test('IRQ_MASK accepts pending IRQ at the next guest instruction boundary', () => {
+	const source = `
+local irq_ack_addr<const> = 0x0800010c
+local irq_mask_addr<const> = 0x08000110
+local irq_vblank<const> = 0x0010
+irq_seen = 0
+after_enable = 0
+function irq(flags)
+	irq_seen = irq_seen + flags
+	mem[irq_ack_addr] = flags
+end
+mem[irq_mask_addr] = irq_vblank
+after_enable = irq_seen
+`;
+	const { cpu, irqController, cpuExecution, state } = makeCompiledIrqRuntime(source);
+
+	irqController.raise(IRQ_VBLANK);
 	cpuExecution.runWithBudget(state);
-	assert.equal(cpu.getGlobalByKey(StringValue.get(cpu.stringPool.intern('irq_seen'))), 2);
+
+	assert.equal(cpu.getGlobalByKey(StringValue.get(cpu.stringPool.intern('irq_seen'))), IRQ_VBLANK);
+	assert.equal(cpu.getGlobalByKey(StringValue.get(cpu.stringPool.intern('after_enable'))), IRQ_VBLANK);
+	assert.equal((irqController.captureState().pendingFlags & IRQ_VBLANK) === 0, true);
 });
 
 test('CPU save-state captured inside an interrupt frame restores and returns to the cart frame', () => {
@@ -495,6 +548,7 @@ test('CPU save-state captured inside an interrupt frame restores and returns to 
 	const cpu = runtime.machine.cpu;
 	const moduleCache = new Map<string, Value>();
 	assert.equal(cpu.runUntilDepth(0, 100), RunResult.Halted);
+	runtime.machine.memory.writeValue(IO_IRQ_MASK, IRQ_VBLANK);
 	runtime.machine.irqController.raise(IRQ_VBLANK);
 	const state = {
 		haltGame: false,
@@ -513,8 +567,10 @@ test('CPU save-state captured inside an interrupt frame restores and returns to 
 	assert.deepEqual(cpu.getCallStack().map(frame => frame.protoIndex), [0, 1]);
 	assert.equal(cpu.canAcceptMaskableInterruptLine(runtime.machine.irqController), false);
 
+	runtime.machine.irqController.acknowledge(IRQ_VBLANK);
 	runtime.cpuExecution.runWithBudget(state);
 	assert.equal(cpu.getFrameDepth(), 0);
+	runtime.machine.irqController.raise(IRQ_VBLANK);
 	assert.equal(cpu.canAcceptMaskableInterruptLine(runtime.machine.irqController), true);
 });
 
@@ -533,70 +589,60 @@ test('frame scheduler does not burn active CPU budget while halted for IRQ witho
 	assert.equal(runtime.machine.cpu.isHaltedUntilIrq(), true);
 });
 
-test('CPU accepts NMI before maskable IRQ and preserves explicit maskable state', () => {
-	const memory = new Memory({ systemRom: new Uint8Array(0) });
-	const irq = new IrqController(memory);
-	const cpu = new CPU(memory);
-	cpu.setProgram(makeProgram(cpu), makeMetadata());
-	cpu.start(0);
-
-	assert.equal(cpu.runUntilDepth(0, 100), RunResult.Halted);
-	irq.raise(IRQ_VBLANK);
-	cpu.requestNonMaskableInterrupt();
-
-	assert.equal(cpu.acceptPendingInterrupt(irq), AcceptedInterruptKind.NonMaskable);
-	assert.equal(cpu.isHaltedUntilIrq(), false);
-	cpu.haltUntilIrq();
-	assert.equal(cpu.acceptPendingInterrupt(irq), AcceptedInterruptKind.None);
-	cpu.restoreMaskableInterruptsAfterNonMaskableInterrupt();
-	assert.equal(cpu.acceptPendingInterrupt(irq), AcceptedInterruptKind.Maskable);
-});
-
 test('IRQ state restore preserves asserted line and cart-visible flags', () => {
 	const memory = new Memory({ systemRom: new Uint8Array(0) });
 	const irq = new IrqController(memory);
 
+	memory.writeValue(IO_IRQ_MASK, IRQ_VBLANK);
 	irq.raise(IRQ_VBLANK);
 	const state = irq.captureState();
 	irq.reset();
 
 	assert.equal(irq.hasAssertedMaskableInterruptLine(), false);
 	assert.equal(memory.readIoU32(IO_IRQ_FLAGS), 0);
+	assert.equal(memory.readIoU32(IO_IRQ_MASK), 0);
 
 	irq.restoreState(state);
 
 	assert.equal(irq.hasAssertedMaskableInterruptLine(), true);
 	assert.equal((memory.readIoU32(IO_IRQ_FLAGS) & IRQ_VBLANK) !== 0, true);
+	assert.equal(memory.readIoU32(IO_IRQ_MASK), IRQ_VBLANK);
 });
 
 test('Machine full-state restore preserves asserted IRQ line and cart-visible flags', () => {
 	const machine = makeMachine();
 
+	machine.memory.writeValue(IO_IRQ_MASK, IRQ_VBLANK);
 	machine.irqController.raise(IRQ_VBLANK);
 	const state = captureMachineState(machine);
 	machine.irqController.reset();
 
 	assert.equal(machine.irqController.hasAssertedMaskableInterruptLine(), false);
 	assert.equal(machine.memory.readIoU32(IO_IRQ_FLAGS), 0);
+	assert.equal(machine.memory.readIoU32(IO_IRQ_MASK), 0);
 
 	restoreMachineState(machine, state);
 
 	assert.equal(machine.irqController.hasAssertedMaskableInterruptLine(), true);
 	assert.equal((machine.memory.readIoU32(IO_IRQ_FLAGS) & IRQ_VBLANK) !== 0, true);
+	assert.equal(machine.memory.readIoU32(IO_IRQ_MASK), IRQ_VBLANK);
 });
 
 test('Machine save-state restore preserves asserted IRQ line and cart-visible flags', () => {
 	const machine = makeMachine();
 
+	machine.memory.writeValue(IO_IRQ_MASK, IRQ_VBLANK);
 	machine.irqController.raise(IRQ_VBLANK);
 	const state = captureMachineSaveState(machine);
 	machine.irqController.reset();
 
 	assert.equal(machine.irqController.hasAssertedMaskableInterruptLine(), false);
 	assert.equal(machine.memory.readIoU32(IO_IRQ_FLAGS), 0);
+	assert.equal(machine.memory.readIoU32(IO_IRQ_MASK), 0);
 
 	restoreMachineSaveState(machine, state);
 
 	assert.equal(machine.irqController.hasAssertedMaskableInterruptLine(), true);
 	assert.equal((machine.memory.readIoU32(IO_IRQ_FLAGS) & IRQ_VBLANK) !== 0, true);
+	assert.equal(machine.memory.readIoU32(IO_IRQ_MASK), IRQ_VBLANK);
 });

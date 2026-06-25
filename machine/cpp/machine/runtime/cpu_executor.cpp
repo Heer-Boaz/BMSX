@@ -97,7 +97,7 @@ RunResult CpuExecutionState::runWithBudget(Runtime& runtime, FrameState& frameSt
 		}
 		scheduler.beginCpuSlice(sliceBudget);
 		try {
-			result = cpu.run(sliceBudget);
+			result = cpu.run(sliceBudget, &runtime.machine.irqController, runtime.programVectors().irqProtoIndex);
 		} catch (...) {
 			scheduler.endCpuSlice();
 			throw;

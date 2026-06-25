@@ -1,6 +1,8 @@
 require('cartlib/prelude')
 local irq_flags_addr<const> = 0x08000108
+local irq_mask_addr<const> = 0x08000110
 local irq_vblank<const> = 0x0010
+local irq_apu<const> = 0x0200
 local target<const> = 50
 local vblank_count = 0
 local fail_reason = nil
@@ -124,6 +126,7 @@ local draw_cart<const> = function()
 end
 
 init()
+mem[irq_mask_addr] = irq_vblank | irq_apu
 new_game()
 mem[sys_inp_ctrl] = inp_ctrl_arm
 while true do

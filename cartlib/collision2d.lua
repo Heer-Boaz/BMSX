@@ -83,7 +83,6 @@ local irq_flags_register<const>: *word = irq_flags_addr
 local irq_ack_register<const>: *word = irq_ack_addr
 local geo_cmd_register<const>: *word = sys_geo_cmd
 local geo_status_register<const>: *word = sys_geo_status
-
 local direct_query_contact<const> = {
 	normal = { x = 0, y = 0 },
 	depth = 0,
@@ -154,8 +153,7 @@ local stage_geo_overlap_instance<const> = function(collider, batch_token, instan
 end
 
 local wait_for_geo_completion<const> = function(label)
-	while true do
-		halt_until_irq
+	repeat
 		local flags<const> = irq_flags_register[0]
 		local geo_flags<const> = flags & geo_irq_mask
 		if geo_flags ~= 0 then
@@ -165,10 +163,7 @@ local wait_for_geo_completion<const> = function(label)
 			end
 			return
 		end
-		if flags ~= 0 then
-			irq(flags)
-		end
-	end
+	until false
 end
 
 local ensure_pair_contacts<const> = function(pair)

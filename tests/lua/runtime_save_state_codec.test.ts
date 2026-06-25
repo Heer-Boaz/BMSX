@@ -109,7 +109,7 @@ function createRuntimeSaveState(): RuntimeSaveState {
 					workCarry: 12,
 					availableWorkUnits: 1,
 				},
-				irq: { pendingFlags: 0xa5a5 },
+				irq: { mask: 0x00ff, pendingFlags: 0xa5a5 },
 				audio: {
 					registerWords: audioRegisterWords,
 					commandFifo: {

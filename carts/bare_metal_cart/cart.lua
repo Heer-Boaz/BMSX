@@ -9,9 +9,11 @@ local vdp_stream_base<const> = sys_vdp_stream_base
 local vram_staging_base<const> = sys_vram_staging_base
 local scratch_base<const> = sys_geo_scratch_base
 local irq_ack_addr<const> = 0x0800010c
+local irq_mask_addr<const> = 0x08000110
 local irq_pending_flags = 0
 
 local vdp_dither_register<const>: *word = sys_vdp_dither
+local irq_mask_register<const>: *word = irq_mask_addr
 local irq_ack_register<const>: *word = irq_ack_addr
 local dma_src_register<const>: *word = sys_dma_src
 local dma_dst_register<const>: *word = sys_dma_dst
@@ -1614,6 +1616,7 @@ end
 
 
 *vdp_dither_register = 0
+*irq_mask_register = irq_vblank | irq_dma_done | irq_dma_error
 build_lua_atlas()
 initialize_vdp_resources()
 upload_atlas_to_vram()

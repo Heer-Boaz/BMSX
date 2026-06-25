@@ -879,12 +879,11 @@ public:
 	bool canAcceptMaskableInterruptLine(const IrqController& irqController) const;
 	AcceptedInterruptKind peekPendingInterrupt(const IrqController& irqController) const;
 	bool tryEnterPendingInterrupt(const IrqController& irqController, int irqProtoIndex);
-	AcceptedInterruptKind acceptPendingInterrupt(const IrqController& irqController);
 	void enterHostExternalCall();
 	void leaveHostExternalCall();
 	bool isHostExternalCallActive() const { return m_hostExternalCallDepth != 0; }
-	RunResult run(int instructionBudget);
-	RunResult runUntilDepth(int targetDepth, int instructionBudget);
+	RunResult run(int instructionBudget, const IrqController* irqController = nullptr, int irqProtoIndex = 0);
+	RunResult runUntilDepth(int targetDepth, int instructionBudget, const IrqController* irqController = nullptr, int irqProtoIndex = 0);
 	void unwindToDepth(int targetDepth);
 	void step();
 	void collectHeap();

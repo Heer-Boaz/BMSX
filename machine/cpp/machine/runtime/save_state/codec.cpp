@@ -309,6 +309,7 @@ MemorySaveState decodeMemorySaveState(const BinValue& value, const char* label) 
 
 BinValue encodeIrqControllerState(const IrqControllerState& state) {
 	BinObject object;
+	object["mask"] = static_cast<f64>(state.mask);
 	object["pendingFlags"] = static_cast<f64>(state.pendingFlags);
 	return BinValue(std::move(object));
 }
@@ -316,6 +317,7 @@ BinValue encodeIrqControllerState(const IrqControllerState& state) {
 IrqControllerState decodeIrqControllerState(const BinValue& value, const char* label) {
 	const BinObject& object = requireObject(value, label);
 	IrqControllerState state;
+	state.mask = requireU32(requireField(object, "mask", label), "machine.irq.mask");
 	state.pendingFlags = requireU32(requireField(object, "pendingFlags", label), "machine.irq.pendingFlags");
 	return state;
 }

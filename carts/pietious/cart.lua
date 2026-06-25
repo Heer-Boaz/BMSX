@@ -31,12 +31,17 @@ local castle_map<const> = require('castle/map')
 local init_epoch = 0
 local pending_title_boot_epoch = -1
 
+local irq_flags_addr<const> = 0x08000108
+local irq_ack_addr<const> = 0x0800010c
+local irq_mask_addr<const> = 0x08000110
 local irq_dma_done<const> = 0x01
 local irq_dma_error<const> = 0x02
 local irq_dma_mask<const> = irq_dma_done | irq_dma_error
 local irq_vblank<const> = 0x0010
+local irq_apu<const> = 0x0200
 local vblank_count = 0
-local dma_irq_flags = 0
+local irq_flags_register<const>: *word = irq_flags_addr
+local irq_ack_register<const>: *word = irq_ack_addr
 
 local register_collision_profiles<const> = function()
 	collision_profiles.define('player', {
@@ -58,17 +63,21 @@ local register_collision_profiles<const> = function()
 end
 
 local wait_vblank<const> = function()
-	local observed<const> = vblank_count
 	repeat
 		halt_until_irq
-	until vblank_count ~= observed
+	until vblank_count ~= 0
+	vblank_count = vblank_count - 1
 end
 
 local wait_dma<const> = function()
 	repeat
-		halt_until_irq
-	until (dma_irq_flags & irq_dma_mask) ~= 0
-	dma_irq_flags = dma_irq_flags - (dma_irq_flags & irq_dma_mask)
+		local flags<const> = irq_flags_register[0]
+		local dma_flags<const> = flags & irq_dma_mask
+		if dma_flags ~= 0 then
+			irq_ack_register[0] = dma_flags
+			return
+		end
+	until false
 end
 
 local grant_starting_loadout<const> = function()
@@ -135,9 +144,6 @@ function init()
 	on_irq(irq_vblank, function()
 		vblank_count = vblank_count + 1
 	end)
-	on_irq(irq_dma_mask, function(_, flags)
-		dma_irq_flags = dma_irq_flags | (flags & irq_dma_mask)
-	end)
 	mem[sys_vdp_dither] = 0
 	pietious_font.register_fonts()
 
@@ -194,6 +200,7 @@ end
 -- rendering/DMA happens in the next VBLANK, and the extra wait keeps the game
 -- tick at half the display refresh rate.
 init()
+mem[irq_mask_addr] = irq_vblank | irq_apu
 new_game()
 mem[sys_inp_ctrl] = inp_ctrl_arm
 wait_vblank()

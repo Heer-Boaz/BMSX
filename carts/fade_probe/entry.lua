@@ -1,6 +1,8 @@
 require('cartlib/prelude')
 local frame = 0
+local irq_mask_addr<const> = 0x08000110
 local irq_vblank<const> = 0x0010
+local irq_apu<const> = 0x0200
 local vblank_count = 0
 
 local width<const> = 160
@@ -14,10 +16,10 @@ local green<const> = 0xff20ff20
 local yellow<const> = 0xffffff20
 
 local wait_vblank<const> = function()
-	local observed<const> = vblank_count
 	repeat
 		halt_until_irq
-	until vblank_count ~= observed
+	until vblank_count ~= 0
+	vblank_count = vblank_count - 1
 end
 
 on_irq(irq_vblank, function()
@@ -55,6 +57,7 @@ local draw_cart<const> = function()
 	draw_static_alpha_ladders()
 end
 
+mem[irq_mask_addr] = irq_vblank | irq_apu
 mem[sys_inp_ctrl] = inp_ctrl_arm
 wait_vblank()
 

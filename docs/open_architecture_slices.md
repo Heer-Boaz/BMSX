@@ -134,7 +134,7 @@ Cart-representatie roadmap/status:
 | dynamic Lua-opcodes weren uit systems/static modules | Deels: const-module static function protos worden na codegen/optimalisatie door de compiler geweigerd als dynamic Lua-opcodes overblijven; open: bredere systems/static functieklassen en audit-output zodra daar een echte consumer voor is. |
 | CPU objectwereld loshalen van machine-code ABI | Open: `CPU.Value` is nog Lua-objectwereld; echte cart ABI moet primair words, registers, addresses, memory, sections en symbols zijn. |
 | assets/`rom_data` binair maken | Deels: `rom_data`-familie is weg en `.bin` raw ROM path is getest; open: maps, rooms, timelines, registries en asset records naar vaste binaire layouts. |
-| cart startup/vector model | Deels: `ProgramImage` draagt nu een expliciete vector table (`resetProtoIndex`, `sectionInitProtoIndex`, `irqProtoIndex`) en TS/C++ linker/runtime boot gebruiken die vector table in plaats van losse entry/section-init velden. `init()`/`new_game()` zijn bewust cartfuncties, geen console-ABI: de lifecycle-IRQ-transportlaag is verwijderd, cold cart startup roept ze direct aan en hot-resume voert alleen `init()` als IDE/debugger-call uit. Hardware IRQ's vectoren bij `HALT` naar cartcode die `irq(flags)` dispatcht en owned masks ackt; gemigreerde carts gebruiken ISR-latches in plaats van post-HALT polling als dispatchpad. Open: instruction-boundary preemptie en expliciete EI/DI-MMIO. |
+| cart startup/vector model | Deels: `ProgramImage` draagt nu een expliciete vector table (`resetProtoIndex`, `sectionInitProtoIndex`, `irqProtoIndex`) en TS/C++ linker/runtime boot gebruiken die vector table in plaats van losse entry/section-init velden. `init()`/`new_game()` zijn bewust cartfuncties, geen console-ABI: de lifecycle-IRQ-transportlaag is verwijderd, cold cart startup roept ze direct aan en hot-resume voert alleen `init()` als IDE/debugger-call uit. Hardware IRQ's vectoren bij `HALT` en guest instruction boundaries naar cartcode die `irq(flags)` dispatcht en owned masks ackt; gemigreerde carts gebruiken ISR-latches in plaats van post-HALT polling als dispatchpad. `IRQ_MASK` is de cart-facing per-source vector-maskerlaag; de CPU-global maskable state is alleen interne handler-serialisatie. Open: NMI blijft buiten scope tot er een echte producer is. |
 | verifier/audit voor echte carts | GESCHRAPT in deze vorm: een los retro-cart verifier-script is een slechte slice. De echte gates horen bij de producer/linker/compiler/runtime-eigenaren zelf, niet in een achteraf-scanner die ROMs opnieuw interpreteert. |
 
 ## 14. Legacy cart-data naar vaste binaire ROM-layouts — GESCHRAPT
@@ -482,21 +482,30 @@ Status:
   herstart de reset vector niet en roept alleen de huidige `init()` closure via
   de IDE/debugger-call primitive aan nadat live state is hersteld.
 - hardware IRQ's hebben nu een concrete vector-entry in het imagecontract.
-  De frame-loop accepteert maskable IRQ's bij `HALT` alleen in guest-domain,
-  pusht een interruptframe boven het onderbroken cartframe, schakelt maskable
-  IRQ's uit voor de handler en herstelt de vorige mask-state op `RET`.
-  Host/debugger-calls observeren pending IRQ's alleen om uit `HALT` te komen;
-  zij consumeren/vectoren niet.
+  Guest-domain executie accepteert maskable IRQ's bij `HALT` en op instruction
+  boundaries, pusht een interruptframe boven het onderbroken cartframe,
+  schakelt maskable IRQ's uit voor de handler en herstelt de vorige mask-state
+  op `RET`. Host/debugger-calls observeren pending IRQ's alleen om uit `HALT`
+  te komen; zij consumeren/vectoren niet.
+- `IRQ_MASK` start op `0`. Firmware/carts unmasken alleen de bronnen die zij
+  asynchroon via de vector afhandelen; de CPU-global maskable state is geen
+  cart-facing EI/DI-knop maar alleen de interne handler-serialisatie die bij
+  accept uitgaat en op interrupt-`RET` herstelt. Een pending unmasked lijn wordt
+  bij de eerstvolgende guest instruction boundary na die mask-write geaccepteerd
+  (geen Z80-achtige delayed EI).
+- de boot ROM zet `IRQ_MASK` terug naar `0` direct vóór cart handoff, zodat
+  firmware-owned mask bits niet in de cart reset vector lekken.
 - de IRQ-vector is functioneel: de compiler-generated vector leest `IRQ_FLAGS`
   en roept de program-handler `irq(flags)` aan. Firmware/cartlib handlers
   dispatchen via `system.irq`/`on_irq` en acken alleen de maskers die zij
-  behandelen; gespecialiseerde waits blijven eigenaar van hun eigen unhandled
-  level-bits. Elke raised IRQ-bit moet precies één eigenaar hebben die ack't;
-  een unacknowledged level-bit vector't opnieuw op de volgende `HALT`, zoals
-  hardware. Carts zijn gemigreerd naar ISR-owned latches in plaats van
-  post-`HALT` flags-polling als dispatchpad.
-- NMI is expliciet buiten scope zolang er geen NMI-producer is. Instruction-boundary
-  preemptie en een cart-zichtbaar EI/DI-register blijven de volgende stap.
+  behandelen. Asynchroon gevectoriseerde bronnen worden in `IRQ_MASK` gezet en
+  hebben precies één handler-owner die ack't. Synchroon gewachte bronnen blijven
+  gemasked: de waiter pollt `IRQ_FLAGS` terwijl hij loopt en schrijft `IRQ_ACK`
+  zelf; masked bits zijn zichtbaar maar vectoren en wekken `HALT` niet. Een
+  unmasked unacknowledged level-bit vector't opnieuw op de volgende eligible
+  guest boundary, zoals hardware. Carts zijn gemigreerd naar ISR-owned latches
+  in plaats van post-`HALT` flags-polling als dispatchpad.
+- NMI is expliciet buiten scope zolang er geen NMI-producer is.
 
 Acceptatie:
 
@@ -507,9 +516,10 @@ Acceptatie:
   `init()` als host/debugger-call uit, niet als machine lifecycle interrupt
 - oude Lua-global lifecycle en `reinit`/`new_game` IRQ transport zijn geen
   console ABI meer
-- IRQ-acceptatie bij `HALT` is cartcode-executie: de CPU pusht een handlerframe,
-  de handler leest/dispatcht/ackt de pending bits, en `RET` uit dat frame
-  hervat de onderbroken PC zonder return values naar het cartframe te schrijven
+- IRQ-acceptatie bij `HALT` en instruction boundaries is cartcode-executie: de
+  CPU pusht een handlerframe, de handler leest/dispatcht/ackt de pending bits,
+  en `RET` uit dat frame hervat de onderbroken PC zonder return values naar het
+  cartframe te schrijven
 - unacknowledged level IRQ's worden niet door de emulator weggegooid; zij
   blijven pending en re-vectoren totdat de owner `IRQ_ACK` schrijft
 
