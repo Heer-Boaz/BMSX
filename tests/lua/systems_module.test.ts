@@ -12,6 +12,7 @@ import { compileLuaChunkToProgram, encodeCompiledProgramImage, type CompiledProg
 import type { ProgramImage } from '../../machine/ts/machine/program/loader';
 import { inflateExecutableProgramImage, linkProgramImages } from '../../machine/ts/machine/program/linker';
 
+const CLAMP_INT_PATH = 'bios/util/clamp_int';
 const RECT_OVERLAPS_PATH = 'bios/util/rect_overlaps';
 
 function parseSource(source: string, path: string) {
@@ -63,6 +64,21 @@ return rect_overlaps(0, 0, 10, 10, 5, 5, 1, 1), rect_overlaps(0, 0, 2, 2, 3, 3, 
 	const disasm = disassembleWithoutBootVectors(compiled);
 	assert.doesNotMatch(disasm, /\b(?:NEWT|GETT|SETT|GETI|SETI|GETFIELD|SETFIELD|SELF|CLOSURE|VARARG|CONCAT|CONCATN)\b/);
 	assert.deepEqual(runColdCompiled(compiled), [true, false]);
+});
+
+test('clamp_int compiles as a systems module and calls through export-proto', () => {
+	const moduleSource = readFileSync('machine/firmware/bios/util/clamp_int.lua', 'utf8');
+	const entrySource = `
+local clamp_int<const> = require("${CLAMP_INT_PATH}")
+return clamp_int(-2, 0, 10), clamp_int(7, 0, 10), clamp_int(12, 0, 10)
+`;
+	const compiled = compileWithSystemsModule(entrySource, CLAMP_INT_PATH, moduleSource);
+	assert.equal(compiled.moduleProtoMap.has(CLAMP_INT_PATH), false);
+	assert.equal(compiled.metadata.exportProtoIdBySlot.bios__util__clamp_int?.includes('/static:'), true);
+	assert.equal(compiled.constRelocs.some(reloc => reloc.kind === 'export_proto' && reloc.symbol === 'bios__util__clamp_int'), true);
+	const disasm = disassembleWithoutBootVectors(compiled);
+	assert.doesNotMatch(disasm, /\b(?:NEWT|GETT|SETT|GETI|SETI|GETFIELD|SETFIELD|SELF|CLOSURE|VARARG|CONCAT|CONCATN)\b/);
+	assert.deepEqual(runColdCompiled(compiled), [0, 7, 10]);
 });
 
 test('cart systems-module calls link to system export protos', () => {

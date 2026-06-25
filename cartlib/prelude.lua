@@ -47,7 +47,6 @@ deep_clone = system.deep_clone
 consume_axis_accum = system.consume_axis_accum
 set_velocity = system.set_velocity
 move_with_velocity = system.move_with_velocity
-clamp_int = system.clamp_int
 div_toward_zero = system.div_toward_zero
 round_to_nearest = system.round_to_nearest
 rol8 = system.rol8

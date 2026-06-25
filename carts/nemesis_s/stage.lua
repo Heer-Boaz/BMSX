@@ -1,3 +1,4 @@
+local clamp_int<const> = require('bios/util/clamp_int')
 local constants<const> = require('constants')
 local bin<const> = require('system/bin')
 local assets<const> = require('bmsx/assets')
