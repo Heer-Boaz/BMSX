@@ -760,12 +760,16 @@ export const linkProgramImages = (
 			mergedSystemGlobals.cartRemap,
 		);
 		if (cartNeedsSymbols) {
+			const mergedExportProtoIdBySlot = {
+				...systemMetadata!.exportProtoIdBySlot,
+				...cartMetadata!.exportProtoIdBySlot,
+			};
 			rewriteSymbolicConstRelocations(
 				cartCode,
 				cartImage.link.constRelocs,
 				mergedGlobals.names,
 				mergedSystemGlobals.names,
-				cartMetadata!.exportProtoIdBySlot,
+				mergedExportProtoIdBySlot,
 				systemMetadata!.protoIds.concat(cartMetadata!.protoIds),
 			);
 		}

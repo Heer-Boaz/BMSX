@@ -1,3 +1,4 @@
+local rect_overlaps<const> = require('bios/util/rect_overlaps')
 local constants<const> = require('constants')
 local sprite_id_by_kind<const> = {
 	[1] = {

@@ -19,6 +19,7 @@ import { buildModuleExportPathKey, buildModuleExportSlotName } from './module_na
 import {
 	buildModuleShapeFromExpression,
 	buildTopLevelLocalModuleShapes,
+	createModuleExportNode,
 	type ModuleExportNode,
 } from './module_shape';
 
@@ -42,6 +43,7 @@ export type ModuleCompileInfo = {
 	staticFunctionExportByPathKey: Map<string, StaticFunctionExportSymbol>;
 	staticFunctionExportSlotBySymbolHandle: Map<string, string>;
 	staticStorage: boolean;
+	systemsModule: boolean;
 };
 
 export type ModuleCompileContext = {
@@ -51,8 +53,12 @@ export type ModuleCompileContext = {
 const buildModuleExportSlots = (
 	modulePath: string,
 	exportRoot: ModuleExportNode,
+	includeRootExport: boolean,
 ): Map<string, string> => {
 	const exportSlotsByPathKey = new Map<string, string>();
+	if (includeRootExport) {
+		exportSlotsByPathKey.set('', buildModuleExportSlotName(modulePath, []));
+	}
 	const assignSlots = (node: ModuleExportNode, path: string[], visiting: WeakSet<ModuleExportNode>): void => {
 		if (visiting.has(node)) {
 			return;
@@ -107,6 +113,7 @@ const buildModuleCompileInfo = (
 	external: boolean,
 	constModule: boolean,
 	staticStorage: boolean,
+	systemsModule: boolean,
 	semantics: LuaSemanticFrontendFile,
 ): ModuleCompileInfo | null => {
 	if (chunk.body.length === 0) {
@@ -121,17 +128,19 @@ const buildModuleCompileInfo = (
 		return null;
 	}
 	const returnExpression = returnStatement.expressions[0];
-	const exportRoot = buildModuleShapeFromExpression(returnExpression, buildTopLevelLocalModuleShapes(chunk));
-	if (!exportRoot || exportRoot.children.size === 0) {
-		return null;
-	}
-	const exportConstValueByPathKey = constModule
-		? buildConstModuleExportValues(modulePath, chunk, returnExpression, staticStorage, semantics)
-		: new Map<string, ConstExportValue>();
 	const staticFunctionExportByPathKey = constModule
 		? collectStaticFunctionExportSymbolsByPathKey(modulePath, chunk, returnExpression, semantics)
 		: new Map<string, StaticFunctionExportSymbol>();
-	if (constModule && !staticStorage && staticFunctionExportByPathKey.size !== 0) {
+	const rootStaticFunctionExport = staticFunctionExportByPathKey.has('');
+	const shapedExportRoot = buildModuleShapeFromExpression(returnExpression, buildTopLevelLocalModuleShapes(chunk));
+	if ((!shapedExportRoot || shapedExportRoot.children.size === 0) && !rootStaticFunctionExport) {
+		return null;
+	}
+	const exportRoot = shapedExportRoot ?? createModuleExportNode();
+	const exportConstValueByPathKey = constModule
+		? buildConstModuleExportValues(modulePath, chunk, returnExpression, staticStorage, semantics)
+		: new Map<string, ConstExportValue>();
+	if (constModule && !staticStorage && staticFunctionExportByPathKey.size !== 0 && !systemsModule) {
 		throw new Error(`[Compiler] Const module '${modulePath}' exports static functions but is not compiled as a source module.`);
 	}
 	if (constModule) {
@@ -143,11 +152,12 @@ const buildModuleCompileInfo = (
 		constModule,
 		returnExpression,
 		exportRoot,
-		exportSlotsByPathKey: buildModuleExportSlots(modulePath, exportRoot),
+		exportSlotsByPathKey: buildModuleExportSlots(modulePath, exportRoot, rootStaticFunctionExport),
 		exportConstValueByPathKey,
 		staticFunctionExportByPathKey,
 		staticFunctionExportSlotBySymbolHandle: buildStaticFunctionExportSlotBySymbolHandle(staticFunctionExportByPathKey),
 		staticStorage,
+		systemsModule,
 	};
 };
 
@@ -155,13 +165,15 @@ export const buildModuleCompileContext = (
 	modules: ReadonlyArray<ProgramModule>,
 	externalModules: ReadonlyArray<ProgramModule>,
 	constModulePaths: ReadonlySet<string>,
+	systemsModulePaths: ReadonlySet<string>,
 	frontend: LuaSemanticFrontend,
 ): ModuleCompileContext => {
 	const modulesByPath = new Map<string, ModuleCompileInfo>();
 	for (let index = 0; index < modules.length; index += 1) {
 		const module = modules[index];
-		const constModule = constModulePaths.has(module.path);
-		const info = buildModuleCompileInfo(module.path, module.chunk, constModule, constModule, constModule, frontend.getFile(module.path));
+		const systemsModule = systemsModulePaths.has(module.path);
+		const constModule = constModulePaths.has(module.path) || systemsModule;
+		const info = buildModuleCompileInfo(module.path, module.chunk, constModule, constModule, constModule, systemsModule, frontend.getFile(module.path));
 		if (info) {
 			modulesByPath.set(module.path, info);
 		}
@@ -171,7 +183,8 @@ export const buildModuleCompileContext = (
 		if (modulesByPath.has(module.path)) {
 			continue;
 		}
-		const info = buildModuleCompileInfo(module.path, module.chunk, true, constModulePaths.has(module.path), false, frontend.getFile(module.path));
+		const systemsModule = systemsModulePaths.has(module.path);
+		const info = buildModuleCompileInfo(module.path, module.chunk, true, constModulePaths.has(module.path) || systemsModule, false, systemsModule, frontend.getFile(module.path));
 		if (info) {
 			modulesByPath.set(module.path, info);
 		}

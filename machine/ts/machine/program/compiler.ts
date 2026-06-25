@@ -53,7 +53,7 @@ import { extractAssignmentPath, extractTableKeyFromExpression } from './compiler
 import { appendModuleExportPathKey, buildModuleExportPathKey, buildModuleExportSlotName, buildModuleRootFieldSlotName } from './compiler/module_names';
 import { collectStaticStorageDeclarations, type StaticStorageDeclaration } from './compiler/static_storage';
 import { collectStaticFunctionExports } from './compiler/static_functions';
-import { assertStaticFunctionInstructionSet } from './compiler/static_proto_contract';
+import { assertStaticFunctionInstructionSet, assertSystemsModuleInstructionSet } from './compiler/static_proto_contract';
 import {
 	buildProgramRomImage,
 	encodeProgramObjectSections,
@@ -189,6 +189,7 @@ type CompileOptions = {
 	entrySource?: string;
 	externalModules?: ReadonlyArray<ProgramModule>;
 	constModulePaths?: ReadonlyArray<string>;
+	systemsModulePaths?: ReadonlyArray<string>;
 };
 
 const EMPTY_PROGRAM_MODULES: ReadonlyArray<ProgramModule> = [];
@@ -1977,6 +1978,11 @@ class FunctionBuilder {
 		return !!this.moduleCompileContext?.modulesByPath.get(modulePath)?.constModule;
 	}
 
+	private isStaticFunctionModuleBinding(binding: ModuleBinding): boolean {
+		const info = this.moduleCompileContext?.modulesByPath.get(binding.modulePath);
+		return info !== undefined && info.constModule && info.staticFunctionExportByPathKey.has(binding.exportPathKey);
+	}
+
 	// Resolve a const module export (e.g. `assets.data_x_addr`) to its compile-time
 	// constant value. Returns a wrapper so a `nil`/`false`/`0` export is distinguished
 	// from "not a const export". The value is inlined at the use site.
@@ -2033,14 +2039,10 @@ class FunctionBuilder {
 
 	private tryResolveStaticFunctionExportBinding(expression: LuaExpression): ModuleBinding | null {
 		const binding = this.tryResolveStaticModuleBinding(expression, true);
-		if (!binding || binding.exportDepth === 0) {
+		if (!binding) {
 			return null;
 		}
-		const info = this.moduleCompileContext?.modulesByPath.get(binding.modulePath);
-		if (!info || !info.constModule) {
-			return null;
-		}
-		return info.staticFunctionExportByPathKey.has(binding.exportPathKey) ? binding : null;
+		return this.isStaticFunctionModuleBinding(binding) ? binding : null;
 	}
 
 	private failStaticFunctionExportValueUse(binding: ModuleBinding): never {
@@ -2053,15 +2055,15 @@ class FunctionBuilder {
 
 	private tryResolveModuleExportSlotFromExpression(expression: LuaExpression): string | undefined {
 		const binding = this.tryResolveStaticModuleBinding(expression, false);
-		if (!binding || binding.exportDepth === 0) {
+		if (!binding || (binding.exportDepth === 0 && !this.isStaticFunctionModuleBinding(binding))) {
 			return undefined;
 		}
 		return this.moduleCompileContext?.modulesByPath.get(binding.modulePath)?.exportSlotsByPathKey.get(binding.exportPathKey);
 	}
 
 	private tryResolveModuleExportCallTargetSlot(expression: LuaExpression): string | undefined {
-		const binding = this.tryResolveStaticModuleBinding(expression, false);
-		if (!binding || binding.exportDepth === 0) {
+		const binding = this.tryResolveStaticModuleBinding(expression, true);
+		if (!binding || (binding.exportDepth === 0 && !this.isStaticFunctionModuleBinding(binding))) {
 			return undefined;
 		}
 		const info = this.moduleCompileContext?.modulesByPath.get(binding.modulePath);
@@ -2154,6 +2156,9 @@ class FunctionBuilder {
 		 */
 		const compileTimeModuleRoot = this.tryGetCompileTimeModuleRootBinding(binding);
 		if (compileTimeModuleRoot !== null) {
+			if (this.isStaticFunctionModuleBinding(compileTimeModuleRoot)) {
+				this.failStaticFunctionExportValueUse(compileTimeModuleRoot);
+			}
 			this.failCompileTimeModuleRootRuntimeUse(compileTimeModuleRoot.modulePath);
 		}
 		const constBinding = this.resolveReferenceConstBinding(reference);
@@ -2919,7 +2924,7 @@ class FunctionBuilder {
 						}
 						if (moduleBinding.exportDepth === 0) {
 							initializerModuleBindings[i] = moduleBinding;
-							if (moduleBinding.external) {
+							if (moduleBinding.external || this.isStaticFunctionModuleBinding(moduleBinding)) {
 								initializerValues[i] = null;
 								continue;
 							}
@@ -2961,7 +2966,7 @@ class FunctionBuilder {
 					}
 					if (moduleBinding.exportDepth === 0) {
 						initializerModuleBindings[lastIndex] = moduleBinding;
-						if (moduleBinding.external) {
+						if (moduleBinding.external || this.isStaticFunctionModuleBinding(moduleBinding)) {
 							initializerValues[lastIndex] = null;
 						}
 					}
@@ -4372,9 +4377,6 @@ class FunctionBuilder {
 
 	private compileCallExpression(expression: LuaCallExpression, target: number, resultCount: number): void {
 		const requireBinding = this.tryResolveRequireModuleBinding(expression);
-		if (requireBinding !== null && this.isConstModulePath(requireBinding.modulePath)) {
-			this.failCompileTimeModuleRootRuntimeUse(requireBinding.modulePath);
-		}
 		const methodName = expression.methodName;
 		const hasMethod = methodName !== null && methodName.length > 0;
 		const moduleMethodSlot = hasMethod ? this.tryResolveModuleExportMethodSlot(expression.callee, methodName) : undefined;
@@ -4386,6 +4388,9 @@ class FunctionBuilder {
 			: null;
 		if (constModuleValueCallee !== null) {
 			this.failConstModuleValueCall(constModuleValueCallee.binding);
+		}
+		if (requireBinding !== null && this.isConstModulePath(requireBinding.modulePath) && moduleCallSlot === undefined) {
+			this.failCompileTimeModuleRootRuntimeUse(requireBinding.modulePath);
 		}
 		const callProtoIndex = constClosureBinding !== null ? constClosureBinding.constClosureProtoIndex : null;
 		const argCount = expression.arguments.length;
@@ -4776,7 +4781,8 @@ export function compileLuaChunkToProgram(chunk: LuaChunk, modules: ReadonlyArray
 	const canonicalExternalModules = canonicalizeProgramModules(options.externalModules ?? EMPTY_PROGRAM_MODULES, 'external');
 	const frontend = buildCompilerSemanticFrontend(chunk, canonicalModules, canonicalExternalModules, options);
 	const constModulePaths = new Set<string>(options.constModulePaths ?? []);
-	const moduleCompileContext = buildModuleCompileContext(canonicalModules, canonicalExternalModules, constModulePaths, frontend);
+	const systemsModulePaths = new Set<string>(options.systemsModulePaths ?? []);
+	const moduleCompileContext = buildModuleCompileContext(canonicalModules, canonicalExternalModules, constModulePaths, systemsModulePaths, frontend);
 	const semanticErrors = collectSemanticCompileErrors(frontend, chunk.range.path);
 	if (semanticErrors.length > 0) {
 		throw new Error(buildCompileFailureMessage(semanticErrors));
@@ -4842,7 +4848,11 @@ export function compileLuaChunkToProgram(chunk: LuaChunk, modules: ReadonlyArray
 					const upvalueNames = programBuilder.getProtoUpvalueNames(protoIndex);
 					throw new Error(`[Compiler] Const module '${module.path}' function export '${fn.symbolHandle}' captures runtime local '${upvalueNames[0]}'; static function exports may use globals, compile-time constants, parameters, function-local declarations, and static storage only.`);
 				}
-				assertStaticFunctionInstructionSet(module.path, fn.symbolHandle, programBuilder.getProtoInstructionSet(protoIndex));
+				if (info.systemsModule) {
+					assertSystemsModuleInstructionSet(module.path, `function export '${fn.symbolHandle}'`, programBuilder.getProtoInstructionSet(protoIndex));
+				} else {
+					assertStaticFunctionInstructionSet(module.path, fn.symbolHandle, programBuilder.getProtoInstructionSet(protoIndex));
+				}
 				programBuilder.markStaticClosureProto(protoIndex);
 				for (let slotIndex = 0; slotIndex < fn.slotNames.length; slotIndex += 1) {
 					programBuilder.recordExportProto(fn.slotNames[slotIndex], protoId);

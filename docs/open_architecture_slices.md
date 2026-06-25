@@ -130,9 +130,9 @@ Cart-representatie roadmap/status:
 | echte `rodata`/`data`/`bss` secties | Deels: BLua heeft nu typed `.bss`, `.rodata` en `.data` declaraties; `.bss` wordt door compiler-generated startup-code genuld, `.rodata` is CPU-leesbare immutable PROGRAM_ROM storage, en `.data` heeft RAM VMA + ROM LMA + startup-copy via gewone CPU-code. Open: brede cart-migratie en toekomstige complexere typed layouts buiten v1 primitive arrays. |
 | één object-file/linker pipeline | Deels: program images hebben reloc-records en TS/C++ linkers; eerste install-seam staat nu in de program/linker-eigenaar (`inflateExecutableProgramImage`) voor object-image → executable program; gewone Lua source-boot, hot-resume en host-eval append lopen ook via de compiler-owned `ProgramImage` encoding; system+cart boot-entry selectie loopt via de program/linker-eigenaar (`linkBootProgramImages`) in TS en C++; ROM-build en source-compile zijn geaudit als legitieme input-producers die op dezelfde compiler/linker objectgrens convergeren, niet als resterende split-brain. |
 | runtime relocaties als load/link stap | Deels: `module`/`export_proto` placeholders zijn uit runtimewaarden gehaald; open: harde verifier-gate voor alle executable images. |
-| static module/data ABI | Deels: M2 call-targets kunnen link-time naar `CLOSURE(proto)` en de const-moduleklasse bestaat; const modules exporteren compile-time constants, `.bss`, `.data` en `.rodata` storage-symbolen en leaf/static function call-targets zonder runtime module-table, global-slot lookup of `require`-call. Static function exports mogen sibling static exports aanroepen via `export_proto` link-symbolen; function exports zijn geen runtime waarden. Open: bredere static functionregels buiten const modules. |
-| dynamic Lua-opcodes weren uit systems/static modules | Deels: const-module static function protos worden na codegen/optimalisatie door de compiler geweigerd als dynamic Lua-opcodes overblijven; open: bredere systems/static functieklassen en audit-output zodra daar een echte consumer voor is. |
-| CPU objectwereld loshalen van machine-code ABI | Open: `CPU.Value` is nog Lua-objectwereld; echte cart ABI moet primair words, registers, addresses, memory, sections en symbols zijn. |
+| static module/data ABI | Deels: M2 call-targets kunnen link-time naar `CLOSURE(proto)` en de const-moduleklasse bestaat; const modules exporteren compile-time constants, `.bss`, `.data` en `.rodata` storage-symbolen en leaf/static function call-targets zonder runtime module-table, global-slot lookup of `require`-call. Static function exports mogen sibling static exports aanroepen via `export_proto` link-symbolen; function exports zijn geen runtime waarden. Systems modules zijn de eerste bredere const-module refinement: `bios/util/rect_overlaps` is als systems module aangewezen en wordt alleen als call-target gebruikt. Open: verdere migratie per target/gap. |
+| dynamic Lua-opcodes weren uit systems/static modules | Deels: const-module static function protos worden na codegen/optimalisatie door de compiler geweigerd als dynamic Lua-opcodes overblijven; systems modules gebruiken dezelfde post-codegen gate op hun static export-protos, bewezen op `bios/util/rect_overlaps`. Open: bredere target-migratie en audit-output zodra daar een echte consumer voor is. |
+| CPU objectwereld loshalen van machine-code ABI | Deels: `CPU.Value` is nog Lua-objectwereld, maar systems-module call-targets zoals `bios/util/rect_overlaps` gebruiken nu scalar word/bool calls via link-time `export_proto` zonder runtime module-table of function value. Open: bredere migratie naar words, registers, addresses, memory, sections en symbols als primaire ABI. |
 | assets/`rom_data` binair maken | Deels: `rom_data`-familie is weg en `.bin` raw ROM path is getest; open: maps, rooms, timelines, registries en asset records naar vaste binaire layouts. |
 | cart startup/vector model | Deels: `ProgramImage` draagt nu een expliciete vector table (`resetProtoIndex`, `sectionInitProtoIndex`, `irqProtoIndex`) en TS/C++ linker/runtime boot gebruiken die vector table in plaats van losse entry/section-init velden. `init()`/`new_game()` zijn bewust cartfuncties, geen console-ABI: de lifecycle-IRQ-transportlaag is verwijderd, cold cart startup roept ze direct aan en hot-resume voert alleen `init()` als IDE/debugger-call uit. Hardware IRQ's vectoren bij `HALT` en guest instruction boundaries naar cartcode die `irq(flags)` dispatcht en owned masks ackt; gemigreerde carts gebruiken ISR-latches in plaats van post-HALT polling als dispatchpad. `IRQ_MASK` is de cart-facing per-source vector-maskerlaag; de CPU-global maskable state is alleen interne handler-serialisatie. Open: NMI blijft buiten scope tot er een echte producer is. |
 | verifier/audit voor echte carts | GESCHRAPT in deze vorm: een los retro-cart verifier-script is een slechte slice. De echte gates horen bij de producer/linker/compiler/runtime-eigenaren zelf, niet in een achteraf-scanner die ROMs opnieuw interpreteert. |
@@ -377,8 +377,12 @@ Status:
 - klaar als eerste static opcode-contract increment: const-module static function
   protos worden na codegen/optimalisatie geweigerd wanneer table allocatie of
   dispatch, runtime closure allocatie, vararg of dynamische concat overblijft.
-- open: bredere static functionregels voor toekomstige systems/static function
-  protos buiten const modules
+- klaar als eerste systems-module increment: `bios/util/rect_overlaps` is via
+  `systemsModulePaths` aangewezen als systems module. Het blijft een const-module
+  variant, exporteert zijn root function alleen als static call-target, en
+  bestaande runtime `system.rect_overlaps` / prelude-global transport is verwijderd;
+  consumers importeren het systeem-symbool direct en linken via `export_proto`.
+- open: verdere migratie per target/gap buiten de eerste scalar systems module
 - geen doel: diepe contentgraphs als Lua const-aggregaten naar rodata-bytes
   verlagen. Dat is content-packaging en hoort bij een
   schema-specifieke asset-producer.
@@ -423,12 +427,16 @@ Status:
   elke export-proto en weigert table allocatie/dispatch, runtime closure
   allocatie, vararg en dynamische concat. Dit is geen linter over source-stijl:
   alleen opcodes die na optimalisatie in het static proto overblijven tellen.
+- eerste systems-module target klaar: `bios/util/rect_overlaps` compileert als
+  systems module, heeft geen runtime module-proto, wordt door cart-consumers via
+  `export_proto` naar de system static proto gelinkt, en de systems-lane gate
+  faalt op een aangewezen module die dynamische table-opcodes emit.
 - dynamic gameplay modules blijven buiten deze gate; de gate hangt aan de
   static moduleklasse die al compile-time constants, `.bss`/`.data`/`.rodata` symbols en
   static function exports bezit.
-- open: dezelfde static-proto gate uitbreiden naar toekomstige systems/static
-  functieklassen buiten const modules, en opcode-mix rapportage per module/proto
-  als audit-output toevoegen wanneer er een echte audit-consumer is.
+- open: volgende targets blijven gap-gedreven: math-intrinsics, local scratch
+  aggregates, typed-pointer calling convention en audit-output per module/proto
+  komen pas wanneer een concrete systems-module migratie ze nodig heeft.
 
 Acceptatie:
 
@@ -450,8 +458,9 @@ Status:
 - `CPU.Value` ondersteunt nog Lua-objecten zoals tables, closures en strings
 - huidige bytecode bevat nog Lua-VM opcodes naast low-level memory/register
   operaties
-- systems-lane gebruikt al struct/pointer/memory-lowering, maar dat is nog geen
-  primair machine-code ABI-contract
+- systems-lane gebruikt al struct/pointer/memory-lowering; `rect_overlaps` is de
+  eerste echte scalar systems-module call-target zonder Lua module/value transport,
+  maar dat is nog geen volledig primair machine-code ABI-contract
 
 Acceptatie:
 

@@ -1,7 +1,7 @@
 import { OpCode, getOpcodeName } from '../../cpu/opcode_info';
 import type { InstructionSet } from '../optimizer';
 
-const staticFunctionForbiddenOpcodeReason = (op: OpCode): string | null => {
+const staticLaneForbiddenOpcodeReason = (op: OpCode): string | null => {
 	switch (op) {
 		case OpCode.NEWT:
 			return 'table allocation';
@@ -25,6 +25,20 @@ const staticFunctionForbiddenOpcodeReason = (op: OpCode): string | null => {
 	}
 };
 
+export const assertSystemsModuleInstructionSet = (
+	modulePath: string,
+	protoLabel: string,
+	instructionSet: InstructionSet,
+): void => {
+	const instructions = instructionSet.instructions;
+	for (let index = 0; index < instructions.length; index += 1) {
+		const reason = staticLaneForbiddenOpcodeReason(instructions[index].op);
+		if (reason !== null) {
+			throw new Error(`[Compiler] Systems module '${modulePath}' proto '${protoLabel}' emits forbidden systems-lane opcode ${getOpcodeName(instructions[index].op)} (${reason}). Systems modules must stay in the systems lane: constants, parameters, function-local words, globals, calls, branches, and memory loads/stores only.`);
+		}
+	}
+};
+
 export const assertStaticFunctionInstructionSet = (
 	modulePath: string,
 	symbolHandle: string,
@@ -32,7 +46,7 @@ export const assertStaticFunctionInstructionSet = (
 ): void => {
 	const instructions = instructionSet.instructions;
 	for (let index = 0; index < instructions.length; index += 1) {
-		const reason = staticFunctionForbiddenOpcodeReason(instructions[index].op);
+		const reason = staticLaneForbiddenOpcodeReason(instructions[index].op);
 		if (reason !== null) {
 			throw new Error(`[Compiler] Const module '${modulePath}' function export '${symbolHandle}' emits forbidden static opcode ${getOpcodeName(instructions[index].op)} (${reason}). Static function exports must stay in the systems lane: constants, parameters, function-local words, globals, calls, branches, and memory loads/stores only.`);
 		}

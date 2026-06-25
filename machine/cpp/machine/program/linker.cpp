@@ -776,12 +776,16 @@ LinkedProgramImage linkProgramImages(
 			mergedProtoIds.reserve(systemSymbols->protoIds.size() + cartSymbols->protoIds.size());
 			mergedProtoIds.insert(mergedProtoIds.end(), systemSymbols->protoIds.begin(), systemSymbols->protoIds.end());
 			mergedProtoIds.insert(mergedProtoIds.end(), cartSymbols->protoIds.begin(), cartSymbols->protoIds.end());
+			std::unordered_map<std::string, std::string> mergedExportProtoIdBySlot = systemSymbols->exportProtoIdBySlot;
+			for (const auto& entry : cartSymbols->exportProtoIdBySlot) {
+				mergedExportProtoIdBySlot[entry.first] = entry.second;
+			}
 			rewriteSymbolicConstRelocations(
 				cartCode,
 				cartImage.link.constRelocs,
 				mergedGlobals.names,
 				mergedSystemGlobals.names,
-				cartSymbols->exportProtoIdBySlot,
+				mergedExportProtoIdBySlot,
 				mergedProtoIds
 			);
 		}
