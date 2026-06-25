@@ -874,7 +874,7 @@ export class ValueKindFlowAnalyzer {
 				return;
 			case LuaSyntaxKind.BreakStatement:
 			case LuaSyntaxKind.HaltUntilIrqStatement:
-			case LuaSyntaxKind.StructDeclarationStatement:
+				case LuaSyntaxKind.StructDeclarationStatement:
 			case LuaSyntaxKind.BssDeclarationStatement:
 			case LuaSyntaxKind.DataDeclarationStatement:
 			case LuaSyntaxKind.RodataDeclarationStatement:

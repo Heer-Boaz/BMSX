@@ -53,7 +53,7 @@ import { extractAssignmentPath, extractTableKeyFromExpression } from './compiler
 import { appendModuleExportPathKey, buildModuleExportPathKey, buildModuleExportSlotName, buildModuleRootFieldSlotName } from './compiler/module_names';
 import { collectStaticStorageDeclarations, type StaticStorageDeclaration } from './compiler/static_storage';
 import { collectStaticFunctionExports } from './compiler/static_functions';
-import { assertStaticFunctionInstructionSet, assertSystemsModuleInstructionSet } from './compiler/static_proto_contract';
+import { assertStaticFunctionInstructionSet } from './compiler/static_proto_contract';
 import {
 	buildProgramRomImage,
 	encodeProgramObjectSections,
@@ -189,7 +189,6 @@ type CompileOptions = {
 	entrySource?: string;
 	externalModules?: ReadonlyArray<ProgramModule>;
 	constModulePaths?: ReadonlyArray<string>;
-	systemsModulePaths?: ReadonlyArray<string>;
 };
 
 const EMPTY_PROGRAM_MODULES: ReadonlyArray<ProgramModule> = [];
@@ -1980,7 +1979,7 @@ class FunctionBuilder {
 
 	private isStaticFunctionModuleBinding(binding: ModuleBinding): boolean {
 		const info = this.moduleCompileContext?.modulesByPath.get(binding.modulePath);
-		return info !== undefined && info.constModule && info.staticFunctionExportByPathKey.has(binding.exportPathKey);
+		return info !== undefined && info.staticFunctionExportByPathKey.has(binding.exportPathKey);
 	}
 
 	// Resolve a const module export (e.g. `assets.data_x_addr`) to its compile-time
@@ -2213,7 +2212,7 @@ class FunctionBuilder {
 
 	private emitModuleExportCallTargetLoad(slotName: string, target: number): void {
 		// Call targets may be link-time function symbols. The linker rewrites this
-		// symbolic relocation to CLOSURE(proto) for static function exports, or to a
+		// symbolic relocation to CLOSURE(proto) for function exports, or to a
 		// normal global-slot load for data/upvalue-capturing exports. Non-call value
 		// reads keep direct global loads so export symbols never enter value-flow.
 		this.emitABx(OpCode.LOADK, target, 0, { kind: 'export_proto', symbol: slotName });
@@ -4781,8 +4780,7 @@ export function compileLuaChunkToProgram(chunk: LuaChunk, modules: ReadonlyArray
 	const canonicalExternalModules = canonicalizeProgramModules(options.externalModules ?? EMPTY_PROGRAM_MODULES, 'external');
 	const frontend = buildCompilerSemanticFrontend(chunk, canonicalModules, canonicalExternalModules, options);
 	const constModulePaths = new Set<string>(options.constModulePaths ?? []);
-	const systemsModulePaths = new Set<string>(options.systemsModulePaths ?? []);
-	const moduleCompileContext = buildModuleCompileContext(canonicalModules, canonicalExternalModules, constModulePaths, systemsModulePaths, frontend);
+	const moduleCompileContext = buildModuleCompileContext(canonicalModules, canonicalExternalModules, constModulePaths, frontend);
 	const semanticErrors = collectSemanticCompileErrors(frontend, chunk.range.path);
 	if (semanticErrors.length > 0) {
 		throw new Error(buildCompileFailureMessage(semanticErrors));
@@ -4824,7 +4822,7 @@ export function compileLuaChunkToProgram(chunk: LuaChunk, modules: ReadonlyArray
 	for (let index = 0; index < canonicalModules.length; index += 1) {
 		const module = canonicalModules[index];
 		const info = moduleCompileContext.modulesByPath.get(module.path);
-		if (info === undefined || !info.constModule) {
+		if (info === undefined || info.staticFunctionExportByPathKey.size === 0) {
 			continue;
 		}
 		try {
@@ -4846,13 +4844,9 @@ export function compileLuaChunkToProgram(chunk: LuaChunk, modules: ReadonlyArray
 				const protoIndex = compileFunctionExpression(programBuilder, fn.expression, staticScope, false, protoId, module.path, semantics, frontend);
 				if (!programBuilder.protoHasNoUpvalues(protoIndex)) {
 					const upvalueNames = programBuilder.getProtoUpvalueNames(protoIndex);
-					throw new Error(`[Compiler] Const module '${module.path}' function export '${fn.symbolHandle}' captures runtime local '${upvalueNames[0]}'; static function exports may use globals, compile-time constants, parameters, function-local declarations, and static storage only.`);
+					throw new Error(`[Compiler] Const module '${module.path}' function export '${fn.symbolHandle}' captures runtime local '${upvalueNames[0]}'; function exports may use globals, compile-time constants, parameters, function-local declarations, and static storage only.`);
 				}
-				if (info.systemsModule) {
-					assertSystemsModuleInstructionSet(module.path, `function export '${fn.symbolHandle}'`, programBuilder.getProtoInstructionSet(protoIndex));
-				} else {
-					assertStaticFunctionInstructionSet(module.path, fn.symbolHandle, programBuilder.getProtoInstructionSet(protoIndex));
-				}
+				assertStaticFunctionInstructionSet(module.path, fn.symbolHandle, programBuilder.getProtoInstructionSet(protoIndex));
 				programBuilder.markStaticClosureProto(protoIndex);
 				for (let slotIndex = 0; slotIndex < fn.slotNames.length; slotIndex += 1) {
 					programBuilder.recordExportProto(fn.slotNames[slotIndex], protoId);

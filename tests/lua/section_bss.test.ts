@@ -123,7 +123,7 @@ return *counter, state.counter
 	assert.equal(result.memory.readMappedU32LE(PROGRAM_STATIC_RAM_BASE), 77);
 });
 
-test('const modules export static functions without runtime module state', () => {
+test('const modules export function call targets without runtime module state', () => {
 	const moduleSource = `
 bss counter: word
 local function read()
@@ -152,7 +152,7 @@ return state.read()
 	assert.equal(result.memory.readMappedU32LE(PROGRAM_STATIC_RAM_BASE), 41);
 });
 
-test('const module static function exports are call targets, not runtime values', () => {
+test('const module function exports are call targets, not runtime values', () => {
 	const moduleSource = `
 local function read()
 	return 1
@@ -176,7 +176,7 @@ return { answer = answer }
 	);
 });
 
-test('const module static functions cannot capture module locals', () => {
+test('const module function call targets cannot capture module locals', () => {
 	const moduleSource = `
 local value = 7
 local function read()
@@ -190,7 +190,7 @@ return { read = read }
 	);
 });
 
-test('const module static functions use module compile-time constants without captures', () => {
+test('const module function call targets use module compile-time constants without captures', () => {
 	const moduleSource = `
 local tile_size<const> = 8
 local function tiles_per_row()
@@ -202,7 +202,7 @@ return { tiles_per_row = tiles_per_row }
 	assert.deepEqual(result.values, [32]);
 });
 
-test('const module static functions call sibling static exports through link symbols', () => {
+test('const module function call targets call sibling function exports through link symbols', () => {
 	const moduleSource = `
 bss counter: word
 local function increment(value)
@@ -225,7 +225,7 @@ return state.read_next()
 	assert.deepEqual(runColdCompiled(compiled).values, [41]);
 });
 
-test('const module static functions reject sibling static exports used as values', () => {
+test('const module function call targets reject sibling function exports used as values', () => {
 	const moduleSource = `
 local function increment(value)
 	return value + 1
@@ -242,7 +242,7 @@ return { increment = increment, leak = leak }
 	);
 });
 
-test('const module static functions reject table allocation opcodes', () => {
+test('const module function call targets reject table allocation opcodes', () => {
 	const moduleSource = `
 local function make()
 	return {}
@@ -255,7 +255,7 @@ return { make = make }
 	);
 });
 
-test('const module static functions reject table dispatch opcodes', () => {
+test('const module function call targets reject table dispatch opcodes', () => {
 	const moduleSource = `
 local function read(record)
 	return record.value
@@ -268,7 +268,7 @@ return { read = read }
 	);
 });
 
-test('const module static functions reject runtime closure allocation opcodes', () => {
+test('const module function call targets reject runtime closure allocation opcodes', () => {
 	const moduleSource = `
 local function outer()
 	local function inner() return 1 end
@@ -282,7 +282,7 @@ return { outer = outer }
 	);
 });
 
-test('const module static functions reject vararg opcodes', () => {
+test('const module function call targets reject vararg opcodes', () => {
 	const moduleSource = `
 local function first(...)
 	return ...
@@ -295,7 +295,7 @@ return { first = first }
 	);
 });
 
-test('const module static functions reject dynamic concat opcodes', () => {
+test('const module function call targets reject dynamic concat opcodes', () => {
 	const moduleSource = `
 local function suffix(prefix)
 	return prefix .. "_x"
@@ -308,7 +308,7 @@ return { suffix = suffix }
 	);
 });
 
-test('external const modules cannot export static functions', () => {
+test('external const modules cannot export function call targets', () => {
 	const moduleSource = 'local function read() return 1 end\nreturn { read = read }';
 	assert.throws(
 		() => compileLuaChunkToProgram(
@@ -320,7 +320,7 @@ test('external const modules cannot export static functions', () => {
 				constModulePaths: ['state'],
 			},
 		),
-		/Const module 'state' exports static functions but is not compiled as a source module/,
+		/Const module 'state' exports function call targets but is not compiled as a source module/,
 	);
 });
 

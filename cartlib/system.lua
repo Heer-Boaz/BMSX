@@ -16,13 +16,9 @@ local eventemitter_module<const> = require('cartlib/eventemitter')
 local eventemitter<const> = eventemitter_module.eventemitter
 eventemitter_module.eventemitter = eventemitter
 eventemitter_module.instance = eventemitter.instance
-local bool01<const> = require('bios/util/bool01')
 local deep_clone<const> = require('bios/util/deep_clone')
 local velocity<const> = require('bios/util/velocity')
 local clear_map<const> = require('bios/util/clear_map')
-local div_toward_zero<const> = require('bios/util/div_toward_zero')
-local round_to_nearest<const> = require('bios/util/round_to_nearest')
-local rol8<const> = require('bios/util/rol8')
 local swap_remove<const> = require('bios/util/swap_remove')
 local timeline<const> = require('cartlib/timeline/index')
 local aem<const> = require('cartlib/aem')
@@ -199,7 +195,6 @@ local apply_subsystem_definition<const> = function(instance, def, addons)
 end
 
 local system<const> = {}
-system.bool01 = bool01
 system.clear_map = clear_map
 system.vdp_stream_claim = vdp_stream_claim
 system.vdp_stream_finish = vdp_rpu_quads.finish_frame
@@ -223,9 +218,6 @@ system.consume_axis_accum = velocity.consume_axis_accum
 system.deep_clone = deep_clone
 system.set_velocity = velocity.set_velocity
 system.move_with_velocity = velocity.move_with_velocity
-system.div_toward_zero = div_toward_zero
-system.round_to_nearest = round_to_nearest
-system.rol8 = rol8
 system.swap_remove = swap_remove
 system.timeline = timeline
 

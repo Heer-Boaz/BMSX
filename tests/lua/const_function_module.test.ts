@@ -12,8 +12,13 @@ import { compileLuaChunkToProgram, encodeCompiledProgramImage, type CompiledProg
 import type { ProgramImage } from '../../machine/ts/machine/program/loader';
 import { inflateExecutableProgramImage, linkProgramImages } from '../../machine/ts/machine/program/linker';
 
+const BOOL01_PATH = 'bios/util/bool01';
+const DIV_TOWARD_ZERO_PATH = 'bios/util/div_toward_zero';
+const ROL8_PATH = 'bios/util/rol8';
+const ROUND_TO_NEAREST_PATH = 'bios/util/round_to_nearest';
 const CLAMP_INT_PATH = 'bios/util/clamp_int';
 const RECT_OVERLAPS_PATH = 'bios/util/rect_overlaps';
+const STATIC_FORBIDDEN_OPCODE_PATTERN = /\b(?:NEWT|GETT|SETT|GETI|SETI|GETFIELD|SETFIELD|SELF|CLOSURE|VARARG|CONCAT|CONCATN)\b/;
 
 function parseSource(source: string, path: string) {
 	const lexer = new LuaLexer(source, path);
@@ -21,11 +26,11 @@ function parseSource(source: string, path: string) {
 	return parser.parseChunk();
 }
 
-function compileWithSystemsModule(entrySource: string, modulePath: string, moduleSource: string): CompiledProgram {
+function compileWithModule(entrySource: string, modulePath: string, moduleSource: string): CompiledProgram {
 	return compileLuaChunkToProgram(
 		parseSource(entrySource, 'entry.lua'),
 		[{ path: modulePath, chunk: parseSource(moduleSource, `${modulePath}.lua`), source: moduleSource }],
-		{ entrySource, systemsModulePaths: [modulePath] },
+		{ entrySource },
 	);
 }
 
@@ -51,43 +56,100 @@ function disassembleWithoutBootVectors(compiled: CompiledProgram): string {
 		.join('\n\n');
 }
 
-test('rect_overlaps compiles as a systems module and calls through export-proto', () => {
+test('rect_overlaps compiles as a const function module and calls through export-proto', () => {
 	const moduleSource = readFileSync('machine/firmware/bios/util/rect_overlaps.lua', 'utf8');
 	const entrySource = `
 local rect_overlaps<const> = require("${RECT_OVERLAPS_PATH}")
 return rect_overlaps(0, 0, 10, 10, 5, 5, 1, 1), rect_overlaps(0, 0, 2, 2, 3, 3, 1, 1)
 `;
-	const compiled = compileWithSystemsModule(entrySource, RECT_OVERLAPS_PATH, moduleSource);
+	const compiled = compileWithModule(entrySource, RECT_OVERLAPS_PATH, moduleSource);
 	assert.equal(compiled.moduleProtoMap.has(RECT_OVERLAPS_PATH), false);
 	assert.equal(compiled.metadata.exportProtoIdBySlot.bios__util__rect_overlaps?.includes('/static:'), true);
 	assert.equal(compiled.constRelocs.some(reloc => reloc.kind === 'export_proto' && reloc.symbol === 'bios__util__rect_overlaps'), true);
 	const disasm = disassembleWithoutBootVectors(compiled);
-	assert.doesNotMatch(disasm, /\b(?:NEWT|GETT|SETT|GETI|SETI|GETFIELD|SETFIELD|SELF|CLOSURE|VARARG|CONCAT|CONCATN)\b/);
+	assert.doesNotMatch(disasm, STATIC_FORBIDDEN_OPCODE_PATTERN);
 	assert.deepEqual(runColdCompiled(compiled), [true, false]);
 });
 
-test('clamp_int compiles as a systems module and calls through export-proto', () => {
+test('clamp_int compiles as a const function module and calls through export-proto', () => {
 	const moduleSource = readFileSync('machine/firmware/bios/util/clamp_int.lua', 'utf8');
 	const entrySource = `
 local clamp_int<const> = require("${CLAMP_INT_PATH}")
 return clamp_int(-2, 0, 10), clamp_int(7, 0, 10), clamp_int(12, 0, 10)
 `;
-	const compiled = compileWithSystemsModule(entrySource, CLAMP_INT_PATH, moduleSource);
+	const compiled = compileWithModule(entrySource, CLAMP_INT_PATH, moduleSource);
 	assert.equal(compiled.moduleProtoMap.has(CLAMP_INT_PATH), false);
 	assert.equal(compiled.metadata.exportProtoIdBySlot.bios__util__clamp_int?.includes('/static:'), true);
 	assert.equal(compiled.constRelocs.some(reloc => reloc.kind === 'export_proto' && reloc.symbol === 'bios__util__clamp_int'), true);
 	const disasm = disassembleWithoutBootVectors(compiled);
-	assert.doesNotMatch(disasm, /\b(?:NEWT|GETT|SETT|GETI|SETI|GETFIELD|SETFIELD|SELF|CLOSURE|VARARG|CONCAT|CONCATN)\b/);
+	assert.doesNotMatch(disasm, STATIC_FORBIDDEN_OPCODE_PATTERN);
 	assert.deepEqual(runColdCompiled(compiled), [0, 7, 10]);
 });
 
-test('cart systems-module calls link to system export protos', () => {
+test('remaining scalar helpers compile as const function modules and call through export-proto', () => {
+	const cases = [
+		{
+			path: BOOL01_PATH,
+			name: 'bool01',
+			sourcePath: 'machine/firmware/bios/util/bool01.lua',
+			entry: `
+local bool01<const> = require("${BOOL01_PATH}")
+return bool01(true), bool01(false)
+`,
+			expected: [1, 0],
+		},
+		{
+			path: DIV_TOWARD_ZERO_PATH,
+			name: 'div_toward_zero',
+			sourcePath: 'machine/firmware/bios/util/div_toward_zero.lua',
+			entry: `
+local div_toward_zero<const> = require("${DIV_TOWARD_ZERO_PATH}")
+return div_toward_zero(7, 3), div_toward_zero(-7, 3)
+`,
+			expected: [2, -2],
+		},
+		{
+			path: ROL8_PATH,
+			name: 'rol8',
+			sourcePath: 'machine/firmware/bios/util/rol8.lua',
+			entry: `
+local rol8<const> = require("${ROL8_PATH}")
+return rol8(5), rol8(128)
+`,
+			expected: [10, 1],
+		},
+		{
+			path: ROUND_TO_NEAREST_PATH,
+			name: 'round_to_nearest',
+			sourcePath: 'machine/firmware/bios/util/round_to_nearest.lua',
+			entry: `
+local round_to_nearest<const> = require("${ROUND_TO_NEAREST_PATH}")
+return round_to_nearest(1.4), round_to_nearest(1.6), round_to_nearest(-1.4), round_to_nearest(-1.6)
+`,
+			expected: [1, 2, -1, -2],
+		},
+	];
+	for (let index = 0; index < cases.length; index += 1) {
+		const testCase = cases[index];
+		const moduleSource = readFileSync(testCase.sourcePath, 'utf8');
+		const compiled = compileWithModule(testCase.entry, testCase.path, moduleSource);
+		const slotName = `bios__util__${testCase.name}`;
+		assert.equal(compiled.moduleProtoMap.has(testCase.path), false);
+		assert.equal(compiled.metadata.exportProtoIdBySlot[slotName]?.includes('/static:'), true);
+		assert.equal(compiled.constRelocs.some(reloc => reloc.kind === 'export_proto' && reloc.symbol === slotName), true);
+		const disasm = disassembleWithoutBootVectors(compiled);
+		assert.doesNotMatch(disasm, STATIC_FORBIDDEN_OPCODE_PATTERN);
+		assert.deepEqual(runColdCompiled(compiled), testCase.expected);
+	}
+});
+
+test('cart const-function calls link to system export protos', () => {
 	const moduleSource = readFileSync('machine/firmware/bios/util/rect_overlaps.lua', 'utf8');
 	const module = { path: RECT_OVERLAPS_PATH, chunk: parseSource(moduleSource, `${RECT_OVERLAPS_PATH}.lua`), source: moduleSource };
 	const systemCompiled = compileLuaChunkToProgram(
 		parseSource('return nil', 'system.lua'),
 		[module],
-		{ entrySource: 'return nil', systemsModulePaths: [RECT_OVERLAPS_PATH] },
+		{ entrySource: 'return nil' },
 	);
 	const cartSource = `
 local rect_overlaps<const> = require("${RECT_OVERLAPS_PATH}")
@@ -96,7 +158,7 @@ return rect_overlaps(2, 2, 4, 4, 5, 5, 2, 2)
 	const cartCompiled = compileLuaChunkToProgram(
 		parseSource(cartSource, 'cart.lua'),
 		[],
-		{ entrySource: cartSource, externalModules: [module], systemsModulePaths: [RECT_OVERLAPS_PATH] },
+		{ entrySource: cartSource, externalModules: [module] },
 	);
 	const linked = linkProgramImages(
 		encodeCompiledProgramImage(systemCompiled),
@@ -107,16 +169,15 @@ return rect_overlaps(2, 2, 4, 4, 5, 5, 2, 2)
 	assert.deepEqual(runColdImage(linked.programImage, linked.metadata), [true]);
 });
 
-test('systems modules reject dynamic opcodes across their protos', () => {
+test('const function modules reject dynamic opcodes across their protos', () => {
 	const moduleSource = `
-local bad<const> = function()
+return function()
 	local t = {}
 	return t
 end
-return bad
 `;
 	assert.throws(
-		() => compileWithSystemsModule('return require("bad")()', 'bad', moduleSource),
-		/Systems module 'bad' proto 'function export .*' emits forbidden systems-lane opcode NEWT \(table allocation\)/,
+		() => compileWithModule('return require("bad")()', 'bad', moduleSource),
+		/Module function export 'bad:.*' emits forbidden static opcode NEWT \(table allocation\).*Return a table for dynamic function exports/,
 	);
 });

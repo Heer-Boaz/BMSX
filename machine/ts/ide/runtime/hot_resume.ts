@@ -1,7 +1,6 @@
 import { convertToError } from '../../lua/value';
 import { clearOverlayFrame } from '../../render/host_overlay/overlay_queue';
 import { compileLuaChunkToProgram, encodeCompiledProgramImage } from '../../machine/program/compiler';
-import { SYSTEMS_MODULE_PATHS } from '../../machine/program/compiler/systems_modules';
 import { ROM_ASSET_SYMBOL_MODULE_PATH } from '../../rompack/asset_symbols';
 import { inflateExecutableProgramImage } from '../../machine/program/linker';
 import { callClosureIntoSuspended } from '../../machine/program/executor';
@@ -95,7 +94,6 @@ export function hotResumeProgramEntry(runtime: Runtime, params: { path: string; 
 		optLevel: runtime.realtimeCompileOptLevel,
 		entrySource: source,
 		constModulePaths: [ROM_ASSET_SYMBOL_MODULE_PATH],
-		systemsModulePaths: SYSTEMS_MODULE_PATHS,
 	});
 	const programImage = encodeCompiledProgramImage(compiled);
 	const program = inflateExecutableProgramImage(programImage, compiled.metadata, runtime.programDataBaseAddress, runtime.programBssBaseAddress);

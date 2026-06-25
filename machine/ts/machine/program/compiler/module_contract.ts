@@ -43,7 +43,6 @@ export type ModuleCompileInfo = {
 	staticFunctionExportByPathKey: Map<string, StaticFunctionExportSymbol>;
 	staticFunctionExportSlotBySymbolHandle: Map<string, string>;
 	staticStorage: boolean;
-	systemsModule: boolean;
 };
 
 export type ModuleCompileContext = {
@@ -113,7 +112,6 @@ const buildModuleCompileInfo = (
 	external: boolean,
 	constModule: boolean,
 	staticStorage: boolean,
-	systemsModule: boolean,
 	semantics: LuaSemanticFrontendFile,
 ): ModuleCompileInfo | null => {
 	if (chunk.body.length === 0) {
@@ -128,28 +126,27 @@ const buildModuleCompileInfo = (
 		return null;
 	}
 	const returnExpression = returnStatement.expressions[0];
-	const staticFunctionExportByPathKey = constModule
-		? collectStaticFunctionExportSymbolsByPathKey(modulePath, chunk, returnExpression, semantics)
-		: new Map<string, StaticFunctionExportSymbol>();
+	const staticFunctionExportByPathKey = collectStaticFunctionExportSymbolsByPathKey(modulePath, chunk, returnExpression, semantics, constModule);
 	const rootStaticFunctionExport = staticFunctionExportByPathKey.has('');
+	const compileTimeModule = constModule || rootStaticFunctionExport;
 	const shapedExportRoot = buildModuleShapeFromExpression(returnExpression, buildTopLevelLocalModuleShapes(chunk));
 	if ((!shapedExportRoot || shapedExportRoot.children.size === 0) && !rootStaticFunctionExport) {
 		return null;
 	}
 	const exportRoot = shapedExportRoot ?? createModuleExportNode();
-	const exportConstValueByPathKey = constModule
+	if (constModule && !staticStorage && staticFunctionExportByPathKey.size !== 0) {
+		throw new Error(`[Compiler] Const module '${modulePath}' exports function call targets but is not compiled as a source module.`);
+	}
+	const exportConstValueByPathKey = compileTimeModule
 		? buildConstModuleExportValues(modulePath, chunk, returnExpression, staticStorage, semantics)
 		: new Map<string, ConstExportValue>();
-	if (constModule && !staticStorage && staticFunctionExportByPathKey.size !== 0 && !systemsModule) {
-		throw new Error(`[Compiler] Const module '${modulePath}' exports static functions but is not compiled as a source module.`);
-	}
-	if (constModule) {
+	if (compileTimeModule) {
 		assertConstModuleExportsAreStatic(modulePath, exportRoot, exportConstValueByPathKey, staticFunctionExportByPathKey);
 	}
 	return {
 		path: modulePath,
 		external,
-		constModule,
+		constModule: compileTimeModule,
 		returnExpression,
 		exportRoot,
 		exportSlotsByPathKey: buildModuleExportSlots(modulePath, exportRoot, rootStaticFunctionExport),
@@ -157,7 +154,6 @@ const buildModuleCompileInfo = (
 		staticFunctionExportByPathKey,
 		staticFunctionExportSlotBySymbolHandle: buildStaticFunctionExportSlotBySymbolHandle(staticFunctionExportByPathKey),
 		staticStorage,
-		systemsModule,
 	};
 };
 
@@ -165,17 +161,16 @@ export const buildModuleCompileContext = (
 	modules: ReadonlyArray<ProgramModule>,
 	externalModules: ReadonlyArray<ProgramModule>,
 	constModulePaths: ReadonlySet<string>,
-	systemsModulePaths: ReadonlySet<string>,
 	frontend: LuaSemanticFrontend,
 ): ModuleCompileContext => {
 	const modulesByPath = new Map<string, ModuleCompileInfo>();
 	for (let index = 0; index < modules.length; index += 1) {
 		const module = modules[index];
-		const systemsModule = systemsModulePaths.has(module.path);
-		const constModule = constModulePaths.has(module.path) || systemsModule;
-		const info = buildModuleCompileInfo(module.path, module.chunk, constModule, constModule, constModule, systemsModule, frontend.getFile(module.path));
+		const constModule = constModulePaths.has(module.path);
+		const info = buildModuleCompileInfo(module.path, module.chunk, constModule, constModule, constModule, frontend.getFile(module.path));
 		if (info) {
 			modulesByPath.set(module.path, info);
+			continue;
 		}
 	}
 	for (let index = 0; index < externalModules.length; index += 1) {
@@ -183,10 +178,10 @@ export const buildModuleCompileContext = (
 		if (modulesByPath.has(module.path)) {
 			continue;
 		}
-		const systemsModule = systemsModulePaths.has(module.path);
-		const info = buildModuleCompileInfo(module.path, module.chunk, true, constModulePaths.has(module.path) || systemsModule, false, systemsModule, frontend.getFile(module.path));
+		const info = buildModuleCompileInfo(module.path, module.chunk, true, constModulePaths.has(module.path), false, frontend.getFile(module.path));
 		if (info) {
 			modulesByPath.set(module.path, info);
+			continue;
 		}
 	}
 	return { modulesByPath };

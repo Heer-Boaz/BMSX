@@ -4,7 +4,6 @@ import { convertToError } from '../../lua/value';
 import type { LuaValue } from '../../lua/value';
 import { seedLuaGlobals } from '../../machine/firmware/globals';
 import { compileLuaChunkToProgram, encodeCompiledProgramImage } from '../../machine/program/compiler';
-import { SYSTEMS_MODULE_PATHS } from '../../machine/program/compiler/systems_modules';
 import { inflateExecutableProgramImage, linkBootProgramImages } from '../../machine/program/linker';
 import { readWorkspaceLuaSourceText } from '../workspace/files';
 import { SymbolEntry, SymbolKind } from '../../machine/runtime/contracts';
@@ -257,7 +256,6 @@ function compileRegistryProgramImage(
 		entrySource,
 		externalModules,
 		constModulePaths: [ROM_ASSET_SYMBOL_MODULE_PATH],
-		systemsModulePaths: SYSTEMS_MODULE_PATHS,
 	});
 	return {
 		image: encodeCompiledProgramImage(compiled),
@@ -403,7 +401,6 @@ function bootLuaProgram(runtime: Runtime, options?: { preserveState?: boolean; s
 			optLevel: runtime.realtimeCompileOptLevel,
 			entrySource,
 			constModulePaths: [ROM_ASSET_SYMBOL_MODULE_PATH],
-			systemsModulePaths: SYSTEMS_MODULE_PATHS,
 		});
 		const programImage = encodeCompiledProgramImage(compiled);
 		runtime.programDataBaseAddress = PROGRAM_STATIC_RAM_BASE;

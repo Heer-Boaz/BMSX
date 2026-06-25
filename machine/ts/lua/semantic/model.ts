@@ -1408,7 +1408,7 @@ class SemanticBuilder {
 				const pending: InternalDecl[] = [];
 				for (let index = 0; index < localAssignment.names.length; index += 1) {
 					const name = localAssignment.names[index];
-					const kind = localAssignment.attributes[index] === 'const' ? 'constant' : 'local';
+					const kind = localAssignment.attributes[index] !== null ? 'constant' : 'local';
 					const decl = this.declareLocal(name, kind, false);
 					pending.push(decl);
 					const pointerTypeRef = localAssignment.pointerTypeRefs[index];

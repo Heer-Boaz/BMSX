@@ -17,6 +17,7 @@ import { buildModuleExportPathKey, buildModuleExportSlotName } from './module_na
 export type StaticFunctionExportSymbol = {
 	symbolHandle: string;
 	slotName: string;
+	expression?: LuaFunctionExpression;
 };
 
 export type StaticFunctionExport = {
@@ -56,6 +57,7 @@ const collectStaticFunctionExportSymbols = (
 	expression: LuaExpression,
 	functions: ReadonlyMap<string, LuaFunctionExpression>,
 	semantics: LuaSemanticFrontendFile,
+	includeLocalBindingExports: boolean,
 	out: Map<string, StaticFunctionExportSymbol>,
 	path: string[],
 ): void => {
@@ -73,12 +75,27 @@ const collectStaticFunctionExportSymbols = (
 				continue;
 			}
 			path.push(key);
-			collectStaticFunctionExportSymbols(modulePath, field.value, functions, semantics, out, path);
+			collectStaticFunctionExportSymbols(modulePath, field.value, functions, semantics, includeLocalBindingExports, out, path);
 			path.pop();
 		}
 		return;
 	}
+	if (expression.kind === LuaSyntaxKind.FunctionExpression) {
+		if (path.length !== 0 && !includeLocalBindingExports) {
+			return;
+		}
+		const slotName = buildModuleExportSlotName(modulePath, path);
+		out.set(buildModuleExportPathKey(path), {
+			symbolHandle: slotName,
+			slotName,
+			expression: expression as LuaFunctionExpression,
+		});
+		return;
+	}
 	if (expression.kind !== LuaSyntaxKind.IdentifierExpression) {
+		return;
+	}
+	if (!includeLocalBindingExports) {
 		return;
 	}
 	const reference = getResolvedIdentifierReference(semantics, expression as LuaIdentifierExpression);
@@ -95,9 +112,10 @@ export const collectStaticFunctionExportSymbolsByPathKey = (
 	chunk: LuaChunk,
 	returnExpression: LuaExpression,
 	semantics: LuaSemanticFrontendFile,
+	includeLocalBindingExports: boolean,
 ): Map<string, StaticFunctionExportSymbol> => {
 	const out = new Map<string, StaticFunctionExportSymbol>();
-	collectStaticFunctionExportSymbols(modulePath, returnExpression, collectTopLevelFunctionExpressions(chunk, semantics), semantics, out, []);
+	collectStaticFunctionExportSymbols(modulePath, returnExpression, collectTopLevelFunctionExpressions(chunk, semantics), semantics, includeLocalBindingExports, out, []);
 	return out;
 };
 
@@ -111,9 +129,9 @@ export const collectStaticFunctionExports = (
 	for (const value of staticFunctionExportByPathKey.values()) {
 		let entry = exportsBySymbol.get(value.symbolHandle);
 		if (entry === undefined) {
-			const expression = functions.get(value.symbolHandle);
+			const expression = value.expression ?? functions.get(value.symbolHandle);
 			if (expression === undefined) {
-				throw new Error(`[Compiler] Static function export '${value.symbolHandle}' has no top-level function body.`);
+				throw new Error(`[Compiler] Const module function export '${value.symbolHandle}' has no top-level function body.`);
 			}
 			entry = { symbolHandle: value.symbolHandle, expression, slotNames: [] };
 			exportsBySymbol.set(value.symbolHandle, entry);

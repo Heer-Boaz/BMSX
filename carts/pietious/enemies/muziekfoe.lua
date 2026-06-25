@@ -1,3 +1,4 @@
+local div_toward_zero<const> = require('bios/util/div_toward_zero')
 local constants<const> = require('constants')
 local behaviourtree<const> = require('cartlib/behaviourtree')
 local enemy_base<const> = require('enemies/enemy_base')

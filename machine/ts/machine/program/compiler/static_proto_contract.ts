@@ -25,20 +25,6 @@ const staticLaneForbiddenOpcodeReason = (op: OpCode): string | null => {
 	}
 };
 
-export const assertSystemsModuleInstructionSet = (
-	modulePath: string,
-	protoLabel: string,
-	instructionSet: InstructionSet,
-): void => {
-	const instructions = instructionSet.instructions;
-	for (let index = 0; index < instructions.length; index += 1) {
-		const reason = staticLaneForbiddenOpcodeReason(instructions[index].op);
-		if (reason !== null) {
-			throw new Error(`[Compiler] Systems module '${modulePath}' proto '${protoLabel}' emits forbidden systems-lane opcode ${getOpcodeName(instructions[index].op)} (${reason}). Systems modules must stay in the systems lane: constants, parameters, function-local words, globals, calls, branches, and memory loads/stores only.`);
-		}
-	}
-};
-
 export const assertStaticFunctionInstructionSet = (
 	modulePath: string,
 	symbolHandle: string,
@@ -48,7 +34,7 @@ export const assertStaticFunctionInstructionSet = (
 	for (let index = 0; index < instructions.length; index += 1) {
 		const reason = staticLaneForbiddenOpcodeReason(instructions[index].op);
 		if (reason !== null) {
-			throw new Error(`[Compiler] Const module '${modulePath}' function export '${symbolHandle}' emits forbidden static opcode ${getOpcodeName(instructions[index].op)} (${reason}). Static function exports must stay in the systems lane: constants, parameters, function-local words, globals, calls, branches, and memory loads/stores only.`);
+			throw new Error(`[Compiler] Module function export '${modulePath}:${symbolHandle}' emits forbidden static opcode ${getOpcodeName(instructions[index].op)} (${reason}). Const-module function exports and modules that return a bare function are static call-targets: they must compile to scalar/static code using constants, parameters, function-local words, globals, calls, branches, and memory loads/stores only. Return a table for dynamic function exports.`);
 		}
 	}
 };

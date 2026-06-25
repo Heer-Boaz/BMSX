@@ -44,8 +44,6 @@ const { splitText } = require('../../machine/ts/common/text_lines');
 // @ts-ignore
 const { compileLuaChunkToProgram, encodeCompiledProgramImage, isLuaCompileError } = require('../../machine/ts/machine/program/compiler');
 // @ts-ignore
-const { SYSTEMS_MODULE_PATHS } = require('../../machine/ts/machine/program/compiler/systems_modules');
-// @ts-ignore
 const {
 	PROGRAM_IMAGE_ID,
 	PROGRAM_SYMBOLS_IMAGE_ID,
@@ -1611,7 +1609,6 @@ export function appendProgramImage(
 		entrySource: entryAsset.buffer.toString('utf8'),
 		externalModules,
 		constModulePaths,
-		systemsModulePaths: SYSTEMS_MODULE_PATHS,
 	});
 	const programImage = encodeCompiledProgramImage(compiled);
 

@@ -1,3 +1,4 @@
+local bool01<const> = require('bios/util/bool01')
 local constants<const> = require('constants')
 
 local director<const> = {}

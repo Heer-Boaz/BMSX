@@ -1,3 +1,4 @@
+local bool01<const> = require('bios/util/bool01')
 local clamp_int<const> = require('bios/util/clamp_int')
 local constants<const> = require('constants')
 local player_abilities<const> = require('player/abilities')
