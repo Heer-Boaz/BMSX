@@ -29,7 +29,6 @@ export type RuntimeResumeSnapshot = {
 	luaPath: string;
 	luaGlobals?: LuaEntrySnapshot;
 	luaLocals?: LuaEntrySnapshot;
-	luaRandomSeed?: number;
 	luaProgramCounter?: number;
 	machineState: RuntimeMachineState;
 };

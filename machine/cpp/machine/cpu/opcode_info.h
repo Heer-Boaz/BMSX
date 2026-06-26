@@ -81,6 +81,12 @@ extern const std::array<u8, OPCODE_COUNT> OPCODE_USES_BX;
 extern const std::array<u8, OPCODE_COUNT> OPCODE_USES_DISP;
 extern const std::array<const char*, OPCODE_COUNT> OPCODE_CATEGORY;
 
+inline constexpr int encodeFixedCallArgCount(int argCount) { return argCount + 1; }
+
+inline constexpr int decodeCallArgCount(int operand, int openArgCount) {
+	return operand == 0 ? openArgCount : operand - 1;
+}
+
 auto getOpcodeName(OpCode op) -> const char*;
 
 } // namespace bmsx

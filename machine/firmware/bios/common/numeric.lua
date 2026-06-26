@@ -1,5 +1,6 @@
 local q8_scale<const> = 0x00000100
 local q16_scale<const> = 0x00010000
+local q16_inv_scale<const> = 1.0 / q16_scale
 
 local trunc<const> = function(value)
 	if value < 0 then
@@ -26,6 +27,7 @@ end
 return {
 	q8_scale = q8_scale,
 	q16_scale = q16_scale,
+	q16_inv_scale = q16_inv_scale,
 	trunc = trunc,
 	q16 = q16,
 	pack_low_high = pack_low_high,

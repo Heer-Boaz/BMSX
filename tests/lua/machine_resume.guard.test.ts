@@ -56,15 +56,17 @@ test('Lua source boot installs through the program-image executable boundary', (
 });
 
 
-test('host eval append installs through the program-image executable boundary', () => {
+test('host eval append preserves installed program ROM while resolving appended code', () => {
 	const src = readFileSync('machine/ts/machine/program/executor.ts', 'utf8');
 	const start = src.indexOf('export function runHostEvalChunk');
 	assert.ok(start > -1, 'runHostEvalChunk not found');
 	const nextExport = src.indexOf('\nexport function ', start + 1);
 	const snippet = src.slice(start, nextExport === -1 ? undefined : nextExport);
-	assert.equal(snippet.includes('encodeAppendedProgramImage(compiled)'), true, 'host eval append must pass through the compiler-owned ProgramImage object boundary');
-	assert.equal(snippet.includes('inflateExecutableProgramImage(programImage, compiled.metadata, runtime.programDataBaseAddress, runtime.programBssBaseAddress)'), true, 'host eval append must install through the program/linker executable boundary');
-	assert.equal(snippet.includes('resolveRuntimeProgramRelocations('), false, 'host eval append must not own raw relocation resolution');
+	assert.equal(snippet.includes('appendLuaChunkToProgram(currentProgram'), true, 'host eval append must compile against the currently installed program');
+	assert.equal(snippet.includes('resolveRuntimeProgramRelocations(compiled.program, compiled.metadata, compiled.constRelocs)'), true, 'host eval append must resolve only the appended code relocations in the program owner');
+	assert.equal(snippet.includes('runtime.machine.cpu.setProgram(compiled.program, compiled.metadata)'), true, 'host eval append must keep the base program ROM mapping intact');
+	assert.equal(snippet.includes('encodeAppendedProgramImage('), false, 'host eval append must not rebuild a ProgramImage that drops the installed rodata ROM');
+	assert.equal(snippet.includes('inflateExecutableProgramImage('), false, 'host eval append must not reinflate and shift the installed program ROM boundary');
 });
 
 test('runtime boot asks the program linker for linked boot images', () => {

@@ -7,7 +7,7 @@ import { LuaLexer } from '../../machine/ts/lua/syntax/lexer';
 import { LuaParser } from '../../machine/ts/lua/syntax/parser';
 import { CPU, OpCode, RunResult, StringValue, Table, asStringId, createNativeFunction, valueIsString, type Proto } from '../../machine/ts/machine/cpu/cpu';
 import { INSTRUCTION_BYTES, readInstructionWord, writeInstruction } from '../../machine/ts/machine/cpu/instruction_format';
-import { appendLuaChunkToProgram, compileLuaChunkToProgram, encodeAppendedProgramImage, encodeCompiledProgramImage } from '../../machine/ts/machine/program/compiler';
+import { appendLuaChunkToProgram, compileLuaChunkToProgram, encodeCompiledProgramImage } from '../../machine/ts/machine/program/compiler';
 import { decodeProgramSymbolsImage, inflateProgram, type ProgramImage, type ProgramConstReloc, type ProgramSymbolsImage } from '../../machine/ts/machine/program/loader';
 import { inflateExecutableProgramImage, linkBootProgramImages, linkProgramImages, resolveRuntimeProgramRelocations } from '../../machine/ts/machine/program/linker';
 import { replaceWithJump, replaceWithMov } from '../../machine/ts/machine/program/optimizer/values';
@@ -1027,10 +1027,11 @@ test('compiled program images resolve hot-resume export relocs through the execu
 	assert.equal(((readInstructionWord(executable.code, reloc.wordIndex) >>> 18) & 0x3f) as OpCode, OpCode.CLOSURE);
 });
 
-test('appended program images install host-eval code through the executable boundary', () => {
-	const baseSource = 'return 1';
+test('appended host-eval code preserves the installed program ROM mapping', () => {
+	const baseSource = 'rodata value: word[1] = { 0x12345678 }\nreturn 1';
 	const baseCompiled = compileLuaChunkToProgram(parseChunk(baseSource, 'cart.lua'), [], { entrySource: baseSource });
-	const baseProgram = inflateExecutableProgramImage(encodeCompiledProgramImage(baseCompiled), baseCompiled.metadata);
+	const baseImage = encodeCompiledProgramImage(baseCompiled);
+	const baseProgram = inflateExecutableProgramImage(baseImage, baseCompiled.metadata);
 	const entrySource = 'return "host eval literal"';
 	const appended = appendLuaChunkToProgram(
 		baseProgram,
@@ -1038,14 +1039,16 @@ test('appended program images install host-eval code through the executable boun
 		parseChunk(entrySource, 'host_eval'),
 		{ entrySource },
 	);
-	const image = encodeAppendedProgramImage(appended);
-	const executable = inflateExecutableProgramImage(image, appended.metadata);
+	resolveRuntimeProgramRelocations(appended.program, appended.metadata, appended.constRelocs);
 	const memory = new Memory({ systemRom: new Uint8Array(0) });
 	const cpu = new CPU(memory);
-	cpu.setProgram(executable, appended.metadata);
-	cpu.start(image.vectors.resetProtoIndex);
+	cpu.setProgram(appended.program, appended.metadata);
+	cpu.start(appended.entryProtoIndex);
 
 	assert.equal(cpu.runUntilDepth(0, 100000), RunResult.Halted);
+	assert.equal(appended.program.programRom, baseProgram.programRom);
+	assert.equal(appended.program.programRomTextByteLength, baseProgram.programRomTextByteLength);
+	assert.equal(memory.readU32(PROGRAM_ROM_BASE + baseImage.sections.text.code.byteLength), 0x12345678);
 	const returned = cpu.lastReturnValues[0];
 	assert.ok(valueIsString(returned));
 	assert.equal(cpu.stringPool.toString(asStringId(returned)), 'host eval literal');

@@ -5,8 +5,8 @@ import { INSTRUCTION_BYTES } from '../cpu/instruction_format';
 import { buildMarshalContext, extendMarshalContext, toNativeValue, toRuntimeValue } from '../runtime/host/native_bridge';
 import { advanceRuntimeTime, runDueRuntimeTimers } from '../runtime/cpu_executor';
 import type { Runtime } from '../runtime/runtime';
-import { appendLuaChunkToProgram, encodeAppendedProgramImage } from './compiler';
-import { inflateExecutableProgramImage } from './linker';
+import { appendLuaChunkToProgram } from './compiler';
+import { resolveRuntimeProgramRelocations } from './linker';
 
 function callLuaFunctionPrepared(runtime: Runtime, fn: LuaFunctionValue, luaArgs: ReadonlyArray<LuaValue>): unknown[] {
 	const results = fn.call(luaArgs);
@@ -49,9 +49,8 @@ export function runHostEvalChunk(runtime: Runtime, source: string): Value[] {
 		optLevel: runtime.realtimeCompileOptLevel,
 		entrySource: source,
 	});
-	const programImage = encodeAppendedProgramImage(compiled);
-	const program = inflateExecutableProgramImage(programImage, compiled.metadata, runtime.programDataBaseAddress, runtime.programBssBaseAddress);
-	runtime.machine.cpu.setProgram(program, compiled.metadata);
+	resolveRuntimeProgramRelocations(compiled.program, compiled.metadata, compiled.constRelocs);
+	runtime.machine.cpu.setProgram(compiled.program, compiled.metadata);
 	if (runtime.programMetadata) {
 		runtime.programMetadata = compiled.metadata;
 	} else {
@@ -59,7 +58,7 @@ export function runHostEvalChunk(runtime: Runtime, source: string): Value[] {
 	}
 	const results = runtime.luaScratch.values.acquire();
 	try {
-		callClosureIntoWithScheduler(runtime, { protoIndex: programImage.vectors.resetProtoIndex, upvalues: [] }, [], results);
+		callClosureIntoWithScheduler(runtime, { protoIndex: compiled.entryProtoIndex, upvalues: [] }, [], results);
 		return results.slice();
 	} finally {
 		runtime.luaScratch.values.release(results);

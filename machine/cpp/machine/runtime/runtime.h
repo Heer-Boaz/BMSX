@@ -63,7 +63,6 @@ public:
 	friend void applyRuntimeResumeSnapshot(Runtime& runtime, const RuntimeResumeSnapshot& state);
 	friend auto captureRuntimeCpuState(const Runtime& runtime) -> CpuRuntimeState;
 	friend void applyRuntimeCpuState(Runtime& runtime, const CpuRuntimeState& state);
-	friend void registerMathAndEasingBuiltins(Runtime& runtime);
 	friend void seedSystemGlobals(Runtime& runtime);
 
 	Runtime(
@@ -206,7 +205,6 @@ private:
 	auto buildLuaPatternRegex(const std::string& pattern) -> const std::regex&;
 	auto translateLuaPatternEscape(char token, bool inClass) const -> std::string;
 	auto valueToString(const Value& value) const -> std::string;
-	auto nextRandom() -> double;
 	auto formatLuaString(const std::string& templateStr, NativeArgsView args, size_t argStart) const -> std::string;
 	void logDebugState() const;
 	void logLuaCallStack() const;
@@ -249,7 +247,6 @@ private:
 	Value m_pairsIterator = valueNil();
 	Value m_ipairsIterator = valueNil();
 	PendingCall m_pendingCall = PendingCall::None;
-	uint32_t m_randomSeedValue = 0;
 
 	std::unordered_map<std::string, int> m_moduleProtos;
 	std::unordered_map<std::string, Value> m_moduleCache;

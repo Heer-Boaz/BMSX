@@ -236,7 +236,6 @@ export class Runtime {
 	public nextTableId = 1;
 	public pairsIterator: Value = null;
 	public ipairsIterator: Value = null;
-	public randomSeedValue = 0;
 	public nativeMemberCompletionCache: WeakMap<object, { dot?: LuaMemberCompletion[]; colon?: LuaMemberCompletion[] }> = new WeakMap();
 	public readonly pathSemanticCache: Map<string, { source: string; model?: LuaSemanticModel; definitions?: ReadonlyArray<LuaDefinitionInfo>; parsed?: ParsedLuaChunk; lines?: readonly string[]; analysis?: FileSemanticData }> = new Map();
 
@@ -789,10 +788,6 @@ export class Runtime {
 		this.machine.cpu.setGlobalByKey(this.internString(name), value);
 	}
 
-	public nextRandom(): number {
-		this.randomSeedValue = (this.randomSeedValue * 1664525 + 1013904223) % 4294967296;
-		return this.randomSeedValue / 4294967296;
-	}
 
 	private prepareHandlerError(error: unknown, meta?: { hid: string; moduleId: string; path?: string }): Error {
 		const wrappedError = convertToError(error);

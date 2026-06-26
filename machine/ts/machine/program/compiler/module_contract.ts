@@ -14,7 +14,7 @@ import {
 	collectStaticFunctionExportSymbolsByPathKey,
 	type StaticFunctionExportSymbol,
 } from './static_functions';
-import { collectStaticStorageDeclarations } from './static_storage';
+import { collectStaticStorageDeclarations, type StaticStorageDeclaration } from './static_storage';
 import { buildModuleExportPathKey, buildModuleExportSlotName } from './module_names';
 import {
 	buildModuleShapeFromExpression,
@@ -75,24 +75,25 @@ const buildModuleExportSlots = (
 	return exportSlotsByPathKey;
 };
 
-const buildConstModuleExportValues = (
+const assertExternalConstModuleDeclaresNoStaticStorage = (
 	modulePath: string,
+	declarations: ReadonlyArray<StaticStorageDeclaration>,
+): void => {
+	for (let index = 0; index < declarations.length; index += 1) {
+		const declaration = declarations[index];
+		if (declaration.kind !== 'struct') {
+			throw new Error(`[Compiler] Const module '${modulePath}' declares .${declaration.kind} storage but is not compiled as a source module.`);
+		}
+	}
+};
+
+const buildConstModuleExportValues = (
 	chunk: LuaChunk,
 	returnExpression: LuaExpression,
 	staticStorage: boolean,
 	semantics: LuaSemanticFrontendFile,
-): Map<string, ConstExportValue> => {
-	if (!staticStorage) {
-		const declarations = collectStaticStorageDeclarations(chunk, semantics);
-		for (let index = 0; index < declarations.length; index += 1) {
-			const declaration = declarations[index];
-			if (declaration.kind !== 'struct') {
-				throw new Error(`[Compiler] Const module '${modulePath}' declares .${declaration.kind} storage but is not compiled as a source module.`);
-			}
-		}
-	}
-	return collectConstModuleExportValues(chunk, returnExpression, semantics, staticStorage);
-};
+): Map<string, ConstExportValue> =>
+	collectConstModuleExportValues(chunk, returnExpression, semantics, staticStorage);
 
 const buildStaticFunctionExportSlotBySymbolHandle = (
 	staticFunctionExportByPathKey: ReadonlyMap<string, StaticFunctionExportSymbol>,
@@ -126,19 +127,31 @@ const buildModuleCompileInfo = (
 		return null;
 	}
 	const returnExpression = returnStatement.expressions[0];
-	const staticFunctionExportByPathKey = collectStaticFunctionExportSymbolsByPathKey(modulePath, chunk, returnExpression, semantics, constModule);
+	const staticStorageDeclarations = collectStaticStorageDeclarations(chunk, semantics);
+	let hasStaticStorageDeclaration = false;
+	for (let index = 0; index < staticStorageDeclarations.length; index += 1) {
+		if (staticStorageDeclarations[index].kind !== 'struct') {
+			hasStaticStorageDeclaration = true;
+			break;
+		}
+	}
+	const moduleOwnsStaticStorage = staticStorage || (!external && hasStaticStorageDeclaration);
+	const staticFunctionExportByPathKey = collectStaticFunctionExportSymbolsByPathKey(modulePath, chunk, returnExpression, semantics, constModule || hasStaticStorageDeclaration);
 	const rootStaticFunctionExport = staticFunctionExportByPathKey.has('');
-	const compileTimeModule = constModule || rootStaticFunctionExport;
+	const compileTimeModule = constModule || rootStaticFunctionExport || hasStaticStorageDeclaration;
 	const shapedExportRoot = buildModuleShapeFromExpression(returnExpression, buildTopLevelLocalModuleShapes(chunk));
 	if ((!shapedExportRoot || shapedExportRoot.children.size === 0) && !rootStaticFunctionExport) {
 		return null;
 	}
 	const exportRoot = shapedExportRoot ?? createModuleExportNode();
-	if (constModule && !staticStorage && staticFunctionExportByPathKey.size !== 0) {
-		throw new Error(`[Compiler] Const module '${modulePath}' exports function call targets but is not compiled as a source module.`);
+	if (constModule && !staticStorage) {
+		if (staticFunctionExportByPathKey.size !== 0) {
+			throw new Error(`[Compiler] Const module '${modulePath}' exports function call targets but is not compiled as a source module.`);
+		}
+		assertExternalConstModuleDeclaresNoStaticStorage(modulePath, staticStorageDeclarations);
 	}
 	const exportConstValueByPathKey = compileTimeModule
-		? buildConstModuleExportValues(modulePath, chunk, returnExpression, staticStorage, semantics)
+		? buildConstModuleExportValues(chunk, returnExpression, moduleOwnsStaticStorage, semantics)
 		: new Map<string, ConstExportValue>();
 	if (compileTimeModule) {
 		assertConstModuleExportsAreStatic(modulePath, exportRoot, exportConstValueByPathKey, staticFunctionExportByPathKey);
@@ -153,7 +166,7 @@ const buildModuleCompileInfo = (
 		exportConstValueByPathKey,
 		staticFunctionExportByPathKey,
 		staticFunctionExportSlotBySymbolHandle: buildStaticFunctionExportSlotBySymbolHandle(staticFunctionExportByPathKey),
-		staticStorage,
+		staticStorage: moduleOwnsStaticStorage,
 	};
 };
 

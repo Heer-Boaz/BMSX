@@ -21,8 +21,6 @@ export function registerFirmwareBuiltins(runtime: Runtime, interpreter: LuaInter
 	registerSystemBuiltins(runtime, interpreter);
 }
 
-const EMPTY_LUA_RESULT: LuaCallResult = Object.freeze([]) as unknown as LuaCallResult;
-
 function populateLuaDateTable(table: LuaTable, timestamp: number): void {
 	const time = bmsxCivilTimeFromTimestamp(timestamp);
 	table.set('year', time.year);
@@ -37,13 +35,6 @@ function populateLuaDateTable(table: LuaTable, timestamp: number): void {
 }
 
 function registerInterpreterMachineTimeBuiltins(runtime: Runtime, interpreter: LuaInterpreter): void {
-	const mathTable = interpreter.getGlobal('math') as LuaTable;
-	mathTable.set('randomseed', new LuaNativeFunction('math.randomseed', (args) => {
-		const seedValue = args.length > 0 ? (args[0] as number) : runtime.machineElapsedMs();
-		interpreter.randomSeed = Math.floor(seedValue) >>> 0;
-		return EMPTY_LUA_RESULT;
-	}));
-
 	const osTable = createLuaTable();
 	osTable.set('clock', new LuaNativeFunction('os.clock', () => {
 		return [runtime.machineElapsedMs() / 1000];

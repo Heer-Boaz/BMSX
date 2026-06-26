@@ -1,4 +1,5 @@
 import { OpCode, valueIsString, type Proto, type SourceRange, type UpvalueDesc, type Value } from '../../cpu/cpu';
+import { decodeCallArgCount } from '../../cpu/opcode_info';
 import { MAX_EXT_CONST } from '../../cpu/instruction_format';
 import type { StringPool } from '../../cpu/string_pool';
 import { buildBasicBlocks, buildBlockGraph, getJumpTarget, isJump, remapInstructions, type Block } from '../control_flow';
@@ -14,6 +15,7 @@ import {
 	replaceWithConst,
 	replaceWithJump,
 	type ConstValue,
+	constPoolValueForOptimization,
 } from './values';
 
 export type InstructionFormat = 'ABC' | 'ABx' | 'AsBx';
@@ -42,6 +44,7 @@ export type OptimizationContext = {
 	getClosureUpvalues: (protoIndex: number) => ReadonlyArray<UpvalueDesc>;
 	getProtoMeta: (protoIndex: number) => OptimizationProtoMeta;
 	getProtoInstructionSet: (protoIndex: number) => InstructionSet | null;
+	relocatedConstIndices: ReadonlySet<number>;
 };
 
 export type InstructionSet = {
@@ -67,7 +70,7 @@ const getConstForOperand = (
 ): ConstValue | undefined => {
 	if (useRk && operand < 0) {
 		const constIndex = -1 - operand;
-		return { value: context.constPool[constIndex], constIndex };
+		return constPoolValueForOptimization(context, constIndex) ?? undefined;
 	}
 	return constants.get(operand);
 };
@@ -280,6 +283,15 @@ const clearRegisterRange = <T>(values: Map<number, T>, start: number, countValue
 	}
 };
 
+const setMapConstIfOptimizable = (constants: Map<number, ConstValue>, register: number, context: OptimizationContext, constIndex: number): void => {
+	const value = constPoolValueForOptimization(context, constIndex);
+	if (value) {
+		constants.set(register, value);
+		return;
+	}
+	constants.delete(register);
+};
+
 const equalConstMaps = (left: Map<number, ConstValue>, right: Map<number, ConstValue>): boolean => {
 	if (left.size !== right.size) {
 		return false;
@@ -388,7 +400,7 @@ const computeBlockConstantIn = (
 					}
 					case OpCode.LOADK: {
 						const index = instruction.b;
-						constants.set(instruction.a, { value: context.constPool[index], constIndex: index });
+						setMapConstIfOptimizable(constants, instruction.a, context, index);
 						break;
 					}
 					case OpCode.LOADNIL: {
@@ -583,7 +595,7 @@ const foldConstants = (set: InstructionSet, context: OptimizationContext): Instr
 				}
 				case OpCode.LOADK: {
 					const index = instruction.b;
-					constants.set(instruction.a, { value: context.constPool[index], constIndex: index });
+					setMapConstIfOptimizable(constants, instruction.a, context, index);
 					break;
 				}
 				case OpCode.LOADNIL: {
@@ -714,6 +726,15 @@ const propagateValues = (set: InstructionSet, context: OptimizationContext): Ins
 	const setConst = (constants: Map<number, ConstValue>, copies: Map<number, number>, register: number, value: ConstValue): void => {
 		killRegister(constants, copies, register);
 		constants.set(register, value);
+	};
+
+	const setTrackedConstIfOptimizable = (constants: Map<number, ConstValue>, copies: Map<number, number>, register: number, context: OptimizationContext, constIndex: number): void => {
+		const value = constPoolValueForOptimization(context, constIndex);
+		if (value) {
+			setConst(constants, copies, register, value);
+			return;
+		}
+		killRegister(constants, copies, register);
 	};
 
 	const setCopy = (constants: Map<number, ConstValue>, copies: Map<number, number>, register: number, source: number): void => {
@@ -896,7 +917,7 @@ const propagateValues = (set: InstructionSet, context: OptimizationContext): Ins
 				}
 				case OpCode.LOADK: {
 					const index = instruction.b;
-					setConst(constants, copies, instruction.a, { value: context.constPool[index], constIndex: index });
+					setTrackedConstIfOptimizable(constants, copies, instruction.a, context, index);
 					break;
 				}
 				case OpCode.LOADNIL: {
@@ -1124,7 +1145,7 @@ const eliminateDeadStores = (set: InstructionSet, context: OptimizationContext):
 					}
 					break;
 				case OpCode.CALL: {
-					const countValue = instruction.b === 0 ? maxRegister - instruction.a : instruction.b;
+					const countValue = decodeCallArgCount(instruction.b, maxRegister - instruction.a);
 					pushRegisterRange(uses, instruction.a, countValue + 1);
 					break;
 				}
@@ -1662,7 +1683,7 @@ const buildInlineExpansion = (
 	callRange: SourceRange | null,
 	callee: InlineCallee,
 ): InstructionSet | null => {
-	const argCount = callInstruction.b;
+	const argCount = decodeCallArgCount(callInstruction.b, 0);
 	const resultCount = callInstruction.c;
 	const callBase = callInstruction.a;
 	const { instructions, ranges } = callee.set;
@@ -2057,7 +2078,7 @@ const inlineFunctionCalls = (
 					const protoIndex = instruction.callProtoIndex ?? closures.get(instruction.a);
 					if (protoIndex !== undefined) {
 						const callee = getInlineCallee(protoIndex);
-						if (callee && instruction.b <= callee.meta.numParams && callee.meta.maxStack <= Math.max(instruction.b + 1, instruction.c)) {
+						if (callee && decodeCallArgCount(instruction.b, 0) <= callee.meta.numParams && callee.meta.maxStack <= Math.max(instruction.b, instruction.c)) {
 							const expansion = buildInlineExpansion(instruction, ranges[index], callee);
 							if (expansion) {
 								const nextCount = instructions.length - 1 + expansion.instructions.length;

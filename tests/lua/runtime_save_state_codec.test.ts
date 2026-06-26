@@ -288,7 +288,6 @@ function createRuntimeSaveState(): RuntimeSaveState {
 		systemProgramActive: true,
 		luaInitialized: true,
 		luaRuntimeFailed: false,
-		randomSeed: 123,
 		pendingEntryCall: false,
 	} as unknown as RuntimeSaveState;
 }

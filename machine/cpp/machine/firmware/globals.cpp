@@ -1,5 +1,4 @@
 #include "machine/runtime/runtime.h"
-#include "machine/firmware/builtins.h"
 #include "machine/firmware/system_globals.h"
 #include "machine/firmware/civil_time.h"
 #include "machine/program/load_compiler.h"
@@ -30,6 +29,10 @@ namespace {
 using StringDifference = std::string::difference_type;
 constexpr double LUA_TIME_SAFE_INT_MIN = -9007199254740991.0;
 constexpr double LUA_TIME_SAFE_INT_MAX = 9007199254740991.0;
+
+int floorIntArg(NativeArgsView args, size_t index) {
+	return static_cast<int>(std::floor(asNumber(args.at(index))));
+}
 
 struct LuaPcallError final : std::exception {
 	const Value value;
@@ -992,10 +995,6 @@ std::string Runtime::valueToString(const Value& value) const {
 	return "function";
 }
 
-double Runtime::nextRandom() {
-	m_randomSeedValue = static_cast<uint32_t>((static_cast<uint64_t>(m_randomSeedValue) * 1664525u + 1013904223u) & 0xffffffffu);
-	return static_cast<double>(m_randomSeedValue) / 4294967296.0;
-}
 
 void Runtime::setupBuiltins() {
 	CPU& cpu = machine.cpu;
@@ -1034,7 +1033,6 @@ void Runtime::setupBuiltins() {
 
 	const double maxSafeInteger = 9007199254740991.0;
 
-	registerMathAndEasingBuiltins(*this);
 	seedSystemGlobals(*this);
 
 	registerNativeFunction("u32_to_f32", [](NativeArgsView args, NativeResults& out) {

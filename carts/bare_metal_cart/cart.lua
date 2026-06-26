@@ -4,6 +4,7 @@ local cam_view_terms<const>   = camobj.cam_view_terms
 local cam_proj_terms<const>   = camobj.cam_proj_terms
 local cam_screen_look<const>  = camobj.cam_screen_look
 local cam_move<const>         = camobj.cam_move
+local sincos_turn32<const>    = require('bios/util/sincos_turn32').sincos_turn32
 
 local vdp_stream_base<const> = sys_vdp_stream_base
 local vram_staging_base<const> = sys_vram_staging_base
@@ -54,6 +55,9 @@ local screen_width<const> = 256
 local screen_height<const> = 212
 local inv_half_screen_width<const> = 1.0 / 128.0
 local inv_half_screen_height<const> = 1.0 / 106.0
+local q16_to_f32_scale<const> = numeric.q16_inv_scale
+-- Binary-turn frame step for the demo mesh yaw; runtime yaw state stays turn32.
+local model_yaw_turn_step<const> = 13671306
 
 struct bg_vertex
 	xy: f32[2]
@@ -930,9 +934,11 @@ local write_mesh_constants<const> = function()
 			v_tx<const>, v_ty<const>, v_tz<const> = cam_view_terms(active)
 	-- Model: slow Y-axis auto-rotation (column-major)
 	-- col0=(mc,0,-ms,0), col1=(0,1,0,0), col2=(ms,0,mc,0), col3=(0,0,0,1)
-	local model_yaw<const> = frame * 0.02
-	local mc<const> = math.cos(model_yaw)
-	local ms<const> = math.sin(model_yaw)
+	local model_yaw_turn<const> = (frame * model_yaw_turn_step) & 0xffffffff
+	local ms_q16<const>, mc_q16<const> = sincos_turn32(model_yaw_turn)
+	-- RPU mesh constants are f32; this is the single Q16.16 trig-to-f32 boundary.
+	local mc<const> = mc_q16 * q16_to_f32_scale
+	local ms<const> = ms_q16 * q16_to_f32_scale
 	-- VM = View * Model (column-major, pre-multiply by P below)
 	-- View col-major: col0=(rx,ux,-fx,0), col1=(ry,uy,-fy,0), col2=(rz,uz,-fz,0), col3=(v_tx,v_ty,v_tz,1)
 	-- VM_col0 = View * M_col0 = View * (mc, 0, -ms, 0)

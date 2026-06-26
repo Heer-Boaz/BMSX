@@ -55,9 +55,6 @@ export function captureRuntimeResumeSnapshot(runtime: Runtime): RuntimeResumeSna
 		if (luaSnapshot.locals) {
 			snapshot.luaLocals = luaSnapshot.locals;
 		}
-		if (luaSnapshot.randomSeed !== undefined) {
-			snapshot.luaRandomSeed = luaSnapshot.randomSeed;
-		}
 		if (luaSnapshot.programCounter !== undefined) {
 			snapshot.luaProgramCounter = luaSnapshot.programCounter;
 		}
@@ -65,14 +62,13 @@ export function captureRuntimeResumeSnapshot(runtime: Runtime): RuntimeResumeSna
 	return snapshot;
 }
 
-function captureRuntimeLuaSnapshot(runtime: Runtime): { globals?: LuaEntrySnapshot; locals?: LuaEntrySnapshot; randomSeed?: number; programCounter?: number } {
+function captureRuntimeLuaSnapshot(runtime: Runtime): { globals?: LuaEntrySnapshot; locals?: LuaEntrySnapshot; programCounter?: number } {
 	const interpreter = runtime.interpreter;
 	const globals = captureLuaEntryCollection(runtime, interpreter.enumerateGlobalEntries());
 	const locals = captureLuaEntryCollection(runtime, interpreter.enumerateChunkEntries());
 	return {
 		globals,
 		locals,
-		randomSeed: runtime.randomSeedValue,
 		programCounter: interpreter.programCounter,
 	};
 }
@@ -114,9 +110,6 @@ function shouldSkipLuaResumeSnapshotEntry(runtime: Runtime, name: string, value:
 
 export function restoreRuntimeLuaSnapshot(runtime: Runtime, snapshot: RuntimeResumeSnapshot): void {
 	const interpreter = runtime.interpreter;
-	if (snapshot.luaRandomSeed !== undefined) {
-		runtime.randomSeedValue = snapshot.luaRandomSeed;
-	}
 	if (snapshot.luaProgramCounter !== undefined) {
 		interpreter.programCounter = snapshot.luaProgramCounter;
 	}

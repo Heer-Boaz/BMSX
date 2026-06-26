@@ -309,15 +309,14 @@ Status:
   `Program` en past object-relocs toe vóór CPU-install
 - TS `bootProgramImage`/`bootSystemSourceProgram` en C++ `Runtime::boot`
   gebruiken die program/linker-eigenaar voor object-image install
-- gewone TS Lua source-boot, hot-resume en host-eval append compileren nu eerst
-  naar `ProgramImage` via de compiler-eigenaar (`encodeCompiledProgramImage` /
-  `encodeAppendedProgramImage`) en installeren daarna via dezelfde executable
-  install-boundary; IDE/runtime live paths bezitten die ruwe reloc-resolve stap
-  niet meer
+- gewone TS Lua source-boot en hot-resume compileren eerst naar `ProgramImage`
+  via de compiler-eigenaar (`encodeCompiledProgramImage`) en installeren daarna
+  via dezelfde executable install-boundary; IDE/runtime live paths bezitten die
+  ruwe reloc-resolve stap niet meer
 - host-eval append voegt alleen executable bytecode/protos toe aan de actieve
-  `Program`; de memory-mapped PROGRAM_ROM bytes en text/ROM split blijven de
-  bestaande boot/source-layout behouden, zodat live-eval code geen ROM-section
-  adressen kan verschuiven
+  `Program`, resolvet alleen de appended code-relocs in de program-eigenaar, en
+  behoudt de bestaande memory-mapped PROGRAM_ROM bytes en text/ROM split zodat
+  live-eval code geen ROM-section adressen kan verschuiven
 - system+cart link-orchestratie bezit nu in TS en C++ ook de boot-entry selectie
   (`linkBootProgramImages`); runtime boot-code vraagt de program/linker-eigenaar om
   het concrete linked boot image in plaats van zelf system/cart entrypaden te kiezen
@@ -445,21 +444,45 @@ Status:
   door cart-consumers via `export_proto` naar system const-module protos gelinkt,
   en de opcode-contract gate faalt op een module die dynamische table-opcodes
   emit.
+- eerste `.rodata`-backed math helper klaar: `bios/util/sincos_turn32` is een
+  gewone BLua const-module export met een zichtbare `rodata sin_quarter_lut:
+  word[257]` quarter-wave table en integer quadrant-reconstructie. De naam is
+  geen intrinsic: compiler, CPU, interpreter en devices kennen `sincos_turn32`
+  niet. Output is het bestaande signed Q16.16 fixed-point formaat; input is een
+  32-bit binary turn. `bare_metal_cart` gebruikt deze route voor zijn model-yaw;
+  alleen de RPU f32-constant boundary schaalt de Q16.16 uitkomst naar f32.
 - dynamic gameplay modules blijven buiten deze gate; de gate hangt aan de
   function export/text-symbol ABI en de bestaande const-module storage/value ABI.
-- open: volgende targets blijven gap-gedreven: math-intrinsics, local scratch
+- open: volgende targets blijven gap-gedreven: verdere fixed-point math helpers
+  blijven gewone BLua modules met ROM-data en integercode; local scratch
   aggregates, typed-pointer calling convention en audit-output per module/proto
   komen pas wanneer een concrete function-export migratie ze nodig heeft.
 
 Acceptatie:
 
 - module-padlijsten en fake module markers zijn niet de ABI: de compiler-semantiek
-  komt uit het const-module contract en de root function modulevorm; const modules blijven compiler-input voor generated symbol modules
+  komt uit het const-module contract en de root function modulevorm; const
+  modules blijven compiler-input voor generated symbol modules
 - compiler controleert de uiteindelijke geoptimaliseerde protos van const-module
   function exports en faalt de build wanneer verboden dynamische opcodes
   overblijven (klaar voor const-module function exports)
 - opcode-mix rapportage per module/proto is beschikbaar voor audit (open)
 - gameplay/dynamic lane blijft mogelijk, maar niet voor console ABI of hot path
+- firmware trig gebruikt geen compiler-known namen, host `Math.*`, nieuwe opcode
+  of native builtin in de runtime; lookup gebeurt via `.rodata` en normale
+  integer/pointer instructies
+- de guest `math` API wordt door `bios/math.lua` geleverd en `easing` door
+  `bios/easing.lua`; de machine-native TS/C++ `math.*` en `easing.*`
+  callbacktabellen zijn verwijderd zodat shipped guest-code niet meer via host
+  `Math.*`/`std::*` rekent
+- `math.sin`, `math.cos` en `math.tan` hebben het firmware-LUT/Q16.16
+  precisiecontract; exacte turn-singulariteiten leveren de normale Lua
+  numerieke infinity op, terwijl bijna-singuliere radian inputs eindig blijven
+- resterende native Lua library support is uitgesplitst: `os.clock` en default
+  `os.time`/`os.date` blijven machine-scheduler/civil-time builtins, terwijl
+  `string.*`/`table.*`/core functies onder de aparte Lua-objectwereld-lane
+  vallen. Geen van beide is precedent voor nieuwe cart-zichtbare host
+  faciliteiten.
 
 ## 21. CPU machine-code ABI loshalen van Lua-objectwereld
 

@@ -13,7 +13,6 @@ struct RuntimeSaveState {
 	bool systemProgramActive = false;
 	bool luaInitialized = false;
 	bool luaRuntimeFailed = false;
-	uint32_t randomSeed = 0;
 	bool pendingEntryCall = false;
 };
 

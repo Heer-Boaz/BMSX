@@ -140,3 +140,34 @@ local values = { nil, 1 }
 return values[1] < values[2]
 `), /Attempted to compare nil with number/);
 });
+test('passes no stale arguments to zero-argument closure calls', () => {
+	const result = run(`
+local function optional(value)
+	return value == nil
+end
+local module = { optional = optional }
+return module.optional(), optional()
+`);
+	assert.equal(result.length, 2);
+	assert.equal(result[0], true);
+	assert.equal(result[1], true);
+});
+
+test('open varargs do not expose stale frame top values', () => {
+	const result = run(`
+local function take(a, ...)
+	return a, ...
+end
+local function pass(...)
+	local scratch0, scratch1, scratch2 = 1, 2, 3
+	local first, second, third = take(...)
+	return first, second == nil, third == nil, scratch0 + scratch1 + scratch2
+end
+return pass(22)
+`);
+	assert.equal(result.length, 4);
+	assert.equal(result[0], 22);
+	assert.equal(result[1], true);
+	assert.equal(result[2], true);
+	assert.equal(result[3], 6);
+});

@@ -152,17 +152,19 @@ return state.read()
 	assert.equal(result.memory.readMappedU32LE(PROGRAM_STATIC_RAM_BASE), 41);
 });
 
-test('const module function exports are call targets, not runtime values', () => {
+test('const module function export aliases stay call targets', () => {
 	const moduleSource = `
 local function read()
 	return 1
 end
 return { read = read }
 `;
-	assert.throws(
-		() => compileWithConstModule('local state<const> = require("state")\nlocal read<const> = state.read\nreturn read()', 'state', moduleSource),
-		/function export 'read' is a call target, not a runtime value/,
-	);
+	const compiled = compileWithConstModule('local state<const> = require("state")\nlocal read<const> = state.read\nreturn read()', 'state', moduleSource);
+	const disasm = disassembleProgramWithoutIrqVector(compiled);
+	assert.equal(compiled.moduleProtoMap.has('state'), false);
+	assert.equal(compiled.constRelocs.some(reloc => reloc.kind === 'export_proto' && reloc.symbol === 'state__read'), true);
+	assert.doesNotMatch(disasm, /\bGET(GL|SYS)\b.*state__read/);
+	assert.deepEqual(runColdCompiled(compiled).values, [1]);
 });
 
 test('const module value exports are not lowered as call-target symbols', () => {

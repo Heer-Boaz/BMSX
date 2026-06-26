@@ -2,6 +2,8 @@
 -- bmsx system boot screen
 
 require('system/msx_colors')
+math = require('bios/math')
+easing = require('bios/easing')
 local clamp_int<const> = require('bios/util/clamp_int')
 local wrap_text_lines<const> = require('bios/util/wrap_text_lines')
 local vdp_rpu_quads<const> = require('system/vdp_rpu_quads')

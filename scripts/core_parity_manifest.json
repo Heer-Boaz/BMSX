@@ -26,6 +26,16 @@
 			"reason": "cpu_interpreter_exception; semantics tested, file parity not required"
 		},
 		{
+			"pattern": "machine/ts/machine/firmware/builtins.ts",
+			"category": "cpu_interpreter_exception",
+			"reason": "ts_lua_source_interpreter_builtins_no_cpp_runtime"
+		},
+		{
+			"pattern": "machine/ts/machine/firmware/builtin_descriptors.ts",
+			"category": "language",
+			"reason": "ts_lua_language_builtin_metadata_no_cpp_runtime"
+		},
+		{
 			"pattern": "machine/ts/machine/program/optimizer/**",
 			"category": "compiler_tooling",
 			"reason": "compiler_optimizer_excluded"
@@ -1753,8 +1763,7 @@
 		},
 		{
 			"roots": [
-				"machine/ts/machine/firmware/builtin_descriptors.ts",
-				"machine/cpp/machine/firmware/builtin_descriptors.cpp"
+				"machine/ts/machine/firmware/builtin_descriptors.ts"
 			],
 			"substrings": [
 				"blitter command",
@@ -2233,13 +2242,6 @@
 				"export const SYSTEM_LUA_BUILTIN_FUNCTIONS: ReadonlyArray<LuaBuiltinDescriptor> = [\n];"
 			],
 			"reason": "ts_firmware_system_builtins_must_stay_tiny_after_cartlib_split"
-		},
-		{
-			"file": "machine/cpp/machine/firmware/builtin_descriptors.cpp",
-			"substrings": [
-				"constexpr std::array<LuaBuiltinDescriptor, 0> kSystemLuaBuiltinFunctions"
-			],
-			"reason": "native_firmware_system_builtins_must_stay_tiny_after_cartlib_split"
 		},
 		{
 			"file": "machine/firmware/system/vdp_rpu_quads.lua",

@@ -7,7 +7,7 @@ import {
 	enforceLuaHeapBudget
 } from '../memory/lua_heap_usage';
 import { formatNumber } from '../common/number_format';
-import { BASE_CYCLES, OPCODE_USES_BX, OPCODE_USES_DISP, OpCode } from './opcode_info';
+import { BASE_CYCLES, OPCODE_USES_BX, OPCODE_USES_DISP, OpCode, decodeCallArgCount } from './opcode_info';
 import { CpuExecutionProfiler, formatCpuProfilerReport, type CpuProfilerReportOptions } from './profiler';
 import { EXT_A_BITS, EXT_B_BITS, EXT_BX_BITS, EXT_C_BITS, INSTRUCTION_BYTES, MAX_BX_BITS, MAX_OPERAND_BITS, readInstructionWord, signExtend } from './instruction_format';
 import { MEMORY_ACCESS_KIND_NAMES, MemoryAccessKind } from '../memory/access_kind';
@@ -135,36 +135,6 @@ function resolveNativeFunctionCost(name: string): NativeFnCost {
 		case 'clock_now':
 		case 'devtools.get_lua_entry_path':
 			return NATIVE_COST_TIER0;
-		case 'math.abs':
-		case 'math.acos':
-		case 'math.asin':
-		case 'math.atan':
-		case 'math.ceil':
-		case 'math.cos':
-		case 'math.deg':
-		case 'math.exp':
-		case 'math.floor':
-		case 'math.fmod':
-		case 'math.log':
-		case 'math.max':
-		case 'math.min':
-		case 'math.rad':
-		case 'math.sin':
-		case 'math.sign':
-		case 'math.sqrt':
-		case 'math.tan':
-		case 'math.tointeger':
-		case 'math.type':
-		case 'math.ult':
-		case 'math.random':
-		case 'easing.linear':
-		case 'easing.ease_in_quad':
-		case 'easing.ease_out_quad':
-		case 'easing.ease_in_out_quad':
-		case 'easing.ease_out_back':
-		case 'easing.smoothstep':
-		case 'easing.pingpong01':
-		case 'easing.arc01':
 		case 'type':
 		case 'tonumber':
 		case 'tostring':
@@ -199,8 +169,6 @@ function resolveNativeFunctionCost(name: string): NativeFnCost {
 		case 'array':
 		case 'assert':
 		case 'error':
-		case 'math.modf':
-		case 'math.randomseed':
 		case 'os.time':
 			return NATIVE_COST_TIER2;
 		case 'string.find':
@@ -2608,11 +2576,14 @@ export class CPU {
 						const value = index < frame.varargCount ? this.stackRegisters.get(frame.varargBase + index) : null;
 						this.setRegisterFast(frame, registers, a + index, value);
 					}
+					if (b === 0) {
+						frame.top = a + count;
+					}
 					return;
 				}
 				case OpCode.CALL: {
 					const callee = registers.get(a);
-					const argCount = b === 0 ? Math.max(frame.top - a - 1, 0) : b;
+					const argCount = decodeCallArgCount(b, Math.max(frame.top - a - 1, 0));
 					if (callee === null) {
 						throw new Error(`Attempted to call a nil value. at ${this.formatLastSourceLocation()}`);
 					}

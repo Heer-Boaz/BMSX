@@ -401,11 +401,14 @@ DISPATCH_LABEL(VARARG) {
 		Value value = i < FRAME.varargCount ? m_stack[static_cast<size_t>(FRAME.varargBase + i)] : valueNil();
 		SET_REGISTER_FAST(a + i, value);
 	}
+	if (b == 0) {
+		FRAME.top = a + count;
+	}
 	DISPATCH_CONTINUE();
 }
 
 DISPATCH_LABEL(CALL) {
-	int argCount = b == 0 ? std::max(FRAME.top - a - 1, 0) : b;
+	int argCount = decodeCallArgCount(b, std::max(FRAME.top - a - 1, 0));
 	int retCount = c;
 	const Value& callee = REG(a);
 	if (valueIsClosure(callee)) {

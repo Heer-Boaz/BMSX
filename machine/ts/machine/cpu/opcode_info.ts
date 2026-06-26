@@ -67,6 +67,11 @@ export const enum OpCode {
 
 export const OPCODE_COUNT = 64;
 
+export const encodeFixedCallArgCount = (argCount: number): number => argCount + 1;
+
+export const decodeCallArgCount = (operand: number, openArgCount: number): number =>
+	operand === 0 ? openArgCount : operand - 1;
+
 export const OPCODE = {
 	WIDE: OpCode.WIDE,
 	MOV: OpCode.MOV,

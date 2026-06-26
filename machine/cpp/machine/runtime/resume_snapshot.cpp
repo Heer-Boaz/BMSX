@@ -13,7 +13,6 @@ RuntimeResumeSnapshot captureRuntimeResumeSnapshot(const Runtime& runtime) {
 	runtime.machine.cpu.globals->forEachEntry([&snapshot](Value key, Value value) {
 		snapshot.globals.emplace_back(key, value);
 	});
-	snapshot.randomSeed = runtime.m_randomSeedValue;
 	snapshot.pendingEntryCall = runtime.m_pendingCall == Runtime::PendingCall::Entry;
 	return snapshot;
 }
@@ -21,7 +20,6 @@ RuntimeResumeSnapshot captureRuntimeResumeSnapshot(const Runtime& runtime) {
 void applyRuntimeResumeSnapshot(Runtime& runtime, const RuntimeResumeSnapshot& snapshot) {
 	applyRuntimeMachineState(runtime, snapshot.machineState);
 	restoreVdpContextState(runtime.machine.vdp, runtime.view());
-	runtime.m_randomSeedValue = snapshot.randomSeed;
 	runtime.m_pendingCall = snapshot.pendingEntryCall ? Runtime::PendingCall::Entry : Runtime::PendingCall::None;
 
 	runtime.machine.cpu.globals->clear();

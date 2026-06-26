@@ -40,6 +40,7 @@ import {
 	type LuaGotoStatement,
 } from '../../lua/syntax/ast';
 import { OpCode, StringValue, asStringId, valueIsString, type Program, type ProgramMetadata, type Proto, type UpvalueDesc, type Value, type SourceRange, type LocalSlotDebug } from '../cpu/cpu';
+import { encodeFixedCallArgCount } from '../cpu/opcode_info';
 import { optimizeInstructions, type Instruction, type InstructionSet, type OptimizationLevel } from './optimizer';
 import {
 	buildModuleCompileContext,
@@ -157,13 +158,6 @@ export function encodeCompiledProgramImage(compiled: CompiledProgram): ProgramIm
 		compiled.rodataBytes,
 		compiled.rodataSymbols,
 	);
-}
-
-// A host-eval append compiles a one-shot chunk against an already-installed base
-// program, so it introduces no module/static-module protos of its own: the executable
-// image carries an empty module map and no static-module paths.
-export function encodeAppendedProgramImage(compiled: AppendedProgram): ProgramImage {
-	return encodeCompilerProgramImage(compiled.program, compiled.entryProtoIndex, compiled.sectionInitProtoIndex, compiled.sectionInitProtoIndex, [], [], compiled.constRelocs, compiled.constValueRelocs, compiled.data, compiled.bss, compiled.rodataBytes, compiled.rodataSymbols);
 }
 
 export type LuaCompileError = {
@@ -378,6 +372,7 @@ class ProgramBuilder {
 	private readonly dataBindingsBySymbolHandle = new Map<string, DataBinding>();
 	private readonly rodataBindingsBySymbolHandle = new Map<string, RodataBinding>();
 	private readonly constValueRelocs: ProgramConstValueReloc[] = [];
+	private readonly relocatedConstIndices = new Set<number>();
 	private bssByteCount = 0;
 	private dataByteCount = 0;
 	private dataBytes = new Uint8Array(0);
@@ -466,6 +461,7 @@ class ProgramBuilder {
 	public constValueRelocIndex(kind: ProgramConstValueReloc['kind'], symbol: string, addend: number): number {
 		const index = this.constPool.length;
 		this.constPool.push(0);
+		this.relocatedConstIndices.add(index);
 		this.constValueRelocs.push({
 			constIndex: index,
 			kind,
@@ -473,6 +469,10 @@ class ProgramBuilder {
 			addend,
 		});
 		return index;
+	}
+
+	public relocatedConstIndexSet(): ReadonlySet<number> {
+		return this.relocatedConstIndices;
 	}
 
 	public resolveGlobalAccess(name: string): { system: boolean; slot: number } {
@@ -1187,7 +1187,7 @@ class FunctionBuilder {
 			const access = this.program.resolveGlobalAccess('irq');
 			this.emitABx(access.system ? OpCode.GETSYS : OpCode.GETGL, callBase, access.slot);
 			this.emitABC(OpCode.MOV, callBase + 1, flagsReg, 0);
-			this.emitABC(OpCode.CALL, callBase, 1, 0);
+			this.emitABC(OpCode.CALL, callBase, encodeFixedCallArgCount(1), 0);
 			this.patchJump(jumpOut, this.code.length);
 			this.emitDefaultReturn();
 		});
@@ -1391,6 +1391,7 @@ class FunctionBuilder {
 			const optimized = optimizeInstructions(this.code, this.ranges, this.program.optLevel, {
 				constPool: this.program.constPool,
 				stringPool: this.program.stringPool,
+				relocatedConstIndices: this.program.relocatedConstIndexSet(),
 				constIndex: (value: Value) => this.program.constIndex(value),
 				getClosureUpvalues: (protoIndex: number) => {
 					const proto = this.program.protos[protoIndex];
@@ -2921,7 +2922,7 @@ class FunctionBuilder {
 						if (moduleBinding.external && !this.isConstModulePath(moduleBinding.modulePath)) {
 							this.markStaticExternalModulePath(moduleBinding.modulePath);
 						}
-						if (moduleBinding.exportDepth === 0) {
+						if (moduleBinding.exportDepth === 0 || this.isStaticFunctionModuleBinding(moduleBinding)) {
 							initializerModuleBindings[i] = moduleBinding;
 							if (moduleBinding.external || this.isStaticFunctionModuleBinding(moduleBinding)) {
 								initializerValues[i] = null;
@@ -2963,7 +2964,7 @@ class FunctionBuilder {
 					if (moduleBinding.external && !this.isConstModulePath(moduleBinding.modulePath)) {
 						this.markStaticExternalModulePath(moduleBinding.modulePath);
 					}
-					if (moduleBinding.exportDepth === 0) {
+					if (moduleBinding.exportDepth === 0 || this.isStaticFunctionModuleBinding(moduleBinding)) {
 						initializerModuleBindings[lastIndex] = moduleBinding;
 						if (moduleBinding.external || this.isStaticFunctionModuleBinding(moduleBinding)) {
 							initializerValues[lastIndex] = null;
@@ -3472,7 +3473,7 @@ class FunctionBuilder {
 		this.emitABC(OpCode.MOV, callBase, iteratorReg, 0);
 		this.emitABC(OpCode.MOV, callBase + 1, stateReg, 0);
 		this.emitABC(OpCode.MOV, callBase + 2, controlReg, 0);
-		this.emitABC(OpCode.CALL, callBase, argCount, resultCount);
+		this.emitABC(OpCode.CALL, callBase, encodeFixedCallArgCount(argCount), resultCount);
 
 		const nilConst = this.program.constIndex(null);
 		const nilOperand = this.encodeConstOperand(nilConst);
@@ -4441,7 +4442,7 @@ class FunctionBuilder {
 			this.compileExpressionInto(expression.arguments[argCount - 1], argBase + fixedArgCount, 0);
 			callArgs = 0;
 		}
-		this.emitABC(OpCode.CALL, callBase, callArgs, resultCount);
+		this.emitABC(OpCode.CALL, callBase, hasVarArg ? 0 : encodeFixedCallArgCount(callArgs), resultCount);
 		if (callProtoIndex !== null) {
 			this.code[this.code.length - 1].callProtoIndex = callProtoIndex;
 		}

@@ -57,6 +57,10 @@ std::string formatCountLiteral(int value) {
 	return value == 0 ? "*" : std::to_string(value);
 }
 
+std::string formatCallArgCountLiteral(int value) {
+	return value == 0 ? "*" : std::to_string(decodeCallArgCount(value, 0));
+}
+
 std::string formatConstValue(const Program& program, int index) {
 	const StringPool& stringPool = program.constPoolStringPool ? *program.constPoolStringPool : program.stringPool;
 	return "k" + std::to_string(index) + "(" + valueToString(program.constPool.at(static_cast<size_t>(index)), stringPool) + ")";
@@ -302,7 +306,7 @@ std::string formatInstructionText(const DecodedDebugInstruction& decoded, const 
 		case OpCode::VARARG:
 			return "VARARG r" + std::to_string(decoded.a) + ", " + formatCountLiteral(decoded.b);
 		case OpCode::CALL:
-			return "CALL r" + std::to_string(decoded.a) + ", " + formatCountLiteral(decoded.b) + ", " + formatCountLiteral(decoded.c);
+			return "CALL r" + std::to_string(decoded.a) + ", " + formatCallArgCountLiteral(decoded.b) + ", " + formatCountLiteral(decoded.c);
 		case OpCode::RET:
 			return "RET r" + std::to_string(decoded.a) + ", " + formatCountLiteral(decoded.b);
 		case OpCode::LOAD_MEM_D:
@@ -415,7 +419,7 @@ std::vector<InstructionOperandDebugInfo> buildInstructionOperands(const DecodedD
 		case OpCode::VARARG:
 			return {registerOperand("dst", decoded.a), plainOperand("count", formatCountLiteral(decoded.b))};
 		case OpCode::CALL:
-			return {registerOperand("callee", decoded.a), plainOperand("args", formatCountLiteral(decoded.b)), plainOperand("returns", formatCountLiteral(decoded.c))};
+			return {registerOperand("callee", decoded.a), plainOperand("args", formatCallArgCountLiteral(decoded.b)), plainOperand("returns", formatCountLiteral(decoded.c))};
 		case OpCode::RET:
 			return {registerOperand("base", decoded.a), plainOperand("count", formatCountLiteral(decoded.b))};
 		case OpCode::LOAD_MEM_D:

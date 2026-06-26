@@ -55,6 +55,43 @@ BIOS/firmware entrypoints, manifest/runtime objects, and explicit helper
 functions whose behavior is part of the firmware contract. Raw hardware values
 that still exist as globals are architecture debt, not precedent for new code.
 
+## Fixed-point and angle ABI
+
+BMSX fixed-point geometry uses one shared signed Q16.16 word format. The value
+`0x00010000` is `1.0`; negative values are two's-complement signed words. The
+GEO transform datapath multiplies Q16.16 matrix words by signed coordinates with
+an i64 multiply-accumulate, saturating i64 addition, arithmetic right shift by
+16, and saturating i32 narrowing. That shift semantics is the ABI; firmware math
+helpers must not introduce a second rounding rule for matrix/trig values.
+
+Angles used by fixed-point firmware trig helpers are 32-bit binary turns: one
+full revolution wraps at `2^32`, `0x40000000` is 90 degrees, `0x80000000` is
+180 degrees, and arithmetic overflow is natural turn wrap. Firmware helpers may
+store lookup tables in `.rodata` and read them through ordinary typed pointer
+loads. Function names such as `sincos_turn32` are ordinary exported BLua symbols,
+not compiler, CPU, interpreter, or device intrinsics.
+
+Guest library tables are firmware-owned. The boot ROM installs `bios/math.lua`
+as the Lua `math` API and `bios/easing.lua` as the animation easing library;
+those modules execute as BLua using ordinary calls, ROM lookup tables, and
+integer/number instructions. Machine TS/C++ firmware must not expose `math.*` or
+`easing.*` as native host callbacks; host `Math.*`/`std::*` remains valid only
+for emulator/device implementation and build tooling.
+
+`math.sin`, `math.cos`, and `math.tan` use the same firmware quarter-wave LUT
+and Q16.16 turn helper as direct fixed-point firmware code. Their precision is
+therefore the documented LUT/Q16.16 firmware precision, not host double
+transcendental precision. `math.tan` is the ratio of those Q16.16 sine/cosine
+results: exact turn singularities divide by zero and produce the normal Lua
+numeric infinity; near-singular radian inputs remain finite.
+
+Other runtime library natives are not one category. `os.clock`, default
+`os.time`, and default `os.date` are machine-scheduler/civil-time builtins and
+must stay tied to machine time rather than host wall-clock time. `string.*`,
+`table.*`, and core functions such as `assert`/`type` are the separate Lua
+object-world support layer; they are not precedent for cart-visible host
+facilities such as the removed `math.*`/`easing.*` callbacks.
+
 ## Hard boundary
 
 BMSX carts observe a machine, not the host application:

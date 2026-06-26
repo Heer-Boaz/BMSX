@@ -14,6 +14,9 @@ export { isTruthyValue as isTruthy };
 export const isConstPoolValue = (value: Value): boolean =>
 	value === null || typeof value === 'boolean' || typeof value === 'number' || valueIsString(value);
 
+export const constPoolValueForOptimization = (context: OptimizationContext, constIndex: number): ConstValue | null =>
+	context.relocatedConstIndices.has(constIndex) ? null : { value: context.constPool[constIndex], constIndex };
+
 export const getImmediateConstValue = (instruction: Instruction, context: OptimizationContext): ConstValue | null => {
 	switch (instruction.op) {
 		case OpCode.KNIL:

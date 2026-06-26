@@ -1302,7 +1302,6 @@ function encodeRuntimeSaveStateValue(state: RuntimeSaveState): RuntimeSaveState 
 		systemProgramActive: state.systemProgramActive,
 		luaInitialized: state.luaInitialized,
 		luaRuntimeFailed: state.luaRuntimeFailed,
-		randomSeed: state.randomSeed,
 		pendingEntryCall: state.pendingEntryCall,
 	};
 }
@@ -1315,7 +1314,6 @@ function decodeRuntimeSaveStateValue(value: unknown, label: string): RuntimeSave
 		systemProgramActive: requireObjectKey(object, 'systemProgramActive', label, 'runtimeSaveState.systemProgramActive') as boolean,
 		luaInitialized: requireObjectKey(object, 'luaInitialized', label, 'runtimeSaveState.luaInitialized') as boolean,
 		luaRuntimeFailed: requireObjectKey(object, 'luaRuntimeFailed', label, 'runtimeSaveState.luaRuntimeFailed') as boolean,
-		randomSeed: requireObjectKey(object, 'randomSeed', label, 'runtimeSaveState.randomSeed') as number,
 		pendingEntryCall: requireObjectKey(object, 'pendingEntryCall', label, 'runtimeSaveState.pendingEntryCall') as boolean,
 	};
 }

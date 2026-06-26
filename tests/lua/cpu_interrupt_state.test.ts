@@ -6,7 +6,7 @@ import { splitText } from '../../machine/ts/common/text_lines';
 import { LuaLexer } from '../../machine/ts/lua/syntax/lexer';
 import { LuaParser } from '../../machine/ts/lua/syntax/parser';
 import { writeInstruction, INSTRUCTION_BYTES } from '../../machine/ts/machine/cpu/instruction_format';
-import { BASE_CYCLES } from '../../machine/ts/machine/cpu/opcode_info';
+import { BASE_CYCLES, encodeFixedCallArgCount } from '../../machine/ts/machine/cpu/opcode_info';
 import { IO_IRQ_MASK, IO_IRQ_FLAGS, IRQ_VBLANK } from '../../machine/ts/machine/bus/io';
 import { IrqController } from '../../machine/ts/machine/devices/irq/controller';
 import { Machine } from '../../machine/ts/machine/machine';
@@ -69,7 +69,7 @@ function makeProgram(cpu: CPU): Program {
 function makeThrowingNativeProgram(cpu: CPU, nativeFunction: Value): Program {
 	const code = new Uint8Array(4 * INSTRUCTION_BYTES);
 	writeInstruction(code, 0, OpCode.LOADK, 0, 0, 0, 0);
-	writeInstruction(code, 1, OpCode.CALL, 0, 0, 0, 0);
+	writeInstruction(code, 1, OpCode.CALL, 0, encodeFixedCallArgCount(0), 0, 0);
 	writeInstruction(code, 2, OpCode.RET, 0, 0, 0, 0);
 	writeInstruction(code, 3, OpCode.RET, 0, 0, 0, 0);
 	const pool = cpu.stringPool;

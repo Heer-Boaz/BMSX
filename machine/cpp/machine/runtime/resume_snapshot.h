@@ -14,7 +14,6 @@ class Runtime;
 struct RuntimeResumeSnapshot {
 	RuntimeMachineState machineState;
 	std::vector<std::pair<Value, Value>> globals;
-	uint32_t randomSeed = 0;
 	bool pendingEntryCall = false;
 };
 

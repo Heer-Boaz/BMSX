@@ -1,6 +1,6 @@
 import { OpCode, Table, asStringId, isNativeFunction, isNativeObject, valueIsString, type Program, type ProgramMetadata, type Proto, type SourceRange, type Value } from './cpu';
 import { EXT_A_BITS, EXT_B_BITS, EXT_BX_BITS, EXT_C_BITS, INSTRUCTION_BYTES, MAX_BX_BITS, MAX_OPERAND_BITS, readInstructionWord, signExtend } from './instruction_format';
-import { OPCODE_USES_BX, OPCODE_USES_DISP, getOpcodeName } from './opcode_info';
+import { OPCODE_USES_BX, OPCODE_USES_DISP, decodeCallArgCount, getOpcodeName } from './opcode_info';
 import { formatNumber } from '../common/number_format';
 
 export type DisassemblyOptions = {
@@ -88,6 +88,7 @@ const getOpName = (op: OpCode): string => getOpcodeName(op);
 const formatBool = (value: number): string => (value !== 0 ? 'true' : 'false');
 
 const formatCount = (value: number): string => (value === 0 ? '*' : value.toString());
+const formatCallArgCount = (value: number): string => (value === 0 ? '*' : decodeCallArgCount(value, 0).toString());
 
 // start repeated-sequence-acceptable -- Disassembly constants quote strings, unlike Lua tostring; keep formatter local to avoid firmware dependency.
 const formatValue = (program: Program, value: Value): string => {
@@ -505,7 +506,7 @@ const buildInstructionOperands = (
 		case OpCode.VARARG:
 			return [registerOperand('a', 'dst', a), plainOperand('b', 'count', formatCount(b))];
 		case OpCode.CALL:
-			return [registerOperand('a', 'callee', a), plainOperand('b', 'args', formatCount(b)), plainOperand('c', 'returns', formatCount(c))];
+			return [registerOperand('a', 'callee', a), plainOperand('b', 'args', formatCallArgCount(b)), plainOperand('c', 'returns', formatCount(c))];
 		case OpCode.RET:
 			return [registerOperand('a', 'base', a), plainOperand('b', 'count', formatCount(b))];
 		case OpCode.LOAD_MEM_D:
@@ -674,7 +675,7 @@ const formatInstruction = (
 		case OpCode.VARARG:
 			return `VARARG r${a}, ${formatCount(b)}`;
 		case OpCode.CALL:
-			return `CALL r${a}, ${formatCount(b)}, ${formatCount(c)}`;
+			return `CALL r${a}, ${formatCallArgCount(b)}, ${formatCount(c)}`;
 		case OpCode.RET:
 			return `RET r${a}, ${formatCount(b)}`;
 		case OpCode.LOAD_MEM_D:

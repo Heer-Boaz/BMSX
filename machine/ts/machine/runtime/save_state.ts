@@ -11,7 +11,6 @@ export type RuntimeSaveState = {
 	systemProgramActive: boolean;
 	luaInitialized: boolean;
 	luaRuntimeFailed: boolean;
-	randomSeed: number;
 	pendingEntryCall: boolean;
 };
 
@@ -22,7 +21,6 @@ export function captureRuntimeSaveState(runtime: Runtime): RuntimeSaveState {
 		systemProgramActive: !runtime.cartProgramStarted,
 		luaInitialized: runtime.luaInitialized,
 		luaRuntimeFailed: runtime.luaRuntimeFailed,
-		randomSeed: runtime.randomSeedValue,
 		pendingEntryCall: runtime.pendingCall === 'entry',
 	};
 }
@@ -38,6 +36,5 @@ export function applyRuntimeSaveState(runtime: Runtime, state: RuntimeSaveState)
 	applyRuntimeCpuState(runtime, state.cpuState);
 	runtime.luaInitialized = state.luaInitialized;
 	runtime.luaRuntimeFailed = state.luaRuntimeFailed;
-	runtime.randomSeedValue = state.randomSeed;
 	runtime.pendingCall = state.pendingEntryCall ? 'entry' : null;
 }

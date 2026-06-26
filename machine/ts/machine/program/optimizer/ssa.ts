@@ -1,6 +1,7 @@
 // start repeated-sequence-acceptable -- SSA optimizer keeps instruction rewrites inline for compile-time throughput and readable opcode cases.
 // start normalized-body-acceptable -- SSA value rewrites intentionally mirror non-SSA rewrites without sharing mutable pass internals.
 import { OpCode, type SourceRange, type Value } from '../../cpu/cpu';
+import { decodeCallArgCount } from '../../cpu/opcode_info';
 import { MAX_EXT_CONST } from '../../cpu/instruction_format';
 import { valueIsString } from '../../cpu/cpu';
 import { buildBasicBlocks, buildBlockGraph, getJumpTarget, isJump, remapInstructions, type Block } from '../control_flow';
@@ -17,6 +18,7 @@ import {
 	replaceWithJump,
 	replaceWithMov,
 	type ConstValue,
+	constPoolValueForOptimization,
 } from './values';
 
 type Phi = {
@@ -260,7 +262,7 @@ const getOperandConst = (
 	const operand = field === 'b' ? instruction.b : instruction.c;
 	if ((instruction.rkMask & rkMaskBit) !== 0 && operand < 0) {
 		const constIndex = -1 - operand;
-		return { value: context.constPool[constIndex], constIndex };
+		return constPoolValueForOptimization(context, constIndex);
 	}
 	if (!slot) {
 		if (operand >= 0) {
@@ -353,7 +355,8 @@ const getSccpOperand = (
 	const operand = field === 'b' ? instruction.b : instruction.c;
 	if ((instruction.rkMask & rkMaskBit) !== 0 && operand < 0) {
 		const constIndex = -1 - operand;
-		return { kind: SCCP_CONST, constVal: { value: context.constPool[constIndex], constIndex } };
+		const value = constPoolValueForOptimization(context, constIndex);
+		return value ? { kind: SCCP_CONST, constVal: value } : { kind: SCCP_OVERDEFINED, constVal: null };
 	}
 	if (!slot) {
 		if (operand >= 0) {
@@ -380,8 +383,10 @@ const evaluateSccpDef = (
 		return { kind: SCCP_CONST, constVal: immediate };
 	}
 	switch (instruction.op) {
-		case OpCode.LOADK:
-			return { kind: SCCP_CONST, constVal: { value: context.constPool[instruction.b], constIndex: instruction.b } };
+		case OpCode.LOADK: {
+			const value = constPoolValueForOptimization(context, instruction.b);
+			return value ? { kind: SCCP_CONST, constVal: value } : { kind: SCCP_OVERDEFINED, constVal: null };
+		}
 		case OpCode.LOADNIL:
 			return { kind: SCCP_CONST, constVal: { value: null, constIndex: context.constIndex(null) } };
 		case OpCode.MOV: {
@@ -872,7 +877,7 @@ const collectUsesForLiveness = (instruction: Instruction, maxRegister: number): 
 			pushRegister(uses, instruction.b);
 			break;
 		case OpCode.CALL: {
-			const countValue = instruction.b === 0 ? maxRegister - instruction.a : instruction.b;
+			const countValue = decodeCallArgCount(instruction.b, maxRegister - instruction.a);
 			pushRegisterRange(uses, instruction.a, countValue + 1);
 			break;
 		}
@@ -1202,7 +1207,8 @@ const simplifyAlgebraic = (instructions: Instruction[], context: OptimizationCon
 		const rkMaskBit = field === 'b' ? RK_B : RK_C;
 		const operand = field === 'b' ? instruction.b : instruction.c;
 		if ((instruction.rkMask & rkMaskBit) !== 0 && operand < 0) {
-			return context.constPool[-1 - operand];
+			const value = constPoolValueForOptimization(context, -1 - operand);
+			return value ? value.value : null;
 		}
 		return null;
 	};
@@ -1869,8 +1875,8 @@ const unrollNumericForLoops = (set: InstructionSet, context: OptimizationContext
 				continue;
 			}
 			const zeroIndex = -1 - lt0.b;
-			const zeroValue = context.constPool[zeroIndex];
-			if (!isConstZero(zeroValue)) {
+			const zeroValue = constPoolValueForOptimization(context, zeroIndex);
+			if (!zeroValue || !isConstZero(zeroValue.value)) {
 				continue;
 			}
 			if (ltPos.b < 0 || ltPos.c < 0 || ltNeg.b < 0 || ltNeg.c < 0) {
@@ -1932,7 +1938,8 @@ const unrollNumericForLoops = (set: InstructionSet, context: OptimizationContext
 							continue;
 						}
 						if (instr.op === OpCode.LOADK) {
-							return context.constPool[instr.b];
+							const value = constPoolValueForOptimization(context, instr.b);
+							return value ? value.value : undefined;
 						}
 						if (instr.op === OpCode.KNIL) {
 							return null;
