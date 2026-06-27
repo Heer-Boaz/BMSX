@@ -22,7 +22,7 @@ import { ensureCursorVisible, updateDesiredColumn } from '../../ui/view/caret/ca
 import { editorCaretState } from '../../ui/view/caret/state';
 import { intellisenseUiState } from './ui_state';
 import { resetBlink } from '../../render/caret';
-import { tryShowLuaErrorOverlay } from '../../../runtime_error/navigation';
+import { showLuaErrorOverlay } from '../../../runtime_error/navigation';
 import { resolvePointerTextPosition } from '../../ui/view/view';
 import type { CodeAreaBounds } from '../../ui/view/view';
 import * as constants from '../../../common/constants';
@@ -2451,7 +2451,7 @@ export function safeInspectLuaExpression(runtime: Runtime, expression: string, p
 		return inspectLuaExpression(runtime, expression, path, row, column, activeContext);
 	} catch (error) {
 		intellisenseUiState.inspectorRequestFailed = true;
-		const handled = tryShowLuaErrorOverlay(error);
+		const handled = showLuaErrorOverlay(error);
 		if (!handled) {
 			const message = extractErrorMessage(error);
 			showEditorMessage(message, constants.COLOR_STATUS_ERROR, 3.2);

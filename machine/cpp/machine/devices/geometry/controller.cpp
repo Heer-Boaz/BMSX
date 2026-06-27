@@ -133,7 +133,7 @@ void GeometryController::onCommandDoorbell(int64_t nowCycles, uint32_t command) 
 		finishRejected(GEO_FAULT_REJECT_BUSY);
 		return;
 	}
-	tryStart(nowCycles, command);
+	start(nowCycles, command);
 }
 
 void GeometryController::onService(int64_t nowCycles) {
@@ -182,7 +182,7 @@ void GeometryController::onService(int64_t nowCycles) {
 	scheduleNextService(nowCycles);
 }
 
-void GeometryController::tryStart(int64_t nowCycles, uint32_t command) {
+void GeometryController::start(int64_t nowCycles, uint32_t command) {
 	GeoJob job;
 	job.cmd = command;
 	job.src0 = m_memory.readIoU32(IO_GEO_SRC0);

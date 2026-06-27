@@ -214,11 +214,11 @@ export class CompletionController {
 		this.closeSession();
 	}
 
-	public tryAcceptSelectedCompletion(): boolean {
+	public acceptSelectedCompletion(): boolean {
 		if (!this.completionSession) {
 			return false;
 		}
-		this.acceptSelectedCompletion();
+		this.applySelectedCompletion();
 		return true;
 	}
 
@@ -420,7 +420,7 @@ export class CompletionController {
 				if (shiftDown) {
 					this.moveCompletionSelection(-1);
 				} else {
-					this.acceptSelectedCompletion();
+					this.applySelectedCompletion();
 				}
 				return true;
 			}
@@ -434,7 +434,7 @@ export class CompletionController {
 			const numpadEnterPressed = isKeyJustPressed('NumpadEnter');
 			if (enterPressed || numpadEnterPressed) {
 				if (enterPressed) consumeIdeKey('Enter'); else consumeIdeKey('NumpadEnter');
-				this.acceptSelectedCompletion();
+				this.applySelectedCompletion();
 				return true;
 			}
 		}
@@ -443,7 +443,7 @@ export class CompletionController {
 			if (shiftDown) {
 				this.moveCompletionSelection(-1);
 			} else {
-				this.acceptSelectedCompletion();
+				this.applySelectedCompletion();
 			}
 			return true;
 		}
@@ -1219,7 +1219,7 @@ export class CompletionController {
 		return true;
 	}
 
-	private acceptSelectedCompletion(): void {
+	private applySelectedCompletion(): void {
 		const session = this.completionSession;
 		if (!session) return;
 		if (session.filteredItems.length === 0) { this.closeSession(); return; }

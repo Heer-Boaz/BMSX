@@ -594,7 +594,7 @@ function collectRequireNavigationTargets(
 	const targets: LuaRequireNavigationTarget[] = [];
 	for (let index = 0; index < source.analysis.callExpressions.length; index += 1) {
 		const callExpression = source.analysis.callExpressions[index];
-		const requireArgument = tryExtractRequireStringArgument(callExpression);
+		const requireArgument = extractRequireStringArgument(callExpression);
 		if (!requireArgument) {
 			continue;
 		}
@@ -617,7 +617,7 @@ function collectRequireNavigationTargets(
 	return targets;
 }
 
-function tryExtractRequireStringArgument(
+function extractRequireStringArgument(
 	callExpression: LuaCallExpression,
 ): LuaStringLiteralExpression {
 	if (callExpression.callee.kind !== LuaSyntaxKind.IdentifierExpression) {

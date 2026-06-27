@@ -11,13 +11,13 @@
 namespace bmsx {
 namespace {
 constexpr double MAX_FRAME_DELTA_MS = 250.0;
+}
 
-void flushRuntimeLuaOutput(MachineManager& machineManager, Runtime& runtime) {
+void MachineManager::flushRuntimeLuaOutput(Runtime& runtime) {
 	for (const std::string& line : runtime.luaOutputLines) {
-		machineManager.log(LogLevel::Info, "%s", line.c_str());
+		log(LogLevel::Info, "%s", line.c_str());
 	}
 	runtime.luaOutputLines.clear();
-}
 }
 
 bool MachineManager::runHostFrame(
@@ -96,7 +96,7 @@ bool MachineManager::runHostFrame(
 		runtime.frameLoop.abandonFrameState(runtime);
 		runtime.handleLuaError("Unhandled host frame exception.");
 	}
-	flushRuntimeLuaOutput(*this, runtime);
+	flushRuntimeLuaOutput(runtime);
 	return rendered;
 }
 

@@ -13,7 +13,7 @@ static constexpr const char* kUfpsMissingMessage = "[RuntimeMachineSpecs] machin
 static constexpr const char* kUfpsInvalidMessage = "[RuntimeMachineSpecs] machine.ufps must be greater than 1 Hz.";
 
 template<typename Predicate>
-static bool tryResolveValue(const std::optional<i64>& value, i64& out, Predicate predicate) {
+static bool resolveValue(const std::optional<i64>& value, i64& out, Predicate predicate) {
 	if (!value || !predicate(*value)) {
 		return false;
 	}
@@ -51,8 +51,8 @@ i64 requireManifestValueAbove(const std::optional<i64>& value, i64 minimumExclus
 	return *value;
 }
 
-bool tryResolveCpuHz(const MachineManifest& manifest, i64& outHz) {
-	return tryResolveValue(manifest.cpuHz, outHz, [](i64 hz) {
+bool resolveCpuHz(const MachineManifest& manifest, i64& outHz) {
+	return resolveValue(manifest.cpuHz, outHz, [](i64 hz) {
 		return hz > 0;
 	});
 }
@@ -61,8 +61,8 @@ i64 resolveCpuHz(const MachineManifest& manifest) {
 	return requirePositiveManifestValue(manifest.cpuHz, kCpuHzMissingMessage, kCpuHzInvalidMessage);
 }
 
-bool tryResolveUfpsScaled(const MachineManifest& manifest, i64& outUfpsScaled) {
-	return tryResolveValue(manifest.ufpsScaled, outUfpsScaled, [](i64 ufpsScaled) {
+bool resolveUfpsScaled(const MachineManifest& manifest, i64& outUfpsScaled) {
+	return resolveValue(manifest.ufpsScaled, outUfpsScaled, [](i64 ufpsScaled) {
 		return ufpsScaled > HZ_SCALE;
 	});
 }

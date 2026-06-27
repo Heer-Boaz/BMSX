@@ -434,7 +434,7 @@ bool LibretroPlatform::loadRomOwned(std::vector<uint8_t>&& data) {
 	return true;
 }
 
-void LibretroPlatform::tryLoadSystemRom(const char* romPath) {
+void LibretroPlatform::loadSystemRom(const char* romPath) {
 	std::string pathStr(romPath);
 	size_t lastSlash = pathStr.find_last_of("/\\");
 	std::string directory = (lastSlash != std::string::npos) ? pathStr.substr(0, lastSlash + 1) : "";
@@ -460,7 +460,7 @@ void LibretroPlatform::tryLoadSystemRom(const char* romPath) {
 
 bool LibretroPlatform::loadRomFromPath(const char* path) {
 	// Load system ROM first (if available in same directory)
-	tryLoadSystemRom(path);
+	loadSystemRom(path);
 
 	// Load the game ROM
 	std::ifstream file(path, std::ios::binary | std::ios::ate);

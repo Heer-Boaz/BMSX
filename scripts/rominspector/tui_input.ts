@@ -91,7 +91,7 @@ export class TuiInput {
 	private parsePending(): void {
 		while (this.pending.length > 0) {
 			if (this.pending.startsWith('\x1b[<')) {
-				const mouseResult = this.tryParseSgrMouse();
+				const mouseResult = this.parseSgrMouse();
 				if (mouseResult === 'wait') {
 					return;
 				}
@@ -100,14 +100,14 @@ export class TuiInput {
 				}
 			}
 			if (this.pending.startsWith('\x1b[M')) {
-				const utfMouseResult = this.tryParseUtfMouse();
+				const utfMouseResult = this.parseUtfMouse();
 				if (utfMouseResult === 'wait') {
 					return;
 				}
 				if (utfMouseResult) {
 					continue;
 				}
-				const x10MouseResult = this.tryParseX10Mouse();
+				const x10MouseResult = this.parseX10Mouse();
 				if (x10MouseResult === 'wait') {
 					return;
 				}
@@ -116,7 +116,7 @@ export class TuiInput {
 				}
 			}
 			if (this.pending.startsWith('\x1b[6;')) {
-				const sizeResult = this.tryParseCellSize();
+				const sizeResult = this.parseCellSize();
 				if (sizeResult === 'wait') {
 					return;
 				}
@@ -125,7 +125,7 @@ export class TuiInput {
 				}
 			}
 			if (this.pending.startsWith('\x1b[')) {
-				const csiKeyResult = this.tryParseCsiKey();
+				const csiKeyResult = this.parseCsiKey();
 				if (csiKeyResult === 'wait') {
 					return;
 				}
@@ -134,7 +134,7 @@ export class TuiInput {
 				}
 			}
 			if (this.pending.startsWith('\x1bO')) {
-				const ss3KeyResult = this.tryParseSs3Key();
+				const ss3KeyResult = this.parseSs3Key();
 				if (ss3KeyResult === 'wait') {
 					return;
 				}
@@ -154,7 +154,7 @@ export class TuiInput {
 		}
 	}
 
-	private tryParseCellSize(): boolean | 'wait' {
+	private parseCellSize(): boolean | 'wait' {
 		const match = this.pending.match(/^\x1b\[6;(\d+);(\d+)t/);
 		if (!match) {
 			return 'wait';
@@ -169,7 +169,7 @@ export class TuiInput {
 		return true;
 	}
 
-	private tryParseSgrMouse(): boolean | 'wait' {
+	private parseSgrMouse(): boolean | 'wait' {
 		const match = this.pending.match(/^\x1b\[<(\d+);(\d+);(\d+)([Mm])/);
 		if (!match) {
 			return 'wait';
@@ -194,7 +194,7 @@ export class TuiInput {
 		return true;
 	}
 
-	private tryParseX10Mouse(): boolean | 'wait' {
+	private parseX10Mouse(): boolean | 'wait' {
 		if (this.pending.length < 6) {
 			return 'wait';
 		}
@@ -220,7 +220,7 @@ export class TuiInput {
 		return true;
 	}
 
-	private tryParseUtfMouse(): boolean | 'wait' {
+	private parseUtfMouse(): boolean | 'wait' {
 		const button = this.decodeUtf8CodePoint(3);
 		if (button === 'wait') {
 			return 'wait';
@@ -268,7 +268,7 @@ export class TuiInput {
 		return true;
 	}
 
-	private tryParseCsiKey(): boolean | 'wait' {
+	private parseCsiKey(): boolean | 'wait' {
 		if (/^\x1b\[[0-9;]*$/.test(this.pending)) {
 			return 'wait';
 		}
@@ -297,7 +297,7 @@ export class TuiInput {
 		return false;
 	}
 
-	private tryParseSs3Key(): boolean | 'wait' {
+	private parseSs3Key(): boolean | 'wait' {
 		if (this.pending.length < 3) {
 			return 'wait';
 		}

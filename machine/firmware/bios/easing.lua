@@ -1,11 +1,7 @@
+local clamp<const> = require('bios/util/clamp')
+
 local linear<const> = function(value)
-	if value < 0 then
-		return 0
-	end
-	if value > 1 then
-		return 1
-	end
-	return value
+	return clamp(value, 0, 1)
 end
 
 local ease_in_quad<const> = function(value)
@@ -23,7 +19,7 @@ local ease_in_out_quad<const> = function(value)
 	if x < 0.5 then
 		return 2 * x * x
 	end
-	local y<const> = (-2 * x) + 2
+	local y<const> = -2 * x + 2
 	return 1 - ((y * y) / 2)
 end
 

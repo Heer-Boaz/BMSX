@@ -32,7 +32,7 @@ export class CpuExecutionState {
 			throw new Error('CPU halted without active program vectors.');
 		}
 		while (true) {
-			if (cpu.tryEnterPendingInterrupt(irqController, vectors.irqProtoIndex)) {
+			if (cpu.enterPendingInterrupt(irqController, vectors.irqProtoIndex)) {
 				return tickCompleted;
 			}
 			if (tickCompleted) {

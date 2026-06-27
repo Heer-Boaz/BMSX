@@ -507,7 +507,7 @@ function recordLocalRequireAliases(statement: LuaLocalAssignmentStatement, alias
 	for (let index = 0; index < statement.names.length; index += 1) {
 		const identifier = statement.names[index];
 		const valueIndex = index < statement.values.length ? index : statement.values.length - 1;
-		const alias = tryResolveModuleAliasExpression(statement.values[valueIndex], aliases);
+		const alias = resolveModuleAliasExpression(statement.values[valueIndex], aliases);
 		if (alias) {
 			aliases.set(identifier.name, {
 				alias: identifier.name,
@@ -528,7 +528,7 @@ function recordGlobalRequireAliases(statement: LuaAssignmentStatement, aliases: 
 			continue;
 		}
 		const valueIndex = index < statement.right.length ? index : statement.right.length - 1;
-		const alias = tryResolveModuleAliasExpression(statement.right[valueIndex], aliases);
+		const alias = resolveModuleAliasExpression(statement.right[valueIndex], aliases);
 		if (alias) {
 			aliases.set((target as LuaIdentifierExpression).name, {
 				alias: (target as LuaIdentifierExpression).name,
@@ -539,8 +539,8 @@ function recordGlobalRequireAliases(statement: LuaAssignmentStatement, aliases: 
 	}
 }
 
-function tryResolveModuleAliasExpression(expression: LuaExpression, aliases: ReadonlyMap<string, ModuleAliasEntry>): ModuleAliasResolution | null {
-	const moduleName = tryExtractRequireModuleName(expression);
+function resolveModuleAliasExpression(expression: LuaExpression, aliases: ReadonlyMap<string, ModuleAliasEntry>): ModuleAliasResolution | null {
+	const moduleName = extractRequireModuleName(expression);
 	if (moduleName) {
 		return {
 			module: moduleName,
@@ -558,7 +558,7 @@ function tryResolveModuleAliasExpression(expression: LuaExpression, aliases: Rea
 		};
 	}
 	if (expression.kind === LuaSyntaxKind.MemberExpression) {
-		const base = tryResolveModuleAliasExpression(expression.base, aliases);
+		const base = resolveModuleAliasExpression(expression.base, aliases);
 		if (!base) {
 			return null;
 		}
@@ -566,11 +566,11 @@ function tryResolveModuleAliasExpression(expression: LuaExpression, aliases: Rea
 		return base;
 	}
 	if (expression.kind === LuaSyntaxKind.IndexExpression) {
-		const base = tryResolveModuleAliasExpression(expression.base, aliases);
+		const base = resolveModuleAliasExpression(expression.base, aliases);
 		if (!base) {
 			return null;
 		}
-		const key = tryExtractStringLiteral(expression.index);
+		const key = extractStringLiteral(expression.index);
 		if (!key) {
 			return null;
 		}
@@ -580,7 +580,7 @@ function tryResolveModuleAliasExpression(expression: LuaExpression, aliases: Rea
 	return null;
 }
 
-function tryExtractRequireModuleName(expression: LuaExpression): string {
+function extractRequireModuleName(expression: LuaExpression): string {
 	if (expression.kind !== LuaSyntaxKind.CallExpression) {
 		return null;
 	}
@@ -2265,15 +2265,15 @@ class SemanticBuilder {
 		}
 		const calleeName = resolveDirectCallName(callExpression.callee);
 		if (calleeName === 'oget' || calleeName === 'rget') {
-			const objectId = tryExtractStringLiteral(callExpression.arguments[0]);
+			const objectId = extractStringLiteral(callExpression.arguments[0]);
 			return objectId ? buildObjectHintKey(objectId) : null;
 		}
 		if (calleeName === 'inst') {
-			const prefabId = tryExtractStringLiteral(callExpression.arguments[0]);
+			const prefabId = extractStringLiteral(callExpression.arguments[0]);
 			if (!prefabId) {
 				return null;
 			}
-			const objectId = tryExtractObjectBindingId(callExpression);
+			const objectId = extractObjectBindingId(callExpression);
 			if (objectId) {
 				return buildObjectHintKey(objectId);
 			}
@@ -2288,15 +2288,15 @@ class SemanticBuilder {
 		}
 		const calleeName = resolveDirectCallName(callExpression.callee);
 		if (calleeName === 'define_prefab') {
-			const prefabClass = tryExtractPrefabClassEntry(callExpression, this.path);
+			const prefabClass = extractPrefabClassEntry(callExpression, this.path);
 			if (prefabClass) {
 				this.prefabClasses.push(prefabClass);
 			}
 			return;
 		}
 		if (calleeName === 'inst') {
-			const prefabId = tryExtractStringLiteral(callExpression.arguments[0]);
-			const objectId = tryExtractObjectBindingId(callExpression);
+			const prefabId = extractStringLiteral(callExpression.arguments[0]);
+			const objectId = extractObjectBindingId(callExpression);
 			if (prefabId && objectId) {
 				this.objectBindings.push({ objectId, prefabId });
 			}
@@ -2677,7 +2677,7 @@ function extractStaticMemberPath(expression: LuaExpression): string[] | null {
 		if (!base) {
 			return null;
 		}
-		const key = tryExtractStringLiteral(expression.index);
+		const key = extractStringLiteral(expression.index);
 		if (!key) {
 			return null;
 		}
@@ -2767,14 +2767,14 @@ function resolveDirectCallName(expression: LuaExpression): string {
 	return expression.name;
 }
 
-function tryExtractStringLiteral(expression: LuaExpression): string {
+function extractStringLiteral(expression: LuaExpression): string {
 	if (!expression || expression.kind !== LuaSyntaxKind.StringLiteralExpression) {
 		return null;
 	}
 	return expression.value;
 }
 
-function tryExtractObjectBindingId(callExpression: LuaCallExpression): string {
+function extractObjectBindingId(callExpression: LuaCallExpression): string {
 	if (callExpression.arguments.length < 2) {
 		return null;
 	}
@@ -2787,12 +2787,12 @@ function tryExtractObjectBindingId(callExpression: LuaCallExpression): string {
 		if (field.kind !== LuaTableFieldKind.IdentifierKey || field.name !== 'id') {
 			continue;
 		}
-		return tryExtractStringLiteral(field.value);
+		return extractStringLiteral(field.value);
 	}
 	return null;
 }
 
-function tryExtractPrefabClassEntry(callExpression: LuaCallExpression, file: string): PrefabClassEntry {
+function extractPrefabClassEntry(callExpression: LuaCallExpression, file: string): PrefabClassEntry {
 	if (callExpression.arguments.length === 0) {
 		return null;
 	}
@@ -2808,7 +2808,7 @@ function tryExtractPrefabClassEntry(callExpression: LuaCallExpression, file: str
 			continue;
 		}
 		if (field.name === 'def_id') {
-			defId = tryExtractStringLiteral(field.value);
+			defId = extractStringLiteral(field.value);
 			continue;
 		}
 		if (field.name === 'class') {

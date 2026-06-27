@@ -13,6 +13,7 @@ import { unusedInitValuePatternRule } from './unused_init_value_pattern';
 import { getterSetterPatternRule } from './getter_setter_pattern';
 import { builtinRecreationPatternRule } from './builtin_recreation_pattern';
 import { forbiddenMathFloorPatternRule } from './forbidden_math_floor_pattern';
+import { functionBodyRequirePatternRule } from './function_body_require_pattern';
 import { forbiddenRandomHelperPatternRule } from './forbidden_random_helper_pattern';
 import { localFunctionConstPatternRule } from './local_function_const_pattern';
 import { multiHasTagPatternRule } from './multi_has_tag_pattern';
@@ -81,6 +82,7 @@ export { unusedInitValuePatternRule };
 export { getterSetterPatternRule };
 export { builtinRecreationPatternRule };
 export { forbiddenMathFloorPatternRule };
+export { functionBodyRequirePatternRule };
 export { forbiddenRandomHelperPatternRule };
 export { localFunctionConstPatternRule };
 export { multiHasTagPatternRule };
@@ -150,6 +152,7 @@ export const CART_ONLY_LINT_RULE_DEFINITIONS = [
 	getterSetterPatternRule,
 	builtinRecreationPatternRule,
 	forbiddenMathFloorPatternRule,
+	functionBodyRequirePatternRule,
 	forbiddenRandomHelperPatternRule,
 	localFunctionConstPatternRule,
 	multiHasTagPatternRule,

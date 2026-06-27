@@ -41,7 +41,7 @@ private:
 
 	using GeoJob = GeometryJobState;
 	void onCommandDoorbell(int64_t nowCycles, uint32_t command);
-	void tryStart(int64_t nowCycles, uint32_t command);
+	void start(int64_t nowCycles, uint32_t command);
 	void scheduleNextService(int64_t nowCycles);
 	void onFaultAckWrite(Value value);
 	void completeRecord(GeoJob& job);

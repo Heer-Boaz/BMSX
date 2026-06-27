@@ -1242,7 +1242,7 @@ bool retro_load_game(const struct retro_game_info* game) {
 	bool loaded_ok = false;
 	if (game->data && game->size > 0) {
 		if (game->path) {
-			g_platform->tryLoadSystemRom(game->path);
+			g_platform->loadSystemRom(game->path);
 		}
 		loaded_ok = g_platform->loadRom(static_cast<const uint8_t*>(game->data),
 										game->size);

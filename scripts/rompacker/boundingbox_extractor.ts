@@ -354,7 +354,7 @@ export class BoundingBoxExtractor {
 
 		let best: ConvexPieceSplit | null = null;
 		for (let cut = minx; cut < maxx; cut++) {
-			const split = this.tryPieceSplit(piece, width, height, minSplitGain, 'x', cut);
+			const split = this.pieceSplit(piece, width, height, minSplitGain, 'x', cut);
 			if (
 				split &&
 				(
@@ -368,7 +368,7 @@ export class BoundingBoxExtractor {
 			}
 		}
 		for (let cut = miny; cut < maxy; cut++) {
-			const split = this.tryPieceSplit(piece, width, height, minSplitGain, 'y', cut);
+			const split = this.pieceSplit(piece, width, height, minSplitGain, 'y', cut);
 			if (
 				split &&
 				(
@@ -384,7 +384,7 @@ export class BoundingBoxExtractor {
 		return best;
 	}
 
-	private static tryPieceSplit(
+	private static pieceSplit(
 		piece: ConvexPiece,
 		width: number,
 		height: number,

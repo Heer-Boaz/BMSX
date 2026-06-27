@@ -105,7 +105,7 @@ export class DmaController {
 		private readonly vdp: VDP,
 		private readonly scheduler: DeviceScheduler,
 	) {
-		this.memory.mapIoWrite(IO_DMA_CTRL, this.tryStartIo.bind(this));
+		this.memory.mapIoWrite(IO_DMA_CTRL, this.startIo.bind(this));
 	}
 
 	public setTiming(cpuHz: number, isoBytesPerSec: number, bulkBytesPerSec: number, nowCycles: number): void {
@@ -228,7 +228,7 @@ export class DmaController {
 		this.scheduleNextService(nowCycles);
 	}
 
-	public tryStartIo(): void {
+	public startIo(): void {
 		const ctrlValue = this.memory.readIoU32(IO_DMA_CTRL);
 		if ((ctrlValue & DMA_CTRL_START) === 0) {
 			return;

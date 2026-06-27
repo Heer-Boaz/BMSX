@@ -212,7 +212,7 @@ export function visitTableFieldsRecursively(
 	}
 }
 
-export function lintTableField(field: TableField, issues: CartLintIssue[]): void {
+export function lintTableField(field: TableField, issues: CartLintIssue[], insideFunction = false): void {
 	lintCollectionLabelPatterns(field, issues);
 	lintInjectedServiceIdPropertyTableField(field, issues);
 	lintForbiddenRenderLayerString(field, issues, pushIssue);
@@ -224,14 +224,14 @@ export function lintTableField(field: TableField, issues: CartLintIssue[]): void
 	}
 	switch (field.kind) {
 		case TableFieldKind.Array:
-			lintExpression(field.value, issues, false);
+			lintExpression(field.value, issues, false, insideFunction);
 			return;
 		case TableFieldKind.IdentifierKey:
-			lintExpression(field.value, issues, false);
+			lintExpression(field.value, issues, false, insideFunction);
 			return;
 		case TableFieldKind.ExpressionKey:
-			lintExpression(field.key, issues, false);
-			lintExpression(field.value, issues, false);
+			lintExpression(field.key, issues, false, insideFunction);
+			lintExpression(field.value, issues, false, insideFunction);
 			return;
 		default:
 			return;

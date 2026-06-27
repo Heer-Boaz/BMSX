@@ -755,7 +755,7 @@ private:
 		int next = -1;
 	};
 
-	bool tryGetArrayIndex(const Value& key, int& outIndex) const;
+	bool getArrayIndex(const Value& key, int& outIndex) const;
 	bool hasArrayIndex(size_t index) const;
 	void updateArrayLengthFrom(size_t startIndex);
 	size_t hashValue(const Value& key) const;
@@ -878,7 +878,7 @@ public:
 	void restoreMaskableInterruptsAfterNonMaskableInterrupt();
 	bool canAcceptMaskableInterruptLine(const IrqController& irqController) const;
 	AcceptedInterruptKind peekPendingInterrupt(const IrqController& irqController) const;
-	bool tryEnterPendingInterrupt(const IrqController& irqController, int irqProtoIndex);
+	bool enterPendingInterrupt(const IrqController& irqController, int irqProtoIndex);
 	void enterHostExternalCall();
 	void leaveHostExternalCall();
 	bool isHostExternalCallActive() const { return m_hostExternalCallDepth != 0; }

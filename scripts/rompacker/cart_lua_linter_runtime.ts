@@ -10,6 +10,7 @@ import { lintAstExplicitTruthyComparisonPattern } from '../lint/rules/common/exp
 import { lintAstOrNilFallbackPattern } from '../lint/rules/common/or_nil_fallback_pattern';
 import { lintCallNewlineNormalizationPattern } from '../lint/rules/code_quality/newline_normalization_pattern';
 import { lintForbiddenMathFloorPattern } from '../lint/rules/lua_cart/forbidden_math_floor_pattern';
+import { lintFunctionBodyRequireCall } from '../lint/rules/lua_cart/function_body_require_pattern';
 import { lintForbiddenRenderWrapperCall } from '../lint/rules/lua_cart/forbidden_render_wrapper_call_pattern';
 import { lintLocalFunctionConstPattern } from '../lint/rules/lua_cart/local_function_const_pattern';
 import { lintRequireCall } from '../lint/rules/lua_cart/require_lua_extension_pattern';
@@ -108,6 +109,7 @@ const CART_LINT_RULES: readonly LintRuleName[] = [
 	'forbidden_dispatch_pattern',
 	'forbidden_matches_state_path_pattern',
 	'forbidden_math_floor_pattern',
+	'function_body_require_pattern',
 	'forbidden_random_helper_pattern',
 	'forbidden_render_layer_string_pattern',
 	'forbidden_render_module_require_pattern',
@@ -363,7 +365,7 @@ export function lintFunctionBody(
 	lintHandlerIdentityDispatchPattern(functionName, functionExpression, issues);
 }
 
-export function lintExpression(expression: Expression | null, issues: CartLintIssue[], topLevel = true): void {
+export function lintExpression(expression: Expression | null, issues: CartLintIssue[], topLevel = true, insideFunction = false): void {
 	if (!expression) {
 		return;
 	}
@@ -379,6 +381,7 @@ export function lintExpression(expression: Expression | null, issues: CartLintIs
 	}
 	switch (expression.kind) {
 		case SyntaxKind.CallExpression:
+			lintFunctionBodyRequireCall(expression, insideFunction, issues, pushIssue);
 			lintRequireCall(expression, issues, pushIssue);
 			lintForbiddenRenderWrapperCall(expression, issues, pushIssue);
 			lintForbiddenStateCalls(expression, issues);
@@ -401,40 +404,40 @@ export function lintExpression(expression: Expression | null, issues: CartLintIs
 			lintFsmIdLabelPattern(expression, issues);
 			lintFsmStateNameMirrorAssignmentPattern(expression, issues);
 			lintBtIdLabelPattern(expression, issues);
-			lintExpression(expression.callee, issues, false);
+			lintExpression(expression.callee, issues, false, insideFunction);
 			for (const arg of expression.arguments) {
-				lintExpression(arg, issues, false);
+				lintExpression(arg, issues, false, insideFunction);
 			}
 			return;
 		case SyntaxKind.MemberExpression:
-			lintExpression(expression.base, issues, false);
+			lintExpression(expression.base, issues, false, insideFunction);
 			return;
 		case SyntaxKind.IndexExpression:
-			lintExpression(expression.base, issues, false);
-			lintExpression(expression.index, issues, false);
+			lintExpression(expression.base, issues, false, insideFunction);
+			lintExpression(expression.index, issues, false, insideFunction);
 			return;
 		case SyntaxKind.BinaryExpression:
-			lintExpression(expression.left, issues, false);
-			lintExpression(expression.right, issues, false);
+			lintExpression(expression.left, issues, false, insideFunction);
+			lintExpression(expression.right, issues, false, insideFunction);
 			return;
 		case SyntaxKind.UnaryExpression:
-			lintExpression(expression.operand, issues, false);
+			lintExpression(expression.operand, issues, false, insideFunction);
 			return;
 		case SyntaxKind.TableConstructorExpression:
 			for (const field of expression.fields) {
-				lintTableField(field, issues);
+				lintTableField(field, issues, insideFunction);
 			}
 			return;
 		case SyntaxKind.FunctionExpression:
-	lintFunctionBody('<anonymous>', expression, issues, false);
-			lintStatements(expression.body.body, issues);
+			lintFunctionBody('<anonymous>', expression, issues, false);
+			lintStatements(expression.body.body, issues, true);
 			return;
 		default:
 			return;
 	}
 }
 
-export function lintStatements(statements: ReadonlyArray<Statement>, issues: CartLintIssue[]): void {
+export function lintStatements(statements: ReadonlyArray<Statement>, issues: CartLintIssue[], insideFunction = false): void {
 	lintBranchUninitializedLocalPattern(statements, issues);
 	lintContiguousMultiEmitPattern(statements, issues);
 	for (const statement of statements) {
@@ -445,15 +448,15 @@ export function lintStatements(statements: ReadonlyArray<Statement>, issues: Car
 					const value = statement.values[index];
 					if (index < statement.names.length && value.kind === SyntaxKind.FunctionExpression) {
 						lintFunctionBody(statement.names[index].name, value, issues, false);
-						lintStatements(value.body.body, issues);
+						lintStatements(value.body.body, issues, true);
 						continue;
 					}
-					lintExpression(value, issues);
+					lintExpression(value, issues, true, insideFunction);
 				}
 				break;
 			case SyntaxKind.AssignmentStatement:
 				for (const left of statement.left) {
-					lintExpression(left, issues);
+					lintExpression(left, issues, true, insideFunction);
 				}
 				for (let index = 0; index < statement.left.length; index += 1) {
 					const left = statement.left[index];
@@ -463,14 +466,14 @@ export function lintStatements(statements: ReadonlyArray<Statement>, issues: Car
 					lintInjectedServiceIdPropertyAssignmentTarget(left, issues);
 				}
 				for (const right of statement.right) {
-					lintExpression(right, issues);
+					lintExpression(right, issues, true, insideFunction);
 				}
 				break;
 			case SyntaxKind.LocalFunctionStatement: {
 				const localFunction = statement as LocalFunctionStatement;
 				lintLocalFunctionConstPattern(localFunction, issues, pushIssue);
 				lintFunctionBody(getFunctionDisplayName(localFunction), localFunction.functionExpression, issues, false);
-				lintStatements(localFunction.functionExpression.body.body, issues);
+				lintStatements(localFunction.functionExpression.body.body, issues, true);
 				break;
 			}
 			case SyntaxKind.FunctionDeclarationStatement: {
@@ -481,12 +484,12 @@ export function lintStatements(statements: ReadonlyArray<Statement>, issues: Car
 					issues,
 					isMethodLikeFunctionDeclaration(declaration),
 				);
-				lintStatements(declaration.functionExpression.body.body, issues);
+				lintStatements(declaration.functionExpression.body.body, issues, true);
 				break;
 			}
 			case SyntaxKind.ReturnStatement:
 				for (const expression of statement.expressions) {
-					lintExpression(expression, issues);
+					lintExpression(expression, issues, true, insideFunction);
 				}
 				break;
 			case SyntaxKind.IfStatement:
@@ -495,38 +498,38 @@ export function lintStatements(statements: ReadonlyArray<Statement>, issues: Car
 				lintSplitNestedIfHasTagPattern(statement, issues);
 				for (const clause of statement.clauses) {
 					if (clause.condition) {
-						lintExpression(clause.condition, issues);
+						lintExpression(clause.condition, issues, true, insideFunction);
 					}
-					lintStatements(clause.block.body, issues);
+					lintStatements(clause.block.body, issues, insideFunction);
 				}
 				break;
 			case SyntaxKind.WhileStatement:
-				lintExpression(statement.condition, issues);
-				lintStatements(statement.block.body, issues);
+				lintExpression(statement.condition, issues, true, insideFunction);
+				lintStatements(statement.block.body, issues, insideFunction);
 				break;
 			case SyntaxKind.RepeatStatement:
-				lintStatements(statement.block.body, issues);
-				lintExpression(statement.condition, issues);
+				lintStatements(statement.block.body, issues, insideFunction);
+				lintExpression(statement.condition, issues, true, insideFunction);
 				break;
 			case SyntaxKind.ForNumericStatement:
 				lintDispatchFanoutLoopPattern(statement, issues);
-				lintExpression(statement.start, issues);
-				lintExpression(statement.limit, issues);
-				lintExpression(statement.step, issues);
-				lintStatements(statement.block.body, issues);
+				lintExpression(statement.start, issues, true, insideFunction);
+				lintExpression(statement.limit, issues, true, insideFunction);
+				lintExpression(statement.step, issues, true, insideFunction);
+				lintStatements(statement.block.body, issues, insideFunction);
 				break;
 			case SyntaxKind.ForGenericStatement:
 				lintDispatchFanoutLoopPattern(statement, issues);
 				for (const iterator of statement.iterators) {
-					lintExpression(iterator, issues);
+					lintExpression(iterator, issues, true, insideFunction);
 				}
-				lintStatements(statement.block.body, issues);
+				lintStatements(statement.block.body, issues, insideFunction);
 				break;
 			case SyntaxKind.DoStatement:
-				lintStatements(statement.block.body, issues);
+				lintStatements(statement.block.body, issues, insideFunction);
 				break;
 			case SyntaxKind.CallStatement:
-				lintExpression(statement.expression, issues);
+				lintExpression(statement.expression, issues, true, insideFunction);
 				break;
 			case SyntaxKind.BreakStatement:
 			case SyntaxKind.GotoStatement:

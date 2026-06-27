@@ -1,7 +1,7 @@
 import { showEditorMessage, showEditorWarningBanner } from '../../../common/feedback_state';
 import type { CodeTabContext, CodeTabMode, ResourceDescriptor } from '../../../common/models';
 import * as constants from '../../../common/constants';
-import { tryShowLuaErrorOverlay } from '../../../runtime_error/navigation';
+import { showLuaErrorOverlay } from '../../../runtime_error/navigation';
 import { saveLuaResourceSource } from '../../../workspace/workspace';
 import { loadWorkspaceSourceFile, persistWorkspaceSourceFile } from '../../../workspace/files';
 import { buildDirtyFilePath } from '../../workspace/io';
@@ -110,7 +110,7 @@ export async function save(runtime: Runtime): Promise<void> {
 			showEditorWarningBanner(`Saved, but runtime apply failed: ${applyMessage}`, 5.0);
 		}
 	} catch (error) {
-		if (context.mode === 'lua' && tryShowLuaErrorOverlay(error)) {
+		if (context.mode === 'lua' && showLuaErrorOverlay(error)) {
 			return;
 		}
 		showEditorMessage(extractErrorMessage(error), constants.COLOR_STATUS_ERROR, 4.0);

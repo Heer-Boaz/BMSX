@@ -473,7 +473,7 @@ export class TerminalMode {
 				this.completion.onCursorMoved();
 			}
 		}
-		const submit = this.trySubmitCommand();
+		const submit = this.submitCommand();
 		if (submit !== null) {
 			this.completion.closeSession();
 			this.suggestModel.clear();
@@ -809,7 +809,7 @@ export class TerminalMode {
 		this.resetInputField(entry);
 	}
 
-	private trySubmitCommand(): string {
+	private submitCommand(): string {
 		const enterPressed = isKeyJustPressed('Enter') || isKeyJustPressed('NumpadEnter');
 		if (!enterPressed) {
 			return null;

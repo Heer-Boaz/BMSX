@@ -131,7 +131,7 @@ export function activateCodeEditorTab(tabId: string, selection?: CodeTabSelectio
 	refreshActiveDiagnostics();
 }
 
-export function tryGotoDefinitionAt(runtime: Runtime, row: number, column: number): boolean {
+export function gotoDefinitionAt(runtime: Runtime, row: number, column: number): boolean {
 	const definition = resolveDefinitionAt(runtime, getActiveCodeTabContext(), row, column);
 	if (!definition) {
 		return false;

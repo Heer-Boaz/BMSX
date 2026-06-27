@@ -275,10 +275,10 @@ export class GeometryController {
 			this.finishRejected(GEO_FAULT_REJECT_BUSY);
 			return;
 		}
-		this.tryStart(nowCycles, command);
+		this.start(nowCycles, command);
 	}
 
-	private tryStart(nowCycles: number, command: number): void {
+	private start(nowCycles: number, command: number): void {
 		const job: GeometryJobState = {
 			cmd: command,
 			src0: this.memory.readIoU32(IO_GEO_SRC0),

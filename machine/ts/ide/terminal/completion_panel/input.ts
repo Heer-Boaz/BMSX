@@ -15,7 +15,7 @@ export function handleInlineCompletionAccept(completion: CompletionController): 
 	const altDown = isAltDown();
 	const metaDown = isMetaDown();
 	if (ctrlDown || altDown || metaDown) return false;
-	const accepted = completion.tryAcceptSelectedCompletion();
+	const accepted = completion.acceptSelectedCompletion();
 	if (!accepted) return false;
 	consumeIdeKey('ArrowRight');
 	return true;

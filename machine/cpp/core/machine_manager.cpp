@@ -387,10 +387,12 @@ void MachineManager::bootRuntimeFromProgram() {
 		rt.setLinkedCartVectors(linked.cartVectors, linked.cartDataBaseAddress, linked.cartBssBaseAddress, std::move(linked.cartStaticModulePaths));
 		rt.enterCartProgram();
 		rt.boot(*m_linked_program, m_linked_program_symbols.get(), linked.vectors, linked.dataBaseAddress, linked.bssBaseAddress, linked.staticModulePaths);
+		flushRuntimeLuaOutput(rt);
 		return;
 	}
 	rt.enterCartProgram();
 	rt.boot(*romPackage.programImage, romPackage.programSymbols.get(), romPackage.programImage->vectors, PROGRAM_STATIC_RAM_BASE, PROGRAM_STATIC_RAM_BASE + static_cast<uint32_t>(romPackage.programImage->sections.data.bytes.size()), romPackage.programImage->sections.rodata.staticModulePaths);
+	flushRuntimeLuaOutput(rt);
 }
 
 bool MachineManager::bootSystemStartupProgram(const MachineManifest& runtimeMachine) {
@@ -447,6 +449,7 @@ bool MachineManager::bootSystemStartupProgram(const MachineManifest& runtimeMach
 	} else {
 		rt.boot(*m_system_rom.programImage, m_system_rom.programSymbols.get(), m_system_rom.programImage->vectors, PROGRAM_STATIC_RAM_BASE, PROGRAM_STATIC_RAM_BASE + static_cast<uint32_t>(m_system_rom.programImage->sections.data.bytes.size()), m_system_rom.programImage->sections.rodata.staticModulePaths);
 	}
+	flushRuntimeLuaOutput(rt);
 	rt.cartBoot.reset();
 	return true;
 }
@@ -464,14 +467,14 @@ bool MachineManager::loadRomInternal(const u8* data, size_t size) {
 	const MachineManifest& cartMachine = m_cart_rom.machine;
 	const i64 cartUfpsScaled = resolveUfpsScaled(cartMachine);
 	i64 cpuHz = 0;
-	const bool cartCpuValid = tryResolveCpuHz(cartMachine, cpuHz);
+	const bool cartCpuValid = resolveCpuHz(cartMachine, cpuHz);
 	i64 runtimeUfpsScaled = cartUfpsScaled;
 	if (!cartCpuValid) {
 		i64 systemUfpsScaled = 0;
 		i64 systemCpuHz = 0;
 		if (!m_system_rom_loaded
-			|| !tryResolveCpuHz(m_system_rom.machine, systemCpuHz)
-			|| !tryResolveUfpsScaled(m_system_rom.machine, systemUfpsScaled)) {
+			|| !resolveCpuHz(m_system_rom.machine, systemCpuHz)
+			|| !resolveUfpsScaled(m_system_rom.machine, systemUfpsScaled)) {
 			throw std::runtime_error("[MachineManager] machine.specs.cpu.cpu_freq_hz is required.");
 		}
 		std::cerr << "[MachineManager] Cart manifest machine.specs.cpu.cpu_freq_hz is required; booting BIOS only." << std::endl;

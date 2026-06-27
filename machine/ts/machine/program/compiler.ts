@@ -1208,7 +1208,7 @@ class FunctionBuilder {
 	}
 
 	private requireStructArrayLength(expression: LuaExpression): number {
-		const value = this.tryEvaluateCompileTimeNumber(expression);
+		const value = this.evaluateCompileTimeNumber(expression);
 		if (value === undefined || !Number.isInteger(value) || value <= 0) {
 			throw new Error('[Compiler] Struct array length must be a positive compile-time integer.');
 		}
@@ -1890,7 +1890,7 @@ class FunctionBuilder {
 		this.program.recordStaticModulePath(path);
 	}
 
-	private tryResolveRequireModuleBinding(expression: LuaExpression): ModuleBinding | null {
+	private resolveRequireModuleBinding(expression: LuaExpression): ModuleBinding | null {
 		if (expression.kind !== LuaSyntaxKind.CallExpression) {
 			return null;
 		}
@@ -1918,7 +1918,7 @@ class FunctionBuilder {
 		};
 	}
 
-	private tryResolveStaticModuleBinding(expression: LuaExpression, allowRequireRoot: boolean): ModuleBinding | null {
+	private resolveStaticModuleBinding(expression: LuaExpression, allowRequireRoot: boolean): ModuleBinding | null {
 		/*
 			Note: emulated-machine semantics and symbolic link-time relocations
 
@@ -1933,13 +1933,27 @@ class FunctionBuilder {
 			linker phases can preserve semantics and perform link-time resolution of symbolic relocations.
 		 */
 		if (allowRequireRoot) {
-			const requireBinding = this.tryResolveRequireModuleBinding(expression);
+			const requireBinding = this.resolveRequireModuleBinding(expression);
 			if (requireBinding !== null) {
 				return requireBinding;
 			}
 		}
 		if (expression.kind === LuaSyntaxKind.IdentifierExpression) {
-			const binding = this.resolveReferenceVisibleBinding(getResolvedIdentifierReference(this.semantics, expression as LuaIdentifierExpression));
+			const reference = getResolvedIdentifierReference(this.semantics, expression as LuaIdentifierExpression);
+			const moduleInfo = this.moduleCompileInfo;
+			const exportRootSymbolHandle = this.getExportRootSymbolHandle();
+			if (moduleInfo !== undefined
+				&& exportRootSymbolHandle !== null
+				&& this.protoId !== buildModuleProtoId(moduleInfo.path)
+				&& getResolvedReferenceSymbolHandle(reference) === exportRootSymbolHandle) {
+				return {
+					modulePath: moduleInfo.path,
+					exportPathKey: '',
+					exportDepth: 0,
+					external: false,
+				};
+			}
+			const binding = this.resolveReferenceVisibleBinding(reference);
 			if (!binding || binding.moduleBinding === null) {
 				return null;
 			}
@@ -1952,7 +1966,7 @@ class FunctionBuilder {
 		const baseExpression = isMemberExpression
 			? (expression as LuaMemberExpression).base
 			: (expression as LuaIndexExpression).base;
-		const baseBinding = this.tryResolveStaticModuleBinding(baseExpression, allowRequireRoot);
+		const baseBinding = this.resolveStaticModuleBinding(baseExpression, allowRequireRoot);
 		if (!baseBinding) {
 			return null;
 		}
@@ -1986,8 +2000,8 @@ class FunctionBuilder {
 	// Resolve a const module export (e.g. `assets.data_x_addr`) to its compile-time
 	// constant value. Returns a wrapper so a `nil`/`false`/`0` export is distinguished
 	// from "not a const export". The value is inlined at the use site.
-	private tryResolveModuleExportConstValue(expression: LuaExpression): { binding: ModuleBinding; value: ConstExportValue } | null {
-		const binding = this.tryResolveStaticModuleBinding(expression, true);
+	private resolveModuleExportConstValue(expression: LuaExpression): { binding: ModuleBinding; value: ConstExportValue } | null {
+		const binding = this.resolveStaticModuleBinding(expression, true);
 		if (!binding || binding.exportDepth === 0) {
 			return null;
 		}
@@ -2037,16 +2051,16 @@ class FunctionBuilder {
 		}
 	}
 
-	private tryResolveStaticFunctionExportBinding(expression: LuaExpression): ModuleBinding | null {
-		const binding = this.tryResolveStaticModuleBinding(expression, true);
+	private resolveStaticFunctionExportBinding(expression: LuaExpression): ModuleBinding | null {
+		const binding = this.resolveStaticModuleBinding(expression, true);
 		if (!binding) {
 			return null;
 		}
 		return this.isStaticFunctionModuleBinding(binding) ? binding : null;
 	}
 
-	private tryResolveConstLocalModuleBinding(expression: LuaExpression): ModuleBinding | null {
-		const binding = this.tryResolveStaticModuleBinding(expression, true);
+	private resolveConstLocalModuleBinding(expression: LuaExpression): ModuleBinding | null {
+		const binding = this.resolveStaticModuleBinding(expression, true);
 		if (binding === null) {
 			return null;
 		}
@@ -2063,20 +2077,28 @@ class FunctionBuilder {
 		return this.moduleCompileContext!.modulesByPath.get(binding.modulePath)!.exportSlotsByPathKey.get(binding.exportPathKey)!;
 	}
 
+	private emitStaticFunctionExportValue(binding: ModuleBinding, target: number): boolean {
+		if (!this.isStaticFunctionModuleBinding(binding)) {
+			return false;
+		}
+		this.emitModuleExportCallTargetLoad(this.getStaticFunctionExportSlot(binding), target);
+		return true;
+	}
+
 	private failConstModuleValueCall(binding: ModuleBinding): never {
 		throw new Error(`[Compiler] Const module '${binding.modulePath}' value export '${binding.exportPathKey}' is not a call target.`);
 	}
 
-	private tryResolveModuleExportSlotFromExpression(expression: LuaExpression): string | undefined {
-		const binding = this.tryResolveStaticModuleBinding(expression, false);
+	private resolveModuleExportSlotFromExpression(expression: LuaExpression): string | undefined {
+		const binding = this.resolveStaticModuleBinding(expression, false);
 		if (!binding || (binding.exportDepth === 0 && !this.isStaticFunctionModuleBinding(binding))) {
 			return undefined;
 		}
 		return this.moduleCompileContext?.modulesByPath.get(binding.modulePath)?.exportSlotsByPathKey.get(binding.exportPathKey);
 	}
 
-	private tryResolveModuleExportCallTargetSlot(expression: LuaExpression): string | undefined {
-		const binding = this.tryResolveStaticModuleBinding(expression, true);
+	private resolveModuleExportCallTargetSlot(expression: LuaExpression): string | undefined {
+		const binding = this.resolveStaticModuleBinding(expression, true);
 		if (!binding || (binding.exportDepth === 0 && !this.isStaticFunctionModuleBinding(binding))) {
 			return undefined;
 		}
@@ -2090,15 +2112,15 @@ class FunctionBuilder {
 		return info.exportSlotsByPathKey.get(binding.exportPathKey);
 	}
 
-	private tryResolveModuleExportMethodSlot(baseExpression: LuaExpression, methodName: string): string | undefined {
-		const binding = this.tryResolveStaticModuleBinding(baseExpression, false);
+	private resolveModuleExportMethodSlot(baseExpression: LuaExpression, methodName: string): string | undefined {
+		const binding = this.resolveStaticModuleBinding(baseExpression, false);
 		if (!binding) {
 			return undefined;
 		}
 		return this.moduleCompileContext?.modulesByPath.get(binding.modulePath)?.exportSlotsByPathKey.get(appendModuleExportPathKey(binding.exportPathKey, methodName));
 	}
 
-	private tryResolveOwnStaticFunctionExportCallSlot(expression: LuaExpression): string | undefined {
+	private resolveOwnStaticFunctionExportCallSlot(expression: LuaExpression): string | undefined {
 		if (expression.kind !== LuaSyntaxKind.IdentifierExpression || this.moduleCompileInfo === undefined) {
 			return undefined;
 		}
@@ -2110,8 +2132,8 @@ class FunctionBuilder {
 		return this.moduleCompileInfo.staticFunctionExportSlotBySymbolHandle.get(symbolHandle);
 	}
 
-	private tryResolveExternalModuleRootFieldSlotName(baseExpression: LuaExpression, key: string): string | undefined {
-		const binding = this.tryResolveStaticModuleBinding(baseExpression, false);
+	private resolveExternalModuleRootFieldSlotName(baseExpression: LuaExpression, key: string): string | undefined {
+		const binding = this.resolveStaticModuleBinding(baseExpression, false);
 		if (!binding || !binding.external || binding.exportDepth !== 0) {
 			return undefined;
 		}
@@ -2135,7 +2157,7 @@ class FunctionBuilder {
 		- This detection prevents treating the module root as a runtime value (local or upvalue) under
 		the emulated-machine semantics used by this project.
 	 */
-	private tryGetCompileTimeModuleRootBinding(binding: LocalBinding | null | undefined): ModuleBinding | null {
+	private getCompileTimeModuleRootBinding(binding: LocalBinding | null | undefined): ModuleBinding | null {
 		if (!binding || binding.moduleBinding === null) {
 			return null;
 		}
@@ -2168,10 +2190,9 @@ class FunctionBuilder {
 			- We detect that here and raise a compile-time error via `failExternalModuleRootRuntimeUse` to
 			prevent generating runtime references to a non-existent module table.
 		 */
-		const compileTimeModuleRoot = this.tryGetCompileTimeModuleRootBinding(binding);
+		const compileTimeModuleRoot = this.getCompileTimeModuleRootBinding(binding);
 		if (compileTimeModuleRoot !== null) {
-			if (this.isStaticFunctionModuleBinding(compileTimeModuleRoot)) {
-				this.emitModuleExportCallTargetLoad(this.getStaticFunctionExportSlot(compileTimeModuleRoot), target);
+			if (this.emitStaticFunctionExportValue(compileTimeModuleRoot, target)) {
 				return;
 			}
 			this.failCompileTimeModuleRootRuntimeUse(compileTimeModuleRoot.modulePath);
@@ -2196,8 +2217,7 @@ class FunctionBuilder {
 			this.emitLoadRodataAddress(target, rodataBinding, 0);
 			return;
 		}
-		if (binding !== null && binding.moduleBinding !== null && this.isStaticFunctionModuleBinding(binding.moduleBinding)) {
-			this.emitModuleExportCallTargetLoad(this.getStaticFunctionExportSlot(binding.moduleBinding), target);
+		if (binding !== null && binding.moduleBinding !== null && this.emitStaticFunctionExportValue(binding.moduleBinding, target)) {
 			return;
 		}
 		const localReg = this.resolveReferenceLocal(reference);
@@ -2935,7 +2955,7 @@ class FunctionBuilder {
 			for (let i = 0; i < lastIndex; i += 1) {
 				const expr = values[i];
 				if (i < names.length && attributes[i] === 'const') {
-					const moduleBinding = this.tryResolveConstLocalModuleBinding(expr);
+					const moduleBinding = this.resolveConstLocalModuleBinding(expr);
 					if (moduleBinding !== null) {
 						initializerModuleBindings[i] = moduleBinding;
 						if (moduleBinding.external || this.isStaticFunctionModuleBinding(moduleBinding)) {
@@ -2972,7 +2992,7 @@ class FunctionBuilder {
 			const lastHasName = lastIndex < names.length;
 			let compileLastInitializerExpression = true;
 			if (lastHasName && attributes[lastIndex] === 'const' && !wantsMulti) {
-				const moduleBinding = this.tryResolveConstLocalModuleBinding(lastExpr);
+				const moduleBinding = this.resolveConstLocalModuleBinding(lastExpr);
 				if (moduleBinding !== null) {
 					initializerModuleBindings[lastIndex] = moduleBinding;
 					compileLastInitializerExpression = !moduleBinding.external && !this.isStaticFunctionModuleBinding(moduleBinding);
@@ -3110,7 +3130,7 @@ class FunctionBuilder {
 				expr.kind === LuaSyntaxKind.IndexExpression ||
 				(expr.kind === LuaSyntaxKind.UnaryExpression && (expr as LuaUnaryExpression).operator === LuaUnaryOperator.Dereference)
 			) {
-				const structAddress = this.tryResolveStructAddress(expr);
+				const structAddress = this.resolveStructAddress(expr);
 				if (structAddress !== null) {
 					if (structAddress.readOnly) {
 						throw new Error('[Compiler] Cannot assign to .rodata storage.');
@@ -3184,7 +3204,7 @@ class FunctionBuilder {
 			if (targetPreparation.kind === 'index') {
 				const baseReg = this.allocTemp();
 				this.compileExpressionInto(targetPreparation.base, baseReg, 1);
-				const keyConst = this.tryGetConstIndex(targetPreparation.index);
+				const keyConst = this.getConstIndex(targetPreparation.index);
 				if (keyConst !== undefined) {
 					targets.push({ kind: 'table', tableReg: baseReg, keyConst });
 					continue;
@@ -3704,27 +3724,27 @@ class FunctionBuilder {
 	}
 
 	private compileMemberExpression(expression: any, target: number): void {
-		const constExport = this.tryResolveModuleExportConstValue(expression as LuaMemberExpression);
+		const constExport = this.resolveModuleExportConstValue(expression as LuaMemberExpression);
 		if (constExport !== null) {
 			this.emitLoadConstExportValue(target, constExport.value);
 			return;
 		}
-		const staticFunctionExportBinding = this.tryResolveStaticFunctionExportBinding(expression as LuaMemberExpression);
+		const staticFunctionExportBinding = this.resolveStaticFunctionExportBinding(expression as LuaMemberExpression);
 		if (staticFunctionExportBinding !== null) {
-			this.emitModuleExportCallTargetLoad(this.getStaticFunctionExportSlot(staticFunctionExportBinding), target);
+			this.emitStaticFunctionExportValue(staticFunctionExportBinding, target);
 			return;
 		}
-		const slotName = this.tryResolveModuleExportSlotFromExpression(expression as LuaMemberExpression);
+		const slotName = this.resolveModuleExportSlotFromExpression(expression as LuaMemberExpression);
 		if (slotName !== undefined) {
 			this.emitModuleExportValueLoad(slotName, target);
 			return;
 		}
-		const structAddress = this.tryResolveStructScalarAddress(expression as LuaMemberExpression);
+		const structAddress = this.resolveStructScalarAddress(expression as LuaMemberExpression);
 		if (structAddress !== null) {
 			this.emitMemoryLoad(target, structAddress.type.accessKind!, undefined, structAddress.baseReg, structAddress.byteOffset);
 			return;
 		}
-		const rootFieldSlot = this.tryResolveExternalModuleRootFieldSlotName(expression.base, expression.identifier);
+		const rootFieldSlot = this.resolveExternalModuleRootFieldSlotName(expression.base, expression.identifier);
 		if (rootFieldSlot !== undefined) {
 			this.emitModuleSlotRelocLoad(rootFieldSlot, target);
 			return;
@@ -3736,29 +3756,29 @@ class FunctionBuilder {
 	}
 
 	private compileIndexExpression(expression: any, target: number): void {
-		const constExport = this.tryResolveModuleExportConstValue(expression as LuaIndexExpression);
+		const constExport = this.resolveModuleExportConstValue(expression as LuaIndexExpression);
 		if (constExport !== null) {
 			this.emitLoadConstExportValue(target, constExport.value);
 			return;
 		}
-		const staticFunctionExportBinding = this.tryResolveStaticFunctionExportBinding(expression as LuaIndexExpression);
+		const staticFunctionExportBinding = this.resolveStaticFunctionExportBinding(expression as LuaIndexExpression);
 		if (staticFunctionExportBinding !== null) {
-			this.emitModuleExportCallTargetLoad(this.getStaticFunctionExportSlot(staticFunctionExportBinding), target);
+			this.emitStaticFunctionExportValue(staticFunctionExportBinding, target);
 			return;
 		}
-		const slotName = this.tryResolveModuleExportSlotFromExpression(expression as LuaIndexExpression);
+		const slotName = this.resolveModuleExportSlotFromExpression(expression as LuaIndexExpression);
 		if (slotName !== undefined) {
 			this.emitModuleExportValueLoad(slotName, target);
 			return;
 		}
-		const structAddress = this.tryResolveStructScalarAddress(expression as LuaIndexExpression);
+		const structAddress = this.resolveStructScalarAddress(expression as LuaIndexExpression);
 		if (structAddress !== null) {
 			this.emitMemoryLoad(target, structAddress.type.accessKind!, undefined, structAddress.baseReg, structAddress.byteOffset);
 			return;
 		}
 		const keyStatic = extractTableKeyFromExpression((expression as LuaIndexExpression).index);
 		const rootFieldSlot = keyStatic !== undefined
-			? this.tryResolveExternalModuleRootFieldSlotName(expression.base, keyStatic)
+			? this.resolveExternalModuleRootFieldSlotName(expression.base, keyStatic)
 			: undefined;
 		if (rootFieldSlot !== undefined) {
 			this.emitModuleSlotRelocLoad(rootFieldSlot, target);
@@ -3772,7 +3792,7 @@ class FunctionBuilder {
 		}
 		const baseReg = this.allocTemp();
 		this.compileExpressionInto(expression.base, baseReg, 1);
-		const keyConst = this.tryGetConstIndex(expression.index);
+		const keyConst = this.getConstIndex(expression.index);
 		if (keyConst !== undefined) {
 			this.emitTableGetConst(target, baseReg, keyConst);
 			return;
@@ -3819,7 +3839,7 @@ class FunctionBuilder {
 				this.tempTop = tempBase;
 				continue;
 			}
-			const keyConst = this.tryGetConstIndex(field.key);
+			const keyConst = this.getConstIndex(field.key);
 			if (keyConst !== undefined) {
 				const valueReg = this.allocTemp();
 				this.compileExpressionInto(field.value, valueReg, 1);
@@ -3836,7 +3856,7 @@ class FunctionBuilder {
 		}
 	}
 
-	private tryGetConstIndex(expression: LuaExpression): number | undefined {
+	private getConstIndex(expression: LuaExpression): number | undefined {
 		const constValue = this.evaluateCompileTimeExpression(expression);
 		if (constValue === undefined) {
 			return undefined;
@@ -3844,7 +3864,7 @@ class FunctionBuilder {
 		return this.program.constIndex(constValue);
 	}
 
-	private tryGetNumericConstIndex(expression: LuaExpression): number | undefined {
+	private getNumericConstIndex(expression: LuaExpression): number | undefined {
 		const constValue = this.evaluateCompileTimeExpression(expression);
 		if (typeof constValue !== 'number') {
 			return undefined;
@@ -3852,7 +3872,7 @@ class FunctionBuilder {
 		return this.program.constIndex(constValue);
 	}
 
-	private tryEvaluateCompileTimeNumber(expression: LuaExpression): number | undefined {
+	private evaluateCompileTimeNumber(expression: LuaExpression): number | undefined {
 		const constValue = this.evaluateCompileTimeExpression(expression);
 		if (constValue === undefined || constValue === null || constValue === true || constValue === false || valueIsString(constValue)) {
 			return undefined;
@@ -3860,7 +3880,7 @@ class FunctionBuilder {
 		return constValue as number;
 	}
 
-	private tryCompileDisplacedAddress(expression: LuaExpression): { baseReg: number; byteOffset: number } | null {
+	private compileDisplacedAddress(expression: LuaExpression): { baseReg: number; byteOffset: number } | null {
 		if (expression.kind !== LuaSyntaxKind.BinaryExpression) {
 			return null;
 		}
@@ -3868,7 +3888,7 @@ class FunctionBuilder {
 		if (binary.operator !== LuaBinaryOperator.Add && binary.operator !== LuaBinaryOperator.Subtract) {
 			return null;
 		}
-		const rightOffset = this.tryEvaluateCompileTimeNumber(binary.right);
+		const rightOffset = this.evaluateCompileTimeNumber(binary.right);
 		if (rightOffset !== undefined) {
 			const baseReg = this.allocTemp();
 			this.compileExpressionInto(binary.left, baseReg, 1);
@@ -3878,7 +3898,7 @@ class FunctionBuilder {
 			};
 		}
 		if (binary.operator === LuaBinaryOperator.Add) {
-			const leftOffset = this.tryEvaluateCompileTimeNumber(binary.left);
+			const leftOffset = this.evaluateCompileTimeNumber(binary.left);
 			if (leftOffset !== undefined) {
 				const baseReg = this.allocTemp();
 				this.compileExpressionInto(binary.right, baseReg, 1);
@@ -3889,11 +3909,11 @@ class FunctionBuilder {
 	}
 
 	private compileMemoryTarget(target: Extract<ReturnType<typeof classifyAssignmentTargetPreparation>, { kind: 'memory' }>): Extract<AssignmentTarget, { kind: 'memory' }> {
-		const addrConst = this.tryGetNumericConstIndex(target.index);
+		const addrConst = this.getNumericConstIndex(target.index);
 		if (addrConst !== undefined) {
 			return { kind: 'memory', accessKind: target.accessKind, addrConst, validateAddress: target.index };
 		}
-		const displaced = this.tryCompileDisplacedAddress(target.index);
+		const displaced = this.compileDisplacedAddress(target.index);
 		if (displaced !== null) {
 			return {
 				kind: 'memory',
@@ -3919,7 +3939,7 @@ class FunctionBuilder {
 			elementType = base.type;
 		}
 		const stride = elementType.size;
-		const staticIndex = this.tryEvaluateCompileTimeNumber(indexExpression);
+		const staticIndex = this.evaluateCompileTimeNumber(indexExpression);
 		if (staticIndex !== undefined) {
 			if (!Number.isInteger(staticIndex)) {
 				throw new Error('[Compiler] Struct array index must be an integer when used as a compile-time offset.');
@@ -3951,7 +3971,7 @@ class FunctionBuilder {
 		};
 	}
 
-	private tryResolveStructAddress(expression: LuaExpression): StructAddress | null {
+	private resolveStructAddress(expression: LuaExpression): StructAddress | null {
 		switch (expression.kind) {
 			case LuaSyntaxKind.IdentifierExpression: {
 				const reference = getResolvedIdentifierReference(this.semantics, expression as LuaIdentifierExpression);
@@ -4017,12 +4037,12 @@ class FunctionBuilder {
 			}
 			case LuaSyntaxKind.MemberExpression: {
 				const member = expression as LuaMemberExpression;
-				const base = this.tryResolveStructAddress(member.base);
+				const base = this.resolveStructAddress(member.base);
 				return base === null ? null : this.resolveStructFieldAddress(base, member.identifier);
 			}
 			case LuaSyntaxKind.IndexExpression: {
 				const index = expression as LuaIndexExpression;
-				const base = this.tryResolveStructAddress(index.base);
+				const base = this.resolveStructAddress(index.base);
 				return base === null ? null : this.compileStructIndexAddress(base, index.index);
 			}
 			case LuaSyntaxKind.UnaryExpression: {
@@ -4030,7 +4050,7 @@ class FunctionBuilder {
 				if (unary.operator !== LuaUnaryOperator.Dereference) {
 					return null;
 				}
-				const base = this.tryResolveStructAddress(unary.operand);
+				const base = this.resolveStructAddress(unary.operand);
 				return base === null ? null : {
 					baseReg: base.baseReg,
 					byteOffset: base.byteOffset,
@@ -4044,8 +4064,8 @@ class FunctionBuilder {
 		}
 	}
 
-	private tryResolveStructScalarAddress(expression: LuaExpression): StructAddress | null {
-		const address = this.tryResolveStructAddress(expression);
+	private resolveStructScalarAddress(expression: LuaExpression): StructAddress | null {
+		const address = this.resolveStructAddress(expression);
 		if (address === null) {
 			return null;
 		}
@@ -4111,7 +4131,7 @@ class FunctionBuilder {
 		this.emitABC(OpCode.STORE_MEM, valueReg, this.emitOffsetAddress(addrReg!, byteOffset), accessKind, 0);
 	}
 
-	private tryResolveConstantMemoryAddress(addressExpression: LuaExpression): number | undefined {
+	private resolveConstantMemoryAddress(addressExpression: LuaExpression): number | undefined {
 		const constValue = this.evaluateCompileTimeExpression(addressExpression);
 		if (typeof constValue === 'number') return constValue;
 		if (addressExpression.kind === LuaSyntaxKind.IdentifierExpression) {
@@ -4130,7 +4150,7 @@ class FunctionBuilder {
 	}
 
 	private resolveMemoryStoreRequirement(addressExpression: LuaExpression): MmioWriteRequirement {
-		const address = this.tryResolveConstantMemoryAddress(addressExpression);
+		const address = this.resolveConstantMemoryAddress(addressExpression);
 		if (address !== undefined) {
 			const spec = MMIO_REGISTER_SPEC_BY_ADDRESS.get(address);
 			if (spec) return spec.writeRequirement;
@@ -4148,7 +4168,7 @@ class FunctionBuilder {
 	}
 
 	private resolveMemoryStoreRegisterName(addressExpression: LuaExpression): string | undefined {
-		const address = this.tryResolveConstantMemoryAddress(addressExpression);
+		const address = this.resolveConstantMemoryAddress(addressExpression);
 		if (address !== undefined) {
 			return MMIO_REGISTER_SPEC_BY_ADDRESS.get(address)?.name;
 		}
@@ -4178,7 +4198,7 @@ class FunctionBuilder {
 	}
 
 	private compileStringIdUnaryExpression(expression: LuaUnaryExpression, target: number, resultCount: number): void {
-		const structAddress = this.tryResolveStructAddress(expression.operand);
+		const structAddress = this.resolveStructAddress(expression.operand);
 		if (structAddress !== null) {
 			this.emitStructAddressValue(structAddress, target, resultCount);
 			return;
@@ -4209,7 +4229,7 @@ class FunctionBuilder {
 	}
 
 	private compileRKOperand(expression: LuaExpression): number {
-		const constIndex = this.tryGetConstIndex(expression);
+		const constIndex = this.getConstIndex(expression);
 		if (constIndex !== undefined) {
 			return this.encodeConstOperand(constIndex);
 		}
@@ -4224,7 +4244,7 @@ class FunctionBuilder {
 			return;
 		}
 		if (expression.operator === LuaUnaryOperator.Dereference) {
-			const structAddress = this.tryResolveStructScalarAddress(expression);
+			const structAddress = this.resolveStructScalarAddress(expression);
 			if (structAddress === null) {
 				throw new Error('[Compiler] Pointer dereference requires a typed pointer.');
 			}
@@ -4390,10 +4410,10 @@ class FunctionBuilder {
 	}
 
 	private compileCallExpression(expression: LuaCallExpression, target: number, resultCount: number): void {
-		const requireBinding = this.tryResolveRequireModuleBinding(expression);
+		const requireBinding = this.resolveRequireModuleBinding(expression);
 		if (requireBinding !== null && this.isStaticFunctionModuleBinding(requireBinding)) {
 			if (resultCount > 0) {
-				this.emitModuleExportCallTargetLoad(this.getStaticFunctionExportSlot(requireBinding), target);
+				this.emitStaticFunctionExportValue(requireBinding, target);
 				if (resultCount > 1) {
 					this.emitLoadNil(target + 1, resultCount - 1);
 				}
@@ -4402,10 +4422,10 @@ class FunctionBuilder {
 		}
 		const methodName = expression.methodName;
 		const hasMethod = methodName !== null && methodName.length > 0;
-		const moduleMethodSlot = hasMethod ? this.tryResolveModuleExportMethodSlot(expression.callee, methodName) : undefined;
-		const constModuleValueCallee = !hasMethod ? this.tryResolveModuleExportConstValue(expression.callee) : null;
-		const moduleCallSlot = !hasMethod ? this.tryResolveModuleExportCallTargetSlot(expression.callee) : undefined;
-		const ownStaticFunctionExportSlot = !hasMethod ? this.tryResolveOwnStaticFunctionExportCallSlot(expression.callee) : undefined;
+		const moduleMethodSlot = hasMethod ? this.resolveModuleExportMethodSlot(expression.callee, methodName) : undefined;
+		const constModuleValueCallee = !hasMethod ? this.resolveModuleExportConstValue(expression.callee) : null;
+		const moduleCallSlot = !hasMethod ? this.resolveModuleExportCallTargetSlot(expression.callee) : undefined;
+		const ownStaticFunctionExportSlot = !hasMethod ? this.resolveOwnStaticFunctionExportCallSlot(expression.callee) : undefined;
 		const constClosureBinding = !hasMethod && expression.callee.kind === LuaSyntaxKind.IdentifierExpression
 			? this.resolveReferenceConstClosureBinding(getResolvedIdentifierReference(this.semantics, expression.callee as LuaIdentifierExpression))
 			: null;

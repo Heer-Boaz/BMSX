@@ -184,7 +184,7 @@ Table::Table(int arraySize, int hashSize) {
 	addTrackedLuaHeapBytes(static_cast<ptrdiff_t>(trackedHeapBytes()));
 }
 
-bool Table::tryGetArrayIndex(const Value& key, int& outIndex) const {
+bool Table::getArrayIndex(const Value& key, int& outIndex) const {
 	if (!valueIsNumber(key)) {
 		return false;
 	}
@@ -300,7 +300,7 @@ void Table::rehash(const Value& key) {
 		if (!isNil(node.key)) {
 			totalKeys += 1;
 			int index = 0;
-			if (tryGetArrayIndex(node.key, index)) {
+			if (getArrayIndex(node.key, index)) {
 				countIntegerKey(static_cast<size_t>(index) + 1);
 			}
 		}
@@ -308,7 +308,7 @@ void Table::rehash(const Value& key) {
 	if (!isNil(key)) {
 		totalKeys += 1;
 		int index = 0;
-		if (tryGetArrayIndex(key, index)) {
+		if (getArrayIndex(key, index)) {
 			countIntegerKey(static_cast<size_t>(index) + 1);
 		}
 	}
@@ -356,7 +356,7 @@ void Table::resize(size_t newArraySize, size_t newHashSize) {
 
 void Table::rawSet(const Value& key, const Value& value) {
 	int index = 0;
-	bool isArrayKey = tryGetArrayIndex(key, index);
+	bool isArrayKey = getArrayIndex(key, index);
 	if (isArrayKey) {
 		size_t idx = static_cast<size_t>(index);
 		if (idx < m_array.size()) {
@@ -473,7 +473,7 @@ Value Table::get(const Value& key) const {
 		throw BMSX_RUNTIME_ERROR("Table index is nil.");
 	}
 	int index = 0;
-	if (tryGetArrayIndex(key, index)) {
+	if (getArrayIndex(key, index)) {
 		if (index < static_cast<int>(m_array.size())) {
 			return m_array[static_cast<size_t>(index)];
 		}
@@ -491,7 +491,7 @@ void Table::set(const Value& key, const Value& value) {
 		throw BMSX_RUNTIME_ERROR("Table index is nil.");
 	}
 	int index = 0;
-	bool isArrayKey = tryGetArrayIndex(key, index);
+	bool isArrayKey = getArrayIndex(key, index);
 	if (isArrayKey) {
 		const size_t idx = static_cast<size_t>(index);
 		if (isNil(value)) {
@@ -648,7 +648,7 @@ std::optional<std::pair<Value, Value>> Table::nextEntry(const Value& after) cons
 		return std::nullopt;
 	}
 	int index = 0;
-	if (tryGetArrayIndex(after, index)) {
+	if (getArrayIndex(after, index)) {
 		if (index < static_cast<int>(m_array.size())) {
 			if (isNil(m_array[static_cast<size_t>(index)])) {
 				return std::nullopt;
@@ -1837,7 +1837,7 @@ AcceptedInterruptKind CPU::peekPendingInterrupt(const IrqController& irqControll
 	return AcceptedInterruptKind::None;
 }
 
-bool CPU::tryEnterPendingInterrupt(const IrqController& irqController, int irqProtoIndex) {
+bool CPU::enterPendingInterrupt(const IrqController& irqController, int irqProtoIndex) {
 	if (!canAcceptMaskableInterruptLine(irqController)) {
 		return false;
 	}
@@ -1917,7 +1917,7 @@ dispatch_loop_check:
 		&& m_maskableInterruptsEnabled
 		&& irqController->hasAssertedMaskableInterruptLine()
 	) {
-		tryEnterPendingInterrupt(*irqController, irqProtoIndex);
+		enterPendingInterrupt(*irqController, irqProtoIndex);
 		goto dispatch_loop_check;
 	}
 	frame = frames.back().get();
@@ -2067,7 +2067,7 @@ dispatch_loop_check:
 		&& m_maskableInterruptsEnabled
 		&& irqController->hasAssertedMaskableInterruptLine()
 	) {
-		tryEnterPendingInterrupt(*irqController, irqProtoIndex);
+		enterPendingInterrupt(*irqController, irqProtoIndex);
 		goto dispatch_loop_check;
 	}
 	frame = frames.back().get();

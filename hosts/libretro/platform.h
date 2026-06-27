@@ -193,7 +193,7 @@ public:
 	bool loadRomFromPath(const char* path);
 	bool loadEmptyCart();
 	void unloadRom();
-	void tryLoadSystemRom(const char* romPath);
+	void loadSystemRom(const char* romPath);
 
 	// Emulation control
 	void reset();

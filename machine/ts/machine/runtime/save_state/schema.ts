@@ -76,7 +76,7 @@ export const RUNTIME_SAVE_STATE_PROP_NAMES = [
 	'protoIndex',
 	'queuedTickCompletions',
 	'ram',
-	'randomSeed',
+	'randomSeed', // retired tombstone: keep positional save-state schema indices stable.
 	'registers',
 	'remaining',
 	'returnBase',

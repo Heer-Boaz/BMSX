@@ -254,11 +254,11 @@ export function scheduleWorkspaceServerRetry(delayMs: number): void {
 	serverRetryHandle = scheduleIdeOnce(delayMs, async () => {
 		serverRetryScheduled = false;
 		serverRetryHandle = null;
-		await tryReconnectServerBackend();
+		await reconnectServerBackend();
 	});
 }
 
-async function tryReconnectServerBackend(): Promise<void> {
+async function reconnectServerBackend(): Promise<void> {
 	if (serverBackendAvailable || !storagePaths) {
 		return;
 	}

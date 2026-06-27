@@ -222,7 +222,7 @@ test('core golden: DMA source bus faults complete as device errors', () => {
 	memory.writeValue(IO_DMA_DST, RAM_BASE);
 	memory.writeValue(IO_DMA_LEN, 4);
 	memory.writeIoValue(IO_DMA_CTRL, DMA_CTRL_START);
-	controller.tryStartIo();
+	controller.startIo();
 	controller.accrueCycles(1, 1);
 	controller.onService(1);
 	assert.equal(memory.readIoU32(IO_DMA_STATUS), DMA_STATUS_DONE | DMA_STATUS_ERROR);

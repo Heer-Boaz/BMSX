@@ -142,7 +142,7 @@ export function syncRuntimeErrorOverlayFromContext(context: CodeTabContext): voi
 	clearExecutionStopHighlight();
 }
 
-export function tryShowLuaErrorOverlay(error: unknown): boolean {
+export function showLuaErrorOverlay(error: unknown): boolean {
 	let candidate: { line?: unknown; column?: unknown; path?: unknown; message?: unknown };
 	if (typeof error === 'string') {
 		candidate = { message: error };

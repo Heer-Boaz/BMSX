@@ -7,7 +7,7 @@ import {
 	enforceLuaHeapBudget
 } from '../memory/lua_heap_usage';
 import { formatNumber } from '../common/number_format';
-import { BASE_CYCLES, OPCODE_USES_BX, OPCODE_USES_DISP, OpCode, decodeCallArgCount } from './opcode_info';
+import { BASE_CYCLES, OPCODE_USES_BX, OPCODE_USES_DISP, OpCode } from './opcode_info';
 import { CpuExecutionProfiler, formatCpuProfilerReport, type CpuProfilerReportOptions } from './profiler';
 import { EXT_A_BITS, EXT_B_BITS, EXT_BX_BITS, EXT_C_BITS, INSTRUCTION_BYTES, MAX_BX_BITS, MAX_OPERAND_BITS, readInstructionWord, signExtend } from './instruction_format';
 import { MEMORY_ACCESS_KIND_NAMES, MemoryAccessKind } from '../memory/access_kind';
@@ -471,7 +471,7 @@ export class Table {
 		if (key === null) {
 			throw new Error('Table index is nil.');
 		}
-		const index = this.tryGetArrayIndex(key);
+		const index = this.getArrayIndex(key);
 		if (index !== null && index < this.array.length) {
 			const value = this.array[index];
 			return value === undefined ? null : value;
@@ -487,7 +487,7 @@ export class Table {
 		if (key === null) {
 			throw new Error('Table index is nil.');
 		}
-		const index = this.tryGetArrayIndex(key);
+		const index = this.getArrayIndex(key);
 		if (index !== null) {
 			if (index < this.array.length) {
 				if (value === null) {
@@ -721,7 +721,7 @@ export class Table {
 			}
 			return null;
 		}
-		const index = this.tryGetArrayIndex(after);
+		const index = this.getArrayIndex(after);
 		if (index !== null && index < this.array.length) {
 			if (this.array[index] === null) {
 				return null;
@@ -865,7 +865,7 @@ export class Table {
 			const node = this.hash[i];
 			if (node.key !== null) {
 				totalKeys += 1;
-				const index = this.tryGetArrayIndex(node.key);
+				const index = this.getArrayIndex(node.key);
 				if (index !== null) {
 					countIntegerKey(index + 1);
 				}
@@ -873,7 +873,7 @@ export class Table {
 		}
 		if (key !== null) {
 			totalKeys += 1;
-			const index = this.tryGetArrayIndex(key);
+			const index = this.getArrayIndex(key);
 			if (index !== null) {
 				countIntegerKey(index + 1);
 			}
@@ -926,7 +926,7 @@ export class Table {
 	}
 
 	private rawSet(key: Value, value: Value): void {
-		const index = this.tryGetArrayIndex(key);
+		const index = this.getArrayIndex(key);
 		if (index !== null && index < this.array.length) {
 			this.array[index] = value;
 			if (value === null) {
@@ -1035,7 +1035,7 @@ export class Table {
 		}
 	}
 
-	private tryGetArrayIndex(key: Value): number | null {
+	private getArrayIndex(key: Value): number | null {
 		if (typeof key !== 'number') {
 			return null;
 		}
@@ -1949,7 +1949,7 @@ export class CPU {
 		return AcceptedInterruptKind.None;
 	}
 
-	public tryEnterPendingInterrupt(irqController: IrqController, irqProtoIndex: number): boolean {
+	public enterPendingInterrupt(irqController: IrqController, irqProtoIndex: number): boolean {
 		if (!this.canAcceptMaskableInterruptLine(irqController)) {
 			return false;
 		}
@@ -2015,7 +2015,7 @@ export class CPU {
 				&& this.maskableInterruptsEnabled
 				&& irqController.hasAssertedMaskableInterruptLine()
 			) {
-				this.tryEnterPendingInterrupt(irqController, irqProtoIndex);
+				this.enterPendingInterrupt(irqController, irqProtoIndex);
 				continue;
 			}
 			const frame = frames[frames.length - 1];
@@ -2583,7 +2583,7 @@ export class CPU {
 				}
 				case OpCode.CALL: {
 					const callee = registers.get(a);
-					const argCount = decodeCallArgCount(b, Math.max(frame.top - a - 1, 0));
+					const argCount = b === 0 ? Math.max(frame.top - a - 1, 0) : b - 1;
 					if (callee === null) {
 						throw new Error(`Attempted to call a nil value. at ${this.formatLastSourceLocation()}`);
 					}

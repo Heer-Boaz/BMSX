@@ -466,6 +466,11 @@ Status:
   alleen de RPU f32-constant boundary schaalt de Q16.16 uitkomst naar f32.
 - dynamic gameplay modules blijven buiten deze gate; de gate hangt aan de
   function export/text-symbol ABI en de bestaande const-module storage/value ABI.
+- runtime table-modules kunnen hun Lua API-table behouden terwijl no-upvalue
+  exported functions via `export_proto` als linkbare sibling-call targets worden
+  gebruikt. `bios/easing` gebruikt die vorm: `easing` blijft een gewone globale
+  Lua table voor API-compatibiliteit, maar direct `require('bios/easing').fn`
+  en interne sibling-calls kunnen naar concrete function protos linken.
 - open: volgende targets blijven gap-gedreven: verdere fixed-point math helpers
   blijven gewone BLua modules met ROM-data en integercode; local scratch
   aggregates, typed-pointer calling convention en audit-output per module/proto

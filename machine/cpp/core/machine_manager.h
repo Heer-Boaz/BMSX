@@ -194,6 +194,7 @@ private:
 	bool bootSystemStartupProgram(const MachineManifest& runtimeMachine);
 	Runtime& prepareRuntimeForActiveCart(const ResolvedRuntimeTiming& timing, const MachineManifest& machine);
 	void bootRuntimeFromProgram();
+	void flushRuntimeLuaOutput(Runtime& runtime);
 
 	MachineManagerState m_state = MachineManagerState::Uninitialized;
 

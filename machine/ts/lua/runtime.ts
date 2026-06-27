@@ -696,11 +696,11 @@ export class LuaInterpreter {
 		this.frameStack.length = 0;
 	}
 
-	private tryConsumeBreak(): boolean {
+	private consumeBreak(): boolean {
 		return false;
 	}
 
-	private tryConsumeGoto(_instruction: LuaInstruction): boolean {
+	private consumeGoto(_instruction: LuaInstruction): boolean {
 		void _instruction;
 		return false;
 	}
@@ -778,14 +778,14 @@ export class LuaInterpreter {
 				return current;
 			}
 			if (current.kind === 'break') {
-				if (this.tryConsumeBreak()) {
+				if (this.consumeBreak()) {
 					current = NORMAL_SIGNAL;
 					continue;
 				}
 				return current;
 			}
 			if (current.kind === 'goto') {
-				if (this.tryConsumeGoto(current)) {
+				if (this.consumeGoto(current)) {
 					current = NORMAL_SIGNAL;
 					continue;
 				}

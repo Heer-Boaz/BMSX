@@ -34,6 +34,29 @@ test('cart lua linter rejects const copies from globals module aliases', async (
 	);
 });
 
+test('cart lua linter rejects require inside function bodies in cart and bios profiles', async () => {
+	await withCartLintFixture(
+		'cart_lua_linter_function_body_require',
+		[
+			"local clamp<const> = require('bios/util/clamp')",
+			'local max_value<const> = 1',
+			'local run<const> = function(value)',
+			"	local bad<const> = require('bios/util/clamp')",
+			'	return bad(value, 0, max_value)',
+			'end',
+			'return run(2)',
+		].join('\n'),
+		async root => {
+			for (const profile of ['cart', 'bios'] as const) {
+				await assert.rejects(
+					lintCartSources({ roots: [root], profile }),
+					/require\(\) inside function bodies is forbidden\. Hoist module imports to file scope with local <const> require bindings\./,
+				);
+			}
+		},
+	);
+});
+
 test('cart lua linter rejects math.floor references in cart and bios profiles', async () => {
 	await withCartLintFixture(
 		'cart_lua_linter_math_floor_reference',

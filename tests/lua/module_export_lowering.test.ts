@@ -1,12 +1,16 @@
 import assert from 'node:assert/strict';
+import { readFileSync } from 'node:fs';
 import { test } from 'node:test';
 
 import { splitText } from '../../machine/ts/common/text_lines';
 import { LuaLexer } from '../../machine/ts/lua/syntax/lexer';
 import { LuaParser } from '../../machine/ts/lua/syntax/parser';
+import { CPU, RunResult } from '../../machine/ts/machine/cpu/cpu';
 import { disassembleProgram } from '../../machine/ts/machine/cpu/disassembler';
+import { Memory } from '../../machine/ts/machine/memory/memory';
 import type { ProgramConstReloc } from '../../machine/ts/machine/program/loader';
-import { compileLuaChunkToProgram, type CompiledProgram } from '../../machine/ts/machine/program/compiler';
+import { compileLuaChunkToProgram, encodeCompiledProgramImage, type CompiledProgram } from '../../machine/ts/machine/program/compiler';
+import { inflateExecutableProgramImage } from '../../machine/ts/machine/program/linker';
 
 function parseSource(source: string, path: string) {
 	const lexer = new LuaLexer(source, path);
@@ -67,6 +71,36 @@ test('static module function calls use export-proto relocations while preserving
 	assert.match(disasm, /\bNEWT\b/, 'module runtime table must still be materialized for require() consumers');
 	assert.match(disasm, /\bSETFIELD\b/, 'exported function must still be stored on the returned table');
 	assert.match(disasm, /\bSET(GL|SYS)\b/, 'export slot must remain populated for value reads and non-symbol exports');
+});
+
+test('module export functions call sibling exports through link symbols', () => {
+	const moduleSource = [
+		'local api<const> = {}',
+		'function api.linear(value) return value end',
+		'function api.twice(value) return api.linear(value) * 2 end',
+		'return api',
+	].join('\n');
+	const compiled = compileWithModule('return require("foo").twice(3)', 'foo', moduleSource);
+	assert.equal(compiled.compiled.metadata.exportProtoIdBySlot.foo__linear?.includes('/decl:api.linear'), true);
+	assert.equal(compiled.compiled.metadata.exportProtoIdBySlot.foo__twice?.includes('/decl:api.twice'), true);
+	assert.equal(compiled.constRelocs.some(reloc => reloc.kind === 'export_proto' && reloc.symbol === 'foo__linear'), true);
+	assert.equal(compiled.constRelocs.some(reloc => reloc.kind === 'export_proto' && reloc.symbol === 'foo__twice'), true);
+	assert.match(compiled.disasm, /\bNEWT\b/, 'runtime module table remains available for normal require consumers');
+	const image = encodeCompiledProgramImage(compiled.compiled);
+	const cpu = new CPU(new Memory({ systemRom: new Uint8Array(0) }));
+	cpu.setProgram(inflateExecutableProgramImage(image, compiled.compiled.metadata), compiled.compiled.metadata);
+	cpu.start(image.vectors.sectionInitProtoIndex);
+	assert.equal(cpu.runUntilDepth(0, 100000), RunResult.Halted);
+	cpu.start(image.vectors.resetProtoIndex);
+	assert.equal(cpu.runUntilDepth(0, 100000), RunResult.Halted);
+	assert.deepEqual(Array.from(cpu.lastReturnValues), [6]);
+});
+
+test('bios easing exports a linkable function while keeping its Lua table', () => {
+	const moduleSource = readFileSync('machine/firmware/bios/easing.lua', 'utf8');
+	const compiled = compileWithModule('return require("bios/easing").arc01(0.25)', 'bios/easing', moduleSource);
+	assert.equal(compiled.constRelocs.some(reloc => reloc.kind === 'export_proto' && reloc.symbol === 'bios__easing__arc01'), true);
+	assert.match(compiled.disasm, /\bNEWT\b/, 'public easing table remains available for Lua API consumers');
 });
 
 // Non-call value reads must not use export_proto relocations; data exports use direct slots.

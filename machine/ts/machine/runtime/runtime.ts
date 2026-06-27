@@ -40,7 +40,7 @@ import type { ParsedLuaChunk } from '../../lua/analysis/parse';
 import { configureLuaHeapUsage, getTrackedLuaHeapBytes } from '../memory/lua_heap_usage';
 import { FrameLoopState } from './frame/loop';
 import { FrameSchedulerState } from '../scheduler/frame';
-import { calcCyclesPerFrameScaled, resolveUfpsScaled, resolveVblankCycles } from './timing';
+import { calcCyclesPerFrameScaled, resolveVblankCycles } from './timing';
 import { TimingState } from './timing/state';
 import { VblankState } from './vblank';
 import { CpuExecutionState } from './cpu_executor';
@@ -49,7 +49,7 @@ import { HostFaultState } from './host_fault';
 import { LuaScratchState } from '../program/scratch';
 import { callClosureInto, invokeClosureHandler, invokeLuaHandler } from '../program/executor';
 import type { ProgramVectorTable } from '../program/loader';
-import { resolvePositiveSafeInteger, resolveRuntimeRenderSize } from '../specs';
+import { resolveCpuHz, resolvePositiveSafeInteger, resolveRuntimeRenderSize, resolveUfpsScaled } from '../specs';
 import { resolveRuntimeMemoryMapSpecs } from '../memory/specs';
 import {
 	applyActiveMachineTiming,
@@ -222,8 +222,8 @@ export class Runtime {
 			});
 			configureMemoryMap(systemMemorySpecs);
 			const systemPerfSpecs = getMachinePerfSpecs(systemMachine);
-			const ufpsScaled = resolveUfpsScaled(systemPerfSpecs.ufps);
-			const cpuHz = resolvePositiveSafeInteger(systemPerfSpecs.cpu_freq_hz, 'machine.specs.cpu.cpu_freq_hz');
+			const ufpsScaled = resolveUfpsScaled(systemMachine);
+			const cpuHz = resolveCpuHz(systemMachine);
 			const cycleBudgetPerFrame = calcCyclesPerFrameScaled(cpuHz, ufpsScaled);
 			const systemRenderSize = resolveRuntimeRenderSize(systemMachine);
 			const vblankCycles = resolveVblankCycles(cpuHz, ufpsScaled, systemRenderSize.height);
@@ -281,8 +281,8 @@ export class Runtime {
 		});
 		configureMemoryMap(memoryLimits);
 		const cartPerfSpecs = getMachinePerfSpecs(cartRom.index.machine);
-		const ufpsScaled = resolveUfpsScaled(cartPerfSpecs.ufps);
-		const cpuHz = resolvePositiveSafeInteger(cartPerfSpecs.cpu_freq_hz, 'machine.specs.cpu.cpu_freq_hz');
+		const ufpsScaled = resolveUfpsScaled(cartRom.index.machine);
+		const cpuHz = resolveCpuHz(cartRom.index.machine);
 		const cycleBudgetPerFrame = calcCyclesPerFrameScaled(cpuHz, ufpsScaled);
 		const cartRenderSize = resolveRuntimeRenderSize(cartRom.index.machine);
 		const vblankCycles = resolveVblankCycles(cpuHz, ufpsScaled, cartRenderSize.height);
@@ -620,8 +620,8 @@ export class Runtime {
 
 	public applyCartProgramTiming(): void {
 		const perfSpecs = getMachinePerfSpecs(this.activeMachineManifest);
-		this.applyUfpsScaled(resolveUfpsScaled(perfSpecs.ufps));
-		const cpuHz = resolvePositiveSafeInteger(perfSpecs.cpu_freq_hz, 'machine.specs.cpu.cpu_freq_hz');
+		this.applyUfpsScaled(resolveUfpsScaled(this.activeMachineManifest));
+		const cpuHz = resolveCpuHz(this.activeMachineManifest);
 		applyActiveMachineTiming(this, cpuHz);
 		setTransferRatesFromManifest(this, perfSpecs);
 	}
