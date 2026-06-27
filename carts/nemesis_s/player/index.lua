@@ -1,5 +1,5 @@
 local bool01<const> = require('bios/util/bool01')
-local clamp_int<const> = require('bios/util/clamp_int')
+local clamp<const> = require('bios/util/clamp')
 local constants<const> = require('constants')
 local player_abilities<const> = require('player/abilities')
 
@@ -261,7 +261,7 @@ function player:update_position()
 			return
 		end
 		local raw_target_x<const> = self.x + dx
-		local target_x<const> = clamp_int(raw_target_x, 0, max_x)
+		local target_x<const> = clamp(raw_target_x, 0, max_x)
 		if target_x ~= raw_target_x then
 			self.edge_push_dx = dx
 		end
@@ -277,7 +277,7 @@ function player:update_position()
 			return
 		end
 		local raw_target_y<const> = self.y + dy
-		local target_y<const> = clamp_int(raw_target_y, 0, max_y)
+		local target_y<const> = clamp(raw_target_y, 0, max_y)
 		if target_y ~= raw_target_y then
 			self.edge_push_dy = dy
 		end

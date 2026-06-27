@@ -1,5 +1,6 @@
 local stagger<const> = {}
 local globals<const> = require('globals')
+local linear<const> = easing.linear
 local stagger_timeline_prefix<const> = 'p3.stagger.'
 
 local presets<const> = {
@@ -44,16 +45,6 @@ local presets<const> = {
 	},
 }
 
-local clamp01<const> = function(value)
-	if value < 0 then
-		return 0
-	end
-	if value > 1 then
-		return 1
-	end
-	return value
-end
-
 local ease_out_quart<const> = function(u)
 	local x<const> = 1 - u
 	return 1 - (x * x * x * x)
@@ -74,7 +65,7 @@ end
 
 local tween_u<const> = function(time, start_time, duration, ease)
 	local u = (time - start_time) / duration
-	u = clamp01(u)
+	u = linear(u)
 	return ease(u)
 end
 

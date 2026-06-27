@@ -34,7 +34,7 @@ export const assertStaticFunctionInstructionSet = (
 	for (let index = 0; index < instructions.length; index += 1) {
 		const reason = staticLaneForbiddenOpcodeReason(instructions[index].op);
 		if (reason !== null) {
-			throw new Error(`[Compiler] Module function export '${modulePath}:${symbolHandle}' emits forbidden static opcode ${getOpcodeName(instructions[index].op)} (${reason}). Const-module function exports and modules that return a bare function are static call-targets: they must compile to scalar/static code using constants, parameters, function-local words, globals, calls, branches, and memory loads/stores only. Return a table for dynamic function exports.`);
+			throw new Error(`[Compiler] Module function export '${modulePath}:${symbolHandle}' emits forbidden static opcode ${getOpcodeName(instructions[index].op)} (${reason}). Const-module function exports and static-compatible bare-function modules must compile to scalar/static code using constants, parameters, function-local words, globals, calls, branches, and memory loads/stores only.`);
 		}
 	}
 };

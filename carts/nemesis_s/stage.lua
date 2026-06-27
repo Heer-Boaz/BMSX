@@ -1,5 +1,5 @@
 local rol8<const> = require('bios/util/rol8')
-local clamp_int<const> = require('bios/util/clamp_int')
+local clamp<const> = require('bios/util/clamp')
 local constants<const> = require('constants')
 local bin<const> = require('system/bin')
 local assets<const> = require('bmsx/assets')
@@ -536,8 +536,8 @@ function stage_subsystem:is_solid_pixel(screen_x, screen_y)
 	local map_x = ((screen_x + self.total_scroll_px) // self.tile_size) + 1
 	local map_y = (screen_y // self.tile_size) + 1
 
-	map_x = clamp_int(map_x, 1, self.tape_length_tiles)
-	map_y = clamp_int(map_y, 1, self.tile_rows)
+	map_x = clamp(map_x, 1, self.tape_length_tiles)
+	map_y = clamp(map_y, 1, self.tile_rows)
 
 	return self.solid_tape[map_y][map_x] ~= 0
 end

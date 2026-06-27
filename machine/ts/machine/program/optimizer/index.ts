@@ -16,6 +16,7 @@ import {
 	replaceWithJump,
 	type ConstValue,
 	constPoolValueForOptimization,
+	loadKConstValueForOptimization,
 } from './values';
 
 export type InstructionFormat = 'ABC' | 'ABx' | 'AsBx';
@@ -283,15 +284,6 @@ const clearRegisterRange = <T>(values: Map<number, T>, start: number, countValue
 	}
 };
 
-const setMapConstIfOptimizable = (constants: Map<number, ConstValue>, register: number, context: OptimizationContext, constIndex: number): void => {
-	const value = constPoolValueForOptimization(context, constIndex);
-	if (value) {
-		constants.set(register, value);
-		return;
-	}
-	constants.delete(register);
-};
-
 const equalConstMaps = (left: Map<number, ConstValue>, right: Map<number, ConstValue>): boolean => {
 	if (left.size !== right.size) {
 		return false;
@@ -399,8 +391,12 @@ const computeBlockConstantIn = (
 						break;
 					}
 					case OpCode.LOADK: {
-						const index = instruction.b;
-						setMapConstIfOptimizable(constants, instruction.a, context, index);
+						const value = loadKConstValueForOptimization(instruction, context);
+						if (value) {
+							constants.set(instruction.a, value);
+						} else {
+							constants.delete(instruction.a);
+						}
 						break;
 					}
 					case OpCode.LOADNIL: {
@@ -594,8 +590,12 @@ const foldConstants = (set: InstructionSet, context: OptimizationContext): Instr
 					break;
 				}
 				case OpCode.LOADK: {
-					const index = instruction.b;
-					setMapConstIfOptimizable(constants, instruction.a, context, index);
+					const value = loadKConstValueForOptimization(instruction, context);
+					if (value) {
+						constants.set(instruction.a, value);
+					} else {
+						constants.delete(instruction.a);
+					}
 					break;
 				}
 				case OpCode.LOADNIL: {
@@ -726,15 +726,6 @@ const propagateValues = (set: InstructionSet, context: OptimizationContext): Ins
 	const setConst = (constants: Map<number, ConstValue>, copies: Map<number, number>, register: number, value: ConstValue): void => {
 		killRegister(constants, copies, register);
 		constants.set(register, value);
-	};
-
-	const setTrackedConstIfOptimizable = (constants: Map<number, ConstValue>, copies: Map<number, number>, register: number, context: OptimizationContext, constIndex: number): void => {
-		const value = constPoolValueForOptimization(context, constIndex);
-		if (value) {
-			setConst(constants, copies, register, value);
-			return;
-		}
-		killRegister(constants, copies, register);
 	};
 
 	const setCopy = (constants: Map<number, ConstValue>, copies: Map<number, number>, register: number, source: number): void => {
@@ -916,8 +907,12 @@ const propagateValues = (set: InstructionSet, context: OptimizationContext): Ins
 					break;
 				}
 				case OpCode.LOADK: {
-					const index = instruction.b;
-					setTrackedConstIfOptimizable(constants, copies, instruction.a, context, index);
+					const value = loadKConstValueForOptimization(instruction, context);
+					if (value) {
+						setConst(constants, copies, instruction.a, value);
+					} else {
+						killRegister(constants, copies, instruction.a);
+					}
 					break;
 				}
 				case OpCode.LOADNIL: {

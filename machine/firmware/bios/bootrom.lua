@@ -4,7 +4,7 @@
 require('system/msx_colors')
 math = require('bios/math')
 easing = require('bios/easing')
-local clamp_int<const> = require('bios/util/clamp_int')
+local clamp<const> = require('bios/util/clamp')
 local wrap_text_lines<const> = require('bios/util/wrap_text_lines')
 local vdp_rpu_quads<const> = require('system/vdp_rpu_quads')
 local vdp_image<const> = require('system/vdp_image')
@@ -27,7 +27,7 @@ end
 local scroll_window<const> = function(lines, top, window_size)
 	local visible_lines<const> = {}
 	local max_scroll<const> = math.max(0, #lines - window_size)
-	local clamped_top<const> = clamp_int(top, 0, max_scroll)
+	local clamped_top<const> = clamp(top, 0, max_scroll)
 	for i = 1, window_size do
 		local idx<const> = clamped_top + i
 		if idx <= #lines then
@@ -161,9 +161,9 @@ local scroll_boot_lines<const> = function(lines, window_size, delta)
 	local line_count<const> = #lines
 	if line_count ~= boot_scroll_state.last_line_count then
 		boot_scroll_state.last_line_count = line_count
-		boot_scroll_state.top = clamp_int(boot_scroll_state.top, 0, line_count - window_size)
+		boot_scroll_state.top = clamp(boot_scroll_state.top, 0, line_count - window_size)
 	end
-	boot_scroll_state.top = clamp_int(boot_scroll_state.top + delta, 0, line_count - window_size)
+	boot_scroll_state.top = clamp(boot_scroll_state.top + delta, 0, line_count - window_size)
 	local visible_lines<const>, max_scroll<const> = scroll_window(lines, boot_scroll_state.top, window_size)
 	local scroll_top<const> = boot_scroll_state.top
 	boot_scroll_state.top = scroll_top
@@ -261,8 +261,8 @@ local divider<const> = function(line_slots)
 end
 
 local build_progress_bar<const> = function(progress, width)
-	local clamped<const> = clamp_int(progress, 0, 1)
-	local filled<const> = clamp_int((width * clamped + 0.5) // 1, 0, width)
+	local clamped<const> = clamp(progress, 0, 1)
+	local filled<const> = clamp((width * clamped + 0.5) // 1, 0, width)
 	return '[' .. string.rep('#', filled) .. string.rep('-', width - filled) .. ']'
 end
 

@@ -144,9 +144,9 @@ Cart-representatie roadmap/status:
 | echte `rodata`/`data`/`bss` secties | Deels: BLua heeft nu typed `.bss`, `.rodata` en `.data` declaraties; `.bss` wordt door compiler-generated startup-code genuld, `.rodata` is CPU-leesbare immutable PROGRAM_ROM storage, en `.data` heeft RAM VMA + ROM LMA + startup-copy via gewone CPU-code. Open: brede cart-migratie en toekomstige complexere typed layouts buiten v1 primitive arrays. |
 | één object-file/linker pipeline | Deels: program images hebben reloc-records en TS/C++ linkers; eerste install-seam staat nu in de program/linker-eigenaar (`inflateExecutableProgramImage`) voor object-image → executable program; gewone Lua source-boot, hot-resume en host-eval append lopen ook via de compiler-owned `ProgramImage` encoding; system+cart boot-entry selectie loopt via de program/linker-eigenaar (`linkBootProgramImages`) in TS en C++; ROM-build en source-compile zijn geaudit als legitieme input-producers die op dezelfde compiler/linker objectgrens convergeren, niet als resterende split-brain. |
 | runtime relocaties als load/link stap | Deels: `module`/`export_proto` placeholders zijn uit runtimewaarden gehaald; open: harde verifier-gate voor alle executable images. |
-| const module/data ABI | Deels: M2 call-targets kunnen link-time naar `CLOSURE(proto)` en de const-moduleklasse bestaat; const modules exporteren compile-time constants, `.bss`, `.data` en `.rodata` storage-symbolen en function call-targets zonder runtime module-table, global-slot lookup of `require`-call. Function exports mogen sibling exports aanroepen via `export_proto` link-symbolen; function exports zijn geen runtime waarden. De scalar bios-util cohort (`bios/util/bool01`, `bios/util/clamp_int`, `bios/util/div_toward_zero`, `bios/util/rect_overlaps`, `bios/util/rol8` en `bios/util/round_to_nearest`) gebruikt root function modules; die functies worden als text-symbol/call-target gecompileerd en niet als runtime modulewaarden vervoerd. Open: verdere migratie per target/gap. |
-| dynamic Lua-opcodes weren uit const-module function exports | Deels: const-module function protos worden na codegen/optimalisatie door de compiler geweigerd als dynamic Lua-opcodes overblijven; function exports gebruiken dezelfde post-codegen gate op hun export-protos, bewezen op de scalar bios-util cohort (`bios/util/bool01`, `bios/util/clamp_int`, `bios/util/div_toward_zero`, `bios/util/rect_overlaps`, `bios/util/rol8` en `bios/util/round_to_nearest`). Open: bredere target-migratie en audit-output zodra daar een echte consumer voor is. |
-| CPU objectwereld loshalen van machine-code ABI | Deels: `CPU.Value` is nog Lua-objectwereld, maar const-module function call-targets in de scalar bios-util cohort (`bios/util/bool01`, `bios/util/clamp_int`, `bios/util/div_toward_zero`, `bios/util/rect_overlaps`, `bios/util/rol8` en `bios/util/round_to_nearest`) gebruiken nu scalar word/bool calls via link-time `export_proto` zonder runtime module-table of function value. Open: bredere migratie naar words, registers, addresses, memory, sections en symbols als primaire ABI. |
+| const module/data ABI | Deels: M2 call-targets kunnen link-time naar `CLOSURE(proto)` en de const-moduleklasse bestaat; const modules exporteren compile-time constants, `.bss`, `.data` en `.rodata` storage-symbolen en function call-targets zonder runtime module-table, global-slot lookup of `require`-call. Function exports mogen sibling exports aanroepen via `export_proto` link-symbolen; wanneer Lua-code een function export als waarde nodig heeft, materialiseert dezelfde `export_proto` naar een static closure in plaats van naar een runtime module-table. De scalar bios-util cohort (`bios/util/bool01`, `bios/util/clamp`, `bios/util/div_toward_zero`, `bios/util/rect_overlaps`, `bios/util/rol8` en `bios/util/round_to_nearest`) gebruikt root function modules; die functies worden als text-symbol/call-target gecompileerd en niet via runtime module-tables vervoerd. Open: verdere migratie per target/gap. |
+| dynamic Lua-opcodes weren uit const-module function exports | Deels: const-module function protos worden na codegen/optimalisatie door de compiler geweigerd als dynamic Lua-opcodes overblijven; function exports gebruiken dezelfde post-codegen gate op hun export-protos, bewezen op de scalar bios-util cohort (`bios/util/bool01`, `bios/util/clamp`, `bios/util/div_toward_zero`, `bios/util/rect_overlaps`, `bios/util/rol8` en `bios/util/round_to_nearest`). Open: bredere target-migratie en audit-output zodra daar een echte consumer voor is. |
+| CPU objectwereld loshalen van machine-code ABI | Deels: `CPU.Value` is nog Lua-objectwereld, maar const-module function call-targets in de scalar bios-util cohort (`bios/util/bool01`, `bios/util/clamp`, `bios/util/div_toward_zero`, `bios/util/rect_overlaps`, `bios/util/rol8` en `bios/util/round_to_nearest`) gebruiken nu scalar word/bool calls via link-time `export_proto` zonder runtime module-table; waar Lua een function value nodig heeft, materialiseert diezelfde link naar een static closure. Open: bredere migratie naar words, registers, addresses, memory, sections en symbols als primaire ABI. |
 | assets/`rom_data` binair maken | Deels: `rom_data`-familie is weg en `.bin` raw ROM path is getest; open: maps, rooms, timelines, registries en asset records naar vaste binaire layouts. |
 | cart startup/vector model | Deels: `ProgramImage` draagt nu een expliciete vector table (`resetProtoIndex`, `sectionInitProtoIndex`, `irqProtoIndex`) en TS/C++ linker/runtime boot gebruiken die vector table in plaats van losse entry/section-init velden. `init()`/`new_game()` zijn bewust cartfuncties, geen console-ABI: de lifecycle-IRQ-transportlaag is verwijderd, cold cart startup roept ze direct aan en hot-resume voert alleen `init()` als IDE/debugger-call uit. Hardware IRQ's vectoren bij `HALT` en guest instruction boundaries naar cartcode die `irq(flags)` dispatcht en owned masks ackt; gemigreerde carts gebruiken ISR-latches in plaats van post-HALT polling als dispatchpad. `IRQ_MASK` is de cart-facing per-source vector-maskerlaag; de CPU-global maskable state is alleen interne handler-serialisatie. Open: NMI blijft buiten scope tot er een echte producer is. |
 | verifier/audit voor echte carts | GESCHRAPT in deze vorm: een los retro-cart verifier-script is een slechte slice. De echte gates horen bij de producer/linker/compiler/runtime-eigenaren zelf, niet in een achteraf-scanner die ROMs opnieuw interpreteert. |
@@ -385,20 +385,20 @@ Status:
   of externe const-module function exports. Function exports mogen module-level
   `<const>` waarden gebruiken; sibling calls naar geëxporteerde
   functies loweren naar `export_proto` link-symbolen in plaats van
-  runtime upvalues. Function exports als waarden lezen blijft geen static
-  ABI: alleen call-targets krijgen link-symboliek.
+  runtime upvalues. Function exports als waarden lezen gebruikt dezelfde link-symboliek: de linker materialiseert een static closure, zodat gewone Lua function-value semantiek behouden blijft zonder runtime module-table of wrapper.
 - klaar als eerste static opcode-contract increment: const-module function
   protos worden na codegen/optimalisatie geweigerd wanneer table allocatie of
   dispatch, runtime closure allocatie, vararg of dynamische concat overblijft.
 - klaar als scalar function-export cohort increment: `bios/util/bool01`,
-  `bios/util/clamp_int`, `bios/util/div_toward_zero`,
+  `bios/util/clamp`, `bios/util/div_toward_zero`,
   `bios/util/rect_overlaps`, `bios/util/rol8` en
   `bios/util/round_to_nearest` zijn root function modules. Een module die een
-  bare function retourneert is daarmee een static call-target module: de
+  bare function retourneert kan daarmee een static call-target module zijn: de
   compiler leidt de call-target af uit de producer-local return-vorm en het
-  const-module contract, niet uit een module-padlijst of extra keyword.
-  Dynamische function exports gebruiken een table-return module en blijven in
-  de gewone Lua-module lane. Bestaand runtime `system.*` / prelude-global
+  const-module contract, niet uit een module-padlijst of extra keyword. Dezelfde
+  export blijft ook als Lua function value bruikbaar; `require('...')` voor root function modules en table fields die zo'n export
+  opnemen materialiseren een static closure via `export_proto` in plaats van
+  een wrapper of host-call. Bestaand runtime `system.*` / prelude-global
   transport is verwijderd; consumers importeren de systeem-symbolen direct en
   linken via `export_proto`.
 - open: verdere migratie per target/gap buiten de eerste scalar function-export cohort
@@ -410,10 +410,9 @@ Acceptatie:
 
 - const-module ABI is declaratie-gedreven: dynamic Lua modules blijven runtime
   modules, generated const-symbol modules blijven compiler-input, BLua const
-  modules declareren function text-symbol/call-targets zonder module-padlijst,
-  extra keyword of runtime function value, en een bare-function module-return is
-  expliciet dezelfde static call-target vorm; dynamische function exports moeten
-  een table-return module gebruiken
+  modules declareren function text-symbol/call-targets zonder module-padlijst
+  of extra keyword, en een bare-function module-return is expliciet dezelfde
+  static call-target vorm zonder Lua function-value semantiek te verwijderen
 - const-module exports zijn linkbare symbolen: functies, constants, `.bss`, `.data`
   en `.rodata` addresses (klaar voor const modules), plus later sizes wanneer
   een echte consumer die nodig heeft
@@ -450,11 +449,11 @@ Status:
   allocatie, vararg en dynamische concat. Dit is geen linter over source-stijl:
   alleen opcodes die na optimalisatie in het static proto overblijven tellen.
 - eerste function-export scalar-cohort klaar: `bios/util/bool01`,
-  `bios/util/clamp_int`, `bios/util/div_toward_zero`,
+  `bios/util/clamp`, `bios/util/div_toward_zero`,
   `bios/util/rect_overlaps`, `bios/util/rol8` en
   `bios/util/round_to_nearest` compileren via hun root function module shape:
-  `return function(...) ... end` is een static call-target contract, geen
-  runtime function value. Deze modules hebben geen runtime module-proto, worden
+  `return function(...) ... end` is een static call-target contract en blijft
+  tegelijk als Lua function value materialiseerbaar. Deze modules worden
   door cart-consumers via `export_proto` naar system const-module protos gelinkt,
   en de opcode-contract gate faalt op een module die dynamische table-opcodes
   emit.
@@ -510,9 +509,9 @@ Status:
 - huidige bytecode bevat nog Lua-VM opcodes naast low-level memory/register
   operaties
 - static lane gebruikt al struct/pointer/memory-lowering; de scalar
-  bios-util cohort (`bool01`, `clamp_int`, `div_toward_zero`, `rect_overlaps`,
+  bios-util cohort (`bool01`, `clamp`, `div_toward_zero`, `rect_overlaps`,
   `rol8`, `round_to_nearest`) is de eerste echte function-export call-target
-  groep zonder Lua module/value transport, maar dat is nog geen volledig primair
+  groep zonder runtime module-table transport, maar dat is nog geen volledig primair
   machine-code ABI-contract
 
 Acceptatie:

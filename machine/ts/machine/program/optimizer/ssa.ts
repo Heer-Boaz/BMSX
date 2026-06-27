@@ -19,6 +19,7 @@ import {
 	replaceWithMov,
 	type ConstValue,
 	constPoolValueForOptimization,
+	loadKConstValueForOptimization,
 } from './values';
 
 type Phi = {
@@ -384,7 +385,7 @@ const evaluateSccpDef = (
 	}
 	switch (instruction.op) {
 		case OpCode.LOADK: {
-			const value = constPoolValueForOptimization(context, instruction.b);
+			const value = loadKConstValueForOptimization(instruction, context);
 			return value ? { kind: SCCP_CONST, constVal: value } : { kind: SCCP_OVERDEFINED, constVal: null };
 		}
 		case OpCode.LOADNIL:
@@ -1359,6 +1360,7 @@ const isHoistableInstruction = (instruction: Instruction): boolean => {
 		case OpCode.KM1:
 		case OpCode.KSMI:
 		case OpCode.LOADK:
+			return instruction.symbolicReloc === undefined;
 		case OpCode.LOADNIL:
 		case OpCode.ADD:
 		case OpCode.SUB:
@@ -1938,8 +1940,7 @@ const unrollNumericForLoops = (set: InstructionSet, context: OptimizationContext
 							continue;
 						}
 						if (instr.op === OpCode.LOADK) {
-							const value = constPoolValueForOptimization(context, instr.b);
-							return value ? value.value : undefined;
+							return loadKConstValueForOptimization(instr, context)?.value;
 						}
 						if (instr.op === OpCode.KNIL) {
 							return null;

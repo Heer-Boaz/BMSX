@@ -74,7 +74,7 @@
 --    and (for shrine exit) emits a reply event ('shrine_exit_done') when the
 --    exit animation timeline completes.
 
-local clamp_int<const> = require('bios/util/clamp_int')
+local clamp<const> = require('bios/util/clamp')
 local constants<const> = require('constants')
 local castle_map<const> = require('castle/map')
 local components<const> = require('cartlib/components')
@@ -235,7 +235,7 @@ function player:on_up_input_pressed()
 end
 
 function player:on_up_input_released()
-	self.up_input_sources = clamp_int(self.up_input_sources - 1, 0, 2)
+	self.up_input_sources = clamp(self.up_input_sources - 1, 0, 2)
 	self.up_held = self.up_input_sources > 0
 end
 

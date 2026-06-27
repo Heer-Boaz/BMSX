@@ -1,4 +1,4 @@
-local clamp01<const> = function(value)
+local linear<const> = function(value)
 	if value < 0 then
 		return 0
 	end
@@ -9,17 +9,17 @@ local clamp01<const> = function(value)
 end
 
 local ease_in_quad<const> = function(value)
-	local x<const> = clamp01(value)
+	local x<const> = linear(value)
 	return x * x
 end
 
 local ease_out_quad<const> = function(value)
-	local x<const> = clamp01(1 - value)
+	local x<const> = linear(1 - value)
 	return 1 - (x * x)
 end
 
 local ease_in_out_quad<const> = function(value)
-	local x<const> = clamp01(value)
+	local x<const> = linear(value)
 	if x < 0.5 then
 		return 2 * x * x
 	end
@@ -28,7 +28,7 @@ local ease_in_out_quad<const> = function(value)
 end
 
 local ease_out_back<const> = function(value)
-	local x<const> = clamp01(value)
+	local x<const> = linear(value)
 	local t<const> = x - 1
 	local c1<const> = 1.70158
 	local c3<const> = c1 + 1
@@ -36,7 +36,7 @@ local ease_out_back<const> = function(value)
 end
 
 local smoothstep<const> = function(value)
-	local x<const> = clamp01(value)
+	local x<const> = linear(value)
 	return x * x * (3 - (2 * x))
 end
 
@@ -56,7 +56,7 @@ local arc01<const> = function(value)
 end
 
 return {
-	linear = clamp01,
+	linear = linear,
 	ease_in_quad = ease_in_quad,
 	ease_out_quad = ease_out_quad,
 	ease_in_out_quad = ease_in_out_quad,

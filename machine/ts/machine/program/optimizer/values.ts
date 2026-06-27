@@ -17,6 +17,9 @@ export const isConstPoolValue = (value: Value): boolean =>
 export const constPoolValueForOptimization = (context: OptimizationContext, constIndex: number): ConstValue | null =>
 	context.relocatedConstIndices.has(constIndex) ? null : { value: context.constPool[constIndex], constIndex };
 
+export const loadKConstValueForOptimization = (instruction: Instruction, context: OptimizationContext): ConstValue | null =>
+	instruction.symbolicReloc === undefined ? constPoolValueForOptimization(context, instruction.b) : null;
+
 export const getImmediateConstValue = (instruction: Instruction, context: OptimizationContext): ConstValue | null => {
 	switch (instruction.op) {
 		case OpCode.KNIL:

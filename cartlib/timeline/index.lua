@@ -1,7 +1,7 @@
 -- timeline.lua
 -- timeline runtime for system rom
 --
-local clamp_int<const> = require('bios/util/clamp_int')
+local clamp<const> = require('bios/util/clamp')
 local timeline_apply<const> = require('cartlib/timeline/apply')
 --
 -- DESIGN PRINCIPLES — timeline authoring
@@ -120,10 +120,10 @@ end
 
 local clamp_marker_frame<const> = function(at, length)
 	if at.frame ~= nil then
-		return clamp_int(at.frame, 0, length - 1)
+		return clamp(at.frame, 0, length - 1)
 	end
-	local normalized<const> = clamp_int(at.u or 0, 0, 1)
-	return clamp_int((normalized * (length - 1)) // 1, 0, length - 1)
+	local normalized<const> = clamp(at.u or 0, 0, 1)
+	return clamp((normalized * (length - 1)) // 1, 0, length - 1)
 end
 
 local compile_timeline_markers<const> = function(def, length)
@@ -421,7 +421,7 @@ end
 
 function timeline:force_seek(frame)
 	clear_step_events(self)
-	local clamped<const> = clamp_int(frame, timeline_start_index, self.length - 1)
+	local clamped<const> = clamp(frame, timeline_start_index, self.length - 1)
 	self.head = clamped
 	self.ticks = 0
 	if self.playback_mode ~= 'pingpong' then

@@ -2045,8 +2045,22 @@ class FunctionBuilder {
 		return this.isStaticFunctionModuleBinding(binding) ? binding : null;
 	}
 
-	private failStaticFunctionExportValueUse(binding: ModuleBinding): never {
-		throw new Error(`[Compiler] Const module '${binding.modulePath}' function export '${binding.exportPathKey}' is a call target, not a runtime value.`);
+	private tryResolveConstLocalModuleBinding(expression: LuaExpression): ModuleBinding | null {
+		const binding = this.tryResolveStaticModuleBinding(expression, true);
+		if (binding === null) {
+			return null;
+		}
+		if (binding.external && !this.isConstModulePath(binding.modulePath)) {
+			this.markStaticExternalModulePath(binding.modulePath);
+		}
+		if (binding.exportDepth !== 0 && !this.isStaticFunctionModuleBinding(binding)) {
+			return null;
+		}
+		return binding;
+	}
+
+	private getStaticFunctionExportSlot(binding: ModuleBinding): string {
+		return this.moduleCompileContext!.modulesByPath.get(binding.modulePath)!.exportSlotsByPathKey.get(binding.exportPathKey)!;
 	}
 
 	private failConstModuleValueCall(binding: ModuleBinding): never {
@@ -2157,7 +2171,8 @@ class FunctionBuilder {
 		const compileTimeModuleRoot = this.tryGetCompileTimeModuleRootBinding(binding);
 		if (compileTimeModuleRoot !== null) {
 			if (this.isStaticFunctionModuleBinding(compileTimeModuleRoot)) {
-				this.failStaticFunctionExportValueUse(compileTimeModuleRoot);
+				this.emitModuleExportCallTargetLoad(this.getStaticFunctionExportSlot(compileTimeModuleRoot), target);
+				return;
 			}
 			this.failCompileTimeModuleRootRuntimeUse(compileTimeModuleRoot.modulePath);
 		}
@@ -2179,6 +2194,10 @@ class FunctionBuilder {
 		const rodataBinding = this.resolveReferenceRodataBinding(reference);
 		if (rodataBinding !== null) {
 			this.emitLoadRodataAddress(target, rodataBinding, 0);
+			return;
+		}
+		if (binding !== null && binding.moduleBinding !== null && this.isStaticFunctionModuleBinding(binding.moduleBinding)) {
+			this.emitModuleExportCallTargetLoad(this.getStaticFunctionExportSlot(binding.moduleBinding), target);
 			return;
 		}
 		const localReg = this.resolveReferenceLocal(reference);
@@ -2212,10 +2231,9 @@ class FunctionBuilder {
 	}
 
 	private emitModuleExportCallTargetLoad(slotName: string, target: number): void {
-		// Call targets may be link-time function symbols. The linker rewrites this
-		// symbolic relocation to CLOSURE(proto) for function exports, or to a
-		// normal global-slot load for data/upvalue-capturing exports. Non-call value
-		// reads keep direct global loads so export symbols never enter value-flow.
+		// Function exports use one link-time symbol path for both direct calls and
+		// Lua function values. The linker rewrites this relocation to CLOSURE(proto)
+		// for static exports or to the existing global-slot load for runtime exports.
 		this.emitABx(OpCode.LOADK, target, 0, { kind: 'export_proto', symbol: slotName });
 	}
 
@@ -2917,17 +2935,11 @@ class FunctionBuilder {
 			for (let i = 0; i < lastIndex; i += 1) {
 				const expr = values[i];
 				if (i < names.length && attributes[i] === 'const') {
-					const moduleBinding = this.tryResolveStaticModuleBinding(expr, true);
+					const moduleBinding = this.tryResolveConstLocalModuleBinding(expr);
 					if (moduleBinding !== null) {
-						if (moduleBinding.external && !this.isConstModulePath(moduleBinding.modulePath)) {
-							this.markStaticExternalModulePath(moduleBinding.modulePath);
-						}
-						if (moduleBinding.exportDepth === 0 || this.isStaticFunctionModuleBinding(moduleBinding)) {
-							initializerModuleBindings[i] = moduleBinding;
-							if (moduleBinding.external || this.isStaticFunctionModuleBinding(moduleBinding)) {
-								initializerValues[i] = null;
-								continue;
-							}
+						initializerModuleBindings[i] = moduleBinding;
+						if (moduleBinding.external || this.isStaticFunctionModuleBinding(moduleBinding)) {
+							continue;
 						}
 					}
 				}
@@ -2958,47 +2970,42 @@ class FunctionBuilder {
 			const remaining = names.length - lastIndex;
 			const wantsMulti = remaining > 1 && this.isMultiReturnExpression(lastExpr);
 			const lastHasName = lastIndex < names.length;
+			let compileLastInitializerExpression = true;
 			if (lastHasName && attributes[lastIndex] === 'const' && !wantsMulti) {
-				const moduleBinding = this.tryResolveStaticModuleBinding(lastExpr, true);
+				const moduleBinding = this.tryResolveConstLocalModuleBinding(lastExpr);
 				if (moduleBinding !== null) {
-					if (moduleBinding.external && !this.isConstModulePath(moduleBinding.modulePath)) {
-						this.markStaticExternalModulePath(moduleBinding.modulePath);
-					}
-					if (moduleBinding.exportDepth === 0 || this.isStaticFunctionModuleBinding(moduleBinding)) {
-						initializerModuleBindings[lastIndex] = moduleBinding;
-						if (moduleBinding.external || this.isStaticFunctionModuleBinding(moduleBinding)) {
-							initializerValues[lastIndex] = null;
-						}
-					}
+					initializerModuleBindings[lastIndex] = moduleBinding;
+					compileLastInitializerExpression = !moduleBinding.external && !this.isStaticFunctionModuleBinding(moduleBinding);
 				}
 			}
-			const constantValue = this.evaluateCompileTimeExpression(lastExpr);
-			if (initializerValues[lastIndex] !== undefined && !wantsMulti) {
-			} else if (constantValue !== undefined && !wantsMulti) {
-				if (lastHasName) {
-					initializerValues[lastIndex] = constantValue;
-				}
-			} else {
-				const lastReg = this.allocTemp();
-				const lastName = lastHasName
-					? this.requireBoundDeclaration(names[lastIndex].range, `local '${names[lastIndex].name}'`).name
-					: '';
-				const resultCount = wantsMulti ? remaining : 1;
-				const lastHint = lastExpr.kind === LuaSyntaxKind.FunctionExpression && lastHasName
-					? this.createLocalFunctionHint(lastName)
-					: null;
-				const closureProtoIndex = this.compileExpressionWithStaticClosureProto(lastExpr, lastReg, resultCount, lastHint);
-				if (lastHasName) {
-					valueRegs[lastIndex] = lastReg;
-					if (attributes[lastIndex] === 'const' && closureProtoIndex !== null) {
-						initializerClosureProtoIndices[lastIndex] = closureProtoIndex;
-						this.program.markStaticClosureProto(closureProtoIndex);
+			if (compileLastInitializerExpression) {
+				const constantValue = this.evaluateCompileTimeExpression(lastExpr);
+				if (constantValue !== undefined && !wantsMulti) {
+					if (lastHasName) {
+						initializerValues[lastIndex] = constantValue;
 					}
-				}
-				if (wantsMulti) {
-					this.reserveTempRange(lastReg, remaining);
-					for (let i = 1; i < remaining && lastIndex + i < names.length; i += 1) {
-						valueRegs[lastIndex + i] = lastReg + i;
+				} else {
+					const lastReg = this.allocTemp();
+					const lastName = lastHasName
+						? this.requireBoundDeclaration(names[lastIndex].range, `local '${names[lastIndex].name}'`).name
+						: '';
+					const resultCount = wantsMulti ? remaining : 1;
+					const lastHint = lastExpr.kind === LuaSyntaxKind.FunctionExpression && lastHasName
+						? this.createLocalFunctionHint(lastName)
+						: null;
+					const closureProtoIndex = this.compileExpressionWithStaticClosureProto(lastExpr, lastReg, resultCount, lastHint);
+					if (lastHasName) {
+						valueRegs[lastIndex] = lastReg;
+						if (attributes[lastIndex] === 'const' && closureProtoIndex !== null) {
+							initializerClosureProtoIndices[lastIndex] = closureProtoIndex;
+							this.program.markStaticClosureProto(closureProtoIndex);
+						}
+					}
+					if (wantsMulti) {
+						this.reserveTempRange(lastReg, remaining);
+						for (let i = 1; i < remaining && lastIndex + i < names.length; i += 1) {
+							valueRegs[lastIndex + i] = lastReg + i;
+						}
 					}
 				}
 			}
@@ -3051,6 +3058,9 @@ class FunctionBuilder {
 			}
 			if (initializerValue !== undefined) {
 				this.emitLoadConst(target, initializerValue);
+				continue;
+			}
+			if (initializerModuleBinding !== null && (initializerModuleBinding.external || this.isStaticFunctionModuleBinding(initializerModuleBinding))) {
 				continue;
 			}
 			const valueReg = valueRegs[i];
@@ -3602,7 +3612,9 @@ class FunctionBuilder {
 		const ret = this.moduleCompileInfo?.returnExpression;
 		if (ret && ret.kind === LuaSyntaxKind.IdentifierExpression) {
 			const ref = getResolvedIdentifierReference(this.semantics, ret as LuaIdentifierExpression);
-			handle = (ref ? getResolvedReferenceSymbolHandle(ref) : null) ?? null;
+			if (ref) {
+				handle = getResolvedReferenceSymbolHandle(ref);
+			}
 		}
 		this.exportRootSymbolHandleCache = handle;
 		return handle;
@@ -3699,7 +3711,8 @@ class FunctionBuilder {
 		}
 		const staticFunctionExportBinding = this.tryResolveStaticFunctionExportBinding(expression as LuaMemberExpression);
 		if (staticFunctionExportBinding !== null) {
-			this.failStaticFunctionExportValueUse(staticFunctionExportBinding);
+			this.emitModuleExportCallTargetLoad(this.getStaticFunctionExportSlot(staticFunctionExportBinding), target);
+			return;
 		}
 		const slotName = this.tryResolveModuleExportSlotFromExpression(expression as LuaMemberExpression);
 		if (slotName !== undefined) {
@@ -3730,7 +3743,8 @@ class FunctionBuilder {
 		}
 		const staticFunctionExportBinding = this.tryResolveStaticFunctionExportBinding(expression as LuaIndexExpression);
 		if (staticFunctionExportBinding !== null) {
-			this.failStaticFunctionExportValueUse(staticFunctionExportBinding);
+			this.emitModuleExportCallTargetLoad(this.getStaticFunctionExportSlot(staticFunctionExportBinding), target);
+			return;
 		}
 		const slotName = this.tryResolveModuleExportSlotFromExpression(expression as LuaIndexExpression);
 		if (slotName !== undefined) {
@@ -4377,6 +4391,15 @@ class FunctionBuilder {
 
 	private compileCallExpression(expression: LuaCallExpression, target: number, resultCount: number): void {
 		const requireBinding = this.tryResolveRequireModuleBinding(expression);
+		if (requireBinding !== null && this.isStaticFunctionModuleBinding(requireBinding)) {
+			if (resultCount > 0) {
+				this.emitModuleExportCallTargetLoad(this.getStaticFunctionExportSlot(requireBinding), target);
+				if (resultCount > 1) {
+					this.emitLoadNil(target + 1, resultCount - 1);
+				}
+			}
+			return;
+		}
 		const methodName = expression.methodName;
 		const hasMethod = methodName !== null && methodName.length > 0;
 		const moduleMethodSlot = hasMethod ? this.tryResolveModuleExportMethodSlot(expression.callee, methodName) : undefined;

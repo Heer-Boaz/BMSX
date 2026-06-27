@@ -1,4 +1,4 @@
-local clamp_int<const> = require('bios/util/clamp_int')
+local clamp<const> = require('bios/util/clamp')
 local constants<const> = require('constants')
 
 local ui<const> = {}
@@ -35,18 +35,18 @@ function ui:bind_visual()
 end
 
 function ui:set_health_target(value)
-	self.hud_health_target = clamp_int(value // 1, 0, constants.damage.max_health)
+	self.hud_health_target = clamp(value // 1, 0, constants.damage.max_health)
 end
 
 function ui:set_weapon_target(value)
-	self.hud_weapon_target = clamp_int(value // 1, 0, constants.hud.weapon_level)
+	self.hud_weapon_target = clamp(value // 1, 0, constants.hud.weapon_level)
 end
 
 function ui:ctor()
 	self:bind_visual()
 	local player<const> = oget('pietolon')
-	local health<const> = clamp_int(player.health // 1, 0, constants.damage.max_health)
-	local weapon<const> = clamp_int(player.weapon_level // 1, 0, constants.hud.weapon_level)
+	local health<const> = clamp(player.health // 1, 0, constants.damage.max_health)
+	local weapon<const> = clamp(player.weapon_level // 1, 0, constants.hud.weapon_level)
 	self.hud_visible = true
 	self.hud_health_level = health
 	self.hud_health_target = health

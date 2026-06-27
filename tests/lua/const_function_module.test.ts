@@ -18,7 +18,7 @@ const BOOL01_PATH = 'bios/util/bool01';
 const DIV_TOWARD_ZERO_PATH = 'bios/util/div_toward_zero';
 const ROL8_PATH = 'bios/util/rol8';
 const ROUND_TO_NEAREST_PATH = 'bios/util/round_to_nearest';
-const CLAMP_INT_PATH = 'bios/util/clamp_int';
+const CLAMP_PATH = 'bios/util/clamp';
 const RECT_OVERLAPS_PATH = 'bios/util/rect_overlaps';
 const SINCOS_TURN32_PATH = 'bios/util/sincos_turn32';
 const STATIC_FORBIDDEN_OPCODE_PATTERN = /\b(?:NEWT|GETT|SETT|GETI|SETI|GETFIELD|SETFIELD|SELF|CLOSURE|VARARG|CONCAT|CONCATN)\b/;
@@ -82,16 +82,16 @@ return rect_overlaps(0, 0, 10, 10, 5, 5, 1, 1), rect_overlaps(0, 0, 2, 2, 3, 3, 
 	assert.deepEqual(runColdCompiled(compiled), [true, false]);
 });
 
-test('clamp_int compiles as a const function module and calls through export-proto', () => {
-	const moduleSource = readFileSync('machine/firmware/bios/util/clamp_int.lua', 'utf8');
+test('clamp compiles as a const function module and calls through export-proto', () => {
+	const moduleSource = readFileSync('machine/firmware/bios/util/clamp.lua', 'utf8');
 	const entrySource = `
-local clamp_int<const> = require("${CLAMP_INT_PATH}")
-return clamp_int(-2, 0, 10), clamp_int(7, 0, 10), clamp_int(12, 0, 10)
+local clamp<const> = require("${CLAMP_PATH}")
+return clamp(-2, 0, 10), clamp(7, 0, 10), clamp(12, 0, 10)
 `;
-	const compiled = compileWithModule(entrySource, CLAMP_INT_PATH, moduleSource);
-	assert.equal(compiled.moduleProtoMap.has(CLAMP_INT_PATH), false);
-	assert.equal(compiled.metadata.exportProtoIdBySlot.bios__util__clamp_int?.includes('/static:'), true);
-	assert.equal(compiled.constRelocs.some(reloc => reloc.kind === 'export_proto' && reloc.symbol === 'bios__util__clamp_int'), true);
+	const compiled = compileWithModule(entrySource, CLAMP_PATH, moduleSource);
+	assert.equal(compiled.moduleProtoMap.has(CLAMP_PATH), false);
+	assert.equal(compiled.metadata.exportProtoIdBySlot.bios__util__clamp?.includes('/static:'), true);
+	assert.equal(compiled.constRelocs.some(reloc => reloc.kind === 'export_proto' && reloc.symbol === 'bios__util__clamp'), true);
 	const disasm = disassembleWithoutBootVectors(compiled);
 	assert.doesNotMatch(disasm, STATIC_FORBIDDEN_OPCODE_PATTERN);
 	assert.deepEqual(runColdCompiled(compiled), [0, 7, 10]);
@@ -219,6 +219,37 @@ return sincos_turn32(0)
 	assert.deepEqual(runColdCompiled(compiled), [0, 65536]);
 });
 
+test('const function modules materialize Lua function values without runtime module tables', () => {
+	const moduleSource = readFileSync('machine/firmware/bios/util/clamp.lua', 'utf8');
+	const entrySource = `
+local required = require("${CLAMP_PATH}")
+local clamp<const> = require("${CLAMP_PATH}")
+local aliased = clamp
+return required(-0.25, 0, 1), aliased(1.25, 0, 1)
+`;
+	const compiled = compileWithModule(entrySource, CLAMP_PATH, moduleSource);
+	const slotName = 'bios__util__clamp';
+	assert.equal(compiled.moduleProtoMap.has(CLAMP_PATH), false);
+	assert.equal(compiled.constRelocs.some(reloc => reloc.kind === 'export_proto' && reloc.symbol === slotName), true);
+	const disasm = disassembleWithoutBootVectors(compiled);
+	assert.doesNotMatch(disasm, /\bGETGL\b|\bGETFIELD\b/);
+	assert.doesNotMatch(disasm, /\bLOADNIL\b/);
+	assert.deepEqual(runColdCompiled(compiled), [0, 1]);
+});
+
+test('static function values survive O3 table materialization', () => {
+	const clampSource = readFileSync('machine/firmware/bios/util/clamp.lua', 'utf8');
+	const entrySource = `
+local clamp<const> = require("${CLAMP_PATH}")
+local easing<const> = { clamp = clamp }
+return easing.clamp(1.2, 0, 1)
+`;
+	const compiled = compileWithModule(entrySource, CLAMP_PATH, clampSource, 3);
+	const slotName = 'bios__util__clamp';
+	assert.equal(compiled.constRelocs.some(reloc => reloc.kind === 'export_proto' && reloc.symbol === slotName), true);
+	assert.deepEqual(runColdCompiled(compiled), [1]);
+});
+
 test('cart const-function calls link to system export protos', () => {
 	const moduleSource = readFileSync('machine/firmware/bios/util/rect_overlaps.lua', 'utf8');
 	const module = { path: RECT_OVERLAPS_PATH, chunk: parseSource(moduleSource, `${RECT_OVERLAPS_PATH}.lua`), source: moduleSource };
@@ -266,6 +297,6 @@ end
 `;
 	assert.throws(
 		() => compileWithModule('return require("bad")()', 'bad', moduleSource),
-		/Module function export 'bad:.*' emits forbidden static opcode NEWT \(table allocation\).*Return a table for dynamic function exports/,
+		/Module function export 'bad:.*' emits forbidden static opcode NEWT \(table allocation\).*static-compatible bare-function modules must compile to scalar\/static code/,
 	);
 });
