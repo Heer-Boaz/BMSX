@@ -1,6 +1,7 @@
 import { machineManager } from './machine_manager';
 import { hostOverlayMenu } from './host_overlay_menu';
 import * as workbenchMode from '../ide/workbench/mode';
+import { flushRuntimeLuaOutputToTerminal } from '../ide/runtime/state';
 import type { Runtime } from '../machine/runtime/runtime';
 import { runRuntimeFrameStepInto, type RuntimeFrameStepResult } from '../machine/runtime/frame/step';
 
@@ -21,7 +22,7 @@ export function runMachineHostFrame(runtime: Runtime, currentTime: number, runRe
 	try {
 		manager.input.pollInput();
 		screen.beginHostFrame(currentTime);
-		workbenchMode.tickIdeInput(runtime);
+		workbenchMode.tickIdeInput();
 		workbenchMode.tickTerminalInput(runtime);
 		hostDeltaMs = Math.min(currentTime - runtime.frameLoop.currentTimeMs, MAX_HOST_FRAME_DELTA_MS);
 		runtime.frameLoop.currentTimeMs = currentTime;
@@ -57,5 +58,6 @@ export function runMachineHostFrame(runtime: Runtime, currentTime: number, runRe
 	} catch (error) {
 		workbenchMode.surfaceHostFrameError(runtime, error, hostDeltaMs, screen);
 	}
+	flushRuntimeLuaOutputToTerminal(runtime, manager.ideState);
 	screen.flushDebugReport(currentTime, runtime);
 }

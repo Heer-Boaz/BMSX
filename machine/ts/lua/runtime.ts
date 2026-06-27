@@ -285,8 +285,6 @@ export class LuaInterpreter {
 	>();
 	private readonly packageTable: LuaTable;
 	private readonly packageLoaded: LuaTable;
-	private _requireHandler: ((interpreter: LuaInterpreter, moduleName: string) => LuaValue) = null;
-	private _outputHandler: ((text: string) => void) = (text: string) => { console.log(text); };
 	private instructionBudgetRemaining: number | null = null;
 	private frameStack: ExecutionFrame[] = [];
 	private envStack: LuaEnvironment[] = [];
@@ -348,10 +346,6 @@ export class LuaInterpreter {
 		this.adapter = adapter;
 	}
 
-	public set requireHandler(handler: ((interpreter: LuaInterpreter, moduleName: string) => LuaValue)) {
-		this._requireHandler = handler;
-	}
-
 	public attachDebugger(controller: LuaDebuggerController): void {
 		this._debuggerController = controller;
 	}
@@ -362,14 +356,6 @@ export class LuaInterpreter {
 
 	public get packageLoadedTable(): LuaTable {
 		return this.packageLoaded;
-	}
-
-	public set outputHandler(handler: ((text: string) => void)) {
-		this._outputHandler = handler;
-	}
-
-	public get outputHandler(): ((text: string) => void) {
-		return this._outputHandler;
 	}
 
 	public get programCounter(): number {
@@ -429,15 +415,10 @@ export class LuaInterpreter {
 		if (moduleArg === null || typeof moduleArg !== 'string') {
 			throw this.runtimeError('require(moduleName) expects a string module name.');
 		}
-		const moduleName = moduleArg.trim();
-		if (moduleName.length === 0) {
+		if (moduleArg.trim().length === 0) {
 			throw this.runtimeError('require(moduleName) expects a non-empty module name.');
 		}
-		if (!this._requireHandler) {
-			throw this.runtimeError('require is not enabled in this interpreter.');
-		}
-		const value = this._requireHandler(this, moduleName);
-		return [value];
+		throw this.runtimeError('require is not enabled in this interpreter.');
 	}
 
 	public getOrCreateNativeValue(value: object | Function, typeName?: string): LuaNativeValue {
@@ -2948,10 +2929,12 @@ export class LuaInterpreter {
 				parts.push(this.toLuaString(value));
 			}
 			if (parts.length === 0) {
-				this.outputHandler('');
+				// eslint-disable-next-line no-console
+				console.log('');
 			}
 			else {
-				this.outputHandler(parts.join('\t'));
+				// eslint-disable-next-line no-console
+				console.log(parts.join('\t'));
 			}
 			return EMPTY_VALUES;
 		}));

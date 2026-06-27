@@ -2,7 +2,6 @@ import type { CpuRuntimeState } from '../cpu/cpu';
 import type { RuntimeSaveMachineState } from './save_machine_state';
 import type { Runtime } from './runtime';
 import { applyRuntimeCpuState, captureRuntimeCpuState } from './cpu_state';
-import { restoreVdpContextState } from '../../render/vdp/context_state';
 import { applyRuntimeSaveMachineState, captureRuntimeSaveMachineState } from './save_machine_state';
 
 export type RuntimeSaveState = {
@@ -32,7 +31,6 @@ export function applyRuntimeSaveState(runtime: Runtime, state: RuntimeSaveState)
 		runtime.enterCartProgram();
 	}
 	applyRuntimeSaveMachineState(runtime, state.machineState);
-	restoreVdpContextState(runtime.machine.vdp, runtime.view);
 	applyRuntimeCpuState(runtime, state.cpuState);
 	runtime.luaInitialized = state.luaInitialized;
 	runtime.luaRuntimeFailed = state.luaRuntimeFailed;

@@ -1,3 +1,4 @@
+import { machineManager } from '../../../../core/machine_manager';
 import { cycleTab } from '../../ui/tabs';
 import { isCodeTabActive } from '../../ui/code_tab/contexts';
 import { selectAllSingleCursor } from '../../../editor/editing/cursor/state';
@@ -6,32 +7,31 @@ import { resetBlink } from '../../../editor/render/caret';
 import { consumeIdeKey, isAltDown, isCtrlDown, isKeyJustPressed, isMetaDown, isShiftDown } from '../../../input/keyboard/key_input';
 import { isInlineWidgetFocused } from '../../../quick_input/inline_widget';
 import { editorDocumentState } from '../../../editor/editing/document_state';
-import type { Runtime } from '../../../../machine/runtime/runtime';
 
-function handleCreateResourceBinding(runtime: Runtime): boolean {
+function handleCreateResourceBinding(): boolean {
 	if (!(isCtrlDown() || isMetaDown()) || !isKeyJustPressed('KeyN')) {
 		return false;
 	}
 	consumeIdeKey('KeyN');
-	runtime.editor.commands.execute('createResource');
+	machineManager.ideState.editor.commands.execute('createResource');
 	return true;
 }
 
-function handleGlobalFindBinding(runtime: Runtime): boolean {
+function handleGlobalFindBinding(): boolean {
 	if (!(isCtrlDown() || isMetaDown()) || !isShiftDown() || isAltDown() || !isKeyJustPressed('KeyF')) {
 		return false;
 	}
 	consumeIdeKey('KeyF');
-	runtime.editor.commands.execute('findGlobal');
+	machineManager.ideState.editor.commands.execute('findGlobal');
 	return true;
 }
 
-function handleLocalFindBinding(runtime: Runtime): boolean {
+function handleLocalFindBinding(): boolean {
 	if (!(isCtrlDown() || isMetaDown()) || isShiftDown() || isAltDown() || !isKeyJustPressed('KeyF')) {
 		return false;
 	}
 	consumeIdeKey('KeyF');
-	runtime.editor.commands.execute('findLocal');
+	machineManager.ideState.editor.commands.execute('findLocal');
 	return true;
 }
 
@@ -44,33 +44,33 @@ function handleCycleTabBinding(): boolean {
 	return true;
 }
 
-function handleDefinitionAndReferenceBinding(runtime: Runtime): boolean {
+function handleDefinitionAndReferenceBinding(): boolean {
 	if (isInlineWidgetFocused() || !isKeyJustPressed('F12')) {
 		return false;
 	}
 	consumeIdeKey('F12');
 	if (isShiftDown()) {
-		runtime.editor.commands.execute('referenceSearch');
+		machineManager.ideState.editor.commands.execute('referenceSearch');
 		return true;
 	}
-	runtime.editor.commands.execute('goToDefinition');
+	machineManager.ideState.editor.commands.execute('goToDefinition');
 	return true;
 }
 
-function handleRenameBinding(runtime: Runtime): boolean {
+function handleRenameBinding(): boolean {
 	if (isInlineWidgetFocused() || !isCodeTabActive() || !isKeyJustPressed('F2')) {
 		return false;
 	}
 	consumeIdeKey('F2');
-	runtime.editor.commands.execute('rename');
+	machineManager.ideState.editor.commands.execute('rename');
 	return true;
 }
 
-function handleSelectAllBinding(runtime: Runtime): boolean {
+function handleSelectAllBinding(): boolean {
 	if (!(isCtrlDown() || isMetaDown()) || isInlineWidgetFocused() || !isCodeTabActive() || !isKeyJustPressed('KeyA')) {
 		return false;
 	}
-	if (runtime.editor.resourcePanel.isFocused()) {
+	if (machineManager.ideState.editor.resourcePanel.isFocused()) {
 		return false;
 	}
 	consumeIdeKey('KeyA');
@@ -83,22 +83,22 @@ function handleSelectAllBinding(runtime: Runtime): boolean {
 	return true;
 }
 
-function handleLineJumpBinding(runtime: Runtime): boolean {
+function handleLineJumpBinding(): boolean {
 	if (!(isCtrlDown() || isMetaDown()) || !isKeyJustPressed('KeyL')) {
 		return false;
 	}
 	consumeIdeKey('KeyL');
-	runtime.editor.commands.execute('lineJump');
+	machineManager.ideState.editor.commands.execute('lineJump');
 	return true;
 }
 
-export function handleEditorPromptBindings(runtime: Runtime): boolean {
-	return handleCreateResourceBinding(runtime)
-		|| handleGlobalFindBinding(runtime)
-		|| handleLocalFindBinding(runtime)
+export function handleEditorPromptBindings(): boolean {
+	return handleCreateResourceBinding()
+		|| handleGlobalFindBinding()
+		|| handleLocalFindBinding()
 		|| handleCycleTabBinding()
-		|| handleDefinitionAndReferenceBinding(runtime)
-		|| handleRenameBinding(runtime)
-		|| handleSelectAllBinding(runtime)
-		|| handleLineJumpBinding(runtime);
+		|| handleDefinitionAndReferenceBinding()
+		|| handleRenameBinding()
+		|| handleSelectAllBinding()
+		|| handleLineJumpBinding();
 }

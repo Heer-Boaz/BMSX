@@ -1,6 +1,9 @@
+import { flushRuntimeLuaOutputToTerminal, type RuntimeIdeState } from '../ide/runtime/state';
+import type { RuntimeFaultState } from '../ide/runtime/fault_state';
 import { SoundMaster } from "../audio/soundmaster";
 import { Input } from "../input/manager";
 import { GameView } from "../render/gameview";
+import { Font } from '../render/shared/bmsx_font';
 import { TextureManager } from "../render/texture_manager";
 import { RenderPassLibrary } from "../render/backend/pass/library";
 import { setMicrotaskQueue } from '../platform';
@@ -8,9 +11,10 @@ import type { GameViewHost, Platform } from '../platform';
 import { DEFAULT_UFPS, HZ_SCALE } from '../machine/runtime/timing/constants';
 import { RomBootManager } from './rom_boot_manager';
 import { renderGate, runGate } from '../common/taskgate';
+import { applyInitialWorkspaceOverrides, prepareRebootToBootRom, startPreparedRuntime } from '../ide/runtime/program_boot';
+import { Runtime } from '../machine/runtime/runtime';
 import { bootActiveProgram } from '../ide/runtime/lua_pipeline';
 import { handleLuaError } from '../ide/workbench/runtime_errors';
-import { Runtime } from '../machine/runtime/runtime';
 import type { GPUBackend } from '../render/backend/backend';
 import { clearOverlayFrame } from '../render/host_overlay/overlay_queue';
 import { restoreVdpContextState } from '../render/vdp/context_state';
@@ -62,6 +66,8 @@ export class MachineManager {
 	private _view!: GameView;
 	private _platform!: Platform;
 	private _runtime!: Runtime;
+	public ideState!: RuntimeIdeState;
+	public faultState!: RuntimeFaultState;
 	public readonly screen = new RenderPresentationState();
 	/**
 	 * Indicates whether the game is currently running.
@@ -143,8 +149,9 @@ export class MachineManager {
 			host: resolvedViewHost,
 		});
 		this._view = gview;
-		const runtime = await Runtime.init(systemLayer, workspaceOverlay, Input.instance, gview, platform.storage, cartridge);
+		const runtime = await Runtime.init(systemLayer, workspaceOverlay, Input.instance, platform.storage, cartridge);
 		this._runtime = runtime;
+		await applyInitialWorkspaceOverrides(runtime);
 		this.syncAudioTiming();
 		const gpuBackend = await resolvedViewHost.createBackend() as GPUBackend;
 		gview.backend = gpuBackend;
@@ -172,7 +179,9 @@ export class MachineManager {
 
 		await gview.initializeDefaultTextures();
 		restoreVdpContextState(runtime.machine.vdp, gview);
-		await runtime.startPreparedRuntime();
+		this.view.default_font = new Font();
+		await startPreparedRuntime(runtime);
+		flushRuntimeLuaOutputToTerminal(runtime, this.ideState);
 
 		if (this.debug) {
 			Input.instance.enableDebugMode(this.view.surface);
@@ -187,14 +196,17 @@ export class MachineManager {
 		const gateToken = this.runtime.luaGate.begin({ blocking: true, tag: 'reboot_bootrom' });
 		try {
 			await this.resetRuntime();
-			await this.runtime.prepareRebootToBootRom();
+			await prepareRebootToBootRom(this.runtime);
 			await this.refreshRenderSurfaces();
 			this.bootstrapStartupAudio();
-			bootActiveProgram(this.runtime);
-		}
-		catch (error) {
-			handleLuaError(this.runtime, error);
-			throw error;
+			try {
+				bootActiveProgram(this.runtime);
+			}
+			catch (error) {
+				handleLuaError(this.runtime, error);
+				throw error;
+			}
+			flushRuntimeLuaOutputToTerminal(this.runtime, this.ideState);
 		}
 		finally {
 			this.runtime.luaGate.end(gateToken);
@@ -223,10 +235,11 @@ export class MachineManager {
 			runtime.frameScheduler.clearQueuedTime();
 			this.screen.reset();
 			runtime.frameLoop.abandonFrameState();
-			runtime.overlayDrawFrameOwner = null;
+			const ideState = this.ideState;
+			ideState.overlayDrawFrameOwner = null;
 			runtime.machine.cpu.clearHaltUntilIrq();
 			runtime.vblank.reset();
-			runtime.overlayRenderer.abandonFrame();
+			ideState.overlayRenderer.abandonFrame();
 
 			if (!preserveTextures) {
 				this.texmanager.clear();

@@ -1,3 +1,4 @@
+import { machineManager } from '../../../../core/machine_manager';
 import { showEditorMessage } from '../../../common/feedback_state';
 import * as constants from '../../../common/constants';
 import type { ResourceDescriptor } from '../../../common/models';
@@ -8,7 +9,7 @@ import { openCodeTabForDescriptor } from '../../ui/code_tab/io';
 import type { Runtime } from '../../../../machine/runtime/runtime';
 
 export function openResourceDescriptor(runtime: Runtime, descriptor: ResourceDescriptor): void {
-	const resourcePanel = runtime.editor.resourcePanel;
+	const resourcePanel = machineManager.ideState.editor.resourcePanel;
 	if (descriptor.asset_id && descriptor.asset_id.length > 0) {
 		resourcePanel.queuePendingSelection(descriptor.asset_id);
 		if (resourcePanel.isVisible()) {

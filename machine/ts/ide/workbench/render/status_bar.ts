@@ -1,3 +1,4 @@
+import { machineManager } from '../../../core/machine_manager';
 import * as constants from '../../common/constants';
 import { getActiveSymbolSearchMatch } from '../../editor/contrib/symbols/shared';
 import { statusAreaHeight, getStatusMessageLines } from '../common/layout';
@@ -17,7 +18,7 @@ import type { Runtime } from '../../../machine/runtime/runtime';
 
 export function renderStatusBar(runtime: Runtime): void {
 	const runtimeFaulted = runtime.hasRuntimeFailed;
-	const resourcePanel = runtime.editor.resourcePanel;
+	const resourcePanel = machineManager.ideState.editor.resourcePanel;
 	const statusTop = editorViewState.viewportHeight - statusAreaHeight();
 	const statusBottom = editorViewState.viewportHeight;
 	const statusBackground = constants.COLOR_STATUS_BACKGROUND;

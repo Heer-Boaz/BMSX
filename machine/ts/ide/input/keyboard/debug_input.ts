@@ -1,9 +1,10 @@
+import { machineManager } from '../../../core/machine_manager';
 import { prepareDebuggerStepOverlay, toggleBreakpointForEditorRow } from '../../workbench/contrib/debugger/controller';
 import type { Runtime } from '../../../machine/runtime/runtime';
 import { consumeIdeKey, isAltDown, isCtrlDown, isKeyJustPressed, isMetaDown, isShiftDown } from './key_input';
 
 export function handleEditorDebuggerInput(runtime: Runtime): boolean {
-	if (handleDebuggerShortcuts(runtime)) {
+	if (handleDebuggerShortcuts()) {
 		return true;
 	}
 	if (!isKeyJustPressed('F9')) {
@@ -14,16 +15,16 @@ export function handleEditorDebuggerInput(runtime: Runtime): boolean {
 	return true;
 }
 
-function handleDebuggerShortcuts(runtime: Runtime): boolean {
-	const handled = evaluateDebuggerShortcuts(runtime);
+function handleDebuggerShortcuts(): boolean {
+	const handled = evaluateDebuggerShortcuts();
 	if (handled) {
 		prepareDebuggerStepOverlay();
 	}
 	return handled;
 }
 
-function evaluateDebuggerShortcuts(runtime: Runtime): boolean {
-	const debuggerUi = runtime.editor.debugger;
+function evaluateDebuggerShortcuts(): boolean {
+	const debuggerUi = machineManager.ideState.editor.debugger;
 	const ctrlDown = isCtrlDown();
 	const metaDown = isMetaDown();
 	const shiftDown = isShiftDown();

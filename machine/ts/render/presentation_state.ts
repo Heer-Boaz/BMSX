@@ -158,7 +158,7 @@ export class RenderPresentationState {
 			this.markPresentation('completed', false);
 		} else if (runtime.frameScheduler.lastTickSequence !== previousTickSequence) {
 			this.markPresentation('completed', runtime.frameScheduler.lastTickVisualFrameCommitted);
-		} else if (runtime.isDrawPending || runtime.workbenchFaultState.faultSnapshot !== null) {
+		} else if (runtime.isDrawPending || machineManager.faultState.faultSnapshot !== null) {
 			this.markPresentation('partial', false);
 		}
 		while (runtime.frameScheduler.consumeTickCompletion(this.tickCompletionScratch)) {
@@ -216,7 +216,7 @@ export class RenderPresentationState {
 			+ `tick_deferred=${this.debugPresentTickDeferred} tick_held=${this.debugPresentTickHeld} `
 			+ `present_partial=${this.debugPresentPartialPresents} present_commit=${this.debugPresentCommitPresents} `
 			+ `present_hold=${this.debugPresentHoldPresents} present_paused=${this.debugPresentPausedPresents} `
-			+ `draw_pending=${runtime.isDrawPending || runtime.workbenchFaultState.faultSnapshot !== null ? 1 : 0} active_tick=${runtime.frameLoop.frameActive ? 1 : 0}`
+			+ `draw_pending=${runtime.isDrawPending || machineManager.faultState.faultSnapshot !== null ? 1 : 0} active_tick=${runtime.frameLoop.frameActive ? 1 : 0}`
 		);
 		this.resetDebugCounters(currentTime);
 	}

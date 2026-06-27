@@ -23,7 +23,7 @@ export function handleCodeAreaPrimaryPressPointer(
 	if (!justPressed || !insideCodeArea) {
 		return false;
 	}
-	focusPrimaryEditorSurface(runtime);
+	focusPrimaryEditorSurface();
 	const target = resolvePointerTextPosition(snapshot.viewportX, snapshot.viewportY, bounds);
 	const targetRow = target.row;
 	const targetColumn = target.column;

@@ -13,7 +13,7 @@ export const CONTEXT_MENU_POINTER_HANDLED = 1;
 export const CONTEXT_MENU_POINTER_CONSUME_PRIMARY = 2;
 export const CONTEXT_MENU_POINTER_CONSUME_SECONDARY = 3;
 
-export function handleEditorContextMenuPointerSession(runtime: Runtime, snapshot: PointerSnapshot, justPressed: boolean, secondaryJustPressed: boolean): number {
+export function handleEditorContextMenuPointerSession(snapshot: PointerSnapshot, justPressed: boolean, secondaryJustPressed: boolean): number {
 	const menu = editorContextMenuState;
 	if (!menu.visible) {
 		return CONTEXT_MENU_POINTER_IGNORED;
@@ -41,7 +41,7 @@ export function handleEditorContextMenuPointerSession(runtime: Runtime, snapshot
 	if (!entry.enabled) {
 		return CONTEXT_MENU_POINTER_HANDLED;
 	}
-	executeEditorContextMenuAction(runtime, entry.action, token);
+	executeEditorContextMenuAction(entry.action, token);
 	return CONTEXT_MENU_POINTER_CONSUME_PRIMARY;
 }
 

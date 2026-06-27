@@ -703,6 +703,7 @@ bool LibretroPlatform::loadState(const void* data, size_t size) {
 	}
 	try {
 		applyRuntimeSaveStateBytes(runtime, static_cast<const u8*>(data), size);
+		restoreVdpContextState(runtime.machine.vdp, *m_machine_manager->view());
 		m_audio_service->resetQueue();
 		m_audio_buffer.clear();
 		return true;

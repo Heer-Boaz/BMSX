@@ -18,13 +18,13 @@ export function handleEditorChromePointerDispatch(
 	if (handleEditorTabDragPointer(snapshot)) {
 		return true;
 	}
-	if (handleEditorScrollbarPointer(runtime.editor.resourcePanel, snapshot, justPressed)) {
+	if (handleEditorScrollbarPointer(machineManager.ideState.editor.resourcePanel, snapshot, justPressed)) {
 		return true;
 	}
-	if (justPressed && handleTopBarPointer(runtime.editor.commands, snapshot)) {
+	if (justPressed && handleTopBarPointer(machineManager.ideState.editor.commands, snapshot)) {
 		return true;
 	}
-	if (handleEditorPanelResizePointer(runtime.editor.resourcePanel, snapshot, justPressed)) {
+	if (handleEditorPanelResizePointer(machineManager.ideState.editor.resourcePanel, snapshot, justPressed)) {
 		return true;
 	}
 	if (handleInvalidEditorPointerSnapshot(snapshot)) {

@@ -268,8 +268,7 @@ Runtime& MachineManager::ensureRuntime(const RuntimeOptions& options) {
 		m_runtime = std::make_unique<Runtime>(
 			options,
 			Input::instance(),
-			*platform()->microtaskQueue(),
-			*view()
+			*platform()->microtaskQueue()
 		);
 	}
 	return *m_runtime;

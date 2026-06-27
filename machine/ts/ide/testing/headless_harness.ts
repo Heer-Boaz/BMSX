@@ -71,7 +71,7 @@ export const headlessIdeHarness: HeadlessIdeHarness = {
 	},
 	activateTerminal: () => activateTerminalMode(requireRuntime()),
 	deactivateTerminal: () => deactivateTerminalMode(requireRuntime()),
-	isTerminalActive: () => requireRuntime().terminal.isActive,
+	isTerminalActive: () => machineManager.ideState.terminal.isActive,
 	debugStats: () => {
 		const runtime = requireRuntime();
 		const cpu = runtime.machine.cpu;

@@ -9,7 +9,7 @@ import { CPU, OpCode, RunResult, StringValue, Table, asStringId, createNativeFun
 import { INSTRUCTION_BYTES, readInstructionWord, writeInstruction } from '../../machine/ts/machine/cpu/instruction_format';
 import { appendLuaChunkToProgram, compileLuaChunkToProgram, encodeCompiledProgramImage } from '../../machine/ts/machine/program/compiler';
 import { decodeProgramSymbolsImage, inflateProgram, type ProgramImage, type ProgramConstReloc, type ProgramSymbolsImage } from '../../machine/ts/machine/program/loader';
-import { inflateExecutableProgramImage, linkBootProgramImages, linkProgramImages, resolveRuntimeProgramRelocations } from '../../machine/ts/machine/program/linker';
+import { inflateExecutableProgramImage, linkBootProgramImages, linkProgramImages, resolveRuntimeProgramRelocations, resolveRuntimeProgramValueRelocations } from '../../machine/ts/machine/program/linker';
 import { replaceWithJump, replaceWithMov } from '../../machine/ts/machine/program/optimizer/values';
 import type { Instruction } from '../../machine/ts/machine/program/optimizer';
 import { SYSTEM_BASE_PC } from '../../machine/ts/machine/program/layout';
@@ -936,6 +936,52 @@ test('ProgramLinker resolves symbolic relocations without rodata payload constan
 	assert.equal(linked.programImage.sections.rodata.constPool.length, 0);
 });
 
+test('resolveRuntimeProgramValueRelocations resolves runtime const-pool address payloads', () => {
+	const image = makeProgramImage(
+		[{ op: OpCode.RET, a: 0, b: 1, c: 0 }],
+		[0, 0, 0, 0],
+		[],
+	);
+	image.sections.rodata.bytes = new Uint8Array(16);
+	image.sections.rodata.symbols = [{ name: 'ro_lookup', offset: 4, byteCount: 4, alignment: 4 }];
+	image.sections.data.bytes = new Uint8Array(8);
+	image.sections.data.symbols = [{ name: 'data_value', offset: 0, byteCount: 4, alignment: 4 }];
+	image.sections.bss = {
+		byteCount: 12,
+		symbols: [{ name: 'bss_value', offset: 4, byteCount: 4, alignment: 4 }],
+	};
+	const program = inflateProgram(image.sections);
+	const dataBaseAddress = PROGRAM_STATIC_RAM_BASE + 0x40;
+	const bssBaseAddress = PROGRAM_STATIC_RAM_BASE + 0x80;
+	const rodataBaseAddress = PROGRAM_ROM_BASE + program.programRomTextByteLength;
+	const dataLmaAddress = rodataBaseAddress + image.sections.rodata.bytes.byteLength;
+
+	resolveRuntimeProgramValueRelocations(
+		program,
+		[
+			{ constIndex: 0, kind: 'rodata_addr', symbol: 'ro_lookup', addend: 2 },
+			{ constIndex: 1, kind: 'data_lma_addr', symbol: 'data_value', addend: 4 },
+			{ constIndex: 2, kind: 'data_addr', symbol: 'data_value', addend: 4 },
+			{ constIndex: 3, kind: 'bss_addr', symbol: 'bss_value', addend: 4 },
+		],
+		image.sections.data.symbols,
+		image.sections.data.bytes.byteLength,
+		dataBaseAddress,
+		image.sections.bss.symbols,
+		image.sections.bss.byteCount,
+		bssBaseAddress,
+		image.sections.rodata.symbols,
+		image.sections.rodata.bytes.byteLength,
+	);
+
+	assert.deepEqual(program.constPool.slice(0, 4), [
+		rodataBaseAddress + 6,
+		dataLmaAddress + 4,
+		dataBaseAddress + 4,
+		bssBaseAddress + 8,
+	]);
+});
+
 test('resolveRuntimeProgramRelocations resolves symbolic relocations without const-pool payloads', () => {
 	const image = makeProgramImage(
 		[
@@ -1038,6 +1084,18 @@ test('appended host-eval code preserves the installed program ROM mapping', () =
 		baseCompiled.metadata,
 		parseChunk(entrySource, 'host_eval'),
 		{ entrySource },
+	);
+	resolveRuntimeProgramValueRelocations(
+		appended.program,
+		appended.constValueRelocs,
+		appended.data.symbols,
+		appended.data.bytes.byteLength,
+		PROGRAM_STATIC_RAM_BASE,
+		appended.bss.symbols,
+		appended.bss.byteCount,
+		PROGRAM_STATIC_RAM_BASE + appended.data.bytes.byteLength,
+		appended.rodataSymbols,
+		appended.rodataBytes.byteLength,
 	);
 	resolveRuntimeProgramRelocations(appended.program, appended.metadata, appended.constRelocs);
 	const memory = new Memory({ systemRom: new Uint8Array(0) });

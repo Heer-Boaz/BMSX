@@ -19,7 +19,7 @@ export function handleTextEditorPointerInput(runtime: Runtime): void {
 	const gotoModifierActive = ctrlDown || metaDown;
 	const activeContext = getActiveCodeTabContext();
 	const snapshot = readEditorPointerSnapshot();
-	if (prepareEditorPointerFrame(runtime.editor.resourcePanel, snapshot, gotoModifierActive)) {
+	if (prepareEditorPointerFrame(machineManager.ideState.editor.resourcePanel, snapshot, gotoModifierActive)) {
 		return;
 	}
 	const playerInput = machineManager.input.getPlayerInput(1);
@@ -28,7 +28,7 @@ export function handleTextEditorPointerInput(runtime: Runtime): void {
 	const justReleased = (buttonMask & POINTER_PRIMARY_JUST_RELEASED) !== 0;
 	const pointerSecondaryJustPressed = (buttonMask & POINTER_SECONDARY_JUST_PRESSED) !== 0;
 	const pointerAuxJustPressed = (buttonMask & POINTER_AUX_JUST_PRESSED) !== 0;
-	if (handleEditorContextMenuPointer(runtime, snapshot, justPressed, pointerSecondaryJustPressed, playerInput)) {
+	if (handleEditorContextMenuPointer(snapshot, justPressed, pointerSecondaryJustPressed, playerInput)) {
 		editorPointerState.pointerPrimaryWasPressed = snapshot.primaryPressed;
 		clearHoverTooltip();
 		clearGotoHoverHighlight();
@@ -37,7 +37,7 @@ export function handleTextEditorPointerInput(runtime: Runtime): void {
 	if (handleEditorChromePointerDispatch(runtime, snapshot, justPressed, pointerAuxJustPressed, playerInput)) {
 		return;
 	}
-	if (handleEditorPanelPointer(runtime, snapshot, justPressed, justReleased)) {
+	if (handleEditorPanelPointer(snapshot, justPressed, justReleased)) {
 		return;
 	}
 	if (handleEditorPointerGuards(runtime, snapshot, justPressed)) {

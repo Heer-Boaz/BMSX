@@ -1,7 +1,7 @@
+import { machineManager } from '../../core/machine_manager';
 import type { LuaChunk } from '../../lua/syntax/ast';
 import { LuaInterpreter } from '../../lua/runtime';
 import { convertToError } from '../../lua/value';
-import type { LuaValue } from '../../lua/value';
 import { seedLuaGlobals } from '../../machine/firmware/globals';
 import { compileLuaChunkToProgram, encodeCompiledProgramImage } from '../../machine/program/compiler';
 import { inflateExecutableProgramImage, linkBootProgramImages } from '../../machine/program/linker';
@@ -48,21 +48,13 @@ function installProgramModules(runtime: Runtime, moduleProtos: Iterable<[string,
 	runtime.machine.vdp.resetIngressState();
 }
 
-export function clearEditorCompletionCache(runtime: Runtime): void {
-	const editor = runtime.editor;
-	if (!editor) {
-		return;
-	}
-	editor.clearNativeMemberCompletionCache();
-}
-
 export function markSourceChunkAsDirty(runtime: Runtime, path: string): void {
 	runtime.luaGenericChunksExecuted.delete(path);
 }
 
 function resetLuaInteroperabilityState(runtime: Runtime): void {
 	runtime.luaGenericChunksExecuted.clear();
-	resetHandledLuaErrors(runtime);
+	resetHandledLuaErrors();
 	runtime.luaFunctionRedirectCache.clear();
 }
 
@@ -449,7 +441,7 @@ function resolveModuleRegistries(runtime: Runtime): LuaSourceRegistry[] {
 export function refreshLuaHandlersForChunk(runtime: Runtime, path: string, sourceOverride?: string): void {
 	runtime.luaGenericChunksExecuted.delete(path);
 	reloadGenericLuaChunk(runtime, path, sourceOverride);
-	clearEditorCompletionCache(runtime);
+	machineManager.ideState.editor.clearNativeMemberCompletionCache();
 }
 
 function reloadGenericLuaChunk(runtime: Runtime, path: string, sourceOverride?: string): void {
@@ -458,23 +450,6 @@ function reloadGenericLuaChunk(runtime: Runtime, path: string, sourceOverride?: 
 	runtime.luaGenericChunksExecuted.add(path);
 }
 
-export function requireLuaModule(runtime: Runtime, interpreter: LuaInterpreter, moduleName: string): LuaValue {
-	if (!runtime.moduleProtos.has(moduleName)) {
-		throw interpreter.runtimeError(`require('${moduleName}') failed: module not found.`);
-	}
-	const loaded = interpreter.packageLoadedTable.get(moduleName);
-	if (loaded !== undefined && loaded !== null) {
-		return loaded;
-	}
-	interpreter.packageLoadedTable.set(moduleName, true);
-	const source = resourceSourceForChunk(runtime, moduleName);
-	const chunk = interpreter.compileChunk(source, moduleName);
-	const results = interpreter.executeChunk(chunk);
-	const value = results.length > 0 ? results[0] : null;
-	const cachedValue = value === null ? true : value;
-	interpreter.packageLoadedTable.set(moduleName, cachedValue);
-	return cachedValue;
-}
 
 export function invalidateModuleLookups(runtime: Runtime): void {
 	runtime.pathSemanticCache.clear();

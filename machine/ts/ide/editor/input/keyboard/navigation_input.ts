@@ -1,19 +1,19 @@
+import { machineManager } from '../../../../core/machine_manager';
 import * as TextEditing from '../../editing/text_editing_and_selection';
 import { moveCursorDown, moveCursorEnd, moveCursorHome, moveCursorLeft, moveCursorRight, moveCursorUp, pageDown, pageUp } from '../../ui/view/caret/caret';
 import { consumeIdeKey, isAltDown, isCtrlDown, isKeyJustPressed, isShiftDown, shouldRepeatKeyFromPlayer } from '../../../input/keyboard/key_input';
-import type { Runtime } from '../../../../machine/runtime/runtime';
 
 type NavigationHistoryCommands = {
 	goBackward(): void;
 	goForward(): void;
 };
 
-export function handleEditorNavigationKeys(runtime: Runtime): void {
+export function handleEditorNavigationKeys(): void {
 	const ctrlDown = isCtrlDown();
 	const shiftDown = isShiftDown();
 	const altDown = isAltDown();
 	if (altDown) {
-		handleEditorAltNavigation(runtime.editor.navigation, ctrlDown, shiftDown);
+		handleEditorAltNavigation(machineManager.ideState.editor.navigation, ctrlDown, shiftDown);
 		return;
 	}
 	if (shouldRepeatKeyFromPlayer('ArrowLeft')) {

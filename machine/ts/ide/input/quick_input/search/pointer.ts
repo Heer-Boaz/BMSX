@@ -1,3 +1,4 @@
+import { machineManager } from '../../../../core/machine_manager';
 import { point_in_rect } from '../../../../common/rect';
 import * as constants from '../../../common/constants';
 import { applySearchSelection, ensureSearchSelectionVisible, processInlineFieldPointer } from '../../../editor/contrib/find/search';
@@ -42,7 +43,7 @@ export function handleSearchPointer(runtime: Runtime, snapshot: PointerSnapshot,
 			closeLineJump(false);
 			editorSearchState.visible = true;
 			editorSearchState.active = true;
-			activateQuickInputField(runtime.editor.resourcePanel);
+			activateQuickInputField(machineManager.ideState.editor.resourcePanel);
 		}
 		const label = editorSearchState.scope === 'global' ? 'SEARCH ALL:' : 'SEARCH:';
 		processInlineFieldPointer(editorSearchState.field, quickInputTextLeft(label), snapshot.viewportX, justPressed, snapshot.primaryPressed);

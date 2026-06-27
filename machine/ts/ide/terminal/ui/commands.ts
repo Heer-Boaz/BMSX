@@ -85,7 +85,7 @@ export class TerminalCommandDispatcher {
 			return true;
 		}
 		if (upper === 'CLS') {
-			this.runtime.terminal.clearOutput()
+			machineManager.ideState.terminal.clearOutput();
 			return true;
 		}
 		if (upper === 'CONT') {
@@ -100,7 +100,7 @@ export class TerminalCommandDispatcher {
 			return true;
 		}
 		if (upper === 'IDE') {
-			this.runtime.terminal.appendStderr(ERROR_LUA_IDE_DISABLED);
+			machineManager.ideState.terminal.appendStderr(ERROR_LUA_IDE_DISABLED);
 			return true;
 		}
 		if (tokens.length >= 1 && tokens[0].toUpperCase() === 'EDIT') {
@@ -108,7 +108,7 @@ export class TerminalCommandDispatcher {
 			return true;
 		}
 		if (upper === 'SYMBOLS') {
-			this.runtime.terminal.openSymbolBrowser();
+			machineManager.ideState.terminal.openSymbolBrowser();
 			return true;
 		}
 		// Support flexible spacing for WS subcommands, e.g. "WS   RESET", "WS\tEDIT", etc.
@@ -118,10 +118,10 @@ export class TerminalCommandDispatcher {
 				return true;
 			}
 			if (tokens.length === 2 && tokens[1].toUpperCase() === 'SYMBOLS') {
-				this.runtime.terminal.openSymbolBrowser();
+				machineManager.ideState.terminal.openSymbolBrowser();
 				return true;
 			}
-			this.runtime.terminal.appendStderr(ERROR_SYNTAX_ERROR);
+			machineManager.ideState.terminal.appendStderr(ERROR_SYNTAX_ERROR);
 			return true;
 		}
 		if (tokens.length >= 1 && tokens[0].toUpperCase() === 'JSSTACK') {
@@ -137,13 +137,13 @@ export class TerminalCommandDispatcher {
 		}
 		if (tokens.length >= 1 && tokens[0].toUpperCase() === 'WS') {
 			if (tokens.length !== 2) {
-				this.runtime.terminal.appendStderr(ERROR_SYNTAX_ERROR);
+				machineManager.ideState.terminal.appendStderr(ERROR_SYNTAX_ERROR);
 				return true;
 			}
 			const sub = tokens[1].toUpperCase();
 			if (sub === 'RESET') return 'workspace_reset';
 			if (sub === 'NUKE') return 'workspace_nuke';
-			this.runtime.terminal.appendStderr(ERROR_SYNTAX_ERROR);
+			machineManager.ideState.terminal.appendStderr(ERROR_SYNTAX_ERROR);
 			return true;
 		}
 		if (upper === 'LS' || upper.startsWith('LS ')) {
@@ -159,15 +159,15 @@ export class TerminalCommandDispatcher {
 
 	private handleEdit(tokens: string[]): void {
 		if (tokens.length > 2) {
-			this.runtime.terminal.appendStderr(ERROR_SYNTAX_ERROR);
+			machineManager.ideState.terminal.appendStderr(ERROR_SYNTAX_ERROR);
 			return;
 		}
-		this.runtime.terminal.appendStderr(ERROR_LUA_IDE_DISABLED);
+		machineManager.ideState.terminal.appendStderr(ERROR_LUA_IDE_DISABLED);
 	}
 
 	private printHelp(): void {
 		for (let index = 0; index < HELP_TEXT.length; index += 1) {
-			this.runtime.terminal.appendSystem(HELP_TEXT[index]);
+			machineManager.ideState.terminal.appendSystem(HELP_TEXT[index]);
 		}
 	}
 
@@ -195,33 +195,33 @@ export class TerminalCommandDispatcher {
 				return 'clear_fault';
 			}
 		}
-		this.runtime.terminal.appendStderr(ERROR_SYNTAX_ERROR);
+		machineManager.ideState.terminal.appendStderr(ERROR_SYNTAX_ERROR);
 		return true;
 	}
 
 	private printSystemInfo(): void {
-		this.runtime.terminal.appendSystem('SYSTEM INFO');
+		machineManager.ideState.terminal.appendSystem('SYSTEM INFO');
 		const lines = this.getSystemStatusLines();
-		this.runtime.terminal.appendStdoutLines(lines);
+		machineManager.ideState.terminal.appendStdoutLines(lines);
 		this.printMemoryUsage();
 		this.printFaultState();
 	}
 
 	private printFaultState(): void {
 		const { lines, active } = this.getFaultStatusLines();
-		this.runtime.terminal.appendSystem('FAULT STATE');
-		this.runtime.terminal.appendStdout(lines[0], active ? 9 : undefined);
-		this.runtime.terminal.appendStdoutLines(lines.slice(1));
+		machineManager.ideState.terminal.appendSystem('FAULT STATE');
+		machineManager.ideState.terminal.appendStdout(lines[0], active ? 9 : undefined);
+		machineManager.ideState.terminal.appendStdoutLines(lines.slice(1));
 	}
 
 	private printMemoryUsage(): void {
-		this.runtime.terminal.appendSystem('MEMORY USAGE');
+		machineManager.ideState.terminal.appendSystem('MEMORY USAGE');
 		const lines = this.getMemoryStatusLines();
-		this.runtime.terminal.appendStdoutLines(lines);
+		machineManager.ideState.terminal.appendStdoutLines(lines);
 	}
 
 	public getSystemStatusLines(): string[] {
-		const overlay = this.runtime.overlayViewportSize;
+		const overlay = machineManager.ideState.overlayRenderer.viewportSize;
 		const pathLabel = this.runtime.currentPath ?? '<none>';
 		const runtimeState = this.runtime.isInitialized ? 'initialized' : 'not initialized';
 		const suspension = this.runtime.debuggerSuspendSignal;
@@ -236,11 +236,11 @@ export class TerminalCommandDispatcher {
 		lines.push(`Lua runtime: ${runtimeState} | Entry: ${pathLabel}`);
 		lines.push(`Status: ${faultLabel} | Debugger: ${debuggerLabel}`);
 		lines.push(`Real-time compile opt: -O${this.runtime.realtimeCompileOptLevel}`);
-		lines.push(`Overlay: ${this.runtime.overlayResolutionMode} ${overlay.width}x${overlay.height}`);
+		lines.push(`Overlay: ${machineManager.ideState.overlayResolutionMode} ${overlay.width}x${overlay.height}`);
 		if (root) {
 			lines.push(`Workspace root: ${root}`);
 		}
-			const snapshot = this.runtime.workbenchFaultState.faultSnapshot;
+		const snapshot = machineManager.faultState.faultSnapshot;
 		if (snapshot) {
 			const location = formatRuntimeErrorLocation(snapshot.path, snapshot.line, snapshot.column);
 			const when = new Date(snapshot.timestampMs).toISOString();
@@ -256,7 +256,7 @@ export class TerminalCommandDispatcher {
 	public getFaultStatusLines(): { lines: string[]; active: boolean } {
 		const lines: string[] = [];
 		const suspension = this.runtime.debuggerSuspendSignal;
-			const faultInfo = this.runtime.workbenchFaultState.faultSnapshot;
+		const faultInfo = machineManager.faultState.faultSnapshot;
 		const faultFlag = this.runtime.hasRuntimeFailed || (suspension !== null && suspension.reason === 'exception');
 		lines.push(`Faulted: ${faultFlag ? 'YES' : 'NO'}`);
 		if (suspension) {
@@ -312,16 +312,16 @@ export class TerminalCommandDispatcher {
 	private async handleLs(command: string): Promise<void> {
 		const tokens = this.tokenize(command);
 		if (tokens.length > 3) {
-			this.runtime.terminal.appendStderr(ERROR_SYNTAX_ERROR);
+			machineManager.ideState.terminal.appendStderr(ERROR_SYNTAX_ERROR);
 			return;
 		}
 		if (tokens.length === 3 && tokens[1].toUpperCase() !== '-L') {
-			this.runtime.terminal.appendStderr(ERROR_SYNTAX_ERROR);
+			machineManager.ideState.terminal.appendStderr(ERROR_SYNTAX_ERROR);
 			return;
 		}
 		if (tokens.length >= 2 && tokens[1].toUpperCase() === '-L') {
 			if (tokens.length !== 3) {
-				this.runtime.terminal.appendStderr(ERROR_SYNTAX_ERROR);
+				machineManager.ideState.terminal.appendStderr(ERROR_SYNTAX_ERROR);
 				return;
 			}
 			this.handleLsDebug(tokens[2]);
@@ -345,7 +345,7 @@ export class TerminalCommandDispatcher {
 		const listing = this.buildListing(paths, cwd);
 		const filtered = filter ? this.filterListing(listing, filter) : listing;
 		if (filtered.length === 0) {
-			this.runtime.terminal.appendStderr(ERROR_FILE_NOT_FOUND);
+			machineManager.ideState.terminal.appendStderr(ERROR_FILE_NOT_FOUND);
 			return;
 		}
 		for (let index = 0; index < filtered.length; index += 1) {
@@ -368,7 +368,7 @@ export class TerminalCommandDispatcher {
 					color = 8;
 					break;
 			}
-			this.runtime.terminal.appendStdout(entry.text.toUpperCase(), color);
+			machineManager.ideState.terminal.appendStdout(entry.text.toUpperCase(), color);
 		}
 	}
 
@@ -376,13 +376,13 @@ export class TerminalCommandDispatcher {
 		const root = this.runtime.cartProjectRootPath;
 		const storage = this.runtime.storageService;
 		if (!root || !storage) {
-			this.runtime.terminal.appendStderr('Workspace unavailable');
+			machineManager.ideState.terminal.appendStderr('Workspace unavailable');
 			return;
 		}
 		const normalizedPath = this.resolvePathArg(pathArg);
 		const asset = this.getLuaAssetByPath(normalizedPath);
 		if (!asset) {
-			this.runtime.terminal.appendStderr(ERROR_FILE_NOT_FOUND);
+			machineManager.ideState.terminal.appendStderr(ERROR_FILE_NOT_FOUND);
 			return;
 		}
 		const dirtyPath = buildWorkspaceDirtyEntryPath(root, asset.source_path);
@@ -397,89 +397,89 @@ export class TerminalCommandDispatcher {
 		const dirtyIsCurrent = dirtyEntry !== null && dirtyEntry.updatedAt !== null && dirtyEntry.updatedAt > cartUpdatedAt;
 		const dirtyDiffersFromSaved = dirtyEntry !== null && (savedEntry === null || dirtyEntry.contents !== savedEntry.contents);
 		const dirtyDiffersFromBase = dirtyEntry !== null && dirtyEntry.contents !== asset.base_src;
-		this.runtime.terminal.appendSystem(`LS -L ${normalizedPath}`);
-		this.runtime.terminal.appendStdout(`cart.updatedAt=${cartUpdatedAt}`);
-		this.runtime.terminal.appendStdout(`cart.src=${lenAndHash(asset.src)}`);
-		this.runtime.terminal.appendStdout(`cart.base=${lenAndHash(asset.base_src)}`);
-		this.runtime.terminal.appendStdout(`saved.exists=${savedEntry !== null} updatedAt=${savedEntry?.updatedAt ?? 'null'} current=${savedIsCurrent} matchCart=${savedMatchesCart}`);
-		this.runtime.terminal.appendStdout(`saved.value=${savedEntry ? lenAndHash(savedEntry.contents) : '<none>'}`);
-		this.runtime.terminal.appendStdout(`dirty.exists=${dirtyEntry !== null} updatedAt=${dirtyEntry?.updatedAt ?? 'null'} current=${dirtyIsCurrent} matchCart=${dirtyMatchesCart}`);
-		this.runtime.terminal.appendStdout(`dirty.value=${dirtyEntry ? lenAndHash(dirtyEntry.contents) : '<none>'}`);
-		this.runtime.terminal.appendStdout(`dirty.diffSaved=${dirtyDiffersFromSaved} dirty.diffBase=${dirtyDiffersFromBase}`);
+		machineManager.ideState.terminal.appendSystem(`LS -L ${normalizedPath}`);
+		machineManager.ideState.terminal.appendStdout(`cart.updatedAt=${cartUpdatedAt}`);
+		machineManager.ideState.terminal.appendStdout(`cart.src=${lenAndHash(asset.src)}`);
+		machineManager.ideState.terminal.appendStdout(`cart.base=${lenAndHash(asset.base_src)}`);
+		machineManager.ideState.terminal.appendStdout(`saved.exists=${savedEntry !== null} updatedAt=${savedEntry?.updatedAt ?? 'null'} current=${savedIsCurrent} matchCart=${savedMatchesCart}`);
+		machineManager.ideState.terminal.appendStdout(`saved.value=${savedEntry ? lenAndHash(savedEntry.contents) : '<none>'}`);
+		machineManager.ideState.terminal.appendStdout(`dirty.exists=${dirtyEntry !== null} updatedAt=${dirtyEntry?.updatedAt ?? 'null'} current=${dirtyIsCurrent} matchCart=${dirtyMatchesCart}`);
+		machineManager.ideState.terminal.appendStdout(`dirty.value=${dirtyEntry ? lenAndHash(dirtyEntry.contents) : '<none>'}`);
+		machineManager.ideState.terminal.appendStdout(`dirty.diffSaved=${dirtyDiffersFromSaved} dirty.diffBase=${dirtyDiffersFromBase}`);
 		const flags = this.collectWorkspaceEntryFlags([asset]).get(normalizedPath);
-		this.runtime.terminal.appendStdout(`flags: saved=${flags?.hasSaved ?? false} dirty=${flags?.hasDirty ?? false} unsaved=${flags?.hasUnsaved ?? false}`);
+		machineManager.ideState.terminal.appendStdout(`flags: saved=${flags?.hasSaved ?? false} dirty=${flags?.hasDirty ?? false} unsaved=${flags?.hasUnsaved ?? false}`);
 	}
 
 	private handleJsStack(tokens: string[]): void {
 		if (tokens.length === 1) {
 			const enabled = this.runtime.jsStackEnabled;
-			this.runtime.terminal.appendStdout(`JS stack traces ${enabled ? 'ON' : 'OFF'}`);
+			machineManager.ideState.terminal.appendStdout(`JS stack traces ${enabled ? 'ON' : 'OFF'}`);
 			return;
 		}
 		if (tokens.length === 2) {
 			const mode = tokens[1].toUpperCase();
 			if (mode === 'ON') {
 				this.runtime.jsStackEnabled = true;
-				this.runtime.terminal.appendStdout('JS stack traces ON');
+				machineManager.ideState.terminal.appendStdout('JS stack traces ON');
 				return;
 			}
 			if (mode === 'OFF') {
 				this.runtime.jsStackEnabled = false;
-				this.runtime.terminal.appendStdout('JS stack traces OFF');
+				machineManager.ideState.terminal.appendStdout('JS stack traces OFF');
 				return;
 			}
 		}
-		this.runtime.terminal.appendStderr(ERROR_SYNTAX_ERROR);
+		machineManager.ideState.terminal.appendStderr(ERROR_SYNTAX_ERROR);
 	}
 
 	private handleOptLevel(tokens: string[]): void {
 		if (tokens.length === 1) {
-			this.runtime.terminal.appendStdout(`Real-time Lua compile optimization: -O${this.runtime.realtimeCompileOptLevel}`);
+			machineManager.ideState.terminal.appendStdout(`Real-time Lua compile optimization: -O${this.runtime.realtimeCompileOptLevel}`);
 			return;
 		}
 		if (tokens.length === 2) {
 			const parsed = Number.parseInt(tokens[1], 10);
 			if (parsed >= 0 && parsed <= 3) {
 				this.runtime.realtimeCompileOptLevel = parsed as 0 | 1 | 2 | 3;
-				this.runtime.terminal.appendStdout(`Real-time Lua compile optimization set to -O${parsed}`);
-				this.runtime.terminal.appendStdout('Applies on next compile/reload/reboot.');
+				machineManager.ideState.terminal.appendStdout(`Real-time Lua compile optimization set to -O${parsed}`);
+				machineManager.ideState.terminal.appendStdout('Applies on next compile/reload/reboot.');
 				return;
 			}
 		}
-		this.runtime.terminal.appendStderr(ERROR_SYNTAX_ERROR);
+		machineManager.ideState.terminal.appendStderr(ERROR_SYNTAX_ERROR);
 	}
 
 	private handleCd(command: string): void {
 		const shortcutUp = command.toUpperCase() === 'CD..';
 		const tokens = shortcutUp ? ['CD', '..'] : this.tokenize(command);
 		if (tokens.length > 2) {
-			this.runtime.terminal.appendStderr(ERROR_SYNTAX_ERROR);
+			machineManager.ideState.terminal.appendStderr(ERROR_SYNTAX_ERROR);
 			return;
 		}
 		if (tokens.length === 1) {
-			this.runtime.terminal.appendStdout(this.cwd);
+			machineManager.ideState.terminal.appendStdout(this.cwd);
 			return;
 		}
 		const targetRaw = tokens[1];
 		if (targetRaw === '..') {
 			this.cwd = this.parentPath(this.cwd);
-			this.runtime.terminal.appendStdout(this.cwd);
+			machineManager.ideState.terminal.appendStdout(this.cwd);
 			return;
 		}
 		if (targetRaw === '/') {
 			this.cwd = '/';
-			this.runtime.terminal.appendStdout(this.cwd);
+			machineManager.ideState.terminal.appendStdout(this.cwd);
 			return;
 		}
 		const next = targetRaw.startsWith('/') ? targetRaw : `${this.cwd}/${targetRaw}`;
 		const paths = this.collectPaths('-ALL');
 		const hasDir = paths.some(entry => this.relativeChildPath(next, entry.path) !== null);
 		if (!hasDir) {
-			this.runtime.terminal.appendStderr(ERROR_FOLDER_NOT_FOUND);
+			machineManager.ideState.terminal.appendStderr(ERROR_FOLDER_NOT_FOUND);
 			return;
 		}
 		this.cwd = next;
-		this.runtime.terminal.appendStdout(this.cwd);
+		machineManager.ideState.terminal.appendStdout(this.cwd);
 	}
 
 	private tokenize(command: string): string[] {
@@ -546,7 +546,7 @@ export class TerminalCommandDispatcher {
 
 	private collectPaths(mode: string): PathEntry[] {
 		if (mode && mode !== '-DIRTY' && mode !== '-SAVED' && mode !== '-ALL' && mode !== '-ROM') {
-			this.runtime.terminal.appendStderr(ERROR_ILLEGAL_FUNCTION_CALL);
+			machineManager.ideState.terminal.appendStderr(ERROR_ILLEGAL_FUNCTION_CALL);
 			return [];
 		}
 		const entries: PathEntry[] = [];

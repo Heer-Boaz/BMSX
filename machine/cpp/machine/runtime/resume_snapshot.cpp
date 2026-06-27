@@ -1,7 +1,6 @@
 #include "machine/runtime/resume_snapshot.h"
 
 #include "machine/runtime/machine_state.h"
-#include "render/vdp/context_state.h"
 #include "machine/runtime/runtime.h"
 
 namespace bmsx {
@@ -19,7 +18,6 @@ RuntimeResumeSnapshot captureRuntimeResumeSnapshot(const Runtime& runtime) {
 
 void applyRuntimeResumeSnapshot(Runtime& runtime, const RuntimeResumeSnapshot& snapshot) {
 	applyRuntimeMachineState(runtime, snapshot.machineState);
-	restoreVdpContextState(runtime.machine.vdp, runtime.view());
 	runtime.m_pendingCall = snapshot.pendingEntryCall ? Runtime::PendingCall::Entry : Runtime::PendingCall::None;
 
 	runtime.machine.cpu.globals->clear();

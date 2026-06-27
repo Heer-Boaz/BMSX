@@ -4,7 +4,6 @@ import type { PointerSnapshot } from '../../../../common/models';
 import { handleRuntimeErrorOverlayPointerClick, setRuntimeErrorOverlayExpanded } from './pointer/actions';
 import { editorPointerState, resetPointerClickTracking } from '../../../../input/pointer/state';
 import { runtimeErrorState } from '../../../contrib/runtime_error/state';
-import type { Runtime } from '../../../../../machine/runtime/runtime';
 import {
 	RUNTIME_ERROR_OVERLAY_POINTER_BODY,
 	RUNTIME_ERROR_OVERLAY_POINTER_COPY_BUTTON,
@@ -13,7 +12,7 @@ import {
 	updateRuntimeErrorOverlayPointerHover,
 } from './pointer/hover';
 
-export function processRuntimeErrorOverlayPointer(runtime: Runtime, snapshot: PointerSnapshot, justPressed: boolean, codeTop: number, codeRight: number, textLeft: number, contentBottom: number): boolean {
+export function processRuntimeErrorOverlayPointer(snapshot: PointerSnapshot, justPressed: boolean, codeTop: number, codeRight: number, textLeft: number, contentBottom: number): boolean {
 	const pointerHit = updateRuntimeErrorOverlayPointerHover(snapshot, codeTop, codeRight, textLeft, contentBottom);
 	if (pointerHit === RUNTIME_ERROR_OVERLAY_POINTER_NONE) {
 		return false;
@@ -37,7 +36,7 @@ export function processRuntimeErrorOverlayPointer(runtime: Runtime, snapshot: Po
 		return true;
 	}
 	if (pointerHit === RUNTIME_ERROR_OVERLAY_POINTER_BODY) {
-		handleRuntimeErrorOverlayPointerClick(runtime, overlay, overlay.hoverLine);
+		handleRuntimeErrorOverlayPointerClick(overlay, overlay.hoverLine);
 	}
 	return true;
 }

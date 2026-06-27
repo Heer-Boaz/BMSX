@@ -1,5 +1,4 @@
 import type { PointerSnapshot } from '../../common/models';
-import type { Runtime } from '../../../machine/runtime/runtime';
 import { handleProblemsPanelPointer, handleProblemsPanelResizePointer } from './problems_panel';
 import { handleResourcePanelPointer } from './resource_panel_content';
 import { handleResourcePanelResizePointer } from './resource_panel_resize';
@@ -12,8 +11,8 @@ export function handleEditorPanelResizePointer(resourcePanel: ResourcePanelContr
 	return handleProblemsPanelResizePointer(snapshot, justPressed);
 }
 
-export function handleEditorPanelPointer(runtime: Runtime, snapshot: PointerSnapshot, justPressed: boolean, justReleased: boolean): boolean {
-	if (handleResourcePanelPointer(runtime, snapshot, justPressed)) {
+export function handleEditorPanelPointer(snapshot: PointerSnapshot, justPressed: boolean, justReleased: boolean): boolean {
+	if (handleResourcePanelPointer(snapshot, justPressed)) {
 		return true;
 	}
 	return handleProblemsPanelPointer(snapshot, justPressed, justReleased);

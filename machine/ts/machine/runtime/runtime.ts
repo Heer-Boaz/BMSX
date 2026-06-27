@@ -8,7 +8,7 @@ import {
 	type LuaDebuggerPauseSignal
 } from '../../lua/value';
 import type { StorageService } from './storage';
-import type { CartManifest, MachineManifest, RuntimeRomPackage, Viewport } from '../../rompack/format';
+import type { CartManifest, MachineManifest, RuntimeRomPackage } from '../../rompack/format';
 import {
 	CART_ROM_HEADER_SIZE,
 	DEFAULT_GEO_WORK_UNITS_PER_SEC,
@@ -18,11 +18,6 @@ import {
 import { RomSourceStack, type RawRomSource, type RomSourceLayer } from '../../rompack/source';
 import { buildRuntimeRomLayer, type RuntimeRomLayer } from '../../rompack/loader';
 import { StringValue, Table, type Value, type ProgramMetadata, type NativeFunction, type NativeObject } from '../cpu/cpu';
-import type { TerminalMode } from '../../ide/terminal/ui/mode';
-import { OverlayRenderer } from '../../ide/runtime/overlay_renderer';
-import { Font, type FontVariant } from '../../render/shared/bmsx_font';
-import type { GameView } from '../../render/gameview';
-import type { CartEditor } from '../../ide/cart_editor';
 import { type LuaSemanticModel, type FileSemanticData } from '../../lua/semantic/model';
 import { registerFirmwareBuiltins } from '../firmware/builtins';
 import { LuaFunctionRedirectCache } from '../firmware/handler_registry';
@@ -30,20 +25,15 @@ import { LuaJsBridge } from './host/native_bridge';
 import type { RuntimeOptions } from './options';
 import type { GateGroup } from '../../common/taskgate';
 import { taskGate } from '../../common/taskgate';
-import { applyWorkspaceOverridesToCart, applyWorkspaceOverridesToRegistry, DEFAULT_SYSTEM_PROJECT_ROOT_PATH } from '../../ide/workspace/workspace';
 import {
 	buildLuaSources,
 	resolveLuaSourceRecord as resolveRegistryLuaSourceRecord,
 	type LuaSourceMatch,
 	type LuaSourceRecord,
 	type LuaSourceRegistry,
+	DEFAULT_SYSTEM_PROJECT_ROOT_PATH,
 } from '../program/sources';
-import * as workbenchMode from '../../ide/workbench/mode';
-import { deactivateEditor, deactivateTerminalMode } from '../../ide/workbench/overlay_modes';
-import { handleLuaError } from '../../ide/workbench/runtime_errors';
-import * as luaPipeline from '../../ide/runtime/lua_pipeline';
-import { DebugPauseCoordinator } from '../../ide/runtime/debug_pause';
-import { clearRuntimeFault, createRuntimeFaultState } from '../../ide/runtime/fault_state';
+import { DebugPauseCoordinator } from '../../lua/debug_pause';
 import { LuaDebuggerController, type LuaDebuggerSessionMetrics } from '../../lua/debugger';
 import type { LuaBuiltinDescriptor, LuaMemberCompletion } from '../../lua/semantic_contracts';
 import type { ParsedLuaChunk } from '../../lua/analysis/parse';
@@ -78,9 +68,6 @@ import {
 	configureMemoryMap,
 } from '../memory/map';
 
-// Flip back to 'msx' to restore default font in machine/editor
-export const EDITOR_FONT_VARIANT: FontVariant = 'tiny';
-
 export type FrameState = {
 	haltGame: boolean;
 	updateExecuted: boolean;
@@ -103,42 +90,14 @@ export class Runtime {
 	public readonly luaJsBridge!: LuaJsBridge;
 	public readonly apiFunctionNames = new Set<string>();
 	public readonly luaBuiltinMetadata = new Map<string, LuaBuiltinDescriptor>();
-	public _activeIdeFontVariant: FontVariant = EDITOR_FONT_VARIANT;
 	public tickEnabled: boolean = true;
-	public editor!: CartEditor;
-	public readonly overlayRenderer = new OverlayRenderer();
-	public terminal!: TerminalMode;
 	public readonly timing: TimingState;
 	public executionOverlayActive = false;
-	private _overlayResolutionMode: 'offscreen' | 'viewport'; // Set in constructor
 	public readonly debuggerController = new LuaDebuggerController();
 	public readonly pauseCoordinator = new DebugPauseCoordinator();
 	public debuggerSuspendSignal: LuaDebuggerPauseSignal = null;
 	public debuggerPaused = false;
 	public debuggerMetrics: LuaDebuggerSessionMetrics = null;
-	public readonly workbenchFaultState = createRuntimeFaultState();
-	public lastIdeInputFrame = -1;
-	public lastTerminalInputFrame = -1;
-	public set overlayResolutionMode(value: 'offscreen' | 'viewport') {
-		this._overlayResolutionMode = value;
-		this.overlayRenderer.setRenderingViewportType(this.view, value);
-		this.editor.updateViewport(this.overlayRenderer.viewportSize);
-	}
-
-	public initializeOverlayViewport(viewport: Viewport): void {
-		this._overlayResolutionMode = 'viewport';
-		this.overlayRenderer.setViewportSize(viewport);
-		this.editor.updateViewport(viewport);
-	}
-
-	public get overlayResolutionMode() {
-		return this._overlayResolutionMode;
-	}
-
-	public get overlayViewportSize(): Viewport {
-		return this.overlayRenderer.viewportSize;
-	}
-
 	public cpuUsageCyclesUsed(): number {
 		return this.frameLoop.frameActive ? this.frameLoop.frameState.activeCpuUsedCycles : this.frameScheduler.lastTickCpuUsedCycles;
 	}
@@ -183,7 +142,6 @@ export class Runtime {
 		return this.luaRuntimeFailed;
 	}
 	private includeJsStackTraces = false;
-	public overlayDrawFrameOwner: 'terminal' | 'ide' | null = null;
 	public realtimeCompileOptLevel: 0 | 1 | 2 | 3 = 3;
 	public readonly frameScheduler: FrameSchedulerState;
 	public readonly frameLoop: FrameLoopState;
@@ -213,6 +171,7 @@ export class Runtime {
 	public readonly vblank: VblankState;
 	public readonly cpuExecution: CpuExecutionState;
 	public pendingLuaWarnings: string[] = [];
+	public readonly luaOutputLines: string[] = [];
 	public readonly luaChunkEnvironmentsByPath: Map<string, LuaEnvironment> = new Map();
 	public readonly luaGenericChunksExecuted: Set<string> = new Set();
 	public readonly luaPatternRegexCache: Map<string, RegExp> = new Map();
@@ -244,7 +203,6 @@ export class Runtime {
 	public readonly hostFault: HostFaultState;
 	public readonly machine: Machine;
 	public readonly cartBoot: CartBootState;
-	public readonly view: GameView;
 	public get interpreter(): LuaInterpreter {
 		return this.luaInterpreter;
 	}
@@ -252,7 +210,7 @@ export class Runtime {
 		return this.programMetadata !== null;
 	}
 
-	public static async init(systemLayer: RuntimeRomLayer, workspaceOverlay: Uint8Array | undefined, input: RuntimeInputSource, view: GameView, storageService: StorageService, cartridge?: Uint8Array): Promise<Runtime> {
+	public static async init(systemLayer: RuntimeRomLayer, workspaceOverlay: Uint8Array | undefined, input: RuntimeInputSource, storageService: StorageService, cartridge?: Uint8Array): Promise<Runtime> {
 		const systemSource = new RomSourceStack([{ id: systemLayer.id, index: systemLayer.index, payload: systemLayer.payload }]);
 		const systemLuaSources = buildLuaSources(systemSource, systemSource, systemLayer.index, ['system']);
 		const systemMachine = systemLayer.index.machine;
@@ -285,7 +243,7 @@ export class Runtime {
 				vblankCycles,
 				vdpWorkUnitsPerSec: systemPerfSpecs.work_units_per_sec,
 				geoWorkUnitsPerSec: systemPerfSpecs.geo_work_units_per_sec,
-			}, input, view, storageService);
+			}, input, storageService);
 			setTransferRatesFromManifest(runtime, systemPerfSpecs);
 			runtime.configureProgramSources({
 				systemRom: systemLayer,
@@ -349,7 +307,7 @@ export class Runtime {
 			vblankCycles,
 			vdpWorkUnitsPerSec: cartPerfSpecs.work_units_per_sec,
 			geoWorkUnitsPerSec: cartPerfSpecs.geo_work_units_per_sec,
-		}, input, view, storageService);
+		}, input, storageService);
 		setTransferRatesFromManifest(runtime, cartPerfSpecs);
 		runtime.configureProgramSources({
 			systemRom: systemLayer,
@@ -360,25 +318,7 @@ export class Runtime {
 			systemRomSource: systemSource,
 			cartRomSource: cartSource,
 		});
-		await applyWorkspaceOverridesToCart(runtime, {
-			cart: cartLuaSources,
-			storage: runtime.storageService,
-			includeServer: true,
-			projectRootPath: cartRom.index.projectRootPath,
-		});
 		return runtime;
-	}
-
-	public async startPreparedRuntime(): Promise<void> {
-		await applyWorkspaceOverridesToRegistry(this, {
-			registry: this.systemLuaSources,
-			storage: this.storageService,
-			includeServer: true,
-			projectRootPath: this.systemProjectRootPath,
-		});
-		await this.prepareBootRomStartupState();
-		this.view.default_font = new Font();
-		await this.boot();
 	}
 
 	private configureProgramSources(params: {
@@ -574,10 +514,8 @@ export class Runtime {
 	private constructor(
 		options: RuntimeOptions,
 		private readonly input: RuntimeInputSource,
-		view: GameView,
 		storageService: StorageService,
 	) {
-		this.view = view;
 		this.frameScheduler = new FrameSchedulerState(this);
 		this.frameLoop = new FrameLoopState(this);
 		this.vblank = new VblankState(this);
@@ -649,14 +587,8 @@ export class Runtime {
 		return this.machine.vdp.trackedTotalVramBytes;
 	}
 
-	private configureInterpreter(interpreter: LuaInterpreter): void {
-		interpreter.requireHandler = (ctx, module) => luaPipeline.requireLuaModule(this, ctx, module);
-		interpreter.outputHandler = (text) => this.terminal.appendStdout(text);
-	}
-
 	public createLuaInterpreter(): LuaInterpreter {
 		const interpreter = new LuaInterpreter(this.luaJsBridge);
-		this.configureInterpreter(interpreter);
 		interpreter.attachDebugger(this.debuggerController);
 		interpreter.clearLastFaultEnvironment();
 		registerFirmwareBuiltins(this, interpreter);
@@ -678,76 +610,12 @@ export class Runtime {
 		this.machine.cpu.clearHaltUntilIrq();
 	}
 
-	public get activeIdeFontVariant(): FontVariant {
-		return this._activeIdeFontVariant;
-	}
-
 	public set jsStackEnabled(enabled: boolean) {
 		this.includeJsStackTraces = enabled;
 	}
 
 	public get jsStackEnabled(): boolean {
 		return this.includeJsStackTraces;
-	}
-
-	public async boot(): Promise<void> {
-		const gateToken = this.luaGate.begin({ blocking: true, tag: 'boot' });
-		try {
-			this.hostFault.clear();
-			this.clearBootFaults();
-			this.clearLuaBootState();
-			luaPipeline.bootActiveProgram(this);
-		}
-		catch (error) {
-			handleLuaError(this, error);
-			throw new Error(`failed to boot runtime: ${error}`);
-		}
-		finally {
-			this.luaGate.end(gateToken);
-		}
-	}
-
-	private clearBootFaults(): void {
-		workbenchMode.clearActiveDebuggerPause(this);
-		clearRuntimeFault(this);
-	}
-
-	private clearLuaBootState(): void {
-		this.luaInitialized = false;
-		luaPipeline.invalidateModuleLookups(this);
-		this.luaChunkEnvironmentsByPath.clear();
-		this.luaGenericChunksExecuted.clear();
-		this.editor.clearRuntimeErrorOverlay();
-	}
-
-	private async prepareBootRomStartupState(): Promise<void> {
-		this.enterSystemFirmware();
-		if (!this.terminal) {
-			workbenchMode.initializeIdeFeatures(this, resolveRuntimeRenderSize(this.activeMachineManifest));
-		}
-	}
-
-	public async prepareRebootToBootRom(): Promise<void> {
-		this.clearBootFaults();
-		deactivateTerminalMode(this);
-		deactivateEditor(this);
-		this.clearLuaBootState();
-		this.cartBoot.reset();
-		if (this.cartLuaSources && this.cartProjectRootPath) {
-			await applyWorkspaceOverridesToCart(this, {
-				cart: this.cartLuaSources,
-				storage: this.storageService,
-				includeServer: true,
-				projectRootPath: this.cartProjectRootPath,
-			});
-		}
-		await applyWorkspaceOverridesToRegistry(this, {
-			registry: this.systemLuaSources,
-			storage: this.storageService,
-			includeServer: true,
-			projectRootPath: this.systemProjectRootPath,
-		});
-		await this.prepareBootRomStartupState();
 	}
 
 	public applyCartProgramTiming(): void {
@@ -765,11 +633,7 @@ export class Runtime {
 
 	public dispose(): void {
 		this.machine.audioController.dispose();
-		workbenchMode.disposeShortcutHandlers(this);
-		this.terminal.deactivate();
-		deactivateEditor(this);
 		this.luaInitialized = false;
-		this.editor.shutdown();
 		this.luaInterpreter = null;
 	}
 

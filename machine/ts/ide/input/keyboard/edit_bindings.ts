@@ -1,3 +1,4 @@
+import { machineManager } from '../../../core/machine_manager';
 import { jumpToNextMatch, jumpToPreviousMatch } from '../../editor/contrib/find/search';
 import { closeActiveTab } from '../../workbench/ui/tabs';
 import { isCodeTabActive, isEditableCodeTab, isReadOnlyCodeTab } from '../../workbench/ui/code_tab/contexts';
@@ -63,7 +64,7 @@ function handleCloseTabBinding(runtime: Runtime): boolean {
 	return true;
 }
 
-function handleSaveBinding(runtime: Runtime): boolean {
+function handleSaveBinding(): boolean {
 	if (!isCtrlDown() || isShiftDown() || !isKeyJustPressed('KeyS')) {
 		return false;
 	}
@@ -72,7 +73,7 @@ function handleSaveBinding(runtime: Runtime): boolean {
 		notifyReadOnlyEdit();
 		return true;
 	}
-	runtime.editor.commands.execute('save');
+	machineManager.ideState.editor.commands.execute('save');
 	return true;
 }
 
@@ -164,7 +165,7 @@ export function handleEditorClipboardAndCommandBindings(runtime: Runtime): boole
 	return handleUndoBinding()
 		|| handleRedoBinding()
 		|| handleCloseTabBinding(runtime)
-		|| handleSaveBinding(runtime)
+		|| handleSaveBinding()
 		|| handleCopyBinding()
 		|| handleCutBinding()
 		|| handlePasteBinding()

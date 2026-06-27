@@ -1,4 +1,4 @@
-import type { Runtime } from '../../../machine/runtime/runtime';
+import { machineManager } from '../../../core/machine_manager';
 import type { EditorCommandId } from '../../common/commands';
 import { consumeIdeKey, isAltDown, isCtrlDown, isKeyJustPressed, isMetaDown, isShiftDown } from './key_input';
 import { handleEscapeKey } from './modal_input';
@@ -93,22 +93,22 @@ function matchesModifierConstraint(constraint: ModifierConstraint, state: Modifi
 		&& !rejectsForbiddenModifier(constraint.noneOf, state);
 }
 
-function handleCommandKeyBinding(runtime: Runtime, binding: CommandKeyBinding, state: ModifierState): boolean {
+function handleCommandKeyBinding(binding: CommandKeyBinding, state: ModifierState): boolean {
 	if (!isKeyJustPressed(binding.code) || !matchesModifierConstraint(binding.modifiers, state)) {
 		return false;
 	}
 	consumeIdeKey(binding.code);
-	runtime.editor.commands.execute(binding.command);
+	machineManager.ideState.editor.commands.execute(binding.command);
 	return true;
 }
 
-export function handleEditorGlobalBindings(runtime: Runtime): boolean {
+export function handleEditorGlobalBindings(): boolean {
 	if (handleEscapeBinding()) {
 		return true;
 	}
 	const state = getModifierState();
 	for (let index = 0; index < editorGlobalKeyBindings.length; index += 1) {
-		if (handleCommandKeyBinding(runtime, editorGlobalKeyBindings[index], state)) {
+		if (handleCommandKeyBinding(editorGlobalKeyBindings[index], state)) {
 			return true;
 		}
 	}

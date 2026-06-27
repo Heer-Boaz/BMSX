@@ -1,3 +1,4 @@
+import { machineManager } from '../../core/machine_manager';
 import type { Runtime } from '../../machine/runtime/runtime';
 import { logDebugState } from '../../machine/runtime/debug';
 import { recordLuaError } from '../runtime/fault_state';
@@ -8,7 +9,7 @@ export function handleLuaError(runtime: Runtime, whatever: unknown): void {
 	if (recorded) {
 		console.error(recorded.stackText);
 		logDebugState(runtime);
-		runtime.terminal.appendError(recorded.error);
+		machineManager.ideState.terminal.appendError(recorded.error);
 	}
 	if (recorded || runtime.luaRuntimeFailed) {
 		activateTerminalMode(runtime);

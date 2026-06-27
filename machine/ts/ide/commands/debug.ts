@@ -1,4 +1,4 @@
-import type { Runtime } from '../../machine/runtime/runtime';
+import { machineManager } from '../../core/machine_manager';
 import type { EditorCommandId, EditorDebugCommandId } from '../common/commands';
 
 export function isEditorDebugCommand(command: EditorCommandId): command is EditorDebugCommandId {
@@ -13,19 +13,19 @@ export function isEditorDebugCommand(command: EditorCommandId): command is Edito
 	}
 }
 
-export function executeEditorDebugCommand(runtime: Runtime, command: EditorDebugCommandId): void {
+export function executeEditorDebugCommand(command: EditorDebugCommandId): void {
 	switch (command) {
 		case 'debugContinue':
-			runtime.editor.debugger.issueDebuggerCommand('continue');
+			machineManager.ideState.editor.debugger.issueDebuggerCommand('continue');
 			return;
 		case 'debugStepOver':
-			runtime.editor.debugger.issueDebuggerCommand('step_over');
+			machineManager.ideState.editor.debugger.issueDebuggerCommand('step_over');
 			return;
 		case 'debugStepInto':
-			runtime.editor.debugger.issueDebuggerCommand('step_into');
+			machineManager.ideState.editor.debugger.issueDebuggerCommand('step_into');
 			return;
 		case 'debugStepOut':
-			runtime.editor.debugger.issueDebuggerCommand('step_out');
+			machineManager.ideState.editor.debugger.issueDebuggerCommand('step_out');
 			return;
 	}
 }

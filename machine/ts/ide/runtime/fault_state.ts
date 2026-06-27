@@ -43,8 +43,9 @@ export function createRuntimeFaultState(): RuntimeFaultState {
 	};
 }
 
-export function resetHandledLuaErrors(runtime: Runtime): void {
-	runtime.workbenchFaultState.handledLuaErrors = new WeakSet<object>();
+
+export function resetHandledLuaErrors(): void {
+	machineManager.faultState.handledLuaErrors = new WeakSet<object>();
 }
 
 function resolveEditorSourceWorkspacePath(runtime: Runtime, source: string): string {
@@ -80,7 +81,7 @@ function runtimeStackFrameLocation(frame: StackTraceFrame): RuntimeErrorLocation
 }
 
 function resolveRuntimeErrorLocation(runtime: Runtime, error: Error): RuntimeErrorLocation {
-	const state = runtime.workbenchFaultState;
+	const state = machineManager.faultState;
 	if (state.lastLuaCallStack.length > 0) {
 		return runtimeStackFrameLocation(state.lastLuaCallStack[0]);
 	}
@@ -112,8 +113,8 @@ function errorStackFunctionName(callFrames: ReadonlyArray<LuaCallFrame>, luaFram
 	return null;
 }
 
-export function clearFaultSnapshot(runtime: Runtime): void {
-	const state = runtime.workbenchFaultState;
+export function clearFaultSnapshot(): void {
+	const state = machineManager.faultState;
 	state.faultSnapshot = null;
 	state.lastCpuFaultSnapshot = [];
 	state.faultOverlayNeedsFlush = false;
@@ -121,7 +122,7 @@ export function clearFaultSnapshot(runtime: Runtime): void {
 
 export function clearRuntimeFault(runtime: Runtime): void {
 	runtime.luaRuntimeFailed = false;
-	clearFaultSnapshot(runtime);
+	clearFaultSnapshot();
 }
 
 function setRuntimeFault(runtime: Runtime, payload: {
@@ -132,7 +133,7 @@ function setRuntimeFault(runtime: Runtime, payload: {
 	details: RuntimeErrorDetails;
 	fromDebugger: boolean;
 }): void {
-	const state = runtime.workbenchFaultState;
+	const state = machineManager.faultState;
 	runtime.luaRuntimeFailed = true;
 	state.faultSnapshot = payload;
 	state.faultSnapshot.timestampMs = machineManager.platform.clock.dateNow();
@@ -141,7 +142,7 @@ function setRuntimeFault(runtime: Runtime, payload: {
 
 export function recordDebuggerExceptionFault(runtime: Runtime, signal: LuaDebuggerPauseSignal): void {
 	const exception = runtime.pauseCoordinator.getPendingException();
-	const state = runtime.workbenchFaultState;
+	const state = machineManager.faultState;
 	if (state.faultSnapshot && runtime.luaRuntimeFailed) {
 		state.faultOverlayNeedsFlush = true;
 		return;
@@ -171,7 +172,7 @@ export function recordDebuggerExceptionFault(runtime: Runtime, signal: LuaDebugg
 
 export function recordLuaError(runtime: Runtime, whatever: unknown): RecordedRuntimeLuaError | null {
 	const error = convertToError(whatever);
-	const state = runtime.workbenchFaultState;
+	const state = machineManager.faultState;
 	if (state.handledLuaErrors.has(error)) {
 		return null;
 	}
@@ -212,7 +213,7 @@ function buildRuntimeErrorDetailsForEditor(runtime: Runtime, error: unknown, mes
 	if (useInterpreterStack) {
 		luaFrames = callFrames.length > 0 ? convertLuaCallFrames(callFrames) : [];
 	} else {
-		const state = runtime.workbenchFaultState;
+		const state = machineManager.faultState;
 		if (state.lastLuaCallStack.length > 0) {
 			luaFrames = state.lastLuaCallStack.slice();
 		}

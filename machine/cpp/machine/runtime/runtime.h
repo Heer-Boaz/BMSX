@@ -42,7 +42,6 @@ namespace bmsx {
 // Forward declarations
 struct ProgramImage;
 class RuntimeRomPackage;
-class GameView;
 class MicrotaskQueue;
 
 /**
@@ -68,8 +67,7 @@ public:
 	Runtime(
 		const RuntimeOptions& options,
 		RuntimeInputSource& input,
-		MicrotaskQueue& microtasks,
-		GameView& view
+		MicrotaskQueue& microtasks
 	);
 	~Runtime();
 
@@ -121,8 +119,6 @@ public:
 	auto vramUsedBytes() const -> uint32_t;
 	auto vramTotalBytes() const -> uint32_t;
 
-	auto view() -> GameView& { return m_view; }
-	auto view() const -> const GameView& { return m_view; }
 	auto machineManifest() const -> const MachineManifest& { return *m_machineManifest; }
 	auto cartManifest() const -> const CartManifest*;
 	auto cartEntryPath() const -> const std::string*;
@@ -193,6 +189,7 @@ public:
 	VblankState vblank;
 	CartBootState cartBoot;
 	LuaScratchState luaScratch;
+	std::vector<std::string> luaOutputLines;
 
 private:
 	enum class PendingCall {
@@ -216,7 +213,6 @@ private:
 	RuntimeRomPackage* m_activeRomPackage = nullptr;
 	RuntimeRomPackage* m_systemRomPackage = nullptr;
 	RuntimeRomPackage* m_cartRomPackage = nullptr;
-	GameView& m_view;
 
 	// Runtime core
 	Memory m_memory;

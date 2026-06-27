@@ -9,13 +9,13 @@ import { RuntimeResumeSnapshot } from '../../machine/runtime/contracts';
 import { restoreRuntimeLuaSnapshot } from '../../machine/runtime/resume_snapshot';
 import { applyRuntimeMachineState } from '../../machine/runtime/machine_state';
 import { restoreVdpContextState } from '../../render/vdp/context_state';
+import { machineManager } from '../../core/machine_manager';
 import { clearRuntimeDebuggerPause } from './debug_pause';
 import { clearFaultSnapshot, resetHandledLuaErrors } from './fault_state';
 import { buildModuleProtoMap, toLuaModulePath } from '../../machine/program/loader';
 import { IRQ_IMG_DONE, IRQ_IMG_ERROR } from '../../machine/bus/io';
 import {
 	buildModuleChunks,
-	clearEditorCompletionCache,
 	refreshLuaHandlersForChunk,
 	replaceMapEntries,
 	resourceSourceForChunk,
@@ -43,13 +43,13 @@ export async function resumeFromSnapshot(runtime: Runtime, state: RuntimeResumeS
 	}
 	const snapshot: RuntimeResumeSnapshot = { ...state, luaRuntimeFailed: false };
 	runtime.interpreter.clearLastFaultEnvironment();
-	clearFaultSnapshot(runtime);
+	clearFaultSnapshot();
 
-	resetHandledLuaErrors(runtime);
+	resetHandledLuaErrors();
 	runtime.luaRuntimeFailed = false;
 	clearOverlayFrame();
 	applyRuntimeMachineState(runtime, snapshot.machineState);
-	restoreVdpContextState(runtime.machine.vdp, runtime.view);
+	restoreVdpContextState(runtime.machine.vdp, machineManager.view);
 	resumeLuaProgramState(runtime, snapshot, preserveSystemModules);
 }
 
@@ -65,7 +65,7 @@ export function resumeLuaProgramState(runtime: Runtime, snapshot: RuntimeResumeS
 		});
 		restoreRuntimeLuaSnapshot(runtime, snapshot);
 		refreshLuaModulesOnResume(runtime, binding);
-		clearEditorCompletionCache(runtime);
+		machineManager.ideState.editor.clearNativeMemberCompletionCache();
 		runHotResumeInit(runtime);
 	}
 	catch (error) {

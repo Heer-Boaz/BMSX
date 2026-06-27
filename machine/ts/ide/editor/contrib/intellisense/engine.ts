@@ -1,3 +1,4 @@
+import { machineManager } from '../../../../core/machine_manager';
 import type { LuaDefinitionInfo, LuaDefinitionKind, LuaSourceRange } from '../../../../lua/syntax/ast';
 import { LuaEnvironment } from '../../../../lua/environment';
 import { LuaLexer } from '../../../../lua/syntax/lexer';
@@ -1637,7 +1638,7 @@ export function resolveSnapshotExpression(runtime: Runtime, expression: string):
 	if (!parts || parts.length === 0) {
 		return null;
 	}
-	const snapshot = runtime.workbenchFaultState.lastCpuFaultSnapshot;
+	const snapshot = machineManager.faultState.lastCpuFaultSnapshot;
 	if (snapshot.length === 0) {
 		return null;
 	}
@@ -1701,8 +1702,8 @@ function resolveRuntimeLocalChainValue(
 	const cpu = runtime.machine.cpu;
 	// Use the fault snapshot when the fault overlay is active — by hover time, the crash
 	// frame has been popped from the live CPU stack, so we must use the saved registers.
-	const faultSnapshot = runtime.workbenchFaultState.faultSnapshot !== null
-		? runtime.workbenchFaultState.lastCpuFaultSnapshot
+	const faultSnapshot = machineManager.faultState.faultSnapshot !== null
+		? machineManager.faultState.lastCpuFaultSnapshot
 		: null;
 	const callStack = faultSnapshot ?? cpu.getCallStack();
 	if (callStack.length === 0) {
@@ -2450,7 +2451,7 @@ export function safeInspectLuaExpression(runtime: Runtime, expression: string, p
 		return inspectLuaExpression(runtime, expression, path, row, column, activeContext);
 	} catch (error) {
 		intellisenseUiState.inspectorRequestFailed = true;
-		const handled = tryShowLuaErrorOverlay(runtime, error);
+		const handled = tryShowLuaErrorOverlay(error);
 		if (!handled) {
 			const message = extractErrorMessage(error);
 			showEditorMessage(message, constants.COLOR_STATUS_ERROR, 3.2);

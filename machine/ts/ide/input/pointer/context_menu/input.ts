@@ -4,13 +4,12 @@ import type { PointerSnapshot } from '../../../common/models';
 import type { Runtime } from '../../../../machine/runtime/runtime';
 
 export function handleEditorContextMenuPointer(
-	runtime: Runtime,
 	snapshot: PointerSnapshot,
 	justPressed: boolean,
 	secondaryJustPressed: boolean,
 	playerInput: ReturnType<typeof machineManager.input.getPlayerInput>
 ): boolean {
-	const result = handleEditorContextMenuPointerSession(runtime, snapshot, justPressed, secondaryJustPressed);
+	const result = handleEditorContextMenuPointerSession(snapshot, justPressed, secondaryJustPressed);
 	if (result === CONTEXT_MENU_POINTER_IGNORED) {
 		return false;
 	}

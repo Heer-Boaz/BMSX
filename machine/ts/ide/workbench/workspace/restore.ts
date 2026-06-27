@@ -1,3 +1,4 @@
+import { machineManager } from '../../../core/machine_manager';
 import type { ResourceDescriptor } from '../../common/models';
 import { restoreBreakpointsFromPayload } from '../contrib/debugger/controller';
 import type { Runtime } from '../../../machine/runtime/runtime';
@@ -37,9 +38,9 @@ export async function restoreWorkspaceSessionFromDisk(runtime: Runtime): Promise
 
 export async function applyWorkspaceAutosavePayload(runtime: Runtime, payload: WorkspaceAutosavePayload): Promise<void> {
 	clearCodeTabContexts();
-	initializeTabs(createEntryTabContext(runtime), runtime.editor.resourcePanel);
+	initializeTabs(createEntryTabContext(runtime), machineManager.ideState.editor.resourcePanel);
 	if (payload.fontVariant) {
-		workbenchMode.setActiveIdeFontVariant(runtime, payload.fontVariant);
+		workbenchMode.setActiveIdeFontVariant(payload.fontVariant);
 	}
 	await hydrateDirtyFiles(runtime, payload.dirtyFiles);
 	restoreBreakpointsFromPayload(runtime, payload.breakpoints);

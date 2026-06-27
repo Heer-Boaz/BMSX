@@ -1,30 +1,9 @@
+import { setOverlayResolutionMode, type RenderTargetSnapshot } from '../runtime/state';
 import { machineManager } from '../../core/machine_manager';
 import { Input } from '../../input/manager';
 import type { Runtime } from '../../machine/runtime/runtime';
 
-type RenderTargetVec2 = { x: number; y: number };
-type RenderTargetSnapshot = {
-	viewportSize: RenderTargetVec2;
-	canvasSize: RenderTargetVec2;
-	offscreenSize: RenderTargetVec2;
-};
-type TargetOwner = 'editor';
-type RenderTargetState = {
-	baseline?: RenderTargetSnapshot;
-	stack: TargetOwner[];
-};
-
-const EDITOR_TARGET: RenderTargetVec2 = { x: 384, y: 288 };
-const RT_STATE = new WeakMap<Runtime, RenderTargetState>();
-
-function getRenderTargetState(runtime: Runtime): RenderTargetState {
-	let state = RT_STATE.get(runtime);
-	if (!state) {
-		state = { stack: [] };
-		RT_STATE.set(runtime, state);
-	}
-	return state;
-}
+const EDITOR_TARGET = { x: 384, y: 288 };
 
 function captureCurrentTargets(): RenderTargetSnapshot {
 	const view = machineManager.view;
@@ -35,76 +14,59 @@ function captureCurrentTargets(): RenderTargetSnapshot {
 	};
 }
 
-function applyFixedEditorTargets(runtime: Runtime): void {
+function applyFixedEditorTargets(): void {
 	machineManager.view.configureRenderTargets({
 		viewportSize: EDITOR_TARGET,
 		canvasSize: EDITOR_TARGET,
 		offscreenSize: EDITOR_TARGET,
 	});
-	runtime.overlayResolutionMode = 'viewport';
+	setOverlayResolutionMode(machineManager.ideState, machineManager.view, 'viewport');
 }
 
-function restoreTargets(runtime: Runtime, snapshot: RenderTargetSnapshot): void {
+function restoreTargets(snapshot: RenderTargetSnapshot): void {
 	machineManager.view.configureRenderTargets({
 		viewportSize: snapshot.viewportSize,
 		canvasSize: snapshot.canvasSize,
 		offscreenSize: snapshot.offscreenSize,
 	});
-	runtime.overlayResolutionMode = 'viewport';
+	setOverlayResolutionMode(machineManager.ideState, machineManager.view, 'viewport');
 }
 
-function pushRenderTargetOwner(runtime: Runtime, owner: TargetOwner): void {
-	const state = getRenderTargetState(runtime);
-	if (!state.baseline) {
-		state.baseline = captureCurrentTargets();
-	}
-	if (state.stack.includes(owner)) {
+function enterEditorRenderTargets(): void {
+	const state = machineManager.ideState;
+	if (state.editorRenderTargetBaseline !== null) {
 		return;
 	}
-	state.stack.push(owner);
-	switch (owner) {
-		case 'editor':
-			applyFixedEditorTargets(runtime);
-			return;
-	}
+	state.editorRenderTargetBaseline = captureCurrentTargets();
+	applyFixedEditorTargets();
 }
 
-function popRenderTargetOwner(runtime: Runtime, owner: TargetOwner): void {
-	const state = RT_STATE.get(runtime);
-	if (!state) {
+function leaveEditorRenderTargets(): void {
+	const state = machineManager.ideState;
+	const snapshot = state.editorRenderTargetBaseline;
+	if (snapshot === null) {
 		return;
 	}
-	for (let i = state.stack.length - 1; i >= 0; i -= 1) {
-		if (state.stack[i] === owner) {
-			state.stack.splice(i, 1);
-		}
-	}
-	if (state.stack.length === 0) {
-		restoreTargets(runtime, state.baseline!);
-		RT_STATE.delete(runtime);
-		return;
-	}
-	const top = state.stack[state.stack.length - 1];
-	switch (top) {
-		case 'editor':
-			applyFixedEditorTargets(runtime);
-			return;
-	}
+	restoreTargets(snapshot);
+	state.editorRenderTargetBaseline = null;
 }
 
-export function editorBlocksRuntimePipeline(runtime: Runtime): boolean {
-	return runtime.editor.blocksRuntimePipeline;
+export function editorBlocksRuntimePipeline(): boolean {
+	const state = machineManager.ideState;
+	return state.editor.blocksRuntimePipeline;
 }
 
-export function isManagedOverlayEditorActive(runtime: Runtime): boolean {
-	if (!editorBlocksRuntimePipeline(runtime)) {
+export function isManagedOverlayEditorActive(): boolean {
+	const state = machineManager.ideState;
+	if (!state.editor.blocksRuntimePipeline) {
 		return false;
 	}
-	return runtime.editor.isActive;
+	return state.editor.isActive;
 }
 
 export function updateGamePipelineExts(runtime: Runtime): void {
-	const overlayActive = runtime.terminal.isActive || isManagedOverlayEditorActive(runtime);
+	const state = machineManager.ideState;
+	const overlayActive = state.terminal.isActive || (state.editor.blocksRuntimePipeline && state.editor.isActive);
 	runtime.executionOverlayActive = overlayActive;
 	machineManager.view.presentWorkbenchFrameBufferTexture = overlayActive;
 	Input.instance.setGameplayCaptureEnabled(!overlayActive);
@@ -123,7 +85,8 @@ function updateOverlayAudioSuspension(runtime: Runtime): void {
 }
 
 export function toggleTerminalMode(runtime: Runtime): void {
-	if (runtime.terminal.isActive) {
+	const state = machineManager.ideState;
+	if (state.terminal.isActive) {
 		deactivateTerminalMode(runtime);
 		return;
 	}
@@ -131,21 +94,25 @@ export function toggleTerminalMode(runtime: Runtime): void {
 }
 
 export function activateTerminalMode(runtime: Runtime): void {
-	if (runtime.terminal.isActive) {
+	const state = machineManager.ideState;
+	const terminal = state.terminal;
+	if (terminal.isActive) {
 		return;
 	}
 	deactivateEditor(runtime);
-	runtime.terminal.activate();
+	terminal.activate();
 	updateGamePipelineExts(runtime);
 }
 
 export function deactivateTerminalMode(runtime: Runtime): void {
-	if (!runtime.terminal.isActive) {
+	const state = machineManager.ideState;
+	const terminal = state.terminal;
+	if (!terminal.isActive) {
 		return;
 	}
-	runtime.terminal.deactivate();
-	if (runtime.overlayDrawFrameOwner === 'terminal') {
-		runtime.overlayDrawFrameOwner = null;
+	terminal.deactivate();
+	if (state.overlayDrawFrameOwner === 'terminal') {
+		state.overlayDrawFrameOwner = null;
 	}
 	updateGamePipelineExts(runtime);
 }
@@ -155,7 +122,8 @@ function isOverlayActive(runtime: Runtime): boolean {
 }
 
 export function toggleEditor(runtime: Runtime): void {
-	if (runtime.editor.isActive) {
+	const state = machineManager.ideState;
+	if (state.editor.isActive) {
 		deactivateEditor(runtime);
 		return;
 	}
@@ -166,13 +134,14 @@ export function activateEditor(runtime: Runtime): void {
 	if (!runtime.hasProgramSymbols) {
 		return;
 	}
-	if (runtime.terminal.isActive) {
-		runtime.terminal.deactivate();
+	const state = machineManager.ideState;
+	if (state.terminal.isActive) {
+		state.terminal.deactivate();
 	}
-	const editor = runtime.editor;
+	const editor = state.editor;
 	const wasActive = editor.isActive;
 	if (!wasActive) {
-		pushRenderTargetOwner(runtime, 'editor');
+		enterEditorRenderTargets();
 	}
 	try {
 		if (!editor.isActive) {
@@ -180,24 +149,25 @@ export function activateEditor(runtime: Runtime): void {
 		}
 	} catch (error) {
 		if (!wasActive) {
-			popRenderTargetOwner(runtime, 'editor');
+			leaveEditorRenderTargets();
 		}
 		throw error;
 	}
 	if (!editor.isActive && !wasActive) {
-		popRenderTargetOwner(runtime, 'editor');
+		leaveEditorRenderTargets();
 	}
 	updateGamePipelineExts(runtime);
 }
 
 export function deactivateEditor(runtime: Runtime): void {
-	const editor = runtime.editor;
+	const state = machineManager.ideState;
+	const editor = state.editor;
 	if (editor.isActive) {
 		editor.deactivate();
 	}
-	if (runtime.overlayDrawFrameOwner === 'ide') {
-		runtime.overlayDrawFrameOwner = null;
+	if (state.overlayDrawFrameOwner === 'ide') {
+		state.overlayDrawFrameOwner = null;
 	}
-	popRenderTargetOwner(runtime, 'editor');
+	leaveEditorRenderTargets();
 	updateGamePipelineExts(runtime);
 }

@@ -17,9 +17,8 @@ import { editorCaretState } from '../../editor/ui/view/caret/state';
 import { intellisenseUiState } from '../../editor/contrib/intellisense/ui_state';
 import { editorViewState } from '../../editor/ui/view/state';
 import { resourceSearchState } from '../../workbench/contrib/resources/widget_state';
-import type { Runtime } from '../../../machine/runtime/runtime';
 
-export function handleEditorWheelInput(runtime: Runtime): void {
+export function handleEditorWheelInput(): void {
 	const playerInput = machineManager.input.getPlayerInput(1);
 	const wheelState = playerInput.getRawButtonState('pointer_wheel', 'pointer');
 	if (wheelState.consumed) {
@@ -40,13 +39,13 @@ export function handleEditorWheelInput(runtime: Runtime): void {
 	if (handleResourceSearchWheel(direction, steps, activePointer, playerInput)) {
 		return;
 	}
-	if (handleResourcePanelWheel(runtime.editor.resourcePanel, direction, steps, activePointer, playerInput)) {
+	if (handleResourcePanelWheel(machineManager.ideState.editor.resourcePanel, direction, steps, activePointer, playerInput)) {
 		return;
 	}
 	if (handleProblemsPanelWheel(direction, steps, activePointer, playerInput)) {
 		return;
 	}
-	if (runtime.editor.completion.handlePointerWheel(direction, steps, activePointer !== null ? { x: activePointer.viewportX, y: activePointer.viewportY } : null)) {
+	if (machineManager.ideState.editor.completion.handlePointerWheel(direction, steps, activePointer !== null ? { x: activePointer.viewportX, y: activePointer.viewportY } : null)) {
 		playerInput.consumeRawButton('pointer_wheel', 'pointer');
 		return;
 	}

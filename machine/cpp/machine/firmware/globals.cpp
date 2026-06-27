@@ -1487,9 +1487,9 @@ void Runtime::setupBuiltins() {
 		if (stampPrint) {
 			const auto now = std::chrono::steady_clock::now().time_since_epoch();
 			const auto ms = std::chrono::duration_cast<std::chrono::milliseconds>(now).count();
-			std::cerr << "[rtc_ms=" << ms << "] " << text << std::endl;
+			this->luaOutputLines.push_back("[rtc_ms=" + std::to_string(ms) + "] " + text);
 		} else {
-			std::cerr << text << std::endl;
+			this->luaOutputLines.push_back(text);
 		}
 		(void)out;
 	});

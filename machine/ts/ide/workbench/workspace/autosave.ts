@@ -1,5 +1,4 @@
 import { machineManager } from '../../../core/machine_manager';
-import type { Runtime } from '../../../machine/runtime/runtime';
 import * as luaPipeline from '../../runtime/lua_pipeline';
 import { workspaceSourceCache } from '../../workspace/cache';
 import { resetNavigationHistoryState } from '../../navigation/navigation_history';
@@ -20,6 +19,7 @@ import {
 	resetWorkspaceContextToCleanSource,
 } from './context_snapshot';
 import type { DirtyContextEntry, PersistedDirtyEntry, SerializedDescriptor, WorkspaceAutosavePayload } from './models';
+import type { Runtime } from '../../../machine/runtime/runtime';
 
 export function collectDirtyContextEntries(): Map<string, DirtyContextEntry> {
 	if (!hasWorkspaceStorage()) {
@@ -54,7 +54,7 @@ export function collectDirtyContextEntries(): Map<string, DirtyContextEntry> {
 	return entries;
 }
 
-export function buildWorkspaceAutosavePayload(runtime: Runtime, entries: Map<string, DirtyContextEntry>): WorkspaceAutosavePayload {
+export function buildWorkspaceAutosavePayload(entries: Map<string, DirtyContextEntry>): WorkspaceAutosavePayload {
 	if (!workspaceState.autosaveEnabled) {
 		return null;
 	}
@@ -75,8 +75,8 @@ export function buildWorkspaceAutosavePayload(runtime: Runtime, entries: Map<str
 		savedAt: machineManager.platform.clock.dateNow(),
 		dirtyFiles,
 		breakpoints: serializeBreakpoints(),
-		fontVariant: runtime.activeIdeFontVariant,
-		overlayResolutionMode: runtime.overlayResolutionMode,
+		fontVariant: machineManager.ideState.activeFontVariant,
+		overlayResolutionMode: machineManager.ideState.overlayResolutionMode,
 	};
 }
 

@@ -1,3 +1,4 @@
+import { machineManager } from '../../../../core/machine_manager';
 import type { PointerSnapshot } from '../../../common/models';
 import type { Runtime } from '../../../../machine/runtime/runtime';
 import { handleCreateResourcePointer } from '../create_resource/pointer';
@@ -8,7 +9,7 @@ import { handleLineJumpPointer } from '../line_jump/pointer';
 import { handleSearchPointer } from '../search/pointer';
 
 export function handleQuickInputPointer(runtime: Runtime, snapshot: PointerSnapshot, justPressed: boolean): boolean {
-	const resourcePanel = runtime.editor.resourcePanel;
+	const resourcePanel = machineManager.ideState.editor.resourcePanel;
 	if (handleCreateResourcePointer(resourcePanel, snapshot, justPressed)) {
 		return true;
 	}

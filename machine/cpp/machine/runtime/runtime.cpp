@@ -21,15 +21,13 @@ constexpr std::array<u8, CART_ROM_HEADER_SIZE> CART_ROM_EMPTY_HEADER = {};
 Runtime::Runtime(
 	const RuntimeOptions& options,
 	RuntimeInputSource& input,
-	MicrotaskQueue& microtasks,
-	GameView& view
+	MicrotaskQueue& microtasks
 )
 	: timing(options.ufpsScaled, options.cpuHz, options.cycleBudgetPerFrame)
 	, cartBoot(*this)
 	, m_systemRomBytes(options.systemRomBytes)
 	, m_cartRomBytes(options.cartRomBytes)
 	, m_machineManifest(options.machineManifest)
-	, m_view(view)
 	, m_memory(MemoryInit{
 		{ options.systemRomBytes.data, options.systemRomBytes.size },
 		options.cartRomBytes.size > 0

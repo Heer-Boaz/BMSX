@@ -1,3 +1,4 @@
+import { machineManager } from '../../../../../core/machine_manager';
 import * as constants from '../../../../common/constants';
 import { setFieldText } from '../../../../editor/ui/inline/text_field';
 import { getActiveCodeTabContext } from '../../../ui/code_tab/contexts';
@@ -14,7 +15,7 @@ export function openCreateResourcePrompt(runtime: Runtime): void {
 	if (createResourceState.working) {
 		return;
 	}
-	runtime.editor.resourcePanel.setFocused(false);
+	machineManager.ideState.editor.resourcePanel.setFocused(false);
 	renameController.cancel();
 	let defaultPath = createResourceState.path.length === 0
 		? determineCreateResourceDefaultPath(runtime)

@@ -6,7 +6,7 @@ import { buildMarshalContext, extendMarshalContext, toNativeValue, toRuntimeValu
 import { advanceRuntimeTime, runDueRuntimeTimers } from '../runtime/cpu_executor';
 import type { Runtime } from '../runtime/runtime';
 import { appendLuaChunkToProgram } from './compiler';
-import { resolveRuntimeProgramRelocations } from './linker';
+import { resolveRuntimeProgramRelocations, resolveRuntimeProgramValueRelocations } from './linker';
 
 function callLuaFunctionPrepared(runtime: Runtime, fn: LuaFunctionValue, luaArgs: ReadonlyArray<LuaValue>): unknown[] {
 	const results = fn.call(luaArgs);
@@ -49,6 +49,18 @@ export function runHostEvalChunk(runtime: Runtime, source: string): Value[] {
 		optLevel: runtime.realtimeCompileOptLevel,
 		entrySource: source,
 	});
+	resolveRuntimeProgramValueRelocations(
+		compiled.program,
+		compiled.constValueRelocs,
+		compiled.data.symbols,
+		compiled.data.bytes.byteLength,
+		runtime.programDataBaseAddress,
+		compiled.bss.symbols,
+		compiled.bss.byteCount,
+		runtime.programBssBaseAddress,
+		compiled.rodataSymbols,
+		compiled.rodataBytes.byteLength,
+	);
 	resolveRuntimeProgramRelocations(compiled.program, compiled.metadata, compiled.constRelocs);
 	runtime.machine.cpu.setProgram(compiled.program, compiled.metadata);
 	if (runtime.programMetadata) {

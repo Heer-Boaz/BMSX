@@ -76,6 +76,7 @@ export const RUNTIME_SAVE_STATE_PROP_NAMES = [
 	'protoIndex',
 	'queuedTickCompletions',
 	'ram',
+	'randomSeed',
 	'registers',
 	'remaining',
 	'returnBase',

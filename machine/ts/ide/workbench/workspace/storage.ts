@@ -110,7 +110,7 @@ export async function runWorkspaceAutosaveTick(runtime: Runtime): Promise<void> 
 	workspaceState.autosaveRunning = true;
 	try {
 		const dirtyEntries = collectDirtyContextEntries();
-		const payload = buildWorkspaceAutosavePayload(runtime, dirtyEntries);
+		const payload = buildWorkspaceAutosavePayload(dirtyEntries);
 		await persistDirtyContextEntries(dirtyEntries);
 		if (payload) {
 			const signature = buildWorkspaceAutosaveSignature(payload);

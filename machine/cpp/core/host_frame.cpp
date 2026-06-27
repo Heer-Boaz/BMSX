@@ -11,6 +11,13 @@
 namespace bmsx {
 namespace {
 constexpr double MAX_FRAME_DELTA_MS = 250.0;
+
+void flushRuntimeLuaOutput(MachineManager& machineManager, Runtime& runtime) {
+	for (const std::string& line : runtime.luaOutputLines) {
+		machineManager.log(LogLevel::Info, "%s", line.c_str());
+	}
+	runtime.luaOutputLines.clear();
+}
 }
 
 bool MachineManager::runHostFrame(
@@ -22,6 +29,7 @@ bool MachineManager::runHostFrame(
 	if (!acceptHostFrame(deltaTime)) {
 		return false;
 	}
+	bool rendered = false;
 	try {
 		const auto tickStart = std::chrono::steady_clock::now();
 		m_screen.recordHostFrame();
@@ -39,6 +47,7 @@ bool MachineManager::runHostFrame(
 
 		Input::instance().pollInput();
 		const bool hostMenuActive = hostOverlayMenu().tickInput(*this);
+		bool frameReady = true;
 
 		m_screen.clearPresentation();
 		if (!platformPaused && !hostMenuActive) {
@@ -49,12 +58,14 @@ bool MachineManager::runHostFrame(
 				runtime.frameScheduler.clearQueuedTime();
 				if (!rebootLoadedRom()) {
 					runtime.handleLuaError("Runtime fault: reboot to bootrom failed.");
-					return false;
+					frameReady = false;
 				}
 			}
-			RuntimeFrameStepResult stepResult;
-			runRuntimeFrameStepInto(stepResult, runtime, hostDeltaMs);
-			m_screen.syncAfterRuntimeUpdate(runtime, stepResult.previousTickSequence);
+			if (frameReady) {
+				RuntimeFrameStepResult stepResult;
+				runRuntimeFrameStepInto(stepResult, runtime, hostDeltaMs);
+				m_screen.syncAfterRuntimeUpdate(runtime, stepResult.previousTickSequence);
+			}
 		} else {
 			runtime.frameScheduler.clearQueuedTime();
 		}
@@ -64,18 +75,20 @@ bool MachineManager::runHostFrame(
 
 		m_last_tick_timing.totalMs = to_ms(std::chrono::steady_clock::now() - tickStart);
 
-		if (hostMenuActive && m_view) {
-			hostOverlayMenu().queueRenderCommands(*this, *m_view);
-		} else {
-			const bool hostOverlayQueued = m_view && hostOverlayMenu().queueFrameOverlayCommands(*this, *m_view);
-			if (hostOverlayQueued) {
+		if (frameReady) {
+			if (hostMenuActive && m_view) {
+				hostOverlayMenu().queueRenderCommands(*this, *m_view);
+			} else {
+				const bool hostOverlayQueued = m_view && hostOverlayMenu().queueFrameOverlayCommands(*this, *m_view);
+				if (hostOverlayQueued) {
+					m_screen.requestHeldPresentation();
+				}
+			}
+			if (hostMenuActive) {
 				m_screen.requestHeldPresentation();
 			}
+			rendered = m_screen.render(*this, runtime, platformPaused);
 		}
-		if (hostMenuActive) {
-			m_screen.requestHeldPresentation();
-		}
-		return m_screen.render(*this, runtime, platformPaused);
 	} catch (const std::exception& e) {
 		runtime.frameLoop.abandonFrameState(runtime);
 		runtime.handleLuaError(e.what());
@@ -83,7 +96,8 @@ bool MachineManager::runHostFrame(
 		runtime.frameLoop.abandonFrameState(runtime);
 		runtime.handleLuaError("Unhandled host frame exception.");
 	}
-	return false;
+	flushRuntimeLuaOutput(*this, runtime);
+	return rendered;
 }
 
 } // namespace bmsx

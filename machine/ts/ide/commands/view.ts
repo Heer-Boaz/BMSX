@@ -1,7 +1,7 @@
+import { machineManager } from '../../core/machine_manager';
 import { toggleProblemsPanel } from '../workbench/contrib/problems/panel/controller';
 import { toggleWordWrap } from '../editor/ui/view/view';
 import type { EditorCommandId, EditorViewCommandId } from '../common/commands';
-import type { Runtime } from '../../machine/runtime/runtime';
 
 export function isEditorViewCommand(command: EditorCommandId): command is EditorViewCommandId {
 	switch (command) {
@@ -15,16 +15,16 @@ export function isEditorViewCommand(command: EditorCommandId): command is Editor
 	}
 }
 
-export function executeEditorViewCommand(runtime: Runtime, command: EditorViewCommandId): void {
+export function executeEditorViewCommand(command: EditorViewCommandId): void {
 	switch (command) {
 		case 'resources':
-			runtime.editor.resourcePanel.togglePanel();
+			machineManager.ideState.editor.resourcePanel.togglePanel();
 			return;
 		case 'problems':
 			toggleProblemsPanel();
 			return;
 		case 'filter':
-			runtime.editor.resourcePanel.toggleFilterMode();
+			machineManager.ideState.editor.resourcePanel.toggleFilterMode();
 			return;
 		case 'wrap':
 			toggleWordWrap();

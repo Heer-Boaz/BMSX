@@ -1,11 +1,11 @@
+import { machineManager } from '../../../core/machine_manager';
 import { point_in_rect } from '../../../common/rect';
 import type { PointerSnapshot } from '../../common/models';
 import { clearHoverTooltip, clearGotoHoverHighlight } from '../../editor/contrib/intellisense/engine';
-import type { Runtime } from '../../../machine/runtime/runtime';
 import { editorPointerState, resetPointerClickTracking } from './state';
 
-export function handleResourcePanelPointer(runtime: Runtime, snapshot: PointerSnapshot, justPressed: boolean): boolean {
-	const resourcePanel = runtime.editor.resourcePanel;
+export function handleResourcePanelPointer(snapshot: PointerSnapshot, justPressed: boolean): boolean {
+	const resourcePanel = machineManager.ideState.editor.resourcePanel;
 	const panelBounds = resourcePanel.getBounds();
 	const pointerInPanel = resourcePanel.isVisible()
 		&& panelBounds !== null
@@ -35,7 +35,7 @@ export function handleResourcePanelPointer(runtime: Runtime, snapshot: PointerSn
 			resourcePanel.setSelectionIndex(hoverIndex);
 		}
 			if (justPressed) {
-				openResourcePanelSelection(runtime, hoverIndex, snapshot.viewportX);
+				openResourcePanelSelection(hoverIndex, snapshot.viewportX);
 			}
 	}
 	if (!snapshot.primaryPressed && hoverIndex === -1) {
@@ -47,8 +47,8 @@ export function handleResourcePanelPointer(runtime: Runtime, snapshot: PointerSn
 	return true;
 }
 
-function openResourcePanelSelection(runtime: Runtime, hoverIndex: number, pointerX: number): void {
-	const resourcePanel = runtime.editor.resourcePanel;
+function openResourcePanelSelection(hoverIndex: number, pointerX: number): void {
+	const resourcePanel = machineManager.ideState.editor.resourcePanel;
 	const mode = resourcePanel.getMode();
 	if (mode === 'command') {
 		if (resourcePanel.isCallHierarchyMarkerHit(hoverIndex, pointerX)) {

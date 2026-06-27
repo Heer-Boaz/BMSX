@@ -1,9 +1,9 @@
+import { machineManager } from '../../../../../../core/machine_manager';
 import { rebuildRuntimeErrorOverlayView } from '../../../../contrib/runtime_error/overlay';
 import { RuntimeErrorOverlay } from '../../../../../common/models';
 import { RuntimeErrorOverlayClickResult } from '../../../../render/error_overlay';
-import type { Runtime } from '../../../../../../machine/runtime/runtime';
 
-export function handleRuntimeErrorOverlayPointerClick(runtime: Runtime, overlay: RuntimeErrorOverlay, hoverLine: number): void {
+export function handleRuntimeErrorOverlayPointerClick(overlay: RuntimeErrorOverlay, hoverLine: number): void {
 	const clickResult = evaluateRuntimeErrorOverlayClick(overlay, hoverLine);
 	switch (clickResult.kind) {
 		case 'expand':
@@ -14,7 +14,7 @@ export function handleRuntimeErrorOverlayPointerClick(runtime: Runtime, overlay:
 			return;
 		case 'navigate':
 			setRuntimeErrorOverlayExpanded(overlay, false);
-			runtime.editor.debugger.navigateToRuntimeErrorFrameTarget(clickResult.frame);
+			machineManager.ideState.editor.debugger.navigateToRuntimeErrorFrameTarget(clickResult.frame);
 			return;
 		case 'noop':
 		default:

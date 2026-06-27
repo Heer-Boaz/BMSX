@@ -333,6 +333,11 @@ test('runtime save-state codec preserves interrupt frame metadata', () => {
 	assert.deepEqual(decoded.cpuState.frames, state.cpuState.frames);
 });
 
+test('runtime save-state property table preserves the retired randomSeed slot', () => {
+	const registersIndex = RUNTIME_SAVE_STATE_PROP_NAMES.indexOf('registers');
+	assert.equal(RUNTIME_SAVE_STATE_PROP_NAMES[registersIndex - 1], 'randomSeed');
+});
+
 test('runtime save-state bytes start at the current property-table payload', () => {
 	const encoded = encodeRuntimeSaveState(createRuntimeSaveState());
 

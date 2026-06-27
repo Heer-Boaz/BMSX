@@ -147,6 +147,28 @@ const resolveStorageSymbolAddress = (
 	throw new Error(`[ProgramLinker] Missing ${sectionName} symbol '${symbolName}'.`);
 };
 
+const resolveConstValueRelocation = (
+	reloc: ProgramConstValueReloc,
+	dataSymbols: ReadonlyArray<ProgramDataSymbol>,
+	dataBaseAddress: number,
+	dataLmaAddress: number,
+	bssSymbols: ReadonlyArray<ProgramBssSymbol>,
+	bssBaseAddress: number,
+	rodataSymbols: ReadonlyArray<ProgramRodataSymbol>,
+	rodataBaseAddress: number,
+): number => {
+	switch (reloc.kind) {
+		case 'data_addr':
+			return resolveStorageSymbolAddress(dataSymbols, dataBaseAddress, reloc.symbol, reloc.addend, '.data');
+		case 'data_lma_addr':
+			return resolveStorageSymbolAddress(dataSymbols, dataLmaAddress, reloc.symbol, reloc.addend, '.data');
+		case 'bss_addr':
+			return resolveStorageSymbolAddress(bssSymbols, bssBaseAddress, reloc.symbol, reloc.addend, '.bss');
+		case 'rodata_addr':
+			return resolveStorageSymbolAddress(rodataSymbols, rodataBaseAddress, reloc.symbol, reloc.addend, '.rodata');
+	}
+};
+
 const resolveConstValueRelocations = (
 	constPool: ReadonlyArray<EncodedValue>,
 	relocs: ReadonlyArray<ProgramConstValueReloc>,
@@ -164,20 +186,7 @@ const resolveConstValueRelocations = (
 	const out = constPool.slice();
 	for (let index = 0; index < relocs.length; index += 1) {
 		const reloc = relocs[index];
-		switch (reloc.kind) {
-			case 'data_addr':
-				out[reloc.constIndex] = resolveStorageSymbolAddress(dataSymbols, dataBaseAddress, reloc.symbol, reloc.addend, '.data');
-				break;
-			case 'data_lma_addr':
-				out[reloc.constIndex] = resolveStorageSymbolAddress(dataSymbols, dataLmaAddress, reloc.symbol, reloc.addend, '.data');
-				break;
-			case 'bss_addr':
-				out[reloc.constIndex] = resolveStorageSymbolAddress(bssSymbols, bssBaseAddress, reloc.symbol, reloc.addend, '.bss');
-				break;
-			case 'rodata_addr':
-				out[reloc.constIndex] = resolveStorageSymbolAddress(rodataSymbols, rodataBaseAddress, reloc.symbol, reloc.addend, '.rodata');
-				break;
-		}
+		out[reloc.constIndex] = resolveConstValueRelocation(reloc, dataSymbols, dataBaseAddress, dataLmaAddress, bssSymbols, bssBaseAddress, rodataSymbols, rodataBaseAddress);
 	}
 	return out;
 };
@@ -369,6 +378,29 @@ export const resolveRuntimeProgramRelocations = (
 		relocs,
 		metadata,
 	);
+};
+
+export const resolveRuntimeProgramValueRelocations = (
+	program: Program,
+	relocs: ReadonlyArray<ProgramConstValueReloc>,
+	dataSymbols: ReadonlyArray<ProgramDataSymbol>,
+	dataByteCount: number,
+	dataBaseAddress: number,
+	bssSymbols: ReadonlyArray<ProgramBssSymbol>,
+	bssByteCount: number,
+	bssBaseAddress: number,
+	rodataSymbols: ReadonlyArray<ProgramRodataSymbol>,
+	rodataByteCount: number,
+): void => {
+	assertStaticRamFits(dataBaseAddress, dataByteCount);
+	assertStaticRamFits(bssBaseAddress, bssByteCount);
+	assertProgramRomFits(program.programRomTextByteLength + rodataByteCount + dataByteCount);
+	const rodataBaseAddress = PROGRAM_ROM_BASE + program.programRomTextByteLength;
+	const dataLmaAddress = rodataBaseAddress + rodataByteCount;
+	for (let index = 0; index < relocs.length; index += 1) {
+		const reloc = relocs[index];
+		program.constPool[reloc.constIndex] = resolveConstValueRelocation(reloc, dataSymbols, dataBaseAddress, dataLmaAddress, bssSymbols, bssBaseAddress, rodataSymbols, rodataBaseAddress);
+	}
 };
 
 export const inflateExecutableProgramImage = (

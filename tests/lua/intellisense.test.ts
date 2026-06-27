@@ -10,6 +10,8 @@ import { LuaParser } from '../../machine/ts/lua/syntax/parser';
 import { CPU, RunResult, StringValue } from '../../machine/ts/machine/cpu/cpu';
 import { Memory } from '../../machine/ts/machine/memory/memory';
 import { compileLuaChunkToProgram } from '../../machine/ts/machine/program/compiler';
+import { machineManager } from '../../machine/ts/core/machine_manager';
+import { createRuntimeFaultState } from '../../machine/ts/ide/runtime/fault_state';
 
 const semanticFrontendModulePromise = import('../../machine/ts/lua/semantic/frontend');
 const semanticDiagnosticsModulePromise = import('../../machine/ts/lua/semantic/diagnostics');
@@ -115,8 +117,7 @@ function runtimeWithPausedCpuLocal(source: string) {
 		update_timestamp: 0,
 		base_update_timestamp: 0,
 	};
-	return {
-		runtime: {
+	const runtime = {
 			programMetadata: compiled.metadata,
 			machine: { cpu },
 			interpreter: {
@@ -127,7 +128,6 @@ function runtimeWithPausedCpuLocal(source: string) {
 					throw new Error('unexpected native value in intellisense live-local test');
 				},
 			},
-			workbenchFaultState: { faultSnapshot: null, lastCpuFaultSnapshot: [] },
 			luaChunkEnvironmentsByPath: new Map(),
 			currentPath: null,
 			luaBuiltinMetadata: new Map(),
@@ -165,7 +165,10 @@ function runtimeWithPausedCpuLocal(source: string) {
 			internString(value: string) {
 				return StringValue.get(cpu.stringPool.intern(value));
 			},
-		} as any,
+		} as any;
+	machineManager.faultState = createRuntimeFaultState();
+	return {
+		runtime,
 		sourcePath,
 	};
 }

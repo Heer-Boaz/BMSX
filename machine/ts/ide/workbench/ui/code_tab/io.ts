@@ -110,7 +110,7 @@ export async function save(runtime: Runtime): Promise<void> {
 			showEditorWarningBanner(`Saved, but runtime apply failed: ${applyMessage}`, 5.0);
 		}
 	} catch (error) {
-		if (context.mode === 'lua' && tryShowLuaErrorOverlay(runtime, error)) {
+		if (context.mode === 'lua' && tryShowLuaErrorOverlay(error)) {
 			return;
 		}
 		showEditorMessage(extractErrorMessage(error), constants.COLOR_STATUS_ERROR, 4.0);

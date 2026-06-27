@@ -1,3 +1,4 @@
+import { machineManager } from '../../../../../core/machine_manager';
 import type { ResourceBrowserItem } from '../../../../common/models';
 import * as constants from '../../../../common/constants';
 import { showEditorMessage } from '../../../../common/feedback_state';
@@ -33,7 +34,7 @@ export function openSelectedResourcePanelItem(runtime: Runtime, items: readonly 
 	}
 	if (item?.descriptor?.type === 'atlas') {
 		showEditorMessage('Atlas resources cannot be previewed in the IDE.', constants.COLOR_STATUS_WARNING, 3.2);
-		releaseResourcePanelFocus(runtime.editor.resourcePanel);
+		releaseResourcePanelFocus(machineManager.ideState.editor.resourcePanel);
 	}
 }
 

@@ -1871,7 +1871,7 @@ export function seedLuaGlobals(runtime: Runtime): void {
 			parts.push(valueToString(args[index], runtime.machine.cpu.stringPool));
 		}
 		const text = parts.length === 0 ? '' : parts.join('\t');
-		runtime.terminal.appendStdout(text);
+		runtime.luaOutputLines.push(text);
 		// eslint-disable-next-line no-console
 		console.log(text);
 		out.length = 0;

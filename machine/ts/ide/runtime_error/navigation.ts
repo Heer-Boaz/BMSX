@@ -1,3 +1,4 @@
+import { machineManager } from '../../core/machine_manager';
 import { centerCursorVertically, setCursorPosition } from '../editor/ui/view/caret/caret';
 import { beginNavigationCapture, completeNavigation } from '../navigation/navigation_history';
 import { activateCodeTab, isTabActive, setActiveTab } from '../workbench/ui/tabs';
@@ -19,7 +20,6 @@ import {
 	setActiveRuntimeErrorOverlay,
 	setExecutionStopHighlight as setEditorExecutionStopHighlight,
 } from '../editor/contrib/runtime_error/navigation';
-import type { Runtime } from '../../machine/runtime/runtime';
 
 type RuntimeErrorOverlayTarget = { context: CodeTabContext; overlay: RuntimeErrorOverlay };
 
@@ -142,7 +142,7 @@ export function syncRuntimeErrorOverlayFromContext(context: CodeTabContext): voi
 	clearExecutionStopHighlight();
 }
 
-export function tryShowLuaErrorOverlay(runtime: Runtime, error: unknown): boolean {
+export function tryShowLuaErrorOverlay(error: unknown): boolean {
 	let candidate: { line?: unknown; column?: unknown; path?: unknown; message?: unknown };
 	if (typeof error === 'string') {
 		candidate = { message: error };
@@ -167,7 +167,7 @@ export function tryShowLuaErrorOverlay(runtime: Runtime, error: unknown): boolea
 	const safeLine = hasLine ? rawLine : 0;
 	const safeColumn = hasColumn ? rawColumn : 0;
 	const baseMessage = messageText ?? 'Unprintable error';
-	runtime.editor.showRuntimeErrorInChunk(path, safeLine, safeColumn, baseMessage);
+	machineManager.ideState.editor.showRuntimeErrorInChunk(path, safeLine, safeColumn, baseMessage);
 	return true;
 }
 

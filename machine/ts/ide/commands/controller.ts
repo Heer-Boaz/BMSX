@@ -1,3 +1,4 @@
+import { machineManager } from '../../core/machine_manager';
 import type { Runtime } from '../../machine/runtime/runtime';
 import type { EditorCommandId } from '../common/commands';
 import { editorDocumentState } from '../editor/editing/document_state';
@@ -17,7 +18,7 @@ export class IdeCommandController {
 
 	public execute(command: EditorCommandId): void {
 		if (isEditorDebugCommand(command)) {
-			executeEditorDebugCommand(this.runtime, command);
+			executeEditorDebugCommand(command);
 			return;
 		}
 		if (isEditorSymbolNavigationCommand(command)) {
@@ -29,7 +30,7 @@ export class IdeCommandController {
 			return;
 		}
 		if (isEditorViewCommand(command)) {
-			executeEditorViewCommand(this.runtime, command);
+			executeEditorViewCommand(command);
 			return;
 		}
 		if (isEditorWorkspaceCommand(command)) {
@@ -44,8 +45,8 @@ export class IdeCommandController {
 			case 'save':
 				return isCodeTabActive() && editorDocumentState.dirty;
 			case 'filter':
-				return this.runtime.editor.resourcePanel.isVisible()
-					&& this.runtime.editor.resourcePanel.getMode() === 'resources';
+				return machineManager.ideState.editor.resourcePanel.isVisible()
+					&& machineManager.ideState.editor.resourcePanel.getMode() === 'resources';
 			case 'debugContinue':
 			case 'debugStepOver':
 			case 'debugStepInto':
@@ -59,11 +60,11 @@ export class IdeCommandController {
 	public isActive(command: EditorCommandId): boolean {
 		switch (command) {
 			case 'resources':
-				return this.runtime.editor.resourcePanel.isVisible();
+				return machineManager.ideState.editor.resourcePanel.isVisible();
 			case 'problems':
 				return problemsPanel.isVisible;
 			case 'filter':
-				return this.runtime.editor.resourcePanel.getFilterMode() === 'lua_only';
+				return machineManager.ideState.editor.resourcePanel.getFilterMode() === 'lua_only';
 			case 'wrap':
 				return editorViewState.wordWrapEnabled;
 			default:

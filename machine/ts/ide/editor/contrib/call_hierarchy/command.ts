@@ -14,7 +14,7 @@ export function executeEditorCallHierarchyAt(runtime: Runtime, row: number, colu
 			showEditorMessage(`No calls found for ${result.expression}`, constants.COLOR_STATUS_WARNING, 1.8);
 			return;
 		case 'success':
-			showCallHierarchyView(runtime, result.view);
+			showCallHierarchyView(result.view);
 			showEditorMessage(result.view.title, constants.COLOR_STATUS_SUCCESS, 1.6);
 			return;
 	}

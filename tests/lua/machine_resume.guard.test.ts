@@ -63,7 +63,7 @@ test('host eval append preserves installed program ROM while resolving appended 
 	const nextExport = src.indexOf('\nexport function ', start + 1);
 	const snippet = src.slice(start, nextExport === -1 ? undefined : nextExport);
 	assert.equal(snippet.includes('appendLuaChunkToProgram(currentProgram'), true, 'host eval append must compile against the currently installed program');
-	assert.equal(snippet.includes('resolveRuntimeProgramRelocations(compiled.program, compiled.metadata, compiled.constRelocs)'), true, 'host eval append must resolve only the appended code relocations in the program owner');
+	assert.equal(snippet.includes('resolveRuntimeProgramRelocations(compiled.program, compiled.metadata, compiled.constRelocs)'), true, 'host eval append must resolve appended code relocations in the program owner');
 	assert.equal(snippet.includes('runtime.machine.cpu.setProgram(compiled.program, compiled.metadata)'), true, 'host eval append must keep the base program ROM mapping intact');
 	assert.equal(snippet.includes('encodeAppendedProgramImage('), false, 'host eval append must not rebuild a ProgramImage that drops the installed rodata ROM');
 	assert.equal(snippet.includes('inflateExecutableProgramImage('), false, 'host eval append must not reinflate and shift the installed program ROM boundary');

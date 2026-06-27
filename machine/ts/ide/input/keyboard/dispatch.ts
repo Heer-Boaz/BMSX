@@ -1,3 +1,4 @@
+import { machineManager } from '../../../core/machine_manager';
 import { editorInput } from '../../editor/input/keyboard/text_input';
 import type { Runtime } from '../../../machine/runtime/runtime';
 import { isResourceViewActive } from '../../workbench/ui/tabs';
@@ -13,17 +14,17 @@ import {
 } from './edit_bindings';
 
 export function handleEditorInput(runtime: Runtime): void {
-	if (handleFocusedResourcePanelInput(runtime)) {
+	if (handleFocusedResourcePanelInput()) {
 		return;
 	}
 	if (isResourceViewActive()) {
 		handleResourceViewerInput();
 		return;
 	}
-	if (handleEditorGlobalBindings(runtime)) {
+	if (handleEditorGlobalBindings()) {
 		return;
 	}
-	if (handleEditorPromptBindings(runtime)) {
+	if (handleEditorPromptBindings()) {
 		return;
 	}
 	if (handleInlineWidgetInput(runtime)) {
@@ -38,7 +39,7 @@ export function handleEditorInput(runtime: Runtime): void {
 	if (handleEditorClipboardAndCommandBindings(runtime)) {
 		return;
 	}
-	if (runtime.editor.completion.handleKeybindings()) {
+	if (machineManager.ideState.editor.completion.handleKeybindings()) {
 		return;
 	}
 	if (handleCodeFormattingKeybinding()) {
@@ -47,8 +48,8 @@ export function handleEditorInput(runtime: Runtime): void {
 	editorInput.handleEditorInput(runtime);
 }
 
-function handleFocusedResourcePanelInput(runtime: Runtime): boolean {
-	const resourcePanel = runtime.editor.resourcePanel;
+function handleFocusedResourcePanelInput(): boolean {
+	const resourcePanel = machineManager.ideState.editor.resourcePanel;
 	if (!resourcePanel.isVisible() || !resourcePanel.isFocused()) {
 		return false;
 	}

@@ -12,7 +12,7 @@ export class InputController {
 		if (handleEditorDebuggerInput(runtime)) {
 			return;
 		}
-		handleEditorNavigationKeys(runtime);
+		handleEditorNavigationKeys();
 		handleEditorEditingKeys();
 		const ctrlDown = isCtrlDown();
 		const metaDown = isMetaDown();

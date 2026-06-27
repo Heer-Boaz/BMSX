@@ -1,3 +1,4 @@
+import { machineManager } from '../../../core/machine_manager';
 import { type color } from '../../../render/shared/submissions';
 import { LAYER_2D_IDE } from '../../../machine/devices/vdp/contracts';
 import { resolveThemeTokenColor, THEME_TOKEN_TERMINAL_LIGHT_YELLOW, THEME_TOKEN_WHITE } from '../../theme/tokens';
@@ -237,11 +238,11 @@ export class TerminalMode {
 	private cursorScreenInfo: CursorScreenInfo = null;
 	private readonly cursorScreenInfoScratch: CursorScreenInfo = { row: 0, column: 0, x: 0, y: 0, width: 0, height: 0, baseChar: ' ', baseColor: 0 };
 	private currentRenderer: OverlayRenderer = null;
-	constructor(private readonly runtime: Runtime) {
+	constructor(private readonly runtime: Runtime, fontVariant: FontVariant) {
 		this.terminalCommands = new TerminalCommandDispatcher(this.runtime);
 		this.setPromptPrefix(this.terminalCommands.getPrompt());
 
-		this.font = new EditorFont(runtime.activeIdeFontVariant);
+		this.font = new EditorFont(fontVariant);
 		this.maxEntries = MAX_OUTPUT_ENTRIES;
 		this.buffer = new InlineFieldTextBuffer(() => this.getLinesSnapshot(), () => this.field.text, () => this.textVersion);
 		const owner = this;
@@ -521,7 +522,7 @@ export class TerminalMode {
 		if (source.length === 0) {
 			return;
 		}
-		if (this.runtime.workbenchFaultState.faultSnapshot !== null && source.startsWith('return ')) {
+		if (machineManager.faultState.faultSnapshot !== null && source.startsWith('return ')) {
 			const expr = source.slice(7).trim();
 			if (TerminalMode.SIMPLE_CHAIN.test(expr)) {
 				const resolved = resolveSnapshotExpression(this.runtime, expr);

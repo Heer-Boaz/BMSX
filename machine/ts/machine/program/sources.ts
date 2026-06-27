@@ -4,6 +4,8 @@ import { utf8FatalDecoder } from '../../common/serializer/binencoder';
 import { buildRomAssetSymbolModuleSource, ROM_ASSET_SYMBOL_MODULE_PATH, ROM_ASSET_SYMBOL_SOURCE_PATH } from '../../rompack/asset_symbols';
 import { PROGRAM_IMAGE_ID, toLuaModulePath } from './loader';
 
+export const DEFAULT_SYSTEM_PROJECT_ROOT_PATH = 'machine/ts';
+
 export type LuaSourceRecord = RomLuaAsset & { base_src: string; base_update_timestamp: number; module_path: string };
 type PackedLuaSourceAsset = RomLuaAsset & { source_path: string; payload_id: CartridgeLayerId };
 

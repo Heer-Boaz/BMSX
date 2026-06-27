@@ -24,7 +24,7 @@ export function handleCodeAreaPointerInput(
 	const contentBottom = editorViewState.codeHorizontalScrollbarVisible
 		? bounds.codeBottom - constants.SCROLLBAR_WIDTH
 		: bounds.codeBottom;
-	if (handleCodeAreaPointerGuards(runtime, snapshot, justPressed, bounds.codeTop, bounds.codeRight, bounds.textLeft, contentBottom)) {
+	if (handleCodeAreaPointerGuards(snapshot, justPressed, bounds.codeTop, bounds.codeRight, bounds.textLeft, contentBottom)) {
 		return;
 	}
 	const insideCodeArea = snapshot.viewportY >= bounds.codeTop

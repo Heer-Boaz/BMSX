@@ -1,11 +1,7 @@
 import type { ParsedLuaChunk } from '../../../../../../lua/analysis/parse';
 import { splitText } from '../../../../../../common/text_lines';
 import * as luaPipeline from '../../../../../runtime/lua_pipeline';
-import {
-	getOrCreateSemanticWorkspace,
-	syncSemanticWorkspacePath,
-	type SemanticWorkspacePathInput,
-} from './state';
+import { getOrCreateSemanticWorkspace, syncSemanticWorkspacePath, type SemanticWorkspacePathInput } from './state';
 import type { FileSemanticData, LuaSemanticWorkspace, LuaSemanticWorkspaceSnapshot } from '../../../../../../lua/semantic/model';
 import type { Runtime } from '../../../../../../machine/runtime/runtime';
 

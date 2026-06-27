@@ -1,3 +1,4 @@
+import { machineManager } from '../../../../../core/machine_manager';
 import * as constants from '../../../../common/constants';
 import { showEditorMessage } from '../../../../common/feedback_state';
 import { resetBlink } from '../../../../editor/render/caret';
@@ -33,9 +34,9 @@ export async function confirmCreateResourcePrompt(runtime: Runtime): Promise<voi
 	try {
 		const descriptor = await createLuaResource(runtime, { path: resourcePath, contents });
 		createResourceState.lastDirectory = directory;
-		runtime.editor.resourcePanel.queuePendingSelection(descriptor.asset_id);
-		if (runtime.editor.resourcePanel.isVisible()) {
-			runtime.editor.resourcePanel.refresh();
+		machineManager.ideState.editor.resourcePanel.queuePendingSelection(descriptor.asset_id);
+		if (machineManager.ideState.editor.resourcePanel.isVisible()) {
+			machineManager.ideState.editor.resourcePanel.refresh();
 		}
 		openLuaCodeTab(runtime, descriptor);
 		showEditorMessage(`Created ${descriptor.path} (asset ${descriptor.asset_id})`, constants.COLOR_STATUS_SUCCESS, 2.5);

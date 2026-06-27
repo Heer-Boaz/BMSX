@@ -86,7 +86,7 @@ export function performHotResume(runtime: Runtime): boolean {
 		}, (error) => {
 			console.error(error);
 			handleLuaError(runtime, error);
-			runtime.editor.handleRuntimeTaskError(error, 'Failed to resume game');
+			machineManager.ideState.editor.handleRuntimeTaskError(error, 'Failed to resume game');
 		});
 	return true;
 }
@@ -101,7 +101,7 @@ export function performReboot(runtime: Runtime): boolean {
 		editorDocumentState.appliedGeneration = targetGeneration;
 		machineManager.paused = false;
 	}, (error) => {
-		runtime.editor.handleRuntimeTaskError(error, 'Failed to reboot game');
+		machineManager.ideState.editor.handleRuntimeTaskError(error, 'Failed to reboot game');
 	});
 	return true;
 }

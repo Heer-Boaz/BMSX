@@ -167,12 +167,12 @@ class RuntimeCartEditor implements CartEditor {
 		},
 	};
 
-	public constructor(runtime: Runtime, viewport: Viewport) {
+	public constructor(runtime: Runtime, viewport: Viewport, fontVariant: Parameters<typeof setFontVariant>[1]) {
 		this.runtime = runtime;
 		this.commands = new IdeCommandController(runtime);
 		this.navigation = new EditorNavigationController(runtime);
 		this.completion = new EditorCompletionController(runtime);
-		this.resourcePanel = this.initialize(viewport);
+		this.resourcePanel = this.initialize(viewport, fontVariant);
 		this.search = new EditorSearchController(runtime, renameController);
 		this.debugger = new DebuggerUiController(runtime);
 		this.clearNativeMemberCompletionCache = () => clearNativeMemberCompletionCache(runtime);
@@ -233,13 +233,13 @@ class RuntimeCartEditor implements CartEditor {
 		}
 		if (runtime.hasRuntimeFailed) {
 			const rendered = this.renderRuntimeFaultOverlay({
-				snapshot: runtime.workbenchFaultState.faultSnapshot,
+				snapshot: machineManager.faultState.faultSnapshot,
 				luaRuntimeFailed: runtime.hasRuntimeFailed,
-				needsFlush: runtime.workbenchFaultState.faultOverlayNeedsFlush,
+				needsFlush: machineManager.faultState.faultOverlayNeedsFlush,
 				force: false,
 			});
 			if (rendered) {
-				runtime.workbenchFaultState.faultOverlayNeedsFlush = false;
+				machineManager.faultState.faultOverlayNeedsFlush = false;
 			}
 		}
 	}
@@ -251,7 +251,7 @@ class RuntimeCartEditor implements CartEditor {
 		if (editorViewState.dimCrtInEditor) {
 			this.restoreCrtPostprocessingFromEditor();
 		}
-		this.runtime.editor.completion.closeSession();
+		machineManager.ideState.editor.completion.closeSession();
 		editorInput.applyOverrides(false, captureKeys);
 		clearSingleCursorSelection(editorDocumentState);
 		clearEditorPointerSelectionState();
@@ -265,7 +265,7 @@ class RuntimeCartEditor implements CartEditor {
 		lineJumpState.visible = false;
 		closeBlockingWorkbenchModal();
 		closeCreateResourcePrompt(false);
-		this.runtime.editor.resourcePanel.hide();
+		machineManager.ideState.editor.resourcePanel.hide();
 		editorChromeState.resourcePanelResizing = false;
 		cancelSearchJob();
 		cancelGlobalSearchJob();
@@ -277,7 +277,7 @@ class RuntimeCartEditor implements CartEditor {
 
 	public tickInput(): void {
 		const runtime = this.runtime;
-		handleEditorWheelInput(runtime);
+		handleEditorWheelInput();
 		handleTextEditorPointerInput(runtime);
 		if (hasBlockingWorkbenchModal()) {
 			handleBlockingWorkbenchModalInput(runtime);
@@ -291,7 +291,7 @@ class RuntimeCartEditor implements CartEditor {
 		updateBlink(deltaSeconds);
 		updateEditorMessage(deltaSeconds);
 		updateRuntimeErrorOverlay(deltaSeconds);
-		runtime.editor.completion.processPending(deltaSeconds);
+		machineManager.ideState.editor.completion.processPending(deltaSeconds);
 		const semanticError = editorViewState.layout.getLastSemanticError();
 		if (semanticError && semanticError !== editorRuntimeState.lastReportedSemanticError) {
 			showEditorMessage(semanticError, constants.COLOR_STATUS_ERROR, 2.0);
@@ -316,19 +316,19 @@ class RuntimeCartEditor implements CartEditor {
 		editorViewState.codeHorizontalScrollbarVisible = false;
 		api.fill_rect(0, 0, editorViewState.viewportWidth, editorViewState.viewportHeight, 0, constants.COLOR_FRAME);
 
-		renderTopBar(runtime.editor.commands, this.chromeRenderContext);
+		renderTopBar(machineManager.ideState.editor.commands, this.chromeRenderContext);
 
 		editorViewState.tabBarRowCount = renderTabBar(this.chromeRenderContext);
-		drawResourcePanel(runtime.editor.resourcePanel);
+		drawResourcePanel(machineManager.ideState.editor.resourcePanel);
 		if (isResourceViewActive()) {
 			drawResourceViewer();
 		} else {
 			renderInlineWidgets();
-			const resourcePanel = runtime.editor.resourcePanel;
+			const resourcePanel = machineManager.ideState.editor.resourcePanel;
 			const problemsPanelHasFocus = problemsPanel.isVisible && problemsPanel.isFocused;
 			const cursorActive = !(editorSearchState.active || lineJumpState.active || resourcePanel.isFocused() || createResourceState.active || problemsPanelHasFocus);
 			const codeAreaViewport = renderCodeArea(
-				runtime.editor.completion,
+				machineManager.ideState.editor.completion,
 				cursorActive,
 				getBreakpointsForChunk(getActiveCodeTabContext().descriptor.path),
 			);
@@ -336,7 +336,7 @@ class RuntimeCartEditor implements CartEditor {
 		}
 		drawProblemsPanel();
 		renderStatusBar(runtime);
-		renderTopBarDropdown(runtime.editor.commands, this.chromeRenderContext);
+		renderTopBarDropdown(machineManager.ideState.editor.commands, this.chromeRenderContext);
 		if (hasBlockingWorkbenchModal()) {
 			drawBlockingWorkbenchModal();
 		}
@@ -381,7 +381,7 @@ class RuntimeCartEditor implements CartEditor {
 		createResourceState.error = null;
 		createResourceState.working = false;
 		closeBlockingWorkbenchModal();
-		this.runtime.editor.resourcePanel.hide();
+		machineManager.ideState.editor.resourcePanel.hide();
 		editorChromeState.resourcePanelResizing = false;
 		activateCodeTab();
 	}
@@ -426,7 +426,7 @@ class RuntimeCartEditor implements CartEditor {
 	}
 
 	public renderFaultOverlay(): void {
-		const snapshot = this.runtime.workbenchFaultState.faultSnapshot;
+		const snapshot = machineManager.faultState.faultSnapshot;
 		if (!snapshot) {
 			return;
 		}
@@ -465,7 +465,7 @@ class RuntimeCartEditor implements CartEditor {
 		machineManager.paused = true;
 		this.activate();
 		const message = `${fallbackMessage}: ${errormsg}`;
-		this.runtime.terminal.appendStderr(message);
+		machineManager.ideState.terminal.appendStderr(message);
 		showEditorMessage(message, constants.COLOR_STATUS_ERROR, 2.0);
 	}
 
@@ -476,9 +476,9 @@ class RuntimeCartEditor implements CartEditor {
 		editorSearchState.scope = 'local';
 	}
 
-	private initialize(viewport: Viewport): ResourcePanelController {
+	private initialize(viewport: Viewport, fontVariant: Parameters<typeof setFontVariant>[1]): ResourcePanelController {
 		const runtime = this.runtime;
-		editorViewState.fontVariant = runtime.activeIdeFontVariant;
+		editorViewState.fontVariant = fontVariant;
 		constants.setIdeThemeVariant(constants.DEFAULT_THEME);
 		editorRuntimeState.themeVariant = constants.getActiveIdeThemeVariant();
 		editorRuntimeState.caseInsensitive = false;
@@ -598,6 +598,6 @@ export class EditorNavigationController {
 	}
 }
 
-export function createCartEditor(runtime: Runtime, viewport: Viewport): CartEditor {
-	return new RuntimeCartEditor(runtime, viewport);
+export function createCartEditor(runtime: Runtime, viewport: Viewport, fontVariant: Parameters<typeof setFontVariant>[1]): CartEditor {
+	return new RuntimeCartEditor(runtime, viewport, fontVariant);
 }
