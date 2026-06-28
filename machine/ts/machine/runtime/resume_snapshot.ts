@@ -1,8 +1,18 @@
 import type { LuaValue } from '../../lua/value';
 import { convertToError, isLuaFunctionValue, isLuaTable } from '../../lua/value';
-import type { LuaEntrySnapshot, RuntimeResumeSnapshot } from './contracts';
+import type { LuaEntrySnapshot } from './host/native_bridge';
 import type { Runtime } from './runtime';
-import { captureRuntimeMachineState } from './machine_state';
+import { captureRuntimeMachineState, type RuntimeMachineState } from './machine_state';
+
+
+export type RuntimeResumeSnapshot = {
+	luaRuntimeFailed: boolean;
+	luaPath: string;
+	luaGlobals?: LuaEntrySnapshot;
+	luaLocals?: LuaEntrySnapshot;
+	luaProgramCounter?: number;
+	machineState: RuntimeMachineState;
+};
 
 const LUA_RESUME_SNAPSHOT_EXCLUDED_GLOBALS = new Set<string>([
 	'print',

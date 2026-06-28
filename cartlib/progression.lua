@@ -51,8 +51,6 @@ local eventemitter<const> = require('cartlib/eventemitter').eventemitter
 local event_matcher<const> = require('cartlib/event_matcher')
 
 local progression<const> = {
-	_inited = false,
-	_event_handler = nil,
 	_runtime_by_ctx = setmetatable({}, { __mode = 'k' }),
 	_runtimes_by_event = {},
 	_event_queue = {},
@@ -441,16 +439,6 @@ function progression.dispatch_event(event)
 	progression._is_dispatching = false
 end
 
-function progression.init()
-	if progression._inited then
-		return
-	end
-	progression._inited = true
-	progression._event_handler = function(event)
-		progression.dispatch_event(event)
-	end
-end
-
 local add_runtime_subscription<const> = function(rt, event_name)
 	local runtimes = progression._runtimes_by_event[event_name]
 	if runtimes == nil then
@@ -458,7 +446,7 @@ local add_runtime_subscription<const> = function(rt, event_name)
 		progression._runtimes_by_event[event_name] = runtimes
 		eventemitter.instance:on({
 			event = event_name,
-			handler = progression._event_handler,
+			handler = progression.dispatch_event,
 			subscriber = progression,
 			persistent = true,
 		})
@@ -479,7 +467,7 @@ local remove_runtime_subscription<const> = function(rt, event_name)
 	end
 	if #runtimes == 0 then
 		progression._runtimes_by_event[event_name] = nil
-		eventemitter.instance:off(event_name, progression._event_handler, nil)
+		eventemitter.instance:off(event_name, progression.dispatch_event, nil)
 	end
 end
 
@@ -492,7 +480,6 @@ end
 --     • a table with { rules=[], handlers={}, keys=[] }
 --   Returns the runtime object (rarely needed; use progression.get/set/matches).
 function progression.mount(ctx, program_or_rule_defs)
-	progression.init()
 	progression.unmount(ctx)
 	local program<const> = progression.compile_program(program_or_rule_defs)
 	local state<const> = progression_state.new(program.state_program)

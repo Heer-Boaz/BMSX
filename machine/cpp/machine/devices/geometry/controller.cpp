@@ -64,11 +64,13 @@ void GeometryController::accrueCycles(int cycles, int64_t nowCycles) {
 		return;
 	}
 
-	const int64_t wholeUnits = accrueBudgetUnits(m_cpuHz, m_workUnitsPerSec, m_workCarry, cycles);
-	if (wholeUnits > 0) {
+	BudgetAccrual accrual;
+	accrueBudgetUnits(accrual, m_cpuHz, m_workUnitsPerSec, m_workCarry, cycles);
+	m_workCarry = accrual.carry;
+	if (accrual.wholeUnits > 0) {
 		const uint32_t remainingRecords = m_activeJob->count - m_activeJob->processed;
 		const int64_t maxGrant = static_cast<int64_t>(remainingRecords - m_availableWorkUnits);
-		const int64_t granted = wholeUnits > maxGrant ? maxGrant : wholeUnits;
+		const int64_t granted = accrual.wholeUnits > maxGrant ? maxGrant : accrual.wholeUnits;
 		m_availableWorkUnits += static_cast<uint32_t>(granted);
 	}
 	scheduleNextService(nowCycles);
@@ -90,7 +92,7 @@ void GeometryController::reset() {
 	m_workCarry = 0;
 	m_availableWorkUnits = 0;
 	m_activeJob.reset();
-	m_scheduler.cancelDeviceService(DeviceServiceGeo);
+	m_scheduler.cancelDeviceService(DEVICE_SERVICE_GEO);
 	m_memory.writeValue(IO_GEO_SRC0, valueNumber(static_cast<double>(0)));
 	m_memory.writeValue(IO_GEO_SRC1, valueNumber(static_cast<double>(0)));
 	m_memory.writeValue(IO_GEO_SRC2, valueNumber(static_cast<double>(0)));
@@ -263,16 +265,16 @@ void GeometryController::onFaultAckWrite(Value value) {
 
 void GeometryController::scheduleNextService(int64_t nowCycles) {
 	if (m_phase != GeometryControllerPhase::Busy) {
-		m_scheduler.cancelDeviceService(DeviceServiceGeo);
+		m_scheduler.cancelDeviceService(DEVICE_SERVICE_GEO);
 		return;
 	}
 	const uint32_t remainingRecords = m_activeJob->count - m_activeJob->processed;
 	const uint32_t targetUnits = remainingRecords < GEO_SERVICE_BATCH_RECORDS ? remainingRecords : GEO_SERVICE_BATCH_RECORDS;
 	if (m_availableWorkUnits >= targetUnits) {
-		m_scheduler.scheduleDeviceService(DeviceServiceGeo, nowCycles);
+		m_scheduler.scheduleDeviceService(DEVICE_SERVICE_GEO, nowCycles);
 		return;
 	}
-	m_scheduler.scheduleDeviceService(DeviceServiceGeo, nowCycles + cyclesUntilBudgetUnits(m_cpuHz, m_workUnitsPerSec, m_workCarry, targetUnits - m_availableWorkUnits));
+	m_scheduler.scheduleDeviceService(DEVICE_SERVICE_GEO, nowCycles + cyclesUntilBudgetUnits(m_cpuHz, m_workUnitsPerSec, m_workCarry, targetUnits - m_availableWorkUnits));
 }
 
 void GeometryController::completeRecord(GeoJob& job) {
@@ -288,7 +290,7 @@ void GeometryController::finishSuccess(uint32_t processed) {
 	m_activeJob.reset();
 	m_workCarry = 0;
 	m_availableWorkUnits = 0u;
-	m_scheduler.cancelDeviceService(DeviceServiceGeo);
+	m_scheduler.cancelDeviceService(DEVICE_SERVICE_GEO);
 	m_memory.writeValue(IO_GEO_STATUS, valueNumber(static_cast<double>(GEO_STATUS_DONE)));
 	m_memory.writeValue(IO_GEO_PROCESSED, valueNumber(static_cast<double>(processed)));
 	m_memory.writeValue(IO_GEO_FAULT, valueNumber(static_cast<double>(0u)));
@@ -300,7 +302,7 @@ void GeometryController::finishError(uint32_t code, uint32_t recordIndex, bool s
 	m_activeJob.reset();
 	m_workCarry = 0;
 	m_availableWorkUnits = 0u;
-	m_scheduler.cancelDeviceService(DeviceServiceGeo);
+	m_scheduler.cancelDeviceService(DEVICE_SERVICE_GEO);
 	m_memory.writeValue(IO_GEO_STATUS, valueNumber(static_cast<double>(GEO_STATUS_DONE | GEO_STATUS_ERROR)));
 	m_memory.writeValue(IO_GEO_FAULT, valueNumber(static_cast<double>(packFault(code, recordIndex))));
 	if (signalIrq) {
@@ -313,7 +315,7 @@ void GeometryController::finishRejected(uint32_t code) {
 	m_activeJob.reset();
 	m_workCarry = 0;
 	m_availableWorkUnits = 0u;
-	m_scheduler.cancelDeviceService(DeviceServiceGeo);
+	m_scheduler.cancelDeviceService(DEVICE_SERVICE_GEO);
 	m_memory.writeValue(IO_GEO_STATUS, valueNumber(static_cast<double>(GEO_STATUS_REJECTED)));
 	m_memory.writeValue(IO_GEO_PROCESSED, valueNumber(static_cast<double>(0u)));
 	m_memory.writeValue(IO_GEO_FAULT, valueNumber(static_cast<double>(packFault(code, GEO_FAULT_RECORD_INDEX_NONE))));

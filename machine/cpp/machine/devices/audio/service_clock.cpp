@@ -19,7 +19,7 @@ ApuServiceClock::ApuServiceClock(DeviceScheduler& scheduler, const ApuCommandFif
 void ApuServiceClock::reset() {
 	m_sampleCarry = 0;
 	m_availableSamples = 0;
-	m_scheduler.cancelDeviceService(DeviceServiceApu);
+	m_scheduler.cancelDeviceService(DEVICE_SERVICE_APU);
 }
 
 i64 ApuServiceClock::captureSampleCarry() const {
@@ -45,7 +45,10 @@ void ApuServiceClock::clearBudget() {
 }
 
 void ApuServiceClock::accrueCycles(int cycles) {
-	m_availableSamples += accrueBudgetUnits(m_cpuHz, APU_SAMPLE_RATE_HZ, m_sampleCarry, cycles);
+	BudgetAccrual accrual;
+	accrueBudgetUnits(accrual, m_cpuHz, APU_SAMPLE_RATE_HZ, m_sampleCarry, cycles);
+	m_availableSamples += accrual.wholeUnits;
+	m_sampleCarry = accrual.carry;
 }
 
 bool ApuServiceClock::pendingSamples() const {
@@ -58,20 +61,20 @@ i64 ApuServiceClock::consumeSamples() {
 
 void ApuServiceClock::scheduleNext(i64 nowCycles) {
 	if (!m_commandFifo.empty()) {
-		m_scheduler.scheduleDeviceService(DeviceServiceApu, nowCycles);
+		m_scheduler.scheduleDeviceService(DEVICE_SERVICE_APU, nowCycles);
 		return;
 	}
 	if (m_slots.activeMask() == 0u) {
-		m_scheduler.cancelDeviceService(DeviceServiceApu);
+		m_scheduler.cancelDeviceService(DEVICE_SERVICE_APU);
 		m_sampleCarry = 0;
 		m_availableSamples = 0;
 		return;
 	}
 	if (m_availableSamples > 0) {
-		m_scheduler.scheduleDeviceService(DeviceServiceApu, nowCycles);
+		m_scheduler.scheduleDeviceService(DEVICE_SERVICE_APU, nowCycles);
 		return;
 	}
-	m_scheduler.scheduleDeviceService(DeviceServiceApu, nowCycles + cyclesUntilBudgetUnits(m_cpuHz, APU_SAMPLE_RATE_HZ, m_sampleCarry, 1));
+	m_scheduler.scheduleDeviceService(DEVICE_SERVICE_APU, nowCycles + cyclesUntilBudgetUnits(m_cpuHz, APU_SAMPLE_RATE_HZ, m_sampleCarry, 1));
 }
 
 } // namespace bmsx

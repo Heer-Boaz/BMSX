@@ -14,7 +14,7 @@ import { MEMORY_ACCESS_KIND_NAMES, MemoryAccessKind } from '../memory/access_kin
 import { ScratchBuffer } from '../../common/scratchbuffer';
 import { ScratchArrayStack } from '../../common/scratchstack';
 import { luaModulo } from '../../lua/numeric';
-import { ceilLog2, nextPowerOfTwo } from '../common/numeric';
+import { ceilDiv4, ceilLog2, nextPowerOfTwo } from '../common/numeric';
 
 export { OpCode } from './opcode_info';
 
@@ -372,7 +372,6 @@ export const enum RunResult {
 	Yielded,
 }
 
-const CEIL_DIV4 = (value: number) => (value + 3) >> 2;
 
 const enum TableIndexKeyKind {
 	Value,
@@ -2672,7 +2671,7 @@ export class CPU {
 				}
 				case OpCode.STORE_MEM_WORDS_D: {
 					const addr = registers.getNumber(b) + (disp << 2);
-					this.charge(CEIL_DIV4(c));
+					this.charge(ceilDiv4(c));
 					this.writeMappedWordSequence(frame, addr, a, c);
 					return;
 				}
@@ -2688,7 +2687,7 @@ export class CPU {
 				}
 				case OpCode.STORE_MEM_WORDS: {
 					const addr = this.readRKNumber(frame, rkB);
-					this.charge(CEIL_DIV4(c));
+					this.charge(ceilDiv4(c));
 					this.writeMappedWordSequence(frame, addr, a, c);
 					return;
 				}
@@ -3540,11 +3539,9 @@ export class CPU {
 		let total = 0;
 		const valueStack: Value[] = [];
 		const upvalueStack: Upvalue[] = [];
-		// Strings reached during the sweep; everything else in the append-only pool
-		// is garbage and its tracked-heap accounting is reclaimed at the end.
-		const reachableStringIds = new Set<StringId>();
+		this.stringPool.beginReachabilityEpoch();
 		if (this.indexKey !== null) {
-			reachableStringIds.add(asStringId(this.indexKey));
+			this.stringPool.markReachable(asStringId(this.indexKey));
 		}
 
 		const pushValue = (value: Value): void => {
@@ -3552,7 +3549,7 @@ export class CPU {
 				return;
 			}
 			if (valueIsString(value)) {
-				reachableStringIds.add(asStringId(value));
+				this.stringPool.markReachable(asStringId(value));
 				return;
 			}
 			valueStack.push(value);
@@ -3653,7 +3650,8 @@ export class CPU {
 				upvalueStack.push(closure.upvalues[index]);
 			}
 		}
-		total += this.stringPool.retainTrackedStrings(reachableStringIds);
+		this.stringPool.reclaimUnreachableTracked();
+		total += this.stringPool.trackedLuaHeapBytes();
 		return total;
 	}
 

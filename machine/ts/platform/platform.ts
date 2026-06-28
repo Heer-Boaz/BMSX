@@ -1,9 +1,14 @@
 import { type vec2 } from 'bmsx/rompack/format';
-import type { StorageService } from '../machine/runtime/storage';
+import type { MicrotaskQueue } from '../machine/scheduler/microtask_queue';
 
-export type { StorageService } from '../machine/runtime/storage';
-
+export type { MicrotaskQueue } from '../machine/scheduler/microtask_queue';
 export type MonoTime = number;
+
+export interface StorageService {
+	getItem(k: string): string;
+	setItem(k: string, v: string): void;
+	removeItem(k: string): void;
+}
 
 /**
  * Core platform contract.
@@ -65,13 +70,26 @@ export function createSubscriptionHandle(cleanup: () => void): SubscriptionHandl
 	};
 }
 
-export interface MicrotaskQueue {
-	schedule(task: () => void): void;
-}
+let defaultMicrotaskQueueTasks: Array<() => void> = [];
+let defaultMicrotaskQueueDrainTasks: Array<() => void> = [];
 
 export const defaultMicrotaskQueue: MicrotaskQueue = {
-	schedule: (task: () => void) => {
-		queueMicrotask(task);
+	queueMicrotask: (task: () => void) => {
+		defaultMicrotaskQueueTasks.push(task);
+	},
+	flush: () => {
+		while (defaultMicrotaskQueueTasks.length > 0) {
+			const tasks = defaultMicrotaskQueueTasks;
+			defaultMicrotaskQueueTasks = defaultMicrotaskQueueDrainTasks;
+			defaultMicrotaskQueueDrainTasks = tasks;
+			try {
+				for (let index = 0; index < defaultMicrotaskQueueDrainTasks.length; index += 1) {
+					defaultMicrotaskQueueDrainTasks[index]();
+				}
+			} finally {
+				defaultMicrotaskQueueDrainTasks.length = 0;
+			}
+		}
 	},
 };
 
@@ -83,7 +101,7 @@ export function setMicrotaskQueue(queue: MicrotaskQueue): void {
 
 // disable-next-line single_line_method_pattern -- callers schedule through the active platform microtask queue selected by MachineManager.
 export function scheduleMicrotask(task: () => void): void {
-	activeMicrotaskQueue.schedule(task);
+	activeMicrotaskQueue.queueMicrotask(task);
 }
 
 export interface TimerHandle {

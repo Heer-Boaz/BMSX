@@ -1,4 +1,5 @@
 import { OpCode, Table, asStringId, isNativeFunction, isNativeObject, valueIsString, type Program, type ProgramMetadata, type Proto, type SourceRange, type Value } from './cpu';
+import { extractSourceRangeText } from './source_text';
 import { EXT_A_BITS, EXT_B_BITS, EXT_BX_BITS, EXT_C_BITS, INSTRUCTION_BYTES, MAX_BX_BITS, MAX_OPERAND_BITS, readInstructionWord, signExtend } from './instruction_format';
 import { OPCODE_USES_BX, OPCODE_USES_DISP, decodeCallArgCount, getOpcodeName } from './opcode_info';
 import { formatNumber } from '../common/number_format';
@@ -221,29 +222,11 @@ const getSourceLines = (path: string, options: DisassemblyOptions, cache: Map<st
 	return lines;
 };
 
-const extractSourceSnippet = (range: SourceRange, lines: readonly string[]): string => {
-	const startLineIndex = range.start.line - 1;
-	const endLineIndex = range.end.line - 1;
-	if (startLineIndex < 0 || endLineIndex < 0 || startLineIndex >= lines.length || endLineIndex >= lines.length) {
-		throw new Error(`[Disassembler] Source range line out of bounds for '${range.path}'.`);
-	}
-	if (endLineIndex < startLineIndex) {
-		throw new Error(`[Disassembler] Source range ends before it starts for '${range.path}'.`);
-	}
-	const parts: string[] = [];
-	if (startLineIndex === endLineIndex) {
-		parts.push(lines[startLineIndex]);
-	} else {
-		for (let index = startLineIndex; index <= endLineIndex; index += 1) {
-			parts.push(lines[index]);
-		}
-	}
-	return parts.join(' ');
-};
-
 export const formatSourceSnippet = (range: SourceRange, sourceText: string, maxChars = SOURCE_COMMENT_MAX_CHARS): string => {
-	// disable-next-line newline_normalization_pattern -- standalone snippet formatting maps source ranges to logical lines.
-	const snippet = extractSourceSnippet(range, sourceText.split(/\r?\n/));
+	const snippet = extractSourceRangeText(range, sourceText);
+	if (snippet === null) {
+		return '';
+	}
 	const compact = snippet.replace(/\s+/g, ' ').trim();
 	if (compact.length === 0) {
 		return '<empty>';

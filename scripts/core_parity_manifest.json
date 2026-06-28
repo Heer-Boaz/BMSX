@@ -286,16 +286,6 @@
 			"reason": "host_render_graph_not_core"
 		},
 		{
-			"pattern": "machine/ts/machine/runtime/handler_cache.ts",
-			"category": "host",
-			"reason": "ts_js_handler_cache_host_bridge_not_core"
-		},
-		{
-			"pattern": "machine/ts/machine/runtime/contracts.ts",
-			"category": "host",
-			"reason": "ts_type_contracts_not_cpp_file_parity_surface"
-		},
-		{
 			"pattern": "machine/ts/machine/runtime/host_fault.ts",
 			"category": "host",
 			"reason": "ts_host_fault_bridge_not_cpp_file_parity_surface"
@@ -583,6 +573,394 @@
 				"machine/cpp/render/backend/gles2/fullscreen_quad.cpp"
 			],
 			"reason": "fullscreen_quad_backend_symbol_parity"
+		},
+		{
+			"ts": "machine/ts/machine/specs.ts",
+			"cpp": [
+				"machine/cpp/machine/specs.h",
+				"machine/cpp/machine/specs.cpp"
+			],
+			"reason": "machine_manifest_specs_runtime_contract"
+		},
+		{
+			"ts": "machine/ts/machine/memory/specs.ts",
+			"cpp": [
+				"machine/cpp/machine/memory/specs.h",
+				"machine/cpp/machine/memory/specs.cpp"
+			],
+			"reason": "memory_map_specs_runtime_contract"
+		},
+		{
+			"ts": "machine/ts/machine/runtime/timing/config.ts",
+			"cpp": [
+				"machine/cpp/machine/runtime/timing/config.h",
+				"machine/cpp/machine/runtime/timing/config.cpp"
+			],
+			"reason": "runtime_timing_config_contract"
+		},
+		{
+			"ts": "machine/ts/machine/runtime/timing/state.ts",
+			"cpp": [
+				"machine/cpp/machine/runtime/timing/state.h",
+				"machine/cpp/machine/runtime/timing/state.cpp"
+			],
+			"reason": "runtime_timing_state_contract"
+		},
+		{
+			"ts": "machine/ts/machine/bus/io.ts",
+			"cpp": [
+				"machine/cpp/machine/bus/io.h"
+			],
+			"reason": "machine_io_register_map_contract"
+		},
+		{
+			"ts": "machine/ts/machine/runtime/timing/constants.ts",
+			"cpp": [
+				"machine/cpp/machine/runtime/timing/constants.h"
+			],
+			"reason": "runtime_timing_constants_contract"
+		},
+		{
+			"ts": "machine/ts/machine/common/hash.ts",
+			"cpp": [
+				"machine/cpp/machine/common/hash.h",
+				"machine/cpp/machine/common/hash.cpp"
+			],
+			"reason": "common_hash_contract"
+		},
+		{
+			"ts": "machine/ts/machine/common/word.ts",
+			"cpp": [
+				"machine/cpp/machine/common/word.h"
+			],
+			"reason": "common_word_contract"
+		},
+		{
+			"ts": "machine/ts/machine/devices/audio/active_slots.ts",
+			"cpp": [
+				"machine/cpp/machine/devices/audio/active_slots.h",
+				"machine/cpp/machine/devices/audio/active_slots.cpp"
+			],
+			"reason": "audio_active_slots_contract"
+		},
+		{
+			"ts": "machine/ts/machine/devices/audio/command_latch.ts",
+			"cpp": [
+				"machine/cpp/machine/devices/audio/command_latch.h",
+				"machine/cpp/machine/devices/audio/command_latch.cpp"
+			],
+			"reason": "audio_command_latch_contract"
+		},
+		{
+			"ts": "machine/ts/machine/devices/audio/event_latch.ts",
+			"cpp": [
+				"machine/cpp/machine/devices/audio/event_latch.h",
+				"machine/cpp/machine/devices/audio/event_latch.cpp"
+			],
+			"reason": "audio_event_latch_contract"
+		},
+		{
+			"ts": "machine/ts/machine/devices/audio/selected_slot_latch.ts",
+			"cpp": [
+				"machine/cpp/machine/devices/audio/selected_slot_latch.h",
+				"machine/cpp/machine/devices/audio/selected_slot_latch.cpp"
+			],
+			"reason": "audio_selected_slot_latch_contract"
+		},
+		{
+			"ts": "machine/ts/machine/devices/audio/status_register.ts",
+			"cpp": [
+				"machine/cpp/machine/devices/audio/status_register.h",
+				"machine/cpp/machine/devices/audio/status_register.cpp"
+			],
+			"reason": "audio_status_register_contract"
+		},
+		{
+			"ts": "machine/ts/machine/devices/audio/service_clock.ts",
+			"cpp": [
+				"machine/cpp/machine/devices/audio/service_clock.h",
+				"machine/cpp/machine/devices/audio/service_clock.cpp"
+			],
+			"reason": "audio_service_clock_contract"
+		},
+		{
+			"ts": "machine/ts/machine/cpu/instruction_format.ts",
+			"cpp": [
+				"machine/cpp/machine/cpu/instruction_format.h",
+				"machine/cpp/machine/cpu/instruction_format.cpp"
+			],
+			"reason": "cpu_instruction_word_encoding_contract"
+		},
+		{
+			"ts": "machine/ts/machine/cpu/opcode_info.ts",
+			"cpp": [
+				"machine/cpp/machine/cpu/opcode_info.h",
+				"machine/cpp/machine/cpu/opcode_info.cpp"
+			],
+			"reason": "cpu_opcode_metadata_contract"
+		},
+		{
+			"ts": "machine/ts/machine/memory/access_kind.ts",
+			"cpp": [
+				"machine/cpp/machine/memory/access_kind.h",
+				"machine/cpp/machine/memory/access_kind.cpp"
+			],
+			"reason": "memory_access_kind_contract"
+		},
+		{
+			"ts": "machine/ts/machine/runtime/save_machine_state.ts",
+			"cpp": [
+				"machine/cpp/machine/runtime/save_machine_state.h",
+				"machine/cpp/machine/runtime/save_machine_state.cpp"
+			],
+			"reason": "runtime_save_machine_state_contract"
+		},
+		{
+			"ts": "machine/ts/machine/runtime/cart_boot.ts",
+			"cpp": [
+				"machine/cpp/machine/runtime/cart_boot.h",
+				"machine/cpp/machine/runtime/cart_boot.cpp"
+			],
+			"reason": "runtime_cart_boot_state_contract"
+		},
+		{
+			"ts": "machine/ts/machine/runtime/machine_state.ts",
+			"cpp": [
+				"machine/cpp/machine/runtime/machine_state.h",
+				"machine/cpp/machine/runtime/machine_state.cpp"
+			],
+			"reason": "runtime_machine_state_contract"
+		},
+		{
+			"ts": "machine/ts/machine/runtime/input.ts",
+			"cpp": [
+				"machine/cpp/machine/runtime/input.h"
+			],
+			"reason": "runtime_input_contract"
+		},
+		{
+			"ts": "machine/ts/machine/runtime/save_state.ts",
+			"cpp": [
+				"machine/cpp/machine/runtime/save_state.h",
+				"machine/cpp/machine/runtime/save_state.cpp"
+			],
+			"reason": "runtime_save_state_surface_contract"
+		},
+		{
+			"ts": "machine/ts/machine/runtime/save_state/schema.ts",
+			"cpp": [
+				"machine/cpp/machine/runtime/save_state/schema.h",
+				"machine/cpp/machine/runtime/save_state/schema.cpp"
+			],
+			"reason": "runtime_save_state_schema_symbol_contract"
+		},
+		{
+			"ts": "machine/ts/machine/runtime/cpu_state.ts",
+			"cpp": [
+				"machine/cpp/machine/runtime/cpu_state.h",
+				"machine/cpp/machine/runtime/cpu_state.cpp"
+			],
+			"reason": "runtime_cpu_state_contract"
+		},
+		{
+			"ts": "machine/ts/machine/runtime/frame/step.ts",
+			"cpp": [
+				"machine/cpp/machine/runtime/frame/step.h",
+				"machine/cpp/machine/runtime/frame/step.cpp"
+			],
+			"reason": "runtime_frame_step_contract"
+		},
+		{
+			"ts": "machine/ts/machine/scheduler/device.ts",
+			"cpp": [
+				"machine/cpp/machine/scheduler/device.h",
+				"machine/cpp/machine/scheduler/device.cpp"
+			],
+			"reason": "device_scheduler_event_contract"
+		},
+		{
+			"ts": "machine/ts/machine/devices/audio/contracts.ts",
+			"cpp": [
+				"machine/cpp/machine/devices/audio/contracts.h"
+			],
+			"reason": "audio_public_contract_constants"
+		},
+		{
+			"ts": "machine/ts/machine/devices/audio/command_fifo.ts",
+			"cpp": [
+				"machine/cpp/machine/devices/audio/command_fifo.h",
+				"machine/cpp/machine/devices/audio/command_fifo.cpp"
+			],
+			"reason": "audio_command_fifo_contract"
+		},
+		{
+			"ts": "machine/ts/machine/devices/audio/command_ingress.ts",
+			"cpp": [
+				"machine/cpp/machine/devices/audio/command_ingress.h",
+				"machine/cpp/machine/devices/audio/command_ingress.cpp"
+			],
+			"reason": "audio_command_ingress_contract"
+		},
+		{
+			"ts": "machine/ts/machine/devices/audio/queue_status_registers.ts",
+			"cpp": [
+				"machine/cpp/machine/devices/audio/queue_status_registers.h",
+				"machine/cpp/machine/devices/audio/queue_status_registers.cpp"
+			],
+			"reason": "audio_queue_status_register_contract"
+		},
+		{
+			"ts": "machine/ts/machine/devices/device_status.ts",
+			"cpp": [
+				"machine/cpp/machine/devices/device_status.h",
+				"machine/cpp/machine/devices/device_status.cpp"
+			],
+			"reason": "device_status_latch_contract"
+		},
+		{
+			"ts": "machine/ts/machine/devices/geometry/job.ts",
+			"cpp": [
+				"machine/cpp/machine/devices/geometry/job.h"
+			],
+			"reason": "geometry_job_contract"
+		},
+		{
+			"ts": "machine/ts/machine/devices/geometry/contracts.ts",
+			"cpp": [
+				"machine/cpp/machine/devices/geometry/contracts.h"
+			],
+			"reason": "geometry_mmio_layout_contract"
+		},
+		{
+			"ts": "machine/ts/machine/devices/geometry/addressing.ts",
+			"cpp": [
+				"machine/cpp/machine/devices/geometry/addressing.h",
+				"machine/cpp/machine/devices/geometry/addressing.cpp"
+			],
+			"reason": "geometry_addressing_contract"
+		},
+		{
+			"ts": "machine/ts/machine/devices/geometry/projection.ts",
+			"cpp": [
+				"machine/cpp/machine/devices/geometry/projection.h"
+			],
+			"reason": "geometry_projection_contract"
+		},
+		{
+			"ts": "machine/ts/machine/devices/input/sample_latch.ts",
+			"cpp": [
+				"machine/cpp/machine/devices/input/sample_latch.h",
+				"machine/cpp/machine/devices/input/sample_latch.cpp"
+			],
+			"reason": "input_sample_latch_contract"
+		},
+		{
+			"ts": "machine/ts/machine/devices/input/sample_edge.ts",
+			"cpp": [
+				"machine/cpp/machine/devices/input/sample_edge.h",
+				"machine/cpp/machine/devices/input/sample_edge.cpp"
+			],
+			"reason": "input_sample_edge_contract"
+		},
+		{
+			"ts": "machine/ts/machine/devices/dma/image_copy.ts",
+			"cpp": [
+				"machine/cpp/machine/devices/dma/image_copy.h"
+			],
+			"reason": "dma_image_copy_contract"
+		},
+		{
+			"ts": "machine/ts/machine/program/layout.ts",
+			"cpp": [
+				"machine/cpp/machine/program/layout.h"
+			],
+			"reason": "program_memory_layout_contract"
+		},
+		{
+			"ts": "machine/ts/machine/devices/vdp/rpu_desc.ts",
+			"cpp": [
+				"machine/cpp/machine/devices/vdp/rpu_desc.h"
+			],
+			"reason": "vdp_rpu_descriptor_contract"
+		},
+		{
+			"ts": "machine/ts/machine/scheduler/budget.ts",
+			"cpp": [
+				"machine/cpp/machine/scheduler/budget.h"
+			],
+			"reason": "scheduler_budget_accrual_math_mirrored"
+		},
+		{
+			"ts": "machine/ts/machine/devices/irq/controller.ts",
+			"cpp": [
+				"machine/cpp/machine/devices/irq/controller.h",
+				"machine/cpp/machine/devices/irq/controller.cpp",
+				"machine/cpp/machine/devices/irq/save_state.cpp"
+			],
+			"reason": "irq_controller_registerfile_contract"
+		},
+		{
+			"ts": "machine/ts/machine/runtime/host_fault.ts",
+			"cpp": [
+				"machine/cpp/machine/runtime/host_fault.h",
+				"machine/cpp/machine/runtime/host_fault.cpp"
+			],
+			"reason": "runtime_host_fault_contract"
+		},
+		{
+			"ts": "machine/ts/machine/devices/audio/pcm_decoder_hot_path.ts",
+			"cpp": [
+				"machine/cpp/machine/devices/audio/pcm_decoder_hot_path.h"
+			],
+			"reason": "devices_audio_pcm_decoder_hot_path_contract"
+		},
+		{
+			"ts": "machine/ts/machine/devices/audio/badp_decoder.ts",
+			"cpp": [
+				"machine/cpp/machine/devices/audio/badp_decoder.h",
+				"machine/cpp/machine/devices/audio/badp_decoder.cpp"
+			],
+			"reason": "devices_audio_badp_decoder_contract"
+		},
+		{
+			"ts": "machine/ts/machine/devices/input/output_port.ts",
+			"cpp": [
+				"machine/cpp/machine/devices/input/output_port.h",
+				"machine/cpp/machine/devices/input/output_port.cpp"
+			],
+			"reason": "devices_input_output_port_contract"
+		},
+		{
+			"ts": "machine/ts/machine/devices/input/control_port.ts",
+			"cpp": [
+				"machine/cpp/machine/devices/input/control_port.h",
+				"machine/cpp/machine/devices/input/control_port.cpp"
+			],
+			"reason": "devices_input_control_port_contract"
+		},
+		{
+			"ts": "machine/ts/machine/devices/audio/playback.ts",
+			"cpp": [
+				"machine/cpp/machine/devices/audio/playback.h",
+				"machine/cpp/machine/devices/audio/playback.cpp"
+			],
+			"reason": "devices_audio_playback_contract"
+		},
+		{
+			"ts": "machine/ts/machine/runtime/boot_timing.ts",
+			"cpp": [
+				"machine/cpp/machine/runtime/boot_timing.h",
+				"machine/cpp/machine/runtime/boot_timing.cpp"
+			],
+			"reason": "runtime_boot_timing_resolution_contract"
+		},
+		{
+			"ts": "machine/ts/machine/cpu/source_text.ts",
+			"cpp": [
+				"machine/cpp/machine/cpu/source_text.h",
+				"machine/cpp/machine/cpu/source_text.cpp"
+			],
+			"reason": "cpu_source_range_text_extraction_contract"
 		}
 	],
 	"strict_runtime_shape_parity": [
@@ -780,6 +1158,114 @@
 				"VdpReadbackState"
 			],
 			"reason": "vdp_readback_state_shape_contract"
+		},
+		{
+			"ts": "machine/ts/machine/devices/input/contracts.ts",
+			"cpp": [
+				"machine/cpp/machine/devices/input/contracts.h"
+			],
+			"symbols": [
+				"InputControllerPadSnapshot",
+				"InputControllerSnapshot"
+			],
+			"reason": "input_controller_raw_snapshot_shape_contract"
+		},
+		{
+			"ts": "machine/ts/machine/devices/irq/save_state.ts",
+			"cpp": [
+				"machine/cpp/machine/devices/irq/save_state.h"
+			],
+			"symbols": [
+				"IrqControllerState"
+			],
+			"reason": "irq_controller_save_state_shape_contract"
+		},
+		{
+			"ts": "machine/ts/machine/devices/input/save_state.ts",
+			"cpp": [
+				"machine/cpp/machine/devices/input/save_state.h"
+			],
+			"symbols": [
+				"InputControllerState"
+			],
+			"reason": "input_controller_save_state_shape_contract"
+		},
+		{
+			"ts": "machine/ts/machine/devices/geometry/save_state.ts",
+			"cpp": [
+				"machine/cpp/machine/devices/geometry/save_state.h"
+			],
+			"symbols": [
+				"GeometryControllerState"
+			],
+			"reason": "devices_geometry_save_state_shape_contract"
+		},
+		{
+			"ts": "machine/ts/machine/devices/audio/save_state.ts",
+			"cpp": [
+				"machine/cpp/machine/devices/audio/save_state.h"
+			],
+			"symbols": [
+				"ApuBiquadFilterState",
+				"ApuBadpDecoderSaveState",
+				"ApuOutputVoiceState",
+				"ApuOutputState",
+				"AudioControllerState"
+			],
+			"reason": "devices_audio_save_state_shape_contract"
+		},
+		{
+			"ts": "machine/ts/machine/save_state.ts",
+			"cpp": [
+				"machine/cpp/machine/save_state.h"
+			],
+			"symbols": [
+				"MachineState",
+				"MachineSaveState"
+			],
+			"reason": "save_state_shape_contract"
+		},
+		{
+			"ts": "machine/ts/machine/devices/audio/playback.ts",
+			"cpp": [
+				"machine/cpp/machine/devices/audio/playback.h"
+			],
+			"symbols": [
+				"ApuOutputFilter",
+				"ApuOutputPlayback"
+			],
+			"reason": "devices_audio_playback_shape_contract"
+		},
+		{
+			"ts": "machine/ts/machine/devices/audio/badp_decoder.ts",
+			"cpp": [
+				"machine/cpp/machine/devices/audio/badp_decoder.h"
+			],
+			"symbols": [
+				"ApuBadpSeekTableResult",
+				"ApuBadpDecoderState"
+			],
+			"reason": "devices_audio_badp_decoder_shape_contract"
+		},
+		{
+			"ts": "machine/ts/machine/runtime/frame/state.ts",
+			"cpp": [
+				"machine/cpp/machine/runtime/frame/state.h"
+			],
+			"symbols": [
+				"FrameState"
+			],
+			"reason": "runtime_frame_state_shape_contract"
+		},
+		{
+			"ts": "machine/ts/machine/runtime/boot_timing.ts",
+			"cpp": [
+				"machine/cpp/machine/runtime/boot_timing.h"
+			],
+			"symbols": [
+				"ResolvedRuntimeTiming"
+			],
+			"reason": "runtime_boot_timing_shape_contract"
 		}
 	],
 	"strict_runtime_no_churn": [
@@ -2557,6 +3043,13 @@
 				"machine/cpp/machine/devices/vdp/vdp.cpp"
 			],
 			"reason": "vdp_device_filename_parity"
+		},
+		{
+			"ts": "machine/ts/machine/scheduler/microtask_queue.ts",
+			"cpp": [
+				"machine/cpp/machine/scheduler/microtask_queue.h"
+			],
+			"reason": "machine_microtask_queue_boundary_contract"
 		}
 	],
 	"public_symbol_parity": [
@@ -2725,6 +3218,17 @@
 					"reason": "TS stores string pool ids as number values; C++ stores the same ids as uint32_t words at the native ABI boundary."
 				}
 			]
+		},
+		{
+			"ts": "machine/ts/machine/cpu/string_pool.ts",
+			"cpp": [
+				"machine/cpp/machine/cpu/string_pool.h"
+			],
+			"symbols": [
+				"StringPoolStateEntry",
+				"StringPoolState"
+			],
+			"reason": "cpu_string_pool_save_state_shape_contract"
 		},
 		{
 			"ts": "machine/ts/machine/program/loader.ts",

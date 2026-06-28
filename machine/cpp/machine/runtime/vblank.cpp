@@ -107,9 +107,9 @@ void VblankState::handleEndTimer(Runtime& runtime) {
 
 void VblankState::scheduleCurrentFrameTimers(Runtime& runtime) {
 	auto& scheduler = runtime.machine.scheduler;
-	scheduler.scheduleVblankTimer(TimerKindVblankEnd, m_frameStartCycle + runtime.timing.cycleBudgetPerFrame);
+	scheduler.scheduleVblankTimer(TIMER_KIND_VBLANK_END, m_frameStartCycle + runtime.timing.cycleBudgetPerFrame);
 	if (m_vblankStartCycle > 0 && getCyclesIntoFrame(runtime) < m_vblankStartCycle) {
-		scheduler.scheduleVblankTimer(TimerKindVblankBegin, m_frameStartCycle + m_vblankStartCycle);
+		scheduler.scheduleVblankTimer(TIMER_KIND_VBLANK_BEGIN, m_frameStartCycle + m_vblankStartCycle);
 	}
 }
 

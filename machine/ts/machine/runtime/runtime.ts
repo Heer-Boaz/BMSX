@@ -7,13 +7,11 @@ import {
 	convertToError,
 	type LuaDebuggerPauseSignal
 } from '../../lua/value';
-import type { StorageService } from './storage';
 import type { CartManifest, MachineManifest, RuntimeRomPackage } from '../../rompack/format';
 import {
 	CART_ROM_HEADER_SIZE,
 	DEFAULT_GEO_WORK_UNITS_PER_SEC,
 	DEFAULT_VDP_WORK_UNITS_PER_SEC,
-	getMachinePerfSpecs,
 } from '../../rompack/format';
 import { RomSourceStack, type RawRomSource, type RomSourceLayer } from '../../rompack/source';
 import { buildRuntimeRomLayer, type RuntimeRomLayer } from '../../rompack/loader';
@@ -21,7 +19,7 @@ import { StringValue, Table, type Value, type ProgramMetadata, type NativeFuncti
 import { type LuaSemanticModel, type FileSemanticData } from '../../lua/semantic/model';
 import { registerFirmwareBuiltins } from '../firmware/builtins';
 import { LuaFunctionRedirectCache } from '../firmware/handler_registry';
-import { LuaJsBridge } from './host/native_bridge';
+import { HandlerCache, LuaJsBridge } from './host/native_bridge';
 import type { RuntimeOptions } from './options';
 import type { GateGroup } from '../../common/taskgate';
 import { taskGate } from '../../common/taskgate';
@@ -40,7 +38,6 @@ import type { ParsedLuaChunk } from '../../lua/analysis/parse';
 import { configureLuaHeapUsage, getTrackedLuaHeapBytes } from '../memory/lua_heap_usage';
 import { FrameLoopState } from './frame/loop';
 import { FrameSchedulerState } from '../scheduler/frame';
-import { calcCyclesPerFrameScaled, resolveVblankCycles } from './timing';
 import { TimingState } from './timing/state';
 import { VblankState } from './vblank';
 import { CpuExecutionState } from './cpu_executor';
@@ -49,17 +46,15 @@ import { HostFaultState } from './host_fault';
 import { LuaScratchState } from '../program/scratch';
 import { callClosureInto, invokeClosureHandler, invokeLuaHandler } from '../program/executor';
 import type { ProgramVectorTable } from '../program/loader';
-import { resolveCpuHz, resolvePositiveSafeInteger, resolveRuntimeRenderSize, resolveUfpsScaled } from '../specs';
+import { resolvePositiveSafeInteger } from '../specs';
 import { resolveRuntimeMemoryMapSpecs } from '../memory/specs';
-import {
-	applyActiveMachineTiming,
-	refreshDeviceTimings,
-	setTransferRatesFromManifest,
-} from './timing/config';
-import { HandlerCache } from './handler_cache';
+import { applyRuntimeTiming, resolveRuntimeTiming } from './boot_timing';
+import { refreshDeviceTimings } from './timing/config';
+import { HZ_SCALE } from './timing/constants';
 import { Machine } from '../machine';
 import type { RuntimeInputSource } from './input';
 import { Memory } from '../memory/memory';
+import type { MicrotaskQueue } from '../scheduler/microtask_queue';
 import {
 	BASE_RAM_USED_SIZE,
 	DEFAULT_VRAM_IMAGE_SLOT_SIZE,
@@ -67,16 +62,6 @@ import {
 	RAM_SIZE,
 	configureMemoryMap,
 } from '../memory/map';
-
-export type FrameState = {
-	haltGame: boolean;
-	updateExecuted: boolean;
-	luaFaulted: boolean;
-	cycleBudgetRemaining: number;
-	cycleBudgetGranted: number;
-	cycleCarryGranted: number;
-	activeCpuUsedCycles: number;
-};
 
 export type RuntimeProgramVectorTable = {
 	resetProtoIndex: number;
@@ -86,7 +71,6 @@ export type RuntimeProgramVectorTable = {
 
 
 export class Runtime {
-	public readonly storageService: StorageService;
 	public readonly luaJsBridge!: LuaJsBridge;
 	public readonly apiFunctionNames = new Set<string>();
 	public readonly luaBuiltinMetadata = new Map<string, LuaBuiltinDescriptor>();
@@ -210,41 +194,32 @@ export class Runtime {
 		return this.programMetadata !== null;
 	}
 
-	public static async init(systemLayer: RuntimeRomLayer, workspaceOverlay: Uint8Array | undefined, input: RuntimeInputSource, storageService: StorageService, cartridge?: Uint8Array): Promise<Runtime> {
+	public static async init(systemLayer: RuntimeRomLayer, workspaceOverlay: Uint8Array | undefined, input: RuntimeInputSource, microtasks: MicrotaskQueue, cartridge?: Uint8Array): Promise<Runtime> {
 		const systemSource = new RomSourceStack([{ id: systemLayer.id, index: systemLayer.index, payload: systemLayer.payload }]);
 		const systemLuaSources = buildLuaSources(systemSource, systemSource, systemLayer.index, ['system']);
 		const systemMachine = systemLayer.index.machine;
 		if (!cartridge) {
-			const systemMemorySpecs = resolveRuntimeMemoryMapSpecs({
-				machine: systemMachine,
-				systemMachine,
-				systemSlotBytes: DEFAULT_VRAM_IMAGE_SLOT_SIZE,
-			});
+			const systemMemorySpecs = resolveRuntimeMemoryMapSpecs(systemMachine, systemMachine, DEFAULT_VRAM_IMAGE_SLOT_SIZE);
 			configureMemoryMap(systemMemorySpecs);
-			const systemPerfSpecs = getMachinePerfSpecs(systemMachine);
-			const ufpsScaled = resolveUfpsScaled(systemMachine);
-			const cpuHz = resolveCpuHz(systemMachine);
-			const cycleBudgetPerFrame = calcCyclesPerFrameScaled(cpuHz, ufpsScaled);
-			const systemRenderSize = resolveRuntimeRenderSize(systemMachine);
-			const vblankCycles = resolveVblankCycles(cpuHz, ufpsScaled, systemRenderSize.height);
+			const timing = resolveRuntimeTiming(systemMachine);
 			const memory = new Memory({
 				systemRom: new Uint8Array(systemLayer.payload),
 				cartRom: new Uint8Array(CART_ROM_HEADER_SIZE),
 			});
 			const runtime = new Runtime({
-				viewport: systemRenderSize,
+				viewport: { width: timing.viewportWidth, height: timing.viewportHeight },
 				memory,
 				activeMachineManifest: systemMachine,
 				cartManifest: null,
 				cartProjectRootPath: null,
-				ufpsScaled,
-				cpuHz,
-				cycleBudgetPerFrame,
-				vblankCycles,
-				vdpWorkUnitsPerSec: systemPerfSpecs.work_units_per_sec,
-				geoWorkUnitsPerSec: systemPerfSpecs.geo_work_units_per_sec,
-			}, input, storageService);
-			setTransferRatesFromManifest(runtime, systemPerfSpecs);
+				ufpsScaled: timing.ufpsScaled,
+				cpuHz: timing.cpuHz,
+				cycleBudgetPerFrame: timing.cycleBudgetPerFrame,
+				vblankCycles: timing.vblankCycles,
+				vdpWorkUnitsPerSec: timing.vdpWorkUnitsPerSec,
+				geoWorkUnitsPerSec: timing.geoWorkUnitsPerSec,
+			}, input, microtasks);
+			applyRuntimeTiming(runtime, timing);
 			runtime.configureProgramSources({
 				systemRom: systemLayer,
 				cartRom: null,
@@ -274,18 +249,9 @@ export class Runtime {
 		const cartSource = new RomSourceStack([{ id: cartRom.id, index: cartRom.index, payload: cartRom.payload }]);
 		const cartLuaSources = buildLuaSources(cartSource, activeRomSource, cartRom.index, overlayRom ? ['overlay', 'cart'] : ['cart']);
 
-		const memoryLimits = resolveRuntimeMemoryMapSpecs({
-			machine: cartRom.index.machine,
-			systemMachine,
-			systemSlotBytes: DEFAULT_VRAM_IMAGE_SLOT_SIZE,
-		});
+		const memoryLimits = resolveRuntimeMemoryMapSpecs(cartRom.index.machine, systemMachine, DEFAULT_VRAM_IMAGE_SLOT_SIZE);
 		configureMemoryMap(memoryLimits);
-		const cartPerfSpecs = getMachinePerfSpecs(cartRom.index.machine);
-		const ufpsScaled = resolveUfpsScaled(cartRom.index.machine);
-		const cpuHz = resolveCpuHz(cartRom.index.machine);
-		const cycleBudgetPerFrame = calcCyclesPerFrameScaled(cpuHz, ufpsScaled);
-		const cartRenderSize = resolveRuntimeRenderSize(cartRom.index.machine);
-		const vblankCycles = resolveVblankCycles(cpuHz, ufpsScaled, cartRenderSize.height);
+		const timing = resolveRuntimeTiming(cartRom.index.machine);
 		let overlayPayload: Uint8Array | undefined;
 		if (overlayRom) {
 			overlayPayload = new Uint8Array(overlayRom.payload);
@@ -296,19 +262,19 @@ export class Runtime {
 			overlayRom: overlayPayload,
 		});
 		const runtime = new Runtime({
-			viewport: cartRenderSize,
+			viewport: { width: timing.viewportWidth, height: timing.viewportHeight },
 			memory,
 			activeMachineManifest: cartRom.index.machine,
 			cartManifest: cartRom.index.cart_manifest,
 			cartProjectRootPath: cartRom.index.projectRootPath,
-			ufpsScaled,
-			cpuHz,
-			cycleBudgetPerFrame,
-			vblankCycles,
-			vdpWorkUnitsPerSec: cartPerfSpecs.work_units_per_sec,
-			geoWorkUnitsPerSec: cartPerfSpecs.geo_work_units_per_sec,
-		}, input, storageService);
-		setTransferRatesFromManifest(runtime, cartPerfSpecs);
+			ufpsScaled: timing.ufpsScaled,
+			cpuHz: timing.cpuHz,
+			cycleBudgetPerFrame: timing.cycleBudgetPerFrame,
+			vblankCycles: timing.vblankCycles,
+			vdpWorkUnitsPerSec: timing.vdpWorkUnitsPerSec,
+			geoWorkUnitsPerSec: timing.geoWorkUnitsPerSec,
+		}, input, microtasks);
+		applyRuntimeTiming(runtime, timing);
 		runtime.configureProgramSources({
 			systemRom: systemLayer,
 			cartRom,
@@ -514,7 +480,7 @@ export class Runtime {
 	private constructor(
 		options: RuntimeOptions,
 		private readonly input: RuntimeInputSource,
-		storageService: StorageService,
+		microtasks: MicrotaskQueue,
 	) {
 		this.frameScheduler = new FrameSchedulerState(this);
 		this.frameLoop = new FrameLoopState(this);
@@ -528,7 +494,6 @@ export class Runtime {
 		const initialGeoWorkUnits = options.geoWorkUnitsPerSec ?? DEFAULT_GEO_WORK_UNITS_PER_SEC;
 		this.timing.vdpWorkUnitsPerSec = resolvePositiveSafeInteger(initialVdpWorkUnits, 'machine.specs.vdp.work_units_per_sec');
 		this.timing.geoWorkUnitsPerSec = resolvePositiveSafeInteger(initialGeoWorkUnits, 'machine.specs.geo.work_units_per_sec');
-		this.storageService = storageService;
 		this.activeMachineManifest = options.activeMachineManifest;
 		this.cartManifest = options.cartManifest;
 		this.cartProjectRootPath = options.cartProjectRootPath;
@@ -537,6 +502,7 @@ export class Runtime {
 			options.memory,
 			options.viewport,
 			input,
+			microtasks,
 		);
 		this.machine.memory.clearIoSlots();
 		this.machine.initializeSystemIo();
@@ -619,16 +585,15 @@ export class Runtime {
 	}
 
 	public applyCartProgramTiming(): void {
-		const perfSpecs = getMachinePerfSpecs(this.activeMachineManifest);
-		this.applyUfpsScaled(resolveUfpsScaled(this.activeMachineManifest));
-		const cpuHz = resolveCpuHz(this.activeMachineManifest);
-		applyActiveMachineTiming(this, cpuHz);
-		setTransferRatesFromManifest(this, perfSpecs);
+		applyRuntimeTiming(this, resolveRuntimeTiming(this.activeMachineManifest));
 	}
 
 	public applyUfpsScaled(ufpsScaled: number): void {
-		this.timing.applyUfpsScaled(ufpsScaled);
-		this.input.setRuntimeInputFrameDurationMs(this.timing.frameDurationMs);
+		const timing = this.timing;
+		timing.ufpsScaled = ufpsScaled;
+		timing.ufps = ufpsScaled / HZ_SCALE;
+		timing.frameDurationMs = 1000 / timing.ufps;
+		this.input.setRuntimeInputFrameDurationMs(timing.frameDurationMs);
 	}
 
 	public dispose(): void {

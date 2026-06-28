@@ -489,11 +489,11 @@ InstructionDebugInfo describeInstructionAtPc(const Program& program, const Progr
 }
 
 std::string formatSourceSnippet(const SourceRange& range, const std::string& source) {
-	std::string snippet;
-	if (!extractSourceRangeText(range, source, snippet)) {
+	std::optional<std::string> snippet = extractSourceRangeText(range, source);
+	if (!snippet) {
 		return {};
 	}
-	std::string compact = compactWhitespace(snippet);
+	std::string compact = compactWhitespace(*snippet);
 	if (compact.empty()) {
 		return "<empty>";
 	}

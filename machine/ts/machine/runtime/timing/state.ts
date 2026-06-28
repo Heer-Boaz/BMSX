@@ -1,5 +1,4 @@
 import { DEFAULT_FRAME_TIME_MS, DEFAULT_UFPS, DEFAULT_UFPS_SCALED, HZ_SCALE } from './constants';
-import { resolveUfpsScaled } from './index';
 
 export class TimingState {
 	public ufps: number = DEFAULT_UFPS;
@@ -11,12 +10,7 @@ export class TimingState {
 	public dmaBytesPerSecBulk: number = 0;
 
 	constructor(public ufpsScaled: number = DEFAULT_UFPS_SCALED, public cpuHz: number = 0, public cycleBudgetPerFrame: number = 0) {
-		this.applyUfpsScaled(ufpsScaled);
-	}
-
-	public applyUfpsScaled(ufpsScaled: number): void {
-		this.ufpsScaled = resolveUfpsScaled(ufpsScaled);
-		this.ufps = this.ufpsScaled / HZ_SCALE;
+		this.ufps = ufpsScaled / HZ_SCALE;
 		this.frameDurationMs = 1000 / this.ufps;
 	}
 }

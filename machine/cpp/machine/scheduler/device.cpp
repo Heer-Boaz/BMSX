@@ -8,7 +8,7 @@
 
 namespace bmsx {
 namespace {
-constexpr uint8_t TIMER_EVENT_KIND_SHIFT = 8;
+constexpr uint8_t timerEventKindShift = 8;
 }
 
 DeviceScheduler::DeviceScheduler(CPU& cpu)
@@ -75,12 +75,12 @@ uint16_t DeviceScheduler::popDueTimer() {
 	const uint8_t kind = m_timerKinds[0];
 	const uint8_t payload = m_timerPayloads[0];
 	removeTopTimer();
-	return static_cast<uint16_t>((static_cast<uint16_t>(kind) << TIMER_EVENT_KIND_SHIFT) | payload);
+	return static_cast<uint16_t>((static_cast<uint16_t>(kind) << timerEventKindShift) | payload);
 }
 
 void DeviceScheduler::scheduleVblankTimer(uint8_t timerKind, i64 deadlineCycles) {
 	uint32_t generation;
-	if (timerKind == TimerKindVblankBegin) {
+	if (timerKind == TIMER_KIND_VBLANK_BEGIN) {
 		generation = nextTimerGeneration(m_vblankEnterTimerGeneration);
 		m_vblankEnterTimerGeneration = generation;
 	} else {
@@ -94,7 +94,7 @@ void DeviceScheduler::scheduleVblankTimer(uint8_t timerKind, i64 deadlineCycles)
 void DeviceScheduler::scheduleDeviceService(uint8_t deviceKind, i64 deadlineCycles) {
 	const uint32_t generation = nextTimerGeneration(m_deviceServiceTimerGeneration[deviceKind]);
 	m_deviceServiceTimerGeneration[deviceKind] = generation;
-	pushTimer(deadlineCycles, TimerKindDeviceService, deviceKind, generation);
+	pushTimer(deadlineCycles, TIMER_KIND_DEVICE_SERVICE, deviceKind, generation);
 	requestYieldForEarlierDeadline(deadlineCycles);
 }
 
@@ -175,11 +175,11 @@ void DeviceScheduler::removeTopTimer() {
 
 bool DeviceScheduler::isTimerCurrent(uint8_t kind, uint8_t payload, uint32_t generation) const {
 	switch (kind) {
-		case TimerKindVblankBegin:
+		case TIMER_KIND_VBLANK_BEGIN:
 			return generation == m_vblankEnterTimerGeneration;
-		case TimerKindVblankEnd:
+		case TIMER_KIND_VBLANK_END:
 			return generation == m_vblankEndTimerGeneration;
-		case TimerKindDeviceService:
+		case TIMER_KIND_DEVICE_SERVICE:
 			return generation == m_deviceServiceTimerGeneration[payload];
 		default:
 			throw std::runtime_error("Runtime fault: unknown timer kind " + std::to_string(kind) + ".");

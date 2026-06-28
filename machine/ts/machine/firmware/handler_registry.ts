@@ -1,7 +1,15 @@
 import type { LuaHandlerFn } from '../../lua/handler_cache';
 import { LuaNativeFunction } from '../../lua/runtime';
 import { type LuaFunctionValue } from '../../lua/value';
-import type { LuaFunctionRedirectRecord } from '../runtime/contracts';
+
+
+type LuaFunctionRedirectRecord = {
+	key: string;
+	moduleId: string;
+	path: ReadonlyArray<string>;
+	current: LuaFunctionValue;
+	redirect: LuaFunctionValue;
+};
 
 export class LuaFunctionRedirectCache {
 	private readonly byKey = new Map<string, LuaFunctionRedirectRecord>();

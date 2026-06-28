@@ -87,6 +87,6 @@ inline constexpr int decodeCallArgCount(int operand, int openArgCount) {
 	return operand == 0 ? openArgCount : operand - 1;
 }
 
-auto getOpcodeName(OpCode op) -> const char*;
+auto getOpcodeName(OpCode opcode) -> const char*;
 
 } // namespace bmsx

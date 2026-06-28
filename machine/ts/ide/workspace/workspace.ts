@@ -53,12 +53,12 @@ export async function saveLuaResourceSource(runtime: Runtime, path: string, sour
 	asset.update_timestamp = updatedAt;
 	registry.path2lua[sourcePath] = asset;
 	registry.module2lua[asset.module_path] = asset;
-	persistWorkspaceOverridesToLocalStorage(runtime.storageService, projectRootPath, new Map([[
+	persistWorkspaceOverridesToLocalStorage(machineManager.platform.storage, projectRootPath, new Map([[
 		sourcePath,
 		{ source, path: sourcePath, cartPath: sourcePath, updatedAt },
 	]]), updatedAt);
 	const dirtyPath = buildWorkspaceDirtyEntryPath(projectRootPath, sourcePath);
-	runtime.storageService.removeItem(buildWorkspaceStorageKey(projectRootPath, dirtyPath));
+	machineManager.platform.storage.removeItem(buildWorkspaceStorageKey(projectRootPath, dirtyPath));
 	await deleteWorkspaceServerFile(dirtyPath);
 	workspaceSourceCache.delete(dirtyPath);
 	workspaceSourceCache.set(sourcePath, source);
@@ -162,7 +162,7 @@ async function clearWorkspaceDirtyFiles(runtime: Runtime, cart: LuaSourceRegistr
 async function reapplyWorkspaceBaseline(runtime: Runtime, registry: LuaSourceRegistry): Promise<void> {
 	await applyWorkspaceSourceOverrides({
 		registry,
-		storage: runtime.storageService,
+		storage: machineManager.platform.storage,
 		includeServer: false,
 		projectRootPath: runtime.cartProjectRootPath,
 		timestampNow: machineManager.platform.clock.dateNow(),
@@ -172,13 +172,13 @@ async function reapplyWorkspaceBaseline(runtime: Runtime, registry: LuaSourceReg
 
 export async function resetWorkspaceDirtyBuffersAndStorage(runtime: Runtime): Promise<void> {
 	const registry = resolveEditableCartLuaSources(runtime);
-	await clearWorkspaceDirtyFiles(runtime, registry, runtime.storageService);
+	await clearWorkspaceDirtyFiles(runtime, registry, machineManager.platform.storage);
 	await reapplyWorkspaceBaseline(runtime, registry);
 }
 
 export async function nukeWorkspaceState(runtime: Runtime): Promise<void> {
 	const registry = resolveEditableCartLuaSources(runtime);
-	await clearWorkspaceArtifacts(runtime, registry, runtime.storageService);
+	await clearWorkspaceArtifacts(runtime, registry, machineManager.platform.storage);
 	await reapplyWorkspaceBaseline(runtime, registry);
 }
 

@@ -402,7 +402,7 @@ bool MachineManager::bootSystemStartupProgram(const MachineManifest& runtimeMach
 	activateSystemRom();
 	setMachineManifest(runtimeMachine);
 	const ResolvedRuntimeTiming timing = resolveRuntimeTiming(runtimeMachine);
-	applyManifestMemorySpecs(runtimeMachine, m_system_rom.machine, DEFAULT_VRAM_IMAGE_SLOT_SIZE);
+	configureMemoryMap(resolveRuntimeMemoryMapSpecs(runtimeMachine, m_system_rom.machine, DEFAULT_VRAM_IMAGE_SLOT_SIZE));
 	configureViewForMachine(runtimeMachine);
 
 	Runtime& rt = ensureRuntime(RuntimeOptions{
@@ -498,7 +498,7 @@ bool MachineManager::loadRomInternal(const u8* data, size_t size) {
 		}
 		activateCartRom();
 		setMachineManifest(cartMachine);
-		applyManifestMemorySpecs(activeRom().machine, m_system_rom.machine, DEFAULT_VRAM_IMAGE_SLOT_SIZE);
+		configureMemoryMap(resolveRuntimeMemoryMapSpecs(activeRom().machine, m_system_rom.machine, DEFAULT_VRAM_IMAGE_SLOT_SIZE));
 		const ResolvedRuntimeTiming timing = resolveRuntimeTiming(activeRom().machine, transferMachine, cpuHz, runtimeUfpsScaled);
 		prepareRuntimeForActiveCart(timing, cartMachine);
 		if (activeRom().hasProgram()) {

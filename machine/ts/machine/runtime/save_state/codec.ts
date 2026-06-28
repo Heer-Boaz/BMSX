@@ -45,19 +45,16 @@ import {
 	VDP_RPU_STREAM_BINDING_CAPACITY,
 	VDP_RPU_CONSTANT_BINDING_CAPACITY,
 	VDP_RPU_TEXTURE_BINDING_CAPACITY,
-	VDP_RPU_PARAM_MEM_SIZE,
 	type VdpRpuCommandBufferSaveState,
 	type VdpRpuFrameSaveState,
 	type VdpRpuSaveState,
 } from '../../devices/vdp/rpu';
 import { VDP_XF_MATRIX_COUNT, VDP_XF_MATRIX_REGISTER_WORDS, type VdpXfState } from '../../devices/vdp/xf';
 import type { MemorySaveState } from '../../memory/memory';
-import { VDP_STREAM_CAPACITY_WORDS } from '../../memory/map';
+import { VDP_STREAM_CAPACITY_WORDS, VRAM_STAGING_SIZE } from '../../memory/map';
 import type { FrameSchedulerStateSnapshot, TickCompletion } from '../../scheduler/frame';
-import type {
-	RuntimeSaveMachineState,
-	RuntimeSaveState,
-} from '../contracts';
+import type { RuntimeSaveMachineState } from '../save_machine_state';
+import type { RuntimeSaveState } from '../save_state';
 import { applyRuntimeSaveState, captureRuntimeSaveState } from '../save_state';
 import { RUNTIME_SAVE_STATE_PROP_NAMES } from './schema';
 import type { Runtime } from '../runtime';
@@ -621,7 +618,7 @@ function decodeVdpRpuState(value: unknown, label: string): VdpRpuSaveState {
 	const object = requireObject(value, label);
 	return {
 		buildState: requireBoundedU32(requireObjectKey(object, 'buildState', label, `${label}.buildState`), `${label}.buildState`, 0, 3) as VdpRpuSaveState['buildState'],
-		vdpVram: decodeBoundedU8Vector(requireObjectKey(object, 'vdpVram', label, `${label}.vdpVram`), `${label}.vdpVram`, VDP_RPU_PARAM_MEM_SIZE),
+		vdpVram: decodeBoundedU8Vector(requireObjectKey(object, 'vdpVram', label, `${label}.vdpVram`), `${label}.vdpVram`, VRAM_STAGING_SIZE),
 	};
 }
 

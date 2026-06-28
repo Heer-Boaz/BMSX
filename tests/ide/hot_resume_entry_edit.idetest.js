@@ -5,6 +5,7 @@ await t.waitForCart();
 await t.frames(20);
 
 const runtime = t.runtime();
+const storage = globalThis.bmsx.machineManager.platform.storage;
 const fontRecord = runtime.cartLuaSources.path2lua['pietious_font.lua'];
 const cartRecord = runtime.cartLuaSources.path2lua['cart.lua'];
 const lootDropRecord = runtime.cartLuaSources.path2lua['loot_drop.lua'];
@@ -33,19 +34,19 @@ const fontStorageKey = `bmsx.workspace:${runtime.cartProjectRootPath}:${fontDirt
 const cartStorageKey = `bmsx.workspace:${runtime.cartProjectRootPath}:${cartDirtyPath}`;
 const lootDropStorageKey = `bmsx.workspace:${runtime.cartProjectRootPath}:${lootDropDirtyPath}`;
 const paperfoeStorageKey = `bmsx.workspace:${runtime.cartProjectRootPath}:${paperfoeDirtyPath}`;
-runtime.storageService.setItem(fontStorageKey, JSON.stringify({
+storage.setItem(fontStorageKey, JSON.stringify({
 	contents: fontProbeSource,
 	updatedAt: fontRecord.base_update_timestamp + 1000000,
 }));
-runtime.storageService.setItem(cartStorageKey, JSON.stringify({
+storage.setItem(cartStorageKey, JSON.stringify({
 	contents: cartProbeSource,
 	updatedAt: cartRecord.base_update_timestamp + 1000000,
 }));
-runtime.storageService.setItem(lootDropStorageKey, JSON.stringify({
+storage.setItem(lootDropStorageKey, JSON.stringify({
 	contents: lootDropProbeSource,
 	updatedAt: lootDropRecord.base_update_timestamp + 1000000,
 }));
-runtime.storageService.setItem(paperfoeStorageKey, JSON.stringify({
+storage.setItem(paperfoeStorageKey, JSON.stringify({
 	contents: paperfoeProbeSource,
 	updatedAt: paperfoeRecord.base_update_timestamp + 1000000,
 }));
@@ -89,8 +90,8 @@ try {
 	t.assert(fsmProbeAfterSecondResume === 6789, `expected second hot-resume to keep changed FSM handler active, got ${fsmProbeAfterSecondResume}`);
 	t.assert(btProbeAfterSecondResume === 'SUCCESS', `expected second hot-resume to keep changed behaviour tree handler active, got ${btProbeAfterSecondResume}`);
 } finally {
-	runtime.storageService.removeItem(fontStorageKey);
-	runtime.storageService.removeItem(cartStorageKey);
-	runtime.storageService.removeItem(lootDropStorageKey);
-	runtime.storageService.removeItem(paperfoeStorageKey);
+	storage.removeItem(fontStorageKey);
+	storage.removeItem(cartStorageKey);
+	storage.removeItem(lootDropStorageKey);
+	storage.removeItem(paperfoeStorageKey);
 }

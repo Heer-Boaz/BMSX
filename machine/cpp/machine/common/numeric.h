@@ -8,8 +8,8 @@
 namespace bmsx {
 
 constexpr int FIX16_SHIFT = 16;
-constexpr i64 FIX16_ONE = i64{1} << FIX16_SHIFT;
-constexpr double FIX16_SCALE = 65536.0;
+constexpr i64 FIX16_ONE = static_cast<i64>(1) << FIX16_SHIFT;
+constexpr double FIX16_SCALE = static_cast<double>(FIX16_ONE);
 
 inline auto toSignedWord(u32 value) -> i32 {
 	return static_cast<i32>(value);

@@ -23,14 +23,10 @@ bool StringPool::StringKeyEq::operator()(const std::string& lhs, std::string_vie
 bool StringPool::StringKeyEq::operator()(std::string_view lhs, const std::string& rhs) const noexcept { return lhs == rhs; }
 
 StringId StringPool::intern(std::string_view value) {
-	return internWithOwnership(value, m_trackLuaHeap);
+	return intern(value, m_trackLuaHeap);
 }
 
-StringId StringPool::internRom(std::string_view value) {
-	return internWithOwnership(value, false);
-}
-
-StringId StringPool::internWithOwnership(std::string_view value, bool tracked) {
+StringId StringPool::intern(std::string_view value, bool tracked) {
 	auto it = m_stringMap.find(value);
 	if (it != m_stringMap.end()) {
 		const StringId id = it->second;

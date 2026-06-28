@@ -4,6 +4,7 @@
 #include "rompack/loader.h"
 
 #include <stdexcept>
+#include <string>
 
 namespace bmsx {
 
@@ -11,6 +12,10 @@ static constexpr const char* kCpuHzMissingMessage = "[RuntimeMachineSpecs] machi
 static constexpr const char* kCpuHzInvalidMessage = "[RuntimeMachineSpecs] machine.specs.cpu.cpu_freq_hz must be a positive integer.";
 static constexpr const char* kUfpsMissingMessage = "[RuntimeMachineSpecs] machine.ufps is required.";
 static constexpr const char* kUfpsInvalidMessage = "[RuntimeMachineSpecs] machine.ufps must be greater than 1 Hz.";
+
+static std::runtime_error runtimeSpecFault(const std::string& message) {
+	return std::runtime_error("Runtime fault: " + message);
+}
 
 template<typename Predicate>
 static bool resolveValue(const std::optional<i64>& value, i64& out, Predicate predicate) {
@@ -69,6 +74,20 @@ bool resolveUfpsScaled(const MachineManifest& manifest, i64& outUfpsScaled) {
 
 i64 resolveUfpsScaled(const MachineManifest& manifest) {
 	return requireManifestValueAbove(manifest.ufpsScaled, HZ_SCALE, kUfpsMissingMessage, kUfpsInvalidMessage);
+}
+
+i64 resolvePositiveSafeInteger(i64 value, const char* label) {
+	if (value <= 0) {
+		throw runtimeSpecFault(std::string(label) + " must be a positive safe integer.");
+	}
+	return value;
+}
+
+RuntimeRenderSize resolveRuntimeRenderSize(const MachineManifest& manifest) {
+	return {
+		static_cast<i32>(resolvePositiveSafeInteger(manifest.viewportWidth, "machine.render_size.width")),
+		static_cast<i32>(resolvePositiveSafeInteger(manifest.viewportHeight, "machine.render_size.height")),
+	};
 }
 
 } // namespace bmsx

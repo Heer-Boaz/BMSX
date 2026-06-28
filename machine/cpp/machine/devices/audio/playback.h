@@ -23,6 +23,7 @@ struct ApuOutputPlayback {
 
 auto resolveApuGainLinear(u32 gainQ12Word) -> f32;
 auto resolveApuPlaybackRate(u32 rateStepQ16Word) -> f32;
+auto decodeApuFilterType(u32 kind) -> std::string_view;
 auto resolveApuOutputFilter(const ApuParameterRegisterWords& registerWords) -> std::optional<ApuOutputFilter>;
 auto resolveApuOutputPlayback(const ApuParameterRegisterWords& registerWords) -> ApuOutputPlayback;
 

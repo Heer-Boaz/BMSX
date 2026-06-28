@@ -12,13 +12,13 @@ namespace {
 
 void dispatchRuntimeTimer(Runtime& runtime, uint8_t kind, uint8_t payload) {
 	switch (kind) {
-		case TimerKindVblankBegin:
+		case TIMER_KIND_VBLANK_BEGIN:
 			runtime.vblank.handleBeginTimer(runtime);
 			return;
-		case TimerKindVblankEnd:
+		case TIMER_KIND_VBLANK_END:
 			runtime.vblank.handleEndTimer(runtime);
 			return;
-		case TimerKindDeviceService:
+		case TIMER_KIND_DEVICE_SERVICE:
 			runtime.machine.runDeviceService(payload);
 			return;
 		default:

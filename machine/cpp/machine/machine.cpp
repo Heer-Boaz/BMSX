@@ -59,19 +59,19 @@ void Machine::advanceDevices(int cycles) {
 void Machine::runDeviceService(uint8_t deviceKind) {
 	const i64 nowCycles = scheduler.nowCycles();
 	switch (deviceKind) {
-		case DeviceServiceGeo:
+		case DEVICE_SERVICE_GEO:
 			geometryController.onService(nowCycles);
 			return;
-		case DeviceServiceDma:
+		case DEVICE_SERVICE_DMA:
 			dmaController.onService(nowCycles);
 			return;
-		case DeviceServiceImg:
+		case DEVICE_SERVICE_IMG:
 			imgDecController.onService(nowCycles);
 			return;
-		case DeviceServiceApu:
+		case DEVICE_SERVICE_APU:
 			audioController.onService(nowCycles);
 			return;
-		case DeviceServiceVdp:
+		case DEVICE_SERVICE_VDP:
 			vdp.onService(nowCycles);
 			return;
 		default:

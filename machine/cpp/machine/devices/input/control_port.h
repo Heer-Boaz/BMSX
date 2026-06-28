@@ -14,7 +14,7 @@ public:
 
 	static void writeControlThunk(void* context, u32 addr, Value value);
 
-	void writeControl(Value value);
+	void writeControl(u32 addr, Value value);
 
 private:
 	Memory& m_memory;

@@ -1,5 +1,6 @@
 import { IRQ_VBLANK } from '../bus/io';
-import { FrameState, Runtime } from './runtime';
+import type { FrameState } from './frame/state';
+import { Runtime } from './runtime';
 import { refreshDeviceTimings } from './timing/config';
 import { TIMER_KIND_VBLANK_BEGIN, TIMER_KIND_VBLANK_END } from '../scheduler/device';
 

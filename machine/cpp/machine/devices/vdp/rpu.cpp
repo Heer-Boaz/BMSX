@@ -166,8 +166,18 @@ void restoreVdpRpuCommandBufferState(VdpRpuCommandBuffer& commands, const VdpRpu
 } // namespace
 
 VdpRpuUnit::VdpRpuUnit(Memory& memory, DeviceStatusLatch& fault)
-	: m_memory(memory)
+	: vdpVram(VDP_RPU_PARAM_MEM_SIZE)
+	, vdpVramPageRevisions(vdpRpuParamMemPageCount(VDP_RPU_PARAM_MEM_SIZE))
+	, m_memory(memory)
 	, m_fault(fault) {}
+
+void VdpRpuUnit::configureVramStorage(size_t byteLength) {
+	if (vdpVram.size() == byteLength) {
+		return;
+	}
+	vdpVram.assign(byteLength, 0u);
+	vdpVramPageRevisions.assign(vdpRpuParamMemPageCount(byteLength), 0u);
+}
 
 void VdpRpuUnit::reset() {
 	lastPacketCost = 0;
@@ -452,7 +462,7 @@ bool VdpRpuUnit::acceptSealFrame(VdpRpuFrameOutput& frame) {
 }
 
 bool VdpRpuUnit::checkVramRange(u32 addr, u32 size) {
-	if (addr >= VDP_RPU_PARAM_MEM_SIZE || size > VDP_RPU_PARAM_MEM_SIZE - addr) {
+	if (addr >= vdpVram.size() || size > vdpVram.size() - addr) {
 		m_fault.raise(VDP_FAULT_RPU_FETCH_OOB, addr);
 		return false;
 	}

@@ -66,7 +66,7 @@ extern uint32_t VRAM_SYSTEM_SLOT_SIZE;
 extern uint32_t VRAM_PRIMARY_SLOT_SIZE;
 extern uint32_t VRAM_SECONDARY_SLOT_SIZE;
 
-struct MemoryMapConfig {
+struct MemoryMapSpecs {
 	uint32_t ramBytes = DEFAULT_RAM_SIZE;
 	uint32_t slotBytes = DEFAULT_VRAM_IMAGE_SLOT_SIZE;
 	uint32_t systemSlotBytes = DEFAULT_VRAM_IMAGE_SLOT_SIZE;
@@ -74,7 +74,7 @@ struct MemoryMapConfig {
 	uint32_t frameBufferBytes = DEFAULT_VRAM_FRAMEBUFFER_SIZE;
 };
 
-void configureMemoryMap(const MemoryMapConfig& config);
+void configureMemoryMap(const MemoryMapSpecs& specs);
 bool isVramMappedRange(uint32_t addr, size_t length);
 bool isVramMappedContiguousRange(uint32_t addr, size_t length);
 uint32_t vramMappedRemainingBytes(uint32_t addr);

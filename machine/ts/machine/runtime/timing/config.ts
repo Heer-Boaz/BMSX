@@ -1,6 +1,4 @@
-import { getMachinePerfSpecs } from '../../../rompack/format';
-import { calcCyclesPerFrameScaled, resolveVblankCycles } from './index';
-import { resolvePositiveSafeInteger, resolveRuntimeRenderSize } from '../../specs';
+import { resolvePositiveSafeInteger } from '../../specs';
 import type { Runtime } from '../runtime';
 
 export type TransferRateManifest = {
@@ -41,22 +39,6 @@ export function setFrameTiming(runtime: Runtime, cpuHz: number, cycleBudgetPerFr
 		runtime.machine.cpu.setGlobalByKey(runtime.internString('sys_max_cycles_per_frame'), cycleBudgetPerFrame);
 	}
 	runtime.vblank.setVblankCycles(vblankCycles);
-}
-
-function setRenderWorkUnitsPerSec(runtime: Runtime, vdpValue: number, geoValue: number): void {
-	runtime.timing.vdpWorkUnitsPerSec = resolvePositiveSafeInteger(vdpValue, 'machine.specs.vdp.work_units_per_sec');
-	runtime.timing.geoWorkUnitsPerSec = resolvePositiveSafeInteger(geoValue, 'machine.specs.geo.work_units_per_sec');
-	refreshDeviceTimings(runtime, runtime.machine.scheduler.currentNowCycles());
-}
-
-export function applyActiveMachineTiming(runtime: Runtime, cpuHz: number): void {
-	const perfSpecs = getMachinePerfSpecs(runtime.activeMachineManifest);
-	const ufpsScaled = runtime.timing.ufpsScaled;
-	const cycleBudgetPerFrame = calcCyclesPerFrameScaled(cpuHz, ufpsScaled);
-	const renderSize = resolveRuntimeRenderSize(runtime.activeMachineManifest);
-	const vblankCycles = resolveVblankCycles(cpuHz, ufpsScaled, renderSize.height);
-	setFrameTiming(runtime, cpuHz, cycleBudgetPerFrame, vblankCycles);
-	setRenderWorkUnitsPerSec(runtime, perfSpecs.work_units_per_sec, perfSpecs.geo_work_units_per_sec);
 }
 
 export function setTransferRatesFromManifest(runtime: Runtime, specs: TransferRateManifest): void {

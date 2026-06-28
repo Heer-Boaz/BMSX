@@ -37,10 +37,7 @@ VDP::VDP(
 	, m_configuredFrameBufferSize(frameBufferSize)
 	, m_scheduler(scheduler)
 	, m_unitRegisterPort(m_fault, m_xf, m_lpu, m_mfu, m_jtu) {
-	m_vram.setExternalStaging(m_rpu.vdpVram.data(), m_rpu.vdpVram.size(), m_rpu.vdpVramPageRevisions.data());
-	m_rpu.rebindFrameResources(*m_buildFrame.rpu);
-	m_rpu.rebindFrameResources(*m_activeFrame.rpu);
-	m_rpu.rebindFrameResources(*m_pendingFrame.rpu);
+	bindStagingMemory();
 	m_memory.setVramWriter(this);
 	m_memory.mapIoRead(IO_VDP_RD_STATUS, this, &VDP::readVdpStatusThunk);
 	m_memory.mapIoRead(IO_VDP_RD_DATA, this, &VDP::readVdpDataThunk);
@@ -615,11 +612,13 @@ void VDP::accrueCycles(int cycles, int64_t nowCycles) {
 	if (!hasPendingRenderWork() || cycles <= 0) {
 		return;
 	}
-	const int64_t wholeUnits = accrueBudgetUnits(m_cpuHz, m_workUnitsPerSec, m_workCarry, cycles);
-	if (wholeUnits > 0) {
+	BudgetAccrual accrual;
+	accrueBudgetUnits(accrual, m_cpuHz, m_workUnitsPerSec, m_workCarry, cycles);
+	m_workCarry = accrual.carry;
+	if (accrual.wholeUnits > 0) {
 		const int remainingWork = getPendingRenderWorkUnits() - m_availableWorkUnits;
 		const int64_t maxGrant = remainingWork <= 0 ? 0 : remainingWork;
-		const int64_t granted = wholeUnits > maxGrant ? maxGrant : wholeUnits;
+		const int64_t granted = accrual.wholeUnits > maxGrant ? maxGrant : accrual.wholeUnits;
 		m_availableWorkUnits += static_cast<int>(granted);
 	}
 	scheduleNextService(nowCycles);
@@ -852,20 +851,20 @@ int VDP::getPendingRenderWorkUnits() const {
 
 void VDP::scheduleNextService(int64_t nowCycles) {
 	if (needsImmediateSchedulerService()) {
-		m_scheduler.scheduleDeviceService(DeviceServiceVdp, nowCycles);
+		m_scheduler.scheduleDeviceService(DEVICE_SERVICE_VDP, nowCycles);
 		return;
 	}
 	if (!hasPendingRenderWork()) {
-		m_scheduler.cancelDeviceService(DeviceServiceVdp);
+		m_scheduler.cancelDeviceService(DEVICE_SERVICE_VDP);
 		return;
 	}
 	const int pendingWork = getPendingRenderWorkUnits();
 	const int targetUnits = pendingWork < VDP_SERVICE_BATCH_WORK_UNITS ? pendingWork : VDP_SERVICE_BATCH_WORK_UNITS;
 	if (m_availableWorkUnits >= targetUnits) {
-		m_scheduler.scheduleDeviceService(DeviceServiceVdp, nowCycles);
+		m_scheduler.scheduleDeviceService(DEVICE_SERVICE_VDP, nowCycles);
 		return;
 	}
-	m_scheduler.scheduleDeviceService(DeviceServiceVdp, nowCycles + cyclesUntilBudgetUnits(m_cpuHz, m_workUnitsPerSec, m_workCarry, targetUnits - m_availableWorkUnits));
+	m_scheduler.scheduleDeviceService(DEVICE_SERVICE_VDP, nowCycles + cyclesUntilBudgetUnits(m_cpuHz, m_workUnitsPerSec, m_workCarry, targetUnits - m_availableWorkUnits));
 }
 
 
@@ -978,6 +977,7 @@ void VDP::initializeRegisters() {
 }
 
 void VDP::initializeVramSurfaces() {
+	bindStagingMemory();
 	resetQueuedFrameState();
 	m_vram.initializeSurfaces(defaultVdpVramSurfaces(m_configuredFrameBufferSize));
 	bindVramSurfaces();
@@ -1024,6 +1024,14 @@ const VdpSurfaceUploadSlot* VDP::findVramSlotOrFault(uint32_t surfaceId, uint32_
 		m_fault.raise(faultCode, surfaceId);
 	}
 	return slot;
+}
+
+void VDP::bindStagingMemory() {
+	m_rpu.configureVramStorage(VRAM_STAGING_SIZE);
+	m_vram.setExternalStaging(m_rpu.vdpVram.data(), m_rpu.vdpVram.size(), m_rpu.vdpVramPageRevisions.data());
+	m_rpu.rebindFrameResources(*m_buildFrame.rpu);
+	m_rpu.rebindFrameResources(*m_activeFrame.rpu);
+	m_rpu.rebindFrameResources(*m_pendingFrame.rpu);
 }
 
 void VDP::bindVramSurfaces() {
@@ -1155,7 +1163,7 @@ void VDP::restoreState(const VdpState& state) {
 	m_fault.restore(0u, state.vdpFaultCode, state.vdpFaultDetail);
 	m_fault.setStatusFlag(VDP_STATUS_FAULT, m_fault.code != VDP_FAULT_NONE);
 	refreshSubmitBusyStatus();
-	m_scheduler.cancelDeviceService(DeviceServiceVdp);
+	m_scheduler.cancelDeviceService(DEVICE_SERVICE_VDP);
 	if (needsImmediateSchedulerService() || hasPendingRenderWork()) {
 		scheduleNextService(m_scheduler.currentNowCycles());
 	}

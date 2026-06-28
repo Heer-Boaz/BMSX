@@ -1,7 +1,7 @@
 import { consumeIdeKey, isAltDown, isCtrlDown, isKeyJustPressed, isMetaDown, isShiftDown } from '../../input/keyboard/key_input';
 import type { CompletionContext, LuaCompletionItem } from '../../common/models';
 import type { CompletionController } from '../../editor/contrib/suggest/completion_controller';
-import type { SymbolEntry } from '../../../machine/runtime/contracts';
+import type { RuntimeSymbolEntry } from '../../runtime/symbols';
 import type {
 	TerminalCompletionPanelState,
 	TerminalSymbolPanelMode,
@@ -44,10 +44,10 @@ type CtrlTabTriggerDeps = {
 	completion: CompletionController;
 	openCompletionPanel: (context: CompletionContext, entries: LuaCompletionItem[], filtered: LuaCompletionItem[]) => void;
 	resolveSymbolCompletionContext: () => TerminalSymbolQueryContext;
-	buildSymbolCatalog: () => SymbolEntry[];
-	filterSymbolEntries: (entries: SymbolEntry[], prefix: string) => SymbolEntry[];
+	buildSymbolCatalog: () => RuntimeSymbolEntry[];
+	filterSymbolEntries: (entries: RuntimeSymbolEntry[], prefix: string) => RuntimeSymbolEntry[];
 	applySymbolCompletion: (context: TerminalSymbolQueryContext, name: string) => void;
-	openSymbolPanel: (mode: TerminalSymbolPanelMode, entries: SymbolEntry[], filtered: SymbolEntry[], query: TerminalSymbolQueryContext | null) => void;
+	openSymbolPanel: (mode: TerminalSymbolPanelMode, entries: RuntimeSymbolEntry[], filtered: RuntimeSymbolEntry[], query: TerminalSymbolQueryContext | null) => void;
 };
 
 export function handleCtrlTabTrigger(deps: CtrlTabTriggerDeps): boolean {

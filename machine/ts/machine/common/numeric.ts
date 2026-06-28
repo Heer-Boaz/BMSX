@@ -1,4 +1,4 @@
-const FIX16_SHIFT = 16;
+export const FIX16_SHIFT = 16;
 const I32_MIN_NUMBER = -0x8000_0000;
 const I32_MAX_NUMBER = 0x7fff_ffff;
 const I64_MIN_HI = 0x8000_0000 | 0;
@@ -8,7 +8,8 @@ const I64_MAX_LO = 0xffff_ffff;
 const F32_BITS_BUFFER = new ArrayBuffer(4);
 const F32_BITS_VIEW = new DataView(F32_BITS_BUFFER);
 
-export const FIX16_SCALE = 65536;
+export const FIX16_ONE = 1 << FIX16_SHIFT;
+export const FIX16_SCALE = FIX16_ONE;
 
 export function toSignedWord(value: number): number {
 	return value | 0;
@@ -41,6 +42,10 @@ export function ceilLog2(value: number): number {
 		log += 1;
 	}
 	return log;
+}
+
+export function ceilDiv4(value: number): number {
+	return (value + 3) >> 2;
 }
 
 export function f32BitsToNumber(bits: number): number {

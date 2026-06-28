@@ -158,10 +158,13 @@ export class VdpVramUnit {
 	}
 
 	public writeStaging(addr: number, bytes: Uint8Array, srcOffset: number, length: number): boolean {
-		if (addr < VRAM_STAGING_BASE || addr + length > VRAM_STAGING_BASE + VRAM_STAGING_SIZE) {
+		if (addr < VRAM_STAGING_BASE) {
 			return false;
 		}
 		const offset = addr - VRAM_STAGING_BASE;
+		if (offset > this.staging.byteLength || length > this.staging.byteLength - offset) {
+			return false;
+		}
 		for (let index = 0; index < length; index += 1) {
 			this.staging[offset + index] = bytes[srcOffset + index]!;
 		}
@@ -170,10 +173,13 @@ export class VdpVramUnit {
 	}
 
 	public readStaging(addr: number, out: Uint8Array, length: number): boolean {
-		if (addr < VRAM_STAGING_BASE || addr + length > VRAM_STAGING_BASE + VRAM_STAGING_SIZE) {
+		if (addr < VRAM_STAGING_BASE) {
 			return false;
 		}
 		const offset = addr - VRAM_STAGING_BASE;
+		if (offset > this.staging.byteLength || length > this.staging.byteLength - offset) {
+			return false;
+		}
 		for (let index = 0; index < length; index += 1) {
 			out[index] = this.staging[offset + index]!;
 		}

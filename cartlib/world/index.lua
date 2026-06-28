@@ -33,6 +33,7 @@ local ecs<const> = require('cartlib/ecs/index')
 local registry<const> = require('cartlib/registry')
 local vdp_rpu_quads<const> = require('system/vdp_rpu_quads')
 local cart_input<const> = require('cartlib/input/player')
+local subsystem_systems<const> = require('cartlib/subsystem/systems')
 
 local tickgroup<const> = ecs.tickgroup
 local world_instance
@@ -621,11 +622,10 @@ function world_class:rebind_subsystem_systems(subsys)
 	if self._subsystems_by_id[subsys.id] ~= subsys or subsys.dispose_flag then
 		return
 	end
-	local subsystem_module<const> = require('cartlib/subsystem/index')
 	local systems<const> = {
-		subsystem_module.create_update_system(subsys),
-		subsystem_module.create_animation_system(subsys),
-		subsystem_module.create_presentation_system(subsys),
+		subsystem_systems.create_update_system(subsys),
+		subsystem_systems.create_animation_system(subsys),
+		subsystem_systems.create_presentation_system(subsys),
 	}
 	local registered<const> = {}
 	for i = 1, #systems do

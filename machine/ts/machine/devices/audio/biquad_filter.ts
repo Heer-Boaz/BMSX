@@ -46,12 +46,12 @@ export class BiquadFilterState {
 export function configureBiquadFilter(
 	state: BiquadFilterState,
 	type: BiquadFilterType,
-	frequencyValue: number,
+	frequency: number,
 	q: number,
 	gain: number,
 	sampleRate: number,
 ): void {
-	const frequency = clamp(frequencyValue, 0.001, sampleRate * 0.499);
+	frequency = clamp(frequency, 0.001, sampleRate * 0.499);
 	const omega = 2 * Math.PI * frequency / sampleRate;
 	const sin = Math.sin(omega);
 	const cos = Math.cos(omega);

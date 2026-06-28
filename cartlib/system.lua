@@ -520,7 +520,6 @@ system.on_irq(irq_apu, function()
 	aem.on_apu_irq()
 end)
 aem.reload()
-progression.init()
 
 -- Register BIOS singletons as persistent registry entries.
 -- This mirrors the TS system where all subsystems (PhysicsWorld, SoundMaster,

@@ -16,6 +16,7 @@ import { IrqController } from './devices/irq/controller';
 import { VDP } from './devices/vdp/vdp';
 import type { VdpFrameBufferSize } from './devices/vdp/vram';
 import { Memory } from './memory/memory';
+import type { MicrotaskQueue } from './scheduler/microtask_queue';
 import {
 	DEVICE_SERVICE_DMA,
 	DEVICE_SERVICE_GEO,
@@ -50,6 +51,7 @@ export class Machine {
 		public readonly memory: Memory,
 		public readonly frameBufferSize: VdpFrameBufferSize,
 		input: InputControllerInputSource,
+		microtasks: MicrotaskQueue,
 	) {
 		this.cpu = new CPU(this.memory);
 		this.scheduler = new DeviceScheduler(this.cpu);
@@ -58,7 +60,7 @@ export class Machine {
 		this.audioOutput = new ApuOutputMixer();
 		this.audioController = new AudioController(this.memory, this.audioOutput, this.irqController, this.scheduler);
 		this.dmaController = new DmaController(this.memory, this.irqController, this.vdp, this.scheduler);
-		this.imgDecController = new ImgDecController(this.memory, this.dmaController, this.vdp, this.irqController, this.scheduler);
+		this.imgDecController = new ImgDecController(this.memory, this.dmaController, this.vdp, this.irqController, this.scheduler, microtasks);
 		this.geometryController = new GeometryController(this.memory, this.irqController, this.scheduler);
 		this.inputController = new InputController(this.memory, input);
 	}

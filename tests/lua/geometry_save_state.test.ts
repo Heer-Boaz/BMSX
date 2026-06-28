@@ -102,12 +102,18 @@ import {
 	IO_CMD_GEO_XFORM2_BATCH,
 } from '../../machine/ts/machine/devices/geometry/contracts';
 import { Machine } from '../../machine/ts/machine/machine';
+import type { MicrotaskQueue } from '../../machine/ts/machine/scheduler/microtask_queue';
 import { captureMachineSaveState, restoreMachineSaveState } from '../../machine/ts/machine/save_state';
 import { Memory } from '../../machine/ts/machine/memory/memory';
 import { RAM_BASE } from '../../machine/ts/machine/memory/map';
 import type { GeometryController } from '../../machine/ts/machine/devices/geometry/controller';
 import type { GeometryControllerState } from '../../machine/ts/machine/devices/geometry/save_state';
 
+
+const INLINE_MICROTASKS: MicrotaskQueue = {
+	queueMicrotask: task => task(),
+	flush: () => {},
+};
 
 function makeMachine(): Machine {
 	const memory = new Memory({ systemRom: new Uint8Array(0) });
@@ -124,6 +130,7 @@ function makeMachine(): Machine {
 		memory,
 		{ x: 256, y: 212 },
 		input as never,
+		INLINE_MICROTASKS,
 	);
 	machine.initializeSystemIo();
 	machine.resetDevices();

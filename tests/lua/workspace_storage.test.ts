@@ -448,7 +448,6 @@ test('explicit lua save promotes canonical source and removes dirty entry', asyn
 		activeLuaSources: registry,
 		cartProjectRootPath: 'offline-cart',
 		systemProjectRootPath: 'machine/ts',
-		storageService: storage,
 		luaGenericChunksExecuted: new Set<string>(),
 	} as any;
 

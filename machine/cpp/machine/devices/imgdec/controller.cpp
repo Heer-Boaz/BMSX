@@ -99,10 +99,12 @@ void ImgDecController::accrueCycles(int cycles, int64_t nowCycles) {
 	if (!m_active || !m_decodeActive || m_decodeQueued || m_decodeRemaining == 0 || cycles <= 0) {
 		return;
 	}
-	const int64_t wholeBytes = accrueBudgetUnits(m_cpuHz, m_decodeBytesPerSec, m_decodeCarry, cycles);
-	if (wholeBytes > 0) {
+	BudgetAccrual accrual;
+	accrueBudgetUnits(accrual, m_cpuHz, m_decodeBytesPerSec, m_decodeCarry, cycles);
+	m_decodeCarry = accrual.carry;
+	if (accrual.wholeUnits > 0) {
 		const int64_t maxGrant = static_cast<int64_t>(m_decodeRemaining) - static_cast<int64_t>(m_availableDecodeBytes);
-		const int64_t granted = wholeBytes > maxGrant ? maxGrant : wholeBytes;
+		const int64_t granted = accrual.wholeUnits > maxGrant ? maxGrant : accrual.wholeUnits;
 		m_availableDecodeBytes += static_cast<uint32_t>(granted);
 	}
 	scheduleNextService(nowCycles);
@@ -156,7 +158,7 @@ void ImgDecController::reset() {
 	m_queuedJobHead = 0;
 	m_activeResolve = {};
 	m_activeReject = {};
-	m_scheduler.cancelDeviceService(DeviceServiceImg);
+	m_scheduler.cancelDeviceService(DEVICE_SERVICE_IMG);
 	m_memory.writeValue(IO_IMG_SRC, valueNumber(0.0));
 	m_memory.writeValue(IO_IMG_LEN, valueNumber(0.0));
 	m_memory.writeValue(IO_IMG_DST, valueNumber(0.0));
@@ -201,7 +203,7 @@ void ImgDecController::onCtrlWrite(int64_t nowCycles) {
 void ImgDecController::onService(int64_t nowCycles) {
 	if (!m_active) {
 		if (!startNextQueuedJob()) {
-			m_scheduler.cancelDeviceService(DeviceServiceImg);
+			m_scheduler.cancelDeviceService(DEVICE_SERVICE_IMG);
 			return;
 		}
 		if (!m_active) {
@@ -424,27 +426,27 @@ void ImgDecController::finishError(std::exception_ptr error) {
 void ImgDecController::scheduleNextService(int64_t nowCycles) {
 	if (!m_active) {
 		if (m_queuedJobHead != m_queuedJobs.size()) {
-			m_scheduler.scheduleDeviceService(DeviceServiceImg, nowCycles);
+			m_scheduler.scheduleDeviceService(DEVICE_SERVICE_IMG, nowCycles);
 			return;
 		}
-		m_scheduler.cancelDeviceService(DeviceServiceImg);
+		m_scheduler.cancelDeviceService(DEVICE_SERVICE_IMG);
 		return;
 	}
 	if (m_pendingError || m_pendingResult.has_value()) {
-		m_scheduler.scheduleDeviceService(DeviceServiceImg, nowCycles);
+		m_scheduler.scheduleDeviceService(DEVICE_SERVICE_IMG, nowCycles);
 		return;
 	}
 	if (m_decodeActive && !m_decodeQueued && m_decodeRemaining > 0) {
 		const uint32_t pendingBytes = static_cast<uint32_t>(m_decodeRemaining);
 		const uint32_t targetBytes = pendingBytes < IMGDEC_SERVICE_BATCH_BYTES ? pendingBytes : IMGDEC_SERVICE_BATCH_BYTES;
 		if (m_availableDecodeBytes >= targetBytes) {
-			m_scheduler.scheduleDeviceService(DeviceServiceImg, nowCycles);
+			m_scheduler.scheduleDeviceService(DEVICE_SERVICE_IMG, nowCycles);
 			return;
 		}
-		m_scheduler.scheduleDeviceService(DeviceServiceImg, nowCycles + cyclesUntilBudgetUnits(m_cpuHz, m_decodeBytesPerSec, m_decodeCarry, targetBytes - m_availableDecodeBytes));
+		m_scheduler.scheduleDeviceService(DEVICE_SERVICE_IMG, nowCycles + cyclesUntilBudgetUnits(m_cpuHz, m_decodeBytesPerSec, m_decodeCarry, targetBytes - m_availableDecodeBytes));
 		return;
 	}
-	m_scheduler.cancelDeviceService(DeviceServiceImg);
+	m_scheduler.cancelDeviceService(DEVICE_SERVICE_IMG);
 }
 
 } // namespace bmsx

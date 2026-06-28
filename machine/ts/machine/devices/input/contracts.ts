@@ -1,4 +1,4 @@
-import { FIX16_SCALE } from '../../common/numeric';
+import { FIX16_ONE } from '../../common/numeric';
 
 // Raw ICU snapshot contract. The ICU latches one full input snapshot per armed
 // VBlank edge into plain MMIO words; it carries no key names, mappings, or
@@ -87,7 +87,7 @@ export interface InputControllerInputSource {
 	applyInputControllerVibrationEffect(padIndex: number, durationMs: number, intensity: number): void;
 }
 
-export const INPUT_CONTROLLER_OUTPUT_INTENSITY_Q16_ONE = FIX16_SCALE;
+export const INPUT_CONTROLLER_OUTPUT_INTENSITY_Q16_ONE = FIX16_ONE;
 export const INP_OUTPUT_CTRL_APPLY = 1;
 
 export function decodeInputOutputIntensityQ16(value: number): number {

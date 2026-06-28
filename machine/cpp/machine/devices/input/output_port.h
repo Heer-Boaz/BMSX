@@ -15,7 +15,7 @@ public:
 
 	static void writeOutputControlRegisterThunk(void* context, u32 addr, Value value);
 
-	void writeOutputControlRegister(Value value);
+	void writeOutputControlRegister(u32 addr, Value value);
 
 private:
 	InputControllerInputSource& m_input;

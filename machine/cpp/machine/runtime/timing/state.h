@@ -6,7 +6,6 @@ namespace bmsx {
 
 struct TimingState {
 	explicit TimingState(i64 ufpsScaled = DEFAULT_UFPS_SCALED, i64 cpuHz = 0, int cycleBudgetPerFrame = 0);
-	void applyUfpsScaled(i64 value);
 
 	i64 ufpsScaled = DEFAULT_UFPS_SCALED;
 	f64 ufps = DEFAULT_UFPS;

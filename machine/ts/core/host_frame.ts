@@ -34,9 +34,11 @@ export function runMachineHostFrame(runtime: Runtime, currentTime: number, runRe
 			runtime.frameScheduler.clearQueuedTime();
 			hostOverlayMenu.queueRenderCommands();
 			screen.requestHeldPresentation();
+			manager.platform.microtasks.flush();
 			screen.presentPending(runtime, hostDeltaMs);
 		} else if (manager.paused) {
 			hostOverlayMenu.queueFrameOverlayCommands();
+			manager.platform.microtasks.flush();
 			screen.presentPausedFrame(runtime, hostDeltaMs);
 		} else {
 			const hostOverlayQueued = hostOverlayMenu.queueFrameOverlayCommands();
@@ -53,6 +55,7 @@ export function runMachineHostFrame(runtime: Runtime, currentTime: number, runRe
 			if (hostOverlayQueued) {
 				screen.requestHeldPresentation();
 			}
+			manager.platform.microtasks.flush();
 			screen.presentPending(runtime, hostDeltaMs);
 		}
 	} catch (error) {

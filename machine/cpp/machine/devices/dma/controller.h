@@ -82,7 +82,7 @@ public:
 	void finishIoError(bool clipped);
 	void finishIoRejected();
 	uint32_t resolveMaxWritable(uint32_t dst) const;
-	uint32_t pendingBytesForChannel(Channel channel) const;
+	uint32_t getPendingBytesForChannel(Channel channel) const;
 
 	DmaChannelState m_channels[2];
 	int64_t m_cpuHz = 1;

@@ -43,22 +43,39 @@ void IrqController::acknowledge(uint32_t mask) {
 
 Value IrqController::onFlagsReadThunk(void* context, uint32_t) {
 	const auto* controller = static_cast<IrqController*>(context);
-	return valueNumber(static_cast<double>(controller->m_pendingFlags));
+	return controller->onFlagsRead();
 }
 
-void IrqController::onAckWriteThunk(void* context, uint32_t, Value value) {
+void IrqController::onAckWriteThunk(void* context, uint32_t addr, Value value) {
 	auto* controller = static_cast<IrqController*>(context);
-	controller->acknowledge(toU32(value));
+	controller->onAckWrite(addr, value);
 }
 
 Value IrqController::onMaskReadThunk(void* context, uint32_t) {
 	const auto* controller = static_cast<IrqController*>(context);
-	return valueNumber(static_cast<double>(controller->m_mask));
+	return controller->onMaskRead();
 }
 
-void IrqController::onMaskWriteThunk(void* context, uint32_t, Value value) {
+void IrqController::onMaskWriteThunk(void* context, uint32_t addr, Value value) {
 	auto* controller = static_cast<IrqController*>(context);
-	controller->m_mask = toU32(value);
+	controller->onMaskWrite(addr, value);
+}
+
+Value IrqController::onFlagsRead() const {
+	return valueNumber(static_cast<double>(m_pendingFlags));
+}
+
+void IrqController::onAckWrite([[maybe_unused]] uint32_t addr, Value value) {
+	const uint32_t mask = toU32(value);
+	acknowledge(mask);
+}
+
+Value IrqController::onMaskRead() const {
+	return valueNumber(static_cast<double>(m_mask));
+}
+
+void IrqController::onMaskWrite([[maybe_unused]] uint32_t addr, Value value) {
+	m_mask = toU32(value);
 }
 
 } // namespace bmsx

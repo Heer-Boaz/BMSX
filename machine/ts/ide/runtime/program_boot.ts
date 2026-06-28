@@ -14,7 +14,7 @@ export async function applyInitialWorkspaceOverrides(runtime: Runtime): Promise<
 	}
 	await applyWorkspaceOverridesToCart(runtime, {
 		cart: runtime.cartLuaSources,
-		storage: runtime.storageService,
+		storage: machineManager.platform.storage,
 		includeServer: true,
 		projectRootPath: runtime.cartProjectRootPath,
 	});
@@ -23,7 +23,7 @@ export async function applyInitialWorkspaceOverrides(runtime: Runtime): Promise<
 export async function startPreparedRuntime(runtime: Runtime): Promise<void> {
 	await applyWorkspaceOverridesToRegistry(runtime, {
 		registry: runtime.systemLuaSources,
-		storage: runtime.storageService,
+		storage: machineManager.platform.storage,
 		includeServer: true,
 		projectRootPath: runtime.systemProjectRootPath,
 	});
@@ -41,14 +41,14 @@ export async function prepareRebootToBootRom(runtime: Runtime): Promise<void> {
 	if (runtime.cartLuaSources && runtime.cartProjectRootPath) {
 		await applyWorkspaceOverridesToCart(runtime, {
 			cart: runtime.cartLuaSources,
-			storage: runtime.storageService,
+			storage: machineManager.platform.storage,
 			includeServer: true,
 			projectRootPath: runtime.cartProjectRootPath,
 		});
 	}
 	await applyWorkspaceOverridesToRegistry(runtime, {
 		registry: runtime.systemLuaSources,
-		storage: runtime.storageService,
+		storage: machineManager.platform.storage,
 		includeServer: true,
 		projectRootPath: runtime.systemProjectRootPath,
 	});

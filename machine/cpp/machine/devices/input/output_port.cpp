@@ -13,11 +13,12 @@ InputControllerOutputPort::InputControllerOutputPort(InputControllerInputSource&
 	, m_memory(memory) {
 }
 
-void InputControllerOutputPort::writeOutputControlRegisterThunk(void* context, u32, Value value) {
-	static_cast<InputControllerOutputPort*>(context)->writeOutputControlRegister(value);
+// disable-next-line single_line_method_pattern -- memory-map callbacks require a C-style thunk into the input output-port owner.
+void InputControllerOutputPort::writeOutputControlRegisterThunk(void* context, u32 addr, Value value) {
+	static_cast<InputControllerOutputPort*>(context)->writeOutputControlRegister(addr, value);
 }
 
-void InputControllerOutputPort::writeOutputControlRegister(Value value) {
+void InputControllerOutputPort::writeOutputControlRegister([[maybe_unused]] u32 addr, Value value) {
 	const u32 command = toU32(value);
 	if (command == INP_OUTPUT_CTRL_APPLY) {
 		m_input.applyInputControllerVibrationEffect(

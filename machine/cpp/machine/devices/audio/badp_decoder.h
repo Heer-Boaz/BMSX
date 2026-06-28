@@ -25,7 +25,7 @@ struct ApuBadpSeekTableResult {
 	std::vector<u32> offsets;
 };
 
-ApuBadpSeekTableResult readApuBadpSeekTable(const u8* data);
+ApuBadpSeekTableResult readApuBadpSeekTable(const u8* bytes);
 
 
 } // namespace bmsx

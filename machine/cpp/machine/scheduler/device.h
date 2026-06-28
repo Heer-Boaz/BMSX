@@ -10,20 +10,16 @@ namespace bmsx {
 
 class CPU;
 
-enum TimerKind : uint8_t {
-	TimerKindVblankBegin = 1,
-	TimerKindVblankEnd = 2,
-	TimerKindDeviceService = 3,
-};
+constexpr uint8_t TIMER_KIND_VBLANK_BEGIN = 1;
+constexpr uint8_t TIMER_KIND_VBLANK_END = 2;
+constexpr uint8_t TIMER_KIND_DEVICE_SERVICE = 3;
 
-enum DeviceServiceKind : uint8_t {
-	DeviceServiceGeo = 1,
-	DeviceServiceDma = 2,
-	DeviceServiceImg = 3,
-	DeviceServiceVdp = 4,
-	DeviceServiceApu = 5,
-	DeviceServiceKindCount = 6,
-};
+constexpr uint8_t DEVICE_SERVICE_GEO = 1;
+constexpr uint8_t DEVICE_SERVICE_DMA = 2;
+constexpr uint8_t DEVICE_SERVICE_IMG = 3;
+constexpr uint8_t DEVICE_SERVICE_VDP = 4;
+constexpr uint8_t DEVICE_SERVICE_APU = 5;
+constexpr uint8_t DeviceServiceKindCount = DEVICE_SERVICE_APU + 1;
 
 class DeviceScheduler {
 public:

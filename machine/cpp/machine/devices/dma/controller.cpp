@@ -71,7 +71,7 @@ void DmaController::accrueCycles(int cycles, int64_t nowCycles) {
 
 void DmaController::onService(int64_t nowCycles) {
 	if (!hasPendingTransfer(Channel::Iso) && !hasPendingTransfer(Channel::Bulk)) {
-		m_scheduler.cancelDeviceService(DeviceServiceDma);
+		m_scheduler.cancelDeviceService(DEVICE_SERVICE_DMA);
 		return;
 	}
 	tickChannel(Channel::Iso);
@@ -87,7 +87,7 @@ void DmaController::onService(int64_t nowCycles) {
 	scheduleNextService(nowCycles);
 }
 
-uint32_t DmaController::pendingBytesForChannel(Channel channel) const {
+uint32_t DmaController::getPendingBytesForChannel(Channel channel) const {
 	const auto& state = m_channels[static_cast<int>(channel)];
 	uint32_t pendingBytes = 0u;
 	if (state.active.has_value()) {
@@ -135,7 +135,7 @@ void DmaController::reset() {
 	m_ioWrittenDirty = false;
 	m_imgWrittenValue = 0;
 	m_imgWrittenDirty = false;
-	m_scheduler.cancelDeviceService(DeviceServiceDma);
+	m_scheduler.cancelDeviceService(DEVICE_SERVICE_DMA);
 	m_memory.writeValue(IO_DMA_SRC, valueNumber(0.0));
 	m_memory.writeValue(IO_DMA_DST, valueNumber(0.0));
 	m_memory.writeValue(IO_DMA_LEN, valueNumber(0.0));
@@ -378,19 +378,21 @@ void DmaController::finishIoRejected() {
 }
 
 void DmaController::accrueChannel(Channel channel, int64_t bytesPerSec, int64_t& carry, int cycles) {
-	const uint32_t pendingBytes = pendingBytesForChannel(channel);
+	const uint32_t pendingBytes = getPendingBytesForChannel(channel);
 	auto& state = m_channels[static_cast<int>(channel)];
 	if (pendingBytes == 0u) {
 		carry = 0;
 		state.budget = 0;
 		return;
 	}
-	const int64_t wholeBytes = accrueBudgetUnits(m_cpuHz, bytesPerSec, carry, cycles);
-	if (wholeBytes <= 0) {
+	BudgetAccrual accrual;
+	accrueBudgetUnits(accrual, m_cpuHz, bytesPerSec, carry, cycles);
+	carry = accrual.carry;
+	if (accrual.wholeUnits <= 0) {
 		return;
 	}
 	const int64_t maxGrant = static_cast<int64_t>(pendingBytes - state.budget);
-	const int64_t granted = wholeBytes > maxGrant ? maxGrant : wholeBytes;
+	const int64_t granted = accrual.wholeUnits > maxGrant ? maxGrant : accrual.wholeUnits;
 	state.budget += static_cast<uint32_t>(granted);
 }
 
@@ -398,33 +400,33 @@ void DmaController::scheduleNextService(int64_t nowCycles) {
 	const bool pendingIso = hasPendingTransfer(Channel::Iso);
 	const bool pendingBulk = hasPendingTransfer(Channel::Bulk);
 	if (!pendingIso && !pendingBulk) {
-		m_scheduler.cancelDeviceService(DeviceServiceDma);
+		m_scheduler.cancelDeviceService(DEVICE_SERVICE_DMA);
 		return;
 	}
 	int64_t nextDeadline = std::numeric_limits<int64_t>::max();
 	if (pendingIso) {
-		const uint32_t pendingBytes = pendingBytesForChannel(Channel::Iso);
+		const uint32_t pendingBytes = getPendingBytesForChannel(Channel::Iso);
 		const uint32_t targetBytes = pendingBytes < DMA_SERVICE_BATCH_BYTES ? pendingBytes : DMA_SERVICE_BATCH_BYTES;
 		const DmaChannelState& state = m_channels[static_cast<int>(Channel::Iso)];
 		if (state.budget >= targetBytes) {
-			m_scheduler.scheduleDeviceService(DeviceServiceDma, nowCycles);
+			m_scheduler.scheduleDeviceService(DEVICE_SERVICE_DMA, nowCycles);
 			return;
 		}
 		const int64_t deadline = nowCycles + cyclesUntilBudgetUnits(m_cpuHz, m_isoBytesPerSec, m_isoCarry, targetBytes - state.budget);
 		nextDeadline = deadline < nextDeadline ? deadline : nextDeadline;
 	}
 	if (pendingBulk) {
-		const uint32_t pendingBytes = pendingBytesForChannel(Channel::Bulk);
+		const uint32_t pendingBytes = getPendingBytesForChannel(Channel::Bulk);
 		const uint32_t targetBytes = pendingBytes < DMA_SERVICE_BATCH_BYTES ? pendingBytes : DMA_SERVICE_BATCH_BYTES;
 		const DmaChannelState& state = m_channels[static_cast<int>(Channel::Bulk)];
 		if (state.budget >= targetBytes) {
-			m_scheduler.scheduleDeviceService(DeviceServiceDma, nowCycles);
+			m_scheduler.scheduleDeviceService(DEVICE_SERVICE_DMA, nowCycles);
 			return;
 		}
 		const int64_t deadline = nowCycles + cyclesUntilBudgetUnits(m_cpuHz, m_bulkBytesPerSec, m_bulkCarry, targetBytes - state.budget);
 		nextDeadline = deadline < nextDeadline ? deadline : nextDeadline;
 	}
-	m_scheduler.scheduleDeviceService(DeviceServiceDma, nextDeadline);
+	m_scheduler.scheduleDeviceService(DEVICE_SERVICE_DMA, nextDeadline);
 }
 
 uint32_t DmaController::resolveMaxWritable(uint32_t dst) const {

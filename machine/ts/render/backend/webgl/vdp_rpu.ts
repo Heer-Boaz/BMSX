@@ -43,7 +43,6 @@ import {
 	resolveVdpRpuStreamLayoutSpec,
 	resolveVdpRpuShaderVariantSpec,
 	vdpRpuVramRangeRevision,
-	VDP_RPU_PARAM_MEM_SIZE,
 	VDP_RPU_RESOURCE_NONE,
 	VDP_RPU_SURFACE_FORMAT_DEPTH16,
 	type VdpRpuFrameOutput,
@@ -99,7 +98,6 @@ let vdpRpuSkinningModeLocation: WebGLUniformLocation = null;
 let vdpRpuMorphModeLocation: WebGLUniformLocation = null;
 let vdpRpuNormalModeLocation: WebGLUniformLocation = null;
 let vdpRpuLightingModeLocation: WebGLUniformLocation = null;
-const VDP_RPU_GL_BUFFER_CACHE_STRIDE = VDP_RPU_PARAM_MEM_SIZE + 1;
 type VdpRpuWebglBuffer = {
 	buffer: WebGLBuffer;
 	revision: number;
@@ -212,7 +210,7 @@ function uploadVdpRpuBuffer(frame: VdpRpuFrameOutput, target: number, vramAddr: 
 	const backend = vdpRpuBackend;
 	const gl = vdpRpuGl;
 	const bufferCache = target === gl.ARRAY_BUFFER ? vdpRpuArrayBuffers : vdpRpuIndexBuffers;
-	const key = vramAddr * VDP_RPU_GL_BUFFER_CACHE_STRIDE + byteLength;
+	const key = vramAddr * (frame.vdpVram.byteLength + 1) + byteLength;
 	let storage = bufferCache.get(key);
 	const revision = vdpRpuVramRangeRevision(frame, vramAddr, byteLength);
 	if (storage === undefined) {

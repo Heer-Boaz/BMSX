@@ -18,6 +18,9 @@ constexpr size_t VDP_RPU_TEXTURE_BINDING_CAPACITY = 4096u;
 constexpr size_t VDP_RPU_PARAM_MEM_SIZE = 0x00400000u;
 constexpr u32 VDP_RPU_PARAM_MEM_PAGE_SHIFT = 12u;
 constexpr u32 VDP_RPU_PARAM_MEM_PAGE_SIZE = 1u << VDP_RPU_PARAM_MEM_PAGE_SHIFT;
+constexpr size_t vdpRpuParamMemPageCount(size_t byteLength) {
+	return (byteLength + VDP_RPU_PARAM_MEM_PAGE_SIZE - 1u) >> VDP_RPU_PARAM_MEM_PAGE_SHIFT;
+}
 constexpr size_t VDP_RPU_PARAM_MEM_PAGE_COUNT = VDP_RPU_PARAM_MEM_SIZE >> VDP_RPU_PARAM_MEM_PAGE_SHIFT;
 constexpr u32 VDP_RPU_RESOURCE_NONE = 0xffffffffu;
 constexpr u32 VDP_RPU_FAULT_SENTINEL = 0xffffffffu;
@@ -173,8 +176,8 @@ struct VdpRpuCommandBuffer {
 
 struct VdpRpuFrameOutput {
 	VdpRpuCommandBuffer commands{};
-	std::array<u8, VDP_RPU_PARAM_MEM_SIZE>* vdpVram = nullptr;
-	std::array<u32, VDP_RPU_PARAM_MEM_PAGE_COUNT>* vdpVramPageRevisions = nullptr;
+	std::vector<u8>* vdpVram = nullptr;
+	std::vector<u32>* vdpVramPageRevisions = nullptr;
 };
 
 struct VdpRpuStreamAttributeSpec {
@@ -295,8 +298,9 @@ class VdpRpuUnit {
 public:
 	VdpRpuUnit(Memory& memory, DeviceStatusLatch& fault);
 
-	std::array<u8, VDP_RPU_PARAM_MEM_SIZE> vdpVram{};
-	std::array<u32, VDP_RPU_PARAM_MEM_PAGE_COUNT> vdpVramPageRevisions{};
+	std::vector<u8> vdpVram;
+	std::vector<u32> vdpVramPageRevisions;
+	void configureVramStorage(size_t byteLength);
 	void reset();
 	auto beginFrame(VdpRpuFrameOutput& frame) -> bool;
 	void cancelFrame(VdpRpuFrameOutput& frame);

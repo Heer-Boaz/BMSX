@@ -17,11 +17,12 @@ InputControllerControlPort::InputControllerControlPort(
 	, m_sampleLatch(sampleLatch) {
 }
 
-void InputControllerControlPort::writeControlThunk(void* context, u32, Value value) {
-	static_cast<InputControllerControlPort*>(context)->writeControl(value);
+// disable-next-line single_line_method_pattern -- memory-map callbacks require a C-style thunk into the input control-port owner.
+void InputControllerControlPort::writeControlThunk(void* context, u32 addr, Value value) {
+	static_cast<InputControllerControlPort*>(context)->writeControl(addr, value);
 }
 
-void InputControllerControlPort::writeControl(Value value) {
+void InputControllerControlPort::writeControl([[maybe_unused]] u32 addr, Value value) {
 	m_registers.write(IO_INP_CTRL, value);
 	switch (m_registers.state.ctrl) {
 		case INP_CTRL_ARM:

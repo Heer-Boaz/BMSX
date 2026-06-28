@@ -1,4 +1,5 @@
-import { FrameState, Runtime } from '../runtime';
+import type { FrameState } from './state';
+import { Runtime } from '../runtime';
 
 export class FrameLoopState {
 	public currentTimeMs = 0;

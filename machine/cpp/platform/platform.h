@@ -153,7 +153,8 @@ public:
 	void flush() override;
 
 private:
-	std::vector<std::function<void()>> m_queue;
+	std::vector<std::function<void()>> m_tasks;
+	std::vector<std::function<void()>> m_drainTasks;
 };
 
 class DefaultLifecycle : public Lifecycle {

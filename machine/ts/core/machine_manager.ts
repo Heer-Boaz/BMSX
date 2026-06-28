@@ -149,7 +149,7 @@ export class MachineManager {
 			host: resolvedViewHost,
 		});
 		this._view = gview;
-		const runtime = await Runtime.init(systemLayer, workspaceOverlay, Input.instance, platform.storage, cartridge);
+		const runtime = await Runtime.init(systemLayer, workspaceOverlay, Input.instance, platform.microtasks, cartridge);
 		this._runtime = runtime;
 		await applyInitialWorkspaceOverrides(runtime);
 		this.syncAudioTiming();

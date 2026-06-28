@@ -28,11 +28,12 @@ void seedSystemGlobals(Runtime& runtime) {
 	runtime.setGlobal("sys_host_fault_flags", valueNumber(static_cast<double>(IO_SYS_HOST_FAULT_FLAGS)));
 	runtime.setGlobal("sys_host_fault_stage", valueNumber(static_cast<double>(IO_SYS_HOST_FAULT_STAGE)));
 	runtime.setGlobal("sys_host_fault_message", machine.cpu.createNativeFunction("sys_host_fault_message", [&runtime, &machine](NativeArgsView, NativeResults& out) {
-		if (!runtime.m_hostFaultMessage.has_value()) {
+		const auto& message = runtime.hostFault.getMessage();
+		if (!message.has_value()) {
 			out.push_back(valueNil());
 			return;
 		}
-		out.push_back(valueString(machine.cpu.stringPool().intern(*runtime.m_hostFaultMessage)));
+		out.push_back(valueString(machine.cpu.stringPool().intern(*message)));
 	}));
 	runtime.setGlobal("sys_cart_magic_addr", valueNumber(static_cast<double>(CART_ROM_MAGIC_ADDR)));
 	runtime.setGlobal("sys_cart_magic", valueNumber(static_cast<double>(CART_ROM_MAGIC)));

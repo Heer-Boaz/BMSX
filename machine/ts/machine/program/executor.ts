@@ -69,10 +69,17 @@ export function runHostEvalChunk(runtime: Runtime, source: string): Value[] {
 		runtime.hostEvalMetadata = compiled.metadata;
 	}
 	const results = runtime.luaScratch.values.acquire();
+	const restoreHalt = runtime.machine.cpu.isHaltedUntilIrq();
+	if (restoreHalt) {
+		runtime.machine.cpu.clearHaltUntilIrq();
+	}
 	try {
 		callClosureIntoWithScheduler(runtime, { protoIndex: compiled.entryProtoIndex, upvalues: [] }, [], results);
 		return results.slice();
 	} finally {
+		if (restoreHalt) {
+			runtime.machine.cpu.haltUntilIrq();
+		}
 		runtime.luaScratch.values.release(results);
 	}
 }

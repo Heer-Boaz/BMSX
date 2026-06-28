@@ -27,7 +27,7 @@ public:
 	explicit StringPool(bool trackLuaHeap = false);
 
 	StringId intern(std::string_view value);
-	StringId internRom(std::string_view value);
+	StringId intern(std::string_view value, bool tracked);
 	const std::string& toString(StringId id) const;
 	int codepointCount(StringId id) const;
 	size_t trackedLuaHeapBytes() const { return m_trackLuaHeap ? m_trackedBytes : 0; }
@@ -68,7 +68,6 @@ private:
 		bool operator()(std::string_view lhs, const std::string& rhs) const noexcept;
 	};
 
-	StringId internWithOwnership(std::string_view value, bool tracked);
 	const InternedString& entry(StringId id) const;
 	InternedString& insert(StringId id, std::string_view value);
 	void insertEntry(std::unique_ptr<InternedString> entry);

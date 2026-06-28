@@ -464,7 +464,7 @@ import {
 import { buildLuaFrameRawLabel } from '../../lua/stack_frame_label';
 import { asStringId, valueIsString, type StringValue } from '../cpu/cpu';
 import type { StringPool } from '../cpu/string_pool';
-import type { LuaMarshalContext } from '../runtime/contracts';
+import type { LuaMarshalContext } from '../runtime/host/native_bridge';
 import type { Runtime } from '../runtime/runtime';
 import { callClosureInto } from '../program/executor';
 import { compileLoadChunk } from '../program/load_compiler';

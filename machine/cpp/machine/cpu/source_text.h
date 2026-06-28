@@ -2,10 +2,11 @@
 
 #include "machine/cpu/cpu.h"
 
+#include <optional>
 #include <string>
 
 namespace bmsx {
 
-bool extractSourceRangeText(const SourceRange& range, const std::string& source, std::string& out);
+std::optional<std::string> extractSourceRangeText(const SourceRange& range, const std::string& source);
 
 } // namespace bmsx

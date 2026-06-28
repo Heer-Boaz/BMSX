@@ -20,8 +20,9 @@ ResolvedRuntimeTiming resolveRuntimeTiming(
 	i64 ufpsScaled
 ) {
 	ResolvedRuntimeTiming timing{};
-	timing.viewportWidth = viewportMachine.viewportWidth;
-	timing.viewportHeight = viewportMachine.viewportHeight;
+	const RuntimeRenderSize renderSize = resolveRuntimeRenderSize(viewportMachine);
+	timing.viewportWidth = renderSize.width;
+	timing.viewportHeight = renderSize.height;
 	timing.ufpsScaled = ufpsScaled;
 	timing.cpuHz = cpuHz;
 	timing.imgDecBytesPerSec = requirePositiveManifestValue(timingMachine.imgDecBytesPerSec, "[RuntimeMachineSpecs] machine.specs.cpu.imgdec_bytes_per_sec is required.", "[RuntimeMachineSpecs] machine.specs.cpu.imgdec_bytes_per_sec must be a positive integer.");
@@ -29,13 +30,13 @@ ResolvedRuntimeTiming resolveRuntimeTiming(
 	timing.dmaBytesPerSecBulk = requirePositiveManifestValue(timingMachine.dmaBytesPerSecBulk, "[RuntimeMachineSpecs] machine.specs.dma.dma_bytes_per_sec_bulk is required.", "[RuntimeMachineSpecs] machine.specs.dma.dma_bytes_per_sec_bulk must be a positive integer.");
 	timing.vdpWorkUnitsPerSec = static_cast<int>(resolvePositiveManifestValue(timingMachine.vdpWorkUnitsPerSec, DEFAULT_VDP_WORK_UNITS_PER_SEC, "[RuntimeMachineSpecs] machine.specs.vdp.work_units_per_sec must be a positive integer."));
 	timing.geoWorkUnitsPerSec = static_cast<int>(resolvePositiveManifestValue(timingMachine.geoWorkUnitsPerSec, DEFAULT_GEO_WORK_UNITS_PER_SEC, "[RuntimeMachineSpecs] machine.specs.geo.work_units_per_sec must be a positive integer."));
-	timing.cycleBudgetPerFrame = calcCyclesPerFrame(cpuHz, ufpsScaled);
+	timing.cycleBudgetPerFrame = static_cast<int>(calcCyclesPerFrameScaled(cpuHz, ufpsScaled));
 	timing.vblankCycles = static_cast<int>(resolveVblankCycles(cpuHz, ufpsScaled, timingMachine.viewportHeight));
 	return timing;
 }
 
 void applyRuntimeTiming(Runtime& runtime, const ResolvedRuntimeTiming& timing) {
-	runtime.timing.applyUfpsScaled(timing.ufpsScaled);
+	runtime.applyUfpsScaled(timing.ufpsScaled);
 	setFrameTiming(runtime, timing.cpuHz, timing.cycleBudgetPerFrame, timing.vblankCycles);
 	setTransferRatesFromManifest(runtime, {
 		timing.imgDecBytesPerSec,

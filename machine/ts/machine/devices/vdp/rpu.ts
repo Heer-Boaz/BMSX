@@ -58,6 +58,9 @@ export const VDP_RPU_TEXTURE_BINDING_CAPACITY = 4096;
 export const VDP_RPU_PARAM_MEM_SIZE = 0x00400000; // 4MB VDP-local memory
 export const VDP_RPU_PARAM_MEM_PAGE_SHIFT = 12;
 export const VDP_RPU_PARAM_MEM_PAGE_SIZE = 1 << VDP_RPU_PARAM_MEM_PAGE_SHIFT;
+export function vdpRpuParamMemPageCount(byteLength: number): number {
+	return (byteLength + VDP_RPU_PARAM_MEM_PAGE_SIZE - 1) >>> VDP_RPU_PARAM_MEM_PAGE_SHIFT;
+}
 export const VDP_RPU_PARAM_MEM_PAGE_COUNT = VDP_RPU_PARAM_MEM_SIZE >> VDP_RPU_PARAM_MEM_PAGE_SHIFT;
 
 export const VDP_RPU_FEATURE_INSTANCED_ARRAYS = 1 << 0;
@@ -616,14 +619,22 @@ export function vdpRpuVramRangeRevision(frame: VdpRpuFrameOutput, vramAddr: numb
 export class VdpRpuUnit {
 	public lastPacketCost = 0;
 	public lastPacketSealedFrame = false;
-	public readonly vdpVram = new Uint8Array(VDP_RPU_PARAM_MEM_SIZE);
-	public readonly vdpVramPageRevisions = new Uint32Array(VDP_RPU_PARAM_MEM_PAGE_COUNT);
+	public vdpVram = new Uint8Array(VDP_RPU_PARAM_MEM_SIZE);
+	public vdpVramPageRevisions = new Uint32Array(VDP_RPU_PARAM_MEM_PAGE_COUNT);
 	private buildState: VdpRpuFrameBuildState = VDP_RPU_FRAME_IDLE;
 
 	public constructor(
 		private readonly memory: Memory,
 		private readonly fault: DeviceStatusLatch,
 	) {}
+
+	public configureVramStorage(byteLength: number): void {
+		if (this.vdpVram.byteLength === byteLength) {
+			return;
+		}
+		this.vdpVram = new Uint8Array(byteLength);
+		this.vdpVramPageRevisions = new Uint32Array(vdpRpuParamMemPageCount(byteLength));
+	}
 
 	public reset(): void {
 		this.lastPacketCost = 0;
@@ -909,7 +920,7 @@ export class VdpRpuUnit {
 	}
 
 	private checkVramRange(addr: number, size: number): boolean {
-		if (addr >= VDP_RPU_PARAM_MEM_SIZE || size > VDP_RPU_PARAM_MEM_SIZE - addr) {
+		if (addr >= this.vdpVram.byteLength || size > this.vdpVram.byteLength - addr) {
 			this.fault.raise(VDP_FAULT_RPU_FETCH_OOB, addr);
 			return false;
 		}

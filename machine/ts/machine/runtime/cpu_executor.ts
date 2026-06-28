@@ -4,7 +4,8 @@ import {
 	TIMER_KIND_VBLANK_BEGIN,
 	TIMER_KIND_VBLANK_END,
 } from '../scheduler/device';
-import { FrameState, Runtime } from './runtime';
+import type { FrameState } from './frame/state';
+import { Runtime } from './runtime';
 
 export class CpuExecutionState {
 	private debugCycleReportAtMs = 0;

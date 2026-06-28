@@ -1,6 +1,6 @@
 import { clamp } from '../../../common/clamp';
 import type { CompletionContext, LuaCompletionItem } from '../../common/models';
-import type { SymbolEntry } from '../../../machine/runtime/contracts';
+import type { RuntimeSymbolEntry } from '../../runtime/symbols';
 import {
 	computePanelGridLayout,
 	findSymbolCompletionBounds,
@@ -20,8 +20,8 @@ export type TerminalSymbolQueryContext = {
 
 export type TerminalSymbolPanelState = {
 	mode: TerminalSymbolPanelMode;
-	entries: SymbolEntry[];
-	filtered: SymbolEntry[];
+	entries: RuntimeSymbolEntry[];
+	filtered: RuntimeSymbolEntry[];
 	filter: string;
 	selectionIndex: number;
 	displayRowOffset: number;
@@ -56,7 +56,7 @@ type TerminalSuggestModelOptions = {
 	listCompletionCandidates: () => TerminalCompletionSnapshot | null;
 	closeCompletionSession: () => void;
 	applyCompletionItem: (context: CompletionContext, item: LuaCompletionItem) => void;
-	buildSymbolCatalog: () => SymbolEntry[];
+	buildSymbolCatalog: () => RuntimeSymbolEntry[];
 };
 
 type TerminalPanelState<TItem> = {
@@ -107,7 +107,7 @@ export class TerminalSuggestModel {
 		this.openSymbolPanel('browse', entries, entries.slice(), null);
 	}
 
-	public buildSortedSymbolCatalog(): SymbolEntry[] {
+	public buildSortedSymbolCatalog(): RuntimeSymbolEntry[] {
 		return this.sortSymbolEntries(this.dedupeSymbolEntries(this.options.buildSymbolCatalog()));
 	}
 
@@ -122,13 +122,13 @@ export class TerminalSuggestModel {
 		};
 	}
 
-	public filterSymbolEntries(entries: SymbolEntry[], prefix: string): SymbolEntry[] {
+	public filterSymbolEntries(entries: RuntimeSymbolEntry[], prefix: string): RuntimeSymbolEntry[] {
 		if (prefix.length === 0) {
 			return entries.slice();
 		}
 		const needle = prefix.toLowerCase();
 		const needleSegments = splitSymbolQuerySegments(needle);
-		const filtered: SymbolEntry[] = [];
+		const filtered: RuntimeSymbolEntry[] = [];
 		for (let index = 0; index < entries.length; index += 1) {
 			const entry = entries[index];
 			const nameLower = entry.name.toLowerCase();
@@ -147,7 +147,7 @@ export class TerminalSuggestModel {
 		return filtered;
 	}
 
-	public openSymbolPanel(mode: TerminalSymbolPanelMode, entries: SymbolEntry[], filtered: SymbolEntry[], query: TerminalSymbolQueryContext | null): void {
+	public openSymbolPanel(mode: TerminalSymbolPanelMode, entries: RuntimeSymbolEntry[], filtered: RuntimeSymbolEntry[], query: TerminalSymbolQueryContext | null): void {
 		const base = this.createPanelState(entries, filtered, query ? query.prefix : '');
 		this.clearCompletionPanel();
 		this.symbolPanel = {
@@ -336,8 +336,8 @@ export class TerminalSuggestModel {
 		};
 	}
 
-	private sortSymbolEntries(entries: SymbolEntry[]): SymbolEntry[] {
-		const kindOrder: Record<SymbolEntry['kind'], number> = {
+	private sortSymbolEntries(entries: RuntimeSymbolEntry[]): RuntimeSymbolEntry[] {
+		const kindOrder: Record<RuntimeSymbolEntry['kind'], number> = {
 			function: 0,
 			table: 1,
 			constant: 2,
@@ -404,9 +404,9 @@ export class TerminalSuggestModel {
 		return deduped;
 	}
 
-	private dedupeSymbolEntries(entries: SymbolEntry[]): SymbolEntry[] {
+	private dedupeSymbolEntries(entries: RuntimeSymbolEntry[]): RuntimeSymbolEntry[] {
 		const seen = new Set<string>();
-		const deduped: SymbolEntry[] = [];
+		const deduped: RuntimeSymbolEntry[] = [];
 		for (let index = 0; index < entries.length; index += 1) {
 			const entry = entries[index];
 			if (seen.has(entry.name)) {

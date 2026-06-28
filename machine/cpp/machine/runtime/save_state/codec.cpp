@@ -635,7 +635,7 @@ VdpRpuSaveState decodeRpuState(const BinValue& value, const char* label) {
 	const BinObject& object = requireObject(value, label);
 	VdpRpuSaveState state;
 	state.buildState = requireBoundedU32(requireField(object, "buildState", label), "machine.vdp.rpu.buildState", VDP_RPU_FRAME_IDLE, VDP_RPU_FRAME_OPEN);
-	state.vdpVram = decodeU8Vector(requireField(object, "vdpVram", label), "machine.vdp.rpu.vdpVram", VDP_RPU_PARAM_MEM_SIZE);
+	state.vdpVram = decodeU8Vector(requireField(object, "vdpVram", label), "machine.vdp.rpu.vdpVram", VRAM_STAGING_SIZE);
 	return state;
 }
 

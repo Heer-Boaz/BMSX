@@ -6,7 +6,7 @@ import { seedLuaGlobals } from '../../machine/firmware/globals';
 import { compileLuaChunkToProgram, encodeCompiledProgramImage } from '../../machine/program/compiler';
 import { inflateExecutableProgramImage, linkBootProgramImages } from '../../machine/program/linker';
 import { readWorkspaceLuaSourceText } from '../workspace/files';
-import { SymbolEntry, SymbolKind } from '../../machine/runtime/contracts';
+import type { RuntimeSymbolEntry, RuntimeSymbolKind } from './symbols';
 import { resolveLuaSourceRecord, type LuaSourceRegistry } from '../../machine/program/sources';
 import { ROM_ASSET_SYMBOL_MODULE_PATH } from '../../rompack/asset_symbols';
 import { logDebugState } from '../../machine/runtime/debug';
@@ -80,7 +80,7 @@ export function resetHardwareState(runtime: Runtime): void {
 	runtime.vblank.reset();
 }
 
-function describeSymbolValue(value: Value): { kind: SymbolKind; valueType: string } {
+function describeSymbolValue(value: Value): { kind: RuntimeSymbolKind; valueType: string } {
 	if (value === null) {
 		return { kind: 'constant', valueType: 'nil' };
 	}
@@ -144,10 +144,10 @@ function shouldHideTerminalSymbolName(name: string, hiddenPrefixes: ReadonlySet<
 	return false;
 }
 
-export function listSymbols(runtime: Runtime): SymbolEntry[] {
+export function listSymbols(runtime: Runtime): RuntimeSymbolEntry[] {
 	runtime.machine.cpu.syncGlobalSlotsToTable();
 	const hiddenPrefixes = collectHiddenSymbolPrefixes(runtime);
-	const symbolsByName = new Map<string, SymbolEntry>();
+	const symbolsByName = new Map<string, RuntimeSymbolEntry>();
 	runtime.machine.cpu.globals.forEachEntry((key, value) => {
 		if (!valueIsString(key)) {
 			return;

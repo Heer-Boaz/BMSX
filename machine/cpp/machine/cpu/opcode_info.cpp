@@ -337,8 +337,8 @@ const std::array<const char*, OPCODE_COUNT> OPCODE_CATEGORY{
 	"sleep/halt",
 };
 
-const char* getOpcodeName(OpCode op) {
-	return OPCODE_NAMES[static_cast<size_t>(op)];
+const char* getOpcodeName(OpCode opcode) {
+	return OPCODE_NAMES[static_cast<size_t>(opcode)];
 }
 
 } // namespace bmsx

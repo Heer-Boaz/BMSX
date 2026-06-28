@@ -22,7 +22,7 @@ export const IO_CMD_GEO_XFORM2_BATCH = 0x20;
 export const IO_CMD_GEO_SAT2_BATCH = 0x21;
 export const IO_CMD_GEO_OVERLAP2D_PASS = 0x22;
 
-export const GEO_INDEX_NONE = 0xffffffff >>> 0;
+export const GEO_INDEX_NONE = 0xffffffff;
 export const GEO_SHAPE_CONVEX_POLY = 1 << 0;
 export const GEO_PRIMITIVE_AABB = 1;
 export const GEO_PRIMITIVE_CONVEX_POLY = 3;

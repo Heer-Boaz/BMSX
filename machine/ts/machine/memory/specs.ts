@@ -20,22 +20,17 @@ function runtimeMemorySpecFault(message: string): Error {
 	return new Error(`Runtime fault: ${message}`);
 }
 
-export function resolveRuntimeMemoryMapSpecs(params: {
-	machine: MachineManifest;
-	systemMachine: MachineManifest;
-	systemSlotBytes: number;
-}): MemoryMapSpecs {
-	const machineConfig = params.machine;
-	const systemMachine = params.systemMachine;
+export function resolveRuntimeMemoryMapSpecs(machine: MachineManifest, systemMachine: MachineManifest, systemSlotBytes: number): MemoryMapSpecs {
+	const machineConfig = machine;
 	const memorySpecs = getMachineMemorySpecs(machineConfig);
 	const engineMemorySpecs = getMachineMemorySpecs(systemMachine);
 	const slotBytes = memorySpecs.slot_bytes ?? DEFAULT_VRAM_IMAGE_SLOT_SIZE;
-	const systemSlotBytes = engineMemorySpecs.system_slot_bytes ?? params.systemSlotBytes;
+	const resolvedSystemSlotBytes = engineMemorySpecs.system_slot_bytes ?? systemSlotBytes;
 	const renderSize = resolveRuntimeRenderSize(machineConfig);
 	const frameBufferWidth = renderSize.width;
 	const frameBufferHeight = renderSize.height;
 	const frameBufferBytes = frameBufferWidth * frameBufferHeight * 4;
-	if (!Number.isSafeInteger(systemSlotBytes) || systemSlotBytes <= 0) {
+	if (!Number.isSafeInteger(resolvedSystemSlotBytes) || resolvedSystemSlotBytes <= 0) {
 		throw runtimeMemorySpecFault('system slot slot bytes must be a positive integer.');
 	}
 	const stagingBytes = memorySpecs.staging_bytes ?? DEFAULT_VRAM_STAGING_SIZE;
@@ -54,12 +49,12 @@ export function resolveRuntimeMemoryMapSpecs(params: {
 		`memory footprint: ram=${ramBytes} bytes (${footprintMiB} MiB) `
 		+ `(io=${IO_REGION_SIZE}, base_ram_used=${BASE_RAM_USED_SIZE}, dynamic_ram=${dynamicRamBytes}, `
 		+ `geo_scratch=${DEFAULT_GEO_SCRATCH_SIZE}, vdp_stream=${VDP_STREAM_BUFFER_SIZE}, vram_staging=${stagingBytes}, framebuffer=${frameBufferBytes} (${frameBufferWidth}x${frameBufferHeight}), `
-		+ `system_slot=${systemSlotBytes}, slot=${slotBytes}x2=${slotBytes * 2}).`,
+		+ `system_slot=${resolvedSystemSlotBytes}, slot=${slotBytes}x2=${slotBytes * 2}).`,
 	);
 	return {
 		ram_bytes: ramBytes,
 		slot_bytes: slotBytes,
-		system_slot_bytes: systemSlotBytes,
+		system_slot_bytes: resolvedSystemSlotBytes,
 		staging_bytes: stagingBytes,
 		framebuffer_bytes: frameBufferBytes,
 	};

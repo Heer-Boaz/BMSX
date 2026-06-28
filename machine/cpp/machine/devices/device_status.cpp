@@ -16,10 +16,10 @@ void DeviceStatusLatch::resetStatus() const {
 	writeRegisterState();
 }
 
-void DeviceStatusLatch::restore(uint32_t restoredStatus, uint32_t restoredCode, uint32_t restoredDetail) const {
-	status = restoredStatus;
-	code = restoredCode;
-	detail = restoredDetail;
+void DeviceStatusLatch::restore(uint32_t status, uint32_t code, uint32_t detail) const {
+	this->status = status;
+	this->code = code;
+	this->detail = detail;
 	writeRegisterState();
 }
 
@@ -55,12 +55,12 @@ void DeviceStatusLatch::setStatusFlag(uint32_t mask, bool active) const {
 	m_memory.writeIoValue(m_registers.statusAddr, valueNumber(static_cast<double>(status)));
 }
 
-void DeviceStatusLatch::raise(uint32_t raisedCode, uint32_t raisedDetail) const {
+void DeviceStatusLatch::raise(uint32_t code, uint32_t detail) const {
 	if ((status & m_registers.faultMask) != 0u) {
 		return;
 	}
-	code = raisedCode;
-	detail = raisedDetail;
+	this->code = code;
+	this->detail = detail;
 	m_memory.writeIoValue(m_registers.codeAddr, valueNumber(static_cast<double>(code)));
 	m_memory.writeIoValue(m_registers.detailAddr, valueNumber(static_cast<double>(detail)));
 	setStatusFlag(m_registers.faultMask, true);

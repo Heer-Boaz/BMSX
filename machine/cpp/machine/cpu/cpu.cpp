@@ -1022,7 +1022,7 @@ void CPU::setProgram(Program* program, ProgramMetadata* metadata) {
 			Value value = constPool[index];
 			if (valueIsString(value)) {
 				StringId oldId = asStringId(value);
-				StringId newId = m_stringPool.internRom(programPool.toString(oldId));
+				StringId newId = m_stringPool.intern(programPool.toString(oldId), false);
 				constPool[index] = valueString(newId);
 			}
 		}
@@ -1050,7 +1050,7 @@ void CPU::initializeGlobalSlotList(std::vector<StringId>& names, std::vector<Val
 	values.resize(source.size());
 	slotByKey.clear();
 	for (size_t index = 0; index < source.size(); ++index) {
-		const StringId key = m_stringPool.internRom(source[index]);
+		const StringId key = m_stringPool.intern(source[index], false);
 		names[index] = key;
 		slotByKey.emplace(key, index);
 		values[index] = globals->get(valueString(key));
@@ -3016,6 +3016,12 @@ void CPU::markRoots(GcHeap& heap) {
 	}
 	for (const Value value : m_nativeLocalRoots) {
 		heap.markValue(value);
+	}
+	for (const auto& cache : m_tableLoadCaches) {
+		if (cache.table) {
+			heap.markObject(cache.table);
+		}
+		heap.markValue(cache.value);
 	}
 	for (const auto& value : m_systemGlobalValues) {
 		heap.markValue(value);

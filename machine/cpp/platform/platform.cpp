@@ -11,17 +11,21 @@ namespace bmsx {
  * ============================================================================ */
 
 void DefaultMicrotaskQueue::queueMicrotask(std::function<void()> task) {
-	m_queue.push_back(std::move(task));
+	m_tasks.push_back(std::move(task));
 }
 
 void DefaultMicrotaskQueue::flush() {
-	// Process all pending tasks (may add more during execution)
-	while (!m_queue.empty()) {
-		auto tasks = std::move(m_queue);
-		m_queue.clear();
-		for (auto& task : tasks) {
-			task();
+	while (!m_tasks.empty()) {
+		m_tasks.swap(m_drainTasks);
+		try {
+			for (auto& task : m_drainTasks) {
+				task();
+			}
+		} catch (...) {
+			m_drainTasks.clear();
+			throw;
 		}
+		m_drainTasks.clear();
 	}
 }
 

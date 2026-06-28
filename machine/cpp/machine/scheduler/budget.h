@@ -4,11 +4,15 @@
 
 namespace bmsx {
 
-inline i64 accrueBudgetUnits(i64 cpuHz, i64 unitsPerSec, i64& carry, int cycles) {
+struct BudgetAccrual {
+	i64 wholeUnits = 0;
+	i64 carry = 0;
+};
+
+inline void accrueBudgetUnits(BudgetAccrual& out, i64 cpuHz, i64 unitsPerSec, i64 carry, int cycles) {
 	const i64 numerator = unitsPerSec * static_cast<i64>(cycles) + carry;
-	const i64 wholeUnits = numerator / cpuHz;
-	carry = numerator % cpuHz;
-	return wholeUnits;
+	out.wholeUnits = numerator / cpuHz;
+	out.carry = numerator % cpuHz;
 }
 
 inline i64 cyclesUntilBudgetUnits(i64 cpuHz, i64 unitsPerSec, i64 carry, i64 targetUnits) {

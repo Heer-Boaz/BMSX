@@ -52,6 +52,7 @@ import { accrueBudgetUnits, cyclesUntilBudgetUnits, type BudgetAccrual } from '.
 import { DEVICE_SERVICE_VDP, type DeviceScheduler } from '../../scheduler/device';
 import {
 	VDP_STREAM_BUFFER_SIZE,
+	VRAM_STAGING_SIZE,
 	IO_WORD_SIZE,
 } from '../../memory/map';
 import {
@@ -192,10 +193,7 @@ export class VDP implements VramWriteSink {
 			this.memory,
 			this.fault,
 		);
-		this.vram.setExternalStaging(this.rpu.vdpVram, this.rpu.vdpVram.byteLength, this.rpu.vdpVramPageRevisions);
-		this.rpu.rebindFrameResources(this.buildFrame.rpu);
-		this.rpu.rebindFrameResources(this.activeFrame.rpu);
-		this.rpu.rebindFrameResources(this.pendingFrame.rpu);
+		this.bindStagingMemory();
 		this.slotSurfacePort = new VdpSlotSurfacePort(this.fault, this.vram);
 		this.unitRegisterPort = new VdpUnitRegisterPort(this.fault, this.xf, this.lpu, this.mfu, this.jtu);
 		this.memory.setVramWriter(this);
@@ -212,6 +210,7 @@ export class VDP implements VramWriteSink {
 	}
 
 	public initializeVramSurfaces(): void {
+		this.bindStagingMemory();
 		this.resetQueuedFrameState();
 		this.vram.initializeSurfaces(defaultVdpVramSurfaces(this.frameBufferSize));
 		this.bindVramSurfaces();
@@ -1302,6 +1301,13 @@ export class VDP implements VramWriteSink {
 		return this.vout.readDeviceOutput(this.scheduler.currentNowCycles());
 	}
 
+	private bindStagingMemory(): void {
+		this.rpu.configureVramStorage(VRAM_STAGING_SIZE);
+		this.vram.setExternalStaging(this.rpu.vdpVram, this.rpu.vdpVram.byteLength, this.rpu.vdpVramPageRevisions);
+		this.rpu.rebindFrameResources(this.buildFrame.rpu);
+		this.rpu.rebindFrameResources(this.activeFrame.rpu);
+		this.rpu.rebindFrameResources(this.pendingFrame.rpu);
+	}
 
 	private bindVramSurfaces(): void {
 		this.readback.resetSurfaceRegistry();

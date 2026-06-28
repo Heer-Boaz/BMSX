@@ -22,11 +22,10 @@ export class HostFaultState {
 	public publishStartup(error: unknown): void {
 		const normalized = convertToError(error);
 		const message = normalized.message.length > 0 ? normalized.message : String(error);
-		this.publish(
-			HOST_FAULT_FLAG_ACTIVE | HOST_FAULT_FLAG_STARTUP_BLOCKING,
-			HOST_FAULT_STAGE_STARTUP_AUDIO_REFRESH,
-			message,
-		);
+		const runtime = this.runtime;
+		this.message = message;
+		runtime.machine.memory.writeValue(IO_SYS_HOST_FAULT_FLAGS, (HOST_FAULT_FLAG_ACTIVE | HOST_FAULT_FLAG_STARTUP_BLOCKING) >>> 0);
+		runtime.machine.memory.writeValue(IO_SYS_HOST_FAULT_STAGE, HOST_FAULT_STAGE_STARTUP_AUDIO_REFRESH);
 	}
 
 	public clear(): void {
@@ -36,10 +35,4 @@ export class HostFaultState {
 		runtime.machine.memory.writeValue(IO_SYS_HOST_FAULT_STAGE, HOST_FAULT_STAGE_NONE);
 	}
 
-	private publish(flags: number, stage: number, message: string): void {
-		const runtime = this.runtime;
-		this.message = message;
-		runtime.machine.memory.writeValue(IO_SYS_HOST_FAULT_FLAGS, flags >>> 0);
-		runtime.machine.memory.writeValue(IO_SYS_HOST_FAULT_STAGE, stage >>> 0);
-	}
 }

@@ -57,19 +57,19 @@ uint32_t VRAM_SYSTEM_SLOT_SIZE = 0;
 uint32_t VRAM_PRIMARY_SLOT_SIZE = 0;
 uint32_t VRAM_SECONDARY_SLOT_SIZE = 0;
 
-void configureMemoryMap(const MemoryMapConfig& config) {
-	RAM_SIZE = config.ramBytes;
+void configureMemoryMap(const MemoryMapSpecs& specs) {
+	RAM_SIZE = specs.ramBytes;
 	RAM_END = RAM_BASE + RAM_SIZE;
-	VRAM_IMAGE_SLOT_SIZE = config.slotBytes;
-	VRAM_STAGING_SIZE = config.stagingBytes;
-	VRAM_FRAMEBUFFER_SIZE = config.frameBufferBytes;
+	VRAM_IMAGE_SLOT_SIZE = specs.slotBytes;
+	VRAM_STAGING_SIZE = specs.stagingBytes;
+	VRAM_FRAMEBUFFER_SIZE = specs.frameBufferBytes;
 
 	VRAM_STAGING_BASE = VRAM_BASE;
 	VRAM_SYSTEM_SLOT_BASE = VRAM_STAGING_BASE + VRAM_STAGING_SIZE;
-	VRAM_PRIMARY_SLOT_BASE = VRAM_SYSTEM_SLOT_BASE + config.systemSlotBytes;
+	VRAM_PRIMARY_SLOT_BASE = VRAM_SYSTEM_SLOT_BASE + specs.systemSlotBytes;
 	VRAM_SECONDARY_SLOT_BASE = VRAM_PRIMARY_SLOT_BASE + VRAM_IMAGE_SLOT_SIZE;
 	VRAM_FRAMEBUFFER_BASE = VRAM_SECONDARY_SLOT_BASE + VRAM_IMAGE_SLOT_SIZE;
-	VRAM_SYSTEM_SLOT_SIZE = config.systemSlotBytes;
+	VRAM_SYSTEM_SLOT_SIZE = specs.systemSlotBytes;
 	VRAM_PRIMARY_SLOT_SIZE = VRAM_IMAGE_SLOT_SIZE;
 	VRAM_SECONDARY_SLOT_SIZE = VRAM_IMAGE_SLOT_SIZE;
 }
@@ -100,9 +100,9 @@ uint32_t vramMappedRemainingBytes(uint32_t addr) {
 
 struct MemoryMapInitializer {
 	MemoryMapInitializer() {
-		MemoryMapConfig config;
-		config.ramBytes = DEFAULT_RAM_SIZE;
-		configureMemoryMap(config);
+		MemoryMapSpecs specs;
+		specs.ramBytes = DEFAULT_RAM_SIZE;
+		configureMemoryMap(specs);
 	}
 };
 

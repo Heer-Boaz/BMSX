@@ -20,28 +20,21 @@ export class StringPool {
 	private readonly trackedByteLengths: number[] = [];
 	private nextId = 0;
 	private trackedBytes = 0;
+	private reachable = new Uint8Array(0);
 
 	public constructor(private readonly trackLuaHeap: boolean = false) {}
 
-	public intern(text: string, tracked: boolean = this.trackLuaHeap): StringId {
-		const existing = this.byText.get(text);
+	public intern(value: string, tracked: boolean = this.trackLuaHeap): StringId {
+		const existing = this.byText.get(value);
 		if (existing !== undefined) {
 			if (tracked && this.trackedByteLengths[existing] === 0) {
-				const byteLength = utf8ByteLength(text);
-				this.trackedByteLengths[existing] = byteLength;
-				this.trackedBytes += byteLength;
-				addTrackedLuaHeapBytes(byteLength);
-				enforceLuaHeapBudget();
+				this.trackStringEntry(existing);
 			}
 			return existing;
 		}
-		const id = this.insert(this.nextId, text);
+		const id = this.insert(this.nextId, value);
 		if (tracked) {
-			const byteLength = utf8ByteLength(text);
-			this.trackedByteLengths[id] = byteLength;
-			this.trackedBytes += byteLength;
-			addTrackedLuaHeapBytes(byteLength);
-			enforceLuaHeapBudget();
+			this.trackStringEntry(id);
 		}
 		return id;
 	}
@@ -58,34 +51,43 @@ export class StringPool {
 		return this.trackedBytes;
 	}
 
-	/**
-	 * Drops the tracked-heap accounting for interned strings that are no longer
-	 * reachable from the live value graph, and returns the retained tracked byte
-	 * total. The interned values and ids are kept intact so existing string ids
-	 * stay valid and identical text re-interns to the same id; only the heap
-	 * accounting is reclaimed. Without this, the pool is append-only and the heap
-	 * collector counts every runtime string ever created, so churning unique
-	 * strings (e.g. repeated hot-resume) leaks the tracked Lua heap until OOM.
-	 */
-	public retainTrackedStrings(reachableIds: ReadonlySet<StringId>): number {
+	public beginReachabilityEpoch(): void {
+		if (!this.trackLuaHeap) {
+			return;
+		}
+		if (this.reachable.length < this.values.length) {
+			this.reachable = new Uint8Array(this.values.length);
+			return;
+		}
+		this.reachable.fill(0, 0, this.values.length);
+	}
+
+	public markReachable(id: StringId): void {
+		if (!this.trackLuaHeap) {
+			return;
+		}
+		this.reachable[id] = 1;
+	}
+
+	public reclaimUnreachableTracked(): void {
 		if (!this.trackLuaHeap) {
 			this.trackedBytes = 0;
-			return 0;
+			return;
 		}
-		let retained = 0;
+		let reclaimed = 0;
 		for (let id = 0; id < this.trackedByteLengths.length; id += 1) {
 			const byteLength = this.trackedByteLengths[id];
-			if (byteLength === 0) {
+			if (byteLength === 0 || this.reachable[id] !== 0) {
 				continue;
 			}
-			if (reachableIds.has(id)) {
-				retained += byteLength;
-			} else {
-				this.trackedByteLengths[id] = 0;
-			}
+			reclaimed += byteLength;
+			this.trackedByteLengths[id] = 0;
 		}
-		this.trackedBytes = retained;
-		return retained;
+		if (reclaimed === 0) {
+			return;
+		}
+		this.trackedBytes -= reclaimed;
+		addTrackedLuaHeapBytes(-reclaimed);
 	}
 
 	public captureState(): StringPoolState {
@@ -122,14 +124,22 @@ export class StringPool {
 		}
 	}
 
-	private insert(id: StringId, text: string): StringId {
-		this.values[id] = text;
-		this.codepointCounts[id] = utf8CodepointCount(text);
+	private insert(id: StringId, value: string): StringId {
+		this.values[id] = value;
+		this.codepointCounts[id] = utf8CodepointCount(value);
 		this.trackedByteLengths[id] = 0;
-		this.byText.set(text, id);
+		this.byText.set(value, id);
 		if (id >= this.nextId) {
 			this.nextId = id + 1;
 		}
 		return id;
+	}
+
+	private trackStringEntry(id: StringId): void {
+		const byteLength = utf8ByteLength(this.values[id]);
+		this.trackedByteLengths[id] = byteLength;
+		this.trackedBytes += byteLength;
+		addTrackedLuaHeapBytes(byteLength);
+		enforceLuaHeapBudget();
 	}
 }

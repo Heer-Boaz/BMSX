@@ -7,13 +7,7 @@ namespace bmsx {
 
 struct MachineManifest;
 
-MemoryMapConfig resolveRuntimeMemoryMapConfig(
-	const MachineManifest& machine,
-	const MachineManifest& systemMachine,
-	uint32_t systemSlotBytes
-);
-
-void applyManifestMemorySpecs(
+MemoryMapSpecs resolveRuntimeMemoryMapSpecs(
 	const MachineManifest& machine,
 	const MachineManifest& systemMachine,
 	uint32_t systemSlotBytes

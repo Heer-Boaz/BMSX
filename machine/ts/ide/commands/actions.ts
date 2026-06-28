@@ -61,14 +61,14 @@ export function performHotResume(runtime: Runtime): boolean {
 		if (runtime.cartLuaSources) {
 			await applyWorkspaceOverridesToCart(runtime, {
 				cart: runtime.cartLuaSources,
-				storage: runtime.storageService,
+				storage: machineManager.platform.storage,
 				includeServer: true,
 				projectRootPath: runtime.cartProjectRootPath,
 			});
 		}
 		const engineChanged = await applyWorkspaceOverridesToRegistry(runtime, {
 			registry: runtime.systemLuaSources,
-			storage: runtime.storageService,
+			storage: machineManager.platform.storage,
 			includeServer: true,
 			projectRootPath: runtime.systemProjectRootPath,
 		});

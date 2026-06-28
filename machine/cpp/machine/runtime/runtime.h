@@ -23,6 +23,7 @@
 #include "machine/program/scratch.h"
 #include "machine/memory/memory.h"
 #include "machine/runtime/frame/loop.h"
+#include "machine/runtime/host_fault.h"
 #include "machine/runtime/input.h"
 #include "machine/scheduler/frame.h"
 #include "machine/devices/vdp/vdp.h"
@@ -113,6 +114,7 @@ public:
 
 	auto frameDeltaMs() const -> f64 { return frameLoop.frameDeltaMs; }
 	auto machineElapsedMs() const -> f64;
+	void applyUfpsScaled(i64 ufpsScaled);
 	auto baseRamUsedBytes() const -> uint32_t;
 	auto ramUsedBytes() const -> uint32_t;
 	auto ramTotalBytes() const -> uint32_t;
@@ -209,6 +211,7 @@ private:
 
 	RuntimeOptions::RomSpan m_systemRomBytes;
 	RuntimeOptions::RomSpan m_cartRomBytes;
+	RuntimeInputSource& m_input;
 	const MachineManifest* m_machineManifest = nullptr;
 	RuntimeRomPackage* m_activeRomPackage = nullptr;
 	RuntimeRomPackage* m_systemRomPackage = nullptr;
@@ -219,6 +222,7 @@ private:
 
 public:
 	Machine machine;
+	HostFaultState hostFault;
 
 private:
 	std::unique_ptr<Program> m_programStorage;
@@ -237,7 +241,6 @@ private:
 	bool m_runtimeFailed = false;
 	bool m_tickEnabled = true;
 	bool m_rebootRequested = false;
-	std::optional<std::string> m_hostFaultMessage;
 
 	// Cached function references
 	Value m_pairsIterator = valueNil();

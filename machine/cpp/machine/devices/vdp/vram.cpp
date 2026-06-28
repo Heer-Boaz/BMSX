@@ -52,24 +52,30 @@ void VdpVramUnit::setExternalStaging(u8* bytes, size_t length, u32* pageRevision
 }
 
 bool VdpVramUnit::writeStaging(u32 addr, const u8* bytes, size_t srcOffset, size_t length) {
-	if (addr < VRAM_STAGING_BASE || addr + length > VRAM_STAGING_BASE + VRAM_STAGING_SIZE) {
+	if (addr < VRAM_STAGING_BASE) {
 		return false;
 	}
-	const u32 offset = addr - VRAM_STAGING_BASE;
-	for (size_t index = 0u; index < length; ++index) {
-		m_staging[static_cast<size_t>(offset) + index] = bytes[srcOffset + index];
+	const size_t offset = static_cast<size_t>(addr - VRAM_STAGING_BASE);
+	if (offset > m_stagingLength || length > m_stagingLength - offset) {
+		return false;
 	}
-	markStagingDirty(offset, length);
+	for (size_t index = 0u; index < length; ++index) {
+		m_staging[offset + index] = bytes[srcOffset + index];
+	}
+	markStagingDirty(static_cast<u32>(offset), length);
 	return true;
 }
 
 bool VdpVramUnit::readStaging(u32 addr, u8* out, size_t length) const {
-	if (addr < VRAM_STAGING_BASE || addr + length > VRAM_STAGING_BASE + VRAM_STAGING_SIZE) {
+	if (addr < VRAM_STAGING_BASE) {
 		return false;
 	}
-	const u32 offset = addr - VRAM_STAGING_BASE;
+	const size_t offset = static_cast<size_t>(addr - VRAM_STAGING_BASE);
+	if (offset > m_stagingLength || length > m_stagingLength - offset) {
+		return false;
+	}
 	for (size_t index = 0u; index < length; ++index) {
-		out[index] = m_staging[static_cast<size_t>(offset) + index];
+		out[index] = m_staging[offset + index];
 	}
 	return true;
 }

@@ -5,7 +5,7 @@ import { ROM_ASSET_SYMBOL_MODULE_PATH } from '../../rompack/asset_symbols';
 import { inflateExecutableProgramImage } from '../../machine/program/linker';
 import { callClosureIntoSuspended } from '../../machine/program/executor';
 import type { Closure } from '../../machine/cpu/cpu';
-import { RuntimeResumeSnapshot } from '../../machine/runtime/contracts';
+import type { RuntimeResumeSnapshot } from '../../machine/runtime/resume_snapshot';
 import { restoreRuntimeLuaSnapshot } from '../../machine/runtime/resume_snapshot';
 import { applyRuntimeMachineState } from '../../machine/runtime/machine_state';
 import { restoreVdpContextState } from '../../render/vdp/context_state';

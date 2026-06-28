@@ -27,7 +27,7 @@ import {
 	VDP_SUBMITTED_FRAME_EXECUTING,
 } from '../../machine/ts/machine/devices/vdp/frame';
 import { captureVdpRpuFrameState, createVdpRpuFrameOutput, VDP_RPU_FRAME_IDLE } from '../../machine/ts/machine/devices/vdp/rpu';
-import type { RuntimeSaveState } from '../../machine/ts/machine/runtime/contracts';
+import type { RuntimeSaveState } from '../../machine/ts/machine/runtime/save_state';
 import { decodeRuntimeSaveState, encodeRuntimeSaveState } from '../../machine/ts/machine/runtime/save_state/codec';
 import { decodeBinaryWithPropTable } from '../../machine/ts/common/serializer/binencoder';
 import { RUNTIME_SAVE_STATE_PROP_NAMES } from '../../machine/ts/machine/runtime/save_state/schema';

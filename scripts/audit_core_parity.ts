@@ -127,6 +127,22 @@ function listTsFiles(dir: string, out: string[]): void {
 	}
 }
 
+function listCppMachineFiles(dir: string, out: string[]): void {
+	for (const entry of fs.readdirSync(dir, { withFileTypes: true })) {
+		const full = path.join(dir, entry.name);
+		if (entry.isDirectory()) {
+			listCppMachineFiles(full, out);
+		} else if (entry.isFile() && (entry.name.endsWith('.h') || entry.name.endsWith('.cpp'))) {
+			out.push(repoPath(full));
+		}
+	}
+}
+
+function tsEquivalentForCppMachineFile(file: string): string {
+	const relative = file.slice(`${cppRoot}/`.length);
+	return `${sourceRoot}/${relative.replace(/\.(?:h|cpp)$/, '.ts')}`;
+}
+
 function resolveImport(fromFile: string, specifier: string): string | null {
 	if (!specifier.startsWith('.')) return null;
 	const baseDir = path.dirname(path.join(repoRoot, fromFile));
@@ -301,6 +317,7 @@ function cppFileHasStringTableDefinition(lines: string[]): boolean {
 }
 
 
+
 function readParameterList(text: string, openIndex: number): string {
 	let depth = 0;
 	for (let index = openIndex; index < text.length; index += 1) {
@@ -345,7 +362,7 @@ function tsParameterNames(parameters: string): string[] {
 		const equals = name.indexOf('=');
 		if (equals >= 0) name = name.slice(0, equals);
 		name = name.replace(/\b(?:public|private|protected|readonly)\b/g, '').replace(/^\.\.\./, '').trim();
-		if (name.length !== 0) names.push(name);
+		if (name.length !== 0) names.push(name.replace(/^_+/, ''));
 	}
 	return names;
 }
@@ -360,7 +377,7 @@ function cppParameterNames(parameters: string): string[] {
 		const tokens = cleaned.split(/\s+/).filter((token) => token.length !== 0 && token !== 'const' && token !== 'volatile' && !token.startsWith('[['));
 		if (tokens.length === 0) continue;
 		const name = tokens[tokens.length - 1].split('=')[0].trim();
-		if (/^[A-Za-z_]\w*$/.test(name)) names.push(name);
+		if (/^[A-Za-z_]\w*$/.test(name)) names.push(name.replace(/^_+/, ''));
 	}
 	return names;
 }
@@ -372,15 +389,36 @@ function putStrictFunction(map: Map<string, string[]>, name: string, params: str
 		return;
 	}
 	if (existing.length !== params.length || existing.some((param, index) => param !== params[index])) {
-		map.set(`${name}#overload${map.size}`, params);
+		let overloadIndex = 1;
+		while (map.has(`${name}#overload${overloadIndex}`)) overloadIndex += 1;
+		map.set(`${name}#overload${overloadIndex}`, params);
 	}
 }
 
+function hasStrictFunction(map: Map<string, string[]>, name: string): boolean {
+	if (map.has(name)) return true;
+	for (const key of map.keys()) {
+		if (key.startsWith(`${name}#overload`)) return true;
+	}
+	return false;
+}
+
 function normalizeStrictConstantExpression(expression: string): string {
-	return expression
+	let normalized = expression;
+	let previous = '';
+	while (previous !== normalized) {
+		previous = normalized;
+		normalized = normalized.replace(/\bstatic_cast<[^>]+>\(([^()]+)\)/g, '$1');
+	}
+	return normalized
 		.replace(/\b(0x[0-9a-fA-F]+|\d+)[uU]\b/g, '$1')
 		.replace(/\b(\d+(?:\.\d+)?|\.\d+)[fF]\b/g, '$1')
-		.replace(/\s+/g, '');
+		.replace(/\b(?:0x[0-9a-fA-F](?:[_']?[0-9a-fA-F])*|\d(?:[_']?\d)*(?:\.\d(?:[_']?\d)*)?)\b/g, (value) => value.replace(/[_']/g, ''))
+		.replace(/\bstd::size\(([A-Z0-9_]+)\)/g, '$1.length')
+		.replace(/\bsizeof\(([A-Z0-9_]+)\)\/sizeof\(\1\[0\]\)/g, '$1.length')
+		.replace(/\b(\d+)\.0\b/g, '$1')
+		.replace(/\s+/g, '')
+		.replace(/\bsizeof\(([A-Z0-9_]+)\)\/sizeof\(\1\[0\]\)/g, '$1.length');
 }
 
 function collectTsStrictSymbols(file: string): StrictRuntimeSymbols {
@@ -396,9 +434,24 @@ function collectTsStrictSymbols(file: string): StrictRuntimeSymbols {
 			constantValues.set(name, normalizeStrictConstantExpression(expression));
 		}
 	}
+	for (const match of text.matchAll(/^export const\s+([A-Za-z_]\w*)\s*=\s*\(/gm)) {
+		const openIndex = match.index! + match[0].length - 1;
+		const parameters = readParameterList(text, openIndex);
+		const closeIndex = openIndex + parameters.length + 1;
+		if (/^\s*(?::[^=]+)?=>/.test(text.slice(closeIndex + 1, closeIndex + 160))) {
+			putStrictFunction(functions, match[1], tsParameterNames(parameters));
+		}
+	}
 	for (const match of text.matchAll(/^(?:export\s+)?function\s+([A-Za-z_]\w*)\s*\(/gm)) {
 		const openIndex = match.index! + match[0].length - 1;
-		putStrictFunction(functions, match[1], tsParameterNames(readParameterList(text, openIndex)));
+		const parameters = readParameterList(text, openIndex);
+		const closeIndex = openIndex + parameters.length + 1;
+		const after = text.slice(closeIndex + 1, closeIndex + 160);
+		const hasBody = /^\s*(?::[^={;]+)?\{/.test(after);
+		if (match[1].endsWith('Thunk')) continue;
+		if (!hasBody || !hasStrictFunction(functions, match[1])) {
+			putStrictFunction(functions, match[1], tsParameterNames(parameters));
+		}
 	}
 	for (const match of text.matchAll(/^(?:export\s+)?class\s+([A-Za-z_]\w*)[^{]*\{/gm)) {
 		const className = match[1];
@@ -411,7 +464,7 @@ function collectTsStrictSymbols(file: string): StrictRuntimeSymbols {
 	}
 	for (const match of text.matchAll(/^\s*(?:public\s+|private\s+|protected\s+)?([A-Za-z_]\w*)\s*\(/gm)) {
 		const name = match[1];
-		if (name === 'constructor' || name === 'if' || name === 'for' || name === 'while' || name === 'switch' || name === 'function') continue;
+		if (name === 'constructor' || name === 'if' || name === 'for' || name === 'while' || name === 'switch' || name === 'function' || name.endsWith('Thunk')) continue;
 		const openIndex = match.index! + match[0].length - 1;
 		const parameters = readParameterList(text, openIndex);
 		const closeIndex = openIndex + parameters.length + 1;
@@ -419,6 +472,7 @@ function collectTsStrictSymbols(file: string): StrictRuntimeSymbols {
 		putStrictFunction(functions, name, tsParameterNames(parameters));
 	}
 	for (const match of text.matchAll(/^\s*(?:public\s+|private\s+|protected\s+)?get\s+([A-Za-z_]\w*)\s*\(\s*\)/gm)) {
+		if (match[1].endsWith('Thunk')) continue;
 		putStrictFunction(functions, match[1], []);
 	}
 	return { constants, constantValues, functions };
@@ -437,6 +491,12 @@ function collectCppStrictSymbols(files: readonly string[]): StrictRuntimeSymbols
 	}
 	for (const file of files) {
 		const text = fs.readFileSync(path.join(repoRoot, file), 'utf8');
+		for (const match of text.matchAll(/^extern[ \t]+const[ \t]+[A-Za-z_][\w:<>,*& \t]*[ \t]+([A-Z0-9_]+)\s*;/gm)) {
+			constants.set(match[1], file);
+		}
+		for (const match of text.matchAll(/^(?:inline[ \t]+)?const[ \t]+[A-Za-z_][\w:<>,*& \t]*[ \t]+([A-Z0-9_]+)\s*\[[^\]\n]*\]\s*=\s*\{/gm)) {
+			constants.set(match[1], file);
+		}
 		for (const match of text.matchAll(/^(?:inline[ \t]+)?constexpr[ \t]+[A-Za-z_][\w:<>,*& \t]*[ \t]+([A-Z0-9_]+)(?:\s*\[[^\]\n]+\])?\s*(?:=\s*([^;\n{]+);|=\s*\{|\{)/gm)) {
 			const name = match[1];
 			constants.set(name, file);
@@ -448,11 +508,11 @@ function collectCppStrictSymbols(files: readonly string[]): StrictRuntimeSymbols
 			const rawName = match[1];
 			const name = rawName.includes('::') ? rawName.slice(rawName.lastIndexOf('::') + 2) : rawName;
 			if (rawName.includes('::') && rawName.slice(0, rawName.lastIndexOf('::')).endsWith(name)) continue;
-			if (name === 'if' || name === 'for' || name === 'while' || name === 'switch') continue;
+			if (name === 'if' || name === 'for' || name === 'while' || name === 'switch' || name.endsWith('Thunk')) continue;
 			const openIndex = match.index! + match[0].length - 1;
 			const closeIndex = openIndex + readParameterList(text, openIndex).length + 1;
 			const after = text.slice(closeIndex + 1, closeIndex + 80);
-			if (!/^\s*(?:const\s*)?\{/.test(after)) continue;
+			if (!/^\s*(?:const\s*)?(?:->[^{]+)?\{/.test(after)) continue;
 			putStrictFunction(functions, name, cppParameterNames(readParameterList(text, openIndex)));
 		}
 		for (const className of classNames) {
@@ -558,13 +618,20 @@ function collectCppShapeFields(files: readonly string[], symbol: string): string
 		const match = new RegExp(`(?:struct|class)\\s+${symbol}(?:\\s*:\\s*(?:public\\s+)?([A-Za-z_]\\w*))?\\s*\\{([\\s\\S]*?)\\n\\};`).exec(text);
 		if (!match) continue;
 		const fields = match[1] ? (collectCppShapeFields(files, match[1]) ?? []) : [];
+		let bodyDepth = 0;
 		for (const rawLine of match[2].split('\n')) {
 			let line = rawLine.replace(/\/\/.*$/, '').trim();
+			const depthBeforeLine = bodyDepth;
+			for (const char of line) {
+				if (char === '{') bodyDepth += 1;
+				else if (char === '}') bodyDepth -= 1;
+			}
+			if (depthBeforeLine !== 0) continue;
 			if (line.length === 0 || line === 'public:' || line === 'private:' || line === 'protected:' || line.startsWith('using ') || line.includes('(')) continue;
 			line = line.replace(/;$/, '').split('=')[0].trim().replace(/[{}]+$/, '').trim().replace(/[&*]/g, ' ');
 			const tokens = line.split(/\s+/).filter((token) => token.length !== 0 && token !== 'const');
 			if (tokens.length === 0) continue;
-			const field = tokens[tokens.length - 1];
+			const field = tokens[tokens.length - 1].replace(/\[[^\]]+\]$/, '');
 			if (/^[A-Za-z_]\w*$/.test(field)) fields.push(field);
 		}
 		return fields;
@@ -1301,6 +1368,7 @@ function main(): void {
 
 	const missing: string[] = [];
 	const fake: string[] = [];
+	const cppMissingTs: string[] = [];
 	const strictRuntimeSymbolParityErrors = auditStrictRuntimeSymbolParity(manifest);
 	const strictRuntimeShapeParityErrors = auditStrictRuntimeShapeParity(manifest);
 	const strictRuntimeNoChurnErrors = auditStrictRuntimeNoChurn(manifest);
@@ -1329,6 +1397,16 @@ function main(): void {
 		}
 	}
 
+	const cppFiles: string[] = [];
+	listCppMachineFiles(path.join(repoRoot, cppRoot, 'machine'), cppFiles);
+	cppFiles.sort();
+	for (const file of cppFiles) {
+		const equivalent = tsEquivalentForCppMachineFile(file);
+		if (!fs.existsSync(path.join(repoRoot, equivalent))) {
+			cppMissingTs.push(`${file} -> ${equivalent}`);
+		}
+	}
+
 	const counts = new Map<Category, number>();
 	for (const entry of classified) counts.set(entry.category, (counts.get(entry.category) ?? 0) + 1);
 	for (const category of ['core', 'host', 'ide', 'terminal', 'language', 'compiler_tooling', 'rompacker_tooling', 'cpu_interpreter_exception', 'barrel'] as Category[]) {
@@ -1345,6 +1423,10 @@ function main(): void {
 	if (fake.length > 0) {
 		console.error(`\nFake/stub C++ equivalents (${fake.length}):`);
 		for (const item of fake) console.error(`  ${item}`);
+	}
+	if (cppMissingTs.length > 0) {
+		console.error(`\nMachine C++ files missing exact TS equivalents (${cppMissingTs.length}):`);
+		for (const item of cppMissingTs) console.error(`  ${item}`);
 	}
 	if (strictRuntimeSymbolParityErrors.length > 0) {
 		console.error(`\nStrict runtime symbol parity errors (${strictRuntimeSymbolParityErrors.length}):`);
@@ -1406,7 +1488,7 @@ function main(): void {
 		console.error(`\nStrict save-state schema parity errors (${strictSaveStateSchemaParityErrors.length}):`);
 		for (const item of strictSaveStateSchemaParityErrors) console.error(`  ${item}`);
 	}
-	if (manifestConflicts.length > 0 || unclassified.length > 0 || missing.length > 0 || fake.length > 0 || strictRuntimeSymbolParityErrors.length > 0 || strictRuntimeShapeParityErrors.length > 0 || strictRuntimeNoChurnErrors.length > 0 || strictRuntimeNoChurnRegionErrors.length > 0 || strictRuntimeNoHeapRegionErrors.length > 0 || strictRuntimeNoHeapFunctionErrors.length > 0 || strictLuaNoHeapRegionErrors.length > 0 || strictRpuTableParityErrors.length > 0 || strictShaderParityErrors.length > 0 || strictLuaVdpAbiParityErrors.length > 0 || strictForbiddenSubstringErrors.length > 0 || strictRequiredSubstringErrors.length > 0 || strictFileLayoutErrors.length > 0 || strictFilePairParityErrors.length > 0 || strictSaveStateSchemaParityErrors.length > 0) {
+	if (manifestConflicts.length > 0 || unclassified.length > 0 || missing.length > 0 || fake.length > 0 || cppMissingTs.length > 0 || strictRuntimeSymbolParityErrors.length > 0 || strictRuntimeShapeParityErrors.length > 0 || strictRuntimeNoChurnErrors.length > 0 || strictRuntimeNoChurnRegionErrors.length > 0 || strictRuntimeNoHeapRegionErrors.length > 0 || strictRuntimeNoHeapFunctionErrors.length > 0 || strictLuaNoHeapRegionErrors.length > 0 || strictRpuTableParityErrors.length > 0 || strictShaderParityErrors.length > 0 || strictLuaVdpAbiParityErrors.length > 0 || strictForbiddenSubstringErrors.length > 0 || strictRequiredSubstringErrors.length > 0 || strictFileLayoutErrors.length > 0 || strictFilePairParityErrors.length > 0 || strictSaveStateSchemaParityErrors.length > 0) {
 		process.exitCode = 1;
 	}
 }

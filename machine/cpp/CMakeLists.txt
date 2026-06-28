@@ -210,7 +210,6 @@ add_library(bmsx_core STATIC
 	core/host_frame.cpp
 	core/host_overlay_menu.cpp
 	core/system.cpp
-	machine/terminal/terminal.cpp
 	common/registry.cpp
 	common/image_decode.cpp
 	rompack/loader.cpp
@@ -319,11 +318,11 @@ add_library(bmsx_core STATIC
 	machine/program/load_compiler.cpp
 	machine/firmware/globals.cpp
 	machine/memory/lua_heap_usage.cpp
-	machine/firmware/runtime.cpp
 	machine/machine.cpp
 	machine/save_state.cpp
 	machine/scheduler/device.cpp
 	machine/runtime/runtime.cpp
+	machine/runtime/host_fault.cpp
 	machine/runtime/machine_state.cpp
 	machine/runtime/save_machine_state.cpp
 	machine/runtime/cpu_state.cpp

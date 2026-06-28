@@ -31,6 +31,7 @@ import type { IrqController } from '../irq/controller';
 import type { VDP } from '../vdp/vdp';
 import { accrueBudgetUnits, cyclesUntilBudgetUnits, type BudgetAccrual } from '../../scheduler/budget';
 import { DEVICE_SERVICE_IMG, type DeviceScheduler } from '../../scheduler/device';
+import type { MicrotaskQueue } from '../../scheduler/microtask_queue';
 
 type ImgDecJob = {
 	buffer: Uint8Array;
@@ -119,6 +120,7 @@ export class ImgDecController {
 		private readonly vdp: VDP,
 		private readonly irq: IrqController,
 		private readonly scheduler: DeviceScheduler,
+		private readonly microtasks: MicrotaskQueue,
 	) {
 		this.memory.mapIoWrite(IO_IMG_CTRL, this.onCtrlRegisterWrite.bind(this));
 	}
@@ -314,20 +316,23 @@ export class ImgDecController {
 		this.decodeQueued = false;
 		const token = this.decodeToken + 1;
 		this.decodeToken = token;
-		void decodePngToRgba(buffer).then((result) => {
-			if (token !== this.decodeToken) {
-				return;
+		this.microtasks.queueMicrotask(() => {
+			try {
+				const result = decodePngToRgba(buffer);
+				if (token !== this.decodeToken) {
+					return;
+				}
+				this.pendingResult = result;
+				this.pendingTargetBase = dst;
+				this.pendingTargetCapacity = targetCapacity;
+				this.scheduleNextService(this.scheduler.currentNowCycles());
+			} catch (error) {
+				if (token !== this.decodeToken) {
+					return;
+				}
+				this.pendingError = error;
+				this.scheduleNextService(this.scheduler.currentNowCycles());
 			}
-			this.pendingResult = result;
-			this.pendingTargetBase = dst;
-			this.pendingTargetCapacity = targetCapacity;
-			this.scheduleNextService(this.scheduler.currentNowCycles());
-		}, (error: unknown) => {
-			if (token !== this.decodeToken) {
-				return;
-			}
-			this.pendingError = error;
-			this.scheduleNextService(this.scheduler.currentNowCycles());
 		});
 	}
 

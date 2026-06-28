@@ -374,8 +374,8 @@ export class TerminalCommandDispatcher {
 
 	private handleLsDebug(pathArg: string): void {
 		const root = this.runtime.cartProjectRootPath;
-		const storage = this.runtime.storageService;
-		if (!root || !storage) {
+		const storage = machineManager.platform.storage;
+		if (!root) {
 			machineManager.ideState.terminal.appendStderr('Workspace unavailable');
 			return;
 		}
@@ -489,8 +489,8 @@ export class TerminalCommandDispatcher {
 	private collectWorkspaceEntryFlags(luaAssets: Array<LuaSourceRecord>): Map<string, { hasSaved: boolean; hasDirty: boolean; hasUnsaved: boolean }> {
 		const flags = new Map<string, { hasSaved: boolean; hasDirty: boolean; hasUnsaved: boolean }>();
 		const root = this.runtime.cartProjectRootPath;
-		const storage = this.runtime.storageService;
-		if (!root || !storage) {
+		const storage = machineManager.platform.storage;
+		if (!root) {
 			return flags;
 		}
 		const unsavedPaths = collectUnsavedWorkspaceSourcePaths(root, storage);

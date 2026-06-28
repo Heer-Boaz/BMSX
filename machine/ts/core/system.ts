@@ -1,4 +1,4 @@
-import { DEFAULT_GEO_WORK_UNITS_PER_SEC, type MachineManifest } from '../rompack/format';
+import { DEFAULT_GEO_WORK_UNITS_PER_SEC, DEFAULT_VDP_WORK_UNITS_PER_SEC, type MachineManifest } from '../rompack/format';
 import { DEFAULT_UFPS_SCALED } from '../machine/runtime/timing/constants';
 
 export const SYSTEM_ROM_NAME = 'bmsx-bios';
@@ -21,7 +21,7 @@ export const SYSTEM_MACHINE_MANIFEST: MachineManifest = {
 			dma_bytes_per_sec_bulk: 26_214_400,
 		},
 		vdp: {
-			work_units_per_sec: 25_600,
+			work_units_per_sec: DEFAULT_VDP_WORK_UNITS_PER_SEC,
 		},
 		geo: {
 			work_units_per_sec: DEFAULT_GEO_WORK_UNITS_PER_SEC,

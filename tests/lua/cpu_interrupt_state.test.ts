@@ -10,6 +10,7 @@ import { BASE_CYCLES, encodeFixedCallArgCount } from '../../machine/ts/machine/c
 import { IO_IRQ_MASK, IO_IRQ_FLAGS, IRQ_VBLANK } from '../../machine/ts/machine/bus/io';
 import { IrqController } from '../../machine/ts/machine/devices/irq/controller';
 import { Machine } from '../../machine/ts/machine/machine';
+import type { MicrotaskQueue } from '../../machine/ts/machine/scheduler/microtask_queue';
 import { captureMachineSaveState, captureMachineState, restoreMachineSaveState, restoreMachineState } from '../../machine/ts/machine/save_state';
 import { Memory } from '../../machine/ts/machine/memory/memory';
 import { compileLuaChunkToProgram, encodeCompiledProgramImage } from '../../machine/ts/machine/program/compiler';
@@ -115,6 +116,11 @@ function makeRuntime(cpu: CPU, sliceStats?: { begin: number; end: number }): Run
 	} as unknown as Runtime;
 }
 
+const INLINE_MICROTASKS: MicrotaskQueue = {
+	queueMicrotask: task => task(),
+	flush: () => {},
+};
+
 function makeMachine(): Machine {
 	const memory = new Memory({ systemRom: new Uint8Array(0) });
 	const input = {
@@ -130,6 +136,7 @@ function makeMachine(): Machine {
 		memory,
 		{ x: 256, y: 212 },
 		input as never,
+		INLINE_MICROTASKS,
 	);
 	machine.initializeSystemIo();
 	machine.resetDevices();

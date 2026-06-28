@@ -11,6 +11,12 @@ const PNG_SIGNATURE_1 = 0x0d0a1a0a;
 const PNG_CHUNK_IHDR = 0x49484452;
 const PNG_CHUNK_IDAT = 0x49444154;
 const PNG_CHUNK_IEND = 0x49454e44;
+const PNG_CHUNK_PLTE = 0x504c5445;
+const PNG_CHUNK_TRNS = 0x74524e53;
+const PNG_COLOR_GRAYSCALE = 0;
+const PNG_COLOR_RGB = 2;
+const PNG_COLOR_PALETTE = 3;
+const PNG_COLOR_GRAYSCALE_ALPHA = 4;
 const PNG_COLOR_RGBA = 6;
 const PNG_BIT_DEPTH_U8 = 8;
 const PNG_FILTER_BYTES_RGBA = 4;
@@ -22,6 +28,101 @@ function readU32be(bytes: Uint8Array, offset: number): number {
 		| (bytes[offset + 2]! << 8)
 		| bytes[offset + 3]!
 	) >>> 0;
+}
+
+function readU16be(bytes: Uint8Array, offset: number): number {
+	return (bytes[offset]! << 8) | bytes[offset + 1]!;
+}
+
+function resolvePngSourceBytesPerPixel(colorType: number): number {
+	switch (colorType) {
+		case PNG_COLOR_GRAYSCALE:
+		case PNG_COLOR_PALETTE:
+			return 1;
+		case PNG_COLOR_GRAYSCALE_ALPHA:
+			return 2;
+		case PNG_COLOR_RGB:
+			return 3;
+		case PNG_COLOR_RGBA:
+			return 4;
+	}
+	throw new Error(`[decodePngToRgba] Unsupported PNG color type ${colorType}.`);
+}
+
+function expandPngPixelsToRgba(
+	width: number,
+	height: number,
+	colorType: number,
+	source: Uint8Array,
+	palette: Uint8Array | null,
+	transparency: Uint8Array | null,
+): Uint8Array {
+	const pixels = new Uint8Array(width * height * PNG_FILTER_BYTES_RGBA);
+	let src = 0;
+	let dst = 0;
+	if (colorType === PNG_COLOR_RGBA) {
+		pixels.set(source);
+		return pixels;
+	}
+	if (colorType === PNG_COLOR_RGB) {
+		const transparentRed = transparency && transparency.byteLength >= 6 ? readU16be(transparency, 0) : -1;
+		const transparentGreen = transparency && transparency.byteLength >= 6 ? readU16be(transparency, 2) : -1;
+		const transparentBlue = transparency && transparency.byteLength >= 6 ? readU16be(transparency, 4) : -1;
+		for (let index = 0; index < width * height; index += 1) {
+			const red = source[src]!;
+			const green = source[src + 1]!;
+			const blue = source[src + 2]!;
+			pixels[dst] = red;
+			pixels[dst + 1] = green;
+			pixels[dst + 2] = blue;
+			pixels[dst + 3] = red === transparentRed && green === transparentGreen && blue === transparentBlue ? 0 : 255;
+			src += 3;
+			dst += 4;
+		}
+		return pixels;
+	}
+	if (colorType === PNG_COLOR_PALETTE) {
+		if (palette === null) {
+			throw new Error('[decodePngToRgba] Palette PNG is missing PLTE.');
+		}
+		for (let index = 0; index < width * height; index += 1) {
+			const paletteIndex = source[src]!;
+			const paletteOffset = paletteIndex * 3;
+			if (paletteOffset + 2 >= palette.byteLength) {
+				throw new Error('[decodePngToRgba] Palette PNG references a missing PLTE entry.');
+			}
+			pixels[dst] = palette[paletteOffset]!;
+			pixels[dst + 1] = palette[paletteOffset + 1]!;
+			pixels[dst + 2] = palette[paletteOffset + 2]!;
+			pixels[dst + 3] = transparency && paletteIndex < transparency.byteLength ? transparency[paletteIndex]! : 255;
+			src += 1;
+			dst += 4;
+		}
+		return pixels;
+	}
+	if (colorType === PNG_COLOR_GRAYSCALE) {
+		const transparentGray = transparency && transparency.byteLength >= 2 ? readU16be(transparency, 0) : -1;
+		for (let index = 0; index < width * height; index += 1) {
+			const gray = source[src]!;
+			pixels[dst] = gray;
+			pixels[dst + 1] = gray;
+			pixels[dst + 2] = gray;
+			pixels[dst + 3] = gray === transparentGray ? 0 : 255;
+			src += 1;
+			dst += 4;
+		}
+		return pixels;
+	}
+	for (let index = 0; index < width * height; index += 1) {
+		const gray = source[src]!;
+		pixels[dst] = gray;
+		pixels[dst + 1] = gray;
+		pixels[dst + 2] = gray;
+		pixels[dst + 3] = source[src + 1]!;
+		src += 2;
+		dst += 4;
+	}
+	return pixels;
 }
 
 function paethPredictor(left: number, up: number, upLeft: number): number {
@@ -38,8 +139,8 @@ function paethPredictor(left: number, up: number, upLeft: number): number {
 	return upLeft;
 }
 
-function decodePngRgbaPixels(width: number, height: number, inflated: Uint8Array): Uint8Array {
-	const rowBytes = width * PNG_FILTER_BYTES_RGBA;
+function decodePngFilteredPixels(width: number, height: number, inflated: Uint8Array, filterBytesPerPixel: number, sourceBytesPerPixel: number): Uint8Array {
+	const rowBytes = width * sourceBytesPerPixel;
 	const sourceStride = rowBytes + 1;
 	const expectedBytes = sourceStride * height;
 	if (inflated.byteLength < expectedBytes) {
@@ -54,9 +155,9 @@ function decodePngRgbaPixels(width: number, height: number, inflated: Uint8Array
 		const rowStart = dst;
 		for (let x = 0; x < rowBytes; x += 1) {
 			const raw = inflated[source + x]!;
-			const left = x >= PNG_FILTER_BYTES_RGBA ? pixels[dst - PNG_FILTER_BYTES_RGBA]! : 0;
+			const left = x >= filterBytesPerPixel ? pixels[dst - filterBytesPerPixel]! : 0;
 			const up = y > 0 ? pixels[dst - rowBytes]! : 0;
-			const upLeft = x >= PNG_FILTER_BYTES_RGBA && y > 0 ? pixels[dst - rowBytes - PNG_FILTER_BYTES_RGBA]! : 0;
+			const upLeft = x >= filterBytesPerPixel && y > 0 ? pixels[dst - rowBytes - filterBytesPerPixel]! : 0;
 			if (filter === 0) {
 				pixels[dst] = raw;
 			} else if (filter === 1) {
@@ -78,7 +179,7 @@ function decodePngRgbaPixels(width: number, height: number, inflated: Uint8Array
 	return pixels;
 }
 
-export async function decodePngToRgba(buffer: Uint8Array): Promise<DecodedImage> {
+export function decodePngToRgba(buffer: Uint8Array): DecodedImage {
 	if (buffer.byteLength < 33 || readU32be(buffer, 0) !== PNG_SIGNATURE_0 || readU32be(buffer, 4) !== PNG_SIGNATURE_1) {
 		throw new Error('[decodePngToRgba] Invalid PNG signature.');
 	}
@@ -90,6 +191,8 @@ export async function decodePngToRgba(buffer: Uint8Array): Promise<DecodedImage>
 	let compression = 0;
 	let filterMethod = 0;
 	let interlace = 0;
+	let palette: Uint8Array | null = null;
+	let transparency: Uint8Array | null = null;
 	const idatChunks: Uint8Array[] = [];
 	let offset = 8;
 	while (offset + 12 <= buffer.byteLength) {
@@ -108,6 +211,10 @@ export async function decodePngToRgba(buffer: Uint8Array): Promise<DecodedImage>
 			compression = buffer[chunkStart + 10]!;
 			filterMethod = buffer[chunkStart + 11]!;
 			interlace = buffer[chunkStart + 12]!;
+		} else if (type === PNG_CHUNK_PLTE) {
+			palette = buffer.subarray(chunkStart, chunkEnd);
+		} else if (type === PNG_CHUNK_TRNS) {
+			transparency = buffer.subarray(chunkStart, chunkEnd);
 		} else if (type === PNG_CHUNK_IDAT) {
 			idatChunks.push(buffer.subarray(chunkStart, chunkEnd));
 		} else if (type === PNG_CHUNK_IEND) {
@@ -118,9 +225,10 @@ export async function decodePngToRgba(buffer: Uint8Array): Promise<DecodedImage>
 	if (width <= 0 || height <= 0) {
 		throw new Error(`[decodePngToRgba] Invalid image size ${width}x${height}.`);
 	}
-	if (bitDepth !== PNG_BIT_DEPTH_U8 || colorType !== PNG_COLOR_RGBA || compression !== 0 || filterMethod !== 0 || interlace !== 0) {
+	if (bitDepth !== PNG_BIT_DEPTH_U8 || compression !== 0 || filterMethod !== 0 || interlace !== 0) {
 		throw new Error(`[decodePngToRgba] Unsupported PNG format depth=${bitDepth} color=${colorType} compression=${compression} filter=${filterMethod} interlace=${interlace}.`);
 	}
+	const sourceBytesPerPixel = resolvePngSourceBytesPerPixel(colorType);
 	if (idatChunks.length === 0) {
 		throw new Error('[decodePngToRgba] PNG contains no image data.');
 	}
@@ -132,5 +240,6 @@ export async function decodePngToRgba(buffer: Uint8Array): Promise<DecodedImage>
 		}
 	}
 	const inflated = inflator.result as Uint8Array;
-	return { width, height, pixels: decodePngRgbaPixels(width, height, inflated) };
+	const source = decodePngFilteredPixels(width, height, inflated, sourceBytesPerPixel, sourceBytesPerPixel);
+	return { width, height, pixels: expandPngPixelsToRgba(width, height, colorType, source, palette, transparency) };
 }

@@ -46,20 +46,20 @@ export function requireManifestValueAbove(value: number | undefined, minimumExcl
 	return value;
 }
 
-export function resolveCpuHz(machine: MachineManifest, outHz: ResolvedManifestNumber): boolean;
-export function resolveCpuHz(machine: MachineManifest): number;
-export function resolveCpuHz(machine: MachineManifest, outHz?: ResolvedManifestNumber): number | boolean {
-	const value = getMachinePerfSpecs(machine).cpu_freq_hz;
+export function resolveCpuHz(manifest: MachineManifest, outHz: ResolvedManifestNumber): boolean;
+export function resolveCpuHz(manifest: MachineManifest): number;
+export function resolveCpuHz(manifest: MachineManifest, outHz?: ResolvedManifestNumber): number | boolean {
+	const value = getMachinePerfSpecs(manifest).cpu_freq_hz;
 	if (outHz !== undefined) {
 		return resolveValue(value, outHz, hz => Number.isSafeInteger(hz) && hz > 0);
 	}
 	return requirePositiveManifestValue(value, CPU_HZ_MISSING_MESSAGE, CPU_HZ_INVALID_MESSAGE);
 }
 
-export function resolveUfpsScaled(machine: MachineManifest, outUfpsScaled: ResolvedManifestNumber): boolean;
-export function resolveUfpsScaled(machine: MachineManifest): number;
-export function resolveUfpsScaled(machine: MachineManifest, outUfpsScaled?: ResolvedManifestNumber): number | boolean {
-	const value = getMachinePerfSpecs(machine).ufps;
+export function resolveUfpsScaled(manifest: MachineManifest, outUfpsScaled: ResolvedManifestNumber): boolean;
+export function resolveUfpsScaled(manifest: MachineManifest): number;
+export function resolveUfpsScaled(manifest: MachineManifest, outUfpsScaled?: ResolvedManifestNumber): number | boolean {
+	const value = getMachinePerfSpecs(manifest).ufps;
 	if (outUfpsScaled !== undefined) {
 		return resolveValue(value, outUfpsScaled, ufpsScaled => Number.isSafeInteger(ufpsScaled) && ufpsScaled > HZ_SCALE);
 	}
@@ -80,8 +80,8 @@ export function resolvePositiveSafeInteger(value: number | undefined, label: str
 	return value;
 }
 
-export function resolveRuntimeRenderSize(machine: { render_size: { width: number; height: number; } }): Viewport {
-	const width = resolvePositiveSafeInteger(machine.render_size.width, 'machine.render_size.width');
-	const height = resolvePositiveSafeInteger(machine.render_size.height, 'machine.render_size.height');
+export function resolveRuntimeRenderSize(manifest: { render_size: { width: number; height: number; } }): Viewport {
+	const width = resolvePositiveSafeInteger(manifest.render_size.width, 'machine.render_size.width');
+	const height = resolvePositiveSafeInteger(manifest.render_size.height, 'machine.render_size.height');
 	return { width, height };
 }

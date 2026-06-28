@@ -37,7 +37,7 @@ inline const char* const INPUT_CONTROLLER_GAMEPAD_BUTTON_BIT_IDS[] = {
 	"home",
 	"touch",
 };
-constexpr int INPUT_CONTROLLER_GAMEPAD_BUTTON_BIT_COUNT = 18;
+constexpr int INPUT_CONTROLLER_GAMEPAD_BUTTON_BIT_COUNT = sizeof(INPUT_CONTROLLER_GAMEPAD_BUTTON_BIT_IDS) / sizeof(INPUT_CONTROLLER_GAMEPAD_BUTTON_BIT_IDS[0]);
 
 // Pointer button bit order mirrors the W3C MouseEvent.button index order.
 constexpr int INP_POINTER_BUTTON_PRIMARY = 0;

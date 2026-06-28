@@ -6,9 +6,11 @@
 #include "machine/program/linker.h"
 #include "machine/runtime/input.h"
 #include "machine/runtime/timing/config.h"
+#include "machine/specs.h"
 #include "rompack/format.h"
 #include "rompack/loader.h"
 #include <array>
+#include <iostream>
 #include <stdexcept>
 #include <utility>
 
@@ -27,6 +29,7 @@ Runtime::Runtime(
 	, cartBoot(*this)
 	, m_systemRomBytes(options.systemRomBytes)
 	, m_cartRomBytes(options.cartRomBytes)
+	, m_input(input)
 	, m_machineManifest(options.machineManifest)
 	, m_memory(MemoryInit{
 		{ options.systemRomBytes.data, options.systemRomBytes.size },
@@ -41,6 +44,7 @@ Runtime::Runtime(
 		input,
 		microtasks
 	)
+	, hostFault(*this)
 {
 	configureLuaHeapUsage({});
 	resetTrackedLuaHeapBytes();
@@ -49,7 +53,9 @@ Runtime::Runtime(
 	machine.initializeSystemIo();
 	machine.resetDevices();
 	vblank.setVblankCycles(*this, options.vblankCycles);
-	setRenderWorkUnitsPerSec(*this, options.vdpWorkUnitsPerSec, options.geoWorkUnitsPerSec);
+	timing.vdpWorkUnitsPerSec = static_cast<int>(resolvePositiveSafeInteger(options.vdpWorkUnitsPerSec, "machine.specs.vdp.work_units_per_sec"));
+	timing.geoWorkUnitsPerSec = static_cast<int>(resolvePositiveSafeInteger(options.geoWorkUnitsPerSec, "machine.specs.geo.work_units_per_sec"));
+	refreshDeviceTimings(*this, machine.scheduler.currentNowCycles());
 	refreshMemoryMap();
 	machine.cpu.setExternalRootMarker([this](GcHeap& heap) {
 		for (const auto& entry : m_moduleCache) {
@@ -77,6 +83,13 @@ Runtime::~Runtime() {
 
 auto Runtime::machineElapsedMs() const -> f64 {
 	return static_cast<f64>(machine.scheduler.currentNowCycles()) * 1000.0 / static_cast<f64>(timing.cpuHz);
+}
+
+void Runtime::applyUfpsScaled(i64 ufpsScaled) {
+	timing.ufpsScaled = ufpsScaled;
+	timing.ufps = static_cast<f64>(ufpsScaled) / static_cast<f64>(HZ_SCALE);
+	timing.frameDurationMs = 1000.0 / timing.ufps;
+	m_input.setRuntimeInputFrameDurationMs(timing.frameDurationMs);
 }
 
 uint32_t Runtime::baseRamUsedBytes() const {
@@ -223,6 +236,93 @@ void Runtime::startLoadedProgram(ProgramVectorTable vectors, const std::vector<s
 	m_luaInitialized = true;
 }
 
+Value Runtime::requireModule(const std::string& moduleName) {
+	const auto cachedIt = m_moduleCache.find(moduleName);
+	if (cachedIt != m_moduleCache.end()) {
+		return cachedIt->second;
+	}
+	const auto protoIt = m_moduleProtos.find(moduleName);
+	if (protoIt == m_moduleProtos.end()) {
+		throw BMSX_RUNTIME_ERROR("require('" + moduleName + "') failed: module not found.");
+	}
+	m_moduleCache[moduleName] = valueBool(true);
+	auto* closure = machine.cpu.createRootClosure(protoIt->second);
+	NativeResults results;
+	callLuaFunctionInto(closure, NativeArgsView(), results);
+	Value value = results.empty() ? valueNil() : results[0];
+	Value cachedValue = isNil(value) ? valueBool(true) : value;
+	m_moduleCache[moduleName] = cachedValue;
+	return cachedValue;
+}
+
+void Runtime::runStaticModuleInitializer(const std::string& path) {
+	if (m_moduleCache.find(path) != m_moduleCache.end()) {
+		return;
+	}
+	const auto protoIt = m_moduleProtos.find(path);
+	if (protoIt == m_moduleProtos.end()) {
+		throw BMSX_RUNTIME_ERROR("static module init failed: module '" + path + "' is not compiled.");
+	}
+	m_moduleCache[path] = valueBool(true);
+	auto* closure = machine.cpu.createRootClosure(protoIt->second);
+	NativeResults results;
+	try {
+		callLuaFunctionInto(closure, NativeArgsView(), results);
+	} catch (...) {
+		m_moduleCache.erase(path);
+		throw;
+	}
+	m_moduleCache.erase(path);
+}
+
+void Runtime::runStaticModuleInitializers(const std::vector<std::string>& paths) {
+	for (const std::string& path : paths) {
+		runStaticModuleInitializer(path);
+	}
+	machine.cpu.syncGlobalSlotsToTable();
+}
+
+void Runtime::logLuaCallStack() const {
+	const ProgramMetadata* metadata = m_programMetadata;
+	if (!metadata) {
+		return;
+	}
+	auto stack = machine.cpu.getCallStack();
+	if (stack.empty()) {
+		auto range = machine.cpu.getDebugRange(machine.cpu.lastPc);
+		if (range.has_value()) {
+			std::cout << "  at <current> (" << range->path << ":" << range->startLine << ":" << range->startColumn << ")"
+						<< std::endl;
+		} else {
+			std::cout << "  at <current> (pc=" << machine.cpu.lastPc << ")" << std::endl;
+		}
+		return;
+	}
+	for (const auto& [protoIndex, pc] : stack) {
+		const std::string& protoId = metadata->protoIds[protoIndex];
+		auto range = machine.cpu.getDebugRange(pc);
+		if (range.has_value()) {
+			std::cout << "  at " << protoId << " (" << range->path << ":" << range->startLine << ":" << range->startColumn << ")"
+						<< std::endl;
+		} else {
+			std::cout << "  at " << protoId << " (pc=" << pc << ")" << std::endl;
+		}
+	}
+}
+
+void Runtime::handleLuaError(const std::string& message) {
+	hostFault.publishStartup(message);
+	std::cout << "[Runtime] Error: " << message << std::endl;
+	logDebugState();
+	logLuaCallStack();
+	machine.cpu.clearHaltUntilIrq();
+	machine.inputController.cancelSampleArm();
+	m_pendingCall = PendingCall::None;
+	frameLoop.frameActive = false;
+	m_runtimeFailed = true;
+}
+
+
 void Runtime::resetRuntimeForProgramReload() {
 	frameLoop.resetFrameState(*this);
 	m_runtimeFailed = false;
@@ -234,7 +334,7 @@ void Runtime::resetRuntimeForProgramReload() {
 	m_cartBssBaseAddress.reset();
 	m_cartStaticModulePaths.clear();
 	cartBoot.reset();
-	m_hostFaultMessage.reset();
+	hostFault.clear();
 	m_moduleCache.clear();
 	machine.cpu.clearGlobalSlots();
 	machine.cpu.globals->clear();

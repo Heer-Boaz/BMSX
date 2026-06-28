@@ -2,11 +2,11 @@
 
 namespace bmsx {
 
-bool extractSourceRangeText(const SourceRange& range, const std::string& source, std::string& out) {
-	out.clear();
+std::optional<std::string> extractSourceRangeText(const SourceRange& range, const std::string& source) {
 	if (range.startLine <= 0 || range.endLine < range.startLine) {
-		return false;
+		return std::nullopt;
 	}
+	std::string out;
 	int line = 1;
 	size_t lineStart = 0;
 	for (size_t index = 0; index <= source.size(); ++index) {
@@ -23,14 +23,13 @@ bool extractSourceRangeText(const SourceRange& range, const std::string& source,
 			}
 			out.append(source.data() + lineStart, lineEnd - lineStart);
 			if (line == range.endLine) {
-				return true;
+				return out;
 			}
 		}
 		line += 1;
 		lineStart = index + 1;
 	}
-	out.clear();
-	return false;
+	return std::nullopt;
 }
 
 } // namespace bmsx
