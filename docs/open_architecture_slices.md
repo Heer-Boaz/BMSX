@@ -152,6 +152,190 @@ Cart-representatie roadmap/status:
 | cart startup/vector model | Deels: `ProgramImage` draagt nu een expliciete vector table (`resetProtoIndex`, `sectionInitProtoIndex`, `irqProtoIndex`) en TS/C++ linker/runtime boot gebruiken die vector table in plaats van losse entry/section-init velden. `init()`/`new_game()` zijn bewust cartfuncties, geen console-ABI: de lifecycle-IRQ-transportlaag is verwijderd, cold cart startup roept ze direct aan en hot-resume voert alleen `init()` als IDE/debugger-call uit. Hardware IRQ's vectoren bij `HALT` en guest instruction boundaries naar cartcode die `irq(flags)` dispatcht en owned masks ackt; gemigreerde carts gebruiken ISR-latches in plaats van post-HALT polling als dispatchpad. `IRQ_MASK` is de cart-facing per-source vector-maskerlaag; de CPU-global maskable state is alleen interne handler-serialisatie. Open: NMI blijft buiten scope tot er een echte producer is. |
 | verifier/audit voor echte carts | GESCHRAPT in deze vorm: een los retro-cart verifier-script is een slechte slice. De echte gates horen bij de producer/linker/compiler/runtime-eigenaren zelf, niet in een achteraf-scanner die ROMs opnieuw interpreteert. |
 
+## 24. Machine-model registry als hardware-eigenaar
+
+Doel: het machinemodel wordt een eigenschap van de **machine**, niet van de cart
+(echte-console-model). Een model-registry wordt de enige bron voor CPU-clock,
+refresh/scanlines, RAM/VRAM en transfer/work-rates. De host/boot kiest welke
+console draait; een cart declareert alleen tegen welke **family** hij draait en
+de loader handhaaft die lock. Cart- en system-manifests stoppen met losse
+hardware-knoppen. Dit is een echte architecture-slice met cart-migratie, geen
+mechanische schema-rename.
+
+Eigenaarschap (echte-console-model):
+
+- De **machine** bezit het model. Drie model-IDs, één eindige enum (geen losse
+  `family`+`region` op machineniveau, want dat maakt `bsx_pal` representeerbaar):
+  - `bmsx_pal` — MSX-achtige family, 50 Hz / 313 scanlines
+  - `bmsx_ntsc` — MSX-achtige family, 60 Hz / 262 scanlines
+  - `bsx_ntsc` — PSX-achtige family (meer RAM/VRAM, GEO/RPU), NTSC-only.
+    `bsx_pal` bestaat bewust niet.
+- De **cart** declareert een `family` (`bmsx` of `bsx`), niet een model en geen
+  lijst. Family is de harde capability-grens (andere BIOS/devices); region is
+  alleen machine-eigen timing die de cart *leest*, niet kiest. Een bmsx-cart
+  draait dus op zowel `bmsx_pal` als `bmsx_ntsc`. Eén model noemen zou onnodig
+  region-locken; een lijst zou alleen de regio's van de family herhalen.
+- De **loader** handhaaft de lock: `cart.family` moet matchen met de family van
+  `machine.model`, anders harde boot-fault. Een bsx-cart in een bmsx-machine
+  boot niet.
+- **Aanname (expliciet):** family-compat betekent dat dezelfde cart op pal vs
+  ntsc op verschillende snelheid draait (50 vs 60 Hz). Dat is authentiek, maar
+  geldt alleen als carts hun logica uit de machine-klok halen (`sys_time_ms`,
+  scheduler-tijd) i.p.v. uit frame-tellingen. Het recente `sys_time_ms`-werk
+  ondersteunt dit; carts die op frame-counts leunen moeten daarop gecontroleerd.
+
+Model-selectie (verplaatst, niet verdwenen):
+
+- Omdat de cart alleen `family` noemt, kiest niets pal vs ntsc voor de draaiende
+  machine. Daarom: **default dev/test-machine = `bmsx_pal`**, met een
+  host/runner-override om expliciet een ander model te booten. Dit is geen losse
+  gap-vuller: default-pal houdt de migratie gedrag-behoudend (alle huidige
+  50 Hz-carts boten op 50 Hz), zodat "behavior-preserving" gedefinieerd is in
+  plaats van impliciet.
+
+Region is alleen video-timing:
+
+- CPU/RAM/VRAM zijn gelijk tussen `bmsx_pal` en `bmsx_ntsc`; alleen refresh en
+  scanlines verschillen. Zo blijft de enum betekenisvol zonder per-region
+  hardware te verzinnen.
+- Region wordt expliciet model-eigendom in plaats van afgeleid. Vandaag
+  infereert `resolveTotalScanlines(ufps)` PAL vs NTSC uit een magische 55 Hz-
+  cutoff (`PAL_NTSC_REFRESH_CUTOFF_SCALED`); die heuristiek vervalt.
+  `total_scanlines` is dus geen nieuw dood veld — `resolveVblankCycles`
+  consumeert het nu al, straks declaratief uit het model.
+
+Eén BIOS in 24.1; geen taalconstructie:
+
+- In 24.1 verschillen de drie modellen **alleen in registry-waarden**
+  (cpu/refresh/scanlines/ram/vram/rates), niet in firmware-logica of beschikbare
+  devices. Eén **registry-geparametriseerde BIOS** bedient alle drie de
+  modellen: hij leest `ram_bytes` etc. uit het model en zet de machine op.
+  Bewijs dat dit al werkt: de 2025-cart (de toekomstige `bsx_ntsc`) draait
+  vandaag op de enige huidige firmware (`2025_live_timeline_assert` is groen).
+- **Per-family BIOS-images zijn een gevolg van 24.2's logica-divergentie**, niet
+  van 24.1. Een aparte `bsx`-BIOS minten in 24.1 zou een no-op kopie van de
+  bmsx-BIOS zijn. De split landt met de capability-split.
+- 24.1 heeft **geen nieuwe taalconstructie** nodig. Machine-specifieke *waarden*
+  komen uit de registry als const-module-symbolen (het `bmsx/assets`-patroon: de
+  linker inlinet de waarde voor het gelinkte model). De `#ifdef`/link-time-
+  module-selectie-vraag is volledig een 24.2-zaak (code-divergentie); een
+  preprocessor wordt niet speculatief gebouwd. Tekst-substitutie is bewust
+  afgewezen ten faveure van link-time selectie (zie slices 16/18/19/20).
+
+Wat in 24.1 cart-eigen blijft:
+
+- `render_size` blijft cart-eigen (geen model-eigendom). De spreiding
+  160×120…320×240 past niet in één model; "cart kiest een VDP-mode binnen de
+  modellimieten" is capability-werk (24.2). Vblank blijft uit
+  `render_size.height` plus model-`total_scanlines` afgeleid.
+- `namespace`, `lua.entry_path` en cart-metadata (`title`/`short_name`/
+  `rom_name`) blijven cart-eigen.
+
+System/BIOS-ROM-consolidatie (doel):
+
+- Vandaag dragen cart- én system-manifest hardware-specs
+  (`resolveRuntimeMemoryMapSpecs` combineert ze). Het model wordt de enige bron;
+  `system_slot_bytes` wordt een modelveld; de system-firmware draait op het
+  machinemodel. De system-manifest levert geen onafhankelijke memory-specs meer.
+
+Naam-collisie:
+
+- `model` is in deze codebase al overladen (`id2model`/`GLTFModel` = glTF 3D-
+  modellen). Het machinemodel leeft op de machine (registry-key), niet als
+  manifest-veld op de cart; de cart draagt `family`. Dit wordt expliciet zo
+  benoemd zodat niemand `RuntimeRomPackage.model` (3D) met het machinemodel
+  verwart.
+
+Cart-manifest na 24.1:
+
+```yaml
+machine:
+    family: bmsx          # compat-lane; draait op elke region van deze family
+    render_size: {width: 256, height: 192}
+    namespace: 'pietious'
+lua:
+    entry_path: cart.lua
+```
+
+Model-registry (alleen velden die vandaag al geconsumeerd worden + identiteit;
+gekeyd op machinemodel):
+
+| veld | bmsx_pal | bmsx_ntsc | bsx_ntsc |
+| --- | --- | --- | --- |
+| family / region | bmsx / pal | bmsx / ntsc | bsx / ntsc |
+| refresh (ufps) | 50 | 60 | 60 |
+| total_scanlines | 313 | 262 | 262 |
+| cpu_freq_hz | 8 MHz | 8 MHz | 50 MHz |
+| imgdec/dma rates | huidige bmsx-defaults | = | bsx-rates |
+| vdp/geo work_units | defaults | = | bsx-profiel |
+| ram_bytes | 4 MB (default) | = | 128 MB |
+| slot/staging/system_slot | vram-defaults | = | 160/40 MB |
+
+Canonieke clock vastgepind: `bmsx`-family = **8 MHz** (gedeeld door pal en ntsc,
+want region = alleen video-timing). 8 MHz wordt al door drie carts gebruikt
+(bare_metal, emptycart, vblanktest) en minimaliseert de migratie-delta.
+`bsx_ntsc` = 50 MHz (overgenomen van de 2025-cart).
+
+Cart-migratie-ledger (default-machine = `bmsx_pal`; gedrag-behoudend tenzij
+vermeld):
+
+| cart | nu | family | draait op (default) | delta |
+| --- | --- | --- | --- | --- |
+| pietious | 5 MHz, 256×192, 50 Hz | bmsx | bmsx_pal | refresh/scanlines behouden; cpu 5→8 MHz |
+| nemesis_s | 10 MHz, 256×192 | bmsx | bmsx_pal | cpu 10→8 MHz |
+| bare_metal_cart / emptycart / vblanktest | 8 MHz, 256×212 | bmsx | bmsx_pal | geen delta; refresh behouden |
+| 2025 | 50 MHz, 320×240, 128 MB | bsx | bsx_ntsc | bewuste 50→60 Hz flip (bsx = NTSC-only) |
+| renderhwtest | 800 MHz | — | dev-override-machine | geen productiemodel |
+| fade_probe | 1 MHz + custom VDP | — | dev-override-machine | geen productiemodel |
+
+De **enige bedoelde timing-flip is 2025 → bsx_ntsc** (50→60 Hz). Controleer of
+`2025_live_timeline_assert` frame-count-gevoelig is vóór je een verandering daar
+als regressie leest.
+
+Dev-override escape hatch: testharnassen die bewust niet-hardware-specs willen
+(renderhwtest 800 MHz, fade_probe custom VDP-rate) booten op een expliciet
+gelabelde override-machine buiten de registry, geweigerd voor echte cart-builds.
+Geen nep-model in de productie-enum, zodat "model = echte hardware" zuiver
+blijft.
+
+Sub-slices:
+
+- 24.1 — model-registry + machine-eigenaarschap; host/boot selecteert het model
+  (default `bmsx_pal` + override); cart-manifest draagt `family` i.p.v.
+  `ufps`/`specs.*`; loader handhaaft de family-lock; resolver leest uit de
+  registry; `resolveTotalScanlines`-inferentie vervangen door model-
+  `total_scanlines`; system-manifest verliest losse hardware-specs
+  (`system_slot_bytes` → model); carts gemigreerd volgens ledger; dev-override
+  voor de twee testharnassen. Eén registry-geparametriseerde BIOS; geen nieuwe
+  taalconstructie. Capability nog niet afgedwongen.
+- 24.2 — echte capability-split: bmsx-family krijgt sprite/tile/palette/blit-
+  limieten, een ander VDP-profiel en device-availability; `render_size` wordt
+  model-begrensde VDP-mode; per-family BIOS-images ontstaan hier omdat de
+  firmware-logica/devices nu echt divergeren; pas hier komt de code-divergentie-
+  vraag (link-time module-selectie per family) op tafel.
+- 24.3 — carts definitief per family sorteren (pietious/nemesis bewust bmsx of
+  bsx; 2025 = bsx; renderhwtest/fade_probe blijven dev-harnassen).
+
+Acceptatie (24.1):
+
+- de machine bezit het model; host/boot selecteert het (default `bmsx_pal`,
+  host/runner-override); de cart-manifest draagt `family` i.p.v. `ufps`+`specs`
+- één gemirrorde TS/C++ registry-tabel; een parity-test asserteert dat beide
+  byte-identiek zijn (past op `audit:core-parity`)
+- de loader weigert een cart waarvan `family` niet matcht met het machinemodel;
+  een onbekend/niet-bestaand model (incl. `bsx_pal`) is een harde fault
+- `resolveVblankCycles` gebruikt model-`total_scanlines`; de 55 Hz-inferentie en
+  `PAL_NTSC_REFRESH_CUTOFF_SCALED` zijn verdwenen
+- `system_slot_bytes` komt uit het model; de system-manifest levert geen
+  onafhankelijke memory-specs meer
+- één registry-geparametriseerde BIOS bedient alle drie de modellen; geen
+  per-family BIOS-image en geen nieuwe taal/preprocessor-constructie in 24.1
+- alle 9 carts gemigreerd; ledger-deltas verklaard en met cart-tests
+  geverifieerd; de enige bedoelde timing-flip is 2025 → bsx_ntsc
+- gates: `npm run compile:machine -- --noEmit`, registry-parity-test,
+  `npm run audit:core-parity`, `npm run test:lua`, `npm run test:rompacker`,
+  headless asserts (pietious + 2025), `npm run check:indent`, `git diff --check`
+
 ## 14. Legacy cart-data naar vaste binaire ROM-layouts — GESCHRAPT
 
 Verworpen; geen open slice meer. De winst die ertoe deed is al binnen: geen
