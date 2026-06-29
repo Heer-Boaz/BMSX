@@ -7,7 +7,6 @@ import {
 	DEFAULT_LUA_BUILTIN_FUNCTIONS,
 	SYSTEM_LUA_BUILTIN_FUNCTIONS,
 } from './builtin_descriptors';
-import { bmsxCivilTimeFromTimestamp, formatBmsxCivilTime, requireLuaTimeValue } from './civil_time';
 import type { Runtime } from '../runtime/runtime';
 import type { LuaBuiltinDescriptor } from '../../lua/semantic_contracts';
 
@@ -21,38 +20,10 @@ export function registerFirmwareBuiltins(runtime: Runtime, interpreter: LuaInter
 	registerSystemBuiltins(runtime, interpreter);
 }
 
-function populateLuaDateTable(table: LuaTable, timestamp: number): void {
-	const time = bmsxCivilTimeFromTimestamp(timestamp);
-	table.set('year', time.year);
-	table.set('month', time.month);
-	table.set('day', time.day);
-	table.set('hour', time.hour);
-	table.set('min', time.min);
-	table.set('sec', time.sec);
-	table.set('wday', time.wday);
-	table.set('yday', time.yday);
-	table.set('isdst', time.isdst);
-}
-
 function registerInterpreterMachineTimeBuiltins(runtime: Runtime, interpreter: LuaInterpreter): void {
 	const osTable = createLuaTable();
 	osTable.set('clock', new LuaNativeFunction('os.clock', () => {
 		return [runtime.machineTimeMs() / 1000];
-	}));
-	osTable.set('date', new LuaNativeFunction('os.date', (args) => {
-		const formatValue = args.length > 0 ? args[0] : null;
-		if (formatValue !== null && typeof formatValue !== 'string') {
-			throw interpreter.runtimeError('os.date expects a format string.');
-		}
-		const format = formatValue === null ? '%c' : (formatValue as string);
-		const bmsxFormat = format.charCodeAt(0) === 33 ? format.slice(1) : format;
-		const timestamp = args.length > 1 && args[1] !== null ? requireLuaTimeValue(args[1]) : Math.trunc(runtime.machineElapsedMs() / 1000);
-		if (bmsxFormat === '*t') {
-			const table = createLuaTable();
-			populateLuaDateTable(table, timestamp);
-			return [table];
-		}
-		return [formatBmsxCivilTime(bmsxFormat, bmsxCivilTimeFromTimestamp(timestamp))];
 	}));
 	registerLuaGlobal(runtime, interpreter.globalEnvironment, 'os', osTable);
 }

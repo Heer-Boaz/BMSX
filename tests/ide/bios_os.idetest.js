@@ -43,3 +43,22 @@ const fractionalDiffOk = t.evaluateLua('return pcall(function() return os.diffti
 t.assert(fractionalDiffOk === false, 'os.difftime should reject fractional BMSX time values');
 const fractionalTimeOk = t.evaluateLua('return pcall(function() return os.time({ year = 1970.5, month = 1, day = 1 }) end)')[0];
 t.assert(fractionalTimeOk === false, 'os.time should reject fractional BMSX civil-time fields');
+
+const dateCases = t.evaluateLua(`
+local epoch_table<const> = os.date('*t', 0)
+return os.date('%Y-%m-%d %H:%M:%S', 0),
+	os.date('%c', 0),
+	os.date('!%F %T %z %Z', -1),
+	os.date('%G-W%V-%u', 0),
+	epoch_table.year, epoch_table.month, epoch_table.day, epoch_table.hour, epoch_table.min, epoch_table.sec, epoch_table.wday, epoch_table.yday, epoch_table.isdst
+`);
+
+t.assert(dateCases[0] === '1970-01-01 00:00:00', `os.date should format epoch fields, got ${dateCases[0]}`);
+t.assert(dateCases[1] === 'Thu Jan 01 00:00:00 1970', `os.date %c mismatch: got ${dateCases[1]}`);
+t.assert(dateCases[2] === '1969-12-31 23:59:59 +0000 BMSX', `os.date should format UTC-prefixed pre-epoch time, got ${dateCases[2]}`);
+t.assert(dateCases[3] === '1970-W01-4', `os.date should format ISO week fields, got ${dateCases[3]}`);
+t.assert(dateCases[4] === 1970 && dateCases[5] === 1 && dateCases[6] === 1, `os.date *t date mismatch: got ${dateCases.slice(4, 7).join('-')}`);
+t.assert(dateCases[7] === 0 && dateCases[8] === 0 && dateCases[9] === 0, `os.date *t clock mismatch: got ${dateCases.slice(7, 10).join(':')}`);
+t.assert(dateCases[10] === 5 && dateCases[11] === 1 && dateCases[12] === false, `os.date *t calendar mismatch: got wday=${dateCases[10]} yday=${dateCases[11]} isdst=${dateCases[12]}`);
+const invalidDateFormatOk = t.evaluateLua("return pcall(function() return os.date('%Q', 0) end)")[0];
+t.assert(invalidDateFormatOk === false, 'os.date should reject unsupported conversion specifiers');

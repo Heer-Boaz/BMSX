@@ -1,5 +1,4 @@
 import { extractErrorMessage, type StackTraceFrame } from '../../lua/value';
-import { bmsxCivilTimeFromTimestamp, formatBmsxCivilTime, requireLuaTimeValue } from './civil_time';
 import {
 	createNativeFunction,
 	isTruthyValue,
@@ -2408,30 +2407,6 @@ export function seedLuaGlobals(runtime: Runtime): void {
 	runtime.setGlobal('table', tableLibrary);
 
 	const osTable = new Table(0, 0);
-	const buildOsDateTable = (time: ReturnType<typeof bmsxCivilTimeFromTimestamp>): Table => {
-		const table = new Table(0, 9);
-		setKey(table, 'year', time.year);
-		setKey(table, 'month', time.month);
-		setKey(table, 'day', time.day);
-		setKey(table, 'hour', time.hour);
-		setKey(table, 'min', time.min);
-		setKey(table, 'sec', time.sec);
-		setKey(table, 'wday', time.wday);
-		setKey(table, 'yday', time.yday);
-		setKey(table, 'isdst', time.isdst);
-		return table;
-	};
-	setKey(osTable, 'date', createNativeFunction('os.date', (args, out) => {
-		const format = args.length > 0 && args[0] !== null ? strings.toString(asStringId(args[0] as StringValue)) : '%c';
-		const bmsxFormat = format.charCodeAt(0) === 33 ? format.slice(1) : format;
-		const timeValue = args.length > 1 && args[1] !== null ? requireLuaTimeValue(args[1]) : Math.trunc(runtime.machineElapsedMs() / 1000);
-		const time = bmsxCivilTimeFromTimestamp(timeValue);
-		if (bmsxFormat === '*t') {
-			out.push(buildOsDateTable(time));
-			return;
-		}
-		out.push(runtime.internString(formatBmsxCivilTime(bmsxFormat, time)));
-	}));
 	runtime.setGlobal('os', osTable);
 
 	const nextFn = createNativeFunction('next', (args, out) => {

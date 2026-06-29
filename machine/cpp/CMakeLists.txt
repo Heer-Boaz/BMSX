@@ -311,7 +311,6 @@ add_library(bmsx_core STATIC
 	machine/devices/irq/controller.cpp
 	machine/devices/irq/save_state.cpp
 	machine/firmware/devtools.cpp
-	machine/firmware/civil_time.cpp
 	machine/firmware/system_globals.cpp
 	machine/firmware/handler_registry.cpp
 	machine/cpu/disassembler.cpp

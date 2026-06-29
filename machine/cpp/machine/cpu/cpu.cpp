@@ -92,7 +92,6 @@ static inline NativeFnCost resolveNativeFunctionCost(std::string_view name) {
 		|| name == "load"
 		|| name == "require"
 		|| name == "print"
-		|| name == "os.date"
 		|| name == "devtools.list_lua_resources"
 		|| name == "devtools.get_lua_resource_source"
 ) {

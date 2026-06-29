@@ -1,6 +1,5 @@
 #include "machine/runtime/runtime.h"
 #include "machine/firmware/system_globals.h"
-#include "machine/firmware/civil_time.h"
 #include "machine/program/load_compiler.h"
 #include "machine/common/number_format.h"
 #include "machine/memory/lua_heap_usage.h"
@@ -27,8 +26,6 @@
 namespace bmsx {
 namespace {
 using StringDifference = std::string::difference_type;
-constexpr double LUA_TIME_SAFE_INT_MIN = -9007199254740991.0;
-constexpr double LUA_TIME_SAFE_INT_MAX = 9007199254740991.0;
 
 int floorIntArg(NativeArgsView args, size_t index) {
 	return static_cast<int>(std::floor(asNumber(args.at(index))));
@@ -105,21 +102,6 @@ int normalizeLuaStringIndex(double value, int length) {
 		return length + integer + 1;
 	}
 	return 1;
-}
-
-i64 requireLuaTimeValue(Value value) {
-	if (!valueIsNumber(value)) {
-		throw BMSX_RUNTIME_ERROR("time is not an integer");
-	}
-	const double number = asNumber(value);
-	const double integer = std::trunc(number);
-	if (number - number != 0.0 || integer != number) {
-		throw BMSX_RUNTIME_ERROR("time is not an integer");
-	}
-	if (number < LUA_TIME_SAFE_INT_MIN || number > LUA_TIME_SAFE_INT_MAX) {
-		throw BMSX_RUNTIME_ERROR("time is out-of-bound");
-	}
-	return static_cast<i64>(number);
 }
 
 size_t packAlignmentPadding(size_t offset, int align) {
@@ -2655,41 +2637,6 @@ tableLib->set(key("sort"), machine.cpu.createNativeFunction("table.sort", [this,
 	setGlobal("table", valueTable(tableLib));
 
 auto* osTable = cpu.createTable();
-const Value yearKey = key("year");
-const Value monthKey = key("month");
-const Value dayKey = key("day");
-const Value hourKey = key("hour");
-const Value minuteKey = key("min");
-const Value secondKey = key("sec");
-const Value wdayKey = key("wday");
-const Value ydayKey = key("yday");
-const Value isdstKey = key("isdst");
-osTable->set(key("date"), machine.cpu.createNativeFunction("os.date", [this, str, yearKey, monthKey, dayKey, hourKey, minuteKey, secondKey, wdayKey, ydayKey, isdstKey](NativeArgsView args, NativeResults& out) {
-	std::string format = args.empty() || isNil(args.at(0)) ? std::string("%c") : machine.cpu.stringPool().toString(asStringId(args.at(0)));
-	std::string_view bmsxFormat(format);
-	if (!bmsxFormat.empty() && bmsxFormat.front() == '!') {
-		bmsxFormat.remove_prefix(1);
-	}
-	const i64 timeValue = args.size() > 1 && !isNil(args.at(1))
-		? requireLuaTimeValue(args.at(1))
-		: static_cast<i64>(machineElapsedMs() / 1000.0);
-	const BmsxCivilTime timeInfo = bmsxCivilTimeFromTimestamp(timeValue);
-	if (bmsxFormat == "*t") {
-		auto* table = machine.cpu.createTable(0, 9);
-		table->set(yearKey, valueNumber(static_cast<double>(timeInfo.year)));
-		table->set(monthKey, valueNumber(static_cast<double>(timeInfo.month)));
-		table->set(dayKey, valueNumber(static_cast<double>(timeInfo.day)));
-		table->set(hourKey, valueNumber(static_cast<double>(timeInfo.hour)));
-		table->set(minuteKey, valueNumber(static_cast<double>(timeInfo.minute)));
-		table->set(secondKey, valueNumber(static_cast<double>(timeInfo.second)));
-		table->set(wdayKey, valueNumber(static_cast<double>(timeInfo.weekday)));
-		table->set(ydayKey, valueNumber(static_cast<double>(timeInfo.yearday)));
-		table->set(isdstKey, valueBool(timeInfo.isDst));
-		out.push_back(valueTable(table));
-		return;
-	}
-	out.push_back(str(formatBmsxCivilTime(bmsxFormat, timeInfo)));
-}));
 	setGlobal("os", valueTable(osTable));
 
 auto nextFn = machine.cpu.createNativeFunction("next", [this](NativeArgsView args, NativeResults& out) {

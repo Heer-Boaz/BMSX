@@ -181,7 +181,6 @@ function resolveNativeFunctionCost(name: string): NativeFnCost {
 		case 'load':
 		case 'require':
 		case 'print':
-		case 'os.date':
 		case 'devtools.list_lua_resources':
 		case 'devtools.get_lua_resource_source':
 			return NATIVE_COST_TIER4;
