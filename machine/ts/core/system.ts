@@ -1,30 +1,40 @@
-import { DEFAULT_GEO_WORK_UNITS_PER_SEC, DEFAULT_VDP_WORK_UNITS_PER_SEC, type MachineManifest } from '../rompack/format';
-import { DEFAULT_UFPS_SCALED } from '../machine/runtime/timing/constants';
+import { type MachineManifest } from '../rompack/format';
+import { getMachineRegionTiming, PSX_MODEL_PROFILE, PSX_VDP_CLASS_PROFILE } from '../machine/model_registry';
 
 export const SYSTEM_ROM_NAME = 'bmsx-bios';
 export const SYSTEM_BOOT_ENTRY_PATH = 'bios/bootrom.lua';
 
+const systemRegion = getMachineRegionTiming('pal');
+
 export const SYSTEM_MACHINE_MANIFEST: MachineManifest = {
 	render_size: {
-		width: 256,
-		height: 212,
+		width: PSX_MODEL_PROFILE.biosRenderWidth,
+		height: PSX_MODEL_PROFILE.biosRenderHeight,
 	},
 	namespace: 'bmsx',
-	ufps: DEFAULT_UFPS_SCALED,
+	ufps: systemRegion.refreshUfpsScaled,
 	specs: {
 		cpu: {
-			cpu_freq_hz: 1_000_000,
-			imgdec_bytes_per_sec: 26_214_400,
+			cpu_freq_hz: PSX_MODEL_PROFILE.cpuFreqHz,
+			imgdec_bytes_per_sec: PSX_MODEL_PROFILE.imgDecBytesPerSec,
 		},
 		dma: {
-			dma_bytes_per_sec_iso: 8_388_608,
-			dma_bytes_per_sec_bulk: 26_214_400,
+			dma_bytes_per_sec_iso: PSX_MODEL_PROFILE.dmaBytesPerSecIso,
+			dma_bytes_per_sec_bulk: PSX_MODEL_PROFILE.dmaBytesPerSecBulk,
 		},
 		vdp: {
-			work_units_per_sec: DEFAULT_VDP_WORK_UNITS_PER_SEC,
+			work_units_per_sec: PSX_VDP_CLASS_PROFILE.vdpWorkUnitsPerSec,
 		},
 		geo: {
-			work_units_per_sec: DEFAULT_GEO_WORK_UNITS_PER_SEC,
+			work_units_per_sec: PSX_VDP_CLASS_PROFILE.geoWorkUnitsPerSec,
+		},
+		ram: {
+			ram_bytes: PSX_MODEL_PROFILE.ramBytes,
+		},
+		vram: {
+			slot_bytes: PSX_MODEL_PROFILE.slotBytes,
+			system_slot_bytes: PSX_MODEL_PROFILE.slotBytes,
+			staging_bytes: PSX_MODEL_PROFILE.stagingBytes,
 		},
 	},
 };

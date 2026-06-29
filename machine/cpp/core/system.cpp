@@ -1,22 +1,28 @@
 #include "system.h"
 
-#include "machine/runtime/timing/constants.h"
+#include "machine/model_registry.h"
 
 namespace bmsx {
 namespace {
 
 const MachineManifest SYSTEM_MACHINE_MANIFEST = [] {
+	const MachineRegionTiming region = getMachineRegionTiming(MachineRegion::Pal);
+
 	MachineManifest manifest;
 	manifest.namespaceName = "bmsx";
-	manifest.viewportWidth = 256;
-	manifest.viewportHeight = 212;
-	manifest.ufpsScaled = DEFAULT_UFPS_SCALED;
-	manifest.cpuHz = 1'000'000;
-	manifest.imgDecBytesPerSec = 26'214'400;
-	manifest.dmaBytesPerSecIso = 8'388'608;
-	manifest.dmaBytesPerSecBulk = 26'214'400;
-	manifest.vdpWorkUnitsPerSec = DEFAULT_VDP_WORK_UNITS_PER_SEC;
-	manifest.geoWorkUnitsPerSec = DEFAULT_GEO_WORK_UNITS_PER_SEC;
+	manifest.viewportWidth = PSX_MODEL_PROFILE.biosRenderWidth;
+	manifest.viewportHeight = PSX_MODEL_PROFILE.biosRenderHeight;
+	manifest.ufpsScaled = region.refreshUfpsScaled;
+	manifest.cpuHz = PSX_MODEL_PROFILE.cpuFreqHz;
+	manifest.imgDecBytesPerSec = PSX_MODEL_PROFILE.imgDecBytesPerSec;
+	manifest.dmaBytesPerSecIso = PSX_MODEL_PROFILE.dmaBytesPerSecIso;
+	manifest.dmaBytesPerSecBulk = PSX_MODEL_PROFILE.dmaBytesPerSecBulk;
+	manifest.vdpWorkUnitsPerSec = PSX_VDP_CLASS_PROFILE.vdpWorkUnitsPerSec;
+	manifest.geoWorkUnitsPerSec = PSX_VDP_CLASS_PROFILE.geoWorkUnitsPerSec;
+	manifest.ramBytes = static_cast<i32>(PSX_MODEL_PROFILE.ramBytes);
+	manifest.slotBytes = static_cast<i32>(PSX_MODEL_PROFILE.slotBytes);
+	manifest.systemSlotBytes = static_cast<i32>(PSX_MODEL_PROFILE.slotBytes);
+	manifest.stagingBytes = static_cast<i32>(PSX_MODEL_PROFILE.stagingBytes);
 	return manifest;
 }();
 

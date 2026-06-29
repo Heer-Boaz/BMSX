@@ -1282,7 +1282,9 @@
 				"machine/cpp/machine/model_registry.h"
 			],
 			"symbols": [
-				"MachineModelProfile"
+				"MachineModelProfile",
+				"MachineVdpClassProfile",
+				"MachineRegionTiming"
 			],
 			"reason": "machine_model_profile_shape_contract"
 		}
