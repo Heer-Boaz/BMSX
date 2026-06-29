@@ -152,150 +152,125 @@ Cart-representatie roadmap/status:
 | cart startup/vector model | Deels: `ProgramImage` draagt nu een expliciete vector table (`resetProtoIndex`, `sectionInitProtoIndex`, `irqProtoIndex`) en TS/C++ linker/runtime boot gebruiken die vector table in plaats van losse entry/section-init velden. `init()`/`new_game()` zijn bewust cartfuncties, geen console-ABI: de lifecycle-IRQ-transportlaag is verwijderd, cold cart startup roept ze direct aan en hot-resume voert alleen `init()` als IDE/debugger-call uit. Hardware IRQ's vectoren bij `HALT` en guest instruction boundaries naar cartcode die `irq(flags)` dispatcht en owned masks ackt; gemigreerde carts gebruiken ISR-latches in plaats van post-HALT polling als dispatchpad. `IRQ_MASK` is de cart-facing per-source vector-maskerlaag; de CPU-global maskable state is alleen interne handler-serialisatie. Open: NMI blijft buiten scope tot er een echte producer is. |
 | verifier/audit voor echte carts | GESCHRAPT in deze vorm: een los retro-cart verifier-script is een slechte slice. De echte gates horen bij de producer/linker/compiler/runtime-eigenaren zelf, niet in een achteraf-scanner die ROMs opnieuw interpreteert. |
 
-## 24. Machine-model registry, region-switch en cart-marker
+## 24. Console-model registry: device-classes en region-switch
 
-Doel: het machinemodel wordt een eigenschap van de **machine** (echte-console-
-model). Een model-registry wordt de enige bron voor CPU-clock, RAM/VRAM en
-transfer/work-rates per model. Er zijn twee modellen — `bmsx` en `psx` — als
-capability-families. Region (50/60 Hz) is **geen** modelkenmerk maar runtime-
-state die live geschakeld wordt zoals de MSX2 dat via VDP-register R#9 deed. De
-cart draagt een **family-marker in de ROM-header**; de boot-ROM leest die en
-kiest native, compat-mode of weigert. Cart- en system-manifests stoppen met
-losse hardware-knoppen. Dit is een echte architecture-slice met cart-migratie.
+Doel: een console-model bestaat uit **vaste hardware** (RAM, VRAM, CPU-clock,
+BIOS-resolutie) plus een set **omwisselbare device-classes** — te beginnen de
+**VDP-class**, met de **APU-class** als geanticipeerde tweede. Elke device-class
+draagt zijn eigen **operations/second** (throughput) en programmeermodel. De
+model-registry wordt de enige bron voor die waarden; cart- en system-manifests
+stoppen met losse hardware-knoppen. **Nu wordt alleen het `psx`-model + de `psx`
+VDP-class ondersteund**; de `bmsx` (tile/sprite) VDP-class is een schone seam
+voor later, niet gebouwd. Region (50/60 Hz) blijft gedeelde, runtime-switchbare
+timing.
 
-Dit supersedet de eerste foundation (commit `72c6ba9f0`), die nog drie region-
-gebakken IDs (`bmsx_pal`/`bmsx_ntsc`/`bsx_ntsc`) had: region-als-identiteit wordt
-region-als-state, en `bsx`→`psx`. De family-gedeelde consts, de rates en het
-parity-patroon dragen door, maar de registry zelf wordt **herzien, niet
-uitgebreid**: drie modellen worden er twee, NTSC 60→59,94 Hz, en de region-consts
-verhuizen naar een gedeelde runtime-tabel.
+Waarom deze vorm:
 
-Twee modellen, region als runtime-state:
+- Het verschil tussen een MSX-achtige en een PSX-achtige console zit primair in
+  het **VDP-programmeermodel** (tile/sprite/nametables vs framebuffer/geometry/
+  3D), niet in de hele machine. Modelleer dat verschil dus als een **device-
+  class**, niet als een aparte CPU/core.
+- Daardoor is backward-compat **goedkoop**: een high-end machine *heeft beide
+  VDP-classes*; de cart-marker kiest welke class hij programmeert; CPU/geheugen
+  zijn gedeeld. Geen tweede core, geen per-core-BIOS, geen dure compat-matrix.
+- RAM/VRAM/CPU-clock zijn **vast per model** — niet configureerbaar, niet
+  per-unit variabel (de MSX-fragmentatie-valkuil die een fantasy console juist
+  vermijdt).
 
-- Modellen: `bmsx` (MSX-achtige family) en `psx` (PSX-achtige high-end: meer
-  RAM/VRAM, GEO/RPU). Geen pal/ntsc-varianten meer; region zit niet in het model.
-- Region (`pal` = 50 Hz/313, `ntsc` ≈ 59,94 Hz/262) is een gedeelde timing-tabel,
-  geen modelveld. De machine heeft een **current-region register** dat bij
-  power-on default `pal` (50 Hz) is — gedrag-behoudend: alle huidige carts
-  blijven 50 Hz tenzij ze switchen.
-- **NTSC is geen exacte 60 Hz**: `ntsc` refresh = `60000/1001 ≈ 59,94 Hz`
-  (scaled `59_940_060`), niet `60 * HZ_SCALE`. PAL blijft exact 50 Hz.
-- **Region-switch-ABI**: een MMIO-register (analoog aan V9938 R#9 bit N/PAL) dat
-  bij schrijven de actieve refresh + total_scanlines wisselt en de frame-timing
-  live herberekent via het bestaande `setFrameTiming`/`applyRuntimeTiming`-pad.
-  De huidige `resolveTotalScanlines(ufps)`-inferentie (magische 55 Hz-cutoff
-  `PAL_NTSC_REFRESH_CUTOFF_SCALED`) vervalt; total_scanlines komt uit de region-
-  state. Region-state hoort in de save-state.
-- Resolutie is **ontkoppeld** van region: het zichtbare-lijnen-verschil (PAL
-  hoger) is een VDP-mode-detail (24.2), niet iets dat de region-switch op
-  BIOS-niveau forceert. Op MSX zijn 50/60 Hz en 192/212 lijnen ook losse VDP-bits.
+Dit supersedet de eerste foundation (commit `72c6ba9f0`): de
+`getMachineFamilyProfile`-vorm splitst in **model** (vaste RAM/VRAM/CPU) +
+**device-class** (ops/sec); de `MachineFamily {Bmsx,Bsx}`-enum wordt de
+VDP-class/device-class-as en wordt `psx` benoemd. Alleen `psx` gepopuleerd; de
+bmsx-tak blijft een lege, gedocumenteerde seam.
 
-Cart-marker + compat-matrix (GBA-model):
+Structuur:
 
-- De cart draagt een `family`-marker (`bmsx`/`psx`) **in de ROM-header** (de
-  bestaande `BMSX`-magic `CartRomHeader`). Dat is het ROM-image-equivalent van de
-  cart-type-byte/pin die een echte console leest (Game Boy CGB-flag `$0143`,
-  Mega Drive regio-tekens). De **boot-ROM leest de marker bij insert/boot** en
-  kiest de modus.
-- `psx` is **superset-hardware** die `bmsx`-carts in compat-mode draait, zoals
-  een GBA een GB draait; `bmsx`-hardware weigert `psx`-carts (te zwaar). De
-  runtime leidt een **effectief model** af uit (machine, marker):
+- **Model** (vast, gekeyd op model-id): `cpu_freq_hz`, `ram_bytes`, `vram`
+  (`slot`/`staging`/`system_slot`), `bios_render` (default displayresolutie),
+  `dma`/`imgdec`-rates, plus welke device-classes het heeft.
+- **Device-class** (omwisselbaar): een benoemde class met zijn eigen ops/sec en
+  programmeermodel-identiteit.
+  - VDP-class `psx`: framebuffer/3D, `work_units_per_sec` + `geo_work_units_per_sec`.
+    (VDP-class `bmsx` = tile/sprite — seam, nog niet gebouwd.)
+  - APU-class: geanticipeerd als tweede omwisselbare class (audio ops/sec), nog
+    niet gebouwd.
+- **Region-timing-tabel** (gedeeld, runtime-switchbaar): `pal` = 50 Hz/313,
+  `ntsc` ≈ 59,94 Hz/262.
 
-| machine \ cart-marker | bmsx | psx |
+Region als runtime-state:
+
+- Region is geen modelkenmerk maar machine-runtime-state. **Region-switch-ABI**:
+  een MMIO-register (analoog aan V9938 R#9 N/PAL) dat refresh + total_scanlines
+  live wisselt via het bestaande `setFrameTiming`/`applyRuntimeTiming`-pad.
+  Power-on default `pal` (50 Hz). `ntsc` = `60000/1001 ≈ 59,94 Hz` (scaled
+  `59_940_060`), niet exact 60. De `resolveTotalScanlines(ufps)`-inferentie
+  (`PAL_NTSC_REFRESH_CUTOFF_SCALED`) vervalt; total_scanlines komt uit de
+  region-state, die in de save-state hoort.
+
+Cart-marker (ROM-header):
+
+- De cart draagt een **VDP-class-marker** in de ROM-header (de bestaande
+  `BMSX`-magic `CartRomHeader`) — het ROM-image-equivalent van de cart-type-byte
+  die een echte console leest (Game Boy CGB-flag `$0143`). De **boot-ROM leest de
+  marker** en selecteert de VDP-class die de cart programmeert.
+- **Effectieve class** = f(welke classes de machine heeft, cart-marker). Een
+  machine die de class niet heeft → harde "incompatibele cartridge"-fault. Nu
+  (alleen `psx`) krijgt elke cart de `psx`-class.
+- Class-selectie is **boot/header-time** (de boot-ROM leest de marker bij
+  insert), te onderscheiden van de runtime VDP-*modes* (SCREEN-stijl) bínnen een
+  class. Of class-switching óók runtime moet kunnen, is een open vraag voor
+  wanneer de tweede class landt — moot zolang alleen `psx` bestaat.
+- De marker is een header-veld, geen nieuwe taal/preprocessor. Code-divergentie
+  (een tweede VDP-class met eigen firmware) is graphics-workstream-werk via
+  link-time module/image-selectie, niet `#ifdef` (zie slices 16/18/19/20).
+
+Model-registry (nu; alleen `psx`):
+
+| laag | veld | psx |
 | --- | --- | --- |
-| bmsx | bmsx (native) | REJECT (incompatibele cartridge) |
-| psx | bmsx (compat) | psx (native) |
-
-- Het effectieve model bepaalt het hardware-profiel: een `bmsx`-cart op
-  `psx`-hardware draait op het **bmsx-profiel** (8 MHz/4 MB), niet op psx-specs —
-  authentiek aan GBA-draait-GB-op-GB-snelheid. Region blijft een onafhankelijke
-  runtime-switch bovenop het effectieve model.
-- Een incompatibele combinatie (`bmsx`-machine + `psx`-cart) of een onbekende
-  marker is een harde boot-fault — het emulator-equivalent van een lock-scherm.
-
-Model-registry (gekeyd op model; alleen velden die vandaag geconsumeerd worden +
-family-default BIOS-resolutie):
-
-| veld | bmsx | psx |
-| --- | --- | --- |
-| family | bmsx | psx |
-| cpu_freq_hz | 8 MHz | 50 MHz |
-| imgdec/dma rates | huidige defaults | = |
-| vdp/geo work_units | defaults | psx-profiel |
-| ram_bytes | 4 MB | 128 MB |
-| slot/staging/system_slot | vram-defaults | 160/40 MB |
-| bios_render (default display) | 256×212 | 320×240 |
-
-Region-timing-tabel (gedeeld, geen modelveld):
-
-| region | refresh (ufps scaled) | total_scanlines |
-| --- | --- | --- |
-| pal | 50_000_000 | 313 |
-| ntsc | 59_940_060 (60000/1001) | 262 |
-
-Canonieke clock vastgepind: `bmsx` = **8 MHz** (meest voorkomend onder de
-bmsx-carts, minimaliseert migratie-delta), `psx` = 50 MHz (overgenomen van 2025).
-
-BIOS-resolutie per family (punt 3): `SYSTEM_MACHINE_MANIFEST`
-(`machine/ts/core/system.ts`) hardcodet nu 256×212 + cpu 1 MHz. Dat vervalt; de
-boot-ROM (`bootrom.lua` leest `render_size`) gebruikt de model-`bios_render` en de
-model-clock. Carts kiezen nog steeds hun eigen `render_size` (VDP-mode);
-`bios_render` is de power-on/native displaymode van de machine.
-
-Marker = ROM-header, geen taalconstructie:
-
-- De marker is een header-veld, geen nieuwe taal/preprocessor. Machine-specifieke
-  *waarden* komen uit de registry als const-symbolen (`bmsx/assets`-patroon).
-  Code-divergentie (psx bevat de bmsx-compat-firmware, zoals een GBA-ROM de
-  GB-BIOS bevat) is 24.2-werk via link-time module/image-selectie, niet `#ifdef`
-  (zie slices 16/18/19/20).
-
-Wat in 24.1 cart-eigen blijft:
-
-- `render_size` (cart-VDP-mode), `namespace`, `lua.entry_path` en cart-metadata
-  (`title`/`short_name`/`rom_name`). Vblank blijft uit `render_size.height` plus
-  region-`total_scanlines` afgeleid.
-
-System/BIOS-ROM-consolidatie (doel):
-
-- Vandaag dragen cart- én system-manifest hardware-specs
-  (`resolveRuntimeMemoryMapSpecs` combineert ze). Het effectieve model wordt de
-  enige bron; `system_slot_bytes` + `bios_render` worden modelvelden; de
-  system-firmware draait op het effectieve model. De system-manifest levert geen
-  onafhankelijke hardware-specs meer.
-
-Naam-collisie:
-
-- `model` is in deze codebase al overladen (`id2model`/`GLTFModel` = glTF 3D-
-  modellen). Het machinemodel leeft op de machine (registry-key), niet als
-  manifest-veld op de cart; de cart draagt `family`.
+| model | cpu_freq_hz | 50 MHz |
+| model | ram_bytes | 128 MB |
+| model | vram slot/staging/system_slot | 160/40 MB |
+| model | imgdec/dma rates | huidige defaults |
+| model | bios_render | 320×240 |
+| VDP-class `psx` | work_units_per_sec / geo_work_units_per_sec | huidige VDP/GEO-rates |
+| region (gedeeld) | pal / ntsc | 50 Hz/313 · 59,94 Hz/262 |
 
 Cart-manifest na 24.1:
 
 ```yaml
 machine:
-    family: bmsx          # ROM-header-marker; machine + region zijn machine-state
-    render_size: {width: 256, height: 192}
-    namespace: 'pietious'
+    vdp_class: psx        # ROM-header-marker; nu de enige ondersteunde class
+    render_size: {width: 320, height: 240}
+    namespace: 'pietsona2025'
 lua:
     entry_path: cart.lua
 ```
 
-Cart-migratie-ledger (default-machine = native family van de cart; power-on
-region = pal/50 Hz; gedrag-behoudend tenzij vermeld):
+`render_size`, `namespace`, `lua.entry_path` en cart-metadata blijven cart-eigen;
+vblank blijft uit `render_size.height` + region-`total_scanlines` afgeleid.
 
-| cart | nu | marker | effectief model | delta |
-| --- | --- | --- | --- | --- |
-| pietious | 5 MHz, 256×192, 50 Hz | bmsx | bmsx | cpu 5→8 MHz; refresh ongewijzigd (pal) |
-| nemesis_s | 10 MHz, 256×192 | bmsx | bmsx | cpu 10→8 MHz |
-| bare_metal_cart / emptycart / vblanktest | 8 MHz, 256×212 | bmsx | bmsx | geen delta |
-| 2025 | 50 MHz, 320×240, 128 MB | psx | psx | cpu gelijk (50 MHz); refresh ongewijzigd (pal/50) tot het zelf switcht |
-| renderhwtest | 800 MHz | — | dev-override-machine | geen productiemodel |
-| fade_probe | 1 MHz + custom VDP | — | dev-override-machine | geen productiemodel |
+Cart-migratie-ledger (alle carts → `psx`-model; power-on region `pal`/50 Hz):
 
-Er zijn nu **geen default timing-flips**: alles boot op pal/50 Hz; alleen
-cpu-clocks normaliseren naar het family-profiel. 60 Hz is opt-in via de
-region-switch-ABI.
+| cart | nu (cpu) | model | delta |
+| --- | --- | --- | --- |
+| pietious / nemesis_s / bare_metal_cart / emptycart / vblanktest | 5–10 MHz | psx | cpu → 50 MHz (vaste psx-clock); refresh ongewijzigd (pal/50); render_size behouden |
+| 2025 | 50 MHz | psx | geen cpu-delta; refresh ongewijzigd (pal/50) |
+| renderhwtest / fade_probe | 800 MHz / 1 MHz | dev-override-machine | geen productie-spec |
+
+- **Verificatiepunt**: carts die nu < 50 MHz draaien krijgen de vaste psx-clock
+  van 50 MHz — dat is een groter **cycle-budget per frame**, geen snellere
+  gameplay: de frame-rate blijft pal/50 (refresh, niet cpu, bepaalt fps). Zolang
+  carts hun logica uit `sys_time_ms`/scheduler-tijd halen i.p.v. cycle-counts,
+  verandert wall-clock-timing niet. Controleer met de headless asserts.
+
+System/BIOS-ROM-consolidatie (doel): vandaag dragen cart- én system-manifest
+hardware-specs (`resolveRuntimeMemoryMapSpecs` combineert ze). Het model wordt de
+enige bron; `system_slot_bytes` + `bios_render` worden modelvelden, de
+VDP-ops/sec horen bij de VDP-class; de system-firmware draait op het model. De
+system-manifest levert geen onafhankelijke hardware-specs meer;
+`SYSTEM_MACHINE_MANIFEST` (`machine/ts/core/system.ts`) stopt met het hardcoden
+van 256×212 + 1 MHz en gebruikt `bios_render` + de model-clock.
 
 Dev-override escape hatch: testharnassen die bewust niet-hardware-specs willen
 (renderhwtest 800 MHz, fade_probe custom VDP-rate) booten op een expliciet
@@ -303,42 +278,38 @@ gelabelde override-machine buiten de registry, geweigerd voor echte cart-builds.
 
 Sub-slices:
 
-- 24.1 — model-registry (`bmsx`/`psx`) + gedeelde region-timing-tabel; machine-
-  eigenaarschap; effectief-model-resolutie uit (machine, ROM-header-marker) met
-  de compat-matrix; region als runtime-state + switch-ABI-register (default pal);
-  cart-manifest/ROM-header draagt `family` i.p.v. `ufps`/`specs.*`; resolver leest
-  uit de registry; `resolveTotalScanlines`-inferentie weg; system-manifest
-  verliest losse hardware-specs (`system_slot_bytes` + `bios_render` → model);
-  BIOS gebruikt `bios_render`; carts gemigreerd; dev-override. Eén registry-
-  geparametriseerde BIOS; capability nog niet afgedwongen.
-- 24.2 — echte capability-split: bmsx-family krijgt sprite/tile/palette/blit-
-  limieten, een ander VDP-profiel en device-availability; compat-mode op psx
-  dwingt de bmsx-limieten echt af; `render_size` wordt model-begrensde VDP-mode;
-  per-family/compat BIOS-firmware ontstaat hier (psx bevat de bmsx-compat-
-  firmware) via link-time module/image-selectie; de PAL/NTSC zichtbare-lijnen-
-  mode hoort ook hier.
-- 24.3 — carts definitief per family sorteren; eventueel master-clock-afgeleide
-  timing (refresh emergent uit master_clock × dots/lijnen) als authenticiteits-
-  verfijning.
+- 24.1 — registry met de **model + device-class**-structuur (één model `psx`, één
+  VDP-class `psx`); ROM-header VDP-class-marker; vaste RAM/VRAM/CPU per model;
+  ops/sec bij de VDP-class; region als runtime-state + switch-ABI (default pal);
+  `resolveTotalScanlines`-inferentie weg; system-consolidatie + `bios_render`;
+  alle carts → `psx`; dev-override. De device-class-abstractie wordt mét één class
+  gebouwd, maar de seam (extra VDP-class, APU-class) is echt.
+- 24.2 (graphics-workstream) — bouw de **`bmsx` tile/sprite VDP-class** + het
+  `bmsx`-model; de marker selecteert de class; backward-compat = de machine biedt
+  beide VDP-classes (gedeelde CPU/geheugen). Hier landt de echte
+  capability-divergentie en, indien gewenst, de PAL/NTSC zichtbare-lijnen-mode.
+- 24.x — **APU-class** als tweede omwisselbare device-class (audio ops/sec),
+  zodra er een producer voor is.
 
 Acceptatie (24.1):
 
-- de machine bezit het model (`bmsx`/`psx`); de runtime leidt het effectieve
-  model af uit (machine, ROM-header-marker) via de compat-matrix; een
-  incompatibele combinatie of onbekende marker is een harde boot-fault
+- registry heeft de **model (vast: cpu/ram/vram/bios_render/dma/imgdec) +
+  device-class (ops/sec)**-structuur; alleen `psx`-model + `psx`-VDP-class
+  gepopuleerd; de seam voor extra classes is expliciet
+- de cart-marker (ROM-header) benoemt de VDP-class; een niet-ondersteunde of
+  onbekende class is een harde boot-fault; nu krijgt elke cart `psx`
 - region is runtime-state met een switch-register (default pal/50 Hz);
-  `resolveVblankCycles` gebruikt region-`total_scanlines`; de 55 Hz-inferentie en
-  `PAL_NTSC_REFRESH_CUTOFF_SCALED` zijn weg; region-state zit in de save-state
-- `ntsc` refresh = `59_940_060` (60000/1001), niet 60 Hz; pal blijft 50 Hz
-- één gemirrorde TS/C++ registry + region-tabel; parity (waarde + shape) groen
-- cart-manifest/ROM-header draagt `family` i.p.v. `ufps`+`specs`;
-  `system_slot_bytes` + `bios_render` komen uit het model; de system-manifest
-  levert geen onafhankelijke hardware-specs meer; de BIOS gebruikt `bios_render`
-  i.p.v. de hardcoded 256×212/1 MHz
-- één registry-geparametriseerde BIOS bedient beide modellen; geen per-family
-  BIOS-image en geen nieuwe taal/preprocessor-constructie in 24.1
-- alle 9 carts gemigreerd; geen default timing-flips (alles pal/50 Hz);
-  cpu-deltas verklaard en met cart-tests geverifieerd
+  `resolveVblankCycles` gebruikt region-`total_scanlines`; de 55 Hz-inferentie +
+  `PAL_NTSC_REFRESH_CUTOFF_SCALED` zijn weg; region-state zit in de save-state;
+  `ntsc` = `59_940_060`
+- gemirrorde TS/C++ registry (model + device-class + region-tabel); parity
+  (waarde + shape) groen
+- cart-/system-manifest dragen geen `ufps`/`specs.*` meer; `system_slot_bytes` +
+  `bios_render` uit het model, VDP-ops/sec uit de VDP-class; de BIOS gebruikt
+  `bios_render` i.p.v. de hardcoded 256×212/1 MHz
+- alle 9 carts → `psx`; cpu normaliseert naar 50 MHz (groter cycle-budget, gelijke
+  fps); refresh blijft pal/50; geverifieerd met de headless asserts (pietious +
+  2025)
 - gates: `npm run compile:machine -- --noEmit`, `npm run audit:core-parity`,
   `npm run test:lua`, `npm run test:rompacker`, headless asserts (pietious +
   2025), `npm run check:indent`, `git diff --check`
