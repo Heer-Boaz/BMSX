@@ -175,7 +175,6 @@ export class Runtime {
 	public readonly tableIds = new WeakMap<Table, number>();
 	public nextTableId = 1;
 	public pairsIterator: Value = null;
-	public ipairsIterator: Value = null;
 	public nativeMemberCompletionCache: WeakMap<object, { dot?: LuaMemberCompletion[]; colon?: LuaMemberCompletion[] }> = new WeakMap();
 	public readonly pathSemanticCache: Map<string, { source: string; model?: LuaSemanticModel; definitions?: ReadonlyArray<LuaDefinitionInfo>; parsed?: ParsedLuaChunk; lines?: readonly string[]; analysis?: FileSemanticData }> = new Map();
 
@@ -530,7 +529,6 @@ export class Runtime {
 				const extraRoots = this.luaScratch.values.acquire();
 				try {
 					extraRoots.push(this.pairsIterator);
-					extraRoots.push(this.ipairsIterator);
 					for (const value of this.moduleCache.values()) {
 						extraRoots.push(value);
 					}

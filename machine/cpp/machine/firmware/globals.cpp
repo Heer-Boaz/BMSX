@@ -2637,35 +2637,7 @@ m_pairsIterator = machine.cpu.createNativeFunction("pairs.iterator", [](NativeAr
 	out.push_back(std::get<3>(*entry));
 });
 
-m_ipairsIterator = machine.cpu.createNativeFunction("ipairs.iterator", [](NativeArgsView args, NativeResults& out) {
-	const Value& target = args.at(0);
-	double index = 0.0;
-	if (args.size() > 1 && valueIsNumber(args.at(1))) {
-		index = asNumber(args.at(1));
-	}
-	double nextIndex = index + 1.0;
-	if (valueIsTable(target)) {
-		Value value = asTable(target)->get(valueNumber(nextIndex));
-		if (isNil(value)) {
-			out.push_back(valueNil());
-			return;
-		}
-		out.push_back(valueNumber(nextIndex));
-		out.push_back(value);
-		return;
-	}
-	if (valueIsNativeObject(target)) {
-		Value value = asNativeObject(target)->get(valueNumber(nextIndex));
-		if (isNil(value)) {
-			out.push_back(valueNil());
-			return;
-		}
-		out.push_back(valueNumber(nextIndex));
-		out.push_back(value);
-		return;
-	}
-	throw BMSX_RUNTIME_ERROR("ipairs expects a table or native object.");
-});
+
 
 	setGlobal("next", nextFn);
 	registerNativeFunction("pairs", [this, nextFn](NativeArgsView args, NativeResults& out) {
@@ -2688,16 +2660,6 @@ m_ipairsIterator = machine.cpu.createNativeFunction("ipairs.iterator", [](Native
 		out.push_back(target);
 		out.push_back(valueNil());
 	});
-	registerNativeFunction("ipairs", [this](NativeArgsView args, NativeResults& out) {
-		const Value& target = args.at(0);
-		if (!valueIsTable(target) && !valueIsNativeObject(target)) {
-			throw BMSX_RUNTIME_ERROR("ipairs expects a table or native object.");
-		}
-		out.push_back(m_ipairsIterator);
-		out.push_back(target);
-		out.push_back(valueNumber(0.0));
-	});
-
 	auto buildMachineManifestTable = [&cpu, key, str](const MachineManifest& manifest) -> Table* {
 		auto* machineTable = cpu.createTable(0, 3);
 		if (!manifest.namespaceName.empty()) {

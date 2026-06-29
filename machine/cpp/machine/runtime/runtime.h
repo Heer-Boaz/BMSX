@@ -255,7 +255,6 @@ private:
 
 	// Cached function references
 	Value m_pairsIterator = valueNil();
-	Value m_ipairsIterator = valueNil();
 	PendingCall m_pendingCall = PendingCall::None;
 
 	std::unordered_map<std::string, int> m_moduleProtos;

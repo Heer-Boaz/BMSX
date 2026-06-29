@@ -15,3 +15,15 @@ return ok, message
 `);
 t.assert(failure[0] === false, 'assert(false, message) should fail under pcall');
 t.assert(failure[1] === 'bios assert failed', `assert failure message mismatch: ${failure[1]}`);
+
+const ipairsValues = t.evaluateLua(`
+local values<const> = { 'first', 'second', nil, 'ignored' }
+local seen<const> = {}
+for index, value in ipairs(values) do
+	seen[#seen + 1] = index .. ':' .. value
+end
+return seen[1], seen[2], seen[3]
+`);
+t.assert(ipairsValues[0] === '1:first', `ipairs first entry mismatch: ${ipairsValues[0]}`);
+t.assert(ipairsValues[1] === '2:second', `ipairs second entry mismatch: ${ipairsValues[1]}`);
+t.assert(ipairsValues[2] === null, `ipairs should stop at the first nil slot, got ${ipairsValues[2]}`);

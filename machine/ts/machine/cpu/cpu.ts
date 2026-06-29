@@ -146,9 +146,7 @@ function resolveNativeFunctionCost(name: string): NativeFnCost {
 		case 'u64_to_f64':
 			return NATIVE_COST_TIER1;
 		case 'pairs':
-		case 'ipairs':
 		case 'pairs.iterator':
-		case 'ipairs.iterator':
 		case 'string.gmatch.iterator':
 		case 'getmetatable':
 		case 'setmetatable':

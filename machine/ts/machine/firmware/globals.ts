@@ -461,7 +461,6 @@ import {
 	nextNativeEntry,
 	pushNativePairsIterator,
 	toNativeValue,
-	toRuntimeValue,
 } from '../runtime/host/native_bridge';
 import { buildLuaFrameRawLabel } from '../../lua/stack_frame_label';
 import { asStringId, valueIsString, type StringValue } from '../cpu/cpu';
@@ -2398,42 +2397,7 @@ export function seedLuaGlobals(runtime: Runtime): void {
 		state.set(4, entry[1] === 0 ? null : entry[2]);
 		out.push(entry[2], entry[3]);
 	});
-	const ipairsIterator = createNativeFunction('ipairs.iterator', (args, out) => {
-		const target = args[0];
-		const index = args[1] as number;
-		const nextIndex = Math.floor(index) + 1;
-		if (target instanceof Table) {
-			const value = target.get(nextIndex);
-			if (value === null) {
-				out.push(null);
-				return;
-			}
-			out.push(nextIndex, value);
-			return;
-		}
-		if (isNativeObject(target)) {
-			const raw = target.raw as object;
-			if (Array.isArray(raw)) {
-				const value = (raw as unknown[])[nextIndex - 1];
-				if (value === undefined || value === null) {
-					out.push(null);
-					return;
-				}
-				out.push(nextIndex, toRuntimeValue(runtime, value));
-				return;
-			}
-			const value = (raw as Record<string, unknown>)[String(nextIndex)];
-			if (value === undefined || value === null) {
-				out.push(null);
-				return;
-			}
-			out.push(nextIndex, toRuntimeValue(runtime, value));
-			return;
-		}
-		throw runtime.createApiRuntimeError('ipairs expects a table or native object.');
-	});
 	runtime.pairsIterator = pairsIterator;
-	runtime.ipairsIterator = ipairsIterator;
 	runtime.setGlobal('next', nextFn);
 	runtime.setGlobal('pairs', createNativeFunction('pairs', (args, out) => {
 		const target = args[0];
@@ -2454,14 +2418,6 @@ export function seedLuaGlobals(runtime: Runtime): void {
 		}
 		pushNativePairsIterator(runtime, target, out);
 	}));
-	runtime.setGlobal('ipairs', createNativeFunction('ipairs', (args, out) => {
-		const target = args[0];
-		if (!(target instanceof Table) && !isNativeObject(target)) {
-			throw runtime.createApiRuntimeError('ipairs expects a table or native object.');
-		}
-		out.push(ipairsIterator, target, 0);
-	}));
-
 
 	exposeObjects();
 }

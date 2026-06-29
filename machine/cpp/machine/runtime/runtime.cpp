@@ -75,7 +75,6 @@ Runtime::Runtime(
 			heap.markValue(entry.second);
 		}
 		heap.markValue(m_pairsIterator);
-		heap.markValue(m_ipairsIterator);
 	});
 
 	configureLuaHeapUsage({

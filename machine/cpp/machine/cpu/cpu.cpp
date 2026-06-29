@@ -49,9 +49,7 @@ static inline NativeFnCost resolveNativeFunctionCost(std::string_view name) {
 		return kNativeCostTier1;
 	}
 	if (name == "pairs"
-		|| name == "ipairs"
 		|| name == "pairs.iterator"
-		|| name == "ipairs.iterator"
 		|| name == "string.gmatch.iterator"
 		|| name == "getmetatable"
 		|| name == "setmetatable"
