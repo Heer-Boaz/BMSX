@@ -166,7 +166,6 @@ function resolveNativeFunctionCost(name: string): NativeFnCost {
 		case 'array':
 		case 'assert':
 		case 'error':
-		case 'os.time':
 			return NATIVE_COST_TIER2;
 		case 'string.find':
 		case 'string.match':

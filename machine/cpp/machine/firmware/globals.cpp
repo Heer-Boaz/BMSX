@@ -107,33 +107,6 @@ int normalizeLuaStringIndex(double value, int length) {
 	return 1;
 }
 
-i64 requireLuaCivilInteger(Value value, std::string_view field, int delta) {
-	if (!valueIsNumber(value)) {
-		throw BMSX_RUNTIME_ERROR("field '" + std::string(field) + "' is not an integer");
-	}
-	const double number = asNumber(value);
-	const double integer = std::trunc(number);
-	if (number - number != 0.0 || integer != number) {
-		throw BMSX_RUNTIME_ERROR("field '" + std::string(field) + "' is not an integer");
-	}
-	if (!(number >= 0.0
-		? number - static_cast<double>(delta) <= static_cast<double>(std::numeric_limits<int>::max())
-		: static_cast<double>(std::numeric_limits<int>::min() + delta) <= number)) {
-		throw BMSX_RUNTIME_ERROR("field '" + std::string(field) + "' is out-of-bound");
-	}
-	return static_cast<i64>(number);
-}
-
-i64 requireLuaCivilTimeField(Value value, std::string_view field, int defaultValue, int delta) {
-	if (isNil(value)) {
-		if (defaultValue < 0) {
-			throw BMSX_RUNTIME_ERROR("field '" + std::string(field) + "' missing in date table");
-		}
-		return defaultValue;
-	}
-	return requireLuaCivilInteger(value, field, delta);
-}
-
 i64 requireLuaTimeValue(Value value) {
 	if (!valueIsNumber(value)) {
 		throw BMSX_RUNTIME_ERROR("time is not an integer");
@@ -2691,38 +2664,6 @@ const Value secondKey = key("sec");
 const Value wdayKey = key("wday");
 const Value ydayKey = key("yday");
 const Value isdstKey = key("isdst");
-osTable->set(key("time"), machine.cpu.createNativeFunction("os.time", [this, yearKey, monthKey, dayKey, hourKey, minuteKey, secondKey, wdayKey, ydayKey, isdstKey](NativeArgsView args, NativeResults& out) {
-	if (!args.empty() && !isNil(args.at(0))) {
-		if (!valueIsTable(args.at(0))) {
-			throw BMSX_RUNTIME_ERROR("os.time expects a table or nil.");
-		}
-		auto* table = asTable(args.at(0));
-		const Value hourValue = table->get(hourKey);
-		const Value minuteValue = table->get(minuteKey);
-		const Value secondValue = table->get(secondKey);
-		const i64 timestamp = bmsxTimestampFromLuaCivilTime(
-			requireLuaCivilTimeField(table->get(yearKey), "year", -1, 1900),
-			requireLuaCivilTimeField(table->get(monthKey), "month", -1, 1),
-			requireLuaCivilTimeField(table->get(dayKey), "day", -1, 0),
-			requireLuaCivilTimeField(hourValue, "hour", 12, 0),
-			requireLuaCivilTimeField(minuteValue, "min", 0, 0),
-			requireLuaCivilTimeField(secondValue, "sec", 0, 0)
-		);
-		const BmsxCivilTime timeInfo = bmsxCivilTimeFromTimestamp(timestamp);
-		table->set(yearKey, valueNumber(static_cast<double>(timeInfo.year)));
-		table->set(monthKey, valueNumber(static_cast<double>(timeInfo.month)));
-		table->set(dayKey, valueNumber(static_cast<double>(timeInfo.day)));
-		table->set(hourKey, valueNumber(static_cast<double>(timeInfo.hour)));
-		table->set(minuteKey, valueNumber(static_cast<double>(timeInfo.minute)));
-		table->set(secondKey, valueNumber(static_cast<double>(timeInfo.second)));
-		table->set(wdayKey, valueNumber(static_cast<double>(timeInfo.weekday)));
-		table->set(ydayKey, valueNumber(static_cast<double>(timeInfo.yearday)));
-		table->set(isdstKey, valueBool(timeInfo.isDst));
-		out.push_back(valueNumber(static_cast<double>(timestamp)));
-		return;
-	}
-	out.push_back(valueNumber(static_cast<double>(static_cast<i64>(machineElapsedMs() / 1000.0))));
-}));
 osTable->set(key("date"), machine.cpu.createNativeFunction("os.date", [this, str, yearKey, monthKey, dayKey, hourKey, minuteKey, secondKey, wdayKey, ydayKey, isdstKey](NativeArgsView args, NativeResults& out) {
 	std::string format = args.empty() || isNil(args.at(0)) ? std::string("%c") : machine.cpu.stringPool().toString(asStringId(args.at(0)));
 	std::string_view bmsxFormat(format);

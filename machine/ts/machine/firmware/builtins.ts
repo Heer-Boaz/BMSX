@@ -1,13 +1,13 @@
 import { LuaEnvironment } from '../../lua/environment';
 import { LuaInterpreter, LuaNativeFunction } from '../../lua/runtime';
 import { isLuaCallSignal, LuaFunctionValue, type LuaCallResult } from '../../lua/value';
-import { createLuaTable, isLuaTable, LuaTable, LuaValue } from '../../lua/value';
+import { createLuaTable, LuaTable, LuaValue } from '../../lua/value';
 import { createInterpreterDevtoolsTable } from './devtools';
 import {
 	DEFAULT_LUA_BUILTIN_FUNCTIONS,
 	SYSTEM_LUA_BUILTIN_FUNCTIONS,
 } from './builtin_descriptors';
-import { bmsxCivilTimeFromTimestamp, bmsxTimestampFromLuaCivilTime, formatBmsxCivilTime, requireLuaCivilTimeField, requireLuaTimeValue } from './civil_time';
+import { bmsxCivilTimeFromTimestamp, formatBmsxCivilTime, requireLuaTimeValue } from './civil_time';
 import type { Runtime } from '../runtime/runtime';
 import type { LuaBuiltinDescriptor } from '../../lua/semantic_contracts';
 
@@ -38,25 +38,6 @@ function registerInterpreterMachineTimeBuiltins(runtime: Runtime, interpreter: L
 	const osTable = createLuaTable();
 	osTable.set('clock', new LuaNativeFunction('os.clock', () => {
 		return [runtime.machineTimeMs() / 1000];
-	}));
-	osTable.set('time', new LuaNativeFunction('os.time', (args) => {
-		if (args.length === 0 || args[0] === null) {
-			return [Math.trunc(runtime.machineElapsedMs() / 1000)];
-		}
-		const table = args[0];
-		if (!isLuaTable(table)) {
-			throw interpreter.runtimeError('os.time expects a table or nil.');
-		}
-		const timestamp = bmsxTimestampFromLuaCivilTime(
-			requireLuaCivilTimeField(table.get('year'), 'year', -1, 1900),
-			requireLuaCivilTimeField(table.get('month'), 'month', -1, 1),
-			requireLuaCivilTimeField(table.get('day'), 'day', -1, 0),
-			requireLuaCivilTimeField(table.get('hour'), 'hour', 12, 0),
-			requireLuaCivilTimeField(table.get('min'), 'min', 0, 0),
-			requireLuaCivilTimeField(table.get('sec'), 'sec', 0, 0)
-		);
-		populateLuaDateTable(table, timestamp);
-		return [timestamp];
 	}));
 	osTable.set('date', new LuaNativeFunction('os.date', (args) => {
 		const formatValue = args.length > 0 ? args[0] : null;
