@@ -1054,6 +1054,7 @@ MachineSaveState decodeMachineSaveState(const BinValue& value, const char* label
 
 BinValue encodeRuntimeSaveMachineState(const RuntimeSaveMachineState& state) {
 	BinObject object;
+	object["machineRegionWord"] = static_cast<i64>(state.machineRegionWord);
 	object["machine"] = encodeMachineSaveState(state.machine);
 	object["frameScheduler"] = encodeFrameSchedulerState(state.frameScheduler);
 	object["vblank"] = encodeRuntimeVblankState(state.vblank);
@@ -1063,6 +1064,7 @@ BinValue encodeRuntimeSaveMachineState(const RuntimeSaveMachineState& state) {
 RuntimeSaveMachineState decodeRuntimeSaveMachineState(const BinValue& value, const char* label) {
 	const BinObject& object = requireObject(value, label);
 	RuntimeSaveMachineState state;
+	state.machineRegionWord = requireU32(requireField(object, "machineRegionWord", label), "machineState.machineRegionWord");
 	state.machine = decodeMachineSaveState(requireField(object, "machine", label), "machineState.machine");
 	state.frameScheduler = decodeFrameSchedulerState(requireField(object, "frameScheduler", label), "machineState.frameScheduler");
 	state.vblank = decodeRuntimeVblankState(requireField(object, "vblank", label), "machineState.vblank");

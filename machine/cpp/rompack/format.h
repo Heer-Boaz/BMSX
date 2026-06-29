@@ -6,9 +6,9 @@
 #define BMSX_ROMPACK_H
 
 #include "common/primitives.h"
+#include "machine/model_registry.h"
 #include <array>
 #include <cstddef>
-#include <optional>
 #include <span>
 #include <string>
 #include <vector>
@@ -21,7 +21,9 @@ constexpr u32 CART_ROM_MAGIC = 0x58534D42u;
 constexpr std::array<u8, 4> CART_ROM_MAGIC_BYTES = { 0x42, 0x4d, 0x53, 0x58 };
 constexpr size_t CART_ROM_BASE_HEADER_SIZE = 32;
 constexpr size_t CART_ROM_PROGRAM_HEADER_SIZE = 64;
-constexpr size_t CART_ROM_HEADER_SIZE = 72;
+constexpr size_t CART_ROM_METADATA_HEADER_SIZE = 72;
+constexpr size_t CART_ROM_HEADER_SIZE = 76;
+constexpr u32 CART_VDP_CLASS_PSX = 1;
 constexpr u32 PROGRAM_BOOT_HEADER_VERSION = 1;
 constexpr i32 BIOS_ATLAS_ID = 254;
 constexpr const char* SYSTEM_SLOT_TEXTURE_KEY = "_system_slot";
@@ -50,6 +52,7 @@ struct CartRomHeader {
 	u32 programConstRelocCount = 0;
 	u32 metadataOffset = 0;
 	u32 metadataLength = 0;
+	MachineVdpClass vdpClass = MachineVdpClass::Psx;
 };
 
 bool hasCartHeader(const u8* data, size_t size);
@@ -63,17 +66,7 @@ struct MachineManifest {
 	std::string namespaceName;
 	i32 viewportWidth = 0;
 	i32 viewportHeight = 0;
-	std::optional<i32> ramBytes;
-	std::optional<i32> slotBytes;
-	std::optional<i32> systemSlotBytes;
-	std::optional<i32> stagingBytes;
-	std::optional<i64> cpuHz;
-	std::optional<i64> imgDecBytesPerSec;
-	std::optional<i64> dmaBytesPerSecIso;
-	std::optional<i64> dmaBytesPerSecBulk;
-	std::optional<i64> vdpWorkUnitsPerSec;
-	std::optional<i64> geoWorkUnitsPerSec;
-	std::optional<i64> ufpsScaled;
+	MachineVdpClass vdpClass = MachineVdpClass::Psx;
 };
 
 /* ============================================================================

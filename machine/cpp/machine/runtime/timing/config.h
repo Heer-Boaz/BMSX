@@ -7,16 +7,16 @@ namespace bmsx {
 class Runtime;
 
 struct RuntimeTransferRates {
-	i64 imgDecBytesPerSec = 0;
-	i64 dmaBytesPerSecIso = 0;
-	i64 dmaBytesPerSecBulk = 0;
-	int vdpWorkUnitsPerSec = 0;
-	int geoWorkUnitsPerSec = 0;
+	i64 imgDecBytesPerSec;
+	i64 dmaBytesPerSecIso;
+	i64 dmaBytesPerSecBulk;
+	int vdpWorkUnitsPerSec;
+	int geoWorkUnitsPerSec;
 };
 
 void refreshDeviceTimings(Runtime& runtime, i64 nowCycles);
 void setCycleBudgetPerFrame(Runtime& runtime, int value);
 void setFrameTiming(Runtime& runtime, i64 cpuHz, int cycleBudgetPerFrame, int vblankCycles);
-void setTransferRatesFromManifest(Runtime& runtime, const RuntimeTransferRates& specs);
+void setTransferRates(Runtime& runtime, const RuntimeTransferRates& rates);
 
 } // namespace bmsx

@@ -12,7 +12,6 @@
 #include "libretro.h"
 #include "platform/platform.h"
 #include "render/backend/backend.h"
-#include "machine/runtime/timing/constants.h"
 #include <vector>
 #include <array>
 #include <memory>
@@ -256,7 +255,7 @@ private:
 	bool m_has_av_info = false;
 	bool m_has_pending_viewport = false;
 	Vec2 m_pending_viewport;
-	double m_frame_time_sec = DEFAULT_FRAME_TIME_SEC;
+	double m_frame_time_sec;
 	BackendType m_backend_type = BackendType::Software;
 	retro_hw_get_current_framebuffer_t m_hw_get_current_framebuffer = nullptr;
 	bool m_crt_postprocessing_enabled = true;

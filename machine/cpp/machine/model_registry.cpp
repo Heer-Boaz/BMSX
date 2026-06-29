@@ -4,18 +4,17 @@ namespace bmsx {
 
 MachineRegionTiming getMachineRegionTiming(MachineRegion region) {
 	if (region == MachineRegion::Pal) {
-		MachineRegionTiming timing;
-		timing.region = region;
-		timing.refreshUfpsScaled = PAL_REFRESH_UFPS_SCALED;
-		timing.totalScanlines = PAL_TOTAL_SCANLINES;
-		return timing;
+		return { region, PAL_REFRESH_UFPS_SCALED, PAL_TOTAL_SCANLINES };
 	}
+	return { region, NTSC_REFRESH_UFPS_SCALED, NTSC_TOTAL_SCANLINES };
+}
 
-	MachineRegionTiming timing;
-	timing.region = region;
-	timing.refreshUfpsScaled = NTSC_REFRESH_UFPS_SCALED;
-	timing.totalScanlines = NTSC_TOTAL_SCANLINES;
-	return timing;
+static MachineRegion decodeMachineRegionWord(uint32_t word) {
+	return (word & MACHINE_REGION_NTSC_WORD) == 0 ? MachineRegion::Pal : MachineRegion::Ntsc;
+}
+
+MachineRegionTiming getMachineRegionTimingForWord(uint32_t word) {
+	return getMachineRegionTiming(decodeMachineRegionWord(word));
 }
 
 } // namespace bmsx

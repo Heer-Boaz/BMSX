@@ -40,6 +40,11 @@ void writeCartRomHeader(u8* data, const CartRomHeader& header) {
 	writeLE32(data + 60, header.programConstRelocCount);
 	writeLE32(data + 64, header.metadataOffset);
 	writeLE32(data + 68, header.metadataLength);
+	switch (header.vdpClass) {
+	case MachineVdpClass::Psx:
+		writeLE32(data + 72, CART_VDP_CLASS_PSX);
+		break;
+	}
 }
 
 std::vector<u8> encodeCartRom(const CartRomHeader& header,
@@ -87,7 +92,7 @@ CartRomHeader parseCartHeader(const u8* data, size_t size) {
 	}
 	CartRomHeader header{};
 	header.headerSize = readLE32(data + 4);
-	if (header.headerSize < CART_ROM_BASE_HEADER_SIZE) {
+	if (header.headerSize < CART_ROM_HEADER_SIZE) {
 		throw BMSX_RUNTIME_ERROR("ROM header size is too small.");
 	}
 	if (header.headerSize > size) {
@@ -99,20 +104,21 @@ CartRomHeader parseCartHeader(const u8* data, size_t size) {
 	header.tocLength = readLE32(data + 20);
 	header.dataOffset = readLE32(data + 24);
 	header.dataLength = readLE32(data + 28);
-	if (header.headerSize >= CART_ROM_PROGRAM_HEADER_SIZE) {
-		header.programBootVersion = readLE32(data + 32);
-		header.programBootFlags = readLE32(data + 36);
-		header.programEntryProtoIndex = readLE32(data + 40);
-		header.programCodeByteCount = readLE32(data + 44);
-		header.programConstPoolCount = readLE32(data + 48);
-		header.programProtoCount = readLE32(data + 52);
-		header.programReserved0 = readLE32(data + 56);
-		header.programConstRelocCount = readLE32(data + 60);
+	header.programBootVersion = readLE32(data + 32);
+	header.programBootFlags = readLE32(data + 36);
+	header.programEntryProtoIndex = readLE32(data + 40);
+	header.programCodeByteCount = readLE32(data + 44);
+	header.programConstPoolCount = readLE32(data + 48);
+	header.programProtoCount = readLE32(data + 52);
+	header.programReserved0 = readLE32(data + 56);
+	header.programConstRelocCount = readLE32(data + 60);
+	header.metadataOffset = readLE32(data + 64);
+	header.metadataLength = readLE32(data + 68);
+	const u32 vdpClassWord = readLE32(data + 72);
+	if (vdpClassWord != CART_VDP_CLASS_PSX) {
+		throw BMSX_RUNTIME_ERROR("Unsupported ROM VDP class marker.");
 	}
-	if (header.headerSize >= CART_ROM_HEADER_SIZE) {
-		header.metadataOffset = readLE32(data + 64);
-		header.metadataLength = readLE32(data + 68);
-	}
+	header.vdpClass = MachineVdpClass::Psx;
 
 	assertSectionRange(static_cast<size_t>(header.manifestOffset), static_cast<size_t>(header.manifestLength), size, "manifest");
 	assertSectionRange(static_cast<size_t>(header.tocOffset), static_cast<size_t>(header.tocLength), size, "toc");
@@ -124,54 +130,13 @@ CartRomHeader parseCartHeader(const u8* data, size_t size) {
 }
 
 std::vector<u8> encodeCartManifest(const CartManifest& cart, const MachineManifest& machine) {
-	BinObject cpu;
-	cpu["cpu_freq_hz"] = BinValue(*machine.cpuHz);
-	cpu["imgdec_bytes_per_sec"] = BinValue(*machine.imgDecBytesPerSec);
-
-	BinObject dma;
-	dma["dma_bytes_per_sec_iso"] = BinValue(*machine.dmaBytesPerSecIso);
-	dma["dma_bytes_per_sec_bulk"] = BinValue(*machine.dmaBytesPerSecBulk);
-
-	BinObject specs;
-	specs["cpu"] = BinValue(std::move(cpu));
-	specs["dma"] = BinValue(std::move(dma));
-	if (machine.vdpWorkUnitsPerSec.has_value()) {
-		BinObject vdp;
-		vdp["work_units_per_sec"] = BinValue(*machine.vdpWorkUnitsPerSec);
-		specs["vdp"] = BinValue(std::move(vdp));
-	}
-	if (machine.geoWorkUnitsPerSec.has_value()) {
-		BinObject geo;
-		geo["work_units_per_sec"] = BinValue(*machine.geoWorkUnitsPerSec);
-		specs["geo"] = BinValue(std::move(geo));
-	}
-	if (machine.ramBytes.has_value()) {
-		BinObject ram;
-		ram["ram_bytes"] = BinValue(*machine.ramBytes);
-		specs["ram"] = BinValue(std::move(ram));
-	}
-	if (machine.slotBytes.has_value() || machine.systemSlotBytes.has_value() || machine.stagingBytes.has_value()) {
-		BinObject vram;
-		if (machine.slotBytes.has_value()) {
-			vram["slot_bytes"] = BinValue(*machine.slotBytes);
-		}
-		if (machine.systemSlotBytes.has_value()) {
-			vram["system_slot_bytes"] = BinValue(*machine.systemSlotBytes);
-		}
-		if (machine.stagingBytes.has_value()) {
-			vram["staging_bytes"] = BinValue(*machine.stagingBytes);
-		}
-		specs["vram"] = BinValue(std::move(vram));
-	}
-
 	BinObject renderSize;
 	renderSize["width"] = BinValue(machine.viewportWidth);
 	renderSize["height"] = BinValue(machine.viewportHeight);
 
 	BinObject machineObject;
 	machineObject["namespace"] = BinValue(machine.namespaceName);
-	machineObject["ufps"] = BinValue(*machine.ufpsScaled);
-	machineObject["specs"] = BinValue(std::move(specs));
+	machineObject["vdp_class"] = BinValue(std::string("psx"));
 	machineObject["render_size"] = BinValue(std::move(renderSize));
 
 	BinObject manifest;
@@ -204,6 +169,7 @@ std::vector<u8> encodeProgramCartRom(const CartManifest& cart, const MachineMani
 	header.programConstPoolCount = static_cast<u32>(image.sections.rodata.constPool.size());
 	header.programProtoCount = static_cast<u32>(image.sections.text.protos.size());
 	header.programConstRelocCount = static_cast<u32>(image.link.constRelocs.size());
+	header.vdpClass = machine.vdpClass;
 
 	RomSourceEntry programEntry;
 	programEntry.resid = PROGRAM_IMAGE_ID;

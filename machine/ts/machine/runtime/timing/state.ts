@@ -1,15 +1,21 @@
-import { DEFAULT_FRAME_TIME_MS, DEFAULT_UFPS, DEFAULT_UFPS_SCALED, HZ_SCALE } from './constants';
+import { HZ_SCALE } from './constants';
 
 export class TimingState {
-	public ufps: number = DEFAULT_UFPS;
-	public frameDurationMs: number = DEFAULT_FRAME_TIME_MS;
-	public vdpWorkUnitsPerSec: number = 0;
-	public geoWorkUnitsPerSec: number = 0;
-	public imgDecBytesPerSec: number = 0;
-	public dmaBytesPerSecIso: number = 0;
-	public dmaBytesPerSecBulk: number = 0;
+	public ufps: number;
+	public frameDurationMs: number;
 
-	constructor(public ufpsScaled: number = DEFAULT_UFPS_SCALED, public cpuHz: number = 0, public cycleBudgetPerFrame: number = 0) {
+	constructor(
+		public ufpsScaled: number,
+		public cpuHz: number,
+		public cycleBudgetPerFrame: number,
+		public regionWord: number,
+		public totalScanlines: number,
+		public imgDecBytesPerSec: number,
+		public dmaBytesPerSecIso: number,
+		public dmaBytesPerSecBulk: number,
+		public vdpWorkUnitsPerSec: number,
+		public geoWorkUnitsPerSec: number,
+	) {
 		this.ufps = ufpsScaled / HZ_SCALE;
 		this.frameDurationMs = 1000 / this.ufps;
 	}

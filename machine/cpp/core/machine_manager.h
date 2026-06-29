@@ -17,7 +17,6 @@
 #include "render/gameview.h"
 #include "render/presentation_state.h"
 #include "audio/soundmaster.h"
-#include "machine/runtime/timing/constants.h"
 #include <chrono>
 #include <memory>
 #include <vector>
@@ -201,7 +200,7 @@ private:
 	f64 m_total_time = 0.0;
 	f64 m_delta_time = 0.0;
 	u64 m_frame_count = 0;
-	f64 m_fps = DEFAULT_UFPS;
+	f64 m_fps = 0.0;
 	bool m_debugTickReportInitialized = false;
 	std::chrono::steady_clock::time_point m_debugTickReportAt;
 	u64 m_debugTickHostFrames = 0;

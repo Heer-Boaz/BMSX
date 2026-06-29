@@ -8,7 +8,7 @@ import { TextureManager } from "../render/texture_manager";
 import { RenderPassLibrary } from "../render/backend/pass/library";
 import { setMicrotaskQueue } from '../platform';
 import type { GameViewHost, Platform } from '../platform';
-import { DEFAULT_UFPS, HZ_SCALE } from '../machine/runtime/timing/constants';
+import { HZ_SCALE } from '../machine/runtime/timing/constants';
 import { RomBootManager } from './rom_boot_manager';
 import { renderGate, runGate } from '../common/taskgate';
 import { applyInitialWorkspaceOverrides, prepareRebootToBootRom, startPreparedRuntime } from '../ide/runtime/program_boot';
@@ -58,7 +58,7 @@ export class MachineManager {
 	public get deltatime_seconds(): number { return this.deltatime / 1000; }
 
 	public host_show_fps = false;
-	public host_fps = DEFAULT_UFPS;
+	public host_fps = 0;
 
 	/**
 	 * The ID of the animation frame request.

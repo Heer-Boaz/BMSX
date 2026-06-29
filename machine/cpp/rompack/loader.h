@@ -21,9 +21,6 @@
 
 namespace bmsx {
 
-constexpr i64 DEFAULT_VDP_WORK_UNITS_PER_SEC = 25'600;
-constexpr i64 DEFAULT_GEO_WORK_UNITS_PER_SEC = 16'384'000;
-
 /* ============================================================================
  * RuntimeRomPackage - decoded ROM package
  * ============================================================================ */

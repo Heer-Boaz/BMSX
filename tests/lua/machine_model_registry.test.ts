@@ -3,6 +3,9 @@ import assert from 'node:assert/strict';
 
 import {
 	getMachineRegionTiming,
+	getMachineRegionTimingForWord,
+	MACHINE_REGION_NTSC_WORD,
+	MACHINE_REGION_PAL_WORD,
 	NTSC_REFRESH_UFPS_SCALED,
 	PSX_MODEL_PROFILE,
 	PSX_VDP_CLASS_PROFILE,
@@ -11,7 +14,6 @@ import { HZ_SCALE } from '../../machine/ts/machine/runtime/timing/constants';
 
 test('machine registry exposes the psx fixed hardware model', () => {
 	assert.deepEqual(PSX_MODEL_PROFILE, {
-		model: 'psx',
 		cpuFreqHz: 50_000_000,
 		imgDecBytesPerSec: 26_214_400,
 		dmaBytesPerSecIso: 8_388_608,
@@ -26,7 +28,6 @@ test('machine registry exposes the psx fixed hardware model', () => {
 
 test('machine registry exposes the psx VDP device class throughput', () => {
 	assert.deepEqual(PSX_VDP_CLASS_PROFILE, {
-		vdpClass: 'psx',
 		vdpWorkUnitsPerSec: 25_600,
 		geoWorkUnitsPerSec: 16_384_000,
 	});
@@ -44,4 +45,6 @@ test('machine region timing uses PAL and 60000/1001 NTSC timing', () => {
 		totalScanlines: 262,
 	});
 	assert.equal(NTSC_REFRESH_UFPS_SCALED, 59_940_060);
+	assert.deepEqual(getMachineRegionTimingForWord(MACHINE_REGION_PAL_WORD), getMachineRegionTiming('pal'));
+	assert.deepEqual(getMachineRegionTimingForWord(MACHINE_REGION_NTSC_WORD), getMachineRegionTiming('ntsc'));
 });

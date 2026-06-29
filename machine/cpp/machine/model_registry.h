@@ -9,7 +9,6 @@ namespace bmsx {
 // throughput/programming-model parameters, and region is runtime timing state.
 // Slice 24.1 intentionally populates only the psx model + psx VDP class.
 
-enum class MachineModelId { Psx };
 enum class MachineVdpClass { Psx };
 enum class MachineRegion { Pal, Ntsc };
 
@@ -30,34 +29,33 @@ constexpr i64 PAL_REFRESH_UFPS_SCALED = 50 * HZ_SCALE;
 constexpr i64 PAL_TOTAL_SCANLINES = 313;
 constexpr i64 NTSC_REFRESH_UFPS_SCALED = 59940060;
 constexpr i64 NTSC_TOTAL_SCANLINES = 262;
+constexpr uint32_t MACHINE_REGION_PAL_WORD = 0;
+constexpr uint32_t MACHINE_REGION_NTSC_WORD = 1;
 
 struct MachineModelProfile {
-	MachineModelId model = MachineModelId::Psx;
-	i64 cpuFreqHz = 0;
-	i64 imgDecBytesPerSec = 0;
-	i64 dmaBytesPerSecIso = 0;
-	i64 dmaBytesPerSecBulk = 0;
-	i64 ramBytes = 0;
-	i64 slotBytes = 0;
-	i64 stagingBytes = 0;
-	i32 biosRenderWidth = 0;
-	i32 biosRenderHeight = 0;
+	i64 cpuFreqHz;
+	i64 imgDecBytesPerSec;
+	i64 dmaBytesPerSecIso;
+	i64 dmaBytesPerSecBulk;
+	i64 ramBytes;
+	i64 slotBytes;
+	i64 stagingBytes;
+	i32 biosRenderWidth;
+	i32 biosRenderHeight;
 };
 
 struct MachineVdpClassProfile {
-	MachineVdpClass vdpClass = MachineVdpClass::Psx;
-	i64 vdpWorkUnitsPerSec = 0;
-	i64 geoWorkUnitsPerSec = 0;
+	i64 vdpWorkUnitsPerSec;
+	i64 geoWorkUnitsPerSec;
 };
 
 struct MachineRegionTiming {
-	MachineRegion region = MachineRegion::Pal;
-	i64 refreshUfpsScaled = 0;
-	i64 totalScanlines = 0;
+	MachineRegion region;
+	i64 refreshUfpsScaled;
+	i64 totalScanlines;
 };
 
 inline constexpr MachineModelProfile PSX_MODEL_PROFILE = {
-	MachineModelId::Psx,
 	PSX_CPU_FREQ_HZ,
 	PSX_IMGDEC_BYTES_PER_SEC,
 	PSX_DMA_BYTES_PER_SEC_ISO,
@@ -70,11 +68,11 @@ inline constexpr MachineModelProfile PSX_MODEL_PROFILE = {
 };
 
 inline constexpr MachineVdpClassProfile PSX_VDP_CLASS_PROFILE = {
-	MachineVdpClass::Psx,
 	PSX_VDP_WORK_UNITS_PER_SEC,
 	PSX_GEO_WORK_UNITS_PER_SEC,
 };
 
 MachineRegionTiming getMachineRegionTiming(MachineRegion region);
+MachineRegionTiming getMachineRegionTimingForWord(uint32_t word);
 
 } // namespace bmsx

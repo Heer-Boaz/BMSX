@@ -7,10 +7,14 @@ export type RuntimeOptions = {
 	activeMachineManifest: MachineManifest;
 	cartManifest: CartManifest | null;
 	cartProjectRootPath: string | null;
+	machineRegionWord: number;
 	ufpsScaled: number;
 	cpuHz: number;
 	cycleBudgetPerFrame: number;
 	vblankCycles: number;
-	vdpWorkUnitsPerSec?: number;
-	geoWorkUnitsPerSec?: number;
+	imgDecBytesPerSec: number;
+	dmaBytesPerSecIso: number;
+	dmaBytesPerSecBulk: number;
+	vdpWorkUnitsPerSec: number;
+	geoWorkUnitsPerSec: number;
 };

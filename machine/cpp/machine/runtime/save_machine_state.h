@@ -3,12 +3,14 @@
 #include "machine/save_state.h"
 #include "machine/scheduler/frame.h"
 #include "machine/runtime/vblank.h"
+#include <cstdint>
 
 namespace bmsx {
 
 class Runtime;
 
 struct RuntimeSaveMachineState {
+	uint32_t machineRegionWord;
 	MachineSaveState machine;
 	FrameSchedulerStateSnapshot frameScheduler;
 	RuntimeVblankSnapshot vblank;

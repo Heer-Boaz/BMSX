@@ -15,6 +15,7 @@
 #include "render/texture_manager.h"
 #include "render/vdp/context_state.h"
 #include "common/mem_snapshot.h"
+#include "machine/model_registry.h"
 #include "machine/runtime/runtime.h"
 #include "machine/runtime/save_state/codec.h"
 #if BMSX_ENABLE_GLES2
@@ -45,7 +46,7 @@ constexpr size_t kAudioRequestAheadFrames = 256;
 constexpr size_t kAudioTargetMinFrames = 384;
 constexpr size_t kAudioTargetMaxFrames = 4096;
 constexpr size_t kAudioReserveVideoFrames = 10;
-constexpr size_t kAudioReserveFrames = static_cast<size_t>(DEFAULT_LIBRETRO_AUDIO_SAMPLE_RATE * DEFAULT_FRAME_TIME_SEC) * kAudioReserveVideoFrames;
+constexpr size_t kAudioReserveFrames = static_cast<size_t>(DEFAULT_LIBRETRO_AUDIO_SAMPLE_RATE * static_cast<double>(HZ_SCALE) / static_cast<double>(PAL_REFRESH_UFPS_SCALED)) * kAudioReserveVideoFrames;
 constexpr const char* kReleaseSystemRomName = "bmsx-bios.rom";
 constexpr const char* kDebugSystemRomName = "bmsx-bios.debug.rom";
 constexpr const char* kDebugRomSuffix = ".debug.rom";
@@ -125,7 +126,8 @@ void appendSystemRomCandidates(std::vector<std::string>& paths, const std::strin
  * ============================================================================ */
 
 LibretroPlatform::LibretroPlatform(BackendType backend_type)
-	: m_backend_type(backend_type) {
+	: m_frame_time_sec(static_cast<double>(HZ_SCALE) / static_cast<double>(PAL_REFRESH_UFPS_SCALED))
+	, m_backend_type(backend_type) {
 #if !BMSX_ENABLE_GLES2
 	if (m_backend_type == BackendType::OpenGLES2) {
 		m_backend_type = BackendType::Software;

@@ -319,6 +319,7 @@ add_library(bmsx_core STATIC
 	machine/firmware/globals.cpp
 	machine/memory/lua_heap_usage.cpp
 	machine/machine.cpp
+	machine/model_registry.cpp
 	machine/save_state.cpp
 	machine/scheduler/device.cpp
 	machine/runtime/runtime.cpp

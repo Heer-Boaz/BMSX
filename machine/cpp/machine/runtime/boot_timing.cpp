@@ -4,41 +4,42 @@
 #include "machine/runtime/runtime.h"
 #include "machine/runtime/timing/config.h"
 #include "machine/specs.h"
+#include "machine/model_registry.h"
 #include "rompack/format.h"
-#include "rompack/loader.h"
 
 namespace bmsx {
-
-ResolvedRuntimeTiming resolveRuntimeTiming(const MachineManifest& machine) {
-	return resolveRuntimeTiming(machine, machine, resolveCpuHz(machine), resolveUfpsScaled(machine));
-}
 
 ResolvedRuntimeTiming resolveRuntimeTiming(
 	const MachineManifest& viewportMachine,
 	const MachineManifest& timingMachine,
 	i64 cpuHz,
-	i64 ufpsScaled
+	uint32_t regionWord
 ) {
-	ResolvedRuntimeTiming timing{};
 	const RuntimeRenderSize renderSize = resolveRuntimeRenderSize(viewportMachine);
-	timing.viewportWidth = renderSize.width;
-	timing.viewportHeight = renderSize.height;
-	timing.ufpsScaled = ufpsScaled;
-	timing.cpuHz = cpuHz;
-	timing.imgDecBytesPerSec = requirePositiveManifestValue(timingMachine.imgDecBytesPerSec, "[RuntimeMachineSpecs] machine.specs.cpu.imgdec_bytes_per_sec is required.", "[RuntimeMachineSpecs] machine.specs.cpu.imgdec_bytes_per_sec must be a positive integer.");
-	timing.dmaBytesPerSecIso = requirePositiveManifestValue(timingMachine.dmaBytesPerSecIso, "[RuntimeMachineSpecs] machine.specs.dma.dma_bytes_per_sec_iso is required.", "[RuntimeMachineSpecs] machine.specs.dma.dma_bytes_per_sec_iso must be a positive integer.");
-	timing.dmaBytesPerSecBulk = requirePositiveManifestValue(timingMachine.dmaBytesPerSecBulk, "[RuntimeMachineSpecs] machine.specs.dma.dma_bytes_per_sec_bulk is required.", "[RuntimeMachineSpecs] machine.specs.dma.dma_bytes_per_sec_bulk must be a positive integer.");
-	timing.vdpWorkUnitsPerSec = static_cast<int>(resolvePositiveManifestValue(timingMachine.vdpWorkUnitsPerSec, DEFAULT_VDP_WORK_UNITS_PER_SEC, "[RuntimeMachineSpecs] machine.specs.vdp.work_units_per_sec must be a positive integer."));
-	timing.geoWorkUnitsPerSec = static_cast<int>(resolvePositiveManifestValue(timingMachine.geoWorkUnitsPerSec, DEFAULT_GEO_WORK_UNITS_PER_SEC, "[RuntimeMachineSpecs] machine.specs.geo.work_units_per_sec must be a positive integer."));
-	timing.cycleBudgetPerFrame = static_cast<int>(calcCyclesPerFrameScaled(cpuHz, ufpsScaled));
-	timing.vblankCycles = static_cast<int>(resolveVblankCycles(cpuHz, ufpsScaled, timingMachine.viewportHeight));
-	return timing;
+	const MachineRegionTiming regionTiming = getMachineRegionTimingForWord(regionWord);
+	return {
+		renderSize.width,
+		renderSize.height,
+		regionWord,
+		regionTiming.refreshUfpsScaled,
+		regionTiming.totalScanlines,
+		cpuHz,
+		PSX_MODEL_PROFILE.imgDecBytesPerSec,
+		PSX_MODEL_PROFILE.dmaBytesPerSecIso,
+		PSX_MODEL_PROFILE.dmaBytesPerSecBulk,
+		static_cast<int>(PSX_VDP_CLASS_PROFILE.vdpWorkUnitsPerSec),
+		static_cast<int>(PSX_VDP_CLASS_PROFILE.geoWorkUnitsPerSec),
+		static_cast<int>(calcCyclesPerFrameScaled(cpuHz, regionTiming.refreshUfpsScaled)),
+		static_cast<int>(resolveVblankCycles(cpuHz, regionTiming.refreshUfpsScaled, regionTiming.totalScanlines, timingMachine.viewportHeight)),
+	};
 }
 
 void applyRuntimeTiming(Runtime& runtime, const ResolvedRuntimeTiming& timing) {
 	runtime.applyUfpsScaled(timing.ufpsScaled);
+	runtime.timing.regionWord = timing.regionWord;
+	runtime.timing.totalScanlines = timing.totalScanlines;
 	setFrameTiming(runtime, timing.cpuHz, timing.cycleBudgetPerFrame, timing.vblankCycles);
-	setTransferRatesFromManifest(runtime, {
+	setTransferRates(runtime, {
 		timing.imgDecBytesPerSec,
 		timing.dmaBytesPerSecIso,
 		timing.dmaBytesPerSecBulk,

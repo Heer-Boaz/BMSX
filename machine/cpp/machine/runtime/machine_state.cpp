@@ -7,6 +7,7 @@ namespace bmsx {
 
 RuntimeMachineState captureRuntimeMachineState(const Runtime& runtime) {
 	RuntimeMachineState state;
+	state.machineRegionWord = runtime.timing.regionWord;
 	state.machine = captureMachineState(runtime.machine);
 	state.frameScheduler = runtime.frameScheduler.captureState();
 	state.vblank = runtime.vblank.capture(runtime);
@@ -14,6 +15,7 @@ RuntimeMachineState captureRuntimeMachineState(const Runtime& runtime) {
 }
 
 void applyRuntimeMachineState(Runtime& runtime, const RuntimeMachineState& state) {
+	runtime.applyMachineRegionWord(state.machineRegionWord);
 	restoreMachineState(runtime.machine, state.machine);
 	runtime.frameScheduler.restoreState(state.frameScheduler);
 	runtime.vblank.restore(runtime, state.vblank);

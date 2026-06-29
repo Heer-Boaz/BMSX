@@ -299,6 +299,7 @@ const std::vector<std::string> RUNTIME_SAVE_STATE_PROP_NAMES = {
 	"textureSlot",
 	"textureSurfaceDescAddr",
 	"format",
+	"machineRegionWord",
 };
 
 } // namespace bmsx

@@ -200,8 +200,10 @@ Structuur:
 Region als runtime-state:
 
 - Region is geen modelkenmerk maar machine-runtime-state. **Region-switch-ABI**:
-  een MMIO-register (analoog aan V9938 R#9 N/PAL) dat refresh + total_scanlines
-  live wisselt via het bestaande `setFrameTiming`/`applyRuntimeTiming`-pad.
+  het `sys_region`-MMIO-register (woorden `sys_region_pal=0`,
+  `sys_region_ntsc=1`, analoog aan V9938 R#9 N/PAL) dat refresh +
+  total_scanlines live wisselt via de timing-owner (`applyUfpsScaled` +
+  `setFrameTiming`).
   Power-on default `pal` (50 Hz). `ntsc` = `60000/1001 ≈ 59,94 Hz` (scaled
   `59_940_060`), niet exact 60. De `resolveTotalScanlines(ufps)`-inferentie
   (`PAL_NTSC_REFRESH_CUTOFF_SCALED`) vervalt; total_scanlines komt uit de

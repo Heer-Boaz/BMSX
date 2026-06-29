@@ -2866,60 +2866,17 @@ m_ipairsIterator = machine.cpu.createNativeFunction("ipairs.iterator", [](Native
 	});
 
 	auto buildMachineManifestTable = [&cpu, key, str](const MachineManifest& manifest) -> Table* {
-		auto* machineTable = cpu.createTable(0, 5);
+		auto* machineTable = cpu.createTable(0, 3);
 		if (!manifest.namespaceName.empty()) {
 			machineTable->set(key("namespace"), str(manifest.namespaceName));
 		}
+		machineTable->set(key("vdp_class"), str("psx"));
 		if (manifest.viewportWidth > 0 && manifest.viewportHeight > 0) {
 			auto* renderSizeTable = cpu.createTable(0, 2);
 			renderSizeTable->set(key("width"), valueNumber(static_cast<double>(manifest.viewportWidth)));
 			renderSizeTable->set(key("height"), valueNumber(static_cast<double>(manifest.viewportHeight)));
 			machineTable->set(key("render_size"), valueTable(renderSizeTable));
 		}
-		auto* specsTable = cpu.createTable(0, 6);
-		auto* cpuTable = cpu.createTable(0, 2);
-		if (manifest.cpuHz) {
-			cpuTable->set(key("cpu_freq_hz"), valueNumber(static_cast<double>(*manifest.cpuHz)));
-		}
-		if (manifest.imgDecBytesPerSec) {
-			cpuTable->set(key("imgdec_bytes_per_sec"), valueNumber(static_cast<double>(*manifest.imgDecBytesPerSec)));
-		}
-		specsTable->set(key("cpu"), valueTable(cpuTable));
-		auto* dmaTable = cpu.createTable(0, 2);
-		if (manifest.dmaBytesPerSecIso) {
-			dmaTable->set(key("dma_bytes_per_sec_iso"), valueNumber(static_cast<double>(*manifest.dmaBytesPerSecIso)));
-		}
-		if (manifest.dmaBytesPerSecBulk) {
-			dmaTable->set(key("dma_bytes_per_sec_bulk"), valueNumber(static_cast<double>(*manifest.dmaBytesPerSecBulk)));
-		}
-		specsTable->set(key("dma"), valueTable(dmaTable));
-		// start value-or-boundary -- firmware exposes manifest defaults after manifest validation.
-		auto* vdpTable = cpu.createTable(0, 1);
-		vdpTable->set(key("work_units_per_sec"), valueNumber(static_cast<double>(manifest.vdpWorkUnitsPerSec.value_or(DEFAULT_VDP_WORK_UNITS_PER_SEC))));
-		specsTable->set(key("vdp"), valueTable(vdpTable));
-		auto* geoTable = cpu.createTable(0, 1);
-		geoTable->set(key("work_units_per_sec"), valueNumber(static_cast<double>(manifest.geoWorkUnitsPerSec.value_or(DEFAULT_GEO_WORK_UNITS_PER_SEC))));
-		specsTable->set(key("geo"), valueTable(geoTable));
-		// end value-or-boundary
-		if (manifest.ramBytes) {
-			auto* ramTable = cpu.createTable(0, 1);
-			ramTable->set(key("ram_bytes"), valueNumber(static_cast<double>(*manifest.ramBytes)));
-			specsTable->set(key("ram"), valueTable(ramTable));
-		}
-		if (manifest.slotBytes || manifest.systemSlotBytes || manifest.stagingBytes) {
-			auto* vramTable = cpu.createTable(0, 3);
-			if (manifest.slotBytes) {
-				vramTable->set(key("slot_bytes"), valueNumber(static_cast<double>(*manifest.slotBytes)));
-			}
-			if (manifest.systemSlotBytes) {
-				vramTable->set(key("system_slot_bytes"), valueNumber(static_cast<double>(*manifest.systemSlotBytes)));
-			}
-			if (manifest.stagingBytes) {
-				vramTable->set(key("staging_bytes"), valueNumber(static_cast<double>(*manifest.stagingBytes)));
-			}
-			specsTable->set(key("vram"), valueTable(vramTable));
-		}
-		machineTable->set(key("specs"), valueTable(specsTable));
 		return machineTable;
 	};
 	auto buildCartManifestTable = [&cpu, key, str, buildMachineManifestTable](const CartManifest& manifest, const MachineManifest& machine, const std::string& entryPath) -> Table* {

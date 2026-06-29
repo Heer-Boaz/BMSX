@@ -3,10 +3,10 @@
 #include "machine/bus/io.h"
 #include "machine/memory/lua_heap_usage.h"
 #include "machine/memory/map.h"
+#include "machine/model_registry.h"
 #include "machine/program/linker.h"
 #include "machine/runtime/input.h"
 #include "machine/runtime/timing/config.h"
-#include "machine/specs.h"
 #include "rompack/format.h"
 #include "rompack/loader.h"
 #include <array>
@@ -25,7 +25,18 @@ Runtime::Runtime(
 	RuntimeInputSource& input,
 	MicrotaskQueue& microtasks
 )
-	: timing(options.ufpsScaled, options.cpuHz, options.cycleBudgetPerFrame)
+	: timing(
+		options.ufpsScaled,
+		options.cpuHz,
+		options.cycleBudgetPerFrame,
+		options.machineRegionWord,
+		getMachineRegionTimingForWord(options.machineRegionWord).totalScanlines,
+		options.imgDecBytesPerSec,
+		options.dmaBytesPerSecIso,
+		options.dmaBytesPerSecBulk,
+		options.vdpWorkUnitsPerSec,
+		options.geoWorkUnitsPerSec
+	)
 	, cartBoot(*this)
 	, m_systemRomBytes(options.systemRomBytes)
 	, m_cartRomBytes(options.cartRomBytes)
@@ -52,11 +63,11 @@ Runtime::Runtime(
 	machine.memory.clearIoSlots();
 	machine.memory.mapIoRead(IO_SYS_TIME_MS, this, &Runtime::onTimeMsReadThunk);
 	machine.memory.mapIoRead(IO_SYS_FRAME_MS, this, &Runtime::onFrameMsReadThunk);
+	machine.memory.mapIoRead(IO_SYS_REGION, this, &Runtime::onMachineRegionReadThunk);
+	machine.memory.mapIoWrite(IO_SYS_REGION, this, &Runtime::onMachineRegionWriteThunk);
 	machine.initializeSystemIo();
 	machine.resetDevices();
 	vblank.setVblankCycles(*this, options.vblankCycles);
-	timing.vdpWorkUnitsPerSec = static_cast<int>(resolvePositiveSafeInteger(options.vdpWorkUnitsPerSec, "machine.specs.vdp.work_units_per_sec"));
-	timing.geoWorkUnitsPerSec = static_cast<int>(resolvePositiveSafeInteger(options.geoWorkUnitsPerSec, "machine.specs.geo.work_units_per_sec"));
 	refreshDeviceTimings(*this, machine.scheduler.currentNowCycles());
 	refreshMemoryMap();
 	machine.cpu.setExternalRootMarker([this](GcHeap& heap) {
@@ -111,11 +122,42 @@ Value Runtime::onFrameMsRead([[maybe_unused]] uint32_t addr) const {
 	return valueNumber(timing.frameDurationMs);
 }
 
+Value Runtime::onMachineRegionReadThunk(void* context, uint32_t addr) {
+	const auto* runtime = static_cast<Runtime*>(context);
+	return runtime->onMachineRegionRead(addr);
+}
+
+Value Runtime::onMachineRegionRead([[maybe_unused]] uint32_t addr) const {
+	return valueNumber(static_cast<double>(timing.regionWord));
+}
+
+void Runtime::onMachineRegionWriteThunk(void* context, uint32_t addr, Value value) {
+	auto* runtime = static_cast<Runtime*>(context);
+	runtime->onMachineRegionWrite(addr, value);
+}
+
+void Runtime::onMachineRegionWrite([[maybe_unused]] uint32_t addr, Value value) {
+	applyMachineRegionWord(toU32(value));
+}
+
 void Runtime::applyUfpsScaled(i64 ufpsScaled) {
 	timing.ufpsScaled = ufpsScaled;
 	timing.ufps = static_cast<f64>(ufpsScaled) / static_cast<f64>(HZ_SCALE);
 	timing.frameDurationMs = 1000.0 / timing.ufps;
 	m_input.setRuntimeInputFrameDurationMs(timing.frameDurationMs);
+}
+
+void Runtime::applyMachineRegionWord(uint32_t regionWord) {
+	const MachineRegionTiming regionTiming = getMachineRegionTimingForWord(regionWord);
+	timing.regionWord = regionWord;
+	timing.totalScanlines = regionTiming.totalScanlines;
+	applyUfpsScaled(regionTiming.refreshUfpsScaled);
+	setFrameTiming(
+		*this,
+		timing.cpuHz,
+		static_cast<int>(calcCyclesPerFrameScaled(timing.cpuHz, regionTiming.refreshUfpsScaled)),
+		static_cast<int>(resolveVblankCycles(timing.cpuHz, regionTiming.refreshUfpsScaled, regionTiming.totalScanlines, m_machineManifest->viewportHeight))
+	);
 }
 
 uint32_t Runtime::baseRamUsedBytes() const {

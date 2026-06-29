@@ -116,6 +116,7 @@ public:
 	auto machineTimeMs() const -> uint32_t;
 	auto machineElapsedMs() const -> f64;
 	void applyUfpsScaled(i64 ufpsScaled);
+	void applyMachineRegionWord(uint32_t regionWord);
 	auto baseRamUsedBytes() const -> uint32_t;
 	auto ramUsedBytes() const -> uint32_t;
 	auto ramTotalBytes() const -> uint32_t;
@@ -244,6 +245,10 @@ private:
 	Value onTimeMsRead(uint32_t addr) const;
 	static Value onFrameMsReadThunk(void* context, uint32_t addr);
 	Value onFrameMsRead(uint32_t addr) const;
+	static Value onMachineRegionReadThunk(void* context, uint32_t addr);
+	Value onMachineRegionRead(uint32_t addr) const;
+	static void onMachineRegionWriteThunk(void* context, uint32_t addr, Value value);
+	void onMachineRegionWrite(uint32_t addr, Value value);
 
 	bool m_tickEnabled = true;
 	bool m_rebootRequested = false;

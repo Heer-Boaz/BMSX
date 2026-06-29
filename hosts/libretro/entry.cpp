@@ -21,7 +21,7 @@
 #include "platform.h"
 #include "core/machine_manager.h"
 #include "core/system.h"
-#include "machine/runtime/timing/constants.h"
+#include "machine/model_registry.h"
 #include "machine/runtime/runtime.h"
 
 // Core info
@@ -100,7 +100,7 @@ static void apply_manifest_av_info(retro_system_av_info& av, const bmsx::Machine
 static void initialize_default_av_info(retro_system_av_info& av) {
 	std::memset(&av, 0, sizeof(av));
 	av.timing.sample_rate = bmsx::DEFAULT_LIBRETRO_AUDIO_SAMPLE_RATE;
-	apply_manifest_av_info(av, bmsx::defaultSystemMachineManifest(), bmsx::DEFAULT_UFPS_SCALED);
+	apply_manifest_av_info(av, bmsx::defaultSystemMachineManifest(), bmsx::PAL_REFRESH_UFPS_SCALED);
 }
 
 extern "C" RETRO_API void bmsx_keyboard_event(const char* code, bool down) {
@@ -1209,9 +1209,11 @@ extern "C" void bmsx_set_frame_time_usec(retro_usec_t usec) {
 }
 
 extern "C" int64_t bmsx_get_ufps(void) {
-	// disable-next-line or_nil_fallback_pattern -- libretro may ask timing before game load; nullptr means use default timing.
 	auto* manager = g_platform ? g_platform->machineManager() : nullptr;
-	return manager ? manager->machineManifest().ufpsScaled.value() : bmsx::DEFAULT_UFPS_SCALED;
+	if (manager && manager->hasRuntime()) {
+		return manager->runtime().timing.ufpsScaled;
+	}
+	return bmsx::PAL_REFRESH_UFPS_SCALED;
 }
 
 void retro_set_controller_port_device(unsigned port, unsigned device) {

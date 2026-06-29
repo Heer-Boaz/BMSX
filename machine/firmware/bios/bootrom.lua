@@ -119,19 +119,16 @@ local flatten_manifest<const> = function(manifest, root_path)
 		return nil
 	end
 	local machine<const> = manifest.machine
-	local specs<const> = machine.specs
-	local cpu<const> = specs.cpu
 	return {
 		title = manifest.title,
 		short_name = manifest.short_name,
 		rom_name = manifest.rom_name,
 		entry_path = manifest.lua and manifest.lua.entry_path,
 		namespace = machine.namespace,
+		vdp_class = machine.vdp_class,
 		render_size = format_render_size_label(machine.render_size),
 		input = manifest.input,
 		root = root_path,
-		cpu_freq_hz = cpu.cpu_freq_hz,
-		ufps = machine.ufps,
 	}
 end
 
@@ -139,23 +136,11 @@ local flatten_machine_manifest<const> = function(machine)
 	if not machine then
 		return nil
 	end
-	local cpu<const> = machine.specs and machine.specs.cpu
 	return {
 		namespace = machine.namespace,
+		vdp_class = machine.vdp_class,
 		render_size = format_render_size_label(machine.render_size),
-		cpu_freq_hz = cpu.cpu_freq_hz,
-		ufps = machine.ufps,
 	}
-end
-
-local format_cpu_mhz_from_hz<const> = function(value)
-	local hz<const> = tonumber(value)
-	if hz == nil then
-		return '--'
-	end
-	local mhz_int<const> = hz // 1000000
-	local mhz_frac<const> = (hz % 1000000) // 1000
-	return string.format('%d.%03d', mhz_int, mhz_frac)
 end
 
 local scroll_boot_lines<const> = function(lines, window_size, delta)
@@ -227,18 +212,16 @@ local build_info<const> = function()
 	-- local cart_ns = cart_manifest and cart_manifest.namespace or '--'
 	local cart_view_label<const> = cart_manifest and cart_manifest.render_size or '--'
 	-- local cart_entry = cart_manifest and cart_manifest.entry_path or '--'
-	local cart_cpu_raw<const> = cart_manifest and cart_manifest.cpu_freq_hz
-	local cart_cpu_label<const> = format_cpu_mhz_from_hz(cart_cpu_raw)
+	local cart_vdp_class<const> = cart_manifest and cart_manifest.vdp_class or '--'
 	local cart_entry_ready<const> = mem[cart_program_vector_addr] == cart_program_start_addr
 
 	local machine_view_label<const> = machine_manifest and machine_manifest.render_size or '--'
-	local machine_cpu_raw<const> = machine_manifest and machine_manifest.cpu_freq_hz
-	local machine_cpu_label<const> = format_cpu_mhz_from_hz(machine_cpu_raw)
+	local machine_vdp_class<const> = machine_manifest and machine_manifest.vdp_class or '--'
 	local vram_total<const> = sys_vram_size
 
 	return {
 		machine_view = machine_view_label,
-		machine_cpu_mhz = machine_cpu_label,
+		machine_vdp_class = machine_vdp_class,
 		cart_title = cart_title,
 		-- cart_short = cart_short,
 		cart_rom = cart_rom,
@@ -247,7 +230,7 @@ local build_info<const> = function()
 		-- cart_canon = cart_canon,
 		-- cart_entry = cart_entry,
 		-- cart_input = cart_input,
-		cart_cpu_mhz = cart_cpu_label,
+		cart_vdp_class = cart_vdp_class,
 		cart_entry_ready = cart_entry_ready,
 		root = cart_root_path and cart_root_path or '--',
 		hw_cart_max = format_bytes(sys_cart_rom_size),
@@ -311,7 +294,7 @@ local build_boot_content_lines<const> = function(info, cart_present, cursor, ela
 	local lines<const> = {}
 	local hw_specs<const> = {
 		{ label = 'MAX CART ROM', value = info.hw_cart_max, color = color_accent },
-		{ label = 'CPU MHZ', value = info.machine_cpu_mhz, color = color_accent },
+		{ label = 'VDP CLASS', value = info.machine_vdp_class, color = color_accent },
 		{ label = 'TOTAL RAM', value = info.hw_ram_total, color = color_info_total },
 		{ label = 'TOTAL VRAM', value = info.hw_vram_total, color = color_info_total },
 		{ label = 'VIEWPORT', value = info.machine_view, color = color_info_total },
@@ -320,6 +303,7 @@ local build_boot_content_lines<const> = function(info, cart_present, cursor, ela
 	local cart_specs<const> = {
 		-- { label = 'CART ROM', value = info.cart_rom, color = color_accent },
 		{ label = 'CART NAME', value = info.cart_title, color = color_ok },
+		{ label = 'VDP CLASS', value = info.cart_vdp_class, color = color_accent },
 	}
 	local label_width = 0
 	for i = 1, #hw_specs do

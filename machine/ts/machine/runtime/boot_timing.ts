@@ -1,14 +1,16 @@
 import type { MachineManifest } from '../../rompack/format';
-import { getMachinePerfSpecs } from '../../rompack/format';
 import type { Runtime } from './runtime';
-import { resolveCpuHz, resolvePositiveSafeInteger, resolveRuntimeRenderSize, resolveUfpsScaled } from '../specs';
+import { resolveRuntimeRenderSize } from '../specs';
 import { calcCyclesPerFrameScaled, resolveVblankCycles } from './timing';
-import { setFrameTiming, setTransferRatesFromManifest } from './timing/config';
+import { setFrameTiming, setTransferRates } from './timing/config';
+import { getMachineRegionTimingForWord, PSX_MODEL_PROFILE, PSX_VDP_CLASS_PROFILE } from '../model_registry';
 
 export type ResolvedRuntimeTiming = {
 	viewportWidth: number;
 	viewportHeight: number;
+	regionWord: number;
 	ufpsScaled: number;
+	totalScanlines: number;
 	cpuHz: number;
 	imgDecBytesPerSec: number;
 	dmaBytesPerSecIso: number;
@@ -19,39 +21,41 @@ export type ResolvedRuntimeTiming = {
 	vblankCycles: number;
 };
 
-export function resolveRuntimeTiming(machine: MachineManifest): ResolvedRuntimeTiming;
-export function resolveRuntimeTiming(viewportMachine: MachineManifest, timingMachine: MachineManifest, cpuHz: number, ufpsScaled: number): ResolvedRuntimeTiming;
 export function resolveRuntimeTiming(
 	viewportMachine: MachineManifest,
-	timingMachine: MachineManifest = viewportMachine,
-	cpuHz = resolveCpuHz(timingMachine),
-	ufpsScaled = resolveUfpsScaled(timingMachine),
+	timingMachine: MachineManifest,
+	cpuHz: number,
+	regionWord: number,
 ): ResolvedRuntimeTiming {
 	const renderSize = resolveRuntimeRenderSize(viewportMachine);
-	const perfSpecs = getMachinePerfSpecs(timingMachine);
+	const regionTiming = getMachineRegionTimingForWord(regionWord);
 	return {
 		viewportWidth: renderSize.width,
 		viewportHeight: renderSize.height,
-		ufpsScaled,
+		regionWord,
+		ufpsScaled: regionTiming.refreshUfpsScaled,
+		totalScanlines: regionTiming.totalScanlines,
 		cpuHz,
-		imgDecBytesPerSec: resolvePositiveSafeInteger(perfSpecs.imgdec_bytes_per_sec, 'machine.specs.cpu.imgdec_bytes_per_sec'),
-		dmaBytesPerSecIso: resolvePositiveSafeInteger(perfSpecs.dma_bytes_per_sec_iso, 'machine.specs.dma.dma_bytes_per_sec_iso'),
-		dmaBytesPerSecBulk: resolvePositiveSafeInteger(perfSpecs.dma_bytes_per_sec_bulk, 'machine.specs.dma.dma_bytes_per_sec_bulk'),
-		vdpWorkUnitsPerSec: resolvePositiveSafeInteger(perfSpecs.work_units_per_sec, 'machine.specs.vdp.work_units_per_sec'),
-		geoWorkUnitsPerSec: resolvePositiveSafeInteger(perfSpecs.geo_work_units_per_sec, 'machine.specs.geo.work_units_per_sec'),
-		cycleBudgetPerFrame: calcCyclesPerFrameScaled(cpuHz, ufpsScaled),
-		vblankCycles: resolveVblankCycles(cpuHz, ufpsScaled, timingMachine.render_size.height),
+		imgDecBytesPerSec: PSX_MODEL_PROFILE.imgDecBytesPerSec,
+		dmaBytesPerSecIso: PSX_MODEL_PROFILE.dmaBytesPerSecIso,
+		dmaBytesPerSecBulk: PSX_MODEL_PROFILE.dmaBytesPerSecBulk,
+		vdpWorkUnitsPerSec: PSX_VDP_CLASS_PROFILE.vdpWorkUnitsPerSec,
+		geoWorkUnitsPerSec: PSX_VDP_CLASS_PROFILE.geoWorkUnitsPerSec,
+		cycleBudgetPerFrame: calcCyclesPerFrameScaled(cpuHz, regionTiming.refreshUfpsScaled),
+		vblankCycles: resolveVblankCycles(cpuHz, regionTiming.refreshUfpsScaled, regionTiming.totalScanlines, timingMachine.render_size.height),
 	};
 }
 
 export function applyRuntimeTiming(runtime: Runtime, timing: ResolvedRuntimeTiming): void {
 	runtime.applyUfpsScaled(timing.ufpsScaled);
+	runtime.timing.regionWord = timing.regionWord >>> 0;
+	runtime.timing.totalScanlines = timing.totalScanlines;
 	setFrameTiming(runtime, timing.cpuHz, timing.cycleBudgetPerFrame, timing.vblankCycles);
-	setTransferRatesFromManifest(runtime, {
-		imgdec_bytes_per_sec: timing.imgDecBytesPerSec,
-		dma_bytes_per_sec_iso: timing.dmaBytesPerSecIso,
-		dma_bytes_per_sec_bulk: timing.dmaBytesPerSecBulk,
-		work_units_per_sec: timing.vdpWorkUnitsPerSec,
-		geo_work_units_per_sec: timing.geoWorkUnitsPerSec,
+	setTransferRates(runtime, {
+		imgDecBytesPerSec: timing.imgDecBytesPerSec,
+		dmaBytesPerSecIso: timing.dmaBytesPerSecIso,
+		dmaBytesPerSecBulk: timing.dmaBytesPerSecBulk,
+		vdpWorkUnitsPerSec: timing.vdpWorkUnitsPerSec,
+		geoWorkUnitsPerSec: timing.geoWorkUnitsPerSec,
 	});
 }

@@ -1,8 +1,12 @@
+import type { MachineVdpClass } from '../machine/model_registry';
+
 export const CART_ROM_MAGIC = 0x58534D42;
 export const CART_ROM_MAGIC_BYTES = new Uint8Array([0x42, 0x4d, 0x53, 0x58]);
 export const CART_ROM_BASE_HEADER_SIZE = 32;
 export const CART_ROM_PROGRAM_HEADER_SIZE = 64;
-export const CART_ROM_HEADER_SIZE = 72;
+export const CART_ROM_METADATA_HEADER_SIZE = 72;
+export const CART_ROM_HEADER_SIZE = 76;
+export const CART_VDP_CLASS_PSX = 1;
 export const PROGRAM_BOOT_HEADER_VERSION = 1;
 
 export type CartRomHeader = {
@@ -23,6 +27,7 @@ export type CartRomHeader = {
 	programConstRelocCount: number;
 	metadataOffset: number;
 	metadataLength: number;
+	vdpClass: MachineVdpClass;
 };
 
 export type ProgramBootHeader = {
@@ -370,42 +375,10 @@ export interface ImgMeta {
 
 export type TextureSource = unknown & { close?(): void; width: number; height: number; data?: Uint8Array; }; // platform-specific source type (e.g. ImageBitmap in browsers)
 export type Viewport = { width: number; height: number; };
-export type MachineCpuSpecs = {
-	cpu_freq_hz: number;
-	imgdec_bytes_per_sec: number;
-};
-export type MachineDmaSpecs = {
-	dma_bytes_per_sec_iso: number;
-	dma_bytes_per_sec_bulk: number;
-};
-export type MachineVdpSpecs = {
-	work_units_per_sec?: number;
-};
-export type MachineGeoSpecs = {
-	work_units_per_sec?: number;
-};
-export type MachineRamSpecs = {
-	ram_bytes?: number;
-};
-export type MachineVramSpecs = {
-	slot_bytes?: number;
-	system_slot_bytes?: number;
-	staging_bytes?: number;
-};
-export type MachineSpecs = {
-	cpu: MachineCpuSpecs;
-	dma: MachineDmaSpecs;
-	vdp?: MachineVdpSpecs;
-	geo?: MachineGeoSpecs;
-	ram?: MachineRamSpecs;
-	vram?: MachineVramSpecs;
-};
-
 export type MachineManifest = {
 	render_size: Viewport;
 	namespace: string;
-	ufps: number;
-	specs: MachineSpecs;
+	vdp_class: MachineVdpClass;
 };
 
 export type CartManifest = {
@@ -419,50 +392,3 @@ export type CartManifest = {
 };
 
 export type RomManifest = CartManifest;
-
-export type MachinePerfSpecs = {
-	cpu_freq_hz: number;
-	imgdec_bytes_per_sec: number;
-	dma_bytes_per_sec_iso: number;
-	dma_bytes_per_sec_bulk: number;
-	work_units_per_sec: number;
-	geo_work_units_per_sec: number;
-	ufps: number;
-};
-
-export const DEFAULT_VDP_WORK_UNITS_PER_SEC = 25_600;
-export const DEFAULT_GEO_WORK_UNITS_PER_SEC = 16_384_000;
-
-export type MachineMemorySpecs = {
-	ram_bytes?: number;
-	slot_bytes?: number;
-	system_slot_bytes?: number;
-	staging_bytes?: number;
-};
-
-export function getMachinePerfSpecs(machine: MachineManifest): MachinePerfSpecs {
-	const cpu = machine.specs.cpu;
-	const dma = machine.specs.dma;
-	const vdp = machine.specs.vdp;
-	const geo = machine.specs.geo;
-	return {
-		cpu_freq_hz: cpu.cpu_freq_hz,
-		imgdec_bytes_per_sec: cpu.imgdec_bytes_per_sec,
-		dma_bytes_per_sec_iso: dma.dma_bytes_per_sec_iso,
-		dma_bytes_per_sec_bulk: dma.dma_bytes_per_sec_bulk,
-		work_units_per_sec: vdp?.work_units_per_sec ?? DEFAULT_VDP_WORK_UNITS_PER_SEC,
-		geo_work_units_per_sec: geo?.work_units_per_sec ?? DEFAULT_GEO_WORK_UNITS_PER_SEC,
-		ufps: machine.ufps,
-	};
-}
-
-export function getMachineMemorySpecs(machine: MachineManifest): MachineMemorySpecs {
-	const ram = machine.specs.ram;
-	const vram = machine.specs.vram;
-	return {
-		ram_bytes: ram?.ram_bytes,
-		slot_bytes: vram?.slot_bytes,
-		system_slot_bytes: vram?.system_slot_bytes,
-		staging_bytes: vram?.staging_bytes,
-	};
-}

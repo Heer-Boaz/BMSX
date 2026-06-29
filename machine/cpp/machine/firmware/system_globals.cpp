@@ -11,6 +11,7 @@
 #include "machine/devices/vdp/jtu.h"
 #include "machine/devices/vdp/mfu.h"
 #include "machine/devices/vdp/lpu.h"
+#include "machine/model_registry.h"
 #include "machine/runtime/runtime.h"
 #include "rompack/format.h"
 
@@ -28,6 +29,9 @@ void seedSystemGlobals(Runtime& runtime) {
 	runtime.setGlobal("sys_host_fault_stage", valueNumber(static_cast<double>(IO_SYS_HOST_FAULT_STAGE)));
 	runtime.setGlobal("sys_time_ms", valueNumber(static_cast<double>(IO_SYS_TIME_MS)));
 	runtime.setGlobal("sys_frame_ms", valueNumber(static_cast<double>(IO_SYS_FRAME_MS)));
+	runtime.setGlobal("sys_region", valueNumber(static_cast<double>(IO_SYS_REGION)));
+	runtime.setGlobal("sys_region_pal", valueNumber(static_cast<double>(MACHINE_REGION_PAL_WORD)));
+	runtime.setGlobal("sys_region_ntsc", valueNumber(static_cast<double>(MACHINE_REGION_NTSC_WORD)));
 	runtime.setGlobal("sys_host_fault_message", machine.cpu.createNativeFunction("sys_host_fault_message", [&runtime, &machine](NativeArgsView, NativeResults& out) {
 		const auto& message = runtime.hostFault.getMessage();
 		if (!message.has_value()) {

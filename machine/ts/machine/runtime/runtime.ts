@@ -8,11 +8,7 @@ import {
 	type LuaDebuggerPauseSignal
 } from '../../lua/value';
 import type { CartManifest, MachineManifest, RuntimeRomPackage } from '../../rompack/format';
-import {
-	CART_ROM_HEADER_SIZE,
-	DEFAULT_GEO_WORK_UNITS_PER_SEC,
-	DEFAULT_VDP_WORK_UNITS_PER_SEC,
-} from '../../rompack/format';
+import { CART_ROM_HEADER_SIZE } from '../../rompack/format';
 import { RomSourceStack, type RawRomSource, type RomSourceLayer } from '../../rompack/source';
 import { buildRuntimeRomLayer, type RuntimeRomLayer } from '../../rompack/loader';
 import { StringValue, Table, type Value, type ProgramMetadata, type NativeFunction, type NativeObject } from '../cpu/cpu';
@@ -46,19 +42,19 @@ import { HostFaultState } from './host_fault';
 import { LuaScratchState } from '../program/scratch';
 import { callClosureInto, invokeClosureHandler, invokeLuaHandler } from '../program/executor';
 import type { ProgramVectorTable } from '../program/loader';
-import { resolvePositiveSafeInteger } from '../specs';
 import { resolveRuntimeMemoryMapSpecs } from '../memory/specs';
+import { getMachineRegionTimingForWord, MACHINE_REGION_PAL_WORD, PSX_MODEL_PROFILE } from '../model_registry';
 import { applyRuntimeTiming, resolveRuntimeTiming } from './boot_timing';
-import { refreshDeviceTimings } from './timing/config';
+import { refreshDeviceTimings, setFrameTiming } from './timing/config';
 import { HZ_SCALE } from './timing/constants';
-import { IO_SYS_FRAME_MS, IO_SYS_TIME_MS } from '../bus/io';
+import { calcCyclesPerFrameScaled, resolveVblankCycles } from './timing';
+import { IO_SYS_FRAME_MS, IO_SYS_REGION, IO_SYS_TIME_MS } from '../bus/io';
 import { Machine } from '../machine';
 import type { RuntimeInputSource } from './input';
 import { Memory } from '../memory/memory';
 import type { MicrotaskQueue } from '../scheduler/microtask_queue';
 import {
 	BASE_RAM_USED_SIZE,
-	DEFAULT_VRAM_IMAGE_SLOT_SIZE,
 	PROGRAM_STATIC_RAM_BASE,
 	RAM_SIZE,
 	configureMemoryMap,
@@ -200,9 +196,9 @@ export class Runtime {
 		const systemLuaSources = buildLuaSources(systemSource, systemSource, systemLayer.index, ['system']);
 		const systemMachine = systemLayer.index.machine;
 		if (!cartridge) {
-			const systemMemorySpecs = resolveRuntimeMemoryMapSpecs(systemMachine, systemMachine, DEFAULT_VRAM_IMAGE_SLOT_SIZE);
+			const systemMemorySpecs = resolveRuntimeMemoryMapSpecs(systemMachine);
 			configureMemoryMap(systemMemorySpecs);
-			const timing = resolveRuntimeTiming(systemMachine);
+			const timing = resolveRuntimeTiming(systemMachine, systemMachine, PSX_MODEL_PROFILE.cpuFreqHz, MACHINE_REGION_PAL_WORD);
 			const memory = new Memory({
 				systemRom: new Uint8Array(systemLayer.payload),
 				cartRom: new Uint8Array(CART_ROM_HEADER_SIZE),
@@ -213,10 +209,14 @@ export class Runtime {
 				activeMachineManifest: systemMachine,
 				cartManifest: null,
 				cartProjectRootPath: null,
+				machineRegionWord: timing.regionWord,
 				ufpsScaled: timing.ufpsScaled,
 				cpuHz: timing.cpuHz,
 				cycleBudgetPerFrame: timing.cycleBudgetPerFrame,
 				vblankCycles: timing.vblankCycles,
+				imgDecBytesPerSec: timing.imgDecBytesPerSec,
+				dmaBytesPerSecIso: timing.dmaBytesPerSecIso,
+				dmaBytesPerSecBulk: timing.dmaBytesPerSecBulk,
 				vdpWorkUnitsPerSec: timing.vdpWorkUnitsPerSec,
 				geoWorkUnitsPerSec: timing.geoWorkUnitsPerSec,
 			}, input, microtasks);
@@ -250,9 +250,9 @@ export class Runtime {
 		const cartSource = new RomSourceStack([{ id: cartRom.id, index: cartRom.index, payload: cartRom.payload }]);
 		const cartLuaSources = buildLuaSources(cartSource, activeRomSource, cartRom.index, overlayRom ? ['overlay', 'cart'] : ['cart']);
 
-		const memoryLimits = resolveRuntimeMemoryMapSpecs(cartRom.index.machine, systemMachine, DEFAULT_VRAM_IMAGE_SLOT_SIZE);
+		const memoryLimits = resolveRuntimeMemoryMapSpecs(cartRom.index.machine);
 		configureMemoryMap(memoryLimits);
-		const timing = resolveRuntimeTiming(cartRom.index.machine);
+		const timing = resolveRuntimeTiming(cartRom.index.machine, cartRom.index.machine, PSX_MODEL_PROFILE.cpuFreqHz, MACHINE_REGION_PAL_WORD);
 		let overlayPayload: Uint8Array | undefined;
 		if (overlayRom) {
 			overlayPayload = new Uint8Array(overlayRom.payload);
@@ -268,10 +268,14 @@ export class Runtime {
 			activeMachineManifest: cartRom.index.machine,
 			cartManifest: cartRom.index.cart_manifest,
 			cartProjectRootPath: cartRom.index.projectRootPath,
+			machineRegionWord: timing.regionWord,
 			ufpsScaled: timing.ufpsScaled,
 			cpuHz: timing.cpuHz,
 			cycleBudgetPerFrame: timing.cycleBudgetPerFrame,
 			vblankCycles: timing.vblankCycles,
+			imgDecBytesPerSec: timing.imgDecBytesPerSec,
+			dmaBytesPerSecIso: timing.dmaBytesPerSecIso,
+			dmaBytesPerSecBulk: timing.dmaBytesPerSecBulk,
 			vdpWorkUnitsPerSec: timing.vdpWorkUnitsPerSec,
 			geoWorkUnitsPerSec: timing.geoWorkUnitsPerSec,
 		}, input, microtasks);
@@ -489,12 +493,19 @@ export class Runtime {
 		this.cpuExecution = new CpuExecutionState(this);
 		this.hostFault = new HostFaultState(this);
 		this.cartBoot = new CartBootState(this);
-		this.timing = new TimingState(options.ufpsScaled, options.cpuHz, options.cycleBudgetPerFrame);
+		this.timing = new TimingState(
+			options.ufpsScaled,
+			options.cpuHz,
+			options.cycleBudgetPerFrame,
+			options.machineRegionWord,
+			getMachineRegionTimingForWord(options.machineRegionWord).totalScanlines,
+			options.imgDecBytesPerSec,
+			options.dmaBytesPerSecIso,
+			options.dmaBytesPerSecBulk,
+			options.vdpWorkUnitsPerSec,
+			options.geoWorkUnitsPerSec,
+		);
 		this.input.setRuntimeInputFrameDurationMs(this.timing.frameDurationMs);
-		const initialVdpWorkUnits = options.vdpWorkUnitsPerSec ?? DEFAULT_VDP_WORK_UNITS_PER_SEC;
-		const initialGeoWorkUnits = options.geoWorkUnitsPerSec ?? DEFAULT_GEO_WORK_UNITS_PER_SEC;
-		this.timing.vdpWorkUnitsPerSec = resolvePositiveSafeInteger(initialVdpWorkUnits, 'machine.specs.vdp.work_units_per_sec');
-		this.timing.geoWorkUnitsPerSec = resolvePositiveSafeInteger(initialGeoWorkUnits, 'machine.specs.geo.work_units_per_sec');
 		this.activeMachineManifest = options.activeMachineManifest;
 		this.cartManifest = options.cartManifest;
 		this.cartProjectRootPath = options.cartProjectRootPath;
@@ -508,6 +519,8 @@ export class Runtime {
 		this.machine.memory.clearIoSlots();
 		this.machine.memory.mapIoRead(IO_SYS_TIME_MS, () => this.machineTimeMs());
 		this.machine.memory.mapIoRead(IO_SYS_FRAME_MS, () => this.timing.frameDurationMs);
+		this.machine.memory.mapIoRead(IO_SYS_REGION, () => this.timing.regionWord);
+		this.machine.memory.mapIoWrite(IO_SYS_REGION, (_addr, value) => this.applyMachineRegionWord((value as number) >>> 0));
 		this.machine.initializeSystemIo();
 		this.machine.resetDevices();
 		this.machine.vdp.initializeVramSurfaces();
@@ -591,16 +604,25 @@ export class Runtime {
 		return this.includeJsStackTraces;
 	}
 
-	public applyCartProgramTiming(): void {
-		applyRuntimeTiming(this, resolveRuntimeTiming(this.activeMachineManifest));
-	}
-
 	public applyUfpsScaled(ufpsScaled: number): void {
 		const timing = this.timing;
 		timing.ufpsScaled = ufpsScaled;
 		timing.ufps = ufpsScaled / HZ_SCALE;
 		timing.frameDurationMs = 1000 / timing.ufps;
 		this.input.setRuntimeInputFrameDurationMs(timing.frameDurationMs);
+	}
+
+	public applyMachineRegionWord(regionWord: number): void {
+		const regionTiming = getMachineRegionTimingForWord(regionWord);
+		this.timing.regionWord = regionWord >>> 0;
+		this.timing.totalScanlines = regionTiming.totalScanlines;
+		this.applyUfpsScaled(regionTiming.refreshUfpsScaled);
+		setFrameTiming(
+			this,
+			this.timing.cpuHz,
+			calcCyclesPerFrameScaled(this.timing.cpuHz, regionTiming.refreshUfpsScaled),
+			resolveVblankCycles(this.timing.cpuHz, regionTiming.refreshUfpsScaled, regionTiming.totalScanlines, this.activeMachineManifest.render_size.height),
+		);
 	}
 
 	public dispose(): void {

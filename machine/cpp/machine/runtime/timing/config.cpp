@@ -1,7 +1,6 @@
 #include "machine/runtime/timing/config.h"
 
 #include "machine/runtime/runtime.h"
-#include "machine/specs.h"
 
 namespace bmsx {
 
@@ -36,12 +35,12 @@ void setFrameTiming(Runtime& runtime, i64 cpuHz, int cycleBudgetPerFrame, int vb
 	runtime.vblank.setVblankCycles(runtime, vblankCycles);
 }
 
-void setTransferRatesFromManifest(Runtime& runtime, const RuntimeTransferRates& specs) {
-	runtime.timing.imgDecBytesPerSec = specs.imgDecBytesPerSec;
-	runtime.timing.dmaBytesPerSecIso = specs.dmaBytesPerSecIso;
-	runtime.timing.dmaBytesPerSecBulk = specs.dmaBytesPerSecBulk;
-	runtime.timing.vdpWorkUnitsPerSec = static_cast<int>(resolvePositiveSafeInteger(specs.vdpWorkUnitsPerSec, "machine.specs.vdp.work_units_per_sec"));
-	runtime.timing.geoWorkUnitsPerSec = static_cast<int>(resolvePositiveSafeInteger(specs.geoWorkUnitsPerSec, "machine.specs.geo.work_units_per_sec"));
+void setTransferRates(Runtime& runtime, const RuntimeTransferRates& rates) {
+	runtime.timing.imgDecBytesPerSec = rates.imgDecBytesPerSec;
+	runtime.timing.dmaBytesPerSecIso = rates.dmaBytesPerSecIso;
+	runtime.timing.dmaBytesPerSecBulk = rates.dmaBytesPerSecBulk;
+	runtime.timing.vdpWorkUnitsPerSec = rates.vdpWorkUnitsPerSec;
+	runtime.timing.geoWorkUnitsPerSec = rates.geoWorkUnitsPerSec;
 	refreshDeviceTimings(runtime, runtime.machine.scheduler.currentNowCycles());
 }
 

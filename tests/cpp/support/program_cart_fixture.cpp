@@ -3,7 +3,6 @@
 #include "machine/cpu/instruction_format.h"
 #include "machine/cpu/opcode_info.h"
 #include "machine/program/loader.h"
-#include "machine/runtime/timing/constants.h"
 #include "rompack/format.h"
 
 namespace bmsx::test {
@@ -35,11 +34,7 @@ MachineManifest makeMinimalMachineManifest() {
 	manifest.namespaceName = "libretro_save_state_test";
 	manifest.viewportWidth = 256;
 	manifest.viewportHeight = 212;
-	manifest.cpuHz = 1'000'000;
-	manifest.imgDecBytesPerSec = 26'214'400;
-	manifest.dmaBytesPerSecIso = 8'388'608;
-	manifest.dmaBytesPerSecBulk = 26'214'400;
-	manifest.ufpsScaled = DEFAULT_UFPS_SCALED;
+	manifest.vdpClass = MachineVdpClass::Psx;
 	return manifest;
 }
 

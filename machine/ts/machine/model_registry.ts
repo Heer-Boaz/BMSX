@@ -4,7 +4,6 @@ import { HZ_SCALE } from './runtime/timing/constants';
 // throughput/programming-model parameters, and region is runtime timing state.
 // Slice 24.1 intentionally populates only the psx model + psx VDP class.
 
-export type MachineModelId = 'psx';
 export type MachineVdpClass = 'psx';
 export type MachineRegion = 'pal' | 'ntsc';
 
@@ -25,9 +24,10 @@ export const PAL_REFRESH_UFPS_SCALED = 50 * HZ_SCALE;
 export const PAL_TOTAL_SCANLINES = 313;
 export const NTSC_REFRESH_UFPS_SCALED = 59_940_060;
 export const NTSC_TOTAL_SCANLINES = 262;
+export const MACHINE_REGION_PAL_WORD = 0;
+export const MACHINE_REGION_NTSC_WORD = 1;
 
 export type MachineModelProfile = {
-	model: MachineModelId;
 	cpuFreqHz: number;
 	imgDecBytesPerSec: number;
 	dmaBytesPerSecIso: number;
@@ -40,7 +40,6 @@ export type MachineModelProfile = {
 };
 
 export type MachineVdpClassProfile = {
-	vdpClass: MachineVdpClass;
 	vdpWorkUnitsPerSec: number;
 	geoWorkUnitsPerSec: number;
 };
@@ -52,7 +51,6 @@ export type MachineRegionTiming = {
 };
 
 export const PSX_MODEL_PROFILE: MachineModelProfile = {
-	model: 'psx',
 	cpuFreqHz: PSX_CPU_FREQ_HZ,
 	imgDecBytesPerSec: PSX_IMGDEC_BYTES_PER_SEC,
 	dmaBytesPerSecIso: PSX_DMA_BYTES_PER_SEC_ISO,
@@ -65,7 +63,6 @@ export const PSX_MODEL_PROFILE: MachineModelProfile = {
 };
 
 export const PSX_VDP_CLASS_PROFILE: MachineVdpClassProfile = {
-	vdpClass: 'psx',
 	vdpWorkUnitsPerSec: PSX_VDP_WORK_UNITS_PER_SEC,
 	geoWorkUnitsPerSec: PSX_GEO_WORK_UNITS_PER_SEC,
 };
@@ -75,4 +72,12 @@ export function getMachineRegionTiming(region: MachineRegion): MachineRegionTimi
 		return { region, refreshUfpsScaled: PAL_REFRESH_UFPS_SCALED, totalScanlines: PAL_TOTAL_SCANLINES };
 	}
 	return { region, refreshUfpsScaled: NTSC_REFRESH_UFPS_SCALED, totalScanlines: NTSC_TOTAL_SCANLINES };
+}
+
+function decodeMachineRegionWord(word: number): MachineRegion {
+	return (word & MACHINE_REGION_NTSC_WORD) === 0 ? 'pal' : 'ntsc';
+}
+
+export function getMachineRegionTimingForWord(word: number): MachineRegionTiming {
+	return getMachineRegionTiming(decodeMachineRegionWord(word));
 }

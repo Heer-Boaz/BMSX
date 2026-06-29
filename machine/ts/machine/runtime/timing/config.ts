@@ -1,12 +1,11 @@
-import { resolvePositiveSafeInteger } from '../../specs';
 import type { Runtime } from '../runtime';
 
-export type TransferRateManifest = {
-	imgdec_bytes_per_sec: number;
-	dma_bytes_per_sec_iso: number;
-	dma_bytes_per_sec_bulk: number;
-	work_units_per_sec: number;
-	geo_work_units_per_sec: number;
+export type RuntimeTransferRates = {
+	imgDecBytesPerSec: number;
+	dmaBytesPerSecIso: number;
+	dmaBytesPerSecBulk: number;
+	vdpWorkUnitsPerSec: number;
+	geoWorkUnitsPerSec: number;
 };
 
 export function refreshDeviceTimings(runtime: Runtime, nowCycles: number): void {
@@ -41,11 +40,11 @@ export function setFrameTiming(runtime: Runtime, cpuHz: number, cycleBudgetPerFr
 	runtime.vblank.setVblankCycles(vblankCycles);
 }
 
-export function setTransferRatesFromManifest(runtime: Runtime, specs: TransferRateManifest): void {
-	runtime.timing.imgDecBytesPerSec = resolvePositiveSafeInteger(specs.imgdec_bytes_per_sec, 'machine.specs.cpu.imgdec_bytes_per_sec');
-	runtime.timing.dmaBytesPerSecIso = resolvePositiveSafeInteger(specs.dma_bytes_per_sec_iso, 'machine.specs.dma.dma_bytes_per_sec_iso');
-	runtime.timing.dmaBytesPerSecBulk = resolvePositiveSafeInteger(specs.dma_bytes_per_sec_bulk, 'machine.specs.dma.dma_bytes_per_sec_bulk');
-	runtime.timing.vdpWorkUnitsPerSec = resolvePositiveSafeInteger(specs.work_units_per_sec, 'machine.specs.vdp.work_units_per_sec');
-	runtime.timing.geoWorkUnitsPerSec = resolvePositiveSafeInteger(specs.geo_work_units_per_sec, 'machine.specs.geo.work_units_per_sec');
+export function setTransferRates(runtime: Runtime, rates: RuntimeTransferRates): void {
+	runtime.timing.imgDecBytesPerSec = rates.imgDecBytesPerSec;
+	runtime.timing.dmaBytesPerSecIso = rates.dmaBytesPerSecIso;
+	runtime.timing.dmaBytesPerSecBulk = rates.dmaBytesPerSecBulk;
+	runtime.timing.vdpWorkUnitsPerSec = rates.vdpWorkUnitsPerSec;
+	runtime.timing.geoWorkUnitsPerSec = rates.geoWorkUnitsPerSec;
 	refreshDeviceTimings(runtime, runtime.machine.scheduler.currentNowCycles());
 }

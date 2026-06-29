@@ -6,18 +6,6 @@ machine:
         width: 320
         height: 240
     namespace: 'pietsona2025'
-    ufps: 50000000 # 50 FPS
-    specs:
-        cpu:
-            cpu_freq_hz: 50000000 # 50 MHz
-            imgdec_bytes_per_sec: 26214400 # 25 MB/s
-        dma:
-            dma_bytes_per_sec_iso: 8388608 # 8 MB/s
-            dma_bytes_per_sec_bulk: 26214400 # 25 MB/s
-        ram:
-            ram_bytes: 134217728 # 128 MB total RAM
-        vram:
-            slot_bytes: 167772160 # 160 MB
-            staging_bytes: 41943040 # 40 MB
+    vdp_class: psx
 lua:
     entry_path: cart.lua

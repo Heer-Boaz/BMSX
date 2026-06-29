@@ -294,4 +294,5 @@ export const RUNTIME_SAVE_STATE_PROP_NAMES = [
 	'textureSlot',
 	'textureSurfaceDescAddr',
 	'format',
+	'machineRegionWord',
 ] as const;

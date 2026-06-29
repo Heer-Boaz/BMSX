@@ -17,7 +17,7 @@ import type {
 } from './format';
 import { decodeBinary, decodeBinaryWithPropTable, toF32, typedArrayFromBytes } from '../common/serializer/binencoder';
 import { parseRomMetadataSection } from './metadata';
-import { CART_ROM_BASE_HEADER_SIZE, CART_ROM_HEADER_SIZE, CART_ROM_MAGIC_BYTES, CART_ROM_PROGRAM_HEADER_SIZE } from './format';
+import { CART_ROM_BASE_HEADER_SIZE, CART_ROM_HEADER_SIZE, CART_ROM_MAGIC_BYTES, CART_VDP_CLASS_PSX } from './format';
 import { inflate } from 'pako';
 import { RomSourceStack, type RawRomSource } from './source';
 import { decodeRomToc } from './toc';
@@ -64,7 +64,7 @@ export function parseCartHeader(payload: Uint8Array): CartRomHeader {
 	}
 	const dv = new DataView(payload.buffer, payload.byteOffset, Math.min(payload.byteLength, CART_ROM_HEADER_SIZE));
 	const headerSize = dv.getUint32(4, true);
-	if (headerSize < CART_ROM_BASE_HEADER_SIZE) {
+	if (headerSize < CART_ROM_HEADER_SIZE) {
 		throw new Error(`ROM header size is too small: ${headerSize}.`);
 	}
 	if (headerSize > payload.byteLength) {
@@ -76,18 +76,21 @@ export function parseCartHeader(payload: Uint8Array): CartRomHeader {
 	const tocLength = dv.getUint32(20, true);
 	const dataOffset = dv.getUint32(24, true);
 	const dataLength = dv.getUint32(28, true);
-	const hasProgramHeader = headerSize >= CART_ROM_PROGRAM_HEADER_SIZE;
-	const hasMetadataHeader = headerSize >= CART_ROM_HEADER_SIZE;
-	const programBootVersion = hasProgramHeader ? dv.getUint32(32, true) : 0;
-	const programBootFlags = hasProgramHeader ? dv.getUint32(36, true) : 0;
-	const programEntryProtoIndex = hasProgramHeader ? dv.getUint32(40, true) : 0;
-	const programCodeByteCount = hasProgramHeader ? dv.getUint32(44, true) : 0;
-	const programConstPoolCount = hasProgramHeader ? dv.getUint32(48, true) : 0;
-	const programProtoCount = hasProgramHeader ? dv.getUint32(52, true) : 0;
-	const programReserved0 = hasProgramHeader ? dv.getUint32(56, true) : 0;
-	const programConstRelocCount = hasProgramHeader ? dv.getUint32(60, true) : 0;
-	const metadataOffset = hasMetadataHeader ? dv.getUint32(64, true) : 0;
-	const metadataLength = hasMetadataHeader ? dv.getUint32(68, true) : 0;
+	const programBootVersion = dv.getUint32(32, true);
+	const programBootFlags = dv.getUint32(36, true);
+	const programEntryProtoIndex = dv.getUint32(40, true);
+	const programCodeByteCount = dv.getUint32(44, true);
+	const programConstPoolCount = dv.getUint32(48, true);
+	const programProtoCount = dv.getUint32(52, true);
+	const programReserved0 = dv.getUint32(56, true);
+	const programConstRelocCount = dv.getUint32(60, true);
+	const metadataOffset = dv.getUint32(64, true);
+	const metadataLength = dv.getUint32(68, true);
+	const vdpClassWord = dv.getUint32(72, true);
+	if (vdpClassWord !== CART_VDP_CLASS_PSX) {
+		throw new Error(`Unsupported ROM VDP class marker: ${vdpClassWord}.`);
+	}
+	const vdpClass = 'psx';
 
 	assertSectionRange(manifestOffset, manifestLength, payload.byteLength, 'manifest');
 	assertSectionRange(tocOffset, tocLength, payload.byteLength, 'toc');
@@ -114,6 +117,7 @@ export function parseCartHeader(payload: Uint8Array): CartRomHeader {
 		programConstRelocCount,
 		metadataOffset,
 		metadataLength,
+		vdpClass,
 	};
 }
 
@@ -210,9 +214,16 @@ function decodeCartridgeMetadata(rom: Uint8Array, header: CartRomHeader): Cartri
 	}
 	const manifestSlice = rom.subarray(header.manifestOffset, header.manifestOffset + header.manifestLength);
 	const cart_manifest = decodeBinary(manifestSlice) as CartManifest;
+	const machine = cart_manifest.machine;
+	if (machine === undefined) {
+		throw new Error('ROM manifest payload is missing machine object.');
+	}
+	if (machine.vdp_class !== header.vdpClass) {
+		throw new Error('ROM header VDP class does not match manifest machine.vdp_class.');
+	}
 	return {
 		cart_manifest,
-		machine: cart_manifest.machine,
+		machine: { ...machine, vdp_class: header.vdpClass },
 		entry_path: cart_manifest.lua.entry_path,
 	};
 }

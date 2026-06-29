@@ -13,6 +13,7 @@
 #include "render/vdp/slot_textures.h"
 #include "../machine/runtime/runtime.h"
 #include "machine/specs.h"
+#include "machine/model_registry.h"
 #include "machine/memory/map.h"
 #include "machine/memory/specs.h"
 #include "machine/runtime/boot_timing.h"
@@ -300,13 +301,13 @@ void MachineManager::configureViewForMachine(const MachineManifest& manifest) {
 }
 
 bool MachineManager::loadSystemRomInternal(const u8* data, size_t size) {
-		if (m_texture_manager) {
-				m_texture_manager->setBackend(m_view ? m_view->backend() : nullptr);
-		}
-		auto plan = m_rom_boot_manager->buildBootPlan(data, size, nullptr, 0);
-		if (!plan) return false;
-		m_system_rom = std::move(plan->systemLayer);
-		m_system_rom_loaded = true;
+	if (m_texture_manager) {
+		m_texture_manager->setBackend(m_view ? m_view->backend() : nullptr);
+	}
+	auto plan = m_rom_boot_manager->buildBootPlan(data, size, nullptr, 0);
+	if (!plan) return false;
+	m_system_rom = std::move(plan->systemLayer);
+	m_system_rom_loaded = true;
 	machine_manifest = &m_system_rom.machine;
 	m_default_font = std::make_unique<Font>();
 	m_view->default_font = m_default_font.get();
@@ -319,10 +320,14 @@ Runtime& MachineManager::prepareRuntimeForActiveCart(const ResolvedRuntimeTiming
 		{ m_system_rom_data, m_system_rom_size },
 		{ m_cart_rom_data, m_cart_rom_size },
 		&machine,
+		timing.regionWord,
 		timing.ufpsScaled,
 		timing.cpuHz,
 		timing.cycleBudgetPerFrame,
 		timing.vblankCycles,
+		timing.imgDecBytesPerSec,
+		timing.dmaBytesPerSecIso,
+		timing.dmaBytesPerSecBulk,
 		timing.vdpWorkUnitsPerSec,
 		timing.geoWorkUnitsPerSec,
 	});
@@ -347,16 +352,20 @@ void MachineManager::bootRuntimeFromProgram() {
 	m_linked_program.reset();
 	m_linked_program_symbols.reset();
 	RuntimeRomPackage& romPackage = activeRom();
-	const ResolvedRuntimeTiming timing = resolveRuntimeTiming(romPackage.machine);
+	const ResolvedRuntimeTiming timing = resolveRuntimeTiming(romPackage.machine, romPackage.machine, PSX_MODEL_PROFILE.cpuFreqHz, MACHINE_REGION_PAL_WORD);
 	Runtime& rt = ensureRuntime(RuntimeOptions{
 		Vec2{ static_cast<f32>(timing.viewportWidth), static_cast<f32>(timing.viewportHeight) },
 		{ m_system_rom_data, m_system_rom_size },
 		{ m_cart_rom_data, m_cart_rom_size },
 		&romPackage.machine,
+		timing.regionWord,
 		timing.ufpsScaled,
 		timing.cpuHz,
 		timing.cycleBudgetPerFrame,
 		timing.vblankCycles,
+		timing.imgDecBytesPerSec,
+		timing.dmaBytesPerSecIso,
+		timing.dmaBytesPerSecBulk,
 		timing.vdpWorkUnitsPerSec,
 		timing.geoWorkUnitsPerSec,
 	});
@@ -401,8 +410,8 @@ bool MachineManager::bootSystemStartupProgram(const MachineManifest& runtimeMach
 
 	activateSystemRom();
 	setMachineManifest(runtimeMachine);
-	const ResolvedRuntimeTiming timing = resolveRuntimeTiming(runtimeMachine);
-	configureMemoryMap(resolveRuntimeMemoryMapSpecs(runtimeMachine, m_system_rom.machine, DEFAULT_VRAM_IMAGE_SLOT_SIZE));
+	const ResolvedRuntimeTiming timing = resolveRuntimeTiming(runtimeMachine, runtimeMachine, PSX_MODEL_PROFILE.cpuFreqHz, MACHINE_REGION_PAL_WORD);
+	configureMemoryMap(resolveRuntimeMemoryMapSpecs(runtimeMachine));
 	configureViewForMachine(runtimeMachine);
 
 	Runtime& rt = ensureRuntime(RuntimeOptions{
@@ -410,10 +419,14 @@ bool MachineManager::bootSystemStartupProgram(const MachineManifest& runtimeMach
 		{ m_system_rom_data, m_system_rom_size },
 		{ m_cart_rom_data, m_cart_rom_size },
 		&runtimeMachine,
+		timing.regionWord,
 		timing.ufpsScaled,
 		timing.cpuHz,
 		timing.cycleBudgetPerFrame,
 		timing.vblankCycles,
+		timing.imgDecBytesPerSec,
+		timing.dmaBytesPerSecIso,
+		timing.dmaBytesPerSecBulk,
 		timing.vdpWorkUnitsPerSec,
 		timing.geoWorkUnitsPerSec,
 	});
@@ -465,41 +478,19 @@ bool MachineManager::loadRomInternal(const u8* data, size_t size) {
 	m_loaded_cart_has_program = m_cart_rom.programImage != nullptr;
 
 	const MachineManifest& cartMachine = m_cart_rom.machine;
-	const i64 cartUfpsScaled = resolveUfpsScaled(cartMachine);
-	i64 cpuHz = 0;
-	const bool cartCpuValid = resolveCpuHz(cartMachine, cpuHz);
-	i64 runtimeUfpsScaled = cartUfpsScaled;
-	if (!cartCpuValid) {
-		i64 systemUfpsScaled = 0;
-		i64 systemCpuHz = 0;
-		if (!m_system_rom_loaded
-			|| !resolveCpuHz(m_system_rom.machine, systemCpuHz)
-			|| !resolveUfpsScaled(m_system_rom.machine, systemUfpsScaled)) {
-			throw std::runtime_error("[MachineManager] machine.specs.cpu.cpu_freq_hz is required.");
-		}
-		std::cerr << "[MachineManager] Cart manifest machine.specs.cpu.cpu_freq_hz is required; booting BIOS only." << std::endl;
-		cpuHz = systemCpuHz;
-		runtimeUfpsScaled = systemUfpsScaled;
-	}
-	const MachineManifest& transferMachine = cartCpuValid ? cartMachine : m_system_rom.machine;
-
 	configureViewForMachine(cartMachine);
 
 	const bool hasSystemProgram = m_system_rom_loaded
 		&& m_system_rom.programImage;
 	if (hasSystemProgram) {
-		if (!bootSystemStartupProgram(transferMachine)) {
+		if (!bootSystemStartupProgram(cartMachine)) {
 			return false;
 		}
 	} else {
-		if (!cartCpuValid) {
-			std::cerr << "[MachineManager] Cart manifest machine.specs.cpu.cpu_freq_hz is required; cannot boot cart without BIOS." << std::endl;
-			return false;
-		}
 		activateCartRom();
 		setMachineManifest(cartMachine);
-		configureMemoryMap(resolveRuntimeMemoryMapSpecs(activeRom().machine, m_system_rom.machine, DEFAULT_VRAM_IMAGE_SLOT_SIZE));
-		const ResolvedRuntimeTiming timing = resolveRuntimeTiming(activeRom().machine, transferMachine, cpuHz, runtimeUfpsScaled);
+		configureMemoryMap(resolveRuntimeMemoryMapSpecs(activeRom().machine));
+		const ResolvedRuntimeTiming timing = resolveRuntimeTiming(activeRom().machine, cartMachine, PSX_MODEL_PROFILE.cpuFreqHz, MACHINE_REGION_PAL_WORD);
 		prepareRuntimeForActiveCart(timing, cartMachine);
 		if (activeRom().hasProgram()) {
 			bootRuntimeFromProgram();

@@ -12,6 +12,9 @@ export const SYSTEM_ROM_HELPER_NAMES = [
 	'clock_now',
 	'sys_time_ms',
 	'sys_frame_ms',
+	'sys_region',
+	'sys_region_pal',
+	'sys_region_ntsc',
 ] as const;
 
 const SYSTEM_ROM_GEO_GLOBAL_NAMES = [

@@ -30,7 +30,8 @@ import {
 	VRAM_SYSTEM_SLOT_BASE,
 	VRAM_SYSTEM_SLOT_SIZE,
 } from '../memory/map';
-import { CART_ROM_MAGIC, DEFAULT_GEO_WORK_UNITS_PER_SEC, DEFAULT_VDP_WORK_UNITS_PER_SEC, type CartManifest, type MachineManifest } from '../../rompack/format';
+import { CART_ROM_MAGIC, type CartManifest, type MachineManifest } from '../../rompack/format';
+import { MACHINE_REGION_NTSC_WORD, MACHINE_REGION_PAL_WORD } from '../model_registry';
 import {
 	GEO_CTRL_ABORT,
 	GEO_FAULT_ABORTED_BY_HOST,
@@ -333,6 +334,7 @@ import {
 	IO_SYS_HOST_FAULT_FLAGS,
 	IO_SYS_HOST_FAULT_STAGE,
 	IO_SYS_FRAME_MS,
+	IO_SYS_REGION,
 	IO_SYS_TIME_MS,
 	IO_VDP_DITHER,
 	IO_VDP_FAULT_CODE,
@@ -505,62 +507,17 @@ export function valueToString(value: Value, stringPool: StringPool): string {
 // end repeated-sequence-acceptable
 
 function buildMachineManifestTable(runtime: Runtime, manifest: MachineManifest): Table {
-	const table = new Table(0, 5);
+	const table = new Table(0, 3);
 	if (manifest.namespace.length > 0) {
 		table.set(runtime.internString('namespace'), runtime.internString(manifest.namespace));
 	}
+	table.set(runtime.internString('vdp_class'), runtime.internString(manifest.vdp_class));
 	if (manifest.render_size.width > 0 && manifest.render_size.height > 0) {
 		const renderSize = new Table(0, 2);
 		renderSize.set(runtime.internString('width'), manifest.render_size.width);
 		renderSize.set(runtime.internString('height'), manifest.render_size.height);
 		table.set(runtime.internString('render_size'), renderSize);
 	}
-	const specs = new Table(0, 5);
-	const specCpu = manifest.specs.cpu;
-	const cpu = new Table(0, 2);
-	if (specCpu.cpu_freq_hz) {
-		cpu.set(runtime.internString('cpu_freq_hz'), specCpu.cpu_freq_hz);
-	}
-	if (specCpu.imgdec_bytes_per_sec) {
-		cpu.set(runtime.internString('imgdec_bytes_per_sec'), specCpu.imgdec_bytes_per_sec);
-	}
-	specs.set(runtime.internString('cpu'), cpu);
-	const specDma = manifest.specs.dma;
-	const dma = new Table(0, 2);
-	if (specDma.dma_bytes_per_sec_iso) {
-		dma.set(runtime.internString('dma_bytes_per_sec_iso'), specDma.dma_bytes_per_sec_iso);
-	}
-	if (specDma.dma_bytes_per_sec_bulk) {
-		dma.set(runtime.internString('dma_bytes_per_sec_bulk'), specDma.dma_bytes_per_sec_bulk);
-	}
-	specs.set(runtime.internString('dma'), dma);
-	const vdp = new Table(0, 1);
-	vdp.set(runtime.internString('work_units_per_sec'), manifest.specs.vdp?.work_units_per_sec ?? DEFAULT_VDP_WORK_UNITS_PER_SEC);
-	specs.set(runtime.internString('vdp'), vdp);
-	const geo = new Table(0, 1);
-	geo.set(runtime.internString('work_units_per_sec'), manifest.specs.geo?.work_units_per_sec ?? DEFAULT_GEO_WORK_UNITS_PER_SEC);
-	specs.set(runtime.internString('geo'), geo);
-	const ram = manifest.specs.ram;
-	if (ram?.ram_bytes) {
-		const ramTable = new Table(0, 1);
-		ramTable.set(runtime.internString('ram_bytes'), ram.ram_bytes);
-		specs.set(runtime.internString('ram'), ramTable);
-	}
-	const vram = manifest.specs.vram;
-	if (vram && (vram.slot_bytes || vram.system_slot_bytes || vram.staging_bytes)) {
-		const vramTable = new Table(0, 3);
-		if (vram.slot_bytes) {
-			vramTable.set(runtime.internString('slot_bytes'), vram.slot_bytes);
-		}
-		if (vram.system_slot_bytes) {
-			vramTable.set(runtime.internString('system_slot_bytes'), vram.system_slot_bytes);
-		}
-		if (vram.staging_bytes) {
-			vramTable.set(runtime.internString('staging_bytes'), vram.staging_bytes);
-		}
-		specs.set(runtime.internString('vram'), vramTable);
-	}
-	table.set(runtime.internString('specs'), specs);
 	return table;
 }
 
@@ -1190,6 +1147,9 @@ export function seedLuaGlobals(runtime: Runtime): void {
 	runtime.setGlobal('sys_host_fault_stage', IO_SYS_HOST_FAULT_STAGE);
 	runtime.setGlobal('sys_time_ms', IO_SYS_TIME_MS);
 	runtime.setGlobal('sys_frame_ms', IO_SYS_FRAME_MS);
+	runtime.setGlobal('sys_region', IO_SYS_REGION);
+	runtime.setGlobal('sys_region_pal', MACHINE_REGION_PAL_WORD);
+	runtime.setGlobal('sys_region_ntsc', MACHINE_REGION_NTSC_WORD);
 	runtime.setGlobal('sys_host_fault_message', createNativeFunction('sys_host_fault_message', (_args, out) => {
 		const message = runtime.hostFault.getMessage();
 		out.push(message === null ? null : runtime.internString(message));

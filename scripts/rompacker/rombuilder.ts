@@ -1,7 +1,7 @@
 import { glsl } from "esbuild-plugin-glsl";
 // @ts-ignore
 import type { Stats } from 'fs';
-import { CART_ROM_HEADER_SIZE, CART_ROM_MAGIC_BYTES, PROGRAM_BOOT_HEADER_VERSION } from '../../machine/ts/rompack/format';
+import { CART_ROM_HEADER_SIZE, CART_ROM_MAGIC_BYTES, CART_VDP_CLASS_PSX, PROGRAM_BOOT_HEADER_VERSION } from '../../machine/ts/rompack/format';
 import { assertRomAssetSymbolsMatchToc, type RomAssetSymbol } from '../../machine/ts/rompack/asset_symbols';
 import type { asset_type, AudioMeta, BoundingBoxPrecalc, CartridgeLayerId, GLTFMesh, HitPolygonsPrecalc, ImgMeta, Polygon, ProgramBootHeader, RectBounds, RomAsset, RomManifest, vec2arr } from '../../machine/ts/rompack/format';
 import { collectRomAssetPayloadRanges } from '../../machine/ts/rompack/asset_layout';
@@ -1852,6 +1852,7 @@ export async function finalizeRompack(
 		headerBuffer.writeUInt32LE(options.programBoot.constRelocCount, 60);
 		headerBuffer.writeUInt32LE(metadataOffset, 64);
 		headerBuffer.writeUInt32LE(metadataLength, 68);
+		headerBuffer.writeUInt32LE(CART_VDP_CLASS_PSX, 72);
 	} finally {
 		writer.end();
 	}

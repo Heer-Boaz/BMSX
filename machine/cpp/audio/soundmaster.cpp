@@ -13,10 +13,6 @@ static constexpr f64 MIX_LOW_OVERHEAD_SEC = 0.004;
 static constexpr f64 MIX_BALANCED_OVERHEAD_SEC = 0.006;
 static constexpr f64 MIX_SAFE_OVERHEAD_SEC = 0.012;
 
-SoundMaster::SoundMaster()
-	: m_mixUfpsScaled(DEFAULT_UFPS_SCALED) {
-	recomputeMixTarget();
-}
 
 const Identifier& SoundMaster::registryId() const {
 	static const Identifier id = "sm";

@@ -4,6 +4,7 @@ import type { RuntimeVblankSnapshot } from './vblank';
 import type { Runtime } from './runtime';
 
 export type RuntimeSaveMachineState = {
+	machineRegionWord: number;
 	machine: MachineSaveState;
 	frameScheduler: FrameSchedulerStateSnapshot;
 	vblank: RuntimeVblankSnapshot;
@@ -11,6 +12,7 @@ export type RuntimeSaveMachineState = {
 
 export function captureRuntimeSaveMachineState(runtime: Runtime): RuntimeSaveMachineState {
 	return {
+		machineRegionWord: runtime.timing.regionWord,
 		machine: captureMachineSaveState(runtime.machine),
 		frameScheduler: runtime.frameScheduler.captureState(),
 		vblank: runtime.vblank.capture(),
@@ -18,6 +20,7 @@ export function captureRuntimeSaveMachineState(runtime: Runtime): RuntimeSaveMac
 }
 
 export function applyRuntimeSaveMachineState(runtime: Runtime, state: RuntimeSaveMachineState): void {
+	runtime.applyMachineRegionWord(state.machineRegionWord);
 	restoreMachineSaveState(runtime.machine, state.machine);
 	runtime.frameScheduler.restoreState(state.frameScheduler);
 	runtime.vblank.restore(state.vblank);

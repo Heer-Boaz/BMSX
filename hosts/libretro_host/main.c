@@ -37,10 +37,10 @@
 #define BMSX_HOST_HZ_SCALE 1000000ll
 #define BMSX_HOST_USEC_PER_SECOND 1000000ull
 #define BMSX_HOST_NSEC_PER_SECOND 1000000000ull
-#define BMSX_HOST_DEFAULT_UFPS_SCALED (50ll * BMSX_HOST_HZ_SCALE)
-#define BMSX_HOST_DEFAULT_TARGET_FPS ((double)BMSX_HOST_DEFAULT_UFPS_SCALED / (double)BMSX_HOST_HZ_SCALE)
-#define BMSX_HOST_DEFAULT_FRAME_USEC (BMSX_HOST_USEC_PER_SECOND * (uint64_t)BMSX_HOST_HZ_SCALE / (uint64_t)BMSX_HOST_DEFAULT_UFPS_SCALED)
-#define BMSX_HOST_DEFAULT_FRAME_NS (BMSX_HOST_NSEC_PER_SECOND * (uint64_t)BMSX_HOST_HZ_SCALE / (uint64_t)BMSX_HOST_DEFAULT_UFPS_SCALED)
+#define BMSX_HOST_INITIAL_PAL_UFPS_SCALED (50ll * BMSX_HOST_HZ_SCALE)
+#define BMSX_HOST_INITIAL_PAL_TARGET_FPS ((double)BMSX_HOST_INITIAL_PAL_UFPS_SCALED / (double)BMSX_HOST_HZ_SCALE)
+#define BMSX_HOST_INITIAL_PAL_FRAME_USEC (BMSX_HOST_USEC_PER_SECOND * (uint64_t)BMSX_HOST_HZ_SCALE / (uint64_t)BMSX_HOST_INITIAL_PAL_UFPS_SCALED)
+#define BMSX_HOST_INITIAL_PAL_FRAME_NS (BMSX_HOST_NSEC_PER_SECOND * (uint64_t)BMSX_HOST_HZ_SCALE / (uint64_t)BMSX_HOST_INITIAL_PAL_UFPS_SCALED)
 
 typedef struct LibretroCore {
 	void* handle;
@@ -217,8 +217,8 @@ static unsigned g_render_target_w = 0;
 static unsigned g_render_target_h = 0;
 static float g_geom_aspect = 0.0f;
 static bool g_geom_dirty = false;
-static uint64_t g_frame_usec = BMSX_HOST_DEFAULT_FRAME_USEC;
-static uint64_t g_frame_ns = BMSX_HOST_DEFAULT_FRAME_NS;
+static uint64_t g_frame_usec = BMSX_HOST_INITIAL_PAL_FRAME_USEC;
+static uint64_t g_frame_ns = BMSX_HOST_INITIAL_PAL_FRAME_NS;
 static uint64_t g_max_run_frames = 0;
 static uint64_t g_run_frame_count = 0;
 static bool g_audio_disabled = false;
@@ -249,7 +249,7 @@ struct fbdev_window {
 
 static struct fbdev_window g_fbwin;
 
-static double g_target_fps = BMSX_HOST_DEFAULT_TARGET_FPS;
+static double g_target_fps = BMSX_HOST_INITIAL_PAL_TARGET_FPS;
 
 #define MSG_MAX_TEXT 256
 #define MSG_MAX_LINES 4
@@ -1165,7 +1165,7 @@ static void msg_mark_dirty(void) {
 static unsigned msg_default_frames(void) {
 	double fps = g_target_fps;
 	if (fps <= 1.0) {
-		fps = BMSX_HOST_DEFAULT_TARGET_FPS;
+		fps = BMSX_HOST_INITIAL_PAL_TARGET_FPS;
 	}
 	unsigned frames = (unsigned)(fps * 2.0 + 0.5);
 	if (frames < 60) {

@@ -46,7 +46,7 @@ test('ROM asset symbols expose concrete memory addresses without runtime lookup'
 	]);
 
 	const source = buildRomAssetSymbolModuleSource(assets, true);
-	assert.match(source, /local data_stage_1_addr <const> = 16777290/);
+	assert.match(source, new RegExp(`local data_stage_1_addr <const> = ${CART_ROM_BASE + CART_ROM_HEADER_SIZE + 2}`));
 	assert.match(source, /local data_stage_1_len <const> = 3/);
 	assert.match(source, /local bin_raw_bin_addr <const> = 16777728/);
 	assert.doesNotMatch(source, /romlabel/);

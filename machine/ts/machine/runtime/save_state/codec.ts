@@ -1024,6 +1024,7 @@ function decodeMachineSaveState(value: unknown, label: string): MachineSaveState
 
 function encodeRuntimeSaveMachineState(state: RuntimeSaveMachineState): RuntimeSaveMachineState {
 	return {
+		machineRegionWord: state.machineRegionWord,
 		machine: encodeMachineSaveState(state.machine),
 		frameScheduler: encodeFrameSchedulerState(state.frameScheduler),
 		vblank: encodeRuntimeVblankState(state.vblank),
@@ -1033,6 +1034,7 @@ function encodeRuntimeSaveMachineState(state: RuntimeSaveMachineState): RuntimeS
 function decodeRuntimeSaveMachineState(value: unknown, label: string): RuntimeSaveMachineState {
 	const object = requireObject(value, label);
 	return {
+		machineRegionWord: requireObjectKey(object, 'machineRegionWord', label, 'machineState.machineRegionWord') as number,
 		machine: decodeMachineSaveState(requireObjectKey(object, 'machine', label, 'machineState.machine'), 'machineState.machine'),
 		frameScheduler: decodeFrameSchedulerState(requireObjectKey(object, 'frameScheduler', label, 'machineState.frameScheduler'), 'machineState.frameScheduler'),
 		vblank: decodeRuntimeVblankState(requireObjectKey(object, 'vblank', label, 'machineState.vblank'), 'machineState.vblank'),

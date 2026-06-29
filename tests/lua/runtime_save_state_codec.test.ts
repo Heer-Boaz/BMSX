@@ -78,6 +78,7 @@ function createRuntimeSaveState(): RuntimeSaveState {
 	const audioSlotSourceBytes = Array.from({ length: APU_SLOT_COUNT }, (_, slot) => new Uint8Array(slot === 1 ? [9, 8, 7, 6] : []));
 	return {
 		machineState: {
+			machineRegionWord: 1,
 			machine: {
 				memory: {
 					ram: new Uint8Array([1, 2, 3, 4]),
@@ -297,6 +298,7 @@ test('runtime save-state codec preserves string pool ROM/runtime ownership', () 
 
 	const decoded = decodeRuntimeSaveState(encodeRuntimeSaveState(state));
 
+	assert.equal(decoded.machineState.machineRegionWord, state.machineState.machineRegionWord);
 	assert.deepEqual(decoded.machineState.machine.stringPool.entries, state.machineState.machine.stringPool.entries);
 	assert.deepEqual(decoded.machineState.machine.irq, state.machineState.machine.irq);
 	assert.deepEqual(decoded.machineState.machine.geometry, state.machineState.machine.geometry);

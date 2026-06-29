@@ -18,12 +18,12 @@ class MicrotaskQueue;
 class InputControllerInputSource;
 
 struct MachineTiming {
-	i64 cpuHz = 0;
-	i64 dmaBytesPerSecIso = 0;
-	i64 dmaBytesPerSecBulk = 0;
-	i64 imgDecBytesPerSec = 0;
-	int geoWorkUnitsPerSec = 0;
-	int vdpWorkUnitsPerSec = 0;
+	i64 cpuHz;
+	i64 dmaBytesPerSecIso;
+	i64 dmaBytesPerSecBulk;
+	i64 imgDecBytesPerSec;
+	int geoWorkUnitsPerSec;
+	int vdpWorkUnitsPerSec;
 };
 
 class Machine {

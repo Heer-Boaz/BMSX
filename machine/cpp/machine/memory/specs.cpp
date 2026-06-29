@@ -1,68 +1,24 @@
 #include "machine/memory/specs.h"
 
+#include "machine/model_registry.h"
 #include "machine/specs.h"
 #include "rompack/format.h"
 
 #include <iomanip>
 #include <iostream>
-#include <stdexcept>
-#include <string>
 
 namespace bmsx {
 
-static std::runtime_error runtimeMemorySpecFault(const std::string& message) {
-	return std::runtime_error("Runtime fault: " + message);
-}
-
-MemoryMapSpecs resolveRuntimeMemoryMapSpecs(const MachineManifest& machine, const MachineManifest& systemMachine, uint32_t systemSlotBytes) {
+MemoryMapSpecs resolveRuntimeMemoryMapSpecs(const MachineManifest& machine) {
 	MemoryMapSpecs config;
-	if (machine.slotBytes) {
-		const i32 value = *machine.slotBytes;
-		if (value <= 0) {
-			throw std::runtime_error("[RuntimeMemorySpecs] slot_bytes must be greater than 0.");
-		}
-		config.slotBytes = static_cast<uint32_t>(value);
-	}
-	if (systemMachine.systemSlotBytes) {
-		const i32 value = *systemMachine.systemSlotBytes;
-		if (value <= 0) {
-			throw std::runtime_error("[RuntimeMemorySpecs] system_slot_bytes must be greater than 0.");
-		}
-		config.systemSlotBytes = static_cast<uint32_t>(value);
-	} else {
-		if (systemSlotBytes == 0) {
-			throw runtimeMemorySpecFault("system slot slot bytes must be a positive integer.");
-		}
-		config.systemSlotBytes = systemSlotBytes;
-	}
-	if (machine.stagingBytes) {
-		const i32 value = *machine.stagingBytes;
-		if (value <= 0) {
-			throw std::runtime_error("[RuntimeMemorySpecs] staging_bytes must be greater than 0.");
-		}
-		config.stagingBytes = static_cast<uint32_t>(value);
-	}
+	config.slotBytes = static_cast<uint32_t>(PSX_MODEL_PROFILE.slotBytes);
+	config.systemSlotBytes = static_cast<uint32_t>(PSX_MODEL_PROFILE.slotBytes);
+	config.stagingBytes = static_cast<uint32_t>(PSX_MODEL_PROFILE.stagingBytes);
 	const RuntimeRenderSize renderSize = resolveRuntimeRenderSize(machine);
 	const uint32_t frameBufferWidth = static_cast<uint32_t>(renderSize.width);
 	const uint32_t frameBufferHeight = static_cast<uint32_t>(renderSize.height);
 	config.frameBufferBytes = frameBufferWidth * frameBufferHeight * 4u;
-
-	if (machine.ramBytes) {
-		const i32 value = *machine.ramBytes;
-		if (value <= 0) {
-			throw std::runtime_error("[RuntimeMemorySpecs] ram_bytes must be greater than 0.");
-		}
-		const uint32_t resolved = static_cast<uint32_t>(value);
-		if (resolved < MIN_RAM_SIZE) {
-			throw runtimeMemorySpecFault("machine.specs.ram.ram_bytes must be at least required size.");
-		}
-		if (resolved > MAX_RAM_SIZE) {
-			throw runtimeMemorySpecFault("machine.specs.ram.ram_bytes exceeds RAM address window.");
-		}
-		config.ramBytes = resolved;
-	} else {
-		config.ramBytes = DEFAULT_RAM_SIZE;
-	}
+	config.ramBytes = static_cast<uint32_t>(PSX_MODEL_PROFILE.ramBytes);
 	const double ramMiB = static_cast<double>(config.ramBytes) / (1024.0 * 1024.0);
 	const uint32_t dynamicRamBytes = config.ramBytes - MIN_RAM_SIZE;
 	std::cerr

@@ -60,71 +60,20 @@ static void updateFlippedBoundingBox(ImgMeta& meta) {
 
 static const BinValue* findObjectField(const BinObject& obj, const char* key);
 
-static const BinObject& requireObject(const BinObject& obj, const char* key, const char* label) {
+static std::string parseRequiredString(const BinObject& obj, const char* key, const char* label) {
 	auto it = obj.find(key);
-	if (it == obj.end() || !it->second.isObject()) {
+	if (it == obj.end() || !it->second.isString()) {
 		throw std::runtime_error(std::string("[RuntimeRomPackage] ") + label + " is required.");
 	}
-	return it->second.asObject();
+	return it->second.asString();
 }
 
-static i64 parseRequiredPositiveI64(const BinObject& obj, const char* key, const char* label) {
-	auto it = obj.find(key);
-	if (it == obj.end()) {
-		throw std::runtime_error(std::string("[RuntimeRomPackage] ") + label + " is required.");
+static MachineVdpClass parseMachineVdpClass(const BinObject& machineObj) {
+	const std::string vdpClass = parseRequiredString(machineObj, "vdp_class", "machine.vdp_class");
+	if (vdpClass == "psx") {
+		return MachineVdpClass::Psx;
 	}
-	const double number = it->second.toNumber();
-	const i64 value = static_cast<i64>(number);
-	if (number != static_cast<double>(value) || value <= 0) {
-		throw std::runtime_error(std::string("[RuntimeRomPackage] ") + label + " must be a positive integer.");
-	}
-	return value;
-}
-
-static void parseMachineSpecs(const BinObject& machineObj, MachineManifest& manifest) {
-	manifest.ufpsScaled = parseRequiredPositiveI64(machineObj, "ufps", "machine.ufps");
-	const auto& specsObj = requireObject(machineObj, "specs", "machine.specs");
-	const auto& cpuObj = requireObject(specsObj, "cpu", "machine.specs.cpu");
-	manifest.cpuHz = parseRequiredPositiveI64(cpuObj, "cpu_freq_hz", "machine.specs.cpu.cpu_freq_hz");
-	manifest.imgDecBytesPerSec = parseRequiredPositiveI64(cpuObj, "imgdec_bytes_per_sec", "machine.specs.cpu.imgdec_bytes_per_sec");
-	const auto& dmaObj = requireObject(specsObj, "dma", "machine.specs.dma");
-	manifest.dmaBytesPerSecIso = parseRequiredPositiveI64(dmaObj, "dma_bytes_per_sec_iso", "machine.specs.dma.dma_bytes_per_sec_iso");
-	manifest.dmaBytesPerSecBulk = parseRequiredPositiveI64(dmaObj, "dma_bytes_per_sec_bulk", "machine.specs.dma.dma_bytes_per_sec_bulk");
-	const BinValue* vdpValue = findObjectField(specsObj, "vdp");
-	if (vdpValue && vdpValue->isObject()) {
-		const auto& vdpObj = vdpValue->asObject();
-		if (vdpObj.count("work_units_per_sec")) {
-			manifest.vdpWorkUnitsPerSec = parseRequiredPositiveI64(vdpObj, "work_units_per_sec", "machine.specs.vdp.work_units_per_sec");
-		}
-	}
-	const BinValue* geoValue = findObjectField(specsObj, "geo");
-	if (geoValue && geoValue->isObject()) {
-		const auto& geoObj = geoValue->asObject();
-		if (geoObj.count("work_units_per_sec")) {
-			manifest.geoWorkUnitsPerSec = parseRequiredPositiveI64(geoObj, "work_units_per_sec", "machine.specs.geo.work_units_per_sec");
-		}
-	}
-
-	const BinValue* ramValue = findObjectField(specsObj, "ram");
-	if (ramValue && ramValue->isObject()) {
-		const auto& ramObj = ramValue->asObject();
-		if (ramObj.count("ram_bytes")) {
-			manifest.ramBytes = ramObj.at("ram_bytes").toI32();
-		}
-	}
-	const BinValue* vramValue = findObjectField(specsObj, "vram");
-	if (vramValue && vramValue->isObject()) {
-		const auto& vramObj = vramValue->asObject();
-		if (vramObj.count("slot_bytes")) {
-			manifest.slotBytes = vramObj.at("slot_bytes").toI32();
-		}
-		if (vramObj.count("system_slot_bytes")) {
-			manifest.systemSlotBytes = vramObj.at("system_slot_bytes").toI32();
-		}
-		if (vramObj.count("staging_bytes")) {
-			manifest.stagingBytes = vramObj.at("staging_bytes").toI32();
-		}
-	}
+	throw std::runtime_error("[RuntimeRomPackage] Unsupported machine.vdp_class.");
 }
 
 static void logMemSnapshot(const char* label) {
@@ -1213,15 +1162,21 @@ static void decodeCartridgeMetadata(const u8* romData, const CartRomHeader& head
 	if (manifestObj.count("description")) cartManifest.description = manifestObj.at("description").asString();
 	romPackage.cartManifest = cartManifest;
 
-	if (manifestObj.count("machine") && manifestObj.at("machine").isObject()) {
-		const auto& machineObj = manifestObj.at("machine").asObject();
-		if (machineObj.count("namespace")) romPackage.machine.namespaceName = machineObj.at("namespace").asString();
-		parseMachineSpecs(machineObj, romPackage.machine);
-		if (machineObj.count("render_size") && machineObj.at("render_size").isObject()) {
-			const auto& vpObj = machineObj.at("render_size").asObject();
-			if (vpObj.count("width")) romPackage.machine.viewportWidth = vpObj.at("width").toI32();
-			if (vpObj.count("height")) romPackage.machine.viewportHeight = vpObj.at("height").toI32();
-		}
+	const auto machineIt = manifestObj.find("machine");
+	if (machineIt == manifestObj.end() || !machineIt->second.isObject()) {
+		throw BMSX_RUNTIME_ERROR("ROM manifest payload is missing machine object.");
+	}
+	const auto& machineObj = machineIt->second.asObject();
+	if (machineObj.count("namespace")) romPackage.machine.namespaceName = machineObj.at("namespace").asString();
+	const MachineVdpClass manifestVdpClass = parseMachineVdpClass(machineObj);
+	if (manifestVdpClass != header.vdpClass) {
+		throw std::runtime_error("[RuntimeRomPackage] ROM header VDP class does not match manifest machine.vdp_class.");
+	}
+	romPackage.machine.vdpClass = header.vdpClass;
+	if (machineObj.count("render_size") && machineObj.at("render_size").isObject()) {
+		const auto& vpObj = machineObj.at("render_size").asObject();
+		if (vpObj.count("width")) romPackage.machine.viewportWidth = vpObj.at("width").toI32();
+		if (vpObj.count("height")) romPackage.machine.viewportHeight = vpObj.at("height").toI32();
 	}
 
 	if (manifestObj.count("lua") && manifestObj.at("lua").isObject()) {
