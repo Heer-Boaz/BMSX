@@ -3,7 +3,7 @@ require('globals')
 local story<const> = require('story')
 local timeline_builders<const> = require('timeline_builders')
 local stagger<const> = require('stagger')
-local round_number<const> = require('bios/common/numeric').round_number
+local round_number<const> = require('bios/util/round_to_nearest')
 local cart_input<const> = require('cartlib/input/player')
 
 local stat_label<const> = function(stat_id)

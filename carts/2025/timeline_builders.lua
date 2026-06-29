@@ -1,6 +1,6 @@
 local builders<const> = {}
 require('globals')
-local round_number<const> = require('bios/common/numeric').round_number
+local round_number<const> = require('bios/util/round_to_nearest')
 
 local shake_hash<const> = function(seed)
 	seed = seed ~ (seed << 13)
