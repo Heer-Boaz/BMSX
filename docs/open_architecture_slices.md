@@ -652,8 +652,8 @@ Acceptatie:
 - opcode-mix rapportage per module/proto is beschikbaar voor audit (open)
 - gameplay/dynamic lane blijft mogelijk, maar niet voor console ABI of hot path
 - firmware trig gebruikt geen compiler-known namen, host `Math.*`, nieuwe opcode
-  of native builtin in de runtime; lookup gebeurt via `.rodata` en normale
-  integer/pointer instructies
+  of native builtin in de runtime; `bios/util/sincos_turn32` is een root
+  function module met `.rodata` en normale integer/pointer instructies
 - de guest `math` API wordt door `bios/math.lua` geleverd en `easing` door
   `bios/easing.lua`; de machine-native TS/C++ `math.*` en `easing.*`
   callbacktabellen zijn verwijderd zodat shipped guest-code niet meer via host
@@ -686,7 +686,9 @@ Status:
   dynamic call targets en string constants in de compiler-producer voordat die
   vormen als opcodes worden geëmit; de post-codegen gate blijft de invariant
   voor resterende dynamic Lua-opcodes zoals table/closure/vararg/concat/object-length
-- static calls blijven expliciet `export_proto` link-symbolen
+- static calls blijven expliciet `export_proto` link-symbolen;
+  `bios/util/sincos_turn32` is nu ook een root function module, zodat firmware
+  trig geen compile-time export table-vorm meer nodig heeft
 - dit is nog geen volledig primair machine-code ABI-contract: `CPU.Value` bestaat
   nog voor de dynamic Lua-lane en er zijn nog ongemigreerde cart/gameplay targets
 

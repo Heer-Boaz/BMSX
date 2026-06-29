@@ -157,18 +157,18 @@ return round_to_nearest(1.4), round_to_nearest(1.6), round_to_nearest(-1.4), rou
 test('sincos_turn32 is a const function module backed by visible rodata', () => {
 	const moduleSource = readFileSync('machine/firmware/bios/util/sincos_turn32.lua', 'utf8');
 	const entrySource = `
-local s0<const>, c0<const> = require("${SINCOS_TURN32_PATH}").sincos_turn32(0)
-local s90<const>, c90<const> = require("${SINCOS_TURN32_PATH}").sincos_turn32(1073741824)
-local s180<const>, c180<const> = require("${SINCOS_TURN32_PATH}").sincos_turn32(2147483648)
-local s270<const>, c270<const> = require("${SINCOS_TURN32_PATH}").sincos_turn32(3221225472)
-local s360<const>, c360<const> = require("${SINCOS_TURN32_PATH}").sincos_turn32(4294967296)
-local s45<const>, c45<const> = require("${SINCOS_TURN32_PATH}").sincos_turn32(536870912)
-local sn45<const>, cn45<const> = require("${SINCOS_TURN32_PATH}").sincos_turn32(-536870912)
+local s0<const>, c0<const> = require("${SINCOS_TURN32_PATH}")(0)
+local s90<const>, c90<const> = require("${SINCOS_TURN32_PATH}")(1073741824)
+local s180<const>, c180<const> = require("${SINCOS_TURN32_PATH}")(2147483648)
+local s270<const>, c270<const> = require("${SINCOS_TURN32_PATH}")(3221225472)
+local s360<const>, c360<const> = require("${SINCOS_TURN32_PATH}")(4294967296)
+local s45<const>, c45<const> = require("${SINCOS_TURN32_PATH}")(536870912)
+local sn45<const>, cn45<const> = require("${SINCOS_TURN32_PATH}")(-536870912)
 return s0, c0, s90, c90, s180, c180, s270, c270, s360, c360, s45, c45, sn45, cn45
 `;
 	const compiled = compileWithModule(entrySource, SINCOS_TURN32_PATH, moduleSource);
 	const image = encodeCompiledProgramImage(compiled);
-	const slotName = 'bios__util__sincos_turn32__sincos_turn32';
+	const slotName = 'bios__util__sincos_turn32';
 	assert.equal(compiled.moduleProtoMap.has(SINCOS_TURN32_PATH), false);
 	assert.equal(compiled.metadata.exportProtoIdBySlot[slotName]?.includes('/static:'), true);
 	assert.equal(compiled.constRelocs.some(reloc => reloc.kind === 'export_proto' && reloc.symbol === slotName), true);
@@ -199,7 +199,7 @@ return s0, c0, s90, c90, s180, c180, s270, c270, s360, c360, s45, c45, sn45, cn4
 test('sincos_turn32 rodata relocations survive O3 constant folding', () => {
 	const moduleSource = readFileSync('machine/firmware/bios/util/sincos_turn32.lua', 'utf8');
 	const entrySource = `
-return require("${SINCOS_TURN32_PATH}").sincos_turn32(0)
+return require("${SINCOS_TURN32_PATH}")(0)
 `;
 	const compiled = compileWithModule(entrySource, SINCOS_TURN32_PATH, moduleSource, 3);
 	assert.deepEqual(runColdCompiled(compiled), [0, 65536]);
@@ -208,11 +208,11 @@ return require("${SINCOS_TURN32_PATH}").sincos_turn32(0)
 test('const function export aliases stay compile-time call targets', () => {
 	const moduleSource = readFileSync('machine/firmware/bios/util/sincos_turn32.lua', 'utf8');
 	const entrySource = `
-local sincos_turn32<const> = require("${SINCOS_TURN32_PATH}").sincos_turn32
+local sincos_turn32<const> = require("${SINCOS_TURN32_PATH}")
 return sincos_turn32(0)
 `;
 	const compiled = compileWithModule(entrySource, SINCOS_TURN32_PATH, moduleSource, 3);
-	const slotName = 'bios__util__sincos_turn32__sincos_turn32';
+	const slotName = 'bios__util__sincos_turn32';
 	assert.equal(compiled.constRelocs.some(reloc => reloc.kind === 'export_proto' && reloc.symbol === slotName), true);
 	const disasm = disassembleWithoutBootVectors(compiled);
 	assert.doesNotMatch(disasm, /\bGETGL\b|\bGETFIELD\b/);

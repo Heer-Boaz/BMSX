@@ -39,7 +39,7 @@ local interval_fraction_mask<const> = 0x3fffff
 local interval_shift<const> = 22
 local q16_one<const> = 65536
 
-local sincos_turn32<const> = function(angle)
+return function(angle)
 	local quadrant<const> = (angle >> 30) & 3
 	local phase<const> = angle & 0x3fffffff
 	local lut<const>: *word = sin_quarter_lut
@@ -71,7 +71,3 @@ local sincos_turn32<const> = function(angle)
 	end
 	return 0 - reverse, forward
 end
-
-return {
-	sincos_turn32 = sincos_turn32,
-}

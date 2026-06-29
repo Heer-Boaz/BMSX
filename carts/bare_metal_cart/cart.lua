@@ -4,7 +4,7 @@ local cam_view_terms<const>   = camobj.cam_view_terms
 local cam_proj_terms<const>   = camobj.cam_proj_terms
 local cam_screen_look<const>  = camobj.cam_screen_look
 local cam_move<const>         = camobj.cam_move
-local sincos_turn32<const>    = require('bios/util/sincos_turn32').sincos_turn32
+local sincos_turn32<const>    = require('bios/util/sincos_turn32')
 
 local vdp_stream_base<const> = sys_vdp_stream_base
 local vram_staging_base<const> = sys_vram_staging_base

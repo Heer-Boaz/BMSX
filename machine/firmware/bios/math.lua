@@ -1,5 +1,5 @@
 local numeric<const> = require('bios/common/numeric')
-local sincos_turn32<const> = require('bios/util/sincos_turn32').sincos_turn32
+local sincos_turn32<const> = require('bios/util/sincos_turn32')
 
 local pi<const> = 3.141592653589793238462643383279502884
 local half_pi<const> = pi * 0.5
