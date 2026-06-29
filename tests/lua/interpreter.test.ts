@@ -171,3 +171,17 @@ return pass(22)
 	assert.equal(result[2], true);
 	assert.equal(result[3], 6);
 });
+
+test('multi-expression returns preserve trailing open vararg nil slots', () => {
+	const result = run(`
+local function take(a, ...)
+	return a, ...
+end
+return take(0, 11, nil, 7)
+`);
+	assert.equal(result.length, 4);
+	assert.equal(result[0], 0);
+	assert.equal(result[1], 11);
+	assert.equal(result[2], null);
+	assert.equal(result[3], 7);
+});

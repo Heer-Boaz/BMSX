@@ -3381,9 +3381,17 @@ class FunctionBuilder {
 			this.emitABC(OpCode.RET, base, wantsMulti ? 0 : 1, 0);
 			return;
 		}
+		const lastIndex = expressions.length - 1;
+		const lastWantsMulti = this.isMultiReturnExpression(expressions[lastIndex]);
 		this.reserveTempRange(base, expressions.length);
-		for (let i = 0; i < expressions.length; i += 1) {
+		const fixedCount = lastWantsMulti ? lastIndex : expressions.length;
+		for (let i = 0; i < fixedCount; i += 1) {
 			this.compileExpressionInto(expressions[i], base + i, 1);
+		}
+		if (lastWantsMulti) {
+			this.compileExpressionInto(expressions[lastIndex], base + lastIndex, 0);
+			this.emitABC(OpCode.RET, base, 0, 0);
+			return;
 		}
 		this.emitABC(OpCode.RET, base, expressions.length, 0);
 	}
