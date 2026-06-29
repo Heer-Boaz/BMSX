@@ -1,6 +1,9 @@
 local stagger<const> = {}
 require('globals')
-local linear<const> = easing.linear
+local linear<const> = require('bios/easing').linear
+local ease_out_quad<const> = require('bios/easing').ease_out_quad
+local ease_out_back<const> = require('bios/easing').ease_out_back
+local smoothstep<const> = require('bios/easing').smoothstep
 local stagger_timeline_prefix<const> = 'p3.stagger.'
 
 local presets<const> = {
@@ -52,15 +55,15 @@ end
 
 local resolve_ease<const> = function(kind)
 	if kind == 'quad' then
-		return easing.ease_out_quad
+		return ease_out_quad
 	end
 	if kind == 'back' then
-		return easing.ease_out_back
+		return ease_out_back
 	end
 	if kind == 'quart' then
 		return ease_out_quart
 	end
-	return easing.smoothstep
+	return smoothstep
 end
 
 local tween_u<const> = function(time, start_time, duration, ease)

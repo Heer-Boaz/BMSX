@@ -7,6 +7,7 @@ local fsmlibrary<const> = require('cartlib/fsm/library')
 local wrap_text_lines<const> = require('bios/util/wrap_text_lines')
 local vdp_rpu_quads<const> = require('system/vdp_rpu_quads')
 local font_module<const> = require('cartlib/font')
+local smoothstep<const> = require('bios/easing').smoothstep
 
 local textobject<const> = {}
 textobject.__index = textobject
@@ -142,7 +143,7 @@ local build_highlight_move_frames<const> = function(params)
 	local overshoot_h<const> = to_h + ((to_h - from_h) * highlight_move_overshoot)
 	for i = 0, highlight_move_in_frames - 1 do
 		local u<const> = i / (highlight_move_in_frames - 1)
-		local eased<const> = easing.smoothstep(u)
+		local eased<const> = smoothstep(u)
 		frames[#frames + 1] = {
 			highlight_anim_y = from_y + ((overshoot_y - from_y) * eased),
 			highlight_anim_h = from_h + ((overshoot_h - from_h) * eased),
@@ -150,7 +151,7 @@ local build_highlight_move_frames<const> = function(params)
 	end
 	for i = 0, highlight_move_settle_frames - 1 do
 		local u<const> = i / (highlight_move_settle_frames - 1)
-		local eased<const> = easing.smoothstep(u)
+		local eased<const> = smoothstep(u)
 		frames[#frames + 1] = {
 			highlight_anim_y = overshoot_y + ((to_y - overshoot_y) * eased),
 			highlight_anim_h = overshoot_h + ((to_h - overshoot_h) * eased),
@@ -215,7 +216,7 @@ fsmlibrary.register(textobject_fsm_id, {
 						period = 0.9,
 						phase = 0.12,
 						wave = 'pingpong',
-						ease = easing.smoothstep,
+						ease = smoothstep,
 					},
 					{
 						kind = 'wave',

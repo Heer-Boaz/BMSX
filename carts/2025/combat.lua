@@ -5,6 +5,10 @@ local timeline_builders<const> = require('timeline_builders')
 local stagger<const> = require('stagger')
 local round_number<const> = require('bios/util/round_to_nearest')
 local cart_input<const> = require('cartlib/input/player')
+local smoothstep<const> = require('bios/easing').smoothstep
+local pingpong01<const> = require('bios/easing').pingpong01
+local sin<const> = require('bios/math').sin
+local pi<const> = require('bios/math').pi
 
 local stat_label<const> = function(stat_id)
 	if stat_id == 'planning' then
@@ -30,10 +34,10 @@ local build_all_out_prompt_portrait_frames<const> = function(params)
 	local settle_frames<const> = params.settle_frames
 	for i = 0, in_frames - 1 do
 		local u<const> = i / (in_frames - 1)
-		local eased<const> = easing.smoothstep(u)
+		local eased<const> = smoothstep(u)
 		local x<const> = params.from_x + ((params.to_x - params.from_x) * eased)
 		local y<const> = params.from_y + ((params.to_y - params.from_y) * eased)
-		local scale<const> = params.from_scale + ((params.overshoot_scale - params.from_scale) * easing.smoothstep(u))
+		local scale<const> = params.from_scale + ((params.overshoot_scale - params.from_scale) * smoothstep(u))
 		frames[#frames + 1] = {
 			x = x,
 			y = y,
@@ -42,9 +46,9 @@ local build_all_out_prompt_portrait_frames<const> = function(params)
 	end
 	for i = 0, settle_frames - 1 do
 		local u<const> = i / (settle_frames - 1)
-		local eased<const> = easing.smoothstep(u)
+		local eased<const> = smoothstep(u)
 		local scale<const> = params.overshoot_scale + ((params.to_scale - params.overshoot_scale) * eased)
-		local bob<const> = math.sin(u * math.pi) * params.settle_bob
+		local bob<const> = sin(u * pi) * params.settle_bob
 		frames[#frames + 1] = {
 			x = params.to_x,
 			y = params.to_y + bob,
@@ -131,8 +135,8 @@ local refresh_combat_parallax<const> = function(self)
 end
 
 local combat_hover_track<const> = function(target, params, _event, time_seconds)
-	local w<const> = easing.pingpong01((time_seconds / combat_monster_hover_period_seconds) + 0.25)
-	local hover<const> = (easing.smoothstep(w) - 0.5) * 2 * combat_monster_hover_amp
+	local w<const> = pingpong01((time_seconds / combat_monster_hover_period_seconds) + 0.25)
+	local hover<const> = (smoothstep(w) - 0.5) * 2 * combat_monster_hover_amp
 	local momentum<const> = target.combat_parallax_momentum_steps
 	params.monster.y = params.monster_base_y + hover
 	target.combat_parallax_offset_base_y = ((11 - momentum) / 10) - hover

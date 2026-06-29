@@ -1,4 +1,7 @@
 local timeline_apply<const> = {}
+local pingpong01<const> = require('bios/easing').pingpong01
+local sin<const> = require('bios/math').sin
+local pi<const> = require('bios/math').pi
 local lua_reserved_word<const> = {
 	['and'] = true,
 	['break'] = true,
@@ -119,7 +122,7 @@ local compile_track_runner<const> = function(track)
 		local set_value<const> = compile_target_setter(track.path)
 		if track.wave == 'pingpong' then
 			return function(target, params, _event, time_seconds)
-				local w<const> = easing.pingpong01((time_seconds * period_inv) + phase)
+				local w<const> = pingpong01((time_seconds * period_inv) + phase)
 				local eased<const> = ease ~= nil and ease(w) or w
 				local base_value<const> = base_is_param and params[base] or base
 				set_value(target, base_value + ((eased - 0.5) * 2 * amp))
@@ -127,7 +130,7 @@ local compile_track_runner<const> = function(track)
 		end
 		if track.wave == 'sin' then
 			return function(target, params, _event, time_seconds)
-				local w<const> = (math.sin(((time_seconds * period_inv) + phase) * (math.pi * 2)) + 1) * 0.5
+				local w<const> = (sin(((time_seconds * period_inv) + phase) * (pi * 2)) + 1) * 0.5
 				local eased<const> = ease ~= nil and ease(w) or w
 				local base_value<const> = base_is_param and params[base] or base
 				set_value(target, base_value + ((eased - 0.5) * 2 * amp))

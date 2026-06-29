@@ -1,6 +1,13 @@
 local builders<const> = {}
 require('globals')
 local round_number<const> = require('bios/util/round_to_nearest')
+local smoothstep<const> = require('bios/easing').smoothstep
+local pingpong01<const> = require('bios/easing').pingpong01
+local ease_in_out_quad<const> = require('bios/easing').ease_in_out_quad
+local arc01<const> = require('bios/easing').arc01
+local ease_out_quad<const> = require('bios/easing').ease_out_quad
+local ease_in_quad<const> = require('bios/easing').ease_in_quad
+local ease_out_back<const> = require('bios/easing').ease_out_back
 
 local shake_hash<const> = function(seed)
 	seed = seed ~ (seed << 13)
@@ -22,7 +29,7 @@ local panel_motion<const> = function(frame_index, panel, in_frames, hold_frames,
 	end
 	if t < in_frames then
 		local u<const> = t / (in_frames - 1)
-		local eased<const> = easing.smoothstep(u)
+		local eased<const> = smoothstep(u)
 		return panel.x_in + (panel.x_hold - panel.x_in) * eased, panel.y, eased
 	end
 	if t < (in_frames + hold_frames) then
@@ -31,7 +38,7 @@ local panel_motion<const> = function(frame_index, panel, in_frames, hold_frames,
 	local out_index<const> = t - in_frames - hold_frames
 	if out_index < out_frames then
 		local u<const> = out_index / (out_frames - 1)
-		local eased<const> = easing.smoothstep(u)
+		local eased<const> = smoothstep(u)
 		return panel.x_hold + (panel.x_out - panel.x_hold) * eased, panel.y, 1 - eased
 	end
 	return panel.x_out, panel.y, 0
@@ -69,18 +76,18 @@ function builders.build_all_out_shake(total_frames)
 		local intensity = 1
 		if frame_index < ramp_in_frames then
 			local u<const> = frame_index / (ramp_in_frames - 1)
-			intensity = easing.smoothstep(u)
+			intensity = smoothstep(u)
 		elseif frame_index >= ramp_out_start then
 			local u<const> = (total_frames - 1 - frame_index) / (ramp_out_frames - 1)
-			intensity = easing.smoothstep(u)
+			intensity = smoothstep(u)
 		end
 
 		local swing_u<const> = (frame_index / swing_period_frames) + 0.15
-		local swing = easing.pingpong01(swing_u)
-		swing = (easing.ease_in_out_quad(swing) - 0.5) * 2
+		local swing = pingpong01(swing_u)
+		swing = (ease_in_out_quad(swing) - 0.5) * 2
 
 		local bob_u<const> = (frame_index / (swing_period_frames * 0.75)) + 0.37
-		local bob<const> = (easing.smoothstep(easing.pingpong01(bob_u)) - 0.5) * 2
+		local bob<const> = (smoothstep(pingpong01(bob_u)) - 0.5) * 2
 
 		local dx = (swing * swing_amp_x)
 		local dy = (bob * swing_amp_y)
@@ -95,7 +102,7 @@ function builders.build_all_out_shake(total_frames)
 		local accent_at<const> = segment_start + (shake_hash(segment_index * 73 + 11) % hit_window)
 		if frame_index >= accent_at and frame_index < (accent_at + hit_len) then
 			local u<const> = (frame_index - accent_at) / (hit_len - 1)
-			local hit_u<const> = easing.arc01(u)
+			local hit_u<const> = arc01(u)
 			local strength<const> = 0.7 + (((shake_hash(segment_index * 53 + 7) & 0xff) / 0xff) * 0.7)
 			dx = dx + (shake_signed(segment_index * 199 + frame_index * 17 + 5) * hit_amp_x * hit_u * strength)
 			dy = dy + (shake_signed(segment_index * 211 + frame_index * 19 + 9) * hit_amp_y * hit_u * strength)
@@ -103,7 +110,7 @@ function builders.build_all_out_shake(total_frames)
 
 		if frame_index < boom_frames then
 			local u<const> = frame_index / (boom_frames - 1)
-			local boom<const> = 1 - easing.smoothstep(u)
+			local boom<const> = 1 - smoothstep(u)
 			dx = dx + (shake_signed(5000 + frame_index * 19 + 1) * boom_amp_x * boom)
 			dy = dy + (shake_signed(6000 + frame_index * 23 + 5) * boom_amp_y * boom)
 		end
@@ -118,7 +125,7 @@ function builders.build_combat_fade_frames()
 		local a = 1
 		if frame_index < combat_fade_out_frames then
 			local u<const> = frame_index / (combat_fade_out_frames - 1)
-			a = easing.smoothstep(u)
+			a = smoothstep(u)
 		end
 		local ab<const> = ((a * 255 + 0.5) // 1) & 0xff
 		frames[#frames + 1] = {
@@ -144,8 +151,8 @@ function builders.build_combat_focus_frames(params)
 
 	for i = 0, combat_focus_zoom_frames - 1 do
 		local u<const> = i / (combat_focus_zoom_frames - 1)
-		local eased<const> = easing.smoothstep(u)
-		local turn<const> = easing.arc01(u)
+		local eased<const> = smoothstep(u)
+		local turn<const> = arc01(u)
 		local s<const> = 1 + ((combat_focus_zoom_scale - 1) * eased)
 		local x<const> = base_x + (zoom_target_x - base_x) * eased + (combat_focus_zoom_arc_x * turn)
 		local y<const> = base_y + (zoom_target_y - base_y) * eased + (combat_focus_zoom_arc_y * turn)
@@ -163,16 +170,16 @@ function builders.build_combat_focus_frames(params)
 
 	for i = 0, combat_focus_vanish_frames - 1 do
 		local u<const> = i / (combat_focus_vanish_frames - 1)
-		local eased<const> = easing.smoothstep(u)
-		local melt<const> = easing.ease_out_quad(eased)
-		local turn<const> = easing.arc01(u)
+		local eased<const> = smoothstep(u)
+		local melt<const> = ease_out_quad(eased)
+		local turn<const> = arc01(u)
 		local sx<const> = combat_focus_zoom_scale + ((combat_focus_vanish_scale_x - combat_focus_zoom_scale) * melt)
 		local sy<const> = combat_focus_zoom_scale + ((combat_focus_vanish_scale_y - combat_focus_zoom_scale) * melt)
 		local center_x<const> = vanish_center_x + (combat_focus_vanish_arc_x * turn)
 		local bottom_y<const> = vanish_bottom_y + (combat_focus_vanish_lift * melt) + (combat_focus_vanish_arc_y * turn)
 		local x<const> = center_x - (monster_sx * sx) / 2
 		local y<const> = bottom_y - (monster_sy * sy)
-		local alpha<const> = 1 - easing.ease_in_quad(u)
+		local alpha<const> = 1 - ease_in_quad(u)
 		local ab<const> = ((alpha * 255 + 0.5) // 1) & 0xff
 
 		frames[#frames + 1] = {
@@ -226,10 +233,10 @@ end
 				if i >= combat_intro_hold_frames then
 					u = (i - combat_intro_hold_frames) / (maya_b_motion_frames - 1)
 				end
-				local eased<const> = easing.smoothstep(u)
-				local whoosh<const> = easing.ease_out_back(eased)
+				local eased<const> = smoothstep(u)
+				local whoosh<const> = ease_out_back(eased)
 				local move<const> = eased + ((whoosh - eased) * combat_intro_whoosh_strength)
-				local turn<const> = easing.arc01(u)
+				local turn<const> = arc01(u)
 				local s<const> = maya_b_start_scale + (maya_b_end_scale - maya_b_start_scale) * eased
 				local right_x<const> = maya_b_start_right_x + (maya_b_exit_right_x - maya_b_start_right_x) * move
 				local x<const> = right_x - (maya_b_sx * s)
@@ -259,10 +266,10 @@ end
 
 			for i = 0, combat_intro_reveal_frames - 1 do
 				local u<const> = i / (combat_intro_reveal_frames - 1)
-				local eased<const> = easing.smoothstep(u)
-				local whoosh<const> = easing.ease_out_back(eased)
+				local eased<const> = smoothstep(u)
+				local whoosh<const> = ease_out_back(eased)
 				local move<const> = eased + ((whoosh - eased) * combat_intro_whoosh_strength)
-				local turn<const> = easing.arc01(u)
+				local turn<const> = arc01(u)
 
 				local monster_scale<const> = monster_start_scale + (1 - monster_start_scale) * eased
 				local monster_ox<const> = (monster_sx * (monster_scale - 1)) / 2
@@ -313,14 +320,14 @@ function builders.build_combat_dodge_frames(params)
 		local scale_y = 1
 		if frame_index < combat_dodge_anticipation_frames then
 			local u<const> = frame_index / (combat_dodge_anticipation_frames - 1)
-			offset = -combat_monster_dodge_distance * 0.2 * easing.smoothstep(u) * dir
-			local t<const> = easing.smoothstep(u)
+			offset = -combat_monster_dodge_distance * 0.2 * smoothstep(u) * dir
+			local t<const> = smoothstep(u)
 			scale_x = 1 + (combat_dodge_anticipation_scale_x * t)
 			scale_y = 1 + (combat_dodge_anticipation_scale_y * t)
 		elseif frame_index < move_end then
 			local u<const> = (frame_index - combat_dodge_anticipation_frames) / (move_frames - 1)
-			offset = combat_monster_dodge_distance * easing.ease_out_quad(u) * dir
-			local t<const> = easing.ease_out_quad(u)
+			offset = combat_monster_dodge_distance * ease_out_quad(u) * dir
+			local t<const> = ease_out_quad(u)
 			scale_x = 1 + (combat_dodge_move_scale_x * t)
 			scale_y = 1 + (combat_dodge_move_scale_y * t)
 		elseif frame_index < peak_end then
@@ -329,7 +336,7 @@ function builders.build_combat_dodge_frames(params)
 			scale_y = 1 + combat_dodge_move_scale_y
 		else
 			local u<const> = (frame_index - peak_end) / (combat_dodge_recover_frames - 1)
-			local t<const> = 1 - easing.ease_in_quad(u)
+			local t<const> = 1 - ease_in_quad(u)
 			offset = combat_monster_dodge_distance * t * dir
 			scale_x = 1 + (combat_dodge_move_scale_x * t)
 			scale_y = 1 + (combat_dodge_move_scale_y * t)
@@ -368,9 +375,9 @@ function builders.build_combat_exchange_frames(params)
 	local maya_recover_end<const> = maya_hold_end + maya_recover_frames
 
 	local ease_u<const> = function(u, frames)
-		local e = easing.smoothstep(u)
+		local e = smoothstep(u)
 		if frames <= 6 then
-			e = easing.smoothstep(e)
+			e = smoothstep(e)
 		end
 		return e
 	end
@@ -379,21 +386,21 @@ function builders.build_combat_exchange_frames(params)
 		local lunge = 0
 		if i < combat_exchange_anticipate_frames then
 			local u<const> = i / (combat_exchange_anticipate_frames - 1)
-			lunge = -0.10 * easing.smoothstep(u)
+			lunge = -0.10 * smoothstep(u)
 		elseif i < lunge_end then
 			local u<const> = (i - combat_exchange_anticipate_frames) / (combat_exchange_lunge_frames - 1)
-			lunge = easing.ease_in_out_quad(u)
+			lunge = ease_in_out_quad(u)
 		elseif i < hitstop_end then
 			lunge = 1.0
 		else
 			local u<const> = (i - hitstop_end) / (recover_frames - 1)
-			lunge = 1.0 - easing.ease_in_quad(u)
+			lunge = 1.0 - ease_in_quad(u)
 		end
 
 		local impact_u = 0
 		if i >= impact_start and i <= impact_end then
 			local ru<const> = (i - impact_start) / (impact_frames - 1)
-			impact_u = easing.arc01(ease_u(ru, impact_frames))
+			impact_u = arc01(ease_u(ru, impact_frames))
 		end
 
 		local maya_u = 0
@@ -440,7 +447,7 @@ function builders.build_combat_exchange_frames(params)
 					x = 1 + (maya_react_scale_x * maya_u),
 					y = 1 + (maya_react_scale_y * maya_u),
 				}
-				local bob_u<const> = easing.smoothstep(easing.pingpong01((i - impact_start) / maya_bob_period_frames))
+				local bob_u<const> = smoothstep(pingpong01((i - impact_start) / maya_bob_period_frames))
 				bob = (bob_u - 0.5) * 2 * maya_bob_amp
 			end
 
@@ -508,11 +515,11 @@ function builders.build_combat_all_out_frames(params)
 	for frame_index = 0, combat_all_out_frame_count - 1 do
 		local dx<const> , dy<const> = shake(frame_index)
 		local u<const> = (frame_index / combat_all_out_pulse_period_frames) + 0.25
-		local pulse<const> = easing.smoothstep(easing.pingpong01(u))
+		local pulse<const> = smoothstep(pingpong01(u))
 		local s_base<const> = 1 + (pulse * combat_all_out_pulse_amp)
 		local squash_u<const> = (frame_index / (combat_all_out_pulse_period_frames * 0.5)) + 0.15
-		local squash = easing.pingpong01(squash_u)
-		squash = (easing.ease_in_out_quad(squash) - 0.5) * 2
+		local squash = pingpong01(squash_u)
+		squash = (ease_in_out_quad(squash) - 0.5) * 2
 		local jitter<const> = shake_signed(7000 + frame_index * 29 + 9) * 0.04
 		local sx<const> = s_base + (squash * combat_all_out_pulse_amp * 0.6) + jitter
 		local sy<const> = s_base - (squash * combat_all_out_pulse_amp * 0.4) - (jitter * 0.6)
@@ -550,12 +557,12 @@ function builders.build_combat_hit_frames(params)
 		local kick = 0
 		if frame_index >= combat_hit_stop_frames and frame_index < peak_start then
 			local u<const> = (frame_index - combat_hit_stop_frames) / (move_frames - 1)
-			kick = easing.ease_out_quad(u)
+			kick = ease_out_quad(u)
 		elseif frame_index >= peak_start and frame_index < recover_start then
 			kick = 1
 		elseif frame_index >= recover_start then
 			local u<const> = (frame_index - recover_start) / (combat_hit_recover_frames - 1)
-			kick = 1 - easing.ease_in_quad(u)
+			kick = 1 - ease_in_quad(u)
 		end
 
 		local dx = combat_hit_knockback_x * kick
@@ -588,7 +595,7 @@ function builders.build_combat_hit_frames(params)
 		local slash_color = 0x00ffffff
 		if slash_active then
 			local u<const> = (frame_index - combat_hit_stop_frames) / (slash_end - combat_hit_stop_frames)
-			local arc<const> = easing.arc01(u)
+			local arc<const> = arc01(u)
 			local center_x<const> = monster_x + (monster_sx * (combat_hit_slash_path_start_x_ratio + ((combat_hit_slash_path_end_x_ratio - combat_hit_slash_path_start_x_ratio) * u)))
 			local center_y<const> = monster_y + (monster_sy * (combat_hit_slash_path_start_y_ratio + ((combat_hit_slash_path_end_y_ratio - combat_hit_slash_path_start_y_ratio) * u)))
 			local scale<const> = 1 + ((combat_hit_slash_peak_scale - 1) * arc)
@@ -633,7 +640,7 @@ function builders.build_combat_results_fade_in_frames(params)
 
 	for frame_index = 0, combat_results_fade_in_frames - 1 do
 		local u<const> = frame_index / (combat_results_fade_in_frames - 1)
-		local a<const> = easing.smoothstep(u)
+		local a<const> = smoothstep(u)
 		local ab<const> = ((a * 255 + 0.5) // 1) & 0xff
 		local bg_ab<const> = ((combat_results_bg_alpha_byte * a + 0.5) // 1) & 0xff
 		frames[#frames + 1] = {
@@ -658,7 +665,7 @@ function builders.build_combat_results_fade_out_frames()
 	local frames<const> = {}
 	for frame_index = 0, combat_results_fade_out_frames - 1 do
 		local u<const> = frame_index / (combat_results_fade_out_frames - 1)
-		local a<const> = 1 - easing.smoothstep(u)
+		local a<const> = 1 - smoothstep(u)
 		local ab<const> = ((a * 255 + 0.5) // 1) & 0xff
 		local bg_ab<const> = ((combat_results_bg_alpha_byte * a + 0.5) // 1) & 0xff
 		frames[#frames + 1] = {
@@ -680,7 +687,7 @@ function builders.build_combat_exit_fade_in_frames()
 	local frames<const> = {}
 	for frame_index = 0, combat_exit_fade_in_frames - 1 do
 		local u<const> = frame_index / (combat_exit_fade_in_frames - 1)
-		local c<const> = easing.smoothstep(u)
+		local c<const> = smoothstep(u)
 		local cb<const> = ((c * 255 + 0.5) // 1) & 0xff
 		frames[#frames + 1] = {
 			sprite_component = {
@@ -713,12 +720,12 @@ function builders.build_transition_frames(params)
 		if not skip_fade then
 			if frame_index < fade_out_frames then
 				local u<const> = frame_index / (fade_out_frames - 1)
-				fade_alpha = easing.smoothstep(u)
+				fade_alpha = smoothstep(u)
 			elseif frame_index < fade_in_start then
 				fade_alpha = 1
 			else
 				local u<const> = (frame_index - fade_in_start) / (fade_in_frames - 1)
-				fade_alpha = 1 - easing.smoothstep(u)
+				fade_alpha = 1 - smoothstep(u)
 			end
 		end
 
@@ -741,13 +748,13 @@ function builders.build_transition_frames(params)
 		local text_x = end_x
 		if frame_index < transition_text_in_frames then
 			local u<const> = frame_index / (transition_text_in_frames - 1)
-			text_x = start_x + (center_x - start_x) * easing.smoothstep(u)
+			text_x = start_x + (center_x - start_x) * smoothstep(u)
 		elseif frame_index < text_out_start then
 			text_x = center_x
 		elseif frame_index < text_out_end then
 			local out_index<const> = frame_index - text_out_start
 			local u<const> = out_index / (transition_text_out_frames - 1)
-			text_x = center_x + (end_x - center_x) * easing.smoothstep(u)
+			text_x = center_x + (end_x - center_x) * smoothstep(u)
 		end
 
 		local overlay_ab<const> = ((fade_alpha * 255 + 0.5) // 1) & 0xff
@@ -772,7 +779,7 @@ function builders.build_transition_fade_in_frames(palette)
 	local base<const> = palette.overlay
 	for frame_index = 0, overgang_fade_in_frames - 1 do
 		local u<const> = frame_index / (overgang_fade_in_frames - 1)
-		local a<const> = 1 - easing.smoothstep(u)
+		local a<const> = 1 - smoothstep(u)
 		local ab<const> = ((a * 255 + 0.5) // 1) & 0xff
 		frames[#frames + 1] = {
 			overlay = { color = (ab << 24) | (base & 0x00ffffff) },
@@ -792,12 +799,12 @@ function builders.build_fade_frames(params)
 	for frame_index = 0, frame_count - 1 do
 		local a
 		if frame_index < fade_out_frames then
-			a = easing.smoothstep(frame_index / (fade_out_frames - 1))
+			a = smoothstep(frame_index / (fade_out_frames - 1))
 		else
 			if hold_black or frame_index < fade_in_start then
 				a = 1
 			else
-				a = 1 - easing.smoothstep((frame_index - fade_in_start) / (fade_in_frames - 1))
+				a = 1 - smoothstep((frame_index - fade_in_start) / (fade_in_frames - 1))
 			end
 		end
 
