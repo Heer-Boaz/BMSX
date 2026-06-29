@@ -2453,11 +2453,6 @@ export function seedLuaGlobals(runtime: Runtime): void {
 		}
 		out.push(Math.trunc(runtime.machineElapsedMs() / 1000));
 	}));
-	setKey(osTable, 'difftime', createNativeFunction('os.difftime', (args, out) => {
-		const t2 = requireLuaTimeValue(args[0]);
-		const t1 = requireLuaTimeValue(args[1]);
-		out.push(t2 - t1);
-	}));
 	setKey(osTable, 'date', createNativeFunction('os.date', (args, out) => {
 		const format = args.length > 0 && args[0] !== null ? strings.toString(asStringId(args[0] as StringValue)) : '%c';
 		const bmsxFormat = format.charCodeAt(0) === 33 ? format.slice(1) : format;

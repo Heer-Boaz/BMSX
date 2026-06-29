@@ -45,7 +45,6 @@ static inline NativeFnCost resolveNativeFunctionCost(std::string_view name) {
 		|| name == "next"
 		|| name == "u32_to_f32"
 		|| name == "u64_to_f64"
-		|| name == "os.difftime"
 		|| name == "get_player_input") {
 		return kNativeCostTier1;
 	}

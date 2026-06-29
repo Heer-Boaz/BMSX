@@ -58,9 +58,6 @@ function registerInterpreterMachineTimeBuiltins(runtime: Runtime, interpreter: L
 		populateLuaDateTable(table, timestamp);
 		return [timestamp];
 	}));
-	osTable.set('difftime', new LuaNativeFunction('os.difftime', (args) => {
-		return [requireLuaTimeValue(args[0]) - requireLuaTimeValue(args[1])];
-	}));
 	osTable.set('date', new LuaNativeFunction('os.date', (args) => {
 		const formatValue = args.length > 0 ? args[0] : null;
 		if (formatValue !== null && typeof formatValue !== 'string') {

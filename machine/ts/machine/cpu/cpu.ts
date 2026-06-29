@@ -144,7 +144,6 @@ function resolveNativeFunctionCost(name: string): NativeFnCost {
 		case 'next':
 		case 'u32_to_f32':
 		case 'u64_to_f64':
-		case 'os.difftime':
 			return NATIVE_COST_TIER1;
 		case 'pairs':
 		case 'ipairs':

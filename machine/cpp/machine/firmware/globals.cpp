@@ -2723,11 +2723,6 @@ osTable->set(key("time"), machine.cpu.createNativeFunction("os.time", [this, yea
 	}
 	out.push_back(valueNumber(static_cast<double>(static_cast<i64>(machineElapsedMs() / 1000.0))));
 }));
-osTable->set(key("difftime"), machine.cpu.createNativeFunction("os.difftime", [](NativeArgsView args, NativeResults& out) {
-	const i64 t2 = requireLuaTimeValue(args.at(0));
-	const i64 t1 = requireLuaTimeValue(args.at(1));
-	out.push_back(valueNumber(static_cast<double>(t2 - t1)));
-}));
 osTable->set(key("date"), machine.cpu.createNativeFunction("os.date", [this, str, yearKey, monthKey, dayKey, hourKey, minuteKey, secondKey, wdayKey, ydayKey, isdstKey](NativeArgsView args, NativeResults& out) {
 	std::string format = args.empty() || isNil(args.at(0)) ? std::string("%c") : machine.cpu.stringPool().toString(asStringId(args.at(0)));
 	std::string_view bmsxFormat(format);
