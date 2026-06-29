@@ -83,7 +83,11 @@ export function hotResumeProgramEntry(runtime: Runtime, params: { path: string; 
 	const interpreter = runtime.interpreter;
 	interpreter.clearLastFaultEnvironment();
 	const chunk = interpreter.compileChunk(source, binding);
-	const { modules } = buildModuleChunks(runtime, toLuaModulePath(binding));
+	const { modules } = buildModuleChunks(
+		runtime,
+		toLuaModulePath(binding),
+		params.preserveSystemModules ? [runtime.activeLuaSources] : undefined,
+	);
 	const baseProgram = runtime.machine.cpu.program;
 	if (!baseProgram) {
 		throw new Error('hot reload requires active program.');

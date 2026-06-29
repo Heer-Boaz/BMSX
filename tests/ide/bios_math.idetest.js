@@ -9,6 +9,13 @@ math.randomseed(123)
 local seeded_a<const> = math.random(10)
 math.randomseed(123)
 local seeded_b<const> = math.random(10)
+math.randomseed(123)
+local random_first<const> = math.random()
+local random_second<const> = math.random()
+math.randomseed(123)
+local random_repeat<const> = math.random()
+local random_upper<const> = math.random(10)
+local random_range<const> = math.random(-1, 1)
 local bad_upper<const> = pcall(function() return math.random(0) end)
 local bad_range<const> = pcall(function() return math.random(5, 3) end)
 local quarter_turn_radians<const> = (1073741824.25 * (math.pi * 2.0)) / 4294967296.0
@@ -30,6 +37,11 @@ return
 	math.ult(0, -1),
 	math.ult(-1, 0),
 	seeded_a == seeded_b,
+	random_first,
+	random_second,
+	random_repeat,
+	random_upper,
+	random_range,
 	bad_upper,
 	bad_range,
 	easing.linear(1.2),
@@ -67,12 +79,23 @@ t.assert(results[13] === 9, `max expected 9, got ${results[13]}`);
 t.assert(results[14] === true, `ult(0, -1) expected true, got ${results[14]}`);
 t.assert(results[15] === false, `ult(-1, 0) expected false, got ${results[15]}`);
 t.assert(results[16] === true, 'randomseed should make math.random deterministic');
-t.assert(results[17] === false, 'math.random(0) should fail under pcall');
-t.assert(results[18] === false, 'math.random(5, 3) should fail under pcall');
-t.assert(results[19] === 1, `easing.linear expected 1, got ${results[19]}`);
-assertClose(20, 0.25, 0.000001, 'ease_in_quad');
-assertClose(21, 0.75, 0.000001, 'ease_out_quad');
-assertClose(22, 0.125, 0.000001, 'ease_in_out_quad');
-assertClose(23, 0.5, 0.000001, 'smoothstep');
-assertClose(24, 0.25, 0.000001, 'pingpong01');
-t.assert(results[25] === 1, `arc01 expected 1, got ${results[25]}`);
+t.assert(results[17] === 1218640798 / 4294967296, `random first seed=123 expected ${1218640798 / 4294967296}, got ${results[17]}`);
+t.assert(results[18] === 1868869221 / 4294967296, `random second seed=123 expected ${1868869221 / 4294967296}, got ${results[18]}`);
+t.assert(results[19] === 1218640798 / 4294967296, `random repeat seed=123 expected ${1218640798 / 4294967296}, got ${results[19]}`);
+t.assert(results[20] === 5, `math.random(10) expected 5, got ${results[20]}`);
+t.assert(results[21] === -1, `math.random(-1, 1) expected -1, got ${results[21]}`);
+t.assert(results[22] === false, 'math.random(0) should fail under pcall');
+t.assert(results[23] === false, 'math.random(5, 3) should fail under pcall');
+t.assert(results[24] === 1, `easing.linear expected 1, got ${results[24]}`);
+assertClose(25, 0.25, 0.000001, 'ease_in_quad');
+assertClose(26, 0.75, 0.000001, 'ease_out_quad');
+assertClose(27, 0.125, 0.000001, 'ease_in_out_quad');
+assertClose(28, 0.5, 0.000001, 'smoothstep');
+assertClose(29, 0.25, 0.000001, 'pingpong01');
+t.assert(results[30] === 1, `arc01 expected 1, got ${results[30]}`);
+
+t.evaluateLua('math.randomseed(123); return math.random()');
+await t.hotResume(true);
+await t.frames(8);
+const afterResumeRandom = t.evaluateLua('return math.random()')[0];
+t.assert(afterResumeRandom === 1868869221 / 4294967296, `hot-resume should preserve math.random state in RAM, got ${afterResumeRandom}`);

@@ -22,6 +22,8 @@ local exp_underflow_limit<const> = -745.133219101941
 local two_pow_16<const> = 65536.0
 local u32_mod<const> = 4294967296.0
 
+data rng_state: word = 0x12345678
+
 local trunc<const> = numeric.trunc
 local abs<const> = function(value)
 	if value < 0 then
@@ -297,12 +299,9 @@ local sign<const> = function(value)
 	return 0
 end
 
-local default_random_seed<const> = 0x12345678
-local random_state = default_random_seed
-
 local next_random_unit<const> = function()
-	random_state = ((random_state * 1664525) + 1013904223) % u32_mod
-	return random_state / u32_mod
+	rng_state[0] = ((rng_state[0] * 1664525) + 1013904223) % u32_mod
+	return rng_state[0] / u32_mod
 end
 
 local random_number<const> = function(lower, upper)
@@ -327,10 +326,10 @@ end
 
 local randomseed<const> = function(seed)
 	if seed == nil then
-		random_state = trunc(os.clock() * 1000) % u32_mod
+		rng_state[0] = trunc(os.clock() * 1000) % u32_mod
 		return
 	end
-	random_state = trunc(seed) % u32_mod
+	rng_state[0] = trunc(seed) % u32_mod
 end
 
 return {

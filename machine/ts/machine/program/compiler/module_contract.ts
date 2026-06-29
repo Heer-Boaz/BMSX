@@ -136,9 +136,9 @@ const buildModuleCompileInfo = (
 		}
 	}
 	const moduleOwnsStaticStorage = staticStorage || (!external && hasStaticStorageDeclaration);
-	const staticFunctionExportByPathKey = collectStaticFunctionExportSymbolsByPathKey(modulePath, chunk, returnExpression, semantics, constModule || hasStaticStorageDeclaration);
+	const staticFunctionExportByPathKey = collectStaticFunctionExportSymbolsByPathKey(modulePath, chunk, returnExpression, semantics, constModule);
 	const rootStaticFunctionExport = staticFunctionExportByPathKey.has('');
-	const compileTimeModule = constModule || rootStaticFunctionExport || hasStaticStorageDeclaration;
+	const compileTimeModule = constModule || rootStaticFunctionExport;
 	const shapedExportRoot = buildModuleShapeFromExpression(returnExpression, buildTopLevelLocalModuleShapes(chunk));
 	if ((!shapedExportRoot || shapedExportRoot.children.size === 0) && !rootStaticFunctionExport) {
 		return null;
