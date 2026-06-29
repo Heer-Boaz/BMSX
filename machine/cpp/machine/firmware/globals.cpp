@@ -1075,15 +1075,6 @@ void Runtime::setupBuiltins() {
 		out.push_back(valueNil());
 	});
 
-	registerNativeFunction("assert", [this](NativeArgsView args, NativeResults& out) {
-		const Value& condition = args.empty() ? valueNil() : args.at(0);
-		if (!isTruthy(condition)) {
-			const Value message = args.size() > 1 ? args.at(1) : valueString(machine.cpu.stringPool().intern("assertion failed!"));
-			throw LuaPcallError(message, machine.cpu.stringPool());
-		}
-		out.append(args.data(), args.size());
-	});
-
 	registerNativeFunction("error", [this](NativeArgsView args, NativeResults& out) {
 		const Value message = args.empty() ? valueString(machine.cpu.stringPool().intern("error")) : args.at(0);
 		(void)out;

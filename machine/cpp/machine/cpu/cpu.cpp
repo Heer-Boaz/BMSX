@@ -66,7 +66,6 @@ static inline NativeFnCost resolveNativeFunctionCost(std::string_view name) {
 		|| name == "string.lower"
 		|| name == "string.rep"
 		|| name == "array"
-		|| name == "assert"
 		|| name == "error"
 		|| name == "player_input.getModifiersState"
 		|| name == "player_input.getButtonState"

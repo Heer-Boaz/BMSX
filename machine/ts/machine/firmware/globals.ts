@@ -1631,17 +1631,6 @@ export function seedLuaGlobals(runtime: Runtime): void {
 		}
 		out.push(null);
 	}));
-	runtime.setGlobal('assert', createNativeFunction('assert', (args, out) => {
-		void out;
-		const condition = args.length > 0 ? args[0] : null;
-		if (!isTruthyValue(condition)) {
-			const message = args.length > 1 ? args[1] : runtime.internString('assertion failed!');
-			throw new LuaThrownValueError(runtime, message);
-		}
-		for (let index = 0; index < args.length; index += 1) {
-			out.push(args[index]);
-		}
-	}));
 	runtime.setGlobal('error', createNativeFunction('error', (args, out) => {
 		void out;
 		const message = args.length > 0 ? args[0] : runtime.internString('error');

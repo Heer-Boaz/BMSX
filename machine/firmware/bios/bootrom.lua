@@ -2,6 +2,7 @@
 -- bmsx system boot screen
 
 require('system/msx_colors')
+require('bios/base')
 require('bios/os')
 require('bios/table')
 math = require('bios/math')
