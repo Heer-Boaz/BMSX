@@ -661,11 +661,14 @@ Acceptatie:
 - `math.sin`, `math.cos` en `math.tan` hebben het firmware-LUT/Q16.16
   precisiecontract; exacte turn-singulariteiten leveren de normale Lua
   numerieke infinity op, terwijl bijna-singuliere radian inputs eindig blijven
-- resterende native Lua library support is uitgesplitst: `os.clock` en default
-  `os.time`/`os.date` blijven machine-scheduler/civil-time builtins, terwijl
-  `string.*`/`table.*`/core functies onder de aparte Lua-objectwereld-lane
-  vallen. Geen van beide is precedent voor nieuwe cart-zichtbare host
-  faciliteiten.
+- de guest `os` API wordt door `bios/os.lua` geleverd: `os.clock`, default
+  `os.time`, default `os.date` en `os.difftime` lezen machine-tijd via
+  `sys_time_ms` en voeren deterministische BMSX civil-time code uit in BLua;
+  de machine-native TS/C++ `os.*` callbacks zijn verwijderd zodat shipped
+  guest-code niet meer via host wall-clock/locale rekent
+- resterende native Lua library support (`string.*`/`table.*`/core functies)
+  valt onder de aparte Lua-objectwereld-lane en is geen precedent voor nieuwe
+  cart-zichtbare host faciliteiten.
 
 ## 21. CPU machine-code ABI loshalen van Lua-objectwereld
 

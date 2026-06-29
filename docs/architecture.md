@@ -85,12 +85,14 @@ transcendental precision. `math.tan` is the ratio of those Q16.16 sine/cosine
 results: exact turn singularities divide by zero and produce the normal Lua
 numeric infinity; near-singular radian inputs remain finite.
 
-Other runtime library natives are not one category. `os.clock`, default
-`os.time`, and default `os.date` are machine-scheduler/civil-time builtins and
-must stay tied to machine time rather than host wall-clock time. `string.*`,
-`table.*`, and core functions such as `assert`/`type` are the separate Lua
-object-world support layer; they are not precedent for cart-visible host
-facilities such as the removed `math.*`/`easing.*` callbacks.
+The `os` library is also firmware-owned. `bios/os.lua` implements `os.clock`,
+`os.time`, `os.date`, and `os.difftime` in BLua; elapsed time comes from the
+CPU-visible `sys_time_ms` word and civil-time conversion is deterministic BMSX
+UTC-equivalent logic, not host wall-clock, host timezone, JavaScript `Date`, or
+libc local-time behavior. `string.*`, `table.*`, and core functions such as
+`assert`/`type` are the separate Lua object-world support layer; they are not
+precedent for cart-visible host facilities such as the removed `math.*`,
+`easing.*`, and `os.*` callbacks.
 
 ## Hard boundary
 
