@@ -40,7 +40,7 @@ import {
 	type LuaGotoStatement,
 } from '../../lua/syntax/ast';
 import { OpCode, StringValue, asStringId, valueIsString, type Program, type ProgramMetadata, type Proto, type UpvalueDesc, type Value, type SourceRange, type LocalSlotDebug } from '../cpu/cpu';
-import { encodeFixedCallArgCount } from '../cpu/opcode_info';
+import { encodeFixedCallArgCount, getOpcodeName } from '../cpu/opcode_info';
 import { optimizeInstructions, type Instruction, type InstructionSet, type OptimizationLevel } from './optimizer';
 import {
 	buildModuleCompileContext,
@@ -54,7 +54,7 @@ import { extractAssignmentPath, extractTableKeyFromExpression } from './compiler
 import { appendModuleExportPathKey, buildModuleExportPathKey, buildModuleExportSlotName, buildModuleRootFieldSlotName } from './compiler/module_names';
 import { collectStaticStorageDeclarations, type StaticStorageDeclaration } from './compiler/static_storage';
 import { collectStaticFunctionExports } from './compiler/static_functions';
-import { assertStaticFunctionInstructionSet } from './compiler/static_proto_contract';
+import { assertStaticFunctionInstructionSet, staticLaneForbiddenOpcodeReason } from './compiler/static_proto_contract';
 import {
 	buildProgramRomImage,
 	encodeProgramObjectSections,
@@ -980,6 +980,7 @@ class FunctionBuilder {
 	private readonly protoId: string;
 	private readonly moduleCompileContext?: ModuleCompileContext;
 	private readonly moduleCompileInfo?: ModuleCompileInfo;
+	private readonly staticCallTargetScope: boolean;
 	private readonly code: Instruction[] = [];
 	private readonly ranges: Array<SourceRange | null> = [];
 	private finalizedCode: Uint8Array | null = null;
@@ -1015,6 +1016,7 @@ class FunctionBuilder {
 			frontend: LuaSemanticFrontend;
 			moduleCompileContext?: ModuleCompileContext;
 			moduleCompileInfo?: ModuleCompileInfo;
+			staticCallTargetScope?: boolean;
 		},
 	) {
 		this.program = program;
@@ -1024,6 +1026,7 @@ class FunctionBuilder {
 		this.moduleId = params.moduleId;
 		this.protoId = params.protoId;
 		this.moduleCompileContext = params.moduleCompileContext ?? parent?.moduleCompileContext;
+		this.staticCallTargetScope = params.staticCallTargetScope === true || (parent !== null && parent.staticCallTargetScope);
 		// Nested functions inherit the module's export info so that references to the
 		// module's own exported namespace (e.g. `room.fn` inside another `room.*`
 		// function) resolve to the export symbol/slot instead of the namespace table.
@@ -2387,7 +2390,31 @@ class FunctionBuilder {
 		this.currentRange = previous;
 	}
 
+	private staticCallTargetForbiddenLoadKReason(op: OpCode, bx: number, symbolicReloc: Instruction['symbolicReloc']): string | null {
+		if (op !== OpCode.LOADK) {
+			return null;
+		}
+		if (symbolicReloc?.kind === 'module') {
+			return 'runtime module slot';
+		}
+		if (symbolicReloc !== undefined) {
+			return null;
+		}
+		return valueIsString(this.program.constPool[bx]) ? 'Lua string constant' : null;
+	}
+
+	private assertStaticCallTargetCanEmit(op: OpCode, bx: number = 0, symbolicReloc?: Instruction['symbolicReloc']): void {
+		if (!this.staticCallTargetScope) {
+			return;
+		}
+		const reason = staticLaneForbiddenOpcodeReason(op) ?? this.staticCallTargetForbiddenLoadKReason(op, bx, symbolicReloc);
+		if (reason !== null) {
+			throw new Error(`[Compiler] Static function export '${this.protoId}' cannot emit forbidden static opcode ${getOpcodeName(op)} (${reason}). Static function exports use numeric and boolean constants, parameters, function-local words, static calls, branches, and memory loads/stores only.`);
+		}
+	}
+
 	private emitABC(op: OpCode, a: number, b: number, c: number, rkMask: number = 0): void {
+		this.assertStaticCallTargetCanEmit(op);
 		this.code.push({
 			op,
 			a,
@@ -2401,6 +2428,7 @@ class FunctionBuilder {
 	}
 
 	private emitABCd(op: OpCode, a: number, b: number, c: number, disp: number): void {
+		this.assertStaticCallTargetCanEmit(op);
 		this.code.push({
 			op,
 			a,
@@ -2415,6 +2443,7 @@ class FunctionBuilder {
 	}
 
 	private emitABx(op: OpCode, a: number, bx: number, symbolicReloc?: Instruction['symbolicReloc']): void {
+		this.assertStaticCallTargetCanEmit(op, bx, symbolicReloc);
 		this.code.push({
 			op,
 			a,
@@ -2429,6 +2458,7 @@ class FunctionBuilder {
 	}
 
 	private emitAsBx(op: OpCode, a: number, sbx: number): void {
+		this.assertStaticCallTargetCanEmit(op);
 		const target = this.code.length + 1 + sbx;
 		this.code.push({
 			op,
@@ -2478,6 +2508,7 @@ class FunctionBuilder {
 	}
 
 	private emitJumpPlaceholder(op: OpCode = OpCode.JMP, a: number = 0): number {
+		this.assertStaticCallTargetCanEmit(op);
 		const index = this.code.length;
 		this.code.push({
 			op,
@@ -4435,6 +4466,9 @@ class FunctionBuilder {
 		if (requireBinding !== null && this.isConstModulePath(requireBinding.modulePath) && moduleCallSlot === undefined) {
 			this.failCompileTimeModuleRootRuntimeUse(requireBinding.modulePath);
 		}
+		if (this.staticCallTargetScope && moduleCallSlot === undefined && ownStaticFunctionExportSlot === undefined) {
+			throw new Error(`[Compiler] Static function export '${this.protoId}' cannot call a dynamic value. Static function exports call other static exports through link-time symbols.`);
+		}
 		const callProtoIndex = constClosureBinding !== null ? constClosureBinding.constClosureProtoIndex : null;
 		const argCount = expression.arguments.length;
 		const lastArg = argCount > 0 ? expression.arguments[argCount - 1] : null;
@@ -4879,6 +4913,7 @@ export function compileLuaChunkToProgram(chunk: LuaChunk, modules: ReadonlyArray
 				frontend,
 				moduleCompileContext,
 				moduleCompileInfo: info,
+				staticCallTargetScope: true,
 			});
 			staticScope.compileStaticFunctionModuleScope(module.chunk);
 			const exports = collectStaticFunctionExports(module.chunk, semantics, info.staticFunctionExportByPathKey);
@@ -4888,9 +4923,9 @@ export function compileLuaChunkToProgram(chunk: LuaChunk, modules: ReadonlyArray
 				const protoIndex = compileFunctionExpression(programBuilder, fn.expression, staticScope, false, protoId, module.path, semantics, frontend);
 				if (!programBuilder.protoHasNoUpvalues(protoIndex)) {
 					const upvalueNames = programBuilder.getProtoUpvalueNames(protoIndex);
-					throw new Error(`[Compiler] Const module '${module.path}' function export '${fn.symbolHandle}' captures runtime local '${upvalueNames[0]}'; function exports may use globals, compile-time constants, parameters, function-local declarations, and static storage only.`);
+					throw new Error(`[Compiler] Const module '${module.path}' function export '${fn.symbolHandle}' captures runtime local '${upvalueNames[0]}'; function exports may use compile-time constants, parameters, function-local declarations, static calls, and static storage only.`);
 				}
-				assertStaticFunctionInstructionSet(module.path, fn.symbolHandle, programBuilder.getProtoInstructionSet(protoIndex));
+				assertStaticFunctionInstructionSet(module.path, fn.symbolHandle, programBuilder.getProtoInstructionSet(protoIndex), programBuilder.constPool);
 				programBuilder.markStaticClosureProto(protoIndex);
 				for (let slotIndex = 0; slotIndex < fn.slotNames.length; slotIndex += 1) {
 					programBuilder.recordExportProto(fn.slotNames[slotIndex], protoId);

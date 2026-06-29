@@ -1,8 +1,14 @@
 import { OpCode, getOpcodeName } from '../../cpu/opcode_info';
-import type { InstructionSet } from '../optimizer';
+import { valueIsString, type Value } from '../../cpu/cpu';
+import type { Instruction, InstructionSet } from '../optimizer';
 
-const staticLaneForbiddenOpcodeReason = (op: OpCode): string | null => {
+export const staticLaneForbiddenOpcodeReason = (op: OpCode): string | null => {
 	switch (op) {
+		case OpCode.GETSYS:
+		case OpCode.SETSYS:
+		case OpCode.GETGL:
+		case OpCode.SETGL:
+			return 'runtime global slot';
 		case OpCode.NEWT:
 			return 'table allocation';
 		case OpCode.GETT:
@@ -13,6 +19,8 @@ const staticLaneForbiddenOpcodeReason = (op: OpCode): string | null => {
 		case OpCode.SETFIELD:
 		case OpCode.SELF:
 			return 'table dispatch';
+		case OpCode.LEN:
+			return 'Lua object length';
 		case OpCode.CLOSURE:
 			return 'runtime closure allocation';
 		case OpCode.VARARG:
@@ -25,16 +33,31 @@ const staticLaneForbiddenOpcodeReason = (op: OpCode): string | null => {
 	}
 };
 
+const instructionLoadKReason = (instruction: Instruction, constPool: ReadonlyArray<Value>): string | null => {
+	if (instruction.op !== OpCode.LOADK) {
+		return null;
+	}
+	if (instruction.symbolicReloc?.kind === 'module') {
+		return 'runtime module slot';
+	}
+	if (instruction.symbolicReloc !== undefined) {
+		return null;
+	}
+	return valueIsString(constPool[instruction.b]) ? 'Lua string constant' : null;
+};
+
 export const assertStaticFunctionInstructionSet = (
 	modulePath: string,
 	symbolHandle: string,
 	instructionSet: InstructionSet,
+	constPool: ReadonlyArray<Value>,
 ): void => {
 	const instructions = instructionSet.instructions;
 	for (let index = 0; index < instructions.length; index += 1) {
-		const reason = staticLaneForbiddenOpcodeReason(instructions[index].op);
+		const instruction = instructions[index];
+		const reason = staticLaneForbiddenOpcodeReason(instruction.op) ?? instructionLoadKReason(instruction, constPool);
 		if (reason !== null) {
-			throw new Error(`[Compiler] Module function export '${modulePath}:${symbolHandle}' emits forbidden static opcode ${getOpcodeName(instructions[index].op)} (${reason}). Const-module function exports and static-compatible bare-function modules must compile to scalar/static code using constants, parameters, function-local words, globals, calls, branches, and memory loads/stores only.`);
+			throw new Error(`[Compiler] Module function export '${modulePath}:${symbolHandle}' emits forbidden static opcode ${getOpcodeName(instruction.op)} (${reason}). Const-module function exports and static-compatible bare-function modules must compile to scalar/static code using numeric and boolean constants, parameters, function-local words, static calls, branches, and memory loads/stores only.`);
 		}
 	}
 };

@@ -21,7 +21,7 @@ const ROUND_TO_NEAREST_PATH = 'bios/util/round_to_nearest';
 const CLAMP_PATH = 'bios/util/clamp';
 const RECT_OVERLAPS_PATH = 'bios/util/rect_overlaps';
 const SINCOS_TURN32_PATH = 'bios/util/sincos_turn32';
-const STATIC_FORBIDDEN_OPCODE_PATTERN = /\b(?:NEWT|GETT|SETT|GETI|SETI|GETFIELD|SETFIELD|SELF|CLOSURE|VARARG|CONCAT|CONCATN)\b/;
+const STATIC_FORBIDDEN_OPCODE_PATTERN = /\b(?:GETSYS|SETSYS|GETGL|SETGL|NEWT|GETT|SETT|GETI|SETI|GETFIELD|SETFIELD|SELF|LEN|CLOSURE|VARARG|CONCAT|CONCATN)\b/;
 
 const buildExpectedSineQuarter = (): number[] => {
 	const out: number[] = [];
@@ -297,6 +297,6 @@ end
 `;
 	assert.throws(
 		() => compileWithModule('return require("bad")()', 'bad', moduleSource),
-		/Module function export 'bad:.*' emits forbidden static opcode NEWT \(table allocation\).*static-compatible bare-function modules must compile to scalar\/static code/,
+		/Static function export '.*' cannot emit forbidden static opcode NEWT \(table allocation\)/,
 	);
 });

@@ -240,7 +240,7 @@ return { increment = increment, leak = leak }
 `;
 	assert.throws(
 		() => compileWithConstModule('local state<const> = require("state")\nreturn state.leak()', 'state', moduleSource),
-		/captures runtime local 'increment'/,
+		/cannot call a dynamic value/,
 	);
 });
 
@@ -307,6 +307,58 @@ return { suffix = suffix }
 	assert.throws(
 		() => compileWithConstModule('local state<const> = require("state")\nreturn state.suffix("a")', 'state', moduleSource),
 		/forbidden static opcode CONCAT \(dynamic string concatenation\)/,
+	);
+});
+
+test('const module function call targets reject Lua object constants', () => {
+	const moduleSource = `
+local function label()
+	return "enemy"
+end
+return { label = label }
+`;
+	assert.throws(
+		() => compileWithConstModule('local state<const> = require("state")\nreturn state.label()', 'state', moduleSource),
+		/forbidden static opcode LOADK \(Lua string constant\)/,
+	);
+});
+
+test('const module function call targets reject runtime globals', () => {
+	const moduleSource = `
+local function leaked_global()
+	return print
+end
+return { leaked_global = leaked_global }
+`;
+	assert.throws(
+		() => compileWithConstModule('local state<const> = require("state")\nreturn state.leaked_global()', 'state', moduleSource),
+		/forbidden static opcode GET(?:SYS|GL) \(runtime global slot\)/,
+	);
+});
+
+test('const module function call targets reject dynamic calls', () => {
+	const moduleSource = `
+local function invoke(fn)
+	return fn(1)
+end
+return { invoke = invoke }
+`;
+	assert.throws(
+		() => compileWithConstModule('local state<const> = require("state")\nreturn state.invoke(function(value) return value end)', 'state', moduleSource),
+		/cannot call a dynamic value/,
+	);
+});
+
+test('const module function call targets reject Lua object length', () => {
+	const moduleSource = `
+local function count(value)
+	return #value
+end
+return { count = count }
+`;
+	assert.throws(
+		() => compileWithConstModule('local state<const> = require("state")\nreturn state.count("abc")', 'state', moduleSource),
+		/forbidden static opcode LEN \(Lua object length\)/,
 	);
 });
 
