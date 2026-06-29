@@ -256,7 +256,6 @@ type ResolvedAssignmentTarget =
 export class LuaInterpreter {
 	private readonly globals: LuaEnvironment;
 	private currentChunk: string;
-	private randomSeedValue: number;
 	private _reservedIdentifiers: Set<string> = new Set<string>();
 	private _currentCallRange: LuaSourceRange = null;
 	private _pathEnvironment: LuaEnvironment = null;
@@ -299,7 +298,6 @@ export class LuaInterpreter {
 		this.globals = LuaEnvironment.createRoot();
 		this.adapter = adapter;
 		this.currentChunk = '<path>';
-		this.randomSeedValue = 0;
 		this.packageTable = createLuaTable();
 		this.packageLoaded = createLuaTable();
 		this.initializeBuiltins();
@@ -446,14 +444,6 @@ export class LuaInterpreter {
 
 	public getGlobal(name: string): LuaValue {
 		return this.globals.get(name);
-	}
-
-	public get randomSeed(): number {
-		return this.randomSeedValue;
-	}
-
-	public set randomSeed(seed: number) {
-		this.randomSeedValue = seed;
 	}
 
 	private beginChunkExecution(path: LuaChunk): ChunkExecutionContext {
@@ -1720,11 +1710,6 @@ export class LuaInterpreter {
 		}
 		const functionValue = this.expectFunction(handler, LuaInterpreter.buildMetamethodMustBeFunctionMessage, name, null);
 		return functionValue.call(args);
-	}
-
-	private nextRandom(): number {
-		this.randomSeedValue = (this.randomSeedValue * 1664525 + 1013904223) % 4294967296;
-		return this.randomSeedValue / 4294967296;
 	}
 
 	private serializeValueInternal(value: LuaValue, visited: Set<LuaTable>): unknown {
@@ -3183,196 +3168,7 @@ export class LuaInterpreter {
 				return table.nextEntry(lastKey) ?? NIL_VALUE_RESULT;
 			}));
 
-		const maxSafeInteger = Number.MAX_SAFE_INTEGER;
-		const radToDeg = 180 / Math.PI;
-		const degToRad = Math.PI / 180;
-		const mathTable = createLuaTable();
-		mathTable.set('abs', new LuaNativeFunction('abs', (args) => {
-			const value = args.length > 0 ? args[0] : null;
-			const number = this.expectNumber(value, 'math.abs expects a number.', null);
-			return [Math.abs(number)];
-		}));
-		mathTable.set('acos', new LuaNativeFunction('acos', (args) => {
-			const value = args.length > 0 ? args[0] : null;
-			const number = this.expectNumber(value, 'math.acos expects a number.', null);
-			return [Math.acos(number)];
-		}));
-		mathTable.set('asin', new LuaNativeFunction('asin', (args) => {
-			const value = args.length > 0 ? args[0] : null;
-			const number = this.expectNumber(value, 'math.asin expects a number.', null);
-			return [Math.asin(number)];
-		}));
-		mathTable.set('atan', new LuaNativeFunction('atan', (args) => {
-			const value = args.length > 0 ? args[0] : null;
-			const y = this.expectNumber(value, 'math.atan expects a number.', null);
-			if (args.length > 1) {
-				const x = this.expectNumber(args[1], 'math.atan expects a number.', null);
-				return [Math.atan2(y, x)];
-			}
-			return [Math.atan(y)];
-		}));
-		mathTable.set('ceil', new LuaNativeFunction('ceil', (args) => {
-			const value = args.length > 0 ? args[0] : null;
-			const number = this.expectNumber(value, 'math.ceil expects a number.', null);
-			return [Math.ceil(number)];
-		}));
-		mathTable.set('cos', new LuaNativeFunction('cos', (args) => {
-			const value = args.length > 0 ? args[0] : null;
-			const number = this.expectNumber(value, 'math.cos expects a number.', null);
-			return [Math.cos(number)];
-		}));
-		mathTable.set('deg', new LuaNativeFunction('deg', (args) => {
-			const value = args.length > 0 ? args[0] : null;
-			const number = this.expectNumber(value, 'math.deg expects a number.', null);
-			return [number * radToDeg];
-		}));
-		mathTable.set('exp', new LuaNativeFunction('exp', (args) => {
-			const value = args.length > 0 ? args[0] : null;
-			const number = this.expectNumber(value, 'math.exp expects a number.', null);
-			return [Math.exp(number)];
-		}));
-		mathTable.set('floor', new LuaNativeFunction('floor', (args) => {
-			const value = args.length > 0 ? args[0] : null;
-			const number = this.expectNumber(value, 'math.floor expects a number.', null);
-			return [Math.floor(number)];
-		}));
-		mathTable.set('fmod', new LuaNativeFunction('fmod', (args) => {
-			const value = args.length > 0 ? args[0] : null;
-			const divisorValue = args.length > 1 ? args[1] : null;
-			const number = this.expectNumber(value, 'math.fmod expects a number.', null);
-			const divisor = this.expectNumber(divisorValue, 'math.fmod expects a number.', null);
-			return [number % divisor];
-		}));
-		mathTable.set('log', new LuaNativeFunction('log', (args) => {
-			const value = args.length > 0 ? args[0] : null;
-			const number = this.expectNumber(value, 'math.log expects a number.', null);
-			if (args.length > 1) {
-				const base = this.expectNumber(args[1], 'math.log expects a number.', null);
-				return [Math.log(number) / Math.log(base)];
-			}
-			return [Math.log(number)];
-		}));
-		mathTable.set('max', new LuaNativeFunction('max', (args) => {
-			if (args.length === 0) {
-				throw this.runtimeError('math.max expects at least one argument.');
-			}
-			let result = this.expectNumber(args[0], 'math.max expects numeric arguments.', null);
-			for (let index = 1; index < args.length; index += 1) {
-				const value = this.expectNumber(args[index], 'math.max expects numeric arguments.', null);
-				if (value > result) {
-					result = value;
-				}
-			}
-			return [result];
-		}));
-		mathTable.set('min', new LuaNativeFunction('min', (args) => {
-			if (args.length === 0) {
-				throw this.runtimeError('math.min expects at least one argument.');
-			}
-			let result = this.expectNumber(args[0], 'math.min expects numeric arguments.', null);
-			for (let index = 1; index < args.length; index += 1) {
-				const value = this.expectNumber(args[index], 'math.min expects numeric arguments.', null);
-				if (value < result) {
-					result = value;
-				}
-			}
-			return [result];
-		}));
-		mathTable.set('modf', new LuaNativeFunction('modf', (args) => {
-			const value = args.length > 0 ? args[0] : null;
-			const number = this.expectNumber(value, 'math.modf expects a number.', null);
-			const integerPart = Math.trunc(number);
-			return [integerPart, number - integerPart];
-		}));
-		mathTable.set('rad', new LuaNativeFunction('rad', (args) => {
-			const value = args.length > 0 ? args[0] : null;
-			const number = this.expectNumber(value, 'math.rad expects a number.', null);
-			return [number * degToRad];
-		}));
-		mathTable.set('sin', new LuaNativeFunction('sin', (args) => {
-			const value = args.length > 0 ? args[0] : null;
-			const number = this.expectNumber(value, 'math.sin expects a number.', null);
-			return [Math.sin(number)];
-		}));
-		mathTable.set('sign', new LuaNativeFunction('sign', (args) => {
-			const value = args.length > 0 ? args[0] : null;
-			const number = this.expectNumber(value, 'math.sign expects a number.', null);
-			if (number < 0) {
-				return [-1];
-			}
-			if (number > 0) {
-				return [1];
-			}
-			return [0];
-		}));
-		mathTable.set('sqrt', new LuaNativeFunction('sqrt', (args) => {
-			const value = args.length > 0 ? args[0] : null;
-			const number = this.expectNumber(value, 'math.sqrt expects a number.', null);
-			if (number < 0) {
-				throw this.runtimeError('math.sqrt cannot operate on negative numbers.');
-			}
-			return [Math.sqrt(number)];
-		}));
-		mathTable.set('tan', new LuaNativeFunction('tan', (args) => {
-			const value = args.length > 0 ? args[0] : null;
-			const number = this.expectNumber(value, 'math.tan expects a number.', null);
-			return [Math.tan(number)];
-		}));
-		mathTable.set('tointeger', new LuaNativeFunction('tointeger', (args) => {
-			const value = args.length > 0 ? args[0] : null;
-			if (typeof value !== 'number' || !Number.isFinite(value) || !Number.isInteger(value)) {
-				return [null];
-			}
-			return [value];
-		}));
-		mathTable.set('type', new LuaNativeFunction('type', (args) => {
-			const value = args.length > 0 ? args[0] : null;
-			if (typeof value !== 'number') {
-				return [null];
-			}
-			if (Number.isInteger(value)) {
-				return ['integer'];
-			}
-			return ['float'];
-		}));
-		mathTable.set('ult', new LuaNativeFunction('ult', (args) => {
-			const left = this.expectNumber(args[0], 'math.ult expects a number.', null) >>> 0;
-			const right = this.expectNumber(args[1], 'math.ult expects a number.', null) >>> 0;
-			return [left < right];
-		}));
-		mathTable.set('random', new LuaNativeFunction('random', (args) => {
-			const randomValue = this.nextRandom();
-			if (args.length === 0) {
-				return [randomValue];
-			}
-			if (args.length === 1) {
-				const upper = this.expectNumber(args[0], 'math.random expects numeric bounds.', null);
-				const upperInt = Math.floor(upper);
-				if (upperInt < 1) {
-					throw this.runtimeError('math.random upper bound must be positive.');
-				}
-				return [Math.floor(randomValue * upperInt) + 1];
-			}
-			const lower = this.expectNumber(args[0], 'math.random expects numeric bounds.', null);
-			const upper = this.expectNumber(args[1], 'math.random expects numeric bounds.', null);
-			const lowerInt = Math.floor(lower);
-			const upperInt = Math.floor(upper);
-			if (upperInt < lowerInt) {
-				throw this.runtimeError('math.random upper bound must be greater than or equal to lower bound.');
-			}
-			const span = upperInt - lowerInt + 1;
-			return [lowerInt + Math.floor(randomValue * span)];
-		}));
-		mathTable.set('randomseed', new LuaNativeFunction('randomseed', (args) => {
-			const seedValue = args.length > 0 ? this.expectNumber(args[0], 'math.randomseed expects a number.', null) : 0;
-			this.randomSeedValue = Math.floor(seedValue) >>> 0;
-			return EMPTY_VALUES;
-		}));
-		mathTable.set('huge', Number.POSITIVE_INFINITY);
-		mathTable.set('maxinteger', maxSafeInteger);
-		mathTable.set('mininteger', -maxSafeInteger);
-		mathTable.set('pi', Math.PI);
-		this.globals.set('math', mathTable);
+		this.globals.set('math', createLuaTable());
 
 		const stringTable = createLuaTable();
 		const packNativeEndian = (() => {
