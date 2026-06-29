@@ -1,18 +1,18 @@
 local bool01<const> = require('bios/util/bool01')
-local constants<const> = require('constants')
+require('constants')
 
 local director<const> = {}
 director.__index = director
 
 function director:emit_metric()
-	if not constants.telemetry.enabled then
+	if not telemetry_enabled then
 		return
 	end
 	print(string.format(
 		'%s|kind=director|f=%d|scroll=%.3f|yellow_blink=%d|blue_blink=%d|yellow_count=%d|blue_count=%d|stage_left=%d|stage_head=%d|stage_px=%.3f|stage_scrolling=%d|stage_mode=%d|stage_rot=%d|stage_gate=%d|stage_adv=%d',
-		constants.telemetry.metric_prefix,
+		telemetry_metric_prefix,
 		self.frame,
-		self.stage.total_smooth_scroll_px % constants.machine.game_width,
+		self.stage.total_smooth_scroll_px % machine_game_width,
 		bool01(self.stage.yellow_blink),
 		bool01(self.stage.blue_blink),
 		#self.stage.yellow_stars,
@@ -29,19 +29,19 @@ function director:emit_metric()
 end
 
 function director:emit_event(name, extra)
-	if not constants.telemetry.enabled then
+	if not telemetry_enabled then
 		return
 	end
 	if extra ~= nil then
-		print(string.format('%s|kind=director|f=%d|name=%s|%s', constants.telemetry.event_prefix, self.frame, name, extra))
+		print(string.format('%s|kind=director|f=%d|name=%s|%s', telemetry_event_prefix, self.frame, name, extra))
 		return
 	end
-	print(string.format('%s|kind=director|f=%d|name=%s', constants.telemetry.event_prefix, self.frame, name))
+	print(string.format('%s|kind=director|f=%d|name=%s', telemetry_event_prefix, self.frame, name))
 end
 
 function director:reset_runtime()
 	self.frame = 0
-	self.stage = subsystem(constants.ids.stage_instance)
+	self.stage = subsystem(ids_stage_instance)
 end
 
 function director:update_runtime()
@@ -50,11 +50,11 @@ function director:update_runtime()
 end
 
 local define_director_fsm<const> = function()
-	define_fsm(constants.ids.director_fsm, {
+	define_fsm(ids_director_fsm, {
 		initial = 'boot',
 		on = {
 			['star_blink_toggle'] = {
-				emitter = constants.ids.stage_instance,
+				emitter = ids_stage_instance,
 				go = function(self, _state, event)
 					self:emit_event(
 						'star_blink_toggle',
@@ -68,19 +68,19 @@ local define_director_fsm<const> = function()
 				end,
 			},
 			['stage_scroll_stop'] = {
-				emitter = constants.ids.stage_instance,
+				emitter = ids_stage_instance,
 				go = function(self, _state, event)
 					self:emit_event('stage_scroll_stop', string.format('left=%d|head=%d', event.left, event.head))
 				end,
 			},
 			['stage_scroll_tile'] = {
-				emitter = constants.ids.stage_instance,
+				emitter = ids_stage_instance,
 				go = function(self, _state, event)
 					self:emit_event('stage_scroll_tile', string.format('left=%d|head=%d', event.left, event.head))
 				end,
 			},
 			['stage_scroll_gate'] = {
-				emitter = constants.ids.stage_instance,
+				emitter = ids_stage_instance,
 				go = function(self, _state, event)
 					self:emit_event(
 						'stage_scroll_gate',
@@ -116,9 +116,9 @@ end
 
 local register_director_definition<const> = function()
 	define_prefab({
-		def_id = constants.ids.director_def,
+		def_id = ids_director_def,
 		class = director,
-		fsms = { constants.ids.director_fsm },
+		fsms = { ids_director_fsm },
 		components = {},
 		defaults = {
 			frame = 0,
@@ -130,7 +130,7 @@ return {
 	director = director,
 	define_director_fsm = define_director_fsm,
 	register_director_definition = register_director_definition,
-	director_def_id = constants.ids.director_def,
-	director_instance_id = constants.ids.director_instance,
-	director_fsm_id = constants.ids.director_fsm,
+	director_def_id = ids_director_def,
+	director_instance_id = ids_director_instance,
+	director_fsm_id = ids_director_fsm,
 }

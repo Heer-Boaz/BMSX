@@ -1,4 +1,4 @@
-local constants<const> = require('constants')
+require('constants')
 local behaviourtree<const> = require('cartlib/behaviourtree')
 local enemy_base<const> = require('enemies/enemy_base')
 
@@ -14,7 +14,7 @@ end
 function boekfoe.bt_tick(self, blackboard)
 	local node<const> = blackboard.nodedata
 	if self.boek_state == 'closed' then
-		local closed_ticks = node.boek_state_ticks or constants.enemy.boek_wait_open_steps
+		local closed_ticks = node.boek_state_ticks or enemy_boek_wait_open_steps
 		closed_ticks = closed_ticks - 1
 		if closed_ticks > 0 then
 			node.boek_state_ticks = closed_ticks
@@ -23,15 +23,15 @@ function boekfoe.bt_tick(self, blackboard)
 		self.boek_state = 'open'
 		self:gfx('boekfoe_open')
 		self.sprite_component.flip.flip_h = self.direction == 'left'
-		node.boek_state_ticks = constants.enemy.boek_wait_close_steps
-		node.boek_spawn_ticks = constants.enemy.boek_spawn_paper_steps
+		node.boek_state_ticks = enemy_boek_wait_close_steps
+		node.boek_spawn_ticks = enemy_boek_spawn_paper_steps
 		return 'RUNNING'
 	end
 
-	local open_ticks = node.boek_state_ticks or constants.enemy.boek_wait_close_steps
+	local open_ticks = node.boek_state_ticks or enemy_boek_wait_close_steps
 	open_ticks = open_ticks - 1
 
-	local spawn_ticks = node.boek_spawn_ticks or constants.enemy.boek_spawn_paper_steps
+	local spawn_ticks = node.boek_spawn_ticks or enemy_boek_spawn_paper_steps
 	spawn_ticks = spawn_ticks - 1
 
 	if spawn_ticks <= 0 then
@@ -39,7 +39,7 @@ function boekfoe.bt_tick(self, blackboard)
 		oget('c').events:emit('paperspawn')
 		inst('enemy.paperfoe', {
 			direction = self.direction == 'left' and 'left' or 'right',
-			speed_x_num = (self.direction == 'left' and -constants.enemy.paper_speed_x or constants.enemy.paper_speed_x) * 5,
+			speed_x_num = (self.direction == 'left' and -enemy_paper_speed_x or enemy_paper_speed_x) * 5,
 			speed_y_num = y_speed_num,
 			speed_den = 5,
 			speed_accum_x = 0,
@@ -50,14 +50,14 @@ function boekfoe.bt_tick(self, blackboard)
 				z = 140,
 			},
 		})
-		spawn_ticks = constants.enemy.boek_spawn_paper_steps
+		spawn_ticks = enemy_boek_spawn_paper_steps
 	end
 
 	if open_ticks <= 0 then
 		self.boek_state = 'closed'
 		self:gfx('boekfoe_closed')
 		self.sprite_component.flip.flip_h = self.direction == 'left'
-		node.boek_state_ticks = constants.enemy.boek_wait_open_steps
+		node.boek_state_ticks = enemy_boek_wait_open_steps
 		node.boek_spawn_ticks = nil
 		return 'RUNNING'
 	end
@@ -79,10 +79,10 @@ function boekfoe.register_behaviour_tree(bt_id)
 end
 
 function boekfoe.choose_drop_type(_self)
-	if math.random(100) <= constants.enemy.boek_drop_health_chance_pct then
+	if math.random(100) <= enemy_boek_drop_health_chance_pct then
 		return 'life'
 	end
-	if math.random(100) <= constants.enemy.boek_drop_ammo_chance_pct then
+	if math.random(100) <= enemy_boek_drop_ammo_chance_pct then
 		return 'ammo'
 	end
 	return nil

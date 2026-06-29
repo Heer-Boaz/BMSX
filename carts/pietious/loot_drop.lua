@@ -1,4 +1,4 @@
-local constants<const> = require('constants')
+require('constants')
 local combat_overlap<const> = require('combat/overlap')
 local worldobject<const> = require('cartlib/world/object')
 
@@ -56,7 +56,7 @@ local register_loot_drop_definition<const> = function()
 		fsms = { 'loot_drop' },
 		defaults = {
 			loot_type = 'life',
-			loot_value = constants.enemy.loot_life_regen,
+			loot_value = enemy_loot_life_regen,
 		},
 	})
 end

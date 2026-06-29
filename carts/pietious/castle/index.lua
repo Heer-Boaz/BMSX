@@ -1,4 +1,4 @@
-local constants<const> = require('constants')
+require('constants')
 local castle_map<const> = require('castle/map')
 local progression<const> = require('cartlib/progression')
 local room_spawner<const> = require('room/spawner')
@@ -404,9 +404,9 @@ function castle:apply_seal_timeline_frame(frame)
 	if frame >= 32 then
 		if frame < 64 then
 			local progress<const> = frame - 32
-			room_dissolve_step = ((progress * constants.flow.seal_room_dissolve_steps) // 32) + 1
+			room_dissolve_step = ((progress * flow_seal_room_dissolve_steps) // 32) + 1
 		else
-			room_dissolve_step = constants.flow.seal_room_dissolve_steps
+			room_dissolve_step = flow_seal_room_dissolve_steps
 		end
 	end
 	if frame >= 64 then
@@ -414,13 +414,13 @@ function castle:apply_seal_timeline_frame(frame)
 		if progress > 31 then
 			progress = 31
 		end
-		seal_dissolve_step = ((progress * constants.flow.seal_sprite_dissolve_steps) // 32) + 1
+		seal_dissolve_step = ((progress * flow_seal_sprite_dissolve_steps) // 32) + 1
 	end
-	if room_dissolve_step > constants.flow.seal_room_dissolve_steps then
-		room_dissolve_step = constants.flow.seal_room_dissolve_steps
+	if room_dissolve_step > flow_seal_room_dissolve_steps then
+		room_dissolve_step = flow_seal_room_dissolve_steps
 	end
-	if seal_dissolve_step > constants.flow.seal_sprite_dissolve_steps then
-		seal_dissolve_step = constants.flow.seal_sprite_dissolve_steps
+	if seal_dissolve_step > flow_seal_sprite_dissolve_steps then
+		seal_dissolve_step = flow_seal_sprite_dissolve_steps
 	end
 	if room.room_dissolve_step ~= room_dissolve_step then
 		room.room_dissolve_step = room_dissolve_step
@@ -711,8 +711,8 @@ function castle:halo_teleport_to_room_1(emit_room_enter_now)
 	self.current_room_number = halo_destination_room_number
 	local switch<const> = create_room_switch(from_room_number, self.current_room_number, 'halo')
 	self:commit_room_switch(switch, 0, 5, 12, emit_room_enter_now)
-	switch.spawn_x = constants.player.start_x
-	switch.spawn_y = constants.player.start_y
+	switch.spawn_x = player_start_x
+	switch.spawn_y = player_start_y
 	switch.spawn_facing = 1
 
 	return {

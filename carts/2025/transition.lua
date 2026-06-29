@@ -1,5 +1,5 @@
 local transition<const> = {}
-local globals<const> = require('globals')
+require('globals')
 local story<const> = require('story')
 local timeline_builders<const> = require('timeline_builders')
 local build_transition_frames<const> = timeline_builders.build_transition_frames
@@ -30,21 +30,21 @@ function transition.register_states(states)
 
 	local build_transition_palette<const> = function(style)
 		if style == 'combat' then
-			return globals.p3_transition_palette_combat
+			return p3_transition_palette_combat
 		end
 		if style == 'ending' then
-			return globals.p3_transition_palette_ending
+			return p3_transition_palette_ending
 		end
 		if style == 'choice' then
-			return globals.p3_transition_palette_choice
+			return p3_transition_palette_choice
 		end
-		return globals.p3_transition_palette_dialogue
+		return p3_transition_palette_dialogue
 	end
 
 	local build_transition_layout<const> = function(style, palette, layout)
 		local w<const> = machine_manifest.render_size.width
 		local h<const> = machine_manifest.render_size.height
-		local swap_frame<const> = globals.overgang_fade_out_frames - 1
+		local swap_frame<const> = overgang_fade_out_frames - 1
 		local center_x<const> = layout.center_x
 		local text_top<const> = layout.text_top
 		local line_height<const> = layout.line_height
@@ -73,7 +73,7 @@ function transition.register_states(states)
 				x_in = w,
 				x_hold = center_x - (panel2_width / 2),
 				x_out = -w * 1.3,
-				offset = globals.transition_panel_gap_frames,
+				offset = transition_panel_gap_frames,
 			},
 			{
 				color = palette.panel_primary,
@@ -83,7 +83,7 @@ function transition.register_states(states)
 				x_in = -w * 0.55,
 				x_hold = center_x - (panel3_width / 2),
 				x_out = w * 1.1,
-				offset = swap_frame - globals.transition_panel_in_frames,
+				offset = swap_frame - transition_panel_in_frames,
 			},
 		}
 
@@ -95,7 +95,7 @@ function transition.register_states(states)
 			x_in = w,
 			x_hold = center_x - (w * 0.35),
 			x_out = -w * 0.3,
-			offset = swap_frame - globals.transition_accent_in_frames,
+			offset = swap_frame - transition_accent_in_frames,
 		}
 
 		return panels, accent
@@ -118,7 +118,7 @@ function transition.register_states(states)
 	end
 
 	local finish_transition_fade_in<const> = function(self)
-		globals.hide_transition_layers()
+		hide_transition_layers()
 		return '/run_node'
 	end
 
@@ -138,12 +138,12 @@ function transition.register_states(states)
 	states.transition = {
 		entering_state = function(self)
 			local node<const> = story[self.node_id]
-			oget(globals.text_main_id):clear_text()
-			oget(globals.text_choice_id):clear_text()
-			oget(globals.text_prompt_id):clear_text()
-			oget(globals.text_transition_id):set_text({ node.label }, { typed = false, snap = true })
-			globals.reset_text_colors()
-			local transition_text<const> = oget(globals.text_transition_id)
+			oget(text_main_id):clear_text()
+			oget(text_choice_id):clear_text()
+			oget(text_prompt_id):clear_text()
+			oget(text_transition_id):set_text({ node.label }, { typed = false, snap = true })
+			reset_text_colors()
+			local transition_text<const> = oget(text_transition_id)
 			self.transition_center_x = transition_text.centered_block_x
 			self.transition_target_bg = story[node.next].bg
 			transition_text.centered_block_x = machine_manifest.render_size.width
@@ -158,38 +158,38 @@ function transition.register_states(states)
 				line_height = transition_text.line_height,
 			}
 			self.transition_panels, self.transition_accent = build_transition_layout(style, self.transition_palette, layout)
-			local swap_frame<const> = globals.overgang_fade_out_frames - 1
-			local montage_end = globals.transition_text_in_frames + globals.transition_text_hold_frames + globals.transition_text_out_frames - 1
+			local swap_frame<const> = overgang_fade_out_frames - 1
+			local montage_end = transition_text_in_frames + transition_text_hold_frames + transition_text_out_frames - 1
 			for i = 1, #self.transition_panels do
 				local panel<const> = self.transition_panels[i]
-				local panel_end<const> = panel.offset + globals.transition_panel_in_frames + globals.transition_panel_hold_frames + globals.transition_panel_out_frames - 1
+				local panel_end<const> = panel.offset + transition_panel_in_frames + transition_panel_hold_frames + transition_panel_out_frames - 1
 				if panel_end > montage_end then
 					montage_end = panel_end
 				end
 			end
-			local accent_end<const> = self.transition_accent.offset + globals.transition_accent_in_frames + globals.transition_accent_hold_frames + globals.transition_accent_out_frames - 1
+			local accent_end<const> = self.transition_accent.offset + transition_accent_in_frames + transition_accent_hold_frames + transition_accent_out_frames - 1
 			if accent_end > montage_end then
 				montage_end = accent_end
 			end
 			self.transition_montage_end_frame = montage_end
 			local fade_in_start = math.max(swap_frame + 1, montage_end + 1)
-			local max_fade_start<const> = globals.overgang_frame_count - globals.overgang_fade_in_frames
+			local max_fade_start<const> = overgang_frame_count - overgang_fade_in_frames
 			if fade_in_start > max_fade_start then
 				fade_in_start = max_fade_start
 			end
 			if next_node.kind == 'combat' then
-				fade_in_start = globals.overgang_frame_count
+				fade_in_start = overgang_frame_count
 			end
 			self.transition_fade_in_start = fade_in_start
 			local finish_frame = montage_end
-			if not self.skip_transition_fade and fade_in_start < globals.overgang_frame_count then
-				finish_frame = fade_in_start + globals.overgang_fade_in_frames - 1
+			if not self.skip_transition_fade and fade_in_start < overgang_frame_count then
+				finish_frame = fade_in_start + overgang_fade_in_frames - 1
 			end
-			if finish_frame > (globals.overgang_frame_count - 1) then
-				finish_frame = globals.overgang_frame_count - 1
+			if finish_frame > (overgang_frame_count - 1) then
+				finish_frame = overgang_frame_count - 1
 			end
 			self.transition_finish_frame = finish_frame
-			globals.show_background(nil)
+			show_background(nil)
 			local overlay<const> = self.transition_visual.overlay
 			local base<const> = self.transition_palette.overlay
 			overlay.visible = true
@@ -220,7 +220,7 @@ function transition.register_states(states)
 			accent.height = self.transition_accent.height
 			accent.color = self.transition_accent.color & 0x00ffffff
 			if self.skip_transition_fade then
-				globals.apply_background(self.transition_target_bg)
+				apply_background(self.transition_target_bg)
 			end
 			local w<const> = machine_manifest.render_size.width
 			local target<const> = {
@@ -230,8 +230,8 @@ function transition.register_states(states)
 				text = transition_text,
 			}
 			local frames<const> = build_transition_frames({
-				fade_out_frames = globals.overgang_fade_out_frames,
-				fade_in_frames = globals.overgang_fade_in_frames,
+				fade_out_frames = overgang_fade_out_frames,
+				fade_in_frames = overgang_fade_in_frames,
 				fade_in_start = self.transition_fade_in_start,
 				finish_frame = self.transition_finish_frame,
 				skip_fade = self.skip_transition_fade,
@@ -243,17 +243,17 @@ function transition.register_states(states)
 				end_x = -w,
 			})
 			self:define_timeline(timeline.new({
-				id = globals.overgang_timeline_id,
+				id = overgang_timeline_id,
 				frames = frames,
-				ticks_per_frame = globals.overgang_ticks_per_frame,
+				ticks_per_frame = overgang_ticks_per_frame,
 				playback_mode = 'once',
 				target = target,
 				apply = true,
 				markers = {
-					{ frame = globals.overgang_fade_out_frames - 1, event = 'transition.swap_bg' },
+					{ frame = overgang_fade_out_frames - 1, event = 'transition.swap_bg' },
 				},
 			}))
-			self:play_timeline(globals.overgang_timeline_id, { rewind = true, snap_to_start = true })
+			self:play_timeline(overgang_timeline_id, { rewind = true, snap_to_start = true })
 		end,
 		input_eval = 'first',
 		input_event_handlers = {
@@ -269,31 +269,31 @@ function transition.register_states(states)
 					if self.skip_transition_fade then
 						return
 					end
-					globals.apply_background(self.transition_target_bg)
+					apply_background(self.transition_target_bg)
 				end,
 			},
-			['timeline.end.' .. globals.overgang_timeline_id] = {
+			['timeline.end.' .. overgang_timeline_id] = {
 				go = function(self)
 					return finish_transition(self)
 				end,
 			},
 		},
 		leaving_state = function(self)
-			self:stop_timeline(globals.overgang_timeline_id)
-			oget(globals.text_transition_id):clear_text()
+			self:stop_timeline(overgang_timeline_id)
+			oget(text_transition_id):clear_text()
 			if self.transition_needs_post_fade or story[self.node_id].kind == 'combat' then
-				globals.hide_transition_layers()
+				hide_transition_layers()
 				return
 			end
-			globals.hide_transition_layers()
+			hide_transition_layers()
 		end,
 	}
 
 	states.transition_fade_in = {
 		entering_state = function(self)
-			oget(globals.text_transition_id):clear_text()
-			globals.show_background(nil)
-			globals.hide_transition_layers()
+			oget(text_transition_id):clear_text()
+			show_background(nil)
+			hide_transition_layers()
 			local overlay<const> = self.transition_visual.overlay
 			local base<const> = self.transition_palette.overlay
 			overlay.visible = true
@@ -305,14 +305,14 @@ function transition.register_states(states)
 			local target<const> = { overlay = overlay }
 			local frames<const> = build_transition_fade_in_frames(self.transition_palette)
 			self:define_timeline(timeline.new({
-				id = globals.overgang_post_fade_in_timeline_id,
+				id = overgang_post_fade_in_timeline_id,
 				frames = frames,
-				ticks_per_frame = globals.overgang_ticks_per_frame,
+				ticks_per_frame = overgang_ticks_per_frame,
 				playback_mode = 'once',
 				target = target,
 				apply = true,
 			}))
-			self:play_timeline(globals.overgang_post_fade_in_timeline_id, { rewind = true, snap_to_start = true })
+			self:play_timeline(overgang_post_fade_in_timeline_id, { rewind = true, snap_to_start = true })
 		end,
 		input_eval = 'first',
 		input_event_handlers = {
@@ -323,23 +323,23 @@ function transition.register_states(states)
 			},
 		},
 		on = {
-			['timeline.end.' .. globals.overgang_post_fade_in_timeline_id] = {
+			['timeline.end.' .. overgang_post_fade_in_timeline_id] = {
 				go = function(self)
 					return finish_transition_fade_in(self)
 				end,
 			},
 		},
 		leaving_state = function(self)
-			self:stop_timeline(globals.overgang_post_fade_in_timeline_id)
-			globals.hide_transition_layers()
+			self:stop_timeline(overgang_post_fade_in_timeline_id)
+			hide_transition_layers()
 		end,
 	}
 
 	states.fade = {
 		entering_state = function(self)
 			local node<const> = story[self.node_id]
-			globals.clear_texts(globals.text_ids_all)
-			globals.reset_text_colors()
+			clear_texts(text_ids_all)
+			reset_text_colors()
 			local next_node<const> = story[node.next]
 			local next_kind<const> = next_node.kind
 			self.fade_hold_black = fade_hold_black_kinds[next_kind]
@@ -354,8 +354,8 @@ function transition.register_states(states)
 			else
 				self.fade_target_bg = next_node.bg
 			end
-			globals.show_background(nil)
-			globals.hide_transition_layers()
+			show_background(nil)
+			hide_transition_layers()
 			local overlay<const> = self.transition_visual.overlay
 			local base<const> = self.fade_palette.overlay
 			overlay.visible = true
@@ -368,20 +368,20 @@ function transition.register_states(states)
 			local frames<const> = build_fade_frames({
 				palette = self.fade_palette,
 				hold_black = self.fade_hold_black,
-				frame_count = next_kind == 'transition' and globals.fade_out_frames or globals.fade_frame_count,
+				frame_count = next_kind == 'transition' and fade_out_frames or fade_frame_count,
 			})
 			self:define_timeline(timeline.new({
-				id = globals.fade_timeline_id,
+				id = fade_timeline_id,
 				frames = frames,
-				ticks_per_frame = globals.fade_ticks_per_frame,
+				ticks_per_frame = fade_ticks_per_frame,
 				playback_mode = 'once',
 				target = target,
 				apply = true,
 				markers = {
-					{ frame = globals.fade_out_frames - 1, event = 'fade.swap_bg' },
+					{ frame = fade_out_frames - 1, event = 'fade.swap_bg' },
 				},
 			}))
-			self:play_timeline(globals.fade_timeline_id, { rewind = true, snap_to_start = true })
+			self:play_timeline(fade_timeline_id, { rewind = true, snap_to_start = true })
 		end,
 		input_eval = 'first',
 		input_event_handlers = {
@@ -397,18 +397,18 @@ function transition.register_states(states)
 					if self.fade_hold_black then
 						return
 					end
-					globals.apply_background(self.fade_target_bg)
+					apply_background(self.fade_target_bg)
 				end,
 			},
-			['timeline.end.' .. globals.fade_timeline_id] = {
+			['timeline.end.' .. fade_timeline_id] = {
 				go = function(self)
 					return finish_fade(self)
 				end,
 			},
 		},
 		leaving_state = function(self)
-			self:stop_timeline(globals.fade_timeline_id)
-			globals.hide_transition_layers()
+			self:stop_timeline(fade_timeline_id)
+			hide_transition_layers()
 			self.fade_hold_black = false
 		end,
 	}

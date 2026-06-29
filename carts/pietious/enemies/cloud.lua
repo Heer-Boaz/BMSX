@@ -1,4 +1,4 @@
-local constants<const> = require('constants')
+require('constants')
 local behaviourtree<const> = require('cartlib/behaviourtree')
 local enemy_base<const> = require('enemies/enemy_base')
 
@@ -29,7 +29,7 @@ function cloud.bt_tick(self, blackboard)
 		self:gfx('cloud_1')
 	end
 
-	local anim_ticks = node.cloud_anim_ticks or constants.enemy.cloud_anim_switch_steps
+	local anim_ticks = node.cloud_anim_ticks or enemy_cloud_anim_switch_steps
 	anim_ticks = anim_ticks - 1
 	if anim_ticks <= 0 then
 		if self.cloud_anim_frame == 1 then
@@ -37,16 +37,16 @@ function cloud.bt_tick(self, blackboard)
 		else
 			self.cloud_anim_frame = 1
 		end
-		anim_ticks = constants.enemy.cloud_anim_switch_steps
+		anim_ticks = enemy_cloud_anim_switch_steps
 	end
 	node.cloud_anim_ticks = anim_ticks
 
 	local dir_modifier<const> = self.direction == 'left' and -1 or 1
 	local move_accum = node.cloud_move_accum or 0
-	move_accum = move_accum + constants.enemy.cloud_horizontal_speed_num
-	while move_accum >= constants.enemy.cloud_horizontal_speed_den do
+	move_accum = move_accum + enemy_cloud_horizontal_speed_num
+	while move_accum >= enemy_cloud_horizontal_speed_den do
 		self.x = self.x + dir_modifier
-		move_accum = move_accum - constants.enemy.cloud_horizontal_speed_den
+		move_accum = move_accum - enemy_cloud_horizontal_speed_den
 	end
 	node.cloud_move_accum = move_accum
 
@@ -66,9 +66,9 @@ function cloud.bt_tick(self, blackboard)
 			wave_speed_num = -1
 		end
 	end
-	local wave_dy<const>, next_wave_accum<const> = consume_axis_accum(wave_accum, wave_speed_num, constants.enemy.cloud_wave_speed_den)
+	local wave_dy<const>, next_wave_accum<const> = consume_axis_accum(wave_accum, wave_speed_num, enemy_cloud_wave_speed_den)
 	self.y = self.y + wave_dy
-	wave_phase = wave_phase + constants.enemy.cloud_wave_phase_step_millirad
+	wave_phase = wave_phase + enemy_cloud_wave_phase_step_millirad
 	if wave_phase >= full_circle_milliradians then
 		wave_phase = wave_phase - full_circle_milliradians
 	end
@@ -85,7 +85,7 @@ function cloud.bt_tick(self, blackboard)
 		end
 	end
 
-	local vlok_ticks = node.cloud_vlok_ticks or constants.enemy.cloud_spawn_vlok_steps
+	local vlok_ticks = node.cloud_vlok_ticks or enemy_cloud_spawn_vlok_steps
 	vlok_ticks = vlok_ticks - 1
 	if vlok_ticks <= 0 then
 		for i = 1, 3 do
@@ -109,7 +109,7 @@ function cloud.bt_tick(self, blackboard)
 				},
 			})
 		end
-		vlok_ticks = constants.enemy.cloud_spawn_vlok_steps
+		vlok_ticks = enemy_cloud_spawn_vlok_steps
 	end
 	node.cloud_vlok_ticks = vlok_ticks
 	return 'RUNNING'

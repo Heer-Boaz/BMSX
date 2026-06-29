@@ -1,4 +1,4 @@
-local constants<const> = require('constants')
+require('constants')
 local behaviourtree<const> = require('cartlib/behaviourtree')
 local enemy_base<const> = require('enemies/enemy_base')
 
@@ -17,7 +17,7 @@ end
 function stafffoe.bt_tick(self, blackboard)
 	local node<const> = blackboard.nodedata
 	if self.staff_state == 'default' then
-		local wait_ticks = node.staff_wait_ticks or constants.enemy.staff_wait_before_spawn_state_steps
+		local wait_ticks = node.staff_wait_ticks or enemy_staff_wait_before_spawn_state_steps
 		wait_ticks = wait_ticks - 1
 		if wait_ticks > 0 then
 			node.staff_wait_ticks = wait_ticks
@@ -25,17 +25,17 @@ function stafffoe.bt_tick(self, blackboard)
 		end
 		self.staff_state = 'spawning'
 		self.staff_spawn_count = 0
-		node.staff_wait_ticks = constants.enemy.staff_wait_before_spawn_steps
+		node.staff_wait_ticks = enemy_staff_wait_before_spawn_steps
 		return 'RUNNING'
 	end
 
-	if self.staff_spawn_count >= constants.enemy.staff_spawn_burst_count then
+	if self.staff_spawn_count >= enemy_staff_spawn_burst_count then
 		self.staff_state = 'default'
-		node.staff_wait_ticks = constants.enemy.staff_wait_before_spawn_state_steps
+		node.staff_wait_ticks = enemy_staff_wait_before_spawn_state_steps
 		return 'RUNNING'
 	end
 
-	local spawn_wait = node.staff_wait_ticks or constants.enemy.staff_wait_before_spawn_steps
+	local spawn_wait = node.staff_wait_ticks or enemy_staff_wait_before_spawn_steps
 	spawn_wait = spawn_wait - 1
 	if spawn_wait > 0 then
 		node.staff_wait_ticks = spawn_wait
@@ -53,7 +53,7 @@ function stafffoe.bt_tick(self, blackboard)
 			direction = speed_x_num < 0 and 'left' or 'right',
 			speed_x_num = speed_x_num,
 			speed_y_num = speed_y_num,
-			speed_den = constants.enemy.staff_bullet_speed_den,
+			speed_den = enemy_staff_bullet_speed_den,
 			speed_accum_x = 0,
 			speed_accum_y = 0,
 			dangerous = bullets_dangerous,
@@ -66,7 +66,7 @@ function stafffoe.bt_tick(self, blackboard)
 	end
 	oget('c').events:emit('staffspawn')
 	self.staff_spawn_count = self.staff_spawn_count + 1
-	node.staff_wait_ticks = constants.enemy.staff_wait_before_spawn_steps
+	node.staff_wait_ticks = enemy_staff_wait_before_spawn_steps
 	return 'RUNNING'
 end
 

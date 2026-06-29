@@ -1,5 +1,5 @@
 local div_toward_zero<const> = require('bios/util/div_toward_zero')
-local constants<const> = require('constants')
+require('constants')
 local behaviourtree<const> = require('cartlib/behaviourtree')
 local enemy_base<const> = require('enemies/enemy_base')
 
@@ -32,26 +32,26 @@ function muziekfoe.bt_tick(self, blackboard)
 	local node<const> = blackboard.nodedata
 	local dir_modifier<const> = self.direction == 'left' and -1 or 1
 	local move_accum = node.muziek_move_accum or 0
-	move_accum = move_accum + constants.enemy.muziek_horizontal_speed_num
-	while move_accum >= constants.enemy.muziek_horizontal_speed_den do
+	move_accum = move_accum + enemy_muziek_horizontal_speed_num
+	while move_accum >= enemy_muziek_horizontal_speed_den do
 		self.x = self.x + dir_modifier
-		move_accum = move_accum - constants.enemy.muziek_horizontal_speed_den
+		move_accum = move_accum - enemy_muziek_horizontal_speed_den
 	end
 	node.muziek_move_accum = move_accum
 
 	if self.direction == 'left' then
 		local rm<const> = oget('room')
-		if self.x < 0 or rm:has_collision_flags_at_world(self.x, self.y, constants.collision_flags.solid_mask) then
+		if self.x < 0 or rm:has_collision_flags_at_world(self.x, self.y, collision_flags_solid_mask) then
 			self.direction = 'right'
 		end
 	else
 		local rm<const> = oget('room')
-		if self.x + 24 >= rm.world_width or rm:has_collision_flags_at_world(self.x + 24, self.y + 16, constants.collision_flags.solid_mask) then
+		if self.x + 24 >= rm.world_width or rm:has_collision_flags_at_world(self.x + 24, self.y + 16, collision_flags_solid_mask) then
 			self.direction = 'left'
 		end
 	end
 
-	local noot_ticks = node.muziek_noot_ticks or constants.enemy.muziek_spawn_noot_steps
+	local noot_ticks = node.muziek_noot_ticks or enemy_muziek_spawn_noot_steps
 	noot_ticks = noot_ticks - 1
 	if noot_ticks <= 0 then
 		local player<const> = oget('pietolon')
@@ -75,7 +75,7 @@ function muziekfoe.bt_tick(self, blackboard)
 				z = 140,
 			},
 		})
-		noot_ticks = constants.enemy.muziek_spawn_noot_steps
+		noot_ticks = enemy_muziek_spawn_noot_steps
 	end
 	node.muziek_noot_ticks = noot_ticks
 	return 'RUNNING'
@@ -93,10 +93,10 @@ function muziekfoe.register_behaviour_tree(bt_id)
 end
 
 function muziekfoe.choose_drop_type(_self)
-	if math.random(100) <= constants.enemy.muziek_drop_health_chance_pct then
+	if math.random(100) <= enemy_muziek_drop_health_chance_pct then
 		return 'life'
 	end
-	if math.random(100) <= constants.enemy.muziek_drop_ammo_chance_pct then
+	if math.random(100) <= enemy_muziek_drop_ammo_chance_pct then
 		return 'ammo'
 	end
 	return nil

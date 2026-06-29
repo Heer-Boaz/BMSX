@@ -8,12 +8,12 @@ export default function schedule({ logger, test }) {
 
 		const objectState = await test.pollUntil(() => {
 			const [state] = test.evalLua(`
-				local globals = require('globals')
-				local main_id = globals.text_main_id
-				local choice_id = globals.text_choice_id
-				local prompt_id = globals.text_prompt_id
-				local transition_id = globals.text_transition_id
-				local results_id = globals.text_results_id
+				require('globals')
+				local main_id = text_main_id
+				local choice_id = text_choice_id
+				local prompt_id = text_prompt_id
+				local transition_id = text_transition_id
+				local results_id = text_results_id
 				local main = main_id ~= nil and oget(main_id) or nil
 				local choice = choice_id ~= nil and oget(choice_id) or nil
 				local prompt = prompt_id ~= nil and oget(prompt_id) or nil
@@ -68,8 +68,8 @@ export default function schedule({ logger, test }) {
 		test.assert(objectState.results_font, 'expected p3.text.results to have a font');
 
 		const [textProbeState] = test.evalLua(`
-			local globals = require('globals')
-			local main = oget(globals.text_main_id)
+			require('globals')
+			local main = oget(text_main_id)
 			main:clear_text()
 			main:set_text({ 'AB' }, { typed = true, snap = false })
 			main:type_next()
@@ -84,7 +84,7 @@ export default function schedule({ logger, test }) {
 			main.highlighted_line_index = 0
 			local highlight_y<const>, highlight_h<const> = main:compute_highlight_block()
 			main.highlighted_line_index = nil
-			local choice = oget(globals.text_choice_id)
+			local choice = oget(text_choice_id)
 			local original_choice_max<const> = choice.maximum_characters_per_line
 			choice.maximum_characters_per_line = 7
 			choice:set_text({ 'AB CD EF', 'GH' }, { typed = false, snap = true })

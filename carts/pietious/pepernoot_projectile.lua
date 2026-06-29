@@ -10,7 +10,7 @@
 -- This is the same pattern the player uses — temporary interruption with
 -- automatic state restoration.
 
-local constants<const> = require('constants')
+require('constants')
 local components<const> = require('cartlib/components')
 local worldobject<const> = require('cartlib/world/object')
 
@@ -27,7 +27,7 @@ function pepernoot_projectile:ctor()
 		id_local = 'world',
 		query = function(_component, owner, payload)
 			local collision_flags<const> = oget('room'):collision_flags_at_world(owner.x, owner.y)
-			if collision_flags == constants.collision_flags.none or collision_flags == constants.collision_flags.elevator then
+			if collision_flags == collision_flags_none or collision_flags == collision_flags_elevator then
 				return nil
 			end
 			payload.collision_flags = collision_flags
@@ -58,7 +58,7 @@ function pepernoot_projectile:update_motion()
 		return
 	end
 	local room<const> = oget('room')
-	self.x = self.x + (self.direction * constants.secondary_weapon.pepernoot_speed_px)
+	self.x = self.x + (self.direction * secondary_weapon_pepernoot_speed_px)
 	self:refresh_tile_aligned_sprite_offset()
 
 	if self.x <= 0 or self.x >= room.world_width then
@@ -73,7 +73,7 @@ local define_pepernoot_projectile_fsm<const> = function()
 		on = {
 			['tilecollision.begin'] = worldobject.mark_for_disposal,
 			['overlap.begin'] = function(self, _state, event)
-				if event.other_layer ~= constants.collision.enemy_layer then
+				if event.other_layer ~= collision_enemy_layer then
 					return
 				end
 				self:mark_for_disposal()

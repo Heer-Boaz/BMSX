@@ -1,4 +1,4 @@
-local constants<const> = require('constants')
+require('constants')
 local combat_overlap<const> = require('combat/overlap')
 local combat_damage<const> = require('combat/damage')
 local rock<const> = {}
@@ -42,10 +42,10 @@ function rock:begin_break()
 	if oget('pietolon').inventory_items[self.item_type] then
 		return
 	end
-	local drop_y<const> = self.y + constants.world_item.drop_offset_y[self.item_type]
+	local drop_y<const> = self.y + world_item_drop_offset_y[self.item_type]
 	local id<const> = 'drop.' .. self.id
 	local rock_drop_id = nil
-	if not constants.world_item.inventory[self.item_type] then
+	if not world_item_inventory[self.item_type] then
 		rock_drop_id = id
 		room.rock_drops[id] = {
 			room_number = room.room_number,
@@ -90,7 +90,7 @@ local define_rock_fsm<const> = function()
 				timelines = {
 					[rock_break_timeline_id] = {
 						def = {
-							frames = timeline.range(constants.rock.break_steps),
+							frames = timeline.range(rock_break_steps),
 							playback_mode = 'once',
 						},
 						autoplay = true,
@@ -125,8 +125,8 @@ local register_rock_definition<const> = function()
 				fsms = { 'rock' },
 		defaults = {
 			item_type = nil,
-			max_health = constants.rock.max_health,
-			health = constants.rock.max_health,
+			max_health = rock_max_health,
+			health = rock_max_health,
 		},
 	})
 end

@@ -1,6 +1,6 @@
 
 local progression<const> = require('cartlib/progression')
-local constants<const> = require('constants')
+require('constants')
 
 local room_spawner<const> = {}
 
@@ -176,7 +176,7 @@ local spawn_destroyed_rock_inventory_items<const> = function(room)
 				local obj<const> = inst('world_item', {
 					id = item_id,
 					space_id = 'main',
-					pos = { x = def.x, y = def.y + constants.world_item.drop_offset_y[item_type], z = 130 },
+					pos = { x = def.x, y = def.y + world_item_drop_offset_y[item_type], z = 130 },
 					item_id = item_id,
 					item_type = item_type,
 					rs_room_number = room.room_number,

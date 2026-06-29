@@ -1,5 +1,5 @@
 local combat<const> = {}
-local globals<const> = require('globals')
+require('globals')
 local story<const> = require('story')
 local timeline_builders<const> = require('timeline_builders')
 local stagger<const> = require('stagger')
@@ -21,7 +21,7 @@ local stat_label<const> = function(stat_id)
 	end
 end
 
-combat.all_out_shake = timeline_builders.build_all_out_shake(globals.combat_all_out_frame_count)
+combat.all_out_shake = timeline_builders.build_all_out_shake(combat_all_out_frame_count)
 local combat_all_out_prompt_timeline_id<const> = 'combat_all_out_prompt'
 
 local build_all_out_prompt_portrait_frames<const> = function(params)
@@ -56,7 +56,7 @@ end
 
 local build_all_out_screen_shake_frames<const> = function(params)
 	local frames<const> = {}
-	for frame_index = 0, globals.combat_all_out_frame_count - 1 do
+	for frame_index = 0, combat_all_out_frame_count - 1 do
 		local dx, dy = combat.all_out_shake(frame_index)
 		dx = round_number(dx)
 		dy = round_number(dy)
@@ -91,9 +91,9 @@ combat_director.__index = combat_director
 
 local combat_parallax_scale<const> = function(weight)
 	if weight < 0 then
-		return 1 - (globals.combat_parallax_scale_delta * weight)
+		return 1 - (combat_parallax_scale_delta * weight)
 	end
-	return 1 + (globals.combat_parallax_scale_delta * weight)
+	return 1 + (combat_parallax_scale_delta * weight)
 end
 
 local draw_combat_parallax_sprite<const> = function(obj, weight, offset_base_y)
@@ -131,8 +131,8 @@ local refresh_combat_parallax<const> = function(self)
 end
 
 local combat_hover_track<const> = function(target, params, _event, time_seconds)
-	local w<const> = easing.pingpong01((time_seconds / globals.combat_monster_hover_period_seconds) + 0.25)
-	local hover<const> = (easing.smoothstep(w) - 0.5) * 2 * globals.combat_monster_hover_amp
+	local w<const> = easing.pingpong01((time_seconds / combat_monster_hover_period_seconds) + 0.25)
+	local hover<const> = (easing.smoothstep(w) - 0.5) * 2 * combat_monster_hover_amp
 	local momentum<const> = target.combat_parallax_momentum_steps
 	params.monster.y = params.monster_base_y + hover
 	target.combat_parallax_offset_base_y = ((11 - momentum) / 10) - hover
@@ -156,14 +156,14 @@ function combat_director:apply_combat_round(node)
 		choice_lines[i] = round.options[i].label
 	end
 	stagger.play(self, 'combat', {
-		bg = oget(globals.bg_id),
+		bg = oget(bg_id),
 		bg_dim = false,
 		pose_targets = {
-			oget(globals.combat_maya_a_id),
+			oget(combat_maya_a_id),
 		},
-		text_main = oget(globals.text_main_id),
-		text_choice = oget(globals.text_choice_id),
-		text_prompt = oget(globals.text_prompt_id),
+		text_main = oget(text_main_id),
+		text_choice = oget(text_choice_id),
+		text_prompt = oget(text_prompt_id),
 		text_lines = round.prompt,
 		text_choice_lines = choice_lines,
 		text_typed = true,
@@ -198,8 +198,8 @@ function combat_director:push_combat_momentum(side, power)
 end
 
 function combat_director:skip_typing()
-	if oget(globals.text_main_id):is_typing() then
-		oget(globals.text_main_id):reveal_text()
+	if oget(text_main_id):is_typing() then
+		oget(text_main_id):reveal_text()
 		cart_input.consume(1, 'b')
 		return true
 	end
@@ -216,7 +216,7 @@ function combat.define_fsm()
 				slash_points = { 0, 0, 0, 0 },
 				slash_thickness = 0,
 				slash_color = 0x00ffffff,
-				slash_z = globals.combat_hit_slash_z,
+				slash_z = combat_hit_slash_z,
 			}
 			self.combat_hit_slash_rc = attach_component(self, 'customvisualcomponent')
 			self.combat_hit_slash_rc:add_producer(function(ctx)
@@ -224,8 +224,8 @@ function combat.define_fsm()
 				if director.combat_parallax_draw_active then
 					local momentum<const> = director.combat_parallax_momentum_steps
 					local offset_base_y<const> = director.combat_parallax_offset_base_y
-					draw_combat_parallax_sprite(oget(globals.combat_monster_id), -(10 + momentum) / 15, offset_base_y)
-					draw_combat_parallax_sprite(oget(globals.combat_maya_a_id), (10 - momentum) / 15, offset_base_y)
+					draw_combat_parallax_sprite(oget(combat_monster_id), -(10 + momentum) / 15, offset_base_y)
+					draw_combat_parallax_sprite(oget(combat_maya_a_id), (10 - momentum) / 15, offset_base_y)
 				end
 				local frame<const> = director.combat_hit_slash_frame
 				if not frame.slash_active then
@@ -241,7 +241,7 @@ function combat.define_fsm()
 				local thickness<const> = frame.slash_thickness
 				vdp_draw_line_color(x0, y0, x1, y1, z, sys_vdp_layer_world, color, thickness)
 			end)
-			globals.hide_combat_sprites()
+			hide_combat_sprites()
 			return '/idle'
 		end,
 	}
@@ -258,14 +258,14 @@ function combat.define_fsm()
 			},
 		},
 		entering_state = function()
-			globals.hide_combat_sprites()
+			hide_combat_sprites()
 		end,
 	}
 
 	states.combat_done = {
 		entering_state = function(self)
 			self:disable_combat_parallax()
-			oget(globals.director_instance_id).events:emit('combat.end', {
+			oget(director_instance_id).events:emit('combat.end', {
 				combat_node_id = self.combat_node_id,
 				next_node_id = self.node_id,
 				monster_imgid = self.combat_monster_imgid,
@@ -285,8 +285,8 @@ function combat.define_fsm()
 	end
 
 	local finish_combat_hit<const> = function(self)
-		local monster<const> = oget(globals.combat_monster_id)
-		monster.sprite_component.color = globals.p3_white_color
+		local monster<const> = oget(combat_monster_id)
+		monster.sprite_component.color = p3_white_color
 		monster.x = self.combat_monster_base_x
 		monster.y = self.combat_monster_base_y
 		monster.sprite_component.scale = { x = 1, y = 1 }
@@ -294,7 +294,7 @@ function combat.define_fsm()
 	end
 
 	local finish_combat_dodge<const> = function(self)
-		local monster<const> = oget(globals.combat_monster_id)
+		local monster<const> = oget(combat_monster_id)
 		monster.x = self.combat_monster_base_x
 		monster.y = self.combat_monster_base_y
 		monster.sprite_component.scale = { x = 1, y = 1 }
@@ -302,31 +302,31 @@ function combat.define_fsm()
 	end
 
 	local finish_combat_focus<const> = function(self)
-		globals.hide_combat_sprites()
-		globals.clear_texts(globals.text_ids_all)
+		hide_combat_sprites()
+		clear_texts(text_ids_all)
 		return '/combat_results_setup'
 	end
 
 	local finish_combat_results_fade_in<const> = function(self)
-		local bg<const> = oget(globals.director_instance_id).combat_results_visual
+		local bg<const> = oget(director_instance_id).combat_results_visual
 		bg.visible = true
-		bg.color = globals.combat_results_bg_visible_color
-		local maya_b<const> = oget(globals.combat_maya_b_id)
-		maya_b.sprite_component.color = globals.p3_white_color
+		bg.color = combat_results_bg_visible_color
+		local maya_b<const> = oget(combat_maya_b_id)
+		maya_b.sprite_component.color = p3_white_color
 		maya_b.x = self.combat_results_maya_target_x
-		local results<const> = oget(globals.text_results_id)
-		results.text_color = globals.p3_white_color
+		local results<const> = oget(text_results_id)
+		results.text_color = p3_white_color
 		results.centered_block_x = self.combat_results_text_target_x
 		return '/combat_results'
 	end
 
 	local finish_combat_results_fade_out<const> = function(self)
-		oget(globals.combat_maya_b_id).visible = false
-		oget(globals.text_results_id):clear_text()
-		local bg<const> = oget(globals.director_instance_id).combat_results_visual
+		oget(combat_maya_b_id).visible = false
+		oget(text_results_id):clear_text()
+		local bg<const> = oget(director_instance_id).combat_results_visual
 		bg.visible = false
-		bg.color = globals.p3_white_color
-		globals.hide_combat_sprites()
+		bg.color = p3_white_color
+		hide_combat_sprites()
 		local next_kind<const> = story[self.node_id].kind
 		if next_kind == 'transition' then
 			self.skip_transition_fade = true
@@ -341,38 +341,38 @@ function combat.define_fsm()
 	end
 
 	local finish_combat_exit_fade_in<const> = function(self)
-		local bg<const> = oget(globals.bg_id)
-		bg.sprite_component.color = globals.p3_white_color
+		local bg<const> = oget(bg_id)
+		bg.sprite_component.color = p3_white_color
 		return '/combat_done'
 	end
 
 	states.combat_fade_in = {
 		timelines = {
-			[globals.combat_fade_timeline_id] = {
+			[combat_fade_timeline_id] = {
 				autoplay = false,
 				stop_on_exit = true,
 				on_end = '/combat_init'
 			},
 		},
 		entering_state = function(self)
-			globals.clear_texts(globals.text_ids_all)
-			globals.hide_combat_sprites()
-			globals.hide_transition_layers()
-			local overlay<const> = oget(globals.director_instance_id).transition_visual.overlay
+			clear_texts(text_ids_all)
+			hide_combat_sprites()
+			hide_transition_layers()
+			local overlay<const> = oget(director_instance_id).transition_visual.overlay
 			overlay.visible = true
 			overlay.x = 0
 			overlay.y = 0
 			overlay.width = machine_manifest.render_size.width
 			overlay.height = machine_manifest.render_size.height
 			overlay.color = 0
-			self:play_timeline(globals.combat_fade_timeline_id, { rewind = true, snap_to_start = true, target = { overlay = overlay } })
+			self:play_timeline(combat_fade_timeline_id, { rewind = true, snap_to_start = true, target = { overlay = overlay } })
 		end,
 		input_eval = 'first',
 		input_event_handlers = {
 			['b[jp]'] = '/combat_init'
 		},
 		leaving_state = function(self)
-			local overlay<const> = oget(globals.director_instance_id).transition_visual.overlay
+			local overlay<const> = oget(director_instance_id).transition_visual.overlay
 			overlay.visible = false
 			overlay.color = 0
 		end,
@@ -380,23 +380,23 @@ function combat.define_fsm()
 
 	states.combat_fade_out = {
 		timelines = {
-			[globals.combat_fade_timeline_id] = {
+			[combat_fade_timeline_id] = {
 				autoplay = false,
 				stop_on_exit = true,
 				on_end = '/combat_done'
 			},
 		},
 		entering_state = function(self)
-			globals.clear_texts(globals.text_ids_core)
-			globals.hide_transition_layers()
-			local overlay<const> = oget(globals.director_instance_id).transition_visual.overlay
+			clear_texts(text_ids_core)
+			hide_transition_layers()
+			local overlay<const> = oget(director_instance_id).transition_visual.overlay
 			overlay.visible = true
 			overlay.x = 0
 			overlay.y = 0
 			overlay.width = machine_manifest.render_size.width
 			overlay.height = machine_manifest.render_size.height
 			overlay.color = 0
-			self:play_timeline(globals.combat_fade_timeline_id, { rewind = true, snap_to_start = true, target = { overlay = overlay } })
+			self:play_timeline(combat_fade_timeline_id, { rewind = true, snap_to_start = true, target = { overlay = overlay } })
 		end,
 		input_eval = 'first',
 		input_event_handlers = {
@@ -407,21 +407,21 @@ function combat.define_fsm()
 	states.combat_init = {
 		entering_state = function(self)
 			local node<const> = story[self.node_id]
-			globals.clear_texts(globals.text_ids_transition_results)
-			globals.reset_text_colors()
-			globals.hide_transition_layers()
+			clear_texts(text_ids_transition_results)
+			reset_text_colors()
+			hide_transition_layers()
 
-			local bg<const> = oget(globals.bg_id)
+			local bg<const> = oget(bg_id)
 			bg.visible = false
 
 			self.combat_round_index = 1
 			self.combat_points = 0
 			self.combat_max_points = #node.rounds
 
-			local monster<const> = oget(globals.combat_monster_id)
+			local monster<const> = oget(combat_monster_id)
 			monster:gfx(node.monster_imgid)
 			monster.visible = false
-			monster.sprite_component.color = globals.p3_white_color
+			monster.sprite_component.color = p3_white_color
 			monster.z = 200
 			monster.sprite_component.scale = { x = 1, y = 1 }
 
@@ -431,10 +431,10 @@ function combat.define_fsm()
 				self.combat_monster_base_x = monster.x
 				self.combat_monster_base_y = monster.y
 				self.combat_monster_start_x = (machine_manifest.render_size.width * 0.2) - (monster.sx / 2)
-				self.combat_monster_start_y = self.combat_monster_base_y + globals.combat_intro_monster_start_y_offset
+				self.combat_monster_start_y = self.combat_monster_base_y + combat_intro_monster_start_y_offset
 				self.combat_monster_start_scale = math.max(1, machine_manifest.render_size.width / monster.sx, machine_manifest.render_size.height / monster.sy)
 
-			local maya_a<const> = oget(globals.combat_maya_a_id)
+			local maya_a<const> = oget(combat_maya_a_id)
 			maya_a:gfx('maya_a')
 			maya_a.visible = false
 			maya_a.x = 0
@@ -443,25 +443,25 @@ function combat.define_fsm()
 			self.combat_maya_a_base_x = maya_a.x
 			self.combat_maya_a_base_y = maya_a.y
 			self.combat_maya_a_start_x = machine_manifest.render_size.width
-			self.combat_maya_a_start_scale = globals.combat_intro_maya_a_scale_ratio
+			self.combat_maya_a_start_scale = combat_intro_maya_a_scale_ratio
 
-			local all_out<const> = oget(globals.combat_all_out_id)
+			local all_out<const> = oget(combat_all_out_id)
 			all_out.visible = false
 			all_out.x = 0
 			all_out.y = 0
 			all_out.z = 800
 
-			local maya_b<const> = oget(globals.combat_maya_b_id)
+			local maya_b<const> = oget(combat_maya_b_id)
 			maya_b:gfx('maya_b')
 			maya_b.visible = true
-			maya_b.sprite_component.color = globals.p3_white_color
+			maya_b.sprite_component.color = p3_white_color
 			maya_b.x = machine_manifest.render_size.width - maya_b.sx
 			maya_b.y = machine_manifest.render_size.height - maya_b.sy
 			maya_b.z = 300
 			self.combat_maya_b_start_x = maya_b.x
 			self.combat_maya_b_base_y = maya_b.y
-			self.combat_maya_b_start_scale = globals.combat_intro_maya_b_start_scale
-			self.combat_maya_b_end_scale = globals.combat_intro_maya_b_end_scale
+			self.combat_maya_b_start_scale = combat_intro_maya_b_start_scale
+			self.combat_maya_b_end_scale = combat_intro_maya_b_end_scale
 			self.combat_maya_b_start_right_x = self.combat_maya_b_start_x + maya_b.sx
 			self.combat_maya_b_exit_right_x = self.combat_maya_b_start_right_x + maya_b.sx
 
@@ -472,22 +472,22 @@ function combat.define_fsm()
 
 	states.combat_intro = {
 		timelines = {
-				[globals.combat_intro_timeline_id] = {
+				[combat_intro_timeline_id] = {
 					autoplay = false,
 					stop_on_exit = true,
 					on_end = '/combat_round',
 				},
 			},
 		entering_state = function(self)
-			local monster<const> = oget(globals.combat_monster_id)
-			local maya_a<const> = oget(globals.combat_maya_a_id)
-			local maya_b<const> = oget(globals.combat_maya_b_id)
+			local monster<const> = oget(combat_monster_id)
+			local maya_a<const> = oget(combat_maya_a_id)
+			local maya_b<const> = oget(combat_maya_b_id)
 			local targets<const> = {
 				monster = monster,
 				maya_a = maya_a,
 				maya_b = maya_b,
 			}
-			self:play_timeline(globals.combat_intro_timeline_id, {
+			self:play_timeline(combat_intro_timeline_id, {
 				rewind = true,
 				snap_to_start = true,
 				target = targets,
@@ -523,19 +523,19 @@ function combat.define_fsm()
 			['b[jp]'] = '/combat_done',
 		},
 		leaving_state = function(self)
-			local monster<const> = oget(globals.combat_monster_id)
+			local monster<const> = oget(combat_monster_id)
 			monster.sprite_component.scale = { x = 1, y = 1 }
 			monster.x = self.combat_monster_base_x
 			monster.y = self.combat_monster_base_y
 			monster.visible = true
 
-			local maya_a<const> = oget(globals.combat_maya_a_id)
+			local maya_a<const> = oget(combat_maya_a_id)
 			maya_a.sprite_component.scale = { x = 1, y = 1 }
 			maya_a.x = self.combat_maya_a_base_x
 			maya_a.y = self.combat_maya_a_base_y
 			maya_a.visible = true
 
-			local maya_b<const> = oget(globals.combat_maya_b_id)
+			local maya_b<const> = oget(combat_maya_b_id)
 			maya_b.sprite_component.scale = { x = 1, y = 1 }
 			maya_b.visible = false
 			maya_b.x = self.combat_maya_b_start_x
@@ -546,20 +546,20 @@ function combat.define_fsm()
 	states.combat_round = {
 		entering_state = function(self)
 			local node<const> = story[self.node_id]
-			globals.clear_texts(globals.text_ids_transition_results)
-			local bg<const> = oget(globals.bg_id)
+			clear_texts(text_ids_transition_results)
+			local bg<const> = oget(bg_id)
 			bg.visible = false
-			local monster<const> = oget(globals.combat_monster_id)
+			local monster<const> = oget(combat_monster_id)
 			monster:gfx(node.monster_imgid)
 			monster.visible = true
-			local maya_a<const> = oget(globals.combat_maya_a_id)
+			local maya_a<const> = oget(combat_maya_a_id)
 			maya_a:gfx('maya_a')
 			maya_a.visible = true
-			oget(globals.combat_all_out_id).visible = false
-			local maya_b<const> = oget(globals.combat_maya_b_id)
+			oget(combat_all_out_id).visible = false
+			local maya_b<const> = oget(combat_maya_b_id)
 			maya_b.visible = false
 			self:apply_combat_round(node)
-			self:play_timeline(globals.combat_hover_timeline_id, {
+			self:play_timeline(combat_hover_timeline_id, {
 				rewind = true,
 				snap_to_start = true,
 				target = self,
@@ -576,13 +576,13 @@ function combat.define_fsm()
 			if self.stagger_blocked then
 				return
 			end
-			local main<const> = oget(globals.text_main_id)
+			local main<const> = oget(text_main_id)
 			if main:is_typing() then
 				main:type_next()
 				return
 			end
-			oget(globals.text_prompt_id):set_text({ '(A) select' }, { typed = false, snap = true })
-			local choice_text<const> = oget(globals.text_choice_id)
+			oget(text_prompt_id):set_text({ '(A) select' }, { typed = false, snap = true })
+			local choice_text<const> = oget(text_choice_id)
 			choice_text.highlighted_line_index = self.choice_index - 1
 		end,
 		input_eval = 'first',
@@ -610,7 +610,7 @@ function combat.define_fsm()
 			['a[jp]'] = {
 				go = function(self)
 					if self.stagger_blocked then return end
-					if oget(globals.text_main_id):is_typing() then return end
+					if oget(text_main_id):is_typing() then return end
 					local node<const> = story[self.node_id]
 					local round<const> = node.rounds[self.combat_round_index]
 					local option<const> = round.options[self.choice_index]
@@ -624,17 +624,17 @@ function combat.define_fsm()
 			},
 		},
 		leaving_state = function(self)
-			self:stop_timeline(globals.combat_hover_timeline_id)
+			self:stop_timeline(combat_hover_timeline_id)
 			self.combat_parallax_draw_active = false
-			oget(globals.combat_monster_id).visible = true
-			oget(globals.combat_maya_a_id).visible = true
+			oget(combat_monster_id).visible = true
+			oget(combat_maya_a_id).visible = true
 			refresh_combat_parallax(self)
 		end,
 	}
 
 	states.combat_hit = {
 		timelines = {
-			[globals.combat_hit_timeline_id] = {
+			[combat_hit_timeline_id] = {
 				autoplay = false,
 				stop_on_exit = true,
 				on_end = {
@@ -645,11 +645,11 @@ function combat.define_fsm()
 			},
 		},
 		entering_state = function(self)
-			globals.clear_texts(globals.text_ids_choice_prompt)
-			oget(globals.text_main_id):set_text({ 'RAAK!' }, { typed = false, snap = true })
+			clear_texts(text_ids_choice_prompt)
+			oget(text_main_id):set_text({ 'RAAK!' }, { typed = false, snap = true })
 			self:push_combat_momentum('hero', combat_parallax_momentum_step)
-			local monster<const> = oget(globals.combat_monster_id)
-			local maya_a<const> = oget(globals.combat_maya_a_id)
+			local monster<const> = oget(combat_monster_id)
+			local maya_a<const> = oget(combat_maya_a_id)
 			monster.x = self.combat_monster_base_x
 			monster.y = self.combat_monster_base_y
 			monster.sprite_component.scale = { x = 1, y = 1 }
@@ -657,7 +657,7 @@ function combat.define_fsm()
 				monster = monster,
 				slash_frame = self.combat_hit_slash_frame,
 			}
-			self:play_timeline(globals.combat_hit_timeline_id, {
+			self:play_timeline(combat_hit_timeline_id, {
 				rewind = true,
 				snap_to_start = true,
 				target = targets,
@@ -687,7 +687,7 @@ function combat.define_fsm()
 
 	states.combat_dodge = {
 		timelines = {
-			[globals.combat_dodge_timeline_id] = {
+			[combat_dodge_timeline_id] = {
 				autoplay = false,
 				stop_on_exit = true,
 				on_end = {
@@ -698,13 +698,13 @@ function combat.define_fsm()
 			},
 		},
 			entering_state = function(self)
-				globals.clear_texts(globals.text_ids_choice_prompt)
-				oget(globals.text_main_id):set_text({ 'ONTWIJKT!' }, { typed = false, snap = true })
-				local monster<const> = oget(globals.combat_monster_id)
-				local maya_a<const> = oget(globals.combat_maya_a_id)
+				clear_texts(text_ids_choice_prompt)
+				oget(text_main_id):set_text({ 'ONTWIJKT!' }, { typed = false, snap = true })
+				local monster<const> = oget(combat_monster_id)
+				local maya_a<const> = oget(combat_maya_a_id)
 				monster.sprite_component.scale = { x = 1, y = 1 }
 				self.combat_dodge_dir = -self.combat_dodge_dir
-				self:play_timeline(globals.combat_dodge_timeline_id, {
+				self:play_timeline(combat_dodge_timeline_id, {
 					rewind = true,
 					snap_to_start = true,
 					target = monster,
@@ -729,7 +729,7 @@ function combat.define_fsm()
 
 	states.combat_exchange_hit = {
 		timelines = {
-			[globals.combat_exchange_hit_timeline_id] = {
+			[combat_exchange_hit_timeline_id] = {
 				autoplay = false,
 				stop_on_exit = true,
 				on_end = {
@@ -740,10 +740,10 @@ function combat.define_fsm()
 			},
 		},
 		entering_state = function(self)
-			local monster<const> = oget(globals.combat_monster_id)
-			local maya_a<const> = oget(globals.combat_maya_a_id)
-				local overlay<const> = oget(globals.director_instance_id).transition_visual.overlay
-			globals.clear_texts(globals.text_ids_choice_prompt)
+			local monster<const> = oget(combat_monster_id)
+			local maya_a<const> = oget(combat_maya_a_id)
+				local overlay<const> = oget(director_instance_id).transition_visual.overlay
+			clear_texts(text_ids_choice_prompt)
 			self:push_combat_momentum('monster', combat_parallax_momentum_step)
 			monster.visible = true
 				maya_a.visible = true
@@ -753,8 +753,8 @@ function combat.define_fsm()
 				maya_a.y = self.combat_maya_a_base_y
 				monster.sprite_component.scale = { x = 1, y = 1 }
 				maya_a.sprite_component.scale = { x = 1, y = 1 }
-				monster.sprite_component.color = globals.p3_white_color
-				maya_a.sprite_component.color = globals.p3_white_color
+				monster.sprite_component.color = p3_white_color
+				maya_a.sprite_component.color = p3_white_color
 				overlay.visible = true
 				overlay.x = 0
 				overlay.y = 0
@@ -766,32 +766,32 @@ function combat.define_fsm()
 				maya_a = maya_a,
 				overlay = overlay,
 			}
-			self:play_timeline(globals.combat_exchange_hit_timeline_id, {
+			self:play_timeline(combat_exchange_hit_timeline_id, {
 				rewind = true,
 				snap_to_start = true,
 				target = targets,
 				params = {
-					frame_count = globals.combat_exchange_hit_frame_count,
+					frame_count = combat_exchange_hit_frame_count,
 					monster_base_x = self.combat_monster_base_x,
 					monster_base_y = self.combat_monster_base_y,
 					maya_base_x = self.combat_maya_a_base_x,
 					maya_base_y = self.combat_maya_a_base_y,
-					maya_offset_x = globals.combat_exchange_hit_recoil_distance,
-					maya_offset_y = globals.combat_exchange_hit_recoil_lift,
-					maya_hold_frames = globals.combat_exchange_hit_recoil_hold_frames,
-					maya_recover_frames = globals.combat_exchange_hit_recoil_recover_frames,
+					maya_offset_x = combat_exchange_hit_recoil_distance,
+					maya_offset_y = combat_exchange_hit_recoil_lift,
+					maya_hold_frames = combat_exchange_hit_recoil_hold_frames,
+					maya_recover_frames = combat_exchange_hit_recoil_recover_frames,
 					maya_bob_amp = 0,
 					maya_bob_period_frames = combat_exchange_miss_dodge_bob_period_frames,
-					maya_react_scale_x = globals.combat_exchange_hit_scale_x,
-					maya_react_scale_y = globals.combat_exchange_hit_scale_y,
-					maya_impact_scale_x = globals.combat_exchange_hit_impact_scale_x,
-					maya_impact_scale_y = globals.combat_exchange_hit_impact_scale_y,
+					maya_react_scale_x = combat_exchange_hit_scale_x,
+					maya_react_scale_y = combat_exchange_hit_scale_y,
+					maya_impact_scale_x = combat_exchange_hit_impact_scale_x,
+					maya_impact_scale_y = combat_exchange_hit_impact_scale_y,
 					flash = true,
-					flash_color = globals.p3_cyan_color,
+					flash_color = p3_cyan_color,
 					squash = true,
-					cam_shake_x = globals.combat_exchange_hit_shake_x,
-					cam_shake_y = globals.combat_exchange_hit_shake_y,
-					overlay_alpha = globals.combat_exchange_hit_overlay_alpha,
+					cam_shake_x = combat_exchange_hit_shake_x,
+					cam_shake_y = combat_exchange_hit_shake_y,
+					overlay_alpha = combat_exchange_hit_overlay_alpha,
 				},
 			})
 			monster.visible = false
@@ -807,17 +807,17 @@ function combat.define_fsm()
 			},
 		},
 		leaving_state = function(self)
-			local monster<const> = oget(globals.combat_monster_id)
-			local maya_a<const> = oget(globals.combat_maya_a_id)
-			local overlay<const> = oget(globals.director_instance_id).transition_visual.overlay
+			local monster<const> = oget(combat_monster_id)
+			local maya_a<const> = oget(combat_maya_a_id)
+			local overlay<const> = oget(director_instance_id).transition_visual.overlay
 					monster.x = self.combat_monster_base_x
 				monster.y = self.combat_monster_base_y
 				maya_a.x = self.combat_maya_a_base_x
 				maya_a.y = self.combat_maya_a_base_y
 				monster.sprite_component.scale = { x = 1, y = 1 }
 				maya_a.sprite_component.scale = { x = 1, y = 1 }
-				monster.sprite_component.color = globals.p3_white_color
-				maya_a.sprite_component.color = globals.p3_white_color
+				monster.sprite_component.color = p3_white_color
+				maya_a.sprite_component.color = p3_white_color
 				overlay.visible = false
 				overlay.color = 0
 		end,
@@ -825,7 +825,7 @@ function combat.define_fsm()
 
 	states.combat_exchange_miss = {
 		timelines = {
-			[globals.combat_exchange_miss_timeline_id] = {
+			[combat_exchange_miss_timeline_id] = {
 				autoplay = false,
 				stop_on_exit = true,
 				on_end = {
@@ -836,10 +836,10 @@ function combat.define_fsm()
 			},
 		},
 		entering_state = function(self)
-			local monster<const> = oget(globals.combat_monster_id)
-			local maya_a<const> = oget(globals.combat_maya_a_id)
-			local overlay<const> = oget(globals.director_instance_id).transition_visual.overlay
-			globals.clear_texts(globals.text_ids_choice_prompt)
+			local monster<const> = oget(combat_monster_id)
+			local maya_a<const> = oget(combat_maya_a_id)
+			local overlay<const> = oget(director_instance_id).transition_visual.overlay
+			clear_texts(text_ids_choice_prompt)
 			monster.visible = true
 				maya_a.visible = true
 				monster.x = self.combat_monster_base_x
@@ -848,8 +848,8 @@ function combat.define_fsm()
 				maya_a.y = self.combat_maya_a_base_y
 				monster.sprite_component.scale = { x = 1, y = 1 }
 				maya_a.sprite_component.scale = { x = 1, y = 1 }
-				monster.sprite_component.color = globals.p3_white_color
-				maya_a.sprite_component.color = globals.p3_white_color
+				monster.sprite_component.color = p3_white_color
+				maya_a.sprite_component.color = p3_white_color
 				overlay.visible = true
 				overlay.x = 0
 				overlay.y = 0
@@ -861,12 +861,12 @@ function combat.define_fsm()
 				maya_a = maya_a,
 				overlay = overlay,
 			}
-			self:play_timeline(globals.combat_exchange_miss_timeline_id, {
+			self:play_timeline(combat_exchange_miss_timeline_id, {
 				rewind = true,
 				snap_to_start = true,
 				target = targets,
 				params = {
-					frame_count = globals.combat_exchange_miss_frame_count,
+					frame_count = combat_exchange_miss_frame_count,
 					monster_base_x = self.combat_monster_base_x,
 					monster_base_y = self.combat_monster_base_y,
 					maya_base_x = self.combat_maya_a_base_x,
@@ -882,7 +882,7 @@ function combat.define_fsm()
 					maya_impact_scale_x = 0,
 					maya_impact_scale_y = 0,
 					flash = false,
-					flash_color = globals.p3_white_color,
+					flash_color = p3_white_color,
 					squash = false,
 					cam_shake_x = 0,
 					cam_shake_y = 0,
@@ -902,17 +902,17 @@ function combat.define_fsm()
 			},
 		},
 		leaving_state = function(self)
-			local monster<const> = oget(globals.combat_monster_id)
-			local maya_a<const> = oget(globals.combat_maya_a_id)
-			local overlay<const> = oget(globals.director_instance_id).transition_visual.overlay
+			local monster<const> = oget(combat_monster_id)
+			local maya_a<const> = oget(combat_maya_a_id)
+			local overlay<const> = oget(director_instance_id).transition_visual.overlay
 					monster.x = self.combat_monster_base_x
 				monster.y = self.combat_monster_base_y
 				maya_a.x = self.combat_maya_a_base_x
 				maya_a.y = self.combat_maya_a_base_y
 				monster.sprite_component.scale = { x = 1, y = 1 }
 				maya_a.sprite_component.scale = { x = 1, y = 1 }
-				monster.sprite_component.color = globals.p3_white_color
-				maya_a.sprite_component.color = globals.p3_white_color
+				monster.sprite_component.color = p3_white_color
+				maya_a.sprite_component.color = p3_white_color
 				overlay.visible = false
 				overlay.color = 0
 		end,
@@ -920,14 +920,14 @@ function combat.define_fsm()
 
 	states.combat_all_out_prompt = {
 		entering_state = function(self)
-			globals.clear_texts(globals.text_ids_choice_prompt)
-			oget(globals.text_main_id):set_text({ 'Het monster lijkt rijp voor de sloop!' }, { typed = true, snap = false })
-			oget(globals.text_choice_id):set_text({ 'ALL-OUT-ATTACK!!' }, { typed = false, snap = true })
+			clear_texts(text_ids_choice_prompt)
+			oget(text_main_id):set_text({ 'Het monster lijkt rijp voor de sloop!' }, { typed = true, snap = false })
+			oget(text_choice_id):set_text({ 'ALL-OUT-ATTACK!!' }, { typed = false, snap = true })
 			self.choice_index = 1
-			oget(globals.text_choice_id).highlight_jitter_enabled = true
-			local monster<const> = oget(globals.combat_monster_id)
-			local maya_a<const> = oget(globals.combat_maya_a_id)
-			local portrait<const> = oget(globals.combat_all_out_id)
+			oget(text_choice_id).highlight_jitter_enabled = true
+			local monster<const> = oget(combat_monster_id)
+			local maya_a<const> = oget(combat_maya_a_id)
+			local portrait<const> = oget(combat_all_out_id)
 			portrait:gfx('maya_v_s')
 			portrait.visible = true
 			portrait.z = 750
@@ -951,7 +951,7 @@ function combat.define_fsm()
 					settle_bob = 6,
 				},
 			})
-			self:play_timeline(globals.combat_hover_timeline_id, {
+			self:play_timeline(combat_hover_timeline_id, {
 				rewind = true,
 				snap_to_start = true,
 				target = self,
@@ -965,13 +965,13 @@ function combat.define_fsm()
 			self.combat_parallax_draw_active = true
 		end,
 		update = function(self)
-			local main<const> = oget(globals.text_main_id)
+			local main<const> = oget(text_main_id)
 			if main:is_typing() then
 				main:type_next()
 				return
 			end
-			oget(globals.text_prompt_id):set_text({ '(A) ATTACK' }, { typed = false, snap = true })
-			oget(globals.text_choice_id).highlighted_line_index = 0
+			oget(text_prompt_id):set_text({ '(A) ATTACK' }, { typed = false, snap = true })
+			oget(text_choice_id).highlighted_line_index = 0
 		end,
 		input_eval = 'first',
 		input_event_handlers = {
@@ -980,27 +980,27 @@ function combat.define_fsm()
 			},
 				['a[jp]'] = {
 					go = function(self)
-						if oget(globals.text_main_id):is_typing() then return end
+						if oget(text_main_id):is_typing() then return end
 						return '/combat_all_out'
 					end,
 				},
 		},
 		leaving_state = function(self)
-			self:stop_timeline(globals.combat_hover_timeline_id)
+			self:stop_timeline(combat_hover_timeline_id)
 			self:stop_timeline(combat_all_out_prompt_timeline_id)
 			self.combat_parallax_draw_active = false
-			oget(globals.combat_monster_id).visible = true
-			oget(globals.combat_maya_a_id).visible = true
-			local portrait<const> = oget(globals.combat_all_out_id)
+			oget(combat_monster_id).visible = true
+			oget(combat_maya_a_id).visible = true
+			local portrait<const> = oget(combat_all_out_id)
 			portrait.visible = false
 			portrait.sprite_component.scale = { x = 1, y = 1 }
-			oget(globals.text_choice_id).highlight_jitter_enabled = false
+			oget(text_choice_id).highlight_jitter_enabled = false
 		end,
 	}
 
 	states.combat_all_out = {
 		timelines = {
-			[globals.combat_all_out_timeline_id] = {
+			[combat_all_out_timeline_id] = {
 				autoplay = false,
 				stop_on_exit = true,
 				on_end = '/combat_focus',
@@ -1008,18 +1008,18 @@ function combat.define_fsm()
 		},
 		entering_state = function(self)
 			self:disable_combat_parallax()
-			globals.clear_texts(globals.text_ids_all)
-			local all_out<const> = oget(globals.combat_all_out_id)
+			clear_texts(text_ids_all)
+			local all_out<const> = oget(combat_all_out_id)
 			all_out:gfx('all_out')
 			all_out.sprite_component.scale = { x = 1, y = 1 }
 			all_out.visible = true
 			all_out.x = 0
 			all_out.y = 0
 			all_out.z = 800
-			local monster<const> = oget(globals.combat_monster_id)
-			local maya_a<const> = oget(globals.combat_maya_a_id)
-			local maya_b<const> = oget(globals.combat_maya_b_id)
-			local bg<const> = oget(globals.bg_id)
+			local monster<const> = oget(combat_monster_id)
+			local maya_a<const> = oget(combat_maya_a_id)
+			local maya_b<const> = oget(combat_maya_b_id)
+			local bg<const> = oget(bg_id)
 			self.all_out_shake_all_out_x = all_out.x
 			self.all_out_shake_all_out_y = all_out.y
 			self.all_out_shake_monster_x = monster.x
@@ -1030,7 +1030,7 @@ function combat.define_fsm()
 			self.all_out_shake_maya_b_y = maya_b.y
 			self.all_out_shake_bg_x = bg.x
 			self.all_out_shake_bg_y = bg.y
-			self:play_timeline(globals.combat_all_out_timeline_id, {
+			self:play_timeline(combat_all_out_timeline_id, {
 				rewind = true,
 				snap_to_start = true,
 				target = {
@@ -1061,11 +1061,11 @@ function combat.define_fsm()
 			},
 		},
 		leaving_state = function(self)
-			local all_out<const> = oget(globals.combat_all_out_id)
-			local monster<const> = oget(globals.combat_monster_id)
-			local maya_a<const> = oget(globals.combat_maya_a_id)
-			local maya_b<const> = oget(globals.combat_maya_b_id)
-			local bg<const> = oget(globals.bg_id)
+			local all_out<const> = oget(combat_all_out_id)
+			local monster<const> = oget(combat_monster_id)
+			local maya_a<const> = oget(combat_maya_a_id)
+			local maya_b<const> = oget(combat_maya_b_id)
+			local bg<const> = oget(bg_id)
 			all_out.x = self.all_out_shake_all_out_x
 			all_out.y = self.all_out_shake_all_out_y
 			all_out.visible = false
@@ -1082,9 +1082,9 @@ function combat.define_fsm()
 
 	states.combat_focus = {
 			entering_state = function(self)
-				local monster<const> = oget(globals.combat_monster_id)
+				local monster<const> = oget(combat_monster_id)
 
-				self:play_timeline(globals.combat_focus_timeline_id, {
+				self:play_timeline(combat_focus_timeline_id, {
 					rewind = true,
 					snap_to_start = true,
 					target = monster,
@@ -1105,8 +1105,8 @@ function combat.define_fsm()
 		on = {
 			['combat_focus.snap'] = {
 				go = function(self)
-					globals.hide_combat_sprites()
-					globals.clear_texts(globals.text_ids_all)
+					hide_combat_sprites()
+					clear_texts(text_ids_all)
 				end,
 			},
 			['combat_focus.done'] = {
@@ -1123,36 +1123,36 @@ function combat.define_fsm()
 			local node<const> = story[self.node_id]
 				local rewards<const> = node.rewards[self.combat_points + 1]
 			self.combat_rewards = rewards
-			oget(globals.director_instance_id).events:emit('combat.results', {
+			oget(director_instance_id).events:emit('combat.results', {
 				combat_node_id = self.combat_node_id,
 				monster_imgid = self.combat_monster_imgid,
 			})
 
-			globals.clear_texts(globals.text_ids_core)
+			clear_texts(text_ids_core)
 
-			local monster<const> = oget(globals.combat_monster_id)
+			local monster<const> = oget(combat_monster_id)
 			monster.visible = false
-			local maya_a<const> = oget(globals.combat_maya_a_id)
+			local maya_a<const> = oget(combat_maya_a_id)
 			maya_a.visible = false
-			local all_out<const> = oget(globals.combat_all_out_id)
+			local all_out<const> = oget(combat_all_out_id)
 			all_out.visible = false
 
-				local bg<const> = oget(globals.director_instance_id).combat_results_visual
+				local bg<const> = oget(director_instance_id).combat_results_visual
 				bg.visible = true
 				bg.x = 0
 				bg.y = 0
 				bg.width = machine_manifest.render_size.width
 				bg.height = machine_manifest.render_size.height
-				bg.color = globals.combat_results_bg_color & 0x00ffffff
+				bg.color = combat_results_bg_color & 0x00ffffff
 
-			local maya_b<const> = oget(globals.combat_maya_b_id)
+			local maya_b<const> = oget(combat_maya_b_id)
 			maya_b:gfx('maya_b')
 			maya_b.visible = true
 			self.combat_results_maya_target_x = machine_manifest.render_size.width - maya_b.sx
 			self.combat_results_maya_start_x = machine_manifest.render_size.width
 			maya_b.x = self.combat_results_maya_start_x
 			maya_b.y = machine_manifest.render_size.height - maya_b.sy
-			maya_b.sprite_component.color = globals.p3_white_color & 0x00ffffff
+			maya_b.sprite_component.color = p3_white_color & 0x00ffffff
 			maya_b.z = 300
 
 			local lines<const> = { 'Combat Results:' }
@@ -1160,9 +1160,9 @@ function combat.define_fsm()
 				local effect<const> = rewards[i]
 				lines[#lines + 1] = stat_label(effect.stat) .. ' +' .. effect.add
 			end
-			oget(globals.text_results_id):set_text(lines, { typed = false, snap = true })
-			local results<const> = oget(globals.text_results_id)
-			results.text_color = globals.p3_white_color & 0x00ffffff
+			oget(text_results_id):set_text(lines, { typed = false, snap = true })
+			local results<const> = oget(text_results_id)
+			results.text_color = p3_white_color & 0x00ffffff
 			self.combat_results_text_target_x = results.centered_block_x / 2
 			self.combat_results_text_start_x = -machine_manifest.render_size.width
 			results.centered_block_x = self.combat_results_text_start_x
@@ -1172,12 +1172,12 @@ function combat.define_fsm()
 
 	states.combat_results_fade_in = {
 		timelines = {
-			[globals.combat_results_fade_in_timeline_id] = {
+			[combat_results_fade_in_timeline_id] = {
 				create = function()
 			return timeline.new({
-				id = globals.combat_results_fade_in_timeline_id,
+				id = combat_results_fade_in_timeline_id,
 				frames = timeline_builders.build_combat_results_fade_in_frames,
-				ticks_per_frame = globals.combat_results_fade_in_ticks_per_frame,
+				ticks_per_frame = combat_results_fade_in_ticks_per_frame,
 				playback_mode = 'once',
 				apply = true,
 			})
@@ -1192,13 +1192,13 @@ function combat.define_fsm()
 			},
 		},
 		entering_state = function(self)
-			self:play_timeline(globals.combat_results_fade_in_timeline_id, {
+			self:play_timeline(combat_results_fade_in_timeline_id, {
 				rewind = true,
 				snap_to_start = true,
 				target = {
-					bg = oget(globals.director_instance_id).combat_results_visual,
-					maya_b = oget(globals.combat_maya_b_id),
-					results = oget(globals.text_results_id),
+					bg = oget(director_instance_id).combat_results_visual,
+					maya_b = oget(combat_maya_b_id),
+					results = oget(text_results_id),
 				},
 				params = {
 					maya_start_x = self.combat_results_maya_start_x,
@@ -1233,7 +1233,7 @@ function combat.define_fsm()
 
 	states.combat_results_fade_out = {
 		timelines = {
-			[globals.combat_results_fade_out_timeline_id] = {
+			[combat_results_fade_out_timeline_id] = {
 				autoplay = false,
 				stop_on_exit = true,
 				on_end = {
@@ -1244,14 +1244,14 @@ function combat.define_fsm()
 			},
 		},
 		entering_state = function(self)
-			globals.clear_texts(globals.text_ids_core)
-			self:play_timeline(globals.combat_results_fade_out_timeline_id, {
+			clear_texts(text_ids_core)
+			self:play_timeline(combat_results_fade_out_timeline_id, {
 				rewind = true,
 				snap_to_start = true,
 				target = {
-					bg = oget(globals.director_instance_id).combat_results_visual,
-					maya_b = oget(globals.combat_maya_b_id),
-					results = oget(globals.text_results_id),
+					bg = oget(director_instance_id).combat_results_visual,
+					maya_b = oget(combat_maya_b_id),
+					results = oget(text_results_id),
 				},
 			})
 		end,
@@ -1267,7 +1267,7 @@ function combat.define_fsm()
 
 	states.combat_exit_fade_in = {
 		timelines = {
-			[globals.combat_exit_fade_in_timeline_id] = {
+			[combat_exit_fade_in_timeline_id] = {
 				autoplay = false,
 				stop_on_exit = true,
 				on_end = {
@@ -1278,9 +1278,9 @@ function combat.define_fsm()
 			},
 		},
 		entering_state = function(self)
-			local bg<const> = globals.show_background(self.combat_exit_target_bg)
-			bg.sprite_component.color = globals.p3_black_color
-			self:play_timeline(globals.combat_exit_fade_in_timeline_id, { rewind = true, snap_to_start = true, target = bg })
+			local bg<const> = show_background(self.combat_exit_target_bg)
+			bg.sprite_component.color = p3_black_color
+			self:play_timeline(combat_exit_fade_in_timeline_id, { rewind = true, snap_to_start = true, target = bg })
 		end,
 		input_eval = 'first',
 		input_event_handlers = {
@@ -1291,8 +1291,8 @@ function combat.define_fsm()
 			},
 		},
 		leaving_state = function(self)
-			local bg<const> = oget(globals.bg_id)
-			bg.sprite_component.color = globals.p3_white_color
+			local bg<const> = oget(bg_id)
+			bg.sprite_component.color = p3_white_color
 		end,
 	}
 
@@ -1312,11 +1312,11 @@ function combat.define_fsm()
 	--   stop_on_exit = true  — stop the timeline automatically on state exit.
 	--   on_end  — transition or action when the timeline finishes.
 	--   on_frame  — action fired on every timeline frame update.
-	define_fsm(globals.combat_director_fsm_id, {
+	define_fsm(combat_director_fsm_id, {
 		initial = 'boot',
 		timelines = {
 			-- Track-driven timelines (no frames, driven by wave/parallax tracks)
-			[globals.combat_hover_timeline_id] = {
+			[combat_hover_timeline_id] = {
 				def = {
 					playback_mode = 'loop',
 					tracks = {
@@ -1328,10 +1328,10 @@ function combat.define_fsm()
 			-- Frame-driven applied animation timelines (frames built by builder fns)
 			-- These require a `target` and optional `params` at play time, so
 			-- individual states use autoplay = false + entering_state play calls.
-			[globals.combat_focus_timeline_id] = {
+			[combat_focus_timeline_id] = {
 				def = {
 					frames = timeline_builders.build_combat_focus_frames,
-					ticks_per_frame = globals.combat_focus_ticks_per_frame,
+					ticks_per_frame = combat_focus_ticks_per_frame,
 					playback_mode = 'once',
 					apply = true,
 					markers = {
@@ -1341,37 +1341,37 @@ function combat.define_fsm()
 				},
 				autoplay = false,
 			},
-			[globals.combat_intro_timeline_id] = {
+			[combat_intro_timeline_id] = {
 				def = {
 					frames = timeline_builders.build_combat_intro_frames,
-					ticks_per_frame = globals.combat_intro_ticks_per_frame,
+					ticks_per_frame = combat_intro_ticks_per_frame,
 					playback_mode = 'once',
 					apply = true,
 				},
 				autoplay = false,
 			},
-			[globals.combat_hit_timeline_id] = {
+			[combat_hit_timeline_id] = {
 				def = {
 					frames = timeline_builders.build_combat_hit_frames,
-					ticks_per_frame = globals.combat_hit_ticks_per_frame,
+					ticks_per_frame = combat_hit_ticks_per_frame,
 					playback_mode = 'once',
 					apply = true,
 				},
 				autoplay = false,
 			},
-			[globals.combat_exchange_hit_timeline_id] = {
+			[combat_exchange_hit_timeline_id] = {
 				def = {
 					frames = timeline_builders.build_combat_exchange_frames,
-					ticks_per_frame = globals.combat_exchange_hit_ticks_per_frame,
+					ticks_per_frame = combat_exchange_hit_ticks_per_frame,
 					playback_mode = 'once',
 					apply = true,
 				},
 				autoplay = false,
 			},
-			[globals.combat_exchange_miss_timeline_id] = {
+			[combat_exchange_miss_timeline_id] = {
 				def = {
 					frames = timeline_builders.build_combat_exchange_frames,
-					ticks_per_frame = globals.combat_exchange_miss_ticks_per_frame,
+					ticks_per_frame = combat_exchange_miss_ticks_per_frame,
 					playback_mode = 'once',
 					apply = true,
 				},
@@ -1386,57 +1386,57 @@ function combat.define_fsm()
 				},
 				autoplay = false,
 			},
-			[globals.combat_dodge_timeline_id] = {
+			[combat_dodge_timeline_id] = {
 				def = {
 					frames = timeline_builders.build_combat_dodge_frames,
-					ticks_per_frame = globals.combat_dodge_ticks_per_frame,
+					ticks_per_frame = combat_dodge_ticks_per_frame,
 					playback_mode = 'once',
 					apply = true,
 				},
 				autoplay = false,
 			},
-			[globals.combat_all_out_timeline_id] = {
+			[combat_all_out_timeline_id] = {
 				def = {
 					frames = build_all_out_screen_shake_frames,
-					ticks_per_frame = globals.combat_all_out_ticks_per_frame,
+					ticks_per_frame = combat_all_out_ticks_per_frame,
 					playback_mode = 'once',
 					apply = true,
 				},
 				autoplay = false,
 			},
-			-- Fade timelines. These use a fixed target (globals.bg_id / etc.) that is only
+			-- Fade timelines. These use a fixed target (bg_id / etc.) that is only
 			-- valid at runtime, so individual states call play_timeline manually.
-			[globals.combat_fade_timeline_id] = {
+			[combat_fade_timeline_id] = {
 				def = {
 					frames = timeline_builders.build_combat_fade_frames(),
-					ticks_per_frame = globals.combat_fade_ticks_per_frame,
+					ticks_per_frame = combat_fade_ticks_per_frame,
 					playback_mode = 'once',
 					apply = true,
 				},
 				autoplay = false,
 			},
-			[globals.combat_results_fade_in_timeline_id] = {
+			[combat_results_fade_in_timeline_id] = {
 				def = {
 					frames = timeline_builders.build_combat_results_fade_in_frames,
-					ticks_per_frame = globals.combat_results_fade_in_ticks_per_frame,
+					ticks_per_frame = combat_results_fade_in_ticks_per_frame,
 					playback_mode = 'once',
 					apply = true,
 				},
 				autoplay = false,
 			},
-			[globals.combat_results_fade_out_timeline_id] = {
+			[combat_results_fade_out_timeline_id] = {
 				def = {
 					frames = timeline_builders.build_combat_results_fade_out_frames(),
-					ticks_per_frame = globals.combat_results_fade_out_ticks_per_frame,
+					ticks_per_frame = combat_results_fade_out_ticks_per_frame,
 					playback_mode = 'once',
 					apply = true,
 				},
 				autoplay = false,
 			},
-			[globals.combat_exit_fade_in_timeline_id] = {
+			[combat_exit_fade_in_timeline_id] = {
 				def = {
 					frames = timeline_builders.build_combat_exit_fade_in_frames(),
-					ticks_per_frame = globals.combat_exit_fade_in_ticks_per_frame,
+					ticks_per_frame = combat_exit_fade_in_ticks_per_frame,
 					playback_mode = 'once',
 					apply = true,
 				},
@@ -1449,10 +1449,10 @@ end
 
 function combat.register_director()
 	define_prefab({
-		def_id = globals.combat_director_def_id,
+		def_id = combat_director_def_id,
 		class = combat_director,
 		type = 'object',
-		fsms = { globals.combat_director_fsm_id },
+		fsms = { combat_director_fsm_id },
 		defaults = {
 			node_id = nil,
 			choice_index = 1,

@@ -1,4 +1,4 @@
-local constants<const> = require('constants')
+require('constants')
 local behaviourtree<const> = require('cartlib/behaviourtree')
 local enemy_base<const> = require('enemies/enemy_base')
 
@@ -60,8 +60,8 @@ local start_flying<const> = function(self, blackboard)
 	set_takeoff_heading(self)
 	self.mijter_state = 'flying'
 	self:change_sprite_on_direction()
-	blackboard.nodedata.mijter_takeoff_ticks = math.random(constants.enemy.mijter_wait_takeoff_min_steps, constants.enemy.mijter_wait_takeoff_max_steps)
-	blackboard.nodedata.mijter_turn_ticks = math.random(constants.enemy.mijter_turn_min_steps, constants.enemy.mijter_turn_max_steps)
+	blackboard.nodedata.mijter_takeoff_ticks = math.random(enemy_mijter_wait_takeoff_min_steps, enemy_mijter_wait_takeoff_max_steps)
+	blackboard.nodedata.mijter_turn_ticks = math.random(enemy_mijter_turn_min_steps, enemy_mijter_turn_max_steps)
 	self.events:emit('takeoff')
 	return 'RUNNING'
 end
@@ -70,7 +70,7 @@ function mijterfoe:ctor()
 	self.mijter_state = 'waiting'
 	self.horizontal_dir_mod = 0
 	self.vertical_dir_mod = 0
-	self.mijter_entry_lock_ticks = constants.enemy.mijter_room_entry_lock_steps
+	self.mijter_entry_lock_ticks = enemy_mijter_room_entry_lock_steps
 	self:change_sprite_on_direction()
 end
 
@@ -131,7 +131,7 @@ function mijterfoe.bt_tick_waiting(self, blackboard)
 		return start_flying(self, blackboard)
 	end
 
-	local takeoff_ticks = blackboard.nodedata.mijter_takeoff_ticks or math.random(constants.enemy.mijter_wait_takeoff_min_steps, constants.enemy.mijter_wait_takeoff_max_steps)
+	local takeoff_ticks = blackboard.nodedata.mijter_takeoff_ticks or math.random(enemy_mijter_wait_takeoff_min_steps, enemy_mijter_wait_takeoff_max_steps)
 	takeoff_ticks = takeoff_ticks - 1
 	if takeoff_ticks > 0 then
 		blackboard.nodedata.mijter_takeoff_ticks = takeoff_ticks
@@ -141,11 +141,11 @@ function mijterfoe.bt_tick_waiting(self, blackboard)
 end
 
 function mijterfoe.bt_tick_flying(self, blackboard)
-	local turn_ticks = blackboard.nodedata.mijter_turn_ticks or math.random(constants.enemy.mijter_turn_min_steps, constants.enemy.mijter_turn_max_steps)
+	local turn_ticks = blackboard.nodedata.mijter_turn_ticks or math.random(enemy_mijter_turn_min_steps, enemy_mijter_turn_max_steps)
 	turn_ticks = turn_ticks - 1
 	if turn_ticks <= 0 then
 		new_random_direction(self)
-		turn_ticks = math.random(constants.enemy.mijter_turn_min_steps, constants.enemy.mijter_turn_max_steps)
+		turn_ticks = math.random(enemy_mijter_turn_min_steps, enemy_mijter_turn_max_steps)
 		self:change_sprite_on_direction()
 	end
 	blackboard.nodedata.mijter_turn_ticks = turn_ticks
@@ -162,8 +162,8 @@ function mijterfoe.bt_tick_flying(self, blackboard)
 	end
 
 	self:change_sprite_on_direction()
-	self.x = self.x + (constants.enemy.mijter_speed_px * self.horizontal_dir_mod)
-	self.y = self.y + (constants.enemy.mijter_speed_px * self.vertical_dir_mod)
+	self.x = self.x + (enemy_mijter_speed_px * self.horizontal_dir_mod)
+	self.y = self.y + (enemy_mijter_speed_px * self.vertical_dir_mod)
 	return 'RUNNING'
 end
 
@@ -186,10 +186,10 @@ function mijterfoe.register_behaviour_tree(bt_id)
 end
 
 function mijterfoe.choose_drop_type(_self)
-	if math.random(100) <= constants.enemy.mijter_drop_health_chance_pct then
+	if math.random(100) <= enemy_mijter_drop_health_chance_pct then
 		return 'life'
 	end
-	if math.random(100) <= constants.enemy.mijter_drop_ammo_chance_pct then
+	if math.random(100) <= enemy_mijter_drop_ammo_chance_pct then
 		return 'ammo'
 	end
 	return nil

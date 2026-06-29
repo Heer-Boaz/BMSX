@@ -15,7 +15,7 @@
 -- this tag before rendering, so the transition overlay can exist and play
 -- its mask timeline without showing any text.
 
-local constants<const> = require('constants')
+require('constants')
 local font_module<const> = require('cartlib/font')
 
 local draw_glyph_line_color<const> = function(font, line, x, y, z, layer, color)
@@ -53,7 +53,7 @@ function transition:draw_transition_overlay()
 	local lines<const> = self.banner_lines
 	if #lines > 0 then
 		local banner_font<const> = self.banner_font
-		local base_y<const> = constants.room.tile_origin_y + (constants.room.tile_size * 9)
+		local base_y<const> = room_tile_origin_y + (room_tile_size * 9)
 		local screen_width<const> = machine_manifest.render_size.width
 		for i = 1, #lines do
 			local line<const> = lines[i]
@@ -70,7 +70,7 @@ function transition:ctor()
 	self:bind_visual()
 	self:define_timeline(timeline.new({
 		id = 'transition.timeline',
-		frames = timeline.range(constants.flow.room_transition_frames),
+		frames = timeline.range(flow_room_transition_frames),
 		playback_mode = 'once',
 	}))
 end

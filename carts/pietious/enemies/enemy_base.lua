@@ -1,6 +1,6 @@
 local combat_overlap<const> = require('combat/overlap')
 local combat_damage<const> = require('combat/damage')
-local constants<const> = require('constants')
+require('constants')
 local components<const> = require('cartlib/components')
 
 local enemy_base<const> = {}
@@ -23,9 +23,9 @@ function enemy_base.setup_projectile_boundary(self)
 	self:add_component(components.screenboundarycomponent.new({
 		bounds = {
 			left = 0,
-			top = constants.room.hud_height,
-			right = constants.room.width,
-			bottom = constants.room.height,
+			top = room_hud_height,
+			right = room_width,
+			bottom = room_height,
 		},
 	}))
 	self.events:on({

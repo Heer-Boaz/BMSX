@@ -1,4 +1,4 @@
-local constants<const> = require('constants')
+require('constants')
 local text<const> = require('cartlib/text/index')
 local bin<const> = require('system/bin')
 local assets<const> = require('bmsx/assets')
@@ -17,8 +17,8 @@ local world_transition_specs<const> = {
 		world_room_number = 101,
 		world_map_x = 2,
 		world_map_y = 0,
-		world_spawn_x = 28 * constants.room.tile_size,
-		world_spawn_y = constants.room.tile_origin_y + (15 * constants.room.tile_size),
+		world_spawn_x = 28 * room_tile_size,
+		world_spawn_y = room_tile_origin_y + (15 * room_tile_size),
 		world_spawn_facing = -1,
 		castle_map_x = 3,
 		castle_map_y = 12,
@@ -75,11 +75,11 @@ local draaideur_kind_by_type<const> = {
 }
 
 local tile_x_to_world<const> = function(tile_x)
-	return tile_x * constants.room.tile_size
+	return tile_x * room_tile_size
 end
 
 local tile_y_to_world<const> = function(tile_y)
-	return constants.room.tile_origin_y + (tile_y * constants.room.tile_size)
+	return room_tile_origin_y + (tile_y * room_tile_size)
 end
 
 local elevator_route_specs<const> = {
@@ -153,8 +153,8 @@ local build_edge_gate<const> = function(map_rows, border_x)
 		last_open_row = 1
 	end
 	return {
-		y_min = constants.room.tile_origin_y + ((first_open_row - 1) * constants.room.tile_size),
-		y_max = constants.room.tile_origin_y + (last_open_row * constants.room.tile_size) - 1,
+		y_min = room_tile_origin_y + ((first_open_row - 1) * room_tile_size),
+		y_max = room_tile_origin_y + (last_open_row * room_tile_size) - 1,
 	}
 end
 
@@ -202,8 +202,8 @@ local build_spawn<const> = function(map_rows)
 		for tx = 1, col_count - 1 do
 			if can_spawn_at(map_rows, tx, ty) then
 				return {
-					x = (tx - 1) * constants.room.tile_size,
-					y = constants.room.tile_origin_y + ((ty - 1) * constants.room.tile_size),
+					x = (tx - 1) * room_tile_size,
+					y = room_tile_origin_y + ((ty - 1) * room_tile_size),
 				}
 			end
 		end
@@ -279,7 +279,7 @@ local build_enemies<const> = function(room_number, room_subtype, object_defs)
 					x = enemy_x,
 					y = enemy_y,
 					direction = object_def.direction,
-					damage = constants.damage.enemy_contact_damage,
+					damage = damage_enemy_contact_damage,
 					health = object_def.health,
 					speedx = object_def.speedx,
 					speedy = object_def.speedy,
@@ -311,7 +311,7 @@ local build_rocks<const> = function(room_number, object_defs)
 				conditions = object_def.condition or empty_conditions,
 			}
 			rocks[#rocks + 1] = rock
-			if item_type ~= nil and constants.world_item.inventory[item_type] then
+			if item_type ~= nil and world_item_inventory[item_type] then
 				inventory_rocks[#inventory_rocks + 1] = rock
 			end
 		end
@@ -412,8 +412,8 @@ local build_world_entrances<const> = function(room_number, object_defs)
 				x = x,
 				y = y,
 				target = object_def.target,
-				stair_x = x + constants.world_entrance.trigger_x_offset,
-				stair_y = y + constants.world_entrance.trigger_y_offset,
+				stair_x = x + world_entrance_trigger_x_offset,
+				stair_y = y + world_entrance_trigger_y_offset,
 			}
 		end
 	end

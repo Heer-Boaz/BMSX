@@ -1,5 +1,5 @@
 local rect_overlaps<const> = require('bios/util/rect_overlaps')
-local constants<const> = require('constants')
+require('constants')
 local castle_map<const> = require('castle/map')
 local timeline<const> = require('cartlib/timeline/index')
 
@@ -55,8 +55,8 @@ local breakable_wall_kinds<const> = {
 	breakablewall = true,
 	disappearingwall = true,
 }
-local rock_tile_width<const> = constants.rock.width / constants.room.tile_size
-local rock_tile_height<const> = constants.rock.height / constants.room.tile_size
+local rock_tile_width<const> = rock_width / room_tile_size
+local rock_tile_height<const> = rock_height / room_tile_size
 local rock_logic_tiles<const> = {
 	{ tile_chars.rock_ul, tile_chars.rock_ur },
 	{ tile_chars.rock_dl, tile_chars.rock_dr },
@@ -476,48 +476,48 @@ end
 local water_kind_at_tile<const> = function(room_state, tx, ty)
 	local water<const> = room_state.water
 	if water == nil then
-		return constants.water.none
+		return water_none
 	end
 	if ty < water.surface_row or ty > room_state.tile_rows then
-		return constants.water.none
+		return water_none
 	end
 	if tx < 1 or tx > room_state.tile_columns then
-		return constants.water.none
+		return water_none
 	end
 	if solid_tiles[string.byte(room_state.logic_rows[ty], tx)] then
-		return constants.water.none
+		return water_none
 	end
 	if ty == water.surface_row then
-		return constants.water.surface
+		return water_surface
 	end
-	return constants.water.body
+	return water_body
 end
 
 local player_water_kind_at_tile<const> = function(room_state, tx, ty)
 	local water<const> = room_state.water
 	if water == nil then
-		return constants.water.none
+		return water_none
 	end
 	if ty < water.surface_row or ty > room_state.tile_rows then
-		return constants.water.none
+		return water_none
 	end
 	if tx < 1 or tx > room_state.tile_columns then
-		return constants.water.none
+		return water_none
 	end
 	if solid_tiles[string.byte(room_state.logic_rows[ty], tx)] then
-		return constants.water.none
+		return water_none
 	end
 	if ty == water.surface_row then
-		return constants.water.surface
+		return water_surface
 	end
-	return constants.water.body
+	return water_body
 end
 
 local rebuild_room_logic<const> = function(room_state)
 	local logic_rows<const> = build_logic_rows(room_state)
 	room_state.logic_rows = logic_rows
-	room_state.solids = build_solids(logic_rows, constants.room.tile_size, constants.room.tile_origin_x, constants.room.tile_origin_y)
-	room_state.stairs = build_stairs(logic_rows, constants.room.tile_size, constants.room.tile_origin_x, constants.room.tile_origin_y, constants.player.height)
+	room_state.solids = build_solids(logic_rows, room_tile_size, room_tile_origin_x, room_tile_origin_y)
+	room_state.stairs = build_stairs(logic_rows, room_tile_size, room_tile_origin_x, room_tile_origin_y, player_height)
 end
 
 local refresh_room_geometry<const> = function(room_state)
@@ -529,9 +529,9 @@ local apply_room_template<const> = function(room_state, template)
 	local map_rows<const> = build_screen_rows(
 		template.map_rows,
 		template.draaideuren,
-		constants.room.tile_size,
-		constants.room.tile_origin_x,
-		constants.room.tile_origin_y
+		room_tile_size,
+		room_tile_origin_x,
+		room_tile_origin_y
 	)
 
 	room_state.room_number = template.room_number
@@ -540,13 +540,13 @@ local apply_room_template<const> = function(room_state, template)
 	room_state.custom = template.custom
 	room_state.room_dissolve_step = 0
 	room_state.seal_dissolve_step = 0
-	room_state.world_width = constants.room.width
-	room_state.world_height = constants.room.height
-	room_state.world_top = constants.room.hud_height
+	room_state.world_width = room_width
+	room_state.world_height = room_height
+	room_state.world_top = room_hud_height
 	room_state.spawn = template.spawn
-	room_state.tile_size = constants.room.tile_size
-	room_state.tile_origin_x = constants.room.tile_origin_x
-	room_state.tile_origin_y = constants.room.tile_origin_y
+	room_state.tile_size = room_tile_size
+	room_state.tile_origin_x = room_tile_origin_x
+	room_state.tile_origin_y = room_tile_origin_y
 	room_state.tile_rows = #map_rows
 	room_state.tile_columns = #map_rows[1]
 	room_state.map_rows = map_rows
@@ -620,20 +620,20 @@ end
 
 function room_object:base_collision_flags_at_tile(tx, ty)
 	if ty < 1 or ty > self.tile_rows then
-		return constants.collision_flags.none
+		return collision_flags_none
 	end
 	if tx < 1 or tx > self.tile_columns then
-		return constants.collision_flags.none
+		return collision_flags_none
 	end
 	local collision = 0
 	if solid_tiles[string.byte(self.logic_rows[ty], tx)] then
-		collision = collision | constants.collision_flags.wall
+		collision = collision | collision_flags_wall
 	end
 	if self:is_active_draaideur_at_tile(tx, ty) then
-		collision = collision | constants.collision_flags.wall
+		collision = collision | collision_flags_wall
 	end
 	if self:is_active_breakable_wall_at_tile(tx, ty) then
-		collision = collision | constants.collision_flags.wall
+		collision = collision | collision_flags_wall
 	end
 	return collision
 end
@@ -667,7 +667,7 @@ function room_object:collision_flags_at_tile(tx, ty, include_elevator)
 		use_elevator = true
 	end
 	if use_elevator and self:is_active_elevator_at_tile(tx, ty) then
-		collision = collision | constants.collision_flags.elevator
+		collision = collision | collision_flags_elevator
 	end
 	return collision
 end
@@ -677,7 +677,7 @@ function room_object:overlaps_active_elevator(x, y, w, h)
 	for i = 1, elevator_count do
 		local platform<const> = oget('e.p' .. tostring(i))
 		if platform.current_room_number == self.room_number
-			and rect_overlaps(x, y, w, h, platform.x, platform.y, constants.room.tile_size4, constants.room.tile_size2)
+			and rect_overlaps(x, y, w, h, platform.x, platform.y, room_tile_size4, room_tile_size2)
 		then
 			return true
 		end
@@ -816,10 +816,10 @@ function room_object:find_near_lithograph(player)
 
 	for i = 1, #lithograph_defs do
 		local lithograph<const> = oget(lithograph_defs[i].id)
-		local area_left<const> = lithograph.x + constants.lithograph.hit_left_px
-		local area_top<const> = lithograph.y + constants.lithograph.hit_top_px
-		local area_right<const> = lithograph.x + constants.lithograph.hit_right_px
-		local area_bottom<const> = lithograph.y + constants.lithograph.hit_bottom_px
+		local area_left<const> = lithograph.x + lithograph_hit_left_px
+		local area_top<const> = lithograph.y + lithograph_hit_top_px
+		local area_right<const> = lithograph.x + lithograph_hit_right_px
+		local area_bottom<const> = lithograph.y + lithograph_hit_bottom_px
 		if player_right >= area_left and player_left <= area_right and player_bottom >= area_top and player_top <= area_bottom then
 			return lithograph
 		end
@@ -960,9 +960,9 @@ function room_object:rebuild_room_tiles()
 		for x = 1, self.tile_columns do
 			local tile_index<const> = row_base + x
 			local kind<const> = water_kind_at_tile(self, x, y)
-			if kind == constants.water.none then
+			if kind == water_none then
 				water_tile_sources[tile_index] = empty_tile_source
-			elseif kind == constants.water.surface then
+			elseif kind == water_surface then
 				water_tile_sources[tile_index] = water_surface_source
 				water_surface_tile_count = water_surface_tile_count + 1
 				water_surface_tile_indices[water_surface_tile_count] = tile_index
@@ -1029,7 +1029,7 @@ function room_object:render_room()
 	if not director:has_tag('d.seal.flash') then
 		return
 	end
-	vdp_fill_rect_color(0, constants.room.tile_origin_y, machine_manifest.render_size.width, machine_manifest.render_size.height, 342, sys_vdp_layer_world, 0x80ffffff)
+	vdp_fill_rect_color(0, room_tile_origin_y, machine_manifest.render_size.width, machine_manifest.render_size.height, 342, sys_vdp_layer_world, 0x80ffffff)
 end
 
 local room_runtime_state_name<const> = function(room_state)

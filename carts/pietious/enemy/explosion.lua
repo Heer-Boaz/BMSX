@@ -1,4 +1,4 @@
-local constants<const> = require('constants')
+require('constants')
 local worldobject<const> = require('cartlib/world/object')
 
 local enemy_explosion<const> = {}
@@ -20,10 +20,10 @@ local explosion_timeline_id<const> = 'enemy_explosion.timeline.explosion'
 
 local loot_value_for_type<const> = function(loot_type)
 	if loot_type == 'life' then
-		return constants.enemy.loot_life_regen
+		return enemy_loot_life_regen
 	end
 	if loot_type == 'ammo' then
-		return constants.enemy.loot_ammo_regen
+		return enemy_loot_ammo_regen
 	end
 	error('pietious enemy_explosion invalid loot_type=' .. tostring(loot_type))
 end
@@ -59,7 +59,7 @@ local define_enemy_explosion_fsm<const> = function()
 			[explosion_timeline_id] = {
 				def = {
 					frames = explosion_frames,
-					ticks_per_frame = constants.enemy.explosion_frame_steps,
+					ticks_per_frame = enemy_explosion_frame_steps,
 					playback_mode = 'once',
 				},
 				autoplay = false,

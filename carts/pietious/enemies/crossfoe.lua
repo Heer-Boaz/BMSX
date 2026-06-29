@@ -1,4 +1,4 @@
-local constants<const> = require('constants')
+require('constants')
 local behaviourtree<const> = require('cartlib/behaviourtree')
 local enemy_base<const> = require('enemies/enemy_base')
 
@@ -41,15 +41,15 @@ function crossfoe.bt_tick_waiting(self, blackboard)
 	local player<const> = oget('pietolon')
 	local node<const> = blackboard.nodedata
 	apply_spin_visual(self)
-	local wait_ticks = node.cross_wait_ticks or constants.enemy.cross_wait_before_fly_steps
+	local wait_ticks = node.cross_wait_ticks or enemy_cross_wait_before_fly_steps
 	wait_ticks = wait_ticks - 1
 	if wait_ticks > 0 then
 		node.cross_wait_ticks = wait_ticks
 		return 'RUNNING'
 	end
 
-	node.cross_wait_ticks = constants.enemy.cross_wait_before_fly_steps
-	node.cross_turn_ticks = constants.enemy.cross_turn_steps
+	node.cross_wait_ticks = enemy_cross_wait_before_fly_steps
+	node.cross_turn_ticks = enemy_cross_turn_steps
 	if player.x < self.x then
 		self.cross_state = 'flying_left'
 	else
@@ -66,7 +66,7 @@ function crossfoe.bt_tick_flying(self, blackboard)
 	local node<const> = blackboard.nodedata
 	apply_spin_visual(self)
 	local direction_mod<const> = self.cross_state == 'flying_left' and -1 or 1
-	local next_x<const> = self.x + (constants.enemy.cross_horizontal_speed_px * direction_mod)
+	local next_x<const> = self.x + (enemy_cross_horizontal_speed_px * direction_mod)
 	local next_left<const> = next_x
 	local next_right<const> = next_x + self.sx
 
@@ -77,23 +77,23 @@ function crossfoe.bt_tick_flying(self, blackboard)
 	then
 		self.cross_state = 'waiting'
 		self.cross_spin_direction = 'down'
-		self.x = self.x - (constants.enemy.cross_horizontal_speed_px * direction_mod)
-		node.cross_wait_ticks = constants.enemy.cross_wait_before_fly_steps
-		node.cross_turn_ticks = constants.enemy.cross_turn_steps
+		self.x = self.x - (enemy_cross_horizontal_speed_px * direction_mod)
+		node.cross_wait_ticks = enemy_cross_wait_before_fly_steps
+		node.cross_turn_ticks = enemy_cross_turn_steps
 		oget('c').events:emit('crossland')
 		return 'RUNNING'
 	end
 
-	self.x = self.x + (constants.enemy.cross_horizontal_speed_px * direction_mod)
+	self.x = self.x + (enemy_cross_horizontal_speed_px * direction_mod)
 
-	local turn_ticks = node.cross_turn_ticks or constants.enemy.cross_turn_steps
+	local turn_ticks = node.cross_turn_ticks or enemy_cross_turn_steps
 	turn_ticks = turn_ticks - 1
 	if turn_ticks > 0 then
 		node.cross_turn_ticks = turn_ticks
 		return 'RUNNING'
 	end
 
-	turn_ticks = constants.enemy.cross_turn_steps
+	turn_ticks = enemy_cross_turn_steps
 	if self.cross_spin_direction == 'down' then
 		self.cross_spin_direction = 'left'
 		self.x = self.x - 4
@@ -131,10 +131,10 @@ function crossfoe.register_behaviour_tree(bt_id)
 end
 
 function crossfoe.choose_drop_type(_self)
-	if math.random(100) <= constants.enemy.cross_drop_health_chance_pct then
+	if math.random(100) <= enemy_cross_drop_health_chance_pct then
 		return 'life'
 	end
-	if math.random(100) <= constants.enemy.cross_drop_ammo_chance_pct then
+	if math.random(100) <= enemy_cross_drop_ammo_chance_pct then
 		return 'ammo'
 	end
 	return nil

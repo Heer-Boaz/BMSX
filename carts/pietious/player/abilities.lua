@@ -1,4 +1,4 @@
-local constants<const> = require('constants')
+require('constants')
 local action_effects<const> = require('cartlib/action_effects')
 
 local player_abilities<const> = {}
@@ -43,10 +43,10 @@ action_effects.register_effect('pepernoot', {
 				live_count = live_count + 1
 			end
 		end
-		if live_count >= constants.secondary_weapon.pepernoot_max_active then
+		if live_count >= secondary_weapon_pepernoot_max_active then
 			return false
 		end
-		if owner.weapon_level < constants.secondary_weapon.pepernoot_weapon_level_cost then
+		if owner.weapon_level < secondary_weapon_pepernoot_weapon_level_cost then
 			return false
 		end
 		return true
@@ -56,8 +56,8 @@ action_effects.register_effect('pepernoot', {
 		local room<const> = oget('room')
 		owner.pepernoot_projectile_sequence = owner.pepernoot_projectile_sequence + 1
 		local projectile_id<const> = string.format('pepernoot_%d_%d', owner.player_index, owner.pepernoot_projectile_sequence)
-		local spawn_x = owner.x + (owner.facing < 0 and -constants.secondary_weapon.pepernoot_spawn_offset_x or constants.secondary_weapon.pepernoot_spawn_offset_x)
-		local spawn_y = owner.y + constants.secondary_weapon.pepernoot_spawn_offset_y
+		local spawn_x = owner.x + (owner.facing < 0 and -secondary_weapon_pepernoot_spawn_offset_x or secondary_weapon_pepernoot_spawn_offset_x)
+		local spawn_y = owner.y + secondary_weapon_pepernoot_spawn_offset_y
 		spawn_x, spawn_y = room:snap_world_to_tile(spawn_x, spawn_y)
 		inst('pepernoot_projectile', {
 			id = projectile_id,
@@ -67,7 +67,7 @@ action_effects.register_effect('pepernoot', {
 			direction = owner.facing,
 			pos = { x = spawn_x, y = spawn_y, z = 113 },
 		})
-		-- owner.weapon_level = owner.weapon_level - constants.secondary_weapon.pepernoot_weapon_level_cost
+		-- owner.weapon_level = owner.weapon_level - secondary_weapon_pepernoot_weapon_level_cost
 		owner:emit_weapon_changed()
 		owner.events:emit('fire_pepernoot')
 	end,

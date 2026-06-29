@@ -1,4 +1,4 @@
-local constants<const> = require('constants')
+require('constants')
 
 local world_entrance_sprite_ids<const> = {
 	closed = 'world_entrance',
@@ -60,10 +60,10 @@ local define_world_entrance_fsm<const> = function()
 				timelines = {
 					[opening_timeline_id] = {
 						def = {
-							frames = timeline.range(constants.world_entrance.open_step_frames * 2),
+							frames = timeline.range(world_entrance_open_step_frames * 2),
 							playback_mode = 'once',
 							markers = {
-								{ frame = constants.world_entrance.open_step_frames, event = opening_half_event },
+								{ frame = world_entrance_open_step_frames, event = opening_half_event },
 							},
 						},
 						autoplay = true,

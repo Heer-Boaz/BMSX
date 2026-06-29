@@ -51,7 +51,7 @@
 --    (e.g. 'death_resolved').  No polling, no pending flag — the FSM state
 --    IS the waiting mechanism.
 
-local constants<const> = require('constants')
+require('constants')
 
 local halo_teleport_timeline_id<const> = 'director.halo.transition'
 local banner_world_timeline_id<const> = 'director.banner.world'
@@ -84,7 +84,7 @@ function director:bind_visual()
 		if not self.seal_flash_on then
 			return
 		end
-		vdp_fill_rect_color(0, constants.room.tile_origin_y, machine_manifest.render_size.width, machine_manifest.render_size.height, 500, sys_vdp_layer_ui, 0xb3ffffff)
+		vdp_fill_rect_color(0, room_tile_origin_y, machine_manifest.render_size.width, machine_manifest.render_size.height, 500, sys_vdp_layer_ui, 0xb3ffffff)
 	end
 end
 
@@ -130,7 +130,7 @@ end
 
 function director:ensure_daemon_cloud_pool()
 	local clouds<const> = self.daemon_clouds
-	for i = 1, constants.flow.daemon_cloud_max do
+	for i = 1, flow_daemon_cloud_max do
 		if clouds[i] == nil then
 			clouds[i] = inst('daemon_cloud', {
 				id = 'dc.' .. tostring(i),
@@ -145,16 +145,16 @@ end
 function director:spawn_daemon_cloud()
 	local clouds<const> = self.daemon_clouds
 	local start_index<const> = self.daemon_smoke_next
-	for i = 0, constants.flow.daemon_cloud_max - 1 do
-		local index<const> = ((start_index - 1 + i) % constants.flow.daemon_cloud_max) + 1
+	for i = 0, flow_daemon_cloud_max - 1 do
+		local index<const> = ((start_index - 1 + i) % flow_daemon_cloud_max) + 1
 		local cloud<const> = clouds[index]
 		if not cloud.visible then
 			cloud:play_once_at(
-				constants.room.tile_origin_x + (math.random(constants.flow.daemon_cloud_spawn_x_min, constants.flow.daemon_cloud_spawn_x_max) * constants.room.tile_size),
-				constants.room.tile_origin_y + (math.random(constants.flow.daemon_cloud_spawn_y_min, constants.flow.daemon_cloud_spawn_y_max) * constants.room.tile_size)
+				room_tile_origin_x + (math.random(flow_daemon_cloud_spawn_x_min, flow_daemon_cloud_spawn_x_max) * room_tile_size),
+				room_tile_origin_y + (math.random(flow_daemon_cloud_spawn_y_min, flow_daemon_cloud_spawn_y_max) * room_tile_size)
 			)
 			self.daemon_smoke_next = index + 1
-			if self.daemon_smoke_next > constants.flow.daemon_cloud_max then
+			if self.daemon_smoke_next > flow_daemon_cloud_max then
 				self.daemon_smoke_next = 1
 			end
 			return
@@ -288,7 +288,7 @@ local define_director_fsm<const> = function()
 		timelines = {
 			[banner_pre_delay_timeline_id] = {
 				def = {
-					frames = timeline.range(constants.flow.banner_prewait_frames),
+					frames = timeline.range(flow_banner_prewait_frames),
 					playback_mode = 'once',
 					markers = {
 						{ frame = 0, event = banner_prewait_cue_event },
@@ -298,7 +298,7 @@ local define_director_fsm<const> = function()
 			},
 			[banner_world_timeline_id] = {
 				def = {
-					frames = timeline.range(constants.flow.world_banner_frames),
+					frames = timeline.range(flow_world_banner_frames),
 					playback_mode = 'once',
 					markers = {
 						{ frame = 0, event = banner_world_show_event },
@@ -308,7 +308,7 @@ local define_director_fsm<const> = function()
 			},
 			[banner_castle_timeline_id] = {
 				def = {
-					frames = timeline.range(constants.flow.castle_banner_frames),
+					frames = timeline.range(flow_castle_banner_frames),
 					playback_mode = 'once',
 					markers = {
 						{ frame = 0, event = banner_castle_show_event },
@@ -318,7 +318,7 @@ local define_director_fsm<const> = function()
 			},
 			[title_start_wait_timeline_id] = {
 				def = {
-					frames = timeline.range(constants.flow.title_start_wait_frames),
+					frames = timeline.range(flow_title_start_wait_frames),
 					playback_mode = 'once',
 				},
 				autoplay = false,
@@ -416,7 +416,7 @@ local define_director_fsm<const> = function()
 				timelines = {
 					[room_switch_wait_timeline_id] = {
 						def = {
-							frames = timeline.range(constants.flow.room_switch_wait_frames),
+							frames = timeline.range(flow_room_switch_wait_frames),
 							playback_mode = 'once',
 						},
 						autoplay = true,
@@ -434,7 +434,7 @@ local define_director_fsm<const> = function()
 				timelines = {
 					[room_switch_wait_timeline_id] = {
 						def = {
-							frames = timeline.range(constants.flow.room_switch_wait_frames),
+							frames = timeline.range(flow_room_switch_wait_frames),
 							playback_mode = 'once',
 						},
 						autoplay = true,
@@ -615,7 +615,7 @@ local define_director_fsm<const> = function()
 						timelines = {
 							[item_screen_open_timeline_id] = {
 								def = {
-									frames = timeline.range(constants.flow.item_screen_wait_frames),
+									frames = timeline.range(flow_item_screen_wait_frames),
 									playback_mode = 'once',
 								},
 								autoplay = true,
@@ -676,7 +676,7 @@ local define_director_fsm<const> = function()
 						timelines = {
 							[item_screen_close_timeline_id] = {
 								def = {
-									frames = timeline.range(constants.flow.item_screen_wait_frames),
+									frames = timeline.range(flow_item_screen_wait_frames),
 									playback_mode = 'once',
 								},
 								autoplay = true,

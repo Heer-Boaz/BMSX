@@ -1,5 +1,5 @@
 require('cartlib/prelude')
-local constants<const> = require('constants')
+require('constants')
 local stage_module<const> = require('stage')
 local player_module<const> = require('player/index')
 local director_module<const> = require('director')
@@ -41,7 +41,7 @@ function new_game()
 	inst(player_module.player_def_id, {
 		id = player_module.player_instance_id,
 		player_index = 1,
-		pos = { x = constants.player.start_x, y = constants.player.start_y, z = 70 },
+		pos = { x = player_start_x, y = player_start_y, z = 70 },
 	})
 end
 

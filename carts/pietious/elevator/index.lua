@@ -1,4 +1,4 @@
-local constants<const> = require('constants')
+require('constants')
 
 local elevator<const> = {}
 elevator.__index = elevator
@@ -6,18 +6,18 @@ elevator.__index = elevator
 function elevator:ctor()
 	self:gfx('elevator_platform')
 	self.collider:set_enabled(true)
-	self.collider.layer = constants.collision.world_layer
-	self.collider.mask = constants.collision.player_layer
+	self.collider.layer = collision_world_layer
+	self.collider.mask = collision_player_layer
 	self.collider.spaceevents = 'current'
 end
 
 local move_vertical<const> = function(self, target, vertical)
-	local top_boundary<const> = constants.room.hud_height + constants.room.tile_size
+	local top_boundary<const> = room_hud_height + room_tile_size
 	local delta_y = 0
 	if vertical == 'down' then
 		self.y = self.y + 2
 		delta_y = 2
-		if self.y > constants.room.height then
+		if self.y > room_height then
 			self.y = top_boundary
 			self.current_room_number = target.room_number
 		end
@@ -27,7 +27,7 @@ local move_vertical<const> = function(self, target, vertical)
 	self.y = self.y - 2
 	delta_y = -2
 	if self.y < top_boundary then
-		self.y = constants.room.height - constants.room.tile_size
+		self.y = room_height - room_tile_size
 		self.current_room_number = target.room_number
 	end
 	return delta_y
@@ -80,7 +80,7 @@ function elevator:update_motion()
 	self.collider:set_enabled(self.visible)
 
 	if self.visible then
-		local standing_on_top<const> = player.y == (self.y - constants.player.height)
+		local standing_on_top<const> = player.y == (self.y - player_height)
 			and player:has_feet_over_elevator_top(self, player.x)
 		if standing_on_top then
 			player.next_vertical_elevator = true

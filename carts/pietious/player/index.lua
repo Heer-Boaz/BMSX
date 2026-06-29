@@ -75,7 +75,7 @@
 --    exit animation timeline completes.
 
 local clamp<const> = require('bios/util/clamp')
-local constants<const> = require('constants')
+require('constants')
 local castle_map<const> = require('castle/map')
 local components<const> = require('cartlib/components')
 local collision2d<const> = require('cartlib/collision2d')
@@ -156,8 +156,8 @@ local player_tags<const> = {
 	in_water = 'p.w',
 }
 local player_in_water_by_state<const> = {
-	[constants.water.surface] = true,
-	[constants.water.body] = true,
+	[water_surface] = true,
+	[water_body] = true,
 }
 local hit_blink_colorize<const> = { r = 1, g = 0.35, b = 0.35, a = 1 }
 local vertical_exit_directions<const> = {
@@ -185,17 +185,17 @@ end
 
 local build_shrine_exit_transition_frames<const> = function()
 	local frames<const> = {}
-	for transition_step = constants.world_entrance.enter_world_midpoint_step, constants.world_entrance.enter_world_total_steps do
+	for transition_step = world_entrance_enter_world_midpoint_step, world_entrance_enter_world_total_steps do
 		local phase
-		if constants.world_entrance.enter_leave_cycle_steps <= 0 then
+		if world_entrance_enter_leave_cycle_steps <= 0 then
 			phase = 0
 		else
-			phase = transition_step % constants.world_entrance.enter_leave_cycle_steps
+			phase = transition_step % world_entrance_enter_leave_cycle_steps
 		end
 		frames[#frames + 1] = {
 			transition_step = transition_step,
 			enter_leave_anim_frame = phase < 4 and 0 or 1,
-			to_enter_cut = transition_step - constants.world_entrance.enter_world_total_steps,
+			to_enter_cut = transition_step - world_entrance_enter_world_total_steps,
 		}
 	end
 	return frames
@@ -318,25 +318,25 @@ function player:define_runtime_timelines()
 	self:define_timeline(timeline.new({
 		id = 'p.tl.hr',
 		frames = timeline.build_frame_sequence({
-			{ value = { imgid = 'pietolon_recover_r' }, hold = constants.damage.hit_recovery_frames },
+			{ value = { imgid = 'pietolon_recover_r' }, hold = damage_hit_recovery_frames },
 		}),
 		playback_mode = 'once',
 	}))
 	self:define_timeline(timeline.new({
 		id = 'p.seq.s',
-		frames = timeline.range(constants.sword.duration_frames + 1),
+		frames = timeline.range(sword_duration_frames + 1),
 		playback_mode = 'once',
 		autotick = false,
 	}))
 	self:define_timeline(timeline.new({
 		id = 'p.seq.hi',
-		frames = timeline.range(constants.damage.hit_invulnerability_frames),
+		frames = timeline.range(damage_hit_invulnerability_frames),
 		playback_mode = 'once',
 		autotick = false,
 	}))
 	self:define_timeline(timeline.new({
 		id = 'p.seq.hb',
-		frames = timeline.range(constants.damage.hit_blink_switch_frames),
+		frames = timeline.range(damage_hit_blink_switch_frames),
 		playback_mode = 'loop',
 		autotick = false,
 	}))
@@ -363,8 +363,8 @@ function player:ctor()
 		program = player_abilities.build_input_action_effect_program(),
 	}))
 	self:gfx('pietolon_stand_r')
-	self.width = constants.player.width
-	self.height = constants.player.height
+	self.width = player_width
+	self.height = player_height
 	self.collider.id_local = 'body'
 	self.collider.spaceevents = 'current'
 	self.collider:apply_collision_profile('player')
@@ -508,33 +508,33 @@ function player:apply_presentation_state()
 	if self:has_tag(state_tags.visual.jump_sword) then
 		imgid = 'pietolon_jumpslash_r'
 		if flip_h then
-			self.sprite_component.offset.x = constants.sword.jump_body_offset_left
-			self.sword_sprite.offset.x = constants.sword.jump_offset_left
+			self.sprite_component.offset.x = sword_jump_body_offset_left
+			self.sword_sprite.offset.x = sword_jump_offset_left
 		else
-			self.sprite_component.offset.x = constants.sword.jump_body_offset_right
-			self.sword_sprite.offset.x = constants.sword.jump_offset_right
+			self.sprite_component.offset.x = sword_jump_body_offset_right
+			self.sword_sprite.offset.x = sword_jump_offset_right
 		end
-		self.sword_sprite.offset.y = constants.sword.jump_offset_y
+		self.sword_sprite.offset.y = sword_jump_offset_y
 	elseif self:has_tag(state_tags.visual.ground_sword) then
 		imgid = 'pietolon_slash_r'
 		if flip_h then
-			self.sprite_component.offset.x = constants.sword.ground_body_offset_left
-			self.sword_sprite.offset.x = constants.sword.ground_offset_left
+			self.sprite_component.offset.x = sword_ground_body_offset_left
+			self.sword_sprite.offset.x = sword_ground_offset_left
 		else
-			self.sprite_component.offset.x = constants.sword.ground_body_offset_right
-			self.sword_sprite.offset.x = constants.sword.ground_offset_right
+			self.sprite_component.offset.x = sword_ground_body_offset_right
+			self.sword_sprite.offset.x = sword_ground_offset_right
 		end
-		self.sword_sprite.offset.y = constants.sword.ground_offset_y
+		self.sword_sprite.offset.y = sword_ground_offset_y
 	elseif self:has_tag(state_tags.visual.stairs_sword) then
 		imgid = 'pietolon_slash_r'
 		if flip_h then
-			self.sprite_component.offset.x = constants.sword.stairs_body_offset_left
-			self.sword_sprite.offset.x = constants.sword.stairs_offset_left
+			self.sprite_component.offset.x = sword_stairs_body_offset_left
+			self.sword_sprite.offset.x = sword_stairs_offset_left
 		else
-			self.sprite_component.offset.x = constants.sword.stairs_body_offset_right
-			self.sword_sprite.offset.x = constants.sword.stairs_offset_right
+			self.sprite_component.offset.x = sword_stairs_body_offset_right
+			self.sword_sprite.offset.x = sword_stairs_offset_right
 		end
-		self.sword_sprite.offset.y = constants.sword.stairs_offset_y
+		self.sword_sprite.offset.y = sword_stairs_offset_y
 	elseif self:has_tag(state_tags.group.player_stairs) then
 		flip_h = false
 		self.sprite_component.offset.x = 0
@@ -573,7 +573,7 @@ end
 
 function player:advance_sword_sequence()
 	local sword_sequence<const> = self:get_timeline('p.seq.s')
-	if sword_sequence:value() >= constants.sword.duration_frames then
+	if sword_sequence:value() >= sword_duration_frames then
 		self.sword_cooldown = 1
 		self.events:emit(player_sword_end_event)
 		return
@@ -595,7 +595,7 @@ function player:update_hit_invulnerability()
 
 	local hit_invulnerability_sequence<const> = self:get_timeline('p.seq.hi')
 	hit_invulnerability_sequence:advance()
-	self.hit_invulnerability_timer = constants.damage.hit_invulnerability_frames - (hit_invulnerability_sequence:value() + 1)
+	self.hit_invulnerability_timer = damage_hit_invulnerability_frames - (hit_invulnerability_sequence:value() + 1)
 
 	local hit_blink_sequence<const> = self:get_timeline('p.seq.hb')
 	hit_blink_sequence:advance()
@@ -616,7 +616,7 @@ function player:reset_hit_invulnerability_sequence()
 end
 
 function player:start_hit_invulnerability_sequence()
-	self.hit_invulnerability_timer = constants.damage.hit_invulnerability_frames
+	self.hit_invulnerability_timer = damage_hit_invulnerability_frames
 	self.hit_blink_on = true
 	self:get_timeline('p.seq.hi'):rewind()
 	self:get_timeline('p.seq.hb'):force_seek(0)
@@ -661,7 +661,7 @@ end
 function player:emit_weapon_changed()
 	self.events:emit('player.weapon_changed', {
 		value = self.weapon_level,
-		max_value = constants.hud.weapon_level,
+		max_value = hud_weapon_level,
 	})
 end
 
@@ -723,8 +723,8 @@ function player:collect_loot(loot_type, loot_value, item_type, item_id)
 		self:emit_health_changed()
 	elseif loot_type == 'ammo' then
 		self.weapon_level = self.weapon_level + loot_value
-		if self.weapon_level > constants.hud.weapon_level then
-			self.weapon_level = constants.hud.weapon_level
+		if self.weapon_level > hud_weapon_level then
+			self.weapon_level = hud_weapon_level
 		end
 		self:emit_weapon_changed()
 	else
@@ -738,15 +738,15 @@ function player:collect_item(item_type, item_id)
 	local loot_type<const> = loot_type_by_item_type[item_type]
 	if loot_type ~= nil then
 		if loot_type == 'life' then
-			return self:collect_loot(loot_type, constants.pickup_item.life_regen, item_type, item_id)
+			return self:collect_loot(loot_type, pickup_item_life_regen, item_type, item_id)
 		end
-		return self:collect_loot(loot_type, constants.pickup_item.ammo_regen, item_type, item_id)
+		return self:collect_loot(loot_type, pickup_item_ammo_regen, item_type, item_id)
 	end
 	if item_type == 'keyworld1' then
 		self.health = self.max_health
 		self:emit_health_changed()
 		self.inventory_items.keyworld1 = true
-	elseif constants.world_item.inventory[item_type] then
+	elseif world_item_inventory[item_type] then
 		self.inventory_items[item_type] = true
 	else
 		error('pietious player invalid item_type=' .. tostring(item_type))
@@ -764,10 +764,10 @@ function player:find_near_shrine()
 
 	for i = 1, #shrines do
 		local shrine<const> = shrines[i]
-		local area_left<const> = shrine.x + constants.shrine.hit_left_px
-		local area_top<const> = shrine.y + constants.shrine.hit_top_px
-		local area_right<const> = shrine.x + constants.shrine.hit_right_px
-		local area_bottom<const> = shrine.y + constants.shrine.hit_bottom_px
+		local area_left<const> = shrine.x + shrine_hit_left_px
+		local area_top<const> = shrine.y + shrine_hit_top_px
+		local area_right<const> = shrine.x + shrine_hit_right_px
+		local area_bottom<const> = shrine.y + shrine_hit_bottom_px
 		if player_right >= area_left and player_left <= area_right and player_bottom >= area_top and player_top <= area_bottom then
 			return shrine
 		end
@@ -783,7 +783,7 @@ function player:find_world_entrance_for_unlock()
 		local world_entrance<const> = world_entrances[i]
 		local entrance_state<const> = castle.world_entrance_states[world_entrance.target].state
 		if entrance_state == 'closed' then
-			local within_x<const> = self.x >= world_entrance.x and self.x <= (world_entrance.x + constants.room.tile_size2)
+			local within_x<const> = self.x >= world_entrance.x and self.x <= (world_entrance.x + room_tile_size2)
 			local on_trigger_y<const> = self.y == world_entrance.stair_y
 			if within_x and on_trigger_y then
 				return world_entrance
@@ -801,8 +801,8 @@ function player:find_near_open_world_entrance()
 		local world_entrance<const> = world_entrances[i]
 		local entrance_state<const> = castle.world_entrance_states[world_entrance.target].state
 		if entrance_state == 'open' then
-			local within_x<const> = self.x >= (world_entrance.stair_x - constants.world_entrance.trigger_half_width)
-			and self.x <= (world_entrance.stair_x + constants.world_entrance.trigger_half_width)
+			local within_x<const> = self.x >= (world_entrance.stair_x - world_entrance_trigger_half_width)
+			and self.x <= (world_entrance.stair_x + world_entrance_trigger_half_width)
 			local on_trigger_y<const> = self.y == world_entrance.stair_y
 			if within_x and on_trigger_y then
 				return world_entrance
@@ -839,16 +839,16 @@ function player:update_enter_leave_cut(direction)
 		self.to_enter_cut = 0
 		return
 	end
-	if transition_step > constants.world_entrance.enter_world_total_steps then
+	if transition_step > world_entrance_enter_world_total_steps then
 		self.to_enter_cut = 0
 		return
 	end
 
 	local phase_step
-	if transition_step <= constants.world_entrance.enter_world_midpoint_step then
+	if transition_step <= world_entrance_enter_world_midpoint_step then
 		phase_step = transition_step
 	else
-		phase_step = constants.world_entrance.enter_world_total_steps - transition_step
+		phase_step = world_entrance_enter_world_total_steps - transition_step
 	end
 
 	if direction < 0 then
@@ -883,9 +883,9 @@ end
 function player:begin_world_emerge_from_door_midpoint()
 	self:cancel_sword()
 	self:clear_input_state()
-	self.transition_step = constants.world_entrance.enter_world_midpoint_step
+	self.transition_step = world_entrance_enter_world_midpoint_step
 	self:update_enter_leave_anim_frame()
-	self.to_enter_cut = constants.world_entrance.enter_world_midpoint_step
+	self.to_enter_cut = world_entrance_enter_world_midpoint_step
 	self.enter_leave_world_target = nil
 	self.enter_leave_shrine_text_lines = {}
 	self.events:emit('world_emerge_start')
@@ -999,18 +999,18 @@ function player:get_walk_dx()
 		return walk_dx
 	end
 	if self.inventory_items['schoentjes'] then
-		self.walk_speed_accum = self.walk_speed_accum + constants.physics.walk_dx_schoentjes_num
-		local walk_dx<const> = self.walk_speed_accum // constants.physics.walk_dx_schoentjes_den
-		self.walk_speed_accum = self.walk_speed_accum - (walk_dx * constants.physics.walk_dx_schoentjes_den)
+		self.walk_speed_accum = self.walk_speed_accum + physics_walk_dx_schoentjes_num
+		local walk_dx<const> = self.walk_speed_accum // physics_walk_dx_schoentjes_den
+		self.walk_speed_accum = self.walk_speed_accum - (walk_dx * physics_walk_dx_schoentjes_den)
 		return walk_dx
 	end
 	self.walk_speed_accum = 0
-	return constants.physics.walk_dx
+	return physics_walk_dx
 end
 
 function player:sync_water_state()
 	self.previous_water_state = self.water_state
-	local next_water_state<const> = oget('room'):player_water_kind_at_world(self.x + constants.room.tile_half, self.y + self.height)
+	local next_water_state<const> = oget('room'):player_water_kind_at_world(self.x + room_tile_half, self.y + self.height)
 	self.water_state = next_water_state
 	set_tag_flag(self, player_tags.in_water, player_in_water_by_state[next_water_state])
 end
@@ -1032,17 +1032,17 @@ function player:reset_vertical_motion_for_jump()
 end
 
 function player:reset_vertical_motion_for_fall()
-	self.vertical_motion_substate = constants.physics.aphrodite_water_fall_start_substate
+	self.vertical_motion_substate = physics_aphrodite_water_fall_start_substate
 	self.vertical_motion_tick = 0
 	self.vertical_motion_dy_accum = 0
 end
 
 function player:advance_aphrodite_water_vertical_motion()
 	self.vertical_motion_tick = self.vertical_motion_tick + 1
-	if (self.vertical_motion_tick % constants.physics.aphrodite_water_vertical_tick_period) ~= 0 then
+	if (self.vertical_motion_tick % physics_aphrodite_water_vertical_tick_period) ~= 0 then
 		return false
 	end
-	if self.vertical_motion_substate < constants.physics.aphrodite_water_vertical_substate_cap then
+	if self.vertical_motion_substate < physics_aphrodite_water_vertical_substate_cap then
 		self.vertical_motion_substate = self.vertical_motion_substate + 1
 	end
 	return true
@@ -1054,8 +1054,8 @@ function player:consume_aphrodite_water_vertical_dy()
 	end
 	local dy<const>, next_accum<const> = consume_axis_accum(
 	self.vertical_motion_dy_accum,
-	constants.physics.aphrodite_water_vertical_dy_by_substate[self.vertical_motion_substate - 1],
-	constants.physics.aphrodite_water_vertical_scale_den
+	physics_aphrodite_water_vertical_dy_by_substate[self.vertical_motion_substate - 1],
+	physics_aphrodite_water_vertical_scale_den
 	)
 	self.vertical_motion_dy_accum = next_accum
 	return dy
@@ -1261,10 +1261,10 @@ function player:pick_entry_stairs(direction)
 		if self.x >= (stair.x - 4) and self.x <= (stair.x + 8) then
 			local y_ok
 			if direction < 0 then
-				local min_y<const> = stair.top_y + constants.room.tile_size2
+				local min_y<const> = stair.top_y + room_tile_size2
 				y_ok = self.y >= min_y and self.y <= stair.bottom_y
 			else
-				local max_y<const> = stair.top_y + constants.room.tile_size
+				local max_y<const> = stair.top_y + room_tile_size
 				y_ok = self.y >= stair.top_y and self.y <= max_y
 			end
 			if y_ok then
@@ -1348,8 +1348,8 @@ end
 
 function player:collides_at_right_wall_stairs_step_off_profile(x, y)
 	local wall_x<const> = x + self.width
-	local center_x<const> = x + constants.room.tile_half
-	local upper_probe_y<const> = (y + self.height) - constants.room.tile_size - 1
+	local center_x<const> = x + room_tile_half
+	local upper_probe_y<const> = (y + self.height) - room_tile_size - 1
 	local lower_probe_y<const> = (y + self.height) - 1
 	return self:collides_at_probe(center_x, upper_probe_y, false)
 	or self:collides_at_probe(center_x, lower_probe_y, false)
@@ -1360,8 +1360,8 @@ end
 function player:collides_at_left_wall_stairs_step_off_profile(x, y)
 	local wall_x<const> = x
 	local wall_x_secondary<const> = wall_x - 1
-	local center_x<const> = x + constants.room.tile_half
-	local upper_probe_y<const> = (y + self.height) - constants.room.tile_size - 1
+	local center_x<const> = x + room_tile_half
+	local upper_probe_y<const> = (y + self.height) - room_tile_size - 1
 	local lower_probe_y<const> = (y + self.height) - 1
 	return self:collides_at_probe(center_x, upper_probe_y, false)
 	or self:collides_at_probe(center_x, lower_probe_y, false)
@@ -1384,14 +1384,14 @@ function player:try_step_off_stairs()
 	if self.left_held and not self.right_held then
 		dir = -1
 		event_name = 'stairs_step_off_left'
-		step_x = constants.stairs.step_off_left_x
-		support_probe_x = self.x + constants.stairs.step_off_left_probe_offset_x
+		step_x = stairs_step_off_left_x
+		support_probe_x = self.x + stairs_step_off_left_probe_offset_x
 		blocked_by_wall = self:collides_at_left_wall_stairs_step_off_profile(self.x, self.y)
 	elseif self.right_held and not self.left_held then
 		dir = 1
 		event_name = 'stairs_step_off_right'
-		step_x = constants.stairs.step_off_right_x
-		support_probe_x = self.x + constants.stairs.step_off_right_probe_offset_x
+		step_x = stairs_step_off_right_x
+		support_probe_x = self.x + stairs_step_off_right_probe_offset_x
 		blocked_by_wall = self:collides_at_right_wall_stairs_step_off_profile(self.x, self.y)
 	else
 		return false
@@ -1401,11 +1401,11 @@ function player:try_step_off_stairs()
 	if blocked_by_wall then
 		return false
 	end
-	local support_probe_y<const> = self.y + self.height + constants.stairs.step_off_probe_extra_y
+	local support_probe_y<const> = self.y + self.height + stairs_step_off_probe_extra_y
 	if not oget('room'):has_collision_flags_at_world(
 	support_probe_x,
 	support_probe_y,
-	constants.collision_flags.solid_mask,
+	collision_flags_solid_mask,
 	false
 	) then
 		return false
@@ -1421,8 +1421,8 @@ end
 
 function player:update_stairs_animation(distance_px)
 	self.stairs_anim_distance = self.stairs_anim_distance + distance_px
-	while self.stairs_anim_distance >= constants.stairs.anim_step_px do
-		self.stairs_anim_distance = self.stairs_anim_distance - constants.stairs.anim_step_px
+	while self.stairs_anim_distance >= stairs_anim_step_px do
+		self.stairs_anim_distance = self.stairs_anim_distance - stairs_anim_step_px
 		if self.stairs_anim_frame == 0 then
 			self.stairs_anim_frame = 1
 		else
@@ -1437,7 +1437,7 @@ function player:start_stairs(direction, stair, event_name)
 	self.x = stair.x
 	if direction > 0 then
 		local feet_y<const> = self.y + self.height
-		self.y = (((feet_y // constants.room.tile_size) * constants.room.tile_size) + constants.room.tile_size) - self.height
+		self.y = (((feet_y // room_tile_size) * room_tile_size) + room_tile_size) - self.height
 	end
 	self.stairs_direction = direction
 	self.stairs_anim_distance = 0
@@ -1454,9 +1454,9 @@ function player:collides_with_elevator_probe(x, y)
 		local platform<const> = oget('e.p' .. tostring(i))
 		if platform.current_room_number == current_room_number
 		and x >= platform.x
-		and x < (platform.x + constants.room.tile_size4)
+		and x < (platform.x + room_tile_size4)
 		and y >= platform.y
-		and y < (platform.y + constants.room.tile_size2)
+		and y < (platform.y + room_tile_size2)
 		then
 			return true
 		end
@@ -1489,12 +1489,12 @@ function player:collides_with_elevator_at(x, y)
 end
 
 function player:has_feet_over_elevator_top(platform, x)
-	local left_foot_x<const> = x + constants.room.tile_half
+	local left_foot_x<const> = x + room_tile_half
 	local mid_foot_x<const> = x + (self.width / 2)
-	local right_foot_x<const> = (x + self.width) - constants.room.tile_half
-	return (left_foot_x >= platform.x and left_foot_x < (platform.x + constants.room.tile_size4))
-	or (mid_foot_x >= platform.x and mid_foot_x < (platform.x + constants.room.tile_size4))
-	or (right_foot_x >= platform.x and right_foot_x < (platform.x + constants.room.tile_size4))
+	local right_foot_x<const> = (x + self.width) - room_tile_half
+	return (left_foot_x >= platform.x and left_foot_x < (platform.x + room_tile_size4))
+	or (mid_foot_x >= platform.x and mid_foot_x < (platform.x + room_tile_size4))
+	or (right_foot_x >= platform.x and right_foot_x < (platform.x + room_tile_size4))
 end
 
 function player:resolve_overlap_with_elevator(platform, previous_platform_y)
@@ -1508,12 +1508,12 @@ function player:resolve_overlap_with_elevator(platform, previous_platform_y)
 		self.y = platform.y - self.height
 		return true
 	end
-	if self.y >= (previous_platform_y + constants.room.tile_size2) then
-		self.y = platform.y + constants.room.tile_size2
+	if self.y >= (previous_platform_y + room_tile_size2) then
+		self.y = platform.y + room_tile_size2
 		return true
 	end
 	local left_x<const> = platform.x - self.width
-	local right_x<const> = platform.x + constants.room.tile_size4
+	local right_x<const> = platform.x + room_tile_size4
 	local left_clear<const> = not self:collides_at(left_x, self.y, true)
 	local right_clear<const> = not self:collides_at(right_x, self.y, true)
 	if left_clear and right_clear then
@@ -1544,8 +1544,8 @@ function player:is_support_below_at(x, y, include_elevator)
 	end
 
 	local player_bottom<const> = y + self.height
-	local left_foot_x<const> = x + constants.room.tile_half
-	local right_foot_x<const> = (x + self.width) - constants.room.tile_half
+	local left_foot_x<const> = x + room_tile_half
+	local right_foot_x<const> = (x + self.width) - room_tile_half
 	local count<const> = oget('c').elevator_count
 	local current_room_number<const> = oget('c').current_room_number
 	for i = 1, count do
@@ -1554,8 +1554,8 @@ function player:is_support_below_at(x, y, include_elevator)
 			if player_bottom >= platform.y
 			and player_bottom <= (platform.y + 1)
 			and (
-			(left_foot_x >= platform.x and left_foot_x < (platform.x + constants.room.tile_size4))
-			or (right_foot_x >= platform.x and right_foot_x < (platform.x + constants.room.tile_size4))
+			(left_foot_x >= platform.x and left_foot_x < (platform.x + room_tile_size4))
+			or (right_foot_x >= platform.x and right_foot_x < (platform.x + room_tile_size4))
 			)
 			then
 				return true
@@ -1568,7 +1568,7 @@ end
 
 function player:collides_at(x, y, include_elevator)
 	local rm<const> = oget('room')
-	if rm:has_collision_flags_in_rect(x, y, self.width, self.height, constants.collision_flags.solid_mask, false) then
+	if rm:has_collision_flags_in_rect(x, y, self.width, self.height, collision_flags_solid_mask, false) then
 		return true
 	end
 	if include_elevator then
@@ -1579,7 +1579,7 @@ end
 
 function player:collides_at_probe(x, y, include_elevator)
 	local rm<const> = oget('room')
-	if rm:has_collision_flags_at_world(x, y, constants.collision_flags.solid_mask, false) then
+	if rm:has_collision_flags_at_world(x, y, collision_flags_solid_mask, false) then
 		return true
 	end
 	if include_elevator then
@@ -1590,29 +1590,29 @@ end
 
 function player:collides_at_support_profile(x, y, include_elevator)
 	local feet_y<const> = y + self.height
-	local left_foot_x<const> = x + constants.room.tile_half
-	local right_foot_x<const> = (x + self.width) - constants.room.tile_half
+	local left_foot_x<const> = x + room_tile_half
+	local right_foot_x<const> = (x + self.width) - room_tile_half
 	return self:collides_at_probe(left_foot_x, feet_y, include_elevator)
 	or self:collides_at_probe(right_foot_x, feet_y, include_elevator)
 end
 
 function player:collides_at_jump_ceiling_profile(x, y, include_elevator)
-	local left_probe_x<const> = x + constants.room.tile_half
-	local right_probe_x<const> = (x + self.width) - constants.room.tile_half
+	local left_probe_x<const> = x + room_tile_half
+	local right_probe_x<const> = (x + self.width) - room_tile_half
 	return self:collides_at_probe(left_probe_x, y, include_elevator)
 	or self:collides_at_probe(right_probe_x, y, include_elevator)
 end
 
 function player:collides_at_right_wall_profile(x, y, include_elevator)
 	local wall_x<const> = x + self.width
-	local first_probe_y<const> = (y + self.height) - constants.room.tile_size
+	local first_probe_y<const> = (y + self.height) - room_tile_size
 	local second_probe_y<const> = first_probe_y - 1
 	return self:collides_at_probe(wall_x, first_probe_y, include_elevator)
 	or self:collides_at_probe(wall_x, second_probe_y, include_elevator)
 end
 
 function player:collides_at_left_wall_primary_profile(x, y, include_elevator)
-	local first_probe_y<const> = (y + self.height) - constants.room.tile_size
+	local first_probe_y<const> = (y + self.height) - room_tile_size
 	local second_probe_y<const> = first_probe_y - 1
 	return self:collides_at_probe(x, first_probe_y, include_elevator)
 	or self:collides_at_probe(x, second_probe_y, include_elevator)
@@ -1620,7 +1620,7 @@ end
 
 function player:collides_at_left_wall_secondary_profile(x, y, include_elevator)
 	local wall_x<const> = x - 1
-	local first_probe_y<const> = (y + self.height) - constants.room.tile_size
+	local first_probe_y<const> = (y + self.height) - room_tile_size
 	local second_probe_y<const> = first_probe_y - 1
 	return self:collides_at_probe(wall_x, first_probe_y, include_elevator)
 	or self:collides_at_probe(wall_x, second_probe_y, include_elevator)
@@ -1628,7 +1628,7 @@ end
 
 function player:snap_feet_y_to_floor_grid()
 	local feet_y<const> = self.y + self.height
-	self.y = ((feet_y // constants.room.tile_size) * constants.room.tile_size) - self.height
+	self.y = ((feet_y // room_tile_size) * room_tile_size) - self.height
 end
 
 function player:apply_side_probe_horizontal_move(dx)
@@ -1681,16 +1681,16 @@ function player:apply_side_probe_horizontal_move(dx)
 end
 
 function player:snap_x_to_current_wall_grid()
-	local msx_x = self.x + constants.room.tile_size
+	local msx_x = self.x + room_tile_size
 	if self.right_wall_collision then
-		msx_x = (msx_x // constants.room.tile_size) * constants.room.tile_size
-		self.x = msx_x - constants.room.tile_size
+		msx_x = (msx_x // room_tile_size) * room_tile_size
+		self.x = msx_x - room_tile_size
 		return
 	end
 	if self.left_wall_collision then
-		self.x = ((self.x + constants.room.tile_size - 1) // constants.room.tile_size) * constants.room.tile_size
-		if self.left_wall_collision_primary and (self.x % constants.room.tile_size) == 0 and self:collides_at_left_wall_primary_profile(self.x, self.y, false) then
-			self.x = self.x + constants.room.tile_size
+		self.x = ((self.x + room_tile_size - 1) // room_tile_size) * room_tile_size
+		if self.left_wall_collision_primary and (self.x % room_tile_size) == 0 and self:collides_at_left_wall_primary_profile(self.x, self.y, false) then
+			self.x = self.x + room_tile_size
 		end
 	end
 end
@@ -1764,37 +1764,37 @@ function player:get_controlled_fall_dy()
 	if self.fall_substate >= 11 then
 		return 6
 	end
-	return constants.physics.controlled_fall_dy_by_substate[self.fall_substate]
+	return physics_controlled_fall_dy_by_substate[self.fall_substate]
 end
 
 function player:get_uncontrolled_fall_dy()
 	if self.fall_substate >= 8 then
 		return 6
 	end
-	return constants.physics.uncontrolled_fall_dy_by_substate[self.fall_substate]
+	return physics_uncontrolled_fall_dy_by_substate[self.fall_substate]
 end
 
 function player:get_controlled_fall_dx()
 	local inertia<const> = self.jump_inertia
 	if self.right_held and not self.left_held then
 		if inertia == 1 then
-			return constants.physics.fall_dx_with_inertia
+			return physics_fall_dx_with_inertia
 		end
 		if inertia == 0 then
-			return constants.physics.fall_dx_neutral
+			return physics_fall_dx_neutral
 		end
-		return -constants.physics.fall_dx_against_inertia
+		return -physics_fall_dx_against_inertia
 	end
 	if self.left_held and not self.right_held then
 		if inertia == -1 then
-			return -constants.physics.fall_dx_with_inertia
+			return -physics_fall_dx_with_inertia
 		end
 		if inertia == 0 then
-			return -constants.physics.fall_dx_neutral
+			return -physics_fall_dx_neutral
 		end
-		return constants.physics.fall_dx_against_inertia
+		return physics_fall_dx_against_inertia
 	end
-	return inertia * constants.physics.fall_dx_neutral
+	return inertia * physics_fall_dx_neutral
 end
 
 function player:reset_walk_animation()
@@ -1804,8 +1804,8 @@ end
 
 function player:advance_walk_animation(distance_px)
 	self.walk_distance_accum = self.walk_distance_accum + distance_px
-	while self.walk_distance_accum >= constants.player.walk_anim_cycle_px do
-		self.walk_distance_accum = self.walk_distance_accum - constants.player.walk_anim_cycle_px
+	while self.walk_distance_accum >= player_walk_anim_cycle_px do
+		self.walk_distance_accum = self.walk_distance_accum - player_walk_anim_cycle_px
 		if self.walk_frame == 0 then
 			self.walk_frame = 1
 		else
@@ -1953,7 +1953,7 @@ function player:runcheck_quiet_stairs_controls()
 		local was_at_or_below_bottom<const> = self.y >= self.stairs_bottom_y
 		self.stairs_direction = 1
 		self.events:emit('stairs_down_hold')
-		self.last_dy = constants.stairs.down_start_push_px
+		self.last_dy = stairs_down_start_push_px
 		self.y = self.y + self.last_dy
 		if self.last_dy ~= 0 then
 			self:update_stairs_animation(math.abs(self.last_dy))
@@ -1968,7 +1968,7 @@ function player:runcheck_quiet_stairs_controls()
 		self.events:emit('stairs_up_hold')
 		local next_y
 		if self.y > self.stairs_top_y then
-			next_y = self.y - constants.stairs.speed_px
+			next_y = self.y - stairs_speed_px
 			self.last_dy = next_y - self.y
 			self.y = next_y
 			self.stairs_direction = -1
@@ -2007,7 +2007,7 @@ function player:update_entering_world()
 	self.transition_step = self.transition_step + 1
 	self:update_enter_leave_anim_frame()
 	self:update_enter_leave_cut(1)
-	if self.transition_step == constants.world_entrance.enter_world_midpoint_step then
+	if self.transition_step == world_entrance_enter_world_midpoint_step then
 		oget('d'):queue_world_banner_transition(castle_map.world_transitions[self.enter_leave_world_target].world_number)
 		self.to_enter_cut = 0
 		self.events:emit('world_entered')
@@ -2020,7 +2020,7 @@ function player:update_entering_shrine()
 	self.transition_step = self.transition_step + 1
 	self:update_enter_leave_anim_frame()
 	self:update_enter_leave_cut(-1)
-	if self.transition_step > constants.world_entrance.enter_world_total_steps then
+	if self.transition_step > world_entrance_enter_world_total_steps then
 		oget('d'):open_shrine(self.enter_leave_shrine_text_lines)
 		self.events:emit('shrine_entered')
 		return
@@ -2032,7 +2032,7 @@ function player:update_emerging_world()
 	self.transition_step = self.transition_step + 1
 	self:update_enter_leave_anim_frame()
 	self:update_enter_leave_cut(-1)
-	if self.transition_step > constants.world_entrance.enter_world_total_steps then
+	if self.transition_step > world_entrance_enter_world_total_steps then
 		self.to_enter_cut = 0
 		self.events:emit('world_emerge_done')
 	end
@@ -2140,14 +2140,14 @@ function player:update_jump_motion()
 		self.jump_inertia = 0
 	end
 	local water_jump<const> = self:has_tag(player_tags.in_water)
-	if not self.up_held and self.jump_substate < constants.physics.jump_release_cut_substate then
+	if not self.up_held and self.jump_substate < physics_jump_release_cut_substate then
 		if water_jump then
-			self.jump_substate = constants.physics.aphrodite_water_jump_release_cut_substate
+			self.jump_substate = physics_aphrodite_water_jump_release_cut_substate
 		else
-			self.jump_substate = constants.physics.jump_release_cut_substate
+			self.jump_substate = physics_jump_release_cut_substate
 		end
-		if water_jump and self.vertical_motion_substate < constants.physics.aphrodite_water_jump_release_cut_substate then
-			self.vertical_motion_substate = constants.physics.aphrodite_water_jump_release_cut_substate
+		if water_jump and self.vertical_motion_substate < physics_aphrodite_water_jump_release_cut_substate then
+			self.vertical_motion_substate = physics_aphrodite_water_jump_release_cut_substate
 		end
 	end
 
@@ -2156,8 +2156,8 @@ function player:update_jump_motion()
 	if water_jump then
 		jump_substate_advanced = self:advance_aphrodite_water_vertical_motion()
 		dy = self:consume_aphrodite_water_vertical_dy()
-	elseif constants.physics.popolon_jump_dy_by_substate[self.jump_substate] ~= nil then
-		dy = constants.physics.popolon_jump_dy_by_substate[self.jump_substate]
+	elseif physics_popolon_jump_dy_by_substate[self.jump_substate] ~= nil then
+		dy = physics_popolon_jump_dy_by_substate[self.jump_substate]
 	else
 		dy = 0
 	end
@@ -2165,16 +2165,16 @@ function player:update_jump_motion()
 		dy = 0
 	end
 	local hit_ceiling<const> = self.previous_y_collision
-	local dx = self.jump_inertia * constants.physics.jump_dx
+	local dx = self.jump_inertia * physics_jump_dx
 	if water_jump then
 		dx = self:consume_water_jump_dx(dx)
 	end
 	self:apply_air_move(dx, dy, true)
 
 	if hit_ceiling then
-		self.jump_substate = constants.physics.jump_ceiling_cut_substate
-		if water_jump and self.vertical_motion_substate < constants.physics.jump_ceiling_cut_substate then
-			self.vertical_motion_substate = constants.physics.jump_ceiling_cut_substate
+		self.jump_substate = physics_jump_ceiling_cut_substate
+		if water_jump and self.vertical_motion_substate < physics_jump_ceiling_cut_substate then
+			self.vertical_motion_substate = physics_jump_ceiling_cut_substate
 		end
 	end
 
@@ -2186,7 +2186,7 @@ function player:update_jump_motion()
 		self.jump_substate = self.jump_substate + 1
 		self.vertical_motion_substate = self.jump_substate
 	end
-	local reached_fall<const> = self.jump_substate >= constants.physics.jump_to_fall_substate
+	local reached_fall<const> = self.jump_substate >= physics_jump_to_fall_substate
 	if reached_fall then
 		self:reset_fall_substate_sequence()
 	end
@@ -2202,7 +2202,7 @@ function player:update_stopped_jump_motion()
 	if (not self:has_tag(state_tags.group.sword)) and self.previous_x_collision then
 		self.jump_inertia = 0
 	end
-	local dx<const> = self.jump_inertia * constants.physics.jump_dx
+	local dx<const> = self.jump_inertia * physics_jump_dx
 	local moved_x<const>, collided_x<const> = self:apply_side_probe_horizontal_move(dx)
 	self.last_dx = moved_x
 	self.last_dy = 0
@@ -2217,7 +2217,7 @@ function player:update_stopped_jump_motion()
 		self.jump_substate = self.jump_substate + 1
 		self.vertical_motion_substate = self.jump_substate
 	end
-	if self.jump_substate >= constants.physics.jump_to_fall_substate then
+	if self.jump_substate >= physics_jump_to_fall_substate then
 		self:reset_fall_substate_sequence()
 		self.events:emit('landed_to_quiet')
 		return
@@ -2261,7 +2261,7 @@ function player:update_controlled_fall_motion()
 		end
 	else
 		self:advance_fall_substate_sequence()
-		self.vertical_motion_substate = constants.physics.jump_to_fall_substate + self.fall_substate
+		self.vertical_motion_substate = physics_jump_to_fall_substate + self.fall_substate
 	end
 end
 
@@ -2295,7 +2295,7 @@ function player:update_uncontrolled_fall_motion()
 		end
 	else
 		self:advance_fall_substate_sequence()
-		self.vertical_motion_substate = constants.physics.jump_to_fall_substate + self.fall_substate
+		self.vertical_motion_substate = physics_jump_to_fall_substate + self.fall_substate
 	end
 end
 
@@ -2309,7 +2309,7 @@ function player:update_up_stairs()
 	if self.up_held and not self.down_held then
 		self.stairs_direction = -1
 		if self.y > self.stairs_top_y then
-			next_y = self.y - constants.stairs.speed_px
+			next_y = self.y - stairs_speed_px
 			moved = true
 		else
 			self:leave_stairs('stairs_end_top')
@@ -2325,7 +2325,7 @@ function player:update_up_stairs()
 		self.stairs_direction = 1
 		self.events:emit('stairs_reverse_down')
 		if self.y < self.stairs_bottom_y then
-			next_y = self.y + constants.stairs.speed_px
+			next_y = self.y + stairs_speed_px
 			moved = true
 		else
 			self:leave_stairs('stairs_end_bottom')
@@ -2364,7 +2364,7 @@ function player:update_down_stairs()
 	if self.down_held and not self.up_held then
 		self.stairs_direction = 1
 		if self.y < self.stairs_bottom_y or stairs_reaches_room_exit then
-			next_y = self.y + constants.stairs.speed_px
+			next_y = self.y + stairs_speed_px
 			moved = true
 		else
 			self:leave_stairs('stairs_end_bottom')
@@ -2380,7 +2380,7 @@ function player:update_down_stairs()
 		self.stairs_direction = -1
 		self.events:emit('stairs_reverse_up')
 		if self.y > self.stairs_top_y then
-			next_y = self.y - constants.stairs.speed_px
+			next_y = self.y - stairs_speed_px
 			moved = true
 		else
 			self:leave_stairs('stairs_end_top')
@@ -2437,7 +2437,7 @@ function player:advance_hit_stairs_fall(dy)
 end
 
 function player:update_hit_fall()
-	local dx<const> = self.hit_direction * constants.damage.knockback_dx
+	local dx<const> = self.hit_direction * damage_knockback_dx
 	local dy
 	if self.hit_substate >= 4 then
 		dy = self.hit_substate - 4
@@ -2550,7 +2550,7 @@ function player:update_hit_recovery()
 	self:zero_motion()
 	self.hit_recovery_timer = self.hit_recovery_timer + 1
 
-	if self.hit_recovery_timer < constants.damage.hit_recovery_frames then
+	if self.hit_recovery_timer < damage_hit_recovery_frames then
 		return
 	end
 
@@ -2563,7 +2563,7 @@ end
 function player:update_dying()
 	self:zero_motion()
 	self.death_timer = self.death_timer + 1
-	if self.death_timer < constants.damage.death_frames then
+	if self.death_timer < damage_death_frames then
 		return
 	end
 	self:respawn()
@@ -3148,12 +3148,12 @@ local register_player_definition<const> = function()
 		defaults = {
 			imgid = 'pietolon_stand_r',
 			player_index = 1,
-			width = constants.player.width,
-			height = constants.player.height,
-			spawn_x = constants.player.start_x,
-			spawn_y = constants.player.start_y,
-			x = constants.player.start_x,
-			y = constants.player.start_y,
+			width = player_width,
+			height = player_height,
+			spawn_x = player_start_x,
+			spawn_y = player_start_y,
+			x = player_start_x,
+			y = player_start_y,
 			facing = 1,
 			jump_substate = 0,
 			fall_substate = 0,
@@ -3186,12 +3186,12 @@ local register_player_definition<const> = function()
 			walk_move_collided_x = false,
 			stairs_direction = 0,
 			stairs_x = -1,
-			stairs_top_y = constants.player.start_y,
-			stairs_bottom_y = constants.player.start_y,
+			stairs_top_y = player_start_y,
+			stairs_bottom_y = player_start_y,
 			stairs_anim_frame = 0,
 			stairs_anim_distance = 0,
-			previous_water_state = constants.water.none,
-			water_state = constants.water.none,
+			previous_water_state = water_none,
+			water_state = water_none,
 			vertical_motion_substate = 0,
 			vertical_motion_tick = 0,
 			vertical_motion_dy_accum = 0,
@@ -3200,8 +3200,8 @@ local register_player_definition<const> = function()
 			hit_stairs_lock = false,
 			stairs_landing_sound_pending = false,
 			slow_doorpass_substate = 0,
-			health = constants.damage.max_health,
-			max_health = constants.damage.max_health,
+			health = damage_max_health,
+			max_health = damage_max_health,
 			hit_invulnerability_timer = 0,
 			hit_blink_on = false,
 			hit_substate = 0,

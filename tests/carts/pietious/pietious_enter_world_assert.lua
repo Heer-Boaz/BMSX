@@ -1,3 +1,5 @@
+require('constants')
+
 __bmsx_host_test = __bmsx_host_test or {
 	frame_count = 0,
 	stable_frames = 0,
@@ -13,7 +15,6 @@ function __bmsx_host_test.setup()
 end
 
 function __bmsx_host_test.update(_frame, _current_music)
-	local constants<const> = require('constants')
 	local castle_map<const> = require('castle/map')
 	local world_transition<const> = castle_map.world_transitions.world_1
 
@@ -76,8 +77,8 @@ function __bmsx_host_test.update(_frame, _current_music)
 	local feet_y<const> = player.y + player.height
 	local left_x<const> = player.x + 1
 	local right_x<const> = player.x + player.width - 2
-	local player_on_floor<const> = room:has_collision_flags_at_world(left_x, feet_y + 1, constants.collision_flags.solid_mask, true)
-		or room:has_collision_flags_at_world(right_x, feet_y + 1, constants.collision_flags.solid_mask, true)
+	local player_on_floor<const> = room:has_collision_flags_at_world(left_x, feet_y + 1, collision_flags_solid_mask, true)
+		or room:has_collision_flags_at_world(right_x, feet_y + 1, collision_flags_solid_mask, true)
 
 	local final_outcome<const> = get_space() == 'main'
 		and castle.current_room_number == world_transition.world_room_number
@@ -98,11 +99,11 @@ function __bmsx_host_test.update(_frame, _current_music)
 	__bmsx_host_test.stable_frames = 0
 	__bmsx_host_test.frame_count = __bmsx_host_test.frame_count + 1
 	local transition_timeout_frames<const> = (
-		constants.world_entrance.enter_world_total_steps
-		+ constants.flow.banner_prewait_frames
-		+ constants.flow.world_banner_frames
-		+ constants.flow.room_transition_frames
-		+ constants.flow.room_switch_wait_frames
+		world_entrance_enter_world_total_steps
+		+ flow_banner_prewait_frames
+		+ flow_world_banner_frames
+		+ flow_room_transition_frames
+		+ flow_room_switch_wait_frames
 	) * 3
 	assert(__bmsx_host_test.frame_count < transition_timeout_frames,
 		'enter-world timed out'

@@ -1,4 +1,4 @@
-local constants<const> = require('constants')
+require('constants')
 local combat_overlap<const> = require('combat/overlap')
 local progression<const> = require('cartlib/progression')
 local world_item<const> = {}
@@ -6,7 +6,7 @@ world_item.__index = world_item
 
 function world_item:ctor()
 	self.collider:apply_collision_profile('pickup')
-	self:gfx(constants.world_item.sprite[self.item_type])
+	self:gfx(world_item_sprite[self.item_type])
 end
 
 function world_item:onspawn(_pos)
@@ -31,7 +31,7 @@ local define_world_item_fsm<const> = function()
 				end
 				if self.rock_drop_id ~= nil then
 					oget('room').rock_drops[self.rock_drop_id] = nil
-				elseif constants.world_item.inventory[self.item_type] then
+				elseif world_item_inventory[self.item_type] then
 					progression.set(oget('c'), 'item_picked_' .. item_id, true)
 				end
 				self:mark_for_disposal()

@@ -1,22 +1,22 @@
-local bg_id<const> = 'p3.bg'
-local combat_monster_id<const> = 'p3.combat.monster'
-local combat_maya_a_id<const> = 'p3.combat.maya_a'
-local combat_maya_b_id<const> = 'p3.combat.maya_b'
-local combat_all_out_id<const> = 'p3.combat.all_out'
-local text_main_id<const> = 'p3.text.main'
-local text_choice_id<const> = 'p3.text.choice'
-local text_prompt_id<const> = 'p3.text.prompt'
-local text_transition_id<const> = 'p3.text.transition'
-local text_results_id<const> = 'p3.text.results'
-local text_ids_all<const> = { text_main_id, text_choice_id, text_prompt_id, text_transition_id, text_results_id }
-local text_ids_core<const> = { text_main_id, text_choice_id, text_prompt_id, text_transition_id }
-local text_ids_choice_prompt<const> = { text_choice_id, text_prompt_id }
-local text_ids_transition_results<const> = { text_transition_id, text_results_id }
+bg_id = 'p3.bg'
+combat_monster_id = 'p3.combat.monster'
+combat_maya_a_id = 'p3.combat.maya_a'
+combat_maya_b_id = 'p3.combat.maya_b'
+combat_all_out_id = 'p3.combat.all_out'
+text_main_id = 'p3.text.main'
+text_choice_id = 'p3.text.choice'
+text_prompt_id = 'p3.text.prompt'
+text_transition_id = 'p3.text.transition'
+text_results_id = 'p3.text.results'
+text_ids_all = { text_main_id, text_choice_id, text_prompt_id, text_transition_id, text_results_id }
+text_ids_core = { text_main_id, text_choice_id, text_prompt_id, text_transition_id }
+text_ids_choice_prompt = { text_choice_id, text_prompt_id }
+text_ids_transition_results = { text_transition_id, text_results_id }
 
-local director_instance_id<const> = 'p3.director'
-local combat_director_def_id<const> = 'p3.combat.director'
-local combat_director_instance_id<const> = 'p3.combat.director'
-local combat_director_fsm_id<const> = 'p3.combat.director.fsm'
+director_instance_id = 'p3.director'
+combat_director_def_id = 'p3.combat.director'
+combat_director_instance_id = 'p3.combat.director'
+combat_director_fsm_id = 'p3.combat.director.fsm'
 
 -- Transition/overgang timing is authored as a ROM data asset and read back via
 -- the build/link `bmsx/assets` symbols: the addresses inline to constants at this
@@ -225,13 +225,13 @@ combat_results_bg_color = p3_blue_color
 combat_results_bg_alpha_byte = 0xd9
 combat_results_bg_visible_color = (combat_results_bg_alpha_byte << 24) | (combat_results_bg_color & 0x00ffffff)
 
-local clear_texts<const> = function(text_ids)
+function clear_texts(text_ids)
 	for i = 1, #text_ids do
 		oget(text_ids[i]):clear_text()
 	end
 end
 
-local apply_background<const> = function(id)
+function apply_background(id)
 	if id == nil then
 		return
 	end
@@ -239,7 +239,7 @@ local apply_background<const> = function(id)
 	bg:gfx(id)
 end
 
-local show_background<const> = function(id)
+function show_background(id)
 	local bg<const> = oget(bg_id)
 	if id ~= nil then
 		bg:gfx(id)
@@ -249,7 +249,7 @@ local show_background<const> = function(id)
 	return bg
 end
 
-local reset_text_colors<const> = function()
+function reset_text_colors()
 	oget(text_main_id).text_color = p3_white_color
 	oget(text_choice_id).text_color = p3_white_color
 	oget(text_prompt_id).text_color = p3_white_color
@@ -257,7 +257,7 @@ local reset_text_colors<const> = function()
 	oget(text_results_id).text_color = p3_white_color
 end
 
-local hide_transition_layers<const> = function()
+function hide_transition_layers()
 	local director<const> = oget(director_instance_id)
 	local overlay<const> = director.transition_visual.overlay
 	overlay.visible = false
@@ -272,207 +272,9 @@ local hide_transition_layers<const> = function()
 	accent.color = 0
 end
 
-local hide_combat_sprites<const> = function()
+function hide_combat_sprites()
 	oget(combat_monster_id).visible = false
 	oget(combat_maya_a_id).visible = false
 	oget(combat_maya_b_id).visible = false
 	oget(combat_all_out_id).visible = false
 end
-
-return {
-	bg_id = bg_id,
-	combat_monster_id = combat_monster_id,
-	combat_maya_a_id = combat_maya_a_id,
-	combat_maya_b_id = combat_maya_b_id,
-	combat_all_out_id = combat_all_out_id,
-	text_main_id = text_main_id,
-	text_choice_id = text_choice_id,
-	text_prompt_id = text_prompt_id,
-	text_transition_id = text_transition_id,
-	text_results_id = text_results_id,
-	text_ids_all = text_ids_all,
-	text_ids_core = text_ids_core,
-	text_ids_choice_prompt = text_ids_choice_prompt,
-	text_ids_transition_results = text_ids_transition_results,
-	director_instance_id = director_instance_id,
-	combat_director_def_id = combat_director_def_id,
-	combat_director_instance_id = combat_director_instance_id,
-	combat_director_fsm_id = combat_director_fsm_id,
-	overgang_timeline_id = overgang_timeline_id,
-	overgang_in_frames = overgang_in_frames,
-	overgang_hold_frames = overgang_hold_frames,
-	overgang_out_frames = overgang_out_frames,
-	overgang_frame_count = overgang_frame_count,
-	overgang_ticks_per_frame = overgang_ticks_per_frame,
-	overgang_fade_out_frames = overgang_fade_out_frames,
-	overgang_fade_in_frames = overgang_fade_in_frames,
-	overgang_post_fade_in_timeline_id = overgang_post_fade_in_timeline_id,
-	transition_panel_in_frames = transition_panel_in_frames,
-	transition_panel_hold_frames = transition_panel_hold_frames,
-	transition_panel_out_frames = transition_panel_out_frames,
-	transition_panel_gap_frames = transition_panel_gap_frames,
-	transition_accent_in_frames = transition_accent_in_frames,
-	transition_accent_hold_frames = transition_accent_hold_frames,
-	transition_accent_out_frames = transition_accent_out_frames,
-	transition_text_in_frames = transition_text_in_frames,
-	transition_text_hold_frames = transition_text_hold_frames,
-	transition_text_out_frames = transition_text_out_frames,
-	combat_fade_timeline_id = combat_fade_timeline_id,
-	combat_fade_out_frames = combat_fade_out_frames,
-	combat_fade_hold_frames = combat_fade_hold_frames,
-	combat_fade_in_frames = combat_fade_in_frames,
-	combat_fade_frame_count = combat_fade_frame_count,
-	combat_fade_ticks_per_frame = combat_fade_ticks_per_frame,
-	combat_intro_timeline_id = combat_intro_timeline_id,
-	combat_intro_maya_b_frames = combat_intro_maya_b_frames,
-	combat_intro_reveal_frames = combat_intro_reveal_frames,
-	combat_intro_ticks_per_frame = combat_intro_ticks_per_frame,
-	combat_intro_hold_frames = combat_intro_hold_frames,
-	combat_intro_whoosh_strength = combat_intro_whoosh_strength,
-	combat_intro_maya_b_start_scale = combat_intro_maya_b_start_scale,
-	combat_intro_maya_b_end_scale = combat_intro_maya_b_end_scale,
-	combat_intro_maya_a_scale_ratio = combat_intro_maya_a_scale_ratio,
-	combat_intro_monster_start_y_offset = combat_intro_monster_start_y_offset,
-	combat_intro_monster_arc_x = combat_intro_monster_arc_x,
-	combat_intro_monster_arc_y = combat_intro_monster_arc_y,
-	combat_intro_maya_a_arc_x = combat_intro_maya_a_arc_x,
-	combat_intro_maya_a_arc_y = combat_intro_maya_a_arc_y,
-	combat_intro_maya_b_arc_y = combat_intro_maya_b_arc_y,
-	combat_focus_timeline_id = combat_focus_timeline_id,
-	combat_hover_timeline_id = combat_hover_timeline_id,
-	combat_focus_zoom_frames = combat_focus_zoom_frames,
-	combat_focus_vanish_frames = combat_focus_vanish_frames,
-	combat_focus_ticks_per_frame = combat_focus_ticks_per_frame,
-	combat_focus_zoom_scale = combat_focus_zoom_scale,
-	combat_focus_vanish_scale_x = combat_focus_vanish_scale_x,
-	combat_focus_vanish_scale_y = combat_focus_vanish_scale_y,
-	combat_focus_zoom_arc_x = combat_focus_zoom_arc_x,
-	combat_focus_zoom_arc_y = combat_focus_zoom_arc_y,
-	combat_focus_vanish_arc_x = combat_focus_vanish_arc_x,
-	combat_focus_vanish_arc_y = combat_focus_vanish_arc_y,
-	combat_focus_vanish_lift = combat_focus_vanish_lift,
-	fade_timeline_id = fade_timeline_id,
-	fade_out_frames = fade_out_frames,
-	fade_hold_frames = fade_hold_frames,
-	fade_in_frames = fade_in_frames,
-	fade_frame_count = fade_frame_count,
-	fade_ticks_per_frame = fade_ticks_per_frame,
-	combat_hit_timeline_id = combat_hit_timeline_id,
-	combat_hit_frame_count = combat_hit_frame_count,
-	combat_hit_ticks_per_frame = combat_hit_ticks_per_frame,
-	combat_hit_stop_frames = combat_hit_stop_frames,
-	combat_hit_peak_frames = combat_hit_peak_frames,
-	combat_hit_recover_frames = combat_hit_recover_frames,
-	combat_hit_knockback_x = combat_hit_knockback_x,
-	combat_hit_knockback_y = combat_hit_knockback_y,
-	combat_hit_shake_frames = combat_hit_shake_frames,
-	combat_hit_shake_x = combat_hit_shake_x,
-	combat_hit_shake_y = combat_hit_shake_y,
-	combat_hit_scale_x = combat_hit_scale_x,
-	combat_hit_scale_y = combat_hit_scale_y,
-	combat_hit_slash_path_start_x_ratio = combat_hit_slash_path_start_x_ratio,
-	combat_hit_slash_path_start_y_ratio = combat_hit_slash_path_start_y_ratio,
-	combat_hit_slash_path_end_x_ratio = combat_hit_slash_path_end_x_ratio,
-	combat_hit_slash_path_end_y_ratio = combat_hit_slash_path_end_y_ratio,
-	combat_hit_slash_length_ratio = combat_hit_slash_length_ratio,
-	combat_hit_slash_thickness_ratio = combat_hit_slash_thickness_ratio,
-	combat_hit_slash_peak_scale = combat_hit_slash_peak_scale,
-	combat_hit_slash_alpha = combat_hit_slash_alpha,
-	combat_hit_slash_taper_floor = combat_hit_slash_taper_floor,
-	combat_hit_slash_z = combat_hit_slash_z,
-	combat_dodge_timeline_id = combat_dodge_timeline_id,
-	combat_dodge_frame_count = combat_dodge_frame_count,
-	combat_dodge_ticks_per_frame = combat_dodge_ticks_per_frame,
-	combat_dodge_anticipation_frames = combat_dodge_anticipation_frames,
-	combat_dodge_peak_frames = combat_dodge_peak_frames,
-	combat_dodge_recover_frames = combat_dodge_recover_frames,
-	combat_dodge_anticipation_scale_x = combat_dodge_anticipation_scale_x,
-	combat_dodge_anticipation_scale_y = combat_dodge_anticipation_scale_y,
-	combat_dodge_move_scale_x = combat_dodge_move_scale_x,
-	combat_dodge_move_scale_y = combat_dodge_move_scale_y,
-	combat_exchange_hit_timeline_id = combat_exchange_hit_timeline_id,
-	combat_exchange_hit_frame_count = combat_exchange_hit_frame_count,
-	combat_exchange_hit_ticks_per_frame = combat_exchange_hit_ticks_per_frame,
-	combat_exchange_miss_timeline_id = combat_exchange_miss_timeline_id,
-	combat_exchange_miss_frame_count = combat_exchange_miss_frame_count,
-	combat_exchange_miss_ticks_per_frame = combat_exchange_miss_ticks_per_frame,
-	combat_exchange_anticipate_frames = combat_exchange_anticipate_frames,
-	combat_exchange_lunge_frames = combat_exchange_lunge_frames,
-	combat_exchange_hitstop_frames = combat_exchange_hitstop_frames,
-	combat_exchange_lunge_distance = combat_exchange_lunge_distance,
-	combat_exchange_lunge_lift = combat_exchange_lunge_lift,
-	combat_exchange_lunge_scale = combat_exchange_lunge_scale,
-	combat_exchange_lunge_punch = combat_exchange_lunge_punch,
-	combat_exchange_hit_recoil_distance = combat_exchange_hit_recoil_distance,
-	combat_exchange_hit_recoil_lift = combat_exchange_hit_recoil_lift,
-	combat_exchange_hit_recoil_hold_frames = combat_exchange_hit_recoil_hold_frames,
-	combat_exchange_hit_recoil_recover_frames = combat_exchange_hit_recoil_recover_frames,
-	combat_exchange_hit_scale_x = combat_exchange_hit_scale_x,
-	combat_exchange_hit_scale_y = combat_exchange_hit_scale_y,
-	combat_exchange_hit_impact_scale_x = combat_exchange_hit_impact_scale_x,
-	combat_exchange_hit_impact_scale_y = combat_exchange_hit_impact_scale_y,
-	combat_exchange_hit_shake_x = combat_exchange_hit_shake_x,
-	combat_exchange_hit_shake_y = combat_exchange_hit_shake_y,
-	combat_exchange_hit_overlay_alpha = combat_exchange_hit_overlay_alpha,
-	combat_exchange_miss_dodge_distance = combat_exchange_miss_dodge_distance,
-	combat_exchange_miss_dodge_lift = combat_exchange_miss_dodge_lift,
-	combat_exchange_miss_dodge_hold_frames = combat_exchange_miss_dodge_hold_frames,
-	combat_exchange_miss_dodge_recover_frames = combat_exchange_miss_dodge_recover_frames,
-	combat_exchange_miss_dodge_bob_amp = combat_exchange_miss_dodge_bob_amp,
-	combat_exchange_miss_dodge_bob_period_frames = combat_exchange_miss_dodge_bob_period_frames,
-	combat_exchange_miss_dodge_scale_x = combat_exchange_miss_dodge_scale_x,
-	combat_exchange_miss_dodge_scale_y = combat_exchange_miss_dodge_scale_y,
-	combat_all_out_timeline_id = combat_all_out_timeline_id,
-	combat_all_out_frame_count = combat_all_out_frame_count,
-	combat_all_out_ticks_per_frame = combat_all_out_ticks_per_frame,
-	combat_all_out_pulse_period_frames = combat_all_out_pulse_period_frames,
-	combat_all_out_pulse_amp = combat_all_out_pulse_amp,
-	combat_results_fade_out_timeline_id = combat_results_fade_out_timeline_id,
-	combat_results_fade_out_frames = combat_results_fade_out_frames,
-	combat_results_fade_out_ticks_per_frame = combat_results_fade_out_ticks_per_frame,
-	combat_exit_fade_in_timeline_id = combat_exit_fade_in_timeline_id,
-	combat_exit_fade_in_frames = combat_exit_fade_in_frames,
-	combat_exit_fade_in_ticks_per_frame = combat_exit_fade_in_ticks_per_frame,
-	combat_results_fade_in_timeline_id = combat_results_fade_in_timeline_id,
-	combat_results_fade_in_frames = combat_results_fade_in_frames,
-	combat_results_fade_in_ticks_per_frame = combat_results_fade_in_ticks_per_frame,
-	combat_monster_hover_period_seconds = combat_monster_hover_period_seconds,
-	combat_monster_hover_amp = combat_monster_hover_amp,
-	combat_monster_dodge_distance = combat_monster_dodge_distance,
-	combat_parallax_momentum_step = combat_parallax_momentum_step,
-	combat_parallax_momentum_limit_steps = combat_parallax_momentum_limit_steps,
-	combat_parallax_scale_delta = combat_parallax_scale_delta,
-	p3_blue_r = p3_blue_r,
-	p3_blue_g = p3_blue_g,
-	p3_blue_b = p3_blue_b,
-	p3_blue_color = p3_blue_color,
-	p3_cyan_r = p3_cyan_r,
-	p3_cyan_g = p3_cyan_g,
-	p3_cyan_b = p3_cyan_b,
-	p3_cyan_color = p3_cyan_color,
-	p3_ink_r = p3_ink_r,
-	p3_ink_g = p3_ink_g,
-	p3_ink_b = p3_ink_b,
-	p3_ink_color = p3_ink_color,
-	p3_white_r = p3_white_r,
-	p3_white_g = p3_white_g,
-	p3_white_b = p3_white_b,
-	p3_white_color = p3_white_color,
-	p3_black_r = p3_black_r,
-	p3_black_g = p3_black_g,
-	p3_black_b = p3_black_b,
-	p3_black_color = p3_black_color,
-	p3_transition_palette_dialogue = p3_transition_palette_dialogue,
-	p3_transition_palette_combat = p3_transition_palette_combat,
-	p3_transition_palette_ending = p3_transition_palette_ending,
-	p3_transition_palette_choice = p3_transition_palette_choice,
-	combat_results_bg_color = combat_results_bg_color,
-	combat_results_bg_alpha_byte = combat_results_bg_alpha_byte,
-	combat_results_bg_visible_color = combat_results_bg_visible_color,
-	clear_texts = clear_texts,
-	apply_background = apply_background,
-	show_background = show_background,
-	reset_text_colors = reset_text_colors,
-	hide_transition_layers = hide_transition_layers,
-	hide_combat_sprites = hide_combat_sprites,
-}

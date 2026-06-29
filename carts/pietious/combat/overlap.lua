@@ -1,4 +1,4 @@
-local constants<const> = require('constants')
+require('constants')
 
 local combat_overlap<const> = {}
 
@@ -9,7 +9,7 @@ function combat_overlap.classify_player_contact(event)
 	if event.other_collider_local_id == 'body' then
 		return 'body'
 	end
-	if event.other_layer == constants.collision.projectile_layer then
+	if event.other_layer == collision_projectile_layer then
 		return 'projectile'
 	end
 	return nil

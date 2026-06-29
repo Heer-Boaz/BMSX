@@ -1,5 +1,5 @@
 require('cartlib/prelude')
-local constants<const> = require('constants')
+require('constants')
 local enemy_registry<const> = require('enemy/registry')
 local progression<const> = require('cartlib/progression')
 local pietious_font<const> = require('pietious_font')
@@ -45,20 +45,20 @@ local irq_ack_register<const>: *word = irq_ack_addr
 
 local register_collision_profiles<const> = function()
 	collision_profiles.define('player', {
-		layer = constants.collision.player_layer,
-		mask = constants.collision.player_mask,
+		layer = collision_player_layer,
+		mask = collision_player_mask,
 	})
 	collision_profiles.define('enemy', {
-		layer = constants.collision.enemy_layer,
-		mask = constants.collision.enemy_mask,
+		layer = collision_enemy_layer,
+		mask = collision_enemy_mask,
 	})
 	collision_profiles.define('projectile', {
-		layer = constants.collision.projectile_layer,
-		mask = constants.collision.projectile_mask,
+		layer = collision_projectile_layer,
+		mask = collision_projectile_mask,
 	})
 	collision_profiles.define('pickup', {
-		layer = constants.collision.pickup_layer,
-		mask = constants.collision.pickup_mask,
+		layer = collision_pickup_layer,
+		mask = collision_pickup_mask,
 	})
 end
 
@@ -91,7 +91,7 @@ local grant_starting_loadout<const> = function()
 	player.inventory_items['map_world1'] = true
 	player.inventory_items['pepernoot'] = true
 	player:equip_subweapon('pepernoot')
-	oget('pietolon').weapon_level = constants.hud.weapon_level
+	oget('pietolon').weapon_level = hud_weapon_level
 	oget('pietolon'):emit_weapon_changed()
 	local castle<const> = oget('c')
 	progression.set(castle, 'staff1destroyed', true)
@@ -117,7 +117,7 @@ local create_world<const> = function(director_boot_mode)
 
 	inst('player', {
 		id = 'pietolon',
-		pos = { x = constants.player.start_x, y = constants.player.start_y, z = 140 },
+		pos = { x = player_start_x, y = player_start_y, z = 140 },
 	})
 	grant_starting_loadout()
 	c:initialize(castle_map.start_room_number, director_boot_mode ~= 'title_screen')

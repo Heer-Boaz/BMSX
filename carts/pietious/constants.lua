@@ -1,458 +1,360 @@
--- ╔══════════════════════════════════════════════════════════════════════════════╗
--- ║  CYCLE COST ANALYSIS — constants access pattern                           ║
--- ╠══════════════════════════════════════════════════════════════════════════════╣
--- ║                                                                            ║
--- ║  This module initialises once (5048 static cycles, 81% SETT), which is     ║
--- ║  fine. The problem is how CONSUMERS read these values at runtime.           ║
--- ║                                                                            ║
--- ║  Every `constants.physics.walk_dx` in a consumer compiles to:              ║
--- ║                                                                            ║
--- ║      GETUP  rN, uK              ;  3 cycles  — load 'constants' upvalue   ║
--- ║      GETT   rN, rN, k("physics");  8 cycles  — table lookup 'physics'    ║
--- ║      GETT   rN, rN, k("walk_dx");  8 cycles  — table lookup 'walk_dx'   ║
--- ║                                                                     ───── ║
--- ║                                              Total: 19 cycles / read      ║
--- ║                                                                            ║
--- ║  Cost reference for the BMSX CPU opcodes:                              ║
--- ║      KSMI / LOADK  =  1 cycle   (inline constant)                         ║
--- ║      GETSYS        =  2 cycles  (system global slot — runtime reserved)     ║
--- ║      GETGL         =  4 cycles  (cart global slot — flat array lookup)     ║
--- ║      GETG          =  6 cycles  (named global — Map lookup, slow)         ║
--- ║      GETT          =  8 cycles  (table field lookup)                       ║
--- ║                                                                            ║
--- ║  In per-frame hot paths (player tick, enemy bt_tick, room tile draw),      ║
--- ║  80+ of these 19-cycle lookups fire every frame × every active entity.     ║
--- ║                                                                            ║
--- ╠══════════════════════════════════════════════════════════════════════════════╣
--- ║  REFACTORING STRATEGY                                                      ║
--- ╠══════════════════════════════════════════════════════════════════════════════╣
--- ║                                                                            ║
--- ║  Replace nested tables with bare <const> globals. The runtime has no        ║
--- ║  real _G; every bare global gets a GETGL slot (a flat Value[] array        ║
--- ║  indexed by compile-time slot number). This costs 4 cycles/read.           ║
--- ║                                                                            ║
--- ║  BEFORE (19 cycles/read — GETUP + 2×GETT):                                ║
--- ║                                                                            ║
--- ║      -- constants.lua                                                      ║
--- ║      local constants<const> = {}                                           ║
--- ║      constants.physics = { walk_dx = 2 }                                   ║
--- ║      return constants                                                      ║
--- ║                                                                            ║
--- ║      -- player.lua                                                         ║
--- ║      local constants<const> = require('constants')                         ║
--- ║      local dx = constants.physics.walk_dx  -- 19 cycles                    ║
--- ║                                                                            ║
--- ║  AFTER (4 cycles/read — single GETGL):                                     ║
--- ║                                                                            ║
--- ║      -- constants.lua                                                      ║
--- ║      PHYSICS_WALK_DX = 2                                                   ║
--- ║      PHYSICS_WALK_DX_SCHOENTJES_NUM = 5                                    ║
--- ║      PHYSICS_WALK_DX_SCHOENTJES_DEN = 2                                    ║
--- ║      ROOM_TILE_SIZE = 8                                                    ║
--- ║      -- ...etc, one flat global per constant                               ║
--- ║                                                                            ║
--- ║      -- player.lua  (no require needed!)                                   ║
--- ║      local dx = PHYSICS_WALK_DX  -- 4 cycles (GETGL)                       ║
--- ║                                                                            ║
--- ║  Consumers that cache a global into a <const> local at module top          ║
--- ║  pay the 4-cycle GETGL exactly once; subsequent reads in the same          ║
--- ║  scope are free (register / KSMI / LOADK at 0-1 cycle) after the          ║
--- ║  optimizer folds the constant value:                                       ║
--- ║                                                                            ║
--- ║      -- player.lua                                                         ║
--- ║      local WALK_DX<const> = PHYSICS_WALK_DX   -- GETGL once (4 cyc)       ║
--- ║      -- ... later in a hot loop:                                           ║
--- ║      x = x + WALK_DX   -- KSMI/LOADK (1 cycle, folded by optimizer)       ║
--- ║                                                                            ║
--- ║  SAVINGS ESTIMATE (player.lua alone):                                      ║
--- ║      ~80 lookups × (19→4 cycles) = 1200 cycles saved/frame                ║
--- ║      With <const> local caching:   ~80 × (19→1) = 1440 cycles saved       ║
--- ║      With enemies + room: likely 3000–5000 cycles saved per frame total.   ║
--- ║                                                                            ║
--- ╚══════════════════════════════════════════════════════════════════════════════╝
-
-local constants<const> = {}
-
-constants.flow = {
-	room_transition_frames = 8,
-	-- C++ drives GameCycle() from main.cpp/render.cpp at REDRAWING_PERIOD = 40 ms.
-	-- The Lua cart runs at 20 ms ticks, so these banner waits need the 2x scale.
-	banner_prewait_frames = 32,
-	world_banner_frames = 62,
-	castle_banner_frames = 62,
-	-- Title-screen blink now runs at the faster MSX-paced timing instead of the
-	-- previously doubled Lua pacing.
-	title_start_blink_phase_frames = 2,
-	title_start_blink_cycles = 7,
-	title_start_blink_tail_frames = 1,
-	-- MSX state_4 stores delay = 0x20 before gameplay actually enters the room.
-	title_start_wait_frames = 32,
-	room_switch_wait_frames = 6,
-	item_screen_wait_frames = 6,
-	seal_room_dissolve_steps = 7,
-	seal_sprite_dissolve_steps = 6,
-	daemon_cloud_max = 8,
-	daemon_cloud_spawn_x_min = 13,
-	daemon_cloud_spawn_x_max = 20,
-	daemon_cloud_spawn_y_min = 6,
-	daemon_cloud_spawn_y_max = 12,
+flow_room_transition_frames = 8
+flow_banner_prewait_frames = 32
+flow_world_banner_frames = 62
+flow_castle_banner_frames = 62
+flow_title_start_blink_phase_frames = 2
+flow_title_start_blink_cycles = 7
+flow_title_start_blink_tail_frames = 1
+flow_title_start_wait_frames = 32
+flow_room_switch_wait_frames = 6
+flow_item_screen_wait_frames = 6
+flow_seal_room_dissolve_steps = 7
+flow_seal_sprite_dissolve_steps = 6
+flow_daemon_cloud_max = 8
+flow_daemon_cloud_spawn_x_min = 13
+flow_daemon_cloud_spawn_x_max = 20
+flow_daemon_cloud_spawn_y_min = 6
+flow_daemon_cloud_spawn_y_max = 12
+room_width = 256
+room_height = 192
+room_hud_height = 32
+room_tile_size = 8
+room_tile_columns = 32
+room_tile_rows = 20
+room_tile_origin_x = 0
+room_tile_origin_y = 32
+room_tile_origin_y = room_hud_height
+room_tile_half = room_tile_size / 2
+room_tile_unit = room_tile_size / 4
+room_tile_size2 = room_tile_size * 2
+room_tile_size3 = room_tile_size * 3
+room_tile_size4 = room_tile_size * 4
+room_tile_size9 = room_tile_size * 9
+room_tile_size20 = room_tile_size * 20
+player_width = 16
+player_height = 16
+player_start_x = room_tile_size20
+player_start_y = room_tile_origin_y + room_tile_size9
+player_walk_anim_cycle_px = 8
+sword_duration_frames = 4
+sword_ground_body_offset_right = 0
+sword_ground_body_offset_left = 0
+sword_ground_offset_right = 17
+sword_ground_offset_left = -10
+sword_ground_offset_y = 9
+sword_jump_body_offset_right = 0
+sword_jump_body_offset_left = 0
+sword_jump_offset_right = 17
+sword_jump_offset_left = -10
+sword_jump_offset_y = 10
+sword_stairs_body_offset_right = 0
+sword_stairs_body_offset_left = 0
+sword_stairs_offset_right = 17
+sword_stairs_offset_left = -10
+sword_stairs_offset_y = 9
+damage_max_health = 48
+damage_hit_invulnerability_frames = 32
+damage_hit_blink_switch_frames = 5
+damage_knockback_dx = 4
+damage_knockup_px = 2
+damage_enemy_contact_damage = 2
+damage_hit_recovery_frames = 8
+damage_death_frames = 40
+enemy_mijter_wait_takeoff_min_steps = 100
+enemy_mijter_wait_takeoff_max_steps = 200
+enemy_mijter_turn_min_steps = 20
+enemy_mijter_turn_max_steps = 40
+enemy_mijter_room_entry_lock_steps = 2
+enemy_mijter_speed_px = 2
+enemy_boek_wait_open_steps = 100
+enemy_boek_wait_close_steps = 100
+enemy_boek_spawn_paper_steps = 20
+enemy_paper_speed_x = 3
+enemy_muziek_horizontal_speed_num = 1
+enemy_muziek_horizontal_speed_den = 4
+enemy_muziek_spawn_noot_steps = 50
+enemy_staff_wait_before_spawn_state_steps = 100
+enemy_staff_wait_before_spawn_steps = 10
+enemy_staff_spawn_burst_count = 3
+enemy_staff_bullet_speed_den = 8
+enemy_cloud_horizontal_speed_num = 1
+enemy_cloud_horizontal_speed_den = 2
+enemy_cloud_wave_phase_step_millirad = 25
+enemy_cloud_wave_speed_den = 3
+enemy_cloud_anim_switch_steps = 5
+enemy_cloud_spawn_vlok_steps = 50
+enemy_vlokspawner_spawn_steps = 50
+enemy_zak_prepare_jump_steps = 13
+enemy_zak_jump_steps = 10
+enemy_zak_recovery_steps = 2
+enemy_zak_horizontal_speed_px = 1
+enemy_zak_vertical_speed_start = -1
+enemy_zak_vertical_speed_step = 0.40
+enemy_cross_wait_before_fly_steps = 50
+enemy_cross_turn_steps = 5
+enemy_cross_horizontal_speed_px = 2
+enemy_mijter_drop_health_chance_pct = 50
+enemy_mijter_drop_ammo_chance_pct = 50
+enemy_zak_drop_health_chance_pct = 25
+enemy_zak_drop_ammo_chance_pct = 20
+enemy_cross_drop_health_chance_pct = 35
+enemy_cross_drop_ammo_chance_pct = 25
+enemy_boek_drop_health_chance_pct = 10
+enemy_boek_drop_ammo_chance_pct = 20
+enemy_muziek_drop_health_chance_pct = 10
+enemy_muziek_drop_ammo_chance_pct = 20
+enemy_marspein_drop_health_chance_pct = 10
+enemy_marspein_drop_ammo_chance_pct = 20
+enemy_explosion_frame_steps = 3 * 20
+enemy_loot_life_regen = 12
+enemy_loot_ammo_regen = 10
+rock_width = 16
+rock_height = 16
+rock_max_health = 3
+rock_break_steps = 20
+pickup_item_life_regen = 12
+pickup_item_ammo_regen = 10
+world_item_drop_offset_y = {
+	ammo = 0,
+	ammofromrock = 0,
+	life = 0,
+	lifefromrock = 0,
+	keyworld1 = 0,
+	map_world1 = 0,
+	halo = 0,
+	pepernoot = room_tile_size,
+	spyglass = room_tile_size,
+	lamp = 0,
+	schoentjes = 0,
+	greenvase = 0,
 }
 
-constants.room = {
-	width = 256,
-	height = 192,
-	hud_height = 32,
-	tile_size = 8,
-	tile_columns = 32,
-	tile_rows = 20,
-	tile_origin_x = 0,
-	tile_origin_y = 32,
-}
-constants.room.tile_origin_y = constants.room.hud_height
-constants.room.tile_half = constants.room.tile_size / 2
-constants.room.tile_unit = constants.room.tile_size / 4
-constants.room.tile_size2 = constants.room.tile_size * 2
-constants.room.tile_size3 = constants.room.tile_size * 3
-constants.room.tile_size4 = constants.room.tile_size * 4
-constants.room.tile_size9 = constants.room.tile_size * 9
-constants.room.tile_size20 = constants.room.tile_size * 20
-
-constants.player = {
-	width = 16,
-	height = 16,
-	start_x = constants.room.tile_size20,
-	start_y = constants.room.tile_origin_y + constants.room.tile_size9,
-	walk_anim_cycle_px = 8,
+world_item_inventory = {
+	keyworld1 = true,
+	map_world1 = true,
+	halo = true,
+	pepernoot = true,
+	spyglass = true,
+	lamp = true,
+	schoentjes = true,
+	greenvase = true,
 }
 
-constants.sword = {
-	duration_frames = 4,
-	ground_body_offset_right = 0,
-	ground_body_offset_left = 0,
-	ground_offset_right = 17,
-	ground_offset_left = -10,
-	ground_offset_y = 9,
-	jump_body_offset_right = 0,
-	jump_body_offset_left = 0,
-	jump_offset_right = 17,
-	jump_offset_left = -10,
-	jump_offset_y = 10,
-	stairs_body_offset_right = 0,
-	stairs_body_offset_left = 0,
-	stairs_offset_right = 17,
-	stairs_offset_left = -10,
-	stairs_offset_y = 9,
+world_item_sprite = {
+	ammo = 'ammo',
+	ammofromrock = 'ammo',
+	life = 'item_health',
+	lifefromrock = 'item_health',
+	keyworld1 = 'world_key',
+	map_world1 = 'map',
+	halo = 'halo',
+	pepernoot = 'pepernoot_16',
+	spyglass = 'spyglass',
+	lamp = 'item_lamp',
+	schoentjes = 'schoentjes',
+	greenvase = 'item_greenvase',
 }
 
-constants.damage = {
-	max_health = 48,
-	hit_invulnerability_frames = 32,
-	hit_blink_switch_frames = 5,
-	knockback_dx = 4,
-	knockup_px = 2,
-	hit_recovery_frames = 8,
-	death_frames = 40,
+collision_world_layer = 1
+collision_player_layer = 4
+collision_enemy_layer = 8
+collision_projectile_layer = 16
+collision_pickup_layer = 32
+collision_player_mask = 57
+collision_enemy_mask = 21
+collision_projectile_mask = 12
+collision_pickup_mask = 4
+collision_flags_none = 0
+collision_flags_wall = 1
+collision_flags_water = 2
+collision_flags_ladder_wall = 4
+collision_flags_door_wall = 8
+collision_flags_player = 16
+collision_flags_weapon = 32
+collision_flags_enemy = 64
+collision_flags_lava = 128
+collision_flags_elevator = collision_flags_wall | collision_flags_ladder_wall
+collision_flags_solid_mask = collision_flags_wall | collision_flags_ladder_wall | collision_flags_door_wall
+water_none = 0
+water_surface = 1
+water_body = 2
+water_surface_color_r = 0.18
+water_surface_color_g = 0.48
+water_surface_color_b = 0.82
+water_surface_color_a = 0.75
+water_body_color_r = 0.08
+water_body_color_g = 0.24
+water_body_color_b = 0.56
+water_body_color_a = 0.72
+stairs_speed_px = 1
+stairs_down_start_push_px = 2
+stairs_anim_step_px = 8
+stairs_foot_probe_offset_x = 4
+stairs_foot_probe_offset_y = 14
+stairs_below_probe_extra_y = 16
+stairs_step_off_probe_extra_y = 5
+stairs_step_off_right_probe_offset_x = 16
+stairs_step_off_left_probe_offset_x = -1
+stairs_step_off_right_x = 8
+stairs_step_off_left_x = -9
+physics_walk_dx = 2
+physics_walk_dx_schoentjes_num = 5
+physics_walk_dx_schoentjes_den = 2
+physics_jump_dx = 2
+physics_fall_dx_neutral = 2
+physics_fall_dx_with_inertia = 3
+physics_fall_dx_against_inertia = 1
+physics_jump_ceiling_cut_substate = 10
+physics_jump_release_cut_substate = 11
+physics_jump_to_fall_substate = 13
+physics_aphrodite_water_jump_release_cut_substate = 10
+physics_aphrodite_water_fall_start_substate = 12
+physics_aphrodite_water_vertical_tick_period = 4
+physics_aphrodite_water_vertical_scale_den = 4
+physics_aphrodite_water_vertical_substate_cap = 24
+physics_aphrodite_water_vertical_dy_by_substate = {
+	[0] = -6,
+	[1] = -6,
+	[2] = -6,
+	[3] = -5,
+	[4] = -5,
+	[5] = -4,
+	[6] = -4,
+	[7] = -3,
+	[8] = -2,
+	[9] = -1,
+	[10] = 0,
+	[11] = 0,
+	[12] = 0,
+	[13] = 0,
+	[14] = 1,
+	[15] = 2,
+	[16] = 3,
+	[17] = 4,
+	[18] = 4,
+	[19] = 5,
+	[20] = 5,
+	[21] = 6,
+	[22] = 6,
+	[23] = 6,
 }
 
-constants.enemy = {
-	mijter_wait_takeoff_min_steps = 100,
-	mijter_wait_takeoff_max_steps = 200,
-	mijter_turn_min_steps = 20,
-	mijter_turn_max_steps = 40,
-	mijter_room_entry_lock_steps = 2,
-	mijter_speed_px = 2,
-	boek_wait_open_steps = 100,
-	boek_wait_close_steps = 100,
-	boek_spawn_paper_steps = 20,
-	paper_speed_x = 3,
-	muziek_horizontal_speed_num = 1,
-	muziek_horizontal_speed_den = 4,
-	muziek_spawn_noot_steps = 50,
-	staff_wait_before_spawn_state_steps = 100,
-	staff_wait_before_spawn_steps = 10,
-	staff_spawn_burst_count = 3,
-	staff_bullet_speed_den = 8,
-	cloud_horizontal_speed_num = 1,
-	cloud_horizontal_speed_den = 2,
-	cloud_wave_phase_step_millirad = 25,
-	cloud_wave_speed_den = 3,
-	cloud_anim_switch_steps = 5,
-	cloud_spawn_vlok_steps = 50,
-	vlokspawner_spawn_steps = 50,
-	zak_prepare_jump_steps = 13,
-	zak_jump_steps = 10,
-	zak_recovery_steps = 2,
-	zak_horizontal_speed_px = 1,
-	zak_vertical_speed_start = -1,
-	zak_vertical_speed_step = 0.40,
-	cross_wait_before_fly_steps = 50,
-	cross_turn_steps = 5,
-	cross_horizontal_speed_px = 2,
-	mijter_drop_health_chance_pct = 50,
-	mijter_drop_ammo_chance_pct = 50,
-	zak_drop_health_chance_pct = 25,
-	zak_drop_ammo_chance_pct = 20,
-	cross_drop_health_chance_pct = 35,
-	cross_drop_ammo_chance_pct = 25,
-	boek_drop_health_chance_pct = 10,
-	boek_drop_ammo_chance_pct = 20,
-	muziek_drop_health_chance_pct = 10,
-	muziek_drop_ammo_chance_pct = 20,
-	marspein_drop_health_chance_pct = 10,
-	marspein_drop_ammo_chance_pct = 20,
-	explosion_frame_steps = 3 * 20,
-	loot_life_regen = 12,
-	loot_ammo_regen = 10,
+physics_popolon_jump_dy_by_substate = {
+	[0] = -7,
+	[1] = -6,
+	[2] = -6,
+	[3] = -6,
+	[4] = -5,
+	[5] = -5,
+	[6] = -5,
+	[7] = -4,
+	[8] = -4,
+	[9] = -3,
+	[10] = -2,
+	[11] = -1,
 }
 
-constants.rock = {
-	width = 16,
-	height = 16,
-	max_health = 3,
-	break_steps = 20,
+physics_controlled_fall_dy_by_substate = {
+	[3] = 1,
+	[4] = 2,
+	[5] = 3,
+	[6] = 4,
+	[7] = 4,
+	[8] = 5,
+	[9] = 5,
+	[10] = 5,
+	[11] = 6,
 }
 
-constants.pickup_item = {
-	life_regen = 12,
-	ammo_regen = 10,
+physics_uncontrolled_fall_dy_by_substate = {
+	[0] = 1,
+	[1] = 2,
+	[2] = 3,
+	[3] = 4,
+	[4] = 4,
+	[5] = 5,
+	[6] = 5,
+	[7] = 5,
+	[8] = 6,
 }
 
-constants.world_item = {
-	drop_offset_y = {
-		ammo = 0,
-		ammofromrock = 0,
-		life = 0,
-		lifefromrock = 0,
-		keyworld1 = 0,
-		map_world1 = 0,
-		halo = 0,
-		pepernoot = constants.room.tile_size,
-		spyglass = constants.room.tile_size,
-		lamp = 0,
-		schoentjes = 0,
-		greenvase = 0,
-	},
-	inventory = {
-		keyworld1 = true,
-		map_world1 = true,
-		halo = true,
-		pepernoot = true,
-		spyglass = true,
-		lamp = true,
-		schoentjes = true,
-		greenvase = true,
-	},
-	sprite = {
-		ammo = 'ammo',
-		ammofromrock = 'ammo',
-		life = 'item_health',
-		lifefromrock = 'item_health',
-		keyworld1 = 'world_key',
-		map_world1 = 'map',
-		halo = 'halo',
-		pepernoot = 'pepernoot_16',
-		spyglass = 'spyglass',
-		lamp = 'item_lamp',
-		schoentjes = 'schoentjes',
-		greenvase = 'item_greenvase',
-	},
-}
-
-constants.collision = {
-	world_layer = 1,
-	player_layer = 4,
-	enemy_layer = 8,
-	projectile_layer = 16,
-	pickup_layer = 32,
-	player_mask = 57,
-	enemy_mask = 21,
-	projectile_mask = 12,
-	pickup_mask = 4,
-}
-
-constants.collision_flags = {
-	none = 0,
-	wall = 1,
-	water = 2,
-	ladder_wall = 4,
-	door_wall = 8,
-	player = 16,
-	weapon = 32,
-	enemy = 64,
-	lava = 128,
-}
-constants.collision_flags.elevator = constants.collision_flags.wall | constants.collision_flags.ladder_wall
-constants.collision_flags.solid_mask = constants.collision_flags.wall | constants.collision_flags.ladder_wall | constants.collision_flags.door_wall
-
-constants.water = {
-	none = 0,
-	surface = 1,
-	body = 2,
-	surface_color = { r = 0.18, g = 0.48, b = 0.82, a = 0.75 },
-	body_color = { r = 0.08, g = 0.24, b = 0.56, a = 0.72 },
-}
-
-constants.stairs = {
-	speed_px = 1,
-	down_start_push_px = 2,
-	anim_step_px = 8,
-	foot_probe_offset_x = 4,
-	foot_probe_offset_y = 14,
-	below_probe_extra_y = 16,
-	step_off_probe_extra_y = 5,
-	step_off_right_probe_offset_x = 16,
-	step_off_left_probe_offset_x = -1,
-	step_off_right_x = 8,
-	step_off_left_x = -9,
-}
-
-constants.physics = {
-	walk_dx = 2,
-	walk_dx_schoentjes_num = 5,
-	walk_dx_schoentjes_den = 2,
-	jump_dx = 2,
-	fall_dx_neutral = 2,
-	fall_dx_with_inertia = 3,
-	fall_dx_against_inertia = 1,
-	jump_ceiling_cut_substate = 10,
-	jump_release_cut_substate = 11,
-	jump_to_fall_substate = 13,
-	aphrodite_water_jump_release_cut_substate = 10,
-	aphrodite_water_fall_start_substate = 12,
-	aphrodite_water_vertical_tick_period = 4,
-	aphrodite_water_vertical_scale_den = 4,
-	aphrodite_water_vertical_substate_cap = 24,
-	aphrodite_water_vertical_dy_by_substate = {
-		[0] = -6,
-		[1] = -6,
-		[2] = -6,
-		[3] = -5,
-		[4] = -5,
-		[5] = -4,
-		[6] = -4,
-		[7] = -3,
-		[8] = -2,
-		[9] = -1,
-		[10] = 0,
-		[11] = 0,
-		[12] = 0,
-		[13] = 0,
-		[14] = 1,
-		[15] = 2,
-		[16] = 3,
-		[17] = 4,
-		[18] = 4,
-		[19] = 5,
-		[20] = 5,
-		[21] = 6,
-		[22] = 6,
-		[23] = 6,
-	},
-	popolon_jump_dy_by_substate = {
-		[0] = -7,
-		[1] = -6,
-		[2] = -6,
-		[3] = -6,
-		[4] = -5,
-		[5] = -5,
-		[6] = -5,
-		[7] = -4,
-		[8] = -4,
-		[9] = -3,
-		[10] = -2,
-		[11] = -1,
-	},
-	controlled_fall_dy_by_substate = {
-		[3] = 1,
-		[4] = 2,
-		[5] = 3,
-		[6] = 4,
-		[7] = 4,
-		[8] = 5,
-		[9] = 5,
-		[10] = 5,
-		[11] = 6,
-	},
-	uncontrolled_fall_dy_by_substate = {
-		[0] = 1,
-		[1] = 2,
-		[2] = 3,
-		[3] = 4,
-		[4] = 4,
-		[5] = 5,
-		[6] = 5,
-		[7] = 5,
-		[8] = 6,
-	},
-}
-
-constants.secondary_weapon = {
-	pepernoot_speed_px = 8,
-	pepernoot_weapon_level_cost = 2,
-	pepernoot_max_active = 3,
-	pepernoot_spawn_offset_x = 8,
-	pepernoot_spawn_offset_y = 8,
-}
-
-constants.lithograph = {
-	hit_left_px = 6,
-	hit_top_px = 8,
-	hit_right_px = 10,
-	hit_bottom_px = 16,
-}
-
-constants.world_entrance = {
-	trigger_x_offset = constants.room.tile_size,
-	trigger_half_width = 4,
-	trigger_y_offset = constants.room.tile_size,
-	open_step_frames = 4,
-	enter_world_midpoint_step = 32,
-	enter_world_total_steps = 64,
-	-- 8-step walk cycle for the shrine-exit transition: 4 steps frame 0, 4 steps frame 1.
-	enter_leave_cycle_steps = 8,
-}
-
-constants.shrine = {
-	hit_left_px = constants.room.tile_size,
-	hit_top_px = constants.room.tile_size,
-	hit_right_px = constants.room.tile_size2,
-	hit_bottom_px = constants.room.tile_size2,
-	text_x = constants.room.tile_size * 6,
-	text_y = constants.room.hud_height + (constants.room.tile_size * 5),
-}
-
-constants.seal = {
-	hit_left_px = 0,
-	hit_top_px = 0,
-	hit_right_px = constants.room.tile_size,
-	hit_bottom_px = constants.room.tile_size,
-}
-
-constants.palette = {
-	sky_top = { r = 0.08, g = 0.12, b = 0.2, a = 1 },
-	sky_bottom = { r = 0.04, g = 0.06, b = 0.11, a = 1 },
-	castle_wall = { r = 0.22, g = 0.24, b = 0.31, a = 1 },
-	castle_wall_dark = { r = 0.14, g = 0.15, b = 0.2, a = 1 },
-	stone = { r = 0.36, g = 0.37, b = 0.44, a = 1 },
-	stone_top = { r = 0.5, g = 0.51, b = 0.58, a = 1 },
-	window = { r = 0.79, g = 0.7, b = 0.35, a = 1 },
-	player_body = { r = 0.89, g = 0.8, b = 0.58, a = 1 },
-	player_tunic = { r = 0.3, g = 0.4, b = 0.84, a = 1 },
-	player_air = { r = 0.88, g = 0.66, b = 0.36, a = 1 },
-	player_outline = { r = 0.08, g = 0.09, b = 0.13, a = 1 },
-}
-
-constants.hud = {
-	health_level = 48,
-	weapon_level = 48,
-	health_anim_step_frames = 2,
-	weapon_anim_step_frames = 2,
-	health_bar_x = 24,
-	health_bar_y = 10,
-	weapon_bar_x = 24,
-	weapon_bar_y = 18,
-	equipped_item_x = 28,
-	equipped_item_y = 1,
-}
-
-return constants
+secondary_weapon_pepernoot_speed_px = 8
+secondary_weapon_pepernoot_weapon_level_cost = 2
+secondary_weapon_pepernoot_max_active = 3
+secondary_weapon_pepernoot_spawn_offset_x = 8
+secondary_weapon_pepernoot_spawn_offset_y = 8
+lithograph_hit_left_px = 6
+lithograph_hit_top_px = 8
+lithograph_hit_right_px = 10
+lithograph_hit_bottom_px = 16
+world_entrance_trigger_x_offset = room_tile_size
+world_entrance_trigger_half_width = 4
+world_entrance_trigger_y_offset = room_tile_size
+world_entrance_open_step_frames = 4
+world_entrance_enter_world_midpoint_step = 32
+world_entrance_enter_world_total_steps = 64
+world_entrance_enter_leave_cycle_steps = 8
+shrine_hit_left_px = room_tile_size
+shrine_hit_top_px = room_tile_size
+shrine_hit_right_px = room_tile_size2
+shrine_hit_bottom_px = room_tile_size2
+shrine_text_x = room_tile_size * 6
+shrine_text_y = room_hud_height + (room_tile_size * 5)
+seal_hit_left_px = 0
+seal_hit_top_px = 0
+seal_hit_right_px = room_tile_size
+seal_hit_bottom_px = room_tile_size
+palette_sky_top_r = 0.08
+palette_sky_top_g = 0.12
+palette_sky_top_b = 0.2
+palette_sky_top_a = 1
+palette_sky_bottom_r = 0.04
+palette_sky_bottom_g = 0.06
+palette_sky_bottom_b = 0.11
+palette_sky_bottom_a = 1
+palette_castle_wall_r = 0.22
+palette_castle_wall_g = 0.24
+palette_castle_wall_b = 0.31
+palette_castle_wall_a = 1
+palette_castle_wall_dark_r = 0.14
+palette_castle_wall_dark_g = 0.15
+palette_castle_wall_dark_b = 0.2
+palette_castle_wall_dark_a = 1
+palette_stone_r = 0.36
+palette_stone_g = 0.37
+palette_stone_b = 0.44
+palette_stone_a = 1
+palette_stone_top_r = 0.5
+palette_stone_top_g = 0.51
+palette_stone_top_b = 0.58
+palette_stone_top_a = 1
+palette_window_r = 0.79
+palette_window_g = 0.7
+palette_window_b = 0.35
+palette_window_a = 1
+palette_player_body_r = 0.89
+palette_player_body_g = 0.8
+palette_player_body_b = 0.58
+palette_player_body_a = 1
+palette_player_tunic_r = 0.3
+palette_player_tunic_g = 0.4
+palette_player_tunic_b = 0.84
+palette_player_tunic_a = 1
+palette_player_air_r = 0.88
+palette_player_air_g = 0.66
+palette_player_air_b = 0.36
+palette_player_air_a = 1
+palette_player_outline_r = 0.08
+palette_player_outline_g = 0.09
+palette_player_outline_b = 0.13
+palette_player_outline_a = 1
+hud_health_level = 48
+hud_weapon_level = 48
+hud_health_anim_step_frames = 2
+hud_weapon_anim_step_frames = 2
+hud_health_bar_x = 24
+hud_health_bar_y = 10
+hud_weapon_bar_x = 24
+hud_weapon_bar_y = 18
+hud_equipped_item_x = 28
+hud_equipped_item_y = 1

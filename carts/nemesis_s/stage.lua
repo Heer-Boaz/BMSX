@@ -1,6 +1,6 @@
 local rol8<const> = require('bios/util/rol8')
 local clamp<const> = require('bios/util/clamp')
-local constants<const> = require('constants')
+require('constants')
 local bin<const> = require('system/bin')
 local assets<const> = require('bmsx/assets')
 
@@ -29,61 +29,61 @@ local non_collision_tile_keys<const> = {
 }
 
 local tile_asset_by_key<const> = {
-	collision = constants.assets.house_tile_1,
-	house_1 = constants.assets.house_tile_1,
-	house_2 = constants.assets.house_tile_2,
-	house_3 = constants.assets.house_tile_3,
-	house_4 = constants.assets.house_tile_4,
-	house_5 = constants.assets.house_tile_5,
-	house_6 = constants.assets.house_tile_6,
-	house_7 = constants.assets.house_tile_7,
-	house_8 = constants.assets.house_tile_8,
-	house_9 = constants.assets.house_tile_9,
-	house_10 = constants.assets.house_tile_10,
-	house_11 = constants.assets.house_tile_11,
-	house_12 = constants.assets.house_tile_12,
-	house_13 = constants.assets.house_tile_13,
-	house_door = constants.assets.house_tile_door,
-	house_window = constants.assets.house_tile_window,
-	house_window2 = constants.assets.house_tile_window2,
-	lantaarn1 = constants.assets.lantaarn_tile_1,
-	lantaarn2 = constants.assets.lantaarn_tile_2,
-	lantaarn3 = constants.assets.lantaarn_tile_3,
-	ground = constants.assets.ground,
-	ground2 = constants.assets.ground2,
-	ground_v = constants.assets.ground_v,
-	ground2_v = constants.assets.ground2_v,
-	ground3 = constants.assets.ground3,
-	ground4 = constants.assets.ground4,
-	ground_start = constants.assets.ground_start,
-	ground_end = constants.assets.ground_end,
-	ground_start_v = constants.assets.ground_start_v,
-	ground_end_v = constants.assets.ground_end_v,
-	snow = constants.assets.snow,
-	schoorsteen1 = constants.assets.schoorsteen1,
-	schoorsteen2 = constants.assets.schoorsteen2,
-	schoorsteen3 = constants.assets.schoorsteen3,
-	snowtree1 = constants.assets.snowtree1,
-	snowtree2 = constants.assets.snowtree2,
-	snowtree3 = constants.assets.snowtree3,
-	snowtree4 = constants.assets.snowtree4,
-	snowtree5 = constants.assets.snowtree5,
-	snowtree6 = constants.assets.snowtree6,
-	snowtree7 = constants.assets.snowtree7,
-	snowtree8 = constants.assets.snowtree8,
-	snowtree9 = constants.assets.snowtree9,
-	snowtree10 = constants.assets.snowtree10,
-	snowtree11 = constants.assets.snowtree11,
-	snowtree12 = constants.assets.snowtree12,
-	snowtree13 = constants.assets.snowtree13,
-	snowtree14 = constants.assets.snowtree14,
-	snowtree15 = constants.assets.snowtree15,
-	snowtree16 = constants.assets.snowtree16,
-	snowtree17 = constants.assets.snowtree17,
-	snowtree18 = constants.assets.snowtree18,
-	snowtree19 = constants.assets.snowtree19,
-	snowtree20 = constants.assets.snowtree20,
-	snowtree21 = constants.assets.snowtree21,
+	collision = assets_house_tile_1,
+	house_1 = assets_house_tile_1,
+	house_2 = assets_house_tile_2,
+	house_3 = assets_house_tile_3,
+	house_4 = assets_house_tile_4,
+	house_5 = assets_house_tile_5,
+	house_6 = assets_house_tile_6,
+	house_7 = assets_house_tile_7,
+	house_8 = assets_house_tile_8,
+	house_9 = assets_house_tile_9,
+	house_10 = assets_house_tile_10,
+	house_11 = assets_house_tile_11,
+	house_12 = assets_house_tile_12,
+	house_13 = assets_house_tile_13,
+	house_door = assets_house_tile_door,
+	house_window = assets_house_tile_window,
+	house_window2 = assets_house_tile_window2,
+	lantaarn1 = assets_lantaarn_tile_1,
+	lantaarn2 = assets_lantaarn_tile_2,
+	lantaarn3 = assets_lantaarn_tile_3,
+	ground = assets_ground,
+	ground2 = assets_ground2,
+	ground_v = assets_ground_v,
+	ground2_v = assets_ground2_v,
+	ground3 = assets_ground3,
+	ground4 = assets_ground4,
+	ground_start = assets_ground_start,
+	ground_end = assets_ground_end,
+	ground_start_v = assets_ground_start_v,
+	ground_end_v = assets_ground_end_v,
+	snow = assets_snow,
+	schoorsteen1 = assets_schoorsteen1,
+	schoorsteen2 = assets_schoorsteen2,
+	schoorsteen3 = assets_schoorsteen3,
+	snowtree1 = assets_snowtree1,
+	snowtree2 = assets_snowtree2,
+	snowtree3 = assets_snowtree3,
+	snowtree4 = assets_snowtree4,
+	snowtree5 = assets_snowtree5,
+	snowtree6 = assets_snowtree6,
+	snowtree7 = assets_snowtree7,
+	snowtree8 = assets_snowtree8,
+	snowtree9 = assets_snowtree9,
+	snowtree10 = assets_snowtree10,
+	snowtree11 = assets_snowtree11,
+	snowtree12 = assets_snowtree12,
+	snowtree13 = assets_snowtree13,
+	snowtree14 = assets_snowtree14,
+	snowtree15 = assets_snowtree15,
+	snowtree16 = assets_snowtree16,
+	snowtree17 = assets_snowtree17,
+	snowtree18 = assets_snowtree18,
+	snowtree19 = assets_snowtree19,
+	snowtree20 = assets_snowtree20,
+	snowtree21 = assets_snowtree21,
 }
 
 local new_rows<const> = function(width, height, default_value)
@@ -383,7 +383,7 @@ function stage_subsystem:apply_stage_config(stage_data)
 end
 
 function stage_subsystem:build_tape()
-	local stage_data<const> = bin.decode(assets.data_nemesis_s_stage_addr, assets.data_nemesis_s_stage_len, constants.stage.asset_id)
+	local stage_data<const> = bin.decode(assets.data_nemesis_s_stage_addr, assets.data_nemesis_s_stage_len, stage_asset_id)
 	self:apply_stage_config(stage_data)
 	local map_rows<const> = stage_data.map_rows
 
@@ -412,7 +412,7 @@ function stage_subsystem:apply_star_scroll(stars, step)
 		local star<const> = stars[i]
 		star.x = star.x - step
 		if star.x < 0 then
-			star.x = constants.machine.game_width
+			star.x = machine_game_width
 		end
 	end
 end
@@ -432,8 +432,8 @@ function stage_subsystem:reset_runtime()
 	self.scroll_gate_bit = 0
 	self.scroll_advanced = false
 	self.frame = 0
-	reset_star_positions(self.yellow_stars, constants.stars.yellow)
-	reset_star_positions(self.blue_stars, constants.stars.blue)
+	reset_star_positions(self.yellow_stars, stars_yellow)
+	reset_star_positions(self.blue_stars, stars_blue)
 	self.yellow_blink = false
 	self.blue_blink = false
 	self.blink_turn = 'yellow'
@@ -504,13 +504,13 @@ function stage_subsystem:draw_star_particles(stars, imgid, hidden)
 	end
 	for i = 1, #stars do
 		local star<const> = stars[i]
-		vdp_blit_img_color(imgid, star.x, star.y, constants.stage.star_particle_z, sys_vdp_layer_world, 1, 1, 0, 0xffffffff, 0)
+		vdp_blit_img_color(imgid, star.x, star.y, stage_star_particle_z, sys_vdp_layer_world, 1, 1, 0, 0xffffffff, 0)
 	end
 end
 
 function stage_subsystem:draw()
-	self:draw_star_particles(self.yellow_stars, constants.assets.star_yellow, self.yellow_blink)
-	self:draw_star_particles(self.blue_stars, constants.assets.star_blue, self.blue_blink)
+	self:draw_star_particles(self.yellow_stars, assets_star_yellow, self.yellow_blink)
+	self:draw_star_particles(self.blue_stars, assets_star_blue, self.blue_blink)
 
 	local draw_columns<const> = self.tile_columns + 1
 	local tile_size<const> = self.tile_size
@@ -550,7 +550,7 @@ function stage_subsystem:ctor()
 end
 
 local define_stage_fsm<const> = function()
-	define_fsm(constants.ids.stage_fsm, {
+	define_fsm(ids_stage_fsm, {
 		initial = 'boot',
 		states = {
 			boot = {
@@ -564,7 +564,7 @@ local define_stage_fsm<const> = function()
 						self:update_runtime()
 					end,
 					timelines = {
-						[constants.ids.stage_star_blink_timeline] = {
+						[ids_stage_star_blink_timeline] = {
 						def = {
 							frames = {
 								{ blink_turn = 'yellow', yellow_blink = true, blue_blink = false },
@@ -572,7 +572,7 @@ local define_stage_fsm<const> = function()
 								{ blink_turn = 'blue', yellow_blink = false, blue_blink = true },
 								{ blink_turn = 'yellow', yellow_blink = false, blue_blink = false },
 							},
-							ticks_per_frame = constants.stage.star_blink_gate_frames,
+							ticks_per_frame = stage_star_blink_gate_frames,
 							playback_mode = 'loop',
 						},
 						autoplay = true,
@@ -597,9 +597,9 @@ end
 
 local register_stage_subsystem_definition<const> = function()
 	define_subsystem({
-		def_id = constants.ids.stage_def,
+		def_id = ids_stage_def,
 		class = stage_subsystem,
-		fsms = { constants.ids.stage_fsm },
+		fsms = { ids_stage_fsm },
 		defaults = {
 			update_priority = -10,
 			animation_priority = -10,
@@ -611,7 +611,7 @@ end
 return {
 	define_stage_fsm = define_stage_fsm,
 	register_stage_subsystem_definition = register_stage_subsystem_definition,
-	stage_def_id = constants.ids.stage_def,
-	stage_instance_id = constants.ids.stage_instance,
-	stage_fsm_id = constants.ids.stage_fsm,
+	stage_def_id = ids_stage_def,
+	stage_instance_id = ids_stage_instance,
+	stage_fsm_id = ids_stage_fsm,
 }

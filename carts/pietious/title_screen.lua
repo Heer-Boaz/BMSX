@@ -1,4 +1,4 @@
-local constants<const> = require('constants')
+require('constants')
 local components<const> = require('cartlib/components')
 
 local title_screen<const> = {}
@@ -101,23 +101,23 @@ end
 
 local build_title_start_frames<const> = function()
 	local frames<const> = {}
-	for _ = 1, constants.flow.title_start_blink_cycles do
+	for _ = 1, flow_title_start_blink_cycles do
 		frames[#frames + 1] = {
 			value = { sprite_id = 'title_screen_play_start' },
-			hold = constants.flow.title_start_blink_phase_frames,
+			hold = flow_title_start_blink_phase_frames,
 		}
 		frames[#frames + 1] = {
 			value = { sprite_id = 'title_screen_play_start_blink' },
-			hold = constants.flow.title_start_blink_phase_frames,
+			hold = flow_title_start_blink_phase_frames,
 		}
 	end
 	frames[#frames + 1] = {
 		value = { sprite_id = 'title_screen_play_start' },
-		hold = constants.flow.title_start_blink_phase_frames,
+		hold = flow_title_start_blink_phase_frames,
 	}
 	frames[#frames + 1] = {
 		value = { sprite_id = 'title_screen_play_start_blink' },
-		hold = constants.flow.title_start_blink_tail_frames,
+		hold = flow_title_start_blink_tail_frames,
 	}
 	return timeline.build_frame_sequence(frames)
 end

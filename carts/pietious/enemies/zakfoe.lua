@@ -1,4 +1,4 @@
-local constants<const> = require('constants')
+require('constants')
 local behaviourtree<const> = require('cartlib/behaviourtree')
 local enemy_base<const> = require('enemies/enemy_base')
 
@@ -17,43 +17,43 @@ function zakfoe.bt_tick(self, blackboard)
 	local node<const> = blackboard.nodedata
 
 	if self.zak_state == 'prepare' then
-		local prepare_ticks = node.zak_prepare_ticks or constants.enemy.zak_prepare_jump_steps
+		local prepare_ticks = node.zak_prepare_ticks or enemy_zak_prepare_jump_steps
 		prepare_ticks = prepare_ticks - 1
 		if prepare_ticks > 0 then
 			node.zak_prepare_ticks = prepare_ticks
 			return 'RUNNING'
 		end
 		node.zak_prepare_ticks = nil
-		self.current_vertical_speed = constants.enemy.zak_vertical_speed_start
+		self.current_vertical_speed = enemy_zak_vertical_speed_start
 		self.zak_ground_y = self.y
 		self.zak_state = 'jump'
-		node.zak_jump_ticks = constants.enemy.zak_jump_steps
+		node.zak_jump_ticks = enemy_zak_jump_steps
 		self:gfx('zakfoe_jump')
 		self.sprite_component.flip.flip_h = self.direction == 'left'
 		return 'RUNNING'
 	end
 
 	if self.zak_state == 'jump' then
-		local jump_ticks = node.zak_jump_ticks or constants.enemy.zak_jump_steps
+		local jump_ticks = node.zak_jump_ticks or enemy_zak_jump_steps
 
 		local direction_mod<const> = self.direction == 'right' and 1 or -1
-		self.x = self.x + (constants.enemy.zak_horizontal_speed_px * direction_mod)
+		self.x = self.x + (enemy_zak_horizontal_speed_px * direction_mod)
 		self.y = self.y + self.current_vertical_speed
-		self.current_vertical_speed = self.current_vertical_speed + constants.enemy.zak_vertical_speed_step
+		self.current_vertical_speed = self.current_vertical_speed + enemy_zak_vertical_speed_step
 
 		if self.direction == 'left' then
 			local rm<const> = oget('room')
 			if self.x < 0
-				or rm:has_collision_flags_at_world(self.x + 2, self.y + 2, constants.collision_flags.solid_mask)
-				or not rm:has_collision_flags_at_world(self.x + 2 - constants.room.tile_half, self.y + 14 + constants.room.tile_size, constants.collision_flags.solid_mask)
+				or rm:has_collision_flags_at_world(self.x + 2, self.y + 2, collision_flags_solid_mask)
+				or not rm:has_collision_flags_at_world(self.x + 2 - room_tile_half, self.y + 14 + room_tile_size, collision_flags_solid_mask)
 			then
 				self.direction = 'right'
 			end
 		else
 			local rm<const> = oget('room')
 			if self.x + 14 >= rm.world_width
-				or rm:has_collision_flags_at_world(self.x + 14, self.y + 2, constants.collision_flags.solid_mask)
-				or not rm:has_collision_flags_at_world(self.x + 14 + constants.room.tile_half, self.y + 14 + constants.room.tile_size, constants.collision_flags.solid_mask)
+				or rm:has_collision_flags_at_world(self.x + 14, self.y + 2, collision_flags_solid_mask)
+				or not rm:has_collision_flags_at_world(self.x + 14 + room_tile_half, self.y + 14 + room_tile_size, collision_flags_solid_mask)
 			then
 				self.direction = 'left'
 			end
@@ -69,11 +69,11 @@ function zakfoe.bt_tick(self, blackboard)
 		self.zak_state = 'recovery'
 		self:gfx('zakfoe_recover')
 		self.sprite_component.flip.flip_h = self.direction == 'left'
-		node.zak_recovery_ticks = constants.enemy.zak_recovery_steps
+		node.zak_recovery_ticks = enemy_zak_recovery_steps
 		return 'RUNNING'
 	end
 
-	local recovery_ticks = node.zak_recovery_ticks or constants.enemy.zak_recovery_steps
+	local recovery_ticks = node.zak_recovery_ticks or enemy_zak_recovery_steps
 	recovery_ticks = recovery_ticks - 1
 	if recovery_ticks > 0 then
 		node.zak_recovery_ticks = recovery_ticks
@@ -83,7 +83,7 @@ function zakfoe.bt_tick(self, blackboard)
 	self.zak_state = 'prepare'
 	self:gfx('zakfoe_stand')
 	self.sprite_component.flip.flip_h = self.direction == 'left'
-	node.zak_prepare_ticks = constants.enemy.zak_prepare_jump_steps
+	node.zak_prepare_ticks = enemy_zak_prepare_jump_steps
 	return 'RUNNING'
 end
 
@@ -99,10 +99,10 @@ function zakfoe.register_behaviour_tree(bt_id)
 end
 
 function zakfoe.choose_drop_type(_self)
-	if math.random(100) <= constants.enemy.zak_drop_health_chance_pct then
+	if math.random(100) <= enemy_zak_drop_health_chance_pct then
 		return 'life'
 	end
-	if math.random(100) <= constants.enemy.zak_drop_ammo_chance_pct then
+	if math.random(100) <= enemy_zak_drop_ammo_chance_pct then
 		return 'ammo'
 	end
 	return nil

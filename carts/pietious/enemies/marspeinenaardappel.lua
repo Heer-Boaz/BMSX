@@ -1,4 +1,4 @@
-local constants<const> = require('constants')
+require('constants')
 local behaviourtree<const> = require('cartlib/behaviourtree')
 local enemy_base<const> = require('enemies/enemy_base')
 
@@ -20,13 +20,13 @@ function marspeinenaardappel.bt_tick(self, _blackboard)
 
 	if speed_x < 0 then
 		local test_x<const> = self.x + speed_x
-		if test_x <= 0 or rm:has_collision_flags_at_world(test_x, self.y, constants.collision_flags.solid_mask) then
+		if test_x <= 0 or rm:has_collision_flags_at_world(test_x, self.y, collision_flags_solid_mask) then
 			self.speed_x_num = -speed_x
 			self.x = self.x + (self.speed_x_num * 2)
 		end
 	elseif speed_x > 0 then
 		local test_x<const> = self.x + self.sx + speed_x
-		if test_x >= rm.world_width or rm:has_collision_flags_at_world(test_x, self.y, constants.collision_flags.solid_mask) then
+		if test_x >= rm.world_width or rm:has_collision_flags_at_world(test_x, self.y, collision_flags_solid_mask) then
 			self.speed_x_num = -speed_x
 			self.x = self.x + (self.speed_x_num * 2)
 		end
@@ -34,13 +34,13 @@ function marspeinenaardappel.bt_tick(self, _blackboard)
 
 	if speed_y < 0 then
 		local test_y<const> = self.y + speed_y
-		if test_y <= rm.world_top or rm:has_collision_flags_at_world(self.x, test_y, constants.collision_flags.solid_mask) then
+		if test_y <= rm.world_top or rm:has_collision_flags_at_world(self.x, test_y, collision_flags_solid_mask) then
 			self.speed_y_num = -speed_y
 			self.y = self.y + (self.speed_y_num * 2)
 		end
 	elseif speed_y > 0 then
 		local test_y<const> = self.y + self.sy + speed_y
-		if test_y >= rm.world_height or rm:has_collision_flags_at_world(self.x, test_y, constants.collision_flags.solid_mask) then
+		if test_y >= rm.world_height or rm:has_collision_flags_at_world(self.x, test_y, collision_flags_solid_mask) then
 			self.speed_y_num = -speed_y
 			self.y = self.y + (self.speed_y_num * 2)
 		end
@@ -61,10 +61,10 @@ function marspeinenaardappel.register_behaviour_tree(bt_id)
 end
 
 function marspeinenaardappel.choose_drop_type(_self)
-	if math.random(100) <= constants.enemy.marspein_drop_health_chance_pct then
+	if math.random(100) <= enemy_marspein_drop_health_chance_pct then
 		return 'life'
 	end
-	if math.random(100) <= constants.enemy.marspein_drop_ammo_chance_pct then
+	if math.random(100) <= enemy_marspein_drop_ammo_chance_pct then
 		return 'ammo'
 	end
 	return nil

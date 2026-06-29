@@ -1,5 +1,5 @@
 local rect_overlaps<const> = require('bios/util/rect_overlaps')
-local constants<const> = require('constants')
+require('constants')
 local sprite_id_by_kind<const> = {
 	[1] = {
 		closed = 'draaideur_1_closed',
@@ -26,10 +26,10 @@ function draaideur:touches_player(player, walking_left, walking_right)
 			player.y,
 			player.width,
 			player.height,
-			self.x + (constants.room.tile_size / 4),
+			self.x + (room_tile_size / 4),
 			self.y,
-			constants.room.tile_size,
-			constants.room.tile_size
+			room_tile_size,
+			room_tile_size
 		) then
 			return true
 		end
@@ -38,10 +38,10 @@ function draaideur:touches_player(player, walking_left, walking_right)
 			player.y,
 			player.width,
 			player.height,
-			self.x + (constants.room.tile_size / 4),
-			self.y + constants.room.tile_size,
-			constants.room.tile_size,
-			constants.room.tile_size
+			self.x + (room_tile_size / 4),
+			self.y + room_tile_size,
+			room_tile_size,
+			room_tile_size
 		) then
 			return true
 		end
@@ -56,10 +56,10 @@ function draaideur:touches_player(player, walking_left, walking_right)
 		player.y,
 		player.width,
 		player.height,
-		self.x - (constants.room.tile_size / 4),
+		self.x - (room_tile_size / 4),
 		self.y,
-		constants.room.tile_size,
-		constants.room.tile_size
+		room_tile_size,
+		room_tile_size
 	) then
 		return true
 	end
@@ -68,10 +68,10 @@ function draaideur:touches_player(player, walking_left, walking_right)
 		player.y,
 		player.width,
 		player.height,
-		self.x - (constants.room.tile_size / 4),
-		self.y + constants.room.tile_size,
-		constants.room.tile_size,
-		constants.room.tile_size
+		self.x - (room_tile_size / 4),
+		self.y + room_tile_size,
+		room_tile_size,
+		room_tile_size
 	) then
 		return true
 	end
@@ -136,24 +136,24 @@ function draaideur:sync_sprite()
 	if self.state < -16 then
 		local sprite_id<const> = self.player_was_right and sprite_set.open_3 or sprite_set.open_1
 		self:gfx(sprite_id)
-		self.sprite_component.offset.x = -constants.room.tile_half
+		self.sprite_component.offset.x = -room_tile_half
 		return
 	end
 
 	if self.state < -8 then
 		self:gfx(sprite_set.open_2)
-		self.sprite_component.offset.x = -constants.room.tile_size
+		self.sprite_component.offset.x = -room_tile_size
 		return
 	end
 
 	if not self.player_was_right then
 		self:gfx(sprite_set.open_3)
-		self.sprite_component.offset.x = -constants.room.tile_half
+		self.sprite_component.offset.x = -room_tile_half
 		return
 	end
 
 	self:gfx(sprite_set.open_1)
-	self.sprite_component.offset.x = -constants.room.tile_half
+	self.sprite_component.offset.x = -room_tile_half
 end
 
 function draaideur:ctor()

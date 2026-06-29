@@ -1,5 +1,5 @@
 local clamp<const> = require('bios/util/clamp')
-local constants<const> = require('constants')
+require('constants')
 
 local ui<const> = {}
 ui.__index = ui
@@ -35,18 +35,18 @@ function ui:bind_visual()
 end
 
 function ui:set_health_target(value)
-	self.hud_health_target = clamp(value // 1, 0, constants.damage.max_health)
+	self.hud_health_target = clamp(value // 1, 0, damage_max_health)
 end
 
 function ui:set_weapon_target(value)
-	self.hud_weapon_target = clamp(value // 1, 0, constants.hud.weapon_level)
+	self.hud_weapon_target = clamp(value // 1, 0, hud_weapon_level)
 end
 
 function ui:ctor()
 	self:bind_visual()
 	local player<const> = oget('pietolon')
-	local health<const> = clamp(player.health // 1, 0, constants.damage.max_health)
-	local weapon<const> = clamp(player.weapon_level // 1, 0, constants.hud.weapon_level)
+	local health<const> = clamp(player.health // 1, 0, damage_max_health)
+	local weapon<const> = clamp(player.weapon_level // 1, 0, hud_weapon_level)
 	self.hud_visible = true
 	self.hud_health_level = health
 	self.hud_health_target = health
@@ -67,7 +67,7 @@ end
 function ui:update_hud_animation()
 	if self.hud_health_level ~= self.hud_health_target then
 		self.hud_health_anim_ticks = self.hud_health_anim_ticks + 1
-		if self.hud_health_anim_ticks >= constants.hud.health_anim_step_frames then
+		if self.hud_health_anim_ticks >= hud_health_anim_step_frames then
 			self.hud_health_anim_ticks = 0
 			self.hud_health_level = animate_level(self.hud_health_level, self.hud_health_target)
 		end
@@ -77,7 +77,7 @@ function ui:update_hud_animation()
 
 	if self.hud_weapon_level ~= self.hud_weapon_target then
 		self.hud_weapon_anim_ticks = self.hud_weapon_anim_ticks + 1
-		if self.hud_weapon_anim_ticks >= constants.hud.weapon_anim_step_frames then
+		if self.hud_weapon_anim_ticks >= hud_weapon_anim_step_frames then
 			self.hud_weapon_anim_ticks = 0
 			self.hud_weapon_level = animate_level(self.hud_weapon_level, self.hud_weapon_target)
 		end
@@ -94,13 +94,13 @@ function ui:draw_ui()
 	vdp_blit_img_color('game_header', 0, 0, 200, sys_vdp_layer_ui, 1, 1, 0, 0xffffffff, 0)
 	local equipped_sprite_id<const> = secondary_weapon_sprite_id(player.secondary_weapon)
 	if equipped_sprite_id ~= nil then
-		vdp_blit_img_color(equipped_sprite_id, constants.hud.equipped_item_x * constants.room.tile_size, constants.hud.equipped_item_y * constants.room.tile_size, 202, sys_vdp_layer_ui, 1, 1, 0, 0xffffffff, 0)
+		vdp_blit_img_color(equipped_sprite_id, hud_equipped_item_x * room_tile_size, hud_equipped_item_y * room_tile_size, 202, sys_vdp_layer_ui, 1, 1, 0, 0xffffffff, 0)
 	end
 	for i = 0, (self.hud_health_level - 1) do
-		vdp_blit_img_color('energybar_stripe_blue', constants.hud.health_bar_x + i, constants.hud.health_bar_y, 201, sys_vdp_layer_ui, 1, 1, 0, 0xffffffff, 0)
+		vdp_blit_img_color('energybar_stripe_blue', hud_health_bar_x + i, hud_health_bar_y, 201, sys_vdp_layer_ui, 1, 1, 0, 0xffffffff, 0)
 	end
 	for i = 0, (self.hud_weapon_level - 1) do
-		vdp_blit_img_color('energybar_stripe_red', constants.hud.weapon_bar_x + i, constants.hud.weapon_bar_y, 201, sys_vdp_layer_ui, 1, 1, 0, 0xffffffff, 0)
+		vdp_blit_img_color('energybar_stripe_red', hud_weapon_bar_x + i, hud_weapon_bar_y, 201, sys_vdp_layer_ui, 1, 1, 0, 0xffffffff, 0)
 	end
 end
 
@@ -152,11 +152,11 @@ local register_ui_definition<const> = function()
 		fsms = { 'ui' },
 		components = { 'customvisualcomponent' },
 		defaults = {
-			hud_health_level = constants.hud.health_level,
-			hud_health_target = constants.hud.health_level,
+			hud_health_level = hud_health_level,
+			hud_health_target = hud_health_level,
 			hud_health_anim_ticks = 0,
-			hud_weapon_level = constants.hud.weapon_level,
-			hud_weapon_target = constants.hud.weapon_level,
+			hud_weapon_level = hud_weapon_level,
+			hud_weapon_target = hud_weapon_level,
 			hud_weapon_anim_ticks = 0,
 		},
 	})

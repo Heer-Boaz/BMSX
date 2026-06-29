@@ -9,7 +9,7 @@
 -- of bind().  Both approaches are equivalent — FSM `on` is preferred when
 -- the object already has an FSM.
 
-local constants<const> = require('constants')
+require('constants')
 local font_module<const> = require('cartlib/font')
 
 local draw_glyph_line_color<const> = function(font, line, x, y, z, layer, color)
@@ -33,11 +33,11 @@ function lithograph_screen:bind_visual()
 end
 
 function lithograph_screen:draw_screen()
-	vdp_blit_img_color(lithograph_mode_sprite_id, constants.room.tile_size4, constants.room.tile_origin_y + constants.room.tile_size2, 340, sys_vdp_layer_ui, 1, 1, 0, 0xffffffff, 0)
+	vdp_blit_img_color(lithograph_mode_sprite_id, room_tile_size4, room_tile_origin_y + room_tile_size2, 340, sys_vdp_layer_ui, 1, 1, 0, 0xffffffff, 0)
 	local lines<const> = self.lines
 	if #lines > 0 then
 		local text_font<const> = self.text_font
-		local base_y<const> = constants.room.tile_origin_y + (constants.room.tile_size * 6)
+		local base_y<const> = room_tile_origin_y + (room_tile_size * 6)
 		local screen_width<const> = machine_manifest.render_size.width
 		for i = 1, #lines do
 			local line<const> = lines[i]

@@ -1,5 +1,5 @@
 require('cartlib/prelude')
-local globals<const> = require('globals')
+require('globals')
 local story<const> = require('story')
 local start_node<const> = 'title'
 -- local start_node<const> = 'combat_wekker'
@@ -80,8 +80,8 @@ local build_director_fsm<const> = function()
 				self.skip_combat_fade_in = false
 				self.skip_transition_fade = false
 				self.fade_hold_black = false
-				globals.clear_texts(globals.text_ids_all)
-				globals.hide_combat_sprites()
+				clear_texts(text_ids_all)
+				hide_combat_sprites()
 				return '/run_node'
 			end,
 		},
@@ -158,10 +158,10 @@ local register_director<const> = function()
 			transition_center_x = 0,
 			transition_target_bg = story.title.bg,
 			transition_style = 'dialogue',
-			transition_palette = globals.p3_transition_palette_dialogue,
+			transition_palette = p3_transition_palette_dialogue,
 			transition_panels = {},
 			transition_accent = {
-				color = globals.p3_transition_palette_dialogue.accent,
+				color = p3_transition_palette_dialogue.accent,
 				width = 0,
 				height = 0,
 				y = 0,
@@ -173,7 +173,7 @@ local register_director<const> = function()
 			transition_needs_post_fade = false,
 			fade_target_bg = story.title.bg,
 			fade_style = 'dialogue',
-			fade_palette = globals.p3_transition_palette_dialogue,
+			fade_palette = p3_transition_palette_dialogue,
 			skip_combat_fade_in = false,
 			skip_transition_fade = false,
 			fade_hold_black = false,
@@ -257,21 +257,21 @@ function new_game()
 	local main_top<const> = h - (line_height * (prompt_lines + choice_lines + main_lines))
 
 	inst('p3.bg', {
-		id = globals.bg_id,
+		id = bg_id,
 		pos = { x = 0, y = 0, z = 0 },
 		visible = false,
 	})
 
 	local horizontal_margin<const> = w / 10
 		inst('p3.text.main', {
-			id = globals.text_main_id,
+			id = text_main_id,
 			dimensions = { left = horizontal_margin, right = w - horizontal_margin, top = main_top, bottom = choice_top },
 			blank_lines = 1,
 			pos = { z = 1000 },
 			layer = sys_vdp_layer_ui,
 		})
 		inst('p3.text.choice', {
-			id = globals.text_choice_id,
+			id = text_choice_id,
 			dimensions = { left = horizontal_margin, right = w - horizontal_margin, top = choice_top, bottom = prompt_top },
 			blank_lines = 1,
 			pos = { z = 1001 },
@@ -281,58 +281,58 @@ function new_game()
 			layer = sys_vdp_layer_ui,
 		})
 		inst('p3.text.prompt', {
-			id = globals.text_prompt_id,
+			id = text_prompt_id,
 			dimensions = { left = horizontal_margin, right = w - horizontal_margin, top = prompt_top, bottom = h },
 			blank_lines = 1,
 			pos = { z = 1002 },
 			layer = sys_vdp_layer_ui,
 		})
 		inst('p3.text.transition', {
-			id = globals.text_transition_id,
+			id = text_transition_id,
 			dimensions = { left = 0, right = w, top = (h / 2) - (line_height * 2), bottom = (h / 2) + (line_height * 2) },
 			blank_lines = 1,
 			pos = { z = 900 },
-			text_color = globals.p3_ink_color,
-			normal_bg_color = globals.p3_white_color,
+			text_color = p3_ink_color,
+			normal_bg_color = p3_white_color,
 			layer = sys_vdp_layer_ui,
 		})
 		inst('p3.text.results', {
-			id = globals.text_results_id,
+			id = text_results_id,
 			dimensions = { left = horizontal_margin, right = w - (w / 3), top = line_height * 2, bottom = h - (h / 3) },
 			blank_lines = 1,
 			pos = { z = 1003 },
 			layer = sys_vdp_layer_ui,
 		})
 
-	globals.clear_texts(globals.text_ids_all)
+	clear_texts(text_ids_all)
 
 	inst('p3.combat.monster', {
-		id = globals.combat_monster_id,
+		id = combat_monster_id,
 		pos = { x = 0, y = 0, z = 200 },
 		imgid = 'monster_snoozer',
 		visible = false,
 	})
 	inst('p3.combat.maya_a', {
-		id = globals.combat_maya_a_id,
+		id = combat_maya_a_id,
 		pos = { x = 0, y = 0, z = 300 },
 		imgid = 'maya_a',
 		visible = false,
 	})
 	inst('p3.combat.maya_b', {
-		id = globals.combat_maya_b_id,
+		id = combat_maya_b_id,
 		pos = { x = 0, y = 0, z = 300 },
 		imgid = 'maya_b',
 		visible = false,
 	})
 	inst('p3.combat.all_out', {
-		id = globals.combat_all_out_id,
+		id = combat_all_out_id,
 		pos = { x = 0, y = 0, z = 800 },
 		imgid = 'all_out',
 		visible = false,
 	})
 
-	combat_director_instance = inst(globals.combat_director_def_id, { id = globals.combat_director_instance_id })
-	inst(director_def_id, { id = globals.director_instance_id })
+	combat_director_instance = inst(combat_director_def_id, { id = combat_director_instance_id })
+	inst(director_def_id, { id = director_instance_id })
 end
 
 local wait_vblank<const> = function()

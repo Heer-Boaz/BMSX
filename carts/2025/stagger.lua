@@ -1,5 +1,5 @@
 local stagger<const> = {}
-local globals<const> = require('globals')
+require('globals')
 local linear<const> = easing.linear
 local stagger_timeline_prefix<const> = 'p3.stagger.'
 

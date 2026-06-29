@@ -1,4 +1,4 @@
-local constants<const> = require('constants')
+require('constants')
 local behaviourtree<const> = require('cartlib/behaviourtree')
 local enemy_base<const> = require('enemies/enemy_base')
 
@@ -11,7 +11,7 @@ function vlokspawner:ctor()
 end
 
 function vlokspawner.bt_tick(self, blackboard)
-	local spawn_ticks = blackboard.nodedata.vlok_spawn_ticks or constants.enemy.vlokspawner_spawn_steps
+	local spawn_ticks = blackboard.nodedata.vlok_spawn_ticks or enemy_vlokspawner_spawn_steps
 	spawn_ticks = spawn_ticks - 1
 	if spawn_ticks > 0 then
 		blackboard.nodedata.vlok_spawn_ticks = spawn_ticks
@@ -33,7 +33,7 @@ function vlokspawner.bt_tick(self, blackboard)
 			z = 140,
 		},
 	})
-	blackboard.nodedata.vlok_spawn_ticks = constants.enemy.vlokspawner_spawn_steps
+	blackboard.nodedata.vlok_spawn_ticks = enemy_vlokspawner_spawn_steps
 	return 'RUNNING'
 end
 
