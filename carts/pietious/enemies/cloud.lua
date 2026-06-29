@@ -1,6 +1,7 @@
 require('constants')
 local behaviourtree<const> = require('cartlib/behaviourtree')
 local enemy_base<const> = require('enemies/enemy_base')
+local abs<const> = require('bios/math').abs
 
 local cloud<const> = {}
 cloud.__index = cloud
@@ -91,7 +92,7 @@ function cloud.bt_tick(self, blackboard)
 		for i = 1, 3 do
 			local random_x = 0
 			local random_y = 0
-			while math.abs(random_x + random_y) < 2 do
+			while abs(random_x + random_y) < 2 do
 				random_x = math.random(-5, 4)
 				random_y = math.random(-5, 4)
 			end

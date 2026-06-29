@@ -2,6 +2,7 @@ local div_toward_zero<const> = require('bios/util/div_toward_zero')
 require('constants')
 local behaviourtree<const> = require('cartlib/behaviourtree')
 local enemy_base<const> = require('enemies/enemy_base')
+local abs<const> = require('bios/math').abs
 
 local muziekfoe<const> = {}
 muziekfoe.__index = muziekfoe
@@ -15,8 +16,8 @@ local get_delta_from_source_to_target_scaled<const> = function(source_x, source_
 	if dy == 0 then
 		return dx > 0 and speed_scale or -speed_scale, 0
 	end
-	local abs_dx<const> = math.abs(dx)
-	local abs_dy<const> = math.abs(dy)
+	local abs_dx<const> = abs(dx)
+	local abs_dy<const> = abs(dy)
 	if abs_dx > abs_dy then
 		return dx > 0 and speed_scale or -speed_scale, div_toward_zero(dy * speed_scale, abs_dx)
 	end

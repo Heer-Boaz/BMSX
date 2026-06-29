@@ -75,6 +75,7 @@
 --    exit animation timeline completes.
 
 local clamp<const> = require('bios/util/clamp')
+local abs<const> = require('bios/math').abs
 require('constants')
 local castle_map<const> = require('castle/map')
 local components<const> = require('cartlib/components')
@@ -1268,7 +1269,7 @@ function player:pick_entry_stairs(direction)
 				y_ok = self.y >= stair.top_y and self.y <= max_y
 			end
 			if y_ok then
-				local dx<const> = math.abs(self.x - stair.x)
+				local dx<const> = abs(self.x - stair.x)
 				if best == nil or dx < best_dx or (dx == best_dx and stair.x > best.x) then
 					best = stair
 					best_dx = dx
@@ -1517,7 +1518,7 @@ function player:resolve_overlap_with_elevator(platform, previous_platform_y)
 	local left_clear<const> = not self:collides_at(left_x, self.y, true)
 	local right_clear<const> = not self:collides_at(right_x, self.y, true)
 	if left_clear and right_clear then
-		if math.abs(self.x - left_x) <= math.abs(self.x - right_x) then
+		if abs(self.x - left_x) <= abs(self.x - right_x) then
 			self.x = left_x
 		else
 			self.x = right_x
@@ -1956,7 +1957,7 @@ function player:runcheck_quiet_stairs_controls()
 		self.last_dy = stairs_down_start_push_px
 		self.y = self.y + self.last_dy
 		if self.last_dy ~= 0 then
-			self:update_stairs_animation(math.abs(self.last_dy))
+			self:update_stairs_animation(abs(self.last_dy))
 		end
 		if was_at_or_below_bottom then
 			self:leave_stairs('stairs_end_bottom')
@@ -1973,7 +1974,7 @@ function player:runcheck_quiet_stairs_controls()
 			self.y = next_y
 			self.stairs_direction = -1
 			if self.last_dy ~= 0 then
-				self:update_stairs_animation(math.abs(self.last_dy))
+				self:update_stairs_animation(abs(self.last_dy))
 			end
 			return
 		end
@@ -2348,7 +2349,7 @@ function player:update_up_stairs()
 	if moved then
 		self.last_dy = next_y - self.y
 		self.y = next_y
-		self:update_stairs_animation(math.abs(self.last_dy))
+		self:update_stairs_animation(abs(self.last_dy))
 	end
 end
 
@@ -2403,7 +2404,7 @@ function player:update_down_stairs()
 	if moved then
 		self.last_dy = next_y - self.y
 		self.y = next_y
-		self:update_stairs_animation(math.abs(self.last_dy))
+		self:update_stairs_animation(abs(self.last_dy))
 	end
 end
 
