@@ -31,7 +31,6 @@ import {
 	VRAM_SYSTEM_SLOT_SIZE,
 } from '../memory/map';
 import { CART_ROM_MAGIC, DEFAULT_GEO_WORK_UNITS_PER_SEC, DEFAULT_VDP_WORK_UNITS_PER_SEC, type CartManifest, type MachineManifest } from '../../rompack/format';
-import { HZ_SCALE } from '../runtime/timing/constants';
 import {
 	GEO_CTRL_ABORT,
 	GEO_FAULT_ABORTED_BY_HOST,
@@ -333,6 +332,8 @@ import {
 	IO_SYS_BOOT_CART,
 	IO_SYS_HOST_FAULT_FLAGS,
 	IO_SYS_HOST_FAULT_STAGE,
+	IO_SYS_FRAME_MS,
+	IO_SYS_TIME_MS,
 	IO_VDP_DITHER,
 	IO_VDP_FAULT_CODE,
 	IO_VDP_FAULT_DETAIL,
@@ -507,9 +508,6 @@ function buildMachineManifestTable(runtime: Runtime, manifest: MachineManifest):
 	const table = new Table(0, 5);
 	if (manifest.namespace.length > 0) {
 		table.set(runtime.internString('namespace'), runtime.internString(manifest.namespace));
-	}
-	if (manifest.ufps) {
-		table.set(runtime.internString('ufps'), manifest.ufps);
 	}
 	if (manifest.render_size.width > 0 && manifest.render_size.height > 0) {
 		const renderSize = new Table(0, 2);
@@ -1190,6 +1188,8 @@ export function seedLuaGlobals(runtime: Runtime): void {
 	runtime.setGlobal('sys_bus_fault_ack', IO_SYS_BUS_FAULT_ACK);
 	runtime.setGlobal('sys_host_fault_flags', IO_SYS_HOST_FAULT_FLAGS);
 	runtime.setGlobal('sys_host_fault_stage', IO_SYS_HOST_FAULT_STAGE);
+	runtime.setGlobal('sys_time_ms', IO_SYS_TIME_MS);
+	runtime.setGlobal('sys_frame_ms', IO_SYS_FRAME_MS);
 	runtime.setGlobal('sys_host_fault_message', createNativeFunction('sys_host_fault_message', (_args, out) => {
 		const message = runtime.hostFault.getMessage();
 		out.push(message === null ? null : runtime.internString(message));
@@ -1198,7 +1198,6 @@ export function seedLuaGlobals(runtime: Runtime): void {
 	runtime.setGlobal('sys_cart_magic', CART_ROM_MAGIC);
 	runtime.setGlobal('sys_cart_rom_size', CART_ROM_SIZE);
 	runtime.setGlobal('sys_ram_size', RAM_SIZE);
-	runtime.setGlobal('sys_hz_scale', HZ_SCALE);
 	runtime.setGlobal('sys_geo_scratch_base', GEO_SCRATCH_BASE);
 	runtime.setGlobal('sys_geo_scratch_size', GEO_SCRATCH_SIZE);
 	runtime.setGlobal('sys_max_cycles_per_frame', runtime.timing.cycleBudgetPerFrame);
@@ -1638,9 +1637,6 @@ export function seedLuaGlobals(runtime: Runtime): void {
 		bitcastView.setUint32(0, lo, true);
 		bitcastView.setUint32(4, hi, true);
 		out.push(bitcastView.getFloat64(0, true));
-	}));
-	runtime.setGlobal('clock_now', createNativeFunction('clock_now', (_args, out) => {
-		out.push(runtime.machineElapsedMs());
 	}));
 	runtime.setGlobal('type', createNativeFunction('type', (args, out) => {
 		const value = args.length > 0 ? args[0] : null;
@@ -2465,9 +2461,6 @@ export function seedLuaGlobals(runtime: Runtime): void {
 		setKey(table, 'isdst', time.isdst);
 		return table;
 	};
-	setKey(osTable, 'clock', createNativeFunction('os.clock', (_args, out) => {
-		out.push(runtime.machineElapsedMs() / 1000);
-	}));
 	setKey(osTable, 'time', createNativeFunction('os.time', (args, out) => {
 		if (args.length > 0 && args[0] !== null) {
 			if (!(args[0] instanceof Table)) {

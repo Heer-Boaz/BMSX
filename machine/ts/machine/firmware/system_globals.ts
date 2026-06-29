@@ -10,7 +10,8 @@ export const SYSTEM_ROM_HELPER_NAMES = [
 	'cart_project_root_path',
 	'u32_to_i32',
 	'clock_now',
-	'sys_hz_scale',
+	'sys_time_ms',
+	'sys_frame_ms',
 ] as const;
 
 const SYSTEM_ROM_GEO_GLOBAL_NAMES = [

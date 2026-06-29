@@ -12,7 +12,6 @@
 #include "machine/devices/vdp/mfu.h"
 #include "machine/devices/vdp/lpu.h"
 #include "machine/runtime/runtime.h"
-#include "machine/runtime/timing/constants.h"
 #include "rompack/format.h"
 
 namespace bmsx {
@@ -27,6 +26,8 @@ void seedSystemGlobals(Runtime& runtime) {
 	runtime.setGlobal("sys_bus_fault_ack", valueNumber(static_cast<double>(IO_SYS_BUS_FAULT_ACK)));
 	runtime.setGlobal("sys_host_fault_flags", valueNumber(static_cast<double>(IO_SYS_HOST_FAULT_FLAGS)));
 	runtime.setGlobal("sys_host_fault_stage", valueNumber(static_cast<double>(IO_SYS_HOST_FAULT_STAGE)));
+	runtime.setGlobal("sys_time_ms", valueNumber(static_cast<double>(IO_SYS_TIME_MS)));
+	runtime.setGlobal("sys_frame_ms", valueNumber(static_cast<double>(IO_SYS_FRAME_MS)));
 	runtime.setGlobal("sys_host_fault_message", machine.cpu.createNativeFunction("sys_host_fault_message", [&runtime, &machine](NativeArgsView, NativeResults& out) {
 		const auto& message = runtime.hostFault.getMessage();
 		if (!message.has_value()) {
@@ -39,7 +40,6 @@ void seedSystemGlobals(Runtime& runtime) {
 	runtime.setGlobal("sys_cart_magic", valueNumber(static_cast<double>(CART_ROM_MAGIC)));
 	runtime.setGlobal("sys_cart_rom_size", valueNumber(static_cast<double>(CART_ROM_SIZE)));
 	runtime.setGlobal("sys_ram_size", valueNumber(static_cast<double>(RAM_SIZE)));
-	runtime.setGlobal("sys_hz_scale", valueNumber(static_cast<double>(HZ_SCALE)));
 	runtime.setGlobal("sys_geo_scratch_base", valueNumber(static_cast<double>(GEO_SCRATCH_BASE)));
 	runtime.setGlobal("sys_geo_scratch_size", valueNumber(static_cast<double>(GEO_SCRATCH_SIZE)));
 	runtime.setGlobal("sys_max_cycles_per_frame", valueNumber(static_cast<double>(timing.cycleBudgetPerFrame)));

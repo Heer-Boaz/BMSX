@@ -113,6 +113,7 @@ public:
 	void startCartProgram();
 
 	auto frameDeltaMs() const -> f64 { return frameLoop.frameDeltaMs; }
+	auto machineTimeMs() const -> uint32_t;
 	auto machineElapsedMs() const -> f64;
 	void applyUfpsScaled(i64 ufpsScaled);
 	auto baseRamUsedBytes() const -> uint32_t;
@@ -239,6 +240,11 @@ private:
 	// State flags
 	bool m_luaInitialized = false;
 	bool m_runtimeFailed = false;
+	static Value onTimeMsReadThunk(void* context, uint32_t addr);
+	Value onTimeMsRead(uint32_t addr) const;
+	static Value onFrameMsReadThunk(void* context, uint32_t addr);
+	Value onFrameMsRead(uint32_t addr) const;
+
 	bool m_tickEnabled = true;
 	bool m_rebootRequested = false;
 

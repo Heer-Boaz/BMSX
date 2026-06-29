@@ -37,7 +37,7 @@ function populateLuaDateTable(table: LuaTable, timestamp: number): void {
 function registerInterpreterMachineTimeBuiltins(runtime: Runtime, interpreter: LuaInterpreter): void {
 	const osTable = createLuaTable();
 	osTable.set('clock', new LuaNativeFunction('os.clock', () => {
-		return [runtime.machineElapsedMs() / 1000];
+		return [runtime.machineTimeMs() / 1000];
 	}));
 	osTable.set('time', new LuaNativeFunction('os.time', (args) => {
 		if (args.length === 0 || args[0] === null) {

@@ -1055,10 +1055,6 @@ void Runtime::setupBuiltins() {
 		out.push_back(valueNumber(value));
 	});
 
-	registerNativeFunction("clock_now", [this](NativeArgsView args, NativeResults& out) {
-		(void)args;
-		out.push_back(valueNumber(machineElapsedMs()));
-	});
 	registerNativeFunction("type", [str](NativeArgsView args, NativeResults& out) {
 		const Value& v = args.empty() ? valueNil() : args.at(0);
 		if (isNil(v)) { out.push_back(str("nil")); return; }
@@ -2695,10 +2691,6 @@ const Value secondKey = key("sec");
 const Value wdayKey = key("wday");
 const Value ydayKey = key("yday");
 const Value isdstKey = key("isdst");
-osTable->set(key("clock"), machine.cpu.createNativeFunction("os.clock", [this](NativeArgsView args, NativeResults& out) {
-	(void)args;
-	out.push_back(valueNumber(machineElapsedMs() / 1000.0));
-}));
 osTable->set(key("time"), machine.cpu.createNativeFunction("os.time", [this, yearKey, monthKey, dayKey, hourKey, minuteKey, secondKey, wdayKey, ydayKey, isdstKey](NativeArgsView args, NativeResults& out) {
 	if (!args.empty() && !isNil(args.at(0))) {
 		if (!valueIsTable(args.at(0))) {
@@ -2877,9 +2869,6 @@ m_ipairsIterator = machine.cpu.createNativeFunction("ipairs.iterator", [](Native
 		auto* machineTable = cpu.createTable(0, 5);
 		if (!manifest.namespaceName.empty()) {
 			machineTable->set(key("namespace"), str(manifest.namespaceName));
-		}
-		if (manifest.ufpsScaled) {
-			machineTable->set(key("ufps"), valueNumber(static_cast<double>(*manifest.ufpsScaled)));
 		}
 		if (manifest.viewportWidth > 0 && manifest.viewportHeight > 0) {
 			auto* renderSizeTable = cpu.createTable(0, 2);

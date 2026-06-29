@@ -2,6 +2,7 @@
 -- bmsx system boot screen
 
 require('system/msx_colors')
+require('bios/os')
 math = require('bios/math')
 easing = require('bios/easing')
 local clamp<const> = require('bios/util/clamp')

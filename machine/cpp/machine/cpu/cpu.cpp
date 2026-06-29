@@ -32,8 +32,7 @@ static constexpr NativeFnCost kNativeCostTier4 { 4, 0, 0 };
 static constexpr NativeFnCost kDefaultNativeCost = kNativeCostTier1;
 
 static inline NativeFnCost resolveNativeFunctionCost(std::string_view name) {
-	if (name == "clock_now"
-		|| name == "devtools.get_lua_entry_path") {
+	if (name == "devtools.get_lua_entry_path") {
 		return kNativeCostTier0;
 	}
 	if (name == "type"
@@ -46,7 +45,6 @@ static inline NativeFnCost resolveNativeFunctionCost(std::string_view name) {
 		|| name == "next"
 		|| name == "u32_to_f32"
 		|| name == "u64_to_f64"
-		|| name == "os.clock"
 		|| name == "os.difftime"
 		|| name == "get_player_input") {
 		return kNativeCostTier1;

@@ -51,6 +51,7 @@ import { resolveRuntimeMemoryMapSpecs } from '../memory/specs';
 import { applyRuntimeTiming, resolveRuntimeTiming } from './boot_timing';
 import { refreshDeviceTimings } from './timing/config';
 import { HZ_SCALE } from './timing/constants';
+import { IO_SYS_FRAME_MS, IO_SYS_TIME_MS } from '../bus/io';
 import { Machine } from '../machine';
 import type { RuntimeInputSource } from './input';
 import { Memory } from '../memory/memory';
@@ -505,6 +506,8 @@ export class Runtime {
 			microtasks,
 		);
 		this.machine.memory.clearIoSlots();
+		this.machine.memory.mapIoRead(IO_SYS_TIME_MS, () => this.machineTimeMs());
+		this.machine.memory.mapIoRead(IO_SYS_FRAME_MS, () => this.timing.frameDurationMs);
 		this.machine.initializeSystemIo();
 		this.machine.resetDevices();
 		this.machine.vdp.initializeVramSurfaces();
@@ -527,6 +530,10 @@ export class Runtime {
 		});
 		refreshDeviceTimings(this, this.machine.scheduler.currentNowCycles());
 		this.vblank.setVblankCycles(options.vblankCycles);
+	}
+
+	public machineTimeMs(): number {
+		return (this.machine.scheduler.currentNowCycles() * 1000 / this.timing.cpuHz) >>> 0;
 	}
 
 	public machineElapsedMs(): number {

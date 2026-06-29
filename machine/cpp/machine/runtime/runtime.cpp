@@ -50,6 +50,8 @@ Runtime::Runtime(
 	resetTrackedLuaHeapBytes();
 	input.setRuntimeInputFrameDurationMs(timing.frameDurationMs);
 	machine.memory.clearIoSlots();
+	machine.memory.mapIoRead(IO_SYS_TIME_MS, this, &Runtime::onTimeMsReadThunk);
+	machine.memory.mapIoRead(IO_SYS_FRAME_MS, this, &Runtime::onFrameMsReadThunk);
 	machine.initializeSystemIo();
 	machine.resetDevices();
 	vblank.setVblankCycles(*this, options.vblankCycles);
@@ -81,8 +83,32 @@ Runtime::~Runtime() {
 	resetTrackedLuaHeapBytes();
 }
 
+auto Runtime::machineTimeMs() const -> uint32_t {
+	const uint64_t cycles = static_cast<uint64_t>(machine.scheduler.currentNowCycles());
+	const uint64_t cpuHz = static_cast<uint64_t>(timing.cpuHz);
+	return static_cast<uint32_t>((cycles / cpuHz) * 1000ULL + ((cycles % cpuHz) * 1000ULL) / cpuHz);
+}
+
 auto Runtime::machineElapsedMs() const -> f64 {
 	return static_cast<f64>(machine.scheduler.currentNowCycles()) * 1000.0 / static_cast<f64>(timing.cpuHz);
+}
+
+Value Runtime::onTimeMsReadThunk(void* context, uint32_t addr) {
+	const auto* runtime = static_cast<Runtime*>(context);
+	return runtime->onTimeMsRead(addr);
+}
+
+Value Runtime::onTimeMsRead([[maybe_unused]] uint32_t addr) const {
+	return valueNumber(static_cast<double>(machineTimeMs()));
+}
+
+Value Runtime::onFrameMsReadThunk(void* context, uint32_t addr) {
+	const auto* runtime = static_cast<Runtime*>(context);
+	return runtime->onFrameMsRead(addr);
+}
+
+Value Runtime::onFrameMsRead([[maybe_unused]] uint32_t addr) const {
+	return valueNumber(timing.frameDurationMs);
 }
 
 void Runtime::applyUfpsScaled(i64 ufpsScaled) {

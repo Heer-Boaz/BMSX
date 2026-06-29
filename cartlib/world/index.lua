@@ -1,4 +1,5 @@
-local frame_delta_ms<const> = (1000 * sys_hz_scale) / machine_manifest.ufps
+local frame_ms<const>: *word = sys_frame_ms
+local frame_delta_ms<const> = frame_ms[0]
 -- world.lua
 -- central world: owns all objects, spaces, and the ECS system manager
 --

@@ -28,7 +28,8 @@ Al afgerond en daarom niet opnieuw als open slice opgenomen:
   contracts in plaats van concrete `platform/platform.h`
 - TS runtime gebruikt machine-owned `StorageService` contracts in plaats van
   concrete `platform/platform` types
-- cart-zichtbare `clock_now`, `os.clock`, default `os.time`/`os.date` en default
+- cart-zichtbare `clock_now` en `os.clock` lopen via het `sys_time_ms`
+  MMIO-register; default `os.time`/`os.date` en default
   `math.randomseed()` gebruiken machine-scheduler tijd in plaats van host/platform clock
 - ICU VBlank sampling gebruikt machine-scheduler tijd voor de hardware
   sample-latch; host input timestamps blijven host-side physical event metadata

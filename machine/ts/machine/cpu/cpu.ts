@@ -132,7 +132,6 @@ const UPVALUE_HEAP_BYTES = 24;
 
 function resolveNativeFunctionCost(name: string): NativeFnCost {
 	switch (name) {
-		case 'clock_now':
 		case 'devtools.get_lua_entry_path':
 			return NATIVE_COST_TIER0;
 		case 'type':
@@ -145,7 +144,6 @@ function resolveNativeFunctionCost(name: string): NativeFnCost {
 		case 'next':
 		case 'u32_to_f32':
 		case 'u64_to_f64':
-		case 'os.clock':
 		case 'os.difftime':
 			return NATIVE_COST_TIER1;
 		case 'pairs':

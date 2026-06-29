@@ -751,6 +751,8 @@ bool Memory::isLuaReadOnlyIoAddress(uint32_t addr) const {
 		case IO_SYS_BUS_FAULT_ACCESS:
 		case IO_SYS_HOST_FAULT_FLAGS:
 		case IO_SYS_HOST_FAULT_STAGE:
+		case IO_SYS_TIME_MS:
+		case IO_SYS_FRAME_MS:
 		case IO_IRQ_FLAGS:
 		case IO_DMA_STATUS:
 		case IO_DMA_WRITTEN:
