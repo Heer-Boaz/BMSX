@@ -154,7 +154,6 @@ function resolveNativeFunctionCost(name: string): NativeFnCost {
 		case 'setmetatable':
 		case 'table.insert':
 		case 'table.remove':
-		case 'table.pack':
 		case 'table.unpack':
 		case 'string.len':
 		case 'string.byte':

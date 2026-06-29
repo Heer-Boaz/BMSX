@@ -57,7 +57,6 @@ static inline NativeFnCost resolveNativeFunctionCost(std::string_view name) {
 		|| name == "setmetatable"
 		|| name == "table.insert"
 		|| name == "table.remove"
-		|| name == "table.pack"
 		|| name == "table.unpack"
 		|| name == "string.len"
 		|| name == "string.byte"

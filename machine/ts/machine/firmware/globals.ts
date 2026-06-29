@@ -2340,14 +2340,6 @@ export function seedLuaGlobals(runtime: Runtime): void {
 			runtime.luaScratch.strings.release(parts);
 		}
 	}));
-	setKey(tableLibrary, 'pack', createNativeFunction('table.pack', (args, out) => {
-		const target = new Table(args.length, 1);
-		for (let index = 0; index < args.length; index += 1) {
-			target.set(index + 1, args[index]);
-		}
-		target.set(key('n'), args.length);
-		out.push(target);
-	}));
 	setKey(tableLibrary, 'unpack', createNativeFunction('table.unpack', (args, out) => {
 		const target = args[0] as Table;
 		const length = target.arrayLength;

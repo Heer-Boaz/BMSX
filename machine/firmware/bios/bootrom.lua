@@ -3,6 +3,7 @@
 
 require('system/msx_colors')
 require('bios/os')
+require('bios/table')
 math = require('bios/math')
 easing = require('bios/easing')
 local clamp<const> = require('bios/util/clamp')

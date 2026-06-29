@@ -2570,15 +2570,6 @@ tableLib->set(key("concat"), machine.cpu.createNativeFunction("table.concat", [t
 	}
 	out.push_back(str(output));
 }));
-const Value packCountKey = key("n");
-tableLib->set(key("pack"), machine.cpu.createNativeFunction("table.pack", [&cpu, this, packCountKey](NativeArgsView args, NativeResults& out) {
-	auto* tbl = cpu.createTable(static_cast<int>(args.size()), 1);
-	for (size_t i = 0; i < args.size(); ++i) {
-		tbl->set(valueNumber(static_cast<double>(i + 1)), args[i]);
-	}
-	tbl->set(packCountKey, valueNumber(static_cast<double>(args.size())));
-	out.push_back(valueTable(tbl));
-}));
 tableLib->set(key("unpack"), machine.cpu.createNativeFunction("table.unpack", [](NativeArgsView args, NativeResults& out) {
 	auto* tbl = asTable(args.at(0));
 	int length = tbl->length();
