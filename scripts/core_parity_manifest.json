@@ -357,6 +357,7 @@
 		"machine/ts/common/lower_bound.ts",
 		"machine/ts/common/scratchstack.ts",
 		"machine/ts/machine/common/hash.ts",
+		"machine/ts/machine/model_registry.ts",
 		"machine/ts/machine/devices/audio/biquad_filter.ts",
 		"machine/ts/machine/devices/audio/output.ts",
 		"machine/ts/machine/devices/vdp/rpu.ts",
@@ -573,6 +574,14 @@
 				"machine/cpp/render/backend/gles2/fullscreen_quad.cpp"
 			],
 			"reason": "fullscreen_quad_backend_symbol_parity"
+		},
+		{
+			"ts": "machine/ts/machine/model_registry.ts",
+			"cpp": [
+				"machine/cpp/machine/model_registry.h",
+				"machine/cpp/machine/model_registry.cpp"
+			],
+			"reason": "machine_model_registry_hardware_profile_contract"
 		},
 		{
 			"ts": "machine/ts/machine/specs.ts",
@@ -1266,6 +1275,16 @@
 				"ResolvedRuntimeTiming"
 			],
 			"reason": "runtime_boot_timing_shape_contract"
+		},
+		{
+			"ts": "machine/ts/machine/model_registry.ts",
+			"cpp": [
+				"machine/cpp/machine/model_registry.h"
+			],
+			"symbols": [
+				"MachineModelProfile"
+			],
+			"reason": "machine_model_profile_shape_contract"
 		}
 	],
 	"strict_runtime_no_churn": [
