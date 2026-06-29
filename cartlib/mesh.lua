@@ -1,5 +1,6 @@
 -- mesh.lua
 -- simple mesh container for system rom
+local sqrt<const> = require('bios/math').sqrt
 
 local mesh<const> = {}
 mesh.__index = mesh
@@ -79,7 +80,7 @@ function mesh:update_bounds()
 			max_dist_sq = d2
 		end
 	end
-	self.bounding_radius = math.sqrt(max_dist_sq)
+	self.bounding_radius = sqrt(max_dist_sq)
 end
 
 return mesh

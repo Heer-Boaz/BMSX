@@ -8,6 +8,7 @@ local arc01<const> = require('bios/easing').arc01
 local ease_out_quad<const> = require('bios/easing').ease_out_quad
 local ease_in_quad<const> = require('bios/easing').ease_in_quad
 local ease_out_back<const> = require('bios/easing').ease_out_back
+local sqrt<const> = require('bios/math').sqrt
 
 local shake_hash<const> = function(seed)
 	seed = seed ~ (seed << 13)
@@ -547,7 +548,7 @@ function builders.build_combat_hit_frames(params)
 	local slash_end<const> = recover_start - 1
 	local path_dx<const> = (combat_hit_slash_path_end_x_ratio - combat_hit_slash_path_start_x_ratio) * monster_sx
 	local path_dy<const> = (combat_hit_slash_path_end_y_ratio - combat_hit_slash_path_start_y_ratio) * monster_sy
-	local path_len<const> = math.sqrt((path_dx * path_dx) + (path_dy * path_dy))
+	local path_len<const> = sqrt((path_dx * path_dx) + (path_dy * path_dy))
 	local path_nx<const> = path_dx / path_len
 	local path_ny<const> = path_dy / path_len
 	local base_length<const> = monster_sx * combat_hit_slash_length_ratio

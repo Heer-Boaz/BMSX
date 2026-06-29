@@ -1,4 +1,5 @@
 local vdp_rpu<const> = require('system/vdp_rpu')
+local sqrt<const> = require('bios/math').sqrt
 
 local vdp_rpu_quads<const> = {}
 
@@ -284,7 +285,7 @@ function vdp_rpu_quads.draw_line_color(x0, y0, x1, y1, z, layer, color, thicknes
 		)
 		return
 	end
-	local length<const> = math.sqrt(dx * dx + dy * dy)
+	local length<const> = sqrt(dx * dx + dy * dy)
 	local tangent_x<const> = dx / length
 	local tangent_y<const> = dy / length
 	local normal_x<const> = -tangent_y
