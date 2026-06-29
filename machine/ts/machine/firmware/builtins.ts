@@ -16,16 +16,8 @@ export function registerFirmwareBuiltins(runtime: Runtime, interpreter: LuaInter
 	const env = interpreter.globalEnvironment;
 	registerLuaGlobal(runtime, env, 'devtools', createInterpreterDevtoolsTable(runtime, interpreter));
 
-	registerInterpreterMachineTimeBuiltins(runtime, interpreter);
+	registerLuaGlobal(runtime, env, 'os', createLuaTable());
 	registerSystemBuiltins(runtime, interpreter);
-}
-
-function registerInterpreterMachineTimeBuiltins(runtime: Runtime, interpreter: LuaInterpreter): void {
-	const osTable = createLuaTable();
-	osTable.set('clock', new LuaNativeFunction('os.clock', () => {
-		return [runtime.machineTimeMs() / 1000];
-	}));
-	registerLuaGlobal(runtime, interpreter.globalEnvironment, 'os', osTable);
 }
 
 function registerSystemBuiltins(runtime: Runtime, interpreter: LuaInterpreter): void {
