@@ -55,8 +55,6 @@ static inline NativeFnCost resolveNativeFunctionCost(std::string_view name) {
 		|| name == "string.gmatch.iterator"
 		|| name == "getmetatable"
 		|| name == "setmetatable"
-		|| name == "table.insert"
-		|| name == "table.remove"
 		|| name == "table.unpack"
 		|| name == "string.len"
 		|| name == "string.byte"

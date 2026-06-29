@@ -152,8 +152,6 @@ function resolveNativeFunctionCost(name: string): NativeFnCost {
 		case 'string.gmatch.iterator':
 		case 'getmetatable':
 		case 'setmetatable':
-		case 'table.insert':
-		case 'table.remove':
 		case 'table.unpack':
 		case 'string.len':
 		case 'string.byte':

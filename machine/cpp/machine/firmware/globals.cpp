@@ -2501,38 +2501,6 @@ stringTable->set(key("unpack"), machine.cpu.createNativeFunction("string.unpack"
 	setGlobal("string", valueTable(stringTable));
 
 	auto* tableLib = cpu.createTable();
-tableLib->set(key("insert"), machine.cpu.createNativeFunction("table.insert", [](NativeArgsView args, NativeResults& out) {
-	auto* tbl = asTable(args.at(0));
-	int position = 0;
-	Value value;
-	if (args.size() == 2) {
-			value = args.at(1);
-			position = tbl->length() + 1;
-		} else {
-			position = floorIntArg(args, 1);
-			value = args.at(2);
-		}
-		int length = tbl->length();
-	for (int i = length; i >= position; --i) {
-		tbl->set(valueNumber(static_cast<double>(i + 1)), tbl->get(valueNumber(static_cast<double>(i))));
-	}
-	tbl->set(valueNumber(static_cast<double>(position)), value);
-	(void)out;
-}));
-tableLib->set(key("remove"), machine.cpu.createNativeFunction("table.remove", [](NativeArgsView args, NativeResults& out) {
-	auto* tbl = asTable(args.at(0));
-	int position = args.size() > 1 ? floorIntArg(args, 1) : tbl->length();
-	int length = tbl->length();
-	Value removed = tbl->get(valueNumber(static_cast<double>(position)));
-		for (int i = position; i < length; ++i) {
-			tbl->set(valueNumber(static_cast<double>(i)), tbl->get(valueNumber(static_cast<double>(i + 1))));
-	}
-	tbl->set(valueNumber(static_cast<double>(length)), valueNil());
-	if (isNil(removed)) {
-		return;
-	}
-	out.push_back(removed);
-}));
 tableLib->set(key("concat"), machine.cpu.createNativeFunction("table.concat", [this, str](NativeArgsView args, NativeResults& out) {
 	auto* tbl = asTable(args.at(0));
 	const std::string separator = args.size() > 1 ? valueToString(args.at(1)) : std::string("");

@@ -2277,37 +2277,6 @@ export function seedLuaGlobals(runtime: Runtime): void {
 	runtime.setGlobal('string', stringTable);
 
 	const tableLibrary = new Table(0, 0);
-	setKey(tableLibrary, 'insert', createNativeFunction('table.insert', (args, out) => {
-		const target = args[0] as Table;
-		let position: number;
-		let value: Value;
-		if (args.length === 2) {
-			value = args[1];
-			position = target.arrayLength + 1;
-		} else {
-			position = Math.floor(args[1] as number);
-			value = args[2];
-		}
-		const length = target.arrayLength;
-		for (let index = length; index >= position; index -= 1) {
-			target.set(index + 1, target.get(index));
-		}
-		target.set(position, value);
-		out.length = 0;
-	}));
-	setKey(tableLibrary, 'remove', createNativeFunction('table.remove', (args, out) => {
-		const target = args[0] as Table;
-		const position = args.length > 1 ? Math.floor(args[1] as number) : target.arrayLength;
-		const length = target.arrayLength;
-		const removed = target.get(position);
-		for (let index = position; index < length; index += 1) {
-			target.set(index, target.get(index + 1));
-		}
-		target.set(length, null);
-		if (removed !== null) {
-			out.push(removed);
-		}
-	}));
 	setKey(tableLibrary, 'concat', createNativeFunction('table.concat', (args, out) => {
 		const target = args[0] as Table;
 		const separator = args.length > 1 ? strings.toString(asStringId(args[1] as StringValue)) : '';
