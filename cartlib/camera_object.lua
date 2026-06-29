@@ -31,6 +31,10 @@ local q_look_at<const>  = camera.q_look_at
 local screen_look<const> = camera.screen_look
 local flight_look<const> = camera.flight_look
 local projection<const> = require('cartlib/projection')
+local pi<const> = require('bios/math').pi
+local tan<const> = require('bios/math').tan
+local abs<const> = require('bios/math').abs
+local atan<const> = require('bios/math').atan
 
 -- ── id counter ──────────────────────────────────────────────────────────────
 -- Mirrors WorldObject.generateId(): each cam_new call gets a unique string id
@@ -168,32 +172,32 @@ end
 -- For other types (orthographic, oblique, isometric, asymmetric_frustum) use
 -- cam_proj_matrix which returns the full 16-component column-major P matrix.
 local cam_proj_terms<const> = function(cam)
-	local fov_rad<const> = cam.fov_deg * (math.pi / 180.0)
+	local fov_rad<const> = cam.fov_deg * (pi / 180.0)
 	local near<const>    = cam.near
 	local far<const>     = cam.far
 	local proj<const>    = cam.proj
 	if proj == 'fisheye' then
 		-- Fisheye: same as perspective but ignores aspect (both axes use full f).
-		local f<const>  = 1.0 / math.tan(fov_rad * 0.5)
+		local f<const>  = 1.0 / tan(fov_rad * 0.5)
 		local nf<const> = 1.0 / (near - far)
 		return f, f, (far + near) * nf, 2.0 * far * near * nf
 	elseif proj == 'panorama' then
 		-- Panorama: horizontal FOV given, vertical derived from aspect.
-		local ht<const>    = math.tan(fov_rad * 0.5)
+		local ht<const>    = tan(fov_rad * 0.5)
 		local aspect<const> = cam.aspect
-		local vhalf<const> = (math.abs(aspect) > 1e-6)
-			and math.atan(ht / aspect) or (fov_rad * 0.5)
+		local vhalf<const> = (abs(aspect) > 1e-6)
+			and atan(ht / aspect) or (fov_rad * 0.5)
 		local sx<const>  = 1.0 / ht
-		local sy<const>  = 1.0 / math.tan(vhalf)
+		local sy<const>  = 1.0 / tan(vhalf)
 		local nf<const>  = 1.0 / (near - far)
 		return sx, sy, (far + near) * nf, 2.0 * far * near * nf
 	elseif proj == 'infinite_perspective' then
 		-- Infinite perspective: far plane at infinity; depth terms collapse.
-		local f<const> = 1.0 / math.tan(fov_rad * 0.5)
+		local f<const> = 1.0 / tan(fov_rad * 0.5)
 		return f / cam.aspect, f, -1.0, -2.0 * near
 	else
 		-- Standard perspective (default for any unrecognised type).
-		local f<const>  = 1.0 / math.tan(fov_rad * 0.5)
+		local f<const>  = 1.0 / tan(fov_rad * 0.5)
 		local nf<const> = 1.0 / (near - far)
 		return f / cam.aspect, f, (far + near) * nf, 2.0 * far * near * nf
 	end
@@ -205,7 +209,7 @@ end
 -- Required for orthographic, oblique, isometric, asymmetric_frustum.
 -- Also works for perspective-family types.
 local cam_proj_matrix<const> = function(cam)
-	local fov_rad<const> = cam.fov_deg * (math.pi / 180.0)
+	local fov_rad<const> = cam.fov_deg * (pi / 180.0)
 	local proj<const>    = cam.proj
 	if proj == 'orthographic' then
 		return projection.proj_orthographic(

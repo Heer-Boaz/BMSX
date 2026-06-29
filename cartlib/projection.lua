@@ -8,12 +8,17 @@
 --   index 12-15 = column 3
 -- Angles in radians throughout.
 
+local tan<const> = require('bios/math').tan
+local abs<const> = require('bios/math').abs
+local atan<const> = require('bios/math').atan
+local sqrt<const> = require('bios/math').sqrt
+
 -- ── proj_perspective ──────────────────────────────────────────────────────────
 -- Standard symmetric perspective frustum.
 -- fov_rad: vertical field-of-view; aspect = width/height.
 -- Matches M4.perspectiveInto() in math3d.ts.
 local proj_perspective<const> = function(fov_rad, aspect, near, far)
-	local f<const>  = 1.0 / math.tan(fov_rad * 0.5)
+	local f<const>  = 1.0 / tan(fov_rad * 0.5)
 	local nf<const> = 1.0 / (near - far)
 	return
 		f / aspect, 0.0, 0.0,  0.0,   -- col 0
@@ -42,7 +47,7 @@ end
 -- but x and y use the same focal length (aspect ratio ignored).
 -- Matches M4.fisheyeInto() in math3d.ts (parameter _aspect is unused there).
 local proj_fisheye<const> = function(fov_rad, near, far)
-	local f<const>  = 1.0 / math.tan(fov_rad * 0.5)
+	local f<const>  = 1.0 / tan(fov_rad * 0.5)
 	local nf<const> = 1.0 / (near - far)
 	return
 		f, 0.0, 0.0,   0.0,   -- col 0
@@ -56,10 +61,10 @@ end
 -- vertical FOV is derived from hfov/aspect.
 -- Matches M4.panoramaInto() in math3d.ts.
 local proj_panorama<const> = function(hfov, aspect, near, far)
-	local ht<const>   = math.tan(hfov * 0.5)
-	local vfov<const> = (math.abs(aspect) > 1e-6) and (2.0 * math.atan(ht / aspect)) or hfov
+	local ht<const>   = tan(hfov * 0.5)
+	local vfov<const> = (abs(aspect) > 1e-6) and (2.0 * atan(ht / aspect)) or hfov
 	local sx<const>   = 1.0 / ht
-	local sy<const>   = 1.0 / math.tan(vfov * 0.5)
+	local sy<const>   = 1.0 / tan(vfov * 0.5)
 	local nf<const>   = 1.0 / (near - far)
 	return
 		sx, 0.0, 0.0,   0.0,   -- col 0
@@ -77,8 +82,8 @@ local proj_oblique<const> = function(l, r, b, t, n, f, alpha_rad, beta_rad)
 	local lr<const>    = 1.0 / (l - r)
 	local bt<const>    = 1.0 / (b - t)
 	local nf<const>    = 1.0 / (n - f)
-	local ca<const>    = 1.0 / math.tan(alpha_rad)   -- cot(alpha)
-	local cb<const>    = 1.0 / math.tan(beta_rad)    -- cot(beta)
+	local ca<const>    = 1.0 / tan(alpha_rad)   -- cot(alpha)
+	local cb<const>    = 1.0 / tan(beta_rad)    -- cot(beta)
 	local fn_nf<const> = (f + n) * nf
 	return
 		-2.0 * lr, 0.0, 0.0,  0.0,   -- col 0
@@ -108,8 +113,8 @@ end
 -- scale: uniform scale factor (default 1).
 -- Matches M4.isometricInto() in math3d.ts.
 local proj_isometric<const> = function(scale)
-	local sqrt2<const> = math.sqrt(2.0)
-	local sqrt6<const> = math.sqrt(6.0)
+	local sqrt2<const> = sqrt(2.0)
+	local sqrt6<const> = sqrt(6.0)
 	local a<const>     = scale * sqrt2 / 2.0
 	local b<const>     = scale * sqrt2 / sqrt6
 	local c<const>     = scale * 2.0  / sqrt6
@@ -125,7 +130,7 @@ end
 -- Only near plane is needed; depth precision accumulates near near plane.
 -- Matches M4.infinitePerspectiveInto() in math3d.ts.
 local proj_infinite_perspective<const> = function(fov_rad, aspect, near)
-	local f<const> = 1.0 / math.tan(fov_rad * 0.5)
+	local f<const> = 1.0 / tan(fov_rad * 0.5)
 	return
 		f / aspect, 0.0, 0.0,  0.0,   -- col 0
 		0.0, f, 0.0,           0.0,   -- col 1
