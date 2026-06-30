@@ -147,6 +147,7 @@ Cart-representatie roadmap/status:
 | runtime relocaties als load/link stap | Deels: `module`/`export_proto` placeholders zijn uit runtimewaarden gehaald; open: harde verifier-gate voor alle executable images. |
 | const module/data ABI | Deels: M2 call-targets kunnen link-time naar `CLOSURE(proto)` en de const-moduleklasse bestaat; const modules exporteren compile-time constants, `.bss`, `.data` en `.rodata` storage-symbolen en function call-targets zonder runtime module-table, global-slot lookup of `require`-call. Function exports mogen sibling exports aanroepen via `export_proto` link-symbolen; wanneer Lua-code een function export als waarde nodig heeft, materialiseert dezelfde `export_proto` naar een static closure in plaats van naar een runtime module-table. De scalar bios-util cohort (`bios/util/bool01`, `bios/util/clamp`, `bios/util/div_toward_zero`, `bios/util/rect_overlaps`, `bios/util/rol8` en `bios/util/round_to_nearest`) gebruikt root function modules; die functies worden als text-symbol/call-target gecompileerd en niet via runtime module-tables vervoerd. Open: verdere migratie per target/gap. |
 | dynamic Lua-opcodes weren uit const-module function exports | Deels: static call-target scopes blokkeren runtime global loads/stores, runtime module slots, dynamic call targets en string constants bij de producer voordat die vormen als code worden geëmit; de post-codegen gate blijft alleen de invariant/backstop voor resterende dynamic Lua-opcodes (tables, closures, vararg, concat, object-length, en onverwachte global/module slots). Bewezen op de scalar bios-util cohort (`bios/util/bool01`, `bios/util/clamp`, `bios/util/div_toward_zero`, `bios/util/rect_overlaps`, `bios/util/rol8` en `bios/util/round_to_nearest`). Open: bredere target-migratie en audit-output zodra daar een echte consumer voor is. |
+| host-magie uit manifesten en Lua libraries verwijderen | Deels: `math.*`, `easing.*` en `os.*` zijn uit machine-native host callbacks gehaald en door BIOS Lua geleverd. Open: resterende guest-zichtbare manifest/runtime shortcuts zijn schuld, geen eindvorm. Cartmanifesten zijn packaging/header input, niet live hardware API; Lua library gedrag hoort in BIOS Lua of in een echte taalprimitive van de dynamic Lua objectwereld. Waarden zoals `machine_manifest.vdp_mode` en afgeleide `render_size` moeten naar VDP-register/state ownership of boot/header-consumptie, niet naar wrappers rond de manifestlaag. |
 | CPU objectwereld loshalen van machine-code ABI | Deels: `CPU.Value` is nog Lua-objectwereld, maar const-module function call-targets in de scalar bios-util cohort (`bios/util/bool01`, `bios/util/clamp`, `bios/util/div_toward_zero`, `bios/util/rect_overlaps`, `bios/util/rol8` en `bios/util/round_to_nearest`) gebruiken nu scalar word/bool calls via link-time `export_proto` zonder runtime module-table, global-slot, dynamic-call of string-object transport; waar Lua een function value nodig heeft, materialiseert diezelfde link naar een static closure. Open: bredere migratie naar words, registers, addresses, memory, sections en symbols als primaire ABI. |
 | assets/`rom_data` binair maken | Deels: `rom_data`-familie is weg en `.bin` raw ROM path is getest; open: maps, rooms, timelines, registries en asset records naar vaste binaire layouts. |
 | cart startup/vector model | Deels: `ProgramImage` draagt nu een expliciete vector table (`resetProtoIndex`, `sectionInitProtoIndex`, `irqProtoIndex`) en TS/C++ linker/runtime boot gebruiken die vector table in plaats van losse entry/section-init velden. `init()`/`new_game()` zijn bewust cartfuncties, geen console-ABI: de lifecycle-IRQ-transportlaag is verwijderd, cold cart startup roept ze direct aan en hot-resume voert alleen `init()` als IDE/debugger-call uit. Hardware IRQ's vectoren bij `HALT` en guest instruction boundaries naar cartcode die `irq(flags)` dispatcht en owned masks ackt; gemigreerde carts gebruiken ISR-latches in plaats van post-HALT polling als dispatchpad. `IRQ_MASK` is de cart-facing per-source vector-maskerlaag; de CPU-global maskable state is alleen interne handler-serialisatie. Open: NMI blijft buiten scope tot er een echte producer is. |
@@ -196,8 +197,8 @@ Structuur:
     niet gebouwd.
 - **VDP-mode-tabel** (binnen de `psx` VDP-class): mode `0` = MSX1
   256×192, mode `1` = MSX2 256×212, mode `2` = PSX 320×240.
-  De mode is de bron voor render-size en kleurcontract; manifests dragen geen
-  losse `render_size`.
+  De mode is VDP-register/state die door cart/firmware-startup expliciet wordt
+  geprogrammeerd; manifests dragen geen `vdp_mode` en geen losse `render_size`.
 - **Region-timing-tabel** (gedeeld, runtime-switchbaar): `pal` = 50 Hz/313,
   `ntsc` ≈ 59,94 Hz/262.
 
@@ -245,28 +246,37 @@ Model-registry (nu; alleen `psx`):
 | VDP-mode 2 | PSX | 320×240, PSX kleurcontract |
 | region (gedeeld) | pal / ntsc | 50 Hz/313 · 59,94 Hz/262 |
 
-Cart-manifest na 24.1:
+Cart-manifest na de cleanup:
 
 ```yaml
 machine:
     vdp_class: psx        # ROM-header-marker; nu de enige ondersteunde class
-    vdp_mode: 2           # 0=MSX1 256×192, 1=MSX2 256×212, 2=PSX 320×240
     namespace: 'pietsona2025'
 lua:
     entry_path: cart.lua
 ```
 
-`vdp_mode`, `namespace`, `lua.entry_path` en cart-metadata blijven cart-eigen.
-Render-size wordt uit de VDP-mode-tabel afgeleid; vblank blijft uit de
-mode-hoogte + region-`total_scanlines` afgeleid.
+`namespace`, `lua.entry_path` en cart-metadata blijven cart-eigen. VDP-mode is
+niet cart-manifest-eigen: de cart/firmware programmeert de VDP-mode zelf via de
+VDP-register/MMIO-ABI tijdens startup. Render-size volgt uit de live VDP-mode en
+hoort niet als Lua-manifestveld te bestaan.
+
+Open follow-up (24.1b): `machine_manifest.vdp_mode` en de daarvan afgeleide
+`machine_manifest.render_size` in guest Lua zijn tijdelijke bullshit en moeten
+weg. De ROM/header kiest hoogstens de VDP-class; de cart owner zet de VDP-mode
+zelf. Migratie: voeg de echte VDP-mode register/write-ABI toe of gebruik de
+bestaande VDP registerfile als owner, laat iedere cart/BIOS-startup zijn mode
+programmeren, verwijder alle cart/BIOS-gebruikers van
+`machine_manifest.vdp_mode` en `machine_manifest.render_size`, en verwijder
+daarna beide velden uit de guest-visible manifest-tabellen.
 
 Cart-migratie-ledger (alle carts → `psx`-model; power-on region `pal`/50 Hz):
 
 | cart | nu (cpu) | model | delta |
 | --- | --- | --- | --- |
-| pietious / nemesis_s | 5–10 MHz | psx + VDP-mode 0 | cpu → 50 MHz; 256×192 uit mode 0 |
-| emptycart / vblanktest / renderhwtest | 5–10 MHz / test | psx + VDP-mode 1 | 256×212 uit mode 1 |
-| 2025 / bare_metal_cart / fade_probe | 50 MHz / test | psx + VDP-mode 2 | 320×240 uit mode 2 |
+| pietious / nemesis_s | 5–10 MHz | psx; cart programmeert VDP-mode 0 | cpu → 50 MHz; 256×192 uit live VDP-mode 0 |
+| emptycart / vblanktest / renderhwtest | 5–10 MHz / test | psx; cart programmeert VDP-mode 1 | 256×212 uit live VDP-mode 1 |
+| 2025 / bare_metal_cart / fade_probe | 50 MHz / test | psx; cart programmeert VDP-mode 2 | 320×240 uit live VDP-mode 2 |
 
 - **Verificatiepunt**: carts die nu < 50 MHz draaien krijgen de vaste psx-clock
   van 50 MHz — dat is een groter **cycle-budget per frame**, geen snellere
@@ -277,11 +287,11 @@ Cart-migratie-ledger (alle carts → `psx`-model; power-on region `pal`/50 Hz):
 System/BIOS-ROM-consolidatie (doel): vandaag dragen cart- én system-manifest
 hardware-specs (`resolveRuntimeMemoryMapSpecs` combineert ze). Het model wordt de
 enige bron; `system_slot_bytes` + `bios_vdp_mode` worden modelvelden, de
-VDP-ops/sec horen bij de VDP-class en render-size hoort bij de VDP-mode; de
+VDP-ops/sec horen bij de VDP-class en render-size hoort bij de live VDP-mode; de
 system-firmware draait op het model. De
 system-manifest levert geen onafhankelijke hardware-specs meer;
 `SYSTEM_MACHINE_MANIFEST` (`machine/ts/core/system.ts`) stopt met het hardcoden
-van 256×212 + 1 MHz en gebruikt model-clock + de VDP-mode-tabel.
+van 256×212 + 1 MHz en gebruikt model-clock; firmware programmeert de VDP-mode zelf.
 
 Dev-override escape hatch: testharnassen die bewust niet-hardware-specs willen
 booten op een expliciet gelabelde override-machine buiten de registry, geweigerd
@@ -291,10 +301,10 @@ Sub-slices:
 
 - 24.1 — registry met de **model + device-class**-structuur (één model `psx`, één
   VDP-class `psx`); ROM-header VDP-class-marker; vaste RAM/VRAM/CPU per model;
-  ops/sec bij de VDP-class; VDP-mode-tabel 0/1/2 als bron voor render-size;
+  ops/sec bij de VDP-class; VDP-mode-tabel 0/1/2 als VDP-registercontract;
   region als runtime-state + switch-ABI (default pal);
   `resolveTotalScanlines`-inferentie weg; system-consolidatie + `bios_vdp_mode`;
-  alle carts → `psx` + concrete VDP-mode; dev-override. De device-class-abstractie wordt mét één class
+  alle carts → `psx` + startup-code die een concrete VDP-mode programmeert; dev-override. De device-class-abstractie wordt mét één class
   gebouwd, maar de seam (extra VDP-class, APU-class) is echt.
 - 24.2 (graphics-workstream) — bouw de **`bmsx` tile/sprite VDP-class** + het
   `bmsx`-model; de marker selecteert de class; backward-compat = de machine biedt
@@ -316,11 +326,11 @@ Acceptatie (24.1):
   `ntsc` = `59_940_060`
 - gemirrorde TS/C++ registry (model + device-class + region-tabel); parity
   (waarde + shape) groen
-- cart-/system-manifest dragen geen `ufps`/`specs.*` of losse `render_size` meer;
+- cart-/system-manifest dragen geen `ufps`/`specs.*`, `vdp_mode` of losse `render_size` meer;
   `system_slot_bytes` + `bios_vdp_mode` uit het model, VDP-ops/sec uit de
-  VDP-class, render-size uit de VDP-mode; de BIOS gebruikt de mode-tabel i.p.v.
+  VDP-class, render-size uit de live VDP-mode; de BIOS programmeert de mode i.p.v.
   hardcoded 256×212/1 MHz
-- alle carts → `psx` + expliciete VDP-mode; cpu normaliseert naar 50 MHz
+- alle carts → `psx` + expliciete VDP-mode-programmering in startup-code; cpu normaliseert naar 50 MHz
   (groter cycle-budget, gelijke fps); refresh blijft pal/50; geverifieerd met de headless asserts (pietious +
   2025)
 - gates: `npm run compile:machine -- --noEmit`, `npm run audit:core-parity`,

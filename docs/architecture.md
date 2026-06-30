@@ -55,6 +55,17 @@ BIOS/firmware entrypoints, manifest/runtime objects, and explicit helper
 functions whose behavior is part of the firmware contract. Raw hardware values
 that still exist as globals are architecture debt, not precedent for new code.
 
+Migration warning: earlier slices sometimes used cart manifests or host-seeded
+Lua library globals as convenient cart-visible API. Treat that as host-magic
+architecture debt, not as precedent. Cart manifests are packaging/header input,
+not the live hardware-control surface. If guest code can observe a value or
+function, it must come from one of the real owners: ROM/header fields consumed at
+boot, link symbols, BIOS Lua, CPU-visible RAM/MMIO, or a documented device
+register. Lua library behavior belongs in BIOS Lua unless it is a true language
+primitive of the remaining dynamic Lua object-world. Do not preserve manifest or
+host-native library shortcuts by adding wrappers; migrate each observable value
+to its owner and delete the shortcut.
+
 ## Fixed-point and angle ABI
 
 BMSX fixed-point geometry uses one shared signed Q16.16 word format. The value
@@ -451,10 +462,15 @@ Cart-visible ingress:
 
 Internal units:
 
-- The model registry owns the cart-selected VDP-mode table: mode 0 = MSX1
-  256×192, mode 1 = MSX2 256×212, mode 2 = PSX 320×240. Runtime
-  manifests name the mode; render-size is derived from it, not configured as
-  free cart metadata.
+- The VDP owns the mode register/state. Mode 0 = MSX1 256×192, mode 1 =
+  MSX2 256×212, mode 2 = PSX 320×240. The cart/firmware owner programs this
+  VDP mode explicitly during startup, like real VDP register programming; it is
+  not selected by a ROM manifest field.
+- Open slice: exposing `machine_manifest.vdp_mode` and derived
+  `machine_manifest.render_size` to guest Lua is temporary bullshit. The VDP
+  mode and visible dimensions belong to the VDP register contract, not to a Lua
+  manifest object. Remove both guest manifest fields after carts/BIOS program
+  their VDP mode directly and stop querying manifest-derived dimensions.
 - `registers` owns the raw VDP transform, surface, mode, dither, and
   control words; shared `machine/devices/device_status` owns VDP
   status/fault/code/detail register images and the fault-ack write edge.
