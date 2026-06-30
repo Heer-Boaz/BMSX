@@ -8,7 +8,7 @@ require('bios/table')
 math = require('bios/math')
 easing = require('bios/easing')
 local clamp<const> = require('bios/util/clamp')
-local wrap_text_lines<const> = require('bios/util/wrap_text_lines')
+local wrap_text_lines<const> = require('bios/util/wrap_text_lines').wrap_text_lines
 local vdp_rpu_quads<const> = require('system/vdp_rpu_quads')
 local vdp_image<const> = require('system/vdp_image')
 local font_module<const> = require('system/font')

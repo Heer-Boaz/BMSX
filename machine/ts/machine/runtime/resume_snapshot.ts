@@ -30,7 +30,6 @@ const LUA_RESUME_SNAPSHOT_EXCLUDED_GLOBALS = new Set<string>([
 	'easing',
 	'table',
 	'string',
-	'wrap_text_lines',
 	'coroutine',
 	'debug',
 	'utf8',

@@ -79,7 +79,6 @@ static inline NativeFnCost resolveNativeFunctionCost(std::string_view name) {
 		|| name == "string.unpack"
 		|| name == "table.concat"
 		|| name == "table.sort"
-		|| name == "wrap_text_lines"
 		|| name == "pcall"
 		|| name == "xpcall"
 		|| name == "loadstring"

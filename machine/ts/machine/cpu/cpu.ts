@@ -168,7 +168,6 @@ function resolveNativeFunctionCost(name: string): NativeFnCost {
 		case 'string.format':
 		case 'table.concat':
 		case 'table.sort':
-		case 'wrap_text_lines':
 		case 'pcall':
 		case 'xpcall':
 		case 'loadstring':

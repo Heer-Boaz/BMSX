@@ -87,7 +87,6 @@ export const DEFAULT_LUA_BUILTIN_FUNCTIONS: ReadonlyArray<LuaBuiltinDescriptor> 
 	{ name: 'string.sub', params: ['s', 'i', 'j?'], signature: 'string.sub(s, i [, j])' },
 	{ name: 'string.upper', params: ['s'], signature: 'string.upper(s)' },
 	{ name: 'array', params: ['...'], signature: 'array(...)', description: 'Returns a Lua array table containing the provided values.' },
-	{ name: 'wrap_text_lines', params: ['text', 'max_chars', 'first_prefix?', 'next_prefix?'], signature: 'wrap_text_lines(text, max_chars [, first_prefix [, next_prefix]])', description: 'Wraps UTF-8 text on word boundaries when possible and hard-wraps long words while preserving code points.' },
 	{ name: 'u32_to_f32', params: ['value'], signature: 'u32_to_f32(value)', description: 'Reinterprets a 32-bit unsigned integer bit pattern as a float32.' },
 	{ name: 'u64_to_f64', params: ['high', 'low'], signature: 'u64_to_f64(high, low)', description: 'Reinterprets a pair of 32-bit unsigned integers as a float64 bit pattern.' },
 	{ name: 'os.clock', params: [], signature: 'os.clock()', description: 'Returns elapsed BMSX machine time in seconds.' },

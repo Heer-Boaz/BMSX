@@ -1,7 +1,7 @@
 -- ecs_systems.lua
 -- built-in ecs systems for the system ROM runtime
 
-local wrap_text_lines<const> = require('bios/util/wrap_text_lines')
+local wrap_text_lines<const> = require('bios/util/wrap_text_lines').wrap_text_lines
 --
 -- DESIGN PRINCIPLES — collision handling via overlap2dsystem
 --
