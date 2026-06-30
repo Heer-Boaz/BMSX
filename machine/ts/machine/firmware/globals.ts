@@ -1892,30 +1892,6 @@ export function seedLuaGlobals(runtime: Runtime): void {
 		const text = strings.toString(asStringId(args[0] as StringValue));
 		out.push(runtime.internString(text.toLowerCase()));
 	}));
-	setKey(stringTable, 'rep', createNativeFunction('string.rep', (args, out) => {
-		const text = strings.toString(asStringId(args[0] as StringValue));
-		const count = Math.floor(args.length > 1 ? (args[1] as number) : 1);
-		if (count <= 0) {
-			out.push(runtime.internString(''));
-			return;
-		}
-		const hasSeparator = args.length > 2 && args[2] !== null;
-		const separator = hasSeparator ? strings.toString(asStringId(args[2] as StringValue)) : '';
-		let output = '';
-		if (hasSeparator) {
-			for (let index = 0; index < count; index += 1) {
-				if (index > 0) {
-					output += separator;
-				}
-				output += text;
-			}
-		} else {
-			for (let index = 0; index < count; index += 1) {
-				output += text;
-			}
-		}
-		out.push(runtime.internString(output));
-	}));
 	setKey(stringTable, 'sub', createNativeFunction('string.sub', (args, out) => {
 		const value = args[0] as StringValue;
 		const text = strings.toString(asStringId(value));

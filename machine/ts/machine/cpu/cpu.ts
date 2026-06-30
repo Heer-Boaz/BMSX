@@ -156,7 +156,6 @@ function resolveNativeFunctionCost(name: string): NativeFnCost {
 		case 'string.sub':
 		case 'string.upper':
 		case 'string.lower':
-		case 'string.rep':
 		case 'array':
 		case 'error':
 			return NATIVE_COST_TIER2;

@@ -83,7 +83,7 @@ export const DEFAULT_LUA_BUILTIN_FUNCTIONS: ReadonlyArray<LuaBuiltinDescriptor> 
 	{ name: 'string.unpack', params: ['format', 's', 'pos?'], signature: 'string.unpack(format, s [, pos])' },
 	{ name: 'string.len', params: ['s'], signature: 'string.len(s)' },
 	{ name: 'string.lower', params: ['s'], signature: 'string.lower(s)' },
-	{ name: 'string.rep', params: ['s', 'n', 'sep?'], signature: 'string.rep(s, n [, sep])' },
+	{ name: 'string.rep', params: ['s', 'n?', 'sep?'], signature: 'string.rep(s [, n [, sep]])' },
 	{ name: 'string.sub', params: ['s', 'i', 'j?'], signature: 'string.sub(s, i [, j])' },
 	{ name: 'string.upper', params: ['s'], signature: 'string.upper(s)' },
 	{ name: 'array', params: ['...'], signature: 'array(...)', description: 'Returns a Lua array table containing the provided values.' },

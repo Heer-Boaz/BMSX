@@ -1830,31 +1830,6 @@ stringTable->set(key("upper"), machine.cpu.createNativeFunction("string.upper", 
 stringTable->set(key("lower"), machine.cpu.createNativeFunction("string.lower", [str, asText](NativeArgsView args, NativeResults& out) {
 	out.push_back(str(utf8_to_lower(asText(args.at(0)))));
 }));
-stringTable->set(key("rep"), machine.cpu.createNativeFunction("string.rep", [str, asText](NativeArgsView args, NativeResults& out) {
-	const std::string& text = asText(args.at(0));
-	int count = args.size() > 1 ? floorIntArg(args, 1) : 1;
-	if (count <= 0) {
-		out.push_back(str(""));
-		return;
-	}
-	bool hasSeparator = args.size() > 2 && !isNil(args.at(2));
-	std::string separator = hasSeparator ? std::string(asText(args.at(2))) : std::string();
-	std::string result;
-	if (hasSeparator) {
-		for (int i = 0; i < count; ++i) {
-			if (i > 0) {
-				result += separator;
-			}
-			result += text;
-		}
-	} else {
-		result.reserve(text.size() * static_cast<size_t>(count));
-		for (int i = 0; i < count; ++i) {
-			result += text;
-		}
-	}
-	out.push_back(str(result));
-}));
 stringTable->set(key("sub"), machine.cpu.createNativeFunction("string.sub", [&cpu, str, asText](NativeArgsView args, NativeResults& out) {
 	StringId textId = asStringId(args.at(0));
 	const std::string& text = asText(args.at(0));
