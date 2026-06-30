@@ -83,16 +83,6 @@ int utf8_codepoint_index_from_byte(const std::string& text, size_t byteIndex) {
 	return current;
 }
 
-int utf8_codepoint_count(const std::string& text) {
-	int count = 0;
-	size_t index = 0;
-	while (index < text.size()) {
-		index = nextUtf8Index(text, index);
-		count += 1;
-	}
-	return count;
-}
-
 int normalizeLuaStringIndex(double value, int length) {
 	const int integer = static_cast<int>(std::floor(value));
 	if (integer > 0) {
@@ -1834,10 +1824,6 @@ auto* stringTable = cpu.createTable();
 		std::memcpy(&value, buffer, sizeof(double));
 		return value;
 	};
-stringTable->set(key("len"), machine.cpu.createNativeFunction("string.len", [&cpu](NativeArgsView args, NativeResults& out) {
-	StringId textId = asStringId(args.at(0));
-	out.push_back(valueNumber(static_cast<double>(cpu.stringPool().codepointCount(textId))));
-}));
 stringTable->set(key("upper"), machine.cpu.createNativeFunction("string.upper", [str, asText](NativeArgsView args, NativeResults& out) {
 	out.push_back(str(utf8_to_upper(asText(args.at(0)))));
 }));

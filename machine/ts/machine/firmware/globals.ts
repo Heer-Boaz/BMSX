@@ -1884,10 +1884,6 @@ export function seedLuaGlobals(runtime: Runtime): void {
 	};
 
 	const stringTable = new Table(0, 0);
-	setKey(stringTable, 'len', createNativeFunction('string.len', (args, out) => {
-		const value = args[0] as StringValue;
-		out.push(strings.codepointCount(asStringId(value)));
-	}));
 	setKey(stringTable, 'upper', createNativeFunction('string.upper', (args, out) => {
 		const text = strings.toString(asStringId(args[0] as StringValue));
 		out.push(runtime.internString(text.toUpperCase()));

@@ -151,7 +151,6 @@ function resolveNativeFunctionCost(name: string): NativeFnCost {
 		case 'getmetatable':
 		case 'setmetatable':
 		case 'table.unpack':
-		case 'string.len':
 		case 'string.byte':
 		case 'string.char':
 		case 'string.sub':
