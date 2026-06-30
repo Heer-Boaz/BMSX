@@ -32,9 +32,10 @@ CartManifest makeMinimalCartManifest() {
 MachineManifest makeMinimalMachineManifest() {
 	MachineManifest manifest;
 	manifest.namespaceName = "libretro_save_state_test";
-	manifest.viewportWidth = 256;
-	manifest.viewportHeight = 212;
+	manifest.viewportWidth = VDP_MODE_MSX2_PROFILE.renderWidth;
+	manifest.viewportHeight = VDP_MODE_MSX2_PROFILE.renderHeight;
 	manifest.vdpClass = MachineVdpClass::Psx;
+	manifest.vdpMode = MachineVdpMode::Msx2;
 	return manifest;
 }
 

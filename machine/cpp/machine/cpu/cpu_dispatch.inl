@@ -416,6 +416,10 @@ DISPATCH_LABEL(CALL) {
 		pushFrame(FRAME, closure, a + 1, argCount, a, retCount, false, FRAME.pc - INSTRUCTION_BYTES);
 		DISPATCH_CONTINUE();
 	}
+	if (valueIsBuiltinFunction(callee)) {
+		runBuiltinFunction(*asBuiltinFunction(callee), FRAME, a, retCount, argCount);
+		DISPATCH_CONTINUE();
+	}
 	if (valueIsNativeFunction(callee)) {
 		NativeFunction* fn = asNativeFunction(callee);
 		CYCLES_ADD(static_cast<int>(fn->cycleBase));
@@ -478,11 +482,15 @@ DISPATCH_LABEL(RET) {
 	}
 	CallFrame& caller = *m_frames.back();
 	const int writeCount = finished->returnCount == 0 ? count : finished->returnCount;
-	if (writeCount > 0) {
+	if (writeCount > 0 && finished->returnBase + writeCount > caller.stackCapacity) {
+		auto resultsScratch = acquireNativeReturnScratch();
+		NativeResults& scratch = resultsScratch.get();
+		scratch.append(results, static_cast<size_t>(count));
 		ensureRegisterCapacity(caller, finished->returnBase + writeCount - 1);
-		results = m_stack.data() + resultOffset;
+		writeReturnValues(caller, finished->returnBase, finished->returnCount, scratch.data(), static_cast<int>(scratch.size()));
+	} else {
+		writeReturnValues(caller, finished->returnBase, finished->returnCount, results, count);
 	}
-	writeReturnValues(caller, finished->returnBase, finished->returnCount, results, count);
 	m_stackTop = finished->varargBase;
 	m_stack.resize(static_cast<size_t>(m_stackTop));
 	releaseFrame(std::move(finished));

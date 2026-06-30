@@ -72,11 +72,11 @@ test('tracked heap bytes include rooted tables and native arrays', () => {
 	assert.ok(afterCleanup >= before, `expected table capacity growth to remain tracked (${afterCleanup} < ${before})`);
 });
 
-test('tracked heap bytes include explicit extra roots for native iterators and handles', () => {
+test('tracked heap bytes include explicit extra roots for native functions and handles', () => {
 	const memory = new Memory({ systemRom: new Uint8Array(0) });
 	const cpu = new CPU(memory);
 
-	const iterator = createNativeFunction('pairs.iterator', () => {});
+	const nativeFn = createNativeFunction('external.iterator', () => {});
 	const handle = createNativeObject({}, {
 		get: () => null,
 		set: () => {
@@ -85,7 +85,7 @@ test('tracked heap bytes include explicit extra roots for native iterators and h
 	});
 
 	const before = cpu.collectTrackedHeapBytes();
-	const after = cpu.collectTrackedHeapBytes([iterator, handle]);
+	const after = cpu.collectTrackedHeapBytes([nativeFn, handle]);
 
 	assert.ok(after > before, `expected explicit extra roots to increase tracked heap usage (${after} <= ${before})`);
 });

@@ -76,6 +76,22 @@ static MachineVdpClass parseMachineVdpClass(const BinObject& machineObj) {
 	throw std::runtime_error("[RuntimeRomPackage] Unsupported machine.vdp_class.");
 }
 
+static MachineVdpMode parseMachineVdpMode(const BinObject& machineObj) {
+	auto it = machineObj.find("vdp_mode");
+	if (it == machineObj.end() || !it->second.isNumber()) {
+		throw std::runtime_error("[RuntimeRomPackage] machine.vdp_mode is required.");
+	}
+	switch (static_cast<u32>(it->second.toI32())) {
+		case VDP_MODE_MSX1_WORD:
+			return MachineVdpMode::Msx1;
+		case VDP_MODE_MSX2_WORD:
+			return MachineVdpMode::Msx2;
+		case VDP_MODE_PSX_WORD:
+			return MachineVdpMode::Psx;
+	}
+	throw std::runtime_error("[RuntimeRomPackage] Unsupported machine.vdp_mode.");
+}
+
 static void logMemSnapshot(const char* label) {
 	const std::string line = memSnapshotLine(label);
 	if (!line.empty()) {
@@ -1173,11 +1189,10 @@ static void decodeCartridgeMetadata(const u8* romData, const CartRomHeader& head
 		throw std::runtime_error("[RuntimeRomPackage] ROM header VDP class does not match manifest machine.vdp_class.");
 	}
 	romPackage.machine.vdpClass = header.vdpClass;
-	if (machineObj.count("render_size") && machineObj.at("render_size").isObject()) {
-		const auto& vpObj = machineObj.at("render_size").asObject();
-		if (vpObj.count("width")) romPackage.machine.viewportWidth = vpObj.at("width").toI32();
-		if (vpObj.count("height")) romPackage.machine.viewportHeight = vpObj.at("height").toI32();
-	}
+	romPackage.machine.vdpMode = parseMachineVdpMode(machineObj);
+	const MachineVdpModeProfile& vdpModeProfile = getMachineVdpModeProfile(romPackage.machine.vdpMode);
+	romPackage.machine.viewportWidth = vdpModeProfile.renderWidth;
+	romPackage.machine.viewportHeight = vdpModeProfile.renderHeight;
 
 	if (manifestObj.count("lua") && manifestObj.at("lua").isObject()) {
 		const auto& luaObj = manifestObj.at("lua").asObject();

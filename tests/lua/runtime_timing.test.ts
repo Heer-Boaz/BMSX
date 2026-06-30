@@ -2,7 +2,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 
 import { HZ_SCALE } from '../../machine/ts/machine/runtime/timing/constants';
-import { MACHINE_REGION_NTSC_WORD, MACHINE_REGION_PAL_WORD, NTSC_REFRESH_UFPS_SCALED, getMachineRegionTimingForWord } from '../../machine/ts/machine/model_registry';
+import { MACHINE_REGION_NTSC_WORD, MACHINE_REGION_PAL_WORD, NTSC_REFRESH_UFPS_SCALED, VDP_MODE_MSX1_WORD, getMachineRegionTimingForWord } from '../../machine/ts/machine/model_registry';
 import { resolveVblankCycles } from '../../machine/ts/machine/runtime/timing';
 import { resolveRuntimeTiming } from '../../machine/ts/machine/runtime/boot_timing';
 
@@ -10,6 +10,7 @@ const TEST_MACHINE = {
 	render_size: { width: 320, height: 192 },
 	namespace: 'test',
 	vdp_class: 'psx',
+	vdp_mode: VDP_MODE_MSX1_WORD,
 } as const;
 
 test('VBLANK cycles use explicit PAL region scanlines', () => {

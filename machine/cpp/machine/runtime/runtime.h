@@ -31,7 +31,6 @@
 #include <cstddef>
 #include <memory>
 #include <optional>
-#include <regex>
 #include <string>
 #include <string_view>
 #include <unordered_map>
@@ -194,6 +193,7 @@ public:
 	CartBootState cartBoot;
 	LuaScratchState luaScratch;
 	std::vector<std::string> luaOutputLines;
+	std::string luaOutputLineBuffer;
 
 private:
 	enum class PendingCall {
@@ -203,10 +203,7 @@ private:
 	void setupBuiltins();
 	void runStaticModuleInitializers(const std::vector<std::string>& paths);
 	void runStaticModuleInitializer(const std::string& path);
-	auto buildLuaPatternRegex(const std::string& pattern) -> const std::regex&;
-	auto translateLuaPatternEscape(char token, bool inClass) const -> std::string;
 	auto valueToString(const Value& value) const -> std::string;
-	auto formatLuaString(const std::string& templateStr, NativeArgsView args, size_t argStart) const -> std::string;
 	void logDebugState() const;
 	void logLuaCallStack() const;
 	void refreshMemoryMapGlobals();
@@ -249,17 +246,18 @@ private:
 	Value onMachineRegionRead(uint32_t addr) const;
 	static void onMachineRegionWriteThunk(void* context, uint32_t addr, Value value);
 	void onMachineRegionWrite(uint32_t addr, Value value);
+	static void onLuaOutputCodepointWriteThunk(void* context, uint32_t addr, Value value);
+	void onLuaOutputCodepointWrite(uint32_t addr, Value value);
+	static void onLuaOutputFlushWriteThunk(void* context, uint32_t addr, Value value);
+	void onLuaOutputFlushWrite(uint32_t addr, Value value);
 
 	bool m_tickEnabled = true;
 	bool m_rebootRequested = false;
 
-	// Cached function references
-	Value m_pairsIterator = valueNil();
 	PendingCall m_pendingCall = PendingCall::None;
 
 	std::unordered_map<std::string, int> m_moduleProtos;
 	std::unordered_map<std::string, Value> m_moduleCache;
-	std::unordered_map<std::string, std::unique_ptr<std::regex>> m_luaPatternRegexCache;
 	i64 m_debugUpdateCountTotal = 0;
 };
 

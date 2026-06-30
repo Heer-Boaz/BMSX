@@ -117,7 +117,7 @@ local format_render_size_label<const> = function(render_size)
 	return tostring(w) .. 'x' .. tostring(h)
 end
 
-local flatten_manifest<const> = function(manifest, root_path)
+local flatten_manifest<const> = function(manifest)
 	if not manifest then
 		return nil
 	end
@@ -131,7 +131,6 @@ local flatten_manifest<const> = function(manifest, root_path)
 		vdp_class = machine.vdp_class,
 		render_size = format_render_size_label(machine.render_size),
 		input = manifest.input,
-		root = root_path,
 	}
 end
 
@@ -205,8 +204,7 @@ end
 local build_info<const> = function()
 	local cart_header<const> = read_cart_header(cart_rom_base)
 	local cart_manifest_raw<const> = cart_manifest
-	local cart_root_path<const> = cart_project_root_path
-	local cart_manifest<const> = cart_header and flatten_manifest(cart_manifest_raw, cart_root_path)
+	local cart_manifest<const> = cart_header and flatten_manifest(cart_manifest_raw)
 	local machine_manifest<const> = flatten_machine_manifest(machine_manifest)
 
 	local cart_title<const> = cart_manifest and cart_manifest.title or '--'
@@ -235,7 +233,6 @@ local build_info<const> = function()
 		-- cart_input = cart_input,
 		cart_vdp_class = cart_vdp_class,
 		cart_entry_ready = cart_entry_ready,
-		root = cart_root_path and cart_root_path or '--',
 		hw_cart_max = format_bytes(sys_cart_rom_size),
 		hw_ram_total = format_bytes(sys_ram_size),
 		hw_vram_total = format_bytes(vram_total),

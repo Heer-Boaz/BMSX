@@ -2,9 +2,7 @@ title: Nemesis S - Nemesis 2 Baseline
 short_name: 'nemesis_s'
 rom_name: 'nemesis_s'
 machine:
-    render_size:
-        width: 256
-        height: 192
+    vdp_mode: 0
     namespace: 'nemesis_s'
     vdp_class: psx
 lua:

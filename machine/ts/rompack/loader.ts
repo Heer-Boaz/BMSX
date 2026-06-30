@@ -18,6 +18,7 @@ import type {
 import { decodeBinary, decodeBinaryWithPropTable, toF32, typedArrayFromBytes } from '../common/serializer/binencoder';
 import { parseRomMetadataSection } from './metadata';
 import { CART_ROM_BASE_HEADER_SIZE, CART_ROM_HEADER_SIZE, CART_ROM_MAGIC_BYTES, CART_VDP_CLASS_PSX } from './format';
+import { getMachineVdpModeProfile, VDP_MODE_MSX1_WORD, VDP_MODE_MSX2_WORD, VDP_MODE_PSX_WORD, type MachineVdpMode } from '../machine/model_registry';
 import { inflate } from 'pako';
 import { RomSourceStack, type RawRomSource } from './source';
 import { decodeRomToc } from './toc';
@@ -202,6 +203,33 @@ function decodedProjectRootPath(path: string | null): string {
 	return path === null ? '' : path;
 }
 
+
+function parseMachineVdpMode(word: number): MachineVdpMode {
+	switch (word) {
+		case VDP_MODE_MSX1_WORD:
+			return VDP_MODE_MSX1_WORD;
+		case VDP_MODE_MSX2_WORD:
+			return VDP_MODE_MSX2_WORD;
+		case VDP_MODE_PSX_WORD:
+			return VDP_MODE_PSX_WORD;
+	}
+	throw new Error(`Unsupported machine.vdp_mode: ${word}.`);
+}
+
+function resolveMachineManifest(machine: MachineManifest, vdpClass: MachineManifest['vdp_class']): MachineManifest {
+	const vdpMode = parseMachineVdpMode(machine.vdp_mode as number);
+	const vdpModeProfile = getMachineVdpModeProfile(vdpMode);
+	return {
+		...machine,
+		vdp_class: vdpClass,
+		vdp_mode: vdpMode,
+		render_size: {
+			width: vdpModeProfile.renderWidth,
+			height: vdpModeProfile.renderHeight,
+		},
+	};
+}
+
 type CartridgeMetadata = {
 	cart_manifest: CartManifest;
 	machine: MachineManifest;
@@ -223,7 +251,7 @@ function decodeCartridgeMetadata(rom: Uint8Array, header: CartRomHeader): Cartri
 	}
 	return {
 		cart_manifest,
-		machine: { ...machine, vdp_class: header.vdpClass },
+		machine: resolveMachineManifest(machine, header.vdpClass),
 		entry_path: cart_manifest.lua.entry_path,
 	};
 }

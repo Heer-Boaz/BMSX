@@ -2,7 +2,7 @@ title: Render HW Test
 short_name: 'renderhwtest'
 rom_name: 'renderhwtest'
 machine:
-    render_size: {width: 256, height: 212}
+    vdp_mode: 1
     namespace: 'renderhwtest'
     vdp_class: psx
 lua:

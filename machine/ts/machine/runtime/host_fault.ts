@@ -10,27 +10,21 @@ import {
 import { Runtime } from './runtime';
 
 export class HostFaultState {
-	private message: string | null = null;
-
 	constructor(private readonly runtime: Runtime) {
-	}
-
-	public getMessage(): string | null {
-		return this.message;
 	}
 
 	public publishStartup(error: unknown): void {
 		const normalized = convertToError(error);
 		const message = normalized.message.length > 0 ? normalized.message : String(error);
 		const runtime = this.runtime;
-		this.message = message;
+		runtime.setGlobal('sys_host_fault_message', runtime.internString(message));
 		runtime.machine.memory.writeValue(IO_SYS_HOST_FAULT_FLAGS, (HOST_FAULT_FLAG_ACTIVE | HOST_FAULT_FLAG_STARTUP_BLOCKING) >>> 0);
 		runtime.machine.memory.writeValue(IO_SYS_HOST_FAULT_STAGE, HOST_FAULT_STAGE_STARTUP_AUDIO_REFRESH);
 	}
 
 	public clear(): void {
 		const runtime = this.runtime;
-		this.message = null;
+		runtime.setGlobal('sys_host_fault_message', null);
 		runtime.machine.memory.writeValue(IO_SYS_HOST_FAULT_FLAGS, 0);
 		runtime.machine.memory.writeValue(IO_SYS_HOST_FAULT_STAGE, HOST_FAULT_STAGE_NONE);
 	}

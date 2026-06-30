@@ -57,6 +57,45 @@ test('cart lua linter rejects require inside function bodies in cart and bios pr
 	);
 });
 
+test('cart lua linter rejects shipped runtime compiler globals in cart and bios profiles', async () => {
+	for (const source of [
+		'return load("return 1")',
+		'local compile<const> = loadstring\nreturn compile',
+		'function loadstring() return nil end',
+	]) {
+		await withCartLintFixture(
+			'cart_lua_linter_runtime_compiler_call',
+			source,
+			async root => {
+				for (const profile of ['cart', 'bios'] as const) {
+					await assert.rejects(
+						lintCartSources({ roots: [root], profile }),
+						/(load|loadstring) is forbidden in shipped Lua\. Runtime source compilation is a host\/compiler boundary; ship explicit Lua code or precompiled module exports instead\./,
+					);
+				}
+			},
+		);
+	}
+});
+
+test('cart lua linter allows local names that are not runtime compiler globals', async () => {
+	await withCartLintFixture(
+		'cart_lua_linter_runtime_compiler_local_shadow',
+		[
+			'local use_name<const> = function(load)',
+			'	return load + 1',
+			'end',
+			'local loadstring<const> = 2',
+			'return use_name(loadstring)',
+		].join('\n'),
+		async root => {
+			for (const profile of ['cart', 'bios'] as const) {
+				await lintCartSources({ roots: [root], profile });
+			}
+		},
+	);
+});
+
 test('cart lua linter rejects math.floor references in cart and bios profiles', async () => {
 	await withCartLintFixture(
 		'cart_lua_linter_math_floor_reference',

@@ -100,15 +100,31 @@ function font.get(id)
 	return descriptors[id]
 end
 
+
+local glyph_item<const> = function(items, glyph)
+	local item<const> = items[glyph]
+	if item ~= nil then
+		return item
+	end
+	return items['?']
+end
+
 function font.for_each_glyph(id_or_descriptor, line, fn)
 	local descriptor<const> = type(id_or_descriptor) == 'table' and id_or_descriptor or font.get(id_or_descriptor)
-	font_for_each_item(descriptor, line, fn)
+	local items<const> = descriptor.items
+	for index = 1, #line do
+		fn(glyph_item(items, string.sub(line, index, index)))
+	end
 end
 
 function font.measure_line_width(id_or_descriptor, line)
 	local descriptor<const> = type(id_or_descriptor) == 'table' and id_or_descriptor or font.get(id_or_descriptor)
-	local max_w<const> = font_measure_line_width(descriptor, line)
-	return max_w
+	local items<const> = descriptor.items
+	local width = 0
+	for index = 1, #line do
+		width = width + glyph_item(items, string.sub(line, index, index)).advance
+	end
+	return width
 end
 
 font.define('default', {

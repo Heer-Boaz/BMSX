@@ -4,12 +4,11 @@
 #include "machine/devices/irq/controller.h"
 #include "machine/memory/lua_heap_usage.h"
 #include "machine/memory/memory.h"
+#include "common/utf8.h"
 #include <algorithm>
 #include <array>
 #include <cctype>
 #include <cmath>
-#include <cstdio>
-#include <cstdlib>
 #include <limits>
 #include <stdexcept>
 #include <unordered_set>
@@ -25,66 +24,24 @@ namespace bmsx {
 // start repeated-sequence-acceptable -- CPU interpreter hot paths keep duplicated opcode/register statements inline.
 
 namespace {
-static constexpr NativeFnCost kNativeCostTier0 { 0, 0, 0 };
 static constexpr NativeFnCost kNativeCostTier1 { 1, 0, 0 };
 static constexpr NativeFnCost kNativeCostTier2 { 2, 0, 0 };
 static constexpr NativeFnCost kNativeCostTier4 { 4, 0, 0 };
 static constexpr NativeFnCost kDefaultNativeCost = kNativeCostTier1;
 
 static inline NativeFnCost resolveNativeFunctionCost(std::string_view name) {
-	if (name == "devtools.get_lua_entry_path") {
-		return kNativeCostTier0;
-	}
-	if (name == "type"
-		|| name == "tonumber"
-		|| name == "tostring"
-		|| name == "rawequal"
-		|| name == "rawget"
-		|| name == "rawset"
-		|| name == "select"
-		|| name == "next"
-		|| name == "u32_to_f32"
-		|| name == "u64_to_f64"
-		|| name == "get_player_input") {
+	if (name == "get_player_input") {
 		return kNativeCostTier1;
 	}
-	if (name == "pairs"
-		|| name == "pairs.iterator"
-		|| name == "string.gmatch.iterator"
-		|| name == "getmetatable"
-		|| name == "setmetatable"
-		|| name == "table.unpack"
-		|| name == "string.byte"
-		|| name == "string.char"
-		|| name == "string.sub"
-		|| name == "string.upper"
-		|| name == "string.lower"
-		|| name == "array"
-		|| name == "error"
-		|| name == "player_input.getModifiersState"
+	if (name == "player_input.getModifiersState"
 		|| name == "player_input.getButtonState"
 		|| name == "player_input.getButtonRepeatState"
 		|| name == "player_input.consumeButton") {
 		return kNativeCostTier2;
 	}
-	if (name == "string.find"
-		|| name == "string.match"
-		|| name == "string.gsub"
-		|| name == "string.gmatch"
-		|| name == "string.format"
-		|| name == "string.pack"
-		|| name == "string.packsize"
-		|| name == "string.unpack"
-		|| name == "table.concat"
-		|| name == "table.sort"
-		|| name == "pcall"
-		|| name == "xpcall"
-		|| name == "loadstring"
+	if (name == "loadstring"
 		|| name == "load"
 		|| name == "require"
-		|| name == "print"
-		|| name == "devtools.list_lua_resources"
-		|| name == "devtools.get_lua_resource_source"
 ) {
 		return kNativeCostTier4;
 	}
@@ -106,6 +63,7 @@ constexpr size_t kTableArraySlotHeapBytes = 8;
 constexpr size_t kTableHashSlotHeapBytes = 20;
 constexpr size_t kClosureHeapBytes = 16;
 constexpr size_t kClosureUpvalueSlotHeapBytes = 8;
+constexpr ptrdiff_t kBuiltinFunctionHeapBytes = 16;
 constexpr ptrdiff_t kNativeFunctionHeapBytes = 16;
 constexpr ptrdiff_t kNativeObjectHeapBytes = 24;
 constexpr ptrdiff_t kUpvalueHeapBytes = 24;
@@ -118,6 +76,10 @@ constexpr std::string_view kCpuRuntimeMetatableSegment = "@metatable";
 
 } // namespace
 
+LuaThrownValueError::LuaThrownValueError(Value value, const StringPool& stringPool)
+	: value(value)
+	, message(valueToString(value, stringPool)) {}
+
 std::string valueToString(const Value& v, const StringPool& stringPool) {
 	if (isNil(v)) return "nil";
 	if (valueIsTagged(v)) {
@@ -127,6 +89,7 @@ std::string valueToString(const Value& v, const StringPool& stringPool) {
 			case ValueTag::String: return stringPool.toString(asStringId(v));
 			case ValueTag::Table: return "table";
 			case ValueTag::Closure: return "function";
+			case ValueTag::BuiltinFunction: return "function";
 			case ValueTag::NativeFunction: return "function";
 			case ValueTag::NativeObject: return "native";
 			case ValueTag::Upvalue: return "upvalue";
@@ -151,11 +114,22 @@ const inline char* valueTypeName(Value v) {
 		case ValueTag::String: return "string";
 		case ValueTag::Table: return "table";
 		case ValueTag::Closure: return "closure";
+		case ValueTag::BuiltinFunction: return "builtin_function";
 		case ValueTag::NativeFunction: return "native_function";
 		case ValueTag::NativeObject: return "native_object";
 		case ValueTag::Upvalue: return "upvalue";
 		default: return "unknown";
 	}
+}
+
+const inline char* valueTypeNameForLua(Value v) {
+	if (isNil(v)) return "nil";
+	if (valueIsBool(v)) return "boolean";
+	if (valueIsNumber(v)) return "number";
+	if (valueIsString(v)) return "string";
+	if (valueIsTable(v)) return "table";
+	if (valueIsNativeObject(v)) return "native";
+	return "function";
 }
 
 Table::Table(int arraySize, int hashSize) {
@@ -731,6 +705,9 @@ void GcHeap::markValue(Value v) {
 		case ValueTag::Closure:
 			markObject(asClosure(v));
 			break;
+		case ValueTag::BuiltinFunction:
+			markObject(asBuiltinFunction(v));
+			break;
 		case ValueTag::NativeFunction:
 			markObject(asNativeFunction(v));
 			break;
@@ -779,6 +756,8 @@ void GcHeap::trace() {
 				}
 				break;
 			}
+			case ObjType::BuiltinFunction:
+				break;
 			case ObjType::NativeFunction:
 				break;
 			case ObjType::NativeObject: {
@@ -822,6 +801,11 @@ void GcHeap::sweep() {
 				m_bytesAllocated -= sizeof(Closure);
 				addTrackedLuaHeapBytes(-static_cast<ptrdiff_t>(trackedClosureBytes(*static_cast<Closure*>(obj))));
 				delete static_cast<Closure*>(obj);
+				break;
+			case ObjType::BuiltinFunction:
+				m_bytesAllocated -= sizeof(BuiltinFunction);
+				addTrackedLuaHeapBytes(-kBuiltinFunctionHeapBytes);
+				delete static_cast<BuiltinFunction*>(obj);
 				break;
 			case ObjType::NativeFunction:
 				m_bytesAllocated -= sizeof(NativeFunction);
@@ -907,6 +891,89 @@ CPU::CPU(Memory& memory)
 	m_externalRootMarker = [](GcHeap&) {};
 	globals = m_heap.allocate<Table>(ObjType::Table, 0, 0);
 	m_indexKey = valueString(m_stringPool.intern("__index"));
+}
+
+Value CPU::createBuiltinFunction(BuiltinFunctionId id) {
+	auto* builtin = m_heap.allocate<BuiltinFunction>(ObjType::BuiltinFunction);
+	addTrackedLuaHeapBytes(kBuiltinFunctionHeapBytes);
+	builtin->id = id;
+	switch (id) {
+		case BuiltinFunctionId::Next:
+			builtin->name = "next";
+			builtin->cycleBase = kNativeCostTier1.base;
+			builtin->cyclePerArg = kNativeCostTier1.perArg;
+			builtin->cyclePerRet = kNativeCostTier1.perRet;
+			break;
+		case BuiltinFunctionId::Type:
+			builtin->name = "type";
+			builtin->cycleBase = kNativeCostTier1.base;
+			builtin->cyclePerArg = kNativeCostTier1.perArg;
+			builtin->cyclePerRet = kNativeCostTier1.perRet;
+			break;
+		case BuiltinFunctionId::SetMetatable:
+			builtin->name = "setmetatable";
+			builtin->cycleBase = kNativeCostTier2.base;
+			builtin->cyclePerArg = kNativeCostTier2.perArg;
+			builtin->cyclePerRet = kNativeCostTier2.perRet;
+			break;
+		case BuiltinFunctionId::GetMetatable:
+			builtin->name = "getmetatable";
+			builtin->cycleBase = kNativeCostTier2.base;
+			builtin->cyclePerArg = kNativeCostTier2.perArg;
+			builtin->cyclePerRet = kNativeCostTier2.perRet;
+			break;
+		case BuiltinFunctionId::RawGet:
+			builtin->name = "rawget";
+			builtin->cycleBase = kNativeCostTier1.base;
+			builtin->cyclePerArg = kNativeCostTier1.perArg;
+			builtin->cyclePerRet = kNativeCostTier1.perRet;
+			break;
+		case BuiltinFunctionId::RawSet:
+			builtin->name = "rawset";
+			builtin->cycleBase = kNativeCostTier1.base;
+			builtin->cyclePerArg = kNativeCostTier1.perArg;
+			builtin->cyclePerRet = kNativeCostTier1.perRet;
+			break;
+		case BuiltinFunctionId::Select:
+			builtin->name = "select";
+			builtin->cycleBase = kNativeCostTier1.base;
+			builtin->cyclePerArg = kNativeCostTier1.perArg;
+			builtin->cyclePerRet = kNativeCostTier1.perRet;
+			break;
+		case BuiltinFunctionId::StringByte:
+			builtin->name = "string.byte";
+			builtin->cycleBase = kNativeCostTier2.base;
+			builtin->cyclePerArg = kNativeCostTier2.perArg;
+			builtin->cyclePerRet = kNativeCostTier2.perRet;
+			break;
+		case BuiltinFunctionId::StringChar:
+			builtin->name = "string.char";
+			builtin->cycleBase = kNativeCostTier2.base;
+			builtin->cyclePerArg = kNativeCostTier2.perArg;
+			builtin->cyclePerRet = kNativeCostTier2.perRet;
+			break;
+		case BuiltinFunctionId::Error:
+			builtin->name = "error";
+			builtin->cycleBase = kNativeCostTier2.base;
+			builtin->cyclePerArg = kNativeCostTier2.perArg;
+			builtin->cyclePerRet = kNativeCostTier2.perRet;
+			break;
+		case BuiltinFunctionId::PCall:
+			builtin->name = "pcall";
+			builtin->cycleBase = kNativeCostTier4.base;
+			builtin->cyclePerArg = kNativeCostTier4.perArg;
+			builtin->cyclePerRet = kNativeCostTier4.perRet;
+			break;
+		case BuiltinFunctionId::XPCall:
+			builtin->name = "xpcall";
+			builtin->cycleBase = kNativeCostTier4.base;
+			builtin->cyclePerArg = kNativeCostTier4.perArg;
+			builtin->cyclePerRet = kNativeCostTier4.perRet;
+			break;
+	}
+	const Value value = valueBuiltinFunction(builtin);
+	trackNativeLocalRoot(value);
+	return value;
 }
 
 Value CPU::createNativeFunction(std::string_view name, NativeFunctionInvoke fn, std::optional<NativeFnCost> cost) {
@@ -1219,7 +1286,7 @@ CpuRuntimeState CPU::captureRuntimeState(const std::unordered_map<std::string, V
 	std::unordered_set<const NativeObject*> stableNativeObjects;
 
 	auto recordStableValue = [&](const std::vector<CpuRuntimeRefSegment>& path, Value value) {
-		if (!valueIsNativeFunction(value) && !valueIsNativeObject(value)) {
+		if (!valueIsBuiltinFunction(value) && !valueIsNativeFunction(value) && !valueIsNativeObject(value)) {
 			return;
 		}
 		stableValueByPath[encodePathKey(path)] = value;
@@ -1342,7 +1409,7 @@ CpuRuntimeState CPU::captureRuntimeState(const std::unordered_map<std::string, V
 			state.stringId = asStringId(value);
 			return state;
 		}
-		if (valueIsNativeFunction(value) || valueIsNativeObject(value)) {
+		if (valueIsBuiltinFunction(value) || valueIsNativeFunction(value) || valueIsNativeObject(value)) {
 			const auto it = stablePathByValue.find(value);
 			if (it == stablePathByValue.end()) {
 				throw std::runtime_error(std::string("[CPU] Runtime snapshot cannot preserve native value '") + valueTypeName(value) + "' without a stable root path.");
@@ -1500,7 +1567,7 @@ void CPU::restoreRuntimeState(const CpuRuntimeState& state, std::unordered_map<s
 	std::unordered_set<const NativeObject*> stableNativeObjects;
 
 	auto recordStableValue = [&](const std::vector<CpuRuntimeRefSegment>& path, Value value) {
-		if (!valueIsNativeFunction(value) && !valueIsNativeObject(value)) {
+		if (!valueIsBuiltinFunction(value) && !valueIsNativeFunction(value) && !valueIsNativeObject(value)) {
 			return;
 		}
 		stableValueByPath[encodePathKey(path)] = value;
@@ -1783,6 +1850,303 @@ void CPU::requestYield() {
 void CPU::haltUntilIrq() {
 	m_haltedUntilIrq = true;
 	m_yieldRequested = false;
+}
+
+void CPU::callBuiltinFunction(BuiltinFunction& fn, NativeArgsView args, NativeResults& out) {
+	out.clear();
+	switch (fn.id) {
+		case BuiltinFunctionId::Next:
+			runBuiltinNextValue(args.size() > 0 ? args.at(0) : valueNil(), args.size() > 1 ? args.at(1) : valueNil(), out);
+			break;
+		case BuiltinFunctionId::Type:
+			runBuiltinType(args.size() > 0 ? args.at(0) : valueNil(), out);
+			break;
+		case BuiltinFunctionId::SetMetatable:
+			runBuiltinSetMetatable(args, out);
+			break;
+		case BuiltinFunctionId::GetMetatable:
+			runBuiltinGetMetatable(args, out);
+			break;
+		case BuiltinFunctionId::RawGet:
+			runBuiltinRawGet(args, out);
+			break;
+		case BuiltinFunctionId::RawSet:
+			runBuiltinRawSet(args, out);
+			break;
+		case BuiltinFunctionId::Select:
+			runBuiltinSelect(args, out);
+			break;
+		case BuiltinFunctionId::StringByte:
+			runBuiltinStringByte(args, out);
+			break;
+		case BuiltinFunctionId::StringChar:
+			runBuiltinStringChar(args, out);
+			break;
+		case BuiltinFunctionId::Error:
+			runBuiltinError(args);
+			break;
+		case BuiltinFunctionId::PCall:
+			runBuiltinPCall(args, out);
+			break;
+		case BuiltinFunctionId::XPCall:
+			runBuiltinXPCall(args, out);
+			break;
+	}
+}
+
+void CPU::runBuiltinFunction(BuiltinFunction& fn, CallFrame& frame, int callBase, int returnCount, int argCount) {
+	instructionBudgetRemaining -= static_cast<int>(fn.cycleBase);
+	auto outScratch = acquireNativeReturnScratch();
+	NativeResults& out = outScratch.get();
+	const NativeArgsView args(frame.registers + static_cast<size_t>(callBase + 1), static_cast<size_t>(argCount));
+	callBuiltinFunction(fn, args, out);
+	if (!m_frames.empty() && m_frames.back().get() == &frame) {
+		writeReturnValues(frame, callBase, returnCount, out.data(), static_cast<int>(out.size()));
+	}
+}
+
+void CPU::runBuiltinNextValue(Value target, Value key, NativeResults& out) {
+	out.clear();
+	if (valueIsTable(target)) {
+		auto entry = asTable(target)->nextEntry(key);
+		if (!entry.has_value()) {
+			out.push_back(valueNil());
+			return;
+		}
+		out.push_back(entry->first);
+		out.push_back(entry->second);
+		return;
+	}
+	if (valueIsNativeObject(target)) {
+		auto* obj = asNativeObject(target);
+		if (!obj->nextEntry) {
+			throw BMSX_RUNTIME_ERROR("next expects a native object with iteration.");
+		}
+		auto entry = obj->nextEntry(key);
+		if (!entry.has_value()) {
+			out.push_back(valueNil());
+			return;
+		}
+		out.push_back(entry->first);
+		out.push_back(entry->second);
+		return;
+	}
+	throw BMSX_RUNTIME_ERROR("next expects a table or native object.");
+}
+
+void CPU::runBuiltinType(Value value, NativeResults& out) {
+	out.push_back(valueString(m_stringPool.intern(valueTypeNameForLua(value))));
+}
+
+void CPU::runBuiltinSetMetatable(NativeArgsView args, NativeResults& out) {
+	if (args.empty() || (!valueIsTable(args.at(0)) && !valueIsNativeObject(args.at(0)))) {
+		throw BMSX_RUNTIME_ERROR("setmetatable expects a table or native value as the first argument.");
+	}
+	Table* metatable = nullptr;
+	if (args.size() >= 2 && !isNil(args.at(1))) {
+		if (!valueIsTable(args.at(1))) {
+			throw BMSX_RUNTIME_ERROR("setmetatable expects a table or nil as the second argument.");
+		}
+		metatable = asTable(args.at(1));
+	}
+	const Value target = args.at(0);
+	if (valueIsTable(target)) {
+		Table* table = asTable(target);
+		table->metatable = metatable;
+		table->bumpVersion();
+		out.push_back(target);
+		return;
+	}
+	asNativeObject(target)->metatable = metatable;
+	out.push_back(target);
+}
+
+void CPU::runBuiltinGetMetatable(NativeArgsView args, NativeResults& out) {
+	if (args.empty() || (!valueIsTable(args.at(0)) && !valueIsNativeObject(args.at(0)))) {
+		throw BMSX_RUNTIME_ERROR("getmetatable expects a table or native value as the first argument.");
+	}
+	const Value target = args.at(0);
+	if (valueIsTable(target)) {
+		Table* metatable = asTable(target)->metatable;
+		out.push_back(metatable ? valueTable(metatable) : valueNil());
+		return;
+	}
+	Table* metatable = asNativeObject(target)->metatable;
+	out.push_back(metatable ? valueTable(metatable) : valueNil());
+}
+
+void CPU::runBuiltinRawGet(NativeArgsView args, NativeResults& out) {
+	Table* table = asTable(args.at(0));
+	out.push_back(table->get(args.size() > 1 ? args.at(1) : valueNil()));
+}
+
+void CPU::runBuiltinRawSet(NativeArgsView args, NativeResults& out) {
+	Table* table = asTable(args.at(0));
+	table->set(args.at(1), args.size() > 2 ? args.at(2) : valueNil());
+	out.push_back(valueTable(table));
+}
+
+void CPU::runBuiltinSelect(NativeArgsView args, NativeResults& out) {
+	if (valueIsString(args.at(0)) && m_stringPool.toString(asStringId(args.at(0))) == "#") {
+		out.push_back(valueNumber(static_cast<double>(args.size() - 1)));
+		return;
+	}
+	const int count = static_cast<int>(args.size()) - 1;
+	int start = static_cast<int>(asNumber(args.at(0)));
+	if (start < 0) {
+		start = count + start + 1;
+	}
+	for (int index = start; index <= count; ++index) {
+		if (index >= 1 && static_cast<size_t>(index) < args.size()) {
+			out.push_back(args.at(static_cast<size_t>(index)));
+		}
+	}
+}
+
+void CPU::runBuiltinStringByte(NativeArgsView args, NativeResults& out) {
+	const std::string& source = m_stringPool.toString(asStringId(args.at(0)));
+	int position = args.size() > 1 ? static_cast<int>(std::trunc(asNumber(args.at(1)))) : 1;
+	if (position < 1) {
+		out.push_back(valueNil());
+		return;
+	}
+	size_t byteIndex = 0;
+	int current = 1;
+	while (byteIndex < source.size()) {
+		if (current == position) {
+			size_t readIndex = byteIndex;
+			out.push_back(valueNumber(static_cast<double>(readUtf8Codepoint(source, readIndex))));
+			return;
+		}
+		byteIndex = nextUtf8Index(source, byteIndex);
+		current += 1;
+	}
+	out.push_back(valueNil());
+}
+
+void CPU::runBuiltinStringChar(NativeArgsView args, NativeResults& out) {
+	if (args.empty()) {
+		out.push_back(valueString(m_stringPool.intern("")));
+		return;
+	}
+	std::string result;
+	result.reserve(args.size());
+	for (const auto& arg : args) {
+		appendUtf8Codepoint(result, static_cast<uint32_t>(std::trunc(asNumber(arg))));
+	}
+	out.push_back(valueString(m_stringPool.intern(result)));
+}
+
+void CPU::runBuiltinError(NativeArgsView args) {
+	const Value value = args.empty() ? valueString(m_stringPool.intern("nil")) : args.at(0);
+	throw LuaThrownValueError(value, m_stringPool);
+}
+
+void CPU::callValueInto(Value callee, NativeArgsView args, NativeResults& out) {
+	out.clear();
+	if (valueIsBuiltinFunction(callee)) {
+		callBuiltinFunction(*asBuiltinFunction(callee), args, out);
+		return;
+	}
+	if (valueIsNativeFunction(callee)) {
+		asNativeFunction(callee)->invoke(args, out);
+		return;
+	}
+	if (!valueIsClosure(callee)) {
+		throw BMSX_RUNTIME_ERROR(formatNonFunctionCallError(
+			callee,
+			m_stringPool,
+			m_frames.empty() ? std::nullopt : getDebugRange(m_frames.back()->pc - INSTRUCTION_BYTES)
+		));
+	}
+	Closure* closure = asClosure(callee);
+	const int depthBefore = static_cast<int>(m_frames.size());
+	const int previousBudget = instructionBudgetRemaining;
+	const int budgetSentinel = std::numeric_limits<int>::max();
+	NativeResults* previousSink = swapExternalReturnSink(&out);
+	int spentBudget = 0;
+	int activeBudget = 0;
+	try {
+		pushFrame(closure, args.data(), args.size(), 0, 0, true, m_program->protos[closure->protoIndex].entryPC);
+		while (static_cast<int>(m_frames.size()) > depthBefore) {
+			activeBudget = budgetSentinel;
+			RunResult result = runUntilDepth(depthBefore, budgetSentinel);
+			spentBudget += activeBudget - instructionBudgetRemaining;
+			activeBudget = 0;
+			if (static_cast<int>(m_frames.size()) > depthBefore && result == RunResult::Halted) {
+				throw BMSX_RUNTIME_ERROR("Protected call halted before returning.");
+			}
+		}
+	} catch (...) {
+		if (activeBudget > 0) {
+			spentBudget += activeBudget - instructionBudgetRemaining;
+		}
+		unwindToDepth(depthBefore);
+		instructionBudgetRemaining = previousBudget - spentBudget;
+		swapExternalReturnSink(previousSink);
+		throw;
+	}
+	instructionBudgetRemaining = previousBudget - spentBudget;
+	swapExternalReturnSink(previousSink);
+}
+
+void CPU::runBuiltinPCall(NativeArgsView args, NativeResults& out) {
+	auto resultsScratch = acquireNativeReturnScratch();
+	NativeResults& results = resultsScratch.get();
+	try {
+		const NativeArgsView callArgs(args.size() > 1 ? args.data() + 1 : nullptr, args.size() > 1 ? args.size() - 1 : 0);
+		callValueInto(args.size() > 0 ? args.at(0) : valueNil(), callArgs, results);
+		out.clear();
+		out.push_back(valueBool(true));
+		out.append(results.data(), results.size());
+	} catch (const LuaThrownValueError& e) {
+		out.clear();
+		out.push_back(valueBool(false));
+		out.push_back(e.value);
+	} catch (const std::exception& e) {
+		out.clear();
+		out.push_back(valueBool(false));
+		out.push_back(valueString(m_stringPool.intern(e.what())));
+	} catch (...) {
+		out.clear();
+		out.push_back(valueBool(false));
+		out.push_back(valueString(m_stringPool.intern("error")));
+	}
+}
+
+void CPU::runBuiltinXPCall(NativeArgsView args, NativeResults& out) {
+	auto resultsScratch = acquireNativeReturnScratch();
+	auto handlerArgsScratch = acquireNativeReturnScratch();
+	NativeResults& results = resultsScratch.get();
+	NativeResults& handlerArgs = handlerArgsScratch.get();
+	try {
+		const NativeArgsView callArgs(args.size() > 2 ? args.data() + 2 : nullptr, args.size() > 2 ? args.size() - 2 : 0);
+		callValueInto(args.size() > 0 ? args.at(0) : valueNil(), callArgs, results);
+		out.clear();
+		out.push_back(valueBool(true));
+		out.append(results.data(), results.size());
+	} catch (const LuaThrownValueError& e) {
+		handlerArgs.clear();
+		handlerArgs.push_back(e.value);
+		callValueInto(args.size() > 1 ? args.at(1) : valueNil(), NativeArgsView(handlerArgs.data(), handlerArgs.size()), results);
+		out.clear();
+		out.push_back(valueBool(false));
+		out.append(results.data(), results.size());
+	} catch (const std::exception& e) {
+		handlerArgs.clear();
+		handlerArgs.push_back(valueString(m_stringPool.intern(e.what())));
+		callValueInto(args.size() > 1 ? args.at(1) : valueNil(), NativeArgsView(handlerArgs.data(), handlerArgs.size()), results);
+		out.clear();
+		out.push_back(valueBool(false));
+		out.append(results.data(), results.size());
+	} catch (...) {
+		handlerArgs.clear();
+		handlerArgs.push_back(valueString(m_stringPool.intern("error")));
+		callValueInto(args.size() > 1 ? args.at(1) : valueNil(), NativeArgsView(handlerArgs.data(), handlerArgs.size()), results);
+		out.clear();
+		out.push_back(valueBool(false));
+		out.append(results.data(), results.size());
+	}
 }
 
 void CPU::clearHaltUntilIrq() {

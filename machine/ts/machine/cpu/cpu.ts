@@ -44,7 +44,7 @@ export class StringValue {
 
 const STRING_VALUES: StringValue[] = [];
 
-export type Value = null | boolean | number | StringValue | Table | Closure | NativeFunction | NativeObject;
+export type Value = null | boolean | number | StringValue | Table | Closure | BuiltinFunction | NativeFunction | NativeObject;
 
 export function valueIsString(value: unknown): value is StringValue {
 	return value !== null
@@ -76,6 +76,7 @@ export type LocalSlotDebug = {
 	scope: SourceRange;
 };
 
+const BUILTIN_FUNCTION_KIND = 'builtin_function';
 const NATIVE_FUNCTION_KIND = 'native_function';
 const NATIVE_OBJECT_KIND = 'native_object';
 
@@ -84,6 +85,72 @@ export type NativeFnCost = {
 	perArg: number;
 	perRet: number;
 };
+
+export const enum BuiltinFunctionId {
+	Next,
+	Type,
+	SetMetatable,
+	GetMetatable,
+	RawGet,
+	RawSet,
+	Select,
+	StringByte,
+	StringChar,
+	Error,
+	PCall,
+	XPCall,
+}
+
+export class LuaThrownValueError extends Error {
+	public readonly value: Value;
+
+	public constructor(value: Value, message: string) {
+		super(message);
+		this.name = 'LuaThrownValueError';
+		this.value = value;
+	}
+}
+
+export type BuiltinFunction = {
+	readonly kind: typeof BUILTIN_FUNCTION_KIND;
+	readonly id: BuiltinFunctionId;
+	readonly name: string;
+	readonly cost: NativeFnCost;
+};
+
+const BUILTIN_COST_TIER1: NativeFnCost = { base: 1, perArg: 0, perRet: 0 };
+const BUILTIN_COST_TIER2: NativeFnCost = { base: 2, perArg: 0, perRet: 0 };
+const BUILTIN_FUNCTION_HEAP_BYTES = 16;
+
+export function createBuiltinFunction(id: BuiltinFunctionId): BuiltinFunction {
+	addTrackedLuaHeapBytes(BUILTIN_FUNCTION_HEAP_BYTES);
+	switch (id) {
+		case BuiltinFunctionId.Next:
+			return { kind: BUILTIN_FUNCTION_KIND, id, name: 'next', cost: BUILTIN_COST_TIER1 };
+		case BuiltinFunctionId.Type:
+			return { kind: BUILTIN_FUNCTION_KIND, id, name: 'type', cost: BUILTIN_COST_TIER1 };
+		case BuiltinFunctionId.SetMetatable:
+			return { kind: BUILTIN_FUNCTION_KIND, id, name: 'setmetatable', cost: BUILTIN_COST_TIER2 };
+		case BuiltinFunctionId.GetMetatable:
+			return { kind: BUILTIN_FUNCTION_KIND, id, name: 'getmetatable', cost: BUILTIN_COST_TIER2 };
+		case BuiltinFunctionId.RawGet:
+			return { kind: BUILTIN_FUNCTION_KIND, id, name: 'rawget', cost: BUILTIN_COST_TIER1 };
+		case BuiltinFunctionId.RawSet:
+			return { kind: BUILTIN_FUNCTION_KIND, id, name: 'rawset', cost: BUILTIN_COST_TIER1 };
+		case BuiltinFunctionId.Select:
+			return { kind: BUILTIN_FUNCTION_KIND, id, name: 'select', cost: BUILTIN_COST_TIER1 };
+		case BuiltinFunctionId.StringByte:
+			return { kind: BUILTIN_FUNCTION_KIND, id, name: 'string.byte', cost: BUILTIN_COST_TIER2 };
+		case BuiltinFunctionId.StringChar:
+			return { kind: BUILTIN_FUNCTION_KIND, id, name: 'string.char', cost: BUILTIN_COST_TIER2 };
+		case BuiltinFunctionId.Error:
+			return { kind: BUILTIN_FUNCTION_KIND, id, name: 'error', cost: BUILTIN_COST_TIER2 };
+		case BuiltinFunctionId.PCall:
+			return { kind: BUILTIN_FUNCTION_KIND, id, name: 'pcall', cost: NATIVE_COST_TIER4 };
+		case BuiltinFunctionId.XPCall:
+			return { kind: BUILTIN_FUNCTION_KIND, id, name: 'xpcall', cost: NATIVE_COST_TIER4 };
+	}
+}
 
 export type NativeFunction = {
 	readonly kind: typeof NATIVE_FUNCTION_KIND;
@@ -110,14 +177,13 @@ function valueTypeName(value: Value): string {
 	if (typeof value === 'number') return 'number';
 	if (valueIsString(value)) return 'string';
 	if (value instanceof Table) return 'table';
+	if (isBuiltinFunction(value)) return 'builtin_function';
 	if (isNativeFunction(value)) return 'native_function';
 	if (isNativeObject(value)) return 'native_object';
 	return 'closure';
 }
 
-const NATIVE_COST_TIER0: NativeFnCost = { base: 0, perArg: 0, perRet: 0 };
 const NATIVE_COST_TIER1: NativeFnCost = { base: 1, perArg: 0, perRet: 0 };
-const NATIVE_COST_TIER2: NativeFnCost = { base: 2, perArg: 0, perRet: 0 };
 const NATIVE_COST_TIER4: NativeFnCost = { base: 4, perArg: 0, perRet: 0 };
 const DEFAULT_NATIVE_COST = NATIVE_COST_TIER1;
 
@@ -132,48 +198,9 @@ const UPVALUE_HEAP_BYTES = 24;
 
 function resolveNativeFunctionCost(name: string): NativeFnCost {
 	switch (name) {
-		case 'devtools.get_lua_entry_path':
-			return NATIVE_COST_TIER0;
-		case 'type':
-		case 'tonumber':
-		case 'tostring':
-		case 'rawequal':
-		case 'rawget':
-		case 'rawset':
-		case 'select':
-		case 'next':
-		case 'u32_to_f32':
-		case 'u64_to_f64':
-			return NATIVE_COST_TIER1;
-		case 'pairs':
-		case 'pairs.iterator':
-		case 'string.gmatch.iterator':
-		case 'getmetatable':
-		case 'setmetatable':
-		case 'table.unpack':
-		case 'string.byte':
-		case 'string.char':
-		case 'string.sub':
-		case 'string.upper':
-		case 'string.lower':
-		case 'array':
-		case 'error':
-			return NATIVE_COST_TIER2;
-		case 'string.find':
-		case 'string.match':
-		case 'string.gsub':
-		case 'string.gmatch':
-		case 'string.format':
-		case 'table.concat':
-		case 'table.sort':
-		case 'pcall':
-		case 'xpcall':
 		case 'loadstring':
 		case 'load':
 		case 'require':
-		case 'print':
-		case 'devtools.list_lua_resources':
-		case 'devtools.get_lua_resource_source':
 			return NATIVE_COST_TIER4;
 		default:
 			return DEFAULT_NATIVE_COST;
@@ -215,6 +242,10 @@ export function createNativeObject(raw: object, handlers: {
 }): NativeObject {
 	addTrackedLuaHeapBytes(NATIVE_OBJECT_HEAP_BYTES);
 	return { kind: NATIVE_OBJECT_KIND, raw, get: handlers.get, set: handlers.set, len: handlers.len, nextEntry: handlers.nextEntry, metatable: null };
+}
+
+export function isBuiltinFunction(value: Value): value is BuiltinFunction {
+	return (value as BuiltinFunction)?.kind === BUILTIN_FUNCTION_KIND;
 }
 
 export function isNativeFunction(value: Value): value is NativeFunction {
@@ -352,6 +383,10 @@ export type Closure = {
 	upvalues: Upvalue[];
 	heapBytes?: number;
 };
+
+export function valueIsClosure(value: Value): value is Closure {
+	return value !== null && value !== undefined && (value as Closure).protoIndex !== undefined;
+}
 
 export const enum RunResult {
 	Halted,
@@ -1069,6 +1104,7 @@ const enum RegisterTag {
 	String,
 	Table,
 	Closure,
+	BuiltinFunction,
 	NativeFunction,
 	NativeObject,
 }
@@ -1201,6 +1237,7 @@ class RegisterFile {
 			case RegisterTag.String:
 			case RegisterTag.Table:
 			case RegisterTag.Closure:
+			case RegisterTag.BuiltinFunction:
 			case RegisterTag.NativeFunction:
 			case RegisterTag.NativeObject:
 				return this.refs[slot];
@@ -1246,6 +1283,12 @@ class RegisterFile {
 		this.refs[slot] = value;
 	}
 
+	public setBuiltinFunction(index: number, value: BuiltinFunction): void {
+		const slot = this.base + index;
+		this.tags[slot] = RegisterTag.BuiltinFunction;
+		this.refs[slot] = value;
+	}
+
 	public setNativeFunction(index: number, value: NativeFunction): void {
 		const slot = this.base + index;
 		this.tags[slot] = RegisterTag.NativeFunction;
@@ -1277,6 +1320,10 @@ class RegisterFile {
 		}
 		if (value instanceof Table) {
 			this.setTable(index, value);
+			return;
+		}
+		if (isBuiltinFunction(value)) {
+			this.setBuiltinFunction(index, value);
 			return;
 		}
 		if (isNativeFunction(value)) {
@@ -2572,10 +2619,14 @@ export class CPU {
 					if (callee === null) {
 						throw new Error(`Attempted to call a nil value. at ${this.formatLastSourceLocation()}`);
 					}
+					if (isBuiltinFunction(callee)) {
+						this.runBuiltinFunction(callee, frame, a, c, argCount);
+						return;
+					}
 					if (isNativeFunction(callee)) {
 						this.charge(callee.cost.base);
 						const argsHandle = this.acquireNativeArgsProxy();
-							const results = this.nativeReturnScratch.acquire();
+					const results = this.nativeReturnScratch.acquire();
 						try {
 							argsHandle.view.bindRegisters(registers, a + 1, argCount);
 							callee.invoke(argsHandle.proxy, results);
@@ -2585,18 +2636,12 @@ export class CPU {
 							enforceLuaHeapBudget();
 						} finally {
 							this.releaseNativeArgsProxy(argsHandle);
-								this.nativeReturnScratch.release(results);
+							this.nativeReturnScratch.release(results);
 						}
 						return;
 					}
-					if (typeof (callee as Closure).protoIndex !== 'number') {
-						const calleeType = valueTypeName(callee as Value);
-						const calleeValue = valueIsString(callee)
-							? ` value=${this.stringPool.toString(asStringId(callee))}`
-							: (typeof callee === 'number' || typeof callee === 'boolean')
-								? ` value=${String(callee)}`
-								: '';
-						throw new Error(`Attempted to call a non-function value (${calleeType}${calleeValue}). at ${this.formatLastSourceLocation()}`);
+					if (!valueIsClosure(callee)) {
+						throw new Error(this.formatNonFunctionCallError(callee));
 					}
 					this.pushFrameFromCaller(frame, callee as Closure, a + 1, argCount, a, c, false, frame.pc - INSTRUCTION_BYTES);
 					return;
@@ -3029,6 +3074,295 @@ export class CPU {
 		return frame.registers.get(rk);
 	}
 
+	public callBuiltinFunction(fn: BuiltinFunction, args: ReadonlyArray<Value>, out: Value[]): void {
+		out.length = 0;
+		switch (fn.id) {
+			case BuiltinFunctionId.Next:
+				this.runBuiltinNextValue(args.length > 0 ? args[0] : null, args.length > 1 ? args[1] : null, out);
+				break;
+			case BuiltinFunctionId.Type:
+				this.runBuiltinType(args.length > 0 ? args[0] : null, out);
+				break;
+			case BuiltinFunctionId.SetMetatable:
+				this.runBuiltinSetMetatable(args, out);
+				break;
+			case BuiltinFunctionId.GetMetatable:
+				this.runBuiltinGetMetatable(args, out);
+				break;
+			case BuiltinFunctionId.RawGet:
+				this.runBuiltinRawGet(args, out);
+				break;
+			case BuiltinFunctionId.RawSet:
+				this.runBuiltinRawSet(args, out);
+				break;
+			case BuiltinFunctionId.Select:
+				this.runBuiltinSelect(args, out);
+				break;
+			case BuiltinFunctionId.StringByte:
+				this.runBuiltinStringByte(args, out);
+				break;
+			case BuiltinFunctionId.StringChar:
+				this.runBuiltinStringChar(args, out);
+				break;
+			case BuiltinFunctionId.Error:
+				this.runBuiltinError(args);
+				break;
+			case BuiltinFunctionId.PCall:
+				this.runBuiltinPCall(args, out);
+				break;
+			case BuiltinFunctionId.XPCall:
+				this.runBuiltinXPCall(args, out);
+				break;
+		}
+	}
+
+	private runBuiltinFunction(fn: BuiltinFunction, frame: CallFrame, callBase: number, returnCount: number, argCount: number): void {
+		this.charge(fn.cost.base);
+		const argsHandle = this.acquireNativeArgsProxy();
+		const results = this.nativeReturnScratch.acquire();
+		try {
+			argsHandle.view.bindRegisters(frame.registers, callBase + 1, argCount);
+			this.callBuiltinFunction(fn, argsHandle.proxy, results);
+			if (this.frames.length > 0 && this.frames[this.frames.length - 1] === frame) {
+				this.writeReturnValues(frame, callBase, returnCount, results);
+			}
+		} finally {
+			this.releaseNativeArgsProxy(argsHandle);
+			this.nativeReturnScratch.release(results);
+		}
+	}
+
+	private runBuiltinNextValue(target: Value, keyValue: Value, out: Value[]): void {
+		out.length = 0;
+		if (target instanceof Table) {
+			const entry = target.nextEntry(keyValue);
+			if (entry === null) {
+				out.push(null);
+				return;
+			}
+			out.push(entry[0], entry[1]);
+			return;
+		}
+		if (isNativeObject(target)) {
+			if (target.nextEntry) {
+				const entry = target.nextEntry(keyValue);
+				if (entry === null) {
+					out.push(null);
+					return;
+				}
+				out.push(entry[0], entry[1]);
+				return;
+			}
+			throw new Error('next expects a native object with iteration.');
+		}
+		throw new Error('next expects a table or native object.');
+	}
+
+	private runBuiltinType(value: Value, out: Value[]): void {
+		out.push(StringValue.get(this.stringPool.intern(this.typeNameForLua(value))));
+	}
+
+	private typeNameForLua(value: Value): string {
+		const rawName = valueTypeName(value);
+		switch (rawName) {
+			case 'builtin_function':
+			case 'native_function':
+			case 'closure':
+				return 'function';
+			case 'native_object':
+				return 'native';
+			default:
+				return rawName;
+		}
+	}
+
+	private runBuiltinSetMetatable(args: ReadonlyArray<Value>, out: Value[]): void {
+		if (args.length === 0 || (!(args[0] instanceof Table) && !isNativeObject(args[0]))) {
+			throw new Error('setmetatable expects a table or native value as the first argument.');
+		}
+		let metatable: Table | null = null;
+		if (args.length > 1 && args[1] !== null) {
+			if (!(args[1] instanceof Table)) {
+				throw new Error('setmetatable expects a table or nil as the second argument.');
+			}
+			metatable = args[1];
+		}
+		const target = args[0];
+		if (target instanceof Table) {
+			target.metatable = metatable;
+			out.push(target);
+			return;
+		}
+		target.metatable = metatable;
+		out.push(target);
+	}
+
+	private runBuiltinGetMetatable(args: ReadonlyArray<Value>, out: Value[]): void {
+		if (args.length === 0 || (!(args[0] instanceof Table) && !isNativeObject(args[0]))) {
+			throw new Error('getmetatable expects a table or native value as the first argument.');
+		}
+		out.push(args[0].metatable);
+	}
+
+	private runBuiltinRawGet(args: ReadonlyArray<Value>, out: Value[]): void {
+		out.push((args[0] as Table).get(args.length > 1 ? args[1] : null));
+	}
+
+	private runBuiltinRawSet(args: ReadonlyArray<Value>, out: Value[]): void {
+		const target = args[0] as Table;
+		target.set(args[1], args.length > 2 ? args[2] : null);
+		out.push(target);
+	}
+
+	private runBuiltinSelect(args: ReadonlyArray<Value>, out: Value[]): void {
+		const index = args[0];
+		const count = args.length - 1;
+		if (valueIsString(index) && this.stringPool.toString(asStringId(index)) === '#') {
+			out.push(count);
+			return;
+		}
+		const start = (index as number) >= 0
+			? (index as number)
+			: count + (index as number) + 1;
+		for (let index = start; index <= count; index += 1) {
+			if (index >= 1 && index < args.length) {
+				out.push(args[index]);
+			}
+		}
+	}
+
+	private runBuiltinStringByte(args: ReadonlyArray<Value>, out: Value[]): void {
+		const source = this.stringPool.toString(asStringId(args[0] as StringValue));
+		const position = args.length > 1 ? Math.trunc(args[1] as number) : 1;
+		if (position < 1) {
+			out.push(null);
+			return;
+		}
+		let current = 1;
+		for (const char of source) {
+			if (current === position) {
+				out.push(char.codePointAt(0) as number);
+				return;
+			}
+			current += 1;
+		}
+		out.push(null);
+	}
+
+	private runBuiltinStringChar(args: ReadonlyArray<Value>, out: Value[]): void {
+		if (args.length === 0) {
+			out.push(StringValue.get(this.stringPool.intern('')));
+			return;
+		}
+		let result = '';
+		for (let index = 0; index < args.length; index += 1) {
+			result += String.fromCodePoint(Math.trunc(args[index] as number));
+		}
+		out.push(StringValue.get(this.stringPool.intern(result)));
+	}
+
+	private runBuiltinError(args: ReadonlyArray<Value>): never {
+		const value = args.length > 0 ? args[0] : StringValue.get(this.stringPool.intern('nil'));
+		throw new LuaThrownValueError(value, this.valueToString(value));
+	}
+
+	private callValueInto(callee: Value, args: Value[], out: Value[]): void {
+		out.length = 0;
+		if (isBuiltinFunction(callee)) {
+			this.callBuiltinFunction(callee, args, out);
+			return;
+		}
+		if (isNativeFunction(callee)) {
+			callee.invoke(args, out);
+			return;
+		}
+		if (!valueIsClosure(callee)) {
+			throw new Error(this.formatNonFunctionCallError(callee));
+		}
+		const closure = callee;
+		const depth = this.frames.length;
+		const previousBudget = this.instructionBudgetRemaining;
+		const previousSink = this.swapExternalReturnSink(out);
+		const budgetSentinel = Number.MAX_SAFE_INTEGER;
+		let spentBudget = 0;
+		let activeBudget = 0;
+		try {
+			this.pushFrame(closure, args, 0, 0, true, this.program.protos[closure.protoIndex].entryPC);
+			while (this.frames.length > depth) {
+				activeBudget = budgetSentinel;
+				const result = this.runUntilDepth(depth, budgetSentinel);
+				spentBudget += activeBudget - this.instructionBudgetRemaining;
+				activeBudget = 0;
+				if (this.frames.length > depth && result === RunResult.Halted) {
+					throw new Error('Protected call halted before returning.');
+				}
+			}
+		} catch (error) {
+			if (activeBudget > 0) {
+				spentBudget += activeBudget - this.instructionBudgetRemaining;
+			}
+			this.unwindToDepth(depth);
+			throw error;
+		} finally {
+			this.swapExternalReturnSink(previousSink);
+			this.instructionBudgetRemaining = previousBudget - spentBudget;
+		}
+	}
+
+	private runBuiltinPCall(args: ReadonlyArray<Value>, out: Value[]): void {
+		const callArgs = this.nativeReturnScratch.acquire();
+		const results = this.nativeReturnScratch.acquire();
+		try {
+			callArgs.length = 0;
+			for (let index = 1; index < args.length; index += 1) {
+				callArgs.push(args[index]);
+			}
+			this.callValueInto(args.length > 0 ? args[0] : null, callArgs, results);
+			out.length = 0;
+			out.push(true);
+			for (let index = 0; index < results.length; index += 1) {
+				out.push(results[index]);
+			}
+		} catch (error) {
+			out.length = 0;
+			out.push(false, error instanceof LuaThrownValueError ? error.value : StringValue.get(this.stringPool.intern(error instanceof Error ? error.message : String(error))));
+		} finally {
+			this.nativeReturnScratch.release(results);
+			this.nativeReturnScratch.release(callArgs);
+		}
+	}
+
+	private runBuiltinXPCall(args: ReadonlyArray<Value>, out: Value[]): void {
+		const callArgs = this.nativeReturnScratch.acquire();
+		const handlerArgs = this.nativeReturnScratch.acquire();
+		const results = this.nativeReturnScratch.acquire();
+		try {
+			callArgs.length = 0;
+			for (let index = 2; index < args.length; index += 1) {
+				callArgs.push(args[index]);
+			}
+			this.callValueInto(args.length > 0 ? args[0] : null, callArgs, results);
+			out.length = 0;
+			out.push(true);
+			for (let index = 0; index < results.length; index += 1) {
+				out.push(results[index]);
+			}
+		} catch (error) {
+			handlerArgs.length = 0;
+			handlerArgs.push(error instanceof LuaThrownValueError ? error.value : StringValue.get(this.stringPool.intern(error instanceof Error ? error.message : String(error))));
+			this.callValueInto(args.length > 1 ? args[1] : null, handlerArgs, results);
+			out.length = 0;
+			out.push(false);
+			for (let index = 0; index < results.length; index += 1) {
+				out.push(results[index]);
+			}
+		} finally {
+			this.nativeReturnScratch.release(results);
+			this.nativeReturnScratch.release(handlerArgs);
+			this.nativeReturnScratch.release(callArgs);
+		}
+	}
+
 	public captureRuntimeState(moduleCache: ReadonlyMap<string, Value>): CpuRuntimeState {
 		this.syncGlobalSlotsToTable();
 		const frameIndexByRef = new WeakMap<CallFrame, number>();
@@ -3054,7 +3388,7 @@ export class CPU {
 		};
 
 		const recordStableValue = (path: ReadonlyArray<CpuRuntimeRefSegment>, value: Value): void => {
-			if (!isNativeFunction(value) && !isNativeObject(value)) {
+			if (!isBuiltinFunction(value) && !isNativeFunction(value) && !isNativeObject(value)) {
 				return;
 			}
 			stableValueByPath.set(encodePathKey(path), value);
@@ -3140,7 +3474,7 @@ export class CPU {
 			if (valueIsString(value)) {
 				return { tag: 'string', id: value.id };
 			}
-			if (isNativeFunction(value) || isNativeObject(value)) {
+			if (isBuiltinFunction(value) || isNativeFunction(value) || isNativeObject(value)) {
 				const path = stablePathByNative.get(value);
 				if (path === undefined) {
 					throw new Error(`[CPU] Runtime snapshot cannot preserve native value '${valueTypeName(value)}' without a stable root path.`);
@@ -3294,7 +3628,7 @@ export class CPU {
 		};
 
 		const recordStableValue = (path: ReadonlyArray<CpuRuntimeRefSegment>, value: Value): void => {
-			if (!isNativeFunction(value) && !isNativeObject(value)) {
+			if (!isBuiltinFunction(value) && !isNativeFunction(value) && !isNativeObject(value)) {
 				return;
 			}
 			stableValueByPath.set(encodePathKey(path), value);
@@ -3607,6 +3941,14 @@ export class CPU {
 				value.walkTrackedValues(pushValue);
 				continue;
 			}
+			if (isBuiltinFunction(value)) {
+				if (seen.has(value)) {
+					continue;
+				}
+				seen.add(value);
+				total += BUILTIN_FUNCTION_HEAP_BYTES;
+				continue;
+			}
 			if (isNativeFunction(value)) {
 				if (seen.has(value)) {
 					continue;
@@ -3641,6 +3983,10 @@ export class CPU {
 		return total;
 	}
 
+	private formatNonFunctionCallError(callee: Value): string {
+		return `Attempted to call a non-function value. callee=${valueTypeName(callee)}(${this.valueToString(callee)}). at ${this.formatLastSourceLocation()}`;
+	}
+
 	private valueToString(value: Value): string {
 		if (value === null) {
 			return 'nil';
@@ -3661,6 +4007,9 @@ export class CPU {
 		}
 		if (value instanceof Table) {
 			return 'table';
+		}
+		if (isBuiltinFunction(value)) {
+			return 'function';
 		}
 		if (isNativeFunction(value)) {
 			return 'function';

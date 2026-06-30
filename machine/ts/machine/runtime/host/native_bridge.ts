@@ -955,47 +955,6 @@ function isArrayIndexProperty(key: string, length: number): boolean {
 	return Number.isInteger(numeric) && String(numeric) === key && numeric >= 0 && numeric < length;
 }
 
-function collectNativeKeys(runtime: Runtime, raw: object): Value[] {
-	const keys: Value[] = [];
-	if (Array.isArray(raw)) {
-		const arr = raw as unknown[];
-		const arrRecord = arr as unknown as Record<string, unknown>;
-		for (let index = 0; index < arr.length; index += 1) {
-			const value = arr[index];
-			if (value == null) {
-				continue;
-			}
-			keys.push(index + 1);
-		}
-		for (const key in arrRecord) {
-			if (!Object.prototype.hasOwnProperty.call(arrRecord, key)) {
-				continue;
-			}
-			if (isArrayIndexProperty(key, arr.length)) {
-				continue;
-			}
-			const value = arrRecord[key];
-			if (value == null) {
-				continue;
-			}
-			keys.push(parseNativeKeyFromString(runtime, key));
-		}
-		return keys;
-	}
-	const obj = raw as Record<string, unknown>;
-	for (const key in obj) {
-		if (!Object.prototype.hasOwnProperty.call(obj, key)) {
-			continue;
-		}
-		const value = obj[key];
-		if (value == null) {
-			continue;
-		}
-		keys.push(parseNativeKeyFromString(runtime, key));
-	}
-	return keys;
-}
-
 function findNativePropertyAfter(runtime: Runtime, raw: Record<string, unknown>, after: Value, skipArrayLength: number): [Value, unknown] | null {
 	let returnNext = after === null;
 	for (const prop in raw) {
@@ -1105,43 +1064,6 @@ export function getOrAssignTableId(runtime: Runtime, table: Table): number {
 	runtime.tableIds.set(table, id);
 	runtime.nextTableId = id + 1;
 	return id;
-}
-
-export function nextNativeEntry(runtime: Runtime, target: NativeObject, after: Value): [Value, Value] | null {
-	if (target.nextEntry) {
-		return target.nextEntry(after);
-	}
-	return buildNativeNextEntry(runtime, target.raw)(after);
-}
-
-export function pushNativePairsIterator(runtime: Runtime, target: NativeObject, out: Value[]): void {
-	const keys = collectNativeKeys(runtime, target.raw);
-	let pointer = 0;
-	const iterator = createNativeFunction('native.pairs.iterator', (args, iteratorOut) => {
-		const nativeTarget = args[0];
-		if (!isNativeObject(nativeTarget) || nativeTarget !== target) {
-			iteratorOut.push(null);
-			return;
-		}
-		const after = args.length > 1 ? args[1] : null;
-		if (after !== null && pointer > 0 && !nativeKeysEqual(runtime, keys[pointer - 1], after)) {
-			pointer = 0;
-			while (pointer < keys.length && !nativeKeysEqual(runtime, keys[pointer], after)) {
-				pointer += 1;
-			}
-			if (pointer < keys.length) {
-				pointer += 1;
-			}
-		}
-		if (pointer >= keys.length) {
-			iteratorOut.push(null);
-			return;
-		}
-		const key = keys[pointer];
-		pointer += 1;
-		iteratorOut.push(key, target.get(key));
-	});
-	out.push(iterator, target, null);
 }
 
 function buildNativeNextEntry(runtime: Runtime, raw: object): (after: Value) => [Value, Value] | null {

@@ -32,14 +32,7 @@ void seedSystemGlobals(Runtime& runtime) {
 	runtime.setGlobal("sys_region", valueNumber(static_cast<double>(IO_SYS_REGION)));
 	runtime.setGlobal("sys_region_pal", valueNumber(static_cast<double>(MACHINE_REGION_PAL_WORD)));
 	runtime.setGlobal("sys_region_ntsc", valueNumber(static_cast<double>(MACHINE_REGION_NTSC_WORD)));
-	runtime.setGlobal("sys_host_fault_message", machine.cpu.createNativeFunction("sys_host_fault_message", [&runtime, &machine](NativeArgsView, NativeResults& out) {
-		const auto& message = runtime.hostFault.getMessage();
-		if (!message.has_value()) {
-			out.push_back(valueNil());
-			return;
-		}
-		out.push_back(valueString(machine.cpu.stringPool().intern(*message)));
-	}));
+	runtime.setGlobal("sys_host_fault_message", valueNil());
 	runtime.setGlobal("sys_cart_magic_addr", valueNumber(static_cast<double>(CART_ROM_MAGIC_ADDR)));
 	runtime.setGlobal("sys_cart_magic", valueNumber(static_cast<double>(CART_ROM_MAGIC)));
 	runtime.setGlobal("sys_cart_rom_size", valueNumber(static_cast<double>(CART_ROM_SIZE)));

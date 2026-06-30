@@ -67,6 +67,7 @@ import { branchUninitializedLocalPatternRule } from './branch_uninitialized_loca
 import { forbiddenRenderWrapperCallPatternRule } from './forbidden_render_wrapper_call_pattern';
 import { forbiddenRenderModuleRequirePatternRule } from './forbidden_render_module_require_pattern';
 import { forbiddenRenderLayerStringPatternRule } from './forbidden_render_layer_string_pattern';
+import { forbiddenRuntimeCompilerCallPatternRule } from './forbidden_runtime_compiler_call_pattern';
 
 export { ensurePatternRule };
 export { syntaxErrorPatternRule };
@@ -136,6 +137,7 @@ export { branchUninitializedLocalPatternRule };
 export { forbiddenRenderWrapperCallPatternRule };
 export { forbiddenRenderModuleRequirePatternRule };
 export { forbiddenRenderLayerStringPatternRule };
+export { forbiddenRuntimeCompilerCallPatternRule };
 
 export const CART_ONLY_LINT_RULE_DEFINITIONS = [
 	ensurePatternRule,
@@ -206,5 +208,6 @@ export const CART_ONLY_LINT_RULE_DEFINITIONS = [
 	forbiddenRenderWrapperCallPatternRule,
 	forbiddenRenderModuleRequirePatternRule,
 	forbiddenRenderLayerStringPatternRule,
+	forbiddenRuntimeCompilerCallPatternRule,
 ] as const;
 export const CART_ONLY_LINT_RULES = ruleNames(CART_ONLY_LINT_RULE_DEFINITIONS);

@@ -31,6 +31,11 @@
 			"reason": "ts_lua_source_interpreter_builtins_no_cpp_runtime"
 		},
 		{
+			"pattern": "machine/ts/machine/firmware/devtools.ts",
+			"category": "cpu_interpreter_exception",
+			"reason": "ts_lua_source_interpreter_devtools_no_cpp_runtime"
+		},
+		{
 			"pattern": "machine/ts/machine/firmware/builtin_descriptors.ts",
 			"category": "language",
 			"reason": "ts_lua_language_builtin_metadata_no_cpp_runtime"

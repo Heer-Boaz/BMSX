@@ -2,7 +2,7 @@ title: Fade Probe
 short_name: 'fade_probe'
 rom_name: 'fade_probe'
 machine:
-    render_size: {width: 160, height: 120}
+    vdp_mode: 2
     namespace: 'fade_probe'
     vdp_class: psx
 lua:

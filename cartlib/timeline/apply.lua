@@ -2,76 +2,83 @@ local timeline_apply<const> = {}
 local pingpong01<const> = require('bios/easing').pingpong01
 local sin<const> = require('bios/math').sin
 local pi<const> = require('bios/math').pi
-local lua_reserved_word<const> = {
-	['and'] = true,
-	['break'] = true,
-	['do'] = true,
-	['else'] = true,
-	['elseif'] = true,
-	['end'] = true,
-	['false'] = true,
-	['for'] = true,
-	['function'] = true,
-	['if'] = true,
-	['in'] = true,
-	['local'] = true,
-	['nil'] = true,
-	['not'] = true,
-	['or'] = true,
-	['repeat'] = true,
-	['return'] = true,
-	['then'] = true,
-	['true'] = true,
-	['until'] = true,
-	['while'] = true,
-}
 
-local append_path<const> = function(parts, root, path)
-	parts[#parts + 1] = root
+local copy_path<const> = function(path)
+	local out<const> = {}
 	for i = 1, #path do
-		local key<const> = path[i]
-		if type(key) == 'number' then
-			parts[#parts + 1] = '['
-			parts[#parts + 1] = key
-			parts[#parts + 1] = ']'
-		elseif key:match('^[A-Za-z_][A-Za-z0-9_]*$') and not lua_reserved_word[key] then
-			parts[#parts + 1] = '.'
-			parts[#parts + 1] = key
-		else
-			parts[#parts + 1] = '['
-			parts[#parts + 1] = string.format('%q', key)
-			parts[#parts + 1] = ']'
-		end
+		out[i] = path[i]
 	end
+	return out
 end
 
-local append_frame_shape_assignments<const> = function(parts, node, path)
+local append_key_signature<const> = function(parts, key)
+	local key_text<const> = tostring(key)
+	parts[#parts + 1] = type(key)
+	parts[#parts + 1] = ':'
+	parts[#parts + 1] = #key_text
+	parts[#parts + 1] = ':'
+	parts[#parts + 1] = key_text
+	parts[#parts + 1] = ';'
+end
+
+local collect_frame_shape<const> = function(node, path, ops, parts)
 	for key, value in pairs(node) do
 		local path_index<const> = #path + 1
 		path[path_index] = key
+		append_key_signature(parts, key)
 		if type(value) == 'table' then
-			append_frame_shape_assignments(parts, value, path)
+			parts[#parts + 1] = '{'
+			collect_frame_shape(value, path, ops, parts)
+			parts[#parts + 1] = '}'
 		else
-			append_path(parts, 'target', path)
-			parts[#parts + 1] = ' = '
-			append_path(parts, 'frame', path)
-			parts[#parts + 1] = '\n'
+			ops[#ops + 1] = copy_path(path)
 		end
 		path[path_index] = nil
 	end
 end
 
+local read_path<const> = function(root, path)
+	local value = root
+	for i = 1, #path do
+		value = value[path[i]]
+	end
+	return value
+end
+
+local write_path<const> = function(root, path, value)
+	local count<const> = #path
+	if count == 1 then
+		root[path[1]] = value
+	elseif count == 2 then
+		root[path[1]][path[2]] = value
+	elseif count == 3 then
+		root[path[1]][path[2]][path[3]] = value
+	else
+		local node = root
+		for i = 1, count - 1 do
+			node = node[path[i]]
+		end
+		node[path[count]] = value
+	end
+end
+
 local compile_frame_shape_apply<const> = function(frame, shape_cache)
-	local parts<const> = { 'return function(target, frame)\n' }
-	append_frame_shape_assignments(parts, frame, {})
-	parts[#parts + 1] = 'end'
-	local source<const> = table.concat(parts)
-	local cached<const> = shape_cache[source]
+	local ops<const> = {}
+	local parts<const> = {}
+	collect_frame_shape(frame, {}, ops, parts)
+	local shape_key<const> = table.concat(parts)
+	local cached<const> = shape_cache[shape_key]
 	if cached ~= nil then
 		return cached
 	end
-	local apply_fn<const> = load(source, '[timeline_apply.frame]', 't')()
-	shape_cache[source] = apply_fn
+	local count<const> = #ops
+	local apply_fn<const> = function(target, frame_value)
+		for i = 1, count do
+			local path<const> = ops[i]
+			write_path(target, path, read_path(frame_value, path))
+		end
+	end
+	shape_cache[shape_key] = apply_fn
 	return apply_fn
 end
 
@@ -98,13 +105,35 @@ function timeline_apply.compile_frames(frames)
 end
 
 local compile_target_setter<const> = function(path)
-	if #path == 0 then
+	local count<const> = #path
+	if count == 0 then
 		error('[timeline_apply] track path must not be empty.')
 	end
-	local parts<const> = { 'return function(target, value)\n' }
-	append_path(parts, 'target', path)
-	parts[#parts + 1] = ' = value\nend'
-	return load(table.concat(parts), '[timeline_apply.setter]', 't')()
+	if count == 1 then
+		local key1<const> = path[1]
+		return function(target, value)
+			target[key1] = value
+		end
+	end
+	if count == 2 then
+		local key1<const> = path[1]
+		local key2<const> = path[2]
+		return function(target, value)
+			target[key1][key2] = value
+		end
+	end
+	if count == 3 then
+		local key1<const> = path[1]
+		local key2<const> = path[2]
+		local key3<const> = path[3]
+		return function(target, value)
+			target[key1][key2][key3] = value
+		end
+	end
+	local captured_path<const> = copy_path(path)
+	return function(target, value)
+		write_path(target, captured_path, value)
+	end
 end
 
 local compile_track_runner<const> = function(track)

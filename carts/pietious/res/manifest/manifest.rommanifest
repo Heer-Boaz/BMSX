@@ -2,9 +2,7 @@ title: Maze of Pietious
 short_name: 'pietious'
 rom_name: 'pietious'
 machine:
-    render_size:
-        width: 256
-        height: 192
+    vdp_mode: 0
     namespace: 'pietious'
     vdp_class: psx
 lua:

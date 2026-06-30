@@ -1,4 +1,4 @@
-import type { MachineVdpClass } from '../machine/model_registry';
+import type { MachineVdpClass, MachineVdpMode } from '../machine/model_registry';
 
 export const CART_ROM_MAGIC = 0x58534D42;
 export const CART_ROM_MAGIC_BYTES = new Uint8Array([0x42, 0x4d, 0x53, 0x58]);
@@ -379,6 +379,7 @@ export type MachineManifest = {
 	render_size: Viewport;
 	namespace: string;
 	vdp_class: MachineVdpClass;
+	vdp_mode: MachineVdpMode;
 };
 
 export type CartManifest = {

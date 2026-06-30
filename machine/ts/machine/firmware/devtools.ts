@@ -1,4 +1,3 @@
-import { asStringId, createNativeFunction, Table, valueIsString } from '../cpu/cpu';
 import { createLuaTable, type LuaTable } from '../../lua/value';
 import { LuaNativeFunction, type LuaInterpreter } from '../../lua/runtime';
 import type { ResourceDescriptor } from '../../rompack/tooling/resource';
@@ -79,42 +78,6 @@ export function getRuntimeLuaResourceSource(runtime: Runtime, path: string): str
 		throw new Error(`[devtools.get_lua_resource_source] Missing Lua resource for path '${path}'. Available: ${summarizeLuaPaths(runtime, 16)}`);
 	}
 	return record.src;
-}
-
-function buildRuntimeResourceDescriptorTable(runtime: Runtime, descriptor: ResourceDescriptor): Table {
-	const table = new Table(0, 3);
-	table.set(runtime.internString('path'), runtime.internString(descriptor.path));
-	table.set(runtime.internString('type'), runtime.internString(descriptor.type));
-	if (descriptor.asset_id !== undefined) {
-		table.set(runtime.internString('asset_id'), runtime.internString(descriptor.asset_id));
-	}
-	return table;
-}
-
-export function createRuntimeDevtoolsTable(runtime: Runtime): Table {
-	const listLuaResourcesFn = createNativeFunction('devtools.list_lua_resources', (_args, out) => {
-		const descriptors = listRuntimeLuaResources(runtime);
-		const table = new Table(0, descriptors.length);
-		for (let index = 0; index < descriptors.length; index += 1) {
-			table.set(index + 1, buildRuntimeResourceDescriptorTable(runtime, descriptors[index]));
-		}
-		out.push(table);
-	});
-	const getLuaEntryPathFn = createNativeFunction('devtools.get_lua_entry_path', (_args, out) => {
-		out.push(runtime.internString(getRuntimeLuaEntryPath(runtime)));
-	});
-	const getLuaResourceSourceFn = createNativeFunction('devtools.get_lua_resource_source', (args, out) => {
-		const path = args[0];
-		if (!valueIsString(path)) {
-			throw runtime.createApiRuntimeError(`[devtools.get_lua_resource_source] path must be a string.`);
-		}
-		out.push(runtime.internString(getRuntimeLuaResourceSource(runtime, runtime.machine.cpu.stringPool.toString(asStringId(path)))));
-	});
-	const table = new Table(0, 3);
-	table.set(runtime.internString('list_lua_resources'), listLuaResourcesFn);
-	table.set(runtime.internString('get_lua_entry_path'), getLuaEntryPathFn);
-	table.set(runtime.internString('get_lua_resource_source'), getLuaResourceSourceFn);
-	return table;
 }
 
 export function createInterpreterDevtoolsTable(runtime: Runtime, interpreter: LuaInterpreter): LuaTable {

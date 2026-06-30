@@ -1,5 +1,5 @@
 #include "machine/runtime/runtime.h"
-#include "machine/firmware/devtools.h"
+#include "common/utf8.h"
 #include "machine/bus/io.h"
 #include "machine/memory/lua_heap_usage.h"
 #include "machine/memory/map.h"
@@ -65,6 +65,8 @@ Runtime::Runtime(
 	machine.memory.mapIoRead(IO_SYS_FRAME_MS, this, &Runtime::onFrameMsReadThunk);
 	machine.memory.mapIoRead(IO_SYS_REGION, this, &Runtime::onMachineRegionReadThunk);
 	machine.memory.mapIoWrite(IO_SYS_REGION, this, &Runtime::onMachineRegionWriteThunk);
+	machine.memory.mapIoWrite(IO_SYS_PRINT_CHAR, this, &Runtime::onLuaOutputCodepointWriteThunk);
+	machine.memory.mapIoWrite(IO_SYS_PRINT_FLUSH, this, &Runtime::onLuaOutputFlushWriteThunk);
 	machine.initializeSystemIo();
 	machine.resetDevices();
 	vblank.setVblankCycles(*this, options.vblankCycles);
@@ -74,7 +76,6 @@ Runtime::Runtime(
 		for (const auto& entry : m_moduleCache) {
 			heap.markValue(entry.second);
 		}
-		heap.markValue(m_pairsIterator);
 	});
 
 	configureLuaHeapUsage({
@@ -137,6 +138,25 @@ void Runtime::onMachineRegionWriteThunk(void* context, uint32_t addr, Value valu
 
 void Runtime::onMachineRegionWrite([[maybe_unused]] uint32_t addr, Value value) {
 	applyMachineRegionWord(toU32(value));
+}
+
+void Runtime::onLuaOutputCodepointWriteThunk(void* context, uint32_t addr, Value value) {
+	auto* runtime = static_cast<Runtime*>(context);
+	runtime->onLuaOutputCodepointWrite(addr, value);
+}
+
+void Runtime::onLuaOutputCodepointWrite([[maybe_unused]] uint32_t addr, Value value) {
+	appendUtf8Codepoint(luaOutputLineBuffer, toU32(value));
+}
+
+void Runtime::onLuaOutputFlushWriteThunk(void* context, uint32_t addr, Value value) {
+	auto* runtime = static_cast<Runtime*>(context);
+	runtime->onLuaOutputFlushWrite(addr, value);
+}
+
+void Runtime::onLuaOutputFlushWrite([[maybe_unused]] uint32_t addr, [[maybe_unused]] Value value) {
+	luaOutputLines.push_back(luaOutputLineBuffer);
+	luaOutputLineBuffer.clear();
 }
 
 void Runtime::applyUfpsScaled(i64 ufpsScaled) {
@@ -280,7 +300,6 @@ void Runtime::boot(const ProgramImage& image, ProgramMetadata* metadata, Program
 	m_programStorage = inflateExecutableProgramImage(image, metadata, dataBaseAddress, bssBaseAddress);
 	try {
 		setupBuiltins();
-		registerRuntimeDevtoolsTable(*this);
 		enforceLuaHeapBudget();
 		m_program = m_programStorage.get();
 		m_programMetadata = metadata;
@@ -400,6 +419,7 @@ void Runtime::resetRuntimeForProgramReload() {
 	m_cartDataBaseAddress.reset();
 	m_cartBssBaseAddress.reset();
 	m_cartStaticModulePaths.clear();
+	luaOutputLineBuffer.clear();
 	cartBoot.reset();
 	hostFault.clear();
 	m_moduleCache.clear();
@@ -428,6 +448,7 @@ void Runtime::registerNativeFunction(std::string_view name, NativeFunctionInvoke
 }
 
 void Runtime::resetHardwareState() {
+	luaOutputLineBuffer.clear();
 	machine.resetDevices();
 	vblank.reset(*this);
 }

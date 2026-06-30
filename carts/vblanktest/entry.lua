@@ -13,7 +13,7 @@ local vblank_cycles = 0
 local full_frame_vblank = false
 
 local resolve_vblank_cycles<const> = function()
-	local render_height<const> = cart_manifest.machine.render_size.height
+	local render_height<const> = machine_manifest.render_size.height
 	if type(render_height) ~= 'number' or render_height <= 0 then
 		return nil
 	end

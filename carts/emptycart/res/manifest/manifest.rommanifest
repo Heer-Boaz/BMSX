@@ -2,7 +2,7 @@ title: Empty Cart
 short_name: 'emptycart'
 rom_name: 'emptycart'
 machine:
-    render_size: {width: 256, height: 212}
+    vdp_mode: 1
     namespace: 'emptycart'
     vdp_class: psx
 lua:

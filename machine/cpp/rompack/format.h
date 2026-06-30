@@ -67,6 +67,7 @@ struct MachineManifest {
 	i32 viewportWidth = 0;
 	i32 viewportHeight = 0;
 	MachineVdpClass vdpClass = MachineVdpClass::Psx;
+	MachineVdpMode vdpMode = MachineVdpMode::Psx;
 };
 
 /* ============================================================================

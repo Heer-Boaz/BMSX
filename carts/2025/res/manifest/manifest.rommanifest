@@ -2,9 +2,7 @@ title: Pietsona 2025
 short_name: '2025'
 rom_name: '2025'
 machine:
-    render_size:
-        width: 320
-        height: 240
+    vdp_mode: 2
     namespace: 'pietsona2025'
     vdp_class: psx
 lua:

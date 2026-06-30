@@ -78,6 +78,11 @@ integer/number instructions. Machine TS/C++ firmware must not expose `math.*` or
 `easing.*` as native host callbacks; host `Math.*`/`std::*` remains valid only
 for emulator/device implementation and build tooling.
 
+Runtime source compilation (`load`/`loadstring`) is a compiler/loader boundary,
+not a shipped-cart technique. ROM, BIOS and cart sources must contain explicit
+Lua code or precompiled module exports; the cart Lua linter rejects references
+to `load` and `loadstring` in shipped sources.
+
 `math.sin`, `math.cos`, and `math.tan` use the same firmware quarter-wave LUT
 and Q16.16 turn helper as direct fixed-point firmware code. Their precision is
 therefore the documented LUT/Q16.16 firmware precision, not host double
@@ -336,7 +341,7 @@ Bus fault access flag values:
 
 The host fault registers publish host startup fault state into the machine
 without making the host own cart-observable behavior. `sys_host_fault_message`
-is a runtime call for the current published message. Register addresses, flag
+is the current published message string or `nil`. Register addresses, flag
 values, and stage values are machine ABI values; they are documented constants,
 not runtime-injected Lua globals.
 
@@ -446,6 +451,10 @@ Cart-visible ingress:
 
 Internal units:
 
+- The model registry owns the cart-selected VDP-mode table: mode 0 = MSX1
+  256×192, mode 1 = MSX2 256×212, mode 2 = PSX 320×240. Runtime
+  manifests name the mode; render-size is derived from it, not configured as
+  free cart metadata.
 - `registers` owns the raw VDP transform, surface, mode, dither, and
   control words; shared `machine/devices/device_status` owns VDP
   status/fault/code/detail register images and the fault-ack write edge.

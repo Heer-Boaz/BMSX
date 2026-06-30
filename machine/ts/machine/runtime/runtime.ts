@@ -48,7 +48,7 @@ import { applyRuntimeTiming, resolveRuntimeTiming } from './boot_timing';
 import { refreshDeviceTimings, setFrameTiming } from './timing/config';
 import { HZ_SCALE } from './timing/constants';
 import { calcCyclesPerFrameScaled, resolveVblankCycles } from './timing';
-import { IO_SYS_FRAME_MS, IO_SYS_REGION, IO_SYS_TIME_MS } from '../bus/io';
+import { IO_SYS_FRAME_MS, IO_SYS_PRINT_CHAR, IO_SYS_PRINT_FLUSH, IO_SYS_REGION, IO_SYS_TIME_MS } from '../bus/io';
 import { Machine } from '../machine';
 import type { RuntimeInputSource } from './input';
 import { Memory } from '../memory/memory';
@@ -153,9 +153,9 @@ export class Runtime {
 	public readonly cpuExecution: CpuExecutionState;
 	public pendingLuaWarnings: string[] = [];
 	public readonly luaOutputLines: string[] = [];
+	private luaOutputLineBuffer = '';
 	public readonly luaChunkEnvironmentsByPath: Map<string, LuaEnvironment> = new Map();
 	public readonly luaGenericChunksExecuted: Set<string> = new Set();
-	public readonly luaPatternRegexCache: Map<string, RegExp> = new Map();
 	public readonly luaScratch = new LuaScratchState();
 	public readonly luaFunctionRedirectCache = new LuaFunctionRedirectCache();
 	// Wrap Lua closures with stable JS stubs so FSM/input/events can hold onto durable references even across hot-resume.
@@ -174,7 +174,6 @@ export class Runtime {
 	public readonly nativeMemberCache = new WeakMap<object, Map<string, NativeFunction>>();
 	public readonly tableIds = new WeakMap<Table, number>();
 	public nextTableId = 1;
-	public pairsIterator: Value = null;
 	public nativeMemberCompletionCache: WeakMap<object, { dot?: LuaMemberCompletion[]; colon?: LuaMemberCompletion[] }> = new WeakMap();
 	public readonly pathSemanticCache: Map<string, { source: string; model?: LuaSemanticModel; definitions?: ReadonlyArray<LuaDefinitionInfo>; parsed?: ParsedLuaChunk; lines?: readonly string[]; analysis?: FileSemanticData }> = new Map();
 
@@ -316,6 +315,7 @@ export class Runtime {
 		this.cartDataBaseAddress = null;
 		this.cartBssBaseAddress = null;
 		this.cartStaticModulePaths = [];
+		this.luaOutputLineBuffer = '';
 		this.systemRomSource = params.systemRomSource;
 		this.cartRomSource = params.cartRomSource;
 		this.activeRomSource = params.systemRomSource;
@@ -520,6 +520,8 @@ export class Runtime {
 		this.machine.memory.mapIoRead(IO_SYS_FRAME_MS, () => this.timing.frameDurationMs);
 		this.machine.memory.mapIoRead(IO_SYS_REGION, () => this.timing.regionWord);
 		this.machine.memory.mapIoWrite(IO_SYS_REGION, (_addr, value) => this.applyMachineRegionWord((value as number) >>> 0));
+		this.machine.memory.mapIoWrite(IO_SYS_PRINT_CHAR, (_addr, value) => this.writeLuaOutputCodepoint((value as number) >>> 0));
+		this.machine.memory.mapIoWrite(IO_SYS_PRINT_FLUSH, () => this.flushLuaOutputLine());
 		this.machine.initializeSystemIo();
 		this.machine.resetDevices();
 		this.machine.vdp.initializeVramSurfaces();
@@ -528,7 +530,6 @@ export class Runtime {
 			collectTrackedHeapBytes: () => {
 				const extraRoots = this.luaScratch.values.acquire();
 				try {
-					extraRoots.push(this.pairsIterator);
 					for (const value of this.moduleCache.values()) {
 						extraRoots.push(value);
 					}
@@ -549,6 +550,15 @@ export class Runtime {
 
 	public machineElapsedMs(): number {
 		return this.machine.scheduler.currentNowCycles() * 1000 / this.timing.cpuHz;
+	}
+
+	private writeLuaOutputCodepoint(codepoint: number): void {
+		this.luaOutputLineBuffer += String.fromCodePoint(codepoint);
+	}
+
+	private flushLuaOutputLine(): void {
+		this.luaOutputLines.push(this.luaOutputLineBuffer);
+		this.luaOutputLineBuffer = '';
 	}
 
 	public baseRamUsedBytes(): number {

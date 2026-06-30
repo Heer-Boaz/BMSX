@@ -9,6 +9,13 @@ import {
 	NTSC_REFRESH_UFPS_SCALED,
 	PSX_MODEL_PROFILE,
 	PSX_VDP_CLASS_PROFILE,
+	VDP_MODE_MSX1_WORD,
+	VDP_MODE_MSX1_PROFILE,
+	VDP_MODE_MSX2_WORD,
+	VDP_MODE_MSX2_PROFILE,
+	VDP_MODE_PSX_WORD,
+	VDP_MODE_PSX_PROFILE,
+	getMachineVdpModeProfile,
 } from '../../machine/ts/machine/model_registry';
 import { HZ_SCALE } from '../../machine/ts/machine/runtime/timing/constants';
 
@@ -21,8 +28,7 @@ test('machine registry exposes the psx fixed hardware model', () => {
 		ramBytes: 0x08000000,
 		slotBytes: 167_772_160,
 		stagingBytes: 41_943_040,
-		biosRenderWidth: 320,
-		biosRenderHeight: 240,
+		biosVdpMode: VDP_MODE_PSX_WORD,
 	});
 });
 
@@ -31,6 +37,15 @@ test('machine registry exposes the psx VDP device class throughput', () => {
 		vdpWorkUnitsPerSec: 25_600,
 		geoWorkUnitsPerSec: 16_384_000,
 	});
+});
+
+test('machine registry exposes VDP modes', () => {
+	assert.deepEqual(getMachineVdpModeProfile(VDP_MODE_MSX1_WORD), VDP_MODE_MSX1_PROFILE);
+	assert.deepEqual(getMachineVdpModeProfile(VDP_MODE_MSX2_WORD), VDP_MODE_MSX2_PROFILE);
+	assert.deepEqual(getMachineVdpModeProfile(VDP_MODE_PSX_WORD), VDP_MODE_PSX_PROFILE);
+	assert.deepEqual(VDP_MODE_MSX1_PROFILE, { mode: VDP_MODE_MSX1_WORD, renderWidth: 256, renderHeight: 192 });
+	assert.deepEqual(VDP_MODE_MSX2_PROFILE, { mode: VDP_MODE_MSX2_WORD, renderWidth: 256, renderHeight: 212 });
+	assert.deepEqual(VDP_MODE_PSX_PROFILE, { mode: VDP_MODE_PSX_WORD, renderWidth: 320, renderHeight: 240 });
 });
 
 test('machine region timing uses PAL and 60000/1001 NTSC timing', () => {

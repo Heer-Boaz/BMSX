@@ -155,7 +155,7 @@ Cart-representatie roadmap/status:
 ## 24. Console-model registry: device-classes en region-switch
 
 Doel: een console-model bestaat uit **vaste hardware** (RAM, VRAM, CPU-clock,
-BIOS-resolutie) plus een set **omwisselbare device-classes** — te beginnen de
+BIOS-default) plus een set **omwisselbare device-classes** — te beginnen de
 **VDP-class**, met de **APU-class** als geanticipeerde tweede. Elke device-class
 draagt zijn eigen **operations/second** (throughput) en programmeermodel. De
 model-registry wordt de enige bron voor die waarden; cart- en system-manifests
@@ -186,14 +186,18 @@ bmsx-tak blijft een lege, gedocumenteerde seam.
 Structuur:
 
 - **Model** (vast, gekeyd op model-id): `cpu_freq_hz`, `ram_bytes`, `vram`
-  (`slot`/`staging`/`system_slot`), `bios_render` (default displayresolutie),
-  `dma`/`imgdec`-rates, plus welke device-classes het heeft.
+  (`slot`/`staging`/`system_slot`), `bios_vdp_mode`, `dma`/`imgdec`-rates,
+  plus welke device-classes het heeft.
 - **Device-class** (omwisselbaar): een benoemde class met zijn eigen ops/sec en
   programmeermodel-identiteit.
   - VDP-class `psx`: framebuffer/3D, `work_units_per_sec` + `geo_work_units_per_sec`.
     (VDP-class `bmsx` = tile/sprite — seam, nog niet gebouwd.)
   - APU-class: geanticipeerd als tweede omwisselbare class (audio ops/sec), nog
     niet gebouwd.
+- **VDP-mode-tabel** (binnen de `psx` VDP-class): mode `0` = MSX1
+  256×192, mode `1` = MSX2 256×212, mode `2` = PSX 320×240.
+  De mode is de bron voor render-size en kleurcontract; manifests dragen geen
+  losse `render_size`.
 - **Region-timing-tabel** (gedeeld, runtime-switchbaar): `pal` = 50 Hz/313,
   `ntsc` ≈ 59,94 Hz/262.
 
@@ -234,8 +238,11 @@ Model-registry (nu; alleen `psx`):
 | model | ram_bytes | 128 MB |
 | model | vram slot/staging/system_slot | 160/40 MB |
 | model | imgdec/dma rates | huidige defaults |
-| model | bios_render | 320×240 |
+| model | bios_vdp_mode | 2 (`psx`) |
 | VDP-class `psx` | work_units_per_sec / geo_work_units_per_sec | huidige VDP/GEO-rates |
+| VDP-mode 0 | MSX1 | 256×192, MSX1 kleurcontract |
+| VDP-mode 1 | MSX2 | 256×212, MSX2 kleurcontract |
+| VDP-mode 2 | PSX | 320×240, PSX kleurcontract |
 | region (gedeeld) | pal / ntsc | 50 Hz/313 · 59,94 Hz/262 |
 
 Cart-manifest na 24.1:
@@ -243,22 +250,23 @@ Cart-manifest na 24.1:
 ```yaml
 machine:
     vdp_class: psx        # ROM-header-marker; nu de enige ondersteunde class
-    render_size: {width: 320, height: 240}
+    vdp_mode: 2           # 0=MSX1 256×192, 1=MSX2 256×212, 2=PSX 320×240
     namespace: 'pietsona2025'
 lua:
     entry_path: cart.lua
 ```
 
-`render_size`, `namespace`, `lua.entry_path` en cart-metadata blijven cart-eigen;
-vblank blijft uit `render_size.height` + region-`total_scanlines` afgeleid.
+`vdp_mode`, `namespace`, `lua.entry_path` en cart-metadata blijven cart-eigen.
+Render-size wordt uit de VDP-mode-tabel afgeleid; vblank blijft uit de
+mode-hoogte + region-`total_scanlines` afgeleid.
 
 Cart-migratie-ledger (alle carts → `psx`-model; power-on region `pal`/50 Hz):
 
 | cart | nu (cpu) | model | delta |
 | --- | --- | --- | --- |
-| pietious / nemesis_s / bare_metal_cart / emptycart / vblanktest | 5–10 MHz | psx | cpu → 50 MHz (vaste psx-clock); refresh ongewijzigd (pal/50); render_size behouden |
-| 2025 | 50 MHz | psx | geen cpu-delta; refresh ongewijzigd (pal/50) |
-| renderhwtest / fade_probe | 800 MHz / 1 MHz | dev-override-machine | geen productie-spec |
+| pietious / nemesis_s | 5–10 MHz | psx + VDP-mode 0 | cpu → 50 MHz; 256×192 uit mode 0 |
+| emptycart / vblanktest / renderhwtest | 5–10 MHz / test | psx + VDP-mode 1 | 256×212 uit mode 1 |
+| 2025 / bare_metal_cart / fade_probe | 50 MHz / test | psx + VDP-mode 2 | 320×240 uit mode 2 |
 
 - **Verificatiepunt**: carts die nu < 50 MHz draaien krijgen de vaste psx-clock
   van 50 MHz — dat is een groter **cycle-budget per frame**, geen snellere
@@ -268,23 +276,25 @@ Cart-migratie-ledger (alle carts → `psx`-model; power-on region `pal`/50 Hz):
 
 System/BIOS-ROM-consolidatie (doel): vandaag dragen cart- én system-manifest
 hardware-specs (`resolveRuntimeMemoryMapSpecs` combineert ze). Het model wordt de
-enige bron; `system_slot_bytes` + `bios_render` worden modelvelden, de
-VDP-ops/sec horen bij de VDP-class; de system-firmware draait op het model. De
+enige bron; `system_slot_bytes` + `bios_vdp_mode` worden modelvelden, de
+VDP-ops/sec horen bij de VDP-class en render-size hoort bij de VDP-mode; de
+system-firmware draait op het model. De
 system-manifest levert geen onafhankelijke hardware-specs meer;
 `SYSTEM_MACHINE_MANIFEST` (`machine/ts/core/system.ts`) stopt met het hardcoden
-van 256×212 + 1 MHz en gebruikt `bios_render` + de model-clock.
+van 256×212 + 1 MHz en gebruikt model-clock + de VDP-mode-tabel.
 
 Dev-override escape hatch: testharnassen die bewust niet-hardware-specs willen
-(renderhwtest 800 MHz, fade_probe custom VDP-rate) booten op een expliciet
-gelabelde override-machine buiten de registry, geweigerd voor echte cart-builds.
+booten op een expliciet gelabelde override-machine buiten de registry, geweigerd
+voor echte cart-builds.
 
 Sub-slices:
 
 - 24.1 — registry met de **model + device-class**-structuur (één model `psx`, één
   VDP-class `psx`); ROM-header VDP-class-marker; vaste RAM/VRAM/CPU per model;
-  ops/sec bij de VDP-class; region als runtime-state + switch-ABI (default pal);
-  `resolveTotalScanlines`-inferentie weg; system-consolidatie + `bios_render`;
-  alle carts → `psx`; dev-override. De device-class-abstractie wordt mét één class
+  ops/sec bij de VDP-class; VDP-mode-tabel 0/1/2 als bron voor render-size;
+  region als runtime-state + switch-ABI (default pal);
+  `resolveTotalScanlines`-inferentie weg; system-consolidatie + `bios_vdp_mode`;
+  alle carts → `psx` + concrete VDP-mode; dev-override. De device-class-abstractie wordt mét één class
   gebouwd, maar de seam (extra VDP-class, APU-class) is echt.
 - 24.2 (graphics-workstream) — bouw de **`bmsx` tile/sprite VDP-class** + het
   `bmsx`-model; de marker selecteert de class; backward-compat = de machine biedt
@@ -306,11 +316,12 @@ Acceptatie (24.1):
   `ntsc` = `59_940_060`
 - gemirrorde TS/C++ registry (model + device-class + region-tabel); parity
   (waarde + shape) groen
-- cart-/system-manifest dragen geen `ufps`/`specs.*` meer; `system_slot_bytes` +
-  `bios_render` uit het model, VDP-ops/sec uit de VDP-class; de BIOS gebruikt
-  `bios_render` i.p.v. de hardcoded 256×212/1 MHz
-- alle 9 carts → `psx`; cpu normaliseert naar 50 MHz (groter cycle-budget, gelijke
-  fps); refresh blijft pal/50; geverifieerd met de headless asserts (pietious +
+- cart-/system-manifest dragen geen `ufps`/`specs.*` of losse `render_size` meer;
+  `system_slot_bytes` + `bios_vdp_mode` uit het model, VDP-ops/sec uit de
+  VDP-class, render-size uit de VDP-mode; de BIOS gebruikt de mode-tabel i.p.v.
+  hardcoded 256×212/1 MHz
+- alle carts → `psx` + expliciete VDP-mode; cpu normaliseert naar 50 MHz
+  (groter cycle-budget, gelijke fps); refresh blijft pal/50; geverifieerd met de headless asserts (pietious +
   2025)
 - gates: `npm run compile:machine -- --noEmit`, `npm run audit:core-parity`,
   `npm run test:lua`, `npm run test:rompacker`, headless asserts (pietious +

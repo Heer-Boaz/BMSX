@@ -2,7 +2,7 @@ title: VBLANK Test
 short_name: 'vblanktest'
 rom_name: 'vblanktest'
 machine:
-    render_size: {width: 256, height: 212}
+    vdp_mode: 1
     namespace: 'vblanktest'
     vdp_class: psx
 lua:

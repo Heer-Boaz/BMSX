@@ -1,4 +1,7 @@
 local bin<const> = {}
+local float_bits<const> = require('bios/common/float_bits')
+local u32_to_f32<const> = float_bits.u32_to_f32
+local u32s_to_f64<const> = float_bits.u32s_to_f64
 
 local version<const> = 0xa1
 local tag_null<const> = 0
@@ -149,7 +152,7 @@ read_value = function(reader)
 		value = false
 	elseif tag == tag_f64 then
 		need(reader, 8, 'float64')
-		value = u64_to_f64(mem32le[reader.pos + 4], mem32le[reader.pos])
+		value = u32s_to_f64(mem32le[reader.pos + 4], mem32le[reader.pos])
 		reader.pos = reader.pos + 8
 	elseif tag == tag_str then
 		value = read_string(reader, 'string')

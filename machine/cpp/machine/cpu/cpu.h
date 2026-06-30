@@ -2,6 +2,7 @@
 
 #include <cstdint>
 #include <cstring>
+#include <exception>
 #include <cmath>
 #include <functional>
 #include <iterator>
@@ -31,6 +32,7 @@ class Memory;
 
 struct Table;
 struct Closure;
+struct BuiltinFunction;
 struct NativeFunction;
 struct NativeObject;
 struct Upvalue;
@@ -62,9 +64,10 @@ enum class ValueTag : uint8_t {
 	String = 3,
 	Table = 4,
 	Closure = 5,
-	NativeFunction = 6,
-	NativeObject = 7,
-	Upvalue = 8,
+	BuiltinFunction = 6,
+	NativeFunction = 7,
+	NativeObject = 8,
+	Upvalue = 9,
 };
 
 constexpr uint64_t VALUE_QNAN_MASK = 0x7ff8000000000000ULL;
@@ -142,6 +145,10 @@ inline Value valueClosure(Closure* closure) {
 	return valueFromTag(ValueTag::Closure, reinterpret_cast<uint64_t>(closure));
 }
 
+inline Value valueBuiltinFunction(BuiltinFunction* fn) {
+	return valueFromTag(ValueTag::BuiltinFunction, reinterpret_cast<uint64_t>(fn));
+}
+
 inline Value valueNativeFunction(NativeFunction* fn) {
 	return valueFromTag(ValueTag::NativeFunction, reinterpret_cast<uint64_t>(fn));
 }
@@ -191,6 +198,10 @@ inline Closure* asClosure(Value v) {
 	return reinterpret_cast<Closure*>(valuePayload(v));
 }
 
+inline BuiltinFunction* asBuiltinFunction(Value v) {
+	return reinterpret_cast<BuiltinFunction*>(valuePayload(v));
+}
+
 inline NativeFunction* asNativeFunction(Value v) {
 	return reinterpret_cast<NativeFunction*>(valuePayload(v));
 }
@@ -225,6 +236,10 @@ inline bool valueIsTable(Value v) {
 
 inline bool valueIsClosure(Value v) {
 	return valueIsTagged(v) && valueTag(v) == ValueTag::Closure;
+}
+
+inline bool valueIsBuiltinFunction(Value v) {
+	return valueIsTagged(v) && valueTag(v) == ValueTag::BuiltinFunction;
 }
 
 inline bool valueIsNativeFunction(Value v) {
@@ -452,6 +467,7 @@ private:
 enum class ObjType : uint8_t {
 	Table,
 	Closure,
+	BuiltinFunction,
 	NativeFunction,
 	NativeObject,
 	Upvalue,
@@ -466,6 +482,37 @@ struct GCObject {
 /**
  * Native function wrapper for C++ functions callable from Lua.
  */
+enum class BuiltinFunctionId : uint8_t {
+	Next = 0,
+	Type = 1,
+	SetMetatable = 2,
+	GetMetatable = 3,
+	RawGet = 4,
+	RawSet = 5,
+	Select = 6,
+	StringByte = 7,
+	StringChar = 8,
+	Error = 9,
+	PCall = 10,
+	XPCall = 11,
+};
+
+struct BuiltinFunction : GCObject {
+	BuiltinFunctionId id = BuiltinFunctionId::Next;
+	std::string name;
+	uint16_t cycleBase = 1;
+	uint8_t cyclePerArg = 0;
+	uint8_t cyclePerRet = 0;
+};
+
+struct LuaThrownValueError final : std::exception {
+	Value value = valueNil();
+	std::string message;
+
+	LuaThrownValueError(Value value, const StringPool& stringPool);
+	const char* what() const noexcept override { return message.c_str(); }
+};
+
 struct NativeFunction : GCObject {
 	std::string name;
 	NativeFunctionInvoke invoke;
@@ -849,6 +896,8 @@ public:
 	void clearGlobalSlots();
 	void syncGlobalSlotsToTable();
 
+	Value createBuiltinFunction(BuiltinFunctionId id);
+	void callBuiltinFunction(BuiltinFunction& fn, NativeArgsView args, NativeResults& out);
 	Value createNativeFunction(std::string_view name, NativeFunctionInvoke fn, std::optional<NativeFnCost> cost = std::nullopt);
 	Value createNativeObject(
 		void* raw,
@@ -909,6 +958,20 @@ private:
 	friend class NativeResultsScratchScope;
 
 	void executeInstruction(CallFrame& frame, const DecodedInstruction& decoded);
+	void runBuiltinFunction(BuiltinFunction& fn, CallFrame& frame, int callBase, int returnCount, int argCount);
+	void runBuiltinNextValue(Value target, Value key, NativeResults& out);
+	void runBuiltinType(Value value, NativeResults& out);
+	void runBuiltinSetMetatable(NativeArgsView args, NativeResults& out);
+	void runBuiltinGetMetatable(NativeArgsView args, NativeResults& out);
+	void runBuiltinRawGet(NativeArgsView args, NativeResults& out);
+	void runBuiltinRawSet(NativeArgsView args, NativeResults& out);
+	void runBuiltinSelect(NativeArgsView args, NativeResults& out);
+	void runBuiltinStringByte(NativeArgsView args, NativeResults& out);
+	void runBuiltinStringChar(NativeArgsView args, NativeResults& out);
+	void runBuiltinError(NativeArgsView args);
+	void runBuiltinPCall(NativeArgsView args, NativeResults& out);
+	void runBuiltinXPCall(NativeArgsView args, NativeResults& out);
+	void callValueInto(Value callee, NativeArgsView args, NativeResults& out);
 	void runHousekeeping();
 	void tickHotLoopHousekeeping();
 	void initializeGlobalSlots(ProgramMetadata* metadata);

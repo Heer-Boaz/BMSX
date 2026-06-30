@@ -2,9 +2,7 @@ title: Bare Metal Cart
 short_name: 'bare_metal_cart'
 rom_name: 'bare_metal_cart'
 machine:
-    render_size:
-        width: 256
-        height: 212
+    vdp_mode: 2
     namespace: 'bare_metal_cart'
     vdp_class: psx
 lua:
