@@ -5,7 +5,7 @@ import { encodeBinary } from '../../machine/ts/common/serializer/binencoder';
 import { splitText } from '../../machine/ts/common/text_lines';
 import { LuaLexer } from '../../machine/ts/lua/syntax/lexer';
 import { LuaParser } from '../../machine/ts/lua/syntax/parser';
-import { CPU, OpCode, RunResult, StringValue, Table, asStringId, createNativeFunction, valueIsString, type Proto } from '../../machine/ts/machine/cpu/cpu';
+import { CPU, OpCode, RunResult, StringValue, Table, asStringId, valueIsString, type Proto } from '../../machine/ts/machine/cpu/cpu';
 import { INSTRUCTION_BYTES, readInstructionWord, writeInstruction } from '../../machine/ts/machine/cpu/instruction_format';
 import { appendLuaChunkToProgram, compileLuaChunkToProgram, encodeCompiledProgramImage } from '../../machine/ts/machine/program/compiler';
 import { decodeProgramSymbolsImage, inflateProgram, type ProgramImage, type ProgramConstReloc, type ProgramSymbolsImage } from '../../machine/ts/machine/program/loader';
@@ -28,6 +28,17 @@ function parseChunk(source: string, path: string = 'test.lua') {
 	const lexer = new LuaLexer(source, path);
 	const parser = new LuaParser(lexer.scanTokens(), path, splitText(source));
 	return parser.parseChunk();
+}
+
+function runStaticModuleInitializers(cpu: CPU, compiled: ReturnType<typeof compileLuaChunkToProgram>): void {
+	for (const path of compiled.staticModulePaths) {
+		const protoIndex = compiled.moduleProtoMap.get(path);
+		assert.notEqual(protoIndex, undefined);
+		const targetDepth = cpu.getFrameDepth();
+		cpu.call({ protoIndex: protoIndex!, upvalues: [] }, []);
+		assert.equal(cpu.runUntilDepth(targetDepth, 100000), RunResult.Halted);
+	}
+	cpu.syncGlobalSlotsToTable();
 }
 
 function buildCode(words: ReadonlyArray<EncodedWord>): Uint8Array {
@@ -568,7 +579,7 @@ test('ProgramCompiler canonicalizes raw module source paths at the API boundary'
 	assert.ok(compiled.metadata.protoIds.some(id => id.includes('module:room/index')));
 });
 
-test('flattened module export slots stay in sync with runtime require results', () => {
+test('flattened module export slots stay in sync with compile-time require imports', () => {
 	const moduleSource = [
 		'local constants<const> = {}',
 		'constants.room = { tile_size = 8 }',
@@ -587,19 +598,7 @@ test('flattened module export slots stay in sync with runtime require results', 
 	const memory = new Memory({ systemRom: new Uint8Array(0) });
 	const cpu = new CPU(memory);
 	cpu.setProgram(compiled.program, compiled.metadata);
-	const requireFn = createNativeFunction('require', (args, out) => {
-		assert.ok(valueIsString(args[0]));
-		const moduleName = cpu.stringPool.toString(asStringId(args[0]));
-		assert.equal(moduleName, 'constants');
-		const protoIndex = compiled.moduleProtoMap.get('constants');
-		assert.notEqual(protoIndex, undefined);
-		const targetDepth = cpu.getFrameDepth();
-		cpu.call({ protoIndex: protoIndex!, upvalues: [] }, []);
-		assert.equal(cpu.runUntilDepth(targetDepth, 100000), RunResult.Halted);
-		const value = cpu.lastReturnValues[0];
-		out.push(value !== undefined ? value : null);
-	});
-	cpu.setGlobalByKey(StringValue.get(cpu.stringPool.intern('require')), requireFn);
+	runStaticModuleInitializers(cpu, compiled);
 	cpu.start(compiled.entryProtoIndex);
 	assert.equal(cpu.runUntilDepth(0, 100000), RunResult.Halted);
 	assert.equal(cpu.lastReturnValues[0], 8);
@@ -627,18 +626,7 @@ test('flattened module export slots survive program append swaps', () => {
 	const memory = new Memory({ systemRom: new Uint8Array(0) });
 	const cpu = new CPU(memory);
 	cpu.setProgram(compiled.program, compiled.metadata);
-	const requireFn = createNativeFunction('require', (args, out) => {
-		assert.ok(valueIsString(args[0]));
-		assert.equal(cpu.stringPool.toString(asStringId(args[0])), 'constants');
-		const protoIndex = compiled.moduleProtoMap.get('constants');
-		assert.notEqual(protoIndex, undefined);
-		const targetDepth = cpu.getFrameDepth();
-		cpu.call({ protoIndex: protoIndex!, upvalues: [] }, []);
-		assert.equal(cpu.runUntilDepth(targetDepth, 100000), RunResult.Halted);
-		const value = cpu.lastReturnValues[0];
-		out.push(value !== undefined ? value : null);
-	});
-	cpu.setGlobalByKey(StringValue.get(cpu.stringPool.intern('require')), requireFn);
+	runStaticModuleInitializers(cpu, compiled);
 	cpu.start(compiled.entryProtoIndex);
 	assert.equal(cpu.runUntilDepth(0, 100000), RunResult.Halted);
 	const slotKey = StringValue.get(cpu.stringPool.intern('constants__room__tile_size'));

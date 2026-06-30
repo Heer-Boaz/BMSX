@@ -43,8 +43,6 @@ const LUA_RESUME_SNAPSHOT_EXCLUDED_GLOBALS = new Set<string>([
 	'pcall',
 	'xpcall',
 	'collectgarbage',
-	'load',
-	'loadstring',
 	'dofile',
 	'select',
 	'debug',

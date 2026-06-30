@@ -29,25 +29,6 @@ static constexpr NativeFnCost kNativeCostTier2 { 2, 0, 0 };
 static constexpr NativeFnCost kNativeCostTier4 { 4, 0, 0 };
 static constexpr NativeFnCost kDefaultNativeCost = kNativeCostTier1;
 
-static inline NativeFnCost resolveNativeFunctionCost(std::string_view name) {
-	if (name == "get_player_input") {
-		return kNativeCostTier1;
-	}
-	if (name == "player_input.getModifiersState"
-		|| name == "player_input.getButtonState"
-		|| name == "player_input.getButtonRepeatState"
-		|| name == "player_input.consumeButton") {
-		return kNativeCostTier2;
-	}
-	if (name == "loadstring"
-		|| name == "load"
-		|| name == "require"
-) {
-		return kNativeCostTier4;
-	}
-	return kDefaultNativeCost;
-}
-
 static std::string formatNonFunctionCallError(Value callee, const StringPool& stringPool,
 													const std::optional<SourceRange>& range) {
 	std::string message = "Attempted to call a non-function value.";
@@ -977,7 +958,7 @@ Value CPU::createBuiltinFunction(BuiltinFunctionId id) {
 }
 
 Value CPU::createNativeFunction(std::string_view name, NativeFunctionInvoke fn, std::optional<NativeFnCost> cost) {
-	const NativeFnCost resolvedCost = cost ? *cost : resolveNativeFunctionCost(name);
+	const NativeFnCost resolvedCost = cost ? *cost : kDefaultNativeCost;
 	auto* native = m_heap.allocate<NativeFunction>(ObjType::NativeFunction);
 	addTrackedLuaHeapBytes(kNativeFunctionHeapBytes);
 	native->name = std::string(name);

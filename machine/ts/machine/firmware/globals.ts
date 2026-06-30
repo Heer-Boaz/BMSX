@@ -1,8 +1,7 @@
-import { extractErrorMessage, type StackTraceFrame } from '../../lua/value';
+import { type StackTraceFrame } from '../../lua/value';
 import {
 	BuiltinFunctionId,
 	createBuiltinFunction,
-	createNativeFunction,
 	isNativeFunction,
 	isNativeObject,
 	Table,
@@ -455,10 +454,9 @@ import {
 } from '../devices/vdp/contracts';
 
 import { buildLuaFrameRawLabel } from '../../lua/stack_frame_label';
-import { asStringId, valueIsString, type StringValue } from '../cpu/cpu';
+import { asStringId, valueIsString } from '../cpu/cpu';
 import type { StringPool } from '../cpu/string_pool';
 import type { Runtime } from '../runtime/runtime';
-import { compileLoadChunk } from '../program/load_compiler';
 
 
 // start repeated-sequence-acceptable -- Lua tostring semantics live in firmware; disassembler formatting is intentionally separate.
@@ -578,11 +576,6 @@ export function buildLuaStackFrames(runtime: Runtime): StackTraceFrame[] {
 }
 
 export function seedLuaGlobals(runtime: Runtime): void {
-	const strings = runtime.machine.cpu.stringPool;
-	const key = (name: string): StringValue => runtime.internString(name);
-	const setKey = (table: Table, name: string, value: Value): void => {
-		table.set(key(name), value);
-	};
 	const exposeObjects = (): void => {
 		const cartManifest = runtime.cartManifest;
 		runtime.setGlobal('cart_manifest', cartManifest === null ? null : buildCartManifestTable(runtime, cartManifest, runtime.activeMachineManifest, cartManifest.lua.entry_path));
@@ -1031,67 +1024,20 @@ export function seedLuaGlobals(runtime: Runtime): void {
 	runtime.setGlobal('img_status_error', IMG_STATUS_ERROR);
 	runtime.setGlobal('img_status_clipped', IMG_STATUS_CLIPPED);
 	runtime.setGlobal('img_status_rejected', IMG_STATUS_REJECTED);
-	runtime.setGlobal('type', createBuiltinFunction(BuiltinFunctionId.Type));
-	runtime.setGlobal('setmetatable', createBuiltinFunction(BuiltinFunctionId.SetMetatable));
-	runtime.setGlobal('getmetatable', createBuiltinFunction(BuiltinFunctionId.GetMetatable));
-	runtime.setGlobal('rawget', createBuiltinFunction(BuiltinFunctionId.RawGet));
-	runtime.setGlobal('rawset', createBuiltinFunction(BuiltinFunctionId.RawSet));
-	runtime.setGlobal('select', createBuiltinFunction(BuiltinFunctionId.Select));
-	runtime.setGlobal('error', createBuiltinFunction(BuiltinFunctionId.Error));
-	runtime.setGlobal('pcall', createBuiltinFunction(BuiltinFunctionId.PCall));
-	runtime.setGlobal('xpcall', createBuiltinFunction(BuiltinFunctionId.XPCall));
-	runtime.setGlobal('loadstring', createNativeFunction('loadstring', (args, out) => {
-		if (!valueIsString(args[0])) {
-			throw runtime.createApiRuntimeError('loadstring(source [, chunkname]) requires a string source.');
-		}
-		if (args.length > 1 && args[1] !== null && !valueIsString(args[1])) {
-			throw runtime.createApiRuntimeError('loadstring(source [, chunkname]) requires a string chunkname.');
-		}
-		const source = strings.toString(asStringId(args[0] as StringValue));
-		const chunkName = args.length > 1 && args[1] !== null ? strings.toString(asStringId(args[1] as StringValue)) : 'loadstring';
-		try {
-			out.push(compileLoadChunk(runtime, source, chunkName));
-		} catch (error) {
-			out.push(null);
-			out.push(runtime.internString(extractErrorMessage(error)));
-		}
-	}));
-	runtime.setGlobal('load', createNativeFunction('load', (args, out) => {
-		if (!valueIsString(args[0])) {
-			throw runtime.createApiRuntimeError('load(source [, chunkname [, mode]]) requires a string source.');
-		}
-		if (args.length > 2 && args[2] !== null) {
-			if (!valueIsString(args[2])) {
-				throw runtime.createApiRuntimeError('load(source [, chunkname [, mode]]) requires mode to be a string.');
-			}
-			const mode = strings.toString(asStringId(args[2] as StringValue));
-			if (mode !== 't' && mode !== 'bt') {
-				throw runtime.createApiRuntimeError("load only supports text mode ('t' or 'bt').");
-			}
-		}
-		if (args.length > 1 && args[1] !== null && !valueIsString(args[1])) {
-			throw runtime.createApiRuntimeError('load(source [, chunkname [, mode]]) requires chunkname to be a string.');
-		}
-		if (args.length > 3 && args[3] !== null) {
-			throw runtime.createApiRuntimeError('load does not support the environment argument.');
-		}
-		const source = strings.toString(asStringId(args[0] as StringValue));
-		const chunkName = args.length > 1 && args[1] !== null ? strings.toString(asStringId(args[1] as StringValue)) : 'load';
-		try {
-			out.push(compileLoadChunk(runtime, source, chunkName));
-		} catch (error) {
-			out.push(null);
-			out.push(runtime.internString(extractErrorMessage(error)));
-		}
-	}));
-	runtime.setGlobal('require', createNativeFunction('require', (args, out) => {
-		const moduleName = strings.toString(asStringId(args[0] as StringValue)).trim();
-		out.push(runtime.requireModule(moduleName));
-	}));
+	runtime.setGlobal('__bmsx_next', createBuiltinFunction(BuiltinFunctionId.Next));
+	runtime.setGlobal('__bmsx_type', createBuiltinFunction(BuiltinFunctionId.Type));
+	runtime.setGlobal('__bmsx_setmetatable', createBuiltinFunction(BuiltinFunctionId.SetMetatable));
+	runtime.setGlobal('__bmsx_getmetatable', createBuiltinFunction(BuiltinFunctionId.GetMetatable));
+	runtime.setGlobal('__bmsx_rawget', createBuiltinFunction(BuiltinFunctionId.RawGet));
+	runtime.setGlobal('__bmsx_rawset', createBuiltinFunction(BuiltinFunctionId.RawSet));
+	runtime.setGlobal('__bmsx_select', createBuiltinFunction(BuiltinFunctionId.Select));
+	runtime.setGlobal('__bmsx_string_byte', createBuiltinFunction(BuiltinFunctionId.StringByte));
+	runtime.setGlobal('__bmsx_string_char', createBuiltinFunction(BuiltinFunctionId.StringChar));
+	runtime.setGlobal('__bmsx_error', createBuiltinFunction(BuiltinFunctionId.Error));
+	runtime.setGlobal('__bmsx_pcall', createBuiltinFunction(BuiltinFunctionId.PCall));
+	runtime.setGlobal('__bmsx_xpcall', createBuiltinFunction(BuiltinFunctionId.XPCall));
 
 	const stringTable = new Table(0, 0);
-	setKey(stringTable, 'byte', createBuiltinFunction(BuiltinFunctionId.StringByte));
-	setKey(stringTable, 'char', createBuiltinFunction(BuiltinFunctionId.StringChar));
 	runtime.machine.cpu.stringIndexTable = stringTable;
 	runtime.setGlobal('string', stringTable);
 
@@ -1100,8 +1046,6 @@ export function seedLuaGlobals(runtime: Runtime): void {
 
 	const osTable = new Table(0, 0);
 	runtime.setGlobal('os', osTable);
-
-	runtime.setGlobal('next', createBuiltinFunction(BuiltinFunctionId.Next));
 
 	exposeObjects();
 }

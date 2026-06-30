@@ -15,6 +15,19 @@ local vdp_image<const> = require('system/vdp_image')
 local font_module<const> = require('system/font')
 local system<const> = require('bios/system')
 
+__bmsx_next = nil
+__bmsx_type = nil
+__bmsx_setmetatable = nil
+__bmsx_getmetatable = nil
+__bmsx_rawget = nil
+__bmsx_rawset = nil
+__bmsx_select = nil
+__bmsx_string_byte = nil
+__bmsx_string_char = nil
+__bmsx_error = nil
+__bmsx_pcall = nil
+__bmsx_xpcall = nil
+
 function irq(flags)
 	system.irq(flags)
 end

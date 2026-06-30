@@ -26,12 +26,24 @@ function disassembleProgramWithoutIrqVector(compiled: CompiledProgram, showProto
 		.join('\\n\\n');
 }
 
-function compileWithModule(entrySource: string, modulePath: string, moduleSource: string): { compiled: CompiledProgram; disasm: string; constRelocs: ProgramConstReloc[] } {
+function compileWithModule(
+	entrySource: string,
+	modulePath: string,
+	moduleSource: string,
+	extraModules: ReadonlyArray<{ path: string; source: string }> = [],
+): { compiled: CompiledProgram; disasm: string; constRelocs: ProgramConstReloc[] } {
 	const entryChunk = parseSource(entrySource, 'entry.lua');
 	const moduleChunk = parseSource(moduleSource, `${modulePath}.lua`);
 	const compiled = compileLuaChunkToProgram(
 		entryChunk,
-		[{ path: modulePath, chunk: moduleChunk, source: moduleSource }],
+		[
+			{ path: modulePath, chunk: moduleChunk, source: moduleSource },
+			...extraModules.map(module => ({
+				path: module.path,
+				chunk: parseSource(module.source, `${module.path}.lua`),
+				source: module.source,
+			})),
+		],
 		{ entrySource },
 	);
 	return {
@@ -55,10 +67,10 @@ function compileWithConstModule(entrySource: string, modulePath: string, moduleS
 	};
 }
 
-// Module return values remain real runtime tables so direct `require(x).field` and
-// dynamic consumers keep Lua semantics. Static module-root calls still lower their
-// call target to an export_proto relocation so the linker can replace function
-// exports with direct CLOSURE operands.
+// Module return values remain real tables so direct compile-time import member
+// reads and dynamic consumers keep Lua semantics. Static module-root calls still
+// lower their call target to an export_proto relocation so the linker can replace
+// function exports with direct CLOSURE operands.
 test('static module function calls use export-proto relocations while preserving runtime tables', () => {
 	const moduleSource = [
 		'local api = {}',
@@ -68,7 +80,7 @@ test('static module function calls use export-proto relocations while preserving
 	const compiled = compileWithModule('local api<const> = require("foo")\napi.update()', 'foo', moduleSource);
 	const disasm = compiled.disasm;
 	assert.equal(compiled.constRelocs.some(reloc => reloc.kind === 'export_proto' && reloc.symbol === 'foo__update'), true, 'static module-root call must emit an export-proto relocation');
-	assert.match(disasm, /\bNEWT\b/, 'module runtime table must still be materialized for require() consumers');
+	assert.match(disasm, /\bNEWT\b/, 'module table must still be materialized for module-root consumers');
 	assert.match(disasm, /\bSETFIELD\b/, 'exported function must still be stored on the returned table');
 	assert.match(disasm, /\bSET(GL|SYS)\b/, 'export slot must remain populated for value reads and non-symbol exports');
 });
@@ -85,7 +97,7 @@ test('module export functions call sibling exports through link symbols', () => 
 	assert.equal(compiled.compiled.metadata.exportProtoIdBySlot.foo__twice?.includes('/decl:api.twice'), true);
 	assert.equal(compiled.constRelocs.some(reloc => reloc.kind === 'export_proto' && reloc.symbol === 'foo__linear'), true);
 	assert.equal(compiled.constRelocs.some(reloc => reloc.kind === 'export_proto' && reloc.symbol === 'foo__twice'), true);
-	assert.match(compiled.disasm, /\bNEWT\b/, 'runtime module table remains available for normal require consumers');
+	assert.match(compiled.disasm, /\bNEWT\b/, 'module table remains available for normal module-root consumers');
 	const image = encodeCompiledProgramImage(compiled.compiled);
 	const cpu = new CPU(new Memory({ systemRom: new Uint8Array(0) }));
 	cpu.setProgram(inflateExecutableProgramImage(image, compiled.compiled.metadata), compiled.compiled.metadata);
@@ -98,7 +110,12 @@ test('module export functions call sibling exports through link symbols', () => 
 
 test('bios easing exports a linkable function while keeping its Lua table', () => {
 	const moduleSource = readFileSync('machine/firmware/bios/easing.lua', 'utf8');
-	const compiled = compileWithModule('return require("bios/easing").arc01(0.25)', 'bios/easing', moduleSource);
+	const compiled = compileWithModule(
+		'return require("bios/easing").arc01(0.25)',
+		'bios/easing',
+		moduleSource,
+		[{ path: 'bios/util/clamp', source: readFileSync('machine/firmware/bios/util/clamp.lua', 'utf8') }],
+	);
 	assert.equal(compiled.constRelocs.some(reloc => reloc.kind === 'export_proto' && reloc.symbol === 'bios__easing__arc01'), true);
 	assert.match(compiled.disasm, /\bNEWT\b/, 'public easing table remains available for Lua API consumers');
 });
@@ -150,8 +167,8 @@ test('const modules inline export constants without runtime module state', () =>
 		moduleSource,
 	);
 	assert.equal(compiled.moduleProtoMap.has('assets'), false, 'const module must not produce a runtime module proto');
-	assert.equal(compiled.staticModulePaths.includes('assets'), false, 'const module must not be required at runtime');
-	assert.doesNotMatch(disasm, /\bCALL\b/, 'const module import must not call require');
+	assert.equal(compiled.staticModulePaths.includes('assets'), false, 'const module must not be scheduled for static initialization');
+	assert.doesNotMatch(disasm, /\bCALL\b/, 'const module import must not emit a runtime import call');
 	assert.doesNotMatch(disasm, /\bNEWT\b/, 'const module must not build a runtime export table');
 	assert.doesNotMatch(disasm, /\bGET(GL|SYS)\b.*assets/, 'const module reads must not use module export slots');
 });
@@ -167,8 +184,24 @@ test('const modules inline direct require member reads', () => {
 		moduleSource,
 	);
 	assert.equal(compiled.moduleProtoMap.has('assets'), false, 'const module must not produce a runtime module proto');
-	assert.doesNotMatch(disasm, /\bCALL\b/, 'direct const module member read must not call require');
+	assert.doesNotMatch(disasm, /\bCALL\b/, 'direct const module member read must not emit a runtime import call');
 	assert.doesNotMatch(disasm, /\bNEWT\b/, 'direct const module member read must not build a runtime export table');
+});
+
+test('compile-time require rejects dynamic module names', () => {
+	const moduleSource = 'return { value = 1 }';
+	assert.throws(
+		() => compileWithModule('local path<const> = "foo"\nreturn require(path).value', 'foo', moduleSource),
+		/Compile-time require expects exactly one literal module path/,
+	);
+});
+
+test('compile-time require rejects missing modules', () => {
+	const source = 'return require("missing")';
+	assert.throws(
+		() => compileLuaChunkToProgram(parseSource(source, 'entry.lua'), [], { entrySource: source }),
+		/Compile-time require module 'missing' was not provided to the program compiler/,
+	);
 });
 
 test('const modules reject non-constant exports', () => {

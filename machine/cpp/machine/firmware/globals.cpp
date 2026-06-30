@@ -1,6 +1,5 @@
 #include "machine/runtime/runtime.h"
 #include "machine/firmware/system_globals.h"
-#include "machine/program/load_compiler.h"
 #include "machine/common/number_format.h"
 #include "machine/memory/lua_heap_usage.h"
 #include "machine/memory/map.h"
@@ -365,91 +364,24 @@ void Runtime::setupBuiltins() {
 	auto str = [&cpu](std::string_view value) {
 		return valueString(cpu.stringPool().intern(value));
 	};
-	auto asText = [&cpu](Value value) -> const std::string& {
-		return cpu.stringPool().toString(asStringId(value));
-	};
-
 	seedSystemGlobals(*this);
 
 	setGlobal("sys_print_char", valueNumber(static_cast<double>(IO_SYS_PRINT_CHAR)));
 	setGlobal("sys_print_flush", valueNumber(static_cast<double>(IO_SYS_PRINT_FLUSH)));
 
-	setGlobal("type", cpu.createBuiltinFunction(BuiltinFunctionId::Type));
-	setGlobal("setmetatable", cpu.createBuiltinFunction(BuiltinFunctionId::SetMetatable));
-	setGlobal("getmetatable", cpu.createBuiltinFunction(BuiltinFunctionId::GetMetatable));
-	setGlobal("rawget", cpu.createBuiltinFunction(BuiltinFunctionId::RawGet));
-	setGlobal("rawset", cpu.createBuiltinFunction(BuiltinFunctionId::RawSet));
-	setGlobal("select", cpu.createBuiltinFunction(BuiltinFunctionId::Select));
-	setGlobal("error", cpu.createBuiltinFunction(BuiltinFunctionId::Error));
-	setGlobal("pcall", cpu.createBuiltinFunction(BuiltinFunctionId::PCall));
-	setGlobal("xpcall", cpu.createBuiltinFunction(BuiltinFunctionId::XPCall));
-
-	registerNativeFunction("loadstring", [this, str, asText](NativeArgsView args, NativeResults& out) {
-		if (args.empty() || !valueIsString(args.at(0))) {
-			throw BMSX_RUNTIME_ERROR("loadstring(source [, chunkname]) requires a string source.");
-		}
-		if (args.size() > 1 && !isNil(args.at(1)) && !valueIsString(args.at(1))) {
-			throw BMSX_RUNTIME_ERROR("loadstring(source [, chunkname]) requires a string chunkname.");
-		}
-		const std::string& source = asText(args.at(0));
-		const std::string chunkName = args.size() > 1 && !isNil(args.at(1))
-			? asText(args.at(1))
-			: std::string("loadstring");
-		try {
-			out.push_back(compileLoadChunk(*this, source, chunkName));
-		} catch (const std::exception& e) {
-			out.push_back(valueNil());
-			out.push_back(str(e.what()));
-		}
-	});
-
-	registerNativeFunction("load", [this, str, asText](NativeArgsView args, NativeResults& out) {
-		if (args.empty() || !valueIsString(args.at(0))) {
-			throw BMSX_RUNTIME_ERROR("load(source [, chunkname [, mode]]) requires a string source.");
-		}
-		if (args.size() > 1 && !isNil(args.at(1)) && !valueIsString(args.at(1))) {
-			throw BMSX_RUNTIME_ERROR("load(source [, chunkname [, mode]]) requires chunkname to be a string.");
-		}
-		if (args.size() > 2 && !isNil(args.at(2))) {
-			if (!valueIsString(args.at(2))) {
-				throw BMSX_RUNTIME_ERROR("load(source [, chunkname [, mode]]) requires mode to be a string.");
-			}
-			const std::string& mode = asText(args.at(2));
-			if (mode != "t" && mode != "bt") {
-				throw BMSX_RUNTIME_ERROR("load only supports text mode ('t' or 'bt').");
-			}
-		}
-		if (args.size() > 3 && !isNil(args.at(3))) {
-			throw BMSX_RUNTIME_ERROR("load does not support the environment argument.");
-		}
-		const std::string& source = asText(args.at(0));
-		const std::string chunkName = args.size() > 1 && !isNil(args.at(1))
-			? asText(args.at(1))
-			: std::string("load");
-		try {
-			out.push_back(compileLoadChunk(*this, source, chunkName));
-		} catch (const std::exception& e) {
-			out.push_back(valueNil());
-			out.push_back(str(e.what()));
-		}
-	});
-
-	registerNativeFunction("require", [this, asText](NativeArgsView args, NativeResults& out) {
-		const std::string& moduleName = asText(args.at(0));
-		size_t start = moduleName.find_first_not_of(" \t\n\r");
-		if (start == std::string::npos) {
-			out.push_back(requireModule(""));
-			return;
-		}
-		size_t end = moduleName.find_last_not_of(" \t\n\r");
-		out.push_back(requireModule(moduleName.substr(start, end - start + 1)));
-	});
-
-
-
-auto* stringTable = cpu.createTable();
-stringTable->set(key("byte"), machine.cpu.createBuiltinFunction(BuiltinFunctionId::StringByte));
-stringTable->set(key("char"), machine.cpu.createBuiltinFunction(BuiltinFunctionId::StringChar));
+	setGlobal("__bmsx_next", cpu.createBuiltinFunction(BuiltinFunctionId::Next));
+	setGlobal("__bmsx_type", cpu.createBuiltinFunction(BuiltinFunctionId::Type));
+	setGlobal("__bmsx_setmetatable", cpu.createBuiltinFunction(BuiltinFunctionId::SetMetatable));
+	setGlobal("__bmsx_getmetatable", cpu.createBuiltinFunction(BuiltinFunctionId::GetMetatable));
+	setGlobal("__bmsx_rawget", cpu.createBuiltinFunction(BuiltinFunctionId::RawGet));
+	setGlobal("__bmsx_rawset", cpu.createBuiltinFunction(BuiltinFunctionId::RawSet));
+	setGlobal("__bmsx_select", cpu.createBuiltinFunction(BuiltinFunctionId::Select));
+	setGlobal("__bmsx_string_byte", cpu.createBuiltinFunction(BuiltinFunctionId::StringByte));
+	setGlobal("__bmsx_string_char", cpu.createBuiltinFunction(BuiltinFunctionId::StringChar));
+	setGlobal("__bmsx_error", cpu.createBuiltinFunction(BuiltinFunctionId::Error));
+	setGlobal("__bmsx_pcall", cpu.createBuiltinFunction(BuiltinFunctionId::PCall));
+	setGlobal("__bmsx_xpcall", cpu.createBuiltinFunction(BuiltinFunctionId::XPCall));
+	auto* stringTable = cpu.createTable();
 
 	machine.cpu.setStringIndexTable(stringTable);
 	setGlobal("string", valueTable(stringTable));
@@ -460,7 +392,6 @@ stringTable->set(key("char"), machine.cpu.createBuiltinFunction(BuiltinFunctionI
 	auto* osTable = cpu.createTable();
 	setGlobal("os", valueTable(osTable));
 
-	setGlobal("next", machine.cpu.createBuiltinFunction(BuiltinFunctionId::Next));
 	auto buildMachineManifestTable = [&cpu, key, str](const MachineManifest& manifest) -> Table* {
 		auto* machineTable = cpu.createTable(0, 3);
 		if (!manifest.namespaceName.empty()) {

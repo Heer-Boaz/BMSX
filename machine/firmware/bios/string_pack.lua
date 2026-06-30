@@ -1,3 +1,4 @@
+require('bios/string_base')
 local byte<const> = string.byte
 local char<const> = string.char
 local sub<const> = string.sub

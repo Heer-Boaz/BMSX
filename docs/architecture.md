@@ -82,17 +82,25 @@ store lookup tables in `.rodata` and read them through ordinary typed pointer
 loads. Function names such as `sincos_turn32` are ordinary exported BLua symbols,
 not compiler, CPU, interpreter, or device intrinsics.
 
-Guest library tables are firmware-owned. The boot ROM installs `bios/math.lua`
-as the Lua `math` API and `bios/easing.lua` as the animation easing library;
-those modules execute as BLua using ordinary calls, ROM lookup tables, and
-integer/number instructions. Machine TS/C++ firmware must not expose `math.*` or
-`easing.*` as native host callbacks; host `Math.*`/`std::*` remains valid only
-for emulator/device implementation and build tooling.
+Guest library tables are firmware-owned. The boot ROM installs `bios/base.lua`
+as the core Lua global library, `bios/table.lua` as `table`, `bios/string.lua`
+as `string`, `bios/math.lua` as `math`, and `bios/easing.lua` as the animation
+easing library. Those modules execute as BLua using ordinary calls, ROM lookup
+tables, and integer/number instructions. Machine TS/C++ firmware exposes only
+temporary `__bmsx_*` boot primitives for the BIOS to capture; the boot ROM clears
+those primitive globals before cart code runs. `require(...)` is not one of those
+primitives and is not a guest runtime global: literal module imports are resolved
+by the compiler into static module initialization and module export slot loads.
+Machine TS/C++ firmware must not expose `math.*`, `easing.*`, `string.*`,
+`table.*`, `require`, or core Lua globals as native host callbacks; host
+`Math.*`/`std::*` remains valid only for emulator/device implementation and
+build tooling.
 
 Runtime source compilation (`load`/`loadstring`) is a compiler/loader boundary,
-not a shipped-cart technique. ROM, BIOS and cart sources must contain explicit
-Lua code or precompiled module exports; the cart Lua linter rejects references
-to `load` and `loadstring` in shipped sources.
+not a shipped-cart technique or a BIOS-provided public Lua API. ROM, BIOS and
+cart sources must contain explicit Lua code or precompiled module exports; the
+cart Lua linter rejects references to `load` and `loadstring` in shipped
+sources.
 
 `math.sin`, `math.cos`, and `math.tan` use the same firmware quarter-wave LUT
 and Q16.16 turn helper as direct fixed-point firmware code. Their precision is
@@ -105,10 +113,10 @@ The `os` library is also firmware-owned. `bios/os.lua` implements `os.clock`,
 `os.time`, `os.date`, and `os.difftime` in BLua; elapsed time comes from the
 CPU-visible `sys_time_ms` word and civil-time conversion is deterministic BMSX
 UTC-equivalent logic, not host wall-clock, host timezone, JavaScript `Date`, or
-libc local-time behavior. `string.*`, `table.*`, and core functions such as
-`assert`/`type` are the separate Lua object-world support layer; they are not
-precedent for cart-visible host facilities such as the removed `math.*`,
-`easing.*`, and `os.*` callbacks.
+libc local-time behavior. VM primitives required by the dynamic Lua object-world
+remain CPU intrinsics, but their cart-visible API surface is installed by BIOS
+Lua and is not precedent for cart-visible host facilities such as the removed
+`math.*`, `easing.*`, and `os.*` callbacks.
 
 ## Hard boundary
 

@@ -322,25 +322,6 @@ void Runtime::startLoadedProgram(ProgramVectorTable vectors, const std::vector<s
 	m_luaInitialized = true;
 }
 
-Value Runtime::requireModule(const std::string& moduleName) {
-	const auto cachedIt = m_moduleCache.find(moduleName);
-	if (cachedIt != m_moduleCache.end()) {
-		return cachedIt->second;
-	}
-	const auto protoIt = m_moduleProtos.find(moduleName);
-	if (protoIt == m_moduleProtos.end()) {
-		throw BMSX_RUNTIME_ERROR("require('" + moduleName + "') failed: module not found.");
-	}
-	m_moduleCache[moduleName] = valueBool(true);
-	auto* closure = machine.cpu.createRootClosure(protoIt->second);
-	NativeResults results;
-	callLuaFunctionInto(closure, NativeArgsView(), results);
-	Value value = results.empty() ? valueNil() : results[0];
-	Value cachedValue = isNil(value) ? valueBool(true) : value;
-	m_moduleCache[moduleName] = cachedValue;
-	return cachedValue;
-}
-
 void Runtime::runStaticModuleInitializer(const std::string& path) {
 	if (m_moduleCache.find(path) != m_moduleCache.end()) {
 		return;

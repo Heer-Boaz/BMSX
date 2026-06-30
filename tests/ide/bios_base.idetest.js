@@ -103,10 +103,10 @@ local ok<const>, key<const>, value<const> = pcall(next, values, nil)
 return type(next), ok, key, value, rawequal(next, pairs(values))
 `);
 t.assert(nextValues[0] === 'function', `next should be a first-class function, got ${nextValues[0]}`);
-t.assert(nextValues[1] === true, 'pcall(next, table) should execute the VM builtin');
+t.assert(nextValues[1] === true, 'pcall(next, table) should execute through the BIOS base function');
 t.assert(nextValues[2] === 1, `next key mismatch: ${nextValues[2]}`);
 t.assert(nextValues[3] === 41, `next value mismatch: ${nextValues[3]}`);
-t.assert(nextValues[4] === true, 'pairs should return the global next builtin');
+t.assert(nextValues[4] === true, 'pairs should return the global BIOS next function');
 
 const devtoolsGlobal = runtime.machine.cpu.getGlobalByKey(runtime.internString('devtools'));
 const cartProjectRootPathGlobal = runtime.machine.cpu.getGlobalByKey(runtime.internString('cart_project_root_path'));
@@ -125,13 +125,13 @@ return type(type), type(rawget), type(rawset), type(setmetatable), type(getmetat
 	rawequal(set_result, target), rawequal(getmetatable(target), meta), rawget(target, 'x'), select('#', 1, nil, 3), select_a, select_b
 	, xpcall_ok, xpcall_value, error_ok, error_value
 `);
-t.assert(primitiveValues[0] === 'function', `type should be a VM builtin function, got ${primitiveValues[0]}`);
-t.assert(primitiveValues[1] === 'function', `rawget should be a VM builtin function, got ${primitiveValues[1]}`);
-t.assert(primitiveValues[2] === 'function', `rawset should be a VM builtin function, got ${primitiveValues[2]}`);
-t.assert(primitiveValues[3] === 'function', `setmetatable should be a VM builtin function, got ${primitiveValues[3]}`);
-t.assert(primitiveValues[4] === 'function', `getmetatable should be a VM builtin function, got ${primitiveValues[4]}`);
-t.assert(primitiveValues[5] === 'function', `select should be a VM builtin function, got ${primitiveValues[5]}`);
-t.assert(primitiveValues[6] === 'function', `error should be a VM builtin function, got ${primitiveValues[6]}`);
+t.assert(primitiveValues[0] === 'function', `type should be a BIOS base function, got ${primitiveValues[0]}`);
+t.assert(primitiveValues[1] === 'function', `rawget should be a BIOS base function, got ${primitiveValues[1]}`);
+t.assert(primitiveValues[2] === 'function', `rawset should be a BIOS base function, got ${primitiveValues[2]}`);
+t.assert(primitiveValues[3] === 'function', `setmetatable should be a BIOS base function, got ${primitiveValues[3]}`);
+t.assert(primitiveValues[4] === 'function', `getmetatable should be a BIOS base function, got ${primitiveValues[4]}`);
+t.assert(primitiveValues[5] === 'function', `select should be a BIOS base function, got ${primitiveValues[5]}`);
+t.assert(primitiveValues[6] === 'function', `error should be a BIOS base function, got ${primitiveValues[6]}`);
 t.assert(primitiveValues[7] === true, 'setmetatable should return the target table');
 t.assert(primitiveValues[8] === true, 'getmetatable should return the assigned metatable');
 t.assert(primitiveValues[9] === 42, `rawget/rawset mismatch: ${primitiveValues[9]}`);
@@ -140,8 +140,21 @@ t.assert(primitiveValues[11] === 'keep', `select(2, ...) first result mismatch: 
 t.assert(primitiveValues[12] === 'tail', `select(2, ...) second result mismatch: ${primitiveValues[12]}`);
 t.assert(primitiveValues[13] === false, 'xpcall should report the protected call failure');
 t.assert(primitiveValues[14] === 'handled:xerr', `xpcall should run the message handler, got ${primitiveValues[14]}`);
-t.assert(primitiveValues[15] === false, 'pcall(error, message) should fail without leaving the VM builtin path');
+t.assert(primitiveValues[15] === false, 'pcall(error, message) should fail through the BIOS base function');
 t.assert(primitiveValues[16] === 'vm-error', `pcall(error, message) should preserve the thrown value, got ${primitiveValues[16]}`);
+
+[
+	['__bmsx_next', 'must be cleared after BIOS boot'],
+	['__bmsx_type', 'must be cleared after BIOS boot'],
+	['__bmsx_string_byte', 'must be cleared after BIOS boot'],
+	['__bmsx_error', 'must be cleared after BIOS boot'],
+	['require', 'must not be a guest Lua global'],
+	['load', 'must not be a guest Lua global'],
+	['loadstring', 'must not be a guest Lua global'],
+].forEach(([name, expectation]) => {
+	const value = runtime.machine.cpu.getGlobalByKey(runtime.internString(name));
+	t.assert(value === null, `${name} ${expectation}`);
+});
 
 const manifestValues = t.evaluateLua(`
 return machine_manifest.vdp_mode,

@@ -313,7 +313,6 @@ add_library(bmsx_core STATIC
 	machine/firmware/system_globals.cpp
 	machine/firmware/handler_registry.cpp
 	machine/cpu/disassembler.cpp
-	machine/program/load_compiler.cpp
 	machine/firmware/globals.cpp
 	machine/memory/lua_heap_usage.cpp
 	machine/machine.cpp

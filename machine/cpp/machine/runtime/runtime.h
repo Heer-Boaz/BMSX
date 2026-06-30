@@ -162,7 +162,6 @@ public:
 	void registerNativeFunction(std::string_view name, NativeFunctionInvoke fn, std::optional<NativeFnCost> cost = std::nullopt);
 
 	void startLoadedProgram(ProgramVectorTable vectors, const std::vector<std::string>& staticModulePaths);
-	auto requireModule(const std::string& moduleName) -> Value;
 
 	void resetHardwareState();
 	void resetRuntimeForProgramReload();

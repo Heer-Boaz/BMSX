@@ -424,29 +424,6 @@ export class Runtime {
 		this.moduleCache.delete(path);
 	}
 
-	public requireModule(moduleName: string): Value {
-		const cached = this.moduleCache.get(moduleName);
-		if (cached !== undefined) {
-			return cached;
-		}
-		const protoIndex = this.moduleProtos.get(moduleName);
-		if (protoIndex === undefined) {
-			throw this.createApiRuntimeError(`require('${moduleName}') failed: module not compiled.`);
-		}
-		this.moduleCache.set(moduleName, true);
-		const results = this.luaScratch.values.acquire();
-		let value: Value = null;
-		try {
-			callClosureInto(this, { protoIndex, upvalues: [] }, [], results);
-			value = results.length > 0 ? results[0] : null;
-		} finally {
-			this.luaScratch.values.release(results);
-		}
-		const cachedValue = value === null ? true : value;
-		this.moduleCache.set(moduleName, cachedValue);
-		return cachedValue;
-	}
-
 	public resolveCurrentModuleId(): string {
 		const currentPath = this.currentPath;
 		if (!currentPath) {

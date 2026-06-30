@@ -97,8 +97,8 @@ Actuele validatie voor de ROM/data/compiler-linker status:
 - `npm run compile:machine -- --noEmit`
 - `npm run audit:architecture-boundaries:strict` (`architecture_boundary_issues,0`)
 - `npm run audit:core-parity`
-- `npm run test:lua` (`281` tests, `280` pass, `1` skipped)
-- `npm run test:rompacker` (`71` pass)
+- `npm run test:lua` (`295` tests, `294` pass, `1` skipped)
+- `npm run test:rompacker` (`78` pass)
 - `npm run build:platform:libretro-wsl -- --force`
 - `npm run ide:test -- pietious tests/ide/hot_resume_entry_edit.idetest.js`
 - `npm run ide:test -- bare_metal_cart tests/ide/bios_math.idetest.js`
@@ -147,7 +147,7 @@ Cart-representatie roadmap/status:
 | runtime relocaties als load/link stap | Deels: `module`/`export_proto` placeholders zijn uit runtimewaarden gehaald; open: harde verifier-gate voor alle executable images. |
 | const module/data ABI | Deels: M2 call-targets kunnen link-time naar `CLOSURE(proto)` en de const-moduleklasse bestaat; const modules exporteren compile-time constants, `.bss`, `.data` en `.rodata` storage-symbolen en function call-targets zonder runtime module-table, global-slot lookup of `require`-call. Function exports mogen sibling exports aanroepen via `export_proto` link-symbolen; wanneer Lua-code een function export als waarde nodig heeft, materialiseert dezelfde `export_proto` naar een static closure in plaats van naar een runtime module-table. De scalar bios-util cohort (`bios/util/bool01`, `bios/util/clamp`, `bios/util/div_toward_zero`, `bios/util/rect_overlaps`, `bios/util/rol8` en `bios/util/round_to_nearest`) gebruikt root function modules; die functies worden als text-symbol/call-target gecompileerd en niet via runtime module-tables vervoerd. Open: verdere migratie per target/gap. |
 | dynamic Lua-opcodes weren uit const-module function exports | Deels: static call-target scopes blokkeren runtime global loads/stores, runtime module slots, dynamic call targets en string constants bij de producer voordat die vormen als code worden geëmit; de post-codegen gate blijft alleen de invariant/backstop voor resterende dynamic Lua-opcodes (tables, closures, vararg, concat, object-length, en onverwachte global/module slots). Bewezen op de scalar bios-util cohort (`bios/util/bool01`, `bios/util/clamp`, `bios/util/div_toward_zero`, `bios/util/rect_overlaps`, `bios/util/rol8` en `bios/util/round_to_nearest`). Open: bredere target-migratie en audit-output zodra daar een echte consumer voor is. |
-| host-magie uit manifesten en Lua libraries verwijderen | Deels: `math.*`, `easing.*` en `os.*` zijn uit machine-native host callbacks gehaald en door BIOS Lua geleverd. Open: resterende guest-zichtbare manifest/runtime shortcuts zijn schuld, geen eindvorm. Cartmanifesten zijn packaging/header input, niet live hardware API; Lua library gedrag hoort in BIOS Lua of in een echte taalprimitive van de dynamic Lua objectwereld. Waarden zoals `machine_manifest.vdp_mode` en afgeleide `render_size` moeten naar VDP-register/state ownership of boot/header-consumptie, niet naar wrappers rond de manifestlaag. |
+| host-magie uit manifesten en Lua libraries verwijderen | Deels: `math.*`, `easing.*`, `os.*`, core globals, `string.*` en `table.*` zijn uit de publieke machine-native host surface gehaald en worden door BIOS Lua geleverd; de CPU houdt alleen verborgen boot-primitives die vóór cart-code worden gewist. `require(...)` is opnieuw alleen een compile-time importvorm: de compiler verlaagt literal imports naar static module initialization en module-export slot loads; er is geen runtime `require` global en geen `__bmsx_require` boot primitive. Open: resterende guest-zichtbare manifest/runtime shortcuts zijn schuld, geen eindvorm. Cartmanifesten zijn packaging/header input, niet live hardware API; Lua library gedrag hoort in BIOS Lua of in een echte taalprimitive van de dynamic Lua objectwereld. Waarden zoals `machine_manifest.vdp_mode` en afgeleide `render_size` moeten naar VDP-register/state ownership of boot/header-consumptie, niet naar wrappers rond de manifestlaag. |
 | CPU objectwereld loshalen van machine-code ABI | Deels: `CPU.Value` is nog Lua-objectwereld, maar const-module function call-targets in de scalar bios-util cohort (`bios/util/bool01`, `bios/util/clamp`, `bios/util/div_toward_zero`, `bios/util/rect_overlaps`, `bios/util/rol8` en `bios/util/round_to_nearest`) gebruiken nu scalar word/bool calls via link-time `export_proto` zonder runtime module-table, global-slot, dynamic-call of string-object transport; waar Lua een function value nodig heeft, materialiseert diezelfde link naar een static closure. Open: bredere migratie naar words, registers, addresses, memory, sections en symbols als primaire ABI. |
 | assets/`rom_data` binair maken | Deels: `rom_data`-familie is weg en `.bin` raw ROM path is getest; open: maps, rooms, timelines, registries en asset records naar vaste binaire layouts. |
 | cart startup/vector model | Deels: `ProgramImage` draagt nu een expliciete vector table (`resetProtoIndex`, `sectionInitProtoIndex`, `irqProtoIndex`) en TS/C++ linker/runtime boot gebruiken die vector table in plaats van losse entry/section-init velden. `init()`/`new_game()` zijn bewust cartfuncties, geen console-ABI: de lifecycle-IRQ-transportlaag is verwijderd, cold cart startup roept ze direct aan en hot-resume voert alleen `init()` als IDE/debugger-call uit. Hardware IRQ's vectoren bij `HALT` en guest instruction boundaries naar cartcode die `irq(flags)` dispatcht en owned masks ackt; gemigreerde carts gebruiken ISR-latches in plaats van post-HALT polling als dispatchpad. `IRQ_MASK` is de cart-facing per-source vector-maskerlaag; de CPU-global maskable state is alleen interne handler-serialisatie. Open: NMI blijft buiten scope tot er een echte producer is. |
@@ -604,8 +604,9 @@ Acceptatie:
   een echte consumer die nodig heeft
 - namespace-als-waarde is voor const modules een compile-error (klaar voor de
   const module: de hele `bmsx/assets`-tabel als waarde gebruiken faalt compile-time)
-- dynamic modules blijven Lua-semantiek houden waar gameplay die lane expliciet
-  kiest
+- dynamic modules behouden hun Lua-table semantiek waar gameplay die lane expliciet
+  kiest, maar `require(...)` zelf blijft compile-time: de runtime voert geen
+  module lookup-functie uit.
 - generated `bmsx/assets` past in dezelfde static-symbol ABI (klaar: const module)
 - const-module `.bss`/`.data`/`.rodata` export heeft geen runtime module-table, geen asset
   lookup en geen content-serializer; het is gewoon object-storage met een
@@ -655,8 +656,9 @@ Status:
 - runtime table-modules kunnen hun Lua API-table behouden terwijl no-upvalue
   exported functions via `export_proto` als linkbare sibling-call targets worden
   gebruikt. `bios/easing` gebruikt die vorm: `easing` blijft een gewone globale
-  Lua table voor API-compatibiliteit, maar direct `require('bios/easing').fn`
-  en interne sibling-calls kunnen naar concrete function protos linken.
+  Lua table voor API-compatibiliteit, maar literal imports zoals
+  `require('bios/easing').fn` worden compile-time naar concrete function protos
+  of module-export slots verlaagd.
 - open: volgende targets blijven gap-gedreven: verdere fixed-point math helpers
   blijven gewone BLua modules met ROM-data en integercode; local scratch
   aggregates, typed-pointer calling convention en audit-output per module/proto
@@ -687,9 +689,12 @@ Acceptatie:
   `sys_time_ms` en voeren deterministische BMSX civil-time code uit in BLua;
   de machine-native TS/C++ `os.*` callbacks zijn verwijderd zodat shipped
   guest-code niet meer via host wall-clock/locale rekent
-- resterende native Lua library support (`string.*`/`table.*`/core functies)
-  valt onder de aparte Lua-objectwereld-lane en is geen precedent voor nieuwe
-  cart-zichtbare host faciliteiten.
+- de publieke core/`string`/`table` Lua library surface wordt door BIOS Lua
+  geïnstalleerd (`bios/base.lua`, `bios/string.lua`, `bios/table.lua`). De CPU
+  houdt alleen verborgen `__bmsx_*` boot-primitives voor de dynamic Lua
+  objectwereld; de boot ROM wist die globals voordat cart-code draait. Dat is
+  geen backwards-compat surface en geen precedent voor nieuwe cart-zichtbare host
+  faciliteiten.
 
 ## 21. CPU machine-code ABI loshalen van Lua-objectwereld
 

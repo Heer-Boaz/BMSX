@@ -17,6 +17,21 @@ export const SYSTEM_ROM_HELPER_NAMES = [
 	'sys_print_flush',
 ] as const;
 
+const SYSTEM_ROM_LUA_PRIMITIVE_NAMES = [
+	'__bmsx_next',
+	'__bmsx_type',
+	'__bmsx_setmetatable',
+	'__bmsx_getmetatable',
+	'__bmsx_rawget',
+	'__bmsx_rawset',
+	'__bmsx_select',
+	'__bmsx_string_byte',
+	'__bmsx_string_char',
+	'__bmsx_error',
+	'__bmsx_pcall',
+	'__bmsx_xpcall',
+] as const;
+
 const SYSTEM_ROM_GEO_GLOBAL_NAMES = [
 	'sys_geo_scratch_base',
 	'sys_geo_scratch_size',
@@ -427,6 +442,7 @@ const SYSTEM_ROM_APU_GLOBAL_NAMES = [
 
 export const SYSTEM_ROM_GLOBAL_NAMES: ReadonlyArray<string> = [
 	...SYSTEM_ROM_HELPER_NAMES,
+	...SYSTEM_ROM_LUA_PRIMITIVE_NAMES,
 	...SYSTEM_LUA_BUILTIN_FUNCTION_NAMES,
 	...SYSTEM_LUA_BUILTIN_GLOBAL_NAMES,
 	...SYSTEM_ROM_GEO_GLOBAL_NAMES,

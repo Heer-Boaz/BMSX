@@ -3,8 +3,11 @@ import { test } from 'node:test';
 
 import { BuiltinFunctionId, createBuiltinFunction, createNativeFunction } from '../../machine/ts/machine/cpu/cpu';
 
-test('native cost resolution uses flat tiers by function category', () => {
-	assert.deepEqual(createNativeFunction('loadstring', () => {}).cost, { base: 4, perArg: 0, perRet: 0 });
+test('native functions use flat default cost', () => {
+	assert.deepEqual(createNativeFunction('require', () => {}).cost, { base: 1, perArg: 0, perRet: 0 });
+	assert.deepEqual(createNativeFunction('loadstring', () => {}).cost, { base: 1, perArg: 0, perRet: 0 });
+	assert.deepEqual(createNativeFunction('get_player_input', () => {}).cost, { base: 1, perArg: 0, perRet: 0 });
+	assert.deepEqual(createNativeFunction('player_input.getButtonState', () => {}).cost, { base: 1, perArg: 0, perRet: 0 });
 	assert.deepEqual(createNativeFunction('unknown_native', () => {}).cost, { base: 1, perArg: 0, perRet: 0 });
 });
 
@@ -15,7 +18,7 @@ test('builtin cost resolution keeps VM primitives off the native callback path',
 	assert.deepEqual(createBuiltinFunction(BuiltinFunctionId.StringChar).cost, { base: 2, perArg: 0, perRet: 0 });
 });
 
-test('native cost resolution still allows explicit overrides', () => {
+test('native functions still allow explicit cost', () => {
 	const cost = { base: 9, perArg: 3, perRet: 2 };
 	assert.deepEqual(createNativeFunction('unknown_native', () => {}, cost).cost, cost);
 });

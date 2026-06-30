@@ -1,4 +1,14 @@
-local byte<const> = string.byte
+local byte<const> = __bmsx_string_byte
+local vm_next<const> = __bmsx_next
+local vm_type<const> = __bmsx_type
+local vm_setmetatable<const> = __bmsx_setmetatable
+local vm_getmetatable<const> = __bmsx_getmetatable
+local vm_rawget<const> = __bmsx_rawget
+local vm_rawset<const> = __bmsx_rawset
+local vm_select<const> = __bmsx_select
+local vm_error<const> = __bmsx_error
+local vm_pcall<const> = __bmsx_pcall
+local vm_xpcall<const> = __bmsx_xpcall
 local print_char<const>: *word = sys_print_char
 local print_flush<const>: *word = sys_print_flush
 
@@ -193,14 +203,64 @@ local parse_decimal<const> = function(text)
 	return sign * value
 end
 
+next = function(target, key)
+	return vm_next(target, key)
+end
+
+
+type = function(value)
+	return vm_type(value)
+end
+
+
+setmetatable = function(target, metatable)
+	return vm_setmetatable(target, metatable)
+end
+
+
+getmetatable = function(target)
+	return vm_getmetatable(target)
+end
+
+
+rawget = function(target, key)
+	return vm_rawget(target, key)
+end
+
+
+rawset = function(target, key, value)
+	return vm_rawset(target, key, value)
+end
+
+
+select = function(index, ...)
+	return vm_select(index, ...)
+end
+
+
+error = function(message, level)
+	return vm_error(message, level)
+end
+
+
+pcall = function(fn, ...)
+	return vm_pcall(fn, ...)
+end
+
+
+xpcall = function(fn, handler, ...)
+	return vm_xpcall(fn, handler, ...)
+end
+
+
 assert = function(condition, ...)
 	if condition then
 		return condition, ...
 	end
-	if select('#', ...) > 0 then
-		error((select(1, ...)))
+	if vm_select('#', ...) > 0 then
+		vm_error((vm_select(1, ...)))
 	end
-	error('assertion failed!')
+	vm_error('assertion failed!')
 end
 
 

@@ -120,6 +120,7 @@ export type BuiltinFunction = {
 
 const BUILTIN_COST_TIER1: NativeFnCost = { base: 1, perArg: 0, perRet: 0 };
 const BUILTIN_COST_TIER2: NativeFnCost = { base: 2, perArg: 0, perRet: 0 };
+const BUILTIN_COST_TIER4: NativeFnCost = { base: 4, perArg: 0, perRet: 0 };
 const BUILTIN_FUNCTION_HEAP_BYTES = 16;
 
 export function createBuiltinFunction(id: BuiltinFunctionId): BuiltinFunction {
@@ -146,9 +147,9 @@ export function createBuiltinFunction(id: BuiltinFunctionId): BuiltinFunction {
 		case BuiltinFunctionId.Error:
 			return { kind: BUILTIN_FUNCTION_KIND, id, name: 'error', cost: BUILTIN_COST_TIER2 };
 		case BuiltinFunctionId.PCall:
-			return { kind: BUILTIN_FUNCTION_KIND, id, name: 'pcall', cost: NATIVE_COST_TIER4 };
+			return { kind: BUILTIN_FUNCTION_KIND, id, name: 'pcall', cost: BUILTIN_COST_TIER4 };
 		case BuiltinFunctionId.XPCall:
-			return { kind: BUILTIN_FUNCTION_KIND, id, name: 'xpcall', cost: NATIVE_COST_TIER4 };
+			return { kind: BUILTIN_FUNCTION_KIND, id, name: 'xpcall', cost: BUILTIN_COST_TIER4 };
 	}
 }
 
@@ -183,9 +184,7 @@ function valueTypeName(value: Value): string {
 	return 'closure';
 }
 
-const NATIVE_COST_TIER1: NativeFnCost = { base: 1, perArg: 0, perRet: 0 };
-const NATIVE_COST_TIER4: NativeFnCost = { base: 4, perArg: 0, perRet: 0 };
-const DEFAULT_NATIVE_COST = NATIVE_COST_TIER1;
+const DEFAULT_NATIVE_COST: NativeFnCost = { base: 1, perArg: 0, perRet: 0 };
 
 const TABLE_HEAP_BYTES = 32;
 const TABLE_ARRAY_SLOT_HEAP_BYTES = 8;
@@ -196,23 +195,12 @@ const NATIVE_FUNCTION_HEAP_BYTES = 16;
 const NATIVE_OBJECT_HEAP_BYTES = 24;
 const UPVALUE_HEAP_BYTES = 24;
 
-function resolveNativeFunctionCost(name: string): NativeFnCost {
-	switch (name) {
-		case 'loadstring':
-		case 'load':
-		case 'require':
-			return NATIVE_COST_TIER4;
-		default:
-			return DEFAULT_NATIVE_COST;
-	}
-}
-
 export function createNativeFunction(
 	name: string,
 	invoke: (args: ReadonlyArray<Value>, out: Value[]) => void,
 	cost?: NativeFnCost,
 ): NativeFunction {
-	const resolvedCost = cost ?? resolveNativeFunctionCost(name);
+	const resolvedCost = cost ?? DEFAULT_NATIVE_COST;
 	addTrackedLuaHeapBytes(NATIVE_FUNCTION_HEAP_BYTES);
 	return {
 		kind: NATIVE_FUNCTION_KIND,

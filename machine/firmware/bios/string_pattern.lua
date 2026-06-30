@@ -1,3 +1,4 @@
+require('bios/string_base')
 local byte<const> = string.byte
 local sub<const> = string.sub
 local concat<const> = table.concat

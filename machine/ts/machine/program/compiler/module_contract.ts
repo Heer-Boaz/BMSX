@@ -1,9 +1,13 @@
 import {
 	LuaSyntaxKind,
+	type LuaCallExpression,
 	type LuaChunk,
 	type LuaExpression,
+	type LuaIdentifierExpression,
 	type LuaReturnStatement,
+	type LuaStringLiteralExpression,
 } from '../../../lua/syntax/ast';
+import { visitCallExpressionsInStatements } from '../../../lua/syntax/calls';
 import type { LuaSemanticFrontend, LuaSemanticFrontendFile } from '../../../lua/semantic/frontend';
 import {
 	assertConstModuleExportsAreStatic,
@@ -46,6 +50,9 @@ export type ModuleCompileInfo = {
 };
 
 export type ModuleCompileContext = {
+	modulePaths: ReadonlySet<string>;
+	externalModulePaths: ReadonlySet<string>;
+	moduleDependenciesByPath: ReadonlyMap<string, ReadonlyArray<string>>;
 	modulesByPath: Map<string, ModuleCompileInfo>;
 };
 
@@ -107,6 +114,32 @@ const buildStaticFunctionExportSlotBySymbolHandle = (
 	return out;
 };
 
+const collectModuleDependencies = (
+	chunk: LuaChunk,
+	knownModulePaths: ReadonlySet<string>,
+): string[] => {
+	const dependencies: string[] = [];
+	const seen = new Set<string>();
+	visitCallExpressionsInStatements(chunk.body, (call: LuaCallExpression) => {
+		if (call.methodName !== null || call.arguments.length !== 1 || call.callee.kind !== LuaSyntaxKind.IdentifierExpression) {
+			return;
+		}
+		if ((call.callee as LuaIdentifierExpression).name !== 'require') {
+			return;
+		}
+		if (call.arguments[0].kind !== LuaSyntaxKind.StringLiteralExpression) {
+			return;
+		}
+		const modulePath = (call.arguments[0] as LuaStringLiteralExpression).value;
+		if (!knownModulePaths.has(modulePath) || seen.has(modulePath)) {
+			return;
+		}
+		seen.add(modulePath);
+		dependencies.push(modulePath);
+	});
+	return dependencies;
+};
+
 const buildModuleCompileInfo = (
 	modulePath: string,
 	chunk: LuaChunk,
@@ -162,7 +195,7 @@ const buildModuleCompileInfo = (
 		constModule: compileTimeModule,
 		returnExpression,
 		exportRoot,
-		exportSlotsByPathKey: buildModuleExportSlots(modulePath, exportRoot, rootStaticFunctionExport),
+		exportSlotsByPathKey: buildModuleExportSlots(modulePath, exportRoot, !compileTimeModule || rootStaticFunctionExport),
 		exportConstValueByPathKey,
 		staticFunctionExportByPathKey,
 		staticFunctionExportSlotBySymbolHandle: buildStaticFunctionExportSlotBySymbolHandle(staticFunctionExportByPathKey),
@@ -177,8 +210,19 @@ export const buildModuleCompileContext = (
 	frontend: LuaSemanticFrontend,
 ): ModuleCompileContext => {
 	const modulesByPath = new Map<string, ModuleCompileInfo>();
+	const modulePaths = new Set<string>();
+	const externalModulePaths = new Set<string>();
+	for (let index = 0; index < modules.length; index += 1) {
+		modulePaths.add(modules[index].path);
+	}
+	for (let index = 0; index < externalModules.length; index += 1) {
+		modulePaths.add(externalModules[index].path);
+		externalModulePaths.add(externalModules[index].path);
+	}
+	const moduleDependenciesByPath = new Map<string, ReadonlyArray<string>>();
 	for (let index = 0; index < modules.length; index += 1) {
 		const module = modules[index];
+		moduleDependenciesByPath.set(module.path, collectModuleDependencies(module.chunk, modulePaths));
 		const constModule = constModulePaths.has(module.path);
 		const info = buildModuleCompileInfo(module.path, module.chunk, constModule, constModule, constModule, frontend.getFile(module.path));
 		if (info) {
@@ -188,6 +232,7 @@ export const buildModuleCompileContext = (
 	}
 	for (let index = 0; index < externalModules.length; index += 1) {
 		const module = externalModules[index];
+		moduleDependenciesByPath.set(module.path, collectModuleDependencies(module.chunk, modulePaths));
 		if (modulesByPath.has(module.path)) {
 			continue;
 		}
@@ -197,5 +242,5 @@ export const buildModuleCompileContext = (
 			continue;
 		}
 	}
-	return { modulesByPath };
+	return { modulePaths, externalModulePaths, moduleDependenciesByPath, modulesByPath };
 };

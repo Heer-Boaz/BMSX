@@ -7,8 +7,8 @@ t.assert(lengths[0] === 3, `string.len ascii mismatch: ${lengths[0]}`);
 t.assert(lengths[1] === 2, `string.len utf8 codepoint mismatch: ${lengths[1]}`);
 t.assert(lengths[2] === 2, `string method len mismatch: ${lengths[2]}`);
 t.assert(lengths[3] === 2, `string length operator mismatch: ${lengths[3]}`);
-t.assert(lengths[4] === 'function', `string.byte should be a VM builtin function, got ${lengths[4]}`);
-t.assert(lengths[5] === 'function', `string.char should be a VM builtin function, got ${lengths[5]}`);
+t.assert(lengths[4] === 'function', `string.byte should be a BIOS string function, got ${lengths[4]}`);
+t.assert(lengths[5] === 'function', `string.char should be a BIOS string function, got ${lengths[5]}`);
 
 const cases = t.evaluateLua(`
 return string.upper('Az-09áβ'), string.lower('Az-09áβ'), ('aBc'):upper(), ('AbC'):lower()
