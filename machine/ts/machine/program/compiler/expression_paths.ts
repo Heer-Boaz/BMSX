@@ -1,11 +1,15 @@
 import {
 	LuaSyntaxKind,
+	LuaTableFieldKind,
 	type LuaAssignableExpression,
 	type LuaExpression,
 	type LuaIdentifierExpression,
 	type LuaIndexExpression,
 	type LuaMemberExpression,
 	type LuaStringLiteralExpression,
+	type LuaTableConstructorExpression,
+	type LuaTableExpressionField,
+	type LuaTableIdentifierField,
 } from '../../../lua/syntax/ast';
 
 export const extractTableKeyFromExpression = (expression: LuaExpression): string | null => {
@@ -16,6 +20,27 @@ export const extractTableKeyFromExpression = (expression: LuaExpression): string
 			return (expression as LuaIdentifierExpression).name;
 		default:
 			return null;
+	}
+};
+
+type NamedTableField = LuaTableIdentifierField | LuaTableExpressionField;
+
+export const visitNamedTableFields = (
+	table: LuaTableConstructorExpression,
+	visit: (key: string, value: LuaExpression, field: NamedTableField) => void,
+): void => {
+	for (let index = 0; index < table.fields.length; index += 1) {
+		const field = table.fields[index];
+		if (field.kind === LuaTableFieldKind.Array) {
+			continue;
+		}
+		const key = field.kind === LuaTableFieldKind.IdentifierKey
+			? field.name
+			: extractTableKeyFromExpression(field.key);
+		if (!key) {
+			continue;
+		}
+		visit(key, field.value, field);
 	}
 };
 

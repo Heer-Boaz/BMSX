@@ -54,6 +54,9 @@ const EMPTY_DEF_SLOTS: DefSlot[] = [];
 
 const RK_B = 1;
 const RK_C = 2;
+
+const inlineConstEquals = (constant: ConstValue | null, value: Value): boolean =>
+	!!constant && constant.value === value;
 const SCCP_UNDEF = 0;
 const SCCP_CONST = 1;
 const SCCP_OVERDEFINED = 2;
@@ -1204,12 +1207,11 @@ const applyAvailableValueNumbering = (
 };
 
 const simplifyAlgebraic = (instructions: Instruction[], context: OptimizationContext): void => {
-	const getInlineConst = (instruction: Instruction, field: 'b' | 'c'): Value | null => {
+	const getInlineConst = (instruction: Instruction, field: 'b' | 'c'): ConstValue | null => {
 		const rkMaskBit = field === 'b' ? RK_B : RK_C;
 		const operand = field === 'b' ? instruction.b : instruction.c;
 		if ((instruction.rkMask & rkMaskBit) !== 0 && operand < 0) {
-			const value = constPoolValueForOptimization(context, -1 - operand);
-			return value ? value.value : null;
+			return constPoolValueForOptimization(context, -1 - operand);
 		}
 		return null;
 	};
@@ -1223,111 +1225,77 @@ const simplifyAlgebraic = (instructions: Instruction[], context: OptimizationCon
 		return operand;
 	};
 
+	const replaceWithOperand = (instruction: Instruction, field: 'b' | 'c', constant: ConstValue | null): void => {
+		if (constant) {
+			replaceWithConst(instruction, instruction.a, constant.value, context);
+			return;
+		}
+		const reg = getRegisterOperand(instruction, field);
+		if (reg || reg === 0) {
+			replaceWithMov(instruction, instruction.a, reg);
+		}
+	};
+
+	const replaceWithNegatedOperand = (instruction: Instruction, field: 'b' | 'c', constant: ConstValue | null): void => {
+		if (constant) {
+			const result = evaluateBinary(OpCode.SUB, 0, constant.value);
+			if (result || result === 0) {
+				replaceWithConst(instruction, instruction.a, result, context);
+			}
+			return;
+		}
+		const reg = getRegisterOperand(instruction, field);
+		if (reg || reg === 0) {
+			replaceWithUnm(instruction, instruction.a, reg);
+		}
+	};
+
 	for (let i = 0; i < instructions.length; i += 1) {
 		const instruction = instructions[i];
 		switch (instruction.op) {
 			case OpCode.ADD: {
 				const bConst = getInlineConst(instruction, 'b');
 				const cConst = getInlineConst(instruction, 'c');
-				if (bConst === 0) {
-					if (cConst !== null) {
-						replaceWithConst(instruction, instruction.a, cConst, context);
-					} else {
-						const reg = getRegisterOperand(instruction, 'c');
-						if (reg !== null) {
-							replaceWithMov(instruction, instruction.a, reg);
-						}
-					}
-				} else if (cConst === 0) {
-					if (bConst !== null) {
-						replaceWithConst(instruction, instruction.a, bConst, context);
-					} else {
-						const reg = getRegisterOperand(instruction, 'b');
-						if (reg !== null) {
-							replaceWithMov(instruction, instruction.a, reg);
-						}
-					}
+				if (inlineConstEquals(bConst, 0)) {
+					replaceWithOperand(instruction, 'c', cConst);
+				} else if (inlineConstEquals(cConst, 0)) {
+					replaceWithOperand(instruction, 'b', bConst);
 				}
 				break;
 			}
 			case OpCode.SUB: {
 				const bConst = getInlineConst(instruction, 'b');
 				const cConst = getInlineConst(instruction, 'c');
-				if (cConst === 0) {
-					if (bConst !== null) {
-						replaceWithConst(instruction, instruction.a, bConst, context);
-					} else {
-						const reg = getRegisterOperand(instruction, 'b');
-						if (reg !== null) {
-							replaceWithMov(instruction, instruction.a, reg);
-						}
-					}
-				} else if (bConst === 0) {
-					if (cConst !== null) {
-						const result = evaluateBinary(OpCode.SUB, bConst, cConst);
-						if (result !== null) {
-							replaceWithConst(instruction, instruction.a, result, context);
-						}
-					} else {
-						const reg = getRegisterOperand(instruction, 'c');
-						if (reg !== null) {
-							replaceWithUnm(instruction, instruction.a, reg);
-						}
-					}
+				if (inlineConstEquals(cConst, 0)) {
+					replaceWithOperand(instruction, 'b', bConst);
+				} else if (inlineConstEquals(bConst, 0)) {
+					replaceWithNegatedOperand(instruction, 'c', cConst);
 				}
 				break;
 			}
 			case OpCode.MUL: {
 				const bConst = getInlineConst(instruction, 'b');
 				const cConst = getInlineConst(instruction, 'c');
-				if (bConst === 1) {
-					if (cConst !== null) {
-						replaceWithConst(instruction, instruction.a, cConst, context);
-					} else {
-						const reg = getRegisterOperand(instruction, 'c');
-						if (reg !== null) {
-							replaceWithMov(instruction, instruction.a, reg);
-						}
-					}
-				} else if (cConst === 1) {
-					if (bConst !== null) {
-						replaceWithConst(instruction, instruction.a, bConst, context);
-					} else {
-						const reg = getRegisterOperand(instruction, 'b');
-						if (reg !== null) {
-							replaceWithMov(instruction, instruction.a, reg);
-						}
-					}
+				if (inlineConstEquals(bConst, 1)) {
+					replaceWithOperand(instruction, 'c', cConst);
+				} else if (inlineConstEquals(cConst, 1)) {
+					replaceWithOperand(instruction, 'b', bConst);
 				}
 				break;
 			}
 			case OpCode.DIV: {
 				const cConst = getInlineConst(instruction, 'c');
-				if (cConst === 1) {
+				if (inlineConstEquals(cConst, 1)) {
 					const bConst = getInlineConst(instruction, 'b');
-					if (bConst !== null) {
-						replaceWithConst(instruction, instruction.a, bConst, context);
-					} else {
-						const reg = getRegisterOperand(instruction, 'b');
-						if (reg !== null) {
-							replaceWithMov(instruction, instruction.a, reg);
-						}
-					}
+					replaceWithOperand(instruction, 'b', bConst);
 				}
 				break;
 			}
 			case OpCode.POW: {
 				const cConst = getInlineConst(instruction, 'c');
-				if (cConst === 1) {
+				if (inlineConstEquals(cConst, 1)) {
 					const bConst = getInlineConst(instruction, 'b');
-					if (bConst !== null) {
-						replaceWithConst(instruction, instruction.a, bConst, context);
-					} else {
-						const reg = getRegisterOperand(instruction, 'b');
-						if (reg !== null) {
-							replaceWithMov(instruction, instruction.a, reg);
-						}
-					}
+					replaceWithOperand(instruction, 'b', bConst);
 				}
 				break;
 			}
@@ -2565,7 +2533,7 @@ export const applyGlobalOptimizations = (
 
 	propagateCopies();
 
-	const exprMap = new Map<string, number>();
+	const exprSlotByKey = new Map<string, number>();
 	const gvnVisit = (blockIndex: number): void => {
 		const localAdded: string[] = [];
 		const block = blocks[blockIndex];
@@ -2621,11 +2589,11 @@ export const applyGlobalOptimizations = (
 				}
 				key = `${key}|${left}|${right}`;
 			}
-			const existing = exprMap.get(key);
-			if (existing !== undefined) {
-				valueCopy[defValue] = existing;
+			const existingSlot = exprSlotByKey.get(key);
+			if (existingSlot) {
+				valueCopy[defValue] = existingSlot - 1;
 			} else {
-				exprMap.set(key, defValue);
+				exprSlotByKey.set(key, defValue + 1);
 				localAdded.push(key);
 			}
 		}
@@ -2636,7 +2604,7 @@ export const applyGlobalOptimizations = (
 		}
 
 		for (let i = 0; i < localAdded.length; i += 1) {
-			exprMap.delete(localAdded[i]);
+			exprSlotByKey.delete(localAdded[i]);
 		}
 	};
 

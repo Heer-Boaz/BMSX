@@ -10,6 +10,7 @@ import { LuaParser } from '../../machine/ts/lua/syntax/parser';
 import { CPU, RunResult, StringValue } from '../../machine/ts/machine/cpu/cpu';
 import { Memory } from '../../machine/ts/machine/memory/memory';
 import { compileLuaChunkToProgram } from '../../machine/ts/machine/program/compiler';
+import { registerLuaSourceRecord } from '../../machine/ts/machine/program/sources';
 import { machineManager } from '../../machine/ts/core/machine_manager';
 import { createRuntimeFaultState } from '../../machine/ts/ide/runtime/fault_state';
 
@@ -23,8 +24,18 @@ const referenceNavigationModulePromise = import('../../machine/ts/ide/editor/con
 const intellisenseEngineModulePromise = import('../../machine/ts/ide/editor/contrib/intellisense/engine');
 
 function runtimeStub(files: Record<string, string> = {}) {
+	const records: any[] = [];
 	const path2lua: Record<string, any> = {};
 	const module2lua: Record<string, any> = {};
+	const systemLuaSources = {
+		records,
+		path2lua,
+		module2lua,
+		entry_path: '',
+		namespace: 'tests',
+		projectRootPath: '',
+		can_boot_from_source: true,
+	};
 	for (const path in files) {
 		const source = files[path];
 		const modulePath = path.replace(/\.lua$/, '').replace(/\\/g, '/');
@@ -37,20 +48,15 @@ function runtimeStub(files: Record<string, string> = {}) {
 			module_path: modulePath,
 			update_timestamp: 0,
 		};
-		path2lua[path] = record;
-		module2lua[modulePath] = record;
+		registerLuaSourceRecord(systemLuaSources, record);
 	}
 	return {
 		pathSemanticCache: new Map(),
 		interpreter: { globalEnvironment: new Map() },
-		systemLuaSources: {
-			path2lua,
-			module2lua,
-			entry_path: '',
-			namespace: 'tests',
-			projectRootPath: '',
-			can_boot_from_source: true,
-		},
+		systemLuaSources,
+		luaSourceRegistries: [systemLuaSources],
+		luaSourceSearchRegistries: [systemLuaSources],
+		moduleCompileLuaSources: [systemLuaSources],
 		cartLuaSources: null,
 		activeLuaSources: null,
 		resolveLuaSource(path: string) {
@@ -134,6 +140,7 @@ function runtimeWithPausedCpuLocal(source: string) {
 			nativeMemberCompletionCache: new WeakMap(),
 			pathSemanticCache: new Map(),
 			cartLuaSources: {
+				records: [record],
 				path2lua: { [sourcePath]: record },
 				module2lua: { [modulePath]: record },
 				entry_path: sourcePath,
@@ -143,18 +150,13 @@ function runtimeWithPausedCpuLocal(source: string) {
 			},
 			activeLuaSources: null,
 			systemLuaSources: {
+				records: [],
 				path2lua: {},
 				module2lua: {},
 				entry_path: '',
 				namespace: 'system',
 				projectRootPath: '',
 				can_boot_from_source: false,
-			},
-			resolveLuaSourceRecord(path: string) {
-				if (path === sourcePath || path === modulePath) {
-					return record;
-				}
-				return null;
 			},
 			resolveLuaSource(path: string) {
 				if (path === sourcePath || path === modulePath) {

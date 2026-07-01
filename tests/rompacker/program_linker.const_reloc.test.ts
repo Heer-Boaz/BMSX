@@ -32,10 +32,10 @@ function parseChunk(source: string, path: string = 'test.lua') {
 
 function runStaticModuleInitializers(cpu: CPU, compiled: ReturnType<typeof compileLuaChunkToProgram>): void {
 	for (const path of compiled.staticModulePaths) {
-		const protoIndex = compiled.moduleProtoMap.get(path);
-		assert.notEqual(protoIndex, undefined);
+		assert.equal(compiled.moduleProtoMap.has(path), true);
+		const protoIndex = compiled.moduleProtoMap.get(path) as number;
 		const targetDepth = cpu.getFrameDepth();
-		cpu.call({ protoIndex: protoIndex!, upvalues: [] }, []);
+		cpu.call(cpu.rootClosure(protoIndex));
 		assert.equal(cpu.runUntilDepth(targetDepth, 100000), RunResult.Halted);
 	}
 	cpu.syncGlobalSlotsToTable();
@@ -79,13 +79,14 @@ function makeProgramImage(
 				code,
 				protos: [makeProto(code.length)],
 			},
-			rodata: {
-				constPool: Array.from(constPool),
-				moduleProtos: [],
-				staticModulePaths: [],
-				bytes: new Uint8Array(0),
-				symbols: [],
-			},
+				rodata: {
+					constPool: Array.from(constPool),
+					moduleProtos: [],
+					moduleExports: [],
+					staticModulePaths: [],
+					bytes: new Uint8Array(0),
+					symbols: [],
+				},
 			data: { bytes: new Uint8Array(0), symbols: [] },
 			bss: { byteCount: 0, symbols: [] },
 		},
@@ -503,7 +504,7 @@ test('ProgramCompiler emits module-slot relocations for direct external root fie
 	assert.equal(closureOps.includes(OpCode.GETFIELD), false);
 });
 
-test('ProgramCompiler rejects external module roots captured as closure upvalues', () => {
+test('ProgramCompiler reads external dynamic module roots from export slots inside closures', () => {
 	const moduleSource = [
 		'local mod<const> = {}',
 		'function mod.foo()',
@@ -518,17 +519,29 @@ test('ProgramCompiler rejects external module roots captured as closure upvalues
 		'end',
 		'return read_root()',
 	].join('\n');
-	assert.throws(
-		() => compileLuaChunkToProgram(
-			parseChunk(entrySource, 'cart.lua'),
-			[],
-			{
-				entrySource,
-				externalModules: [{ path: 'mod', chunk: parseChunk(moduleSource, 'mod'), source: moduleSource }],
-			},
-		),
-		/External module 'mod' is compile-time only/,
+	const compiled = compileLuaChunkToProgram(
+		parseChunk(entrySource, 'cart.lua'),
+		[],
+		{
+			entrySource,
+			externalModules: [{ path: 'mod', chunk: parseChunk(moduleSource, 'mod'), source: moduleSource }],
+		},
 	);
+	let closureProtoIndex = -1;
+	for (let index = 0; index < compiled.metadata.protoIds.length; index += 1) {
+		if (compiled.metadata.protoIds[index].includes('read_root')) {
+			closureProtoIndex = index;
+			break;
+		}
+	}
+	assert.notEqual(closureProtoIndex, -1);
+	resolveRuntimeProgramRelocations(compiled.program, compiled.metadata, compiled.constRelocs);
+	const closureOps = collectProtoOps(compiled.program, closureProtoIndex);
+	const globalReads = collectProtoGlobalNames(compiled.program, compiled.metadata.globalNames, closureProtoIndex, OpCode.GETGL);
+	const systemReads = collectProtoGlobalNames(compiled.program, compiled.metadata.systemGlobalNames, closureProtoIndex, OpCode.GETSYS);
+	assert.equal(closureOps.includes(OpCode.GETUP), false);
+	assert.equal(closureOps.includes(OpCode.GETFIELD), false);
+	assert.equal(globalReads.includes('mod') || systemReads.includes('mod'), true);
 });
 
 test('ProgramCompiler emits module export slot stores from module returns', () => {
@@ -549,6 +562,7 @@ test('ProgramCompiler emits module export slot stores from module returns', () =
 	);
 	const moduleProtoIndex = compiled.moduleProtoMap.get('constants');
 	assert.notEqual(moduleProtoIndex, undefined);
+	resolveRuntimeProgramRelocations(compiled.program, compiled.metadata, compiled.constRelocs);
 	const moduleStores = collectProtoGlobalNames(compiled.program, compiled.metadata.globalNames, moduleProtoIndex!, OpCode.SETGL);
 	const entryLoads = collectProtoGlobalNames(compiled.program, compiled.metadata.globalNames, compiled.entryProtoIndex, OpCode.GETGL);
 	const entryOps = collectProtoOps(compiled.program, compiled.entryProtoIndex);
@@ -597,6 +611,7 @@ test('flattened module export slots stay in sync with compile-time require impor
 	);
 	const memory = new Memory({ systemRom: new Uint8Array(0) });
 	const cpu = new CPU(memory);
+	resolveRuntimeProgramRelocations(compiled.program, compiled.metadata, compiled.constRelocs);
 	cpu.setProgram(compiled.program, compiled.metadata);
 	runStaticModuleInitializers(cpu, compiled);
 	cpu.start(compiled.entryProtoIndex);
@@ -625,6 +640,7 @@ test('flattened module export slots survive program append swaps', () => {
 	);
 	const memory = new Memory({ systemRom: new Uint8Array(0) });
 	const cpu = new CPU(memory);
+	resolveRuntimeProgramRelocations(compiled.program, compiled.metadata, compiled.constRelocs);
 	cpu.setProgram(compiled.program, compiled.metadata);
 	runStaticModuleInitializers(cpu, compiled);
 	cpu.start(compiled.entryProtoIndex);

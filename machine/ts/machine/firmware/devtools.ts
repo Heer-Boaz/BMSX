@@ -2,33 +2,15 @@ import { createLuaTable, type LuaTable } from '../../lua/value';
 import { LuaNativeFunction, type LuaInterpreter } from '../../lua/runtime';
 import type { ResourceDescriptor } from '../../rompack/tooling/resource';
 import type { Runtime } from '../runtime/runtime';
-import { resolveLuaSourceRecord, type LuaSourceRegistry } from '../program/sources';
-
-
-function listRuntimeLuaRegistries(runtime: Runtime): LuaSourceRegistry[] {
-	const registries: LuaSourceRegistry[] = [];
-	const active = runtime.activeLuaSources;
-	if (active !== null) {
-		registries.push(active);
-	}
-	if (runtime.cartLuaSources !== null && runtime.cartLuaSources !== active) {
-		registries.push(runtime.cartLuaSources);
-	}
-	if (runtime.systemLuaSources !== null && runtime.systemLuaSources !== active) {
-		registries.push(runtime.systemLuaSources);
-	}
-	return registries;
-}
+import { resolveLuaSourceRecord } from '../program/sources';
 
 function summarizeLuaPaths(runtime: Runtime, limit: number): string {
 	const values: string[] = [];
 	const seen = new Set<string>();
-	const registries = listRuntimeLuaRegistries(runtime);
-	for (let registryIndex = 0; registryIndex < registries.length; registryIndex += 1) {
-		const registry = registries[registryIndex];
-		const entries = Object.values(registry.path2lua);
-		for (let index = 0; index < entries.length; index += 1) {
-			const path = entries[index].source_path;
+	for (let registryIndex = 0; registryIndex < runtime.luaSourceSearchRegistries.length; registryIndex += 1) {
+		const registry = runtime.luaSourceSearchRegistries[registryIndex];
+		for (let index = 0; index < registry.records.length; index += 1) {
+			const path = registry.records[index].source_path;
 			if (seen.has(path)) {
 				continue;
 			}
@@ -45,12 +27,10 @@ function summarizeLuaPaths(runtime: Runtime, limit: number): string {
 export function listRuntimeLuaResources(runtime: Runtime): ResourceDescriptor[] {
 	const descriptors: ResourceDescriptor[] = [];
 	const seen = new Set<string>();
-	const registries = listRuntimeLuaRegistries(runtime);
-	for (let registryIndex = 0; registryIndex < registries.length; registryIndex += 1) {
-		const registry = registries[registryIndex];
-		const entries = Object.values(registry.path2lua);
-		for (let index = 0; index < entries.length; index += 1) {
-			const entry = entries[index];
+	for (let registryIndex = 0; registryIndex < runtime.luaSourceSearchRegistries.length; registryIndex += 1) {
+		const registry = runtime.luaSourceSearchRegistries[registryIndex];
+		for (let index = 0; index < registry.records.length; index += 1) {
+			const entry = registry.records[index];
 			if (seen.has(entry.source_path)) {
 				continue;
 			}
@@ -73,11 +53,11 @@ export function getRuntimeLuaEntryPath(runtime: Runtime): string {
 }
 
 export function getRuntimeLuaResourceSource(runtime: Runtime, path: string): string {
-	const record = runtime.resolveLuaSourceRecord(path);
-	if (!record) {
-		throw new Error(`[devtools.get_lua_resource_source] Missing Lua resource for path '${path}'. Available: ${summarizeLuaPaths(runtime, 16)}`);
+	const match = runtime.resolveLuaSource(path);
+	if (match) {
+		return match.record.src;
 	}
-	return record.src;
+	throw new Error(`[devtools.get_lua_resource_source] Missing Lua resource for path '${path}'. Available: ${summarizeLuaPaths(runtime, 16)}`);
 }
 
 export function createInterpreterDevtoolsTable(runtime: Runtime, interpreter: LuaInterpreter): LuaTable {

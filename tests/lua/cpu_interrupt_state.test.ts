@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 
-import { CPU, createNativeFunction, OpCode, RunResult, StringValue, type Program, type ProgramMetadata, type Proto, type Value } from '../../machine/ts/machine/cpu/cpu';
+import { CPU, EMPTY_CALL_ARGS, createNativeFunction, OpCode, RunResult, StringValue, type Program, type ProgramMetadata, type Proto, type Value } from '../../machine/ts/machine/cpu/cpu';
 import { splitText } from '../../machine/ts/common/text_lines';
 import { LuaLexer } from '../../machine/ts/lua/syntax/lexer';
 import { LuaParser } from '../../machine/ts/lua/syntax/parser';
@@ -259,12 +259,13 @@ test('CPU external closure calls cannot wake HALT without an accepted interrupt'
 	const memory = new Memory({ systemRom: new Uint8Array(0) });
 	const cpu = new CPU(memory);
 	cpu.setProgram(makeProgram(cpu), makeMetadata());
+	const closure = cpu.rootClosure(1);
 	cpu.start(0);
 
 	assert.equal(cpu.runUntilDepth(0, 100), RunResult.Halted);
 	assert.equal(cpu.isHaltedUntilIrq(), true);
 	assert.throws(
-		() => cpu.callExternal({ protoIndex: 1, upvalues: [] }),
+		() => cpu.callExternal(closure),
 		/Cannot enter CPU while halted until IRQ/,
 	);
 	assert.equal(cpu.isHaltedUntilIrq(), true);
@@ -274,22 +275,24 @@ test('CPU external closure calls rejected while already halted preserve budget s
 	const memory = new Memory({ systemRom: new Uint8Array(0) });
 	const cpu = new CPU(memory);
 	cpu.setProgram(makeProgram(cpu), makeMetadata());
+	const closure = cpu.rootClosure(1);
 	cpu.start(0);
 	const runtime = makeRuntime(cpu);
 
 	assert.equal(cpu.runUntilDepth(0, 100), RunResult.Halted);
 	assert.equal(cpu.isHaltedUntilIrq(), true);
 
+	const out: Value[] = [];
 	cpu.instructionBudgetRemaining = 37;
 	assert.throws(
-		() => callClosureInto(runtime, { protoIndex: 1, upvalues: [] }, [], []),
+		() => callClosureInto(runtime, closure, EMPTY_CALL_ARGS, out),
 		/Cannot enter CPU while halted until IRQ/,
 	);
 	assert.equal(cpu.instructionBudgetRemaining, 37);
 
 	cpu.instructionBudgetRemaining = 41;
 	assert.throws(
-		() => callClosureIntoWithScheduler(runtime, { protoIndex: 1, upvalues: [] }, [], []),
+		() => callClosureIntoWithScheduler(runtime, closure, EMPTY_CALL_ARGS, out),
 		/Cannot enter CPU while halted until IRQ/,
 	);
 	assert.equal(cpu.instructionBudgetRemaining, 41);
@@ -301,11 +304,13 @@ test('CPU closure calls that execute HALT without a scheduled interrupt unwind',
 	const memory = new Memory({ systemRom: new Uint8Array(0) });
 	const cpu = new CPU(memory);
 	cpu.setProgram(makeProgram(cpu), makeMetadata());
+	const closure = cpu.rootClosure(0);
 	cpu.start(1);
 	const runtime = makeRuntime(cpu);
+	const out: Value[] = [];
 
 	assert.throws(
-		() => callClosureIntoWithScheduler(runtime, { protoIndex: 0, upvalues: [] }, [], []),
+		() => callClosureIntoWithScheduler(runtime, closure, EMPTY_CALL_ARGS, out),
 		/CPU halted with no scheduled interrupt/,
 	);
 	assert.equal(cpu.isHaltedUntilIrq(), true);
@@ -316,13 +321,14 @@ test('host external closure calls wake from pending IRQ without vectoring', () =
 	const memory = new Memory({ systemRom: new Uint8Array(0) });
 	const cpu = new CPU(memory);
 	cpu.setProgram(makeProgram(cpu), makeMetadata());
+	const closure = cpu.rootClosure(0);
 	cpu.start(1);
 	const runtime = makeRuntime(cpu);
 	runtime.machine.irqController.raise(IRQ_VBLANK);
 	runtime.machine.memory.writeValue(IO_IRQ_MASK, IRQ_VBLANK);
 
 	const out: Value[] = [];
-	callClosureInto(runtime, { protoIndex: 0, upvalues: [] }, [], out);
+	callClosureInto(runtime, closure, EMPTY_CALL_ARGS, out);
 
 	assert.deepEqual(out, []);
 	assert.equal(cpu.getFrameDepth(), 1);
@@ -358,13 +364,14 @@ test('CPU closure calls continue after scheduler yield requests', () => {
 		cpu.requestYield();
 	}, { base: nativeCost, perArg: 0, perRet: 0 });
 	cpu.setProgram(makeThrowingNativeProgram(cpu, yieldingNative), makeMetadata());
+	const closure = cpu.rootClosure(0);
 	cpu.start(1);
 	const spent = BASE_CYCLES[OpCode.LOADK] + BASE_CYCLES[OpCode.CALL] + nativeCost + BASE_CYCLES[OpCode.RET];
 	const runtime = makeRuntime(cpu);
 	const out: Value[] = [];
 
 	cpu.instructionBudgetRemaining = 100;
-	callClosureInto(runtime, { protoIndex: 0, upvalues: [] }, [], out);
+	callClosureInto(runtime, closure, EMPTY_CALL_ARGS, out);
 
 	assert.deepEqual(out, []);
 	assert.equal(cpu.instructionBudgetRemaining, 100 - spent);
@@ -379,13 +386,15 @@ test('CPU external closure calls that throw after executing preserve spent budge
 		throw new Error('native boom');
 	}, { base: nativeCost, perArg: 0, perRet: 0 });
 	cpu.setProgram(makeThrowingNativeProgram(cpu, throwingNative), makeMetadata());
+	const closure = cpu.rootClosure(0);
 	cpu.start(1);
 	const spent = BASE_CYCLES[OpCode.LOADK] + BASE_CYCLES[OpCode.CALL] + nativeCost;
 	const directRuntime = makeRuntime(cpu);
+	const out: Value[] = [];
 
 	cpu.instructionBudgetRemaining = 100;
 	assert.throws(
-		() => callClosureInto(directRuntime, { protoIndex: 0, upvalues: [] }, [], []),
+		() => callClosureInto(directRuntime, closure, EMPTY_CALL_ARGS, out),
 		/native boom/,
 	);
 	assert.equal(cpu.instructionBudgetRemaining, 100 - spent);
@@ -395,7 +404,7 @@ test('CPU external closure calls that throw after executing preserve spent budge
 	const schedulerRuntime = makeRuntime(cpu, sliceStats);
 	cpu.instructionBudgetRemaining = 100;
 	assert.throws(
-		() => callClosureIntoWithScheduler(schedulerRuntime, { protoIndex: 0, upvalues: [] }, [], []),
+		() => callClosureIntoWithScheduler(schedulerRuntime, closure, EMPTY_CALL_ARGS, out),
 		/native boom/,
 	);
 	assert.equal(cpu.instructionBudgetRemaining, 100 - spent);

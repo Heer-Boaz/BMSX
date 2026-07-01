@@ -11,7 +11,7 @@ import type { CartManifest, MachineManifest, RuntimeRomPackage } from '../../rom
 import { CART_ROM_HEADER_SIZE } from '../../rompack/format';
 import { RomSourceStack, type RawRomSource, type RomSourceLayer } from '../../rompack/source';
 import { buildRuntimeRomLayer, type RuntimeRomLayer } from '../../rompack/loader';
-import { StringValue, Table, type Value, type ProgramMetadata, type NativeFunction, type NativeObject } from '../cpu/cpu';
+import { EMPTY_CALL_ARGS, StringValue, Table, type Value, type Program, type ProgramMetadata, type NativeFunction, type NativeObject } from '../cpu/cpu';
 import { type LuaSemanticModel, type FileSemanticData } from '../../lua/semantic/model';
 import { registerFirmwareBuiltins } from '../firmware/builtins';
 import { LuaFunctionRedirectCache } from '../firmware/handler_registry';
@@ -23,7 +23,6 @@ import {
 	buildLuaSources,
 	resolveLuaSourceRecord as resolveRegistryLuaSourceRecord,
 	type LuaSourceMatch,
-	type LuaSourceRecord,
 	type LuaSourceRegistry,
 	DEFAULT_SYSTEM_PROJECT_ROOT_PATH,
 } from '../program/sources';
@@ -137,6 +136,9 @@ export class Runtime {
 	public systemLuaSources: LuaSourceRegistry = null;
 	public cartLuaSources: LuaSourceRegistry | null = null;
 	public activeLuaSources: LuaSourceRegistry = null;
+	public readonly luaSourceRegistries: LuaSourceRegistry[] = [];
+	public readonly luaSourceSearchRegistries: LuaSourceRegistry[] = [];
+	public readonly moduleCompileLuaSources: LuaSourceRegistry[] = [];
 	public cartProgramStarted = false;
 	public programVectors: RuntimeProgramVectorTable | null = null;
 	public cartVectors: ProgramVectorTable | null = null;
@@ -167,7 +169,6 @@ export class Runtime {
 		(fn, thisArg, args) => invokeClosureHandler(this, fn, thisArg, args),
 		(error, meta) => this.handleClosureHandlerError(error, meta),
 	);
-	public readonly moduleProtos = new Map<string, number>();
 	public readonly moduleCache = new Map<string, Value>();
 	public readonly nativeObjectCache = new WeakMap<object, NativeObject>();
 	public readonly nativeFunctionCache = new WeakMap<Function, NativeFunction>();
@@ -320,6 +321,7 @@ export class Runtime {
 		this.cartRomSource = params.cartRomSource;
 		this.activeRomSource = params.systemRomSource;
 		this.systemProjectRootPath = params.systemSources.projectRootPath || DEFAULT_SYSTEM_PROJECT_ROOT_PATH;
+		this.rebuildLuaSourceOrders();
 		this.cartBoot.reset();
 	}
 
@@ -335,6 +337,7 @@ export class Runtime {
 		this.activeLuaSources = this.systemLuaSources;
 		this.activeRomSource = this.systemRomSource;
 		this.activePackage = this.systemPackage;
+		this.rebuildLuaSourceOrders();
 	}
 
 	public enterCartProgram(): void {
@@ -353,6 +356,30 @@ export class Runtime {
 			this.activePackage = this.cartRom.package;
 		} else {
 			throw new Error('cart ROM is not configured.');
+		}
+		this.rebuildLuaSourceOrders();
+	}
+
+	private rebuildLuaSourceOrders(): void {
+		this.luaSourceRegistries.length = 0;
+		if (this.cartLuaSources) {
+			this.luaSourceRegistries.push(this.cartLuaSources);
+		}
+		this.luaSourceRegistries.push(this.systemLuaSources);
+
+		this.luaSourceSearchRegistries.length = 0;
+		this.luaSourceSearchRegistries.push(this.activeLuaSources);
+		if (this.cartLuaSources && this.cartLuaSources !== this.activeLuaSources) {
+			this.luaSourceSearchRegistries.push(this.cartLuaSources);
+		}
+		if (this.systemLuaSources !== this.activeLuaSources && this.systemLuaSources !== this.cartLuaSources) {
+			this.luaSourceSearchRegistries.push(this.systemLuaSources);
+		}
+
+		this.moduleCompileLuaSources.length = 0;
+		this.moduleCompileLuaSources.push(this.activeLuaSources);
+		if (this.systemLuaSources !== this.activeLuaSources) {
+			this.moduleCompileLuaSources.push(this.systemLuaSources);
 		}
 	}
 
@@ -390,7 +417,7 @@ export class Runtime {
 	private runSectionInitializer(protoIndex: number): void {
 		const results = this.luaScratch.values.acquire();
 		try {
-			callClosureInto(this, { protoIndex, upvalues: [] }, [], results);
+			callClosureInto(this, this.machine.cpu.rootClosure(protoIndex), EMPTY_CALL_ARGS, results);
 		} finally {
 			this.luaScratch.values.release(results);
 		}
@@ -407,14 +434,15 @@ export class Runtime {
 		if (this.moduleCache.has(path)) {
 			return;
 		}
-		const protoIndex = this.moduleProtos.get(path);
+		const program = this.machine.cpu.program as Program;
+		const protoIndex = program.moduleProtoMap.get(path);
 		if (protoIndex === undefined) {
 			throw this.createApiRuntimeError(`static module init failed: module '${path}' is not compiled.`);
 		}
 		this.moduleCache.set(path, true);
 		const results = this.luaScratch.values.acquire();
 		try {
-			callClosureInto(this, { protoIndex, upvalues: [] }, [], results);
+			callClosureInto(this, this.machine.cpu.rootClosure(protoIndex), EMPTY_CALL_ARGS, results);
 		} catch (error) {
 			this.moduleCache.delete(path);
 			throw error;
@@ -429,31 +457,17 @@ export class Runtime {
 		if (!currentPath) {
 			return 'runtime';
 		}
-		const record = this.resolveLuaSourceRecord(currentPath);
-		return record ? record.source_path : 'runtime';
-	}
-
-	public resolveLuaSourceRecord(path: string): LuaSourceRecord | null {
-		return this.resolveLuaSource(path)?.record ?? null;
+		const match = this.resolveLuaSource(currentPath);
+		return match ? match.record.source_path : 'runtime';
 	}
 
 	public resolveLuaSource(path: string): LuaSourceMatch | null {
-		const activeSources = this.activeLuaSources;
-		const activeRecord = resolveRegistryLuaSourceRecord(activeSources, path);
-		if (activeRecord) {
-			return { registry: activeSources, record: activeRecord };
-		}
-		const cartSources = this.cartLuaSources;
-		if (cartSources) {
-			const cartRecord = resolveRegistryLuaSourceRecord(cartSources, path);
-			if (cartRecord) {
-				return { registry: cartSources, record: cartRecord };
+		for (let index = 0; index < this.luaSourceSearchRegistries.length; index += 1) {
+			const registry = this.luaSourceSearchRegistries[index];
+			const record = resolveRegistryLuaSourceRecord(registry, path);
+			if (record) {
+				return { registry, record };
 			}
-		}
-		const systemSources = this.systemLuaSources;
-		const systemRecord = resolveRegistryLuaSourceRecord(systemSources, path);
-		if (systemRecord) {
-			return { registry: systemSources, record: systemRecord };
 		}
 		return null;
 	}
@@ -599,14 +613,15 @@ export class Runtime {
 
 	public applyMachineRegionWord(regionWord: number): void {
 		const regionTiming = getMachineRegionTimingForWord(regionWord);
+		const refreshUfpsScaled = regionTiming.refreshUfpsScaled;
 		this.timing.regionWord = regionWord >>> 0;
 		this.timing.totalScanlines = regionTiming.totalScanlines;
-		this.applyUfpsScaled(regionTiming.refreshUfpsScaled);
+		this.applyUfpsScaled(refreshUfpsScaled);
 		setFrameTiming(
 			this,
 			this.timing.cpuHz,
-			calcCyclesPerFrameScaled(this.timing.cpuHz, regionTiming.refreshUfpsScaled),
-			resolveVblankCycles(this.timing.cpuHz, regionTiming.refreshUfpsScaled, regionTiming.totalScanlines, this.activeMachineManifest.render_size.height),
+			calcCyclesPerFrameScaled(this.timing.cpuHz, refreshUfpsScaled),
+			resolveVblankCycles(this.timing.cpuHz, refreshUfpsScaled, regionTiming.totalScanlines, this.activeMachineManifest.render_size.height),
 		);
 	}
 

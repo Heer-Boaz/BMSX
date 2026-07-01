@@ -39,7 +39,7 @@ import {
 	type LuaWhileStatement,
 	type LuaGotoStatement,
 } from '../../lua/syntax/ast';
-import { OpCode, StringValue, asStringId, valueIsString, type Program, type ProgramMetadata, type Proto, type UpvalueDesc, type Value, type SourceRange, type LocalSlotDebug } from '../cpu/cpu';
+import { OpCode, StringValue, asStringId, isTruthyValue, valueIsString, type Program, type ProgramMetadata, type ProgramModuleExport, type ProgramModuleProto, type Proto, type UpvalueDesc, type Value, type SourceRange, type LocalSlotDebug } from '../cpu/cpu';
 import { encodeFixedCallArgCount, getOpcodeName } from '../cpu/opcode_info';
 import { optimizeInstructions, type Instruction, type InstructionSet, type OptimizationLevel } from './optimizer';
 import {
@@ -86,7 +86,7 @@ import {
 	classifyFunctionDeclarationTarget,
 } from './target_semantics';
 import { getMemoryAccessKindForName, MemoryAccessKind } from '../memory/access_kind';
-import { luaModulo } from '../../lua/numeric';
+import { luaFloorDivide, luaModulo } from '../../lua/numeric';
 import { writeLE16, writeLE32 } from '../../common/endian';
 import { isReservedIntrinsicName } from '../../lua/semantic/common';
 import { IO_IRQ_FLAGS } from '../bus/io';
@@ -120,44 +120,26 @@ export type AppendedProgram = {
 	rodataSymbols: ProgramRodataSymbol[];
 };
 
-const encodeCompilerProgramImage = (
-	program: Program,
-	entryProtoIndex: number,
-	sectionInitProtoIndex: number,
-	irqProtoIndex: number,
-	moduleProtos: Array<{ path: string; protoIndex: number }>,
-	staticModulePaths: string[],
-	constRelocs: ProgramConstReloc[],
-	constValueRelocs: ProgramConstValueReloc[],
-	data: ProgramDataSection,
-	bss: ProgramBssSection,
-	rodataBytes: Uint8Array,
-	rodataSymbols: ProgramRodataSymbol[],
-): ProgramImage => ({
-	vectors: {
-		resetProtoIndex: entryProtoIndex,
-		sectionInitProtoIndex,
-		irqProtoIndex,
-	},
-	sections: encodeProgramObjectSections(program, moduleProtos, staticModulePaths, data, bss, rodataBytes, rodataSymbols),
-	link: { constRelocs, constValueRelocs },
-});
-
 export function encodeCompiledProgramImage(compiled: CompiledProgram): ProgramImage {
-	return encodeCompilerProgramImage(
-		compiled.program,
-		compiled.entryProtoIndex,
-		compiled.sectionInitProtoIndex,
-		compiled.irqProtoIndex,
-		Array.from(compiled.moduleProtoMap, ([path, protoIndex]) => ({ path, protoIndex })),
-		compiled.staticModulePaths,
-		compiled.constRelocs,
-		compiled.constValueRelocs,
-		compiled.data,
-		compiled.bss,
-		compiled.rodataBytes,
-		compiled.rodataSymbols,
-	);
+	return {
+		vectors: {
+			resetProtoIndex: compiled.entryProtoIndex,
+			sectionInitProtoIndex: compiled.sectionInitProtoIndex,
+			irqProtoIndex: compiled.irqProtoIndex,
+		},
+		sections: encodeProgramObjectSections(
+			compiled.program,
+			compiled.staticModulePaths,
+			compiled.data,
+			compiled.bss,
+			compiled.rodataBytes,
+			compiled.rodataSymbols,
+		),
+		link: {
+			constRelocs: compiled.constRelocs,
+			constValueRelocs: compiled.constValueRelocs,
+		},
+	};
 }
 
 export type LuaCompileError = {
@@ -186,6 +168,8 @@ type CompileOptions = {
 };
 
 const EMPTY_PROGRAM_MODULES: ReadonlyArray<ProgramModule> = [];
+const EMPTY_PROGRAM_MODULE_PROTOS: ReadonlyArray<ProgramModuleProto> = [];
+const EMPTY_PROGRAM_MODULE_EXPORTS: ReadonlyArray<ProgramModuleExport> = [];
 
 type LoopContext = {
 	breakJumps: number[];
@@ -205,15 +189,35 @@ type LocalBinding = {
 	kind: LocalBindingKind;
 	constValue: Value | null;
 	hasConstValue: boolean;
+	constNumberValue: number;
+	hasConstNumberValue: boolean;
+	constBooleanValue: boolean;
+	hasConstBooleanValue: boolean;
 	constClosureProtoIndex: number | null;
 	moduleBinding: ModuleBinding | null;
 	structView: StructView | null;
 };
 
-type ModuleBinding = {
+type ModuleBindingBase = {
 	modulePath: string;
 	exportPathKey: string;
 	exportDepth: number;
+};
+
+type SourceModuleBinding = ModuleBindingBase & {
+	kind: 'source';
+	moduleInfo: ModuleCompileInfo;
+};
+
+type InstalledModuleBinding = ModuleBindingBase & {
+	kind: 'installed';
+};
+
+type ModuleBinding = SourceModuleBinding | InstalledModuleBinding;
+
+type RequireModuleBinding = ModuleBinding | {
+	kind: 'unshaped';
+	modulePath: string;
 	external: boolean;
 };
 
@@ -302,6 +306,12 @@ type AssignmentTarget =
 
 const RK_B = 1;
 const RK_C = 2;
+const INIT_HAS_VALUE = 1 << 0;
+const INIT_HAS_NUMBER = 1 << 1;
+const INIT_HAS_BOOLEAN = 1 << 2;
+const INIT_HAS_VALUE_REG = 1 << 3;
+const INIT_HAS_CLOSURE_PROTO = 1 << 4;
+const INIT_HAS_MODULE_BINDING = 1 << 5;
 
 const isConstBxOp = (op: OpCode): boolean =>
 	op === OpCode.LOADK;
@@ -349,13 +359,13 @@ class ProgramBuilder {
 	public readonly constPool: Value[];
 	public readonly stringPool: StringPool;
 	public readonly optLevel: OptimizationLevel;
-	private readonly constMap: Map<string, number>;
+	private readonly constSlotByKey: Map<string, number>;
 	private readonly baseCode: Uint8Array | null;
 	private readonly systemGlobalNameSet: Set<string>;
 	private readonly systemGlobalNames: string[] = [];
-	private readonly systemGlobalNameMap: Map<string, number> = new Map();
+	private readonly systemGlobalSlotByName: Map<string, number> = new Map();
 	private readonly globalNames: string[] = [];
-	private readonly globalNameMap: Map<string, number> = new Map();
+	private readonly globalSlotByName: Map<string, number> = new Map();
 	public readonly protos: Proto[] = [];
 	public readonly protoCode: Uint8Array[] = [];
 	public readonly protoRanges: ReadonlyArray<SourceRange | null>[] = [];
@@ -366,11 +376,13 @@ class ProgramBuilder {
 	public readonly protoFixedEntryPC: boolean[] = [];
 	public readonly protoIds: string[] = [];
 	private readonly exportProtoIdBySlot: { [slotName: string]: string } = {};
-	private readonly structDeclarations = new Map<string, LuaStructDeclarationStatement>();
-	private readonly structLayouts = new Map<string, StructLayout>();
-	private readonly bssBindingsBySymbolHandle = new Map<string, BssBinding>();
-	private readonly dataBindingsBySymbolHandle = new Map<string, DataBinding>();
-	private readonly rodataBindingsBySymbolHandle = new Map<string, RodataBinding>();
+	private readonly structDeclarationMap = new Map<string, LuaStructDeclarationStatement>();
+	private readonly structLayoutMap = new Map<string, StructLayout>();
+	public readonly structDeclarations: ReadonlyMap<string, LuaStructDeclarationStatement> = this.structDeclarationMap;
+	public readonly structLayouts: ReadonlyMap<string, StructLayout> = this.structLayoutMap;
+	public readonly bssBindingsBySymbolHandle = new Map<string, BssBinding>();
+	public readonly dataBindingsBySymbolHandle = new Map<string, DataBinding>();
+	public readonly rodataBindingsBySymbolHandle = new Map<string, RodataBinding>();
 	private readonly constValueRelocs: ProgramConstValueReloc[] = [];
 	private readonly relocatedConstIndices = new Set<number>();
 	private bssByteCount = 0;
@@ -378,8 +390,14 @@ class ProgramBuilder {
 	private dataBytes = new Uint8Array(0);
 	private rodataByteCount = 0;
 	private rodataBytes = new Uint8Array(0);
-	private readonly protoIdMap: Map<string, number> = new Map();
+	private readonly protoSlotById: Map<string, number> = new Map();
 	private readonly assignedProtoIds: Set<string> = new Set();
+	private readonly moduleProtoEntries: ProgramModuleProto[] = [];
+	private readonly moduleProtoEntrySlotByPath = new Map<string, number>();
+	private readonly moduleExportEntries: ProgramModuleExport[] = [];
+	private readonly moduleExportEntrySlotByKey = new Map<string, number>();
+	private readonly moduleExportSlotByKey = new Map<string, string>();
+	private readonly modulePathSet = new Set<string>();
 	private readonly staticModulePaths: string[] = [];
 	private readonly staticModulePathSet: Set<string> = new Set();
 	private readonly baseProgramRom: Uint8Array | null;
@@ -395,6 +413,8 @@ class ProgramBuilder {
 		baseProgramRom: Uint8Array | null = null,
 		baseProgramRomTextByteLength = 0,
 		canDeclareStaticStorage = true,
+		baseModuleProtos: ReadonlyArray<ProgramModuleProto> = EMPTY_PROGRAM_MODULE_PROTOS,
+		baseModuleExports: ReadonlyArray<ProgramModuleExport> = EMPTY_PROGRAM_MODULE_EXPORTS,
 	) {
 		this.constPool = [];
 		if (baseConstPool) {
@@ -411,11 +431,19 @@ class ProgramBuilder {
 		this.baseProgramRom = baseProgramRom;
 		this.baseProgramRomTextByteLength = baseProgramRomTextByteLength;
 		this.canDeclareStaticStorage = canDeclareStaticStorage;
-		this.constMap = new Map<string, number>();
+		this.constSlotByKey = new Map<string, number>();
 		this.systemGlobalNameSet = new Set(SYSTEM_ROM_GLOBAL_NAME_SET);
+		for (let index = 0; index < baseModuleProtos.length; index += 1) {
+			const entry = baseModuleProtos[index];
+			this.recordModuleProto(entry.path, entry.protoIndex);
+		}
+		for (let index = 0; index < baseModuleExports.length; index += 1) {
+			const entry = baseModuleExports[index];
+			this.recordModuleExport(entry.path, entry.exportPathKey, entry.slotName);
+		}
 		for (let index = 0; index < this.constPool.length; index += 1) {
 			const value = this.constPool[index];
-			this.constMap.set(this.makeConstKey(value), index);
+			this.constSlotByKey.set(this.makeConstKey(value), index + 1);
 		}
 		this.seedGlobalSlots(baseMetadata);
 	}
@@ -428,13 +456,16 @@ class ProgramBuilder {
 		for (let index = 0; index < systemNames.length; index += 1) {
 			const name = systemNames[index];
 			this.systemGlobalNames.push(name);
-			this.systemGlobalNameMap.set(name, index);
+			this.systemGlobalSlotByName.set(name, index + 1);
 		}
 		const globalNames = metadata.globalNames;
 		for (let index = 0; index < globalNames.length; index += 1) {
 			const name = globalNames[index];
 			this.globalNames.push(name);
-			this.globalNameMap.set(name, index);
+			this.globalSlotByName.set(name, index + 1);
+		}
+		for (const slotName in metadata.exportProtoIdBySlot) {
+			this.exportProtoIdBySlot[slotName] = metadata.exportProtoIdBySlot[slotName];
 		}
 	}
 
@@ -448,13 +479,13 @@ class ProgramBuilder {
 
 	public constIndex(value: Value): number {
 		const key = this.makeConstKey(value);
-		const existing = this.constMap.get(key);
-		if (existing !== undefined) {
-			return existing;
+		const slot = this.constSlotByKey.get(key);
+		if (slot) {
+			return slot - 1;
 		}
 		const index = this.constPool.length;
 		this.constPool.push(value);
-		this.constMap.set(key, index);
+		this.constSlotByKey.set(key, index + 1);
 		return index;
 	}
 
@@ -476,6 +507,10 @@ class ProgramBuilder {
 	}
 
 	public resolveGlobalAccess(name: string): { system: boolean; slot: number } {
+		const systemSlot = this.systemGlobalSlotByName.get(name);
+		if (systemSlot) {
+			return { system: true, slot: systemSlot - 1 };
+		}
 		if (this.systemGlobalNameSet.has(name)) {
 			return { system: true, slot: this.resolveSystemGlobalSlot(name) };
 		}
@@ -485,7 +520,7 @@ class ProgramBuilder {
 	public recordBss(symbolHandle: string, moduleId: string, name: string, type: StructResolvedType): BssBinding {
 		this.assertStaticStorageAllowed('bss');
 		const existing = this.bssBindingsBySymbolHandle.get(symbolHandle);
-		if (existing !== undefined) {
+		if (existing) {
 			return existing;
 		}
 		const offset = this.alignStorageOffset(this.bssByteCount, type.alignment);
@@ -503,15 +538,10 @@ class ProgramBuilder {
 		return binding;
 	}
 
-	public resolveBss(symbolHandle: string): BssBinding | null {
-		const binding = this.bssBindingsBySymbolHandle.get(symbolHandle);
-		return binding === undefined ? null : binding;
-	}
-
 	public recordData(symbolHandle: string, moduleId: string, name: string, type: StructResolvedType, bytes: Uint8Array): DataBinding {
 		this.assertStaticStorageAllowed('data');
 		const existing = this.dataBindingsBySymbolHandle.get(symbolHandle);
-		if (existing !== undefined) {
+		if (existing) {
 			return existing;
 		}
 		const offset = this.alignStorageOffset(this.dataByteCount, type.alignment);
@@ -534,15 +564,10 @@ class ProgramBuilder {
 		return binding;
 	}
 
-	public resolveData(symbolHandle: string): DataBinding | null {
-		const binding = this.dataBindingsBySymbolHandle.get(symbolHandle);
-		return binding === undefined ? null : binding;
-	}
-
 	public recordRodata(symbolHandle: string, moduleId: string, name: string, type: StructResolvedType, bytes: Uint8Array): RodataBinding {
 		this.assertStaticStorageAllowed('rodata');
 		const existing = this.rodataBindingsBySymbolHandle.get(symbolHandle);
-		if (existing !== undefined) {
+		if (existing) {
 			return existing;
 		}
 		const offset = this.alignStorageOffset(this.rodataByteCount, type.alignment);
@@ -563,11 +588,6 @@ class ProgramBuilder {
 		this.rodataBindingsBySymbolHandle.set(symbolHandle, binding);
 		this.rodataByteCount = nextByteCount;
 		return binding;
-	}
-
-	public resolveRodata(symbolHandle: string): RodataBinding | null {
-		const binding = this.rodataBindingsBySymbolHandle.get(symbolHandle);
-		return binding === undefined ? null : binding;
 	}
 
 	public buildRodataSymbols(): ProgramRodataSymbol[] {
@@ -648,41 +668,33 @@ class ProgramBuilder {
 	}
 
 	public registerStructDeclaration(statement: LuaStructDeclarationStatement): void {
-		this.structDeclarations.set(statement.name.name, statement);
-		this.structLayouts.delete(statement.name.name);
-	}
-
-	public getStructDeclaration(name: string): LuaStructDeclarationStatement | undefined {
-		return this.structDeclarations.get(name);
-	}
-
-	public getStructLayout(name: string): StructLayout | undefined {
-		return this.structLayouts.get(name);
+		this.structDeclarationMap.set(statement.name.name, statement);
+		this.structLayoutMap.delete(statement.name.name);
 	}
 
 	public recordStructLayout(layout: StructLayout): void {
-		this.structLayouts.set(layout.name, layout);
+		this.structLayoutMap.set(layout.name, layout);
 	}
 
 	private resolveSystemGlobalSlot(name: string): number {
-		const existing = this.systemGlobalNameMap.get(name);
-		if (existing !== undefined) {
-			return existing;
+		const slot = this.systemGlobalSlotByName.get(name);
+		if (slot) {
+			return slot - 1;
 		}
 		const index = this.systemGlobalNames.length;
 		this.systemGlobalNames.push(name);
-		this.systemGlobalNameMap.set(name, index);
+		this.systemGlobalSlotByName.set(name, index + 1);
 		return index;
 	}
 
 	private resolveGlobalSlot(name: string): number {
-		const existing = this.globalNameMap.get(name);
-		if (existing !== undefined) {
-			return existing;
+		const slot = this.globalSlotByName.get(name);
+		if (slot) {
+			return slot - 1;
 		}
 		const index = this.globalNames.length;
 		this.globalNames.push(name);
-		this.globalNameMap.set(name, index);
+		this.globalSlotByName.set(name, index + 1);
 		return index;
 	}
 
@@ -700,8 +712,9 @@ class ProgramBuilder {
 			throw new Error(`[ProgramBuilder] Duplicate proto id '${protoId}'.`);
 		}
 		this.assignedProtoIds.add(protoId);
-		const existing = this.protoIdMap.get(protoId);
-		if (existing !== undefined) {
+		const existingSlot = this.protoSlotById.get(protoId);
+		if (existingSlot) {
+			const existing = existingSlot - 1;
 			this.protos[existing] = proto;
 			this.protoCode[existing] = code;
 			this.protoRanges[existing] = ranges;
@@ -723,8 +736,60 @@ class ProgramBuilder {
 		this.protoInstructionSets.push(instructionSet);
 		this.protoFixedEntryPC.push(false);
 		this.protoIds.push(protoId);
-		this.protoIdMap.set(protoId, index);
+		this.protoSlotById.set(protoId, index + 1);
 		return index;
+	}
+
+	public hasModuleContract(path: string): boolean {
+		return this.modulePathSet.has(path);
+	}
+
+	public recordModuleProto(path: string, protoIndex: number): void {
+		this.modulePathSet.add(path);
+		const existingSlot = this.moduleProtoEntrySlotByPath.get(path);
+		if (existingSlot) {
+			const existing = existingSlot - 1;
+			this.moduleProtoEntries[existing] = { path, protoIndex };
+			return;
+		}
+		this.moduleProtoEntrySlotByPath.set(path, this.moduleProtoEntries.length + 1);
+		this.moduleProtoEntries.push({ path, protoIndex });
+	}
+
+	private makeModuleExportKey(path: string, exportPathKey: string): string {
+		return `${path}\0${exportPathKey}`;
+	}
+
+	public recordModuleExport(path: string, exportPathKey: string, slotName: string): void {
+		this.modulePathSet.add(path);
+		const key = this.makeModuleExportKey(path, exportPathKey);
+		const existingSlot = this.moduleExportEntrySlotByKey.get(key);
+		if (existingSlot) {
+			const existing = existingSlot - 1;
+			this.moduleExportEntries[existing] = { path, exportPathKey, slotName };
+			this.moduleExportSlotByKey.set(key, slotName);
+			return;
+		}
+		this.moduleExportEntrySlotByKey.set(key, this.moduleExportEntries.length + 1);
+		this.moduleExportSlotByKey.set(key, slotName);
+		this.moduleExportEntries.push({ path, exportPathKey, slotName });
+	}
+
+	public recordModuleExportSlot(path: string, exportPathKey: string, slotName: string, system: boolean): void {
+		this.recordModuleExport(path, exportPathKey, slotName);
+		if (system) {
+			this.resolveSystemGlobalSlot(slotName);
+			return;
+		}
+		this.resolveGlobalSlot(slotName);
+	}
+
+	public hasModuleExportSlot(path: string, exportPathKey: string): boolean {
+		return this.moduleExportSlotByKey.has(this.makeModuleExportKey(path, exportPathKey));
+	}
+
+	public resolveModuleExportSlot(path: string, exportPathKey: string): string | undefined {
+		return this.moduleExportSlotByKey.get(this.makeModuleExportKey(path, exportPathKey));
 	}
 
 	public hasStaticModulePath(path: string): boolean {
@@ -753,7 +818,7 @@ class ProgramBuilder {
 
 	public getProtoInstructionSet(protoIndex: number): InstructionSet {
 		const instructionSet = this.protoInstructionSets[protoIndex];
-		if (instructionSet === null || instructionSet === undefined) {
+		if (!instructionSet) {
 			throw new Error(`[ProgramBuilder] Missing instruction set for proto index ${protoIndex}.`);
 		}
 		return instructionSet;
@@ -764,6 +829,10 @@ class ProgramBuilder {
 	// the proto (a link-time symbol) instead of a runtime global-slot load.
 	public recordExportProto(slotName: string, protoId: string): void {
 		this.exportProtoIdBySlot[slotName] = protoId;
+	}
+
+	public hasExportProto(slotName: string): boolean {
+		return slotName in this.exportProtoIdBySlot;
 	}
 
 	public seedProto(
@@ -785,7 +854,7 @@ class ProgramBuilder {
 		this.protoInstructionSets.push(null);
 		this.protoFixedEntryPC.push(true);
 		this.protoIds.push(protoId);
-		this.protoIdMap.set(protoId, index);
+		this.protoSlotById.set(protoId, index + 1);
 	}
 
 	public buildProgram(): { program: Program; metadata: ProgramMetadata; constRelocs: ProgramConstReloc[]; constValueRelocs: ProgramConstValueReloc[]; data: ProgramDataSection; bss: ProgramBssSection; rodataBytes: Uint8Array; rodataSymbols: ProgramRodataSymbol[]; staticModulePaths: string[] } {
@@ -871,6 +940,11 @@ class ProgramBuilder {
 			systemGlobalNames: this.systemGlobalNames,
 			exportProtoIdBySlot: this.exportProtoIdBySlot,
 		};
+		const moduleProtoMap = new Map<string, number>();
+		for (let index = 0; index < this.moduleProtoEntries.length; index += 1) {
+			const entry = this.moduleProtoEntries[index];
+			moduleProtoMap.set(entry.path, entry.protoIndex);
+		}
 		return {
 			program: {
 				code: fullCode,
@@ -878,6 +952,9 @@ class ProgramBuilder {
 				programRomTextByteLength: this.baseProgramRom === null ? fullCode.byteLength : this.baseProgramRomTextByteLength,
 				constPool: this.constPool,
 				protos,
+				moduleProtos: this.moduleProtoEntries,
+				moduleExports: this.moduleExportEntries,
+				moduleProtoMap,
 				stringPool: this.stringPool,
 				constPoolStringPool: this.stringPool,
 			},
@@ -898,6 +975,20 @@ class ProgramBuilder {
 		if (valueIsString(value)) return `s:${value.id}`;
 		if (typeof value === 'boolean') return `b:${value ? 1 : 0}`;
 		return `o:${String(value)}`;
+	}
+}
+
+function recordModuleExportContracts(programBuilder: ProgramBuilder, moduleCompileContext: ModuleCompileContext): void {
+	for (const [, info] of moduleCompileContext.modulesByPath) {
+		for (const [exportPathKey, slotName] of info.exportSlotsByPathKey) {
+			if (info.constModule) {
+				if (info.staticFunctionExportByPathKey.has(exportPathKey)) {
+					programBuilder.recordModuleExportSlot(info.path, exportPathKey, slotName, info.external);
+				}
+				continue;
+			}
+			programBuilder.recordModuleExportSlot(info.path, exportPathKey, slotName, info.external);
+		}
 	}
 }
 
@@ -995,7 +1086,7 @@ class FunctionBuilder {
 	private readonly localDebugSlots: LocalSlotDebug[] = [];
 	private readonly upvalueDescs: UpvalueDesc[] = [];
 	private readonly upvalueNames: string[] = [];
-	private readonly upvalueMap = new Map<string, number>();
+	private readonly upvalueSlotBySymbolHandle = new Map<string, number>();
 	private readonly loopStack: LoopContext[] = [];
 	private readonly labelPositions = new Map<string, number>();
 	private readonly pendingLabelJumps = new Map<string, number[]>();
@@ -1006,9 +1097,20 @@ class FunctionBuilder {
 	private localFunctionCounters = new Map<string, number>();
 	private flowAnalysis: ValueKindFlowAnalyzer | null = null;
 	private currentFlowState: SymbolFlowState = new Map();
-	// Cached symbol handle of this module's exported namespace local (the local that
-	// the module returns, e.g. `room` in `return room`). undefined = not yet computed.
-	private exportRootSymbolHandleCache: string | null | undefined = undefined;
+	private exportRootSymbolHandleResolved = false;
+	private exportRootSymbolHandleCache: string | null = null;
+	private compileTimeValue: Value = null;
+	private compileTimeNumberValue = 0;
+	private compileTimeHasNumberValue = false;
+	private compileTimeBooleanValue = false;
+	private compileTimeHasBooleanValue = false;
+	private readonly initializerFlags: number[] = [];
+	private readonly initializerValues: Value[] = [];
+	private readonly initializerNumberValues: number[] = [];
+	private readonly initializerBooleanValues: boolean[] = [];
+	private readonly initializerValueRegs: number[] = [];
+	private readonly initializerClosureProtoIndices: number[] = [];
+	private readonly initializerModuleBindings: ModuleBinding[] = [];
 
 	constructor(
 		program: ProgramBuilder,
@@ -1029,12 +1131,17 @@ class FunctionBuilder {
 		this.frontend = params.frontend;
 		this.moduleId = params.moduleId;
 		this.protoId = params.protoId;
-		this.moduleCompileContext = params.moduleCompileContext ?? parent?.moduleCompileContext;
-		this.staticCallTargetScope = params.staticCallTargetScope === true || (parent !== null && parent.staticCallTargetScope);
+		this.moduleCompileContext = params.moduleCompileContext;
+		this.staticCallTargetScope = !!params.staticCallTargetScope;
 		// Nested functions inherit the module's export info so that references to the
 		// module's own exported namespace (e.g. `room.fn` inside another `room.*`
 		// function) resolve to the export symbol/slot instead of the namespace table.
-		this.moduleCompileInfo = params.moduleCompileInfo ?? parent?.moduleCompileInfo;
+		this.moduleCompileInfo = params.moduleCompileInfo;
+		if (parent) {
+			this.moduleCompileContext = this.moduleCompileContext || parent.moduleCompileContext;
+			this.staticCallTargetScope = this.staticCallTargetScope || parent.staticCallTargetScope;
+			this.moduleCompileInfo = this.moduleCompileInfo || parent.moduleCompileInfo;
+		}
 	}
 
 	public compileChunk(chunk: LuaChunk): void {
@@ -1070,6 +1177,33 @@ class FunctionBuilder {
 		}
 	}
 
+	private resetInitializerScratch(count: number): void {
+		this.initializerFlags.length = count;
+		this.initializerValues.length = count;
+		this.initializerNumberValues.length = count;
+		this.initializerBooleanValues.length = count;
+		this.initializerValueRegs.length = count;
+		this.initializerClosureProtoIndices.length = count;
+		this.initializerModuleBindings.length = count;
+		for (let index = 0; index < count; index += 1) {
+			this.initializerFlags[index] = 0;
+		}
+	}
+
+	private recordCompileTimeInitializer(index: number): void {
+		let flags = this.initializerFlags[index] | INIT_HAS_VALUE;
+		if (this.compileTimeHasNumberValue) {
+			flags |= INIT_HAS_NUMBER;
+		}
+		if (this.compileTimeHasBooleanValue) {
+			flags |= INIT_HAS_BOOLEAN;
+		}
+		this.initializerFlags[index] = flags;
+		this.initializerValues[index] = this.compileTimeValue;
+		this.initializerNumberValues[index] = this.compileTimeNumberValue;
+		this.initializerBooleanValues[index] = this.compileTimeBooleanValue;
+	}
+
 	public compileStaticFunctionModuleScope(chunk: LuaChunk): void {
 		this.registerStructDeclarations(chunk.body);
 		this.pushScope(chunk.range);
@@ -1085,19 +1219,32 @@ class FunctionBuilder {
 				continue;
 			}
 			const local = statement as LuaLocalAssignmentStatement;
-			const initializerValues: Array<Value | undefined> = new Array(local.names.length);
+			this.resetInitializerScratch(local.names.length);
 			for (let valueIndex = 0; valueIndex < local.values.length && valueIndex < local.names.length; valueIndex += 1) {
-				if (local.attributes[valueIndex] === 'const') {
-					initializerValues[valueIndex] = this.evaluateCompileTimeExpression(local.values[valueIndex]);
+				if (local.attributes[valueIndex] === 'const' && this.evaluateCompileTimeExpression(local.values[valueIndex])) {
+					this.recordCompileTimeInitializer(valueIndex);
 				}
 			}
 			for (let nameIndex = 0; nameIndex < local.names.length; nameIndex += 1) {
-				const decl = this.requireBoundDeclaration(local.names[nameIndex].range, `local '${local.names[nameIndex].name}'`);
-				const constValue = initializerValues[nameIndex];
-				if (constValue !== undefined) {
-					this.declareLocalFromDecl(decl, local.names[nameIndex].range, undefined, constValue, true);
+				const localName = local.names[nameIndex];
+				const decl = this.requireBoundDeclaration(localName.range, `local '${localName.name}'`);
+				const flags = this.initializerFlags[nameIndex];
+				if (flags & INIT_HAS_VALUE) {
+					this.declareLocalFromDecl(
+						decl,
+						localName.range,
+						undefined,
+						this.initializerValues[nameIndex],
+						true,
+						null,
+						null,
+						this.initializerNumberValues[nameIndex],
+						!!(flags & INIT_HAS_NUMBER),
+						this.initializerBooleanValues[nameIndex],
+						!!(flags & INIT_HAS_BOOLEAN),
+					);
 				} else {
-					this.declareLocalFromDecl(decl, local.names[nameIndex].range);
+					this.declareLocalFromDecl(decl, localName.range);
 				}
 			}
 		}
@@ -1275,12 +1422,12 @@ class FunctionBuilder {
 	}
 
 	private resolveStructLayout(name: string, resolving: Set<string> = new Set()): StructLayout {
-		const existing = this.program.getStructLayout(name);
-		if (existing !== undefined) {
+		const existing = this.program.structLayouts.get(name);
+		if (existing) {
 			return existing;
 		}
-		const declaration = this.program.getStructDeclaration(name);
-		if (declaration === undefined) {
+		const declaration = this.program.structDeclarations.get(name);
+		if (!declaration) {
 			throw new Error(`[Compiler] Unknown struct type '${name}'.`);
 		}
 		if (resolving.has(name)) {
@@ -1597,10 +1744,10 @@ class FunctionBuilder {
 				}
 				writeInstruction(code, cursor, instr.op, aSplit.low, (bxSplit.low >>> 6) & 0x3f, bxSplit.low & 0x3f, bxSplit.ext);
 				finalRanges[cursor] = range;
-				cursor += 1;
-				if (isConstBxOp(instr.op)) {
-					if (instr.symbolicReloc !== undefined) {
-						constRelocs.push({ wordIndex: instrWordIndex[index], kind: instr.symbolicReloc.kind, symbol: instr.symbolicReloc.symbol });
+					cursor += 1;
+					if (isConstBxOp(instr.op)) {
+						if (instr.symbolicReloc) {
+							constRelocs.push({ wordIndex: instrWordIndex[index], kind: instr.symbolicReloc.kind, symbol: instr.symbolicReloc.symbol });
 					} else {
 						constRelocs.push({ wordIndex: instrWordIndex[index], kind: 'bx', constIndex: instr.b });
 					}
@@ -1690,6 +1837,10 @@ class FunctionBuilder {
 		hasConstValue = false,
 		constClosureProtoIndex: number | null = null,
 		moduleBinding: ModuleBinding | null = null,
+		constNumberValue = 0,
+		hasConstNumberValue = false,
+		constBooleanValue = false,
+		hasConstBooleanValue = false,
 	): number {
 		if (getMemoryAccessKindForName(name) !== null) {
 			throw new Error(`[Compiler] '${name}' is a reserved memory map name and cannot be used as a local or parameter.`);
@@ -1712,6 +1863,10 @@ class FunctionBuilder {
 			kind,
 			constValue,
 			hasConstValue,
+			constNumberValue,
+			hasConstNumberValue,
+			constBooleanValue,
+			hasConstBooleanValue,
 			constClosureProtoIndex,
 			moduleBinding,
 			structView: null,
@@ -1737,6 +1892,10 @@ class FunctionBuilder {
 		hasConstValue = false,
 		constClosureProtoIndex: number | null = null,
 		moduleBinding: ModuleBinding | null = null,
+		constNumberValue = 0,
+		hasConstNumberValue = false,
+		constBooleanValue = false,
+		hasConstBooleanValue = false,
 	): number {
 		let kind: LocalBindingKind;
 		switch (decl.kind) {
@@ -1751,7 +1910,21 @@ class FunctionBuilder {
 				kind = 'local';
 				break;
 		}
-		return this.declareLocal(decl.id, decl.name, definitionRange, scopeRange, kind, constValue, hasConstValue, constClosureProtoIndex, moduleBinding);
+		return this.declareLocal(
+			decl.id,
+			decl.name,
+			definitionRange,
+			scopeRange,
+			kind,
+			constValue,
+			hasConstValue,
+			constClosureProtoIndex,
+			moduleBinding,
+			constNumberValue,
+			hasConstNumberValue,
+			constBooleanValue,
+			hasConstBooleanValue,
+		);
 	}
 
 	private resolveLocal(symbolHandle: string): number | null {
@@ -1763,27 +1936,27 @@ class FunctionBuilder {
 	}
 
 	private resolveUpvalue(symbolHandle: string, name: string): number | null {
-		const existing = this.upvalueMap.get(symbolHandle);
-		if (existing !== undefined) {
-			return existing;
+		const slot = this.upvalueSlotBySymbolHandle.get(symbolHandle);
+		if (slot) {
+			return slot - 1;
 		}
 		if (!this.parent) {
 			return null;
 		}
 		const parentLocal = this.parent.localBindings.get(symbolHandle);
-		if (parentLocal !== undefined) {
+		if (parentLocal) {
 			const index = this.upvalueDescs.length;
 			this.upvalueDescs.push({ inStack: true, index: parentLocal.reg });
 			this.upvalueNames.push(name);
-			this.upvalueMap.set(symbolHandle, index);
+			this.upvalueSlotBySymbolHandle.set(symbolHandle, index + 1);
 			return index;
 		}
 		const parentUpvalue = this.parent.resolveUpvalue(symbolHandle, name);
-		if (parentUpvalue !== null) {
+		if (parentUpvalue || parentUpvalue === 0) {
 			const index = this.upvalueDescs.length;
 			this.upvalueDescs.push({ inStack: false, index: parentUpvalue });
 			this.upvalueNames.push(name);
-			this.upvalueMap.set(symbolHandle, index);
+			this.upvalueSlotBySymbolHandle.set(symbolHandle, index + 1);
 			return index;
 		}
 		return null;
@@ -1852,37 +2025,40 @@ class FunctionBuilder {
 		return this.resolveCompileTimeConstBinding(symbolHandle);
 	}
 
-	private resolveReferenceBssBinding(reference: LuaBoundReference): BssBinding | null {
-		if (reference.decl?.kind === 'bss') {
-			return this.program.resolveBss(reference.decl.id);
+	private resolveReferenceBssBinding(reference: LuaBoundReference): BssBinding | undefined {
+		const decl = reference.decl;
+		if (decl && decl.kind === 'bss') {
+			return this.program.bssBindingsBySymbolHandle.get(decl.id);
 		}
 		const symbolHandle = getResolvedReferenceSymbolHandle(reference);
 		if (!symbolHandle) {
-			return null;
+			return;
 		}
-		return this.program.resolveBss(symbolHandle);
+		return this.program.bssBindingsBySymbolHandle.get(symbolHandle);
 	}
 
-	private resolveReferenceDataBinding(reference: LuaBoundReference): DataBinding | null {
-		if (reference.decl?.kind === 'data') {
-			return this.program.resolveData(reference.decl.id);
+	private resolveReferenceDataBinding(reference: LuaBoundReference): DataBinding | undefined {
+		const decl = reference.decl;
+		if (decl && decl.kind === 'data') {
+			return this.program.dataBindingsBySymbolHandle.get(decl.id);
 		}
 		const symbolHandle = getResolvedReferenceSymbolHandle(reference);
 		if (!symbolHandle) {
-			return null;
+			return;
 		}
-		return this.program.resolveData(symbolHandle);
+		return this.program.dataBindingsBySymbolHandle.get(symbolHandle);
 	}
 
-	private resolveReferenceRodataBinding(reference: LuaBoundReference): RodataBinding | null {
-		if (reference.decl?.kind === 'rodata') {
-			return this.program.resolveRodata(reference.decl.id);
+	private resolveReferenceRodataBinding(reference: LuaBoundReference): RodataBinding | undefined {
+		const decl = reference.decl;
+		if (decl && decl.kind === 'rodata') {
+			return this.program.rodataBindingsBySymbolHandle.get(decl.id);
 		}
 		const symbolHandle = getResolvedReferenceSymbolHandle(reference);
 		if (!symbolHandle) {
-			return null;
+			return;
 		}
-		return this.program.resolveRodata(symbolHandle);
+		return this.program.rodataBindingsBySymbolHandle.get(symbolHandle);
 	}
 
 	private resolveReferenceConstClosureBinding(reference: LuaBoundReference): LocalBinding | null {
@@ -1900,12 +2076,14 @@ class FunctionBuilder {
 		if (visiting.has(path)) {
 			throw new Error(`[Compiler] Compile-time require cycle includes module '${path}'.`);
 		}
-		if (this.moduleCompileContext?.modulesByPath.get(path)?.constModule) {
+		const context = this.moduleCompileContext as ModuleCompileContext;
+		const moduleInfo = context.modulesByPath.get(path);
+		if (moduleInfo && moduleInfo.constModule) {
 			return;
 		}
 		visiting.add(path);
-		const dependencies = this.moduleCompileContext?.moduleDependenciesByPath.get(path);
-		if (dependencies !== undefined) {
+		const dependencies = context.moduleDependenciesByPath.get(path);
+		if (dependencies) {
 			for (let index = 0; index < dependencies.length; index += 1) {
 				this.markStaticModulePath(dependencies[index], visiting);
 			}
@@ -1914,39 +2092,76 @@ class FunctionBuilder {
 		this.program.recordStaticModulePath(path);
 	}
 
-	private resolveRequireModuleBinding(expression: LuaExpression): ModuleBinding | null {
+	private resolveKnownModulePath(name: string): string {
+		const canonicalName = toLuaModulePath(name);
+		const context = this.moduleCompileContext;
+		if (context) {
+			if (context.modulePaths.has(name)) {
+				return name;
+			}
+			if (context.modulePaths.has(canonicalName)) {
+				return canonicalName;
+			}
+		}
+		if (this.program.hasModuleContract(name)) {
+			return name;
+		}
+		if (this.program.hasModuleContract(canonicalName)) {
+			return canonicalName;
+		}
+		throw new Error(`[Compiler] Compile-time require module '${name}' was not provided to the program compiler.`);
+	}
+
+	private resolveRequireModuleBinding(expression: LuaExpression): RequireModuleBinding | undefined {
 		if (expression.kind !== LuaSyntaxKind.CallExpression) {
-			return null;
+			return;
 		}
 		const call = expression as LuaCallExpression;
 		if (call.callee.kind !== LuaSyntaxKind.IdentifierExpression) {
-			return null;
+			return;
 		}
 		const callee = call.callee as LuaIdentifierExpression;
 		if (callee.name !== 'require') {
-			return null;
+			return;
 		}
 		const reference = getResolvedIdentifierReference(this.semantics, callee);
 		if (reference.kind === 'lexical') {
-			return null;
+			return;
 		}
 		if (call.methodName !== null || call.arguments.length !== 1 || call.arguments[0].kind !== LuaSyntaxKind.StringLiteralExpression) {
 			throw new Error('[Compiler] Compile-time require expects exactly one literal module path.');
 		}
 		const moduleName = (call.arguments[0] as LuaStringLiteralExpression).value;
-		const modulePath = this.moduleCompileContext?.modulePaths.has(moduleName) ? moduleName : undefined;
-		if (!modulePath) {
-			throw new Error(`[Compiler] Compile-time require module '${moduleName}' was not provided to the program compiler.`);
+		const modulePath = this.resolveKnownModulePath(moduleName);
+		const context = this.moduleCompileContext;
+		if (context) {
+			const moduleInfo = context.modulesByPath.get(modulePath);
+			if (moduleInfo) {
+				return {
+					kind: 'source',
+					modulePath,
+					exportPathKey: '',
+					exportDepth: 0,
+					moduleInfo,
+				};
+			}
+			if (context.modulePaths.has(modulePath)) {
+				return {
+					kind: 'unshaped',
+					modulePath,
+					external: context.externalModulePaths.has(modulePath),
+				};
+			}
 		}
 		return {
+			kind: 'installed',
 			modulePath,
 			exportPathKey: '',
 			exportDepth: 0,
-			external: !!this.moduleCompileContext?.externalModulePaths.has(modulePath),
 		};
 	}
 
-	private resolveStaticModuleBinding(expression: LuaExpression, allowRequireRoot: boolean): ModuleBinding | null {
+	private resolveStaticModuleBinding(expression: LuaExpression, allowRequireRoot: boolean): ModuleBinding | undefined {
 		/*
 			Note: emulated-machine semantics and symbolic link-time relocations
 
@@ -1957,38 +2172,40 @@ class FunctionBuilder {
 			- The compiler must not fabricate runtime tables. When a module export cannot be resolved at
 			compile time, the compiler emits an explicit symbolic relocation on the instruction.
 			The relocation resolver rewrites the operand/instruction before execution.
-			- This function detects static module bindings and marks them `external` so later compiler and
-			linker phases can preserve semantics and perform link-time resolution of symbolic relocations.
+			- This function resolves shaped source modules and installed program modules. Plain unshaped
+			modules are handled only by require lowering, not by member/static export lowering.
 		 */
 		if (allowRequireRoot) {
 			const requireBinding = this.resolveRequireModuleBinding(expression);
-			if (requireBinding !== null) {
+			if (requireBinding && (requireBinding.kind === 'source' || requireBinding.kind === 'installed')) {
 				return requireBinding;
 			}
 		}
 		if (expression.kind === LuaSyntaxKind.IdentifierExpression) {
 			const reference = getResolvedIdentifierReference(this.semantics, expression as LuaIdentifierExpression);
 			const moduleInfo = this.moduleCompileInfo;
-			const exportRootSymbolHandle = this.getExportRootSymbolHandle();
-			if (moduleInfo !== undefined
-				&& exportRootSymbolHandle !== null
-				&& this.protoId !== buildModuleProtoId(moduleInfo.path)
-				&& getResolvedReferenceSymbolHandle(reference) === exportRootSymbolHandle) {
-				return {
-					modulePath: moduleInfo.path,
-					exportPathKey: '',
-					exportDepth: 0,
-					external: false,
-				};
+			if (moduleInfo) {
+				const exportRootSymbolHandle = this.getExportRootSymbolHandle();
+				if (exportRootSymbolHandle
+					&& this.protoId !== buildModuleProtoId(moduleInfo.path)
+					&& getResolvedReferenceSymbolHandle(reference) === exportRootSymbolHandle) {
+					return {
+						kind: 'source',
+						modulePath: moduleInfo.path,
+						exportPathKey: '',
+						exportDepth: 0,
+						moduleInfo,
+					};
+				}
 			}
-			const binding = this.resolveReferenceVisibleBinding(reference);
-			if (!binding || binding.moduleBinding === null) {
-				return null;
+			const visibleBinding = this.resolveReferenceVisibleBinding(reference);
+			if (visibleBinding && visibleBinding.moduleBinding) {
+				return visibleBinding.moduleBinding;
 			}
-			return binding.moduleBinding;
+			return;
 		}
 		if (expression.kind !== LuaSyntaxKind.MemberExpression && expression.kind !== LuaSyntaxKind.IndexExpression) {
-			return null;
+			return;
 		}
 		const isMemberExpression = expression.kind === LuaSyntaxKind.MemberExpression;
 		const baseExpression = isMemberExpression
@@ -1996,48 +2213,80 @@ class FunctionBuilder {
 			: (expression as LuaIndexExpression).base;
 		const baseBinding = this.resolveStaticModuleBinding(baseExpression, allowRequireRoot);
 		if (!baseBinding) {
-			return null;
+			return;
 		}
 		const key = isMemberExpression
 			? (expression as LuaMemberExpression).identifier
 			: extractTableKeyFromExpression((expression as LuaIndexExpression).index);
 		if (!key) {
-			return null;
+			return;
 		}
 		const exportPathKey = appendModuleExportPathKey(baseBinding.exportPathKey, key);
-		if (!this.moduleCompileContext?.modulesByPath.get(baseBinding.modulePath)?.exportSlotsByPathKey.get(exportPathKey)) {
-			return null;
+		if (this.moduleBindingExportsPath(baseBinding, exportPathKey)) {
+			return this.repathModuleBinding(baseBinding, exportPathKey);
 		}
-		return {
-			modulePath: baseBinding.modulePath,
-			exportPathKey,
-			exportDepth: baseBinding.exportDepth + 1,
-			external: baseBinding.external,
-		};
 	}
 
-	private isConstModulePath(modulePath: string): boolean {
-		return !!this.moduleCompileContext?.modulesByPath.get(modulePath)?.constModule;
+	private repathModuleBinding(binding: ModuleBinding, exportPathKey: string): ModuleBinding {
+		switch (binding.kind) {
+			case 'source':
+				return {
+					kind: 'source',
+					modulePath: binding.modulePath,
+					exportPathKey,
+					exportDepth: binding.exportDepth + 1,
+					moduleInfo: binding.moduleInfo,
+				};
+			case 'installed':
+				return {
+					kind: 'installed',
+					modulePath: binding.modulePath,
+					exportPathKey,
+					exportDepth: binding.exportDepth + 1,
+				};
+		}
+	}
+
+	private moduleBindingExportsPath(binding: ModuleBinding, exportPathKey: string): boolean {
+		switch (binding.kind) {
+			case 'source':
+				return binding.moduleInfo.exportSlotsByPathKey.has(exportPathKey);
+			case 'installed':
+				return this.program.hasModuleExportSlot(binding.modulePath, exportPathKey);
+		}
+	}
+
+	private resolveModuleExportSlot(binding: ModuleBinding, exportPathKey: string = binding.exportPathKey): string | undefined {
+		switch (binding.kind) {
+			case 'source':
+				return binding.moduleInfo.exportSlotsByPathKey.get(exportPathKey);
+			case 'installed':
+				return this.program.resolveModuleExportSlot(binding.modulePath, exportPathKey);
+		}
 	}
 
 	private isStaticFunctionModuleBinding(binding: ModuleBinding): boolean {
-		const info = this.moduleCompileContext?.modulesByPath.get(binding.modulePath);
-		return info !== undefined && info.staticFunctionExportByPathKey.has(binding.exportPathKey);
+		return binding.kind === 'source' && binding.moduleInfo.staticFunctionExportByPathKey.has(binding.exportPathKey);
+	}
+
+	private moduleBindingOwnsCompileTimeLocal(binding: ModuleBinding): boolean {
+		return binding.exportDepth === 0 && (binding.kind === 'installed'
+			|| binding.moduleInfo.external
+			|| binding.moduleInfo.constModule
+			|| binding.moduleInfo.staticFunctionExportByPathKey.has(''));
 	}
 
 	// Resolve a const module export (e.g. `assets.data_x_addr`) to its compile-time
 	// constant value. Returns a wrapper so a `nil`/`false`/`0` export is distinguished
 	// from "not a const export". The value is inlined at the use site.
-	private resolveModuleExportConstValue(expression: LuaExpression): { binding: ModuleBinding; value: ConstExportValue } | null {
+	private resolveModuleExportConstValue(expression: LuaExpression): { binding: ModuleBinding; value: ConstExportValue } | undefined {
 		const binding = this.resolveStaticModuleBinding(expression, true);
-		if (!binding || binding.exportDepth === 0) {
-			return null;
+		if (binding && binding.kind === 'source' && binding.exportDepth !== 0 && binding.moduleInfo.constModule) {
+			const value = binding.moduleInfo.exportConstValueByPathKey.get(binding.exportPathKey);
+			if (value) {
+				return { binding, value };
+			}
 		}
-		const info = this.moduleCompileContext?.modulesByPath.get(binding.modulePath);
-		if (!info || !info.constModule || !info.exportConstValueByPathKey.has(binding.exportPathKey)) {
-			return null;
-		}
-		return { binding, value: info.exportConstValueByPathKey.get(binding.exportPathKey)! };
 	}
 
 	private emitLoadConstExportValue(target: number, value: ConstExportValue): void {
@@ -2053,64 +2302,64 @@ class FunctionBuilder {
 				this.emitLoadConst(target, this.program.internString(value.value));
 				return;
 			case 'bss_addr': {
-				const binding = this.program.resolveBss(value.symbolHandle);
-				if (binding === null) {
-					throw new Error(`[Compiler] Static module .bss symbol '${value.symbolHandle}' was not recorded.`);
+				const binding = this.program.bssBindingsBySymbolHandle.get(value.symbolHandle);
+				if (binding) {
+					this.emitLoadBssAddress(target, binding, 0);
+					return;
 				}
-				this.emitLoadBssAddress(target, binding, 0);
-				return;
+				throw new Error(`[Compiler] Static module .bss symbol '${value.symbolHandle}' was not recorded.`);
 			}
 			case 'data_addr': {
-				const binding = this.program.resolveData(value.symbolHandle);
-				if (binding === null) {
-					throw new Error(`[Compiler] Static module .data symbol '${value.symbolHandle}' was not recorded.`);
+				const binding = this.program.dataBindingsBySymbolHandle.get(value.symbolHandle);
+				if (binding) {
+					this.emitLoadDataAddress(target, binding, 0);
+					return;
 				}
-				this.emitLoadDataAddress(target, binding, 0);
-				return;
+				throw new Error(`[Compiler] Static module .data symbol '${value.symbolHandle}' was not recorded.`);
 			}
 			case 'rodata_addr': {
-				const binding = this.program.resolveRodata(value.symbolHandle);
-				if (binding === null) {
-					throw new Error(`[Compiler] Static module .rodata symbol '${value.symbolHandle}' was not recorded.`);
+				const binding = this.program.rodataBindingsBySymbolHandle.get(value.symbolHandle);
+				if (binding) {
+					this.emitLoadRodataAddress(target, binding, 0);
+					return;
 				}
-				this.emitLoadRodataAddress(target, binding, 0);
-				return;
+				throw new Error(`[Compiler] Static module .rodata symbol '${value.symbolHandle}' was not recorded.`);
 			}
 		}
 	}
 
-	private resolveStaticFunctionExportBinding(expression: LuaExpression): ModuleBinding | null {
+	private resolveStaticFunctionExportBinding(expression: LuaExpression): ModuleBinding | undefined {
 		const binding = this.resolveStaticModuleBinding(expression, true);
-		if (!binding) {
-			return null;
+		if (binding && this.isStaticFunctionModuleBinding(binding)) {
+			return binding;
 		}
-		return this.isStaticFunctionModuleBinding(binding) ? binding : null;
 	}
 
-	private resolveConstLocalModuleBinding(expression: LuaExpression): ModuleBinding | null {
+	private resolveConstLocalModuleBinding(expression: LuaExpression): ModuleBinding | undefined {
 		const binding = this.resolveStaticModuleBinding(expression, true);
-		if (binding === null) {
-			return null;
+		if (binding) {
+			if (binding.kind === 'source' && binding.moduleInfo.external && binding.moduleInfo.constModule === false) {
+				this.markStaticModulePath(binding.modulePath);
+			}
+			if (binding.exportDepth === 0 || this.isStaticFunctionModuleBinding(binding)) {
+				return binding;
+			}
 		}
-		if (binding.external && !this.isConstModulePath(binding.modulePath)) {
-			this.markStaticModulePath(binding.modulePath);
-		}
-		if (binding.exportDepth !== 0 && !this.isStaticFunctionModuleBinding(binding)) {
-			return null;
-		}
-		return binding;
-	}
-
-	private getStaticFunctionExportSlot(binding: ModuleBinding): string {
-		return this.moduleCompileContext!.modulesByPath.get(binding.modulePath)!.exportSlotsByPathKey.get(binding.exportPathKey)!;
 	}
 
 	private emitStaticFunctionExportValue(binding: ModuleBinding, target: number): boolean {
-		if (!this.isStaticFunctionModuleBinding(binding)) {
-			return false;
+		switch (binding.kind) {
+			case 'installed':
+				return false;
+			case 'source': {
+				const staticExport = binding.moduleInfo.staticFunctionExportByPathKey.get(binding.exportPathKey);
+				if (staticExport) {
+					this.emitModuleExportCallTargetLoad(staticExport.slotName, target);
+					return true;
+				}
+				return false;
+			}
 		}
-		this.emitModuleExportCallTargetLoad(this.getStaticFunctionExportSlot(binding), target);
-		return true;
 	}
 
 	private failConstModuleValueCall(binding: ModuleBinding): never {
@@ -2119,33 +2368,29 @@ class FunctionBuilder {
 
 	private resolveModuleExportSlotFromExpression(expression: LuaExpression): string | undefined {
 		const binding = this.resolveStaticModuleBinding(expression, false);
-		if (!binding || (binding.exportDepth === 0 && !this.isStaticFunctionModuleBinding(binding))) {
-			return undefined;
+		if (binding && (binding.exportDepth !== 0 || this.isStaticFunctionModuleBinding(binding))) {
+			return this.resolveModuleExportSlot(binding);
 		}
-		return this.moduleCompileContext?.modulesByPath.get(binding.modulePath)?.exportSlotsByPathKey.get(binding.exportPathKey);
 	}
 
 	private resolveModuleExportCallTargetSlot(expression: LuaExpression): string | undefined {
 		const binding = this.resolveStaticModuleBinding(expression, true);
-		if (!binding || (binding.exportDepth === 0 && !this.isStaticFunctionModuleBinding(binding))) {
-			return undefined;
+		if (binding && (binding.exportDepth !== 0 || this.isStaticFunctionModuleBinding(binding))) {
+			if (binding.kind === 'source' && binding.moduleInfo.constModule) {
+				if (binding.moduleInfo.staticFunctionExportByPathKey.has(binding.exportPathKey)) {
+					return this.resolveModuleExportSlot(binding);
+				}
+			} else {
+				return this.resolveModuleExportSlot(binding);
+			}
 		}
-		const info = this.moduleCompileContext?.modulesByPath.get(binding.modulePath);
-		if (info === undefined) {
-			return undefined;
-		}
-		if (info.constModule && !info.staticFunctionExportByPathKey.has(binding.exportPathKey)) {
-			return undefined;
-		}
-		return info.exportSlotsByPathKey.get(binding.exportPathKey);
 	}
 
 	private resolveModuleExportMethodSlot(baseExpression: LuaExpression, methodName: string): string | undefined {
 		const binding = this.resolveStaticModuleBinding(baseExpression, false);
-		if (!binding) {
-			return undefined;
+		if (binding) {
+			return this.resolveModuleExportSlot(binding, appendModuleExportPathKey(binding.exportPathKey, methodName));
 		}
-		return this.moduleCompileContext?.modulesByPath.get(binding.modulePath)?.exportSlotsByPathKey.get(appendModuleExportPathKey(binding.exportPathKey, methodName));
 	}
 
 	private resolveOwnStaticFunctionExportCallSlot(expression: LuaExpression): string | undefined {
@@ -2160,70 +2405,36 @@ class FunctionBuilder {
 		return this.moduleCompileInfo.staticFunctionExportSlotBySymbolHandle.get(symbolHandle);
 	}
 
-	private resolveExternalModuleRootFieldSlotName(baseExpression: LuaExpression, key: string): string | undefined {
+	private emitExternalModuleRootFieldLoad(baseExpression: LuaExpression, key: string, target: number): boolean {
 		const binding = this.resolveStaticModuleBinding(baseExpression, false);
-		if (!binding || !binding.external || binding.exportDepth !== 0) {
-			return undefined;
+		if (binding && binding.kind === 'source' && binding.moduleInfo.external && binding.exportDepth === 0) {
+			if (binding.moduleInfo.constModule || binding.moduleInfo.exportSlotsByPathKey.has(key)) {
+				return false;
+			}
+			this.emitModuleSlotRelocLoad(buildModuleRootFieldSlotName(binding.modulePath, key), target);
+			return true;
 		}
-		// Const modules export only the symbols in their return table; an unknown field
-		// is not a runtime global-slot reference (it surfaces as a module-root misuse).
-		if (this.isConstModulePath(binding.modulePath)) {
-			return undefined;
-		}
-		const moduleInfo = this.moduleCompileContext!.modulesByPath.get(binding.modulePath)!;
-		if (moduleInfo.exportSlotsByPathKey.get(key) !== undefined) {
-			return undefined;
-		}
-		return buildModuleRootFieldSlotName(binding.modulePath, key);
+		return false;
 	}
 
-	/*
-		Detect a compile-time-only module root binding
-
-		- Returns true when a local binding is associated with a moduleBinding and that module is
-		marked `external` (compile-time-only) and the moduleBinding is the module root.
-		- This detection prevents treating the module root as a runtime value (local or upvalue) under
-		the emulated-machine semantics used by this project.
-	 */
-	private getCompileTimeModuleRootBinding(binding: LocalBinding | null | undefined): ModuleBinding | null {
-		if (!binding || binding.moduleBinding === null) {
-			return null;
-		}
-		return binding.moduleBinding.external && binding.moduleBinding.exportDepth === 0
-			? binding.moduleBinding
-			: null;
-	}
-
-	/*
-		Error on attempts to use a compile-time-only module root as a runtime value
-
-		- Under the emulated-machine semantics, external modules used for ABI/BIOS are compile-time-only
-		descriptors and not runtime Lua tables. Storing or returning a whole module (for example
-		`local m = require('bios')`) is therefore invalid and is rejected with a compile-time error.
-		- This makes the failure explicit and directs the developer to access specific exported slots
-		instead of treating the module as a runtime table.
-	 */
 	private failCompileTimeModuleRootRuntimeUse(modulePath: string): never {
-		throw new Error(`[Compiler] External module '${modulePath}' is compile-time only; access an exported field instead of using the module table as a runtime value.`);
+		throw new Error(`[Compiler] Module '${modulePath}' root is compile-time only; access an exported field instead of using the module table as a runtime value.`);
 	}
 
 	private emitReferenceLoad(reference: LuaBoundReference, target: number): void {
 		const name = this.getReferenceName(reference);
 		const binding = this.resolveReferenceVisibleBinding(reference);
-		/*
-			Prevent leaking a compile-time-only module root as a runtime value
-
-			- If `binding` refers to a compile-time-only module root, it must not be used as a runtime
-			value (stored in a local or captured as an upvalue) under the project's emulated-machine ABI.
-			- We detect that here and raise a compile-time error via `failExternalModuleRootRuntimeUse` to
-			prevent generating runtime references to a non-existent module table.
-		 */
-		const compileTimeModuleRoot = this.getCompileTimeModuleRootBinding(binding);
-		if (compileTimeModuleRoot !== null) {
-			if (this.emitStaticFunctionExportValue(compileTimeModuleRoot, target)) {
-				return;
+		if (binding && binding.moduleBinding) {
+			const compileTimeModuleRoot = binding.moduleBinding;
+			if (this.moduleBindingOwnsCompileTimeLocal(compileTimeModuleRoot)) {
+				if (this.emitStaticFunctionExportValue(compileTimeModuleRoot, target)) {
+					return;
+				}
+				if (this.emitDynamicModuleRootValue(compileTimeModuleRoot, target)) {
+					return;
+				}
+				this.failCompileTimeModuleRootRuntimeUse(compileTimeModuleRoot.modulePath);
 			}
-			this.failCompileTimeModuleRootRuntimeUse(compileTimeModuleRoot.modulePath);
 		}
 		const constBinding = this.resolveReferenceConstBinding(reference);
 		if (constBinding !== null) {
@@ -2231,21 +2442,21 @@ class FunctionBuilder {
 			return;
 		}
 		const bssBinding = this.resolveReferenceBssBinding(reference);
-		if (bssBinding !== null) {
+		if (bssBinding) {
 			this.emitLoadBssAddress(target, bssBinding, 0);
 			return;
 		}
 		const dataBinding = this.resolveReferenceDataBinding(reference);
-		if (dataBinding !== null) {
+		if (dataBinding) {
 			this.emitLoadDataAddress(target, dataBinding, 0);
 			return;
 		}
 		const rodataBinding = this.resolveReferenceRodataBinding(reference);
-		if (rodataBinding !== null) {
+		if (rodataBinding) {
 			this.emitLoadRodataAddress(target, rodataBinding, 0);
 			return;
 		}
-		if (binding !== null && binding.moduleBinding !== null && this.emitStaticFunctionExportValue(binding.moduleBinding, target)) {
+		if (binding && binding.moduleBinding && this.emitStaticFunctionExportValue(binding.moduleBinding, target)) {
 			return;
 		}
 		const localReg = this.resolveReferenceLocal(reference);
@@ -2274,8 +2485,40 @@ class FunctionBuilder {
 	}
 
 	private emitModuleExportValueLoad(slotName: string, target: number): void {
-		const access = this.program.resolveGlobalAccess(slotName);
-		this.emitABx(access.system ? OpCode.GETSYS : OpCode.GETGL, target, access.slot);
+		if (this.program.hasExportProto(slotName)) {
+			this.emitModuleExportCallTargetLoad(slotName, target);
+			return;
+		}
+		this.emitModuleSlotRelocLoad(slotName, target);
+	}
+
+	private emitInstalledModuleRootValue(modulePath: string, target: number): void {
+		const rootSlot = this.program.resolveModuleExportSlot(modulePath, '');
+		if (rootSlot) {
+			this.emitModuleExportValueLoad(rootSlot, target);
+		} else {
+			this.emitLoadBool(target, true);
+		}
+	}
+
+	private emitDynamicModuleRootValue(binding: ModuleBinding, target: number): boolean {
+		switch (binding.kind) {
+			case 'installed':
+				this.emitInstalledModuleRootValue(binding.modulePath, target);
+				return true;
+			case 'source': {
+				if (binding.moduleInfo.external && binding.moduleInfo.constModule === false) {
+					const rootSlot = binding.moduleInfo.exportSlotsByPathKey.get('');
+					if (rootSlot) {
+						this.emitModuleExportValueLoad(rootSlot, target);
+					} else {
+						this.emitLoadBool(target, true);
+					}
+					return true;
+				}
+				return false;
+			}
+		}
 	}
 
 	private emitModuleExportCallTargetLoad(slotName: string, target: number): void {
@@ -2335,13 +2578,13 @@ class FunctionBuilder {
 		if (visibleBinding !== null && visibleBinding.kind === 'const') {
 			throw new Error(`[Compiler] '${name}' is a constant local and cannot be assigned.`);
 		}
-		if (this.resolveReferenceBssBinding(reference) !== null) {
+		if (this.resolveReferenceBssBinding(reference)) {
 			throw new Error(`[Compiler] '${name}' is .bss storage; assign through a typed pointer or field.`);
 		}
-		if (this.resolveReferenceDataBinding(reference) !== null) {
+		if (this.resolveReferenceDataBinding(reference)) {
 			throw new Error(`[Compiler] '${name}' is .data storage; assign through a typed pointer or field.`);
 		}
-		if (this.resolveReferenceRodataBinding(reference) !== null) {
+		if (this.resolveReferenceRodataBinding(reference)) {
 			throw new Error(`[Compiler] '${name}' is .rodata storage and cannot be assigned.`);
 		}
 		const upvalue = this.resolveReferenceUpvalue(reference);
@@ -2419,10 +2662,10 @@ class FunctionBuilder {
 		if (op !== OpCode.LOADK) {
 			return null;
 		}
-		if (symbolicReloc?.kind === 'module') {
-			return 'runtime module slot';
-		}
-		if (symbolicReloc !== undefined) {
+			if (symbolicReloc && symbolicReloc.kind === 'module') {
+				return 'runtime module slot';
+			}
+		if (symbolicReloc) {
 			return null;
 		}
 		return valueIsString(this.program.constPool[bx]) ? 'Lua string constant' : null;
@@ -2628,7 +2871,7 @@ class FunctionBuilder {
 			}
 			if (expression.kind === LuaSyntaxKind.IdentifierExpression) {
 				const binding = this.resolveReferenceConstClosureBinding(getResolvedIdentifierReference(this.semantics, expression as LuaIdentifierExpression));
-				if (binding !== null) {
+				if (binding) {
 					closureProtoIndex = binding.constClosureProtoIndex;
 				}
 			}
@@ -2637,27 +2880,126 @@ class FunctionBuilder {
 		return closureProtoIndex;
 	}
 
-	private evaluateCompileTimeExpression(expression: LuaExpression): Value | undefined {
+	private setCompileTimeValue(value: Value): boolean {
+		this.compileTimeValue = value;
+		this.compileTimeHasNumberValue = false;
+		this.compileTimeHasBooleanValue = false;
+		return true;
+	}
+
+	private setCompileTimeNumberValue(value: number): boolean {
+		this.compileTimeValue = value;
+		this.compileTimeNumberValue = value;
+		this.compileTimeHasNumberValue = true;
+		this.compileTimeHasBooleanValue = false;
+		return true;
+	}
+
+	private setCompileTimeBooleanValue(value: boolean): boolean {
+		this.compileTimeValue = value;
+		this.compileTimeHasNumberValue = false;
+		this.compileTimeBooleanValue = value;
+		this.compileTimeHasBooleanValue = true;
+		return true;
+	}
+
+	private setCompileTimeBindingValue(binding: LocalBinding): boolean {
+		this.compileTimeValue = binding.constValue;
+		this.compileTimeNumberValue = binding.constNumberValue;
+		this.compileTimeHasNumberValue = binding.hasConstNumberValue;
+		this.compileTimeBooleanValue = binding.constBooleanValue;
+		this.compileTimeHasBooleanValue = binding.hasConstBooleanValue;
+		return true;
+	}
+
+	private evaluateCompileTimeExpression(expression: LuaExpression): boolean {
 		switch (expression.kind) {
 			case LuaSyntaxKind.NumericLiteralExpression:
-				return (expression as LuaNumericLiteralExpression).value;
+				return this.setCompileTimeNumberValue((expression as LuaNumericLiteralExpression).value);
 			case LuaSyntaxKind.StringLiteralExpression:
-				return this.program.internString((expression as LuaStringLiteralExpression).value);
+				return this.setCompileTimeValue(this.program.internString((expression as LuaStringLiteralExpression).value));
 			case LuaSyntaxKind.BooleanLiteralExpression:
-				return (expression as LuaBooleanLiteralExpression).value;
+				return this.setCompileTimeBooleanValue((expression as LuaBooleanLiteralExpression).value);
 			case LuaSyntaxKind.NilLiteralExpression:
-				return null;
+				return this.setCompileTimeValue(null);
 			case LuaSyntaxKind.IdentifierExpression: {
 				const binding = this.resolveReferenceConstBinding(getResolvedIdentifierReference(this.semantics, expression as LuaIdentifierExpression));
-				if (!binding) {
-					return undefined;
-				}
-				return binding.constValue;
+				return !!binding && this.setCompileTimeBindingValue(binding);
 			}
 			case LuaSyntaxKind.UnaryExpression:
 				return this.evaluateCompileTimeUnaryExpression(expression as LuaUnaryExpression);
 			case LuaSyntaxKind.BinaryExpression:
 				return this.evaluateCompileTimeBinaryExpression(expression as LuaBinaryExpression);
+			case LuaSyntaxKind.SizeOfExpression:
+				return this.setCompileTimeNumberValue(this.resolveStructTypeReference((expression as LuaSizeOfExpression).typeRef).size);
+			case LuaSyntaxKind.OffsetOfExpression: {
+				const offsetOf = expression as LuaOffsetOfExpression;
+				return this.setCompileTimeNumberValue(this.resolveOffsetOf(offsetOf.typeName, offsetOf.fieldPath));
+			}
+			default:
+				return false;
+		}
+	}
+
+	private evaluateCompileTimeUnaryExpression(expression: LuaUnaryExpression): boolean {
+		switch (expression.operator) {
+			case LuaUnaryOperator.Negate: {
+				const value = this.evaluateCompileTimeNumber(expression.operand);
+				return (value || value === 0) && this.setCompileTimeNumberValue(-value);
+			}
+			case LuaUnaryOperator.Not:
+				return this.evaluateCompileTimeExpression(expression.operand)
+					&& this.setCompileTimeBooleanValue(!isTruthyValue(this.compileTimeValue));
+			case LuaUnaryOperator.Length:
+				return this.evaluateCompileTimeExpression(expression.operand)
+					&& valueIsString(this.compileTimeValue)
+					&& this.setCompileTimeNumberValue(this.program.stringPool.codepointCount(asStringId(this.compileTimeValue)));
+			case LuaUnaryOperator.BitwiseNot: {
+				const value = this.evaluateCompileTimeNumber(expression.operand);
+				return (value || value === 0) && this.setCompileTimeNumberValue(~value);
+			}
+			case LuaUnaryOperator.StringId:
+				return this.evaluateCompileTimeExpression(expression.operand) && valueIsString(this.compileTimeValue);
+			default:
+				return false;
+		}
+	}
+
+	private evaluateCompileTimeNumber(expression: LuaExpression): number | undefined {
+		switch (expression.kind) {
+			case LuaSyntaxKind.NumericLiteralExpression:
+				return (expression as LuaNumericLiteralExpression).value;
+			case LuaSyntaxKind.IdentifierExpression: {
+				const binding = this.resolveReferenceConstBinding(getResolvedIdentifierReference(this.semantics, expression as LuaIdentifierExpression));
+				if (binding && binding.hasConstNumberValue) {
+					return binding.constNumberValue;
+				}
+				return;
+			}
+			case LuaSyntaxKind.UnaryExpression: {
+				const unary = expression as LuaUnaryExpression;
+				switch (unary.operator) {
+					case LuaUnaryOperator.Negate: {
+						const value = this.evaluateCompileTimeNumber(unary.operand);
+						if (value || value === 0) return -value;
+						return;
+					}
+					case LuaUnaryOperator.BitwiseNot: {
+						const value = this.evaluateCompileTimeNumber(unary.operand);
+						if (value || value === 0) return ~value;
+						return;
+					}
+					case LuaUnaryOperator.Length:
+						if (this.evaluateCompileTimeExpression(unary.operand) && valueIsString(this.compileTimeValue)) {
+							return this.program.stringPool.codepointCount(asStringId(this.compileTimeValue));
+						}
+						return;
+					default:
+						return;
+				}
+			}
+			case LuaSyntaxKind.BinaryExpression:
+				return this.evaluateCompileTimeNumberBinaryExpression(expression as LuaBinaryExpression);
 			case LuaSyntaxKind.SizeOfExpression:
 				return this.resolveStructTypeReference((expression as LuaSizeOfExpression).typeRef).size;
 			case LuaSyntaxKind.OffsetOfExpression: {
@@ -2665,165 +3007,172 @@ class FunctionBuilder {
 				return this.resolveOffsetOf(offsetOf.typeName, offsetOf.fieldPath);
 			}
 			default:
-				return undefined;
+				return;
 		}
 	}
 
-	private evaluateCompileTimeUnaryExpression(expression: LuaUnaryExpression): Value | undefined {
-		const operand = this.evaluateCompileTimeExpression(expression.operand);
-		if (operand === undefined) {
-			return undefined;
-		}
-		switch (expression.operator) {
-			case LuaUnaryOperator.Negate:
-				return typeof operand === 'number' ? -operand : undefined;
-			case LuaUnaryOperator.Not:
-				return !this.isTruthyCompileTimeValue(operand);
-			case LuaUnaryOperator.Length:
-				return valueIsString(operand) ? this.program.stringPool.codepointCount(asStringId(operand)) : undefined;
-			case LuaUnaryOperator.BitwiseNot:
-				return typeof operand === 'number' ? ~operand : undefined;
-			case LuaUnaryOperator.StringId:
-				return valueIsString(operand) ? operand : undefined;
+	private evaluateCompileTimeNumberBinaryExpression(expression: LuaBinaryExpression): number | undefined {
+		const left = this.evaluateCompileTimeNumber(expression.left);
+		const right = this.evaluateCompileTimeNumber(expression.right);
+		if ((!left && left !== 0) || (!right && right !== 0)) return;
+		return this.evaluateCompileTimeNumberBinaryOperator(expression.operator, left, right);
+	}
+
+	private evaluateCompileTimeNumberBinaryOperator(operator: LuaBinaryOperator, left: number, right: number): number | undefined {
+		switch (operator) {
+			case LuaBinaryOperator.BitwiseOr:
+				return left | right;
+			case LuaBinaryOperator.BitwiseXor:
+				return left ^ right;
+			case LuaBinaryOperator.BitwiseAnd:
+				return left & right;
+			case LuaBinaryOperator.ShiftLeft:
+				return left << (right & 31);
+			case LuaBinaryOperator.ShiftRight:
+				return left >> (right & 31);
+			case LuaBinaryOperator.Add:
+				return left + right;
+			case LuaBinaryOperator.Subtract:
+				return left - right;
+			case LuaBinaryOperator.Multiply:
+				return left * right;
+			case LuaBinaryOperator.Divide:
+				return left / right;
+			case LuaBinaryOperator.FloorDivide:
+				return luaFloorDivide(left, right);
+			case LuaBinaryOperator.Modulus:
+				return luaModulo(left, right);
+			case LuaBinaryOperator.Exponent:
+				return Math.pow(left, right);
 			default:
-				return undefined;
+				return;
 		}
 	}
 
-	private evaluateCompileTimeBinaryExpression(expression: LuaBinaryExpression): Value | undefined {
+	private evaluateCompileTimeNumberBinaryInto(expression: LuaBinaryExpression): boolean {
+		const value = this.evaluateCompileTimeNumberBinaryExpression(expression);
+		return (value || value === 0) && this.setCompileTimeNumberValue(value);
+	}
+
+	private evaluateCompileTimeRelationalInto(expression: LuaBinaryExpression): boolean {
+		const value = this.evaluateCompileTimeRelational(expression);
+		return (value || value === false) && this.setCompileTimeBooleanValue(value);
+	}
+
+	private evaluateCompileTimeNumberOrStringRelational(operator: LuaBinaryOperator, left: number | string, right: number | string): boolean | undefined {
+		switch (operator) {
+			case LuaBinaryOperator.LessThan:
+				return left < right;
+			case LuaBinaryOperator.LessEqual:
+				return left <= right;
+			case LuaBinaryOperator.GreaterThan:
+				return left > right;
+			case LuaBinaryOperator.GreaterEqual:
+				return left >= right;
+			default:
+				return;
+		}
+	}
+
+	private evaluateCompileTimeBinaryExpression(expression: LuaBinaryExpression): boolean {
 		switch (expression.operator) {
-			case LuaBinaryOperator.And: {
-				const left = this.evaluateCompileTimeExpression(expression.left);
-				if (left === undefined) {
-					return undefined;
-				}
-				if (!this.isTruthyCompileTimeValue(left)) {
-					return left;
-				}
-				return this.evaluateCompileTimeExpression(expression.right);
+			case LuaBinaryOperator.And:
+				return this.evaluateCompileTimeExpression(expression.left)
+					&& (!isTruthyValue(this.compileTimeValue) || this.evaluateCompileTimeExpression(expression.right));
+			case LuaBinaryOperator.Or:
+				return this.evaluateCompileTimeExpression(expression.left)
+					&& (isTruthyValue(this.compileTimeValue) || this.evaluateCompileTimeExpression(expression.right));
+			case LuaBinaryOperator.Equal: {
+				const equal = this.evaluateCompileTimeEquality(expression.left, expression.right);
+				return (equal || equal === false) && this.setCompileTimeBooleanValue(equal);
 			}
-			case LuaBinaryOperator.Or: {
-				const left = this.evaluateCompileTimeExpression(expression.left);
-				if (left === undefined) {
-					return undefined;
-				}
-				if (this.isTruthyCompileTimeValue(left)) {
-					return left;
-				}
-				return this.evaluateCompileTimeExpression(expression.right);
-			}
-			case LuaBinaryOperator.Equal:
-				return this.evaluateCompileTimeEquality(expression.left, expression.right);
 			case LuaBinaryOperator.NotEqual: {
 				const equal = this.evaluateCompileTimeEquality(expression.left, expression.right);
-				return equal === undefined ? undefined : !equal;
+				return (equal || equal === false) && this.setCompileTimeBooleanValue(!equal);
 			}
 			case LuaBinaryOperator.LessThan:
-				return this.evaluateCompileTimeRelational(expression.left, expression.right, (a, b) => a < b);
 			case LuaBinaryOperator.LessEqual:
-				return this.evaluateCompileTimeRelational(expression.left, expression.right, (a, b) => a <= b);
 			case LuaBinaryOperator.GreaterThan:
-				return this.evaluateCompileTimeRelational(expression.right, expression.left, (a, b) => a < b);
 			case LuaBinaryOperator.GreaterEqual:
-				return this.evaluateCompileTimeRelational(expression.right, expression.left, (a, b) => a <= b);
+				return this.evaluateCompileTimeRelationalInto(expression);
 			case LuaBinaryOperator.BitwiseOr:
-				return this.evaluateCompileTimeNumericBinary(expression.left, expression.right, (a, b) => a | b);
 			case LuaBinaryOperator.BitwiseXor:
-				return this.evaluateCompileTimeNumericBinary(expression.left, expression.right, (a, b) => a ^ b);
 			case LuaBinaryOperator.BitwiseAnd:
-				return this.evaluateCompileTimeNumericBinary(expression.left, expression.right, (a, b) => a & b);
 			case LuaBinaryOperator.ShiftLeft:
-				return this.evaluateCompileTimeNumericBinary(expression.left, expression.right, (a, b) => a << (b & 31));
 			case LuaBinaryOperator.ShiftRight:
-				return this.evaluateCompileTimeNumericBinary(expression.left, expression.right, (a, b) => a >> (b & 31));
 			case LuaBinaryOperator.Add:
-				return this.evaluateCompileTimeNumericBinary(expression.left, expression.right, (a, b) => a + b);
 			case LuaBinaryOperator.Subtract:
-				return this.evaluateCompileTimeNumericBinary(expression.left, expression.right, (a, b) => a - b);
 			case LuaBinaryOperator.Multiply:
-				return this.evaluateCompileTimeNumericBinary(expression.left, expression.right, (a, b) => a * b);
 			case LuaBinaryOperator.Divide:
-				return this.evaluateCompileTimeNumericBinary(expression.left, expression.right, (a, b) => a / b);
 			case LuaBinaryOperator.FloorDivide:
-				return this.evaluateCompileTimeNumericBinary(expression.left, expression.right, (a, b) => Math.floor(a / b));
 			case LuaBinaryOperator.Modulus:
-				return this.evaluateCompileTimeNumericBinary(expression.left, expression.right, luaModulo);
+			case LuaBinaryOperator.Exponent:
+				return this.evaluateCompileTimeNumberBinaryInto(expression);
 			case LuaBinaryOperator.Concat:
 				return this.evaluateCompileTimeConcat(expression.left, expression.right);
-			case LuaBinaryOperator.Exponent:
-				return this.evaluateCompileTimeNumericBinary(expression.left, expression.right, (a, b) => Math.pow(a, b));
 			default:
-				return undefined;
+				return false;
 		}
 	}
 
-	private evaluateCompileTimeNumericBinary(leftExpression: LuaExpression, rightExpression: LuaExpression, operator: (left: number, right: number) => number | undefined): Value | undefined {
-		const left = this.evaluateCompileTimeExpression(leftExpression);
-		const right = this.evaluateCompileTimeExpression(rightExpression);
-		if (left === undefined || right === undefined) {
-			return undefined;
-		}
-		if (typeof left !== 'number' || typeof right !== 'number') {
-			return undefined;
-		}
-		return operator(left, right);
-	}
-
-	private evaluateCompileTimeConcat(leftExpression: LuaExpression, rightExpression: LuaExpression): Value | undefined {
-		const left = this.evaluateCompileTimeExpression(leftExpression);
-		const right = this.evaluateCompileTimeExpression(rightExpression);
-		if (left === undefined || right === undefined) {
-			return undefined;
-		}
-		if (!this.isCompileTimeConcatValue(left) || !this.isCompileTimeConcatValue(right)) {
-			return undefined;
-		}
-		return this.program.internString(this.toCompileTimeString(left) + this.toCompileTimeString(right));
+	private evaluateCompileTimeConcat(leftExpression: LuaExpression, rightExpression: LuaExpression): boolean {
+		if (!this.evaluateCompileTimeExpression(leftExpression)) return false;
+		const left = this.compileTimeValue;
+		const leftNumber = this.compileTimeNumberValue;
+		const leftHasNumber = this.compileTimeHasNumberValue;
+		if (!this.isCompileTimeConcatValue(left, leftHasNumber)) return false;
+		if (!this.evaluateCompileTimeExpression(rightExpression)) return false;
+		if (!this.isCompileTimeConcatValue(this.compileTimeValue, this.compileTimeHasNumberValue)) return false;
+		return this.setCompileTimeValue(this.program.internString(
+			this.toCompileTimeString(left, leftNumber, leftHasNumber)
+			+ this.toCompileTimeString(this.compileTimeValue, this.compileTimeNumberValue, this.compileTimeHasNumberValue),
+		));
 	}
 
 	private evaluateCompileTimeEquality(leftExpression: LuaExpression, rightExpression: LuaExpression): boolean | undefined {
-		const left = this.evaluateCompileTimeExpression(leftExpression);
-		const right = this.evaluateCompileTimeExpression(rightExpression);
-		if (left === undefined || right === undefined) {
-			return undefined;
-		}
-		if (typeof left === 'number') {
-			return typeof right === 'number' && left === right;
+		if (!this.evaluateCompileTimeExpression(leftExpression)) return;
+		const left = this.compileTimeValue;
+		const leftNumber = this.compileTimeNumberValue;
+		const leftHasNumber = this.compileTimeHasNumberValue;
+		const leftBoolean = this.compileTimeBooleanValue;
+		const leftHasBoolean = this.compileTimeHasBooleanValue;
+		if (!this.evaluateCompileTimeExpression(rightExpression)) return;
+		if (leftHasNumber) {
+			return this.compileTimeHasNumberValue && leftNumber === this.compileTimeNumberValue;
 		}
 		if (valueIsString(left)) {
-			return valueIsString(right) && this.program.stringPool.toString(asStringId(left)) === this.program.stringPool.toString(asStringId(right));
+			return valueIsString(this.compileTimeValue) && this.program.stringPool.toString(asStringId(left)) === this.program.stringPool.toString(asStringId(this.compileTimeValue));
 		}
-		if (typeof left === 'boolean' || left === null) {
-			return left === right;
+		if (leftHasBoolean) {
+			return this.compileTimeHasBooleanValue && leftBoolean === this.compileTimeBooleanValue;
 		}
-		return undefined;
+		return left === this.compileTimeValue;
 	}
 
-	private evaluateCompileTimeRelational(leftExpression: LuaExpression, rightExpression: LuaExpression, comparator: (left: number | string, right: number | string) => boolean): boolean | undefined {
-		const left = this.evaluateCompileTimeExpression(leftExpression);
-		const right = this.evaluateCompileTimeExpression(rightExpression);
-		if (left === undefined || right === undefined) {
-			return undefined;
+	private evaluateCompileTimeRelational(expression: LuaBinaryExpression): boolean | undefined {
+		if (!this.evaluateCompileTimeExpression(expression.left)) return;
+		const left = this.compileTimeValue;
+		const leftNumber = this.compileTimeNumberValue;
+		const leftHasNumber = this.compileTimeHasNumberValue;
+		if (!this.evaluateCompileTimeExpression(expression.right)) return;
+		if (leftHasNumber && this.compileTimeHasNumberValue) {
+			return this.evaluateCompileTimeNumberOrStringRelational(expression.operator, leftNumber, this.compileTimeNumberValue);
 		}
-		if (typeof left === 'number' && typeof right === 'number') {
-			return comparator(left, right);
+		if (valueIsString(left) && valueIsString(this.compileTimeValue)) {
+			return this.evaluateCompileTimeNumberOrStringRelational(
+				expression.operator,
+				this.program.stringPool.toString(asStringId(left)),
+				this.program.stringPool.toString(asStringId(this.compileTimeValue)),
+			);
 		}
-		if (valueIsString(left) && valueIsString(right)) {
-			return comparator(this.program.stringPool.toString(asStringId(left)), this.program.stringPool.toString(asStringId(right)));
-		}
-		return undefined;
 	}
 
-	private isCompileTimeConcatValue(value: Value): boolean {
-		return typeof value === 'number' || valueIsString(value);
+	private isCompileTimeConcatValue(value: Value, hasNumberValue: boolean): boolean {
+		return hasNumberValue || valueIsString(value);
 	}
 
-	private toCompileTimeString(value: Value): string {
-		return valueIsString(value) ? this.program.stringPool.toString(asStringId(value)) : String(value);
-	}
-
-	private isTruthyCompileTimeValue(value: Value): boolean {
-		return value !== null && value !== false;
+	private toCompileTimeString(value: Value, numberValue: number, hasNumberValue: boolean): string {
+		return hasNumberValue ? String(numberValue) : this.program.stringPool.toString(asStringId(value as StringValue));
 	}
 
 	private compileStatement(statement: LuaStatement): void {
@@ -2959,8 +3308,8 @@ class FunctionBuilder {
 		if (type.accessKind === null) {
 			throw new Error(`[Compiler] ${sectionName} v1 supports primitive typed storage; '${type.name}' is not a primitive scalar at this initializer position.`);
 		}
-		const value = this.evaluateCompileTimeExpression(expression);
-		if (value === undefined || value === null || value === true || value === false || valueIsString(value) || !Number.isInteger(value)) {
+		const value = this.evaluateCompileTimeNumber(expression);
+		if (!Number.isInteger(value)) {
 			throw new Error(`[Compiler] ${sectionName} primitive initializer must be a compile-time integer.`);
 		}
 		const word = value as number;
@@ -2992,37 +3341,31 @@ class FunctionBuilder {
 			const target = this.declareLocalFromDecl(decl, names[0].range);
 			const hint = this.createLocalFunctionHint(name);
 			const closureProtoIndex = this.compileExpressionWithStaticClosureProto(values[0], target, 1, hint);
-			const binding = this.localBindings.get(decl.id);
-			if (binding !== undefined) {
-				binding.constClosureProtoIndex = closureProtoIndex;
-			}
-			if (closureProtoIndex !== null) {
+			(this.localBindings.get(decl.id) as LocalBinding).constClosureProtoIndex = closureProtoIndex;
+			if (closureProtoIndex || closureProtoIndex === 0) {
 				this.program.markStaticClosureProto(closureProtoIndex);
 			}
 			this.tempTop = Math.max(this.tempTop, tempsBase);
 			return;
 		}
-		const valueRegs: Array<number | undefined> = new Array(names.length);
-		const initializerValues: Array<Value | undefined> = new Array(names.length);
-		const initializerClosureProtoIndices: Array<number | undefined> = new Array(names.length);
-		const initializerModuleBindings: Array<ModuleBinding | undefined> = new Array(names.length);
+		this.resetInitializerScratch(names.length);
 		if (values.length > 0) {
 			const lastIndex = values.length - 1;
 			for (let i = 0; i < lastIndex; i += 1) {
 				const expr = values[i];
 				if (i < names.length && attributes[i] === 'const') {
 					const moduleBinding = this.resolveConstLocalModuleBinding(expr);
-					if (moduleBinding !== null) {
-						initializerModuleBindings[i] = moduleBinding;
-						if (moduleBinding.external || this.isConstModulePath(moduleBinding.modulePath) || this.isStaticFunctionModuleBinding(moduleBinding)) {
+					if (moduleBinding) {
+						this.initializerFlags[i] |= INIT_HAS_MODULE_BINDING;
+						this.initializerModuleBindings[i] = moduleBinding;
+						if (this.moduleBindingOwnsCompileTimeLocal(moduleBinding)) {
 							continue;
 						}
 					}
 				}
-				const constantValue = this.evaluateCompileTimeExpression(expr);
-				if (constantValue !== undefined) {
+				if (this.evaluateCompileTimeExpression(expr)) {
 					if (i < names.length) {
-						initializerValues[i] = constantValue;
+						this.recordCompileTimeInitializer(i);
 					}
 					continue;
 				}
@@ -3035,9 +3378,11 @@ class FunctionBuilder {
 					: null;
 				const closureProtoIndex = this.compileExpressionWithStaticClosureProto(expr, reg, 1, hint);
 				if (i < names.length) {
-					valueRegs[i] = reg;
-					if (attributes[i] === 'const' && closureProtoIndex !== null) {
-						initializerClosureProtoIndices[i] = closureProtoIndex;
+					this.initializerFlags[i] |= INIT_HAS_VALUE_REG;
+					this.initializerValueRegs[i] = reg;
+					if (attributes[i] === 'const' && (closureProtoIndex || closureProtoIndex === 0)) {
+						this.initializerFlags[i] |= INIT_HAS_CLOSURE_PROTO;
+						this.initializerClosureProtoIndices[i] = closureProtoIndex;
 						this.program.markStaticClosureProto(closureProtoIndex);
 					}
 				}
@@ -3049,16 +3394,16 @@ class FunctionBuilder {
 			let compileLastInitializerExpression = true;
 			if (lastHasName && attributes[lastIndex] === 'const' && !wantsMulti) {
 				const moduleBinding = this.resolveConstLocalModuleBinding(lastExpr);
-				if (moduleBinding !== null) {
-					initializerModuleBindings[lastIndex] = moduleBinding;
-					compileLastInitializerExpression = !moduleBinding.external && !this.isConstModulePath(moduleBinding.modulePath) && !this.isStaticFunctionModuleBinding(moduleBinding);
+				if (moduleBinding) {
+					this.initializerFlags[lastIndex] |= INIT_HAS_MODULE_BINDING;
+					this.initializerModuleBindings[lastIndex] = moduleBinding;
+					compileLastInitializerExpression = !this.moduleBindingOwnsCompileTimeLocal(moduleBinding);
 				}
 			}
 			if (compileLastInitializerExpression) {
-				const constantValue = this.evaluateCompileTimeExpression(lastExpr);
-				if (constantValue !== undefined && !wantsMulti) {
+				if (this.evaluateCompileTimeExpression(lastExpr) && !wantsMulti) {
 					if (lastHasName) {
-						initializerValues[lastIndex] = constantValue;
+						this.recordCompileTimeInitializer(lastIndex);
 					}
 				} else {
 					const lastReg = this.allocTemp();
@@ -3071,16 +3416,19 @@ class FunctionBuilder {
 						: null;
 					const closureProtoIndex = this.compileExpressionWithStaticClosureProto(lastExpr, lastReg, resultCount, lastHint);
 					if (lastHasName) {
-						valueRegs[lastIndex] = lastReg;
-						if (attributes[lastIndex] === 'const' && closureProtoIndex !== null) {
-							initializerClosureProtoIndices[lastIndex] = closureProtoIndex;
+						this.initializerFlags[lastIndex] |= INIT_HAS_VALUE_REG;
+						this.initializerValueRegs[lastIndex] = lastReg;
+						if (attributes[lastIndex] === 'const' && (closureProtoIndex || closureProtoIndex === 0)) {
+							this.initializerFlags[lastIndex] |= INIT_HAS_CLOSURE_PROTO;
+							this.initializerClosureProtoIndices[lastIndex] = closureProtoIndex;
 							this.program.markStaticClosureProto(closureProtoIndex);
 						}
 					}
 					if (wantsMulti) {
 						this.reserveTempRange(lastReg, remaining);
 						for (let i = 1; i < remaining && lastIndex + i < names.length; i += 1) {
-							valueRegs[lastIndex + i] = lastReg + i;
+							this.initializerFlags[lastIndex + i] |= INIT_HAS_VALUE_REG;
+							this.initializerValueRegs[lastIndex + i] = lastReg + i;
 						}
 					}
 				}
@@ -3095,22 +3443,29 @@ class FunctionBuilder {
 			if (attribute === 'const' && !hasInitializer) {
 				throw new Error(`[Compiler] Constant local '${name}' must have an initializer.`);
 			}
-			const initializerValue = initializerValues[i];
+			const flags = this.initializerFlags[i];
+			const hasInitializerValue = flags & INIT_HAS_VALUE;
 			let initializerClosureProtoIndex: number | null = null;
 			let initializerModuleBinding: ModuleBinding | null = null;
 			if (attribute === 'const') {
-				const closureProtoIndex = initializerClosureProtoIndices[i];
-				if (closureProtoIndex !== undefined) {
-					initializerClosureProtoIndex = closureProtoIndex;
+				if (flags & INIT_HAS_CLOSURE_PROTO) {
+					initializerClosureProtoIndex = this.initializerClosureProtoIndices[i];
 				}
-				const moduleBinding = initializerModuleBindings[i];
-				if (moduleBinding !== undefined) {
-					initializerModuleBinding = moduleBinding;
+				if (flags & INIT_HAS_MODULE_BINDING) {
+					initializerModuleBinding = this.initializerModuleBindings[i];
 				}
 			}
 			let constValue: Value | null = null;
-			if (initializerValue !== undefined) {
-				constValue = initializerValue;
+			let initializerNumberValue = 0;
+			let initializerHasNumberValue = false;
+			let initializerBooleanValue = false;
+			let initializerHasBooleanValue = false;
+			if (hasInitializerValue) {
+				constValue = this.initializerValues[i];
+				initializerNumberValue = this.initializerNumberValues[i];
+				initializerHasNumberValue = !!(flags & INIT_HAS_NUMBER);
+				initializerBooleanValue = this.initializerBooleanValues[i];
+				initializerHasBooleanValue = !!(flags & INIT_HAS_BOOLEAN);
 			}
 			const target = this.declareLocal(
 				decl.id,
@@ -3119,28 +3474,29 @@ class FunctionBuilder {
 				undefined,
 				attribute === 'const' ? 'const' : 'local',
 				constValue,
-				initializerValue !== undefined && attribute === 'const',
+				!!hasInitializerValue && attribute === 'const',
 				initializerClosureProtoIndex,
 				initializerModuleBinding,
+				initializerNumberValue,
+				initializerHasNumberValue,
+				initializerBooleanValue,
+				initializerHasBooleanValue,
 			);
 			const pointerTypeRef = pointerTypeRefs[i];
-			if (pointerTypeRef !== null) {
-				const binding = this.localBindings.get(decl.id);
-				if (binding !== undefined) {
-					binding.structView = {
-						type: this.resolveStructTypeReference(pointerTypeRef),
-					};
-				}
+			if (pointerTypeRef) {
+				(this.localBindings.get(decl.id) as LocalBinding).structView = {
+					type: this.resolveStructTypeReference(pointerTypeRef),
+				};
 			}
-			if (initializerValue !== undefined) {
-				this.emitLoadConst(target, initializerValue);
+			if (hasInitializerValue) {
+				this.emitLoadConst(target, this.initializerValues[i]);
 				continue;
 			}
-			if (initializerModuleBinding !== null && (initializerModuleBinding.external || this.isConstModulePath(initializerModuleBinding.modulePath) || this.isStaticFunctionModuleBinding(initializerModuleBinding))) {
+			if (initializerModuleBinding && this.moduleBindingOwnsCompileTimeLocal(initializerModuleBinding)) {
 				continue;
 			}
-			const valueReg = valueRegs[i];
-			if (valueReg !== undefined) {
+			if (flags & INIT_HAS_VALUE_REG) {
+				const valueReg = this.initializerValueRegs[i];
 				if (valueReg !== target) {
 					this.emitABC(OpCode.MOV, target, valueReg, 0);
 				}
@@ -3187,7 +3543,7 @@ class FunctionBuilder {
 				(expr.kind === LuaSyntaxKind.UnaryExpression && (expr as LuaUnaryExpression).operator === LuaUnaryOperator.Dereference)
 			) {
 				const structAddress = this.resolveStructAddress(expr);
-				if (structAddress !== null) {
+				if (structAddress) {
 					if (structAddress.readOnly) {
 						throw new Error('[Compiler] Cannot assign to .rodata storage.');
 					}
@@ -3224,7 +3580,7 @@ class FunctionBuilder {
 				if (visibleBinding !== null && visibleBinding.kind === 'const') {
 					throw new Error(`[Compiler] '${name}' is a constant local and cannot be assigned.`);
 				}
-				if (this.resolveReferenceBssBinding(reference) !== null) {
+				if (this.resolveReferenceBssBinding(reference)) {
 					throw new Error(`[Compiler] '${name}' is .bss storage; assign through a typed pointer or field.`);
 				}
 				const upvalue = this.resolveReferenceUpvalue(reference);
@@ -3383,8 +3739,8 @@ class FunctionBuilder {
 
 	private compileCallStatement(expression: LuaCallExpression): void {
 		const requireBinding = this.resolveRequireModuleBinding(expression);
-		if (requireBinding !== null) {
-			this.compileRequireExpression(requireBinding, 0, 0);
+		if (requireBinding) {
+			this.compileRequireStatement(requireBinding);
 			return;
 		}
 		const reg = this.allocTemp();
@@ -3698,18 +4054,20 @@ class FunctionBuilder {
 	// module returns (e.g. `room` in `return room`). null when the module does not
 	// return a bare local. Cached because it is consulted per export definition.
 	private getExportRootSymbolHandle(): string | null {
-		if (this.exportRootSymbolHandleCache !== undefined) {
+		if (this.exportRootSymbolHandleResolved) {
 			return this.exportRootSymbolHandleCache;
-		}
-		let handle: string | null = null;
-		const ret = this.moduleCompileInfo?.returnExpression;
-		if (ret && ret.kind === LuaSyntaxKind.IdentifierExpression) {
-			const ref = getResolvedIdentifierReference(this.semantics, ret as LuaIdentifierExpression);
-			if (ref) {
-				handle = getResolvedReferenceSymbolHandle(ref);
+			}
+			let handle: string | null = null;
+			const moduleInfo = this.moduleCompileInfo;
+			const ret = moduleInfo && moduleInfo.returnExpression;
+			if (ret && ret.kind === LuaSyntaxKind.IdentifierExpression) {
+				const ref = getResolvedIdentifierReference(this.semantics, ret as LuaIdentifierExpression);
+				if (ref) {
+					handle = getResolvedReferenceSymbolHandle(ref);
 			}
 		}
 		this.exportRootSymbolHandleCache = handle;
+		this.exportRootSymbolHandleResolved = true;
 		return handle;
 	}
 
@@ -3798,12 +4156,12 @@ class FunctionBuilder {
 
 	private compileMemberExpression(expression: any, target: number): void {
 		const constExport = this.resolveModuleExportConstValue(expression as LuaMemberExpression);
-		if (constExport !== null) {
+		if (constExport) {
 			this.emitLoadConstExportValue(target, constExport.value);
 			return;
 		}
 		const staticFunctionExportBinding = this.resolveStaticFunctionExportBinding(expression as LuaMemberExpression);
-		if (staticFunctionExportBinding !== null) {
+		if (staticFunctionExportBinding) {
 			this.emitStaticFunctionExportValue(staticFunctionExportBinding, target);
 			return;
 		}
@@ -3813,13 +4171,11 @@ class FunctionBuilder {
 			return;
 		}
 		const structAddress = this.resolveStructScalarAddress(expression as LuaMemberExpression);
-		if (structAddress !== null) {
+		if (structAddress) {
 			this.emitMemoryLoad(target, structAddress.type.accessKind!, undefined, structAddress.baseReg, structAddress.byteOffset);
 			return;
 		}
-		const rootFieldSlot = this.resolveExternalModuleRootFieldSlotName(expression.base, expression.identifier);
-		if (rootFieldSlot !== undefined) {
-			this.emitModuleSlotRelocLoad(rootFieldSlot, target);
+		if (this.emitExternalModuleRootFieldLoad(expression.base, expression.identifier, target)) {
 			return;
 		}
 		const baseReg = this.allocTemp();
@@ -3830,12 +4186,12 @@ class FunctionBuilder {
 
 	private compileIndexExpression(expression: any, target: number): void {
 		const constExport = this.resolveModuleExportConstValue(expression as LuaIndexExpression);
-		if (constExport !== null) {
+		if (constExport) {
 			this.emitLoadConstExportValue(target, constExport.value);
 			return;
 		}
 		const staticFunctionExportBinding = this.resolveStaticFunctionExportBinding(expression as LuaIndexExpression);
-		if (staticFunctionExportBinding !== null) {
+		if (staticFunctionExportBinding) {
 			this.emitStaticFunctionExportValue(staticFunctionExportBinding, target);
 			return;
 		}
@@ -3845,16 +4201,13 @@ class FunctionBuilder {
 			return;
 		}
 		const structAddress = this.resolveStructScalarAddress(expression as LuaIndexExpression);
-		if (structAddress !== null) {
+		if (structAddress) {
 			this.emitMemoryLoad(target, structAddress.type.accessKind!, undefined, structAddress.baseReg, structAddress.byteOffset);
 			return;
 		}
-		const keyStatic = extractTableKeyFromExpression((expression as LuaIndexExpression).index);
-		const rootFieldSlot = keyStatic !== undefined
-			? this.resolveExternalModuleRootFieldSlotName(expression.base, keyStatic)
-			: undefined;
-		if (rootFieldSlot !== undefined) {
-			this.emitModuleSlotRelocLoad(rootFieldSlot, target);
+		const indexExpression = (expression as LuaIndexExpression).index;
+		if (indexExpression.kind === LuaSyntaxKind.StringLiteralExpression
+			&& this.emitExternalModuleRootFieldLoad(expression.base, (indexExpression as LuaStringLiteralExpression).value, target)) {
 			return;
 		}
 		const targetPreparation = classifyAssignmentTargetPreparation(this.semantics, expression as LuaIndexExpression);
@@ -3930,27 +4283,15 @@ class FunctionBuilder {
 	}
 
 	private getConstIndex(expression: LuaExpression): number | undefined {
-		const constValue = this.evaluateCompileTimeExpression(expression);
-		if (constValue === undefined) {
-			return undefined;
-		}
-		return this.program.constIndex(constValue);
+		if (!this.evaluateCompileTimeExpression(expression)) return;
+		return this.program.constIndex(this.compileTimeValue);
 	}
 
 	private getNumericConstIndex(expression: LuaExpression): number | undefined {
-		const constValue = this.evaluateCompileTimeExpression(expression);
-		if (typeof constValue !== 'number') {
-			return undefined;
+		const numberValue = this.evaluateCompileTimeNumber(expression);
+		if (numberValue || numberValue === 0) {
+			return this.program.constIndex(numberValue);
 		}
-		return this.program.constIndex(constValue);
-	}
-
-	private evaluateCompileTimeNumber(expression: LuaExpression): number | undefined {
-		const constValue = this.evaluateCompileTimeExpression(expression);
-		if (constValue === undefined || constValue === null || constValue === true || constValue === false || valueIsString(constValue)) {
-			return undefined;
-		}
-		return constValue as number;
 	}
 
 	private compileDisplacedAddress(expression: LuaExpression): { baseReg: number; byteOffset: number } | null {
@@ -4044,12 +4385,12 @@ class FunctionBuilder {
 		};
 	}
 
-	private resolveStructAddress(expression: LuaExpression): StructAddress | null {
+	private resolveStructAddress(expression: LuaExpression): StructAddress | undefined {
 		switch (expression.kind) {
 			case LuaSyntaxKind.IdentifierExpression: {
 				const reference = getResolvedIdentifierReference(this.semantics, expression as LuaIdentifierExpression);
 				const bssBinding = this.resolveReferenceBssBinding(reference);
-				if (bssBinding !== null) {
+				if (bssBinding) {
 					const baseReg = this.allocTemp();
 					this.emitLoadBssAddress(baseReg, bssBinding, 0);
 					return {
@@ -4061,7 +4402,7 @@ class FunctionBuilder {
 					};
 				}
 				const dataBinding = this.resolveReferenceDataBinding(reference);
-				if (dataBinding !== null) {
+				if (dataBinding) {
 					const baseReg = this.allocTemp();
 					this.emitLoadDataAddress(baseReg, dataBinding, 0);
 					return {
@@ -4072,75 +4413,84 @@ class FunctionBuilder {
 						readOnly: false,
 					};
 				}
-				const rodataBinding = this.resolveReferenceRodataBinding(reference);
-				if (rodataBinding !== null) {
-					const baseReg = this.allocTemp();
-					this.emitLoadRodataAddress(baseReg, rodataBinding, 0);
-					return {
-						baseReg,
-						byteOffset: 0,
-						type: rodataBinding.type,
-						pointerIndex: true,
-						readOnly: true,
-					};
-				}
-				const binding = this.resolveReferenceVisibleBinding(reference);
-				if (binding === null || binding.structView === null) {
-					return null;
-				}
-				const localReg = this.resolveReferenceLocal(reference);
-				if (localReg !== null) {
-					return {
-						baseReg: localReg,
-						byteOffset: 0,
-						type: binding.structView.type,
-						pointerIndex: true,
-						readOnly: false,
-					};
-				}
-				const baseReg = this.allocTemp();
-				this.emitReferenceLoad(reference, baseReg);
-				return {
-					baseReg,
-					byteOffset: 0,
-					type: binding.structView.type,
-					pointerIndex: true,
-					readOnly: false,
-				};
+					const rodataBinding = this.resolveReferenceRodataBinding(reference);
+					if (rodataBinding) {
+						const baseReg = this.allocTemp();
+						this.emitLoadRodataAddress(baseReg, rodataBinding, 0);
+						return {
+							baseReg,
+							byteOffset: 0,
+							type: rodataBinding.type,
+							pointerIndex: true,
+							readOnly: true,
+						};
+					}
+						const visibleBinding = this.resolveReferenceVisibleBinding(reference);
+						if (visibleBinding && visibleBinding.structView) {
+							const localReg = this.resolveReferenceLocal(reference);
+							if (localReg || localReg === 0) {
+								return {
+									baseReg: localReg,
+									byteOffset: 0,
+									type: visibleBinding.structView.type,
+									pointerIndex: true,
+									readOnly: false,
+							};
+						}
+						const baseReg = this.allocTemp();
+						this.emitReferenceLoad(reference, baseReg);
+							return {
+								baseReg,
+								byteOffset: 0,
+								type: visibleBinding.structView.type,
+								pointerIndex: true,
+								readOnly: false,
+							};
+					}
+					return;
 			}
 			case LuaSyntaxKind.MemberExpression: {
 				const member = expression as LuaMemberExpression;
 				const base = this.resolveStructAddress(member.base);
-				return base === null ? null : this.resolveStructFieldAddress(base, member.identifier);
+				if (!base) {
+					return;
+				}
+				return this.resolveStructFieldAddress(base, member.identifier);
 			}
 			case LuaSyntaxKind.IndexExpression: {
 				const index = expression as LuaIndexExpression;
 				const base = this.resolveStructAddress(index.base);
-				return base === null ? null : this.compileStructIndexAddress(base, index.index);
+				if (!base) {
+					return;
+				}
+				return this.compileStructIndexAddress(base, index.index);
 			}
 			case LuaSyntaxKind.UnaryExpression: {
 				const unary = expression as LuaUnaryExpression;
 				if (unary.operator !== LuaUnaryOperator.Dereference) {
-					return null;
+					return;
 				}
 				const base = this.resolveStructAddress(unary.operand);
-				return base === null ? null : {
+				if (!base) {
+					return;
+				}
+				return {
 					baseReg: base.baseReg,
 					byteOffset: base.byteOffset,
 					type: base.type,
 					pointerIndex: false,
 					readOnly: base.readOnly,
 				};
+				}
+				default:
+					return;
 			}
-			default:
-				return null;
 		}
-	}
 
-	private resolveStructScalarAddress(expression: LuaExpression): StructAddress | null {
+	private resolveStructScalarAddress(expression: LuaExpression): StructAddress | undefined {
 		const address = this.resolveStructAddress(expression);
-		if (address === null) {
-			return null;
+		if (!address) {
+			return;
 		}
 		if (address.type.accessKind === null) {
 			throw new Error(`[Compiler] Struct expression '${address.type.name}' is an address range; use '&' to pass its address or select a scalar field.`);
@@ -4204,27 +4554,9 @@ class FunctionBuilder {
 		this.emitABC(OpCode.STORE_MEM, valueReg, this.emitOffsetAddress(addrReg!, byteOffset), accessKind, 0);
 	}
 
-	private resolveConstantMemoryAddress(addressExpression: LuaExpression): number | undefined {
-		const constValue = this.evaluateCompileTimeExpression(addressExpression);
-		if (typeof constValue === 'number') return constValue;
-		if (addressExpression.kind === LuaSyntaxKind.IdentifierExpression) {
-			const reference = getResolvedIdentifierReference(this.semantics, addressExpression as LuaIdentifierExpression);
-			if (reference.kind === 'lexical') {
-				const symbolHandle = getResolvedReferenceSymbolHandle(reference);
-				if (symbolHandle !== null) {
-					const binding = this.resolveVisibleBinding(symbolHandle);
-					if (binding !== null && binding.hasConstValue && typeof binding.constValue === 'number') {
-						return binding.constValue;
-					}
-				}
-			}
-		}
-		return undefined;
-	}
-
 	private resolveMemoryStoreRequirement(addressExpression: LuaExpression): MmioWriteRequirement {
-		const address = this.resolveConstantMemoryAddress(addressExpression);
-		if (address !== undefined) {
+		const address = this.evaluateCompileTimeNumber(addressExpression);
+		if (address || address === 0) {
 			const spec = MMIO_REGISTER_SPEC_BY_ADDRESS.get(address);
 			if (spec) return spec.writeRequirement;
 			return 'any';
@@ -4241,9 +4573,11 @@ class FunctionBuilder {
 	}
 
 	private resolveMemoryStoreRegisterName(addressExpression: LuaExpression): string | undefined {
-		const address = this.resolveConstantMemoryAddress(addressExpression);
-		if (address !== undefined) {
-			return MMIO_REGISTER_SPEC_BY_ADDRESS.get(address)?.name;
+		const address = this.evaluateCompileTimeNumber(addressExpression);
+		if (address || address === 0) {
+			const spec = MMIO_REGISTER_SPEC_BY_ADDRESS.get(address);
+			if (spec) return spec.name;
+			return;
 		}
 		if (addressExpression.kind === LuaSyntaxKind.IdentifierExpression) {
 			const reference = getResolvedIdentifierReference(this.semantics, addressExpression as LuaIdentifierExpression);
@@ -4272,7 +4606,7 @@ class FunctionBuilder {
 
 	private compileStringIdUnaryExpression(expression: LuaUnaryExpression, target: number, resultCount: number): void {
 		const structAddress = this.resolveStructAddress(expression.operand);
-		if (structAddress !== null) {
+		if (structAddress) {
 			this.emitStructAddressValue(structAddress, target, resultCount);
 			return;
 		}
@@ -4318,7 +4652,7 @@ class FunctionBuilder {
 		}
 		if (expression.operator === LuaUnaryOperator.Dereference) {
 			const structAddress = this.resolveStructScalarAddress(expression);
-			if (structAddress === null) {
+			if (!structAddress) {
 				throw new Error('[Compiler] Pointer dereference requires a typed pointer.');
 			}
 			this.emitMemoryLoad(target, structAddress.type.accessKind!, undefined, structAddress.baseReg, structAddress.byteOffset);
@@ -4482,55 +4816,79 @@ class FunctionBuilder {
 		}
 	}
 
-	private compileRequireExpression(binding: ModuleBinding, target: number, resultCount: number): void {
-		const moduleInfo = this.moduleCompileContext?.modulesByPath.get(binding.modulePath);
-		if (this.isStaticFunctionModuleBinding(binding)) {
-			if (resultCount > 0) {
-				this.emitStaticFunctionExportValue(binding, target);
+	private compileRequireStatement(binding: RequireModuleBinding): void {
+		switch (binding.kind) {
+			case 'installed':
+				return;
+			case 'unshaped':
+				this.markStaticModulePath(binding.modulePath);
+				return;
+			case 'source':
+				if (binding.moduleInfo.constModule) {
+					return;
+				}
+				this.markStaticModulePath(binding.modulePath);
+				return;
+		}
+	}
+
+	private compileRequireExpression(binding: RequireModuleBinding, target: number, resultCount: number): void {
+		switch (binding.kind) {
+			case 'installed':
+				this.emitInstalledModuleRootValue(binding.modulePath, target);
 				if (resultCount > 1) {
 					this.emitLoadNil(target + 1, resultCount - 1);
 				}
+				return;
+			case 'unshaped':
+				this.markStaticModulePath(binding.modulePath);
+				this.emitLoadBool(target, true);
+				if (resultCount > 1) {
+					this.emitLoadNil(target + 1, resultCount - 1);
+				}
+				return;
+			case 'source': {
+				if (this.isStaticFunctionModuleBinding(binding)) {
+					this.emitStaticFunctionExportValue(binding, target);
+					if (resultCount > 1) {
+						this.emitLoadNil(target + 1, resultCount - 1);
+					}
+					return;
+				}
+				if (binding.moduleInfo.constModule) {
+					this.failCompileTimeModuleRootRuntimeUse(binding.modulePath);
+				}
+				this.markStaticModulePath(binding.modulePath);
+				const rootSlot = binding.moduleInfo.exportSlotsByPathKey.get('');
+				if (rootSlot) {
+					this.emitModuleExportValueLoad(rootSlot, target);
+				} else {
+					this.emitLoadBool(target, true);
+				}
+				if (resultCount > 1) {
+					this.emitLoadNil(target + 1, resultCount - 1);
+				}
+				return;
 			}
-			return;
-		}
-		if (moduleInfo?.constModule) {
-			this.failCompileTimeModuleRootRuntimeUse(binding.modulePath);
-		}
-		this.markStaticModulePath(binding.modulePath);
-		if (resultCount === 0) {
-			return;
-		}
-		const rootSlot = moduleInfo?.exportSlotsByPathKey.get('');
-		if (rootSlot !== undefined) {
-			this.emitModuleExportValueLoad(rootSlot, target);
-		} else {
-			this.emitLoadBool(target, true);
-		}
-		if (resultCount > 1) {
-			this.emitLoadNil(target + 1, resultCount - 1);
 		}
 	}
 
 	private compileCallExpression(expression: LuaCallExpression, target: number, resultCount: number): void {
 		const requireBinding = this.resolveRequireModuleBinding(expression);
-		if (requireBinding !== null) {
+		if (requireBinding) {
 			this.compileRequireExpression(requireBinding, target, resultCount);
 			return;
 		}
 		const methodName = expression.methodName;
-		const hasMethod = methodName !== null && methodName.length > 0;
-		const moduleMethodSlot = hasMethod ? this.resolveModuleExportMethodSlot(expression.callee, methodName) : undefined;
-		const constModuleValueCallee = !hasMethod ? this.resolveModuleExportConstValue(expression.callee) : null;
-		const moduleCallSlot = !hasMethod ? this.resolveModuleExportCallTargetSlot(expression.callee) : undefined;
-		const ownStaticFunctionExportSlot = !hasMethod ? this.resolveOwnStaticFunctionExportCallSlot(expression.callee) : undefined;
-		const constClosureBinding = !hasMethod && expression.callee.kind === LuaSyntaxKind.IdentifierExpression
+		const moduleMethodSlot = methodName ? this.resolveModuleExportMethodSlot(expression.callee, methodName) : undefined;
+		const constModuleValueCallee = methodName ? undefined : this.resolveModuleExportConstValue(expression.callee);
+		const moduleCallSlot = methodName ? undefined : this.resolveModuleExportCallTargetSlot(expression.callee);
+		const ownStaticFunctionExportSlot = methodName ? undefined : this.resolveOwnStaticFunctionExportCallSlot(expression.callee);
+		const constClosureBinding = !methodName && expression.callee.kind === LuaSyntaxKind.IdentifierExpression
 			? this.resolveReferenceConstClosureBinding(getResolvedIdentifierReference(this.semantics, expression.callee as LuaIdentifierExpression))
 			: null;
-		if (constModuleValueCallee !== null) {
+		if (constModuleValueCallee) {
 			this.failConstModuleValueCall(constModuleValueCallee.binding);
-		}
-		if (requireBinding !== null && this.isConstModulePath(requireBinding.modulePath) && moduleCallSlot === undefined) {
-			this.failCompileTimeModuleRootRuntimeUse(requireBinding.modulePath);
 		}
 		if (this.staticCallTargetScope && moduleCallSlot === undefined && ownStaticFunctionExportSlot === undefined) {
 			throw new Error(`[Compiler] Static function export '${this.protoId}' cannot call a dynamic value. Static function exports call other static exports through link-time symbols.`);
@@ -4540,7 +4898,7 @@ class FunctionBuilder {
 		const lastArg = argCount > 0 ? expression.arguments[argCount - 1] : null;
 		const hasVarArg = lastArg !== null && this.isMultiReturnExpression(lastArg);
 		const fixedArgCount = hasVarArg ? argCount - 1 : argCount;
-		const callSlotCount = fixedArgCount + (hasMethod ? 2 : 1) + (hasVarArg ? 1 : 0);
+		const callSlotCount = fixedArgCount + (methodName ? 2 : 1) + (hasVarArg ? 1 : 0);
 		const resultSlots = resultCount > 0 ? resultCount : 0;
 		const requiredSlots = Math.max(callSlotCount, resultSlots);
 		const tempBase = this.tempTop;
@@ -4556,7 +4914,7 @@ class FunctionBuilder {
 			if (selfReg !== callBase + 1) {
 				this.emitABC(OpCode.MOV, callBase + 1, selfReg, 0);
 			}
-		} else if (hasMethod) {
+		} else if (methodName) {
 			this.reserveTempRange(callBase, 2);
 			this.compileExpressionInto(expression.callee, callBase, 1);
 			const methodKey = this.program.constIndexString(methodName);
@@ -4568,7 +4926,7 @@ class FunctionBuilder {
 		} else {
 			this.compileExpressionInto(expression.callee, callBase, 1);
 		}
-		const argBase = callBase + (hasMethod ? 2 : 1);
+		const argBase = callBase + (methodName ? 2 : 1);
 		if (useTarget) {
 			this.ensureMaxStack(callBase + requiredSlots);
 		}
@@ -4580,7 +4938,7 @@ class FunctionBuilder {
 				this.emitABC(OpCode.MOV, destReg, argReg, 0);
 			}
 		}
-		let callArgs = fixedArgCount + (hasMethod ? 1 : 0);
+		let callArgs = fixedArgCount + (methodName ? 1 : 0);
 		if (hasVarArg) {
 			this.compileExpressionInto(expression.arguments[argCount - 1], argBase + fixedArgCount, 0);
 			callArgs = 0;
@@ -4614,7 +4972,7 @@ class FunctionBuilder {
 	private isMultiReturnExpression(expression: LuaExpression): boolean {
 		if (expression.kind === LuaSyntaxKind.VarargExpression) return true;
 		if (expression.kind !== LuaSyntaxKind.CallExpression) return false;
-		return true;
+		return !this.resolveRequireModuleBinding(expression);
 	}
 
 	private emitDefaultReturn(): void {
@@ -4895,6 +5253,8 @@ function createProgramBuilderFromProgram(
 		preserveProgramRom ? base.programRom : null,
 		preserveProgramRom ? base.programRomTextByteLength : 0,
 		!preserveProgramRom,
+		base.moduleProtos,
+		base.moduleExports,
 	);
 	const protoIds = metadata.protoIds;
 	if (!protoIds || protoIds.length !== base.protos.length) {
@@ -4923,7 +5283,7 @@ export function compileLuaChunkToProgram(chunk: LuaChunk, modules: ReadonlyArray
 	const canonicalModules = canonicalizeProgramModules(modules, 'program');
 	const canonicalExternalModules = canonicalizeProgramModules(options.externalModules ?? EMPTY_PROGRAM_MODULES, 'external');
 	const frontend = buildCompilerSemanticFrontend(chunk, canonicalModules, canonicalExternalModules, options);
-	const constModulePaths = new Set<string>(options.constModulePaths ?? []);
+	const constModulePaths = new Set<string>(options.constModulePaths);
 	const moduleCompileContext = buildModuleCompileContext(canonicalModules, canonicalExternalModules, constModulePaths, frontend);
 	const semanticErrors = collectSemanticCompileErrors(frontend, chunk.range.path);
 	if (semanticErrors.length > 0) {
@@ -5043,12 +5403,12 @@ export function compileLuaChunkToProgram(chunk: LuaChunk, modules: ReadonlyArray
 			message: extractCompileErrorMessage(error, chunk.range.path),
 		});
 	}
-	const moduleProtoMap = new Map<string, number>();
 	for (let i = 0; i < canonicalModules.length; i += 1) {
 		const module = canonicalModules[i];
 		// Const modules are compile-time symbol tables: their exports are inlined at
 		// use sites, so they carry no runtime proto and are never statically initialized.
-		if (moduleCompileContext.modulesByPath.get(module.path)?.constModule) {
+		const moduleInfo = moduleCompileContext.modulesByPath.get(module.path);
+		if (moduleInfo && moduleInfo.constModule) {
 			continue;
 		}
 		const moduleProtoId = buildModuleProtoId(module.path);
@@ -5071,12 +5431,12 @@ export function compileLuaChunkToProgram(chunk: LuaChunk, modules: ReadonlyArray
 				entryPC: 0,
 				codeLen: ranges.length * INSTRUCTION_BYTES,
 				numParams: 0,
-					isVararg: false,
-					maxStack: builder.getMaxStack(),
-					upvalueDescs: builder.getUpvalueDescs(),
-					staticClosure: false,
-				}, code, ranges, constRelocs, localSlots, builder.getUpvalueNames(), moduleProtoId, instructionSet);
-			moduleProtoMap.set(module.path, protoIndex);
+				isVararg: false,
+				maxStack: builder.getMaxStack(),
+				upvalueDescs: builder.getUpvalueDescs(),
+				staticClosure: false,
+			}, code, ranges, constRelocs, localSlots, builder.getUpvalueNames(), moduleProtoId, instructionSet);
+			programBuilder.recordModuleProto(module.path, protoIndex);
 		} catch (error) {
 			compileErrors.push({
 				path: module.path,
@@ -5091,39 +5451,17 @@ export function compileLuaChunkToProgram(chunk: LuaChunk, modules: ReadonlyArray
 	const entrySemantics = frontend.getFile(chunk.range.path);
 	sectionInitProtoIndex = compileSectionInitProto(programBuilder, moduleId, chunk.range, entrySemantics, frontend);
 	irqProtoIndex = compileInterruptProto(programBuilder, moduleId, chunk.range, entrySemantics, frontend);
+	recordModuleExportContracts(programBuilder, moduleCompileContext);
 	const { program, metadata, constRelocs, constValueRelocs, data, bss, rodataBytes, rodataSymbols, staticModulePaths } = programBuilder.buildProgram();
-
-	// Ensure module export slot names (built during module compile-info collection)
-	// are present in the program metadata so linkers can resolve symbolic module slots.
-	// Externals (system ROM modules passed as externalModules) are treated as
-	// system globals so they are preferred when resolving symbolic slots.
-	for (const [, info] of moduleCompileContext.modulesByPath) {
-		// Const module exports are inlined as constants and never resolved through a
-		// global slot, so they do not register slot names.
-		if (info.constModule) {
-			continue;
-		}
-		for (const slotName of info.exportSlotsByPathKey.values()) {
-			if (info.external) {
-				if (!metadata.systemGlobalNames.includes(slotName)) {
-					metadata.systemGlobalNames.push(slotName);
-				}
-			} else {
-				if (!metadata.globalNames.includes(slotName)) {
-					metadata.globalNames.push(slotName);
-				}
-			}
-		}
-	}
 	return {
 		program,
-		metadata,
-		entryProtoIndex,
-		sectionInitProtoIndex,
-		irqProtoIndex,
-		moduleProtoMap,
-		staticModulePaths,
-		constRelocs,
+			metadata,
+			entryProtoIndex,
+			sectionInitProtoIndex,
+			irqProtoIndex,
+			moduleProtoMap: program.moduleProtoMap,
+			staticModulePaths,
+			constRelocs,
 		constValueRelocs,
 		data,
 		bss,
@@ -5135,12 +5473,14 @@ export function compileLuaChunkToProgram(chunk: LuaChunk, modules: ReadonlyArray
 export function appendLuaChunkToProgram(base: Program, programMetadata: ProgramMetadata, chunk: LuaChunk, options: CompileOptions = {}): AppendedProgram {
 	const optLevel = options.optLevel;
 	const externalModules = canonicalizeProgramModules(options.externalModules ?? EMPTY_PROGRAM_MODULES, 'external');
+	const constModulePaths = new Set<string>(options.constModulePaths);
 	const frontend = buildCompilerSemanticFrontend(chunk, EMPTY_PROGRAM_MODULES, externalModules, {
 		baseProgram: options.baseProgram,
 		baseMetadata: programMetadata,
 		optLevel: options.optLevel,
 		entrySource: options.entrySource,
 	});
+	const moduleCompileContext = buildModuleCompileContext(EMPTY_PROGRAM_MODULES, externalModules, constModulePaths, frontend);
 	const semanticErrors = collectSemanticCompileErrors(frontend, chunk.range.path);
 	if (semanticErrors.length > 0) {
 		throw new Error(buildCompileFailureMessage(semanticErrors));
@@ -5156,6 +5496,7 @@ export function appendLuaChunkToProgram(base: Program, programMetadata: ProgramM
 		protoId: entryProtoId,
 		semantics: frontend.getFile(chunk.range.path),
 		frontend,
+		moduleCompileContext,
 	});
 	try {
 		entryBuilder.compileChunk(chunk);
@@ -5184,6 +5525,7 @@ export function appendLuaChunkToProgram(base: Program, programMetadata: ProgramM
 		throw new Error(buildCompileFailureMessage(compileErrors));
 	}
 	sectionInitProtoIndex = compileSectionInitProto(programBuilder, moduleId, chunk.range, frontend.getFile(chunk.range.path), frontend);
+	recordModuleExportContracts(programBuilder, moduleCompileContext);
 	const { program, metadata, constRelocs, constValueRelocs, data, bss, rodataBytes, rodataSymbols } = programBuilder.buildProgram();
 	return { program, metadata, entryProtoIndex, sectionInitProtoIndex, constRelocs, constValueRelocs, data, bss, rodataBytes, rodataSymbols };
 }

@@ -3,15 +3,23 @@ import { test } from 'node:test';
 
 import { Table, StringValue } from '../../machine/ts/machine/cpu/cpu';
 import { StringPool } from '../../machine/ts/machine/cpu/string_pool';
-import type { LuaSourceRegistry } from '../../machine/ts/machine/program/sources';
+import { registerLuaSourceRecord, type LuaSourceRegistry } from '../../machine/ts/machine/program/sources';
 import type { Runtime } from '../../machine/ts/machine/runtime/runtime';
 import { listSymbols } from '../../machine/ts/ide/runtime/lua_pipeline';
 
 function makeRegistry(sourcePaths: readonly string[]): LuaSourceRegistry {
-	const path2lua: LuaSourceRegistry['path2lua'] = {};
+	const registry: LuaSourceRegistry = {
+		records: [],
+		path2lua: {},
+		module2lua: {},
+		entry_path: '',
+		namespace: 'test',
+		projectRootPath: '',
+		can_boot_from_source: false,
+	};
 	for (let index = 0; index < sourcePaths.length; index += 1) {
 		const sourcePath = sourcePaths[index];
-		path2lua[sourcePath] = {
+		registerLuaSourceRecord(registry, {
 			resid: sourcePath,
 			type: 'lua',
 			source_path: sourcePath,
@@ -19,16 +27,9 @@ function makeRegistry(sourcePaths: readonly string[]): LuaSourceRegistry {
 			src: '',
 			base_src: '',
 			update_timestamp: 0,
-		};
+		});
 	}
-	return {
-		path2lua,
-		module2lua: {},
-		entry_path: '',
-		namespace: 'test',
-		projectRootPath: '',
-		can_boot_from_source: false,
-	};
+	return registry;
 }
 
 test('listSymbols hides compiler-generated module export slots through loader module paths', () => {
@@ -38,6 +39,8 @@ test('listSymbols hides compiler-generated module export slots through loader mo
 	globals.set(StringValue.get(stringPool.intern('room__index__spawn')), true);
 	globals.set(StringValue.get(stringPool.intern('font__get')), true);
 	globals.set(StringValue.get(stringPool.intern('player_score')), true);
+	const systemLuaSources = makeRegistry(['system/font.lua']);
+	const cartLuaSources = makeRegistry(['carts/pietious/room/index.lua']);
 	const runtime = {
 		machine: {
 			cpu: {
@@ -46,8 +49,9 @@ test('listSymbols hides compiler-generated module export slots through loader mo
 				stringPool,
 			},
 		},
-		systemLuaSources: makeRegistry(['system/font.lua']),
-		cartLuaSources: makeRegistry(['carts/pietious/room/index.lua']),
+		systemLuaSources,
+		cartLuaSources,
+		luaSourceRegistries: [cartLuaSources, systemLuaSources],
 	} as Runtime;
 
 	const names = listSymbols(runtime).map(symbol => symbol.name);

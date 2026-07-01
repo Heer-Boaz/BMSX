@@ -40,7 +40,7 @@ LuaFunctionRedirectRecord& LuaFunctionRedirectCache::createRecord(Runtime& runti
 			asNativeFunction(target->current)->invoke(args, out);
 			return;
 		}
-		runtime.callLuaFunctionInto(asClosure(target->current), args, out);
+		runtime.callLuaFunctionInto(*asClosure(target->current), args, out);
 	});
 	return *target;
 }

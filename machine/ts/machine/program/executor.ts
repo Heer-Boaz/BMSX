@@ -1,6 +1,6 @@
 import type { LuaFunctionValue, LuaValue } from '../../lua/value';
 import { isLuaCallSignal } from '../../lua/value';
-import { AcceptedInterruptKind, Closure, RunResult, type Program, type ProgramMetadata, type Value } from '../cpu/cpu';
+import { AcceptedInterruptKind, EMPTY_CALL_ARGS, Closure, RunResult, type Program, type ProgramMetadata, type Value } from '../cpu/cpu';
 import { INSTRUCTION_BYTES } from '../cpu/instruction_format';
 import { buildMarshalContext, extendMarshalContext, toNativeValue, toRuntimeValue } from '../runtime/host/native_bridge';
 import { advanceRuntimeTime, runDueRuntimeTimers } from '../runtime/cpu_executor';
@@ -27,9 +27,10 @@ function buildHostEvalMetadata(baseProgram: Program): ProgramMetadata {
 	for (let index = 0; index < debugRanges.length; index += 1) {
 		debugRanges[index] = null;
 	}
-	const protoIds = new Array<string>(baseProgram.protos.length);
-	const localSlotsByProto: Array<ProgramMetadata['localSlotsByProto'][number]> = new Array(baseProgram.protos.length);
-	const upvalueNamesByProto: Array<ProgramMetadata['upvalueNamesByProto'][number]> = new Array(baseProgram.protos.length);
+	const protoCount = baseProgram.protos.length;
+	const protoIds = new Array<string>(protoCount);
+	const localSlotsByProto: Array<ProgramMetadata['localSlotsByProto'][number]> = new Array(protoCount);
+	const upvalueNamesByProto: Array<ProgramMetadata['upvalueNamesByProto'][number]> = new Array(protoCount);
 	for (let index = 0; index < protoIds.length; index += 1) {
 		protoIds[index] = `proto:${index}`;
 		localSlotsByProto[index] = [];
@@ -74,7 +75,7 @@ export function runHostEvalChunk(runtime: Runtime, source: string): Value[] {
 		runtime.machine.cpu.clearHaltUntilIrq();
 	}
 	try {
-		callClosureIntoWithScheduler(runtime, { protoIndex: compiled.entryProtoIndex, upvalues: [] }, [], results);
+		callClosureIntoWithScheduler(runtime, runtime.machine.cpu.rootClosure(compiled.entryProtoIndex), EMPTY_CALL_ARGS, results);
 		return results.slice();
 	} finally {
 		if (restoreHalt) {
@@ -129,7 +130,7 @@ function runHaltedClosureUntilInterrupt(runtime: Runtime): void {
 }
 
 // start repeated-sequence-acceptable -- External closure calls keep frame/budget restore code direct instead of routing through callback plumbing.
-export function callClosureInto(runtime: Runtime, fn: Closure, args: Value[], out: Value[]): void {
+export function callClosureInto(runtime: Runtime, fn: Closure, args: ReadonlyArray<Value>, out: Value[]): void {
 	const cpu = runtime.machine.cpu;
 	const depth = cpu.getFrameDepth();
 	const previousBudget = cpu.instructionBudgetRemaining;
@@ -163,7 +164,7 @@ export function callClosureInto(runtime: Runtime, fn: Closure, args: Value[], ou
 	}
 }
 
-export function callClosureIntoWithScheduler(runtime: Runtime, fn: Closure, args: Value[], out: Value[]): void {
+export function callClosureIntoWithScheduler(runtime: Runtime, fn: Closure, args: ReadonlyArray<Value>, out: Value[]): void {
 	const cpu = runtime.machine.cpu;
 	const scheduler = runtime.machine.scheduler;
 	const depth = cpu.getFrameDepth();
@@ -226,7 +227,7 @@ export function callClosureIntoWithScheduler(runtime: Runtime, fn: Closure, args
 }
 // end repeated-sequence-acceptable
 
-export function callClosureIntoSuspended(runtime: Runtime, fn: Closure, args: Value[], out: Value[]): void {
+export function callClosureIntoSuspended(runtime: Runtime, fn: Closure, args: ReadonlyArray<Value>, out: Value[]): void {
 	const cpu = runtime.machine.cpu;
 	const restoreHalt = cpu.isHaltedUntilIrq();
 	if (restoreHalt) {
@@ -241,7 +242,7 @@ export function callClosureIntoSuspended(runtime: Runtime, fn: Closure, args: Va
 	}
 }
 
-export function callClosure(runtime: Runtime, fn: Closure, args: Value[]): Value[] {
+export function callClosure(runtime: Runtime, fn: Closure, args: ReadonlyArray<Value>): Value[] {
 	callClosureInto(runtime, fn, args, runtime.machine.cpu.lastReturnValues);
 	return runtime.machine.cpu.lastReturnValues;
 }

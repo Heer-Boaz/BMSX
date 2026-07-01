@@ -203,54 +203,16 @@ local parse_decimal<const> = function(text)
 	return sign * value
 end
 
-next = function(target, key)
-	return vm_next(target, key)
-end
-
-
-type = function(value)
-	return vm_type(value)
-end
-
-
-setmetatable = function(target, metatable)
-	return vm_setmetatable(target, metatable)
-end
-
-
-getmetatable = function(target)
-	return vm_getmetatable(target)
-end
-
-
-rawget = function(target, key)
-	return vm_rawget(target, key)
-end
-
-
-rawset = function(target, key, value)
-	return vm_rawset(target, key, value)
-end
-
-
-select = function(index, ...)
-	return vm_select(index, ...)
-end
-
-
-error = function(message, level)
-	return vm_error(message, level)
-end
-
-
-pcall = function(fn, ...)
-	return vm_pcall(fn, ...)
-end
-
-
-xpcall = function(fn, handler, ...)
-	return vm_xpcall(fn, handler, ...)
-end
+next = vm_next
+type = vm_type
+setmetatable = vm_setmetatable
+getmetatable = vm_getmetatable
+rawget = vm_rawget
+rawset = vm_rawset
+select = vm_select
+error = vm_error
+pcall = vm_pcall
+xpcall = vm_xpcall
 
 
 assert = function(condition, ...)

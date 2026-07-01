@@ -68,9 +68,9 @@ function extractExpressionCandidates(range: SourceRange, sourceText: string): st
 }
 
 function resourceSourceForPath(runtime: Runtime, path: string): string | null {
-	const record = runtime.resolveLuaSourceRecord(path);
-	if (record) {
-		return record.src;
+	const source = runtime.resolveLuaSource(path);
+	if (source) {
+		return source.record.src;
 	}
 	return null;
 }

@@ -39,10 +39,10 @@ export function primeRuntimeSemanticWorkspaceProjectSources(runtime: Runtime, wo
 	if (primedProjectWorkspace === workspace) {
 		return workspace;
 	}
-	const registries = luaPipeline.listLuaSourceRegistries(runtime);
-	for (let registryIndex = 0; registryIndex < registries.length; registryIndex += 1) {
-		const path2lua = registries[registryIndex]!.path2lua;
-		for (const path in path2lua) {
+	for (let registryIndex = 0; registryIndex < runtime.luaSourceRegistries.length; registryIndex += 1) {
+		const registry = runtime.luaSourceRegistries[registryIndex];
+		for (let recordIndex = 0; recordIndex < registry.records.length; recordIndex += 1) {
+			const path = registry.records[recordIndex].source_path;
 			const cacheEntry = runtime.pathSemanticCache.get(path);
 			const source = cacheEntry ? cacheEntry.source : luaPipeline.resourceSourceForChunk(runtime, path);
 			const existing = workspace.getFileData(path);

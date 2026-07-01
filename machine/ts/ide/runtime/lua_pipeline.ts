@@ -14,7 +14,6 @@ import { addTrackedLuaHeapBytes, resetTrackedLuaHeapBytes } from '../../machine/
 import { PROGRAM_STATIC_RAM_BASE } from '../../machine/memory/map';
 import { resetHandledLuaErrors } from './fault_state';
 import {
-	buildModuleProtoMap,
 	decodeProgramImage,
 	decodeProgramSymbolsImage,
 	PROGRAM_IMAGE_ID,
@@ -28,24 +27,11 @@ import { Table, type ProgramMetadata, type Value, isNativeFunction, isNativeObje
 import { asStringId, valueIsString } from '../../machine/cpu/cpu';
 import type { Runtime } from '../../machine/runtime/runtime';
 
-export function replaceMapEntries<TKey, TValue>(target: Map<TKey, TValue>, entries: Iterable<[TKey, TValue]>): void {
-	target.clear();
-	for (const [key, value] of entries) {
-		target.set(key, value);
-	}
-}
-
 function installFreshLuaInterpreter(runtime: Runtime): LuaInterpreter {
 	resetLuaInteroperabilityState(runtime);
 	const interpreter = runtime.createLuaInterpreter();
 	runtime.assignInterpreter(interpreter);
 	return interpreter;
-}
-
-function installProgramModules(runtime: Runtime, moduleProtos: Iterable<[string, number]>): void {
-	replaceMapEntries(runtime.moduleProtos, moduleProtos);
-	runtime.moduleCache.clear();
-	runtime.machine.vdp.resetIngressState();
 }
 
 export function markSourceChunkAsDirty(runtime: Runtime, path: string): void {
@@ -71,7 +57,6 @@ export function resetRuntimeState(runtime: Runtime): void {
 	resetTrackedLuaHeapBytes();
 	addTrackedLuaHeapBytes(cpu.globals.getTrackedHeapBytes());
 	runtime.moduleCache.clear();
-	runtime.moduleProtos.clear();
 	seedLuaGlobals(runtime);
 }
 
@@ -121,15 +106,10 @@ function buildSymbolModuleSlotPrefix(modulePath: string): string {
 
 function collectHiddenSymbolPrefixes(runtime: Runtime): Set<string> {
 	const prefixes = new Set<string>();
-	const registries = [runtime.systemLuaSources, runtime.cartLuaSources];
-	for (let registryIndex = 0; registryIndex < registries.length; registryIndex += 1) {
-		const registry = registries[registryIndex];
-		if (!registry) {
-			continue;
-		}
-		const luaAssets = Object.values(registry.path2lua);
-		for (let assetIndex = 0; assetIndex < luaAssets.length; assetIndex += 1) {
-			prefixes.add(buildSymbolModuleSlotPrefix(luaAssets[assetIndex].source_path));
+	for (let registryIndex = 0; registryIndex < runtime.luaSourceRegistries.length; registryIndex += 1) {
+		const registry = runtime.luaSourceRegistries[registryIndex];
+		for (let assetIndex = 0; assetIndex < registry.records.length; assetIndex += 1) {
+			prefixes.add(buildSymbolModuleSlotPrefix(registry.records[assetIndex].source_path));
 		}
 	}
 	return prefixes;
@@ -198,23 +178,15 @@ function loadProgramImagesForSource(runtime: Runtime, source: 'system' | 'cart')
 export function buildModuleChunks(
 	runtime: Runtime,
 	entryModulePath: string,
-	registries?: LuaSourceRegistry[],
+	registries: LuaSourceRegistry[] = runtime.moduleCompileLuaSources,
 	interpreter: LuaInterpreter = runtime.interpreter,
 ): { modules: Array<{ path: string; chunk: LuaChunk; source: string }> } {
 	const modules: Array<{ path: string; chunk: LuaChunk; source: string }> = [];
 	const seen = new Set<string>();
-	const resolvedRegistries = registries ?? resolveModuleRegistries(runtime);
-	for (const registry of resolvedRegistries) {
-		if (!registry) {
-			continue;
-		}
-		const luaAssets = Object.values(registry.path2lua);
-		for (const asset of luaAssets) {
-			if (!asset || asset.type !== 'lua') {
-				continue;
-			}
+	for (const registry of registries) {
+		for (const asset of registry.records) {
 			const key = asset.module_path;
-			if (!key || seen.has(key)) {
+			if (seen.has(key)) {
 				continue;
 			}
 			seen.add(key);
@@ -295,7 +267,8 @@ function bootSystemSourceProgram(runtime: Runtime, interpreter: LuaInterpreter, 
 	if (!options?.preserveState) {
 		resetRuntimeState(runtime);
 	}
-	installProgramModules(runtime, buildModuleProtoMap(programImage.sections.rodata.moduleProtos));
+	runtime.moduleCache.clear();
+	runtime.machine.vdp.resetIngressState();
 	const program = inflateExecutableProgramImage(programImage, metadata, runtime.programDataBaseAddress, runtime.programBssBaseAddress);
 	runtime.machine.cpu.setProgram(program, metadata);
 	runtime.programMetadata = metadata;
@@ -338,8 +311,8 @@ function bootProgramImage(runtime: Runtime, options?: { preserveState?: boolean 
 		resetRuntimeState(runtime);
 	}
 
-	const protoMap = buildModuleProtoMap(programImage.sections.rodata.moduleProtos);
-	installProgramModules(runtime, protoMap);
+	runtime.moduleCache.clear();
+	runtime.machine.vdp.resetIngressState();
 
 	const inflated = inflateExecutableProgramImage(programImage, metadata, runtime.programDataBaseAddress, runtime.programBssBaseAddress);
 	try {
@@ -398,7 +371,8 @@ function bootLuaProgram(runtime: Runtime, options?: { preserveState?: boolean; s
 		runtime.programDataBaseAddress = PROGRAM_STATIC_RAM_BASE;
 		runtime.programBssBaseAddress = PROGRAM_STATIC_RAM_BASE + programImage.sections.data.bytes.byteLength;
 		const program = inflateExecutableProgramImage(programImage, compiled.metadata, runtime.programDataBaseAddress, runtime.programBssBaseAddress);
-		installProgramModules(runtime, buildModuleProtoMap(programImage.sections.rodata.moduleProtos));
+		runtime.moduleCache.clear();
+		runtime.machine.vdp.resetIngressState();
 		runtime.machine.cpu.setProgram(program, compiled.metadata);
 		runtime.programMetadata = compiled.metadata;
 		runtime.startLoadedProgram(programImage.vectors, programImage.sections.rodata.staticModulePaths);
@@ -416,26 +390,6 @@ export function resourceSourceForChunk(runtime: Runtime, path: string): string {
 		throw new Error(`Missing Lua source for '${path}'.`);
 	}
 	return readWorkspaceLuaSourceText(luaSource.registry, luaSource.record);
-}
-
-export function listLuaSourceRegistries(runtime: Runtime): LuaSourceRegistry[] {
-	const registries: LuaSourceRegistry[] = [];
-	if (runtime.cartLuaSources) {
-		registries.push(runtime.cartLuaSources);
-	}
-	registries.push(runtime.systemLuaSources);
-	return registries;
-}
-
-function resolveModuleRegistries(runtime: Runtime): LuaSourceRegistry[] {
-	const registries: LuaSourceRegistry[] = [];
-	if (runtime.activeLuaSources) {
-		registries.push(runtime.activeLuaSources);
-	}
-	if (runtime.systemLuaSources && runtime.systemLuaSources !== runtime.activeLuaSources) {
-		registries.push(runtime.systemLuaSources);
-	}
-	return registries;
 }
 
 export function refreshLuaHandlersForChunk(runtime: Runtime, path: string, sourceOverride?: string): void {

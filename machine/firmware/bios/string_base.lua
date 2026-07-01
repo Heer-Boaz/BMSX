@@ -32,14 +32,8 @@ local normalize_index<const> = function(value, length, zero)
 end
 
 
-string.byte = function(value, ...)
-	return byte(value, ...)
-end
-
-
-string.char = function(...)
-	return char(...)
-end
+string.byte = byte
+string.char = char
 
 
 string.len = function(value)

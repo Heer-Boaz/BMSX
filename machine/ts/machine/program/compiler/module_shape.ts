@@ -1,7 +1,6 @@
 import {
 	LuaAssignmentOperator,
 	LuaSyntaxKind,
-	LuaTableFieldKind,
 	type LuaAssignmentStatement,
 	type LuaChunk,
 	type LuaExpression,
@@ -13,7 +12,7 @@ import {
 	type LuaMemberExpression,
 	type LuaTableConstructorExpression,
 } from '../../../lua/syntax/ast';
-import { extractAssignmentPath, extractTableKeyFromExpression } from './expression_paths';
+import { extractAssignmentPath, extractTableKeyFromExpression, visitNamedTableFields } from './expression_paths';
 
 export type ModuleExportNode = {
 	children: Map<string, ModuleExportNode>;
@@ -67,22 +66,12 @@ export const buildModuleShapeFromExpression = (
 	if (expression.kind === LuaSyntaxKind.TableConstructorExpression) {
 		const table = expression as LuaTableConstructorExpression;
 		const node = createModuleExportNode();
-		for (let index = 0; index < table.fields.length; index += 1) {
-			const field = table.fields[index];
-			if (field.kind === LuaTableFieldKind.Array) {
-				continue;
-			}
-			const key = field.kind === LuaTableFieldKind.IdentifierKey
-				? field.name
-				: extractTableKeyFromExpression(field.key);
-			if (!key) {
-				continue;
-			}
+		visitNamedTableFields(table, (key, value) => {
 			node.children.set(
 				key,
-				buildModuleShapeOrEmpty(field.value, localShapes),
+				buildModuleShapeOrEmpty(value, localShapes),
 			);
-		}
+		});
 		return node;
 	}
 	return resolveStaticModuleShapePath(expression, localShapes);

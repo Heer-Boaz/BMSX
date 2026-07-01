@@ -563,7 +563,7 @@ export class TerminalCommandDispatcher {
 		const includeRom = mode === '-ROM' || mode === '-ALL' || !mode;
 		const includeSaved = mode === '-SAVED' || mode === '-ALL' || !mode;
 		const includeDirty = mode === '-DIRTY' || mode === '-ALL' || !mode;
-		const luaAssets = Object.values(this.runtime.activeLuaSources.path2lua);
+		const luaAssets = this.runtime.activeLuaSources.records;
 		if (includeRom) {
 			for (const asset of luaAssets) {
 				pushPath(asset.source_path, 'rom');

@@ -15,7 +15,6 @@ import { buildMarshalContext, toNativeValue } from '../../../../machine/runtime/
 import { buildLuaSemanticFrontend } from '../../../../lua/semantic/frontend';
 import type { Runtime } from '../../../../machine/runtime/runtime';
 import * as luaPipeline from '../../../runtime/lua_pipeline';
-import type { LuaSourceRecord } from '../../../../machine/program/sources';
 import { asStringId, valueIsString } from '../../../../machine/cpu/cpu';
 import type { LuaBuiltinDescriptor, LuaDefinitionLocation, LuaDefinitionRange, LuaHoverResult, LuaHoverScope, LuaMemberCompletion, LuaSymbolEntry } from '../../../../lua/semantic_contracts';
 import { ensureCursorVisible, updateDesiredColumn } from '../../ui/view/caret/caret';
@@ -1173,10 +1172,10 @@ export function resolveLuaDefinitionMetadata(runtime: Runtime, value: LuaValue, 
 	if (!range) {
 		return null;
 	}
-	const record = runtime.resolveLuaSourceRecord(range.path);
-	if (record && record.source_path !== range.path) {
+	const sourceMatch = runtime.resolveLuaSource(range.path);
+	if (sourceMatch && sourceMatch.record.source_path !== range.path) {
 		range = {
-			path: record.source_path,
+			path: sourceMatch.record.source_path,
 			start: range.start,
 			end: range.end,
 		};
@@ -1412,7 +1411,7 @@ export function getStaticDefinitions(runtime: Runtime, preferredChunk: string): 
 	const interpreter = runtime.interpreter;
 	const matchingChunks: Array<{ path: string; info: { asset_id: string; path?: string } }> = [];
 	const luaSources = runtime.cartLuaSources ? runtime.cartLuaSources : runtime.activeLuaSources;
-	for (const asset of Object.values(luaSources.path2lua) as LuaSourceRecord[]) {
+	for (const asset of luaSources.records) {
 		const path = asset.module_path;
 		const info: { asset_id: string; path?: string } = { asset_id: asset.resid, path: asset.source_path };
 		const matchesPath = preferredChunk !== null && (info.path === preferredChunk || asset.module_path === preferredChunk);
@@ -1697,8 +1696,11 @@ function resolveRuntimeLocalChainValue(
 	if (!metadata) {
 		return null;
 	}
-	const requestedRecord = runtime.resolveLuaSourceRecord(path);
-	const requestedPath = requestedRecord ? requestedRecord.module_path : path;
+	let requestedPath = path;
+	const requestedSource = runtime.resolveLuaSource(path);
+	if (requestedSource) {
+		requestedPath = requestedSource.record.module_path;
+	}
 	const cpu = runtime.machine.cpu;
 	// Use the fault snapshot when the fault overlay is active — by hover time, the crash
 	// frame has been popped from the live CPU stack, so we must use the saved registers.

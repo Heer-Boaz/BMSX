@@ -87,7 +87,7 @@ function collectWorkspaceDirtyOverrides(params: { cart: LuaSourceRegistry; proje
 	const overrides = new Map<string, WorkspaceOverrideRecord>();
 	const root = params.projectRootPath;
 	const storage = params.storage;
-	for (const asset of Object.values(params.cart.path2lua)) {
+	for (const asset of params.cart.records) {
 		const cartPath = asset.source_path;
 		const dirtyPath = buildWorkspaceDirtyEntryPath(root, cartPath);
 		const storageKey = buildWorkspaceStorageKey(root, dirtyPath);
@@ -108,7 +108,7 @@ export function collectWorkspaceOverrides(params: { cart: LuaSourceRegistry; pro
 	const overrides = new Map<string, WorkspaceOverrideRecord>();
 	const root = params.projectRootPath;
 	const storage = params.storage;
-	for (const asset of Object.values(params.cart.path2lua)) {
+	for (const asset of params.cart.records) {
 		const cartPath = asset.source_path;
 		const canonicalKey = buildWorkspaceStorageKey(root, cartPath);
 		const storedCanonical = readWorkspaceStoragePayload(storage, canonicalKey);
@@ -171,7 +171,7 @@ export async function fetchWorkspaceDirtyLuaOverrides(cart: LuaSourceRegistry, r
 	const tasks: Array<Promise<{ contents: string; path: string; filePath: string; updatedAt?: number }>> = [];
 	// Fetching dirty files from backend is best-effort. Missing files do NOT mean we should
 	// discard in-memory dirty edits; they simply yield no extra overrides.
-	for (const asset of Object.values(cart.path2lua)) {
+	for (const asset of cart.records) {
 		const filePath = asset.source_path;
 		const dirtyPath = buildWorkspaceDirtyEntryPath(root, filePath);
 		tasks.push(fetchWorkspaceFile(dirtyPath).then((result) => {
@@ -195,7 +195,7 @@ export async function fetchWorkspaceDirtyLuaOverrides(cart: LuaSourceRegistry, r
 
 async function fetchWorkspaceCanonicalLua(cart: LuaSourceRegistry, root: string): Promise<Map<string, WorkspaceOverrideRecord>> {
 	const tasks: Array<Promise<WorkspaceOverrideRecord>> = [];
-	for (const asset of Object.values(cart.path2lua)) {
+	for (const asset of cart.records) {
 		const canonicalPath = resolveWorkspacePath(asset.source_path, root);
 		tasks.push(fetchWorkspaceFile(canonicalPath).then((result) => {
 			if (!result) {
@@ -397,9 +397,8 @@ export async function applyWorkspaceSourceOverrides(params: { registry: LuaSourc
 		canonicalOverrides = await fetchWorkspaceCanonicalLua(registry, root);
 	}
 
-	for (const asset of Object.values(registry.path2lua)) {
+	for (const asset of registry.records) {
 		const filePath = asset.source_path;
-		const pathBinding = registry.path2lua[asset.source_path];
 		const persistedBaselineTimestamp = asset.base_update_timestamp;
 		const localDirty = localDirtyOverrides.get(filePath);
 		const serverDirty = serverOverrides.get(filePath);
@@ -418,13 +417,11 @@ export async function applyWorkspaceSourceOverrides(params: { registry: LuaSourc
 		const canonicalKey = buildWorkspaceStorageKey(root, filePath);
 
 		if (winner.kind === 'rom') {
-			if (asset.src !== asset.base_src || pathBinding.src !== asset.base_src) {
+			if (asset.src !== asset.base_src) {
 				changed.add(filePath);
 			}
 			asset.src = asset.base_src;
-			pathBinding.src = asset.base_src;
 			asset.update_timestamp = persistedBaselineTimestamp;
-			pathBinding.update_timestamp = persistedBaselineTimestamp;
 			storage.removeItem(dirtyKey);
 			storage.removeItem(canonicalKey);
 			workspaceSourceCache.delete(dirtyPath);
@@ -433,14 +430,12 @@ export async function applyWorkspaceSourceOverrides(params: { registry: LuaSourc
 		}
 
 		const nextSource = winner.record.source;
-		if (asset.src !== nextSource || pathBinding.src !== nextSource) {
+		if (asset.src !== nextSource) {
 			changed.add(filePath);
 		}
 		asset.src = nextSource;
-		pathBinding.src = nextSource;
 		const updatedAt = winner.updatedAt >= 0 ? winner.updatedAt : params.timestampNow;
 		asset.update_timestamp = updatedAt;
-		pathBinding.update_timestamp = updatedAt;
 
 		if (winner.kind === 'dirty') {
 			const dirtyRecord: WorkspaceOverrideRecord = { ...winner.record, path: dirtyPath, cartPath: filePath, updatedAt };
@@ -449,7 +444,6 @@ export async function applyWorkspaceSourceOverrides(params: { registry: LuaSourc
 			workspaceSourceCache.delete(filePath);
 		} else {
 			asset.base_update_timestamp = updatedAt;
-			pathBinding.base_update_timestamp = updatedAt;
 			const canonicalRecord: WorkspaceOverrideRecord = { ...winner.record, path: filePath, cartPath: filePath, updatedAt };
 			persistWorkspaceOverridesToLocalStorage(storage, root, new Map([[filePath, canonicalRecord]]), params.timestampNow);
 			storage.removeItem(dirtyKey);

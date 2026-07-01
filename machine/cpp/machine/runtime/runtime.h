@@ -147,7 +147,7 @@ public:
 	/**
 	 * Call a Lua function from native code.
 	 */
-	void callLuaFunctionInto(Closure* fn, NativeArgsView args, NativeResults& out);
+	void callLuaFunctionInto(Closure& fn, NativeArgsView args, NativeResults& out);
 
 	/**
 	 * Set a global variable.
@@ -244,9 +244,7 @@ private:
 	static Value onMachineRegionReadThunk(void* context, uint32_t addr);
 	Value onMachineRegionRead(uint32_t addr) const;
 	static void onMachineRegionWriteThunk(void* context, uint32_t addr, Value value);
-	void onMachineRegionWrite(uint32_t addr, Value value);
 	static void onLuaOutputCodepointWriteThunk(void* context, uint32_t addr, Value value);
-	void onLuaOutputCodepointWrite(uint32_t addr, Value value);
 	static void onLuaOutputFlushWriteThunk(void* context, uint32_t addr, Value value);
 	void onLuaOutputFlushWrite(uint32_t addr, Value value);
 
@@ -255,7 +253,6 @@ private:
 
 	PendingCall m_pendingCall = PendingCall::None;
 
-	std::unordered_map<std::string, int> m_moduleProtos;
 	std::unordered_map<std::string, Value> m_moduleCache;
 	i64 m_debugUpdateCountTotal = 0;
 };

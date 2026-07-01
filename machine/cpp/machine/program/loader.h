@@ -6,7 +6,6 @@
 #include <memory>
 #include <string>
 #include <string_view>
-#include <unordered_map>
 #include <variant>
 #include <vector>
 
@@ -24,6 +23,7 @@ struct ProgramTextSection {
 struct ProgramRodataSection {
 	std::vector<EncodedValue> constPool;
 	std::vector<std::pair<std::string, int>> moduleProtos;
+	std::vector<ProgramModuleExport> moduleExports;
 	std::vector<std::string> staticModulePaths;
 	std::vector<uint8_t> bytes;
 	struct Symbol {
@@ -136,7 +136,6 @@ std::unique_ptr<ProgramImage> decodeProgramImage(const uint8_t* data, size_t siz
 std::vector<uint8_t> encodeProgramImage(const ProgramImage& asset);
 std::unique_ptr<ProgramSymbolsImage> decodeProgramSymbolsImage(const uint8_t* data, size_t size);
 std::unique_ptr<Program> inflateProgram(const ProgramObjectSections& sections);
-std::unordered_map<std::string, int> buildModuleProtoMap(const std::vector<std::pair<std::string, int>>& entries);
 std::string stripLuaExtension(std::string_view candidate);
 std::string toLuaModulePath(std::string_view sourcePath);
 

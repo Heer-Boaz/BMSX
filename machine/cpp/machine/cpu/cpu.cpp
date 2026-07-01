@@ -1002,24 +1002,17 @@ Table* CPU::createTable(int arraySize, int hashSize) {
 	return table;
 }
 
-Closure* CPU::createRootClosure(int protoIndex) {
-	return staticClosure(protoIndex);
-}
-
-Closure* CPU::staticClosure(int protoIndex) {
-	const size_t index = static_cast<size_t>(protoIndex);
-	if (index >= m_staticClosures.size()) {
-		m_staticClosures.resize(index + 1u, nullptr);
+void CPU::materializeStaticClosures() {
+	const size_t protoCount = m_program->protos.size();
+	for (size_t index = m_staticClosures.size(); index < protoCount; ++index) {
+		m_staticClosures.push_back(m_heap.allocate<Closure>(ObjType::Closure));
 	}
-	Closure* closure = m_staticClosures[index];
-	if (!closure) {
-		closure = m_heap.allocate<Closure>(ObjType::Closure);
-		closure->protoIndex = protoIndex;
+	for (size_t index = 0; index < protoCount; ++index) {
+		Closure* closure = m_staticClosures[index];
+		closure->protoIndex = static_cast<int>(index);
 		closure->upvalues.clear();
 		closure->trackedHeapBytes = 0;
-		m_staticClosures[index] = closure;
 	}
-	return closure;
 }
 
 Closure* CPU::createTrackedClosure(int protoIndex, size_t upvalueCount) {
@@ -1037,7 +1030,6 @@ void CPU::setProgram(Program* program, ProgramMetadata* metadata) {
 	// slot layout from `globals`, so without this sync flattened module exports can fall back to nil.
 	syncGlobalSlotsToTable();
 	m_program = program;
-	m_staticClosures.clear();
 	if (m_program) {
 		m_memory.setProgramRom(m_program->programRom.data(), m_program->programRom.size(), m_program->programRomTextByteLength);
 	} else {
@@ -1045,6 +1037,7 @@ void CPU::setProgram(Program* program, ProgramMetadata* metadata) {
 	}
 	m_metadata = metadata;
 	if (!m_program) {
+		m_staticClosures.clear();
 		initializeGlobalSlots(metadata);
 		m_decoded.clear();
 		return;
@@ -1066,6 +1059,7 @@ void CPU::setProgram(Program* program, ProgramMetadata* metadata) {
 		throw BMSX_RUNTIME_ERROR("[CPU] Program const pool is canonicalized for a different string pool.");
 	}
 	m_indexKey = valueString(m_stringPool.intern("__index"));
+	materializeStaticClosures();
 	initializeGlobalSlots(metadata);
 	decodeProgram();
 }
@@ -1211,29 +1205,23 @@ void CPU::start(int entryProtoIndex, NativeArgsView args) {
 	m_nonMaskableInterruptPending = false;
 	m_yieldRequested = false;
 	m_hostExternalCallDepth = 0;
-	auto* closure = createRootClosure(entryProtoIndex);
+	Closure* closure = &rootClosure(entryProtoIndex);
 	pushFrame(closure, args.data(), args.size(), 0, 0, false, m_program->protos[entryProtoIndex].entryPC);
 	runHousekeeping();
 }
 
-void CPU::call(Closure* closure, NativeArgsView args, int returnCount) {
-	if (!closure) {
-		throw BMSX_RUNTIME_ERROR("Attempted to call a nil value.");
-	}
+void CPU::call(Closure& closure, NativeArgsView args, int returnCount) {
 	requireRunnableForCall();
 	lastReturnValues.clear();
 	m_yieldRequested = false;
-	pushFrame(closure, args.data(), args.size(), 0, returnCount, false, m_program->protos[closure->protoIndex].entryPC);
+	pushFrame(&closure, args.data(), args.size(), 0, returnCount, false, m_program->protos[closure.protoIndex].entryPC);
 }
 
-void CPU::callExternal(Closure* closure, NativeArgsView args) {
-	if (!closure) {
-		throw BMSX_RUNTIME_ERROR("Attempted to call a nil value.");
-	}
+void CPU::callExternal(Closure& closure, NativeArgsView args) {
 	requireRunnableForCall();
 	lastReturnValues.clear();
 	m_yieldRequested = false;
-	pushFrame(closure, args.data(), args.size(), 0, 0, true, m_program->protos[closure->protoIndex].entryPC);
+	pushFrame(&closure, args.data(), args.size(), 0, 0, true, m_program->protos[closure.protoIndex].entryPC);
 }
 
 NativeResults* CPU::swapExternalReturnSink(NativeResults* sink) {
@@ -1645,7 +1633,7 @@ void CPU::restoreRuntimeState(const CpuRuntimeState& state, std::unordered_map<s
 				case CpuObjectState::Kind::Closure: {
 					const size_t upvalueCount = objectState.upvalues.size();
 					restoredObjects[index].closure = m_program->protos[static_cast<size_t>(objectState.protoIndex)].staticClosure && objectState.upvalues.empty()
-						? createRootClosure(objectState.protoIndex)
+						? &rootClosure(objectState.protoIndex)
 						: createTrackedClosure(objectState.protoIndex, upvalueCount);
 					restoredObjects[index].closure->upvalues.resize(upvalueCount, nullptr);
 					break;
@@ -1836,12 +1824,12 @@ void CPU::haltUntilIrq() {
 void CPU::callBuiltinFunction(BuiltinFunction& fn, NativeArgsView args, NativeResults& out) {
 	out.clear();
 	switch (fn.id) {
-		case BuiltinFunctionId::Next:
-			runBuiltinNextValue(args.size() > 0 ? args.at(0) : valueNil(), args.size() > 1 ? args.at(1) : valueNil(), out);
-			break;
-		case BuiltinFunctionId::Type:
-			runBuiltinType(args.size() > 0 ? args.at(0) : valueNil(), out);
-			break;
+			case BuiltinFunctionId::Next:
+				runBuiltinNextValue(args.size() > 0 ? args.at(0) : valueNil(), args.size() > 1 ? args.at(1) : valueNil(), out);
+				break;
+			case BuiltinFunctionId::Type:
+				out.push_back(valueString(m_stringPool.intern(valueTypeNameForLua(args.size() > 0 ? args.at(0) : valueNil()))));
+				break;
 		case BuiltinFunctionId::SetMetatable:
 			runBuiltinSetMetatable(args, out);
 			break;
@@ -1913,10 +1901,6 @@ void CPU::runBuiltinNextValue(Value target, Value key, NativeResults& out) {
 		return;
 	}
 	throw BMSX_RUNTIME_ERROR("next expects a table or native object.");
-}
-
-void CPU::runBuiltinType(Value value, NativeResults& out) {
-	out.push_back(valueString(m_stringPool.intern(valueTypeNameForLua(value))));
 }
 
 void CPU::runBuiltinSetMetatable(NativeArgsView args, NativeResults& out) {
@@ -1992,13 +1976,12 @@ void CPU::runBuiltinStringByte(NativeArgsView args, NativeResults& out) {
 		return;
 	}
 	size_t byteIndex = 0;
-	int current = 1;
-	while (byteIndex < source.size()) {
-		if (current == position) {
-			size_t readIndex = byteIndex;
-			out.push_back(valueNumber(static_cast<double>(readUtf8Codepoint(source, readIndex))));
-			return;
-		}
+		int current = 1;
+		while (byteIndex < source.size()) {
+			if (current == position) {
+				out.push_back(valueNumber(static_cast<double>(readUtf8Codepoint(source, byteIndex))));
+				return;
+			}
 		byteIndex = nextUtf8Index(source, byteIndex);
 		current += 1;
 	}
@@ -2106,28 +2089,18 @@ void CPU::runBuiltinXPCall(NativeArgsView args, NativeResults& out) {
 		out.clear();
 		out.push_back(valueBool(true));
 		out.append(results.data(), results.size());
+		return;
 	} catch (const LuaThrownValueError& e) {
-		handlerArgs.clear();
 		handlerArgs.push_back(e.value);
-		callValueInto(args.size() > 1 ? args.at(1) : valueNil(), NativeArgsView(handlerArgs.data(), handlerArgs.size()), results);
-		out.clear();
-		out.push_back(valueBool(false));
-		out.append(results.data(), results.size());
 	} catch (const std::exception& e) {
-		handlerArgs.clear();
 		handlerArgs.push_back(valueString(m_stringPool.intern(e.what())));
-		callValueInto(args.size() > 1 ? args.at(1) : valueNil(), NativeArgsView(handlerArgs.data(), handlerArgs.size()), results);
-		out.clear();
-		out.push_back(valueBool(false));
-		out.append(results.data(), results.size());
 	} catch (...) {
-		handlerArgs.clear();
 		handlerArgs.push_back(valueString(m_stringPool.intern("error")));
-		callValueInto(args.size() > 1 ? args.at(1) : valueNil(), NativeArgsView(handlerArgs.data(), handlerArgs.size()), results);
-		out.clear();
-		out.push_back(valueBool(false));
-		out.append(results.data(), results.size());
 	}
+	callValueInto(args.size() > 1 ? args.at(1) : valueNil(), NativeArgsView(handlerArgs.data(), handlerArgs.size()), results);
+	out.clear();
+	out.push_back(valueBool(false));
+	out.append(results.data(), results.size());
 }
 
 void CPU::clearHaltUntilIrq() {
@@ -2172,12 +2145,11 @@ bool CPU::enterPendingInterrupt(const IrqController& irqController, int irqProto
 	if (!canAcceptMaskableInterruptLine(irqController)) {
 		return false;
 	}
-	const bool savedMaskableEnabled = m_maskableInterruptsEnabled;
 	m_maskableInterruptsEnabled = false;
 	clearHaltAfterAcceptedInterrupt();
-	CallFrame* frame = pushFrame(staticClosure(irqProtoIndex), nullptr, 0, 0, 0, false, m_program->protos[irqProtoIndex].entryPC);
+	CallFrame* frame = pushFrame(&rootClosure(irqProtoIndex), nullptr, 0, 0, 0, false, m_program->protos[irqProtoIndex].entryPC);
 	frame->isInterruptFrame = true;
-	frame->savedMaskableEnabled = savedMaskableEnabled;
+	frame->savedMaskableEnabled = true;
 	return true;
 }
 
@@ -2671,7 +2643,7 @@ Upvalue* CPU::findOpenUpvalue(const CallFrame& frame, int index) const {
 Closure* CPU::createClosure(CallFrame& frame, int protoIndex) {
 	const Proto& proto = m_program->protos[protoIndex];
 	if (proto.staticClosure && proto.upvalues.empty()) {
-		return staticClosure(protoIndex);
+		return &rootClosure(protoIndex);
 	}
 	auto* closure = createTrackedClosure(protoIndex, proto.upvalues.size());
 	for (size_t i = 0; i < proto.upvalues.size(); ++i) {
@@ -3366,9 +3338,7 @@ void CPU::markRoots(GcHeap& heap) {
 		}
 	}
 	for (Closure* closure : m_staticClosures) {
-		if (closure) {
-			heap.markObject(closure);
-		}
+		heap.markObject(closure);
 	}
 	for (const auto& framePtr : m_frames) {
 		CallFrame* frame = framePtr.get();

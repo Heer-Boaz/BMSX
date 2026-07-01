@@ -12,12 +12,11 @@ import { restoreVdpContextState } from '../../render/vdp/context_state';
 import { machineManager } from '../../core/machine_manager';
 import { clearRuntimeDebuggerPause } from './debug_pause';
 import { clearFaultSnapshot, resetHandledLuaErrors } from './fault_state';
-import { buildModuleProtoMap, toLuaModulePath } from '../../machine/program/loader';
+import { toLuaModulePath } from '../../machine/program/loader';
 import { IRQ_IMG_DONE, IRQ_IMG_ERROR } from '../../machine/bus/io';
 import {
 	buildModuleChunks,
 	refreshLuaHandlersForChunk,
-	replaceMapEntries,
 	resourceSourceForChunk,
 } from './lua_pipeline';
 import type { Runtime } from '../../machine/runtime/runtime';
@@ -101,7 +100,6 @@ export function hotResumeProgramEntry(runtime: Runtime, params: { path: string; 
 	});
 	const programImage = encodeCompiledProgramImage(compiled);
 	const program = inflateExecutableProgramImage(programImage, compiled.metadata, runtime.programDataBaseAddress, runtime.programBssBaseAddress);
-	replaceMapEntries(runtime.moduleProtos, buildModuleProtoMap(programImage.sections.rodata.moduleProtos));
 	if (!params.preserveSystemModules) {
 		runtime.moduleCache.clear();
 		runtime.machine.imgDecController.reset();
@@ -130,10 +128,10 @@ function runHotResumeInit(runtime: Runtime): void {
 }
 
 function refreshLuaModulesOnResume(runtime: Runtime, resumeModuleId: string): void {
-	const paths = Object.keys(runtime.activeLuaSources.path2lua);
-	for (let index = 0; index < paths.length; index += 1) {
-		const moduleId = paths[index];
-		if (resumeModuleId && moduleId === resumeModuleId) {
+	const records = runtime.activeLuaSources.records;
+	for (let index = 0; index < records.length; index += 1) {
+		const moduleId = records[index].source_path;
+		if (moduleId === resumeModuleId) {
 			continue;
 		}
 		refreshLuaHandlersForChunk(runtime, moduleId);

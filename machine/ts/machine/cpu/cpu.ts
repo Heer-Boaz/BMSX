@@ -45,6 +45,7 @@ export class StringValue {
 const STRING_VALUES: StringValue[] = [];
 
 export type Value = null | boolean | number | StringValue | Table | Closure | BuiltinFunction | NativeFunction | NativeObject;
+export const EMPTY_CALL_ARGS: ReadonlyArray<Value> = [];
 
 export function valueIsString(value: unknown): value is StringValue {
 	return value !== null
@@ -347,8 +348,22 @@ export type Program = {
 	programRomTextByteLength: number;
 	constPool: Value[];
 	protos: Proto[];
+	moduleProtos: ProgramModuleProto[];
+	moduleExports: ProgramModuleExport[];
+	moduleProtoMap: Map<string, number>;
 	stringPool: StringPool;
 	constPoolStringPool: StringPool;
+};
+
+export type ProgramModuleProto = {
+	path: string;
+	protoIndex: number;
+};
+
+export type ProgramModuleExport = {
+	path: string;
+	exportPathKey: string;
+	slotName: string;
 };
 
 export type Proto = {
@@ -394,6 +409,8 @@ type Upvalue = {
 	frame: CallFrame;
 	value: Value;
 };
+
+const EMPTY_CLOSURE_UPVALUES: Upvalue[] = [];
 
 type OpenUpvalueSlot = {
 	frame: CallFrame;
@@ -1760,10 +1777,24 @@ export class CPU {
 		}
 		program.constPoolStringPool = this.stringPool;
 		this.indexKey = StringValue.get(this.stringPool.intern('__index'));
-		this.staticClosures.length = 0;
+		this.materializeStaticClosures(program);
 		this.initializeGlobalSlots(metadata);
 		this.decodeProgram(program);
 		this.profiler.configureProgram(program, metadata, this.decodedOps!);
+	}
+
+	private materializeStaticClosures(program: Program): void {
+		const protos = program.protos;
+		const closures = this.staticClosures;
+		for (let index = closures.length; index < protos.length; index += 1) {
+			closures[index] = { protoIndex: index, upvalues: EMPTY_CLOSURE_UPVALUES, heapBytes: 0 };
+		}
+		for (let index = 0; index < protos.length; index += 1) {
+			const closure = closures[index];
+			closure.protoIndex = index;
+			closure.upvalues = EMPTY_CLOSURE_UPVALUES;
+			closure.heapBytes = 0;
+		}
 	}
 
 	private initializeGlobalSlots(metadata: ProgramMetadata | null): void {
@@ -1866,7 +1897,7 @@ export class CPU {
 		}
 	}
 
-	public start(entryProtoIndex: number, args: Value[] = []): void {
+	public start(entryProtoIndex: number, args: ReadonlyArray<Value> = EMPTY_CALL_ARGS): void {
 		this.lastReturnValues.length = 0;
 		this.clearCallStack();
 		this.haltedUntilIrq = false;
@@ -1875,18 +1906,16 @@ export class CPU {
 		this.nonMaskableInterruptPending = false;
 		this.hostExternalCallDepth = 0;
 		this.yieldRequested = false;
-		const closure = this.staticClosure(entryProtoIndex);
-		this.pushFrame(closure, args, 0, 0, false, this.program.protos[entryProtoIndex].entryPC);
+		this.pushFrame(this.rootClosure(entryProtoIndex), args, 0, 0, false, this.program.protos[entryProtoIndex].entryPC);
 		enforceLuaHeapBudget();
 	}
 
-	public call(closure: Closure, args: Value[] = [], returnCount: number = 0): void {
-		if (closure === null) {
-			throw new Error('Attempted to call a nil value.');
-		}
-		if (typeof closure.protoIndex !== 'number') {
-			throw new Error('Attempted to call a non-function value.');
-		}
+	public rootClosure(protoIndex: number): Closure {
+		const closure = this.staticClosures[protoIndex];
+		return closure;
+	}
+
+	public call(closure: Closure, args: ReadonlyArray<Value> = EMPTY_CALL_ARGS, returnCount: number = 0): void {
 		this.requireRunnableForCall();
 		this.lastReturnValues.length = 0;
 		this.yieldRequested = false;
@@ -1905,13 +1934,7 @@ export class CPU {
 		return this.hostExternalCallDepth !== 0;
 	}
 
-	public callExternal(closure: Closure, args: Value[] = []): void {
-		if (closure === null) {
-			throw new Error('Attempted to call a nil value.');
-		}
-		if (typeof closure.protoIndex !== 'number') {
-			throw new Error('Attempted to call a non-function value.');
-		}
+	public callExternal(closure: Closure, args: ReadonlyArray<Value> = EMPTY_CALL_ARGS): void {
 		this.requireRunnableForCall();
 		this.lastReturnValues.length = 0;
 		this.yieldRequested = false;
@@ -1976,7 +1999,7 @@ export class CPU {
 		const savedMaskableEnabled = this.maskableInterruptsEnabled;
 		this.maskableInterruptsEnabled = false;
 		this.clearHaltAfterAcceptedInterrupt();
-		const frame = this.pushFrame(this.staticClosure(irqProtoIndex), [], 0, 0, false, this.program.protos[irqProtoIndex].entryPC);
+		const frame = this.pushFrame(this.rootClosure(irqProtoIndex), EMPTY_CALL_ARGS, 0, 0, false, this.program.protos[irqProtoIndex].entryPC);
 		frame.isInterruptFrame = true;
 		frame.savedMaskableEnabled = savedMaskableEnabled;
 		return true;
@@ -2731,7 +2754,7 @@ export class CPU {
 		return registers;
 	}
 
-	private pushFrame(closure: Closure, args: Value[], returnBase: number, returnCount: number, captureReturns: boolean, callSitePc: number): CallFrame {
+	private pushFrame(closure: Closure, args: ReadonlyArray<Value>, returnBase: number, returnCount: number, captureReturns: boolean, callSitePc: number): CallFrame {
 		const proto = this.program.protos[closure.protoIndex];
 		const frame = this.acquireFrame();
 		frame.protoIndex = closure.protoIndex;
@@ -2794,7 +2817,7 @@ export class CPU {
 	private createClosure(frame: CallFrame, protoIndex: number): Closure {
 		const proto = this.program.protos[protoIndex];
 		if (proto.staticClosure && proto.upvalueDescs.length === 0) {
-			return this.staticClosure(protoIndex);
+			return this.rootClosure(protoIndex);
 		}
 		const upvalues = new Array<Upvalue>(proto.upvalueDescs.length);
 		for (let index = 0; index < proto.upvalueDescs.length; index += 1) {
@@ -2814,15 +2837,6 @@ export class CPU {
 		const heapBytes = CLOSURE_HEAP_BYTES + (upvalues.length * CLOSURE_UPVALUE_SLOT_HEAP_BYTES);
 		addTrackedLuaHeapBytes(heapBytes);
 		return { protoIndex, upvalues, heapBytes };
-	}
-
-	private staticClosure(protoIndex: number): Closure {
-		let closure = this.staticClosures[protoIndex];
-		if (closure === undefined) {
-			closure = { protoIndex, upvalues: [], heapBytes: 0 };
-			this.staticClosures[protoIndex] = closure;
-		}
-		return closure;
 	}
 
 	private closeUpvalues(frame: CallFrame): void {
@@ -3254,7 +3268,7 @@ export class CPU {
 		throw new LuaThrownValueError(value, this.valueToString(value));
 	}
 
-	private callValueInto(callee: Value, args: Value[], out: Value[]): void {
+	private callValueInto(callee: Value, args: ReadonlyArray<Value>, out: Value[]): void {
 		out.length = 0;
 		if (isBuiltinFunction(callee)) {
 			this.callBuiltinFunction(callee, args, out);
@@ -3688,7 +3702,7 @@ export class CPU {
 					const upvalues = new Array<Upvalue>(objectState.upvalues.length);
 					const proto = this.program.protos[objectState.protoIndex];
 					if (proto.staticClosure && upvalues.length === 0) {
-						restoredObjects[index] = this.staticClosure(objectState.protoIndex);
+						restoredObjects[index] = this.rootClosure(objectState.protoIndex);
 					} else {
 						const heapBytes = CLOSURE_HEAP_BYTES + (upvalues.length * CLOSURE_UPVALUE_SLOT_HEAP_BYTES);
 						addTrackedLuaHeapBytes(heapBytes);

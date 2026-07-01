@@ -173,7 +173,8 @@ const buildModuleCompileInfo = (
 	const rootStaticFunctionExport = staticFunctionExportByPathKey.has('');
 	const compileTimeModule = constModule || rootStaticFunctionExport;
 	const shapedExportRoot = buildModuleShapeFromExpression(returnExpression, buildTopLevelLocalModuleShapes(chunk));
-	if ((!shapedExportRoot || shapedExportRoot.children.size === 0) && !rootStaticFunctionExport) {
+	const hasShapedExports = shapedExportRoot && shapedExportRoot.children.size !== 0;
+	if (compileTimeModule && !rootStaticFunctionExport && !hasShapedExports) {
 		return null;
 	}
 	const exportRoot = shapedExportRoot ?? createModuleExportNode();

@@ -12,9 +12,9 @@ export function normalizedBodyFingerprint(tokens: readonly Token[], start: numbe
 				text += 'Identifier|';
 			}
 		} else if (token.kind === 'string' || token.kind === 'char') {
-			text += 'StringLiteral|';
+			text += `${token.kind}:${token.text}|`;
 		} else if (token.kind === 'number') {
-			text += 'NumericLiteral|';
+			text += `number:${token.text}|`;
 		} else {
 			text += token.text;
 			text += '|';

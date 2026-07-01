@@ -14,6 +14,11 @@ struct ConstRelocKindEntry {
 	std::variant<ProgramIndexedConstRelocKind, ProgramSymbolicConstRelocKind> kind;
 };
 
+struct ConstValueRelocKindEntry {
+	const char* name;
+	ProgramConstValueRelocKind kind;
+};
+
 constexpr ConstRelocKindEntry CONST_RELOC_KIND_ENTRIES[] = {
 	{"bx", ProgramIndexedConstRelocKind::Bx},
 	{"rk_b", ProgramIndexedConstRelocKind::RkB},
@@ -26,6 +31,13 @@ constexpr ConstRelocKindEntry CONST_RELOC_KIND_ENTRIES[] = {
 	{"export_proto", ProgramSymbolicConstRelocKind::ExportProto},
 };
 
+constexpr ConstValueRelocKindEntry CONST_VALUE_RELOC_KIND_ENTRIES[] = {
+	{"bss_addr", ProgramConstValueRelocKind::BssAddr},
+	{"data_addr", ProgramConstValueRelocKind::DataAddr},
+	{"data_lma_addr", ProgramConstValueRelocKind::DataLmaAddr},
+	{"rodata_addr", ProgramConstValueRelocKind::RodataAddr},
+};
+
 std::variant<ProgramIndexedConstRelocKind, ProgramSymbolicConstRelocKind> parseConstRelocKind(const std::string& kind) {
 	for (const auto& entry : CONST_RELOC_KIND_ENTRIES) {
 		if (kind == entry.name) {
@@ -35,6 +47,15 @@ std::variant<ProgramIndexedConstRelocKind, ProgramSymbolicConstRelocKind> parseC
 	// Lua 5.4-style specialized table ops such as GETFIELD/SETFIELD/GETI/SETI patch a plain
 	// const operand in B/C. Treating them as legacy RK relocations corrupts the linked bytecode.
 	throw BMSX_RUNTIME_ERROR("ProgramImage: unknown const reloc kind '" + kind + "'.");
+}
+
+ProgramConstValueRelocKind parseConstValueRelocKind(const std::string& kind) {
+	for (const auto& entry : CONST_VALUE_RELOC_KIND_ENTRIES) {
+		if (kind == entry.name) {
+			return entry.kind;
+		}
+	}
+	throw BMSX_RUNTIME_ERROR("ProgramImage.link.constValueRelocs kind must be bss_addr, data_addr, data_lma_addr or rodata_addr.");
 }
 
 SourceRange parseSourceRange(const BinValue& rangeVal) {
@@ -56,6 +77,34 @@ LocalSlotDebug parseLocalSlotDebug(const BinValue& slotVal) {
 	slot.definition = parseSourceRange(slotVal.require("definition"));
 	slot.scope = parseSourceRange(slotVal.require("scope"));
 	return slot;
+}
+
+template <typename Symbol>
+void readStorageSymbols(const BinArray& values, std::vector<Symbol>& symbols) {
+	symbols.reserve(values.size());
+	for (const auto& symbolValue : values) {
+		Symbol symbol;
+		symbol.name = symbolValue.require("name").asString();
+		symbol.offset = static_cast<size_t>(symbolValue.require("offset").toI32());
+		symbol.byteCount = static_cast<size_t>(symbolValue.require("byteCount").toI32());
+		symbol.alignment = static_cast<size_t>(symbolValue.require("alignment").toI32());
+		symbols.push_back(std::move(symbol));
+	}
+}
+
+template <typename Symbol>
+BinArray encodeStorageSymbols(const std::vector<Symbol>& symbols) {
+	BinArray values;
+	values.reserve(symbols.size());
+	for (const auto& symbol : symbols) {
+		BinObject object;
+		object["name"] = BinValue(symbol.name);
+		object["offset"] = BinValue(static_cast<i64>(symbol.offset));
+		object["byteCount"] = BinValue(static_cast<i64>(symbol.byteCount));
+		object["alignment"] = BinValue(static_cast<i64>(symbol.alignment));
+		values.push_back(BinValue(std::move(object)));
+	}
+	return values;
 }
 
 std::vector<std::string> readStringArray(const BinValue& value, const std::string& context) {
@@ -163,19 +212,20 @@ ProgramRodataSection extractRodataSection(const BinValue& rodataObj) {
 		rodata.moduleProtos.emplace_back(std::move(path), protoIndex);
 	}
 
+	const auto& moduleExportsArr = rodataObj.require("moduleExports").asArray();
+	rodata.moduleExports.reserve(moduleExportsArr.size());
+	for (const auto& value : moduleExportsArr) {
+		ProgramModuleExport moduleExport;
+		moduleExport.path = value.require("path").asString();
+		moduleExport.exportPathKey = value.require("exportPathKey").asString();
+		moduleExport.slotName = value.require("slotName").asString();
+		rodata.moduleExports.push_back(std::move(moduleExport));
+	}
+
 	rodata.staticModulePaths = readStringArray(rodataObj.require("staticModulePaths"), "ProgramImage: ProgramImage.sections.rodata.staticModulePaths");
 	const auto& bytes = rodataObj.require("bytes").asBinary();
 	rodata.bytes.assign(bytes.begin(), bytes.end());
-	const auto& symbols = rodataObj.require("symbols").asArray();
-	rodata.symbols.reserve(symbols.size());
-	for (const auto& symbolValue : symbols) {
-		ProgramRodataSection::Symbol symbol;
-		symbol.name = symbolValue.require("name").asString();
-		symbol.offset = static_cast<size_t>(symbolValue.require("offset").toI32());
-		symbol.byteCount = static_cast<size_t>(symbolValue.require("byteCount").toI32());
-		symbol.alignment = static_cast<size_t>(symbolValue.require("alignment").toI32());
-		rodata.symbols.push_back(std::move(symbol));
-	}
+	readStorageSymbols(rodataObj.require("symbols").asArray(), rodata.symbols);
 	return rodata;
 }
 
@@ -186,36 +236,26 @@ BinValue encodeModuleProto(const std::pair<std::string, int>& entry) {
 	return BinValue(std::move(object));
 }
 
+BinValue encodeModuleExport(const ProgramModuleExport& entry) {
+	BinObject object;
+	object["path"] = BinValue(entry.path);
+	object["exportPathKey"] = BinValue(entry.exportPathKey);
+	object["slotName"] = BinValue(entry.slotName);
+	return BinValue(std::move(object));
+}
+
 ProgramDataSection extractDataSection(const BinValue& dataObj) {
 	ProgramDataSection data;
 	const auto& bytes = dataObj.require("bytes").asBinary();
 	data.bytes.assign(bytes.begin(), bytes.end());
-	const auto& symbols = dataObj.require("symbols").asArray();
-	data.symbols.reserve(symbols.size());
-	for (const auto& symbolValue : symbols) {
-		ProgramDataSection::Symbol symbol;
-		symbol.name = symbolValue.require("name").asString();
-		symbol.offset = static_cast<size_t>(symbolValue.require("offset").toI32());
-		symbol.byteCount = static_cast<size_t>(symbolValue.require("byteCount").toI32());
-		symbol.alignment = static_cast<size_t>(symbolValue.require("alignment").toI32());
-		data.symbols.push_back(std::move(symbol));
-	}
+	readStorageSymbols(dataObj.require("symbols").asArray(), data.symbols);
 	return data;
 }
 
 ProgramBssSection extractBssSection(const BinValue& bssObj) {
 	ProgramBssSection bss;
 	bss.byteCount = static_cast<size_t>(bssObj.require("byteCount").toI32());
-	const auto& symbols = bssObj.require("symbols").asArray();
-	bss.symbols.reserve(symbols.size());
-	for (const auto& symbolValue : symbols) {
-		ProgramBssSection::Symbol symbol;
-		symbol.name = symbolValue.require("name").asString();
-		symbol.offset = static_cast<size_t>(symbolValue.require("offset").toI32());
-		symbol.byteCount = static_cast<size_t>(symbolValue.require("byteCount").toI32());
-		symbol.alignment = static_cast<size_t>(symbolValue.require("alignment").toI32());
-		bss.symbols.push_back(std::move(symbol));
-	}
+	readStorageSymbols(bssObj.require("symbols").asArray(), bss.symbols);
 	return bss;
 }
 
@@ -338,6 +378,12 @@ std::unique_ptr<Program> inflateProgram(const ProgramObjectSections& sections) {
 	program->programRom.insert(program->programRom.end(), sections.data.bytes.begin(), sections.data.bytes.end());
 	program->programRomTextByteLength = sections.text.code.size();
 	program->protos = sections.text.protos;
+	program->moduleProtos = sections.rodata.moduleProtos;
+	program->moduleExports = sections.rodata.moduleExports;
+	program->moduleProtoMap.reserve(program->moduleProtos.size());
+	for (const auto& entry : program->moduleProtos) {
+		program->moduleProtoMap.emplace(entry.first, entry.second);
+	}
 	program->constPool.reserve(sections.rodata.constPool.size());
 	for (const EncodedValue& value : sections.rodata.constPool) {
 		program->constPool.push_back(encodedValueToRuntimeValue(value, program->stringPool));
@@ -381,21 +427,9 @@ std::unique_ptr<ProgramImage> decodeProgramImage(const uint8_t* data, size_t siz
 	const auto& constValueRelocsArr = linkObj.require("constValueRelocs").asArray();
 	image->link.constValueRelocs.reserve(constValueRelocsArr.size());
 	for (const auto& relocObj : constValueRelocsArr) {
-		const std::string kind = relocObj.require("kind").asString();
-		if (kind != "bss_addr" && kind != "data_addr" && kind != "data_lma_addr" && kind != "rodata_addr") {
-			throw BMSX_RUNTIME_ERROR("ProgramImage.link.constValueRelocs kind must be bss_addr, data_addr, data_lma_addr or rodata_addr.");
-		}
 		ProgramConstValueReloc reloc;
 		reloc.constIndex = relocObj.require("constIndex").toI32();
-		if (kind == "bss_addr") {
-			reloc.kind = ProgramConstValueRelocKind::BssAddr;
-		} else if (kind == "data_addr") {
-			reloc.kind = ProgramConstValueRelocKind::DataAddr;
-		} else if (kind == "data_lma_addr") {
-			reloc.kind = ProgramConstValueRelocKind::DataLmaAddr;
-		} else {
-			reloc.kind = ProgramConstValueRelocKind::RodataAddr;
-		}
+		reloc.kind = parseConstValueRelocKind(relocObj.require("kind").asString());
 		reloc.symbol = relocObj.require("symbol").asString();
 		reloc.addend = relocObj.require("addend").toI32();
 		image->link.constValueRelocs.push_back(std::move(reloc));
@@ -425,6 +459,11 @@ std::vector<uint8_t> encodeProgramImage(const ProgramImage& asset) {
 	for (const auto& entry : asset.sections.rodata.moduleProtos) {
 		moduleProtos.push_back(encodeModuleProto(entry));
 	}
+	BinArray moduleExports;
+	moduleExports.reserve(asset.sections.rodata.moduleExports.size());
+	for (const auto& entry : asset.sections.rodata.moduleExports) {
+		moduleExports.push_back(encodeModuleExport(entry));
+	}
 	BinArray staticModulePaths;
 	staticModulePaths.reserve(asset.sections.rodata.staticModulePaths.size());
 	for (const std::string& path : asset.sections.rodata.staticModulePaths) {
@@ -434,47 +473,18 @@ std::vector<uint8_t> encodeProgramImage(const ProgramImage& asset) {
 	BinObject rodata;
 	rodata["constPool"] = BinValue(std::move(constPool));
 	rodata["moduleProtos"] = BinValue(std::move(moduleProtos));
+	rodata["moduleExports"] = BinValue(std::move(moduleExports));
 	rodata["staticModulePaths"] = BinValue(std::move(staticModulePaths));
 	rodata["bytes"] = BinValue(BinBinary(asset.sections.rodata.bytes.begin(), asset.sections.rodata.bytes.end()));
-	BinArray rodataSymbols;
-	rodataSymbols.reserve(asset.sections.rodata.symbols.size());
-	for (const auto& symbol : asset.sections.rodata.symbols) {
-		BinObject object;
-		object["name"] = BinValue(symbol.name);
-		object["offset"] = BinValue(static_cast<i64>(symbol.offset));
-		object["byteCount"] = BinValue(static_cast<i64>(symbol.byteCount));
-		object["alignment"] = BinValue(static_cast<i64>(symbol.alignment));
-		rodataSymbols.push_back(BinValue(std::move(object)));
-	}
-	rodata["symbols"] = BinValue(std::move(rodataSymbols));
+	rodata["symbols"] = BinValue(encodeStorageSymbols(asset.sections.rodata.symbols));
 
 	BinObject data;
 	data["bytes"] = BinValue(BinBinary(asset.sections.data.bytes.begin(), asset.sections.data.bytes.end()));
-	BinArray dataSymbols;
-	dataSymbols.reserve(asset.sections.data.symbols.size());
-	for (const auto& symbol : asset.sections.data.symbols) {
-		BinObject object;
-		object["name"] = BinValue(symbol.name);
-		object["offset"] = BinValue(static_cast<i64>(symbol.offset));
-		object["byteCount"] = BinValue(static_cast<i64>(symbol.byteCount));
-		object["alignment"] = BinValue(static_cast<i64>(symbol.alignment));
-		dataSymbols.push_back(BinValue(std::move(object)));
-	}
-	data["symbols"] = BinValue(std::move(dataSymbols));
+	data["symbols"] = BinValue(encodeStorageSymbols(asset.sections.data.symbols));
 
 	BinObject bss;
 	bss["byteCount"] = BinValue(static_cast<i64>(asset.sections.bss.byteCount));
-	BinArray bssSymbols;
-	bssSymbols.reserve(asset.sections.bss.symbols.size());
-	for (const auto& symbol : asset.sections.bss.symbols) {
-		BinObject object;
-		object["name"] = BinValue(symbol.name);
-		object["offset"] = BinValue(static_cast<i64>(symbol.offset));
-		object["byteCount"] = BinValue(static_cast<i64>(symbol.byteCount));
-		object["alignment"] = BinValue(static_cast<i64>(symbol.alignment));
-		bssSymbols.push_back(BinValue(std::move(object)));
-	}
-	bss["symbols"] = BinValue(std::move(bssSymbols));
+	bss["symbols"] = BinValue(encodeStorageSymbols(asset.sections.bss.symbols));
 
 	BinObject sections;
 	sections["text"] = BinValue(std::move(text));
@@ -534,15 +544,6 @@ std::unique_ptr<ProgramMetadata> decodeProgramSymbolsImage(const uint8_t* data, 
 	}
 
 	return extractProgramMetadata(root.require("metadata"));
-}
-
-std::unordered_map<std::string, int> buildModuleProtoMap(const std::vector<std::pair<std::string, int>>& entries) {
-	std::unordered_map<std::string, int> map;
-	map.reserve(entries.size());
-	for (const auto& entry : entries) {
-		map[entry.first] = entry.second;
-	}
-	return map;
 }
 
 std::string stripLuaExtension(std::string_view candidate) {

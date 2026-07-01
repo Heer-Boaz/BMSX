@@ -9,8 +9,8 @@ import { CPU, RunResult } from '../../machine/ts/machine/cpu/cpu';
 import { disassembleProgram } from '../../machine/ts/machine/cpu/disassembler';
 import { Memory } from '../../machine/ts/machine/memory/memory';
 import type { ProgramConstReloc } from '../../machine/ts/machine/program/loader';
-import { compileLuaChunkToProgram, encodeCompiledProgramImage, type CompiledProgram } from '../../machine/ts/machine/program/compiler';
-import { inflateExecutableProgramImage } from '../../machine/ts/machine/program/linker';
+import { appendLuaChunkToProgram, compileLuaChunkToProgram, encodeCompiledProgramImage, type CompiledProgram } from '../../machine/ts/machine/program/compiler';
+import { inflateExecutableProgramImage, resolveRuntimeProgramRelocations } from '../../machine/ts/machine/program/linker';
 
 function parseSource(source: string, path: string) {
 	const lexer = new LuaLexer(source, path);
@@ -67,6 +67,17 @@ function compileWithConstModule(entrySource: string, modulePath: string, moduleS
 	};
 }
 
+function runStaticModuleInitializers(cpu: CPU, compiled: CompiledProgram): void {
+	for (const path of compiled.staticModulePaths) {
+		assert.equal(compiled.moduleProtoMap.has(path), true);
+		const protoIndex = compiled.moduleProtoMap.get(path) as number;
+		const targetDepth = cpu.getFrameDepth();
+		cpu.call(cpu.rootClosure(protoIndex));
+		assert.equal(cpu.runUntilDepth(targetDepth, 100000), RunResult.Halted);
+	}
+	cpu.syncGlobalSlotsToTable();
+}
+
 // Module return values remain real tables so direct compile-time import member
 // reads and dynamic consumers keep Lua semantics. Static module-root calls still
 // lower their call target to an export_proto relocation so the linker can replace
@@ -120,16 +131,23 @@ test('bios easing exports a linkable function while keeping its Lua table', () =
 	assert.match(compiled.disasm, /\bNEWT\b/, 'public easing table remains available for Lua API consumers');
 });
 
-// Non-call value reads must not use export_proto relocations; data exports use direct slots.
-test('static module data reads use global slots, not export-proto relocations', () => {
+// Non-call value reads must not use export_proto relocations; data exports use module-slot relocs.
+test('static module data reads use module slots, not export-proto relocations', () => {
 	const moduleSource = [
 		'local api = { value = 7 }',
 		'return api',
 	].join('\n');
 	const compiled = compileWithModule('local api<const> = require("foo")\nreturn api.value + 1', 'foo', moduleSource);
-	const disasm = compiled.disasm;
 	assert.equal(compiled.constRelocs.some(reloc => reloc.kind === 'export_proto' && reloc.symbol === 'foo__value'), false, 'data reads must not emit export-proto relocations');
-	assert.match(disasm, /\bGET(GL|SYS)\b.*foo__value/, 'data read must use the export slot directly');
+	let hasModuleValueReloc = false;
+	for (let index = 0; index < compiled.constRelocs.length; index += 1) {
+		const reloc = compiled.constRelocs[index];
+		if (reloc.kind === 'module' && reloc.symbol === 'foo__value') {
+			hasModuleValueReloc = true;
+			break;
+		}
+	}
+	assert.equal(hasModuleValueReloc, true, 'data read must target the module export slot');
 });
 
 // Nested namespaces are runtime tables; flat export slots only represent direct fields.
@@ -152,6 +170,55 @@ test('computed (non-literal) export key uses the table path', () => {
 	].join('\n');
 	const { disasm } = compileWithModule('local m<const> = require("baz")\nm.update()', 'baz', moduleSource);
 	assert.match(disasm, /\bNEWT\b/, 'computed export key stays on the table path');
+});
+
+test('dynamic root-function modules remain runtime values', () => {
+	const moduleSource = [
+		'local inc<const> = function(value) return value + 1 end',
+		'return inc',
+	].join('\n');
+	const { compiled, disasm } = compileWithModule('local inc<const> = require("foo")\nreturn inc(4)', 'foo', moduleSource);
+	assert.equal(compiled.moduleProtoMap.has('foo'), true, 'dynamic root-function module must keep its initializer proto');
+	assert.match(disasm, /\bSET(GL|SYS)\b.*foo\b/, 'module initializer must publish the root function value');
+	let hasRootModuleReloc = false;
+	for (let index = 0; index < compiled.constRelocs.length; index += 1) {
+		const reloc = compiled.constRelocs[index];
+		if (reloc.kind === 'module' && reloc.symbol === 'foo') {
+			hasRootModuleReloc = true;
+			break;
+		}
+	}
+	assert.equal(hasRootModuleReloc, true, 'const local require must read the root function value from the export slot');
+	const image = encodeCompiledProgramImage(compiled);
+	const cpu = new CPU(new Memory({ systemRom: new Uint8Array(0) }));
+	cpu.setProgram(inflateExecutableProgramImage(image, compiled.metadata), compiled.metadata);
+	cpu.start(image.vectors.sectionInitProtoIndex);
+	assert.equal(cpu.runUntilDepth(0, 100000), RunResult.Halted);
+	runStaticModuleInitializers(cpu, compiled);
+	cpu.start(image.vectors.resetProtoIndex);
+	assert.equal(cpu.runUntilDepth(0, 100000), RunResult.Halted);
+	assert.deepEqual(Array.from(cpu.lastReturnValues), [5]);
+});
+
+test('host-eval append resolves installed module roots from the program image', () => {
+	const moduleSource = [
+		'local inc<const> = function(value) return value + 1 end',
+		'return inc',
+	].join('\n');
+	const { compiled } = compileWithModule('local inc<const> = require("foo")\nreturn 0', 'foo', moduleSource);
+	const image = encodeCompiledProgramImage(compiled);
+	const baseProgram = inflateExecutableProgramImage(image, compiled.metadata);
+	const source = 'local inc<const> = require("foo")\nreturn inc(9)';
+	const appended = appendLuaChunkToProgram(baseProgram, compiled.metadata, parseSource(source, 'host_eval.lua'), { entrySource: source });
+	resolveRuntimeProgramRelocations(appended.program, appended.metadata, appended.constRelocs);
+	const cpu = new CPU(new Memory({ systemRom: new Uint8Array(0) }));
+	cpu.setProgram(appended.program, appended.metadata);
+	cpu.start(image.vectors.sectionInitProtoIndex);
+	assert.equal(cpu.runUntilDepth(0, 100000), RunResult.Halted);
+	runStaticModuleInitializers(cpu, compiled);
+	cpu.start(appended.entryProtoIndex);
+	assert.equal(cpu.runUntilDepth(0, 100000), RunResult.Halted);
+	assert.deepEqual(Array.from(cpu.lastReturnValues), [10]);
 });
 
 test('const modules inline export constants without runtime module state', () => {
@@ -219,10 +286,10 @@ test('const modules reject runtime root values', () => {
 	const moduleSource = 'return { value = 7 }';
 	assert.throws(
 		() => compileWithConstModule('return require("assets")', 'assets', moduleSource),
-		/External module 'assets' is compile-time only/,
+		/Module 'assets' root is compile-time only/,
 	);
 	assert.throws(
 		() => compileWithConstModule('local assets = require("assets")\nreturn assets', 'assets', moduleSource),
-		/External module 'assets' is compile-time only/,
+		/Module 'assets' root is compile-time only/,
 	);
 });

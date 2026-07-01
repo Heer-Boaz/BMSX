@@ -133,20 +133,14 @@ Value Runtime::onMachineRegionRead([[maybe_unused]] uint32_t addr) const {
 
 void Runtime::onMachineRegionWriteThunk(void* context, uint32_t addr, Value value) {
 	auto* runtime = static_cast<Runtime*>(context);
-	runtime->onMachineRegionWrite(addr, value);
-}
-
-void Runtime::onMachineRegionWrite([[maybe_unused]] uint32_t addr, Value value) {
-	applyMachineRegionWord(toU32(value));
+	(void)addr;
+	runtime->applyMachineRegionWord(toU32(value));
 }
 
 void Runtime::onLuaOutputCodepointWriteThunk(void* context, uint32_t addr, Value value) {
 	auto* runtime = static_cast<Runtime*>(context);
-	runtime->onLuaOutputCodepointWrite(addr, value);
-}
-
-void Runtime::onLuaOutputCodepointWrite([[maybe_unused]] uint32_t addr, Value value) {
-	appendUtf8Codepoint(luaOutputLineBuffer, toU32(value));
+	(void)addr;
+	appendUtf8Codepoint(runtime->luaOutputLineBuffer, toU32(value));
 }
 
 void Runtime::onLuaOutputFlushWriteThunk(void* context, uint32_t addr, Value value) {
@@ -295,7 +289,6 @@ void Runtime::startCartProgram() {
 }
 
 void Runtime::boot(const ProgramImage& image, ProgramMetadata* metadata, ProgramVectorTable vectors, uint32_t dataBaseAddress, uint32_t bssBaseAddress, const std::vector<std::string>& staticModulePaths) {
-	m_moduleProtos = buildModuleProtoMap(image.sections.rodata.moduleProtos);
 	m_moduleCache.clear();
 	m_programStorage = inflateExecutableProgramImage(image, metadata, dataBaseAddress, bssBaseAddress);
 	try {
@@ -313,7 +306,7 @@ void Runtime::boot(const ProgramImage& image, ProgramMetadata* metadata, Program
 void Runtime::startLoadedProgram(ProgramVectorTable vectors, const std::vector<std::string>& staticModulePaths) {
 	m_programVectors = vectors;
 	NativeResults sectionResults;
-	callLuaFunctionInto(machine.cpu.createRootClosure(vectors.sectionInitProtoIndex), NativeArgsView(), sectionResults);
+	callLuaFunctionInto(machine.cpu.rootClosure(vectors.sectionInitProtoIndex), NativeArgsView(), sectionResults);
 	runStaticModuleInitializers(staticModulePaths);
 	enforceLuaHeapBudget();
 	machine.cpu.start(vectors.resetProtoIndex);
@@ -326,12 +319,12 @@ void Runtime::runStaticModuleInitializer(const std::string& path) {
 	if (m_moduleCache.find(path) != m_moduleCache.end()) {
 		return;
 	}
-	const auto protoIt = m_moduleProtos.find(path);
-	if (protoIt == m_moduleProtos.end()) {
+	const auto protoIt = m_program->moduleProtoMap.find(path);
+	if (protoIt == m_program->moduleProtoMap.end()) {
 		throw BMSX_RUNTIME_ERROR("static module init failed: module '" + path + "' is not compiled.");
 	}
 	m_moduleCache[path] = valueBool(true);
-	auto* closure = machine.cpu.createRootClosure(protoIt->second);
+	Closure& closure = machine.cpu.rootClosure(protoIt->second);
 	NativeResults results;
 	try {
 		callLuaFunctionInto(closure, NativeArgsView(), results);

@@ -68,10 +68,10 @@ const getConstForOperand = (
 	useRk: boolean,
 	constants: Map<number, ConstValue>,
 	context: OptimizationContext,
-): ConstValue | undefined => {
+): ConstValue | null | undefined => {
 	if (useRk && operand < 0) {
 		const constIndex = -1 - operand;
-		return constPoolValueForOptimization(context, constIndex) ?? undefined;
+		return constPoolValueForOptimization(context, constIndex);
 	}
 	return constants.get(operand);
 };

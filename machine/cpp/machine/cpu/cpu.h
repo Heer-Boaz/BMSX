@@ -557,6 +557,12 @@ struct Proto {
 /**
  * Compiled program - bytecode, constants, and prototypes.
  */
+struct ProgramModuleExport {
+	std::string path;
+	std::string exportPathKey;
+	std::string slotName;
+};
+
 struct Program {
 	std::vector<uint8_t> code;
 	std::vector<uint8_t> programRom;
@@ -565,6 +571,9 @@ struct Program {
 	StringPool stringPool;
 	StringPool* constPoolStringPool = nullptr;
 	std::vector<Proto> protos;
+	std::vector<std::pair<std::string, int>> moduleProtos;
+	std::vector<ProgramModuleExport> moduleExports;
+	std::unordered_map<std::string, int> moduleProtoMap;
 	bool constPoolCanonicalized = false;
 };
 
@@ -908,11 +917,11 @@ public:
 		std::function<void(GcHeap&)> mark = nullptr
 	);
 	Table* createTable(int arraySize = 0, int hashSize = 0);
-	Closure* createRootClosure(int protoIndex);
+	Closure& rootClosure(int protoIndex) { return *m_staticClosures[static_cast<size_t>(protoIndex)]; }
 
 	void start(int entryProtoIndex, NativeArgsView args = {});
-	void call(Closure* closure, NativeArgsView args = {}, int returnCount = 0);
-	void callExternal(Closure* closure, NativeArgsView args = {});
+	void call(Closure& closure, NativeArgsView args = {}, int returnCount = 0);
+	void callExternal(Closure& closure, NativeArgsView args = {});
 	NativeResults* swapExternalReturnSink(NativeResults* sink);
 	CpuRuntimeState captureRuntimeState(const std::unordered_map<std::string, Value>& moduleCache) const;
 	void restoreRuntimeState(const CpuRuntimeState& state, std::unordered_map<std::string, Value>& moduleCache);
@@ -960,7 +969,6 @@ private:
 	void executeInstruction(CallFrame& frame, const DecodedInstruction& decoded);
 	void runBuiltinFunction(BuiltinFunction& fn, CallFrame& frame, int callBase, int returnCount, int argCount);
 	void runBuiltinNextValue(Value target, Value key, NativeResults& out);
-	void runBuiltinType(Value value, NativeResults& out);
 	void runBuiltinSetMetatable(NativeArgsView args, NativeResults& out);
 	void runBuiltinGetMetatable(NativeArgsView args, NativeResults& out);
 	void runBuiltinRawGet(NativeArgsView args, NativeResults& out);
@@ -976,11 +984,11 @@ private:
 	void tickHotLoopHousekeeping();
 	void initializeGlobalSlots(ProgramMetadata* metadata);
 	void initializeGlobalSlotList(std::vector<StringId>& names, std::vector<Value>& values, std::unordered_map<StringId, size_t>& slotByKey, const std::vector<std::string>& source);
+	void materializeStaticClosures();
 	CallFrame* pushFrame(CallFrame& caller, Closure* closure, int argBase, int argCount,
 		int returnBase, int returnCount, bool captureReturns, int callSitePc);
 	CallFrame* pushFrame(Closure* closure, const Value* args, size_t argCount,
 		int returnBase, int returnCount, bool captureReturns, int callSitePc);
-	Closure* staticClosure(int protoIndex);
 	Closure* createTrackedClosure(int protoIndex, size_t upvalueCount);
 	Closure* createClosure(CallFrame& frame, int protoIndex);
 	void closeUpvalues(CallFrame& frame);

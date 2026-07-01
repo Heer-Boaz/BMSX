@@ -3301,10 +3301,6 @@
 					"reason": "TS text section code bytes are Uint8Array; C++ stores the same instruction bytes in std::vector<u8>."
 				},
 				{
-					"symbol": "buildModuleProtoMap",
-					"reason": "TS module proto entries are object records; C++ module proto entries are the same path/proto pairs as native std::pair records."
-				},
-				{
 					"symbol": "inflateProgram",
 					"reason": "TS returns the owned Program object directly; C++ returns the same Program owner through unique_ptr at the native ownership boundary."
 				}

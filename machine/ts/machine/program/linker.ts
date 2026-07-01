@@ -1,5 +1,5 @@
 // start repeated-sequence-acceptable -- Program linker rewrites packed instruction fields directly to preserve bit-level clarity.
-import { OpCode, type Program, type ProgramMetadata, type Proto, type SourceRange } from '../cpu/cpu';
+import { OpCode, type Program, type ProgramMetadata, type ProgramModuleExport, type ProgramModuleProto, type Proto, type SourceRange } from '../cpu/cpu';
 import {
 	BASE_BX_BITS,
 	EXT_B_BITS,
@@ -95,25 +95,25 @@ const mergeConstPools = (
 	cartConstPool: ReadonlyArray<EncodedValue>,
 ): { constPool: EncodedValue[]; cartConstRemap: number[] } => {
 	const constPool: EncodedValue[] = systemConstPool.slice();
-	const keyToIndex = new Map<string, number>();
+	const constSlotByKey = new Map<string, number>();
 	for (let index = 0; index < systemConstPool.length; index += 1) {
 		const key = makeConstKey(systemConstPool[index]);
-		if (!keyToIndex.has(key)) {
-			keyToIndex.set(key, index);
+		if (!constSlotByKey.has(key)) {
+			constSlotByKey.set(key, index + 1);
 		}
 	}
 	const cartConstRemap: number[] = new Array(cartConstPool.length);
 	for (let index = 0; index < cartConstPool.length; index += 1) {
 		const value = cartConstPool[index];
 		const key = makeConstKey(value);
-		const existing = keyToIndex.get(key);
-		if (existing !== undefined) {
-			cartConstRemap[index] = existing;
+		const slot = constSlotByKey.get(key);
+		if (slot) {
+			cartConstRemap[index] = slot - 1;
 			continue;
 		}
 		const nextIndex = constPool.length;
 		constPool.push(value);
-		keyToIndex.set(key, nextIndex);
+		constSlotByKey.set(key, nextIndex + 1);
 		cartConstRemap[index] = nextIndex;
 	}
 	return { constPool, cartConstRemap };
@@ -196,24 +196,24 @@ const mergeNamedSlots = (
 	cartNames: ReadonlyArray<string>,
 ): { names: string[]; cartRemap: number[] } => {
 	const names: string[] = systemNames.slice();
-	const nameToIndex = new Map<string, number>();
+	const slotByName = new Map<string, number>();
 	for (let index = 0; index < systemNames.length; index += 1) {
 		const name = systemNames[index];
-		if (!nameToIndex.has(name)) {
-			nameToIndex.set(name, index);
+		if (!slotByName.has(name)) {
+			slotByName.set(name, index + 1);
 		}
 	}
 	const cartRemap: number[] = new Array(cartNames.length);
 	for (let index = 0; index < cartNames.length; index += 1) {
 		const name = cartNames[index];
-		const existing = nameToIndex.get(name);
-		if (existing !== undefined) {
-			cartRemap[index] = existing;
+		const slot = slotByName.get(name);
+		if (slot) {
+			cartRemap[index] = slot - 1;
 			continue;
 		}
 		const mergedIndex = names.length;
 		names.push(name);
-		nameToIndex.set(name, mergedIndex);
+		slotByName.set(name, mergedIndex + 1);
 		cartRemap[index] = mergedIndex;
 	}
 	return { names, cartRemap };
@@ -649,17 +649,42 @@ const mergeMetadata = (
 	for (let index = 0; index < cartInstructionCount; index += 1) {
 		debugRanges[cartBaseWord + index] = cart.debugRanges[index];
 	}
+	const protoIds: string[] = new Array(system.protoIds.length + cart.protoIds.length);
+	for (let index = 0; index < system.protoIds.length; index += 1) {
+		protoIds[index] = system.protoIds[index];
+	}
+	for (let index = 0; index < cart.protoIds.length; index += 1) {
+		protoIds[system.protoIds.length + index] = cart.protoIds[index];
+	}
+	const localSlotsByProto: Array<ProgramMetadata['localSlotsByProto'][number]> = new Array(system.localSlotsByProto.length + cart.localSlotsByProto.length);
+	for (let index = 0; index < system.localSlotsByProto.length; index += 1) {
+		localSlotsByProto[index] = system.localSlotsByProto[index];
+	}
+	for (let index = 0; index < cart.localSlotsByProto.length; index += 1) {
+		localSlotsByProto[system.localSlotsByProto.length + index] = cart.localSlotsByProto[index];
+	}
+	const upvalueNamesByProto: Array<ProgramMetadata['upvalueNamesByProto'][number]> = new Array(system.upvalueNamesByProto.length + cart.upvalueNamesByProto.length);
+	for (let index = 0; index < system.upvalueNamesByProto.length; index += 1) {
+		upvalueNamesByProto[index] = system.upvalueNamesByProto[index];
+	}
+	for (let index = 0; index < cart.upvalueNamesByProto.length; index += 1) {
+		upvalueNamesByProto[system.upvalueNamesByProto.length + index] = cart.upvalueNamesByProto[index];
+	}
+	const exportProtoIdBySlot: ProgramMetadata['exportProtoIdBySlot'] = {};
+	for (const slotName in system.exportProtoIdBySlot) {
+		exportProtoIdBySlot[slotName] = system.exportProtoIdBySlot[slotName];
+	}
+	for (const slotName in cart.exportProtoIdBySlot) {
+		exportProtoIdBySlot[slotName] = cart.exportProtoIdBySlot[slotName];
+	}
 	return {
 		debugRanges,
-		protoIds: system.protoIds.concat(cart.protoIds),
-		localSlotsByProto: system.localSlotsByProto.concat(cart.localSlotsByProto),
-		upvalueNamesByProto: system.upvalueNamesByProto.concat(cart.upvalueNamesByProto),
+		protoIds,
+		localSlotsByProto,
+		upvalueNamesByProto,
 		systemGlobalNames: mergedSystemGlobals.names,
 		globalNames: mergedGlobals.names,
-		exportProtoIdBySlot: {
-			...system.exportProtoIdBySlot,
-			...cart.exportProtoIdBySlot,
-		},
+		exportProtoIdBySlot,
 	};
 };
 
@@ -696,30 +721,38 @@ export const linkProgramImages = (
 	const cartText = cartImage.sections.text;
 	const systemRodata = systemImage.sections.rodata;
 	const cartRodata = cartImage.sections.rodata;
+	const systemData = systemImage.sections.data;
+	const cartData = cartImage.sections.data;
+	const systemBss = systemImage.sections.bss;
+	const cartBss = cartImage.sections.bss;
+	const systemConstRelocs = systemImage.link.constRelocs;
+	const cartConstRelocs = cartImage.link.constRelocs;
 	const baseProtoCount = systemText.protos.length;
 	const systemCodeBytes = systemText.code.length;
 	const cartCodeBytes = cartText.code.length;
 	const systemInstructionCount = systemCodeBytes / INSTRUCTION_BYTES;
 	const cartInstructionCount = cartCodeBytes / INSTRUCTION_BYTES;
 	const resolvedLayout = resolveProgramLayout(systemCodeBytes, systemBasePc, cartBasePc);
-	const systemDataByteCount = systemImage.sections.data.bytes.byteLength;
-	const cartDataByteCount = cartImage.sections.data.bytes.byteLength;
+	const systemDataByteCount = systemData.bytes.byteLength;
+	const cartDataByteCount = cartData.bytes.byteLength;
 	const linkedDataByteCount = systemDataByteCount + cartDataByteCount;
-	const linkedBssByteCount = systemImage.sections.bss.byteCount + cartImage.sections.bss.byteCount;
+	const linkedBssByteCount = systemBss.byteCount + cartBss.byteCount;
 	const systemDataBase = PROGRAM_STATIC_RAM_BASE;
 	const cartDataBase = systemDataBase + systemDataByteCount;
 	const systemBssBase = PROGRAM_STATIC_RAM_BASE + linkedDataByteCount;
-	const cartBssBase = systemBssBase + systemImage.sections.bss.byteCount;
+	const cartBssBase = systemBssBase + systemBss.byteCount;
 	assertStaticRamFits(PROGRAM_STATIC_RAM_BASE, linkedDataByteCount + linkedBssByteCount);
 	const totalBytes = Math.max(
 		resolvedLayout.systemBasePc + systemCodeBytes,
 		resolvedLayout.cartBasePc + cartCodeBytes,
 	);
-	const linkedRodataByteCount = systemRodata.bytes.byteLength + cartRodata.bytes.byteLength;
+	const systemRodataByteCount = systemRodata.bytes.byteLength;
+	const cartRodataByteCount = cartRodata.bytes.byteLength;
+	const linkedRodataByteCount = systemRodataByteCount + cartRodataByteCount;
 	assertProgramRomFits(totalBytes + linkedRodataByteCount + linkedDataByteCount);
 	const systemRodataBase = PROGRAM_ROM_BASE + totalBytes;
-	const cartRodataBase = systemRodataBase + systemRodata.bytes.byteLength;
-	const systemDataLma = cartRodataBase + cartRodata.bytes.byteLength;
+	const cartRodataBase = systemRodataBase + systemRodataByteCount;
+	const systemDataLma = cartRodataBase + cartRodataByteCount;
 	const cartDataLma = systemDataLma + systemDataByteCount;
 	const code = new Uint8Array(totalBytes);
 	code.set(systemText.code, resolvedLayout.systemBasePc);
@@ -732,10 +765,10 @@ export const linkProgramImages = (
 		resolveConstValueRelocations(
 			systemRodata.constPool,
 			systemImage.link.constValueRelocs,
-			systemImage.sections.data.symbols,
+			systemData.symbols,
 			systemDataBase,
 			systemDataLma,
-			systemImage.sections.bss.symbols,
+			systemBss.symbols,
 			systemBssBase,
 			systemRodata.symbols,
 			systemRodataBase,
@@ -743,10 +776,10 @@ export const linkProgramImages = (
 		resolveConstValueRelocations(
 			cartRodata.constPool,
 			cartImage.link.constValueRelocs,
-			cartImage.sections.data.symbols,
+			cartData.symbols,
 			cartDataBase,
 			cartDataLma,
-			cartImage.sections.bss.symbols,
+			cartBss.symbols,
 			cartBssBase,
 			cartRodata.symbols,
 			cartRodataBase,
@@ -757,9 +790,27 @@ export const linkProgramImages = (
 
 	// Module/export relocations are symbolic object-code records. The linker resolves
 	// them for every input image before the program becomes executable.
-	const systemNeedsSymbols = systemImage.link.constRelocs.some(relocRequiresSymbolMetadata);
-	const cartNeedsSymbols = cartImage.link.constRelocs.some(relocRequiresSymbolMetadata);
-	const cartNeedsMetadata = cartImage.link.constRelocs.some(cartRelocRequiresMetadata);
+	let systemNeedsSymbols = false;
+	for (let index = 0; index < systemConstRelocs.length; index += 1) {
+		if (relocRequiresSymbolMetadata(systemConstRelocs[index])) {
+			systemNeedsSymbols = true;
+			break;
+		}
+	}
+	let cartNeedsSymbols = false;
+	let cartNeedsMetadata = false;
+	for (let index = 0; index < cartConstRelocs.length; index += 1) {
+		const reloc = cartConstRelocs[index];
+		if (relocRequiresSymbolMetadata(reloc)) {
+			cartNeedsSymbols = true;
+		}
+		if (cartRelocRequiresMetadata(reloc)) {
+			cartNeedsMetadata = true;
+		}
+		if (cartNeedsSymbols && cartNeedsMetadata) {
+			break;
+		}
+	}
 	if ((systemNeedsSymbols || cartNeedsMetadata) && !systemMetadata) {
 		throw new Error('[ProgramLinker] Missing system symbols metadata required to resolve relocations.');
 	}
@@ -768,41 +819,54 @@ export const linkProgramImages = (
 	}
 
 	if (systemNeedsSymbols) {
+		const symbols = systemMetadata as ProgramMetadata;
 		rewriteSymbolicConstRelocations(
 			systemCode,
-			systemImage.link.constRelocs,
-			systemMetadata!.globalNames,
-			systemMetadata!.systemGlobalNames,
-			systemMetadata!.exportProtoIdBySlot,
-			systemMetadata!.protoIds,
+			systemConstRelocs,
+			symbols.globalNames,
+			symbols.systemGlobalNames,
+			symbols.exportProtoIdBySlot,
+			symbols.protoIds,
 		);
 	}
 	rewriteConstPoolRelocations(
 		cartCode,
-		cartImage.link.constRelocs,
+		cartConstRelocs,
 		mergedConsts.cartConstRemap,
 	);
 	if (cartNeedsMetadata) {
-		const mergedSystemGlobals = mergeNamedSlots(systemMetadata!.systemGlobalNames, cartMetadata!.systemGlobalNames);
-		const mergedGlobals = mergeNamedSlots(systemMetadata!.globalNames, cartMetadata!.globalNames);
+		const systemRelocMetadata = systemMetadata as ProgramMetadata;
+		const cartRelocMetadata = cartMetadata as ProgramMetadata;
+		const mergedSystemGlobals = mergeNamedSlots(systemRelocMetadata.systemGlobalNames, cartRelocMetadata.systemGlobalNames);
+		const mergedGlobals = mergeNamedSlots(systemRelocMetadata.globalNames, cartRelocMetadata.globalNames);
 		rewriteNamedSlotRelocations(
 			cartCode,
-			cartImage.link.constRelocs,
+			cartConstRelocs,
 			mergedGlobals.cartRemap,
 			mergedSystemGlobals.cartRemap,
 		);
 		if (cartNeedsSymbols) {
-			const mergedExportProtoIdBySlot = {
-				...systemMetadata!.exportProtoIdBySlot,
-				...cartMetadata!.exportProtoIdBySlot,
-			};
+			const mergedExportProtoIdBySlot: ProgramMetadata['exportProtoIdBySlot'] = {};
+			for (const slotName in systemRelocMetadata.exportProtoIdBySlot) {
+				mergedExportProtoIdBySlot[slotName] = systemRelocMetadata.exportProtoIdBySlot[slotName];
+			}
+			for (const slotName in cartRelocMetadata.exportProtoIdBySlot) {
+				mergedExportProtoIdBySlot[slotName] = cartRelocMetadata.exportProtoIdBySlot[slotName];
+			}
+			const mergedProtoIds: string[] = new Array(systemRelocMetadata.protoIds.length + cartRelocMetadata.protoIds.length);
+			for (let index = 0; index < systemRelocMetadata.protoIds.length; index += 1) {
+				mergedProtoIds[index] = systemRelocMetadata.protoIds[index];
+			}
+			for (let index = 0; index < cartRelocMetadata.protoIds.length; index += 1) {
+				mergedProtoIds[systemRelocMetadata.protoIds.length + index] = cartRelocMetadata.protoIds[index];
+			}
 			rewriteSymbolicConstRelocations(
 				cartCode,
-				cartImage.link.constRelocs,
+				cartConstRelocs,
 				mergedGlobals.names,
 				mergedSystemGlobals.names,
 				mergedExportProtoIdBySlot,
-				systemMetadata!.protoIds.concat(cartMetadata!.protoIds),
+				mergedProtoIds,
 			);
 		}
 	}
@@ -839,22 +903,79 @@ export const linkProgramImages = (
 		protoIndex += 1;
 	}
 
-	const moduleProtos: Array<{ path: string; protoIndex: number }> = [];
-	for (const entry of cartRodata.moduleProtos) {
-		moduleProtos.push({ path: entry.path, protoIndex: entry.protoIndex + baseProtoCount });
+	const moduleProtos: ProgramModuleProto[] = new Array(cartRodata.moduleProtos.length + systemRodata.moduleProtos.length);
+	let moduleProtoIndex = 0;
+	for (let index = 0; index < cartRodata.moduleProtos.length; index += 1) {
+		const entry = cartRodata.moduleProtos[index];
+		moduleProtos[moduleProtoIndex] = { path: entry.path, protoIndex: entry.protoIndex + baseProtoCount };
+		moduleProtoIndex += 1;
 	}
-	for (const entry of systemRodata.moduleProtos) {
-		moduleProtos.push({ path: entry.path, protoIndex: entry.protoIndex });
+	for (let index = 0; index < systemRodata.moduleProtos.length; index += 1) {
+		const entry = systemRodata.moduleProtos[index];
+		moduleProtos[moduleProtoIndex] = { path: entry.path, protoIndex: entry.protoIndex };
+		moduleProtoIndex += 1;
+	}
+	const moduleExports: ProgramModuleExport[] = new Array(systemRodata.moduleExports.length + cartRodata.moduleExports.length);
+	for (let index = 0; index < systemRodata.moduleExports.length; index += 1) {
+		moduleExports[index] = systemRodata.moduleExports[index];
+	}
+	for (let index = 0; index < cartRodata.moduleExports.length; index += 1) {
+		moduleExports[systemRodata.moduleExports.length + index] = cartRodata.moduleExports[index];
 	}
 	const systemStaticModulePaths = systemRodata.staticModulePaths;
 	const cartStaticModulePaths = cartRodata.staticModulePaths;
-	const staticModulePaths = systemStaticModulePaths.concat(cartStaticModulePaths);
+	const staticModulePaths: string[] = new Array(systemStaticModulePaths.length + cartStaticModulePaths.length);
+	for (let index = 0; index < systemStaticModulePaths.length; index += 1) {
+		staticModulePaths[index] = systemStaticModulePaths[index];
+	}
+	for (let index = 0; index < cartStaticModulePaths.length; index += 1) {
+		staticModulePaths[systemStaticModulePaths.length + index] = cartStaticModulePaths[index];
+	}
 	const rodataBytes = new Uint8Array(linkedRodataByteCount);
 	rodataBytes.set(systemRodata.bytes, 0);
-	rodataBytes.set(cartRodata.bytes, systemRodata.bytes.byteLength);
+	rodataBytes.set(cartRodata.bytes, systemRodataByteCount);
 	const dataBytes = new Uint8Array(linkedDataByteCount);
-	dataBytes.set(systemImage.sections.data.bytes, 0);
-	dataBytes.set(cartImage.sections.data.bytes, systemDataByteCount);
+	dataBytes.set(systemData.bytes, 0);
+	dataBytes.set(cartData.bytes, systemDataByteCount);
+	const rodataSymbols: ProgramRodataSymbol[] = new Array(systemRodata.symbols.length + cartRodata.symbols.length);
+	for (let index = 0; index < systemRodata.symbols.length; index += 1) {
+		rodataSymbols[index] = systemRodata.symbols[index];
+	}
+	for (let index = 0; index < cartRodata.symbols.length; index += 1) {
+		const symbol = cartRodata.symbols[index];
+		rodataSymbols[systemRodata.symbols.length + index] = {
+			name: symbol.name,
+			offset: symbol.offset + systemRodataByteCount,
+			byteCount: symbol.byteCount,
+			alignment: symbol.alignment,
+		};
+	}
+	const dataSymbols: ProgramDataSymbol[] = new Array(systemData.symbols.length + cartData.symbols.length);
+	for (let index = 0; index < systemData.symbols.length; index += 1) {
+		dataSymbols[index] = systemData.symbols[index];
+	}
+	for (let index = 0; index < cartData.symbols.length; index += 1) {
+		const symbol = cartData.symbols[index];
+		dataSymbols[systemData.symbols.length + index] = {
+			name: symbol.name,
+			offset: symbol.offset + systemDataByteCount,
+			byteCount: symbol.byteCount,
+			alignment: symbol.alignment,
+		};
+	}
+	const bssSymbols: ProgramBssSymbol[] = new Array(systemBss.symbols.length + cartBss.symbols.length);
+	for (let index = 0; index < systemBss.symbols.length; index += 1) {
+		bssSymbols[index] = systemBss.symbols[index];
+	}
+	for (let index = 0; index < cartBss.symbols.length; index += 1) {
+		const symbol = cartBss.symbols[index];
+		bssSymbols[systemBss.symbols.length + index] = {
+			name: symbol.name,
+			offset: symbol.offset + systemBss.byteCount,
+			byteCount: symbol.byteCount,
+			alignment: symbol.alignment,
+		};
+	}
 	const systemVectors = systemImage.vectors;
 	const cartVectors = {
 		resetProtoIndex: cartImage.vectors.resetProtoIndex + baseProtoCount,
@@ -879,32 +1000,18 @@ export const linkProgramImages = (
 			rodata: {
 				constPool: mergedConsts.constPool,
 				moduleProtos,
+				moduleExports,
 				staticModulePaths,
 				bytes: rodataBytes,
-				symbols: systemRodata.symbols.concat(cartRodata.symbols.map(symbol => ({
-					name: symbol.name,
-					offset: symbol.offset + systemRodata.bytes.byteLength,
-					byteCount: symbol.byteCount,
-					alignment: symbol.alignment,
-				}))),
+				symbols: rodataSymbols,
 			},
 			data: {
 				bytes: dataBytes,
-				symbols: systemImage.sections.data.symbols.concat(cartImage.sections.data.symbols.map(symbol => ({
-					name: symbol.name,
-					offset: symbol.offset + systemDataByteCount,
-					byteCount: symbol.byteCount,
-					alignment: symbol.alignment,
-				}))),
+				symbols: dataSymbols,
 			},
 			bss: {
 				byteCount: linkedBssByteCount,
-				symbols: systemImage.sections.bss.symbols.concat(cartImage.sections.bss.symbols.map(symbol => ({
-					name: symbol.name,
-					offset: symbol.offset + systemImage.sections.bss.byteCount,
-					byteCount: symbol.byteCount,
-					alignment: symbol.alignment,
-				}))),
+				symbols: bssSymbols,
 			},
 		},
 		link: { constRelocs: [], constValueRelocs: [] },

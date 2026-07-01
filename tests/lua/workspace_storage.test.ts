@@ -35,7 +35,7 @@ import { hydrateDirtyFiles } from '../../machine/ts/ide/workbench/workspace/rest
 import { captureActiveCodeTabSource } from '../../machine/ts/ide/workbench/ui/code_tab/activation';
 import { captureContextText } from '../../machine/ts/ide/workbench/workspace/context_snapshot';
 import { editorDocumentState } from '../../machine/ts/ide/editor/editing/document_state';
-import type { LuaSourceRegistry } from '../../machine/ts/machine/program/sources';
+import { registerLuaSourceRecord, type LuaSourceRegistry } from '../../machine/ts/machine/program/sources';
 import { saveLuaResourceSource } from '../../machine/ts/ide/workspace/workspace';
 
 class MockStorage implements StorageService {
@@ -289,6 +289,7 @@ test('dirty restore keeps autosave contents authoritative over canonical source'
 test('workspace override application keeps dirty and canonical in separate namespaces', async () => {
 	const storage = new MockStorage();
 	const registry: LuaSourceRegistry = {
+		records: [],
 		path2lua: {},
 		module2lua: {},
 		entry_path: 'src/foo.lua',
@@ -306,8 +307,7 @@ test('workspace override application keeps dirty and canonical in separate names
 		module_path: 'src.foo',
 		update_timestamp: 15,
 	};
-	registry.path2lua[asset.source_path] = asset;
-	registry.module2lua[asset.module_path] = asset;
+	registerLuaSourceRecord(registry, asset);
 	storage.setItem(buildWorkspaceStorageKey('offline-cart', 'src/foo.lua'), JSON.stringify({
 		contents: '-- saved source',
 		updatedAt: 25,
@@ -350,6 +350,7 @@ test('workspace override application keeps dirty and canonical in separate names
 test('stale dirty buffers never win over newer cart code', async () => {
 	const storage = new MockStorage();
 	const registry: LuaSourceRegistry = {
+		records: [],
 		path2lua: {},
 		module2lua: {},
 		entry_path: 'src/foo.lua',
@@ -367,8 +368,7 @@ test('stale dirty buffers never win over newer cart code', async () => {
 		module_path: 'src.foo',
 		update_timestamp: 100,
 	};
-	registry.path2lua[asset.source_path] = asset;
-	registry.module2lua[asset.module_path] = asset;
+	registerLuaSourceRecord(registry, asset);
 	const dirtyPath = buildWorkspaceDirtyEntryPath('offline-cart', 'src/foo.lua');
 	storage.setItem(buildWorkspaceStorageKey('offline-cart', dirtyPath), JSON.stringify({
 		contents: '-- stale dirty source',
@@ -407,6 +407,7 @@ test('explicit lua save promotes canonical source and removes dirty entry', asyn
 	const storage = new MockStorage();
 	installOfflineWorkspace(t, storage);
 	const registry: LuaSourceRegistry = {
+		records: [],
 		path2lua: {},
 		module2lua: {},
 		entry_path: 'src/foo.lua',
@@ -424,8 +425,7 @@ test('explicit lua save promotes canonical source and removes dirty entry', asyn
 		module_path: 'src.foo',
 		update_timestamp: 1,
 	};
-	registry.path2lua[asset.source_path] = asset;
-	registry.module2lua[asset.module_path] = asset;
+	registerLuaSourceRecord(registry, asset);
 	const dirtyPath = buildWorkspaceDirtyEntryPath('offline-cart', 'src/foo.lua');
 	storage.setItem(buildWorkspaceStorageKey('offline-cart', dirtyPath), JSON.stringify({
 		contents: '-- dirty source',

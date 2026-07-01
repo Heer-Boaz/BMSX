@@ -1,6 +1,5 @@
 import {
 	LuaSyntaxKind,
-	LuaTableFieldKind,
 	type LuaChunk,
 	type LuaExpression,
 	type LuaFunctionExpression,
@@ -11,7 +10,7 @@ import {
 } from '../../../lua/syntax/ast';
 import type { LuaSemanticFrontendFile } from '../../../lua/semantic/frontend';
 import { getBoundIdentifierReference as getResolvedIdentifierReference } from '../bound_reference';
-import { extractTableKeyFromExpression } from './expression_paths';
+import { visitNamedTableFields } from './expression_paths';
 import { buildModuleExportPathKey, buildModuleExportSlotName } from './module_names';
 
 export type StaticFunctionExportSymbol = {
@@ -63,21 +62,11 @@ const collectStaticFunctionExportSymbols = (
 ): void => {
 	if (expression.kind === LuaSyntaxKind.TableConstructorExpression) {
 		const table = expression as LuaTableConstructorExpression;
-		for (let index = 0; index < table.fields.length; index += 1) {
-			const field = table.fields[index];
-			if (field.kind === LuaTableFieldKind.Array) {
-				continue;
-			}
-			const key = field.kind === LuaTableFieldKind.IdentifierKey
-				? field.name
-				: extractTableKeyFromExpression(field.key);
-			if (!key) {
-				continue;
-			}
+		visitNamedTableFields(table, (key, value) => {
 			path.push(key);
-			collectStaticFunctionExportSymbols(modulePath, field.value, functions, semantics, includeLocalBindingExports, out, path);
+			collectStaticFunctionExportSymbols(modulePath, value, functions, semantics, includeLocalBindingExports, out, path);
 			path.pop();
-		}
+		});
 		return;
 	}
 	if (expression.kind === LuaSyntaxKind.FunctionExpression) {

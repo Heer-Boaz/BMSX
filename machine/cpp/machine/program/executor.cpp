@@ -33,7 +33,7 @@ void runHaltedClosureUntilInterrupt(Runtime& runtime) {
 
 } // namespace
 
-void Runtime::callLuaFunctionInto(Closure* fn, NativeArgsView args, NativeResults& out) {
+void Runtime::callLuaFunctionInto(Closure& fn, NativeArgsView args, NativeResults& out) {
 	CPU& cpu = machine.cpu;
 	int depthBefore = cpu.getFrameDepth();
 	const int previousBudget = cpu.instructionBudgetRemaining;

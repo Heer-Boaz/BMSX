@@ -85,7 +85,7 @@ export const headlessIdeHarness: HeadlessIdeHarness = {
 			stringBytes,
 			objectBytes: tracked - stringBytes,
 			moduleCache: runtime.moduleCache.size,
-			moduleProtos: runtime.moduleProtos.size,
+			moduleProtos: program ? program.moduleProtos.length : 0,
 			protos: program ? program.protos.length : 0,
 			constPool: program ? program.constPool.length : 0,
 			globals,

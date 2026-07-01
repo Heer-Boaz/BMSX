@@ -10,6 +10,7 @@ export type LuaSourceRecord = RomLuaAsset & { base_src: string; base_update_time
 type PackedLuaSourceAsset = RomLuaAsset & { source_path: string; payload_id: CartridgeLayerId };
 
 export type LuaSourceRegistry = {
+	records: LuaSourceRecord[];
 	path2lua: Record<string, LuaSourceRecord>;
 	module2lua: Record<string, LuaSourceRecord>;
 	entry_path: string;
@@ -22,6 +23,17 @@ export type LuaSourceMatch = {
 	registry: LuaSourceRegistry;
 	record: LuaSourceRecord;
 };
+
+export function registerLuaSourceRecord(registry: LuaSourceRegistry, record: LuaSourceRecord): void {
+	const previous = registry.path2lua[record.source_path];
+	if (previous) {
+		registry.records[registry.records.indexOf(previous)] = record;
+	} else {
+		registry.records.push(record);
+	}
+	registry.path2lua[record.source_path] = record;
+	registry.module2lua[record.module_path] = record;
+}
 
 export function resolveLuaSourceRecord(registry: LuaSourceRegistry, path: string): LuaSourceRecord | null {
 	const record = registry.path2lua[path];
@@ -46,6 +58,7 @@ function isAllowedPayloadId(payloadId: CartridgeLayerId, allowedPayloadIds: read
 
 export function buildLuaSources(cartSource: RawRomSource, romSource: RawRomSource, index: CartridgeIndex, allowedPayloadIds: readonly CartridgeLayerId[]): LuaSourceRegistry {
 	const registry: LuaSourceRegistry = {
+		records: [],
 		path2lua: {},
 		module2lua: {},
 		entry_path: index.entry_path,
@@ -74,8 +87,7 @@ export function buildLuaSources(cartSource: RawRomSource, romSource: RawRomSourc
 		luaRecord.base_src = baseSrc;
 		luaRecord.base_update_timestamp = entry.update_timestamp ?? 0;
 		luaRecord.module_path = toLuaModulePath(entry.source_path);
-		registry.path2lua[luaRecord.source_path] = luaRecord;
-		registry.module2lua[luaRecord.module_path] = luaRecord;
+		registerLuaSourceRecord(registry, luaRecord);
 	}
 	registry.can_boot_from_source = sourceCount > 0;
 
@@ -99,8 +111,7 @@ export function buildLuaSources(cartSource: RawRomSource, romSource: RawRomSourc
 			module_path: ROM_ASSET_SYMBOL_MODULE_PATH,
 			update_timestamp: 0,
 		};
-		registry.path2lua[assetSymbols.source_path] = assetSymbols;
-		registry.module2lua[assetSymbols.module_path] = assetSymbols;
+		registerLuaSourceRecord(registry, assetSymbols);
 	}
 
 	if (sourceCount === 0) {
@@ -117,8 +128,7 @@ export function buildLuaSources(cartSource: RawRomSource, romSource: RawRomSourc
 				module_path: toLuaModulePath(entryPath),
 				update_timestamp: 0,
 			};
-			registry.path2lua[stub.source_path] = stub;
-			registry.module2lua[stub.module_path] = stub;
+			registerLuaSourceRecord(registry, stub);
 		}
 	}
 

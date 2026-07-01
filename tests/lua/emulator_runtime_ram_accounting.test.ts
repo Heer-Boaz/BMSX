@@ -205,7 +205,7 @@ test('restored static closures reuse the static proto cache', () => {
 	cpu.restoreRuntimeState(state, new Map());
 
 	const restoredClosure = (cpu as unknown as { lastReturnValues: unknown[] }).lastReturnValues[0];
-	const cachedClosure = (cpu as unknown as { staticClosure(protoIndex: number): unknown }).staticClosure(staticProtoIndex);
+	const cachedClosure = (cpu as unknown as { rootClosure(protoIndex: number): unknown }).rootClosure(staticProtoIndex);
 	assert.equal(restoredClosure, cachedClosure);
 });
 
