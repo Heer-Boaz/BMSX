@@ -1786,7 +1786,9 @@ export class CPU {
 	private materializeStaticClosures(program: Program): void {
 		const protos = program.protos;
 		const closures = this.staticClosures;
-		for (let index = closures.length; index < protos.length; index += 1) {
+		const existingCount = closures.length;
+		closures.length = protos.length;
+		for (let index = existingCount; index < protos.length; index += 1) {
 			closures[index] = { protoIndex: index, upvalues: EMPTY_CLOSURE_UPVALUES, heapBytes: 0 };
 		}
 		for (let index = 0; index < protos.length; index += 1) {
@@ -1996,12 +1998,11 @@ export class CPU {
 		if (!this.canAcceptMaskableInterruptLine(irqController)) {
 			return false;
 		}
-		const savedMaskableEnabled = this.maskableInterruptsEnabled;
 		this.maskableInterruptsEnabled = false;
 		this.clearHaltAfterAcceptedInterrupt();
 		const frame = this.pushFrame(this.rootClosure(irqProtoIndex), EMPTY_CALL_ARGS, 0, 0, false, this.program.protos[irqProtoIndex].entryPC);
 		frame.isInterruptFrame = true;
-		frame.savedMaskableEnabled = savedMaskableEnabled;
+		frame.savedMaskableEnabled = true;
 		return true;
 	}
 

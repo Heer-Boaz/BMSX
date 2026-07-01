@@ -1004,6 +1004,9 @@ Table* CPU::createTable(int arraySize, int hashSize) {
 
 void CPU::materializeStaticClosures() {
 	const size_t protoCount = m_program->protos.size();
+	if (m_staticClosures.size() > protoCount) {
+		m_staticClosures.resize(protoCount);
+	}
 	for (size_t index = m_staticClosures.size(); index < protoCount; ++index) {
 		m_staticClosures.push_back(m_heap.allocate<Closure>(ObjType::Closure));
 	}
@@ -1824,12 +1827,12 @@ void CPU::haltUntilIrq() {
 void CPU::callBuiltinFunction(BuiltinFunction& fn, NativeArgsView args, NativeResults& out) {
 	out.clear();
 	switch (fn.id) {
-			case BuiltinFunctionId::Next:
-				runBuiltinNextValue(args.size() > 0 ? args.at(0) : valueNil(), args.size() > 1 ? args.at(1) : valueNil(), out);
-				break;
-			case BuiltinFunctionId::Type:
-				out.push_back(valueString(m_stringPool.intern(valueTypeNameForLua(args.size() > 0 ? args.at(0) : valueNil()))));
-				break;
+		case BuiltinFunctionId::Next:
+			runBuiltinNextValue(args.size() > 0 ? args.at(0) : valueNil(), args.size() > 1 ? args.at(1) : valueNil(), out);
+			break;
+		case BuiltinFunctionId::Type:
+			out.push_back(valueString(m_stringPool.intern(valueTypeNameForLua(args.size() > 0 ? args.at(0) : valueNil()))));
+			break;
 		case BuiltinFunctionId::SetMetatable:
 			runBuiltinSetMetatable(args, out);
 			break;
@@ -1976,12 +1979,12 @@ void CPU::runBuiltinStringByte(NativeArgsView args, NativeResults& out) {
 		return;
 	}
 	size_t byteIndex = 0;
-		int current = 1;
-		while (byteIndex < source.size()) {
-			if (current == position) {
-				out.push_back(valueNumber(static_cast<double>(readUtf8Codepoint(source, byteIndex))));
-				return;
-			}
+	int current = 1;
+	while (byteIndex < source.size()) {
+		if (current == position) {
+			out.push_back(valueNumber(static_cast<double>(readUtf8Codepoint(source, byteIndex))));
+			return;
+		}
 		byteIndex = nextUtf8Index(source, byteIndex);
 		current += 1;
 	}

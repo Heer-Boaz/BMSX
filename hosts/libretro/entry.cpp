@@ -81,6 +81,7 @@ static std::string sanitizeSystemDir(std::string_view path) {
 static bmsx::LibretroPlatform* g_platform = nullptr;
 static retro_system_av_info g_cached_av_info{};
 static bool g_cached_av_info_valid = false;
+static int64_t g_current_ufps_scaled = bmsx::PAL_REFRESH_UFPS_SCALED;
 
 static void apply_model_av_info(retro_system_av_info& av, int64_t ufps_scaled) {
 	const bmsx::MachineVdpModeProfile& vdpMode = bmsx::getMachineVdpModeProfile(bmsx::PSX_MODEL_PROFILE.biosVdpMode);
@@ -1209,11 +1210,7 @@ extern "C" void bmsx_set_frame_time_usec(retro_usec_t usec) {
 }
 
 extern "C" int64_t bmsx_get_ufps(void) {
-	bmsx::MachineManager& manager = *g_platform->machineManager();
-	if (manager.hasRuntime()) {
-		return manager.runtime().timing.ufpsScaled;
-	}
-	return bmsx::PAL_REFRESH_UFPS_SCALED;
+	return g_current_ufps_scaled;
 }
 
 void retro_set_controller_port_device(unsigned port, unsigned device) {
@@ -1258,12 +1255,12 @@ bool retro_load_game(const struct retro_game_info* game) {
 		return false;
 	}
 
-	const int64_t ufps_scaled = bmsx_get_ufps();
+	g_current_ufps_scaled = g_platform->machineManager()->runtime().timing.ufpsScaled;
 	struct retro_system_av_info av = g_cached_av_info;
 	if (!g_cached_av_info_valid) {
 		initialize_default_av_info(av);
 	}
-	apply_model_av_info(av, ufps_scaled);
+	apply_model_av_info(av, g_current_ufps_scaled);
 	g_cached_av_info = av;
 	g_cached_av_info_valid = true;
 	g_platform->setAVInfo(av);
@@ -1284,6 +1281,7 @@ bool retro_load_game_special(unsigned game_type,
 void retro_unload_game(void) {
 	logging.log(RETRO_LOG_INFO, "[BMSX] Unloading game\n");
 	g_platform->unloadRom();
+	g_current_ufps_scaled = bmsx::PAL_REFRESH_UFPS_SCALED;
 }
 
 /* ============================================================================

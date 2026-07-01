@@ -6,7 +6,7 @@ local vdp_image<const> = {}
 local cache<const> = {}
 
 local system_atlas_id<const> = 254
-local system_atlas_name<const> = string.format('_atlas_%02d', system_atlas_id)
+local system_atlas_name<const> = '_atlas_254'
 local system_atlas_meta<const> = romdir.system_image(system_atlas_name).imgmeta
 vdp_rpu_quads.set_slot_dim(sys_vdp_slot_system, system_atlas_meta.width, system_atlas_meta.height)
 
