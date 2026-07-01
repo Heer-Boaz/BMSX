@@ -64,6 +64,7 @@ bool MachineManager::runHostFrame(
 			if (frameReady) {
 				RuntimeFrameStepResult stepResult;
 				runRuntimeFrameStepInto(stepResult, runtime, hostDeltaMs);
+				syncRuntimeAudioTiming();
 				m_screen.syncAfterRuntimeUpdate(runtime, stepResult.previousTickSequence);
 			}
 		} else {

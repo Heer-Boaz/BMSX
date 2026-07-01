@@ -50,6 +50,7 @@ export function runMachineHostFrame(runtime: Runtime, currentTime: number, runRe
 			} else {
 				manager.deltatime = runtime.timing.frameDurationMs;
 				runRuntimeFrameStepInto(hostFrameStepResult, runtime, hostDeltaMs);
+				manager.syncRuntimeAudioTiming();
 				screen.syncAfterRuntimeUpdate(runtime, hostFrameStepResult.previousTickSequence);
 			}
 			if (hostOverlayQueued) {

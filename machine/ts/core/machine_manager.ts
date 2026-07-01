@@ -8,6 +8,7 @@ import { TextureManager } from "../render/texture_manager";
 import { RenderPassLibrary } from "../render/backend/pass/library";
 import { setMicrotaskQueue } from '../platform';
 import type { GameViewHost, Platform } from '../platform';
+import { PAL_REFRESH_UFPS_SCALED } from '../machine/model_registry';
 import { HZ_SCALE } from '../machine/runtime/timing/constants';
 import { RomBootManager } from './rom_boot_manager';
 import { renderGate, runGate } from '../common/taskgate';
@@ -59,6 +60,7 @@ export class MachineManager {
 
 	public host_show_fps = false;
 	public host_fps = 0;
+	private audioUfpsScaled = PAL_REFRESH_UFPS_SCALED;
 
 	/**
 	 * The ID of the animation frame request.
@@ -108,8 +110,16 @@ export class MachineManager {
 	}
 
 	public syncAudioTiming(): void {
-		this.platform.audio.setFrameTimeSec(HZ_SCALE / this.runtime.timing.ufpsScaled);
-		this.sndmaster.setMixerUfpsScaled(this.runtime.timing.ufpsScaled);
+		const ufpsScaled = this.runtime.timing.ufpsScaled;
+		this.platform.audio.setFrameTimeSec(HZ_SCALE / ufpsScaled);
+		this.sndmaster.setMixerUfpsScaled(ufpsScaled);
+		this.audioUfpsScaled = ufpsScaled;
+	}
+
+	public syncRuntimeAudioTiming(): void {
+		if (this.runtime.timing.ufpsScaled !== this.audioUfpsScaled) {
+			this.syncAudioTiming();
+		}
 	}
 
 	public bootstrapStartupAudio(): void {

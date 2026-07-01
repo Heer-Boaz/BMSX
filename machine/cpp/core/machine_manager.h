@@ -96,6 +96,8 @@ public:
 		f64 deltaTime,
 		bool platformPaused
 	);
+	void syncAudioTiming();
+	void syncRuntimeAudioTiming();
 
 	// State accessors
 	MachineManagerState state() const { return m_state; }
@@ -201,6 +203,7 @@ private:
 	f64 m_delta_time = 0.0;
 	u64 m_frame_count = 0;
 	f64 m_fps = 0.0;
+	i64 m_audio_ufps_scaled;
 	bool m_debugTickReportInitialized = false;
 	std::chrono::steady_clock::time_point m_debugTickReportAt;
 	u64 m_debugTickHostFrames = 0;

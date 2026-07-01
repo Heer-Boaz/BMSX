@@ -104,6 +104,18 @@ static void initialize_default_av_info(retro_system_av_info& av) {
 	apply_model_av_info(av, bmsx::PAL_REFRESH_UFPS_SCALED);
 }
 
+static void sync_current_av_info(int64_t ufps_scaled) {
+	retro_system_av_info av = g_cached_av_info;
+	if (!g_cached_av_info_valid) {
+		initialize_default_av_info(av);
+	}
+	apply_model_av_info(av, ufps_scaled);
+	g_cached_av_info = av;
+	g_cached_av_info_valid = true;
+	g_current_ufps_scaled = ufps_scaled;
+	g_platform->setAVInfo(av);
+}
+
 extern "C" RETRO_API void bmsx_keyboard_event(const char* code, bool down) {
 	if (!g_platform || !code || !code[0]) {
 		return;
@@ -1229,41 +1241,33 @@ bool retro_load_game(const struct retro_game_info* game) {
 		logging.log(RETRO_LOG_ERROR, "%s\n", g_backend_error.c_str());
 		return false;
 	}
+	bool loaded_ok = false;
 	if (!game) {
 		logging.log(RETRO_LOG_INFO,
 					"[BMSX] No game provided, loading empty cart\n");
-		return g_platform->loadEmptyCart();
-	}
-
-	logging.log(RETRO_LOG_INFO, "[BMSX] Loading game: %s\n",
-				game->path ? game->path : "(memory)");
-
-	bool loaded_ok = false;
-	if (game->data && game->size > 0) {
-		if (game->path) {
-			g_platform->loadSystemRom(game->path);
-		}
-		loaded_ok = g_platform->loadRom(static_cast<const uint8_t*>(game->data),
-										game->size);
-	} else if (game->path) {
-		loaded_ok = g_platform->loadRomFromPath(game->path);
+		loaded_ok = g_platform->loadEmptyCart();
 	} else {
-		logging.log(RETRO_LOG_ERROR, "[BMSX] No game data or path provided\n");
-		return false;
+		logging.log(RETRO_LOG_INFO, "[BMSX] Loading game: %s\n",
+					game->path ? game->path : "(memory)");
+
+		if (game->data && game->size > 0) {
+			if (game->path) {
+				g_platform->loadSystemRom(game->path);
+			}
+			loaded_ok = g_platform->loadRom(static_cast<const uint8_t*>(game->data),
+											game->size);
+		} else if (game->path) {
+			loaded_ok = g_platform->loadRomFromPath(game->path);
+		} else {
+			logging.log(RETRO_LOG_ERROR, "[BMSX] No game data or path provided\n");
+			return false;
+		}
 	}
 	if (!loaded_ok) {
 		return false;
 	}
 
-	g_current_ufps_scaled = g_platform->machineManager()->runtime().timing.ufpsScaled;
-	struct retro_system_av_info av = g_cached_av_info;
-	if (!g_cached_av_info_valid) {
-		initialize_default_av_info(av);
-	}
-	apply_model_av_info(av, g_current_ufps_scaled);
-	g_cached_av_info = av;
-	g_cached_av_info_valid = true;
-	g_platform->setAVInfo(av);
+	sync_current_av_info(g_platform->machineManager()->runtime().timing.ufpsScaled);
 
 	return true;
 }
@@ -1453,6 +1457,12 @@ void retro_run(void) {
 	// Run one frame
 //   const auto runStart = std::chrono::steady_clock::now();
 	const bool video_frame_presented = g_platform->runFrame();
+	const int64_t runtime_ufps_scaled = g_platform->machineManager()->runtime().timing.ufpsScaled;
+	if (runtime_ufps_scaled != g_current_ufps_scaled) {
+		g_platform->machineManager()->syncRuntimeAudioTiming();
+		sync_current_av_info(runtime_ufps_scaled);
+		environ_cb(RETRO_ENVIRONMENT_SET_SYSTEM_AV_INFO, &g_cached_av_info);
+	}
 //   const auto runEnd = std::chrono::steady_clock::now();
 //   const double runMs = std::chrono::duration<double, std::milli>(runEnd - runStart).count();
 //   const auto& tickTiming = g_platform->machineManager()->lastTickTiming();

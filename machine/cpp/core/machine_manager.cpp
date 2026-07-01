@@ -32,7 +32,8 @@ namespace bmsx {
 
 MachineManager* MachineManager::s_instance = nullptr;
 
-MachineManager::MachineManager() {
+MachineManager::MachineManager()
+	: m_audio_ufps_scaled(PAL_REFRESH_UFPS_SCALED) {
 	s_instance = this;
 	machine_manifest = &defaultSystemMachineManifest();
 	m_active_rom = &m_system_rom;
@@ -212,6 +213,18 @@ void MachineManager::setHostPaused(bool paused, bool romLoaded) {
 	}
 }
 
+void MachineManager::syncAudioTiming() {
+	const i64 ufpsScaled = runtime().timing.ufpsScaled;
+	m_sound_master->setMixerUfpsScaled(ufpsScaled);
+	m_audio_ufps_scaled = ufpsScaled;
+}
+
+void MachineManager::syncRuntimeAudioTiming() {
+	if (runtime().timing.ufpsScaled != m_audio_ufps_scaled) {
+		syncAudioTiming();
+	}
+}
+
 void MachineManager::refreshRenderSurfaces() {
 	if (m_texture_manager) {
 		m_texture_manager->setBackend(m_view ? m_view->backend() : nullptr);
@@ -340,7 +353,7 @@ Runtime& MachineManager::prepareRuntimeForActiveCart(const ResolvedRuntimeTiming
 		m_cart_rom_size > 0 ? &m_cart_rom : nullptr
 	);
 	applyRuntimeTiming(runtime, timing);
-	m_sound_master->setMixerUfpsScaled(runtime.timing.ufpsScaled);
+	syncAudioTiming();
 	runtime.refreshMemoryMapGlobals();
 	return runtime;
 }
@@ -378,7 +391,7 @@ void MachineManager::bootRuntimeFromProgram() {
 		m_cart_rom_size > 0 ? &m_cart_rom : nullptr
 	);
 	applyRuntimeTiming(rt, timing);
-	m_sound_master->setMixerUfpsScaled(rt.timing.ufpsScaled);
+	syncAudioTiming();
 	rt.refreshMemoryMapGlobals();
 	rt.resetRuntimeForProgramReload();
 	m_screen.reset();
@@ -439,7 +452,7 @@ bool MachineManager::bootSystemStartupProgram(const MachineManifest& runtimeMach
 		m_cart_rom_size > 0 ? &m_cart_rom : nullptr
 	);
 	applyRuntimeTiming(rt, timing);
-	m_sound_master->setMixerUfpsScaled(rt.timing.ufpsScaled);
+	syncAudioTiming();
 	rt.refreshMemoryMapGlobals();
 	rt.resetRuntimeForProgramReload();
 	m_screen.reset();
