@@ -328,7 +328,12 @@ function textobject.new(opts)
 	self.normal_bg_color = opts.normal_bg_color or 0xff000000
 	self.highlight_bg_color = opts.highlight_bg_color or 0xb3000080
 	self.font = opts.font or font_module.get('default')
-	self.dimensions = opts.dimensions or { left = 0, top = 0, right = machine_manifest.render_size.width, bottom = machine_manifest.render_size.height }
+	local dimensions = opts.dimensions
+	if not dimensions then
+		local screen_wh<const> = mem[sys_vdp_screen_wh]
+		dimensions = { left = 0, top = 0, right = screen_wh & 0xffff, bottom = screen_wh >> 16 }
+	end
+	self.dimensions = dimensions
 	self.centered_block_x = 0
 	self.char_width = opts.char_width or self.font.glyphs['a'].width
 	self.blank_lines = opts.blank_lines or 0

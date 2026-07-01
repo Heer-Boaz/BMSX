@@ -1,25 +1,20 @@
 #include "machine/runtime/boot_timing.h"
 
-#include "machine/memory/specs.h"
 #include "machine/runtime/runtime.h"
 #include "machine/runtime/timing/config.h"
-#include "machine/specs.h"
 #include "machine/model_registry.h"
-#include "rompack/format.h"
 
 namespace bmsx {
 
 ResolvedRuntimeTiming resolveRuntimeTiming(
-	const MachineManifest& viewportMachine,
-	const MachineManifest& timingMachine,
 	i64 cpuHz,
 	uint32_t regionWord
 ) {
-	const RuntimeRenderSize renderSize = resolveRuntimeRenderSize(viewportMachine);
+	const MachineVdpModeProfile& renderSize = getMachineVdpModeProfile(PSX_MODEL_PROFILE.biosVdpMode);
 	const MachineRegionTiming regionTiming = getMachineRegionTimingForWord(regionWord);
 	return {
-		renderSize.width,
-		renderSize.height,
+		renderSize.renderWidth,
+		renderSize.renderHeight,
 		regionWord,
 		regionTiming.refreshUfpsScaled,
 		regionTiming.totalScanlines,
@@ -30,7 +25,7 @@ ResolvedRuntimeTiming resolveRuntimeTiming(
 		static_cast<int>(PSX_VDP_CLASS_PROFILE.vdpWorkUnitsPerSec),
 		static_cast<int>(PSX_VDP_CLASS_PROFILE.geoWorkUnitsPerSec),
 		static_cast<int>(calcCyclesPerFrameScaled(cpuHz, regionTiming.refreshUfpsScaled)),
-		static_cast<int>(resolveVblankCycles(cpuHz, regionTiming.refreshUfpsScaled, regionTiming.totalScanlines, timingMachine.viewportHeight)),
+		static_cast<int>(resolveVblankCycles(cpuHz, regionTiming.refreshUfpsScaled, regionTiming.totalScanlines, renderSize.renderHeight)),
 	};
 }
 

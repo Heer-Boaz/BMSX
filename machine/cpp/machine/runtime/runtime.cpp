@@ -67,11 +67,12 @@ Runtime::Runtime(
 	machine.memory.mapIoWrite(IO_SYS_REGION, this, &Runtime::onMachineRegionWriteThunk);
 	machine.memory.mapIoWrite(IO_SYS_PRINT_CHAR, this, &Runtime::onLuaOutputCodepointWriteThunk);
 	machine.memory.mapIoWrite(IO_SYS_PRINT_FLUSH, this, &Runtime::onLuaOutputFlushWriteThunk);
+	machine.memory.mapIoWrite(IO_VDP_MODE, this, &Runtime::onVdpModeWriteThunk);
 	machine.initializeSystemIo();
 	machine.resetDevices();
 	vblank.setVblankCycles(*this, options.vblankCycles);
 	refreshDeviceTimings(*this, machine.scheduler.currentNowCycles());
-	refreshMemoryMap();
+	refreshMemoryMapGlobals();
 	machine.cpu.setExternalRootMarker([this](GcHeap& heap) {
 		for (const auto& entry : m_moduleCache) {
 			heap.markValue(entry.second);
@@ -137,6 +138,12 @@ void Runtime::onMachineRegionWriteThunk(void* context, uint32_t addr, Value valu
 	runtime->applyMachineRegionWord(toU32(value));
 }
 
+void Runtime::onVdpModeWriteThunk(void* context, uint32_t addr, Value value) {
+	auto* runtime = static_cast<Runtime*>(context);
+	(void)addr;
+	runtime->applyVdpModeWord(toU32(value));
+}
+
 void Runtime::onLuaOutputCodepointWriteThunk(void* context, uint32_t addr, Value value) {
 	auto* runtime = static_cast<Runtime*>(context);
 	(void)addr;
@@ -169,7 +176,18 @@ void Runtime::applyMachineRegionWord(uint32_t regionWord) {
 		*this,
 		timing.cpuHz,
 		static_cast<int>(calcCyclesPerFrameScaled(timing.cpuHz, regionTiming.refreshUfpsScaled)),
-		static_cast<int>(resolveVblankCycles(timing.cpuHz, regionTiming.refreshUfpsScaled, regionTiming.totalScanlines, m_machineManifest->viewportHeight))
+		static_cast<int>(resolveVblankCycles(timing.cpuHz, regionTiming.refreshUfpsScaled, regionTiming.totalScanlines, machine.vdp.frameBufferHeight()))
+	);
+}
+
+void Runtime::applyVdpModeWord(uint32_t modeWord) {
+	machine.vdp.writeModeWord(modeWord);
+	const MachineRegionTiming regionTiming = getMachineRegionTimingForWord(timing.regionWord);
+	setFrameTiming(
+		*this,
+		timing.cpuHz,
+		timing.cycleBudgetPerFrame,
+		static_cast<int>(resolveVblankCycles(timing.cpuHz, regionTiming.refreshUfpsScaled, regionTiming.totalScanlines, machine.vdp.frameBufferHeight()))
 	);
 }
 
@@ -425,11 +443,6 @@ void Runtime::resetHardwareState() {
 	luaOutputLineBuffer.clear();
 	machine.resetDevices();
 	vblank.reset(*this);
-}
-
-void Runtime::refreshMemoryMap() {
-	machine.vdp.initializeVramSurfaces();
-	refreshMemoryMapGlobals();
 }
 
 void Runtime::refreshMemoryMapGlobals() {

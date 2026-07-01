@@ -49,6 +49,11 @@ void seedSystemGlobals(Runtime& runtime) {
 	runtime.setGlobal("sys_vdp_fifo", valueNumber(static_cast<double>(IO_VDP_FIFO)));
 	runtime.setGlobal("sys_vdp_fifo_ctrl", valueNumber(static_cast<double>(IO_VDP_FIFO_CTRL)));
 	runtime.setGlobal("sys_vdp_fifo_ctrl_seal", valueNumber(static_cast<double>(VDP_FIFO_CTRL_SEAL)));
+	runtime.setGlobal("sys_vdp_mode", valueNumber(static_cast<double>(IO_VDP_MODE)));
+	runtime.setGlobal("sys_vdp_screen_wh", valueNumber(static_cast<double>(IO_VDP_SCREEN_WH)));
+	runtime.setGlobal("sys_vdp_mode_msx1", valueNumber(static_cast<double>(VDP_MODE_MSX1_WORD)));
+	runtime.setGlobal("sys_vdp_mode_msx2", valueNumber(static_cast<double>(VDP_MODE_MSX2_WORD)));
+	runtime.setGlobal("sys_vdp_mode_psx", valueNumber(static_cast<double>(VDP_MODE_PSX_WORD)));
 	runtime.setGlobal("sys_vdp_slot_primary", valueNumber(static_cast<double>(VDP_SLOT_PRIMARY)));
 	runtime.setGlobal("sys_vdp_slot_secondary", valueNumber(static_cast<double>(VDP_SLOT_SECONDARY)));
 	runtime.setGlobal("sys_vdp_slot_system", valueNumber(static_cast<double>(VDP_SLOT_SYSTEM)));
@@ -71,6 +76,7 @@ void seedSystemGlobals(Runtime& runtime) {
 	runtime.setGlobal("sys_vdp_status_submit_rejected", valueNumber(static_cast<double>(VDP_STATUS_SUBMIT_REJECTED)));
 	runtime.setGlobal("sys_vdp_status_fault", valueNumber(static_cast<double>(VDP_STATUS_FAULT)));
 	runtime.setGlobal("sys_vdp_fault_none", valueNumber(static_cast<double>(VDP_FAULT_NONE)));
+	runtime.setGlobal("sys_vdp_fault_mode_unsupported", valueNumber(static_cast<double>(VDP_FAULT_MODE_UNSUPPORTED)));
 	runtime.setGlobal("sys_vdp_fault_rd_unsupported_mode", valueNumber(static_cast<double>(VDP_FAULT_RD_UNSUPPORTED_MODE)));
 	runtime.setGlobal("sys_vdp_fault_rd_surface", valueNumber(static_cast<double>(VDP_FAULT_RD_SURFACE)));
 	runtime.setGlobal("sys_vdp_fault_rd_oob", valueNumber(static_cast<double>(VDP_FAULT_RD_OOB)));

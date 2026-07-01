@@ -335,7 +335,6 @@ add_library(bmsx_core STATIC
 	machine/runtime/frame/step.cpp
 	machine/program/executor.cpp
 	machine/program/scratch.cpp
-	machine/specs.cpp
 	machine/scheduler/frame.cpp
 	machine/memory/specs.cpp
 	render/presentation_state.cpp

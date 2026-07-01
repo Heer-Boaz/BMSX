@@ -393,18 +393,11 @@ void Runtime::setupBuiltins() {
 	setGlobal("os", valueTable(osTable));
 
 	auto buildMachineManifestTable = [&cpu, key, str](const MachineManifest& manifest) -> Table* {
-		auto* machineTable = cpu.createTable(0, 3);
+		auto* machineTable = cpu.createTable(0, 2);
 		if (!manifest.namespaceName.empty()) {
 			machineTable->set(key("namespace"), str(manifest.namespaceName));
 		}
 		machineTable->set(key("vdp_class"), str("psx"));
-		machineTable->set(key("vdp_mode"), valueNumber(static_cast<double>(static_cast<u32>(manifest.vdpMode))));
-		if (manifest.viewportWidth > 0 && manifest.viewportHeight > 0) {
-			auto* renderSizeTable = cpu.createTable(0, 2);
-			renderSizeTable->set(key("width"), valueNumber(static_cast<double>(manifest.viewportWidth)));
-			renderSizeTable->set(key("height"), valueNumber(static_cast<double>(manifest.viewportHeight)));
-			machineTable->set(key("render_size"), valueTable(renderSizeTable));
-		}
 		return machineTable;
 	};
 	auto buildCartManifestTable = [&cpu, key, str, buildMachineManifestTable](const CartManifest& manifest, const MachineManifest& machine, const std::string& entryPath) -> Table* {

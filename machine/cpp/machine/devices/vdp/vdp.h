@@ -22,6 +22,7 @@
 #include "machine/devices/vdp/vram.h"
 #include "machine/devices/vdp/xf.h"
 #include "machine/devices/vdp/unit_register_port.h"
+#include "machine/model_registry.h"
 #include <array>
 
 namespace bmsx {
@@ -40,6 +41,7 @@ public:
 	void initializeRegisters();
 	void resetIngressState();
 	void resetStatus();
+	void writeModeWord(uint32_t word);
 	void setScanoutTiming(bool vblankActive, int cyclesIntoFrame, int cyclesPerFrame, int vblankStartCycle);
 	bool canAcceptVdpSubmit() const;
 	void acceptSubmitAttempt();
@@ -135,11 +137,13 @@ private:
 	VdpFrameBufferSize m_configuredFrameBufferSize;
 	DeviceScheduler& m_scheduler;
 	VdpUnitRegisterPort m_unitRegisterPort;
+	u32 m_vdpModeWord = VDP_MODE_PSX_WORD;
 
 	VdpSurfaceUploadSlot* findVramSlotOrFault(uint32_t surfaceId, uint32_t faultCode);
 	const VdpSurfaceUploadSlot* findVramSlotOrFault(uint32_t surfaceId, uint32_t faultCode) const;
 	void bindStagingMemory();
 	void bindVramSurfaces();
+	void applyVdpModeProfile(const MachineVdpModeProfile& profile);
 	bool resizeVramSlot(VdpSurfaceUploadSlot& slot, uint32_t width, uint32_t height, uint32_t faultDetail);
 	void resetQueuedFrameState();
 	bool canAcceptSubmittedFrame() const {
@@ -175,7 +179,6 @@ private:
 	void onVdpFifoWrite();
 	void onVdpFifoCtrlWrite();
 	void onVdpCommandWrite();
-	void commitActiveVisualState();
 	void finishCommittedFrameOnVblankEdge();
 
 };

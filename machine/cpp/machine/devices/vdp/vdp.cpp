@@ -61,6 +61,32 @@ void VDP::resetStatus() {
 	refreshSubmitBusyStatus();
 }
 
+void VDP::writeModeWord(uint32_t word) {
+	switch (word) {
+	case VDP_MODE_MSX1_WORD:
+		applyVdpModeProfile(VDP_MODE_MSX1_PROFILE);
+		break;
+	case VDP_MODE_MSX2_WORD:
+		applyVdpModeProfile(VDP_MODE_MSX2_PROFILE);
+		break;
+	case VDP_MODE_PSX_WORD:
+		applyVdpModeProfile(VDP_MODE_PSX_PROFILE);
+		break;
+	default:
+		m_fault.raise(VDP_FAULT_MODE_UNSUPPORTED, word);
+		m_memory.writeIoValue(IO_VDP_MODE, valueNumber(static_cast<double>(m_vdpModeWord)));
+	}
+}
+
+void VDP::applyVdpModeProfile(const MachineVdpModeProfile& profile) {
+	m_vdpModeWord = static_cast<u32>(profile.mode);
+	const u32 screenWh = packLowHigh16(static_cast<u32>(profile.renderWidth), static_cast<u32>(profile.renderHeight));
+	m_memory.writeIoValue(IO_VDP_MODE, valueNumber(static_cast<double>(m_vdpModeWord)));
+	m_memory.writeIoValue(IO_VDP_SCREEN_WH, valueNumber(static_cast<double>(screenWh)));
+	VdpSurfaceUploadSlot& frameBufferSlot = *m_vram.findSurface(VDP_RD_SURFACE_FRAMEBUFFER);
+	resizeVramSlot(frameBufferSlot, static_cast<uint32_t>(profile.renderWidth), static_cast<uint32_t>(profile.renderHeight), screenWh);
+}
+
 void VDP::resetVdpRegisters() {
 	uint32_t slotDim = 1u | (1u << 16u);
 	if (auto* primary = m_vram.findSurface(VDP_RD_SURFACE_PRIMARY)) {
@@ -872,12 +898,8 @@ const VdpDeviceOutput& VDP::readDeviceOutput() {
 	return m_vout.readDeviceOutput(m_scheduler.currentNowCycles());
 }
 
-void VDP::commitActiveVisualState() {
-	m_vout.presentFrame(m_activeFrame);
-}
-
 void VDP::finishCommittedFrameOnVblankEdge() {
-	commitActiveVisualState();
+	m_vout.presentFrame(m_activeFrame);
 	m_lastFrameCommitted = true;
 	m_lastFrameHeld = false;
 	resetSubmittedFrameSlot(m_activeFrame);
@@ -947,12 +969,10 @@ Value VDP::readVdpDataThunk(void* context, uint32_t addr) {
 
 void VDP::initializeRegisters() {
 	const i32 dither = 0;
-	const VdpSurfaceUploadSlot* frameBufferSlot = m_vram.findSurface(VDP_RD_SURFACE_FRAMEBUFFER);
-	if (frameBufferSlot != nullptr) {
-		m_fbm.configure(frameBufferSlot->surfaceWidth, frameBufferSlot->surfaceHeight);
-	} else {
-		m_fbm.configure(m_configuredFrameBufferSize.width, m_configuredFrameBufferSize.height);
-	}
+	m_vdpModeWord = static_cast<u32>(PSX_MODEL_PROFILE.biosVdpMode);
+	const MachineVdpModeProfile& vdpMode = getMachineVdpModeProfile(PSX_MODEL_PROFILE.biosVdpMode);
+	const VdpSurfaceUploadSlot& frameBufferSlot = *m_vram.findSurface(VDP_RD_SURFACE_FRAMEBUFFER);
+	m_fbm.configure(frameBufferSlot.surfaceWidth, frameBufferSlot.surfaceHeight);
 	resetQueuedFrameState();
 	resetIngressState();
 	resetStatus();
@@ -963,6 +983,8 @@ void VDP::initializeRegisters() {
 	m_memory.writeIoValue(IO_VDP_DITHER, valueNumber(static_cast<double>(dither)));
 	m_memory.writeIoValue(IO_VDP_SLOT_PRIMARY, valueNumber(static_cast<double>(VDP_SLOT_NONE)));
 	m_memory.writeIoValue(IO_VDP_SLOT_SECONDARY, valueNumber(static_cast<double>(VDP_SLOT_NONE)));
+	m_memory.writeIoValue(IO_VDP_MODE, valueNumber(static_cast<double>(m_vdpModeWord)));
+	m_memory.writeIoValue(IO_VDP_SCREEN_WH, valueNumber(static_cast<double>(packLowHigh16(static_cast<u32>(vdpMode.renderWidth), static_cast<u32>(vdpMode.renderHeight)))));
 	m_memory.writeIoValue(IO_VDP_CMD, valueNumber(0.0));
 	resetVdpRegisters();
 	m_xf.reset();
@@ -1099,6 +1121,7 @@ bool VDP::readFrameBufferPixels(VdpFrameBufferPage page, uint32_t x, uint32_t y,
 // end hot-path
 
 void VDP::captureVisualStateFields(VdpState& state) const {
+	state.vdpModeWord = m_vdpModeWord;
 	state.xf = m_xf.captureState();
 	for (size_t index = 0u; index < state.vdpRegisterWords.size(); ++index) {
 		state.vdpRegisterWords[index] = m_vdpRegisters[index];
@@ -1132,6 +1155,7 @@ VdpState VDP::captureState() const {
 }
 
 void VDP::restoreState(const VdpState& state) {
+	writeModeWord(state.vdpModeWord);
 	m_xf.restoreState(state.xf);
 	for (size_t index = 0u; index < m_vdpRegisters.size(); ++index) {
 		m_vdpRegisters[index] = state.vdpRegisterWords[index];

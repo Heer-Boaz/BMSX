@@ -187,7 +187,7 @@ private:
 	void activateSystemRom();
 	void activateCartRom();
 	void setMachineManifest(const MachineManifest& manifest);
-	void configureViewForMachine(const MachineManifest& manifest);
+	void configureViewForModel();
 	bool loadSystemRomInternal(const u8* data, size_t size);
 	bool loadRomInternal(const u8* data, size_t size);
 	bool bootSystemStartupProgram(const MachineManifest& runtimeMachine);

@@ -1,3 +1,4 @@
+mem[sys_vdp_mode] = sys_vdp_mode_psx
 require('cartlib/prelude')
 local frame = 0
 local irq_mask_addr<const> = 0x08000110

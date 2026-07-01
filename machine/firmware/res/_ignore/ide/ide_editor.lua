@@ -167,8 +167,9 @@ local function update_gutter_width()
 end
 
 local function compute_wrap_width()
+	local screen_width<const> = mem[sys_vdp_screen_wh] & 0xffff
 	local gutter_space = state.gutter_width + 2
-	local available = machine_manifest.render_size.width - gutter_space - constants.code_area_right_margin
+	local available = screen_width - gutter_space - constants.code_area_right_margin
 	return math.max(state.char_advance, available - 2)
 end
 
@@ -185,12 +186,15 @@ local function update_layout()
 end
 
 local function refresh_view_metrics()
+	local screen_wh<const> = mem[sys_vdp_screen_wh]
+	local screen_width<const> = screen_wh & 0xffff
+	local screen_height<const> = screen_wh >> 16
 	update_gutter_width()
 	update_layout()
 	view_metrics.code_top = state.header_height
-	view_metrics.code_bottom = machine_manifest.render_size.height - state.status_height
+	view_metrics.code_bottom = screen_height - state.status_height
 	view_metrics.code_left = 0
-	view_metrics.code_right = machine_manifest.render_size.width
+	view_metrics.code_right = screen_width
 	view_metrics.gutter_left = view_metrics.code_left
 	view_metrics.gutter_right = view_metrics.gutter_left + state.gutter_width
 	view_metrics.text_left = view_metrics.gutter_right + 2
@@ -1598,7 +1602,7 @@ local function draw_code_area()
 end
 
 local function draw_header()
-	local width = machine_manifest.render_size.width
+	local width<const> = mem[sys_vdp_screen_wh] & 0xffff
 	fill_rect(0, 0, width, state.header_height, 0, constants.color_top_bar)
 	local left = truncate_for_width("Lua IDE", (width * 0.25) // 1)
 	local right = truncate_for_width(state.active_path, (width * 0.7) // 1)
@@ -1607,9 +1611,11 @@ local function draw_header()
 end
 
 local function draw_status()
-	local width = machine_manifest.render_size.width
-	local top = machine_manifest.render_size.height - state.status_height
-	fill_rect(0, top, width, machine_manifest.render_size.height, 0, constants.color_status_bar)
+	local screen_wh<const> = mem[sys_vdp_screen_wh]
+	local width<const> = screen_wh & 0xffff
+	local height<const> = screen_wh >> 16
+	local top<const> = height - state.status_height
+	fill_rect(0, top, width, height, 0, constants.color_status_bar)
 
 	local line_info = string.format("Ln %d  Col %d", state.cursor_row + 1, state.cursor_column + 1)
 	local selection_info = ""

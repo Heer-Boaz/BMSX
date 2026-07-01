@@ -5,7 +5,6 @@ import { encodeBinary } from '../../machine/ts/common/serializer/binencoder';
 import { parseCartridgeIndex, parseCartHeader } from '../../machine/ts/rompack/loader';
 import { encodeRomToc } from '../../machine/ts/rompack/tooling/toc_encode';
 import { CART_ROM_HEADER_SIZE, CART_ROM_MAGIC_BYTES, CART_VDP_CLASS_PSX } from '../../machine/ts/rompack/format';
-import { VDP_MODE_MSX1_WORD, VDP_MODE_PSX_WORD } from '../../machine/ts/machine/model_registry';
 
 test('ROM header carries the psx VDP-class marker', () => {
 	const rom = new Uint8Array(CART_ROM_HEADER_SIZE);
@@ -28,7 +27,7 @@ test('ROM header rejects unsupported VDP-class markers', () => {
 });
 
 
-function makeIndexedRom(machine: { vdp_mode: number; namespace: string; vdp_class: 'psx' }): Uint8Array {
+function makeIndexedRom(machine: { namespace: string; vdp_class: 'psx' }): Uint8Array {
 	const manifest = encodeBinary({
 		rom_name: 'test',
 		machine,
@@ -50,12 +49,8 @@ function makeIndexedRom(machine: { vdp_mode: number; namespace: string; vdp_clas
 	return rom;
 }
 
-test('ROM manifest VDP mode derives the effective render size', async () => {
-	const msx1 = await parseCartridgeIndex(makeIndexedRom({ vdp_mode: VDP_MODE_MSX1_WORD, namespace: 'msx1_cart', vdp_class: 'psx' }));
-	assert.equal(msx1.machine.vdp_mode, VDP_MODE_MSX1_WORD);
-	assert.deepEqual(msx1.machine.render_size, { width: 256, height: 192 });
-
-	const psx = await parseCartridgeIndex(makeIndexedRom({ vdp_mode: VDP_MODE_PSX_WORD, namespace: 'psx_cart', vdp_class: 'psx' }));
-	assert.equal(psx.machine.vdp_mode, VDP_MODE_PSX_WORD);
-	assert.deepEqual(psx.machine.render_size, { width: 320, height: 240 });
+test('ROM manifest carries only the VDP class marker', async () => {
+	const cart = await parseCartridgeIndex(makeIndexedRom({ namespace: 'psx_cart', vdp_class: 'psx' }));
+	assert.equal(cart.machine.namespace, 'psx_cart');
+	assert.equal(cart.machine.vdp_class, 'psx');
 });

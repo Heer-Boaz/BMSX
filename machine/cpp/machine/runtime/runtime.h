@@ -116,6 +116,7 @@ public:
 	auto machineElapsedMs() const -> f64;
 	void applyUfpsScaled(i64 ufpsScaled);
 	void applyMachineRegionWord(uint32_t regionWord);
+	void applyVdpModeWord(uint32_t modeWord);
 	auto baseRamUsedBytes() const -> uint32_t;
 	auto ramUsedBytes() const -> uint32_t;
 	auto ramTotalBytes() const -> uint32_t;
@@ -183,7 +184,7 @@ public:
 	auto vdpUsageWorkUnitsLast() const -> int { return machine.vdp.lastFrameCost(); }
 	auto vdpUsageFrameHeld() const -> bool { return machine.vdp.lastFrameHeld(); }
 	auto isDrawPending() const -> bool { return m_runtimeFailed || m_pendingCall == PendingCall::Entry; }
-	void refreshMemoryMap();
+	void refreshMemoryMapGlobals();
 	TimingState timing;
 	FrameSchedulerState frameScheduler;
 	CpuExecutionState cpuExecution;
@@ -205,7 +206,6 @@ private:
 	auto valueToString(const Value& value) const -> std::string;
 	void logDebugState() const;
 	void logLuaCallStack() const;
-	void refreshMemoryMapGlobals();
 
 	RuntimeOptions::RomSpan m_systemRomBytes;
 	RuntimeOptions::RomSpan m_cartRomBytes;
@@ -244,6 +244,7 @@ private:
 	static Value onMachineRegionReadThunk(void* context, uint32_t addr);
 	Value onMachineRegionRead(uint32_t addr) const;
 	static void onMachineRegionWriteThunk(void* context, uint32_t addr, Value value);
+	static void onVdpModeWriteThunk(void* context, uint32_t addr, Value value);
 	static void onLuaOutputCodepointWriteThunk(void* context, uint32_t addr, Value value);
 	static void onLuaOutputFlushWriteThunk(void* context, uint32_t addr, Value value);
 	void onLuaOutputFlushWrite(uint32_t addr, Value value);

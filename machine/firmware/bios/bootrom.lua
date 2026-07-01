@@ -1,6 +1,8 @@
 -- bootrom.lua
 -- bmsx system boot screen
 
+mem[sys_vdp_mode] = sys_vdp_mode_psx
+
 require('system/msx_colors')
 require('bios/base')
 require('bios/os')
@@ -118,18 +120,6 @@ local read_cart_header<const> = function(base)
 	}
 end
 
-local format_render_size_label<const> = function(render_size)
-	if not render_size then
-		return nil
-	end
-	local w<const> = render_size.width
-	local h<const> = render_size.height
-	if not w or not h then
-		return nil
-	end
-	return tostring(w) .. 'x' .. tostring(h)
-end
-
 local flatten_manifest<const> = function(manifest)
 	if not manifest then
 		return nil
@@ -142,7 +132,6 @@ local flatten_manifest<const> = function(manifest)
 		entry_path = manifest.lua and manifest.lua.entry_path,
 		namespace = machine.namespace,
 		vdp_class = machine.vdp_class,
-		render_size = format_render_size_label(machine.render_size),
 		input = manifest.input,
 	}
 end
@@ -154,7 +143,6 @@ local flatten_machine_manifest<const> = function(machine)
 	return {
 		namespace = machine.namespace,
 		vdp_class = machine.vdp_class,
-		render_size = format_render_size_label(machine.render_size),
 	}
 end
 
@@ -224,23 +212,19 @@ local build_info<const> = function()
 	-- local cart_short = cart_manifest and cart_manifest.short_name or '--'
 	local cart_rom<const> = cart_manifest and cart_manifest.rom_name or '--'
 	-- local cart_ns = cart_manifest and cart_manifest.namespace or '--'
-	local cart_view_label<const> = cart_manifest and cart_manifest.render_size or '--'
 	-- local cart_entry = cart_manifest and cart_manifest.entry_path or '--'
 	local cart_vdp_class<const> = cart_manifest and cart_manifest.vdp_class or '--'
 	local cart_entry_ready<const> = mem[cart_program_vector_addr] == cart_program_start_addr
 
-	local machine_view_label<const> = machine_manifest and machine_manifest.render_size or '--'
 	local machine_vdp_class<const> = machine_manifest and machine_manifest.vdp_class or '--'
 	local vram_total<const> = sys_vram_size
 
 	return {
-		machine_view = machine_view_label,
 		machine_vdp_class = machine_vdp_class,
 		cart_title = cart_title,
 		-- cart_short = cart_short,
 		cart_rom = cart_rom,
 		-- cart_ns = cart_ns,
-		cart_view = cart_view_label,
 		-- cart_canon = cart_canon,
 		-- cart_entry = cart_entry,
 		-- cart_input = cart_input,
@@ -310,7 +294,6 @@ local build_boot_content_lines<const> = function(info, cart_present, cursor, ela
 		{ label = 'VDP CLASS', value = info.machine_vdp_class, color = color_accent },
 		{ label = 'TOTAL RAM', value = info.hw_ram_total, color = color_info_total },
 		{ label = 'TOTAL VRAM', value = info.hw_vram_total, color = color_info_total },
-		{ label = 'VIEWPORT', value = info.machine_view, color = color_info_total },
 		-- { label = 'MAX CYCLES/FRAME', value = info.hw_max_cycles, color = color_accent },
 	}
 	local cart_specs<const> = {
@@ -459,8 +442,9 @@ end
 end
 
 render_boot_screen = function(scroll_delta)
-	local width<const> = machine_manifest.render_size.width
-	local height<const> = machine_manifest.render_size.height
+	local screen_wh<const> = mem[sys_vdp_screen_wh]
+	local width<const> = screen_wh & 0xffff
+	local height<const> = screen_wh >> 16
 	local left<const> = 8
 	local top<const> = content_top
 	local font<const> = font_module.get('default')
@@ -473,7 +457,7 @@ render_boot_screen = function(scroll_delta)
 	local cursor<const> = ((elapsed * 2) % 2 == 0) and '█' or ' '
 	local line_slots<const> = line_slots(width, left, font_width)
 	local content_lines<const> = build_boot_content_lines(info, cart_present, cursor, elapsed, line_slots)
-	local window_size<const> = window_size(machine_manifest.render_size.height, top, line_height, 1, 1)
+	local window_size<const> = window_size(height, top, line_height, 1, 1)
 	local scroll_top<const>, max_scroll<const>, visible_lines<const> = scroll_boot_lines(content_lines, window_size, scroll_delta)
 	local y = top + 1
 	local text_z<const> = 1

@@ -29,7 +29,7 @@ import {
 	VRAM_SYSTEM_SLOT_SIZE,
 } from '../memory/map';
 import { CART_ROM_MAGIC, type CartManifest, type MachineManifest } from '../../rompack/format';
-import { MACHINE_REGION_NTSC_WORD, MACHINE_REGION_PAL_WORD } from '../model_registry';
+import { MACHINE_REGION_NTSC_WORD, MACHINE_REGION_PAL_WORD, VDP_MODE_MSX1_WORD, VDP_MODE_MSX2_WORD, VDP_MODE_PSX_WORD } from '../model_registry';
 import {
 	GEO_CTRL_ABORT,
 	GEO_FAULT_ABORTED_BY_HOST,
@@ -344,12 +344,14 @@ import {
 	IO_VDP_SLOT_SECONDARY,
 	IO_VDP_FIFO,
 	IO_VDP_FIFO_CTRL,
+	IO_VDP_MODE,
 	IO_VDP_RD_DATA,
 	IO_VDP_RD_MODE,
 	IO_VDP_RD_STATUS,
 	IO_VDP_RD_SURFACE,
 	IO_VDP_RD_X,
 	IO_VDP_RD_Y,
+	IO_VDP_SCREEN_WH,
 	IO_VDP_STATUS,
 } from '../bus/io';
 import { VDP_PKT_END } from '../devices/vdp/registers';
@@ -425,6 +427,7 @@ import {
 	VDP_JTU_MATRIX_WORDS,
 	VDP_FIFO_CTRL_SEAL,
 	VDP_FAULT_NONE,
+	VDP_FAULT_MODE_UNSUPPORTED,
 	VDP_FAULT_RD_OOB,
 	VDP_FAULT_RD_SURFACE,
 	VDP_FAULT_RD_UNSUPPORTED_MODE,
@@ -492,18 +495,11 @@ export function valueToString(value: Value, stringPool: StringPool): string {
 // end repeated-sequence-acceptable
 
 function buildMachineManifestTable(runtime: Runtime, manifest: MachineManifest): Table {
-	const table = new Table(0, 3);
+	const table = new Table(0, 2);
 	if (manifest.namespace.length > 0) {
 		table.set(runtime.internString('namespace'), runtime.internString(manifest.namespace));
 	}
 	table.set(runtime.internString('vdp_class'), runtime.internString(manifest.vdp_class));
-	table.set(runtime.internString('vdp_mode'), manifest.vdp_mode);
-	if (manifest.render_size.width > 0 && manifest.render_size.height > 0) {
-		const renderSize = new Table(0, 2);
-		renderSize.set(runtime.internString('width'), manifest.render_size.width);
-		renderSize.set(runtime.internString('height'), manifest.render_size.height);
-		table.set(runtime.internString('render_size'), renderSize);
-	}
 	return table;
 }
 
@@ -613,6 +609,11 @@ export function seedLuaGlobals(runtime: Runtime): void {
 	runtime.setGlobal('sys_vdp_fifo', IO_VDP_FIFO);
 	runtime.setGlobal('sys_vdp_fifo_ctrl', IO_VDP_FIFO_CTRL);
 	runtime.setGlobal('sys_vdp_fifo_ctrl_seal', VDP_FIFO_CTRL_SEAL);
+	runtime.setGlobal('sys_vdp_mode', IO_VDP_MODE);
+	runtime.setGlobal('sys_vdp_screen_wh', IO_VDP_SCREEN_WH);
+	runtime.setGlobal('sys_vdp_mode_msx1', VDP_MODE_MSX1_WORD);
+	runtime.setGlobal('sys_vdp_mode_msx2', VDP_MODE_MSX2_WORD);
+	runtime.setGlobal('sys_vdp_mode_psx', VDP_MODE_PSX_WORD);
 	runtime.setGlobal('sys_vdp_slot_primary', VDP_SLOT_PRIMARY);
 	runtime.setGlobal('sys_vdp_slot_secondary', VDP_SLOT_SECONDARY);
 	runtime.setGlobal('sys_vdp_slot_system', VDP_SLOT_SYSTEM);
@@ -635,6 +636,7 @@ export function seedLuaGlobals(runtime: Runtime): void {
 	runtime.setGlobal('sys_vdp_status_submit_rejected', VDP_STATUS_SUBMIT_REJECTED);
 	runtime.setGlobal('sys_vdp_status_fault', VDP_STATUS_FAULT);
 	runtime.setGlobal('sys_vdp_fault_none', VDP_FAULT_NONE);
+	runtime.setGlobal('sys_vdp_fault_mode_unsupported', VDP_FAULT_MODE_UNSUPPORTED);
 	runtime.setGlobal('sys_vdp_fault_rd_unsupported_mode', VDP_FAULT_RD_UNSUPPORTED_MODE);
 	runtime.setGlobal('sys_vdp_fault_rd_surface', VDP_FAULT_RD_SURFACE);
 	runtime.setGlobal('sys_vdp_fault_rd_oob', VDP_FAULT_RD_OOB);

@@ -1,3 +1,4 @@
+mem[sys_vdp_mode] = sys_vdp_mode_msx2
 require('cartlib/prelude')
 local irq_mask_addr<const> = 0x08000110
 local irq_vblank<const> = 0x0010

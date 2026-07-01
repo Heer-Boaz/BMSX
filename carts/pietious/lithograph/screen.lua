@@ -38,7 +38,6 @@ function lithograph_screen:draw_screen()
 	if #lines > 0 then
 		local text_font<const> = self.text_font
 		local base_y<const> = room_tile_origin_y + (room_tile_size * 6)
-		local screen_width<const> = machine_manifest.render_size.width
 		for i = 1, #lines do
 			local line<const> = lines[i]
 			if string.len(line) > 0 then

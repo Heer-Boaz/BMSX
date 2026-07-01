@@ -1,3 +1,4 @@
+mem[sys_vdp_mode] = sys_vdp_mode_psx
 require('cartlib/prelude')
 require('globals')
 local story<const> = require('story')
@@ -246,8 +247,8 @@ end
 
 function new_game()
 	reset()
-	local w<const> = machine_manifest.render_size.width
-	local h<const> = machine_manifest.render_size.height
+	local w<const> = screen_width
+	local h<const> = screen_height
 	local line_height<const> = 16
 	local prompt_lines<const> = 1
 	local choice_lines<const> = 4

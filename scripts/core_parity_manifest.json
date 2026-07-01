@@ -589,14 +589,6 @@
 			"reason": "machine_model_registry_hardware_profile_contract"
 		},
 		{
-			"ts": "machine/ts/machine/specs.ts",
-			"cpp": [
-				"machine/cpp/machine/specs.h",
-				"machine/cpp/machine/specs.cpp"
-			],
-			"reason": "machine_manifest_specs_runtime_contract"
-		},
-		{
 			"ts": "machine/ts/machine/memory/specs.ts",
 			"cpp": [
 				"machine/cpp/machine/memory/specs.h",

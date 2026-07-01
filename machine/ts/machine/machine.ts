@@ -79,6 +79,7 @@ export class Machine {
 		this.geometryController.reset();
 		this.imgDecController.reset();
 		this.audioController.reset();
+		this.vdp.initializeVramSurfaces();
 		this.vdp.initializeRegisters();
 	}
 

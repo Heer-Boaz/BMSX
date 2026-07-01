@@ -13,6 +13,7 @@ local irq_ack_addr<const> = 0x0800010c
 local irq_mask_addr<const> = 0x08000110
 local irq_pending_flags = 0
 
+local vdp_mode_register<const>: *word = sys_vdp_mode
 local vdp_dither_register<const>: *word = sys_vdp_dither
 local irq_mask_register<const>: *word = irq_mask_addr
 local irq_ack_register<const>: *word = irq_ack_addr
@@ -42,6 +43,8 @@ local dma_ctrl_start<const> = 1
 local irq_dma_done<const> = 0x01
 local irq_dma_error<const> = 0x02
 local irq_vblank<const> = 0x10
+
+*vdp_mode_register = sys_vdp_mode_psx
 
 function irq(flags)
 	irq_pending_flags = irq_pending_flags | flags

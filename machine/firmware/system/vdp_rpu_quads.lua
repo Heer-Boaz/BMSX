@@ -13,10 +13,11 @@ struct rpu_quad_instance
 	color: word
 end
 
-local screen_width<const> = machine_manifest.render_size.width
-local screen_height<const> = machine_manifest.render_size.height
-local ndc_x_scale<const> = 2.0 / screen_width
-local ndc_y_scale<const> = 2.0 / screen_height
+local screen_wh
+local screen_width
+local screen_height
+local ndc_x_scale
+local ndc_y_scale
 
 local quad_vertex_stride<const> = sizeof(rpu_quad_vertex)
 local quad_vertex_count<const> = 4
@@ -71,12 +72,32 @@ local draw_count
 local current_pass_first_draw
 local current_pass_ops
 local current_pass_clear_color
+local frame_metrics_active
 
 instance_count = 0
 instance_batch_addr = instance_addr
 current_surface_desc = vdp_rpu.resource_none
 pass_count = 0
 draw_count = 0
+frame_metrics_active = false
+
+local refresh_screen_metrics<const> = function()
+	screen_wh = mem[sys_vdp_screen_wh]
+	screen_width = screen_wh & 0xffff
+	screen_height = screen_wh >> 16
+	ndc_x_scale = 2.0 / screen_width
+	ndc_y_scale = 2.0 / screen_height
+end
+
+refresh_screen_metrics()
+
+local begin_frame_metrics<const> = function()
+	if frame_metrics_active then
+		return
+	end
+	refresh_screen_metrics()
+	frame_metrics_active = true
+end
 
 local write_quad_vertices<const> = function()
 	local vertices<const>: *rpu_quad_vertex[quad_vertex_count] = quad_addr
@@ -235,6 +256,7 @@ function vdp_rpu_quads.set_slot_dim(slot, width, height)
 end
 
 function vdp_rpu_quads.clear_color(color)
+	begin_frame_metrics()
 	if instance_count ~= 0 then
 		flush_instances()
 	end
@@ -246,6 +268,7 @@ function vdp_rpu_quads.clear_color(color)
 end
 
 function vdp_rpu_quads.fill_rect_color(x0, y0, x1, y1, z, layer, color)
+	begin_frame_metrics()
 	switch_surface(vdp_rpu.resource_none)
 	write_instance(
 		x0 * ndc_x_scale - 1.0,
@@ -264,6 +287,7 @@ function vdp_rpu_quads.fill_rect_color(x0, y0, x1, y1, z, layer, color)
 end
 
 function vdp_rpu_quads.draw_line_color(x0, y0, x1, y1, z, layer, color, thickness)
+	begin_frame_metrics()
 	local dx<const> = x1 - x0
 	local dy<const> = y1 - y0
 	local half<const> = thickness * 0.5
@@ -308,6 +332,7 @@ function vdp_rpu_quads.draw_line_color(x0, y0, x1, y1, z, layer, color, thicknes
 end
 
 function vdp_rpu_quads.blit_source_affine_color(slot, u, v, w, h, origin_x, origin_y, z, layer, axis_xx, axis_xy, axis_yx, axis_yy, flip_flags, color)
+	begin_frame_metrics()
 	local surface_desc_addr<const> = slot_surface_desc[slot]
 	local inv_w<const> = 1.0 / surface_width[surface_desc_addr]
 	local inv_h<const> = 1.0 / surface_height[surface_desc_addr]
@@ -341,6 +366,7 @@ function vdp_rpu_quads.blit_source_affine_color(slot, u, v, w, h, origin_x, orig
 end
 
 function vdp_rpu_quads.blit_source_color(slot, u, v, w, h, x, y, z, layer, scale_x, scale_y, flip_flags, color)
+	begin_frame_metrics()
 	local texture_surface_desc_addr<const> = slot_surface_desc[slot]
 	local inv_w<const> = 1.0 / surface_width[texture_surface_desc_addr]
 	local inv_h<const> = 1.0 / surface_height[texture_surface_desc_addr]
@@ -374,6 +400,7 @@ function vdp_rpu_quads.blit_source_color(slot, u, v, w, h, x, y, z, layer, scale
 end
 
 function vdp_rpu_quads.tile_run_sources(sources, tile_count, cols, tile_size, origin_x, origin_y, empty_source)
+	begin_frame_metrics()
 	local index = 1
 	while index <= tile_count do
 		local source<const> = sources[index]
@@ -426,6 +453,7 @@ function vdp_rpu_quads.finish_frame()
 	end
 	pass_count = 0
 	draw_count = 0
+	frame_metrics_active = false
 end
 
 return vdp_rpu_quads

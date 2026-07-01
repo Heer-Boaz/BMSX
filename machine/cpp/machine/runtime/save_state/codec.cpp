@@ -736,6 +736,7 @@ VdpReadbackState decodeVdpReadbackState(const BinValue& value, const char* label
 
 BinValue encodeVdpState(const VdpState& state) {
 	BinObject object;
+	object["vdpModeWord"] = static_cast<i64>(state.vdpModeWord);
 	object["xf"] = encodeVdpXfState(state.xf);
 	object["vdpRegisterWords"] = encodeFixedArray(state.vdpRegisterWords, encodeScalar<i64, u32>);
 	object["buildFrame"] = encodeBuildingFrameState(state.buildFrame);
@@ -758,6 +759,7 @@ BinValue encodeVdpState(const VdpState& state) {
 VdpState decodeVdpState(const BinValue& value, const char* label) {
 	const BinObject& object = requireObject(value, label);
 	VdpState state;
+	state.vdpModeWord = requireU32(requireField(object, "vdpModeWord", label), "machine.vdp.vdpModeWord");
 	state.xf = decodeVdpXfState(requireField(object, "xf", label), "machine.vdp.xf");
 	state.vdpRegisterWords = decodeU32Array<VDP_REGISTER_COUNT>(requireField(object, "vdpRegisterWords", label), "machine.vdp.vdpRegisterWords");
 	state.buildFrame = decodeBuildingFrameState(requireField(object, "buildFrame", label), "machine.vdp.buildFrame");
@@ -826,6 +828,7 @@ VdpSaveState decodeVdpSaveState(const BinValue& value, const char* label) {
 	const BinObject& object = requireObject(value, label);
 	const VdpState base = decodeVdpState(value, label);
 	VdpSaveState state;
+	state.vdpModeWord = base.vdpModeWord;
 	state.xf = base.xf;
 	state.vdpRegisterWords = base.vdpRegisterWords;
 	state.ditherType = base.ditherType;

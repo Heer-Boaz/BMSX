@@ -474,11 +474,9 @@ Internal units:
   MSX2 256×212, mode 2 = PSX 320×240. The cart/firmware owner programs this
   VDP mode explicitly during startup, like real VDP register programming; it is
   not selected by a ROM manifest field.
-- Open slice: exposing `machine_manifest.vdp_mode` and derived
-  `machine_manifest.render_size` to guest Lua is temporary bullshit. The VDP
-  mode and visible dimensions belong to the VDP register contract, not to a Lua
-  manifest object. Remove both guest manifest fields after carts/BIOS program
-  their VDP mode directly and stop querying manifest-derived dimensions.
+- Guest manifests do not expose `vdp_mode` or derived `render_size`. The live
+  visible dimensions are the VDP `sys_vdp_screen_wh` register word, updated by
+  the same VDP mode write that resizes the framebuffer surface.
 - `registers` owns the raw VDP transform, surface, mode, dither, and
   control words; shared `machine/devices/device_status` owns VDP
   status/fault/code/detail register images and the fault-ack write edge.

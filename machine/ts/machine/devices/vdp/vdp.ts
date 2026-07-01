@@ -8,6 +8,7 @@ import {
 	VDP_FAULT_RD_OOB,
 	VDP_FAULT_RD_SURFACE,
 	VDP_FAULT_STREAM_BAD_PACKET,
+	VDP_FAULT_MODE_UNSUPPORTED,
 	VDP_FAULT_SUBMIT_STATE,
 	VDP_FAULT_CMD_BAD_DOORBELL,
 	VDP_FAULT_SUBMIT_BUSY,
@@ -33,7 +34,9 @@ import {
 	IO_VDP_CMD,
 	IO_VDP_FIFO,
 	IO_VDP_FIFO_CTRL,
+	IO_VDP_MODE,
 	IO_VDP_REG0,
+	IO_VDP_SCREEN_WH,
 	IO_VDP_SLOT_PRIMARY,
 	IO_VDP_SLOT_SECONDARY,
 	IO_VDP_RD_DATA,
@@ -74,7 +77,18 @@ import {
 import { createVdpRpuFrameOutput, VDP_RPU_PACKET_KIND, VdpRpuUnit } from './rpu';
 import { VdpVoutUnit } from './vout';
 import { vdpUnitPacketHasFlags, vdpUnitPacketPayloadWords } from './packet';
-import { packedHigh16, packedLow16 } from '../../common/word';
+import { packLowHigh16, packedHigh16, packedLow16 } from '../../common/word';
+import {
+	getMachineVdpModeProfile,
+	PSX_MODEL_PROFILE,
+	VDP_MODE_MSX1_PROFILE,
+	VDP_MODE_MSX1_WORD,
+	VDP_MODE_MSX2_PROFILE,
+	VDP_MODE_MSX2_WORD,
+	VDP_MODE_PSX_PROFILE,
+	VDP_MODE_PSX_WORD,
+	type MachineVdpModeProfile,
+} from '../../model_registry';
 import {
 	VDP_DEX_FRAME_DIRECT_OPEN,
 	VDP_DEX_FRAME_IDLE,
@@ -178,6 +192,7 @@ export class VDP implements VramWriteSink {
 	private readonly streamIngress = new VdpStreamIngressUnit();
 	private readonly slotSurfacePort: VdpSlotSurfacePort;
 	private readonly unitRegisterPort: VdpUnitRegisterPort;
+	private vdpModeWord = PSX_MODEL_PROFILE.biosVdpMode;
 	private m_lastFrameCommitted = true;
 	private m_lastFrameCost = 0;
 	private m_lastFrameHeld = false;
@@ -224,6 +239,32 @@ export class VDP implements VramWriteSink {
 	public resetStatus(): void {
 		this.fault.resetStatus();
 		this.refreshSubmitBusyStatus();
+	}
+
+	public writeModeWord(word: number): void {
+		switch (word >>> 0) {
+			case VDP_MODE_MSX1_WORD:
+				this.applyVdpModeProfile(VDP_MODE_MSX1_PROFILE);
+				break;
+			case VDP_MODE_MSX2_WORD:
+				this.applyVdpModeProfile(VDP_MODE_MSX2_PROFILE);
+				break;
+			case VDP_MODE_PSX_WORD:
+				this.applyVdpModeProfile(VDP_MODE_PSX_PROFILE);
+				break;
+			default:
+				this.fault.raise(VDP_FAULT_MODE_UNSUPPORTED, word >>> 0);
+				this.memory.writeIoValue(IO_VDP_MODE, this.vdpModeWord);
+		}
+	}
+
+	private applyVdpModeProfile(profile: MachineVdpModeProfile): void {
+		this.vdpModeWord = profile.mode;
+		const screenWh = packLowHigh16(profile.renderWidth, profile.renderHeight);
+		this.memory.writeIoValue(IO_VDP_MODE, profile.mode);
+		this.memory.writeIoValue(IO_VDP_SCREEN_WH, screenWh);
+		const frameBufferSlot = this.vram.findSurface(VDP_RD_SURFACE_FRAMEBUFFER)!;
+		this.resizeVramSlot(frameBufferSlot, profile.renderWidth, profile.renderHeight, screenWh);
 	}
 
 	private resetVdpRegisters(): void {
@@ -974,12 +1015,8 @@ export class VDP implements VramWriteSink {
 	}
 
 
-	private commitActiveVisualState(): void {
-		this.vout.presentFrame(this.activeFrame);
-	}
-
 	private finishCommittedFrameOnVblankEdge(): void {
-		this.commitActiveVisualState();
+		this.vout.presentFrame(this.activeFrame);
 		this.m_lastFrameCommitted = true;
 		this.m_lastFrameHeld = false;
 		resetSubmittedFrameSlot(this.activeFrame);
@@ -1171,12 +1208,10 @@ export class VDP implements VramWriteSink {
 
 	public initializeRegisters(): void {
 		const dither = 0;
-		const frameBufferSlot = this.vram.findSurface(VDP_RD_SURFACE_FRAMEBUFFER);
-		if (frameBufferSlot !== null) {
-			this.fbm.configure(frameBufferSlot.surfaceWidth, frameBufferSlot.surfaceHeight);
-		} else {
-			this.fbm.configure(this.frameBufferSize.width, this.frameBufferSize.height);
-		}
+		this.vdpModeWord = PSX_MODEL_PROFILE.biosVdpMode;
+		const vdpModeProfile = getMachineVdpModeProfile(this.vdpModeWord);
+		const frameBufferSlot = this.vram.findSurface(VDP_RD_SURFACE_FRAMEBUFFER)!;
+		this.fbm.configure(frameBufferSlot.surfaceWidth, frameBufferSlot.surfaceHeight);
 		this.resetQueuedFrameState();
 		this.resetIngressState();
 		this.resetStatus();
@@ -1187,6 +1222,8 @@ export class VDP implements VramWriteSink {
 		this.memory.writeIoValue(IO_VDP_DITHER, dither);
 		this.memory.writeIoValue(IO_VDP_SLOT_PRIMARY, VDP_SLOT_NONE);
 		this.memory.writeIoValue(IO_VDP_SLOT_SECONDARY, VDP_SLOT_NONE);
+		this.memory.writeIoValue(IO_VDP_MODE, this.vdpModeWord);
+		this.memory.writeIoValue(IO_VDP_SCREEN_WH, packLowHigh16(vdpModeProfile.renderWidth, vdpModeProfile.renderHeight));
 		this.memory.writeIoValue(IO_VDP_CMD, 0);
 		this.resetVdpRegisters();
 		this.xf.reset();
@@ -1201,6 +1238,7 @@ export class VDP implements VramWriteSink {
 	}
 
 	public captureVisualStateFields(state: VdpState): void {
+		state.vdpModeWord = this.vdpModeWord;
 		state.xf = this.xf.captureState();
 		const vdpRegisterWords = state.vdpRegisterWords;
 		for (let index = 0; index < VDP_REGISTER_COUNT; index += 1) {
@@ -1250,6 +1288,7 @@ export class VDP implements VramWriteSink {
 	}
 
 	public restoreState(state: VdpState): void {
+		this.writeModeWord(state.vdpModeWord);
 		this.xf.restoreState(state.xf);
 		for (let index = 0; index < VDP_REGISTER_COUNT; index += 1) {
 			this.vdpRegisters[index] = state.vdpRegisterWords[index]!;

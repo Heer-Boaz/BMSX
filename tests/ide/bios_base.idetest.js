@@ -157,16 +157,23 @@ t.assert(primitiveValues[16] === 'vm-error', `pcall(error, message) should prese
 });
 
 const manifestValues = t.evaluateLua(`
-return machine_manifest.vdp_mode,
-	machine_manifest.render_size.width,
-	machine_manifest.render_size.height,
-	cart_manifest.machine.vdp_mode,
-	cart_manifest.machine.render_size.width,
-	cart_manifest.machine.render_size.height
+local screen_wh<const> = mem[sys_vdp_screen_wh]
+return mem[sys_vdp_mode],
+	screen_wh & 0xffff,
+	screen_wh >> 16,
+	machine_manifest.vdp_class,
+	cart_manifest.machine.vdp_class,
+	machine_manifest.vdp_mode == nil,
+	machine_manifest.render_size == nil,
+	cart_manifest.machine.vdp_mode == nil,
+	cart_manifest.machine.render_size == nil
 `);
 t.assert(manifestValues[0] === 2, `bare_metal_cart should boot VDP mode 2, got ${manifestValues[0]}`);
-t.assert(manifestValues[1] === 320, `machine_manifest width should derive from mode 2, got ${manifestValues[1]}`);
-t.assert(manifestValues[2] === 240, `machine_manifest height should derive from mode 2, got ${manifestValues[2]}`);
-t.assert(manifestValues[3] === 2, `cart_manifest machine VDP mode should match active machine, got ${manifestValues[3]}`);
-t.assert(manifestValues[4] === 320, `cart_manifest width should derive from mode 2, got ${manifestValues[4]}`);
-t.assert(manifestValues[5] === 240, `cart_manifest height should derive from mode 2, got ${manifestValues[5]}`);
+t.assert(manifestValues[1] === 320, `sys_vdp_screen_wh width should derive from mode 2, got ${manifestValues[1]}`);
+t.assert(manifestValues[2] === 240, `sys_vdp_screen_wh height should derive from mode 2, got ${manifestValues[2]}`);
+t.assert(manifestValues[3] === 'psx', `machine_manifest VDP class should remain psx, got ${manifestValues[3]}`);
+t.assert(manifestValues[4] === 'psx', `cart_manifest machine VDP class should remain psx, got ${manifestValues[4]}`);
+t.assert(manifestValues[5] === true, 'machine_manifest must not expose vdp_mode');
+t.assert(manifestValues[6] === true, 'machine_manifest must not expose render_size');
+t.assert(manifestValues[7] === true, 'cart_manifest.machine must not expose vdp_mode');
+t.assert(manifestValues[8] === true, 'cart_manifest.machine must not expose render_size');

@@ -14,6 +14,7 @@
 namespace bmsx {
 
 struct VdpState {
+	u32 vdpModeWord = 0;
 	VdpXfState xf{};
 	std::array<u32, VDP_REGISTER_COUNT> vdpRegisterWords{};
 	VdpBuildingFrameSaveState buildFrame;

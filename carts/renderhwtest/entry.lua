@@ -1,3 +1,4 @@
+mem[sys_vdp_mode] = sys_vdp_mode_msx2
 require('cartlib/prelude')
 
 local frame = 0

@@ -1,5 +1,5 @@
 import { machineManager } from '../../core/machine_manager';
-import { resolveRuntimeRenderSize } from '../../machine/specs';
+import { getMachineVdpModeProfile, PSX_MODEL_PROFILE } from '../../machine/model_registry';
 import type { Runtime } from '../../machine/runtime/runtime';
 import { applyWorkspaceOverridesToCart, applyWorkspaceOverridesToRegistry } from '../workspace/workspace';
 import * as workbenchMode from '../workbench/mode';
@@ -27,7 +27,8 @@ export async function startPreparedRuntime(runtime: Runtime): Promise<void> {
 		includeServer: true,
 		projectRootPath: runtime.systemProjectRootPath,
 	});
-	workbenchMode.initializeIdeFeatures(runtime, resolveRuntimeRenderSize(runtime.activeMachineManifest));
+	const vdpMode = getMachineVdpModeProfile(PSX_MODEL_PROFILE.biosVdpMode);
+	workbenchMode.initializeIdeFeatures(runtime, { width: vdpMode.renderWidth, height: vdpMode.renderHeight });
 	runtime.enterSystemFirmware();
 	await bootPreparedRuntimeProgram(runtime);
 }

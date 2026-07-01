@@ -5,8 +5,6 @@
 
 namespace bmsx {
 
-struct MachineManifest;
-
-MemoryMapSpecs resolveRuntimeMemoryMapSpecs(const MachineManifest& machine);
+MemoryMapSpecs resolveRuntimeMemoryMapSpecs();
 
 } // namespace bmsx

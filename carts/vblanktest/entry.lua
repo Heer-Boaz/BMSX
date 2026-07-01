@@ -1,3 +1,4 @@
+mem[sys_vdp_mode] = sys_vdp_mode_msx2
 require('cartlib/prelude')
 local irq_flags_addr<const> = 0x08000108
 local irq_mask_addr<const> = 0x08000110
@@ -13,19 +14,14 @@ local vblank_cycles = 0
 local full_frame_vblank = false
 
 local resolve_vblank_cycles<const> = function()
-	local render_height<const> = machine_manifest.render_size.height
-	if type(render_height) ~= 'number' or render_height <= 0 then
-		return nil
-	end
+	local screen_wh<const> = mem[sys_vdp_screen_wh]
+	local render_height<const> = screen_wh >> 16
 	local active_display<const> = (cycles_per_frame // (render_height + 1)) * render_height
 	return cycles_per_frame - active_display
 end
 
 local init_vblank_cycles<const> = function()
 	vblank_cycles = resolve_vblank_cycles()
-	if vblank_cycles == nil then
-		fail('machine.render_size.height is required and must be a positive integer')
-	end
 end
 
 local fail<const> = function(msg)

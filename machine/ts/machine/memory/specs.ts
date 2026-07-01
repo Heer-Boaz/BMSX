@@ -1,5 +1,4 @@
-import type { MachineManifest } from '../../rompack/format';
-import { PSX_MODEL_PROFILE } from '../model_registry';
+import { getMachineVdpModeProfile, PSX_MODEL_PROFILE } from '../model_registry';
 import {
 	DEFAULT_GEO_SCRATCH_SIZE,
 	BASE_RAM_USED_SIZE,
@@ -8,12 +7,11 @@ import {
 	VDP_STREAM_BUFFER_SIZE,
 	type MemoryMapSpecs,
 } from './map';
-import { resolveRuntimeRenderSize } from '../specs';
 
-export function resolveRuntimeMemoryMapSpecs(machine: MachineManifest): MemoryMapSpecs {
-	const renderSize = resolveRuntimeRenderSize(machine);
-	const frameBufferWidth = renderSize.width;
-	const frameBufferHeight = renderSize.height;
+export function resolveRuntimeMemoryMapSpecs(): MemoryMapSpecs {
+	const renderSize = getMachineVdpModeProfile(PSX_MODEL_PROFILE.biosVdpMode);
+	const frameBufferWidth = renderSize.renderWidth;
+	const frameBufferHeight = renderSize.renderHeight;
 	const frameBufferBytes = frameBufferWidth * frameBufferHeight * 4;
 	const ramBytes = PSX_MODEL_PROFILE.ramBytes;
 	const footprintMiB = (ramBytes / (1024 * 1024)).toFixed(2);

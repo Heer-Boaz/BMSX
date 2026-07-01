@@ -1,3 +1,4 @@
+mem[sys_vdp_mode] = sys_vdp_mode_msx1
 require('cartlib/prelude')
 require('constants')
 local enemy_registry<const> = require('enemy/registry')

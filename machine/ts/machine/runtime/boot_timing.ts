@@ -1,9 +1,7 @@
-import type { MachineManifest } from '../../rompack/format';
 import type { Runtime } from './runtime';
-import { resolveRuntimeRenderSize } from '../specs';
 import { calcCyclesPerFrameScaled, resolveVblankCycles } from './timing';
 import { setFrameTiming, setTransferRates } from './timing/config';
-import { getMachineRegionTimingForWord, PSX_MODEL_PROFILE, PSX_VDP_CLASS_PROFILE } from '../model_registry';
+import { getMachineRegionTimingForWord, getMachineVdpModeProfile, PSX_MODEL_PROFILE, PSX_VDP_CLASS_PROFILE } from '../model_registry';
 
 export type ResolvedRuntimeTiming = {
 	viewportWidth: number;
@@ -22,16 +20,14 @@ export type ResolvedRuntimeTiming = {
 };
 
 export function resolveRuntimeTiming(
-	viewportMachine: MachineManifest,
-	timingMachine: MachineManifest,
 	cpuHz: number,
 	regionWord: number,
 ): ResolvedRuntimeTiming {
-	const renderSize = resolveRuntimeRenderSize(viewportMachine);
+	const renderSize = getMachineVdpModeProfile(PSX_MODEL_PROFILE.biosVdpMode);
 	const regionTiming = getMachineRegionTimingForWord(regionWord);
 	return {
-		viewportWidth: renderSize.width,
-		viewportHeight: renderSize.height,
+		viewportWidth: renderSize.renderWidth,
+		viewportHeight: renderSize.renderHeight,
 		regionWord,
 		ufpsScaled: regionTiming.refreshUfpsScaled,
 		totalScanlines: regionTiming.totalScanlines,
@@ -42,7 +38,7 @@ export function resolveRuntimeTiming(
 		vdpWorkUnitsPerSec: PSX_VDP_CLASS_PROFILE.vdpWorkUnitsPerSec,
 		geoWorkUnitsPerSec: PSX_VDP_CLASS_PROFILE.geoWorkUnitsPerSec,
 		cycleBudgetPerFrame: calcCyclesPerFrameScaled(cpuHz, regionTiming.refreshUfpsScaled),
-		vblankCycles: resolveVblankCycles(cpuHz, regionTiming.refreshUfpsScaled, regionTiming.totalScanlines, timingMachine.render_size.height),
+		vblankCycles: resolveVblankCycles(cpuHz, regionTiming.refreshUfpsScaled, regionTiming.totalScanlines, renderSize.renderHeight),
 	};
 }
 

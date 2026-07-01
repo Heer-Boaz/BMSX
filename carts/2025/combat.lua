@@ -366,8 +366,8 @@ function combat.define_fsm()
 			overlay.visible = true
 			overlay.x = 0
 			overlay.y = 0
-			overlay.width = machine_manifest.render_size.width
-			overlay.height = machine_manifest.render_size.height
+			overlay.width = screen_width
+			overlay.height = screen_height
 			overlay.color = 0
 			self:play_timeline(combat_fade_timeline_id, { rewind = true, snap_to_start = true, target = { overlay = overlay } })
 		end,
@@ -397,8 +397,8 @@ function combat.define_fsm()
 			overlay.visible = true
 			overlay.x = 0
 			overlay.y = 0
-			overlay.width = machine_manifest.render_size.width
-			overlay.height = machine_manifest.render_size.height
+			overlay.width = screen_width
+			overlay.height = screen_height
 			overlay.color = 0
 			self:play_timeline(combat_fade_timeline_id, { rewind = true, snap_to_start = true, target = { overlay = overlay } })
 		end,
@@ -429,24 +429,24 @@ function combat.define_fsm()
 			monster.z = 200
 			monster.sprite_component.scale = { x = 1, y = 1 }
 
-			monster.x = (machine_manifest.render_size.width * 0.65) - (monster.sx / 2)
-			monster.y = (machine_manifest.render_size.height * 0.25) - (monster.sy / 3)
+			monster.x = (screen_width * 0.65) - (monster.sx / 2)
+			monster.y = (screen_height * 0.25) - (monster.sy / 3)
 
 				self.combat_monster_base_x = monster.x
 				self.combat_monster_base_y = monster.y
-				self.combat_monster_start_x = (machine_manifest.render_size.width * 0.2) - (monster.sx / 2)
+				self.combat_monster_start_x = (screen_width * 0.2) - (monster.sx / 2)
 				self.combat_monster_start_y = self.combat_monster_base_y + combat_intro_monster_start_y_offset
-				self.combat_monster_start_scale = math.max(1, machine_manifest.render_size.width / monster.sx, machine_manifest.render_size.height / monster.sy)
+				self.combat_monster_start_scale = math.max(1, screen_width / monster.sx, screen_height / monster.sy)
 
 			local maya_a<const> = oget(combat_maya_a_id)
 			maya_a:gfx('maya_a')
 			maya_a.visible = false
 			maya_a.x = 0
-			maya_a.y = machine_manifest.render_size.height - maya_a.sy
+			maya_a.y = screen_height - maya_a.sy
 			maya_a.z = 300
 			self.combat_maya_a_base_x = maya_a.x
 			self.combat_maya_a_base_y = maya_a.y
-			self.combat_maya_a_start_x = machine_manifest.render_size.width
+			self.combat_maya_a_start_x = screen_width
 			self.combat_maya_a_start_scale = combat_intro_maya_a_scale_ratio
 
 			local all_out<const> = oget(combat_all_out_id)
@@ -459,8 +459,8 @@ function combat.define_fsm()
 			maya_b:gfx('maya_b')
 			maya_b.visible = true
 			maya_b.sprite_component.color = p3_white_color
-			maya_b.x = machine_manifest.render_size.width - maya_b.sx
-			maya_b.y = machine_manifest.render_size.height - maya_b.sy
+			maya_b.x = screen_width - maya_b.sx
+			maya_b.y = screen_height - maya_b.sy
 			maya_b.z = 300
 			self.combat_maya_b_start_x = maya_b.x
 			self.combat_maya_b_base_y = maya_b.y
@@ -762,8 +762,8 @@ function combat.define_fsm()
 				overlay.visible = true
 				overlay.x = 0
 				overlay.y = 0
-					overlay.width = machine_manifest.render_size.width
-					overlay.height = machine_manifest.render_size.height
+					overlay.width = screen_width
+					overlay.height = screen_height
 					overlay.color = 0
 			local targets<const> = {
 				monster = monster,
@@ -857,8 +857,8 @@ function combat.define_fsm()
 				overlay.visible = true
 				overlay.x = 0
 				overlay.y = 0
-					overlay.width = machine_manifest.render_size.width
-					overlay.height = machine_manifest.render_size.height
+					overlay.width = screen_width
+					overlay.height = screen_height
 					overlay.color = 0
 			local targets<const> = {
 				monster = monster,
@@ -936,8 +936,8 @@ function combat.define_fsm()
 			portrait.visible = true
 			portrait.z = 750
 			portrait.sprite_component.scale = { x = 1, y = 1 }
-			local target_x<const> = (machine_manifest.render_size.width * 0.08) // 1
-			local target_y<const> = (machine_manifest.render_size.height - portrait.sy) // 1
+			local target_x<const> = (screen_width * 0.08) // 1
+			local target_y<const> = (screen_height - portrait.sy) // 1
 			self:play_timeline(combat_all_out_prompt_timeline_id, {
 				rewind = true,
 				snap_to_start = true,
@@ -1145,17 +1145,17 @@ function combat.define_fsm()
 				bg.visible = true
 				bg.x = 0
 				bg.y = 0
-				bg.width = machine_manifest.render_size.width
-				bg.height = machine_manifest.render_size.height
+				bg.width = screen_width
+				bg.height = screen_height
 				bg.color = combat_results_bg_color & 0x00ffffff
 
 			local maya_b<const> = oget(combat_maya_b_id)
 			maya_b:gfx('maya_b')
 			maya_b.visible = true
-			self.combat_results_maya_target_x = machine_manifest.render_size.width - maya_b.sx
-			self.combat_results_maya_start_x = machine_manifest.render_size.width
+			self.combat_results_maya_target_x = screen_width - maya_b.sx
+			self.combat_results_maya_start_x = screen_width
 			maya_b.x = self.combat_results_maya_start_x
-			maya_b.y = machine_manifest.render_size.height - maya_b.sy
+			maya_b.y = screen_height - maya_b.sy
 			maya_b.sprite_component.color = p3_white_color & 0x00ffffff
 			maya_b.z = 300
 
@@ -1168,7 +1168,7 @@ function combat.define_fsm()
 			local results<const> = oget(text_results_id)
 			results.text_color = p3_white_color & 0x00ffffff
 			self.combat_results_text_target_x = results.centered_block_x / 2
-			self.combat_results_text_start_x = -machine_manifest.render_size.width
+			self.combat_results_text_start_x = -screen_width
 			results.centered_block_x = self.combat_results_text_start_x
 			return '/combat_results_fade_in'
 		end,

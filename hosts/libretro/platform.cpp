@@ -6,7 +6,6 @@
 #include "core/machine_manager.h"
 #include "common/primitives.h"
 #include "core/rom_boot_manager.h"
-#include "core/system.h"
 #include "input/manager.h"
 #include "input/gamepad.h"
 #include "input/keyboard.h"
@@ -133,10 +132,10 @@ LibretroPlatform::LibretroPlatform(BackendType backend_type)
 		m_backend_type = BackendType::Software;
 	}
 #endif
-	const MachineManifest& systemMachine = defaultSystemMachineManifest();
+	const MachineVdpModeProfile& systemVdpMode = getMachineVdpModeProfile(PSX_MODEL_PROFILE.biosVdpMode);
 	m_framebuffer.resize(
-		static_cast<unsigned>(systemMachine.viewportWidth),
-		static_cast<unsigned>(systemMachine.viewportHeight)
+		static_cast<unsigned>(systemVdpMode.renderWidth),
+		static_cast<unsigned>(systemVdpMode.renderHeight)
 	);
 
 	m_audio_buffer.reserve(kAudioReserveFrames);
@@ -376,31 +375,6 @@ void LibretroPlatform::setControllerDevice(unsigned port, unsigned device) {
 	if (port < m_controller_devices.size()) {
 		m_controller_devices[port] = device;
 	}
-}
-
-void LibretroPlatform::applyManifestViewport() {
-	const auto& manifest = m_machine_manager->machineManifest();
-	m_pending_viewport = {
-		static_cast<f32>(manifest.viewportWidth),
-		static_cast<f32>(manifest.viewportHeight)
-	};
-	m_has_pending_viewport = true;
-	if (!m_has_av_info) {
-		return;
-	}
-
-	retro_system_av_info nextInfo = m_av_info;
-	auto& geometry = nextInfo.geometry;
-	geometry.base_width = static_cast<unsigned>(m_pending_viewport.x);
-	geometry.base_height = static_cast<unsigned>(m_pending_viewport.y);
-	geometry.max_width = geometry.base_width;
-	geometry.max_height = geometry.base_height;
-	geometry.aspect_ratio = static_cast<float>(geometry.base_width)
-		/ static_cast<float>(geometry.base_height);
-
-	m_has_pending_viewport = false;
-	m_environ_cb(RETRO_ENVIRONMENT_SET_GEOMETRY, &geometry);
-	setAVInfo(nextInfo);
 }
 
 bool LibretroPlatform::loadRom(const uint8_t* data, size_t size) {

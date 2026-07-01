@@ -1031,7 +1031,6 @@ setmetatable(screenboundarycomponent, { __index = positionupdateaxiscomponent })
 --   When set, the boundarysystem uses these values instead of the viewport dimensions.
 --   This is used to express e.g. a room with a HUD strip at the top:
 --     bounds = { left=0, top=32, right=256, bottom=224 }
---   Any field omitted falls back to the viewport edge for that side.
 --   Boundary values are resolved once at construction and stored as boundary_left/top/right/bottom,
 --   so the boundarysystem hot loop has no per-frame table lookups or conditionals.
 local init_screenboundary_fields<const> = function(self, opts)
@@ -1040,11 +1039,18 @@ local init_screenboundary_fields<const> = function(self, opts)
 	if opts.stick_to_edge ~= nil then
 		self.stick_to_edge = opts.stick_to_edge
 	end
+	local screen_wh<const> = mem[sys_vdp_screen_wh]
+	self.boundary_left = 0
+	self.boundary_top = 0
+	self.boundary_right = screen_wh & 0xffff
+	self.boundary_bottom = screen_wh >> 16
 	local bounds<const> = opts.bounds
-	self.boundary_left = bounds and bounds.left or 0
-	self.boundary_top = bounds and bounds.top or 0
-	self.boundary_right = bounds and bounds.right or machine_manifest.render_size.width
-	self.boundary_bottom = bounds and bounds.bottom or machine_manifest.render_size.height
+	if bounds then
+		self.boundary_left = bounds.left
+		self.boundary_top = bounds.top
+		self.boundary_right = bounds.right
+		self.boundary_bottom = bounds.bottom
+	end
 	return self
 end
 

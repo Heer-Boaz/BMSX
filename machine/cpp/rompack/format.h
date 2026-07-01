@@ -64,10 +64,7 @@ CartRomHeader parseCartHeader(const u8* data, size_t size);
 
 struct MachineManifest {
 	std::string namespaceName;
-	i32 viewportWidth = 0;
-	i32 viewportHeight = 0;
 	MachineVdpClass vdpClass = MachineVdpClass::Psx;
-	MachineVdpMode vdpMode = MachineVdpMode::Psx;
 };
 
 /* ============================================================================

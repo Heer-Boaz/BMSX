@@ -185,7 +185,6 @@ public:
 	void setAVInfo(const retro_system_av_info& info);
 	void setFrameTimeUsec(retro_usec_t usec);
 	void setControllerDevice(unsigned port, unsigned device);
-	void applyManifestViewport();
 
 	// ROM management
 	bool loadRom(const uint8_t* data, size_t size);
@@ -253,8 +252,6 @@ private:
 	// AV info
 	retro_system_av_info m_av_info{};
 	bool m_has_av_info = false;
-	bool m_has_pending_viewport = false;
-	Vec2 m_pending_viewport;
 	double m_frame_time_sec;
 	BackendType m_backend_type = BackendType::Software;
 	retro_hw_get_current_framebuffer_t m_hw_get_current_framebuffer = nullptr;

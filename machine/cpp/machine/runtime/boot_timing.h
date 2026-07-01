@@ -5,8 +5,6 @@
 namespace bmsx {
 
 class Runtime;
-struct MachineManifest;
-
 struct ResolvedRuntimeTiming {
 	i32 viewportWidth;
 	i32 viewportHeight;
@@ -24,8 +22,6 @@ struct ResolvedRuntimeTiming {
 };
 
 ResolvedRuntimeTiming resolveRuntimeTiming(
-	const MachineManifest& viewportMachine,
-	const MachineManifest& timingMachine,
 	i64 cpuHz,
 	uint32_t regionWord
 );

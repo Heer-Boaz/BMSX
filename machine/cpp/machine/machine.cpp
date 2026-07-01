@@ -35,6 +35,7 @@ void Machine::resetDevices() {
 	geometryController.reset();
 	imgDecController.reset();
 	audioController.reset();
+	vdp.initializeVramSurfaces();
 	vdp.initializeRegisters();
 }
 

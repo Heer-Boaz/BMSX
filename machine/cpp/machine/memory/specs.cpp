@@ -1,22 +1,20 @@
 #include "machine/memory/specs.h"
 
 #include "machine/model_registry.h"
-#include "machine/specs.h"
-#include "rompack/format.h"
 
 #include <iomanip>
 #include <iostream>
 
 namespace bmsx {
 
-MemoryMapSpecs resolveRuntimeMemoryMapSpecs(const MachineManifest& machine) {
+MemoryMapSpecs resolveRuntimeMemoryMapSpecs() {
 	MemoryMapSpecs config;
 	config.slotBytes = static_cast<uint32_t>(PSX_MODEL_PROFILE.slotBytes);
 	config.systemSlotBytes = static_cast<uint32_t>(PSX_MODEL_PROFILE.slotBytes);
 	config.stagingBytes = static_cast<uint32_t>(PSX_MODEL_PROFILE.stagingBytes);
-	const RuntimeRenderSize renderSize = resolveRuntimeRenderSize(machine);
-	const uint32_t frameBufferWidth = static_cast<uint32_t>(renderSize.width);
-	const uint32_t frameBufferHeight = static_cast<uint32_t>(renderSize.height);
+	const MachineVdpModeProfile& renderSize = getMachineVdpModeProfile(PSX_MODEL_PROFILE.biosVdpMode);
+	const uint32_t frameBufferWidth = static_cast<uint32_t>(renderSize.renderWidth);
+	const uint32_t frameBufferHeight = static_cast<uint32_t>(renderSize.renderHeight);
 	config.frameBufferBytes = frameBufferWidth * frameBufferHeight * 4u;
 	config.ramBytes = static_cast<uint32_t>(PSX_MODEL_PROFILE.ramBytes);
 	const double ramMiB = static_cast<double>(config.ramBytes) / (1024.0 * 1024.0);

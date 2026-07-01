@@ -1,4 +1,6 @@
 bg_id = 'p3.bg'
+screen_width = 320
+screen_height = 240
 combat_monster_id = 'p3.combat.monster'
 combat_maya_a_id = 'p3.combat.maya_a'
 combat_maya_b_id = 'p3.combat.maya_b'

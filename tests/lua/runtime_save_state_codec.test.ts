@@ -27,6 +27,7 @@ import {
 	VDP_SUBMITTED_FRAME_EXECUTING,
 } from '../../machine/ts/machine/devices/vdp/frame';
 import { captureVdpRpuFrameState, createVdpRpuFrameOutput, VDP_RPU_FRAME_IDLE } from '../../machine/ts/machine/devices/vdp/rpu';
+import { VDP_MODE_PSX_WORD } from '../../machine/ts/machine/model_registry';
 import type { RuntimeSaveState } from '../../machine/ts/machine/runtime/save_state';
 import { decodeRuntimeSaveState, encodeRuntimeSaveState } from '../../machine/ts/machine/runtime/save_state/codec';
 import { decodeBinaryWithPropTable } from '../../machine/ts/common/serializer/binencoder';
@@ -201,6 +202,7 @@ function createRuntimeSaveState(): RuntimeSaveState {
 					},
 				},
 				vdp: {
+					vdpModeWord: VDP_MODE_PSX_WORD,
 					xf: {
 						matrixWords: numberedWords(VDP_XF_MATRIX_REGISTER_WORDS),
 						viewMatrixIndex: VDP_XF_VIEW_MATRIX_RESET_INDEX,

@@ -20,7 +20,6 @@
 #include "libretro.h"
 #include "platform.h"
 #include "core/machine_manager.h"
-#include "core/system.h"
 #include "machine/model_registry.h"
 #include "machine/runtime/runtime.h"
 
@@ -83,9 +82,10 @@ static bmsx::LibretroPlatform* g_platform = nullptr;
 static retro_system_av_info g_cached_av_info{};
 static bool g_cached_av_info_valid = false;
 
-static void apply_manifest_av_info(retro_system_av_info& av, const bmsx::MachineManifest& manifest, int64_t ufps_scaled) {
-	av.geometry.base_width = static_cast<unsigned>(manifest.viewportWidth);
-	av.geometry.base_height = static_cast<unsigned>(manifest.viewportHeight);
+static void apply_model_av_info(retro_system_av_info& av, int64_t ufps_scaled) {
+	const bmsx::MachineVdpModeProfile& vdpMode = bmsx::getMachineVdpModeProfile(bmsx::PSX_MODEL_PROFILE.biosVdpMode);
+	av.geometry.base_width = static_cast<unsigned>(vdpMode.renderWidth);
+	av.geometry.base_height = static_cast<unsigned>(vdpMode.renderHeight);
 	if (av.geometry.max_width < av.geometry.base_width) {
 		av.geometry.max_width = av.geometry.base_width;
 	}
@@ -100,7 +100,7 @@ static void apply_manifest_av_info(retro_system_av_info& av, const bmsx::Machine
 static void initialize_default_av_info(retro_system_av_info& av) {
 	std::memset(&av, 0, sizeof(av));
 	av.timing.sample_rate = bmsx::DEFAULT_LIBRETRO_AUDIO_SAMPLE_RATE;
-	apply_manifest_av_info(av, bmsx::defaultSystemMachineManifest(), bmsx::PAL_REFRESH_UFPS_SCALED);
+	apply_model_av_info(av, bmsx::PAL_REFRESH_UFPS_SCALED);
 }
 
 extern "C" RETRO_API void bmsx_keyboard_event(const char* code, bool down) {
@@ -1209,9 +1209,9 @@ extern "C" void bmsx_set_frame_time_usec(retro_usec_t usec) {
 }
 
 extern "C" int64_t bmsx_get_ufps(void) {
-	auto* manager = g_platform ? g_platform->machineManager() : nullptr;
-	if (manager && manager->hasRuntime()) {
-		return manager->runtime().timing.ufpsScaled;
+	bmsx::MachineManager& manager = *g_platform->machineManager();
+	if (manager.hasRuntime()) {
+		return manager.runtime().timing.ufpsScaled;
 	}
 	return bmsx::PAL_REFRESH_UFPS_SCALED;
 }
@@ -1263,8 +1263,7 @@ bool retro_load_game(const struct retro_game_info* game) {
 	if (!g_cached_av_info_valid) {
 		initialize_default_av_info(av);
 	}
-	const auto& manifest = g_platform->machineManager()->machineManifest();
-	apply_manifest_av_info(av, manifest, ufps_scaled);
+	apply_model_av_info(av, ufps_scaled);
 	g_cached_av_info = av;
 	g_cached_av_info_valid = true;
 	g_platform->setAVInfo(av);

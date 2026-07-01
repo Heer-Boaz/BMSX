@@ -47,7 +47,7 @@ import { applyRuntimeTiming, resolveRuntimeTiming } from './boot_timing';
 import { refreshDeviceTimings, setFrameTiming } from './timing/config';
 import { HZ_SCALE } from './timing/constants';
 import { calcCyclesPerFrameScaled, resolveVblankCycles } from './timing';
-import { IO_SYS_FRAME_MS, IO_SYS_PRINT_CHAR, IO_SYS_PRINT_FLUSH, IO_SYS_REGION, IO_SYS_TIME_MS } from '../bus/io';
+import { IO_SYS_FRAME_MS, IO_SYS_PRINT_CHAR, IO_SYS_PRINT_FLUSH, IO_SYS_REGION, IO_SYS_TIME_MS, IO_VDP_MODE } from '../bus/io';
 import { Machine } from '../machine';
 import type { RuntimeInputSource } from './input';
 import { Memory } from '../memory/memory';
@@ -195,9 +195,9 @@ export class Runtime {
 		const systemLuaSources = buildLuaSources(systemSource, systemSource, systemLayer.index, ['system']);
 		const systemMachine = systemLayer.index.machine;
 		if (!cartridge) {
-			const systemMemorySpecs = resolveRuntimeMemoryMapSpecs(systemMachine);
+			const systemMemorySpecs = resolveRuntimeMemoryMapSpecs();
 			configureMemoryMap(systemMemorySpecs);
-			const timing = resolveRuntimeTiming(systemMachine, systemMachine, PSX_MODEL_PROFILE.cpuFreqHz, MACHINE_REGION_PAL_WORD);
+			const timing = resolveRuntimeTiming(PSX_MODEL_PROFILE.cpuFreqHz, MACHINE_REGION_PAL_WORD);
 			const memory = new Memory({
 				systemRom: new Uint8Array(systemLayer.payload),
 				cartRom: new Uint8Array(CART_ROM_HEADER_SIZE),
@@ -249,9 +249,9 @@ export class Runtime {
 		const cartSource = new RomSourceStack([{ id: cartRom.id, index: cartRom.index, payload: cartRom.payload }]);
 		const cartLuaSources = buildLuaSources(cartSource, activeRomSource, cartRom.index, overlayRom ? ['overlay', 'cart'] : ['cart']);
 
-		const memoryLimits = resolveRuntimeMemoryMapSpecs(cartRom.index.machine);
+		const memoryLimits = resolveRuntimeMemoryMapSpecs();
 		configureMemoryMap(memoryLimits);
-		const timing = resolveRuntimeTiming(cartRom.index.machine, cartRom.index.machine, PSX_MODEL_PROFILE.cpuFreqHz, MACHINE_REGION_PAL_WORD);
+		const timing = resolveRuntimeTiming(PSX_MODEL_PROFILE.cpuFreqHz, MACHINE_REGION_PAL_WORD);
 		let overlayPayload: Uint8Array | undefined;
 		if (overlayRom) {
 			overlayPayload = new Uint8Array(overlayRom.payload);
@@ -513,9 +513,9 @@ export class Runtime {
 		this.machine.memory.mapIoWrite(IO_SYS_REGION, (_addr, value) => this.applyMachineRegionWord((value as number) >>> 0));
 		this.machine.memory.mapIoWrite(IO_SYS_PRINT_CHAR, (_addr, value) => this.writeLuaOutputCodepoint((value as number) >>> 0));
 		this.machine.memory.mapIoWrite(IO_SYS_PRINT_FLUSH, () => this.flushLuaOutputLine());
+		this.machine.memory.mapIoWrite(IO_VDP_MODE, (_addr, value) => this.applyVdpModeWord((value as number) >>> 0));
 		this.machine.initializeSystemIo();
 		this.machine.resetDevices();
-		this.machine.vdp.initializeVramSurfaces();
 		configureLuaHeapUsage({
 			getBaseRamUsedBytes: () => this.baseRamUsedBytes(),
 			collectTrackedHeapBytes: () => {
@@ -621,7 +621,18 @@ export class Runtime {
 			this,
 			this.timing.cpuHz,
 			calcCyclesPerFrameScaled(this.timing.cpuHz, refreshUfpsScaled),
-			resolveVblankCycles(this.timing.cpuHz, refreshUfpsScaled, regionTiming.totalScanlines, this.activeMachineManifest.render_size.height),
+			resolveVblankCycles(this.timing.cpuHz, refreshUfpsScaled, regionTiming.totalScanlines, this.machine.vdp.frameBufferHeight),
+		);
+	}
+
+	public applyVdpModeWord(modeWord: number): void {
+		this.machine.vdp.writeModeWord(modeWord);
+		const regionTiming = getMachineRegionTimingForWord(this.timing.regionWord);
+		setFrameTiming(
+			this,
+			this.timing.cpuHz,
+			this.timing.cycleBudgetPerFrame,
+			resolveVblankCycles(this.timing.cpuHz, regionTiming.refreshUfpsScaled, regionTiming.totalScanlines, this.machine.vdp.frameBufferHeight),
 		);
 	}
 

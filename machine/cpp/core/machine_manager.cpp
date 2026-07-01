@@ -12,7 +12,6 @@
 #include "render/vdp/framebuffer.h"
 #include "render/vdp/slot_textures.h"
 #include "../machine/runtime/runtime.h"
-#include "machine/specs.h"
 #include "machine/model_registry.h"
 #include "machine/memory/map.h"
 #include "machine/memory/specs.h"
@@ -60,10 +59,10 @@ bool MachineManager::initialize(Platform* platform) {
 
 	// Get viewport size from platform
 	auto* host = platform->gameviewHost();
-	const MachineManifest& systemMachine = defaultSystemMachineManifest();
+	const MachineVdpModeProfile& systemVdpMode = getMachineVdpModeProfile(PSX_MODEL_PROFILE.biosVdpMode);
 	Vec2 defaultViewport{
-		static_cast<f32>(systemMachine.viewportWidth),
-		static_cast<f32>(systemMachine.viewportHeight)
+		static_cast<f32>(systemVdpMode.renderWidth),
+		static_cast<f32>(systemVdpMode.renderHeight)
 	};
 	ViewportDimensions dims = host->getSize(defaultViewport, {defaultViewport.x * 2.0f, defaultViewport.y * 2.0f});
 
@@ -291,10 +290,11 @@ void MachineManager::setMachineManifest(const MachineManifest& manifest) {
 	machine_manifest = &manifest;
 }
 
-void MachineManager::configureViewForMachine(const MachineManifest& manifest) {
+void MachineManager::configureViewForModel() {
+	const MachineVdpModeProfile& vdpMode = getMachineVdpModeProfile(PSX_MODEL_PROFILE.biosVdpMode);
 	Vec2 viewportSize{
-		static_cast<f32>(manifest.viewportWidth),
-		static_cast<f32>(manifest.viewportHeight)
+		static_cast<f32>(vdpMode.renderWidth),
+		static_cast<f32>(vdpMode.renderHeight)
 	};
 	Vec2 offscreenSize{ viewportSize.x * 2.0f, viewportSize.y * 2.0f };
 	m_view->configureRenderTargets(&viewportSize, &viewportSize, &offscreenSize, &m_viewport_scale, &m_canvas_scale);
@@ -341,7 +341,7 @@ Runtime& MachineManager::prepareRuntimeForActiveCart(const ResolvedRuntimeTiming
 	);
 	applyRuntimeTiming(runtime, timing);
 	m_sound_master->setMixerUfpsScaled(runtime.timing.ufpsScaled);
-	runtime.refreshMemoryMap();
+	runtime.refreshMemoryMapGlobals();
 	return runtime;
 }
 
@@ -352,7 +352,7 @@ void MachineManager::bootRuntimeFromProgram() {
 	m_linked_program.reset();
 	m_linked_program_symbols.reset();
 	RuntimeRomPackage& romPackage = activeRom();
-	const ResolvedRuntimeTiming timing = resolveRuntimeTiming(romPackage.machine, romPackage.machine, PSX_MODEL_PROFILE.cpuFreqHz, MACHINE_REGION_PAL_WORD);
+	const ResolvedRuntimeTiming timing = resolveRuntimeTiming(PSX_MODEL_PROFILE.cpuFreqHz, MACHINE_REGION_PAL_WORD);
 	Runtime& rt = ensureRuntime(RuntimeOptions{
 		Vec2{ static_cast<f32>(timing.viewportWidth), static_cast<f32>(timing.viewportHeight) },
 		{ m_system_rom_data, m_system_rom_size },
@@ -379,7 +379,7 @@ void MachineManager::bootRuntimeFromProgram() {
 	);
 	applyRuntimeTiming(rt, timing);
 	m_sound_master->setMixerUfpsScaled(rt.timing.ufpsScaled);
-	rt.refreshMemoryMap();
+	rt.refreshMemoryMapGlobals();
 	rt.resetRuntimeForProgramReload();
 	m_screen.reset();
 	refreshRenderSurfaces();
@@ -410,9 +410,9 @@ bool MachineManager::bootSystemStartupProgram(const MachineManifest& runtimeMach
 
 	activateSystemRom();
 	setMachineManifest(runtimeMachine);
-	const ResolvedRuntimeTiming timing = resolveRuntimeTiming(runtimeMachine, runtimeMachine, PSX_MODEL_PROFILE.cpuFreqHz, MACHINE_REGION_PAL_WORD);
-	configureMemoryMap(resolveRuntimeMemoryMapSpecs(runtimeMachine));
-	configureViewForMachine(runtimeMachine);
+	const ResolvedRuntimeTiming timing = resolveRuntimeTiming(PSX_MODEL_PROFILE.cpuFreqHz, MACHINE_REGION_PAL_WORD);
+	configureMemoryMap(resolveRuntimeMemoryMapSpecs());
+	configureViewForModel();
 
 	Runtime& rt = ensureRuntime(RuntimeOptions{
 		Vec2{ static_cast<f32>(timing.viewportWidth), static_cast<f32>(timing.viewportHeight) },
@@ -440,7 +440,7 @@ bool MachineManager::bootSystemStartupProgram(const MachineManifest& runtimeMach
 	);
 	applyRuntimeTiming(rt, timing);
 	m_sound_master->setMixerUfpsScaled(rt.timing.ufpsScaled);
-	rt.refreshMemoryMap();
+	rt.refreshMemoryMapGlobals();
 	rt.resetRuntimeForProgramReload();
 	m_screen.reset();
 	rt.enterSystemFirmware();
@@ -478,7 +478,7 @@ bool MachineManager::loadRomInternal(const u8* data, size_t size) {
 	m_loaded_cart_has_program = m_cart_rom.programImage != nullptr;
 
 	const MachineManifest& cartMachine = m_cart_rom.machine;
-	configureViewForMachine(cartMachine);
+	configureViewForModel();
 
 	const bool hasSystemProgram = m_system_rom_loaded
 		&& m_system_rom.programImage;
@@ -489,8 +489,8 @@ bool MachineManager::loadRomInternal(const u8* data, size_t size) {
 	} else {
 		activateCartRom();
 		setMachineManifest(cartMachine);
-		configureMemoryMap(resolveRuntimeMemoryMapSpecs(activeRom().machine));
-		const ResolvedRuntimeTiming timing = resolveRuntimeTiming(activeRom().machine, cartMachine, PSX_MODEL_PROFILE.cpuFreqHz, MACHINE_REGION_PAL_WORD);
+		configureMemoryMap(resolveRuntimeMemoryMapSpecs());
+		const ResolvedRuntimeTiming timing = resolveRuntimeTiming(PSX_MODEL_PROFILE.cpuFreqHz, MACHINE_REGION_PAL_WORD);
 		prepareRuntimeForActiveCart(timing, cartMachine);
 		if (activeRom().hasProgram()) {
 			bootRuntimeFromProgram();

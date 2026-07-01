@@ -1,11 +1,9 @@
-import { shallowcopy } from '../common/shallowcopy';
 import {
 	buildSystemRuntimeRomLayer,
-	normalizeCartridgeBlob,
-	parseCartridgeIndex,
 	type RuntimeRomLayer,
 } from '../rompack/loader';
 import { SYSTEM_BOOT_ENTRY_PATH, SYSTEM_MACHINE_MANIFEST } from './system';
+import { getMachineVdpModeProfile, PSX_MODEL_PROFILE } from '../machine/model_registry';
 
 export type RomBootPlan = {
 	systemLayer: RuntimeRomLayer;
@@ -20,19 +18,12 @@ export class RomBootManager {
 			entry_path: SYSTEM_BOOT_ENTRY_PATH,
 		});
 
-		let viewport = systemLayer.index.machine.render_size;
-		if (options.cartridge) {
-			const cartNormalized = normalizeCartridgeBlob(options.cartridge);
-			const cartIndex = await parseCartridgeIndex(cartNormalized.payload);
-			viewport = cartIndex.machine.render_size;
-		}
-
-		const viewportInput = shallowcopy(viewport) as { width?: number; height?: number;};
+		const viewport = getMachineVdpModeProfile(PSX_MODEL_PROFILE.biosVdpMode);
 		return {
 			systemLayer,
 			viewportSize: {
-				x: viewportInput.width!,
-				y: viewportInput.height!,
+				x: viewport.renderWidth,
+				y: viewport.renderHeight,
 			},
 		};
 	}

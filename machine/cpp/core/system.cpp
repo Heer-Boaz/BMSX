@@ -8,11 +8,7 @@ namespace {
 const MachineManifest SYSTEM_MACHINE_MANIFEST = [] {
 	MachineManifest manifest;
 	manifest.namespaceName = "bmsx";
-	const MachineVdpModeProfile& vdpMode = getMachineVdpModeProfile(PSX_MODEL_PROFILE.biosVdpMode);
-	manifest.viewportWidth = vdpMode.renderWidth;
-	manifest.viewportHeight = vdpMode.renderHeight;
 	manifest.vdpClass = MachineVdpClass::Psx;
-	manifest.vdpMode = PSX_MODEL_PROFILE.biosVdpMode;
 	return manifest;
 }();
 

@@ -133,7 +133,6 @@ std::vector<u8> encodeCartManifest(const CartManifest& cart, const MachineManife
 	BinObject machineObject;
 	machineObject["namespace"] = BinValue(machine.namespaceName);
 	machineObject["vdp_class"] = BinValue(std::string("psx"));
-	machineObject["vdp_mode"] = BinValue(static_cast<i32>(machine.vdpMode));
 
 	BinObject manifest;
 	if (!cart.name.empty()) manifest["name"] = BinValue(cart.name);

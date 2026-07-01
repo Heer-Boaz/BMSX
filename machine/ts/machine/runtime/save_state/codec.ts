@@ -721,6 +721,7 @@ function decodeVdpReadbackState(value: unknown, label: string): VdpReadbackState
 
 function encodeVdpState(state: VdpState): VdpState {
 	return {
+		vdpModeWord: state.vdpModeWord,
 		xf: encodeVdpXfState(state.xf),
 		vdpRegisterWords: state.vdpRegisterWords,
 		buildFrame: encodeBuildingFrameState(state.buildFrame),
@@ -743,6 +744,7 @@ function encodeVdpState(state: VdpState): VdpState {
 function decodeVdpState(value: unknown, label: string): VdpState {
 	const object = requireObject(value, label);
 	return {
+		vdpModeWord: requireBoundedU32(requireObjectKey(object, 'vdpModeWord', label, 'machine.vdp.vdpModeWord'), 'machine.vdp.vdpModeWord', 0, 0xffffffff),
 		xf: decodeVdpXfState(requireObjectKey(object, 'xf', label, 'machine.vdp.xf'), 'machine.vdp.xf'),
 		vdpRegisterWords: decodeU32FixedArray(requireObjectKey(object, 'vdpRegisterWords', label, 'machine.vdp.vdpRegisterWords'), 'machine.vdp.vdpRegisterWords', VDP_REGISTER_COUNT),
 		buildFrame: decodeBuildingFrameState(requireObjectKey(object, 'buildFrame', label, 'machine.vdp.buildFrame'), 'machine.vdp.buildFrame'),
