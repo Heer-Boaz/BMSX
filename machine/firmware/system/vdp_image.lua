@@ -6,6 +6,9 @@ local vdp_image<const> = {}
 local cache<const> = {}
 
 local system_atlas_id<const> = 254
+local system_atlas_name<const> = string.format('_atlas_%02d', system_atlas_id)
+local system_atlas_meta<const> = romdir.system_image(system_atlas_name).imgmeta
+vdp_rpu_quads.set_slot_dim(sys_vdp_slot_system, system_atlas_meta.width, system_atlas_meta.height)
 
 local slot_atlas_addr<const> = function(slot)
 	if slot == sys_vdp_slot_primary then
@@ -53,10 +56,8 @@ function vdp_image.load_slot(slot, atlas_id)
 end
 
 function vdp_image.load_system_slot()
-	local name<const> = string.format('_atlas_%02d', system_atlas_id)
-	local atlas<const> = romdir.system_rom_atlas(name)
-	local atlas_meta<const> = romdir.system_image(name).imgmeta
-	local dst<const>, cap<const> = vdp_rpu_quads.set_slot_dim(sys_vdp_slot_system, atlas_meta.width, atlas_meta.height)
+	local atlas<const> = romdir.system_rom_atlas(system_atlas_name)
+	local dst<const>, cap<const> = vdp_rpu_quads.set_slot_dim(sys_vdp_slot_system, system_atlas_meta.width, system_atlas_meta.height)
 	start_decode(atlas.addr, atlas.len, dst, cap)
 end
 
