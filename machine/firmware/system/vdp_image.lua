@@ -5,7 +5,6 @@ local vdp_rpu_quads<const> = require('system/vdp_rpu_quads')
 local vdp_image<const> = {}
 local cache<const> = {}
 
-local system_atlas_id<const> = 254
 local system_atlas_name<const> = '_atlas_254'
 local system_atlas_meta<const> = romdir.system_image(system_atlas_name).imgmeta
 vdp_rpu_quads.set_slot_dim(sys_vdp_slot_system, system_atlas_meta.width, system_atlas_meta.height)
