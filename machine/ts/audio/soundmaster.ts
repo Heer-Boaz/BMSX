@@ -1,5 +1,6 @@
 import { machineManager } from '../core/machine_manager';
 import { type AudioOutputPuller, type AudioService } from '../platform';
+import { PAL_REFRESH_UFPS_SCALED } from '../machine/model_registry';
 import { HZ_SCALE } from '../machine/runtime/timing/constants';
 import { clamp01 } from '../common/clamp';
 import { isIOSAudioTarget } from '../platform/browser_audio_target';
@@ -15,9 +16,9 @@ export class SoundMaster {
 	public static readonly instance: SoundMaster = new SoundMaster();
 	private globalSuspensions: Set<string>;
 	private audio!: AudioService;
-	private mixUfpsScaled!: number;
+	private mixUfpsScaled = PAL_REFRESH_UFPS_SCALED;
 	private mixLatencyProfile: MixLatencyProfile;
-	private mixTargetAheadSec!: number;
+	private mixTargetAheadSec: number;
 	private readonly pullRuntimeOutput: AudioOutputPuller = (output, frameCount, sampleRate, targetQueuedFrames): void => {
 		machineManager.runtime.machine.audioOutput.pullOutputFrames(output, frameCount, sampleRate, 1, targetQueuedFrames);
 	};
@@ -25,6 +26,7 @@ export class SoundMaster {
 	private constructor() {
 		this.globalSuspensions = new Set();
 		this.mixLatencyProfile = isIOSAudioTarget() ? 'safe' : 'low';
+		this.mixTargetAheadSec = (HZ_SCALE / this.mixUfpsScaled) + this.profileOverheadSec();
 	}
 
 	private get A(): AudioService {

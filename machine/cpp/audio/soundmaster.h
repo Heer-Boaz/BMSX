@@ -20,7 +20,7 @@ enum class MixLatencyProfile {
 
 class SoundMaster final : public Registerable {
 public:
-	SoundMaster() = default;
+	SoundMaster();
 	~SoundMaster() override = default;
 
 	[[nodiscard]] auto registryId() const -> const Identifier& override;

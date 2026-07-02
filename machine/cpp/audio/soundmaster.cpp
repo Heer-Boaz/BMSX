@@ -5,6 +5,7 @@
 #include "soundmaster.h"
 
 #include "machine/runtime/timing/constants.h"
+#include "machine/model_registry.h"
 
 namespace bmsx {
 
@@ -12,6 +13,13 @@ static constexpr f64 MIX_MINIMAL_OVERHEAD_SEC = 0.002;
 static constexpr f64 MIX_LOW_OVERHEAD_SEC = 0.004;
 static constexpr f64 MIX_BALANCED_OVERHEAD_SEC = 0.006;
 static constexpr f64 MIX_SAFE_OVERHEAD_SEC = 0.012;
+
+
+SoundMaster::SoundMaster()
+	: m_mixUfpsScaled(PAL_REFRESH_UFPS_SCALED)
+	, m_mixFrameTimeSec(static_cast<f64>(HZ_SCALE) / static_cast<f64>(PAL_REFRESH_UFPS_SCALED))
+	, m_mixTargetAheadSec(m_mixFrameTimeSec + MIX_LOW_OVERHEAD_SEC) {
+}
 
 
 const Identifier& SoundMaster::registryId() const {

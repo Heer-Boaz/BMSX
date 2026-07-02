@@ -1285,7 +1285,7 @@ bool retro_load_game_special(unsigned game_type,
 void retro_unload_game(void) {
 	logging.log(RETRO_LOG_INFO, "[BMSX] Unloading game\n");
 	g_platform->unloadRom();
-	g_current_ufps_scaled = bmsx::PAL_REFRESH_UFPS_SCALED;
+	sync_current_av_info(bmsx::PAL_REFRESH_UFPS_SCALED);
 }
 
 /* ============================================================================
