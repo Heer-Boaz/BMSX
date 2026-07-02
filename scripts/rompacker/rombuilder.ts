@@ -50,7 +50,6 @@ const {
 	toLuaModulePath,
 } = require('../../machine/ts/machine/program/loader');
 // @ts-ignore
-// @ts-ignore
 const pako = require('pako');
 // @ts-ignore
 const { minify } = require('@node-minify/core');

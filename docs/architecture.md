@@ -360,17 +360,18 @@ Bus fault access flag values:
 ### Host fault publication
 
 The host fault registers publish host startup fault state into the machine
-without making the host own cart-observable behavior. `sys_host_fault_message`
-is the current published message string or `nil`. Register addresses, flag
-values, and stage values are machine ABI values; they are documented constants,
-not runtime-injected Lua globals.
+without making the host own cart-observable behavior. The host writes only the
+fault flags and stage MMIO words; it does not publish a Lua message global.
+Register addresses, flag values, and stage values are machine ABI values. Firmware
+names the words it owns locally or consumes them through owner-owned
+BIOS/system helpers; the emulator does not inject them as Lua globals.
 
 Host fault registers:
 
 | Register | Address | Meaning |
 | --- | ---: | --- |
-| `HOST_FAULT_FLAGS` | `0x08000004` | Sticky host fault flags published by the host runtime during startup. |
-| `HOST_FAULT_STAGE` | `0x08000008` | Host startup fault stage code. |
+| `HOST_FAULT_FLAGS` | `0x08000000` | Sticky host fault flags published by the host runtime during startup. |
+| `HOST_FAULT_STAGE` | `0x08000004` | Host startup fault stage code. |
 
 Host fault flag values:
 
@@ -434,9 +435,9 @@ hardware interrupt-storm semantics rather than being discarded by the emulator.
 
 | Register | Address | Meaning |
 | --- | ---: | --- |
-| `IRQ_FLAGS` | `0x08000108` | Read pending IRQ bits. |
-| `IRQ_ACK` | `0x0800010c` | Write bits to clear. |
-| `IRQ_MASK` | `0x08000110` | Read/write per-source vector mask; bit set means that pending source may vector. Reset `0`. |
+| `IRQ_FLAGS` | `0x08000104` | Read pending IRQ bits. |
+| `IRQ_ACK` | `0x08000108` | Write bits to clear. |
+| `IRQ_MASK` | `0x0800010c` | Read/write per-source vector mask; bit set means that pending source may vector. Reset `0`. |
 
 | Name | Value | Meaning |
 | --- | ---: | --- |

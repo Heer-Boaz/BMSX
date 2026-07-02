@@ -15,7 +15,6 @@
 #include "machine/runtime/vblank.h"
 #include "machine/runtime/cpu_executor.h"
 #include "machine/runtime/cpu_state.h"
-#include "machine/runtime/cart_boot.h"
 #include "machine/runtime/options.h"
 #include "machine/runtime/save_state.h"
 #include "machine/runtime/resume_snapshot.h"
@@ -56,14 +55,12 @@ class Runtime {
 public:
 	friend class FrameLoopState;
 	friend class FrameSchedulerState;
-	friend class CartBootState;
 	friend auto captureRuntimeSaveState(Runtime& runtime) -> RuntimeSaveState;
 	friend void applyRuntimeSaveState(Runtime& runtime, const RuntimeSaveState& state);
 	friend auto captureRuntimeResumeSnapshot(const Runtime& runtime) -> RuntimeResumeSnapshot;
 	friend void applyRuntimeResumeSnapshot(Runtime& runtime, const RuntimeResumeSnapshot& state);
 	friend auto captureRuntimeCpuState(const Runtime& runtime) -> CpuRuntimeState;
 	friend void applyRuntimeCpuState(Runtime& runtime, const CpuRuntimeState& state);
-	friend void seedSystemGlobals(Runtime& runtime);
 
 	Runtime(
 		const RuntimeOptions& options,
@@ -185,13 +182,11 @@ public:
 	auto vdpUsageWorkUnitsLast() const -> int { return machine.vdp.lastFrameCost(); }
 	auto vdpUsageFrameHeld() const -> bool { return machine.vdp.lastFrameHeld(); }
 	auto isDrawPending() const -> bool { return m_runtimeFailed || m_pendingCall == PendingCall::Entry; }
-	void refreshMemoryMapGlobals();
 	TimingState timing;
 	FrameSchedulerState frameScheduler;
 	CpuExecutionState cpuExecution;
 	FrameLoopState frameLoop;
 	VblankState vblank;
-	CartBootState cartBoot;
 	LuaScratchState luaScratch;
 	std::vector<std::string> luaOutputLines;
 	std::string luaOutputLineBuffer;
@@ -245,6 +240,8 @@ private:
 	Value onFrameMsRead(uint32_t addr) const;
 	static Value onMachineRegionReadThunk(void* context, uint32_t addr);
 	Value onMachineRegionRead(uint32_t addr) const;
+	static Value onCyclesPerFrameReadThunk(void* context, uint32_t addr);
+	Value onCyclesPerFrameRead(uint32_t addr) const;
 	static void onMachineRegionWriteThunk(void* context, uint32_t addr, Value value);
 	static void onVdpModeWriteThunk(void* context, uint32_t addr, Value value);
 	static void onLuaOutputCodepointWriteThunk(void* context, uint32_t addr, Value value);

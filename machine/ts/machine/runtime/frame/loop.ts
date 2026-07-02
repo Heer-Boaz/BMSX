@@ -1,5 +1,6 @@
 import type { FrameState } from './state';
 import { Runtime } from '../runtime';
+import { RunResult } from '../../cpu/cpu';
 
 export class FrameLoopState {
 	public currentTimeMs = 0;
@@ -70,9 +71,6 @@ export class FrameLoopState {
 		const runtime = this.runtime;
 		if (!runtime.tickEnabled) {
 			return false;
-		}
-		if (runtime.cartBoot.processPending()) {
-			return true;
 		}
 		if (runtime.executionOverlayActive) {
 			if (this.frameActive) {
@@ -174,7 +172,13 @@ export class FrameLoopState {
 				if (runtime.pendingCall !== 'entry') {
 					return;
 				}
-				runtime.cpuExecution.runWithBudget(state);
+				const result = runtime.cpuExecution.runWithBudget(state);
+				if (result === RunResult.Halted && cpu.getFrameDepth() === 0 && !runtime.cartProgramStarted) {
+					runtime.frameScheduler.clearQueuedTime();
+					this.abandonFrameState();
+					runtime.startCartProgram();
+					return;
+				}
 				if (cpu.isHaltedUntilIrq()) {
 					return;
 				}

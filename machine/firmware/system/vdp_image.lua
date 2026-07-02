@@ -8,24 +8,24 @@ local cache<const> = {}
 
 local system_atlas_name<const> = '_atlas_254'
 local system_atlas_meta<const> = romdir.system_image(system_atlas_name).imgmeta
-vdp_rpu_quads.set_slot_dim(sys_vdp_slot_system, system_atlas_meta.width, system_atlas_meta.height)
+vdp_rpu_quads.set_slot_dim(0x00000002, system_atlas_meta.width, system_atlas_meta.height)
 
 local slot_atlas_addr<const> = function(slot)
-	if slot == sys_vdp_slot_primary then
-		return sys_vdp_slot_primary_atlas
+	if slot == 0x00000000 then
+		return 0x0800000c
 	end
-	if slot == sys_vdp_slot_secondary then
-		return sys_vdp_slot_secondary_atlas
+	if slot == 0x00000001 then
+		return 0x08000010
 	end
 	error('invalid VDP image slot ' .. tostring(slot))
 end
 
 local bind_slot_atlas<const> = function(slot, atlas_id)
-	if mem[sys_vdp_slot_primary_atlas] == atlas_id then
-		mem[sys_vdp_slot_primary_atlas] = sys_vdp_slot_none
+	if mem[0x0800000c] == atlas_id then
+		mem[0x0800000c] = 0xffffffff
 	end
-	if mem[sys_vdp_slot_secondary_atlas] == atlas_id then
-		mem[sys_vdp_slot_secondary_atlas] = sys_vdp_slot_none
+	if mem[0x08000010] == atlas_id then
+		mem[0x08000010] = 0xffffffff
 	end
 	mem[slot_atlas_addr(slot)] = atlas_id
 end
@@ -41,7 +41,7 @@ end
 
 function vdp_image.load_system_slot()
 	local atlas<const> = romdir.system_rom_atlas(system_atlas_name)
-	local dst<const>, cap<const> = vdp_rpu_quads.set_slot_dim(sys_vdp_slot_system, system_atlas_meta.width, system_atlas_meta.height)
+	local dst<const>, cap<const> = vdp_rpu_quads.set_slot_dim(0x00000002, system_atlas_meta.width, system_atlas_meta.height)
 	imgdec.start(atlas.addr, atlas.len, dst, cap)
 end
 
@@ -101,13 +101,13 @@ end
 
 function vdp_image.slot(rect)
 	if rect.atlas_id == 254 then
-		return sys_vdp_slot_system
+		return 0x00000002
 	end
-	if mem[sys_vdp_slot_primary_atlas] == rect.atlas_id then
-		return sys_vdp_slot_primary
+	if mem[0x0800000c] == rect.atlas_id then
+		return 0x00000000
 	end
-	if mem[sys_vdp_slot_secondary_atlas] == rect.atlas_id then
-		return sys_vdp_slot_secondary
+	if mem[0x08000010] == rect.atlas_id then
+		return 0x00000001
 	end
 	error('atlas ' .. tostring(rect.atlas_id) .. ' is not loaded in a VDP slot.')
 end
@@ -124,10 +124,10 @@ end
 
 function vdp_image.write_source(dst, rect)
 	mem[dst] = vdp_image.slot(rect)
-	mem[dst + sys_vdp_arg_stride] = rect.u
-	mem[dst + (sys_vdp_arg_stride * 2)] = rect.v
-	mem[dst + (sys_vdp_arg_stride * 3)] = rect.w
-	mem[dst + (sys_vdp_arg_stride * 4)] = rect.h
+	mem[dst + 0x00000004] = rect.u
+	mem[dst + (0x00000004 * 2)] = rect.v
+	mem[dst + (0x00000004 * 3)] = rect.w
+	mem[dst + (0x00000004 * 4)] = rect.h
 end
 
 function vdp_image.write_blit_color(imgid, x, y, z, layer, scale_x, scale_y, flip_flags, color)

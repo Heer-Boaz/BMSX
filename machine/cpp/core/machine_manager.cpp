@@ -354,7 +354,6 @@ Runtime& MachineManager::prepareRuntimeForActiveCart(const ResolvedRuntimeTiming
 	);
 	applyRuntimeTiming(runtime, timing);
 	syncAudioTiming();
-	runtime.refreshMemoryMapGlobals();
 	return runtime;
 }
 
@@ -392,7 +391,6 @@ void MachineManager::bootRuntimeFromProgram() {
 	);
 	applyRuntimeTiming(rt, timing);
 	syncAudioTiming();
-	rt.refreshMemoryMapGlobals();
 	rt.resetRuntimeForProgramReload();
 	m_screen.reset();
 	refreshRenderSurfaces();
@@ -453,7 +451,6 @@ bool MachineManager::bootSystemStartupProgram(const MachineManifest& runtimeMach
 	);
 	applyRuntimeTiming(rt, timing);
 	syncAudioTiming();
-	rt.refreshMemoryMapGlobals();
 	rt.resetRuntimeForProgramReload();
 	m_screen.reset();
 	rt.enterSystemFirmware();
@@ -476,7 +473,6 @@ bool MachineManager::bootSystemStartupProgram(const MachineManifest& runtimeMach
 		rt.boot(*m_system_rom.programImage, m_system_rom.programSymbols.get(), m_system_rom.programImage->vectors, PROGRAM_STATIC_RAM_BASE, PROGRAM_STATIC_RAM_BASE + static_cast<uint32_t>(m_system_rom.programImage->sections.data.bytes.size()), m_system_rom.programImage->sections.rodata.staticModulePaths, std::span<const std::string>{});
 	}
 	flushRuntimeLuaOutput(rt);
-	rt.cartBoot.reset();
 	return true;
 }
 

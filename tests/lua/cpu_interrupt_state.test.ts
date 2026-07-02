@@ -195,9 +195,6 @@ function makeHaltFrameRuntime(): Runtime {
 			irqProtoIndex: 1,
 		},
 		luaGate: { ready: true },
-		cartBoot: {
-			processPending: () => false,
-		},
 	} as unknown as Runtime;
 	runtime.frameLoop = new FrameLoopState(runtime);
 	runtime.cpuExecution = new CpuExecutionState(runtime);
@@ -487,8 +484,8 @@ test('frame loop vectors a pending IRQ above a halted cart frame', () => {
 
 test('compiled IRQ vector dispatches through cart irq and acknowledges the device line', () => {
 	const source = `
-local irq_ack_addr<const> = 0x0800010c
-local irq_mask_addr<const> = 0x08000110
+local irq_ack_addr<const> = 0x08000108
+local irq_mask_addr<const> = 0x0800010c
 local irq_vblank<const> = 0x0010
 irq_seen = 0
 function irq(flags)
@@ -514,7 +511,7 @@ end
 
 test('compiled IRQ vector storms on an unacknowledged level line', () => {
 	const source = `
-local irq_mask_addr<const> = 0x08000110
+local irq_mask_addr<const> = 0x0800010c
 local irq_vblank<const> = 0x0010
 irq_seen = 0
 function irq(flags)
@@ -537,8 +534,8 @@ end
 
 test('IRQ_MASK accepts pending IRQ at the next guest instruction boundary', () => {
 	const source = `
-local irq_ack_addr<const> = 0x0800010c
-local irq_mask_addr<const> = 0x08000110
+local irq_ack_addr<const> = 0x08000108
+local irq_mask_addr<const> = 0x0800010c
 local irq_vblank<const> = 0x0010
 irq_seen = 0
 after_enable = 0

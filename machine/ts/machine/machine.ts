@@ -1,7 +1,6 @@
 import { ApuOutputMixer } from './devices/audio/output';
 import {
 	HOST_FAULT_STAGE_NONE,
-	IO_SYS_BOOT_CART,
 	IO_SYS_HOST_FAULT_FLAGS,
 	IO_SYS_HOST_FAULT_STAGE,
 } from './bus/io';
@@ -67,7 +66,6 @@ export class Machine {
 
 	public initializeSystemIo(): void {
 		this.memory.clearBusFault();
-		this.memory.writeValue(IO_SYS_BOOT_CART, 0);
 		this.memory.writeValue(IO_SYS_HOST_FAULT_FLAGS, 0);
 		this.memory.writeValue(IO_SYS_HOST_FAULT_STAGE, HOST_FAULT_STAGE_NONE);
 	}

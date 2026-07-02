@@ -36,7 +36,7 @@ function vdp_xf.matrix_words(matrix_index, src_addr)
 end
 
 function vdp_xf.select(view_matrix_index, projection_matrix_index)
-	local packet<const>: *xf_select_packet = vdp_stream_claim(sizeof(xf_select_packet) // sys_vdp_arg_stride)
+	local packet<const>: *xf_select_packet = vdp_stream_claim(sizeof(xf_select_packet) // 0x00000004)
 	packet->header = packet_kind | (select_packet_payload_words << 16)
 	packet->register = view_matrix_index_register
 	packet->view_matrix_index = view_matrix_index

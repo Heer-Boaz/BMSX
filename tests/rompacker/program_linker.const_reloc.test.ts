@@ -385,14 +385,16 @@ test('ProgramCompiler rejects undefined identifiers when source is provided', ()
 	);
 });
 
-test('ProgramCompiler accepts shared runtime globals when source is provided', () => {
+test('ProgramCompiler rejects host-published machine word globals when source is provided', () => {
 	const source = 'return sys_boot_cart, sys_vdp_stream_base, cart_manifest';
 	const chunk = parseChunk(source);
-	const compiled = compileLuaChunkToProgram(chunk, [], { entrySource: source });
-	assert.ok(compiled.program.code.length > 0);
+	assert.throws(
+		() => compileLuaChunkToProgram(chunk, [], { entrySource: source }),
+		/error\(s\):[\s\S]*'sys_boot_cart' is not defined\.[\s\S]*'sys_vdp_stream_base' is not defined\.[\s\S]*'cart_manifest' is not defined\./,
+	);
 });
 
-test('ProgramCompiler rejects machine ABI value constants as implicit runtime globals', () => {
+test('ProgramCompiler rejects machine word value constants as implicit runtime globals', () => {
 	const source = 'return sys_bus_fault_access_word, sys_host_fault_flag_active, irq_vblank, sys_irq_flags, sys_irq_ack, sys_irq_mask';
 	const chunk = parseChunk(source);
 	assert.throws(
@@ -761,12 +763,12 @@ test('ProgramLinker owns linked boot vector selection', () => {
 	assert.deepEqual(systemBoot.cartVectors, { resetProtoIndex: 1, sectionInitProtoIndex: 1, irqProtoIndex: 1 });
 	assert.deepEqual(systemBoot.cartStaticModulePaths, ['cart/init']);
 
-	const cartBoot = linkBootProgramImages(systemImage, null, cartImage, null, 'cart');
-	assert.deepEqual(cartBoot.vectors, { resetProtoIndex: 1, sectionInitProtoIndex: 1, irqProtoIndex: 1 });
-	assert.equal(cartBoot.bssBaseAddress, PROGRAM_STATIC_RAM_BASE);
-	assert.deepEqual(cartBoot.systemStaticModulePaths, ['system/init']);
-	assert.deepEqual(cartBoot.cartVectors, { resetProtoIndex: 1, sectionInitProtoIndex: 1, irqProtoIndex: 1 });
-	assert.deepEqual(cartBoot.cartStaticModulePaths, ['cart/init']);
+	const cartLink = linkBootProgramImages(systemImage, null, cartImage, null, 'cart');
+	assert.deepEqual(cartLink.vectors, { resetProtoIndex: 1, sectionInitProtoIndex: 1, irqProtoIndex: 1 });
+	assert.equal(cartLink.bssBaseAddress, PROGRAM_STATIC_RAM_BASE);
+	assert.deepEqual(cartLink.systemStaticModulePaths, ['system/init']);
+	assert.deepEqual(cartLink.cartVectors, { resetProtoIndex: 1, sectionInitProtoIndex: 1, irqProtoIndex: 1 });
+	assert.deepEqual(cartLink.cartStaticModulePaths, ['cart/init']);
 });
 
 
@@ -850,9 +852,9 @@ test('ProgramLinker resolves .bss address constants and boot vectors', () => {
 	const systemBoot = linkBootProgramImages(systemImage, null, cartImage, null, 'system');
 	assert.deepEqual(systemBoot.vectors, { resetProtoIndex: 0, sectionInitProtoIndex: 0, irqProtoIndex: 0 });
 	assert.equal(systemBoot.bssBaseAddress, PROGRAM_STATIC_RAM_BASE);
-	const cartBoot = linkBootProgramImages(systemImage, null, cartImage, null, 'cart');
-	assert.deepEqual(cartBoot.vectors, { resetProtoIndex: 1, sectionInitProtoIndex: 1, irqProtoIndex: 1 });
-	assert.equal(cartBoot.bssBaseAddress, PROGRAM_STATIC_RAM_BASE + 4);
+	const cartLink = linkBootProgramImages(systemImage, null, cartImage, null, 'cart');
+	assert.deepEqual(cartLink.vectors, { resetProtoIndex: 1, sectionInitProtoIndex: 1, irqProtoIndex: 1 });
+	assert.equal(cartLink.bssBaseAddress, PROGRAM_STATIC_RAM_BASE + 4);
 });
 
 test('inflateExecutableProgramImage resolves .bss constants against explicit non-default image base', () => {

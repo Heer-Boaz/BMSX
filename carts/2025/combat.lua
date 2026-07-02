@@ -243,7 +243,7 @@ function combat.define_fsm()
 				local z<const> = frame.slash_z
 				local color<const> = frame.slash_color
 				local thickness<const> = frame.slash_thickness
-				vdp_draw_line_color(x0, y0, x1, y1, z, sys_vdp_layer_world, color, thickness)
+				vdp_draw_line_color(x0, y0, x1, y1, z, 0x00000000, color, thickness)
 			end)
 			hide_combat_sprites()
 			return '/idle'

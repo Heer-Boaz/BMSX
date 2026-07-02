@@ -1,4 +1,4 @@
-local frame_ms<const>: *word = sys_frame_ms
+local frame_ms<const>: *word = 0x08010358
 local frame_delta_ms<const> = frame_ms[0]
 -- world.lua
 -- central world: owns all objects, spaces, and the ECS system manager
@@ -378,7 +378,7 @@ function world_class.new()
 	self.active_space = nil
 	self.systems = ecs.ecsystemmanager.new()
 	self.current_phase = nil
-	local screen_wh<const> = mem[sys_vdp_screen_wh]
+	local screen_wh<const> = mem[0x08000088]
 	self.gamewidth = screen_wh & 0xffff
 	self.gameheight = screen_wh >> 16
 	-- id counter for unique id generation

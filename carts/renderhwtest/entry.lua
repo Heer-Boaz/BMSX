@@ -1,8 +1,8 @@
-mem[sys_vdp_mode] = sys_vdp_mode_msx2
+mem[0x08000084] = 0x00000001
 require('cartlib/prelude')
 
 local frame = 0
-local irq_mask_addr<const> = 0x08000110
+local irq_mask_addr<const> = 0x0800010c
 local irq_vblank<const> = 0x0010
 local irq_apu<const> = 0x0200
 local vblank_count = 0
@@ -29,10 +29,10 @@ end)
 
 local draw_grid<const> = function()
 	for x = 0, width, 32 do
-		vdp_draw_line_color(x, 0, x, height, 20, sys_vdp_layer_world, grid_color, 1)
+		vdp_draw_line_color(x, 0, x, height, 20, 0x00000000, grid_color, 1)
 	end
 	for y = 0, height, 32 do
-		vdp_draw_line_color(0, y, width, y, 20, sys_vdp_layer_world, grid_color, 1)
+		vdp_draw_line_color(0, y, width, y, 20, 0x00000000, grid_color, 1)
 	end
 end
 
@@ -46,29 +46,29 @@ local draw_cart<const> = function()
 	local x1<const> = width - 16 - phase
 	local y1<const> = height - 42 - ((frame * 5) % 64)
 
-	vdp_fill_rect_color(24, 24, 96, 72, 30, sys_vdp_layer_world, shadow_color)
-	vdp_fill_rect_color(20, 20, 92, 68, 40, sys_vdp_layer_world, bar_color)
-	vdp_fill_rect_color(width - 92, height - 68, width - 20, height - 20, 40, sys_vdp_layer_world, hot_color)
-	vdp_draw_line_color(x0, y0, x1, y1, 60, sys_vdp_layer_world, line_color, 4)
+	vdp_fill_rect_color(24, 24, 96, 72, 30, 0x00000000, shadow_color)
+	vdp_fill_rect_color(20, 20, 92, 68, 40, 0x00000000, bar_color)
+	vdp_fill_rect_color(width - 92, height - 68, width - 20, height - 20, 40, 0x00000000, hot_color)
+	vdp_draw_line_color(x0, y0, x1, y1, 60, 0x00000000, line_color, 4)
 end
 
 mem[irq_mask_addr] = irq_vblank | irq_apu
-mem[sys_inp_ctrl] = inp_ctrl_arm
+mem[0x08000194] = 0x00000001
 wait_vblank()
 
 while true do
-	mem[sys_inp_ctrl] = inp_ctrl_arm
+	mem[0x08000194] = 0x00000001
 	wait_vblank()
-	vdp_stream_cursor = sys_vdp_stream_base
+	vdp_stream_cursor = 0x080c0000
 	draw_cart()
 	vdp_stream_finish()
 	do
-		local used_bytes<const> = vdp_stream_cursor - sys_vdp_stream_base
+		local used_bytes<const> = vdp_stream_cursor - 0x080c0000
 		if used_bytes ~= 0 then
-			mem[sys_dma_src] = sys_vdp_stream_base
-			mem[sys_dma_dst] = sys_vdp_fifo
-			mem[sys_dma_len] = used_bytes
-			mem[sys_dma_ctrl] = dma_ctrl_start
+			mem[0x08000110] = 0x080c0000
+			mem[0x08000114] = 0x0800007c
+			mem[0x08000118] = used_bytes
+			mem[0x0800011c] = 0x00000001
 		end
 	end
 	frame = frame + 1

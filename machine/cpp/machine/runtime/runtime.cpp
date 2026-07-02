@@ -37,7 +37,6 @@ Runtime::Runtime(
 		options.vdpWorkUnitsPerSec,
 		options.geoWorkUnitsPerSec
 	)
-	, cartBoot(*this)
 	, m_systemRomBytes(options.systemRomBytes)
 	, m_cartRomBytes(options.cartRomBytes)
 	, m_input(input)
@@ -64,6 +63,7 @@ Runtime::Runtime(
 	machine.memory.mapIoRead(IO_SYS_TIME_MS, this, &Runtime::onTimeMsReadThunk);
 	machine.memory.mapIoRead(IO_SYS_FRAME_MS, this, &Runtime::onFrameMsReadThunk);
 	machine.memory.mapIoRead(IO_SYS_REGION, this, &Runtime::onMachineRegionReadThunk);
+	machine.memory.mapIoRead(IO_SYS_CYCLES_PER_FRAME, this, &Runtime::onCyclesPerFrameReadThunk);
 	machine.memory.mapIoWrite(IO_SYS_REGION, this, &Runtime::onMachineRegionWriteThunk);
 	machine.memory.mapIoWrite(IO_SYS_PRINT_CHAR, this, &Runtime::onLuaOutputCodepointWriteThunk);
 	machine.memory.mapIoWrite(IO_SYS_PRINT_FLUSH, this, &Runtime::onLuaOutputFlushWriteThunk);
@@ -72,7 +72,6 @@ Runtime::Runtime(
 	machine.resetDevices();
 	vblank.setVblankCycles(*this, options.vblankCycles);
 	refreshDeviceTimings(*this, machine.scheduler.currentNowCycles());
-	refreshMemoryMapGlobals();
 	machine.cpu.setExternalRootMarker([this](GcHeap& heap) {
 		for (const auto& entry : m_moduleCache) {
 			heap.markValue(entry.second);
@@ -130,6 +129,15 @@ Value Runtime::onMachineRegionReadThunk(void* context, uint32_t addr) {
 
 Value Runtime::onMachineRegionRead([[maybe_unused]] uint32_t addr) const {
 	return valueNumber(static_cast<double>(timing.regionWord));
+}
+
+Value Runtime::onCyclesPerFrameReadThunk(void* context, uint32_t addr) {
+	const auto* runtime = static_cast<Runtime*>(context);
+	return runtime->onCyclesPerFrameRead(addr);
+}
+
+Value Runtime::onCyclesPerFrameRead([[maybe_unused]] uint32_t addr) const {
+	return valueNumber(static_cast<double>(timing.cycleBudgetPerFrame));
 }
 
 void Runtime::onMachineRegionWriteThunk(void* context, uint32_t addr, Value value) {
@@ -391,7 +399,7 @@ void Runtime::logLuaCallStack() const {
 }
 
 void Runtime::handleLuaError(const std::string& message) {
-	hostFault.publishStartup(message);
+	hostFault.publishStartup();
 	std::cout << "[Runtime] Error: " << message << std::endl;
 	logDebugState();
 	logLuaCallStack();
@@ -414,7 +422,6 @@ void Runtime::resetRuntimeForProgramReload() {
 	m_cartBssBaseAddress.reset();
 	m_cartStaticModulePaths.clear();
 	luaOutputLineBuffer.clear();
-	cartBoot.reset();
 	hostFault.clear();
 	m_moduleCache.clear();
 	machine.cpu.clearGlobalSlots();
@@ -445,18 +452,6 @@ void Runtime::resetHardwareState() {
 	luaOutputLineBuffer.clear();
 	machine.resetDevices();
 	vblank.reset(*this);
-}
-
-void Runtime::refreshMemoryMapGlobals() {
-	setGlobal("sys_vram_system_slot_base", valueNumber(static_cast<double>(VRAM_SYSTEM_SLOT_BASE)));
-	setGlobal("sys_vram_primary_slot_base", valueNumber(static_cast<double>(VRAM_PRIMARY_SLOT_BASE)));
-	setGlobal("sys_vram_secondary_slot_base", valueNumber(static_cast<double>(VRAM_SECONDARY_SLOT_BASE)));
-	setGlobal("sys_vram_staging_base", valueNumber(static_cast<double>(VRAM_STAGING_BASE)));
-	setGlobal("sys_vram_system_slot_size", valueNumber(static_cast<double>(VRAM_SYSTEM_SLOT_SIZE)));
-	setGlobal("sys_vram_primary_slot_size", valueNumber(static_cast<double>(VRAM_PRIMARY_SLOT_SIZE)));
-	setGlobal("sys_vram_secondary_slot_size", valueNumber(static_cast<double>(VRAM_SECONDARY_SLOT_SIZE)));
-	setGlobal("sys_vram_staging_size", valueNumber(static_cast<double>(VRAM_STAGING_SIZE)));
-	setGlobal("sys_vram_size", valueNumber(static_cast<double>(machine.vdp.trackedTotalVramBytes())));
 }
 
 } // namespace bmsx

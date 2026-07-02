@@ -242,14 +242,17 @@ return add(1, 2)
 	assert.equal(diagnostics.length, 0);
 });
 
-test('intellisense recognizes shared runtime globals without false positives', async () => {
+test('intellisense rejects host-published machine word globals', async () => {
 	const { buildLuaSemanticFrontend } = await semanticFrontendModulePromise;
 	const { getDefaultLuaBuiltinDescriptors } = await semanticDiagnosticsModulePromise;
 	const diagnostics = buildLuaSemanticFrontend(
 		[{ path: 'testpath', source: 'return sys_boot_cart, cart_manifest, sys_vdp_stream_base' }],
 		{ builtinDescriptors: getDefaultLuaBuiltinDescriptors() },
 	).getFile('testpath').diagnostics;
-	assert.equal(diagnostics.length, 0);
+	assert.equal(diagnostics.length, 3);
+	assert.equal(diagnostics[0].message, `'sys_boot_cart' is not defined.`);
+	assert.equal(diagnostics[1].message, `'cart_manifest' is not defined.`);
+	assert.equal(diagnostics[2].message, `'sys_vdp_stream_base' is not defined.`);
 });
 
 test('intellisense live locals resolve editor source paths against CPU module paths', async () => {

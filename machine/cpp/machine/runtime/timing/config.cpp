@@ -21,7 +21,6 @@ void setCycleBudgetPerFrame(Runtime& runtime, int value) {
 		return;
 	}
 	runtime.timing.cycleBudgetPerFrame = value;
-	runtime.setGlobal("sys_max_cycles_per_frame", valueNumber(static_cast<double>(value)));
 	refreshDeviceTimings(runtime, runtime.machine.scheduler.currentNowCycles());
 	runtime.vblank.configureCycleBudget(runtime);
 }
@@ -30,7 +29,6 @@ void setFrameTiming(Runtime& runtime, i64 cpuHz, int cycleBudgetPerFrame, int vb
 	runtime.timing.cpuHz = cpuHz;
 	if (cycleBudgetPerFrame != runtime.timing.cycleBudgetPerFrame) {
 		runtime.timing.cycleBudgetPerFrame = cycleBudgetPerFrame;
-		runtime.setGlobal("sys_max_cycles_per_frame", valueNumber(static_cast<double>(cycleBudgetPerFrame)));
 	}
 	runtime.vblank.setVblankCycles(runtime, vblankCycles);
 }

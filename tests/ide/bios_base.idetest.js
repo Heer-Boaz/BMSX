@@ -151,29 +151,23 @@ t.assert(primitiveValues[16] === 'vm-error', `pcall(error, message) should prese
 	['require', 'must not be a guest Lua global'],
 	['load', 'must not be a guest Lua global'],
 	['loadstring', 'must not be a guest Lua global'],
+	['cart_manifest', 'must not be a guest CPU global'],
+	['machine_manifest', 'must not be a guest CPU global'],
+	['sys_boot_cart', 'must not be a guest CPU global'],
+	['sys_vdp_screen_wh', 'must not be a guest CPU global'],
+	['sys_img_ctrl', 'must not be a guest CPU global'],
+	['img_ctrl_start', 'must not be a guest CPU global'],
 ].forEach(([name, expectation]) => {
 	const value = runtime.machine.cpu.getGlobalByKey(runtime.internString(name));
 	t.assert(value === null, `${name} ${expectation}`);
 });
 
-const manifestValues = t.evaluateLua(`
-local screen_wh<const> = mem[sys_vdp_screen_wh]
-return mem[sys_vdp_mode],
+const rawMachineValues = t.evaluateLua(`
+local screen_wh<const> = mem[0x08000088]
+return mem[0x08000084],
 	screen_wh & 0xffff,
-	screen_wh >> 16,
-	machine_manifest.vdp_class,
-	cart_manifest.machine.vdp_class,
-	machine_manifest.vdp_mode == nil,
-	machine_manifest.render_size == nil,
-	cart_manifest.machine.vdp_mode == nil,
-	cart_manifest.machine.render_size == nil
+	screen_wh >> 16
 `);
-t.assert(manifestValues[0] === 2, `bare_metal_cart should boot VDP mode 2, got ${manifestValues[0]}`);
-t.assert(manifestValues[1] === 320, `sys_vdp_screen_wh width should derive from mode 2, got ${manifestValues[1]}`);
-t.assert(manifestValues[2] === 240, `sys_vdp_screen_wh height should derive from mode 2, got ${manifestValues[2]}`);
-t.assert(manifestValues[3] === 'psx', `machine_manifest VDP class should remain psx, got ${manifestValues[3]}`);
-t.assert(manifestValues[4] === 'psx', `cart_manifest machine VDP class should remain psx, got ${manifestValues[4]}`);
-t.assert(manifestValues[5] === true, 'machine_manifest must not expose vdp_mode');
-t.assert(manifestValues[6] === true, 'machine_manifest must not expose render_size');
-t.assert(manifestValues[7] === true, 'cart_manifest.machine must not expose vdp_mode');
-t.assert(manifestValues[8] === true, 'cart_manifest.machine must not expose render_size');
+t.assert(rawMachineValues[0] === 2, `bare_metal_cart should boot VDP mode 2, got ${rawMachineValues[0]}`);
+t.assert(rawMachineValues[1] === 320, `sys_vdp_screen_wh width should derive from mode 2, got ${rawMachineValues[1]}`);
+t.assert(rawMachineValues[2] === 240, `sys_vdp_screen_wh height should derive from mode 2, got ${rawMachineValues[2]}`);

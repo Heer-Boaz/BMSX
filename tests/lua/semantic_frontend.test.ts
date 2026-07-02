@@ -5,13 +5,17 @@ import { buildLuaSemanticFrontend } from '../../machine/ts/lua/semantic/frontend
 import { createLuaSemanticFrontendFromSnapshot } from '../../machine/ts/ide/editor/contrib/intellisense/semantic/workspace';
 import { LuaSemanticWorkspace } from '../../machine/ts/lua/semantic/model';
 
-test('LuaSemanticFrontend accepts shared runtime globals without diagnostics', () => {
+test('LuaSemanticFrontend rejects host-published machine word globals', () => {
 	const source = 'return sys_boot_cart, sys_vdp_stream_base, cart_manifest';
 	const frontend = buildLuaSemanticFrontend([{ path: 'globals.lua', source }]);
-	assert.deepEqual(frontend.getFile('globals.lua').diagnostics, []);
+	const diagnostics = frontend.getFile('globals.lua').diagnostics;
+	assert.equal(diagnostics.length, 3);
+	assert.equal(diagnostics[0].message, `'sys_boot_cart' is not defined.`);
+	assert.equal(diagnostics[1].message, `'sys_vdp_stream_base' is not defined.`);
+	assert.equal(diagnostics[2].message, `'cart_manifest' is not defined.`);
 });
 
-test('LuaSemanticFrontend rejects machine ABI value constants as implicit runtime globals', () => {
+test('LuaSemanticFrontend rejects machine word value constants as implicit runtime globals', () => {
 	const source = 'return sys_bus_fault_access_word, sys_host_fault_flag_active, irq_vblank, sys_irq_flags, sys_irq_ack, sys_irq_mask';
 	const frontend = buildLuaSemanticFrontend([{ path: 'abi_constant.lua', source }]);
 	const diagnostics = frontend.getFile('abi_constant.lua').diagnostics;
@@ -61,9 +65,10 @@ test('LuaSemanticFrontend does not flag member access on call results as undefin
 
 test('LuaSemanticFrontend treats implicit global writes inside nested scopes as globals', () => {
 	const source = [
+		'local vdp_stream_base<const> = 0',
 		'while true do',
-		'\tvdp_stream_cursor = sys_vdp_stream_base',
-		'\tlocal used_bytes<const> = vdp_stream_cursor - sys_vdp_stream_base',
+		'\tvdp_stream_cursor = vdp_stream_base',
+		'\tlocal used_bytes<const> = vdp_stream_cursor - vdp_stream_base',
 		'\tbreak',
 		'end',
 	].join('\n');

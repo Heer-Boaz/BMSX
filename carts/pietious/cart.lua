@@ -1,4 +1,4 @@
-mem[sys_vdp_mode] = sys_vdp_mode_msx1
+mem[0x08000084] = 0x00000000
 require('cartlib/prelude')
 require('constants')
 local enemy_registry<const> = require('enemy/registry')
@@ -33,8 +33,8 @@ local init_epoch = 0
 local pending_title_boot_epoch = -1
 
 local irq_flags_addr<const> = 0x08000108
-local irq_ack_addr<const> = 0x0800010c
-local irq_mask_addr<const> = 0x08000110
+local irq_ack_addr<const> = 0x08000108
+local irq_mask_addr<const> = 0x0800010c
 local irq_dma_done<const> = 0x01
 local irq_dma_error<const> = 0x02
 local irq_dma_mask<const> = irq_dma_done | irq_dma_error
@@ -145,7 +145,7 @@ function init()
 	on_irq(irq_vblank, function()
 		vblank_count = vblank_count + 1
 	end)
-	mem[sys_vdp_dither] = 0
+	mem[0x08000008] = 0
 	pietious_font.register_fonts()
 
 	player_module.define_player_fsm()
@@ -191,7 +191,7 @@ function init()
 	title_screen_module.register_title_screen_definition()
 	director_module.register_director_definition()
 	register_collision_profiles()
-	vdp_load_slot(sys_vdp_slot_primary, 0)
+	vdp_load_slot(0x00000000, 0)
 	init_epoch = init_epoch + 1
 	pending_title_boot_epoch = init_epoch
 end
@@ -203,22 +203,22 @@ end
 init()
 mem[irq_mask_addr] = irq_vblank | irq_apu
 new_game()
-mem[sys_inp_ctrl] = inp_ctrl_arm
+mem[0x08000194] = 0x00000001
 wait_vblank()
 
 while true do
 	update_world()
 
 	wait_vblank()
-	vdp_stream_cursor = sys_vdp_stream_base
+	vdp_stream_cursor = 0x080c0000
 	draw_world()
 	vdp_stream_finish()
-	mem[sys_dma_src] = sys_vdp_stream_base
-	mem[sys_dma_dst] = sys_vdp_fifo
-	mem[sys_dma_len] = vdp_stream_cursor - sys_vdp_stream_base
-	mem[sys_dma_ctrl] = dma_ctrl_start
+	mem[0x08000110] = 0x080c0000
+	mem[0x08000114] = 0x0800007c
+	mem[0x08000118] = vdp_stream_cursor - 0x080c0000
+	mem[0x0800011c] = 0x00000001
 	wait_dma()
 
-	mem[sys_inp_ctrl] = inp_ctrl_arm
+	mem[0x08000194] = 0x00000001
 	wait_vblank()
 end

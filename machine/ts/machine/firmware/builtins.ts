@@ -1,12 +1,8 @@
 import { LuaEnvironment } from '../../lua/environment';
-import { LuaInterpreter, LuaNativeFunction } from '../../lua/runtime';
-import { isLuaCallSignal, LuaFunctionValue, type LuaCallResult } from '../../lua/value';
-import { createLuaTable, LuaTable, LuaValue } from '../../lua/value';
+import { LuaInterpreter } from '../../lua/runtime';
+import { createLuaTable, LuaValue } from '../../lua/value';
 import { createInterpreterDevtoolsTable } from './devtools';
-import {
-	DEFAULT_LUA_BUILTIN_FUNCTIONS,
-	SYSTEM_LUA_BUILTIN_FUNCTIONS,
-} from './builtin_descriptors';
+import { DEFAULT_LUA_BUILTIN_FUNCTIONS } from './builtin_descriptors';
 import type { Runtime } from '../runtime/runtime';
 import type { LuaBuiltinDescriptor } from '../../lua/semantic_contracts';
 
@@ -17,25 +13,6 @@ export function registerFirmwareBuiltins(runtime: Runtime, interpreter: LuaInter
 	registerLuaGlobal(runtime, env, 'devtools', createInterpreterDevtoolsTable(runtime, interpreter));
 
 	registerLuaGlobal(runtime, env, 'os', createLuaTable());
-	registerSystemBuiltins(runtime, interpreter);
-}
-
-function registerSystemBuiltins(runtime: Runtime, interpreter: LuaInterpreter): void {
-	const env = interpreter.globalEnvironment;
-	const callSystemMember = (name: string, args: ReadonlyArray<LuaValue>): LuaCallResult => {
-		const requireFn = interpreter.getGlobal('require') as LuaFunctionValue;
-		const systemValue = requireFn.call(['system']);
-		if (isLuaCallSignal(systemValue)) {
-			return systemValue;
-		}
-		const systemTable = systemValue[0] as LuaTable;
-		return (systemTable.get(name) as LuaFunctionValue).call(args);
-	};
-	for (let index = 0; index < SYSTEM_LUA_BUILTIN_FUNCTIONS.length; index += 1) {
-		const name = SYSTEM_LUA_BUILTIN_FUNCTIONS[index].name;
-		const native = new LuaNativeFunction(name, (args) => callSystemMember(name, args));
-		registerLuaGlobal(runtime, env, name, native);
-	}
 }
 
 export function registerLuaBuiltin(runtime: Runtime, metadata: LuaBuiltinDescriptor): void {

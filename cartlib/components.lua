@@ -152,7 +152,7 @@ function spritecomponent.new(opts)
 	opts = opts or {}
 	opts.type_name = 'spritecomponent'
 	local self<const> = setmetatable(component.new(opts), spritecomponent)
-	self.layer = opts.layer or sys_vdp_layer_world
+	self.layer = opts.layer or 0x00000000
 	self.flip = { flip_h = false, flip_v = false }
 	self.color = opts.color or 0xffffffff
 	-- colorize is a per-sprite RGBA multiplier used by various carts; ensure
@@ -686,7 +686,7 @@ function textcomponent.new(opts)
 	self.align = opts.align
 	self.baseline = opts.baseline
 	self.offset = opts.offset or { x = 0, y = 0, z = 0 }
-	self.layer = opts.layer or sys_vdp_layer_world
+	self.layer = opts.layer or 0x00000000
 	return self
 end
 
@@ -769,7 +769,7 @@ function meshcomponent.new(opts)
 	self.joint_matrices = opts.joint_matrices
 	self.morph_weights = opts.morph_weights
 	self.receive_shadow = opts.receive_shadow
-	self.layer = opts.layer or sys_vdp_layer_world
+	self.layer = opts.layer or 0x00000000
 	return self
 end
 
@@ -1039,7 +1039,7 @@ local init_screenboundary_fields<const> = function(self, opts)
 	if opts.stick_to_edge ~= nil then
 		self.stick_to_edge = opts.stick_to_edge
 	end
-	local screen_wh<const> = mem[sys_vdp_screen_wh]
+	local screen_wh<const> = mem[0x08000088]
 	self.boundary_left = 0
 	self.boundary_top = 0
 	self.boundary_right = screen_wh & 0xffff

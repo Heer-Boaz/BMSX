@@ -1,5 +1,4 @@
 #include "machine/runtime/frame/loop.h"
-#include "machine/runtime/cart_boot.h"
 #include "machine/runtime/cpu_executor.h"
 #include "machine/runtime/runtime.h"
 #include "machine/scheduler/device.h"
@@ -69,7 +68,13 @@ void FrameLoopState::runUpdatePhase(Runtime& runtime) {
 			if (runtime.m_pendingCall != Runtime::PendingCall::Entry) {
 				return;
 			}
-			runtime.cpuExecution.runWithBudget(runtime, frameState);
+			const RunResult result = runtime.cpuExecution.runWithBudget(runtime, frameState);
+			if (result == RunResult::Halted && cpu.getFrameDepth() == 0 && !runtime.isCartProgramStarted()) {
+				runtime.frameScheduler.clearQueuedTime();
+				abandonFrameState(runtime);
+				runtime.startCartProgram();
+				return;
+			}
 			if (cpu.isHaltedUntilIrq()) {
 				return;
 			}
@@ -89,9 +94,6 @@ bool FrameLoopState::tickUpdate(Runtime& runtime) {
 		return false;
 	}
 
-	if (runtime.cartBoot.processPending()) {
-		return true;
-	}
 
 	const bool previousFrameActive = frameActive;
 	const int previousRemaining = previousFrameActive ? frameState.cycleBudgetRemaining : -1;

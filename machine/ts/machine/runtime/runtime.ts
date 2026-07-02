@@ -37,7 +37,6 @@ import { FrameSchedulerState } from '../scheduler/frame';
 import { TimingState } from './timing/state';
 import { VblankState } from './vblank';
 import { CpuExecutionState } from './cpu_executor';
-import { CartBootState } from './cart_boot';
 import { HostFaultState } from './host_fault';
 import { LuaScratchState } from '../program/scratch';
 import { callClosureInto, invokeClosureHandler, invokeLuaHandler } from '../program/executor';
@@ -48,7 +47,7 @@ import { applyRuntimeTiming, resolveRuntimeTiming } from './boot_timing';
 import { refreshDeviceTimings, setFrameTiming } from './timing/config';
 import { HZ_SCALE } from './timing/constants';
 import { calcCyclesPerFrameScaled, resolveVblankCycles } from './timing';
-import { IO_SYS_FRAME_MS, IO_SYS_PRINT_CHAR, IO_SYS_PRINT_FLUSH, IO_SYS_REGION, IO_SYS_TIME_MS, IO_VDP_MODE } from '../bus/io';
+import { IO_SYS_CYCLES_PER_FRAME, IO_SYS_FRAME_MS, IO_SYS_PRINT_CHAR, IO_SYS_PRINT_FLUSH, IO_SYS_REGION, IO_SYS_TIME_MS, IO_VDP_MODE } from '../bus/io';
 import { Machine } from '../machine';
 import type { RuntimeInputSource } from './input';
 import { Memory } from '../memory/memory';
@@ -184,7 +183,6 @@ export class Runtime {
 	public cartEntryAvailable = true;
 	public readonly hostFault: HostFaultState;
 	public readonly machine: Machine;
-	public readonly cartBoot: CartBootState;
 	public get interpreter(): LuaInterpreter {
 		return this.luaInterpreter;
 	}
@@ -324,7 +322,6 @@ export class Runtime {
 		this.activeRomSource = params.systemRomSource;
 		this.systemProjectRootPath = params.systemSources.projectRootPath || DEFAULT_SYSTEM_PROJECT_ROOT_PATH;
 		this.rebuildLuaSourceOrders();
-		this.cartBoot.reset();
 	}
 
 	public setLinkedCartVectors(vectors: ProgramVectorTable, dataBaseAddress: number, bssBaseAddress: number, staticModulePaths: ReadonlyArray<string>): void {
@@ -486,7 +483,6 @@ export class Runtime {
 		this.vblank = new VblankState(this);
 		this.cpuExecution = new CpuExecutionState(this);
 		this.hostFault = new HostFaultState(this);
-		this.cartBoot = new CartBootState(this);
 		this.timing = new TimingState(
 			options.ufpsScaled,
 			options.cpuHz,
@@ -514,6 +510,7 @@ export class Runtime {
 		this.machine.memory.mapIoRead(IO_SYS_TIME_MS, () => this.machineTimeMs());
 		this.machine.memory.mapIoRead(IO_SYS_FRAME_MS, () => this.timing.frameDurationMs);
 		this.machine.memory.mapIoRead(IO_SYS_REGION, () => this.timing.regionWord);
+		this.machine.memory.mapIoRead(IO_SYS_CYCLES_PER_FRAME, () => this.timing.cycleBudgetPerFrame);
 		this.machine.memory.mapIoWrite(IO_SYS_REGION, (_addr, value) => this.applyMachineRegionWord((value as number) >>> 0));
 		this.machine.memory.mapIoWrite(IO_SYS_PRINT_CHAR, (_addr, value) => this.writeLuaOutputCodepoint((value as number) >>> 0));
 		this.machine.memory.mapIoWrite(IO_SYS_PRINT_FLUSH, () => this.flushLuaOutputLine());

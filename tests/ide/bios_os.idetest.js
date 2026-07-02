@@ -5,7 +5,7 @@ await t.waitForCart();
 await t.frames(2);
 
 const readClockState = () => t.evaluateLua(`
-local time_ms<const>: *word = sys_time_ms
+local time_ms<const>: *word = 0x08010354
 return time_ms[0], os.clock(), clock_now(), os.time(), os.difftime(125, 20)
 `);
 

@@ -167,7 +167,7 @@ local function update_gutter_width()
 end
 
 local function compute_wrap_width()
-	local screen_width<const> = mem[sys_vdp_screen_wh] & 0xffff
+	local screen_width<const> = mem[0x08000088] & 0xffff
 	local gutter_space = state.gutter_width + 2
 	local available = screen_width - gutter_space - constants.code_area_right_margin
 	return math.max(state.char_advance, available - 2)
@@ -186,7 +186,7 @@ local function update_layout()
 end
 
 local function refresh_view_metrics()
-	local screen_wh<const> = mem[sys_vdp_screen_wh]
+	local screen_wh<const> = mem[0x08000088]
 	local screen_width<const> = screen_wh & 0xffff
 	local screen_height<const> = screen_wh >> 16
 	update_gutter_width()
@@ -1602,7 +1602,7 @@ local function draw_code_area()
 end
 
 local function draw_header()
-	local width<const> = mem[sys_vdp_screen_wh] & 0xffff
+	local width<const> = mem[0x08000088] & 0xffff
 	fill_rect(0, 0, width, state.header_height, 0, constants.color_top_bar)
 	local left = truncate_for_width("Lua IDE", (width * 0.25) // 1)
 	local right = truncate_for_width(state.active_path, (width * 0.7) // 1)
@@ -1611,7 +1611,7 @@ local function draw_header()
 end
 
 local function draw_status()
-	local screen_wh<const> = mem[sys_vdp_screen_wh]
+	local screen_wh<const> = mem[0x08000088]
 	local width<const> = screen_wh & 0xffff
 	local height<const> = screen_wh >> 16
 	local top<const> = height - state.status_height

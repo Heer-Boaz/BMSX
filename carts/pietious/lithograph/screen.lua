@@ -33,7 +33,7 @@ function lithograph_screen:bind_visual()
 end
 
 function lithograph_screen:draw_screen()
-	vdp_blit_img_color(lithograph_mode_sprite_id, room_tile_size4, room_tile_origin_y + room_tile_size2, 340, sys_vdp_layer_ui, 1, 1, 0, 0xffffffff, 0)
+	vdp_blit_img_color(lithograph_mode_sprite_id, room_tile_size4, room_tile_origin_y + room_tile_size2, 340, 0x00000001, 1, 1, 0, 0xffffffff, 0)
 	local lines<const> = self.lines
 	if #lines > 0 then
 		local text_font<const> = self.text_font
@@ -41,7 +41,7 @@ function lithograph_screen:draw_screen()
 		for i = 1, #lines do
 			local line<const> = lines[i]
 			if string.len(line) > 0 then
-				draw_glyph_line_color(text_font, line, (screen_width - font_module.measure_line_width(text_font, line)) // 2, base_y + ((i - 1) * text_font.line_height), 341, sys_vdp_layer_ui, 0xffffffff)
+				draw_glyph_line_color(text_font, line, (screen_width - font_module.measure_line_width(text_font, line)) // 2, base_y + ((i - 1) * text_font.line_height), 341, 0x00000001, 0xffffffff)
 			end
 		end
 	end

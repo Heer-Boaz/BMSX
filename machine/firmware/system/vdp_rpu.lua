@@ -1,27 +1,27 @@
 local vdp_rpu<const> = {}
 
-vdp_stream_cursor = sys_vdp_stream_base
+vdp_stream_cursor = 0x080c0000
 
 function vdp_stream_claim(count)
 	local base<const> = vdp_stream_cursor
-	vdp_stream_cursor = base + (count * sys_vdp_arg_stride)
+	vdp_stream_cursor = base + (count * 0x00000004)
 	return base
 end
 
 function vdp_stream_submit_cpu_fifo()
 	local end_packet<const>: *word = vdp_stream_claim(1)
-	local stream<const>: *word = sys_vdp_stream_base
-	local fifo<const>: *word = sys_vdp_fifo
-	local fifo_ctrl<const>: *word = sys_vdp_fifo_ctrl
-	*end_packet = sys_vdp_pkt_end
-	local word_count<const> = (vdp_stream_cursor - sys_vdp_stream_base) // sys_vdp_arg_stride
+	local stream<const>: *word = 0x080c0000
+	local fifo<const>: *word = 0x0800007c
+	local fifo_ctrl<const>: *word = 0x08000080
+	*end_packet = 0x00000000
+	local word_count<const> = (vdp_stream_cursor - 0x080c0000) // 0x00000004
 	local index = 0
 	while index < word_count do
 		*fifo = stream[index]
 		index = index + 1
 	end
-	*fifo_ctrl = sys_vdp_fifo_ctrl_seal
-	vdp_stream_cursor = sys_vdp_stream_base
+	*fifo_ctrl = 0x00000001
+	vdp_stream_cursor = 0x080c0000
 end
 
 local packet_kind<const> = 0x18000000
@@ -105,14 +105,14 @@ struct rpu_seal_frame_packet
 end
 
 function vdp_rpu.exec_pass_list(pass_count, pass_desc_addr)
-	local packet<const>: *rpu_exec_pass_list_packet = vdp_stream_claim(sizeof(rpu_exec_pass_list_packet) // sys_vdp_arg_stride)
+	local packet<const>: *rpu_exec_pass_list_packet = vdp_stream_claim(sizeof(rpu_exec_pass_list_packet) // 0x00000004)
 	packet->header = packet_kind | (words_exec_pass_list << 16)
 	packet->op = op_exec_pass_list | (pass_count << 8)
 	packet->pass_desc_addr = pass_desc_addr
 end
 
 function vdp_rpu.seal_frame()
-	local packet<const>: *rpu_seal_frame_packet = vdp_stream_claim(sizeof(rpu_seal_frame_packet) // sys_vdp_arg_stride)
+	local packet<const>: *rpu_seal_frame_packet = vdp_stream_claim(sizeof(rpu_seal_frame_packet) // 0x00000004)
 	packet->header = packet_kind | (words_seal_frame << 16)
 	packet->op = op_seal_frame
 end

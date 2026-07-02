@@ -28,7 +28,7 @@ local vdp_rpu_quads<const> = require('system/vdp_rpu_quads')
 local vdp_image<const> = require('system/vdp_image')
 local cart_input<const> = require('cartlib/input/player')
 
-local irq_ack_addr<const> = 0x0800010c
+local irq_ack_addr<const> = 0x08000108
 local irq_apu<const> = 0x0200
 
 local world_instance<const> = world_module.instance
@@ -37,8 +37,8 @@ local definitions<const> = {}
 local subsystem_definitions<const> = {}
 local component_definitions<const> = {}
 local cart_irq_handlers<const> = {}
-mem[sys_vdp_slot_primary_atlas] = sys_vdp_slot_none
-mem[sys_vdp_slot_secondary_atlas] = sys_vdp_slot_none
+mem[0x0800000c] = 0xffffffff
+mem[0x08000010] = 0xffffffff
 
 local excluded_class_keys<const> = {
 	def_id = true,

@@ -2,7 +2,7 @@ local bin<const> = require('system/bin')
 
 local romdir<const> = {}
 
-local cart_magic<const> = sys_cart_magic
+local cart_magic<const> = 0x58534d42
 local cart_metadata_header_size<const> = 72
 local toc_magic_value<const> = 0x434f5442
 local toc_header_size<const> = 48
@@ -397,13 +397,10 @@ local list_entries<const> = function(roms, kind)
 	return out
 end
 
-local cart_header<const> = read_header(sys_rom_cart_base, 'cart', false)
-local overlay_header = nil
-if sys_rom_overlay_size > 0 then
-	overlay_header = read_header(sys_rom_overlay_base, 'overlay', false)
-end
+local cart_header<const> = read_header(0x01000000, 'cart', false)
+local overlay_header<const> = read_header(0x06000000, 'overlay', false)
 
-local system_rom<const> = parse_rom(read_header(sys_rom_system_base, 'system', true), rom_system)
+local system_rom<const> = parse_rom(read_header(0x00000000, 'system', true), rom_system)
 local cart_rom = nil
 if cart_header ~= nil then
 	cart_rom = parse_rom(cart_header, rom_cart)

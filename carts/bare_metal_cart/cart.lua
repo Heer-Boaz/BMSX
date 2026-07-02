@@ -6,23 +6,23 @@ local cam_screen_look<const>  = camobj.cam_screen_look
 local cam_move<const>         = camobj.cam_move
 local sincos_turn32<const>    = require('bios/util/sincos_turn32')
 
-local vdp_stream_base<const> = sys_vdp_stream_base
-local vram_staging_base<const> = sys_vram_staging_base
-local scratch_base<const> = sys_geo_scratch_base
-local irq_ack_addr<const> = 0x0800010c
-local irq_mask_addr<const> = 0x08000110
+local vdp_stream_base<const> = 0x080c0000
+local vram_staging_base<const> = 0x11000000
+local scratch_base<const> = 0x08040000
+local irq_ack_addr<const> = 0x08000108
+local irq_mask_addr<const> = 0x0800010c
 local irq_pending_flags = 0
 
-local vdp_mode_register<const>: *word = sys_vdp_mode
-local vdp_dither_register<const>: *word = sys_vdp_dither
+local vdp_mode_register<const>: *word = 0x08000084
+local vdp_dither_register<const>: *word = 0x08000008
 local irq_mask_register<const>: *word = irq_mask_addr
 local irq_ack_register<const>: *word = irq_ack_addr
-local dma_src_register<const>: *word = sys_dma_src
-local dma_dst_register<const>: *word = sys_dma_dst
-local dma_len_register<const>: *word = sys_dma_len
-local dma_ctrl_register<const>: *word = sys_dma_ctrl
-local inp_keys<const>: *word[8] = sys_inp_keys
-local inp_ctrl_register<const>: *word = sys_inp_ctrl
+local dma_src_register<const>: *word = 0x08000110
+local dma_dst_register<const>: *word = 0x08000114
+local dma_len_register<const>: *word = 0x08000118
+local dma_ctrl_register<const>: *word = 0x0800011c
+local inp_keys<const>: *word[8] = 0x0800019c
+local inp_ctrl_register<const>: *word = 0x08000194
 
 -- USB HID usages (page 0x07); the ICU keyboard bitmap is indexed by these.
 local key_digit1<const> = 30
@@ -39,12 +39,11 @@ local key_r<const> = 21
 local key_f<const> = 9
 local key_shift_left<const> = 225
 
-local dma_ctrl_start<const> = 1
 local irq_dma_done<const> = 0x01
 local irq_dma_error<const> = 0x02
 local irq_vblank<const> = 0x10
 
-*vdp_mode_register = sys_vdp_mode_psx
+*vdp_mode_register = 0x00000002
 
 function irq(flags)
 	irq_pending_flags = irq_pending_flags | flags
@@ -292,17 +291,17 @@ local rpu_c1_vram_addr<const> = rpu_c0_vram_addr + c0_bytes
 local rpu_joint_vram_addr<const> = rpu_c1_vram_addr + c1_bytes
 local rpu_morph_vertex_vram_addr<const> = rpu_joint_vram_addr + joint_bytes
 local rpu_surface_desc_vram_addr<const> = rpu_morph_vertex_vram_addr + morph_vertex_bytes
-local rpu_pass_desc_vram_addr<const> = rpu_surface_desc_vram_addr + surface_desc_count * sys_rpu_surface_desc_bytes
-local rpu_draw_desc_vram_addr<const> = rpu_pass_desc_vram_addr + pass_desc_count * sys_rpu_pass_desc_bytes
-local rpu_stream_desc_vram_addr<const> = rpu_draw_desc_vram_addr + draw_desc_count * sys_rpu_draw_desc_bytes
-local rpu_constant_desc_vram_addr<const> = rpu_stream_desc_vram_addr + stream_bind_desc_count * sys_rpu_stream_desc_bytes
-local rpu_texture_desc_vram_addr<const> = rpu_constant_desc_vram_addr + constant_bind_desc_count * sys_rpu_constant_desc_bytes
-local rpu_scene_color_vram_addr<const> = rpu_texture_desc_vram_addr + sampled_surface_bind_desc_count * sys_rpu_texture_desc_bytes
+local rpu_pass_desc_vram_addr<const> = rpu_surface_desc_vram_addr + surface_desc_count * 0x00000010
+local rpu_draw_desc_vram_addr<const> = rpu_pass_desc_vram_addr + pass_desc_count * 0x00000024
+local rpu_stream_desc_vram_addr<const> = rpu_draw_desc_vram_addr + draw_desc_count * 0x0000002c
+local rpu_constant_desc_vram_addr<const> = rpu_stream_desc_vram_addr + stream_bind_desc_count * 0x0000000c
+local rpu_texture_desc_vram_addr<const> = rpu_constant_desc_vram_addr + constant_bind_desc_count * 0x0000000c
+local rpu_scene_color_vram_addr<const> = rpu_texture_desc_vram_addr + sampled_surface_bind_desc_count * 0x00000008
 local rpu_scene_depth_vram_addr<const> = rpu_scene_color_vram_addr + screen_width * screen_height * 4
 
 local atlas_surface<const> = rpu_surface_desc_vram_addr
-local scene_color_surface<const> = rpu_surface_desc_vram_addr + sys_rpu_surface_desc_bytes
-local scene_depth_surface<const> = rpu_surface_desc_vram_addr + (sys_rpu_surface_desc_bytes * 2)
+local scene_color_surface<const> = rpu_surface_desc_vram_addr + 0x00000010
+local scene_depth_surface<const> = rpu_surface_desc_vram_addr + (0x00000010 * 2)
 
 local white<const> = 0xffffffff
 local othercolor<const> = 0x00ffffff
@@ -322,14 +321,14 @@ local mesh_tint<const> = white
 local mesh_joint_word<const> = 0x00000001
 local mesh_weight_word<const> = 0x000000ff
 
-local rpu_primitive_triangles<const> = sys_rpu_prim_triangles | (sys_rpu_index_none << 8)
-local rpu_primitive_triangle_strip<const> = sys_rpu_prim_triangle_strip | (sys_rpu_index_none << 8)
-local rpu_primitive_lines<const> = sys_rpu_prim_lines | (sys_rpu_index_none << 8)
-local rpu_primitive_points<const> = sys_rpu_prim_points | (sys_rpu_index_none << 8)
-local rpu_primitive_indexed_triangles<const> = sys_rpu_prim_triangles | (sys_rpu_index_u16 << 8)
-local rpu_pipeline_opaque<const> = sys_rpu_blend_none | (sys_rpu_depth_none << 4) | (sys_rpu_cull_none << 8) | sys_rpu_pipe_color_write_rgba
-local rpu_pipeline_depth_opaque<const> = sys_rpu_blend_none | (sys_rpu_depth_lequal << 4) | (sys_rpu_cull_none << 8) | sys_rpu_pipe_depth_write | sys_rpu_pipe_color_write_rgba
-local rpu_pipeline_depth_alpha<const> = sys_rpu_blend_alpha | (sys_rpu_depth_lequal << 4) | (sys_rpu_cull_none << 8) | sys_rpu_pipe_depth_write | sys_rpu_pipe_color_write_rgba
+local rpu_primitive_triangles<const> = 0x00000000 | (0x00000000 << 8)
+local rpu_primitive_triangle_strip<const> = 0x00000001 | (0x00000000 << 8)
+local rpu_primitive_lines<const> = 0x00000002 | (0x00000000 << 8)
+local rpu_primitive_points<const> = 0x00000003 | (0x00000000 << 8)
+local rpu_primitive_indexed_triangles<const> = 0x00000000 | (0x00000001 << 8)
+local rpu_pipeline_opaque<const> = 0x00000000 | (0x00000000 << 4) | (0x00000000 << 8) | 0x000f0000
+local rpu_pipeline_depth_opaque<const> = 0x00000000 | (0x00000002 << 4) | (0x00000000 << 8) | 0x00001000 | 0x000f0000
+local rpu_pipeline_depth_alpha<const> = 0x00000001 | (0x00000002 << 4) | (0x00000000 << 8) | 0x00001000 | 0x000f0000
 
 local vdp_stream_cursor
 vdp_stream_cursor = vdp_stream_base
@@ -358,9 +357,9 @@ local submit_current_stream<const> = function()
 	if vdp_stream_cursor ~= vdp_stream_base then
 		local used_bytes<const> = vdp_stream_cursor - vdp_stream_base
 		*dma_src_register = vdp_stream_base
-		*dma_dst_register = sys_vdp_fifo
+		*dma_dst_register = 0x0800007c
 		*dma_len_register = used_bytes
-		*dma_ctrl_register = dma_ctrl_start
+		*dma_ctrl_register = 0x00000001
 		vdp_stream_cursor = vdp_stream_base
 	end
 end
@@ -423,7 +422,7 @@ local upload_atlas_to_vram<const> = function()
 	*dma_src_register = scratch_base
 	*dma_dst_register = vram_staging_base + rpu_atlas_vram_addr
 	*dma_len_register = atlas_bytes
-	*dma_ctrl_register = dma_ctrl_start
+	*dma_ctrl_register = 0x00000001
 	wait_interrupt(irq_dma_done | irq_dma_error)
 end
 
@@ -1223,19 +1222,19 @@ local write_vdp_command_descriptors<const> = function()
 	surfaces[0].pitch_bytes = atlas_width * 4
 	surfaces[0].width = atlas_width
 	surfaces[0].height = atlas_height
-	surfaces[0].format = sys_rpu_surface_format_rgba8
+	surfaces[0].format = 0x00000000
 	surfaces[1].desc_addr = scene_color_surface
 	surfaces[1].base_addr = rpu_scene_color_vram_addr
 	surfaces[1].pitch_bytes = screen_width * 4
 	surfaces[1].width = screen_width
 	surfaces[1].height = screen_height
-	surfaces[1].format = sys_rpu_surface_format_rgba8
+	surfaces[1].format = 0x00000000
 	surfaces[2].desc_addr = scene_depth_surface
 	surfaces[2].base_addr = rpu_scene_depth_vram_addr
 	surfaces[2].pitch_bytes = screen_width * 2
 	surfaces[2].width = screen_width
 	surfaces[2].height = screen_height
-	surfaces[2].format = sys_rpu_surface_format_depth16
+	surfaces[2].format = 0x00000001
 
 	local surface_words<const>: *word = vram_staging_base + rpu_surface_desc_vram_addr
 	local surface_index = 0
@@ -1317,7 +1316,7 @@ local write_vdp_command_descriptors<const> = function()
 	passes[0].depth_surface_desc_addr = scene_depth_surface
 	passes[0].viewport_xy = 0
 	passes[0].viewport_wh = screen_width | (screen_height << 16)
-	passes[0].pass_ops = sys_rpu_pass_color_clear | sys_rpu_pass_depth_clear
+	passes[0].pass_ops = 0x00000001 | 0x00000002
 	passes[0].clear_color = 0xff071a3a
 	passes[0].clear_depth_word = 0xffffffff
 	passes[0].first_draw = scene_draw_first
@@ -1333,7 +1332,7 @@ local write_vdp_command_descriptors<const> = function()
 	passes[1].draw_count = present_draw_count
 
 	local draws<const>: *bm_draw_desc[draw_desc_count] = draw_desc_addr
-	draws[0].shader_variant = sys_rpu_shader_v2_c4
+	draws[0].shader_variant = 0x00000000
 	draws[0].primitive_index_type = rpu_primitive_triangles
 	draws[0].pipeline_word = rpu_pipeline_opaque
 	draws[0].vertex_count = background_vertex_count
@@ -1346,7 +1345,7 @@ local write_vdp_command_descriptors<const> = function()
 	draws[0].constant_count = 0
 	draws[0].sampled_surface_first = 0
 	draws[0].sampled_surface_count = 0
-	draws[1].shader_variant = sys_rpu_shader_v2_c4
+	draws[1].shader_variant = 0x00000000
 	draws[1].primitive_index_type = rpu_primitive_triangles
 	draws[1].pipeline_word = rpu_pipeline_opaque
 	draws[1].vertex_count = vector_vertex_count
@@ -1359,7 +1358,7 @@ local write_vdp_command_descriptors<const> = function()
 	draws[1].constant_count = 0
 	draws[1].sampled_surface_first = 0
 	draws[1].sampled_surface_count = 0
-	draws[2].shader_variant = sys_rpu_shader_v2_c4
+	draws[2].shader_variant = 0x00000000
 	draws[2].primitive_index_type = rpu_primitive_lines
 	draws[2].pipeline_word = rpu_pipeline_opaque
 	draws[2].vertex_count = 2
@@ -1372,7 +1371,7 @@ local write_vdp_command_descriptors<const> = function()
 	draws[2].constant_count = 0
 	draws[2].sampled_surface_first = 0
 	draws[2].sampled_surface_count = 0
-	draws[3].shader_variant = sys_rpu_shader_v2_c4
+	draws[3].shader_variant = 0x00000000
 	draws[3].primitive_index_type = rpu_primitive_points
 	draws[3].pipeline_word = rpu_pipeline_depth_alpha
 	draws[3].vertex_count = 1
@@ -1385,7 +1384,7 @@ local write_vdp_command_descriptors<const> = function()
 	draws[3].constant_count = 0
 	draws[3].sampled_surface_first = 0
 	draws[3].sampled_surface_count = 0
-	draws[4].shader_variant = sys_rpu_shader_v2_t2_c4_i_affine2
+	draws[4].shader_variant = 0x00000006
 	draws[4].primitive_index_type = rpu_primitive_triangle_strip
 	draws[4].pipeline_word = rpu_pipeline_depth_opaque
 	draws[4].vertex_count = quad_vertex_count
@@ -1398,7 +1397,7 @@ local write_vdp_command_descriptors<const> = function()
 	draws[4].constant_count = 0
 	draws[4].sampled_surface_first = 0
 	draws[4].sampled_surface_count = 1
-	draws[5].shader_variant = sys_rpu_shader_v3_c4_i_mat4
+	draws[5].shader_variant = 0x00000007
 	draws[5].primitive_index_type = rpu_primitive_triangles
 	draws[5].pipeline_word = rpu_pipeline_depth_opaque
 	draws[5].vertex_count = mat4_vertex_count
@@ -1411,7 +1410,7 @@ local write_vdp_command_descriptors<const> = function()
 	draws[5].constant_count = 0
 	draws[5].sampled_surface_first = 0
 	draws[5].sampled_surface_count = 0
-	draws[6].shader_variant = sys_rpu_shader_v3_c4_c0
+	draws[6].shader_variant = 0x00000002
 	draws[6].primitive_index_type = rpu_primitive_triangles
 	draws[6].pipeline_word = rpu_pipeline_depth_opaque
 	draws[6].vertex_count = mat4_vertex_count
@@ -1424,7 +1423,7 @@ local write_vdp_command_descriptors<const> = function()
 	draws[6].constant_count = 1
 	draws[6].sampled_surface_first = 0
 	draws[6].sampled_surface_count = 0
-	draws[7].shader_variant = sys_rpu_shader_v3_n3_t2_c4_j4_w4_c0_c1 | sys_rpu_shader_flag_morph | sys_rpu_shader_flag_t1
+	draws[7].shader_variant = 0x00000005 | 0x00000008 | 0x00000010
 	draws[7].primitive_index_type = rpu_primitive_indexed_triangles
 	draws[7].pipeline_word = rpu_pipeline_depth_opaque
 	draws[7].vertex_count = mesh_vertex_count
@@ -1437,7 +1436,7 @@ local write_vdp_command_descriptors<const> = function()
 	draws[7].constant_count = 3
 	draws[7].sampled_surface_first = 1
 	draws[7].sampled_surface_count = 2
-	draws[8].shader_variant = sys_rpu_shader_v2_t2_c4_i_affine2
+	draws[8].shader_variant = 0x00000006
 	draws[8].primitive_index_type = rpu_primitive_triangle_strip
 	draws[8].pipeline_word = rpu_pipeline_opaque
 	draws[8].vertex_count = quad_vertex_count
@@ -1452,19 +1451,19 @@ local write_vdp_command_descriptors<const> = function()
 	draws[8].sampled_surface_count = 1
 
 	local streams<const>: *bm_stream_bind_desc[stream_bind_desc_count] = stream_bind_desc_addr
-	streams[0].stream_slot = 0; streams[0].layout_id = sys_rpu_layout_v2_c4; streams[0].vram_addr = rpu_background_vertex_vram_addr; streams[0].byte_length = background_vertex_bytes; streams[0].step_rate = 0
-	streams[1].stream_slot = 0; streams[1].layout_id = sys_rpu_layout_v2_c4; streams[1].vram_addr = rpu_vector_vertex_vram_addr; streams[1].byte_length = vector_vertex_bytes; streams[1].step_rate = 0
-	streams[2].stream_slot = 0; streams[2].layout_id = sys_rpu_layout_v2_c4; streams[2].vram_addr = rpu_vector_vertex_vram_addr + vector_vertex_stride * 2; streams[2].byte_length = vector_vertex_bytes - vector_vertex_stride * 2; streams[2].step_rate = 0
-	streams[3].stream_slot = 0; streams[3].layout_id = sys_rpu_layout_v2_c4; streams[3].vram_addr = rpu_vector_vertex_vram_addr + vector_vertex_stride * 2; streams[3].byte_length = vector_vertex_bytes - vector_vertex_stride * 2; streams[3].step_rate = 0
-	streams[4].stream_slot = 0; streams[4].layout_id = sys_rpu_layout_v2_t2_c4; streams[4].vram_addr = rpu_quad_vertex_vram_addr; streams[4].byte_length = quad_vertex_bytes; streams[4].step_rate = 0
-	streams[5].stream_slot = 1; streams[5].layout_id = sys_rpu_layout_i_affine2_trect_c4; streams[5].vram_addr = rpu_instance_vram_addr; streams[5].byte_length = instance_bytes; streams[5].step_rate = 1
-	streams[6].stream_slot = 0; streams[6].layout_id = sys_rpu_layout_v3_c4; streams[6].vram_addr = rpu_mat4_vertex_vram_addr; streams[6].byte_length = mat4_vertex_bytes; streams[6].step_rate = 0
-	streams[7].stream_slot = 1; streams[7].layout_id = sys_rpu_layout_i_mat4_c4; streams[7].vram_addr = rpu_mat4_instance_vram_addr; streams[7].byte_length = mat4_instance_bytes; streams[7].step_rate = 1
-	streams[8].stream_slot = 0; streams[8].layout_id = sys_rpu_layout_v3_c4; streams[8].vram_addr = rpu_mat4_vertex_vram_addr; streams[8].byte_length = mat4_vertex_bytes; streams[8].step_rate = 0
-	streams[9].stream_slot = 0; streams[9].layout_id = sys_rpu_layout_v3_n3_t2_c4_j4_w4; streams[9].vram_addr = rpu_mesh_vertex_vram_addr; streams[9].byte_length = mesh_vertex_bytes; streams[9].step_rate = 0
-	streams[10].stream_slot = 2; streams[10].layout_id = sys_rpu_layout_v3_dm3; streams[10].vram_addr = rpu_morph_vertex_vram_addr; streams[10].byte_length = morph_vertex_bytes; streams[10].step_rate = 0
-	streams[11].stream_slot = 0; streams[11].layout_id = sys_rpu_layout_v2_t2_c4; streams[11].vram_addr = rpu_quad_vertex_vram_addr; streams[11].byte_length = quad_vertex_bytes; streams[11].step_rate = 0
-	streams[12].stream_slot = 1; streams[12].layout_id = sys_rpu_layout_i_affine2_trect_c4; streams[12].vram_addr = rpu_instance_vram_addr + present_instance_offset; streams[12].byte_length = instance_bytes - present_instance_offset; streams[12].step_rate = 1
+	streams[0].stream_slot = 0; streams[0].layout_id = 0x00000000; streams[0].vram_addr = rpu_background_vertex_vram_addr; streams[0].byte_length = background_vertex_bytes; streams[0].step_rate = 0
+	streams[1].stream_slot = 0; streams[1].layout_id = 0x00000000; streams[1].vram_addr = rpu_vector_vertex_vram_addr; streams[1].byte_length = vector_vertex_bytes; streams[1].step_rate = 0
+	streams[2].stream_slot = 0; streams[2].layout_id = 0x00000000; streams[2].vram_addr = rpu_vector_vertex_vram_addr + vector_vertex_stride * 2; streams[2].byte_length = vector_vertex_bytes - vector_vertex_stride * 2; streams[2].step_rate = 0
+	streams[3].stream_slot = 0; streams[3].layout_id = 0x00000000; streams[3].vram_addr = rpu_vector_vertex_vram_addr + vector_vertex_stride * 2; streams[3].byte_length = vector_vertex_bytes - vector_vertex_stride * 2; streams[3].step_rate = 0
+	streams[4].stream_slot = 0; streams[4].layout_id = 0x00000001; streams[4].vram_addr = rpu_quad_vertex_vram_addr; streams[4].byte_length = quad_vertex_bytes; streams[4].step_rate = 0
+	streams[5].stream_slot = 1; streams[5].layout_id = 0x00000020; streams[5].vram_addr = rpu_instance_vram_addr; streams[5].byte_length = instance_bytes; streams[5].step_rate = 1
+	streams[6].stream_slot = 0; streams[6].layout_id = 0x00000002; streams[6].vram_addr = rpu_mat4_vertex_vram_addr; streams[6].byte_length = mat4_vertex_bytes; streams[6].step_rate = 0
+	streams[7].stream_slot = 1; streams[7].layout_id = 0x00000021; streams[7].vram_addr = rpu_mat4_instance_vram_addr; streams[7].byte_length = mat4_instance_bytes; streams[7].step_rate = 1
+	streams[8].stream_slot = 0; streams[8].layout_id = 0x00000002; streams[8].vram_addr = rpu_mat4_vertex_vram_addr; streams[8].byte_length = mat4_vertex_bytes; streams[8].step_rate = 0
+	streams[9].stream_slot = 0; streams[9].layout_id = 0x00000006; streams[9].vram_addr = rpu_mesh_vertex_vram_addr; streams[9].byte_length = mesh_vertex_bytes; streams[9].step_rate = 0
+	streams[10].stream_slot = 2; streams[10].layout_id = 0x00000008; streams[10].vram_addr = rpu_morph_vertex_vram_addr; streams[10].byte_length = morph_vertex_bytes; streams[10].step_rate = 0
+	streams[11].stream_slot = 0; streams[11].layout_id = 0x00000001; streams[11].vram_addr = rpu_quad_vertex_vram_addr; streams[11].byte_length = quad_vertex_bytes; streams[11].step_rate = 0
+	streams[12].stream_slot = 1; streams[12].layout_id = 0x00000020; streams[12].vram_addr = rpu_instance_vram_addr + present_instance_offset; streams[12].byte_length = instance_bytes - present_instance_offset; streams[12].step_rate = 1
 
 	local constants<const>: *bm_constant_bind_desc[constant_bind_desc_count] = constant_bind_desc_addr
 	constants[0].binding_slot = 0; constants[0].vram_addr = rpu_c0_vram_addr; constants[0].byte_length = c0_bytes
@@ -1482,7 +1481,7 @@ local write_vdp_command_descriptors<const> = function()
 	local pass_index = 0
 	while pass_index < pass_desc_count do
 		local pass<const>: *bm_pass_desc = &passes[pass_index]
-		local word_base<const> = (pass_index * sys_rpu_pass_desc_bytes) // 4
+		local word_base<const> = (pass_index * 0x00000024) // 4
 		pass_words[word_base] = pass->color_surface_desc_addr
 		pass_words[word_base + 1] = pass->depth_surface_desc_addr
 		pass_words[word_base + 2] = pass->viewport_xy
@@ -1490,7 +1489,7 @@ local write_vdp_command_descriptors<const> = function()
 		pass_words[word_base + 4] = pass->pass_ops
 		pass_words[word_base + 5] = pass->clear_color
 		pass_words[word_base + 6] = pass->clear_depth_word
-		pass_words[word_base + 7] = rpu_draw_desc_vram_addr + pass->first_draw * sys_rpu_draw_desc_bytes
+		pass_words[word_base + 7] = rpu_draw_desc_vram_addr + pass->first_draw * 0x0000002c
 		pass_words[word_base + 8] = pass->draw_count
 		pass_index = pass_index + 1
 	end
@@ -1499,7 +1498,7 @@ local write_vdp_command_descriptors<const> = function()
 	local draw_index = 0
 	while draw_index < draw_desc_count do
 		local draw<const>: *bm_draw_desc = &draws[draw_index]
-		local word_base<const> = (draw_index * sys_rpu_draw_desc_bytes) // 4
+		local word_base<const> = (draw_index * 0x0000002c) // 4
 		draw_words[word_base] = draw->shader_variant | ((draw->primitive_index_type & 0xff) << 16)
 		draw_words[word_base + 1] = draw->pipeline_word
 		draw_words[word_base + 2] = draw->vertex_count
@@ -1507,9 +1506,9 @@ local write_vdp_command_descriptors<const> = function()
 		draw_words[word_base + 4] = draw->index_vram_addr
 		draw_words[word_base + 5] = draw->index_count
 		draw_words[word_base + 6] = ((draw->primitive_index_type >> 8) & 0xff) | (draw->stream_count << 8) | (draw->constant_count << 16) | (draw->sampled_surface_count << 24)
-		draw_words[word_base + 7] = rpu_stream_desc_vram_addr + draw->stream_first * sys_rpu_stream_desc_bytes
-		draw_words[word_base + 8] = rpu_constant_desc_vram_addr + draw->constant_first * sys_rpu_constant_desc_bytes
-		draw_words[word_base + 9] = rpu_texture_desc_vram_addr + draw->sampled_surface_first * sys_rpu_texture_desc_bytes
+		draw_words[word_base + 7] = rpu_stream_desc_vram_addr + draw->stream_first * 0x0000000c
+		draw_words[word_base + 8] = rpu_constant_desc_vram_addr + draw->constant_first * 0x0000000c
+		draw_words[word_base + 9] = rpu_texture_desc_vram_addr + draw->sampled_surface_first * 0x00000008
 		draw_words[word_base + 10] = 0
 		draw_index = draw_index + 1
 	end
@@ -1518,7 +1517,7 @@ local write_vdp_command_descriptors<const> = function()
 	local stream_index = 0
 	while stream_index < stream_bind_desc_count do
 		local stream<const>: *bm_stream_bind_desc = &streams[stream_index]
-		local word_base<const> = (stream_index * sys_rpu_stream_desc_bytes) // 4
+		local word_base<const> = (stream_index * 0x0000000c) // 4
 		stream_words[word_base] = stream->vram_addr
 		stream_words[word_base + 1] = stream->byte_length
 		stream_words[word_base + 2] = stream->layout_id | (stream->stream_slot << 16) | (stream->step_rate << 24)
@@ -1529,7 +1528,7 @@ local write_vdp_command_descriptors<const> = function()
 	local constant_index = 0
 	while constant_index < constant_bind_desc_count do
 		local constant<const>: *bm_constant_bind_desc = &constants[constant_index]
-		local word_base<const> = (constant_index * sys_rpu_constant_desc_bytes) // 4
+		local word_base<const> = (constant_index * 0x0000000c) // 4
 		constant_words[word_base] = constant->vram_addr
 		constant_words[word_base + 1] = constant->byte_length
 		constant_words[word_base + 2] = constant->binding_slot
@@ -1540,7 +1539,7 @@ local write_vdp_command_descriptors<const> = function()
 	local sampled_surface_index = 0
 	while sampled_surface_index < sampled_surface_bind_desc_count do
 		local sampled_surface_bind<const>: *bm_sampled_surface_bind_desc = &sampled_surface_binds[sampled_surface_index]
-		local word_base<const> = (sampled_surface_index * sys_rpu_texture_desc_bytes) // 4
+		local word_base<const> = (sampled_surface_index * 0x00000008) // 4
 		texture_words[word_base] = sampled_surface_bind->surface_desc_addr
 		texture_words[word_base + 1] = sampled_surface_bind->texture_slot
 		sampled_surface_index = sampled_surface_index + 1
@@ -1564,7 +1563,7 @@ local initialize_vdp_resources<const> = function()
 			*dma_src_register = desc->upload_src_addr
 			*dma_dst_register = vram_staging_base + desc->vram_addr
 			*dma_len_register = desc->upload_byte_length
-			*dma_ctrl_register = dma_ctrl_start
+			*dma_ctrl_register = 0x00000001
 			wait_interrupt(irq_dma_done | irq_dma_error)
 		end
 		buffer_index = buffer_index + 1
@@ -1590,7 +1589,7 @@ local draw_frame<const> = function()
 		*dma_src_register = desc->src_addr
 		*dma_dst_register = vram_staging_base + desc->vram_addr
 		*dma_len_register = desc->byte_length
-		*dma_ctrl_register = dma_ctrl_start
+		*dma_ctrl_register = 0x00000001
 		wait_interrupt(irq_dma_done | irq_dma_error)
 		frame_upload_index = frame_upload_index + 1
 	end
@@ -1601,23 +1600,23 @@ local draw_frame<const> = function()
 		*dma_src_register = desc->src_addr
 		*dma_dst_register = vram_staging_base + desc->vram_addr
 		*dma_len_register = desc->byte_length
-		*dma_ctrl_register = dma_ctrl_start
+		*dma_ctrl_register = 0x00000001
 		wait_interrupt(irq_dma_done | irq_dma_error)
 		constant_upload_index = constant_upload_index + 1
 	end
 	local wp = vdp_stream_base
 	local exec_packet<const>: *bm_rpu_exec_pass_list_packet = wp
-	exec_packet->header = sys_rpu_packet_kind | (sys_rpu_words_exec_pass_list << 16)
-	exec_packet->op = sys_rpu_op_exec_pass_list | (pass_desc_count << 8)
+	exec_packet->header = 0x18000000 | (0x00000002 << 16)
+	exec_packet->op = 0x00000040 | (pass_desc_count << 8)
 	exec_packet->pass_desc_addr = rpu_pass_desc_vram_addr
 	wp = wp + sizeof(bm_rpu_exec_pass_list_packet)
 	local seal_packet<const>: *bm_rpu_seal_frame_packet = wp
-	seal_packet->header = sys_rpu_packet_kind | (sys_rpu_words_seal_frame << 16)
-	seal_packet->op = sys_rpu_op_seal_frame
+	seal_packet->header = 0x18000000 | (0x00000001 << 16)
+	seal_packet->op = 0x00000041
 	wp = wp + sizeof(bm_rpu_seal_frame_packet)
 	local end_packet<const>: *word = wp
-	*end_packet = sys_vdp_pkt_end
-	wp = wp + sys_vdp_arg_stride
+	*end_packet = 0x00000000
+	wp = wp + 0x00000004
 	vdp_stream_cursor = wp
 	submit_current_stream()
 	wait_interrupt(irq_dma_done | irq_dma_error)
@@ -1629,7 +1628,7 @@ end
 build_lua_atlas()
 initialize_vdp_resources()
 upload_atlas_to_vram()
-*inp_ctrl_register = inp_ctrl_arm
+*inp_ctrl_register = 0x00000001
 
 while true do
 	wait_interrupt(irq_vblank)
@@ -1646,5 +1645,5 @@ while true do
 	sprite_y = 88 + ((frame // 12) % 4)
 	update_camera()
 	draw_frame()
-	*inp_ctrl_register = inp_ctrl_arm
+	*inp_ctrl_register = 0x00000001
 end

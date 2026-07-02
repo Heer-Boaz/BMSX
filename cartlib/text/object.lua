@@ -317,7 +317,7 @@ function textobject.new(opts)
 	self.highlight_move_enabled = false
 	self.highlight_pulse_enabled = false
 	self.highlight_jitter_enabled = false
-	self.layer = opts.layer or sys_vdp_layer_ui
+	self.layer = opts.layer or 0x00000001
 	self.highlight_vibe_scale = 1
 	self.highlight_vibe_offset_x = 0
 	self.highlight_vibe_offset_y = 0
@@ -330,7 +330,7 @@ function textobject.new(opts)
 	self.font = opts.font or font_module.get('default')
 	local dimensions = opts.dimensions
 	if not dimensions then
-		local screen_wh<const> = mem[sys_vdp_screen_wh]
+		local screen_wh<const> = mem[0x08000088]
 		dimensions = { left = 0, top = 0, right = screen_wh & 0xffff, bottom = screen_wh >> 16 }
 	end
 	self.dimensions = dimensions

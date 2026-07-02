@@ -49,7 +49,6 @@ export function resetRuntimeState(runtime: Runtime): void {
 	// MachineManager.screen before calling bootActiveProgram.
 	runtime.frameLoop.resetFrameState();
 	runtime.pendingCall = null;
-	runtime.cartBoot.reset();
 	resetHardwareState(runtime);
 	const cpu = runtime.machine.cpu;
 	cpu.globals.clear();

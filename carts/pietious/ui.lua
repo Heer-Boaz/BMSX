@@ -91,16 +91,16 @@ function ui:draw_ui()
 		return
 	end
 	local player<const> = oget('pietolon')
-	vdp_blit_img_color('game_header', 0, 0, 200, sys_vdp_layer_ui, 1, 1, 0, 0xffffffff, 0)
+	vdp_blit_img_color('game_header', 0, 0, 200, 0x00000001, 1, 1, 0, 0xffffffff, 0)
 	local equipped_sprite_id<const> = secondary_weapon_sprite_id(player.secondary_weapon)
 	if equipped_sprite_id ~= nil then
-		vdp_blit_img_color(equipped_sprite_id, hud_equipped_item_x * room_tile_size, hud_equipped_item_y * room_tile_size, 202, sys_vdp_layer_ui, 1, 1, 0, 0xffffffff, 0)
+		vdp_blit_img_color(equipped_sprite_id, hud_equipped_item_x * room_tile_size, hud_equipped_item_y * room_tile_size, 202, 0x00000001, 1, 1, 0, 0xffffffff, 0)
 	end
 	for i = 0, (self.hud_health_level - 1) do
-		vdp_blit_img_color('energybar_stripe_blue', hud_health_bar_x + i, hud_health_bar_y, 201, sys_vdp_layer_ui, 1, 1, 0, 0xffffffff, 0)
+		vdp_blit_img_color('energybar_stripe_blue', hud_health_bar_x + i, hud_health_bar_y, 201, 0x00000001, 1, 1, 0, 0xffffffff, 0)
 	end
 	for i = 0, (self.hud_weapon_level - 1) do
-		vdp_blit_img_color('energybar_stripe_red', hud_weapon_bar_x + i, hud_weapon_bar_y, 201, sys_vdp_layer_ui, 1, 1, 0, 0xffffffff, 0)
+		vdp_blit_img_color('energybar_stripe_red', hud_weapon_bar_x + i, hud_weapon_bar_y, 201, 0x00000001, 1, 1, 0, 0xffffffff, 0)
 	end
 end
 

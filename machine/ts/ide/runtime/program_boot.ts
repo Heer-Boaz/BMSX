@@ -38,7 +38,6 @@ export async function prepareRebootToBootRom(runtime: Runtime): Promise<void> {
 	deactivateTerminalMode(runtime);
 	deactivateEditor(runtime);
 	clearLuaBootState(runtime);
-	runtime.cartBoot.reset();
 	if (runtime.cartLuaSources && runtime.cartProjectRootPath) {
 		await applyWorkspaceOverridesToCart(runtime, {
 			cart: runtime.cartLuaSources,

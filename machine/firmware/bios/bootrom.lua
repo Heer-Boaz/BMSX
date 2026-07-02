@@ -1,7 +1,7 @@
 -- bootrom.lua
 -- bmsx system boot screen
 
-mem[sys_vdp_mode] = sys_vdp_mode_psx
+mem[0x08000084] = 0x00000002
 
 require('system/msx_colors')
 require('bios/base')
@@ -76,7 +76,7 @@ local cart_rom_magic<const> = 0x58534d42
 local irq_img_done<const> = 0x0004
 local irq_img_error<const> = 0x0008
 local irq_vblank<const> = 0x0010
-local irq_mask_addr<const> = 0x08000110
+local irq_mask_addr<const> = 0x0800010c
 local boot_vblank_count = 0
 
 local boot_start
@@ -88,49 +88,12 @@ local boot_screen_visible = false
 local boot_screen_presented
 local render_boot_screen
 
-local read_cart_header<const> = function(base)
+local cart_header_present<const> = function(base)
 	if mem[base] ~= cart_rom_magic then
-		return nil
+		return false
 	end
 	local header_size<const> = mem[base + 4]
-	if header_size < cart_rom_base_header_size then
-		return nil
-	end
-	return {
-		header_size = header_size,
-		manifest_off = mem[base + 8],
-		manifest_len = mem[base + 12],
-		toc_off = mem[base + 16],
-		toc_len = mem[base + 20],
-		data_off = mem[base + 24],
-		data_len = mem[base + 28],
-	}
-end
-
-local flatten_manifest<const> = function(manifest)
-	if not manifest then
-		return nil
-	end
-	local machine<const> = manifest.machine
-	return {
-		title = manifest.title,
-		short_name = manifest.short_name,
-		rom_name = manifest.rom_name,
-		entry_path = manifest.lua and manifest.lua.entry_path,
-		namespace = machine.namespace,
-		vdp_class = machine.vdp_class,
-		input = manifest.input,
-	}
-end
-
-local flatten_machine_manifest<const> = function(machine)
-	if not machine then
-		return nil
-	end
-	return {
-		namespace = machine.namespace,
-		vdp_class = machine.vdp_class,
-	}
+	return header_size >= cart_rom_base_header_size
 end
 
 local scroll_boot_lines<const> = function(lines, window_size, delta)
@@ -189,39 +152,18 @@ local format_bignumbers<const> = function(value)
 	return tostring(value)
 end
 
-local build_info<const> = function()
-	local cart_header<const> = read_cart_header(cart_rom_base)
-	local cart_manifest_raw<const> = cart_manifest
-	local cart_manifest<const> = cart_header and flatten_manifest(cart_manifest_raw)
-	local machine_manifest<const> = flatten_machine_manifest(machine_manifest)
-
-	local cart_title<const> = cart_manifest and cart_manifest.title or '--'
-	-- local cart_short = cart_manifest and cart_manifest.short_name or '--'
-	local cart_rom<const> = cart_manifest and cart_manifest.rom_name or '--'
-	-- local cart_ns = cart_manifest and cart_manifest.namespace or '--'
-	-- local cart_entry = cart_manifest and cart_manifest.entry_path or '--'
-	local cart_vdp_class<const> = cart_manifest and cart_manifest.vdp_class or '--'
+local build_info<const> = function(width, height)
 	local cart_entry_ready<const> = mem[cart_program_vector_addr] == cart_program_start_addr
-
-	local machine_vdp_class<const> = machine_manifest and machine_manifest.vdp_class or '--'
-	local vram_total<const> = sys_vram_size
+	local vram_total<const> = 0x03435000
 
 	return {
-		machine_vdp_class = machine_vdp_class,
-		cart_title = cart_title,
-		-- cart_short = cart_short,
-		cart_rom = cart_rom,
-		-- cart_ns = cart_ns,
-		-- cart_canon = cart_canon,
-		-- cart_entry = cart_entry,
-		-- cart_input = cart_input,
-		cart_vdp_class = cart_vdp_class,
 		cart_entry_ready = cart_entry_ready,
-		hw_cart_max = format_bytes(sys_cart_rom_size),
-		hw_ram_total = format_bytes(sys_ram_size),
+		hw_cart_max = format_bytes(0x05000000),
+		hw_ram_total = format_bytes(0x00400000),
 		hw_vram_total = format_bytes(vram_total),
-		hw_max_cycles = format_bignumbers(sys_max_cycles_per_frame),
-		}
+		hw_screen = tostring(width) .. 'x' .. tostring(height),
+		hw_max_cycles = format_bignumbers(mem[0x08010368]),
+	}
 end
 
 local divider<const> = function(line_slots)
@@ -278,15 +220,14 @@ local build_boot_content_lines<const> = function(info, cart_present, cursor, ela
 	local lines<const> = {}
 	local hw_specs<const> = {
 		{ label = 'MAX CART ROM', value = info.hw_cart_max, color = color_accent },
-		{ label = 'VDP CLASS', value = info.machine_vdp_class, color = color_accent },
+		{ label = 'SCREEN', value = info.hw_screen, color = color_accent },
 		{ label = 'TOTAL RAM', value = info.hw_ram_total, color = color_info_total },
 		{ label = 'TOTAL VRAM', value = info.hw_vram_total, color = color_info_total },
 		-- { label = 'MAX CYCLES/FRAME', value = info.hw_max_cycles, color = color_accent },
 	}
 	local cart_specs<const> = {
-		-- { label = 'CART ROM', value = info.cart_rom, color = color_accent },
-		{ label = 'CART NAME', value = info.cart_title, color = color_ok },
-		{ label = 'VDP CLASS', value = info.cart_vdp_class, color = color_accent },
+		{ label = 'ROM HEADER', value = cart_present and 'FOUND' or 'MISSING', color = cart_present and color_ok or color_warn },
+		{ label = 'ENTRY', value = info.cart_entry_ready and 'READY' or 'WAITING', color = info.cart_entry_ready and color_ok or color_accent },
 	}
 	local label_width = 0
 	for i = 1, #hw_specs do
@@ -312,7 +253,7 @@ local build_boot_content_lines<const> = function(info, cart_present, cursor, ela
 	append_section(lines, 'CARTRIDGE', line_slots)
 	for i = 1, #cart_specs do
 		local spec<const> = cart_specs[i]
-		append_kv_wrapped(lines, spec.label, spec.value, spec.color or color_text, label_width, line_slots)
+			append_kv_wrapped(lines, spec.label, spec.value, spec.color, label_width, line_slots)
 	end
 
 	append_blank_line(lines)
@@ -368,7 +309,7 @@ local down_next_repeat_frame = 0
 local up_next_repeat_frame = 0
 
 local key_pressed<const> = function(usage)
-	local word<const> = mem[sys_inp_keys + ((usage >> 5) << 2)]
+	local word<const> = mem[0x0800019c + ((usage >> 5) << 2)]
 	return ((word >> (usage & 31)) & 1) ~= 0
 end
 
@@ -405,31 +346,26 @@ local update_boot_screen<const> = function()
 	end
 	prev_arrow_down = arrow_down
 	prev_arrow_up = arrow_up
-local cart_header<const> = read_cart_header(cart_rom_base)
-local cart_present_and_ready<const> = cart_header
-	and mem[cart_rom_base] == cart_rom_magic
-	and mem[cart_program_vector_addr] == cart_program_start_addr
+	local cart_present_and_ready<const> = cart_header_present(cart_rom_base)
+		and mem[cart_program_vector_addr] == cart_program_start_addr
 
-if cart_present_and_ready and not boot_requested and system_slot_ready and not system_slot_failed then
-	if (mem[sys_vdp_status] & sys_vdp_status_submit_busy) == 0 then
-		boot_requested = true
-		print('Cart boot requested.')
-		mem[irq_mask_addr] = 0
-		mem[sys_boot_cart] = 1
+	if cart_present_and_ready and not boot_requested and system_slot_ready and not system_slot_failed then
+		if (mem[0x08000144] & 0x00000002) == 0 then
+			boot_requested = true
+			print('Cart boot requested.')
+			mem[irq_mask_addr] = 0
+		end
+		return true
 	end
-	return
-end
-if boot_requested and mem[sys_boot_cart] == 0 then
-	return
-end
-render_boot_screen(scroll_delta)
-if not boot_screen_presented then
-	boot_screen_presented = true
-end
+	render_boot_screen(scroll_delta)
+	if not boot_screen_presented then
+		boot_screen_presented = true
+	end
+	return false
 end
 
 render_boot_screen = function(scroll_delta)
-	local screen_wh<const> = mem[sys_vdp_screen_wh]
+	local screen_wh<const> = mem[0x08000088]
 	local width<const> = screen_wh & 0xffff
 	local height<const> = screen_wh >> 16
 	local left<const> = 8
@@ -437,9 +373,9 @@ render_boot_screen = function(scroll_delta)
 	local font<const> = font_module.get('default')
 
 	vdp_rpu_quads.clear_color(color_bg)
-	vdp_rpu_quads.fill_rect_color(0, 0, width, 24, 0, sys_vdp_layer_world, color_header_bg)
-	local info<const> = build_info()
-	local cart_present<const> = mem[cart_rom_base] == cart_rom_magic
+	vdp_rpu_quads.fill_rect_color(0, 0, width, 24, 0, 0x00000000, color_header_bg)
+	local info<const> = build_info(width, height)
+	local cart_present<const> = cart_header_present(cart_rom_base)
 	local elapsed<const> = os.clock() - boot_start
 	local cursor<const> = ((elapsed * 2) % 2 == 0) and '█' or ' '
 	local line_slots<const> = line_slots(width, left, font_width)
@@ -462,7 +398,7 @@ render_boot_screen = function(scroll_delta)
 		end
 		if string.len(text) > 0 then
 			local color<const> = line_color or color_text
-			draw_glyph_line_color(font, text, left, y, text_z, sys_vdp_layer_world, color)
+			draw_glyph_line_color(font, text, left, y, text_z, 0x00000000, color)
 		end
 		y = y + line_height
 	end
@@ -483,19 +419,22 @@ end
 init()
 mem[irq_mask_addr] = irq_img_done | irq_img_error | irq_vblank
 new_game()
-mem[sys_inp_ctrl] = inp_ctrl_arm
+mem[0x08000194] = 0x00000001
 while true do
 	wait_vblank()
-	vdp_stream_cursor = sys_vdp_stream_base
-	update_boot_screen()
+	vdp_stream_cursor = 0x080c0000
+	local boot_complete<const> = update_boot_screen()
 	vdp_rpu_quads.finish_frame()
-	do local used_bytes<const> = vdp_stream_cursor - sys_vdp_stream_base
+	do local used_bytes<const> = vdp_stream_cursor - 0x080c0000
 		if used_bytes ~= 0 then
-			mem[sys_dma_src] = sys_vdp_stream_base
-			mem[sys_dma_dst] = sys_vdp_fifo
-			mem[sys_dma_len] = used_bytes
-			mem[sys_dma_ctrl] = dma_ctrl_start
+			mem[0x08000110] = 0x080c0000
+			mem[0x08000114] = 0x0800007c
+			mem[0x08000118] = used_bytes
+			mem[0x0800011c] = 0x00000001
 		end
 	end
-	mem[sys_inp_ctrl] = inp_ctrl_arm
+	if boot_complete then
+		return
+	end
+	mem[0x08000194] = 0x00000001
 end

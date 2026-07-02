@@ -1,8 +1,8 @@
 import assert from 'node:assert/strict';
+import { readFileSync } from 'node:fs';
 import { test } from 'node:test';
 
 import { DEFAULT_LUA_BUILTIN_NAMES } from '../../machine/ts/machine/firmware/builtin_descriptors';
-import { SYSTEM_ROM_GLOBAL_NAME_SET } from '../../machine/ts/machine/firmware/system_globals';
 import {
 	IO_GEO_CMD,
 	IO_GEO_COUNT,
@@ -596,7 +596,9 @@ test('GEO overlap2d submit rejects reserved src2 and non-RAM result base', () =>
 	assert.equal(geometry.captureState().phase, GEOMETRY_CONTROLLER_PHASE_ERROR);
 });
 
-test('GEO cart-visible ABI names are system ROM globals and builtins', () => {
+test('GEO cart-visible words are not host globals or firmware module fields', () => {
+	const source = readFileSync('cartlib/collision2d.lua', 'utf8');
+	assert.equal(source.includes('require('), false);
 	for (const name of [
 		'sys_geo_cmd_overlap2d_pass',
 		'sys_geo_primitive_aabb',
@@ -644,8 +646,8 @@ test('GEO cart-visible ABI names are system ROM globals and builtins', () => {
 		'sys_geo_fault_record_index_mask',
 		'sys_geo_fault_record_index_none',
 	]) {
-		assert.equal(SYSTEM_ROM_GLOBAL_NAME_SET.has(name), true);
-		assert.equal(DEFAULT_LUA_BUILTIN_NAMES.includes(name), true);
+		assert.equal(source.includes(name), false);
+		assert.equal(DEFAULT_LUA_BUILTIN_NAMES.includes(name), false);
 	}
 	assert.equal(GEO_XFORM2_MAX_VERTICES, 64);
 	assert.equal(GEO_SAT2_MAX_POLY_VERTICES, 64);

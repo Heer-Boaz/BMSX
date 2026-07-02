@@ -73,7 +73,7 @@ import { EXT_A_BITS, EXT_B_BITS, EXT_BX_BITS, EXT_C_BITS, INSTRUCTION_BYTES, MAX
 import { buildLuaSemanticFrontend, type LuaBoundReference, type LuaSemanticFrontend, type LuaSemanticFrontendFile } from '../../lua/semantic/frontend';
 import { MMIO_REGISTER_SPEC_BY_ADDRESS, MMIO_REGISTER_SPEC_BY_NAME, type MmioWriteRequirement } from '../bus/registers';
 import { ValueKindFlowAnalyzer, type SymbolFlowState } from './compile_value_flow';
-import { SYSTEM_ROM_GLOBAL_NAMES, SYSTEM_ROM_GLOBAL_NAME_SET } from '../firmware/system_globals';
+import { SYSTEM_ROM_BOOT_SYMBOL_NAMES, SYSTEM_ROM_BOOT_SYMBOL_NAME_SET } from '../firmware/system_boot_symbols';
 import { LuaSyntaxError } from '../../lua/errors';
 import { Decl } from '../../lua/semantic/model';
 import {
@@ -432,7 +432,7 @@ class ProgramBuilder {
 		this.baseProgramRomTextByteLength = baseProgramRomTextByteLength;
 		this.canDeclareStaticStorage = canDeclareStaticStorage;
 		this.constSlotByKey = new Map<string, number>();
-		this.systemGlobalNameSet = new Set(SYSTEM_ROM_GLOBAL_NAME_SET);
+		this.systemGlobalNameSet = new Set(SYSTEM_ROM_BOOT_SYMBOL_NAME_SET);
 		for (let index = 0; index < baseModuleProtos.length; index += 1) {
 			const entry = baseModuleProtos[index];
 			this.recordModuleProto(entry.path, entry.protoIndex);
@@ -5094,10 +5094,10 @@ function buildCompilerSemanticFrontend(
 	externalModules: ReadonlyArray<ProgramModule>,
 	options: CompileOptions,
 ): LuaSemanticFrontend {
-	let extraGlobalNames: ReadonlyArray<string> = SYSTEM_ROM_GLOBAL_NAMES;
+	let extraGlobalNames: ReadonlyArray<string> = SYSTEM_ROM_BOOT_SYMBOL_NAMES;
 	if (options.baseMetadata) {
 		const mergedGlobalNames: string[] = [];
-		for (const name of SYSTEM_ROM_GLOBAL_NAMES) {
+		for (const name of SYSTEM_ROM_BOOT_SYMBOL_NAMES) {
 			mergedGlobalNames.push(name);
 		}
 		for (const name of options.baseMetadata.systemGlobalNames) {

@@ -13,19 +13,19 @@ local source_gamepad<const> = 2
 local source_pointer<const> = 3
 
 local gamepad_bits<const> = {
-	['a'] = inp_btn_a, ['b'] = inp_btn_b, ['x'] = inp_btn_x, ['y'] = inp_btn_y,
-	['lb'] = inp_btn_lb, ['rb'] = inp_btn_rb, ['lt'] = inp_btn_lt, ['rt'] = inp_btn_rt,
-	['select'] = inp_btn_select, ['start'] = inp_btn_start, ['ls'] = inp_btn_ls, ['rs'] = inp_btn_rs,
-	['up'] = inp_btn_up, ['down'] = inp_btn_down, ['left'] = inp_btn_left, ['right'] = inp_btn_right,
-	['home'] = inp_btn_home, ['touch'] = inp_btn_touch,
+	['a'] = 0x00000000, ['b'] = 0x00000001, ['x'] = 0x00000002, ['y'] = 0x00000003,
+	['lb'] = 0x00000004, ['rb'] = 0x00000005, ['lt'] = 0x00000006, ['rt'] = 0x00000007,
+	['select'] = 0x00000008, ['start'] = 0x00000009, ['ls'] = 0x0000000a, ['rs'] = 0x0000000b,
+	['up'] = 0x0000000c, ['down'] = 0x0000000d, ['left'] = 0x0000000e, ['right'] = 0x0000000f,
+	['home'] = 0x00000010, ['touch'] = 0x00000011,
 }
 
 local pointer_bits<const> = {
-	['pointer_primary'] = inp_pointer_primary,
-	['pointer_aux'] = inp_pointer_aux,
-	['pointer_secondary'] = inp_pointer_secondary,
-	['pointer_back'] = inp_pointer_back,
-	['pointer_forward'] = inp_pointer_forward,
+	['pointer_primary'] = 0x00000000,
+	['pointer_aux'] = 0x00000001,
+	['pointer_secondary'] = 0x00000002,
+	['pointer_back'] = 0x00000003,
+	['pointer_forward'] = 0x00000004,
 }
 
 local player_count<const> = 4
@@ -144,7 +144,7 @@ local resolve_binding<const> = function(player, source_index, button, state)
 	if source_index == source_keyboard then
 		local usage<const> = keys[button]
 		if usage then
-			state.level_addr = sys_inp_keys + ((usage >> 5) << 2)
+			state.level_addr = 0x0800019c + ((usage >> 5) << 2)
 			state.level_mask = 1 << (usage & 31)
 		end
 		return
@@ -152,34 +152,34 @@ local resolve_binding<const> = function(player, source_index, button, state)
 	if source_index == source_gamepad then
 		local bit<const> = gamepad_bits[button]
 		if bit then
-			local pad_base<const> = sys_inp_pads + (player.index - 1) * inp_pad_stride
-			state.level_addr = pad_base + inp_pad_buttons
+			local pad_base<const> = 0x080001cc + (player.index - 1) * 0x0000001c
+			state.level_addr = pad_base + 0x00000000
 			state.level_mask = 1 << bit
 			if button == 'ls' then
-				state.value_x_addr = pad_base + inp_pad_lx
-				state.value_y_addr = pad_base + inp_pad_ly
+				state.value_x_addr = pad_base + 0x00000004
+				state.value_y_addr = pad_base + 0x00000008
 			elseif button == 'rs' then
-				state.value_x_addr = pad_base + inp_pad_rx
-				state.value_y_addr = pad_base + inp_pad_ry
+				state.value_x_addr = pad_base + 0x0000000c
+				state.value_y_addr = pad_base + 0x00000010
 			elseif button == 'lt' then
-				state.value_addr = pad_base + inp_pad_lt
+				state.value_addr = pad_base + 0x00000014
 			elseif button == 'rt' then
-				state.value_addr = pad_base + inp_pad_rt
+				state.value_addr = pad_base + 0x00000018
 			end
 		end
 		return
 	end
 	local bit<const> = pointer_bits[button]
 	if bit then
-		state.level_addr = sys_inp_pointer_buttons
+		state.level_addr = 0x080001bc
 		state.level_mask = 1 << bit
 	elseif button == 'pointer_position' then
-		state.value_x_addr = sys_inp_pointer_x
-		state.value_y_addr = sys_inp_pointer_y
+		state.value_x_addr = 0x080001c0
+		state.value_y_addr = 0x080001c4
 	elseif button == 'pointer_delta' then
 		state.is_pointer_delta = true
 	elseif button == 'pointer_wheel' then
-		state.value_addr = sys_inp_pointer_wheel
+		state.value_addr = 0x080001c8
 		state.pressed_from_value = true
 	end
 end
@@ -407,8 +407,8 @@ local sample_value_button<const> = function(player, state)
 		state.value_y_q16 = mem[state.value_y_addr]
 	end
 	if state.is_pointer_delta then
-		local x<const> = mem[sys_inp_pointer_x]
-		local y<const> = mem[sys_inp_pointer_y]
+		local x<const> = mem[0x080001c0]
+		local y<const> = mem[0x080001c4]
 		state.value_x_q16 = x - state.prev_x_q16
 		state.value_y_q16 = y - state.prev_y_q16
 		state.prev_x_q16 = x

@@ -10,7 +10,7 @@ class HostFaultState {
 public:
 	explicit HostFaultState(Runtime& runtime);
 
-	void publishStartup(const std::string& error);
+	void publishStartup();
 	void clear();
 
 private:

@@ -310,7 +310,6 @@ add_library(bmsx_core STATIC
 	machine/devices/audio/controller.cpp
 	machine/devices/irq/controller.cpp
 	machine/devices/irq/save_state.cpp
-	machine/firmware/system_globals.cpp
 	machine/firmware/handler_registry.cpp
 	machine/cpu/disassembler.cpp
 	machine/firmware/globals.cpp
@@ -328,7 +327,6 @@ add_library(bmsx_core STATIC
 	machine/runtime/save_state/schema.cpp
 	machine/runtime/save_state/codec.cpp
 	machine/runtime/resume_snapshot.cpp
-	machine/runtime/cart_boot.cpp
 	machine/runtime/cpu_executor.cpp
 	machine/runtime/boot_timing.cpp
 	machine/runtime/frame/loop.cpp

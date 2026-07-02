@@ -30,35 +30,35 @@ end
 
 local apu<const> = {
 	filter_kind = {
-		lowpass = apu_filter_lowpass,
-		highpass = apu_filter_highpass,
-		bandpass = apu_filter_bandpass,
-		notch = apu_filter_notch,
-		allpass = apu_filter_allpass,
-		peaking = apu_filter_peaking,
-		lowshelf = apu_filter_lowshelf,
-		highshelf = apu_filter_highshelf,
+		lowpass = 0x00000001,
+		highpass = 0x00000002,
+		bandpass = 0x00000003,
+		notch = 0x00000004,
+		allpass = 0x00000005,
+		peaking = 0x00000006,
+		lowshelf = 0x00000007,
+		highshelf = 0x00000008,
 	},
 }
 
-local command_registers<const>: *apu_command_registers = sys_apu_source_addr
+local command_registers<const>: *apu_command_registers = 0x08000250
 
 function apu.seconds_to_samples(seconds)
-	return seconds * apu_sample_rate_hz
+	return seconds * 0x0000ac44
 end
 
 function apu.ms_to_samples(ms)
-	return ms * apu_sample_rate_hz / 1000
+	return ms * 0x0000ac44 / 1000
 end
 
 local rom_base_for_payload<const> = function(payload_id)
 	if payload_id == 'system' then
-		return sys_rom_system_base
+		return 0x00000000
 	end
 	if payload_id == 'overlay' then
-		return sys_rom_overlay_base
+		return 0x06000000
 	end
-	return sys_rom_cart_base
+	return 0x01000000
 end
 local read_badp_source<const> = function(addr, source_bytes)
 	local header<const>: *word = addr
@@ -135,8 +135,8 @@ function apu.play(source, slot, rate_step_q16, gain_q12, start_sample, filter_ki
 	command_registers->filter_gain_millidb = filter_gain_millidb
 	command_registers->fade_samples = 0
 	command_registers->generator_kind = 0
-	command_registers->generator_duty_q12 = apu_gain_q12_one
-	command_registers->cmd = apu_cmd_play
+	command_registers->generator_duty_q12 = 0x00001000
+	command_registers->cmd = 0x00000001
 end
 
 function apu.play_plain(source, slot)
@@ -151,29 +151,29 @@ function apu.play_plain(source, slot)
 	command_registers->loop_start_sample = source.loop_start_sample
 	command_registers->loop_end_sample = source.loop_end_sample
 	command_registers->slot = slot
-	command_registers->rate_step_q16 = apu_rate_step_q16_one
-	command_registers->gain_q12 = apu_gain_q12_one
+	command_registers->rate_step_q16 = 0x00010000
+	command_registers->gain_q12 = 0x00001000
 	command_registers->start_sample = 0
-	command_registers->filter_kind = apu_filter_none
+	command_registers->filter_kind = 0x00000000
 	command_registers->filter_freq_hz = 0
 	command_registers->filter_q_milli = 1000
 	command_registers->filter_gain_millidb = 0
 	command_registers->fade_samples = 0
 	command_registers->generator_kind = 0
-	command_registers->generator_duty_q12 = apu_gain_q12_one
-	command_registers->cmd = apu_cmd_play
+	command_registers->generator_duty_q12 = 0x00001000
+	command_registers->cmd = 0x00000001
 end
 
 function apu.stop_slot(slot, fade_samples)
 	command_registers->slot = slot
 	command_registers->fade_samples = fade_samples
-	command_registers->cmd = apu_cmd_stop_slot
+	command_registers->cmd = 0x00000002
 end
 
 function apu.set_slot_gain(slot, gain_q12)
 	command_registers->slot = slot
 	command_registers->gain_q12 = gain_q12
-	command_registers->cmd = apu_cmd_set_slot_gain
+	command_registers->cmd = 0x00000003
 end
 
 return apu

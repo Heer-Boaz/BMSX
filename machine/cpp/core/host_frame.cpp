@@ -52,7 +52,7 @@ bool MachineManager::runHostFrame(
 		m_screen.clearPresentation();
 		if (!platformPaused && !hostMenuActive) {
 			m_delta_time = runtime.timing.frameDurationMs / 1000.0;
-			// Handle program reload request at the frame boundary (TS parity: no MachineManager in CartBootState)
+			// Handle program reload request at the frame boundary (runtime frame boundary owns reboot orchestration)
 			if (runtime.isRebootRequested()) {
 				runtime.clearRebootRequest();
 				runtime.frameScheduler.clearQueuedTime();

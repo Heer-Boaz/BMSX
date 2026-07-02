@@ -50,7 +50,7 @@ local compile_apu_defaults<const> = function(action)
 	action.__apu_rate = 1
 	action.__apu_rate_range_min = 0
 	action.__apu_rate_range_span = 0
-	action.__apu_filter_kind = apu_filter_none
+	action.__apu_filter_kind = 0x00000000
 	action.__apu_filter_freq_hz = 0
 	action.__apu_filter_q_milli = 1000
 	action.__apu_filter_gain_millidb = 0
@@ -71,11 +71,11 @@ local compile_modulation<const> = function(action, params)
 		action.__apu_volume_range_span = volume_range[2] - volume_range[1]
 	end
 
-	action.__apu_start_sample = (params.offset or 0) * apu_sample_rate_hz
+	action.__apu_start_sample = (params.offset or 0) * 0x0000ac44
 	local offset_range<const> = params['offsetRange']
 	if offset_range ~= nil then
-		action.__apu_start_range_min = offset_range[1] * apu_sample_rate_hz
-		action.__apu_start_range_span = (offset_range[2] - offset_range[1]) * apu_sample_rate_hz
+		action.__apu_start_range_min = offset_range[1] * 0x0000ac44
+		action.__apu_start_range_span = (offset_range[2] - offset_range[1]) * 0x0000ac44
 	end
 
 	action.__apu_rate = params['playbackRate'] or 1
@@ -452,10 +452,10 @@ local prepare_plain_play<const> = function(audio_record, slot)
 		source = apu.source(audio_record),
 		slot = slot,
 		priority = audio_record.audiometa.priority,
-		rate_step_q16 = apu_rate_step_q16_one,
-		gain_q12 = apu_gain_q12_one,
+		rate_step_q16 = 0x00010000,
+		gain_q12 = 0x00001000,
 		start_sample = 0,
-		filter_kind = apu_filter_none,
+		filter_kind = 0x00000000,
 		filter_freq_hz = 0,
 		filter_q_milli = 1000,
 		filter_gain_millidb = 0,
@@ -474,7 +474,7 @@ local prepare_action_play<const> = function(audio_record, slot, action)
 	if volume_range_span ~= 0 then
 		volume_delta = volume_delta + action.__apu_volume_range_min + (volume_range_span * math.random())
 	end
-	local gain_q12<const> = (10 ^ (volume_delta / 20)) * apu_gain_q12_one
+	local gain_q12<const> = (10 ^ (volume_delta / 20)) * 0x00001000
 
 	local start_sample = action.__apu_start_sample
 	local start_range_span<const> = action.__apu_start_range_span
@@ -487,7 +487,7 @@ local prepare_action_play<const> = function(audio_record, slot, action)
 	if rate_range_span ~= 0 then
 		rate = rate + action.__apu_rate_range_min + (rate_range_span * math.random())
 	end
-	local rate_step_q16<const> = rate * (2 ^ (pitch_delta / 12)) * apu_rate_step_q16_one
+	local rate_step_q16<const> = rate * (2 ^ (pitch_delta / 12)) * 0x00010000
 
 	return {
 		source = apu.source(audio_record),
@@ -552,7 +552,7 @@ local play_music_now<const> = function(audio_record, transition, gain_q12, slot)
 	current_music_source_addr = source.source_addr
 	current_music_slot = target_slot
 	mark_slot_active(target_slot, source.source_addr, audio_record.audiometa.priority)
-	apu.play(source, target_slot, apu_rate_step_q16_one, gain_q12 or apu_gain_q12_one, transition_start_sample(audio_record, transition), apu_filter_none, 0, 1000, 0)
+	apu.play(source, target_slot, 0x00010000, gain_q12 or 0x00001000, transition_start_sample(audio_record, transition), 0x00000000, 0, 1000, 0)
 end
 
 local queue_music_after_current<const> = function(request_seq, audio_record, transition)
@@ -572,7 +572,7 @@ local play_transition_apu<const> = function(audio_record, transition)
 		local old_slot<const> = current_music_slot
 		local new_slot<const> = alternate_music_slot()
 		apu.stop_slot(old_slot, crossfade_samples)
-		play_music_now(audio_record, transition, apu_gain_q12_one, new_slot)
+		play_music_now(audio_record, transition, 0x00001000, new_slot)
 		return
 	end
 
@@ -709,11 +709,11 @@ local reload<const> = function()
 end
 
 local on_apu_irq<const> = function()
-	local kind<const> = mem[sys_apu_event_kind]
-	local slot<const> = mem[sys_apu_event_slot]
-	local source_addr<const> = mem[sys_apu_event_source_addr]
+	local kind<const> = mem[0x080002ac]
+	local slot<const> = mem[0x080002b0]
+	local source_addr<const> = mem[0x080002b4]
 
-	if kind ~= apu_event_slot_ended then
+	if kind ~= 0x00000001 then
 		return
 	end
 

@@ -5,6 +5,12 @@ import { splitText } from '../../machine/ts/common/text_lines';
 import { LuaLexer } from '../../machine/ts/lua/syntax/lexer';
 import { LuaParser } from '../../machine/ts/lua/syntax/parser';
 import { valueIsString } from '../../machine/ts/machine/cpu/cpu';
+import {
+	INP_CTRL_ARM,
+	IO_INP_CTRL,
+	IO_INP_OUTPUT_DURATION_MS,
+	IO_INP_OUTPUT_PORT,
+} from '../../machine/ts/machine/bus/io';
 import { compileLuaChunkToProgram } from '../../machine/ts/machine/program/compiler';
 import { MMIO_REGISTER_SPECS } from '../../machine/ts/machine/bus/registers';
 import { runCompiledLua } from '../lua/cpu_test_harness';
@@ -13,10 +19,6 @@ function parseChunk(source: string, path: string = 'value_flow.lua') {
 	const lexer = new LuaLexer(source, path);
 	const parser = new LuaParser(lexer.scanTokens(), path, splitText(source));
 	return parser.parseChunk();
-}
-
-function compileSource(source: string, path: string = 'value_flow.lua') {
-	return compileLuaChunkToProgram(parseChunk(source, path), [], { entrySource: source });
 }
 
 test('ProgramCompiler has no special MMIO string-id register contracts after raw ICU redesign', () => {
@@ -68,10 +70,14 @@ test('ProgramCompiler -O3 folds a conditional increment after reusing the regist
 
 test('ProgramCompiler treats raw ICU MMIO writes as plain word writes', () => {
 	const source = [
-		'mem[sys_inp_ctrl] = inp_ctrl_arm',
-		'mem[sys_inp_output_port] = 2',
-		'mem[sys_inp_output_duration_ms] = 120',
+		`mem[0x${IO_INP_CTRL.toString(16).padStart(8, '0')}] = 0x${INP_CTRL_ARM.toString(16).padStart(8, '0')}`,
+		`mem[0x${IO_INP_OUTPUT_PORT.toString(16).padStart(8, '0')}] = 2`,
+		`mem[0x${IO_INP_OUTPUT_DURATION_MS.toString(16).padStart(8, '0')}] = 120`,
 	].join('\n');
-	const compiled = compileSource(source, 'raw_icu_words.lua');
+	const compiled = compileLuaChunkToProgram(
+		parseChunk(source, 'raw_icu_words.lua'),
+		[],
+		{ entrySource: source },
+	);
 	assert.ok(compiled.program.code.length > 0);
 });

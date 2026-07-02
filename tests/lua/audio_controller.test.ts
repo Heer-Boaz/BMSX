@@ -92,7 +92,6 @@ import type { ApuOutputState, ApuOutputVoiceState } from '../../machine/ts/machi
 import { CPU } from '../../machine/ts/machine/cpu/cpu';
 import { IrqController } from '../../machine/ts/machine/devices/irq/controller';
 import { DEFAULT_LUA_BUILTIN_NAMES } from '../../machine/ts/machine/firmware/builtin_descriptors';
-import { SYSTEM_ROM_GLOBAL_NAME_SET } from '../../machine/ts/machine/firmware/system_globals';
 import { RAM_BASE } from '../../machine/ts/machine/memory/map';
 import { Memory } from '../../machine/ts/machine/memory/memory';
 import { DeviceScheduler } from '../../machine/ts/machine/scheduler/device';
@@ -269,59 +268,43 @@ test('APU contract constants keep hardware command values', () => {
 	assert.equal(IO_APU_SELECTED_SLOT_REG_COUNT, APU_PARAMETER_REGISTER_COUNT);
 });
 
-test('APU firmware descriptors expose status and fault ABI', () => {
-	assert.equal(DEFAULT_LUA_BUILTIN_NAMES.includes('sys_apu_fault_code'), true);
-	assert.equal(DEFAULT_LUA_BUILTIN_NAMES.includes('sys_apu_fault_detail'), true);
-	assert.equal(DEFAULT_LUA_BUILTIN_NAMES.includes('sys_apu_fault_ack'), true);
-	assert.equal(DEFAULT_LUA_BUILTIN_NAMES.includes('apu_status_fault'), true);
-	assert.equal(DEFAULT_LUA_BUILTIN_NAMES.includes('apu_status_selected_slot_active'), true);
-	assert.equal(DEFAULT_LUA_BUILTIN_NAMES.includes('apu_status_busy'), true);
-	assert.equal(DEFAULT_LUA_BUILTIN_NAMES.includes('apu_status_output_empty'), true);
-	assert.equal(DEFAULT_LUA_BUILTIN_NAMES.includes('apu_status_output_full'), true);
-	assert.equal(DEFAULT_LUA_BUILTIN_NAMES.includes('apu_output_queue_capacity_frames'), true);
-	assert.equal(DEFAULT_LUA_BUILTIN_NAMES.includes('sys_apu_selected_source_addr'), true);
-	assert.equal(DEFAULT_LUA_BUILTIN_NAMES.includes('sys_apu_active_mask'), true);
-	assert.equal(DEFAULT_LUA_BUILTIN_NAMES.includes('sys_apu_selected_slot_regs'), true);
-	assert.equal(DEFAULT_LUA_BUILTIN_NAMES.includes('sys_apu_selected_slot_reg_count'), true);
-	assert.equal(DEFAULT_LUA_BUILTIN_NAMES.includes('sys_apu_generator_kind'), true);
-	assert.equal(DEFAULT_LUA_BUILTIN_NAMES.includes('sys_apu_generator_duty_q12'), true);
-	assert.equal(DEFAULT_LUA_BUILTIN_NAMES.includes('apu_generator_none'), true);
-	assert.equal(DEFAULT_LUA_BUILTIN_NAMES.includes('apu_generator_square'), true);
-	assert.equal(DEFAULT_LUA_BUILTIN_NAMES.includes('sys_apu_output_queued_frames'), true);
-	assert.equal(DEFAULT_LUA_BUILTIN_NAMES.includes('sys_apu_output_free_frames'), true);
-	assert.equal(DEFAULT_LUA_BUILTIN_NAMES.includes('sys_apu_output_capacity_frames'), true);
-	assert.equal(DEFAULT_LUA_BUILTIN_NAMES.includes('sys_apu_cmd_queued'), true);
-	assert.equal(DEFAULT_LUA_BUILTIN_NAMES.includes('sys_apu_cmd_free'), true);
-	assert.equal(DEFAULT_LUA_BUILTIN_NAMES.includes('sys_apu_cmd_capacity'), true);
-	assert.equal(DEFAULT_LUA_BUILTIN_NAMES.includes('apu_fault_source_range'), true);
-	assert.equal(DEFAULT_LUA_BUILTIN_NAMES.includes('apu_fault_unsupported_format'), true);
-	assert.equal(DEFAULT_LUA_BUILTIN_NAMES.includes('apu_fault_output_playback_rate'), true);
-	assert.equal(SYSTEM_ROM_GLOBAL_NAME_SET.has('sys_apu_status'), true);
-	assert.equal(SYSTEM_ROM_GLOBAL_NAME_SET.has('sys_apu_selected_source_addr'), true);
-	assert.equal(SYSTEM_ROM_GLOBAL_NAME_SET.has('sys_apu_active_mask'), true);
-	assert.equal(SYSTEM_ROM_GLOBAL_NAME_SET.has('sys_apu_selected_slot_regs'), true);
-	assert.equal(SYSTEM_ROM_GLOBAL_NAME_SET.has('sys_apu_selected_slot_reg_count'), true);
-	assert.equal(SYSTEM_ROM_GLOBAL_NAME_SET.has('sys_apu_generator_kind'), true);
-	assert.equal(SYSTEM_ROM_GLOBAL_NAME_SET.has('sys_apu_generator_duty_q12'), true);
-	assert.equal(SYSTEM_ROM_GLOBAL_NAME_SET.has('apu_generator_none'), true);
-	assert.equal(SYSTEM_ROM_GLOBAL_NAME_SET.has('apu_generator_square'), true);
-	assert.equal(SYSTEM_ROM_GLOBAL_NAME_SET.has('sys_apu_output_queued_frames'), true);
-	assert.equal(SYSTEM_ROM_GLOBAL_NAME_SET.has('sys_apu_output_free_frames'), true);
-	assert.equal(SYSTEM_ROM_GLOBAL_NAME_SET.has('sys_apu_output_capacity_frames'), true);
-	assert.equal(SYSTEM_ROM_GLOBAL_NAME_SET.has('sys_apu_cmd_queued'), true);
-	assert.equal(SYSTEM_ROM_GLOBAL_NAME_SET.has('sys_apu_cmd_free'), true);
-	assert.equal(SYSTEM_ROM_GLOBAL_NAME_SET.has('sys_apu_cmd_capacity'), true);
-	assert.equal(SYSTEM_ROM_GLOBAL_NAME_SET.has('apu_status_selected_slot_active'), true);
-	assert.equal(SYSTEM_ROM_GLOBAL_NAME_SET.has('apu_status_busy'), true);
-	assert.equal(SYSTEM_ROM_GLOBAL_NAME_SET.has('apu_status_output_empty'), true);
-	assert.equal(SYSTEM_ROM_GLOBAL_NAME_SET.has('apu_status_output_full'), true);
-	assert.equal(SYSTEM_ROM_GLOBAL_NAME_SET.has('apu_status_cmd_fifo_empty'), true);
-	assert.equal(SYSTEM_ROM_GLOBAL_NAME_SET.has('apu_status_cmd_fifo_full'), true);
-	assert.equal(SYSTEM_ROM_GLOBAL_NAME_SET.has('apu_output_queue_capacity_frames'), true);
-	assert.equal(SYSTEM_ROM_GLOBAL_NAME_SET.has('apu_command_fifo_capacity'), true);
-	assert.equal(SYSTEM_ROM_GLOBAL_NAME_SET.has('apu_fault_cmd_fifo_full'), true);
-	assert.equal(SYSTEM_ROM_GLOBAL_NAME_SET.has('apu_fault_unsupported_format'), true);
-	assert.equal(SYSTEM_ROM_GLOBAL_NAME_SET.has('apu_fault_output_playback_rate'), true);
+test('APU hardware words are not runtime globals', () => {
+	const source = DEFAULT_LUA_BUILTIN_NAMES.join('\n');
+	for (const name of [
+		'sys_apu_fault_code',
+		'sys_apu_fault_detail',
+		'sys_apu_fault_ack',
+		'apu_status_fault',
+		'apu_status_selected_slot_active',
+		'apu_status_busy',
+		'apu_status_output_empty',
+		'apu_status_output_full',
+		'apu_output_queue_capacity_frames',
+		'sys_apu_selected_source_addr',
+		'sys_apu_active_mask',
+		'sys_apu_selected_slot_regs',
+		'sys_apu_selected_slot_reg_count',
+		'sys_apu_generator_kind',
+		'sys_apu_generator_duty_q12',
+		'apu_generator_none',
+		'apu_generator_square',
+		'sys_apu_output_queued_frames',
+		'sys_apu_output_free_frames',
+		'sys_apu_output_capacity_frames',
+		'sys_apu_cmd_queued',
+		'sys_apu_cmd_free',
+		'sys_apu_cmd_capacity',
+		'apu_fault_source_range',
+		'apu_fault_unsupported_format',
+		'apu_fault_output_playback_rate',
+		'apu_status_cmd_fifo_empty',
+		'apu_status_cmd_fifo_full',
+		'apu_command_fifo_capacity',
+		'apu_fault_cmd_fifo_full',
+	]) {
+		assert.equal(source.includes(name), false);
+		assert.equal(DEFAULT_LUA_BUILTIN_NAMES.includes(name), false);
+	}
 });
 
 function writeValidSourceRegisters(memory: Memory): void {

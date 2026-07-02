@@ -41,6 +41,11 @@
 			"reason": "ts_lua_language_builtin_metadata_no_cpp_runtime"
 		},
 		{
+			"pattern": "machine/ts/machine/firmware/system_boot_symbols.ts",
+			"category": "compiler_tooling",
+			"reason": "ts_compiler_boot_symbol_metadata_no_cpp_runtime"
+		},
+		{
 			"pattern": "machine/ts/machine/program/optimizer/**",
 			"category": "compiler_tooling",
 			"reason": "compiler_optimizer_excluded"
@@ -335,7 +340,6 @@
 		"machine/ts/input/manager.ts",
 		"machine/ts/machine/cpu/disassembler.ts",
 		"machine/ts/machine/firmware/globals.ts",
-		"machine/ts/machine/firmware/system_globals.ts",
 		"machine/ts/machine/machine.ts",
 		"machine/ts/machine/runtime/cpu_state.ts",
 		"machine/ts/machine/runtime/debug.ts",
@@ -720,14 +724,6 @@
 				"machine/cpp/machine/runtime/save_machine_state.cpp"
 			],
 			"reason": "runtime_save_machine_state_contract"
-		},
-		{
-			"ts": "machine/ts/machine/runtime/cart_boot.ts",
-			"cpp": [
-				"machine/cpp/machine/runtime/cart_boot.h",
-				"machine/cpp/machine/runtime/cart_boot.cpp"
-			],
-			"reason": "runtime_cart_boot_state_contract"
 		},
 		{
 			"ts": "machine/ts/machine/runtime/machine_state.ts",
@@ -2424,18 +2420,18 @@
 				"passes[0].color_surface_desc_addr = scene_color_surface",
 				"passes[0].depth_surface_desc_addr = scene_depth_surface",
 				"sampled_surface_binds[3].surface_desc_addr = scene_color_surface",
-				"sys_rpu_shader_v2_c4",
+				"0x00000000",
 				"rpu_primitive_lines",
 				"rpu_primitive_points",
-				"sys_rpu_shader_v2_t2_c4_i_affine2",
-				"sys_rpu_shader_v3_c4_i_mat4",
-				"sys_rpu_layout_i_mat4_c4",
-				"sys_rpu_shader_v3_n3_t2_c4_j4_w4_c0_c1",
-				"sys_rpu_index_u16",
+				"0x00000006",
+				"0x00000007",
+				"0x00000021",
+				"0x00000005",
+				"0x00000001",
 				"parallax_x * inv_half_screen_width - 1.0",
-				"streams[5].stream_slot = 1; streams[5].layout_id = sys_rpu_layout_i_affine2_trect_c4; streams[5].vram_addr = rpu_instance_vram_addr; streams[5].byte_length = instance_bytes; streams[5].step_rate = 1",
-				"streams[7].stream_slot = 1; streams[7].layout_id = sys_rpu_layout_i_mat4_c4; streams[7].vram_addr = rpu_mat4_instance_vram_addr; streams[7].byte_length = mat4_instance_bytes; streams[7].step_rate = 1",
-				"streams[9].stream_slot = 0; streams[9].layout_id = sys_rpu_layout_v3_n3_t2_c4_j4_w4; streams[9].vram_addr = rpu_mesh_vertex_vram_addr; streams[9].byte_length = mesh_vertex_bytes; streams[9].step_rate = 0"
+				"streams[5].stream_slot = 1; streams[5].layout_id = 0x00000020; streams[5].vram_addr = rpu_instance_vram_addr; streams[5].byte_length = instance_bytes; streams[5].step_rate = 1",
+				"streams[7].stream_slot = 1; streams[7].layout_id = 0x00000021; streams[7].vram_addr = rpu_mat4_instance_vram_addr; streams[7].byte_length = mat4_instance_bytes; streams[7].step_rate = 1",
+				"streams[9].stream_slot = 0; streams[9].layout_id = 0x00000006; streams[9].vram_addr = rpu_mesh_vertex_vram_addr; streams[9].byte_length = mesh_vertex_bytes; streams[9].step_rate = 0"
 			],
 			"reason": "bare_metal_cart_must_demonstrate_descriptor_render_features_through_rpu_and_vdp_devices"
 		},
@@ -2553,7 +2549,7 @@
 			"file": "carts/bare_metal_cart/cart.lua",
 			"substrings": [
 				"local instance_stride<const> = sizeof(sprite_instance)",
-				"rpu_pipeline_depth_alpha<const> = sys_rpu_blend_alpha | (sys_rpu_depth_lequal << 4) | (sys_rpu_cull_none << 8) | sys_rpu_pipe_depth_write | sys_rpu_pipe_color_write_rgba"
+				"rpu_pipeline_depth_alpha<const> = 0x00000001 | (0x00000002 << 4) | (0x00000000 << 8) | 0x00001000 | 0x000f0000"
 			],
 			"reason": "bare_metal_cart_affine_sprite_instances_must_demonstrate_gpu_depth_ordering_with_new_rpu"
 		},
@@ -2741,17 +2737,10 @@
 			"reason": "headless_entrypoint_must_remain_generic_rom_parameter_not_bare_metal_alias"
 		},
 		{
-			"file": "machine/ts/machine/firmware/builtin_descriptors.ts",
-			"substrings": [
-				"export const SYSTEM_LUA_BUILTIN_FUNCTIONS: ReadonlyArray<LuaBuiltinDescriptor> = [\n];"
-			],
-			"reason": "ts_firmware_system_builtins_must_stay_tiny_after_cartlib_split"
-		},
-		{
 			"file": "machine/firmware/system/vdp_rpu_quads.lua",
 			"substrings": [
 				"function vdp_rpu_quads.finish_frame()",
-				"local end_packet<const>: *word = vdp_stream_claim(1)\n\t\t*end_packet = sys_vdp_pkt_end"
+				"local end_packet<const>: *word = vdp_stream_claim(1)\n\t\t*end_packet = 0x00000000"
 			],
 			"reason": "rpu_quad_owner_finishes_stream_without_deleted_vdp_stream_forwarder"
 		},
@@ -3579,13 +3568,13 @@
 	"strict_lua_no_heap_regions": [
 		{
 			"file": "machine/firmware/system/vdp_rpu.lua",
-			"start": "\tlocal packet<const>: *rpu_exec_pass_list_packet = vdp_stream_claim(sizeof(rpu_exec_pass_list_packet) // sys_vdp_arg_stride)",
+			"start": "\tlocal packet<const>: *rpu_exec_pass_list_packet = vdp_stream_claim(sizeof(rpu_exec_pass_list_packet) // 0x00000004)",
 			"end": "\nend\n\nfunction vdp_rpu.seal_frame",
 			"reason": "vdp_rpu_descriptor_packet_submit_helper_must_not_allocate_tables_closures_or_strings"
 		},
 		{
 			"file": "machine/firmware/system/vdp_rpu.lua",
-			"start": "\tlocal packet<const>: *rpu_seal_frame_packet = vdp_stream_claim(sizeof(rpu_seal_frame_packet) // sys_vdp_arg_stride)",
+			"start": "\tlocal packet<const>: *rpu_seal_frame_packet = vdp_stream_claim(sizeof(rpu_seal_frame_packet) // 0x00000004)",
 			"end": "\nend\n\nvdp_rpu.packet_kind",
 			"reason": "vdp_rpu_descriptor_packet_submit_helper_must_not_allocate_tables_closures_or_strings"
 		},

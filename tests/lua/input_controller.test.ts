@@ -132,14 +132,20 @@ test('input controller exposes the VBlank sample edge without leaking the sample
 	assert.equal(harness.controller.captureState().sampleArmed, false);
 });
 
-test('ICU firmware descriptors expose raw input registers without high-level action registers', () => {
+test('ICU raw input words are not host globals or high-level action registers', () => {
+	const source = DEFAULT_LUA_BUILTIN_NAMES.join('\n');
 	assert.equal(DEFAULT_LUA_BUILTIN_NAMES.includes('string' + '_ref'), false);
-	assert.equal(DEFAULT_LUA_BUILTIN_NAMES.includes('sys_inp_ctrl'), true);
-	assert.equal(DEFAULT_LUA_BUILTIN_NAMES.includes('sys_inp_status'), true);
-	assert.equal(DEFAULT_LUA_BUILTIN_NAMES.includes('sys_inp_keys'), true);
-	assert.equal(DEFAULT_LUA_BUILTIN_NAMES.includes('sys_inp_pads'), true);
-	assert.equal(DEFAULT_LUA_BUILTIN_NAMES.includes('sys_inp_pointer_buttons'), true);
-	assert.equal(DEFAULT_LUA_BUILTIN_NAMES.includes('sys_inp_output_port'), true);
+	for (const name of [
+		'sys_inp_ctrl',
+		'sys_inp_status',
+		'sys_inp_keys',
+		'sys_inp_pads',
+		'sys_inp_pointer_buttons',
+		'sys_inp_output_port',
+	]) {
+		assert.equal(source.includes(name), false);
+		assert.equal(DEFAULT_LUA_BUILTIN_NAMES.includes(name), false);
+	}
 	assert.equal(DEFAULT_LUA_BUILTIN_NAMES.includes('sys_inp_player'), false);
 	assert.equal(DEFAULT_LUA_BUILTIN_NAMES.includes('sys_inp_source'), false);
 	assert.equal(DEFAULT_LUA_BUILTIN_NAMES.includes('sys_inp_button'), false);

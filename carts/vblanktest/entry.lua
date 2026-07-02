@@ -1,7 +1,7 @@
-mem[sys_vdp_mode] = sys_vdp_mode_msx2
+mem[0x08000084] = 0x00000001
 require('cartlib/prelude')
 local irq_flags_addr<const> = 0x08000108
-local irq_mask_addr<const> = 0x08000110
+local irq_mask_addr<const> = 0x0800010c
 local irq_vblank<const> = 0x0010
 local irq_apu<const> = 0x0200
 local target<const> = 50
@@ -9,12 +9,12 @@ local vblank_count = 0
 local fail_reason = nil
 local done = false
 
-local cycles_per_frame<const> = sys_max_cycles_per_frame
+local cycles_per_frame<const> = mem[0x08010368]
 local vblank_cycles = 0
 local full_frame_vblank = false
 
 local resolve_vblank_cycles<const> = function()
-	local screen_wh<const> = mem[sys_vdp_screen_wh]
+	local screen_wh<const> = mem[0x08000088]
 	local render_height<const> = screen_wh >> 16
 	local active_display<const> = (cycles_per_frame // (render_height + 1)) * render_height
 	return cycles_per_frame - active_display
@@ -33,8 +33,8 @@ end
 local wait_for_vblank_clear<const> = function()
 	local remaining = cycles_per_frame
 	while remaining > 0 do
-		local status<const> = mem[sys_vdp_status]
-		if (status & sys_vdp_status_vblank) == 0 then
+		local status<const> = mem[0x08000144]
+		if (status & 0x00000001) == 0 then
 			return true
 		end
 		remaining = remaining - 1
@@ -46,8 +46,8 @@ local wait_for_vblank_set<const> = function()
 	local remaining = cycles_per_frame
 	local saw_irq = false
 	while remaining > 0 do
-		local status<const> = mem[sys_vdp_status]
-		if (status & sys_vdp_status_vblank) ~= 0 then
+		local status<const> = mem[0x08000144]
+		if (status & 0x00000001) ~= 0 then
 			return true
 		end
 		local flags<const> = mem[irq_flags_addr]
@@ -68,8 +68,8 @@ on_irq(irq_vblank, function(_, flags)
 	if (flags & irq_vblank) ~= 0 then
 		vblank_count = vblank_count + 1
 
-		local status<const> = mem[sys_vdp_status]
-		if (status & sys_vdp_status_vblank) == 0 then
+		local status<const> = mem[0x08000144]
+		if (status & 0x00000001) == 0 then
 			fail("irq_vblank seen but VDP_STATUS_VBLANK not set")
 		end
 
@@ -95,13 +95,13 @@ local update_cart<const> = function()
 	end
 
 	if full_frame_vblank then
-		local status<const> = mem[sys_vdp_status]
-		if (status & sys_vdp_status_vblank) == 0 then
+		local status<const> = mem[0x08000144]
+		if (status & 0x00000001) == 0 then
 			fail("VDP_STATUS_VBLANK not set for full-frame VBLANK")
 		end
 	else
-		local status<const> = mem[sys_vdp_status]
-		if (status & sys_vdp_status_vblank) ~= 0 then
+		local status<const> = mem[0x08000144]
+		if (status & 0x00000001) ~= 0 then
 			if not wait_for_vblank_clear() then
 				fail("VDP_STATUS_VBLANK never cleared")
 				return
@@ -124,24 +124,24 @@ end
 init()
 mem[irq_mask_addr] = irq_vblank | irq_apu
 new_game()
-mem[sys_inp_ctrl] = inp_ctrl_arm
+mem[0x08000194] = 0x00000001
 while true do
 	local last_vblank_count<const> = vblank_count
 	repeat
 		halt_until_irq
 	until vblank_count ~= last_vblank_count
-	vdp_stream_cursor = sys_vdp_stream_base
+	vdp_stream_cursor = 0x080c0000
 	update_cart()
 	draw_cart()
 	vdp_stream_finish()
 	do
-		local used_bytes<const> = vdp_stream_cursor - sys_vdp_stream_base
+		local used_bytes<const> = vdp_stream_cursor - 0x080c0000
 		if used_bytes ~= 0 then
-			mem[sys_dma_src] = sys_vdp_stream_base
-			mem[sys_dma_dst] = sys_vdp_fifo
-			mem[sys_dma_len] = used_bytes
-			mem[sys_dma_ctrl] = dma_ctrl_start
+			mem[0x08000110] = 0x080c0000
+			mem[0x08000114] = 0x0800007c
+			mem[0x08000118] = used_bytes
+			mem[0x0800011c] = 0x00000001
 		end
 	end
-	mem[sys_inp_ctrl] = inp_ctrl_arm
+	mem[0x08000194] = 0x00000001
 end
