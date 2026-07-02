@@ -17,18 +17,15 @@
 		"typeRoots": ["node_modules/@types", "node_modules"],
 		"types": ["node", "@webgpu/types"],
 		"pretty": false,
-		// Skip type-checking of declaration files. This helps avoid type errors
-		// originating from differing lib declarations (e.g., SharedArrayBuffer vs ArrayBuffer)
 		"skipLibCheck": true,
 		"preserveConstEnums": false,
 		"checkJs": false,
-		"assumeChangesOnlyAffectDirectDependencies": false, // Was `true` before, but I think `false` is safer. No reason to have it `false` though
+		"assumeChangesOnlyAffectDirectDependencies": false,
 		"noEmitHelpers": true,
 		"sourceMap": false,
 		"rootDir": ".",
 		"removeComments": true,
 		"importHelpers": true,
-		"downlevelIteration": false,
 		"strict": false,
 		"noImplicitAny": false,
 		"strictNullChecks": false,
@@ -36,7 +33,6 @@
 		"strictBindCallApply": true,
 		"strictPropertyInitialization": false,
 		"noImplicitThis": true,
-		"alwaysStrict": false,
 		"noUnusedLocals": true,
 		"noUnusedParameters": true,
 		"noImplicitReturns": false,
@@ -50,8 +46,9 @@
 		"inlineSources": false,
 		"experimentalDecorators": false,
 		"emitDecoratorMetadata": false,
-		"allowArbitraryExtensions": true, // For importing `.glsl` files, but I have not tested whether that works
+		"allowArbitraryExtensions": true,
 		"allowImportingTsExtensions": true,
+		"ignoreDeprecations": "6.0",
 		"baseUrl": ".",
 		"paths": {
 			"bmsx": ["machine/ts/index.ts"],

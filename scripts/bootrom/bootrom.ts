@@ -368,7 +368,7 @@ function getImageUrlFromBuffer(buffer: Uint8Array): string {
  */
 async function awaitBootComplete(): Promise<void> {
 	const result: Promise<void> = new Promise((resolve) => {
-		const msx = <HTMLElement>document.querySelector('#msx');
+		const msx = document.querySelector<HTMLElement>('#msx');
 		msx.onanimationend = _ev => {
 			// let loading = <HTMLElement>document.querySelector('#loading');
 			// loading.hidden = false;

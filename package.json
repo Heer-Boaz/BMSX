@@ -3,47 +3,28 @@
 	"private": true,
 	"version": "1.0.0",
 	"description": "",
-	"dependencies": {
-		"blob": "*",
-		"node-fetch": "*",
-		"npm": "*",
-		"requirejs": "*"
-	},
 	"devDependencies": {
 		"@node-minify/clean-css": "*",
 		"@node-minify/core": "*",
-		"@node-minify/types": "^9.0.0",
-		"@types/bin-pack": "*",
 		"@types/js-yaml": "*",
-		"@types/node": "^24.3.0",
-		"@types/node-fetch": "*",
+		"@types/node": "*",
 		"@types/pako": "*",
-		"@types/pngjs": "^6.0.5",
-		"@types/systemjs": "*",
-		"@types/w3c-web-hid": "^1.0.6",
-		"@typescript/native-preview": "^7.0.0-dev.20250604.1",
-		"@wasm-audio-decoders/ogg-vorbis": "^0.1.20",
-		"@webgpu/types": "^0.1.64",
-		"canvas": "^3.1.0",
-		"dagre": "*",
-		"earcut": "^3.0.2",
-		"esbuild": "^0.25.3",
-		"esbuild-plugin-glsl": "^1.4.0",
-		"flatted": "*",
-		"ftp-deploy": "*",
+		"@types/pngjs": "*",
+		"@types/w3c-web-hid": "*",
+		"@wasm-audio-decoders/ogg-vorbis": "*",
+		"@webgpu/types": "*",
+		"canvas": "*",
+		"earcut": "*",
+		"esbuild": "*",
+		"esbuild-plugin-glsl": "*",
 		"js-yaml": "*",
-		"libkss-js": "*",
-		"midi-file": "*",
-		"minify-stream": "*",
 		"pako": "*",
-		"picocolors": "^1.0.1",
-		"pngjs": "^7.0.0",
-		"string-width": "^4.2.3",
-		"stringify": "^2.2.0",
-		"ts-morph": "^22.0.0",
-		"tslib": "*",
-		"tsx": "^4.20.5",
-		"typescript": "^5.9.3"
+		"picocolors": "*",
+		"pngjs": "*",
+		"string-width": "*",
+		"ts-morph": "*",
+		"tsx": "*",
+		"typescript": "*"
 	},
 	"scripts": {
 		"headless:game": "node dist/host_headless.debug.js --machine-runtime dist/libbmsx.debug.js --system-rom dist/bmsx-bios.debug.rom",
@@ -83,6 +64,7 @@
 		"clean:dist": "node scripts/clean-dist.mjs",
 		"fix:indent": "node scripts/fix-ts-indentation-safe.js",
 		"check:indent": "node scripts/fix-ts-indentation-safe.js --check",
+		"check:deps": "npm exec --yes --package=depcheck -- depcheck",
 		"analyze:code-quality": "npx tsx scripts/analysis/code_quality.ts",
 		"audit:core-parity": "tsx scripts/audit_core_parity.ts",
 		"audit:architecture-boundaries": "npx tsx scripts/audit_architecture_boundaries.ts",
@@ -97,5 +79,9 @@
 	"bugs": {
 		"url": "https://github.com/Heer-Boaz/BMSX/issues"
 	},
-	"homepage": "https://github.com/Heer-Boaz/BMSX#readme"
+	"homepage": "https://github.com/Heer-Boaz/BMSX#readme",
+	"allowScripts": {
+		"canvas": true,
+		"esbuild": true
+	}
 }

@@ -1,0 +1,3 @@
+# bmsx is the tsconfig paths alias, not an npm package.
+# @types/w3c-web-hid is loaded through a triple-slash ambient type reference.
+ignores: ["@types/w3c-web-hid", "bmsx"]
