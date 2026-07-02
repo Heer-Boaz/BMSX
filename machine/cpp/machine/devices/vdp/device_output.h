@@ -16,7 +16,7 @@ inline std::vector<VdpDirtySpan> createVdpDirtySpans(u32 height) {
 	return spans;
 }
 
-struct VdpSurfaceUploadSlot {
+struct VdpSurfaceBacking {
 	uint32_t baseAddr = 0;
 	uint32_t capacity = 0;
 	uint32_t surfaceId = 0;
@@ -26,17 +26,6 @@ struct VdpSurfaceUploadSlot {
 	uint32_t dirtyRowStart = 0;
 	uint32_t dirtyRowEnd = 0;
 	std::vector<VdpDirtySpan> dirtySpansByRow;
-};
-
-struct VdpSurfaceUpload {
-	uint32_t surfaceId = 0;
-	uint32_t surfaceWidth = 0;
-	uint32_t surfaceHeight = 0;
-	const std::vector<u8>* cpuReadback = nullptr;
-	uint32_t dirtyRowStart = 0;
-	uint32_t dirtyRowEnd = 0;
-	const std::vector<VdpDirtySpan>* dirtySpansByRow = nullptr;
-	bool requiresFullSync = false;
 };
 
 struct VdpFrameBufferPresentation {
@@ -56,12 +45,6 @@ class VdpFrameBufferPresentationSink {
 public:
 	virtual ~VdpFrameBufferPresentationSink() = default;
 	virtual void consumeVdpFrameBufferPresentation(const VdpFrameBufferPresentation& presentation) = 0;
-};
-
-class VdpSurfaceUploadSink {
-public:
-	virtual ~VdpSurfaceUploadSink() = default;
-	virtual void consumeVdpSurfaceUpload(const VdpSurfaceUpload& upload) = 0;
 };
 
 struct VdpDeviceOutput {

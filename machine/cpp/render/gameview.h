@@ -27,7 +27,6 @@ class RenderPassLibrary;
 class RenderGraphRuntime;
 class LightingSystem;
 class VdpFrameBufferTextures;
-class VdpSlotTextures;
 
 /* ============================================================================
  * Atmosphere parameters (fog, etc.)
@@ -108,11 +107,9 @@ public:
 	// Textures map
 	// ─────────────────────────────────────────────────────────────────────────
 	std::unordered_map<std::string, TextureHandle> textures;
-	void setVdpTextureState(std::unique_ptr<VdpFrameBufferTextures> frameBufferTextures, std::unique_ptr<VdpSlotTextures> slotTextures);
+	void setVdpTextureState(std::unique_ptr<VdpFrameBufferTextures> frameBufferTextures);
 	VdpFrameBufferTextures& vdpFrameBufferTextures();
 	const VdpFrameBufferTextures& vdpFrameBufferTextures() const;
-	VdpSlotTextures& vdpSlotTextures();
-	const VdpSlotTextures& vdpSlotTextures() const;
 
 	// ─────────────────────────────────────────────────────────────────────────
 	// Video snapshot fields (owned by VDP, consumed by renderer)
@@ -219,7 +216,6 @@ private:
 	std::unique_ptr<RenderGraphRuntime> m_renderGraph;
 	std::unique_ptr<LightingSystem> m_lightingSystem;
 	std::unique_ptr<VdpFrameBufferTextures> m_vdpFrameBufferTextures;
-	std::unique_ptr<VdpSlotTextures> m_vdpSlotTextures;
 
 	i32 m_activeTexUnit = -1;
 

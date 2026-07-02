@@ -152,12 +152,6 @@ export interface RegisterablePersistent extends Registerable {
  */
 export const BIOS_ATLAS_ID = 254;
 
-/**
- * Texture dictionary key used by GameView to cache VDP slot textures.
- */
-export const SYSTEM_SLOT_TEXTURE_KEY = '_system_slot';
-export const VDP_PRIMARY_SLOT_TEXTURE_KEY = '_vdp_slot_primary';
-export const VDP_SECONDARY_SLOT_TEXTURE_KEY = '_vdp_slot_secondary';
 export const FRAMEBUFFER_TEXTURE_KEY = '_framebuffer_2d';
 export const FRAMEBUFFER_RENDER_TEXTURE_KEY = '_framebuffer_render_2d';
 
@@ -364,6 +358,8 @@ export interface ImgMeta {
 	atlasid?: number; // ROM atlas containing this image or identifying this atlas asset.
 	width: number; // The width of the image.
 	height: number; // The height of the image.
+	texture_addr?: number; // Concrete CPU-visible VRAM address for atlas assets.
+	texture_len?: number; // Contiguous RGBA byte footprint for atlas assets.
 	texcoords?: number[]; // The texture coordinates for the image, used for rendering.
 	texcoords_fliph?: number[]; // The texture coordinates for the image, when flipped horizontally.
 	texcoords_flipv?: number[]; // The texture coordinates for the image, when flipped vertically.

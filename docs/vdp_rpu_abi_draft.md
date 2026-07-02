@@ -7,15 +7,17 @@ This draft defines the data contract for the Render Processing Unit (RPU). The R
 ## VDP-Local Address Space
 
 ```
-VDP-local address: 0 .. VDP_RPU_PARAM_MEM_SIZE-1   (u32, 1.75 MB range)
-System bus alias:  VRAM_STAGING_BASE + vdp_local_addr
+VDP-local address:        0 .. VDP_RPU_PARAM_MEM_SIZE-1   (u32, 0x00222000 bytes)
+Descriptor/scratch range: 0x00000000 .. 0x00021fff
+Texture VRAM range:       0x00022000 .. 0x00221fff
+System bus alias:         VRAM_BASE + vdp_local_addr
 ```
 
-Cart DMA pattern: the cart writes descriptor structs and vertex/constant data to the VDP's local memory using the system DMA unit with a destination in the VRAM_STAGING range. The FIFO then refers to these records by VDP-local address.
+Cart DMA pattern: the cart writes descriptor structs and vertex/constant data to the VDP's local memory using the system DMA unit with a destination in the staging or texture VRAM ranges. The FIFO then refers to these records by VDP-local address.
 
 ```lua
 -- DMA destination uses system bus address:
-mem[sys_dma_dst] = VRAM_STAGING_BASE + pass_desc_offset
+mem[sys_dma_dst] = VRAM_BASE + pass_desc_offset
 -- EXEC_PASS_LIST uses VDP-local address:
 rpu_fifo(VDP_RPU_OP_EXEC_PASS_LIST | (pass_count << 8), pass_desc_offset)
 ```
@@ -134,7 +136,7 @@ export const VDP_RPU_STREAM_BINDING_CAPACITY = 8192;
 export const VDP_RPU_CONSTANT_BINDING_CAPACITY = 8192;
 export const VDP_RPU_TEXTURE_BINDING_CAPACITY = 4096;
 
-export const VDP_RPU_PARAM_MEM_SIZE = 0x001c0000;  // 1.75 MB VDP-local memory
+export const VDP_RPU_PARAM_MEM_SIZE = 0x00222000;  // 136 KiB staging + 2 MiB texture VRAM
 ```
 
 ## Backend feature contract

@@ -12,7 +12,7 @@
 #include "input/pointer.h"
 #include "render/backend/pass/library.h"
 #include "render/texture_manager.h"
-#include "render/vdp/context_state.h"
+#include "render/vdp/framebuffer.h"
 #include "common/mem_snapshot.h"
 #include "machine/model_registry.h"
 #include "machine/runtime/runtime.h"
@@ -679,7 +679,7 @@ bool LibretroPlatform::loadState(const void* data, size_t size) {
 	}
 	try {
 		applyRuntimeSaveStateBytes(runtime, static_cast<const u8*>(data), size);
-		restoreVdpContextState(runtime.machine.vdp, *m_machine_manager->view());
+		m_machine_manager->view()->vdpFrameBufferTextures().initialize(runtime.machine.vdp);
 		m_audio_service->resetQueue();
 		m_audio_buffer.clear();
 		return true;

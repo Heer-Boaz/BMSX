@@ -8,7 +8,6 @@ import type { Closure } from '../../machine/cpu/cpu';
 import type { RuntimeResumeSnapshot } from '../../machine/runtime/resume_snapshot';
 import { restoreRuntimeLuaSnapshot } from '../../machine/runtime/resume_snapshot';
 import { applyRuntimeMachineState } from '../../machine/runtime/machine_state';
-import { restoreVdpContextState } from '../../render/vdp/context_state';
 import { machineManager } from '../../core/machine_manager';
 import { clearRuntimeDebuggerPause } from './debug_pause';
 import { clearFaultSnapshot, resetHandledLuaErrors } from './fault_state';
@@ -48,7 +47,7 @@ export async function resumeFromSnapshot(runtime: Runtime, state: RuntimeResumeS
 	runtime.luaRuntimeFailed = false;
 	clearOverlayFrame();
 	applyRuntimeMachineState(runtime, snapshot.machineState);
-	restoreVdpContextState(runtime.machine.vdp, machineManager.view);
+	machineManager.view.vdpFrameBufferTextures.initialize(runtime.machine.vdp);
 	resumeLuaProgramState(runtime, snapshot, preserveSystemModules);
 }
 

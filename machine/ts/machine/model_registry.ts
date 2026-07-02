@@ -13,8 +13,8 @@ export const PSX_IMGDEC_BYTES_PER_SEC = 26_214_400;
 export const PSX_DMA_BYTES_PER_SEC_ISO = 8_388_608;
 export const PSX_DMA_BYTES_PER_SEC_BULK = 26_214_400;
 export const PSX_RAM_BYTES = 0x00400000;
-export const PSX_VRAM_SLOT_BYTES = 0x00200000;
-export const PSX_VRAM_STAGING_BYTES = 0x001c0000;
+export const PSX_VRAM_TEXTURE_BYTES = 0x00200000;
+export const PSX_VRAM_STAGING_BYTES = 0x00022000;
 export const VDP_MODE_MSX1_WORD = 0;
 export const VDP_MODE_MSX2_WORD = 1;
 export const VDP_MODE_PSX_WORD = 2;
@@ -41,7 +41,7 @@ export type MachineModelProfile = {
 	dmaBytesPerSecIso: number;
 	dmaBytesPerSecBulk: number;
 	ramBytes: number;
-	slotBytes: number;
+	textureBytes: number;
 	stagingBytes: number;
 	biosVdpMode: MachineVdpMode;
 };
@@ -69,7 +69,7 @@ export const PSX_MODEL_PROFILE: MachineModelProfile = {
 	dmaBytesPerSecIso: PSX_DMA_BYTES_PER_SEC_ISO,
 	dmaBytesPerSecBulk: PSX_DMA_BYTES_PER_SEC_BULK,
 	ramBytes: PSX_RAM_BYTES,
-	slotBytes: PSX_VRAM_SLOT_BYTES,
+	textureBytes: PSX_VRAM_TEXTURE_BYTES,
 	stagingBytes: PSX_VRAM_STAGING_BYTES,
 	biosVdpMode: VDP_MODE_PSX_WORD,
 };

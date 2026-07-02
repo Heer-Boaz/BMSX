@@ -20,12 +20,11 @@ export function resolveRuntimeMemoryMapSpecs(): MemoryMapSpecs {
 		`memory footprint: ram=${ramBytes} bytes (${footprintMiB} MiB) `
 		+ `(io=${IO_REGION_SIZE}, base_ram_used=${BASE_RAM_USED_SIZE}, dynamic_ram=${dynamicRamBytes}, `
 		+ `geo_scratch=${DEFAULT_GEO_SCRATCH_SIZE}, vdp_stream=${VDP_STREAM_BUFFER_SIZE}, vram_staging=${PSX_MODEL_PROFILE.stagingBytes}, framebuffer=${frameBufferBytes} (${frameBufferWidth}x${frameBufferHeight}), `
-		+ `system_slot=${PSX_MODEL_PROFILE.slotBytes}, slot=${PSX_MODEL_PROFILE.slotBytes}x2=${PSX_MODEL_PROFILE.slotBytes * 2}).`,
+		+ `texture_vram=${PSX_MODEL_PROFILE.textureBytes}).`,
 	);
 	return {
 		ram_bytes: ramBytes,
-		slot_bytes: PSX_MODEL_PROFILE.slotBytes,
-		system_slot_bytes: PSX_MODEL_PROFILE.slotBytes,
+		texture_bytes: PSX_MODEL_PROFILE.textureBytes,
 		staging_bytes: PSX_MODEL_PROFILE.stagingBytes,
 		framebuffer_bytes: frameBufferBytes,
 	};

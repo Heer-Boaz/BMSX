@@ -114,7 +114,7 @@ export const RUNTIME_SAVE_STATE_PROP_NAMES = [
 	'flip_strength',
 	'flip_window',
 	'vram',
-	'staging',
+	'rpuVram',
 	'surfacePixels',
 	'surfaceId',
 	'pixels',

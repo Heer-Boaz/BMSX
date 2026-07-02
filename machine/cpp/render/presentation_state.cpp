@@ -5,7 +5,6 @@
 #include "machine/runtime/runtime.h"
 #include "render/backend/pass/library.h"
 #include "render/vdp/framebuffer.h"
-#include "render/vdp/slot_textures.h"
 #include "render/vdp/view_snapshot.h"
 #include <cstdio>
 #include <cstdlib>
@@ -190,7 +189,6 @@ bool RenderPresentationState::render(MachineManager& manager, Runtime& runtime, 
 		recordPresentation(presentMode, commitFrame, pausedPresent);
 
 		runtime.machine.vdp.drainFrameBufferPresentation(manager.m_view->vdpFrameBufferTextures());
-		runtime.machine.vdp.drainSurfaceUploads(manager.m_view->vdpSlotTextures());
 		commitVdpViewSnapshot(*manager.m_view, runtime.machine.vdp.readDeviceOutput());
 		manager.m_view->configurePresentation(presentMode, commitFrame);
 		manager.m_view->drawgame();

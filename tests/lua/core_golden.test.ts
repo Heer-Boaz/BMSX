@@ -54,7 +54,7 @@ import { DmaController } from '../../machine/ts/machine/devices/dma/controller';
 import { ImgDecController } from '../../machine/ts/machine/devices/imgdec/controller';
 import { IrqController } from '../../machine/ts/machine/devices/irq/controller';
 import { Memory, type VramWriteSink } from '../../machine/ts/machine/memory/memory';
-import { GEO_SCRATCH_BASE, RAM_BASE, RAM_END, SYSTEM_ROM_BASE, VRAM_PRIMARY_SLOT_BASE, VRAM_STAGING_BASE } from '../../machine/ts/machine/memory/map';
+import { GEO_SCRATCH_BASE, RAM_BASE, RAM_END, SYSTEM_ROM_BASE, VRAM_FRAMEBUFFER_BASE, VRAM_STAGING_BASE } from '../../machine/ts/machine/memory/map';
 import type { VDP } from '../../machine/ts/machine/devices/vdp/vdp';
 import type { Runtime } from '../../machine/ts/machine/runtime/runtime';
 import { VblankState } from '../../machine/ts/machine/runtime/vblank';
@@ -232,7 +232,7 @@ test('core golden: DMA source bus faults complete as device errors', () => {
 });
 
 test('core golden: image decoder register faults complete as device status', () => {
-	for (const [dst, cap] of [[0xffff_0000, 4], [VRAM_PRIMARY_SLOT_BASE, 0]]) {
+	for (const [dst, cap] of [[0xffff_0000, 4], [VRAM_FRAMEBUFFER_BASE, 0]]) {
 		const { memory, controller } = createImageDecoderFixture();
 		memory.writeValue(IO_IMG_SRC, RAM_BASE);
 		memory.writeValue(IO_IMG_LEN, 0);
@@ -247,7 +247,7 @@ test('core golden: image decoder register faults complete as device status', () 
 	const { memory, controller } = createImageDecoderFixture();
 	memory.writeValue(IO_IMG_SRC, RAM_END - 1);
 	memory.writeValue(IO_IMG_LEN, 4);
-	memory.writeValue(IO_IMG_DST, VRAM_PRIMARY_SLOT_BASE);
+	memory.writeValue(IO_IMG_DST, VRAM_FRAMEBUFFER_BASE);
 	memory.writeValue(IO_IMG_CAP, 4);
 	memory.writeIoValue(IO_IMG_CTRL, IMG_CTRL_START);
 	controller.onCtrlWrite(0);
@@ -266,7 +266,7 @@ test('core golden: queued image decoder faults reject and drain', async () => {
 			invalidDstRejected = true;
 		},
 	);
-	const invalidCap = controller.decodeToVram({ bytes: new Uint8Array(), dst: VRAM_PRIMARY_SLOT_BASE, cap: 0 }).then(
+	const invalidCap = controller.decodeToVram({ bytes: new Uint8Array(), dst: VRAM_FRAMEBUFFER_BASE, cap: 0 }).then(
 		() => assert.fail('queued invalid capacity should reject'),
 		() => {
 			invalidCapRejected = true;

@@ -26,8 +26,8 @@ export const CART_PROGRAM_VECTOR_ADDR = PROGRAM_ROM_BASE + CART_PROGRAM_VECTOR_O
 export const IO_REGION_SIZE = 0x00040000; // 256 KB
 
 export const DEFAULT_GEO_SCRATCH_SIZE = 0x00080000; // 512 KB
-export const DEFAULT_VRAM_IMAGE_SLOT_SIZE = 0x00200000; // 2 MB
-export const DEFAULT_VRAM_STAGING_SIZE = 0x001c0000; // 1.75 MB
+export const DEFAULT_VRAM_TEXTURE_SIZE = 0x00200000; // 2 MB
+export const DEFAULT_VRAM_STAGING_SIZE = 0x00022000; // 136 KB
 export const DEFAULT_VRAM_FRAMEBUFFER_SIZE = 256 * 212 * 4;
 export const VDP_CMD_ARG_COUNT = 19;
 export const VDP_STREAM_CAPACITY_WORDS = 16384;
@@ -41,7 +41,7 @@ export const PROGRAM_STATIC_RAM_BASE = RAM_BASE + MIN_RAM_SIZE;
 export const VRAM_BASE = PROGRAM_ROM_BASE + PROGRAM_ROM_SIZE;
 
 export let RAM_SIZE = DEFAULT_RAM_SIZE;
-export let VRAM_IMAGE_SLOT_SIZE = DEFAULT_VRAM_IMAGE_SLOT_SIZE;
+export let VRAM_TEXTURE_SIZE = DEFAULT_VRAM_TEXTURE_SIZE;
 export let VRAM_STAGING_SIZE = DEFAULT_VRAM_STAGING_SIZE;
 export let VRAM_FRAMEBUFFER_SIZE = DEFAULT_VRAM_FRAMEBUFFER_SIZE;
 
@@ -49,20 +49,14 @@ export const IO_BASE = RAM_BASE;
 export const GEO_SCRATCH_BASE = IO_BASE + IO_REGION_SIZE;
 export const GEO_SCRATCH_SIZE = DEFAULT_GEO_SCRATCH_SIZE;
 export const VDP_STREAM_BUFFER_BASE = GEO_SCRATCH_BASE + GEO_SCRATCH_SIZE;
-export let VRAM_SECONDARY_SLOT_BASE = 0;
-export let VRAM_PRIMARY_SLOT_BASE = 0;
-export let VRAM_SYSTEM_SLOT_BASE = 0;
 export let VRAM_STAGING_BASE = 0;
+export let VRAM_TEXTURE_BASE = 0;
 export let VRAM_FRAMEBUFFER_BASE = 0;
-export let VRAM_SYSTEM_SLOT_SIZE = 0;
-export let VRAM_PRIMARY_SLOT_SIZE = 0;
-export let VRAM_SECONDARY_SLOT_SIZE = 0;
 export let RAM_END = RAM_BASE + RAM_SIZE;
 
 export type MemoryMapSpecs = {
 	ram_bytes?: number;
-	slot_bytes?: number;
-	system_slot_bytes?: number;
+	texture_bytes?: number;
 	staging_bytes?: number;
 	framebuffer_bytes?: number;
 };
@@ -87,9 +81,7 @@ function vramMappedRangeMatchesNonEmpty(addr: number, length: number, contiguous
 	const end = addr + length;
 	const matches = contiguous ? vramRegionContains : vramRegionOverlaps;
 	return matches(addr, end, VRAM_STAGING_BASE, VRAM_STAGING_SIZE)
-		|| matches(addr, end, VRAM_SYSTEM_SLOT_BASE, VRAM_SYSTEM_SLOT_SIZE)
-		|| matches(addr, end, VRAM_PRIMARY_SLOT_BASE, VRAM_PRIMARY_SLOT_SIZE)
-		|| matches(addr, end, VRAM_SECONDARY_SLOT_BASE, VRAM_SECONDARY_SLOT_SIZE)
+		|| matches(addr, end, VRAM_TEXTURE_BASE, VRAM_TEXTURE_SIZE)
 		|| matches(addr, end, VRAM_FRAMEBUFFER_BASE, VRAM_FRAMEBUFFER_SIZE);
 }
 
@@ -109,47 +101,36 @@ export function isVramMappedContiguousRange(addr: number, length: number): boole
 
 export function vramMappedRemainingBytes(addr: number): number {
 	return vramRegionRemainingBytes(addr, VRAM_STAGING_BASE, VRAM_STAGING_SIZE)
-		|| vramRegionRemainingBytes(addr, VRAM_SYSTEM_SLOT_BASE, VRAM_SYSTEM_SLOT_SIZE)
-		|| vramRegionRemainingBytes(addr, VRAM_PRIMARY_SLOT_BASE, VRAM_PRIMARY_SLOT_SIZE)
-		|| vramRegionRemainingBytes(addr, VRAM_SECONDARY_SLOT_BASE, VRAM_SECONDARY_SLOT_SIZE)
+		|| vramRegionRemainingBytes(addr, VRAM_TEXTURE_BASE, VRAM_TEXTURE_SIZE)
 		|| vramRegionRemainingBytes(addr, VRAM_FRAMEBUFFER_BASE, VRAM_FRAMEBUFFER_SIZE);
 }
 
 function recomputeMemoryLayout(config: {
 	ramBytes: number;
-	slotBytes: number;
-	systemSlotBytes: number;
+	textureBytes: number;
 	stagingBytes: number;
 	frameBufferBytes: number;
 }): void {
 	RAM_SIZE = config.ramBytes;
-	VRAM_IMAGE_SLOT_SIZE = config.slotBytes;
-	VRAM_SYSTEM_SLOT_SIZE = config.systemSlotBytes;
+	VRAM_TEXTURE_SIZE = config.textureBytes;
 	VRAM_STAGING_SIZE = config.stagingBytes;
 	VRAM_FRAMEBUFFER_SIZE = config.frameBufferBytes;
 
 	RAM_END = RAM_BASE + RAM_SIZE;
 
 	VRAM_STAGING_BASE = VRAM_BASE;
-	VRAM_SYSTEM_SLOT_BASE = VRAM_STAGING_BASE + VRAM_STAGING_SIZE;
-	VRAM_PRIMARY_SLOT_BASE = VRAM_SYSTEM_SLOT_BASE + config.systemSlotBytes;
-	VRAM_SECONDARY_SLOT_BASE = VRAM_PRIMARY_SLOT_BASE + VRAM_IMAGE_SLOT_SIZE;
-	VRAM_FRAMEBUFFER_BASE = VRAM_SECONDARY_SLOT_BASE + VRAM_IMAGE_SLOT_SIZE;
-	VRAM_SYSTEM_SLOT_SIZE = config.systemSlotBytes;
-	VRAM_PRIMARY_SLOT_SIZE = VRAM_IMAGE_SLOT_SIZE;
-	VRAM_SECONDARY_SLOT_SIZE = VRAM_IMAGE_SLOT_SIZE;
+	VRAM_TEXTURE_BASE = VRAM_STAGING_BASE + VRAM_STAGING_SIZE;
+	VRAM_FRAMEBUFFER_BASE = VRAM_TEXTURE_BASE + VRAM_TEXTURE_SIZE;
 }
 
 export function configureMemoryMap(specs?: MemoryMapSpecs): void {
 	const ramBytes = specs?.ram_bytes ?? DEFAULT_RAM_SIZE;
-	const slotBytes = specs?.slot_bytes ?? DEFAULT_VRAM_IMAGE_SLOT_SIZE;
-	const systemSlotBytes = specs?.system_slot_bytes ?? slotBytes;
+	const textureBytes = specs?.texture_bytes ?? DEFAULT_VRAM_TEXTURE_SIZE;
 	const stagingBytes = specs?.staging_bytes ?? DEFAULT_VRAM_STAGING_SIZE;
 	const frameBufferBytes = specs?.framebuffer_bytes ?? DEFAULT_VRAM_FRAMEBUFFER_SIZE;
 	recomputeMemoryLayout({
 		ramBytes,
-		slotBytes,
-		systemSlotBytes,
+		textureBytes,
 		stagingBytes,
 		frameBufferBytes,
 	});

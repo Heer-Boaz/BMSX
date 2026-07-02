@@ -60,6 +60,7 @@ local collision2d<const> = require('cartlib/collision2d')
 local scratchrecordbatch<const> = require('bios/util/scratchrecordbatch')
 local world_instance<const> = require('cartlib/world/index').instance
 local vdp_image<const> = require('system/vdp_image')
+local vdp_rpu_quads<const> = require('system/vdp_rpu_quads')
 
 local tickgroup<const> = ecs.tickgroup
 local ecsystem<const> = ecs.ecsystem
@@ -519,7 +520,8 @@ function spriterendersystem:update()
 			flip_flags = flip_flags | 2
 		end
 		local draw_scale<const> = sc.draw_scale
-		vdp_image.write_blit_color(sc.imgid, x, y, z, sc.layer, sc.scale.x * draw_scale.x, sc.scale.y * draw_scale.y, flip_flags, sc.color)
+		local rect<const> = vdp_image.rect(sc.imgid)
+		vdp_rpu_quads.blit_source_color(rect.atlas_id, rect.u, rect.v, rect.w, rect.h, x, y, z, sc.layer, sc.scale.x * draw_scale.x, sc.scale.y * draw_scale.y, flip_flags, sc.color)
 		::continue_sprite_render::
 	end
 end

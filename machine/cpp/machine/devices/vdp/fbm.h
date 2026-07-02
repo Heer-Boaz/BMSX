@@ -29,7 +29,7 @@ public:
 	void configure(u32 width, u32 height);
 	std::vector<u8> captureDisplayReadback() const;
 	void restoreDisplayReadback(const std::vector<u8>& pixels);
-	void presentPage(VdpSurfaceUploadSlot& renderSlot);
+	void presentPage(VdpSurfaceBacking& renderSurface);
 	void presentTexturePage();
 	void copyReadbackPixelsFrom(const std::vector<u8>& source, u32 x, u32 y, u32 width, u32 height, u8* out);
 	const VdpFrameBufferPresentation& buildPresentation(const std::vector<u8>& renderReadback, bool forceFullSync = false);

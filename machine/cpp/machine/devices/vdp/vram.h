@@ -21,14 +21,6 @@ struct VdpEntropySeeds {
 
 inline constexpr VdpEntropySeeds DEFAULT_VDP_ENTROPY_SEEDS{};
 
-struct VdpVramSurface {
-	u32 surfaceId = 0u;
-	u32 baseAddr = 0u;
-	u32 capacity = 0u;
-	u32 width = 0u;
-	u32 height = 0u;
-};
-
 struct VdpSurfacePixelsState {
 	u32 surfaceId = 0u;
 	u32 surfaceWidth = 0u;
@@ -37,56 +29,45 @@ struct VdpSurfacePixelsState {
 };
 
 struct VdpVramState {
-	std::vector<u8> staging;
+	std::vector<u8> rpuVram;
 	std::vector<VdpSurfacePixelsState> surfacePixels;
 };
-
-std::array<VdpVramSurface, VDP_RD_SURFACE_COUNT> defaultVdpVramSurfaces(VdpFrameBufferSize frameBufferSize);
 
 class VdpVramUnit {
 public:
 	explicit VdpVramUnit(VdpEntropySeeds entropySeeds = DEFAULT_VDP_ENTROPY_SEEDS);
 
-	void initializeSurfaces(const std::array<VdpVramSurface, VDP_RD_SURFACE_COUNT>& surfaces);
-	void setExternalStaging(u8* bytes, size_t length, u32* pageRevisions);
-	bool writeStaging(u32 addr, const u8* bytes, size_t srcOffset, size_t length);
-	bool readStaging(u32 addr, u8* out, size_t length) const;
-	void writeSurfaceBytes(VdpSurfaceUploadSlot& slot, u32 offset, const u8* bytes, size_t srcOffset, size_t length);
-	void readSurfaceBytes(const VdpSurfaceUploadSlot& slot, u32 offset, u8* out, size_t length) const;
-	bool setSlotLogicalDimensions(VdpSurfaceUploadSlot& slot, u32 width, u32 height);
-	void markSlotDirty(VdpSurfaceUploadSlot& slot, u32 startRow, u32 rowCount);
-	VdpSurfaceUploadSlot* findMappedSlot(u32 addr, size_t length);
-	const VdpSurfaceUploadSlot* findMappedSlot(u32 addr, size_t length) const;
-	VdpSurfaceUploadSlot* findSurface(u32 surfaceId);
-	const VdpSurfaceUploadSlot* findSurface(u32 surfaceId) const;
-	void clearSurfaceUploadDirty(u32 surfaceId);
-	void drainSurfaceUploads(VdpSurfaceUploadSink& sink);
-	void syncSurfaceUploads(VdpSurfaceUploadSink& sink);
+	void initializeFrameBuffer(VdpFrameBufferSize frameBufferSize);
+	void setExternalRpuVram(u8* bytes, size_t length, u32* pageRevisions);
+	bool writeRpuVram(u32 addr, const u8* bytes, size_t srcOffset, size_t length);
+	bool readRpuVram(u32 addr, u8* out, size_t length) const;
+	void writeSurfaceBytes(VdpSurfaceBacking& surface, u32 offset, const u8* bytes, size_t srcOffset, size_t length);
+	void readSurfaceBytes(const VdpSurfaceBacking& surface, u32 offset, u8* out, size_t length) const;
+	bool setSurfaceLogicalDimensions(VdpSurfaceBacking& surface, u32 width, u32 height);
+	void markSurfaceDirty(VdpSurfaceBacking& surface, u32 startRow, u32 rowCount);
+	bool frameBufferContains(u32 addr, size_t length) const;
 	VdpVramState captureState() const;
 	void restoreState(const VdpVramState& state);
 	u32 trackedUsedBytes() const;
 	u32 trackedTotalBytes() const;
 
-	std::vector<VdpSurfaceUploadSlot>& slots() { return m_slots; }
-	const std::vector<VdpSurfaceUploadSlot>& slots() const { return m_slots; }
+	VdpSurfaceBacking& frameBufferSurface() { return m_frameBufferSurface; }
+	const VdpSurfaceBacking& frameBufferSurface() const { return m_frameBufferSurface; }
 
 private:
-	void registerSlot(const VdpVramSurface& surface);
+	void configureFrameBufferSurface(u32 width, u32 height);
 	std::vector<VdpSurfacePixelsState> captureSurfacePixels() const;
 	void restoreSurfacePixels(const VdpSurfacePixelsState& state);
-	void emitSurfaceUpload(VdpSurfaceUploadSink& sink, const VdpSurfaceUploadSlot& slot, bool requiresFullSync);
-	void markSlotDirtySpan(VdpSurfaceUploadSlot& slot, u32 row, u32 xStart, u32 xEnd);
-	void updateCpuReadback(VdpSurfaceUploadSlot& surface, const u8* bytes, size_t srcOffset, size_t length, u32 x, u32 y);
-	void seedSlotPixels(VdpSurfaceUploadSlot& slot);
-	void markStagingDirty(u32 offset, size_t byteLength);
+	void markSurfaceDirtySpan(VdpSurfaceBacking& surface, u32 row, u32 xStart, u32 xEnd);
+	void updateCpuReadback(VdpSurfaceBacking& surface, const u8* bytes, size_t srcOffset, size_t length, u32 x, u32 y);
+	void seedSurfacePixels(VdpSurfaceBacking& surface);
 
-	std::vector<VdpSurfaceUploadSlot> m_slots;
-	VdpSurfaceUpload m_surfaceUploadOutput;
-	std::vector<u8> m_ownedStaging;
-	std::vector<u32> m_ownedStagingPageRevisions;
-	u8* m_staging = nullptr;
-	u32* m_stagingPageRevisions = nullptr;
-	size_t m_stagingLength = 0u;
+	VdpSurfaceBacking m_frameBufferSurface;
+	std::vector<u8> m_ownedRpuVram;
+	std::vector<u32> m_ownedRpuVramPageRevisions;
+	u8* m_rpuVram = nullptr;
+	u32* m_rpuVramPageRevisions = nullptr;
+	size_t m_rpuVramLength = 0u;
 	std::vector<u8> m_garbageScratch;
 	std::array<u8, 4u> m_seedPixel{{0u, 0u, 0u, 0u}};
 	u32 m_machineSeed = 0u;

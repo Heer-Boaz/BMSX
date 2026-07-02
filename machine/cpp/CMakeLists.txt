@@ -273,10 +273,7 @@ add_library(bmsx_core STATIC
 	render/host_overlay/overlay_queue.cpp
 	render/host_overlay/software/renderer.cpp
 	render/host_overlay/gles2/pipeline.cpp
-	render/vdp/context_state.cpp
 	render/vdp/framebuffer.cpp
-	render/vdp/surfaces.cpp
-	render/vdp/slot_textures.cpp
 	render/vdp/transform.cpp
 	render/vdp/view_snapshot.cpp
 	render/texture_manager.cpp
@@ -345,7 +342,6 @@ add_library(bmsx_core STATIC
 	machine/memory/access_kind.cpp
 	machine/memory/memory.cpp
 	machine/memory/map.cpp
-	machine/devices/vdp/slot_surface.cpp
 	machine/devices/vdp/fbm.cpp
 	machine/devices/vdp/frame.cpp
 	machine/devices/vdp/ingress.cpp

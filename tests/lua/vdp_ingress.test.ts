@@ -24,17 +24,14 @@ import {
 	IO_VDP_REG_DST_Y,
 	IO_VDP_REG_GEOM_X0,
 	IO_VDP_REG_LINE_WIDTH,
-	IO_VDP_REG_SLOT_DIM,
 	IO_VDP_REG_SLOT_INDEX,
 	IO_VDP_REG_SRC_SLOT,
 	IO_VDP_REG_SRC_UV,
 	IO_VDP_REG_SRC_WH,
-	IO_VDP_SLOT_PRIMARY,
-	IO_VDP_SLOT_SECONDARY,
 	IO_VDP_STATUS,
 } from '../../machine/ts/machine/bus/io';
 import { CPU } from '../../machine/ts/machine/cpu/cpu';
-import type { VdpFrameBufferPresentation, VdpFrameBufferPresentationSink, VdpSurfaceUpload } from '../../machine/ts/machine/devices/vdp/device_output';
+import type { VdpFrameBufferPresentation, VdpFrameBufferPresentationSink } from '../../machine/ts/machine/devices/vdp/device_output';
 import { VDP, VDP_FRAMEBUFFER_PAGE_DISPLAY } from '../../machine/ts/machine/devices/vdp/vdp';
 import {
 	VDP_FIFO_CTRL_SEAL,
@@ -43,16 +40,12 @@ import {
 	VDP_FAULT_RD_UNSUPPORTED_MODE,
 	VDP_FAULT_SUBMIT_STATE,
 	VDP_FAULT_STREAM_BAD_PACKET,
-	VDP_FAULT_VRAM_SLOT_DIM,
 	VDP_FAULT_VRAM_WRITE_OOB,
 	VDP_FAULT_VRAM_WRITE_UNALIGNED,
 	VDP_FAULT_VRAM_WRITE_UNMAPPED,
 	VDP_RD_MODE_RGBA8888,
 	VDP_RD_STATUS_OVERFLOW,
 	VDP_RD_STATUS_READY,
-	VDP_RD_SURFACE_PRIMARY,
-	VDP_SLOT_NONE,
-	VDP_SLOT_PRIMARY,
 	VDP_STATUS_FAULT,
 	VDP_STATUS_VBLANK,
 } from '../../machine/ts/machine/devices/vdp/contracts';
@@ -129,7 +122,7 @@ import {
 	VDP_XF_VIEW_MATRIX_INDEX_REGISTER,
 } from '../../machine/ts/machine/devices/vdp/xf';
 import { Memory } from '../../machine/ts/machine/memory/memory';
-import { IO_WORD_SIZE, VDP_STREAM_BUFFER_BASE, VRAM_FRAMEBUFFER_BASE, VRAM_PRIMARY_SLOT_BASE, VRAM_STAGING_BASE } from '../../machine/ts/machine/memory/map';
+import { IO_WORD_SIZE, VDP_STREAM_BUFFER_BASE, VRAM_FRAMEBUFFER_BASE, VRAM_STAGING_BASE } from '../../machine/ts/machine/memory/map';
 import { DeviceScheduler } from '../../machine/ts/machine/scheduler/device';
 import { createVdpTransformSnapshot, resolveVdpTransformSnapshot } from '../../machine/ts/render/vdp/transform';
 
@@ -143,8 +136,6 @@ function createVdp(): { memory: Memory; scheduler: DeviceScheduler; vdp: VDP } {
 	const scheduler = new DeviceScheduler(cpu);
 	const vdp = new VDP(memory, scheduler, { width: 256, height: 212 });
 	memory.writeIoValue(IO_VDP_DITHER, 0);
-	memory.writeIoValue(IO_VDP_SLOT_PRIMARY, VDP_SLOT_NONE);
-	memory.writeIoValue(IO_VDP_SLOT_SECONDARY, VDP_SLOT_NONE);
 	vdp.initializeVramSurfaces();
 	vdp.initializeRegisters();
 	vdp.resetStatus();
@@ -379,10 +370,10 @@ test('VDP fault latch is sticky-first until FAULT_ACK', () => {
 	memory.writeValue(IO_VDP_RD_MODE, 99);
 	assert.equal(memory.readValue(IO_VDP_RD_DATA), 0);
 	assertVdpFault(memory, VDP_FAULT_RD_UNSUPPORTED_MODE);
-	vdp.writeVram(VRAM_PRIMARY_SLOT_BASE + 1, new Uint8Array([1, 2, 3, 4]));
+	vdp.writeVram(VRAM_FRAMEBUFFER_BASE + 1, new Uint8Array([1, 2, 3, 4]));
 	assert.equal(memory.readIoU32(IO_VDP_FAULT_CODE), VDP_FAULT_RD_UNSUPPORTED_MODE);
 	clearVdpFault(memory);
-	vdp.writeVram(VRAM_PRIMARY_SLOT_BASE + 1, new Uint8Array([1, 2, 3, 4]));
+	vdp.writeVram(VRAM_FRAMEBUFFER_BASE + 1, new Uint8Array([1, 2, 3, 4]));
 	assertVdpFault(memory, VDP_FAULT_VRAM_WRITE_UNALIGNED);
 });
 
@@ -417,7 +408,7 @@ test('VDP save-state restores readback budget and overflow status', () => {
 test('VDP VRAM write faults latch status instead of throwing', () => {
 	const { memory, vdp } = createVdp();
 
-	assert.doesNotThrow(() => vdp.writeVram(VRAM_PRIMARY_SLOT_BASE + 1, new Uint8Array([1, 2, 3, 4])));
+	assert.doesNotThrow(() => vdp.writeVram(VRAM_FRAMEBUFFER_BASE + 1, new Uint8Array([1, 2, 3, 4])));
 	assert.equal(memory.readIoU32(IO_VDP_FAULT_CODE), VDP_FAULT_VRAM_WRITE_UNALIGNED);
 	assert.equal((memory.readIoU32(IO_VDP_STATUS) & VDP_STATUS_FAULT) !== 0, true);
 });
@@ -431,8 +422,8 @@ test('VDP VRAM read faults latch status instead of throwing', () => {
 	assert.deepEqual(Array.from(out), [0, 0, 0, 0]);
 	clearVdpFault(memory);
 
-	memory.writeValue(IO_VDP_REG_SLOT_DIM, 1 | (1 << 16));
-	assert.doesNotThrow(() => vdp.readVram(VRAM_PRIMARY_SLOT_BASE + 4, out));
+	vdp.setDecodedVramSurfaceDimensions(VRAM_FRAMEBUFFER_BASE, 1, 1);
+	assert.doesNotThrow(() => vdp.readVram(VRAM_FRAMEBUFFER_BASE + 4, out));
 	assertVdpFault(memory, VDP_FAULT_VRAM_WRITE_OOB);
 	assert.deepEqual(Array.from(out), [0, 0, 0, 0]);
 });

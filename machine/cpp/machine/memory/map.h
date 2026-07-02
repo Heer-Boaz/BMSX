@@ -52,24 +52,18 @@ constexpr uint32_t IO_BASE = RAM_BASE;
 constexpr uint32_t GEO_SCRATCH_BASE = IO_BASE + IO_REGION_SIZE;
 constexpr uint32_t GEO_SCRATCH_SIZE = DEFAULT_GEO_SCRATCH_SIZE;
 constexpr uint32_t VDP_STREAM_BUFFER_BASE = GEO_SCRATCH_BASE + GEO_SCRATCH_SIZE;
-constexpr uint32_t DEFAULT_VRAM_IMAGE_SLOT_SIZE = 0x00200000u; // 2 MB
-constexpr uint32_t DEFAULT_VRAM_STAGING_SIZE = 0x001c0000u; // 1.75 MB
-extern uint32_t VRAM_IMAGE_SLOT_SIZE;
+constexpr uint32_t DEFAULT_VRAM_TEXTURE_SIZE = 0x00200000u; // 2 MB
+constexpr uint32_t DEFAULT_VRAM_STAGING_SIZE = 0x00022000u; // 136 KB
+extern uint32_t VRAM_TEXTURE_SIZE;
 extern uint32_t VRAM_STAGING_SIZE;
 extern uint32_t VRAM_FRAMEBUFFER_SIZE;
-extern uint32_t VRAM_SECONDARY_SLOT_BASE;
-extern uint32_t VRAM_PRIMARY_SLOT_BASE;
-extern uint32_t VRAM_SYSTEM_SLOT_BASE;
 extern uint32_t VRAM_STAGING_BASE;
+extern uint32_t VRAM_TEXTURE_BASE;
 extern uint32_t VRAM_FRAMEBUFFER_BASE;
-extern uint32_t VRAM_SYSTEM_SLOT_SIZE;
-extern uint32_t VRAM_PRIMARY_SLOT_SIZE;
-extern uint32_t VRAM_SECONDARY_SLOT_SIZE;
 
 struct MemoryMapSpecs {
 	uint32_t ramBytes = DEFAULT_RAM_SIZE;
-	uint32_t slotBytes = DEFAULT_VRAM_IMAGE_SLOT_SIZE;
-	uint32_t systemSlotBytes = DEFAULT_VRAM_IMAGE_SLOT_SIZE;
+	uint32_t textureBytes = DEFAULT_VRAM_TEXTURE_SIZE;
 	uint32_t stagingBytes = DEFAULT_VRAM_STAGING_SIZE;
 	uint32_t frameBufferBytes = DEFAULT_VRAM_FRAMEBUFFER_SIZE;
 };

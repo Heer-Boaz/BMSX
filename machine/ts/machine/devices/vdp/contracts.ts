@@ -4,8 +4,8 @@ export const LAYER_2D_WORLD: Layer2D = 0;
 export const LAYER_2D_UI: Layer2D = 1;
 export const LAYER_2D_IDE: Layer2D = 2;
 
-export type VdpSlotSource = {
-	slot: number;
+export type VdpAtlasSource = {
+	atlasId: number;
 	u: number;
 	v: number;
 	w: number;
@@ -17,15 +17,8 @@ export const VDP_JTU_MATRIX_WORDS = 16;
 export const VDP_JTU_MATRIX_COUNT = 32;
 export const VDP_JTU_REGISTER_WORDS = VDP_JTU_MATRIX_WORDS * VDP_JTU_MATRIX_COUNT;
 
-export const VDP_RD_SURFACE_SYSTEM = 0;
-export const VDP_RD_SURFACE_PRIMARY = 1;
-export const VDP_RD_SURFACE_SECONDARY = 2;
-export const VDP_RD_SURFACE_FRAMEBUFFER = 3;
-export const VDP_RD_SURFACE_COUNT = 4;
-export const VDP_SLOT_PRIMARY = 0;
-export const VDP_SLOT_SECONDARY = 1;
-export const VDP_SLOT_SYSTEM = 2;
-export const VDP_SLOT_NONE = 0xffffffff;
+export const VDP_RD_SURFACE_FRAMEBUFFER = 0;
+export const VDP_RD_SURFACE_COUNT = 1;
 export const VDP_RD_MODE_RGBA8888 = 0;
 export const VDP_RD_STATUS_READY = 1 << 0;
 export const VDP_RD_STATUS_OVERFLOW = 1 << 1;
@@ -43,7 +36,7 @@ export const VDP_FAULT_VRAM_WRITE_UNMAPPED = 0x0101;
 export const VDP_FAULT_VRAM_WRITE_UNINITIALIZED = 0x0102;
 export const VDP_FAULT_VRAM_WRITE_OOB = 0x0103;
 export const VDP_FAULT_VRAM_WRITE_UNALIGNED = 0x0104;
-export const VDP_FAULT_VRAM_SLOT_DIM = 0x0105;
+export const VDP_FAULT_VRAM_SURFACE_DIM = 0x0105;
 export const VDP_FAULT_STREAM_BAD_PACKET = 0x0201;
 export const VDP_FAULT_SUBMIT_STATE = 0x0202;
 export const VDP_FAULT_CMD_BAD_DOORBELL = 0x0203;

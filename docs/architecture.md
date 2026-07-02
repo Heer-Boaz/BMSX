@@ -147,8 +147,9 @@ frontend executable. It never owns cart-observable machine semantics.
 ## Console model and timing
 
 The active machine model is `psx`. The model owns fixed hardware facts:
-50 MHz CPU clock, 4 MB RAM, PSX DMA/IMGDEC transfer rates, 2 MB VDP slot
-storage, 1.75 MB VDP-local staging storage, and BIOS default VDP mode `2`.
+50 MHz CPU clock, 4 MB RAM, PSX DMA/IMGDEC transfer rates, 136 KiB RPU
+descriptor/scratch staging, 2 MB texture VRAM, a PSX-mode 320×240 framebuffer,
+and BIOS default VDP mode `2`.
 
 The active VDP class is also `psx`. A cart ROM carries a VDP-class marker in
 the ROM header; the only supported marker today is `psx`. Guest Lua does not
@@ -528,7 +529,7 @@ Cart-visible ingress:
 - raw VDP register writes;
 - doorbell/status/fault words;
 - packet/FIFO/stream words;
-- VRAM/surface memory owned by the VDP;
+- RPU staging, texture VRAM, and framebuffer memory owned by the VDP;
 - BIOS helpers that emit those same words.
 
 Internal units:
@@ -548,20 +549,22 @@ Internal units:
   target the IDE/terminal framebuffer texture presentation pass.
 - `streamIngress` owns the DMA submit latch, FIFO partial-word bytes, and sealed
   FIFO packet words.
-- `VRAM` owns staging memory, surface slots, dirty spans, CPU readback pixels,
-  and surface-upload transactions.
-- `readback` owns the CPU-visible read-surface registry, retained read cache,
-  per-frame read budget, and overflow latch.
+- `VRAM` owns RPU descriptor/scratch staging, texture VRAM bytes, the
+  framebuffer surface backing, dirty spans, and CPU readback pixels.
+- `readback` owns framebuffer readback cache, per-frame read budget, and
+  overflow latch.
 - `RPU` owns the raw cart-visible render contract: buffer records, surface
   records, constant banks, fixed stream layouts, fixed shader-variant ids,
   retained render passes, and retained draw commands.
-  Firmware quad helpers currently carve VDP-local staging into descriptor
-  storage plus texture regions: 288 KiB system atlas, 416 KiB primary cart
-  slot, and 984704 bytes secondary cart slot. Rompacker atlas splitting uses
-  that current byte budget, not a pixel-only texture dimension. The fact that
-  texture bytes live under staging, and that the two cart texture regions are
-  asymmetric, is tracked as open staging/texture residency debt rather than a
-  final hardware contract.
+  Firmware quad helpers keep descriptors in the 136 KiB staging range and point
+  texture descriptors at the fixed texture-VRAM range. The first 288 KiB of
+  texture VRAM is reserved for the system atlas; the remaining cart texture
+  range is build-time materialised by the rompacker. If authored cart atlases
+  exceed resident texture VRAM, the rompacker splits them into ROM atlas pages
+  and assigns concrete texture addresses; pages from the same authored atlas may
+  intentionally overlay the same texture region. That baked layout is data, not
+  a hardware allocator or BIOS policy, and cart code may stream, overwrite, or
+  ignore it.
 - `LPU` owns raw ambient, directional, and point-light register words.
 - `MFU` owns raw morph-weight register words.
 - `JTU` owns raw joint-matrix register words.

@@ -26,7 +26,8 @@ local reset_scroll_state<const> = function(state) state.top = 0 end
 local draw_glyph_line_color<const> = function(font, line, x, y, z, layer, color)
 	local cursor_x = x
 	font_module.for_each_glyph(font, line, function(glyph)
-		vdp_image.write_glyph_color(glyph, cursor_x, y, z, layer, color)
+		local rect<const> = vdp_image.rect(glyph.imgid)
+		vdp_rpu_quads.blit_source_color(rect.atlas_id, rect.u, rect.v, rect.w, rect.h, cursor_x, y, z, layer, 1, 1, 0, color)
 		cursor_x = cursor_x + glyph.advance
 	end)
 end
@@ -80,8 +81,8 @@ local irq_mask_addr<const> = 0x0800010c
 local boot_vblank_count = 0
 
 local boot_start
-local system_slot_ready
-local system_slot_failed
+local system_atlas_ready
+local system_atlas_failed
 local boot_scroll_state<const> = { top = 0 }
 local boot_screen_visible = false
 local boot_screen_presented
@@ -181,7 +182,7 @@ local compute_boot_progress<const> = function(info, cart_ready, elapsed)
 	if boot_screen_visible then
 		stage_done = stage_done + 1
 	end
-	if system_slot_ready and not system_slot_failed then
+	if system_atlas_ready and not system_atlas_failed then
 		stage_done = stage_done + 1
 	end
 	if cart_ready then
@@ -277,19 +278,19 @@ function init()
 	boot_start = os.clock()
 	boot_screen_visible = true
 	boot_screen_presented = false
-	system_slot_ready = false
-	system_slot_failed = false
+	system_atlas_ready = false
+	system_atlas_failed = false
 	reset_scroll_state(boot_scroll_state)
 	system.on_irq(irq_img_done, function()
-		system_slot_ready = true
+		system_atlas_ready = true
 	end)
 	system.on_irq(irq_img_error, function()
-		system_slot_failed = true
+		system_atlas_failed = true
 	end)
 	system.on_irq(irq_vblank, function()
 		boot_vblank_count = boot_vblank_count + 1
 	end)
-	vdp_image.load_system_slot()
+	vdp_image.load_system_atlas()
 end
 
 function new_game()
@@ -347,7 +348,7 @@ local update_boot_screen<const> = function()
 	local cart_present_and_ready<const> = cart_header_present(cart_rom_base)
 		and mem[cart_program_vector_addr] == cart_program_start_addr
 
-	if cart_present_and_ready and system_slot_ready and not system_slot_failed then
+	if cart_present_and_ready and system_atlas_ready and not system_atlas_failed then
 		if (mem[0x08000144] & 0x00000002) ~= 0 then
 			return false
 		end

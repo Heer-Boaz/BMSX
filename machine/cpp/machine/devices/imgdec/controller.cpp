@@ -319,12 +319,7 @@ void ImgDecController::beginDecode(DecodedImage&& result, uint32_t targetBaseAdd
 	m_availableDecodeBytes = 0;
 	m_decodeActive = true;
 	m_decodeQueued = false;
-	if (m_decodePlan.writeWidth > 0u && m_decodePlan.writeHeight > 0u && (
-		targetBaseAddr == VRAM_SYSTEM_SLOT_BASE
-		|| targetBaseAddr == VRAM_PRIMARY_SLOT_BASE
-		|| targetBaseAddr == VRAM_SECONDARY_SLOT_BASE
-		|| targetBaseAddr == VRAM_FRAMEBUFFER_BASE
-	)) {
+	if (m_decodePlan.writeWidth > 0u && m_decodePlan.writeHeight > 0u && targetBaseAddr == VRAM_FRAMEBUFFER_BASE) {
 		m_vdp.setDecodedVramSurfaceDimensions(targetBaseAddr, m_decodePlan.writeWidth, m_decodePlan.writeHeight);
 	}
 	if (m_decodePlan.writeLen == 0) {

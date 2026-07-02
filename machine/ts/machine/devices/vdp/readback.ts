@@ -6,18 +6,13 @@ import {
 	VDP_RD_MODE_RGBA8888,
 	VDP_RD_STATUS_OVERFLOW,
 	VDP_RD_STATUS_READY,
-	VDP_RD_SURFACE_COUNT,
+	VDP_RD_SURFACE_FRAMEBUFFER,
 } from './contracts';
-import type { VdpSurfaceUploadSlot } from './device_output';
+import type { VdpSurfaceBacking } from './device_output';
 
 export type VdpReadbackState = {
 	readBudgetBytes: number;
 	readOverflow: boolean;
-};
-
-type VdpReadSurface = {
-	surfaceId: number;
-	registered: boolean;
 };
 
 type VdpReadCache = {
@@ -31,43 +26,18 @@ const VDP_READBACK_BUDGET_BYTES = 4096;
 const VDP_READBACK_MAX_CHUNK_PIXELS = 256;
 
 export class VdpReadbackUnit {
-	public resolvedSurfaceId = 0;
 	public faultCode = VDP_FAULT_NONE;
 	public faultDetail = 0;
 	public word = 0;
 	public nextX = 0;
 	public nextY = 0;
 	public advanceReadPosition = false;
-	private readonly readSurfaces: VdpReadSurface[] = [];
-	private readonly readCaches: VdpReadCache[] = [];
+	private readonly frameBufferCache: VdpReadCache = { x0: 0, y: 0, width: 0, data: new Uint8Array(VDP_READBACK_MAX_CHUNK_PIXELS * 4) };
 	private readBudgetBytes = VDP_READBACK_BUDGET_BYTES;
 	private readOverflow = false;
 
-	public constructor() {
-		for (let surfaceId = 0; surfaceId < VDP_RD_SURFACE_COUNT; surfaceId += 1) {
-			this.readSurfaces[surfaceId] = { surfaceId, registered: false };
-			this.readCaches[surfaceId] = { x0: 0, y: 0, width: 0, data: new Uint8Array(VDP_READBACK_MAX_CHUNK_PIXELS * 4) };
-		}
-	}
-
-	public resetSurfaceRegistry(): void {
-		for (let surfaceId = 0; surfaceId < VDP_RD_SURFACE_COUNT; surfaceId += 1) {
-			const readSurface = this.readSurfaces[surfaceId]!;
-			readSurface.surfaceId = surfaceId;
-			readSurface.registered = false;
-			this.invalidateSurface(surfaceId);
-		}
-	}
-
-	public registerSurface(surfaceId: number): void {
-		const readSurface = this.readSurfaces[surfaceId]!;
-		readSurface.surfaceId = surfaceId;
-		readSurface.registered = true;
-		this.invalidateSurface(surfaceId);
-	}
-
-	public invalidateSurface(surfaceId: number): void {
-		this.readCaches[surfaceId]!.width = 0;
+	public invalidateFrameBuffer(): void {
+		this.frameBufferCache.width = 0;
 	}
 
 	public beginFrame(): void {
@@ -96,22 +66,15 @@ export class VdpReadbackUnit {
 			this.faultDetail = mode;
 			return false;
 		}
-		if (requestedSurfaceId >= VDP_RD_SURFACE_COUNT) {
+		if (requestedSurfaceId !== VDP_RD_SURFACE_FRAMEBUFFER) {
 			this.faultCode = VDP_FAULT_RD_SURFACE;
 			this.faultDetail = requestedSurfaceId;
 			return false;
 		}
-		const readSurface = this.readSurfaces[requestedSurfaceId]!;
-		if (!readSurface.registered) {
-			this.faultCode = VDP_FAULT_RD_SURFACE;
-			this.faultDetail = requestedSurfaceId;
-			return false;
-		}
-		this.resolvedSurfaceId = readSurface.surfaceId;
 		return true;
 	}
 
-	public readPixel(surface: VdpSurfaceUploadSlot, x: number, y: number): boolean {
+	public readPixel(surface: VdpSurfaceBacking, x: number, y: number): boolean {
 		const width = surface.surfaceWidth;
 		const height = surface.surfaceHeight;
 		if (x >= width || y >= height) {
@@ -126,7 +89,7 @@ export class VdpReadbackUnit {
 			this.advanceReadPosition = false;
 			return true;
 		}
-		const cache = this.getReadCache(this.resolvedSurfaceId, surface, x, y);
+		const cache = this.getReadCache(surface, x, y);
 		const localX = x - cache.x0;
 		const byteIndex = localX * 4;
 		const r = cache.data[byteIndex]!;
@@ -159,15 +122,15 @@ export class VdpReadbackUnit {
 		this.readOverflow = state.readOverflow;
 	}
 
-	private getReadCache(surfaceId: number, surface: VdpSurfaceUploadSlot, x: number, y: number): VdpReadCache {
-		const cache = this.readCaches[surfaceId]!;
+	private getReadCache(surface: VdpSurfaceBacking, x: number, y: number): VdpReadCache {
+		const cache = this.frameBufferCache;
 		if (cache.width === 0 || cache.y !== y || x < cache.x0 || x >= cache.x0 + cache.width) {
 			this.prefetchReadCache(cache, surface, x, y);
 		}
 		return cache;
 	}
 
-	private prefetchReadCache(cache: VdpReadCache, surface: VdpSurfaceUploadSlot, x: number, y: number): void {
+	private prefetchReadCache(cache: VdpReadCache, surface: VdpSurfaceBacking, x: number, y: number): void {
 		const maxPixelsByBudget = this.readBudgetBytes >>> 2;
 		if (maxPixelsByBudget <= 0) {
 			this.readOverflow = true;
@@ -183,7 +146,7 @@ export class VdpReadbackUnit {
 		cache.width = chunkW;
 	}
 
-	private copySurfacePixels(cache: VdpReadCache, surface: VdpSurfaceUploadSlot, x: number, y: number, width: number, height: number): void {
+	private copySurfacePixels(cache: VdpReadCache, surface: VdpSurfaceBacking, x: number, y: number, width: number, height: number): void {
 		const buffer = surface.cpuReadback;
 		const stride = surface.surfaceWidth * 4;
 		const rowBytes = width * 4;

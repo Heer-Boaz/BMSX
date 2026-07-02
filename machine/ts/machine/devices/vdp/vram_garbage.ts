@@ -1,8 +1,7 @@
 import { fmix32, scramble32, signed8FromHash, xorshift32 } from '../../common/hash';
 import {
-	VRAM_SECONDARY_SLOT_BASE,
-	VRAM_SECONDARY_SLOT_SIZE,
-	VRAM_STAGING_BASE,
+	VRAM_STAGING_SIZE,
+	VRAM_TEXTURE_SIZE,
 } from '../../memory/map';
 
 export const VRAM_GARBAGE_CHUNK_BYTES = 64 * 1024;
@@ -175,7 +174,7 @@ export function fillVramGarbageScratch(buffer: Uint8Array, length: number, s: Vr
 
 	const biasSeed = (s.machineSeed ^ s.slotSalt) >>> 0;
 	const bootSeedMix = (s.bootSeed ^ s.slotSalt) >>> 0;
-	const vramBytes = (VRAM_SECONDARY_SLOT_BASE + VRAM_SECONDARY_SLOT_SIZE - VRAM_STAGING_BASE) >>> 0;
+	const vramBytes = (VRAM_STAGING_SIZE + VRAM_TEXTURE_SIZE) >>> 0;
 	const biasConfig = makeBiasConfig(vramBytes, VRAM_GARBAGE_BIAS_CONFIG);
 
 	const BLOCK_BYTES = 32;

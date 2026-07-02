@@ -27,7 +27,7 @@ local instance_batch_capacity<const> = 1024
 local instance_frame_capacity<const> = 1024
 local instance_frame_bytes<const> = instance_stride * instance_frame_capacity
 local draw_frame_capacity<const> = 1024
-local surface_desc_count<const> = 3
+local surface_desc_count<const> = 256
 local vram_staging_base<const> = 0x11000000
 local rpu_quad_vertex_vram_addr<const> = 0
 local rpu_instance_vram_addr<const> = rpu_quad_vertex_vram_addr + quad_vertex_bytes
@@ -36,13 +36,6 @@ local rpu_pass_desc_vram_addr<const> = rpu_surface_desc_vram_addr + surface_desc
 local rpu_draw_desc_vram_addr<const> = rpu_pass_desc_vram_addr + 64 * 0x00000024
 local rpu_stream_desc_vram_addr<const> = rpu_draw_desc_vram_addr + draw_frame_capacity * 0x0000002c
 local rpu_texture_desc_vram_addr<const> = rpu_stream_desc_vram_addr + draw_frame_capacity * 2 * 0x0000000c
-local rpu_texture_region_vram_addr<const> = rpu_texture_desc_vram_addr + draw_frame_capacity * 0x00000008
-local rpu_system_texture_bytes<const> = 0x00048000
-local rpu_primary_texture_bytes<const> = 0x00068000
-local rpu_secondary_texture_bytes<const> = 0x001c0000 - rpu_texture_region_vram_addr - rpu_system_texture_bytes - rpu_primary_texture_bytes
-local rpu_system_texture_vram_addr<const> = rpu_texture_region_vram_addr
-local rpu_primary_texture_vram_addr<const> = rpu_system_texture_vram_addr + rpu_system_texture_bytes
-local rpu_secondary_texture_vram_addr<const> = rpu_primary_texture_vram_addr + rpu_primary_texture_bytes
 local quad_addr<const> = vram_staging_base + rpu_quad_vertex_vram_addr
 local instance_addr<const> = vram_staging_base + rpu_instance_vram_addr
 local instance_frame_end<const> = instance_addr + instance_frame_bytes
@@ -51,18 +44,6 @@ local quad_pipeline<const> = vdp_rpu.blend_alpha | (vdp_rpu.depth_lequal << 4) |
 local white<const> = 0xffffffff
 local draw_order_depth_scale<const> = 2.0 / 1048576.0
 local tile_run_depth<const> = 1.0 - ((0x00000000 * 4096.0) * draw_order_depth_scale)
-local slot_surface_desc<const> = {}
-slot_surface_desc[0x00000002] = rpu_surface_desc_vram_addr
-slot_surface_desc[0x00000000] = rpu_surface_desc_vram_addr + 0x00000010
-slot_surface_desc[0x00000001] = rpu_surface_desc_vram_addr + (0x00000010 * 2)
-local slot_texture_vram_addr<const> = {}
-slot_texture_vram_addr[0x00000002] = rpu_system_texture_vram_addr
-slot_texture_vram_addr[0x00000000] = rpu_primary_texture_vram_addr
-slot_texture_vram_addr[0x00000001] = rpu_secondary_texture_vram_addr
-local slot_texture_bytes<const> = {}
-slot_texture_bytes[0x00000002] = rpu_system_texture_bytes
-slot_texture_bytes[0x00000000] = rpu_primary_texture_bytes
-slot_texture_bytes[0x00000001] = rpu_secondary_texture_bytes
 
 local surface_width<const> = {}
 local surface_height<const> = {}
@@ -129,9 +110,9 @@ local write_quad_vertices<const> = function()
 	vertices[3].color = white
 end
 
-local write_surface_desc<const> = function(slot)
-	local surface_desc_addr<const> = slot_surface_desc[slot]
-	local texture_vram_addr<const> = slot_texture_vram_addr[slot]
+local write_surface_desc<const> = function(atlas_id, texture_addr)
+	local surface_desc_addr<const> = rpu_surface_desc_vram_addr + atlas_id * 0x00000010
+	local texture_vram_addr<const> = texture_addr - vram_staging_base
 	local width<const> = surface_width[surface_desc_addr]
 	local height<const> = surface_height[surface_desc_addr]
 	local word_base<const> = (surface_desc_addr - rpu_surface_desc_vram_addr) // 4
@@ -252,13 +233,12 @@ local write_instance<const> = function(origin_x, origin_y, depth_z, axis_xx, axi
 	instance_count = instance_count + 1
 end
 
-function vdp_rpu_quads.set_slot_dim(slot, width, height)
-	local surface_desc_addr<const> = slot_surface_desc[slot]
+function vdp_rpu_quads.define_atlas(atlas_id, texture_addr, width, height)
+	local surface_desc_addr<const> = rpu_surface_desc_vram_addr + atlas_id * 0x00000010
 	surface_width[surface_desc_addr] = width
 	surface_height[surface_desc_addr] = height
 	write_quad_vertices()
-	write_surface_desc(slot)
-	return vram_staging_base + slot_texture_vram_addr[slot], slot_texture_bytes[slot]
+	write_surface_desc(atlas_id, texture_addr)
 end
 
 function vdp_rpu_quads.clear_color(color)
@@ -337,9 +317,9 @@ function vdp_rpu_quads.draw_line_color(x0, y0, x1, y1, z, layer, color, thicknes
 	)
 end
 
-function vdp_rpu_quads.blit_source_affine_color(slot, u, v, w, h, origin_x, origin_y, z, layer, axis_xx, axis_xy, axis_yx, axis_yy, flip_flags, color)
+function vdp_rpu_quads.blit_source_affine_color(atlas_id, u, v, w, h, origin_x, origin_y, z, layer, axis_xx, axis_xy, axis_yx, axis_yy, flip_flags, color)
 	begin_frame_metrics()
-	local surface_desc_addr<const> = slot_surface_desc[slot]
+	local surface_desc_addr<const> = rpu_surface_desc_vram_addr + atlas_id * 0x00000010
 	local inv_w<const> = 1.0 / surface_width[surface_desc_addr]
 	local inv_h<const> = 1.0 / surface_height[surface_desc_addr]
 	local u0 = u * inv_w
@@ -371,9 +351,9 @@ function vdp_rpu_quads.blit_source_affine_color(slot, u, v, w, h, origin_x, orig
 	)
 end
 
-function vdp_rpu_quads.blit_source_color(slot, u, v, w, h, x, y, z, layer, scale_x, scale_y, flip_flags, color)
+function vdp_rpu_quads.blit_source_color(atlas_id, u, v, w, h, x, y, z, layer, scale_x, scale_y, flip_flags, color)
 	begin_frame_metrics()
-	local texture_surface_desc_addr<const> = slot_surface_desc[slot]
+	local texture_surface_desc_addr<const> = rpu_surface_desc_vram_addr + atlas_id * 0x00000010
 	local inv_w<const> = 1.0 / surface_width[texture_surface_desc_addr]
 	local inv_h<const> = 1.0 / surface_height[texture_surface_desc_addr]
 	local u0 = u * inv_w
@@ -411,7 +391,7 @@ function vdp_rpu_quads.tile_run_sources(sources, tile_count, cols, tile_size, or
 	while index <= tile_count do
 		local source<const> = sources[index]
 		if source ~= empty_source then
-			local surface_desc_addr<const> = slot_surface_desc[source.slot]
+			local surface_desc_addr<const> = rpu_surface_desc_vram_addr + source.atlas_id * 0x00000010
 			switch_surface(surface_desc_addr)
 			local inv_w<const> = 1.0 / surface_width[surface_desc_addr]
 			local inv_h<const> = 1.0 / surface_height[surface_desc_addr]

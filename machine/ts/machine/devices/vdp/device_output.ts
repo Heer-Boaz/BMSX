@@ -5,7 +5,7 @@ export type VdpDirtySpan = {
 	xEnd: number;
 };
 
-export type VdpSurfaceUploadSlot = {
+export type VdpSurfaceBacking = {
 	baseAddr: number;
 	capacity: number;
 	surfaceId: number;
@@ -24,17 +24,6 @@ export function createVdpDirtySpans(height: number): VdpDirtySpan[] {
 	}
 	return spans;
 }
-
-export type VdpSurfaceUpload = Readonly<{
-	surfaceId: number;
-	surfaceWidth: number;
-	surfaceHeight: number;
-	cpuReadback: Uint8Array;
-	dirtyRowStart: number;
-	dirtyRowEnd: number;
-	dirtySpansByRow: readonly VdpDirtySpan[];
-	requiresFullSync: boolean;
-}>;
 
 export type VdpDeviceOutput = Readonly<{
 	ditherType: number;
@@ -61,8 +50,4 @@ export type VdpFrameBufferPresentation = Readonly<{
 
 export type VdpFrameBufferPresentationSink = {
 	consumeVdpFrameBufferPresentation(presentation: VdpFrameBufferPresentation): void;
-};
-
-export type VdpSurfaceUploadSink = {
-	consumeVdpSurfaceUpload(upload: VdpSurfaceUpload): void;
 };

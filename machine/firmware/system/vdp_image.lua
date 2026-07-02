@@ -8,41 +8,20 @@ local cache<const> = {}
 
 local system_atlas_name<const> = '_atlas_254'
 local system_atlas_meta<const> = romdir.system_image(system_atlas_name).imgmeta
-vdp_rpu_quads.set_slot_dim(0x00000002, system_atlas_meta.width, system_atlas_meta.height)
+vdp_rpu_quads.define_atlas(254, system_atlas_meta.texture_addr, system_atlas_meta.width, system_atlas_meta.height)
 
-local slot_atlas_addr<const> = function(slot)
-	if slot == 0x00000000 then
-		return 0x0800000c
-	end
-	if slot == 0x00000001 then
-		return 0x08000010
-	end
-	error('invalid VDP image slot ' .. tostring(slot))
-end
-
-local bind_slot_atlas<const> = function(slot, atlas_id)
-	if mem[0x0800000c] == atlas_id then
-		mem[0x0800000c] = 0xffffffff
-	end
-	if mem[0x08000010] == atlas_id then
-		mem[0x08000010] = 0xffffffff
-	end
-	mem[slot_atlas_addr(slot)] = atlas_id
-end
-
-function vdp_image.load_slot(slot, atlas_id)
+function vdp_image.load_atlas(atlas_id)
 	local name<const> = string.format('_atlas_%02d', atlas_id)
 	local atlas<const> = romdir.cart_atlas(name)
 	local atlas_meta<const> = romdir.image(name).imgmeta
-	local dst<const>, cap<const> = vdp_rpu_quads.set_slot_dim(slot, atlas_meta.width, atlas_meta.height)
-	bind_slot_atlas(slot, atlas_id)
-	imgdec.start(atlas.addr, atlas.len, dst, cap)
+	vdp_rpu_quads.define_atlas(atlas_id, atlas_meta.texture_addr, atlas_meta.width, atlas_meta.height)
+	imgdec.start(atlas.addr, atlas.len, atlas_meta.texture_addr, atlas_meta.texture_len)
 end
 
-function vdp_image.load_system_slot()
+function vdp_image.load_system_atlas()
 	local atlas<const> = romdir.system_rom_atlas(system_atlas_name)
-	local dst<const>, cap<const> = vdp_rpu_quads.set_slot_dim(0x00000002, system_atlas_meta.width, system_atlas_meta.height)
-	imgdec.start(atlas.addr, atlas.len, dst, cap)
+	vdp_rpu_quads.define_atlas(254, system_atlas_meta.texture_addr, system_atlas_meta.width, system_atlas_meta.height)
+	imgdec.start(atlas.addr, atlas.len, system_atlas_meta.texture_addr, system_atlas_meta.texture_len)
 end
 
 local require_meta<const> = function(imgid)
@@ -99,22 +78,9 @@ function vdp_image.rect(imgid)
 	return rect
 end
 
-function vdp_image.slot(rect)
-	if rect.atlas_id == 254 then
-		return 0x00000002
-	end
-	if mem[0x0800000c] == rect.atlas_id then
-		return 0x00000000
-	end
-	if mem[0x08000010] == rect.atlas_id then
-		return 0x00000001
-	end
-	error('atlas ' .. tostring(rect.atlas_id) .. ' is not loaded in a VDP slot.')
-end
-
 function vdp_image.source(rect)
 	return {
-		slot = vdp_image.slot(rect),
+		atlas_id = rect.atlas_id,
 		u = rect.u,
 		v = rect.v,
 		w = rect.w,
@@ -123,29 +89,11 @@ function vdp_image.source(rect)
 end
 
 function vdp_image.write_source(dst, rect)
-	mem[dst] = vdp_image.slot(rect)
+	mem[dst] = rect.atlas_id
 	mem[dst + 0x00000004] = rect.u
 	mem[dst + (0x00000004 * 2)] = rect.v
 	mem[dst + (0x00000004 * 3)] = rect.w
 	mem[dst + (0x00000004 * 4)] = rect.h
-end
-
-function vdp_image.write_blit_color(imgid, x, y, z, layer, scale_x, scale_y, flip_flags, color)
-	local rect<const> = vdp_image.rect(imgid)
-	local slot<const> = vdp_image.slot(rect)
-	vdp_rpu_quads.blit_source_color(slot, rect.u, rect.v, rect.w, rect.h, x, y, z, layer, scale_x, scale_y, flip_flags, color)
-end
-
-function vdp_image.write_blit_affine_color(imgid, origin_x, origin_y, z, layer, axis_xx, axis_xy, axis_yx, axis_yy, flip_flags, color)
-	local rect<const> = vdp_image.rect(imgid)
-	local slot<const> = vdp_image.slot(rect)
-	vdp_rpu_quads.blit_source_affine_color(slot, rect.u, rect.v, rect.w, rect.h, origin_x, origin_y, z, layer, axis_xx, axis_xy, axis_yx, axis_yy, flip_flags, color)
-end
-
-function vdp_image.write_glyph_color(glyph, x, y, z, layer, color)
-	local rect<const> = vdp_image.rect(glyph.imgid)
-	local slot<const> = vdp_image.slot(rect)
-	vdp_rpu_quads.blit_source_color(slot, rect.u, rect.v, rect.w, rect.h, x, y, z, layer, 1, 1, 0, color)
 end
 
 return vdp_image

@@ -14,7 +14,6 @@ struct VdpReadbackState {
 
 class VdpReadbackUnit {
 public:
-	u32 resolvedSurfaceId = 0u;
 	u32 faultCode = VDP_FAULT_NONE;
 	u32 faultDetail = 0u;
 	u32 word = 0u;
@@ -22,22 +21,15 @@ public:
 	u32 nextY = 0u;
 	bool advanceReadPosition = false;
 
-	VdpReadbackUnit();
-	void resetSurfaceRegistry();
-	void registerSurface(u32 surfaceId);
-	void invalidateSurface(u32 surfaceId);
+	void invalidateFrameBuffer();
 	void beginFrame();
 	u32 status() const;
 	bool resolveSurface(u32 requestedSurfaceId, u32 mode);
-	bool readPixel(const VdpSurfaceUploadSlot& surface, u32 x, u32 y);
+	bool readPixel(const VdpSurfaceBacking& surface, u32 x, u32 y);
 	VdpReadbackState captureState() const;
 	void restoreState(const VdpReadbackState& state);
 
 private:
-	struct ReadSurface {
-		u32 surfaceId = 0u;
-		bool registered = false;
-	};
 	static constexpr u32 ReadbackBudgetBytes = 4096u;
 	static constexpr u32 ReadbackMaxChunkPixels = 256u;
 
@@ -48,12 +40,11 @@ private:
 		std::array<u8, ReadbackMaxChunkPixels * 4u> data{};
 	};
 
-	ReadCache& getReadCache(u32 surfaceId, const VdpSurfaceUploadSlot& surface, u32 x, u32 y);
-	void prefetchReadCache(ReadCache& cache, const VdpSurfaceUploadSlot& surface, u32 x, u32 y);
-	void copySurfacePixels(ReadCache& cache, const VdpSurfaceUploadSlot& surface, u32 x, u32 y, u32 width, u32 height);
+	ReadCache& getReadCache(const VdpSurfaceBacking& surface, u32 x, u32 y);
+	void prefetchReadCache(ReadCache& cache, const VdpSurfaceBacking& surface, u32 x, u32 y);
+	void copySurfacePixels(ReadCache& cache, const VdpSurfaceBacking& surface, u32 x, u32 y, u32 width, u32 height);
 
-	std::array<ReadSurface, VDP_RD_SURFACE_COUNT> m_readSurfaces{};
-	std::array<ReadCache, VDP_RD_SURFACE_COUNT> m_readCaches{};
+	ReadCache m_frameBufferCache;
 	u32 m_readBudgetBytes = ReadbackBudgetBytes;
 	bool m_readOverflow = false;
 };

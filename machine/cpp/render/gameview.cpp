@@ -16,7 +16,6 @@
 #include "rompack/format.h"
 #include "texture_manager.h"
 #include "vdp/framebuffer.h"
-#include "vdp/slot_textures.h"
 #include <stdexcept>
 #include <utility>
 
@@ -101,19 +100,13 @@ void GameView::initializeDefaultTextures() {
 		throw BMSX_RUNTIME_ERROR("[GameView] initializeDefaultTextures called before backend was configured.");
 	}
 
-	TextureHandle fallback = m_backend->createSolidTexture2D(1, 1, 0xffffffffu, RGBA8_SRGB_TEXTURE_PARAMS);
-	textures[VDP_PRIMARY_SLOT_TEXTURE_KEY] = fallback;
-	textures[VDP_SECONDARY_SLOT_TEXTURE_KEY] = fallback;
-	textures[SYSTEM_SLOT_TEXTURE_KEY] = fallback;
-
 	textures["_default_albedo"] = m_backend->createSolidTexture2D(1, 1, 0xffffffffu, RGBA8_SRGB_TEXTURE_PARAMS);
 	textures["_default_normal"] = m_backend->createSolidTexture2D(1, 1, 0xff7f7fffu, RGBA8_LINEAR_TEXTURE_PARAMS);
 	textures["_default_mr"] = m_backend->createSolidTexture2D(1, 1, 0xffffffffu, RGBA8_LINEAR_TEXTURE_PARAMS);
 }
 
-void GameView::setVdpTextureState(std::unique_ptr<VdpFrameBufferTextures> frameBufferTextures, std::unique_ptr<VdpSlotTextures> slotTextures) {
+void GameView::setVdpTextureState(std::unique_ptr<VdpFrameBufferTextures> frameBufferTextures) {
 	m_vdpFrameBufferTextures = std::move(frameBufferTextures);
-	m_vdpSlotTextures = std::move(slotTextures);
 }
 
 VdpFrameBufferTextures& GameView::vdpFrameBufferTextures() {
@@ -122,14 +115,6 @@ VdpFrameBufferTextures& GameView::vdpFrameBufferTextures() {
 
 const VdpFrameBufferTextures& GameView::vdpFrameBufferTextures() const {
 	return *m_vdpFrameBufferTextures;
-}
-
-VdpSlotTextures& GameView::vdpSlotTextures() {
-	return *m_vdpSlotTextures;
-}
-
-const VdpSlotTextures& GameView::vdpSlotTextures() const {
-	return *m_vdpSlotTextures;
 }
 
 void GameView::configurePresentation(PresentationMode mode, bool commitFrame) {

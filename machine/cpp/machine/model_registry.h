@@ -18,8 +18,8 @@ constexpr i64 PSX_IMGDEC_BYTES_PER_SEC = 26214400;
 constexpr i64 PSX_DMA_BYTES_PER_SEC_ISO = 8388608;
 constexpr i64 PSX_DMA_BYTES_PER_SEC_BULK = 26214400;
 constexpr i64 PSX_RAM_BYTES = 0x00400000;
-constexpr i64 PSX_VRAM_SLOT_BYTES = 0x00200000;
-constexpr i64 PSX_VRAM_STAGING_BYTES = 0x001c0000;
+constexpr i64 PSX_VRAM_TEXTURE_BYTES = 0x00200000;
+constexpr i64 PSX_VRAM_STAGING_BYTES = 0x00022000;
 constexpr u32 VDP_MODE_MSX1_WORD = 0u;
 constexpr u32 VDP_MODE_MSX2_WORD = 1u;
 constexpr u32 VDP_MODE_PSX_WORD = 2u;
@@ -47,7 +47,7 @@ struct MachineModelProfile {
 	i64 dmaBytesPerSecIso;
 	i64 dmaBytesPerSecBulk;
 	i64 ramBytes;
-	i64 slotBytes;
+	i64 textureBytes;
 	i64 stagingBytes;
 	MachineVdpMode biosVdpMode;
 };
@@ -75,7 +75,7 @@ inline constexpr MachineModelProfile PSX_MODEL_PROFILE = {
 	PSX_DMA_BYTES_PER_SEC_ISO,
 	PSX_DMA_BYTES_PER_SEC_BULK,
 	PSX_RAM_BYTES,
-	PSX_VRAM_SLOT_BYTES,
+	PSX_VRAM_TEXTURE_BYTES,
 	PSX_VRAM_STAGING_BYTES,
 	MachineVdpMode::Psx,
 };

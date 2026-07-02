@@ -18,9 +18,7 @@ import { bootActiveProgram } from '../ide/runtime/lua_pipeline';
 import { handleLuaError } from '../ide/workbench/runtime_errors';
 import type { GPUBackend } from '../render/backend/backend';
 import { clearOverlayFrame } from '../render/host_overlay/overlay_queue';
-import { restoreVdpContextState } from '../render/vdp/context_state';
 import { VdpFrameBufferTextures } from '../render/vdp/framebuffer';
-import { VdpSlotTextures } from '../render/vdp/slot_textures';
 import { RenderPresentationState } from '../render/presentation_state';
 import { runMachineHostFrame } from './host_frame';
 
@@ -167,7 +165,6 @@ export class MachineManager {
 		gview.backend = gpuBackend;
 		const textureManager = new TextureManager(gpuBackend);
 		gview.vdpFrameBufferTextures = new VdpFrameBufferTextures(textureManager, gview);
-		gview.vdpSlotTextures = new VdpSlotTextures(textureManager, gview);
 		const pipelineRegistry = new RenderPassLibrary(gpuBackend, runtime, gview);
 		gview.pipelineRegistry = pipelineRegistry;
 		gview.applyPresentationPassState();
@@ -188,7 +185,7 @@ export class MachineManager {
 		});
 
 		await gview.initializeDefaultTextures();
-		restoreVdpContextState(runtime.machine.vdp, gview);
+		gview.vdpFrameBufferTextures.initialize(runtime.machine.vdp);
 		this.view.default_font = new Font();
 		await startPreparedRuntime(runtime);
 		flushRuntimeLuaOutputToTerminal(runtime, this.ideState);
@@ -226,7 +223,7 @@ export class MachineManager {
 	public async refreshRenderSurfaces(): Promise<void> {
 		this.texmanager.setBackend(this.view.backend);
 		await this.view.initializeDefaultTextures();
-		restoreVdpContextState(this.runtime.machine.vdp, this.view);
+		this.view.vdpFrameBufferTextures.initialize(this.runtime.machine.vdp);
 	}
 
 	public async resetRuntime(preserveTextures = false): Promise<void> {

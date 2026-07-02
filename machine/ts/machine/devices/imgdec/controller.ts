@@ -18,9 +18,6 @@ import {
 } from '../../bus/io';
 import {
 	VRAM_FRAMEBUFFER_BASE,
-	VRAM_PRIMARY_SLOT_BASE,
-	VRAM_SECONDARY_SLOT_BASE,
-	VRAM_SYSTEM_SLOT_BASE,
 	vramMappedRemainingBytes,
 } from '../../memory/map';
 import { Memory } from '../../memory/memory';
@@ -354,12 +351,7 @@ export class ImgDecController {
 		this.decodeWidth = result.width;
 		this.decodeHeight = result.height;
 		this.decodeRemaining = plan.writeSize;
-		if (plan.writeWidth > 0 && plan.writeHeight > 0 && (
-			targetBase === VRAM_SYSTEM_SLOT_BASE
-			|| targetBase === VRAM_PRIMARY_SLOT_BASE
-			|| targetBase === VRAM_SECONDARY_SLOT_BASE
-			|| targetBase === VRAM_FRAMEBUFFER_BASE
-		)) {
+		if (plan.writeWidth > 0 && plan.writeHeight > 0 && targetBase === VRAM_FRAMEBUFFER_BASE) {
 			this.vdp.setDecodedVramSurfaceDimensions(targetBase, plan.writeWidth, plan.writeHeight);
 		}
 		this.decodeCarry = 0;

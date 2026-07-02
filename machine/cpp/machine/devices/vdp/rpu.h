@@ -2,6 +2,7 @@
 
 #include "common/primitives.h"
 #include "machine/devices/device_status.h"
+#include "machine/memory/map.h"
 #include "machine/memory/memory.h"
 #include <array>
 #include <cstddef>
@@ -15,7 +16,7 @@ constexpr size_t VDP_RPU_DRAW_CAPACITY = 4096u;
 constexpr size_t VDP_RPU_STREAM_BINDING_CAPACITY = 8192u;
 constexpr size_t VDP_RPU_CONSTANT_BINDING_CAPACITY = 8192u;
 constexpr size_t VDP_RPU_TEXTURE_BINDING_CAPACITY = 4096u;
-constexpr size_t VDP_RPU_PARAM_MEM_SIZE = 0x001c0000u;
+constexpr size_t VDP_RPU_PARAM_MEM_SIZE = DEFAULT_VRAM_STAGING_SIZE + DEFAULT_VRAM_TEXTURE_SIZE;
 constexpr u32 VDP_RPU_PARAM_MEM_PAGE_SHIFT = 12u;
 constexpr u32 VDP_RPU_PARAM_MEM_PAGE_SIZE = 1u << VDP_RPU_PARAM_MEM_PAGE_SHIFT;
 constexpr size_t vdpRpuParamMemPageCount(size_t byteLength) {

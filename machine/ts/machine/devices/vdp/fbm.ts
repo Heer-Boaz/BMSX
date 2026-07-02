@@ -1,4 +1,4 @@
-import { createVdpDirtySpans, type VdpDirtySpan, type VdpFrameBufferPresentation, type VdpFrameBufferPresentationSink, type VdpSurfaceUploadSlot } from './device_output';
+import { createVdpDirtySpans, type VdpDirtySpan, type VdpFrameBufferPresentation, type VdpFrameBufferPresentationSink, type VdpSurfaceBacking } from './device_output';
 
 export const VDP_FBM_STATE_PAGE_WRITABLE = 0;
 export const VDP_FBM_STATE_PAGE_PENDING_PRESENT = 1;
@@ -88,13 +88,13 @@ export class VdpFbmUnit {
 		this.resetPresentation();
 	}
 
-	public presentPage(renderSlot: VdpSurfaceUploadSlot): void {
+	public presentPage(renderSurface: VdpSurfaceBacking): void {
 		if (this.presentationCount === 0) {
 			this.presentationReadbackValid = true;
-			this.presentationDirtyRowStart = renderSlot.dirtyRowStart;
-			this.presentationDirtyRowEnd = renderSlot.dirtyRowEnd;
-			for (let row = renderSlot.dirtyRowStart; row < renderSlot.dirtyRowEnd; row += 1) {
-				const source = renderSlot.dirtySpansByRow[row]!;
+			this.presentationDirtyRowStart = renderSurface.dirtyRowStart;
+			this.presentationDirtyRowEnd = renderSurface.dirtyRowEnd;
+			for (let row = renderSurface.dirtyRowStart; row < renderSurface.dirtyRowEnd; row += 1) {
+				const source = renderSurface.dirtySpansByRow[row]!;
 				const target = this.presentationDirtySpansByRow[row]!;
 				target.xStart = source.xStart;
 				target.xEnd = source.xEnd;
@@ -104,8 +104,8 @@ export class VdpFbmUnit {
 		}
 		this.presentationCount += 1;
 		const displayReadback = this.displayFrameBufferCpuReadback;
-		this.displayFrameBufferCpuReadback = renderSlot.cpuReadback;
-		renderSlot.cpuReadback = displayReadback;
+		this.displayFrameBufferCpuReadback = renderSurface.cpuReadback;
+		renderSurface.cpuReadback = displayReadback;
 		this._state = VDP_FBM_STATE_PAGE_PENDING_PRESENT;
 	}
 

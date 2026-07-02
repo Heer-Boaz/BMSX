@@ -711,7 +711,8 @@ function textcomponent:render_glyphs(x, y, z, glyphs)
 			end
 			local cursor_x = line_x
 			font_module.for_each_glyph(self.font, line, function(glyph)
-				vdp_image.write_glyph_color(glyph, cursor_x, line_y, z, layer, color)
+				local rect<const> = vdp_image.rect(glyph.imgid)
+				vdp_rpu_quads.blit_source_color(rect.atlas_id, rect.u, rect.v, rect.w, rect.h, cursor_x, line_y, z, layer, 1, 1, 0, color)
 				cursor_x = cursor_x + glyph.advance
 			end)
 		end

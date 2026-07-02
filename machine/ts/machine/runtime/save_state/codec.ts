@@ -785,7 +785,7 @@ function decodeVdpSurfacePixelsState(value: unknown, label: string): VdpSurfaceP
 
 function encodeVdpVramState(state: VdpVramState): VdpVramState {
 	return {
-		staging: state.staging,
+		rpuVram: state.rpuVram,
 		surfacePixels: encodeVector(state.surfacePixels, encodeVdpSurfacePixelsState),
 	};
 }
@@ -793,7 +793,7 @@ function encodeVdpVramState(state: VdpVramState): VdpVramState {
 function decodeVdpVramState(value: unknown, label: string): VdpVramState {
 	const object = requireObject(value, label);
 	return {
-		staging: requireBinaryValue(requireObjectKey(object, 'staging', label, 'machine.vdp.vram.staging'), 'machine.vdp.vram.staging'),
+		rpuVram: requireBinaryValue(requireObjectKey(object, 'rpuVram', label, 'machine.vdp.vram.rpuVram'), 'machine.vdp.vram.rpuVram'),
 		surfacePixels: decodeVector(
 			requireObjectKey(object, 'surfacePixels', label, 'machine.vdp.vram.surfacePixels'),
 			'machine.vdp.vram.surfacePixels',

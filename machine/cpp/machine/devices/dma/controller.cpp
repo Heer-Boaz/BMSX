@@ -433,20 +433,8 @@ uint32_t DmaController::resolveMaxWritable(uint32_t dst) const {
 	if (dst == IO_VDP_FIFO) {
 		return VDP_STREAM_BUFFER_SIZE;
 	}
-	if (dst >= VRAM_SYSTEM_SLOT_BASE && dst < VRAM_SYSTEM_SLOT_BASE + VRAM_SYSTEM_SLOT_SIZE) {
-		return (VRAM_SYSTEM_SLOT_BASE + VRAM_SYSTEM_SLOT_SIZE) - dst;
-	}
-	if (dst >= VRAM_PRIMARY_SLOT_BASE && dst < VRAM_PRIMARY_SLOT_BASE + VRAM_PRIMARY_SLOT_SIZE) {
-		return (VRAM_PRIMARY_SLOT_BASE + VRAM_PRIMARY_SLOT_SIZE) - dst;
-	}
-	if (dst >= VRAM_SECONDARY_SLOT_BASE && dst < VRAM_SECONDARY_SLOT_BASE + VRAM_SECONDARY_SLOT_SIZE) {
-		return (VRAM_SECONDARY_SLOT_BASE + VRAM_SECONDARY_SLOT_SIZE) - dst;
-	}
-	if (dst >= VRAM_FRAMEBUFFER_BASE && dst < VRAM_FRAMEBUFFER_BASE + VRAM_FRAMEBUFFER_SIZE) {
-		return (VRAM_FRAMEBUFFER_BASE + VRAM_FRAMEBUFFER_SIZE) - dst;
-	}
-	if (dst >= VRAM_STAGING_BASE && dst < VRAM_STAGING_BASE + VRAM_STAGING_SIZE) {
-		return (VRAM_STAGING_BASE + VRAM_STAGING_SIZE) - dst;
+	if (const uint32_t vramRemaining = vramMappedRemainingBytes(dst)) {
+		return vramRemaining;
 	}
 	if (dst >= OVERLAY_ROM_BASE && dst < OVERLAY_ROM_BASE + OVERLAY_ROM_SIZE) {
 		return (OVERLAY_ROM_BASE + OVERLAY_ROM_SIZE) - dst;

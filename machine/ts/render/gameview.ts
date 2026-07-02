@@ -15,11 +15,6 @@ import type {
 	SubscriptionHandle,
 } from '../platform';
 import {
-	VDP_PRIMARY_SLOT_TEXTURE_KEY,
-	VDP_SECONDARY_SLOT_TEXTURE_KEY,
-	SYSTEM_SLOT_TEXTURE_KEY,
-} from 'bmsx/rompack/format';
-import {
 	VDP_JTU_REGISTER_WORDS,
 	VDP_MFU_WEIGHT_COUNT,
 } from '../machine/devices/vdp/contracts';
@@ -28,7 +23,6 @@ import { VDP_XF_MATRIX_REGISTER_WORDS } from '../machine/devices/vdp/xf';
 import { createVdpTransformSnapshot } from './vdp/transform';
 import type { VdpFrameBufferTextures } from './vdp/framebuffer';
 import type { VdpRpuFrameOutput } from '../machine/devices/vdp/rpu';
-import type { VdpSlotTextures } from './vdp/slot_textures';
 import { renderGate } from '../common/taskgate';
 
 const PRESENTATION_PASS_IDS = ['vdp_rpu', 'framebuffer_2d', 'device_quantize', 'crt', 'host_overlay', 'host_menu'];
@@ -86,7 +80,6 @@ export class GameView implements RenderContext {
 	public readonly vdpTransform = createVdpTransformSnapshot();
 	public readonly vdpXfMatrixWords = new Uint32Array(VDP_XF_MATRIX_REGISTER_WORDS);
 	public vdpFrameBufferTextures!: VdpFrameBufferTextures;
-	public vdpSlotTextures!: VdpSlotTextures;
 	public readonly vdpLightRegisterWords = new Uint32Array(VDP_LPU_REGISTER_WORDS);
 	public readonly vdpAmbientLightColorIntensity = new Float32Array(4);
 	public readonly vdpDirectionalLightDirections = new Float32Array(VDP_LPU_DIRECTIONAL_LIGHT_LIMIT * 3);
@@ -464,11 +457,6 @@ export class GameView implements RenderContext {
 		return this._backend;
 	}
 	public async initializeDefaultTextures(): Promise<void> {
-		const fallback = this.backend.createSolidTexture2D(1, 1, 0xffffffff, RGBA8_SRGB_TEXTURE_PARAMS);
-		this.textures[VDP_PRIMARY_SLOT_TEXTURE_KEY] = fallback; // Start with fallback to avoid undefined states and race conditions
-		this.textures[VDP_SECONDARY_SLOT_TEXTURE_KEY] = fallback;
-		this.textures['_slot_fallback'] = fallback;
-		this.textures[SYSTEM_SLOT_TEXTURE_KEY] = fallback;
 		// Default material textures for imported model assets
 		this.textures['_default_albedo'] = this.backend.createSolidTexture2D(1, 1, 0xffffffff, RGBA8_SRGB_TEXTURE_PARAMS);
 		// Normal map default (0.5,0.5,1.0)

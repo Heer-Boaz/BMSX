@@ -153,7 +153,7 @@ void fillVramGarbageScratch(u8* buffer, size_t length, VramGarbageStream& s) {
 
 	const uint32_t biasSeed = s.machineSeed ^ s.slotSalt;
 	const uint32_t bootSeedMix = s.bootSeed ^ s.slotSalt;
-	const uint32_t vramBytes = (VRAM_SECONDARY_SLOT_BASE + VRAM_SECONDARY_SLOT_SIZE) - VRAM_STAGING_BASE;
+	const uint32_t vramBytes = VRAM_STAGING_SIZE + VRAM_TEXTURE_SIZE;
 	BiasConfig biasConfig;
 	makeBiasConfig(vramBytes, biasConfig);
 

@@ -9,8 +9,14 @@ import { SYSTEM_BOOT_ENTRY_PATH } from '../../machine/ts/core/system';
 import { encodeRomToc } from '../../machine/ts/rompack/tooling/toc_encode';
 import type { LuaChunk } from '../../machine/ts/lua/syntax/ast';
 import { encodeAudioAssetToAdpcm } from './adpcm';
-import { resolveTargetAtlasId, createOptimizedAtlas, generateAtlasAssetId, splitAtlasImagesByVramUsage } from './atlasbuilder';
-import { RPU_QUAD_MAX_CART_ATLAS_BYTES, RPU_QUAD_PRIMARY_TEXTURE_SLOT_BYTES, RPU_QUAD_SYSTEM_TEXTURE_SLOT_BYTES } from './texture_atlas_contract';
+import { resolveTargetAtlasId, createOptimizedAtlas, generateAtlasAssetId, measureOptimizedAtlasBytes, splitAtlasImagesByVramUsage } from './atlasbuilder';
+import {
+	RPU_CART_TEXTURE_VRAM_BASE_ADDR,
+	RPU_CART_TEXTURE_VRAM_BYTES,
+	RPU_SYSTEM_TEXTURE_RESERVED_BYTES,
+	RPU_TEXTURE_VRAM_BASE_ADDR,
+	TEXTURE_ATLAS_RGBA_BYTES_PER_PIXEL,
+} from './texture_atlas_contract';
 import { BoundingBoxExtractor } from './boundingbox_extractor';
 import { collectGLTFExternalBufferFileSet, loadGLTFModel } from './gltfloader';
 import type { TextureAtlasResource, ImageResource, Resource, resourcetype, RomPackerTarget } from './rompacker.rompack';
@@ -1155,10 +1161,6 @@ export async function getResMetaList(respaths: string[], _romname?: string, opti
 		}
 	}
 
-	// Ensure the default texture atlas (id 0) is always present when atlas packing is enabled.
-	if (GENERATE_AND_USE_TEXTURE_ATLAS && DONT_PACK_IMAGES_WHEN_USING_ATLAS) {
-		targetAtlasIdSet.add(0);
-	}
 	for (const id of Array.from(targetAtlasIdSet).sort((a, b) => a - b)) {
 		const name = generateAtlasAssetId(id);
 		result.push({ name, ext: '.atlas', type: 'atlas', id: imgid++, atlasId: id });
@@ -1647,7 +1649,98 @@ export function buildImgMetaForAtlas(res: TextureAtlasResource): ImgMeta {
 		atlasid: res.atlasId,
 		width: res.img.width,
 		height: res.img.height,
+		texture_addr: res.textureAddr,
+		texture_len: res.textureBytes,
 	};
+}
+
+type CartAtlasResidencyPlan = {
+	sourceAtlas: TextureAtlasResource;
+	images: ImageResource[];
+	pages: ImageResource[][];
+	budget: number;
+	regionBytes: number;
+	minRegionBytes: number;
+	textureAddr: number;
+};
+
+function atlasResidencyMinimumBytes(images: ImageResource[]): number {
+	let bytes = TEXTURE_ATLAS_RGBA_BYTES_PER_PIXEL;
+	for (let index = 0; index < images.length; index += 1) {
+		const imageBytes = measureOptimizedAtlasBytes([images[index]]);
+		if (imageBytes > bytes) {
+			bytes = imageBytes;
+		}
+	}
+	return bytes;
+}
+
+function atlasPagesRegionBytes(pages: ImageResource[][]): number {
+	let bytes = TEXTURE_ATLAS_RGBA_BYTES_PER_PIXEL;
+	for (let index = 0; index < pages.length; index += 1) {
+		const pageBytes = measureOptimizedAtlasBytes(pages[index]);
+		if (pageBytes > bytes) {
+			bytes = pageBytes;
+		}
+	}
+	return bytes;
+}
+
+function planCartAtlasResidency(sourceAtlases: TextureAtlasResource[], imageAssets: ImageResource[]): CartAtlasResidencyPlan[] {
+	const plans: CartAtlasResidencyPlan[] = [];
+	for (let index = 0; index < sourceAtlases.length; index += 1) {
+		const sourceAtlas = sourceAtlases[index];
+		if (sourceAtlas.atlasId === BIOS_ATLAS_ID) {
+			continue;
+		}
+		const images = imageAssets.filter(resource => resource.targetAtlasId === sourceAtlas.atlasId);
+		plans.push({
+			sourceAtlas,
+			images,
+			pages: [],
+			budget: RPU_CART_TEXTURE_VRAM_BYTES,
+			regionBytes: 0,
+			minRegionBytes: atlasResidencyMinimumBytes(images),
+			textureAddr: 0,
+		});
+	}
+
+	let planned = false;
+	while (!planned) {
+		let totalRegionBytes = 0;
+		for (let index = 0; index < plans.length; index += 1) {
+			const plan = plans[index];
+			plan.pages = splitAtlasImagesByVramUsage(plan.images, plan.budget);
+			plan.regionBytes = atlasPagesRegionBytes(plan.pages);
+			totalRegionBytes += plan.regionBytes;
+		}
+		if (totalRegionBytes <= RPU_CART_TEXTURE_VRAM_BYTES) {
+			planned = true;
+			continue;
+		}
+		const overflowBytes = totalRegionBytes - RPU_CART_TEXTURE_VRAM_BYTES;
+		let selectedPlanIndex = -1;
+		for (let index = 0; index < plans.length; index += 1) {
+			const plan = plans[index];
+			if (plan.regionBytes > plan.minRegionBytes && (selectedPlanIndex < 0 || plan.regionBytes > plans[selectedPlanIndex].regionBytes)) {
+				selectedPlanIndex = index;
+			}
+		}
+		if (selectedPlanIndex < 0) {
+			throw new Error(`[RomPacker] Cart texture residency needs ${totalRegionBytes} bytes, exceeding the VDP texture VRAM limit of ${RPU_CART_TEXTURE_VRAM_BYTES} bytes.`);
+		}
+		const selectedPlan = plans[selectedPlanIndex];
+		const reducedBudget = selectedPlan.regionBytes - overflowBytes;
+		selectedPlan.budget = reducedBudget > selectedPlan.minRegionBytes ? reducedBudget : selectedPlan.minRegionBytes;
+	}
+
+	let textureCursor = RPU_CART_TEXTURE_VRAM_BASE_ADDR;
+	for (let index = 0; index < plans.length; index += 1) {
+		const plan = plans[index];
+		plan.textureAddr = textureCursor;
+		textureCursor += plan.regionBytes;
+	}
+	return plans;
 }
 
 /**
@@ -1662,25 +1755,31 @@ export function buildImgMetaForAtlas(res: TextureAtlasResource): ImgMeta {
 export async function createAtlasses(resources: Resource[], reportProgress?: ProgressNote) {
 	if (GENERATE_AND_USE_TEXTURE_ATLAS) {
 		const atlases = resources.filter((res): res is TextureAtlasResource => res.type === 'atlas');
-		if (atlases.length === 0) throw new Error('No texture atlas resources found in the "resources"-list. The process of preparing the list of all resources (assets) should also add any texture atlases that are to be generated. Thus, this is a bug in the code that prepares the list of resources :-(');
 		const image_assets = resources.filter((resource): resource is ImageResource => resource.type === 'image');
+		if (image_assets.length === 0) {
+			return;
+		}
+		if (atlases.length === 0) throw new Error('No texture atlas resources found in the "resources"-list. The process of preparing the list of all resources (assets) should also add any texture atlases that are to be generated. Thus, this is a bug in the code that prepares the list of resources :-(');
 		let nextAtlasResourceId = resources.reduce((maxId, resource) => resource.id && resource.id > maxId ? resource.id : maxId, 0) + 1;
 		let nextAtlasId = atlases.reduce((maxId, atlas) => atlas.atlasId > maxId ? atlas.atlasId : maxId, 0) + 1;
-		const atlasQueue: TextureAtlasResource[] = [];
-		const atlasByteBudgetQueue: number[] = [];
-		for (const atlas of atlases) {
-			const atlasByteBudget = atlas.atlasId === BIOS_ATLAS_ID ? RPU_QUAD_SYSTEM_TEXTURE_SLOT_BYTES : atlas.atlasId === 0 ? RPU_QUAD_PRIMARY_TEXTURE_SLOT_BYTES : RPU_QUAD_MAX_CART_ATLAS_BYTES;
+		const cartPlans = planCartAtlasResidency(atlases, image_assets);
+		const atlasQueue: Array<{ atlas: TextureAtlasResource; images: ImageResource[]; textureAddr: number; byteLimit: number }> = [];
+		for (let atlasIndex = 0; atlasIndex < atlases.length; atlasIndex += 1) {
+			const atlas = atlases[atlasIndex];
 			const filteredImages = image_assets.filter(resource => resource.targetAtlasId === atlas.atlasId);
-			const groups = atlas.atlasId === BIOS_ATLAS_ID || filteredImages.length === 0 ? [filteredImages] : splitAtlasImagesByVramUsage(filteredImages, atlasByteBudget);
-			for (let groupIndex = 0; groupIndex < groups.length; groupIndex += 1) {
-				const group = groups[groupIndex];
-				if (groupIndex === 0) {
-					atlasQueue.push(atlas);
-					atlasByteBudgetQueue.push(atlasByteBudget);
-				} else {
+			if (atlas.atlasId === BIOS_ATLAS_ID) {
+				atlasQueue.push({ atlas, images: filteredImages, textureAddr: RPU_TEXTURE_VRAM_BASE_ADDR, byteLimit: RPU_SYSTEM_TEXTURE_RESERVED_BYTES });
+			}
+		}
+		for (let planIndex = 0; planIndex < cartPlans.length; planIndex += 1) {
+			const plan = cartPlans[planIndex];
+			for (let pageIndex = 0; pageIndex < plan.pages.length; pageIndex += 1) {
+				const page = plan.pages[pageIndex];
+				let atlas = plan.sourceAtlas;
+				if (pageIndex !== 0) {
 					const splitAtlasId = nextAtlasId;
 					nextAtlasId += 1;
-					const splitAtlas: TextureAtlasResource = {
+					atlas = {
 						name: generateAtlasAssetId(splitAtlasId),
 						ext: '.atlas',
 						type: 'atlas',
@@ -1688,21 +1787,22 @@ export async function createAtlasses(resources: Resource[], reportProgress?: Pro
 						atlasId: splitAtlasId,
 					};
 					nextAtlasResourceId += 1;
-					resources.push(splitAtlas);
-					atlasQueue.push(splitAtlas);
-					atlasByteBudgetQueue.push(atlasByteBudget);
-					for (let imageIndex = 0; imageIndex < group.length; imageIndex += 1) {
-						group[imageIndex].targetAtlasId = splitAtlasId;
+					resources.push(atlas);
+					for (let imageIndex = 0; imageIndex < page.length; imageIndex += 1) {
+						page[imageIndex].targetAtlasId = splitAtlasId;
 					}
 				}
+				atlasQueue.push({ atlas, images: page, textureAddr: plan.textureAddr, byteLimit: plan.regionBytes });
 			}
 		}
 		for (let atlasIndex = 0; atlasIndex < atlasQueue.length; atlasIndex += 1) {
-			const atlas = atlasQueue[atlasIndex];
-			const filteredImages = image_assets.filter(resource => resource.targetAtlasId === atlas.atlasId);
-			reportProgress?.(`atlas ${atlas.name} (${filteredImages.length} images)`);
-			const atlasCanvas = createOptimizedAtlas(filteredImages, atlasByteBudgetQueue[atlasIndex]);
+			const entry = atlasQueue[atlasIndex];
+			const atlas = entry.atlas;
+			reportProgress?.(`atlas ${atlas.name} (${entry.images.length} images)`);
+			const atlasCanvas = createOptimizedAtlas(entry.images, entry.byteLimit);
 			atlas.img = atlasCanvas; // Store the canvas in the resource (to extract the image properties later during `processResources`)
+			atlas.textureAddr = entry.textureAddr;
+			atlas.textureBytes = atlasCanvas.width * atlasCanvas.height * TEXTURE_ATLAS_RGBA_BYTES_PER_PIXEL;
 			atlas.buffer = atlasCanvas.toBuffer('image/png'); // Convert canvas to PNG buffer
 			reportProgress?.(`write atlas ${atlas.name}`);
 			await writeFile(`./rom/_ignore/${generateAtlasAssetId(atlas.atlasId)}.png`, atlas.buffer);

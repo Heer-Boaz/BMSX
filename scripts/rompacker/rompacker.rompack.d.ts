@@ -59,10 +59,12 @@ export interface ImageResource extends BaseResource<'image'> {
 	atlasTexcoords?: AtlasTexcoords;
 }
 
-// Serialized as a ROM atlas asset; the BIOS decides which VDP slot receives it.
+// Serialized as a ROM atlas asset with concrete build-time texture-VRAM placement.
 export interface TextureAtlasResource extends BaseResource<'atlas'> {
 	id: number;
 	atlasId: number;
+	textureAddr?: number;
+	textureBytes?: number;
 	img?: Canvas & { toBuffer?: (format: string) => Buffer; };
 }
 

@@ -1,5 +1,5 @@
 import type { Memory } from '../../memory/memory';
-import { IO_WORD_SIZE } from '../../memory/map';
+import { DEFAULT_VRAM_STAGING_SIZE, DEFAULT_VRAM_TEXTURE_SIZE, IO_WORD_SIZE } from '../../memory/map';
 import type { DeviceStatusLatch } from '../device_status';
 import {
 	VDP_RPU_PASS_COST,
@@ -55,7 +55,7 @@ export const VDP_RPU_DRAW_CAPACITY = 4096;
 export const VDP_RPU_STREAM_BINDING_CAPACITY = 8192;
 export const VDP_RPU_CONSTANT_BINDING_CAPACITY = 8192;
 export const VDP_RPU_TEXTURE_BINDING_CAPACITY = 4096;
-export const VDP_RPU_PARAM_MEM_SIZE = 0x001c0000; // 1.75 MB VDP-local memory
+export const VDP_RPU_PARAM_MEM_SIZE = DEFAULT_VRAM_STAGING_SIZE + DEFAULT_VRAM_TEXTURE_SIZE;
 export const VDP_RPU_PARAM_MEM_PAGE_SHIFT = 12;
 export const VDP_RPU_PARAM_MEM_PAGE_SIZE = 1 << VDP_RPU_PARAM_MEM_PAGE_SHIFT;
 export function vdpRpuParamMemPageCount(byteLength: number): number {

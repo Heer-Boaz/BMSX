@@ -39,6 +39,7 @@
 local worldobject<const> = require('cartlib/world/object')
 local components<const> = require('cartlib/components')
 local vdp_image<const> = require('system/vdp_image')
+local vdp_rpu_quads<const> = require('system/vdp_rpu_quads')
 local romdir<const> = require('system/romdir')
 
 local spriteobject<const> = {}
@@ -118,8 +119,13 @@ function spriteobject:draw()
 		flip_flags = flip_flags | 2
 	end
 	local draw_scale<const> = sc.draw_scale
-	vdp_image.write_blit_color(
-		sc.imgid,
+	local rect<const> = vdp_image.rect(sc.imgid)
+	vdp_rpu_quads.blit_source_color(
+		rect.atlas_id,
+		rect.u,
+		rect.v,
+		rect.w,
+		rect.h,
 		self.x + offset.x + draw_offset.x,
 		self.y + offset.y + draw_offset.y,
 		self.z + offset.z + draw_offset.z,

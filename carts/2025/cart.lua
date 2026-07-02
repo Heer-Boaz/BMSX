@@ -348,7 +348,7 @@ local wait_vblank<const> = function()
 end
 
 init()
-start_image_load(story.title.bg, image_residency_background)
+vdp_load_atlas(vdp_img_rect(story.title.bg).atlas_id)
 new_game()
 mem[0x08000194] = 0x00000001
 while true do

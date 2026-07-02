@@ -7,7 +7,6 @@
 #include "machine/memory/map.h"
 #include "machine/scheduler/device.h"
 #include "machine/devices/device_status.h"
-#include "machine/devices/vdp/slot_surface.h"
 #include "machine/devices/vdp/device_output.h"
 #include "machine/devices/vdp/fbm.h"
 #include "machine/devices/vdp/frame.h"
@@ -67,7 +66,6 @@ public:
 
 	void initializeVramSurfaces();
 	void setDecodedVramSurfaceDimensions(uint32_t baseAddr, uint32_t width, uint32_t height);
-	void configureVramSlotSurface(uint32_t slotId, uint32_t width, uint32_t height);
 	void captureVisualStateFields(VdpState& state) const;
 	VdpState captureState() const;
 	void restoreState(const VdpState& state);
@@ -93,8 +91,6 @@ public:
 	using BuildingFrame = VdpBuildingFrame;
 
 	const VdpDeviceOutput& readDeviceOutput();
-	void drainSurfaceUploads(VdpSurfaceUploadSink& sink);
-	void syncSurfaceUploads(VdpSurfaceUploadSink& sink);
 
 private:
 	static Value readVdpStatusThunk(void* context, uint32_t addr);
@@ -112,7 +108,6 @@ private:
 	Memory& m_memory;
 	DeviceStatusLatch m_fault;
 	VdpVramUnit m_vram;
-	VdpSlotSurfacePort m_slotSurfacePort;
 	VdpReadbackUnit m_readback;
 	VdpXfUnit m_xf;
 	VdpLpuUnit m_lpu;
@@ -139,12 +134,10 @@ private:
 	VdpUnitRegisterPort m_unitRegisterPort;
 	u32 m_vdpModeWord = VDP_MODE_PSX_WORD;
 
-	VdpSurfaceUploadSlot* findVramSlotOrFault(uint32_t surfaceId, uint32_t faultCode);
-	const VdpSurfaceUploadSlot* findVramSlotOrFault(uint32_t surfaceId, uint32_t faultCode) const;
 	void bindStagingMemory();
 	void bindVramSurfaces();
 	void applyVdpModeProfile(const MachineVdpModeProfile& profile);
-	bool resizeVramSlot(VdpSurfaceUploadSlot& slot, uint32_t width, uint32_t height, uint32_t faultDetail);
+	bool resizeFrameBufferSurface(uint32_t width, uint32_t height, uint32_t faultDetail);
 	void resetQueuedFrameState();
 	bool canAcceptSubmittedFrame() const {
 		return m_pendingFrame.state == VdpSubmittedFrameState::Empty;
@@ -159,7 +152,6 @@ private:
 		void resetVdpRegisters();
 		void onDitherWrite(Value value);
 		void onVdpRegisterWrite(uint32_t addr);
-	void configureSelectedSlotDimension(u32 word);
 	void pushVdpFifoWord(u32 word);
 	bool consumeSealedVdpStream(uint32_t baseAddr, size_t byteLength);
 	void consumeSealedVdpWordStream(const u32* words, u32 wordCount);

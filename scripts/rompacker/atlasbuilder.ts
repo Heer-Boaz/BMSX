@@ -2,7 +2,7 @@ import type { Canvas, CanvasRenderingContext2D } from 'canvas';
 import { resolve as resolvePath, sep as pathSep } from 'path';
 import { commonResPath } from './rombuilder';
 import { BIOS_ATLAS_ID, generateAtlasAssetId } from '../../machine/ts/rompack/format';
-import { RPU_QUAD_MAX_CART_ATLAS_BYTES, TEXTURE_ATLAS_RGBA_BYTES_PER_PIXEL } from './texture_atlas_contract';
+import { RPU_TEXTURE_VRAM_BYTES, TEXTURE_ATLAS_RGBA_BYTES_PER_PIXEL } from './texture_atlas_contract';
 import { AtlasTexcoords, ImageResource } from './rompacker.rompack';
 export { generateAtlasAssetId };
 
@@ -453,16 +453,27 @@ function packOptimizedAtlas(imageResources: ImageResource[]): PackedAtlas | fals
 	});
 }
 
+function atlasImageNames(imageResources: ImageResource[]): string {
+	return imageResources.map(resource => resource.name).join(', ');
+}
+
 function tryPackAtlasWithinVramLimit(imageResources: ImageResource[], maxAtlasBytes: number): PackedAtlas | false {
 	const packed = packOptimizedAtlas(imageResources);
 	return packed && packedAtlasByteLength(packed) <= maxAtlasBytes ? packed : false;
 }
 
-function atlasImageNames(imageResources: ImageResource[]): string {
-	return imageResources.map(resource => resource.name).join(', ');
+export function measureOptimizedAtlasBytes(imageResources: ImageResource[]): number {
+	if (imageResources.length === 0) {
+		return TEXTURE_ATLAS_RGBA_BYTES_PER_PIXEL;
+	}
+	const packedAtlas = packOptimizedAtlas(imageResources);
+	if (!packedAtlas) {
+		throw new Error('All texture atlas packing algorithms failed to fit the provided images within the configured texture atlas dimensions.');
+	}
+	return packedAtlasByteLength(packedAtlas);
 }
 
-export function splitAtlasImagesByVramUsage(imageResources: ImageResource[], maxAtlasBytes = RPU_QUAD_MAX_CART_ATLAS_BYTES): ImageResource[][] {
+export function splitAtlasImagesByVramUsage(imageResources: ImageResource[], maxAtlasBytes = RPU_TEXTURE_VRAM_BYTES): ImageResource[][] {
 	if (imageResources.length === 0) {
 		return [];
 	}
@@ -477,7 +488,7 @@ export function splitAtlasImagesByVramUsage(imageResources: ImageResource[], max
 			if (!packed) {
 				const singleAtlas = packOptimizedAtlas(single);
 				const detail = singleAtlas ? `${packedAtlasByteLength(singleAtlas)} atlas bytes` : 'more than the configured atlas dimensions';
-				throw new Error(`[RomPacker] Image "${image.name}" requires ${detail}, exceeding the VDP texture slot budget of ${maxAtlasBytes} bytes.`);
+				throw new Error(`[RomPacker] Image "${image.name}" requires ${detail}, exceeding the VDP texture VRAM limit of ${maxAtlasBytes} bytes.`);
 			}
 			group = single;
 			continue;
@@ -494,7 +505,7 @@ export function splitAtlasImagesByVramUsage(imageResources: ImageResource[], max
 			if (!singlePacked) {
 				const singleAtlas = packOptimizedAtlas(single);
 				const detail = singleAtlas ? `${packedAtlasByteLength(singleAtlas)} atlas bytes` : 'more than the configured atlas dimensions';
-				throw new Error(`[RomPacker] Image "${image.name}" requires ${detail}, exceeding the VDP texture slot budget of ${maxAtlasBytes} bytes.`);
+				throw new Error(`[RomPacker] Image "${image.name}" requires ${detail}, exceeding the VDP texture VRAM limit of ${maxAtlasBytes} bytes.`);
 			}
 			group = single;
 		}
@@ -503,7 +514,7 @@ export function splitAtlasImagesByVramUsage(imageResources: ImageResource[], max
 	return groups;
 }
 
-export function createOptimizedAtlas(imageResources: ImageResource[], maxAtlasBytes = RPU_QUAD_MAX_CART_ATLAS_BYTES): Canvas {
+export function createOptimizedAtlas(imageResources: ImageResource[], maxAtlasBytes = RPU_TEXTURE_VRAM_BYTES): Canvas {
 	if (imageResources.length === 0) {
 		return createCanvas(1, 1);
 	}
@@ -513,7 +524,7 @@ export function createOptimizedAtlas(imageResources: ImageResource[], maxAtlasBy
 	}
 	const atlasByteLength = packedAtlasByteLength(packedAtlas);
 	if (atlasByteLength > maxAtlasBytes) {
-		throw new Error(`[RomPacker] Atlas for images ${atlasImageNames(imageResources)} requires ${atlasByteLength} bytes, exceeding the VDP texture slot budget of ${maxAtlasBytes} bytes.`);
+		throw new Error(`[RomPacker] Atlas for images ${atlasImageNames(imageResources)} requires ${atlasByteLength} bytes, exceeding the VDP texture VRAM limit of ${maxAtlasBytes} bytes.`);
 	}
 
 	const atlas_width = CROP_ATLAS ? packedAtlas.width : ATLAS_MAX_SIZE_IN_PIXELS;

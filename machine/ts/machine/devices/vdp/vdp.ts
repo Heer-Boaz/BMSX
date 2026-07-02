@@ -1,25 +1,20 @@
 import {
-	VDP_RD_SURFACE_SYSTEM,
 	VDP_RD_SURFACE_FRAMEBUFFER,
-	VDP_RD_SURFACE_PRIMARY,
 	VDP_FRAMEBUFFER_PAGE_RENDER,
 	VDP_FIFO_CTRL_SEAL,
 	VDP_FAULT_NONE,
 	VDP_FAULT_RD_OOB,
-	VDP_FAULT_RD_SURFACE,
 	VDP_FAULT_STREAM_BAD_PACKET,
 	VDP_FAULT_MODE_UNSUPPORTED,
 	VDP_FAULT_SUBMIT_STATE,
 	VDP_FAULT_CMD_BAD_DOORBELL,
 	VDP_FAULT_SUBMIT_BUSY,
 	VDP_FAULT_VRAM_WRITE_OOB,
-	VDP_FAULT_VRAM_SLOT_DIM,
+	VDP_FAULT_VRAM_SURFACE_DIM,
 	VDP_FAULT_VRAM_WRITE_UNALIGNED,
 	VDP_FAULT_VRAM_WRITE_UNINITIALIZED,
 	VDP_FAULT_VRAM_WRITE_UNMAPPED,
 	VDP_RD_MODE_RGBA8888,
-	VDP_SLOT_NONE,
-	VDP_SLOT_PRIMARY,
 	VDP_STATUS_SUBMIT_BUSY,
 	VDP_STATUS_SUBMIT_REJECTED,
 	VDP_STATUS_FAULT,
@@ -37,8 +32,6 @@ import {
 	IO_VDP_MODE,
 	IO_VDP_REG0,
 	IO_VDP_SCREEN_WH,
-	IO_VDP_SLOT_PRIMARY,
-	IO_VDP_SLOT_SECONDARY,
 	IO_VDP_RD_DATA,
 	IO_VDP_RD_MODE,
 	IO_VDP_RD_STATUS,
@@ -55,7 +48,9 @@ import { accrueBudgetUnits, cyclesUntilBudgetUnits, type BudgetAccrual } from '.
 import { DEVICE_SERVICE_VDP, type DeviceScheduler } from '../../scheduler/device';
 import {
 	VDP_STREAM_BUFFER_SIZE,
+	VRAM_FRAMEBUFFER_BASE,
 	VRAM_STAGING_SIZE,
+	VRAM_TEXTURE_SIZE,
 	IO_WORD_SIZE,
 } from '../../memory/map';
 import {
@@ -77,7 +72,7 @@ import {
 import { createVdpRpuFrameOutput, VDP_RPU_PACKET_KIND, VdpRpuUnit } from './rpu';
 import { VdpVoutUnit } from './vout';
 import { vdpUnitPacketHasFlags, vdpUnitPacketPayloadWords } from './packet';
-import { packLowHigh16, packedHigh16, packedLow16 } from '../../common/word';
+import { packLowHigh16, packedLow16 } from '../../common/word';
 import {
 	getMachineVdpModeProfile,
 	PSX_MODEL_PROFILE,
@@ -125,24 +120,18 @@ import {
 	VDP_REG_DRAW_SCALE_Y,
 	VDP_REG_LINE_WIDTH,
 	VDP_REG_SLOT_DIM,
-	VDP_REG_SLOT_INDEX,
-	VDP_REG_SRC_SLOT,
 	VDP_REGISTER_COUNT,
 } from './registers';
 import {
 	type VdpDeviceOutput,
 	type VdpFrameBufferPresentationSink,
-	type VdpSurfaceUploadSink,
-	type VdpSurfaceUploadSlot,
 } from './device_output';
 import { VdpFbmUnit } from './fbm';
 import { VdpStreamIngressUnit } from './ingress';
-import { VdpSlotSurfacePort } from './slot_surface';
 import { VdpUnitRegisterPort } from './unit_register_port';
 import { VdpReadbackUnit } from './readback';
 import {
 	DEFAULT_VDP_ENTROPY_SEEDS,
-	defaultVdpVramSurfaces,
 	type VdpEntropySeeds,
 	type VdpFrameBufferSize,
 	VdpVramUnit,
@@ -150,7 +139,7 @@ import {
 import type { VdpSaveState, VdpState } from './save_state';
 
 
-export type { VdpEntropySeeds, VdpFrameBufferSize, VdpVramSurface } from './vram';
+export type { VdpEntropySeeds, VdpFrameBufferSize } from './vram';
 
 export const VDP_DEVICE_STATUS_REGISTERS: DeviceStatusRegisters = {
 	statusAddr: IO_VDP_STATUS,
@@ -190,7 +179,6 @@ export class VDP implements VramWriteSink {
 	private readonly fault: DeviceStatusLatch;
 	private readonly vdpRegisters = new Uint32Array(VDP_REGISTER_COUNT);
 	private readonly streamIngress = new VdpStreamIngressUnit();
-	private readonly slotSurfacePort: VdpSlotSurfacePort;
 	private readonly unitRegisterPort: VdpUnitRegisterPort;
 	private vdpModeWord = PSX_MODEL_PROFILE.biosVdpMode;
 	private m_lastFrameCommitted = true;
@@ -209,7 +197,6 @@ export class VDP implements VramWriteSink {
 			this.fault,
 		);
 		this.bindStagingMemory();
-		this.slotSurfacePort = new VdpSlotSurfacePort(this.fault, this.vram);
 		this.unitRegisterPort = new VdpUnitRegisterPort(this.fault, this.xf, this.lpu, this.mfu, this.jtu);
 		this.memory.setVramWriter(this);
 		this.memory.mapIoRead(IO_VDP_RD_STATUS, this.readVdpStatusThunk.bind(this, this));
@@ -227,7 +214,7 @@ export class VDP implements VramWriteSink {
 	public initializeVramSurfaces(): void {
 		this.bindStagingMemory();
 		this.resetQueuedFrameState();
-		this.vram.initializeSurfaces(defaultVdpVramSurfaces(this.frameBufferSize));
+		this.vram.initializeFrameBuffer(this.frameBufferSize);
 		this.bindVramSurfaces();
 	}
 
@@ -263,25 +250,17 @@ export class VDP implements VramWriteSink {
 		const screenWh = packLowHigh16(profile.renderWidth, profile.renderHeight);
 		this.memory.writeIoValue(IO_VDP_MODE, profile.mode);
 		this.memory.writeIoValue(IO_VDP_SCREEN_WH, screenWh);
-		const frameBufferSlot = this.vram.findSurface(VDP_RD_SURFACE_FRAMEBUFFER)!;
-		this.resizeVramSlot(frameBufferSlot, profile.renderWidth, profile.renderHeight, screenWh);
+		this.resizeFrameBufferSurface(profile.renderWidth, profile.renderHeight, screenWh);
 	}
 
 	private resetVdpRegisters(): void {
-		let slotDim = 1 | (1 << 16);
-		const primarySlot = this.vram.findSurface(VDP_RD_SURFACE_PRIMARY);
-		if (primarySlot !== null) {
-			slotDim = (primarySlot.surfaceWidth & 0xffff) | ((primarySlot.surfaceHeight & 0xffff) << 16);
-		}
 		this.vdpRegisters.fill(0);
-		this.vdpRegisters[VDP_REG_SRC_SLOT] = VDP_SLOT_PRIMARY;
 		this.vdpRegisters[VDP_REG_LINE_WIDTH] = VDP_Q16_ONE;
 		this.vdpRegisters[VDP_REG_DRAW_SCALE_X] = VDP_Q16_ONE;
 		this.vdpRegisters[VDP_REG_DRAW_SCALE_Y] = VDP_Q16_ONE;
 		this.vdpRegisters[VDP_REG_DRAW_COLOR] = 0xffffffff;
 		this.vdpRegisters[VDP_REG_BG_COLOR] = 0xff000000;
-		this.vdpRegisters[VDP_REG_SLOT_INDEX] = VDP_SLOT_PRIMARY;
-		this.vdpRegisters[VDP_REG_SLOT_DIM] = slotDim >>> 0;
+		this.vdpRegisters[VDP_REG_SLOT_DIM] = 1 | (1 << 16);
 		for (let index = 0; index < VDP_REGISTER_COUNT; index += 1) {
 			this.memory.writeIoValue(IO_VDP_REG0 + index * IO_WORD_SIZE, this.vdpRegisters[index]);
 		}
@@ -293,11 +272,6 @@ export class VDP implements VramWriteSink {
 			return false;
 		}
 		const word = value >>> 0;
-		switch (index) {
-			case VDP_REG_SLOT_DIM:
-				this.configureSelectedSlotDimension(word);
-				break;
-		}
 		this.vdpRegisters[index] = word;
 		this.memory.writeIoValue(IO_VDP_REG0 + index * IO_WORD_SIZE, word);
 		return true;
@@ -310,24 +284,6 @@ export class VDP implements VramWriteSink {
 
 	private onDitherWrite(value: Value): void {
 		this.vout.writeDitherType(value as number);
-	}
-
-	private configureSelectedSlotDimension(word: number): void {
-		const width = packedLow16(word);
-		const height = packedHigh16(word);
-		if (width === 0 || height === 0) {
-			this.fault.raise(VDP_FAULT_VRAM_SLOT_DIM, word);
-			return;
-		}
-		const slot = this.slotSurfacePort.resolveSlotSurface(this.vdpRegisters[VDP_REG_SLOT_INDEX], VDP_FAULT_VRAM_SLOT_DIM);
-		if (slot === null) {
-			return;
-		}
-		if (width * height * 4 > slot.capacity) {
-			this.fault.raise(VDP_FAULT_VRAM_SLOT_DIM, word);
-			return;
-		}
-		this.resizeVramSlot(slot, width, height, word);
 	}
 
 	private readVdpStatusThunk(context: VDP, addr: number): number {
@@ -1057,32 +1013,11 @@ export class VDP implements VramWriteSink {
 		if (!this.fbm.hasPendingPresentation) {
 			return;
 		}
-		const slot = this.vram.findSurface(VDP_RD_SURFACE_FRAMEBUFFER);
-		if (slot === null) {
-			this.fault.raise(VDP_FAULT_RD_SURFACE, VDP_RD_SURFACE_FRAMEBUFFER);
-			return;
-		}
-		this.fbm.drainPresentation(sink, slot.cpuReadback);
+		this.fbm.drainPresentation(sink, this.vram.frameBufferSurface.cpuReadback);
 	}
 
 	public syncFrameBufferPresentation(sink: VdpFrameBufferPresentationSink): void {
-		const slot = this.vram.findSurface(VDP_RD_SURFACE_FRAMEBUFFER);
-		if (slot === null) {
-			this.fault.raise(VDP_FAULT_RD_SURFACE, VDP_RD_SURFACE_FRAMEBUFFER);
-			return;
-		}
-		this.fbm.syncPresentation(sink, slot.cpuReadback);
-		this.vram.clearSurfaceUploadDirty(VDP_RD_SURFACE_FRAMEBUFFER);
-	}
-
-	// disable-next-line single_line_method_pattern -- VDP exposes the host surface-upload boundary; VRAM owns the retained upload payload and dirty spans.
-	public drainSurfaceUploads(sink: VdpSurfaceUploadSink): void {
-		this.vram.drainSurfaceUploads(sink);
-	}
-
-	// disable-next-line single_line_method_pattern -- VDP exposes the host surface-upload boundary; VRAM owns the retained upload payload and dirty spans.
-	public syncSurfaceUploads(sink: VdpSurfaceUploadSink): void {
-		this.vram.syncSurfaceUploads(sink);
+		this.fbm.syncPresentation(sink, this.vram.frameBufferSurface.cpuReadback);
 	}
 
 	public lastFrameCommitted(): boolean {
@@ -1098,69 +1033,64 @@ export class VDP implements VramWriteSink {
 	}
 
 	public writeVram(addr: number, data: Uint8Array, srcOffset = 0, length = data.byteLength - srcOffset): void {
-		if (this.vram.writeStaging(addr, data, srcOffset, length)) {
+		if (this.vram.writeRpuVram(addr, data, srcOffset, length)) {
 			return;
 		}
-		const slot = this.vram.findMappedSlot(addr, length);
-		if (slot === null) {
+		if (!this.vram.frameBufferContains(addr, length)) {
 			this.fault.raise(VDP_FAULT_VRAM_WRITE_UNMAPPED, addr);
 			return;
 		}
-		const offset = addr - slot.baseAddr;
+		const surface = this.vram.frameBufferSurface;
+		const offset = addr - surface.baseAddr;
 		if ((offset & 3) !== 0 || (length & 3) !== 0) {
 			this.fault.raise(VDP_FAULT_VRAM_WRITE_UNALIGNED, addr);
 			return;
 		}
-		if (slot.surfaceWidth === 0 || slot.surfaceHeight === 0) {
+		if (surface.surfaceWidth === 0 || surface.surfaceHeight === 0) {
 			this.fault.raise(VDP_FAULT_VRAM_WRITE_UNINITIALIZED, addr);
 			return;
 		}
-		const stride = slot.surfaceWidth * 4;
-		const rowCount = slot.surfaceHeight;
+		const stride = surface.surfaceWidth * 4;
+		const rowCount = surface.surfaceHeight;
 		const totalBytes = rowCount * stride;
 		if (offset + length > totalBytes) {
 			this.fault.raise(VDP_FAULT_VRAM_WRITE_OOB, addr);
 			return;
 		}
-		this.vram.writeSurfaceBytes(slot, offset, data, srcOffset, length);
-		this.readback.invalidateSurface(slot.surfaceId);
+		this.vram.writeSurfaceBytes(surface, offset, data, srcOffset, length);
+		this.readback.invalidateFrameBuffer();
 	}
 
 	public readVram(addr: number, out: Uint8Array, length = out.byteLength): void {
-		if (this.vram.readStaging(addr, out, length)) {
+		if (this.vram.readRpuVram(addr, out, length)) {
 			return;
 		}
-		const slot = this.vram.findMappedSlot(addr, length);
-		if (slot === null) {
+		if (!this.vram.frameBufferContains(addr, length)) {
 			this.fault.raise(VDP_FAULT_VRAM_WRITE_UNMAPPED, addr);
 			out.fill(0, 0, length);
 			return;
 		}
-		if (slot.surfaceWidth === 0 || slot.surfaceHeight === 0) {
+		const surface = this.vram.frameBufferSurface;
+		if (surface.surfaceWidth === 0 || surface.surfaceHeight === 0) {
 			this.fault.raise(VDP_FAULT_VRAM_WRITE_UNINITIALIZED, addr);
 			out.fill(0, 0, length);
 			return;
 		}
-		const offset = addr - slot.baseAddr;
-		const stride = slot.surfaceWidth * 4;
-		const totalBytes = slot.surfaceHeight * stride;
+		const offset = addr - surface.baseAddr;
+		const stride = surface.surfaceWidth * 4;
+		const totalBytes = surface.surfaceHeight * stride;
 		if (offset + length > totalBytes) {
 			this.fault.raise(VDP_FAULT_VRAM_WRITE_OOB, addr);
 			out.fill(0, 0, length);
 			return;
 		}
-		this.vram.readSurfaceBytes(slot, offset, out, length);
+		this.vram.readSurfaceBytes(surface, offset, out, length);
 	}
 
 	public readFrameBufferPixels(page: VdpFrameBufferPage, x: number, y: number, width: number, height: number, out: Uint8Array, outBytes = out.byteLength): boolean {
 		let source = this.fbm.displayReadback;
 		if (page === VDP_FRAMEBUFFER_PAGE_RENDER) {
-			const slot = this.findVramSlotOrFault(VDP_RD_SURFACE_FRAMEBUFFER, VDP_FAULT_RD_SURFACE);
-			if (slot === null) {
-				this.fault.raise(VDP_FAULT_RD_SURFACE, VDP_RD_SURFACE_FRAMEBUFFER);
-				return false;
-			}
-			source = slot.cpuReadback;
+			source = this.vram.frameBufferSurface.cpuReadback;
 		}
 		const frameBufferWidth = this.fbm.width;
 		const frameBufferHeight = this.fbm.height;
@@ -1191,11 +1121,7 @@ export class VDP implements VramWriteSink {
 			this.fault.raise(this.readback.faultCode, this.readback.faultDetail);
 			return VDP_OPEN_BUS_WORD;
 		}
-		const surface = this.vram.findSurface(this.readback.resolvedSurfaceId);
-		if (surface === null) {
-			throw new Error('[VDP] registered readback surface has no backing VRAM slot.');
-		}
-		if (!this.readback.readPixel(surface, x, y)) {
+		if (!this.readback.readPixel(this.vram.frameBufferSurface, x, y)) {
 			this.fault.raise(this.readback.faultCode, this.readback.faultDetail);
 			return VDP_OPEN_BUS_WORD;
 		}
@@ -1210,18 +1136,16 @@ export class VDP implements VramWriteSink {
 		const dither = 0;
 		this.vdpModeWord = PSX_MODEL_PROFILE.biosVdpMode;
 		const vdpModeProfile = getMachineVdpModeProfile(this.vdpModeWord);
-		const frameBufferSlot = this.vram.findSurface(VDP_RD_SURFACE_FRAMEBUFFER)!;
-		this.fbm.configure(frameBufferSlot.surfaceWidth, frameBufferSlot.surfaceHeight);
+		const frameBuffer = this.vram.frameBufferSurface;
+		this.fbm.configure(frameBuffer.surfaceWidth, frameBuffer.surfaceHeight);
 		this.resetQueuedFrameState();
 		this.resetIngressState();
 		this.resetStatus();
-		this.memory.writeIoValue(IO_VDP_RD_SURFACE, VDP_RD_SURFACE_SYSTEM);
+		this.memory.writeIoValue(IO_VDP_RD_SURFACE, VDP_RD_SURFACE_FRAMEBUFFER);
 		this.memory.writeIoValue(IO_VDP_RD_X, 0);
 		this.memory.writeIoValue(IO_VDP_RD_Y, 0);
 		this.memory.writeIoValue(IO_VDP_RD_MODE, VDP_RD_MODE_RGBA8888);
 		this.memory.writeIoValue(IO_VDP_DITHER, dither);
-		this.memory.writeIoValue(IO_VDP_SLOT_PRIMARY, VDP_SLOT_NONE);
-		this.memory.writeIoValue(IO_VDP_SLOT_SECONDARY, VDP_SLOT_NONE);
 		this.memory.writeIoValue(IO_VDP_MODE, this.vdpModeWord);
 		this.memory.writeIoValue(IO_VDP_SCREEN_WH, packLowHigh16(vdpModeProfile.renderWidth, vdpModeProfile.renderHeight));
 		this.memory.writeIoValue(IO_VDP_CMD, 0);
@@ -1341,64 +1265,39 @@ export class VDP implements VramWriteSink {
 	}
 
 	private bindStagingMemory(): void {
-		this.rpu.configureVramStorage(VRAM_STAGING_SIZE);
-		this.vram.setExternalStaging(this.rpu.vdpVram, this.rpu.vdpVram.byteLength, this.rpu.vdpVramPageRevisions);
+		this.rpu.configureVramStorage(VRAM_STAGING_SIZE + VRAM_TEXTURE_SIZE);
+		this.vram.setExternalRpuVram(this.rpu.vdpVram, this.rpu.vdpVram.byteLength, this.rpu.vdpVramPageRevisions);
 		this.rpu.rebindFrameResources(this.buildFrame.rpu);
 		this.rpu.rebindFrameResources(this.activeFrame.rpu);
 		this.rpu.rebindFrameResources(this.pendingFrame.rpu);
 	}
 
 	private bindVramSurfaces(): void {
-		this.readback.resetSurfaceRegistry();
-		this.fbm.configure(0, 0);
-		this.vout.configureScanout(0, 0);
-		for (let index = 0; index < this.vram.slots.length; index += 1) {
-			const slot = this.vram.slots[index]!;
-			this.readback.registerSurface(slot.surfaceId);
-			if (slot.surfaceId === VDP_RD_SURFACE_FRAMEBUFFER) {
-				this.fbm.configure(slot.surfaceWidth, slot.surfaceHeight);
-				this.vout.configureScanout(slot.surfaceWidth, slot.surfaceHeight);
-			}
-		}
+		const frameBuffer = this.vram.frameBufferSurface;
+		this.readback.invalidateFrameBuffer();
+		this.fbm.configure(frameBuffer.surfaceWidth, frameBuffer.surfaceHeight);
+		this.vout.configureScanout(frameBuffer.surfaceWidth, frameBuffer.surfaceHeight);
 		this.vout.presentLiveState();
 	}
 
-	private findVramSlotOrFault(surfaceId: number, faultCode: number): VdpSurfaceUploadSlot | null {
-		const slot = this.vram.findSurface(surfaceId);
-		if (slot === null) {
-			this.fault.raise(faultCode, surfaceId);
-		}
-		return slot;
-	}
-
-	private resizeVramSlot(slot: VdpSurfaceUploadSlot, width: number, height: number, faultDetail: number): boolean {
-		if (!this.vram.setSlotLogicalDimensions(slot, width, height)) {
-			this.fault.raise(VDP_FAULT_VRAM_SLOT_DIM, faultDetail);
+	private resizeFrameBufferSurface(width: number, height: number, faultDetail: number): boolean {
+		const surface = this.vram.frameBufferSurface;
+		if (!this.vram.setSurfaceLogicalDimensions(surface, width, height)) {
+			this.fault.raise(VDP_FAULT_VRAM_SURFACE_DIM, faultDetail);
 			return false;
 		}
-		this.readback.invalidateSurface(slot.surfaceId);
-		if (slot.surfaceId === VDP_RD_SURFACE_FRAMEBUFFER) {
-			this.fbm.configure(width, height);
-			this.vout.configureScanout(width, height);
-		}
+		this.readback.invalidateFrameBuffer();
+		this.fbm.configure(width, height);
+		this.vout.configureScanout(width, height);
 		return true;
 	}
 
 	public setDecodedVramSurfaceDimensions(baseAddr: number, width: number, height: number): void {
-		const slot = this.vram.findMappedSlot(baseAddr, 1);
-		if (slot === null) {
+		if (baseAddr !== VRAM_FRAMEBUFFER_BASE) {
 			this.fault.raise(VDP_FAULT_VRAM_WRITE_UNMAPPED, baseAddr);
 			return;
 		}
-		this.resizeVramSlot(slot, width, height, (width | (height << 16)) >>> 0);
-	}
-
-	public configureVramSlotSurface(slotId: number, width: number, height: number): void {
-		const slot = this.slotSurfacePort.resolveSlotSurface(slotId, VDP_FAULT_VRAM_SLOT_DIM);
-		if (slot === null) {
-			return;
-		}
-		this.resizeVramSlot(slot, width, height, (width | (height << 16)) >>> 0);
+		this.resizeFrameBufferSurface(width, height, (width | (height << 16)) >>> 0);
 	}
 
 	public get trackedUsedVramBytes(): number {

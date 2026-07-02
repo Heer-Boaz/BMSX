@@ -21,8 +21,6 @@ through VOUT. The old framebuffer texture presentation path is IDE/terminal host
 | `IO_VDP_FAULT_DETAIL` | R | u32 | VDP | Fault-specific detail word. |
 | `IO_VDP_FAULT_ACK` | W | u32 | VDP | Clears the sticky fault latch and self-clears. |
 | `IO_VDP_DITHER` | W | u32 | VOUT | Dither latch for the next sealed frame. |
-| `IO_VDP_SLOT_PRIMARY` | W/R | slot id | RPU texture source binding | Selects the primary atlas slot used by BIOS RPU draw setup. |
-| `IO_VDP_SLOT_SECONDARY` | W/R | slot id | RPU texture source binding | Selects the secondary atlas slot used by BIOS RPU draw setup. |
 | `IO_VDP_RD_SURFACE` | W | u32 | FBM/readback | Selects a readback surface. |
 | `IO_VDP_RD_X` | W | u32 | FBM/readback | Selects readback X. |
 | `IO_VDP_RD_Y` | W | u32 | FBM/readback | Selects readback Y. |
@@ -30,7 +28,7 @@ through VOUT. The old framebuffer texture presentation path is IDE/terminal host
 | `IO_VDP_RD_STATUS` | R | status bits | FBM/readback | Ready/overflow for readback data. |
 | `IO_VDP_RD_DATA` | R | u32 | FBM/readback | Packed readback data. |
 | `IO_VDP_CMD` | W | command word | RPU submit doorbell | Direct frame-submit doorbell. |
-| `IO_VDP_CMD_ARG0` / `IO_VDP_REG0..IO_VDP_REG_SLOT_DIM` | W/R | raw u32 words | VDP registerfile | Raw argument latches and slot setup words. |
+| `IO_VDP_CMD_ARG0` / `IO_VDP_REG0..IO_VDP_REG_SLOT_DIM` | W/R | raw u32 words | VDP registerfile | Raw argument latches retained for the retired direct-command path. |
 | `IO_VDP_FIFO` | W | packet word | VDP stream | Appends one word to the FIFO ingress buffer. |
 | `IO_VDP_FIFO_CTRL` | W | control bits | VDP stream | `VDP_FIFO_CTRL_SEAL` seals and replays the FIFO packet stream. |
 
@@ -38,10 +36,12 @@ The old cart-visible SBX MMIO window is retired and intentionally left as an
 unassigned hole so IRQ/DMA and later public MMIO addresses do not move during
 the RPU migration.
 
-The framebuffer, primary, secondary, system, and staging VRAM ranges are
-CPU-visible memory ranges owned by the VDP. The DMA/FIFO stream buffer starts at
-`VDP_STREAM_BUFFER_BASE`; sealed streams are decoded as VDP packet words, not as
-host renderer commands.
+The VDP exposes three CPU-visible memory ranges: RPU staging/scratch, texture
+VRAM, and framebuffer VRAM. Texture residency is plain VRAM contents: the ROM
+build may materialise initial atlas bytes and coordinates, but the VDP has no
+primary/secondary/system atlas slots and no runtime atlas-binding MMIO. The
+DMA/FIFO stream buffer starts at `VDP_STREAM_BUFFER_BASE`; sealed streams are
+decoded as VDP packet words, not as host renderer commands.
 
 ## Status bits
 
@@ -144,7 +144,7 @@ BEGIN/END stream commands, and unknown packet kinds fault with
 | XF/LPU/MFU/JTU register port | Stream unit packets write raw live register words during sealed stream replay. RPU `CONSTANT_UPLOAD_DEVICE` copies those register words into RPU constant banks. | Bad register ranges fault and abort the sealed stream frame. |
 | RPU | Packet admission retains raw buffers, surfaces, constants, passes, draws, and bindings. Host GPU backends execute the retained command buffer. | Malformed packets and structural resource ranges fault; representable weird state renders weirdly. |
 | FBM | Framebuffer page transitions happen on VBlank for display/readback state. | Framebuffer presentation and display readback page. |
-| Readback | `IO_VDP_RD_*` reads resolve a registered surface, serve retained cache chunks, advance X/Y, and consume per-frame budget. | Readback status/data and VDP fault registers. |
+| Readback | `IO_VDP_RD_*` reads resolve the framebuffer surface, serve retained cache chunks, advance X/Y, and consume per-frame budget. | Readback status/data and VDP fault registers. |
 | VOUT | Dither/dimension/output latches are sampled at frame seal and become visible at frame presentation. | Host consumes `VdpDeviceOutput`; cart sees MMIO/status only. |
 
 The boundary follows the same device-shape discipline used by mature emulator
@@ -163,9 +163,9 @@ datapath rejects them.
 | Readback unsupported mode | `VDP_FAULT_RD_UNSUPPORTED_MODE` | Latch fault; readback result is not advanced for the bad request. |
 | Readback bad surface | `VDP_FAULT_RD_SURFACE` | Latch fault; readback returns no new surface data. |
 | Readback out of bounds/budget | `VDP_FAULT_RD_OOB` | Latch fault; overflow status may be set. |
-| VRAM write to unmapped/stale/uninitialized slot | `VDP_FAULT_VRAM_WRITE_UNMAPPED`, `VDP_FAULT_VRAM_WRITE_UNINITIALIZED` | Latch fault; no surface mutation for that write. |
+| VRAM write to unmapped or uninitialised VDP memory | `VDP_FAULT_VRAM_WRITE_UNMAPPED`, `VDP_FAULT_VRAM_WRITE_UNINITIALIZED` | Latch fault; no memory mutation for that write. |
 | VRAM write out of range/unaligned | `VDP_FAULT_VRAM_WRITE_OOB`, `VDP_FAULT_VRAM_WRITE_UNALIGNED` | Latch fault; write is rejected. |
-| Slot dimension overflow/bad slot | `VDP_FAULT_VRAM_SLOT_DIM` | Latch fault; existing slot dimensions remain. |
+| Framebuffer surface dimension overflow | `VDP_FAULT_VRAM_SURFACE_DIM` | Latch fault; existing framebuffer dimensions remain. |
 | Stream malformed packet | `VDP_FAULT_STREAM_BAD_PACKET` | Abort sealed stream frame and clear stream ingress. |
 | Direct bad submit state | `VDP_FAULT_SUBMIT_STATE` | Reject/drop command and keep or cancel the direct frame according to the command path. |
 | Unknown draw doorbell | `VDP_FAULT_CMD_BAD_DOORBELL` | Latch fault; drop the doorbell. |
@@ -191,7 +191,7 @@ Saved VDP state includes:
 - LPU live light register words;
 - XF matrix words and selected indexes;
 - VOUT/dither/display dimensions that affect future output;
-- VRAM unit state: staging bytes and surface pixels;
+- VRAM unit state: RPU-local bytes and framebuffer surface pixels;
 - framebuffer display/readback pixels.
 
 Host GPU textures, WebGL/SDL resources, texture handles, renderer queues, and

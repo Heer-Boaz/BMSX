@@ -238,7 +238,7 @@ function createRuntimeSaveState(): RuntimeSaveState {
 					vdpFaultCode: 0,
 					vdpFaultDetail: 0,
 					vram: {
-						staging: new Uint8Array([7, 8]),
+						rpuVram: new Uint8Array([7, 8]),
 						surfacePixels: [
 							{ surfaceId: 4, surfaceWidth: 1, surfaceHeight: 1, pixels: new Uint8Array([9, 10, 11, 12]) },
 						],

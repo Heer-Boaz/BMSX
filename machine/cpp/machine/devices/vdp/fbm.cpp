@@ -37,20 +37,20 @@ void VdpFbmUnit::restoreDisplayReadback(const std::vector<u8>& pixels) {
 	resetPresentation();
 }
 
-void VdpFbmUnit::presentPage(VdpSurfaceUploadSlot& renderSlot) {
+void VdpFbmUnit::presentPage(VdpSurfaceBacking& renderSurface) {
 	if (m_presentationCount == 0u) {
 		m_presentationReadbackValid = true;
-		m_presentationDirtyRowStart = renderSlot.dirtyRowStart;
-		m_presentationDirtyRowEnd = renderSlot.dirtyRowEnd;
-		for (u32 row = renderSlot.dirtyRowStart; row < renderSlot.dirtyRowEnd; ++row) {
-			m_presentationDirtySpansByRow[row].xStart = renderSlot.dirtySpansByRow[row].xStart;
-			m_presentationDirtySpansByRow[row].xEnd = renderSlot.dirtySpansByRow[row].xEnd;
+		m_presentationDirtyRowStart = renderSurface.dirtyRowStart;
+		m_presentationDirtyRowEnd = renderSurface.dirtyRowEnd;
+		for (u32 row = renderSurface.dirtyRowStart; row < renderSurface.dirtyRowEnd; ++row) {
+			m_presentationDirtySpansByRow[row].xStart = renderSurface.dirtySpansByRow[row].xStart;
+			m_presentationDirtySpansByRow[row].xEnd = renderSurface.dirtySpansByRow[row].xEnd;
 		}
 	} else {
 		m_presentationRequiresFullSync = true;
 	}
 	m_presentationCount += 1u;
-	std::swap(renderSlot.cpuReadback, m_displayFrameBufferCpuReadback);
+	std::swap(renderSurface.cpuReadback, m_displayFrameBufferCpuReadback);
 	m_state = VdpFbmState::PagePendingPresent;
 }
 

@@ -546,14 +546,6 @@
 			"reason": "vdp_readback_runtime_contract"
 		},
 		{
-			"ts": "machine/ts/machine/devices/vdp/slot_surface.ts",
-			"cpp": [
-				"machine/cpp/machine/devices/vdp/slot_surface.h",
-				"machine/cpp/machine/devices/vdp/slot_surface.cpp"
-			],
-			"reason": "vdp_slot_surface_port_runtime_contract"
-		},
-		{
 			"ts": "machine/ts/machine/devices/vdp/frame.ts",
 			"cpp": [
 				"machine/cpp/machine/devices/vdp/frame.h",
@@ -973,8 +965,7 @@
 			],
 			"symbols": [
 				"VdpDirtySpan",
-				"VdpSurfaceUploadSlot",
-				"VdpSurfaceUpload",
+				"VdpSurfaceBacking",
 				"VdpFrameBufferPresentation",
 				"VdpDeviceOutput"
 			],
@@ -986,7 +977,7 @@
 				"machine/cpp/machine/devices/vdp/contracts.h"
 			],
 			"symbols": [
-				"VdpSlotSource"
+				"VdpAtlasSource"
 			],
 			"reason": "vdp_shared_register_shape_contract"
 		},
@@ -1113,11 +1104,10 @@
 			"symbols": [
 				"VdpFrameBufferSize",
 				"VdpEntropySeeds",
-				"VdpVramSurface",
 				"VdpSurfacePixelsState",
 				"VdpVramState"
 			],
-			"reason": "vram_surface_upload_state_shape_contract"
+			"reason": "vram_framebuffer_surface_state_shape_contract"
 		},
 		{
 			"ts": "machine/ts/machine/devices/vdp/ingress.ts",
@@ -1414,7 +1404,8 @@
 			"ts": [
 				"machine/ts/machine/devices/vdp/rpu.ts",
 				"machine/ts/machine/devices/vdp/contracts.ts",
-				"machine/ts/machine/devices/vdp/rpu_desc.ts"
+				"machine/ts/machine/devices/vdp/rpu_desc.ts",
+				"machine/ts/machine/memory/map.ts"
 			],
 			"exports": "vdp_rpu",
 			"symbols": [
@@ -3028,14 +3019,6 @@
 			"reason": "vdp_vram_garbage_filename_parity"
 		},
 		{
-			"ts": "machine/ts/machine/devices/vdp/slot_surface.ts",
-			"cpp": [
-				"machine/cpp/machine/devices/vdp/slot_surface.h",
-				"machine/cpp/machine/devices/vdp/slot_surface.cpp"
-			],
-			"reason": "vdp_slot_surface_port_filename_parity"
-		},
-		{
 			"ts": "machine/ts/machine/devices/vdp/readback.ts",
 			"cpp": [
 				"machine/cpp/machine/devices/vdp/readback.h",
@@ -3664,7 +3647,7 @@
 		},
 		{
 			"file": "machine/firmware/system/vdp_rpu_quads.lua",
-			"start": "\tlocal texture_vram_addr<const> = slot_texture_vram_addr[slot]",
+			"start": "\tlocal surface_desc_addr<const> = rpu_surface_desc_vram_addr + atlas_id * 0x00000010",
 			"end": "\nend\n\nlocal end_pass",
 			"reason": "vdp_rpu_quads_surface_setup_must_not_allocate_after_module_init"
 		},
@@ -3695,14 +3678,14 @@
 		{
 			"file": "machine/firmware/system/vdp_rpu_quads.lua",
 			"start": "\tif instance_count == instance_batch_capacity then",
-			"end": "\nend\n\nfunction vdp_rpu_quads.set_slot_dim",
+			"end": "\nend\n\nfunction vdp_rpu_quads.define_atlas",
 			"reason": "vdp_rpu_quads_instance_write_must_not_allocate"
 		},
 		{
 			"file": "machine/firmware/system/vdp_rpu_quads.lua",
 			"start": "\tsurface_width[surface_desc_addr] = width\n\tsurface_height[surface_desc_addr] = height",
 			"end": "\nend\n\nfunction vdp_rpu_quads.clear_color",
-			"reason": "vdp_rpu_quads_set_slot_dim_must_not_allocate"
+			"reason": "vdp_rpu_quads_define_atlas_must_not_allocate"
 		},
 		{
 			"file": "machine/firmware/system/vdp_rpu_quads.lua",
@@ -3730,7 +3713,7 @@
 		},
 		{
 			"file": "machine/firmware/system/vdp_rpu_quads.lua",
-			"start": "\tlocal texture_surface_desc_addr<const> = slot_surface_desc[slot]",
+			"start": "\tlocal texture_surface_desc_addr<const> = rpu_surface_desc_vram_addr + atlas_id * 0x00000010",
 			"end": "\nend\n\nfunction vdp_rpu_quads.tile_run_sources",
 			"reason": "vdp_rpu_quads_axis_aligned_blit_must_not_allocate"
 		},

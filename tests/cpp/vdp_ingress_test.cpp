@@ -44,8 +44,6 @@ struct Harness {
 		, scheduler(cpu)
 		, vdp(memory, scheduler, {256u, 212u}) {
 		setIo(memory, bmsx::IO_VDP_DITHER, 0u);
-		setIo(memory, bmsx::IO_VDP_SLOT_PRIMARY, bmsx::VDP_SLOT_NONE);
-		setIo(memory, bmsx::IO_VDP_SLOT_SECONDARY, bmsx::VDP_SLOT_NONE);
 		vdp.initializeVramSurfaces();
 		vdp.initializeRegisters();
 		vdp.resetStatus();
@@ -325,10 +323,10 @@ void testFaultLatchStickyFirstUntilAck() {
 	require(h.vdp.readVdpData() == 0u, "unsupported readback should return open-bus zero");
 	expectVdpFault(h, bmsx::VDP_FAULT_RD_UNSUPPORTED_MODE, "first fault should latch");
 	const std::array<bmsx::u8, 4> data{{1u, 2u, 3u, 4u}};
-	h.vdp.writeVram(bmsx::VRAM_PRIMARY_SLOT_BASE + 1u, data.data(), 0u, data.size());
+	h.vdp.writeVram(bmsx::VRAM_FRAMEBUFFER_BASE + 1u, data.data(), 0u, data.size());
 	require(h.memory.readIoU32(bmsx::IO_VDP_FAULT_CODE) == bmsx::VDP_FAULT_RD_UNSUPPORTED_MODE, "second fault should not overwrite sticky-first latch");
 	clearVdpFault(h);
-	h.vdp.writeVram(bmsx::VRAM_PRIMARY_SLOT_BASE + 1u, data.data(), 0u, data.size());
+	h.vdp.writeVram(bmsx::VRAM_FRAMEBUFFER_BASE + 1u, data.data(), 0u, data.size());
 	expectVdpFault(h, bmsx::VDP_FAULT_VRAM_WRITE_UNALIGNED, "ACK should allow the next fault to latch");
 }
 
@@ -363,7 +361,7 @@ void testVramWriteFaultsLatchStatus() {
 	Harness h;
 	const uint8_t bytes[4] = {1u, 2u, 3u, 4u};
 
-	h.vdp.writeVram(bmsx::VRAM_PRIMARY_SLOT_BASE + 1u, bytes, 0u, sizeof(bytes));
+	h.vdp.writeVram(bmsx::VRAM_FRAMEBUFFER_BASE + 1u, bytes, 0u, sizeof(bytes));
 
 	require(h.memory.readIoU32(bmsx::IO_VDP_FAULT_CODE) == bmsx::VDP_FAULT_VRAM_WRITE_UNALIGNED, "unaligned VRAM write should latch fault code");
 	require((h.memory.readIoU32(bmsx::IO_VDP_STATUS) & bmsx::VDP_STATUS_FAULT) != 0u, "unaligned VRAM write should set VDP fault status");
@@ -378,9 +376,9 @@ void testVramReadFaultsLatchStatus() {
 	require(bytes == std::array<uint8_t, 4>{{0u, 0u, 0u, 0u}}, "unmapped VRAM read should return zero bytes");
 	clearVdpFault(h);
 
-	writeIo(h.memory, bmsx::IO_VDP_REG_SLOT_DIM, 1u | (1u << 16u));
+	h.vdp.setDecodedVramSurfaceDimensions(bmsx::VRAM_FRAMEBUFFER_BASE, 1u, 1u);
 	bytes = std::array<uint8_t, 4>{{0xffu, 0xffu, 0xffu, 0xffu}};
-	h.vdp.readVram(bmsx::VRAM_PRIMARY_SLOT_BASE + 4u, bytes.data(), bytes.size());
+	h.vdp.readVram(bmsx::VRAM_FRAMEBUFFER_BASE + 4u, bytes.data(), bytes.size());
 	expectVdpFault(h, bmsx::VDP_FAULT_VRAM_WRITE_OOB, "OOB VRAM read should latch fault code");
 	require(bytes == std::array<uint8_t, 4>{{0u, 0u, 0u, 0u}}, "OOB VRAM read should return zero bytes");
 }

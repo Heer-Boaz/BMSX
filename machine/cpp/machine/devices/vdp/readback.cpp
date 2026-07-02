@@ -3,28 +3,8 @@
 #include <algorithm>
 
 namespace bmsx {
-VdpReadbackUnit::VdpReadbackUnit() {
-	for (u32 surfaceId = 0u; surfaceId < VDP_RD_SURFACE_COUNT; ++surfaceId) {
-		m_readSurfaces[surfaceId].surfaceId = surfaceId;
-	}
-}
-
-void VdpReadbackUnit::resetSurfaceRegistry() {
-	for (u32 surfaceId = 0u; surfaceId < VDP_RD_SURFACE_COUNT; ++surfaceId) {
-		m_readSurfaces[surfaceId].surfaceId = surfaceId;
-		m_readSurfaces[surfaceId].registered = false;
-		invalidateSurface(surfaceId);
-	}
-}
-
-void VdpReadbackUnit::registerSurface(u32 surfaceId) {
-	m_readSurfaces[surfaceId].surfaceId = surfaceId;
-	m_readSurfaces[surfaceId].registered = true;
-	invalidateSurface(surfaceId);
-}
-
-void VdpReadbackUnit::invalidateSurface(u32 surfaceId) {
-	m_readCaches[surfaceId].width = 0u;
+void VdpReadbackUnit::invalidateFrameBuffer() {
+	m_frameBufferCache.width = 0u;
 }
 
 void VdpReadbackUnit::beginFrame() {
@@ -53,22 +33,15 @@ bool VdpReadbackUnit::resolveSurface(u32 requestedSurfaceId, u32 mode) {
 		faultDetail = mode;
 		return false;
 	}
-	if (requestedSurfaceId >= VDP_RD_SURFACE_COUNT) {
+	if (requestedSurfaceId != VDP_RD_SURFACE_FRAMEBUFFER) {
 		faultCode = VDP_FAULT_RD_SURFACE;
 		faultDetail = requestedSurfaceId;
 		return false;
 	}
-	const ReadSurface& readSurface = m_readSurfaces[requestedSurfaceId];
-	if (!readSurface.registered) {
-		faultCode = VDP_FAULT_RD_SURFACE;
-		faultDetail = requestedSurfaceId;
-		return false;
-	}
-	resolvedSurfaceId = readSurface.surfaceId;
 	return true;
 }
 
-bool VdpReadbackUnit::readPixel(const VdpSurfaceUploadSlot& surface, u32 x, u32 y) {
+bool VdpReadbackUnit::readPixel(const VdpSurfaceBacking& surface, u32 x, u32 y) {
 	if (x >= surface.surfaceWidth || y >= surface.surfaceHeight) {
 		faultCode = VDP_FAULT_RD_OOB;
 		faultDetail = x | (y << 16u);
@@ -81,7 +54,7 @@ bool VdpReadbackUnit::readPixel(const VdpSurfaceUploadSlot& surface, u32 x, u32 
 		advanceReadPosition = false;
 		return true;
 	}
-	const ReadCache& cache = getReadCache(resolvedSurfaceId, surface, x, y);
+	const ReadCache& cache = getReadCache(surface, x, y);
 	const u32 localX = x - cache.x0;
 	const size_t byteIndex = static_cast<size_t>(localX) * 4u;
 	const u32 r = cache.data[byteIndex];
@@ -112,8 +85,8 @@ void VdpReadbackUnit::restoreState(const VdpReadbackState& state) {
 	m_readOverflow = state.readOverflow;
 }
 
-VdpReadbackUnit::ReadCache& VdpReadbackUnit::getReadCache(u32 surfaceId, const VdpSurfaceUploadSlot& surface, u32 x, u32 y) {
-	ReadCache& cache = m_readCaches[surfaceId];
+VdpReadbackUnit::ReadCache& VdpReadbackUnit::getReadCache(const VdpSurfaceBacking& surface, u32 x, u32 y) {
+	ReadCache& cache = m_frameBufferCache;
 	if (cache.width == 0u || cache.y != y || x < cache.x0 || x >= cache.x0 + cache.width) {
 		prefetchReadCache(cache, surface, x, y);
 	}
@@ -121,7 +94,7 @@ VdpReadbackUnit::ReadCache& VdpReadbackUnit::getReadCache(u32 surfaceId, const V
 }
 
 // start numeric-sanitization-acceptable -- readback chunk width is the minimum of hardware cap, remaining surface span, and per-frame read budget.
-void VdpReadbackUnit::prefetchReadCache(ReadCache& cache, const VdpSurfaceUploadSlot& surface, u32 x, u32 y) {
+void VdpReadbackUnit::prefetchReadCache(ReadCache& cache, const VdpSurfaceBacking& surface, u32 x, u32 y) {
 	const u32 maxPixelsByBudget = m_readBudgetBytes / 4u;
 	if (maxPixelsByBudget == 0u) {
 		m_readOverflow = true;
@@ -136,7 +109,7 @@ void VdpReadbackUnit::prefetchReadCache(ReadCache& cache, const VdpSurfaceUpload
 }
 // end numeric-sanitization-acceptable
 
-void VdpReadbackUnit::copySurfacePixels(ReadCache& cache, const VdpSurfaceUploadSlot& surface, u32 x, u32 y, u32 width, u32 height) {
+void VdpReadbackUnit::copySurfacePixels(ReadCache& cache, const VdpSurfaceBacking& surface, u32 x, u32 y, u32 width, u32 height) {
 	const u32 stride = surface.surfaceWidth * 4u;
 	const u32 rowBytes = width * 4u;
 	std::array<u8, ReadbackMaxChunkPixels * 4u>& out = cache.data;
