@@ -555,10 +555,13 @@ Internal units:
 - `RPU` owns the raw cart-visible render contract: buffer records, surface
   records, constant banks, fixed stream layouts, fixed shader-variant ids,
   retained render passes, and retained draw commands.
-  Firmware quad helpers carve VDP-local staging into descriptor storage plus
-  concrete texture regions: 288 KiB system atlas, 416 KiB primary cart slot,
-  and 984704 bytes secondary cart slot. Rompacker atlas splitting uses that
-  secondary-slot byte budget, not a pixel-only texture dimension.
+  Firmware quad helpers currently carve VDP-local staging into descriptor
+  storage plus texture regions: 288 KiB system atlas, 416 KiB primary cart
+  slot, and 984704 bytes secondary cart slot. Rompacker atlas splitting uses
+  that current byte budget, not a pixel-only texture dimension. The fact that
+  texture bytes live under staging, and that the two cart texture regions are
+  asymmetric, is tracked as open staging/texture residency debt rather than a
+  final hardware contract.
 - `LPU` owns raw ambient, directional, and point-light register words.
 - `MFU` owns raw morph-weight register words.
 - `JTU` owns raw joint-matrix register words.
