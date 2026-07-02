@@ -4,11 +4,22 @@ import { test } from 'node:test';
 
 import {
 	IMG_CTRL_START,
+	IO_DMA_CTRL,
+	IO_DMA_DST,
+	IO_DMA_LEN,
+	IO_DMA_SRC,
 	IO_IMG_CAP,
 	IO_IMG_CTRL,
 	IO_IMG_DST,
 	IO_IMG_LEN,
 	IO_IMG_SRC,
+	IO_INP_CTRL,
+	IO_IRQ_MASK,
+	IO_SYS_CYCLES_PER_FRAME,
+	IO_VDP_FIFO,
+	IO_VDP_MODE,
+	IO_VDP_SCREEN_WH,
+	IO_VDP_STATUS,
 } from '../../machine/ts/machine/bus/io';
 
 test('IMGDEC hardware words are raw firmware words, not host-seeded globals', () => {
@@ -34,4 +45,20 @@ test('IMGDEC firmware consumes raw hardware words directly', () => {
 	assert.equal(source.includes(`mem[0x${IO_IMG_LEN.toString(16).padStart(8, '0')}] = len`), true);
 	assert.equal(source.includes(`mem[0x${IO_IMG_DST.toString(16).padStart(8, '0')}] = dst`), true);
 	assert.equal(source.includes(`mem[0x${IO_IMG_CAP.toString(16).padStart(8, '0')}] = cap`), true);
+});
+
+test('bootrom handoff waits for VDP submit idle before leaving system firmware', () => {
+	const source = readFileSync('machine/firmware/bios/bootrom.lua', 'utf8');
+	assert.equal(source.includes('boot_requested'), false);
+	assert.equal(source.includes('sys_boot_cart'), false);
+	assert.equal(source.includes(`mem[0x${IO_VDP_MODE.toString(16).padStart(8, '0')}] = 0x00000002`), true);
+	assert.equal(source.includes(`local irq_mask_addr<const> = 0x${IO_IRQ_MASK.toString(16).padStart(8, '0')}`), true);
+	assert.equal(source.includes(`hw_max_cycles = format_bignumbers(mem[0x${IO_SYS_CYCLES_PER_FRAME.toString(16).padStart(8, '0')}])`), true);
+	assert.equal(source.includes(`local screen_wh<const> = mem[0x${IO_VDP_SCREEN_WH.toString(16).padStart(8, '0')}]`), true);
+	assert.equal(source.includes(`if (mem[0x${IO_VDP_STATUS.toString(16).padStart(8, '0')}] & 0x00000002) ~= 0 then\n\t\t\treturn false\n\t\tend\n\t\tprint('Cart boot requested.')\n\t\tmem[irq_mask_addr] = 0\n\t\treturn true`), true);
+	assert.equal(source.includes(`mem[0x${IO_INP_CTRL.toString(16).padStart(8, '0')}] = 0x00000001`), true);
+	assert.equal(source.includes(`mem[0x${IO_DMA_SRC.toString(16).padStart(8, '0')}] = 0x080c0000`), true);
+	assert.equal(source.includes(`mem[0x${IO_DMA_DST.toString(16).padStart(8, '0')}] = 0x${IO_VDP_FIFO.toString(16).padStart(8, '0')}`), true);
+	assert.equal(source.includes(`mem[0x${IO_DMA_LEN.toString(16).padStart(8, '0')}] = used_bytes`), true);
+	assert.equal(source.includes(`mem[0x${IO_DMA_CTRL.toString(16).padStart(8, '0')}] = 0x00000001`), true);
 });

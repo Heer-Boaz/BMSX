@@ -80,7 +80,6 @@ local irq_mask_addr<const> = 0x0800010c
 local boot_vblank_count = 0
 
 local boot_start
-local boot_requested
 local system_slot_ready
 local system_slot_failed
 local boot_scroll_state<const> = { top = 0 }
@@ -253,7 +252,7 @@ local build_boot_content_lines<const> = function(info, cart_present, cursor, ela
 	append_section(lines, 'CARTRIDGE', line_slots)
 	for i = 1, #cart_specs do
 		local spec<const> = cart_specs[i]
-			append_kv_wrapped(lines, spec.label, spec.value, spec.color, label_width, line_slots)
+		append_kv_wrapped(lines, spec.label, spec.value, spec.color, label_width, line_slots)
 	end
 
 	append_blank_line(lines)
@@ -261,7 +260,7 @@ local build_boot_content_lines<const> = function(info, cart_present, cursor, ela
 
 	if cart_present then
 		local cart_ready<const> = info.cart_entry_ready
-		local status<const> = cart_ready and 'CART LOADED' or (boot_requested and 'STARTING CART' or 'LOADING CART')
+		local status<const> = cart_ready and 'CART LOADED' or 'LOADING CART'
 		local status_color<const> = cart_ready and color_ok or color_accent
 		append_wrapped_line(lines, status, status_color, line_slots, '', '')
 		local bar_width = line_slots - 3
@@ -276,7 +275,6 @@ end
 
 function init()
 	boot_start = os.clock()
-	boot_requested = false
 	boot_screen_visible = true
 	boot_screen_presented = false
 	system_slot_ready = false
@@ -349,12 +347,12 @@ local update_boot_screen<const> = function()
 	local cart_present_and_ready<const> = cart_header_present(cart_rom_base)
 		and mem[cart_program_vector_addr] == cart_program_start_addr
 
-	if cart_present_and_ready and not boot_requested and system_slot_ready and not system_slot_failed then
-		if (mem[0x08000144] & 0x00000002) == 0 then
-			boot_requested = true
-			print('Cart boot requested.')
-			mem[irq_mask_addr] = 0
+	if cart_present_and_ready and system_slot_ready and not system_slot_failed then
+		if (mem[0x08000144] & 0x00000002) ~= 0 then
+			return false
 		end
+		print('Cart boot requested.')
+		mem[irq_mask_addr] = 0
 		return true
 	end
 	render_boot_screen(scroll_delta)
