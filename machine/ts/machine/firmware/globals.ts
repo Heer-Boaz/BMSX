@@ -222,12 +222,6 @@ import {
 	DMA_STATUS_DONE,
 	DMA_STATUS_ERROR,
 	DMA_STATUS_REJECTED,
-	IMG_CTRL_START,
-	IMG_STATUS_BUSY,
-	IMG_STATUS_CLIPPED,
-	IMG_STATUS_DONE,
-	IMG_STATUS_ERROR,
-	IMG_STATUS_REJECTED,
 	INP_CTRL_ARM,
 	INP_CTRL_RESET,
 	IO_ARG_STRIDE,
@@ -294,13 +288,6 @@ import {
 	IO_GEO_STRIDE0,
 	IO_GEO_STRIDE1,
 	IO_GEO_STRIDE2,
-	IO_IMG_CAP,
-	IO_IMG_CTRL,
-	IO_IMG_DST,
-	IO_IMG_LEN,
-	IO_IMG_SRC,
-	IO_IMG_STATUS,
-	IO_IMG_WRITTEN,
 	IO_INP_CTRL,
 	IO_INP_KEYS,
 	IO_INP_OUTPUT_CTRL,
@@ -763,13 +750,6 @@ export function seedLuaGlobals(runtime: Runtime): void {
 	runtime.setGlobal('sys_geo_processed', IO_GEO_PROCESSED);
 	runtime.setGlobal('sys_geo_fault', IO_GEO_FAULT);
 	runtime.setGlobal('sys_geo_fault_ack', IO_GEO_FAULT_ACK);
-	runtime.setGlobal('sys_img_src', IO_IMG_SRC);
-	runtime.setGlobal('sys_img_len', IO_IMG_LEN);
-	runtime.setGlobal('sys_img_dst', IO_IMG_DST);
-	runtime.setGlobal('sys_img_cap', IO_IMG_CAP);
-	runtime.setGlobal('sys_img_ctrl', IO_IMG_CTRL);
-	runtime.setGlobal('sys_img_status', IO_IMG_STATUS);
-	runtime.setGlobal('sys_img_written', IO_IMG_WRITTEN);
 	runtime.setGlobal('sys_inp_ctrl', IO_INP_CTRL);
 	runtime.setGlobal('sys_inp_status', IO_INP_STATUS);
 	runtime.setGlobal('sys_inp_keys', IO_INP_KEYS);
@@ -1035,12 +1015,6 @@ export function seedLuaGlobals(runtime: Runtime): void {
 	runtime.setGlobal('sys_geo_fault_reject_dst_not_ram', GEO_FAULT_REJECT_DST_NOT_RAM);
 	runtime.setGlobal('sys_geo_fault_reject_misaligned_regs', GEO_FAULT_REJECT_MISALIGNED_REGS);
 	runtime.setGlobal('sys_geo_fault_reject_bad_register_combo', GEO_FAULT_REJECT_BAD_REGISTER_COMBO);
-	runtime.setGlobal('img_ctrl_start', IMG_CTRL_START);
-	runtime.setGlobal('img_status_busy', IMG_STATUS_BUSY);
-	runtime.setGlobal('img_status_done', IMG_STATUS_DONE);
-	runtime.setGlobal('img_status_error', IMG_STATUS_ERROR);
-	runtime.setGlobal('img_status_clipped', IMG_STATUS_CLIPPED);
-	runtime.setGlobal('img_status_rejected', IMG_STATUS_REJECTED);
 	for (let index = 0; index < LUA_BOOT_PRIMITIVES.length; index += 1) {
 		const primitive = LUA_BOOT_PRIMITIVES[index];
 		runtime.setGlobal(primitive.name, createBuiltinFunction(primitive.id));

@@ -1,4 +1,5 @@
 local round_to_nearest<const> = require('bios/util/round_to_nearest')
+local imgdec<const> = require('system/imgdec')
 local romdir<const> = require('system/romdir')
 local vdp_rpu_quads<const> = require('system/vdp_rpu_quads')
 
@@ -29,35 +30,19 @@ local bind_slot_atlas<const> = function(slot, atlas_id)
 	mem[slot_atlas_addr(slot)] = atlas_id
 end
 
-local start_decode<const> = function(src, len, dst, cap)
-	mem[sys_img_src] = src
-	mem[sys_img_len] = len
-	mem[sys_img_dst] = dst
-	mem[sys_img_cap] = cap
-	mem[sys_img_ctrl] = img_ctrl_start
-end
-
-function vdp_image.wait_decode()
-	while (mem[sys_img_status] & img_status_busy) ~= 0 do
-	end
-	if (mem[sys_img_status] & img_status_error) ~= 0 then
-		error('VDP image decode failed.')
-	end
-end
-
 function vdp_image.load_slot(slot, atlas_id)
 	local name<const> = string.format('_atlas_%02d', atlas_id)
 	local atlas<const> = romdir.cart_atlas(name)
 	local atlas_meta<const> = romdir.image(name).imgmeta
 	local dst<const>, cap<const> = vdp_rpu_quads.set_slot_dim(slot, atlas_meta.width, atlas_meta.height)
 	bind_slot_atlas(slot, atlas_id)
-	start_decode(atlas.addr, atlas.len, dst, cap)
+	imgdec.start(atlas.addr, atlas.len, dst, cap)
 end
 
 function vdp_image.load_system_slot()
 	local atlas<const> = romdir.system_rom_atlas(system_atlas_name)
 	local dst<const>, cap<const> = vdp_rpu_quads.set_slot_dim(sys_vdp_slot_system, system_atlas_meta.width, system_atlas_meta.height)
-	start_decode(atlas.addr, atlas.len, dst, cap)
+	imgdec.start(atlas.addr, atlas.len, dst, cap)
 end
 
 local require_meta<const> = function(imgid)

@@ -454,6 +454,8 @@ hardware interrupt-storm semantics rather than being discarded by the emulator.
 DMA and IMGDEC are MMIO devices. Command words latch work, device status/fault
 registers expose completion or rejection, and bus faults become device-visible
 fault state.
+IMGDEC's BIOS-facing Lua helper owns the register words it uses; IMGDEC
+addresses, command bits, and status bits are not host-seeded Lua globals.
 
 ### VDP
 

@@ -188,13 +188,6 @@ void seedSystemGlobals(Runtime& runtime) {
 	runtime.setGlobal("sys_geo_processed", valueNumber(static_cast<double>(IO_GEO_PROCESSED)));
 	runtime.setGlobal("sys_geo_fault", valueNumber(static_cast<double>(IO_GEO_FAULT)));
 	runtime.setGlobal("sys_geo_fault_ack", valueNumber(static_cast<double>(IO_GEO_FAULT_ACK)));
-	runtime.setGlobal("sys_img_src", valueNumber(static_cast<double>(IO_IMG_SRC)));
-	runtime.setGlobal("sys_img_len", valueNumber(static_cast<double>(IO_IMG_LEN)));
-	runtime.setGlobal("sys_img_dst", valueNumber(static_cast<double>(IO_IMG_DST)));
-	runtime.setGlobal("sys_img_cap", valueNumber(static_cast<double>(IO_IMG_CAP)));
-	runtime.setGlobal("sys_img_ctrl", valueNumber(static_cast<double>(IO_IMG_CTRL)));
-	runtime.setGlobal("sys_img_status", valueNumber(static_cast<double>(IO_IMG_STATUS)));
-	runtime.setGlobal("sys_img_written", valueNumber(static_cast<double>(IO_IMG_WRITTEN)));
 	runtime.setGlobal("sys_inp_ctrl", valueNumber(static_cast<double>(IO_INP_CTRL)));
 	runtime.setGlobal("sys_inp_status", valueNumber(static_cast<double>(IO_INP_STATUS)));
 	runtime.setGlobal("sys_inp_keys", valueNumber(static_cast<double>(IO_INP_KEYS)));
@@ -430,12 +423,6 @@ void seedSystemGlobals(Runtime& runtime) {
 	runtime.setGlobal("sys_geo_fault_reject_dst_not_ram", valueNumber(static_cast<double>(GEO_FAULT_REJECT_DST_NOT_RAM)));
 	runtime.setGlobal("sys_geo_fault_reject_misaligned_regs", valueNumber(static_cast<double>(GEO_FAULT_REJECT_MISALIGNED_REGS)));
 	runtime.setGlobal("sys_geo_fault_reject_bad_register_combo", valueNumber(static_cast<double>(GEO_FAULT_REJECT_BAD_REGISTER_COMBO)));
-	runtime.setGlobal("img_ctrl_start", valueNumber(static_cast<double>(IMG_CTRL_START)));
-	runtime.setGlobal("img_status_busy", valueNumber(static_cast<double>(IMG_STATUS_BUSY)));
-	runtime.setGlobal("img_status_done", valueNumber(static_cast<double>(IMG_STATUS_DONE)));
-	runtime.setGlobal("img_status_error", valueNumber(static_cast<double>(IMG_STATUS_ERROR)));
-	runtime.setGlobal("img_status_clipped", valueNumber(static_cast<double>(IMG_STATUS_CLIPPED)));
-	runtime.setGlobal("img_status_rejected", valueNumber(static_cast<double>(IMG_STATUS_REJECTED)));
 	runtime.setGlobal("inp_ctrl_arm", valueNumber(static_cast<double>(INP_CTRL_ARM)));
 	runtime.setGlobal("inp_ctrl_reset", valueNumber(static_cast<double>(INP_CTRL_RESET)));
 	runtime.setGlobal("inp_key_word_count", valueNumber(static_cast<double>(IO_INP_KEY_WORD_COUNT)));
