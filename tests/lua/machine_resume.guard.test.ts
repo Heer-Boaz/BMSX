@@ -74,3 +74,23 @@ test('runtime boot asks the program linker for linked boot images', () => {
 	assert.equal(src.includes('linkBootProgramImages('), true, 'runtime boot must route system+cart linking through the program/linker boot owner');
 	assert.equal(src.includes('linkProgramImages('), false, 'runtime boot must not own raw multi-image link orchestration');
 });
+
+test('runtime clears BIOS boot primitives before cart static modules', () => {
+	const src = readFileSync('machine/ts/machine/runtime/runtime.ts', 'utf8');
+	const start = src.indexOf('public startLoadedProgram');
+	assert.ok(start > -1, 'startLoadedProgram not found');
+	const nextMethod = src.indexOf('\n\tprivate runSectionInitializer', start + 1);
+	assert.ok(nextMethod > start, 'startLoadedProgram boundary not found');
+	const snippet = src.slice(start, nextMethod);
+	const systemInit = snippet.indexOf('this.runStaticModuleInitializers(systemStaticModulePaths)');
+	const clear = snippet.indexOf('clearLuaBootPrimitives(this)');
+	const cartInit = snippet.indexOf('this.runStaticModuleInitializers(cartStaticModulePaths)');
+	const resetVector = snippet.indexOf('this.machine.cpu.start(vectors.resetProtoIndex)');
+	assert.ok(systemInit > -1, 'system static modules must have their own boot phase');
+	assert.ok(clear > -1, 'boot primitives must be cleared by the runtime boot phase');
+	assert.ok(cartInit > -1, 'cart static modules must have their own boot phase');
+	assert.ok(resetVector > -1, 'reset vector must run after static modules');
+	assert.ok(systemInit < clear, 'BIOS modules capture boot primitives before clearing');
+	assert.ok(clear < cartInit, 'cart modules must not see boot primitives');
+	assert.ok(cartInit < resetVector, 'cart reset vector runs after cart static modules');
+});

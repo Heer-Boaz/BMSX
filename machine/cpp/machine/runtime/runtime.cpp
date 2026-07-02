@@ -303,10 +303,10 @@ void Runtime::startCartProgram() {
 		throw std::runtime_error("cannot start cart: no cart bss base is loaded.");
 	}
 	enterCartProgram();
-	startLoadedProgram(*m_cartVectors, m_cartStaticModulePaths);
+	startLoadedProgram(*m_cartVectors, std::span<const std::string>{}, m_cartStaticModulePaths);
 }
 
-void Runtime::boot(const ProgramImage& image, ProgramMetadata* metadata, ProgramVectorTable vectors, uint32_t dataBaseAddress, uint32_t bssBaseAddress, const std::vector<std::string>& staticModulePaths) {
+void Runtime::boot(const ProgramImage& image, ProgramMetadata* metadata, ProgramVectorTable vectors, uint32_t dataBaseAddress, uint32_t bssBaseAddress, std::span<const std::string> systemStaticModulePaths, std::span<const std::string> cartStaticModulePaths) {
 	m_moduleCache.clear();
 	m_programStorage = inflateExecutableProgramImage(image, metadata, dataBaseAddress, bssBaseAddress);
 	try {
@@ -315,17 +315,20 @@ void Runtime::boot(const ProgramImage& image, ProgramMetadata* metadata, Program
 		m_program = m_programStorage.get();
 		m_programMetadata = metadata;
 		machine.cpu.setProgram(m_program, metadata);
-		startLoadedProgram(vectors, staticModulePaths);
+		startLoadedProgram(vectors, systemStaticModulePaths, cartStaticModulePaths);
 	} catch (const std::exception& e) {
 		handleLuaError(e.what());
 	}
 }
 
-void Runtime::startLoadedProgram(ProgramVectorTable vectors, const std::vector<std::string>& staticModulePaths) {
+void Runtime::startLoadedProgram(ProgramVectorTable vectors, std::span<const std::string> systemStaticModulePaths, std::span<const std::string> cartStaticModulePaths) {
 	m_programVectors = vectors;
 	NativeResults sectionResults;
 	callLuaFunctionInto(machine.cpu.rootClosure(vectors.sectionInitProtoIndex), NativeArgsView(), sectionResults);
-	runStaticModuleInitializers(staticModulePaths);
+	runStaticModuleInitializers(systemStaticModulePaths);
+	clearLuaBootPrimitives();
+	runStaticModuleInitializers(cartStaticModulePaths);
+	machine.cpu.syncGlobalSlotsToTable();
 	enforceLuaHeapBudget();
 	machine.cpu.start(vectors.resetProtoIndex);
 	enforceLuaHeapBudget();
@@ -353,11 +356,10 @@ void Runtime::runStaticModuleInitializer(const std::string& path) {
 	m_moduleCache.erase(path);
 }
 
-void Runtime::runStaticModuleInitializers(const std::vector<std::string>& paths) {
+void Runtime::runStaticModuleInitializers(std::span<const std::string> paths) {
 	for (const std::string& path : paths) {
 		runStaticModuleInitializer(path);
 	}
-	machine.cpu.syncGlobalSlotsToTable();
 }
 
 void Runtime::logLuaCallStack() const {

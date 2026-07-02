@@ -904,15 +904,14 @@ LinkedBootProgramImage linkBootProgramImages(
 			output.vectors = linked.systemVectors;
 			output.dataBaseAddress = linked.systemDataBaseAddress;
 			output.bssBaseAddress = linked.systemBssBaseAddress;
-			output.staticModulePaths = std::move(linked.systemStaticModulePaths);
 			break;
 		case ProgramBootTarget::Cart:
 			output.vectors = linked.cartVectors;
 			output.dataBaseAddress = linked.cartDataBaseAddress;
 			output.bssBaseAddress = linked.cartBssBaseAddress;
-			output.staticModulePaths = linked.programImage->sections.rodata.staticModulePaths;
 			break;
 	}
+	output.systemStaticModulePaths = std::move(linked.systemStaticModulePaths);
 	output.programImage = std::move(linked.programImage);
 	output.metadata = std::move(linked.metadata);
 	return output;

@@ -14,6 +14,7 @@ import { buildRuntimeRomLayer, type RuntimeRomLayer } from '../../rompack/loader
 import { EMPTY_CALL_ARGS, StringValue, Table, type Value, type Program, type ProgramMetadata, type NativeFunction, type NativeObject } from '../cpu/cpu';
 import { type LuaSemanticModel, type FileSemanticData } from '../../lua/semantic/model';
 import { registerFirmwareBuiltins } from '../firmware/builtins';
+import { clearLuaBootPrimitives } from '../firmware/globals';
 import { LuaFunctionRedirectCache } from '../firmware/handler_registry';
 import { HandlerCache, LuaJsBridge } from './host/native_bridge';
 import type { RuntimeOptions } from './options';
@@ -65,6 +66,7 @@ export type RuntimeProgramVectorTable = {
 	irqProtoIndex: number;
 };
 
+export const EMPTY_STATIC_MODULE_PATHS: ReadonlyArray<string> = [];
 
 export class Runtime {
 	public readonly luaJsBridge!: LuaJsBridge;
@@ -400,15 +402,18 @@ export class Runtime {
 		this.programBssBaseAddress = bssBaseAddress;
 		this.enterCartProgram();
 		this._luaPath = this.activeLuaSources.entry_path;
-		this.startLoadedProgram(vectors, this.cartStaticModulePaths);
+		this.startLoadedProgram(vectors, EMPTY_STATIC_MODULE_PATHS, this.cartStaticModulePaths);
 	}
 
-	public startLoadedProgram(vectors: RuntimeProgramVectorTable, staticModulePaths: ReadonlyArray<string>): void {
+	public startLoadedProgram(vectors: RuntimeProgramVectorTable, systemStaticModulePaths: ReadonlyArray<string>, cartStaticModulePaths: ReadonlyArray<string>): void {
 		this.programVectors = vectors;
 		if (vectors.sectionInitProtoIndex !== null) {
 			this.runSectionInitializer(vectors.sectionInitProtoIndex);
 		}
-		this.runStaticModuleInitializers(staticModulePaths);
+		this.runStaticModuleInitializers(systemStaticModulePaths);
+		clearLuaBootPrimitives(this);
+		this.runStaticModuleInitializers(cartStaticModulePaths);
+		this.machine.cpu.syncGlobalSlotsToTable();
 		this.machine.cpu.start(vectors.resetProtoIndex);
 		this.pendingCall = 'entry';
 		this.luaInitialized = true;
@@ -427,7 +432,6 @@ export class Runtime {
 		for (let index = 0; index < paths.length; index += 1) {
 			this.runStaticModuleInitializer(paths[index]);
 		}
-		this.machine.cpu.syncGlobalSlotsToTable();
 	}
 
 	private runStaticModuleInitializer(path: string): void {

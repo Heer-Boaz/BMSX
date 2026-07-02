@@ -56,7 +56,7 @@ export type LinkedBootProgramImage = {
 	vectors: ProgramVectorTable;
 	dataBaseAddress: number;
 	bssBaseAddress: number;
-	staticModulePaths: ReadonlyArray<string>;
+	systemStaticModulePaths: ReadonlyArray<string>;
 	cartVectors: ProgramVectorTable;
 	cartDataBaseAddress: number;
 	cartBssBaseAddress: number;
@@ -1044,12 +1044,10 @@ export const linkBootProgramImages = (
 	let vectors = linked.systemVectors;
 	let dataBaseAddress = linked.systemDataBaseAddress;
 	let bssBaseAddress = linked.systemBssBaseAddress;
-	let staticModulePaths = linked.systemStaticModulePaths;
 	if (bootTarget === 'cart') {
 		vectors = linked.cartVectors;
 		dataBaseAddress = linked.cartDataBaseAddress;
 		bssBaseAddress = linked.cartBssBaseAddress;
-		staticModulePaths = linked.programImage.sections.rodata.staticModulePaths;
 	}
 	return {
 		programImage: linked.programImage,
@@ -1057,7 +1055,7 @@ export const linkBootProgramImages = (
 		vectors,
 		dataBaseAddress,
 		bssBaseAddress,
-		staticModulePaths,
+		systemStaticModulePaths: linked.systemStaticModulePaths,
 		cartVectors: linked.cartVectors,
 		cartDataBaseAddress: linked.cartDataBaseAddress,
 		cartBssBaseAddress: linked.cartBssBaseAddress,

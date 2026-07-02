@@ -461,6 +461,21 @@ import { asStringId, valueIsString } from '../cpu/cpu';
 import type { StringPool } from '../cpu/string_pool';
 import type { Runtime } from '../runtime/runtime';
 
+const LUA_BOOT_PRIMITIVES: ReadonlyArray<{ name: string; id: BuiltinFunctionId }> = [
+	{ name: '__bmsx_next', id: BuiltinFunctionId.Next },
+	{ name: '__bmsx_type', id: BuiltinFunctionId.Type },
+	{ name: '__bmsx_setmetatable', id: BuiltinFunctionId.SetMetatable },
+	{ name: '__bmsx_getmetatable', id: BuiltinFunctionId.GetMetatable },
+	{ name: '__bmsx_rawget', id: BuiltinFunctionId.RawGet },
+	{ name: '__bmsx_rawset', id: BuiltinFunctionId.RawSet },
+	{ name: '__bmsx_select', id: BuiltinFunctionId.Select },
+	{ name: '__bmsx_string_byte', id: BuiltinFunctionId.StringByte },
+	{ name: '__bmsx_string_char', id: BuiltinFunctionId.StringChar },
+	{ name: '__bmsx_error', id: BuiltinFunctionId.Error },
+	{ name: '__bmsx_pcall', id: BuiltinFunctionId.PCall },
+	{ name: '__bmsx_xpcall', id: BuiltinFunctionId.XPCall },
+];
+
 
 // start repeated-sequence-acceptable -- Lua tostring semantics live in firmware; disassembler formatting is intentionally separate.
 export function valueToString(value: Value, stringPool: StringPool): string {
@@ -1026,18 +1041,10 @@ export function seedLuaGlobals(runtime: Runtime): void {
 	runtime.setGlobal('img_status_error', IMG_STATUS_ERROR);
 	runtime.setGlobal('img_status_clipped', IMG_STATUS_CLIPPED);
 	runtime.setGlobal('img_status_rejected', IMG_STATUS_REJECTED);
-	runtime.setGlobal('__bmsx_next', createBuiltinFunction(BuiltinFunctionId.Next));
-	runtime.setGlobal('__bmsx_type', createBuiltinFunction(BuiltinFunctionId.Type));
-	runtime.setGlobal('__bmsx_setmetatable', createBuiltinFunction(BuiltinFunctionId.SetMetatable));
-	runtime.setGlobal('__bmsx_getmetatable', createBuiltinFunction(BuiltinFunctionId.GetMetatable));
-	runtime.setGlobal('__bmsx_rawget', createBuiltinFunction(BuiltinFunctionId.RawGet));
-	runtime.setGlobal('__bmsx_rawset', createBuiltinFunction(BuiltinFunctionId.RawSet));
-	runtime.setGlobal('__bmsx_select', createBuiltinFunction(BuiltinFunctionId.Select));
-	runtime.setGlobal('__bmsx_string_byte', createBuiltinFunction(BuiltinFunctionId.StringByte));
-	runtime.setGlobal('__bmsx_string_char', createBuiltinFunction(BuiltinFunctionId.StringChar));
-	runtime.setGlobal('__bmsx_error', createBuiltinFunction(BuiltinFunctionId.Error));
-	runtime.setGlobal('__bmsx_pcall', createBuiltinFunction(BuiltinFunctionId.PCall));
-	runtime.setGlobal('__bmsx_xpcall', createBuiltinFunction(BuiltinFunctionId.XPCall));
+	for (let index = 0; index < LUA_BOOT_PRIMITIVES.length; index += 1) {
+		const primitive = LUA_BOOT_PRIMITIVES[index];
+		runtime.setGlobal(primitive.name, createBuiltinFunction(primitive.id));
+	}
 
 	const stringTable = new Table(0, 0);
 	runtime.machine.cpu.stringIndexTable = stringTable;
@@ -1050,4 +1057,10 @@ export function seedLuaGlobals(runtime: Runtime): void {
 	runtime.setGlobal('os', osTable);
 
 	exposeObjects();
+}
+
+export function clearLuaBootPrimitives(runtime: Runtime): void {
+	for (let index = 0; index < LUA_BOOT_PRIMITIVES.length; index += 1) {
+		runtime.setGlobal(LUA_BOOT_PRIMITIVES[index].name, null);
+	}
 }

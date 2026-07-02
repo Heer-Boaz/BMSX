@@ -689,8 +689,9 @@ Acceptatie:
 - de publieke core/`string`/`table` Lua library surface wordt door BIOS Lua
   geïnstalleerd (`bios/base.lua`, `bios/string.lua`, `bios/table.lua`). De CPU
   houdt alleen verborgen `__bmsx_*` boot-primitives voor de dynamic Lua
-  objectwereld; de boot ROM wist die globals voordat cart-code draait. Dat is
-  geen backwards-compat surface en geen precedent voor nieuwe cart-zichtbare host
+  objectwereld; runtime boot wist die globals na system static-module init en
+  vóór cart static modules of cart reset-vector draaien. Dat is geen
+  backwards-compat surface en geen precedent voor nieuwe cart-zichtbare host
   faciliteiten.
 
 ## 21. CPU machine-code ABI loshalen van Lua-objectwereld

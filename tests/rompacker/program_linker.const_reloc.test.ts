@@ -757,14 +757,14 @@ test('ProgramLinker owns linked boot vector selection', () => {
 	const systemBoot = linkBootProgramImages(systemImage, null, cartImage, null, 'system');
 	assert.deepEqual(systemBoot.vectors, systemImage.vectors);
 	assert.equal(systemBoot.bssBaseAddress, PROGRAM_STATIC_RAM_BASE);
-	assert.deepEqual(systemBoot.staticModulePaths, ['system/init']);
+	assert.deepEqual(systemBoot.systemStaticModulePaths, ['system/init']);
 	assert.deepEqual(systemBoot.cartVectors, { resetProtoIndex: 1, sectionInitProtoIndex: 1, irqProtoIndex: 1 });
 	assert.deepEqual(systemBoot.cartStaticModulePaths, ['cart/init']);
 
 	const cartBoot = linkBootProgramImages(systemImage, null, cartImage, null, 'cart');
 	assert.deepEqual(cartBoot.vectors, { resetProtoIndex: 1, sectionInitProtoIndex: 1, irqProtoIndex: 1 });
 	assert.equal(cartBoot.bssBaseAddress, PROGRAM_STATIC_RAM_BASE);
-	assert.deepEqual(cartBoot.staticModulePaths, ['system/init', 'cart/init']);
+	assert.deepEqual(cartBoot.systemStaticModulePaths, ['system/init']);
 	assert.deepEqual(cartBoot.cartVectors, { resetProtoIndex: 1, sectionInitProtoIndex: 1, irqProtoIndex: 1 });
 	assert.deepEqual(cartBoot.cartStaticModulePaths, ['cart/init']);
 });

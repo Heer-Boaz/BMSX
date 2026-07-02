@@ -87,8 +87,9 @@ as the core Lua global library, `bios/table.lua` as `table`, `bios/string.lua`
 as `string`, `bios/math.lua` as `math`, and `bios/easing.lua` as the animation
 easing library. Those modules execute as BLua using ordinary calls, ROM lookup
 tables, and integer/number instructions. Machine TS/C++ firmware exposes only
-temporary `__bmsx_*` boot primitives for the BIOS to capture; the boot ROM clears
-those primitive globals before cart code runs. `require(...)` is not one of those
+temporary `__bmsx_*` boot primitives for the BIOS to capture; runtime boot clears
+those primitive globals after system static-module initialization and before any
+cart static module or reset vector runs. `require(...)` is not one of those
 primitives and is not a guest runtime global: literal module imports are resolved
 by the compiler into static module initialization and module export slot loads.
 Machine TS/C++ firmware must not expose `math.*`, `easing.*`, `string.*`,

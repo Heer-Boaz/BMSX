@@ -31,6 +31,7 @@
 #include <cstddef>
 #include <memory>
 #include <optional>
+#include <span>
 #include <string>
 #include <string_view>
 #include <unordered_map>
@@ -78,7 +79,7 @@ public:
 	/**
 	 * Boot the runtime with a compiled program.
 	 */
-	void boot(const ProgramImage& image, ProgramMetadata* metadata, ProgramVectorTable vectors, uint32_t dataBaseAddress, uint32_t bssBaseAddress, const std::vector<std::string>& staticModulePaths);
+	void boot(const ProgramImage& image, ProgramMetadata* metadata, ProgramVectorTable vectors, uint32_t dataBaseAddress, uint32_t bssBaseAddress, std::span<const std::string> systemStaticModulePaths, std::span<const std::string> cartStaticModulePaths);
 	void handleLuaError(const std::string& message);
 
 	/**
@@ -162,7 +163,7 @@ public:
 	 */
 	void registerNativeFunction(std::string_view name, NativeFunctionInvoke fn, std::optional<NativeFnCost> cost = std::nullopt);
 
-	void startLoadedProgram(ProgramVectorTable vectors, const std::vector<std::string>& staticModulePaths);
+	void startLoadedProgram(ProgramVectorTable vectors, std::span<const std::string> systemStaticModulePaths, std::span<const std::string> cartStaticModulePaths);
 
 	void resetHardwareState();
 	void resetRuntimeForProgramReload();
@@ -201,7 +202,8 @@ private:
 		Entry,
 	};
 	void setupBuiltins();
-	void runStaticModuleInitializers(const std::vector<std::string>& paths);
+	void clearLuaBootPrimitives();
+	void runStaticModuleInitializers(std::span<const std::string> paths);
 	void runStaticModuleInitializer(const std::string& path);
 	auto valueToString(const Value& value) const -> std::string;
 	void logDebugState() const;

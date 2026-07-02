@@ -13,6 +13,26 @@
 
 namespace bmsx {
 namespace {
+struct LuaBootPrimitive {
+	std::string_view name;
+	BuiltinFunctionId id;
+};
+
+constexpr std::array<LuaBootPrimitive, 12> LUA_BOOT_PRIMITIVES{{
+	{ "__bmsx_next", BuiltinFunctionId::Next },
+	{ "__bmsx_type", BuiltinFunctionId::Type },
+	{ "__bmsx_setmetatable", BuiltinFunctionId::SetMetatable },
+	{ "__bmsx_getmetatable", BuiltinFunctionId::GetMetatable },
+	{ "__bmsx_rawget", BuiltinFunctionId::RawGet },
+	{ "__bmsx_rawset", BuiltinFunctionId::RawSet },
+	{ "__bmsx_select", BuiltinFunctionId::Select },
+	{ "__bmsx_string_byte", BuiltinFunctionId::StringByte },
+	{ "__bmsx_string_char", BuiltinFunctionId::StringChar },
+	{ "__bmsx_error", BuiltinFunctionId::Error },
+	{ "__bmsx_pcall", BuiltinFunctionId::PCall },
+	{ "__bmsx_xpcall", BuiltinFunctionId::XPCall },
+}};
+
 template <typename Container>
 Table* buildNumericArrayTable(CPU& cpu, const Container& values);
 
@@ -369,18 +389,9 @@ void Runtime::setupBuiltins() {
 	setGlobal("sys_print_char", valueNumber(static_cast<double>(IO_SYS_PRINT_CHAR)));
 	setGlobal("sys_print_flush", valueNumber(static_cast<double>(IO_SYS_PRINT_FLUSH)));
 
-	setGlobal("__bmsx_next", cpu.createBuiltinFunction(BuiltinFunctionId::Next));
-	setGlobal("__bmsx_type", cpu.createBuiltinFunction(BuiltinFunctionId::Type));
-	setGlobal("__bmsx_setmetatable", cpu.createBuiltinFunction(BuiltinFunctionId::SetMetatable));
-	setGlobal("__bmsx_getmetatable", cpu.createBuiltinFunction(BuiltinFunctionId::GetMetatable));
-	setGlobal("__bmsx_rawget", cpu.createBuiltinFunction(BuiltinFunctionId::RawGet));
-	setGlobal("__bmsx_rawset", cpu.createBuiltinFunction(BuiltinFunctionId::RawSet));
-	setGlobal("__bmsx_select", cpu.createBuiltinFunction(BuiltinFunctionId::Select));
-	setGlobal("__bmsx_string_byte", cpu.createBuiltinFunction(BuiltinFunctionId::StringByte));
-	setGlobal("__bmsx_string_char", cpu.createBuiltinFunction(BuiltinFunctionId::StringChar));
-	setGlobal("__bmsx_error", cpu.createBuiltinFunction(BuiltinFunctionId::Error));
-	setGlobal("__bmsx_pcall", cpu.createBuiltinFunction(BuiltinFunctionId::PCall));
-	setGlobal("__bmsx_xpcall", cpu.createBuiltinFunction(BuiltinFunctionId::XPCall));
+	for (const LuaBootPrimitive& primitive : LUA_BOOT_PRIMITIVES) {
+		setGlobal(primitive.name, cpu.createBuiltinFunction(primitive.id));
+	}
 	auto* stringTable = cpu.createTable();
 
 	machine.cpu.setStringIndexTable(stringTable);
@@ -426,6 +437,12 @@ void Runtime::setupBuiltins() {
 	setGlobal("machine_manifest", valueTable(buildMachineManifestTable(machineManifest())));
 
 
+}
+
+void Runtime::clearLuaBootPrimitives() {
+	for (const LuaBootPrimitive& primitive : LUA_BOOT_PRIMITIVES) {
+		setGlobal(primitive.name, valueNil());
+	}
 }
 
 } // namespace bmsx

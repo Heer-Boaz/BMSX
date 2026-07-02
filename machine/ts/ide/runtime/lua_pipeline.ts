@@ -25,7 +25,7 @@ import {
 import type { RawRomSource } from '../../rompack/source';
 import { Table, type ProgramMetadata, type Value, isNativeFunction, isNativeObject } from '../../machine/cpu/cpu';
 import { asStringId, valueIsString } from '../../machine/cpu/cpu';
-import type { Runtime } from '../../machine/runtime/runtime';
+import { EMPTY_STATIC_MODULE_PATHS, type Runtime } from '../../machine/runtime/runtime';
 
 function installFreshLuaInterpreter(runtime: Runtime): LuaInterpreter {
 	resetLuaInteroperabilityState(runtime);
@@ -234,7 +234,7 @@ function bootSystemSourceProgram(runtime: Runtime, interpreter: LuaInterpreter, 
 	let programImage = system.image;
 	let metadata: ProgramMetadata = system.symbols;
 	let vectors = system.image.vectors;
-	let staticModulePaths: ReadonlyArray<string> = system.image.sections.rodata.staticModulePaths;
+	let systemStaticModulePaths: ReadonlyArray<string> = system.image.sections.rodata.staticModulePaths;
 	runtime.cartVectors = null;
 	runtime.cartDataBaseAddress = null;
 	runtime.cartBssBaseAddress = null;
@@ -257,7 +257,7 @@ function bootSystemSourceProgram(runtime: Runtime, interpreter: LuaInterpreter, 
 		programImage = linked.programImage;
 		metadata = linked.metadata;
 		vectors = linked.vectors;
-		staticModulePaths = linked.staticModulePaths;
+		systemStaticModulePaths = linked.systemStaticModulePaths;
 		runtime.programDataBaseAddress = linked.dataBaseAddress;
 		runtime.programBssBaseAddress = linked.bssBaseAddress;
 		runtime.setLinkedCartVectors(linked.cartVectors, linked.cartDataBaseAddress, linked.cartBssBaseAddress, linked.cartStaticModulePaths);
@@ -272,7 +272,7 @@ function bootSystemSourceProgram(runtime: Runtime, interpreter: LuaInterpreter, 
 	const program = inflateExecutableProgramImage(programImage, metadata, runtime.programDataBaseAddress, runtime.programBssBaseAddress);
 	runtime.machine.cpu.setProgram(program, metadata);
 	runtime.programMetadata = metadata;
-	runtime.startLoadedProgram(vectors, staticModulePaths);
+	runtime.startLoadedProgram(vectors, systemStaticModulePaths, EMPTY_STATIC_MODULE_PATHS);
 	return true;
 }
 
@@ -282,7 +282,8 @@ function bootProgramImage(runtime: Runtime, options?: { preserveState?: boolean 
 	let programImage = systemImages.program;
 	let metadata: ProgramMetadata | null = systemImages.symbols;
 	let vectors = systemImages.program.vectors;
-	let staticModulePaths: ReadonlyArray<string> = systemImages.program.sections.rodata.staticModulePaths;
+	let systemStaticModulePaths: ReadonlyArray<string> = systemImages.program.sections.rodata.staticModulePaths;
+	let cartStaticModulePaths: ReadonlyArray<string> = EMPTY_STATIC_MODULE_PATHS;
 	runtime.cartVectors = null;
 	runtime.cartDataBaseAddress = null;
 	runtime.cartBssBaseAddress = null;
@@ -297,7 +298,10 @@ function bootProgramImage(runtime: Runtime, options?: { preserveState?: boolean 
 			programImage = linked.programImage;
 			metadata = linked.metadata;
 			vectors = linked.vectors;
-			staticModulePaths = linked.staticModulePaths;
+			systemStaticModulePaths = linked.systemStaticModulePaths;
+			if (bootingCart) {
+				cartStaticModulePaths = linked.cartStaticModulePaths;
+			}
 			runtime.programDataBaseAddress = linked.dataBaseAddress;
 			runtime.programBssBaseAddress = linked.bssBaseAddress;
 			runtime.setLinkedCartVectors(linked.cartVectors, linked.cartDataBaseAddress, linked.cartBssBaseAddress, linked.cartStaticModulePaths);
@@ -318,7 +322,7 @@ function bootProgramImage(runtime: Runtime, options?: { preserveState?: boolean 
 	try {
 		runtime.machine.cpu.setProgram(inflated, metadata);
 		runtime.programMetadata = metadata;
-		runtime.startLoadedProgram(vectors, staticModulePaths);
+		runtime.startLoadedProgram(vectors, systemStaticModulePaths, cartStaticModulePaths);
 		return true;
 	} catch (error) {
 		console.info('Program-image boot failed.');
@@ -375,7 +379,7 @@ function bootLuaProgram(runtime: Runtime, options?: { preserveState?: boolean; s
 		runtime.machine.vdp.resetIngressState();
 		runtime.machine.cpu.setProgram(program, compiled.metadata);
 		runtime.programMetadata = compiled.metadata;
-		runtime.startLoadedProgram(programImage.vectors, programImage.sections.rodata.staticModulePaths);
+		runtime.startLoadedProgram(programImage.vectors, EMPTY_STATIC_MODULE_PATHS, programImage.sections.rodata.staticModulePaths);
 		return true;
 	}
 	catch (error) {
