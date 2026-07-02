@@ -1,7 +1,7 @@
 import { glsl } from "esbuild-plugin-glsl";
 // @ts-ignore
 import type { Stats } from 'fs';
-import { CART_ROM_HEADER_SIZE, CART_ROM_MAGIC_BYTES, CART_VDP_CLASS_PSX, PROGRAM_BOOT_HEADER_VERSION } from '../../machine/ts/rompack/format';
+import { BIOS_ATLAS_ID, CART_ROM_HEADER_SIZE, CART_ROM_MAGIC_BYTES, CART_VDP_CLASS_PSX, PROGRAM_BOOT_HEADER_VERSION } from '../../machine/ts/rompack/format';
 import { assertRomAssetSymbolsMatchToc, type RomAssetSymbol } from '../../machine/ts/rompack/asset_symbols';
 import type { asset_type, AudioMeta, BoundingBoxPrecalc, CartridgeLayerId, GLTFMesh, HitPolygonsPrecalc, ImgMeta, Polygon, ProgramBootHeader, RectBounds, RomAsset, RomManifest, vec2arr } from '../../machine/ts/rompack/format';
 import { collectRomAssetPayloadRanges } from '../../machine/ts/rompack/asset_layout';
@@ -9,7 +9,8 @@ import { SYSTEM_BOOT_ENTRY_PATH } from '../../machine/ts/core/system';
 import { encodeRomToc } from '../../machine/ts/rompack/tooling/toc_encode';
 import type { LuaChunk } from '../../machine/ts/lua/syntax/ast';
 import { encodeAudioAssetToAdpcm } from './adpcm';
-import { resolveTargetAtlasId, createOptimizedAtlas, generateAtlasAssetId } from './atlasbuilder';
+import { resolveTargetAtlasId, createOptimizedAtlas, generateAtlasAssetId, splitAtlasImagesByVramUsage } from './atlasbuilder';
+import { RPU_QUAD_MAX_CART_ATLAS_BYTES, RPU_QUAD_PRIMARY_TEXTURE_SLOT_BYTES, RPU_QUAD_SYSTEM_TEXTURE_SLOT_BYTES } from './texture_atlas_contract';
 import { BoundingBoxExtractor } from './boundingbox_extractor';
 import { collectGLTFExternalBufferFileSet, loadGLTFModel } from './gltfloader';
 import type { TextureAtlasResource, ImageResource, Resource, resourcetype, RomPackerTarget } from './rompacker.rompack';
@@ -1160,7 +1161,7 @@ export async function getResMetaList(respaths: string[], _romname?: string, opti
 	}
 	for (const id of Array.from(targetAtlasIdSet).sort((a, b) => a - b)) {
 		const name = generateAtlasAssetId(id);
-		result.push({ filepath: undefined, name, ext: '.atlas', type: 'atlas', id: imgid++, atlasId: id });
+		result.push({ name, ext: '.atlas', type: 'atlas', id: imgid++, atlasId: id });
 	}
 
 	result.sort((left, right) => {
@@ -1662,13 +1663,45 @@ export async function createAtlasses(resources: Resource[], reportProgress?: Pro
 	if (GENERATE_AND_USE_TEXTURE_ATLAS) {
 		const atlases = resources.filter((res): res is TextureAtlasResource => res.type === 'atlas');
 		if (atlases.length === 0) throw new Error('No texture atlas resources found in the "resources"-list. The process of preparing the list of all resources (assets) should also add any texture atlases that are to be generated. Thus, this is a bug in the code that prepares the list of resources :-(');
-		// Determine the texture atlas ids to generate
+		const image_assets = resources.filter((resource): resource is ImageResource => resource.type === 'image');
+		let nextAtlasResourceId = resources.reduce((maxId, resource) => resource.id && resource.id > maxId ? resource.id : maxId, 0) + 1;
+		let nextAtlasId = atlases.reduce((maxId, atlas) => atlas.atlasId > maxId ? atlas.atlasId : maxId, 0) + 1;
+		const atlasQueue: TextureAtlasResource[] = [];
+		const atlasByteBudgetQueue: number[] = [];
 		for (const atlas of atlases) {
-			const image_assets = resources.filter((resource): resource is ImageResource => resource.type === 'image');
+			const atlasByteBudget = atlas.atlasId === BIOS_ATLAS_ID ? RPU_QUAD_SYSTEM_TEXTURE_SLOT_BYTES : atlas.atlasId === 0 ? RPU_QUAD_PRIMARY_TEXTURE_SLOT_BYTES : RPU_QUAD_MAX_CART_ATLAS_BYTES;
+			const filteredImages = image_assets.filter(resource => resource.targetAtlasId === atlas.atlasId);
+			const groups = atlas.atlasId === BIOS_ATLAS_ID || filteredImages.length === 0 ? [filteredImages] : splitAtlasImagesByVramUsage(filteredImages, atlasByteBudget);
+			for (let groupIndex = 0; groupIndex < groups.length; groupIndex += 1) {
+				const group = groups[groupIndex];
+				if (groupIndex === 0) {
+					atlasQueue.push(atlas);
+					atlasByteBudgetQueue.push(atlasByteBudget);
+				} else {
+					const splitAtlasId = nextAtlasId;
+					nextAtlasId += 1;
+					const splitAtlas: TextureAtlasResource = {
+						name: generateAtlasAssetId(splitAtlasId),
+						ext: '.atlas',
+						type: 'atlas',
+						id: nextAtlasResourceId,
+						atlasId: splitAtlasId,
+					};
+					nextAtlasResourceId += 1;
+					resources.push(splitAtlas);
+					atlasQueue.push(splitAtlas);
+					atlasByteBudgetQueue.push(atlasByteBudget);
+					for (let imageIndex = 0; imageIndex < group.length; imageIndex += 1) {
+						group[imageIndex].targetAtlasId = splitAtlasId;
+					}
+				}
+			}
+		}
+		for (let atlasIndex = 0; atlasIndex < atlasQueue.length; atlasIndex += 1) {
+			const atlas = atlasQueue[atlasIndex];
 			const filteredImages = image_assets.filter(resource => resource.targetAtlasId === atlas.atlasId);
 			reportProgress?.(`atlas ${atlas.name} (${filteredImages.length} images)`);
-			const atlasCanvas = createOptimizedAtlas(filteredImages);
-			if (!atlasCanvas) throw new Error(`Failed to create atlases for ${atlas.name}.`);
+			const atlasCanvas = createOptimizedAtlas(filteredImages, atlasByteBudgetQueue[atlasIndex]);
 			atlas.img = atlasCanvas; // Store the canvas in the resource (to extract the image properties later during `processResources`)
 			atlas.buffer = atlasCanvas.toBuffer('image/png'); // Convert canvas to PNG buffer
 			reportProgress?.(`write atlas ${atlas.name}`);

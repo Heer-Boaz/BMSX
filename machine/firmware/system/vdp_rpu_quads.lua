@@ -24,9 +24,9 @@ local quad_vertex_count<const> = 4
 local quad_vertex_bytes<const> = quad_vertex_stride * quad_vertex_count
 local instance_stride<const> = sizeof(rpu_quad_instance)
 local instance_batch_capacity<const> = 1024
-local instance_frame_capacity<const> = 4096
+local instance_frame_capacity<const> = 1024
 local instance_frame_bytes<const> = instance_stride * instance_frame_capacity
-local draw_frame_capacity<const> = 4096
+local draw_frame_capacity<const> = 1024
 local surface_desc_count<const> = 3
 local vram_staging_base<const> = 0x11000000
 local rpu_quad_vertex_vram_addr<const> = 0
@@ -37,10 +37,12 @@ local rpu_draw_desc_vram_addr<const> = rpu_pass_desc_vram_addr + 64 * 0x00000024
 local rpu_stream_desc_vram_addr<const> = rpu_draw_desc_vram_addr + draw_frame_capacity * 0x0000002c
 local rpu_texture_desc_vram_addr<const> = rpu_stream_desc_vram_addr + draw_frame_capacity * 2 * 0x0000000c
 local rpu_texture_region_vram_addr<const> = rpu_texture_desc_vram_addr + draw_frame_capacity * 0x00000008
-local rpu_slot_texture_bytes<const> = (0x00400000 - rpu_texture_region_vram_addr) // 3
+local rpu_system_texture_bytes<const> = 0x00048000
+local rpu_primary_texture_bytes<const> = 0x00068000
+local rpu_secondary_texture_bytes<const> = 0x001c0000 - rpu_texture_region_vram_addr - rpu_system_texture_bytes - rpu_primary_texture_bytes
 local rpu_system_texture_vram_addr<const> = rpu_texture_region_vram_addr
-local rpu_primary_texture_vram_addr<const> = rpu_system_texture_vram_addr + rpu_slot_texture_bytes
-local rpu_secondary_texture_vram_addr<const> = rpu_primary_texture_vram_addr + rpu_slot_texture_bytes
+local rpu_primary_texture_vram_addr<const> = rpu_system_texture_vram_addr + rpu_system_texture_bytes
+local rpu_secondary_texture_vram_addr<const> = rpu_primary_texture_vram_addr + rpu_primary_texture_bytes
 local quad_addr<const> = vram_staging_base + rpu_quad_vertex_vram_addr
 local instance_addr<const> = vram_staging_base + rpu_instance_vram_addr
 local instance_frame_end<const> = instance_addr + instance_frame_bytes
@@ -57,6 +59,10 @@ local slot_texture_vram_addr<const> = {}
 slot_texture_vram_addr[0x00000002] = rpu_system_texture_vram_addr
 slot_texture_vram_addr[0x00000000] = rpu_primary_texture_vram_addr
 slot_texture_vram_addr[0x00000001] = rpu_secondary_texture_vram_addr
+local slot_texture_bytes<const> = {}
+slot_texture_bytes[0x00000002] = rpu_system_texture_bytes
+slot_texture_bytes[0x00000000] = rpu_primary_texture_bytes
+slot_texture_bytes[0x00000001] = rpu_secondary_texture_bytes
 
 local surface_width<const> = {}
 local surface_height<const> = {}
@@ -252,7 +258,7 @@ function vdp_rpu_quads.set_slot_dim(slot, width, height)
 	surface_height[surface_desc_addr] = height
 	write_quad_vertices()
 	write_surface_desc(slot)
-	return vram_staging_base + slot_texture_vram_addr[slot], width * height * 4
+	return vram_staging_base + slot_texture_vram_addr[slot], slot_texture_bytes[slot]
 end
 
 function vdp_rpu_quads.clear_color(color)

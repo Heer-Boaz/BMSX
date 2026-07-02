@@ -25,9 +25,9 @@ test('machine registry exposes the psx fixed hardware model', () => {
 		imgDecBytesPerSec: 26_214_400,
 		dmaBytesPerSecIso: 8_388_608,
 		dmaBytesPerSecBulk: 26_214_400,
-		ramBytes: 0x08000000,
-		slotBytes: 167_772_160,
-		stagingBytes: 41_943_040,
+		ramBytes: 0x00400000,
+		slotBytes: 0x00200000,
+		stagingBytes: 0x001c0000,
 		biosVdpMode: VDP_MODE_PSX_WORD,
 	});
 });

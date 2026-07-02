@@ -5,6 +5,8 @@ local story<const> = require('story')
 local start_node<const> = 'title'
 -- local start_node<const> = 'combat_wekker'
 local irq_mask_addr<const> = 0x0800010c
+local irq_img_done<const> = 0x0004
+local irq_img_error<const> = 0x0008
 local irq_vblank<const> = 0x0010
 local irq_apu<const> = 0x0200
 local vblank_count = 0
@@ -234,11 +236,13 @@ local register_director<const> = function()
 end
 
 function init()
-	on_irq(irq_vblank, function()
-		vblank_count = vblank_count + 1
+	on_irq(irq_img_done | irq_img_error | irq_vblank, function(_, flags)
+		if (flags & irq_vblank) ~= 0 then
+			vblank_count = vblank_count + 1
+		end
 	end)
+	mem[irq_mask_addr] = irq_img_done | irq_img_error | irq_vblank | irq_apu
 	mem[0x08000008] = 2
-	vdp_load_slot(0x00000000, 0)
 	combat_module.define_fsm()
 	build_director_fsm()
 	combat_module.register_director()
@@ -344,7 +348,7 @@ local wait_vblank<const> = function()
 end
 
 init()
-mem[irq_mask_addr] = irq_vblank | irq_apu
+start_image_load(story.title.bg, image_residency_background)
 new_game()
 mem[0x08000194] = 0x00000001
 while true do

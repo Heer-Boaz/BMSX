@@ -7,7 +7,7 @@ This draft defines the data contract for the Render Processing Unit (RPU). The R
 ## VDP-Local Address Space
 
 ```
-VDP-local address: 0 .. VDP_RPU_PARAM_MEM_SIZE-1   (u32, 4MB range)
+VDP-local address: 0 .. VDP_RPU_PARAM_MEM_SIZE-1   (u32, 1.75 MB range)
 System bus alias:  VRAM_STAGING_BASE + vdp_local_addr
 ```
 
@@ -134,7 +134,7 @@ export const VDP_RPU_STREAM_BINDING_CAPACITY = 8192;
 export const VDP_RPU_CONSTANT_BINDING_CAPACITY = 8192;
 export const VDP_RPU_TEXTURE_BINDING_CAPACITY = 4096;
 
-export const VDP_RPU_PARAM_MEM_SIZE = 0x00400000;  // 4MB VDP-local memory
+export const VDP_RPU_PARAM_MEM_SIZE = 0x001c0000;  // 1.75 MB VDP-local memory
 ```
 
 ## Backend feature contract

@@ -1,6 +1,6 @@
 # BMSX Architecture Contract
 
-Last checked: 2026-06-02.
+Last checked: 2026-07-02.
 
 This document is the current machine/host boundary contract. It is not a work
 log, a prompt, or a migration diary. If implementation changes land, this file
@@ -50,10 +50,10 @@ hardware documentation lists cart-visible values. Cart, BIOS, or cart-library
 source defines the constants it uses. The emulator runtime must not make a
 value observable merely by seeding a friendly global name.
 
-Runtime-injected Lua globals are reserved for language/runtime builtins,
-BIOS/firmware entrypoints, manifest/runtime objects, and explicit helper
-functions whose behavior is part of the firmware contract. Raw hardware values
-that still exist as globals are architecture debt, not precedent for new code.
+Runtime-injected host Lua globals are not a cart API. Machine TS/C++ may expose
+temporary hidden `__bmsx_*` boot primitives only for BIOS Lua to capture; runtime
+boot clears those primitives before cart code runs. Public guest names are
+installed by BIOS/firmware Lua or ordinary cart Lua, not by host seeding.
 
 Migration warning: earlier slices sometimes used cart manifests or host-seeded
 Lua library globals as convenient cart-visible API. Treat that as host-magic
@@ -143,6 +143,30 @@ and inject input events. It must not be the owner of cart-observable semantics.
 A BMSX host owns the embedding/process edge and physical host services. It may be
 a browser bootstrap, a Node executable, a libretro core entrypoint, or a local
 frontend executable. It never owns cart-observable machine semantics.
+
+## Console model and timing
+
+The active machine model is `psx`. The model owns fixed hardware facts:
+50 MHz CPU clock, 4 MB RAM, PSX DMA/IMGDEC transfer rates, 2 MB VDP slot
+storage, 1.75 MB VDP-local staging storage, and BIOS default VDP mode `2`.
+
+The active VDP class is also `psx`. A cart ROM carries a VDP-class marker in
+the ROM header; the only supported marker today is `psx`. Guest Lua does not
+receive a `machine_manifest`, `cart_manifest`, or raw hardware globals to
+discover these facts. The header and machine registry are host/tooling input;
+cart-visible behavior is still programmed through CPU-visible ROM, RAM, MMIO,
+BIOS Lua, and link symbols.
+
+Region is runtime machine state, not a model field. The `sys_region` MMIO word
+selects PAL (`0`, 50 Hz, 313 total scanlines) or NTSC (`1`, 59.940060 Hz, 262
+total scanlines). Runtime timing, cycle budget, audio mixer pacing, libretro AV
+publication, and save-state restore consume that region state. There is no
+refresh-rate inference from ufps.
+
+VDP modes are VDP register state inside the active VDP class: mode `0` is
+MSX1 256x192, mode `1` is MSX2 256x212, and mode `2` is PSX 320x240. Carts and
+firmware program the VDP mode explicitly. Manifests do not own `vdp_mode` or
+derived `render_size`.
 
 ## Runtime container vocabulary
 
@@ -271,6 +295,36 @@ const aggregates. The producer validates the schema and emits immutable ROM
 bytes plus named symbols; runtime/game code consumes those concrete
 address/length symbols through the content reader.
 
+Decoding schema-rich payloads once at cart initialization through
+address/length symbols is an acceptable cold authoring-data path. The platform
+does not mandate fixed binary layouts for every map, room, timeline, registry,
+or asset record. Fixed layouts become a machine/tooling contract only when a
+concrete asset producer and hot/runtime consumer require that contract.
+
+Program images are object images until linked. Symbolic relocs remain linker
+metadata; `module`, `export_proto`, section-address, and const-value relocs must
+not leak as placeholder runtime strings into executable const-pools or Lua
+values. The program/linker owner resolves object images to executable program
+state before CPU install.
+
+Program images carry a vector table: reset, section-init, and IRQ. Cold boot
+runs section-init, then static module initialization, then the reset vector.
+Hot-resume installs the same linked image shape but does not re-run section-init
+against live cart RAM.
+
+BLua sections are machine storage, not runtime metadata. `.rodata` is immutable
+CPU-readable PROGRAM_ROM storage; `.data` is RAM storage with a PROGRAM_ROM
+load image; `.bss` is zeroed RAM storage. BLua declarations create typed storage
+symbols and startup code copies `.data` and zeros `.bss` with ordinary CPU
+memory operations. Runtime and rompacker do not parse sections to initialize
+cart data on behalf of the game.
+
+Const modules are the static symbol ABI. They may export constants, section
+symbols, and function text-symbols without producing a runtime module table,
+module proto, global slot, or runtime `require` call. Dynamic Lua modules keep
+Lua table/function semantics where gameplay deliberately chooses the dynamic
+lane.
+
 ## Memory, CPU, and scheduler
 
 - `Memory` owns RAM, ROM windows, IO slots, and MMIO callback dispatch.
@@ -280,6 +334,11 @@ address/length symbols through the content reader.
   host frame pump may request work; it does not own device state transitions.
 - VBlank is a machine edge. Devices with VBlank behavior expose explicit edge
   methods and latch/commit their own state there.
+
+The static cart ABI is moving toward words, registers, addresses, sections,
+memory, and symbols as the primary representation. `CPU.Value` still exists for
+the dynamic Lua object-world, but it is not the target transport for hot/static
+machine-code ABI.
 
 ## Save-state contract
 
@@ -496,6 +555,10 @@ Internal units:
 - `RPU` owns the raw cart-visible render contract: buffer records, surface
   records, constant banks, fixed stream layouts, fixed shader-variant ids,
   retained render passes, and retained draw commands.
+  Firmware quad helpers carve VDP-local staging into descriptor storage plus
+  concrete texture regions: 288 KiB system atlas, 416 KiB primary cart slot,
+  and 984704 bytes secondary cart slot. Rompacker atlas splitting uses that
+  secondary-slot byte budget, not a pixel-only texture dimension.
 - `LPU` owns raw ambient, directional, and point-light register words.
 - `MFU` owns raw morph-weight register words.
 - `JTU` owns raw joint-matrix register words.
@@ -763,5 +826,6 @@ They must not be prompts, migration journals, marketing copy, or product-pitch
 explanations. If a document cannot be made into a current hardware contract, it
 should be deleted.
 
-The active work-order checklist lives in `docs/goal.md`; this architecture file
-remains the stable machine contract.
+The active architecture-slice status table lives in
+`docs/open_architecture_slices.md`; the broader hardware-emulation goal lives in
+`docs/goal.md`. This architecture file remains the stable machine contract.

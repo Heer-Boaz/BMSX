@@ -227,6 +227,33 @@ combat_results_bg_color = p3_blue_color
 combat_results_bg_alpha_byte = 0xd9
 combat_results_bg_visible_color = (combat_results_bg_alpha_byte << 24) | (combat_results_bg_color & 0x00ffffff)
 
+image_residency_background = 0x00000000
+image_residency_sprites = 0x00000001
+local unloaded_atlas_id<const> = 0xffffffff
+local loaded_primary_atlas = unloaded_atlas_id
+local loaded_secondary_atlas = unloaded_atlas_id
+local active_background_atlas = unloaded_atlas_id
+
+function start_image_load(imgid, preferred_slot)
+	local atlas_id<const> = vdp_img_rect(imgid).atlas_id
+	if loaded_primary_atlas == atlas_id or loaded_secondary_atlas == atlas_id then
+		return false
+	end
+	local slot = preferred_slot
+	if slot == image_residency_background and active_background_atlas == loaded_primary_atlas then
+		slot = image_residency_sprites
+	elseif slot == image_residency_sprites and active_background_atlas == loaded_secondary_atlas then
+		slot = image_residency_background
+	end
+	vdp_load_slot(slot, atlas_id)
+	if slot == image_residency_background then
+		loaded_primary_atlas = atlas_id
+	else
+		loaded_secondary_atlas = atlas_id
+	end
+	return true
+end
+
 function clear_texts(text_ids)
 	for i = 1, #text_ids do
 		oget(text_ids[i]):clear_text()
@@ -237,6 +264,7 @@ function apply_background(id)
 	if id == nil then
 		return
 	end
+	active_background_atlas = vdp_img_rect(id).atlas_id
 	local bg<const> = oget(bg_id)
 	bg:gfx(id)
 end
@@ -244,6 +272,7 @@ end
 function show_background(id)
 	local bg<const> = oget(bg_id)
 	if id ~= nil then
+		active_background_atlas = vdp_img_rect(id).atlas_id
 		bg:gfx(id)
 	end
 	bg.visible = true

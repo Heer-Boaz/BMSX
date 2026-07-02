@@ -2,6 +2,7 @@ import type { Canvas, CanvasRenderingContext2D } from 'canvas';
 import { resolve as resolvePath, sep as pathSep } from 'path';
 import { commonResPath } from './rombuilder';
 import { BIOS_ATLAS_ID, generateAtlasAssetId } from '../../machine/ts/rompack/format';
+import { RPU_QUAD_MAX_CART_ATLAS_BYTES, TEXTURE_ATLAS_RGBA_BYTES_PER_PIXEL } from './texture_atlas_contract';
 import { AtlasTexcoords, ImageResource } from './rompacker.rompack';
 export { generateAtlasAssetId };
 
@@ -19,6 +20,7 @@ const ATLAS_IMAGE_PADDING = 1;
 
 export type Rect = { width: number; height: number; id: number; };
 export type Bin = { x: number; y: number; width: number; height: number; };
+type PackedAtlas = { items: { item: Rect, x: number, y: number; }[], width: number, height: number; };
 
 export function resolveTargetAtlasId(filepath: string, current?: number): number {
 	const abs = resolvePath(filepath);
@@ -40,9 +42,9 @@ export function resolveTargetAtlasId(filepath: string, current?: number): number
  * Splits a free rectangle into smaller rectangles based on the position and size of a used rectangle
  * @param freeRect The free rectangle to split.
  * @param usedRect The used rectangle to use as a reference for splitting the free rectangle.
- * @returns An array of new free rectangles created by splitting the original free rectangle, or null when the rectangles do not overlap.
+ * @returns An array of new free rectangles created by splitting the original free rectangle, or false when the rectangles do not overlap.
  */
-function splitFreeRectangle(freeRect: Bin, usedRect: Bin): Bin[] {
+function splitFreeRectangle(freeRect: Bin, usedRect: Bin): Bin[] | false {
 	const overlapMinX = Math.max(freeRect.x, usedRect.x);
 	const overlapMinY = Math.max(freeRect.y, usedRect.y);
 	const overlapMaxX = Math.min(freeRect.x + freeRect.width, usedRect.x + usedRect.width);
@@ -50,7 +52,7 @@ function splitFreeRectangle(freeRect: Bin, usedRect: Bin): Bin[] {
 
 	// If there is no intersection between the rectangles, keep the original free rectangle.
 	if (overlapMinX >= overlapMaxX || overlapMinY >= overlapMaxY) {
-		return null;
+		return false;
 	}
 
 	const newFreeRects: Bin[] = [];
@@ -143,7 +145,7 @@ function isContained(rect1: Bin, rect2: Bin): boolean {
  * @param binHeight The maximum height of the texture atlas.
  * @returns An object containing the packed rectangles, their positions in the texture atlas, and the dimensions of the texture atlas.
  */
-function maximalRectanglesPacker(rects: Rect[], binWidth: number, binHeight: number): { items: { item: Rect, x: number, y: number; }[], width: number, height: number; } {
+function maximalRectanglesPacker(rects: Rect[], binWidth: number, binHeight: number): PackedAtlas {
 	// Sort the rectangles by area in descending order
 	const sortedRects = rects.slice().sort((a, b) => b.width * b.height - a.width * a.height);
 
@@ -154,8 +156,8 @@ function maximalRectanglesPacker(rects: Rect[], binWidth: number, binHeight: num
 	const freeRectangles: Bin[] = [{ x: 0, y: 0, width: binWidth, height: binHeight }];
 
 	// Helper function to find the best placement for a rectangle
-	function findBestPlacement(rect: Rect): { bin: Bin, score: number; } {
-		let bestBin: Bin = null;
+	function findBestPlacement(rect: Rect): { bin: Bin, score: number; } | false {
+		let bestBin: Bin | false = false;
 		let bestScore = Number.MAX_VALUE;
 
 		for (const freeRect of freeRectangles) {
@@ -174,7 +176,7 @@ function maximalRectanglesPacker(rects: Rect[], binWidth: number, binHeight: num
 			}
 		}
 
-		return bestBin ? { bin: bestBin, score: bestScore } : null;
+		return bestBin ? { bin: bestBin, score: bestScore } : false;
 	}
 
 	// Pack all rectangles
@@ -223,7 +225,7 @@ type Shelf = {
  * @param binHeight The maximum height of the texture atlas.
  * @returns An object containing the packed rectangles, their positions in the texture atlas, and the dimensions of the texture atlas.
  */
-function shelfBinPacker(rects: Rect[], binWidth: number, binHeight: number): { items: { item: Rect, x: number, y: number; }[], width: number, height: number; } {
+function shelfBinPacker(rects: Rect[], binWidth: number, binHeight: number): PackedAtlas | false {
 	// Sort the rectangles by height in descending order
 	const sortedRects = rects.slice().sort((a, b) => b.height - a.height);
 
@@ -251,7 +253,7 @@ function shelfBinPacker(rects: Rect[], binWidth: number, binHeight: number): { i
 			};
 
 			if (currentShelf.y + currentShelf.height > binHeight) {
-				throw new Error("The rectangles do not fit into the given bin dimensions.");
+				return false;
 			}
 
 			// Add the rectangle to the new shelf
@@ -285,7 +287,7 @@ type Node = {
  * @param binHeight The maximum height of the texture atlas.
  * @returns An object containing the packed rectangles, their positions in the texture atlas, and the dimensions of the texture atlas.
  */
-function tprfPacker(rects: Rect[], binWidth: number, binHeight: number): { items: { item: Rect, x: number, y: number; }[], width: number, height: number; } {
+function tprfPacker(rects: Rect[], binWidth: number, binHeight: number): PackedAtlas | false {
 	// Sort the rectangles by area in descending order
 	const sortedRects = rects.slice().sort((a, b) => b.width * b.height - a.width * a.height);
 
@@ -349,7 +351,7 @@ function tprfPacker(rects: Rect[], binWidth: number, binHeight: number): { items
 
 	// Pack all rectangles
 	for (const rect of sortedRects) {
-		let bestNode: Node = null;
+		let bestNode: Node | false = false;
 		let bestPerimeter = Number.MAX_VALUE;
 
 		// Find the best node to place the rectangle
@@ -365,7 +367,7 @@ function tprfPacker(rects: Rect[], binWidth: number, binHeight: number): { items
 		}
 
 		if (!bestNode) {
-			throw new Error("The rectangles do not fit into the given bin dimensions.");
+			return false;
 		}
 
 		// Add the rectangle to the best node
@@ -405,80 +407,145 @@ function tprfPacker(rects: Rect[], binWidth: number, binHeight: number): { items
 	return { items: items, width: width, height: height };
 }
 
-export function createOptimizedAtlas(imageResources: ImageResource[]): Canvas {
-	if (imageResources.length === 0) {
-		return createCanvas(1, 1);
+function imageResourceRects(imageResources: ImageResource[]): Rect[] {
+	const rects: Rect[] = [];
+	for (let index = 0; index < imageResources.length; index += 1) {
+		const resource = imageResources[index];
+		const img = resource.img!;
+		rects.push({
+			width: img.width + ATLAS_IMAGE_PADDING * 2,
+			height: img.height + ATLAS_IMAGE_PADDING * 2,
+			id: resource.id,
+		});
 	}
-	const rects = imageResources.map(img_resource => ({
-		x: undefined as number,
-		y: undefined as number,
-		width: (img_resource.img?.width ?? 0) + ATLAS_IMAGE_PADDING * 2,
-		height: (img_resource.img?.height ?? 0) + ATLAS_IMAGE_PADDING * 2,
-		id: img_resource.id
-	}));
+	return rects;
+}
 
-	const results: Array<{ items: { item: Rect, x: number, y: number; }[], width: number, height: number; }> = [];
-	const packers: Array<{ name: string; fn: (rectangles: Rect[], width: number, height: number) => { items: { item: Rect, x: number, y: number; }[], width: number, height: number; }; }> = [
+function packedAtlasByteLength(packed: PackedAtlas): number {
+	return packed.width * packed.height * TEXTURE_ATLAS_RGBA_BYTES_PER_PIXEL;
+}
+
+function packOptimizedAtlas(imageResources: ImageResource[]): PackedAtlas | false {
+	const rects = imageResourceRects(imageResources);
+	const results: PackedAtlas[] = [];
+	const packers: Array<{ name: string; fn: (rectangles: Rect[], width: number, height: number) => PackedAtlas | false; }> = [
 		{ name: 'maximalRectanglesPacker', fn: maximalRectanglesPacker },
 		{ name: 'shelfBinPacker', fn: shelfBinPacker },
 		{ name: 'tprfPacker', fn: tprfPacker },
 	];
 
 	for (const packer of packers) {
-		const clonedRects = rects.map(rect => ({ width: rect.width as number, height: rect.height as number, id: rect.id }));
+		const clonedRects = rects.map(rect => ({ width: rect.width, height: rect.height, id: rect.id }));
 		const packed = packer.fn(clonedRects, ATLAS_MAX_SIZE_IN_PIXELS, ATLAS_MAX_SIZE_IN_PIXELS);
-		results.push(packed);
+		if (packed && packed.items.length === rects.length) {
+			results.push(packed);
+		}
 	}
 
 	if (results.length === 0) {
-		throw new Error('All texture atlas packing algorithms failed to fit the provided images within the configured texture atlas dimensions.');
+		return false;
 	}
 
-	// Determine the smallest result
-	const smallest_result = results.reduce((smallest, current) => {
+	return results.reduce((smallest, current) => {
 		const smallestArea = smallest.width * smallest.height;
 		const currentArea = current.width * current.height;
 		return currentArea < smallestArea ? current : smallest;
 	});
+}
 
-	const atlas_width = CROP_ATLAS ? smallest_result.width : ATLAS_MAX_SIZE_IN_PIXELS, atlas_height = CROP_ATLAS ? smallest_result.height : ATLAS_MAX_SIZE_IN_PIXELS;
+function tryPackAtlasWithinVramLimit(imageResources: ImageResource[], maxAtlasBytes: number): PackedAtlas | false {
+	const packed = packOptimizedAtlas(imageResources);
+	return packed && packedAtlasByteLength(packed) <= maxAtlasBytes ? packed : false;
+}
 
+function atlasImageNames(imageResources: ImageResource[]): string {
+	return imageResources.map(resource => resource.name).join(', ');
+}
+
+export function splitAtlasImagesByVramUsage(imageResources: ImageResource[], maxAtlasBytes = RPU_QUAD_MAX_CART_ATLAS_BYTES): ImageResource[][] {
+	if (imageResources.length === 0) {
+		return [];
+	}
+
+	const groups: ImageResource[][] = [];
+	let group: ImageResource[] = [];
+	for (let index = 0; index < imageResources.length; index += 1) {
+		const image = imageResources[index];
+		if (group.length === 0) {
+			const single = [image];
+			const packed = tryPackAtlasWithinVramLimit(single, maxAtlasBytes);
+			if (!packed) {
+				const singleAtlas = packOptimizedAtlas(single);
+				const detail = singleAtlas ? `${packedAtlasByteLength(singleAtlas)} atlas bytes` : 'more than the configured atlas dimensions';
+				throw new Error(`[RomPacker] Image "${image.name}" requires ${detail}, exceeding the VDP texture slot budget of ${maxAtlasBytes} bytes.`);
+			}
+			group = single;
+			continue;
+		}
+
+		const candidate = group.concat(image);
+		const packed = tryPackAtlasWithinVramLimit(candidate, maxAtlasBytes);
+		if (packed) {
+			group = candidate;
+		} else {
+			groups.push(group);
+			const single = [image];
+			const singlePacked = tryPackAtlasWithinVramLimit(single, maxAtlasBytes);
+			if (!singlePacked) {
+				const singleAtlas = packOptimizedAtlas(single);
+				const detail = singleAtlas ? `${packedAtlasByteLength(singleAtlas)} atlas bytes` : 'more than the configured atlas dimensions';
+				throw new Error(`[RomPacker] Image "${image.name}" requires ${detail}, exceeding the VDP texture slot budget of ${maxAtlasBytes} bytes.`);
+			}
+			group = single;
+		}
+	}
+	groups.push(group);
+	return groups;
+}
+
+export function createOptimizedAtlas(imageResources: ImageResource[], maxAtlasBytes = RPU_QUAD_MAX_CART_ATLAS_BYTES): Canvas {
+	if (imageResources.length === 0) {
+		return createCanvas(1, 1);
+	}
+	const packedAtlas = packOptimizedAtlas(imageResources);
+	if (!packedAtlas) {
+		throw new Error('All texture atlas packing algorithms failed to fit the provided images within the configured texture atlas dimensions.');
+	}
+	const atlasByteLength = packedAtlasByteLength(packedAtlas);
+	if (atlasByteLength > maxAtlasBytes) {
+		throw new Error(`[RomPacker] Atlas for images ${atlasImageNames(imageResources)} requires ${atlasByteLength} bytes, exceeding the VDP texture slot budget of ${maxAtlasBytes} bytes.`);
+	}
+
+	const atlas_width = CROP_ATLAS ? packedAtlas.width : ATLAS_MAX_SIZE_IN_PIXELS;
+	const atlas_height = CROP_ATLAS ? packedAtlas.height : ATLAS_MAX_SIZE_IN_PIXELS;
 	const atlasCanvas: Canvas = createCanvas(atlas_width, atlas_height);
 	const ctx: CanvasRenderingContext2D = atlasCanvas.getContext('2d')!;
+	const imageById = new Map<number, ImageResource>();
+	for (let index = 0; index < imageResources.length; index += 1) {
+		const resource = imageResources[index];
+		imageById.set(resource.id, resource);
+	}
 
-	// Draw images onto the texture atlas canvas
-	for (const packedRect of smallest_result.items) {
-		const img_asset = imageResources.find(candidate => candidate.id === packedRect.item.id);
-		if (!img_asset) {
-			throw new Error(`Failed to locate image resource with id ${packedRect.item.id} for texture atlas packing.`);
-		}
-		if (!img_asset.img) {
-			throw new Error(`Image resource "${img_asset.name}" is missing its image payload.`);
-		}
-		const img = img_asset.img;
+	for (const packedRect of packedAtlas.items) {
+		const img_asset = imageById.get(packedRect.item.id)!;
+		const img = img_asset.img!;
 		const pad = ATLAS_IMAGE_PADDING;
 		const dx = packedRect.x + pad;
 		const dy = packedRect.y + pad;
 
-		// Draw the main image
 		ctx.drawImage(img, dx, dy);
 
-		// Extrude edge pixels into the padding area to prevent sampling gaps.
 		if (pad > 0) {
-			// Left / right borders
 			ctx.drawImage(img, 0, 0, 1, img.height, packedRect.x, dy, pad, img.height);
 			ctx.drawImage(img, img.width - 1, 0, 1, img.height, dx + img.width, dy, pad, img.height);
-			// Top / bottom borders
 			ctx.drawImage(img, 0, 0, img.width, 1, dx, packedRect.y, img.width, pad);
 			ctx.drawImage(img, 0, img.height - 1, img.width, 1, dx, dy + img.height, img.width, pad);
-			// Corners
 			ctx.drawImage(img, 0, 0, 1, 1, packedRect.x, packedRect.y, pad, pad);
 			ctx.drawImage(img, img.width - 1, 0, 1, 1, dx + img.width, packedRect.y, pad, pad);
 			ctx.drawImage(img, 0, img.height - 1, 1, 1, packedRect.x, dy + img.height, pad, pad);
 			ctx.drawImage(img, img.width - 1, img.height - 1, 1, 1, dx + img.width, dy + img.height, pad, pad);
 		}
 
-		// UVs cover ONLY the actual image pixels (exclude the padding).
 		img_asset.atlasTexcoords = uvcoords(dx, dy, atlas_width, atlas_height, img.width, img.height);
 	}
 	return atlasCanvas;

@@ -423,6 +423,7 @@ function combat.define_fsm()
 			self.combat_max_points = #node.rounds
 
 			local monster<const> = oget(combat_monster_id)
+			start_image_load(node.monster_imgid, image_residency_sprites)
 			monster:gfx(node.monster_imgid)
 			monster.visible = false
 			monster.sprite_component.color = p3_white_color
@@ -929,6 +930,7 @@ function combat.define_fsm()
 			oget(text_choice_id):set_text({ 'ALL-OUT-ATTACK!!' }, { typed = false, snap = true })
 			self.choice_index = 1
 			oget(text_choice_id).highlight_jitter_enabled = true
+			start_image_load('all_out', image_residency_sprites)
 			local monster<const> = oget(combat_monster_id)
 			local maya_a<const> = oget(combat_maya_a_id)
 			local portrait<const> = oget(combat_all_out_id)
@@ -1014,6 +1016,7 @@ function combat.define_fsm()
 			self:disable_combat_parallax()
 			clear_texts(text_ids_all)
 			local all_out<const> = oget(combat_all_out_id)
+			start_image_load('all_out', image_residency_sprites)
 			all_out:gfx('all_out')
 			all_out.sprite_component.scale = { x = 1, y = 1 }
 			all_out.visible = true
@@ -1034,6 +1037,9 @@ function combat.define_fsm()
 			self.all_out_shake_maya_b_y = maya_b.y
 			self.all_out_shake_bg_x = bg.x
 			self.all_out_shake_bg_y = bg.y
+			monster.visible = false
+			maya_a.visible = false
+			maya_b.visible = false
 			self:play_timeline(combat_all_out_timeline_id, {
 				rewind = true,
 				snap_to_start = true,
@@ -1087,6 +1093,7 @@ function combat.define_fsm()
 	states.combat_focus = {
 			entering_state = function(self)
 				local monster<const> = oget(combat_monster_id)
+				monster.visible = true
 
 				self:play_timeline(combat_focus_timeline_id, {
 					rewind = true,
@@ -1282,6 +1289,7 @@ function combat.define_fsm()
 			},
 		},
 		entering_state = function(self)
+			start_image_load(self.combat_exit_target_bg, image_residency_background)
 			local bg<const> = show_background(self.combat_exit_target_bg)
 			bg.sprite_component.color = p3_black_color
 			self:play_timeline(combat_exit_fade_in_timeline_id, { rewind = true, snap_to_start = true, target = bg })
