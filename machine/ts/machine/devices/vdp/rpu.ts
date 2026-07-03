@@ -572,7 +572,6 @@ export type VdpRpuFrameSaveState = {
 
 export type VdpRpuSaveState = {
 	buildState: VdpRpuFrameBuildState;
-	vdpVram: number[];
 };
 
 export function createVdpRpuFrameOutput(): VdpRpuFrameOutput {
@@ -619,21 +618,18 @@ export function vdpRpuVramRangeRevision(frame: VdpRpuFrameOutput, vramAddr: numb
 export class VdpRpuUnit {
 	public lastPacketCost = 0;
 	public lastPacketSealedFrame = false;
-	public vdpVram = new Uint8Array(VDP_RPU_PARAM_MEM_SIZE);
-	public vdpVramPageRevisions = new Uint32Array(VDP_RPU_PARAM_MEM_PAGE_COUNT);
 	private buildState: VdpRpuFrameBuildState = VDP_RPU_FRAME_IDLE;
 
 	public constructor(
 		private readonly memory: Memory,
 		private readonly fault: DeviceStatusLatch,
+		private vdpVram: Uint8Array,
+		private vdpVramPageRevisions: Uint32Array,
 	) {}
 
-	public configureVramStorage(byteLength: number): void {
-		if (this.vdpVram.byteLength === byteLength) {
-			return;
-		}
-		this.vdpVram = new Uint8Array(byteLength);
-		this.vdpVramPageRevisions = new Uint32Array(vdpRpuParamMemPageCount(byteLength));
+	public bindVramStorage(vdpVram: Uint8Array, vdpVramPageRevisions: Uint32Array): void {
+		this.vdpVram = vdpVram;
+		this.vdpVramPageRevisions = vdpVramPageRevisions;
 	}
 
 	public reset(): void {
@@ -685,14 +681,11 @@ export class VdpRpuUnit {
 	public captureState(): VdpRpuSaveState {
 		return {
 			buildState: this.buildState,
-			vdpVram: captureVdpRpuArrayState(this.vdpVram, this.vdpVram.length),
 		};
 	}
 
 	public restoreState(state: VdpRpuSaveState): void {
 		this.buildState = state.buildState;
-		this.vdpVram.set(state.vdpVram);
-		bumpVdpRpuVramPageRevisions(this.vdpVramPageRevisions, 0, this.vdpVram.byteLength);
 	}
 
 	public consumePacketFromMemory(frame: VdpRpuFrameOutput, headerWord: number, cursor: number, end: number): number {

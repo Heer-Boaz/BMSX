@@ -15,27 +15,25 @@ inline uint64_t vramSurfaceByteSize(u32 width, u32 height) {
 } // namespace
 
 VdpVramUnit::VdpVramUnit(VdpEntropySeeds entropySeeds)
-	: m_ownedRpuVram(static_cast<size_t>(VRAM_STAGING_SIZE) + static_cast<size_t>(VRAM_TEXTURE_SIZE))
-	, m_ownedRpuVramPageRevisions(VDP_RPU_PARAM_MEM_PAGE_COUNT)
-	, m_rpuVram(m_ownedRpuVram.data())
-	, m_rpuVramPageRevisions(m_ownedRpuVramPageRevisions.data())
-	, m_rpuVramLength(m_ownedRpuVram.size())
+	: rpuVram(static_cast<size_t>(VRAM_STAGING_SIZE) + static_cast<size_t>(VRAM_TEXTURE_SIZE))
+	, rpuVramPageRevisions(VDP_RPU_PARAM_MEM_PAGE_COUNT)
 	, m_garbageScratch(VRAM_GARBAGE_CHUNK_BYTES)
 	, m_machineSeed(entropySeeds.machineSeed)
 	, m_bootSeed(entropySeeds.bootSeed) {}
 
 void VdpVramUnit::initializeFrameBuffer(VdpFrameBufferSize frameBufferSize) {
 	VramGarbageStream stream{m_machineSeed, m_bootSeed, VRAM_GARBAGE_SPACE_SALT, VRAM_STAGING_BASE};
-	fillVramGarbageScratch(m_rpuVram, m_rpuVramLength, stream);
-	bumpVdpRpuVramPageRevisions(m_rpuVramPageRevisions, 0u, m_rpuVramLength);
+	fillVramGarbageScratch(rpuVram.data(), rpuVram.size(), stream);
+	bumpVdpRpuVramPageRevisions(rpuVramPageRevisions.data(), 0u, rpuVram.size());
 	configureFrameBufferSurface(frameBufferSize.width, frameBufferSize.height);
 }
 
-void VdpVramUnit::setExternalRpuVram(u8* bytes, size_t length, u32* pageRevisions) {
-	m_rpuVram = bytes;
-	m_rpuVramLength = length;
-	m_rpuVramPageRevisions = pageRevisions;
-	bumpVdpRpuVramPageRevisions(m_rpuVramPageRevisions, 0u, m_rpuVramLength);
+void VdpVramUnit::configureRpuVramStorage(size_t byteLength) {
+	if (rpuVram.size() == byteLength) {
+		return;
+	}
+	rpuVram.assign(byteLength, 0u);
+	rpuVramPageRevisions.assign(vdpRpuParamMemPageCount(byteLength), 0u);
 }
 
 bool VdpVramUnit::writeRpuVram(u32 addr, const u8* bytes, size_t srcOffset, size_t length) {
@@ -43,13 +41,13 @@ bool VdpVramUnit::writeRpuVram(u32 addr, const u8* bytes, size_t srcOffset, size
 		return false;
 	}
 	const size_t offset = static_cast<size_t>(addr - VRAM_STAGING_BASE);
-	if (offset > m_rpuVramLength || length > m_rpuVramLength - offset) {
+	if (offset > rpuVram.size() || length > rpuVram.size() - offset) {
 		return false;
 	}
 	for (size_t index = 0u; index < length; ++index) {
-		m_rpuVram[offset + index] = bytes[srcOffset + index];
+		rpuVram[offset + index] = bytes[srcOffset + index];
 	}
-	bumpVdpRpuVramPageRevisions(m_rpuVramPageRevisions, static_cast<u32>(offset), length);
+	bumpVdpRpuVramPageRevisions(rpuVramPageRevisions.data(), static_cast<u32>(offset), length);
 	return true;
 }
 
@@ -58,11 +56,11 @@ bool VdpVramUnit::readRpuVram(u32 addr, u8* out, size_t length) const {
 		return false;
 	}
 	const size_t offset = static_cast<size_t>(addr - VRAM_STAGING_BASE);
-	if (offset > m_rpuVramLength || length > m_rpuVramLength - offset) {
+	if (offset > rpuVram.size() || length > rpuVram.size() - offset) {
 		return false;
 	}
 	for (size_t index = 0u; index < length; ++index) {
-		out[index] = m_rpuVram[offset + index];
+		out[index] = rpuVram[offset + index];
 	}
 	return true;
 }
@@ -156,23 +154,23 @@ bool VdpVramUnit::frameBufferContains(u32 addr, size_t length) const {
 
 VdpVramState VdpVramUnit::captureState() const {
 	VdpVramState state;
-	state.rpuVram.assign(m_rpuVram, m_rpuVram + m_rpuVramLength);
+	state.rpuVram = rpuVram;
 	state.surfacePixels = captureSurfacePixels();
 	return state;
 }
 
 void VdpVramUnit::restoreState(const VdpVramState& state) {
 	for (size_t index = 0u; index < state.rpuVram.size(); ++index) {
-		m_rpuVram[index] = state.rpuVram[index];
+		rpuVram[index] = state.rpuVram[index];
 	}
-	bumpVdpRpuVramPageRevisions(m_rpuVramPageRevisions, 0u, state.rpuVram.size());
+	bumpVdpRpuVramPageRevisions(rpuVramPageRevisions.data(), 0u, state.rpuVram.size());
 	for (const VdpSurfacePixelsState& surface : state.surfacePixels) {
 		restoreSurfacePixels(surface);
 	}
 }
 
 u32 VdpVramUnit::trackedUsedBytes() const {
-	return static_cast<u32>(m_rpuVramLength) + static_cast<u32>(vramSurfaceByteSize(m_frameBufferSurface.surfaceWidth, m_frameBufferSurface.surfaceHeight));
+	return static_cast<u32>(rpuVram.size()) + static_cast<u32>(vramSurfaceByteSize(m_frameBufferSurface.surfaceWidth, m_frameBufferSurface.surfaceHeight));
 }
 
 u32 VdpVramUnit::trackedTotalBytes() const {

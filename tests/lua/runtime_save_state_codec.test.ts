@@ -65,7 +65,6 @@ function createSubmittedFrameState(state = VDP_SUBMITTED_FRAME_EMPTY) {
 function createRpuState() {
 	return {
 		buildState: VDP_RPU_FRAME_IDLE,
-		vdpVram: [21, 22, 23],
 	};
 }
 

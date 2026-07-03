@@ -254,7 +254,6 @@ export const RUNTIME_SAVE_STATE_PROP_NAMES = [
 	'rpu',
 	'commands',
 	'buildState',
-	'vdpVram',
 	'passCount',
 	'drawCount',
 	'streamBindingCount',

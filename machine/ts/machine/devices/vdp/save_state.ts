@@ -13,6 +13,7 @@ export type VdpState = {
 	activeFrame: VdpSubmittedFrameSaveState;
 	pendingFrame: VdpSubmittedFrameSaveState;
 	rpu: VdpRpuSaveState;
+	vram: VdpVramState;
 	workCarry: number;
 	availableWorkUnits: number;
 	streamIngress: VdpStreamIngressState;
@@ -26,6 +27,5 @@ export type VdpState = {
 };
 
 export type VdpSaveState = VdpState & {
-	vram: VdpVramState;
 	displayFrameBufferPixels: Uint8Array;
 };

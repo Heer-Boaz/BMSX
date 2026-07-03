@@ -32,7 +32,7 @@ VDP::VDP(
 	: m_memory(memory)
 	, m_fault(memory, VDP_DEVICE_STATUS_REGISTERS)
 	, m_vram(entropySeeds)
-	, m_rpu(m_memory, m_fault)
+	, m_rpu(m_memory, m_fault, m_vram.rpuVram, m_vram.rpuVramPageRevisions)
 	, m_configuredFrameBufferSize(frameBufferSize)
 	, m_scheduler(scheduler)
 	, m_unitRegisterPort(m_fault, m_xf, m_lpu, m_mfu, m_jtu) {
@@ -970,8 +970,8 @@ void VDP::setDecodedVramSurfaceDimensions(uint32_t baseAddr, uint32_t width, uin
 }
 
 void VDP::bindStagingMemory() {
-	m_rpu.configureVramStorage(static_cast<size_t>(VRAM_STAGING_SIZE) + static_cast<size_t>(VRAM_TEXTURE_SIZE));
-	m_vram.setExternalRpuVram(m_rpu.vdpVram.data(), m_rpu.vdpVram.size(), m_rpu.vdpVramPageRevisions.data());
+	m_vram.configureRpuVramStorage(static_cast<size_t>(VRAM_STAGING_SIZE) + static_cast<size_t>(VRAM_TEXTURE_SIZE));
+	m_rpu.bindVramStorage(m_vram.rpuVram, m_vram.rpuVramPageRevisions);
 	m_rpu.rebindFrameResources(*m_buildFrame.rpu);
 	m_rpu.rebindFrameResources(*m_activeFrame.rpu);
 	m_rpu.rebindFrameResources(*m_pendingFrame.rpu);
@@ -1028,6 +1028,7 @@ void VDP::captureVisualStateFields(VdpState& state) const {
 	state.activeFrame = captureSubmittedFrameState(m_activeFrame);
 	state.pendingFrame = captureSubmittedFrameState(m_pendingFrame);
 	state.rpu = m_rpu.captureState();
+	state.vram = m_vram.captureState();
 	state.workCarry = m_workCarry;
 	state.availableWorkUnits = m_availableWorkUnits;
 	state.streamIngress = m_streamIngress.captureState();
@@ -1062,6 +1063,7 @@ void VDP::restoreState(const VdpState& state) {
 	restoreSubmittedFrameState(m_activeFrame, state.activeFrame);
 	restoreSubmittedFrameState(m_pendingFrame, state.pendingFrame);
 	m_rpu.restoreState(state.rpu);
+	m_vram.restoreState(state.vram);
 	m_rpu.rebindFrameResources(*m_buildFrame.rpu);
 	m_rpu.rebindFrameResources(*m_activeFrame.rpu);
 	m_rpu.rebindFrameResources(*m_pendingFrame.rpu);
@@ -1095,14 +1097,12 @@ void VDP::restoreState(const VdpState& state) {
 VdpSaveState VDP::captureSaveState() const {
 	VdpSaveState state;
 	captureVisualStateFields(state);
-	state.vram = m_vram.captureState();
 	state.displayFrameBufferPixels = m_fbm.captureDisplayReadback();
 	return state;
 }
 
 void VDP::restoreSaveState(const VdpSaveState& state) {
 	restoreState(state);
-	m_vram.restoreState(state.vram);
 	bindVramSurfaces();
 	m_fbm.restoreDisplayReadback(state.displayFrameBufferPixels);
 	m_vout.presentLiveState();

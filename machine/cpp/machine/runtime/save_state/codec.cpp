@@ -627,7 +627,6 @@ VdpRpuFrameSaveState decodeRpuFrameState(const BinValue& value, const char* labe
 BinValue encodeRpuState(const VdpRpuSaveState& state) {
 	return BinValue(BinObject{
 		{"buildState", static_cast<i64>(state.buildState)},
-		{"vdpVram", encodeVector<u8>(state.vdpVram, encodeScalar<i64, u8>)},
 	});
 }
 
@@ -635,7 +634,6 @@ VdpRpuSaveState decodeRpuState(const BinValue& value, const char* label) {
 	const BinObject& object = requireObject(value, label);
 	VdpRpuSaveState state;
 	state.buildState = requireBoundedU32(requireField(object, "buildState", label), "machine.vdp.rpu.buildState", VDP_RPU_FRAME_IDLE, VDP_RPU_FRAME_OPEN);
-	state.vdpVram = decodeU8Vector(requireField(object, "vdpVram", label), "machine.vdp.rpu.vdpVram", static_cast<size_t>(VRAM_STAGING_SIZE) + static_cast<size_t>(VRAM_TEXTURE_SIZE));
 	return state;
 }
 
@@ -734,6 +732,9 @@ VdpReadbackState decodeVdpReadbackState(const BinValue& value, const char* label
 	return state;
 }
 
+BinValue encodeVdpVramState(const VdpVramState& state);
+VdpVramState decodeVdpVramState(const BinValue& value, const char* label);
+
 BinValue encodeVdpState(const VdpState& state) {
 	BinObject object;
 	object["vdpModeWord"] = static_cast<i64>(state.vdpModeWord);
@@ -743,6 +744,7 @@ BinValue encodeVdpState(const VdpState& state) {
 	object["activeFrame"] = encodeSubmittedFrameState(state.activeFrame);
 	object["pendingFrame"] = encodeSubmittedFrameState(state.pendingFrame);
 	object["rpu"] = encodeRpuState(state.rpu);
+	object["vram"] = encodeVdpVramState(state.vram);
 	object["workCarry"] = static_cast<i64>(state.workCarry);
 	object["availableWorkUnits"] = static_cast<i64>(state.availableWorkUnits);
 	object["streamIngress"] = encodeVdpStreamIngressState(state.streamIngress);
@@ -766,6 +768,7 @@ VdpState decodeVdpState(const BinValue& value, const char* label) {
 	state.activeFrame = decodeSubmittedFrameState(requireField(object, "activeFrame", label), "machine.vdp.activeFrame");
 	state.pendingFrame = decodeSubmittedFrameState(requireField(object, "pendingFrame", label), "machine.vdp.pendingFrame");
 	state.rpu = decodeRpuState(requireField(object, "rpu", label), "machine.vdp.rpu");
+	state.vram = decodeVdpVramState(requireField(object, "vram", label), "machine.vdp.vram");
 	state.workCarry = requireI64(requireField(object, "workCarry", label), "machine.vdp.workCarry");
 	state.availableWorkUnits = requireI32(requireField(object, "availableWorkUnits", label), "machine.vdp.availableWorkUnits");
 	state.streamIngress = decodeVdpStreamIngressState(requireField(object, "streamIngress", label), "machine.vdp.streamIngress");
@@ -819,7 +822,6 @@ VdpVramState decodeVdpVramState(const BinValue& value, const char* label) {
 
 BinValue encodeVdpSaveState(const VdpSaveState& state) {
 	BinObject object = encodeVdpState(state).asObject();
-	object["vram"] = encodeVdpVramState(state.vram);
 	object["displayFrameBufferPixels"] = BinBinary(state.displayFrameBufferPixels);
 	return BinValue(std::move(object));
 }
@@ -828,20 +830,7 @@ VdpSaveState decodeVdpSaveState(const BinValue& value, const char* label) {
 	const BinObject& object = requireObject(value, label);
 	const VdpState base = decodeVdpState(value, label);
 	VdpSaveState state;
-	state.vdpModeWord = base.vdpModeWord;
-	state.xf = base.xf;
-	state.vdpRegisterWords = base.vdpRegisterWords;
-	state.ditherType = base.ditherType;
-	state.buildFrame = base.buildFrame;
-	state.activeFrame = base.activeFrame;
-	state.pendingFrame = base.pendingFrame;
-	state.workCarry = base.workCarry;
-	state.availableWorkUnits = base.availableWorkUnits;
-	state.streamIngress = base.streamIngress;
-	state.readback = base.readback;
-	state.vdpFaultCode = base.vdpFaultCode;
-	state.vdpFaultDetail = base.vdpFaultDetail;
-	state.vram = decodeVdpVramState(requireField(object, "vram", label), "machine.vdp.vram");
+	static_cast<VdpState&>(state) = base;
 	state.displayFrameBufferPixels = requireBinary(requireField(object, "displayFrameBufferPixels", label), "machine.vdp.displayFrameBufferPixels");
 	return state;
 }

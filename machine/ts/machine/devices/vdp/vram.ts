@@ -21,6 +21,7 @@ import {
 import {
 	VDP_RPU_PARAM_MEM_PAGE_COUNT,
 	bumpVdpRpuVramPageRevisions,
+	vdpRpuParamMemPageCount,
 } from './rpu';
 
 export type VdpFrameBufferSize = {
@@ -66,8 +67,8 @@ export class VdpVramUnit {
 		dirtyRowEnd: 0,
 		dirtySpansByRow: [],
 	};
-	private rpuVram: Uint8Array = new Uint8Array(VRAM_STAGING_SIZE + VRAM_TEXTURE_SIZE);
-	private rpuVramPageRevisions: Uint32Array = new Uint32Array(VDP_RPU_PARAM_MEM_PAGE_COUNT);
+	public rpuVram: Uint8Array = new Uint8Array(VRAM_STAGING_SIZE + VRAM_TEXTURE_SIZE);
+	public rpuVramPageRevisions: Uint32Array = new Uint32Array(VDP_RPU_PARAM_MEM_PAGE_COUNT);
 	private readonly garbageScratch = new Uint8Array(VRAM_GARBAGE_CHUNK_BYTES);
 	private readonly seedPixel = new Uint8Array(4);
 	private machineSeed = DEFAULT_VDP_ENTROPY_SEEDS.machineSeed;
@@ -78,10 +79,12 @@ export class VdpVramUnit {
 		this.bootSeed = entropySeeds.bootSeed >>> 0;
 	}
 
-	public setExternalRpuVram(bytes: Uint8Array, length: number, pageRevisions: Uint32Array): void {
-		this.rpuVram = bytes;
-		this.rpuVramPageRevisions = pageRevisions;
-		bumpVdpRpuVramPageRevisions(this.rpuVramPageRevisions, 0, length);
+	public configureRpuVramStorage(byteLength: number): void {
+		if (this.rpuVram.byteLength === byteLength) {
+			return;
+		}
+		this.rpuVram = new Uint8Array(byteLength);
+		this.rpuVramPageRevisions = new Uint32Array(vdpRpuParamMemPageCount(byteLength));
 	}
 
 	public get frameBufferSurface(): VdpSurfaceBacking {

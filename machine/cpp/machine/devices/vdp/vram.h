@@ -38,7 +38,7 @@ public:
 	explicit VdpVramUnit(VdpEntropySeeds entropySeeds = DEFAULT_VDP_ENTROPY_SEEDS);
 
 	void initializeFrameBuffer(VdpFrameBufferSize frameBufferSize);
-	void setExternalRpuVram(u8* bytes, size_t length, u32* pageRevisions);
+	void configureRpuVramStorage(size_t byteLength);
 	bool writeRpuVram(u32 addr, const u8* bytes, size_t srcOffset, size_t length);
 	bool readRpuVram(u32 addr, u8* out, size_t length) const;
 	void writeSurfaceBytes(VdpSurfaceBacking& surface, u32 offset, const u8* bytes, size_t srcOffset, size_t length);
@@ -51,6 +51,8 @@ public:
 	u32 trackedUsedBytes() const;
 	u32 trackedTotalBytes() const;
 
+	std::vector<u8> rpuVram;
+	std::vector<u32> rpuVramPageRevisions;
 	VdpSurfaceBacking& frameBufferSurface() { return m_frameBufferSurface; }
 	const VdpSurfaceBacking& frameBufferSurface() const { return m_frameBufferSurface; }
 
@@ -63,11 +65,6 @@ private:
 	void seedSurfacePixels(VdpSurfaceBacking& surface);
 
 	VdpSurfaceBacking m_frameBufferSurface;
-	std::vector<u8> m_ownedRpuVram;
-	std::vector<u32> m_ownedRpuVramPageRevisions;
-	u8* m_rpuVram = nullptr;
-	u32* m_rpuVramPageRevisions = nullptr;
-	size_t m_rpuVramLength = 0u;
 	std::vector<u8> m_garbageScratch;
 	std::array<u8, 4u> m_seedPixel{{0u, 0u, 0u, 0u}};
 	u32 m_machineSeed = 0u;

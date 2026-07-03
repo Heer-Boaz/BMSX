@@ -21,6 +21,7 @@ struct VdpState {
 	VdpSubmittedFrameSaveState activeFrame;
 	VdpSubmittedFrameSaveState pendingFrame;
 	VdpRpuSaveState rpu;
+	VdpVramState vram;
 	i64 workCarry = 0;
 	int availableWorkUnits = 0;
 	VdpStreamIngressState streamIngress;
@@ -34,7 +35,6 @@ struct VdpState {
 };
 
 struct VdpSaveState : VdpState {
-	VdpVramState vram;
 	std::vector<u8> displayFrameBufferPixels;
 };
 

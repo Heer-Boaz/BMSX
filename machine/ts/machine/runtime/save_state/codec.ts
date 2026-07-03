@@ -51,7 +51,7 @@ import {
 } from '../../devices/vdp/rpu';
 import { VDP_XF_MATRIX_COUNT, VDP_XF_MATRIX_REGISTER_WORDS, type VdpXfState } from '../../devices/vdp/xf';
 import type { MemorySaveState } from '../../memory/memory';
-import { VDP_STREAM_CAPACITY_WORDS, VRAM_STAGING_SIZE, VRAM_TEXTURE_SIZE } from '../../memory/map';
+import { VDP_STREAM_CAPACITY_WORDS } from '../../memory/map';
 import type { FrameSchedulerStateSnapshot, TickCompletion } from '../../scheduler/frame';
 import type { RuntimeSaveMachineState } from '../save_machine_state';
 import type { RuntimeSaveState } from '../save_state';
@@ -610,7 +610,6 @@ function decodeVdpRpuFrameState(value: unknown, label: string): VdpRpuFrameSaveS
 function encodeVdpRpuState(state: VdpRpuSaveState): VdpRpuSaveState {
 	return {
 		buildState: state.buildState,
-		vdpVram: state.vdpVram,
 	};
 }
 
@@ -618,7 +617,6 @@ function decodeVdpRpuState(value: unknown, label: string): VdpRpuSaveState {
 	const object = requireObject(value, label);
 	return {
 		buildState: requireBoundedU32(requireObjectKey(object, 'buildState', label, `${label}.buildState`), `${label}.buildState`, 0, 3) as VdpRpuSaveState['buildState'],
-		vdpVram: decodeBoundedU8Vector(requireObjectKey(object, 'vdpVram', label, `${label}.vdpVram`), `${label}.vdpVram`, VRAM_STAGING_SIZE + VRAM_TEXTURE_SIZE),
 	};
 }
 
@@ -728,6 +726,7 @@ function encodeVdpState(state: VdpState): VdpState {
 		activeFrame: encodeSubmittedFrameState(state.activeFrame),
 		pendingFrame: encodeSubmittedFrameState(state.pendingFrame),
 		rpu: encodeVdpRpuState(state.rpu),
+		vram: encodeVdpVramState(state.vram),
 		workCarry: state.workCarry,
 		availableWorkUnits: state.availableWorkUnits,
 		streamIngress: encodeVdpStreamIngressState(state.streamIngress),
@@ -751,6 +750,7 @@ function decodeVdpState(value: unknown, label: string): VdpState {
 		activeFrame: decodeSubmittedFrameState(requireObjectKey(object, 'activeFrame', label, 'machine.vdp.activeFrame'), 'machine.vdp.activeFrame'),
 		pendingFrame: decodeSubmittedFrameState(requireObjectKey(object, 'pendingFrame', label, 'machine.vdp.pendingFrame'), 'machine.vdp.pendingFrame'),
 		rpu: decodeVdpRpuState(requireObjectKey(object, 'rpu', label, 'machine.vdp.rpu'), 'machine.vdp.rpu'),
+		vram: decodeVdpVramState(requireObjectKey(object, 'vram', label, 'machine.vdp.vram'), 'machine.vdp.vram'),
 		workCarry: requireI64(requireObjectKey(object, 'workCarry', label, 'machine.vdp.workCarry'), 'machine.vdp.workCarry'),
 		availableWorkUnits: requireI32(requireObjectKey(object, 'availableWorkUnits', label, 'machine.vdp.availableWorkUnits'), 'machine.vdp.availableWorkUnits'),
 		streamIngress: decodeVdpStreamIngressState(requireObjectKey(object, 'streamIngress', label, 'machine.vdp.streamIngress'), 'machine.vdp.streamIngress'),
@@ -805,7 +805,6 @@ function decodeVdpVramState(value: unknown, label: string): VdpVramState {
 function encodeVdpSaveState(state: VdpSaveState): VdpSaveState {
 	return {
 		...encodeVdpState(state),
-		vram: encodeVdpVramState(state.vram),
 		displayFrameBufferPixels: state.displayFrameBufferPixels,
 	};
 }
@@ -814,7 +813,6 @@ function decodeVdpSaveState(value: unknown, label: string): VdpSaveState {
 	const object = requireObject(value, label);
 	return {
 		...decodeVdpState(value, label),
-		vram: decodeVdpVramState(requireObjectKey(object, 'vram', label, 'machine.vdp.vram'), 'machine.vdp.vram'),
 		displayFrameBufferPixels: requireBinaryValue(requireObjectKey(object, 'displayFrameBufferPixels', label, 'machine.vdp.displayFrameBufferPixels'), 'machine.vdp.displayFrameBufferPixels'),
 	};
 }

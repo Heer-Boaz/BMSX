@@ -165,18 +165,15 @@ void restoreVdpRpuCommandBufferState(VdpRpuCommandBuffer& commands, const VdpRpu
 
 } // namespace
 
-VdpRpuUnit::VdpRpuUnit(Memory& memory, DeviceStatusLatch& fault)
-	: vdpVram(VDP_RPU_PARAM_MEM_SIZE)
-	, vdpVramPageRevisions(vdpRpuParamMemPageCount(VDP_RPU_PARAM_MEM_SIZE))
-	, m_memory(memory)
-	, m_fault(fault) {}
+VdpRpuUnit::VdpRpuUnit(Memory& memory, DeviceStatusLatch& fault, std::vector<u8>& vdpVram, std::vector<u32>& vdpVramPageRevisions)
+	: m_memory(memory)
+	, m_fault(fault)
+	, m_vdpVram(&vdpVram)
+	, m_vdpVramPageRevisions(&vdpVramPageRevisions) {}
 
-void VdpRpuUnit::configureVramStorage(size_t byteLength) {
-	if (vdpVram.size() == byteLength) {
-		return;
-	}
-	vdpVram.assign(byteLength, 0u);
-	vdpVramPageRevisions.assign(vdpRpuParamMemPageCount(byteLength), 0u);
+void VdpRpuUnit::bindVramStorage(std::vector<u8>& vdpVram, std::vector<u32>& vdpVramPageRevisions) {
+	m_vdpVram = &vdpVram;
+	m_vdpVramPageRevisions = &vdpVramPageRevisions;
 }
 
 void VdpRpuUnit::reset() {
@@ -193,8 +190,8 @@ bool VdpRpuUnit::beginFrame(VdpRpuFrameOutput& frame) {
 		return false;
 	}
 	resetVdpRpuFrameOutput(frame);
-	frame.vdpVram = &vdpVram;
-	frame.vdpVramPageRevisions = &vdpVramPageRevisions;
+	frame.vdpVram = m_vdpVram;
+	frame.vdpVramPageRevisions = m_vdpVramPageRevisions;
 	m_buildState = VDP_RPU_FRAME_OPEN;
 	return true;
 }
@@ -203,8 +200,8 @@ void VdpRpuUnit::cancelFrame(VdpRpuFrameOutput& frame) {
 	lastPacketCost = 0;
 	lastPacketSealedFrame = false;
 	resetVdpRpuFrameOutput(frame);
-	frame.vdpVram = &vdpVram;
-	frame.vdpVramPageRevisions = &vdpVramPageRevisions;
+	frame.vdpVram = m_vdpVram;
+	frame.vdpVramPageRevisions = m_vdpVramPageRevisions;
 	m_buildState = VDP_RPU_FRAME_IDLE;
 }
 
@@ -221,26 +218,18 @@ bool VdpRpuUnit::endFrame(VdpRpuFrameOutput& frame) {
 }
 
 void VdpRpuUnit::rebindFrameResources(VdpRpuFrameOutput& frame) {
-	frame.vdpVram = &vdpVram;
-	frame.vdpVramPageRevisions = &vdpVramPageRevisions;
+	frame.vdpVram = m_vdpVram;
+	frame.vdpVramPageRevisions = m_vdpVramPageRevisions;
 }
 
 VdpRpuSaveState VdpRpuUnit::captureState() const {
 	VdpRpuSaveState state;
 	state.buildState = m_buildState;
-	state.vdpVram.resize(vdpVram.size());
-	for (size_t index = 0u; index < vdpVram.size(); ++index) {
-		state.vdpVram[index] = vdpVram[index];
-	}
 	return state;
 }
 
 void VdpRpuUnit::restoreState(const VdpRpuSaveState& state) {
 	m_buildState = state.buildState;
-	for (size_t index = 0u; index < state.vdpVram.size(); ++index) {
-		vdpVram[index] = state.vdpVram[index];
-	}
-	bumpVdpRpuVramPageRevisions(vdpVramPageRevisions.data(), 0u, vdpVram.size());
 }
 
 u32 VdpRpuUnit::consumePacketFromMemory(VdpRpuFrameOutput& frame, u32 headerWord, u32 cursor, u32 end) {
@@ -317,7 +306,7 @@ bool VdpRpuUnit::acceptExecPassList(VdpRpuFrameOutput& frame, u32 opWord, u32 pa
 	}
 	const u32 passCount = (opWord >> 8u) & 0xffffu;
 	VdpRpuCommandBuffer& cmd = frame.commands;
-	const u8* vram = vdpVram.data();
+	const u8* vram = m_vdpVram->data();
 	int cost = VDP_RPU_PACKET_COST;
 
 	for (u32 p = 0u; p < passCount; ++p) {
@@ -462,7 +451,7 @@ bool VdpRpuUnit::acceptSealFrame(VdpRpuFrameOutput& frame) {
 }
 
 bool VdpRpuUnit::checkVramRange(u32 addr, u32 size) {
-	if (addr >= vdpVram.size() || size > vdpVram.size() - addr) {
+	if (addr >= m_vdpVram->size() || size > m_vdpVram->size() - addr) {
 		m_fault.raise(VDP_FAULT_RPU_FETCH_OOB, addr);
 		return false;
 	}

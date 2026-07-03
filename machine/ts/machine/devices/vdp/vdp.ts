@@ -195,6 +195,8 @@ export class VDP implements VramWriteSink {
 		this.rpu = new VdpRpuUnit(
 			this.memory,
 			this.fault,
+			this.vram.rpuVram,
+			this.vram.rpuVramPageRevisions,
 		);
 		this.bindStagingMemory();
 		this.unitRegisterPort = new VdpUnitRegisterPort(this.fault, this.xf, this.lpu, this.mfu, this.jtu);
@@ -1172,6 +1174,7 @@ export class VDP implements VramWriteSink {
 		state.activeFrame = captureSubmittedFrameState(this.activeFrame);
 		state.pendingFrame = captureSubmittedFrameState(this.pendingFrame);
 		state.rpu = this.rpu.captureState();
+		state.vram = this.vram.captureState();
 		state.workCarry = this.workCarry;
 		state.availableWorkUnits = this.availableWorkUnits;
 		state.streamIngress = this.streamIngress.captureState();
@@ -1206,7 +1209,6 @@ export class VDP implements VramWriteSink {
 
 	public captureSaveState(): VdpSaveState {
 		const state = this.captureState() as VdpSaveState;
-		state.vram = this.vram.captureState();
 		state.displayFrameBufferPixels = this.fbm.captureDisplayReadback();
 		return state;
 	}
@@ -1221,6 +1223,7 @@ export class VDP implements VramWriteSink {
 		restoreSubmittedFrameState(this.activeFrame, state.activeFrame);
 		restoreSubmittedFrameState(this.pendingFrame, state.pendingFrame);
 		this.rpu.restoreState(state.rpu);
+		this.vram.restoreState(state.vram);
 		this.rpu.rebindFrameResources(this.buildFrame.rpu);
 		this.rpu.rebindFrameResources(this.activeFrame.rpu);
 		this.rpu.rebindFrameResources(this.pendingFrame.rpu);
@@ -1253,7 +1256,6 @@ export class VDP implements VramWriteSink {
 
 	public restoreSaveState(state: VdpSaveState): void {
 		this.restoreState(state);
-		this.vram.restoreState(state.vram);
 		this.bindVramSurfaces();
 		this.fbm.restoreDisplayReadback(state.displayFrameBufferPixels);
 		this.vout.presentLiveState();
@@ -1265,8 +1267,8 @@ export class VDP implements VramWriteSink {
 	}
 
 	private bindStagingMemory(): void {
-		this.rpu.configureVramStorage(VRAM_STAGING_SIZE + VRAM_TEXTURE_SIZE);
-		this.vram.setExternalRpuVram(this.rpu.vdpVram, this.rpu.vdpVram.byteLength, this.rpu.vdpVramPageRevisions);
+		this.vram.configureRpuVramStorage(VRAM_STAGING_SIZE + VRAM_TEXTURE_SIZE);
+		this.rpu.bindVramStorage(this.vram.rpuVram, this.vram.rpuVramPageRevisions);
 		this.rpu.rebindFrameResources(this.buildFrame.rpu);
 		this.rpu.rebindFrameResources(this.activeFrame.rpu);
 		this.rpu.rebindFrameResources(this.pendingFrame.rpu);

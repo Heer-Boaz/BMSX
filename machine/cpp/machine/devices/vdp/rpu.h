@@ -292,16 +292,13 @@ struct VdpRpuFrameSaveState {
 
 struct VdpRpuSaveState {
 	VdpRpuFrameBuildState buildState = VDP_RPU_FRAME_IDLE;
-	std::vector<u8> vdpVram;
 };
 
 class VdpRpuUnit {
 public:
-	VdpRpuUnit(Memory& memory, DeviceStatusLatch& fault);
+	VdpRpuUnit(Memory& memory, DeviceStatusLatch& fault, std::vector<u8>& vdpVram, std::vector<u32>& vdpVramPageRevisions);
 
-	std::vector<u8> vdpVram;
-	std::vector<u32> vdpVramPageRevisions;
-	void configureVramStorage(size_t byteLength);
+	void bindVramStorage(std::vector<u8>& vdpVram, std::vector<u32>& vdpVramPageRevisions);
 	void reset();
 	auto beginFrame(VdpRpuFrameOutput& frame) -> bool;
 	void cancelFrame(VdpRpuFrameOutput& frame);
@@ -317,6 +314,8 @@ public:
 private:
 	Memory& m_memory;
 	DeviceStatusLatch& m_fault;
+	std::vector<u8>* m_vdpVram;
+	std::vector<u32>* m_vdpVramPageRevisions;
 	VdpRpuFrameBuildState m_buildState = VDP_RPU_FRAME_IDLE;
 
 	auto consumePacketPayloadFromMemory(VdpRpuFrameOutput& frame, u32 op, u32 cursor, u32 payloadWords) -> bool;

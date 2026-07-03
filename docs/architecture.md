@@ -575,7 +575,9 @@ Internal units:
   overflow latch.
 - `RPU` owns the raw cart-visible render contract: buffer records, surface
   records, constant banks, fixed stream layouts, fixed shader-variant ids,
-  retained render passes, and retained draw commands.
+  retained render passes, and retained draw commands. RPU frame outputs point
+  at the VDP-owned VRAM bytes and page-revision words; the RPU does not own a
+  second param-memory copy.
   Firmware quad helpers keep descriptors in the 136 KiB staging range and point
   texture descriptors at the fixed texture-VRAM range. The first 288 KiB of
   texture VRAM is reserved for the system atlas; the remaining cart texture
