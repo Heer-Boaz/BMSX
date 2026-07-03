@@ -8,6 +8,7 @@
 #include <functional>
 #include <iterator>
 #include <memory>
+#include <new>
 #include <optional>
 #include <stdexcept>
 #include <string>
@@ -789,9 +790,9 @@ public:
 				fn(valueNumber(static_cast<double>(i + 1)), m_array[i]);
 			}
 		}
-		for (const auto& node : m_hash) {
-			if (!isNil(node.key)) {
-				fn(node.key, node.value);
+		for (size_t i = 0; i < m_hashSize; ++i) {
+			if (!isNil(m_hashKeys[i])) {
+				fn(m_hashKeys[i], m_hashValues[i]);
 			}
 		}
 	}
@@ -811,10 +812,8 @@ public:
 	}
 
 private:
-	struct HashNode {
-		Value key = valueNil();
-		Value value = valueNil();
-		int next = -1;
+	struct HashStorageDeleter {
+		void operator()(void* ptr) const noexcept { ::operator delete(ptr); }
 	};
 
 	bool getArrayIndex(const Value& key, int& outIndex) const;
@@ -823,18 +822,21 @@ private:
 	size_t hashValue(const Value& key) const;
 	bool keyEquals(const Value& a, const Value& b) const;
 	int findNodeIndex(const Value& key) const;
-	HashNode* getNode(const Value& key);
-	HashNode* getMainNode(const Value& key);
 	int getFreeIndex();
 	void rehash(const Value& key);
 	void resize(size_t newArraySize, size_t newHashSize);
+	void allocateHash(size_t size);
 	void rawSet(const Value& key, const Value& value);
 	void insertHash(const Value& key, const Value& value);
 	void removeFromHash(const Value& key);
 
 	std::vector<Value> m_array;
 	size_t m_arrayLength = 0;
-	std::vector<HashNode> m_hash;
+	std::unique_ptr<void, HashStorageDeleter> m_hashStorage;
+	Value* m_hashKeys = nullptr;
+	Value* m_hashValues = nullptr;
+	int32_t* m_hashNext = nullptr;
+	size_t m_hashSize = 0;
 	int m_hashFree = -1;
 	uint32_t m_version = 1;
 };
@@ -951,8 +953,23 @@ public:
 	void unwindToDepth(int targetDepth);
 	void step();
 	void collectHeap();
-	void suspendGc();
-	void resumeGc();
+	class NativeLocalRootsScope {
+	public:
+		NativeLocalRootsScope(const NativeLocalRootsScope&) = delete;
+		NativeLocalRootsScope& operator=(const NativeLocalRootsScope&) = delete;
+		NativeLocalRootsScope(NativeLocalRootsScope&& other) noexcept;
+		NativeLocalRootsScope& operator=(NativeLocalRootsScope&& other) = delete;
+		~NativeLocalRootsScope();
+
+	private:
+		friend class CPU;
+
+		explicit NativeLocalRootsScope(CPU& cpu) noexcept;
+
+		CPU* m_cpu = nullptr;
+		size_t m_base = 0;
+	};
+	NativeLocalRootsScope acquireNativeLocalRoots();
 
 	int getFrameDepth() const { return static_cast<int>(m_frames.size()); }
 	bool hasFrames() const { return !m_frames.empty(); }
@@ -1031,20 +1048,6 @@ private:
 	void refreshFrameRegisterPointers();
 	NativeResultsScratchScope acquireNativeReturnScratch();
 	void releaseNativeReturnScratch(NativeResults& out);
-	class NativeLocalRootsScope {
-	public:
-		explicit NativeLocalRootsScope(CPU& cpu) noexcept;
-		NativeLocalRootsScope(const NativeLocalRootsScope&) = delete;
-		NativeLocalRootsScope& operator=(const NativeLocalRootsScope&) = delete;
-		NativeLocalRootsScope(NativeLocalRootsScope&& other) noexcept;
-		NativeLocalRootsScope& operator=(NativeLocalRootsScope&& other) = delete;
-		~NativeLocalRootsScope();
-
-	private:
-		CPU* m_cpu = nullptr;
-		size_t m_base = 0;
-	};
-	NativeLocalRootsScope acquireNativeLocalRoots();
 	void releaseNativeLocalRoots(size_t base);
 	void trackNativeLocalRoot(Value value);
 

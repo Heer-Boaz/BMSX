@@ -362,6 +362,15 @@ memory, and symbols as the primary representation. `CPU.Value` still exists for
 the dynamic Lua object-world, but it is not the target transport for hot/static
 machine-code ABI.
 
+Lua tables are VM-owned data structures, not host collection wrappers. Their
+representation follows the usual array-part/hash-part split: integer sequence
+keys live in the array part, while the hash part stores key, value, and next-link
+columns. The C++ runtime keeps those columns in one table-owned contiguous
+allocation; the TypeScript runtime uses parallel arrays plus an `Int32Array`
+next column so hash capacity does not materialize one JavaScript object per
+slot. Save-state still serializes hash nodes as schema data at the persistence
+boundary, but steady-state table storage is columnar.
+
 System ROM and cart ROM are fixed CPU-visible address windows. The backing
 payload may be shorter than the window or absent; bytes beyond the backing read
 as zero through the bus. The memory owner exposes immutable ROM residency by

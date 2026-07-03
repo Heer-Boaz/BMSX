@@ -195,6 +195,7 @@ const CLOSURE_UPVALUE_SLOT_HEAP_BYTES = 8;
 const NATIVE_FUNCTION_HEAP_BYTES = 16;
 const NATIVE_OBJECT_HEAP_BYTES = 24;
 const UPVALUE_HEAP_BYTES = 24;
+const EMPTY_TABLE_HASH_NEXT = new Int32Array(0);
 
 export function createNativeFunction(
 	name: string,
@@ -457,7 +458,9 @@ export class Table {
 	public readonly kind = TABLE_VALUE_KIND;
 	private array: Value[];
 	public arrayLength = 0;
-	private hash: HashNode[];
+	private hashKeys: Value[];
+	private hashValues: Value[];
+	private hashNext: Int32Array;
 	private hashFree = -1;
 	private tableMetatable: Table | null = null;
 	private version = 1;
@@ -478,10 +481,12 @@ export class Table {
 		this.array = new Array<Value>(arraySize);
 		this.array.fill(null);
 		const size = hashSize > 0 ? nextPowerOfTwo(hashSize) : 0;
-		this.hash = new Array<HashNode>(size);
-		for (let i = 0; i < size; i += 1) {
-			this.hash[i] = { key: null, value: null, next: -1 };
-		}
+		this.hashKeys = new Array<Value>(size);
+		this.hashKeys.fill(null);
+		this.hashValues = new Array<Value>(size);
+		this.hashValues.fill(null);
+		this.hashNext = new Int32Array(size);
+		this.hashNext.fill(-1);
 		this.hashFree = size > 0 ? size - 1 : -1;
 		addTrackedLuaHeapBytes(this.getTrackedHeapBytes());
 	}
@@ -501,12 +506,11 @@ export class Table {
 		}
 		const index = this.getArrayIndex(key);
 		if (index !== null && index < this.array.length) {
-			const value = this.array[index];
-			return value === undefined ? null : value;
+			return this.array[index];
 		}
 		const nodeIndex = this.findNodeIndex(key);
 		if (nodeIndex >= 0) {
-			return this.hash[nodeIndex].value;
+			return this.hashValues[nodeIndex];
 		}
 		return null;
 	}
@@ -543,11 +547,11 @@ export class Table {
 			}
 			const nodeIndex = this.findNodeIndex(key);
 			if (nodeIndex >= 0) {
-				this.hash[nodeIndex].value = value;
+				this.hashValues[nodeIndex] = value;
 				this.bumpVersion();
 				return;
 			}
-			if (this.hash.length === 0 || this.hashFree < 0) {
+			if (this.hashKeys.length === 0 || this.hashFree < 0) {
 				this.rehash(key);
 			}
 			this.rawSet(key, value);
@@ -561,11 +565,11 @@ export class Table {
 		}
 		const nodeIndex = this.findNodeIndex(key);
 		if (nodeIndex >= 0) {
-			this.hash[nodeIndex].value = value;
+			this.hashValues[nodeIndex] = value;
 			this.bumpVersion();
 			return;
 		}
-		if (this.hash.length === 0 || this.hashFree < 0) {
+		if (this.hashKeys.length === 0 || this.hashFree < 0) {
 			this.rehash(key);
 		}
 		this.rawSet(key, value);
@@ -575,12 +579,11 @@ export class Table {
 	public getInteger(indexValue: number): Value {
 		const index = indexValue - 1;
 		if (index >= 0 && index < this.array.length) {
-			const value = this.array[index];
-			return value === undefined ? null : value;
+			return this.array[index];
 		}
 		const nodeIndex = this.findNodeIndex(indexValue);
 		if (nodeIndex >= 0) {
-			return this.hash[nodeIndex].value;
+			return this.hashValues[nodeIndex];
 		}
 		return null;
 	}
@@ -613,11 +616,11 @@ export class Table {
 		}
 		const nodeIndex = this.findNodeIndex(indexValue);
 		if (nodeIndex >= 0) {
-			this.hash[nodeIndex].value = value;
+			this.hashValues[nodeIndex] = value;
 			this.bumpVersion();
 			return;
 		}
-		if (this.hash.length === 0 || this.hashFree < 0) {
+		if (this.hashKeys.length === 0 || this.hashFree < 0) {
 			this.rehash(indexValue);
 		}
 		this.rawSet(indexValue, value);
@@ -627,7 +630,7 @@ export class Table {
 	public getStringKey(key: StringValue): Value {
 		const nodeIndex = this.findNodeIndex(key);
 		if (nodeIndex >= 0) {
-			return this.hash[nodeIndex].value;
+			return this.hashValues[nodeIndex];
 		}
 		return null;
 	}
@@ -640,11 +643,11 @@ export class Table {
 		}
 		const nodeIndex = this.findNodeIndex(key);
 		if (nodeIndex >= 0) {
-			this.hash[nodeIndex].value = value;
+			this.hashValues[nodeIndex] = value;
 			this.bumpVersion();
 			return;
 		}
-		if (this.hash.length === 0 || this.hashFree < 0) {
+		if (this.hashKeys.length === 0 || this.hashFree < 0) {
 			this.rehash(key);
 		}
 		this.rawSet(key, value);
@@ -655,24 +658,26 @@ export class Table {
 		const previousBytes = this.getTrackedHeapBytes();
 		this.array.length = 0;
 		this.arrayLength = 0;
-		this.hash.length = 0;
+		this.hashKeys.length = 0;
+		this.hashValues.length = 0;
+		this.hashNext = EMPTY_TABLE_HASH_NEXT;
 		this.hashFree = -1;
 		this.bumpVersion();
-			addTrackedLuaHeapBytes(this.getTrackedHeapBytes() - previousBytes);
+		addTrackedLuaHeapBytes(this.getTrackedHeapBytes() - previousBytes);
 	}
 
 	public forEachEntry(visitor: (key: Value, value: Value) => void): void {
 		for (let index = 0; index < this.array.length; index += 1) {
 			const value = this.array[index];
-			if (value === null || value === undefined) {
+			if (value === null) {
 				continue;
 			}
 			visitor(index + 1, value);
 		}
-		for (let index = 0; index < this.hash.length; index += 1) {
-			const node = this.hash[index];
-			if (node.key !== null) {
-				visitor(node.key, node.value);
+		for (let index = 0; index < this.hashKeys.length; index += 1) {
+			const key = this.hashKeys[index];
+			if (key !== null) {
+				visitor(key, this.hashValues[index]);
 			}
 		}
 	}
@@ -683,10 +688,9 @@ export class Table {
 
 	public captureRuntimeState(): TableRuntimeState {
 		const array = this.array.slice();
-		const hash: HashNode[] = new Array(this.hash.length);
-		for (let index = 0; index < this.hash.length; index += 1) {
-			const node = this.hash[index];
-			hash[index] = { key: node.key, value: node.value, next: node.next };
+		const hash: HashNode[] = new Array(this.hashKeys.length);
+		for (let index = 0; index < this.hashKeys.length; index += 1) {
+			hash[index] = { key: this.hashKeys[index], value: this.hashValues[index], next: this.hashNext[index] };
 		}
 		return {
 			array,
@@ -701,50 +705,53 @@ export class Table {
 		const previousBytes = this.getTrackedHeapBytes();
 		this.array = state.array.slice();
 		this.arrayLength = state.arrayLength;
-		this.hash = new Array<HashNode>(state.hash.length);
+		this.hashKeys = new Array<Value>(state.hash.length);
+		this.hashValues = new Array<Value>(state.hash.length);
+		this.hashNext = new Int32Array(state.hash.length);
 		for (let index = 0; index < state.hash.length; index += 1) {
 			const node = state.hash[index];
-			this.hash[index] = { key: node.key, value: node.value, next: node.next };
+			this.hashKeys[index] = node.key;
+			this.hashValues[index] = node.value;
+			this.hashNext[index] = node.next;
 		}
 		this.hashFree = state.hashFree;
 		this.tableMetatable = state.metatable;
 		this.bumpVersion();
-			addTrackedLuaHeapBytes(this.getTrackedHeapBytes() - previousBytes);
+		addTrackedLuaHeapBytes(this.getTrackedHeapBytes() - previousBytes);
 	}
 
 	public walkTrackedValues(visitor: (value: Value) => void): void {
 		visitor(this.tableMetatable);
 		for (let index = 0; index < this.array.length; index += 1) {
 			const value = this.array[index];
-			if (value !== null && value !== undefined) {
+			if (value !== null) {
 				visitor(value);
 			}
 		}
-		for (let index = 0; index < this.hash.length; index += 1) {
-			const node = this.hash[index];
-			visitor(node.key);
-			visitor(node.value);
+		for (let index = 0; index < this.hashKeys.length; index += 1) {
+			visitor(this.hashKeys[index]);
+			visitor(this.hashValues[index]);
 		}
 	}
 
 	public getTrackedHeapBytes(): number {
 		return TABLE_HEAP_BYTES
 			+ (this.array.length * TABLE_ARRAY_SLOT_HEAP_BYTES)
-			+ (this.hash.length * TABLE_HASH_SLOT_HEAP_BYTES);
+			+ (this.hashKeys.length * TABLE_HASH_SLOT_HEAP_BYTES);
 	}
 
 	public nextEntry(after: Value): [Value, Value] | null {
 		if (after === null) {
 			for (let index = 0; index < this.array.length; index += 1) {
 				const value = this.array[index];
-				if (value !== null && value !== undefined) {
+				if (value !== null) {
 					return [index + 1, value];
 				}
 			}
-			for (let index = 0; index < this.hash.length; index += 1) {
-				const node = this.hash[index];
-				if (node.key !== null) {
-					return [node.key, node.value];
+			for (let index = 0; index < this.hashKeys.length; index += 1) {
+				const key = this.hashKeys[index];
+				if (key !== null) {
+					return [key, this.hashValues[index]];
 				}
 			}
 			return null;
@@ -756,14 +763,14 @@ export class Table {
 			}
 			for (let cursor = index + 1; cursor < this.array.length; cursor += 1) {
 				const value = this.array[cursor];
-				if (value !== null && value !== undefined) {
+				if (value !== null) {
 					return [cursor + 1, value];
 				}
 			}
-			for (let i = 0; i < this.hash.length; i += 1) {
-				const node = this.hash[i];
-				if (node.key !== null) {
-					return [node.key, node.value];
+			for (let i = 0; i < this.hashKeys.length; i += 1) {
+				const key = this.hashKeys[i];
+				if (key !== null) {
+					return [key, this.hashValues[i]];
 				}
 			}
 			return null;
@@ -772,10 +779,10 @@ export class Table {
 		if (nodeIndex < 0) {
 			return null;
 		}
-		for (let i = nodeIndex + 1; i < this.hash.length; i += 1) {
-			const node = this.hash[i];
-			if (node.key !== null) {
-				return [node.key, node.value];
+		for (let i = nodeIndex + 1; i < this.hashKeys.length; i += 1) {
+			const key = this.hashKeys[i];
+			if (key !== null) {
+				return [key, this.hashValues[i]];
 			}
 		}
 		return null;
@@ -784,18 +791,18 @@ export class Table {
 	public nextEntryFromCursor(arrayCursor: number, hashCursor: number, previousHashKey: Value = null): [number, number, Value, Value] | null {
 		for (let index = arrayCursor; index < this.array.length; index += 1) {
 			const value = this.array[index];
-			if (value !== null && value !== undefined) {
+			if (value !== null) {
 				return [index + 1, 0, index + 1, value];
 			}
 		}
 		const hashStart = hashCursor > 0 ? hashCursor - 1 : 0;
-		for (let index = hashStart; index < this.hash.length; index += 1) {
-			const node = this.hash[index];
-			if (node.key !== null) {
-				if (hashCursor > 0 && index === hashCursor - 1 && previousHashKey !== null && this.keyEquals(node.key, previousHashKey)) {
+		for (let index = hashStart; index < this.hashKeys.length; index += 1) {
+			const key = this.hashKeys[index];
+			if (key !== null) {
+				if (hashCursor > 0 && index === hashCursor - 1 && previousHashKey !== null && this.keyEquals(key, previousHashKey)) {
 					continue;
 				}
-				return [this.array.length, index + 1, node.key, node.value];
+				return [this.array.length, index + 1, key, this.hashValues[index]];
 			}
 		}
 		return null;
@@ -844,25 +851,25 @@ export class Table {
 	}
 
 	private findNodeIndex(key: Value): number {
-		if (this.hash.length === 0) {
+		if (this.hashKeys.length === 0) {
 			return -1;
 		}
-		const mask = this.hash.length - 1;
+		const mask = this.hashKeys.length - 1;
 		let index = (this.hashValue(key) & mask) >>> 0;
 		while (index >= 0) {
-			const node = this.hash[index];
-			if (node.key !== null && this.keyEquals(node.key, key)) {
+			const nodeKey = this.hashKeys[index];
+			if (nodeKey !== null && this.keyEquals(nodeKey, key)) {
 				return index;
 			}
-			index = node.next;
+			index = this.hashNext[index];
 		}
 		return -1;
 	}
 
 	private getFreeIndex(): number {
-		const start = this.hashFree >= 0 ? this.hashFree : this.hash.length - 1;
+		const start = this.hashFree >= 0 ? this.hashFree : this.hashKeys.length - 1;
 		for (let i = start; i >= 0; i -= 1) {
-			if (this.hash[i].key === null) {
+			if (this.hashKeys[i] === null) {
 				this.hashFree = i - 1;
 				return i;
 			}
@@ -889,11 +896,11 @@ export class Table {
 				countIntegerKey(i + 1);
 			}
 		}
-		for (let i = 0; i < this.hash.length; i += 1) {
-			const node = this.hash[i];
-			if (node.key !== null) {
+		for (let i = 0; i < this.hashKeys.length; i += 1) {
+			const key = this.hashKeys[i];
+			if (key !== null) {
 				totalKeys += 1;
-				const index = this.getArrayIndex(node.key);
+				const index = this.getArrayIndex(key);
 				if (index !== null) {
 					countIntegerKey(index + 1);
 				}
@@ -928,15 +935,18 @@ export class Table {
 	private resize(newArraySize: number, newHashSize: number): void {
 		const previousBytes = this.getTrackedHeapBytes();
 		const oldArray = this.array;
-		const oldHash = this.hash;
+		const oldHashKeys = this.hashKeys;
+		const oldHashValues = this.hashValues;
 
 		this.array = new Array<Value>(newArraySize);
 		this.array.fill(null);
 		this.arrayLength = 0;
-		this.hash = new Array<HashNode>(newHashSize);
-		for (let i = 0; i < newHashSize; i += 1) {
-			this.hash[i] = { key: null, value: null, next: -1 };
-		}
+		this.hashKeys = new Array<Value>(newHashSize);
+		this.hashKeys.fill(null);
+		this.hashValues = new Array<Value>(newHashSize);
+		this.hashValues.fill(null);
+		this.hashNext = new Int32Array(newHashSize);
+		this.hashNext.fill(-1);
 		this.hashFree = newHashSize > 0 ? newHashSize - 1 : -1;
 
 		for (let i = 0; i < oldArray.length; i += 1) {
@@ -944,13 +954,13 @@ export class Table {
 				this.rawSet(i + 1, oldArray[i]);
 			}
 		}
-		for (let i = 0; i < oldHash.length; i += 1) {
-			const node = oldHash[i];
-			if (node.key !== null) {
-				this.rawSet(node.key, node.value);
+		for (let i = 0; i < oldHashKeys.length; i += 1) {
+			const key = oldHashKeys[i];
+			if (key !== null) {
+				this.rawSet(key, oldHashValues[i]);
 			}
 		}
-			addTrackedLuaHeapBytes(this.getTrackedHeapBytes() - previousBytes);
+		addTrackedLuaHeapBytes(this.getTrackedHeapBytes() - previousBytes);
 	}
 
 	private rawSet(key: Value, value: Value): void {
@@ -973,18 +983,18 @@ export class Table {
 	}
 
 	private insertHash(key: Value, value: Value): void {
-		if (this.hash.length === 0) {
+		if (this.hashKeys.length === 0) {
 			this.rehash(key);
 			this.rawSet(key, value);
 			return;
 		}
-		const mask = this.hash.length - 1;
+		const mask = this.hashKeys.length - 1;
 		const mainIndex = (this.hashValue(key) & mask) >>> 0;
-		const mainNode = this.hash[mainIndex];
-		if (mainNode.key === null) {
-			mainNode.key = key;
-			mainNode.value = value;
-			mainNode.next = -1;
+		const mainKey = this.hashKeys[mainIndex];
+		if (mainKey === null) {
+			this.hashKeys[mainIndex] = key;
+			this.hashValues[mainIndex] = value;
+			this.hashNext[mainIndex] = -1;
 			return;
 		}
 		const freeIndex = this.getFreeIndex();
@@ -993,73 +1003,71 @@ export class Table {
 			this.rawSet(key, value);
 			return;
 		}
-		const freeNode = this.hash[freeIndex];
-		const mainIndexOfOccupied = (this.hashValue(mainNode.key) & mask) >>> 0;
+		const mainIndexOfOccupied = (this.hashValue(mainKey) & mask) >>> 0;
 		if (mainIndexOfOccupied !== mainIndex) {
-			freeNode.key = mainNode.key;
-			freeNode.value = mainNode.value;
-			freeNode.next = mainNode.next;
+			this.hashKeys[freeIndex] = mainKey;
+			this.hashValues[freeIndex] = this.hashValues[mainIndex];
+			this.hashNext[freeIndex] = this.hashNext[mainIndex];
 			let prev = mainIndexOfOccupied;
-			while (this.hash[prev].next !== mainIndex) {
-				prev = this.hash[prev].next;
+			while (this.hashNext[prev] !== mainIndex) {
+				prev = this.hashNext[prev];
 			}
-			this.hash[prev].next = freeIndex;
-			mainNode.key = key;
-			mainNode.value = value;
-			mainNode.next = -1;
+			this.hashNext[prev] = freeIndex;
+			this.hashKeys[mainIndex] = key;
+			this.hashValues[mainIndex] = value;
+			this.hashNext[mainIndex] = -1;
 			return;
 		}
-		freeNode.key = key;
-		freeNode.value = value;
-		freeNode.next = mainNode.next;
-		mainNode.next = freeIndex;
+		this.hashKeys[freeIndex] = key;
+		this.hashValues[freeIndex] = value;
+		this.hashNext[freeIndex] = this.hashNext[mainIndex];
+		this.hashNext[mainIndex] = freeIndex;
 	}
 
 	private removeFromHash(key: Value): void {
-		if (this.hash.length === 0) {
+		if (this.hashKeys.length === 0) {
 			return;
 		}
-		const mask = this.hash.length - 1;
+		const mask = this.hashKeys.length - 1;
 		const mainIndex = (this.hashValue(key) & mask) >>> 0;
 		let prev = -1;
 		let index = mainIndex;
 		while (index >= 0) {
-			const node = this.hash[index];
-			if (node.key !== null && this.keyEquals(node.key, key)) {
-				const next = node.next;
+			const nodeKey = this.hashKeys[index];
+			if (nodeKey !== null && this.keyEquals(nodeKey, key)) {
+				const next = this.hashNext[index];
 				if (prev >= 0) {
-					this.hash[prev].next = next;
-					node.key = null;
-					node.value = null;
-					node.next = -1;
+					this.hashNext[prev] = next;
+					this.hashKeys[index] = null;
+					this.hashValues[index] = null;
+					this.hashNext[index] = -1;
 					if (index > this.hashFree) {
 						this.hashFree = index;
 					}
 					return;
 				}
 				if (next >= 0) {
-					const nextNode = this.hash[next];
-					node.key = nextNode.key;
-					node.value = nextNode.value;
-					node.next = nextNode.next;
-					nextNode.key = null;
-					nextNode.value = null;
-					nextNode.next = -1;
+					this.hashKeys[index] = this.hashKeys[next];
+					this.hashValues[index] = this.hashValues[next];
+					this.hashNext[index] = this.hashNext[next];
+					this.hashKeys[next] = null;
+					this.hashValues[next] = null;
+					this.hashNext[next] = -1;
 					if (next > this.hashFree) {
 						this.hashFree = next;
 					}
 					return;
 				}
-				node.key = null;
-				node.value = null;
-				node.next = -1;
+				this.hashKeys[index] = null;
+				this.hashValues[index] = null;
+				this.hashNext[index] = -1;
 				if (index > this.hashFree) {
 					this.hashFree = index;
 				}
 				return;
 			}
 			prev = index;
-			index = node.next;
+			index = this.hashNext[index];
 		}
 	}
 
@@ -1082,7 +1090,7 @@ export class Table {
 	private hasArrayIndex(index: number): boolean {
 		if (index < this.array.length) {
 			const value = this.array[index];
-			return value !== null && value !== undefined;
+			return value !== null;
 		}
 		const key = index + 1;
 		return this.findNodeIndex(key) >= 0;

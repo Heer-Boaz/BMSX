@@ -60,13 +60,7 @@ std::string Runtime::valueToString(const Value& value) const {
 
 void Runtime::setupBuiltins() {
 	CPU& cpu = machine.cpu;
-	cpu.suspendGc();
-	struct ResumeBuiltinGc {
-		CPU& cpu;
-		~ResumeBuiltinGc() {
-			cpu.resumeGc();
-		}
-	} resumeBuiltinGc{ cpu };
+	auto builtinRoots = cpu.acquireNativeLocalRoots();
 
 	for (const LuaBootPrimitive& primitive : LUA_BOOT_PRIMITIVES) {
 		setGlobal(primitive.name, cpu.createBuiltinFunction(primitive.id));
