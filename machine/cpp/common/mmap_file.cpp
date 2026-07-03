@@ -65,7 +65,6 @@ bool MmapFile::open(const std::string& path) {
 	close();
 
 #ifdef _WIN32
-	// Windows implementation using CreateFileMapping
 	m_file_handle = CreateFileA(
 		path.c_str(),
 		GENERIC_READ,
@@ -131,7 +130,6 @@ bool MmapFile::open(const std::string& path) {
 	return true;
 
 #else
-	// POSIX implementation using mmap
 	m_fd = ::open(path.c_str(), O_RDONLY);
 	if (m_fd < 0) {
 		return false;

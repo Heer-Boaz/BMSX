@@ -225,6 +225,7 @@ add_library(bmsx_core STATIC
 	common/taskgate.cpp
 	common/byte_hex_string.cpp
 	common/mem_snapshot.cpp
+	common/mmap_file.cpp
 	common/scratchbuffer.cpp
 
 	# Audio systems

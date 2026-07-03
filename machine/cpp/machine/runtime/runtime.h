@@ -76,7 +76,7 @@ public:
 	/**
 	 * Boot the runtime with a compiled program.
 	 */
-	void boot(const ProgramImage& image, ProgramMetadata* metadata, ProgramVectorTable vectors, uint32_t dataBaseAddress, uint32_t bssBaseAddress, std::span<const std::string> systemStaticModulePaths, std::span<const std::string> cartStaticModulePaths);
+	void boot(const ProgramImage& image, std::unique_ptr<ProgramMetadata> metadata, ProgramVectorTable vectors, uint32_t dataBaseAddress, uint32_t bssBaseAddress, std::span<const std::string> systemStaticModulePaths, std::span<const std::string> cartStaticModulePaths);
 	void handleLuaError(const std::string& message);
 
 	/**
@@ -222,6 +222,8 @@ public:
 private:
 	std::unique_ptr<Program> m_programStorage;
 	Program* m_program = nullptr;
+	ProgramRuntimeSymbols m_programRuntimeSymbols;
+	std::unique_ptr<ProgramMetadata> m_programMetadataStorage;
 	ProgramMetadata* m_programMetadata = nullptr;
 
 	std::optional<ProgramVectorTable> m_cartVectors;

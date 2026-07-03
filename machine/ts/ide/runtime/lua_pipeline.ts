@@ -231,7 +231,8 @@ function compileRegistryProgramImage(
 function bootSystemSourceProgram(runtime: Runtime, interpreter: LuaInterpreter, options?: { preserveState?: boolean }): boolean {
 	const system = compileRegistryProgramImage(runtime, runtime.systemLuaSources, interpreter);
 	let programImage = system.image;
-	let metadata: ProgramMetadata = system.symbols;
+	let metadata: ProgramMetadata | null = system.symbols;
+	let runtimeSymbols = system.image.link.symbols;
 	let vectors = system.image.vectors;
 	let systemStaticModulePaths: ReadonlyArray<string> = system.image.sections.rodata.staticModulePaths;
 	runtime.cartVectors = null;
@@ -255,6 +256,7 @@ function bootSystemSourceProgram(runtime: Runtime, interpreter: LuaInterpreter, 
 		const linked = linkBootProgramImages(system.image, system.symbols, cartProgramImage, cartSymbols, 'system');
 		programImage = linked.programImage;
 		metadata = linked.metadata;
+		runtimeSymbols = linked.programImage.link.symbols;
 		vectors = linked.vectors;
 		systemStaticModulePaths = linked.systemStaticModulePaths;
 		runtime.programDataBaseAddress = linked.dataBaseAddress;
@@ -268,8 +270,9 @@ function bootSystemSourceProgram(runtime: Runtime, interpreter: LuaInterpreter, 
 	}
 	runtime.moduleCache.clear();
 	runtime.machine.vdp.resetIngressState();
-	const program = inflateExecutableProgramImage(programImage, metadata, runtime.programDataBaseAddress, runtime.programBssBaseAddress);
-	runtime.machine.cpu.setProgram(program, metadata);
+	const program = inflateExecutableProgramImage(programImage, runtime.programDataBaseAddress, runtime.programBssBaseAddress);
+	runtime.machine.cpu.setProgram(program, runtimeSymbols, metadata);
+	runtime.programRuntimeSymbols = runtimeSymbols;
 	runtime.programMetadata = metadata;
 	runtime.startLoadedProgram(vectors, systemStaticModulePaths, EMPTY_STATIC_MODULE_PATHS);
 	return true;
@@ -280,6 +283,7 @@ function bootProgramImage(runtime: Runtime, options?: { preserveState?: boolean 
 	const systemImages = loadProgramImagesForSource(runtime, 'system');
 	let programImage = systemImages.program;
 	let metadata: ProgramMetadata | null = systemImages.symbols;
+	let runtimeSymbols = systemImages.program.link.symbols;
 	let vectors = systemImages.program.vectors;
 	let systemStaticModulePaths: ReadonlyArray<string> = systemImages.program.sections.rodata.staticModulePaths;
 	let cartStaticModulePaths: ReadonlyArray<string> = EMPTY_STATIC_MODULE_PATHS;
@@ -296,6 +300,7 @@ function bootProgramImage(runtime: Runtime, options?: { preserveState?: boolean 
 			const linked = linkBootProgramImages(systemImages.program, systemImages.symbols, cartImages.program, cartImages.symbols, bootingCart ? 'cart' : 'system');
 			programImage = linked.programImage;
 			metadata = linked.metadata;
+			runtimeSymbols = linked.programImage.link.symbols;
 			vectors = linked.vectors;
 			systemStaticModulePaths = linked.systemStaticModulePaths;
 			if (bootingCart) {
@@ -317,9 +322,10 @@ function bootProgramImage(runtime: Runtime, options?: { preserveState?: boolean 
 	runtime.moduleCache.clear();
 	runtime.machine.vdp.resetIngressState();
 
-	const inflated = inflateExecutableProgramImage(programImage, metadata, runtime.programDataBaseAddress, runtime.programBssBaseAddress);
+	const inflated = inflateExecutableProgramImage(programImage, runtime.programDataBaseAddress, runtime.programBssBaseAddress);
 	try {
-		runtime.machine.cpu.setProgram(inflated, metadata);
+		runtime.machine.cpu.setProgram(inflated, runtimeSymbols, metadata);
+		runtime.programRuntimeSymbols = runtimeSymbols;
 		runtime.programMetadata = metadata;
 		runtime.startLoadedProgram(vectors, systemStaticModulePaths, cartStaticModulePaths);
 		return true;
@@ -373,10 +379,11 @@ function bootLuaProgram(runtime: Runtime, options?: { preserveState?: boolean; s
 		const programImage = encodeCompiledProgramImage(compiled);
 		runtime.programDataBaseAddress = PROGRAM_STATIC_RAM_BASE;
 		runtime.programBssBaseAddress = PROGRAM_STATIC_RAM_BASE + programImage.sections.data.bytes.byteLength;
-		const program = inflateExecutableProgramImage(programImage, compiled.metadata, runtime.programDataBaseAddress, runtime.programBssBaseAddress);
+		const program = inflateExecutableProgramImage(programImage, runtime.programDataBaseAddress, runtime.programBssBaseAddress);
 		runtime.moduleCache.clear();
 		runtime.machine.vdp.resetIngressState();
-		runtime.machine.cpu.setProgram(program, compiled.metadata);
+		runtime.machine.cpu.setProgram(program, programImage.link.symbols, compiled.metadata);
+		runtime.programRuntimeSymbols = programImage.link.symbols;
 		runtime.programMetadata = compiled.metadata;
 		runtime.startLoadedProgram(programImage.vectors, EMPTY_STATIC_MODULE_PATHS, programImage.sections.rodata.staticModulePaths);
 		return true;

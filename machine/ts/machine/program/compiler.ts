@@ -138,6 +138,12 @@ export function encodeCompiledProgramImage(compiled: CompiledProgram): ProgramIm
 		link: {
 			constRelocs: compiled.constRelocs,
 			constValueRelocs: compiled.constValueRelocs,
+			symbols: {
+				protoIds: compiled.metadata.protoIds,
+				globalNames: compiled.metadata.globalNames,
+				systemGlobalNames: compiled.metadata.systemGlobalNames,
+				exportProtoIdBySlot: compiled.metadata.exportProtoIdBySlot,
+			},
 		},
 	};
 }

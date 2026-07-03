@@ -314,15 +314,17 @@ void Runtime::startCartProgram() {
 	startLoadedProgram(*m_cartVectors, std::span<const std::string>{}, m_cartStaticModulePaths);
 }
 
-void Runtime::boot(const ProgramImage& image, ProgramMetadata* metadata, ProgramVectorTable vectors, uint32_t dataBaseAddress, uint32_t bssBaseAddress, std::span<const std::string> systemStaticModulePaths, std::span<const std::string> cartStaticModulePaths) {
+void Runtime::boot(const ProgramImage& image, std::unique_ptr<ProgramMetadata> metadata, ProgramVectorTable vectors, uint32_t dataBaseAddress, uint32_t bssBaseAddress, std::span<const std::string> systemStaticModulePaths, std::span<const std::string> cartStaticModulePaths) {
 	m_moduleCache.clear();
-	m_programStorage = inflateExecutableProgramImage(image, metadata, dataBaseAddress, bssBaseAddress);
+	m_programStorage = inflateExecutableProgramImage(image, dataBaseAddress, bssBaseAddress);
 	try {
 		setupBuiltins();
 		enforceLuaHeapBudget();
 		m_program = m_programStorage.get();
-		m_programMetadata = metadata;
-		machine.cpu.setProgram(m_program, metadata);
+		m_programRuntimeSymbols = image.link.symbols;
+		m_programMetadataStorage = std::move(metadata);
+		m_programMetadata = m_programMetadataStorage.get();
+		machine.cpu.setProgram(m_program, m_programRuntimeSymbols, m_programMetadata);
 		startLoadedProgram(vectors, systemStaticModulePaths, cartStaticModulePaths);
 	} catch (const std::exception& e) {
 		handleLuaError(e.what());

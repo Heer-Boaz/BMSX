@@ -9,7 +9,6 @@
 #include "rompack/format.h"
 #include "rompack/assets.h"
 #include "common/serializer/binencoder.h"
-#include "../machine/program/loader.h"
 #include <string>
 #include <unordered_map>
 #include <vector>
@@ -40,10 +39,8 @@ public:
 	std::unordered_map<AssetToken, BinAsset> bin;
 	std::unordered_map<AssetToken, AudioEventAsset> audioevents;
 
-	// Pre-compiled program image loaded from the ROM package.
-	std::unique_ptr<ProgramImage> programImage;
-	// Optional program symbols loaded from the ROM package.
-	std::unique_ptr<ProgramMetadata> programSymbols;
+	std::optional<RomAssetInfo> programImageRom;
+	std::optional<RomAssetInfo> programSymbolsRom;
 
 	// Project metadata
 	std::string projectRootPath;
@@ -83,7 +80,7 @@ public:
 	bool hasLuaModule(const AssetId& modulePath) const;
 	bool hasLuaSource(const AssetId& sourcePath) const;
 	bool hasAudioEvent(const AssetId& id) const;
-	bool hasProgram() const { return programImage != nullptr; }
+	bool hasProgram() const { return programImageRom.has_value(); }
 	bool hasAnyImg() const { return !img.empty(); }
 
 private:

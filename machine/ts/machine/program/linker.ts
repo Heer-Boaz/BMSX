@@ -1,5 +1,5 @@
 // start repeated-sequence-acceptable -- Program linker rewrites packed instruction fields directly to preserve bit-level clarity.
-import { OpCode, type Program, type ProgramMetadata, type ProgramModuleExport, type ProgramModuleProto, type Proto, type SourceRange } from '../cpu/cpu';
+import { OpCode, type Program, type ProgramMetadata, type ProgramModuleExport, type ProgramModuleProto, type ProgramRuntimeSymbols, type Proto, type SourceRange } from '../cpu/cpu';
 import {
 	BASE_BX_BITS,
 	EXT_B_BITS,
@@ -289,11 +289,11 @@ const resolveLinkedExportSlot = (
 	throw new Error(`[ProgramLinker] Unable to resolve module export slot '${slotName}' during linking.`);
 };
 
-const relocRequiresSymbolMetadata = (reloc: ProgramConstReloc): boolean =>
+const relocRequiresLinkSymbols = (reloc: ProgramConstReloc): boolean =>
 	reloc.kind === 'module' || reloc.kind === 'export_proto';
 
-const cartRelocRequiresMetadata = (reloc: ProgramConstReloc): boolean =>
-	relocRequiresSymbolMetadata(reloc) || reloc.kind === 'gl' || reloc.kind === 'sys';
+const relocRequiresNamedSlotRemap = (reloc: ProgramConstReloc): boolean =>
+	reloc.kind === 'gl' || reloc.kind === 'sys';
 
 const rewriteResolvedABx = (
 	code: Uint8Array,
@@ -338,20 +338,18 @@ const resolveExportProtoRelocTarget = (
 	return { op: resolvedSlot.op, value: resolvedSlot.slot };
 };
 
-type SymbolicRelocSymbols = {
-	globalNames: ReadonlyArray<string>;
-	systemGlobalNames: ReadonlyArray<string>;
-	exportProtoIdBySlot: { readonly [slotName: string]: string };
-	protoIds: ReadonlyArray<string>;
-};
-
 // Shared resolver for the two symbolic reloc kinds ('module', 'export_proto').
 // The reloc record owns the symbolic export name; resolved relocs rewrite their
 // referencing instruction to the final concrete operand (slot or proto index).
 const applySymbolicRelocations = (
 	code: Uint8Array,
 	relocs: ReadonlyArray<ProgramConstReloc>,
-	symbols: SymbolicRelocSymbols,
+	symbols: {
+		readonly protoIds: ReadonlyArray<string>;
+		readonly globalNames: ReadonlyArray<string>;
+		readonly systemGlobalNames: ReadonlyArray<string>;
+		readonly exportProtoIdBySlot: { readonly [slotName: string]: string };
+	},
 ): void => {
 	for (let index = 0; index < relocs.length; index += 1) {
 		const reloc = relocs[index];
@@ -370,13 +368,13 @@ const applySymbolicRelocations = (
 
 export const resolveRuntimeProgramRelocations = (
 	program: Program,
-	metadata: ProgramMetadata,
+	symbols: ProgramRuntimeSymbols,
 	relocs: ReadonlyArray<ProgramConstReloc>,
 ): void => {
 	applySymbolicRelocations(
 		program.code,
 		relocs,
-		metadata,
+		symbols,
 	);
 };
 
@@ -405,7 +403,6 @@ export const resolveRuntimeProgramValueRelocations = (
 
 export const inflateExecutableProgramImage = (
 	programImage: ProgramImage,
-	metadata: ProgramMetadata | null,
 	dataBaseAddress: number = PROGRAM_STATIC_RAM_BASE,
 	bssBaseAddress: number = dataBaseAddress + programImage.sections.data.bytes.byteLength,
 ): Program => {
@@ -434,10 +431,7 @@ export const inflateExecutableProgramImage = (
 		},
 	});
 	if (programImage.link.constRelocs.length !== 0) {
-		if (metadata === null) {
-			throw new Error('program image relocations require metadata.');
-		}
-		resolveRuntimeProgramRelocations(program, metadata, programImage.link.constRelocs);
+		resolveRuntimeProgramRelocations(program, programImage.link.symbols, programImage.link.constRelocs);
 	}
 	return program;
 };
@@ -614,9 +608,38 @@ const rewriteClosureIndices = (code: Uint8Array, protoOffset: number): void => {
 };
 
 
+const mergeRuntimeSymbols = (
+	system: ProgramRuntimeSymbols,
+	cart: ProgramRuntimeSymbols,
+	systemGlobalNames: string[],
+	globalNames: string[],
+): ProgramRuntimeSymbols => {
+	const protoIds: string[] = new Array(system.protoIds.length + cart.protoIds.length);
+	for (let index = 0; index < system.protoIds.length; index += 1) {
+		protoIds[index] = system.protoIds[index];
+	}
+	for (let index = 0; index < cart.protoIds.length; index += 1) {
+		protoIds[system.protoIds.length + index] = cart.protoIds[index];
+	}
+	const exportProtoIdBySlot: ProgramRuntimeSymbols['exportProtoIdBySlot'] = {};
+	for (const slotName in system.exportProtoIdBySlot) {
+		exportProtoIdBySlot[slotName] = system.exportProtoIdBySlot[slotName];
+	}
+	for (const slotName in cart.exportProtoIdBySlot) {
+		exportProtoIdBySlot[slotName] = cart.exportProtoIdBySlot[slotName];
+	}
+	return {
+		protoIds,
+		systemGlobalNames,
+		globalNames,
+		exportProtoIdBySlot,
+	};
+};
+
 const mergeMetadata = (
 	system: ProgramMetadata | undefined,
 	cart: ProgramMetadata | undefined,
+	runtimeSymbols: ProgramRuntimeSymbols,
 	layout: ProgramLayout,
 	systemInstructionCount: number,
 	cartInstructionCount: number,
@@ -625,7 +648,7 @@ const mergeMetadata = (
 		return null;
 	}
 	if (!system || !cart) {
-		throw new Error('[ProgramLinker] Linking requires both system and cart symbols when symbols are provided.');
+		throw new Error('[ProgramLinker] Linking requires both debug symbol metadata assets when debug metadata is provided.');
 	}
 	if (system.debugRanges.length !== systemInstructionCount) {
 		throw new Error('[ProgramLinker] System debug range length mismatch.');
@@ -633,8 +656,6 @@ const mergeMetadata = (
 	if (cart.debugRanges.length !== cartInstructionCount) {
 		throw new Error('[ProgramLinker] Cart debug range length mismatch.');
 	}
-	const mergedSystemGlobals = mergeNamedSlots(system.systemGlobalNames, cart.systemGlobalNames);
-	const mergedGlobals = mergeNamedSlots(system.globalNames, cart.globalNames);
 	const systemBaseWord = layout.systemBasePc / INSTRUCTION_BYTES;
 	const cartBaseWord = layout.cartBasePc / INSTRUCTION_BYTES;
 	const totalInstructionCount = Math.max(
@@ -648,13 +669,6 @@ const mergeMetadata = (
 	}
 	for (let index = 0; index < cartInstructionCount; index += 1) {
 		debugRanges[cartBaseWord + index] = cart.debugRanges[index];
-	}
-	const protoIds: string[] = new Array(system.protoIds.length + cart.protoIds.length);
-	for (let index = 0; index < system.protoIds.length; index += 1) {
-		protoIds[index] = system.protoIds[index];
-	}
-	for (let index = 0; index < cart.protoIds.length; index += 1) {
-		protoIds[system.protoIds.length + index] = cart.protoIds[index];
 	}
 	const localSlotsByProto: Array<ProgramMetadata['localSlotsByProto'][number]> = new Array(system.localSlotsByProto.length + cart.localSlotsByProto.length);
 	for (let index = 0; index < system.localSlotsByProto.length; index += 1) {
@@ -670,21 +684,14 @@ const mergeMetadata = (
 	for (let index = 0; index < cart.upvalueNamesByProto.length; index += 1) {
 		upvalueNamesByProto[system.upvalueNamesByProto.length + index] = cart.upvalueNamesByProto[index];
 	}
-	const exportProtoIdBySlot: ProgramMetadata['exportProtoIdBySlot'] = {};
-	for (const slotName in system.exportProtoIdBySlot) {
-		exportProtoIdBySlot[slotName] = system.exportProtoIdBySlot[slotName];
-	}
-	for (const slotName in cart.exportProtoIdBySlot) {
-		exportProtoIdBySlot[slotName] = cart.exportProtoIdBySlot[slotName];
-	}
 	return {
 		debugRanges,
-		protoIds,
+		protoIds: runtimeSymbols.protoIds,
 		localSlotsByProto,
 		upvalueNamesByProto,
-		systemGlobalNames: mergedSystemGlobals.names,
-		globalNames: mergedGlobals.names,
-		exportProtoIdBySlot,
+		systemGlobalNames: runtimeSymbols.systemGlobalNames,
+		globalNames: runtimeSymbols.globalNames,
+		exportProtoIdBySlot: runtimeSymbols.exportProtoIdBySlot,
 	};
 };
 
@@ -727,6 +734,8 @@ export const linkProgramImages = (
 	const cartBss = cartImage.sections.bss;
 	const systemConstRelocs = systemImage.link.constRelocs;
 	const cartConstRelocs = cartImage.link.constRelocs;
+	const systemRuntimeSymbols = systemImage.link.symbols;
+	const cartRuntimeSymbols = cartImage.link.symbols;
 	const baseProtoCount = systemText.protos.length;
 	const systemCodeBytes = systemText.code.length;
 	const cartCodeBytes = cartText.code.length;
@@ -785,48 +794,42 @@ export const linkProgramImages = (
 			cartRodataBase,
 		),
 	);
-	const systemMetadata = systemSymbols;
-	const cartMetadata = cartSymbols;
+	const mergedSystemGlobals = mergeNamedSlots(systemRuntimeSymbols.systemGlobalNames, cartRuntimeSymbols.systemGlobalNames);
+	const mergedGlobals = mergeNamedSlots(systemRuntimeSymbols.globalNames, cartRuntimeSymbols.globalNames);
+	const runtimeSymbols = mergeRuntimeSymbols(systemRuntimeSymbols, cartRuntimeSymbols, mergedSystemGlobals.names, mergedGlobals.names);
 
 	// Module/export relocations are symbolic object-code records. The linker resolves
 	// them for every input image before the program becomes executable.
-	let systemNeedsSymbols = false;
+	let systemNeedsLinkSymbols = false;
 	for (let index = 0; index < systemConstRelocs.length; index += 1) {
-		if (relocRequiresSymbolMetadata(systemConstRelocs[index])) {
-			systemNeedsSymbols = true;
+		if (relocRequiresLinkSymbols(systemConstRelocs[index])) {
+			systemNeedsLinkSymbols = true;
 			break;
 		}
 	}
-	let cartNeedsSymbols = false;
-	let cartNeedsMetadata = false;
+	let cartNeedsLinkSymbols = false;
+	let cartNeedsNamedSlotRemap = false;
 	for (let index = 0; index < cartConstRelocs.length; index += 1) {
 		const reloc = cartConstRelocs[index];
-		if (relocRequiresSymbolMetadata(reloc)) {
-			cartNeedsSymbols = true;
+		if (relocRequiresLinkSymbols(reloc)) {
+			cartNeedsLinkSymbols = true;
 		}
-		if (cartRelocRequiresMetadata(reloc)) {
-			cartNeedsMetadata = true;
+		if (relocRequiresNamedSlotRemap(reloc)) {
+			cartNeedsNamedSlotRemap = true;
 		}
-		if (cartNeedsSymbols && cartNeedsMetadata) {
+		if (cartNeedsLinkSymbols && cartNeedsNamedSlotRemap) {
 			break;
 		}
 	}
-	if ((systemNeedsSymbols || cartNeedsMetadata) && !systemMetadata) {
-		throw new Error('[ProgramLinker] Missing system symbols metadata required to resolve relocations.');
-	}
-	if (cartNeedsMetadata && !cartMetadata) {
-		throw new Error('[ProgramLinker] Missing cart symbols metadata required to resolve cart relocations.');
-	}
 
-	if (systemNeedsSymbols) {
-		const symbols = systemMetadata as ProgramMetadata;
+	if (systemNeedsLinkSymbols) {
 		rewriteSymbolicConstRelocations(
 			systemCode,
 			systemConstRelocs,
-			symbols.globalNames,
-			symbols.systemGlobalNames,
-			symbols.exportProtoIdBySlot,
-			symbols.protoIds,
+			systemRuntimeSymbols.globalNames,
+			systemRuntimeSymbols.systemGlobalNames,
+			systemRuntimeSymbols.exportProtoIdBySlot,
+			systemRuntimeSymbols.protoIds,
 		);
 	}
 	rewriteConstPoolRelocations(
@@ -834,39 +837,21 @@ export const linkProgramImages = (
 		cartConstRelocs,
 		mergedConsts.cartConstRemap,
 	);
-	if (cartNeedsMetadata) {
-		const systemRelocMetadata = systemMetadata as ProgramMetadata;
-		const cartRelocMetadata = cartMetadata as ProgramMetadata;
-		const mergedSystemGlobals = mergeNamedSlots(systemRelocMetadata.systemGlobalNames, cartRelocMetadata.systemGlobalNames);
-		const mergedGlobals = mergeNamedSlots(systemRelocMetadata.globalNames, cartRelocMetadata.globalNames);
+	if (cartNeedsNamedSlotRemap || cartNeedsLinkSymbols) {
 		rewriteNamedSlotRelocations(
 			cartCode,
 			cartConstRelocs,
 			mergedGlobals.cartRemap,
 			mergedSystemGlobals.cartRemap,
 		);
-		if (cartNeedsSymbols) {
-			const mergedExportProtoIdBySlot: ProgramMetadata['exportProtoIdBySlot'] = {};
-			for (const slotName in systemRelocMetadata.exportProtoIdBySlot) {
-				mergedExportProtoIdBySlot[slotName] = systemRelocMetadata.exportProtoIdBySlot[slotName];
-			}
-			for (const slotName in cartRelocMetadata.exportProtoIdBySlot) {
-				mergedExportProtoIdBySlot[slotName] = cartRelocMetadata.exportProtoIdBySlot[slotName];
-			}
-			const mergedProtoIds: string[] = new Array(systemRelocMetadata.protoIds.length + cartRelocMetadata.protoIds.length);
-			for (let index = 0; index < systemRelocMetadata.protoIds.length; index += 1) {
-				mergedProtoIds[index] = systemRelocMetadata.protoIds[index];
-			}
-			for (let index = 0; index < cartRelocMetadata.protoIds.length; index += 1) {
-				mergedProtoIds[systemRelocMetadata.protoIds.length + index] = cartRelocMetadata.protoIds[index];
-			}
+		if (cartNeedsLinkSymbols) {
 			rewriteSymbolicConstRelocations(
 				cartCode,
 				cartConstRelocs,
 				mergedGlobals.names,
 				mergedSystemGlobals.names,
-				mergedExportProtoIdBySlot,
-				mergedProtoIds,
+				runtimeSymbols.exportProtoIdBySlot,
+				runtimeSymbols.protoIds,
 			);
 		}
 	}
@@ -983,8 +968,9 @@ export const linkProgramImages = (
 		irqProtoIndex: cartImage.vectors.irqProtoIndex + baseProtoCount,
 	};
 	const metadata = mergeMetadata(
-		systemMetadata,
-		cartMetadata,
+		systemSymbols,
+		cartSymbols,
+		runtimeSymbols,
 		resolvedLayout,
 		systemInstructionCount,
 		cartInstructionCount,
@@ -1014,7 +1000,7 @@ export const linkProgramImages = (
 				symbols: bssSymbols,
 			},
 		},
-		link: { constRelocs: [], constValueRelocs: [] },
+		link: { constRelocs: [], constValueRelocs: [], symbols: runtimeSymbols },
 	};
 
 	return {

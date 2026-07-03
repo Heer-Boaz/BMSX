@@ -260,9 +260,29 @@ Owners:
 The ROM package and program image use the current wire records only. There is no
 old-format reader and no decode path for obsolete records.
 
+Runtime package records describe ROM payloads; they do not own duplicate audio,
+atlas, or binary payload bytes. The active machine keeps one CPU-visible ROM
+backing per loaded layer. Native path-based libretro loads use read-only mapped
+files for that backing; memory-buffer frontends provide data that the core owns
+once for lifetime safety. Node headless consumes the `fs.readFile` buffer
+directly. Guest code moves bytes from ROM to RAM/VRAM/APU through the machine;
+the Lua engine must not cache asset payload copies behind the cart's back.
+
 Compiled Lua/YAML is source/program material, not mutable machine state.
 `__program__` is a linked object image. `__program_symbols__` is debug metadata
 and never counts as RAM.
+
+Runtime link symbols belong to `__program__`, not `__program_symbols__`.
+The program-image `link.symbols` record carries proto ids, global slot names,
+system-global slot names, and export-proto mappings required to resolve
+relocations and install CPU global slots. Stripping `__program_symbols__`
+removes source ranges, local-slot names, and upvalue names only; it must not
+change executable linking, boot, or restore behavior.
+
+CPU decode state is derived runtime infrastructure. The CPU decodes executable
+proto ranges into sparse pages and allocates table-load inline caches only for
+actual table-load opcodes. It must not allocate decode/cache state for address
+holes in the linked text layout or for every possible program-ROM word.
 
 ROM asset symbols are a compile/link contract, not a runtime registry. The
 rompack owner emits the generated const module `bmsx/assets`; the compiler

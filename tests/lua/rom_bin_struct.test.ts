@@ -22,7 +22,7 @@ function runStructRead(packedWords: number[], snippet: string): Value[] {
 		memory.writeMappedU32LE(BIN_ADDR + index * 4, packedWords[index] >>> 0);
 	}
 	const cpu = new CPU(memory);
-	cpu.setProgram(compiled.program, compiled.metadata);
+	cpu.setProgram(compiled.program, compiled.metadata, compiled.metadata);
 	cpu.start(compiled.entryProtoIndex);
 	assert.equal(cpu.runUntilDepth(0, 1000000), RunResult.Halted);
 	return Array.from(cpu.lastReturnValues);

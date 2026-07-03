@@ -18,6 +18,7 @@ ProgramImage makeMinimalProgramImage() {
 
 	Proto proto;
 	proto.entryPC = 0;
+	proto.codeLen = INSTRUCTION_BYTES;
 	proto.maxStack = 1;
 	image.sections.text.protos.push_back(proto);
 	return image;

@@ -1027,7 +1027,7 @@ Closure* CPU::createTrackedClosure(int protoIndex, size_t upvalueCount) {
 	return closure;
 }
 
-void CPU::setProgram(Program* program, ProgramMetadata* metadata) {
+void CPU::setProgram(Program* program, const ProgramRuntimeSymbols& runtimeSymbols, ProgramMetadata* metadata) {
 	// Keep slot-backed globals materialized in the globals table before swapping programs.
 	// SETGL/SETSYS write into the slot arrays directly, and append/reload paths rebuild the next
 	// slot layout from `globals`, so without this sync flattened module exports can fall back to nil.
@@ -1041,8 +1041,10 @@ void CPU::setProgram(Program* program, ProgramMetadata* metadata) {
 	m_metadata = metadata;
 	if (!m_program) {
 		m_staticClosures.clear();
-		initializeGlobalSlots(metadata);
-		m_decoded.clear();
+		clearGlobalSlots();
+		m_decodedPages.clear();
+		m_decodedWordCount = 0;
+		m_tableLoadCaches.clear();
 		return;
 	}
 	if (!m_program->constPoolCanonicalized) {
@@ -1063,17 +1065,14 @@ void CPU::setProgram(Program* program, ProgramMetadata* metadata) {
 	}
 	m_indexKey = valueString(m_stringPool.intern("__index"));
 	materializeStaticClosures();
-	initializeGlobalSlots(metadata);
+	initializeGlobalSlots(runtimeSymbols);
 	decodeProgram();
 }
 
-void CPU::initializeGlobalSlots(ProgramMetadata* metadata) {
+void CPU::initializeGlobalSlots(const ProgramRuntimeSymbols& runtimeSymbols) {
 	clearGlobalSlots();
-	if (!metadata) {
-		return;
-	}
-	initializeGlobalSlotList(m_systemGlobalNames, m_systemGlobalValues, m_systemGlobalSlotByKey, metadata->systemGlobalNames);
-	initializeGlobalSlotList(m_globalNames, m_globalValues, m_globalSlotByKey, metadata->globalNames);
+	initializeGlobalSlotList(m_systemGlobalNames, m_systemGlobalValues, m_systemGlobalSlotByKey, runtimeSymbols.systemGlobalNames);
+	initializeGlobalSlotList(m_globalNames, m_globalValues, m_globalSlotByKey, runtimeSymbols.globalNames);
 }
 
 void CPU::initializeGlobalSlotList(std::vector<StringId>& names, std::vector<Value>& values, std::unordered_map<StringId, size_t>& slotByKey, const std::vector<std::string>& source) {
@@ -1135,68 +1134,92 @@ void CPU::syncGlobalSlotsToTable() {
 
 
 void CPU::decodeProgram() {
-	m_decoded.clear();
+	m_decodedPages.clear();
 	m_tableLoadCaches.clear();
 	if (!m_program) {
+		m_decodedWordCount = 0;
 		return;
 	}
-	size_t instructionCount = m_program->code.size() / INSTRUCTION_BYTES;
-	m_decoded.resize(instructionCount);
-	m_tableLoadCaches.resize(instructionCount);
-	for (size_t wordIndex = 0; wordIndex < instructionCount; ++wordIndex) {
-		int width = 1;
-		uint8_t wideA = 0;
-		uint8_t wideB = 0;
-		uint8_t wideC = 0;
-		uint32_t instr = readInstructionWord(m_program->code, static_cast<int>(wordIndex));
-		uint8_t op = static_cast<uint8_t>((instr >> 18) & 0x3f);
-		uint8_t ext = static_cast<uint8_t>(instr >> 24);
-		if (static_cast<OpCode>(op) == OpCode::WIDE) {
-			if (wordIndex + 1 >= instructionCount) {
-				throw BMSX_RUNTIME_ERROR("Malformed program: WIDE instruction at end of program.");
+	m_decodedWordCount = m_program->code.size() / INSTRUCTION_BYTES;
+	const size_t pageCount = (m_decodedWordCount + DECODED_PAGE_WORDS - 1u) >> DECODED_PAGE_SHIFT;
+	m_decodedPages.resize(pageCount);
+	for (const Proto& proto : m_program->protos) {
+		const size_t startWord = static_cast<size_t>(proto.entryPC) / INSTRUCTION_BYTES;
+		const size_t endWord = startWord + static_cast<size_t>(proto.codeLen) / INSTRUCTION_BYTES;
+		for (size_t wordIndex = startWord; wordIndex < endWord;) {
+			int width = 1;
+			uint8_t wideA = 0;
+			uint8_t wideB = 0;
+			uint8_t wideC = 0;
+			uint32_t instr = readInstructionWord(m_program->code, static_cast<int>(wordIndex));
+			uint8_t op = static_cast<uint8_t>((instr >> 18) & 0x3f);
+			uint8_t ext = static_cast<uint8_t>(instr >> 24);
+			if (static_cast<OpCode>(op) == OpCode::WIDE) {
+				if (wordIndex + 1 >= m_decodedWordCount) {
+					throw BMSX_RUNTIME_ERROR("Malformed program: WIDE instruction at end of program.");
+				}
+				width = 2;
+				wideA = static_cast<uint8_t>((instr >> 12) & 0x3f);
+				wideB = static_cast<uint8_t>((instr >> 6) & 0x3f);
+				wideC = static_cast<uint8_t>(instr & 0x3f);
+				instr = readInstructionWord(m_program->code, static_cast<int>(wordIndex + 1));
+				op = static_cast<uint8_t>((instr >> 18) & 0x3f);
+				ext = static_cast<uint8_t>(instr >> 24);
 			}
-			width = 2;
-			wideA = static_cast<uint8_t>((instr >> 12) & 0x3f);
-			wideB = static_cast<uint8_t>((instr >> 6) & 0x3f);
-			wideC = static_cast<uint8_t>(instr & 0x3f);
-			instr = readInstructionWord(m_program->code, static_cast<int>(wordIndex + 1));
-			op = static_cast<uint8_t>((instr >> 18) & 0x3f);
-			ext = static_cast<uint8_t>(instr >> 24);
+			const uint8_t aLow = static_cast<uint8_t>((instr >> 12) & 0x3f);
+			const uint8_t bLow = static_cast<uint8_t>((instr >> 6) & 0x3f);
+			const uint8_t cLow = static_cast<uint8_t>(instr & 0x3f);
+			const bool usesDisp = OPCODE_USES_DISP[op] != 0u;
+			const bool usesBx = !usesDisp && OPCODE_USES_BX[op] != 0u;
+			const uint8_t extA = (usesBx || usesDisp) ? 0 : static_cast<uint8_t>((ext >> 6) & 0x3);
+			const uint8_t extB = (usesBx || usesDisp) ? 0 : static_cast<uint8_t>((ext >> 3) & 0x7);
+			const uint8_t extC = (usesBx || usesDisp) ? 0 : static_cast<uint8_t>(ext & 0x7);
+			const int aShift = usesDisp ? MAX_OPERAND_BITS : MAX_OPERAND_BITS + (usesBx ? 0 : EXT_A_BITS);
+			const int bShift = usesDisp ? MAX_OPERAND_BITS : MAX_OPERAND_BITS + EXT_B_BITS;
+			const int cShift = usesDisp ? MAX_OPERAND_BITS : MAX_OPERAND_BITS + EXT_C_BITS;
+			const uint32_t bxLow = (static_cast<uint32_t>(bLow) << MAX_OPERAND_BITS) | static_cast<uint32_t>(cLow);
+			const uint32_t rkRawB = (static_cast<uint32_t>(wideB) << bShift)
+				| (static_cast<uint32_t>(extB) << MAX_OPERAND_BITS)
+				| static_cast<uint32_t>(bLow);
+			const uint32_t rkRawC = (static_cast<uint32_t>(wideC) << cShift)
+				| (static_cast<uint32_t>(extC) << MAX_OPERAND_BITS)
+				| static_cast<uint32_t>(cLow);
+			DecodedInstruction decoded;
+			decoded.word = instr;
+			decoded.op = op;
+			decoded.width = static_cast<uint8_t>(width);
+			decoded.a = static_cast<uint16_t>((static_cast<int>(wideA) << aShift) | (static_cast<int>(extA) << MAX_OPERAND_BITS) | aLow);
+			decoded.b = static_cast<uint16_t>((static_cast<int>(wideB) << bShift) | (static_cast<int>(extB) << MAX_OPERAND_BITS) | bLow);
+			decoded.c = static_cast<uint16_t>((static_cast<int>(wideC) << cShift) | (static_cast<int>(extC) << MAX_OPERAND_BITS) | cLow);
+			decoded.bx = (static_cast<uint32_t>(wideB) << (MAX_BX_BITS + EXT_BX_BITS))
+				| (static_cast<uint32_t>(usesBx ? ext : 0) << MAX_BX_BITS)
+				| bxLow;
+			decoded.sbx = signExtend(decoded.bx, MAX_BX_BITS + EXT_BX_BITS + ((width - 1) * MAX_OPERAND_BITS));
+			decoded.rkB = signExtend(rkRawB, MAX_OPERAND_BITS + EXT_B_BITS + ((width - 1) * MAX_OPERAND_BITS));
+			decoded.rkC = signExtend(rkRawC, MAX_OPERAND_BITS + EXT_C_BITS + ((width - 1) * MAX_OPERAND_BITS));
+			decoded.disp = ext;
+			if (static_cast<OpCode>(op) == OpCode::GETI
+				|| static_cast<OpCode>(op) == OpCode::GETFIELD
+				|| static_cast<OpCode>(op) == OpCode::SELF) {
+				decoded.tableCacheIndex = static_cast<uint32_t>(m_tableLoadCaches.size());
+				m_tableLoadCaches.push_back(TableLoadInlineCache{});
+			}
+			decodedSlotForWrite(wordIndex) = decoded;
+			wordIndex += static_cast<size_t>(width);
 		}
-		const uint8_t aLow = static_cast<uint8_t>((instr >> 12) & 0x3f);
-		const uint8_t bLow = static_cast<uint8_t>((instr >> 6) & 0x3f);
-		const uint8_t cLow = static_cast<uint8_t>(instr & 0x3f);
-		const bool usesDisp = OPCODE_USES_DISP[op] != 0u;
-		const bool usesBx = !usesDisp && OPCODE_USES_BX[op] != 0u;
-		const uint8_t extA = (usesBx || usesDisp) ? 0 : static_cast<uint8_t>((ext >> 6) & 0x3);
-		const uint8_t extB = (usesBx || usesDisp) ? 0 : static_cast<uint8_t>((ext >> 3) & 0x7);
-		const uint8_t extC = (usesBx || usesDisp) ? 0 : static_cast<uint8_t>(ext & 0x7);
-		const int aShift = usesDisp ? MAX_OPERAND_BITS : MAX_OPERAND_BITS + (usesBx ? 0 : EXT_A_BITS);
-		const int bShift = usesDisp ? MAX_OPERAND_BITS : MAX_OPERAND_BITS + EXT_B_BITS;
-		const int cShift = usesDisp ? MAX_OPERAND_BITS : MAX_OPERAND_BITS + EXT_C_BITS;
-		const uint32_t bxLow = (static_cast<uint32_t>(bLow) << MAX_OPERAND_BITS) | static_cast<uint32_t>(cLow);
-		const uint32_t rkRawB = (static_cast<uint32_t>(wideB) << bShift)
-			| (static_cast<uint32_t>(extB) << MAX_OPERAND_BITS)
-			| static_cast<uint32_t>(bLow);
-		const uint32_t rkRawC = (static_cast<uint32_t>(wideC) << cShift)
-			| (static_cast<uint32_t>(extC) << MAX_OPERAND_BITS)
-			| static_cast<uint32_t>(cLow);
-		DecodedInstruction decoded;
-		decoded.word = instr;
-		decoded.op = op;
-		decoded.width = static_cast<uint8_t>(width);
-		decoded.a = static_cast<uint16_t>((static_cast<int>(wideA) << aShift) | (static_cast<int>(extA) << MAX_OPERAND_BITS) | aLow);
-		decoded.b = static_cast<uint16_t>((static_cast<int>(wideB) << bShift) | (static_cast<int>(extB) << MAX_OPERAND_BITS) | bLow);
-		decoded.c = static_cast<uint16_t>((static_cast<int>(wideC) << cShift) | (static_cast<int>(extC) << MAX_OPERAND_BITS) | cLow);
-		decoded.bx = (static_cast<uint32_t>(wideB) << (MAX_BX_BITS + EXT_BX_BITS))
-			| (static_cast<uint32_t>(usesBx ? ext : 0) << MAX_BX_BITS)
-			| bxLow;
-		decoded.sbx = signExtend(decoded.bx, MAX_BX_BITS + EXT_BX_BITS + ((width - 1) * MAX_OPERAND_BITS));
-		decoded.rkB = signExtend(rkRawB, MAX_OPERAND_BITS + EXT_B_BITS + ((width - 1) * MAX_OPERAND_BITS));
-		decoded.rkC = signExtend(rkRawC, MAX_OPERAND_BITS + EXT_C_BITS + ((width - 1) * MAX_OPERAND_BITS));
-		decoded.disp = ext;
-		m_decoded[wordIndex] = decoded;
 	}
+}
+
+DecodedInstruction& CPU::decodedSlotForWrite(size_t wordIndex) {
+	std::unique_ptr<DecodedInstructionPage>& page = m_decodedPages[wordIndex >> DECODED_PAGE_SHIFT];
+	if (!page) {
+		page = std::make_unique<DecodedInstructionPage>();
+	}
+	return page->words[wordIndex & DECODED_PAGE_MASK];
+}
+
+const DecodedInstruction& CPU::decodedAtWordIndex(int wordIndex) const {
+	return m_decodedPages[static_cast<size_t>(wordIndex) >> DECODED_PAGE_SHIFT]->words[static_cast<size_t>(wordIndex) & DECODED_PAGE_MASK];
 }
 
 void CPU::start(int entryProtoIndex, NativeArgsView args) {
@@ -2178,7 +2201,6 @@ void CPU::clearHaltAfterAcceptedInterrupt() {
 RunResult CPU::run(int instructionBudget, const IrqController* irqController, int irqProtoIndex) {
 	instructionBudgetRemaining = instructionBudget;
 	auto& frames = m_frames;
-	const DecodedInstruction* decodedProgram = m_decoded.data();
 	CallFrame* frame = nullptr;
 	const DecodedInstruction* decoded = nullptr;
 	int pc = 0;
@@ -2230,7 +2252,7 @@ dispatch_loop_check:
 	registers = frame->registers;
 	pc = frame->pc;
 	wordIndex = pc / INSTRUCTION_BYTES;
-	decoded = &decodedProgram[wordIndex];
+	decoded = &decodedAtWordIndex(wordIndex);
 	frame->pc = pc + (static_cast<int>(decoded->width) * INSTRUCTION_BYTES);
 	lastPc = pc + ((static_cast<int>(decoded->width) - 1) * INSTRUCTION_BYTES);
 	lastInstruction = decoded->word;
@@ -2256,12 +2278,12 @@ dispatch_loop_check:
 } while (0)
 #define SKIP_NEXT_INSTRUCTION() do { \
 	const int skipWordIndex = FRAME.pc / INSTRUCTION_BYTES; \
-	if (skipWordIndex < 0 || skipWordIndex >= static_cast<int>(m_decoded.size())) { \
+	if (skipWordIndex < 0 || skipWordIndex >= static_cast<int>(m_decodedWordCount)) { \
 		throw BMSX_RUNTIME_ERROR("Attempted to skip beyond end of program."); \
 	} \
-	FRAME.pc += static_cast<int>(decodedProgram[static_cast<size_t>(skipWordIndex)].width) * INSTRUCTION_BYTES; \
+	FRAME.pc += static_cast<int>(decodedAtWordIndex(skipWordIndex).width) * INSTRUCTION_BYTES; \
 } while (0)
-#define TABLE_CACHE_INDEX() (wordIndex)
+#define TABLE_CACHE_INDEX() (decoded->tableCacheIndex)
 #define DISPATCH_CONTINUE() do { goto dispatch_continue; } while (0)
 
 #if BMSX_USE_COMPUTED_GOTO
@@ -2303,12 +2325,12 @@ dispatch_continue:
 } while (0)
 #define SKIP_NEXT_INSTRUCTION() do { \
 	const int skipWordIndex = FRAME.pc / INSTRUCTION_BYTES; \
-	if (skipWordIndex < 0 || skipWordIndex >= static_cast<int>(m_decoded.size())) { \
+	if (skipWordIndex < 0 || skipWordIndex >= static_cast<int>(m_decodedWordCount)) { \
 		throw BMSX_RUNTIME_ERROR("Attempted to skip beyond end of program."); \
 	} \
-	FRAME.pc += static_cast<int>(decodedProgram[static_cast<size_t>(skipWordIndex)].width) * INSTRUCTION_BYTES; \
+	FRAME.pc += static_cast<int>(decodedAtWordIndex(skipWordIndex).width) * INSTRUCTION_BYTES; \
 } while (0)
-#define TABLE_CACHE_INDEX() (wordIndex)
+#define TABLE_CACHE_INDEX() (decoded->tableCacheIndex)
 #define DISPATCH_LABEL(name) dispatch_##name:
 #define DISPATCH_CONTINUE() do { goto dispatch_continue; } while (0)
 #include "machine/cpu/cpu_dispatch.inl"
@@ -2328,7 +2350,6 @@ dispatch_INVALID:
 RunResult CPU::runUntilDepth(int targetDepth, int instructionBudget, const IrqController* irqController, int irqProtoIndex) {
 	instructionBudgetRemaining = instructionBudget;
 	auto& frames = m_frames;
-	const DecodedInstruction* decodedProgram = m_decoded.data();
 	CallFrame* frame = nullptr;
 	const DecodedInstruction* decoded = nullptr;
 	int pc = 0;
@@ -2380,7 +2401,7 @@ dispatch_loop_check:
 	registers = frame->registers;
 	pc = frame->pc;
 	wordIndex = pc / INSTRUCTION_BYTES;
-	decoded = &decodedProgram[wordIndex];
+	decoded = &decodedAtWordIndex(wordIndex);
 	frame->pc = pc + (static_cast<int>(decoded->width) * INSTRUCTION_BYTES);
 	lastPc = pc + ((static_cast<int>(decoded->width) - 1) * INSTRUCTION_BYTES);
 	lastInstruction = decoded->word;
@@ -2406,12 +2427,12 @@ dispatch_loop_check:
 } while (0)
 #define SKIP_NEXT_INSTRUCTION() do { \
 	const int skipWordIndex = FRAME.pc / INSTRUCTION_BYTES; \
-	if (skipWordIndex < 0 || skipWordIndex >= static_cast<int>(m_decoded.size())) { \
+	if (skipWordIndex < 0 || skipWordIndex >= static_cast<int>(m_decodedWordCount)) { \
 		throw BMSX_RUNTIME_ERROR("Attempted to skip beyond end of program."); \
 	} \
-	FRAME.pc += static_cast<int>(decodedProgram[static_cast<size_t>(skipWordIndex)].width) * INSTRUCTION_BYTES; \
+	FRAME.pc += static_cast<int>(decodedAtWordIndex(skipWordIndex).width) * INSTRUCTION_BYTES; \
 } while (0)
-#define TABLE_CACHE_INDEX() (wordIndex)
+#define TABLE_CACHE_INDEX() (decoded->tableCacheIndex)
 #define DISPATCH_CONTINUE() do { goto dispatch_continue; } while (0)
 
 #if BMSX_USE_COMPUTED_GOTO
@@ -2453,12 +2474,12 @@ dispatch_continue:
 } while (0)
 #define SKIP_NEXT_INSTRUCTION() do { \
 	const int skipWordIndex = FRAME.pc / INSTRUCTION_BYTES; \
-	if (skipWordIndex < 0 || skipWordIndex >= static_cast<int>(m_decoded.size())) { \
+	if (skipWordIndex < 0 || skipWordIndex >= static_cast<int>(m_decodedWordCount)) { \
 		throw BMSX_RUNTIME_ERROR("Attempted to skip beyond end of program."); \
 	} \
-	FRAME.pc += static_cast<int>(decodedProgram[static_cast<size_t>(skipWordIndex)].width) * INSTRUCTION_BYTES; \
+	FRAME.pc += static_cast<int>(decodedAtWordIndex(skipWordIndex).width) * INSTRUCTION_BYTES; \
 } while (0)
-#define TABLE_CACHE_INDEX() (wordIndex)
+#define TABLE_CACHE_INDEX() (decoded->tableCacheIndex)
 #define DISPATCH_LABEL(name) dispatch_##name:
 #define DISPATCH_CONTINUE() do { goto dispatch_continue; } while (0)
 #include "machine/cpu/cpu_dispatch.inl"
@@ -2521,7 +2542,7 @@ void CPU::step() {
 	CallFrame& frame = *m_frames.back();
 	int pc = frame.pc;
 	int wordIndex = pc / INSTRUCTION_BYTES;
-	const DecodedInstruction& decoded = m_decoded[static_cast<size_t>(wordIndex)];
+	const DecodedInstruction& decoded = decodedAtWordIndex(wordIndex);
 	frame.pc = pc + (static_cast<int>(decoded.width) * INSTRUCTION_BYTES);
 	lastPc = pc + ((static_cast<int>(decoded.width) - 1) * INSTRUCTION_BYTES);
 	lastInstruction = decoded.word;
@@ -2611,12 +2632,12 @@ void CPU::executeInstruction(CallFrame& frame, const DecodedInstruction& decoded
 } while (0)
 #define SKIP_NEXT_INSTRUCTION() do { \
 	const int skipWordIndex = FRAME.pc / INSTRUCTION_BYTES; \
-	if (skipWordIndex < 0 || skipWordIndex >= static_cast<int>(m_decoded.size())) { \
+	if (skipWordIndex < 0 || skipWordIndex >= static_cast<int>(m_decodedWordCount)) { \
 		throw BMSX_RUNTIME_ERROR("Attempted to skip beyond end of program."); \
 	} \
-	FRAME.pc += static_cast<int>(m_decoded[static_cast<size_t>(skipWordIndex)].width) * INSTRUCTION_BYTES; \
+	FRAME.pc += static_cast<int>(decodedAtWordIndex(skipWordIndex).width) * INSTRUCTION_BYTES; \
 } while (0)
-#define TABLE_CACHE_INDEX() ((FRAME.pc / INSTRUCTION_BYTES) - static_cast<int>(decoded.width))
+#define TABLE_CACHE_INDEX() (decoded.tableCacheIndex)
 #define DISPATCH_LABEL(name) case OpCode::name:
 #define DISPATCH_CONTINUE() do { return; } while (0)
 	switch (static_cast<OpCode>(decoded.op)) {

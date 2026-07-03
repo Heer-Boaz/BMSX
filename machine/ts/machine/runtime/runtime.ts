@@ -11,7 +11,7 @@ import type { CartManifest, MachineManifest, RuntimeRomPackage } from '../../rom
 import { CART_ROM_HEADER_SIZE } from '../../rompack/format';
 import { RomSourceStack, type RawRomSource, type RomSourceLayer } from '../../rompack/source';
 import { buildRuntimeRomLayer, type RuntimeRomLayer } from '../../rompack/loader';
-import { EMPTY_CALL_ARGS, StringValue, Table, type Value, type Program, type ProgramMetadata, type NativeFunction, type NativeObject } from '../cpu/cpu';
+import { EMPTY_CALL_ARGS, StringValue, Table, type Value, type Program, type ProgramMetadata, type ProgramRuntimeSymbols, type NativeFunction, type NativeObject } from '../cpu/cpu';
 import { type LuaSemanticModel, type FileSemanticData } from '../../lua/semantic/model';
 import { registerFirmwareBuiltins } from '../firmware/builtins';
 import { clearLuaBootPrimitives } from '../firmware/globals';
@@ -109,6 +109,7 @@ export class Runtime {
 	}
 
 	public programMetadata: ProgramMetadata | null = null;
+	public programRuntimeSymbols!: ProgramRuntimeSymbols;
 	public hostEvalMetadata: ProgramMetadata | null = null;
 	public _luaPath: string = null;
 	public get currentPath(): string {

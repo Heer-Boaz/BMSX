@@ -22,7 +22,7 @@ void applyRuntimeResumeSnapshot(Runtime& runtime, const RuntimeResumeSnapshot& s
 
 	runtime.machine.cpu.globals->clear();
 	runtime.machine.cpu.clearGlobalSlots();
-	runtime.machine.cpu.setProgram(runtime.m_program, runtime.m_programMetadata);
+	runtime.machine.cpu.setProgram(runtime.m_program, runtime.m_programRuntimeSymbols, runtime.m_programMetadata);
 	for (const auto& [key, value] : snapshot.globals) {
 		runtime.machine.cpu.setGlobalByKey(key, value);
 	}

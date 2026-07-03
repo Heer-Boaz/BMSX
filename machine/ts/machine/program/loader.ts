@@ -1,5 +1,5 @@
 import { decodeBinary, requireObject, requireObjectKey } from '../../common/serializer/binencoder';
-import { StringValue, asStringId, valueIsString, type Program, type ProgramMetadata, type ProgramModuleExport, type ProgramModuleProto, type Proto, type Value } from '../cpu/cpu';
+import { StringValue, asStringId, valueIsString, type Program, type ProgramMetadata, type ProgramModuleExport, type ProgramModuleProto, type ProgramRuntimeSymbols, type Proto, type Value } from '../cpu/cpu';
 import { StringPool } from '../cpu/string_pool';
 
 // disable-next-line legacy_sentinel_string_pattern -- Program image id is a TS/C++/bootrom binary contract, not an alias fallback.
@@ -86,6 +86,7 @@ export type ProgramConstValueReloc = {
 export type ProgramLink = {
 	constRelocs: ProgramConstReloc[];
 	constValueRelocs: ProgramConstValueReloc[];
+	symbols: ProgramRuntimeSymbols;
 };
 
 export type ProgramImage = {
@@ -297,7 +298,22 @@ function decodeProgramLink(value: unknown): ProgramLink {
 			addend: requireObjectKey(entry, 'addend', entryLabel, `${entryLabel}.addend`) as number,
 		};
 	}
-	return { constRelocs, constValueRelocs };
+	return {
+		constRelocs,
+		constValueRelocs,
+		symbols: decodeProgramRuntimeSymbols(requireObjectKey(link, 'symbols', 'ProgramImage.link')),
+	};
+}
+
+function decodeProgramRuntimeSymbols(value: unknown): ProgramRuntimeSymbols {
+	const symbols = requireObject(value, 'ProgramImage.link.symbols');
+	const exportProtoIdBySlot = requireObject(requireObjectKey(symbols, 'exportProtoIdBySlot', 'ProgramImage.link.symbols', 'ProgramImage.link.symbols.exportProtoIdBySlot'), 'ProgramImage.link.symbols.exportProtoIdBySlot') as ProgramRuntimeSymbols['exportProtoIdBySlot'];
+	return {
+		protoIds: requireObjectKey(symbols, 'protoIds', 'ProgramImage.link.symbols', 'ProgramImage.link.symbols.protoIds') as string[],
+		globalNames: requireObjectKey(symbols, 'globalNames', 'ProgramImage.link.symbols', 'ProgramImage.link.symbols.globalNames') as string[],
+		systemGlobalNames: requireObjectKey(symbols, 'systemGlobalNames', 'ProgramImage.link.symbols', 'ProgramImage.link.symbols.systemGlobalNames') as string[],
+		exportProtoIdBySlot,
+	};
 }
 
 export function inflateProgram(sections: ProgramObjectSections): Program {

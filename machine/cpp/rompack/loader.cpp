@@ -918,8 +918,8 @@ void RuntimeRomPackage::clear() {
 	m_lua.clear();
 	m_luaSourceToModule.clear();
 	audioevents.clear();
-	programImage.reset();
-	programSymbols.reset();
+	programImageRom.reset();
+	programSymbolsRom.reset();
 	projectRootPath.clear();
 	cartManifest.reset();
 	machine = MachineManifest{};
@@ -1417,9 +1417,9 @@ static bool loadRomAssetPayloadInternal(const u8* romData,
 					throw BMSX_RUNTIME_ERROR("Code ROM entry missing payload: " + assetId);
 				}
 				if (assetId == PROGRAM_IMAGE_ID) {
-					romPackage.programImage = decodeProgramImage(romData + bufStart, bufEnd - bufStart);
+					romPackage.programImageRom = romInfo;
 				} else if (assetId == PROGRAM_SYMBOLS_IMAGE_ID) {
-					romPackage.programSymbols = decodeProgramSymbolsImage(romData + bufStart, bufEnd - bufStart);
+					romPackage.programSymbolsRom = romInfo;
 				}
 				break;
 			}
@@ -1440,7 +1440,7 @@ static bool loadRomAssetPayloadInternal(const u8* romData,
 		}
 	}
 
-	if (!romPackage.programImage && romPackage.programSymbols) {
+	if (!romPackage.programImageRom && romPackage.programSymbolsRom) {
 		throw BMSX_RUNTIME_ERROR("Program symbols require the program image.");
 	}
 

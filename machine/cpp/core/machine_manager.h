@@ -9,6 +9,7 @@
 #ifndef BMSX_MACHINE_MANAGER_H
 #define BMSX_MACHINE_MANAGER_H
 
+#include "common/mmap_file.h"
 #include "common/primitives.h"
 #include "common/registry.h"
 #include "rompack/format.h"
@@ -19,6 +20,7 @@
 #include "audio/soundmaster.h"
 #include <chrono>
 #include <memory>
+#include <string>
 #include <vector>
 
 namespace bmsx {
@@ -120,8 +122,10 @@ public:
 
 	// ROM loading and boot orchestration
 	bool loadSystemRomOwned(std::vector<u8>&& data);
+	bool loadSystemRomFile(const std::string& path);
 	bool loadRom(const u8* data, size_t size);
 	bool loadRomOwned(std::vector<u8>&& data);
+	bool loadRomFile(const std::string& path);
 	void unloadRom();
 	bool rebootLoadedRom();
 	bool bootWithoutCart();
@@ -161,6 +165,11 @@ public:
 	static MachineManager& instance();
 
 private:
+	struct LoadedProgramImages {
+		std::unique_ptr<ProgramImage> image;
+		std::unique_ptr<ProgramMetadata> metadata;
+	};
+
 	Platform* m_platform = nullptr;
 	std::unique_ptr<GameView> m_view;
 	std::unique_ptr<BFont> m_default_font;
@@ -173,23 +182,24 @@ private:
 	RuntimeRomPackage m_system_rom;
 	RuntimeRomPackage m_cart_rom;
 	RuntimeRomPackage* m_active_rom = nullptr;
+	MmapFile m_system_rom_file;
 	std::vector<u8> m_system_rom_owned;
 	const u8* m_system_rom_data = nullptr;
 	size_t m_system_rom_size = 0;
+	MmapFile m_cart_rom_file;
 	std::vector<u8> m_cart_rom_owned;
 	const u8* m_cart_rom_data = nullptr;
 	size_t m_cart_rom_size = 0;
 	bool m_rom_loaded = false;
 	bool m_loaded_cart_has_program = false;
 	bool m_system_rom_loaded = false;
-	std::unique_ptr<ProgramImage> m_linked_program;
-	std::unique_ptr<ProgramMetadata> m_linked_program_symbols;
 
 	// Boot helpers (moved from RomBootManager)
 	void activateSystemRom();
 	void activateCartRom();
 	void setMachineManifest(const MachineManifest& manifest);
 	void configureViewForModel();
+	LoadedProgramImages loadProgramImagesFromRom(const RuntimeRomPackage& romPackage, const u8* romData) const;
 	bool loadSystemRomInternal(const u8* data, size_t size);
 	bool loadRomInternal(const u8* data, size_t size);
 	bool bootSystemStartupProgram(const MachineManifest& runtimeMachine);

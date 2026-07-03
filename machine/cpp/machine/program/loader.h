@@ -116,6 +116,7 @@ struct ProgramConstValueReloc {
 struct ProgramLink {
 	std::vector<ProgramConstReloc> constRelocs;
 	std::vector<ProgramConstValueReloc> constValueRelocs;
+	ProgramRuntimeSymbols symbols;
 };
 
 struct ProgramVectorTable {

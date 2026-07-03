@@ -56,7 +56,8 @@ function makeMetadata(): ProgramMetadata {
 test('CPU profiler records opcode and PC execution counts', () => {
 	const memory = new Memory({ systemRom: new Uint8Array(0) });
 	const cpu = new CPU(memory);
-	cpu.setProgram(makeProgram(cpu), makeMetadata());
+	const metadata = makeMetadata();
+	cpu.setProgram(makeProgram(cpu), metadata, metadata);
 	cpu.setProfilerEnabled(true);
 	cpu.start(0);
 
@@ -77,7 +78,8 @@ test('CPU profiler records opcode and PC execution counts', () => {
 test('CPU profiler report resolves hot PCs back to opcode and source location', () => {
 	const memory = new Memory({ systemRom: new Uint8Array(0) });
 	const cpu = new CPU(memory);
-	cpu.setProgram(makeProgram(cpu), makeMetadata());
+	const metadata = makeMetadata();
+	cpu.setProgram(makeProgram(cpu), metadata, metadata);
 	cpu.setProfilerEnabled(true);
 	cpu.start(0);
 

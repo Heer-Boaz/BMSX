@@ -245,11 +245,8 @@ export function isNativeObject(value: Value): value is NativeObject {
 	return (value as NativeObject)?.kind === NATIVE_OBJECT_KIND;
 }
 
-export type ProgramMetadata = {
-	debugRanges: ReadonlyArray<SourceRange | null>;
+export type ProgramRuntimeSymbols = {
 	protoIds: string[];
-	localSlotsByProto: ReadonlyArray<ReadonlyArray<LocalSlotDebug>>;
-	upvalueNamesByProto: ReadonlyArray<ReadonlyArray<string>>;
 	globalNames: string[];
 	systemGlobalNames: string[];
 	// BLua module exports: maps a module export slot name (e.g. "foo__update") to the
@@ -257,6 +254,12 @@ export type ProgramMetadata = {
 	// The linker uses this to resolve an export reference directly to that proto (a
 	// link-time symbol / static closure) instead of a runtime global-slot load.
 	exportProtoIdBySlot: { [slotName: string]: string };
+};
+
+export type ProgramMetadata = ProgramRuntimeSymbols & {
+	debugRanges: ReadonlyArray<SourceRange | null>;
+	localSlotsByProto: ReadonlyArray<ReadonlyArray<LocalSlotDebug>>;
+	upvalueNamesByProto: ReadonlyArray<ReadonlyArray<string>>;
 };
 
 export type CpuFrameSnapshot = {
@@ -1413,6 +1416,25 @@ type TableLoadInlineCache = {
 	value: Value;
 };
 
+const DECODED_PAGE_SHIFT = 8;
+const DECODED_PAGE_WORDS = 1 << DECODED_PAGE_SHIFT;
+const DECODED_PAGE_MASK = DECODED_PAGE_WORDS - 1;
+
+type DecodedInstructionPage = {
+	widths: Uint8Array;
+	ops: Uint8Array;
+	a: Uint16Array;
+	b: Uint16Array;
+	c: Uint16Array;
+	bx: Uint32Array;
+	sbx: Int32Array;
+	rkB: Int32Array;
+	rkC: Int32Array;
+	disp: Uint8Array;
+	words: Uint32Array;
+	tableCacheIndexes: Uint32Array;
+};
+
 // Pool constant for frame reuse
 const MAX_POOLED_FRAMES = 32;
 export class CPU {
@@ -1444,18 +1466,10 @@ export class CPU {
 	private readonly nativeReturnScratch = new ScratchArrayStack<Value>();
 	public readonly profiler = new CpuExecutionProfiler();
 	private profilerEnabled = false;
+	private profilerConfigured = false;
+	private profilerRuntimeSymbols!: ProgramRuntimeSymbols;
 	private externalReturnSink: Value[] | null = null;
-	private decodedWidths: Uint8Array | null = null;
-	private decodedOps: Uint8Array | null = null;
-	private decodedA: Uint16Array | null = null;
-	private decodedB: Uint16Array | null = null;
-	private decodedC: Uint16Array | null = null;
-	private decodedBx: Uint32Array | null = null;
-	private decodedSbx: Int32Array | null = null;
-	private decodedRkB: Int32Array | null = null;
-	private decodedRkC: Int32Array | null = null;
-	private decodedDisp: Uint8Array | null = null;
-	private decodedWords: Uint32Array | null = null;
+	private decodedPages: DecodedInstructionPage[] = [];
 	private tableLoadCaches: TableLoadInlineCache[] = [];
 	public stringIndexTable: Table | null = null;
 	private systemGlobalNames: StringId[] = [];
@@ -1759,7 +1773,7 @@ export class CPU {
 		this.stackTop = 0;
 	}
 
-	public setProgram(program: Program, metadata: ProgramMetadata | null = null): void {
+	public setProgram(program: Program, runtimeSymbols: ProgramRuntimeSymbols, metadata: ProgramMetadata | null): void {
 		// Keep slot-backed globals materialized in the globals table before swapping programs.
 		// SETGL/SETSYS mutate the slot arrays directly, and append/reload paths rebuild the next
 		// slot layout from `globals`, so without this sync flattened module exports can fall back to nil.
@@ -1778,9 +1792,13 @@ export class CPU {
 		program.constPoolStringPool = this.stringPool;
 		this.indexKey = StringValue.get(this.stringPool.intern('__index'));
 		this.materializeStaticClosures(program);
-		this.initializeGlobalSlots(metadata);
+		this.initializeGlobalSlots(runtimeSymbols);
 		this.decodeProgram(program);
-		this.profiler.configureProgram(program, metadata, this.decodedOps!);
+		this.profilerRuntimeSymbols = runtimeSymbols;
+		this.profilerConfigured = false;
+		if (this.profilerEnabled) {
+			this.configureProfiler();
+		}
 	}
 
 	private materializeStaticClosures(program: Program): void {
@@ -1799,9 +1817,9 @@ export class CPU {
 		}
 	}
 
-	private initializeGlobalSlots(metadata: ProgramMetadata | null): void {
-		const systemNames = metadata ? metadata.systemGlobalNames : [];
-		const globalNames = metadata ? metadata.globalNames : [];
+	private initializeGlobalSlots(runtimeSymbols: ProgramRuntimeSymbols): void {
+		const systemNames = runtimeSymbols.systemGlobalNames;
+		const globalNames = runtimeSymbols.globalNames;
 		this.systemGlobalNames = new Array(systemNames.length);
 		this.systemGlobalValues = new Array(systemNames.length);
 		this.systemGlobalSlotByKey = new Map();
@@ -1825,78 +1843,115 @@ export class CPU {
 	private decodeProgram(program: Program): void {
 		const code = program.code;
 		const instructionCount = code.length / INSTRUCTION_BYTES;
-		const decodedWidths = new Uint8Array(instructionCount);
-		const decodedOps = new Uint8Array(instructionCount);
-		const decodedA = new Uint16Array(instructionCount);
-		const decodedB = new Uint16Array(instructionCount);
-		const decodedC = new Uint16Array(instructionCount);
-		const decodedBx = new Uint32Array(instructionCount);
-		const decodedSbx = new Int32Array(instructionCount);
-		const decodedRkB = new Int32Array(instructionCount);
-		const decodedRkC = new Int32Array(instructionCount);
-		const decodedDisp = new Uint8Array(instructionCount);
-		const decodedWords = new Uint32Array(instructionCount);
-		for (let wordIndex = 0; wordIndex < instructionCount; wordIndex += 1) {
-			let width = 1;
-			let wideA = 0;
-			let wideB = 0;
-			let wideC = 0;
-			let instr = readInstructionWord(code, wordIndex);
-			let op = (instr >>> 18) & 0x3f;
-			let ext = instr >>> 24;
-			if (op === OpCode.WIDE) {
-				if (wordIndex + 1 >= instructionCount) {
-					throw new Error('Malformed program: WIDE instruction at end of program.');
+		const decodedPages = new Array<DecodedInstructionPage>((instructionCount + DECODED_PAGE_WORDS - 1) >> DECODED_PAGE_SHIFT);
+		const tableLoadCaches: TableLoadInlineCache[] = [];
+		for (let protoIndex = 0; protoIndex < program.protos.length; protoIndex += 1) {
+			const proto = program.protos[protoIndex];
+			const startWord = proto.entryPC / INSTRUCTION_BYTES;
+			const endWord = startWord + proto.codeLen / INSTRUCTION_BYTES;
+			for (let wordIndex = startWord; wordIndex < endWord;) {
+				const page = this.decodedPageForWrite(decodedPages, wordIndex);
+				const pageOffset = wordIndex & DECODED_PAGE_MASK;
+				let width = 1;
+				let wideA = 0;
+				let wideB = 0;
+				let wideC = 0;
+				let instr = readInstructionWord(code, wordIndex);
+				let op = (instr >>> 18) & 0x3f;
+				let ext = instr >>> 24;
+				if (op === OpCode.WIDE) {
+					if (wordIndex + 1 >= instructionCount) {
+						throw new Error('Malformed program: WIDE instruction at end of program.');
+					}
+					width = 2;
+					wideA = (instr >>> 12) & 0x3f;
+					wideB = (instr >>> 6) & 0x3f;
+					wideC = instr & 0x3f;
+					instr = readInstructionWord(code, wordIndex + 1);
+					op = (instr >>> 18) & 0x3f;
+					ext = instr >>> 24;
 				}
-				width = 2;
-				wideA = (instr >>> 12) & 0x3f;
-				wideB = (instr >>> 6) & 0x3f;
-				wideC = instr & 0x3f;
-				instr = readInstructionWord(code, wordIndex + 1);
-				op = (instr >>> 18) & 0x3f;
-				ext = instr >>> 24;
+				const aLow = (instr >>> 12) & 0x3f;
+				const bLow = (instr >>> 6) & 0x3f;
+				const cLow = instr & 0x3f;
+				const usesDisp = OPCODE_USES_DISP[op] !== 0;
+				const usesBx = !usesDisp && OPCODE_USES_BX[op] !== 0;
+				const extA = usesBx || usesDisp ? 0 : (ext >>> 6) & 0x3;
+				const extB = usesBx || usesDisp ? 0 : (ext >>> 3) & 0x7;
+				const extC = usesBx || usesDisp ? 0 : (ext & 0x7);
+				const aShift = usesDisp ? MAX_OPERAND_BITS : MAX_OPERAND_BITS + (usesBx ? 0 : EXT_A_BITS);
+				const bShift = usesDisp ? MAX_OPERAND_BITS : MAX_OPERAND_BITS + EXT_B_BITS;
+				const cShift = usesDisp ? MAX_OPERAND_BITS : MAX_OPERAND_BITS + EXT_C_BITS;
+				const bxLow = (bLow << MAX_OPERAND_BITS) | cLow;
+				const rawB = (wideB << bShift) | (extB << MAX_OPERAND_BITS) | bLow;
+				const rawC = (wideC << cShift) | (extC << MAX_OPERAND_BITS) | cLow;
+				const decodedBx = (wideB << (MAX_BX_BITS + EXT_BX_BITS)) | ((usesBx ? ext : 0) << MAX_BX_BITS) | bxLow;
+				page.widths[pageOffset] = width;
+				page.words[pageOffset] = instr;
+				page.ops[pageOffset] = op;
+				page.a[pageOffset] = (wideA << aShift) | (extA << MAX_OPERAND_BITS) | aLow;
+				page.b[pageOffset] = rawB;
+				page.c[pageOffset] = rawC;
+				page.bx[pageOffset] = decodedBx;
+				page.sbx[pageOffset] = signExtend(decodedBx, MAX_BX_BITS + EXT_BX_BITS + ((width - 1) * MAX_OPERAND_BITS));
+				page.rkB[pageOffset] = signExtend(rawB, MAX_OPERAND_BITS + EXT_B_BITS + ((width - 1) * MAX_OPERAND_BITS));
+				page.rkC[pageOffset] = signExtend(rawC, MAX_OPERAND_BITS + EXT_C_BITS + ((width - 1) * MAX_OPERAND_BITS));
+				page.disp[pageOffset] = ext;
+				if (op === OpCode.GETI || op === OpCode.GETFIELD || op === OpCode.SELF) {
+					page.tableCacheIndexes[pageOffset] = tableLoadCaches.length;
+					tableLoadCaches.push({ table: null, version: 0, value: null });
+				}
+				wordIndex += width;
 			}
-			const aLow = (instr >>> 12) & 0x3f;
-			const bLow = (instr >>> 6) & 0x3f;
-			const cLow = instr & 0x3f;
-			const usesDisp = OPCODE_USES_DISP[op] !== 0;
-			const usesBx = !usesDisp && OPCODE_USES_BX[op] !== 0;
-			const extA = usesBx || usesDisp ? 0 : (ext >>> 6) & 0x3;
-			const extB = usesBx || usesDisp ? 0 : (ext >>> 3) & 0x7;
-			const extC = usesBx || usesDisp ? 0 : (ext & 0x7);
-			const aShift = usesDisp ? MAX_OPERAND_BITS : MAX_OPERAND_BITS + (usesBx ? 0 : EXT_A_BITS);
-			const bShift = usesDisp ? MAX_OPERAND_BITS : MAX_OPERAND_BITS + EXT_B_BITS;
-			const cShift = usesDisp ? MAX_OPERAND_BITS : MAX_OPERAND_BITS + EXT_C_BITS;
-			const bxLow = (bLow << MAX_OPERAND_BITS) | cLow;
-			const rawB = (wideB << bShift) | (extB << MAX_OPERAND_BITS) | bLow;
-			const rawC = (wideC << cShift) | (extC << MAX_OPERAND_BITS) | cLow;
-			decodedWidths[wordIndex] = width;
-			decodedWords[wordIndex] = instr;
-			decodedOps[wordIndex] = op;
-			decodedA[wordIndex] = (wideA << aShift) | (extA << MAX_OPERAND_BITS) | aLow;
-			decodedB[wordIndex] = rawB;
-			decodedC[wordIndex] = rawC;
-			decodedBx[wordIndex] = (wideB << (MAX_BX_BITS + EXT_BX_BITS)) | ((usesBx ? ext : 0) << MAX_BX_BITS) | bxLow;
-			decodedSbx[wordIndex] = signExtend(decodedBx[wordIndex], MAX_BX_BITS + EXT_BX_BITS + ((width - 1) * MAX_OPERAND_BITS));
-			decodedRkB[wordIndex] = signExtend(rawB, MAX_OPERAND_BITS + EXT_B_BITS + ((width - 1) * MAX_OPERAND_BITS));
-			decodedRkC[wordIndex] = signExtend(rawC, MAX_OPERAND_BITS + EXT_C_BITS + ((width - 1) * MAX_OPERAND_BITS));
-			decodedDisp[wordIndex] = ext;
 		}
-		this.decodedWidths = decodedWidths;
-		this.decodedOps = decodedOps;
-		this.decodedA = decodedA;
-		this.decodedB = decodedB;
-		this.decodedC = decodedC;
-		this.decodedBx = decodedBx;
-		this.decodedSbx = decodedSbx;
-		this.decodedRkB = decodedRkB;
-		this.decodedRkC = decodedRkC;
-		this.decodedDisp = decodedDisp;
-		this.decodedWords = decodedWords;
-		this.tableLoadCaches = new Array<TableLoadInlineCache>(instructionCount);
-		for (let index = 0; index < instructionCount; index += 1) {
-			this.tableLoadCaches[index] = { table: null, version: 0, value: null };
+		this.decodedPages = decodedPages;
+		this.tableLoadCaches = tableLoadCaches;
+	}
+
+	private decodedPageForWrite(decodedPages: DecodedInstructionPage[], wordIndex: number): DecodedInstructionPage {
+		const pageIndex = wordIndex >>> DECODED_PAGE_SHIFT;
+		let page = decodedPages[pageIndex];
+		if (!page) {
+			page = {
+				widths: new Uint8Array(DECODED_PAGE_WORDS),
+				ops: new Uint8Array(DECODED_PAGE_WORDS),
+				a: new Uint16Array(DECODED_PAGE_WORDS),
+				b: new Uint16Array(DECODED_PAGE_WORDS),
+				c: new Uint16Array(DECODED_PAGE_WORDS),
+				bx: new Uint32Array(DECODED_PAGE_WORDS),
+				sbx: new Int32Array(DECODED_PAGE_WORDS),
+				rkB: new Int32Array(DECODED_PAGE_WORDS),
+				rkC: new Int32Array(DECODED_PAGE_WORDS),
+				disp: new Uint8Array(DECODED_PAGE_WORDS),
+				words: new Uint32Array(DECODED_PAGE_WORDS),
+				tableCacheIndexes: new Uint32Array(DECODED_PAGE_WORDS),
+			};
+			decodedPages[pageIndex] = page;
 		}
+		return page;
+	}
+
+	private configureProfiler(): void {
+		this.profiler.configureProgram(this.program, this.profilerRuntimeSymbols, this.metadata, this.buildProfilerOpcodeByWord());
+		this.profilerConfigured = true;
+	}
+
+	private buildProfilerOpcodeByWord(): Uint8Array {
+		const opcodeByWord = new Uint8Array(this.program.code.length / INSTRUCTION_BYTES);
+		const decodedPages = this.decodedPages;
+		for (let pageIndex = 0; pageIndex < decodedPages.length; pageIndex += 1) {
+			const page = decodedPages[pageIndex];
+			if (!page) {
+				continue;
+			}
+			const pageStart = pageIndex << DECODED_PAGE_SHIFT;
+			const remainingWords = opcodeByWord.length - pageStart;
+			const pageWords = remainingWords < DECODED_PAGE_WORDS ? remainingWords : DECODED_PAGE_WORDS;
+			for (let offset = 0; offset < pageWords; offset += 1) {
+				opcodeByWord[pageStart + offset] = page.ops[offset];
+			}
+		}
+		return opcodeByWord;
 	}
 
 	public start(entryProtoIndex: number, args: ReadonlyArray<Value> = EMPTY_CALL_ARGS): void {
@@ -2032,17 +2087,7 @@ export class CPU {
 		const frames = this.frames;
 		const profiler = this.profilerEnabled ? this.profiler : null;
 		const baseCycles = BASE_CYCLES;
-		const decodedWidths = this.decodedWidths!;
-		const decodedOps = this.decodedOps!;
-		const decodedA = this.decodedA!;
-		const decodedB = this.decodedB!;
-		const decodedC = this.decodedC!;
-		const decodedBx = this.decodedBx!;
-		const decodedSbx = this.decodedSbx!;
-		const decodedRkB = this.decodedRkB!;
-		const decodedRkC = this.decodedRkC!;
-		const decodedDisp = this.decodedDisp!;
-		const decodedWords = this.decodedWords!;
+		const decodedPages = this.decodedPages;
 		while (frames.length > targetDepth) {
 			if (this.haltedUntilIrq) {
 				return RunResult.Halted;
@@ -2065,27 +2110,29 @@ export class CPU {
 			const frame = frames[frames.length - 1];
 			const pc = frame.pc;
 			const wordIndex = pc / INSTRUCTION_BYTES;
-			const width = decodedWidths[wordIndex];
-			const op = decodedOps[wordIndex];
+			const page = decodedPages[wordIndex >>> DECODED_PAGE_SHIFT]!;
+			const pageOffset = wordIndex & DECODED_PAGE_MASK;
+			const width = page.widths[pageOffset];
+			const op = page.ops[pageOffset];
 			frame.pc = pc + (width * INSTRUCTION_BYTES);
 			this.lastPc = pc + ((width - 1) * INSTRUCTION_BYTES);
-			this.lastInstruction = decodedWords[wordIndex];
+			this.lastInstruction = page.words[pageOffset];
 			if (profiler !== null) {
 				profiler.record(wordIndex, op);
 			}
 			this.instructionBudgetRemaining -= baseCycles[op];
 			this.executeInstruction(
 				frame,
-				wordIndex,
+				page.tableCacheIndexes[pageOffset],
 				op,
-				decodedA[wordIndex],
-				decodedB[wordIndex],
-				decodedC[wordIndex],
-				decodedBx[wordIndex],
-				decodedSbx[wordIndex],
-				decodedRkB[wordIndex],
-				decodedRkC[wordIndex],
-				decodedDisp[wordIndex],
+				page.a[pageOffset],
+				page.b[pageOffset],
+				page.c[pageOffset],
+				page.bx[pageOffset],
+				page.sbx[pageOffset],
+				page.rkB[pageOffset],
+				page.rkC[pageOffset],
+				page.disp[pageOffset],
 			);
 		}
 		return RunResult.Halted;
@@ -2105,9 +2152,9 @@ export class CPU {
 	}
 
 	private skipNextInstruction(frame: CallFrame): void {
-		const decodedWidths = this.decodedWidths!;
 		const wordIndex = frame.pc / INSTRUCTION_BYTES;
-		frame.pc += decodedWidths[wordIndex] * INSTRUCTION_BYTES;
+		const page = this.decodedPages[wordIndex >>> DECODED_PAGE_SHIFT]!;
+		frame.pc += page.widths[wordIndex & DECODED_PAGE_MASK] * INSTRUCTION_BYTES;
 	}
 
 	private formatSourceLocation(range: SourceRange | null): string {
@@ -2124,40 +2171,31 @@ export class CPU {
 		}
 		const frame = this.frames[this.frames.length - 1];
 		const pc = frame.pc;
-		let wordIndex = pc / INSTRUCTION_BYTES;
+		const wordIndex = pc / INSTRUCTION_BYTES;
 		const profiler = this.profilerEnabled ? this.profiler : null;
-		const decodedWidths = this.decodedWidths!;
-		const decodedOps = this.decodedOps!;
-		const decodedA = this.decodedA!;
-		const decodedB = this.decodedB!;
-		const decodedC = this.decodedC!;
-		const decodedBx = this.decodedBx!;
-		const decodedSbx = this.decodedSbx!;
-		const decodedRkB = this.decodedRkB!;
-		const decodedRkC = this.decodedRkC!;
-		const decodedDisp = this.decodedDisp!;
-		const decodedWords = this.decodedWords!;
-		const width = decodedWidths[wordIndex];
-		const op = decodedOps[wordIndex];
+		const page = this.decodedPages[wordIndex >>> DECODED_PAGE_SHIFT]!;
+		const pageOffset = wordIndex & DECODED_PAGE_MASK;
+		const width = page.widths[pageOffset];
+		const op = page.ops[pageOffset];
 		frame.pc = pc + (width * INSTRUCTION_BYTES);
 		this.lastPc = pc + ((width - 1) * INSTRUCTION_BYTES);
-		this.lastInstruction = decodedWords[wordIndex];
+		this.lastInstruction = page.words[pageOffset];
 		if (profiler !== null) {
 			profiler.record(wordIndex, op);
 		}
 		this.charge(BASE_CYCLES[op]);
 		this.executeInstruction(
 			frame,
-			wordIndex,
+			page.tableCacheIndexes[pageOffset],
 			op,
-			decodedA[wordIndex],
-			decodedB[wordIndex],
-			decodedC[wordIndex],
-			decodedBx[wordIndex],
-			decodedSbx[wordIndex],
-			decodedRkB[wordIndex],
-			decodedRkC[wordIndex],
-			decodedDisp[wordIndex],
+			page.a[pageOffset],
+			page.b[pageOffset],
+			page.c[pageOffset],
+			page.bx[pageOffset],
+			page.sbx[pageOffset],
+			page.rkB[pageOffset],
+			page.rkC[pageOffset],
+			page.disp[pageOffset],
 		);
 	}
 
@@ -2182,7 +2220,11 @@ export class CPU {
 	public setProfilerEnabled(enabled: boolean): void {
 		this.profilerEnabled = enabled;
 		if (enabled) {
-			this.profiler.reset();
+			if (!this.profilerConfigured) {
+				this.configureProfiler();
+			} else {
+				this.profiler.reset();
+			}
 		}
 	}
 
@@ -2311,7 +2353,7 @@ export class CPU {
 
 	private executeInstruction(
 		frame: CallFrame,
-		wordIndex: number,
+		tableCacheIndex: number,
 		op: number,
 		a: number,
 		b: number,
@@ -2372,13 +2414,13 @@ export class CPU {
 					this.setGlobalBySlot(bx, registers.get(a));
 					return;
 				case OpCode.GETI:
-					this.setRegisterFast(frame, registers, a, this.loadTableIntegerIndexCached(wordIndex, registers.get(b), c));
+					this.setRegisterFast(frame, registers, a, this.loadTableIntegerIndexCached(tableCacheIndex, registers.get(b), c));
 					return;
 				case OpCode.SETI:
 					this.storeTableIntegerIndex(registers.get(a), b, this.readRK(frame, rkC));
 					return;
 				case OpCode.GETFIELD:
-					this.setRegisterFast(frame, registers, a, this.loadTableFieldIndexCached(wordIndex, registers.get(b), this.program.constPool[c] as StringValue));
+					this.setRegisterFast(frame, registers, a, this.loadTableFieldIndexCached(tableCacheIndex, registers.get(b), this.program.constPool[c] as StringValue));
 					return;
 				case OpCode.SETFIELD:
 					this.storeTableFieldIndex(registers.get(a), this.program.constPool[b] as StringValue, this.readRK(frame, rkC));
@@ -2387,7 +2429,7 @@ export class CPU {
 					const base = registers.get(b);
 					const key = this.program.constPool[c] as StringValue;
 					this.setRegisterFast(frame, registers, a + 1, base);
-					this.setRegisterFast(frame, registers, a, this.loadTableFieldIndexCached(wordIndex, base, key));
+					this.setRegisterFast(frame, registers, a, this.loadTableFieldIndexCached(tableCacheIndex, base, key));
 					return;
 				}
 		case OpCode.HALT:

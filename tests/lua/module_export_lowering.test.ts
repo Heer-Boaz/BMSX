@@ -111,7 +111,7 @@ test('module export functions call sibling exports through link symbols', () => 
 	assert.match(compiled.disasm, /\bNEWT\b/, 'module table remains available for normal module-root consumers');
 	const image = encodeCompiledProgramImage(compiled.compiled);
 	const cpu = new CPU(new Memory({ systemRom: new Uint8Array(0) }));
-	cpu.setProgram(inflateExecutableProgramImage(image, compiled.compiled.metadata), compiled.compiled.metadata);
+	cpu.setProgram(inflateExecutableProgramImage(image), image.link.symbols, compiled.compiled.metadata);
 	cpu.start(image.vectors.sectionInitProtoIndex);
 	assert.equal(cpu.runUntilDepth(0, 100000), RunResult.Halted);
 	cpu.start(image.vectors.resetProtoIndex);
@@ -191,7 +191,7 @@ test('dynamic root-function modules remain runtime values', () => {
 	assert.equal(hasRootModuleReloc, true, 'const local require must read the root function value from the export slot');
 	const image = encodeCompiledProgramImage(compiled);
 	const cpu = new CPU(new Memory({ systemRom: new Uint8Array(0) }));
-	cpu.setProgram(inflateExecutableProgramImage(image, compiled.metadata), compiled.metadata);
+	cpu.setProgram(inflateExecutableProgramImage(image), image.link.symbols, compiled.metadata);
 	cpu.start(image.vectors.sectionInitProtoIndex);
 	assert.equal(cpu.runUntilDepth(0, 100000), RunResult.Halted);
 	runStaticModuleInitializers(cpu, compiled);
@@ -207,12 +207,12 @@ test('host-eval append resolves installed module roots from the program image', 
 	].join('\n');
 	const { compiled } = compileWithModule('local inc<const> = require("foo")\nreturn 0', 'foo', moduleSource);
 	const image = encodeCompiledProgramImage(compiled);
-	const baseProgram = inflateExecutableProgramImage(image, compiled.metadata);
+	const baseProgram = inflateExecutableProgramImage(image);
 	const source = 'local inc<const> = require("foo")\nreturn inc(9)';
 	const appended = appendLuaChunkToProgram(baseProgram, compiled.metadata, parseSource(source, 'host_eval.lua'), { entrySource: source });
 	resolveRuntimeProgramRelocations(appended.program, appended.metadata, appended.constRelocs);
 	const cpu = new CPU(new Memory({ systemRom: new Uint8Array(0) }));
-	cpu.setProgram(appended.program, appended.metadata);
+	cpu.setProgram(appended.program, appended.metadata, appended.metadata);
 	cpu.start(image.vectors.sectionInitProtoIndex);
 	assert.equal(cpu.runUntilDepth(0, 100000), RunResult.Halted);
 	runStaticModuleInitializers(cpu, compiled);

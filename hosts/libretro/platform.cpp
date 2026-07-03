@@ -23,15 +23,16 @@
 #endif
 #include <chrono>
 #include <cstring>
-#include <cerrno>
 #include <cstdarg>
-#include <fstream>
 #include <algorithm>
 #include <cmath>
 #include <stdexcept>
 #include <string>
 #include <utility>
 #include <vector>
+#if defined(__GLIBC__)
+#include <malloc.h>
+#endif
 
 #ifndef ENABLE_PERFORMANCE_LOGS
 #define ENABLE_PERFORMANCE_LOGS 0
@@ -398,6 +399,9 @@ bool LibretroPlatform::loadRomOwned(std::vector<uint8_t>&& data) {
 		return false;
 	}
 	setDitherType(m_dither_type);
+#if defined(__GLIBC__)
+	malloc_trim(0);
+#endif
 	{
 		const std::string line = memSnapshotLine("libretro:after_loadRom");
 		if (!line.empty()) {
@@ -438,23 +442,32 @@ bool LibretroPlatform::loadRomFromPath(const char* path) {
 	// Load system ROM first (if available in same directory)
 	loadSystemRom(path);
 
-	// Load the game ROM
-	std::ifstream file(path, std::ios::binary | std::ios::ate);
-	if (!file) {
-		log(RETRO_LOG_ERROR, "[BMSX] Failed to open ROM file: %s\n", path);
-		return false;
+	unloadRom();
+	{
+		const std::string line = memSnapshotLine("libretro:before_loadRom");
+		if (!line.empty()) {
+			log(RETRO_LOG_INFO, "%s\n", line.c_str());
+		}
 	}
 
-	size_t size = file.tellg();
-	file.seekg(0);
-
-	std::vector<uint8_t> data(size);
-	if (!file.read(reinterpret_cast<char*>(data.data()), size)) {
-		log(RETRO_LOG_ERROR, "[BMSX] Failed to read ROM file: %s\n", path);
+	if (!m_machine_manager->loadRomFile(path)) {
+		log(RETRO_LOG_ERROR, "[BMSX] Failed to load ROM file: %s\n", path);
 		return false;
 	}
+	setDitherType(m_dither_type);
+#if defined(__GLIBC__)
+	malloc_trim(0);
+#endif
+	{
+		const std::string line = memSnapshotLine("libretro:after_loadRom");
+		if (!line.empty()) {
+			log(RETRO_LOG_INFO, "%s\n", line.c_str());
+		}
+	}
 
-	return loadRomOwned(std::move(data));
+	m_rom_loaded = true;
+	log(RETRO_LOG_INFO, "[BMSX] ROM loaded from file: %s\n", path);
+	return true;
 }
 
 bool LibretroPlatform::loadEmptyCart() {
@@ -499,29 +512,15 @@ bool LibretroPlatform::loadEmptyCart() {
 }
 
 bool LibretroPlatform::loadSystemRomFromFile(const std::string& path) {
-	std::ifstream file(path, std::ios::binary | std::ios::ate);
-	if (!file) {
-		log(RETRO_LOG_WARN, "[BMSX] Failed to open system ROM: %s (errno=%d: %s)\n",
-			path.c_str(), errno, std::strerror(errno));
+	if (!m_machine_manager->loadSystemRomFile(path)) {
+		log(RETRO_LOG_WARN, "[BMSX] Failed to load system ROM: %s\n", path.c_str());
 		return false;
 	}
+#if defined(__GLIBC__)
+	malloc_trim(0);
+#endif
 
-	size_t size = file.tellg();
-	file.seekg(0);
-
-	std::vector<uint8_t> data(size);
-	if (!file.read(reinterpret_cast<char*>(data.data()), size)) {
-		log(RETRO_LOG_WARN, "[BMSX] Failed to read system ROM: %s (errno=%d: %s)\n",
-			path.c_str(), errno, std::strerror(errno));
-		return false;
-	}
-
-	if (!m_machine_manager->loadSystemRomOwned(std::move(data))) {
-		log(RETRO_LOG_WARN, "[BMSX] Failed to parse system ROM: %s\n", path.c_str());
-		return false;
-	}
-
-	log(RETRO_LOG_INFO, "[BMSX] System ROM loaded (%zu bytes) from: %s\n", size, path.c_str());
+	log(RETRO_LOG_INFO, "[BMSX] System ROM loaded from: %s\n", path.c_str());
 	return true;
 }
 

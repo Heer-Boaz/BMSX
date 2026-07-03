@@ -21,7 +21,6 @@
 #include <cstdlib>
 #include <chrono>
 #include <cstdarg>
-#include <fstream>
 #include <iostream>
 #include <stdexcept>
 #include <utility>
@@ -308,6 +307,23 @@ void MachineManager::configureViewForModel() {
 	m_view->configureRenderTargets(&viewportSize, &viewportSize, &offscreenSize, &m_viewport_scale, &m_canvas_scale);
 }
 
+MachineManager::LoadedProgramImages MachineManager::loadProgramImagesFromRom(const RuntimeRomPackage& romPackage, const u8* romData) const {
+	const RomAssetInfo& imageRecord = *romPackage.programImageRom;
+	LoadedProgramImages images;
+	images.image = decodeProgramImage(
+		romData + static_cast<size_t>(*imageRecord.start),
+		static_cast<size_t>(*imageRecord.end - *imageRecord.start)
+	);
+	if (romPackage.programSymbolsRom) {
+		const RomAssetInfo& symbolsRecord = *romPackage.programSymbolsRom;
+		images.metadata = decodeProgramSymbolsImage(
+			romData + static_cast<size_t>(*symbolsRecord.start),
+			static_cast<size_t>(*symbolsRecord.end - *symbolsRecord.start)
+		);
+	}
+	return images;
+}
+
 bool MachineManager::loadSystemRomInternal(const u8* data, size_t size) {
 	if (m_texture_manager) {
 		m_texture_manager->setBackend(m_view ? m_view->backend() : nullptr);
@@ -353,11 +369,9 @@ Runtime& MachineManager::prepareRuntimeForActiveCart(const ResolvedRuntimeTiming
 }
 
 void MachineManager::bootRuntimeFromProgram() {
-	if (!activeRom().programImage) {
+	if (!activeRom().hasProgram()) {
 		return;
 	}
-	m_linked_program.reset();
-	m_linked_program_symbols.reset();
 	RuntimeRomPackage& romPackage = activeRom();
 	const ResolvedRuntimeTiming timing = resolveRuntimeTiming(PSX_MODEL_PROFILE.cpuFreqHz, MACHINE_REGION_PAL_WORD);
 	Runtime& rt = ensureRuntime(RuntimeOptions{
@@ -389,30 +403,30 @@ void MachineManager::bootRuntimeFromProgram() {
 	rt.resetRuntimeForProgramReload();
 	m_screen.reset();
 	refreshRenderSurfaces();
-	if (m_system_rom_loaded && m_system_rom.programImage) {
+	LoadedProgramImages cartImages = loadProgramImagesFromRom(romPackage, m_cart_rom_data);
+	if (m_system_rom_loaded && m_system_rom.hasProgram()) {
+		LoadedProgramImages systemImages = loadProgramImagesFromRom(m_system_rom, m_system_rom_data);
 		auto linked = linkBootProgramImages(
-			*m_system_rom.programImage,
-			m_system_rom.programSymbols.get(),
-			*romPackage.programImage,
-			romPackage.programSymbols.get(),
+			*systemImages.image,
+			systemImages.metadata.get(),
+			*cartImages.image,
+			cartImages.metadata.get(),
 			ProgramBootTarget::Cart
 		);
-		m_linked_program = std::move(linked.programImage);
-		m_linked_program_symbols = std::move(linked.metadata);
 		rt.enterCartProgram();
-		rt.boot(*m_linked_program, m_linked_program_symbols.get(), linked.vectors, linked.dataBaseAddress, linked.bssBaseAddress, linked.systemStaticModulePaths, linked.cartStaticModulePaths);
+		rt.boot(*linked.programImage, std::move(linked.metadata), linked.vectors, linked.dataBaseAddress, linked.bssBaseAddress, linked.systemStaticModulePaths, linked.cartStaticModulePaths);
 		rt.setLinkedCartVectors(linked.cartVectors, linked.cartDataBaseAddress, linked.cartBssBaseAddress, std::move(linked.cartStaticModulePaths));
 		flushRuntimeLuaOutput(rt);
 		return;
 	}
 	rt.enterCartProgram();
-	rt.boot(*romPackage.programImage, romPackage.programSymbols.get(), romPackage.programImage->vectors, PROGRAM_STATIC_RAM_BASE, PROGRAM_STATIC_RAM_BASE + static_cast<uint32_t>(romPackage.programImage->sections.data.bytes.size()), std::span<const std::string>{}, romPackage.programImage->sections.rodata.staticModulePaths);
+	rt.boot(*cartImages.image, std::move(cartImages.metadata), cartImages.image->vectors, PROGRAM_STATIC_RAM_BASE, PROGRAM_STATIC_RAM_BASE + static_cast<uint32_t>(cartImages.image->sections.data.bytes.size()), std::span<const std::string>{}, cartImages.image->sections.rodata.staticModulePaths);
 	flushRuntimeLuaOutput(rt);
 }
 
 bool MachineManager::bootSystemStartupProgram(const MachineManifest& runtimeMachine) {
 	if (!m_system_rom_loaded) return false;
-	if (!m_system_rom.programImage) return false;
+	if (!m_system_rom.hasProgram()) return false;
 
 	activateSystemRom();
 	setMachineManifest(runtimeMachine);
@@ -450,22 +464,20 @@ bool MachineManager::bootSystemStartupProgram(const MachineManifest& runtimeMach
 	m_screen.reset();
 	rt.enterSystemFirmware();
 	refreshRenderSurfaces();
-	m_linked_program.reset();
-	m_linked_program_symbols.reset();
-	if (m_cart_rom_size > 0 && m_cart_rom.programImage) {
+	LoadedProgramImages systemImages = loadProgramImagesFromRom(m_system_rom, m_system_rom_data);
+	if (m_cart_rom_size > 0 && m_cart_rom.hasProgram()) {
+		LoadedProgramImages cartImages = loadProgramImagesFromRom(m_cart_rom, m_cart_rom_data);
 		auto linked = linkBootProgramImages(
-			*m_system_rom.programImage,
-			m_system_rom.programSymbols.get(),
-			*m_cart_rom.programImage,
-			m_cart_rom.programSymbols.get(),
+			*systemImages.image,
+			systemImages.metadata.get(),
+			*cartImages.image,
+			cartImages.metadata.get(),
 			ProgramBootTarget::System
 		);
-		m_linked_program = std::move(linked.programImage);
-		m_linked_program_symbols = std::move(linked.metadata);
 		rt.setLinkedCartVectors(linked.cartVectors, linked.cartDataBaseAddress, linked.cartBssBaseAddress, std::move(linked.cartStaticModulePaths));
-		rt.boot(*m_linked_program, m_linked_program_symbols.get(), linked.vectors, linked.dataBaseAddress, linked.bssBaseAddress, linked.systemStaticModulePaths, std::span<const std::string>{});
+		rt.boot(*linked.programImage, std::move(linked.metadata), linked.vectors, linked.dataBaseAddress, linked.bssBaseAddress, linked.systemStaticModulePaths, std::span<const std::string>{});
 	} else {
-		rt.boot(*m_system_rom.programImage, m_system_rom.programSymbols.get(), m_system_rom.programImage->vectors, PROGRAM_STATIC_RAM_BASE, PROGRAM_STATIC_RAM_BASE + static_cast<uint32_t>(m_system_rom.programImage->sections.data.bytes.size()), m_system_rom.programImage->sections.rodata.staticModulePaths, std::span<const std::string>{});
+		rt.boot(*systemImages.image, std::move(systemImages.metadata), systemImages.image->vectors, PROGRAM_STATIC_RAM_BASE, PROGRAM_STATIC_RAM_BASE + static_cast<uint32_t>(systemImages.image->sections.data.bytes.size()), systemImages.image->sections.rodata.staticModulePaths, std::span<const std::string>{});
 	}
 	flushRuntimeLuaOutput(rt);
 	return true;
@@ -479,13 +491,13 @@ bool MachineManager::loadRomInternal(const u8* data, size_t size) {
 	if (!loadCartRomPackageFromRom(data, size, m_cart_rom, nullptr, "cart")) {
 		return false;
 	}
-	m_loaded_cart_has_program = m_cart_rom.programImage != nullptr;
+	m_loaded_cart_has_program = m_cart_rom.hasProgram();
 
 	const MachineManifest& cartMachine = m_cart_rom.machine;
 	configureViewForModel();
 
 	const bool hasSystemProgram = m_system_rom_loaded
-		&& m_system_rom.programImage;
+		&& m_system_rom.hasProgram();
 	if (hasSystemProgram) {
 		if (!bootSystemStartupProgram(cartMachine)) {
 			return false;
@@ -507,16 +519,31 @@ bool MachineManager::loadRomInternal(const u8* data, size_t size) {
 
 bool MachineManager::loadSystemRomOwned(std::vector<u8>&& data) {
 	m_runtime.reset();
+	m_system_rom_file.close();
 	m_system_rom_owned = std::move(data);
 	m_system_rom_data = m_system_rom_owned.data();
 	m_system_rom_size = m_system_rom_owned.size();
 	return loadSystemRomInternal(m_system_rom_data, m_system_rom_size);
 }
 
+bool MachineManager::loadSystemRomFile(const std::string& path) {
+	MmapFile mapped;
+	if (!mapped.open(path)) {
+		return false;
+	}
+	m_runtime.reset();
+	m_system_rom_owned = std::vector<u8>();
+	m_system_rom_file = std::move(mapped);
+	m_system_rom_data = m_system_rom_file.data();
+	m_system_rom_size = m_system_rom_file.size();
+	return loadSystemRomInternal(m_system_rom_data, m_system_rom_size);
+}
+
 bool MachineManager::loadRom(const u8* data, size_t size) {
 	unloadRom();
 	m_runtime.reset();
-	m_cart_rom_owned.clear();
+	m_cart_rom_file.close();
+	m_cart_rom_owned = std::vector<u8>();
 	m_cart_rom_data = data;
 	m_cart_rom_size = size;
 	return loadRomInternal(data, size);
@@ -525,9 +552,27 @@ bool MachineManager::loadRom(const u8* data, size_t size) {
 bool MachineManager::loadRomOwned(std::vector<u8>&& data) {
 	unloadRom();
 	m_runtime.reset();
+	m_cart_rom_file.close();
 	m_cart_rom_owned = std::move(data);
 	m_cart_rom_data = m_cart_rom_owned.data();
 	m_cart_rom_size = m_cart_rom_owned.size();
+	return loadRomInternal(m_cart_rom_data, m_cart_rom_size);
+}
+
+bool MachineManager::loadRomFile(const std::string& path) {
+	unloadRom();
+	m_runtime.reset();
+	m_cart_rom_file.close();
+	m_cart_rom_owned = std::vector<u8>();
+	m_cart_rom_data = nullptr;
+	m_cart_rom_size = 0;
+	MmapFile mapped;
+	if (!mapped.open(path)) {
+		return false;
+	}
+	m_cart_rom_file = std::move(mapped);
+	m_cart_rom_data = m_cart_rom_file.data();
+	m_cart_rom_size = m_cart_rom_file.size();
 	return loadRomInternal(m_cart_rom_data, m_cart_rom_size);
 }
 
@@ -537,9 +582,8 @@ void MachineManager::unloadRom() {
 		m_active_rom = &m_system_rom;
 		machine_manifest = &m_system_rom.machine;
 		m_cart_rom.clear();
-		m_linked_program.reset();
-		m_linked_program_symbols.reset();
-		m_cart_rom_owned.clear();
+		m_cart_rom_owned = std::vector<u8>();
+		m_cart_rom_file.close();
 		m_cart_rom_data = nullptr;
 		m_cart_rom_size = 0;
 		if (m_texture_manager) {
@@ -560,7 +604,7 @@ bool MachineManager::rebootLoadedRom() {
 	}
 
 	const MachineManifest* runtimeMachine = &m_system_rom.machine;
-	if (m_cart_rom_size > 0 && m_cart_rom.programImage) {
+	if (m_cart_rom_size > 0 && m_cart_rom.hasProgram()) {
 		runtimeMachine = &m_cart_rom.machine;
 	}
 	return bootSystemStartupProgram(*runtimeMachine);

@@ -5,7 +5,7 @@ import { encodeBinary } from '../../machine/ts/common/serializer/binencoder';
 import { splitText } from '../../machine/ts/common/text_lines';
 import { LuaLexer } from '../../machine/ts/lua/syntax/lexer';
 import { LuaParser } from '../../machine/ts/lua/syntax/parser';
-import { CPU, OpCode, RunResult, StringValue, Table, asStringId, valueIsString, type Proto } from '../../machine/ts/machine/cpu/cpu';
+import { CPU, OpCode, RunResult, StringValue, Table, asStringId, valueIsString, type ProgramRuntimeSymbols, type Proto } from '../../machine/ts/machine/cpu/cpu';
 import { INSTRUCTION_BYTES, readInstructionWord, writeInstruction } from '../../machine/ts/machine/cpu/instruction_format';
 import { appendLuaChunkToProgram, compileLuaChunkToProgram, encodeCompiledProgramImage } from '../../machine/ts/machine/program/compiler';
 import { decodeProgramSymbolsImage, inflateProgram, type ProgramImage, type ProgramConstReloc, type ProgramSymbolsImage } from '../../machine/ts/machine/program/loader';
@@ -68,6 +68,12 @@ function makeProgramImage(
 	constRelocs: ReadonlyArray<ProgramConstReloc>,
 ): ProgramImage {
 	const code = buildCode(words);
+	const symbols: ProgramRuntimeSymbols = {
+		protoIds: ['proto:0'],
+		globalNames: [],
+		systemGlobalNames: [],
+		exportProtoIdBySlot: {},
+	};
 	return {
 		vectors: {
 			resetProtoIndex: 0,
@@ -93,6 +99,7 @@ function makeProgramImage(
 		link: {
 			constRelocs: Array.from(constRelocs),
 			constValueRelocs: [],
+			symbols,
 		},
 	};
 }
@@ -614,7 +621,7 @@ test('flattened module export slots stay in sync with compile-time require impor
 	const memory = new Memory({ systemRom: new Uint8Array(0) });
 	const cpu = new CPU(memory);
 	resolveRuntimeProgramRelocations(compiled.program, compiled.metadata, compiled.constRelocs);
-	cpu.setProgram(compiled.program, compiled.metadata);
+	cpu.setProgram(compiled.program, compiled.metadata, compiled.metadata);
 	runStaticModuleInitializers(cpu, compiled);
 	cpu.start(compiled.entryProtoIndex);
 	assert.equal(cpu.runUntilDepth(0, 100000), RunResult.Halted);
@@ -643,7 +650,7 @@ test('flattened module export slots survive program append swaps', () => {
 	const memory = new Memory({ systemRom: new Uint8Array(0) });
 	const cpu = new CPU(memory);
 	resolveRuntimeProgramRelocations(compiled.program, compiled.metadata, compiled.constRelocs);
-	cpu.setProgram(compiled.program, compiled.metadata);
+	cpu.setProgram(compiled.program, compiled.metadata, compiled.metadata);
 	runStaticModuleInitializers(cpu, compiled);
 	cpu.start(compiled.entryProtoIndex);
 	assert.equal(cpu.runUntilDepth(0, 100000), RunResult.Halted);
@@ -657,7 +664,7 @@ test('flattened module export slots survive program append swaps', () => {
 		parseChunk(hostEvalSource, 'host_eval'),
 		{ entrySource: hostEvalSource },
 	);
-	cpu.setProgram(appended.program, appended.metadata);
+	cpu.setProgram(appended.program, appended.metadata, appended.metadata);
 	assert.equal(cpu.getGlobalByKey(slotKey), 8);
 });
 
@@ -725,7 +732,7 @@ test('ProgramLinker patches direct field const relocations against large system 
 	assert.equal(decodeUnsignedC(linkedCode, cartBaseWord + 5), 5002);
 });
 
-test('ProgramLinker rejects cart global relocations without symbols metadata', () => {
+test('ProgramLinker resolves cart global relocations without debug symbols', () => {
 	const systemImage = makeSystemImage(1);
 	const cartImage = makeProgramImage(
 		[
@@ -736,11 +743,12 @@ test('ProgramLinker rejects cart global relocations without symbols metadata', (
 		[],
 		[{ wordIndex: 1, kind: 'gl', constIndex: 0 }],
 	);
-	const systemSymbols = makeProgramSymbols('system', systemImage.sections.text.code.length / INSTRUCTION_BYTES);
-	assert.throws(
-		() => linkProgramImages(systemImage, systemSymbols, cartImage, null),
-		/Missing cart symbols metadata required to resolve cart relocations/,
-	);
+	cartImage.link.symbols.globalNames = ['cart__value'];
+
+	const linked = linkProgramImages(systemImage, null, cartImage, null);
+	const cartBaseWord = 0x80000 / INSTRUCTION_BYTES;
+	assert.equal(decodeBx(linked.programImage.sections.text.code, cartBaseWord + 1), 0);
+	assert.equal(linked.metadata, null);
 });
 
 test('ProgramLinker owns linked boot vector selection', () => {
@@ -869,7 +877,7 @@ test('inflateExecutableProgramImage resolves .bss constants against explicit non
 	};
 	image.link.constValueRelocs = [{ constIndex: 0, kind: 'bss_addr', symbol: 'cart_state', addend: 0 }];
 
-	const program = inflateExecutableProgramImage(image, null, PROGRAM_STATIC_RAM_BASE, PROGRAM_STATIC_RAM_BASE + 16);
+	const program = inflateExecutableProgramImage(image, PROGRAM_STATIC_RAM_BASE, PROGRAM_STATIC_RAM_BASE + 16);
 	assert.notEqual(program.constPool[0], PROGRAM_STATIC_RAM_BASE + 4);
 	assert.deepEqual(program.constPool, [PROGRAM_STATIC_RAM_BASE + 20]);
 });
@@ -911,6 +919,8 @@ test('ProgramLinker resolves system export-proto relocations before layout merge
 	const systemSymbols = makeProgramSymbols('system', systemImage.sections.text.code.length / INSTRUCTION_BYTES);
 	const cartSymbols = makeProgramSymbols('cart', cartImage.sections.text.code.length / INSTRUCTION_BYTES);
 	systemSymbols.exportProtoIdBySlot = { system__boot: 'system' };
+	systemImage.link.symbols.protoIds = systemSymbols.protoIds;
+	systemImage.link.symbols.exportProtoIdBySlot = systemSymbols.exportProtoIdBySlot;
 	const linked = linkProgramImages(systemImage, systemSymbols, cartImage, cartSymbols);
 	const systemBaseWord = SYSTEM_BASE_PC / INSTRUCTION_BYTES + 1;
 	const word = readInstructionWord(linked.programImage.sections.text.code, systemBaseWord);
@@ -936,6 +946,8 @@ test('ProgramLinker resolves symbolic relocations without rodata payload constan
 	const systemSymbols = makeProgramSymbols('system', systemImage.sections.text.code.length / INSTRUCTION_BYTES);
 	const cartSymbols = makeProgramSymbols('cart', cartImage.sections.text.code.length / INSTRUCTION_BYTES);
 	systemSymbols.exportProtoIdBySlot = { system__boot: 'system' };
+	systemImage.link.symbols.protoIds = systemSymbols.protoIds;
+	systemImage.link.symbols.exportProtoIdBySlot = systemSymbols.exportProtoIdBySlot;
 
 	const linked = linkProgramImages(systemImage, systemSymbols, cartImage, cartSymbols);
 
@@ -1022,8 +1034,10 @@ test('inflateExecutableProgramImage resolves object relocs before runtime instal
 	);
 	const metadata = makeProgramSymbols('main', image.sections.text.code.length / INSTRUCTION_BYTES);
 	metadata.exportProtoIdBySlot = { main__entry: 'main' };
+	image.link.symbols.protoIds = metadata.protoIds;
+	image.link.symbols.exportProtoIdBySlot = metadata.exportProtoIdBySlot;
 
-	const program = inflateExecutableProgramImage(image, metadata);
+	const program = inflateExecutableProgramImage(image);
 
 	assert.equal(((readInstructionWord(program.code, 1) >>> 18) & 0x3f) as OpCode, OpCode.CLOSURE);
 	const runtimeConst = program.constPool[0];
@@ -1031,26 +1045,26 @@ test('inflateExecutableProgramImage resolves object relocs before runtime instal
 	assert.equal(program.constPoolStringPool.toString(asStringId(runtimeConst)), 'runtime literal');
 });
 
-test('inflateExecutableProgramImage rejects object relocs without metadata', () => {
+test('inflateExecutableProgramImage resolves object relocs from image link symbols', () => {
 	const image = makeProgramImage(
 		[
+			{ op: OpCode.WIDE, a: 0, b: 0, c: 0 },
 			{ op: OpCode.LOADK, a: 0, b: 0, c: 0 },
 			{ op: OpCode.RET, a: 0, b: 1, c: 0 },
 		],
 		[],
-		[{ wordIndex: 0, kind: 'module', symbol: 'main__entry' }],
+		[{ wordIndex: 1, kind: 'module', symbol: 'main__entry' }],
 	);
+	image.link.symbols.globalNames = ['main__entry'];
 
-	assert.throws(
-		() => inflateExecutableProgramImage(image, null),
-		/program image relocations require metadata/,
-	);
+	const program = inflateExecutableProgramImage(image);
+	assert.equal(decodeBx(program.code, 1), 0);
 });
 
 test('compiled program images resolve hot-resume export relocs through the executable boundary', () => {
 	const baseSource = 'return 1';
 	const baseCompiled = compileLuaChunkToProgram(parseChunk(baseSource, 'cart.lua'), [], { entrySource: baseSource });
-	const baseProgram = inflateExecutableProgramImage(encodeCompiledProgramImage(baseCompiled), baseCompiled.metadata);
+	const baseProgram = inflateExecutableProgramImage(encodeCompiledProgramImage(baseCompiled));
 	const moduleSource = [
 		'local mod<const> = {}',
 		'function mod.foo()',
@@ -1074,7 +1088,7 @@ test('compiled program images resolve hot-resume export relocs through the execu
 	const image = encodeCompiledProgramImage(compiled);
 	const reloc = image.link.constRelocs.find(record => record.kind === 'export_proto' && record.symbol === 'mod__foo');
 	assert.ok(reloc);
-	const executable = inflateExecutableProgramImage(image, compiled.metadata);
+	const executable = inflateExecutableProgramImage(image);
 
 	assert.equal(((readInstructionWord(executable.code, reloc.wordIndex) >>> 18) & 0x3f) as OpCode, OpCode.CLOSURE);
 });
@@ -1083,7 +1097,7 @@ test('appended host-eval code preserves the installed program ROM mapping', () =
 	const baseSource = 'rodata value: word[1] = { 0x12345678 }\nreturn 1';
 	const baseCompiled = compileLuaChunkToProgram(parseChunk(baseSource, 'cart.lua'), [], { entrySource: baseSource });
 	const baseImage = encodeCompiledProgramImage(baseCompiled);
-	const baseProgram = inflateExecutableProgramImage(baseImage, baseCompiled.metadata);
+	const baseProgram = inflateExecutableProgramImage(baseImage);
 	const entrySource = 'return "host eval literal"';
 	const appended = appendLuaChunkToProgram(
 		baseProgram,
@@ -1106,7 +1120,7 @@ test('appended host-eval code preserves the installed program ROM mapping', () =
 	resolveRuntimeProgramRelocations(appended.program, appended.metadata, appended.constRelocs);
 	const memory = new Memory({ systemRom: new Uint8Array(0) });
 	const cpu = new CPU(memory);
-	cpu.setProgram(appended.program, appended.metadata);
+	cpu.setProgram(appended.program, appended.metadata, appended.metadata);
 	cpu.start(appended.entryProtoIndex);
 
 	assert.equal(cpu.runUntilDepth(0, 100000), RunResult.Halted);
@@ -1146,6 +1160,8 @@ test('ProgramLinker preserves ordinary string literals that match old reloc mark
 	const systemSymbols = makeProgramSymbols('system', systemImage.sections.text.code.length / INSTRUCTION_BYTES);
 	const cartSymbols = makeProgramSymbols('cart', cartImage.sections.text.code.length / INSTRUCTION_BYTES);
 	systemSymbols.exportProtoIdBySlot = { system__boot: 'system' };
+	systemImage.link.symbols.protoIds = systemSymbols.protoIds;
+	systemImage.link.symbols.exportProtoIdBySlot = systemSymbols.exportProtoIdBySlot;
 
 	const linked = linkProgramImages(systemImage, systemSymbols, cartImage, cartSymbols);
 
@@ -1170,6 +1186,7 @@ test('ProgramLinker resolves system symbolic relocations against system symbols 
 	const systemSymbols = makeProgramSymbols('system', systemImage.sections.text.code.length / INSTRUCTION_BYTES);
 	const cartSymbols = makeProgramSymbols('cart', cartImage.sections.text.code.length / INSTRUCTION_BYTES);
 	cartSymbols.globalNames = ['cart__only'];
+	cartImage.link.symbols.globalNames = cartSymbols.globalNames;
 	assert.throws(
 		() => linkProgramImages(systemImage, systemSymbols, cartImage, cartSymbols),
 		/Unable to resolve module export slot 'cart__only'/,

@@ -23,9 +23,9 @@ test('hotResumeProgramEntry keeps interpreter resident', () => {
 	const snippet = src.slice(start, nextExport === -1 ? undefined : nextExport);
 	assert.equal(snippet.includes('createLuaInterpreter('), false, 'hotResumeProgramEntry should not create a new interpreter');
 	assert.equal(snippet.includes('runtime.startLoadedProgram('), false, 'hotResumeProgramEntry must not restart the reset vector');
-	assert.equal(snippet.includes('runtime.machine.cpu.setProgram(program, compiled.metadata)'), true, 'hotResumeProgramEntry must patch the installed program in place');
+	assert.equal(snippet.includes('runtime.machine.cpu.setProgram(program, programImage.link.symbols, compiled.metadata)'), true, 'hotResumeProgramEntry must patch the installed program in place');
 	assert.equal(snippet.includes('encodeCompiledProgramImage(compiled)'), true, 'hotResumeProgramEntry must pass compiled code through the compiler-owned ProgramImage object boundary');
-	assert.equal(snippet.includes('inflateExecutableProgramImage(programImage, compiled.metadata, runtime.programDataBaseAddress, runtime.programBssBaseAddress)'), true, 'hotResumeProgramEntry must install through the program/linker executable boundary');
+	assert.equal(snippet.includes('inflateExecutableProgramImage(programImage, runtime.programDataBaseAddress, runtime.programBssBaseAddress)'), true, 'hotResumeProgramEntry must install through the program/linker executable boundary');
 	assert.equal(snippet.includes('resolveRuntimeProgramRelocations('), false, 'hotResumeProgramEntry must not own raw relocation resolution');
 	assert.equal(snippet.includes('if (!params.preserveSystemModules)'), true, 'hot-resume must preserve live module objects (single generation); only a full reload clears the module cache');
 });
@@ -51,7 +51,7 @@ test('Lua source boot installs through the program-image executable boundary', (
 	const nextExport = src.indexOf('\nexport function ', start + 1);
 	const snippet = src.slice(start, nextExport === -1 ? undefined : nextExport);
 	assert.equal(snippet.includes('encodeCompiledProgramImage(compiled)'), true, 'source boot must pass through the compiler-owned ProgramImage object boundary');
-	assert.equal(snippet.includes('inflateExecutableProgramImage(programImage, compiled.metadata, runtime.programDataBaseAddress, runtime.programBssBaseAddress)'), true, 'source boot must install through the program/linker executable boundary');
+	assert.equal(snippet.includes('inflateExecutableProgramImage(programImage, runtime.programDataBaseAddress, runtime.programBssBaseAddress)'), true, 'source boot must install through the program/linker executable boundary');
 	assert.equal(snippet.includes('resolveRuntimeProgramRelocations('), false, 'source boot must not own raw relocation resolution');
 });
 
@@ -64,7 +64,7 @@ test('host eval append preserves installed program ROM while resolving appended 
 	const snippet = src.slice(start, nextExport === -1 ? undefined : nextExport);
 	assert.equal(snippet.includes('appendLuaChunkToProgram(currentProgram'), true, 'host eval append must compile against the currently installed program');
 	assert.equal(snippet.includes('resolveRuntimeProgramRelocations(compiled.program, compiled.metadata, compiled.constRelocs)'), true, 'host eval append must resolve appended code relocations in the program owner');
-	assert.equal(snippet.includes('runtime.machine.cpu.setProgram(compiled.program, compiled.metadata)'), true, 'host eval append must keep the base program ROM mapping intact');
+	assert.equal(snippet.includes('runtime.machine.cpu.setProgram(compiled.program, compiled.metadata, compiled.metadata)'), true, 'host eval append must keep the base program ROM mapping intact');
 	assert.equal(snippet.includes('encodeAppendedProgramImage('), false, 'host eval append must not rebuild a ProgramImage that drops the installed rodata ROM');
 	assert.equal(snippet.includes('inflateExecutableProgramImage('), false, 'host eval append must not reinflate and shift the installed program ROM boundary');
 });

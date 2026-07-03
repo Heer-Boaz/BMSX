@@ -160,6 +160,7 @@ ProgramTextSection extractTextSection(const BinValue& textObj) {
 		proto.maxStack = protoObj.require("maxStack").toI32();
 		proto.numParams = protoObj.require("numParams").toI32();
 		proto.entryPC = protoObj.require("entryPC").toI32();
+		proto.codeLen = protoObj.require("codeLen").toI32();
 		proto.isVararg = protoObj.require("isVararg").asBool();
 		proto.staticClosure = protoObj.require("staticClosure").asBool();
 
@@ -182,6 +183,7 @@ BinValue encodeProto(const Proto& proto) {
 	object["maxStack"] = BinValue(proto.maxStack);
 	object["numParams"] = BinValue(proto.numParams);
 	object["entryPC"] = BinValue(proto.entryPC);
+	object["codeLen"] = BinValue(proto.codeLen);
 	object["isVararg"] = BinValue(proto.isVararg);
 	object["staticClosure"] = BinValue(proto.staticClosure);
 	BinArray upvalues;
@@ -268,13 +270,24 @@ ProgramObjectSections extractProgramObjectSections(const BinValue& sectionsObj) 
 	return sections;
 }
 
+void extractProgramRuntimeSymbols(const BinValue& symbolsObj, ProgramRuntimeSymbols& symbols, const std::string& context) {
+	const auto& protoIdsArr = symbolsObj.require("protoIds").asArray();
+	symbols.protoIds.reserve(protoIdsArr.size());
+	for (const auto& idVal : protoIdsArr) {
+		symbols.protoIds.push_back(idVal.asString());
+	}
+	symbols.systemGlobalNames = readStringArray(symbolsObj.require("systemGlobalNames"), context + ".systemGlobalNames");
+	symbols.globalNames = readStringArray(symbolsObj.require("globalNames"), context + ".globalNames");
+	const BinObject& exportObj = symbolsObj.require("exportProtoIdBySlot").asObject();
+	symbols.exportProtoIdBySlot.reserve(exportObj.size());
+	for (const auto& entry : exportObj) {
+		symbols.exportProtoIdBySlot.emplace(entry.first, entry.second.asString());
+	}
+}
+
 std::unique_ptr<ProgramMetadata> extractProgramMetadata(const BinValue& metadataObj) {
 	auto metadata = std::make_unique<ProgramMetadata>();
-	const auto& protoIdsArr = metadataObj.require("protoIds").asArray();
-	metadata->protoIds.reserve(protoIdsArr.size());
-	for (const auto& idVal : protoIdsArr) {
-		metadata->protoIds.push_back(idVal.asString());
-	}
+	extractProgramRuntimeSymbols(metadataObj, *metadata, "ProgramImage.metadata");
 	const auto& rangesArr = metadataObj.require("debugRanges").asArray();
 	metadata->debugRanges.reserve(rangesArr.size());
 	for (const auto& rangeVal : rangesArr) {
@@ -308,13 +321,6 @@ std::unique_ptr<ProgramMetadata> extractProgramMetadata(const BinValue& metadata
 		throw BMSX_RUNTIME_ERROR("ProgramImage: upvalueNamesByProto length does not match protoIds length.");
 	}
 
-	metadata->systemGlobalNames = readStringArray(metadataObj.require("systemGlobalNames"), "ProgramImage: systemGlobalNames");
-	metadata->globalNames = readStringArray(metadataObj.require("globalNames"), "ProgramImage: globalNames");
-	const BinObject& exportObj = metadataObj.require("exportProtoIdBySlot").asObject();
-	metadata->exportProtoIdBySlot.reserve(exportObj.size());
-	for (const auto& entry : exportObj) {
-		metadata->exportProtoIdBySlot.emplace(entry.first, entry.second.asString());
-	}
 	return metadata;
 }
 
@@ -366,6 +372,34 @@ BinValue encodeConstReloc(const ProgramConstReloc& reloc) {
 		object["constIndex"] = BinValue(indexed.constIndex);
 	}
 	return BinValue(std::move(object));
+}
+
+BinValue encodeRuntimeSymbols(const ProgramRuntimeSymbols& symbols) {
+	BinArray protoIds;
+	protoIds.reserve(symbols.protoIds.size());
+	for (const std::string& protoId : symbols.protoIds) {
+		protoIds.push_back(BinValue(protoId));
+	}
+	BinArray globalNames;
+	globalNames.reserve(symbols.globalNames.size());
+	for (const std::string& name : symbols.globalNames) {
+		globalNames.push_back(BinValue(name));
+	}
+	BinArray systemGlobalNames;
+	systemGlobalNames.reserve(symbols.systemGlobalNames.size());
+	for (const std::string& name : symbols.systemGlobalNames) {
+		systemGlobalNames.push_back(BinValue(name));
+	}
+	BinObject exportProtoIdBySlot;
+	for (const auto& entry : symbols.exportProtoIdBySlot) {
+		exportProtoIdBySlot[entry.first] = BinValue(entry.second);
+	}
+	BinObject out;
+	out["protoIds"] = BinValue(std::move(protoIds));
+	out["globalNames"] = BinValue(std::move(globalNames));
+	out["systemGlobalNames"] = BinValue(std::move(systemGlobalNames));
+	out["exportProtoIdBySlot"] = BinValue(std::move(exportProtoIdBySlot));
+	return BinValue(std::move(out));
 }
 
 } // namespace
@@ -434,6 +468,7 @@ std::unique_ptr<ProgramImage> decodeProgramImage(const uint8_t* data, size_t siz
 		reloc.addend = relocObj.require("addend").toI32();
 		image->link.constValueRelocs.push_back(std::move(reloc));
 	}
+	extractProgramRuntimeSymbols(linkObj.require("symbols"), image->link.symbols, "ProgramImage.link.symbols");
 
 	return image;
 }
@@ -523,6 +558,7 @@ std::vector<uint8_t> encodeProgramImage(const ProgramImage& asset) {
 	BinObject link;
 	link["constRelocs"] = BinValue(std::move(constRelocs));
 	link["constValueRelocs"] = BinValue(std::move(constValueRelocs));
+	link["symbols"] = encodeRuntimeSymbols(asset.link.symbols);
 
 	BinObject vectors;
 	vectors["resetProtoIndex"] = BinValue(asset.vectors.resetProtoIndex);

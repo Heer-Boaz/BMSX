@@ -17,13 +17,13 @@ struct MergedNamedSlots {
 	std::vector<int> cartRemap;
 };
 
-bool relocRequiresSymbolMetadata(const ProgramConstReloc& reloc) {
+bool relocRequiresLinkSymbols(const ProgramConstReloc& reloc) {
 	return std::holds_alternative<ProgramSymbolicConstReloc>(reloc.target);
 }
 
-bool cartRelocRequiresMetadata(const ProgramConstReloc& reloc) {
-	if (relocRequiresSymbolMetadata(reloc)) {
-		return true;
+bool relocRequiresNamedSlotRemap(const ProgramConstReloc& reloc) {
+	if (std::holds_alternative<ProgramSymbolicConstReloc>(reloc.target)) {
+		return false;
 	}
 	const auto& indexed = std::get<ProgramIndexedConstReloc>(reloc.target);
 	return indexed.kind == ProgramIndexedConstRelocKind::Gl || indexed.kind == ProgramIndexedConstRelocKind::Sys;
@@ -527,9 +527,29 @@ void rewriteSymbolicConstRelocations(
 	}
 }
 
+ProgramRuntimeSymbols mergeRuntimeSymbols(
+	const ProgramRuntimeSymbols& system,
+	const ProgramRuntimeSymbols& cart,
+	const MergedNamedSlots& systemGlobalNames,
+	const MergedNamedSlots& globalNames
+) {
+	ProgramRuntimeSymbols merged;
+	merged.protoIds.reserve(system.protoIds.size() + cart.protoIds.size());
+	merged.protoIds.insert(merged.protoIds.end(), system.protoIds.begin(), system.protoIds.end());
+	merged.protoIds.insert(merged.protoIds.end(), cart.protoIds.begin(), cart.protoIds.end());
+	merged.systemGlobalNames = systemGlobalNames.names;
+	merged.globalNames = globalNames.names;
+	merged.exportProtoIdBySlot = system.exportProtoIdBySlot;
+	for (const auto& entry : cart.exportProtoIdBySlot) {
+		merged.exportProtoIdBySlot[entry.first] = entry.second;
+	}
+	return merged;
+}
+
 std::unique_ptr<ProgramMetadata> mergeMetadata(
 	const ProgramMetadata* system,
 	const ProgramMetadata* cart,
+	const ProgramRuntimeSymbols& runtimeSymbols,
 	const ProgramLayout& layout,
 	int systemInstructionCount,
 	int cartInstructionCount
@@ -538,7 +558,7 @@ std::unique_ptr<ProgramMetadata> mergeMetadata(
 		return nullptr;
 	}
 	if (!system || !cart) {
-		throw std::runtime_error("[ProgramLinker] Linking requires both system and cart symbols.");
+		throw std::runtime_error("[ProgramLinker] Linking requires both debug symbol metadata assets when debug metadata is provided.");
 	}
 	if (static_cast<int>(system->debugRanges.size()) != systemInstructionCount) {
 		throw std::runtime_error("[ProgramLinker] System debug range length mismatch.");
@@ -569,8 +589,7 @@ std::unique_ptr<ProgramMetadata> mergeMetadata(
 	for (int i = 0; i < cartInstructionCount; ++i) {
 		merged->debugRanges[static_cast<size_t>(cartBaseWord + i)] = cart->debugRanges[static_cast<size_t>(i)];
 	}
-	merged->protoIds = system->protoIds;
-	merged->protoIds.insert(merged->protoIds.end(), cart->protoIds.begin(), cart->protoIds.end());
+	merged->protoIds = runtimeSymbols.protoIds;
 	merged->localSlotsByProto = system->localSlotsByProto;
 	merged->localSlotsByProto.insert(
 		merged->localSlotsByProto.end(),
@@ -583,14 +602,9 @@ std::unique_ptr<ProgramMetadata> mergeMetadata(
 		cart->upvalueNamesByProto.begin(),
 		cart->upvalueNamesByProto.end()
 	);
-	const MergedNamedSlots systemGlobalNames = mergeNamedSlots(system->systemGlobalNames, cart->systemGlobalNames);
-	const MergedNamedSlots globalNames = mergeNamedSlots(system->globalNames, cart->globalNames);
-	merged->systemGlobalNames = systemGlobalNames.names;
-	merged->globalNames = globalNames.names;
-	merged->exportProtoIdBySlot = system->exportProtoIdBySlot;
-	for (const auto& entry : cart->exportProtoIdBySlot) {
-		merged->exportProtoIdBySlot[entry.first] = entry.second;
-	}
+	merged->systemGlobalNames = runtimeSymbols.systemGlobalNames;
+	merged->globalNames = runtimeSymbols.globalNames;
+	merged->exportProtoIdBySlot = runtimeSymbols.exportProtoIdBySlot;
 	return merged;
 }
 
@@ -598,7 +612,7 @@ std::unique_ptr<ProgramMetadata> mergeMetadata(
 
 void resolveRuntimeProgramRelocations(
 	Program& program,
-	const ProgramMetadata& metadata,
+	const ProgramRuntimeSymbols& symbols,
 	const std::vector<ProgramConstReloc>& relocs
 ) {
 	for (const ProgramConstReloc& reloc : relocs) {
@@ -607,16 +621,16 @@ void resolveRuntimeProgramRelocations(
 			continue;
 		}
 		if (symbolic->kind == ProgramSymbolicConstRelocKind::Module) {
-			const ResolvedExportSlot resolvedSlot = resolveLinkedExportSlot(symbolic->symbol, metadata.globalNames, metadata.systemGlobalNames);
+			const ResolvedExportSlot resolvedSlot = resolveLinkedExportSlot(symbolic->symbol, symbols.globalNames, symbols.systemGlobalNames);
 			writeResolvedABx(program.code, reloc.wordIndex, resolvedSlot.op, resolvedSlot.slot);
 			continue;
 		}
 		const ResolvedExportProtoTarget target = resolveExportProtoRelocTarget(
 			symbolic->symbol,
-			metadata.globalNames,
-			metadata.systemGlobalNames,
-			metadata.exportProtoIdBySlot,
-			metadata.protoIds
+			symbols.globalNames,
+			symbols.systemGlobalNames,
+			symbols.exportProtoIdBySlot,
+			symbols.protoIds
 		);
 		writeResolvedABx(program.code, reloc.wordIndex, target.op, target.value);
 	}
@@ -624,7 +638,6 @@ void resolveRuntimeProgramRelocations(
 
 std::unique_ptr<Program> inflateExecutableProgramImage(
 	const ProgramImage& image,
-	const ProgramMetadata* metadata,
 	uint32_t dataBaseAddress,
 	uint32_t bssBaseAddress
 ) {
@@ -649,10 +662,7 @@ std::unique_ptr<Program> inflateExecutableProgramImage(
 	);
 	auto program = inflateProgram(executableSections);
 	if (!image.link.constRelocs.empty()) {
-		if (!metadata) {
-			throw std::runtime_error("program image relocations require metadata.");
-		}
-		resolveRuntimeProgramRelocations(*program, *metadata, image.link.constRelocs);
+		resolveRuntimeProgramRelocations(*program, image.link.symbols, image.link.constRelocs);
 	}
 	return program;
 }
@@ -693,6 +703,8 @@ LinkedProgramImage linkProgramImages(
 	const ProgramBssSection& cartBss = cartImage.sections.bss;
 	const std::vector<ProgramConstReloc>& systemConstRelocs = systemImage.link.constRelocs;
 	const std::vector<ProgramConstReloc>& cartConstRelocs = cartImage.link.constRelocs;
+	const ProgramRuntimeSymbols& systemRuntimeSymbols = systemImage.link.symbols;
+	const ProgramRuntimeSymbols& cartRuntimeSymbols = cartImage.link.symbols;
 	const int systemCodeBytes = static_cast<int>(systemText.code.size());
 	const int cartCodeBytes = static_cast<int>(cartText.code.size());
 	const size_t systemProtoSize = systemText.protos.size();
@@ -746,23 +758,20 @@ LinkedProgramImage linkProgramImages(
 			cartRodataBase
 		)
 	);
-	const bool systemNeedsSymbols = std::any_of(systemConstRelocs.begin(), systemConstRelocs.end(), relocRequiresSymbolMetadata);
-	const bool cartNeedsSymbols = std::any_of(cartConstRelocs.begin(), cartConstRelocs.end(), relocRequiresSymbolMetadata);
-	const bool cartNeedsMetadata = std::any_of(cartConstRelocs.begin(), cartConstRelocs.end(), cartRelocRequiresMetadata);
-	if ((systemNeedsSymbols || cartNeedsMetadata) && !systemSymbols) {
-		throw std::runtime_error("[ProgramLinker] Missing system symbols metadata required to resolve relocations.");
-	}
-	if (cartNeedsMetadata && !cartSymbols) {
-		throw std::runtime_error("[ProgramLinker] Missing cart symbols metadata required to resolve cart relocations.");
-	}
-	if (systemNeedsSymbols) {
+	const MergedNamedSlots mergedSystemGlobals = mergeNamedSlots(systemRuntimeSymbols.systemGlobalNames, cartRuntimeSymbols.systemGlobalNames);
+	const MergedNamedSlots mergedGlobals = mergeNamedSlots(systemRuntimeSymbols.globalNames, cartRuntimeSymbols.globalNames);
+	ProgramRuntimeSymbols runtimeSymbols = mergeRuntimeSymbols(systemRuntimeSymbols, cartRuntimeSymbols, mergedSystemGlobals, mergedGlobals);
+	const bool systemNeedsLinkSymbols = std::any_of(systemConstRelocs.begin(), systemConstRelocs.end(), relocRequiresLinkSymbols);
+	const bool cartNeedsLinkSymbols = std::any_of(cartConstRelocs.begin(), cartConstRelocs.end(), relocRequiresLinkSymbols);
+	const bool cartNeedsNamedSlotRemap = std::any_of(cartConstRelocs.begin(), cartConstRelocs.end(), relocRequiresNamedSlotRemap);
+	if (systemNeedsLinkSymbols) {
 		rewriteSymbolicConstRelocations(
 			systemCode,
 			systemConstRelocs,
-			systemSymbols->globalNames,
-			systemSymbols->systemGlobalNames,
-			systemSymbols->exportProtoIdBySlot,
-			systemSymbols->protoIds
+			systemRuntimeSymbols.globalNames,
+			systemRuntimeSymbols.systemGlobalNames,
+			systemRuntimeSymbols.exportProtoIdBySlot,
+			systemRuntimeSymbols.protoIds
 		);
 	}
 	rewriteConstPoolRelocations(
@@ -770,31 +779,21 @@ LinkedProgramImage linkProgramImages(
 		cartConstRelocs,
 		merged.cartRemap
 	);
-	if (cartNeedsMetadata) {
-		const MergedNamedSlots mergedSystemGlobals = mergeNamedSlots(systemSymbols->systemGlobalNames, cartSymbols->systemGlobalNames);
-		const MergedNamedSlots mergedGlobals = mergeNamedSlots(systemSymbols->globalNames, cartSymbols->globalNames);
+	if (cartNeedsNamedSlotRemap || cartNeedsLinkSymbols) {
 		rewriteNamedSlotRelocations(
 			cartCode,
 			cartConstRelocs,
 			mergedGlobals.cartRemap,
 			mergedSystemGlobals.cartRemap
 		);
-		if (cartNeedsSymbols) {
-			std::vector<std::string> mergedProtoIds;
-			mergedProtoIds.reserve(systemSymbols->protoIds.size() + cartSymbols->protoIds.size());
-			mergedProtoIds.insert(mergedProtoIds.end(), systemSymbols->protoIds.begin(), systemSymbols->protoIds.end());
-			mergedProtoIds.insert(mergedProtoIds.end(), cartSymbols->protoIds.begin(), cartSymbols->protoIds.end());
-			std::unordered_map<std::string, std::string> mergedExportProtoIdBySlot = systemSymbols->exportProtoIdBySlot;
-			for (const auto& entry : cartSymbols->exportProtoIdBySlot) {
-				mergedExportProtoIdBySlot[entry.first] = entry.second;
-			}
+		if (cartNeedsLinkSymbols) {
 			rewriteSymbolicConstRelocations(
 				cartCode,
 				cartConstRelocs,
 				mergedGlobals.names,
 				mergedSystemGlobals.names,
-				mergedExportProtoIdBySlot,
-				mergedProtoIds
+				runtimeSymbols.exportProtoIdBySlot,
+				runtimeSymbols.protoIds
 			);
 		}
 	}
@@ -865,10 +864,11 @@ LinkedProgramImage linkProgramImages(
 	linkedImage->sections = std::move(linkedSections);
 	linkedImage->link.constRelocs.clear();
 	linkedImage->link.constValueRelocs.clear();
+	linkedImage->link.symbols = runtimeSymbols;
 
 	const int systemInstructionCount = systemCodeBytes / INSTRUCTION_BYTES;
 	const int cartInstructionCount = cartCodeBytes / INSTRUCTION_BYTES;
-	std::unique_ptr<ProgramMetadata> mergedMetadata = mergeMetadata(systemSymbols, cartSymbols, layout, systemInstructionCount, cartInstructionCount);
+	std::unique_ptr<ProgramMetadata> mergedMetadata = mergeMetadata(systemSymbols, cartSymbols, runtimeSymbols, layout, systemInstructionCount, cartInstructionCount);
 
 	LinkedProgramImage output;
 	output.programImage = std::move(linkedImage);

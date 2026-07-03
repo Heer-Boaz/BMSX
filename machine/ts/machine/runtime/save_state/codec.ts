@@ -51,7 +51,7 @@ import {
 } from '../../devices/vdp/rpu';
 import { VDP_XF_MATRIX_COUNT, VDP_XF_MATRIX_REGISTER_WORDS, type VdpXfState } from '../../devices/vdp/xf';
 import type { MemorySaveState } from '../../memory/memory';
-import { VDP_STREAM_CAPACITY_WORDS, VRAM_STAGING_SIZE } from '../../memory/map';
+import { VDP_STREAM_CAPACITY_WORDS, VRAM_STAGING_SIZE, VRAM_TEXTURE_SIZE } from '../../memory/map';
 import type { FrameSchedulerStateSnapshot, TickCompletion } from '../../scheduler/frame';
 import type { RuntimeSaveMachineState } from '../save_machine_state';
 import type { RuntimeSaveState } from '../save_state';
@@ -618,7 +618,7 @@ function decodeVdpRpuState(value: unknown, label: string): VdpRpuSaveState {
 	const object = requireObject(value, label);
 	return {
 		buildState: requireBoundedU32(requireObjectKey(object, 'buildState', label, `${label}.buildState`), `${label}.buildState`, 0, 3) as VdpRpuSaveState['buildState'],
-		vdpVram: decodeBoundedU8Vector(requireObjectKey(object, 'vdpVram', label, `${label}.vdpVram`), `${label}.vdpVram`, VRAM_STAGING_SIZE),
+		vdpVram: decodeBoundedU8Vector(requireObjectKey(object, 'vdpVram', label, `${label}.vdpVram`), `${label}.vdpVram`, VRAM_STAGING_SIZE + VRAM_TEXTURE_SIZE),
 	};
 }
 

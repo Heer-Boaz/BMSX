@@ -40,7 +40,7 @@ function disassembleProgramWithoutIrqVector(compiled: CompiledProgram): string {
 function runColdCompiled(compiled: CompiledProgram, memory = new Memory({ systemRom: new Uint8Array(0) })): { memory: Memory; values: Value[] } {
 	const image = encodeCompiledProgramImage(compiled);
 	const cpu = new CPU(memory);
-	cpu.setProgram(inflateExecutableProgramImage(image, compiled.metadata), compiled.metadata);
+	cpu.setProgram(inflateExecutableProgramImage(image), image.link.symbols, compiled.metadata);
 	cpu.start(image.vectors.sectionInitProtoIndex);
 	assert.equal(cpu.runUntilDepth(0, 100000), RunResult.Halted);
 	cpu.start(image.vectors.resetProtoIndex);

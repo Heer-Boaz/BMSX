@@ -98,7 +98,7 @@ export function hotResumeProgramEntry(runtime: Runtime, params: { path: string; 
 		constModulePaths: [ROM_ASSET_SYMBOL_MODULE_PATH],
 	});
 	const programImage = encodeCompiledProgramImage(compiled);
-	const program = inflateExecutableProgramImage(programImage, compiled.metadata, runtime.programDataBaseAddress, runtime.programBssBaseAddress);
+	const program = inflateExecutableProgramImage(programImage, runtime.programDataBaseAddress, runtime.programBssBaseAddress);
 	if (!params.preserveSystemModules) {
 		runtime.moduleCache.clear();
 		runtime.machine.imgDecController.reset();
@@ -110,9 +110,10 @@ export function hotResumeProgramEntry(runtime: Runtime, params: { path: string; 
 	// Re-requiring would build a redundant second module generation (the heap
 	// doubling that pushed resume over the RAM budget) and discard live state.
 	runtime.machine.vdp.resetIngressState();
-	runtime.machine.cpu.setProgram(program, compiled.metadata);
+	runtime.machine.cpu.setProgram(program, programImage.link.symbols, compiled.metadata);
 	runtime.luaRuntimeFailed = preserveRuntimeFailure;
 	runtime._luaPath = binding;
+	runtime.programRuntimeSymbols = programImage.link.symbols;
 	runtime.programMetadata = compiled.metadata;
 }
 

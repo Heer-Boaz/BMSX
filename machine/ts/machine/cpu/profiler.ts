@@ -23,6 +23,9 @@ export type CpuProfilerProgram = {
 
 export type CpuProfilerMetadata = {
 	debugRanges: ReadonlyArray<CpuProfilerSourceRange | null>;
+};
+
+export type CpuProfilerRuntimeSymbols = {
 	protoIds: ReadonlyArray<string>;
 };
 
@@ -205,7 +208,7 @@ export class CpuExecutionProfiler {
 	private protoIds: string[] = [];
 	private debugRanges: Array<CpuProfilerSourceRange | null> = [];
 
-	public configureProgram(program: CpuProfilerProgram, metadata: CpuProfilerMetadata | null, decodedOps: Uint8Array): void {
+	public configureProgram(program: CpuProfilerProgram, runtimeSymbols: CpuProfilerRuntimeSymbols, metadata: CpuProfilerMetadata | null, decodedOps: Uint8Array): void {
 		const instructionCount = decodedOps.length;
 		if (this.pcCounts.length !== instructionCount) {
 			this.pcCounts = new Uint32Array(instructionCount);
@@ -225,7 +228,7 @@ export class CpuExecutionProfiler {
 		}
 		this.protoIds = new Array(program.protos.length);
 		for (let protoIndex = 0; protoIndex < program.protos.length; protoIndex += 1) {
-			this.protoIds[protoIndex] = metadata !== null ? metadata.protoIds[protoIndex] : `proto:${protoIndex}`;
+			this.protoIds[protoIndex] = runtimeSymbols.protoIds[protoIndex];
 		}
 		this.debugRanges = new Array<CpuProfilerSourceRange | null>(instructionCount);
 		for (let wordIndex = 0; wordIndex < instructionCount; wordIndex += 1) {

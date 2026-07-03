@@ -600,11 +600,7 @@ function assertDebugArtifacts(label: string, debugFlag: boolean, filePath: strin
 
 async function readRomFile(filePath: string): Promise<Uint8Array> {
 	try {
-		const buffer = await fs.readFile(filePath);
-		const start = buffer.byteOffset;
-		const end = buffer.byteOffset + buffer.byteLength;
-		const slice = buffer.buffer.slice(start, end);
-		return slice instanceof ArrayBuffer ? new Uint8Array(slice) : new Uint8Array(slice).slice();
+		return await fs.readFile(filePath);
 	} catch (err) {
 		throw new Error(`Unable to read ROM file at ${filePath}: ${err instanceof Error ? err.message : String(err)}`);
 	}

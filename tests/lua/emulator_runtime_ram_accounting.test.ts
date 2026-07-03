@@ -22,7 +22,7 @@ function createCpuWithProgram(source: string): { cpu: CPU; entryProtoIndex: numb
 	const compiled = compileSource(source);
 	const memory = new Memory({ systemRom: new Uint8Array(0) });
 	const cpu = new CPU(memory);
-	cpu.setProgram(compiled.program, compiled.metadata);
+	cpu.setProgram(compiled.program, compiled.metadata, compiled.metadata);
 	return { cpu, entryProtoIndex: compiled.entryProtoIndex };
 }
 
@@ -128,7 +128,7 @@ test('program image literals and debug names stay in ROM accounting', () => {
 		'return alpha_beta_gamma, field_name',
 	].join('\n'));
 
-	cpu.setProgram(compiled.program, compiled.metadata);
+	cpu.setProgram(compiled.program, compiled.metadata, compiled.metadata);
 
 	assert.equal(cpu.collectTrackedHeapBytes(), before);
 });

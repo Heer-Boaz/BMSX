@@ -1,5 +1,6 @@
 #pragma once
 
+#include <array>
 #include <cstdint>
 #include <cstring>
 #include <exception>
@@ -547,6 +548,7 @@ struct UpvalueDesc {
  */
 struct Proto {
 	int entryPC = 0;
+	int codeLen = 0;
 	int maxStack = 0;
 	int numParams = 0;
 	bool isVararg = false;
@@ -584,14 +586,17 @@ struct LocalSlotDebug {
 	SourceRange scope;
 };
 
-struct ProgramMetadata {
-	std::vector<std::optional<SourceRange>> debugRanges;
+struct ProgramRuntimeSymbols {
 	std::vector<std::string> protoIds;
-	std::vector<std::vector<LocalSlotDebug>> localSlotsByProto;
-	std::vector<std::vector<std::string>> upvalueNamesByProto;
 	std::vector<std::string> globalNames;
 	std::vector<std::string> systemGlobalNames;
 	std::unordered_map<std::string, std::string> exportProtoIdBySlot;
+};
+
+struct ProgramMetadata : ProgramRuntimeSymbols {
+	std::vector<std::optional<SourceRange>> debugRanges;
+	std::vector<std::vector<LocalSlotDebug>> localSlotsByProto;
+	std::vector<std::vector<std::string>> upvalueNamesByProto;
 };
 
 struct DecodedInstruction {
@@ -600,6 +605,7 @@ struct DecodedInstruction {
 	int32_t sbx = 0;
 	int32_t rkB = 0;
 	int32_t rkC = 0;
+	uint32_t tableCacheIndex = 0;
 	uint16_t a = 0;
 	uint16_t b = 0;
 	uint16_t c = 0;
@@ -892,7 +898,7 @@ class CPU {
 public:
 	explicit CPU(Memory& memory);
 
-	void setProgram(Program* program, ProgramMetadata* metadata);
+	void setProgram(Program* program, const ProgramRuntimeSymbols& runtimeSymbols, ProgramMetadata* metadata);
 	Program* getProgram() const { return m_program; }
 	StringPool& stringPool() { return m_stringPool; }
 	const StringPool& stringPool() const { return m_stringPool; }
@@ -982,7 +988,7 @@ private:
 	void callValueInto(Value callee, NativeArgsView args, NativeResults& out);
 	void runHousekeeping();
 	void tickHotLoopHousekeeping();
-	void initializeGlobalSlots(ProgramMetadata* metadata);
+	void initializeGlobalSlots(const ProgramRuntimeSymbols& runtimeSymbols);
 	void initializeGlobalSlotList(std::vector<StringId>& names, std::vector<Value>& values, std::unordered_map<StringId, size_t>& slotByKey, const std::vector<std::string>& source);
 	void materializeStaticClosures();
 	CallFrame* pushFrame(CallFrame& caller, Closure* closure, int argBase, int argCount,
@@ -1043,6 +1049,8 @@ private:
 	void trackNativeLocalRoot(Value value);
 
 	void decodeProgram();
+	DecodedInstruction& decodedSlotForWrite(size_t wordIndex);
+	const DecodedInstruction& decodedAtWordIndex(int wordIndex) const;
 	void requireRunnableForCall() const;
 	void clearHaltAfterAcceptedInterrupt();
 	void markRoots(GcHeap& heap);
@@ -1074,8 +1082,16 @@ private:
 	std::vector<Value> m_stack;
 	int m_stackTop = 0;
 	static constexpr int HOT_LOOP_HOUSEKEEPING_STRIDE = 16;
+	static constexpr size_t DECODED_PAGE_SHIFT = 8;
+	static constexpr size_t DECODED_PAGE_WORDS = 1u << DECODED_PAGE_SHIFT;
+	static constexpr size_t DECODED_PAGE_MASK = DECODED_PAGE_WORDS - 1u;
 
-	std::vector<DecodedInstruction> m_decoded;
+	struct DecodedInstructionPage {
+		std::array<DecodedInstruction, DECODED_PAGE_WORDS> words{};
+	};
+
+	std::vector<std::unique_ptr<DecodedInstructionPage>> m_decodedPages;
+	size_t m_decodedWordCount = 0;
 	std::vector<TableLoadInlineCache> m_tableLoadCaches;
 	Value m_indexKey = valueNil();
 	std::vector<StringId> m_systemGlobalNames;

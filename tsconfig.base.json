@@ -48,7 +48,7 @@
 		"emitDecoratorMetadata": false,
 		"allowArbitraryExtensions": true,
 		"allowImportingTsExtensions": true,
-		"ignoreDeprecations": "6.0",
+		"ignoreDeprecations": "5.0",
 		"baseUrl": ".",
 		"paths": {
 			"bmsx": ["machine/ts/index.ts"],

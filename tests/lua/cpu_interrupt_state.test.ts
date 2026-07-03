@@ -146,7 +146,8 @@ function makeMachine(): Machine {
 function makeHaltFrameRuntime(): Runtime {
 	const memory = new Memory({ systemRom: new Uint8Array(0) });
 	const cpu = new CPU(memory);
-	cpu.setProgram(makeProgram(cpu), makeMetadata());
+	const metadata = makeMetadata();
+	cpu.setProgram(makeProgram(cpu), metadata, metadata);
 	cpu.start(0);
 	const scheduler = {
 		nowCycles: 0,
@@ -214,7 +215,7 @@ function makeCompiledIrqRuntime(source: string): { cpu: CPU; irqController: IrqC
 	const image = encodeCompiledProgramImage(compiled);
 	const memory = new Memory({ systemRom: new Uint8Array(0) });
 	const cpu = new CPU(memory);
-	cpu.setProgram(inflateExecutableProgramImage(image, compiled.metadata), compiled.metadata);
+	cpu.setProgram(inflateExecutableProgramImage(image), image.link.symbols, compiled.metadata);
 	cpu.start(image.vectors.resetProtoIndex);
 	const irqController = new IrqController(memory);
 	const scheduler = {
@@ -255,7 +256,8 @@ function makeCompiledIrqRuntime(source: string): { cpu: CPU; irqController: IrqC
 test('CPU external closure calls cannot wake HALT without an accepted interrupt', () => {
 	const memory = new Memory({ systemRom: new Uint8Array(0) });
 	const cpu = new CPU(memory);
-	cpu.setProgram(makeProgram(cpu), makeMetadata());
+	const metadata = makeMetadata();
+	cpu.setProgram(makeProgram(cpu), metadata, metadata);
 	const closure = cpu.rootClosure(1);
 	cpu.start(0);
 
@@ -271,7 +273,8 @@ test('CPU external closure calls cannot wake HALT without an accepted interrupt'
 test('CPU external closure calls rejected while already halted preserve budget state', () => {
 	const memory = new Memory({ systemRom: new Uint8Array(0) });
 	const cpu = new CPU(memory);
-	cpu.setProgram(makeProgram(cpu), makeMetadata());
+	const metadata = makeMetadata();
+	cpu.setProgram(makeProgram(cpu), metadata, metadata);
 	const closure = cpu.rootClosure(1);
 	cpu.start(0);
 	const runtime = makeRuntime(cpu);
@@ -300,7 +303,8 @@ test('CPU external closure calls rejected while already halted preserve budget s
 test('CPU closure calls that execute HALT without a scheduled interrupt unwind', () => {
 	const memory = new Memory({ systemRom: new Uint8Array(0) });
 	const cpu = new CPU(memory);
-	cpu.setProgram(makeProgram(cpu), makeMetadata());
+	const metadata = makeMetadata();
+	cpu.setProgram(makeProgram(cpu), metadata, metadata);
 	const closure = cpu.rootClosure(0);
 	cpu.start(1);
 	const runtime = makeRuntime(cpu);
@@ -317,7 +321,8 @@ test('CPU closure calls that execute HALT without a scheduled interrupt unwind',
 test('host external closure calls wake from pending IRQ without vectoring', () => {
 	const memory = new Memory({ systemRom: new Uint8Array(0) });
 	const cpu = new CPU(memory);
-	cpu.setProgram(makeProgram(cpu), makeMetadata());
+	const metadata = makeMetadata();
+	cpu.setProgram(makeProgram(cpu), metadata, metadata);
 	const closure = cpu.rootClosure(0);
 	cpu.start(1);
 	const runtime = makeRuntime(cpu);
@@ -337,7 +342,8 @@ test('IRQ mask starts closed and gates pending maskable IRQs', () => {
 	const memory = new Memory({ systemRom: new Uint8Array(0) });
 	const irq = new IrqController(memory);
 	const cpu = new CPU(memory);
-	cpu.setProgram(makeProgram(cpu), makeMetadata());
+	const metadata = makeMetadata();
+	cpu.setProgram(makeProgram(cpu), metadata, metadata);
 	cpu.start(0);
 
 	irq.raise(IRQ_VBLANK);
@@ -360,7 +366,8 @@ test('CPU closure calls continue after scheduler yield requests', () => {
 	const yieldingNative = createNativeFunction('yielding_native', () => {
 		cpu.requestYield();
 	}, { base: nativeCost, perArg: 0, perRet: 0 });
-	cpu.setProgram(makeThrowingNativeProgram(cpu, yieldingNative), makeMetadata());
+	const metadata = makeMetadata();
+	cpu.setProgram(makeThrowingNativeProgram(cpu, yieldingNative), metadata, metadata);
 	const closure = cpu.rootClosure(0);
 	cpu.start(1);
 	const spent = BASE_CYCLES[OpCode.LOADK] + BASE_CYCLES[OpCode.CALL] + nativeCost + BASE_CYCLES[OpCode.RET];
@@ -382,7 +389,8 @@ test('CPU external closure calls that throw after executing preserve spent budge
 	const throwingNative = createNativeFunction('throwing_native', () => {
 		throw new Error('native boom');
 	}, { base: nativeCost, perArg: 0, perRet: 0 });
-	cpu.setProgram(makeThrowingNativeProgram(cpu, throwingNative), makeMetadata());
+	const metadata = makeMetadata();
+	cpu.setProgram(makeThrowingNativeProgram(cpu, throwingNative), metadata, metadata);
 	const closure = cpu.rootClosure(0);
 	cpu.start(1);
 	const spent = BASE_CYCLES[OpCode.LOADK] + BASE_CYCLES[OpCode.CALL] + nativeCost;
@@ -415,7 +423,8 @@ test('CPU frame executor closes scheduler slice when execution throws', () => {
 	const throwingNative = createNativeFunction('throwing_native', () => {
 		throw new Error('native boom');
 	}, { base: 7, perArg: 0, perRet: 0 });
-	cpu.setProgram(makeThrowingNativeProgram(cpu, throwingNative), makeMetadata());
+	const metadata = makeMetadata();
+	cpu.setProgram(makeThrowingNativeProgram(cpu, throwingNative), metadata, metadata);
 	cpu.start(0);
 
 	const sliceStats = { begin: 0, end: 0 };

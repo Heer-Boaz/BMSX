@@ -1,6 +1,6 @@
 import type { LuaFunctionValue, LuaValue } from '../../lua/value';
 import { isLuaCallSignal } from '../../lua/value';
-import { AcceptedInterruptKind, EMPTY_CALL_ARGS, Closure, RunResult, type Program, type ProgramMetadata, type Value } from '../cpu/cpu';
+import { AcceptedInterruptKind, EMPTY_CALL_ARGS, Closure, RunResult, type Program, type ProgramMetadata, type ProgramRuntimeSymbols, type Value } from '../cpu/cpu';
 import { INSTRUCTION_BYTES } from '../cpu/instruction_format';
 import { buildMarshalContext, extendMarshalContext, toNativeValue, toRuntimeValue } from '../runtime/host/native_bridge';
 import { advanceRuntimeTime, runDueRuntimeTimers } from '../runtime/cpu_executor';
@@ -21,22 +21,28 @@ function callLuaFunctionPrepared(runtime: Runtime, fn: LuaFunctionValue, luaArgs
 	return output;
 }
 
-function buildHostEvalMetadata(baseProgram: Program): ProgramMetadata {
+function buildHostEvalMetadata(baseProgram: Program, runtimeSymbols: ProgramRuntimeSymbols): ProgramMetadata {
 	const instructionCount = baseProgram.code.length / INSTRUCTION_BYTES;
 	const debugRanges: Array<ProgramMetadata['debugRanges'][number]> = new Array(instructionCount);
 	for (let index = 0; index < debugRanges.length; index += 1) {
 		debugRanges[index] = null;
 	}
 	const protoCount = baseProgram.protos.length;
-	const protoIds = new Array<string>(protoCount);
 	const localSlotsByProto: Array<ProgramMetadata['localSlotsByProto'][number]> = new Array(protoCount);
 	const upvalueNamesByProto: Array<ProgramMetadata['upvalueNamesByProto'][number]> = new Array(protoCount);
-	for (let index = 0; index < protoIds.length; index += 1) {
-		protoIds[index] = `proto:${index}`;
+	for (let index = 0; index < protoCount; index += 1) {
 		localSlotsByProto[index] = [];
 		upvalueNamesByProto[index] = [];
 	}
-	return { debugRanges, protoIds, localSlotsByProto, upvalueNamesByProto, globalNames: [], systemGlobalNames: [], exportProtoIdBySlot: {} };
+	return {
+		debugRanges,
+		protoIds: runtimeSymbols.protoIds,
+		localSlotsByProto,
+		upvalueNamesByProto,
+		globalNames: runtimeSymbols.globalNames,
+		systemGlobalNames: runtimeSymbols.systemGlobalNames,
+		exportProtoIdBySlot: runtimeSymbols.exportProtoIdBySlot,
+	};
 }
 
 export function runHostEvalChunk(runtime: Runtime, source: string): Value[] {
@@ -45,7 +51,7 @@ export function runHostEvalChunk(runtime: Runtime, source: string): Value[] {
 	if (!currentProgram) {
 		throw new Error('host-eval execution requires active program.');
 	}
-	const baseMetadata = runtime.programMetadata ?? runtime.hostEvalMetadata ?? buildHostEvalMetadata(currentProgram);
+	const baseMetadata = runtime.programMetadata ?? runtime.hostEvalMetadata ?? buildHostEvalMetadata(currentProgram, runtime.programRuntimeSymbols);
 	const compiled = appendLuaChunkToProgram(currentProgram, baseMetadata, chunk, {
 		optLevel: runtime.realtimeCompileOptLevel,
 		entrySource: source,
@@ -63,7 +69,8 @@ export function runHostEvalChunk(runtime: Runtime, source: string): Value[] {
 		compiled.rodataBytes.byteLength,
 	);
 	resolveRuntimeProgramRelocations(compiled.program, compiled.metadata, compiled.constRelocs);
-	runtime.machine.cpu.setProgram(compiled.program, compiled.metadata);
+	runtime.machine.cpu.setProgram(compiled.program, compiled.metadata, compiled.metadata);
+	runtime.programRuntimeSymbols = compiled.metadata;
 	if (runtime.programMetadata) {
 		runtime.programMetadata = compiled.metadata;
 	} else {

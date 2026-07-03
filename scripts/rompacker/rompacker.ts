@@ -403,7 +403,7 @@ async function runBIOSBuild(options: ParsedOptions, progress?: ProgressReporter)
 	validateAudioEventReferences(BIOSResources);
 	const BIOSRomAssets = await runBIOSStep(TASK.ROM_ASSETS, () => generateRomAssets(BIOSResources, message => progress?.setDetail(message)));
 	await generateHostSystemAtlasArtifactsFromAssets(BIOSRomAssets);
-	const BIOSProgramBoot = appendProgramImage(BIOSRomAssets, SYSTEM_BOOT_ENTRY_PATH, { includeSymbols: true, optLevel });
+	const BIOSProgramBoot = appendProgramImage(BIOSRomAssets, SYSTEM_BOOT_ENTRY_PATH, { includeSymbols: debug, optLevel });
 	stripLuaAssets(BIOSRomAssets, debug);
 	await runBIOSStep(TASK.BIOS_FINALIZE, () => finalizeRompack(BIOSRomAssets, BIOSRomName, { projectRootPath: '', manifest: null, zipRom: false, debug, programBoot: BIOSProgramBoot }));
 	if (progress) {
@@ -552,7 +552,7 @@ async function main() {
 			const assetSymbols = collectRomAssetSymbols(romAssets, romPackDebug, 'cart');
 			const assetSymbolModuleSource = buildRomAssetSymbolModuleSourceFromSymbols(assetSymbols);
 			const programBoot = appendProgramImage(romAssets, romManifest.lua.entry_path, {
-				includeSymbols: true,
+				includeSymbols: romPackDebug,
 				optLevel,
 				externalLuaAssets: biosProgramContextAssets,
 				generatedLuaModules: [{ path: ROM_ASSET_SYMBOL_MODULE_PATH, source: assetSymbolModuleSource }],

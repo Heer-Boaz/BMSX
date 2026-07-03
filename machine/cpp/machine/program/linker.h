@@ -61,13 +61,12 @@ LinkedBootProgramImage linkBootProgramImages(
 
 void resolveRuntimeProgramRelocations(
 	Program& program,
-	const ProgramMetadata& metadata,
+	const ProgramRuntimeSymbols& symbols,
 	const std::vector<ProgramConstReloc>& relocs
 );
 
 std::unique_ptr<Program> inflateExecutableProgramImage(
 	const ProgramImage& image,
-	const ProgramMetadata* metadata,
 	uint32_t dataBaseAddress,
 	uint32_t bssBaseAddress
 );
