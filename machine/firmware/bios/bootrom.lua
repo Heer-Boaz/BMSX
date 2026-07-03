@@ -154,7 +154,7 @@ end
 
 local build_info<const> = function(width, height)
 	local cart_entry_ready<const> = mem[cart_program_vector_addr] == cart_program_start_addr
-	local vram_total<const> = 0x0080b000
+	local vram_total<const> = 0x0026d000
 
 	return {
 		cart_entry_ready = cart_entry_ready,

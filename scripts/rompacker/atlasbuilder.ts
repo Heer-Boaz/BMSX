@@ -2,7 +2,7 @@ import type { Canvas, CanvasRenderingContext2D } from 'canvas';
 import { resolve as resolvePath, sep as pathSep } from 'path';
 import { commonResPath } from './rombuilder';
 import { BIOS_ATLAS_ID, generateAtlasAssetId } from '../../machine/ts/rompack/format';
-import { RPU_TEXTURE_VRAM_BYTES, TEXTURE_ATLAS_RGBA_BYTES_PER_PIXEL } from './texture_atlas_contract';
+import { RPU_CART_ATLAS_ID_LIMIT, RPU_TEXTURE_VRAM_BYTES, TEXTURE_ATLAS_RGBA_BYTES_PER_PIXEL } from './texture_atlas_contract';
 import { AtlasTexcoords, ImageResource } from './rompacker.rompack';
 export { generateAtlasAssetId };
 
@@ -22,7 +22,7 @@ export type Rect = { width: number; height: number; id: number; };
 export type Bin = { x: number; y: number; width: number; height: number; };
 type PackedAtlas = { items: { item: Rect, x: number, y: number; }[], width: number, height: number; };
 
-export function resolveTargetAtlasId(filepath: string, current?: number): number {
+export function resolveTargetAtlasId(filepath: string, current = 0): number {
 	const abs = resolvePath(filepath);
 	const biosResourceRoots = new Set(
 		[commonResPath]
@@ -35,7 +35,10 @@ export function resolveTargetAtlasId(filepath: string, current?: number): number
 			return BIOS_ATLAS_ID;
 		}
 	}
-	return current ?? 0;
+	if (current >= RPU_CART_ATLAS_ID_LIMIT) {
+		throw new Error(`[RomPacker] Cart atlas descriptor id ${current} collides with reserved system atlas id ${BIOS_ATLAS_ID}.`);
+	}
+	return current;
 };
 
 /**

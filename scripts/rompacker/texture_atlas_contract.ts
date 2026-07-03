@@ -1,5 +1,6 @@
 import { PSX_VRAM_STAGING_BYTES, PSX_VRAM_TEXTURE_BYTES } from '../../machine/ts/machine/model_registry';
 import { VRAM_BASE } from '../../machine/ts/machine/memory/map';
+import { BIOS_ATLAS_ID } from '../../machine/ts/rompack/format';
 
 export const RPU_QUAD_VERTEX_STRIDE_BYTES = 0x00000014;
 export const RPU_QUAD_VERTEX_COUNT = 4;
@@ -29,3 +30,8 @@ export const RPU_TEXTURE_VRAM_BASE_ADDR = VRAM_BASE + PSX_VRAM_STAGING_BYTES;
 export const RPU_SYSTEM_TEXTURE_RESERVED_BYTES = 0x00048000;
 export const RPU_CART_TEXTURE_VRAM_BASE_ADDR = RPU_TEXTURE_VRAM_BASE_ADDR + RPU_SYSTEM_TEXTURE_RESERVED_BYTES;
 export const RPU_CART_TEXTURE_VRAM_BYTES = RPU_TEXTURE_VRAM_BYTES - RPU_SYSTEM_TEXTURE_RESERVED_BYTES;
+export const RPU_CART_ATLAS_ID_LIMIT = BIOS_ATLAS_ID;
+
+if (RPU_QUAD_DESCRIPTOR_END_VRAM_ADDR > PSX_VRAM_STAGING_BYTES) {
+	throw new Error(`[RomPacker] RPU quad descriptors end at ${RPU_QUAD_DESCRIPTOR_END_VRAM_ADDR} bytes, exceeding staging capacity ${PSX_VRAM_STAGING_BYTES} bytes.`);
+}

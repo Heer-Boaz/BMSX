@@ -21,6 +21,12 @@ import {
 	IO_VDP_SCREEN_WH,
 	IO_VDP_STATUS,
 } from '../../machine/ts/machine/bus/io';
+import {
+	getMachineVdpModeProfile,
+	PSX_MODEL_PROFILE,
+	PSX_VRAM_STAGING_BYTES,
+	PSX_VRAM_TEXTURE_BYTES,
+} from '../../machine/ts/machine/model_registry';
 
 test('IMGDEC hardware words are raw firmware words, not host-seeded globals', () => {
 	const tsGlobals = readFileSync('machine/ts/machine/firmware/globals.ts', 'utf8');
@@ -49,8 +55,13 @@ test('IMGDEC firmware consumes raw hardware words directly', () => {
 
 test('bootrom handoff waits for VDP submit idle before leaving system firmware', () => {
 	const source = readFileSync('machine/firmware/bios/bootrom.lua', 'utf8');
+	const biosVdpMode = getMachineVdpModeProfile(PSX_MODEL_PROFILE.biosVdpMode);
+	const bootVramTotal = PSX_VRAM_STAGING_BYTES
+		+ PSX_VRAM_TEXTURE_BYTES
+		+ biosVdpMode.renderWidth * biosVdpMode.renderHeight * 4;
 	assert.equal(source.includes('boot_requested'), false);
 	assert.equal(source.includes('sys_boot_cart'), false);
+	assert.equal(source.includes(`local vram_total<const> = 0x${bootVramTotal.toString(16).padStart(8, '0')}`), true);
 	assert.equal(source.includes(`mem[0x${IO_VDP_MODE.toString(16).padStart(8, '0')}] = 0x00000002`), true);
 	assert.equal(source.includes(`local irq_mask_addr<const> = 0x${IO_IRQ_MASK.toString(16).padStart(8, '0')}`), true);
 	assert.equal(source.includes(`hw_max_cycles = format_bignumbers(mem[0x${IO_SYS_CYCLES_PER_FRAME.toString(16).padStart(8, '0')}])`), true);

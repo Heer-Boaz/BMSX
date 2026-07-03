@@ -11,6 +11,7 @@ import type { LuaChunk } from '../../machine/ts/lua/syntax/ast';
 import { encodeAudioAssetToAdpcm } from './adpcm';
 import { resolveTargetAtlasId, createOptimizedAtlas, generateAtlasAssetId, measureOptimizedAtlasBytes, splitAtlasImagesByVramUsage } from './atlasbuilder';
 import {
+	RPU_CART_ATLAS_ID_LIMIT,
 	RPU_CART_TEXTURE_VRAM_BASE_ADDR,
 	RPU_CART_TEXTURE_VRAM_BYTES,
 	RPU_SYSTEM_TEXTURE_RESERVED_BYTES,
@@ -1686,6 +1687,12 @@ function atlasPagesRegionBytes(pages: ImageResource[][]): number {
 	return bytes;
 }
 
+function assertCartAtlasDescriptorId(atlasId: number, atlasName: string): void {
+	if (atlasId >= RPU_CART_ATLAS_ID_LIMIT) {
+		throw new Error(`[RomPacker] Cart atlas ${atlasName} uses descriptor id ${atlasId}, colliding with reserved system atlas id ${BIOS_ATLAS_ID}.`);
+	}
+}
+
 function planCartAtlasResidency(sourceAtlases: TextureAtlasResource[], imageAssets: ImageResource[]): CartAtlasResidencyPlan[] {
 	const plans: CartAtlasResidencyPlan[] = [];
 	for (let index = 0; index < sourceAtlases.length; index += 1) {
@@ -1693,6 +1700,7 @@ function planCartAtlasResidency(sourceAtlases: TextureAtlasResource[], imageAsse
 		if (sourceAtlas.atlasId === BIOS_ATLAS_ID) {
 			continue;
 		}
+		assertCartAtlasDescriptorId(sourceAtlas.atlasId, sourceAtlas.name);
 		const images = imageAssets.filter(resource => resource.targetAtlasId === sourceAtlas.atlasId);
 		plans.push({
 			sourceAtlas,
@@ -1778,9 +1786,11 @@ export async function createAtlasses(resources: Resource[], reportProgress?: Pro
 				let atlas = plan.sourceAtlas;
 				if (pageIndex !== 0) {
 					const splitAtlasId = nextAtlasId;
+					const splitAtlasName = generateAtlasAssetId(splitAtlasId);
+					assertCartAtlasDescriptorId(splitAtlasId, splitAtlasName);
 					nextAtlasId += 1;
 					atlas = {
-						name: generateAtlasAssetId(splitAtlasId),
+						name: splitAtlasName,
 						ext: '.atlas',
 						type: 'atlas',
 						id: nextAtlasResourceId,
