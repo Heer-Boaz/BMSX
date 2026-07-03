@@ -5,14 +5,31 @@
 #include "machine/bus/io.h"
 #include "machine/cpu/cpu.h"
 
+#include <cstring>
+
 namespace bmsx {
 
-const ApuSlotSourceBytes& ApuSourceDma::captureState() const {
-	return m_slotSourceBytes;
+ApuSlotSourceBytes ApuSourceDma::captureState() const {
+	ApuSlotSourceBytes state;
+	for (ApuAudioSlot slot = 0; slot < APU_SLOT_COUNT; slot += 1u) {
+		const Span<const u8> bytes = m_slotSources[slot].bytes;
+		std::vector<u8>& slotBytes = state[slot];
+		slotBytes.resize(bytes.size());
+		if (!bytes.empty()) {
+			std::memcpy(slotBytes.data(), bytes.data(), bytes.size());
+		}
+	}
+	return state;
 }
 
 void ApuSourceDma::restoreState(const ApuSlotSourceBytes& slotSourceBytes) {
-	m_slotSourceBytes = slotSourceBytes;
+	for (ApuAudioSlot slot = 0; slot < APU_SLOT_COUNT; slot += 1u) {
+		SlotSource& slotSource = m_slotSources[slot];
+		const std::vector<u8>& stateBytes = slotSourceBytes[slot];
+		slotSource.ownedBytes = std::vector<u8>(stateBytes.begin(), stateBytes.end());
+		slotSource.bytes.data_ = slotSource.ownedBytes.data();
+		slotSource.bytes.size_ = slotSource.ownedBytes.size();
+	}
 }
 
 ApuOutputVoiceState captureApuOutputVoiceState(const ApuOutputMixer::VoiceRecord& record) {

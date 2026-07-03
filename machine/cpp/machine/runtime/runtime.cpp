@@ -7,18 +7,12 @@
 #include "machine/program/linker.h"
 #include "machine/runtime/input.h"
 #include "machine/runtime/timing/config.h"
-#include "rompack/format.h"
 #include "rompack/loader.h"
-#include <array>
 #include <iostream>
 #include <stdexcept>
 #include <utility>
 
 namespace bmsx {
-namespace {
-constexpr std::array<u8, CART_ROM_HEADER_SIZE> CART_ROM_EMPTY_HEADER = {};
-
-} // namespace
 
 Runtime::Runtime(
 	const RuntimeOptions& options,
@@ -43,9 +37,7 @@ Runtime::Runtime(
 	, m_machineManifest(options.machineManifest)
 	, m_memory(MemoryInit{
 		{ options.systemRomBytes.data, options.systemRomBytes.size },
-		options.cartRomBytes.size > 0
-			? MemoryInit::RomSpan{ options.cartRomBytes.data, options.cartRomBytes.size }
-			: MemoryInit::RomSpan{ CART_ROM_EMPTY_HEADER.data(), CART_ROM_EMPTY_HEADER.size() },
+		{ options.cartRomBytes.data, options.cartRomBytes.size },
 		{}
 	})
 	, machine(

@@ -85,7 +85,7 @@ function clearBusFault(memory: Memory): void {
 }
 
 function createImageDecoderFixture(): { memory: Memory; controller: ImgDecController } {
-	const memory = new Memory({ systemRom: new Uint8Array() });
+	const memory = new Memory({ systemRom: new Uint8Array(), cartRom: new Uint8Array(0) });
 	const scheduler = new DeviceScheduler(new CPU(memory));
 	const irq = new IrqController(memory);
 	const controller = new ImgDecController(memory, {} as DmaController, {} as VDP, irq, scheduler);
@@ -95,7 +95,7 @@ function createImageDecoderFixture(): { memory: Memory; controller: ImgDecContro
 }
 
 function createDmaFixture(): { memory: Memory; controller: DmaController } {
-	const memory = new Memory({ systemRom: new Uint8Array() });
+	const memory = new Memory({ systemRom: new Uint8Array(), cartRom: new Uint8Array(0) });
 	const scheduler = new DeviceScheduler(new CPU(memory));
 	const irq = new IrqController(memory);
 	const vdp = {
@@ -114,7 +114,7 @@ function createDmaFixture(): { memory: Memory; controller: DmaController } {
 }
 
 test('core golden: memory RAM, ROM, and numeric I/O words stay observable', () => {
-	const memory = new Memory({ systemRom: new Uint8Array([0x11, 0x22, 0x33, 0x44]) });
+	const memory = new Memory({ systemRom: new Uint8Array([0x11, 0x22, 0x33, 0x44]), cartRom: new Uint8Array(0) });
 	assert.equal(memory.readU8(SYSTEM_ROM_BASE), 0x11);
 	memory.writeU32(RAM_BASE, 0x12345678);
 	assert.equal(memory.readU32(RAM_BASE), 0x12345678);
@@ -161,7 +161,7 @@ test('core golden: mapped memory hot paths keep boundary faults and contained VR
 		}
 	}
 
-	const memory = new Memory({ systemRom: new Uint8Array([0x11, 0x22, 0x33, 0x44]) });
+	const memory = new Memory({ systemRom: new Uint8Array([0x11, 0x22, 0x33, 0x44]), cartRom: new Uint8Array(0) });
 	const vram = new RecordingVram();
 	memory.setVramWriter(vram);
 
@@ -200,7 +200,7 @@ test('core golden: mapped memory hot paths keep boundary faults and contained VR
 });
 
 test('core golden: raw memory byte paths latch bus faults instead of throwing', () => {
-	const memory = new Memory({ systemRom: new Uint8Array([0x11, 0x22, 0x33, 0x44]) });
+	const memory = new Memory({ systemRom: new Uint8Array([0x11, 0x22, 0x33, 0x44]), cartRom: new Uint8Array(0) });
 	assert.equal(memory.readU8(0xffff_ffff), 0);
 	assertBusFault(memory, BUS_FAULT_UNMAPPED, 0xffff_ffff, BUS_FAULT_ACCESS_READ | BUS_FAULT_ACCESS_U8);
 	clearBusFault(memory);
@@ -291,7 +291,7 @@ test('core golden: budget and fixed16 datapaths match native integer semantics',
 });
 
 test('core golden: runtime VBlank end publishes scanout at the new frame origin', () => {
-	const memory = new Memory({ systemRom: new Uint8Array() });
+	const memory = new Memory({ systemRom: new Uint8Array(), cartRom: new Uint8Array(0) });
 	const scheduler = new DeviceScheduler(new CPU(memory));
 	const scanoutCalls: Array<{ active: boolean; cyclesIntoFrame: number }> = [];
 	const inputSampleEdges: Array<{ currentTimeMs: number; nowCycles: number }> = [];

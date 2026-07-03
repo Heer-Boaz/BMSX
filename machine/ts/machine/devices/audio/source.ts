@@ -1,4 +1,4 @@
-import { Memory } from '../../memory/memory';
+import { Memory, type MainMemoryByteView } from '../../memory/memory';
 import {
 	APU_GENERATOR_NONE,
 	APU_PARAMETER_SOURCE_ADDR_INDEX,
@@ -20,6 +20,13 @@ import {
 } from './contracts';
 
 const EMPTY_APU_SOURCE_BYTES = new Uint8Array(0);
+
+export type ApuSourceByteView = MainMemoryByteView;
+
+type ApuSlotSource = {
+	ownedBytes: Uint8Array;
+	bytes: ApuSourceByteView;
+};
 
 export function resolveApuAudioSource(registerWords: ApuParameterRegisterWords): ApuAudioSource {
 	return {
@@ -60,36 +67,57 @@ export function apuParameterProgramsSourceBuffer(parameterIndex: number): boolea
 }
 
 export class ApuSourceDma {
-	private readonly slotSourceBytes: Uint8Array[] = new Array(APU_SLOT_COUNT).fill(EMPTY_APU_SOURCE_BYTES);
+	private readonly slotSources: ApuSlotSource[] = new Array(APU_SLOT_COUNT);
 
-	public constructor(private readonly memory: Memory) {}
+	public constructor(private readonly memory: Memory) {
+		for (let slot = 0; slot < APU_SLOT_COUNT; slot += 1) {
+			this.slotSources[slot] = {
+				ownedBytes: EMPTY_APU_SOURCE_BYTES,
+				bytes: { bytes: EMPTY_APU_SOURCE_BYTES, byteOffset: 0, byteLength: 0 },
+			};
+		}
+	}
 
 	public reset(): void {
 		for (let slot = 0; slot < APU_SLOT_COUNT; slot += 1) {
-			this.slotSourceBytes[slot] = EMPTY_APU_SOURCE_BYTES;
+			const slotSource = this.slotSources[slot]!;
+			slotSource.ownedBytes = EMPTY_APU_SOURCE_BYTES;
+			slotSource.bytes.bytes = EMPTY_APU_SOURCE_BYTES;
+			slotSource.bytes.byteOffset = 0;
+			slotSource.bytes.byteLength = 0;
 		}
 	}
 
 	public captureState(): Uint8Array[] {
 		const state = new Array<Uint8Array>(APU_SLOT_COUNT);
 		for (let slot = 0; slot < APU_SLOT_COUNT; slot += 1) {
-			state[slot] = this.slotSourceBytes[slot]!.slice();
+			const sourceBytes = this.slotSources[slot]!.bytes;
+			state[slot] = sourceBytes.bytes.slice(sourceBytes.byteOffset, sourceBytes.byteOffset + sourceBytes.byteLength);
 		}
 		return state;
 	}
 
 	public restoreState(slotSourceBytes: readonly Uint8Array[]): void {
 		for (let slot = 0; slot < APU_SLOT_COUNT; slot += 1) {
-			this.slotSourceBytes[slot] = slotSourceBytes[slot]!.slice();
+			const bytes = slotSourceBytes[slot]!.slice();
+			const slotSource = this.slotSources[slot]!;
+			slotSource.ownedBytes = bytes;
+			slotSource.bytes.bytes = bytes;
+			slotSource.bytes.byteOffset = 0;
+			slotSource.bytes.byteLength = bytes.byteLength;
 		}
 	}
 
-	public bytesForSlot(slot: ApuAudioSlot): Uint8Array {
-		return this.slotSourceBytes[slot]!;
+	public bytesForSlot(slot: ApuAudioSlot): ApuSourceByteView {
+		return this.slotSources[slot]!.bytes;
 	}
 
 	public clearSlot(slot: ApuAudioSlot): void {
-		this.slotSourceBytes[slot] = EMPTY_APU_SOURCE_BYTES;
+		const slotSource = this.slotSources[slot]!;
+		slotSource.ownedBytes = EMPTY_APU_SOURCE_BYTES;
+		slotSource.bytes.bytes = EMPTY_APU_SOURCE_BYTES;
+		slotSource.bytes.byteOffset = 0;
+		slotSource.bytes.byteLength = 0;
 	}
 
 	public loadSlot(slot: ApuAudioSlot, source: ApuAudioSource): void {
@@ -97,11 +125,19 @@ export class ApuSourceDma {
 			this.clearSlot(slot);
 			return;
 		}
-		let bytes = this.slotSourceBytes[slot]!;
+		const slotSource = this.slotSources[slot]!;
+		if (this.memory.bindImmutableMainMemoryView(source.sourceAddr, source.sourceBytes, slotSource.bytes)) {
+			slotSource.ownedBytes = EMPTY_APU_SOURCE_BYTES;
+			return;
+		}
+		let bytes = slotSource.ownedBytes;
 		if (bytes.byteLength !== source.sourceBytes) {
 			bytes = new Uint8Array(source.sourceBytes);
-			this.slotSourceBytes[slot] = bytes;
 		}
 		this.memory.readBytesInto(source.sourceAddr, bytes, bytes.byteLength);
+		slotSource.ownedBytes = bytes;
+		slotSource.bytes.bytes = bytes;
+		slotSource.bytes.byteOffset = 0;
+		slotSource.bytes.byteLength = bytes.byteLength;
 	}
 }

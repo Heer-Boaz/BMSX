@@ -131,7 +131,7 @@ const VDP_XF_SELECT_HEADER = VDP_XF_PACKET_KIND | (VDP_XF_SELECT_PACKET_PAYLOAD_
 
 
 function createVdp(): { memory: Memory; scheduler: DeviceScheduler; vdp: VDP } {
-	const memory = new Memory({ systemRom: new Uint8Array(0) });
+	const memory = new Memory({ systemRom: new Uint8Array(0), cartRom: new Uint8Array(0) });
 	const cpu = new CPU(memory);
 	const scheduler = new DeviceScheduler(cpu);
 	const vdp = new VDP(memory, scheduler, { width: 256, height: 212 });

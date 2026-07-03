@@ -1,5 +1,6 @@
 #pragma once
 
+#include "common/primitives.h"
 #include "common/types.h"
 #include "machine/devices/audio/contracts.h"
 #include "machine/devices/audio/save_state.h"
@@ -33,12 +34,16 @@ public:
 	void reset();
 	void clearSlot(ApuAudioSlot slot);
 	void loadSlot(const Memory& memory, ApuAudioSlot slot, const ApuAudioSource& source);
-	const std::vector<u8>& bytesForSlot(ApuAudioSlot slot) const { return m_slotSourceBytes[slot]; }
-	const ApuSlotSourceBytes& captureState() const;
+	const Span<const u8>& bytesForSlot(ApuAudioSlot slot) const { return m_slotSources[slot].bytes; }
+	ApuSlotSourceBytes captureState() const;
 	void restoreState(const ApuSlotSourceBytes& slotSourceBytes);
 
 private:
-	ApuSlotSourceBytes m_slotSourceBytes{};
+	struct SlotSource {
+		std::vector<u8> ownedBytes;
+		Span<const u8> bytes;
+	};
+	std::array<SlotSource, APU_SLOT_COUNT> m_slotSources{};
 };
 
 } // namespace bmsx

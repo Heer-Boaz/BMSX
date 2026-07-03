@@ -15,7 +15,7 @@ import {
 	resolveApuOutputPlayback,
 	type ApuOutputPlayback,
 } from './playback';
-import { apuAudioSourceUsesGenerator } from './source';
+import { apuAudioSourceUsesGenerator, type ApuSourceByteView } from './source';
 import {
 	captureApuOutputVoiceState,
 	restoreApuOutputVoiceState,
@@ -141,7 +141,7 @@ export class ApuOutputMixer {
 		slot: ApuAudioSlot,
 		voiceId: ApuVoiceId,
 		source: ApuAudioSource,
-		sourceBytes: Uint8Array,
+		sourceBytes: ApuSourceByteView,
 		registerWords: ApuParameterRegisterWords,
 		playbackCursorQ16: number,
 		stopFadeSamples = 0,
@@ -154,7 +154,7 @@ export class ApuOutputMixer {
 		let badpSeekOffsets: Uint32Array<ArrayBufferLike> = EMPTY_BADP_SEEK_OFFSETS;
 		if (!apuAudioSourceUsesGenerator(source)) {
 			if (source.bitsPerSample === 4) {
-				const badpSeek = readApuBadpSeekTable(sourceBytes);
+				const badpSeek = readApuBadpSeekTable(sourceBytes.bytes, sourceBytes.byteOffset);
 				badpSeekFrames = badpSeek.frames;
 				badpSeekOffsets = badpSeek.offsets;
 			}
@@ -414,7 +414,7 @@ export class ApuOutputMixer {
 		slot: ApuAudioSlot,
 		voiceId: ApuVoiceId,
 		source: ApuAudioSource,
-		sourceBytes: Uint8Array,
+		sourceBytes: ApuSourceByteView,
 		badpSeekFrames: Uint32Array<ArrayBufferLike>,
 		badpSeekOffsets: Uint32Array<ArrayBufferLike>,
 		playback: ApuOutputPlayback,
@@ -440,8 +440,8 @@ export class ApuOutputMixer {
 			sampleRate: source.sampleRateHz,
 			channels: source.channels,
 			bitsPerSample: source.bitsPerSample,
-			sourceBytes,
-			dataOffset: source.dataOffset,
+			sourceBytes: sourceBytes.bytes,
+			dataOffset: sourceBytes.byteOffset + source.dataOffset,
 			dataSize: source.dataBytes,
 			frames: source.frameCount,
 			generatorKind: source.generatorKind,

@@ -86,7 +86,7 @@ function makeThrowingNativeProgram(cpu: CPU, nativeFunction: Value): Program {
 }
 
 function makeRuntime(cpu: CPU, sliceStats?: { begin: number; end: number }): Runtime {
-	const irqMemory = new Memory({ systemRom: new Uint8Array(0) });
+	const irqMemory = new Memory({ systemRom: new Uint8Array(0), cartRom: new Uint8Array(0) });
 	return {
 		machine: {
 			cpu,
@@ -122,7 +122,7 @@ const INLINE_MICROTASKS: MicrotaskQueue = {
 };
 
 function makeMachine(): Machine {
-	const memory = new Memory({ systemRom: new Uint8Array(0) });
+	const memory = new Memory({ systemRom: new Uint8Array(0), cartRom: new Uint8Array(0) });
 	const input = {
 		getPlayerInput: () => ({
 			checkActionTriggered: () => false,
@@ -144,7 +144,7 @@ function makeMachine(): Machine {
 }
 
 function makeHaltFrameRuntime(): Runtime {
-	const memory = new Memory({ systemRom: new Uint8Array(0) });
+	const memory = new Memory({ systemRom: new Uint8Array(0), cartRom: new Uint8Array(0) });
 	const cpu = new CPU(memory);
 	const metadata = makeMetadata();
 	cpu.setProgram(makeProgram(cpu), metadata, metadata);
@@ -213,7 +213,7 @@ function makeHaltFrameRuntime(): Runtime {
 function makeCompiledIrqRuntime(source: string): { cpu: CPU; irqController: IrqController; cpuExecution: CpuExecutionState; state: FrameState } {
 	const compiled = compileLuaChunkToProgram(parseSource(source), [], { entrySource: source });
 	const image = encodeCompiledProgramImage(compiled);
-	const memory = new Memory({ systemRom: new Uint8Array(0) });
+	const memory = new Memory({ systemRom: new Uint8Array(0), cartRom: new Uint8Array(0) });
 	const cpu = new CPU(memory);
 	cpu.setProgram(inflateExecutableProgramImage(image), image.link.symbols, compiled.metadata);
 	cpu.start(image.vectors.resetProtoIndex);
@@ -254,7 +254,7 @@ function makeCompiledIrqRuntime(source: string): { cpu: CPU; irqController: IrqC
 }
 
 test('CPU external closure calls cannot wake HALT without an accepted interrupt', () => {
-	const memory = new Memory({ systemRom: new Uint8Array(0) });
+	const memory = new Memory({ systemRom: new Uint8Array(0), cartRom: new Uint8Array(0) });
 	const cpu = new CPU(memory);
 	const metadata = makeMetadata();
 	cpu.setProgram(makeProgram(cpu), metadata, metadata);
@@ -271,7 +271,7 @@ test('CPU external closure calls cannot wake HALT without an accepted interrupt'
 });
 
 test('CPU external closure calls rejected while already halted preserve budget state', () => {
-	const memory = new Memory({ systemRom: new Uint8Array(0) });
+	const memory = new Memory({ systemRom: new Uint8Array(0), cartRom: new Uint8Array(0) });
 	const cpu = new CPU(memory);
 	const metadata = makeMetadata();
 	cpu.setProgram(makeProgram(cpu), metadata, metadata);
@@ -301,7 +301,7 @@ test('CPU external closure calls rejected while already halted preserve budget s
 });
 
 test('CPU closure calls that execute HALT without a scheduled interrupt unwind', () => {
-	const memory = new Memory({ systemRom: new Uint8Array(0) });
+	const memory = new Memory({ systemRom: new Uint8Array(0), cartRom: new Uint8Array(0) });
 	const cpu = new CPU(memory);
 	const metadata = makeMetadata();
 	cpu.setProgram(makeProgram(cpu), metadata, metadata);
@@ -319,7 +319,7 @@ test('CPU closure calls that execute HALT without a scheduled interrupt unwind',
 });
 
 test('host external closure calls wake from pending IRQ without vectoring', () => {
-	const memory = new Memory({ systemRom: new Uint8Array(0) });
+	const memory = new Memory({ systemRom: new Uint8Array(0), cartRom: new Uint8Array(0) });
 	const cpu = new CPU(memory);
 	const metadata = makeMetadata();
 	cpu.setProgram(makeProgram(cpu), metadata, metadata);
@@ -339,7 +339,7 @@ test('host external closure calls wake from pending IRQ without vectoring', () =
 });
 
 test('IRQ mask starts closed and gates pending maskable IRQs', () => {
-	const memory = new Memory({ systemRom: new Uint8Array(0) });
+	const memory = new Memory({ systemRom: new Uint8Array(0), cartRom: new Uint8Array(0) });
 	const irq = new IrqController(memory);
 	const cpu = new CPU(memory);
 	const metadata = makeMetadata();
@@ -360,7 +360,7 @@ test('IRQ mask starts closed and gates pending maskable IRQs', () => {
 });
 
 test('CPU closure calls continue after scheduler yield requests', () => {
-	const memory = new Memory({ systemRom: new Uint8Array(0) });
+	const memory = new Memory({ systemRom: new Uint8Array(0), cartRom: new Uint8Array(0) });
 	const cpu = new CPU(memory);
 	const nativeCost = 7;
 	const yieldingNative = createNativeFunction('yielding_native', () => {
@@ -383,7 +383,7 @@ test('CPU closure calls continue after scheduler yield requests', () => {
 });
 
 test('CPU external closure calls that throw after executing preserve spent budget', () => {
-	const memory = new Memory({ systemRom: new Uint8Array(0) });
+	const memory = new Memory({ systemRom: new Uint8Array(0), cartRom: new Uint8Array(0) });
 	const cpu = new CPU(memory);
 	const nativeCost = 7;
 	const throwingNative = createNativeFunction('throwing_native', () => {
@@ -418,7 +418,7 @@ test('CPU external closure calls that throw after executing preserve spent budge
 });
 
 test('CPU frame executor closes scheduler slice when execution throws', () => {
-	const memory = new Memory({ systemRom: new Uint8Array(0) });
+	const memory = new Memory({ systemRom: new Uint8Array(0), cartRom: new Uint8Array(0) });
 	const cpu = new CPU(memory);
 	const throwingNative = createNativeFunction('throwing_native', () => {
 		throw new Error('native boom');
@@ -612,7 +612,7 @@ test('frame scheduler does not burn active CPU budget while halted for IRQ witho
 });
 
 test('IRQ state restore preserves asserted line and cart-visible flags', () => {
-	const memory = new Memory({ systemRom: new Uint8Array(0) });
+	const memory = new Memory({ systemRom: new Uint8Array(0), cartRom: new Uint8Array(0) });
 	const irq = new IrqController(memory);
 
 	memory.writeValue(IO_IRQ_MASK, IRQ_VBLANK);

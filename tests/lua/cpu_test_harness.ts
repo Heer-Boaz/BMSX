@@ -12,7 +12,7 @@ export function runCompiledLua(source: string, path = 'test.lua', optLevel: Opti
 	const lexer = new LuaLexer(source, path);
 	const parser = new LuaParser(lexer.scanTokens(), path, splitText(source));
 	const compiled = compileLuaChunkToProgram(parser.parseChunk(), [], { entrySource: source, optLevel });
-	const cpu = new CPU(new Memory({ systemRom: new Uint8Array(0) }));
+	const cpu = new CPU(new Memory({ systemRom: new Uint8Array(0), cartRom: new Uint8Array(0) }));
 	cpu.setProgram(compiled.program, compiled.metadata, compiled.metadata);
 	cpu.start(compiled.entryProtoIndex);
 	assert.equal(cpu.runUntilDepth(0, 100000), RunResult.Halted);

@@ -2,6 +2,7 @@
 
 #include "machine/devices/audio/badp_decoder.h"
 #include "machine/devices/audio/biquad_filter.h"
+#include "common/primitives.h"
 #include "common/types.h"
 #include "machine/devices/audio/contracts.h"
 #include "machine/devices/audio/output_ring.h"
@@ -27,7 +28,7 @@ public:
 	[[nodiscard]] auto captureState() const -> ApuOutputState;
 	void restoreVoiceState(const ApuOutputVoiceState& state);
 	void pullOutputFrames(i16* output, size_t frameCount, i32 outputSampleRate, f32 outputGain, size_t targetQueuedFrames = 0);
-	auto playVoice(ApuAudioSlot slot, ApuVoiceId voiceId, const ApuAudioSource& source, const std::vector<u8>& sourceBytes, const ApuParameterRegisterWords& registerWords, i64 playbackCursorQ16, u32 stopFadeSamples = 0) -> ApuOutputStartResult;
+	auto playVoice(ApuAudioSlot slot, ApuVoiceId voiceId, const ApuAudioSource& source, const Span<const u8>& sourceBytes, const ApuParameterRegisterWords& registerWords, i64 playbackCursorQ16, u32 stopFadeSamples = 0) -> ApuOutputStartResult;
 	auto writeSlotRegisterWord(ApuAudioSlot slot, const ApuAudioSource& source, const ApuParameterRegisterWords& registerWords, u32 parameterIndex, i64 playbackCursorQ16) -> ApuOutputStartResult;
 	auto stopSlot(ApuAudioSlot slot, u32 fadeSamples = 0) -> bool;
 	void stopAllVoices();
@@ -69,7 +70,7 @@ private:
 	auto buildVoiceFromData(ApuAudioSlot slot,
 								ApuVoiceId voiceId,
 								const ApuAudioSource& source,
-								const std::vector<u8>& sourceBytes,
+								const Span<const u8>& sourceBytes,
 								std::vector<u32> badpSeekFrames,
 								std::vector<u32> badpSeekOffsets,
 								const ApuOutputPlayback& playback,

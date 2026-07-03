@@ -618,7 +618,7 @@ test('flattened module export slots stay in sync with compile-time require impor
 		[{ path: 'constants', chunk: parseChunk(moduleSource, 'constants'), source: moduleSource }],
 		{ entrySource },
 	);
-	const memory = new Memory({ systemRom: new Uint8Array(0) });
+	const memory = new Memory({ systemRom: new Uint8Array(0), cartRom: new Uint8Array(0) });
 	const cpu = new CPU(memory);
 	resolveRuntimeProgramRelocations(compiled.program, compiled.metadata, compiled.constRelocs);
 	cpu.setProgram(compiled.program, compiled.metadata, compiled.metadata);
@@ -647,7 +647,7 @@ test('flattened module export slots survive program append swaps', () => {
 		[{ path: 'constants', chunk: parseChunk(moduleSource, 'constants'), source: moduleSource }],
 		{ entrySource },
 	);
-	const memory = new Memory({ systemRom: new Uint8Array(0) });
+	const memory = new Memory({ systemRom: new Uint8Array(0), cartRom: new Uint8Array(0) });
 	const cpu = new CPU(memory);
 	resolveRuntimeProgramRelocations(compiled.program, compiled.metadata, compiled.constRelocs);
 	cpu.setProgram(compiled.program, compiled.metadata, compiled.metadata);
@@ -1118,7 +1118,7 @@ test('appended host-eval code preserves the installed program ROM mapping', () =
 		appended.rodataBytes.byteLength,
 	);
 	resolveRuntimeProgramRelocations(appended.program, appended.metadata, appended.constRelocs);
-	const memory = new Memory({ systemRom: new Uint8Array(0) });
+	const memory = new Memory({ systemRom: new Uint8Array(0), cartRom: new Uint8Array(0) });
 	const cpu = new CPU(memory);
 	cpu.setProgram(appended.program, appended.metadata, appended.metadata);
 	cpu.start(appended.entryProtoIndex);

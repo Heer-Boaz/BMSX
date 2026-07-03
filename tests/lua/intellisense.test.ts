@@ -109,7 +109,7 @@ function runtimeWithPausedCpuLocal(source: string) {
 		entrySource: source,
 		optLevel: 0,
 	});
-	const cpu = new CPU(new Memory({ systemRom: new Uint8Array(0) }));
+	const cpu = new CPU(new Memory({ systemRom: new Uint8Array(0), cartRom: new Uint8Array(0) }));
 	cpu.setProgram(compiled.program, compiled.metadata, compiled.metadata);
 	cpu.start(compiled.entryProtoIndex);
 	assert.equal(cpu.runUntilDepth(0, 100), RunResult.Halted);

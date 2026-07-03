@@ -46,7 +46,7 @@ function compileWithModule(entrySource: string, modulePath: string, moduleSource
 }
 
 function runColdImage(image: ProgramImage, metadata: ProgramMetadata | null) {
-	const cpu = new CPU(new Memory({ systemRom: new Uint8Array(0) }));
+	const cpu = new CPU(new Memory({ systemRom: new Uint8Array(0), cartRom: new Uint8Array(0) }));
 	cpu.setProgram(inflateExecutableProgramImage(image), image.link.symbols, metadata);
 	cpu.start(image.vectors.sectionInitProtoIndex);
 	assert.equal(cpu.runUntilDepth(0, 100000), RunResult.Halted);

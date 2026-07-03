@@ -16,6 +16,7 @@ import {
 	APU_FAULT_OUTPUT_PLAYBACK_RATE,
 	APU_FAULT_SOURCE_RANGE,
 	APU_FAULT_UNSUPPORTED_FORMAT,
+	APU_GENERATOR_NONE,
 	APU_GENERATOR_SQUARE,
 	APU_PARAMETER_GENERATOR_DUTY_Q12_INDEX,
 	APU_PARAMETER_GENERATOR_KIND_INDEX,
@@ -88,11 +89,12 @@ import {
 } from '../../machine/ts/machine/bus/io';
 import { AudioController } from '../../machine/ts/machine/devices/audio/controller';
 import { ApuOutputMixer } from '../../machine/ts/machine/devices/audio/output';
+import { ApuSourceDma } from '../../machine/ts/machine/devices/audio/source';
 import type { ApuOutputState, ApuOutputVoiceState } from '../../machine/ts/machine/devices/audio/save_state';
 import { CPU } from '../../machine/ts/machine/cpu/cpu';
 import { IrqController } from '../../machine/ts/machine/devices/irq/controller';
 import { DEFAULT_LUA_BUILTIN_NAMES } from '../../machine/ts/machine/firmware/builtin_descriptors';
-import { RAM_BASE } from '../../machine/ts/machine/memory/map';
+import { CART_ROM_BASE, PROGRAM_ROM_BASE, RAM_BASE, SYSTEM_ROM_BASE } from '../../machine/ts/machine/memory/map';
 import { Memory } from '../../machine/ts/machine/memory/memory';
 import { DeviceScheduler } from '../../machine/ts/machine/scheduler/device';
 
@@ -137,7 +139,7 @@ function createFakeOutputVoiceState(voice: FakeVoiceInfo): ApuOutputVoiceState {
 }
 
 function createAudioControllerHarness(audioOutput: object): { memory: Memory; audio: AudioController } {
-	const memory = new Memory({ systemRom: new Uint8Array(0) });
+	const memory = new Memory({ systemRom: new Uint8Array(0), cartRom: new Uint8Array(0) });
 	const cpu = new CPU(memory);
 	const scheduler = new DeviceScheduler(cpu);
 	const irq = new IrqController(memory);
@@ -305,6 +307,60 @@ test('APU hardware words are not runtime globals', () => {
 		assert.equal(source.includes(name), false);
 		assert.equal(DEFAULT_LUA_BUILTIN_NAMES.includes(name), false);
 	}
+});
+
+test('APU source DMA views mapped BIOS/cart ROM and owns RAM samples', () => {
+	const systemRom = new Uint8Array([0xa1, 0xa2, 0xa3, 0xa4, 0xa5, 0xa6]);
+	const cartRom = new Uint8Array([0xb1, 0xb2, 0xb3, 0xb4, 0xb5, 0xb6, 0xb7, 0xb8]);
+	const memory = new Memory({ systemRom, cartRom });
+	const sourceDma = new ApuSourceDma(memory);
+	const source = {
+		sourceAddr: SYSTEM_ROM_BASE + 1,
+		sourceBytes: 4,
+		sampleRateHz: 44100,
+		channels: 1,
+		bitsPerSample: 8,
+		frameCount: 4,
+		dataOffset: 0,
+		dataBytes: 4,
+		loopStartSample: 0,
+		loopEndSample: 0,
+		generatorKind: APU_GENERATOR_NONE,
+		generatorDutyQ12: 0,
+	};
+
+	sourceDma.loadSlot(1, source);
+	const biosBytes = sourceDma.bytesForSlot(1);
+	assert.deepEqual(Array.from(biosBytes.bytes.subarray(biosBytes.byteOffset, biosBytes.byteOffset + biosBytes.byteLength)), [0xa2, 0xa3, 0xa4, 0xa5]);
+	assert.equal(biosBytes.bytes.buffer, systemRom.buffer);
+
+	source.sourceAddr = CART_ROM_BASE + 2;
+	sourceDma.loadSlot(1, source);
+	const cartBytes = sourceDma.bytesForSlot(1);
+	assert.deepEqual(Array.from(cartBytes.bytes.subarray(cartBytes.byteOffset, cartBytes.byteOffset + cartBytes.byteLength)), [0xb3, 0xb4, 0xb5, 0xb6]);
+	assert.equal(cartBytes.bytes.buffer, cartRom.buffer);
+
+	assert.equal(memory.readMappedU32LE(CART_ROM_BASE + 6), 0x0000b8b7);
+	assert.equal(memory.readU8(CART_ROM_BASE + 0x1000), 0);
+	assert.equal(memory.isReadableMainMemoryRange(CART_ROM_BASE + 0x1000, 4), true);
+	assert.equal(memory.isImmutableMainMemoryRange(CART_ROM_BASE + 0x1000, 4), false);
+	source.sourceAddr = CART_ROM_BASE + 6;
+	sourceDma.loadSlot(1, source);
+	const cartTailBytes = sourceDma.bytesForSlot(1);
+	assert.deepEqual(Array.from(cartTailBytes.bytes.subarray(cartTailBytes.byteOffset, cartTailBytes.byteOffset + cartTailBytes.byteLength)), [0xb7, 0xb8, 0x00, 0x00]);
+	assert.notEqual(cartTailBytes.bytes.buffer, cartRom.buffer);
+
+	memory.writeU32(RAM_BASE, 0x44332211);
+	source.sourceAddr = RAM_BASE;
+	sourceDma.loadSlot(1, source);
+	const ramBytes = sourceDma.bytesForSlot(1);
+	memory.writeU8(RAM_BASE, 0xee);
+	assert.deepEqual(Array.from(ramBytes.bytes.subarray(ramBytes.byteOffset, ramBytes.byteOffset + ramBytes.byteLength)), [0x11, 0x22, 0x33, 0x44]);
+	assert.notEqual(ramBytes.bytes.buffer, systemRom.buffer);
+	assert.notEqual(ramBytes.bytes.buffer, cartRom.buffer);
+
+	memory.setProgramRom(new Uint8Array([0xc1, 0xc2, 0xc3, 0xc4]), 0);
+	assert.equal(memory.isImmutableMainMemoryRange(PROGRAM_ROM_BASE, 4), false);
 });
 
 function writeValidSourceRegisters(memory: Memory): void {

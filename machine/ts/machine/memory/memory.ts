@@ -1,6 +1,7 @@
 import type { Value } from '../cpu/cpu';
 import {
 	CART_ROM_BASE,
+	CART_ROM_SIZE,
 	IO_BASE,
 	IO_WORD_SIZE,
 	OVERLAY_ROM_BASE,
@@ -9,6 +10,7 @@ import {
 	RAM_BASE,
 	RAM_END,
 	SYSTEM_ROM_BASE,
+	SYSTEM_ROM_SIZE,
 	isVramMappedContiguousRange,
 	isVramMappedRange,
 } from './map';
@@ -90,16 +92,22 @@ export type MemorySaveState = {
 	busFaultAccess: number;
 };
 
+export type MainMemoryByteView = {
+	bytes: Uint8Array;
+	byteOffset: number;
+	byteLength: number;
+};
+
 export type MemoryInit = {
 	systemRom: Uint8Array;
-	cartRom?: Uint8Array;
+	cartRom: Uint8Array;
 	overlayRom?: Uint8Array;
 };
 
 export class Memory {
 	private readonly systemRom: Uint8Array;
-	private readonly cartRom: Uint8Array | undefined;
-	private readonly overlayRom: Uint8Array | undefined;
+	private readonly cartRom: Uint8Array;
+	private readonly overlayRom?: Uint8Array;
 	private readonly ram: Uint8Array;
 	private readonly ioSlots: Value[];
 	private readonly ioReadHandlers: Array<IoReadHandler | null>;
@@ -195,15 +203,63 @@ export class Memory {
 		this.writeBusFaultSlots();
 	}
 
+	private readRomWindowU16LE(bytes: Uint8Array, offset: number): number {
+		if (offset + 2 <= bytes.byteLength) {
+			return readLE16(bytes, offset);
+		}
+		if (offset >= bytes.byteLength) {
+			return 0;
+		}
+		return bytes[offset]!;
+	}
+
+	private readRomWindowU32LE(bytes: Uint8Array, offset: number): number {
+		if (offset + 4 <= bytes.byteLength) {
+			return readLE32(bytes, offset);
+		}
+		if (offset >= bytes.byteLength) {
+			return 0;
+		}
+		let value = bytes[offset]!;
+		const remaining = bytes.byteLength - offset;
+		if (remaining >= 2) {
+			value |= bytes[offset + 1]! << 8;
+		}
+		if (remaining >= 3) {
+			value |= bytes[offset + 2]! << 16;
+		}
+		return value >>> 0;
+	}
+
+	private copyRomWindowInto(bytes: Uint8Array, offset: number, out: Uint8Array, dstOffset: number, length: number): void {
+		if (offset >= bytes.byteLength) {
+			out.fill(0, dstOffset, dstOffset + length);
+			return;
+		}
+		const available = bytes.byteLength - offset;
+		if (length <= available) {
+			for (let index = 0; index < length; index += 1) {
+				out[dstOffset + index] = bytes[offset + index]!;
+			}
+			return;
+		}
+		for (let index = 0; index < available; index += 1) {
+			out[dstOffset + index] = bytes[offset + index]!;
+		}
+		out.fill(0, dstOffset + available, dstOffset + length);
+	}
+
 	private readMainMemoryU8(addr: number, faultAccess: number): number {
 		if (this.isProgramRomReadableRange(addr, 1)) {
 			return this.programRom[addr - PROGRAM_ROM_BASE];
 		}
-		if (addr >= SYSTEM_ROM_BASE && addr < SYSTEM_ROM_BASE + this.systemRom.byteLength) {
-			return this.systemRom[addr - SYSTEM_ROM_BASE];
+		if (addr >= SYSTEM_ROM_BASE && addr < SYSTEM_ROM_BASE + SYSTEM_ROM_SIZE) {
+			const offset = addr - SYSTEM_ROM_BASE;
+			return offset < this.systemRom.byteLength ? this.systemRom[offset]! : 0;
 		}
-		if (this.cartRom && addr >= CART_ROM_BASE && addr < CART_ROM_BASE + this.cartRom.byteLength) {
-			return this.cartRom[addr - CART_ROM_BASE];
+		if (addr >= CART_ROM_BASE && addr < CART_ROM_BASE + CART_ROM_SIZE) {
+			const offset = addr - CART_ROM_BASE;
+			return offset < this.cartRom.byteLength ? this.cartRom[offset]! : 0;
 		}
 		if (this.overlayRom && addr >= OVERLAY_ROM_BASE && addr < OVERLAY_ROM_BASE + this.overlayRom.byteLength) {
 			return this.overlayRom[addr - OVERLAY_ROM_BASE];
@@ -323,13 +379,11 @@ export class Memory {
 		}
 		let data: Uint8Array;
 		let offset: number;
-		if (addr >= SYSTEM_ROM_BASE && addr + 4 <= SYSTEM_ROM_BASE + this.systemRom.byteLength) {
-			data = this.systemRom;
-			offset = addr - SYSTEM_ROM_BASE;
+		if (this.isRangeWithinRegion(addr, 4, SYSTEM_ROM_BASE, SYSTEM_ROM_SIZE)) {
+			return this.readRomWindowU32LE(this.systemRom, addr - SYSTEM_ROM_BASE);
 		}
-		else if (this.cartRom && addr >= CART_ROM_BASE && addr + 4 <= CART_ROM_BASE + this.cartRom.byteLength) {
-			data = this.cartRom;
-			offset = addr - CART_ROM_BASE;
+		else if (this.isRangeWithinRegion(addr, 4, CART_ROM_BASE, CART_ROM_SIZE)) {
+			return this.readRomWindowU32LE(this.cartRom, addr - CART_ROM_BASE);
 		}
 		else if (this.overlayRom && addr >= OVERLAY_ROM_BASE && addr + 4 <= OVERLAY_ROM_BASE + this.overlayRom.byteLength) {
 			data = this.overlayRom;
@@ -498,13 +552,11 @@ export class Memory {
 			data = this.programRom;
 			offset = addr - PROGRAM_ROM_BASE;
 		}
-		else if (addr >= SYSTEM_ROM_BASE && addr + 4 <= SYSTEM_ROM_BASE + this.systemRom.byteLength) {
-			data = this.systemRom;
-			offset = addr - SYSTEM_ROM_BASE;
+		else if (this.isRangeWithinRegion(addr, 4, SYSTEM_ROM_BASE, SYSTEM_ROM_SIZE)) {
+			return this.readRomWindowU32LE(this.systemRom, addr - SYSTEM_ROM_BASE);
 		}
-		else if (this.cartRom && addr >= CART_ROM_BASE && addr + 4 <= CART_ROM_BASE + this.cartRom.byteLength) {
-			data = this.cartRom;
-			offset = addr - CART_ROM_BASE;
+		else if (this.isRangeWithinRegion(addr, 4, CART_ROM_BASE, CART_ROM_SIZE)) {
+			return this.readRomWindowU32LE(this.cartRom, addr - CART_ROM_BASE);
 		}
 		else if (this.overlayRom && addr >= OVERLAY_ROM_BASE && addr + 4 <= OVERLAY_ROM_BASE + this.overlayRom.byteLength) {
 			data = this.overlayRom;
@@ -537,13 +589,11 @@ export class Memory {
 			data = this.programRom;
 			offset = addr - PROGRAM_ROM_BASE;
 		}
-		else if (addr >= SYSTEM_ROM_BASE && addr + 2 <= SYSTEM_ROM_BASE + this.systemRom.byteLength) {
-			data = this.systemRom;
-			offset = addr - SYSTEM_ROM_BASE;
+		else if (this.isRangeWithinRegion(addr, 2, SYSTEM_ROM_BASE, SYSTEM_ROM_SIZE)) {
+			return this.readRomWindowU16LE(this.systemRom, addr - SYSTEM_ROM_BASE);
 		}
-		else if (this.cartRom && addr >= CART_ROM_BASE && addr + 2 <= CART_ROM_BASE + this.cartRom.byteLength) {
-			data = this.cartRom;
-			offset = addr - CART_ROM_BASE;
+		else if (this.isRangeWithinRegion(addr, 2, CART_ROM_BASE, CART_ROM_SIZE)) {
+			return this.readRomWindowU16LE(this.cartRom, addr - CART_ROM_BASE);
 		}
 		else if (this.overlayRom && addr >= OVERLAY_ROM_BASE && addr + 2 <= OVERLAY_ROM_BASE + this.overlayRom.byteLength) {
 			data = this.overlayRom;
@@ -588,13 +638,11 @@ export class Memory {
 			data = this.programRom;
 			offset = addr - PROGRAM_ROM_BASE;
 		}
-		else if (addr >= SYSTEM_ROM_BASE && addr + 4 <= SYSTEM_ROM_BASE + this.systemRom.byteLength) {
-			data = this.systemRom;
-			offset = addr - SYSTEM_ROM_BASE;
+		else if (this.isRangeWithinRegion(addr, 4, SYSTEM_ROM_BASE, SYSTEM_ROM_SIZE)) {
+			return this.readRomWindowU32LE(this.systemRom, addr - SYSTEM_ROM_BASE);
 		}
-		else if (this.cartRom && addr >= CART_ROM_BASE && addr + 4 <= CART_ROM_BASE + this.cartRom.byteLength) {
-			data = this.cartRom;
-			offset = addr - CART_ROM_BASE;
+		else if (this.isRangeWithinRegion(addr, 4, CART_ROM_BASE, CART_ROM_SIZE)) {
+			return this.readRomWindowU32LE(this.cartRom, addr - CART_ROM_BASE);
 		}
 		else if (this.overlayRom && addr >= OVERLAY_ROM_BASE && addr + 4 <= OVERLAY_ROM_BASE + this.overlayRom.byteLength) {
 			data = this.overlayRom;
@@ -739,13 +787,13 @@ export class Memory {
 			data = this.programRom;
 			offset = addr - PROGRAM_ROM_BASE;
 		}
-		else if (addr >= SYSTEM_ROM_BASE && addr + length <= SYSTEM_ROM_BASE + this.systemRom.byteLength) {
-			data = this.systemRom;
-			offset = addr - SYSTEM_ROM_BASE;
+		else if (this.isRangeWithinRegion(addr, length, SYSTEM_ROM_BASE, SYSTEM_ROM_SIZE)) {
+			this.copyRomWindowInto(this.systemRom, addr - SYSTEM_ROM_BASE, out, dstOffset, length);
+			return true;
 		}
-		else if (this.cartRom && addr >= CART_ROM_BASE && addr + length <= CART_ROM_BASE + this.cartRom.byteLength) {
-			data = this.cartRom;
-			offset = addr - CART_ROM_BASE;
+		else if (this.isRangeWithinRegion(addr, length, CART_ROM_BASE, CART_ROM_SIZE)) {
+			this.copyRomWindowInto(this.cartRom, addr - CART_ROM_BASE, out, dstOffset, length);
+			return true;
 		}
 		else if (this.overlayRom && addr >= OVERLAY_ROM_BASE && addr + length <= OVERLAY_ROM_BASE + this.overlayRom.byteLength) {
 			data = this.overlayRom;
@@ -772,10 +820,32 @@ export class Memory {
 
 	public isReadableMainMemoryRange(addr: number, length: number): boolean {
 		return this.isProgramRomReadableRange(addr, length)
-			|| this.isRangeWithinRegion(addr, length, SYSTEM_ROM_BASE, this.systemRom.byteLength)
-			|| (!!this.cartRom && this.isRangeWithinRegion(addr, length, CART_ROM_BASE, this.cartRom.byteLength))
+			|| this.isRangeWithinRegion(addr, length, SYSTEM_ROM_BASE, SYSTEM_ROM_SIZE)
+			|| this.isRangeWithinRegion(addr, length, CART_ROM_BASE, CART_ROM_SIZE)
 			|| (!!this.overlayRom && this.isRangeWithinRegion(addr, length, OVERLAY_ROM_BASE, this.overlayRom.byteLength))
 			|| (addr >= RAM_BASE && addr - RAM_BASE + length <= this.ram.byteLength);
+	}
+
+	public isImmutableMainMemoryRange(addr: number, length: number): boolean {
+		return length > 0
+			&& (this.isRangeWithinRegion(addr, length, SYSTEM_ROM_BASE, this.systemRom.byteLength)
+				|| this.isRangeWithinRegion(addr, length, CART_ROM_BASE, this.cartRom.byteLength));
+	}
+
+	public bindImmutableMainMemoryView(addr: number, length: number, out: MainMemoryByteView): boolean {
+		if (length > 0 && this.isRangeWithinRegion(addr, length, SYSTEM_ROM_BASE, this.systemRom.byteLength)) {
+			out.bytes = this.systemRom;
+			out.byteOffset = addr - SYSTEM_ROM_BASE;
+			out.byteLength = length;
+			return true;
+		}
+		if (length > 0 && this.isRangeWithinRegion(addr, length, CART_ROM_BASE, this.cartRom.byteLength)) {
+			out.bytes = this.cartRom;
+			out.byteOffset = addr - CART_ROM_BASE;
+			out.byteLength = length;
+			return true;
+		}
+		return false;
 	}
 
 	public isRamRange(addr: number, length: number): boolean {
@@ -916,10 +986,10 @@ export class Memory {
 		if (addr >= PROGRAM_ROM_BASE && addr + length <= PROGRAM_ROM_BASE + PROGRAM_ROM_SIZE) {
 			return false;
 		}
-		if (this.isRangeWithinRegion(addr, length, SYSTEM_ROM_BASE, this.systemRom.byteLength)) {
+		if (this.isRangeWithinRegion(addr, length, SYSTEM_ROM_BASE, SYSTEM_ROM_SIZE)) {
 			return false;
 		}
-		if (this.cartRom && this.isRangeWithinRegion(addr, length, CART_ROM_BASE, this.cartRom.byteLength)) {
+		if (this.isRangeWithinRegion(addr, length, CART_ROM_BASE, CART_ROM_SIZE)) {
 			return false;
 		}
 		if (this.overlayRom && this.isRangeWithinRegion(addr, length, OVERLAY_ROM_BASE, this.overlayRom.byteLength)) {
@@ -938,10 +1008,10 @@ export class Memory {
 		if (this.isProgramRomReadableRange(addr, length)) {
 			return true;
 		}
-		if (this.isRangeWithinRegion(addr, length, SYSTEM_ROM_BASE, this.systemRom.byteLength)) {
+		if (this.isRangeWithinRegion(addr, length, SYSTEM_ROM_BASE, SYSTEM_ROM_SIZE)) {
 			return true;
 		}
-		if (this.cartRom && this.isRangeWithinRegion(addr, length, CART_ROM_BASE, this.cartRom.byteLength)) {
+		if (this.isRangeWithinRegion(addr, length, CART_ROM_BASE, CART_ROM_SIZE)) {
 			return true;
 		}
 		if (this.overlayRom && this.isRangeWithinRegion(addr, length, OVERLAY_ROM_BASE, this.overlayRom.byteLength)) {

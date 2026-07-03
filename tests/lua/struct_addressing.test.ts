@@ -75,7 +75,7 @@ function makeDisplacedMemoryProgram(cpu: CPU): Program {
 }
 
 test('CPU executes displaced memory load/store opcodes', () => {
-	const memory = new Memory({ systemRom: new Uint8Array(0) });
+	const memory = new Memory({ systemRom: new Uint8Array(0), cartRom: new Uint8Array(0) });
 	const cpu = new CPU(memory);
 	const metadata = makeMetadata(10);
 	cpu.setProgram(makeDisplacedMemoryProgram(cpu), metadata, metadata);

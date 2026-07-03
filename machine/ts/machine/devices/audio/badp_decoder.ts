@@ -19,14 +19,14 @@ export type ApuBadpDecoderState = {
 	decodedRight: number;
 };
 
-export function readApuBadpSeekTable(bytes: Uint8Array): ApuBadpSeekTableResult {
-	const seekEntryCount = readLE32(bytes, 28);
-	const seekTableOffset = readLE32(bytes, 32);
+export function readApuBadpSeekTable(bytes: Uint8Array, byteOffset: number): ApuBadpSeekTableResult {
+	const seekEntryCount = readLE32(bytes, byteOffset + 28);
+	const seekTableOffset = readLE32(bytes, byteOffset + 32);
 	const seekCount = seekEntryCount > 0 ? seekEntryCount : 1;
 	const seekFrames = new Uint32Array(seekCount);
 	const seekOffsets = new Uint32Array(seekCount);
 	if (seekEntryCount > 0) {
-		let cursor = seekTableOffset;
+		let cursor = byteOffset + seekTableOffset;
 		for (let index = 0; index < seekCount; index += 1) {
 			seekFrames[index] = readLE32(bytes, cursor);
 			seekOffsets[index] = readLE32(bytes, cursor + 4);

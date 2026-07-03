@@ -39,21 +39,54 @@ inline bool addressRangeWithin(uint32_t addr, uint32_t base, size_t size, size_t
 	return addressRangeOffset(addr, base, size, length, offset);
 }
 
-} // namespace
-
-Memory::Memory()
-	: m_ram(RAM_END - RAM_BASE)
-	, m_ioSlots(IO_SLOT_COUNT, valueNil())
-	, m_ioReadHandlers(IO_SLOT_COUNT)
-	, m_ioWriteHandlers(IO_SLOT_COUNT) {
-	m_ioWriteHandlers[IO_SYS_BUS_FAULT_ACK_SLOT] = { this, &Memory::onBusFaultAckWriteThunk };
-	clearBusFault();
+inline uint32_t readRomWindowU16LE(const u8* data, size_t size, size_t offset) {
+	if (offset + 2u <= size) {
+		return readLE16(data + offset);
+	}
+	if (offset >= size) {
+		return 0u;
+	}
+	return static_cast<uint32_t>(data[offset]);
 }
+
+inline uint32_t readRomWindowU32LE(const u8* data, size_t size, size_t offset) {
+	if (offset + 4u <= size) {
+		return readLE32(data + offset);
+	}
+	if (offset >= size) {
+		return 0u;
+	}
+	uint32_t value = static_cast<uint32_t>(data[offset]);
+	const size_t remaining = size - offset;
+	if (remaining >= 2u) {
+		value |= static_cast<uint32_t>(data[offset + 1u]) << 8u;
+	}
+	if (remaining >= 3u) {
+		value |= static_cast<uint32_t>(data[offset + 2u]) << 16u;
+	}
+	return value;
+}
+
+inline void readRomWindowBytes(const u8* data, size_t size, size_t offset, u8* out, size_t length) {
+	if (offset >= size) {
+		std::memset(out, 0, length);
+		return;
+	}
+	const size_t available = size - offset;
+	if (length <= available) {
+		std::memcpy(out, data + offset, length);
+		return;
+	}
+	std::memcpy(out, data + offset, available);
+	std::memset(out + available, 0, length - available);
+}
+
+} // namespace
 
 Memory::Memory(const MemoryInit& init)
 	: m_systemRom{ init.systemRom.data, init.systemRom.size }
 	, m_cartRom{ init.cartRom.data, init.cartRom.size }
-	, m_programRom()
+	, m_programRom{ nullptr, 0 }
 	, m_programTextByteLength(0)
 	, m_overlayRom{ init.overlayRom.data, init.overlayRom.size }
 	, m_ram(RAM_END - RAM_BASE)
@@ -114,11 +147,13 @@ u8 Memory::readMainMemoryU8(uint32_t addr, uint32_t faultAccess) const {
 	if (isProgramRomReadableRange(addr, 1)) {
 		return m_programRom.data[static_cast<size_t>(addr - PROGRAM_ROM_BASE)];
 	}
-	if (addr >= SYSTEM_ROM_BASE && addr < SYSTEM_ROM_BASE + m_systemRom.size) {
-		return m_systemRom.data[static_cast<size_t>(addr - SYSTEM_ROM_BASE)];
+	if (addr >= SYSTEM_ROM_BASE && addr < SYSTEM_ROM_BASE + SYSTEM_ROM_SIZE) {
+		const size_t offset = static_cast<size_t>(addr - SYSTEM_ROM_BASE);
+		return offset < m_systemRom.size ? m_systemRom.data[offset] : 0u;
 	}
-	if (m_cartRom.data != nullptr && addr >= CART_ROM_BASE && addr < CART_ROM_BASE + m_cartRom.size) {
-		return m_cartRom.data[static_cast<size_t>(addr - CART_ROM_BASE)];
+	if (addr >= CART_ROM_BASE && addr < CART_ROM_BASE + CART_ROM_SIZE) {
+		const size_t offset = static_cast<size_t>(addr - CART_ROM_BASE);
+		return offset < m_cartRom.size ? m_cartRom.data[offset] : 0u;
 	}
 	if (m_overlayRom.data != nullptr && addr >= OVERLAY_ROM_BASE && addr < OVERLAY_ROM_BASE + m_overlayRom.size) {
 		return m_overlayRom.data[static_cast<size_t>(addr - OVERLAY_ROM_BASE)];
@@ -255,10 +290,10 @@ Value Memory::readMappedValue(uint32_t addr) const {
 	}
 	const u8* region = nullptr;
 	size_t offset = 0;
-	if (addressRangeOffset(addr, SYSTEM_ROM_BASE, m_systemRom.size, 4, offset)) {
-		region = m_systemRom.data;
-	} else if (m_cartRom.data != nullptr && addressRangeOffset(addr, CART_ROM_BASE, m_cartRom.size, 4, offset)) {
-		region = m_cartRom.data;
+	if (addressRangeOffset(addr, SYSTEM_ROM_BASE, SYSTEM_ROM_SIZE, 4, offset)) {
+		return valueNumber(static_cast<double>(readRomWindowU32LE(m_systemRom.data, m_systemRom.size, offset)));
+	} else if (addressRangeOffset(addr, CART_ROM_BASE, CART_ROM_SIZE, 4, offset)) {
+		return valueNumber(static_cast<double>(readRomWindowU32LE(m_cartRom.data, m_cartRom.size, offset)));
 	} else if (m_overlayRom.data != nullptr && addressRangeOffset(addr, OVERLAY_ROM_BASE, m_overlayRom.size, 4, offset)) {
 		region = m_overlayRom.data;
 	} else if (addr >= RAM_BASE) {
@@ -420,10 +455,10 @@ uint32_t Memory::readU32FromRegion(uint32_t addr) const {
 	if (isProgramRomReadableRange(addr, 4)) {
 		region = m_programRom.data;
 		offset = static_cast<size_t>(addr - PROGRAM_ROM_BASE);
-	} else if (addressRangeOffset(addr, SYSTEM_ROM_BASE, m_systemRom.size, 4, offset)) {
-		region = m_systemRom.data;
-	} else if (m_cartRom.data != nullptr && addressRangeOffset(addr, CART_ROM_BASE, m_cartRom.size, 4, offset)) {
-		region = m_cartRom.data;
+	} else if (addressRangeOffset(addr, SYSTEM_ROM_BASE, SYSTEM_ROM_SIZE, 4, offset)) {
+		return readRomWindowU32LE(m_systemRom.data, m_systemRom.size, offset);
+	} else if (addressRangeOffset(addr, CART_ROM_BASE, CART_ROM_SIZE, 4, offset)) {
+		return readRomWindowU32LE(m_cartRom.data, m_cartRom.size, offset);
 	} else if (m_overlayRom.data != nullptr && addressRangeOffset(addr, OVERLAY_ROM_BASE, m_overlayRom.size, 4, offset)) {
 		region = m_overlayRom.data;
 	} else {
@@ -452,10 +487,10 @@ uint32_t Memory::readMappedU16LE(uint32_t addr) const {
 	if (isProgramRomReadableRange(addr, 2)) {
 		region = m_programRom.data;
 		offset = static_cast<size_t>(addr - PROGRAM_ROM_BASE);
-	} else if (addressRangeOffset(addr, SYSTEM_ROM_BASE, m_systemRom.size, 2, offset)) {
-		region = m_systemRom.data;
-	} else if (m_cartRom.data != nullptr && addressRangeOffset(addr, CART_ROM_BASE, m_cartRom.size, 2, offset)) {
-		region = m_cartRom.data;
+	} else if (addressRangeOffset(addr, SYSTEM_ROM_BASE, SYSTEM_ROM_SIZE, 2, offset)) {
+		return readRomWindowU16LE(m_systemRom.data, m_systemRom.size, offset);
+	} else if (addressRangeOffset(addr, CART_ROM_BASE, CART_ROM_SIZE, 2, offset)) {
+		return readRomWindowU16LE(m_cartRom.data, m_cartRom.size, offset);
 	} else if (m_overlayRom.data != nullptr && addressRangeOffset(addr, OVERLAY_ROM_BASE, m_overlayRom.size, 2, offset)) {
 		region = m_overlayRom.data;
 	} else if (addr >= RAM_BASE) {
@@ -495,10 +530,10 @@ uint32_t Memory::readMappedU32LE(uint32_t addr) const {
 	if (isProgramRomReadableRange(addr, 4)) {
 		region = m_programRom.data;
 		offset = static_cast<size_t>(addr - PROGRAM_ROM_BASE);
-	} else if (addressRangeOffset(addr, SYSTEM_ROM_BASE, m_systemRom.size, 4, offset)) {
-		region = m_systemRom.data;
-	} else if (m_cartRom.data != nullptr && addressRangeOffset(addr, CART_ROM_BASE, m_cartRom.size, 4, offset)) {
-		region = m_cartRom.data;
+	} else if (addressRangeOffset(addr, SYSTEM_ROM_BASE, SYSTEM_ROM_SIZE, 4, offset)) {
+		return readRomWindowU32LE(m_systemRom.data, m_systemRom.size, offset);
+	} else if (addressRangeOffset(addr, CART_ROM_BASE, CART_ROM_SIZE, 4, offset)) {
+		return readRomWindowU32LE(m_cartRom.data, m_cartRom.size, offset);
 	} else if (m_overlayRom.data != nullptr && addressRangeOffset(addr, OVERLAY_ROM_BASE, m_overlayRom.size, 4, offset)) {
 		region = m_overlayRom.data;
 	} else if (addr >= RAM_BASE) {
@@ -663,12 +698,12 @@ bool Memory::readBytes(uint32_t addr, u8* out, size_t length) const {
 		std::memcpy(out, m_programRom.data + static_cast<size_t>(addr - PROGRAM_ROM_BASE), length);
 		return true;
 	}
-	if (addressRangeOffset(addr, SYSTEM_ROM_BASE, m_systemRom.size, length, offset)) {
-		std::memcpy(out, m_systemRom.data + offset, length);
+	if (addressRangeOffset(addr, SYSTEM_ROM_BASE, SYSTEM_ROM_SIZE, length, offset)) {
+		readRomWindowBytes(m_systemRom.data, m_systemRom.size, offset, out, length);
 		return true;
 	}
-	if (m_cartRom.data != nullptr && addressRangeOffset(addr, CART_ROM_BASE, m_cartRom.size, length, offset)) {
-		std::memcpy(out, m_cartRom.data + offset, length);
+	if (addressRangeOffset(addr, CART_ROM_BASE, CART_ROM_SIZE, length, offset)) {
+		readRomWindowBytes(m_cartRom.data, m_cartRom.size, offset, out, length);
 		return true;
 	}
 	if (m_overlayRom.data != nullptr && addressRangeOffset(addr, OVERLAY_ROM_BASE, m_overlayRom.size, length, offset)) {
@@ -692,10 +727,31 @@ bool Memory::isReadableMainMemoryRange(uint32_t addr, size_t length) const {
 		&& length <= m_ram.size()
 		&& static_cast<size_t>(addr - RAM_BASE) <= m_ram.size() - length;
 	return isProgramRomReadableRange(addr, length)
-		|| isRangeWithinRegion(addr, length, SYSTEM_ROM_BASE, static_cast<uint32_t>(m_systemRom.size))
-		|| (m_cartRom.data != nullptr && isRangeWithinRegion(addr, length, CART_ROM_BASE, static_cast<uint32_t>(m_cartRom.size)))
+		|| isRangeWithinRegion(addr, length, SYSTEM_ROM_BASE, SYSTEM_ROM_SIZE)
+		|| (isRangeWithinRegion(addr, length, CART_ROM_BASE, CART_ROM_SIZE))
 		|| (m_overlayRom.data != nullptr && isRangeWithinRegion(addr, length, OVERLAY_ROM_BASE, static_cast<uint32_t>(m_overlayRom.size)))
 		|| isReadableRam;
+}
+
+bool Memory::isImmutableMainMemoryRange(uint32_t addr, size_t length) const {
+	return length > 0u
+		&& (isRangeWithinRegion(addr, length, SYSTEM_ROM_BASE, static_cast<uint32_t>(m_systemRom.size))
+			|| isRangeWithinRegion(addr, length, CART_ROM_BASE, static_cast<uint32_t>(m_cartRom.size)));
+}
+
+bool Memory::bindImmutableMainMemoryView(uint32_t addr, size_t length, Span<const u8>& out) const {
+	size_t offset = 0;
+	if (length > 0u && addressRangeOffset(addr, SYSTEM_ROM_BASE, m_systemRom.size, length, offset)) {
+		out.data_ = m_systemRom.data + offset;
+		out.size_ = length;
+		return true;
+	}
+	if (length > 0u && addressRangeOffset(addr, CART_ROM_BASE, m_cartRom.size, length, offset)) {
+		out.data_ = m_cartRom.data + offset;
+		out.size_ = length;
+		return true;
+	}
+	return false;
 }
 
 bool Memory::isRamRange(uint32_t addr, size_t length) const {
@@ -791,10 +847,10 @@ bool Memory::isMappedWritableRange(uint32_t addr, size_t length) const {
 	if (addressRangeWithin(addr, PROGRAM_ROM_BASE, PROGRAM_ROM_SIZE, length)) {
 		return false;
 	}
-	if (isRangeWithinRegion(addr, length, SYSTEM_ROM_BASE, static_cast<uint32_t>(m_systemRom.size))) {
+	if (isRangeWithinRegion(addr, length, SYSTEM_ROM_BASE, SYSTEM_ROM_SIZE)) {
 		return false;
 	}
-	if (m_cartRom.data != nullptr && isRangeWithinRegion(addr, length, CART_ROM_BASE, static_cast<uint32_t>(m_cartRom.size))) {
+	if (isRangeWithinRegion(addr, length, CART_ROM_BASE, CART_ROM_SIZE)) {
 		return false;
 	}
 	if (m_overlayRom.data != nullptr && isRangeWithinRegion(addr, length, OVERLAY_ROM_BASE, static_cast<uint32_t>(m_overlayRom.size))) {
@@ -815,10 +871,10 @@ bool Memory::isMappedReadableRange(uint32_t addr, size_t length) const {
 	if (isProgramRomReadableRange(addr, length)) {
 		return true;
 	}
-	if (isRangeWithinRegion(addr, length, SYSTEM_ROM_BASE, static_cast<uint32_t>(m_systemRom.size))) {
+	if (isRangeWithinRegion(addr, length, SYSTEM_ROM_BASE, SYSTEM_ROM_SIZE)) {
 		return true;
 	}
-	if (m_cartRom.data != nullptr && isRangeWithinRegion(addr, length, CART_ROM_BASE, static_cast<uint32_t>(m_cartRom.size))) {
+	if (isRangeWithinRegion(addr, length, CART_ROM_BASE, CART_ROM_SIZE)) {
 		return true;
 	}
 	if (m_overlayRom.data != nullptr && isRangeWithinRegion(addr, length, OVERLAY_ROM_BASE, static_cast<uint32_t>(m_overlayRom.size))) {

@@ -39,7 +39,11 @@ struct Harness {
 	bmsx::VDP vdp;
 
 	Harness()
-		: memory()
+		: memory({
+			{ nullptr, 0 },
+			{ nullptr, 0 },
+			{}
+		})
 		, cpu(memory)
 		, scheduler(cpu)
 		, vdp(memory, scheduler, {256u, 212u}) {

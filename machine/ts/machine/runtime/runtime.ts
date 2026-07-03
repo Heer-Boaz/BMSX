@@ -8,7 +8,6 @@ import {
 	type LuaDebuggerPauseSignal
 } from '../../lua/value';
 import type { CartManifest, MachineManifest, RuntimeRomPackage } from '../../rompack/format';
-import { CART_ROM_HEADER_SIZE } from '../../rompack/format';
 import { RomSourceStack, type RawRomSource, type RomSourceLayer } from '../../rompack/source';
 import { buildRuntimeRomLayer, type RuntimeRomLayer } from '../../rompack/loader';
 import { EMPTY_CALL_ARGS, StringValue, Table, type Value, type Program, type ProgramMetadata, type ProgramRuntimeSymbols, type NativeFunction, type NativeObject } from '../cpu/cpu';
@@ -201,7 +200,7 @@ export class Runtime {
 			const timing = resolveRuntimeTiming(PSX_MODEL_PROFILE.cpuFreqHz, MACHINE_REGION_PAL_WORD);
 			const memory = new Memory({
 				systemRom: new Uint8Array(systemLayer.payload),
-				cartRom: new Uint8Array(CART_ROM_HEADER_SIZE),
+				cartRom: new Uint8Array(0),
 			});
 			const runtime = new Runtime({
 				viewport: { width: timing.viewportWidth, height: timing.viewportHeight },

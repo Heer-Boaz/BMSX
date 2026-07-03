@@ -56,7 +56,7 @@ function writeSample(snapshot: InputControllerSnapshot): void {
 }
 
 function createHarness(): { memory: Memory; controller: InputController; vibrations: FakeVibration[]; samples: () => number } {
-	const memory = new Memory({ systemRom: new Uint8Array(0) });
+	const memory = new Memory({ systemRom: new Uint8Array(0), cartRom: new Uint8Array(0) });
 	const vibrations: FakeVibration[] = [];
 	let sampleCount = 0;
 	const input: InputControllerInputSource = {

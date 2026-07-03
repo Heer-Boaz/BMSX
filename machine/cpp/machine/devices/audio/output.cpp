@@ -106,7 +106,7 @@ void ApuOutputMixer::pullOutputFrames(i16* output, size_t frameCount, i32 output
 	fillOutputQueueTo(targetQueuedFrames, outputSampleRate, outputGain);
 }
 
-ApuOutputStartResult ApuOutputMixer::playVoice(ApuAudioSlot slot, ApuVoiceId voiceId, const ApuAudioSource& source, const std::vector<u8>& sourceBytes, const ApuParameterRegisterWords& registerWords, i64 playbackCursorQ16, u32 stopFadeSamples) {
+ApuOutputStartResult ApuOutputMixer::playVoice(ApuAudioSlot slot, ApuVoiceId voiceId, const ApuAudioSource& source, const Span<const u8>& sourceBytes, const ApuParameterRegisterWords& registerWords, i64 playbackCursorQ16, u32 stopFadeSamples) {
 	const ApuOutputPlayback playback = resolveApuOutputPlayback(registerWords);
 	if (playback.playbackRate <= 0.0f) {
 		return {APU_FAULT_OUTPUT_PLAYBACK_RATE, registerWords[APU_PARAMETER_RATE_STEP_Q16_INDEX]};
@@ -116,7 +116,7 @@ ApuOutputStartResult ApuOutputMixer::playVoice(ApuAudioSlot slot, ApuVoiceId voi
 	std::vector<u32> badpSeekOffsets;
 	if (!apuAudioSourceUsesGenerator(source)) {
 		if (source.bitsPerSample == 4) {
-			ApuBadpSeekTableResult badpSeek = readApuBadpSeekTable(sourceBytes.data());
+			ApuBadpSeekTableResult badpSeek = readApuBadpSeekTable(sourceBytes.data(), 0u);
 			badpSeekFrames = std::move(badpSeek.frames);
 			badpSeekOffsets = std::move(badpSeek.offsets);
 		}
@@ -589,7 +589,7 @@ void ApuOutputMixer::fillOutputQueueTo(size_t targetFrames, i32 outputSampleRate
 ApuOutputMixer::VoiceRecord ApuOutputMixer::buildVoiceFromData(ApuAudioSlot slot,
 															ApuVoiceId voiceId,
 															const ApuAudioSource& source,
-															const std::vector<u8>& sourceBytes,
+															const Span<const u8>& sourceBytes,
 															std::vector<u32> badpSeekFrames,
 															std::vector<u32> badpSeekOffsets,
 															const ApuOutputPlayback& playback,

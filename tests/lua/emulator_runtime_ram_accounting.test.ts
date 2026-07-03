@@ -20,14 +20,14 @@ function compileSource(source: string, path = 'ram_accounting.lua') {
 
 function createCpuWithProgram(source: string): { cpu: CPU; entryProtoIndex: number } {
 	const compiled = compileSource(source);
-	const memory = new Memory({ systemRom: new Uint8Array(0) });
+	const memory = new Memory({ systemRom: new Uint8Array(0), cartRom: new Uint8Array(0) });
 	const cpu = new CPU(memory);
 	cpu.setProgram(compiled.program, compiled.metadata, compiled.metadata);
 	return { cpu, entryProtoIndex: compiled.entryProtoIndex };
 }
 
 test('tracked heap bytes include rooted tables and native arrays', () => {
-	const memory = new Memory({ systemRom: new Uint8Array(0) });
+	const memory = new Memory({ systemRom: new Uint8Array(0), cartRom: new Uint8Array(0) });
 	const cpu = new CPU(memory);
 	const key = StringValue.get(cpu.stringPool.intern('state'));
 	const listKey = StringValue.get(cpu.stringPool.intern('list'));
@@ -73,7 +73,7 @@ test('tracked heap bytes include rooted tables and native arrays', () => {
 });
 
 test('tracked heap bytes include explicit extra roots for native functions and handles', () => {
-	const memory = new Memory({ systemRom: new Uint8Array(0) });
+	const memory = new Memory({ systemRom: new Uint8Array(0), cartRom: new Uint8Array(0) });
 	const cpu = new CPU(memory);
 
 	const nativeFn = createNativeFunction('external.iterator', () => {});
@@ -91,7 +91,7 @@ test('tracked heap bytes include explicit extra roots for native functions and h
 });
 
 test('tracked heap bytes do not include raw js array capacity without native iteration entries', () => {
-	const memory = new Memory({ systemRom: new Uint8Array(0) });
+	const memory = new Memory({ systemRom: new Uint8Array(0), cartRom: new Uint8Array(0) });
 	const cpu = new CPU(memory);
 
 	const before = cpu.collectTrackedHeapBytes();
@@ -118,7 +118,7 @@ test('tracked heap bytes do not include raw js array capacity without native ite
 });
 
 test('program image literals and debug names stay in ROM accounting', () => {
-	const memory = new Memory({ systemRom: new Uint8Array(0) });
+	const memory = new Memory({ systemRom: new Uint8Array(0), cartRom: new Uint8Array(0) });
 	const cpu = new CPU(memory);
 	const before = cpu.collectTrackedHeapBytes();
 	const compiled = compileSource([
@@ -134,7 +134,7 @@ test('program image literals and debug names stay in ROM accounting', () => {
 });
 
 test('runtime string materialization tracks RAM even when the same text exists in ROM', () => {
-	const memory = new Memory({ systemRom: new Uint8Array(0) });
+	const memory = new Memory({ systemRom: new Uint8Array(0), cartRom: new Uint8Array(0) });
 	const cpu = new CPU(memory);
 	cpu.stringPool.intern('rom literal', false);
 	const before = cpu.collectTrackedHeapBytes();
@@ -149,7 +149,7 @@ test('runtime string materialization tracks RAM even when the same text exists i
 });
 
 test('unreachable runtime strings are reclaimed by the heap collector', () => {
-	const memory = new Memory({ systemRom: new Uint8Array(0) });
+	const memory = new Memory({ systemRom: new Uint8Array(0), cartRom: new Uint8Array(0) });
 	const cpu = new CPU(memory);
 	const before = cpu.collectTrackedHeapBytes();
 

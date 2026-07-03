@@ -20,8 +20,8 @@ struct MemorySaveState {
 
 struct MemoryInit {
 	struct RomSpan {
-		const u8* data = nullptr;
-		size_t size = 0;
+		const u8* data;
+		size_t size;
 	};
 	struct MutableRomSpan {
 		u8* data = nullptr;
@@ -34,19 +34,18 @@ struct MemoryInit {
 
 class Memory {
 public:
-		class VramWriter {
-		public:
-			virtual ~VramWriter() = default;
-			virtual void writeVram(uint32_t addr, const u8* data, size_t srcOffset, size_t length) = 0;
-			virtual void readVram(uint32_t addr, u8* out, size_t length) const = 0;
-		};
-		using IoReadHandler = Value (*)(void* context, uint32_t addr);
-		using IoWriteHandler = void (*)(void* context, uint32_t addr, Value value);
+	class VramWriter {
+	public:
+		virtual ~VramWriter() = default;
+		virtual void writeVram(uint32_t addr, const u8* data, size_t srcOffset, size_t length) = 0;
+		virtual void readVram(uint32_t addr, u8* out, size_t length) const = 0;
+	};
+	using IoReadHandler = Value (*)(void* context, uint32_t addr);
+	using IoWriteHandler = void (*)(void* context, uint32_t addr, Value value);
 
-	Memory();
 	explicit Memory(const MemoryInit& init);
 
-		size_t getOverlayRomSize() const;
+	size_t getOverlayRomSize() const;
 	void setVramWriter(VramWriter* writer);
 	void mapIoRead(uint32_t addr, void* context, IoReadHandler handler);
 	void mapIoWrite(uint32_t addr, void* context, IoWriteHandler handler);
@@ -76,9 +75,11 @@ public:
 	void writeMappedF32LE(uint32_t addr, float value);
 	void writeMappedF64LE(uint32_t addr, double value);
 
-		bool writeBytes(uint32_t addr, const u8* data, size_t length);
-		bool readBytes(uint32_t addr, u8* out, size_t length) const;
+	bool writeBytes(uint32_t addr, const u8* data, size_t length);
+	bool readBytes(uint32_t addr, u8* out, size_t length) const;
 	bool isReadableMainMemoryRange(uint32_t addr, size_t length) const;
+	bool isImmutableMainMemoryRange(uint32_t addr, size_t length) const;
+	bool bindImmutableMainMemoryView(uint32_t addr, size_t length, Span<const u8>& out) const;
 	bool isRamRange(uint32_t addr, size_t length) const;
 
 	MemorySaveState captureSaveState() const;
@@ -89,34 +90,34 @@ public:
 
 private:
 	struct RomSpan {
-		const u8* data = nullptr;
+		const u8* data;
+		size_t size;
+	};
+	struct MutableRomSpan {
+		u8* data = nullptr;
 		size_t size = 0;
 	};
-		struct MutableRomSpan {
-			u8* data = nullptr;
-			size_t size = 0;
-		};
-		struct IoReadBinding {
-			void* context = nullptr;
-			IoReadHandler handler = nullptr;
-		};
-		struct IoWriteBinding {
-			void* context = nullptr;
-			IoWriteHandler handler = nullptr;
-		};
-		RomSpan m_systemRom;
-		RomSpan m_cartRom;
-		RomSpan m_programRom;
-		size_t m_programTextByteLength = 0;
-		MutableRomSpan m_overlayRom;
-		std::vector<u8> m_ram;
-		mutable std::vector<Value> m_ioSlots;
-		std::vector<IoReadBinding> m_ioReadHandlers;
-		std::vector<IoWriteBinding> m_ioWriteHandlers;
-		VramWriter* m_vramWriter = nullptr;
-		mutable uint32_t m_busFaultCode = BUS_FAULT_NONE;
-		mutable uint32_t m_busFaultAddr = 0;
-		mutable uint32_t m_busFaultAccess = 0;
+	struct IoReadBinding {
+		void* context = nullptr;
+		IoReadHandler handler = nullptr;
+	};
+	struct IoWriteBinding {
+		void* context = nullptr;
+		IoWriteHandler handler = nullptr;
+	};
+	RomSpan m_systemRom;
+	RomSpan m_cartRom;
+	RomSpan m_programRom;
+	size_t m_programTextByteLength = 0;
+	MutableRomSpan m_overlayRom;
+	std::vector<u8> m_ram;
+	mutable std::vector<Value> m_ioSlots;
+	std::vector<IoReadBinding> m_ioReadHandlers;
+	std::vector<IoWriteBinding> m_ioWriteHandlers;
+	VramWriter* m_vramWriter = nullptr;
+	mutable uint32_t m_busFaultCode = BUS_FAULT_NONE;
+	mutable uint32_t m_busFaultAddr = 0;
+	mutable uint32_t m_busFaultAccess = 0;
 
 	bool isIoRegionRange(uint32_t addr, size_t length) const;
 	int ioAlignedSlot(uint32_t addr) const {

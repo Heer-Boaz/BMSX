@@ -22,14 +22,16 @@ ApuAudioSource resolveApuAudioSource(const ApuParameterRegisterWords& registerWo
 }
 
 void ApuSourceDma::reset() {
-	for (std::vector<u8>& bytes : m_slotSourceBytes) {
-		bytes.clear();
+	for (SlotSource& slotSource : m_slotSources) {
+		slotSource.ownedBytes = std::vector<u8>{};
+		slotSource.bytes = {};
 	}
 }
 
 void ApuSourceDma::clearSlot(ApuAudioSlot slot) {
-	std::vector<u8>& bytes = m_slotSourceBytes[slot];
-	bytes.clear();
+	SlotSource& slotSource = m_slotSources[slot];
+	slotSource.ownedBytes = std::vector<u8>{};
+	slotSource.bytes = {};
 }
 
 void ApuSourceDma::loadSlot(const Memory& memory, ApuAudioSlot slot, const ApuAudioSource& source) {
@@ -37,9 +39,17 @@ void ApuSourceDma::loadSlot(const Memory& memory, ApuAudioSlot slot, const ApuAu
 		clearSlot(slot);
 		return;
 	}
-	std::vector<u8>& bytes = m_slotSourceBytes[slot];
-	bytes.resize(source.sourceBytes);
-	memory.readBytes(source.sourceAddr, bytes.data(), bytes.size());
+	SlotSource& slotSource = m_slotSources[slot];
+	if (memory.bindImmutableMainMemoryView(source.sourceAddr, source.sourceBytes, slotSource.bytes)) {
+		slotSource.ownedBytes = std::vector<u8>{};
+		return;
+	}
+	if (slotSource.ownedBytes.size() != source.sourceBytes) {
+		slotSource.ownedBytes = std::vector<u8>(source.sourceBytes);
+	}
+	memory.readBytes(source.sourceAddr, slotSource.ownedBytes.data(), slotSource.ownedBytes.size());
+	slotSource.bytes.data_ = slotSource.ownedBytes.data();
+	slotSource.bytes.size_ = slotSource.ownedBytes.size();
 }
 
 } // namespace bmsx

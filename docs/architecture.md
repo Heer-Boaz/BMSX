@@ -152,11 +152,12 @@ descriptor/scratch staging, 2 MB texture VRAM, a PSX-mode 320×240 framebuffer,
 and BIOS default VDP mode `2`.
 
 The active VDP class is also `psx`. A cart ROM carries a VDP-class marker in
-the ROM header; the only supported marker today is `psx`. Guest Lua does not
-receive a `machine_manifest`, `cart_manifest`, or raw hardware globals to
-discover these facts. The header and machine registry are host/tooling input;
-cart-visible behavior is still programmed through CPU-visible ROM, RAM, MMIO,
-BIOS Lua, and link symbols.
+the ROM header; the only supported marker today is `psx`. A second VDP/APU or
+device-class contract starts only when a real producer consumes it; it is not an
+open slice by itself. Guest Lua does not receive a `machine_manifest`,
+`cart_manifest`, or raw hardware globals to discover these facts. The header and
+machine registry are host/tooling input; cart-visible behavior is still
+programmed through CPU-visible ROM, RAM, MMIO, BIOS Lua, and link symbols.
 
 Region is runtime machine state, not a model field. The `sys_region` MMIO word
 selects PAL (`0`, 50 Hz, 313 total scanlines) or NTSC (`1`, 59.940060 Hz, 262
@@ -361,6 +362,14 @@ memory, and symbols as the primary representation. `CPU.Value` still exists for
 the dynamic Lua object-world, but it is not the target transport for hot/static
 machine-code ABI.
 
+System ROM and cart ROM are fixed CPU-visible address windows. The backing
+payload may be shorter than the window or absent; bytes beyond the backing read
+as zero through the bus. The memory owner exposes immutable ROM residency by
+binding caller-owned retained byte views for ranges that are fully backed by the
+system/cart ROM payload. It must not allocate or return fresh view/span objects
+on device load paths, and an empty or zero-filled window tail is not immutable
+backing.
+
 ## Save-state contract
 
 Save-state captures deterministic machine state, not host conveniences.
@@ -370,9 +379,9 @@ Saved:
 - CPU registers, stack/frame/root runtime values, string pool ownership, RAM/IO
   state, scheduler/VBlank state, device registerfiles/latches/FIFOs/buffers, and
   device-visible memory.
-- VDP registerfile, build/submitted-frame state, RPU retained buffers,
-  surfaces, constants, passes, and draw commands, named stream-ingress
-  latches/FIFO words, readback budget/overflow latches, surfaces,
+- VDP registerfile, VDP-owned VRAM/surface memory, build/submitted-frame
+  state, RPU retained surface records, constants, passes, and draw commands,
+  named stream-ingress latches/FIFO words, readback budget/overflow latches,
   display/readback pixels, and VOUT state that determines future output.
 - APU command/source/output state that determines future audio output,
   including the command FIFO ring, queued parameter latch words, active AOUT
@@ -699,6 +708,14 @@ device boundary while command-FIFO state transfer stays on the FIFO hardware
 owner, including the FIFO save-state record shape. BADP fixture proof covers
 saved decoder latches and selected-slot start-sample mutation while a
 decoder-backed voice is active.
+
+APU source DMA slots store either a retained immutable ROM byte view or
+device-owned source bytes. ROM-backed sources bind directly to the system/cart
+ROM backing through the memory owner and do not copy sample payload into the
+slot. RAM-backed and zero-filled/tail sources are copied into exact-size
+device-owned bytes so later RAM writes cannot mutate active voices and stale
+sample capacity is not retained. Save-state serializes the active source bytes
+deterministically and restore rebuilds exact-size owned slot bytes.
 
 Hot paths must use retained buffers and fixed-size state. No per-sample,
 per-render, or per-pull allocation is acceptable.

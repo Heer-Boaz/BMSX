@@ -116,7 +116,7 @@ const INLINE_MICROTASKS: MicrotaskQueue = {
 };
 
 function makeMachine(): Machine {
-	const memory = new Memory({ systemRom: new Uint8Array(0) });
+	const memory = new Memory({ systemRom: new Uint8Array(0), cartRom: new Uint8Array(0) });
 	const input = {
 		getPlayerInput: () => ({
 			checkActionTriggered: () => false,
