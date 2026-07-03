@@ -53,6 +53,10 @@ static inline size_t trackedClosureBytes(const Closure& closure) {
 	return closure.trackedHeapBytes;
 }
 
+static inline size_t closureAllocationBytes(size_t upvalueCount) {
+	return sizeof(Closure) + (upvalueCount * sizeof(Upvalue*));
+}
+
 constexpr std::string_view kCpuRuntimeMetatableSegment = "@metatable";
 
 } // namespace
@@ -721,6 +725,26 @@ void GcHeap::markValue(Value v) {
 	}
 }
 
+Closure* GcHeap::allocateClosure(size_t upvalueCount) {
+	const size_t byteCount = closureAllocationBytes(upvalueCount);
+	void* storage = ::operator new(byteCount);
+	auto* closure = new (storage) Closure();
+	closure->type = ObjType::Closure;
+	closure->marked = false;
+	closure->next = m_objects;
+	closure->upvalueCount = upvalueCount;
+	closure->upvalues = reinterpret_cast<Upvalue**>(static_cast<uint8_t*>(storage) + sizeof(Closure));
+	for (size_t index = 0; index < upvalueCount; ++index) {
+		closure->upvalues[index] = nullptr;
+	}
+	m_objects = closure;
+	m_bytesAllocated += byteCount;
+	if (m_bytesAllocated > m_nextGC) {
+		m_collectRequested = true;
+	}
+	return closure;
+}
+
 void GcHeap::markObject(GCObject* obj) {
 	if (!obj || obj->marked) {
 		return;
@@ -747,8 +771,8 @@ void GcHeap::trace() {
 			}
 			case ObjType::Closure: {
 				auto* closure = static_cast<Closure*>(obj);
-				for (auto* upvalue : closure->upvalues) {
-					markObject(upvalue);
+				for (size_t index = 0; index < closure->upvalueCount; ++index) {
+					markObject(closure->upvalues[index]);
 				}
 				break;
 			}
@@ -794,9 +818,10 @@ void GcHeap::sweep() {
 				delete static_cast<Table*>(obj);
 				break;
 			case ObjType::Closure:
-				m_bytesAllocated -= sizeof(Closure);
+				m_bytesAllocated -= closureAllocationBytes(static_cast<Closure*>(obj)->upvalueCount);
 				addTrackedLuaHeapBytes(-static_cast<ptrdiff_t>(trackedClosureBytes(*static_cast<Closure*>(obj))));
-				delete static_cast<Closure*>(obj);
+				static_cast<Closure*>(obj)->~Closure();
+				::operator delete(obj);
 				break;
 			case ObjType::BuiltinFunction:
 				m_bytesAllocated -= sizeof(BuiltinFunction);
@@ -1023,20 +1048,19 @@ void CPU::materializeStaticClosures() {
 		m_staticClosures.resize(protoCount);
 	}
 	for (size_t index = m_staticClosures.size(); index < protoCount; ++index) {
-		m_staticClosures.push_back(m_heap.allocate<Closure>(ObjType::Closure));
+		m_staticClosures.push_back(m_heap.allocateClosure(0));
 	}
 	for (size_t index = 0; index < protoCount; ++index) {
 		Closure* closure = m_staticClosures[index];
 		closure->protoIndex = static_cast<int>(index);
-		closure->upvalues.clear();
+		closure->upvalueCount = 0;
 		closure->trackedHeapBytes = 0;
 	}
 }
 
 Closure* CPU::createTrackedClosure(int protoIndex, size_t upvalueCount) {
-	auto* closure = m_heap.allocate<Closure>(ObjType::Closure);
+	auto* closure = m_heap.allocateClosure(upvalueCount);
 	closure->protoIndex = protoIndex;
-	closure->upvalues.resize(upvalueCount);
 	closure->trackedHeapBytes = kClosureHeapBytes + (upvalueCount * kClosureUpvalueSlotHeapBytes);
 	addTrackedLuaHeapBytes(static_cast<ptrdiff_t>(trackedClosureBytes(*closure)));
 	return closure;
@@ -1471,9 +1495,9 @@ CpuRuntimeState CPU::captureRuntimeState(const std::unordered_map<std::string, V
 				state.kind = CpuObjectState::Kind::Closure;
 				Closure* closure = static_cast<Closure*>(object);
 				state.protoIndex = closure->protoIndex;
-				state.upvalues.reserve(closure->upvalues.size());
-				for (Upvalue* upvalue : closure->upvalues) {
-					state.upvalues.push_back(ensureObjectId(upvalue));
+				state.upvalues.reserve(closure->upvalueCount);
+				for (size_t upvalueIndex = 0; upvalueIndex < closure->upvalueCount; ++upvalueIndex) {
+					state.upvalues.push_back(ensureObjectId(closure->upvalues[upvalueIndex]));
 				}
 				return state;
 			}
@@ -1676,7 +1700,6 @@ void CPU::restoreRuntimeState(const CpuRuntimeState& state, std::unordered_map<s
 					restoredObjects[index].closure = m_program->protos[static_cast<size_t>(objectState.protoIndex)].staticClosure && objectState.upvalues.empty()
 						? &rootClosure(objectState.protoIndex)
 						: createTrackedClosure(objectState.protoIndex, upvalueCount);
-					restoredObjects[index].closure->upvalues.resize(upvalueCount, nullptr);
 					break;
 				}
 			case CpuObjectState::Kind::Upvalue: {
@@ -2602,7 +2625,7 @@ bool CPU::hasFrameUpvalue(int frameIndex, int upvalueIndex) const {
 	if (upvalueIndex < 0) {
 		return false;
 	}
-	return upvalueIndex < static_cast<int>(frame.closure->upvalues.size());
+	return upvalueIndex < static_cast<int>(frame.closure->upvalueCount);
 }
 
 Value CPU::readFrameUpvalue(int frameIndex, int upvalueIndex) const {
@@ -2610,7 +2633,7 @@ Value CPU::readFrameUpvalue(int frameIndex, int upvalueIndex) const {
 		throw BMSX_RUNTIME_ERROR("[CPU] Frame index out of range: " + std::to_string(frameIndex) + ".");
 	}
 	const CallFrame& frame = *m_frames[static_cast<size_t>(frameIndex)];
-	if (upvalueIndex < 0 || upvalueIndex >= static_cast<int>(frame.closure->upvalues.size())) {
+	if (upvalueIndex < 0 || upvalueIndex >= static_cast<int>(frame.closure->upvalueCount)) {
 		throw BMSX_RUNTIME_ERROR("[CPU] Upvalue index out of range: " + std::to_string(upvalueIndex) + ".");
 	}
 	return const_cast<CPU*>(this)->readUpvalue(frame.closure->upvalues[static_cast<size_t>(upvalueIndex)]);

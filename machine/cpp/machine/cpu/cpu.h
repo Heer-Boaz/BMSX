@@ -624,7 +624,8 @@ struct Upvalue : GCObject {
 
 struct Closure : GCObject {
 	int protoIndex = 0;
-	std::vector<Upvalue*> upvalues;
+	size_t upvalueCount = 0;
+	Upvalue** upvalues;
 	size_t trackedHeapBytes = 0;
 };
 
@@ -862,6 +863,7 @@ public:
 		}
 		return obj;
 	}
+	Closure* allocateClosure(size_t upvalueCount);
 
 	void requestCollection() { m_collectRequested = true; }
 	bool needsCollection() const { return m_collectRequested; }

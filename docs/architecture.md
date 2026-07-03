@@ -371,6 +371,14 @@ next column so hash capacity does not materialize one JavaScript object per
 slot. Save-state still serializes hash nodes as schema data at the persistence
 boundary, but steady-state table storage is columnar.
 
+Lua closures own their captured upvalue slots as VM closure storage. In C++,
+captured-closure upvalue pointers are tail storage in the same GC allocation as
+the closure object, not a separate `std::vector` allocation. TypeScript keeps
+the same boundary with dense `Upvalue[]` closure slots, which are the native VM
+container for indexed JS object references. Save-state serializes closure
+upvalue references as object ids at the persistence boundary; it does not expose
+either runtime's closure slot storage shape.
+
 System ROM and cart ROM are fixed CPU-visible address windows. The backing
 payload may be shorter than the window or absent; bytes beyond the backing read
 as zero through the bus. The memory owner exposes immutable ROM residency by
