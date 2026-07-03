@@ -1179,7 +1179,8 @@ void CPU::decodeProgram() {
 		m_decodedWordCount = 0;
 		return;
 	}
-	m_decodedWordCount = m_program->code.size() / INSTRUCTION_BYTES;
+	std::span<const uint8_t> code = m_program->code();
+	m_decodedWordCount = code.size() / INSTRUCTION_BYTES;
 	const size_t pageCount = (m_decodedWordCount + DECODED_PAGE_WORDS - 1u) >> DECODED_PAGE_SHIFT;
 	m_decodedPages.resize(pageCount);
 	for (const Proto& proto : m_program->protos) {
@@ -1190,7 +1191,7 @@ void CPU::decodeProgram() {
 			uint8_t wideA = 0;
 			uint8_t wideB = 0;
 			uint8_t wideC = 0;
-			uint32_t instr = readInstructionWord(m_program->code, static_cast<int>(wordIndex));
+			uint32_t instr = readInstructionWord(code, static_cast<int>(wordIndex));
 			uint8_t op = static_cast<uint8_t>((instr >> 18) & 0x3f);
 			uint8_t ext = static_cast<uint8_t>(instr >> 24);
 			if (static_cast<OpCode>(op) == OpCode::WIDE) {
@@ -1201,7 +1202,7 @@ void CPU::decodeProgram() {
 				wideA = static_cast<uint8_t>((instr >> 12) & 0x3f);
 				wideB = static_cast<uint8_t>((instr >> 6) & 0x3f);
 				wideC = static_cast<uint8_t>(instr & 0x3f);
-				instr = readInstructionWord(m_program->code, static_cast<int>(wordIndex + 1));
+				instr = readInstructionWord(code, static_cast<int>(wordIndex + 1));
 				op = static_cast<uint8_t>((instr >> 18) & 0x3f);
 				ext = static_cast<uint8_t>(instr >> 24);
 			}

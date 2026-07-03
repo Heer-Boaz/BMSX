@@ -1,7 +1,7 @@
 #pragma once
 
 #include <cstdint>
-#include <vector>
+#include <span>
 
 namespace bmsx {
 
@@ -39,8 +39,8 @@ constexpr int MAX_EXT_BX = (MAX_WIDE << BASE_BX_BITS) | MAX_BASE_BX;
 
 int signExtend(uint32_t value, int bits);
 uint32_t packInstructionWord(uint8_t op, uint8_t a, uint8_t b, uint8_t c, uint8_t ext = 0);
-void writeInstruction(std::vector<uint8_t>& code, int index, uint8_t op, uint8_t a, uint8_t b, uint8_t c, uint8_t ext = 0);
-void writeInstructionWord(std::vector<uint8_t>& code, int index, uint32_t word);
-uint32_t readInstructionWord(const std::vector<uint8_t>& code, int index);
+void writeInstruction(std::span<uint8_t> code, int index, uint8_t op, uint8_t a, uint8_t b, uint8_t c, uint8_t ext = 0);
+void writeInstructionWord(std::span<uint8_t> code, int index, uint32_t word);
+uint32_t readInstructionWord(std::span<const uint8_t> code, int index);
 
 } // namespace bmsx

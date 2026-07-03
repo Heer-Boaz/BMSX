@@ -132,7 +132,9 @@ test('ProgramImage exposes text and rodata as ROM sections', () => {
 	assert.equal(image.sections.text.code.length, INSTRUCTION_BYTES);
 	assert.equal(image.sections.rodata.constPool.length, 2);
 	assert.equal(image.sections.text.protos.length, 1);
-	assert.equal(program.code, image.sections.text.code);
+	assert.equal(program.code.buffer, program.programRom.buffer);
+	assert.equal(program.code.byteOffset, program.programRom.byteOffset);
+	assert.equal(program.code.byteLength, program.programRomTextByteLength);
 	assert.deepEqual(Array.from(program.programRom), Array.from(image.sections.text.code).concat([1, 2, 3, 4]));
 	assert.equal(program.programRomTextByteLength, image.sections.text.code.byteLength);
 	assert.equal(program.protos, image.sections.text.protos);
@@ -1091,6 +1093,7 @@ test('compiled program images resolve hot-resume export relocs through the execu
 	const executable = inflateExecutableProgramImage(image);
 
 	assert.equal(((readInstructionWord(executable.code, reloc.wordIndex) >>> 18) & 0x3f) as OpCode, OpCode.CLOSURE);
+	assert.equal(((readInstructionWord(executable.programRom, reloc.wordIndex) >>> 18) & 0x3f) as OpCode, OpCode.CLOSURE);
 });
 
 test('appended host-eval code preserves the installed program ROM mapping', () => {

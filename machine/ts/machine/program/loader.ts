@@ -140,7 +140,7 @@ export function encodeProgramObjectSections(
 	};
 }
 
-export function buildProgramRomImage(textCode: Uint8Array, rodataBytes: Uint8Array, dataBytes: Uint8Array): Uint8Array {
+export function buildProgramRomImage(textCode: Uint8Array, rodataBytes: Uint8Array, dataBytes: Uint8Array): Uint8Array<ArrayBuffer> {
 	const programRom = new Uint8Array(textCode.byteLength + rodataBytes.byteLength + dataBytes.byteLength);
 	programRom.set(textCode, 0);
 	programRom.set(rodataBytes, textCode.byteLength);
@@ -333,10 +333,12 @@ export function inflateProgram(sections: ProgramObjectSections): Program {
 		const entry = moduleProtos[index];
 		moduleProtoMap.set(entry.path, entry.protoIndex);
 	}
+	const programRom = buildProgramRomImage(sections.text.code, sections.rodata.bytes, sections.data.bytes);
+	const programRomTextByteLength = sections.text.code.byteLength;
 	return {
-		code: sections.text.code,
-		programRom: buildProgramRomImage(sections.text.code, sections.rodata.bytes, sections.data.bytes),
-		programRomTextByteLength: sections.text.code.byteLength,
+		code: programRom.subarray(0, programRomTextByteLength),
+		programRom,
+		programRomTextByteLength,
 		constPool,
 		protos: sections.text.protos,
 		moduleProtos,

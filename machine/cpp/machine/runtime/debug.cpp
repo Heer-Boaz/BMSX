@@ -8,10 +8,10 @@
 namespace bmsx {
 
 void Runtime::logDebugState() const {
-	if (!m_program || m_program->code.empty()) {
+	if (!m_program || m_program->code().empty()) {
 		return;
 	}
-	if (machine.cpu.lastPc < 0 || machine.cpu.lastPc >= static_cast<int>(m_program->code.size())) {
+	if (machine.cpu.lastPc < 0 || machine.cpu.lastPc >= static_cast<int>(m_program->code().size())) {
 		return;
 	}
 	const InstructionDebugInfo instruction = describeInstructionAtPc(*m_program, m_programMetadata, machine.cpu.lastPc);

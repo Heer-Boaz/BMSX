@@ -406,7 +406,7 @@ class ProgramBuilder {
 	private readonly modulePathSet = new Set<string>();
 	private readonly staticModulePaths: string[] = [];
 	private readonly staticModulePathSet: Set<string> = new Set();
-	private readonly baseProgramRom: Uint8Array | null;
+	private readonly baseProgramRom: Uint8Array<ArrayBuffer> | null;
 	private readonly baseProgramRomTextByteLength: number;
 	private readonly canDeclareStaticStorage: boolean;
 
@@ -416,7 +416,7 @@ class ProgramBuilder {
 		optLevel: OptimizationLevel = 0,
 		baseMetadata: ProgramMetadata | null = null,
 		baseCode: Uint8Array | null = null,
-		baseProgramRom: Uint8Array | null = null,
+		baseProgramRom: Uint8Array<ArrayBuffer> | null = null,
 		baseProgramRomTextByteLength = 0,
 		canDeclareStaticStorage = true,
 		baseModuleProtos: ReadonlyArray<ProgramModuleProto> = EMPTY_PROGRAM_MODULE_PROTOS,
@@ -951,11 +951,19 @@ class ProgramBuilder {
 			const entry = this.moduleProtoEntries[index];
 			moduleProtoMap.set(entry.path, entry.protoIndex);
 		}
+		let programCode = fullCode;
+		let programRom = this.baseProgramRom;
+		let programRomTextByteLength = this.baseProgramRomTextByteLength;
+		if (programRom === null) {
+			programRom = buildProgramRomImage(fullCode, this.rodataBytes, this.dataBytes);
+			programRomTextByteLength = fullCode.byteLength;
+			programCode = programRom.subarray(0, programRomTextByteLength);
+		}
 		return {
 			program: {
-				code: fullCode,
-				programRom: this.baseProgramRom === null ? buildProgramRomImage(fullCode, this.rodataBytes, this.dataBytes) : this.baseProgramRom,
-				programRomTextByteLength: this.baseProgramRom === null ? fullCode.byteLength : this.baseProgramRomTextByteLength,
+				code: programCode,
+				programRom,
+				programRomTextByteLength,
 				constPool: this.constPool,
 				protos,
 				moduleProtos: this.moduleProtoEntries,

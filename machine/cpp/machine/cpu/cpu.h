@@ -10,6 +10,7 @@
 #include <memory>
 #include <new>
 #include <optional>
+#include <span>
 #include <stdexcept>
 #include <string>
 #include <string_view>
@@ -567,9 +568,16 @@ struct ProgramModuleExport {
 };
 
 struct Program {
-	std::vector<uint8_t> code;
 	std::vector<uint8_t> programRom;
 	size_t programRomTextByteLength = 0;
+
+	std::span<uint8_t> code() {
+		return std::span<uint8_t>(programRom.data(), programRomTextByteLength);
+	}
+
+	std::span<const uint8_t> code() const {
+		return std::span<const uint8_t>(programRom.data(), programRomTextByteLength);
+	}
 	std::vector<Value> constPool;
 	StringPool stringPool;
 	StringPool* constPoolStringPool = nullptr;

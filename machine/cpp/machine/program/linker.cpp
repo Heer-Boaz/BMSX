@@ -4,6 +4,7 @@
 #include <algorithm>
 #include <cstring>
 #include <iomanip>
+#include <span>
 #include <sstream>
 #include <stdexcept>
 #include <unordered_map>
@@ -41,7 +42,7 @@ bool fitsSignedRaw(int value, int bits) {
 }
 
 void writeBcRelocatedInstruction(
-	std::vector<uint8_t>& code,
+	std::span<uint8_t> code,
 	int wordIndex,
 	uint8_t op,
 	uint8_t aLow,
@@ -265,7 +266,7 @@ ResolvedExportSlot resolveLinkedExportSlot(
 	throw std::runtime_error("[ProgramLinker] Missing module export slot '" + slotName + "' in merged globals.");
 }
 
-void writeResolvedABx(std::vector<uint8_t>& code, int wordIndex, OpCode targetOp, int value) {
+void writeResolvedABx(std::span<uint8_t> code, int wordIndex, OpCode targetOp, int value) {
 	const uint32_t word = readInstructionWord(code, wordIndex);
 	const bool hasWide = wordIndex > 0
 		&& static_cast<OpCode>((readInstructionWord(code, wordIndex - 1) >> 18) & 0x3f) == OpCode::WIDE;
@@ -318,7 +319,7 @@ ResolvedExportProtoTarget resolveExportProtoRelocTarget(
 	return {resolvedSlot.op, resolvedSlot.slot};
 }
 
-void rewriteClosureIndices(std::vector<uint8_t>& code, int protoOffset) {
+void rewriteClosureIndices(std::span<uint8_t> code, int protoOffset) {
 	if (protoOffset == 0) {
 		return;
 	}
@@ -374,7 +375,7 @@ void rewriteClosureIndices(std::vector<uint8_t>& code, int protoOffset) {
 }
 
 void rewriteConstPoolRelocations(
-	std::vector<uint8_t>& code,
+	std::span<uint8_t> code,
 	const std::vector<ProgramConstReloc>& relocs,
 	const std::vector<int>& cartConstRemap
 ) {
@@ -477,7 +478,7 @@ void rewriteConstPoolRelocations(
 }
 
 void rewriteNamedSlotRelocations(
-	std::vector<uint8_t>& code,
+	std::span<uint8_t> code,
 	const std::vector<ProgramConstReloc>& relocs,
 	const std::vector<int>& cartGlobalRemap,
 	const std::vector<int>& cartSystemGlobalRemap
@@ -499,7 +500,7 @@ void rewriteNamedSlotRelocations(
 }
 
 void rewriteSymbolicConstRelocations(
-	std::vector<uint8_t>& code,
+	std::span<uint8_t> code,
 	const std::vector<ProgramConstReloc>& relocs,
 	const std::vector<std::string>& globalNames,
 	const std::vector<std::string>& systemGlobalNames,
@@ -622,7 +623,7 @@ void resolveRuntimeProgramRelocations(
 		}
 		if (symbolic->kind == ProgramSymbolicConstRelocKind::Module) {
 			const ResolvedExportSlot resolvedSlot = resolveLinkedExportSlot(symbolic->symbol, symbols.globalNames, symbols.systemGlobalNames);
-			writeResolvedABx(program.code, reloc.wordIndex, resolvedSlot.op, resolvedSlot.slot);
+			writeResolvedABx(program.code(), reloc.wordIndex, resolvedSlot.op, resolvedSlot.slot);
 			continue;
 		}
 		const ResolvedExportProtoTarget target = resolveExportProtoRelocTarget(
@@ -632,7 +633,7 @@ void resolveRuntimeProgramRelocations(
 			symbols.exportProtoIdBySlot,
 			symbols.protoIds
 		);
-		writeResolvedABx(program.code, reloc.wordIndex, target.op, target.value);
+		writeResolvedABx(program.code(), reloc.wordIndex, target.op, target.value);
 	}
 }
 
@@ -731,7 +732,7 @@ LinkedProgramImage linkProgramImages(
 	const uint32_t cartDataLma = systemDataLma + static_cast<uint32_t>(systemDataByteCount);
 	std::vector<uint8_t> systemCode = systemText.code;
 	std::vector<uint8_t> cartCode = cartText.code;
-	rewriteClosureIndices(cartCode, systemProtoCount);
+	rewriteClosureIndices(std::span<uint8_t>(cartCode), systemProtoCount);
 
 	ProgramObjectSections linkedSections;
 	MergedConstPool merged = mergeConstPools(
@@ -766,7 +767,7 @@ LinkedProgramImage linkProgramImages(
 	const bool cartNeedsNamedSlotRemap = std::any_of(cartConstRelocs.begin(), cartConstRelocs.end(), relocRequiresNamedSlotRemap);
 	if (systemNeedsLinkSymbols) {
 		rewriteSymbolicConstRelocations(
-			systemCode,
+			std::span<uint8_t>(systemCode),
 			systemConstRelocs,
 			systemRuntimeSymbols.globalNames,
 			systemRuntimeSymbols.systemGlobalNames,
@@ -775,20 +776,20 @@ LinkedProgramImage linkProgramImages(
 		);
 	}
 	rewriteConstPoolRelocations(
-		cartCode,
+		std::span<uint8_t>(cartCode),
 		cartConstRelocs,
 		merged.cartRemap
 	);
 	if (cartNeedsNamedSlotRemap || cartNeedsLinkSymbols) {
 		rewriteNamedSlotRelocations(
-			cartCode,
+			std::span<uint8_t>(cartCode),
 			cartConstRelocs,
 			mergedGlobals.cartRemap,
 			mergedSystemGlobals.cartRemap
 		);
 		if (cartNeedsLinkSymbols) {
 			rewriteSymbolicConstRelocations(
-				cartCode,
+				std::span<uint8_t>(cartCode),
 				cartConstRelocs,
 				mergedGlobals.names,
 				mergedSystemGlobals.names,
@@ -812,7 +813,7 @@ LinkedProgramImage linkProgramImages(
 	linkedSections.text.code.assign(static_cast<size_t>(totalBytes), 0);
 	std::copy(systemCode.begin(), systemCode.end(), linkedSections.text.code.begin() + layout.systemBasePc);
 	std::copy(cartCode.begin(), cartCode.end(), linkedSections.text.code.begin() + layout.cartBasePc);
-	writeInstructionWord(linkedSections.text.code, CART_PROGRAM_VECTOR_PC / INSTRUCTION_BYTES, CART_PROGRAM_VECTOR_VALUE);
+	writeInstructionWord(std::span<uint8_t>(linkedSections.text.code), CART_PROGRAM_VECTOR_PC / INSTRUCTION_BYTES, CART_PROGRAM_VECTOR_VALUE);
 
 	ProgramVectorTable cartVectors;
 	cartVectors.resetProtoIndex = cartImage.vectors.resetProtoIndex + systemProtoCount;

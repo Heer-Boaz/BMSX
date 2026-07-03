@@ -347,8 +347,8 @@ export const enum AcceptedInterruptKind {
 }
 
 export type Program = {
-	code: Uint8Array;
-	programRom: Uint8Array;
+	code: Uint8Array<ArrayBuffer>;
+	programRom: Uint8Array<ArrayBuffer>;
 	programRomTextByteLength: number;
 	constPool: Value[];
 	protos: Proto[];

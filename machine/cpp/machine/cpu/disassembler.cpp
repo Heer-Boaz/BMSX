@@ -8,6 +8,7 @@
 #include <cctype>
 #include <cstdint>
 #include <iomanip>
+#include <span>
 #include <sstream>
 #include <string_view>
 
@@ -126,7 +127,7 @@ InstructionOperandDebugInfo rkOperand(const char* label, const Program& program,
 }
 
 DecodedDebugInstruction decodeInstructionFromStart(const Program& program, int pc) {
-	const std::vector<uint8_t>& code = program.code;
+	std::span<const uint8_t> code = program.code();
 	const int wordIndex = pc / INSTRUCTION_BYTES;
 	const uint32_t word = readInstructionWord(code, wordIndex);
 	const uint32_t ext = word >> 24;
@@ -201,17 +202,17 @@ DecodedDebugInstruction decodeInstructionAtPcInternal(const Program& program, in
 	if ((pc % INSTRUCTION_BYTES) != 0) {
 		throw BMSX_RUNTIME_ERROR("[Disassembler] Instruction pc " + std::to_string(pc) + " is not aligned.");
 	}
-	if (pc < 0 || pc >= static_cast<int>(program.code.size())) {
+	if (pc < 0 || pc >= static_cast<int>(program.code().size())) {
 		throw BMSX_RUNTIME_ERROR("[Disassembler] Instruction pc " + std::to_string(pc) + " is out of bounds.");
 	}
 	const int wordIndex = pc / INSTRUCTION_BYTES;
-	const uint32_t word = readInstructionWord(program.code, wordIndex);
+	const uint32_t word = readInstructionWord(program.code(), wordIndex);
 	const auto op = static_cast<OpCode>((word >> 18) & 0x3f);
 	if (op == OpCode::WIDE) {
 		return decodeInstructionFromStart(program, pc);
 	}
 	if (wordIndex > 0) {
-		const uint32_t previous = readInstructionWord(program.code, wordIndex - 1);
+		const uint32_t previous = readInstructionWord(program.code(), wordIndex - 1);
 		const auto previousOp = static_cast<OpCode>((previous >> 18) & 0x3f);
 		if (previousOp == OpCode::WIDE) {
 			return decodeInstructionFromStart(program, pc - INSTRUCTION_BYTES);
@@ -469,7 +470,7 @@ std::string compactWhitespace(std::string_view value) {
 } // namespace
 
 InstructionDebugInfo describeInstructionAtPc(const Program& program, const ProgramMetadata* metadata, int pc) {
-	const int lastPc = std::max(0, static_cast<int>(program.code.size()) - INSTRUCTION_BYTES);
+	const int lastPc = std::max(0, static_cast<int>(program.code().size()) - INSTRUCTION_BYTES);
 	const int pcWidth = hexWidth(lastPc);
 	const DecodedDebugInstruction decoded = decodeInstructionAtPcInternal(program, pc);
 	const int wordIndex = decoded.pc / INSTRUCTION_BYTES;

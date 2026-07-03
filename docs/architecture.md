@@ -379,6 +379,13 @@ container for indexed JS object references. Save-state serializes closure
 upvalue references as object ids at the persistence boundary; it does not expose
 either runtime's closure slot storage shape.
 
+Executable program text is part of the memory-mapped program ROM image. The
+runtime program text view points at the text window in that ROM buffer, so
+runtime relocations patch the executable text that the CPU decodes and the bytes
+that the bus exposes at the program-ROM address range. Host-eval append code is
+the explicit exception: it extends the CPU-visible bytecode stream while
+preserving the already-installed program-ROM mapping for guest memory reads.
+
 System ROM and cart ROM are fixed CPU-visible address windows. The backing
 payload may be shorter than the window or absent; bytes beyond the backing read
 as zero through the bus. The memory owner exposes immutable ROM residency by

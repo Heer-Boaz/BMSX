@@ -406,10 +406,11 @@ BinValue encodeRuntimeSymbols(const ProgramRuntimeSymbols& symbols) {
 
 std::unique_ptr<Program> inflateProgram(const ProgramObjectSections& sections) {
 	auto program = std::make_unique<Program>();
-	program->code = sections.text.code;
-	program->programRom = sections.text.code;
-	program->programRom.insert(program->programRom.end(), sections.rodata.bytes.begin(), sections.rodata.bytes.end());
-	program->programRom.insert(program->programRom.end(), sections.data.bytes.begin(), sections.data.bytes.end());
+	std::vector<uint8_t>& programRom = program->programRom;
+	programRom.reserve(sections.text.code.size() + sections.rodata.bytes.size() + sections.data.bytes.size());
+	programRom.insert(programRom.end(), sections.text.code.begin(), sections.text.code.end());
+	programRom.insert(programRom.end(), sections.rodata.bytes.begin(), sections.rodata.bytes.end());
+	programRom.insert(programRom.end(), sections.data.bytes.begin(), sections.data.bytes.end());
 	program->programRomTextByteLength = sections.text.code.size();
 	program->protos = sections.text.protos;
 	program->moduleProtos = sections.rodata.moduleProtos;

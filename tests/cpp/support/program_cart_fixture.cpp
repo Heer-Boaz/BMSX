@@ -5,6 +5,8 @@
 #include "machine/program/loader.h"
 #include "rompack/format.h"
 
+#include <span>
+
 namespace bmsx::test {
 namespace {
 
@@ -14,7 +16,7 @@ ProgramImage makeMinimalProgramImage() {
 	image.vectors.sectionInitProtoIndex = 0;
 	image.vectors.irqProtoIndex = 0;
 	image.sections.text.code.resize(INSTRUCTION_BYTES);
-	writeInstruction(image.sections.text.code, 0, static_cast<u8>(OpCode::RET), 0, 0, 0);
+	writeInstruction(std::span<u8>(image.sections.text.code), 0, static_cast<u8>(OpCode::RET), 0, 0, 0);
 
 	Proto proto;
 	proto.entryPC = 0;
