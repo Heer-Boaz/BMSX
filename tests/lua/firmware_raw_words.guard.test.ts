@@ -27,6 +27,7 @@ import {
 	PSX_VRAM_STAGING_BYTES,
 	PSX_VRAM_TEXTURE_BYTES,
 } from '../../machine/ts/machine/model_registry';
+import { RPU_QUAD_SURFACE_DESC_COUNT } from '../../scripts/rompacker/texture_atlas_contract';
 
 test('IMGDEC hardware words are raw firmware words, not host-seeded globals', () => {
 	const tsGlobals = readFileSync('machine/ts/machine/firmware/globals.ts', 'utf8');
@@ -72,4 +73,9 @@ test('bootrom handoff waits for VDP submit idle before leaving system firmware',
 	assert.equal(source.includes(`mem[0x${IO_DMA_DST.toString(16).padStart(8, '0')}] = 0x${IO_VDP_FIFO.toString(16).padStart(8, '0')}`), true);
 	assert.equal(source.includes(`mem[0x${IO_DMA_LEN.toString(16).padStart(8, '0')}] = used_bytes`), true);
 	assert.equal(source.includes(`mem[0x${IO_DMA_CTRL.toString(16).padStart(8, '0')}] = 0x00000001`), true);
+});
+
+test('RPU quad firmware descriptor table matches the rompacker texture contract', () => {
+	const source = readFileSync('machine/firmware/system/vdp_rpu_quads.lua', 'utf8');
+	assert.equal(source.includes(`local surface_desc_count<const> = ${RPU_QUAD_SURFACE_DESC_COUNT}`), true);
 });
