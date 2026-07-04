@@ -750,6 +750,10 @@ class ProgramBuilder {
 		return this.modulePathSet.has(path);
 	}
 
+	public hasModuleProto(path: string): boolean {
+		return this.moduleProtoEntrySlotByPath.has(path);
+	}
+
 	public recordModuleProto(path: string, protoIndex: number): void {
 		this.modulePathSet.add(path);
 		const existingSlot = this.moduleProtoEntrySlotByPath.get(path);
@@ -2283,7 +2287,29 @@ class FunctionBuilder {
 		return binding.kind === 'source' && binding.moduleInfo.staticFunctionExportByPathKey.has(binding.exportPathKey);
 	}
 
+	private resolveStaticFunctionExportCallSlot(binding: ModuleBinding): string | undefined {
+		const slotName = this.resolveModuleExportSlot(binding);
+		if (!slotName) {
+			return;
+		}
+		switch (binding.kind) {
+			case 'source':
+				if (binding.moduleInfo.staticFunctionExportByPathKey.has(binding.exportPathKey)) {
+					return slotName;
+				}
+				return;
+			case 'installed':
+				if (!this.program.hasModuleProto(binding.modulePath) && this.program.hasExportProto(slotName)) {
+					return slotName;
+				}
+				return;
+		}
+	}
+
 	private moduleBindingOwnsCompileTimeLocal(binding: ModuleBinding): boolean {
+		if (this.resolveStaticFunctionExportCallSlot(binding)) {
+			return true;
+		}
 		return binding.exportDepth === 0 && (binding.kind === 'installed'
 			|| binding.moduleInfo.external
 			|| binding.moduleInfo.constModule
@@ -2344,7 +2370,7 @@ class FunctionBuilder {
 
 	private resolveStaticFunctionExportBinding(expression: LuaExpression): ModuleBinding | undefined {
 		const binding = this.resolveStaticModuleBinding(expression, true);
-		if (binding && this.isStaticFunctionModuleBinding(binding)) {
+		if (binding && this.resolveStaticFunctionExportCallSlot(binding)) {
 			return binding;
 		}
 	}
@@ -2355,25 +2381,14 @@ class FunctionBuilder {
 			if (binding.kind === 'source' && binding.moduleInfo.external && binding.moduleInfo.constModule === false) {
 				this.markStaticModulePath(binding.modulePath);
 			}
-			if (binding.exportDepth === 0 || this.isStaticFunctionModuleBinding(binding)) {
+			if (binding.exportDepth === 0 || this.resolveStaticFunctionExportCallSlot(binding)) {
 				return binding;
 			}
 		}
 	}
 
-	private emitStaticFunctionExportValue(binding: ModuleBinding, target: number): boolean {
-		switch (binding.kind) {
-			case 'installed':
-				return false;
-			case 'source': {
-				const staticExport = binding.moduleInfo.staticFunctionExportByPathKey.get(binding.exportPathKey);
-				if (staticExport) {
-					this.emitModuleExportCallTargetLoad(staticExport.slotName, target);
-					return true;
-				}
-				return false;
-			}
-		}
+	private failStaticFunctionExportRuntimeValue(symbol: string): never {
+		throw new Error(`[Compiler] Static function export '${symbol}' is a call target, not a Lua runtime value.`);
 	}
 
 	private failConstModuleValueCall(binding: ModuleBinding): never {
@@ -2389,12 +2404,15 @@ class FunctionBuilder {
 
 	private resolveModuleExportCallTargetSlot(expression: LuaExpression): string | undefined {
 		const binding = this.resolveStaticModuleBinding(expression, true);
-		if (binding && (binding.exportDepth !== 0 || this.isStaticFunctionModuleBinding(binding))) {
-			if (binding.kind === 'source' && binding.moduleInfo.constModule) {
-				if (binding.moduleInfo.staticFunctionExportByPathKey.has(binding.exportPathKey)) {
-					return this.resolveModuleExportSlot(binding);
+		if (binding) {
+			const staticSlot = this.resolveStaticFunctionExportCallSlot(binding);
+			if (staticSlot) {
+				return staticSlot;
+			}
+			if (binding.exportDepth !== 0) {
+				if (binding.kind === 'source' && binding.moduleInfo.constModule) {
+					return;
 				}
-			} else {
 				return this.resolveModuleExportSlot(binding);
 			}
 		}
@@ -2441,8 +2459,9 @@ class FunctionBuilder {
 		if (binding && binding.moduleBinding) {
 			const compileTimeModuleRoot = binding.moduleBinding;
 			if (this.moduleBindingOwnsCompileTimeLocal(compileTimeModuleRoot)) {
-				if (this.emitStaticFunctionExportValue(compileTimeModuleRoot, target)) {
-					return;
+				const staticSlot = this.resolveStaticFunctionExportCallSlot(compileTimeModuleRoot);
+				if (staticSlot) {
+					this.failStaticFunctionExportRuntimeValue(staticSlot);
 				}
 				if (this.emitDynamicModuleRootValue(compileTimeModuleRoot, target)) {
 					return;
@@ -2470,8 +2489,11 @@ class FunctionBuilder {
 			this.emitLoadRodataAddress(target, rodataBinding, 0);
 			return;
 		}
-		if (binding && binding.moduleBinding && this.emitStaticFunctionExportValue(binding.moduleBinding, target)) {
-			return;
+		if (binding && binding.moduleBinding) {
+			const staticSlot = this.resolveStaticFunctionExportCallSlot(binding.moduleBinding);
+			if (staticSlot) {
+				this.failStaticFunctionExportRuntimeValue(staticSlot);
+			}
 		}
 		const localReg = this.resolveReferenceLocal(reference);
 		if (localReg !== null) {
@@ -2498,18 +2520,13 @@ class FunctionBuilder {
 		this.emitABx(access.system ? OpCode.GETSYS : OpCode.GETGL, target, access.slot);
 	}
 
-	private emitModuleExportValueLoad(slotName: string, target: number): void {
-		if (this.program.hasExportProto(slotName)) {
-			this.emitModuleExportCallTargetLoad(slotName, target);
-			return;
-		}
-		this.emitModuleSlotRelocLoad(slotName, target);
-	}
-
 	private emitInstalledModuleRootValue(modulePath: string, target: number): void {
 		const rootSlot = this.program.resolveModuleExportSlot(modulePath, '');
 		if (rootSlot) {
-			this.emitModuleExportValueLoad(rootSlot, target);
+			if (!this.program.hasModuleProto(modulePath) && this.program.hasExportProto(rootSlot)) {
+				this.failStaticFunctionExportRuntimeValue(rootSlot);
+			}
+			this.emitModuleSlotRelocLoad(rootSlot, target);
 		} else {
 			this.emitLoadBool(target, true);
 		}
@@ -2524,7 +2541,7 @@ class FunctionBuilder {
 				if (binding.moduleInfo.external && binding.moduleInfo.constModule === false) {
 					const rootSlot = binding.moduleInfo.exportSlotsByPathKey.get('');
 					if (rootSlot) {
-						this.emitModuleExportValueLoad(rootSlot, target);
+						this.emitModuleSlotRelocLoad(rootSlot, target);
 					} else {
 						this.emitLoadBool(target, true);
 					}
@@ -2536,9 +2553,9 @@ class FunctionBuilder {
 	}
 
 	private emitModuleExportCallTargetLoad(slotName: string, target: number): void {
-		// Function exports use one link-time symbol path for both direct calls and
-		// Lua function values. The linker rewrites this relocation to CLOSURE(proto)
-		// for static exports or to the existing global-slot load for runtime exports.
+		// Function exports use a link-time symbol path for call operands. The linker
+		// rewrites this relocation to CLOSURE(proto) for static exports or to the
+		// existing global-slot load for runtime exports.
 		this.emitABx(OpCode.LOADK, target, 0, { kind: 'export_proto', symbol: slotName });
 	}
 
@@ -4176,12 +4193,11 @@ class FunctionBuilder {
 		}
 		const staticFunctionExportBinding = this.resolveStaticFunctionExportBinding(expression as LuaMemberExpression);
 		if (staticFunctionExportBinding) {
-			this.emitStaticFunctionExportValue(staticFunctionExportBinding, target);
-			return;
+			this.failStaticFunctionExportRuntimeValue(`${staticFunctionExportBinding.modulePath}:${staticFunctionExportBinding.exportPathKey}`);
 		}
 		const slotName = this.resolveModuleExportSlotFromExpression(expression as LuaMemberExpression);
 		if (slotName !== undefined) {
-			this.emitModuleExportValueLoad(slotName, target);
+			this.emitModuleSlotRelocLoad(slotName, target);
 			return;
 		}
 		const structAddress = this.resolveStructScalarAddress(expression as LuaMemberExpression);
@@ -4206,12 +4222,11 @@ class FunctionBuilder {
 		}
 		const staticFunctionExportBinding = this.resolveStaticFunctionExportBinding(expression as LuaIndexExpression);
 		if (staticFunctionExportBinding) {
-			this.emitStaticFunctionExportValue(staticFunctionExportBinding, target);
-			return;
+			this.failStaticFunctionExportRuntimeValue(`${staticFunctionExportBinding.modulePath}:${staticFunctionExportBinding.exportPathKey}`);
 		}
 		const slotName = this.resolveModuleExportSlotFromExpression(expression as LuaIndexExpression);
 		if (slotName !== undefined) {
-			this.emitModuleExportValueLoad(slotName, target);
+			this.emitModuleSlotRelocLoad(slotName, target);
 			return;
 		}
 		const structAddress = this.resolveStructScalarAddress(expression as LuaIndexExpression);
@@ -4863,11 +4878,7 @@ class FunctionBuilder {
 				return;
 			case 'source': {
 				if (this.isStaticFunctionModuleBinding(binding)) {
-					this.emitStaticFunctionExportValue(binding, target);
-					if (resultCount > 1) {
-						this.emitLoadNil(target + 1, resultCount - 1);
-					}
-					return;
+					this.failStaticFunctionExportRuntimeValue(`${binding.modulePath}:${binding.exportPathKey}`);
 				}
 				if (binding.moduleInfo.constModule) {
 					this.failCompileTimeModuleRootRuntimeUse(binding.modulePath);
@@ -4875,7 +4886,7 @@ class FunctionBuilder {
 				this.markStaticModulePath(binding.modulePath);
 				const rootSlot = binding.moduleInfo.exportSlotsByPathKey.get('');
 				if (rootSlot) {
-					this.emitModuleExportValueLoad(rootSlot, target);
+					this.emitModuleSlotRelocLoad(rootSlot, target);
 				} else {
 					this.emitLoadBool(target, true);
 				}

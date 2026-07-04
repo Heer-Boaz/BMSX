@@ -9,9 +9,9 @@ import { LuaParser } from '../../machine/ts/lua/syntax/parser';
 import { CPU, RunResult, type ProgramMetadata } from '../../machine/ts/machine/cpu/cpu';
 import { disassembleProgram } from '../../machine/ts/machine/cpu/disassembler';
 import { Memory } from '../../machine/ts/machine/memory/memory';
-import { compileLuaChunkToProgram, encodeCompiledProgramImage, type CompiledProgram } from '../../machine/ts/machine/program/compiler';
+import { appendLuaChunkToProgram, compileLuaChunkToProgram, encodeCompiledProgramImage, type CompiledProgram } from '../../machine/ts/machine/program/compiler';
 import type { ProgramImage } from '../../machine/ts/machine/program/loader';
-import { inflateExecutableProgramImage, linkProgramImages } from '../../machine/ts/machine/program/linker';
+import { inflateExecutableProgramImage, linkProgramImages, resolveRuntimeProgramRelocations } from '../../machine/ts/machine/program/linker';
 import type { OptimizationLevel } from '../../machine/ts/machine/program/optimizer';
 
 const BOOL01_PATH = 'bios/util/bool01';
@@ -219,35 +219,35 @@ return sincos_turn32(0)
 	assert.deepEqual(runColdCompiled(compiled), [0, 65536]);
 });
 
-test('const function modules materialize Lua function values without runtime module tables', () => {
+test('const function modules do not materialize Lua function values', () => {
 	const moduleSource = readFileSync('machine/firmware/bios/util/clamp.lua', 'utf8');
-	const entrySource = `
+	assert.throws(
+		() => compileWithModule(`
 local required = require("${CLAMP_PATH}")
+return required(-0.25, 0, 1)
+`, CLAMP_PATH, moduleSource),
+		/call target, not a Lua runtime value/,
+	);
+	assert.throws(
+		() => compileWithModule(`
 local clamp<const> = require("${CLAMP_PATH}")
 local aliased = clamp
-return required(-0.25, 0, 1), aliased(1.25, 0, 1)
-`;
-	const compiled = compileWithModule(entrySource, CLAMP_PATH, moduleSource);
-	const slotName = 'bios__util__clamp';
-	assert.equal(compiled.moduleProtoMap.has(CLAMP_PATH), false);
-	assert.equal(compiled.constRelocs.some(reloc => reloc.kind === 'export_proto' && reloc.symbol === slotName), true);
-	const disasm = disassembleWithoutBootVectors(compiled);
-	assert.doesNotMatch(disasm, /\bGETGL\b|\bGETFIELD\b/);
-	assert.doesNotMatch(disasm, /\bLOADNIL\b/);
-	assert.deepEqual(runColdCompiled(compiled), [0, 1]);
+return aliased(1.25, 0, 1)
+`, CLAMP_PATH, moduleSource),
+		/call target, not a Lua runtime value/,
+	);
 });
 
-test('static function values survive O3 table materialization', () => {
+test('static function exports do not enter const table materialization', () => {
 	const clampSource = readFileSync('machine/firmware/bios/util/clamp.lua', 'utf8');
-	const entrySource = `
+	assert.throws(
+		() => compileWithModule(`
 local clamp<const> = require("${CLAMP_PATH}")
 local easing<const> = { clamp = clamp }
 return easing.clamp(1.2, 0, 1)
-`;
-	const compiled = compileWithModule(entrySource, CLAMP_PATH, clampSource, 3);
-	const slotName = 'bios__util__clamp';
-	assert.equal(compiled.constRelocs.some(reloc => reloc.kind === 'export_proto' && reloc.symbol === slotName), true);
-	assert.deepEqual(runColdCompiled(compiled), [1]);
+`, CLAMP_PATH, clampSource, 3),
+		/call target, not a Lua runtime value/,
+	);
 });
 
 test('cart const-function calls link to system export protos', () => {
@@ -274,6 +274,38 @@ return rect_overlaps(2, 2, 4, 4, 5, 5, 2, 2)
 		cartCompiled.metadata,
 	);
 	assert.deepEqual(runColdImage(linked.programImage, linked.metadata), [true]);
+});
+
+test('installed const-function modules stay call targets without Lua value materialization', () => {
+	const moduleSource = readFileSync('machine/firmware/bios/util/clamp.lua', 'utf8');
+	const module = { path: CLAMP_PATH, chunk: parseSource(moduleSource, `${CLAMP_PATH}.lua`), source: moduleSource };
+	const systemCompiled = compileLuaChunkToProgram(
+		parseSource('return nil', 'system.lua'),
+		[module],
+		{ entrySource: 'return nil' },
+	);
+	const systemImage = encodeCompiledProgramImage(systemCompiled);
+	const baseProgram = inflateExecutableProgramImage(systemImage);
+	const source = `
+local clamp<const> = require("${CLAMP_PATH}")
+return clamp(12, 0, 10)
+`;
+	const appended = appendLuaChunkToProgram(baseProgram, systemCompiled.metadata, parseSource(source, 'cart.lua'), { entrySource: source });
+	resolveRuntimeProgramRelocations(appended.program, appended.metadata, appended.constRelocs);
+	const cpu = new CPU(new Memory({ systemRom: new Uint8Array(0), cartRom: new Uint8Array(0) }));
+	cpu.setProgram(appended.program, appended.metadata, appended.metadata);
+	cpu.start(appended.entryProtoIndex);
+	assert.equal(cpu.runUntilDepth(0, 100000), RunResult.Halted);
+	assert.deepEqual(Array.from(cpu.lastReturnValues), [10]);
+	const dynamicSource = `
+local clamp<const> = require("${CLAMP_PATH}")
+local dynamic = clamp
+return dynamic(12, 0, 10)
+`;
+	assert.throws(
+		() => appendLuaChunkToProgram(baseProgram, systemCompiled.metadata, parseSource(dynamicSource, 'cart.lua'), { entrySource: dynamicSource }),
+		/call target, not a Lua runtime value/,
+	);
 });
 
 test('dynamic table-return function modules remain runtime modules', () => {

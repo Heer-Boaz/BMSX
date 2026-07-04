@@ -341,11 +341,15 @@ symbols and startup code copies `.data` and zeros `.bss` with ordinary CPU
 memory operations. Runtime and rompacker do not parse sections to initialize
 cart data on behalf of the game.
 
-Const modules are the static symbol ABI. They may export constants, section
-symbols, and function text-symbols without producing a runtime module table,
-module proto, global slot, or runtime `require` call. Dynamic Lua modules keep
-Lua table/function semantics where gameplay deliberately chooses the dynamic
-lane.
+Const modules are the static symbol ABI. They export constants, section symbols,
+and function text-symbols without producing a runtime module table, module proto,
+global slot, or runtime `require` call. Function text-symbols are call targets
+only: const aliases may name them for direct calls, but they are not Lua runtime
+values and cannot be stored in tables, assigned to dynamic locals, or returned as
+gameplay objects. Static calls resolve through `export_proto` symbols; non-call
+value reads of dynamic module exports use ordinary module-slot relocs so the
+dynamic lane keeps Lua table/function semantics where gameplay deliberately
+chooses that lane.
 
 ## Memory, CPU, and scheduler
 
@@ -380,10 +384,13 @@ lane.
 - VBlank is a machine edge. Devices with VBlank behavior expose explicit edge
   methods and latch/commit their own state there.
 
-The static cart ABI is moving toward words, registers, addresses, sections,
-memory, and symbols as the primary representation. `CPU.Value` still exists for
-the dynamic Lua object-world, but it is not the target transport for hot/static
-machine-code ABI.
+The static cart ABI uses words, registers, addresses, sections, memory, and
+symbols as the primary representation. Static storage crosses module boundaries
+as section symbols and typed addresses; static function exports cross those
+boundaries as proto/text symbols; typed memory and numeric opcodes consume the
+register/RK lanes directly as machine data. `CPU.Value` remains the dynamic Lua
+object-world representation, but hot/static machine-code ABI does not use it as
+module-export transport.
 
 Lua tables are VM-owned data structures, not host collection wrappers. Their
 representation follows the usual array-part/hash-part split: integer sequence

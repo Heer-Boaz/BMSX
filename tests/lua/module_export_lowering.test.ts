@@ -150,6 +150,34 @@ test('static module data reads use module slots, not export-proto relocations', 
 	assert.equal(hasModuleValueReloc, true, 'data read must target the module export slot');
 });
 
+test('dynamic module function value reads use module slots, not export-proto relocations', () => {
+	const moduleSource = [
+		'local api = {}',
+		'function api.read() return 7 end',
+		'return api',
+	].join('\n');
+	const compiled = compileWithModule('local api<const> = require("foo")\nlocal read = api.read\nreturn read()', 'foo', moduleSource);
+	assert.equal(compiled.constRelocs.some(reloc => reloc.kind === 'export_proto' && reloc.symbol === 'foo__read'), false, 'function value read must not emit an export-proto relocation');
+	let hasModuleFunctionReloc = false;
+	for (let index = 0; index < compiled.constRelocs.length; index += 1) {
+		const reloc = compiled.constRelocs[index];
+		if (reloc.kind === 'module' && reloc.symbol === 'foo__read') {
+			hasModuleFunctionReloc = true;
+			break;
+		}
+	}
+	assert.equal(hasModuleFunctionReloc, true, 'function value read must target the runtime export slot');
+	const image = encodeCompiledProgramImage(compiled.compiled);
+	const cpu = new CPU(new Memory({ systemRom: new Uint8Array(0), cartRom: new Uint8Array(0) }));
+	cpu.setProgram(inflateExecutableProgramImage(image), image.link.symbols, compiled.compiled.metadata);
+	cpu.start(image.vectors.sectionInitProtoIndex);
+	assert.equal(cpu.runUntilDepth(0, 100000), RunResult.Halted);
+	runStaticModuleInitializers(cpu, compiled.compiled);
+	cpu.start(image.vectors.resetProtoIndex);
+	assert.equal(cpu.runUntilDepth(0, 100000), RunResult.Halted);
+	assert.deepEqual(Array.from(cpu.lastReturnValues), [7]);
+});
+
 // Nested namespaces are runtime tables; flat export slots only represent direct fields.
 test('nested module export namespace uses the table path', () => {
 	const moduleSource = [
