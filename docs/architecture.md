@@ -340,6 +340,10 @@ load image; `.bss` is zeroed RAM storage. BLua declarations create typed storage
 symbols and startup code copies `.data` and zeros `.bss` with ordinary CPU
 memory operations. Runtime and rompacker do not parse sections to initialize
 cart data on behalf of the game.
+Cart library numeric latches that model machine words over time use section
+storage too: AEM keeps request/source/slot words and per-slot active
+source/priority arrays in `.bss`, while Lua tables remain only for actual
+event records and queued play objects.
 
 Const modules are the static symbol ABI. They export constants, section symbols,
 and function text-symbols without producing a runtime module table, module proto,
