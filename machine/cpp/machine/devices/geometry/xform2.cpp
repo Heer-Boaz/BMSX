@@ -17,6 +17,12 @@ GeometryXform2Unit::GeometryXform2Unit(Memory& memory)
 
 uint32_t GeometryXform2Unit::processRecord(GeometryJobState& job) {
 	const uint32_t recordAddr = geometryIndexedAddr(job.src0, job.processed, job.stride0);
+	if (!geometryIndexedSpanFits(job.src0, job.processed, job.stride0, GEO_XFORM2_RECORD_BYTES)) {
+		return GEO_FAULT_BAD_RECORD_ALIGNMENT;
+	}
+	if (!m_memory.isReadableMainMemoryRange(recordAddr, GEO_XFORM2_RECORD_BYTES)) {
+		return GEO_FAULT_SRC_RANGE;
+	}
 	const uint32_t flags = m_memory.readU32(recordAddr + GEO_XFORM2_RECORD_FLAGS_OFFSET);
 	const uint32_t srcIndex = m_memory.readU32(recordAddr + GEO_XFORM2_RECORD_SRC_INDEX_OFFSET);
 	const uint32_t dstIndex = m_memory.readU32(recordAddr + GEO_XFORM2_RECORD_DST_INDEX_OFFSET);
@@ -32,12 +38,29 @@ uint32_t GeometryXform2Unit::processRecord(GeometryJobState& job) {
 	if (vertexCount > GEO_XFORM2_MAX_VERTICES) {
 		return GEO_FAULT_BAD_VERTEX_COUNT;
 	}
+	const uint32_t vertexBytes = vertexCount * GEO_VERTEX2_BYTES;
 	const uint32_t srcAddr = geometryIndexedAddr(job.src1, srcIndex, job.stride1);
+	if (!geometryIndexedSpanFits(job.src1, srcIndex, job.stride1, vertexBytes)
+		|| !m_memory.isReadableMainMemoryRange(srcAddr, vertexBytes)) {
+		return GEO_FAULT_SRC_RANGE;
+	}
 	const uint32_t matrixAddr = geometryIndexedAddr(job.src2, auxIndex, job.stride2);
+	if (!geometryIndexedSpanFits(job.src2, auxIndex, job.stride2, GEO_XFORM2_MATRIX_BYTES)
+		|| !m_memory.isReadableMainMemoryRange(matrixAddr, GEO_XFORM2_MATRIX_BYTES)) {
+		return GEO_FAULT_SRC_RANGE;
+	}
 	const uint32_t dstAddr = geometryIndexedAddr(job.dst0, dstIndex, GEO_VERTEX2_BYTES);
+	if (!geometryIndexedSpanFits(job.dst0, dstIndex, GEO_VERTEX2_BYTES, vertexBytes)
+		|| !m_memory.isRamRange(dstAddr, vertexBytes)) {
+		return GEO_FAULT_DST_RANGE;
+	}
 	uint32_t aabbAddr = 0u;
 	if (dst1Index != GEO_INDEX_NONE) {
 		aabbAddr = geometryIndexedAddr(job.dst1, dst1Index, GEO_XFORM2_AABB_BYTES);
+		if (!geometryIndexedSpanFits(job.dst1, dst1Index, GEO_XFORM2_AABB_BYTES, GEO_XFORM2_AABB_BYTES)
+			|| !m_memory.isRamRange(aabbAddr, GEO_XFORM2_AABB_BYTES)) {
+			return GEO_FAULT_DST_RANGE;
+		}
 	}
 	const int32_t m00 = toSignedWord(m_memory.readU32(matrixAddr + GEO_XFORM2_MATRIX_M00_OFFSET));
 	const int32_t m01 = toSignedWord(m_memory.readU32(matrixAddr + GEO_XFORM2_MATRIX_M01_OFFSET));

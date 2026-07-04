@@ -300,7 +300,7 @@ export class ApuOutputMixer {
 						if (position < loopStart || position >= loopEnd) {
 							position = this.wrapLoopFrame(position, loopStart, loopEnd);
 						}
-					} else if (position >= framesInRecordF) {
+					} else if (position < 0 || position >= framesInRecordF) {
 						ended = true;
 						break;
 					}
@@ -339,7 +339,7 @@ export class ApuOutputMixer {
 						if (position < loopStart || position >= loopEnd) {
 							position = this.wrapLoopFrame(position, loopStart, loopEnd);
 						}
-					} else if (position >= framesInRecordF) {
+					} else if (position < 0 || position >= framesInRecordF) {
 						ended = true;
 						break;
 					}

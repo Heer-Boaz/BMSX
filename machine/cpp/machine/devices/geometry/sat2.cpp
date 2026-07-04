@@ -25,6 +25,12 @@ GeometrySat2Unit::GeometrySat2Unit(Memory& memory)
 
 uint32_t GeometrySat2Unit::processRecord(GeometryJobState& job) {
 	const uint32_t pairAddr = geometryIndexedAddr(job.src0, job.processed, job.stride0);
+	if (!geometryIndexedSpanFits(job.src0, job.processed, job.stride0, GEO_SAT2_PAIR_BYTES)) {
+		return GEO_FAULT_BAD_RECORD_ALIGNMENT;
+	}
+	if (!m_memory.isReadableMainMemoryRange(pairAddr, GEO_SAT2_PAIR_BYTES)) {
+		return GEO_FAULT_SRC_RANGE;
+	}
 	const uint32_t flags = m_memory.readU32(pairAddr + GEO_SAT2_PAIR_FLAGS_OFFSET);
 	const uint32_t shapeAIndex = m_memory.readU32(pairAddr + GEO_SAT2_PAIR_SHAPE_A_INDEX_OFFSET);
 	const uint32_t resultIndex = m_memory.readU32(pairAddr + GEO_SAT2_PAIR_RESULT_INDEX_OFFSET);
@@ -34,8 +40,18 @@ uint32_t GeometrySat2Unit::processRecord(GeometryJobState& job) {
 		return GEO_FAULT_BAD_RECORD_FLAGS;
 	}
 	const uint32_t resultAddr = geometryIndexedAddr(job.dst0, resultIndex, GEO_SAT2_RESULT_BYTES);
+	if (!geometryIndexedSpanFits(job.dst0, resultIndex, GEO_SAT2_RESULT_BYTES, GEO_SAT2_RESULT_BYTES)
+		|| !m_memory.isRamRange(resultAddr, GEO_SAT2_RESULT_BYTES)) {
+		return GEO_FAULT_DST_RANGE;
+	}
 	const uint32_t shapeADescAddr = geometryIndexedAddr(job.src1, shapeAIndex, job.stride1);
 	const uint32_t shapeBDescAddr = geometryIndexedAddr(job.src1, shapeBIndex, job.stride1);
+	if (!geometryIndexedSpanFits(job.src1, shapeAIndex, job.stride1, GEO_SAT2_DESC_BYTES)
+		|| !geometryIndexedSpanFits(job.src1, shapeBIndex, job.stride1, GEO_SAT2_DESC_BYTES)
+		|| !m_memory.isReadableMainMemoryRange(shapeADescAddr, GEO_SAT2_DESC_BYTES)
+		|| !m_memory.isReadableMainMemoryRange(shapeBDescAddr, GEO_SAT2_DESC_BYTES)) {
+		return GEO_FAULT_SRC_RANGE;
+	}
 	const uint32_t shapeAFlags = m_memory.readU32(shapeADescAddr + GEO_SAT2_DESC_FLAGS_OFFSET);
 	const uint32_t shapeAVertexCount = m_memory.readU32(shapeADescAddr + GEO_SAT2_DESC_VERTEX_COUNT_OFFSET);
 	const uint32_t shapeAVertexOffsetBytes = m_memory.readU32(shapeADescAddr + GEO_SAT2_DESC_VERTEX_OFFSET_OFFSET);
@@ -53,12 +69,23 @@ uint32_t GeometrySat2Unit::processRecord(GeometryJobState& job) {
 	if (shapeAVertexCount < 3u || shapeBVertexCount < 3u) {
 		return GEO_FAULT_BAD_VERTEX_COUNT;
 	}
+	if ((shapeAVertexOffsetBytes & GEOMETRY_WORD_ALIGN_MASK) != 0u || (shapeBVertexOffsetBytes & GEOMETRY_WORD_ALIGN_MASK) != 0u) {
+		return GEO_FAULT_BAD_RECORD_ALIGNMENT;
+	}
 	if (shapeAVertexCount > GEO_SAT2_MAX_POLY_VERTICES
 		|| shapeBVertexCount > GEO_SAT2_MAX_POLY_VERTICES) {
 		return GEO_FAULT_BAD_VERTEX_COUNT;
 	}
+	const uint32_t shapeAVertexBytes = shapeAVertexCount * GEO_VERTEX2_BYTES;
+	const uint32_t shapeBVertexBytes = shapeBVertexCount * GEO_VERTEX2_BYTES;
 	const uint32_t shapeAVertexAddr = geometryIndexedAddr(job.src2, shapeAVertexOffsetBytes, 1u);
 	const uint32_t shapeBVertexAddr = geometryIndexedAddr(job.src2, shapeBVertexOffsetBytes, 1u);
+	if (!geometryIndexedSpanFits(job.src2, shapeAVertexOffsetBytes, 1u, shapeAVertexBytes)
+		|| !geometryIndexedSpanFits(job.src2, shapeBVertexOffsetBytes, 1u, shapeBVertexBytes)
+		|| !m_memory.isReadableMainMemoryRange(shapeAVertexAddr, shapeAVertexBytes)
+		|| !m_memory.isReadableMainMemoryRange(shapeBVertexAddr, shapeBVertexBytes)) {
+		return GEO_FAULT_SRC_RANGE;
+	}
 	double centerAX = 0.0;
 	double centerAY = 0.0;
 	uint32_t vertexXAddr = shapeAVertexAddr + GEO_VERTEX2_X_OFFSET;

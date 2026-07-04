@@ -295,7 +295,7 @@ struct ValueHash {
 struct ValueEq {
 	bool operator()(Value lhs, Value rhs) const noexcept {
 		if (valueIsNumber(lhs) && valueIsNumber(rhs)) {
-			return asNumber(lhs) == asNumber(rhs);
+			return lhs == rhs || asNumber(lhs) == asNumber(rhs);
 		}
 		return lhs == rhs;
 	}
@@ -323,7 +323,10 @@ public:
 	const Value* data() const noexcept { return m_data; }
 	const Value* begin() const noexcept { return m_data; }
 	const Value* end() const noexcept { return m_size == 0 ? m_data : m_data + m_size; }
-	const Value& operator[](size_t index) const noexcept { return m_data[index]; }
+	Value operator[](size_t index) const noexcept { return index < m_size ? m_data[index] : valueNil(); }
+	NativeArgsView tailFrom(size_t index) const noexcept {
+		return index < m_size ? NativeArgsView(m_data + index, m_size - index) : NativeArgsView(m_data + m_size, 0);
+	}
 
 private:
 	const Value* m_data = nullptr;
@@ -1061,6 +1064,7 @@ private:
 	const DecodedInstruction& decodedAtWordIndex(int wordIndex) const;
 	void skipNextInstruction(CallFrame& frame);
 	void clearHaltAfterAcceptedInterrupt();
+	void hardHalt();
 	void markRoots(GcHeap& heap);
 
 	Program* m_program = nullptr;
@@ -1068,6 +1072,7 @@ private:
 	std::vector<std::unique_ptr<CallFrame>> m_frames;
 	std::vector<OpenUpvalueSlot> m_openUpvalues;
 	bool m_haltedUntilIrq = false;
+	bool m_hardHalted = false;
 	bool m_maskableInterruptsEnabled = true;
 	bool m_maskableInterruptsRestoreEnabled = true;
 	bool m_nonMaskableInterruptPending = false;

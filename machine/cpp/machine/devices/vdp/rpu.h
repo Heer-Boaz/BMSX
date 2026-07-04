@@ -32,6 +32,7 @@ constexpr u32 VDP_RPU_FEATURE_DEPTH_TEXTURE = 1u << 2u;
 constexpr u32 VDP_RPU_REQUIRED_FEATURES = VDP_RPU_FEATURE_INSTANCED_ARRAYS | VDP_RPU_FEATURE_UINT_INDEX;
 
 constexpr u32 VDP_RPU_PACKET_KIND = 0x18000000u;
+constexpr u32 VDP_RPU_FAULT_SENTINEL = 0xffffffffu;
 constexpr u32 VDP_RPU_OP_EXEC_PASS_LIST = 64u;
 constexpr u32 VDP_RPU_OP_SEAL_FRAME = 65u;
 constexpr u32 VDP_RPU_EXEC_PASS_LIST_WORDS = 2u;
@@ -129,7 +130,9 @@ constexpr u32 VDP_RPU_INSTANCE_MODE_AFFINE2 = 1U;
 constexpr u32 VDP_RPU_INSTANCE_MODE_MAT4 = 2U;
 
 constexpr u32 VDP_FAULT_RPU_BAD_PACKET = 0x0700u;
+constexpr u32 VDP_FAULT_RPU_FETCH_OOB = 0x0701u;
 constexpr u32 VDP_FAULT_RPU_BAD_STREAM_LAYOUT = 0x0702U;
+constexpr u32 VDP_FAULT_RPU_COMMAND_OVERFLOW = 0x0708U;
 constexpr u32 VDP_FAULT_RPU_BAD_STATE = 0x0709U;
 
 struct VdpRpuCommandBuffer {
@@ -297,13 +300,13 @@ public:
 	VdpRpuUnit(Memory& memory, DeviceStatusLatch& fault, std::vector<u8>& vdpVram);
 
 	void reset();
-	void beginFrame(VdpRpuFrameOutput& frame);
+	auto beginFrame(VdpRpuFrameOutput& frame) -> bool;
 	void cancelFrame(VdpRpuFrameOutput& frame);
-	void endFrame(VdpRpuFrameOutput& frame);
+	auto endFrame(VdpRpuFrameOutput& frame) -> bool;
 	[[nodiscard]] auto captureState() const -> VdpRpuSaveState;
 	void restoreState(const VdpRpuSaveState& state);
-	auto consumePacketFromMemory(VdpRpuFrameOutput& frame, u32 headerWord, u32 cursor) -> u32;
-	auto consumePacketFromWords(VdpRpuFrameOutput& frame, const u32* words, u32 headerWord, u32 cursor) -> u32;
+	auto consumePacketFromMemory(VdpRpuFrameOutput& frame, u32 headerWord, u32 cursor, u32 end) -> u32;
+	auto consumePacketFromWords(VdpRpuFrameOutput& frame, const u32* words, u32 headerWord, u32 cursor, u32 wordCount) -> u32;
 	int lastPacketCost = 0;
 	bool lastPacketSealedFrame = false;
 
@@ -313,10 +316,12 @@ private:
 	std::vector<u8>& m_vdpVram;
 	VdpRpuFrameBuildState m_buildState = VDP_RPU_FRAME_IDLE;
 
-	void consumePacketPayloadFromMemory(VdpRpuFrameOutput& frame, u32 op, u32 cursor);
-	void consumePacketPayloadFromWords(VdpRpuFrameOutput& frame, const u32* words, u32 op, u32 cursor);
-	void acceptExecPassList(VdpRpuFrameOutput& frame, u32 opWord, u32 passDescAddr);
-	void acceptSealFrame(VdpRpuFrameOutput& frame);
+	auto decodePacketPayloadWords(u32 headerWord) -> u32;
+	auto consumePacketPayloadFromMemory(VdpRpuFrameOutput& frame, u32 op, u32 cursor, u32 payloadWords) -> bool;
+	auto consumePacketPayloadFromWords(VdpRpuFrameOutput& frame, const u32* words, u32 op, u32 cursor, u32 payloadWords) -> bool;
+	auto acceptExecPassList(VdpRpuFrameOutput& frame, u32 opWord, u32 passDescAddr) -> bool;
+	auto acceptSealFrame(VdpRpuFrameOutput& frame) -> bool;
+	[[nodiscard]] auto checkVramRange(u32 addr, u32 size) -> bool;
 };
 
 auto createVdpRpuFrameOutput(std::vector<u8>& vdpVram, std::vector<u32>& vdpVramPageRevisions) -> std::unique_ptr<VdpRpuFrameOutput>;

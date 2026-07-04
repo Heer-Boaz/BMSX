@@ -200,9 +200,7 @@ void GeometryController::start(int64_t nowCycles, uint32_t command) {
 	job.stride2 = m_memory.readIoU32(IO_GEO_STRIDE2);
 	switch (job.cmd) {
 		case IO_CMD_GEO_XFORM2_BATCH:
-			break;
 		case IO_CMD_GEO_SAT2_BATCH:
-			break;
 		case IO_CMD_GEO_OVERLAP2D_PASS:
 			break;
 		default:

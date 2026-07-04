@@ -259,7 +259,7 @@ void ApuOutputMixer::renderSamples(i16* output, size_t frameCount, i32 outputSam
 						}
 						if (hasLoop) {
 							wrapAudioPosition(position, loopStart, loopEnd, loopLen);
-						} else if (position >= framesInRecordF) {
+						} else if (position < 0.0 || position >= framesInRecordF) {
 							ended = true;
 							break;
 						}
@@ -283,7 +283,7 @@ void ApuOutputMixer::renderSamples(i16* output, size_t frameCount, i32 outputSam
 						}
 					if (hasLoop) {
 						wrapAudioPosition(position, loopStart, loopEnd, loopLen);
-					} else if (position >= framesInRecordF) {
+					} else if (position < 0.0 || position >= framesInRecordF) {
 						ended = true;
 						break;
 					}
@@ -424,7 +424,7 @@ void ApuOutputMixer::renderSamples(i16* output, size_t frameCount, i32 outputSam
 									ended = true;
 									break;
 								}
-							if (position >= framesInRecordF) {
+							if (position < 0.0 || position >= framesInRecordF) {
 								ended = true;
 								break;
 							}
@@ -477,7 +477,7 @@ void ApuOutputMixer::renderSamples(i16* output, size_t frameCount, i32 outputSam
 									ended = true;
 									break;
 								}
-							if (position >= framesInRecordF) {
+							if (position < 0.0 || position >= framesInRecordF) {
 								ended = true;
 								break;
 							}

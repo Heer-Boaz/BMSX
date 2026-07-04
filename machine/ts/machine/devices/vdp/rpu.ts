@@ -69,6 +69,7 @@ export const VDP_RPU_FEATURE_DEPTH_TEXTURE = 1 << 2;
 export const VDP_RPU_REQUIRED_FEATURES = VDP_RPU_FEATURE_INSTANCED_ARRAYS | VDP_RPU_FEATURE_UINT_INDEX;
 
 export const VDP_RPU_PACKET_KIND = 0x18000000;
+export const VDP_RPU_FAULT_SENTINEL = 0xffffffff;
 
 export const VDP_RPU_OP_EXEC_PASS_LIST = 64;
 export const VDP_RPU_OP_SEAL_FRAME     = 65;
@@ -185,7 +186,9 @@ export const VDP_RPU_INSTANCE_MODE_AFFINE2 = 1;
 export const VDP_RPU_INSTANCE_MODE_MAT4 = 2;
 
 export const VDP_FAULT_RPU_BAD_PACKET        = 0x0700;
+export const VDP_FAULT_RPU_FETCH_OOB         = 0x0701;
 export const VDP_FAULT_RPU_BAD_STREAM_LAYOUT = 0x0702;
+export const VDP_FAULT_RPU_COMMAND_OVERFLOW  = 0x0708;
 export const VDP_FAULT_RPU_BAD_STATE         = 0x0709;
 
 export const VDP_RPU_FRAME_IDLE = 0;
@@ -631,23 +634,35 @@ export class VdpRpuUnit {
 		this.buildState = VDP_RPU_FRAME_IDLE;
 	}
 
-	public beginFrame(frame: VdpRpuFrameOutput): void {
+	public beginFrame(frame: VdpRpuFrameOutput): boolean {
 		this.lastPacketCost = 0;
 		this.lastPacketSealedFrame = false;
+		if (this.buildState !== VDP_RPU_FRAME_IDLE) {
+			this.fault.raise(VDP_FAULT_RPU_BAD_STATE, this.buildState);
+			return false;
+		}
 		resetVdpRpuFrameOutput(frame);
 		this.buildState = VDP_RPU_FRAME_OPEN;
+		return true;
 	}
 
 	public cancelFrame(frame: VdpRpuFrameOutput): void {
-		this.beginFrame(frame);
+		this.lastPacketCost = 0;
+		this.lastPacketSealedFrame = false;
+		resetVdpRpuFrameOutput(frame);
 		this.buildState = VDP_RPU_FRAME_IDLE;
 	}
 
-	public endFrame(frame: VdpRpuFrameOutput): void {
+	public endFrame(frame: VdpRpuFrameOutput): boolean {
 		this.lastPacketCost = 0;
 		this.lastPacketSealedFrame = false;
 		void frame;
+		if (this.buildState !== VDP_RPU_FRAME_OPEN) {
+			this.fault.raise(VDP_FAULT_RPU_BAD_STATE, this.buildState);
+			return false;
+		}
 		this.buildState = VDP_RPU_FRAME_IDLE;
+		return true;
 	}
 
 	public captureState(): VdpRpuSaveState {
@@ -660,52 +675,87 @@ export class VdpRpuUnit {
 		this.buildState = state.buildState;
 	}
 
-	public consumePacketFromMemory(frame: VdpRpuFrameOutput, headerWord: number, cursor: number): number {
+	private decodePacketPayloadWords(headerWord: number): number {
 		this.lastPacketCost = 0;
 		this.lastPacketSealedFrame = false;
+		if ((headerWord & 0x0000ffff) !== 0) {
+			this.fault.raise(VDP_FAULT_RPU_BAD_PACKET, headerWord);
+			return VDP_RPU_FAULT_SENTINEL;
+		}
 		const payloadWords = (headerWord >>> 16) & 0xff;
+		if (payloadWords === 0) {
+			this.fault.raise(VDP_FAULT_RPU_BAD_PACKET, headerWord);
+			return VDP_RPU_FAULT_SENTINEL;
+		}
+		return payloadWords;
+	}
+
+	public consumePacketFromMemory(frame: VdpRpuFrameOutput, headerWord: number, cursor: number, end: number): number {
+		const payloadWords = this.decodePacketPayloadWords(headerWord);
+		if (payloadWords === VDP_RPU_FAULT_SENTINEL) {
+			return VDP_RPU_FAULT_SENTINEL;
+		}
 		const payloadEnd = cursor + payloadWords * IO_WORD_SIZE;
+		if (payloadEnd > end) {
+			this.fault.raise(VDP_FAULT_RPU_BAD_PACKET, headerWord);
+			return VDP_RPU_FAULT_SENTINEL;
+		}
 		const op = this.memory.readU32(cursor);
-		this.consumePacketPayloadFromMemory(frame, op, cursor);
-		return payloadEnd;
+		return this.consumePacketPayloadFromMemory(frame, op, cursor, payloadWords) ? payloadEnd : VDP_RPU_FAULT_SENTINEL;
 	}
 
-	public consumePacketFromWords(frame: VdpRpuFrameOutput, words: Uint32Array, headerWord: number, cursor: number): number {
-		this.lastPacketCost = 0;
-		this.lastPacketSealedFrame = false;
-		const payloadWords = (headerWord >>> 16) & 0xff;
+	public consumePacketFromWords(frame: VdpRpuFrameOutput, words: Uint32Array, headerWord: number, cursor: number, wordCount: number): number {
+		const payloadWords = this.decodePacketPayloadWords(headerWord);
+		if (payloadWords === VDP_RPU_FAULT_SENTINEL) {
+			return VDP_RPU_FAULT_SENTINEL;
+		}
+		if (cursor + payloadWords > wordCount) {
+			this.fault.raise(VDP_FAULT_RPU_BAD_PACKET, headerWord);
+			return VDP_RPU_FAULT_SENTINEL;
+		}
 		const op = words[cursor];
-		this.consumePacketPayloadFromWords(frame, words, op, cursor);
-		return cursor + payloadWords;
+		return this.consumePacketPayloadFromWords(frame, words, op, cursor, payloadWords) ? cursor + payloadWords : VDP_RPU_FAULT_SENTINEL;
 	}
 
-	private consumePacketPayloadFromMemory(frame: VdpRpuFrameOutput, op: number, cursor: number): void {
+	private consumePacketPayloadFromMemory(frame: VdpRpuFrameOutput, op: number, cursor: number, payloadWords: number): boolean {
+		if (this.buildState === VDP_RPU_FRAME_IDLE) {
+			this.fault.raise(VDP_FAULT_RPU_BAD_STATE, op);
+			return false;
+		}
 		switch (op & 0xff) {
 			case VDP_RPU_OP_EXEC_PASS_LIST:
-				this.acceptExecPassList(frame, op, this.memory.readU32(cursor + IO_WORD_SIZE));
-				return;
+				return payloadWords === VDP_RPU_EXEC_PASS_LIST_WORDS
+					&& this.acceptExecPassList(frame, op, this.memory.readU32(cursor + IO_WORD_SIZE));
 			case VDP_RPU_OP_SEAL_FRAME:
-				this.acceptSealFrame(frame);
-				return;
+				return payloadWords === VDP_RPU_SEAL_FRAME_WORDS && this.acceptSealFrame(frame);
 			default:
 				this.fault.raise(VDP_FAULT_RPU_BAD_PACKET, op);
+				return false;
 		}
 	}
 
-	private consumePacketPayloadFromWords(frame: VdpRpuFrameOutput, words: Uint32Array, op: number, cursor: number): void {
+	private consumePacketPayloadFromWords(frame: VdpRpuFrameOutput, words: Uint32Array, op: number, cursor: number, payloadWords: number): boolean {
+		if (this.buildState === VDP_RPU_FRAME_IDLE) {
+			this.fault.raise(VDP_FAULT_RPU_BAD_STATE, op);
+			return false;
+		}
 		switch (op & 0xff) {
 			case VDP_RPU_OP_EXEC_PASS_LIST:
-				this.acceptExecPassList(frame, op, words[cursor + 1]);
-				return;
+				return payloadWords === VDP_RPU_EXEC_PASS_LIST_WORDS
+					&& this.acceptExecPassList(frame, op, words[cursor + 1]);
 			case VDP_RPU_OP_SEAL_FRAME:
-				this.acceptSealFrame(frame);
-				return;
+				return payloadWords === VDP_RPU_SEAL_FRAME_WORDS && this.acceptSealFrame(frame);
 			default:
 				this.fault.raise(VDP_FAULT_RPU_BAD_PACKET, op);
+				return false;
 		}
 	}
 
-	private acceptExecPassList(frame: VdpRpuFrameOutput, opWord: number, passDescAddr: number): void {
+	private acceptExecPassList(frame: VdpRpuFrameOutput, opWord: number, passDescAddr: number): boolean {
+		if (this.buildState !== VDP_RPU_FRAME_OPEN) {
+			this.fault.raise(VDP_FAULT_RPU_BAD_STATE, opWord);
+			return false;
+		}
 		const passCount = (opWord >>> 8) & 0xffff;
 		const cmd = frame.commands;
 		const vram = this.vdpVram;
@@ -713,6 +763,13 @@ export class VdpRpuUnit {
 
 		for (let p = 0; p < passCount; p += 1) {
 			const pb = (passDescAddr + p * RPU_PASS_DESC_SIZE) >>> 0;
+			if (!this.checkVramRange(pb, RPU_PASS_DESC_SIZE)) {
+				return false;
+			}
+			if (cmd.passCount >= VDP_RPU_PASS_CAPACITY) {
+				this.fault.raise(VDP_FAULT_RPU_COMMAND_OVERFLOW, cmd.passCount);
+				return false;
+			}
 			const pi = cmd.passCount++;
 			cost += VDP_RPU_PASS_COST;
 			cmd.passColorSurfaceDescAddr[pi] = readRpuDescU32(vram, pb + RPU_PASS_DESC_COLOR_SURFACE_DESC_ADDR_OFFSET);
@@ -729,6 +786,15 @@ export class VdpRpuUnit {
 
 			for (let d = 0; d < drawCount; d += 1) {
 				const db = (drawDescsAddr + d * RPU_DRAW_DESC_SIZE) >>> 0;
+				if (!this.checkVramRange(db, RPU_DRAW_DESC_SIZE)) {
+					cmd.passDrawCount[pi] = d;
+					return false;
+				}
+				if (cmd.drawCount >= VDP_RPU_DRAW_CAPACITY) {
+					cmd.passDrawCount[pi] = d;
+					this.fault.raise(VDP_FAULT_RPU_COMMAND_OVERFLOW, cmd.drawCount);
+					return false;
+				}
 				const di = cmd.drawCount++;
 				cmd.drawShaderVariant[di] = readRpuDescU16(vram, db + RPU_DRAW_DESC_SHADER_VARIANT_OFFSET);
 				cmd.drawPrimitive[di] = vram[db + RPU_DRAW_DESC_PRIMITIVE_OFFSET]!;
@@ -739,7 +805,8 @@ export class VdpRpuUnit {
 				cmd.drawIndexCount[di] = readRpuDescU32(vram, db + RPU_DRAW_DESC_INDEX_COUNT_OFFSET);
 				cmd.drawIndexType[di] = vram[db + RPU_DRAW_DESC_INDEX_TYPE_OFFSET]!;
 				cmd.drawFirstStreamBinding[di] = cmd.streamBindingCount;
-				cmd.drawFirstConstantBinding[di] = cmd.constantBindingCount;
+				const firstConstantBinding = cmd.constantBindingCount;
+				cmd.drawFirstConstantBinding[di] = firstConstantBinding;
 				cmd.drawFirstTextureBinding[di] = cmd.textureBindingCount;
 				cost += rpuDrawCost(cmd.drawVertexCount[di], cmd.drawInstanceCount[di], cmd.drawIndexCount[di]);
 
@@ -749,9 +816,23 @@ export class VdpRpuUnit {
 				const streamDescsAddr = readRpuDescU32(vram, db + RPU_DRAW_DESC_STREAM_DESCS_ADDR_OFFSET);
 				const constantDescsAddr = readRpuDescU32(vram, db + RPU_DRAW_DESC_CONSTANT_DESCS_ADDR_OFFSET);
 				const textureDescsAddr = readRpuDescU32(vram, db + RPU_DRAW_DESC_TEXTURE_DESCS_ADDR_OFFSET);
+				const acceptedDrawCount = d + 1;
 
 				for (let s = 0; s < streamCount; s += 1) {
 					const sb = (streamDescsAddr + s * RPU_STREAM_DESC_SIZE) >>> 0;
+					if (!this.checkVramRange(sb, RPU_STREAM_DESC_SIZE)) {
+						cmd.drawStreamBindingCount[di] = s;
+						cmd.drawConstantBindingCount[di] = 0;
+						cmd.drawTextureBindingCount[di] = 0;
+						cmd.passDrawCount[pi] = acceptedDrawCount;
+						return false;
+					}
+					if (cmd.streamBindingCount >= VDP_RPU_STREAM_BINDING_CAPACITY) {
+						cmd.drawStreamBindingCount[di] = s;
+						cmd.passDrawCount[pi] = acceptedDrawCount;
+						this.fault.raise(VDP_FAULT_RPU_COMMAND_OVERFLOW, cmd.streamBindingCount);
+						return false;
+					}
 					const si = cmd.streamBindingCount++;
 					cmd.streamVramAddr[si] = readRpuDescU32(vram, sb + RPU_STREAM_DESC_VRAM_ADDR_OFFSET);
 					cmd.streamByteLength[si] = readRpuDescU32(vram, sb + RPU_STREAM_DESC_BYTE_LENGTH_OFFSET);
@@ -764,7 +845,20 @@ export class VdpRpuUnit {
 
 				for (let c = 0; c < constantCount; c += 1) {
 					const cb = (constantDescsAddr + c * RPU_CONSTANT_DESC_SIZE) >>> 0;
-					const ci = cmd.constantBindingCount++;
+					if (!this.checkVramRange(cb, RPU_CONSTANT_DESC_SIZE)) {
+						cmd.drawConstantBindingCount[di] = c;
+						cmd.drawTextureBindingCount[di] = 0;
+						cmd.passDrawCount[pi] = acceptedDrawCount;
+						return false;
+					}
+					const ci = cmd.constantBindingCount;
+					if (ci >= VDP_RPU_CONSTANT_BINDING_CAPACITY) {
+						cmd.drawConstantBindingCount[di] = c;
+						cmd.passDrawCount[pi] = acceptedDrawCount;
+						this.fault.raise(VDP_FAULT_RPU_COMMAND_OVERFLOW, ci);
+						return false;
+					}
+					cmd.constantBindingCount = ci + 1;
 					cmd.constantBindingSlot[ci] = vram[cb + RPU_CONSTANT_DESC_SLOT_OFFSET]!;
 					cmd.constantVramAddr[ci] = readRpuDescU32(vram, cb + RPU_CONSTANT_DESC_VRAM_ADDR_OFFSET);
 					cmd.constantByteLength[ci] = readRpuDescU32(vram, cb + RPU_CONSTANT_DESC_BYTE_LENGTH_OFFSET);
@@ -774,6 +868,17 @@ export class VdpRpuUnit {
 
 				for (let t = 0; t < textureCount; t += 1) {
 					const tb = (textureDescsAddr + t * RPU_TEXTURE_DESC_SIZE) >>> 0;
+					if (!this.checkVramRange(tb, RPU_TEXTURE_DESC_SIZE)) {
+						cmd.drawTextureBindingCount[di] = t;
+						cmd.passDrawCount[pi] = acceptedDrawCount;
+						return false;
+					}
+					if (cmd.textureBindingCount >= VDP_RPU_TEXTURE_BINDING_CAPACITY) {
+						cmd.drawTextureBindingCount[di] = t;
+						cmd.passDrawCount[pi] = acceptedDrawCount;
+						this.fault.raise(VDP_FAULT_RPU_COMMAND_OVERFLOW, cmd.textureBindingCount);
+						return false;
+					}
 					const ti = cmd.textureBindingCount++;
 					cmd.textureSlot[ti] = vram[tb + RPU_TEXTURE_DESC_SLOT_OFFSET]!;
 					cmd.textureSurfaceDescAddr[ti] = readRpuDescU32(vram, tb + RPU_TEXTURE_DESC_SURFACE_DESC_ADDR_OFFSET);
@@ -785,13 +890,27 @@ export class VdpRpuUnit {
 		}
 
 		this.lastPacketCost = cost;
+		return true;
 	}
 
-	private acceptSealFrame(frame: VdpRpuFrameOutput): void {
+	private acceptSealFrame(frame: VdpRpuFrameOutput): boolean {
+		if (this.buildState !== VDP_RPU_FRAME_OPEN) {
+			this.fault.raise(VDP_FAULT_RPU_BAD_STATE, VDP_RPU_OP_SEAL_FRAME);
+			return false;
+		}
 		void frame;
 		this.buildState = VDP_RPU_FRAME_IDLE;
 		this.lastPacketSealedFrame = true;
 		this.lastPacketCost = VDP_RPU_PACKET_COST;
+		return true;
+	}
+
+	private checkVramRange(addr: number, size: number): boolean {
+		if (addr >= this.vdpVram.byteLength || size > this.vdpVram.byteLength - addr) {
+			this.fault.raise(VDP_FAULT_RPU_FETCH_OOB, addr);
+			return false;
+		}
+		return true;
 	}
 }
 

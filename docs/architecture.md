@@ -355,7 +355,7 @@ lane.
 - Reserved opcodes, malformed standalone `WIDE` prefix words, and branch skips
   past decoded text do not become host exceptions. The CPU latches a hard-halt
   state, stops accepting IRQs, and stays stopped until a new program/reset path
-  starts it again; save-state preserves that latch.
+  starts it again.
 - Typed memory opcodes consume the register/RK lane directly as machine data;
   producers own the numeric address/value representation before the CPU reaches
   RAM, ROM, VRAM, or MMIO byte/halfword/float datapaths.

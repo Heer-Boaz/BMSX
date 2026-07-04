@@ -65,7 +65,7 @@ import {
 } from './xf';
 import { createVdpRpuFrameOutput, VDP_RPU_PACKET_KIND, VdpRpuUnit } from './rpu';
 import { VdpVoutUnit } from './vout';
-import { vdpUnitPacketPayloadWords } from './packet';
+import { vdpUnitPacketHasFlags, vdpUnitPacketPayloadWords } from './packet';
 import { packLowHigh16, packedLow16 } from '../../common/word';
 import {
 	getMachineVdpModeProfile,
@@ -142,6 +142,7 @@ export const VDP_DEVICE_STATUS_REGISTERS: DeviceStatusRegisters = {
 	noneCode: VDP_FAULT_NONE,
 };
 export const VDP_SERVICE_BATCH_WORK_UNITS = 128;
+export const VDP_REPLAY_PACKET_FAULT = 0xffffffff;
 
 export class VDP implements VramWriteSink {
 	private readonly vram: VdpVramUnit;
@@ -193,7 +194,7 @@ export class VDP implements VramWriteSink {
 		};
 		this.activeFrame = allocateSubmittedFrameSlot(this.vram.rpuVram, this.vram.rpuVramPageRevisions);
 		this.pendingFrame = allocateSubmittedFrameSlot(this.vram.rpuVram, this.vram.rpuVramPageRevisions);
-		this.unitRegisterPort = new VdpUnitRegisterPort(this.xf, this.lpu, this.mfu, this.jtu);
+		this.unitRegisterPort = new VdpUnitRegisterPort(this.fault, this.xf, this.lpu, this.mfu, this.jtu);
 		this.memory.setVramWriter(this);
 		this.memory.mapIoRead(IO_VDP_RD_STATUS, this.readVdpStatusThunk.bind(this, this));
 		this.memory.mapIoRead(IO_VDP_RD_DATA, this.readVdpDataThunk.bind(this, this));
@@ -262,10 +263,10 @@ export class VDP implements VramWriteSink {
 	}
 
 	private writeVdpRegister(index: number, value: number): void {
-		const slot = index % VDP_REGISTER_COUNT;
+		const register = index % VDP_REGISTER_COUNT;
 		const word = value >>> 0;
-		this.vdpRegisters[slot] = word;
-		this.memory.writeIoValue(IO_VDP_REG0 + slot * IO_WORD_SIZE, word);
+		this.vdpRegisters[register] = word;
+		this.memory.writeIoValue(IO_VDP_REG0 + register * IO_WORD_SIZE, word);
 	}
 
 	private onVdpRegisterWrite(addr: number): void {
@@ -391,7 +392,9 @@ export class VDP implements VramWriteSink {
 		}
 		let cursor = baseAddr;
 		const end = baseAddr + byteLength;
-		this.beginSubmittedFrame(VDP_DEX_FRAME_STREAM_OPEN);
+		if (!this.beginSubmittedFrame(VDP_DEX_FRAME_STREAM_OPEN)) {
+			return;
+		}
 		let ended = false;
 		while (cursor < end) {
 			const word = this.memory.readU32(cursor) >>> 0;
@@ -405,14 +408,20 @@ export class VDP implements VramWriteSink {
 				ended = true;
 				break;
 			}
-			cursor = this.consumeReplayPacketFromMemory(word, cursor);
+			cursor = this.consumeReplayPacketFromMemory(word, cursor, end);
+			if (cursor === VDP_REPLAY_PACKET_FAULT) {
+				this.cancelSubmittedFrame();
+				return;
+			}
 		}
 		if (!ended) {
 			this.fault.raise(VDP_FAULT_STREAM_BAD_PACKET, byteLength);
 			this.cancelSubmittedFrame();
 			return;
 		}
-		this.sealSubmittedFrame();
+		if (!this.sealSubmittedFrame()) {
+			this.cancelSubmittedFrame();
+		}
 		this.refreshSubmitBusyStatus();
 	}
 
@@ -423,7 +432,9 @@ export class VDP implements VramWriteSink {
 			return;
 		}
 		let cursor = 0;
-		this.beginSubmittedFrame(VDP_DEX_FRAME_STREAM_OPEN);
+		if (!this.beginSubmittedFrame(VDP_DEX_FRAME_STREAM_OPEN)) {
+			return;
+		}
 		let ended = false;
 		while (cursor < wordCount) {
 			const word = words[cursor] >>> 0;
@@ -437,14 +448,20 @@ export class VDP implements VramWriteSink {
 				ended = true;
 				break;
 			}
-			cursor = this.consumeReplayPacketFromWords(words, word, cursor);
+			cursor = this.consumeReplayPacketFromWords(words, word, cursor, wordCount);
+			if (cursor === VDP_REPLAY_PACKET_FAULT) {
+				this.cancelSubmittedFrame();
+				return;
+			}
 		}
 		if (!ended) {
 			this.fault.raise(VDP_FAULT_STREAM_BAD_PACKET, wordCount);
 			this.cancelSubmittedFrame();
 			return;
 		}
-		this.sealSubmittedFrame();
+		if (!this.sealSubmittedFrame()) {
+			this.cancelSubmittedFrame();
+		}
 		this.refreshSubmitBusyStatus();
 	}
 
@@ -461,13 +478,16 @@ export class VDP implements VramWriteSink {
 		this.resetIngressState();
 	}
 
-	private consumeReplayPacketFromMemory(word: number, cursor: number): number {
+	private consumeReplayPacketFromMemory(word: number, cursor: number, end: number): number {
 		const kind = word & VDP_PKT_KIND_MASK;
 		switch (kind) {
 			case VDP_PKT_CMD:
-				this.consumeReplayCommandPacket(word);
-				return cursor;
+				return this.consumeReplayCommandPacket(word) ? cursor : VDP_REPLAY_PACKET_FAULT;
 			case VDP_PKT_REG1: {
+				if (cursor + IO_WORD_SIZE > end) {
+					this.fault.raise(VDP_FAULT_STREAM_BAD_PACKET, word);
+					return VDP_REPLAY_PACKET_FAULT;
+				}
 				this.writeVdpRegister(packedLow16(word), this.memory.readU32(cursor));
 				return cursor + IO_WORD_SIZE;
 			}
@@ -475,48 +495,81 @@ export class VDP implements VramWriteSink {
 				const packet = this.regnPacketScratch;
 				this.decodeRegnPacket(word, packet);
 				const byteCount = packet.count * IO_WORD_SIZE;
+				const payloadEnd = cursor + byteCount;
+				if (payloadEnd > end) {
+					this.fault.raise(VDP_FAULT_STREAM_BAD_PACKET, word);
+					return VDP_REPLAY_PACKET_FAULT;
+				}
 				for (let offset = 0; offset < packet.count; offset += 1) {
 					this.writeVdpRegister(packet.firstRegister + offset, this.memory.readU32(cursor + offset * IO_WORD_SIZE));
 				}
-				return cursor + byteCount;
+				return payloadEnd;
 			}
 			case VDP_XF_PACKET_KIND:
 			case VDP_LPU_PACKET_KIND:
 			case VDP_MFU_PACKET_KIND:
 			case VDP_JTU_PACKET_KIND:
-				return this.consumeUnitRegisterPacketFromMemory(word, cursor);
+				return this.consumeUnitRegisterPacketFromMemory(word, cursor, end);
 			case VDP_RPU_PACKET_KIND: {
-				const nextCursor = this.rpu.consumePacketFromMemory(this.buildFrame.rpu, word, cursor);
-				this.buildFrame.cost += this.rpu.lastPacketCost;
+				const nextCursor = this.rpu.consumePacketFromMemory(this.buildFrame.rpu, word, cursor, end);
+				if (nextCursor !== VDP_REPLAY_PACKET_FAULT) {
+					this.buildFrame.cost += this.rpu.lastPacketCost;
+				}
 				return nextCursor;
 			}
 		}
 		return cursor;
 	}
 
-	private consumeUnitRegisterPacketFromMemory(word: number, cursor: number): number {
+	private consumeUnitRegisterPacketFromMemory(word: number, cursor: number, end: number): number {
+		if (vdpUnitPacketHasFlags(word)) {
+			this.fault.raise(VDP_FAULT_STREAM_BAD_PACKET, word);
+			return VDP_REPLAY_PACKET_FAULT;
+		}
 		const payloadWords = vdpUnitPacketPayloadWords(word);
+		if (payloadWords < 2) {
+			this.fault.raise(VDP_FAULT_STREAM_BAD_PACKET, word);
+			return VDP_REPLAY_PACKET_FAULT;
+		}
+		const payloadEnd = cursor + payloadWords * IO_WORD_SIZE;
+		if (payloadEnd > end) {
+			this.fault.raise(VDP_FAULT_STREAM_BAD_PACKET, word);
+			return VDP_REPLAY_PACKET_FAULT;
+		}
 		const packetKind = word & VDP_PKT_KIND_MASK;
 		const firstRegister = this.memory.readU32(cursor);
-		for (let payloadIndex = 1; payloadIndex < payloadWords; payloadIndex += 1) {
-			this.unitRegisterPort.writeWord(packetKind, firstRegister + payloadIndex - 1, this.memory.readU32(cursor + payloadIndex * IO_WORD_SIZE));
+		const registerCount = payloadWords - 1;
+		if (!this.unitRegisterPort.acceptRange(packetKind, firstRegister, registerCount)) {
+			return VDP_REPLAY_PACKET_FAULT;
 		}
-		return cursor + payloadWords * IO_WORD_SIZE;
+		for (let offset = 0; offset < registerCount; offset += 1) {
+			if (!this.unitRegisterPort.writeWord(packetKind, firstRegister + offset, this.memory.readU32(cursor + (offset + 1) * IO_WORD_SIZE))) {
+				return VDP_REPLAY_PACKET_FAULT;
+			}
+		}
+		return payloadEnd;
 	}
 
-	private consumeReplayPacketFromWords(words: Uint32Array, word: number, cursor: number): number {
+	private consumeReplayPacketFromWords(words: Uint32Array, word: number, cursor: number, wordCount: number): number {
 		const kind = word & VDP_PKT_KIND_MASK;
 		switch (kind) {
 			case VDP_PKT_CMD:
-				this.consumeReplayCommandPacket(word);
-				return cursor;
+				return this.consumeReplayCommandPacket(word) ? cursor : VDP_REPLAY_PACKET_FAULT;
 			case VDP_PKT_REG1: {
+				if (cursor >= wordCount) {
+					this.fault.raise(VDP_FAULT_STREAM_BAD_PACKET, word);
+					return VDP_REPLAY_PACKET_FAULT;
+				}
 				this.writeVdpRegister(packedLow16(word), words[cursor]);
 				return cursor + 1;
 			}
 			case VDP_PKT_REGN: {
 				const packet = this.regnPacketScratch;
 				this.decodeRegnPacket(word, packet);
+				if (cursor + packet.count > wordCount) {
+					this.fault.raise(VDP_FAULT_STREAM_BAD_PACKET, word);
+					return VDP_REPLAY_PACKET_FAULT;
+				}
 				for (let offset = 0; offset < packet.count; offset += 1) {
 					this.writeVdpRegister(packet.firstRegister + offset, words[cursor + offset]);
 				}
@@ -526,22 +579,38 @@ export class VDP implements VramWriteSink {
 			case VDP_LPU_PACKET_KIND:
 			case VDP_MFU_PACKET_KIND:
 			case VDP_JTU_PACKET_KIND:
-				return this.consumeUnitRegisterPacketFromWords(words, word, cursor);
+				return this.consumeUnitRegisterPacketFromWords(words, word, cursor, wordCount);
 			case VDP_RPU_PACKET_KIND: {
-				const nextCursor = this.rpu.consumePacketFromWords(this.buildFrame.rpu, words, word, cursor);
-				this.buildFrame.cost += this.rpu.lastPacketCost;
+				const nextCursor = this.rpu.consumePacketFromWords(this.buildFrame.rpu, words, word, cursor, wordCount);
+				if (nextCursor !== VDP_REPLAY_PACKET_FAULT) {
+					this.buildFrame.cost += this.rpu.lastPacketCost;
+				}
 				return nextCursor;
 			}
 		}
 		return cursor;
 	}
 
-	private consumeUnitRegisterPacketFromWords(words: Uint32Array, word: number, cursor: number): number {
+	private consumeUnitRegisterPacketFromWords(words: Uint32Array, word: number, cursor: number, wordCount: number): number {
+		if (vdpUnitPacketHasFlags(word)) {
+			this.fault.raise(VDP_FAULT_STREAM_BAD_PACKET, word);
+			return VDP_REPLAY_PACKET_FAULT;
+		}
 		const payloadWords = vdpUnitPacketPayloadWords(word);
+		if (payloadWords < 2 || cursor + payloadWords > wordCount) {
+			this.fault.raise(VDP_FAULT_STREAM_BAD_PACKET, word);
+			return VDP_REPLAY_PACKET_FAULT;
+		}
 		const packetKind = word & VDP_PKT_KIND_MASK;
 		const firstRegister = words[cursor];
-		for (let payloadIndex = 1; payloadIndex < payloadWords; payloadIndex += 1) {
-			this.unitRegisterPort.writeWord(packetKind, firstRegister + payloadIndex - 1, words[cursor + payloadIndex]);
+		const registerCount = payloadWords - 1;
+		if (!this.unitRegisterPort.acceptRange(packetKind, firstRegister, registerCount)) {
+			return VDP_REPLAY_PACKET_FAULT;
+		}
+		for (let offset = 0; offset < registerCount; offset += 1) {
+			if (!this.unitRegisterPort.writeWord(packetKind, firstRegister + offset, words[cursor + offset + 1])) {
+				return VDP_REPLAY_PACKET_FAULT;
+			}
 		}
 		return cursor + payloadWords;
 	}
@@ -551,11 +620,17 @@ export class VDP implements VramWriteSink {
 		packet.count = (word >>> 16) & 0xff;
 	}
 
-	private consumeReplayCommandPacket(word: number): void {
+	private consumeReplayCommandPacket(word: number): boolean {
 		const command = packedLow16(word);
-		if (command !== VDP_CMD_NOP) {
-			this.fault.raise(VDP_FAULT_CMD_BAD_DOORBELL, command);
+		if (command === VDP_CMD_BEGIN_FRAME || command === VDP_CMD_END_FRAME) {
+			this.fault.raise(VDP_FAULT_STREAM_BAD_PACKET, command);
+			return false;
 		}
+		if (command === VDP_CMD_NOP) {
+			return true;
+		}
+		this.fault.raise(VDP_FAULT_CMD_BAD_DOORBELL, command);
+		return false;
 	}
 
 	private consumeDirectVdpCommand(command: number): void {
@@ -568,7 +643,9 @@ export class VDP implements VramWriteSink {
 				this.cancelSubmittedFrame();
 				return;
 			}
-			this.beginSubmittedFrame(VDP_DEX_FRAME_DIRECT_OPEN);
+			if (!this.beginSubmittedFrame(VDP_DEX_FRAME_DIRECT_OPEN)) {
+				return;
+			}
 			this.refreshSubmitBusyStatus();
 			return;
 		}
@@ -578,7 +655,9 @@ export class VDP implements VramWriteSink {
 				this.fault.raise(VDP_FAULT_SUBMIT_STATE, command);
 				return;
 			}
-			this.sealSubmittedFrame();
+			if (!this.sealSubmittedFrame()) {
+				this.cancelSubmittedFrame();
+			}
 			this.refreshSubmitBusyStatus();
 			return;
 		}
@@ -688,10 +767,17 @@ export class VDP implements VramWriteSink {
 		return this.pendingFrame.state === VDP_SUBMITTED_FRAME_EMPTY;
 	}
 
-	private beginSubmittedFrame(state: VdpDexFrameState): void {
+	private beginSubmittedFrame(state: VdpDexFrameState): boolean {
+		if (this.buildFrame.state !== VDP_DEX_FRAME_IDLE) {
+			this.fault.raise(VDP_FAULT_SUBMIT_STATE, VDP_CMD_BEGIN_FRAME);
+			return false;
+		}
 		resetBuildingFrame(this.buildFrame);
-		this.rpu.beginFrame(this.buildFrame.rpu);
+		if (!this.rpu.beginFrame(this.buildFrame.rpu)) {
+			return false;
+		}
 		this.buildFrame.state = state;
+		return true;
 	}
 
 	private cancelSubmittedFrame(): void {
@@ -701,13 +787,22 @@ export class VDP implements VramWriteSink {
 		this.refreshSubmitBusyStatus();
 	}
 
-	private sealSubmittedFrame(): void {
-		if (!this.rpu.lastPacketSealedFrame) {
-			this.rpu.endFrame(this.buildFrame.rpu);
+	private sealSubmittedFrame(): boolean {
+		if (this.buildFrame.state === VDP_DEX_FRAME_IDLE) {
+			this.fault.raise(VDP_FAULT_SUBMIT_STATE, VDP_CMD_END_FRAME);
+			return false;
+		}
+		const sealedByFifo = this.rpu.lastPacketSealedFrame;
+		if (!sealedByFifo && !this.rpu.endFrame(this.buildFrame.rpu)) {
+			return false;
 		}
 		const activeFrameEmpty = this.activeFrame.state === VDP_SUBMITTED_FRAME_EMPTY;
 		let frame = this.activeFrame;
 		if (!activeFrameEmpty) {
+			if (this.pendingFrame.state !== VDP_SUBMITTED_FRAME_EMPTY) {
+				this.fault.raise(VDP_FAULT_SUBMIT_BUSY, VDP_CMD_END_FRAME);
+				return false;
+			}
 			frame = this.pendingFrame;
 		}
 		const buildRpu = this.buildFrame.rpu;
@@ -746,6 +841,7 @@ export class VDP implements VramWriteSink {
 		resetBuildingFrame(this.buildFrame);
 		this.scheduleNextService(this.scheduler.currentNowCycles());
 		this.refreshSubmitBusyStatus();
+		return true;
 	}
 
 	private promotePendingFrame(): void {

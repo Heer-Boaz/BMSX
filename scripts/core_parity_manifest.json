@@ -1313,7 +1313,7 @@
 	"strict_runtime_no_churn_regions": [
 		{
 			"file": "machine/ts/machine/devices/vdp/rpu.ts",
-			"start": "public consumePacketFromMemory(frame: VdpRpuFrameOutput, headerWord: number, cursor: number): number {",
+			"start": "public consumePacketFromMemory(frame: VdpRpuFrameOutput, headerWord: number, cursor: number, end: number): number {",
 			"end": "type VdpRpuSaveArray = Uint32Array | Uint16Array | Uint8Array;",
 			"reason": "rpu_device_packet_consume_and_retained_command_buffer_hot_path"
 		}
@@ -3706,7 +3706,7 @@
 	"strict_runtime_no_heap_regions": [
 		{
 			"file": "machine/ts/machine/devices/vdp/rpu.ts",
-			"start": "public consumePacketFromMemory(frame: VdpRpuFrameOutput, headerWord: number, cursor: number): number {",
+			"start": "public consumePacketFromMemory(frame: VdpRpuFrameOutput, headerWord: number, cursor: number, end: number): number {",
 			"end": "type VdpRpuSaveArray = Uint32Array | Uint16Array | Uint8Array;",
 			"reason": "rpu_device_packet_consume_and_retained_command_buffer_hot_path_must_not_allocate"
 		},
@@ -3730,7 +3730,7 @@
 		},
 		{
 			"file": "machine/cpp/machine/devices/vdp/rpu.cpp",
-			"start": "u32 VdpRpuUnit::consumePacketFromMemory(VdpRpuFrameOutput& frame, u32 headerWord, u32 cursor) {",
+			"start": "u32 VdpRpuUnit::consumePacketFromMemory(VdpRpuFrameOutput& frame, u32 headerWord, u32 cursor, u32 end) {",
 			"end": "std::unique_ptr<VdpRpuFrameOutput> createVdpRpuFrameOutput(std::vector<u8>& vdpVram, std::vector<u32>& vdpVramPageRevisions) {",
 			"reason": "rpu_device_packet_consume_and_retained_command_buffer_hot_path_must_not_allocate"
 		},

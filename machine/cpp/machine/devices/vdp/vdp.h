@@ -125,7 +125,6 @@ private:
 	int m_availableWorkUnits = 0;
 	std::array<u32, VDP_CMD_ARG_COUNT> m_vdpRegisters{};
 	VdpStreamIngressUnit m_streamIngress;
-	RegnPacket m_regnPacketScratch;
 	BuildingFrame m_buildFrame;
 	SubmittedFrame m_activeFrame;
 	SubmittedFrame m_pendingFrame;
@@ -145,9 +144,9 @@ private:
 	bool canAcceptSubmittedFrame() const {
 		return m_pendingFrame.state == VdpSubmittedFrameState::Empty;
 	}
-	void beginSubmittedFrame(VdpDexFrameState state);
+	bool beginSubmittedFrame(VdpDexFrameState state);
 	void cancelSubmittedFrame();
-	void sealSubmittedFrame();
+	bool sealSubmittedFrame();
 	void promotePendingFrame();
 	void scheduleNextService(int64_t nowCycles);
 	bool hasBlockedSubmitPath() const;
@@ -158,12 +157,12 @@ private:
 	void consumeSealedVdpStream(uint32_t baseAddr, size_t byteLength);
 	void consumeSealedVdpWordStream(const u32* words, u32 wordCount);
 	void sealVdpFifoTransfer();
-	u32 consumeReplayPacketFromMemory(u32 word, u32 cursor);
-	u32 consumeUnitRegisterPacketFromMemory(u32 word, u32 cursor);
-	u32 consumeReplayPacketFromWords(const u32* words, u32 word, u32 cursor);
-	u32 consumeUnitRegisterPacketFromWords(const u32* words, u32 word, u32 cursor);
+	u32 consumeReplayPacketFromMemory(u32 word, u32 cursor, u32 end);
+	u32 consumeUnitRegisterPacketFromMemory(u32 word, u32 cursor, u32 end);
+	u32 consumeReplayPacketFromWords(const u32* words, u32 word, u32 cursor, u32 wordCount);
+	u32 consumeUnitRegisterPacketFromWords(const u32* words, u32 word, u32 cursor, u32 wordCount);
 	void decodeRegnPacket(u32 word, RegnPacket& packet) const;
-	void consumeReplayCommandPacket(u32 word);
+	bool consumeReplayCommandPacket(u32 word);
 	void onVdpFifoWrite();
 	void onVdpFifoCtrlWrite();
 	void onVdpCommandWrite();

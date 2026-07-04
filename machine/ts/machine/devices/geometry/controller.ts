@@ -299,9 +299,7 @@ export class GeometryController {
 		};
 		switch (job.cmd) {
 			case IO_CMD_GEO_XFORM2_BATCH:
-				break;
 			case IO_CMD_GEO_SAT2_BATCH:
-				break;
 			case IO_CMD_GEO_OVERLAP2D_PASS:
 				break;
 			default:

@@ -38,7 +38,7 @@ private:
 
 	uint32_t processCandidateRecord(GeoJob& job);
 	uint32_t processFullPassRecord(GeoJob& job);
-	void readInstanceAt(const GeoJob& job, uint32_t instanceIndex, std::array<uint32_t, GEO_OVERLAP2D_INSTANCE_WORDS>& out) const;
+	bool readInstanceAt(const GeoJob& job, uint32_t instanceIndex, std::array<uint32_t, GEO_OVERLAP2D_INSTANCE_WORDS>& out) const;
 	uint32_t processPair(GeoJob& job, const std::array<uint32_t, GEO_OVERLAP2D_INSTANCE_WORDS>& instanceA, const std::array<uint32_t, GEO_OVERLAP2D_INSTANCE_WORDS>& instanceB, uint32_t pairMeta);
 	uint32_t readPieceBounds(uint32_t pieceAddr, double tx, double ty, std::array<double, 4>& out) const;
 	uint32_t computePiecePairContact(uint32_t pieceAAddr, double txA, double tyA, uint32_t pieceBAddr, double txB, double tyB);

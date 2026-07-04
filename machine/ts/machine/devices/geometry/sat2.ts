@@ -1,15 +1,20 @@
 import {
+	GEO_FAULT_BAD_RECORD_ALIGNMENT,
 	GEO_FAULT_BAD_RECORD_FLAGS,
 	GEO_FAULT_BAD_VERTEX_COUNT,
 	GEO_FAULT_DESCRIPTOR_KIND,
+	GEO_FAULT_DST_RANGE,
+	GEO_FAULT_SRC_RANGE,
 	GEO_SAT_META_AXIS_MASK,
 	GEO_SAT_META_SHAPE_AUX,
 	GEO_SAT_META_SHAPE_SHIFT,
 	GEO_SAT_META_SHAPE_SRC,
 	GEO_SAT2_DESC_FLAGS_OFFSET,
+	GEO_SAT2_DESC_BYTES,
 	GEO_SAT2_DESC_RESERVED_OFFSET,
 	GEO_SAT2_DESC_VERTEX_COUNT_OFFSET,
 	GEO_SAT2_DESC_VERTEX_OFFSET_OFFSET,
+	GEO_SAT2_PAIR_BYTES,
 	GEO_SAT2_PAIR_FLAGS2_OFFSET,
 	GEO_SAT2_PAIR_FLAGS_OFFSET,
 	GEO_SAT2_PAIR_RESULT_INDEX_OFFSET,
@@ -27,7 +32,7 @@ import {
 	GEO_VERTEX2_X_OFFSET,
 	GEO_VERTEX2_Y_OFFSET,
 } from './contracts';
-import { geometryIndexedAddr } from './addressing';
+import { GEOMETRY_WORD_ALIGN_MASK, geometryIndexedAddr, geometryIndexedSpanFits } from './addressing';
 import { GeometryProjectionSpan } from './projection';
 import type { GeometryJobState } from './job';
 import type { Memory } from '../../memory/memory';
@@ -52,6 +57,12 @@ export class GeometrySat2Unit {
 	public processRecord(job: GeometryJobState): number {
 		const recordIndex = job.processed;
 		const pairAddr = geometryIndexedAddr(job.src0, recordIndex, job.stride0);
+		if (!geometryIndexedSpanFits(job.src0, recordIndex, job.stride0, GEO_SAT2_PAIR_BYTES)) {
+			return GEO_FAULT_BAD_RECORD_ALIGNMENT;
+		}
+		if (!this.memory.isReadableMainMemoryRange(pairAddr, GEO_SAT2_PAIR_BYTES)) {
+			return GEO_FAULT_SRC_RANGE;
+		}
 		const flags = this.memory.readU32(pairAddr + GEO_SAT2_PAIR_FLAGS_OFFSET);
 		const shapeAIndex = this.memory.readU32(pairAddr + GEO_SAT2_PAIR_SHAPE_A_INDEX_OFFSET);
 		const resultIndex = this.memory.readU32(pairAddr + GEO_SAT2_PAIR_RESULT_INDEX_OFFSET);
@@ -61,8 +72,18 @@ export class GeometrySat2Unit {
 			return GEO_FAULT_BAD_RECORD_FLAGS;
 		}
 		const resultAddr = geometryIndexedAddr(job.dst0, resultIndex, GEO_SAT2_RESULT_BYTES);
+		if (!geometryIndexedSpanFits(job.dst0, resultIndex, GEO_SAT2_RESULT_BYTES, GEO_SAT2_RESULT_BYTES)
+			|| !this.memory.isRamRange(resultAddr, GEO_SAT2_RESULT_BYTES)) {
+			return GEO_FAULT_DST_RANGE;
+		}
 		const shapeADescAddr = geometryIndexedAddr(job.src1, shapeAIndex, job.stride1);
 		const shapeBDescAddr = geometryIndexedAddr(job.src1, shapeBIndex, job.stride1);
+		if (!geometryIndexedSpanFits(job.src1, shapeAIndex, job.stride1, GEO_SAT2_DESC_BYTES)
+			|| !geometryIndexedSpanFits(job.src1, shapeBIndex, job.stride1, GEO_SAT2_DESC_BYTES)
+			|| !this.memory.isReadableMainMemoryRange(shapeADescAddr, GEO_SAT2_DESC_BYTES)
+			|| !this.memory.isReadableMainMemoryRange(shapeBDescAddr, GEO_SAT2_DESC_BYTES)) {
+			return GEO_FAULT_SRC_RANGE;
+		}
 		const shapeAFlags = this.memory.readU32(shapeADescAddr + GEO_SAT2_DESC_FLAGS_OFFSET);
 		const shapeAVertexCount = this.memory.readU32(shapeADescAddr + GEO_SAT2_DESC_VERTEX_COUNT_OFFSET);
 		const shapeAVertexOffsetBytes = this.memory.readU32(shapeADescAddr + GEO_SAT2_DESC_VERTEX_OFFSET_OFFSET);
@@ -80,12 +101,23 @@ export class GeometrySat2Unit {
 		if (shapeAVertexCount < 3 || shapeBVertexCount < 3) {
 			return GEO_FAULT_BAD_VERTEX_COUNT;
 		}
+		if ((shapeAVertexOffsetBytes & GEOMETRY_WORD_ALIGN_MASK) !== 0 || (shapeBVertexOffsetBytes & GEOMETRY_WORD_ALIGN_MASK) !== 0) {
+			return GEO_FAULT_BAD_RECORD_ALIGNMENT;
+		}
 		if (shapeAVertexCount > GEO_SAT2_MAX_POLY_VERTICES
 			|| shapeBVertexCount > GEO_SAT2_MAX_POLY_VERTICES) {
 			return GEO_FAULT_BAD_VERTEX_COUNT;
 		}
+		const shapeAVertexBytes = shapeAVertexCount * GEO_VERTEX2_BYTES;
+		const shapeBVertexBytes = shapeBVertexCount * GEO_VERTEX2_BYTES;
 		const shapeAVertexAddr = geometryIndexedAddr(job.src2, shapeAVertexOffsetBytes, 1);
 		const shapeBVertexAddr = geometryIndexedAddr(job.src2, shapeBVertexOffsetBytes, 1);
+		if (!geometryIndexedSpanFits(job.src2, shapeAVertexOffsetBytes, 1, shapeAVertexBytes)
+			|| !geometryIndexedSpanFits(job.src2, shapeBVertexOffsetBytes, 1, shapeBVertexBytes)
+			|| !this.memory.isReadableMainMemoryRange(shapeAVertexAddr, shapeAVertexBytes)
+			|| !this.memory.isReadableMainMemoryRange(shapeBVertexAddr, shapeBVertexBytes)) {
+			return GEO_FAULT_SRC_RANGE;
+		}
 		let centerAX = 0;
 		let centerAY = 0;
 		let vertexXAddr = shapeAVertexAddr + GEO_VERTEX2_X_OFFSET;

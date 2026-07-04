@@ -181,25 +181,36 @@ void VdpRpuUnit::reset() {
 	m_buildState = VDP_RPU_FRAME_IDLE;
 }
 
-void VdpRpuUnit::beginFrame(VdpRpuFrameOutput& frame) {
+bool VdpRpuUnit::beginFrame(VdpRpuFrameOutput& frame) {
 	lastPacketCost = 0;
 	lastPacketSealedFrame = false;
+	if (m_buildState != VDP_RPU_FRAME_IDLE) {
+		m_fault.raise(VDP_FAULT_RPU_BAD_STATE, m_buildState);
+		return false;
+	}
 	resetVdpRpuFrameOutput(frame);
 	m_buildState = VDP_RPU_FRAME_OPEN;
+	return true;
 }
 
 void VdpRpuUnit::cancelFrame(VdpRpuFrameOutput& frame) {
-	beginFrame(frame);
+	lastPacketCost = 0;
+	lastPacketSealedFrame = false;
+	resetVdpRpuFrameOutput(frame);
 	m_buildState = VDP_RPU_FRAME_IDLE;
 }
 
-void VdpRpuUnit::endFrame(VdpRpuFrameOutput& frame) {
+bool VdpRpuUnit::endFrame(VdpRpuFrameOutput& frame) {
 	lastPacketCost = 0;
 	lastPacketSealedFrame = false;
 	(void)frame;
+	if (m_buildState != VDP_RPU_FRAME_OPEN) {
+		m_fault.raise(VDP_FAULT_RPU_BAD_STATE, m_buildState);
+		return false;
+	}
 	m_buildState = VDP_RPU_FRAME_IDLE;
+	return true;
 }
-
 
 VdpRpuSaveState VdpRpuUnit::captureState() const {
 	VdpRpuSaveState state;
@@ -211,52 +222,87 @@ void VdpRpuUnit::restoreState(const VdpRpuSaveState& state) {
 	m_buildState = state.buildState;
 }
 
-u32 VdpRpuUnit::consumePacketFromMemory(VdpRpuFrameOutput& frame, u32 headerWord, u32 cursor) {
+u32 VdpRpuUnit::decodePacketPayloadWords(u32 headerWord) {
 	lastPacketCost = 0;
 	lastPacketSealedFrame = false;
+	if ((headerWord & 0x0000ffffu) != 0u) {
+		m_fault.raise(VDP_FAULT_RPU_BAD_PACKET, headerWord);
+		return VDP_RPU_FAULT_SENTINEL;
+	}
 	const u32 payloadWords = (headerWord >> 16u) & 0xffu;
+	if (payloadWords == 0u) {
+		m_fault.raise(VDP_FAULT_RPU_BAD_PACKET, headerWord);
+		return VDP_RPU_FAULT_SENTINEL;
+	}
+	return payloadWords;
+}
+
+u32 VdpRpuUnit::consumePacketFromMemory(VdpRpuFrameOutput& frame, u32 headerWord, u32 cursor, u32 end) {
+	const u32 payloadWords = decodePacketPayloadWords(headerWord);
+	if (payloadWords == VDP_RPU_FAULT_SENTINEL) {
+		return VDP_RPU_FAULT_SENTINEL;
+	}
 	const u32 payloadEnd = cursor + payloadWords * IO_WORD_SIZE;
+	if (payloadEnd > end) {
+		m_fault.raise(VDP_FAULT_RPU_BAD_PACKET, headerWord);
+		return VDP_RPU_FAULT_SENTINEL;
+	}
 	const u32 op = m_memory.readU32(cursor);
-	consumePacketPayloadFromMemory(frame, op, cursor);
-	return payloadEnd;
+	return consumePacketPayloadFromMemory(frame, op, cursor, payloadWords) ? payloadEnd : VDP_RPU_FAULT_SENTINEL;
 }
 
-u32 VdpRpuUnit::consumePacketFromWords(VdpRpuFrameOutput& frame, const u32* words, u32 headerWord, u32 cursor) {
-	lastPacketCost = 0;
-	lastPacketSealedFrame = false;
-	const u32 payloadWords = (headerWord >> 16u) & 0xffu;
+u32 VdpRpuUnit::consumePacketFromWords(VdpRpuFrameOutput& frame, const u32* words, u32 headerWord, u32 cursor, u32 wordCount) {
+	const u32 payloadWords = decodePacketPayloadWords(headerWord);
+	if (payloadWords == VDP_RPU_FAULT_SENTINEL) {
+		return VDP_RPU_FAULT_SENTINEL;
+	}
+	if (cursor + payloadWords > wordCount) {
+		m_fault.raise(VDP_FAULT_RPU_BAD_PACKET, headerWord);
+		return VDP_RPU_FAULT_SENTINEL;
+	}
 	const u32 op = words[cursor];
-	consumePacketPayloadFromWords(frame, words, op, cursor);
-	return cursor + payloadWords;
+	return consumePacketPayloadFromWords(frame, words, op, cursor, payloadWords) ? cursor + payloadWords : VDP_RPU_FAULT_SENTINEL;
 }
 
-void VdpRpuUnit::consumePacketPayloadFromMemory(VdpRpuFrameOutput& frame, u32 op, u32 cursor) {
+bool VdpRpuUnit::consumePacketPayloadFromMemory(VdpRpuFrameOutput& frame, u32 op, u32 cursor, u32 payloadWords) {
+	if (m_buildState == VDP_RPU_FRAME_IDLE) {
+		m_fault.raise(VDP_FAULT_RPU_BAD_STATE, op);
+		return false;
+	}
 	switch (op & 0xffu) {
 		case VDP_RPU_OP_EXEC_PASS_LIST:
-			acceptExecPassList(frame, op, m_memory.readU32(cursor + IO_WORD_SIZE));
-			return;
+			return payloadWords == VDP_RPU_EXEC_PASS_LIST_WORDS
+				&& acceptExecPassList(frame, op, m_memory.readU32(cursor + IO_WORD_SIZE));
 		case VDP_RPU_OP_SEAL_FRAME:
-			acceptSealFrame(frame);
-			return;
+			return payloadWords == VDP_RPU_SEAL_FRAME_WORDS && acceptSealFrame(frame);
 		default:
 			m_fault.raise(VDP_FAULT_RPU_BAD_PACKET, op);
+			return false;
 	}
 }
 
-void VdpRpuUnit::consumePacketPayloadFromWords(VdpRpuFrameOutput& frame, const u32* words, u32 op, u32 cursor) {
+bool VdpRpuUnit::consumePacketPayloadFromWords(VdpRpuFrameOutput& frame, const u32* words, u32 op, u32 cursor, u32 payloadWords) {
+	if (m_buildState == VDP_RPU_FRAME_IDLE) {
+		m_fault.raise(VDP_FAULT_RPU_BAD_STATE, op);
+		return false;
+	}
 	switch (op & 0xffu) {
 		case VDP_RPU_OP_EXEC_PASS_LIST:
-			acceptExecPassList(frame, op, words[cursor + 1u]);
-			return;
+			return payloadWords == VDP_RPU_EXEC_PASS_LIST_WORDS
+				&& acceptExecPassList(frame, op, words[cursor + 1u]);
 		case VDP_RPU_OP_SEAL_FRAME:
-			acceptSealFrame(frame);
-			return;
+			return payloadWords == VDP_RPU_SEAL_FRAME_WORDS && acceptSealFrame(frame);
 		default:
 			m_fault.raise(VDP_FAULT_RPU_BAD_PACKET, op);
+			return false;
 	}
 }
 
-void VdpRpuUnit::acceptExecPassList(VdpRpuFrameOutput& frame, u32 opWord, u32 passDescAddr) {
+bool VdpRpuUnit::acceptExecPassList(VdpRpuFrameOutput& frame, u32 opWord, u32 passDescAddr) {
+	if (m_buildState != VDP_RPU_FRAME_OPEN) {
+		m_fault.raise(VDP_FAULT_RPU_BAD_STATE, opWord);
+		return false;
+	}
 	const u32 passCount = (opWord >> 8u) & 0xffffu;
 	VdpRpuCommandBuffer& cmd = frame.commands;
 	const u8* vram = m_vdpVram.data();
@@ -264,6 +310,13 @@ void VdpRpuUnit::acceptExecPassList(VdpRpuFrameOutput& frame, u32 opWord, u32 pa
 
 	for (u32 p = 0u; p < passCount; ++p) {
 		const u32 pb = passDescAddr + p * RPU_PASS_DESC_SIZE;
+		if (!checkVramRange(pb, RPU_PASS_DESC_SIZE)) {
+			return false;
+		}
+		if (cmd.passCount >= VDP_RPU_PASS_CAPACITY) {
+			m_fault.raise(VDP_FAULT_RPU_COMMAND_OVERFLOW, static_cast<u32>(cmd.passCount));
+			return false;
+		}
 		const size_t pi = cmd.passCount++;
 		cost += VDP_RPU_PASS_COST;
 		cmd.passColorSurfaceDescAddr[pi] = readRpuDescU32(vram, pb + RPU_PASS_DESC_COLOR_SURFACE_DESC_ADDR_OFFSET);
@@ -280,6 +333,15 @@ void VdpRpuUnit::acceptExecPassList(VdpRpuFrameOutput& frame, u32 opWord, u32 pa
 
 		for (u32 d = 0u; d < drawCount; ++d) {
 			const u32 db = drawDescsAddr + d * RPU_DRAW_DESC_SIZE;
+			if (!checkVramRange(db, RPU_DRAW_DESC_SIZE)) {
+				cmd.passDrawCount[pi] = static_cast<u16>(d);
+				return false;
+			}
+			if (cmd.drawCount >= VDP_RPU_DRAW_CAPACITY) {
+				cmd.passDrawCount[pi] = static_cast<u16>(d);
+				m_fault.raise(VDP_FAULT_RPU_COMMAND_OVERFLOW, static_cast<u32>(cmd.drawCount));
+				return false;
+			}
 			const size_t di = cmd.drawCount++;
 			cmd.drawShaderVariant[di] = readRpuDescU16(vram, db + RPU_DRAW_DESC_SHADER_VARIANT_OFFSET);
 			cmd.drawPrimitive[di] = vram[db + RPU_DRAW_DESC_PRIMITIVE_OFFSET];
@@ -300,9 +362,23 @@ void VdpRpuUnit::acceptExecPassList(VdpRpuFrameOutput& frame, u32 opWord, u32 pa
 			const u32 streamDescsAddr = readRpuDescU32(vram, db + RPU_DRAW_DESC_STREAM_DESCS_ADDR_OFFSET);
 			const u32 constantDescsAddr = readRpuDescU32(vram, db + RPU_DRAW_DESC_CONSTANT_DESCS_ADDR_OFFSET);
 			const u32 textureDescsAddr = readRpuDescU32(vram, db + RPU_DRAW_DESC_TEXTURE_DESCS_ADDR_OFFSET);
+			const u16 acceptedDrawCount = static_cast<u16>(d + 1u);
 
 			for (u32 s = 0u; s < streamCount; ++s) {
 				const u32 sb = streamDescsAddr + s * RPU_STREAM_DESC_SIZE;
+				if (!checkVramRange(sb, RPU_STREAM_DESC_SIZE)) {
+					cmd.drawStreamBindingCount[di] = static_cast<u8>(s);
+					cmd.drawConstantBindingCount[di] = 0u;
+					cmd.drawTextureBindingCount[di] = 0u;
+					cmd.passDrawCount[pi] = acceptedDrawCount;
+					return false;
+				}
+				if (cmd.streamBindingCount >= VDP_RPU_STREAM_BINDING_CAPACITY) {
+					cmd.drawStreamBindingCount[di] = static_cast<u8>(s);
+					cmd.passDrawCount[pi] = acceptedDrawCount;
+					m_fault.raise(VDP_FAULT_RPU_COMMAND_OVERFLOW, static_cast<u32>(cmd.streamBindingCount));
+					return false;
+				}
 				const size_t si = cmd.streamBindingCount++;
 				cmd.streamVramAddr[si] = readRpuDescU32(vram, sb + RPU_STREAM_DESC_VRAM_ADDR_OFFSET);
 				cmd.streamByteLength[si] = readRpuDescU32(vram, sb + RPU_STREAM_DESC_BYTE_LENGTH_OFFSET);
@@ -315,6 +391,18 @@ void VdpRpuUnit::acceptExecPassList(VdpRpuFrameOutput& frame, u32 opWord, u32 pa
 
 			for (u32 c = 0u; c < constantCount; ++c) {
 				const u32 cb = constantDescsAddr + c * RPU_CONSTANT_DESC_SIZE;
+				if (!checkVramRange(cb, RPU_CONSTANT_DESC_SIZE)) {
+					cmd.drawConstantBindingCount[di] = static_cast<u8>(c);
+					cmd.drawTextureBindingCount[di] = 0u;
+					cmd.passDrawCount[pi] = acceptedDrawCount;
+					return false;
+				}
+				if (cmd.constantBindingCount >= VDP_RPU_CONSTANT_BINDING_CAPACITY) {
+					cmd.drawConstantBindingCount[di] = static_cast<u8>(c);
+					cmd.passDrawCount[pi] = acceptedDrawCount;
+					m_fault.raise(VDP_FAULT_RPU_COMMAND_OVERFLOW, static_cast<u32>(cmd.constantBindingCount));
+					return false;
+				}
 				const size_t ci = cmd.constantBindingCount++;
 				cmd.constantBindingSlot[ci] = vram[cb + RPU_CONSTANT_DESC_SLOT_OFFSET];
 				cmd.constantVramAddr[ci] = readRpuDescU32(vram, cb + RPU_CONSTANT_DESC_VRAM_ADDR_OFFSET);
@@ -325,6 +413,17 @@ void VdpRpuUnit::acceptExecPassList(VdpRpuFrameOutput& frame, u32 opWord, u32 pa
 
 			for (u32 t = 0u; t < textureCount; ++t) {
 				const u32 tb = textureDescsAddr + t * RPU_TEXTURE_DESC_SIZE;
+				if (!checkVramRange(tb, RPU_TEXTURE_DESC_SIZE)) {
+					cmd.drawTextureBindingCount[di] = static_cast<u8>(t);
+					cmd.passDrawCount[pi] = acceptedDrawCount;
+					return false;
+				}
+				if (cmd.textureBindingCount >= VDP_RPU_TEXTURE_BINDING_CAPACITY) {
+					cmd.drawTextureBindingCount[di] = static_cast<u8>(t);
+					cmd.passDrawCount[pi] = acceptedDrawCount;
+					m_fault.raise(VDP_FAULT_RPU_COMMAND_OVERFLOW, static_cast<u32>(cmd.textureBindingCount));
+					return false;
+				}
 				const size_t ti = cmd.textureBindingCount++;
 				cmd.textureSlot[ti] = vram[tb + RPU_TEXTURE_DESC_SLOT_OFFSET];
 				cmd.textureSurfaceDescAddr[ti] = readRpuDescU32(vram, tb + RPU_TEXTURE_DESC_SURFACE_DESC_ADDR_OFFSET);
@@ -336,13 +435,27 @@ void VdpRpuUnit::acceptExecPassList(VdpRpuFrameOutput& frame, u32 opWord, u32 pa
 	}
 
 	lastPacketCost = cost;
+	return true;
 }
 
-void VdpRpuUnit::acceptSealFrame(VdpRpuFrameOutput& frame) {
+bool VdpRpuUnit::acceptSealFrame(VdpRpuFrameOutput& frame) {
+	if (m_buildState != VDP_RPU_FRAME_OPEN) {
+		m_fault.raise(VDP_FAULT_RPU_BAD_STATE, VDP_RPU_OP_SEAL_FRAME);
+		return false;
+	}
 	(void)frame;
 	m_buildState = VDP_RPU_FRAME_IDLE;
 	lastPacketSealedFrame = true;
 	lastPacketCost = VDP_RPU_PACKET_COST;
+	return true;
+}
+
+bool VdpRpuUnit::checkVramRange(u32 addr, u32 size) {
+	if (addr >= m_vdpVram.size() || size > m_vdpVram.size() - addr) {
+		m_fault.raise(VDP_FAULT_RPU_FETCH_OOB, addr);
+		return false;
+	}
+	return true;
 }
 
 std::unique_ptr<VdpRpuFrameOutput> createVdpRpuFrameOutput(std::vector<u8>& vdpVram, std::vector<u32>& vdpVramPageRevisions) {

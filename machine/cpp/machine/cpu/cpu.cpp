@@ -1023,6 +1023,7 @@ void CPU::setProgram(Program* program, const ProgramRuntimeSymbols& runtimeSymbo
 	// slot layout from `globals`, so without this sync flattened module exports can fall back to nil.
 	syncGlobalSlotsToTable();
 	m_program = program;
+	m_hardHalted = false;
 	if (m_program) {
 		m_memory.setProgramRom(m_program->programRom.data(), m_program->programRom.size(), m_program->programRomTextByteLength);
 	} else {
@@ -1209,7 +1210,12 @@ const DecodedInstruction& CPU::decodedAtWordIndex(int wordIndex) const {
 }
 
 void CPU::skipNextInstruction(CallFrame& frame) {
-	const DecodedInstruction& decoded = decodedAtWordIndex(frame.pc / INSTRUCTION_BYTES);
+	const int wordIndex = frame.pc / INSTRUCTION_BYTES;
+	if (static_cast<uint32_t>(wordIndex) >= m_decodedWordCount) {
+		hardHalt();
+		return;
+	}
+	const DecodedInstruction& decoded = decodedAtWordIndex(wordIndex);
 	frame.pc += static_cast<int>(decoded.width) * INSTRUCTION_BYTES;
 }
 
@@ -1217,6 +1223,7 @@ void CPU::start(int entryProtoIndex, NativeArgsView args) {
 	lastReturnValues.clear();
 	clearCallStack();
 	m_haltedUntilIrq = false;
+	m_hardHalted = false;
 	m_maskableInterruptsEnabled = true;
 	m_maskableInterruptsRestoreEnabled = true;
 	m_nonMaskableInterruptPending = false;
@@ -1635,6 +1642,12 @@ void CPU::haltUntilIrq() {
 	m_yieldRequested = false;
 }
 
+void CPU::hardHalt() {
+	m_hardHalted = true;
+	m_haltedUntilIrq = false;
+	m_yieldRequested = false;
+}
+
 
 void CPU::callBuiltinFunction(BuiltinFunction& fn, NativeArgsView args, NativeResults& out) {
 	out.clear();
@@ -1809,11 +1822,11 @@ bool CPU::callValueInto(Value callee, NativeArgsView args, NativeResults& out) {
 	out.clear();
 	if (valueIsBuiltinFunction(callee)) {
 		callBuiltinFunction(*asBuiltinFunction(callee), args, out);
-		return !m_haltedUntilIrq;
+		return !m_hardHalted && !m_haltedUntilIrq;
 	}
 	if (valueIsNativeFunction(callee)) {
 		asNativeFunction(callee)->invoke(args, out);
-		return !m_haltedUntilIrq;
+		return !m_hardHalted && !m_haltedUntilIrq;
 	}
 	Closure* closure = asClosure(callee);
 	const int depthBefore = static_cast<int>(m_frames.size());
@@ -1853,8 +1866,7 @@ void CPU::runBuiltinPCall(NativeArgsView args, NativeResults& out) {
 	auto resultsScratch = acquireNativeReturnScratch();
 	NativeResults& results = resultsScratch.get();
 	try {
-		const NativeArgsView callArgs(args.data() + 1, args.size() - 1);
-		if (!callValueInto(args[0], callArgs, results)) {
+		if (!callValueInto(args[0], args.tailFrom(1), results)) {
 			return;
 		}
 		out.clear();
@@ -1881,8 +1893,7 @@ void CPU::runBuiltinXPCall(NativeArgsView args, NativeResults& out) {
 	NativeResults& results = resultsScratch.get();
 	NativeResults& handlerArgs = handlerArgsScratch.get();
 	try {
-		const NativeArgsView callArgs(args.data() + 2, args.size() - 2);
-		if (!callValueInto(args[0], callArgs, results)) {
+		if (!callValueInto(args[0], args.tailFrom(2), results)) {
 			return;
 		}
 		out.clear();
@@ -1998,7 +2009,7 @@ dispatch_loop_check:
 	if (frames.empty()) {
 		return RunResult::Halted;
 	}
-	if (m_haltedUntilIrq) {
+	if (m_hardHalted || m_haltedUntilIrq) {
 		return RunResult::Halted;
 	}
 	if (m_yieldRequested) {
@@ -2020,6 +2031,10 @@ dispatch_loop_check:
 	registers = frame->registers;
 	pc = frame->pc;
 	wordIndex = pc / INSTRUCTION_BYTES;
+	if (static_cast<uint32_t>(wordIndex) >= m_decodedWordCount) {
+		hardHalt();
+		return RunResult::Halted;
+	}
 	decoded = &decodedAtWordIndex(wordIndex);
 	frame->pc = pc + (static_cast<int>(decoded->width) * INSTRUCTION_BYTES);
 	lastPc = pc + ((static_cast<int>(decoded->width) - 1) * INSTRUCTION_BYTES);
@@ -2134,7 +2149,7 @@ dispatch_loop_check:
 	if (static_cast<int>(frames.size()) <= targetDepth) {
 		return RunResult::Halted;
 	}
-	if (m_haltedUntilIrq) {
+	if (m_hardHalted || m_haltedUntilIrq) {
 		return RunResult::Halted;
 	}
 	if (m_yieldRequested) {
@@ -2156,6 +2171,10 @@ dispatch_loop_check:
 	registers = frame->registers;
 	pc = frame->pc;
 	wordIndex = pc / INSTRUCTION_BYTES;
+	if (static_cast<uint32_t>(wordIndex) >= m_decodedWordCount) {
+		hardHalt();
+		return RunResult::Halted;
+	}
 	decoded = &decodedAtWordIndex(wordIndex);
 	frame->pc = pc + (static_cast<int>(decoded->width) * INSTRUCTION_BYTES);
 	lastPc = pc + ((static_cast<int>(decoded->width) - 1) * INSTRUCTION_BYTES);
@@ -2272,11 +2291,15 @@ void CPU::tickHotLoopHousekeeping() {
 
 void CPU::step() {
 	if (m_frames.empty()) return;
-	if (m_haltedUntilIrq) return;
+	if (m_hardHalted || m_haltedUntilIrq) return;
 	runHousekeeping();
 	CallFrame& frame = *m_frames.back();
 	int pc = frame.pc;
 	int wordIndex = pc / INSTRUCTION_BYTES;
+	if (static_cast<uint32_t>(wordIndex) >= m_decodedWordCount) {
+		hardHalt();
+		return;
+	}
 	const DecodedInstruction& decoded = decodedAtWordIndex(wordIndex);
 	frame.pc = pc + (static_cast<int>(decoded.width) * INSTRUCTION_BYTES);
 	lastPc = pc + ((static_cast<int>(decoded.width) - 1) * INSTRUCTION_BYTES);

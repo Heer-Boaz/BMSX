@@ -858,7 +858,7 @@ export class Table {
 
 	private keyEquals(a: Value, b: Value): boolean {
 		if (valueIsNumber(a) && valueIsNumber(b)) {
-			return a === b;
+			return a === b || (a !== a && b !== b);
 		}
 		if (valueIsString(a) && valueIsString(b)) {
 			return a.id === b.id;
@@ -1387,7 +1387,7 @@ export class ArrayNativeArgsView implements NativeArgs {
 	}
 
 	public get(index: number): Value {
-		return this.values[index] as Value;
+		return index < this.length ? this.values[index] : null;
 	}
 }
 
@@ -1409,7 +1409,7 @@ class RegisterNativeArgsView implements NativeArgs {
 	}
 
 	public get(index: number): Value {
-		return this.registers.get(this.base + index);
+		return index < this.length ? this.registers.get(this.base + index) : null;
 	}
 }
 
@@ -1473,6 +1473,7 @@ export class CPU {
 	public readonly stringPool: StringPool;
 	private indexKey: StringValue = null;
 	private haltedUntilIrq = false;
+	private hardHalted = false;
 	private maskableInterruptsEnabled = true;
 	private maskableInterruptsRestoreEnabled = true;
 	private nonMaskableInterruptPending = false;
@@ -1492,6 +1493,7 @@ export class CPU {
 	private profilerRuntimeSymbols!: ProgramRuntimeSymbols;
 	private externalReturnSink: Value[] | null = null;
 	private decodedPages: DecodedInstructionPage[] = [];
+	private decodedWordCount = 0;
 	private tableLoadCaches: TableLoadInlineCache[] = [];
 	public stringIndexTable: Table;
 	private systemGlobalNames: StringId[] = [];
@@ -1837,6 +1839,7 @@ export class CPU {
 		// slot layout from `globals`, so without this sync flattened module exports can fall back to nil.
 		this.syncGlobalSlotsToTable();
 		this.program = program;
+		this.hardHalted = false;
 		this.memory.setProgramRom(program.programRom, program.programRomTextByteLength);
 		this.metadata = metadata;
 		const constPool = program.constPool;
@@ -1903,6 +1906,7 @@ export class CPU {
 	private decodeProgram(program: Program): void {
 		const code = program.code;
 		const instructionCount = code.length / INSTRUCTION_BYTES;
+		this.decodedWordCount = instructionCount;
 		const decodedPages = new Array<DecodedInstructionPage>((instructionCount + DECODED_PAGE_WORDS - 1) >> DECODED_PAGE_SHIFT);
 		for (let pageIndex = 0; pageIndex < decodedPages.length; pageIndex += 1) {
 			decodedPages[pageIndex] = createDecodedInstructionPage();
@@ -1995,6 +1999,7 @@ export class CPU {
 		this.lastReturnValues.length = 0;
 		this.clearCallStack();
 		this.haltedUntilIrq = false;
+		this.hardHalted = false;
 		this.maskableInterruptsEnabled = true;
 		this.maskableInterruptsRestoreEnabled = true;
 		this.nonMaskableInterruptPending = false;
@@ -2039,6 +2044,12 @@ export class CPU {
 
 	public haltUntilIrq(): void {
 		this.haltedUntilIrq = true;
+		this.yieldRequested = false;
+	}
+
+	private hardHalt(): void {
+		this.hardHalted = true;
+		this.haltedUntilIrq = false;
 		this.yieldRequested = false;
 	}
 
@@ -2120,7 +2131,7 @@ export class CPU {
 		const baseCycles = BASE_CYCLES;
 		const decodedPages = this.decodedPages;
 		while (frames.length > targetDepth) {
-			if (this.haltedUntilIrq) {
+			if (this.hardHalted || this.haltedUntilIrq) {
 				return RunResult.Halted;
 			}
 			if (this.yieldRequested) {
@@ -2141,6 +2152,10 @@ export class CPU {
 			const frame = frames[frames.length - 1];
 			const pc = frame.pc;
 			const wordIndex = pc / INSTRUCTION_BYTES;
+			if ((wordIndex >>> 0) >= this.decodedWordCount) {
+				this.hardHalt();
+				return RunResult.Halted;
+			}
 			const pageIndex = wordIndex >>> DECODED_PAGE_SHIFT;
 			const page = decodedPages[pageIndex];
 			const pageOffset = wordIndex & DECODED_PAGE_MASK;
@@ -2185,18 +2200,26 @@ export class CPU {
 
 	private skipNextInstruction(frame: CallFrame): void {
 		const wordIndex = frame.pc / INSTRUCTION_BYTES;
+		if ((wordIndex >>> 0) >= this.decodedWordCount) {
+			this.hardHalt();
+			return;
+		}
 		const page = this.decodedPageAt(wordIndex);
 		const width = page.widths[wordIndex & DECODED_PAGE_MASK];
 		frame.pc += width * INSTRUCTION_BYTES;
 	}
 
 	public step(): void {
-		if (this.haltedUntilIrq) {
+		if (this.hardHalted || this.haltedUntilIrq) {
 			return;
 		}
 		const frame = this.frames[this.frames.length - 1];
 		const pc = frame.pc;
 		const wordIndex = pc / INSTRUCTION_BYTES;
+		if ((wordIndex >>> 0) >= this.decodedWordCount) {
+			this.hardHalt();
+			return;
+		}
 		const profiler = this.profilerEnabled ? this.profiler : null;
 		const page = this.decodedPageAt(wordIndex);
 		const pageOffset = wordIndex & DECODED_PAGE_MASK;
@@ -2392,6 +2415,7 @@ export class CPU {
 		const registers = frame.registers;
 		switch (op) {
 				case OpCode.WIDE:
+					this.hardHalt();
 					return;
 				case OpCode.MOV:
 					this.copyRegisterFast(frame, registers, a, b);
@@ -2592,6 +2616,7 @@ export class CPU {
 				case OpCode.RESERVED1:
 				case OpCode.RESERVED2:
 				case OpCode.RESERVED3:
+					this.hardHalt();
 					return;
 
 				case OpCode.LE: {
@@ -3301,13 +3326,13 @@ export class CPU {
 		out.length = 0;
 		if (isBuiltinFunction(callee)) {
 			this.callBuiltinFunction(callee, args, out);
-			return !this.haltedUntilIrq;
+			return !this.hardHalted && !this.haltedUntilIrq;
 		}
 		if (isNativeFunction(callee)) {
 			const nativeArgs = this.acquireArrayNativeArgs(args);
 			try {
 				callee.invoke(nativeArgs, out);
-				return !this.haltedUntilIrq;
+				return !this.hardHalted && !this.haltedUntilIrq;
 			} finally {
 				this.releaseArrayNativeArgs(nativeArgs);
 			}

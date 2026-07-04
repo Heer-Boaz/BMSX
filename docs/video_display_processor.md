@@ -91,7 +91,7 @@ the public word-count constants remain payload counts.
 | `VDP_MFU_PACKET_KIND` | Writes raw MFU morph-weight registers. |
 | `VDP_JTU_PACKET_KIND` | Writes raw JTU joint-matrix registers. |
 | `VDP_RPU_PACKET_KIND` | Writes raw RPU buffers, surfaces, constants, passes, draws, and bindings. |
-| Legacy `VDP_BBU_PACKET_KIND` / `VDP_MDU_PACKET_KIND` / `VDP_SBX_PACKET_KIND` | Rejected as bad packets. |
+| Retired/unknown packet kinds | Consume the header as a deterministic no-op. |
 
 `VDP_LPU_PACKET_KIND`, `VDP_MFU_PACKET_KIND`, and `VDP_JTU_PACKET_KIND` use the
 same register-window shape as XF packets: the first payload word is the first
@@ -112,11 +112,17 @@ Control bit 0 enables the light record. Color, intensity, direction, position,
 and range words are stored raw and decoded as signed Q16.16 only when render
 snapshots build the frame lighting view.
 
-RPU packets define raw buffers, surfaces, constants, passes, draws, and fixed shader bindings. The VDP does not assign billboard, mesh, parallax, or skybox meaning to those packets; carts build the required vertex, instance, texture, and constant data themselves. Legacy BBU/MDU/SBX packet kinds are rejected as malformed stream packets.
+RPU packets define raw buffers, surfaces, constants, passes, draws, and fixed
+shader bindings. The VDP does not assign billboard, mesh, parallax, or skybox
+meaning to those packets; carts build the required vertex, instance, texture,
+and constant data themselves. Retired BBU/MDU/SBX packet headers have no
+payload contract and therefore consume only their header word.
 
-Malformed stream headers, reserved packet bits, missing payload words, illegal
-BEGIN/END stream commands, and unknown packet kinds fault with
-`VDP_FAULT_STREAM_BAD_PACKET` and abort the sealed stream frame.
+Malformed stream headers, missing payload words, illegal BEGIN/END stream
+commands, and bad unit-packet ranges fault with `VDP_FAULT_STREAM_BAD_PACKET`
+and abort the sealed stream frame. REG1/REGN register addresses wrap through
+the VDP registerfile, command high bits stay part of the command word, and
+unknown packet kinds consume the header as a deterministic no-op.
 
 ## Subunit states
 
