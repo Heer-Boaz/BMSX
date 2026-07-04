@@ -841,22 +841,6 @@
 			"reason": "geometry_projection_contract"
 		},
 		{
-			"ts": "machine/ts/machine/devices/input/sample_latch.ts",
-			"cpp": [
-				"machine/cpp/machine/devices/input/sample_latch.h",
-				"machine/cpp/machine/devices/input/sample_latch.cpp"
-			],
-			"reason": "input_sample_latch_contract"
-		},
-		{
-			"ts": "machine/ts/machine/devices/input/sample_edge.ts",
-			"cpp": [
-				"machine/cpp/machine/devices/input/sample_edge.h",
-				"machine/cpp/machine/devices/input/sample_edge.cpp"
-			],
-			"reason": "input_sample_edge_contract"
-		},
-		{
 			"ts": "machine/ts/machine/devices/dma/image_copy.ts",
 			"cpp": [
 				"machine/cpp/machine/devices/dma/image_copy.h"
@@ -925,14 +909,6 @@
 			"reason": "devices_input_output_port_contract"
 		},
 		{
-			"ts": "machine/ts/machine/devices/input/control_port.ts",
-			"cpp": [
-				"machine/cpp/machine/devices/input/control_port.h",
-				"machine/cpp/machine/devices/input/control_port.cpp"
-			],
-			"reason": "devices_input_control_port_contract"
-		},
-		{
 			"ts": "machine/ts/machine/devices/audio/playback.ts",
 			"cpp": [
 				"machine/cpp/machine/devices/audio/playback.h",
@@ -964,9 +940,7 @@
 				"machine/cpp/machine/devices/vdp/device_output.h"
 			],
 			"symbols": [
-				"VdpDirtySpan",
 				"VdpSurfaceBacking",
-				"VdpFrameBufferPresentation",
 				"VdpDeviceOutput"
 			],
 			"reason": "vdp_host_output_contract"
@@ -1223,7 +1197,6 @@
 				"machine/cpp/machine/devices/audio/playback.h"
 			],
 			"symbols": [
-				"ApuOutputFilter",
 				"ApuOutputPlayback"
 			],
 			"reason": "devices_audio_playback_shape_contract"
@@ -1340,7 +1313,7 @@
 	"strict_runtime_no_churn_regions": [
 		{
 			"file": "machine/ts/machine/devices/vdp/rpu.ts",
-			"start": "public consumePacketFromMemory(frame: VdpRpuFrameOutput, headerWord: number, cursor: number, end: number): number {",
+			"start": "public consumePacketFromMemory(frame: VdpRpuFrameOutput, headerWord: number, cursor: number): number {",
 			"end": "type VdpRpuSaveArray = Uint32Array | Uint16Array | Uint8Array;",
 			"reason": "rpu_device_packet_consume_and_retained_command_buffer_hot_path"
 		}
@@ -2456,7 +2429,7 @@
 			"substrings": [
 				"#include \"render/backend/gles2/shaders/vdp_rpu_shaders.h\"",
 				"backend.buildProgram(kVdpRpuVertexShader, kVdpRpuFragmentShader, \"vdp_rpu\")",
-				"glBufferSubData(target, 0, static_cast<GLsizeiptr>(byteLength), frame.vdpVram->data() + vramAddr);"
+				"glBufferSubData(target, 0, static_cast<GLsizeiptr>(byteLength), frame.vdpVram.get().data() + vramAddr);"
 			],
 			"reason": "gles2_rpu_backend_must_load_generated_external_shader_sources"
 		},
@@ -2505,13 +2478,13 @@
 			"file": "machine/ts/render/2d/framebuffer_pipeline.ts",
 			"substrings": [
 				"shouldExecute: (view) => view.presentWorkbenchFrameBufferTexture && view.vdpRpuFrame.commands.passCount === 0",
-				"const framebuffer2DStateScratch: RenderPassStateRegistry['framebuffer_2d']",
+				"const framebuffer2DState: RenderPassStateRegistry['framebuffer_2d']",
 				"function bootstrapFramebuffer2DPass(backend: WebGLBackend): void"
 			],
 			"reason": "browser_workbench_framebuffer_texture_presentation_must_not_run_for_rpu_cart_frames_and_must_keep_retained_state"
 		},
 		{
-			"file": "machine/cpp/render/2d/framebuffer_pipeline.cpp",
+			"file": "machine/cpp/render/backend/pass/library.cpp",
 			"substrings": [
 				"return view->presentWorkbenchFrameBufferTexture && view->vdpRpuFrame->commands.passCount == 0u;"
 			],
@@ -2698,7 +2671,7 @@
 			"substrings": [
 				"#include \"machine/devices/vdp/rpu.h\"",
 				"struct VdpDeviceOutput {",
-				"\tconst VdpRpuFrameOutput* rpu = nullptr;"
+				"\tconst VdpRpuFrameOutput* rpu;"
 			],
 			"reason": "native_vdp_device_output_must_publish_only_retained_rpu_frame_for_cart_visible_rendering"
 		},
@@ -3733,7 +3706,7 @@
 	"strict_runtime_no_heap_regions": [
 		{
 			"file": "machine/ts/machine/devices/vdp/rpu.ts",
-			"start": "public consumePacketFromMemory(frame: VdpRpuFrameOutput, headerWord: number, cursor: number, end: number): number {",
+			"start": "public consumePacketFromMemory(frame: VdpRpuFrameOutput, headerWord: number, cursor: number): number {",
 			"end": "type VdpRpuSaveArray = Uint32Array | Uint16Array | Uint8Array;",
 			"reason": "rpu_device_packet_consume_and_retained_command_buffer_hot_path_must_not_allocate"
 		},
@@ -3757,8 +3730,8 @@
 		},
 		{
 			"file": "machine/cpp/machine/devices/vdp/rpu.cpp",
-			"start": "u32 VdpRpuUnit::consumePacketFromMemory(VdpRpuFrameOutput& frame, u32 headerWord, u32 cursor, u32 end) {",
-			"end": "std::unique_ptr<VdpRpuFrameOutput> createVdpRpuFrameOutput() {",
+			"start": "u32 VdpRpuUnit::consumePacketFromMemory(VdpRpuFrameOutput& frame, u32 headerWord, u32 cursor) {",
+			"end": "std::unique_ptr<VdpRpuFrameOutput> createVdpRpuFrameOutput(std::vector<u8>& vdpVram, std::vector<u32>& vdpVramPageRevisions) {",
 			"reason": "rpu_device_packet_consume_and_retained_command_buffer_hot_path_must_not_allocate"
 		},
 		{
@@ -3786,21 +3759,22 @@
 			"functions": [
 				"vdpRpuPrimitive",
 				"vdpRpuIndexType",
+				"configureNearestClampTexture2D",
 				"deleteVdpRpuSurfaceStorage",
 				"uploadVdpRpuBuffer",
-				"ensureVdpRpuSurfaceStorage",
+				"loadVdpRpuSurfaceStorage",
 				"uploadVdpRpuTextureSurface",
 				"bindVdpRpuPassFramebuffer",
 				"setVdpRpuPipelineState",
 				"vdpRpuAttributeLocation",
 				"vdpRpuAttributeType",
 				"bindVdpRpuStreamAttribute",
-				"bindVdpRpuVertexStream",
+				"bindVdpRpuStreamBinding",
 				"setVdpRpuDefaultVertexAttributes",
 				"setVdpRpuDefaultInstanceAttributes",
-				"bindVdpRpuInstanceStream",
-				"bindVdpRpuMorphStream",
 				"bindVdpRpuDrawStreams",
+				"findVdpRpuConstantBindingAddress",
+				"readVdpRpuFloatWords",
 				"setVdpRpuC0Constants",
 				"setVdpRpuC1Constants",
 				"setVdpRpuJointConstants",
@@ -3816,21 +3790,22 @@
 			"functions": [
 				"vdpRpuPrimitive",
 				"vdpRpuIndexType",
+				"configureNearestClampTexture2D",
 				"deleteVdpRpuSurfaceStorage",
 				"uploadVdpRpuBuffer",
-				"ensureVdpRpuSurfaceStorage",
+				"loadVdpRpuSurfaceStorage",
 				"uploadVdpRpuTextureSurface",
 				"bindVdpRpuPassFramebuffer",
 				"setVdpRpuPipelineState",
 				"vdpRpuAttributeLocation",
 				"vdpRpuAttributeType",
 				"bindVdpRpuStreamAttribute",
-				"bindVdpRpuVertexStream",
+				"bindVdpRpuStreamBinding",
 				"setVdpRpuDefaultVertexAttributes",
 				"setVdpRpuDefaultInstanceAttributes",
-				"bindVdpRpuInstanceStream",
-				"bindVdpRpuMorphStream",
 				"bindVdpRpuDrawStreams",
+				"findVdpRpuConstantBindingAddress",
+				"readVdpRpuFloatWords",
 				"setVdpRpuC0Constants",
 				"setVdpRpuC1Constants",
 				"setVdpRpuJointConstants",
@@ -3890,7 +3865,6 @@
 		{
 			"file": "machine/ts/render/headless/backend.ts",
 			"functions": [
-				"resetFrameStats",
 				"beginFrame",
 				"beginRenderPass"
 			],
@@ -3921,8 +3895,7 @@
 		{
 			"file": "machine/ts/render/headless/view.ts",
 			"functions": [
-				"presentFrameBuffer",
-				"borrowPresentedFramePixels"
+				"presentFrameBuffer"
 			],
 			"reason": "headless_present_host_must_reuse_presented_frame_event_object"
 		}

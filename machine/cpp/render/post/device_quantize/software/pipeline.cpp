@@ -7,7 +7,6 @@
 #include "common/clamp.h"
 #include "render/backend/backend.h"
 #include "render/backend/pass/library.h"
-#include "render/gameview.h"
 
 #include <array>
 #include <cmath>
@@ -95,23 +94,11 @@ inline u8 byteFromLinear(f32 c) {
 	return static_cast<u8>(v);
 }
 
-void writeState(DeviceQuantizePipelineState& state, const RenderPassDef::RenderGraphPassContext& ctx) {
-	auto* view = ctx.view;
-	writeRenderPassViewportSize(state.width, state.height, state.baseWidth, state.baseHeight, *view);
-	state.colorTex = ctx.getTexture(RenderPassDef::RenderGraphSlot::FrameColor);
-	state.ditherType = static_cast<i32>(view->dither_type);
-}
-
-void writeState(const RenderPassDef::RenderGraphPassContext& ctx, RenderPassStateStorage& state) {
-	writeState(state.deviceQuantize, ctx);
-}
-
-void render(SoftwareBackend& backend, const DeviceQuantizePipelineState& state) {
+void renderDeviceQuantizeSoftware(SoftwareBackend& backend, const DeviceQuantizePipelineState& state) {
 	auto* colorTex = static_cast<SoftwareTexture*>(state.colorTex);
 	const u32* src = colorTex->data.data();
 	u32* dst = backend.framebuffer();
 	const i32 srcWidth = colorTex->width;
-	const i32 srcHeight = colorTex->height;
 	const i32 dstWidth = backend.width();
 	const i32 dstHeight = backend.height();
 	const i32 dstPixelsPerRow = backend.pitch() / static_cast<i32>(sizeof(u32));
@@ -120,7 +107,7 @@ void render(SoftwareBackend& backend, const DeviceQuantizePipelineState& state) 
 	const auto& signalToLinearLut = kSignalToLinearTable;
 
 	for (i32 y = 0; y < dstHeight; y += 1) {
-		const i32 sy = y * srcHeight / dstHeight;
+		const i32 sy = y * colorTex->height / dstHeight;
 		const u32* srcRow = src + static_cast<size_t>(sy) * static_cast<size_t>(srcWidth);
 		u32* dstRow = dst + static_cast<size_t>(y) * static_cast<size_t>(dstPixelsPerRow);
 		for (i32 x = 0; x < dstWidth; x += 1) {
@@ -157,24 +144,17 @@ void render(SoftwareBackend& backend, const DeviceQuantizePipelineState& state) 
 
 } // namespace
 
-bool shouldExecute(GameView* view, void*) {
-	return static_cast<i32>(view->dither_type) != 0;
-}
-
-void render(GPUBackend* backend, GameView*, void*, RenderPassStateStorage& state, void*) {
-	render(*static_cast<SoftwareBackend*>(backend), state.deviceQuantize);
-}
-
 void registerPass(RenderPassLibrary& registry) {
 	RenderPassDef desc;
 	desc.id = "device_quantize";
 	desc.name = "DeviceQuantize";
-	desc.graph = RenderPassDef::RenderPassGraphDef{};
-	desc.graph->reads = { RenderPassDef::RenderGraphSlot::FrameColor };
-	desc.graph->writes = { RenderPassDef::RenderGraphSlot::DeviceColor };
-	desc.graph->writeState = writeState;
-	desc.shouldExecute = shouldExecute;
-	desc.exec = render;
+	setDeviceQuantizeGraph(desc);
+	desc.shouldExecute = shouldExecuteDeviceQuantizePass;
+	desc.exec = executeStateRenderPass<
+		SoftwareBackend,
+		DeviceQuantizePipelineState,
+		&RenderPassStateStorage::deviceQuantize,
+		renderDeviceQuantizeSoftware>;
 	registry.registerPass(desc);
 }
 

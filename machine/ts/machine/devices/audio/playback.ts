@@ -22,17 +22,14 @@ import {
 
 export type ApuFilterType = BiquadFilterType;
 
-export interface ApuOutputFilter {
-	type: ApuFilterType;
-	frequency: number;
-	q: number;
-	gain: number;
-}
-
 export interface ApuOutputPlayback {
 	playbackRate: number;
 	gainLinear: number;
-	filter: ApuOutputFilter | null;
+	filterEnabled: boolean;
+	filterType: ApuFilterType;
+	filterFrequency: number;
+	filterQ: number;
+	filterGain: number;
 }
 
 export function resolveApuGainLinear(gainQ12Word: number): number {
@@ -64,23 +61,25 @@ function decodeApuFilterType(kind: number): ApuFilterType {
 	}
 }
 
-export function resolveApuOutputFilter(registerWords: ApuParameterRegisterWords): ApuOutputFilter | null {
+export function applyApuOutputFilter(playback: ApuOutputPlayback, registerWords: ApuParameterRegisterWords): void {
 	const filterKind = registerWords[APU_PARAMETER_FILTER_KIND_INDEX]!;
-	if (filterKind === APU_FILTER_NONE) {
-		return null;
-	}
-	return {
-		type: decodeApuFilterType(filterKind),
-		frequency: toSignedWord(registerWords[APU_PARAMETER_FILTER_FREQ_HZ_INDEX]!),
-		q: toSignedWord(registerWords[APU_PARAMETER_FILTER_Q_MILLI_INDEX]!) / 1000,
-		gain: toSignedWord(registerWords[APU_PARAMETER_FILTER_GAIN_MILLIDB_INDEX]!) / 1000,
-	};
+	playback.filterEnabled = filterKind !== APU_FILTER_NONE;
+	playback.filterType = decodeApuFilterType(filterKind);
+	playback.filterFrequency = toSignedWord(registerWords[APU_PARAMETER_FILTER_FREQ_HZ_INDEX]!);
+	playback.filterQ = toSignedWord(registerWords[APU_PARAMETER_FILTER_Q_MILLI_INDEX]!) / 1000;
+	playback.filterGain = toSignedWord(registerWords[APU_PARAMETER_FILTER_GAIN_MILLIDB_INDEX]!) / 1000;
 }
 
 export function resolveApuOutputPlayback(registerWords: ApuParameterRegisterWords): ApuOutputPlayback {
-	return {
+	const playback: ApuOutputPlayback = {
 		playbackRate: resolveApuPlaybackRate(registerWords[APU_PARAMETER_RATE_STEP_Q16_INDEX]!),
 		gainLinear: resolveApuGainLinear(registerWords[APU_PARAMETER_GAIN_Q12_INDEX]!),
-		filter: resolveApuOutputFilter(registerWords),
+		filterEnabled: false,
+		filterType: 'lowpass',
+		filterFrequency: 0,
+		filterQ: 0,
+		filterGain: 0,
 	};
+	applyApuOutputFilter(playback, registerWords);
+	return playback;
 }

@@ -199,30 +199,12 @@ void GeometryController::start(int64_t nowCycles, uint32_t command) {
 	job.stride1 = m_memory.readIoU32(IO_GEO_STRIDE1);
 	job.stride2 = m_memory.readIoU32(IO_GEO_STRIDE2);
 	switch (job.cmd) {
-		case IO_CMD_GEO_XFORM2_BATCH: {
-			const uint32_t rejectFault = m_xform2.validateSubmission(job);
-			if (rejectFault != 0u) {
-				finishRejected(rejectFault);
-				return;
-			}
+		case IO_CMD_GEO_XFORM2_BATCH:
 			break;
-		}
-		case IO_CMD_GEO_SAT2_BATCH: {
-			const uint32_t rejectFault = m_sat2.validateSubmission(job);
-			if (rejectFault != 0u) {
-				finishRejected(rejectFault);
-				return;
-			}
+		case IO_CMD_GEO_SAT2_BATCH:
 			break;
-		}
-		case IO_CMD_GEO_OVERLAP2D_PASS: {
-			const uint32_t rejectFault = m_overlap2d.validateSubmission(job);
-			if (rejectFault != 0u) {
-				finishRejected(rejectFault);
-				return;
-			}
+		case IO_CMD_GEO_OVERLAP2D_PASS:
 			break;
-		}
 		default:
 			finishRejected(GEO_FAULT_REJECT_BAD_CMD);
 			return;

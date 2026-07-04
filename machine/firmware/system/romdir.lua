@@ -11,6 +11,8 @@ local toc_invalid_u32<const> = 0xffffffff
 local op_delete<const> = 1
 local hash_prime<const> = 0x1b3
 local u32_mod<const> = 0x100000000
+local atlas_id_prefix_len<const> = 7
+local ascii_zero<const> = 48
 
 local kind_image<const> = 1
 local kind_audio<const> = 2
@@ -24,12 +26,10 @@ local kind_code<const> = 10
 
 local rom_system<const> = 1
 local rom_cart<const> = 2
-local rom_overlay<const> = 3
 
 local rom_name_by_id<const> = {
 	[rom_system] = 'system',
 	[rom_cart] = 'cart',
-	[rom_overlay] = 'overlay',
 }
 
 local kind_name_by_id<const> = {
@@ -43,6 +43,14 @@ local kind_name_by_id<const> = {
 	[kind_lua] = 'lua',
 	[kind_code] = 'code',
 }
+
+local atlas_id_from_name<const> = function(id)
+	local atlas_id = 0
+	for index = atlas_id_prefix_len + 1, #id do
+		atlas_id = atlas_id * 10 + string.byte(id, index) - ascii_zero
+	end
+	return atlas_id
+end
 
 local assert_range<const> = function(offset, length, limit, label)
 	if offset < 0 or length < 0 or offset + length > limit then
@@ -90,6 +98,9 @@ local register_token<const> = function(rom, entry)
 		error(rom.label .. ' ROM TOC has duplicate resource token.')
 	end
 	kind_map[entry.kind] = entry
+	if entry.kind == kind_atlas then
+		rom.atlases[atlas_id_from_name(entry.id)] = entry
+	end
 end
 
 local entry_span<const> = function(header, section_off, section_len, start, finish, label)
@@ -181,6 +192,7 @@ local parse_rom<const> = function(header, rom_id)
 		label = header.label,
 		header = header,
 		tokens = {},
+		atlases = {},
 		entries = {},
 	}
 	for index = 0, entry_count - 1 do
@@ -278,6 +290,19 @@ local find_in_roms<const> = function(roms, id, kind)
 	local token_lo<const>, token_hi<const> = hash_id(id)
 	for index = 1, #roms do
 		local entry<const> = find_by_token(roms[index], token_lo, token_hi, kind)
+		if entry ~= nil then
+			if entry.op == op_delete then
+				return nil, true
+			end
+			return entry, false
+		end
+	end
+	return nil, false
+end
+
+local find_atlas_in_roms<const> = function(roms, atlas_id)
+	for index = 1, #roms do
+		local entry<const> = roms[index].atlases[atlas_id]
 		if entry ~= nil then
 			if entry.op == op_delete then
 				return nil, true
@@ -397,23 +422,14 @@ local list_entries<const> = function(roms, kind)
 	return out
 end
 
-local cart_header<const> = read_header(0x01000000, 'cart', false)
-local overlay_header<const> = read_header(0x06000000, 'overlay', false)
-
 local system_rom<const> = parse_rom(read_header(0x00000000, 'system', true), rom_system)
+local cart_header<const> = read_header(0x01000000, 'cart', false)
 local cart_rom = nil
 if cart_header ~= nil then
 	cart_rom = parse_rom(cart_header, rom_cart)
 end
-local overlay_rom = nil
-if overlay_header ~= nil then
-	overlay_rom = parse_rom(overlay_header, rom_overlay)
-end
 
 local active_roms<const> = {}
-if overlay_rom ~= nil then
-	active_roms[#active_roms + 1] = overlay_rom
-end
 if cart_rom ~= nil then
 	active_roms[#active_roms + 1] = cart_rom
 end
@@ -440,11 +456,11 @@ function romdir.cart(id)
 end
 
 function romdir.cart_atlas(id)
-	local entry<const> = find_in_roms(active_roms, id, kind_atlas)
+	local entry<const> = find_atlas_in_roms(active_roms, id)
 	if entry == nil then
-		error('cart atlas ROM entry "' .. tostring(id) .. '" was not found.')
+		error('cart atlas ROM entry ' .. tostring(id) .. ' was not found.')
 	end
-	return entry
+	return record_for_entry(entry)
 end
 
 function romdir.system(id)
@@ -456,11 +472,19 @@ function romdir.system(id)
 end
 
 function romdir.system_rom_atlas(id)
-	local entry<const> = find_in_roms(system_roms, id, kind_atlas)
+	local entry<const> = find_atlas_in_roms(system_roms, id)
 	if entry == nil then
-		error('system ROM atlas entry "' .. tostring(id) .. '" was not found.')
+		error('system ROM atlas entry ' .. tostring(id) .. ' was not found.')
 	end
-	return entry
+	return record_for_entry(entry)
+end
+
+function romdir.atlas(id)
+	local entry<const> = find_atlas_in_roms(active_plus_system_roms, id)
+	if entry == nil then
+		return nil
+	end
+	return record_for_entry(entry)
 end
 
 function romdir.lookup(id)

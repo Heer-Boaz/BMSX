@@ -20,13 +20,9 @@ public:
 	void acknowledge(uint32_t mask);
 
 private:
-	static Value onFlagsReadThunk(void* context, uint32_t addr);
-	static void onAckWriteThunk(void* context, uint32_t addr, Value value);
-	static Value onMaskReadThunk(void* context, uint32_t addr);
-	static void onMaskWriteThunk(void* context, uint32_t addr, Value value);
-	Value onFlagsRead() const;
+	Value onFlagsRead(uint32_t addr) const;
 	void onAckWrite(uint32_t addr, Value value);
-	Value onMaskRead() const;
+	Value onMaskRead(uint32_t addr) const;
 	void onMaskWrite(uint32_t addr, Value value);
 
 	Memory& m_memory;

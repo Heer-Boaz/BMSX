@@ -46,11 +46,14 @@ void ApuActiveSlots::setPhase(ApuAudioSlot slot, ApuSlotPhase phase) {
 }
 
 void ApuActiveSlots::advance(i64 samples) {
+	const u32 activeMask = m_slots.activeMask();
 	for (ApuAudioSlot slot = 0; slot < APU_SLOT_COUNT; slot += 1u) {
-		const ApuSlotAdvanceResult result = m_slots.advanceSlot(slot, samples);
-		if (result.ended) {
-			m_audioOutput.stopSlot(slot);
-			emitSlotEvent(slot, result.voiceId, result.sourceAddr);
+		if ((activeMask & (1u << slot)) != 0u) {
+			const ApuSlotAdvanceResult result = m_slots.advanceSlot(slot, samples);
+			if (result.ended) {
+				m_audioOutput.stopSlot(slot);
+				emitSlotEvent(slot, result.voiceId, result.sourceAddr);
+			}
 		}
 	}
 }

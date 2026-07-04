@@ -1,6 +1,6 @@
 import {
 	APU_PARAMETER_SOURCE_ADDR_INDEX,
-	APU_SLOT_COUNT,
+	APU_SLOT_INDEX_MASK,
 	APU_STATUS_SELECTED_SLOT_ACTIVE,
 } from './contracts';
 import type { ApuSlotBank } from './slot_bank';
@@ -21,8 +21,8 @@ export class ApuSelectedSlotLatch {
 	}
 
 	public refresh(): void {
-		const slot = this.memory.readIoU32(IO_APU_SLOT);
-		const active = slot < APU_SLOT_COUNT && (this.slots.activeMask & (1 << slot)) !== 0;
+		const slot = this.memory.readIoU32(IO_APU_SLOT) & APU_SLOT_INDEX_MASK;
+		const active = (this.slots.activeMask & (1 << slot)) !== 0;
 		this.memory.writeIoValue(IO_APU_SELECTED_SOURCE_ADDR, active ? this.slots.registerWord(slot, APU_PARAMETER_SOURCE_ADDR_INDEX) : 0);
 		this.status.setStatusFlag(APU_STATUS_SELECTED_SLOT_ACTIVE, active);
 	}

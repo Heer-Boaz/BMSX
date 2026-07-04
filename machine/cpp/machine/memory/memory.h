@@ -23,13 +23,8 @@ struct MemoryInit {
 		const u8* data;
 		size_t size;
 	};
-	struct MutableRomSpan {
-		u8* data = nullptr;
-		size_t size = 0;
-	};
 	RomSpan systemRom;
 	RomSpan cartRom;
-	MutableRomSpan overlayRom;
 };
 
 class Memory {
@@ -45,10 +40,17 @@ public:
 
 	explicit Memory(const MemoryInit& init);
 
-	size_t getOverlayRomSize() const;
 	void setVramWriter(VramWriter* writer);
 	void mapIoRead(uint32_t addr, void* context, IoReadHandler handler);
+	template <auto Method, typename TObject>
+	void mapIoRead(uint32_t addr, TObject& object) {
+		m_ioReadHandlers[static_cast<size_t>((addr - IO_BASE) / IO_WORD_SIZE)] = { &object, &readMember<Method, TObject> };
+	}
 	void mapIoWrite(uint32_t addr, void* context, IoWriteHandler handler);
+	template <auto Method, typename TObject>
+	void mapIoWrite(uint32_t addr, TObject& object) {
+		m_ioWriteHandlers[static_cast<size_t>((addr - IO_BASE) / IO_WORD_SIZE)] = { &object, &writeMember<Method, TObject> };
+	}
 	void setProgramRom(const u8* data, size_t size, size_t textByteLength);
 
 	Value readValue(uint32_t addr) const;
@@ -75,8 +77,8 @@ public:
 	void writeMappedF32LE(uint32_t addr, float value);
 	void writeMappedF64LE(uint32_t addr, double value);
 
-	bool writeBytes(uint32_t addr, const u8* data, size_t length);
-	bool readBytes(uint32_t addr, u8* out, size_t length) const;
+	void writeBytes(uint32_t addr, const u8* data, size_t length);
+	void readBytes(uint32_t addr, u8* out, size_t length) const;
 	bool isReadableMainMemoryRange(uint32_t addr, size_t length) const;
 	bool isImmutableMainMemoryRange(uint32_t addr, size_t length) const;
 	bool bindImmutableMainMemoryView(uint32_t addr, size_t length, Span<const u8>& out) const;
@@ -93,10 +95,6 @@ private:
 		const u8* data;
 		size_t size;
 	};
-	struct MutableRomSpan {
-		u8* data = nullptr;
-		size_t size = 0;
-	};
 	struct IoReadBinding {
 		void* context = nullptr;
 		IoReadHandler handler = nullptr;
@@ -109,7 +107,6 @@ private:
 	RomSpan m_cartRom;
 	RomSpan m_programRom;
 	size_t m_programTextByteLength = 0;
-	MutableRomSpan m_overlayRom;
 	std::vector<u8> m_ram;
 	mutable std::vector<Value> m_ioSlots;
 	std::vector<IoReadBinding> m_ioReadHandlers;
@@ -129,16 +126,21 @@ private:
 	}
 	bool isProgramRomReadableRange(uint32_t addr, size_t length) const;
 	uint32_t readProgramRomWord(uint32_t addr) const;
-	uint32_t readU32FromRegion(uint32_t addr) const;
+	uint32_t readSystemOrCartRomU32(uint32_t addr) const;
 	bool isRangeWithinRegion(uint32_t addr, size_t length, uint32_t base, uint32_t size) const;
 	bool isLuaReadOnlyIoAddress(uint32_t addr) const;
-	bool isMappedWritableRange(uint32_t addr, size_t length) const;
-	bool isMappedReadableRange(uint32_t addr, size_t length) const;
-	int requireIoAlignedSlot(uint32_t addr) const;
 	Value readIoSlotValue(int slot, uint32_t addr) const;
 	void writeIoSlotValue(int slot, uint32_t addr, Value value);
 	bool writeRamU8(uint32_t addr, u8 value);
 	bool writeRamWordLE(uint32_t addr, size_t byteLength, uint32_t value);
+	template <auto Method, typename TObject>
+	static Value readMember(void* context, uint32_t addr) {
+		return (static_cast<TObject*>(context)->*Method)(addr);
+	}
+	template <auto Method, typename TObject>
+	static void writeMember(void* context, uint32_t addr, Value value) {
+		(static_cast<TObject*>(context)->*Method)(addr, value);
+	}
 	static void onBusFaultAckWriteThunk(void* context, uint32_t addr, Value value);
 	void onBusFaultAckWrite(uint32_t addr, Value value);
 	void raiseBusFault(uint32_t code, uint32_t addr, uint32_t access) const;

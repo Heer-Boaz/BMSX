@@ -2,24 +2,17 @@
 
 namespace bmsx {
 
-namespace {
-
-i64 floorScaledRatio(i64 value, i64 multiplier, i64 divisor) {
-	const i64 whole = (value / divisor) * multiplier;
-	const i64 remainder = ((value % divisor) * multiplier) / divisor;
-	return whole + remainder;
-}
-
-} // namespace
-
 i64 calcCyclesPerFrameScaled(i64 cpuHz, i64 refreshHzScaled) {
-	return floorScaledRatio(cpuHz, HZ_SCALE, refreshHzScaled);
+	const i64 whole = (cpuHz / refreshHzScaled) * HZ_SCALE;
+	const i64 remainder = ((cpuHz % refreshHzScaled) * HZ_SCALE) / refreshHzScaled;
+	return whole + remainder;
 }
 
 i64 resolveVblankCycles(i64 cpuFreqHz, i64 ufpsScaled, i64 totalScanlines, i32 renderHeight) {
 	const i64 cycleBudgetPerFrame = calcCyclesPerFrameScaled(cpuFreqHz, ufpsScaled);
-	const i64 activeDisplayCycles = floorScaledRatio(cycleBudgetPerFrame, renderHeight, totalScanlines);
-	return cycleBudgetPerFrame - activeDisplayCycles;
+	const i64 whole = (cycleBudgetPerFrame / totalScanlines) * renderHeight;
+	const i64 remainder = ((cycleBudgetPerFrame % totalScanlines) * renderHeight) / totalScanlines;
+	return cycleBudgetPerFrame - (whole + remainder);
 }
 
 } // namespace bmsx

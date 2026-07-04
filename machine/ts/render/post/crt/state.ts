@@ -1,7 +1,18 @@
 import type { CRTPipelineState, PresentPipelineState, RenderGraphPassContext } from '../../backend/backend';
 import type { GameView } from '../../gameview';
 
-export function hasEnabledCrtEffects(view: GameView): boolean {
+export function shouldExecuteAutoPresentPass(view: GameView): boolean {
+	return !view.crt_postprocessing_enabled
+		|| (!view.enable_noise
+			&& !view.enable_colorbleed
+			&& !view.enable_scanlines
+			&& !view.enable_blur
+			&& !view.enable_glow
+			&& !view.enable_fringing
+			&& !view.enable_aperture);
+}
+
+export function shouldExecuteAutoCrtPass(view: GameView): boolean {
 	return view.crt_postprocessing_enabled
 		&& (view.enable_noise
 			|| view.enable_colorbleed
@@ -10,14 +21,6 @@ export function hasEnabledCrtEffects(view: GameView): boolean {
 			|| view.enable_glow
 			|| view.enable_fringing
 			|| view.enable_aperture);
-}
-
-export function shouldExecuteAutoPresentPass(view: GameView): boolean {
-	return !hasEnabledCrtEffects(view);
-}
-
-export function shouldExecuteAutoCrtPass(view: GameView): boolean {
-	return hasEnabledCrtEffects(view);
 }
 
 export function createPresentPassState(): PresentPipelineState {

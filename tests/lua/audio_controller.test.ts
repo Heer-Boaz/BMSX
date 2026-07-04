@@ -11,9 +11,7 @@ import {
 	APU_FILTER_HIGHSHELF,
 	APU_FILTER_LOWPASS,
 	APU_FAULT_BAD_CMD,
-	APU_FAULT_CMD_FIFO_FULL,
 	APU_FAULT_NONE,
-	APU_FAULT_OUTPUT_PLAYBACK_RATE,
 	APU_FAULT_SOURCE_RANGE,
 	APU_FAULT_UNSUPPORTED_FORMAT,
 	APU_GENERATOR_NONE,
@@ -30,6 +28,7 @@ import {
 	APU_PARAMETER_SOURCE_ADDR_INDEX,
 	APU_OUTPUT_QUEUE_CAPACITY_FRAMES,
 	APU_SAMPLE_RATE_HZ,
+	APU_SLOT_INDEX_MASK,
 	APU_SLOT_PHASE_FADING,
 	APU_SLOT_PHASE_IDLE,
 	APU_SLOT_PHASE_PLAYING,
@@ -90,7 +89,7 @@ import {
 import { AudioController } from '../../machine/ts/machine/devices/audio/controller';
 import { ApuOutputMixer } from '../../machine/ts/machine/devices/audio/output';
 import { ApuSourceDma } from '../../machine/ts/machine/devices/audio/source';
-import type { ApuOutputState, ApuOutputVoiceState } from '../../machine/ts/machine/devices/audio/save_state';
+import type { AudioControllerState, ApuOutputState, ApuOutputVoiceState } from '../../machine/ts/machine/devices/audio/save_state';
 import { CPU } from '../../machine/ts/machine/cpu/cpu';
 import { IrqController } from '../../machine/ts/machine/devices/irq/controller';
 import { DEFAULT_LUA_BUILTIN_NAMES } from '../../machine/ts/machine/firmware/builtin_descriptors';
@@ -151,13 +150,13 @@ function createAudioControllerHarness(audioOutput: object): { memory: Memory; au
 
 function createAudioHarness(): { memory: Memory; audio: AudioController } {
 	const audioOutput = {
-		playVoice: () => ({ faultCode: APU_FAULT_NONE, faultDetail: 0 }),
-		writeSlotRegisterWord: () => ({ faultCode: APU_FAULT_NONE, faultDetail: 0 }),
+		playVoice: () => {},
+		writeSlotRegisterWord: () => {},
 		stopAllVoices: () => {},
 		resetPlaybackState: () => {},
 		stopSlot: () => {},
 		captureState: (): ApuOutputState => ({ voices: [] }),
-		restoreVoiceState: () => {},
+		restoreVoice: () => {},
 		outputRing: {
 			queuedFrames: () => 0,
 			freeFrames: () => APU_OUTPUT_QUEUE_CAPACITY_FRAMES,
@@ -170,6 +169,18 @@ function createAudioHarness(): { memory: Memory; audio: AudioController } {
 function createRealAudioHarness(): { memory: Memory; audio: AudioController; audioOutput: ApuOutputMixer } {
 	const audioOutput = new ApuOutputMixer();
 	return { ...createAudioControllerHarness(audioOutput), audioOutput };
+}
+
+function restoreRealAudioHarness(state: AudioControllerState): { memory: Memory; audio: AudioController; audioOutput: ApuOutputMixer } {
+	const restored = createRealAudioHarness();
+	restored.audio.restoreState(state, 0);
+	return restored;
+}
+
+function renderAoutFrame(audioOutput: ApuOutputMixer): Int16Array {
+	const output = new Int16Array(2);
+	audioOutput.renderSamples(output, 1, APU_SAMPLE_RATE_HZ, 1);
+	return output;
 }
 
 function renderPastAoutVoiceEnd(audioOutput: ApuOutputMixer): void {
@@ -190,13 +201,11 @@ function createActiveVoiceAudioHarness(stopSlotWithFade = false): {
 	const audioOutput = {
 		playVoice: (slot: number, voiceId: number, source: { sourceAddr: number }, _runtimeBytes: Uint8Array, registerWords: readonly number[], playbackCursorQ16: number, stopFadeSamples = 0) => {
 			activeVoice = { slot, voiceId, sourceAddr: source.sourceAddr, registerWords, playbackCursorQ16, stopFadeSamples };
-			return { faultCode: APU_FAULT_NONE, faultDetail: 0 };
 		},
 		writeSlotRegisterWord: (_slot: number, _source: object, registerWords: readonly number[], parameterIndex: number) => {
 			if (parameterIndex === APU_PARAMETER_GAIN_Q12_INDEX) {
 				slotGainQ12 = registerWords[APU_PARAMETER_GAIN_Q12_INDEX]!;
 			}
-			return { faultCode: APU_FAULT_NONE, faultDetail: 0 };
 		},
 		stopAllVoices: () => {
 			activeVoice = null;
@@ -206,21 +215,23 @@ function createActiveVoiceAudioHarness(stopSlotWithFade = false): {
 			stoppedFadeSamples = 0;
 		},
 		stopSlot: (slot: number, fadeSamples = 0) => {
+			const slotActive = activeVoice !== null && activeVoice.slot === slot;
 			if (fadeSamples === 0) {
-				const stopped = activeVoice !== null && activeVoice.slot === slot;
 				activeVoice = null;
-				return stopped;
+				return slotActive;
 			}
 			if (!stopSlotWithFade) {
 				return false;
 			}
 			stoppedFadeSamples = fadeSamples;
-			return activeVoice !== null && activeVoice.slot === slot;
+			return slotActive;
 		},
 		captureState: (): ApuOutputState => ({
 			voices: activeVoice === null ? [] : [createFakeOutputVoiceState(activeVoice)],
 		}),
-		restoreVoiceState: () => {},
+		restoreVoice: (slot: number, voiceId: number, source: { sourceAddr: number }, _runtimeBytes: Uint8Array, registerWords: readonly number[], playbackCursorQ16: number) => {
+			activeVoice = { slot, voiceId, sourceAddr: source.sourceAddr, registerWords, playbackCursorQ16, stopFadeSamples: stoppedFadeSamples };
+		},
 		outputRing: {
 			queuedFrames: () => 0,
 			freeFrames: () => APU_OUTPUT_QUEUE_CAPACITY_FRAMES,
@@ -251,12 +262,11 @@ test('APU contract constants keep hardware command values', () => {
 	assert.equal(APU_STATUS_CMD_FIFO_FULL, 64);
 	assert.equal(APU_OUTPUT_QUEUE_CAPACITY_FRAMES, 16384);
 	assert.equal(APU_COMMAND_FIFO_CAPACITY, 16);
+	assert.equal(APU_SLOT_INDEX_MASK, 15);
 	assert.equal(APU_SLOT_PHASE_PLAYING, 1);
 	assert.equal(APU_SLOT_PHASE_FADING, 2);
 	assert.equal(APU_FAULT_SOURCE_RANGE, 0x0102);
-	assert.equal(APU_FAULT_CMD_FIFO_FULL, 0x0003);
 	assert.equal(APU_FAULT_UNSUPPORTED_FORMAT, 0x0201);
-	assert.equal(APU_FAULT_OUTPUT_PLAYBACK_RATE, 0x0204);
 	assert.equal(APU_FILTER_HIGHSHELF, 8);
 	assert.equal(APU_EVENT_SLOT_ENDED, 1);
 	assert.equal(APU_GENERATOR_SQUARE, 1);
@@ -298,7 +308,6 @@ test('APU hardware words are not runtime globals', () => {
 		'sys_apu_cmd_capacity',
 		'apu_fault_source_range',
 		'apu_fault_unsupported_format',
-		'apu_fault_output_playback_rate',
 		'apu_status_cmd_fifo_empty',
 		'apu_status_cmd_fifo_full',
 		'apu_command_fifo_capacity',
@@ -446,14 +455,14 @@ function assertApuFaultLatch(memory: Memory, faultCode: number): void {
 	assert.equal((status & APU_STATUS_FAULT) !== 0, true);
 }
 
-function assertApuSlotOneActiveReadback(memory: Memory): void {
+function assertApuSlotOneActiveReadback(memory: Memory, slotRegisterWord = 1): void {
 	const status = memory.readIoU32(IO_APU_STATUS);
 	assert.equal((status & APU_STATUS_SELECTED_SLOT_ACTIVE) !== 0, true);
 	assert.equal((status & APU_STATUS_BUSY) !== 0, true);
 	assert.equal(memory.readIoU32(IO_APU_SELECTED_SOURCE_ADDR), RAM_BASE);
 	assert.equal(memory.readIoU32(IO_APU_ACTIVE_MASK), 2);
 	assert.equal(memory.readIoU32(IO_APU_SELECTED_SLOT_REG0), RAM_BASE);
-	assert.equal(memory.readIoU32(IO_APU_SELECTED_SLOT_REG0 + APU_PARAMETER_SLOT_INDEX * IO_ARG_STRIDE), 1);
+	assert.equal(memory.readIoU32(IO_APU_SELECTED_SLOT_REG0 + APU_PARAMETER_SLOT_INDEX * IO_ARG_STRIDE), slotRegisterWord);
 }
 
 function assertApuSelectedSlotInactive(memory: Memory): void {
@@ -523,11 +532,11 @@ test('APU command doorbell enqueues a device-owned FIFO snapshot', () => {
 	assertApuSlotOneActiveReadback(memory);
 });
 
-test('APU command FIFO full latches a hardware fault without executing the overflow doorbell', () => {
+test('APU command FIFO full stays a deterministic ring write', () => {
 	const { memory, audio } = createAudioHarness();
 
 	for (let index = 0; index < APU_COMMAND_FIFO_CAPACITY; index += 1) {
-		memory.writeValue(IO_APU_SLOT, 0);
+		memory.writeValue(IO_APU_SLOT, index);
 		memory.writeValue(IO_APU_CMD, APU_CMD_STOP_SLOT);
 	}
 	assert.equal(memory.readIoU32(IO_APU_CMD_QUEUED), APU_COMMAND_FIFO_CAPACITY);
@@ -536,8 +545,12 @@ test('APU command FIFO full latches a hardware fault without executing the overf
 
 	memory.writeValue(IO_APU_SLOT, 1);
 	memory.writeValue(IO_APU_CMD, APU_CMD_STOP_SLOT);
-	assertApuFaultLatch(memory, APU_FAULT_CMD_FIFO_FULL);
-	assert.equal(memory.readIoU32(IO_APU_CMD_QUEUED), APU_COMMAND_FIFO_CAPACITY);
+	assert.equal(memory.readIoU32(IO_APU_FAULT_CODE), APU_FAULT_NONE);
+	const state = audio.captureState().commandFifo;
+	assert.equal(state.count, APU_COMMAND_FIFO_CAPACITY);
+	assert.equal(state.readIndex, 1);
+	assert.equal(state.writeIndex, 1);
+	assert.equal(state.registerWords[APU_PARAMETER_SLOT_INDEX], 1);
 
 	audio.onService(0);
 	assert.equal(memory.readIoU32(IO_APU_CMD_QUEUED), 0);
@@ -561,17 +574,17 @@ test('APU save-state restores pending command FIFO work', () => {
 	assertApuSlotOneActiveReadback(restored.memory);
 });
 
-test('APU output playback-parameter faults clear the replacement slot latch', () => {
+test('APU output playback parameters flow as raw slot state', () => {
 	const { memory, audio } = createRealAudioHarness();
 
 	writeValidSourceRegisters(memory);
 	memory.writeValue(IO_APU_RATE_STEP_Q16, 0);
 	memory.writeValue(IO_APU_SLOT, 1);
 	assert.doesNotThrow(() => writeApuCommand(memory, audio, APU_CMD_PLAY));
+	memory.writeValue(IO_APU_SLOT, 1);
 
-	assertApuFaultLatch(memory, APU_FAULT_OUTPUT_PLAYBACK_RATE);
-	assert.equal(memory.readIoU32(IO_APU_ACTIVE_MASK), 0);
-	assertApuIdleReadback(memory);
+	assert.equal(memory.readIoU32(IO_APU_FAULT_CODE), APU_FAULT_NONE);
+	assertApuSlotOneActiveReadback(memory);
 });
 
 test('AOUT owns reusable host-output queue state', () => {
@@ -669,6 +682,22 @@ test('APU selected-slot active status is device-owned and saved', async () => {
 	assert.equal(restoredStoppedState.slotPhases[1], APU_SLOT_PHASE_IDLE);
 	assert.equal(restoredStoppedState.slotRegisterWords[slotOneSourceRegister], 0);
 	assert.equal(restoredStoppedState.slotSourceBytes[1]!.byteLength, 0);
+});
+
+test('APU slot selectors decode low register bits without bad-slot guards', () => {
+	const { memory, audio } = createAudioHarness();
+	const rawSlotWord = APU_SLOT_INDEX_MASK + 2;
+
+	beginApuPlay(memory, audio, rawSlotWord);
+
+	const state = audio.captureState();
+	assert.equal(memory.readIoU32(IO_APU_FAULT_CODE), APU_FAULT_NONE);
+	assert.equal(memory.readIoU32(IO_APU_ACTIVE_MASK), 2);
+	assert.equal(state.slotPhases[1], APU_SLOT_PHASE_PLAYING);
+	assert.equal(state.slotRegisterWords[apuSlotRegisterWordIndex(1, APU_PARAMETER_SLOT_INDEX)], rawSlotWord);
+
+	memory.writeValue(IO_APU_SLOT, rawSlotWord);
+	assertApuSlotOneActiveReadback(memory, rawSlotWord);
 });
 
 test('APU parameter registerfile is device-owned and saved', () => {
@@ -787,8 +816,9 @@ test('APU selected-slot register window writes live channel state through AOUT',
 	assert.equal(output[1], -7680);
 
 	memory.writeMappedU32LE(selectedRateAddr, 0);
-	assertApuFaultLatch(memory, APU_FAULT_OUTPUT_PLAYBACK_RATE);
-	assertApuIdleReadback(memory);
+	assert.equal(memory.readIoU32(IO_APU_FAULT_CODE), APU_FAULT_NONE);
+	assert.equal(memory.readIoU32(selectedRateAddr), 0);
+	assertApuSlotOneActiveReadback(memory);
 
 	const { memory: sourceReloadMemory, audio: sourceReloadAudio, audioOutput: sourceReloadOutput } = createRealAudioHarness();
 	sourceReloadMemory.writeU32(RAM_BASE + 4, 0x80808080);
@@ -809,8 +839,8 @@ test('APU selected-slot register window writes live channel state through AOUT',
 	renderPastAoutVoiceEnd(noRecordRateOutput);
 	assert.equal(noRecordRateMemory.readIoU32(IO_APU_ACTIVE_MASK), 2);
 	noRecordRateMemory.writeMappedU32LE(selectedRateAddr, 0);
-	assertApuFaultLatch(noRecordRateMemory, APU_FAULT_OUTPUT_PLAYBACK_RATE);
-	assertApuIdleReadback(noRecordRateMemory);
+	assert.equal(noRecordRateMemory.readIoU32(IO_APU_FAULT_CODE), APU_FAULT_NONE);
+	assert.equal(noRecordRateMemory.readIoU32(IO_APU_ACTIVE_MASK), 2);
 });
 
 test('APU selected-slot source-DMA reload preserves STOP fade countdown', () => {
@@ -851,14 +881,9 @@ test('APU restore preserves live AOUT STOP fade envelope state', () => {
 	const saved = audio.captureState();
 	assert.equal(saved.slotFadeSamplesRemaining[1], 2);
 	assert.equal(saved.slotFadeSamplesTotal[1], 4);
-	const liveOutput = new Int16Array(2);
-	audioOutput.renderSamples(liveOutput, 1, APU_SAMPLE_RATE_HZ, 1);
-
-	const restored = createRealAudioHarness();
-	restored.audio.restoreState(saved, 0);
-	const output = new Int16Array(2);
-	restored.audioOutput.renderSamples(output, 1, APU_SAMPLE_RATE_HZ, 1);
-	assert.deepEqual(Array.from(output), Array.from(liveOutput));
+	const liveOutput = renderAoutFrame(audioOutput);
+	const restored = restoreRealAudioHarness(saved);
+	assert.deepEqual(Array.from(renderAoutFrame(restored.audioOutput)), Array.from(liveOutput));
 });
 
 test('APU sample cursor ends playback through the device scheduler', async () => {
@@ -914,14 +939,10 @@ test('APU save-state preserves AOUT voice datapath state after host rendering', 
 	assert.equal(saved.slotPlaybackCursorQ16[1], 0);
 	assert.equal(saved.output.voices.length, 1);
 
-	const liveNext = new Int16Array(2);
-	audioOutput.renderSamples(liveNext, 1, APU_SAMPLE_RATE_HZ, 1);
-	const restored = createRealAudioHarness();
-	restored.audio.restoreState(saved, 0);
-	const restoredNext = new Int16Array(2);
-	restored.audioOutput.renderSamples(restoredNext, 1, APU_SAMPLE_RATE_HZ, 1);
+	const liveNext = renderAoutFrame(audioOutput);
+	const restored = restoreRealAudioHarness(saved);
 
-	assert.deepEqual(Array.from(restoredNext), Array.from(liveNext));
+	assert.deepEqual(Array.from(renderAoutFrame(restored.audioOutput)), Array.from(liveNext));
 });
 
 test('APU save-state does not recreate an AOUT voice that already drained at the host edge', () => {
@@ -933,13 +954,10 @@ test('APU save-state does not recreate an AOUT voice that already drained at the
 	assert.equal(memory.readIoU32(IO_APU_ACTIVE_MASK), 2);
 	assert.equal(saved.output.voices.length, 0);
 
-	const restored = createRealAudioHarness();
-	restored.audio.restoreState(saved, 0);
-	const output = new Int16Array(2);
-	restored.audioOutput.renderSamples(output, 1, APU_SAMPLE_RATE_HZ, 1);
+	const restored = restoreRealAudioHarness(saved);
 
 	assert.equal(restored.memory.readIoU32(IO_APU_ACTIVE_MASK), 2);
-	assert.deepEqual(Array.from(output), [0, 0]);
+	assert.deepEqual(Array.from(renderAoutFrame(restored.audioOutput)), [0, 0]);
 });
 
 test('APU device cursor advances at source sample rate', async () => {
@@ -998,14 +1016,10 @@ test('APU BADP save-state restores decoder-backed AOUT and selected-slot seek wr
 	assert.equal(saved.output.voices[0]!.badp.decodedFrame, 2);
 	assert.equal(saved.output.voices[0]!.badp.nextFrame, 3);
 
-	const liveNext = new Int16Array(2);
-	audioOutput.renderSamples(liveNext, 1, APU_SAMPLE_RATE_HZ, 1);
+	const liveNext = renderAoutFrame(audioOutput);
 
-	const restored = createRealAudioHarness();
-	restored.audio.restoreState(saved, 0);
-	const restoredNext = new Int16Array(2);
-	restored.audioOutput.renderSamples(restoredNext, 1, APU_SAMPLE_RATE_HZ, 1);
-	assert.deepEqual(Array.from(restoredNext), Array.from(liveNext));
+	const restored = restoreRealAudioHarness(saved);
+	assert.deepEqual(Array.from(renderAoutFrame(restored.audioOutput)), Array.from(liveNext));
 
 	restored.memory.writeValue(IO_APU_SLOT, 1);
 	restored.memory.writeMappedU32LE(IO_APU_SELECTED_SLOT_REG0 + APU_PARAMETER_START_SAMPLE_INDEX * IO_ARG_STRIDE, 5);
@@ -1051,7 +1065,7 @@ test('APU STOP_SLOT fade keeps the slot active until the ended event', async () 
 	const restoredMidFadeVoice = restoredMidFade.activeVoice();
 	assert.notEqual(restoredMidFadeVoice, null);
 	assert.equal((restoredMidFadeVoice as FakeVoiceInfo).playbackCursorQ16, twoSampleCursorQ16);
-	assert.equal((restoredMidFadeVoice as FakeVoiceInfo).stopFadeSamples, APU_SAMPLE_RATE_HZ - 2);
+	assert.equal(restoredMidFade.audio.captureState().slotFadeSamplesRemaining[1], APU_SAMPLE_RATE_HZ - 2);
 
 	audio.accrueCycles(APU_SAMPLE_RATE_HZ - 2, APU_SAMPLE_RATE_HZ);
 	audio.onService(APU_SAMPLE_RATE_HZ);

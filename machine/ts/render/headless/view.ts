@@ -113,7 +113,7 @@ export class HeadlessGameViewHost implements GameViewHost {
 	public readonly surface: HeadlessGameViewCanvas;
 	private readonly overlays = new Map<string, HeadlessOverlay>();
 	private readonly presentedFrameListeners = new Set<(frame: HeadlessPresentedFrame) => void>();
-	private readonly presentSurface = new HeadlessPresentSurface();
+	public readonly presentSurface = new HeadlessPresentSurface();
 	private readonly presentedFrameScratch: HeadlessPresentedFrame = { frameIndex: 0, width: 0, height: 0 };
 	private presentedFrameIndex = 0;
 	private readonly viewportCapability: ViewportMetricsProvider;
@@ -202,10 +202,6 @@ export class HeadlessGameViewHost implements GameViewHost {
 			width: this.presentSurface.width,
 			height: this.presentSurface.height,
 		};
-	}
-
-	public borrowPresentedFramePixels(): Uint8Array {
-		return this.presentSurface.borrowPixels();
 	}
 
 	public get presentedFrameWidth(): number {

@@ -295,4 +295,5 @@ export const RUNTIME_SAVE_STATE_PROP_NAMES = [
 	'format',
 	'machineRegionWord',
 	'vdpModeWord',
+	'hashId',
 ] as const;

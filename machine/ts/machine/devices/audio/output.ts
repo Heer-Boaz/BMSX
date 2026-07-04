@@ -9,8 +9,8 @@ import {
 import { ApuOutputRing } from './output_ring';
 import { APU_PCM_SAMPLE_SCALE, readApuPcmSample } from './pcm_decoder_hot_path';
 import {
+	applyApuOutputFilter,
 	resolveApuGainLinear,
-	resolveApuOutputFilter,
 	resolveApuPlaybackRate,
 	resolveApuOutputPlayback,
 	type ApuOutputPlayback,
@@ -24,25 +24,14 @@ import {
 	type ApuOutputVoiceState,
 } from './save_state';
 import {
-	APU_FAULT_NONE,
-	APU_FAULT_OUTPUT_METADATA,
-	APU_FAULT_OUTPUT_PLAYBACK_RATE,
 	APU_GAIN_Q12_ONE,
 	APU_GENERATOR_SQUARE,
 	APU_OUTPUT_QUEUE_CAPACITY_FRAMES,
 	APU_OUTPUT_QUEUE_CAPACITY_SAMPLES,
+	APU_SLOT_COUNT,
 	APU_PARAMETER_GENERATOR_DUTY_Q12_INDEX,
-	APU_PARAMETER_GENERATOR_KIND_INDEX,
-	APU_PARAMETER_SOURCE_ADDR_INDEX,
-	APU_PARAMETER_SOURCE_BITS_PER_SAMPLE_INDEX,
-	APU_PARAMETER_SOURCE_BYTES_INDEX,
-	APU_PARAMETER_SOURCE_CHANNELS_INDEX,
-	APU_PARAMETER_SOURCE_DATA_BYTES_INDEX,
-	APU_PARAMETER_SOURCE_DATA_OFFSET_INDEX,
-	APU_PARAMETER_SOURCE_FRAME_COUNT_INDEX,
 	APU_PARAMETER_SOURCE_LOOP_END_SAMPLE_INDEX,
 	APU_PARAMETER_SOURCE_LOOP_START_SAMPLE_INDEX,
-	APU_PARAMETER_SOURCE_SAMPLE_RATE_HZ_INDEX,
 	APU_PARAMETER_FILTER_FREQ_HZ_INDEX,
 	APU_PARAMETER_FILTER_GAIN_MILLIDB_INDEX,
 	APU_PARAMETER_FILTER_KIND_INDEX,
@@ -58,12 +47,8 @@ import {
 	type ApuVoiceId,
 } from './contracts';
 
-export interface ApuOutputStartResult {
-	faultCode: number;
-	faultDetail: number;
-}
-
 type ApuOutputVoice = ApuOutputVoiceStateAccess & {
+	active: boolean;
 	voiceId: ApuVoiceId;
 	sampleRate: number;
 	channels: number;
@@ -84,7 +69,7 @@ type ApuOutputVoice = ApuOutputVoiceStateAccess & {
 };
 
 const MIN_GAIN = 0.0001;
-const APU_OUTPUT_START_OK: ApuOutputStartResult = { faultCode: APU_FAULT_NONE, faultDetail: 0 };
+const EMPTY_SOURCE_BYTES = new Uint8Array(0);
 const EMPTY_BADP_SEEK_FRAMES = new Uint32Array(0);
 const EMPTY_BADP_SEEK_OFFSETS = new Uint32Array(0);
 function audioFrameIndex(position: number): number {
@@ -103,29 +88,64 @@ export class ApuOutputMixer {
 	private sampledLeft = 0;
 	private sampledRight = 0;
 
+	public constructor() {
+		for (let slot = 0; slot < APU_SLOT_COUNT; slot += 1) {
+			this.voices[slot] = {
+				active: false,
+				voiceId: 0,
+				slot,
+				sampleRate: 0,
+				channels: 0,
+				bitsPerSample: 0,
+				sourceBytes: EMPTY_SOURCE_BYTES,
+				dataOffset: 0,
+				dataSize: 0,
+				frames: 0,
+				generatorKind: 0,
+				generatorDutyQ12: 0,
+				badpSeekFrames: EMPTY_BADP_SEEK_FRAMES,
+				badpSeekOffsets: EMPTY_BADP_SEEK_OFFSETS,
+				loopStartFrame: -1,
+				loopEndFrame: -1,
+				playback: {
+					playbackRate: 1,
+					gainLinear: 1,
+					filterEnabled: false,
+					filterType: 'lowpass',
+					filterFrequency: 0,
+					filterQ: 0,
+					filterGain: 0,
+				},
+				position: 0,
+				step: 0,
+				gain: 1,
+				targetGain: 1,
+				gainRampRemaining: 0,
+				stopAfter: -1,
+				filterSampleRate: 0,
+				filter: new BiquadFilterState(),
+				usesBadp: false,
+				badp: createApuBadpDecoderState(),
+			};
+		}
+	}
+
 	public resetPlaybackState(): void {
-		this.voices.length = 0;
+		for (let slot = 0; slot < APU_SLOT_COUNT; slot += 1) {
+			this.voices[slot]!.active = false;
+		}
 		this.outputRing.clear();
 	}
 
 	public captureState(): ApuOutputState {
-		const voices = new Array<ApuOutputVoiceState>(this.voices.length);
-		for (let index = 0; index < this.voices.length; index += 1) {
-			voices[index] = captureApuOutputVoiceState(this.voices[index]!);
+		const voices: ApuOutputVoiceState[] = [];
+		for (let slot = 0; slot < APU_SLOT_COUNT; slot += 1) {
+			const record = this.voices[slot]!;
+			if (record.active) {
+				voices.push(captureApuOutputVoiceState(record));
+			}
 		}
 		return { voices };
-	}
-
-	public restoreVoiceState(state: ApuOutputVoiceState): void {
-		for (let index = this.voices.length - 1; index >= 0; index -= 1) {
-			const record = this.voices[index]!;
-			if (record.slot !== state.slot) {
-				continue;
-			}
-			restoreApuOutputVoiceState(record, state);
-			return;
-		}
-		throw new Error('[AOUT] Restored voice state has no active AOUT record.');
 	}
 
 	public pullOutputFrames(output: Int16Array, frameCount: number, outputSampleRate: number, outputGain: number, targetQueuedFrames = 0): void {
@@ -145,97 +165,87 @@ export class ApuOutputMixer {
 		registerWords: ApuParameterRegisterWords,
 		playbackCursorQ16: number,
 		stopFadeSamples = 0,
-	): ApuOutputStartResult {
+	): void {
 		const playback = resolveApuOutputPlayback(registerWords);
-		if (playback.playbackRate <= 0) {
-			return { faultCode: APU_FAULT_OUTPUT_PLAYBACK_RATE, faultDetail: registerWords[APU_PARAMETER_RATE_STEP_Q16_INDEX]! };
-		}
-		let badpSeekFrames: Uint32Array<ArrayBufferLike> = EMPTY_BADP_SEEK_FRAMES;
-		let badpSeekOffsets: Uint32Array<ArrayBufferLike> = EMPTY_BADP_SEEK_OFFSETS;
-		if (!apuAudioSourceUsesGenerator(source)) {
-			if (source.bitsPerSample === 4) {
-				const badpSeek = readApuBadpSeekTable(sourceBytes.bytes, sourceBytes.byteOffset);
-				badpSeekFrames = badpSeek.frames;
-				badpSeekOffsets = badpSeek.offsets;
-			}
-		}
-		const record = this.buildVoiceFromData(slot, voiceId, source, sourceBytes, badpSeekFrames, badpSeekOffsets, playback, playbackCursorQ16, clamp01(playback.gainLinear));
+		const record = this.voices[slot]!;
+		this.buildVoiceFromData(record, voiceId, source, sourceBytes, playback, playbackCursorQ16, clamp01(playback.gainLinear));
 		if (stopFadeSamples > 0) {
 			const fadeSec = stopFadeSamples / APU_SAMPLE_RATE_HZ;
 			this.rampVoiceGain(record, MIN_GAIN, fadeSec);
 			record.stopAfter = fadeSec;
 		}
-		this.voices.push(record);
-		return APU_OUTPUT_START_OK;
 	}
 
-	public writeSlotRegisterWord(slot: ApuAudioSlot, source: ApuAudioSource, registerWords: ApuParameterRegisterWords, parameterIndex: number, playbackCursorQ16: number): ApuOutputStartResult {
+	public restoreVoice(
+		slot: ApuAudioSlot,
+		voiceId: ApuVoiceId,
+		source: ApuAudioSource,
+		sourceBytes: ApuSourceByteView,
+		registerWords: ApuParameterRegisterWords,
+		playbackCursorQ16: number,
+		state: ApuOutputVoiceState,
+	): void {
+		const playback = resolveApuOutputPlayback(registerWords);
+		const record = this.voices[slot]!;
+		this.buildVoiceFromData(record, voiceId, source, sourceBytes, playback, playbackCursorQ16, clamp01(playback.gainLinear));
+		restoreApuOutputVoiceState(record, state);
+		record.active = true;
+	}
+
+	public writeSlotRegisterWord(slot: ApuAudioSlot, source: ApuAudioSource, registerWords: ApuParameterRegisterWords, parameterIndex: number, playbackCursorQ16: number): void {
 		let playbackRate = 0;
 		switch (parameterIndex) {
-			case APU_PARAMETER_SOURCE_ADDR_INDEX:
-			case APU_PARAMETER_SOURCE_BYTES_INDEX:
-			case APU_PARAMETER_SOURCE_SAMPLE_RATE_HZ_INDEX:
-			case APU_PARAMETER_SOURCE_CHANNELS_INDEX:
-			case APU_PARAMETER_SOURCE_BITS_PER_SAMPLE_INDEX:
-			case APU_PARAMETER_SOURCE_FRAME_COUNT_INDEX:
-			case APU_PARAMETER_SOURCE_DATA_OFFSET_INDEX:
-			case APU_PARAMETER_SOURCE_DATA_BYTES_INDEX:
-			case APU_PARAMETER_GENERATOR_KIND_INDEX:
-				return { faultCode: APU_FAULT_OUTPUT_METADATA, faultDetail: parameterIndex };
 			case APU_PARAMETER_RATE_STEP_Q16_INDEX: {
 				const rateStepQ16Word = registerWords[APU_PARAMETER_RATE_STEP_Q16_INDEX]!;
 				playbackRate = resolveApuPlaybackRate(rateStepQ16Word);
-				if (playbackRate <= 0) {
-					return { faultCode: APU_FAULT_OUTPUT_PLAYBACK_RATE, faultDetail: rateStepQ16Word };
-				}
 				break;
 			}
 		}
-		const record = this.findSlot(slot);
-		if (record === null) {
-			return APU_OUTPUT_START_OK;
-		}
+		const record = this.voices[slot]!;
 		switch (parameterIndex) {
 			case APU_PARAMETER_SOURCE_LOOP_START_SAMPLE_INDEX:
 			case APU_PARAMETER_SOURCE_LOOP_END_SAMPLE_INDEX:
 				this.applyVoiceLoopBounds(record, source);
-				return APU_OUTPUT_START_OK;
+				return;
 			case APU_PARAMETER_RATE_STEP_Q16_INDEX:
 				record.playback.playbackRate = playbackRate;
 				record.step = playbackRate;
-				return APU_OUTPUT_START_OK;
+				return;
 			case APU_PARAMETER_GAIN_Q12_INDEX:
 				this.applyVoiceGainQ12(record, registerWords[APU_PARAMETER_GAIN_Q12_INDEX]!);
-				return APU_OUTPUT_START_OK;
+				return;
 			case APU_PARAMETER_GENERATOR_DUTY_Q12_INDEX:
 				record.generatorDutyQ12 = source.generatorDutyQ12;
-				return APU_OUTPUT_START_OK;
+				return;
 			case APU_PARAMETER_START_SAMPLE_INDEX:
 				this.seekVoice(record, registerWords[APU_PARAMETER_START_SAMPLE_INDEX]!, playbackCursorQ16);
-				return APU_OUTPUT_START_OK;
+				return;
 			case APU_PARAMETER_FILTER_KIND_INDEX:
 			case APU_PARAMETER_FILTER_FREQ_HZ_INDEX:
 			case APU_PARAMETER_FILTER_Q_MILLI_INDEX:
 			case APU_PARAMETER_FILTER_GAIN_MILLIDB_INDEX:
-				record.playback.filter = resolveApuOutputFilter(registerWords);
+				applyApuOutputFilter(record.playback, registerWords);
 				record.filterSampleRate = 0;
-				return APU_OUTPUT_START_OK;
+				return;
 			default:
-				return APU_OUTPUT_START_OK;
+				return;
 		}
 	}
 
-	public stopSlot(slot: ApuAudioSlot, fadeSamples = 0): boolean {
-		const index = this.findSlotIndex(slot);
-		if (index < 0) {
-			return false;
+	public stopSlot(slot: ApuAudioSlot, fadeSamples = 0): void {
+		const record = this.voices[slot]!;
+		if (fadeSamples > 0) {
+			const fadeSec = fadeSamples / APU_SAMPLE_RATE_HZ;
+			this.rampVoiceGain(record, MIN_GAIN, fadeSec);
+			record.stopAfter = fadeSec;
+			return;
 		}
-		return this.stopVoiceAtIndex(index, fadeSamples);
+		record.active = false;
 	}
 
 	public stopAllVoices(): void {
-		while (this.voices.length > 0) {
-			this.removeVoice(this.voices.length - 1);
+		for (let slot = 0; slot < APU_SLOT_COUNT; slot += 1) {
+			this.voices[slot]!.active = false;
 		}
 	}
 
@@ -249,10 +259,13 @@ export class ApuOutputMixer {
 		const invOutputRate = 1 / outputSampleRate;
 		const mix = this.mixBuffer;
 
-		for (let index = 0; index < this.voices.length;) {
-			const record = this.voices[index]!;
+		for (let slot = 0; slot < APU_SLOT_COUNT; slot += 1) {
+			const record = this.voices[slot]!;
+			if (!record.active) {
+				continue;
+			}
 			if (record.frames === 0) {
-				this.removeVoice(index);
+				record.active = false;
 				continue;
 			}
 
@@ -342,19 +355,13 @@ export class ApuOutputMixer {
 						nextFrame = frameIndex;
 					}
 
-					if (!this.readVoiceFrame(record, frameIndex)) {
-						ended = true;
-						break;
-					}
+					this.readVoiceFrame(record, frameIndex);
 					const left0 = this.sampledLeft;
 					const right0 = this.sampledRight;
 					let left = left0;
 					let right = right0;
 					if (nextFrame !== frameIndex) {
-						if (!this.readVoiceFrame(record, nextFrame)) {
-							ended = true;
-							break;
-						}
+						this.readVoiceFrame(record, nextFrame);
 						left = left0 + (this.sampledLeft - left0) * frac;
 						right = right0 + (this.sampledRight - right0) * frac;
 					}
@@ -386,10 +393,8 @@ export class ApuOutputMixer {
 			record.stopAfter = stopAfter;
 
 			if (ended) {
-				this.removeVoice(index);
-				continue;
+				record.active = false;
 			}
-			index += 1;
 		}
 
 		for (let index = 0; index < totalSamples; index += 1) {
@@ -411,16 +416,23 @@ export class ApuOutputMixer {
 	}
 
 	private buildVoiceFromData(
-		slot: ApuAudioSlot,
+		record: ApuOutputVoice,
 		voiceId: ApuVoiceId,
 		source: ApuAudioSource,
 		sourceBytes: ApuSourceByteView,
-		badpSeekFrames: Uint32Array<ArrayBufferLike>,
-		badpSeekOffsets: Uint32Array<ArrayBufferLike>,
 		playback: ApuOutputPlayback,
 		playbackCursorQ16: number,
 		initialGain: number,
-	): ApuOutputVoice {
+	): void {
+		let badpSeekFrames: Uint32Array<ArrayBufferLike> = EMPTY_BADP_SEEK_FRAMES;
+		let badpSeekOffsets: Uint32Array<ArrayBufferLike> = EMPTY_BADP_SEEK_OFFSETS;
+		if (!apuAudioSourceUsesGenerator(source)) {
+			if (source.bitsPerSample === 4) {
+				const badpSeek = readApuBadpSeekTable(sourceBytes.bytes, sourceBytes.byteOffset);
+				badpSeekFrames = badpSeek.frames;
+				badpSeekOffsets = badpSeek.offsets;
+			}
+		}
 		const loopStartFrame = source.loopEndSample > source.loopStartSample ? source.loopStartSample : -1;
 		const loopEndFrame = source.loopEndSample > source.loopStartSample ? source.loopEndSample : -1;
 		let position = playbackCursorQ16 / APU_RATE_STEP_Q16_ONE;
@@ -434,71 +446,34 @@ export class ApuOutputMixer {
 				position = clamp(position, 0, source.frameCount);
 			}
 		}
-		const record: ApuOutputVoice = {
-			voiceId,
-			slot,
-			sampleRate: source.sampleRateHz,
-			channels: source.channels,
-			bitsPerSample: source.bitsPerSample,
-			sourceBytes: sourceBytes.bytes,
-			dataOffset: sourceBytes.byteOffset + source.dataOffset,
-			dataSize: source.dataBytes,
-			frames: source.frameCount,
-			generatorKind: source.generatorKind,
-			generatorDutyQ12: source.generatorDutyQ12,
-			badpSeekFrames,
-			badpSeekOffsets,
-			loopStartFrame,
-			loopEndFrame,
-			playback,
-			position,
-			step: playback.playbackRate,
-			gain: initialGain,
-			targetGain: initialGain,
-			gainRampRemaining: 0,
-			stopAfter: -1,
-			filterSampleRate: 0,
-			filter: new BiquadFilterState(),
-			usesBadp: !apuAudioSourceUsesGenerator(source) && source.bitsPerSample === 4,
-			badp: createApuBadpDecoderState(),
-		};
+		record.active = true;
+		record.voiceId = voiceId;
+		record.sampleRate = source.sampleRateHz;
+		record.channels = source.channels;
+		record.bitsPerSample = source.bitsPerSample;
+		record.sourceBytes = sourceBytes.bytes;
+		record.dataOffset = sourceBytes.byteOffset + source.dataOffset;
+		record.dataSize = source.dataBytes;
+		record.frames = source.frameCount;
+		record.generatorKind = source.generatorKind;
+		record.generatorDutyQ12 = source.generatorDutyQ12;
+		record.badpSeekFrames = badpSeekFrames;
+		record.badpSeekOffsets = badpSeekOffsets;
+		record.loopStartFrame = loopStartFrame;
+		record.loopEndFrame = loopEndFrame;
+		record.playback = playback;
+		record.position = position;
+		record.step = playback.playbackRate;
+		record.gain = initialGain;
+		record.targetGain = initialGain;
+		record.gainRampRemaining = 0;
+		record.stopAfter = -1;
+		record.filterSampleRate = 0;
+		record.filter.reset();
+		record.usesBadp = !apuAudioSourceUsesGenerator(source) && source.bitsPerSample === 4;
 		if (record.usesBadp) {
 			resetApuBadpDecoder(record, audioFrameIndex(record.position));
 		}
-		return record;
-	}
-
-	private findSlotIndex(slot: ApuAudioSlot): number {
-		for (let index = 0; index < this.voices.length; index += 1) {
-			if (this.voices[index]!.slot === slot) {
-				return index;
-			}
-		}
-		return -1;
-	}
-
-	private findSlot(slot: ApuAudioSlot): ApuOutputVoice | null {
-		const index = this.findSlotIndex(slot);
-		return index >= 0 ? this.voices[index]! : null;
-	}
-
-	private stopVoiceAtIndex(index: number, fadeSamples: number): boolean {
-		if (fadeSamples > 0) {
-			const fadeSec = fadeSamples / APU_SAMPLE_RATE_HZ;
-			this.rampVoiceGain(this.voices[index]!, MIN_GAIN, fadeSec);
-			this.voices[index]!.stopAfter = fadeSec;
-			return true;
-		}
-		this.removeVoice(index);
-		return true;
-	}
-
-	private removeVoice(index: number): void {
-		const last = this.voices.length - 1;
-		if (index !== last) {
-			this.voices[index] = this.voices[last]!;
-		}
-		this.voices.pop();
 	}
 
 	private rampVoiceGain(record: ApuOutputVoice, target: number, durationSec: number): void {
@@ -527,27 +502,21 @@ export class ApuOutputMixer {
 		}
 	}
 
-	private readVoiceFrame(record: ApuOutputVoice, frame: number): boolean {
+	private readVoiceFrame(record: ApuOutputVoice, frame: number): void {
 		if (record.usesBadp) {
-			if (!readApuBadpFrameAt(record, frame)) {
-				return false;
-			}
+			readApuBadpFrameAt(record, frame);
 			this.sampledLeft = record.badp.decodedLeft * APU_PCM_SAMPLE_SCALE;
 			this.sampledRight = record.badp.decodedRight * APU_PCM_SAMPLE_SCALE;
-			return true;
-		}
-		if (frame < 0 || frame >= record.frames) {
-			return false;
+			return;
 		}
 		const baseSample = frame * record.channels;
 		if (record.bitsPerSample === 16) {
 			this.sampledLeft = readApuPcmSample(record.sourceBytes, record.dataOffset, true, baseSample) * APU_PCM_SAMPLE_SCALE;
 			this.sampledRight = record.channels === 1 ? this.sampledLeft : readApuPcmSample(record.sourceBytes, record.dataOffset, true, baseSample + 1) * APU_PCM_SAMPLE_SCALE;
-			return true;
+			return;
 		}
 		this.sampledLeft = readApuPcmSample(record.sourceBytes, record.dataOffset, false, baseSample) * APU_PCM_SAMPLE_SCALE;
 		this.sampledRight = record.channels === 1 ? this.sampledLeft : readApuPcmSample(record.sourceBytes, record.dataOffset, false, baseSample + 1) * APU_PCM_SAMPLE_SCALE;
-		return true;
 	}
 
 	private wrapLoopFrame(position: number, loopStart: number, loopEnd: number): number {
@@ -560,8 +529,8 @@ export class ApuOutputMixer {
 	}
 
 	private configureRecordFilter(record: ApuOutputVoice, outputSampleRate: number): void {
-		const filter = record.playback.filter;
-		if (filter === null) {
+		const playback = record.playback;
+		if (!playback.filterEnabled) {
 			record.filter.reset();
 			record.filterSampleRate = 0;
 			return;
@@ -569,7 +538,7 @@ export class ApuOutputMixer {
 		if (record.filterSampleRate === outputSampleRate) {
 			return;
 		}
-		configureBiquadFilter(record.filter, filter.type, filter.frequency, filter.q, filter.gain, outputSampleRate);
+		configureBiquadFilter(record.filter, playback.filterType, playback.filterFrequency, playback.filterQ, playback.filterGain, outputSampleRate);
 		record.filterSampleRate = outputSampleRate;
 	}
 

@@ -203,7 +203,6 @@ system.vdp_fill_rect_color = vdp_rpu_quads.fill_rect_color
 system.vdp_draw_line_color = vdp_rpu_quads.draw_line_color
 system.vdp_tile_run_sources = vdp_rpu_quads.tile_run_sources
 system.vdp_load_atlas = vdp_image.load_atlas
-system.vdp_load_system_atlas = vdp_image.load_system_atlas
 function system.vdp_blit_img_color(imgid, x, y, z, layer, scale_x, scale_y, flip_flags, color)
 	local rect<const> = vdp_image.rect(imgid)
 	vdp_rpu_quads.blit_source_color(rect.atlas_id, rect.u, rect.v, rect.w, rect.h, x, y, z, layer, scale_x, scale_y, flip_flags, color)
@@ -217,7 +216,6 @@ function system.vdp_glyph_color(glyph, x, y, z, layer, color)
 	vdp_rpu_quads.blit_source_color(rect.atlas_id, rect.u, rect.v, rect.w, rect.h, x, y, z, layer, 1, 1, 0, color)
 end
 system.vdp_img_rect = vdp_image.rect
-system.vdp_img_source = vdp_image.source
 system.vdp_write_source = vdp_image.write_source
 system.font = font_module
 system.input = cart_input

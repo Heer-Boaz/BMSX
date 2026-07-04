@@ -11,7 +11,6 @@ namespace bmsx {
 namespace {
 
 constexpr int VDP_SERVICE_BATCH_WORK_UNITS = 128;
-constexpr u32 VDP_REPLAY_PACKET_FAULT = 0xffffffffu;
 constexpr DeviceStatusRegisters VDP_DEVICE_STATUS_REGISTERS{
 	IO_VDP_STATUS,
 	IO_VDP_FAULT_CODE,
@@ -31,12 +30,16 @@ VDP::VDP(
 )
 	: m_memory(memory)
 	, m_fault(memory, VDP_DEVICE_STATUS_REGISTERS)
-	, m_vram(entropySeeds)
-	, m_rpu(m_memory, m_fault, m_vram.rpuVram, m_vram.rpuVramPageRevisions)
-	, m_configuredFrameBufferSize(frameBufferSize)
+	, m_vram(frameBufferSize, entropySeeds)
+	, m_readback(m_memory, m_fault)
+	, m_rpu(m_memory, m_fault, m_vram.rpuVram)
+	, m_vout(m_vram.rpuVram, m_vram.rpuVramPageRevisions)
+	, m_buildFrame{.rpu = createVdpRpuFrameOutput(m_vram.rpuVram, m_vram.rpuVramPageRevisions), .state = VdpDexFrameState::Idle, .cost = 0}
+	, m_activeFrame(allocateSubmittedFrameSlot(m_vram.rpuVram, m_vram.rpuVramPageRevisions))
+	, m_pendingFrame(allocateSubmittedFrameSlot(m_vram.rpuVram, m_vram.rpuVramPageRevisions))
+	, m_fbm(frameBufferSize.width, frameBufferSize.height)
 	, m_scheduler(scheduler)
-	, m_unitRegisterPort(m_fault, m_xf, m_lpu, m_mfu, m_jtu) {
-	bindStagingMemory();
+	, m_unitRegisterPort(m_xf, m_lpu, m_mfu, m_jtu) {
 	m_memory.setVramWriter(this);
 	m_memory.mapIoRead(IO_VDP_RD_STATUS, this, &VDP::readVdpStatusThunk);
 	m_memory.mapIoRead(IO_VDP_RD_DATA, this, &VDP::readVdpDataThunk);
@@ -82,7 +85,7 @@ void VDP::applyVdpModeProfile(const MachineVdpModeProfile& profile) {
 	const u32 screenWh = packLowHigh16(static_cast<u32>(profile.renderWidth), static_cast<u32>(profile.renderHeight));
 	m_memory.writeIoValue(IO_VDP_MODE, valueNumber(static_cast<double>(m_vdpModeWord)));
 	m_memory.writeIoValue(IO_VDP_SCREEN_WH, valueNumber(static_cast<double>(screenWh)));
-	resizeFrameBufferSurface(static_cast<uint32_t>(profile.renderWidth), static_cast<uint32_t>(profile.renderHeight), screenWh);
+	resizeFrameBufferSurface(static_cast<uint32_t>(profile.renderWidth), static_cast<uint32_t>(profile.renderHeight));
 }
 
 void VDP::resetVdpRegisters() {
@@ -98,14 +101,10 @@ void VDP::resetVdpRegisters() {
 	}
 }
 
-bool VDP::writeVdpRegister(uint32_t index, u32 value) {
-	if (index >= VDP_REGISTER_COUNT) {
-		m_fault.raise(VDP_FAULT_STREAM_BAD_PACKET, index);
-		return false;
-	}
-	m_vdpRegisters[index] = value;
-	m_memory.writeIoValue(IO_VDP_REG0 + index * IO_WORD_SIZE, valueNumber(static_cast<double>(value)));
-	return true;
+void VDP::writeVdpRegister(uint32_t index, u32 value) {
+	const u32 slot = index % VDP_REGISTER_COUNT;
+	m_vdpRegisters[slot] = value;
+	m_memory.writeIoValue(IO_VDP_REG0 + slot * IO_WORD_SIZE, valueNumber(static_cast<double>(value)));
 }
 
 void VDP::onVdpRegisterWrite(uint32_t addr) {
@@ -113,19 +112,10 @@ void VDP::onVdpRegisterWrite(uint32_t addr) {
 	writeVdpRegister(index, m_memory.readIoU32(addr));
 }
 
-void VDP::onDitherWrite(Value value) {
-	const i32 ditherType = toI32(asNumber(value));
-	m_vout.writeDitherType(ditherType);
-}
-
 // start hot-path -- VDP status, command ingress, scheduler service, and VRAM row access run on frame-critical paths.
 void VDP::setScanoutTiming(bool vblankActive, int cyclesIntoFrame, int cyclesPerFrame, int vblankStartCycle) {
 	m_vout.setScanoutTiming(cyclesIntoFrame, cyclesPerFrame, vblankStartCycle, m_scheduler.currentNowCycles());
 	m_fault.setStatusFlag(VDP_STATUS_VBLANK, vblankActive);
-}
-
-bool VDP::canAcceptVdpSubmit() const {
-	return !hasBlockedSubmitPath();
 }
 
 void VDP::acceptSubmitAttempt() {
@@ -153,10 +143,9 @@ void VDP::endDmaSubmit() {
 	refreshSubmitBusyStatus();
 }
 
-bool VDP::sealDmaTransfer(uint32_t src, size_t byteLength) {
-	const bool accepted = consumeSealedVdpStream(src, byteLength);
+void VDP::sealDmaTransfer(uint32_t src, size_t byteLength) {
+	consumeSealedVdpStream(src, byteLength);
 	endDmaSubmit();
-	return accepted;
 }
 
 void VDP::writeVdpFifoBytes(const u8* data, size_t length) {
@@ -188,51 +177,46 @@ void VDP::pushVdpFifoWord(u32 word) {
 	refreshSubmitBusyStatus();
 }
 
-bool VDP::consumeSealedVdpStream(uint32_t baseAddr, size_t byteLength) {
-	if ((byteLength & 3u) != 0u || byteLength > VDP_STREAM_BUFFER_SIZE) {
-		m_fault.raise(VDP_FAULT_STREAM_BAD_PACKET, static_cast<uint32_t>(byteLength));
-		return false;
+void VDP::consumeSealedVdpStream(uint32_t baseAddr, size_t byteLength) {
+	const u32 streamByteLength = static_cast<uint32_t>(byteLength);
+	if ((byteLength & 3u) != 0u) {
+		m_fault.raise(VDP_FAULT_STREAM_BAD_PACKET, streamByteLength);
+		return;
+	}
+	if (byteLength > VDP_STREAM_BUFFER_SIZE) {
+		m_fault.raise(VDP_FAULT_STREAM_BAD_PACKET, streamByteLength);
+		return;
 	}
 	if (m_buildFrame.state != VdpDexFrameState::Idle) {
 		m_fault.raise(VDP_FAULT_STREAM_BAD_PACKET, VDP_CMD_BEGIN_FRAME);
 		cancelSubmittedFrame();
-		return false;
+		return;
 	}
 	uint32_t cursor = baseAddr;
-	const uint32_t end = baseAddr + static_cast<uint32_t>(byteLength);
-	if (!beginSubmittedFrame(VdpDexFrameState::StreamOpen)) {
-		return false;
-	}
+	const uint32_t end = baseAddr + streamByteLength;
+	beginSubmittedFrame(VdpDexFrameState::StreamOpen);
 	bool ended = false;
 	while (cursor < end) {
 		const u32 word = m_memory.readU32(cursor);
 		cursor += IO_WORD_SIZE;
 		if (word == VDP_PKT_END) {
-				if (cursor != end) {
-					m_fault.raise(VDP_FAULT_STREAM_BAD_PACKET, word);
-					cancelSubmittedFrame();
-					return false;
-				}
+			if (cursor != end) {
+				m_fault.raise(VDP_FAULT_STREAM_BAD_PACKET, word);
+				cancelSubmittedFrame();
+				return;
+			}
 			ended = true;
 			break;
 		}
-		cursor = consumeReplayPacketFromMemory(word, cursor, end);
-		if (cursor == VDP_REPLAY_PACKET_FAULT) {
-			cancelSubmittedFrame();
-			return false;
-		}
+		cursor = consumeReplayPacketFromMemory(word, cursor);
 	}
 	if (!ended) {
-		m_fault.raise(VDP_FAULT_STREAM_BAD_PACKET, static_cast<uint32_t>(byteLength));
+		m_fault.raise(VDP_FAULT_STREAM_BAD_PACKET, streamByteLength);
 		cancelSubmittedFrame();
-		return false;
+		return;
 	}
-	const bool accepted = sealSubmittedFrame();
-	if (!accepted) {
-		cancelSubmittedFrame();
-	}
+	sealSubmittedFrame();
 	refreshSubmitBusyStatus();
-	return accepted;
 }
 
 void VDP::consumeSealedVdpWordStream(const u32* words, u32 wordCount) {
@@ -242,9 +226,7 @@ void VDP::consumeSealedVdpWordStream(const u32* words, u32 wordCount) {
 		return;
 	}
 	u32 cursor = 0u;
-	if (!beginSubmittedFrame(VdpDexFrameState::StreamOpen)) {
-		return;
-	}
+	beginSubmittedFrame(VdpDexFrameState::StreamOpen);
 	bool ended = false;
 	while (cursor < wordCount) {
 		const u32 word = words[cursor];
@@ -258,20 +240,14 @@ void VDP::consumeSealedVdpWordStream(const u32* words, u32 wordCount) {
 			ended = true;
 			break;
 		}
-		cursor = consumeReplayPacketFromWords(words, word, cursor, wordCount);
-		if (cursor == VDP_REPLAY_PACKET_FAULT) {
-			cancelSubmittedFrame();
-			return;
-		}
+		cursor = consumeReplayPacketFromWords(words, word, cursor);
 	}
 	if (!ended) {
 		m_fault.raise(VDP_FAULT_STREAM_BAD_PACKET, wordCount);
 		cancelSubmittedFrame();
 		return;
 	}
-	if (!sealSubmittedFrame()) {
-		cancelSubmittedFrame();
-	}
+	sealSubmittedFrame();
 	refreshSubmitBusyStatus();
 }
 
@@ -289,189 +265,96 @@ void VDP::sealVdpFifoTransfer() {
 }
 
 // start repeated-sequence-acceptable -- memory replay and FIFO replay consume the same packet ABI from different backing stores.
-u32 VDP::consumeReplayPacketFromMemory(u32 word, u32 cursor, u32 end) {
+u32 VDP::consumeReplayPacketFromMemory(u32 word, u32 cursor) {
 	const u32 kind = word & VDP_PKT_KIND_MASK;
 	switch (kind) {
 		case VDP_PKT_CMD:
-			return consumeReplayCommandPacket(word) ? cursor : VDP_REPLAY_PACKET_FAULT;
-		case VDP_PKT_REG1: {
-			const u32 reg = decodeReg1Packet(word);
-			if (reg == VDP_REPLAY_PACKET_FAULT || cursor + IO_WORD_SIZE > end) {
-				m_fault.raise(VDP_FAULT_STREAM_BAD_PACKET, word);
-				return VDP_REPLAY_PACKET_FAULT;
-			}
-			return writeVdpRegister(reg, m_memory.readU32(cursor)) ? cursor + IO_WORD_SIZE : VDP_REPLAY_PACKET_FAULT;
-		}
+			consumeReplayCommandPacket(word);
+			return cursor;
+		case VDP_PKT_REG1:
+			writeVdpRegister(packedLow16(word), m_memory.readU32(cursor));
+			return cursor + IO_WORD_SIZE;
 		case VDP_PKT_REGN: {
-			RegnPacket packet;
-			if (!decodeRegnPacket(word, packet)) {
-				m_fault.raise(VDP_FAULT_STREAM_BAD_PACKET, word);
-				return VDP_REPLAY_PACKET_FAULT;
+			decodeRegnPacket(word, m_regnPacketScratch);
+			const u32 byteCount = m_regnPacketScratch.count * IO_WORD_SIZE;
+			for (u32 offset = 0u; offset < m_regnPacketScratch.count; ++offset) {
+				writeVdpRegister(m_regnPacketScratch.firstRegister + offset, m_memory.readU32(cursor + offset * IO_WORD_SIZE));
 			}
-			const u32 byteCount = packet.count * IO_WORD_SIZE;
-			const u32 payloadEnd = cursor + byteCount;
-			if (payloadEnd > end) {
-				m_fault.raise(VDP_FAULT_STREAM_BAD_PACKET, word);
-				return VDP_REPLAY_PACKET_FAULT;
-			}
-			for (uint32_t offset = 0; offset < packet.count; ++offset) {
-				if (!writeVdpRegister(packet.firstRegister + offset, m_memory.readU32(cursor + offset * IO_WORD_SIZE))) {
-					return VDP_REPLAY_PACKET_FAULT;
-				}
-			}
-			return payloadEnd;
+			return cursor + byteCount;
 		}
 		case VDP_XF_PACKET_KIND:
 		case VDP_LPU_PACKET_KIND:
 		case VDP_MFU_PACKET_KIND:
 		case VDP_JTU_PACKET_KIND:
-			return consumeUnitRegisterPacketFromMemory(word, cursor, end);
+			return consumeUnitRegisterPacketFromMemory(word, cursor);
 		case VDP_RPU_PACKET_KIND: {
-			const u32 nextCursor = m_rpu.consumePacketFromMemory(*m_buildFrame.rpu, word, cursor, end);
-			if (nextCursor != VDP_REPLAY_PACKET_FAULT) {
-				m_buildFrame.cost += m_rpu.lastPacketCost;
-			}
+			const u32 nextCursor = m_rpu.consumePacketFromMemory(*m_buildFrame.rpu, word, cursor);
+			m_buildFrame.cost += m_rpu.lastPacketCost;
 			return nextCursor;
 		}
-		default:
-			m_fault.raise(VDP_FAULT_STREAM_BAD_PACKET, word);
-			return VDP_REPLAY_PACKET_FAULT;
 	}
+	return cursor;
 }
 
-u32 VDP::consumeUnitRegisterPacketFromMemory(u32 word, u32 cursor, u32 end) {
-	if (vdpUnitPacketHasFlags(word)) {
-		m_fault.raise(VDP_FAULT_STREAM_BAD_PACKET, word);
-		return VDP_REPLAY_PACKET_FAULT;
-	}
+u32 VDP::consumeUnitRegisterPacketFromMemory(u32 word, u32 cursor) {
 	const u32 payloadWords = vdpUnitPacketPayloadWords(word);
-	if (payloadWords < 2u) {
-		m_fault.raise(VDP_FAULT_STREAM_BAD_PACKET, word);
-		return VDP_REPLAY_PACKET_FAULT;
-	}
-	const u32 payloadEnd = cursor + payloadWords * IO_WORD_SIZE;
-	if (payloadEnd > end) {
-		m_fault.raise(VDP_FAULT_STREAM_BAD_PACKET, word);
-		return VDP_REPLAY_PACKET_FAULT;
-	}
 	const u32 packetKind = word & VDP_PKT_KIND_MASK;
 	const u32 firstRegister = m_memory.readU32(cursor);
-	const u32 registerCount = payloadWords - 1u;
-	if (!m_unitRegisterPort.acceptRange(packetKind, firstRegister, registerCount)) {
-		return VDP_REPLAY_PACKET_FAULT;
+	for (u32 payloadIndex = 1u; payloadIndex < payloadWords; ++payloadIndex) {
+		m_unitRegisterPort.writeWord(packetKind, firstRegister + payloadIndex - 1u, m_memory.readU32(cursor + payloadIndex * IO_WORD_SIZE));
 	}
-	for (u32 offset = 0u; offset < registerCount; ++offset) {
-		if (!m_unitRegisterPort.writeWord(packetKind, firstRegister + offset, m_memory.readU32(cursor + (offset + 1u) * IO_WORD_SIZE))) {
-			return VDP_REPLAY_PACKET_FAULT;
-		}
-	}
-	return payloadEnd;
+	return cursor + payloadWords * IO_WORD_SIZE;
 }
 
-u32 VDP::consumeReplayPacketFromWords(const u32* words, u32 word, u32 cursor, u32 wordCount) {
+u32 VDP::consumeReplayPacketFromWords(const u32* words, u32 word, u32 cursor) {
 	const u32 kind = word & VDP_PKT_KIND_MASK;
 	switch (kind) {
 		case VDP_PKT_CMD:
-			return consumeReplayCommandPacket(word) ? cursor : VDP_REPLAY_PACKET_FAULT;
-		case VDP_PKT_REG1: {
-			const u32 reg = decodeReg1Packet(word);
-			if (reg == VDP_REPLAY_PACKET_FAULT || cursor >= wordCount) {
-				m_fault.raise(VDP_FAULT_STREAM_BAD_PACKET, word);
-				return VDP_REPLAY_PACKET_FAULT;
+			consumeReplayCommandPacket(word);
+			return cursor;
+		case VDP_PKT_REG1:
+			writeVdpRegister(packedLow16(word), words[cursor]);
+			return cursor + 1u;
+		case VDP_PKT_REGN:
+			decodeRegnPacket(word, m_regnPacketScratch);
+			for (u32 offset = 0u; offset < m_regnPacketScratch.count; ++offset) {
+				writeVdpRegister(m_regnPacketScratch.firstRegister + offset, words[cursor + offset]);
 			}
-			return writeVdpRegister(reg, words[cursor]) ? cursor + 1u : VDP_REPLAY_PACKET_FAULT;
-		}
-		case VDP_PKT_REGN: {
-			RegnPacket packet;
-			if (!decodeRegnPacket(word, packet) || cursor + packet.count > wordCount) {
-				m_fault.raise(VDP_FAULT_STREAM_BAD_PACKET, word);
-				return VDP_REPLAY_PACKET_FAULT;
-			}
-			for (uint32_t offset = 0; offset < packet.count; ++offset) {
-				if (!writeVdpRegister(packet.firstRegister + offset, words[cursor + offset])) {
-					return VDP_REPLAY_PACKET_FAULT;
-				}
-			}
-			return cursor + packet.count;
-		}
+			return cursor + m_regnPacketScratch.count;
 		case VDP_XF_PACKET_KIND:
 		case VDP_LPU_PACKET_KIND:
 		case VDP_MFU_PACKET_KIND:
 		case VDP_JTU_PACKET_KIND:
-			return consumeUnitRegisterPacketFromWords(words, word, cursor, wordCount);
+			return consumeUnitRegisterPacketFromWords(words, word, cursor);
 		case VDP_RPU_PACKET_KIND: {
-			const u32 nextCursor = m_rpu.consumePacketFromWords(*m_buildFrame.rpu, words, word, cursor, wordCount);
-			if (nextCursor != VDP_REPLAY_PACKET_FAULT) {
-				m_buildFrame.cost += m_rpu.lastPacketCost;
-			}
+			const u32 nextCursor = m_rpu.consumePacketFromWords(*m_buildFrame.rpu, words, word, cursor);
+			m_buildFrame.cost += m_rpu.lastPacketCost;
 			return nextCursor;
 		}
-		default:
-			m_fault.raise(VDP_FAULT_STREAM_BAD_PACKET, word);
-			return VDP_REPLAY_PACKET_FAULT;
 	}
+	return cursor;
 }
 
-u32 VDP::consumeUnitRegisterPacketFromWords(const u32* words, u32 word, u32 cursor, u32 wordCount) {
-	if (vdpUnitPacketHasFlags(word)) {
-		m_fault.raise(VDP_FAULT_STREAM_BAD_PACKET, word);
-		return VDP_REPLAY_PACKET_FAULT;
-	}
+u32 VDP::consumeUnitRegisterPacketFromWords(const u32* words, u32 word, u32 cursor) {
 	const u32 payloadWords = vdpUnitPacketPayloadWords(word);
-	if (payloadWords < 2u || cursor + payloadWords > wordCount) {
-		m_fault.raise(VDP_FAULT_STREAM_BAD_PACKET, word);
-		return VDP_REPLAY_PACKET_FAULT;
-	}
 	const u32 packetKind = word & VDP_PKT_KIND_MASK;
 	const u32 firstRegister = words[cursor];
-	const u32 registerCount = payloadWords - 1u;
-	if (!m_unitRegisterPort.acceptRange(packetKind, firstRegister, registerCount)) {
-		return VDP_REPLAY_PACKET_FAULT;
-	}
-	for (u32 offset = 0u; offset < registerCount; ++offset) {
-		if (!m_unitRegisterPort.writeWord(packetKind, firstRegister + offset, words[cursor + offset + 1u])) {
-			return VDP_REPLAY_PACKET_FAULT;
-		}
+	for (u32 payloadIndex = 1u; payloadIndex < payloadWords; ++payloadIndex) {
+		m_unitRegisterPort.writeWord(packetKind, firstRegister + payloadIndex - 1u, words[cursor + payloadIndex]);
 	}
 	return cursor + payloadWords;
 }
 
-u32 VDP::decodeReg1Packet(u32 word) const {
-	if ((word & VDP_PKT_RESERVED_MASK) != 0u) {
-		return VDP_REPLAY_PACKET_FAULT;
-	}
-	return packedLow16(word);
+void VDP::decodeRegnPacket(u32 word, RegnPacket& packet) const {
+	packet.firstRegister = packedLow16(word);
+	packet.count = (word >> 16u) & 0xffu;
 }
 
-
-bool VDP::decodeRegnPacket(u32 word, RegnPacket& packet) const {
-	const u32 firstRegister = packedLow16(word);
-	const u32 count = (word >> 16u) & 0xffu;
-	if (count == 0u || count > VDP_REGISTER_COUNT) {
-		return false;
-	}
-	if (firstRegister >= VDP_REGISTER_COUNT || firstRegister + count > VDP_REGISTER_COUNT) {
-		return false;
-	}
-	packet.firstRegister = firstRegister;
-	packet.count = count;
-	return true;
-}
-
-bool VDP::consumeReplayCommandPacket(u32 word) {
-	if ((word & VDP_PKT_RESERVED_MASK) != 0u) {
-		m_fault.raise(VDP_FAULT_STREAM_BAD_PACKET, word);
-		return false;
-	}
+void VDP::consumeReplayCommandPacket(u32 word) {
 	const u32 command = packedLow16(word);
-	if (command == VDP_CMD_BEGIN_FRAME || command == VDP_CMD_END_FRAME) {
-		m_fault.raise(VDP_FAULT_STREAM_BAD_PACKET, command);
-		return false;
+	if (command != VDP_CMD_NOP) {
+		m_fault.raise(VDP_FAULT_CMD_BAD_DOORBELL, command);
 	}
-	if (command == VDP_CMD_NOP) {
-		return true;
-	}
-	return executeVdpDrawDoorbell(command);
 }
 
 void VDP::consumeDirectVdpCommand(u32 command) {
@@ -484,9 +367,7 @@ void VDP::consumeDirectVdpCommand(u32 command) {
 			cancelSubmittedFrame();
 			return;
 		}
-		if (!beginSubmittedFrame(VdpDexFrameState::DirectOpen)) {
-			return;
-		}
+		beginSubmittedFrame(VdpDexFrameState::DirectOpen);
 		refreshSubmitBusyStatus();
 		return;
 	}
@@ -496,9 +377,7 @@ void VDP::consumeDirectVdpCommand(u32 command) {
 			m_fault.raise(VDP_FAULT_SUBMIT_STATE, command);
 			return;
 		}
-		if (!sealSubmittedFrame()) {
-			cancelSubmittedFrame();
-		}
+		sealSubmittedFrame();
 		refreshSubmitBusyStatus();
 		return;
 	}
@@ -507,13 +386,8 @@ void VDP::consumeDirectVdpCommand(u32 command) {
 		m_fault.raise(VDP_FAULT_SUBMIT_STATE, command);
 		return;
 	}
-	executeVdpDrawDoorbell(command);
-	refreshSubmitBusyStatus();
-}
-
-bool VDP::executeVdpDrawDoorbell(u32 command) {
 	m_fault.raise(VDP_FAULT_CMD_BAD_DOORBELL, command);
-	return false;
+	refreshSubmitBusyStatus();
 }
 
 void VDP::onVdpFifoWrite() {
@@ -583,7 +457,7 @@ void VDP::onCommandWriteThunk(void* context, uint32_t addr, Value value) {
 void VDP::onDitherWriteThunk(void* context, uint32_t addr, Value value) {
 	(void)addr;
 	auto& vdp = *static_cast<VDP*>(context);
-	vdp.onDitherWrite(value);
+	vdp.m_vout.writeDitherType(toI32(asNumber(value)));
 }
 
 void VDP::onRegisterWriteThunk(void* context, uint32_t addr, Value value) {
@@ -706,28 +580,11 @@ void VDP::resetQueuedFrameState() {
 	resetSubmittedFrameSlot(m_pendingFrame);
 }
 
-void VDP::drainFrameBufferPresentation(VdpFrameBufferPresentationSink& sink) {
-	if (!m_fbm.hasPendingPresentation()) {
-		return;
-	}
-	m_fbm.drainPresentation(sink, m_vram.frameBufferSurface().cpuReadback);
-}
 
-void VDP::syncFrameBufferPresentation(VdpFrameBufferPresentationSink& sink) {
-	m_fbm.syncPresentation(sink, m_vram.frameBufferSurface().cpuReadback);
-}
-
-bool VDP::beginSubmittedFrame(VdpDexFrameState state) {
-	if (m_buildFrame.state != VdpDexFrameState::Idle) {
-		m_fault.raise(VDP_FAULT_SUBMIT_STATE, VDP_CMD_BEGIN_FRAME);
-		return false;
-	}
+void VDP::beginSubmittedFrame(VdpDexFrameState state) {
 	resetBuildingFrame(m_buildFrame);
-	if (!m_rpu.beginFrame(*m_buildFrame.rpu)) {
-		return false;
-	}
+	m_rpu.beginFrame(*m_buildFrame.rpu);
 	m_buildFrame.state = state;
-	return true;
 }
 
 void VDP::cancelSubmittedFrame() {
@@ -737,22 +594,13 @@ void VDP::cancelSubmittedFrame() {
 	refreshSubmitBusyStatus();
 }
 
-bool VDP::sealSubmittedFrame() {
-	if (m_buildFrame.state == VdpDexFrameState::Idle) {
-		m_fault.raise(VDP_FAULT_SUBMIT_STATE, VDP_CMD_END_FRAME);
-		return false;
-	}
-	const bool sealedByFifo = m_rpu.lastPacketSealedFrame;
-	if (!sealedByFifo && !m_rpu.endFrame(*m_buildFrame.rpu)) {
-		return false;
+void VDP::sealSubmittedFrame() {
+	if (!m_rpu.lastPacketSealedFrame) {
+		m_rpu.endFrame(*m_buildFrame.rpu);
 	}
 	const bool activeFrameEmpty = m_activeFrame.state == VdpSubmittedFrameState::Empty;
 	VdpSubmittedFrame* frame = &m_activeFrame;
 	if (!activeFrameEmpty) {
-		if (m_pendingFrame.state != VdpSubmittedFrameState::Empty) {
-			m_fault.raise(VDP_FAULT_SUBMIT_BUSY, VDP_CMD_END_FRAME);
-			return false;
-		}
 		frame = &m_pendingFrame;
 	}
 	const bool frameHasRpuCommands = m_buildFrame.rpu->commands.passCount != 0u || m_buildFrame.rpu->commands.drawCount != 0u;
@@ -789,7 +637,6 @@ bool VDP::sealSubmittedFrame() {
 	resetBuildingFrame(m_buildFrame);
 	scheduleNextService(m_scheduler.currentNowCycles());
 	refreshSubmitBusyStatus();
-	return true;
 }
 
 void VDP::promotePendingFrame() {
@@ -862,7 +709,7 @@ void VDP::finishCommittedFrameOnVblankEdge() {
 	refreshSubmitBusyStatus();
 }
 
-bool VDP::presentReadyFrameOnVblankEdge() {
+void VDP::presentReadyFrameOnVblankEdge() {
 	if (m_activeFrame.state == VdpSubmittedFrameState::Empty) {
 		m_lastFrameCommitted = false;
 		m_lastFrameCost = 0;
@@ -870,16 +717,15 @@ bool VDP::presentReadyFrameOnVblankEdge() {
 		promotePendingFrame();
 		scheduleNextService(m_scheduler.currentNowCycles());
 		refreshSubmitBusyStatus();
-		return false;
+		return;
 	}
 	m_lastFrameCost = m_activeFrame.cost;
 	if (m_activeFrame.state != VdpSubmittedFrameState::Ready) {
 		m_lastFrameCommitted = false;
 		m_lastFrameHeld = true;
-		return false;
+		return;
 	}
 	finishCommittedFrameOnVblankEdge();
-	return false;
 }
 // end hot-path
 
@@ -895,19 +741,7 @@ uint32_t VDP::readVdpData() {
 	const uint32_t x = m_memory.readIoU32(IO_VDP_RD_X);
 	const uint32_t y = m_memory.readIoU32(IO_VDP_RD_Y);
 	const uint32_t mode = m_memory.readIoU32(IO_VDP_RD_MODE);
-	if (!m_readback.resolveSurface(surfaceId, mode)) {
-		m_fault.raise(m_readback.faultCode, m_readback.faultDetail);
-		return 0u;
-	}
-	if (!m_readback.readPixel(m_vram.frameBufferSurface(), x, y)) {
-		m_fault.raise(m_readback.faultCode, m_readback.faultDetail);
-		return 0u;
-	}
-	if (m_readback.advanceReadPosition) {
-		m_memory.writeValue(IO_VDP_RD_X, valueNumber(static_cast<double>(m_readback.nextX)));
-		m_memory.writeValue(IO_VDP_RD_Y, valueNumber(static_cast<double>(m_readback.nextY)));
-	}
-	return m_readback.word;
+	return m_readback.read(m_vram.frameBufferSurface(), surfaceId, mode, x, y);
 }
 
 Value VDP::readVdpDataThunk(void* context, uint32_t addr) {
@@ -947,9 +781,8 @@ void VDP::initializeRegisters() {
 }
 
 void VDP::initializeVramSurfaces() {
-	bindStagingMemory();
 	resetQueuedFrameState();
-	m_vram.initializeFrameBuffer(m_configuredFrameBufferSize);
+	m_vram.initializeFrameBuffer();
 	bindVramSurfaces();
 }
 
@@ -966,15 +799,7 @@ void VDP::setDecodedVramSurfaceDimensions(uint32_t baseAddr, uint32_t width, uin
 		m_fault.raise(VDP_FAULT_VRAM_WRITE_UNMAPPED, baseAddr);
 		return;
 	}
-	resizeFrameBufferSurface(width, height, width | (height << 16u));
-}
-
-void VDP::bindStagingMemory() {
-	m_vram.configureRpuVramStorage(static_cast<size_t>(VRAM_STAGING_SIZE) + static_cast<size_t>(VRAM_TEXTURE_SIZE));
-	m_rpu.bindVramStorage(m_vram.rpuVram, m_vram.rpuVramPageRevisions);
-	m_rpu.rebindFrameResources(*m_buildFrame.rpu);
-	m_rpu.rebindFrameResources(*m_activeFrame.rpu);
-	m_rpu.rebindFrameResources(*m_pendingFrame.rpu);
+	resizeFrameBufferSurface(width, height);
 }
 
 void VDP::bindVramSurfaces() {
@@ -985,36 +810,11 @@ void VDP::bindVramSurfaces() {
 	m_vout.presentLiveState();
 }
 
-bool VDP::resizeFrameBufferSurface(uint32_t width, uint32_t height, uint32_t faultDetail) {
-	if (!m_vram.setSurfaceLogicalDimensions(m_vram.frameBufferSurface(), width, height)) {
-		m_fault.raise(VDP_FAULT_VRAM_SURFACE_DIM, faultDetail);
-		return false;
-	}
+void VDP::resizeFrameBufferSurface(uint32_t width, uint32_t height) {
+	m_vram.setSurfaceLogicalDimensions(m_vram.frameBufferSurface(), width, height);
 	m_readback.invalidateFrameBuffer();
 	m_fbm.configure(width, height);
 	m_vout.configureScanout(width, height);
-	return true;
-}
-
-bool VDP::readFrameBufferPixels(VdpFrameBufferPage page, uint32_t x, uint32_t y, uint32_t width, uint32_t height, u8* out, size_t outBytes) {
-	const std::vector<u8>* source = &m_fbm.displayReadback();
-	if (page == VdpFrameBufferPage::Render) {
-		source = &m_vram.frameBufferSurface().cpuReadback;
-	}
-	const size_t rowBytes = static_cast<size_t>(width) * 4u;
-	const size_t expectedBytes = rowBytes * static_cast<size_t>(height);
-	if (outBytes != expectedBytes) {
-		m_fault.raise(VDP_FAULT_RD_OOB, static_cast<uint32_t>(outBytes));
-		return false;
-	}
-	const u32 frameBufferWidth = m_fbm.width();
-	const u32 frameBufferHeight = m_fbm.height();
-	if (width > frameBufferWidth || height > frameBufferHeight || x > frameBufferWidth - width || y > frameBufferHeight - height) {
-		m_fault.raise(VDP_FAULT_RD_OOB, x | (y << 16u));
-		return false;
-	}
-	m_fbm.copyReadbackPixelsFrom(*source, x, y, width, height, out);
-	return true;
 }
 // end hot-path
 
@@ -1064,9 +864,6 @@ void VDP::restoreState(const VdpState& state) {
 	restoreSubmittedFrameState(m_pendingFrame, state.pendingFrame);
 	m_rpu.restoreState(state.rpu);
 	m_vram.restoreState(state.vram);
-	m_rpu.rebindFrameResources(*m_buildFrame.rpu);
-	m_rpu.rebindFrameResources(*m_activeFrame.rpu);
-	m_rpu.rebindFrameResources(*m_pendingFrame.rpu);
 	m_workCarry = state.workCarry;
 	m_availableWorkUnits = state.availableWorkUnits;
 	m_streamIngress.restoreState(state.streamIngress);

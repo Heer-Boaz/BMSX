@@ -1,11 +1,8 @@
 #pragma once
 #include "machine/memory/memory.h"
 #include "machine/devices/input/contracts.h"
-#include "machine/devices/input/control_port.h"
 #include "machine/devices/input/output_port.h"
 #include "machine/devices/input/registers.h"
-#include "machine/devices/input/sample_latch.h"
-#include "machine/devices/input/sample_edge.h"
 #include "machine/devices/input/save_state.h"
 
 namespace bmsx {
@@ -19,11 +16,15 @@ public:
 	void restoreState(const InputControllerState& state);
 
 private:
+	void writeControl(u32 addr, Value value);
+
 	Memory& m_memory;
+	InputControllerInputSource& m_input;
 	InputControllerRegisterFile m_registers;
-	InputControllerSampleLatch m_sampleLatch;
-	InputControllerSampleEdge m_sampleEdge;
-	InputControllerControlPort m_controlPort;
+	bool m_sampleArmed = false;
+	u32 m_sampleSequence = 0;
+	u32 m_lastSampleCycle = 0;
+	InputControllerSnapshot m_snapshot;
 	InputControllerOutputPort m_outputPort;
 };
 } // namespace bmsx

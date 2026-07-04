@@ -175,13 +175,9 @@ export class AudioController {
 		this.fault.restore(state.apuStatus, state.apuFaultCode, state.apuFaultDetail);
 		this.activeSlots.writeActiveMask();
 		for (const voiceState of state.output.voices) {
-			const slot = voiceState.slot;
 			const voiceId = this.slots.allocateVoiceId();
-			this.slots.assignVoiceId(slot, voiceId);
-			if (!this.commandExecutor.replayHostOutput(slot, voiceId)) {
-				throw new Error('[APU] Cannot restore saved AOUT voice.');
-			}
-			this.audioOutput.restoreVoiceState(voiceState);
+			this.slots.assignVoiceId(voiceState.slot, voiceId);
+			this.commandExecutor.restoreOutputVoice(voiceState, voiceId);
 		}
 		this.serviceClock.scheduleNext(nowCycles);
 	}

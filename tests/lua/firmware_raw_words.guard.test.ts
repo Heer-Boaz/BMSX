@@ -79,3 +79,16 @@ test('RPU quad firmware descriptor table matches the rompacker texture contract'
 	const source = readFileSync('machine/firmware/system/vdp_rpu_quads.lua', 'utf8');
 	assert.equal(source.includes(`local surface_desc_count<const> = ${RPU_QUAD_SURFACE_DESC_COUNT}`), true);
 });
+
+test('VDP image firmware uses numeric ROMDIR atlas ids', () => {
+	const vdpImageSource = readFileSync('machine/firmware/system/vdp_image.lua', 'utf8');
+	const romdirSource = readFileSync('machine/firmware/system/romdir.lua', 'utf8');
+	const cartlibSystemSource = readFileSync('cartlib/system.lua', 'utf8');
+	const cartlibPreludeSource = readFileSync('cartlib/prelude.lua', 'utf8');
+	assert.equal(vdpImageSource.includes("string.format('_atlas_"), false);
+	assert.equal(vdpImageSource.includes('romdir.cart_atlas(atlas_id)'), true);
+	assert.equal(vdpImageSource.includes('romdir.atlas(atlas_id)'), true);
+	assert.equal(romdirSource.includes('rom.atlases[atlas_id_from_name(entry.id)] = entry'), true);
+	assert.equal(cartlibSystemSource.includes('vdp_load_system_atlas'), false);
+	assert.equal(cartlibPreludeSource.includes('vdp_load_system_atlas'), false);
+});

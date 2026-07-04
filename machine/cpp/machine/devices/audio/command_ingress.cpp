@@ -28,9 +28,8 @@ void ApuCommandIngress::onCommandWrite() {
 		case APU_CMD_PLAY:
 		case APU_CMD_STOP_SLOT:
 		case APU_CMD_SET_SLOT_GAIN:
-			if (enqueueCommand(command)) {
-				m_serviceClock.scheduleNext(m_scheduler.currentNowCycles());
-			}
+			m_commandFifo.enqueue(command, m_memory);
+			m_serviceClock.scheduleNext(m_scheduler.currentNowCycles());
 			clearApuCommandLatch(m_memory);
 			return;
 		case APU_CMD_NONE:
@@ -45,14 +44,6 @@ void ApuCommandIngress::onCommandWrite() {
 // disable-next-line single_line_method_pattern -- memory-map callbacks require a C-style thunk into the command-doorbell device owner.
 void ApuCommandIngress::writeThunk(void* context, u32, Value) {
 	static_cast<ApuCommandIngress*>(context)->onCommandWrite();
-}
-
-bool ApuCommandIngress::enqueueCommand(u32 command) {
-	if (!m_commandFifo.enqueue(command, m_memory)) {
-		m_fault.raise(APU_FAULT_CMD_FIFO_FULL, command);
-		return false;
-	}
-	return true;
 }
 
 } // namespace bmsx

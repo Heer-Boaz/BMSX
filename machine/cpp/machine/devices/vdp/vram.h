@@ -35,16 +35,14 @@ struct VdpVramState {
 
 class VdpVramUnit {
 public:
-	explicit VdpVramUnit(VdpEntropySeeds entropySeeds = DEFAULT_VDP_ENTROPY_SEEDS);
+	VdpVramUnit(VdpFrameBufferSize frameBufferSize, VdpEntropySeeds entropySeeds = DEFAULT_VDP_ENTROPY_SEEDS);
 
-	void initializeFrameBuffer(VdpFrameBufferSize frameBufferSize);
-	void configureRpuVramStorage(size_t byteLength);
+	void initializeFrameBuffer();
 	bool writeRpuVram(u32 addr, const u8* bytes, size_t srcOffset, size_t length);
 	bool readRpuVram(u32 addr, u8* out, size_t length) const;
 	void writeSurfaceBytes(VdpSurfaceBacking& surface, u32 offset, const u8* bytes, size_t srcOffset, size_t length);
 	void readSurfaceBytes(const VdpSurfaceBacking& surface, u32 offset, u8* out, size_t length) const;
-	bool setSurfaceLogicalDimensions(VdpSurfaceBacking& surface, u32 width, u32 height);
-	void markSurfaceDirty(VdpSurfaceBacking& surface, u32 startRow, u32 rowCount);
+	void setSurfaceLogicalDimensions(VdpSurfaceBacking& surface, u32 width, u32 height);
 	bool frameBufferContains(u32 addr, size_t length) const;
 	VdpVramState captureState() const;
 	void restoreState(const VdpVramState& state);
@@ -60,13 +58,12 @@ private:
 	void configureFrameBufferSurface(u32 width, u32 height);
 	std::vector<VdpSurfacePixelsState> captureSurfacePixels() const;
 	void restoreSurfacePixels(const VdpSurfacePixelsState& state);
-	void markSurfaceDirtySpan(VdpSurfaceBacking& surface, u32 row, u32 xStart, u32 xEnd);
 	void updateCpuReadback(VdpSurfaceBacking& surface, const u8* bytes, size_t srcOffset, size_t length, u32 x, u32 y);
 	void seedSurfacePixels(VdpSurfaceBacking& surface);
 
 	VdpSurfaceBacking m_frameBufferSurface;
 	std::vector<u8> m_garbageScratch;
-	std::array<u8, 4u> m_seedPixel{{0u, 0u, 0u, 0u}};
+	VdpFrameBufferSize m_configuredFrameBufferSize;
 	u32 m_machineSeed = 0u;
 	u32 m_bootSeed = 0u;
 };

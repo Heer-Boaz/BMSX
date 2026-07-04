@@ -12,7 +12,6 @@ class GeometrySat2Unit {
 public:
 	explicit GeometrySat2Unit(Memory& memory);
 
-	uint32_t validateSubmission(const GeometryJobState& job) const;
 	uint32_t processRecord(GeometryJobState& job);
 
 private:

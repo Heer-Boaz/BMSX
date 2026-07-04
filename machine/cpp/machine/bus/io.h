@@ -382,7 +382,6 @@ constexpr uint32_t DMA_STATUS_BUSY = 1 << 0;
 constexpr uint32_t DMA_STATUS_DONE = 1 << 1;
 constexpr uint32_t DMA_STATUS_ERROR = 1 << 2;
 constexpr uint32_t DMA_STATUS_CLIPPED = 1 << 3;
-constexpr uint32_t DMA_STATUS_REJECTED = 1 << 4;
 
 constexpr uint32_t IMG_CTRL_START = 1 << 0;
 constexpr uint32_t IMG_STATUS_BUSY = 1 << 0;

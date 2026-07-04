@@ -181,15 +181,7 @@ void renderCRT(SoftwareBackend& backend, const CRTPipelineState& state) {
 	const f32 srcMaxY = srcHf - 1.0f;
 	const f32 time = static_cast<f32>(state.time);
 	const f32 random = hashNoise(time, srcWf, srcHf);
-
-	const bool useNoise = state.options.applyNoise;
-	const bool useColorBleed = state.options.applyColorBleed;
-	const bool useScanlines = state.options.applyScanlines;
-	const bool useBlur = state.options.applyBlur;
-	const bool useGlow = state.options.applyGlow;
-	const bool useFringing = state.options.applyFringing;
-	const bool useAperture = state.options.applyAperture;
-	const f32 blurMix = state.options.blurIntensity;
+	const auto& options = state.options;
 	const u32* sampleSource = src;
 
 	for (i32 y = 0; y < dstHeight; ++y) {
@@ -203,14 +195,14 @@ void renderCRT(SoftwareBackend& backend, const CRTPipelineState& state) {
 			const LinearRgb baseTex = sampleLinear(sampleSource, srcWidth, srcHeight, srcX, srcY, table);
 			LinearRgb color = baseTex;
 
-			if (useColorBleed) {
-				color.r += state.options.colorBleed[0];
-				color.g += state.options.colorBleed[1];
-				color.b += state.options.colorBleed[2];
+			if (options.applyColorBleed) {
+				color.r += options.colorBleed[0];
+				color.g += options.colorBleed[1];
+				color.b += options.colorBleed[2];
 			}
 
 			BlurContrast bc;
-			if (useBlur || useFringing || useAperture || useScanlines) {
+			if (options.applyBlur || options.applyFringing || options.applyAperture || options.applyScanlines) {
 				bc = applyBlurAndContrast(sampleSource, srcWidth, srcHeight, srcX, srcY, table);
 			} else {
 				bc.blurred = color;
@@ -219,15 +211,15 @@ void renderCRT(SoftwareBackend& backend, const CRTPipelineState& state) {
 
 			const f32 edge = smoothstep(0.01f, 0.05f, bc.contrast);
 
-			if (useBlur) {
+			if (options.applyBlur) {
 				const f32 blurEdge = 1.0f - (0.75f * edge);
-				const f32 blurK = blurEdge * blurMix;
+				const f32 blurK = blurEdge * options.blurIntensity;
 				color.r += (bc.blurred.r - color.r) * blurK;
 				color.g += (bc.blurred.g - color.g) * blurK;
 				color.b += (bc.blurred.b - color.b) * blurK;
 			}
 
-			if (useFringing) {
+			if (options.applyFringing) {
 				const f32 mixK = kFringingMix * edge;
 				const f32 dUVx = uvX - kFringingOffset;
 				const f32 dUVy = uvY - kFringingOffset;
@@ -251,7 +243,7 @@ void renderCRT(SoftwareBackend& backend, const CRTPipelineState& state) {
 				color.b += (fringed.b - color.b) * mixK;
 			}
 
-			if (useScanlines) {
+			if (options.applyScanlines) {
 				const f32 lum = luminance(color);
 				const f32 A = kScanlineDepth + (0.12f - kScanlineDepth) * lum;
 				const f32 row = static_cast<f32>(static_cast<i32>(uvY * srcHf));
@@ -268,7 +260,7 @@ void renderCRT(SoftwareBackend& backend, const CRTPipelineState& state) {
 				color.b = scanB * (1.0f - edge) + color.b * edge;
 			}
 
-			if (useAperture) {
+			if (options.applyAperture) {
 				const i32 aperturePhase = static_cast<i32>(uvX * srcWf) % 3;
 				const f32 r = aperturePhase == 0 ? 1.0f : 0.0f;
 				const f32 g = aperturePhase == 1 ? 1.0f : 0.0f;
@@ -287,16 +279,16 @@ void renderCRT(SoftwareBackend& backend, const CRTPipelineState& state) {
 				color.b = apertureB * (1.0f - edge) + color.b * edge;
 			}
 
-			if (useGlow) {
+			if (options.applyGlow) {
 				const f32 lum = luminance(color);
 				const f32 k = smoothstep(kBlackCutoff, kBlackSoft, lum);
 				const f32 glow = lum * k;
-				color.r += state.options.glowColor[0] * glow;
-				color.g += state.options.glowColor[1] * glow;
-				color.b += state.options.glowColor[2] * glow;
+				color.r += options.glowColor[0] * glow;
+				color.g += options.glowColor[1] * glow;
+				color.b += options.glowColor[2] * glow;
 			}
 
-			if (useNoise) {
+			if (options.applyNoise) {
 				const f32 ySrc = uvY * srcHf;
 				const f32 lineNoise =
 					hashNoise(0.0f, static_cast<f32>(static_cast<i32>(ySrc)) + time * 30.0f, 0.0f) - 0.5f;
@@ -307,7 +299,7 @@ void renderCRT(SoftwareBackend& backend, const CRTPipelineState& state) {
 				const f32 lum = luminance(color);
 				const f32 n = pixNoise * 0.65f + lineNoise * 0.35f;
 				const f32 k = smoothstep(kBlackCutoff, kBlackSoft, lum);
-				const f32 amp = state.options.noiseIntensity * (1.0f - 0.8f * lum);
+				const f32 amp = options.noiseIntensity * (1.0f - 0.8f * lum);
 				color.r += color.r * (n * amp * k);
 				color.g += color.g * (n * amp * k);
 				color.b += color.b * (n * amp * k);

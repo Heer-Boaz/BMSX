@@ -148,9 +148,6 @@ void ApuSlotBank::setFadeSamples(ApuAudioSlot slot, uint32_t samples) {
 ApuSlotAdvanceResult ApuSlotBank::advanceSlot(ApuAudioSlot slot, int64_t samples) {
 	ApuSlotAdvanceResult result;
 	const ApuSlotPhase slotPhase = m_slotPhases[slot];
-	if (slotPhase == APU_SLOT_PHASE_IDLE) {
-		return result;
-	}
 	bool ended = false;
 	const uint32_t fadeSamples = m_slotFadeSamplesRemaining[slot];
 	if (slotPhase == APU_SLOT_PHASE_FADING) {

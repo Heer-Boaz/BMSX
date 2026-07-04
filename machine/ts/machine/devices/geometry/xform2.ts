@@ -1,13 +1,6 @@
 import {
-	GEO_FAULT_BAD_RECORD_ALIGNMENT,
 	GEO_FAULT_BAD_RECORD_FLAGS,
 	GEO_FAULT_BAD_VERTEX_COUNT,
-	GEO_FAULT_DST_RANGE,
-	GEO_FAULT_REJECT_BAD_REGISTER_COMBO,
-	GEO_FAULT_REJECT_BAD_STRIDE,
-	GEO_FAULT_REJECT_DST_NOT_RAM,
-	GEO_FAULT_REJECT_MISALIGNED_REGS,
-	GEO_FAULT_SRC_RANGE,
 	GEO_INDEX_NONE,
 	GEO_VERTEX2_BYTES,
 	GEO_VERTEX2_X_OFFSET,
@@ -17,7 +10,6 @@ import {
 	GEO_XFORM2_AABB_MAX_Y_OFFSET,
 	GEO_XFORM2_AABB_MIN_X_OFFSET,
 	GEO_XFORM2_AABB_MIN_Y_OFFSET,
-	GEO_XFORM2_MATRIX_BYTES,
 	GEO_XFORM2_MATRIX_M00_OFFSET,
 	GEO_XFORM2_MATRIX_M01_OFFSET,
 	GEO_XFORM2_MATRIX_M10_OFFSET,
@@ -25,7 +17,6 @@ import {
 	GEO_XFORM2_MATRIX_TX_OFFSET,
 	GEO_XFORM2_MATRIX_TY_OFFSET,
 	GEO_XFORM2_RECORD_AUX_INDEX_OFFSET,
-	GEO_XFORM2_RECORD_BYTES,
 	GEO_XFORM2_RECORD_DST1_INDEX_OFFSET,
 	GEO_XFORM2_RECORD_DST_INDEX_OFFSET,
 	GEO_XFORM2_RECORD_FLAGS_OFFSET,
@@ -33,7 +24,7 @@ import {
 	GEO_XFORM2_RECORD_VERTEX_COUNT_OFFSET,
 	GEO_XFORM2_MAX_VERTICES,
 } from './contracts';
-import { GEOMETRY_WORD_ALIGN_MASK, resolveGeometryIndexedSpan } from './addressing';
+import { geometryIndexedAddr } from './addressing';
 import type { GeometryJobState } from './job';
 import type { Memory } from '../../memory/memory';
 import { toSignedWord, transformFixed16 } from '../../common/numeric';
@@ -43,46 +34,9 @@ const GEO_FAULT_NONE = 0;
 export class GeometryXform2Unit {
 	public constructor(private readonly memory: Memory) {}
 
-	public validateSubmission(job: GeometryJobState): number {
-		if (job.param0 !== 0 || job.param1 !== 0) {
-			return GEO_FAULT_REJECT_BAD_REGISTER_COMBO;
-		}
-		if (job.stride0 !== GEO_XFORM2_RECORD_BYTES || job.stride1 !== GEO_VERTEX2_BYTES || job.stride2 !== GEO_XFORM2_MATRIX_BYTES) {
-			return GEO_FAULT_REJECT_BAD_STRIDE;
-		}
-		if ((job.src0 & GEOMETRY_WORD_ALIGN_MASK) !== 0
-			|| (job.src1 & GEOMETRY_WORD_ALIGN_MASK) !== 0
-			|| (job.src2 & GEOMETRY_WORD_ALIGN_MASK) !== 0
-			|| (job.dst0 & GEOMETRY_WORD_ALIGN_MASK) !== 0
-			|| (job.dst1 & GEOMETRY_WORD_ALIGN_MASK) !== 0) {
-			return GEO_FAULT_REJECT_MISALIGNED_REGS;
-		}
-		if (job.count === 0) {
-			return GEO_FAULT_NONE;
-		}
-		if (!this.memory.isReadableMainMemoryRange(job.src0, job.stride0)
-			|| !this.memory.isReadableMainMemoryRange(job.src1, job.stride1)
-			|| !this.memory.isReadableMainMemoryRange(job.src2, job.stride2)) {
-			return GEO_FAULT_REJECT_BAD_REGISTER_COMBO;
-		}
-		if (!this.memory.isRamRange(job.dst0, GEO_VERTEX2_BYTES)) {
-			return GEO_FAULT_REJECT_DST_NOT_RAM;
-		}
-		if (job.dst1 !== 0 && !this.memory.isRamRange(job.dst1, 4)) {
-			return GEO_FAULT_REJECT_DST_NOT_RAM;
-		}
-		return GEO_FAULT_NONE;
-	}
-
 	public processRecord(job: GeometryJobState): number {
 		const recordIndex = job.processed;
-		const recordAddr = resolveGeometryIndexedSpan(job.src0, recordIndex, job.stride0, GEO_XFORM2_RECORD_BYTES);
-		if (recordAddr === null) {
-			return GEO_FAULT_BAD_RECORD_ALIGNMENT;
-		}
-		if (!this.memory.isReadableMainMemoryRange(recordAddr, GEO_XFORM2_RECORD_BYTES)) {
-			return GEO_FAULT_SRC_RANGE;
-		}
+		const recordAddr = geometryIndexedAddr(job.src0, recordIndex, job.stride0);
 		const flags = this.memory.readU32(recordAddr + GEO_XFORM2_RECORD_FLAGS_OFFSET);
 		const srcIndex = this.memory.readU32(recordAddr + GEO_XFORM2_RECORD_SRC_INDEX_OFFSET);
 		const dstIndex = this.memory.readU32(recordAddr + GEO_XFORM2_RECORD_DST_INDEX_OFFSET);
@@ -98,25 +52,12 @@ export class GeometryXform2Unit {
 		if (vertexCount > GEO_XFORM2_MAX_VERTICES) {
 			return GEO_FAULT_BAD_VERTEX_COUNT;
 		}
-		const vertexBytes = vertexCount * GEO_VERTEX2_BYTES;
-		const srcAddr = resolveGeometryIndexedSpan(job.src1, srcIndex, job.stride1, vertexBytes);
-		if (srcAddr === null || !this.memory.isReadableMainMemoryRange(srcAddr, vertexBytes)) {
-			return GEO_FAULT_SRC_RANGE;
-		}
-		const matrixAddr = resolveGeometryIndexedSpan(job.src2, auxIndex, job.stride2, GEO_XFORM2_MATRIX_BYTES);
-		if (matrixAddr === null || !this.memory.isReadableMainMemoryRange(matrixAddr, GEO_XFORM2_MATRIX_BYTES)) {
-			return GEO_FAULT_SRC_RANGE;
-		}
-		const dstAddr = resolveGeometryIndexedSpan(job.dst0, dstIndex, GEO_VERTEX2_BYTES, vertexBytes);
-		if (dstAddr === null || !this.memory.isRamRange(dstAddr, vertexBytes)) {
-			return GEO_FAULT_DST_RANGE;
-		}
+		const srcAddr = geometryIndexedAddr(job.src1, srcIndex, job.stride1);
+		const matrixAddr = geometryIndexedAddr(job.src2, auxIndex, job.stride2);
+		const dstAddr = geometryIndexedAddr(job.dst0, dstIndex, GEO_VERTEX2_BYTES);
 		let aabbAddr = 0;
 		if (dst1Index !== GEO_INDEX_NONE) {
-			aabbAddr = resolveGeometryIndexedSpan(job.dst1, dst1Index, GEO_XFORM2_AABB_BYTES, GEO_XFORM2_AABB_BYTES);
-			if (aabbAddr === null || !this.memory.isRamRange(aabbAddr, GEO_XFORM2_AABB_BYTES)) {
-				return GEO_FAULT_DST_RANGE;
-			}
+			aabbAddr = geometryIndexedAddr(job.dst1, dst1Index, GEO_XFORM2_AABB_BYTES);
 		}
 		const m00 = toSignedWord(this.memory.readU32(matrixAddr + GEO_XFORM2_MATRIX_M00_OFFSET));
 		const m01 = toSignedWord(this.memory.readU32(matrixAddr + GEO_XFORM2_MATRIX_M01_OFFSET));

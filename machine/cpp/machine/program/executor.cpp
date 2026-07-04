@@ -5,30 +5,35 @@
 namespace bmsx {
 namespace {
 
-void runHaltedClosureUntilInterrupt(Runtime& runtime) {
+int runHaltedClosureUntilInterrupt(Runtime& runtime) {
 	CPU& cpu = runtime.machine.cpu;
 	DeviceScheduler& scheduler = runtime.machine.scheduler;
+	int consumed = 0;
+	bool advancedDeadline = false;
 	while (cpu.isHaltedUntilIrq()) {
 		if (cpu.peekPendingInterrupt(runtime.machine.irqController) != AcceptedInterruptKind::None) {
 			cpu.clearHaltUntilIrq();
-			return;
+			return consumed;
 		}
-		if (scheduler.hasDueTimer()) {
-			runDueRuntimeTimers(runtime);
-			continue;
+		if (advancedDeadline) {
+			return consumed;
 		}
 		const i64 nextDeadline = scheduler.nextDeadline();
 		if (nextDeadline == std::numeric_limits<i64>::max()) {
-			// Halted with no pending interrupt and nothing scheduled to wake it:
-			// fail fast instead of spinning the host forever.
-			throw BMSX_RUNTIME_ERROR("CPU halted with no scheduled interrupt");
+			return consumed;
 		}
-		const i64 cyclesToDeadline = nextDeadline - scheduler.nowCycles();
-		if (cyclesToDeadline <= 0) {
+		const i64 idleCycles = nextDeadline - scheduler.nowCycles();
+		if (idleCycles <= 0) {
+			if (runDueRuntimeTimers(runtime)) {
+				return consumed;
+			}
 			continue;
 		}
-		advanceRuntimeTime(runtime, static_cast<int>(cyclesToDeadline));
+		advanceRuntimeTime(runtime, static_cast<int>(idleCycles));
+		consumed += static_cast<int>(idleCycles);
+		advancedDeadline = true;
 	}
+	return consumed;
 }
 
 } // namespace
@@ -51,7 +56,10 @@ void Runtime::callLuaFunctionInto(Closure& fn, NativeArgsView args, NativeResult
 			spentBudget += activeBudget - cpu.instructionBudgetRemaining;
 			activeBudget = 0;
 			if (cpu.getFrameDepth() > depthBefore && result == RunResult::Halted) {
-				runHaltedClosureUntilInterrupt(*this);
+				spentBudget += runHaltedClosureUntilInterrupt(*this);
+				if (cpu.isHaltedUntilIrq()) {
+					break;
+				}
 			}
 		}
 	} catch (...) {

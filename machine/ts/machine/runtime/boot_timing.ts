@@ -25,11 +25,12 @@ export function resolveRuntimeTiming(
 ): ResolvedRuntimeTiming {
 	const renderSize = getMachineVdpModeProfile(PSX_MODEL_PROFILE.biosVdpMode);
 	const regionTiming = getMachineRegionTimingForWord(regionWord);
+	const refreshUfpsScaled = regionTiming.refreshUfpsScaled;
 	return {
 		viewportWidth: renderSize.renderWidth,
 		viewportHeight: renderSize.renderHeight,
 		regionWord,
-		ufpsScaled: regionTiming.refreshUfpsScaled,
+		ufpsScaled: refreshUfpsScaled,
 		totalScanlines: regionTiming.totalScanlines,
 		cpuHz,
 		imgDecBytesPerSec: PSX_MODEL_PROFILE.imgDecBytesPerSec,
@@ -37,8 +38,8 @@ export function resolveRuntimeTiming(
 		dmaBytesPerSecBulk: PSX_MODEL_PROFILE.dmaBytesPerSecBulk,
 		vdpWorkUnitsPerSec: PSX_VDP_CLASS_PROFILE.vdpWorkUnitsPerSec,
 		geoWorkUnitsPerSec: PSX_VDP_CLASS_PROFILE.geoWorkUnitsPerSec,
-		cycleBudgetPerFrame: calcCyclesPerFrameScaled(cpuHz, regionTiming.refreshUfpsScaled),
-		vblankCycles: resolveVblankCycles(cpuHz, regionTiming.refreshUfpsScaled, regionTiming.totalScanlines, renderSize.renderHeight),
+		cycleBudgetPerFrame: calcCyclesPerFrameScaled(cpuHz, refreshUfpsScaled),
+		vblankCycles: resolveVblankCycles(cpuHz, refreshUfpsScaled, regionTiming.totalScanlines, renderSize.renderHeight),
 	};
 }
 

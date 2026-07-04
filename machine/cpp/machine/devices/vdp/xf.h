@@ -31,7 +31,7 @@ public:
 
 	VdpXfUnit();
 	void reset();
-	bool writeRegister(u32 registerIndex, u32 word);
+	void writeRegister(u32 registerIndex, u32 word);
 	VdpXfState captureState() const;
 	void restoreState(const VdpXfState& state);
 };

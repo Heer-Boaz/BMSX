@@ -1,10 +1,5 @@
 import type { VdpRpuFrameOutput } from './rpu';
 
-export type VdpDirtySpan = {
-	xStart: number;
-	xEnd: number;
-};
-
 export type VdpSurfaceBacking = {
 	baseAddr: number;
 	capacity: number;
@@ -12,18 +7,7 @@ export type VdpSurfaceBacking = {
 	surfaceWidth: number;
 	surfaceHeight: number;
 	cpuReadback: Uint8Array;
-	dirtyRowStart: number;
-	dirtyRowEnd: number;
-	dirtySpansByRow: VdpDirtySpan[];
 };
-
-export function createVdpDirtySpans(height: number): VdpDirtySpan[] {
-	const spans: VdpDirtySpan[] = [];
-	for (let row = 0; row < height; row += 1) {
-		spans.push({ xStart: 0, xEnd: 0 });
-	}
-	return spans;
-}
 
 export type VdpDeviceOutput = Readonly<{
 	ditherType: number;
@@ -34,20 +18,3 @@ export type VdpDeviceOutput = Readonly<{
 	frameBufferHeight: number;
 	rpu: VdpRpuFrameOutput;
 }>;
-
-export type VdpFrameBufferPresentation = Readonly<{
-	presentationCount: number;
-	readbackValid: boolean;
-	requiresFullSync: boolean;
-	dirtyRowStart: number;
-	dirtyRowEnd: number;
-	dirtySpansByRow: readonly VdpDirtySpan[];
-	renderReadback: Uint8Array;
-	displayReadback: Uint8Array;
-	width: number;
-	height: number;
-}>;
-
-export type VdpFrameBufferPresentationSink = {
-	consumeVdpFrameBufferPresentation(presentation: VdpFrameBufferPresentation): void;
-};

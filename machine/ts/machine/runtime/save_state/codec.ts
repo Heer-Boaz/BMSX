@@ -1,6 +1,6 @@
 import { decodeBinaryWithPropTable, encodeBinaryWithPropTable, requireObject, requireObjectKey } from '../../../common/serializer/binencoder';
 import type { MachineSaveState } from '../../save_state';
-import type { BuiltinFunctionId, CpuFrameState, CpuObjectState, CpuRootValueState, CpuRuntimeRefSegment, CpuRuntimeState, CpuValueState } from '../../cpu/cpu';
+import type { BuiltinFunctionId, CpuFrameState, CpuObjectState, CpuRootValueState, CpuRuntimeState, CpuValueState } from '../../cpu/cpu';
 import type { IrqControllerState } from '../../devices/irq/save_state';
 import type { AudioControllerState } from '../../devices/audio/save_state';
 import type {
@@ -49,9 +49,9 @@ import {
 	type VdpRpuFrameSaveState,
 	type VdpRpuSaveState,
 } from '../../devices/vdp/rpu';
-import { VDP_XF_MATRIX_COUNT, VDP_XF_MATRIX_REGISTER_WORDS, type VdpXfState } from '../../devices/vdp/xf';
+import { VDP_XF_MATRIX_REGISTER_WORDS, type VdpXfState } from '../../devices/vdp/xf';
 import type { MemorySaveState } from '../../memory/memory';
-import { VDP_STREAM_CAPACITY_WORDS } from '../../memory/map';
+import { RAM_BASE, RAM_END, VDP_STREAM_CAPACITY_WORDS } from '../../memory/map';
 import type { FrameSchedulerStateSnapshot, TickCompletion } from '../../scheduler/frame';
 import type { RuntimeSaveMachineState } from '../save_machine_state';
 import type { RuntimeSaveState } from '../save_state';
@@ -274,8 +274,12 @@ function encodeMemorySaveState(state: MemorySaveState): MemorySaveState {
 
 function decodeMemorySaveState(value: unknown, label: string): MemorySaveState {
 	const object = requireObject(value, label);
+	const ram = requireBinaryValue(requireObjectKey(object, 'ram', label, 'machine.memory.ram'), 'machine.memory.ram');
+	if (ram.byteLength !== RAM_END - RAM_BASE) {
+		throw new Error(`machine.memory.ram must contain ${RAM_END - RAM_BASE} bytes.`);
+	}
 	return {
-		ram: requireBinaryValue(requireObjectKey(object, 'ram', label, 'machine.memory.ram'), 'machine.memory.ram'),
+		ram,
 		busFaultCode: requireObjectKey(object, 'busFaultCode', label, 'machine.memory.busFaultCode') as number,
 		busFaultAddr: requireObjectKey(object, 'busFaultAddr', label, 'machine.memory.busFaultAddr') as number,
 		busFaultAccess: requireObjectKey(object, 'busFaultAccess', label, 'machine.memory.busFaultAccess') as number,
@@ -466,29 +470,13 @@ function decodeVdpXfState(value: unknown, label: string): VdpXfState {
 	const object = requireObject(value, label);
 	return {
 		matrixWords: decodeU32FixedArray(requireObjectKey(object, 'matrixWords', label, `${label}.matrixWords`), `${label}.matrixWords`, VDP_XF_MATRIX_REGISTER_WORDS),
-		viewMatrixIndex: requireBoundedU32(requireObjectKey(object, 'viewMatrixIndex', label, `${label}.viewMatrixIndex`), `${label}.viewMatrixIndex`, 0, VDP_XF_MATRIX_COUNT - 1),
-		projectionMatrixIndex: requireBoundedU32(requireObjectKey(object, 'projectionMatrixIndex', label, `${label}.projectionMatrixIndex`), `${label}.projectionMatrixIndex`, 0, VDP_XF_MATRIX_COUNT - 1),
+		viewMatrixIndex: requireBoundedU32(requireObjectKey(object, 'viewMatrixIndex', label, `${label}.viewMatrixIndex`), `${label}.viewMatrixIndex`, 0, 0xffffffff),
+		projectionMatrixIndex: requireBoundedU32(requireObjectKey(object, 'projectionMatrixIndex', label, `${label}.projectionMatrixIndex`), `${label}.projectionMatrixIndex`, 0, 0xffffffff),
 	};
 }
 
-function decodeBoundedU32Vector(value: unknown, label: string, capacity: number): number[] {
-	const entries = decodeVector(value, label, (entry) => requireBoundedU32(entry, `${label}[]`, 0, 0xffffffff));
-	if (entries.length > capacity) {
-		throw new Error(`${label} exceeds capacity ${capacity}.`);
-	}
-	return entries;
-}
-
-function decodeBoundedU16Vector(value: unknown, label: string, capacity: number): number[] {
-	const entries = decodeVector(value, label, (entry) => requireBoundedU32(entry, `${label}[]`, 0, 0xffff));
-	if (entries.length > capacity) {
-		throw new Error(`${label} exceeds capacity ${capacity}.`);
-	}
-	return entries;
-}
-
-function decodeBoundedU8Vector(value: unknown, label: string, capacity: number): number[] {
-	const entries = decodeVector(value, label, (entry) => requireBoundedU32(entry, `${label}[]`, 0, 0xff));
+function decodeBoundedWordVector(value: unknown, label: string, capacity: number, maxValue: number): number[] {
+	const entries = decodeVector(value, label, (entry) => requireBoundedU32(entry, `${label}[]`, 0, maxValue));
 	if (entries.length > capacity) {
 		throw new Error(`${label} exceeds capacity ${capacity}.`);
 	}
@@ -558,39 +546,39 @@ function decodeVdpRpuCommandBufferState(value: unknown, label: string): VdpRpuCo
 		streamBindingCount,
 		constantBindingCount,
 		textureBindingCount,
-		passFirstDraw: requireVectorCount(decodeBoundedU32Vector(requireObjectKey(object, 'passFirstDraw', label, `${label}.passFirstDraw`), `${label}.passFirstDraw`, VDP_RPU_PASS_CAPACITY), `${label}.passFirstDraw`, passCount),
-		passDrawCount: requireVectorCount(decodeBoundedU16Vector(requireObjectKey(object, 'passDrawCount', label, `${label}.passDrawCount`), `${label}.passDrawCount`, VDP_RPU_PASS_CAPACITY), `${label}.passDrawCount`, passCount),
-		passColorSurfaceDescAddr: requireVectorCount(decodeBoundedU32Vector(requireObjectKey(object, 'passColorSurfaceDescAddr', label, `${label}.passColorSurfaceDescAddr`), `${label}.passColorSurfaceDescAddr`, VDP_RPU_PASS_CAPACITY), `${label}.passColorSurfaceDescAddr`, passCount),
-		passDepthSurfaceDescAddr: requireVectorCount(decodeBoundedU32Vector(requireObjectKey(object, 'passDepthSurfaceDescAddr', label, `${label}.passDepthSurfaceDescAddr`), `${label}.passDepthSurfaceDescAddr`, VDP_RPU_PASS_CAPACITY), `${label}.passDepthSurfaceDescAddr`, passCount),
-		passViewportXY: requireVectorCount(decodeBoundedU32Vector(requireObjectKey(object, 'passViewportXY', label, `${label}.passViewportXY`), `${label}.passViewportXY`, VDP_RPU_PASS_CAPACITY), `${label}.passViewportXY`, passCount),
-		passViewportWH: requireVectorCount(decodeBoundedU32Vector(requireObjectKey(object, 'passViewportWH', label, `${label}.passViewportWH`), `${label}.passViewportWH`, VDP_RPU_PASS_CAPACITY), `${label}.passViewportWH`, passCount),
-		passOps: requireVectorCount(decodeBoundedU32Vector(requireObjectKey(object, 'passOps', label, `${label}.passOps`), `${label}.passOps`, VDP_RPU_PASS_CAPACITY), `${label}.passOps`, passCount),
-		passClearColor: requireVectorCount(decodeBoundedU32Vector(requireObjectKey(object, 'passClearColor', label, `${label}.passClearColor`), `${label}.passClearColor`, VDP_RPU_PASS_CAPACITY), `${label}.passClearColor`, passCount),
-		passClearDepthWord: requireVectorCount(decodeBoundedU32Vector(requireObjectKey(object, 'passClearDepthWord', label, `${label}.passClearDepthWord`), `${label}.passClearDepthWord`, VDP_RPU_PASS_CAPACITY), `${label}.passClearDepthWord`, passCount),
-		drawShaderVariant: requireVectorCount(decodeBoundedU16Vector(requireObjectKey(object, 'drawShaderVariant', label, `${label}.drawShaderVariant`), `${label}.drawShaderVariant`, VDP_RPU_DRAW_CAPACITY), `${label}.drawShaderVariant`, drawCount),
-		drawPrimitive: requireVectorCount(decodeBoundedU8Vector(requireObjectKey(object, 'drawPrimitive', label, `${label}.drawPrimitive`), `${label}.drawPrimitive`, VDP_RPU_DRAW_CAPACITY), `${label}.drawPrimitive`, drawCount),
-		drawPipelineWord: requireVectorCount(decodeBoundedU32Vector(requireObjectKey(object, 'drawPipelineWord', label, `${label}.drawPipelineWord`), `${label}.drawPipelineWord`, VDP_RPU_DRAW_CAPACITY), `${label}.drawPipelineWord`, drawCount),
-		drawVertexCount: requireVectorCount(decodeBoundedU32Vector(requireObjectKey(object, 'drawVertexCount', label, `${label}.drawVertexCount`), `${label}.drawVertexCount`, VDP_RPU_DRAW_CAPACITY), `${label}.drawVertexCount`, drawCount),
-		drawInstanceCount: requireVectorCount(decodeBoundedU32Vector(requireObjectKey(object, 'drawInstanceCount', label, `${label}.drawInstanceCount`), `${label}.drawInstanceCount`, VDP_RPU_DRAW_CAPACITY), `${label}.drawInstanceCount`, drawCount),
-		drawIndexVramAddr: requireVectorCount(decodeBoundedU32Vector(requireObjectKey(object, 'drawIndexVramAddr', label, `${label}.drawIndexVramAddr`), `${label}.drawIndexVramAddr`, VDP_RPU_DRAW_CAPACITY), `${label}.drawIndexVramAddr`, drawCount),
-		drawIndexCount: requireVectorCount(decodeBoundedU32Vector(requireObjectKey(object, 'drawIndexCount', label, `${label}.drawIndexCount`), `${label}.drawIndexCount`, VDP_RPU_DRAW_CAPACITY), `${label}.drawIndexCount`, drawCount),
-		drawIndexType: requireVectorCount(decodeBoundedU8Vector(requireObjectKey(object, 'drawIndexType', label, `${label}.drawIndexType`), `${label}.drawIndexType`, VDP_RPU_DRAW_CAPACITY), `${label}.drawIndexType`, drawCount),
-		drawFirstStreamBinding: requireVectorCount(decodeBoundedU32Vector(requireObjectKey(object, 'drawFirstStreamBinding', label, `${label}.drawFirstStreamBinding`), `${label}.drawFirstStreamBinding`, VDP_RPU_DRAW_CAPACITY), `${label}.drawFirstStreamBinding`, drawCount),
-		drawStreamBindingCount: requireVectorCount(decodeBoundedU8Vector(requireObjectKey(object, 'drawStreamBindingCount', label, `${label}.drawStreamBindingCount`), `${label}.drawStreamBindingCount`, VDP_RPU_DRAW_CAPACITY), `${label}.drawStreamBindingCount`, drawCount),
-		drawFirstConstantBinding: requireVectorCount(decodeBoundedU32Vector(requireObjectKey(object, 'drawFirstConstantBinding', label, `${label}.drawFirstConstantBinding`), `${label}.drawFirstConstantBinding`, VDP_RPU_DRAW_CAPACITY), `${label}.drawFirstConstantBinding`, drawCount),
-		drawConstantBindingCount: requireVectorCount(decodeBoundedU8Vector(requireObjectKey(object, 'drawConstantBindingCount', label, `${label}.drawConstantBindingCount`), `${label}.drawConstantBindingCount`, VDP_RPU_DRAW_CAPACITY), `${label}.drawConstantBindingCount`, drawCount),
-		drawFirstTextureBinding: requireVectorCount(decodeBoundedU32Vector(requireObjectKey(object, 'drawFirstTextureBinding', label, `${label}.drawFirstTextureBinding`), `${label}.drawFirstTextureBinding`, VDP_RPU_DRAW_CAPACITY), `${label}.drawFirstTextureBinding`, drawCount),
-		drawTextureBindingCount: requireVectorCount(decodeBoundedU8Vector(requireObjectKey(object, 'drawTextureBindingCount', label, `${label}.drawTextureBindingCount`), `${label}.drawTextureBindingCount`, VDP_RPU_DRAW_CAPACITY), `${label}.drawTextureBindingCount`, drawCount),
-		streamLayoutId: requireVectorCount(decodeBoundedU16Vector(requireObjectKey(object, 'streamLayoutId', label, `${label}.streamLayoutId`), `${label}.streamLayoutId`, VDP_RPU_STREAM_BINDING_CAPACITY), `${label}.streamLayoutId`, streamBindingCount),
-		streamSlot: requireVectorCount(decodeBoundedU8Vector(requireObjectKey(object, 'streamSlot', label, `${label}.streamSlot`), `${label}.streamSlot`, VDP_RPU_STREAM_BINDING_CAPACITY), `${label}.streamSlot`, streamBindingCount),
-		streamVramAddr: requireVectorCount(decodeBoundedU32Vector(requireObjectKey(object, 'streamVramAddr', label, `${label}.streamVramAddr`), `${label}.streamVramAddr`, VDP_RPU_STREAM_BINDING_CAPACITY), `${label}.streamVramAddr`, streamBindingCount),
-		streamByteLength: requireVectorCount(decodeBoundedU32Vector(requireObjectKey(object, 'streamByteLength', label, `${label}.streamByteLength`), `${label}.streamByteLength`, VDP_RPU_STREAM_BINDING_CAPACITY), `${label}.streamByteLength`, streamBindingCount),
-		streamStepRate: requireVectorCount(decodeBoundedU8Vector(requireObjectKey(object, 'streamStepRate', label, `${label}.streamStepRate`), `${label}.streamStepRate`, VDP_RPU_STREAM_BINDING_CAPACITY), `${label}.streamStepRate`, streamBindingCount),
-		constantBindingSlot: requireVectorCount(decodeBoundedU8Vector(requireObjectKey(object, 'constantBindingSlot', label, `${label}.constantBindingSlot`), `${label}.constantBindingSlot`, VDP_RPU_CONSTANT_BINDING_CAPACITY), `${label}.constantBindingSlot`, constantBindingCount),
-		constantVramAddr: requireVectorCount(decodeBoundedU32Vector(requireObjectKey(object, 'constantVramAddr', label, `${label}.constantVramAddr`), `${label}.constantVramAddr`, VDP_RPU_CONSTANT_BINDING_CAPACITY), `${label}.constantVramAddr`, constantBindingCount),
-		constantByteLength: requireVectorCount(decodeBoundedU32Vector(requireObjectKey(object, 'constantByteLength', label, `${label}.constantByteLength`), `${label}.constantByteLength`, VDP_RPU_CONSTANT_BINDING_CAPACITY), `${label}.constantByteLength`, constantBindingCount),
-		textureSlot: requireVectorCount(decodeBoundedU8Vector(requireObjectKey(object, 'textureSlot', label, `${label}.textureSlot`), `${label}.textureSlot`, VDP_RPU_TEXTURE_BINDING_CAPACITY), `${label}.textureSlot`, textureBindingCount),
-		textureSurfaceDescAddr: requireVectorCount(decodeBoundedU32Vector(requireObjectKey(object, 'textureSurfaceDescAddr', label, `${label}.textureSurfaceDescAddr`), `${label}.textureSurfaceDescAddr`, VDP_RPU_TEXTURE_BINDING_CAPACITY), `${label}.textureSurfaceDescAddr`, textureBindingCount),
+		passFirstDraw: requireVectorCount(decodeBoundedWordVector(requireObjectKey(object, 'passFirstDraw', label, `${label}.passFirstDraw`), `${label}.passFirstDraw`, VDP_RPU_PASS_CAPACITY, 0xffffffff), `${label}.passFirstDraw`, passCount),
+		passDrawCount: requireVectorCount(decodeBoundedWordVector(requireObjectKey(object, 'passDrawCount', label, `${label}.passDrawCount`), `${label}.passDrawCount`, VDP_RPU_PASS_CAPACITY, 0xffff), `${label}.passDrawCount`, passCount),
+		passColorSurfaceDescAddr: requireVectorCount(decodeBoundedWordVector(requireObjectKey(object, 'passColorSurfaceDescAddr', label, `${label}.passColorSurfaceDescAddr`), `${label}.passColorSurfaceDescAddr`, VDP_RPU_PASS_CAPACITY, 0xffffffff), `${label}.passColorSurfaceDescAddr`, passCount),
+		passDepthSurfaceDescAddr: requireVectorCount(decodeBoundedWordVector(requireObjectKey(object, 'passDepthSurfaceDescAddr', label, `${label}.passDepthSurfaceDescAddr`), `${label}.passDepthSurfaceDescAddr`, VDP_RPU_PASS_CAPACITY, 0xffffffff), `${label}.passDepthSurfaceDescAddr`, passCount),
+		passViewportXY: requireVectorCount(decodeBoundedWordVector(requireObjectKey(object, 'passViewportXY', label, `${label}.passViewportXY`), `${label}.passViewportXY`, VDP_RPU_PASS_CAPACITY, 0xffffffff), `${label}.passViewportXY`, passCount),
+		passViewportWH: requireVectorCount(decodeBoundedWordVector(requireObjectKey(object, 'passViewportWH', label, `${label}.passViewportWH`), `${label}.passViewportWH`, VDP_RPU_PASS_CAPACITY, 0xffffffff), `${label}.passViewportWH`, passCount),
+		passOps: requireVectorCount(decodeBoundedWordVector(requireObjectKey(object, 'passOps', label, `${label}.passOps`), `${label}.passOps`, VDP_RPU_PASS_CAPACITY, 0xffffffff), `${label}.passOps`, passCount),
+		passClearColor: requireVectorCount(decodeBoundedWordVector(requireObjectKey(object, 'passClearColor', label, `${label}.passClearColor`), `${label}.passClearColor`, VDP_RPU_PASS_CAPACITY, 0xffffffff), `${label}.passClearColor`, passCount),
+		passClearDepthWord: requireVectorCount(decodeBoundedWordVector(requireObjectKey(object, 'passClearDepthWord', label, `${label}.passClearDepthWord`), `${label}.passClearDepthWord`, VDP_RPU_PASS_CAPACITY, 0xffffffff), `${label}.passClearDepthWord`, passCount),
+		drawShaderVariant: requireVectorCount(decodeBoundedWordVector(requireObjectKey(object, 'drawShaderVariant', label, `${label}.drawShaderVariant`), `${label}.drawShaderVariant`, VDP_RPU_DRAW_CAPACITY, 0xffff), `${label}.drawShaderVariant`, drawCount),
+		drawPrimitive: requireVectorCount(decodeBoundedWordVector(requireObjectKey(object, 'drawPrimitive', label, `${label}.drawPrimitive`), `${label}.drawPrimitive`, VDP_RPU_DRAW_CAPACITY, 0xff), `${label}.drawPrimitive`, drawCount),
+		drawPipelineWord: requireVectorCount(decodeBoundedWordVector(requireObjectKey(object, 'drawPipelineWord', label, `${label}.drawPipelineWord`), `${label}.drawPipelineWord`, VDP_RPU_DRAW_CAPACITY, 0xffffffff), `${label}.drawPipelineWord`, drawCount),
+		drawVertexCount: requireVectorCount(decodeBoundedWordVector(requireObjectKey(object, 'drawVertexCount', label, `${label}.drawVertexCount`), `${label}.drawVertexCount`, VDP_RPU_DRAW_CAPACITY, 0xffffffff), `${label}.drawVertexCount`, drawCount),
+		drawInstanceCount: requireVectorCount(decodeBoundedWordVector(requireObjectKey(object, 'drawInstanceCount', label, `${label}.drawInstanceCount`), `${label}.drawInstanceCount`, VDP_RPU_DRAW_CAPACITY, 0xffffffff), `${label}.drawInstanceCount`, drawCount),
+		drawIndexVramAddr: requireVectorCount(decodeBoundedWordVector(requireObjectKey(object, 'drawIndexVramAddr', label, `${label}.drawIndexVramAddr`), `${label}.drawIndexVramAddr`, VDP_RPU_DRAW_CAPACITY, 0xffffffff), `${label}.drawIndexVramAddr`, drawCount),
+		drawIndexCount: requireVectorCount(decodeBoundedWordVector(requireObjectKey(object, 'drawIndexCount', label, `${label}.drawIndexCount`), `${label}.drawIndexCount`, VDP_RPU_DRAW_CAPACITY, 0xffffffff), `${label}.drawIndexCount`, drawCount),
+		drawIndexType: requireVectorCount(decodeBoundedWordVector(requireObjectKey(object, 'drawIndexType', label, `${label}.drawIndexType`), `${label}.drawIndexType`, VDP_RPU_DRAW_CAPACITY, 0xff), `${label}.drawIndexType`, drawCount),
+		drawFirstStreamBinding: requireVectorCount(decodeBoundedWordVector(requireObjectKey(object, 'drawFirstStreamBinding', label, `${label}.drawFirstStreamBinding`), `${label}.drawFirstStreamBinding`, VDP_RPU_DRAW_CAPACITY, 0xffffffff), `${label}.drawFirstStreamBinding`, drawCount),
+		drawStreamBindingCount: requireVectorCount(decodeBoundedWordVector(requireObjectKey(object, 'drawStreamBindingCount', label, `${label}.drawStreamBindingCount`), `${label}.drawStreamBindingCount`, VDP_RPU_DRAW_CAPACITY, 0xff), `${label}.drawStreamBindingCount`, drawCount),
+		drawFirstConstantBinding: requireVectorCount(decodeBoundedWordVector(requireObjectKey(object, 'drawFirstConstantBinding', label, `${label}.drawFirstConstantBinding`), `${label}.drawFirstConstantBinding`, VDP_RPU_DRAW_CAPACITY, 0xffffffff), `${label}.drawFirstConstantBinding`, drawCount),
+		drawConstantBindingCount: requireVectorCount(decodeBoundedWordVector(requireObjectKey(object, 'drawConstantBindingCount', label, `${label}.drawConstantBindingCount`), `${label}.drawConstantBindingCount`, VDP_RPU_DRAW_CAPACITY, 0xff), `${label}.drawConstantBindingCount`, drawCount),
+		drawFirstTextureBinding: requireVectorCount(decodeBoundedWordVector(requireObjectKey(object, 'drawFirstTextureBinding', label, `${label}.drawFirstTextureBinding`), `${label}.drawFirstTextureBinding`, VDP_RPU_DRAW_CAPACITY, 0xffffffff), `${label}.drawFirstTextureBinding`, drawCount),
+		drawTextureBindingCount: requireVectorCount(decodeBoundedWordVector(requireObjectKey(object, 'drawTextureBindingCount', label, `${label}.drawTextureBindingCount`), `${label}.drawTextureBindingCount`, VDP_RPU_DRAW_CAPACITY, 0xff), `${label}.drawTextureBindingCount`, drawCount),
+		streamLayoutId: requireVectorCount(decodeBoundedWordVector(requireObjectKey(object, 'streamLayoutId', label, `${label}.streamLayoutId`), `${label}.streamLayoutId`, VDP_RPU_STREAM_BINDING_CAPACITY, 0xffff), `${label}.streamLayoutId`, streamBindingCount),
+		streamSlot: requireVectorCount(decodeBoundedWordVector(requireObjectKey(object, 'streamSlot', label, `${label}.streamSlot`), `${label}.streamSlot`, VDP_RPU_STREAM_BINDING_CAPACITY, 0xff), `${label}.streamSlot`, streamBindingCount),
+		streamVramAddr: requireVectorCount(decodeBoundedWordVector(requireObjectKey(object, 'streamVramAddr', label, `${label}.streamVramAddr`), `${label}.streamVramAddr`, VDP_RPU_STREAM_BINDING_CAPACITY, 0xffffffff), `${label}.streamVramAddr`, streamBindingCount),
+		streamByteLength: requireVectorCount(decodeBoundedWordVector(requireObjectKey(object, 'streamByteLength', label, `${label}.streamByteLength`), `${label}.streamByteLength`, VDP_RPU_STREAM_BINDING_CAPACITY, 0xffffffff), `${label}.streamByteLength`, streamBindingCount),
+		streamStepRate: requireVectorCount(decodeBoundedWordVector(requireObjectKey(object, 'streamStepRate', label, `${label}.streamStepRate`), `${label}.streamStepRate`, VDP_RPU_STREAM_BINDING_CAPACITY, 0xff), `${label}.streamStepRate`, streamBindingCount),
+		constantBindingSlot: requireVectorCount(decodeBoundedWordVector(requireObjectKey(object, 'constantBindingSlot', label, `${label}.constantBindingSlot`), `${label}.constantBindingSlot`, VDP_RPU_CONSTANT_BINDING_CAPACITY, 0xff), `${label}.constantBindingSlot`, constantBindingCount),
+		constantVramAddr: requireVectorCount(decodeBoundedWordVector(requireObjectKey(object, 'constantVramAddr', label, `${label}.constantVramAddr`), `${label}.constantVramAddr`, VDP_RPU_CONSTANT_BINDING_CAPACITY, 0xffffffff), `${label}.constantVramAddr`, constantBindingCount),
+		constantByteLength: requireVectorCount(decodeBoundedWordVector(requireObjectKey(object, 'constantByteLength', label, `${label}.constantByteLength`), `${label}.constantByteLength`, VDP_RPU_CONSTANT_BINDING_CAPACITY, 0xffffffff), `${label}.constantByteLength`, constantBindingCount),
+		textureSlot: requireVectorCount(decodeBoundedWordVector(requireObjectKey(object, 'textureSlot', label, `${label}.textureSlot`), `${label}.textureSlot`, VDP_RPU_TEXTURE_BINDING_CAPACITY, 0xff), `${label}.textureSlot`, textureBindingCount),
+		textureSurfaceDescAddr: requireVectorCount(decodeBoundedWordVector(requireObjectKey(object, 'textureSurfaceDescAddr', label, `${label}.textureSurfaceDescAddr`), `${label}.textureSurfaceDescAddr`, VDP_RPU_TEXTURE_BINDING_CAPACITY, 0xffffffff), `${label}.textureSurfaceDescAddr`, textureBindingCount),
 	};
 }
 
@@ -1055,8 +1043,6 @@ function encodeCpuValueState(state: CpuValueState): CpuValueState {
 			return { tag: 'builtin', id: state.id };
 		case 'ref':
 			return { tag: 'ref', id: state.id };
-		case 'stable_ref':
-			return { tag: 'stable_ref', path: encodeVector(state.path, (segment) => segment) };
 	}
 }
 
@@ -1076,15 +1062,6 @@ function decodeCpuValueState(value: unknown, label: string): CpuValueState {
 			return { tag: 'builtin', id: requireObjectKey(object, 'id', label, 'cpuValueState.id') as BuiltinFunctionId };
 		case 'ref':
 			return { tag: 'ref', id: requireObjectKey(object, 'id', label, 'cpuValueState.id') as number };
-		case 'stable_ref':
-			return {
-				tag: 'stable_ref',
-				path: decodeVector<CpuRuntimeRefSegment>(
-					requireObjectKey(object, 'path', label, 'cpuValueState.path'),
-					'cpuValueState.path',
-					(segment) => segment as CpuRuntimeRefSegment,
-				),
-			};
 	}
 	throw new Error('cpuValueState.tag is invalid.');
 }
@@ -1111,6 +1088,7 @@ function encodeCpuObjectState(state: CpuObjectState): CpuObjectState {
 		case 'table':
 			return {
 				kind: 'table',
+				hashId: state.hashId,
 				array: encodeVector(state.array, encodeCpuValueState),
 				arrayLength: state.arrayLength,
 				hash: encodeVector(state.hash, encodeCpuTableHashNodeState),
@@ -1120,12 +1098,14 @@ function encodeCpuObjectState(state: CpuObjectState): CpuObjectState {
 		case 'closure':
 			return {
 				kind: 'closure',
+				hashId: state.hashId,
 				protoIndex: state.protoIndex,
 				upvalues: encodeVector(state.upvalues, (index) => index),
 			};
 		case 'upvalue':
 			return {
 				kind: 'upvalue',
+				hashId: state.hashId,
 				open: state.open,
 				index: state.index,
 				frameIndex: state.frameIndex,
@@ -1141,6 +1121,7 @@ function decodeCpuObjectState(value: unknown, label: string): CpuObjectState {
 		case 'table':
 			return {
 				kind: 'table',
+				hashId: requireObjectKey(object, 'hashId', label, 'cpuObjectState.hashId') as number,
 				array: decodeVector(
 					requireObjectKey(object, 'array', label, 'cpuObjectState.array'),
 					'cpuObjectState.array',
@@ -1158,6 +1139,7 @@ function decodeCpuObjectState(value: unknown, label: string): CpuObjectState {
 		case 'closure':
 			return {
 				kind: 'closure',
+				hashId: requireObjectKey(object, 'hashId', label, 'cpuObjectState.hashId') as number,
 				protoIndex: requireObjectKey(object, 'protoIndex', label, 'cpuObjectState.protoIndex') as number,
 				upvalues: decodeVector(
 					requireObjectKey(object, 'upvalues', label, 'cpuObjectState.upvalues'),
@@ -1168,6 +1150,7 @@ function decodeCpuObjectState(value: unknown, label: string): CpuObjectState {
 		case 'upvalue':
 			return {
 				kind: 'upvalue',
+				hashId: requireObjectKey(object, 'hashId', label, 'cpuObjectState.hashId') as number,
 				open: requireObjectKey(object, 'open', label, 'cpuObjectState.open') as boolean,
 				index: requireObjectKey(object, 'index', label, 'cpuObjectState.index') as number,
 				frameIndex: requireObjectKey(object, 'frameIndex', label, 'cpuObjectState.frameIndex') as number,

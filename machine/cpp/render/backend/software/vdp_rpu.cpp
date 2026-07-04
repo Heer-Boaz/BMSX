@@ -119,7 +119,7 @@ SoftwareRpuTarget passColorTarget(SoftwareBackend& backend, const VdpRpuFrameOut
 	if (colorSurfaceDescAddr == 0u) {
 		return SoftwareRpuTarget{backend.framebuffer(), nullptr, 0u, backend.pitch(), backend.pitch() / static_cast<i32>(sizeof(u32)), backend.width(), backend.height(), true, &g_rpuSoftware.defaultDepth};
 	}
-	u8* vram = frame.vdpVram->data();
+	u8* vram = frame.vdpVram.get().data();
 	return SoftwareRpuTarget{
 		nullptr,
 		vram,
@@ -142,7 +142,7 @@ std::vector<f64>* passDepthTarget(const VdpRpuFrameOutput& frame, size_t passInd
 		}
 		return &g_rpuSoftware.defaultDepth;
 	}
-	const u8* vram = frame.vdpVram->data();
+	const u8* vram = frame.vdpVram.get().data();
 	const i32 width = static_cast<i32>(readRpuDescU16(vram, depthSurfaceDescAddr + RPU_SURFACE_DESC_WIDTH_OFFSET));
 	const i32 height = static_cast<i32>(readRpuDescU16(vram, depthSurfaceDescAddr + RPU_SURFACE_DESC_HEIGHT_OFFSET));
 	SoftwareRpuDepthSurface& surface = g_rpuSoftware.depthSurfaces[depthSurfaceDescAddr];
@@ -220,7 +220,7 @@ void readAttribute(const VdpRpuFrameOutput& frame, size_t bindingIndex, u32 elem
 	const VdpRpuCommandBuffer& commands = frame.commands;
 	const VdpRpuStreamLayoutSpec& layout = resolveVdpRpuStreamLayoutSpec(commands.streamLayoutId[bindingIndex]);
 	setDefaultAttribute(attributeId);
-	const u8* bytes = frame.vdpVram->data();
+	const u8* bytes = frame.vdpVram.get().data();
 	const u32 elementOffset = commands.streamVramAddr[bindingIndex] + elementIndex * layout.byteStride;
 	for (size_t index = 0; index < layout.attributeCount; ++index) {
 		const VdpRpuStreamAttributeSpec& spec = layout.attributes[index];
@@ -262,7 +262,7 @@ size_t findBindingSlot(const u8* slots, size_t firstBinding, size_t bindingCount
 }
 
 u32 constantWord(const VdpRpuFrameOutput& frame, size_t bindingIndex, u32 wordIndex) {
-	return readRpuDescU32(frame.vdpVram->data(), frame.commands.constantVramAddr[bindingIndex] + wordIndex * 4u);
+	return readRpuDescU32(frame.vdpVram.get().data(), frame.commands.constantVramAddr[bindingIndex] + wordIndex * 4u);
 }
 
 f64 constantF32(const VdpRpuFrameOutput& frame, size_t bindingIndex, u32 wordIndex) {
@@ -328,12 +328,13 @@ void writeVertex(const VdpRpuFrameOutput& frame, size_t drawIndex, const VdpRpuS
 	const size_t streamFirstBinding = commands.drawFirstStreamBinding[drawIndex];
 	const size_t streamBindingCount = commands.drawStreamBindingCount[drawIndex];
 	const size_t bindingEnd = streamFirstBinding + streamBindingCount;
-	const size_t constantFirstBinding = commands.drawFirstConstantBinding[drawIndex];
-	const size_t constantBindingCount = commands.drawConstantBindingCount[drawIndex];
-	const size_t constantBindingEnd = constantFirstBinding + constantBindingCount;
-	const u8* constantBindingSlot = commands.constantBindingSlot.data();
-	const size_t vertexBinding = findBindingSlot(commands.streamSlot.data(), streamFirstBinding, streamBindingCount, 0u);
-	const size_t instanceBinding = findBindingSlot(commands.streamSlot.data(), streamFirstBinding, streamBindingCount, 1u);
+		const size_t constantFirstBinding = commands.drawFirstConstantBinding[drawIndex];
+		const size_t constantBindingCount = commands.drawConstantBindingCount[drawIndex];
+		const size_t constantBindingEnd = constantFirstBinding + constantBindingCount;
+		const u8* streamSlot = commands.streamSlot.data();
+		const u8* constantBindingSlot = commands.constantBindingSlot.data();
+		const size_t vertexBinding = findBindingSlot(streamSlot, streamFirstBinding, streamBindingCount, 0u);
+		const size_t instanceBinding = findBindingSlot(streamSlot, streamFirstBinding, streamBindingCount, 1u);
 	f64 px = 0.0;
 	f64 py = 0.0;
 	f64 pz = 0.0;
@@ -364,9 +365,9 @@ void writeVertex(const VdpRpuFrameOutput& frame, size_t drawIndex, const VdpRpuS
 		readAttribute(frame, vertexBinding, vertexIndex, VDP_RPU_ATTR_JOINTS);
 		readAttribute(frame, vertexBinding, vertexIndex, VDP_RPU_ATTR_WEIGHTS);
 		ctx.attr[16] = ctx.attr[0]; ctx.attr[17] = ctx.attr[1]; ctx.attr[18] = ctx.attr[2]; ctx.attr[19] = ctx.attr[3];
-	}
-	if ((rawVariantWord & VDP_RPU_SHADER_FLAG_MORPH) != 0u) {
-		const size_t morphBinding = findBindingSlot(commands.streamSlot.data(), streamFirstBinding, streamBindingCount, 2u);
+		}
+		if ((rawVariantWord & VDP_RPU_SHADER_FLAG_MORPH) != 0u) {
+			const size_t morphBinding = findBindingSlot(streamSlot, streamFirstBinding, streamBindingCount, 2u);
 		if (morphBinding != bindingEnd) {
 			readAttribute(frame, morphBinding, vertexIndex, VDP_RPU_ATTR_MORPH_POS);
 			px += ctx.attr[0]; py += ctx.attr[1]; pz += ctx.attr[2];
@@ -421,8 +422,7 @@ void writeVertex(const VdpRpuFrameOutput& frame, size_t drawIndex, const VdpRpuS
 		readAttribute(frame, instanceBinding, instanceIndex, VDP_RPU_ATTR_INSTANCE_COLOR);
 		r *= ctx.attr[0]; g *= ctx.attr[1]; b *= ctx.attr[2]; a *= ctx.attr[3];
 	}
-	// Save model-space position (pre-MVP) for point light attenuation
-	const f64 modelX = px; const f64 modelY = py; const f64 modelZ = pz;
+		const std::array<f64, 3u> modelPosition = {px, py, pz};
 	if (shaderVariant.usesC0 != 0u) {
 		const size_t c0Binding = findBindingSlot(constantBindingSlot, constantFirstBinding, constantBindingCount, 0u);
 		if (c0Binding != constantBindingEnd) {
@@ -482,7 +482,7 @@ void writeVertex(const VdpRpuFrameOutput& frame, size_t drawIndex, const VdpRpuS
 				const f64 plb = constantF32(frame, c1Binding, base + 6u);
 				const f64 pli = constantF32(frame, c1Binding, base + 7u);
 				if (pli <= 0.0 || plRange <= 0.0) continue;
-				const f64 ddx = modelX - plx; const f64 ddy = modelY - ply; const f64 ddz = modelZ - plz;
+					const f64 ddx = modelPosition[0] - plx; const f64 ddy = modelPosition[1] - ply; const f64 ddz = modelPosition[2] - plz;
 				const f64 dist = std::sqrt(ddx * ddx + ddy * ddy + ddz * ddz);
 				const f64 atten = std::max(0.0, 1.0 - dist / plRange);
 				totalR += plr * pli * atten;
@@ -519,7 +519,7 @@ u32 readIndex(const VdpRpuFrameOutput& frame, size_t drawIndex, u32 index) {
 	const auto& commands = frame.commands;
 	const u32 indexType = commands.drawIndexType[drawIndex];
 	const u32 offset = commands.drawIndexVramAddr[drawIndex] + index * (indexType == VDP_RPU_INDEX_U16 ? 2u : 4u);
-	return indexType == VDP_RPU_INDEX_U16 ? readRpuDescU16(frame.vdpVram->data(), offset) : readRpuDescU32(frame.vdpVram->data(), offset);
+	return indexType == VDP_RPU_INDEX_U16 ? readRpuDescU16(frame.vdpVram.get().data(), offset) : readRpuDescU32(frame.vdpVram.get().data(), offset);
 }
 
 size_t textureBinding(const VdpRpuFrameOutput& frame, size_t drawIndex) {
@@ -550,7 +550,7 @@ void resolveTextureSource(const VdpRpuFrameOutput& frame, size_t bindingIndex, s
 		source.enabled = false;
 		return;
 	}
-	const u8* vram = frame.vdpVram->data();
+	const u8* vram = frame.vdpVram.get().data();
 	source.enabled = true;
 	source.pixels = vram;
 	source.baseOffset = readRpuDescU32(vram, surfaceDescAddr + RPU_SURFACE_DESC_BASE_ADDR_OFFSET);

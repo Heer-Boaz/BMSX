@@ -3,7 +3,6 @@ import { test } from 'node:test';
 
 import {
 	BUS_FAULT_ACCESS_READ,
-	BUS_FAULT_ACCESS_F64,
 	BUS_FAULT_ACCESS_U8,
 	BUS_FAULT_ACCESS_U16,
 	BUS_FAULT_ACCESS_U32,
@@ -15,7 +14,6 @@ import {
 	BUS_FAULT_VRAM_RANGE,
 	DMA_CTRL_START,
 	DMA_STATUS_DONE,
-	DMA_STATUS_ERROR,
 	IMG_CTRL_START,
 	IMG_STATUS_DONE,
 	IMG_STATUS_ERROR,
@@ -44,7 +42,7 @@ import {
 	IO_SYS_BUS_FAULT_ACK,
 	IO_SYS_BUS_FAULT_ADDR,
 	IO_SYS_BUS_FAULT_CODE,
-	IRQ_DMA_ERROR,
+	IRQ_DMA_DONE,
 	IRQ_IMG_ERROR,
 	IRQ_VBLANK,
 } from '../../machine/ts/machine/bus/io';
@@ -54,7 +52,7 @@ import { DmaController } from '../../machine/ts/machine/devices/dma/controller';
 import { ImgDecController } from '../../machine/ts/machine/devices/imgdec/controller';
 import { IrqController } from '../../machine/ts/machine/devices/irq/controller';
 import { Memory, type VramWriteSink } from '../../machine/ts/machine/memory/memory';
-import { GEO_SCRATCH_BASE, RAM_BASE, RAM_END, SYSTEM_ROM_BASE, VRAM_FRAMEBUFFER_BASE, VRAM_STAGING_BASE } from '../../machine/ts/machine/memory/map';
+import { GEO_SCRATCH_BASE, PROGRAM_ROM_BASE, PROGRAM_ROM_SIZE, RAM_BASE, RAM_END, SYSTEM_ROM_BASE, VRAM_FRAMEBUFFER_BASE, VRAM_STAGING_BASE } from '../../machine/ts/machine/memory/map';
 import type { VDP } from '../../machine/ts/machine/devices/vdp/vdp';
 import type { Runtime } from '../../machine/ts/machine/runtime/runtime';
 import { VblankState } from '../../machine/ts/machine/runtime/vblank';
@@ -99,12 +97,11 @@ function createDmaFixture(): { memory: Memory; controller: DmaController } {
 	const scheduler = new DeviceScheduler(new CPU(memory));
 	const irq = new IrqController(memory);
 	const vdp = {
-		canAcceptVdpSubmit: () => true,
 		acceptSubmitAttempt: () => { },
 		rejectSubmitAttempt: () => { },
 		beginDmaSubmit: () => { },
 		endDmaSubmit: () => { },
-		sealDmaTransfer: () => true,
+		sealDmaTransfer: () => { },
 	} as unknown as VDP;
 	const controller = new DmaController(memory, irq, vdp, scheduler);
 	controller.reset();
@@ -140,6 +137,21 @@ test('core golden: memory RAM, ROM, and numeric I/O words stay observable', () =
 	}
 });
 
+test('core golden: program ROM window zero-fills consistently across memory paths', () => {
+	const memory = new Memory({ systemRom: new Uint8Array(0), cartRom: new Uint8Array(0) });
+	memory.setProgramRom(new Uint8Array([0x11, 0x22, 0x33, 0x44, 0x55, 0x66]), 4);
+	const tailBytes = new Uint8Array(4);
+
+	assert.equal(memory.readValue(PROGRAM_ROM_BASE), 0x11223344);
+	assert.equal(memory.readMappedU32LE(PROGRAM_ROM_BASE), 0x44332211);
+	assert.equal(memory.readMappedU32LE(PROGRAM_ROM_BASE + 4), 0x00006655);
+	assert.equal(memory.readU8(PROGRAM_ROM_BASE + PROGRAM_ROM_SIZE - 1), 0);
+	memory.readBytesInto(PROGRAM_ROM_BASE + 4, tailBytes, tailBytes.byteLength);
+	assert.deepEqual([...tailBytes], [0x55, 0x66, 0, 0]);
+	assert.equal(memory.readMappedU32LE(PROGRAM_ROM_BASE + PROGRAM_ROM_SIZE - 4), 0);
+	assert.equal(memory.readIoU32(IO_SYS_BUS_FAULT_CODE), BUS_FAULT_NONE);
+});
+
 test('core golden: mapped memory hot paths keep boundary faults and contained VRAM transfers explicit', () => {
 	class RecordingVram implements VramWriteSink {
 		public readonly reads: Array<{ addr: number; length: number }> = [];
@@ -163,16 +175,17 @@ test('core golden: mapped memory hot paths keep boundary faults and contained VR
 
 	const memory = new Memory({ systemRom: new Uint8Array([0x11, 0x22, 0x33, 0x44]), cartRom: new Uint8Array(0) });
 	const vram = new RecordingVram();
+	const readU32Access = BUS_FAULT_ACCESS_READ | BUS_FAULT_ACCESS_U32;
 	memory.setVramWriter(vram);
 
 	assert.equal(memory.readMappedU32LE(0xffff_fffc), 0);
-	assertBusFault(memory, BUS_FAULT_UNMAPPED, 0xffff_fffc, BUS_FAULT_ACCESS_READ | BUS_FAULT_ACCESS_U32);
+	assertBusFault(memory, BUS_FAULT_UNMAPPED, 0xffff_fffc, readU32Access);
 	clearBusFault(memory);
 	memory.writeMappedU32LE(0xffff_fffc, 0);
 	assertBusFault(memory, BUS_FAULT_UNMAPPED, 0xffff_fffc, BUS_FAULT_ACCESS_WRITE | BUS_FAULT_ACCESS_U32);
 	clearBusFault(memory);
 	assert.equal(memory.readMappedU32LE(RAM_END - 3), 0);
-	assertBusFault(memory, BUS_FAULT_UNMAPPED, RAM_END - 3, BUS_FAULT_ACCESS_READ | BUS_FAULT_ACCESS_U32);
+	assertBusFault(memory, BUS_FAULT_UNMAPPED, RAM_END - 3, readU32Access);
 	clearBusFault(memory);
 	memory.writeMappedU16LE(RAM_END - 1, 0);
 	assertBusFault(memory, BUS_FAULT_UNMAPPED, RAM_END - 1, BUS_FAULT_ACCESS_WRITE | BUS_FAULT_ACCESS_U16);
@@ -184,19 +197,19 @@ test('core golden: mapped memory hot paths keep boundary faults and contained VR
 	memory.writeMappedU32LE(VRAM_STAGING_BASE - 1, 0xabcdef01);
 	assertBusFault(memory, BUS_FAULT_VRAM_RANGE, VRAM_STAGING_BASE - 1, BUS_FAULT_ACCESS_WRITE | BUS_FAULT_ACCESS_U32);
 	clearBusFault(memory);
-	assert.equal(memory.readMappedF64LE(VRAM_STAGING_BASE - 4), 0);
-	assertBusFault(memory, BUS_FAULT_VRAM_RANGE, VRAM_STAGING_BASE - 4, BUS_FAULT_ACCESS_READ | BUS_FAULT_ACCESS_F64);
+	memory.readMappedF64LE(VRAM_STAGING_BASE - 4);
+	assert.equal(memory.readIoU32(IO_SYS_BUS_FAULT_CODE), BUS_FAULT_NONE);
 	clearBusFault(memory);
 	memory.writeMappedF64LE(VRAM_STAGING_BASE - 4, 1);
-	assertBusFault(memory, BUS_FAULT_VRAM_RANGE, VRAM_STAGING_BASE - 4, BUS_FAULT_ACCESS_WRITE | BUS_FAULT_ACCESS_F64);
+	assertBusFault(memory, BUS_FAULT_UNMAPPED, VRAM_STAGING_BASE - 4, BUS_FAULT_ACCESS_WRITE | BUS_FAULT_ACCESS_U32);
 	clearBusFault(memory);
-	assert.deepEqual(vram.reads, []);
-	assert.deepEqual(vram.writes, []);
+	assert.deepEqual(vram.reads, [{ addr: VRAM_STAGING_BASE, length: 4 }]);
+	assert.deepEqual(vram.writes, [{ addr: VRAM_STAGING_BASE, bytes: [0, 0, 0xf0, 0x3f] }]);
 
 	assert.equal(memory.readMappedU32LE(VRAM_STAGING_BASE), 0x04030201);
 	memory.writeMappedU32LE(VRAM_STAGING_BASE, 0x78563412);
-	assert.deepEqual(vram.reads, [{ addr: VRAM_STAGING_BASE, length: 4 }]);
-	assert.deepEqual(vram.writes, [{ addr: VRAM_STAGING_BASE, bytes: [0x12, 0x34, 0x56, 0x78] }]);
+	assert.deepEqual(vram.reads, [{ addr: VRAM_STAGING_BASE, length: 4 }, { addr: VRAM_STAGING_BASE, length: 4 }]);
+	assert.deepEqual(vram.writes, [{ addr: VRAM_STAGING_BASE, bytes: [0, 0, 0xf0, 0x3f] }, { addr: VRAM_STAGING_BASE, bytes: [0x12, 0x34, 0x56, 0x78] }]);
 });
 
 test('core golden: raw memory byte paths latch bus faults instead of throwing', () => {
@@ -205,18 +218,18 @@ test('core golden: raw memory byte paths latch bus faults instead of throwing', 
 	assertBusFault(memory, BUS_FAULT_UNMAPPED, 0xffff_ffff, BUS_FAULT_ACCESS_READ | BUS_FAULT_ACCESS_U8);
 	clearBusFault(memory);
 	const bytes = new Uint8Array(4);
-	assert.equal(memory.readBytesInto(RAM_END - 1, bytes, bytes.byteLength), false);
+	memory.readBytesInto(RAM_END - 1, bytes, bytes.byteLength);
 	assert.deepEqual([...bytes], [0, 0, 0, 0]);
 	assertBusFault(memory, BUS_FAULT_UNMAPPED, RAM_END - 1, BUS_FAULT_ACCESS_READ | BUS_FAULT_ACCESS_U8);
 	clearBusFault(memory);
-	assert.equal(memory.writeBytes(RAM_END - 1, new Uint8Array([1, 2, 3, 4])), false);
+	memory.writeBytes(RAM_END - 1, new Uint8Array([1, 2, 3, 4]));
 	assertBusFault(memory, BUS_FAULT_UNMAPPED, RAM_END - 1, BUS_FAULT_ACCESS_WRITE | BUS_FAULT_ACCESS_U8);
 	clearBusFault(memory);
 	memory.writeU32(RAM_END - 3, 0x12345678);
 	assertBusFault(memory, BUS_FAULT_UNMAPPED, RAM_END - 3, BUS_FAULT_ACCESS_WRITE | BUS_FAULT_ACCESS_U32);
 });
 
-test('core golden: DMA source bus faults complete as device errors', () => {
+test('core golden: DMA source bus faults latch on the memory bus while DMA progresses', () => {
 	const { memory, controller } = createDmaFixture();
 	memory.writeValue(IO_DMA_SRC, RAM_END - 1);
 	memory.writeValue(IO_DMA_DST, RAM_BASE);
@@ -225,9 +238,9 @@ test('core golden: DMA source bus faults complete as device errors', () => {
 	controller.startIo();
 	controller.accrueCycles(1, 1);
 	controller.onService(1);
-	assert.equal(memory.readIoU32(IO_DMA_STATUS), DMA_STATUS_DONE | DMA_STATUS_ERROR);
-	assert.equal(memory.readIoU32(IO_DMA_WRITTEN), 0);
-	assert.equal((memory.readIoU32(IO_IRQ_FLAGS) & IRQ_DMA_ERROR) !== 0, true);
+	assert.equal(memory.readIoU32(IO_DMA_STATUS), DMA_STATUS_DONE);
+	assert.equal(memory.readIoU32(IO_DMA_WRITTEN), 4);
+	assert.equal((memory.readIoU32(IO_IRQ_FLAGS) & IRQ_DMA_DONE) !== 0, true);
 	assertBusFault(memory, BUS_FAULT_UNMAPPED, RAM_END - 1, BUS_FAULT_ACCESS_READ | BUS_FAULT_ACCESS_U8);
 });
 
@@ -239,21 +252,11 @@ test('core golden: image decoder register faults complete as device status', () 
 		memory.writeValue(IO_IMG_DST, dst);
 		memory.writeValue(IO_IMG_CAP, cap);
 		memory.writeIoValue(IO_IMG_CTRL, IMG_CTRL_START);
-		assert.doesNotThrow(() => controller.onCtrlWrite(0));
-		assert.equal(memory.readIoU32(IO_IMG_STATUS), IMG_STATUS_DONE | IMG_STATUS_ERROR);
-		assert.equal((memory.readIoU32(IO_IRQ_FLAGS) & IRQ_IMG_ERROR) !== 0, true);
-	}
+			assert.doesNotThrow(() => controller.onCtrlWrite(0));
+			assert.equal(memory.readIoU32(IO_IMG_STATUS), IMG_STATUS_DONE | IMG_STATUS_ERROR);
+			assert.notEqual(memory.readIoU32(IO_IRQ_FLAGS) & IRQ_IMG_ERROR, 0);
+		}
 
-	const { memory, controller } = createImageDecoderFixture();
-	memory.writeValue(IO_IMG_SRC, RAM_END - 1);
-	memory.writeValue(IO_IMG_LEN, 4);
-	memory.writeValue(IO_IMG_DST, VRAM_FRAMEBUFFER_BASE);
-	memory.writeValue(IO_IMG_CAP, 4);
-	memory.writeIoValue(IO_IMG_CTRL, IMG_CTRL_START);
-	controller.onCtrlWrite(0);
-	assert.equal(memory.readIoU32(IO_IMG_STATUS), IMG_STATUS_DONE | IMG_STATUS_ERROR);
-	assert.equal((memory.readIoU32(IO_IRQ_FLAGS) & IRQ_IMG_ERROR) !== 0, true);
-	assertBusFault(memory, BUS_FAULT_UNMAPPED, RAM_END - 1, BUS_FAULT_ACCESS_READ | BUS_FAULT_ACCESS_U8);
 });
 
 test('core golden: queued image decoder faults reject and drain', async () => {
@@ -322,9 +325,7 @@ test('core golden: runtime VBlank end publishes scanout at the new frame origin'
 			},
 			vdp: {
 				resetStatus() { },
-				presentReadyFrameOnVblankEdge() {
-					return false;
-				},
+				presentReadyFrameOnVblankEdge() { },
 				setScanoutTiming(active: boolean, cyclesIntoFrame: number) {
 					scanoutCalls.push({ active, cyclesIntoFrame });
 				},

@@ -186,10 +186,35 @@ struct RenderPassDef {
 	bool depthWrite = false;
 };
 
+template<typename Backend, typename State, State RenderPassStateStorage::* StateMember, void (*Render)(Backend&, const State&)>
+void executeStateRenderPass(GPUBackend* backend, GameView*, void*, RenderPassStateStorage& state, void*) {
+	auto& typedBackend = *static_cast<Backend*>(backend);
+	const auto& typedState = state.*StateMember;
+	Render(typedBackend, typedState);
+}
+
+template<typename Backend, typename Pipeline, typename State, State RenderPassStateStorage::* StateMember, void (*Render)(Backend&, Pipeline&, const State&)>
+void executePipelineRenderPass(GPUBackend* backend, GameView*, void*, RenderPassStateStorage& state, void* context) {
+	auto& typedBackend = *static_cast<Backend*>(backend);
+	auto& typedPipeline = *static_cast<Pipeline*>(context);
+	const auto& typedState = state.*StateMember;
+	Render(typedBackend, typedPipeline, typedState);
+}
+
+template<typename Backend, void (*Bootstrap)(Backend&)>
+void bootstrapBackendRenderPass(GPUBackend* backend, void*) {
+	auto& typedBackend = *static_cast<Backend*>(backend);
+	Bootstrap(typedBackend);
+}
+
+void setFramebuffer2DGraph(RenderPassDef& desc);
 void setAutoPresentGraph(RenderPassDef& desc);
 void setAutoCRTGraph(RenderPassDef& desc);
+void setDeviceQuantizeGraph(RenderPassDef& desc);
+bool shouldExecuteFramebuffer2DPass(GameView* view, void*);
 bool shouldExecuteAutoPresentPass(GameView* view, void*);
 bool shouldExecuteAutoCRTPass(GameView* view, void*);
+bool shouldExecuteDeviceQuantizePass(GameView* view, void*);
 void registerFrameStatePasses(RenderPassLibrary& registry);
 
 /* ============================================================================
@@ -207,34 +232,7 @@ public:
 	bool has(const std::string& id) const;
 
 	template<typename T>
-	void setState(const std::string& id, const T& state) {
-		auto it = m_registered.find(id);
-		if (it == m_registered.end()) {
-			throw BMSX_RUNTIME_ERROR("Render pass '" + id + "' not found");
-		}
-		stateRef<T>(it->second.state) = state;
-	}
-
-	template<typename T>
-	T getState(const std::string& id) const {
-		auto it = m_registered.find(id);
-		if (it == m_registered.end()) {
-			throw BMSX_RUNTIME_ERROR("Render pass '" + id + "' not found");
-		}
-		return stateRef<T>(it->second.state);
-	}
-
-	template<typename T>
 	T& getStateRef(const std::string& id) {
-		auto it = m_registered.find(id);
-		if (it == m_registered.end()) {
-			throw BMSX_RUNTIME_ERROR("Render pass '" + id + "' not found");
-		}
-		return stateRef<T>(it->second.state);
-	}
-
-	template<typename T>
-	const T& getStateRef(const std::string& id) const {
 		auto it = m_registered.find(id);
 		if (it == m_registered.end()) {
 			throw BMSX_RUNTIME_ERROR("Render pass '" + id + "' not found");

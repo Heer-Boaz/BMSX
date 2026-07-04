@@ -206,9 +206,6 @@ VdpXfState decodeVdpXfState(const BinValue& value, const char* label) {
 	state.matrixWords = decodeU32Array<VDP_XF_MATRIX_REGISTER_WORDS>(requireField(object, "matrixWords", label), "machine.vdp.xf.matrixWords");
 	state.viewMatrixIndex = requireU32(requireField(object, "viewMatrixIndex", label), "machine.vdp.xf.viewMatrixIndex");
 	state.projectionMatrixIndex = requireU32(requireField(object, "projectionMatrixIndex", label), "machine.vdp.xf.projectionMatrixIndex");
-	if (state.viewMatrixIndex >= VDP_XF_MATRIX_COUNT || state.projectionMatrixIndex >= VDP_XF_MATRIX_COUNT) {
-		throw BMSX_RUNTIME_ERROR("[save-state] machine.vdp.xf selects invalid matrix indexes.");
-	}
 	return state;
 }
 
@@ -301,6 +298,9 @@ MemorySaveState decodeMemorySaveState(const BinValue& value, const char* label) 
 	const BinObject& object = requireObject(value, label);
 	MemorySaveState state;
 	state.ram = requireBinary(requireField(object, "ram", label), "machine.memory.ram");
+	if (state.ram.size() != RAM_END - RAM_BASE) {
+		throw BMSX_RUNTIME_ERROR("machine.memory.ram must contain " + std::to_string(RAM_END - RAM_BASE) + " bytes.");
+	}
 	state.busFaultCode = requireU32(requireField(object, "busFaultCode", label), "machine.memory.busFaultCode");
 	state.busFaultAddr = requireU32(requireField(object, "busFaultAddr", label), "machine.memory.busFaultAddr");
 	state.busFaultAccess = requireU32(requireField(object, "busFaultAccess", label), "machine.memory.busFaultAccess");
@@ -1091,16 +1091,6 @@ BinValue encodeCpuValueState(const CpuValueState& state) {
 			object["tag"] = "ref";
 			object["id"] = static_cast<i64>(state.refId);
 			break;
-		case CpuValueStateTag::StableRef: {
-			object["tag"] = "stable_ref";
-			BinArray path;
-			path.reserve(state.path.size());
-			for (const CpuRuntimeRefSegment& segment : state.path) {
-				path.push_back(segment.isIndex ? BinValue(static_cast<i64>(segment.index)) : BinValue(segment.key));
-			}
-			object["path"] = BinValue(std::move(path));
-			break;
-		}
 	}
 	return BinValue(std::move(object));
 }
@@ -1141,28 +1131,12 @@ CpuValueState decodeCpuValueState(const BinValue& value, const char* label) {
 		state.refId = requireI32(requireField(object, "id", label), "cpuValueState.id");
 		return state;
 	}
-	if (tag == "stable_ref") {
-		state.tag = CpuValueStateTag::StableRef;
-		const BinArray& path = requireArray(requireField(object, "path", label), "cpuValueState.path");
-		state.path.reserve(path.size());
-		for (size_t index = 0; index < path.size(); ++index) {
-			const BinValue& segmentValue = path[index];
-			CpuRuntimeRefSegment segment;
-			if (segmentValue.isString()) {
-				segment.key = segmentValue.asString();
-			} else {
-				segment.isIndex = true;
-				segment.index = requireI32(segmentValue, "cpuValueState.path[]");
-			}
-			state.path.push_back(std::move(segment));
-		}
-		return state;
-	}
 	throw BMSX_RUNTIME_ERROR("cpuValueState.tag is invalid.");
 }
 
 BinValue encodeCpuObjectState(const CpuObjectState& state) {
 	BinObject object;
+	object["hashId"] = static_cast<i64>(state.hashId);
 	switch (state.kind) {
 		case CpuObjectState::Kind::Table:
 			object["kind"] = "table";
@@ -1204,6 +1178,7 @@ CpuObjectState decodeCpuObjectState(const BinValue& value, const char* label) {
 	CpuObjectState state;
 	if (kind == "table") {
 		state.kind = CpuObjectState::Kind::Table;
+		state.hashId = requireU32(requireField(object, "hashId", label), "cpuObjectState.hashId");
 		state.array = decodeVector<CpuValueState>(requireField(object, "array", label), "cpuObjectState.array",
 			[](const BinValue& entryValue, size_t) {
 				return decodeCpuValueState(entryValue, "cpuObjectState.array[]");
@@ -1224,6 +1199,7 @@ CpuObjectState decodeCpuObjectState(const BinValue& value, const char* label) {
 	}
 	if (kind == "closure") {
 		state.kind = CpuObjectState::Kind::Closure;
+		state.hashId = requireU32(requireField(object, "hashId", label), "cpuObjectState.hashId");
 		state.protoIndex = requireI32(requireField(object, "protoIndex", label), "cpuObjectState.protoIndex");
 		state.upvalues = decodeVector<int>(requireField(object, "upvalues", label), "cpuObjectState.upvalues",
 			[](const BinValue& entryValue, size_t) {
@@ -1233,6 +1209,7 @@ CpuObjectState decodeCpuObjectState(const BinValue& value, const char* label) {
 	}
 	if (kind == "upvalue") {
 		state.kind = CpuObjectState::Kind::Upvalue;
+		state.hashId = requireU32(requireField(object, "hashId", label), "cpuObjectState.hashId");
 		state.upvalueOpen = requireBool(requireField(object, "open", label), "cpuObjectState.open");
 		state.upvalueIndex = requireI32(requireField(object, "index", label), "cpuObjectState.index");
 		state.frameIndex = requireI32(requireField(object, "frameIndex", label), "cpuObjectState.frameIndex");

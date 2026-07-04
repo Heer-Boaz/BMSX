@@ -14,41 +14,37 @@
 
 namespace bmsx {
 
-struct ApuOutputStartResult {
-	u32 faultCode = APU_FAULT_NONE;
-	u32 faultDetail = 0;
-};
-
 class ApuOutputMixer final {
 public:
-	ApuOutputMixer() = default;
+	ApuOutputMixer();
 	ApuOutputRing outputRing;
 
 	void resetPlaybackState();
 	[[nodiscard]] auto captureState() const -> ApuOutputState;
-	void restoreVoiceState(const ApuOutputVoiceState& state);
 	void pullOutputFrames(i16* output, size_t frameCount, i32 outputSampleRate, f32 outputGain, size_t targetQueuedFrames = 0);
-	auto playVoice(ApuAudioSlot slot, ApuVoiceId voiceId, const ApuAudioSource& source, const Span<const u8>& sourceBytes, const ApuParameterRegisterWords& registerWords, i64 playbackCursorQ16, u32 stopFadeSamples = 0) -> ApuOutputStartResult;
-	auto writeSlotRegisterWord(ApuAudioSlot slot, const ApuAudioSource& source, const ApuParameterRegisterWords& registerWords, u32 parameterIndex, i64 playbackCursorQ16) -> ApuOutputStartResult;
-	auto stopSlot(ApuAudioSlot slot, u32 fadeSamples = 0) -> bool;
+	void playVoice(ApuAudioSlot slot, ApuVoiceId voiceId, const ApuAudioSource& source, const Span<const u8>& sourceBytes, const ApuParameterRegisterWords& registerWords, i64 playbackCursorQ16, u32 stopFadeSamples = 0);
+	void restoreVoice(ApuAudioSlot slot, ApuVoiceId voiceId, const ApuAudioSource& source, const Span<const u8>& sourceBytes, const ApuParameterRegisterWords& registerWords, i64 playbackCursorQ16, const ApuOutputVoiceState& state);
+	void writeSlotRegisterWord(ApuAudioSlot slot, const ApuAudioSource& source, const ApuParameterRegisterWords& registerWords, u32 parameterIndex, i64 playbackCursorQ16);
+	void stopSlot(ApuAudioSlot slot, u32 fadeSamples = 0);
 	void stopAllVoices();
 	void renderSamples(i16* output, size_t frameCount, i32 outputSampleRate, f32 outputGain);
 
 private:
 	struct VoiceRecord {
+		bool active = false;
 		ApuVoiceId voiceId = 0;
 		i32 sampleRate = 0;
 		i32 channels = 0;
 		i32 bitsPerSample = 0;
-		const u8* data = nullptr;
+		const u8* data;
 		size_t dataSize = 0;
 		size_t frames = 0;
 		u32 generatorKind = APU_GENERATOR_NONE;
 		u32 generatorDutyQ12 = 0;
 		std::vector<u32> badpSeekFrames;
 		std::vector<u32> badpSeekOffsets;
-		std::optional<f64> loopStartFrame;
-		std::optional<f64> loopEndFrame;
+		f64 loopStartFrame = -1.0;
+		f64 loopEndFrame = -1.0;
 		ApuAudioSlot slot = 0;
 		ApuOutputPlayback playback;
 		f64 position = 0.0;
@@ -67,20 +63,13 @@ private:
 	friend auto captureApuOutputVoiceState(const VoiceRecord& record) -> ApuOutputVoiceState;
 	friend void restoreApuOutputVoiceState(VoiceRecord& record, const ApuOutputVoiceState& state);
 
-	auto buildVoiceFromData(ApuAudioSlot slot,
+	void buildVoiceFromData(VoiceRecord& record,
 								ApuVoiceId voiceId,
 								const ApuAudioSource& source,
 								const Span<const u8>& sourceBytes,
-								std::vector<u32> badpSeekFrames,
-								std::vector<u32> badpSeekOffsets,
 								const ApuOutputPlayback& playback,
 								i64 playbackCursorQ16,
-								f32 initialGain) -> VoiceRecord;
-	[[nodiscard]] auto findSlotIndex(ApuAudioSlot slot) const -> std::optional<size_t>;
-	void removeVoice(size_t index);
-	auto stopVoiceAtIndex(size_t index, u32 fadeSamples) -> bool;
-	auto findSlot(ApuAudioSlot slot) -> VoiceRecord*;
-	[[nodiscard]] auto findSlot(ApuAudioSlot slot) const -> const VoiceRecord*;
+								f32 initialGain);
 	void rampVoiceGain(VoiceRecord& record, f32 target, f64 durationSec);
 	void applyVoiceGainQ12(VoiceRecord& record, u32 gainQ12Word);
 	void applyVoiceLoopBounds(VoiceRecord& record, const ApuAudioSource& source);
@@ -90,7 +79,8 @@ private:
 
 	[[nodiscard]] auto clampVolume(f32 value) const -> f32;
 
-	std::vector<VoiceRecord> m_voices;
+	std::array<u8, 1> m_emptySourceBytes{};
+	std::array<VoiceRecord, APU_SLOT_COUNT> m_voices{};
 	std::array<f32, APU_OUTPUT_QUEUE_CAPACITY_SAMPLES> m_mixBuffer{};
 };
 

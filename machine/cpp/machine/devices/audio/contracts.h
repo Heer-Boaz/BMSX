@@ -19,6 +19,7 @@ constexpr uint32_t APU_CMD_STOP_SLOT = 2U;
 constexpr uint32_t APU_CMD_SET_SLOT_GAIN = 3U;
 
 constexpr uint32_t APU_SLOT_COUNT = 16U;
+constexpr uint32_t APU_SLOT_INDEX_MASK = APU_SLOT_COUNT - 1U;
 constexpr uint32_t APU_SLOT_PHASE_IDLE = 0U;
 constexpr uint32_t APU_SLOT_PHASE_PLAYING = 1U;
 constexpr uint32_t APU_SLOT_PHASE_FADING = 2U;
@@ -63,8 +64,6 @@ constexpr uint32_t APU_STATUS_CMD_FIFO_FULL = 1U << 6U;
 
 constexpr uint32_t APU_FAULT_NONE = 0U;
 constexpr uint32_t APU_FAULT_BAD_CMD = 0x0001U;
-constexpr uint32_t APU_FAULT_BAD_SLOT = 0x0002U;
-constexpr uint32_t APU_FAULT_CMD_FIFO_FULL = 0x0003U;
 constexpr uint32_t APU_FAULT_SOURCE_BYTES = 0x0101U;
 constexpr uint32_t APU_FAULT_SOURCE_RANGE = 0x0102U;
 constexpr uint32_t APU_FAULT_SOURCE_SAMPLE_RATE = 0x0103U;
@@ -73,10 +72,6 @@ constexpr uint32_t APU_FAULT_SOURCE_FRAME_COUNT = 0x0105U;
 constexpr uint32_t APU_FAULT_SOURCE_DATA_RANGE = 0x0106U;
 constexpr uint32_t APU_FAULT_SOURCE_BIT_DEPTH = 0x0107U;
 constexpr uint32_t APU_FAULT_UNSUPPORTED_FORMAT = 0x0201U;
-constexpr uint32_t APU_FAULT_OUTPUT_METADATA = 0x0202U;
-constexpr uint32_t APU_FAULT_OUTPUT_DATA_RANGE = 0x0203U;
-constexpr uint32_t APU_FAULT_OUTPUT_PLAYBACK_RATE = 0x0204U;
-constexpr uint32_t APU_FAULT_OUTPUT_BLOCK = 0x0205U;
 
 constexpr uint32_t APU_FILTER_NONE = 0U;
 constexpr uint32_t APU_FILTER_LOWPASS = 1U;

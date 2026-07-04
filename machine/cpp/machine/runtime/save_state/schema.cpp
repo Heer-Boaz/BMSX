@@ -300,6 +300,7 @@ const std::vector<std::string> RUNTIME_SAVE_STATE_PROP_NAMES = {
 	"format",
 	"machineRegionWord",
 	"vdpModeWord",
+	"hashId",
 };
 
 } // namespace bmsx

@@ -147,10 +147,7 @@ constexpr uint32_t GEO_OVERLAP2D_PAIR_META_INSTANCE_A_MASK = 0xffffu;
 constexpr uint32_t GEO_OVERLAP2D_PAIR_META_INSTANCE_B_MASK = 0xffffu;
 
 constexpr uint32_t GEO_FAULT_ABORTED_BY_HOST = 0x0001u;
-constexpr uint32_t GEO_FAULT_BAD_RECORD_ALIGNMENT = 0x0002u;
 constexpr uint32_t GEO_FAULT_BAD_VERTEX_COUNT = 0x0003u;
-constexpr uint32_t GEO_FAULT_SRC_RANGE = 0x0004u;
-constexpr uint32_t GEO_FAULT_DST_RANGE = 0x0005u;
 constexpr uint32_t GEO_FAULT_DESCRIPTOR_KIND = 0x0006u;
 constexpr uint32_t GEO_FAULT_NUMERIC_OVERFLOW_INTERNAL = 0x0007u;
 constexpr uint32_t GEO_FAULT_BAD_RECORD_FLAGS = 0x0008u;
@@ -162,9 +159,5 @@ constexpr uint32_t GEO_FAULT_RECORD_INDEX_NONE = 0xffffu;
 
 constexpr uint32_t GEO_FAULT_REJECT_BUSY = 0x8001u;
 constexpr uint32_t GEO_FAULT_REJECT_BAD_CMD = 0x8002u;
-constexpr uint32_t GEO_FAULT_REJECT_BAD_STRIDE = 0x8003u;
-constexpr uint32_t GEO_FAULT_REJECT_DST_NOT_RAM = 0x8004u;
-constexpr uint32_t GEO_FAULT_REJECT_MISALIGNED_REGS = 0x8005u;
-constexpr uint32_t GEO_FAULT_REJECT_BAD_REGISTER_COMBO = 0x8006u;
 
 } // namespace bmsx

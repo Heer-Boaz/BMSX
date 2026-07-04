@@ -61,13 +61,10 @@ export function resetApuBadpDecoder(record: ApuBadpDecodeTarget, frame: number):
 	seekApuBadpDecoderToFrame(record, frame);
 }
 
-export function readApuBadpFrameAt(record: ApuBadpDecodeTarget, frame: number): boolean {
-	if (frame < 0 || frame >= record.frames) {
-		return false;
-	}
+export function readApuBadpFrameAt(record: ApuBadpDecodeTarget, frame: number): void {
 	const badp = record.badp;
 	if (badp.decodedFrame === frame) {
-		return true;
+		return;
 	}
 	if (frame < badp.nextFrame) {
 		seekApuBadpDecoderToFrame(record, frame);
@@ -75,7 +72,6 @@ export function readApuBadpFrameAt(record: ApuBadpDecodeTarget, frame: number): 
 	while (badp.nextFrame <= frame) {
 		decodeNextApuBadpFrame(record);
 	}
-	return true;
 }
 
 function loadApuBadpBlock(record: ApuBadpDecodeTarget, offset: number): void {

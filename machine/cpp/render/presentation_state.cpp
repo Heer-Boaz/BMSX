@@ -188,7 +188,6 @@ bool RenderPresentationState::render(MachineManager& manager, Runtime& runtime, 
 			: m_presentationScratch.commitFrame;
 		recordPresentation(presentMode, commitFrame, pausedPresent);
 
-		runtime.machine.vdp.drainFrameBufferPresentation(manager.m_view->vdpFrameBufferTextures());
 		commitVdpViewSnapshot(*manager.m_view, runtime.machine.vdp.readDeviceOutput());
 		manager.m_view->configurePresentation(presentMode, commitFrame);
 		manager.m_view->drawgame();

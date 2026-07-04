@@ -185,9 +185,7 @@ export const VDP_RPU_INSTANCE_MODE_AFFINE2 = 1;
 export const VDP_RPU_INSTANCE_MODE_MAT4 = 2;
 
 export const VDP_FAULT_RPU_BAD_PACKET        = 0x0700;
-export const VDP_FAULT_RPU_FETCH_OOB         = 0x0701;
 export const VDP_FAULT_RPU_BAD_STREAM_LAYOUT = 0x0702;
-export const VDP_FAULT_RPU_COMMAND_OVERFLOW  = 0x0708;
 export const VDP_FAULT_RPU_BAD_STATE         = 0x0709;
 
 export const VDP_RPU_FRAME_IDLE = 0;
@@ -574,11 +572,11 @@ export type VdpRpuSaveState = {
 	buildState: VdpRpuFrameBuildState;
 };
 
-export function createVdpRpuFrameOutput(): VdpRpuFrameOutput {
+export function createVdpRpuFrameOutput(vdpVram: Uint8Array, vdpVramPageRevisions: Uint32Array): VdpRpuFrameOutput {
 	return {
 		commands: new VdpRpuCommandBuffer(),
-		vdpVram: new Uint8Array(0),
-		vdpVramPageRevisions: new Uint32Array(0),
+		vdpVram,
+		vdpVramPageRevisions,
 	};
 }
 
@@ -623,14 +621,9 @@ export class VdpRpuUnit {
 	public constructor(
 		private readonly memory: Memory,
 		private readonly fault: DeviceStatusLatch,
-		private vdpVram: Uint8Array,
-		private vdpVramPageRevisions: Uint32Array,
+		private readonly vdpVram: Uint8Array,
 	) {}
 
-	public bindVramStorage(vdpVram: Uint8Array, vdpVramPageRevisions: Uint32Array): void {
-		this.vdpVram = vdpVram;
-		this.vdpVramPageRevisions = vdpVramPageRevisions;
-	}
 
 	public reset(): void {
 		this.lastPacketCost = 0;
@@ -638,44 +631,23 @@ export class VdpRpuUnit {
 		this.buildState = VDP_RPU_FRAME_IDLE;
 	}
 
-	public beginFrame(frame: VdpRpuFrameOutput): boolean {
+	public beginFrame(frame: VdpRpuFrameOutput): void {
 		this.lastPacketCost = 0;
 		this.lastPacketSealedFrame = false;
-		if (this.buildState !== VDP_RPU_FRAME_IDLE) {
-			this.fault.raise(VDP_FAULT_RPU_BAD_STATE, this.buildState);
-			return false;
-		}
 		resetVdpRpuFrameOutput(frame);
-		frame.vdpVram = this.vdpVram;
-		frame.vdpVramPageRevisions = this.vdpVramPageRevisions;
 		this.buildState = VDP_RPU_FRAME_OPEN;
-		return true;
 	}
 
 	public cancelFrame(frame: VdpRpuFrameOutput): void {
-		this.lastPacketCost = 0;
-		this.lastPacketSealedFrame = false;
-		resetVdpRpuFrameOutput(frame);
-		frame.vdpVram = this.vdpVram;
-		frame.vdpVramPageRevisions = this.vdpVramPageRevisions;
+		this.beginFrame(frame);
 		this.buildState = VDP_RPU_FRAME_IDLE;
 	}
 
-	public endFrame(frame: VdpRpuFrameOutput): boolean {
+	public endFrame(frame: VdpRpuFrameOutput): void {
 		this.lastPacketCost = 0;
 		this.lastPacketSealedFrame = false;
 		void frame;
-		if (this.buildState !== VDP_RPU_FRAME_OPEN) {
-			this.fault.raise(VDP_FAULT_RPU_BAD_STATE, this.buildState);
-			return false;
-		}
 		this.buildState = VDP_RPU_FRAME_IDLE;
-		return true;
-	}
-
-	public rebindFrameResources(frame: VdpRpuFrameOutput): void {
-		frame.vdpVram = this.vdpVram;
-		frame.vdpVramPageRevisions = this.vdpVramPageRevisions;
 	}
 
 	public captureState(): VdpRpuSaveState {
@@ -688,84 +660,52 @@ export class VdpRpuUnit {
 		this.buildState = state.buildState;
 	}
 
-	public consumePacketFromMemory(frame: VdpRpuFrameOutput, headerWord: number, cursor: number, end: number): number {
+	public consumePacketFromMemory(frame: VdpRpuFrameOutput, headerWord: number, cursor: number): number {
 		this.lastPacketCost = 0;
 		this.lastPacketSealedFrame = false;
-		if ((headerWord & 0x0000ffff) !== 0) {
-			this.fault.raise(VDP_FAULT_RPU_BAD_PACKET, headerWord);
-			return VDP_RPU_FAULT_SENTINEL;
-		}
 		const payloadWords = (headerWord >>> 16) & 0xff;
 		const payloadEnd = cursor + payloadWords * IO_WORD_SIZE;
-		if (payloadWords === 0 || payloadEnd > end) {
-			this.fault.raise(VDP_FAULT_RPU_BAD_PACKET, headerWord);
-			return VDP_RPU_FAULT_SENTINEL;
-		}
 		const op = this.memory.readU32(cursor);
-		if (this.consumePacketPayloadFromMemory(frame, op, cursor, payloadWords)) {
-			return payloadEnd;
-		}
-		return VDP_RPU_FAULT_SENTINEL;
+		this.consumePacketPayloadFromMemory(frame, op, cursor);
+		return payloadEnd;
 	}
 
-	public consumePacketFromWords(frame: VdpRpuFrameOutput, words: Uint32Array, headerWord: number, cursor: number, wordCount: number): number {
+	public consumePacketFromWords(frame: VdpRpuFrameOutput, words: Uint32Array, headerWord: number, cursor: number): number {
 		this.lastPacketCost = 0;
 		this.lastPacketSealedFrame = false;
-		if ((headerWord & 0x0000ffff) !== 0) {
-			this.fault.raise(VDP_FAULT_RPU_BAD_PACKET, headerWord);
-			return VDP_RPU_FAULT_SENTINEL;
-		}
 		const payloadWords = (headerWord >>> 16) & 0xff;
-		if (payloadWords === 0 || cursor + payloadWords > wordCount) {
-			this.fault.raise(VDP_FAULT_RPU_BAD_PACKET, headerWord);
-			return VDP_RPU_FAULT_SENTINEL;
-		}
 		const op = words[cursor];
-		if (this.consumePacketPayloadFromWords(frame, words, op, cursor, payloadWords)) {
-			return cursor + payloadWords;
-		}
-		return VDP_RPU_FAULT_SENTINEL;
+		this.consumePacketPayloadFromWords(frame, words, op, cursor);
+		return cursor + payloadWords;
 	}
 
-	private consumePacketPayloadFromMemory(frame: VdpRpuFrameOutput, op: number, cursor: number, payloadWords: number): boolean {
-		if (this.buildState === VDP_RPU_FRAME_IDLE) {
-			this.fault.raise(VDP_FAULT_RPU_BAD_STATE, op);
-			return false;
-		}
+	private consumePacketPayloadFromMemory(frame: VdpRpuFrameOutput, op: number, cursor: number): void {
 		switch (op & 0xff) {
 			case VDP_RPU_OP_EXEC_PASS_LIST:
-				return payloadWords === VDP_RPU_EXEC_PASS_LIST_WORDS
-					&& this.acceptExecPassList(frame, op, this.memory.readU32(cursor + IO_WORD_SIZE));
+				this.acceptExecPassList(frame, op, this.memory.readU32(cursor + IO_WORD_SIZE));
+				return;
 			case VDP_RPU_OP_SEAL_FRAME:
-				return payloadWords === VDP_RPU_SEAL_FRAME_WORDS && this.acceptSealFrame(frame);
+				this.acceptSealFrame(frame);
+				return;
 			default:
 				this.fault.raise(VDP_FAULT_RPU_BAD_PACKET, op);
-				return false;
 		}
 	}
 
-	private consumePacketPayloadFromWords(frame: VdpRpuFrameOutput, words: Uint32Array, op: number, cursor: number, payloadWords: number): boolean {
-		if (this.buildState === VDP_RPU_FRAME_IDLE) {
-			this.fault.raise(VDP_FAULT_RPU_BAD_STATE, op);
-			return false;
-		}
+	private consumePacketPayloadFromWords(frame: VdpRpuFrameOutput, words: Uint32Array, op: number, cursor: number): void {
 		switch (op & 0xff) {
 			case VDP_RPU_OP_EXEC_PASS_LIST:
-				return payloadWords === VDP_RPU_EXEC_PASS_LIST_WORDS
-					&& this.acceptExecPassList(frame, op, words[cursor + 1]);
+				this.acceptExecPassList(frame, op, words[cursor + 1]);
+				return;
 			case VDP_RPU_OP_SEAL_FRAME:
-				return payloadWords === VDP_RPU_SEAL_FRAME_WORDS && this.acceptSealFrame(frame);
+				this.acceptSealFrame(frame);
+				return;
 			default:
 				this.fault.raise(VDP_FAULT_RPU_BAD_PACKET, op);
-				return false;
 		}
 	}
 
-	private acceptExecPassList(frame: VdpRpuFrameOutput, opWord: number, passDescAddr: number): boolean {
-		if (this.buildState !== VDP_RPU_FRAME_OPEN) {
-			this.fault.raise(VDP_FAULT_RPU_BAD_STATE, opWord);
-			return false;
-		}
+	private acceptExecPassList(frame: VdpRpuFrameOutput, opWord: number, passDescAddr: number): void {
 		const passCount = (opWord >>> 8) & 0xffff;
 		const cmd = frame.commands;
 		const vram = this.vdpVram;
@@ -773,13 +713,6 @@ export class VdpRpuUnit {
 
 		for (let p = 0; p < passCount; p += 1) {
 			const pb = (passDescAddr + p * RPU_PASS_DESC_SIZE) >>> 0;
-			if (!this.checkVramRange(pb, RPU_PASS_DESC_SIZE)) {
-				return false;
-			}
-			if (cmd.passCount >= VDP_RPU_PASS_CAPACITY) {
-				this.fault.raise(VDP_FAULT_RPU_COMMAND_OVERFLOW, cmd.passCount);
-				return false;
-			}
 			const pi = cmd.passCount++;
 			cost += VDP_RPU_PASS_COST;
 			cmd.passColorSurfaceDescAddr[pi] = readRpuDescU32(vram, pb + RPU_PASS_DESC_COLOR_SURFACE_DESC_ADDR_OFFSET);
@@ -796,15 +729,6 @@ export class VdpRpuUnit {
 
 			for (let d = 0; d < drawCount; d += 1) {
 				const db = (drawDescsAddr + d * RPU_DRAW_DESC_SIZE) >>> 0;
-				if (!this.checkVramRange(db, RPU_DRAW_DESC_SIZE)) {
-					cmd.passDrawCount[pi] = d;
-					return false;
-				}
-				if (cmd.drawCount >= VDP_RPU_DRAW_CAPACITY) {
-					cmd.passDrawCount[pi] = d;
-					this.fault.raise(VDP_FAULT_RPU_COMMAND_OVERFLOW, cmd.drawCount);
-					return false;
-				}
 				const di = cmd.drawCount++;
 				cmd.drawShaderVariant[di] = readRpuDescU16(vram, db + RPU_DRAW_DESC_SHADER_VARIANT_OFFSET);
 				cmd.drawPrimitive[di] = vram[db + RPU_DRAW_DESC_PRIMITIVE_OFFSET]!;
@@ -828,19 +752,6 @@ export class VdpRpuUnit {
 
 				for (let s = 0; s < streamCount; s += 1) {
 					const sb = (streamDescsAddr + s * RPU_STREAM_DESC_SIZE) >>> 0;
-					if (!this.checkVramRange(sb, RPU_STREAM_DESC_SIZE)) {
-						cmd.drawStreamBindingCount[di] = s;
-						cmd.drawConstantBindingCount[di] = 0;
-						cmd.drawTextureBindingCount[di] = 0;
-						cmd.passDrawCount[pi] = d + 1;
-						return false;
-					}
-					if (cmd.streamBindingCount >= VDP_RPU_STREAM_BINDING_CAPACITY) {
-						cmd.drawStreamBindingCount[di] = s;
-						cmd.passDrawCount[pi] = d + 1;
-						this.fault.raise(VDP_FAULT_RPU_COMMAND_OVERFLOW, cmd.streamBindingCount);
-						return false;
-					}
 					const si = cmd.streamBindingCount++;
 					cmd.streamVramAddr[si] = readRpuDescU32(vram, sb + RPU_STREAM_DESC_VRAM_ADDR_OFFSET);
 					cmd.streamByteLength[si] = readRpuDescU32(vram, sb + RPU_STREAM_DESC_BYTE_LENGTH_OFFSET);
@@ -853,18 +764,6 @@ export class VdpRpuUnit {
 
 				for (let c = 0; c < constantCount; c += 1) {
 					const cb = (constantDescsAddr + c * RPU_CONSTANT_DESC_SIZE) >>> 0;
-					if (!this.checkVramRange(cb, RPU_CONSTANT_DESC_SIZE)) {
-						cmd.drawConstantBindingCount[di] = c;
-						cmd.drawTextureBindingCount[di] = 0;
-						cmd.passDrawCount[pi] = d + 1;
-						return false;
-					}
-					if (cmd.constantBindingCount >= VDP_RPU_CONSTANT_BINDING_CAPACITY) {
-						cmd.drawConstantBindingCount[di] = c;
-						cmd.passDrawCount[pi] = d + 1;
-						this.fault.raise(VDP_FAULT_RPU_COMMAND_OVERFLOW, cmd.constantBindingCount);
-						return false;
-					}
 					const ci = cmd.constantBindingCount++;
 					cmd.constantBindingSlot[ci] = vram[cb + RPU_CONSTANT_DESC_SLOT_OFFSET]!;
 					cmd.constantVramAddr[ci] = readRpuDescU32(vram, cb + RPU_CONSTANT_DESC_VRAM_ADDR_OFFSET);
@@ -875,17 +774,6 @@ export class VdpRpuUnit {
 
 				for (let t = 0; t < textureCount; t += 1) {
 					const tb = (textureDescsAddr + t * RPU_TEXTURE_DESC_SIZE) >>> 0;
-					if (!this.checkVramRange(tb, RPU_TEXTURE_DESC_SIZE)) {
-						cmd.drawTextureBindingCount[di] = t;
-						cmd.passDrawCount[pi] = d + 1;
-						return false;
-					}
-					if (cmd.textureBindingCount >= VDP_RPU_TEXTURE_BINDING_CAPACITY) {
-						cmd.drawTextureBindingCount[di] = t;
-						cmd.passDrawCount[pi] = d + 1;
-						this.fault.raise(VDP_FAULT_RPU_COMMAND_OVERFLOW, cmd.textureBindingCount);
-						return false;
-					}
 					const ti = cmd.textureBindingCount++;
 					cmd.textureSlot[ti] = vram[tb + RPU_TEXTURE_DESC_SLOT_OFFSET]!;
 					cmd.textureSurfaceDescAddr[ti] = readRpuDescU32(vram, tb + RPU_TEXTURE_DESC_SURFACE_DESC_ADDR_OFFSET);
@@ -897,31 +785,15 @@ export class VdpRpuUnit {
 		}
 
 		this.lastPacketCost = cost;
-		return true;
 	}
 
-	private acceptSealFrame(frame: VdpRpuFrameOutput): boolean {
-		if (this.buildState !== VDP_RPU_FRAME_OPEN) {
-			this.fault.raise(VDP_FAULT_RPU_BAD_STATE, VDP_RPU_OP_SEAL_FRAME);
-			return false;
-		}
+	private acceptSealFrame(frame: VdpRpuFrameOutput): void {
 		void frame;
 		this.buildState = VDP_RPU_FRAME_IDLE;
 		this.lastPacketSealedFrame = true;
 		this.lastPacketCost = VDP_RPU_PACKET_COST;
-		return true;
-	}
-
-	private checkVramRange(addr: number, size: number): boolean {
-		if (addr >= this.vdpVram.byteLength || size > this.vdpVram.byteLength - addr) {
-			this.fault.raise(VDP_FAULT_RPU_FETCH_OOB, addr);
-			return false;
-		}
-		return true;
 	}
 }
-
-export const VDP_RPU_FAULT_SENTINEL = 0xffffffff;
 
 type VdpRpuSaveArray = Uint32Array | Uint16Array | Uint8Array;
 
@@ -940,45 +812,50 @@ function restoreVdpRpuArrayState(target: VdpRpuSaveArray, state: number[]): void
 }
 
 function captureVdpRpuCommandBufferState(commands: VdpRpuCommandBuffer): VdpRpuCommandBufferSaveState {
+	const passCount = commands.passCount;
+	const drawCount = commands.drawCount;
+	const streamBindingCount = commands.streamBindingCount;
+	const constantBindingCount = commands.constantBindingCount;
+	const textureBindingCount = commands.textureBindingCount;
 	return {
-		passCount: commands.passCount,
-		drawCount: commands.drawCount,
-		streamBindingCount: commands.streamBindingCount,
-		constantBindingCount: commands.constantBindingCount,
-		textureBindingCount: commands.textureBindingCount,
-		passFirstDraw: captureVdpRpuArrayState(commands.passFirstDraw, commands.passCount),
-		passDrawCount: captureVdpRpuArrayState(commands.passDrawCount, commands.passCount),
-		passColorSurfaceDescAddr: captureVdpRpuArrayState(commands.passColorSurfaceDescAddr, commands.passCount),
-		passDepthSurfaceDescAddr: captureVdpRpuArrayState(commands.passDepthSurfaceDescAddr, commands.passCount),
-		passViewportXY: captureVdpRpuArrayState(commands.passViewportXY, commands.passCount),
-		passViewportWH: captureVdpRpuArrayState(commands.passViewportWH, commands.passCount),
-		passOps: captureVdpRpuArrayState(commands.passOps, commands.passCount),
-		passClearColor: captureVdpRpuArrayState(commands.passClearColor, commands.passCount),
-		passClearDepthWord: captureVdpRpuArrayState(commands.passClearDepthWord, commands.passCount),
-		drawShaderVariant: captureVdpRpuArrayState(commands.drawShaderVariant, commands.drawCount),
-		drawPrimitive: captureVdpRpuArrayState(commands.drawPrimitive, commands.drawCount),
-		drawPipelineWord: captureVdpRpuArrayState(commands.drawPipelineWord, commands.drawCount),
-		drawVertexCount: captureVdpRpuArrayState(commands.drawVertexCount, commands.drawCount),
-		drawInstanceCount: captureVdpRpuArrayState(commands.drawInstanceCount, commands.drawCount),
-		drawIndexVramAddr: captureVdpRpuArrayState(commands.drawIndexVramAddr, commands.drawCount),
-		drawIndexCount: captureVdpRpuArrayState(commands.drawIndexCount, commands.drawCount),
-		drawIndexType: captureVdpRpuArrayState(commands.drawIndexType, commands.drawCount),
-		drawFirstStreamBinding: captureVdpRpuArrayState(commands.drawFirstStreamBinding, commands.drawCount),
-		drawStreamBindingCount: captureVdpRpuArrayState(commands.drawStreamBindingCount, commands.drawCount),
-		drawFirstConstantBinding: captureVdpRpuArrayState(commands.drawFirstConstantBinding, commands.drawCount),
-		drawConstantBindingCount: captureVdpRpuArrayState(commands.drawConstantBindingCount, commands.drawCount),
-		drawFirstTextureBinding: captureVdpRpuArrayState(commands.drawFirstTextureBinding, commands.drawCount),
-		drawTextureBindingCount: captureVdpRpuArrayState(commands.drawTextureBindingCount, commands.drawCount),
-		streamLayoutId: captureVdpRpuArrayState(commands.streamLayoutId, commands.streamBindingCount),
-		streamSlot: captureVdpRpuArrayState(commands.streamSlot, commands.streamBindingCount),
-		streamVramAddr: captureVdpRpuArrayState(commands.streamVramAddr, commands.streamBindingCount),
-		streamByteLength: captureVdpRpuArrayState(commands.streamByteLength, commands.streamBindingCount),
-		streamStepRate: captureVdpRpuArrayState(commands.streamStepRate, commands.streamBindingCount),
-		constantBindingSlot: captureVdpRpuArrayState(commands.constantBindingSlot, commands.constantBindingCount),
-		constantVramAddr: captureVdpRpuArrayState(commands.constantVramAddr, commands.constantBindingCount),
-		constantByteLength: captureVdpRpuArrayState(commands.constantByteLength, commands.constantBindingCount),
-		textureSlot: captureVdpRpuArrayState(commands.textureSlot, commands.textureBindingCount),
-		textureSurfaceDescAddr: captureVdpRpuArrayState(commands.textureSurfaceDescAddr, commands.textureBindingCount),
+		passCount,
+		drawCount,
+		streamBindingCount,
+		constantBindingCount,
+		textureBindingCount,
+		passFirstDraw: captureVdpRpuArrayState(commands.passFirstDraw, passCount),
+		passDrawCount: captureVdpRpuArrayState(commands.passDrawCount, passCount),
+		passColorSurfaceDescAddr: captureVdpRpuArrayState(commands.passColorSurfaceDescAddr, passCount),
+		passDepthSurfaceDescAddr: captureVdpRpuArrayState(commands.passDepthSurfaceDescAddr, passCount),
+		passViewportXY: captureVdpRpuArrayState(commands.passViewportXY, passCount),
+		passViewportWH: captureVdpRpuArrayState(commands.passViewportWH, passCount),
+		passOps: captureVdpRpuArrayState(commands.passOps, passCount),
+		passClearColor: captureVdpRpuArrayState(commands.passClearColor, passCount),
+		passClearDepthWord: captureVdpRpuArrayState(commands.passClearDepthWord, passCount),
+		drawShaderVariant: captureVdpRpuArrayState(commands.drawShaderVariant, drawCount),
+		drawPrimitive: captureVdpRpuArrayState(commands.drawPrimitive, drawCount),
+		drawPipelineWord: captureVdpRpuArrayState(commands.drawPipelineWord, drawCount),
+		drawVertexCount: captureVdpRpuArrayState(commands.drawVertexCount, drawCount),
+		drawInstanceCount: captureVdpRpuArrayState(commands.drawInstanceCount, drawCount),
+		drawIndexVramAddr: captureVdpRpuArrayState(commands.drawIndexVramAddr, drawCount),
+		drawIndexCount: captureVdpRpuArrayState(commands.drawIndexCount, drawCount),
+		drawIndexType: captureVdpRpuArrayState(commands.drawIndexType, drawCount),
+		drawFirstStreamBinding: captureVdpRpuArrayState(commands.drawFirstStreamBinding, drawCount),
+		drawStreamBindingCount: captureVdpRpuArrayState(commands.drawStreamBindingCount, drawCount),
+		drawFirstConstantBinding: captureVdpRpuArrayState(commands.drawFirstConstantBinding, drawCount),
+		drawConstantBindingCount: captureVdpRpuArrayState(commands.drawConstantBindingCount, drawCount),
+		drawFirstTextureBinding: captureVdpRpuArrayState(commands.drawFirstTextureBinding, drawCount),
+		drawTextureBindingCount: captureVdpRpuArrayState(commands.drawTextureBindingCount, drawCount),
+		streamLayoutId: captureVdpRpuArrayState(commands.streamLayoutId, streamBindingCount),
+		streamSlot: captureVdpRpuArrayState(commands.streamSlot, streamBindingCount),
+		streamVramAddr: captureVdpRpuArrayState(commands.streamVramAddr, streamBindingCount),
+		streamByteLength: captureVdpRpuArrayState(commands.streamByteLength, streamBindingCount),
+		streamStepRate: captureVdpRpuArrayState(commands.streamStepRate, streamBindingCount),
+		constantBindingSlot: captureVdpRpuArrayState(commands.constantBindingSlot, constantBindingCount),
+		constantVramAddr: captureVdpRpuArrayState(commands.constantVramAddr, constantBindingCount),
+		constantByteLength: captureVdpRpuArrayState(commands.constantByteLength, constantBindingCount),
+		textureSlot: captureVdpRpuArrayState(commands.textureSlot, textureBindingCount),
+		textureSurfaceDescAddr: captureVdpRpuArrayState(commands.textureSurfaceDescAddr, textureBindingCount),
 	};
 }
 

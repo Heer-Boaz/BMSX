@@ -117,14 +117,14 @@ export function seedLuaGlobals(runtime: Runtime): void {
 		runtime.setGlobal(primitive.name, createBuiltinFunction(primitive.id));
 	}
 
-	const stringTable = new Table(0, 0);
+	const stringTable = runtime.machine.cpu.createTable(0, 0);
 	runtime.machine.cpu.stringIndexTable = stringTable;
 	runtime.setGlobal('string', stringTable);
 
-	const tableLibrary = new Table(0, 0);
+	const tableLibrary = runtime.machine.cpu.createTable(0, 0);
 	runtime.setGlobal('table', tableLibrary);
 
-	const osTable = new Table(0, 0);
+	const osTable = runtime.machine.cpu.createTable(0, 0);
 	runtime.setGlobal('os', osTable);
 }
 

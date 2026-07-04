@@ -363,7 +363,6 @@ export const DMA_STATUS_BUSY = 1 << 0;
 export const DMA_STATUS_DONE = 1 << 1;
 export const DMA_STATUS_ERROR = 1 << 2;
 export const DMA_STATUS_CLIPPED = 1 << 3;
-export const DMA_STATUS_REJECTED = 1 << 4;
 
 export const IMG_CTRL_START = 1 << 0;
 export const IMG_STATUS_BUSY = 1 << 0;

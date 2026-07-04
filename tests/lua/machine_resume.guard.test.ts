@@ -51,7 +51,7 @@ test('Lua source boot installs through the program-image executable boundary', (
 	const nextExport = src.indexOf('\nexport function ', start + 1);
 	const snippet = src.slice(start, nextExport === -1 ? undefined : nextExport);
 	assert.equal(snippet.includes('encodeCompiledProgramImage(compiled)'), true, 'source boot must pass through the compiler-owned ProgramImage object boundary');
-	assert.equal(snippet.includes('inflateExecutableProgramImage(programImage, runtime.programDataBaseAddress, runtime.programBssBaseAddress)'), true, 'source boot must install through the program/linker executable boundary');
+	assert.equal(snippet.includes('runtime.boot(programImage, compiled.metadata, programImage.vectors'), true, 'source boot must install through the runtime-owned executable program boundary');
 	assert.equal(snippet.includes('resolveRuntimeProgramRelocations('), false, 'source boot must not own raw relocation resolution');
 });
 
@@ -82,10 +82,13 @@ test('runtime clears BIOS boot primitives before cart static modules', () => {
 	const nextMethod = src.indexOf('\n\tprivate runSectionInitializer', start + 1);
 	assert.ok(nextMethod > start, 'startLoadedProgram boundary not found');
 	const snippet = src.slice(start, nextMethod);
-	const systemInit = snippet.indexOf('this.runStaticModuleInitializers(systemStaticModulePaths)');
-	const clear = snippet.indexOf('clearLuaBootPrimitives(this)');
-	const cartInit = snippet.indexOf('this.runStaticModuleInitializers(cartStaticModulePaths)');
-	const resetVector = snippet.indexOf('this.machine.cpu.start(vectors.resetProtoIndex)');
+	const bootPhaseIndexes = [
+		'this.runStaticModuleInitializers(systemStaticModulePaths)',
+		'clearLuaBootPrimitives(this)',
+		'this.runStaticModuleInitializers(cartStaticModulePaths)',
+		'this.machine.cpu.start(vectors.resetProtoIndex)',
+	].map(needle => snippet.indexOf(needle));
+	const [systemInit, clear, cartInit, resetVector] = bootPhaseIndexes;
 	assert.ok(systemInit > -1, 'system static modules must have their own boot phase');
 	assert.ok(clear > -1, 'boot primitives must be cleared by the runtime boot phase');
 	assert.ok(cartInit > -1, 'cart static modules must have their own boot phase');

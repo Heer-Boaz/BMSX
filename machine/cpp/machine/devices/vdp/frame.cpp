@@ -2,8 +2,21 @@
 
 namespace bmsx {
 
-VdpSubmittedFrame allocateSubmittedFrameSlot() {
-	return VdpSubmittedFrame{};
+VdpSubmittedFrame allocateSubmittedFrameSlot(std::vector<u8>& vdpVram, std::vector<u32>& vdpVramPageRevisions) {
+	return VdpSubmittedFrame{
+		.rpu = createVdpRpuFrameOutput(vdpVram, vdpVramPageRevisions),
+		.state = VdpSubmittedFrameState::Empty,
+		.hasCommands = false,
+		.cost = 0,
+		.workRemaining = 0,
+		.ditherType = 0,
+		.frameBufferWidth = 0u,
+		.frameBufferHeight = 0u,
+		.xf = VdpXfUnit{},
+		.lightRegisterWords = {},
+		.morphWeightWords = {},
+		.jointMatrixWords = {},
+	};
 }
 
 void resetBuildingFrame(VdpBuildingFrame& frame) {

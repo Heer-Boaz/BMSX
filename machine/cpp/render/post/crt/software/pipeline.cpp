@@ -32,10 +32,6 @@ void renderPresentSoftware(GPUBackend* backend, GameView*, void*, RenderPassStat
 		false);
 }
 
-void renderCRTSoftware(GPUBackend* backend, GameView*, void*, RenderPassStateStorage& state, void*) {
-	Software::renderCRT(*static_cast<SoftwareBackend*>(backend), state.crt);
-}
-
 } // namespace
 
 void registerCRTPostSoftwarePass(RenderPassLibrary& registry) {
@@ -51,7 +47,11 @@ void registerCRTPostSoftwarePass(RenderPassLibrary& registry) {
 	crt.id = "crt";
 	crt.name = "Present/CRT";
 	setAutoCRTGraph(crt);
-	crt.exec = renderCRTSoftware;
+	crt.exec = executeStateRenderPass<
+		SoftwareBackend,
+		CRTPipelineState,
+		&RenderPassStateStorage::crt,
+		Software::renderCRT>;
 	crt.shouldExecute = shouldExecuteAutoCRTPass;
 	registry.registerPass(crt);
 }

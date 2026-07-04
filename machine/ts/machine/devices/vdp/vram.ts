@@ -14,14 +14,10 @@ import {
 	fillVramGarbageScratch,
 	type VramGarbageStream,
 } from './vram_garbage';
-import {
-	createVdpDirtySpans,
-	type VdpSurfaceBacking,
-} from './device_output';
+import type { VdpSurfaceBacking } from './device_output';
 import {
 	VDP_RPU_PARAM_MEM_PAGE_COUNT,
-	bumpVdpRpuVramPageRevisions,
-	vdpRpuParamMemPageCount,
+	bumpVdpRpuVramPageRevisions
 } from './rpu';
 
 export type VdpFrameBufferSize = {
@@ -47,7 +43,7 @@ export type VdpVramState = {
 };
 
 function vramSurfaceByteSize(width: number, height: number): number {
-	return width * height * 4;
+	return (width * height * 4) >>> 0;
 }
 
 export const DEFAULT_VDP_ENTROPY_SEEDS: VdpEntropySeeds = {
@@ -56,42 +52,36 @@ export const DEFAULT_VDP_ENTROPY_SEEDS: VdpEntropySeeds = {
 };
 
 export class VdpVramUnit {
-	private readonly frameBuffer: VdpSurfaceBacking = {
-		baseAddr: 0,
-		capacity: 0,
-		surfaceId: VDP_RD_SURFACE_FRAMEBUFFER,
-		surfaceWidth: 0,
-		surfaceHeight: 0,
-		cpuReadback: new Uint8Array(0),
-		dirtyRowStart: 0,
-		dirtyRowEnd: 0,
-		dirtySpansByRow: [],
-	};
-	public rpuVram: Uint8Array = new Uint8Array(VRAM_STAGING_SIZE + VRAM_TEXTURE_SIZE);
-	public rpuVramPageRevisions: Uint32Array = new Uint32Array(VDP_RPU_PARAM_MEM_PAGE_COUNT);
+	private readonly frameBuffer: VdpSurfaceBacking;
+	public readonly rpuVram: Uint8Array = new Uint8Array(VRAM_STAGING_SIZE + VRAM_TEXTURE_SIZE);
+	public readonly rpuVramPageRevisions: Uint32Array = new Uint32Array(VDP_RPU_PARAM_MEM_PAGE_COUNT);
 	private readonly garbageScratch = new Uint8Array(VRAM_GARBAGE_CHUNK_BYTES);
-	private readonly seedPixel = new Uint8Array(4);
 	private machineSeed = DEFAULT_VDP_ENTROPY_SEEDS.machineSeed;
 	private bootSeed = DEFAULT_VDP_ENTROPY_SEEDS.bootSeed;
 
-	public constructor(entropySeeds: VdpEntropySeeds = DEFAULT_VDP_ENTROPY_SEEDS) {
+	public constructor(
+		private readonly frameBufferSize: VdpFrameBufferSize,
+		entropySeeds: VdpEntropySeeds = DEFAULT_VDP_ENTROPY_SEEDS,
+	) {
 		this.machineSeed = entropySeeds.machineSeed >>> 0;
 		this.bootSeed = entropySeeds.bootSeed >>> 0;
+		this.frameBuffer = {
+			baseAddr: VRAM_FRAMEBUFFER_BASE,
+			capacity: VRAM_FRAMEBUFFER_SIZE,
+			surfaceId: VDP_RD_SURFACE_FRAMEBUFFER,
+			surfaceWidth: frameBufferSize.width,
+			surfaceHeight: frameBufferSize.height,
+			cpuReadback: new Uint8Array(vramSurfaceByteSize(frameBufferSize.width, frameBufferSize.height)),
+		};
+		this.seedSurfacePixels(this.frameBuffer);
 	}
 
-	public configureRpuVramStorage(byteLength: number): void {
-		if (this.rpuVram.byteLength === byteLength) {
-			return;
-		}
-		this.rpuVram = new Uint8Array(byteLength);
-		this.rpuVramPageRevisions = new Uint32Array(vdpRpuParamMemPageCount(byteLength));
-	}
 
 	public get frameBufferSurface(): VdpSurfaceBacking {
 		return this.frameBuffer;
 	}
 
-	public initializeFrameBuffer(frameBufferSize: VdpFrameBufferSize): void {
+	public initializeFrameBuffer(): void {
 		fillVramGarbageScratch(this.rpuVram, this.rpuVram.byteLength, {
 			machineSeed: this.machineSeed,
 			bootSeed: this.bootSeed,
@@ -99,7 +89,7 @@ export class VdpVramUnit {
 			addr: VRAM_STAGING_BASE >>> 0,
 		});
 		bumpVdpRpuVramPageRevisions(this.rpuVramPageRevisions, 0, this.rpuVram.byteLength);
-		this.configureFrameBufferSurface(frameBufferSize.width, frameBufferSize.height);
+		this.configureFrameBufferSurface(this.frameBufferSize.width, this.frameBufferSize.height);
 	}
 
 	public writeRpuVram(addr: number, bytes: Uint8Array, srcOffset: number, length: number): boolean {
@@ -140,9 +130,7 @@ export class VdpVramUnit {
 		while (remaining > 0) {
 			const rowAvailable = stride - rowOffset;
 			const rowBytes = remaining < rowAvailable ? remaining : rowAvailable;
-			const x = rowOffset / 4;
-			this.markSurfaceDirtySpan(surface, row, x, x + rowBytes / 4);
-			this.updateCpuReadback(surface, bytes, cursor, rowBytes, x, row);
+			this.updateCpuReadback(surface, bytes, cursor, rowBytes, rowOffset / 4, row);
 			remaining -= rowBytes;
 			cursor += rowBytes;
 			row += 1;
@@ -171,42 +159,19 @@ export class VdpVramUnit {
 		}
 	}
 
-	public setSurfaceLogicalDimensions(surface: VdpSurfaceBacking, width: number, height: number): boolean {
+	public setSurfaceLogicalDimensions(surface: VdpSurfaceBacking, width: number, height: number): void {
 		const byteLength = vramSurfaceByteSize(width, height);
-		if (width <= 0 || height <= 0 || byteLength > surface.capacity) {
-			return false;
-		}
 		if (surface.surfaceWidth === width && surface.surfaceHeight === height) {
-			return true;
+			return;
 		}
 		const previous = surface.cpuReadback;
 		surface.surfaceWidth = width;
 		surface.surfaceHeight = height;
 		surface.cpuReadback = new Uint8Array(byteLength);
-		surface.dirtySpansByRow = createVdpDirtySpans(height);
 		const copyBytes = previous.byteLength < surface.cpuReadback.byteLength ? previous.byteLength : surface.cpuReadback.byteLength;
 		this.seedSurfacePixels(surface);
 		for (let index = 0; index < copyBytes; index += 1) {
 			surface.cpuReadback[index] = previous[index]!;
-		}
-		return true;
-	}
-
-	public markSurfaceDirty(surface: VdpSurfaceBacking, startRow: number, rowCount: number): void {
-		const endRow = startRow + rowCount;
-		if (surface.dirtyRowStart >= surface.dirtyRowEnd) {
-			surface.dirtyRowStart = startRow;
-			surface.dirtyRowEnd = endRow;
-		} else if (startRow < surface.dirtyRowStart) {
-			surface.dirtyRowStart = startRow;
-		}
-		if (endRow > surface.dirtyRowEnd) {
-			surface.dirtyRowEnd = endRow;
-		}
-		for (let row = startRow; row < endRow; row += 1) {
-			const span = surface.dirtySpansByRow[row]!;
-			span.xStart = 0;
-			span.xEnd = surface.surfaceWidth;
 		}
 	}
 
@@ -237,7 +202,7 @@ export class VdpVramUnit {
 	}
 
 	public get trackedUsedBytes(): number {
-		return this.rpuVram.byteLength + this.frameBuffer.surfaceWidth * this.frameBuffer.surfaceHeight * 4;
+		return this.rpuVram.byteLength + vramSurfaceByteSize(this.frameBuffer.surfaceWidth, this.frameBuffer.surfaceHeight);
 	}
 
 	public get trackedTotalBytes(): number {
@@ -246,12 +211,6 @@ export class VdpVramUnit {
 
 	private configureFrameBufferSurface(width: number, height: number): void {
 		const byteLength = vramSurfaceByteSize(width, height);
-		fillVramGarbageScratch(this.seedPixel, this.seedPixel.byteLength, {
-			machineSeed: this.machineSeed,
-			bootSeed: this.bootSeed,
-			slotSalt: VRAM_GARBAGE_SPACE_SALT >>> 0,
-			addr: VRAM_FRAMEBUFFER_BASE >>> 0,
-		});
 		const surface = this.frameBuffer;
 		surface.baseAddr = VRAM_FRAMEBUFFER_BASE;
 		surface.capacity = VRAM_FRAMEBUFFER_SIZE;
@@ -259,9 +218,6 @@ export class VdpVramUnit {
 		surface.surfaceWidth = width;
 		surface.surfaceHeight = height;
 		surface.cpuReadback = new Uint8Array(byteLength);
-		surface.dirtyRowStart = 0;
-		surface.dirtyRowEnd = 0;
-		surface.dirtySpansByRow = createVdpDirtySpans(height);
 		this.seedSurfacePixels(surface);
 	}
 
@@ -283,34 +239,6 @@ export class VdpVramUnit {
 		const surface = this.frameBuffer;
 		for (let index = 0; index < state.pixels.byteLength; index += 1) {
 			surface.cpuReadback[index] = state.pixels[index]!;
-		}
-		this.markSurfaceDirty(surface, 0, surface.surfaceHeight);
-	}
-
-	private markSurfaceDirtySpan(surface: VdpSurfaceBacking, row: number, xStart: number, xEnd: number): void {
-		const endRow = row + 1;
-		if (surface.dirtyRowStart >= surface.dirtyRowEnd) {
-			surface.dirtyRowStart = row;
-			surface.dirtyRowEnd = endRow;
-		} else {
-			if (row < surface.dirtyRowStart) {
-				surface.dirtyRowStart = row;
-			}
-			if (endRow > surface.dirtyRowEnd) {
-				surface.dirtyRowEnd = endRow;
-			}
-		}
-		const span = surface.dirtySpansByRow[row]!;
-		if (span.xStart >= span.xEnd) {
-			span.xStart = xStart;
-			span.xEnd = xEnd;
-			return;
-		}
-		if (xStart < span.xStart) {
-			span.xStart = xStart;
-		}
-		if (xEnd > span.xEnd) {
-			span.xEnd = xEnd;
 		}
 	}
 

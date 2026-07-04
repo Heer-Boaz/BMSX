@@ -23,10 +23,17 @@ const EMPTY_APU_SOURCE_BYTES = new Uint8Array(0);
 
 export type ApuSourceByteView = MainMemoryByteView;
 
-type ApuSlotSource = {
-	ownedBytes: Uint8Array;
-	bytes: ApuSourceByteView;
-};
+class ApuSlotSource {
+	public ownedBytes: Uint8Array = EMPTY_APU_SOURCE_BYTES;
+	public readonly bytes: ApuSourceByteView = { bytes: EMPTY_APU_SOURCE_BYTES, byteOffset: 0, byteLength: 0 };
+
+	public bindOwnedBytes(bytes: Uint8Array): void {
+		this.ownedBytes = bytes;
+		this.bytes.bytes = bytes;
+		this.bytes.byteOffset = 0;
+		this.bytes.byteLength = bytes.byteLength;
+	}
+}
 
 export function resolveApuAudioSource(registerWords: ApuParameterRegisterWords): ApuAudioSource {
 	return {
@@ -71,20 +78,13 @@ export class ApuSourceDma {
 
 	public constructor(private readonly memory: Memory) {
 		for (let slot = 0; slot < APU_SLOT_COUNT; slot += 1) {
-			this.slotSources[slot] = {
-				ownedBytes: EMPTY_APU_SOURCE_BYTES,
-				bytes: { bytes: EMPTY_APU_SOURCE_BYTES, byteOffset: 0, byteLength: 0 },
-			};
+			this.slotSources[slot] = new ApuSlotSource();
 		}
 	}
 
 	public reset(): void {
 		for (let slot = 0; slot < APU_SLOT_COUNT; slot += 1) {
-			const slotSource = this.slotSources[slot]!;
-			slotSource.ownedBytes = EMPTY_APU_SOURCE_BYTES;
-			slotSource.bytes.bytes = EMPTY_APU_SOURCE_BYTES;
-			slotSource.bytes.byteOffset = 0;
-			slotSource.bytes.byteLength = 0;
+			this.clearSlot(slot);
 		}
 	}
 
@@ -100,11 +100,7 @@ export class ApuSourceDma {
 	public restoreState(slotSourceBytes: readonly Uint8Array[]): void {
 		for (let slot = 0; slot < APU_SLOT_COUNT; slot += 1) {
 			const bytes = slotSourceBytes[slot]!.slice();
-			const slotSource = this.slotSources[slot]!;
-			slotSource.ownedBytes = bytes;
-			slotSource.bytes.bytes = bytes;
-			slotSource.bytes.byteOffset = 0;
-			slotSource.bytes.byteLength = bytes.byteLength;
+			this.slotSources[slot]!.bindOwnedBytes(bytes);
 		}
 	}
 
@@ -135,9 +131,6 @@ export class ApuSourceDma {
 			bytes = new Uint8Array(source.sourceBytes);
 		}
 		this.memory.readBytesInto(source.sourceAddr, bytes, bytes.byteLength);
-		slotSource.ownedBytes = bytes;
-		slotSource.bytes.bytes = bytes;
-		slotSource.bytes.byteOffset = 0;
-		slotSource.bytes.byteLength = bytes.byteLength;
+		slotSource.bindOwnedBytes(bytes);
 	}
 }

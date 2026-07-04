@@ -200,7 +200,7 @@ export class HeadlessCaptureCoordinator {
 			return;
 		}
 		this.capturedFrames.add(outputFrameIndex);
-		const pixels = this.host.borrowPresentedFramePixels();
+		const pixels = this.host.presentSurface.borrowPixels();
 		const png = encodePng(frame.width, frame.height, pixels);
 		const filename = this.buildFilename(outputFrameIndex);
 		const outputPath = path.join(this.outputDir, filename);

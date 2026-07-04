@@ -298,30 +298,12 @@ export class GeometryController {
 			broadphasePairCount: 0,
 		};
 		switch (job.cmd) {
-			case IO_CMD_GEO_XFORM2_BATCH: {
-				const rejectFault = this.xform2.validateSubmission(job);
-				if (rejectFault !== 0) {
-					this.finishRejected(rejectFault);
-					return;
-				}
+			case IO_CMD_GEO_XFORM2_BATCH:
 				break;
-			}
-			case IO_CMD_GEO_SAT2_BATCH: {
-				const rejectFault = this.sat2.validateSubmission(job);
-				if (rejectFault !== 0) {
-					this.finishRejected(rejectFault);
-					return;
-				}
+			case IO_CMD_GEO_SAT2_BATCH:
 				break;
-			}
-			case IO_CMD_GEO_OVERLAP2D_PASS: {
-				const rejectFault = this.overlap2d.validateSubmission(job);
-				if (rejectFault !== 0) {
-					this.finishRejected(rejectFault);
-					return;
-				}
+			case IO_CMD_GEO_OVERLAP2D_PASS:
 				break;
-			}
 			default:
 				this.finishRejected(GEO_FAULT_REJECT_BAD_CMD);
 				return;

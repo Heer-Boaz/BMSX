@@ -92,7 +92,6 @@ export class ImgDecController {
 	private availableDecodeBytes = 0;
 	private active = false;
 	private status = 0;
-	private pendingError: unknown = null;
 	private pendingResult: DecodedImage | null = null;
 	private pendingTargetBase = 0;
 	private pendingTargetCapacity = 0;
@@ -169,7 +168,6 @@ export class ImgDecController {
 		this.availableDecodeBytes = 0;
 		this.active = false;
 		this.status = 0;
-		this.pendingError = null;
 		this.pendingResult = null;
 		this.pendingTargetBase = 0;
 		this.pendingTargetCapacity = 0;
@@ -214,14 +212,7 @@ export class ImgDecController {
 		const cap = this.memory.readIoU32(IO_IMG_CAP);
 		this.memory.writeIoValue(IO_IMG_CTRL, ctrl & ~IMG_CTRL_START);
 		const buffer = new Uint8Array(len);
-		if (!this.memory.readBytesInto(src, buffer, len)) {
-			this.activeResolve = null;
-			this.activeReject = null;
-			this.writeJobRegisters(IMG_STATUS_DONE | IMG_STATUS_ERROR, 0, src, len, dst, cap);
-			this.irq.raise(IRQ_IMG_ERROR);
-			this.scheduleNextService(nowCycles);
-			return;
-		}
+		this.memory.readBytesInto(src, buffer, len);
 		this.activeResolve = null;
 		this.activeReject = null;
 		this.startJob(buffer, dst, cap, src, len, true);
@@ -237,12 +228,6 @@ export class ImgDecController {
 			if (!this.active) {
 				return;
 			}
-		}
-		if (this.pendingError !== null) {
-			const error = this.pendingError;
-			this.pendingError = null;
-			this.finishError(error);
-			return;
 		}
 		if (this.pendingResult !== null) {
 			const result = this.pendingResult;
@@ -285,7 +270,6 @@ export class ImgDecController {
 
 	private startJob(buffer: Uint8Array, dst: number, cap: number, src: number, len: number, signalIrq: boolean): void {
 		this.pendingResult = null;
-		this.pendingError = null;
 		this.pendingTargetBase = 0;
 		this.pendingTargetCapacity = 0;
 		this.activeCapacityLimit = 0;
@@ -294,12 +278,12 @@ export class ImgDecController {
 
 		const targetCapacity = vramMappedRemainingBytes(dst);
 		if (targetCapacity === 0) {
-			this.finishError(null);
+			this.finishError();
 			return;
 		}
 		const effectiveCap = cap < targetCapacity ? cap : targetCapacity;
 		if (effectiveCap === 0) {
-			this.finishError(null);
+			this.finishError();
 			return;
 		}
 		this.activeCapacityLimit = effectiveCap;
@@ -314,22 +298,14 @@ export class ImgDecController {
 		const token = this.decodeToken + 1;
 		this.decodeToken = token;
 		this.microtasks.queueMicrotask(() => {
-			try {
-				const result = decodePngToRgba(buffer);
-				if (token !== this.decodeToken) {
-					return;
-				}
-				this.pendingResult = result;
-				this.pendingTargetBase = dst;
-				this.pendingTargetCapacity = targetCapacity;
-				this.scheduleNextService(this.scheduler.currentNowCycles());
-			} catch (error) {
-				if (token !== this.decodeToken) {
-					return;
-				}
-				this.pendingError = error;
-				this.scheduleNextService(this.scheduler.currentNowCycles());
+			const result = decodePngToRgba(buffer);
+			if (token !== this.decodeToken) {
+				return;
 			}
+			this.pendingResult = result;
+			this.pendingTargetBase = dst;
+			this.pendingTargetCapacity = targetCapacity;
+			this.scheduleNextService(this.scheduler.currentNowCycles());
 		});
 	}
 
@@ -378,11 +354,7 @@ export class ImgDecController {
 		const pixels = this.decodePixels!;
 		this.decodePlan = null;
 		this.decodePixels = null;
-		this.dma.enqueueImageCopy(plan, pixels, (error, clipped) => {
-			if (error) {
-				this.finishError(null);
-				return;
-			}
+		this.dma.enqueueImageCopy(plan, pixels, clipped => {
 			this.finishSuccess(clipped);
 		});
 	}
@@ -394,7 +366,6 @@ export class ImgDecController {
 		this.activeResolve = null;
 		this.activeReject = null;
 		this.active = false;
-		this.pendingError = null;
 		this.pendingResult = null;
 		this.pendingTargetBase = 0;
 		this.pendingTargetCapacity = 0;
@@ -419,12 +390,11 @@ export class ImgDecController {
 		this.scheduleNextService(this.scheduler.currentNowCycles());
 	}
 
-	private finishError(jobError: unknown | null): void {
+	private finishError(): void {
 		const reject = this.activeReject;
 		this.activeResolve = null;
 		this.activeReject = null;
 		this.active = false;
-		this.pendingError = null;
 		this.pendingResult = null;
 		this.pendingTargetBase = 0;
 		this.pendingTargetCapacity = 0;
@@ -444,7 +414,7 @@ export class ImgDecController {
 		}
 		this.signalIrq = false;
 		if (reject) {
-			reject(jobError === null || jobError === undefined ? imageDecoderFault('decode failed.') : jobError);
+			reject(imageDecoderFault('decode failed.'));
 		}
 		this.scheduleNextService(this.scheduler.currentNowCycles());
 	}
@@ -458,7 +428,7 @@ export class ImgDecController {
 			this.scheduler.cancelDeviceService(DEVICE_SERVICE_IMG);
 			return;
 		}
-		if (this.pendingError !== null || this.pendingResult !== null) {
+		if (this.pendingResult !== null) {
 			this.scheduler.scheduleDeviceService(DEVICE_SERVICE_IMG, nowCycles);
 			return;
 		}

@@ -39,7 +39,8 @@ import { CpuExecutionState } from './cpu_executor';
 import { HostFaultState } from './host_fault';
 import { LuaScratchState } from '../program/scratch';
 import { callClosureInto, invokeClosureHandler, invokeLuaHandler } from '../program/executor';
-import type { ProgramVectorTable } from '../program/loader';
+import type { ProgramImage, ProgramVectorTable } from '../program/loader';
+import { inflateExecutableProgramImage, type LinkedBootProgramImage } from '../program/linker';
 import { resolveRuntimeMemoryMapSpecs } from '../memory/specs';
 import { getMachineRegionTimingForWord, MACHINE_REGION_PAL_WORD, PSX_MODEL_PROFILE } from '../model_registry';
 import { applyRuntimeTiming, resolveRuntimeTiming } from './boot_timing';
@@ -131,7 +132,6 @@ export class Runtime {
 	public readonly cartProjectRootPath: string | null;
 	public systemRom: RuntimeRomLayer = null;
 	public cartRom: RuntimeRomLayer | null = null;
-	public overlayRom: RuntimeRomLayer | null = null;
 	public systemPackage: RuntimeRomPackage = null;
 	public activePackage: RuntimeRomPackage = null;
 	public systemLuaSources: LuaSourceRegistry = null;
@@ -142,11 +142,11 @@ export class Runtime {
 	public readonly moduleCompileLuaSources: LuaSourceRegistry[] = [];
 	public cartProgramStarted = false;
 	public programVectors: RuntimeProgramVectorTable | null = null;
-	public cartVectors: ProgramVectorTable | null = null;
+	public cartVectors!: ProgramVectorTable;
 	public programDataBaseAddress = PROGRAM_STATIC_RAM_BASE;
 	public programBssBaseAddress = PROGRAM_STATIC_RAM_BASE;
-	public cartDataBaseAddress: number | null = null;
-	public cartBssBaseAddress: number | null = null;
+	public cartDataBaseAddress = PROGRAM_STATIC_RAM_BASE;
+	public cartBssBaseAddress = PROGRAM_STATIC_RAM_BASE;
 	public cartStaticModulePaths: ReadonlyArray<string> = [];
 	public systemRomSource: RawRomSource = null;
 	public cartRomSource: RawRomSource | null = null;
@@ -180,7 +180,7 @@ export class Runtime {
 	public readonly pathSemanticCache: Map<string, { source: string; model?: LuaSemanticModel; definitions?: ReadonlyArray<LuaDefinitionInfo>; parsed?: ParsedLuaChunk; lines?: readonly string[]; analysis?: FileSemanticData }> = new Map();
 
 	public readonly luaGate: GateGroup = taskGate.group('machine:lua');
-	public cartEntryAvailable = true;
+	public cartEntryAvailable = false;
 	public readonly hostFault: HostFaultState;
 	public readonly machine: Machine;
 	public get interpreter(): LuaInterpreter {
@@ -190,7 +190,7 @@ export class Runtime {
 		return this.programMetadata !== null;
 	}
 
-	public static async init(systemLayer: RuntimeRomLayer, workspaceOverlay: Uint8Array | undefined, input: RuntimeInputSource, microtasks: MicrotaskQueue, cartridge?: Uint8Array): Promise<Runtime> {
+	public static async init(systemLayer: RuntimeRomLayer, input: RuntimeInputSource, microtasks: MicrotaskQueue, cartridge?: Uint8Array): Promise<Runtime> {
 		const systemSource = new RomSourceStack([{ id: systemLayer.id, index: systemLayer.index, payload: systemLayer.payload }]);
 		const systemLuaSources = buildLuaSources(systemSource, systemSource, systemLayer.index, ['system']);
 		const systemMachine = systemLayer.index.machine;
@@ -199,7 +199,7 @@ export class Runtime {
 			configureMemoryMap(systemMemorySpecs);
 			const timing = resolveRuntimeTiming(PSX_MODEL_PROFILE.cpuFreqHz, MACHINE_REGION_PAL_WORD);
 			const memory = new Memory({
-				systemRom: new Uint8Array(systemLayer.payload),
+				systemRom: systemLayer.payload,
 				cartRom: new Uint8Array(0),
 			});
 			const runtime = new Runtime({
@@ -223,7 +223,6 @@ export class Runtime {
 			runtime.configureProgramSources({
 				systemRom: systemLayer,
 				cartRom: null,
-				overlayRom: null,
 				systemSources: systemLuaSources,
 				cartSources: null,
 				systemRomSource: systemSource,
@@ -233,33 +232,21 @@ export class Runtime {
 		}
 
 		const cartRom = await buildRuntimeRomLayer({ blob: cartridge, id: 'cart' });
-		const overlayBlob = workspaceOverlay;
-		let overlayRom: RuntimeRomLayer | null = null;
-		if (overlayBlob) {
-			overlayRom = await buildRuntimeRomLayer({ blob: overlayBlob, id: 'overlay' });
-		}
-		const sourceLayers: RomSourceLayer[] = [];
-		if (overlayRom) {
-			sourceLayers.push({ id: overlayRom.id, index: overlayRom.index, payload: overlayRom.payload });
-		}
-		sourceLayers.push({ id: cartRom.id, index: cartRom.index, payload: cartRom.payload });
-		sourceLayers.push({ id: systemLayer.id, index: systemLayer.index, payload: systemLayer.payload });
+		const sourceLayers: RomSourceLayer[] = [
+			{ id: cartRom.id, index: cartRom.index, payload: cartRom.payload },
+			{ id: systemLayer.id, index: systemLayer.index, payload: systemLayer.payload },
+		];
 		const activeRomSource = new RomSourceStack(sourceLayers);
 
 		const cartSource = new RomSourceStack([{ id: cartRom.id, index: cartRom.index, payload: cartRom.payload }]);
-		const cartLuaSources = buildLuaSources(cartSource, activeRomSource, cartRom.index, overlayRom ? ['overlay', 'cart'] : ['cart']);
+		const cartLuaSources = buildLuaSources(cartSource, activeRomSource, cartRom.index, ['cart']);
 
 		const memoryLimits = resolveRuntimeMemoryMapSpecs();
 		configureMemoryMap(memoryLimits);
 		const timing = resolveRuntimeTiming(PSX_MODEL_PROFILE.cpuFreqHz, MACHINE_REGION_PAL_WORD);
-		let overlayPayload: Uint8Array | undefined;
-		if (overlayRom) {
-			overlayPayload = new Uint8Array(overlayRom.payload);
-		}
 		const memory = new Memory({
-			systemRom: new Uint8Array(systemLayer.payload),
-			cartRom: new Uint8Array(cartRom.payload),
-			overlayRom: overlayPayload,
+			systemRom: systemLayer.payload,
+			cartRom: cartRom.payload,
 		});
 		const runtime = new Runtime({
 			viewport: { width: timing.viewportWidth, height: timing.viewportHeight },
@@ -282,7 +269,6 @@ export class Runtime {
 		runtime.configureProgramSources({
 			systemRom: systemLayer,
 			cartRom,
-			overlayRom,
 			systemSources: systemLuaSources,
 			cartSources: cartLuaSources,
 			systemRomSource: systemSource,
@@ -294,7 +280,6 @@ export class Runtime {
 	private configureProgramSources(params: {
 		systemRom: RuntimeRomLayer;
 		cartRom: RuntimeRomLayer | null;
-		overlayRom: RuntimeRomLayer | null;
 		systemSources: LuaSourceRegistry;
 		cartSources: LuaSourceRegistry | null;
 		systemRomSource: RawRomSource;
@@ -302,7 +287,6 @@ export class Runtime {
 	}): void {
 		this.systemRom = params.systemRom;
 		this.cartRom = params.cartRom;
-		this.overlayRom = params.overlayRom;
 		this.systemPackage = params.systemRom.package;
 		this.activePackage = params.systemRom.package;
 		this.systemLuaSources = params.systemSources;
@@ -310,11 +294,11 @@ export class Runtime {
 		this.activeLuaSources = params.systemSources;
 		this.cartProgramStarted = false;
 		this.programVectors = null;
-		this.cartVectors = null;
+		this.cartEntryAvailable = false;
 		this.programDataBaseAddress = PROGRAM_STATIC_RAM_BASE;
 		this.programBssBaseAddress = PROGRAM_STATIC_RAM_BASE;
-		this.cartDataBaseAddress = null;
-		this.cartBssBaseAddress = null;
+		this.cartDataBaseAddress = PROGRAM_STATIC_RAM_BASE;
+		this.cartBssBaseAddress = PROGRAM_STATIC_RAM_BASE;
 		this.cartStaticModulePaths = [];
 		this.luaOutputLineBuffer = '';
 		this.systemRomSource = params.systemRomSource;
@@ -324,11 +308,54 @@ export class Runtime {
 		this.rebuildLuaSourceOrders();
 	}
 
-	public setLinkedCartVectors(vectors: ProgramVectorTable, dataBaseAddress: number, bssBaseAddress: number, staticModulePaths: ReadonlyArray<string>): void {
+	private setLinkedCartProgram(vectors: ProgramVectorTable, programDataBaseAddress: number, programBssBaseAddress: number, cartDataBaseAddress: number, cartBssBaseAddress: number, staticModulePaths: ReadonlyArray<string>): void {
 		this.cartVectors = vectors;
-		this.cartDataBaseAddress = dataBaseAddress;
-		this.cartBssBaseAddress = bssBaseAddress;
+		this.programDataBaseAddress = programDataBaseAddress;
+		this.programBssBaseAddress = programBssBaseAddress;
+		this.cartDataBaseAddress = cartDataBaseAddress;
+		this.cartBssBaseAddress = cartBssBaseAddress;
 		this.cartStaticModulePaths = staticModulePaths;
+		this.cartEntryAvailable = true;
+	}
+
+	public clearLinkedCartProgram(dataByteLength: number): void {
+		this.cartEntryAvailable = false;
+		this.cartDataBaseAddress = PROGRAM_STATIC_RAM_BASE;
+		this.cartBssBaseAddress = PROGRAM_STATIC_RAM_BASE;
+		this.programDataBaseAddress = PROGRAM_STATIC_RAM_BASE;
+		this.programBssBaseAddress = PROGRAM_STATIC_RAM_BASE + dataByteLength;
+		this.cartStaticModulePaths = EMPTY_STATIC_MODULE_PATHS;
+	}
+
+	public boot(
+		image: ProgramImage,
+		metadata: ProgramMetadata | null,
+		vectors: RuntimeProgramVectorTable,
+		dataBaseAddress: number,
+		bssBaseAddress: number,
+		systemStaticModulePaths: ReadonlyArray<string>,
+		cartStaticModulePaths: ReadonlyArray<string>,
+	): void {
+		this.programDataBaseAddress = dataBaseAddress;
+		this.programBssBaseAddress = bssBaseAddress;
+		const program = inflateExecutableProgramImage(image, dataBaseAddress, bssBaseAddress);
+		this.machine.cpu.setProgram(program, image.link.symbols, metadata);
+		this.programRuntimeSymbols = image.link.symbols;
+		this.programMetadata = metadata;
+		this.startLoadedProgram(vectors, systemStaticModulePaths, cartStaticModulePaths);
+	}
+
+	public bootLinkedProgramImage(linked: LinkedBootProgramImage): void {
+		this.setLinkedCartProgram(linked.cartVectors, linked.dataBaseAddress, linked.bssBaseAddress, linked.cartDataBaseAddress, linked.cartBssBaseAddress, linked.cartStaticModulePaths);
+		this.boot(
+			linked.programImage,
+			linked.metadata,
+			linked.vectors,
+			linked.dataBaseAddress,
+			linked.bssBaseAddress,
+			linked.systemStaticModulePaths,
+			this.cartProgramStarted ? linked.cartStaticModulePaths : EMPTY_STATIC_MODULE_PATHS,
+		);
 	}
 
 	public enterSystemFirmware(): void {
@@ -340,22 +367,10 @@ export class Runtime {
 	}
 
 	public enterCartProgram(): void {
-		if (!this.cartLuaSources) {
-			throw new Error('cart Lua sources are not configured.');
-		}
-		if (!this.cartRomSource) {
-			throw new Error('cart ROM source is not configured.');
-		}
 		this.cartProgramStarted = true;
-		this.activeLuaSources = this.cartLuaSources;
-		this.activeRomSource = this.cartRomSource;
-		if (this.overlayRom) {
-			this.activePackage = this.overlayRom.package;
-		} else if (this.cartRom) {
-			this.activePackage = this.cartRom.package;
-		} else {
-			throw new Error('cart ROM is not configured.');
-		}
+		this.activeLuaSources = this.cartLuaSources!;
+		this.activeRomSource = this.cartRomSource!;
+		this.activePackage = this.cartRom!.package;
 		this.rebuildLuaSourceOrders();
 	}
 
@@ -383,23 +398,11 @@ export class Runtime {
 	}
 
 	public startCartProgram(): void {
-		const vectors = this.cartVectors;
-		const dataBaseAddress = this.cartDataBaseAddress;
-		const bssBaseAddress = this.cartBssBaseAddress;
-		if (vectors === null) {
-			throw new Error('cannot start cart: no cart vector table is loaded.');
-		}
-		if (dataBaseAddress === null) {
-			throw new Error('cannot start cart: no cart data base is loaded.');
-		}
-		if (bssBaseAddress === null) {
-			throw new Error('cannot start cart: no cart bss base is loaded.');
-		}
-		this.programDataBaseAddress = dataBaseAddress;
-		this.programBssBaseAddress = bssBaseAddress;
+		this.programDataBaseAddress = this.cartDataBaseAddress;
+		this.programBssBaseAddress = this.cartBssBaseAddress;
 		this.enterCartProgram();
 		this._luaPath = this.activeLuaSources.entry_path;
-		this.startLoadedProgram(vectors, EMPTY_STATIC_MODULE_PATHS, this.cartStaticModulePaths);
+		this.startLoadedProgram(this.cartVectors, EMPTY_STATIC_MODULE_PATHS, this.cartStaticModulePaths);
 	}
 
 	public startLoadedProgram(vectors: RuntimeProgramVectorTable, systemStaticModulePaths: ReadonlyArray<string>, cartStaticModulePaths: ReadonlyArray<string>): void {

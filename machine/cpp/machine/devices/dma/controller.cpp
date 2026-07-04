@@ -29,24 +29,9 @@ void DmaController::onCtrlWriteThunk(void* context, uint32_t, Value) {
 	static_cast<DmaController*>(context)->startIo();
 }
 
-bool DmaController::hasPendingVdpSubmit() const {
-	for (const auto& state : m_channels) {
-		if (state.active.has_value() && state.active->kind == DmaJob::Kind::Io && state.active->dst == IO_VDP_FIFO) {
-			return true;
-		}
-		for (size_t index = state.queueHead; index < state.queue.size(); index += 1) {
-			const DmaJob& job = state.queue[index];
-			if (job.kind == DmaJob::Kind::Io && job.dst == IO_VDP_FIFO) {
-				return true;
-			}
-		}
-	}
-	return false;
-}
-
 bool DmaController::hasPendingTransfer(Channel channel) const {
 	const auto& state = m_channels[static_cast<int>(channel)];
-	return state.active.has_value() || state.queueHead != state.queue.size();
+	return state.queueHead != state.queue.size();
 }
 
 void DmaController::setTiming(int64_t cpuHz, int64_t isoBytesPerSec, int64_t bulkBytesPerSec, int64_t nowCycles) {
@@ -90,12 +75,6 @@ void DmaController::onService(int64_t nowCycles) {
 uint32_t DmaController::getPendingBytesForChannel(Channel channel) const {
 	const auto& state = m_channels[static_cast<int>(channel)];
 	uint32_t pendingBytes = 0u;
-	if (state.active.has_value()) {
-		const DmaJob& job = *state.active;
-		pendingBytes += job.kind == DmaJob::Kind::Io
-			? job.remaining
-			: (static_cast<uint32_t>(job.plan.writeLen) - job.written);
-	}
 	for (size_t index = state.queueHead; index < state.queue.size(); index += 1) {
 		const DmaJob& job = state.queue[index];
 		pendingBytes += job.kind == DmaJob::Kind::Io
@@ -105,10 +84,11 @@ uint32_t DmaController::getPendingBytesForChannel(Channel channel) const {
 	return pendingBytes;
 }
 
-void DmaController::enqueueImageCopy(const ImageCopyPlan& plan, std::vector<uint8_t>&& pixels, std::function<void(bool error, bool clipped)> onComplete) {
+void DmaController::enqueueImageCopy(const ImageCopyPlan& plan, std::vector<uint8_t>&& pixels, std::function<void(bool clipped)> onComplete) {
 	DmaJob job;
 	job.kind = DmaJob::Kind::Image;
 	job.channel = Channel::Bulk;
+	job.started = false;
 	job.plan = plan;
 	job.pixels = std::move(pixels);
 	job.row = 0;
@@ -116,7 +96,6 @@ void DmaController::enqueueImageCopy(const ImageCopyPlan& plan, std::vector<uint
 	job.vramTarget = isVramMappedRange(plan.baseAddr, plan.writeLen > 0 ? plan.writeLen : 1);
 	job.written = 0;
 	job.clipped = plan.clipped;
-	job.error = false;
 	job.onComplete = std::move(onComplete);
 	m_channels[static_cast<int>(Channel::Bulk)].queue.push_back(std::move(job));
 	scheduleNextService(m_scheduler.currentNowCycles());
@@ -128,7 +107,6 @@ void DmaController::reset() {
 	for (int i = 0; i < 2; i += 1) {
 		m_channels[i].queue.clear();
 		m_channels[i].queueHead = 0;
-		m_channels[i].active.reset();
 		m_channels[i].budget = 0;
 	}
 	m_ioWrittenValue = 0;
@@ -148,18 +126,17 @@ void DmaController::tickChannel(Channel channel) {
 	auto& state = m_channels[static_cast<int>(channel)];
 	uint32_t budget = state.budget;
 	while (budget > 0) {
-		if (!state.active.has_value()) {
-			if (state.queueHead == state.queue.size()) {
-				return;
-			}
-			state.active = std::move(state.queue[state.queueHead]);
-			state.queueHead += 1;
-			if (state.queueHead == state.queue.size()) {
-				state.queue.clear();
-				state.queueHead = 0;
+		if (state.queueHead == state.queue.size()) {
+			state.budget = budget;
+			return;
+		}
+		DmaJob& job = state.queue[state.queueHead];
+		if (!job.started) {
+			job.started = true;
+			if (job.kind == DmaJob::Kind::Io && job.dst == IO_VDP_FIFO) {
+				m_vdp.beginDmaSubmit();
 			}
 		}
-		auto& job = *state.active;
 		const uint32_t written = processJob(job, budget);
 		budget -= written;
 		if (job.kind == DmaJob::Kind::Io) {
@@ -172,7 +149,11 @@ void DmaController::tickChannel(Channel channel) {
 		}
 		if (isJobComplete(job)) {
 			finishJob(job);
-			state.active.reset();
+			state.queueHead += 1u;
+			if (state.queueHead == state.queue.size()) {
+				state.queue.clear();
+				state.queueHead = 0;
+			}
 			continue;
 		}
 		if (written == 0) {
@@ -184,9 +165,6 @@ void DmaController::tickChannel(Channel channel) {
 }
 
 uint32_t DmaController::processJob(DmaJob& job, uint32_t budget) {
-	if (job.error) {
-		return 0;
-	}
 	if (job.kind == DmaJob::Kind::Io) {
 		uint32_t chunk = job.remaining > budget ? budget : job.remaining;
 		if (chunk == 0) {
@@ -206,14 +184,8 @@ uint32_t DmaController::processJob(DmaJob& job, uint32_t budget) {
 			if (chunk > m_buffer.size()) {
 				chunk = static_cast<uint32_t>(m_buffer.size());
 			}
-			if (!m_memory.readBytes(job.src, m_buffer.data(), chunk)) {
-				job.error = true;
-				return 0;
-			}
-			if (!m_memory.writeBytes(job.dst, m_buffer.data(), chunk)) {
-				job.error = true;
-				return 0;
-			}
+			m_memory.readBytes(job.src, m_buffer.data(), chunk);
+			m_memory.writeBytes(job.dst, m_buffer.data(), chunk);
 		job.src += chunk;
 		job.dst += chunk;
 		job.remaining -= chunk;
@@ -236,10 +208,7 @@ uint32_t DmaController::processImageJob(DmaJob& job, uint32_t budget) {
 		}
 		const size_t srcOffset = static_cast<size_t>(job.row) * job.plan.sourceStride + job.rowOffset;
 		const uint32_t dstAddr = job.plan.baseAddr + job.row * job.plan.targetStride + job.rowOffset;
-		if (!m_memory.writeBytes(dstAddr, job.pixels.data() + srcOffset, toCopy)) {
-			job.error = true;
-			return budget - remaining;
-		}
+		m_memory.writeBytes(dstAddr, job.pixels.data() + srcOffset, toCopy);
 		remaining -= toCopy;
 		job.rowOffset += toCopy;
 		job.written += toCopy;
@@ -252,9 +221,6 @@ uint32_t DmaController::processImageJob(DmaJob& job, uint32_t budget) {
 }
 
 bool DmaController::isJobComplete(const DmaJob& job) const {
-	if (job.error) {
-		return true;
-	}
 	if (job.kind == DmaJob::Kind::Io) {
 		return job.remaining == 0;
 	}
@@ -266,9 +232,7 @@ void DmaController::finishJob(DmaJob& job) {
 		finishIoJob(job);
 		return;
 	}
-	if (job.onComplete) {
-		job.onComplete(job.error, job.clipped);
-	}
+	job.onComplete(job.clipped);
 }
 
 void DmaController::startIo() {
@@ -283,17 +247,7 @@ void DmaController::startIo() {
 	const bool vdpSubmit = dst == IO_VDP_FIFO;
 	const bool strict = (ctrl & DMA_CTRL_STRICT) != 0;
 	m_memory.writeIoValue(IO_DMA_CTRL, valueNumber(static_cast<double>(ctrl & ~DMA_CTRL_START)));
-	if (vdpSubmit && (hasPendingVdpSubmit() || !m_vdp.canAcceptVdpSubmit())) {
-		finishIoRejected();
-		m_vdp.rejectSubmitAttempt();
-		return;
-	}
 	m_memory.writeValue(IO_DMA_WRITTEN, valueNumber(0.0));
-	if (vdpSubmit && (len & 3u) != 0u) {
-		finishIoError(false);
-		return;
-	}
-
 	const uint32_t maxWritable = resolveMaxWritable(dst);
 	if (maxWritable == 0) {
 		finishIoError(false);
@@ -303,7 +257,7 @@ void DmaController::startIo() {
 	bool clipped = false;
 	if (transferLen > maxWritable) {
 		clipped = true;
-		if (strict || vdpSubmit) {
+		if (strict) {
 			finishIoError(true);
 			return;
 		}
@@ -318,19 +272,16 @@ void DmaController::startIo() {
 		finishIoSuccess(clipped);
 		return;
 	}
-	if (vdpSubmit) {
-		m_vdp.beginDmaSubmit();
-	}
 	DmaJob job;
 	job.kind = DmaJob::Kind::Io;
 	job.channel = Channel::Bulk;
+	job.started = false;
 	job.src = src;
 	job.dst = dst;
 	job.remaining = transferLen;
 	job.written = 0;
 	job.clipped = clipped;
 	job.strict = strict;
-	job.error = false;
 	m_ioWrittenValue = 0;
 	m_ioWrittenDirty = true;
 	m_channels[static_cast<int>(Channel::Bulk)].queue.push_back(std::move(job));
@@ -338,18 +289,8 @@ void DmaController::startIo() {
 }
 
 void DmaController::finishIoJob(DmaJob& job) {
-	if (job.error) {
-		if (job.dst == IO_VDP_FIFO) {
-			m_vdp.endDmaSubmit();
-		}
-		finishIoError(job.clipped);
-		return;
-	}
 	if (job.dst == IO_VDP_FIFO) {
-		if (!m_vdp.sealDmaTransfer(job.src, job.written)) {
-			finishIoError(job.clipped);
-			return;
-		}
+		m_vdp.sealDmaTransfer(job.src, job.written);
 	}
 	finishIoSuccess(job.clipped);
 }
@@ -370,11 +311,6 @@ void DmaController::finishIoError(bool clipped) {
 	}
 	m_memory.writeValue(IO_DMA_STATUS, valueNumber(static_cast<double>(status)));
 	m_irq.raise(IRQ_DMA_ERROR);
-}
-
-void DmaController::finishIoRejected() {
-	m_memory.writeValue(IO_DMA_WRITTEN, valueNumber(0.0));
-	m_memory.writeValue(IO_DMA_STATUS, valueNumber(static_cast<double>(DMA_STATUS_REJECTED)));
 }
 
 void DmaController::accrueChannel(Channel channel, int64_t bytesPerSec, int64_t& carry, int cycles) {
@@ -435,9 +371,6 @@ uint32_t DmaController::resolveMaxWritable(uint32_t dst) const {
 	}
 	if (const uint32_t vramRemaining = vramMappedRemainingBytes(dst)) {
 		return vramRemaining;
-	}
-	if (dst >= OVERLAY_ROM_BASE && dst < OVERLAY_ROM_BASE + OVERLAY_ROM_SIZE) {
-		return (OVERLAY_ROM_BASE + OVERLAY_ROM_SIZE) - dst;
 	}
 	if (dst >= RAM_BASE && dst < RAM_END) {
 		return RAM_END - dst;

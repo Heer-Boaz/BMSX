@@ -157,9 +157,6 @@ export class ApuSlotBank {
 		out.voiceId = 0;
 		out.sourceAddr = 0;
 		const phase = this.slotPhases[slot]!;
-		if (phase === APU_SLOT_PHASE_IDLE) {
-			return;
-		}
 		const base = apuSlotRegisterWordIndex(slot, 0);
 		const fadeSamples = this.slotFadeSamplesRemaining[slot]!;
 		const voiceId = this.slotVoiceIds[slot]!;

@@ -1,24 +1,15 @@
 import {
-	GEO_FAULT_BAD_RECORD_ALIGNMENT,
 	GEO_FAULT_BAD_RECORD_FLAGS,
 	GEO_FAULT_BAD_VERTEX_COUNT,
 	GEO_FAULT_DESCRIPTOR_KIND,
-	GEO_FAULT_DST_RANGE,
-	GEO_FAULT_REJECT_BAD_REGISTER_COMBO,
-	GEO_FAULT_REJECT_BAD_STRIDE,
-	GEO_FAULT_REJECT_DST_NOT_RAM,
-	GEO_FAULT_REJECT_MISALIGNED_REGS,
-	GEO_FAULT_SRC_RANGE,
 	GEO_SAT_META_AXIS_MASK,
 	GEO_SAT_META_SHAPE_AUX,
 	GEO_SAT_META_SHAPE_SHIFT,
 	GEO_SAT_META_SHAPE_SRC,
-	GEO_SAT2_DESC_BYTES,
 	GEO_SAT2_DESC_FLAGS_OFFSET,
 	GEO_SAT2_DESC_RESERVED_OFFSET,
 	GEO_SAT2_DESC_VERTEX_COUNT_OFFSET,
 	GEO_SAT2_DESC_VERTEX_OFFSET_OFFSET,
-	GEO_SAT2_PAIR_BYTES,
 	GEO_SAT2_PAIR_FLAGS2_OFFSET,
 	GEO_SAT2_PAIR_FLAGS_OFFSET,
 	GEO_SAT2_PAIR_RESULT_INDEX_OFFSET,
@@ -36,7 +27,7 @@ import {
 	GEO_VERTEX2_X_OFFSET,
 	GEO_VERTEX2_Y_OFFSET,
 } from './contracts';
-import { GEOMETRY_WORD_ALIGN_MASK, resolveGeometryIndexedSpan } from './addressing';
+import { geometryIndexedAddr } from './addressing';
 import { GeometryProjectionSpan } from './projection';
 import type { GeometryJobState } from './job';
 import type { Memory } from '../../memory/memory';
@@ -58,42 +49,9 @@ export class GeometrySat2Unit {
 
 	public constructor(private readonly memory: Memory) {}
 
-	public validateSubmission(job: GeometryJobState): number {
-		if (job.param0 !== 0 || job.param1 !== 0 || job.dst1 !== 0) {
-			return GEO_FAULT_REJECT_BAD_REGISTER_COMBO;
-		}
-		if (job.stride0 !== GEO_SAT2_PAIR_BYTES || job.stride1 !== GEO_SAT2_DESC_BYTES || job.stride2 !== GEO_VERTEX2_BYTES) {
-			return GEO_FAULT_REJECT_BAD_STRIDE;
-		}
-		if ((job.src0 & GEOMETRY_WORD_ALIGN_MASK) !== 0
-			|| (job.src1 & GEOMETRY_WORD_ALIGN_MASK) !== 0
-			|| (job.src2 & GEOMETRY_WORD_ALIGN_MASK) !== 0
-			|| (job.dst0 & GEOMETRY_WORD_ALIGN_MASK) !== 0) {
-			return GEO_FAULT_REJECT_MISALIGNED_REGS;
-		}
-		if (job.count === 0) {
-			return GEO_FAULT_NONE;
-		}
-		if (!this.memory.isReadableMainMemoryRange(job.src0, job.stride0)
-			|| !this.memory.isReadableMainMemoryRange(job.src1, job.stride1)
-			|| !this.memory.isReadableMainMemoryRange(job.src2, job.stride2)) {
-			return GEO_FAULT_REJECT_BAD_REGISTER_COMBO;
-		}
-		if (!this.memory.isRamRange(job.dst0, GEO_SAT2_RESULT_BYTES)) {
-			return GEO_FAULT_REJECT_DST_NOT_RAM;
-		}
-		return GEO_FAULT_NONE;
-	}
-
 	public processRecord(job: GeometryJobState): number {
 		const recordIndex = job.processed;
-		const pairAddr = resolveGeometryIndexedSpan(job.src0, recordIndex, job.stride0, GEO_SAT2_PAIR_BYTES);
-		if (pairAddr === null) {
-			return GEO_FAULT_BAD_RECORD_ALIGNMENT;
-		}
-		if (!this.memory.isReadableMainMemoryRange(pairAddr, GEO_SAT2_PAIR_BYTES)) {
-			return GEO_FAULT_SRC_RANGE;
-		}
+		const pairAddr = geometryIndexedAddr(job.src0, recordIndex, job.stride0);
 		const flags = this.memory.readU32(pairAddr + GEO_SAT2_PAIR_FLAGS_OFFSET);
 		const shapeAIndex = this.memory.readU32(pairAddr + GEO_SAT2_PAIR_SHAPE_A_INDEX_OFFSET);
 		const resultIndex = this.memory.readU32(pairAddr + GEO_SAT2_PAIR_RESULT_INDEX_OFFSET);
@@ -102,19 +60,9 @@ export class GeometrySat2Unit {
 		if (flags !== 0 || pairFlags !== 0) {
 			return GEO_FAULT_BAD_RECORD_FLAGS;
 		}
-		const resultAddr = resolveGeometryIndexedSpan(job.dst0, resultIndex, GEO_SAT2_RESULT_BYTES, GEO_SAT2_RESULT_BYTES);
-		if (resultAddr === null || !this.memory.isRamRange(resultAddr, GEO_SAT2_RESULT_BYTES)) {
-			return GEO_FAULT_DST_RANGE;
-		}
-		const shapeADescAddr = resolveGeometryIndexedSpan(job.src1, shapeAIndex, job.stride1, GEO_SAT2_DESC_BYTES);
-		const shapeBDescAddr = resolveGeometryIndexedSpan(job.src1, shapeBIndex, job.stride1, GEO_SAT2_DESC_BYTES);
-		if (shapeADescAddr === null || shapeBDescAddr === null) {
-			return GEO_FAULT_SRC_RANGE;
-		}
-		if (!this.memory.isReadableMainMemoryRange(shapeADescAddr, GEO_SAT2_DESC_BYTES)
-			|| !this.memory.isReadableMainMemoryRange(shapeBDescAddr, GEO_SAT2_DESC_BYTES)) {
-			return GEO_FAULT_SRC_RANGE;
-		}
+		const resultAddr = geometryIndexedAddr(job.dst0, resultIndex, GEO_SAT2_RESULT_BYTES);
+		const shapeADescAddr = geometryIndexedAddr(job.src1, shapeAIndex, job.stride1);
+		const shapeBDescAddr = geometryIndexedAddr(job.src1, shapeBIndex, job.stride1);
 		const shapeAFlags = this.memory.readU32(shapeADescAddr + GEO_SAT2_DESC_FLAGS_OFFSET);
 		const shapeAVertexCount = this.memory.readU32(shapeADescAddr + GEO_SAT2_DESC_VERTEX_COUNT_OFFSET);
 		const shapeAVertexOffsetBytes = this.memory.readU32(shapeADescAddr + GEO_SAT2_DESC_VERTEX_OFFSET_OFFSET);
@@ -132,24 +80,12 @@ export class GeometrySat2Unit {
 		if (shapeAVertexCount < 3 || shapeBVertexCount < 3) {
 			return GEO_FAULT_BAD_VERTEX_COUNT;
 		}
-		if ((shapeAVertexOffsetBytes & GEOMETRY_WORD_ALIGN_MASK) !== 0 || (shapeBVertexOffsetBytes & GEOMETRY_WORD_ALIGN_MASK) !== 0) {
-			return GEO_FAULT_BAD_RECORD_ALIGNMENT;
-		}
 		if (shapeAVertexCount > GEO_SAT2_MAX_POLY_VERTICES
 			|| shapeBVertexCount > GEO_SAT2_MAX_POLY_VERTICES) {
 			return GEO_FAULT_BAD_VERTEX_COUNT;
 		}
-		const shapeAVertexBytes = shapeAVertexCount * GEO_VERTEX2_BYTES;
-		const shapeBVertexBytes = shapeBVertexCount * GEO_VERTEX2_BYTES;
-		const shapeAVertexAddr = resolveGeometryIndexedSpan(job.src2, shapeAVertexOffsetBytes, 1, shapeAVertexBytes);
-		const shapeBVertexAddr = resolveGeometryIndexedSpan(job.src2, shapeBVertexOffsetBytes, 1, shapeBVertexBytes);
-		if (shapeAVertexAddr === null || shapeBVertexAddr === null) {
-			return GEO_FAULT_SRC_RANGE;
-		}
-		if (!this.memory.isReadableMainMemoryRange(shapeAVertexAddr, shapeAVertexBytes)
-			|| !this.memory.isReadableMainMemoryRange(shapeBVertexAddr, shapeBVertexBytes)) {
-			return GEO_FAULT_SRC_RANGE;
-		}
+		const shapeAVertexAddr = geometryIndexedAddr(job.src2, shapeAVertexOffsetBytes, 1);
+		const shapeBVertexAddr = geometryIndexedAddr(job.src2, shapeBVertexOffsetBytes, 1);
 		let centerAX = 0;
 		let centerAY = 0;
 		let vertexXAddr = shapeAVertexAddr + GEO_VERTEX2_X_OFFSET;

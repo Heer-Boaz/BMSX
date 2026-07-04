@@ -1,5 +1,5 @@
 DISPATCH_LABEL(WIDE) {
-	throw BMSX_RUNTIME_ERROR("Unexpected WIDE opcode.");
+	DISPATCH_CONTINUE();
 }
 
 DISPATCH_LABEL(MOV) {
@@ -127,89 +127,101 @@ DISPATCH_LABEL(NEWT) {
 }
 
 DISPATCH_LABEL(ADD) {
-	double left = requireRKNumber(FRAME, rkB);
-	double right = requireRKNumber(FRAME, rkC);
-	SET_REGISTER_FAST(a, valueNumber(left + right));
+	const Value& left = readRK(FRAME, rkB);
+	const Value& right = readRK(FRAME, rkC);
+	SET_REGISTER_FAST(a, valueNumber(asNumber(left) + asNumber(right)));
 	DISPATCH_CONTINUE();
 }
 
 DISPATCH_LABEL(SUB) {
-	double left = requireRKNumber(FRAME, rkB);
-	double right = requireRKNumber(FRAME, rkC);
-	SET_REGISTER_FAST(a, valueNumber(left - right));
+	const Value& left = readRK(FRAME, rkB);
+	const Value& right = readRK(FRAME, rkC);
+	SET_REGISTER_FAST(a, valueNumber(asNumber(left) - asNumber(right)));
 	DISPATCH_CONTINUE();
 }
 
 DISPATCH_LABEL(MUL) {
-	double left = requireRKNumber(FRAME, rkB);
-	double right = requireRKNumber(FRAME, rkC);
-	SET_REGISTER_FAST(a, valueNumber(left * right));
+	const Value& left = readRK(FRAME, rkB);
+	const Value& right = readRK(FRAME, rkC);
+	SET_REGISTER_FAST(a, valueNumber(asNumber(left) * asNumber(right)));
 	DISPATCH_CONTINUE();
 }
 
 DISPATCH_LABEL(DIV) {
-	double left = requireRKNumber(FRAME, rkB);
-	double right = requireRKNumber(FRAME, rkC);
-	SET_REGISTER_FAST(a, valueNumber(left / right));
+	const Value& left = readRK(FRAME, rkB);
+	const Value& right = readRK(FRAME, rkC);
+	SET_REGISTER_FAST(a, valueNumber(asNumber(left) / asNumber(right)));
 	DISPATCH_CONTINUE();
 }
 
 DISPATCH_LABEL(MOD) {
-	double left = requireRKNumber(FRAME, rkB);
-	double right = requireRKNumber(FRAME, rkC);
-	SET_REGISTER_FAST(a, valueNumber(left - std::floor(left / right) * right));
+	const Value& leftValue = readRK(FRAME, rkB);
+	const Value& rightValue = readRK(FRAME, rkC);
+	const double left = asNumber(leftValue);
+	const double right = asNumber(rightValue);
+	SET_REGISTER_FAST(a, valueNumber(luaModulo(left, right)));
 	DISPATCH_CONTINUE();
 }
 
 DISPATCH_LABEL(FLOORDIV) {
-	double left = requireRKNumber(FRAME, rkB);
-	double right = requireRKNumber(FRAME, rkC);
-	SET_REGISTER_FAST(a, valueNumber(std::floor(left / right)));
+	const Value& left = readRK(FRAME, rkB);
+	const Value& right = readRK(FRAME, rkC);
+	SET_REGISTER_FAST(a, valueNumber(luaFloorDivide(asNumber(left), asNumber(right))));
 	DISPATCH_CONTINUE();
 }
 
 DISPATCH_LABEL(POW) {
-	double left = requireRKNumber(FRAME, rkB);
-	double right = requireRKNumber(FRAME, rkC);
-	SET_REGISTER_FAST(a, valueNumber(std::pow(left, right)));
+	const Value& left = readRK(FRAME, rkB);
+	const Value& right = readRK(FRAME, rkC);
+	SET_REGISTER_FAST(a, valueNumber(std::pow(asNumber(left), asNumber(right))));
 	DISPATCH_CONTINUE();
 }
 
 DISPATCH_LABEL(BAND) {
-	const uint32_t left = toU32(requireRKNumber(FRAME, rkB));
-	const uint32_t right = toU32(requireRKNumber(FRAME, rkC));
+	const Value& leftValue = readRK(FRAME, rkB);
+	const Value& rightValue = readRK(FRAME, rkC);
+	const uint32_t left = toU32(leftValue);
+	const uint32_t right = toU32(rightValue);
 	const int32_t result = static_cast<int32_t>(left & right);
 	SET_REGISTER_FAST(a, valueNumber(static_cast<double>(result)));
 	DISPATCH_CONTINUE();
 }
 
 DISPATCH_LABEL(BOR) {
-	const uint32_t left = toU32(requireRKNumber(FRAME, rkB));
-	const uint32_t right = toU32(requireRKNumber(FRAME, rkC));
+	const Value& leftValue = readRK(FRAME, rkB);
+	const Value& rightValue = readRK(FRAME, rkC);
+	const uint32_t left = toU32(leftValue);
+	const uint32_t right = toU32(rightValue);
 	const int32_t result = static_cast<int32_t>(left | right);
 	SET_REGISTER_FAST(a, valueNumber(static_cast<double>(result)));
 	DISPATCH_CONTINUE();
 }
 
 DISPATCH_LABEL(BXOR) {
-	const uint32_t left = toU32(requireRKNumber(FRAME, rkB));
-	const uint32_t right = toU32(requireRKNumber(FRAME, rkC));
+	const Value& leftValue = readRK(FRAME, rkB);
+	const Value& rightValue = readRK(FRAME, rkC);
+	const uint32_t left = toU32(leftValue);
+	const uint32_t right = toU32(rightValue);
 	const int32_t result = static_cast<int32_t>(left ^ right);
 	SET_REGISTER_FAST(a, valueNumber(static_cast<double>(result)));
 	DISPATCH_CONTINUE();
 }
 
 DISPATCH_LABEL(SHL) {
-	const uint32_t left = toU32(requireRKNumber(FRAME, rkB));
-	const uint32_t right = toU32(requireRKNumber(FRAME, rkC)) & 31u;
+	const Value& leftValue = readRK(FRAME, rkB);
+	const Value& rightValue = readRK(FRAME, rkC);
+	const uint32_t left = toU32(leftValue);
+	const uint32_t right = toU32(rightValue) & 31u;
 	const uint32_t result = left << right;
 	SET_REGISTER_FAST(a, valueNumber(static_cast<double>(static_cast<int32_t>(result))));
 	DISPATCH_CONTINUE();
 }
 
 DISPATCH_LABEL(SHR) {
-	const int32_t left = toI32(requireRKNumber(FRAME, rkB));
-	const uint32_t right = toU32(requireRKNumber(FRAME, rkC)) & 31u;
+	const Value& leftValue = readRK(FRAME, rkB);
+	const Value& rightValue = readRK(FRAME, rkC);
+	const int32_t left = toI32(leftValue);
+	const uint32_t right = toU32(rightValue) & 31u;
 	SET_REGISTER_FAST(a, valueNumber(static_cast<double>(left >> right)));
 	DISPATCH_CONTINUE();
 }
@@ -233,8 +245,8 @@ DISPATCH_LABEL(CONCATN) {
 }
 
 DISPATCH_LABEL(UNM) {
-	double val = requireRegisterNumber(FRAME, b);
-	SET_REGISTER_FAST(a, valueNumber(-val));
+	const Value value = REG(b);
+	SET_REGISTER_FAST(a, valueNumber(-asNumber(value)));
 	DISPATCH_CONTINUE();
 }
 
@@ -254,47 +266,14 @@ DISPATCH_LABEL(LEN) {
 		SET_REGISTER_FAST(a, valueNumber(static_cast<double>(asTable(val)->length())));
 		DISPATCH_CONTINUE();
 	}
-	if (valueIsNativeObject(val)) {
-		auto* obj = asNativeObject(val);
-		if (!obj->len) {
-			std::string stack;
-			auto callStack = getCallStack();
-			for (auto it = callStack.rbegin(); it != callStack.rend(); ++it) {
-				const auto& entry = *it;
-				const auto range = getDebugRange(entry.second);
-				if (!stack.empty()) {
-					stack += " <- ";
-				}
-				if (range.has_value()) {
-					stack += range->path + ":" + std::to_string(range->startLine) + ":" + std::to_string(range->startColumn);
-				} else {
-					stack += "<unknown>";
-				}
-			}
-			throw BMSX_RUNTIME_ERROR("Length operator expects a native object with a length. stack=" + stack);
-		}
-		SET_REGISTER_FAST(a, valueNumber(static_cast<double>(obj->len())));
-		DISPATCH_CONTINUE();
-	}
-	std::string stack;
-	auto callStack = getCallStack();
-	for (auto it = callStack.rbegin(); it != callStack.rend(); ++it) {
-		const auto& entry = *it;
-		const auto range = getDebugRange(entry.second);
-		if (!stack.empty()) {
-			stack += " <- ";
-		}
-		if (range.has_value()) {
-			stack += range->path + ":" + std::to_string(range->startLine) + ":" + std::to_string(range->startColumn);
-		} else {
-			stack += "<unknown>";
-		}
-	}
-	throw BMSX_RUNTIME_ERROR("Length operator expects a string or table. stack=" + stack);
+	auto* obj = asNativeObject(val);
+	SET_REGISTER_FAST(a, valueNumber(static_cast<double>(obj->len())));
+	DISPATCH_CONTINUE();
 }
 
 DISPATCH_LABEL(BNOT) {
-	const uint32_t val = toU32(requireRegisterNumber(FRAME, b));
+	const Value value = REG(b);
+	const uint32_t val = toU32(value);
 	const int32_t result = static_cast<int32_t>(~val);
 	SET_REGISTER_FAST(a, valueNumber(static_cast<double>(result)));
 	DISPATCH_CONTINUE();
@@ -319,12 +298,10 @@ DISPATCH_LABEL(LT) {
 	const Value& leftValue = readRK(FRAME, rkB);
 	const Value& rightValue = readRK(FRAME, rkC);
 	bool ok = false;
-	if (valueIsNumber(leftValue) && valueIsNumber(rightValue)) {
-		ok = asNumber(leftValue) < asNumber(rightValue);
-	} else if (valueIsString(leftValue) && valueIsString(rightValue)) {
+	if (valueIsString(leftValue) && valueIsString(rightValue)) {
 		ok = m_stringPool.toString(asStringId(leftValue)) < m_stringPool.toString(asStringId(rightValue));
 	} else {
-		throw BMSX_RUNTIME_ERROR(std::string("Attempted to compare ") + valueTypeName(leftValue) + " with " + valueTypeName(rightValue) + ".");
+		ok = asNumber(leftValue) < asNumber(rightValue);
 	}
 	if (ok != (a != 0)) {
 		SKIP_NEXT_INSTRUCTION();
@@ -336,12 +313,10 @@ DISPATCH_LABEL(LE) {
 	const Value& leftValue = readRK(FRAME, rkB);
 	const Value& rightValue = readRK(FRAME, rkC);
 	bool ok = false;
-	if (valueIsNumber(leftValue) && valueIsNumber(rightValue)) {
-		ok = asNumber(leftValue) <= asNumber(rightValue);
-	} else if (valueIsString(leftValue) && valueIsString(rightValue)) {
+	if (valueIsString(leftValue) && valueIsString(rightValue)) {
 		ok = m_stringPool.toString(asStringId(leftValue)) <= m_stringPool.toString(asStringId(rightValue));
 	} else {
-		throw BMSX_RUNTIME_ERROR(std::string("Attempted to compare ") + valueTypeName(leftValue) + " with " + valueTypeName(rightValue) + ".");
+		ok = asNumber(leftValue) <= asNumber(rightValue);
 	}
 	if (ok != (a != 0)) {
 		SKIP_NEXT_INSTRUCTION();
@@ -350,11 +325,11 @@ DISPATCH_LABEL(LE) {
 }
 
 DISPATCH_LABEL(RESERVED0) {
-	throw BMSX_RUNTIME_ERROR("Reserved opcode 0 executed.");
+	DISPATCH_CONTINUE();
 }
 
 DISPATCH_LABEL(RESERVED1) {
-	throw BMSX_RUNTIME_ERROR("Reserved opcode 1 executed.");
+	DISPATCH_CONTINUE();
 }
 
 DISPATCH_LABEL(JMP) {
@@ -433,11 +408,9 @@ DISPATCH_LABEL(CALL) {
 		runHousekeeping();
 		DISPATCH_CONTINUE();
 	}
-	throw BMSX_RUNTIME_ERROR(formatNonFunctionCallError(
-		callee,
-		m_stringPool,
-		getDebugRange(FRAME.pc - INSTRUCTION_BYTES)
-	));
+	Closure* closure = asClosure(callee);
+	pushFrame(FRAME, closure, a + 1, argCount, a, retCount, false, FRAME.pc - INSTRUCTION_BYTES);
+	DISPATCH_CONTINUE();
 }
 
 DISPATCH_LABEL(RET) {
@@ -498,47 +471,77 @@ DISPATCH_LABEL(RET) {
 }
 
 DISPATCH_LABEL(LOAD_MEM_D) {
-	const uint32_t addr = static_cast<uint32_t>(requireRegisterNumber(FRAME, b)) + (static_cast<uint32_t>(disp) << 2);
-	SET_REGISTER_FAST(a, readMappedMemoryValue(addr, static_cast<MemoryAccessKind>(c)));
+	const uint32_t addr = static_cast<uint32_t>(asNumber(REG(b))) + (static_cast<uint32_t>(disp) << 2);
+	switch (static_cast<MemoryAccessKind>(c)) {
+		case MemoryAccessKind::Word: SET_REGISTER_FAST(a, m_memory.readMappedValue(addr)); break;
+		case MemoryAccessKind::U8: SET_REGISTER_FAST(a, valueNumber(static_cast<double>(m_memory.readMappedU8(addr)))); break;
+		case MemoryAccessKind::U16LE: SET_REGISTER_FAST(a, valueNumber(static_cast<double>(m_memory.readMappedU16LE(addr)))); break;
+		case MemoryAccessKind::U32LE: SET_REGISTER_FAST(a, valueNumber(static_cast<double>(m_memory.readMappedU32LE(addr)))); break;
+		case MemoryAccessKind::F32LE: SET_REGISTER_FAST(a, valueNumber(static_cast<double>(m_memory.readMappedF32LE(addr)))); break;
+		case MemoryAccessKind::F64LE: SET_REGISTER_FAST(a, valueNumber(m_memory.readMappedF64LE(addr))); break;
+	}
 	DISPATCH_CONTINUE();
 }
 
 DISPATCH_LABEL(STORE_MEM_D) {
-	const uint32_t addr = static_cast<uint32_t>(requireRegisterNumber(FRAME, b)) + (static_cast<uint32_t>(disp) << 2);
-	writeMappedMemoryValue(addr, static_cast<MemoryAccessKind>(c), REG(a));
+	const uint32_t addr = static_cast<uint32_t>(asNumber(REG(b))) + (static_cast<uint32_t>(disp) << 2);
+	const Value value = REG(a);
+	switch (static_cast<MemoryAccessKind>(c)) {
+		case MemoryAccessKind::Word: m_memory.writeMappedValue(addr, value); break;
+		case MemoryAccessKind::U8: m_memory.writeMappedU8(addr, static_cast<u8>(toU32(asNumber(value)))); break;
+		case MemoryAccessKind::U16LE: m_memory.writeMappedU16LE(addr, toU32(asNumber(value))); break;
+		case MemoryAccessKind::U32LE: m_memory.writeMappedU32LE(addr, toU32(asNumber(value))); break;
+		case MemoryAccessKind::F32LE: m_memory.writeMappedF32LE(addr, static_cast<float>(asNumber(value))); break;
+		case MemoryAccessKind::F64LE: m_memory.writeMappedF64LE(addr, asNumber(value)); break;
+	}
 	DISPATCH_CONTINUE();
 }
 
 DISPATCH_LABEL(STORE_MEM_WORDS_D) {
-	const uint32_t addr = static_cast<uint32_t>(requireRegisterNumber(FRAME, b)) + (static_cast<uint32_t>(disp) << 2);
+	const uint32_t addr = static_cast<uint32_t>(asNumber(REG(b))) + (static_cast<uint32_t>(disp) << 2);
 	CYCLES_ADD(ceilDiv4(c));
 	writeMappedWordSequence(FRAME, addr, a, c);
 	DISPATCH_CONTINUE();
 }
 
 DISPATCH_LABEL(LOAD_MEM) {
-	const uint32_t addr = static_cast<uint32_t>(requireRKNumber(FRAME, rkB));
-	SET_REGISTER_FAST(a, readMappedMemoryValue(addr, static_cast<MemoryAccessKind>(c)));
+	const uint32_t addr = static_cast<uint32_t>(asNumber(readRK(FRAME, rkB)));
+	switch (static_cast<MemoryAccessKind>(c)) {
+		case MemoryAccessKind::Word: SET_REGISTER_FAST(a, m_memory.readMappedValue(addr)); break;
+		case MemoryAccessKind::U8: SET_REGISTER_FAST(a, valueNumber(static_cast<double>(m_memory.readMappedU8(addr)))); break;
+		case MemoryAccessKind::U16LE: SET_REGISTER_FAST(a, valueNumber(static_cast<double>(m_memory.readMappedU16LE(addr)))); break;
+		case MemoryAccessKind::U32LE: SET_REGISTER_FAST(a, valueNumber(static_cast<double>(m_memory.readMappedU32LE(addr)))); break;
+		case MemoryAccessKind::F32LE: SET_REGISTER_FAST(a, valueNumber(static_cast<double>(m_memory.readMappedF32LE(addr)))); break;
+		case MemoryAccessKind::F64LE: SET_REGISTER_FAST(a, valueNumber(m_memory.readMappedF64LE(addr))); break;
+	}
 	DISPATCH_CONTINUE();
 }
 
 DISPATCH_LABEL(STORE_MEM) {
-	const uint32_t addr = static_cast<uint32_t>(requireRKNumber(FRAME, rkB));
-	writeMappedMemoryValue(addr, static_cast<MemoryAccessKind>(c), REG(a));
+	const uint32_t addr = static_cast<uint32_t>(asNumber(readRK(FRAME, rkB)));
+	const Value value = REG(a);
+	switch (static_cast<MemoryAccessKind>(c)) {
+		case MemoryAccessKind::Word: m_memory.writeMappedValue(addr, value); break;
+		case MemoryAccessKind::U8: m_memory.writeMappedU8(addr, static_cast<u8>(toU32(asNumber(value)))); break;
+		case MemoryAccessKind::U16LE: m_memory.writeMappedU16LE(addr, toU32(asNumber(value))); break;
+		case MemoryAccessKind::U32LE: m_memory.writeMappedU32LE(addr, toU32(asNumber(value))); break;
+		case MemoryAccessKind::F32LE: m_memory.writeMappedF32LE(addr, static_cast<float>(asNumber(value))); break;
+		case MemoryAccessKind::F64LE: m_memory.writeMappedF64LE(addr, asNumber(value)); break;
+	}
 	DISPATCH_CONTINUE();
 }
 
 DISPATCH_LABEL(STORE_MEM_WORDS) {
-	const uint32_t addr = static_cast<uint32_t>(requireRKNumber(FRAME, rkB));
+	const uint32_t addr = static_cast<uint32_t>(asNumber(readRK(FRAME, rkB)));
 	CYCLES_ADD(ceilDiv4(c));
 	writeMappedWordSequence(FRAME, addr, a, c);
 	DISPATCH_CONTINUE();
 }
 
 DISPATCH_LABEL(RESERVED2) {
-	throw BMSX_RUNTIME_ERROR("Reserved opcode 2 executed.");
+	DISPATCH_CONTINUE();
 }
 
 DISPATCH_LABEL(RESERVED3) {
-	throw BMSX_RUNTIME_ERROR("Reserved opcode 3 executed.");
+	DISPATCH_CONTINUE();
 }

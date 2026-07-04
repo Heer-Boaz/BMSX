@@ -258,15 +258,15 @@ inline bool valueIsUpvalue(Value v) {
 	return valueIsTagged(v) && valueTag(v) == ValueTag::Upvalue;
 }
 
+uint32_t valueObjectHashId(Value v);
+uint32_t valueBuiltinFunctionHashId(Value v);
+
 struct ValueHash {
 	size_t operator()(Value v) const noexcept {
 		if (valueIsNumber(v)) {
 			double num = asNumber(v);
 			if (num == 0.0) {
 				num = 0.0;
-			}
-			if (num != num) {
-				return static_cast<size_t>(VALUE_QNAN_MASK ^ (VALUE_QNAN_MASK >> 32));
 			}
 			uint64_t bits = 0;
 			std::memcpy(&bits, &num, sizeof(double));
@@ -281,6 +281,12 @@ struct ValueHash {
 		if (isNil(v)) {
 			return static_cast<size_t>(0x27d4eb2du);
 		}
+		if (valueIsBuiltinFunction(v)) {
+			return static_cast<size_t>(valueBuiltinFunctionHashId(v) * 0x27d4eb2du);
+		}
+		if (valueIsTable(v) || valueIsClosure(v) || valueIsNativeFunction(v) || valueIsNativeObject(v) || valueIsUpvalue(v)) {
+			return static_cast<size_t>(static_cast<uint64_t>(valueObjectHashId(v)) * 2654435761ULL);
+		}
 		const uint64_t payload = valuePayload(v);
 		return static_cast<size_t>(payload * 2654435761ULL);
 	}
@@ -289,12 +295,7 @@ struct ValueHash {
 struct ValueEq {
 	bool operator()(Value lhs, Value rhs) const noexcept {
 		if (valueIsNumber(lhs) && valueIsNumber(rhs)) {
-			double leftNum = asNumber(lhs);
-			double rightNum = asNumber(rhs);
-			if (leftNum != leftNum && rightNum != rightNum) {
-				return true;
-			}
-			return leftNum == rightNum;
+			return asNumber(lhs) == asNumber(rhs);
 		}
 		return lhs == rhs;
 	}
@@ -323,12 +324,6 @@ public:
 	const Value* begin() const noexcept { return m_data; }
 	const Value* end() const noexcept { return m_size == 0 ? m_data : m_data + m_size; }
 	const Value& operator[](size_t index) const noexcept { return m_data[index]; }
-	const Value& at(size_t index) const {
-		if (index >= m_size) {
-			throw std::out_of_range("NativeArgsView index out of range");
-		}
-		return m_data[index];
-	}
 
 private:
 	const Value* m_data = nullptr;
@@ -479,6 +474,7 @@ enum class ObjType : uint8_t {
 struct GCObject {
 	ObjType type;
 	bool marked = false;
+	uint32_t hashId = 0;
 	GCObject* next = nullptr;
 };
 
@@ -534,7 +530,6 @@ struct NativeObject : GCObject {
 	std::function<void(const Value&, const Value&)> set;
 	std::function<int()> len;
 	std::function<std::optional<std::pair<Value, Value>>(const Value&)> nextEntry;
-	std::function<void(GcHeap&)> mark;
 	Table* metatable = nullptr;
 };
 
@@ -620,7 +615,7 @@ struct DecodedInstruction {
 	uint16_t b = 0;
 	uint16_t c = 0;
 	uint8_t op = 0;
-	uint8_t width = 1;
+	uint8_t width = 0;
 	uint8_t disp = 0;
 };
 
@@ -687,12 +682,6 @@ struct TableRuntimeState {
 	Table* metatable = nullptr;
 };
 
-struct CpuRuntimeRefSegment {
-	bool isIndex = false;
-	std::string key;
-	int index = 0;
-};
-
 enum class CpuValueStateTag : uint8_t {
 	Nil,
 	False,
@@ -701,7 +690,6 @@ enum class CpuValueStateTag : uint8_t {
 	String,
 	Builtin,
 	Ref,
-	StableRef,
 };
 
 struct CpuValueState {
@@ -710,7 +698,6 @@ struct CpuValueState {
 	StringId stringId = 0;
 	BuiltinFunctionId builtinId = BuiltinFunctionId::Next;
 	int refId = -1;
-	std::vector<CpuRuntimeRefSegment> path;
 };
 
 struct CpuTableHashNodeSnapshot {
@@ -727,6 +714,7 @@ struct CpuObjectState {
 	};
 
 	Kind kind = Kind::Table;
+	uint32_t hashId = 0;
 	std::vector<CpuValueState> array;
 	size_t arrayLength = 0;
 	std::vector<CpuTableHashNodeSnapshot> hash;
@@ -866,6 +854,7 @@ public:
 		auto* obj = new T(std::forward<Args>(args)...);
 		obj->type = type;
 		obj->marked = false;
+		obj->hashId = allocateHashId();
 		obj->next = m_objects;
 		m_objects = obj;
 		m_bytesAllocated += sizeof(T);
@@ -877,6 +866,12 @@ public:
 	Closure* allocateClosure(size_t upvalueCount);
 
 	void requestCollection() { m_collectRequested = true; }
+	uint32_t allocateHashId() { return m_nextObjectHashId++; }
+	void observeHashId(uint32_t hashId) {
+		if (m_nextObjectHashId <= hashId) {
+			m_nextObjectHashId = hashId + 1u;
+		}
+	}
 	bool needsCollection() const { return m_collectRequested; }
 	void collect();
 	void suspendCollection() { m_collectionSuspendDepth += 1; }
@@ -904,6 +899,7 @@ private:
 	std::vector<GCObject*> m_grayStack;
 	size_t m_bytesAllocated = 0;
 	size_t m_nextGC = 1024 * 1024;
+	uint32_t m_nextObjectHashId = 1;
 	bool m_collectRequested = false;
 	int m_collectionSuspendDepth = 0;
 	std::function<void(GcHeap&)> m_rootMarker;
@@ -934,9 +930,8 @@ public:
 		void* raw,
 		std::function<Value(const Value&)> get,
 		std::function<void(const Value&, const Value&)> set,
-		std::function<int()> len = nullptr,
-		std::function<std::optional<std::pair<Value, Value>>(const Value&)> nextEntry = nullptr,
-		std::function<void(GcHeap&)> mark = nullptr
+		std::function<int()> len,
+		std::function<std::optional<std::pair<Value, Value>>(const Value&)> nextEntry
 	);
 	Table* createTable(int arraySize = 0, int hashSize = 0);
 	Closure& rootClosure(int protoIndex) { return m_staticClosures[static_cast<size_t>(protoIndex)]; }
@@ -1016,7 +1011,7 @@ private:
 	void runBuiltinError(NativeArgsView args);
 	void runBuiltinPCall(NativeArgsView args, NativeResults& out);
 	void runBuiltinXPCall(NativeArgsView args, NativeResults& out);
-	void callValueInto(Value callee, NativeArgsView args, NativeResults& out);
+	bool callValueInto(Value callee, NativeArgsView args, NativeResults& out);
 	void runHousekeeping();
 	void tickHotLoopHousekeeping();
 	void initializeGlobalSlots(const ProgramRuntimeSymbols& runtimeSymbols);
@@ -1035,11 +1030,7 @@ private:
 	void writeReturnValues(CallFrame& frame, int base, int count, const Value* values, int valueCount);
 	void setRegister(CallFrame& frame, int index, Value value);
 	Value* ensureRegisterCapacity(CallFrame& frame, int index);
-	Value readMappedMemoryValue(uint32_t addr, MemoryAccessKind accessKind) const;
-	void writeMappedMemoryValue(uint32_t addr, MemoryAccessKind accessKind, const Value& value);
 	void writeMappedWordSequence(CallFrame& frame, uint32_t addr, int valueBase, int valueCount);
-	double requireRegisterNumber(CallFrame& frame, int index) const;
-	double requireRKNumber(CallFrame& frame, int rk) const;
 	const Value& readRK(CallFrame& frame, int rk);
 	template <typename Getter>
 	Value resolveTableIndexChain(Table* table, Getter get);
@@ -1068,7 +1059,7 @@ private:
 	void decodeProgram();
 	DecodedInstruction& decodedSlotForWrite(size_t wordIndex);
 	const DecodedInstruction& decodedAtWordIndex(int wordIndex) const;
-	void requireRunnableForCall() const;
+	void skipNextInstruction(CallFrame& frame);
 	void clearHaltAfterAcceptedInterrupt();
 	void markRoots(GcHeap& heap);
 
@@ -1108,7 +1099,7 @@ private:
 		std::array<DecodedInstruction, DECODED_PAGE_WORDS> words{};
 	};
 
-	std::vector<std::unique_ptr<DecodedInstructionPage>> m_decodedPages;
+	std::vector<DecodedInstructionPage> m_decodedPages;
 	size_t m_decodedWordCount = 0;
 	std::vector<TableLoadInlineCache> m_tableLoadCaches;
 	Value m_indexKey = valueNil();
@@ -1118,7 +1109,7 @@ private:
 	std::vector<StringId> m_globalNames;
 	std::vector<Value> m_globalValues;
 	std::unordered_map<StringId, size_t> m_globalSlotByKey;
-	Table* m_stringIndexTable = nullptr;
+	Table* m_stringIndexTable;
 	int m_hotLoopHousekeepingCountdown = HOT_LOOP_HOUSEKEEPING_STRIDE;
 };
 

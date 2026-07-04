@@ -72,7 +72,7 @@ export type VdpSubmittedFrameSaveState = {
 	rpu: VdpRpuFrameSaveState;
 };
 
-export function allocateSubmittedFrameSlot(): VdpSubmittedFrame {
+export function allocateSubmittedFrameSlot(vdpVram: Uint8Array, vdpVramPageRevisions: Uint32Array): VdpSubmittedFrame {
 	return {
 		state: VDP_SUBMITTED_FRAME_EMPTY,
 		hasCommands: false,
@@ -85,7 +85,7 @@ export function allocateSubmittedFrameSlot(): VdpSubmittedFrame {
 		lightRegisterWords: new Uint32Array(VDP_LPU_REGISTER_WORDS),
 		morphWeightWords: new Uint32Array(VDP_MFU_WEIGHT_COUNT),
 		jointMatrixWords: new Uint32Array(VDP_JTU_REGISTER_WORDS),
-		rpu: createVdpRpuFrameOutput(),
+		rpu: createVdpRpuFrameOutput(vdpVram, vdpVramPageRevisions),
 	};
 }
 

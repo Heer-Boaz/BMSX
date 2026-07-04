@@ -1,5 +1,5 @@
 import { type CartridgeLayerId, type RomAsset } from './format';
-import { CART_ROM_BASE, OVERLAY_ROM_BASE, SYSTEM_ROM_BASE } from '../machine/memory/map';
+import { CART_ROM_BASE, SYSTEM_ROM_BASE } from '../machine/memory/map';
 import { collectRomAssetPayloadRanges } from './asset_layout';
 
 export const ROM_ASSET_SYMBOL_MODULE_PATH = 'bmsx/assets';
@@ -17,7 +17,6 @@ export type RomAssetSymbol = {
 const romBaseByPayloadId: Record<CartridgeLayerId, number> = {
 	system: SYSTEM_ROM_BASE,
 	cart: CART_ROM_BASE,
-	overlay: OVERLAY_ROM_BASE,
 };
 
 function sanitizeAssetSymbolSegment(value: string): string {

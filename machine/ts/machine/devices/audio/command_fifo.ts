@@ -51,10 +51,7 @@ export class ApuCommandFifo {
 		this.queuedCount = 0;
 	}
 
-	public enqueue(command: number, memory: Memory): boolean {
-		if (this.full) {
-			return false;
-		}
+	public enqueue(command: number, memory: Memory): void {
 		const entry = this.writeIndex;
 		this.commands[entry] = command;
 		const base = entry * APU_PARAMETER_REGISTER_COUNT;
@@ -65,8 +62,11 @@ export class ApuCommandFifo {
 		if (this.writeIndex === APU_COMMAND_FIFO_CAPACITY) {
 			this.writeIndex = 0;
 		}
-		this.queuedCount += 1;
-		return true;
+		if (this.queuedCount === APU_COMMAND_FIFO_CAPACITY) {
+			this.readIndex = this.writeIndex;
+		} else {
+			this.queuedCount += 1;
+		}
 	}
 
 	public popInto(target: ApuParameterRegisterWords & { [index: number]: number }): number {

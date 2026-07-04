@@ -2,6 +2,10 @@
 
 namespace bmsx {
 
+VdpVoutUnit::VdpVoutUnit(std::vector<u8>& vdpVram, std::vector<u32>& vdpVramPageRevisions)
+	: m_visibleRpuFrame(createVdpRpuFrameOutput(vdpVram, vdpVramPageRevisions))
+	, m_deviceOutput{.rpu = m_visibleRpuFrame.get()} {}
+
 void VdpVoutUnit::reset(i32 ditherType, u32 frameBufferWidth, u32 frameBufferHeight) {
 	m_liveDitherType = ditherType;
 	m_scanoutPhase = VdpVoutScanoutPhase::Active;

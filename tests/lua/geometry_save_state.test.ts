@@ -33,7 +33,6 @@ import {
 	GEOMETRY_CONTROLLER_PHASE_IDLE,
 	GEOMETRY_CONTROLLER_PHASE_REJECTED,
 	GEOMETRY_CONTROLLER_REGISTER_COUNT,
-	GEO_FAULT_BAD_RECORD_ALIGNMENT,
 	GEO_FAULT_BAD_VERTEX_COUNT,
 	GEO_FAULT_CODE_SHIFT,
 	GEO_INDEX_NONE,
@@ -320,8 +319,8 @@ test('GEO save-state restores in-flight command latch instead of aborting BUSY w
 	capturedGeometry = geometry.captureState();
 	assert.equal(capturedGeometry.phase, GEOMETRY_CONTROLLER_PHASE_BUSY);
 
-	geometry.accrueCycles(1, 1);
-	geometry.onService(1);
+	geometry.accrueCycles(1, 2);
+	geometry.onService(2);
 	assert.equal(memory.readIoU32(IO_GEO_PROCESSED), 2);
 	assert.equal(memory.readIoU32(IO_GEO_STATUS), GEO_STATUS_BUSY);
 	capturedGeometry = geometry.captureState();
@@ -477,7 +476,7 @@ test('GEO sat2 faults oversize convex polygons at the device scratch capacity', 
 	assert.equal(geometry.captureState().phase, GEOMETRY_CONTROLLER_PHASE_ERROR);
 });
 
-test('GEO overlap2d submit rejects reserved src2 and non-RAM result base', () => {
+test('GEO overlap2d start consumes register words without submit preflight', () => {
 	const machine = makeMachine();
 	const memory = machine.memory;
 	const geometry = machine.geometryController;
@@ -485,30 +484,16 @@ test('GEO overlap2d submit rejects reserved src2 and non-RAM result base', () =>
 
 	writeOverlap2dFullPassRegisters(memory, jobBase, 0, jobBase + 0x100, jobBase + 0x300, 1);
 	memory.writeValue(IO_GEO_CMD, IO_CMD_GEO_OVERLAP2D_PASS);
-	let rejectedFault = memory.readIoU32(IO_GEO_FAULT);
-	assert.notEqual(rejectedFault, 0);
-	assertGeometryFaultLatch(
-		memory,
-		geometry,
-		GEO_STATUS_REJECTED,
-		rejectedFault,
-		GEOMETRY_CONTROLLER_PHASE_REJECTED,
-	);
+	assert.equal(memory.readIoU32(IO_GEO_STATUS), GEO_STATUS_DONE);
+	assert.equal(memory.readIoU32(IO_GEO_FAULT), 0);
+	assert.equal(geometry.captureState().phase, GEOMETRY_CONTROLLER_PHASE_DONE);
 
-	memory.writeValue(IO_GEO_FAULT_ACK, 1);
 	writeOverlap2dFullPassRegisters(memory, jobBase, 0, 0, 0, 0);
 	memory.writeValue(IO_GEO_CMD, IO_CMD_GEO_OVERLAP2D_PASS);
-	rejectedFault = memory.readIoU32(IO_GEO_FAULT);
-	assert.notEqual(rejectedFault, 0);
-	assertGeometryFaultLatch(
-		memory,
-		geometry,
-		GEO_STATUS_REJECTED,
-		rejectedFault,
-		GEOMETRY_CONTROLLER_PHASE_REJECTED,
-	);
+	assert.equal(memory.readIoU32(IO_GEO_STATUS), GEO_STATUS_DONE);
+	assert.equal(memory.readIoU32(IO_GEO_FAULT), 0);
+	assert.equal(geometry.captureState().phase, GEOMETRY_CONTROLLER_PHASE_DONE);
 
-	memory.writeValue(IO_GEO_FAULT_ACK, 1);
 	const shapeA = jobBase + 0x400;
 	const shapeB = jobBase + 0x500;
 	const summaryBase = jobBase + 0x200;
@@ -539,8 +524,8 @@ test('GEO overlap2d submit rejects reserved src2 and non-RAM result base', () =>
 	writeOverlap2dFullPassRegisters(memory, jobBase, 2, 0, resultBase, 1);
 	memory.writeValue(IO_GEO_CMD, IO_CMD_GEO_OVERLAP2D_PASS);
 	assert.equal(memory.readIoU32(IO_GEO_STATUS), GEO_STATUS_BUSY);
-	geometry.accrueCycles(1, 1);
-	geometry.onService(1);
+	geometry.accrueCycles(2, 2);
+	geometry.onService(2);
 	assert.equal(memory.readIoU32(IO_GEO_STATUS), GEO_STATUS_DONE | GEO_STATUS_ERROR);
 	assert.equal(memory.readIoU32(IO_GEO_FAULT) >>> GEO_FAULT_CODE_SHIFT, GEO_FAULT_BAD_VERTEX_COUNT);
 
@@ -553,11 +538,11 @@ test('GEO overlap2d submit rejects reserved src2 and non-RAM result base', () =>
 	writeOverlap2dFullPassRegisters(memory, jobBase, 2, 0, resultBase, 1);
 	memory.writeValue(IO_GEO_CMD, IO_CMD_GEO_OVERLAP2D_PASS);
 	assert.equal(memory.readIoU32(IO_GEO_STATUS), GEO_STATUS_BUSY);
-	geometry.accrueCycles(1, 1);
-	geometry.onService(1);
-	assert.equal(memory.readIoU32(IO_GEO_STATUS), GEO_STATUS_DONE | GEO_STATUS_ERROR);
-	assert.equal(memory.readIoU32(IO_GEO_FAULT) >>> GEO_FAULT_CODE_SHIFT, GEO_FAULT_BAD_RECORD_ALIGNMENT);
-	assert.equal(geometry.captureState().phase, GEOMETRY_CONTROLLER_PHASE_ERROR);
+	geometry.accrueCycles(2, 2);
+	geometry.onService(2);
+	assert.equal(memory.readIoU32(IO_GEO_STATUS), GEO_STATUS_DONE);
+	assert.equal(memory.readIoU32(IO_GEO_FAULT), 0);
+	assert.equal(geometry.captureState().phase, GEOMETRY_CONTROLLER_PHASE_DONE);
 
 	memory.writeValue(IO_GEO_FAULT_ACK, 1);
 	writeOverlap2dInstance(memory, jobBase, shapeA);
@@ -568,32 +553,12 @@ test('GEO overlap2d submit rejects reserved src2 and non-RAM result base', () =>
 	writeOverlap2dFullPassRegisters(memory, jobBase, 2, 0, resultBase, 1);
 	memory.writeValue(IO_GEO_CMD, IO_CMD_GEO_OVERLAP2D_PASS);
 	assert.equal(memory.readIoU32(IO_GEO_STATUS), GEO_STATUS_BUSY);
-	geometry.accrueCycles(1, 1);
-	geometry.onService(1);
-	assert.equal(memory.readIoU32(IO_GEO_STATUS), GEO_STATUS_DONE | GEO_STATUS_ERROR);
-	assert.equal(memory.readIoU32(IO_GEO_FAULT) >>> GEO_FAULT_CODE_SHIFT, GEO_FAULT_BAD_RECORD_ALIGNMENT);
-	assert.equal(geometry.captureState().phase, GEOMETRY_CONTROLLER_PHASE_ERROR);
+	geometry.accrueCycles(2, 2);
+	geometry.onService(2);
+	assert.equal(memory.readIoU32(IO_GEO_STATUS), GEO_STATUS_DONE);
+	assert.equal(memory.readIoU32(IO_GEO_FAULT), 0);
+	assert.equal(geometry.captureState().phase, GEOMETRY_CONTROLLER_PHASE_DONE);
 
-	memory.writeValue(IO_GEO_FAULT_ACK, 1);
-	writeOverlap2dInstance(memory, jobBase, shapeA);
-	writeOverlap2dInstance(memory, jobBase + GEO_OVERLAP2D_INSTANCE_BYTES, shapeB);
-	writeOverlapAabbShape(memory, shapeB, 0x3f00_0000, 0x0000_0000, 0x3fc0_0000, 0x3f80_0000);
-	memory.writeU32(shapeA + GEO_OVERLAP2D_SHAPE_KIND_OFFSET, GEO_OVERLAP2D_SHAPE_KIND_COMPOUND);
-	memory.writeU32(shapeA + GEO_OVERLAP2D_SHAPE_DATA_COUNT_OFFSET, 1);
-	memory.writeU32(shapeA + GEO_OVERLAP2D_SHAPE_DATA_OFFSET_OFFSET, GEO_OVERLAP2D_SHAPE_DESC_BYTES + 1);
-	memory.writeU32(shapeA + GEO_OVERLAP2D_SHAPE_BOUNDS_OFFSET_OFFSET, GEO_OVERLAP2D_SHAPE_DESC_BYTES);
-	memory.writeU32(shapeA + GEO_OVERLAP2D_SHAPE_DESC_BYTES + GEO_OVERLAP2D_SHAPE_BOUNDS_LEFT_OFFSET, 0);
-	memory.writeU32(shapeA + GEO_OVERLAP2D_SHAPE_DESC_BYTES + GEO_OVERLAP2D_SHAPE_BOUNDS_TOP_OFFSET, 0);
-	memory.writeU32(shapeA + GEO_OVERLAP2D_SHAPE_DESC_BYTES + GEO_OVERLAP2D_SHAPE_BOUNDS_RIGHT_OFFSET, 0x3f80_0000);
-	memory.writeU32(shapeA + GEO_OVERLAP2D_SHAPE_DESC_BYTES + GEO_OVERLAP2D_SHAPE_BOUNDS_BOTTOM_OFFSET, 0x3f80_0000);
-	writeOverlap2dFullPassRegisters(memory, jobBase, 2, 0, resultBase, 1);
-	memory.writeValue(IO_GEO_CMD, IO_CMD_GEO_OVERLAP2D_PASS);
-	assert.equal(memory.readIoU32(IO_GEO_STATUS), GEO_STATUS_BUSY);
-	geometry.accrueCycles(1, 1);
-	geometry.onService(1);
-	assert.equal(memory.readIoU32(IO_GEO_STATUS), GEO_STATUS_DONE | GEO_STATUS_ERROR);
-	assert.equal(memory.readIoU32(IO_GEO_FAULT) >>> GEO_FAULT_CODE_SHIFT, GEO_FAULT_BAD_RECORD_ALIGNMENT);
-	assert.equal(geometry.captureState().phase, GEOMETRY_CONTROLLER_PHASE_ERROR);
 });
 
 test('GEO cart-visible words are not host globals or firmware module fields', () => {

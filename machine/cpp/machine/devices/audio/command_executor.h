@@ -16,6 +16,7 @@ class ApuSourceDma;
 class DeviceScheduler;
 class DeviceStatusLatch;
 class Memory;
+struct ApuOutputVoiceState;
 
 class ApuCommandExecutor final {
 public:
@@ -31,7 +32,7 @@ public:
 		ApuServiceClock& serviceClock);
 
 	void drainCommandFifo();
-	bool replayHostOutput(ApuAudioSlot slot, ApuVoiceId voiceId);
+	void restoreOutputVoice(const ApuOutputVoiceState& state, ApuVoiceId voiceId);
 	Value onSelectedSlotRegisterRead(u32 addr) const;
 	void onSelectedSlotRegisterWrite(u32 addr, Value value);
 	static Value selectedSlotRegisterReadThunk(void* context, u32 addr);
@@ -52,14 +53,13 @@ private:
 	ApuParameterRegisterWords m_slotRegisterDispatchWords{};
 
 	void executeCommand(u32 command, const ApuParameterRegisterWords& registerWords);
-	bool readSlot(const ApuParameterRegisterWords& registerWords, ApuAudioSlot& slot) const;
 	void play(const ApuParameterRegisterWords& registerWords);
 	void startPlay(const ApuAudioSource& source, ApuAudioSlot slot, const ApuParameterRegisterWords& registerWords);
 	void stopSlot(const ApuParameterRegisterWords& registerWords);
 	void setSlotGain(const ApuParameterRegisterWords& registerWords);
 	void replaceSlotSourceDma(ApuAudioSlot slot, const ApuAudioSource& source);
 	void writeSlotRegisterWord(ApuAudioSlot slot, u32 parameterIndex, u32 word);
-	bool playOutputVoice(ApuAudioSlot slot, ApuVoiceId voiceId, const ApuAudioSource& source, const ApuParameterRegisterWords& registerWords, u32 fadeSamples);
+	void playOutputVoice(ApuAudioSlot slot, ApuVoiceId voiceId, const ApuAudioSource& source, const ApuParameterRegisterWords& registerWords, u32 fadeSamples);
 	const ApuParameterRegisterWords& fadeOutputRegisterWords(ApuAudioSlot slot, const ApuParameterRegisterWords& registerWords);
 };
 

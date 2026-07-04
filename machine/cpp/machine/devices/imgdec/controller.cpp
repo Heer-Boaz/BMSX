@@ -141,7 +141,6 @@ void ImgDecController::reset() {
 	m_availableDecodeBytes = 0;
 	m_active = false;
 	m_status = 0;
-	m_pendingError = nullptr;
 	m_pendingResult.reset();
 	m_pendingTargetBase = 0;
 	m_pendingTargetCapacity = 0;
@@ -186,14 +185,7 @@ void ImgDecController::onCtrlWrite(int64_t nowCycles) {
 	const uint32_t cap = m_memory.readIoU32(IO_IMG_CAP);
 	m_memory.writeIoValue(IO_IMG_CTRL, valueNumber(static_cast<double>(ctrl & ~IMG_CTRL_START)));
 	std::vector<uint8_t> buffer(len);
-	if (len > 0 && !m_memory.readBytes(src, buffer.data(), len)) {
-		m_activeResolve = {};
-		m_activeReject = {};
-		writeJobRegisters(IMG_STATUS_DONE | IMG_STATUS_ERROR, 0u, src, len, dst, cap);
-		m_irq.raise(IRQ_IMG_ERROR);
-		scheduleNextService(nowCycles);
-		return;
-	}
+	m_memory.readBytes(src, buffer.data(), len);
 	m_activeResolve = {};
 	m_activeReject = {};
 	startJob(std::move(buffer), dst, cap, src, len, true);
@@ -209,10 +201,6 @@ void ImgDecController::onService(int64_t nowCycles) {
 		if (!m_active) {
 			return;
 		}
-	}
-	if (m_pendingError) {
-		finishError(std::exchange(m_pendingError, nullptr));
-		return;
 	}
 	if (m_pendingResult) {
 		auto result = std::move(*m_pendingResult);
@@ -250,7 +238,6 @@ bool ImgDecController::startNextQueuedJob() {
 
 void ImgDecController::startJob(std::vector<uint8_t>&& buffer, uint32_t dst, uint32_t cap, uint32_t src, uint32_t len, bool signalIrq) {
 	m_pendingResult.reset();
-	m_pendingError = nullptr;
 	m_pendingTargetBase = 0;
 	m_pendingTargetCapacity = 0;
 	m_activeCapacityLimit = 0;
@@ -259,12 +246,12 @@ void ImgDecController::startJob(std::vector<uint8_t>&& buffer, uint32_t dst, uin
 
 	const uint32_t targetCapacity = vramMappedRemainingBytes(dst);
 	if (targetCapacity == 0u) {
-		finishError(nullptr);
+		finishError();
 		return;
 	}
 	const uint32_t effectiveCap = cap < targetCapacity ? cap : targetCapacity;
 	if (effectiveCap == 0) {
-		finishError(nullptr);
+		finishError();
 		return;
 	}
 	m_activeCapacityLimit = effectiveCap;
@@ -279,16 +266,7 @@ void ImgDecController::startJob(std::vector<uint8_t>&& buffer, uint32_t dst, uin
 	const uint64_t token = m_decodeToken + 1;
 	m_decodeToken = token;
 	m_microtasks.queueMicrotask([this, dst, targetCapacity, token, buffer = std::move(buffer)]() mutable {
-		DecodedImage result;
-		try {
-			result = decodePngToRgba(buffer.data(), buffer.size());
-		} catch (...) {
-			if (token == m_decodeToken) {
-				m_pendingError = std::make_exception_ptr(imageDecoderFault("PNG decode failed."));
-				scheduleNextService(m_scheduler.currentNowCycles());
-			}
-			return;
-		}
+		DecodedImage result = decodePngToRgba(buffer.data(), buffer.size());
 		if (token == m_decodeToken) {
 			m_pendingResult = std::move(result);
 			m_pendingTargetBase = dst;
@@ -343,11 +321,7 @@ void ImgDecController::advanceDecode() {
 	m_decodeQueued = true;
 	auto pixels = std::move(m_decodePixels);
 	m_decodePixels.clear();
-	m_dma.enqueueImageCopy(m_decodePlan, std::move(pixels), [this](bool error, bool clipped) {
-		if (error) {
-			finishError(nullptr);
-			return;
-		}
+	m_dma.enqueueImageCopy(m_decodePlan, std::move(pixels), [this](bool clipped) {
 		finishSuccess(clipped);
 	});
 }
@@ -357,7 +331,6 @@ void ImgDecController::finishSuccess(bool clipped) {
 	m_activeResolve = {};
 	m_activeReject = {};
 	m_active = false;
-	m_pendingError = nullptr;
 	m_pendingResult.reset();
 	m_pendingTargetBase = 0;
 	m_pendingTargetCapacity = 0;
@@ -385,12 +358,11 @@ void ImgDecController::finishSuccess(bool clipped) {
 	scheduleNextService(m_scheduler.currentNowCycles());
 }
 
-void ImgDecController::finishError(std::exception_ptr error) {
+void ImgDecController::finishError() {
 	auto activeReject = std::move(m_activeReject);
 	m_activeResolve = {};
 	m_activeReject = {};
 	m_active = false;
-	m_pendingError = nullptr;
 	m_pendingResult.reset();
 	m_pendingTargetBase = 0;
 	m_pendingTargetCapacity = 0;
@@ -408,10 +380,7 @@ void ImgDecController::finishError(std::exception_ptr error) {
 	}
 	m_signalIrq = false;
 	if (activeReject) {
-		if (!error) {
-			error = std::make_exception_ptr(imageDecoderFault("decode failed."));
-		}
-		activeReject(error);
+		activeReject(std::make_exception_ptr(imageDecoderFault("decode failed.")));
 	}
 	m_decodeWidth = 0;
 	m_decodeHeight = 0;
@@ -427,7 +396,7 @@ void ImgDecController::scheduleNextService(int64_t nowCycles) {
 		m_scheduler.cancelDeviceService(DEVICE_SERVICE_IMG);
 		return;
 	}
-	if (m_pendingError || m_pendingResult.has_value()) {
+	if (m_pendingResult.has_value()) {
 		m_scheduler.scheduleDeviceService(DEVICE_SERVICE_IMG, nowCycles);
 		return;
 	}

@@ -48,11 +48,14 @@ export class ApuActiveSlots {
 
 	public advance(samples: number): void {
 		const result = this.advanceResult;
+		const activeMask = this.slots.activeMask;
 		for (let slot = 0; slot < APU_SLOT_COUNT; slot += 1) {
-			this.slots.advanceSlot(slot, samples, result);
-			if (result.ended) {
-				this.audioOutput.stopSlot(slot);
-				this.emitSlotEvent(slot, result.voiceId, result.sourceAddr);
+			if ((activeMask & (1 << slot)) !== 0) {
+				this.slots.advanceSlot(slot, samples, result);
+				if (result.ended) {
+					this.audioOutput.stopSlot(slot);
+					this.emitSlotEvent(slot, result.voiceId, result.sourceAddr);
+				}
 			}
 		}
 	}

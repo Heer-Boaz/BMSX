@@ -48,21 +48,26 @@ export class VdpVoutUnit {
 	private visibleDither = 0;
 	private visibleFrameBufferWidth = 0;
 	private visibleFrameBufferHeight = 0;
-	private visibleRpuFrame: VdpRpuFrameOutput = createVdpRpuFrameOutput();
+	private visibleRpuFrame: VdpRpuFrameOutput;
 	private readonly sealedFrameOutput: VdpVoutFrameOutput = {
 		ditherType: 0,
 		frameBufferWidth: 0,
 		frameBufferHeight: 0,
 	};
-	private readonly deviceOutput: MutableVdpDeviceOutput = {
-		ditherType: 0,
-		scanoutPhase: VDP_VOUT_SCANOUT_PHASE_ACTIVE,
-		scanoutX: 0,
-		scanoutY: 0,
-		frameBufferWidth: 0,
-		frameBufferHeight: 0,
-		rpu: this.visibleRpuFrame,
-	};
+	private readonly deviceOutput: MutableVdpDeviceOutput;
+
+	public constructor(vdpVram: Uint8Array, vdpVramPageRevisions: Uint32Array) {
+		this.visibleRpuFrame = createVdpRpuFrameOutput(vdpVram, vdpVramPageRevisions);
+		this.deviceOutput = {
+			ditherType: 0,
+			scanoutPhase: VDP_VOUT_SCANOUT_PHASE_ACTIVE,
+			scanoutX: 0,
+			scanoutY: 0,
+			frameBufferWidth: 0,
+			frameBufferHeight: 0,
+			rpu: this.visibleRpuFrame,
+		};
+	}
 
 	public get state(): VdpVoutState {
 		return this._state;

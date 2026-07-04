@@ -52,11 +52,8 @@ function apu.ms_to_samples(ms)
 end
 
 local rom_base_for_payload<const> = function(payload_id)
-	if payload_id == 'system' then
+	if payload_id == 'system' then -- ?????????? There isn't any BIOS audio?!
 		return 0x00000000
-	end
-	if payload_id == 'overlay' then
-		return 0x06000000
 	end
 	return 0x01000000
 end

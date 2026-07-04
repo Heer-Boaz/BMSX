@@ -42,6 +42,29 @@ void logFramebufferDitherState() {
 					static_cast<int>(alpha_bits), dither_enabled);
 }
 
+void initializeFullscreenPostProcessProgram(GLuint program, GLint uniformTexture, FullscreenQuad& quad) {
+	createFullscreenQuad(quad);
+	glUseProgram(program);
+	glUniform1i(uniformTexture, kTexUnitPostProcess);
+}
+
+void beginFullscreenPostProcessDraw(OpenGLES2Backend& backend,
+										FullscreenQuad& quad,
+										GLuint program,
+										GLint attribPosition,
+										GLint attribUv,
+										GLint uniformTexture,
+										i32 width,
+										i32 height) {
+	glUseProgram(program);
+	glUniform1i(uniformTexture, kTexUnitPostProcess);
+	updateFullscreenQuad(quad, width, height);
+	backend.setRenderTarget(backend.backbuffer(), width, height);
+	glDisable(GL_DEPTH_TEST);
+	glDisable(GL_CULL_FACE);
+	glDisable(GL_BLEND);
+	bindFullscreenQuad(quad, attribPosition, attribUv);
+}
 
 } // namespace
 
@@ -55,10 +78,7 @@ void initPresentGLES2(OpenGLES2Backend& backend, PresentGLES2State& pipeline) {
 	pipeline.uniform_scale = glGetUniformLocation(pipeline.program, "u_scale");
 	pipeline.uniform_texture = glGetUniformLocation(pipeline.program, "u_texture");
 
-	createFullscreenQuad(pipeline.quad);
-
-	glUseProgram(pipeline.program);
-	glUniform1i(pipeline.uniform_texture, kTexUnitPostProcess);
+	initializeFullscreenPostProcessProgram(pipeline.program, pipeline.uniform_texture, pipeline.quad);
 }
 
 void initCRTGLES2(OpenGLES2Backend& backend, CRTGLES2State& pipeline) {
@@ -87,12 +107,7 @@ void initCRTGLES2(OpenGLES2Backend& backend, CRTGLES2State& pipeline) {
 	pipeline.uniform_glow_color = glGetUniformLocation(pipeline.program, "u_glowColor");
 	pipeline.uniform_texture = glGetUniformLocation(pipeline.program, "u_texture");
 
-	createFullscreenQuad(pipeline.quad);
-
-	glUseProgram(pipeline.program);
-	// Re-apply sampler binding every draw; shared contexts can clobber uniform state.
-	// This keeps the CRT pass sampling the offscreen color texture.
-	glUniform1i(pipeline.uniform_texture, kTexUnitPostProcess);
+	initializeFullscreenPostProcessProgram(pipeline.program, pipeline.uniform_texture, pipeline.quad);
 	if (kCRTVerboseLog) {
 		std::fprintf(stderr,
 						"[BMSX][GLES2][CRT] init program=%u attribs(pos=%d uv=%d) uniforms(res=%d srcRes=%d scale=%d fragscale=%d time=%d random=%d tex=%d)\n",
@@ -118,19 +133,15 @@ void shutdownPresentGLES2(PresentGLES2State& pipeline) {
 
 
 void renderPresentGLES2State(OpenGLES2Backend& backend, PresentGLES2State& pipeline, const PresentPipelineState& state) {
-	glUseProgram(pipeline.program);
-	glUniform1i(pipeline.uniform_texture, kTexUnitPostProcess);
-
-	updateFullscreenQuad(pipeline.quad, state.width, state.height);
-
-	backend.setRenderTarget(backend.backbuffer(), state.width, state.height);
-
-	glDisable(GL_DEPTH_TEST);
-	glDisable(GL_CULL_FACE);
-	glDisable(GL_BLEND);
-
-	bindFullscreenQuad(pipeline.quad, pipeline.attrib_pos, pipeline.attrib_uv);
-
+	beginFullscreenPostProcessDraw(
+		backend,
+		pipeline.quad,
+		pipeline.program,
+		pipeline.attrib_pos,
+		pipeline.attrib_uv,
+		pipeline.uniform_texture,
+		state.width,
+		state.height);
 	glUniform2f(pipeline.uniform_resolution, static_cast<float>(state.width), static_cast<float>(state.height));
 	glUniform1f(pipeline.uniform_scale, 1.0f);
 
@@ -141,8 +152,6 @@ void renderPresentGLES2State(OpenGLES2Backend& backend, PresentGLES2State& pipel
 }
 
 void renderCRTGLES2State(OpenGLES2Backend& backend, CRTGLES2State& pipeline, const CRTPipelineState& state) {
-	glUseProgram(pipeline.program);
-	glUniform1i(pipeline.uniform_texture, kTexUnitPostProcess);
 	if (kCRTVerboseLog) {
 		auto* srcTex = OpenGLES2Backend::asTexture(state.colorTex);
 		std::fprintf(stderr,
@@ -151,16 +160,15 @@ void renderCRTGLES2State(OpenGLES2Backend& backend, CRTGLES2State& pipeline, con
 						static_cast<unsigned>(srcTex->id), state.width,
 						state.height, state.baseWidth, state.baseHeight);
 	}
-	updateFullscreenQuad(pipeline.quad, state.width, state.height);
-
-	backend.setRenderTarget(backend.backbuffer(), state.width, state.height);
-
-	glDisable(GL_DEPTH_TEST);
-	glDisable(GL_CULL_FACE);
-	glDisable(GL_BLEND);
-
-	bindFullscreenQuad(pipeline.quad, pipeline.attrib_pos, pipeline.attrib_uv);
-
+	beginFullscreenPostProcessDraw(
+		backend,
+		pipeline.quad,
+		pipeline.program,
+		pipeline.attrib_pos,
+		pipeline.attrib_uv,
+		pipeline.uniform_texture,
+		state.width,
+		state.height);
 	glUniform2f(pipeline.uniform_resolution, static_cast<float>(state.width), static_cast<float>(state.height));
 	glUniform2f(pipeline.uniform_src_resolution, static_cast<float>(state.baseWidth), static_cast<float>(state.baseHeight));
 	glUniform1f(pipeline.uniform_scale, 1.0f);
@@ -189,27 +197,18 @@ void renderCRTGLES2State(OpenGLES2Backend& backend, CRTGLES2State& pipeline, con
 	glDrawArrays(GL_TRIANGLES, 0, 6);
 }
 
-void renderPresent(GPUBackend* backend, GameView*, void*, RenderPassStateStorage& state, void* context) {
-	renderPresentGLES2State(
-		*static_cast<OpenGLES2Backend*>(backend),
-		*static_cast<PresentGLES2State*>(context),
-		state.present);
-}
-
-void renderCRT(GPUBackend* backend, GameView*, void*, RenderPassStateStorage& state, void* context) {
-	renderCRTGLES2State(
-		*static_cast<OpenGLES2Backend*>(backend),
-		*static_cast<CRTGLES2State*>(context),
-		state.crt);
-}
-
 void registerPresentGLES2Pass(RenderPassLibrary& registry, PresentGLES2State& pipeline) {
 	RenderPassDef desc;
 	desc.id = "present";
 	desc.name = "Present";
 	setAutoPresentGraph(desc);
 	desc.context = &pipeline;
-	desc.exec = renderPresent;
+	desc.exec = executePipelineRenderPass<
+		OpenGLES2Backend,
+		PresentGLES2State,
+		PresentPipelineState,
+		&RenderPassStateStorage::present,
+		renderPresentGLES2State>;
 	desc.shouldExecute = shouldExecuteAutoPresentPass;
 	registry.registerPass(desc);
 }
@@ -220,7 +219,12 @@ void registerCRTGLES2Pass(RenderPassLibrary& registry, CRTGLES2State& pipeline) 
 	desc.name = "Present/CRT";
 	setAutoCRTGraph(desc);
 	desc.context = &pipeline;
-	desc.exec = renderCRT;
+	desc.exec = executePipelineRenderPass<
+		OpenGLES2Backend,
+		CRTGLES2State,
+		CRTPipelineState,
+		&RenderPassStateStorage::crt,
+		renderCRTGLES2State>;
 	desc.shouldExecute = shouldExecuteAutoCRTPass;
 	registry.registerPass(desc);
 }

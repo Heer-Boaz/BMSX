@@ -27,8 +27,7 @@ void ApuSourceDma::restoreState(const ApuSlotSourceBytes& slotSourceBytes) {
 		SlotSource& slotSource = m_slotSources[slot];
 		const std::vector<u8>& stateBytes = slotSourceBytes[slot];
 		slotSource.ownedBytes = std::vector<u8>(stateBytes.begin(), stateBytes.end());
-		slotSource.bytes.data_ = slotSource.ownedBytes.data();
-		slotSource.bytes.size_ = slotSource.ownedBytes.size();
+		slotSource.bindOwnedBytes();
 	}
 }
 
@@ -147,36 +146,22 @@ void AudioController::restoreState(const AudioControllerState& state, int64_t no
 	m_fault.restore(state.apuStatus, state.apuFaultCode, state.apuFaultDetail);
 	m_activeSlots.writeActiveMask();
 	for (const ApuOutputVoiceState& voiceState : state.output.voices) {
-		const ApuAudioSlot slot = voiceState.slot;
 		const ApuVoiceId voiceId = m_slots.allocateVoiceId();
-		m_slots.assignVoiceId(slot, voiceId);
-		if (!m_commandExecutor.replayHostOutput(slot, voiceId)) {
-			throw BMSX_RUNTIME_ERROR("[APU] Cannot restore saved AOUT voice.");
-		}
-		m_audioOutput.restoreVoiceState(voiceState);
+		m_slots.assignVoiceId(voiceState.slot, voiceId);
+		m_commandExecutor.restoreOutputVoice(voiceState, voiceId);
 	}
 	m_serviceClock.scheduleNext(nowCycles);
 }
 
 ApuOutputState ApuOutputMixer::captureState() const {
 	ApuOutputState state;
-	state.voices.reserve(m_voices.size());
+	state.voices.reserve(APU_SLOT_COUNT);
 	for (const VoiceRecord& record : m_voices) {
-		state.voices.push_back(captureApuOutputVoiceState(record));
+		if (record.active) {
+			state.voices.push_back(captureApuOutputVoiceState(record));
+		}
 	}
 	return state;
-}
-
-void ApuOutputMixer::restoreVoiceState(const ApuOutputVoiceState& state) {
-	for (auto it = m_voices.rbegin(); it != m_voices.rend(); ++it) {
-		VoiceRecord& record = *it;
-		if (record.slot != state.slot) {
-			continue;
-		}
-		restoreApuOutputVoiceState(record, state);
-		return;
-	}
-	throw BMSX_RUNTIME_ERROR("[AOUT] Restored voice state has no active AOUT record.");
 }
 
 } // namespace bmsx

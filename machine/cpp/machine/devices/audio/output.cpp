@@ -16,7 +16,6 @@
 namespace bmsx {
 
 static constexpr f32 MIN_GAIN = 0.0001f;
-static constexpr ApuOutputStartResult APU_OUTPUT_START_OK{};
 static inline bool consumeStopTimer(f64& stopAfter, f64 invOutputRate) {
 	if (stopAfter < 0.0) {
 		return false;
@@ -92,8 +91,17 @@ static inline void advanceLoopedAudioFrame(f64& position,
 	advanceGainRamp(gain, rampRemaining, gainStep, invOutputRate);
 }
 
+ApuOutputMixer::ApuOutputMixer() {
+	for (ApuAudioSlot slot = 0; slot < APU_SLOT_COUNT; slot += 1u) {
+		m_voices[slot].slot = slot;
+		m_voices[slot].data = m_emptySourceBytes.data();
+	}
+}
+
 void ApuOutputMixer::resetPlaybackState() {
-	m_voices.clear();
+	for (VoiceRecord& record : m_voices) {
+		record.active = false;
+	}
 	outputRing.clear();
 }
 
@@ -106,128 +114,80 @@ void ApuOutputMixer::pullOutputFrames(i16* output, size_t frameCount, i32 output
 	fillOutputQueueTo(targetQueuedFrames, outputSampleRate, outputGain);
 }
 
-ApuOutputStartResult ApuOutputMixer::playVoice(ApuAudioSlot slot, ApuVoiceId voiceId, const ApuAudioSource& source, const Span<const u8>& sourceBytes, const ApuParameterRegisterWords& registerWords, i64 playbackCursorQ16, u32 stopFadeSamples) {
+void ApuOutputMixer::playVoice(ApuAudioSlot slot, ApuVoiceId voiceId, const ApuAudioSource& source, const Span<const u8>& sourceBytes, const ApuParameterRegisterWords& registerWords, i64 playbackCursorQ16, u32 stopFadeSamples) {
 	const ApuOutputPlayback playback = resolveApuOutputPlayback(registerWords);
-	if (playback.playbackRate <= 0.0f) {
-		return {APU_FAULT_OUTPUT_PLAYBACK_RATE, registerWords[APU_PARAMETER_RATE_STEP_Q16_INDEX]};
-	}
-	const f32 initialGain = clampVolume(playback.gainLinear);
-	std::vector<u32> badpSeekFrames;
-	std::vector<u32> badpSeekOffsets;
-	if (!apuAudioSourceUsesGenerator(source)) {
-		if (source.bitsPerSample == 4) {
-			ApuBadpSeekTableResult badpSeek = readApuBadpSeekTable(sourceBytes.data(), 0u);
-			badpSeekFrames = std::move(badpSeek.frames);
-			badpSeekOffsets = std::move(badpSeek.offsets);
-		}
-	}
-	VoiceRecord record = buildVoiceFromData(
-		slot,
-		voiceId,
-		source,
-		sourceBytes,
-		std::move(badpSeekFrames),
-		std::move(badpSeekOffsets),
-		playback,
-		playbackCursorQ16,
-		initialGain
-	);
+	VoiceRecord& record = m_voices[slot];
+	buildVoiceFromData(record, voiceId, source, sourceBytes, playback, playbackCursorQ16, clampVolume(playback.gainLinear));
 	if (stopFadeSamples > 0u) {
 		const f64 fadeSec = static_cast<f64>(stopFadeSamples) / static_cast<f64>(APU_SAMPLE_RATE_HZ);
 		rampVoiceGain(record, MIN_GAIN, fadeSec);
 		record.stopAfter = fadeSec;
 	}
-	m_voices.push_back(std::move(record));
-	return APU_OUTPUT_START_OK;
 }
 
-ApuOutputStartResult ApuOutputMixer::writeSlotRegisterWord(ApuAudioSlot slot, const ApuAudioSource& source, const ApuParameterRegisterWords& registerWords, u32 parameterIndex, i64 playbackCursorQ16) {
+void ApuOutputMixer::restoreVoice(ApuAudioSlot slot, ApuVoiceId voiceId, const ApuAudioSource& source, const Span<const u8>& sourceBytes, const ApuParameterRegisterWords& registerWords, i64 playbackCursorQ16, const ApuOutputVoiceState& state) {
+	const ApuOutputPlayback playback = resolveApuOutputPlayback(registerWords);
+	VoiceRecord& record = m_voices[slot];
+	buildVoiceFromData(record, voiceId, source, sourceBytes, playback, playbackCursorQ16, clampVolume(playback.gainLinear));
+	restoreApuOutputVoiceState(record, state);
+	record.active = true;
+}
+
+void ApuOutputMixer::writeSlotRegisterWord(ApuAudioSlot slot, const ApuAudioSource& source, const ApuParameterRegisterWords& registerWords, u32 parameterIndex, i64 playbackCursorQ16) {
 	f32 playbackRate = 0.0f;
 	switch (parameterIndex) {
-		case APU_PARAMETER_SOURCE_ADDR_INDEX:
-		case APU_PARAMETER_SOURCE_BYTES_INDEX:
-		case APU_PARAMETER_SOURCE_SAMPLE_RATE_HZ_INDEX:
-		case APU_PARAMETER_SOURCE_CHANNELS_INDEX:
-		case APU_PARAMETER_SOURCE_BITS_PER_SAMPLE_INDEX:
-		case APU_PARAMETER_SOURCE_FRAME_COUNT_INDEX:
-		case APU_PARAMETER_SOURCE_DATA_OFFSET_INDEX:
-		case APU_PARAMETER_SOURCE_DATA_BYTES_INDEX:
-		case APU_PARAMETER_GENERATOR_KIND_INDEX:
-			return {APU_FAULT_OUTPUT_METADATA, parameterIndex};
 		case APU_PARAMETER_RATE_STEP_Q16_INDEX:
 			playbackRate = resolveApuPlaybackRate(registerWords[APU_PARAMETER_RATE_STEP_Q16_INDEX]);
-			if (playbackRate <= 0.0f) {
-				return {APU_FAULT_OUTPUT_PLAYBACK_RATE, registerWords[APU_PARAMETER_RATE_STEP_Q16_INDEX]};
-			}
 			break;
 		default:
 			break;
 	}
-	VoiceRecord* record = findSlot(slot);
-	if (!record) {
-		return APU_OUTPUT_START_OK;
-	}
+	VoiceRecord& record = m_voices[slot];
 	switch (parameterIndex) {
 		case APU_PARAMETER_SOURCE_LOOP_START_SAMPLE_INDEX:
 		case APU_PARAMETER_SOURCE_LOOP_END_SAMPLE_INDEX:
-			applyVoiceLoopBounds(*record, source);
-			return APU_OUTPUT_START_OK;
+			applyVoiceLoopBounds(record, source);
+			return;
 		case APU_PARAMETER_RATE_STEP_Q16_INDEX:
-			record->playback.playbackRate = playbackRate;
-			record->step = playbackRate;
-			return APU_OUTPUT_START_OK;
+			record.playback.playbackRate = playbackRate;
+			record.step = playbackRate;
+			return;
 		case APU_PARAMETER_GAIN_Q12_INDEX:
-			applyVoiceGainQ12(*record, registerWords[APU_PARAMETER_GAIN_Q12_INDEX]);
-			return APU_OUTPUT_START_OK;
+			applyVoiceGainQ12(record, registerWords[APU_PARAMETER_GAIN_Q12_INDEX]);
+			return;
 		case APU_PARAMETER_GENERATOR_DUTY_Q12_INDEX:
-			record->generatorDutyQ12 = source.generatorDutyQ12;
-			return APU_OUTPUT_START_OK;
+			record.generatorDutyQ12 = source.generatorDutyQ12;
+			return;
 		case APU_PARAMETER_START_SAMPLE_INDEX:
-			seekVoice(*record, registerWords[APU_PARAMETER_START_SAMPLE_INDEX], playbackCursorQ16);
-			return APU_OUTPUT_START_OK;
+			seekVoice(record, registerWords[APU_PARAMETER_START_SAMPLE_INDEX], playbackCursorQ16);
+			return;
 		case APU_PARAMETER_FILTER_KIND_INDEX:
 		case APU_PARAMETER_FILTER_FREQ_HZ_INDEX:
 		case APU_PARAMETER_FILTER_Q_MILLI_INDEX:
 		case APU_PARAMETER_FILTER_GAIN_MILLIDB_INDEX:
-			record->playback.filter = resolveApuOutputFilter(registerWords);
-			record->filterSampleRate = 0;
-			return APU_OUTPUT_START_OK;
+			applyApuOutputFilter(record.playback, registerWords);
+			record.filterSampleRate = 0;
+			return;
 		default:
-			return APU_OUTPUT_START_OK;
+			return;
 	}
 }
 
-bool ApuOutputMixer::stopSlot(ApuAudioSlot slot, u32 fadeSamples) {
-	const std::optional<size_t> index = findSlotIndex(slot);
-	if (!index.has_value()) {
-		return false;
-	}
-	return stopVoiceAtIndex(*index, fadeSamples);
-}
-
-std::optional<size_t> ApuOutputMixer::findSlotIndex(ApuAudioSlot slot) const {
-	for (size_t index = 0; index < m_voices.size(); ++index) {
-		if (m_voices[index].slot == slot) {
-			return index;
-		}
-	}
-	return std::nullopt;
-}
-
-bool ApuOutputMixer::stopVoiceAtIndex(size_t index, u32 fadeSamples) {
+void ApuOutputMixer::stopSlot(ApuAudioSlot slot, u32 fadeSamples) {
+	VoiceRecord& record = m_voices[slot];
 	if (fadeSamples > 0u) {
 		const f64 fadeSec = static_cast<f64>(fadeSamples) / static_cast<f64>(APU_SAMPLE_RATE_HZ);
-		rampVoiceGain(m_voices[index], MIN_GAIN, fadeSec);
-		m_voices[index].stopAfter = fadeSec;
-		return true;
+		rampVoiceGain(record, MIN_GAIN, fadeSec);
+		record.stopAfter = fadeSec;
+		return;
 	}
-	removeVoice(index);
-	return true;
+	record.active = false;
 }
 
+
 void ApuOutputMixer::stopAllVoices() {
-	while (!m_voices.empty()) {
-		removeVoice(m_voices.size() - 1);
+	for (VoiceRecord& record : m_voices) {
+		record.active = false;
 	}
 }
 
@@ -242,23 +202,25 @@ void ApuOutputMixer::renderSamples(i16* output, size_t frameCount, i32 outputSam
 	const f32 sampleScale = APU_PCM_SAMPLE_SCALE;
 	f32* mix = m_mixBuffer.data();
 
-	for (size_t i = 0; i < m_voices.size();) {
-			VoiceRecord& record = m_voices[i];
+	for (ApuAudioSlot slot = 0; slot < APU_SLOT_COUNT; slot += 1u) {
+			VoiceRecord& record = m_voices[slot];
+			if (!record.active) {
+				continue;
+			}
 			const u8* data = record.data;
 			const int channels = record.channels;
 			const size_t framesInRecord = record.frames;
 			if (framesInRecord == 0) {
-				removeVoice(i);
+				record.active = false;
 				continue;
 			}
 			const bool is16Bit = record.bitsPerSample == 16;
 
-				const bool hasLoopStart = record.loopStartFrame.has_value();
-				const f64 loopStart = hasLoopStart ? *record.loopStartFrame : 0.0;
-				const f64 loopEnd = record.loopEndFrame.has_value() ? *record.loopEndFrame : static_cast<f64>(framesInRecord);
-				const bool hasLoop = hasLoopStart && loopEnd > loopStart;
-				const f64 loopLen = loopEnd - loopStart;
-				const f64 framesInRecordF = static_cast<f64>(framesInRecord);
+			const bool hasLoop = record.loopEndFrame > record.loopStartFrame;
+			const f64 loopStart = hasLoop ? record.loopStartFrame : 0.0;
+			const f64 loopEnd = hasLoop ? record.loopEndFrame : static_cast<f64>(framesInRecord);
+			const f64 loopLen = loopEnd - loopStart;
+			const f64 framesInRecordF = static_cast<f64>(framesInRecord);
 
 			const f64 step = record.step * (static_cast<f64>(record.sampleRate) * invOutputRate);
 
@@ -271,22 +233,20 @@ void ApuOutputMixer::renderSamples(i16* output, size_t frameCount, i32 outputSam
 				const f64 rampFrames = rampRemaining * static_cast<f64>(outputSampleRate);
 				gainStep = (record.targetGain - gain) / rampFrames;
 			}
-			if (record.playback.filter.has_value()) {
-				if (record.filterSampleRate != outputSampleRate) {
-					const auto& filter = record.playback.filter.value();
-					configureBiquadFilter(
-						record.filter,
-						filter.type,
-						filter.frequency,
-						filter.q,
-						filter.gain,
-						static_cast<f32>(outputSampleRate)
-					);
-					record.filterSampleRate = outputSampleRate;
-				}
-			} else {
+			const ApuOutputPlayback& playback = record.playback;
+			if (!playback.filterEnabled) {
 				record.filter.reset();
 				record.filterSampleRate = 0;
+			} else if (record.filterSampleRate != outputSampleRate) {
+				configureBiquadFilter(
+					record.filter,
+					playback.filterType,
+					playback.filterFrequency,
+					playback.filterQ,
+					playback.filterGain,
+					static_cast<f32>(outputSampleRate)
+				);
+				record.filterSampleRate = outputSampleRate;
 			}
 
 				bool ended = false;
@@ -342,15 +302,11 @@ void ApuOutputMixer::renderSamples(i16* output, size_t frameCount, i32 outputSam
 
 					i16 left0i = 0;
 					i16 right0i = 0;
-					if (!readApuBadpFrameAt(record.data, record.frames, badpChannels, record.badpSeekFrames, record.badpSeekOffsets, record.badp, idx0, left0i, right0i)) {
-						ended = true;
-						break;
-					}
+					readApuBadpFrameAt(record.data, record.frames, badpChannels, record.badpSeekFrames, record.badpSeekOffsets, record.badp, idx0, left0i, right0i);
 					i16 left1i = left0i;
 					i16 right1i = right0i;
-						if (nextIndex != idx0 && !readApuBadpFrameAt(record.data, record.frames, badpChannels, record.badpSeekFrames, record.badpSeekOffsets, record.badp, nextIndex, left1i, right1i)) {
-							ended = true;
-							break;
+						if (nextIndex != idx0) {
+							readApuBadpFrameAt(record.data, record.frames, badpChannels, record.badpSeekFrames, record.badpSeekOffsets, record.badp, nextIndex, left1i, right1i);
 						}
 
 					const f32 left0 = static_cast<f32>(left0i) * sampleScale;
@@ -560,10 +516,8 @@ void ApuOutputMixer::renderSamples(i16* output, size_t frameCount, i32 outputSam
 			record.stopAfter = stopAfter;
 
 			if (ended) {
-				removeVoice(i);
-				continue;
+				record.active = false;
 			}
-			++i;
 	}
 
 	for (size_t i = 0; i < totalSamples; ++i) {
@@ -586,16 +540,23 @@ void ApuOutputMixer::fillOutputQueueTo(size_t targetFrames, i32 outputSampleRate
 	outputRing.write(outputRing.renderBuffer(), framesToRender);
 }
 
-ApuOutputMixer::VoiceRecord ApuOutputMixer::buildVoiceFromData(ApuAudioSlot slot,
-															ApuVoiceId voiceId,
-															const ApuAudioSource& source,
-															const Span<const u8>& sourceBytes,
-															std::vector<u32> badpSeekFrames,
-															std::vector<u32> badpSeekOffsets,
-															const ApuOutputPlayback& playback,
-															i64 playbackCursorQ16,
-															f32 initialGain) {
-	VoiceRecord record;
+void ApuOutputMixer::buildVoiceFromData(VoiceRecord& record,
+											ApuVoiceId voiceId,
+											const ApuAudioSource& source,
+											const Span<const u8>& sourceBytes,
+											const ApuOutputPlayback& playback,
+											i64 playbackCursorQ16,
+											f32 initialGain) {
+	std::vector<u32> badpSeekFrames;
+	std::vector<u32> badpSeekOffsets;
+	if (!apuAudioSourceUsesGenerator(source)) {
+		if (source.bitsPerSample == 4) {
+			ApuBadpSeekTableResult badpSeek = readApuBadpSeekTable(sourceBytes.data(), 0u);
+			badpSeekFrames = std::move(badpSeek.frames);
+			badpSeekOffsets = std::move(badpSeek.offsets);
+		}
+	}
+	record.active = true;
 	record.voiceId = voiceId;
 	record.sampleRate = static_cast<i32>(source.sampleRateHz);
 	record.channels = static_cast<i32>(source.channels);
@@ -606,18 +567,15 @@ ApuOutputMixer::VoiceRecord ApuOutputMixer::buildVoiceFromData(ApuAudioSlot slot
 	record.generatorDutyQ12 = source.generatorDutyQ12;
 	record.badpSeekFrames = std::move(badpSeekFrames);
 	record.badpSeekOffsets = std::move(badpSeekOffsets);
-	if (source.loopEndSample > source.loopStartSample) {
-		record.loopStartFrame = static_cast<f64>(source.loopStartSample);
-		record.loopEndFrame = static_cast<f64>(source.loopEndSample);
-	}
-	record.slot = slot;
+	record.loopStartFrame = source.loopEndSample > source.loopStartSample ? static_cast<f64>(source.loopStartSample) : -1.0;
+	record.loopEndFrame = source.loopEndSample > source.loopStartSample ? static_cast<f64>(source.loopEndSample) : -1.0;
 	record.playback = playback;
 	record.data = apuAudioSourceUsesGenerator(source) ? sourceBytes.data() : sourceBytes.data() + source.dataOffset;
 	record.usesBadp = !apuAudioSourceUsesGenerator(source) && source.bitsPerSample == 4;
 	const size_t framesInRecord = record.frames;
 	f64 position = static_cast<f64>(playbackCursorQ16) / static_cast<f64>(APU_RATE_STEP_Q16_ONE);
 	if (framesInRecord > 0u) {
-		if (record.loopStartFrame.has_value()) {
+		if (record.loopEndFrame > record.loopStartFrame) {
 			position = std::fmod(position, static_cast<f64>(framesInRecord));
 			if (position < 0.0) position += static_cast<f64>(framesInRecord);
 		} else {
@@ -631,37 +589,11 @@ ApuOutputMixer::VoiceRecord ApuOutputMixer::buildVoiceFromData(ApuAudioSlot slot
 	record.targetGain = initialGain;
 	record.gainRampRemaining = 0.0;
 	record.stopAfter = -1.0;
+	record.filterSampleRate = 0;
+	record.filter.reset();
 	if (record.usesBadp) {
 		resetApuBadpDecoder(record.data, record.frames, static_cast<u32>(record.channels), record.badpSeekFrames, record.badpSeekOffsets, record.badp, static_cast<size_t>(audioFrameIndex(record.position)));
 	}
-
-	return record;
-}
-
-void ApuOutputMixer::removeVoice(size_t index) {
-	const size_t last = m_voices.size() - 1u;
-	if (index != last) {
-		m_voices[index] = std::move(m_voices[last]);
-	}
-	m_voices.pop_back();
-}
-
-ApuOutputMixer::VoiceRecord* ApuOutputMixer::findSlot(ApuAudioSlot slot) {
-	for (auto& record : m_voices) {
-		if (record.slot == slot) {
-			return &record;
-		}
-	}
-	return nullptr;
-}
-
-const ApuOutputMixer::VoiceRecord* ApuOutputMixer::findSlot(ApuAudioSlot slot) const {
-	for (const auto& record : m_voices) {
-		if (record.slot == slot) {
-			return &record;
-		}
-	}
-	return nullptr;
 }
 
 
@@ -680,13 +612,8 @@ void ApuOutputMixer::applyVoiceGainQ12(VoiceRecord& record, u32 gainQ12Word) {
 }
 
 void ApuOutputMixer::applyVoiceLoopBounds(VoiceRecord& record, const ApuAudioSource& source) {
-	if (source.loopEndSample > source.loopStartSample) {
-		record.loopStartFrame = static_cast<f64>(source.loopStartSample);
-		record.loopEndFrame = static_cast<f64>(source.loopEndSample);
-	} else {
-		record.loopStartFrame.reset();
-		record.loopEndFrame.reset();
-	}
+	record.loopStartFrame = source.loopEndSample > source.loopStartSample ? static_cast<f64>(source.loopStartSample) : -1.0;
+	record.loopEndFrame = source.loopEndSample > source.loopStartSample ? static_cast<f64>(source.loopEndSample) : -1.0;
 }
 
 void ApuOutputMixer::mixVoiceSample(VoiceRecord& record, f32* mix, size_t& outIndex, f32 left, f32 right, f32 gain) {

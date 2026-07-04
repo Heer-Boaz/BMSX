@@ -7,7 +7,6 @@
 #include <algorithm>
 #include <cmath>
 #include <limits>
-#include <optional>
 
 namespace bmsx {
 namespace {
@@ -24,70 +23,27 @@ GeometrySat2Unit::GeometrySat2Unit(Memory& memory)
 	: m_memory(memory) {
 }
 
-uint32_t GeometrySat2Unit::validateSubmission(const GeometryJobState& job) const {
-	if (job.param0 != 0u || job.param1 != 0u || job.dst1 != 0u) {
-		return GEO_FAULT_REJECT_BAD_REGISTER_COMBO;
-	}
-	if (job.stride0 != GEO_SAT2_PAIR_BYTES || job.stride1 != GEO_SAT2_DESC_BYTES || job.stride2 != GEO_VERTEX2_BYTES) {
-		return GEO_FAULT_REJECT_BAD_STRIDE;
-	}
-	if ((job.src0 & GEOMETRY_WORD_ALIGN_MASK) != 0u
-		|| (job.src1 & GEOMETRY_WORD_ALIGN_MASK) != 0u
-		|| (job.src2 & GEOMETRY_WORD_ALIGN_MASK) != 0u
-		|| (job.dst0 & GEOMETRY_WORD_ALIGN_MASK) != 0u) {
-		return GEO_FAULT_REJECT_MISALIGNED_REGS;
-	}
-	if (job.count == 0u) {
-		return GEO_FAULT_NONE;
-	}
-	if (!m_memory.isReadableMainMemoryRange(job.src0, job.stride0)
-		|| !m_memory.isReadableMainMemoryRange(job.src1, job.stride1)
-		|| !m_memory.isReadableMainMemoryRange(job.src2, job.stride2)) {
-		return GEO_FAULT_REJECT_BAD_REGISTER_COMBO;
-	}
-	if (!m_memory.isRamRange(job.dst0, GEO_SAT2_RESULT_BYTES)) {
-		return GEO_FAULT_REJECT_DST_NOT_RAM;
-	}
-	return GEO_FAULT_NONE;
-}
-
 uint32_t GeometrySat2Unit::processRecord(GeometryJobState& job) {
-	const std::optional<uint32_t> pairAddr = resolveGeometryIndexedSpan(job.src0, job.processed, job.stride0, GEO_SAT2_PAIR_BYTES);
-	if (!pairAddr.has_value()) {
-		return GEO_FAULT_BAD_RECORD_ALIGNMENT;
-	}
-	if (!m_memory.isReadableMainMemoryRange(*pairAddr, GEO_SAT2_PAIR_BYTES)) {
-		return GEO_FAULT_SRC_RANGE;
-	}
-	const uint32_t flags = m_memory.readU32(*pairAddr + GEO_SAT2_PAIR_FLAGS_OFFSET);
-	const uint32_t shapeAIndex = m_memory.readU32(*pairAddr + GEO_SAT2_PAIR_SHAPE_A_INDEX_OFFSET);
-	const uint32_t resultIndex = m_memory.readU32(*pairAddr + GEO_SAT2_PAIR_RESULT_INDEX_OFFSET);
-	const uint32_t shapeBIndex = m_memory.readU32(*pairAddr + GEO_SAT2_PAIR_SHAPE_B_INDEX_OFFSET);
-	const uint32_t pairFlags = m_memory.readU32(*pairAddr + GEO_SAT2_PAIR_FLAGS2_OFFSET);
+	const uint32_t pairAddr = geometryIndexedAddr(job.src0, job.processed, job.stride0);
+	const uint32_t flags = m_memory.readU32(pairAddr + GEO_SAT2_PAIR_FLAGS_OFFSET);
+	const uint32_t shapeAIndex = m_memory.readU32(pairAddr + GEO_SAT2_PAIR_SHAPE_A_INDEX_OFFSET);
+	const uint32_t resultIndex = m_memory.readU32(pairAddr + GEO_SAT2_PAIR_RESULT_INDEX_OFFSET);
+	const uint32_t shapeBIndex = m_memory.readU32(pairAddr + GEO_SAT2_PAIR_SHAPE_B_INDEX_OFFSET);
+	const uint32_t pairFlags = m_memory.readU32(pairAddr + GEO_SAT2_PAIR_FLAGS2_OFFSET);
 	if (flags != 0u || pairFlags != 0u) {
 		return GEO_FAULT_BAD_RECORD_FLAGS;
 	}
-	const std::optional<uint32_t> resultAddr = resolveGeometryIndexedSpan(job.dst0, resultIndex, GEO_SAT2_RESULT_BYTES, GEO_SAT2_RESULT_BYTES);
-	if (!resultAddr.has_value() || !m_memory.isRamRange(*resultAddr, GEO_SAT2_RESULT_BYTES)) {
-		return GEO_FAULT_DST_RANGE;
-	}
-	const std::optional<uint32_t> shapeADescAddr = resolveGeometryIndexedSpan(job.src1, shapeAIndex, job.stride1, GEO_SAT2_DESC_BYTES);
-	const std::optional<uint32_t> shapeBDescAddr = resolveGeometryIndexedSpan(job.src1, shapeBIndex, job.stride1, GEO_SAT2_DESC_BYTES);
-	if (!shapeADescAddr.has_value() || !shapeBDescAddr.has_value()) {
-		return GEO_FAULT_SRC_RANGE;
-	}
-	if (!m_memory.isReadableMainMemoryRange(*shapeADescAddr, GEO_SAT2_DESC_BYTES)
-		|| !m_memory.isReadableMainMemoryRange(*shapeBDescAddr, GEO_SAT2_DESC_BYTES)) {
-		return GEO_FAULT_SRC_RANGE;
-	}
-	const uint32_t shapeAFlags = m_memory.readU32(*shapeADescAddr + GEO_SAT2_DESC_FLAGS_OFFSET);
-	const uint32_t shapeAVertexCount = m_memory.readU32(*shapeADescAddr + GEO_SAT2_DESC_VERTEX_COUNT_OFFSET);
-	const uint32_t shapeAVertexOffsetBytes = m_memory.readU32(*shapeADescAddr + GEO_SAT2_DESC_VERTEX_OFFSET_OFFSET);
-	const uint32_t shapeAReserved = m_memory.readU32(*shapeADescAddr + GEO_SAT2_DESC_RESERVED_OFFSET);
-	const uint32_t shapeBFlags = m_memory.readU32(*shapeBDescAddr + GEO_SAT2_DESC_FLAGS_OFFSET);
-	const uint32_t shapeBVertexCount = m_memory.readU32(*shapeBDescAddr + GEO_SAT2_DESC_VERTEX_COUNT_OFFSET);
-	const uint32_t shapeBVertexOffsetBytes = m_memory.readU32(*shapeBDescAddr + GEO_SAT2_DESC_VERTEX_OFFSET_OFFSET);
-	const uint32_t shapeBReserved = m_memory.readU32(*shapeBDescAddr + GEO_SAT2_DESC_RESERVED_OFFSET);
+	const uint32_t resultAddr = geometryIndexedAddr(job.dst0, resultIndex, GEO_SAT2_RESULT_BYTES);
+	const uint32_t shapeADescAddr = geometryIndexedAddr(job.src1, shapeAIndex, job.stride1);
+	const uint32_t shapeBDescAddr = geometryIndexedAddr(job.src1, shapeBIndex, job.stride1);
+	const uint32_t shapeAFlags = m_memory.readU32(shapeADescAddr + GEO_SAT2_DESC_FLAGS_OFFSET);
+	const uint32_t shapeAVertexCount = m_memory.readU32(shapeADescAddr + GEO_SAT2_DESC_VERTEX_COUNT_OFFSET);
+	const uint32_t shapeAVertexOffsetBytes = m_memory.readU32(shapeADescAddr + GEO_SAT2_DESC_VERTEX_OFFSET_OFFSET);
+	const uint32_t shapeAReserved = m_memory.readU32(shapeADescAddr + GEO_SAT2_DESC_RESERVED_OFFSET);
+	const uint32_t shapeBFlags = m_memory.readU32(shapeBDescAddr + GEO_SAT2_DESC_FLAGS_OFFSET);
+	const uint32_t shapeBVertexCount = m_memory.readU32(shapeBDescAddr + GEO_SAT2_DESC_VERTEX_COUNT_OFFSET);
+	const uint32_t shapeBVertexOffsetBytes = m_memory.readU32(shapeBDescAddr + GEO_SAT2_DESC_VERTEX_OFFSET_OFFSET);
+	const uint32_t shapeBReserved = m_memory.readU32(shapeBDescAddr + GEO_SAT2_DESC_RESERVED_OFFSET);
 	if (shapeAFlags != GEO_SHAPE_CONVEX_POLY
 		|| shapeBFlags != GEO_SHAPE_CONVEX_POLY
 		|| shapeAReserved != 0u
@@ -97,28 +53,16 @@ uint32_t GeometrySat2Unit::processRecord(GeometryJobState& job) {
 	if (shapeAVertexCount < 3u || shapeBVertexCount < 3u) {
 		return GEO_FAULT_BAD_VERTEX_COUNT;
 	}
-	if ((shapeAVertexOffsetBytes & GEOMETRY_WORD_ALIGN_MASK) != 0u || (shapeBVertexOffsetBytes & GEOMETRY_WORD_ALIGN_MASK) != 0u) {
-		return GEO_FAULT_BAD_RECORD_ALIGNMENT;
-	}
 	if (shapeAVertexCount > GEO_SAT2_MAX_POLY_VERTICES
 		|| shapeBVertexCount > GEO_SAT2_MAX_POLY_VERTICES) {
 		return GEO_FAULT_BAD_VERTEX_COUNT;
 	}
-	const uint32_t shapeAVertexBytes = shapeAVertexCount * GEO_VERTEX2_BYTES;
-	const uint32_t shapeBVertexBytes = shapeBVertexCount * GEO_VERTEX2_BYTES;
-	const std::optional<uint32_t> shapeAVertexAddr = resolveGeometryIndexedSpan(job.src2, shapeAVertexOffsetBytes, 1u, shapeAVertexBytes);
-	const std::optional<uint32_t> shapeBVertexAddr = resolveGeometryIndexedSpan(job.src2, shapeBVertexOffsetBytes, 1u, shapeBVertexBytes);
-	if (!shapeAVertexAddr.has_value() || !shapeBVertexAddr.has_value()) {
-		return GEO_FAULT_SRC_RANGE;
-	}
-	if (!m_memory.isReadableMainMemoryRange(*shapeAVertexAddr, shapeAVertexBytes)
-		|| !m_memory.isReadableMainMemoryRange(*shapeBVertexAddr, shapeBVertexBytes)) {
-		return GEO_FAULT_SRC_RANGE;
-	}
+	const uint32_t shapeAVertexAddr = geometryIndexedAddr(job.src2, shapeAVertexOffsetBytes, 1u);
+	const uint32_t shapeBVertexAddr = geometryIndexedAddr(job.src2, shapeBVertexOffsetBytes, 1u);
 	double centerAX = 0.0;
 	double centerAY = 0.0;
-	uint32_t vertexXAddr = *shapeAVertexAddr + GEO_VERTEX2_X_OFFSET;
-	uint32_t vertexYAddr = *shapeAVertexAddr + GEO_VERTEX2_Y_OFFSET;
+	uint32_t vertexXAddr = shapeAVertexAddr + GEO_VERTEX2_X_OFFSET;
+	uint32_t vertexYAddr = shapeAVertexAddr + GEO_VERTEX2_Y_OFFSET;
 	for (uint32_t vertexIndex = 0; vertexIndex < shapeAVertexCount; vertexIndex += 1u) {
 		centerAX += toSignedWord(m_memory.readU32(vertexXAddr));
 		centerAY += toSignedWord(m_memory.readU32(vertexYAddr));
@@ -127,8 +71,8 @@ uint32_t GeometrySat2Unit::processRecord(GeometryJobState& job) {
 	}
 	double centerBX = 0.0;
 	double centerBY = 0.0;
-	vertexXAddr = *shapeBVertexAddr + GEO_VERTEX2_X_OFFSET;
-	vertexYAddr = *shapeBVertexAddr + GEO_VERTEX2_Y_OFFSET;
+	vertexXAddr = shapeBVertexAddr + GEO_VERTEX2_X_OFFSET;
+	vertexYAddr = shapeBVertexAddr + GEO_VERTEX2_Y_OFFSET;
 	for (uint32_t vertexIndex = 0; vertexIndex < shapeBVertexCount; vertexIndex += 1u) {
 		centerBX += toSignedWord(m_memory.readU32(vertexXAddr));
 		centerBY += toSignedWord(m_memory.readU32(vertexYAddr));
@@ -146,7 +90,7 @@ uint32_t GeometrySat2Unit::processRecord(GeometryJobState& job) {
 	uint32_t bestShapeSelector = GEO_SAT_META_SHAPE_SRC;
 	bool sawAxis = false;
 	for (uint32_t shapeSelector = GEO_SAT_META_SHAPE_SRC; shapeSelector <= GEO_SAT_META_SHAPE_AUX; shapeSelector += 1u) {
-		const uint32_t axisBase = shapeSelector == GEO_SAT_META_SHAPE_SRC ? *shapeAVertexAddr : *shapeBVertexAddr;
+		const uint32_t axisBase = shapeSelector == GEO_SAT_META_SHAPE_SRC ? shapeAVertexAddr : shapeBVertexAddr;
 		const uint32_t axisCount = shapeSelector == GEO_SAT_META_SHAPE_SRC ? shapeAVertexCount : shapeBVertexCount;
 		for (uint32_t edgeIndex = 0; edgeIndex < axisCount; edgeIndex += 1u) {
 			const uint32_t currentAddr = axisBase + edgeIndex * GEO_VERTEX2_BYTES;
@@ -165,12 +109,12 @@ uint32_t GeometrySat2Unit::processRecord(GeometryJobState& job) {
 			sawAxis = true;
 			const double ax = nx / axisLength;
 			const double ay = ny / axisLength;
-			projectVertexSpanInto(*shapeAVertexAddr, shapeAVertexCount, ax, ay, m_projectionA);
-			projectVertexSpanInto(*shapeBVertexAddr, shapeBVertexCount, ax, ay, m_projectionB);
+			projectVertexSpanInto(shapeAVertexAddr, shapeAVertexCount, ax, ay, m_projectionA);
+			projectVertexSpanInto(shapeBVertexAddr, shapeBVertexCount, ax, ay, m_projectionB);
 			const double sepA = m_projectionA.min - m_projectionB.max;
 			const double sepB = m_projectionB.min - m_projectionA.max;
 			if (sepA > 0.0 || sepB > 0.0) {
-				writeResult(*resultAddr, 0u, 0, 0, 0, 0u);
+				writeResult(resultAddr, 0u, 0, 0, 0, 0u);
 				return GEO_FAULT_NONE;
 			}
 			const double overlap = std::min(m_projectionA.max, m_projectionB.max) - std::max(m_projectionA.min, m_projectionB.min);
@@ -193,7 +137,7 @@ uint32_t GeometrySat2Unit::processRecord(GeometryJobState& job) {
 		bestAxisY = -bestAxisY;
 	}
 	writeResult(
-		*resultAddr,
+		resultAddr,
 		1u,
 		saturateRoundedI32(bestAxisX * FIX16_SCALE),
 		saturateRoundedI32(bestAxisY * FIX16_SCALE),

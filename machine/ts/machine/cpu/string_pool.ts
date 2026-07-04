@@ -14,7 +14,7 @@ export type StringPoolState = {
 };
 
 export class StringPool {
-	private readonly byText = new Map<string, StringId>();
+	private readonly byText = new Map<string, number>();
 	private readonly values: string[] = [];
 	private readonly codepointCounts: number[] = [];
 	private readonly trackedByteLengths: number[] = [];
@@ -25,8 +25,9 @@ export class StringPool {
 	public constructor(private readonly trackLuaHeap: boolean = false) {}
 
 	public intern(value: string, tracked: boolean = this.trackLuaHeap): StringId {
-		const existing = this.byText.get(value);
-		if (existing !== undefined) {
+		const interned = this.byText.get(value) | 0;
+		if (interned !== 0) {
+			const existing = interned - 1;
 			if (tracked && this.trackedByteLengths[existing] === 0) {
 				this.trackStringEntry(existing);
 			}
@@ -94,9 +95,7 @@ export class StringPool {
 		const entries: StringPoolStateEntry[] = [];
 		for (let id = 0; id < this.values.length; id += 1) {
 			const value = this.values[id];
-			if (value !== undefined) {
-				entries.push({ id, value, tracked: this.trackedByteLengths[id] > 0 });
-			}
+			entries.push({ id, value, tracked: this.trackedByteLengths[id] > 0 });
 		}
 		return { entries };
 	}
@@ -128,7 +127,7 @@ export class StringPool {
 		this.values[id] = value;
 		this.codepointCounts[id] = utf8CodepointCount(value);
 		this.trackedByteLengths[id] = 0;
-		this.byText.set(value, id);
+		this.byText.set(value, id + 1);
 		if (id >= this.nextId) {
 			this.nextId = id + 1;
 		}

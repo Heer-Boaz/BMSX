@@ -20,19 +20,24 @@ import { GEOMETRY_CONTROLLER_PHASE_BUSY, GEOMETRY_CONTROLLER_REGISTER_COUNT } fr
 import { INPUT_CONTROLLER_KEY_WORD_COUNT, INPUT_CONTROLLER_PAD_AXIS_COUNT, INPUT_CONTROLLER_PAD_COUNT } from '../../machine/ts/machine/devices/input/contracts';
 import { VDP_REGISTER_COUNT } from '../../machine/ts/machine/devices/vdp/registers';
 import { VDP_LPU_REGISTER_WORDS } from '../../machine/ts/machine/devices/vdp/lpu';
-import { VDP_XF_MATRIX_REGISTER_WORDS, VDP_XF_PROJECTION_MATRIX_RESET_INDEX, VDP_XF_VIEW_MATRIX_RESET_INDEX } from '../../machine/ts/machine/devices/vdp/xf';
+import { VDP_XF_MATRIX_REGISTER_WORDS } from '../../machine/ts/machine/devices/vdp/xf';
 import {
 	VDP_DEX_FRAME_IDLE,
 	VDP_SUBMITTED_FRAME_EMPTY,
 	VDP_SUBMITTED_FRAME_EXECUTING,
 } from '../../machine/ts/machine/devices/vdp/frame';
-import { captureVdpRpuFrameState, createVdpRpuFrameOutput, VDP_RPU_FRAME_IDLE } from '../../machine/ts/machine/devices/vdp/rpu';
+import { captureVdpRpuFrameState, createVdpRpuFrameOutput, VDP_RPU_FRAME_IDLE, VDP_RPU_PARAM_MEM_PAGE_COUNT, VDP_RPU_PARAM_MEM_SIZE } from '../../machine/ts/machine/devices/vdp/rpu';
 import { VDP_MODE_PSX_WORD } from '../../machine/ts/machine/model_registry';
+
 import type { RuntimeSaveState } from '../../machine/ts/machine/runtime/save_state';
 import { decodeRuntimeSaveState, encodeRuntimeSaveState } from '../../machine/ts/machine/runtime/save_state/codec';
 import { decodeBinaryWithPropTable } from '../../machine/ts/common/serializer/binencoder';
 import { RUNTIME_SAVE_STATE_PROP_NAMES } from '../../machine/ts/machine/runtime/save_state/schema';
 import { BuiltinFunctionId } from '../../machine/ts/machine/cpu/cpu';
+import { RAM_BASE, RAM_END } from '../../machine/ts/machine/memory/map';
+
+const codecTestRpuVram = new Uint8Array(VDP_RPU_PARAM_MEM_SIZE);
+const codecTestRpuVramPageRevisions = new Uint32Array(VDP_RPU_PARAM_MEM_PAGE_COUNT);
 
 function numberedWords(count: number): number[] {
 	const words = new Array<number>(count);
@@ -53,13 +58,13 @@ function createSubmittedFrameState(state = VDP_SUBMITTED_FRAME_EMPTY) {
 		frameBufferHeight: 212,
 		xf: {
 			matrixWords: numberedWords(VDP_XF_MATRIX_REGISTER_WORDS),
-			viewMatrixIndex: VDP_XF_VIEW_MATRIX_RESET_INDEX,
-			projectionMatrixIndex: VDP_XF_PROJECTION_MATRIX_RESET_INDEX,
+			viewMatrixIndex: 0xfffffffe,
+			projectionMatrixIndex: 0xffffffff,
 		},
 		lightRegisterWords: numberedWords(VDP_LPU_REGISTER_WORDS),
 		morphWeightWords: numberedWords(VDP_MFU_WEIGHT_COUNT),
 		jointMatrixWords: numberedWords(VDP_JTU_REGISTER_WORDS),
-		rpu: captureVdpRpuFrameState(createVdpRpuFrameOutput()),
+		rpu: captureVdpRpuFrameState(createVdpRpuFrameOutput(codecTestRpuVram, codecTestRpuVramPageRevisions)),
 	};
 }
 
@@ -70,6 +75,8 @@ function createRpuState() {
 }
 
 function createRuntimeSaveState(): RuntimeSaveState {
+	const ram = new Uint8Array(RAM_END - RAM_BASE);
+	ram.set([1, 2, 3, 4]);
 	const audioRegisterWords = numberedWords(APU_PARAMETER_REGISTER_COUNT);
 	audioRegisterWords[APU_PARAMETER_SLOT_INDEX] = 1;
 	const audioSlotRegisterWords = new Array<number>(APU_SLOT_REGISTER_WORD_COUNT).fill(0);
@@ -82,7 +89,7 @@ function createRuntimeSaveState(): RuntimeSaveState {
 			machineRegionWord: 1,
 			machine: {
 				memory: {
-					ram: new Uint8Array([1, 2, 3, 4]),
+					ram,
 					busFaultCode: 2,
 					busFaultAddr: 0x12345678,
 					busFaultAccess: 0x400,
@@ -205,13 +212,13 @@ function createRuntimeSaveState(): RuntimeSaveState {
 					vdpModeWord: VDP_MODE_PSX_WORD,
 					xf: {
 						matrixWords: numberedWords(VDP_XF_MATRIX_REGISTER_WORDS),
-						viewMatrixIndex: VDP_XF_VIEW_MATRIX_RESET_INDEX,
-						projectionMatrixIndex: VDP_XF_PROJECTION_MATRIX_RESET_INDEX,
+						viewMatrixIndex: 0xfffffffe,
+						projectionMatrixIndex: 0xffffffff,
 					},
 					vdpRegisterWords: numberedWords(VDP_REGISTER_COUNT),
 					buildFrame: {
 						state: VDP_DEX_FRAME_IDLE,
-										rpu: captureVdpRpuFrameState(createVdpRpuFrameOutput()),
+										rpu: captureVdpRpuFrameState(createVdpRpuFrameOutput(codecTestRpuVram, codecTestRpuVramPageRevisions)),
 						cost: 0,
 					},
 					activeFrame: createSubmittedFrameState(VDP_SUBMITTED_FRAME_EXECUTING),

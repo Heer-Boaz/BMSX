@@ -40,7 +40,7 @@ export type ProgramBootHeader = {
 	constRelocCount: number;
 };
 
-export type CartridgeLayerId = 'system' | 'cart' | 'overlay';
+export type CartridgeLayerId = 'system' | 'cart';
 
 export type RomAssetOp = 'delete';
 

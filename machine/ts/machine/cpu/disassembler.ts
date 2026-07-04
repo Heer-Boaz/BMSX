@@ -1,4 +1,4 @@
-import { OpCode, Table, asStringId, isNativeFunction, isNativeObject, valueIsString, type Program, type ProgramMetadata, type Proto, type SourceRange, type Value } from './cpu';
+import { OpCode, Table, asStringId, isNativeFunction, isNativeObject, valueIsNumber, valueIsString, type Program, type ProgramMetadata, type Proto, type SourceRange, type Value } from './cpu';
 import { extractSourceRangeText } from './source_text';
 import { EXT_A_BITS, EXT_B_BITS, EXT_BX_BITS, EXT_C_BITS, INSTRUCTION_BYTES, MAX_BX_BITS, MAX_OPERAND_BITS, readInstructionWord, signExtend } from './instruction_format';
 import { OPCODE_USES_BX, OPCODE_USES_DISP, decodeCallArgCount, getOpcodeName } from './opcode_info';
@@ -52,25 +52,33 @@ export type InstructionDebugInfo = {
 	sourceRange: SourceRange | null;
 };
 
-const normalizeOptions = (options: DisassemblyOptions): DisassemblyOptions => {
-	const showPc = options.showPc ?? true;
-	const pcRadix = options.pcRadix ?? 10;
-	const pcPrefix = options.pcPrefix ?? '';
-	const pcSuffix = options.pcSuffix ?? '';
-	const protoAddressOp = options.protoAddressOp ?? undefined;
+const normalizeOptions = ({
+	showPc = true,
+	showRaw = false,
+	showConsts = true,
+	showProtoHeaders = true,
+	showSourceComments = false,
+	sourceTextForPath,
+	pcPrefix = '',
+	pcSuffix = '',
+	pcRadix = 10,
+	pcFormatter,
+	protoAddressOp,
+	pcBias = 0,
+}: DisassemblyOptions): DisassemblyOptions => {
 	return {
 		showPc,
-		showRaw: !!options.showRaw,
-		showConsts: options.showConsts !== false,
-		showProtoHeaders: options.showProtoHeaders !== false,
-		showSourceComments: !!options.showSourceComments,
-		sourceTextForPath: options.sourceTextForPath,
+		showRaw,
+		showConsts,
+		showProtoHeaders,
+		showSourceComments,
+		sourceTextForPath,
 		pcPrefix,
 		pcSuffix,
 		pcRadix,
-		pcFormatter: options.pcFormatter,
+		pcFormatter,
 		protoAddressOp,
-		pcBias: options.pcBias ?? 0,
+		pcBias,
 	};
 };
 
@@ -93,18 +101,15 @@ const formatCallArgCount = (value: number): string => (value === 0 ? '*' : decod
 
 // start repeated-sequence-acceptable -- Disassembly constants quote strings, unlike Lua tostring; keep formatter local to avoid firmware dependency.
 const formatValue = (program: Program, value: Value): string => {
-	if (value === undefined) {
-		throw new Error('[Disassembler] Unexpected undefined value.');
-	}
 	if (value === null) {
 		return 'nil';
 	}
 	if (typeof value === 'boolean') {
 		return value ? 'true' : 'false';
 	}
-	if (typeof value === 'number') {
-		if (!Number.isFinite(value)) {
-			return Number.isNaN(value) ? 'nan' : (value < 0 ? '-inf' : 'inf');
+	if (valueIsNumber(value)) {
+		if (value - value !== 0) {
+			return value !== value ? 'nan' : (value < 0 ? '-inf' : 'inf');
 		}
 		return formatNumber(value);
 	}

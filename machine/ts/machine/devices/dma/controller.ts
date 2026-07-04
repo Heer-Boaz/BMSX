@@ -5,7 +5,6 @@ import {
 	DMA_STATUS_CLIPPED,
 	DMA_STATUS_DONE,
 	DMA_STATUS_ERROR,
-	DMA_STATUS_REJECTED,
 	IO_DMA_CTRL,
 	IO_DMA_DST,
 	IO_DMA_LEN,
@@ -18,8 +17,6 @@ import {
 	IRQ_DMA_ERROR,
 } from '../../bus/io';
 import {
-	OVERLAY_ROM_BASE,
-	OVERLAY_ROM_SIZE,
 	RAM_BASE,
 	RAM_END,
 	VDP_STREAM_BUFFER_SIZE,
@@ -41,9 +38,9 @@ const DMA_SERVICE_BATCH_BYTES = 64;
 type DmaJobBase = {
 	kind: 'io' | 'image';
 	channel: DmaChannelId;
+	started: boolean;
 	written: number;
 	clipped: boolean;
-	error: boolean;
 };
 
 type DmaIoJob = DmaJobBase & {
@@ -61,22 +58,21 @@ type DmaImageJob = DmaJobBase & {
 	row: number;
 	rowOffset: number;
 	vramTarget: boolean;
-	onComplete: (error: boolean, clipped: boolean) => void;
+	onComplete: (clipped: boolean) => void;
 };
 
 type DmaJob = DmaIoJob | DmaImageJob;
 
 type DmaChannelState = {
 	budget: number;
-	queue: Array<DmaJob | null>;
+	queue: DmaJob[];
 	queueHead: number;
-	active: DmaJob | null;
 };
 
 export class DmaController {
 	private readonly channels: [DmaChannelState, DmaChannelState] = [
-		{ budget: 0, queue: [], queueHead: 0, active: null },
-		{ budget: 0, queue: [], queueHead: 0, active: null },
+		{ budget: 0, queue: [], queueHead: 0 },
+		{ budget: 0, queue: [], queueHead: 0 },
 	];
 	private cpuHz = 1;
 	private isoBytesPerSec = 1;
@@ -119,36 +115,14 @@ export class DmaController {
 		this.scheduleNextService(nowCycles);
 	}
 
-	private hasPendingVdpSubmit(): boolean {
-		for (let channelIndex = 0; channelIndex < this.channels.length; channelIndex += 1) {
-			const state = this.channels[channelIndex]!;
-			if (state.active !== null && state.active.kind === 'io' && state.active.dst === IO_VDP_FIFO) {
-				return true;
-			}
-			for (let queueIndex = state.queueHead; queueIndex < state.queue.length; queueIndex += 1) {
-				const job = state.queue[queueIndex]!;
-				if (job.kind === 'io' && job.dst === IO_VDP_FIFO) {
-					return true;
-				}
-			}
-		}
-		return false;
-	}
-
 	private hasPendingTransfer(channel: DmaChannelId): boolean {
 		const state = this.channels[channel];
-		return state.active !== null || state.queueHead !== state.queue.length;
+		return state.queueHead !== state.queue.length;
 	}
 
 	private getPendingBytesForChannel(channel: DmaChannelId): number {
 		const state = this.channels[channel];
 		let pendingBytes = 0;
-		const activeJob = state.active;
-		if (activeJob !== null) {
-			pendingBytes += activeJob.kind === 'io'
-				? activeJob.remaining
-				: activeJob.plan.writeSize - activeJob.written;
-		}
 		for (let index = state.queueHead; index < state.queue.length; index += 1) {
 			const job = state.queue[index]!;
 			pendingBytes += job.kind === 'io'
@@ -164,11 +138,9 @@ export class DmaController {
 		this.channels[DMA_CH_ISO].queue.length = 0;
 		this.channels[DMA_CH_ISO].queueHead = 0;
 		this.channels[DMA_CH_ISO].budget = 0;
-		this.channels[DMA_CH_ISO].active = null;
 		this.channels[DMA_CH_BULK].queue.length = 0;
 		this.channels[DMA_CH_BULK].queueHead = 0;
 		this.channels[DMA_CH_BULK].budget = 0;
-		this.channels[DMA_CH_BULK].active = null;
 		this.ioWrittenValue = 0;
 		this.ioWrittenDirty = false;
 		this.imgWrittenValue = 0;
@@ -182,11 +154,12 @@ export class DmaController {
 		this.memory.writeValue(IO_DMA_WRITTEN, 0);
 	}
 
-	public enqueueImageCopy(plan: ImageCopyPlan, pixels: Uint8Array, onComplete: (error: boolean, clipped: boolean) => void): void {
+	public enqueueImageCopy(plan: ImageCopyPlan, pixels: Uint8Array, onComplete: (clipped: boolean) => void): void {
 		const vramTarget = isVramMappedRange(plan.baseAddr, plan.writeSize > 0 ? plan.writeSize : 1);
 		const job: DmaImageJob = {
 			kind: 'image',
 			channel: DMA_CH_BULK,
+			started: false,
 			plan,
 			pixels,
 			row: 0,
@@ -194,7 +167,6 @@ export class DmaController {
 			vramTarget,
 			written: 0,
 			clipped: plan.clipped,
-			error: false,
 			onComplete,
 		};
 		this.channels[DMA_CH_BULK].queue.push(job);
@@ -231,16 +203,7 @@ export class DmaController {
 		const vdpSubmit = dst === IO_VDP_FIFO;
 		const strict = (ctrl & DMA_CTRL_STRICT) !== 0;
 		this.memory.writeIoValue(IO_DMA_CTRL, ctrl & ~DMA_CTRL_START);
-		if (vdpSubmit && (this.hasPendingVdpSubmit() || !this.vdp.canAcceptVdpSubmit())) {
-			this.finishIoRejected();
-			this.vdp.rejectSubmitAttempt();
-			return;
-		}
 		this.memory.writeValue(IO_DMA_WRITTEN, 0);
-		if (vdpSubmit && (len & 3) !== 0) {
-			this.finishIoError(false);
-			return;
-		}
 		const maxWritable = this.resolveMaxWritable(dst);
 		if (maxWritable <= 0) {
 			this.finishIoError(false);
@@ -250,7 +213,7 @@ export class DmaController {
 		let clipped = false;
 		if (transferLen > maxWritable) {
 			clipped = true;
-			if (strict || vdpSubmit) {
+			if (strict) {
 				this.finishIoError(true);
 				return;
 			}
@@ -265,19 +228,16 @@ export class DmaController {
 			this.finishIoSuccess(clipped);
 			return;
 		}
-		if (vdpSubmit) {
-			this.vdp.beginDmaSubmit();
-		}
 		const job: DmaIoJob = {
 			kind: 'io',
 			channel: DMA_CH_BULK,
+			started: false,
 			src,
 			dst,
 			remaining: transferLen,
 			written: 0,
 			clipped,
 			strict,
-			error: false,
 		};
 		this.ioWrittenValue = 0;
 		this.ioWrittenDirty = true;
@@ -289,19 +249,17 @@ export class DmaController {
 		const state = this.channels[channel];
 		let budget = state.budget;
 		while (budget > 0) {
-			if (!state.active) {
-				if (state.queueHead === state.queue.length) {
-					return;
-				}
-				state.active = state.queue[state.queueHead]!;
-				state.queue[state.queueHead] = null;
-				state.queueHead += 1;
-				if (state.queueHead === state.queue.length) {
-					state.queue.length = 0;
-					state.queueHead = 0;
+			if (state.queueHead === state.queue.length) {
+				state.budget = budget;
+				return;
+			}
+			const job = state.queue[state.queueHead]!;
+			if (!job.started) {
+				job.started = true;
+				if (job.kind === 'io' && job.dst === IO_VDP_FIFO) {
+					this.vdp.beginDmaSubmit();
 				}
 			}
-			const job = state.active;
 			const written = this.processJob(job, budget);
 			budget -= written;
 			if (job.kind === 'io') {
@@ -314,7 +272,11 @@ export class DmaController {
 			}
 			if (this.isJobComplete(job)) {
 				this.finishJob(job);
-				state.active = null;
+				state.queueHead += 1;
+				if (state.queueHead === state.queue.length) {
+					state.queue.length = 0;
+					state.queueHead = 0;
+				}
 				continue;
 			}
 			if (written === 0) {
@@ -326,9 +288,6 @@ export class DmaController {
 	}
 
 	private processJob(job: DmaJob, budget: number): number {
-		if (job.error) {
-			return 0;
-		}
 		if (job.kind === 'io') {
 			let chunk = job.remaining > budget ? budget : job.remaining;
 			if (chunk === 0) {
@@ -348,14 +307,8 @@ export class DmaController {
 				if (chunk > this.buffer.byteLength) {
 					chunk = this.buffer.byteLength;
 				}
-				if (!this.memory.readBytesInto(job.src, this.buffer, chunk)) {
-					job.error = true;
-					return 0;
-				}
-				if (!this.memory.writeBytesFrom(this.buffer, 0, job.dst, chunk)) {
-					job.error = true;
-					return 0;
-				}
+				this.memory.readBytesInto(job.src, this.buffer, chunk);
+				this.memory.writeBytesFrom(this.buffer, 0, job.dst, chunk);
 			job.src += chunk;
 			job.dst += chunk;
 			job.remaining -= chunk;
@@ -378,10 +331,7 @@ export class DmaController {
 			}
 			const srcOffset = job.row * job.plan.sourceStride + job.rowOffset;
 			const dstAddr = job.plan.baseAddr + (job.row * job.plan.targetStride) + job.rowOffset;
-			if (!this.memory.writeBytesFrom(job.pixels, srcOffset, dstAddr, toCopy)) {
-				job.error = true;
-				return budget - remaining;
-			}
+			this.memory.writeBytesFrom(job.pixels, srcOffset, dstAddr, toCopy);
 			remaining -= toCopy;
 			job.rowOffset += toCopy;
 			job.written += toCopy;
@@ -394,9 +344,6 @@ export class DmaController {
 	}
 
 	private isJobComplete(job: DmaJob): boolean {
-		if (job.error) {
-			return true;
-		}
 		if (job.kind === 'io') {
 			return job.remaining === 0;
 		}
@@ -408,7 +355,7 @@ export class DmaController {
 			this.finishIoJob(job);
 			return;
 		}
-		job.onComplete(job.error, job.clipped);
+		job.onComplete(job.clipped);
 	}
 
 	private resolveMaxWritable(dst: number): number {
@@ -419,9 +366,6 @@ export class DmaController {
 		if (vramRemaining !== 0) {
 			return vramRemaining;
 		}
-		if (dst >= OVERLAY_ROM_BASE && dst < OVERLAY_ROM_BASE + OVERLAY_ROM_SIZE) {
-			return (OVERLAY_ROM_BASE + OVERLAY_ROM_SIZE) - dst;
-		}
 		if (dst >= RAM_BASE && dst < RAM_END) {
 			return RAM_END - dst;
 		}
@@ -429,18 +373,8 @@ export class DmaController {
 	}
 
 	private finishIoJob(job: DmaIoJob): void {
-		if (job.error) {
-			if (job.dst === IO_VDP_FIFO) {
-				this.vdp.endDmaSubmit();
-			}
-			this.finishIoError(job.clipped);
-			return;
-		}
 		if (job.dst === IO_VDP_FIFO) {
-			if (!this.vdp.sealDmaTransfer(job.src, job.written)) {
-				this.finishIoError(job.clipped);
-				return;
-			}
+			this.vdp.sealDmaTransfer(job.src, job.written);
 		}
 		this.finishIoSuccess(job.clipped);
 	}
@@ -461,11 +395,6 @@ export class DmaController {
 		}
 		this.memory.writeValue(IO_DMA_STATUS, status);
 		this.irq.raise(IRQ_DMA_ERROR);
-	}
-
-	private finishIoRejected(): void {
-		this.memory.writeValue(IO_DMA_WRITTEN, 0);
-		this.memory.writeValue(IO_DMA_STATUS, DMA_STATUS_REJECTED);
 	}
 
 	private accrueChannel(channel: DmaChannelId, bytesPerSec: number, carryKey: 'isoCarry' | 'bulkCarry', cycles: number): void {

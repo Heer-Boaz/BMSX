@@ -142,7 +142,7 @@ inline void resetApuBadpDecoder(const u8* data,
 	seekApuBadpDecoderToFrame(data, frames, channels, seekFrames, seekOffsets, decoder, frame);
 }
 
-inline bool readApuBadpFrameAt(const u8* data,
+inline void readApuBadpFrameAt(const u8* data,
 								size_t frames,
 								u32 channels,
 								const std::vector<u32>& seekFrames,
@@ -151,13 +151,10 @@ inline bool readApuBadpFrameAt(const u8* data,
 								size_t frame,
 								i16& outLeft,
 								i16& outRight) {
-	if (frame >= frames) {
-		return false;
-	}
 	if (decoder.decodedFrame == static_cast<i64>(frame)) {
 		outLeft = decoder.decodedLeft;
 		outRight = decoder.decodedRight;
-		return true;
+		return;
 	}
 	if (frame < decoder.nextFrame) {
 		seekApuBadpDecoderToFrame(data, frames, channels, seekFrames, seekOffsets, decoder, frame);
@@ -167,7 +164,6 @@ inline bool readApuBadpFrameAt(const u8* data,
 	}
 	outLeft = decoder.decodedLeft;
 	outRight = decoder.decodedRight;
-	return true;
 }
 
 

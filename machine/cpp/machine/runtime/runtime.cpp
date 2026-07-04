@@ -37,8 +37,7 @@ Runtime::Runtime(
 	, m_machineManifest(options.machineManifest)
 	, m_memory(MemoryInit{
 		{ options.systemRomBytes.data, options.systemRomBytes.size },
-		{ options.cartRomBytes.data, options.cartRomBytes.size },
-		{}
+		{ options.cartRomBytes.data, options.cartRomBytes.size }
 	})
 	, machine(
 		m_memory,
@@ -272,11 +271,23 @@ void Runtime::setRuntimeEnvironment(
 	m_cartRomPackage = cartRom;
 }
 
-void Runtime::setLinkedCartVectors(ProgramVectorTable vectors, uint32_t dataBaseAddress, uint32_t bssBaseAddress, std::vector<std::string> staticModulePaths) {
+void Runtime::setLinkedCartProgram(ProgramVectorTable vectors, uint32_t programDataBaseAddress, uint32_t programBssBaseAddress, uint32_t cartDataBaseAddress, uint32_t cartBssBaseAddress, std::vector<std::string> staticModulePaths) {
 	m_cartVectors = vectors;
-	m_cartDataBaseAddress = dataBaseAddress;
-	m_cartBssBaseAddress = bssBaseAddress;
+	m_programDataBaseAddress = programDataBaseAddress;
+	m_programBssBaseAddress = programBssBaseAddress;
+	m_cartDataBaseAddress = cartDataBaseAddress;
+	m_cartBssBaseAddress = cartBssBaseAddress;
 	m_cartStaticModulePaths = std::move(staticModulePaths);
+	m_cartEntryAvailable = true;
+}
+
+void Runtime::clearLinkedCartProgram(uint32_t dataByteLength) {
+	m_cartEntryAvailable = false;
+	m_cartDataBaseAddress = PROGRAM_STATIC_RAM_BASE;
+	m_cartBssBaseAddress = PROGRAM_STATIC_RAM_BASE;
+	m_programDataBaseAddress = PROGRAM_STATIC_RAM_BASE;
+	m_programBssBaseAddress = PROGRAM_STATIC_RAM_BASE + dataByteLength;
+	m_cartStaticModulePaths.clear();
 }
 
 void Runtime::enterSystemFirmware() {
@@ -285,30 +296,22 @@ void Runtime::enterSystemFirmware() {
 }
 
 void Runtime::enterCartProgram() {
-	if (!m_cartRomPackage) {
-		throw std::runtime_error("cannot enter cart program: cart ROM is not configured.");
-	}
 	m_cartProgramStarted = true;
 	m_activeRomPackage = m_cartRomPackage;
 }
 
 void Runtime::startCartProgram() {
-	if (!m_cartVectors) {
-		throw std::runtime_error("cannot start cart: no cart vector table is loaded.");
-	}
-	if (!m_cartDataBaseAddress) {
-		throw std::runtime_error("cannot start cart: no cart data base is loaded.");
-	}
-	if (!m_cartBssBaseAddress) {
-		throw std::runtime_error("cannot start cart: no cart bss base is loaded.");
-	}
+	m_programDataBaseAddress = m_cartDataBaseAddress;
+	m_programBssBaseAddress = m_cartBssBaseAddress;
 	enterCartProgram();
-	startLoadedProgram(*m_cartVectors, std::span<const std::string>{}, m_cartStaticModulePaths);
+	startLoadedProgram(m_cartVectors, std::span<const std::string>{}, m_cartStaticModulePaths);
 }
 
 void Runtime::boot(const ProgramImage& image, std::unique_ptr<ProgramMetadata> metadata, ProgramVectorTable vectors, uint32_t dataBaseAddress, uint32_t bssBaseAddress, std::span<const std::string> systemStaticModulePaths, std::span<const std::string> cartStaticModulePaths) {
 	m_moduleCache.clear();
-	m_programStorage = inflateExecutableProgramImage(image, dataBaseAddress, bssBaseAddress);
+	m_programDataBaseAddress = dataBaseAddress;
+	m_programBssBaseAddress = bssBaseAddress;
+	m_programStorage = inflateExecutableProgramImage(image, m_programDataBaseAddress, m_programBssBaseAddress);
 	try {
 		setupBuiltins();
 		enforceLuaHeapBudget();
@@ -321,6 +324,22 @@ void Runtime::boot(const ProgramImage& image, std::unique_ptr<ProgramMetadata> m
 	} catch (const std::exception& e) {
 		handleLuaError(e.what());
 	}
+}
+
+void Runtime::bootLinkedProgramImage(LinkedBootProgramImage&& linked) {
+	setLinkedCartProgram(linked.cartVectors, linked.dataBaseAddress, linked.bssBaseAddress, linked.cartDataBaseAddress, linked.cartBssBaseAddress, std::move(linked.cartStaticModulePaths));
+	std::span<const std::string> cartStaticModulePaths = m_cartProgramStarted
+		? std::span<const std::string>{ m_cartStaticModulePaths }
+		: std::span<const std::string>{};
+	boot(
+		*linked.programImage,
+		std::move(linked.metadata),
+		linked.vectors,
+		linked.dataBaseAddress,
+		linked.bssBaseAddress,
+		linked.systemStaticModulePaths,
+		cartStaticModulePaths
+	);
 }
 
 void Runtime::startLoadedProgram(ProgramVectorTable vectors, std::span<const std::string> systemStaticModulePaths, std::span<const std::string> cartStaticModulePaths) {
@@ -411,10 +430,7 @@ void Runtime::resetRuntimeForProgramReload() {
 	m_luaInitialized = false;
 	m_pendingCall = PendingCall::None;
 	m_programVectors.reset();
-	m_cartVectors.reset();
-	m_cartDataBaseAddress.reset();
-	m_cartBssBaseAddress.reset();
-	m_cartStaticModulePaths.clear();
+	clearLinkedCartProgram(0);
 	luaOutputLineBuffer.clear();
 	hostFault.clear();
 	m_moduleCache.clear();

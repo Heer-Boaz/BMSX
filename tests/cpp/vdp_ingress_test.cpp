@@ -24,30 +24,21 @@ namespace {
 constexpr uint32_t VDP_XF_MATRIX_HEADER = bmsx::VDP_XF_PACKET_KIND | (bmsx::VDP_XF_MATRIX_PACKET_PAYLOAD_WORDS << 16u);
 constexpr uint32_t VDP_XF_SELECT_HEADER = bmsx::VDP_XF_PACKET_KIND | (bmsx::VDP_XF_SELECT_PACKET_PAYLOAD_WORDS << 16u);
 
-void writeIo(bmsx::Memory& memory, uint32_t addr, uint32_t value) {
-	memory.writeValue(addr, bmsx::valueNumber(static_cast<double>(value)));
-}
-
-void setIo(bmsx::Memory& memory, uint32_t addr, uint32_t value) {
-	memory.writeIoValue(addr, bmsx::valueNumber(static_cast<double>(value)));
-}
-
 struct Harness {
 	bmsx::Memory memory;
 	bmsx::CPU cpu;
 	bmsx::DeviceScheduler scheduler;
 	bmsx::VDP vdp;
 
-	Harness()
-		: memory({
-			{ nullptr, 0 },
-			{ nullptr, 0 },
-			{}
-		})
+		Harness()
+			: memory({
+				{ nullptr, 0 },
+				{ nullptr, 0 }
+			})
 		, cpu(memory)
 		, scheduler(cpu)
 		, vdp(memory, scheduler, {256u, 212u}) {
-		setIo(memory, bmsx::IO_VDP_DITHER, 0u);
+		memory.writeIoValue(bmsx::IO_VDP_DITHER, bmsx::valueNumber(static_cast<double>(0u)));
 		vdp.initializeVramSurfaces();
 		vdp.initializeRegisters();
 		vdp.resetStatus();
@@ -66,7 +57,7 @@ void expectVdpFault(Harness& h, uint32_t code, const char* label) {
 }
 
 void clearVdpFault(Harness& h) {
-	writeIo(h.memory, bmsx::IO_VDP_FAULT_ACK, 1u);
+	h.memory.writeValue(bmsx::IO_VDP_FAULT_ACK, bmsx::valueNumber(static_cast<double>(1u)));
 	require(h.memory.readIoU32(bmsx::IO_VDP_FAULT_CODE) == bmsx::VDP_FAULT_NONE, "FAULT_ACK should clear VDP fault code");
 	require((h.memory.readIoU32(bmsx::IO_VDP_STATUS) & bmsx::VDP_STATUS_FAULT) == 0u, "FAULT_ACK should clear VDP fault status bit");
 	require(h.memory.readIoU32(bmsx::IO_VDP_FAULT_ACK) == 0u, "FAULT_ACK write should self-clear");
@@ -85,9 +76,9 @@ void sealStream(Harness& harness, const std::vector<uint32_t>& words) {
 
 void sealFifo(Harness& harness, const std::vector<uint32_t>& words) {
 	for (const uint32_t word : words) {
-		writeIo(harness.memory, bmsx::IO_VDP_FIFO, word);
+		harness.memory.writeValue(bmsx::IO_VDP_FIFO, bmsx::valueNumber(static_cast<double>(word)));
 	}
-	writeIo(harness.memory, bmsx::IO_VDP_FIFO_CTRL, bmsx::VDP_FIFO_CTRL_SEAL);
+	harness.memory.writeValue(bmsx::IO_VDP_FIFO_CTRL, bmsx::valueNumber(static_cast<double>(bmsx::VDP_FIFO_CTRL_SEAL)));
 }
 
 std::vector<uint32_t> xfMatrixRegisterPacket(uint32_t matrixIndex, const std::array<uint32_t, bmsx::VDP_XF_MATRIX_WORDS>& words) {
@@ -103,31 +94,31 @@ std::vector<uint32_t> xfSelectRegisterPacket(uint32_t viewMatrixIndex, uint32_t 
 void testDirectLifecycle() {
 	Harness h;
 
-	writeIo(h.memory, bmsx::IO_VDP_CMD, bmsx::VDP_CMD_END_FRAME);
+	h.memory.writeValue(bmsx::IO_VDP_CMD, bmsx::valueNumber(static_cast<double>(bmsx::VDP_CMD_END_FRAME)));
 	expectVdpFault(h, bmsx::VDP_FAULT_SUBMIT_STATE, "END_FRAME without open frame should fault");
 	clearVdpFault(h);
-	writeIo(h.memory, bmsx::IO_VDP_CMD, bmsx::VDP_CMD_FILL_RECT);
+	h.memory.writeValue(bmsx::IO_VDP_CMD, bmsx::valueNumber(static_cast<double>(bmsx::VDP_CMD_FILL_RECT)));
 	expectVdpFault(h, bmsx::VDP_FAULT_SUBMIT_STATE, "retired draw doorbell without open frame should fault as submit-state");
 	clearVdpFault(h);
 
-	writeIo(h.memory, bmsx::IO_VDP_CMD, bmsx::VDP_CMD_BEGIN_FRAME);
-	writeIo(h.memory, bmsx::IO_VDP_CMD, bmsx::VDP_CMD_FILL_RECT);
+	h.memory.writeValue(bmsx::IO_VDP_CMD, bmsx::valueNumber(static_cast<double>(bmsx::VDP_CMD_BEGIN_FRAME)));
+	h.memory.writeValue(bmsx::IO_VDP_CMD, bmsx::valueNumber(static_cast<double>(bmsx::VDP_CMD_FILL_RECT)));
 	expectVdpFault(h, bmsx::VDP_FAULT_CMD_BAD_DOORBELL, "retired draw doorbell inside a frame should fault as bad doorbell");
 	clearVdpFault(h);
-	writeIo(h.memory, bmsx::IO_VDP_CMD, bmsx::VDP_CMD_END_FRAME);
-	require(!h.vdp.presentReadyFrameOnVblankEdge(), "retired draw doorbell should not present framebuffer work");
+	h.memory.writeValue(bmsx::IO_VDP_CMD, bmsx::valueNumber(static_cast<double>(bmsx::VDP_CMD_END_FRAME)));
+	h.vdp.presentReadyFrameOnVblankEdge();
 	require(h.vdp.readDeviceOutput().rpu->commands.passCount == 0u, "retired draw doorbell should not produce RPU passes");
 }
 
 void testRawRegisterWordsDoNotCancelFrame() {
 	Harness h;
 
-	writeIo(h.memory, bmsx::IO_VDP_CMD, bmsx::VDP_CMD_BEGIN_FRAME);
-	writeIo(h.memory, bmsx::IO_VDP_REG_DRAW_CTRL, 0x4u);
+	h.memory.writeValue(bmsx::IO_VDP_CMD, bmsx::valueNumber(static_cast<double>(bmsx::VDP_CMD_BEGIN_FRAME)));
+	h.memory.writeValue(bmsx::IO_VDP_REG_DRAW_CTRL, bmsx::valueNumber(static_cast<double>(0x4u)));
 	require(h.memory.readIoU32(bmsx::IO_VDP_REG_DRAW_CTRL) == 0x4u, "DRAW_CTRL should latch raw bits");
-	writeIo(h.memory, bmsx::IO_VDP_REG_DRAW_SCALE_X, 0xffff0000u);
+	h.memory.writeValue(bmsx::IO_VDP_REG_DRAW_SCALE_X, bmsx::valueNumber(static_cast<double>(0xffff0000u)));
 	require(h.memory.readIoU32(bmsx::IO_VDP_REG_DRAW_SCALE_X) == 0xffff0000u, "DRAW_SCALE_X should latch raw bits");
-	writeIo(h.memory, bmsx::IO_VDP_CMD, bmsx::VDP_CMD_END_FRAME);
+	h.memory.writeValue(bmsx::IO_VDP_CMD, bmsx::valueNumber(static_cast<double>(bmsx::VDP_CMD_END_FRAME)));
 	require(h.memory.readIoU32(bmsx::IO_VDP_FAULT_CODE) == bmsx::VDP_FAULT_NONE, "raw register words should not fault");
 }
 
@@ -174,7 +165,7 @@ void testRpuFrameRetainsPassAndDraw() {
 
 	require(h.memory.readIoU32(bmsx::IO_VDP_FAULT_CODE) == bmsx::VDP_FAULT_NONE, "RPU packet stream should not fault");
 	h.vdp.advanceWork(h.vdp.getPendingRenderWorkUnits());
-	require(!h.vdp.presentReadyFrameOnVblankEdge(), "RPU retained command buffer does not use legacy framebuffer presentation");
+	h.vdp.presentReadyFrameOnVblankEdge();
 	const bmsx::VdpDeviceOutput& output = h.vdp.readDeviceOutput();
 	require(output.rpu->commands.passCount == 1u, "RPU output should retain one pass");
 	require(output.rpu->commands.drawCount == 1u, "RPU output should retain one draw");
@@ -195,24 +186,28 @@ void testRpuFrameRetainsPassAndDraw() {
 
 void testFifoReplayAndFaults() {
 	{
-		Harness badPacket;
-		sealStream(badPacket, {
+		Harness unknownPacket;
+		sealStream(unknownPacket, {
 			bmsx::VDP_PKT_REG1 | bmsx::VDP_REG_BG_COLOR,
 			0xff102030u,
 			0x04000000u,
 			bmsx::VDP_PKT_END,
 		});
-		expectVdpFault(badPacket, bmsx::VDP_FAULT_STREAM_BAD_PACKET, "bad packet should fault");
-		require(badPacket.memory.readIoU32(bmsx::IO_VDP_REG_BG_COLOR) == 0xff102030u, "prior register packet side effects should remain visible");
-		require(badPacket.vdp.getPendingRenderWorkUnits() == 0, "bad packet should not submit render work");
+		require(unknownPacket.memory.readIoU32(bmsx::IO_VDP_FAULT_CODE) == bmsx::VDP_FAULT_NONE, "unknown packet kind should flow without stream fault");
+		require(unknownPacket.memory.readIoU32(bmsx::IO_VDP_REG_BG_COLOR) == 0xff102030u, "prior register packet side effects should remain visible");
+		require(unknownPacket.vdp.getPendingRenderWorkUnits() == 0, "unknown packet should not submit render work");
 	}
 	{
 		Harness reserved;
 		sealStream(reserved, {bmsx::VDP_PKT_CMD | (1u << 16u) | bmsx::VDP_CMD_CLEAR, bmsx::VDP_PKT_END});
-		expectVdpFault(reserved, bmsx::VDP_FAULT_STREAM_BAD_PACKET, "reserved command packet bits should fault");
+		expectVdpFault(reserved, bmsx::VDP_FAULT_CMD_BAD_DOORBELL, "reserved command bits should still decode the low command word");
 		clearVdpFault(reserved);
-		sealStream(reserved, {bmsx::VDP_PKT_REG1 | 19u, 0u, bmsx::VDP_PKT_END});
-		expectVdpFault(reserved, bmsx::VDP_FAULT_STREAM_BAD_PACKET, "REG1 out of range should fault");
+		sealStream(reserved, {bmsx::VDP_PKT_REG1 | 19u, 0xaabbccddu, bmsx::VDP_PKT_END});
+		require(reserved.memory.readIoU32(bmsx::IO_VDP_FAULT_CODE) == bmsx::VDP_FAULT_NONE, "REG1 high register index should not fault");
+		require(reserved.memory.readIoU32(bmsx::IO_VDP_REG_SRC_SLOT) == 0xaabbccddu, "REG1 high register index should wrap through the register datapath");
+		sealStream(reserved, {bmsx::VDP_PKT_REGN | (2u << 16u) | 18u, 0x11111111u, 0x22222222u, bmsx::VDP_PKT_END});
+		require(reserved.memory.readIoU32(bmsx::IO_VDP_FAULT_CODE) == bmsx::VDP_FAULT_NONE, "REGN high register range should not fault");
+		require(reserved.memory.readIoU32(bmsx::IO_VDP_REG_SRC_SLOT) == 0x22222222u, "REGN high register range should wrap through the register datapath");
 	}
 	{
 		Harness retiredDoorbell;
@@ -260,6 +255,8 @@ void testXfWordsResolveToRenderOwnedViewRotationInverseTransform() {
 	bmsx::VdpTransformSnapshot transform;
 	constexpr uint32_t viewMatrixIndex = 2u;
 	constexpr uint32_t projectionMatrixIndex = 3u;
+	constexpr uint32_t viewMatrixIndexWord = viewMatrixIndex + bmsx::VDP_XF_MATRIX_COUNT;
+	constexpr uint32_t projectionMatrixIndexWord = projectionMatrixIndex + bmsx::VDP_XF_MATRIX_COUNT;
 	std::array<uint32_t, bmsx::VDP_XF_MATRIX_REGISTER_WORDS> matrixWords{};
 	const std::array<uint32_t, bmsx::VDP_XF_MATRIX_WORDS> viewWords{{
 		0x00020000u, 0u, 0u, 0u,
@@ -278,7 +275,7 @@ void testXfWordsResolveToRenderOwnedViewRotationInverseTransform() {
 		matrixWords[static_cast<size_t>(projectionMatrixIndex * bmsx::VDP_XF_MATRIX_WORDS) + index] = projWords[index];
 	}
 
-	bmsx::resolveVdpTransformSnapshot(transform, matrixWords, viewMatrixIndex, projectionMatrixIndex);
+	bmsx::resolveVdpTransformSnapshot(transform, matrixWords, viewMatrixIndexWord, projectionMatrixIndexWord);
 
 	require(transform.view[0] == 2.0f, "XF view should decode Q16.16 words");
 	require(transform.viewRotationInverse[0] == 0.5f, "XF view rotation inverse should invert affine X scale");
@@ -288,17 +285,23 @@ void testXfWordsResolveToRenderOwnedViewRotationInverseTransform() {
 	require(transform.eye.x == -3.0f && transform.eye.y == -2.0f && transform.eye.z == -2.0f, "XF eye should come from affine inverse");
 }
 
-void testXfPacketFaultsThroughVdpState() {
+void testXfSelectRegistersLatchRawWords() {
 	Harness h;
+	constexpr uint32_t viewMatrixIndex = bmsx::VDP_XF_MATRIX_COUNT;
+	constexpr uint32_t projectionMatrixIndex = 0xffffffffu;
+
 	sealStream(h, {
 		bmsx::VDP_XF_PACKET_KIND | (bmsx::VDP_XF_SELECT_PACKET_PAYLOAD_WORDS << 16u),
 		bmsx::VDP_XF_VIEW_MATRIX_INDEX_REGISTER,
-		bmsx::VDP_XF_MATRIX_COUNT,
-		0u,
+		viewMatrixIndex,
+		projectionMatrixIndex,
 		bmsx::VDP_PKT_END,
 	});
-	expectVdpFault(h, bmsx::VDP_FAULT_STREAM_BAD_PACKET, "bad XF packet should latch a stream fault");
-	require(h.vdp.getPendingRenderWorkUnits() == 0, "bad XF packet should not submit render work");
+
+	const bmsx::VdpState state = h.vdp.captureState();
+	require(h.memory.readIoU32(bmsx::IO_VDP_FAULT_CODE) == bmsx::VDP_FAULT_NONE, "raw XF select words should not fault");
+	require(state.xf.viewMatrixIndex == viewMatrixIndex, "XF should latch raw view matrix index word");
+	require(state.xf.projectionMatrixIndex == projectionMatrixIndex, "XF should latch raw projection matrix index word");
 }
 
 void testEmptyFifoFrame() {
@@ -311,7 +314,7 @@ void testEmptyFifoFrame() {
 void testReadbackFaultsLatchStatus() {
 	Harness h;
 
-	writeIo(h.memory, bmsx::IO_VDP_RD_MODE, 99u);
+	h.memory.writeValue(bmsx::IO_VDP_RD_MODE, bmsx::valueNumber(static_cast<double>(99u)));
 
 	require(h.vdp.readVdpData() == 0u, "unsupported read mode should return open bus");
 	require(h.memory.readIoU32(bmsx::IO_VDP_FAULT_CODE) == bmsx::VDP_FAULT_RD_UNSUPPORTED_MODE, "unsupported read mode should latch fault code");
@@ -323,7 +326,7 @@ void testReadbackFaultsLatchStatus() {
 void testFaultLatchStickyFirstUntilAck() {
 	Harness h;
 
-	writeIo(h.memory, bmsx::IO_VDP_RD_MODE, 99u);
+	h.memory.writeValue(bmsx::IO_VDP_RD_MODE, bmsx::valueNumber(static_cast<double>(99u)));
 	require(h.vdp.readVdpData() == 0u, "unsupported readback should return open-bus zero");
 	expectVdpFault(h, bmsx::VDP_FAULT_RD_UNSUPPORTED_MODE, "first fault should latch");
 	const std::array<bmsx::u8, 4> data{{1u, 2u, 3u, 4u}};
@@ -337,9 +340,9 @@ void testFaultLatchStickyFirstUntilAck() {
 void testReadbackOobFaultsLatchStatus() {
 	Harness h;
 
-	writeIo(h.memory, bmsx::IO_VDP_RD_MODE, bmsx::VDP_RD_MODE_RGBA8888);
-	writeIo(h.memory, bmsx::IO_VDP_RD_X, 999u);
-	writeIo(h.memory, bmsx::IO_VDP_RD_Y, 0u);
+	h.memory.writeValue(bmsx::IO_VDP_RD_MODE, bmsx::valueNumber(static_cast<double>(bmsx::VDP_RD_MODE_RGBA8888)));
+	h.memory.writeValue(bmsx::IO_VDP_RD_X, bmsx::valueNumber(static_cast<double>(999u)));
+	h.memory.writeValue(bmsx::IO_VDP_RD_Y, bmsx::valueNumber(static_cast<double>(0u)));
 
 	require(h.vdp.readVdpData() == 0u, "OOB read should return open bus");
 	require(h.memory.readIoU32(bmsx::IO_VDP_FAULT_CODE) == bmsx::VDP_FAULT_RD_OOB, "OOB read should latch fault code");
@@ -389,42 +392,50 @@ void testVramReadFaultsLatchStatus() {
 
 void testVoutScanoutTimingOwnsVblankOutputPin() {
 	Harness h;
+	bmsx::VDP& vdp = h.vdp;
 
-	require(h.vdp.readDeviceOutput().scanoutPhase == static_cast<uint32_t>(bmsx::VdpVoutScanoutPhase::Active), "VOUT scanout should start active");
-	require(h.vdp.readDeviceOutput().scanoutX == 0u, "VOUT scanout X should start at the left edge");
-	require(h.vdp.readDeviceOutput().scanoutY == 0u, "VOUT scanout Y should start at the top edge");
+	const bmsx::VdpDeviceOutput resetOutput = vdp.readDeviceOutput();
+	require(resetOutput.scanoutPhase == static_cast<uint32_t>(bmsx::VdpVoutScanoutPhase::Active), "VOUT scanout should start active");
+	require(resetOutput.scanoutX == 0u, "VOUT scanout X should start at the left edge");
+	require(resetOutput.scanoutY == 0u, "VOUT scanout Y should start at the top edge");
 	require((h.memory.readIoU32(bmsx::IO_VDP_STATUS) & bmsx::VDP_STATUS_VBLANK) == 0u, "VDP status should start outside VBLANK");
-	h.vdp.setScanoutTiming(false, 0, 100, 80);
+	vdp.setScanoutTiming(false, 0, 100, 80);
 	h.scheduler.setNowCycles(41);
-	require(h.vdp.readDeviceOutput().scanoutPhase == static_cast<uint32_t>(bmsx::VdpVoutScanoutPhase::Active), "VOUT scanout should remain active before VBLANK");
-	require(h.vdp.readDeviceOutput().scanoutX == 166u, "VOUT active scanout X should advance through visible dots");
-	require(h.vdp.readDeviceOutput().scanoutY == 108u, "VOUT active scanout Y should advance through visible lines");
+	const bmsx::VdpDeviceOutput activeOutput = vdp.readDeviceOutput();
+	require(activeOutput.scanoutPhase == static_cast<uint32_t>(bmsx::VdpVoutScanoutPhase::Active), "VOUT scanout should remain active before VBLANK");
+	require(activeOutput.scanoutX == 166u, "VOUT active scanout X should advance through visible dots");
+	require(activeOutput.scanoutY == 108u, "VOUT active scanout Y should advance through visible lines");
 	h.scheduler.setNowCycles(80);
-	h.vdp.setScanoutTiming(true, 80, 100, 80);
+	vdp.setScanoutTiming(true, 80, 100, 80);
 	h.scheduler.setNowCycles(90);
-	require(h.vdp.readDeviceOutput().scanoutPhase == static_cast<uint32_t>(bmsx::VdpVoutScanoutPhase::Vblank), "VOUT scanout should enter VBLANK");
+	const bmsx::VdpDeviceOutput vblankOutput = vdp.readDeviceOutput();
+	require(vblankOutput.scanoutPhase == static_cast<uint32_t>(bmsx::VdpVoutScanoutPhase::Vblank), "VOUT scanout should enter VBLANK");
 	require((h.memory.readIoU32(bmsx::IO_VDP_STATUS) & bmsx::VDP_STATUS_VBLANK) != 0u, "VDP status should reflect VOUT VBLANK phase");
 }
 
 void testDitherRegisterWritesUpdateLiveLatch() {
 	Harness h;
+	bmsx::VDP& vdp = h.vdp;
 
-	require(h.vdp.readDeviceOutput().ditherType == 0, "visible DITHER output should start at reset value");
-	require(h.vdp.readDeviceOutput().frameBufferWidth == 256u, "visible VOUT scanout width should start at configured framebuffer width");
-	require(h.vdp.readDeviceOutput().frameBufferHeight == 212u, "visible VOUT scanout height should start at configured framebuffer height");
-	writeIo(h.memory, bmsx::IO_VDP_DITHER, 3u);
-	h.vdp.setDecodedVramSurfaceDimensions(bmsx::VRAM_FRAMEBUFFER_BASE, 128u, 64u);
+	const bmsx::VdpDeviceOutput resetOutput = vdp.readDeviceOutput();
+	require(resetOutput.ditherType == 0, "visible DITHER output should start at reset value");
+	require(resetOutput.frameBufferWidth == 256u, "visible VOUT scanout width should start at configured framebuffer width");
+	require(resetOutput.frameBufferHeight == 212u, "visible VOUT scanout height should start at configured framebuffer height");
+	h.memory.writeValue(bmsx::IO_VDP_DITHER, bmsx::valueNumber(static_cast<double>(3u)));
+	vdp.setDecodedVramSurfaceDimensions(bmsx::VRAM_FRAMEBUFFER_BASE, 128u, 64u);
 
-	require(h.vdp.captureState().ditherType == 3, "DITHER write should update live VDP latch directly");
-	require(h.vdp.readDeviceOutput().ditherType == 0, "live DITHER write should wait for frame present before visible output");
-	require(h.vdp.frameBufferWidth() == 128u, "FBM live scanout width should update at framebuffer configuration");
-	require(h.vdp.frameBufferHeight() == 64u, "FBM live scanout height should update at framebuffer configuration");
-	writeIo(h.memory, bmsx::IO_VDP_CMD, bmsx::VDP_CMD_BEGIN_FRAME);
-	writeIo(h.memory, bmsx::IO_VDP_CMD, bmsx::VDP_CMD_END_FRAME);
-	require(!h.vdp.presentReadyFrameOnVblankEdge(), "DITHER-only frame should not present framebuffer pages");
-	require(h.vdp.readDeviceOutput().ditherType == 3, "presented frame should commit visible DITHER output");
-	require(h.vdp.readDeviceOutput().frameBufferWidth == 128u, "presented frame should commit frame-sealed VOUT scanout width");
-	require(h.vdp.readDeviceOutput().frameBufferHeight == 64u, "presented frame should commit frame-sealed VOUT scanout height");
+	require(vdp.captureState().ditherType == 3, "DITHER write should update live VDP latch directly");
+	const bmsx::VdpDeviceOutput liveOutput = vdp.readDeviceOutput();
+	require(liveOutput.ditherType == 0, "live DITHER write should wait for frame present before visible output");
+	require(vdp.frameBufferWidth() == 128u, "FBM live scanout width should update at framebuffer configuration");
+	require(vdp.frameBufferHeight() == 64u, "FBM live scanout height should update at framebuffer configuration");
+	h.memory.writeValue(bmsx::IO_VDP_CMD, bmsx::valueNumber(static_cast<double>(bmsx::VDP_CMD_BEGIN_FRAME)));
+	h.memory.writeValue(bmsx::IO_VDP_CMD, bmsx::valueNumber(static_cast<double>(bmsx::VDP_CMD_END_FRAME)));
+	vdp.presentReadyFrameOnVblankEdge();
+	const bmsx::VdpDeviceOutput presentedOutput = vdp.readDeviceOutput();
+	require(presentedOutput.ditherType == 3, "presented frame should commit visible DITHER output");
+	require(presentedOutput.frameBufferWidth == 128u, "presented frame should commit frame-sealed VOUT scanout width");
+	require(presentedOutput.frameBufferHeight == 64u, "presented frame should commit frame-sealed VOUT scanout height");
 }
 
 } // namespace
@@ -437,7 +448,7 @@ int main() {
 		{"FIFO replay and faults", testFifoReplayAndFaults},
 		{"VDP XF packet raw state", testXfPacketUpdatesRawTransformRegisterState},
 		{"VDP XF render transform", testXfWordsResolveToRenderOwnedViewRotationInverseTransform},
-		{"VDP XF packet fault state", testXfPacketFaultsThroughVdpState},
+		{"VDP XF raw select register words", testXfSelectRegistersLatchRawWords},
 		{"empty FIFO frame", testEmptyFifoFrame},
 		{"VDP readback fault status", testReadbackFaultsLatchStatus},
 		{"VDP fault latch sticky-first", testFaultLatchStickyFirstUntilAck},
@@ -450,12 +461,7 @@ int main() {
 	};
 
 	for (const auto& test : tests) {
-		try {
-			test.second();
-		} catch (const std::exception& error) {
-			std::cerr << "FAIL " << test.first << ": " << error.what() << "\n";
-			return EXIT_FAILURE;
-		}
+		test.second();
 	}
 	return EXIT_SUCCESS;
 }

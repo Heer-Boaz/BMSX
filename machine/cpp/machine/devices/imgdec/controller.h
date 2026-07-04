@@ -59,7 +59,7 @@ private:
 	void beginDecode(DecodedImage&& result, uint32_t targetBaseAddr, uint32_t targetCapacity);
 	void advanceDecode();
 	void finishSuccess(bool clipped);
-	void finishError(std::exception_ptr error);
+	void finishError();
 	void scheduleNextService(int64_t nowCycles);
 
 	int64_t m_cpuHz = 1;
@@ -68,7 +68,6 @@ private:
 	uint32_t m_availableDecodeBytes = 0;
 	bool m_active = false;
 	uint32_t m_status = 0;
-	std::exception_ptr m_pendingError;
 	std::optional<DecodedImage> m_pendingResult;
 	uint32_t m_pendingTargetBase = 0;
 	uint32_t m_pendingTargetCapacity = 0;

@@ -14,7 +14,6 @@ namespace bmsx {
 enum class CartridgeLayerId {
 	System,
 	Cart,
-	Overlay,
 };
 
 struct RomSourceEntry {

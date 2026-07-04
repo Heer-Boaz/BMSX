@@ -25,7 +25,7 @@ public:
 	bool empty() const;
 	bool full() const;
 	void reset();
-	bool enqueue(u32 command, const Memory& memory);
+	void enqueue(u32 command, const Memory& memory);
 	u32 popInto(ApuParameterRegisterWords& target);
 	ApuCommandFifoState captureState() const;
 	void restoreState(const ApuCommandFifoState& state);

@@ -38,32 +38,40 @@ void setSkippedStatePass(RenderPassDef& desc, const char* id, const char* name) 
 	desc.graph->skip = true;
 }
 
-void writeAutoPresentPipelineState(PresentPipelineState& presentState, const RenderPassDef::RenderGraphPassContext& ctx,
-													RenderPassDef::RenderPassGraphDef::PresentInput presentInput) {
+RenderPassDef::RenderPassGraphDef& resetAutoPresentGraph(RenderPassDef& desc) {
+	desc.present = true;
+	desc.graph = RenderPassDef::RenderPassGraphDef{};
+	desc.graph->presentInput = RenderPassDef::RenderPassGraphDef::PresentInput::Auto;
+	return *desc.graph;
+}
+
+void writeAutoPresentPipelineState(const RenderPassDef::RenderGraphPassContext& ctx, RenderPassStateStorage& state) {
 	auto* view = ctx.view;
+	PresentPipelineState& presentState = state.present;
 	presentState.width = static_cast<i32>(view->canvasSize.x);
 	presentState.height = static_cast<i32>(view->canvasSize.y);
 	presentState.srcWidth = static_cast<i32>(view->offscreenCanvasSize.x);
 	presentState.srcHeight = static_cast<i32>(view->offscreenCanvasSize.y);
-
-	const bool allowDevice = presentInput == RenderPassDef::RenderPassGraphDef::PresentInput::Auto
-		|| presentInput == RenderPassDef::RenderPassGraphDef::PresentInput::DeviceColor;
-	const bool useDither = allowDevice && ctx.deviceColorEnabled && static_cast<i32>(view->dither_type) != 0;
+	const bool useDither = ctx.deviceColorEnabled && static_cast<i32>(view->dither_type) != 0;
 	presentState.colorTex = useDither
 		? ctx.getTexture(RenderPassDef::RenderGraphSlot::DeviceColor)
 		: ctx.getTexture(RenderPassDef::RenderGraphSlot::FrameColor);
 }
 
-void writeAutoPresentPipelineState(const RenderPassDef::RenderGraphPassContext& ctx, RenderPassStateStorage& state) {
-	writeAutoPresentPipelineState(
-		state.present,
-		ctx,
-		RenderPassDef::RenderPassGraphDef::PresentInput::Auto);
+void writeFramebuffer2DPipelineState(const RenderPassDef::RenderGraphPassContext& ctx, RenderPassStateStorage& state) {
+	Framebuffer2DPipelineState& framebufferState = state.framebuffer2D;
+	writeRenderPassViewportSize(
+		framebufferState.width,
+		framebufferState.height,
+		framebufferState.baseWidth,
+		framebufferState.baseHeight,
+		*ctx.view);
+	framebufferState.colorTex = ctx.view->vdpFrameBufferTextures().displayTexture();
 }
 
-void writeAutoCRTPipelineState(CRTPipelineState& crtState, const RenderPassDef::RenderGraphPassContext& ctx,
-													RenderPassDef::RenderPassGraphDef::PresentInput presentInput) {
+void writeAutoCRTPipelineState(const RenderPassDef::RenderGraphPassContext& ctx, RenderPassStateStorage& state) {
 	auto* view = ctx.view;
+	CRTPipelineState& crtState = state.crt;
 	crtState.width = static_cast<i32>(view->canvasSize.x);
 	crtState.height = static_cast<i32>(view->canvasSize.y);
 	crtState.baseWidth = static_cast<i32>(view->viewportSize.x);
@@ -72,15 +80,10 @@ void writeAutoCRTPipelineState(CRTPipelineState& crtState, const RenderPassDef::
 	crtState.srcHeight = static_cast<i32>(view->offscreenCanvasSize.y);
 	crtState.time = static_cast<f32>(ctx.time);
 
-	const bool allowDevice = presentInput == RenderPassDef::RenderPassGraphDef::PresentInput::Auto
-		|| presentInput == RenderPassDef::RenderPassGraphDef::PresentInput::DeviceColor;
-	const bool useDither = allowDevice && ctx.deviceColorEnabled && static_cast<i32>(view->dither_type) != 0;
-	TextureHandle baseTex = ctx.getTexture(RenderPassDef::RenderGraphSlot::FrameColor);
-	TextureHandle deviceTex = nullptr;
-	if (ctx.deviceColorEnabled) {
-		deviceTex = ctx.getTexture(RenderPassDef::RenderGraphSlot::DeviceColor);
-	}
-	crtState.colorTex = useDither ? deviceTex : baseTex;
+	const bool useDither = ctx.deviceColorEnabled && static_cast<i32>(view->dither_type) != 0;
+	crtState.colorTex = useDither
+		? ctx.getTexture(RenderPassDef::RenderGraphSlot::DeviceColor)
+		: ctx.getTexture(RenderPassDef::RenderGraphSlot::FrameColor);
 
 	const bool applyCrt = view->crt_postprocessing_enabled;
 	crtState.options.applyNoise = applyCrt && view->applyNoise;
@@ -96,46 +99,72 @@ void writeAutoCRTPipelineState(CRTPipelineState& crtState, const RenderPassDef::
 	crtState.options.applyAperture = applyCrt && view->applyAperture;
 }
 
-void writeAutoCRTPipelineState(const RenderPassDef::RenderGraphPassContext& ctx, RenderPassStateStorage& state) {
-	writeAutoCRTPipelineState(
-		state.crt,
-		ctx,
-		RenderPassDef::RenderPassGraphDef::PresentInput::Auto);
-}
-
-bool hasEnabledCRTEffects(const GameView& view) {
-	return view.crt_postprocessing_enabled
-		&& (view.applyNoise
-			|| view.applyColorBleed
-			|| view.applyScanlines
-			|| view.applyBlur
-			|| view.applyGlow
-			|| view.applyFringing
-			|| view.applyAperture);
+void writeDeviceQuantizePipelineState(const RenderPassDef::RenderGraphPassContext& ctx, RenderPassStateStorage& state) {
+	auto* view = ctx.view;
+	DeviceQuantizePipelineState& deviceQuantizeState = state.deviceQuantize;
+	writeRenderPassViewportSize(
+		deviceQuantizeState.width,
+		deviceQuantizeState.height,
+		deviceQuantizeState.baseWidth,
+		deviceQuantizeState.baseHeight,
+		*view);
+	deviceQuantizeState.colorTex = ctx.getTexture(RenderPassDef::RenderGraphSlot::FrameColor);
+	deviceQuantizeState.ditherType = static_cast<i32>(view->dither_type);
 }
 
 } // namespace
 
-void setAutoPresentGraph(RenderPassDef& desc) {
-	desc.present = true;
+void setFramebuffer2DGraph(RenderPassDef& desc) {
 	desc.graph = RenderPassDef::RenderPassGraphDef{};
-	desc.graph->presentInput = RenderPassDef::RenderPassGraphDef::PresentInput::Auto;
-	desc.graph->writeState = writeAutoPresentPipelineState;
+	desc.graph->writes = { RenderPassDef::RenderGraphSlot::FrameColor };
+	desc.graph->writeState = writeFramebuffer2DPipelineState;
+}
+
+void setAutoPresentGraph(RenderPassDef& desc) {
+	RenderPassDef::RenderPassGraphDef& graph = resetAutoPresentGraph(desc);
+	graph.writeState = writeAutoPresentPipelineState;
 }
 
 void setAutoCRTGraph(RenderPassDef& desc) {
-	desc.present = true;
+	RenderPassDef::RenderPassGraphDef& graph = resetAutoPresentGraph(desc);
+	graph.writeState = writeAutoCRTPipelineState;
+}
+
+void setDeviceQuantizeGraph(RenderPassDef& desc) {
 	desc.graph = RenderPassDef::RenderPassGraphDef{};
-	desc.graph->presentInput = RenderPassDef::RenderPassGraphDef::PresentInput::Auto;
-	desc.graph->writeState = writeAutoCRTPipelineState;
+	desc.graph->reads = { RenderPassDef::RenderGraphSlot::FrameColor };
+	desc.graph->writes = { RenderPassDef::RenderGraphSlot::DeviceColor };
+	desc.graph->writeState = writeDeviceQuantizePipelineState;
+}
+
+bool shouldExecuteFramebuffer2DPass(GameView* view, void*) {
+	return view->presentWorkbenchFrameBufferTexture && view->vdpRpuFrame->commands.passCount == 0u;
 }
 
 bool shouldExecuteAutoPresentPass(GameView* view, void*) {
-	return !hasEnabledCRTEffects(*view);
+	return !view->crt_postprocessing_enabled
+		|| (!view->applyNoise
+			&& !view->applyColorBleed
+			&& !view->applyScanlines
+			&& !view->applyBlur
+			&& !view->applyGlow
+			&& !view->applyFringing
+			&& !view->applyAperture);
 }
 
 bool shouldExecuteAutoCRTPass(GameView* view, void*) {
-	return hasEnabledCRTEffects(*view);
+	return view->crt_postprocessing_enabled
+		&& (view->applyNoise
+			|| view->applyColorBleed
+			|| view->applyScanlines
+			|| view->applyBlur
+			|| view->applyGlow
+			|| view->applyFringing
+			|| view->applyAperture);
+}
+
+bool shouldExecuteDeviceQuantizePass(GameView* view, void*) {
+	return static_cast<i32>(view->dither_type) != 0;
 }
 
 void registerFrameStatePasses(RenderPassLibrary& registry) {

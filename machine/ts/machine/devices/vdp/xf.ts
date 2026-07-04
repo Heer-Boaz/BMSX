@@ -55,26 +55,18 @@ export class VdpXfUnit {
 		this.projectionMatrixIndex = VDP_XF_PROJECTION_MATRIX_RESET_INDEX;
 	}
 
-	public writeRegister(registerIndex: number, word: number): boolean {
+	public writeRegister(registerIndex: number, word: number): void {
 		if (registerIndex < VDP_XF_MATRIX_REGISTER_WORDS) {
 			this.matrixWords[registerIndex] = word >>> 0;
-			return true;
+			return;
 		}
 		if (registerIndex === VDP_XF_VIEW_MATRIX_INDEX_REGISTER) {
-			if (word >= VDP_XF_MATRIX_COUNT) {
-				return false;
-			}
 			this.viewMatrixIndex = word >>> 0;
-			return true;
+			return;
 		}
 		if (registerIndex === VDP_XF_PROJECTION_MATRIX_INDEX_REGISTER) {
-			if (word >= VDP_XF_MATRIX_COUNT) {
-				return false;
-			}
 			this.projectionMatrixIndex = word >>> 0;
-			return true;
 		}
-		return false;
 	}
 
 	public captureState(): VdpXfState {

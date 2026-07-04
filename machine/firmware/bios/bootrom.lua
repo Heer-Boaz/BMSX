@@ -12,6 +12,8 @@ math = require('bios/math')
 easing = require('bios/easing')
 local clamp<const> = require('bios/util/clamp')
 local wrap_text_lines<const> = require('bios/util/wrap_text_lines').wrap_text_lines
+local imgdec<const> = require('system/imgdec')
+local romdir<const> = require('system/romdir')
 local vdp_rpu_quads<const> = require('system/vdp_rpu_quads')
 local vdp_image<const> = require('system/vdp_image')
 local font_module<const> = require('system/font')
@@ -290,7 +292,10 @@ function init()
 	system.on_irq(irq_vblank, function()
 		boot_vblank_count = boot_vblank_count + 1
 	end)
-	vdp_image.load_system_atlas()
+	local atlas<const> = romdir.system_rom_atlas(254)
+	local atlas_meta<const> = atlas.imgmeta
+	vdp_rpu_quads.define_atlas(254, atlas_meta.texture_addr, atlas_meta.width, atlas_meta.height)
+	imgdec.start(atlas.addr, atlas.len, atlas_meta.texture_addr, atlas_meta.texture_len)
 end
 
 function new_game()

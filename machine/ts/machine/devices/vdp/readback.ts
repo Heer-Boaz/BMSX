@@ -1,5 +1,10 @@
 import {
-	VDP_FAULT_NONE,
+	IO_VDP_RD_X,
+	IO_VDP_RD_Y,
+} from '../../bus/io';
+import type { Memory } from '../../memory/memory';
+import type { DeviceStatusLatch } from '../device_status';
+import {
 	VDP_FAULT_RD_OOB,
 	VDP_FAULT_RD_SURFACE,
 	VDP_FAULT_RD_UNSUPPORTED_MODE,
@@ -26,15 +31,15 @@ const VDP_READBACK_BUDGET_BYTES = 4096;
 const VDP_READBACK_MAX_CHUNK_PIXELS = 256;
 
 export class VdpReadbackUnit {
-	public faultCode = VDP_FAULT_NONE;
-	public faultDetail = 0;
-	public word = 0;
-	public nextX = 0;
-	public nextY = 0;
-	public advanceReadPosition = false;
 	private readonly frameBufferCache: VdpReadCache = { x0: 0, y: 0, width: 0, data: new Uint8Array(VDP_READBACK_MAX_CHUNK_PIXELS * 4) };
 	private readBudgetBytes = VDP_READBACK_BUDGET_BYTES;
 	private readOverflow = false;
+
+	public constructor(
+		private readonly memory: Memory,
+		private readonly fault: DeviceStatusLatch,
+	) {
+	}
 
 	public invalidateFrameBuffer(): void {
 		this.frameBufferCache.width = 0;
@@ -56,38 +61,24 @@ export class VdpReadbackUnit {
 		return status;
 	}
 
-	public resolveSurface(requestedSurfaceId: number, mode: number): boolean {
-		this.faultCode = VDP_FAULT_NONE;
-		this.faultDetail = 0;
-		this.advanceReadPosition = false;
-		this.word = 0;
+	public read(surface: VdpSurfaceBacking, requestedSurfaceId: number, mode: number, x: number, y: number): number {
 		if (mode !== VDP_RD_MODE_RGBA8888) {
-			this.faultCode = VDP_FAULT_RD_UNSUPPORTED_MODE;
-			this.faultDetail = mode;
-			return false;
+			this.fault.raise(VDP_FAULT_RD_UNSUPPORTED_MODE, mode);
+			return 0;
 		}
 		if (requestedSurfaceId !== VDP_RD_SURFACE_FRAMEBUFFER) {
-			this.faultCode = VDP_FAULT_RD_SURFACE;
-			this.faultDetail = requestedSurfaceId;
-			return false;
+			this.fault.raise(VDP_FAULT_RD_SURFACE, requestedSurfaceId);
+			return 0;
 		}
-		return true;
-	}
-
-	public readPixel(surface: VdpSurfaceBacking, x: number, y: number): boolean {
 		const width = surface.surfaceWidth;
 		const height = surface.surfaceHeight;
 		if (x >= width || y >= height) {
-			this.faultCode = VDP_FAULT_RD_OOB;
-			this.faultDetail = (x | (y << 16)) >>> 0;
-			this.word = 0;
-			return false;
+			this.fault.raise(VDP_FAULT_RD_OOB, (x | (y << 16)) >>> 0);
+			return 0;
 		}
 		if (this.readBudgetBytes < 4) {
 			this.readOverflow = true;
-			this.word = 0;
-			this.advanceReadPosition = false;
-			return true;
+			return 0;
 		}
 		const cache = this.getReadCache(surface, x, y);
 		const localX = x - cache.x0;
@@ -103,11 +94,9 @@ export class VdpReadbackUnit {
 			nextX = 0;
 			nextY = y + 1;
 		}
-		this.nextX = nextX;
-		this.nextY = nextY;
-		this.advanceReadPosition = true;
-		this.word = (r | (g << 8) | (b << 16) | (a << 24)) >>> 0;
-		return true;
+		this.memory.writeValue(IO_VDP_RD_X, nextX);
+		this.memory.writeValue(IO_VDP_RD_Y, nextY);
+		return (r | (g << 8) | (b << 16) | (a << 24)) >>> 0;
 	}
 
 	public captureState(): VdpReadbackState {

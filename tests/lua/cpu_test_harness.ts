@@ -8,10 +8,18 @@ import { Memory } from '../../machine/ts/machine/memory/memory';
 import { compileLuaChunkToProgram } from '../../machine/ts/machine/program/compiler';
 import type { OptimizationLevel } from '../../machine/ts/machine/program/optimizer';
 
-export function runCompiledLua(source: string, path = 'test.lua', optLevel: OptimizationLevel = 0): Value[] {
+export function parseLuaChunk(source: string, path = 'test.lua') {
 	const lexer = new LuaLexer(source, path);
 	const parser = new LuaParser(lexer.scanTokens(), path, splitText(source));
-	const compiled = compileLuaChunkToProgram(parser.parseChunk(), [], { entrySource: source, optLevel });
+	return parser.parseChunk();
+}
+
+export function compileLuaSource(source: string, path = 'test.lua', optLevel: OptimizationLevel = 0) {
+	return compileLuaChunkToProgram(parseLuaChunk(source, path), [], { entrySource: source, optLevel });
+}
+
+export function runCompiledLua(source: string, path = 'test.lua', optLevel: OptimizationLevel = 0): Value[] {
+	const compiled = compileLuaSource(source, path, optLevel);
 	const cpu = new CPU(new Memory({ systemRom: new Uint8Array(0), cartRom: new Uint8Array(0) }));
 	cpu.setProgram(compiled.program, compiled.metadata, compiled.metadata);
 	cpu.start(compiled.entryProtoIndex);

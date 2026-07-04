@@ -31,11 +31,11 @@ import {
 	IO_VDP_STATUS,
 } from '../../machine/ts/machine/bus/io';
 import { CPU } from '../../machine/ts/machine/cpu/cpu';
-import type { VdpFrameBufferPresentation, VdpFrameBufferPresentationSink } from '../../machine/ts/machine/devices/vdp/device_output';
-import { VDP, VDP_FRAMEBUFFER_PAGE_DISPLAY } from '../../machine/ts/machine/devices/vdp/vdp';
+import { VDP } from '../../machine/ts/machine/devices/vdp/vdp';
 import {
 	VDP_FIFO_CTRL_SEAL,
 	VDP_FAULT_CMD_BAD_DOORBELL,
+	VDP_FAULT_NONE,
 	VDP_FAULT_RD_OOB,
 	VDP_FAULT_RD_UNSUPPORTED_MODE,
 	VDP_FAULT_SUBMIT_STATE,
@@ -189,25 +189,6 @@ function assertVdpFault(memory: Memory, code: number): void {
 	assert.equal((memory.readIoU32(IO_VDP_STATUS) & VDP_STATUS_FAULT) !== 0, true);
 }
 
-function drainFrameBufferPresentation(vdp: VDP): { count: number; dirtyRowStart: number; dirtyRowEnd: number; firstDirtyXEnd: number } {
-	const result = {
-		count: 0,
-		dirtyRowStart: 0,
-		dirtyRowEnd: 0,
-		firstDirtyXEnd: 0,
-	};
-	const sink: VdpFrameBufferPresentationSink = {
-		consumeVdpFrameBufferPresentation(presentation: VdpFrameBufferPresentation): void {
-			result.count = presentation.presentationCount;
-			result.dirtyRowStart = presentation.dirtyRowStart;
-			result.dirtyRowEnd = presentation.dirtyRowEnd;
-			result.firstDirtyXEnd = presentation.dirtySpansByRow[presentation.dirtyRowStart]!.xEnd;
-		},
-	};
-	vdp.drainFrameBufferPresentation(sink);
-	return result;
-}
-
 function clearVdpFault(memory: Memory): void {
 	memory.writeValue(IO_VDP_FAULT_ACK, 1);
 	assert.equal(memory.readIoU32(IO_VDP_FAULT_CODE), 0);
@@ -294,7 +275,7 @@ test('VDP stream retains RPU pass and draw commands as device output', () => {
 
 	assert.equal(memory.readIoU32(IO_VDP_FAULT_CODE), 0);
 	vdp.advanceWork(vdp.getPendingRenderWorkUnits());
-	assert.equal(vdp.presentReadyFrameOnVblankEdge(), false);
+	vdp.presentReadyFrameOnVblankEdge();
 	const output = vdp.readDeviceOutput();
 	assert.equal(output.rpu.commands.passCount, 1);
 	assert.equal(output.rpu.commands.drawCount, 1);
@@ -314,7 +295,7 @@ test('VDP stream retains RPU pass and draw commands as device output', () => {
 	assert.notEqual(revisionAfter, revisionBefore);
 });
 
-test('VDP packet FIFO faults cancel the frame while preserving prior register side effects', () => {
+test('VDP packet FIFO keeps unknown packets deterministic while preserving prior register side effects', () => {
 	const { memory, vdp } = createVdp();
 
 	sealStream(memory, vdp, [
@@ -324,22 +305,23 @@ test('VDP packet FIFO faults cancel the frame while preserving prior register si
 		VDP_PKT_END,
 	]);
 
-	assertVdpFault(memory, VDP_FAULT_STREAM_BAD_PACKET);
+	assert.equal(memory.readIoU32(IO_VDP_FAULT_CODE), VDP_FAULT_NONE);
 	assert.equal(memory.readValue(IO_VDP_REG_BG_COLOR), 0xff102030);
 	assert.equal(vdp.getPendingRenderWorkUnits(), 0);
 });
 
-test('VDP packet FIFO rejects reserved bits and register ranges', () => {
+test('VDP packet FIFO decodes reserved command bits and wraps register indices', () => {
 	const { memory, vdp } = createVdp();
 
 	sealStream(memory, vdp, [VDP_PKT_CMD | (1 << 16) | VDP_CMD_CLEAR, VDP_PKT_END]);
-	assertVdpFault(memory, VDP_FAULT_STREAM_BAD_PACKET);
+	assertVdpFault(memory, VDP_FAULT_CMD_BAD_DOORBELL);
 	clearVdpFault(memory);
-	sealStream(memory, vdp, [VDP_PKT_REG1 | 19, 0, VDP_PKT_END]);
-	assertVdpFault(memory, VDP_FAULT_STREAM_BAD_PACKET);
-	clearVdpFault(memory);
-	sealStream(memory, vdp, [VDP_PKT_REGN | (2 << 16) | 18, 0, 0, VDP_PKT_END]);
-	assertVdpFault(memory, VDP_FAULT_STREAM_BAD_PACKET);
+	sealStream(memory, vdp, [VDP_PKT_REG1 | 19, 0xaabbccdd, VDP_PKT_END]);
+	assert.equal(memory.readIoU32(IO_VDP_FAULT_CODE), VDP_FAULT_NONE);
+	assert.equal(memory.readValue(IO_VDP_REG_SRC_SLOT), 0xaabbccdd);
+	sealStream(memory, vdp, [VDP_PKT_REGN | (2 << 16) | 18, 0x11111111, 0x22222222, VDP_PKT_END]);
+	assert.equal(memory.readIoU32(IO_VDP_FAULT_CODE), VDP_FAULT_NONE);
+	assert.equal(memory.readValue(IO_VDP_REG_SRC_SLOT), 0x22222222);
 });
 
 test('VDP packet FIFO allows an empty PKT_END-only frame', () => {
@@ -430,64 +412,75 @@ test('VDP VRAM read faults latch status instead of throwing', () => {
 
 test('VDP VOUT scanout timing owns the VBLANK output pin', () => {
 	const { memory, scheduler, vdp } = createVdp();
+	const vdpStatusWords: number[] = [];
 
-	assert.equal(vdp.readDeviceOutput().scanoutPhase, VDP_VOUT_SCANOUT_PHASE_ACTIVE);
-	assert.equal(vdp.readDeviceOutput().scanoutX, 0);
-	assert.equal(vdp.readDeviceOutput().scanoutY, 0);
-	assert.equal((memory.readIoU32(IO_VDP_STATUS) & VDP_STATUS_VBLANK) !== 0, false);
+	const resetOutput = vdp.readDeviceOutput();
+	assert.equal(resetOutput.scanoutPhase, VDP_VOUT_SCANOUT_PHASE_ACTIVE);
+	assert.equal(resetOutput.scanoutX, 0);
+	assert.equal(resetOutput.scanoutY, 0);
+	vdpStatusWords.push(memory.readIoU32(IO_VDP_STATUS));
 	vdp.setScanoutTiming(false, 0, 100, 80);
 	scheduler.setNowCycles(41);
-	assert.equal(vdp.readDeviceOutput().scanoutPhase, VDP_VOUT_SCANOUT_PHASE_ACTIVE);
-	assert.equal(vdp.readDeviceOutput().scanoutX, 166);
-	assert.equal(vdp.readDeviceOutput().scanoutY, 108);
-	assert.equal((memory.readIoU32(IO_VDP_STATUS) & VDP_STATUS_VBLANK) !== 0, false);
+	const activeOutput = vdp.readDeviceOutput();
+	assert.equal(activeOutput.scanoutPhase, VDP_VOUT_SCANOUT_PHASE_ACTIVE);
+	assert.equal(activeOutput.scanoutX, 166);
+	assert.equal(activeOutput.scanoutY, 108);
+	vdpStatusWords.push(memory.readIoU32(IO_VDP_STATUS));
 	scheduler.setNowCycles(80);
 	vdp.setScanoutTiming(true, 80, 100, 80);
 	scheduler.setNowCycles(90);
-	assert.equal(vdp.readDeviceOutput().scanoutPhase, VDP_VOUT_SCANOUT_PHASE_VBLANK);
-	assert.equal(vdp.readDeviceOutput().scanoutX, 128);
-	assert.equal(vdp.readDeviceOutput().scanoutY, 238);
-	assert.equal((memory.readIoU32(IO_VDP_STATUS) & VDP_STATUS_VBLANK) !== 0, true);
+	const vblankOutput = vdp.readDeviceOutput();
+	assert.equal(vblankOutput.scanoutPhase, VDP_VOUT_SCANOUT_PHASE_VBLANK);
+	assert.equal(vblankOutput.scanoutX, 128);
+	assert.equal(vblankOutput.scanoutY, 238);
+	vdpStatusWords.push(memory.readIoU32(IO_VDP_STATUS));
 	scheduler.setNowCycles(100);
 	vdp.setScanoutTiming(false, 0, 100, 80);
 	scheduler.setNowCycles(120);
-	assert.equal(vdp.readDeviceOutput().scanoutPhase, VDP_VOUT_SCANOUT_PHASE_ACTIVE);
-	assert.equal(vdp.readDeviceOutput().scanoutX, 0);
-	assert.equal(vdp.readDeviceOutput().scanoutY, 53);
-	assert.equal((memory.readIoU32(IO_VDP_STATUS) & VDP_STATUS_VBLANK) !== 0, false);
+	const nextActiveOutput = vdp.readDeviceOutput();
+	assert.equal(nextActiveOutput.scanoutPhase, VDP_VOUT_SCANOUT_PHASE_ACTIVE);
+	assert.equal(nextActiveOutput.scanoutX, 0);
+	assert.equal(nextActiveOutput.scanoutY, 53);
+	vdpStatusWords.push(memory.readIoU32(IO_VDP_STATUS));
+	assert.deepEqual(vdpStatusWords.map(status => (status & VDP_STATUS_VBLANK) !== 0), [false, false, true, false]);
 });
 
 test('VDP dither register writes update the live latch directly', () => {
 	const { memory, vdp } = createVdp();
 
-	assert.equal(vdp.readDeviceOutput().ditherType, 0);
-	assert.equal(vdp.readDeviceOutput().frameBufferWidth, 256);
-	assert.equal(vdp.readDeviceOutput().frameBufferHeight, 212);
+	const resetOutput = vdp.readDeviceOutput();
+	assert.equal(resetOutput.ditherType, 0);
+	assert.equal(resetOutput.frameBufferWidth, 256);
+	assert.equal(resetOutput.frameBufferHeight, 212);
 	memory.writeValue(IO_VDP_DITHER, 3);
 	vdp.setDecodedVramSurfaceDimensions(VRAM_FRAMEBUFFER_BASE, 128, 64);
 
 	assert.equal(vdp.captureState().ditherType, 3);
-	assert.equal(vdp.readDeviceOutput().ditherType, 0);
+	const liveOutput = vdp.readDeviceOutput();
+	assert.equal(liveOutput.ditherType, 0);
 	assert.equal(vdp.frameBufferWidth, 128);
 	assert.equal(vdp.frameBufferHeight, 64);
-	assert.equal(vdp.readDeviceOutput().frameBufferWidth, 256);
-	assert.equal(vdp.readDeviceOutput().frameBufferHeight, 212);
+	assert.equal(liveOutput.frameBufferWidth, 256);
+	assert.equal(liveOutput.frameBufferHeight, 212);
 	memory.writeValue(IO_VDP_CMD, VDP_CMD_BEGIN_FRAME);
 	memory.writeValue(IO_VDP_CMD, VDP_CMD_END_FRAME);
 	vdp.setDecodedVramSurfaceDimensions(VRAM_FRAMEBUFFER_BASE, 96, 48);
 	assert.equal(vdp.frameBufferWidth, 96);
 	assert.equal(vdp.frameBufferHeight, 48);
-	assert.equal(vdp.readDeviceOutput().frameBufferWidth, 256);
-	assert.equal(vdp.readDeviceOutput().frameBufferHeight, 212);
-	assert.equal(vdp.presentReadyFrameOnVblankEdge(), false);
-	assert.equal(vdp.readDeviceOutput().ditherType, 3);
-	assert.equal(vdp.readDeviceOutput().frameBufferWidth, 128);
-	assert.equal(vdp.readDeviceOutput().frameBufferHeight, 64);
+	const sealedOutput = vdp.readDeviceOutput();
+	assert.equal(sealedOutput.frameBufferWidth, 256);
+	assert.equal(sealedOutput.frameBufferHeight, 212);
+	vdp.presentReadyFrameOnVblankEdge();
+	const presentedOutput = vdp.readDeviceOutput();
+	assert.equal(presentedOutput.ditherType, 3);
+	assert.equal(presentedOutput.frameBufferWidth, 128);
+	assert.equal(presentedOutput.frameBufferHeight, 64);
 	memory.writeValue(IO_VDP_CMD, VDP_CMD_BEGIN_FRAME);
 	memory.writeValue(IO_VDP_CMD, VDP_CMD_END_FRAME);
-	assert.equal(vdp.presentReadyFrameOnVblankEdge(), false);
-	assert.equal(vdp.readDeviceOutput().frameBufferWidth, 96);
-	assert.equal(vdp.readDeviceOutput().frameBufferHeight, 48);
+	vdp.presentReadyFrameOnVblankEdge();
+	const nextPresentedOutput = vdp.readDeviceOutput();
+	assert.equal(nextPresentedOutput.frameBufferWidth, 96);
+	assert.equal(nextPresentedOutput.frameBufferHeight, 48);
 });
 
 test('VDP XF packet updates raw transform register state', () => {
@@ -529,6 +522,8 @@ test('VDP XF words resolve to render-owned view rotation inverse transform', () 
 	const transform = createVdpTransformSnapshot();
 	const viewMatrixIndex = 2;
 	const projectionMatrixIndex = 3;
+	const viewMatrixIndexWord = viewMatrixIndex + VDP_XF_MATRIX_COUNT;
+	const projectionMatrixIndexWord = projectionMatrixIndex + VDP_XF_MATRIX_COUNT;
 	const matrixWords = new Array<number>(VDP_XF_MATRIX_REGISTER_WORDS).fill(0);
 	const viewWords = [
 		0x00020000, 0, 0, 0,
@@ -547,7 +542,7 @@ test('VDP XF words resolve to render-owned view rotation inverse transform', () 
 		matrixWords[projectionMatrixIndex * VDP_XF_MATRIX_WORDS + index] = projWords[index];
 	}
 
-	resolveVdpTransformSnapshot(transform, matrixWords, viewMatrixIndex, projectionMatrixIndex);
+	resolveVdpTransformSnapshot(transform, matrixWords, viewMatrixIndexWord, projectionMatrixIndexWord);
 
 	assert.equal(transform.view[0], 2);
 	assert.equal(transform.viewRotationInverse[0], 0.5);
@@ -561,16 +556,21 @@ test('VDP XF words resolve to render-owned view rotation inverse transform', () 
 	assert.equal(transform.eye[2], -2);
 });
 
-test('VDP XF packet faults through VDP state instead of exceptions', () => {
+test('VDP XF select registers latch raw words', () => {
 	const { memory, vdp } = createVdp();
+	const viewMatrixIndex = VDP_XF_MATRIX_COUNT;
+	const projectionMatrixIndex = 0xffffffff;
 
-	assert.doesNotThrow(() => sealStream(memory, vdp, [
+	sealStream(memory, vdp, [
 		VDP_XF_PACKET_KIND | (VDP_XF_SELECT_PACKET_PAYLOAD_WORDS << 16),
 		VDP_XF_VIEW_MATRIX_INDEX_REGISTER,
-		VDP_XF_MATRIX_COUNT,
-		0,
+		viewMatrixIndex,
+		projectionMatrixIndex,
 		VDP_PKT_END,
-	]));
-	assertVdpFault(memory, VDP_FAULT_STREAM_BAD_PACKET);
-	assert.equal(vdp.getPendingRenderWorkUnits(), 0);
+	]);
+
+	const state = vdp.captureState();
+	assert.equal(memory.readIoU32(IO_VDP_FAULT_CODE), VDP_FAULT_NONE);
+	assert.equal(state.xf.viewMatrixIndex, viewMatrixIndex);
+	assert.equal(state.xf.projectionMatrixIndex, projectionMatrixIndex);
 });

@@ -4,7 +4,7 @@ import { LuaInterpreter } from '../../lua/runtime';
 import { convertToError } from '../../lua/value';
 import { seedLuaGlobals } from '../../machine/firmware/globals';
 import { compileLuaChunkToProgram, encodeCompiledProgramImage } from '../../machine/program/compiler';
-import { inflateExecutableProgramImage, linkBootProgramImages } from '../../machine/program/linker';
+import { linkBootProgramImages } from '../../machine/program/linker';
 import { readWorkspaceLuaSourceText } from '../workspace/files';
 import type { RuntimeSymbolEntry, RuntimeSymbolKind } from './symbols';
 import { resolveLuaSourceRecord, type LuaSourceRegistry } from '../../machine/program/sources';
@@ -23,7 +23,7 @@ import {
 	type ProgramSymbolsImage,
 } from '../../machine/program/loader';
 import type { RawRomSource } from '../../rompack/source';
-import { Table, type ProgramMetadata, type Value, isNativeFunction, isNativeObject } from '../../machine/cpu/cpu';
+import { Table, type Value, isNativeFunction, isNativeObject } from '../../machine/cpu/cpu';
 import { asStringId, valueIsString } from '../../machine/cpu/cpu';
 import { EMPTY_STATIC_MODULE_PATHS, type Runtime } from '../../machine/runtime/runtime';
 
@@ -228,19 +228,9 @@ function compileRegistryProgramImage(
 	};
 }
 
-function bootSystemSourceProgram(runtime: Runtime, interpreter: LuaInterpreter, options?: { preserveState?: boolean }): boolean {
+function bootSystemSourceProgram(runtime: Runtime, interpreter: LuaInterpreter, preserveState = false): boolean {
 	const system = compileRegistryProgramImage(runtime, runtime.systemLuaSources, interpreter);
-	let programImage = system.image;
-	let metadata: ProgramMetadata | null = system.symbols;
-	let runtimeSymbols = system.image.link.symbols;
-	let vectors = system.image.vectors;
-	let systemStaticModulePaths: ReadonlyArray<string> = system.image.sections.rodata.staticModulePaths;
-	runtime.cartVectors = null;
-	runtime.cartDataBaseAddress = null;
-	runtime.cartBssBaseAddress = null;
-	runtime.programDataBaseAddress = PROGRAM_STATIC_RAM_BASE;
-	runtime.programBssBaseAddress = PROGRAM_STATIC_RAM_BASE + programImage.sections.data.bytes.byteLength;
-	runtime.cartStaticModulePaths = [];
+	runtime.clearLinkedCartProgram(system.image.sections.data.bytes.byteLength);
 	let cartProgramImage: ProgramImage | null = null;
 	let cartSymbols: ProgramSymbolsImage | null = null;
 	if (runtime.cartLuaSources?.can_boot_from_source) {
@@ -252,82 +242,44 @@ function bootSystemSourceProgram(runtime: Runtime, interpreter: LuaInterpreter, 
 		cartProgramImage = cart.program;
 		cartSymbols = cart.symbols;
 	}
-	if (cartProgramImage) {
-		const linked = linkBootProgramImages(system.image, system.symbols, cartProgramImage, cartSymbols, 'system');
-		programImage = linked.programImage;
-		metadata = linked.metadata;
-		runtimeSymbols = linked.programImage.link.symbols;
-		vectors = linked.vectors;
-		systemStaticModulePaths = linked.systemStaticModulePaths;
-		runtime.programDataBaseAddress = linked.dataBaseAddress;
-		runtime.programBssBaseAddress = linked.bssBaseAddress;
-		runtime.setLinkedCartVectors(linked.cartVectors, linked.cartDataBaseAddress, linked.cartBssBaseAddress, linked.cartStaticModulePaths);
-	}
-	runtime.cartEntryAvailable = true;
 	runtime._luaPath = system.entryPath;
-	if (!options?.preserveState) {
+	if (!preserveState) {
 		resetRuntimeState(runtime);
 	}
 	runtime.moduleCache.clear();
 	runtime.machine.vdp.resetIngressState();
-	const program = inflateExecutableProgramImage(programImage, runtime.programDataBaseAddress, runtime.programBssBaseAddress);
-	runtime.machine.cpu.setProgram(program, runtimeSymbols, metadata);
-	runtime.programRuntimeSymbols = runtimeSymbols;
-	runtime.programMetadata = metadata;
-	runtime.startLoadedProgram(vectors, systemStaticModulePaths, EMPTY_STATIC_MODULE_PATHS);
+	if (cartProgramImage) {
+		runtime.bootLinkedProgramImage(linkBootProgramImages(system.image, system.symbols, cartProgramImage, cartSymbols, 'system'));
+		return true;
+	}
+	runtime.boot(system.image, system.symbols, system.image.vectors, PROGRAM_STATIC_RAM_BASE, PROGRAM_STATIC_RAM_BASE + system.image.sections.data.bytes.byteLength, system.image.sections.rodata.staticModulePaths, EMPTY_STATIC_MODULE_PATHS);
 	return true;
 }
 
-function bootProgramImage(runtime: Runtime, options?: { preserveState?: boolean }): boolean {
+function bootProgramImage(runtime: Runtime, preserveState = false): boolean {
 	const bootingCart = runtime.cartProgramStarted;
 	const systemImages = loadProgramImagesForSource(runtime, 'system');
-	let programImage = systemImages.program;
-	let metadata: ProgramMetadata | null = systemImages.symbols;
-	let runtimeSymbols = systemImages.program.link.symbols;
-	let vectors = systemImages.program.vectors;
-	let systemStaticModulePaths: ReadonlyArray<string> = systemImages.program.sections.rodata.staticModulePaths;
-	let cartStaticModulePaths: ReadonlyArray<string> = EMPTY_STATIC_MODULE_PATHS;
-	runtime.cartVectors = null;
-	runtime.cartDataBaseAddress = null;
-	runtime.cartBssBaseAddress = null;
-	runtime.programDataBaseAddress = PROGRAM_STATIC_RAM_BASE;
-	runtime.programBssBaseAddress = PROGRAM_STATIC_RAM_BASE + programImage.sections.data.bytes.byteLength;
-	runtime.cartStaticModulePaths = [];
-	if (runtime.cartRomSource) {
-		const cartEntry = runtime.cartRomSource.getEntry(PROGRAM_IMAGE_ID);
-		if (cartEntry) {
-			const cartImages = loadProgramImagesForSource(runtime, 'cart');
-			const linked = linkBootProgramImages(systemImages.program, systemImages.symbols, cartImages.program, cartImages.symbols, bootingCart ? 'cart' : 'system');
-			programImage = linked.programImage;
-			metadata = linked.metadata;
-			runtimeSymbols = linked.programImage.link.symbols;
-			vectors = linked.vectors;
-			systemStaticModulePaths = linked.systemStaticModulePaths;
-			if (bootingCart) {
-				cartStaticModulePaths = linked.cartStaticModulePaths;
-			}
-			runtime.programDataBaseAddress = linked.dataBaseAddress;
-			runtime.programBssBaseAddress = linked.bssBaseAddress;
-			runtime.setLinkedCartVectors(linked.cartVectors, linked.cartDataBaseAddress, linked.cartBssBaseAddress, linked.cartStaticModulePaths);
-		}
-	}
-	runtime.cartEntryAvailable = true;
+	runtime.clearLinkedCartProgram(systemImages.program.sections.data.bytes.byteLength);
 	installFreshLuaInterpreter(runtime);
 
 	runtime._luaPath = runtime.activeLuaSources.entry_path;
-	if (!options?.preserveState) {
+	if (!preserveState) {
 		resetRuntimeState(runtime);
 	}
 
 	runtime.moduleCache.clear();
 	runtime.machine.vdp.resetIngressState();
 
-	const inflated = inflateExecutableProgramImage(programImage, runtime.programDataBaseAddress, runtime.programBssBaseAddress);
 	try {
-		runtime.machine.cpu.setProgram(inflated, runtimeSymbols, metadata);
-		runtime.programRuntimeSymbols = runtimeSymbols;
-		runtime.programMetadata = metadata;
-		runtime.startLoadedProgram(vectors, systemStaticModulePaths, cartStaticModulePaths);
+		if (runtime.cartRomSource) {
+			const cartEntry = runtime.cartRomSource.getEntry(PROGRAM_IMAGE_ID);
+			if (cartEntry) {
+				const cartImages = loadProgramImagesForSource(runtime, 'cart');
+				runtime.bootLinkedProgramImage(linkBootProgramImages(systemImages.program, systemImages.symbols, cartImages.program, cartImages.symbols, bootingCart ? 'cart' : 'system'));
+				return true;
+			}
+		}
+		runtime.boot(systemImages.program, systemImages.symbols, systemImages.program.vectors, PROGRAM_STATIC_RAM_BASE, PROGRAM_STATIC_RAM_BASE + systemImages.program.sections.data.bytes.byteLength, systemImages.program.sections.rodata.staticModulePaths, EMPTY_STATIC_MODULE_PATHS);
 		return true;
 	} catch (error) {
 		console.info('Program-image boot failed.');
@@ -336,10 +288,10 @@ function bootProgramImage(runtime: Runtime, options?: { preserveState?: boolean 
 	}
 }
 
-export function bootActiveProgram(runtime: Runtime, options?: { preserveState?: boolean }): boolean {
+export function bootActiveProgram(runtime: Runtime, preserveState = false): boolean {
 	return runtime.activeLuaSources.can_boot_from_source
-		? bootLuaProgram(runtime, { preserveState: options?.preserveState })
-		: bootProgramImage(runtime, options);
+		? bootLuaProgram(runtime, { preserveState })
+		: bootProgramImage(runtime, preserveState);
 }
 
 function bootLuaProgram(runtime: Runtime, options?: { preserveState?: boolean; sourceOverride?: { path: string; source: string } }): boolean {
@@ -348,7 +300,7 @@ function bootLuaProgram(runtime: Runtime, options?: { preserveState?: boolean; s
 
 	const interpreter = installFreshLuaInterpreter(runtime);
 	if (runtime.activeLuaSources === runtime.systemLuaSources && !options?.sourceOverride) {
-		return bootSystemSourceProgram(runtime, interpreter, options);
+		return bootSystemSourceProgram(runtime, interpreter, !!options?.preserveState);
 	}
 
 	if (entryRecord === null) {
@@ -377,18 +329,11 @@ function bootLuaProgram(runtime: Runtime, options?: { preserveState?: boolean; s
 			constModulePaths: [ROM_ASSET_SYMBOL_MODULE_PATH],
 		});
 		const programImage = encodeCompiledProgramImage(compiled);
-		runtime.programDataBaseAddress = PROGRAM_STATIC_RAM_BASE;
-		runtime.programBssBaseAddress = PROGRAM_STATIC_RAM_BASE + programImage.sections.data.bytes.byteLength;
-		const program = inflateExecutableProgramImage(programImage, runtime.programDataBaseAddress, runtime.programBssBaseAddress);
 		runtime.moduleCache.clear();
 		runtime.machine.vdp.resetIngressState();
-		runtime.machine.cpu.setProgram(program, programImage.link.symbols, compiled.metadata);
-		runtime.programRuntimeSymbols = programImage.link.symbols;
-		runtime.programMetadata = compiled.metadata;
-		runtime.startLoadedProgram(programImage.vectors, EMPTY_STATIC_MODULE_PATHS, programImage.sections.rodata.staticModulePaths);
+		runtime.boot(programImage, compiled.metadata, programImage.vectors, PROGRAM_STATIC_RAM_BASE, PROGRAM_STATIC_RAM_BASE + programImage.sections.data.bytes.byteLength, EMPTY_STATIC_MODULE_PATHS, programImage.sections.rodata.staticModulePaths);
 		return true;
-	}
-	catch (error) {
+	} catch (error) {
 		logDebugState(runtime);
 		throw convertToError(error);
 	}

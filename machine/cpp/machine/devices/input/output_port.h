@@ -13,8 +13,6 @@ class InputControllerOutputPort {
 public:
 	InputControllerOutputPort(InputControllerInputSource& input, const InputControllerRegisterFile& registers, Memory& memory);
 
-	static void writeOutputControlRegisterThunk(void* context, u32 addr, Value value);
-
 	void writeOutputControlRegister(u32 addr, Value value);
 
 private:

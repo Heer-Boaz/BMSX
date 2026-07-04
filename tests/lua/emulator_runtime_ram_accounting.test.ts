@@ -1,29 +1,24 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 
-import { splitText } from '../../machine/ts/common/text_lines';
-import { LuaLexer } from '../../machine/ts/lua/syntax/lexer';
-import { LuaParser } from '../../machine/ts/lua/syntax/parser';
-import { BuiltinFunctionId, CPU, RunResult, StringValue, Table, createBuiltinFunction, createNativeFunction, createNativeObject, type CpuRuntimeState } from '../../machine/ts/machine/cpu/cpu';
+import { BuiltinFunctionId, CPU, RunResult, StringValue, createBuiltinFunction, type CpuRuntimeState } from '../../machine/ts/machine/cpu/cpu';
 import { Memory } from '../../machine/ts/machine/memory/memory';
-import { compileLuaChunkToProgram } from '../../machine/ts/machine/program/compiler';
-
-function parseChunk(source: string, path = 'ram_accounting.lua') {
-	const lexer = new LuaLexer(source, path);
-	const parser = new LuaParser(lexer.scanTokens(), path, splitText(source));
-	return parser.parseChunk();
-}
-
-function compileSource(source: string, path = 'ram_accounting.lua') {
-	return compileLuaChunkToProgram(parseChunk(source, path), [], { entrySource: source });
-}
+import { compileLuaSource } from './cpu_test_harness';
 
 function createCpuWithProgram(source: string): { cpu: CPU; entryProtoIndex: number } {
-	const compiled = compileSource(source);
+	const compiled = compileLuaSource(source, 'ram_accounting.lua');
 	const memory = new Memory({ systemRom: new Uint8Array(0), cartRom: new Uint8Array(0) });
 	const cpu = new CPU(memory);
 	cpu.setProgram(compiled.program, compiled.metadata, compiled.metadata);
 	return { cpu, entryProtoIndex: compiled.entryProtoIndex };
+}
+
+function collectHeapDeltaAfterRun(source: string): { before: number; after: number } {
+	const { cpu, entryProtoIndex } = createCpuWithProgram(source);
+	const before = cpu.collectTrackedHeapBytes();
+	cpu.start(entryProtoIndex);
+	assert.equal(cpu.runUntilDepth(0, 100000), RunResult.Halted);
+	return { before, after: cpu.collectTrackedHeapBytes() };
 }
 
 test('tracked heap bytes include rooted tables and native arrays', () => {
@@ -34,7 +29,7 @@ test('tracked heap bytes include rooted tables and native arrays', () => {
 
 	const before = cpu.collectTrackedHeapBytes();
 
-	const table = new Table(2, 2);
+	const table = cpu.createTable(2, 2);
 	table.set(1, 11);
 	table.set(StringValue.get(cpu.stringPool.intern('hp')), 7);
 	cpu.globals.set(key, table);
@@ -43,7 +38,7 @@ test('tracked heap bytes include rooted tables and native arrays', () => {
 	assert.ok(afterTable > before, `expected table bytes to increase heap usage (${afterTable} <= ${before})`);
 
 	const raw = [3, 5];
-	const nativeArray = createNativeObject(raw, {
+	const nativeArray = cpu.createNativeObject(raw, {
 		get: (entryKey) => {
 			if (typeof entryKey === 'number' && Number.isInteger(entryKey) && entryKey >= 1) {
 				const value = raw[entryKey - 1];
@@ -58,6 +53,7 @@ test('tracked heap bytes include rooted tables and native arrays', () => {
 			raw[entryKey - 1] = value as number;
 		},
 		len: () => raw.length,
+		nextEntry: () => null,
 	});
 	cpu.globals.set(listKey, nativeArray);
 
@@ -76,12 +72,14 @@ test('tracked heap bytes include explicit extra roots for native functions and h
 	const memory = new Memory({ systemRom: new Uint8Array(0), cartRom: new Uint8Array(0) });
 	const cpu = new CPU(memory);
 
-	const nativeFn = createNativeFunction('external.iterator', () => {});
-	const handle = createNativeObject({}, {
+	const nativeFn = cpu.createNativeFunction('external.iterator', () => {});
+	const handle = cpu.createNativeObject({}, {
 		get: () => null,
 		set: () => {
 			throw new Error('read-only');
 		},
+		len: () => 0,
+		nextEntry: () => null,
 	});
 
 	const before = cpu.collectTrackedHeapBytes();
@@ -118,13 +116,21 @@ test('builtin primitive save-state uses VM id instead of stable global path', ()
 	);
 });
 
+test('CPU save-state leaves host-native bridge values out of CPU roots', () => {
+	const memory = new Memory({ systemRom: new Uint8Array(0), cartRom: new Uint8Array(0) });
+	const cpu = new CPU(memory);
+	cpu.globals.setStringKey(StringValue.get(cpu.stringPool.intern('native')), cpu.createNativeFunction('native_bridge', () => {}));
+
+	assert.deepEqual(cpu.captureRuntimeState(new Map()).globals, []);
+});
+
 test('tracked heap bytes do not include raw js array capacity without native iteration entries', () => {
 	const memory = new Memory({ systemRom: new Uint8Array(0), cartRom: new Uint8Array(0) });
 	const cpu = new CPU(memory);
 
 	const before = cpu.collectTrackedHeapBytes();
 	const raw = new Array(1024).fill(7);
-	const nativeArray = createNativeObject(raw, {
+	const nativeArray = cpu.createNativeObject(raw, {
 		get: (entryKey) => {
 			if (typeof entryKey !== 'number' || !Number.isInteger(entryKey) || entryKey < 1 || entryKey > raw.length) {
 				return null;
@@ -139,6 +145,7 @@ test('tracked heap bytes do not include raw js array capacity without native ite
 			raw[entryKey - 1] = value as number;
 		},
 		len: () => raw.length,
+		nextEntry: () => null,
 	});
 
 	const after = cpu.collectTrackedHeapBytes([nativeArray]);
@@ -149,12 +156,12 @@ test('program image literals and debug names stay in ROM accounting', () => {
 	const memory = new Memory({ systemRom: new Uint8Array(0), cartRom: new Uint8Array(0) });
 	const cpu = new CPU(memory);
 	const before = cpu.collectTrackedHeapBytes();
-	const compiled = compileSource([
+	const compiled = compileLuaSource([
 		'local alpha_beta_gamma = "literal text"',
 		'local field_name = "field literal"',
 		'program_literal = "global literal"',
 		'return alpha_beta_gamma, field_name',
-	].join('\n'));
+	].join('\n'), 'ram_accounting.lua');
 
 	cpu.setProgram(compiled.program, compiled.metadata, compiled.metadata);
 
@@ -238,32 +245,24 @@ test('restored static closures reuse the static proto cache', () => {
 });
 
 test('non-const function materialization allocates a runtime closure', () => {
-	const { cpu, entryProtoIndex } = createCpuWithProgram([
+	const heap = collectHeapDeltaAfterRun([
 		'local f = function()',
 		'	return 7',
 		'end',
 		'return f',
 	].join('\n'));
-	const before = cpu.collectTrackedHeapBytes();
 
-	cpu.start(entryProtoIndex);
-	assert.equal(cpu.runUntilDepth(0, 100000), RunResult.Halted);
-
-	assert.ok(cpu.collectTrackedHeapBytes() > before);
+	assert.ok(heap.after > heap.before);
 });
 
 test('captured closures allocate tracked closure and upvalue state', () => {
-	const { cpu, entryProtoIndex } = createCpuWithProgram([
+	const heap = collectHeapDeltaAfterRun([
 		'local x = 7',
 		'local f = function()',
 		'	return x',
 		'end',
 		'return f',
 	].join('\n'));
-	const before = cpu.collectTrackedHeapBytes();
 
-	cpu.start(entryProtoIndex);
-	assert.equal(cpu.runUntilDepth(0, 100000), RunResult.Halted);
-
-	assert.ok(cpu.collectTrackedHeapBytes() > before);
+	assert.ok(heap.after > heap.before);
 });

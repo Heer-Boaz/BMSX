@@ -1,9 +1,11 @@
 #pragma once
 #include "machine/devices/input/registers.h"
-#include "machine/devices/input/sample_latch.h"
 
 namespace bmsx {
-struct InputControllerState : InputControllerSampleLatchState {
+struct InputControllerState {
+	bool sampleArmed = false;
+	u32 sampleSequence = 0;
+	u32 lastSampleCycle = 0;
 	InputControllerRegisterState registers;
 };
 } // namespace bmsx

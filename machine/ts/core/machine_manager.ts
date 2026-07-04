@@ -28,7 +28,6 @@ global = globalScope; // Ensure global is defined
 export interface MachineBootOptions {
 	systemRom: Uint8Array;
 	cartridge?: Uint8Array;
-	workspaceOverlay?: Uint8Array;
 	sndcontext?: AudioContext;
 	gainnode?: GainNode;
 	debug?: boolean;
@@ -129,7 +128,7 @@ export class MachineManager {
 	}
 
 	public async boot(options: MachineBootOptions): Promise<Runtime> {
-		const { systemRom, cartridge, workspaceOverlay, debug = false, startingGamepadIndex = null, enableOnscreenGamepad = false, platform, viewHost } = options;
+		const { systemRom, cartridge, debug = false, startingGamepadIndex = null, enableOnscreenGamepad = false, platform, viewHost } = options;
 		if (!platform) {
 			throw new Error('[MachineManager] Platform services not provided.');
 		}
@@ -157,7 +156,7 @@ export class MachineManager {
 			host: resolvedViewHost,
 		});
 		this._view = gview;
-		const runtime = await Runtime.init(systemLayer, workspaceOverlay, Input.instance, platform.microtasks, cartridge);
+		const runtime = await Runtime.init(systemLayer, Input.instance, platform.microtasks, cartridge);
 		this._runtime = runtime;
 		await applyInitialWorkspaceOverrides(runtime);
 		this.syncAudioTiming();

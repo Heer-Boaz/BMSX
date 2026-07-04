@@ -873,9 +873,9 @@ function room_object:ctor()
 	self.last_water_surface_frame = 1
 	self.water_surface_sources = {}
 	for i = 1, #water_surface_frame_imgids do
-		self.water_surface_sources[i] = vdp_img_source(vdp_img_rect(water_surface_frame_imgids[i]))
+		self.water_surface_sources[i] = vdp_img_rect(water_surface_frame_imgids[i])
 	end
-	self.water_body_source = vdp_img_source(vdp_img_rect('water_body_msx'))
+	self.water_body_source = vdp_img_rect('water_body_msx')
 	self.tiles_visible = false
 	self:bind_visual()
 end
@@ -928,7 +928,7 @@ function room_object:rebuild_room_tiles()
 					tile_id = dissolve_prefix .. tostring(dissolve_index)
 				end
 			end
-			room_tile_sources[tile_index] = vdp_img_source(vdp_img_rect(tile_id))
+			room_tile_sources[tile_index] = vdp_img_rect(tile_id)
 			::continue::
 		end
 	end

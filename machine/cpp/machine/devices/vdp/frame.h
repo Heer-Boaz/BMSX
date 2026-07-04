@@ -7,6 +7,7 @@
 #include "machine/devices/vdp/rpu.h"
 #include "machine/devices/vdp/xf.h"
 #include <memory>
+#include <vector>
 
 namespace bmsx {
 
@@ -33,7 +34,7 @@ enum class VdpSubmittedFrameState : u8 {
 };
 
 struct VdpSubmittedFrame {
-	std::unique_ptr<VdpRpuFrameOutput> rpu = createVdpRpuFrameOutput();
+	std::unique_ptr<VdpRpuFrameOutput> rpu;
 	VdpSubmittedFrameState state = VdpSubmittedFrameState::Empty;
 	bool hasCommands = false;
 	int cost = 0;
@@ -48,7 +49,7 @@ struct VdpSubmittedFrame {
 };
 
 struct VdpBuildingFrame {
-	std::unique_ptr<VdpRpuFrameOutput> rpu = createVdpRpuFrameOutput();
+	std::unique_ptr<VdpRpuFrameOutput> rpu;
 	VdpDexFrameState state = VdpDexFrameState::Idle;
 	int cost = 0;
 };
@@ -74,7 +75,7 @@ struct VdpSubmittedFrameSaveState {
 	VdpRpuFrameSaveState rpu;
 };
 
-VdpSubmittedFrame allocateSubmittedFrameSlot();
+VdpSubmittedFrame allocateSubmittedFrameSlot(std::vector<u8>& vdpVram, std::vector<u32>& vdpVramPageRevisions);
 void resetBuildingFrame(VdpBuildingFrame& frame);
 void resetSubmittedFrameSlot(VdpSubmittedFrame& frame);
 VdpBuildingFrameSaveState captureBuildingFrameState(const VdpBuildingFrame& frame);

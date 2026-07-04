@@ -15,8 +15,6 @@ constexpr uint32_t CART_ROM_SIZE = 0x05000000u; // 80 MB
 constexpr uint32_t CART_ROM_MAGIC_OFFSET = 0x00000000u;
 constexpr uint32_t CART_ROM_MAGIC_ADDR = CART_ROM_BASE + CART_ROM_MAGIC_OFFSET;
 
-constexpr uint32_t OVERLAY_ROM_BASE = 0x06000000u;
-constexpr uint32_t OVERLAY_ROM_SIZE = 0x02000000u; // 32 MB
 
 constexpr uint32_t RAM_BASE = 0x08000000u;
 constexpr uint32_t MAX_RAM_SIZE = 0x08000000u; // 128 MB address window

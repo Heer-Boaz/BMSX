@@ -1,6 +1,7 @@
 #include "machine/cpu/cpu.h"
 #include "machine/common/numeric.h"
 #include "machine/common/number_format.h"
+#include "lua/numeric.h"
 #include "machine/devices/irq/controller.h"
 #include "machine/memory/lua_heap_usage.h"
 #include "machine/memory/memory.h"
@@ -23,6 +24,27 @@ namespace bmsx {
 
 // start repeated-sequence-acceptable -- CPU interpreter hot paths keep duplicated opcode/register statements inline.
 
+uint32_t valueObjectHashId(Value v) {
+	switch (valueTag(v)) {
+		case ValueTag::Table:
+			return asTable(v)->hashId;
+		case ValueTag::Closure:
+			return asClosure(v)->hashId;
+		case ValueTag::NativeFunction:
+			return asNativeFunction(v)->hashId;
+		case ValueTag::NativeObject:
+			return asNativeObject(v)->hashId;
+		case ValueTag::Upvalue:
+			return asUpvalue(v)->hashId;
+		default:
+			return static_cast<uint32_t>(valuePayload(v));
+	}
+}
+
+uint32_t valueBuiltinFunctionHashId(Value v) {
+	return static_cast<uint32_t>(asBuiltinFunction(v)->id) + 1u;
+}
+
 namespace {
 static constexpr NativeFnCost kNativeCostTier1 { 1, 0, 0 };
 static constexpr NativeFnCost kNativeCostTier2 { 2, 0, 0 };
@@ -44,16 +66,6 @@ constexpr std::array<NativeFnCost, BUILTIN_FUNCTION_COUNT> kBuiltinFunctionCosts
 	kNativeCostTier4,
 }};
 
-static std::string formatNonFunctionCallError(Value callee, const StringPool& stringPool,
-													const std::optional<SourceRange>& range) {
-	std::string message = "Attempted to call a non-function value.";
-	message += " callee=" + std::string(valueTypeName(callee)) + "(" + valueToString(callee, stringPool) + ")";
-	if (range.has_value()) {
-		message += " at " + range->path + ":" + std::to_string(range->startLine) + ":" + std::to_string(range->startColumn);
-	}
-	return message;
-}
-
 constexpr size_t kTableHeapBytes = 32;
 constexpr size_t kTableArraySlotHeapBytes = 8;
 constexpr size_t kTableHashSlotHeapBytes = 20;
@@ -62,7 +74,6 @@ constexpr size_t kClosureUpvalueSlotHeapBytes = 8;
 constexpr ptrdiff_t kNativeFunctionHeapBytes = 16;
 constexpr ptrdiff_t kNativeObjectHeapBytes = 24;
 constexpr ptrdiff_t kUpvalueHeapBytes = 24;
-
 static inline size_t trackedClosureBytes(const Closure& closure) {
 	return closure.trackedHeapBytes;
 }
@@ -70,8 +81,6 @@ static inline size_t trackedClosureBytes(const Closure& closure) {
 static inline size_t closureAllocationBytes(size_t upvalueCount) {
 	return sizeof(Closure) + (upvalueCount * sizeof(Upvalue*));
 }
-
-constexpr std::string_view kCpuRuntimeMetatableSegment = "@metatable";
 
 } // namespace
 
@@ -751,6 +760,7 @@ Closure* GcHeap::allocateClosure(size_t upvalueCount) {
 	auto* closure = new (storage) Closure();
 	closure->type = ObjType::Closure;
 	closure->marked = false;
+	closure->hashId = allocateHashId();
 	closure->next = m_objects;
 	closure->upvalueCount = upvalueCount;
 	closure->upvalues = reinterpret_cast<Upvalue**>(static_cast<uint8_t*>(storage) + sizeof(Closure));
@@ -802,9 +812,6 @@ void GcHeap::trace() {
 				auto* native = static_cast<NativeObject*>(obj);
 				if (native->metatable) {
 					markObject(native->metatable);
-				}
-				if (native->mark) {
-					native->mark(*this);
 				}
 				break;
 			}
@@ -932,6 +939,7 @@ CPU::CPU(Memory& memory)
 	m_heap.setRootMarker([this](GcHeap& heap) { markRoots(heap); });
 	m_externalRootMarker = [](GcHeap&) {};
 	globals = m_heap.allocate<Table>(ObjType::Table, 0, 0);
+	m_stringIndexTable = createTable();
 	m_indexKey = valueString(m_stringPool.intern("__index"));
 }
 
@@ -962,8 +970,7 @@ Value CPU::createNativeObject(
 	std::function<Value(const Value&)> get,
 	std::function<void(const Value&, const Value&)> set,
 	std::function<int()> len,
-	std::function<std::optional<std::pair<Value, Value>>(const Value&)> nextEntry,
-	std::function<void(GcHeap&)> mark
+	std::function<std::optional<std::pair<Value, Value>>(const Value&)> nextEntry
 ) {
 	auto* native = m_heap.allocate<NativeObject>(ObjType::NativeObject);
 	addTrackedLuaHeapBytes(kNativeObjectHeapBytes);
@@ -972,7 +979,6 @@ Value CPU::createNativeObject(
 	native->set = std::move(set);
 	native->len = std::move(len);
 	native->nextEntry = std::move(nextEntry);
-	native->mark = std::move(mark);
 	const Value value = valueNativeObject(native);
 	trackNativeLocalRoot(value);
 	return value;
@@ -986,11 +992,15 @@ Table* CPU::createTable(int arraySize, int hashSize) {
 
 void CPU::materializeStaticClosures() {
 	const size_t protoCount = m_program->protos.size();
+	const size_t existingCount = m_staticClosures.size();
 	m_staticClosures.resize(protoCount);
 	for (size_t index = 0; index < protoCount; ++index) {
 		Closure& closure = m_staticClosures[index];
 		closure.type = ObjType::Closure;
 		closure.marked = false;
+		if (index >= existingCount) {
+			closure.hashId = m_heap.allocateHashId();
+		}
 		closure.next = nullptr;
 		closure.protoIndex = static_cast<int>(index);
 		closure.upvalueCount = 0;
@@ -1124,83 +1134,83 @@ void CPU::decodeProgram() {
 	m_decodedWordCount = code.size() / INSTRUCTION_BYTES;
 	const size_t pageCount = (m_decodedWordCount + DECODED_PAGE_WORDS - 1u) >> DECODED_PAGE_SHIFT;
 	m_decodedPages.resize(pageCount);
-	for (const Proto& proto : m_program->protos) {
-		const size_t startWord = static_cast<size_t>(proto.entryPC) / INSTRUCTION_BYTES;
-		const size_t endWord = startWord + static_cast<size_t>(proto.codeLen) / INSTRUCTION_BYTES;
-		for (size_t wordIndex = startWord; wordIndex < endWord;) {
-			int width = 1;
-			uint8_t wideA = 0;
-			uint8_t wideB = 0;
-			uint8_t wideC = 0;
-			uint32_t instr = readInstructionWord(code, static_cast<int>(wordIndex));
-			uint8_t op = static_cast<uint8_t>((instr >> 18) & 0x3f);
-			uint8_t ext = static_cast<uint8_t>(instr >> 24);
-			if (static_cast<OpCode>(op) == OpCode::WIDE) {
-				if (wordIndex + 1 >= m_decodedWordCount) {
-					throw BMSX_RUNTIME_ERROR("Malformed program: WIDE instruction at end of program.");
-				}
-				width = 2;
-				wideA = static_cast<uint8_t>((instr >> 12) & 0x3f);
-				wideB = static_cast<uint8_t>((instr >> 6) & 0x3f);
-				wideC = static_cast<uint8_t>(instr & 0x3f);
-				instr = readInstructionWord(code, static_cast<int>(wordIndex + 1));
-				op = static_cast<uint8_t>((instr >> 18) & 0x3f);
-				ext = static_cast<uint8_t>(instr >> 24);
-			}
-			const uint8_t aLow = static_cast<uint8_t>((instr >> 12) & 0x3f);
-			const uint8_t bLow = static_cast<uint8_t>((instr >> 6) & 0x3f);
-			const uint8_t cLow = static_cast<uint8_t>(instr & 0x3f);
-			const bool usesDisp = OPCODE_USES_DISP[op] != 0u;
-			const bool usesBx = !usesDisp && OPCODE_USES_BX[op] != 0u;
-			const uint8_t extA = (usesBx || usesDisp) ? 0 : static_cast<uint8_t>((ext >> 6) & 0x3);
-			const uint8_t extB = (usesBx || usesDisp) ? 0 : static_cast<uint8_t>((ext >> 3) & 0x7);
-			const uint8_t extC = (usesBx || usesDisp) ? 0 : static_cast<uint8_t>(ext & 0x7);
-			const int aShift = usesDisp ? MAX_OPERAND_BITS : MAX_OPERAND_BITS + (usesBx ? 0 : EXT_A_BITS);
-			const int bShift = usesDisp ? MAX_OPERAND_BITS : MAX_OPERAND_BITS + EXT_B_BITS;
-			const int cShift = usesDisp ? MAX_OPERAND_BITS : MAX_OPERAND_BITS + EXT_C_BITS;
-			const uint32_t bxLow = (static_cast<uint32_t>(bLow) << MAX_OPERAND_BITS) | static_cast<uint32_t>(cLow);
-			const uint32_t rkRawB = (static_cast<uint32_t>(wideB) << bShift)
-				| (static_cast<uint32_t>(extB) << MAX_OPERAND_BITS)
-				| static_cast<uint32_t>(bLow);
-			const uint32_t rkRawC = (static_cast<uint32_t>(wideC) << cShift)
-				| (static_cast<uint32_t>(extC) << MAX_OPERAND_BITS)
-				| static_cast<uint32_t>(cLow);
-			DecodedInstruction decoded;
-			decoded.word = instr;
-			decoded.op = op;
-			decoded.width = static_cast<uint8_t>(width);
-			decoded.a = static_cast<uint16_t>((static_cast<int>(wideA) << aShift) | (static_cast<int>(extA) << MAX_OPERAND_BITS) | aLow);
-			decoded.b = static_cast<uint16_t>((static_cast<int>(wideB) << bShift) | (static_cast<int>(extB) << MAX_OPERAND_BITS) | bLow);
-			decoded.c = static_cast<uint16_t>((static_cast<int>(wideC) << cShift) | (static_cast<int>(extC) << MAX_OPERAND_BITS) | cLow);
-			decoded.bx = (static_cast<uint32_t>(wideB) << (MAX_BX_BITS + EXT_BX_BITS))
-				| (static_cast<uint32_t>(usesBx ? ext : 0) << MAX_BX_BITS)
-				| bxLow;
-			decoded.sbx = signExtend(decoded.bx, MAX_BX_BITS + EXT_BX_BITS + ((width - 1) * MAX_OPERAND_BITS));
-			decoded.rkB = signExtend(rkRawB, MAX_OPERAND_BITS + EXT_B_BITS + ((width - 1) * MAX_OPERAND_BITS));
-			decoded.rkC = signExtend(rkRawC, MAX_OPERAND_BITS + EXT_C_BITS + ((width - 1) * MAX_OPERAND_BITS));
-			decoded.disp = ext;
-			if (static_cast<OpCode>(op) == OpCode::GETI
-				|| static_cast<OpCode>(op) == OpCode::GETFIELD
-				|| static_cast<OpCode>(op) == OpCode::SELF) {
-				decoded.tableCacheIndex = static_cast<uint32_t>(m_tableLoadCaches.size());
-				m_tableLoadCaches.push_back(TableLoadInlineCache{});
-			}
-			decodedSlotForWrite(wordIndex) = decoded;
-			wordIndex += static_cast<size_t>(width);
+	for (DecodedInstructionPage& page : m_decodedPages) {
+		for (DecodedInstruction& decoded : page.words) {
+			decoded.op = static_cast<uint8_t>(OpCode::RESERVED0);
+			decoded.width = 1;
 		}
+	}
+	for (size_t wordIndex = 0; wordIndex < m_decodedWordCount;) {
+		int width = 1;
+		uint8_t wideA = 0;
+		uint8_t wideB = 0;
+		uint8_t wideC = 0;
+		uint32_t instr = readInstructionWord(code, static_cast<int>(wordIndex));
+		uint8_t op = static_cast<uint8_t>((instr >> 18) & 0x3f);
+		uint8_t ext = static_cast<uint8_t>(instr >> 24);
+		if (static_cast<OpCode>(op) == OpCode::WIDE && wordIndex + 1u < m_decodedWordCount) {
+			width = 2;
+			wideA = static_cast<uint8_t>((instr >> 12) & 0x3f);
+			wideB = static_cast<uint8_t>((instr >> 6) & 0x3f);
+			wideC = static_cast<uint8_t>(instr & 0x3f);
+			instr = readInstructionWord(code, static_cast<int>(wordIndex + 1));
+			op = static_cast<uint8_t>((instr >> 18) & 0x3f);
+			ext = static_cast<uint8_t>(instr >> 24);
+		}
+		const uint8_t aLow = static_cast<uint8_t>((instr >> 12) & 0x3f);
+		const uint8_t bLow = static_cast<uint8_t>((instr >> 6) & 0x3f);
+		const uint8_t cLow = static_cast<uint8_t>(instr & 0x3f);
+		const bool usesDisp = OPCODE_USES_DISP[op] != 0u;
+		const bool usesBx = !usesDisp && OPCODE_USES_BX[op] != 0u;
+		const uint8_t extA = (usesBx || usesDisp) ? 0 : static_cast<uint8_t>((ext >> 6) & 0x3);
+		const uint8_t extB = (usesBx || usesDisp) ? 0 : static_cast<uint8_t>((ext >> 3) & 0x7);
+		const uint8_t extC = (usesBx || usesDisp) ? 0 : static_cast<uint8_t>(ext & 0x7);
+		const int aShift = usesDisp ? MAX_OPERAND_BITS : MAX_OPERAND_BITS + (usesBx ? 0 : EXT_A_BITS);
+		const int bShift = usesDisp ? MAX_OPERAND_BITS : MAX_OPERAND_BITS + EXT_B_BITS;
+		const int cShift = usesDisp ? MAX_OPERAND_BITS : MAX_OPERAND_BITS + EXT_C_BITS;
+		const uint32_t bxLow = (static_cast<uint32_t>(bLow) << MAX_OPERAND_BITS) | static_cast<uint32_t>(cLow);
+		const uint32_t rkRawB = (static_cast<uint32_t>(wideB) << bShift)
+			| (static_cast<uint32_t>(extB) << MAX_OPERAND_BITS)
+			| static_cast<uint32_t>(bLow);
+		const uint32_t rkRawC = (static_cast<uint32_t>(wideC) << cShift)
+			| (static_cast<uint32_t>(extC) << MAX_OPERAND_BITS)
+			| static_cast<uint32_t>(cLow);
+		DecodedInstruction decoded;
+		decoded.word = instr;
+		decoded.op = op;
+		decoded.width = static_cast<uint8_t>(width);
+		decoded.a = static_cast<uint16_t>((static_cast<int>(wideA) << aShift) | (static_cast<int>(extA) << MAX_OPERAND_BITS) | aLow);
+		decoded.b = static_cast<uint16_t>((static_cast<int>(wideB) << bShift) | (static_cast<int>(extB) << MAX_OPERAND_BITS) | bLow);
+		decoded.c = static_cast<uint16_t>((static_cast<int>(wideC) << cShift) | (static_cast<int>(extC) << MAX_OPERAND_BITS) | cLow);
+		decoded.bx = (static_cast<uint32_t>(wideB) << (MAX_BX_BITS + EXT_BX_BITS))
+			| (static_cast<uint32_t>(usesBx ? ext : 0) << MAX_BX_BITS)
+			| bxLow;
+		decoded.sbx = signExtend(decoded.bx, MAX_BX_BITS + EXT_BX_BITS + ((width - 1) * MAX_OPERAND_BITS));
+		decoded.rkB = signExtend(rkRawB, MAX_OPERAND_BITS + EXT_B_BITS + ((width - 1) * MAX_OPERAND_BITS));
+		decoded.rkC = signExtend(rkRawC, MAX_OPERAND_BITS + EXT_C_BITS + ((width - 1) * MAX_OPERAND_BITS));
+		decoded.disp = ext;
+		if (static_cast<OpCode>(op) == OpCode::GETI
+			|| static_cast<OpCode>(op) == OpCode::GETFIELD
+			|| static_cast<OpCode>(op) == OpCode::SELF) {
+			decoded.tableCacheIndex = static_cast<uint32_t>(m_tableLoadCaches.size());
+			m_tableLoadCaches.push_back(TableLoadInlineCache{});
+		}
+		decodedSlotForWrite(wordIndex) = decoded;
+		wordIndex += static_cast<size_t>(width);
 	}
 }
 
 DecodedInstruction& CPU::decodedSlotForWrite(size_t wordIndex) {
-	std::unique_ptr<DecodedInstructionPage>& page = m_decodedPages[wordIndex >> DECODED_PAGE_SHIFT];
-	if (!page) {
-		page = std::make_unique<DecodedInstructionPage>();
-	}
-	return page->words[wordIndex & DECODED_PAGE_MASK];
+	return m_decodedPages[wordIndex >> DECODED_PAGE_SHIFT].words[wordIndex & DECODED_PAGE_MASK];
 }
 
 const DecodedInstruction& CPU::decodedAtWordIndex(int wordIndex) const {
-	return m_decodedPages[static_cast<size_t>(wordIndex) >> DECODED_PAGE_SHIFT]->words[static_cast<size_t>(wordIndex) & DECODED_PAGE_MASK];
+	return m_decodedPages[static_cast<size_t>(wordIndex) >> DECODED_PAGE_SHIFT].words[static_cast<size_t>(wordIndex) & DECODED_PAGE_MASK];
+}
+
+void CPU::skipNextInstruction(CallFrame& frame) {
+	const DecodedInstruction& decoded = decodedAtWordIndex(frame.pc / INSTRUCTION_BYTES);
+	frame.pc += static_cast<int>(decoded.width) * INSTRUCTION_BYTES;
 }
 
 void CPU::start(int entryProtoIndex, NativeArgsView args) {
@@ -1218,14 +1228,12 @@ void CPU::start(int entryProtoIndex, NativeArgsView args) {
 }
 
 void CPU::call(Closure& closure, NativeArgsView args, int returnCount) {
-	requireRunnableForCall();
 	lastReturnValues.clear();
 	m_yieldRequested = false;
 	pushFrame(&closure, args.data(), args.size(), 0, returnCount, false, m_program->protos[closure.protoIndex].entryPC);
 }
 
 void CPU::callExternal(Closure& closure, NativeArgsView args) {
-	requireRunnableForCall();
 	lastReturnValues.clear();
 	m_yieldRequested = false;
 	pushFrame(&closure, args.data(), args.size(), 0, 0, true, m_program->protos[closure.protoIndex].entryPC);
@@ -1239,111 +1247,6 @@ NativeResults* CPU::swapExternalReturnSink(NativeResults* sink) {
 
 CpuRuntimeState CPU::captureRuntimeState(const std::unordered_map<std::string, Value>& moduleCache) const {
 	const_cast<CPU&>(*this).syncGlobalSlotsToTable();
-	std::unordered_map<const CallFrame*, int> frameIndexByRef;
-	for (int index = 0; index < static_cast<int>(m_frames.size()); ++index) {
-		frameIndexByRef.emplace(m_frames[static_cast<size_t>(index)].get(), index);
-	}
-
-	auto encodePathKey = [](const std::vector<CpuRuntimeRefSegment>& path) -> std::string {
-		std::string key;
-		for (const CpuRuntimeRefSegment& segment : path) {
-			if (segment.isIndex) {
-				key += "#" + std::to_string(segment.index) + ";";
-				continue;
-			}
-			key += "$" + std::to_string(segment.key.size()) + ":" + segment.key + ";";
-		}
-		return key;
-	};
-
-	std::unordered_map<Value, std::vector<CpuRuntimeRefSegment>> stablePathByValue;
-	std::unordered_map<std::string, Value> stableValueByPath;
-	std::unordered_set<const Table*> stableTables;
-	std::unordered_set<const NativeObject*> stableNativeObjects;
-
-	auto recordStableValue = [&](const std::vector<CpuRuntimeRefSegment>& path, Value value) {
-		if (!valueIsNativeFunction(value) && !valueIsNativeObject(value)) {
-			return;
-		}
-		stableValueByPath[encodePathKey(path)] = value;
-		stablePathByValue.emplace(value, path);
-	};
-
-	std::function<void(const std::vector<CpuRuntimeRefSegment>&, Value)> traverseStableValue;
-	traverseStableValue = [&](const std::vector<CpuRuntimeRefSegment>& path, Value value) {
-		recordStableValue(path, value);
-		if (valueIsTable(value)) {
-			const Table* table = asTable(value);
-			if (!stableTables.insert(table).second) {
-				return;
-			}
-			if (table->metatable) {
-				auto nextPath = path;
-				nextPath.push_back(CpuRuntimeRefSegment{ false, std::string(kCpuRuntimeMetatableSegment), 0 });
-				traverseStableValue(nextPath, valueTable(table->metatable));
-			}
-			for (int arrayIndex = 1; arrayIndex <= table->length(); ++arrayIndex) {
-				const Value entryValue = table->getInteger(arrayIndex);
-				if (!isNil(entryValue)) {
-					auto nextPath = path;
-					nextPath.push_back(CpuRuntimeRefSegment{ true, {}, arrayIndex });
-					traverseStableValue(nextPath, entryValue);
-				}
-			}
-			table->forEachEntry([&](Value key, Value entryValue) {
-				if (valueIsString(key)) {
-					auto nextPath = path;
-					nextPath.push_back(CpuRuntimeRefSegment{ false, m_stringPool.toString(asStringId(key)), 0 });
-					traverseStableValue(nextPath, entryValue);
-					return;
-				}
-				if (!valueIsNumber(key)) {
-					return;
-				}
-				const double numberKey = asNumber(key);
-				if (!std::isfinite(numberKey)) {
-					return;
-				}
-				const int integerKey = static_cast<int>(numberKey);
-				if (static_cast<double>(integerKey) != numberKey) {
-					return;
-				}
-				auto nextPath = path;
-				nextPath.push_back(CpuRuntimeRefSegment{ true, {}, integerKey });
-				traverseStableValue(nextPath, entryValue);
-			});
-			return;
-		}
-		if (!valueIsNativeObject(value)) {
-			return;
-		}
-		const NativeObject* native = asNativeObject(value);
-		if (!stableNativeObjects.insert(native).second) {
-			return;
-		}
-		if (native->metatable) {
-			auto nextPath = path;
-			nextPath.push_back(CpuRuntimeRefSegment{ false, std::string(kCpuRuntimeMetatableSegment), 0 });
-			traverseStableValue(nextPath, valueTable(native->metatable));
-		}
-	};
-
-	globals->forEachEntry([&](Value key, Value value) {
-		if (!valueIsString(key)) {
-			return;
-		}
-		std::vector<CpuRuntimeRefSegment> path;
-		path.push_back(CpuRuntimeRefSegment{ false, "globals", 0 });
-		path.push_back(CpuRuntimeRefSegment{ false, m_stringPool.toString(asStringId(key)), 0 });
-		traverseStableValue(path, value);
-	});
-	for (const auto& [name, value] : moduleCache) {
-		std::vector<CpuRuntimeRefSegment> path;
-		path.push_back(CpuRuntimeRefSegment{ false, "moduleCache", 0 });
-		path.push_back(CpuRuntimeRefSegment{ false, name, 0 });
-		traverseStableValue(path, value);
-	}
-
 	std::unordered_map<const void*, int> objectIds;
 	std::vector<CpuObjectState> objects;
 	std::function<CpuObjectState(GCObject*)> captureObjectState;
@@ -1358,7 +1261,8 @@ CpuRuntimeState CPU::captureRuntimeState(const std::unordered_map<std::string, V
 		}
 		const int id = static_cast<int>(objects.size());
 		objectIds.emplace(key, id);
-		objects.push_back(captureObjectState(object));
+		objects.emplace_back();
+		objects[static_cast<size_t>(id)] = captureObjectState(object);
 		return id;
 	};
 
@@ -1390,15 +1294,6 @@ CpuRuntimeState CPU::captureRuntimeState(const std::unordered_map<std::string, V
 			state.builtinId = asBuiltinFunction(value)->id;
 			return state;
 		}
-		if (valueIsNativeFunction(value) || valueIsNativeObject(value)) {
-			const auto it = stablePathByValue.find(value);
-			if (it == stablePathByValue.end()) {
-				throw std::runtime_error(std::string("[CPU] Runtime snapshot cannot preserve native value '") + valueTypeName(value) + "' without a stable root path.");
-			}
-			state.tag = CpuValueStateTag::StableRef;
-			state.path = it->second;
-			return state;
-		}
 		state.tag = CpuValueStateTag::Ref;
 		if (valueIsTable(value)) {
 			state.refId = ensureObjectId(asTable(value));
@@ -1412,17 +1307,17 @@ CpuRuntimeState CPU::captureRuntimeState(const std::unordered_map<std::string, V
 			state.refId = ensureObjectId(asUpvalue(value));
 			return state;
 		}
-		throw std::runtime_error("[CPU] Unsupported runtime snapshot value.");
+		throw BMSX_RUNTIME_ERROR("[CPU] Runtime snapshot cannot preserve " + std::string(valueTypeName(value)) + " value.");
 	};
 
 	captureObjectState = [&](GCObject* object) -> CpuObjectState {
 		CpuObjectState state;
+		state.hashId = object->hashId;
 		switch (object->type) {
 			case ObjType::Table: {
 				state.kind = CpuObjectState::Kind::Table;
 				const TableRuntimeState tableState = static_cast<Table*>(object)->captureRuntimeState();
 				state.arrayLength = tableState.arrayLength;
-				state.hashFree = tableState.hashFree;
 				state.metatable = captureValueState(tableState.metatable ? valueTable(tableState.metatable) : valueNil());
 				state.array.reserve(tableState.array.size());
 				for (const Value& value : tableState.array) {
@@ -1436,6 +1331,7 @@ CpuRuntimeState CPU::captureRuntimeState(const std::unordered_map<std::string, V
 						node.next,
 					});
 				}
+				state.hashFree = tableState.hashFree;
 				return state;
 			}
 			case ObjType::Closure: {
@@ -1454,11 +1350,11 @@ CpuRuntimeState CPU::captureRuntimeState(const std::unordered_map<std::string, V
 				state.upvalueOpen = upvalue->open;
 				state.upvalueIndex = upvalue->index;
 				if (upvalue->open) {
-					const auto it = frameIndexByRef.find(upvalue->frame);
-					if (it == frameIndexByRef.end()) {
-						throw std::runtime_error("[CPU] Runtime snapshot found an open upvalue without a tracked frame.");
+					int frameIndex = 0;
+					while (m_frames[static_cast<size_t>(frameIndex)].get() != upvalue->frame) {
+						frameIndex += 1;
 					}
-					state.frameIndex = it->second;
+					state.frameIndex = frameIndex;
 					state.upvalueValue = captureValueState(upvalue->frame->registers[static_cast<size_t>(upvalue->index)]);
 				} else {
 					state.frameIndex = -1;
@@ -1476,12 +1372,18 @@ CpuRuntimeState CPU::captureRuntimeState(const std::unordered_map<std::string, V
 		if (!valueIsString(key)) {
 			return;
 		}
+		if (valueIsNativeFunction(value) || valueIsNativeObject(value)) {
+			return;
+		}
 		state.globals.push_back(CpuRootValueState{
 			m_stringPool.toString(asStringId(key)),
 			captureValueState(value),
 		});
 	});
 	for (const auto& [name, value] : moduleCache) {
+		if (valueIsNativeFunction(value) || valueIsNativeObject(value)) {
+			continue;
+		}
 		state.moduleCache.push_back(CpuRootValueState{ name, captureValueState(value) });
 	}
 	state.frames.reserve(m_frames.size());
@@ -1529,106 +1431,6 @@ CpuRuntimeState CPU::captureRuntimeState(const std::unordered_map<std::string, V
 }
 
 void CPU::restoreRuntimeState(const CpuRuntimeState& state, std::unordered_map<std::string, Value>& moduleCache) {
-	syncGlobalSlotsToTable();
-
-	auto encodePathKey = [](const std::vector<CpuRuntimeRefSegment>& path) -> std::string {
-		std::string key;
-		for (const CpuRuntimeRefSegment& segment : path) {
-			if (segment.isIndex) {
-				key += "#" + std::to_string(segment.index) + ";";
-				continue;
-			}
-			key += "$" + std::to_string(segment.key.size()) + ":" + segment.key + ";";
-		}
-		return key;
-	};
-
-	std::unordered_map<std::string, Value> stableValueByPath;
-	std::unordered_set<const Table*> stableTables;
-	std::unordered_set<const NativeObject*> stableNativeObjects;
-
-	auto recordStableValue = [&](const std::vector<CpuRuntimeRefSegment>& path, Value value) {
-		if (!valueIsNativeFunction(value) && !valueIsNativeObject(value)) {
-			return;
-		}
-		stableValueByPath[encodePathKey(path)] = value;
-	};
-
-	std::function<void(const std::vector<CpuRuntimeRefSegment>&, Value)> traverseStableValue;
-	traverseStableValue = [&](const std::vector<CpuRuntimeRefSegment>& path, Value value) {
-		recordStableValue(path, value);
-		if (valueIsTable(value)) {
-			const Table* table = asTable(value);
-			if (!stableTables.insert(table).second) {
-				return;
-			}
-			if (table->metatable) {
-				auto nextPath = path;
-				nextPath.push_back(CpuRuntimeRefSegment{ false, std::string(kCpuRuntimeMetatableSegment), 0 });
-				traverseStableValue(nextPath, valueTable(table->metatable));
-			}
-			for (int arrayIndex = 1; arrayIndex <= table->length(); ++arrayIndex) {
-				const Value entryValue = table->getInteger(arrayIndex);
-				if (!isNil(entryValue)) {
-					auto nextPath = path;
-					nextPath.push_back(CpuRuntimeRefSegment{ true, {}, arrayIndex });
-					traverseStableValue(nextPath, entryValue);
-				}
-			}
-			table->forEachEntry([&](Value key, Value entryValue) {
-				if (valueIsString(key)) {
-					auto nextPath = path;
-					nextPath.push_back(CpuRuntimeRefSegment{ false, m_stringPool.toString(asStringId(key)), 0 });
-					traverseStableValue(nextPath, entryValue);
-					return;
-				}
-				if (!valueIsNumber(key)) {
-					return;
-				}
-				const double numberKey = asNumber(key);
-				if (!std::isfinite(numberKey)) {
-					return;
-				}
-				const int integerKey = static_cast<int>(numberKey);
-				if (static_cast<double>(integerKey) != numberKey) {
-					return;
-				}
-				auto nextPath = path;
-				nextPath.push_back(CpuRuntimeRefSegment{ true, {}, integerKey });
-				traverseStableValue(nextPath, entryValue);
-			});
-			return;
-		}
-		if (!valueIsNativeObject(value)) {
-			return;
-		}
-		const NativeObject* native = asNativeObject(value);
-		if (!stableNativeObjects.insert(native).second) {
-			return;
-		}
-		if (native->metatable) {
-			auto nextPath = path;
-			nextPath.push_back(CpuRuntimeRefSegment{ false, std::string(kCpuRuntimeMetatableSegment), 0 });
-			traverseStableValue(nextPath, valueTable(native->metatable));
-		}
-	};
-
-	globals->forEachEntry([&](Value key, Value value) {
-		if (!valueIsString(key)) {
-			return;
-		}
-		std::vector<CpuRuntimeRefSegment> path;
-		path.push_back(CpuRuntimeRefSegment{ false, "globals", 0 });
-		path.push_back(CpuRuntimeRefSegment{ false, m_stringPool.toString(asStringId(key)), 0 });
-		traverseStableValue(path, value);
-	});
-	for (const auto& [name, value] : moduleCache) {
-		std::vector<CpuRuntimeRefSegment> path;
-		path.push_back(CpuRuntimeRefSegment{ false, "moduleCache", 0 });
-		path.push_back(CpuRuntimeRefSegment{ false, name, 0 });
-		traverseStableValue(path, value);
-	}
-
 	struct RestoredObject {
 		Table* table = nullptr;
 		Closure* closure = nullptr;
@@ -1641,20 +1443,26 @@ void CPU::restoreRuntimeState(const CpuRuntimeState& state, std::unordered_map<s
 		switch (objectState.kind) {
 			case CpuObjectState::Kind::Table:
 				restoredObjects[index].table = createTable(0, 0);
+				restoredObjects[index].table->hashId = objectState.hashId;
+				m_heap.observeHashId(objectState.hashId);
 				break;
-				case CpuObjectState::Kind::Closure: {
-					const size_t upvalueCount = objectState.upvalues.size();
-					restoredObjects[index].closure = m_program->protos[static_cast<size_t>(objectState.protoIndex)].staticClosure && objectState.upvalues.empty()
-						? &rootClosure(objectState.protoIndex)
-						: createTrackedClosure(objectState.protoIndex, upvalueCount);
-					break;
-				}
+			case CpuObjectState::Kind::Closure: {
+				const size_t upvalueCount = objectState.upvalues.size();
+				restoredObjects[index].closure = m_program->protos[static_cast<size_t>(objectState.protoIndex)].staticClosure && objectState.upvalues.empty()
+					? &rootClosure(objectState.protoIndex)
+					: createTrackedClosure(objectState.protoIndex, upvalueCount);
+				restoredObjects[index].closure->hashId = objectState.hashId;
+				m_heap.observeHashId(objectState.hashId);
+				break;
+			}
 			case CpuObjectState::Kind::Upvalue: {
 				auto* upvalue = m_heap.allocate<Upvalue>(ObjType::Upvalue);
 				upvalue->open = false;
 				upvalue->index = objectState.upvalueIndex;
 				upvalue->frame = nullptr;
 				upvalue->value = valueNil();
+				upvalue->hashId = objectState.hashId;
+				m_heap.observeHashId(objectState.hashId);
 				addTrackedLuaHeapBytes(kUpvalueHeapBytes);
 				restoredObjects[index].upvalue = upvalue;
 				break;
@@ -1677,21 +1485,20 @@ void CPU::restoreRuntimeState(const CpuRuntimeState& state, std::unordered_map<s
 			case CpuValueStateTag::Builtin:
 				return createBuiltinFunction(valueState.builtinId);
 			case CpuValueStateTag::Ref: {
-				const RestoredObject& restored = restoredObjects.at(static_cast<size_t>(valueState.refId));
-				if (restored.table) return valueTable(restored.table);
-				if (restored.closure) return valueClosure(restored.closure);
-				if (restored.upvalue) return valueUpvalue(restored.upvalue);
-				throw std::runtime_error("[CPU] Runtime snapshot reference points to an unknown object.");
-			}
-			case CpuValueStateTag::StableRef: {
-				const auto it = stableValueByPath.find(encodePathKey(valueState.path));
-				if (it == stableValueByPath.end()) {
-					throw std::runtime_error("[CPU] Runtime snapshot stable reference is not available in the current runtime environment.");
+				const size_t refId = static_cast<size_t>(valueState.refId);
+				const RestoredObject& restored = restoredObjects[refId];
+				switch (state.objects[refId].kind) {
+					case CpuObjectState::Kind::Table:
+						return valueTable(restored.table);
+					case CpuObjectState::Kind::Closure:
+						return valueClosure(restored.closure);
+					case CpuObjectState::Kind::Upvalue:
+						return valueUpvalue(restored.upvalue);
 				}
-				return it->second;
+				__builtin_unreachable();
 			}
 		}
-		throw std::runtime_error("[CPU] Unknown runtime snapshot value tag.");
+		__builtin_unreachable();
 	};
 
 	for (size_t index = 0; index < state.objects.size(); ++index) {
@@ -1724,7 +1531,7 @@ void CPU::restoreRuntimeState(const CpuRuntimeState& state, std::unordered_map<s
 				Closure* closure = restoredObjects[index].closure;
 				closure->protoIndex = objectState.protoIndex;
 				for (size_t upvalueIndex = 0; upvalueIndex < objectState.upvalues.size(); ++upvalueIndex) {
-					closure->upvalues[upvalueIndex] = restoredObjects.at(static_cast<size_t>(objectState.upvalues[upvalueIndex])).upvalue;
+					closure->upvalues[upvalueIndex] = restoredObjects[static_cast<size_t>(objectState.upvalues[upvalueIndex])].upvalue;
 				}
 				break;
 			}
@@ -1756,7 +1563,7 @@ void CPU::restoreRuntimeState(const CpuRuntimeState& state, std::unordered_map<s
 		auto frame = acquireFrame();
 		frame->protoIndex = frameState.protoIndex;
 		frame->pc = frameState.pc;
-		frame->closure = restoredObjects.at(static_cast<size_t>(frameState.closureRef)).closure;
+		frame->closure = restoredObjects[static_cast<size_t>(frameState.closureRef)].closure;
 		frame->returnBase = frameState.returnBase;
 		frame->returnCount = frameState.returnCount;
 		frame->captureReturns = frameState.captureReturns;
@@ -1788,14 +1595,8 @@ void CPU::restoreRuntimeState(const CpuRuntimeState& state, std::unordered_map<s
 	}
 
 	for (int upvalueRef : state.openUpvalues) {
-		const CpuObjectState& objectState = state.objects.at(static_cast<size_t>(upvalueRef));
-		if (objectState.kind != CpuObjectState::Kind::Upvalue || !objectState.upvalueOpen) {
-			throw std::runtime_error("[CPU] Runtime snapshot contains an invalid open upvalue reference.");
-		}
-		Upvalue* upvalue = restoredObjects.at(static_cast<size_t>(upvalueRef)).upvalue;
-		if (objectState.frameIndex < 0 || objectState.frameIndex >= static_cast<int>(m_frames.size())) {
-			throw std::runtime_error("[CPU] Runtime snapshot open upvalue refers to a missing frame.");
-		}
+		const CpuObjectState& objectState = state.objects[static_cast<size_t>(upvalueRef)];
+		Upvalue* upvalue = restoredObjects[static_cast<size_t>(upvalueRef)].upvalue;
 		CallFrame* frame = m_frames[static_cast<size_t>(objectState.frameIndex)].get();
 		upvalue->open = true;
 		upvalue->index = objectState.upvalueIndex;
@@ -1834,14 +1635,15 @@ void CPU::haltUntilIrq() {
 	m_yieldRequested = false;
 }
 
+
 void CPU::callBuiltinFunction(BuiltinFunction& fn, NativeArgsView args, NativeResults& out) {
 	out.clear();
 	switch (fn.id) {
 		case BuiltinFunctionId::Next:
-			runBuiltinNextValue(args.size() > 0 ? args.at(0) : valueNil(), args.size() > 1 ? args.at(1) : valueNil(), out);
+			runBuiltinNextValue(args[0], args[1], out);
 			break;
 		case BuiltinFunctionId::Type:
-			out.push_back(valueString(m_stringPool.intern(valueTypeNameForLua(args.size() > 0 ? args.at(0) : valueNil()))));
+			out.push_back(valueString(m_stringPool.intern(valueTypeNameForLua(args[0]))));
 			break;
 		case BuiltinFunctionId::SetMetatable:
 			runBuiltinSetMetatable(args, out);
@@ -1899,35 +1701,19 @@ void CPU::runBuiltinNextValue(Value target, Value key, NativeResults& out) {
 		out.push_back(entry->second);
 		return;
 	}
-	if (valueIsNativeObject(target)) {
-		auto* obj = asNativeObject(target);
-		if (!obj->nextEntry) {
-			throw BMSX_RUNTIME_ERROR("next expects a native object with iteration.");
-		}
-		auto entry = obj->nextEntry(key);
-		if (!entry.has_value()) {
-			out.push_back(valueNil());
-			return;
-		}
-		out.push_back(entry->first);
-		out.push_back(entry->second);
+	auto* obj = asNativeObject(target);
+	auto entry = obj->nextEntry(key);
+	if (!entry.has_value()) {
+		out.push_back(valueNil());
 		return;
 	}
-	throw BMSX_RUNTIME_ERROR("next expects a table or native object.");
+	out.push_back(entry->first);
+	out.push_back(entry->second);
 }
 
 void CPU::runBuiltinSetMetatable(NativeArgsView args, NativeResults& out) {
-	if (args.empty() || (!valueIsTable(args.at(0)) && !valueIsNativeObject(args.at(0)))) {
-		throw BMSX_RUNTIME_ERROR("setmetatable expects a table or native value as the first argument.");
-	}
-	Table* metatable = nullptr;
-	if (args.size() >= 2 && !isNil(args.at(1))) {
-		if (!valueIsTable(args.at(1))) {
-			throw BMSX_RUNTIME_ERROR("setmetatable expects a table or nil as the second argument.");
-		}
-		metatable = asTable(args.at(1));
-	}
-	const Value target = args.at(0);
+	Table* metatable = asTable(args[1]);
+	const Value target = args[0];
 	if (valueIsTable(target)) {
 		Table* table = asTable(target);
 		table->metatable = metatable;
@@ -1940,10 +1726,7 @@ void CPU::runBuiltinSetMetatable(NativeArgsView args, NativeResults& out) {
 }
 
 void CPU::runBuiltinGetMetatable(NativeArgsView args, NativeResults& out) {
-	if (args.empty() || (!valueIsTable(args.at(0)) && !valueIsNativeObject(args.at(0)))) {
-		throw BMSX_RUNTIME_ERROR("getmetatable expects a table or native value as the first argument.");
-	}
-	const Value target = args.at(0);
+	const Value target = args[0];
 	if (valueIsTable(target)) {
 		Table* metatable = asTable(target)->metatable;
 		out.push_back(metatable ? valueTable(metatable) : valueNil());
@@ -1954,36 +1737,43 @@ void CPU::runBuiltinGetMetatable(NativeArgsView args, NativeResults& out) {
 }
 
 void CPU::runBuiltinRawGet(NativeArgsView args, NativeResults& out) {
-	Table* table = asTable(args.at(0));
-	out.push_back(table->get(args.size() > 1 ? args.at(1) : valueNil()));
+	Table* table = asTable(args[0]);
+	out.push_back(table->get(args[1]));
 }
 
 void CPU::runBuiltinRawSet(NativeArgsView args, NativeResults& out) {
-	Table* table = asTable(args.at(0));
-	table->set(args.at(1), args.size() > 2 ? args.at(2) : valueNil());
+	Table* table = asTable(args[0]);
+	table->set(args[1], args[2]);
 	out.push_back(valueTable(table));
 }
 
 void CPU::runBuiltinSelect(NativeArgsView args, NativeResults& out) {
-	if (valueIsString(args.at(0)) && m_stringPool.toString(asStringId(args.at(0))) == "#") {
+	const Value selector = args[0];
+	if (valueIsString(selector) && m_stringPool.toString(asStringId(selector)) == "#") {
 		out.push_back(valueNumber(static_cast<double>(args.size() - 1)));
 		return;
 	}
 	const int count = static_cast<int>(args.size()) - 1;
-	int start = static_cast<int>(asNumber(args.at(0)));
+	int start = static_cast<int>(asNumber(selector));
 	if (start < 0) {
 		start = count + start + 1;
 	}
 	for (int index = start; index <= count; ++index) {
 		if (index >= 1 && static_cast<size_t>(index) < args.size()) {
-			out.push_back(args.at(static_cast<size_t>(index)));
+			out.push_back(args[static_cast<size_t>(index)]);
 		}
 	}
 }
 
 void CPU::runBuiltinStringByte(NativeArgsView args, NativeResults& out) {
-	const std::string& source = m_stringPool.toString(asStringId(args.at(0)));
-	int position = args.size() > 1 ? static_cast<int>(std::trunc(asNumber(args.at(1)))) : 1;
+	const std::string& source = m_stringPool.toString(asStringId(args[0]));
+	int position = 1;
+	if (args.size() > 1) {
+		const Value positionValue = args[1];
+		if (!isNil(positionValue)) {
+			position = static_cast<int>(std::trunc(asNumber(positionValue)));
+		}
+	}
 	if (position < 1) {
 		out.push_back(valueNil());
 		return;
@@ -2002,10 +1792,6 @@ void CPU::runBuiltinStringByte(NativeArgsView args, NativeResults& out) {
 }
 
 void CPU::runBuiltinStringChar(NativeArgsView args, NativeResults& out) {
-	if (args.empty()) {
-		out.push_back(valueString(m_stringPool.intern("")));
-		return;
-	}
 	std::string result;
 	result.reserve(args.size());
 	for (const auto& arg : args) {
@@ -2015,26 +1801,19 @@ void CPU::runBuiltinStringChar(NativeArgsView args, NativeResults& out) {
 }
 
 void CPU::runBuiltinError(NativeArgsView args) {
-	const Value value = args.empty() ? valueString(m_stringPool.intern("nil")) : args.at(0);
+	const Value value = args[0];
 	throw LuaThrownValueError(value, m_stringPool);
 }
 
-void CPU::callValueInto(Value callee, NativeArgsView args, NativeResults& out) {
+bool CPU::callValueInto(Value callee, NativeArgsView args, NativeResults& out) {
 	out.clear();
 	if (valueIsBuiltinFunction(callee)) {
 		callBuiltinFunction(*asBuiltinFunction(callee), args, out);
-		return;
+		return !m_haltedUntilIrq;
 	}
 	if (valueIsNativeFunction(callee)) {
 		asNativeFunction(callee)->invoke(args, out);
-		return;
-	}
-	if (!valueIsClosure(callee)) {
-		throw BMSX_RUNTIME_ERROR(formatNonFunctionCallError(
-			callee,
-			m_stringPool,
-			m_frames.empty() ? std::nullopt : getDebugRange(m_frames.back()->pc - INSTRUCTION_BYTES)
-		));
+		return !m_haltedUntilIrq;
 	}
 	Closure* closure = asClosure(callee);
 	const int depthBefore = static_cast<int>(m_frames.size());
@@ -2043,6 +1822,7 @@ void CPU::callValueInto(Value callee, NativeArgsView args, NativeResults& out) {
 	NativeResults* previousSink = swapExternalReturnSink(&out);
 	int spentBudget = 0;
 	int activeBudget = 0;
+	bool completed = true;
 	try {
 		pushFrame(closure, args.data(), args.size(), 0, 0, true, m_program->protos[closure->protoIndex].entryPC);
 		while (static_cast<int>(m_frames.size()) > depthBefore) {
@@ -2051,7 +1831,8 @@ void CPU::callValueInto(Value callee, NativeArgsView args, NativeResults& out) {
 			spentBudget += activeBudget - instructionBudgetRemaining;
 			activeBudget = 0;
 			if (static_cast<int>(m_frames.size()) > depthBefore && result == RunResult::Halted) {
-				throw BMSX_RUNTIME_ERROR("Protected call halted before returning.");
+				completed = false;
+				break;
 			}
 		}
 	} catch (...) {
@@ -2065,14 +1846,17 @@ void CPU::callValueInto(Value callee, NativeArgsView args, NativeResults& out) {
 	}
 	instructionBudgetRemaining = previousBudget - spentBudget;
 	swapExternalReturnSink(previousSink);
+	return completed;
 }
 
 void CPU::runBuiltinPCall(NativeArgsView args, NativeResults& out) {
 	auto resultsScratch = acquireNativeReturnScratch();
 	NativeResults& results = resultsScratch.get();
 	try {
-		const NativeArgsView callArgs(args.size() > 1 ? args.data() + 1 : nullptr, args.size() > 1 ? args.size() - 1 : 0);
-		callValueInto(args.size() > 0 ? args.at(0) : valueNil(), callArgs, results);
+		const NativeArgsView callArgs(args.data() + 1, args.size() - 1);
+		if (!callValueInto(args[0], callArgs, results)) {
+			return;
+		}
 		out.clear();
 		out.push_back(valueBool(true));
 		out.append(results.data(), results.size());
@@ -2097,8 +1881,10 @@ void CPU::runBuiltinXPCall(NativeArgsView args, NativeResults& out) {
 	NativeResults& results = resultsScratch.get();
 	NativeResults& handlerArgs = handlerArgsScratch.get();
 	try {
-		const NativeArgsView callArgs(args.size() > 2 ? args.data() + 2 : nullptr, args.size() > 2 ? args.size() - 2 : 0);
-		callValueInto(args.size() > 0 ? args.at(0) : valueNil(), callArgs, results);
+		const NativeArgsView callArgs(args.data() + 2, args.size() - 2);
+		if (!callValueInto(args[0], callArgs, results)) {
+			return;
+		}
 		out.clear();
 		out.push_back(valueBool(true));
 		out.append(results.data(), results.size());
@@ -2110,7 +1896,9 @@ void CPU::runBuiltinXPCall(NativeArgsView args, NativeResults& out) {
 	} catch (...) {
 		handlerArgs.push_back(valueString(m_stringPool.intern("error")));
 	}
-	callValueInto(args.size() > 1 ? args.at(1) : valueNil(), NativeArgsView(handlerArgs.data(), handlerArgs.size()), results);
+	if (!callValueInto(args[1], NativeArgsView(handlerArgs.data(), handlerArgs.size()), results)) {
+		return;
+	}
 	out.clear();
 	out.push_back(valueBool(false));
 	out.append(results.data(), results.size());
@@ -2174,12 +1962,6 @@ void CPU::leaveHostExternalCall() {
 	--m_hostExternalCallDepth;
 }
 
-void CPU::requireRunnableForCall() const {
-	if (m_haltedUntilIrq) {
-		throw BMSX_RUNTIME_ERROR("Cannot enter CPU while halted until IRQ.");
-	}
-}
-
 void CPU::clearHaltAfterAcceptedInterrupt() {
 	m_haltedUntilIrq = false;
 	m_yieldRequested = false;
@@ -2189,7 +1971,7 @@ RunResult CPU::run(int instructionBudget, const IrqController* irqController, in
 	instructionBudgetRemaining = instructionBudget;
 	auto& frames = m_frames;
 	CallFrame* frame = nullptr;
-	const DecodedInstruction* decoded = nullptr;
+	const DecodedInstruction* decoded;
 	int pc = 0;
 	int wordIndex = 0;
 	int a = 0;
@@ -2204,11 +1986,10 @@ RunResult CPU::run(int instructionBudget, const IrqController* irqController, in
 #if BMSX_USE_COMPUTED_GOTO
 #pragma GCC diagnostic push
 #pragma GCC diagnostic ignored "-Wpedantic"
-	static void* const kDispatchTargets[65] = {
+	static void* const kDispatchTargets[OPCODE_COUNT] = {
 #define OP(name) &&dispatch_##name,
 #include "machine/cpu/cpu_opcode_list.inl"
 #undef OP
-		&&dispatch_INVALID
 	};
 #pragma GCC diagnostic pop
 #endif
@@ -2264,11 +2045,7 @@ dispatch_loop_check:
 	} \
 } while (0)
 #define SKIP_NEXT_INSTRUCTION() do { \
-	const int skipWordIndex = FRAME.pc / INSTRUCTION_BYTES; \
-	if (skipWordIndex < 0 || skipWordIndex >= static_cast<int>(m_decodedWordCount)) { \
-		throw BMSX_RUNTIME_ERROR("Attempted to skip beyond end of program."); \
-	} \
-	FRAME.pc += static_cast<int>(decodedAtWordIndex(skipWordIndex).width) * INSTRUCTION_BYTES; \
+	skipNextInstruction(FRAME); \
 } while (0)
 #define TABLE_CACHE_INDEX() (decoded->tableCacheIndex)
 #define DISPATCH_CONTINUE() do { goto dispatch_continue; } while (0)
@@ -2283,8 +2060,6 @@ dispatch_loop_check:
 #define DISPATCH_LABEL(name) case OpCode::name:
 #include "machine/cpu/cpu_dispatch.inl"
 #undef DISPATCH_LABEL
-		default:
-			throw BMSX_RUNTIME_ERROR("Unknown opcode.");
 	}
 #endif
 
@@ -2311,18 +2086,12 @@ dispatch_continue:
 	} \
 } while (0)
 #define SKIP_NEXT_INSTRUCTION() do { \
-	const int skipWordIndex = FRAME.pc / INSTRUCTION_BYTES; \
-	if (skipWordIndex < 0 || skipWordIndex >= static_cast<int>(m_decodedWordCount)) { \
-		throw BMSX_RUNTIME_ERROR("Attempted to skip beyond end of program."); \
-	} \
-	FRAME.pc += static_cast<int>(decodedAtWordIndex(skipWordIndex).width) * INSTRUCTION_BYTES; \
+	skipNextInstruction(FRAME); \
 } while (0)
 #define TABLE_CACHE_INDEX() (decoded->tableCacheIndex)
 #define DISPATCH_LABEL(name) dispatch_##name:
 #define DISPATCH_CONTINUE() do { goto dispatch_continue; } while (0)
 #include "machine/cpu/cpu_dispatch.inl"
-dispatch_INVALID:
-	throw BMSX_RUNTIME_ERROR("Unknown opcode.");
 #undef DISPATCH_CONTINUE
 #undef SKIP_NEXT_INSTRUCTION
 #undef TABLE_CACHE_INDEX
@@ -2338,7 +2107,7 @@ RunResult CPU::runUntilDepth(int targetDepth, int instructionBudget, const IrqCo
 	instructionBudgetRemaining = instructionBudget;
 	auto& frames = m_frames;
 	CallFrame* frame = nullptr;
-	const DecodedInstruction* decoded = nullptr;
+	const DecodedInstruction* decoded;
 	int pc = 0;
 	int wordIndex = 0;
 	int a = 0;
@@ -2353,11 +2122,10 @@ RunResult CPU::runUntilDepth(int targetDepth, int instructionBudget, const IrqCo
 #if BMSX_USE_COMPUTED_GOTO
 #pragma GCC diagnostic push
 #pragma GCC diagnostic ignored "-Wpedantic"
-	static void* const kDispatchTargets[65] = {
+	static void* const kDispatchTargets[OPCODE_COUNT] = {
 #define OP(name) &&dispatch_##name,
 #include "machine/cpu/cpu_opcode_list.inl"
 #undef OP
-		&&dispatch_INVALID
 	};
 #pragma GCC diagnostic pop
 #endif
@@ -2413,11 +2181,7 @@ dispatch_loop_check:
 	} \
 } while (0)
 #define SKIP_NEXT_INSTRUCTION() do { \
-	const int skipWordIndex = FRAME.pc / INSTRUCTION_BYTES; \
-	if (skipWordIndex < 0 || skipWordIndex >= static_cast<int>(m_decodedWordCount)) { \
-		throw BMSX_RUNTIME_ERROR("Attempted to skip beyond end of program."); \
-	} \
-	FRAME.pc += static_cast<int>(decodedAtWordIndex(skipWordIndex).width) * INSTRUCTION_BYTES; \
+	skipNextInstruction(FRAME); \
 } while (0)
 #define TABLE_CACHE_INDEX() (decoded->tableCacheIndex)
 #define DISPATCH_CONTINUE() do { goto dispatch_continue; } while (0)
@@ -2432,8 +2196,6 @@ dispatch_loop_check:
 #define DISPATCH_LABEL(name) case OpCode::name:
 #include "machine/cpu/cpu_dispatch.inl"
 #undef DISPATCH_LABEL
-		default:
-			throw BMSX_RUNTIME_ERROR("Unknown opcode.");
 	}
 #endif
 
@@ -2460,18 +2222,12 @@ dispatch_continue:
 	} \
 } while (0)
 #define SKIP_NEXT_INSTRUCTION() do { \
-	const int skipWordIndex = FRAME.pc / INSTRUCTION_BYTES; \
-	if (skipWordIndex < 0 || skipWordIndex >= static_cast<int>(m_decodedWordCount)) { \
-		throw BMSX_RUNTIME_ERROR("Attempted to skip beyond end of program."); \
-	} \
-	FRAME.pc += static_cast<int>(decodedAtWordIndex(skipWordIndex).width) * INSTRUCTION_BYTES; \
+	skipNextInstruction(FRAME); \
 } while (0)
 #define TABLE_CACHE_INDEX() (decoded->tableCacheIndex)
 #define DISPATCH_LABEL(name) dispatch_##name:
 #define DISPATCH_CONTINUE() do { goto dispatch_continue; } while (0)
 #include "machine/cpu/cpu_dispatch.inl"
-dispatch_INVALID:
-	throw BMSX_RUNTIME_ERROR("Unknown opcode.");
 #undef DISPATCH_CONTINUE
 #undef SKIP_NEXT_INSTRUCTION
 #undef TABLE_CACHE_INDEX
@@ -2549,42 +2305,21 @@ std::vector<std::pair<int, int>> CPU::getCallStack() const {
 }
 
 int CPU::getFrameRegisterCount(int frameIndex) const {
-	if (frameIndex < 0 || frameIndex >= static_cast<int>(m_frames.size())) {
-		throw BMSX_RUNTIME_ERROR("[CPU] Frame index out of range: " + std::to_string(frameIndex) + ".");
-	}
 	return m_frames[static_cast<size_t>(frameIndex)]->top;
 }
 
 Value CPU::readFrameRegister(int frameIndex, int registerIndex) const {
-	if (frameIndex < 0 || frameIndex >= static_cast<int>(m_frames.size())) {
-		throw BMSX_RUNTIME_ERROR("[CPU] Frame index out of range: " + std::to_string(frameIndex) + ".");
-	}
 	const CallFrame& frame = *m_frames[static_cast<size_t>(frameIndex)];
-	if (registerIndex < 0 || registerIndex >= frame.stackCapacity) {
-		throw BMSX_RUNTIME_ERROR("[CPU] Register index out of range: " + std::to_string(registerIndex) + ".");
-	}
 	return frame.registers[static_cast<size_t>(registerIndex)];
 }
 
 bool CPU::hasFrameUpvalue(int frameIndex, int upvalueIndex) const {
-	if (frameIndex < 0 || frameIndex >= static_cast<int>(m_frames.size())) {
-		throw BMSX_RUNTIME_ERROR("[CPU] Frame index out of range: " + std::to_string(frameIndex) + ".");
-	}
 	const CallFrame& frame = *m_frames[static_cast<size_t>(frameIndex)];
-	if (upvalueIndex < 0) {
-		return false;
-	}
-	return upvalueIndex < static_cast<int>(frame.closure->upvalueCount);
+	return upvalueIndex >= 0 && upvalueIndex < static_cast<int>(frame.closure->upvalueCount);
 }
 
 Value CPU::readFrameUpvalue(int frameIndex, int upvalueIndex) const {
-	if (frameIndex < 0 || frameIndex >= static_cast<int>(m_frames.size())) {
-		throw BMSX_RUNTIME_ERROR("[CPU] Frame index out of range: " + std::to_string(frameIndex) + ".");
-	}
 	const CallFrame& frame = *m_frames[static_cast<size_t>(frameIndex)];
-	if (upvalueIndex < 0 || upvalueIndex >= static_cast<int>(frame.closure->upvalueCount)) {
-		throw BMSX_RUNTIME_ERROR("[CPU] Upvalue index out of range: " + std::to_string(upvalueIndex) + ".");
-	}
 	return const_cast<CPU*>(this)->readUpvalue(frame.closure->upvalues[static_cast<size_t>(upvalueIndex)]);
 }
 
@@ -2610,19 +2345,13 @@ void CPU::executeInstruction(CallFrame& frame, const DecodedInstruction& decoded
 	} \
 } while (0)
 #define SKIP_NEXT_INSTRUCTION() do { \
-	const int skipWordIndex = FRAME.pc / INSTRUCTION_BYTES; \
-	if (skipWordIndex < 0 || skipWordIndex >= static_cast<int>(m_decodedWordCount)) { \
-		throw BMSX_RUNTIME_ERROR("Attempted to skip beyond end of program."); \
-	} \
-	FRAME.pc += static_cast<int>(decodedAtWordIndex(skipWordIndex).width) * INSTRUCTION_BYTES; \
+	skipNextInstruction(FRAME); \
 } while (0)
 #define TABLE_CACHE_INDEX() (decoded.tableCacheIndex)
 #define DISPATCH_LABEL(name) case OpCode::name:
 #define DISPATCH_CONTINUE() do { return; } while (0)
 	switch (static_cast<OpCode>(decoded.op)) {
 #include "machine/cpu/cpu_dispatch.inl"
-		default:
-			throw BMSX_RUNTIME_ERROR("Unknown opcode.");
 	}
 #undef DISPATCH_CONTINUE
 #undef SKIP_NEXT_INSTRUCTION
@@ -2857,89 +2586,12 @@ Value* CPU::ensureRegisterCapacity(CallFrame& frame, int index) {
 	return frame.registers;
 }
 
-Value CPU::readMappedMemoryValue(uint32_t addr, MemoryAccessKind accessKind) const {
-	switch (accessKind) {
-		case MemoryAccessKind::Word:
-			return m_memory.readMappedValue(addr);
-		case MemoryAccessKind::U8:
-			return valueNumber(static_cast<double>(m_memory.readMappedU8(addr)));
-		case MemoryAccessKind::U16LE:
-			return valueNumber(static_cast<double>(m_memory.readMappedU16LE(addr)));
-		case MemoryAccessKind::U32LE:
-			return valueNumber(static_cast<double>(m_memory.readMappedU32LE(addr)));
-		case MemoryAccessKind::F32LE:
-			return valueNumber(static_cast<double>(m_memory.readMappedF32LE(addr)));
-		case MemoryAccessKind::F64LE:
-			return valueNumber(m_memory.readMappedF64LE(addr));
-	}
-	throw std::runtime_error("Unknown memory access kind.");
-}
-
-void CPU::writeMappedMemoryValue(uint32_t addr, MemoryAccessKind accessKind, const Value& value) {
-	switch (accessKind) {
-		case MemoryAccessKind::Word:
-			m_memory.writeMappedValue(addr, value);
-			return;
-		case MemoryAccessKind::U8:
-			if (!valueIsNumber(value)) {
-				throw std::runtime_error("[Memory] mem8[addr] expects a number.");
-			}
-			m_memory.writeMappedU8(addr, static_cast<u8>(toU32(value)));
-			return;
-		case MemoryAccessKind::U16LE:
-			if (!valueIsNumber(value)) {
-				throw std::runtime_error("[Memory] mem16le[addr] expects a number.");
-			}
-			m_memory.writeMappedU16LE(addr, toU32(value));
-			return;
-		case MemoryAccessKind::U32LE:
-			if (!valueIsNumber(value)) {
-				throw std::runtime_error("[Memory] mem32le[addr] expects a number.");
-			}
-			m_memory.writeMappedU32LE(addr, toU32(value));
-			return;
-		case MemoryAccessKind::F32LE:
-			if (!valueIsNumber(value)) {
-				throw std::runtime_error("[Memory] memf32le[addr] expects a number.");
-			}
-			m_memory.writeMappedF32LE(addr, static_cast<float>(asNumber(value)));
-			return;
-		case MemoryAccessKind::F64LE:
-			if (!valueIsNumber(value)) {
-				throw std::runtime_error("[Memory] memf64le[addr] expects a number.");
-			}
-			m_memory.writeMappedF64LE(addr, asNumber(value));
-			return;
-		default: throw std::runtime_error("Unknown memory access kind.");
-	}
-}
-
 void CPU::writeMappedWordSequence(CallFrame& frame, uint32_t addr, int valueBase, int valueCount) {
 	uint32_t writeAddr = addr;
 	for (int offset = 0; offset < valueCount; ++offset) {
-		writeMappedMemoryValue(writeAddr, MemoryAccessKind::Word, frame.registers[static_cast<size_t>(valueBase + offset)]);
+		m_memory.writeMappedValue(writeAddr, frame.registers[static_cast<size_t>(valueBase + offset)]);
 		writeAddr += 4;
 	}
-}
-
-double CPU::requireRegisterNumber(CallFrame& frame, int index) const {
-	const Value value = frame.registers[static_cast<size_t>(index)];
-	if (!valueIsNumber(value)) {
-		throw BMSX_RUNTIME_ERROR("Register " + std::to_string(index) + " expected a number, got " + valueTypeName(value) + ".");
-	}
-	return asNumber(value);
-}
-
-double CPU::requireRKNumber(CallFrame& frame, int rk) const {
-	if (rk < 0) {
-		const int index = -1 - rk;
-		const Value value = m_program->constPool[static_cast<size_t>(index)];
-		if (!valueIsNumber(value)) {
-			throw BMSX_RUNTIME_ERROR("RK constant " + std::to_string(index) + " expected a number, got " + valueTypeName(value) + ".");
-		}
-		return asNumber(value);
-	}
-	return requireRegisterNumber(frame, rk);
 }
 
 const Value& CPU::readRK(CallFrame& frame, int rk) {
@@ -2998,9 +2650,6 @@ Value CPU::loadTableIndex(const Value& base, const Value& key) {
 		return resolveTableIndex(table, key);
 	}
 	if (valueIsString(base)) {
-		if (!m_stringIndexTable) {
-			return valueNil();
-		}
 		if (!m_stringIndexTable->metatable) {
 			return m_stringIndexTable->get(key);
 		}
@@ -3008,7 +2657,7 @@ Value CPU::loadTableIndex(const Value& base, const Value& key) {
 	}
 	if (valueIsNativeObject(base)) {
 		auto* native = asNativeObject(base);
-		Value directValue = native->get ? native->get(key) : valueNil();
+		Value directValue = native->get(key);
 		if (!isNil(directValue) || !native->metatable) {
 			return directValue;
 		}
@@ -3038,9 +2687,6 @@ Value CPU::loadTableIntegerIndexCached(int cacheIndex, const Value& base, int in
 		return resolveTableIntegerIndex(table, index);
 	}
 	if (valueIsString(base)) {
-		if (!m_stringIndexTable) {
-			return valueNil();
-		}
 		if (!m_stringIndexTable->metatable) {
 			TableLoadInlineCache& cache = m_tableLoadCaches[static_cast<size_t>(cacheIndex)];
 			if (cache.table == m_stringIndexTable && cache.version == m_stringIndexTable->version()) {
@@ -3056,7 +2702,7 @@ Value CPU::loadTableIntegerIndexCached(int cacheIndex, const Value& base, int in
 	}
 	if (valueIsNativeObject(base)) {
 		auto* native = asNativeObject(base);
-		Value directValue = native->get ? native->get(valueNumber(static_cast<double>(index))) : valueNil();
+		Value directValue = native->get(valueNumber(static_cast<double>(index)));
 		if (!isNil(directValue) || !native->metatable) {
 			return directValue;
 		}
@@ -3078,9 +2724,6 @@ Value CPU::loadTableIntegerIndex(const Value& base, int index) {
 		return resolveTableIntegerIndex(table, index);
 	}
 	if (valueIsString(base)) {
-		if (!m_stringIndexTable) {
-			return valueNil();
-		}
 		if (!m_stringIndexTable->metatable) {
 			return m_stringIndexTable->getInteger(index);
 		}
@@ -3088,7 +2731,7 @@ Value CPU::loadTableIntegerIndex(const Value& base, int index) {
 	}
 	if (valueIsNativeObject(base)) {
 		auto* native = asNativeObject(base);
-		Value directValue = native->get ? native->get(valueNumber(static_cast<double>(index))) : valueNil();
+		Value directValue = native->get(valueNumber(static_cast<double>(index)));
 		if (!isNil(directValue) || !native->metatable) {
 			return directValue;
 		}
@@ -3118,9 +2761,6 @@ Value CPU::loadTableFieldIndexCached(int cacheIndex, const Value& base, StringId
 		return resolveTableFieldIndex(table, key);
 	}
 	if (valueIsString(base)) {
-		if (!m_stringIndexTable) {
-			return valueNil();
-		}
 		if (!m_stringIndexTable->metatable) {
 			TableLoadInlineCache& cache = m_tableLoadCaches[static_cast<size_t>(cacheIndex)];
 			if (cache.table == m_stringIndexTable && cache.version == m_stringIndexTable->version()) {
@@ -3136,7 +2776,7 @@ Value CPU::loadTableFieldIndexCached(int cacheIndex, const Value& base, StringId
 	}
 	if (valueIsNativeObject(base)) {
 		auto* native = asNativeObject(base);
-		Value directValue = native->get ? native->get(valueString(key)) : valueNil();
+		Value directValue = native->get(valueString(key));
 		if (!isNil(directValue) || !native->metatable) {
 			return directValue;
 		}
@@ -3158,9 +2798,6 @@ Value CPU::loadTableFieldIndex(const Value& base, StringId key) {
 		return resolveTableFieldIndex(table, key);
 	}
 	if (valueIsString(base)) {
-		if (!m_stringIndexTable) {
-			return valueNil();
-		}
 		if (!m_stringIndexTable->metatable) {
 			return m_stringIndexTable->getStringKey(key);
 		}
@@ -3168,7 +2805,7 @@ Value CPU::loadTableFieldIndex(const Value& base, StringId key) {
 	}
 	if (valueIsNativeObject(base)) {
 		auto* native = asNativeObject(base);
-		Value directValue = native->get ? native->get(valueString(key)) : valueNil();
+		Value directValue = native->get(valueString(key));
 		if (!isNil(directValue) || !native->metatable) {
 			return directValue;
 		}
@@ -3297,14 +2934,10 @@ void CPU::trackNativeLocalRoot(Value value) {
 }
 
 void CPU::markRoots(GcHeap& heap) {
-	if (globals) {
-		heap.markObject(globals);
-	}
+	heap.markObject(globals);
 	// Keep the interned "__index" key tracked even while no live metatable uses it.
 	heap.markValue(m_indexKey);
-	if (m_stringIndexTable) {
-		heap.markObject(m_stringIndexTable);
-	}
+	heap.markObject(m_stringIndexTable);
 	m_memory.markRoots(heap);
 	for (const auto& value : lastReturnValues) {
 		heap.markValue(value);

@@ -52,7 +52,7 @@ u32 vdpRpuVramRangeRevision(const VdpRpuFrameOutput& frame, u32 vramAddr, u32 by
 	}
 	const size_t firstPage = static_cast<size_t>(vramAddr >> VDP_RPU_PARAM_MEM_PAGE_SHIFT);
 	const size_t lastPage = (static_cast<size_t>(vramAddr) + byteLength - 1u) >> VDP_RPU_PARAM_MEM_PAGE_SHIFT;
-	const auto& pageRevisions = *frame.vdpVramPageRevisions;
+	const auto& pageRevisions = frame.vdpVramPageRevisions.get();
 	u32 revision = byteLength;
 	for (size_t page = firstPage; page <= lastPage; ++page) {
 		revision = (revision << 5u) - revision + pageRevisions[page];
@@ -80,45 +80,50 @@ void restoreVdpRpuArrayState(std::array<T, N>& target, const std::vector<T>& sta
 }
 
 VdpRpuCommandBufferSaveState captureVdpRpuCommandBufferState(const VdpRpuCommandBuffer& commands) {
+	const size_t passCount = commands.passCount;
+	const size_t drawCount = commands.drawCount;
+	const size_t streamBindingCount = commands.streamBindingCount;
+	const size_t constantBindingCount = commands.constantBindingCount;
+	const size_t textureBindingCount = commands.textureBindingCount;
 	VdpRpuCommandBufferSaveState state;
-	state.passCount = commands.passCount;
-	state.drawCount = commands.drawCount;
-	state.streamBindingCount = commands.streamBindingCount;
-	state.constantBindingCount = commands.constantBindingCount;
-	state.textureBindingCount = commands.textureBindingCount;
-	state.passFirstDraw = captureVdpRpuArrayState(commands.passFirstDraw, commands.passCount);
-	state.passDrawCount = captureVdpRpuArrayState(commands.passDrawCount, commands.passCount);
-	state.passColorSurfaceDescAddr = captureVdpRpuArrayState(commands.passColorSurfaceDescAddr, commands.passCount);
-	state.passDepthSurfaceDescAddr = captureVdpRpuArrayState(commands.passDepthSurfaceDescAddr, commands.passCount);
-	state.passViewportXY = captureVdpRpuArrayState(commands.passViewportXY, commands.passCount);
-	state.passViewportWH = captureVdpRpuArrayState(commands.passViewportWH, commands.passCount);
-	state.passOps = captureVdpRpuArrayState(commands.passOps, commands.passCount);
-	state.passClearColor = captureVdpRpuArrayState(commands.passClearColor, commands.passCount);
-	state.passClearDepthWord = captureVdpRpuArrayState(commands.passClearDepthWord, commands.passCount);
-	state.drawShaderVariant = captureVdpRpuArrayState(commands.drawShaderVariant, commands.drawCount);
-	state.drawPrimitive = captureVdpRpuArrayState(commands.drawPrimitive, commands.drawCount);
-	state.drawPipelineWord = captureVdpRpuArrayState(commands.drawPipelineWord, commands.drawCount);
-	state.drawVertexCount = captureVdpRpuArrayState(commands.drawVertexCount, commands.drawCount);
-	state.drawInstanceCount = captureVdpRpuArrayState(commands.drawInstanceCount, commands.drawCount);
-	state.drawIndexVramAddr = captureVdpRpuArrayState(commands.drawIndexVramAddr, commands.drawCount);
-	state.drawIndexCount = captureVdpRpuArrayState(commands.drawIndexCount, commands.drawCount);
-	state.drawIndexType = captureVdpRpuArrayState(commands.drawIndexType, commands.drawCount);
-	state.drawFirstStreamBinding = captureVdpRpuArrayState(commands.drawFirstStreamBinding, commands.drawCount);
-	state.drawStreamBindingCount = captureVdpRpuArrayState(commands.drawStreamBindingCount, commands.drawCount);
-	state.drawFirstConstantBinding = captureVdpRpuArrayState(commands.drawFirstConstantBinding, commands.drawCount);
-	state.drawConstantBindingCount = captureVdpRpuArrayState(commands.drawConstantBindingCount, commands.drawCount);
-	state.drawFirstTextureBinding = captureVdpRpuArrayState(commands.drawFirstTextureBinding, commands.drawCount);
-	state.drawTextureBindingCount = captureVdpRpuArrayState(commands.drawTextureBindingCount, commands.drawCount);
-	state.streamLayoutId = captureVdpRpuArrayState(commands.streamLayoutId, commands.streamBindingCount);
-	state.streamSlot = captureVdpRpuArrayState(commands.streamSlot, commands.streamBindingCount);
-	state.streamVramAddr = captureVdpRpuArrayState(commands.streamVramAddr, commands.streamBindingCount);
-	state.streamByteLength = captureVdpRpuArrayState(commands.streamByteLength, commands.streamBindingCount);
-	state.streamStepRate = captureVdpRpuArrayState(commands.streamStepRate, commands.streamBindingCount);
-	state.constantBindingSlot = captureVdpRpuArrayState(commands.constantBindingSlot, commands.constantBindingCount);
-	state.constantVramAddr = captureVdpRpuArrayState(commands.constantVramAddr, commands.constantBindingCount);
-	state.constantByteLength = captureVdpRpuArrayState(commands.constantByteLength, commands.constantBindingCount);
-	state.textureSlot = captureVdpRpuArrayState(commands.textureSlot, commands.textureBindingCount);
-	state.textureSurfaceDescAddr = captureVdpRpuArrayState(commands.textureSurfaceDescAddr, commands.textureBindingCount);
+	state.passCount = passCount;
+	state.drawCount = drawCount;
+	state.streamBindingCount = streamBindingCount;
+	state.constantBindingCount = constantBindingCount;
+	state.textureBindingCount = textureBindingCount;
+	state.passFirstDraw = captureVdpRpuArrayState(commands.passFirstDraw, passCount);
+	state.passDrawCount = captureVdpRpuArrayState(commands.passDrawCount, passCount);
+	state.passColorSurfaceDescAddr = captureVdpRpuArrayState(commands.passColorSurfaceDescAddr, passCount);
+	state.passDepthSurfaceDescAddr = captureVdpRpuArrayState(commands.passDepthSurfaceDescAddr, passCount);
+	state.passViewportXY = captureVdpRpuArrayState(commands.passViewportXY, passCount);
+	state.passViewportWH = captureVdpRpuArrayState(commands.passViewportWH, passCount);
+	state.passOps = captureVdpRpuArrayState(commands.passOps, passCount);
+	state.passClearColor = captureVdpRpuArrayState(commands.passClearColor, passCount);
+	state.passClearDepthWord = captureVdpRpuArrayState(commands.passClearDepthWord, passCount);
+	state.drawShaderVariant = captureVdpRpuArrayState(commands.drawShaderVariant, drawCount);
+	state.drawPrimitive = captureVdpRpuArrayState(commands.drawPrimitive, drawCount);
+	state.drawPipelineWord = captureVdpRpuArrayState(commands.drawPipelineWord, drawCount);
+	state.drawVertexCount = captureVdpRpuArrayState(commands.drawVertexCount, drawCount);
+	state.drawInstanceCount = captureVdpRpuArrayState(commands.drawInstanceCount, drawCount);
+	state.drawIndexVramAddr = captureVdpRpuArrayState(commands.drawIndexVramAddr, drawCount);
+	state.drawIndexCount = captureVdpRpuArrayState(commands.drawIndexCount, drawCount);
+	state.drawIndexType = captureVdpRpuArrayState(commands.drawIndexType, drawCount);
+	state.drawFirstStreamBinding = captureVdpRpuArrayState(commands.drawFirstStreamBinding, drawCount);
+	state.drawStreamBindingCount = captureVdpRpuArrayState(commands.drawStreamBindingCount, drawCount);
+	state.drawFirstConstantBinding = captureVdpRpuArrayState(commands.drawFirstConstantBinding, drawCount);
+	state.drawConstantBindingCount = captureVdpRpuArrayState(commands.drawConstantBindingCount, drawCount);
+	state.drawFirstTextureBinding = captureVdpRpuArrayState(commands.drawFirstTextureBinding, drawCount);
+	state.drawTextureBindingCount = captureVdpRpuArrayState(commands.drawTextureBindingCount, drawCount);
+	state.streamLayoutId = captureVdpRpuArrayState(commands.streamLayoutId, streamBindingCount);
+	state.streamSlot = captureVdpRpuArrayState(commands.streamSlot, streamBindingCount);
+	state.streamVramAddr = captureVdpRpuArrayState(commands.streamVramAddr, streamBindingCount);
+	state.streamByteLength = captureVdpRpuArrayState(commands.streamByteLength, streamBindingCount);
+	state.streamStepRate = captureVdpRpuArrayState(commands.streamStepRate, streamBindingCount);
+	state.constantBindingSlot = captureVdpRpuArrayState(commands.constantBindingSlot, constantBindingCount);
+	state.constantVramAddr = captureVdpRpuArrayState(commands.constantVramAddr, constantBindingCount);
+	state.constantByteLength = captureVdpRpuArrayState(commands.constantByteLength, constantBindingCount);
+	state.textureSlot = captureVdpRpuArrayState(commands.textureSlot, textureBindingCount);
+	state.textureSurfaceDescAddr = captureVdpRpuArrayState(commands.textureSurfaceDescAddr, textureBindingCount);
 	return state;
 }
 
@@ -165,16 +170,10 @@ void restoreVdpRpuCommandBufferState(VdpRpuCommandBuffer& commands, const VdpRpu
 
 } // namespace
 
-VdpRpuUnit::VdpRpuUnit(Memory& memory, DeviceStatusLatch& fault, std::vector<u8>& vdpVram, std::vector<u32>& vdpVramPageRevisions)
+VdpRpuUnit::VdpRpuUnit(Memory& memory, DeviceStatusLatch& fault, std::vector<u8>& vdpVram)
 	: m_memory(memory)
 	, m_fault(fault)
-	, m_vdpVram(&vdpVram)
-	, m_vdpVramPageRevisions(&vdpVramPageRevisions) {}
-
-void VdpRpuUnit::bindVramStorage(std::vector<u8>& vdpVram, std::vector<u32>& vdpVramPageRevisions) {
-	m_vdpVram = &vdpVram;
-	m_vdpVramPageRevisions = &vdpVramPageRevisions;
-}
+	, m_vdpVram(vdpVram) {}
 
 void VdpRpuUnit::reset() {
 	lastPacketCost = 0;
@@ -182,45 +181,25 @@ void VdpRpuUnit::reset() {
 	m_buildState = VDP_RPU_FRAME_IDLE;
 }
 
-bool VdpRpuUnit::beginFrame(VdpRpuFrameOutput& frame) {
+void VdpRpuUnit::beginFrame(VdpRpuFrameOutput& frame) {
 	lastPacketCost = 0;
 	lastPacketSealedFrame = false;
-	if (m_buildState != VDP_RPU_FRAME_IDLE) {
-		m_fault.raise(VDP_FAULT_RPU_BAD_STATE, m_buildState);
-		return false;
-	}
 	resetVdpRpuFrameOutput(frame);
-	frame.vdpVram = m_vdpVram;
-	frame.vdpVramPageRevisions = m_vdpVramPageRevisions;
 	m_buildState = VDP_RPU_FRAME_OPEN;
-	return true;
 }
 
 void VdpRpuUnit::cancelFrame(VdpRpuFrameOutput& frame) {
-	lastPacketCost = 0;
-	lastPacketSealedFrame = false;
-	resetVdpRpuFrameOutput(frame);
-	frame.vdpVram = m_vdpVram;
-	frame.vdpVramPageRevisions = m_vdpVramPageRevisions;
+	beginFrame(frame);
 	m_buildState = VDP_RPU_FRAME_IDLE;
 }
 
-bool VdpRpuUnit::endFrame(VdpRpuFrameOutput& frame) {
+void VdpRpuUnit::endFrame(VdpRpuFrameOutput& frame) {
 	lastPacketCost = 0;
 	lastPacketSealedFrame = false;
 	(void)frame;
-	if (m_buildState != VDP_RPU_FRAME_OPEN) {
-		m_fault.raise(VDP_FAULT_RPU_BAD_STATE, m_buildState);
-		return false;
-	}
 	m_buildState = VDP_RPU_FRAME_IDLE;
-	return true;
 }
 
-void VdpRpuUnit::rebindFrameResources(VdpRpuFrameOutput& frame) {
-	frame.vdpVram = m_vdpVram;
-	frame.vdpVramPageRevisions = m_vdpVramPageRevisions;
-}
 
 VdpRpuSaveState VdpRpuUnit::captureState() const {
 	VdpRpuSaveState state;
@@ -232,92 +211,59 @@ void VdpRpuUnit::restoreState(const VdpRpuSaveState& state) {
 	m_buildState = state.buildState;
 }
 
-u32 VdpRpuUnit::consumePacketFromMemory(VdpRpuFrameOutput& frame, u32 headerWord, u32 cursor, u32 end) {
+u32 VdpRpuUnit::consumePacketFromMemory(VdpRpuFrameOutput& frame, u32 headerWord, u32 cursor) {
 	lastPacketCost = 0;
 	lastPacketSealedFrame = false;
-	if ((headerWord & 0x0000ffffu) != 0u) {
-		m_fault.raise(VDP_FAULT_RPU_BAD_PACKET, headerWord);
-		return VDP_RPU_FAULT_SENTINEL;
-	}
 	const u32 payloadWords = (headerWord >> 16u) & 0xffu;
 	const u32 payloadEnd = cursor + payloadWords * IO_WORD_SIZE;
-	if (payloadWords == 0u || payloadEnd > end) {
-		m_fault.raise(VDP_FAULT_RPU_BAD_PACKET, headerWord);
-		return VDP_RPU_FAULT_SENTINEL;
-	}
 	const u32 op = m_memory.readU32(cursor);
-	return consumePacketPayloadFromMemory(frame, op, cursor, payloadWords) ? payloadEnd : VDP_RPU_FAULT_SENTINEL;
+	consumePacketPayloadFromMemory(frame, op, cursor);
+	return payloadEnd;
 }
 
-u32 VdpRpuUnit::consumePacketFromWords(VdpRpuFrameOutput& frame, const u32* words, u32 headerWord, u32 cursor, u32 wordCount) {
+u32 VdpRpuUnit::consumePacketFromWords(VdpRpuFrameOutput& frame, const u32* words, u32 headerWord, u32 cursor) {
 	lastPacketCost = 0;
 	lastPacketSealedFrame = false;
-	if ((headerWord & 0x0000ffffu) != 0u) {
-		m_fault.raise(VDP_FAULT_RPU_BAD_PACKET, headerWord);
-		return VDP_RPU_FAULT_SENTINEL;
-	}
 	const u32 payloadWords = (headerWord >> 16u) & 0xffu;
-	if (payloadWords == 0u || cursor + payloadWords > wordCount) {
-		m_fault.raise(VDP_FAULT_RPU_BAD_PACKET, headerWord);
-		return VDP_RPU_FAULT_SENTINEL;
-	}
 	const u32 op = words[cursor];
-	return consumePacketPayloadFromWords(frame, words, op, cursor, payloadWords) ? cursor + payloadWords : VDP_RPU_FAULT_SENTINEL;
+	consumePacketPayloadFromWords(frame, words, op, cursor);
+	return cursor + payloadWords;
 }
 
-bool VdpRpuUnit::consumePacketPayloadFromMemory(VdpRpuFrameOutput& frame, u32 op, u32 cursor, u32 payloadWords) {
-	if (m_buildState == VDP_RPU_FRAME_IDLE) {
-		m_fault.raise(VDP_FAULT_RPU_BAD_STATE, op);
-		return false;
-	}
+void VdpRpuUnit::consumePacketPayloadFromMemory(VdpRpuFrameOutput& frame, u32 op, u32 cursor) {
 	switch (op & 0xffu) {
 		case VDP_RPU_OP_EXEC_PASS_LIST:
-			return payloadWords == VDP_RPU_EXEC_PASS_LIST_WORDS
-				&& acceptExecPassList(frame, op, m_memory.readU32(cursor + IO_WORD_SIZE));
+			acceptExecPassList(frame, op, m_memory.readU32(cursor + IO_WORD_SIZE));
+			return;
 		case VDP_RPU_OP_SEAL_FRAME:
-			return payloadWords == VDP_RPU_SEAL_FRAME_WORDS && acceptSealFrame(frame);
+			acceptSealFrame(frame);
+			return;
 		default:
 			m_fault.raise(VDP_FAULT_RPU_BAD_PACKET, op);
-			return false;
 	}
 }
 
-bool VdpRpuUnit::consumePacketPayloadFromWords(VdpRpuFrameOutput& frame, const u32* words, u32 op, u32 cursor, u32 payloadWords) {
-	if (m_buildState == VDP_RPU_FRAME_IDLE) {
-		m_fault.raise(VDP_FAULT_RPU_BAD_STATE, op);
-		return false;
-	}
+void VdpRpuUnit::consumePacketPayloadFromWords(VdpRpuFrameOutput& frame, const u32* words, u32 op, u32 cursor) {
 	switch (op & 0xffu) {
 		case VDP_RPU_OP_EXEC_PASS_LIST:
-			return payloadWords == VDP_RPU_EXEC_PASS_LIST_WORDS
-				&& acceptExecPassList(frame, op, words[cursor + 1u]);
+			acceptExecPassList(frame, op, words[cursor + 1u]);
+			return;
 		case VDP_RPU_OP_SEAL_FRAME:
-			return payloadWords == VDP_RPU_SEAL_FRAME_WORDS && acceptSealFrame(frame);
+			acceptSealFrame(frame);
+			return;
 		default:
 			m_fault.raise(VDP_FAULT_RPU_BAD_PACKET, op);
-			return false;
 	}
 }
 
-bool VdpRpuUnit::acceptExecPassList(VdpRpuFrameOutput& frame, u32 opWord, u32 passDescAddr) {
-	if (m_buildState != VDP_RPU_FRAME_OPEN) {
-		m_fault.raise(VDP_FAULT_RPU_BAD_STATE, opWord);
-		return false;
-	}
+void VdpRpuUnit::acceptExecPassList(VdpRpuFrameOutput& frame, u32 opWord, u32 passDescAddr) {
 	const u32 passCount = (opWord >> 8u) & 0xffffu;
 	VdpRpuCommandBuffer& cmd = frame.commands;
-	const u8* vram = m_vdpVram->data();
+	const u8* vram = m_vdpVram.data();
 	int cost = VDP_RPU_PACKET_COST;
 
 	for (u32 p = 0u; p < passCount; ++p) {
 		const u32 pb = passDescAddr + p * RPU_PASS_DESC_SIZE;
-		if (!checkVramRange(pb, RPU_PASS_DESC_SIZE)) {
-			return false;
-		}
-		if (cmd.passCount >= VDP_RPU_PASS_CAPACITY) {
-			m_fault.raise(VDP_FAULT_RPU_COMMAND_OVERFLOW, static_cast<u32>(cmd.passCount));
-			return false;
-		}
 		const size_t pi = cmd.passCount++;
 		cost += VDP_RPU_PASS_COST;
 		cmd.passColorSurfaceDescAddr[pi] = readRpuDescU32(vram, pb + RPU_PASS_DESC_COLOR_SURFACE_DESC_ADDR_OFFSET);
@@ -334,15 +280,6 @@ bool VdpRpuUnit::acceptExecPassList(VdpRpuFrameOutput& frame, u32 opWord, u32 pa
 
 		for (u32 d = 0u; d < drawCount; ++d) {
 			const u32 db = drawDescsAddr + d * RPU_DRAW_DESC_SIZE;
-			if (!checkVramRange(db, RPU_DRAW_DESC_SIZE)) {
-				cmd.passDrawCount[pi] = static_cast<u16>(d);
-				return false;
-			}
-			if (cmd.drawCount >= VDP_RPU_DRAW_CAPACITY) {
-				cmd.passDrawCount[pi] = static_cast<u16>(d);
-				m_fault.raise(VDP_FAULT_RPU_COMMAND_OVERFLOW, static_cast<u32>(cmd.drawCount));
-				return false;
-			}
 			const size_t di = cmd.drawCount++;
 			cmd.drawShaderVariant[di] = readRpuDescU16(vram, db + RPU_DRAW_DESC_SHADER_VARIANT_OFFSET);
 			cmd.drawPrimitive[di] = vram[db + RPU_DRAW_DESC_PRIMITIVE_OFFSET];
@@ -366,19 +303,6 @@ bool VdpRpuUnit::acceptExecPassList(VdpRpuFrameOutput& frame, u32 opWord, u32 pa
 
 			for (u32 s = 0u; s < streamCount; ++s) {
 				const u32 sb = streamDescsAddr + s * RPU_STREAM_DESC_SIZE;
-				if (!checkVramRange(sb, RPU_STREAM_DESC_SIZE)) {
-					cmd.drawStreamBindingCount[di] = static_cast<u8>(s);
-					cmd.drawConstantBindingCount[di] = 0u;
-					cmd.drawTextureBindingCount[di] = 0u;
-					cmd.passDrawCount[pi] = static_cast<u16>(d + 1u);
-					return false;
-				}
-				if (cmd.streamBindingCount >= VDP_RPU_STREAM_BINDING_CAPACITY) {
-					cmd.drawStreamBindingCount[di] = static_cast<u8>(s);
-					cmd.passDrawCount[pi] = static_cast<u16>(d + 1u);
-					m_fault.raise(VDP_FAULT_RPU_COMMAND_OVERFLOW, static_cast<u32>(cmd.streamBindingCount));
-					return false;
-				}
 				const size_t si = cmd.streamBindingCount++;
 				cmd.streamVramAddr[si] = readRpuDescU32(vram, sb + RPU_STREAM_DESC_VRAM_ADDR_OFFSET);
 				cmd.streamByteLength[si] = readRpuDescU32(vram, sb + RPU_STREAM_DESC_BYTE_LENGTH_OFFSET);
@@ -391,18 +315,6 @@ bool VdpRpuUnit::acceptExecPassList(VdpRpuFrameOutput& frame, u32 opWord, u32 pa
 
 			for (u32 c = 0u; c < constantCount; ++c) {
 				const u32 cb = constantDescsAddr + c * RPU_CONSTANT_DESC_SIZE;
-				if (!checkVramRange(cb, RPU_CONSTANT_DESC_SIZE)) {
-					cmd.drawConstantBindingCount[di] = static_cast<u8>(c);
-					cmd.drawTextureBindingCount[di] = 0u;
-					cmd.passDrawCount[pi] = static_cast<u16>(d + 1u);
-					return false;
-				}
-				if (cmd.constantBindingCount >= VDP_RPU_CONSTANT_BINDING_CAPACITY) {
-					cmd.drawConstantBindingCount[di] = static_cast<u8>(c);
-					cmd.passDrawCount[pi] = static_cast<u16>(d + 1u);
-					m_fault.raise(VDP_FAULT_RPU_COMMAND_OVERFLOW, static_cast<u32>(cmd.constantBindingCount));
-					return false;
-				}
 				const size_t ci = cmd.constantBindingCount++;
 				cmd.constantBindingSlot[ci] = vram[cb + RPU_CONSTANT_DESC_SLOT_OFFSET];
 				cmd.constantVramAddr[ci] = readRpuDescU32(vram, cb + RPU_CONSTANT_DESC_VRAM_ADDR_OFFSET);
@@ -413,17 +325,6 @@ bool VdpRpuUnit::acceptExecPassList(VdpRpuFrameOutput& frame, u32 opWord, u32 pa
 
 			for (u32 t = 0u; t < textureCount; ++t) {
 				const u32 tb = textureDescsAddr + t * RPU_TEXTURE_DESC_SIZE;
-				if (!checkVramRange(tb, RPU_TEXTURE_DESC_SIZE)) {
-					cmd.drawTextureBindingCount[di] = static_cast<u8>(t);
-					cmd.passDrawCount[pi] = static_cast<u16>(d + 1u);
-					return false;
-				}
-				if (cmd.textureBindingCount >= VDP_RPU_TEXTURE_BINDING_CAPACITY) {
-					cmd.drawTextureBindingCount[di] = static_cast<u8>(t);
-					cmd.passDrawCount[pi] = static_cast<u16>(d + 1u);
-					m_fault.raise(VDP_FAULT_RPU_COMMAND_OVERFLOW, static_cast<u32>(cmd.textureBindingCount));
-					return false;
-				}
 				const size_t ti = cmd.textureBindingCount++;
 				cmd.textureSlot[ti] = vram[tb + RPU_TEXTURE_DESC_SLOT_OFFSET];
 				cmd.textureSurfaceDescAddr[ti] = readRpuDescU32(vram, tb + RPU_TEXTURE_DESC_SURFACE_DESC_ADDR_OFFSET);
@@ -435,31 +336,17 @@ bool VdpRpuUnit::acceptExecPassList(VdpRpuFrameOutput& frame, u32 opWord, u32 pa
 	}
 
 	lastPacketCost = cost;
-	return true;
 }
 
-bool VdpRpuUnit::acceptSealFrame(VdpRpuFrameOutput& frame) {
-	if (m_buildState != VDP_RPU_FRAME_OPEN) {
-		m_fault.raise(VDP_FAULT_RPU_BAD_STATE, VDP_RPU_OP_SEAL_FRAME);
-		return false;
-	}
+void VdpRpuUnit::acceptSealFrame(VdpRpuFrameOutput& frame) {
 	(void)frame;
 	m_buildState = VDP_RPU_FRAME_IDLE;
 	lastPacketSealedFrame = true;
 	lastPacketCost = VDP_RPU_PACKET_COST;
-	return true;
 }
 
-bool VdpRpuUnit::checkVramRange(u32 addr, u32 size) {
-	if (addr >= m_vdpVram->size() || size > m_vdpVram->size() - addr) {
-		m_fault.raise(VDP_FAULT_RPU_FETCH_OOB, addr);
-		return false;
-	}
-	return true;
-}
-
-std::unique_ptr<VdpRpuFrameOutput> createVdpRpuFrameOutput() {
-	return std::make_unique<VdpRpuFrameOutput>();
+std::unique_ptr<VdpRpuFrameOutput> createVdpRpuFrameOutput(std::vector<u8>& vdpVram, std::vector<u32>& vdpVramPageRevisions) {
+	return std::make_unique<VdpRpuFrameOutput>(VdpRpuFrameOutput{.vdpVram = vdpVram, .vdpVramPageRevisions = vdpVramPageRevisions});
 }
 
 void resetVdpRpuFrameOutput(VdpRpuFrameOutput& frame) {

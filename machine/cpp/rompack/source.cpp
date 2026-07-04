@@ -1,5 +1,6 @@
 #include "rompack/source.h"
 
+#include <cstdlib>
 #include <unordered_set>
 
 
@@ -19,9 +20,8 @@ const char* cartridgeLayerIdName(CartridgeLayerId id) {
 	switch (id) {
 		case CartridgeLayerId::System: return "system";
 		case CartridgeLayerId::Cart: return "cart";
-		case CartridgeLayerId::Overlay: return "overlay";
 	}
-	throw BMSX_RUNTIME_ERROR("Invalid cartridge layer id.");
+	std::abort();
 }
 
 std::string cartridgeLayerIdString(CartridgeLayerId id) {

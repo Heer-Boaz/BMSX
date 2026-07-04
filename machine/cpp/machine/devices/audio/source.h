@@ -42,6 +42,7 @@ private:
 	struct SlotSource {
 		std::vector<u8> ownedBytes;
 		Span<const u8> bytes;
+		void bindOwnedBytes();
 	};
 	std::array<SlotSource, APU_SLOT_COUNT> m_slotSources{};
 };

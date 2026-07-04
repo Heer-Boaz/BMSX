@@ -10,10 +10,10 @@ import { formatNumber } from '../common/number_format';
 import { BASE_CYCLES, OPCODE_USES_BX, OPCODE_USES_DISP, OpCode } from './opcode_info';
 import { CpuExecutionProfiler, formatCpuProfilerReport, type CpuProfilerReportOptions } from './profiler';
 import { EXT_A_BITS, EXT_B_BITS, EXT_BX_BITS, EXT_C_BITS, INSTRUCTION_BYTES, MAX_BX_BITS, MAX_OPERAND_BITS, readInstructionWord, signExtend } from './instruction_format';
-import { MEMORY_ACCESS_KIND_NAMES, MemoryAccessKind } from '../memory/access_kind';
+import { MemoryAccessKind } from '../memory/access_kind';
 import { ScratchBuffer } from '../../common/scratchbuffer';
 import { ScratchArrayStack } from '../../common/scratchstack';
-import { luaModulo } from '../../lua/numeric';
+import { luaFloorDivide, luaModulo } from '../../lua/numeric';
 import { ceilDiv4, ceilLog2, nextPowerOfTwo } from '../common/numeric';
 
 export { OpCode } from './opcode_info';
@@ -47,10 +47,15 @@ const STRING_VALUES: StringValue[] = [];
 export type Value = null | boolean | number | StringValue | Table | Closure | BuiltinFunction | NativeFunction | NativeObject;
 export const EMPTY_CALL_ARGS: ReadonlyArray<Value> = [];
 
-export function valueIsString(value: unknown): value is StringValue {
-	return value !== null
-		&& value !== undefined
-		&& (value as { readonly kind?: string }).kind === STRING_VALUE_KIND;
+
+export function valueIsString(value: Value): value is StringValue {
+	switch (value) {
+		case null:
+		case false:
+		case true:
+			return false;
+	}
+	return (value as StringValue).kind === STRING_VALUE_KIND;
 }
 
 export function asStringId(value: StringValue): StringId {
@@ -142,27 +147,32 @@ export function createBuiltinFunction(id: BuiltinFunctionId): BuiltinFunction {
 
 export type NativeFunction = {
 	readonly kind: typeof NATIVE_FUNCTION_KIND;
+	readonly hashId: number;
 	readonly name: string;
 	invoke(args: NativeArgs, out: Value[]): void;
 	readonly cost: NativeFnCost;
 };
 
-export type NativeArgs = ReadonlyArray<Value>;
+export type NativeArgs = {
+	readonly length: number;
+	get(index: number): Value;
+};
 
 export type NativeObject = {
 	readonly kind: typeof NATIVE_OBJECT_KIND;
+	readonly hashId: number;
 	readonly raw: object;
 	get(key: Value): Value;
 	set(key: Value, value: Value): void;
-	len?: () => number;
-	nextEntry?: (after: Value) => [Value, Value] | null;
+	len: () => number;
+	nextEntry: (after: Value) => [Value, Value] | null;
 	metatable: Table | null;
 };
 
 function valueTypeName(value: Value): string {
 	if (value === null) return 'nil';
 	if (typeof value === 'boolean') return 'boolean';
-	if (typeof value === 'number') return 'number';
+	if (valueIsNumber(value)) return 'number';
 	if (valueIsString(value)) return 'string';
 	if (value instanceof Table) return 'table';
 	if (isBuiltinFunction(value)) return 'builtin_function';
@@ -183,53 +193,55 @@ const NATIVE_OBJECT_HEAP_BYTES = 24;
 const UPVALUE_HEAP_BYTES = 24;
 const EMPTY_TABLE_HASH_NEXT = new Int32Array(0);
 
-export function createNativeFunction(
+function createNativeFunction(
+	hashId: number,
 	name: string,
-	invoke: (args: ReadonlyArray<Value>, out: Value[]) => void,
+	invoke: (args: NativeArgs, out: Value[]) => void,
 	cost?: NativeFnCost,
 ): NativeFunction {
 	const resolvedCost = cost ?? DEFAULT_NATIVE_COST;
 	addTrackedLuaHeapBytes(NATIVE_FUNCTION_HEAP_BYTES);
 	return {
 		kind: NATIVE_FUNCTION_KIND,
+		hashId,
 		name,
 		cost: resolvedCost,
-		// Keep diagnostics aligned with the C++ runtime when native calls receive wrong arg types.
 		invoke: (args, out) => {
 			out.length = 0;
-			try {
-				invoke(args, out);
-			} catch (err) {
-				if (err instanceof TypeError) {
-					const argTypes = args.map(valueTypeName).join(', ');
-					err.message = `Native function argument type mismatch. fn=${name} args=[${argTypes}] error=${err.message}`;
-				}
-				throw err;
-			}
+			invoke(args, out);
 		},
 	};
 }
 
-export function createNativeObject(raw: object, handlers: {
+function createNativeObject(hashId: number, raw: object, handlers: {
 	get: (key: Value) => Value;
 	set: (key: Value, value: Value) => void;
-	len?: () => number;
-	nextEntry?: (after: Value) => [Value, Value] | null;
+	len: () => number;
+	nextEntry: (after: Value) => [Value, Value] | null;
 }): NativeObject {
 	addTrackedLuaHeapBytes(NATIVE_OBJECT_HEAP_BYTES);
-	return { kind: NATIVE_OBJECT_KIND, raw, get: handlers.get, set: handlers.set, len: handlers.len, nextEntry: handlers.nextEntry, metatable: null };
+	return { kind: NATIVE_OBJECT_KIND, hashId, raw, get: handlers.get, set: handlers.set, len: handlers.len, nextEntry: handlers.nextEntry, metatable: null };
 }
 
 export function isBuiltinFunction(value: Value): value is BuiltinFunction {
-	return (value as BuiltinFunction)?.kind === BUILTIN_FUNCTION_KIND;
+	if (value === null) {
+		return false;
+	}
+	return (value as BuiltinFunction).kind === BUILTIN_FUNCTION_KIND;
 }
 
 export function isNativeFunction(value: Value): value is NativeFunction {
-	return (value as NativeFunction)?.kind === NATIVE_FUNCTION_KIND;
+	if (value === null) {
+		return false;
+	}
+	return (value as NativeFunction).kind === NATIVE_FUNCTION_KIND;
 }
 
 export function isNativeObject(value: Value): value is NativeObject {
-	return (value as NativeObject)?.kind === NATIVE_OBJECT_KIND;
+	if (value === null) {
+		return false;
+	}
+	return (value as NativeObject).kind === NATIVE_OBJECT_KIND;
 }
 
 export type ProgramRuntimeSymbols = {
@@ -255,9 +267,6 @@ export type CpuFrameSnapshot = {
 	registers: Value[];
 };
 
-export type CpuRuntimeRefSegment = string | number;
-
-const CPU_RUNTIME_METATABLE_SEGMENT = '@metatable';
 export type CpuValueState =
 	| { tag: 'nil' }
 	| { tag: 'false' }
@@ -265,12 +274,12 @@ export type CpuValueState =
 	| { tag: 'number'; value: number }
 	| { tag: 'string'; id: number }
 	| { tag: 'builtin'; id: BuiltinFunctionId }
-	| { tag: 'ref'; id: number }
-	| { tag: 'stable_ref'; path: CpuRuntimeRefSegment[] };
+	| { tag: 'ref'; id: number };
 
 export type CpuObjectState =
 	| {
 		kind: 'table';
+		hashId: number;
 		array: CpuValueState[];
 		arrayLength: number;
 		hash: Array<{ key: CpuValueState; value: CpuValueState; next: number }>;
@@ -279,11 +288,13 @@ export type CpuObjectState =
 	}
 	| {
 		kind: 'closure';
+		hashId: number;
 		protoIndex: number;
 		upvalues: number[];
 	}
 	| {
 		kind: 'upvalue';
+		hashId: number;
 		open: boolean;
 		index: number;
 		frameIndex: number;
@@ -372,14 +383,52 @@ export type UpvalueDesc = {
 	index: number;
 };
 
-export type Closure = {
-	protoIndex: number;
-	upvalues: Upvalue[];
-	heapBytes: number;
-};
+export class Closure {
+	public hashId = 0;
+
+	public constructor(
+		public protoIndex: number,
+		public upvalues: Upvalue[],
+		public heapBytes: number,
+	) {
+	}
+}
 
 export function valueIsClosure(value: Value): value is Closure {
-	return value !== null && value !== undefined && (value as Closure).protoIndex !== undefined;
+	return value instanceof Closure;
+}
+
+export function valueIsNumber(value: Value): value is number {
+	switch (value) {
+		case null:
+		case false:
+		case true:
+			return false;
+	}
+	if (valueIsClosure(value)) {
+		return false;
+	}
+	switch ((value as { readonly kind?: string }).kind) {
+		case STRING_VALUE_KIND:
+		case TABLE_VALUE_KIND:
+		case BUILTIN_FUNCTION_KIND:
+		case NATIVE_FUNCTION_KIND:
+		case NATIVE_OBJECT_KIND:
+			return false;
+		default:
+			return true;
+	}
+}
+
+function valueIsImmediate(value: Value): value is null | boolean | number {
+	switch (value) {
+		case null:
+		case false:
+		case true:
+			return true;
+		default:
+			return valueIsNumber(value);
+	}
 }
 
 export const enum RunResult {
@@ -395,6 +444,7 @@ const enum TableIndexKeyKind {
 }
 
 type Upvalue = {
+	hashId: number;
 	open: boolean;
 	index: number;
 	frame: CallFrame;
@@ -443,6 +493,7 @@ export type TableRuntimeState = {
 
 export class Table {
 	public readonly kind = TABLE_VALUE_KIND;
+	public hashId = 0;
 	private array: Value[];
 	public arrayLength = 0;
 	private hashKeys: Value[];
@@ -455,14 +506,6 @@ export class Table {
 	private static readonly numberBuffer = new ArrayBuffer(8);
 	private static readonly float64View = new Float64Array(Table.numberBuffer);
 	private static readonly uint32View = new Uint32Array(Table.numberBuffer);
-	private static readonly objectIds = new WeakMap<object, number>();
-	private static nextObjectId = 1;
-
-	public static [Symbol.hasInstance](value: unknown): boolean {
-		return value !== null
-			&& value !== undefined
-			&& (value as { readonly kind?: string }).kind === TABLE_VALUE_KIND;
-	}
 
 	constructor(arraySize: number, hashSize: number) {
 		this.array = new Array<Value>(arraySize);
@@ -795,22 +838,8 @@ export class Table {
 		return null;
 	}
 
-	private static getObjectId(value: object): number {
-		const existing = Table.objectIds.get(value);
-		if (existing !== undefined) {
-			return existing;
-		}
-		const id = Table.nextObjectId;
-		Table.nextObjectId += 1;
-		Table.objectIds.set(value, id);
-		return id;
-	}
-
 	private hashValue(key: Value): number {
-		if (typeof key === 'number') {
-			if (Number.isNaN(key)) {
-				return 0x7ff80000;
-			}
+		if (valueIsNumber(key)) {
 			const normalized = key === 0 ? 0 : key;
 			Table.float64View[0] = normalized;
 			return (Table.uint32View[0] ^ Table.uint32View[1]) >>> 0;
@@ -821,14 +850,14 @@ export class Table {
 		if (valueIsString(key)) {
 			return (key.id * 2654435761) >>> 0;
 		}
-		return (Table.getObjectId(key as object) * 2654435761) >>> 0;
+		if (isBuiltinFunction(key)) {
+			return ((key.id + 1) * 0x27d4eb2d) >>> 0;
+		}
+		return (key.hashId * 2654435761) >>> 0;
 	}
 
 	private keyEquals(a: Value, b: Value): boolean {
-		if (typeof a === 'number' && typeof b === 'number') {
-			if (Number.isNaN(a) && Number.isNaN(b)) {
-				return true;
-			}
+		if (valueIsNumber(a) && valueIsNumber(b)) {
 			return a === b;
 		}
 		if (valueIsString(a) && valueIsString(b)) {
@@ -1059,16 +1088,16 @@ export class Table {
 	}
 
 	private getArrayIndex(key: Value): number | null {
-		if (typeof key !== 'number') {
+		if (!valueIsNumber(key)) {
 			return null;
 		}
-		if (!Number.isFinite(key)) {
+		if (key - key !== 0) {
 			return null;
 		}
 		if (key < 1) {
 			return null;
 		}
-		if (!Number.isInteger(key)) {
+		if (key % 1 !== 0) {
 			return null;
 		}
 		return key - 1;
@@ -1309,7 +1338,7 @@ class RegisterFile {
 			this.setNil(index);
 			return;
 		}
-		if (typeof value === 'number') {
+		if (valueIsNumber(value)) {
 			this.setNumber(index, value);
 			return;
 		}
@@ -1341,69 +1370,48 @@ class RegisterFile {
 	}
 }
 
-type NativeArgsProxyHandle = {
-	view: NativeArgsView;
-	proxy: NativeArgs;
-};
+const EMPTY_REGISTER_FILE = new RegisterFile(0);
 
-class NativeArgsView {
-	private registers: RegisterFile | null = null;
-	private values: ReadonlyArray<Value> | null = null;
-	private base = 0;
+export class ArrayNativeArgsView implements NativeArgs {
+	private values: ReadonlyArray<Value> = EMPTY_CALL_ARGS;
 	public length = 0;
 
-	public bindRegisters(registers: RegisterFile, base: number, length: number): void {
-		this.registers = registers;
-		this.values = null;
-		this.base = base;
-		this.length = length;
-	}
-
-	public bindArray(values: ReadonlyArray<Value>): void {
-		this.registers = null;
+	public bind(values: ReadonlyArray<Value>): void {
 		this.values = values;
-		this.base = 0;
 		this.length = values.length;
 	}
 
 	public clear(): void {
-		this.registers = null;
-		this.values = null;
+		this.values = EMPTY_CALL_ARGS;
+		this.length = 0;
+	}
+
+	public get(index: number): Value {
+		return this.values[index] as Value;
+	}
+}
+
+class RegisterNativeArgsView implements NativeArgs {
+	private registers = EMPTY_REGISTER_FILE;
+	private base = 0;
+	public length = 0;
+
+	public bind(registers: RegisterFile, base: number, length: number): void {
+		this.registers = registers;
+		this.base = base;
+		this.length = length;
+	}
+
+	public clear(): void {
+		this.registers = EMPTY_REGISTER_FILE;
 		this.base = 0;
 		this.length = 0;
 	}
 
-	public at(index: number): Value | undefined {
-		if (index < 0 || index >= this.length) {
-			return undefined;
-		}
-		if (this.values !== null) {
-			return this.values[index];
-		}
-		return this.registers!.get(this.base + index);
-	}
-
-	public map<U>(callback: (value: Value, index: number, array: NativeArgs) => U): U[] {
-		const output = new Array<U>(this.length);
-		const proxy = this as unknown as NativeArgs;
-		for (let index = 0; index < this.length; index += 1) {
-			output[index] = callback(this.at(index)!, index, proxy);
-		}
-		return output;
+	public get(index: number): Value {
+		return this.registers.get(this.base + index);
 	}
 }
-
-const nativeArgsIndexPattern = /^(0|[1-9]\d*)$/;
-const nativeArgsProxyHandler: ProxyHandler<NativeArgsView> = {
-	get(target, property) {
-		if (typeof property === 'string' && nativeArgsIndexPattern.test(property)) {
-			return target.at(property.length === 1 ? (property.charCodeAt(0) - 48) : Number(property));
-		}
-		const value = Reflect.get(target, property, target);
-		// disable-next-line defensive_typeof_function_pattern -- Proxy trap binds NativeArgsView methods returned by Reflect.get.
-		return typeof value === 'function' ? value.bind(target) : value;
-	},
-};
 
 type TableLoadInlineCache = {
 	table: Table | null;
@@ -1430,6 +1438,26 @@ type DecodedInstructionPage = {
 	tableCacheIndexes: Uint32Array;
 };
 
+function createDecodedInstructionPage(): DecodedInstructionPage {
+	const page: DecodedInstructionPage = {
+		widths: new Uint8Array(DECODED_PAGE_WORDS),
+		ops: new Uint8Array(DECODED_PAGE_WORDS),
+		a: new Uint16Array(DECODED_PAGE_WORDS),
+		b: new Uint16Array(DECODED_PAGE_WORDS),
+		c: new Uint16Array(DECODED_PAGE_WORDS),
+		bx: new Uint32Array(DECODED_PAGE_WORDS),
+		sbx: new Int32Array(DECODED_PAGE_WORDS),
+		rkB: new Int32Array(DECODED_PAGE_WORDS),
+		rkC: new Int32Array(DECODED_PAGE_WORDS),
+		disp: new Uint8Array(DECODED_PAGE_WORDS),
+		words: new Uint32Array(DECODED_PAGE_WORDS),
+		tableCacheIndexes: new Uint32Array(DECODED_PAGE_WORDS),
+	};
+	page.widths.fill(1);
+	page.ops.fill(OpCode.RESERVED0);
+	return page;
+}
+
 // Pool constant for frame reuse
 const MAX_POOLED_FRAMES = 32;
 export class CPU {
@@ -1452,11 +1480,10 @@ export class CPU {
 	private yieldRequested = false;
 	private readonly frames: CallFrame[] = [];
 	private readonly openUpvalues: OpenUpvalueSlot[] = [];
-	private readonly nativeArgsScratch = new ScratchBuffer<NativeArgsProxyHandle>(() => {
-		const view = new NativeArgsView();
-		return { view, proxy: new Proxy(view, nativeArgsProxyHandler) as unknown as NativeArgs };
-	});
-	private nativeArgsScratchIndex = 0;
+	private readonly registerNativeArgsScratch = new ScratchBuffer<RegisterNativeArgsView>(() => new RegisterNativeArgsView());
+	private registerNativeArgsScratchIndex = 0;
+	private readonly arrayNativeArgsScratch = new ScratchBuffer<ArrayNativeArgsView>(() => new ArrayNativeArgsView());
+	private arrayNativeArgsScratchIndex = 0;
 	private readonly debugRegistersScratch: Value[] = [];
 	private readonly nativeReturnScratch = new ScratchArrayStack<Value>();
 	public readonly profiler = new CpuExecutionProfiler();
@@ -1466,7 +1493,7 @@ export class CPU {
 	private externalReturnSink: Value[] | null = null;
 	private decodedPages: DecodedInstructionPage[] = [];
 	private tableLoadCaches: TableLoadInlineCache[] = [];
-	public stringIndexTable: Table | null = null;
+	public stringIndexTable: Table;
 	private systemGlobalNames: StringId[] = [];
 	private systemGlobalValues: Value[] = [];
 	private systemGlobalSlotByKey: Map<StringId, number> = new Map();
@@ -1477,12 +1504,45 @@ export class CPU {
 	private readonly staticClosures: Closure[] = [];
 	private stackRegisters = new RegisterFile(8);
 	private stackTop = 0;
+	private nextObjectHashId = 1;
 
 	constructor(memory: Memory) {
 		this.memory = memory;
 		this.stringPool = new StringPool(true);
-		this.globals = new Table(0, 0);
+		this.globals = this.createTable(0, 0);
+		this.stringIndexTable = this.createTable(0, 0);
 		this.indexKey = StringValue.get(this.stringPool.intern('__index'));
+	}
+
+	public allocateObjectHashId(): number {
+		const hashId = this.nextObjectHashId;
+		this.nextObjectHashId = hashId + 1;
+		return hashId;
+	}
+
+	private observeObjectHashId(hashId: number): void {
+		if (this.nextObjectHashId <= hashId) {
+			this.nextObjectHashId = hashId + 1;
+		}
+	}
+
+	public createTable(arraySize: number, hashSize: number): Table {
+		const table = new Table(arraySize, hashSize);
+		table.hashId = this.allocateObjectHashId();
+		return table;
+	}
+
+	public createNativeFunction(name: string, invoke: (args: NativeArgs, out: Value[]) => void, cost?: NativeFnCost): NativeFunction {
+		return createNativeFunction(this.allocateObjectHashId(), name, invoke, cost);
+	}
+
+	public createNativeObject(raw: object, handlers: {
+		get: (key: Value) => Value;
+		set: (key: Value, value: Value) => void;
+		len: () => number;
+		nextEntry: (after: Value) => [Value, Value] | null;
+	}): NativeObject {
+		return createNativeObject(this.allocateObjectHashId(), raw, handlers);
 	}
 
 	private ensureStackCapacity(size: number): void {
@@ -1509,15 +1569,27 @@ export class CPU {
 		}
 	}
 
-	private acquireNativeArgsProxy(): NativeArgsProxyHandle {
-		const handle = this.nativeArgsScratch.get(this.nativeArgsScratchIndex);
-		this.nativeArgsScratchIndex += 1;
-		return handle;
+	private acquireRegisterNativeArgs(): RegisterNativeArgsView {
+		const args = this.registerNativeArgsScratch.get(this.registerNativeArgsScratchIndex);
+		this.registerNativeArgsScratchIndex += 1;
+		return args;
 	}
 
-	private releaseNativeArgsProxy(handle: NativeArgsProxyHandle): void {
-		handle.view.clear();
-		this.nativeArgsScratchIndex -= 1;
+	private releaseRegisterNativeArgs(args: RegisterNativeArgsView): void {
+		args.clear();
+		this.registerNativeArgsScratchIndex -= 1;
+	}
+
+	private acquireArrayNativeArgs(values: ReadonlyArray<Value>): ArrayNativeArgsView {
+		const args = this.arrayNativeArgsScratch.get(this.arrayNativeArgsScratchIndex);
+		this.arrayNativeArgsScratchIndex += 1;
+		args.bind(values);
+		return args;
+	}
+
+	private releaseArrayNativeArgs(args: ArrayNativeArgsView): void {
+		args.clear();
+		this.arrayNativeArgsScratchIndex -= 1;
 	}
 
 	private findOpenUpvalue(frame: CallFrame, index: number): Upvalue | null {
@@ -1564,9 +1636,6 @@ export class CPU {
 		}
 		if (valueIsString(base)) {
 			const indexTable = this.stringIndexTable;
-			if (indexTable === null) {
-				return null;
-			}
 			if (indexTable.metatable === null) {
 				return indexTable.get(key);
 			}
@@ -1606,9 +1675,6 @@ export class CPU {
 		}
 		if (valueIsString(base)) {
 			const table = this.stringIndexTable;
-			if (table === null) {
-				return null;
-			}
 			if (table.metatable === null) {
 				const cache = this.tableLoadCaches[cacheIndex];
 				const version = table.getVersion();
@@ -1655,9 +1721,6 @@ export class CPU {
 		}
 		if (valueIsString(base)) {
 			const table = this.stringIndexTable;
-			if (table === null) {
-				return null;
-			}
 			if (table.metatable === null) {
 				const cache = this.tableLoadCaches[cacheIndex];
 				const version = table.getVersion();
@@ -1802,7 +1865,9 @@ export class CPU {
 		const existingCount = closures.length;
 		closures.length = protos.length;
 		for (let index = existingCount; index < protos.length; index += 1) {
-			closures[index] = { protoIndex: index, upvalues: EMPTY_CLOSURE_UPVALUES, heapBytes: 0 };
+			const closure = new Closure(index, EMPTY_CLOSURE_UPVALUES, 0);
+			closure.hashId = this.allocateObjectHashId();
+			closures[index] = closure;
 		}
 		for (let index = 0; index < protos.length; index += 1) {
 			const closure = closures[index];
@@ -1839,91 +1904,71 @@ export class CPU {
 		const code = program.code;
 		const instructionCount = code.length / INSTRUCTION_BYTES;
 		const decodedPages = new Array<DecodedInstructionPage>((instructionCount + DECODED_PAGE_WORDS - 1) >> DECODED_PAGE_SHIFT);
+		for (let pageIndex = 0; pageIndex < decodedPages.length; pageIndex += 1) {
+			decodedPages[pageIndex] = createDecodedInstructionPage();
+		}
 		const tableLoadCaches: TableLoadInlineCache[] = [];
-		for (let protoIndex = 0; protoIndex < program.protos.length; protoIndex += 1) {
-			const proto = program.protos[protoIndex];
-			const startWord = proto.entryPC / INSTRUCTION_BYTES;
-			const endWord = startWord + proto.codeLen / INSTRUCTION_BYTES;
-			for (let wordIndex = startWord; wordIndex < endWord;) {
-				const page = this.decodedPageForWrite(decodedPages, wordIndex);
-				const pageOffset = wordIndex & DECODED_PAGE_MASK;
-				let width = 1;
-				let wideA = 0;
-				let wideB = 0;
-				let wideC = 0;
-				let instr = readInstructionWord(code, wordIndex);
-				let op = (instr >>> 18) & 0x3f;
-				let ext = instr >>> 24;
-				if (op === OpCode.WIDE) {
-					if (wordIndex + 1 >= instructionCount) {
-						throw new Error('Malformed program: WIDE instruction at end of program.');
-					}
-					width = 2;
-					wideA = (instr >>> 12) & 0x3f;
-					wideB = (instr >>> 6) & 0x3f;
-					wideC = instr & 0x3f;
-					instr = readInstructionWord(code, wordIndex + 1);
-					op = (instr >>> 18) & 0x3f;
-					ext = instr >>> 24;
-				}
-				const aLow = (instr >>> 12) & 0x3f;
-				const bLow = (instr >>> 6) & 0x3f;
-				const cLow = instr & 0x3f;
-				const usesDisp = OPCODE_USES_DISP[op] !== 0;
-				const usesBx = !usesDisp && OPCODE_USES_BX[op] !== 0;
-				const extA = usesBx || usesDisp ? 0 : (ext >>> 6) & 0x3;
-				const extB = usesBx || usesDisp ? 0 : (ext >>> 3) & 0x7;
-				const extC = usesBx || usesDisp ? 0 : (ext & 0x7);
-				const aShift = usesDisp ? MAX_OPERAND_BITS : MAX_OPERAND_BITS + (usesBx ? 0 : EXT_A_BITS);
-				const bShift = usesDisp ? MAX_OPERAND_BITS : MAX_OPERAND_BITS + EXT_B_BITS;
-				const cShift = usesDisp ? MAX_OPERAND_BITS : MAX_OPERAND_BITS + EXT_C_BITS;
-				const bxLow = (bLow << MAX_OPERAND_BITS) | cLow;
-				const rawB = (wideB << bShift) | (extB << MAX_OPERAND_BITS) | bLow;
-				const rawC = (wideC << cShift) | (extC << MAX_OPERAND_BITS) | cLow;
-				const decodedBx = (wideB << (MAX_BX_BITS + EXT_BX_BITS)) | ((usesBx ? ext : 0) << MAX_BX_BITS) | bxLow;
-				page.widths[pageOffset] = width;
-				page.words[pageOffset] = instr;
-				page.ops[pageOffset] = op;
-				page.a[pageOffset] = (wideA << aShift) | (extA << MAX_OPERAND_BITS) | aLow;
-				page.b[pageOffset] = rawB;
-				page.c[pageOffset] = rawC;
-				page.bx[pageOffset] = decodedBx;
-				page.sbx[pageOffset] = signExtend(decodedBx, MAX_BX_BITS + EXT_BX_BITS + ((width - 1) * MAX_OPERAND_BITS));
-				page.rkB[pageOffset] = signExtend(rawB, MAX_OPERAND_BITS + EXT_B_BITS + ((width - 1) * MAX_OPERAND_BITS));
-				page.rkC[pageOffset] = signExtend(rawC, MAX_OPERAND_BITS + EXT_C_BITS + ((width - 1) * MAX_OPERAND_BITS));
-				page.disp[pageOffset] = ext;
-				if (op === OpCode.GETI || op === OpCode.GETFIELD || op === OpCode.SELF) {
-					page.tableCacheIndexes[pageOffset] = tableLoadCaches.length;
-					tableLoadCaches.push({ table: null, version: 0, value: null });
-				}
-				wordIndex += width;
+		for (let wordIndex = 0; wordIndex < instructionCount;) {
+			const page = this.decodedPageForWrite(decodedPages, wordIndex);
+			const pageOffset = wordIndex & DECODED_PAGE_MASK;
+			let width = 1;
+			let wideA = 0;
+			let wideB = 0;
+			let wideC = 0;
+			let instr = readInstructionWord(code, wordIndex);
+			let op = (instr >>> 18) & 0x3f;
+			let ext = instr >>> 24;
+			if (op === OpCode.WIDE && wordIndex + 1 < instructionCount) {
+				width = 2;
+				wideA = (instr >>> 12) & 0x3f;
+				wideB = (instr >>> 6) & 0x3f;
+				wideC = instr & 0x3f;
+				instr = readInstructionWord(code, wordIndex + 1);
+				op = (instr >>> 18) & 0x3f;
+				ext = instr >>> 24;
 			}
+			const aLow = (instr >>> 12) & 0x3f;
+			const bLow = (instr >>> 6) & 0x3f;
+			const cLow = instr & 0x3f;
+			const usesDisp = OPCODE_USES_DISP[op] !== 0;
+			const usesBx = !usesDisp && OPCODE_USES_BX[op] !== 0;
+			const extA = usesBx || usesDisp ? 0 : (ext >>> 6) & 0x3;
+			const extB = usesBx || usesDisp ? 0 : (ext >>> 3) & 0x7;
+			const extC = usesBx || usesDisp ? 0 : (ext & 0x7);
+			const aShift = usesDisp ? MAX_OPERAND_BITS : MAX_OPERAND_BITS + (usesBx ? 0 : EXT_A_BITS);
+			const bShift = usesDisp ? MAX_OPERAND_BITS : MAX_OPERAND_BITS + EXT_B_BITS;
+			const cShift = usesDisp ? MAX_OPERAND_BITS : MAX_OPERAND_BITS + EXT_C_BITS;
+			const bxLow = (bLow << MAX_OPERAND_BITS) | cLow;
+			const rawB = (wideB << bShift) | (extB << MAX_OPERAND_BITS) | bLow;
+			const rawC = (wideC << cShift) | (extC << MAX_OPERAND_BITS) | cLow;
+			const decodedBx = (wideB << (MAX_BX_BITS + EXT_BX_BITS)) | ((usesBx ? ext : 0) << MAX_BX_BITS) | bxLow;
+			page.widths[pageOffset] = width;
+			page.words[pageOffset] = instr;
+			page.ops[pageOffset] = op;
+			page.a[pageOffset] = (wideA << aShift) | (extA << MAX_OPERAND_BITS) | aLow;
+			page.b[pageOffset] = rawB;
+			page.c[pageOffset] = rawC;
+			page.bx[pageOffset] = decodedBx;
+			page.sbx[pageOffset] = signExtend(decodedBx, MAX_BX_BITS + EXT_BX_BITS + ((width - 1) * MAX_OPERAND_BITS));
+			page.rkB[pageOffset] = signExtend(rawB, MAX_OPERAND_BITS + EXT_B_BITS + ((width - 1) * MAX_OPERAND_BITS));
+			page.rkC[pageOffset] = signExtend(rawC, MAX_OPERAND_BITS + EXT_C_BITS + ((width - 1) * MAX_OPERAND_BITS));
+			page.disp[pageOffset] = ext;
+			if (op === OpCode.GETI || op === OpCode.GETFIELD || op === OpCode.SELF) {
+				page.tableCacheIndexes[pageOffset] = tableLoadCaches.length;
+				tableLoadCaches.push({ table: null, version: 0, value: null });
+			}
+			wordIndex += width;
 		}
 		this.decodedPages = decodedPages;
 		this.tableLoadCaches = tableLoadCaches;
 	}
 
 	private decodedPageForWrite(decodedPages: DecodedInstructionPage[], wordIndex: number): DecodedInstructionPage {
-		const pageIndex = wordIndex >>> DECODED_PAGE_SHIFT;
-		let page = decodedPages[pageIndex];
-		if (!page) {
-			page = {
-				widths: new Uint8Array(DECODED_PAGE_WORDS),
-				ops: new Uint8Array(DECODED_PAGE_WORDS),
-				a: new Uint16Array(DECODED_PAGE_WORDS),
-				b: new Uint16Array(DECODED_PAGE_WORDS),
-				c: new Uint16Array(DECODED_PAGE_WORDS),
-				bx: new Uint32Array(DECODED_PAGE_WORDS),
-				sbx: new Int32Array(DECODED_PAGE_WORDS),
-				rkB: new Int32Array(DECODED_PAGE_WORDS),
-				rkC: new Int32Array(DECODED_PAGE_WORDS),
-				disp: new Uint8Array(DECODED_PAGE_WORDS),
-				words: new Uint32Array(DECODED_PAGE_WORDS),
-				tableCacheIndexes: new Uint32Array(DECODED_PAGE_WORDS),
-			};
-			decodedPages[pageIndex] = page;
-		}
-		return page;
+		return decodedPages[wordIndex >>> DECODED_PAGE_SHIFT];
+	}
+
+	private decodedPageAt(wordIndex: number): DecodedInstructionPage {
+		return this.decodedPages[wordIndex >>> DECODED_PAGE_SHIFT];
 	}
 
 	private configureProfiler(): void {
@@ -1936,9 +1981,6 @@ export class CPU {
 		const decodedPages = this.decodedPages;
 		for (let pageIndex = 0; pageIndex < decodedPages.length; pageIndex += 1) {
 			const page = decodedPages[pageIndex];
-			if (!page) {
-				continue;
-			}
 			const pageStart = pageIndex << DECODED_PAGE_SHIFT;
 			const remainingWords = opcodeByWord.length - pageStart;
 			const pageWords = remainingWords < DECODED_PAGE_WORDS ? remainingWords : DECODED_PAGE_WORDS;
@@ -1968,7 +2010,6 @@ export class CPU {
 	}
 
 	public call(closure: Closure, args: ReadonlyArray<Value> = EMPTY_CALL_ARGS, returnCount: number = 0): void {
-		this.requireRunnableForCall();
 		this.lastReturnValues.length = 0;
 		this.yieldRequested = false;
 		this.pushFrame(closure, args, 0, returnCount, false, this.program.protos[closure.protoIndex].entryPC);
@@ -1987,7 +2028,6 @@ export class CPU {
 	}
 
 	public callExternal(closure: Closure, args: ReadonlyArray<Value> = EMPTY_CALL_ARGS): void {
-		this.requireRunnableForCall();
 		this.lastReturnValues.length = 0;
 		this.yieldRequested = false;
 		this.pushFrame(closure, args, 0, 0, true, this.program.protos[closure.protoIndex].entryPC);
@@ -2002,6 +2042,7 @@ export class CPU {
 		this.yieldRequested = false;
 	}
 
+
 	public clearHaltUntilIrq(): void {
 		this.haltedUntilIrq = false;
 		this.yieldRequested = false;
@@ -2010,6 +2051,7 @@ export class CPU {
 	public isHaltedUntilIrq(): boolean {
 		return this.haltedUntilIrq;
 	}
+
 
 	public enableMaskableInterrupts(): void {
 		this.maskableInterruptsEnabled = true;
@@ -2056,12 +2098,6 @@ export class CPU {
 		return true;
 	}
 
-	private requireRunnableForCall(): void {
-		if (this.haltedUntilIrq) {
-			throw new Error('Cannot enter CPU while halted until IRQ.');
-		}
-	}
-
 	private clearHaltAfterAcceptedInterrupt(): void {
 		this.haltedUntilIrq = false;
 		this.yieldRequested = false;
@@ -2105,7 +2141,8 @@ export class CPU {
 			const frame = frames[frames.length - 1];
 			const pc = frame.pc;
 			const wordIndex = pc / INSTRUCTION_BYTES;
-			const page = decodedPages[wordIndex >>> DECODED_PAGE_SHIFT]!;
+			const pageIndex = wordIndex >>> DECODED_PAGE_SHIFT;
+			const page = decodedPages[pageIndex];
 			const pageOffset = wordIndex & DECODED_PAGE_MASK;
 			const width = page.widths[pageOffset];
 			const op = page.ops[pageOffset];
@@ -2148,16 +2185,9 @@ export class CPU {
 
 	private skipNextInstruction(frame: CallFrame): void {
 		const wordIndex = frame.pc / INSTRUCTION_BYTES;
-		const page = this.decodedPages[wordIndex >>> DECODED_PAGE_SHIFT]!;
-		frame.pc += page.widths[wordIndex & DECODED_PAGE_MASK] * INSTRUCTION_BYTES;
-	}
-
-	private formatSourceLocation(range: SourceRange | null): string {
-		return range ? `${range.path}:${range.start.line}:${range.start.column}` : 'unknown';
-	}
-
-	private formatLastSourceLocation(): string {
-		return this.formatSourceLocation(this.metadata ? this.getDebugRange(this.lastPc) : null);
+		const page = this.decodedPageAt(wordIndex);
+		const width = page.widths[wordIndex & DECODED_PAGE_MASK];
+		frame.pc += width * INSTRUCTION_BYTES;
 	}
 
 	public step(): void {
@@ -2168,7 +2198,7 @@ export class CPU {
 		const pc = frame.pc;
 		const wordIndex = pc / INSTRUCTION_BYTES;
 		const profiler = this.profilerEnabled ? this.profiler : null;
-		const page = this.decodedPages[wordIndex >>> DECODED_PAGE_SHIFT]!;
+		const page = this.decodedPageAt(wordIndex);
 		const pageOffset = wordIndex & DECODED_PAGE_MASK;
 		const width = page.widths[pageOffset];
 		const op = page.ops[pageOffset];
@@ -2362,7 +2392,7 @@ export class CPU {
 		const registers = frame.registers;
 		switch (op) {
 				case OpCode.WIDE:
-					throw new Error('Unknown opcode.');
+					return;
 				case OpCode.MOV:
 					this.copyRegisterFast(frame, registers, a, b);
 					return;
@@ -2438,80 +2468,61 @@ export class CPU {
 					this.storeTableIndex(registers.get(a), this.readRK(frame, rkB), this.readRK(frame, rkC));
 					return;
 				case OpCode.NEWT:
-					this.setRegisterTableFast(frame, registers, a, new Table(b, c));
+					this.setRegisterTableFast(frame, registers, a, this.createTable(b, c));
 					enforceLuaHeapBudget();
 					return;
-				case OpCode.ADD: {
-					const left = this.readRKNumber(frame, rkB);
-					const right = this.readRKNumber(frame, rkC);
-					this.setRegisterNumberFast(frame, registers, a, left + right);
-					return;
-				}
-				case OpCode.SUB: {
-					const left = this.readRKNumber(frame, rkB);
-					const right = this.readRKNumber(frame, rkC);
-					this.setRegisterNumberFast(frame, registers, a, left - right);
-					return;
-				}
-				case OpCode.MUL: {
-					const left = this.readRKNumber(frame, rkB);
-					const right = this.readRKNumber(frame, rkC);
-					this.setRegisterNumberFast(frame, registers, a, left * right);
-					return;
-				}
-				case OpCode.DIV: {
-					const left = this.readRKNumber(frame, rkB);
-					const right = this.readRKNumber(frame, rkC);
-					this.setRegisterNumberFast(frame, registers, a, left / right);
-					return;
-				}
-				case OpCode.MOD: {
-					const left = this.readRKNumber(frame, rkB);
-					const right = this.readRKNumber(frame, rkC);
-					this.setRegisterNumberFast(frame, registers, a, luaModulo(left, right));
-					return;
-				}
-				case OpCode.FLOORDIV: {
-					const left = this.readRKNumber(frame, rkB);
-					const right = this.readRKNumber(frame, rkC);
-					this.setRegisterNumberFast(frame, registers, a, Math.floor(left / right));
-					return;
-				}
-				case OpCode.POW: {
-					const left = this.readRKNumber(frame, rkB);
-					const right = this.readRKNumber(frame, rkC);
-					this.setRegisterNumberFast(frame, registers, a, Math.pow(left, right));
-					return;
-				}
-				case OpCode.BAND: {
-					const left = this.readRKNumber(frame, rkB);
-					const right = this.readRKNumber(frame, rkC);
-					this.setRegisterNumberFast(frame, registers, a, left & right);
-					return;
-				}
-				case OpCode.BOR: {
-					const left = this.readRKNumber(frame, rkB);
-					const right = this.readRKNumber(frame, rkC);
-					this.setRegisterNumberFast(frame, registers, a, left | right);
-					return;
-				}
-				case OpCode.BXOR: {
-					const left = this.readRKNumber(frame, rkB);
-					const right = this.readRKNumber(frame, rkC);
-					this.setRegisterNumberFast(frame, registers, a, left ^ right);
-					return;
-				}
-				case OpCode.SHL: {
-					const left = this.readRKNumber(frame, rkB);
-					const right = this.readRKNumber(frame, rkC);
-					this.setRegisterNumberFast(frame, registers, a, left << (right & 31));
-					return;
-				}
+				case OpCode.ADD:
+				case OpCode.SUB:
+				case OpCode.MUL:
+				case OpCode.DIV:
+				case OpCode.MOD:
+				case OpCode.FLOORDIV:
+				case OpCode.POW:
+				case OpCode.BAND:
+				case OpCode.BOR:
+				case OpCode.BXOR:
+				case OpCode.SHL:
 				case OpCode.SHR: {
-					const left = this.readRKNumber(frame, rkB);
-					const right = this.readRKNumber(frame, rkC);
-					this.setRegisterNumberFast(frame, registers, a, left >> (right & 31));
-					return;
+					const left = this.readRK(frame, rkB) as number;
+					const right = this.readRK(frame, rkC) as number;
+					switch (op) {
+						case OpCode.ADD:
+							this.setRegisterNumberFast(frame, registers, a, left + right);
+							return;
+						case OpCode.SUB:
+							this.setRegisterNumberFast(frame, registers, a, left - right);
+							return;
+						case OpCode.MUL:
+							this.setRegisterNumberFast(frame, registers, a, left * right);
+							return;
+						case OpCode.DIV:
+							this.setRegisterNumberFast(frame, registers, a, left / right);
+							return;
+						case OpCode.MOD:
+							this.setRegisterNumberFast(frame, registers, a, luaModulo(left, right));
+							return;
+						case OpCode.FLOORDIV:
+							this.setRegisterNumberFast(frame, registers, a, luaFloorDivide(left, right));
+							return;
+						case OpCode.POW:
+							this.setRegisterNumberFast(frame, registers, a, Math.pow(left, right));
+							return;
+						case OpCode.BAND:
+							this.setRegisterNumberFast(frame, registers, a, left & right);
+							return;
+						case OpCode.BOR:
+							this.setRegisterNumberFast(frame, registers, a, left | right);
+							return;
+						case OpCode.BXOR:
+							this.setRegisterNumberFast(frame, registers, a, left ^ right);
+							return;
+						case OpCode.SHL:
+							this.setRegisterNumberFast(frame, registers, a, left << (right & 31));
+							return;
+						case OpCode.SHR:
+							this.setRegisterNumberFast(frame, registers, a, left >> (right & 31));
+							return;
+					}
 				}
 				case OpCode.CONCAT: {
 					const left = this.readRK(frame, rkB);
@@ -2531,7 +2542,7 @@ export class CPU {
 					return;
 				}
 				case OpCode.UNM: {
-					const value = this.readRegisterNumber(frame, b);
+					const value = registers.get(b) as number;
 					this.setRegisterNumberFast(frame, registers, a, -value);
 					return;
 				}
@@ -2549,33 +2560,11 @@ export class CPU {
 						this.setRegisterNumberFast(frame, registers, a, value.arrayLength);
 						return;
 					}
-					if (isNativeObject(value)) {
-					if (!value.len) {
-						const stack = this.getCallStack()
-							.map(entry => {
-								const range = this.getDebugRange(entry.pc);
-								if (!range) return '<unknown>';
-								return this.formatSourceLocation(range);
-							})
-							.reverse()
-							.join(' <- ');
-						throw new Error(`Length operator expects a native object with a length. stack=${stack}`);
-					}
-					this.setRegisterNumberFast(frame, registers, a, value.len());
+					this.setRegisterNumberFast(frame, registers, a, (value as NativeObject).len());
 					return;
 				}
-				const stack = this.getCallStack()
-					.map(entry => {
-						const range = this.getDebugRange(entry.pc);
-						if (!range) return '<unknown>';
-						return `${range.path}:${range.start.line}:${range.start.column}`;
-					})
-					.reverse()
-					.join(' <- ');
-				throw new Error(`Length operator expects a string or table. stack=${stack}`);
-				}
 				case OpCode.BNOT: {
-					const value = this.readRegisterNumber(frame, b);
+					const value = registers.get(b) as number;
 					this.setRegisterNumberFast(frame, registers, a, ~value);
 					return;
 				}
@@ -2591,30 +2580,26 @@ export class CPU {
 				case OpCode.LT: {
 					const left = this.readRK(frame, rkB);
 					const right = this.readRK(frame, rkC);
-					let ok: boolean;
-					if (typeof left === 'number' && typeof right === 'number') {
-						ok = left < right;
-					} else if (valueIsString(left) && valueIsString(right)) {
-						ok = this.stringPool.toString(asStringId(left)) < this.stringPool.toString(asStringId(right));
-					} else {
-						throw new Error(`Attempted to compare ${valueTypeName(left)} with ${valueTypeName(right)}. at ${this.formatLastSourceLocation()}`);
-					}
+					const ok = valueIsString(left) && valueIsString(right)
+						? this.stringPool.toString(asStringId(left)) < this.stringPool.toString(asStringId(right))
+						: (left as number) < (right as number);
 					if (ok !== (a !== 0)) {
 						this.skipNextInstruction(frame);
 					}
 					return;
 				}
+				case OpCode.RESERVED0:
+				case OpCode.RESERVED1:
+				case OpCode.RESERVED2:
+				case OpCode.RESERVED3:
+					return;
+
 				case OpCode.LE: {
 					const left = this.readRK(frame, rkB);
 					const right = this.readRK(frame, rkC);
-					let ok: boolean;
-					if (typeof left === 'number' && typeof right === 'number') {
-						ok = left <= right;
-					} else if (valueIsString(left) && valueIsString(right)) {
-						ok = this.stringPool.toString(asStringId(left)) <= this.stringPool.toString(asStringId(right));
-					} else {
-						throw new Error(`Attempted to compare ${valueTypeName(left)} with ${valueTypeName(right)}. at ${this.formatLastSourceLocation()}`);
-					}
+					const ok = valueIsString(left) && valueIsString(right)
+						? this.stringPool.toString(asStringId(left)) <= this.stringPool.toString(asStringId(right))
+						: (left as number) <= (right as number);
 					if (ok !== (a !== 0)) {
 						this.skipNextInstruction(frame);
 					}
@@ -2665,32 +2650,26 @@ export class CPU {
 				case OpCode.CALL: {
 					const callee = registers.get(a);
 					const argCount = b === 0 ? Math.max(frame.top - a - 1, 0) : b - 1;
-					if (callee === null) {
-						throw new Error(`Attempted to call a nil value. at ${this.formatLastSourceLocation()}`);
-					}
 					if (isBuiltinFunction(callee)) {
 						this.runBuiltinFunction(callee, frame, a, c, argCount);
 						return;
 					}
 					if (isNativeFunction(callee)) {
 						this.charge(callee.cost.base);
-						const argsHandle = this.acquireNativeArgsProxy();
-					const results = this.nativeReturnScratch.acquire();
+						const nativeArgs = this.acquireRegisterNativeArgs();
+						const results = this.nativeReturnScratch.acquire();
 						try {
-							argsHandle.view.bindRegisters(registers, a + 1, argCount);
-							callee.invoke(argsHandle.proxy, results);
+							nativeArgs.bind(registers, a + 1, argCount);
+							callee.invoke(nativeArgs, results);
 							if (this.frames.length > 0 && this.frames[this.frames.length - 1] === frame) {
 								this.writeReturnValues(frame, a, c, results);
 							}
 							enforceLuaHeapBudget();
 						} finally {
-							this.releaseNativeArgsProxy(argsHandle);
+							this.releaseRegisterNativeArgs(nativeArgs);
 							this.nativeReturnScratch.release(results);
 						}
 						return;
-					}
-					if (!valueIsClosure(callee)) {
-						throw new Error(this.formatNonFunctionCallError(callee));
 					}
 					this.pushFrameFromCaller(frame, callee as Closure, a + 1, argCount, a, c, false, frame.pc - INSTRUCTION_BYTES);
 					return;
@@ -2739,40 +2718,117 @@ export class CPU {
 					this.releaseFrame(frame);
 					return;
 				}
-				case OpCode.LOAD_MEM_D: {
-					const addr = registers.getNumber(b) + (disp << 2);
-					this.setRegisterFast(frame, registers, a, this.readMappedMemoryValue(addr, c));
-					return;
-				}
-				case OpCode.STORE_MEM_D: {
-					const addr = registers.getNumber(b) + (disp << 2);
-					this.writeMappedMemoryValue(addr, c, registers.get(a));
-					return;
-				}
+				case OpCode.LOAD_MEM_D:
+				case OpCode.STORE_MEM_D:
 				case OpCode.STORE_MEM_WORDS_D: {
-					const addr = registers.getNumber(b) + (disp << 2);
-					this.charge(ceilDiv4(c));
-					this.writeMappedWordSequence(frame, addr, a, c);
+					const addr = (registers.get(b) as number) + (disp << 2);
+					if (op === OpCode.STORE_MEM_WORDS_D) {
+						this.charge(ceilDiv4(c));
+						this.writeMappedWordSequence(frame, addr, a, c);
+						return;
+					}
+					if (op === OpCode.STORE_MEM_D) {
+						const value = registers.get(a);
+						if (c === MemoryAccessKind.Word) {
+							this.memory.writeMappedValue(addr, value);
+							return;
+						}
+						switch (c) {
+							case MemoryAccessKind.U8:
+								this.memory.writeMappedU8(addr, value as number);
+								return;
+							case MemoryAccessKind.U16LE:
+								this.memory.writeMappedU16LE(addr, value as number);
+								return;
+							case MemoryAccessKind.U32LE:
+								this.memory.writeMappedU32LE(addr, value as number);
+								return;
+							case MemoryAccessKind.F32LE:
+								this.memory.writeMappedF32LE(addr, value as number);
+								return;
+							case MemoryAccessKind.F64LE:
+								this.memory.writeMappedF64LE(addr, value as number);
+								return;
+						}
+						return;
+					}
+					switch (c) {
+						case MemoryAccessKind.Word:
+							this.setRegisterFast(frame, registers, a, this.memory.readMappedValue(addr));
+							return;
+						case MemoryAccessKind.U8:
+							this.setRegisterFast(frame, registers, a, this.memory.readMappedU8(addr));
+							return;
+						case MemoryAccessKind.U16LE:
+							this.setRegisterFast(frame, registers, a, this.memory.readMappedU16LE(addr));
+							return;
+						case MemoryAccessKind.U32LE:
+							this.setRegisterFast(frame, registers, a, this.memory.readMappedU32LE(addr));
+							return;
+						case MemoryAccessKind.F32LE:
+							this.setRegisterFast(frame, registers, a, this.memory.readMappedF32LE(addr));
+							return;
+						case MemoryAccessKind.F64LE:
+							this.setRegisterFast(frame, registers, a, this.memory.readMappedF64LE(addr));
+							return;
+					}
 					return;
 				}
 				case OpCode.LOAD_MEM: {
-					const addr = this.readRKNumber(frame, rkB);
-					this.setRegisterFast(frame, registers, a, this.readMappedMemoryValue(addr, c));
+					const addr = this.readRK(frame, rkB) as number;
+					switch (c) {
+						case MemoryAccessKind.Word:
+							this.setRegisterFast(frame, registers, a, this.memory.readMappedValue(addr));
+							return;
+						case MemoryAccessKind.U8:
+							this.setRegisterFast(frame, registers, a, this.memory.readMappedU8(addr));
+							return;
+						case MemoryAccessKind.U16LE:
+							this.setRegisterFast(frame, registers, a, this.memory.readMappedU16LE(addr));
+							return;
+						case MemoryAccessKind.U32LE:
+							this.setRegisterFast(frame, registers, a, this.memory.readMappedU32LE(addr));
+							return;
+						case MemoryAccessKind.F32LE:
+							this.setRegisterFast(frame, registers, a, this.memory.readMappedF32LE(addr));
+							return;
+						case MemoryAccessKind.F64LE:
+							this.setRegisterFast(frame, registers, a, this.memory.readMappedF64LE(addr));
+							return;
+					}
 					return;
 				}
 				case OpCode.STORE_MEM: {
-					const addr = this.readRKNumber(frame, rkB);
-					this.writeMappedMemoryValue(addr, c, registers.get(a));
+					const addr = this.readRK(frame, rkB) as number;
+					const value = registers.get(a);
+					if (c === MemoryAccessKind.Word) {
+						this.memory.writeMappedValue(addr, value);
+						return;
+					}
+					switch (c) {
+						case MemoryAccessKind.U8:
+							this.memory.writeMappedU8(addr, value as number);
+							return;
+						case MemoryAccessKind.U16LE:
+							this.memory.writeMappedU16LE(addr, value as number);
+							return;
+						case MemoryAccessKind.U32LE:
+							this.memory.writeMappedU32LE(addr, value as number);
+							return;
+						case MemoryAccessKind.F32LE:
+							this.memory.writeMappedF32LE(addr, value as number);
+							return;
+						case MemoryAccessKind.F64LE:
+							this.memory.writeMappedF64LE(addr, value as number);
+							return;
+					}
 					return;
 				}
 				case OpCode.STORE_MEM_WORDS: {
-					const addr = this.readRKNumber(frame, rkB);
 					this.charge(ceilDiv4(c));
-					this.writeMappedWordSequence(frame, addr, a, c);
+					this.writeMappedWordSequence(frame, this.readRK(frame, rkB) as number, a, c);
 					return;
 				}
-			default:
-				throw new Error('Unknown opcode.');
 		}
 	}
 
@@ -2862,11 +2918,11 @@ export class CPU {
 			const desc = proto.upvalueDescs[index];
 			if (desc.inStack) {
 				let upvalue = this.findOpenUpvalue(frame, desc.index);
-				if (!upvalue) {
-					upvalue = { open: true, index: desc.index, frame, value: null };
-					this.openUpvalues.push({ frame, index: desc.index, upvalue });
-					addTrackedLuaHeapBytes(UPVALUE_HEAP_BYTES);
-				}
+					if (!upvalue) {
+						upvalue = { hashId: this.allocateObjectHashId(), open: true, index: desc.index, frame, value: null };
+						this.openUpvalues.push({ frame, index: desc.index, upvalue });
+						addTrackedLuaHeapBytes(UPVALUE_HEAP_BYTES);
+					}
 				upvalues[index] = upvalue;
 				continue;
 			}
@@ -2874,7 +2930,9 @@ export class CPU {
 		}
 		const heapBytes = CLOSURE_HEAP_BYTES + (upvalues.length * CLOSURE_UPVALUE_SLOT_HEAP_BYTES);
 		addTrackedLuaHeapBytes(heapBytes);
-		return { protoIndex, upvalues, heapBytes };
+		const closure = new Closure(protoIndex, upvalues, heapBytes);
+		closure.hashId = this.allocateObjectHashId();
+		return closure;
 	}
 
 	private closeUpvalues(frame: CallFrame): void {
@@ -3033,77 +3091,12 @@ export class CPU {
 		this.setRegisterFast(frame, registers, index, value);
 	}
 
-	private readRegisterNumber(frame: CallFrame, index: number): number {
-		const registers = frame.registers;
-		return registers.getNumber(index);
-	}
-
-	private readMappedMemoryValue(addr: number, accessKind: number): Value {
-		switch (accessKind) {
-			case MemoryAccessKind.Word:
-				return this.memory.readMappedValue(addr);
-			case MemoryAccessKind.U8:
-				return this.memory.readMappedU8(addr);
-			case MemoryAccessKind.U16LE:
-				return this.memory.readMappedU16LE(addr);
-			case MemoryAccessKind.U32LE:
-				return this.memory.readMappedU32LE(addr);
-			case MemoryAccessKind.F32LE:
-				return this.memory.readMappedF32LE(addr);
-			case MemoryAccessKind.F64LE:
-				return this.memory.readMappedF64LE(addr);
-			default:
-				throw new Error(`[CPU] Unknown memory access kind: ${accessKind}.`);
-		}
-	}
-
-	private writeMappedMemoryValue(addr: number, accessKind: number, value: Value): void {
-		if (accessKind === MemoryAccessKind.Word) {
-			this.memory.writeMappedValue(addr, value);
-			return;
-		}
-		if (accessKind < MemoryAccessKind.U8 || accessKind > MemoryAccessKind.F64LE) {
-			throw new Error(`[CPU] Unknown memory access kind: ${accessKind}.`);
-		}
-		if (typeof value !== 'number') {
-			throw new Error(`[Memory] ${MEMORY_ACCESS_KIND_NAMES[accessKind]}[addr] expects a number. Got ${typeof value}.`);
-		}
-		switch (accessKind) {
-			case MemoryAccessKind.U8:
-				this.memory.writeMappedU8(addr, value);
-				return;
-			case MemoryAccessKind.U16LE:
-				this.memory.writeMappedU16LE(addr, value);
-				return;
-			case MemoryAccessKind.U32LE:
-				this.memory.writeMappedU32LE(addr, value);
-				return;
-			case MemoryAccessKind.F32LE:
-				this.memory.writeMappedF32LE(addr, value);
-				return;
-			case MemoryAccessKind.F64LE:
-				this.memory.writeMappedF64LE(addr, value);
-				return;
-			default:
-				throw new Error(`[CPU] Unknown memory access kind: ${accessKind}.`);
-		}
-	}
-
 	private writeMappedWordSequence(frame: CallFrame, addr: number, valueBase: number, valueCount: number): void {
 		let writeAddr = addr;
 		for (let offset = 0; offset < valueCount; offset += 1) {
 			this.memory.writeMappedValue(writeAddr, frame.registers.get(valueBase + offset));
 			writeAddr += 4;
 		}
-	}
-
-	private readRKNumber(frame: CallFrame, rk: number): number {
-		if (rk < 0) {
-			const index = -1 - rk;
-			const value = this.program.constPool[index];
-			return value as number;
-		}
-		return this.readRegisterNumber(frame, rk);
 	}
 
 	private readRK(frame: CallFrame, rk: number): Value {
@@ -3115,13 +3108,22 @@ export class CPU {
 	}
 
 	public callBuiltinFunction(fn: BuiltinFunction, args: ReadonlyArray<Value>, out: Value[]): void {
+		const nativeArgs = this.acquireArrayNativeArgs(args);
+		try {
+			this.callBuiltinFunctionView(fn, nativeArgs, out);
+		} finally {
+			this.releaseArrayNativeArgs(nativeArgs);
+		}
+	}
+
+	private callBuiltinFunctionView(fn: BuiltinFunction, args: NativeArgs, out: Value[]): void {
 		out.length = 0;
 		switch (fn.id) {
 			case BuiltinFunctionId.Next:
-				this.runBuiltinNextValue(args.length > 0 ? args[0] : null, args.length > 1 ? args[1] : null, out);
+				this.runBuiltinNextValue(args.get(0), args.get(1), out);
 				break;
 			case BuiltinFunctionId.Type:
-				this.runBuiltinType(args.length > 0 ? args[0] : null, out);
+				this.runBuiltinType(args.get(0), out);
 				break;
 			case BuiltinFunctionId.SetMetatable:
 				this.runBuiltinSetMetatable(args, out);
@@ -3158,16 +3160,16 @@ export class CPU {
 
 	private runBuiltinFunction(fn: BuiltinFunction, frame: CallFrame, callBase: number, returnCount: number, argCount: number): void {
 		this.charge(fn.cost.base);
-		const argsHandle = this.acquireNativeArgsProxy();
+		const nativeArgs = this.acquireRegisterNativeArgs();
 		const results = this.nativeReturnScratch.acquire();
 		try {
-			argsHandle.view.bindRegisters(frame.registers, callBase + 1, argCount);
-			this.callBuiltinFunction(fn, argsHandle.proxy, results);
+			nativeArgs.bind(frame.registers, callBase + 1, argCount);
+			this.callBuiltinFunctionView(fn, nativeArgs, results);
 			if (this.frames.length > 0 && this.frames[this.frames.length - 1] === frame) {
 				this.writeReturnValues(frame, callBase, returnCount, results);
 			}
 		} finally {
-			this.releaseNativeArgsProxy(argsHandle);
+			this.releaseRegisterNativeArgs(nativeArgs);
 			this.nativeReturnScratch.release(results);
 		}
 	}
@@ -3183,19 +3185,12 @@ export class CPU {
 			out.push(entry[0], entry[1]);
 			return;
 		}
-		if (isNativeObject(target)) {
-			if (target.nextEntry) {
-				const entry = target.nextEntry(keyValue);
-				if (entry === null) {
-					out.push(null);
-					return;
-				}
-				out.push(entry[0], entry[1]);
-				return;
-			}
-			throw new Error('next expects a native object with iteration.');
+		const entry = (target as NativeObject).nextEntry(keyValue);
+		if (entry === null) {
+			out.push(null);
+			return;
 		}
-		throw new Error('next expects a table or native object.');
+		out.push(entry[0], entry[1]);
 	}
 
 	private runBuiltinType(value: Value, out: Value[]): void {
@@ -3216,64 +3211,64 @@ export class CPU {
 		}
 	}
 
-	private runBuiltinSetMetatable(args: ReadonlyArray<Value>, out: Value[]): void {
-		if (args.length === 0 || (!(args[0] instanceof Table) && !isNativeObject(args[0]))) {
-			throw new Error('setmetatable expects a table or native value as the first argument.');
-		}
-		let metatable: Table | null = null;
-		if (args.length > 1 && args[1] !== null) {
-			if (!(args[1] instanceof Table)) {
-				throw new Error('setmetatable expects a table or nil as the second argument.');
-			}
-			metatable = args[1];
-		}
-		const target = args[0];
+	private runBuiltinSetMetatable(args: NativeArgs, out: Value[]): void {
+		const target = args.get(0);
+		const metatable = args.get(1) as Table | null;
 		if (target instanceof Table) {
 			target.metatable = metatable;
 			out.push(target);
 			return;
 		}
-		target.metatable = metatable;
+		(target as NativeObject).metatable = metatable;
 		out.push(target);
 	}
 
-	private runBuiltinGetMetatable(args: ReadonlyArray<Value>, out: Value[]): void {
-		if (args.length === 0 || (!(args[0] instanceof Table) && !isNativeObject(args[0]))) {
-			throw new Error('getmetatable expects a table or native value as the first argument.');
+	private runBuiltinGetMetatable(args: NativeArgs, out: Value[]): void {
+		const target = args.get(0);
+		if (target instanceof Table) {
+			out.push(target.metatable);
+			return;
 		}
-		out.push(args[0].metatable);
+		out.push((target as NativeObject).metatable);
 	}
 
-	private runBuiltinRawGet(args: ReadonlyArray<Value>, out: Value[]): void {
-		out.push((args[0] as Table).get(args.length > 1 ? args[1] : null));
+	private runBuiltinRawGet(args: NativeArgs, out: Value[]): void {
+		out.push((args.get(0) as Table).get(args.get(1)));
 	}
 
-	private runBuiltinRawSet(args: ReadonlyArray<Value>, out: Value[]): void {
-		const target = args[0] as Table;
-		target.set(args[1], args.length > 2 ? args[2] : null);
+	private runBuiltinRawSet(args: NativeArgs, out: Value[]): void {
+		const target = args.get(0) as Table;
+		target.set(args.get(1), args.get(2));
 		out.push(target);
 	}
 
-	private runBuiltinSelect(args: ReadonlyArray<Value>, out: Value[]): void {
-		const index = args[0];
+	private runBuiltinSelect(args: NativeArgs, out: Value[]): void {
+		const selector = args.get(0);
 		const count = args.length - 1;
-		if (valueIsString(index) && this.stringPool.toString(asStringId(index)) === '#') {
+		if (valueIsString(selector) && this.stringPool.toString(asStringId(selector)) === '#') {
 			out.push(count);
 			return;
 		}
-		const start = (index as number) >= 0
-			? (index as number)
-			: count + (index as number) + 1;
+		const startSelector = selector as number;
+		const start = startSelector >= 0
+			? startSelector
+			: count + startSelector + 1;
 		for (let index = start; index <= count; index += 1) {
 			if (index >= 1 && index < args.length) {
-				out.push(args[index]);
+				out.push(args.get(index));
 			}
 		}
 	}
 
-	private runBuiltinStringByte(args: ReadonlyArray<Value>, out: Value[]): void {
-		const source = this.stringPool.toString(asStringId(args[0] as StringValue));
-		const position = args.length > 1 ? Math.trunc(args[1] as number) : 1;
+	private runBuiltinStringByte(args: NativeArgs, out: Value[]): void {
+		const source = this.stringPool.toString(asStringId(args.get(0) as StringValue));
+		let position = 1;
+		if (args.length > 1) {
+			const positionValue = args.get(1);
+			if (positionValue !== null) {
+				position = Math.trunc(positionValue as number);
+			}
+		}
 		if (position < 1) {
 			out.push(null);
 			return;
@@ -3289,43 +3284,42 @@ export class CPU {
 		out.push(null);
 	}
 
-	private runBuiltinStringChar(args: ReadonlyArray<Value>, out: Value[]): void {
-		if (args.length === 0) {
-			out.push(StringValue.get(this.stringPool.intern('')));
-			return;
-		}
+	private runBuiltinStringChar(args: NativeArgs, out: Value[]): void {
 		let result = '';
 		for (let index = 0; index < args.length; index += 1) {
-			result += String.fromCodePoint(Math.trunc(args[index] as number));
+			result += String.fromCodePoint(Math.trunc(args.get(index) as number));
 		}
 		out.push(StringValue.get(this.stringPool.intern(result)));
 	}
 
-	private runBuiltinError(args: ReadonlyArray<Value>): never {
-		const value = args.length > 0 ? args[0] : StringValue.get(this.stringPool.intern('nil'));
+	private runBuiltinError(args: NativeArgs): never {
+		const value = args.get(0);
 		throw new LuaThrownValueError(value, this.valueToString(value));
 	}
 
-	private callValueInto(callee: Value, args: ReadonlyArray<Value>, out: Value[]): void {
+	private callValueInto(callee: Value, args: ReadonlyArray<Value>, out: Value[]): boolean {
 		out.length = 0;
 		if (isBuiltinFunction(callee)) {
 			this.callBuiltinFunction(callee, args, out);
-			return;
+			return !this.haltedUntilIrq;
 		}
 		if (isNativeFunction(callee)) {
-			callee.invoke(args, out);
-			return;
+			const nativeArgs = this.acquireArrayNativeArgs(args);
+			try {
+				callee.invoke(nativeArgs, out);
+				return !this.haltedUntilIrq;
+			} finally {
+				this.releaseArrayNativeArgs(nativeArgs);
+			}
 		}
-		if (!valueIsClosure(callee)) {
-			throw new Error(this.formatNonFunctionCallError(callee));
-		}
-		const closure = callee;
+		const closure = callee as Closure;
 		const depth = this.frames.length;
 		const previousBudget = this.instructionBudgetRemaining;
 		const previousSink = this.swapExternalReturnSink(out);
 		const budgetSentinel = Number.MAX_SAFE_INTEGER;
 		let spentBudget = 0;
 		let activeBudget = 0;
+		let completed = true;
 		try {
 			this.pushFrame(closure, args, 0, 0, true, this.program.protos[closure.protoIndex].entryPC);
 			while (this.frames.length > depth) {
@@ -3334,7 +3328,8 @@ export class CPU {
 				spentBudget += activeBudget - this.instructionBudgetRemaining;
 				activeBudget = 0;
 				if (this.frames.length > depth && result === RunResult.Halted) {
-					throw new Error('Protected call halted before returning.');
+					completed = false;
+					break;
 				}
 			}
 		} catch (error) {
@@ -3347,17 +3342,20 @@ export class CPU {
 			this.swapExternalReturnSink(previousSink);
 			this.instructionBudgetRemaining = previousBudget - spentBudget;
 		}
+		return completed;
 	}
 
-	private runBuiltinPCall(args: ReadonlyArray<Value>, out: Value[]): void {
+	private runBuiltinPCall(args: NativeArgs, out: Value[]): void {
 		const callArgs = this.nativeReturnScratch.acquire();
 		const results = this.nativeReturnScratch.acquire();
 		try {
 			callArgs.length = 0;
 			for (let index = 1; index < args.length; index += 1) {
-				callArgs.push(args[index]);
+				callArgs.push(args.get(index));
 			}
-			this.callValueInto(args.length > 0 ? args[0] : null, callArgs, results);
+			if (!this.callValueInto(args.get(0), callArgs, results)) {
+				return;
+			}
 			out.length = 0;
 			out.push(true);
 			for (let index = 0; index < results.length; index += 1) {
@@ -3372,16 +3370,18 @@ export class CPU {
 		}
 	}
 
-	private runBuiltinXPCall(args: ReadonlyArray<Value>, out: Value[]): void {
+	private runBuiltinXPCall(args: NativeArgs, out: Value[]): void {
 		const callArgs = this.nativeReturnScratch.acquire();
 		const handlerArgs = this.nativeReturnScratch.acquire();
 		const results = this.nativeReturnScratch.acquire();
 		try {
 			callArgs.length = 0;
 			for (let index = 2; index < args.length; index += 1) {
-				callArgs.push(args[index]);
+				callArgs.push(args.get(index));
 			}
-			this.callValueInto(args.length > 0 ? args[0] : null, callArgs, results);
+			if (!this.callValueInto(args.get(0), callArgs, results)) {
+				return;
+			}
 			out.length = 0;
 			out.push(true);
 			for (let index = 0; index < results.length; index += 1) {
@@ -3390,7 +3390,9 @@ export class CPU {
 		} catch (error) {
 			handlerArgs.length = 0;
 			handlerArgs.push(error instanceof LuaThrownValueError ? error.value : StringValue.get(this.stringPool.intern(error instanceof Error ? error.message : String(error))));
-			this.callValueInto(args.length > 1 ? args[1] : null, handlerArgs, results);
+			if (!this.callValueInto(args.get(1), handlerArgs, results)) {
+				return;
+			}
 			out.length = 0;
 			out.push(false);
 			for (let index = 0; index < results.length; index += 1) {
@@ -3405,99 +3407,17 @@ export class CPU {
 
 	public captureRuntimeState(moduleCache: ReadonlyMap<string, Value>): CpuRuntimeState {
 		this.syncGlobalSlotsToTable();
-		const frameIndexByRef = new WeakMap<CallFrame, number>();
-		for (let index = 0; index < this.frames.length; index += 1) {
-			frameIndexByRef.set(this.frames[index], index);
-		}
-		const stablePathByNative = new WeakMap<object, CpuRuntimeRefSegment[]>();
-		const stableValueByPath = new Map<string, Value>();
-		const stableTables = new WeakSet<Table>();
-		const stableNativeObjects = new WeakSet<NativeObject>();
-
-		const encodePathKey = (path: ReadonlyArray<CpuRuntimeRefSegment>): string => {
-			let key = '';
-			for (let index = 0; index < path.length; index += 1) {
-				const segment = path[index];
-				if (typeof segment === 'number') {
-					key += `#${segment};`;
-					continue;
-				}
-				key += `$${segment.length}:${segment};`;
-			}
-			return key;
-		};
-
-		const recordStableValue = (path: ReadonlyArray<CpuRuntimeRefSegment>, value: Value): void => {
-			if (!isNativeFunction(value) && !isNativeObject(value)) {
-				return;
-			}
-			stableValueByPath.set(encodePathKey(path), value);
-			stablePathByNative.set(value, [...path]);
-		};
-
-		const traverseStableValue = (path: CpuRuntimeRefSegment[], value: Value): void => {
-			recordStableValue(path, value);
-			if (value instanceof Table) {
-				if (stableTables.has(value)) {
-					return;
-				}
-				stableTables.add(value);
-				const metatable = value.metatable;
-				if (metatable !== null) {
-					traverseStableValue([...path, CPU_RUNTIME_METATABLE_SEGMENT], metatable);
-				}
-				for (let arrayIndex = 1; arrayIndex <= value.arrayLength; arrayIndex += 1) {
-					const arrayValue = value.getInteger(arrayIndex);
-					if (arrayValue !== null) {
-						traverseStableValue([...path, arrayIndex], arrayValue);
-					}
-				}
-				value.forEachEntry((key, entryValue) => {
-					if (typeof key === 'number') {
-						if (Number.isInteger(key)) {
-							traverseStableValue([...path, key], entryValue);
-						}
-						return;
-					}
-					if (valueIsString(key)) {
-						traverseStableValue([...path, this.stringPool.toString(asStringId(key))], entryValue);
-					}
-				});
-				return;
-			}
-			if (!isNativeObject(value)) {
-				return;
-			}
-			if (stableNativeObjects.has(value)) {
-				return;
-			}
-			stableNativeObjects.add(value);
-			if (value.metatable !== null) {
-				traverseStableValue([...path, CPU_RUNTIME_METATABLE_SEGMENT], value.metatable);
-			}
-		};
-
-		this.globals.forEachEntry((key, value) => {
-			if (!valueIsString(key)) {
-				return;
-			}
-			traverseStableValue(['globals', this.stringPool.toString(asStringId(key))], value);
-		});
-		for (const [name, value] of moduleCache) {
-			traverseStableValue(['moduleCache', name], value);
-		}
-
-		const objectIds = new WeakMap<object, number>();
+		const objectOrdinals = new Map<Table | Closure | Upvalue, number>();
 		const objects: CpuObjectState[] = [];
 
-		const ensureObjectId = (object: Table | Closure | Upvalue): number => {
-			const existing = objectIds.get(object);
-			if (existing !== undefined) {
-				return existing;
+		const ensureObjectId = (object: Table | Closure | Upvalue, kind: CpuObjectState['kind']): number => {
+			if (objectOrdinals.has(object)) {
+				return objectOrdinals.get(object) as number;
 			}
 			const id = objects.length;
-			objectIds.set(object, id);
-			objects.push(captureObjectState(object));
+			objectOrdinals.set(object, id);
+			objects.length = id + 1;
+			objects[id] = captureObjectState(object, kind);
 			return id;
 		};
 
@@ -3508,7 +3428,7 @@ export class CPU {
 			if (typeof value === 'boolean') {
 				return { tag: value ? 'true' : 'false' };
 			}
-			if (typeof value === 'number') {
+			if (valueIsNumber(value)) {
 				return { tag: 'number', value };
 			}
 			if (valueIsString(value)) {
@@ -3517,70 +3437,82 @@ export class CPU {
 			if (isBuiltinFunction(value)) {
 				return { tag: 'builtin', id: value.id };
 			}
-			if (isNativeFunction(value) || isNativeObject(value)) {
-				const path = stablePathByNative.get(value);
-				if (path === undefined) {
-					throw new Error(`[CPU] Runtime snapshot cannot preserve native value '${valueTypeName(value)}' without a stable root path.`);
-				}
-				return { tag: 'stable_ref', path };
+			if (value instanceof Table) {
+				return { tag: 'ref', id: ensureObjectId(value, 'table') };
 			}
-			return { tag: 'ref', id: ensureObjectId(value as Table | Closure) };
+			if (valueIsClosure(value)) {
+				return { tag: 'ref', id: ensureObjectId(value, 'closure') };
+			}
+			throw new Error(`[CPU] Runtime snapshot cannot preserve ${valueTypeName(value)} value.`);
 		};
 
-		const captureObjectState = (object: Table | Closure | Upvalue): CpuObjectState => {
-			if (object instanceof Table) {
-				const tableState = object.captureRuntimeState();
-				const hash = new Array(tableState.hash.length);
-				for (let index = 0; index < tableState.hash.length; index += 1) {
-					const node = tableState.hash[index];
-					hash[index] = {
-						key: captureValueState(node.key),
-						value: captureValueState(node.value),
-						next: node.next,
+		const captureObjectState = (object: Table | Closure | Upvalue, kind: CpuObjectState['kind']): CpuObjectState => {
+			switch (kind) {
+				case 'table': {
+					const table = object as Table;
+					const tableState = table.captureRuntimeState();
+					const hash = new Array(tableState.hash.length);
+					for (let index = 0; index < tableState.hash.length; index += 1) {
+						const node = tableState.hash[index];
+						hash[index] = {
+							key: captureValueState(node.key),
+							value: captureValueState(node.value),
+							next: node.next,
+						};
+					}
+					const array = new Array(tableState.array.length);
+					for (let index = 0; index < tableState.array.length; index += 1) {
+						array[index] = captureValueState(tableState.array[index]);
+					}
+					return {
+						kind: 'table',
+						hashId: table.hashId,
+						array,
+						arrayLength: tableState.arrayLength,
+						hash,
+						hashFree: tableState.hashFree,
+						metatable: captureValueState(tableState.metatable),
 					};
 				}
-				const array = new Array(tableState.array.length);
-				for (let index = 0; index < tableState.array.length; index += 1) {
-					array[index] = captureValueState(tableState.array[index]);
+				case 'upvalue': {
+					const upvalue = object as Upvalue;
+					let frameIndex = -1;
+					let value = upvalue.value;
+					if (upvalue.open) {
+						frameIndex = this.frames.indexOf(upvalue.frame);
+						value = upvalue.frame.registers.get(upvalue.index);
+					}
+					return {
+						kind: 'upvalue',
+						hashId: upvalue.hashId,
+						open: upvalue.open,
+						index: upvalue.index,
+						frameIndex,
+						value: captureValueState(value),
+					};
 				}
-				return {
-					kind: 'table',
-					array,
-					arrayLength: tableState.arrayLength,
-					hash,
-					hashFree: tableState.hashFree,
-					metatable: captureValueState(tableState.metatable),
-				};
-			}
-			const upvalue = object as Upvalue;
-			if ((upvalue as Upvalue).frame !== undefined && (upvalue as Upvalue).open !== undefined && (upvalue as Upvalue).index !== undefined) {
-				const frameIndex = upvalue.open ? frameIndexByRef.get(upvalue.frame) ?? -1 : -1;
-				if (upvalue.open && frameIndex < 0) {
-					throw new Error('[CPU] Runtime snapshot found an open upvalue without a tracked frame.');
+				case 'closure': {
+					const closure = object as Closure;
+					const upvalues = new Array(closure.upvalues.length);
+					for (let index = 0; index < closure.upvalues.length; index += 1) {
+						upvalues[index] = ensureObjectId(closure.upvalues[index], 'upvalue');
+					}
+					return {
+						kind: 'closure',
+						hashId: closure.hashId,
+						protoIndex: closure.protoIndex,
+						upvalues,
+					};
 				}
-				return {
-					kind: 'upvalue',
-					open: upvalue.open,
-					index: upvalue.index,
-					frameIndex,
-					value: captureValueState(upvalue.open ? upvalue.frame.registers.get(upvalue.index) : upvalue.value),
-				};
 			}
-			const closure = object as Closure;
-			const upvalues = new Array(closure.upvalues.length);
-			for (let index = 0; index < closure.upvalues.length; index += 1) {
-				upvalues[index] = ensureObjectId(closure.upvalues[index]);
-			}
-			return {
-				kind: 'closure',
-				protoIndex: closure.protoIndex,
-				upvalues,
-			};
 		};
 
 		const globals: CpuRootValueState[] = [];
 		this.globals.forEachEntry((key, value) => {
 			if (!valueIsString(key)) {
+				return;
+			}
+			if (isNativeFunction(value) || isNativeObject(value)) {
 				return;
 			}
 			globals.push({
@@ -3591,6 +3523,9 @@ export class CPU {
 
 		const moduleCacheState: CpuRootValueState[] = [];
 		for (const [name, value] of moduleCache) {
+			if (isNativeFunction(value) || isNativeObject(value)) {
+				continue;
+			}
 			moduleCacheState.push({
 				name,
 				value: captureValueState(value),
@@ -3611,7 +3546,7 @@ export class CPU {
 			frames[frameIndex] = {
 				protoIndex: frame.protoIndex,
 				pc: frame.pc,
-				closureRef: ensureObjectId(frame.closure),
+				closureRef: ensureObjectId(frame.closure, 'closure'),
 				registers,
 				varargs,
 				returnBase: frame.returnBase,
@@ -3631,7 +3566,7 @@ export class CPU {
 
 		const openUpvalues = new Array<number>(this.openUpvalues.length);
 		for (let index = 0; index < this.openUpvalues.length; index += 1) {
-			openUpvalues[index] = ensureObjectId(this.openUpvalues[index].upvalue);
+			openUpvalues[index] = ensureObjectId(this.openUpvalues[index].upvalue, 'upvalue');
 		}
 
 		return {
@@ -3653,110 +3588,45 @@ export class CPU {
 	}
 
 	public restoreRuntimeState(state: CpuRuntimeState, moduleCache: Map<string, Value>): void {
-		const stableValueByPath = new Map<string, Value>();
-		const stableTables = new WeakSet<Table>();
-		const stableNativeObjects = new WeakSet<NativeObject>();
-
-		const encodePathKey = (path: ReadonlyArray<CpuRuntimeRefSegment>): string => {
-			let key = '';
-			for (let index = 0; index < path.length; index += 1) {
-				const segment = path[index];
-				if (typeof segment === 'number') {
-					key += `#${segment};`;
-					continue;
-				}
-				key += `$${segment.length}:${segment};`;
-			}
-			return key;
-		};
-
-		const recordStableValue = (path: ReadonlyArray<CpuRuntimeRefSegment>, value: Value): void => {
-			if (!isNativeFunction(value) && !isNativeObject(value)) {
-				return;
-			}
-			stableValueByPath.set(encodePathKey(path), value);
-		};
-
-		const traverseStableValue = (path: CpuRuntimeRefSegment[], value: Value): void => {
-			recordStableValue(path, value);
-			if (value instanceof Table) {
-				if (stableTables.has(value)) {
-					return;
-				}
-				stableTables.add(value);
-				const metatable = value.metatable;
-				if (metatable !== null) {
-					traverseStableValue([...path, CPU_RUNTIME_METATABLE_SEGMENT], metatable);
-				}
-				for (let arrayIndex = 1; arrayIndex <= value.arrayLength; arrayIndex += 1) {
-					const arrayValue = value.getInteger(arrayIndex);
-					if (arrayValue !== null) {
-						traverseStableValue([...path, arrayIndex], arrayValue);
-					}
-				}
-				value.forEachEntry((key, entryValue) => {
-					if (typeof key === 'number') {
-						if (Number.isInteger(key)) {
-							traverseStableValue([...path, key], entryValue);
-						}
-						return;
-					}
-					if (valueIsString(key)) {
-						traverseStableValue([...path, this.stringPool.toString(asStringId(key))], entryValue);
-					}
-				});
-				return;
-			}
-			if (!isNativeObject(value)) {
-				return;
-			}
-			if (stableNativeObjects.has(value)) {
-				return;
-			}
-			stableNativeObjects.add(value);
-			if (value.metatable !== null) {
-				traverseStableValue([...path, CPU_RUNTIME_METATABLE_SEGMENT], value.metatable);
-			}
-		};
-
-		this.syncGlobalSlotsToTable();
-		this.globals.forEachEntry((key, value) => {
-			if (!valueIsString(key)) {
-				return;
-			}
-			traverseStableValue(['globals', this.stringPool.toString(asStringId(key))], value);
-		});
-		for (const [name, value] of moduleCache) {
-			traverseStableValue(['moduleCache', name], value);
-		}
-
 		type RestoredObject = Table | Closure | Upvalue;
 		const restoredObjects = new Array<RestoredObject>(state.objects.length);
+		let maxRestoredHashId = 0;
 
 		for (let index = 0; index < state.objects.length; index += 1) {
 			const objectState = state.objects[index];
+			if (objectState.hashId > maxRestoredHashId) {
+				maxRestoredHashId = objectState.hashId;
+			}
 			switch (objectState.kind) {
-				case 'table':
-					restoredObjects[index] = new Table(0, 0);
+				case 'table': {
+					const table = new Table(0, 0);
+					table.hashId = objectState.hashId;
+					restoredObjects[index] = table;
 					break;
+				}
 				case 'closure': {
 					const upvalues = new Array<Upvalue>(objectState.upvalues.length);
 					const proto = this.program.protos[objectState.protoIndex];
 					if (proto.staticClosure && upvalues.length === 0) {
-						restoredObjects[index] = this.rootClosure(objectState.protoIndex);
+						const closure = this.rootClosure(objectState.protoIndex);
+						closure.hashId = objectState.hashId;
+						restoredObjects[index] = closure;
 					} else {
 						const heapBytes = CLOSURE_HEAP_BYTES + (upvalues.length * CLOSURE_UPVALUE_SLOT_HEAP_BYTES);
 						addTrackedLuaHeapBytes(heapBytes);
-						restoredObjects[index] = { protoIndex: objectState.protoIndex, upvalues, heapBytes };
+						const closure = new Closure(objectState.protoIndex, upvalues, heapBytes);
+						closure.hashId = objectState.hashId;
+						restoredObjects[index] = closure;
 					}
 					break;
 				}
 				case 'upvalue':
 					addTrackedLuaHeapBytes(UPVALUE_HEAP_BYTES);
-					restoredObjects[index] = { open: false, index: objectState.index, frame: null, value: null };
+					restoredObjects[index] = { hashId: objectState.hashId, open: false, index: objectState.index, frame: null, value: null };
 					break;
 			}
 		}
+		this.observeObjectHashId(maxRestoredHashId);
 
 		const restoreValue = (valueState: CpuValueState): Value => {
 			switch (valueState.tag) {
@@ -3774,13 +3644,6 @@ export class CPU {
 					return createBuiltinFunction(valueState.id);
 				case 'ref':
 					return restoredObjects[valueState.id] as Table | Closure;
-				case 'stable_ref': {
-					const value = stableValueByPath.get(encodePathKey(valueState.path));
-					if (value === undefined) {
-						throw new Error('[CPU] Runtime snapshot stable reference is not available in the current runtime environment.');
-					}
-					return value;
-				}
 			}
 		};
 
@@ -3860,15 +3723,9 @@ export class CPU {
 		}
 
 		for (let index = 0; index < state.openUpvalues.length; index += 1) {
-			const upvalueState = state.objects[state.openUpvalues[index]];
-			if (upvalueState.kind !== 'upvalue' || !upvalueState.open) {
-				throw new Error('[CPU] Runtime snapshot contains an invalid open upvalue reference.');
-			}
+			const upvalueState = state.objects[state.openUpvalues[index]] as Extract<CpuObjectState, { kind: 'upvalue' }>;
 			const upvalue = restoredObjects[state.openUpvalues[index]] as Upvalue;
 			const frame = this.frames[upvalueState.frameIndex];
-			if (!frame) {
-				throw new Error('[CPU] Runtime snapshot open upvalue refers to a missing frame.');
-			}
 			upvalue.open = true;
 			upvalue.index = upvalueState.index;
 			upvalue.frame = frame;
@@ -3910,7 +3767,7 @@ export class CPU {
 		}
 
 		const pushValue = (value: Value): void => {
-			if (value === null || typeof value === 'boolean' || typeof value === 'number') {
+			if (valueIsImmediate(value)) {
 				return;
 			}
 			if (valueIsString(value)) {
@@ -3927,9 +3784,7 @@ export class CPU {
 		for (let slot = 0; slot < this.globalValues.length; slot += 1) {
 			pushValue(this.globalValues[slot]);
 		}
-		if (this.stringIndexTable !== null) {
-			pushValue(this.stringIndexTable);
-		}
+		pushValue(this.stringIndexTable);
 		this.memory.collectRootValues(pushValue);
 		for (let index = 0; index < this.lastReturnValues.length; index += 1) {
 			pushValue(this.lastReturnValues[index]);
@@ -4027,10 +3882,6 @@ export class CPU {
 		return total;
 	}
 
-	private formatNonFunctionCallError(callee: Value): string {
-		return `Attempted to call a non-function value. callee=${valueTypeName(callee)}(${this.valueToString(callee)}). at ${this.formatLastSourceLocation()}`;
-	}
-
 	private valueToString(value: Value): string {
 		if (value === null) {
 			return 'nil';
@@ -4038,9 +3889,9 @@ export class CPU {
 		if (typeof value === 'boolean') {
 			return value ? 'true' : 'false';
 		}
-		if (typeof value === 'number') {
-			if (!Number.isFinite(value)) {
-				return Number.isNaN(value) ? 'nan' : (value < 0 ? '-inf' : 'inf');
+		if (valueIsNumber(value)) {
+			if (value - value !== 0) {
+				return value !== value ? 'nan' : (value < 0 ? '-inf' : 'inf');
 			}
 			// Parity with C++ runtime string output (Lua tostring semantics).
 			// Slower than V8's native formatting; avoid tight-loop conversions.

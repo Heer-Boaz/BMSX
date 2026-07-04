@@ -2,7 +2,7 @@ import { LuaSourceRange } from '../../../lua/syntax/ast';
 import { LuaEnvironment } from '../../../lua/environment';
 import { LuaHandlerCache, isLuaHandlerFunction } from '../../../lua/handler_cache';
 import { LuaValue, LuaTable, isLuaTable, createLuaTable, LuaNativeValue, isLuaFunctionValue, isPlainObject, resolveNativeTypeName, isLuaNativeMemberHandle, LuaFunctionValue } from '../../../lua/value';
-import { Table, asStringId, valueIsString, type Closure, type NativeFunction, type NativeObject, type Value, createNativeFunction, createNativeObject, isNativeFunction, isNativeObject } from '../../cpu/cpu';
+import { Table, asStringId, valueIsString, type Closure, type NativeFunction, type NativeObject, type Value, isNativeFunction, isNativeObject } from '../../cpu/cpu';
 import { Runtime } from '../runtime';
 
 // disable defensive_typeof_function_pattern -- JS bridge marshals arbitrary host values; callable probes are explicit interop boundaries.
@@ -1000,6 +1000,20 @@ function findNativeRawEntryAfter(runtime: Runtime, raw: object, after: Value): [
 		return findNativePropertyAfter(runtime, raw as Record<string, unknown>, after, -1);
 }
 
+function nativeObjectEntryCount(raw: Record<string, unknown>): number {
+	let count = 0;
+	for (const prop in raw) {
+		if (!Object.prototype.hasOwnProperty.call(raw, prop)) {
+			continue;
+		}
+		const value = raw[prop];
+		if (value !== undefined && value !== null) {
+			count += 1;
+		}
+	}
+	return count;
+}
+
 function stringifyKey(runtime: Runtime, key: Value): string {
 	if (valueIsString(key)) {
 		return runtime.machine.cpu.stringPool.toString(asStringId(key));
@@ -1116,7 +1130,7 @@ export function toRuntimeValue(runtime: Runtime, value: unknown): Value {
 			}
 			entryCount += 1;
 		}
-		const table = new Table(0, reserveTableHashSize(entryCount));
+		const table = runtime.machine.cpu.createTable(0, reserveTableHashSize(entryCount));
 		for (const prop in record) {
 			if (!Object.prototype.hasOwnProperty.call(record, prop)) {
 				continue;
@@ -1130,7 +1144,7 @@ export function toRuntimeValue(runtime: Runtime, value: unknown): Value {
 		return table;
 	}
 	if (value instanceof Map) {
-		const table = new Table(0, reserveTableHashSize(value.size));
+		const table = runtime.machine.cpu.createTable(0, reserveTableHashSize(value.size));
 		for (const [key, entry] of value.entries()) {
 			table.set(toRuntimeValue(runtime, key), toRuntimeValue(runtime, entry));
 		}
@@ -1159,13 +1173,18 @@ export function toNativeValue(runtime: Runtime, value: Value, context: LuaMarsha
 			const resultVisited = runtime.luaScratch.tableMarshal.acquire();
 			try {
 				for (let index = 0; index < args.length; index += 1) {
-						callArgs.push(toRuntimeValue(runtime, args[index]));
+					callArgs.push(toRuntimeValue(runtime, args[index]));
 				}
-				value.invoke(callArgs, results);
+				const nativeArgs = runtime.luaScratch.acquireNativeArgs(callArgs);
+				try {
+					value.invoke(nativeArgs, results);
+				} finally {
+					runtime.luaScratch.releaseNativeArgs(nativeArgs);
+				}
 				if (results.length === 0) {
 					return undefined;
 				}
-					return toNativeValue(runtime, results[0], context, resultVisited);
+				return toNativeValue(runtime, results[0], context, resultVisited);
 			} finally {
 				runtime.luaScratch.tableMarshal.release(resultVisited);
 				runtime.luaScratch.values.release(results);
@@ -1200,7 +1219,10 @@ export function getOrCreateNativeObject(runtime: Runtime, value: object): Native
 	}
 	const isArray = Array.isArray(value);
 	const arrayValue = isArray ? (value as unknown[]) : null;
-	const wrapper = createNativeObject(value, {
+	const len = isArray
+		? () => arrayValue.length
+		: () => nativeObjectEntryCount(value as Record<string, unknown>);
+	const wrapper = runtime.machine.cpu.createNativeObject(value, {
 		get: (key) => {
 			if (isArray && typeof key === 'number' && Number.isInteger(key) && key >= 1) {
 				const index = key - 1;
@@ -1241,7 +1263,7 @@ export function getOrCreateNativeObject(runtime: Runtime, value: object): Native
 			const ctx = buildMarshalContext(runtime);
 			(value as Record<string, unknown>)[prop] = toNativeValue(runtime, entryValue, ctx, new WeakMap());
 		},
-		len: isArray ? () => arrayValue.length : undefined,
+		len,
 		nextEntry: buildNativeNextEntry(runtime, value),
 	});
 	runtime.nativeObjectCache.set(value, wrapper);
@@ -1254,13 +1276,13 @@ export function getOrCreateNativeFunction(runtime: Runtime, fn: Function): Nativ
 		return cached;
 	}
 	const name = resolveNativeTypeName(fn);
-	const wrapper = createNativeFunction(name, (args, out) => {
+	const wrapper = runtime.machine.cpu.createNativeFunction(name, (args, out) => {
 		const ctx = buildMarshalContext(runtime);
 		const visited = runtime.luaScratch.tableMarshal.acquire();
 		const jsArgs = runtime.luaScratch.values.acquire() as unknown[];
 		try {
 			for (let index = 0; index < args.length; index += 1) {
-				jsArgs.push(toNativeValue(runtime, args[index], ctx, visited));
+				jsArgs.push(toNativeValue(runtime, args.get(index), ctx, visited));
 			}
 			const result = fn.apply(undefined, jsArgs);
 			wrapNativeResult(runtime, result, out);
@@ -1284,7 +1306,7 @@ export function getOrCreateNativeMethod(runtime: Runtime, target: object, key: s
 		return cached;
 	}
 	const name = `${resolveNativeTypeName(target)}.${key}`;
-	const wrapper = createNativeFunction(name, (args, out) => {
+	const wrapper = runtime.machine.cpu.createNativeFunction(name, (args, out) => {
 		const ctx = buildMarshalContext(runtime);
 		const visited = runtime.luaScratch.tableMarshal.acquire();
 		const jsArgs = runtime.luaScratch.values.acquire() as unknown[];
@@ -1296,21 +1318,21 @@ export function getOrCreateNativeMethod(runtime: Runtime, target: object, key: s
 				}
 				let startIndex = 0;
 				if (args.length > 0) {
-					const first = toNativeValue(runtime, args[0], ctx, visited);
+					const first = toNativeValue(runtime, args.get(0), ctx, visited);
 					if (first !== target) {
 						jsArgs.push(first);
 					}
 					startIndex = 1;
 				}
 				for (let index = startIndex; index < args.length; index += 1) {
-					jsArgs.push(toNativeValue(runtime, args[index], ctx, visited));
+					jsArgs.push(toNativeValue(runtime, args.get(index), ctx, visited));
 				}
 				const result = (member as (...inner: unknown[]) => unknown).apply(target, jsArgs);
 				wrapNativeResult(runtime, result, out);
 				return;
 			}
 			for (let index = 0; index < args.length; index += 1) {
-				jsArgs.push(toNativeValue(runtime, args[index], ctx, visited));
+				jsArgs.push(toNativeValue(runtime, args.get(index), ctx, visited));
 			}
 			if (typeof member !== 'function') {
 				throw new Error(`Property '${key}' is not callable.`);

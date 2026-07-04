@@ -135,21 +135,28 @@ GLuint uploadVdpRpuBuffer(const VdpRpuFrameOutput& frame, GLenum target, u32 vra
 		glGenBuffers(1, &storage.buffer);
 		glBindBuffer(target, storage.buffer);
 		glBufferData(target, static_cast<GLsizeiptr>(byteLength), nullptr, GL_DYNAMIC_DRAW);
-		glBufferSubData(target, 0, static_cast<GLsizeiptr>(byteLength), frame.vdpVram->data() + vramAddr);
+		glBufferSubData(target, 0, static_cast<GLsizeiptr>(byteLength), frame.vdpVram.get().data() + vramAddr);
 		storage.revision = revision;
 		return storage.buffer;
 	}
 	glBindBuffer(target, storage.buffer);
 	if (storage.revision != revision) {
-		glBufferSubData(target, 0, static_cast<GLsizeiptr>(byteLength), frame.vdpVram->data() + vramAddr);
+		glBufferSubData(target, 0, static_cast<GLsizeiptr>(byteLength), frame.vdpVram.get().data() + vramAddr);
 		storage.revision = revision;
 	}
 	return storage.buffer;
 }
 
-VdpRpuGLESSurface& ensureVdpRpuSurfaceStorage(OpenGLES2Backend& backend, const VdpRpuFrameOutput& frame, u32 surfaceDescAddr) {
+void configureNearestClampTexture2D() {
+	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
+	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
+	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
+	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
+}
+
+VdpRpuGLESSurface& loadVdpRpuSurfaceStorage(OpenGLES2Backend& backend, const VdpRpuFrameOutput& frame, u32 surfaceDescAddr) {
 	VdpRpuGLESSurface& surface = g_vdpRpuSurfaces[surfaceDescAddr];
-	const u8* vram = frame.vdpVram->data();
+	const u8* vram = frame.vdpVram.get().data();
 	const u32 baseAddr = readRpuDescU32(vram, surfaceDescAddr + RPU_SURFACE_DESC_BASE_ADDR_OFFSET);
 	const u32 pitchBytes = readRpuDescU16(vram, surfaceDescAddr + RPU_SURFACE_DESC_PITCH_BYTES_OFFSET);
 	const u32 width = readRpuDescU16(vram, surfaceDescAddr + RPU_SURFACE_DESC_WIDTH_OFFSET);
@@ -173,10 +180,7 @@ VdpRpuGLESSurface& ensureVdpRpuSurfaceStorage(OpenGLES2Backend& backend, const V
 		glGenTextures(1, &surface.texture);
 		glBindTexture(GL_TEXTURE_2D, surface.texture);
 		glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA, static_cast<GLsizei>(width), static_cast<GLsizei>(height), 0, GL_RGBA, GL_UNSIGNED_BYTE, nullptr);
-		glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
-		glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
-		glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
-		glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
+		configureNearestClampTexture2D();
 	}
 	backend.invalidateTextureBindingCache();
 	glGenFramebuffers(1, &surface.framebuffer);
@@ -204,7 +208,7 @@ void uploadVdpRpuTextureSurface(OpenGLES2Backend& backend, const VdpRpuFrameOutp
 	backend.setActiveTextureUnit(0);
 	glBindTexture(GL_TEXTURE_2D, surface.texture);
 	glPixelStorei(GL_UNPACK_ALIGNMENT, 1);
-	const u8* base = frame.vdpVram->data() + surface.baseAddr;
+	const u8* base = frame.vdpVram.get().data() + surface.baseAddr;
 	const u32 rowBytes = surface.width * 4u;
 	if (surface.pitchBytes == rowBytes) {
 		glTexSubImage2D(GL_TEXTURE_2D, 0, 0, 0, static_cast<GLsizei>(surface.width), static_cast<GLsizei>(surface.height), GL_RGBA, GL_UNSIGNED_BYTE, base);
@@ -228,11 +232,11 @@ void bindVdpRpuPassFramebuffer(OpenGLES2Backend& backend, const VdpRpuFrameOutpu
 		return;
 	}
 	VdpRpuGLESSurface& targetSurface = colorSurfaceDescAddr != 0u
-		? ensureVdpRpuSurfaceStorage(backend, frame, colorSurfaceDescAddr)
-		: ensureVdpRpuSurfaceStorage(backend, frame, depthSurfaceDescAddr);
+		? loadVdpRpuSurfaceStorage(backend, frame, colorSurfaceDescAddr)
+		: loadVdpRpuSurfaceStorage(backend, frame, depthSurfaceDescAddr);
 	backend.setRenderTarget(targetSurface.framebuffer, static_cast<i32>(targetSurface.width), static_cast<i32>(targetSurface.height));
 	if (colorSurfaceDescAddr != 0u) {
-		VdpRpuGLESSurface& colorSurface = ensureVdpRpuSurfaceStorage(backend, frame, colorSurfaceDescAddr);
+		VdpRpuGLESSurface& colorSurface = loadVdpRpuSurfaceStorage(backend, frame, colorSurfaceDescAddr);
 		glFramebufferTexture2D(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, GL_TEXTURE_2D, colorSurface.texture, 0);
 		colorSurface.renderedFrame = g_vdpRpu.frameSerial;
 		colorSurface.sourceUploaded = false;
@@ -240,7 +244,7 @@ void bindVdpRpuPassFramebuffer(OpenGLES2Backend& backend, const VdpRpuFrameOutpu
 		glFramebufferTexture2D(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, GL_TEXTURE_2D, 0u, 0);
 	}
 	if (depthSurfaceDescAddr != 0u) {
-		VdpRpuGLESSurface& depthSurface = ensureVdpRpuSurfaceStorage(backend, frame, depthSurfaceDescAddr);
+		VdpRpuGLESSurface& depthSurface = loadVdpRpuSurfaceStorage(backend, frame, depthSurfaceDescAddr);
 		glFramebufferRenderbuffer(GL_FRAMEBUFFER, GL_DEPTH_ATTACHMENT, GL_RENDERBUFFER, depthSurface.depthBuffer);
 		depthSurface.renderedFrame = g_vdpRpu.frameSerial;
 		depthSurface.sourceUploaded = false;
@@ -351,15 +355,6 @@ void bindVdpRpuStreamAttribute(const VdpRpuStreamAttributeSpec& attribute, u32 b
 	runtime.vertexAttribDivisor(static_cast<GLuint>(location), divisor);
 }
 
-void bindVdpRpuVertexStream(const VdpRpuFrameOutput& frame, size_t streamBindingIndex) {
-	const VdpRpuCommandBuffer& commands = frame.commands;
-	const VdpRpuStreamLayoutSpec& layout = resolveVdpRpuStreamLayoutSpec(commands.streamLayoutId[streamBindingIndex]);
-	uploadVdpRpuBuffer(frame, GL_ARRAY_BUFFER, commands.streamVramAddr[streamBindingIndex], commands.streamByteLength[streamBindingIndex]);
-	for (size_t index = 0u; index < layout.attributeCount; ++index) {
-		bindVdpRpuStreamAttribute(layout.attributes[index], layout.byteStride, 0u, 0u);
-	}
-}
-
 void setVdpRpuDefaultVertexAttributes() {
 	const auto& runtime = g_vdpRpu;
 	glDisableVertexAttribArray(static_cast<GLuint>(runtime.attribPosition));
@@ -410,22 +405,29 @@ void setVdpRpuDefaultInstanceAttributes() {
 	runtime.vertexAttribDivisor(static_cast<GLuint>(runtime.attribInstanceUvRect), 0u);
 }
 
-void bindVdpRpuInstanceStream(const VdpRpuFrameOutput& frame, size_t streamBindingIndex) {
+void bindVdpRpuStreamBinding(const VdpRpuFrameOutput& frame, size_t streamBindingIndex, u32 divisor) {
 	const VdpRpuCommandBuffer& commands = frame.commands;
-	const u32 stepRate = commands.streamStepRate[streamBindingIndex];
 	const VdpRpuStreamLayoutSpec& layout = resolveVdpRpuStreamLayoutSpec(commands.streamLayoutId[streamBindingIndex]);
 	uploadVdpRpuBuffer(frame, GL_ARRAY_BUFFER, commands.streamVramAddr[streamBindingIndex], commands.streamByteLength[streamBindingIndex]);
 	for (size_t index = 0u; index < layout.attributeCount; ++index) {
-		bindVdpRpuStreamAttribute(layout.attributes[index], layout.byteStride, 0u, stepRate);
+		bindVdpRpuStreamAttribute(layout.attributes[index], layout.byteStride, 0u, divisor);
 	}
 }
 
-void bindVdpRpuMorphStream(const VdpRpuFrameOutput& frame, size_t streamBindingIndex) {
-	const VdpRpuCommandBuffer& commands = frame.commands;
-	const VdpRpuStreamLayoutSpec& layout = resolveVdpRpuStreamLayoutSpec(commands.streamLayoutId[streamBindingIndex]);
-	uploadVdpRpuBuffer(frame, GL_ARRAY_BUFFER, commands.streamVramAddr[streamBindingIndex], commands.streamByteLength[streamBindingIndex]);
-	for (size_t index = 0u; index < layout.attributeCount; ++index) {
-		bindVdpRpuStreamAttribute(layout.attributes[index], layout.byteStride, 0u, 0u);
+bool findVdpRpuConstantBindingAddress(const VdpRpuCommandBuffer& commands, size_t drawIndex, u32 constantSlot, u32& constantByteAddr) {
+	const size_t bindingEnd = commands.drawFirstConstantBinding[drawIndex] + commands.drawConstantBindingCount[drawIndex];
+	for (size_t bindingIndex = commands.drawFirstConstantBinding[drawIndex]; bindingIndex < bindingEnd; ++bindingIndex) {
+		if (commands.constantBindingSlot[bindingIndex] == constantSlot) {
+			constantByteAddr = commands.constantVramAddr[bindingIndex];
+			return true;
+		}
+	}
+	return false;
+}
+
+void readVdpRpuFloatWords(const u8* vram, u32 byteAddr, f32* out, size_t wordOffset, size_t count) {
+	for (size_t index = 0u; index < count; ++index) {
+		out[index] = std::bit_cast<f32>(readRpuDescU32(vram, byteAddr + static_cast<u32>((wordOffset + index) * 4u)));
 	}
 }
 
@@ -446,36 +448,28 @@ void bindVdpRpuDrawStreams(const VdpRpuFrameOutput& frame, size_t drawIndex, u32
 		}
 	}
 	if (vertexBinding != bindingEnd) {
-		bindVdpRpuVertexStream(frame, vertexBinding);
+		bindVdpRpuStreamBinding(frame, vertexBinding, 0u);
 	}
 	if (instanceMode != VDP_RPU_INSTANCE_MODE_NONE && instanceBinding != bindingEnd) {
-		bindVdpRpuInstanceStream(frame, instanceBinding);
+		bindVdpRpuStreamBinding(frame, instanceBinding, commands.streamStepRate[instanceBinding]);
 	}
 	if (morphBinding != bindingEnd) {
-		bindVdpRpuMorphStream(frame, morphBinding);
+		bindVdpRpuStreamBinding(frame, morphBinding, 0u);
 	}
 }
 
 void setVdpRpuC0Constants(const VdpRpuFrameOutput& frame, size_t drawIndex, u32 normalMode) {
 	VdpRpuGLES2Runtime& runtime = g_vdpRpu;
-	const VdpRpuCommandBuffer& commands = frame.commands;
-	const size_t bindingEnd = commands.drawFirstConstantBinding[drawIndex] + commands.drawConstantBindingCount[drawIndex];
-	for (size_t bindingIndex = commands.drawFirstConstantBinding[drawIndex]; bindingIndex < bindingEnd; ++bindingIndex) {
-		if (commands.constantBindingSlot[bindingIndex] == 0u) {
-			const u32 constantByteAddr = commands.constantVramAddr[bindingIndex];
-			const u8* vram = frame.vdpVram->data();
-			for (size_t index = 0u; index < 16u; ++index) {
-				runtime.c0Floats[index] = std::bit_cast<f32>(readRpuDescU32(vram, constantByteAddr + static_cast<u32>(index * 4u)));
-			}
-			glUniformMatrix4fv(runtime.uniformC0, 1, GL_FALSE, runtime.c0Floats.data());
-			if (normalMode != 0u) {
-				for (size_t index = 0u; index < 9u; ++index) {
-					runtime.nmFloats[index] = std::bit_cast<f32>(readRpuDescU32(vram, constantByteAddr + static_cast<u32>((16u + index) * 4u)));
-				}
-				glUniformMatrix3fv(runtime.uniformNm, 1, GL_FALSE, runtime.nmFloats.data());
-			}
-			return;
+	u32 constantByteAddr;
+	if (findVdpRpuConstantBindingAddress(frame.commands, drawIndex, 0u, constantByteAddr)) {
+		const u8* vram = frame.vdpVram.get().data();
+		readVdpRpuFloatWords(vram, constantByteAddr, runtime.c0Floats.data(), 0u, 16u);
+		glUniformMatrix4fv(runtime.uniformC0, 1, GL_FALSE, runtime.c0Floats.data());
+		if (normalMode != 0u) {
+			readVdpRpuFloatWords(vram, constantByteAddr, runtime.nmFloats.data(), 16u, 9u);
+			glUniformMatrix3fv(runtime.uniformNm, 1, GL_FALSE, runtime.nmFloats.data());
 		}
+		return;
 	}
 	glUniformMatrix4fv(runtime.uniformC0, 1, GL_FALSE, runtime.identityC0.data());
 	if (normalMode != 0u) {
@@ -492,18 +486,11 @@ void setVdpRpuC1Constants(const VdpRpuFrameOutput& frame, size_t drawIndex, cons
 		return;
 	}
 	glUniform1i(runtime.uniformLightingMode, 1);
-	const VdpRpuCommandBuffer& commands = frame.commands;
-	const size_t bindingEnd = commands.drawFirstConstantBinding[drawIndex] + commands.drawConstantBindingCount[drawIndex];
-	for (size_t bindingIndex = commands.drawFirstConstantBinding[drawIndex]; bindingIndex < bindingEnd; ++bindingIndex) {
-		if (commands.constantBindingSlot[bindingIndex] == constantSlot) {
-			const u32 constantByteAddr = commands.constantVramAddr[bindingIndex];
-			const u8* vram = frame.vdpVram->data();
-			for (size_t index = 0u; index < 68u; ++index) {
-				runtime.c1Floats[index] = std::bit_cast<f32>(readRpuDescU32(vram, constantByteAddr + static_cast<u32>(index * 4u)));
-			}
-			glUniform4fv(runtime.uniformC1, 17, runtime.c1Floats.data());
-			return;
-		}
+	u32 constantByteAddr;
+	if (findVdpRpuConstantBindingAddress(frame.commands, drawIndex, constantSlot, constantByteAddr)) {
+		readVdpRpuFloatWords(frame.vdpVram.get().data(), constantByteAddr, runtime.c1Floats.data(), 0u, 68u);
+		glUniform4fv(runtime.uniformC1, 17, runtime.c1Floats.data());
+		return;
 	}
 	glUniform4fv(runtime.uniformC1, 17, runtime.defaultC1Floats.data());
 }
@@ -517,18 +504,11 @@ void setVdpRpuJointConstants(const VdpRpuFrameOutput& frame, size_t drawIndex, c
 		return;
 	}
 	glUniform1i(runtime.uniformSkinningMode, 1);
-	const VdpRpuCommandBuffer& commands = frame.commands;
-	const size_t bindingEnd = commands.drawFirstConstantBinding[drawIndex] + commands.drawConstantBindingCount[drawIndex];
-	for (size_t bindingIndex = commands.drawFirstConstantBinding[drawIndex]; bindingIndex < bindingEnd; ++bindingIndex) {
-		if (commands.constantBindingSlot[bindingIndex] == constantSlot) {
-			const u32 constantByteAddr = commands.constantVramAddr[bindingIndex];
-			const u8* vram = frame.vdpVram->data();
-			for (size_t index = 0u; index < 384u; ++index) {
-				runtime.jointFloats[index] = std::bit_cast<f32>(readRpuDescU32(vram, constantByteAddr + static_cast<u32>(index * 4u)));
-			}
-			glUniformMatrix4fv(runtime.uniformJoint, 24, GL_FALSE, runtime.jointFloats.data());
-			return;
-		}
+	u32 constantByteAddr;
+	if (findVdpRpuConstantBindingAddress(frame.commands, drawIndex, constantSlot, constantByteAddr)) {
+		readVdpRpuFloatWords(frame.vdpVram.get().data(), constantByteAddr, runtime.jointFloats.data(), 0u, 384u);
+		glUniformMatrix4fv(runtime.uniformJoint, 24, GL_FALSE, runtime.jointFloats.data());
+		return;
 	}
 	glUniformMatrix4fv(runtime.uniformJoint, 24, GL_FALSE, runtime.defaultJointFloats.data());
 }
@@ -562,7 +542,7 @@ void bindVdpRpuTextureBindings(VdpRpuRuntime& runtime, const VdpRpuFrameOutput& 
 				bindVdpRpuNeutralTexture(runtime.backend);
 				glUniform1i(g_vdpRpu.uniformT0, 0);
 			} else {
-				VdpRpuGLESSurface& surface = ensureVdpRpuSurfaceStorage(runtime.backend, frame, surfaceDescAddr);
+				VdpRpuGLESSurface& surface = loadVdpRpuSurfaceStorage(runtime.backend, frame, surfaceDescAddr);
 				uploadVdpRpuTextureSurface(runtime.backend, frame, surface);
 				runtime.backend.setActiveTextureUnit(0);
 				glBindTexture(GL_TEXTURE_2D, surface.texture);
@@ -573,7 +553,7 @@ void bindVdpRpuTextureBindings(VdpRpuRuntime& runtime, const VdpRpuFrameOutput& 
 			foundT1 = true;
 			const u32 surfaceDescAddr = commands.textureSurfaceDescAddr[bindingIndex];
 			if (surfaceDescAddr != 0u) {
-				VdpRpuGLESSurface& surface = ensureVdpRpuSurfaceStorage(runtime.backend, frame, surfaceDescAddr);
+				VdpRpuGLESSurface& surface = loadVdpRpuSurfaceStorage(runtime.backend, frame, surfaceDescAddr);
 				uploadVdpRpuTextureSurface(runtime.backend, frame, surface);
 				runtime.backend.setActiveTextureUnit(1);
 				glBindTexture(GL_TEXTURE_2D, surface.texture);
@@ -644,10 +624,7 @@ void initVdpRpuPipeline(OpenGLES2Backend& backend) {
 	glGenTextures(1, &g_vdpRpu.neutralTexture);
 	glBindTexture(GL_TEXTURE_2D, g_vdpRpu.neutralTexture);
 	glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA, 1, 1, 0, GL_RGBA, GL_UNSIGNED_BYTE, g_vdpRpu.neutralTexturePixel.data());
-	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
-	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
-	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
-	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
+	configureNearestClampTexture2D();
 	glBindTexture(GL_TEXTURE_2D, 0u);
 	backend.invalidateTextureBindingCache();
 	setupVdpRpuLocations(backend);

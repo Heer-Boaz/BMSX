@@ -6,6 +6,7 @@
 #include "machine/memory/memory.h"
 #include <array>
 #include <cstddef>
+#include <functional>
 #include <memory>
 #include <vector>
 
@@ -24,7 +25,6 @@ constexpr size_t vdpRpuParamMemPageCount(size_t byteLength) {
 }
 constexpr size_t VDP_RPU_PARAM_MEM_PAGE_COUNT = VDP_RPU_PARAM_MEM_SIZE >> VDP_RPU_PARAM_MEM_PAGE_SHIFT;
 constexpr u32 VDP_RPU_RESOURCE_NONE = 0xffffffffu;
-constexpr u32 VDP_RPU_FAULT_SENTINEL = 0xffffffffu;
 
 constexpr u32 VDP_RPU_FEATURE_INSTANCED_ARRAYS = 1u << 0u;
 constexpr u32 VDP_RPU_FEATURE_UINT_INDEX = 1u << 1u;
@@ -129,9 +129,7 @@ constexpr u32 VDP_RPU_INSTANCE_MODE_AFFINE2 = 1U;
 constexpr u32 VDP_RPU_INSTANCE_MODE_MAT4 = 2U;
 
 constexpr u32 VDP_FAULT_RPU_BAD_PACKET = 0x0700u;
-constexpr u32 VDP_FAULT_RPU_FETCH_OOB = 0x0701u;
 constexpr u32 VDP_FAULT_RPU_BAD_STREAM_LAYOUT = 0x0702U;
-constexpr u32 VDP_FAULT_RPU_COMMAND_OVERFLOW = 0x0708U;
 constexpr u32 VDP_FAULT_RPU_BAD_STATE = 0x0709U;
 
 struct VdpRpuCommandBuffer {
@@ -177,8 +175,8 @@ struct VdpRpuCommandBuffer {
 
 struct VdpRpuFrameOutput {
 	VdpRpuCommandBuffer commands{};
-	std::vector<u8>* vdpVram = nullptr;
-	std::vector<u32>* vdpVramPageRevisions = nullptr;
+	std::reference_wrapper<std::vector<u8>> vdpVram;
+	std::reference_wrapper<std::vector<u32>> vdpVramPageRevisions;
 };
 
 struct VdpRpuStreamAttributeSpec {
@@ -296,36 +294,32 @@ struct VdpRpuSaveState {
 
 class VdpRpuUnit {
 public:
-	VdpRpuUnit(Memory& memory, DeviceStatusLatch& fault, std::vector<u8>& vdpVram, std::vector<u32>& vdpVramPageRevisions);
+	VdpRpuUnit(Memory& memory, DeviceStatusLatch& fault, std::vector<u8>& vdpVram);
 
-	void bindVramStorage(std::vector<u8>& vdpVram, std::vector<u32>& vdpVramPageRevisions);
 	void reset();
-	auto beginFrame(VdpRpuFrameOutput& frame) -> bool;
+	void beginFrame(VdpRpuFrameOutput& frame);
 	void cancelFrame(VdpRpuFrameOutput& frame);
-	auto endFrame(VdpRpuFrameOutput& frame) -> bool;
+	void endFrame(VdpRpuFrameOutput& frame);
 	[[nodiscard]] auto captureState() const -> VdpRpuSaveState;
 	void restoreState(const VdpRpuSaveState& state);
-	void rebindFrameResources(VdpRpuFrameOutput& frame);
-	auto consumePacketFromMemory(VdpRpuFrameOutput& frame, u32 headerWord, u32 cursor, u32 end) -> u32;
-	auto consumePacketFromWords(VdpRpuFrameOutput& frame, const u32* words, u32 headerWord, u32 cursor, u32 wordCount) -> u32;
+	auto consumePacketFromMemory(VdpRpuFrameOutput& frame, u32 headerWord, u32 cursor) -> u32;
+	auto consumePacketFromWords(VdpRpuFrameOutput& frame, const u32* words, u32 headerWord, u32 cursor) -> u32;
 	int lastPacketCost = 0;
 	bool lastPacketSealedFrame = false;
 
 private:
 	Memory& m_memory;
 	DeviceStatusLatch& m_fault;
-	std::vector<u8>* m_vdpVram;
-	std::vector<u32>* m_vdpVramPageRevisions;
+	std::vector<u8>& m_vdpVram;
 	VdpRpuFrameBuildState m_buildState = VDP_RPU_FRAME_IDLE;
 
-	auto consumePacketPayloadFromMemory(VdpRpuFrameOutput& frame, u32 op, u32 cursor, u32 payloadWords) -> bool;
-	auto consumePacketPayloadFromWords(VdpRpuFrameOutput& frame, const u32* words, u32 op, u32 cursor, u32 payloadWords) -> bool;
-	auto acceptExecPassList(VdpRpuFrameOutput& frame, u32 opWord, u32 passDescAddr) -> bool;
-	auto acceptSealFrame(VdpRpuFrameOutput& frame) -> bool;
-	[[nodiscard]] auto checkVramRange(u32 addr, u32 size) -> bool;
+	void consumePacketPayloadFromMemory(VdpRpuFrameOutput& frame, u32 op, u32 cursor);
+	void consumePacketPayloadFromWords(VdpRpuFrameOutput& frame, const u32* words, u32 op, u32 cursor);
+	void acceptExecPassList(VdpRpuFrameOutput& frame, u32 opWord, u32 passDescAddr);
+	void acceptSealFrame(VdpRpuFrameOutput& frame);
 };
 
-auto createVdpRpuFrameOutput() -> std::unique_ptr<VdpRpuFrameOutput>;
+auto createVdpRpuFrameOutput(std::vector<u8>& vdpVram, std::vector<u32>& vdpVramPageRevisions) -> std::unique_ptr<VdpRpuFrameOutput>;
 void resetVdpRpuFrameOutput(VdpRpuFrameOutput& frame);
 auto captureVdpRpuFrameState(const VdpRpuFrameOutput& frame) -> VdpRpuFrameSaveState;
 void restoreVdpRpuFrameState(VdpRpuFrameOutput& frame, const VdpRpuFrameSaveState& state);

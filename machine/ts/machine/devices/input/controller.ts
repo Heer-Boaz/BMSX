@@ -1,4 +1,6 @@
 import {
+	INP_CTRL_ARM,
+	INP_CTRL_RESET,
 	IO_INP_CTRL,
 	IO_INP_OUTPUT_CTRL,
 	IO_INP_OUTPUT_DURATION_MS,
@@ -6,32 +8,28 @@ import {
 	IO_INP_OUTPUT_PORT,
 	IO_INP_STATUS,
 } from '../../bus/io';
+import type { Value } from '../../cpu/cpu';
 import { Memory } from '../../memory/memory';
 import type { InputControllerState } from './save_state';
 import { InputControllerRegisterFile } from './registers';
-import { InputControllerSampleLatch } from './sample_latch';
-import { InputControllerSampleEdge } from './sample_edge';
 import { InputControllerOutputPort } from './output_port';
-import { InputControllerControlPort } from './control_port';
-import type { InputControllerInputSource } from './contracts';
+import { createInputControllerSnapshot, type InputControllerInputSource } from './contracts';
 
 export class InputController {
-	private readonly sampleLatch: InputControllerSampleLatch;
-	private readonly sampleEdge: InputControllerSampleEdge;
-	private readonly controlPort: InputControllerControlPort;
+	private sampleArmed = false;
+	private sampleSequence = 0;
+	private lastSampleCycle = 0;
+	private readonly snapshot = createInputControllerSnapshot();
 	private readonly outputPort: InputControllerOutputPort;
 	private readonly registers = new InputControllerRegisterFile();
 
 	public constructor(
 		private readonly memory: Memory,
-		input: InputControllerInputSource,
+		private readonly input: InputControllerInputSource,
 	) {
-		this.sampleLatch = new InputControllerSampleLatch();
-		this.controlPort = new InputControllerControlPort(memory, this.registers, this.sampleLatch);
 		this.outputPort = new InputControllerOutputPort(input, this.registers, memory);
-		this.sampleEdge = new InputControllerSampleEdge(input, this.sampleLatch, this.registers, memory);
 		const registerWrite = this.registers.write.bind(this.registers);
-		this.memory.mapIoWrite(IO_INP_CTRL, this.controlPort.writeControl.bind(this.controlPort));
+		this.memory.mapIoWrite(IO_INP_CTRL, this.writeControl.bind(this));
 		this.memory.mapIoWrite(IO_INP_OUTPUT_PORT, registerWrite);
 		this.memory.mapIoWrite(IO_INP_OUTPUT_INTENSITY_Q16, registerWrite);
 		this.memory.mapIoWrite(IO_INP_OUTPUT_DURATION_MS, registerWrite);
@@ -39,34 +37,65 @@ export class InputController {
 	}
 
 	public reset(): void {
-		this.sampleLatch.reset();
+		this.sampleArmed = false;
+		this.sampleSequence = 0;
+		this.lastSampleCycle = 0;
 		this.registers.reset();
 		this.memory.writeIoValue(IO_INP_OUTPUT_CTRL, 0);
 		this.registers.mirror(this.memory);
-		this.memory.writeIoValue(IO_INP_STATUS, this.sampleLatch.sequence());
+		this.memory.writeIoValue(IO_INP_STATUS, this.sampleSequence);
 	}
 
-	// runtime enters at the ICU device boundary; sample_edge owns the VBlank datapath.
+	private writeControl(_addr: number, value: Value): void {
+		this.registers.write(IO_INP_CTRL, value);
+		switch (this.registers.state.ctrl) {
+			case INP_CTRL_ARM:
+				this.sampleArmed = true;
+				return;
+			case INP_CTRL_RESET:
+				this.sampleArmed = false;
+				this.sampleSequence = 0;
+				this.lastSampleCycle = 0;
+				this.registers.reset();
+				this.registers.mirror(this.memory);
+				this.memory.writeIoValue(IO_INP_STATUS, this.sampleSequence);
+				return;
+		}
+	}
+
 	public onVblankEdge(currentTimeMs: number, nowCycles: number): void {
-		this.sampleEdge.onVblankEdge(currentTimeMs, nowCycles);
+		if (!this.sampleArmed) {
+			return;
+		}
+		this.sampleSequence = (this.sampleSequence + 1) >>> 0;
+		this.lastSampleCycle = nowCycles >>> 0;
+		this.sampleArmed = false;
+		this.input.sampleInputControllerSnapshot(currentTimeMs, this.snapshot);
+		this.registers.latchSnapshot(this.snapshot);
+		this.registers.mirror(this.memory);
+		this.memory.writeIoValue(IO_INP_STATUS, this.sampleSequence);
 	}
 
 	public cancelSampleArm(): void {
-		this.sampleLatch.cancel();
+		this.sampleArmed = false;
 	}
 
 	public captureState(): InputControllerState {
 		return {
-			...this.sampleLatch.captureState(),
+			sampleArmed: this.sampleArmed,
+			sampleSequence: this.sampleSequence,
+			lastSampleCycle: this.lastSampleCycle,
 			registers: this.registers.captureState(),
 		};
 	}
 
 	public restoreState(state: InputControllerState): void {
-		this.sampleLatch.restoreState(state);
+		this.sampleArmed = state.sampleArmed;
+		this.sampleSequence = state.sampleSequence;
+		this.lastSampleCycle = state.lastSampleCycle;
 		this.registers.restoreState(state.registers);
 		this.memory.writeIoValue(IO_INP_OUTPUT_CTRL, 0);
 		this.registers.mirror(this.memory);
-		this.memory.writeIoValue(IO_INP_STATUS, this.sampleLatch.sequence());
+		this.memory.writeIoValue(IO_INP_STATUS, this.sampleSequence);
 	}
 }

@@ -414,8 +414,7 @@ void MachineManager::bootRuntimeFromProgram() {
 			ProgramBootTarget::Cart
 		);
 		rt.enterCartProgram();
-		rt.boot(*linked.programImage, std::move(linked.metadata), linked.vectors, linked.dataBaseAddress, linked.bssBaseAddress, linked.systemStaticModulePaths, linked.cartStaticModulePaths);
-		rt.setLinkedCartVectors(linked.cartVectors, linked.cartDataBaseAddress, linked.cartBssBaseAddress, std::move(linked.cartStaticModulePaths));
+		rt.bootLinkedProgramImage(std::move(linked));
 		flushRuntimeLuaOutput(rt);
 		return;
 	}
@@ -474,8 +473,7 @@ bool MachineManager::bootSystemStartupProgram(const MachineManifest& runtimeMach
 			cartImages.metadata.get(),
 			ProgramBootTarget::System
 		);
-		rt.setLinkedCartVectors(linked.cartVectors, linked.cartDataBaseAddress, linked.cartBssBaseAddress, std::move(linked.cartStaticModulePaths));
-		rt.boot(*linked.programImage, std::move(linked.metadata), linked.vectors, linked.dataBaseAddress, linked.bssBaseAddress, linked.systemStaticModulePaths, std::span<const std::string>{});
+		rt.bootLinkedProgramImage(std::move(linked));
 	} else {
 		rt.boot(*systemImages.image, std::move(systemImages.metadata), systemImages.image->vectors, PROGRAM_STATIC_RAM_BASE, PROGRAM_STATIC_RAM_BASE + static_cast<uint32_t>(systemImages.image->sections.data.bytes.size()), systemImages.image->sections.rodata.staticModulePaths, std::span<const std::string>{});
 	}

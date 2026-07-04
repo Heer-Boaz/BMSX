@@ -75,18 +75,6 @@ function arrayBufferViewBytesPerElement(data: ArrayBufferView): number {
 	return data instanceof DataView ? 1 : sized.BYTES_PER_ELEMENT ?? 1;
 }
 
-function resetFrameStats(stats: HeadlessFrameStats): void {
-	stats.draws = 0;
-	stats.drawIndexed = 0;
-	stats.drawsInstanced = 0;
-	stats.drawIndexedInstanced = 0;
-	stats.bytesUploaded = 0;
-	stats.vertexBytes = 0;
-	stats.indexBytes = 0;
-	stats.uniformBytes = 0;
-	stats.textureBytes = 0;
-}
-
 function textureByteLength(width: number, height: number): number {
 	return width * height * 4;
 }
@@ -117,12 +105,7 @@ export class HeadlessGPUBackend implements GPUBackend {
 	}
 
 	private getTextureRecord(handle: TextureHandle): HeadlessTextureRecord {
-		const id = this.getTextureId(handle);
-		const record = this.textures.get(id);
-		if (!record) {
-			throw new Error(`[HeadlessBackend] Texture handle ${id} is not tracked.`);
-		}
-		return record;
+		return this.textures.get(this.getTextureId(handle))!;
 	}
 
 	private createTextureRecord(
@@ -138,35 +121,12 @@ export class HeadlessGPUBackend implements GPUBackend {
 		return handle;
 	}
 
-	private createBufferRecord(
-		recordMap: Map<number, HeadlessBufferRecord>,
-		kind: 'vertex' | 'uniform',
-		usage: 'static' | 'dynamic',
-		byteLength: number,
-	): unknown {
-		const id = ++bufferIdSeq;
-		recordMap.set(id, { id, usage, byteLength });
-		this.accountUpload(kind, byteLength);
-		return { id, kind: `${kind}-buffer` };
-	}
-
 	private textureSourcePixels(src: TextureSource): Uint8Array {
-		const expectedBytes = textureByteLength(src.width, src.height);
-		if (!src.data) {
-			throw new Error('[HeadlessBackend] Texture source has no pixels.');
-		}
-		const bytes = src.data;
-		if (bytes.byteLength !== expectedBytes) {
-			throw new Error(`[HeadlessBackend] Texture source byte length mismatch (${bytes.byteLength} != ${expectedBytes}).`);
-		}
-		return bytes;
+		return src.data!;
 	}
 
-	private ensureTexturePixels(record: HeadlessTextureRecord): Uint8Array {
-		if (!record.pixels || record.pixels.byteLength !== textureByteLength(record.width, record.height)) {
-			record.pixels = new Uint8Array(textureByteLength(record.width, record.height));
-		}
-		return record.pixels;
+	private texturePixels(record: HeadlessTextureRecord): Uint8Array {
+		return record.pixels!;
 	}
 
 	setActiveTexture(unit: number): void {
@@ -206,13 +166,7 @@ export class HeadlessGPUBackend implements GPUBackend {
 
 	updateTextureRegion(handle: TextureHandle, data: Uint8Array, width: number, height: number, x: number, y: number, _desc: TextureParams, sourceOffset = 0): void {
 		const record = this.getTextureRecord(handle);
-		if (record.cubemapFaces) {
-			throw new Error('[HeadlessBackend] Cannot write 2D texture region into cubemap texture.');
-		}
-		if (x < 0 || y < 0 || x + width > record.width || y + height > record.height) {
-			throw new Error(`[HeadlessBackend] Texture region ${width}x${height}@${x},${y} out of bounds for ${record.width}x${record.height}.`);
-		}
-		const dstPixels = this.ensureTexturePixels(record);
+		const dstPixels = this.texturePixels(record);
 		const dstStride = record.width * 4;
 		const srcStride = width * 4;
 		for (let row = 0; row < height; row += 1) {
@@ -227,13 +181,7 @@ export class HeadlessGPUBackend implements GPUBackend {
 
 	readTextureRegion(handle: TextureHandle, out: Uint8Array, width: number, height: number, x: number, y: number, _desc: TextureParams): void {
 		const record = this.getTextureRecord(handle);
-		if (record.cubemapFaces) {
-			throw new Error('[HeadlessBackend] readTextureRegion only supports 2D textures.');
-		}
-		if (x < 0 || y < 0 || x + width > record.width || y + height > record.height) {
-			throw new Error(`[HeadlessBackend] Texture read ${width}x${height}@${x},${y} out of bounds for ${record.width}x${record.height}.`);
-		}
-		const src = this.ensureTexturePixels(record);
+		const src = this.texturePixels(record);
 		const srcStride = record.width * 4;
 		const outStride = width * 4;
 		for (let row = 0; row < height; row += 1) {
@@ -264,10 +212,6 @@ export class HeadlessGPUBackend implements GPUBackend {
 			this.textureSourcePixels(faces[5]),
 		];
 		for (let faceIndex = 0; faceIndex < 6; faceIndex += 1) {
-			const face = faces[faceIndex];
-			if (face.width !== width || face.height !== height) {
-				throw new Error('[HeadlessBackend] Cubemap faces must all have identical dimensions.');
-			}
 			this.accountUpload('texture', facePixels[faceIndex].byteLength);
 		}
 		return this.createTextureRecord('cubemap', width, height, null, facePixels);
@@ -301,17 +245,8 @@ export class HeadlessGPUBackend implements GPUBackend {
 
 	uploadCubemapFace(cubemap: TextureHandle, face: number, src: TextureSource): void {
 		const record = this.getTextureRecord(cubemap);
-		if (!record.cubemapFaces) {
-			throw new Error('[HeadlessBackend] uploadCubemapFace requires a cubemap texture.');
-		}
-		if (face < 0 || face >= 6) {
-			throw new Error(`[HeadlessBackend] Cubemap face index ${face} out of range.`);
-		}
-		if (src.width !== record.width || src.height !== record.height) {
-			throw new Error(`[HeadlessBackend] Cubemap face size mismatch: expected ${record.width}x${record.height}, got ${src.width}x${src.height}.`);
-		}
 		const pixels = this.textureSourcePixels(src);
-		record.cubemapFaces[face] = pixels;
+		record.cubemapFaces![face] = pixels;
 		this.accountUpload('texture', pixels.byteLength);
 	}
 
@@ -392,15 +327,15 @@ export class HeadlessGPUBackend implements GPUBackend {
 	}
 
 	createVertexBuffer(data: ArrayBufferView, usage: 'static' | 'dynamic'): unknown {
-		return this.createBufferRecord(this.vertexBuffers, 'vertex', usage, data.byteLength);
+		const id = ++bufferIdSeq;
+		this.vertexBuffers.set(id, { id, usage, byteLength: data.byteLength });
+		this.accountUpload('vertex', data.byteLength);
+		return { id, kind: 'vertex-buffer' };
 	}
 
 	updateVertexBuffer(buf: unknown, data: ArrayBufferView, dstOffset = 0, sourceOffset = 0, elementCount?: number): void {
 		const id = (buf as { id: number }).id;
-		const record = this.vertexBuffers.get(id);
-		if (!record) {
-			throw new Error(`[HeadlessBackend] Vertex buffer ${id} is not tracked.`);
-		}
+		const record = this.vertexBuffers.get(id)!;
 		const bytesPerElement = arrayBufferViewBytesPerElement(data);
 		const uploadElements = elementCount === undefined ? arrayBufferViewElementCount(data) - sourceOffset : elementCount;
 		const uploadBytes = uploadElements * bytesPerElement;
@@ -426,15 +361,15 @@ export class HeadlessGPUBackend implements GPUBackend {
 	}
 
 	createUniformBuffer(byteSize: number, usage: 'static' | 'dynamic'): unknown {
-		return this.createBufferRecord(this.uniformBuffers, 'uniform', usage, byteSize);
+		const id = ++bufferIdSeq;
+		this.uniformBuffers.set(id, { id, usage, byteLength: byteSize });
+		this.accountUpload('uniform', byteSize);
+		return { id, kind: 'uniform-buffer' };
 	}
 
 	updateUniformBuffer(buf: unknown, data: ArrayBufferView, dstByteOffset = 0): void {
 		const id = (buf as { id: number }).id;
-		const record = this.uniformBuffers.get(id);
-		if (!record) {
-			throw new Error(`[HeadlessBackend] Uniform buffer ${id} is not tracked.`);
-		}
+		const record = this.uniformBuffers.get(id)!;
 		const needed = dstByteOffset + data.byteLength;
 		if (needed > record.byteLength) {
 			record.byteLength = needed;
@@ -445,10 +380,19 @@ export class HeadlessGPUBackend implements GPUBackend {
 	bindUniformBufferBase(_bindingIndex: number, _buf: unknown): void { }
 
 	beginFrame(): void {
-		resetFrameStats(this.frameStats);
+		this.frameStats.draws = 0;
+		this.frameStats.drawIndexed = 0;
+		this.frameStats.drawsInstanced = 0;
+		this.frameStats.drawIndexedInstanced = 0;
+		this.frameStats.bytesUploaded = 0;
+		this.frameStats.vertexBytes = 0;
+		this.frameStats.indexBytes = 0;
+		this.frameStats.uniformBytes = 0;
+		this.frameStats.textureBytes = 0;
 	}
 
-	endFrame(): void { }
+	endFrame(): void {
+	}
 
 	getFrameStats(): typeof this.frameStats {
 		return this.frameStats;

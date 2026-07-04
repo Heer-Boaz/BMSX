@@ -33,10 +33,7 @@ void ApuCommandFifo::reset() {
 	m_queuedCount = 0u;
 }
 
-bool ApuCommandFifo::enqueue(u32 command, const Memory& memory) {
-	if (full()) {
-		return false;
-	}
+void ApuCommandFifo::enqueue(u32 command, const Memory& memory) {
 	const u32 entry = m_writeIndex;
 	m_commands[entry] = command;
 	const size_t base = static_cast<size_t>(entry) * APU_PARAMETER_REGISTER_COUNT;
@@ -47,8 +44,11 @@ bool ApuCommandFifo::enqueue(u32 command, const Memory& memory) {
 	if (m_writeIndex == APU_COMMAND_FIFO_CAPACITY) {
 		m_writeIndex = 0u;
 	}
-	m_queuedCount += 1u;
-	return true;
+	if (m_queuedCount == APU_COMMAND_FIFO_CAPACITY) {
+		m_readIndex = m_writeIndex;
+	} else {
+		m_queuedCount += 1u;
+	}
 }
 
 u32 ApuCommandFifo::popInto(ApuParameterRegisterWords& target) {

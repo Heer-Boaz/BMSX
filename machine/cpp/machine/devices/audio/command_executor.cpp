@@ -43,32 +43,33 @@ void ApuCommandExecutor::drainCommandFifo() {
 	}
 }
 
-bool ApuCommandExecutor::replayHostOutput(ApuAudioSlot slot, ApuVoiceId voiceId) {
+void ApuCommandExecutor::restoreOutputVoice(const ApuOutputVoiceState& state, ApuVoiceId voiceId) {
+	const ApuAudioSlot slot = state.slot;
 	m_slots.loadRegisterWords(slot, m_slotRegisterDispatchWords);
-	return playOutputVoice(
+	const ApuAudioSource source = resolveApuAudioSource(m_slotRegisterDispatchWords);
+	const u32 fadeSamples = m_slots.fadeSamplesRemaining(slot);
+	const ApuParameterRegisterWords& outputRegisterWords = fadeSamples > 0u
+		? fadeOutputRegisterWords(slot, m_slotRegisterDispatchWords)
+		: m_slotRegisterDispatchWords;
+	m_audioOutput.restoreVoice(
 		slot,
 		voiceId,
-		resolveApuAudioSource(m_slotRegisterDispatchWords),
-		m_slotRegisterDispatchWords,
-		m_slots.fadeSamplesRemaining(slot)
+		source,
+		m_sourceDma.bytesForSlot(slot),
+		outputRegisterWords,
+		m_slots.playbackCursorQ16(slot),
+		state
 	);
 }
 
 Value ApuCommandExecutor::onSelectedSlotRegisterRead(u32 addr) const {
-	const u32 slot = m_memory.readIoU32(IO_APU_SLOT);
-	if (slot >= APU_SLOT_COUNT) {
-		return valueNumber(0.0);
-	}
+	const u32 slot = m_memory.readIoU32(IO_APU_SLOT) & APU_SLOT_INDEX_MASK;
 	const u32 parameterIndex = (addr - IO_APU_SELECTED_SLOT_REG0) / IO_WORD_SIZE;
 	return valueNumber(static_cast<double>(m_slots.registerWord(slot, parameterIndex)));
 }
 
 void ApuCommandExecutor::onSelectedSlotRegisterWrite(u32 addr, Value value) {
-	const u32 slot = m_memory.readIoU32(IO_APU_SLOT);
-	if (slot >= APU_SLOT_COUNT) {
-		m_fault.raise(APU_FAULT_BAD_SLOT, slot);
-		return;
-	}
+	const u32 slot = m_memory.readIoU32(IO_APU_SLOT) & APU_SLOT_INDEX_MASK;
 	writeSlotRegisterWord(slot, (addr - IO_APU_SELECTED_SLOT_REG0) / IO_WORD_SIZE, toU32(value));
 }
 
@@ -98,21 +99,9 @@ void ApuCommandExecutor::executeCommand(u32 command, const ApuParameterRegisterW
 	}
 }
 
-bool ApuCommandExecutor::readSlot(const ApuParameterRegisterWords& registerWords, ApuAudioSlot& slot) const {
-	slot = static_cast<ApuAudioSlot>(registerWords[APU_PARAMETER_SLOT_INDEX]);
-	if (slot >= APU_SLOT_COUNT) {
-		m_fault.raise(APU_FAULT_BAD_SLOT, slot);
-		return false;
-	}
-	return true;
-}
-
 void ApuCommandExecutor::play(const ApuParameterRegisterWords& registerWords) {
 	const ApuAudioSource source = resolveApuAudioSource(registerWords);
-	ApuAudioSlot slot = 0;
-	if (!readSlot(registerWords, slot)) {
-		return;
-	}
+	const ApuAudioSlot slot = registerWords[APU_PARAMETER_SLOT_INDEX] & APU_SLOT_INDEX_MASK;
 	startPlay(source, slot, registerWords);
 }
 
@@ -120,17 +109,12 @@ void ApuCommandExecutor::startPlay(const ApuAudioSource& source, ApuAudioSlot sl
 	replaceSlotSourceDma(slot, source);
 	const ApuVoiceId voiceId = m_slots.allocateVoiceId();
 	m_activeSlots.setActive(slot, registerWords, voiceId);
-	if (!playOutputVoice(slot, voiceId, source, registerWords, 0u)) {
-		return;
-	}
+	playOutputVoice(slot, voiceId, source, registerWords, 0u);
 	m_serviceClock.scheduleNext(m_scheduler.currentNowCycles());
 }
 
 void ApuCommandExecutor::stopSlot(const ApuParameterRegisterWords& registerWords) {
-	ApuAudioSlot slot = 0;
-	if (!readSlot(registerWords, slot)) {
-		return;
-	}
+	const ApuAudioSlot slot = registerWords[APU_PARAMETER_SLOT_INDEX] & APU_SLOT_INDEX_MASK;
 	const u32 fadeSamples = registerWords[APU_PARAMETER_FADE_SAMPLES_INDEX];
 	if ((m_slots.activeMask() & (1u << slot)) == 0u) {
 		m_audioOutput.stopSlot(slot);
@@ -150,10 +134,7 @@ void ApuCommandExecutor::stopSlot(const ApuParameterRegisterWords& registerWords
 }
 
 void ApuCommandExecutor::setSlotGain(const ApuParameterRegisterWords& registerWords) {
-	ApuAudioSlot slot = 0;
-	if (!readSlot(registerWords, slot)) {
-		return;
-	}
+	const ApuAudioSlot slot = registerWords[APU_PARAMETER_SLOT_INDEX] & APU_SLOT_INDEX_MASK;
 	writeSlotRegisterWord(slot, APU_PARAMETER_GAIN_Q12_INDEX, registerWords[APU_PARAMETER_GAIN_Q12_INDEX]);
 }
 
@@ -172,36 +153,29 @@ void ApuCommandExecutor::writeSlotRegisterWord(ApuAudioSlot slot, u32 parameterI
 			replaceSlotSourceDma(slot, source);
 			const ApuVoiceId voiceId = m_slots.allocateVoiceId();
 			m_slots.assignVoiceId(slot, voiceId);
-			if (!playOutputVoice(slot, voiceId, source, m_slotRegisterDispatchWords, fadeSamples)) {
-				return;
-			}
+			playOutputVoice(slot, voiceId, source, m_slotRegisterDispatchWords, fadeSamples);
 			m_serviceClock.scheduleNext(m_scheduler.currentNowCycles());
 		} else {
 			const ApuParameterRegisterWords& outputRegisterWords = fadeSamples > 0u
 				? fadeOutputRegisterWords(slot, m_slotRegisterDispatchWords)
 				: m_slotRegisterDispatchWords;
-			const ApuOutputStartResult outputWrite = m_audioOutput.writeSlotRegisterWord(
+			m_audioOutput.writeSlotRegisterWord(
 				slot,
 				source,
 				outputRegisterWords,
 				parameterIndex,
 				m_slots.playbackCursorQ16(slot)
 			);
-			if (outputWrite.faultCode != APU_FAULT_NONE) {
-				m_audioOutput.stopSlot(slot);
-				m_activeSlots.stop(slot);
-				m_fault.raise(outputWrite.faultCode, outputWrite.faultDetail);
-			}
 		}
 	}
 	m_selectedSlotLatch.refresh();
 }
 
-bool ApuCommandExecutor::playOutputVoice(ApuAudioSlot slot, ApuVoiceId voiceId, const ApuAudioSource& source, const ApuParameterRegisterWords& registerWords, u32 fadeSamples) {
+void ApuCommandExecutor::playOutputVoice(ApuAudioSlot slot, ApuVoiceId voiceId, const ApuAudioSource& source, const ApuParameterRegisterWords& registerWords, u32 fadeSamples) {
 	const ApuParameterRegisterWords& outputRegisterWords = fadeSamples > 0u
 		? fadeOutputRegisterWords(slot, registerWords)
 		: registerWords;
-	const ApuOutputStartResult outputStart = m_audioOutput.playVoice(
+	m_audioOutput.playVoice(
 		slot,
 		voiceId,
 		source,
@@ -210,13 +184,6 @@ bool ApuCommandExecutor::playOutputVoice(ApuAudioSlot slot, ApuVoiceId voiceId, 
 		m_slots.playbackCursorQ16(slot),
 		fadeSamples
 	);
-	if (outputStart.faultCode != APU_FAULT_NONE) {
-		m_audioOutput.stopSlot(slot);
-		m_activeSlots.stop(slot);
-		m_fault.raise(outputStart.faultCode, outputStart.faultDetail);
-		return false;
-	}
-	return true;
 }
 
 const ApuParameterRegisterWords& ApuCommandExecutor::fadeOutputRegisterWords(ApuAudioSlot slot, const ApuParameterRegisterWords& registerWords) {

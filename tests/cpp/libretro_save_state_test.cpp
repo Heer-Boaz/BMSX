@@ -107,7 +107,7 @@ void testLibretroSaveStateRoundTrip() {
 	memory.writeMappedU32LE(bmsx::IO_VDP_FIFO_CTRL, bmsx::VDP_FIFO_CTRL_SEAL);
 	require(memory.readIoU32(bmsx::IO_VDP_FAULT_CODE) == bmsx::VDP_FAULT_NONE, "restored VDP should accept RPU packets after libretro loadState");
 	runtime.machine.vdp.advanceWork(runtime.machine.vdp.getPendingRenderWorkUnits());
-	require(!runtime.machine.vdp.presentReadyFrameOnVblankEdge(), "RPU frame should not use legacy framebuffer presentation after libretro loadState");
+	runtime.machine.vdp.presentReadyFrameOnVblankEdge();
 	const bmsx::VdpDeviceOutput& output = runtime.machine.vdp.readDeviceOutput();
 	require(output.rpu->commands.passCount == 1u, "restored runtime should publish retained RPU pass output");
 	require(output.rpu->commands.drawCount == 1u, "restored runtime should publish retained RPU draw output");

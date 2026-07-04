@@ -39,26 +39,18 @@ void VdpXfUnit::reset() {
 	projectionMatrixIndex = VDP_XF_PROJECTION_MATRIX_RESET_INDEX;
 }
 
-bool VdpXfUnit::writeRegister(u32 registerIndex, u32 word) {
+void VdpXfUnit::writeRegister(u32 registerIndex, u32 word) {
 	if (registerIndex < VDP_XF_MATRIX_REGISTER_WORDS) {
 		matrixWords[static_cast<size_t>(registerIndex)] = word;
-		return true;
+		return;
 	}
 	if (registerIndex == VDP_XF_VIEW_MATRIX_INDEX_REGISTER) {
-		if (word >= VDP_XF_MATRIX_COUNT) {
-			return false;
-		}
 		viewMatrixIndex = word;
-		return true;
+		return;
 	}
 	if (registerIndex == VDP_XF_PROJECTION_MATRIX_INDEX_REGISTER) {
-		if (word >= VDP_XF_MATRIX_COUNT) {
-			return false;
-		}
 		projectionMatrixIndex = word;
-		return true;
 	}
-	return false;
 }
 
 VdpXfState VdpXfUnit::captureState() const {

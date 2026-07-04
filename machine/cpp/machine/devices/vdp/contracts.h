@@ -46,7 +46,6 @@ constexpr uint32_t VDP_FAULT_VRAM_WRITE_UNMAPPED = 0x0101u;
 constexpr uint32_t VDP_FAULT_VRAM_WRITE_UNINITIALIZED = 0x0102u;
 constexpr uint32_t VDP_FAULT_VRAM_WRITE_OOB = 0x0103u;
 constexpr uint32_t VDP_FAULT_VRAM_WRITE_UNALIGNED = 0x0104u;
-constexpr uint32_t VDP_FAULT_VRAM_SURFACE_DIM = 0x0105u;
 constexpr uint32_t VDP_FAULT_STREAM_BAD_PACKET = 0x0201u;
 constexpr uint32_t VDP_FAULT_SUBMIT_STATE = 0x0202u;
 constexpr uint32_t VDP_FAULT_CMD_BAD_DOORBELL = 0x0203u;
@@ -59,13 +58,5 @@ constexpr uint32_t VDP_FAULT_DEX_OVERFLOW = 0x0305u;
 constexpr uint32_t VDP_FAULT_DEX_UNSUPPORTED_DRAW_CTRL = 0x0306u;
 constexpr uint32_t VDP_FAULT_DEX_CMD_NO_BATCH = 0x0307u;
 constexpr uint32_t VDP_FAULT_BLITTER_OOM_BATCH = 0x0308u;
-
-constexpr u32 VDP_FRAMEBUFFER_PAGE_RENDER = 0u;
-constexpr u32 VDP_FRAMEBUFFER_PAGE_DISPLAY = 1u;
-
-enum class VdpFrameBufferPage : u8 {
-	Render,
-	Display,
-};
 
 } // namespace bmsx

@@ -110,30 +110,35 @@ export function installNativeGlobal(runtime: Runtime, name: string, value: unkno
 	}
 }
 
-function runHaltedClosureUntilInterrupt(runtime: Runtime): void {
+function runHaltedClosureUntilInterrupt(runtime: Runtime): number {
 	const cpu = runtime.machine.cpu;
 	const scheduler = runtime.machine.scheduler;
+	let consumed = 0;
+	let advancedDeadline = false;
 	while (cpu.isHaltedUntilIrq()) {
 		if (cpu.peekPendingInterrupt(runtime.machine.irqController) !== AcceptedInterruptKind.None) {
 			cpu.clearHaltUntilIrq();
-			return;
+			return consumed;
 		}
-		if (scheduler.hasDueTimer()) {
-			runDueRuntimeTimers(runtime);
-			continue;
+		if (advancedDeadline) {
+			return consumed;
 		}
 		const nextDeadline = scheduler.nextDeadline();
 		if (nextDeadline === Number.MAX_SAFE_INTEGER) {
-			// Halted with no pending interrupt and nothing scheduled to wake it:
-			// fail fast instead of spinning the host forever.
-			throw new Error('CPU halted with no scheduled interrupt');
+			return consumed;
 		}
-		const cyclesToDeadline = nextDeadline - scheduler.nowCycles;
-		if (cyclesToDeadline <= 0) {
+		const idleCycles = nextDeadline - scheduler.nowCycles;
+		if (idleCycles <= 0) {
+			if (runDueRuntimeTimers(runtime)) {
+				return consumed;
+			}
 			continue;
 		}
-		advanceRuntimeTime(runtime, cyclesToDeadline);
+		advanceRuntimeTime(runtime, idleCycles);
+		consumed += idleCycles;
+		advancedDeadline = true;
 	}
+	return consumed;
 }
 
 // start repeated-sequence-acceptable -- External closure calls keep frame/budget restore code direct instead of routing through callback plumbing.
@@ -155,7 +160,10 @@ export function callClosureInto(runtime: Runtime, fn: Closure, args: ReadonlyArr
 			spentBudget += activeBudget - cpu.instructionBudgetRemaining;
 			activeBudget = 0;
 			if (cpu.getFrameDepth() > depth && result === RunResult.Halted) {
-				runHaltedClosureUntilInterrupt(runtime);
+				spentBudget += runHaltedClosureUntilInterrupt(runtime);
+				if (cpu.isHaltedUntilIrq()) {
+					break;
+				}
 			}
 		}
 	} catch (error) {
@@ -216,7 +224,12 @@ export function callClosureIntoWithScheduler(runtime: Runtime, fn: Closure, args
 				break;
 			}
 			if (result === RunResult.Halted) {
-				runHaltedClosureUntilInterrupt(runtime);
+				const idleCycles = runHaltedClosureUntilInterrupt(runtime);
+				remaining -= idleCycles;
+				spentBudget += idleCycles;
+				if (cpu.isHaltedUntilIrq()) {
+					break;
+				}
 				continue;
 			}
 			if (consumed <= 0) {

@@ -7,7 +7,6 @@
 #include <array>
 #include <cstdint>
 #include <functional>
-#include <optional>
 #include <vector>
 
 namespace bmsx {
@@ -33,7 +32,7 @@ public:
 	void accrueCycles(int cycles, int64_t nowCycles);
 	void onService(int64_t nowCycles);
 	void startIo();
-		void enqueueImageCopy(const ImageCopyPlan& plan, std::vector<uint8_t>&& pixels, std::function<void(bool error, bool clipped)> onComplete);
+		void enqueueImageCopy(const ImageCopyPlan& plan, std::vector<uint8_t>&& pixels, std::function<void(bool clipped)> onComplete);
 	void reset();
 
 		private:
@@ -44,9 +43,9 @@ public:
 		enum class Kind : uint8_t { Io, Image };
 		Kind kind = Kind::Io;
 		Channel channel = Channel::Bulk;
+		bool started = false;
 			uint32_t written = 0;
 			bool clipped = false;
-			bool error = false;
 
 			uint32_t src = 0;
 			uint32_t dst = 0;
@@ -58,20 +57,18 @@ public:
 			uint32_t row = 0;
 			uint32_t rowOffset = 0;
 			bool vramTarget = false;
-			std::function<void(bool error, bool clipped)> onComplete;
+			std::function<void(bool clipped)> onComplete;
 	};
 
 	struct DmaChannelState {
 		uint32_t budget = 0;
 		std::vector<DmaJob> queue;
 		size_t queueHead = 0;
-		std::optional<DmaJob> active;
 	};
 
 	void accrueChannel(Channel channel, int64_t bytesPerSec, int64_t& carry, int cycles);
 	void scheduleNextService(int64_t nowCycles);
 	bool hasPendingTransfer(Channel channel) const;
-	bool hasPendingVdpSubmit() const;
 	void tickChannel(Channel channel);
 	uint32_t processJob(DmaJob& job, uint32_t budget);
 	uint32_t processImageJob(DmaJob& job, uint32_t budget);
@@ -80,7 +77,6 @@ public:
 	void finishIoJob(DmaJob& job);
 	void finishIoSuccess(bool clipped);
 	void finishIoError(bool clipped);
-	void finishIoRejected();
 	uint32_t resolveMaxWritable(uint32_t dst) const;
 	uint32_t getPendingBytesForChannel(Channel channel) const;
 

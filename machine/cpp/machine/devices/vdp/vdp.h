@@ -23,6 +23,7 @@
 #include "machine/devices/vdp/unit_register_port.h"
 #include "machine/model_registry.h"
 #include <array>
+#include <vector>
 
 namespace bmsx {
 
@@ -42,12 +43,11 @@ public:
 	void resetStatus();
 	void writeModeWord(uint32_t word);
 	void setScanoutTiming(bool vblankActive, int cyclesIntoFrame, int cyclesPerFrame, int vblankStartCycle);
-	bool canAcceptVdpSubmit() const;
 	void acceptSubmitAttempt();
 	void rejectSubmitAttempt();
 	void beginDmaSubmit();
 	void endDmaSubmit();
-	bool sealDmaTransfer(uint32_t src, size_t byteLength);
+	void sealDmaTransfer(uint32_t src, size_t byteLength);
 	void writeVdpFifoBytes(const u8* data, size_t length);
 	void writeVram(uint32_t addr, const u8* data, size_t srcOffset, size_t length) override;
 	void readVram(uint32_t addr, u8* out, size_t length) const override;
@@ -56,12 +56,11 @@ public:
 	void accrueCycles(int cycles, int64_t nowCycles);
 	void onService(int64_t nowCycles);
 	void advanceWork(int workUnits);
-	bool presentReadyFrameOnVblankEdge();
+	void presentReadyFrameOnVblankEdge();
 	uint32_t frameBufferWidth() const { return m_fbm.width(); }
 	uint32_t frameBufferHeight() const { return m_fbm.height(); }
-	bool readFrameBufferPixels(VdpFrameBufferPage page, uint32_t x, uint32_t y, uint32_t width, uint32_t height, u8* out, size_t outBytes);
-	void drainFrameBufferPresentation(VdpFrameBufferPresentationSink& sink);
-	void syncFrameBufferPresentation(VdpFrameBufferPresentationSink& sink);
+	const std::vector<u8>& frameBufferRenderReadback() const { return m_vram.frameBufferSurface().cpuReadback; }
+	const std::vector<u8>& frameBufferDisplayReadback() const { return m_fbm.displayReadback(); }
 	uint32_t readVdpData();
 
 	void initializeVramSurfaces();
@@ -101,7 +100,12 @@ private:
 	static void onDitherWriteThunk(void* context, uint32_t addr, Value value);
 	static void onRegisterWriteThunk(void* context, uint32_t addr, Value value);
 
-	bool writeVdpRegister(uint32_t index, u32 value);
+	struct RegnPacket {
+		u32 firstRegister = 0;
+		u32 count = 0;
+	};
+
+	void writeVdpRegister(uint32_t index, u32 value);
 	void consumeDirectVdpCommand(u32 cmd);
 	void rejectBusySubmitAttempt(uint32_t detail);
 
@@ -121,6 +125,7 @@ private:
 	int m_availableWorkUnits = 0;
 	std::array<u32, VDP_CMD_ARG_COUNT> m_vdpRegisters{};
 	VdpStreamIngressUnit m_streamIngress;
+	RegnPacket m_regnPacketScratch;
 	BuildingFrame m_buildFrame;
 	SubmittedFrame m_activeFrame;
 	SubmittedFrame m_pendingFrame;
@@ -129,45 +134,36 @@ private:
 	int m_lastFrameCost = 0;
 	bool m_lastFrameHeld = false;
 	VdpFbmUnit m_fbm;
-	VdpFrameBufferSize m_configuredFrameBufferSize;
 	DeviceScheduler& m_scheduler;
 	VdpUnitRegisterPort m_unitRegisterPort;
 	u32 m_vdpModeWord = VDP_MODE_PSX_WORD;
 
-	void bindStagingMemory();
 	void bindVramSurfaces();
 	void applyVdpModeProfile(const MachineVdpModeProfile& profile);
-	bool resizeFrameBufferSurface(uint32_t width, uint32_t height, uint32_t faultDetail);
+	void resizeFrameBufferSurface(uint32_t width, uint32_t height);
 	void resetQueuedFrameState();
 	bool canAcceptSubmittedFrame() const {
 		return m_pendingFrame.state == VdpSubmittedFrameState::Empty;
 	}
-	bool beginSubmittedFrame(VdpDexFrameState state);
+	void beginSubmittedFrame(VdpDexFrameState state);
 	void cancelSubmittedFrame();
-	bool sealSubmittedFrame();
+	void sealSubmittedFrame();
 	void promotePendingFrame();
 	void scheduleNextService(int64_t nowCycles);
 	bool hasBlockedSubmitPath() const;
-		void refreshSubmitBusyStatus();
-		void resetVdpRegisters();
-		void onDitherWrite(Value value);
-		void onVdpRegisterWrite(uint32_t addr);
+	void refreshSubmitBusyStatus();
+	void resetVdpRegisters();
+	void onVdpRegisterWrite(uint32_t addr);
 	void pushVdpFifoWord(u32 word);
-	bool consumeSealedVdpStream(uint32_t baseAddr, size_t byteLength);
+	void consumeSealedVdpStream(uint32_t baseAddr, size_t byteLength);
 	void consumeSealedVdpWordStream(const u32* words, u32 wordCount);
 	void sealVdpFifoTransfer();
-	u32 consumeReplayPacketFromMemory(u32 word, u32 cursor, u32 end);
-	u32 consumeUnitRegisterPacketFromMemory(u32 word, u32 cursor, u32 end);
-	u32 consumeReplayPacketFromWords(const u32* words, u32 word, u32 cursor, u32 wordCount);
-	u32 consumeUnitRegisterPacketFromWords(const u32* words, u32 word, u32 cursor, u32 wordCount);
-	u32 decodeReg1Packet(u32 word) const;
-	struct RegnPacket {
-		u32 firstRegister = 0;
-		u32 count = 0;
-	};
-		bool decodeRegnPacket(u32 word, RegnPacket& packet) const;
-		bool consumeReplayCommandPacket(u32 word);
-		bool executeVdpDrawDoorbell(u32 command);
+	u32 consumeReplayPacketFromMemory(u32 word, u32 cursor);
+	u32 consumeUnitRegisterPacketFromMemory(u32 word, u32 cursor);
+	u32 consumeReplayPacketFromWords(const u32* words, u32 word, u32 cursor);
+	u32 consumeUnitRegisterPacketFromWords(const u32* words, u32 word, u32 cursor);
+	void decodeRegnPacket(u32 word, RegnPacket& packet) const;
+	void consumeReplayCommandPacket(u32 word);
 	void onVdpFifoWrite();
 	void onVdpFifoCtrlWrite();
 	void onVdpCommandWrite();

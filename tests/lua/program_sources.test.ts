@@ -78,15 +78,15 @@ function luaEntry(resid: string, sourcePath: string, payloadId: CartridgeLayerId
 
 test('buildLuaSources registers real Lua assets in one pass', () => {
 	const cartEntry = luaEntry('main', 'cart.lua', 'cart', 11);
-	const overlayEntry = luaEntry('main', 'cart.lua', 'overlay', 22);
+	const activeEntry = luaEntry('main', 'cart.lua', 'cart', 22);
 	const systemEntry = luaEntry('sys', 'bios/system.lua', 'system', 0);
 	const cartSource = new TestRomSource([cartEntry], { main: 'return 1' });
-	const activeSource = new TestRomSource([overlayEntry, systemEntry], {
+	const activeSource = new TestRomSource([activeEntry, systemEntry], {
 		main: 'return 2',
 		sys: 'return 3',
 	});
 
-	const registry = buildLuaSources(cartSource, activeSource, makeIndex('cart.lua', [cartEntry]), ['overlay', 'cart']);
+	const registry = buildLuaSources(cartSource, activeSource, makeIndex('cart.lua', [cartEntry]), ['cart']);
 	const record = registry.path2lua['cart.lua'];
 
 	assert.equal(registry.can_boot_from_source, true);

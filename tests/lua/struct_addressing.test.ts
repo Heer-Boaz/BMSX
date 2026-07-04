@@ -4,7 +4,7 @@ import { test } from 'node:test';
 import { splitText } from '../../machine/ts/common/text_lines';
 import { LuaLexer } from '../../machine/ts/lua/syntax/lexer';
 import { LuaParser } from '../../machine/ts/lua/syntax/parser';
-import { CPU, OpCode, RunResult, type Program, type ProgramMetadata, type Proto } from '../../machine/ts/machine/cpu/cpu';
+import { CPU, OpCode, RunResult, type Program, type ProgramMetadata } from '../../machine/ts/machine/cpu/cpu';
 import { disassembleProgram } from '../../machine/ts/machine/cpu/disassembler';
 import { writeInstruction, INSTRUCTION_BYTES } from '../../machine/ts/machine/cpu/instruction_format';
 import { MemoryAccessKind } from '../../machine/ts/machine/memory/access_kind';
@@ -23,18 +23,6 @@ function parseSource(source: string, path = 'struct_addressing.lua') {
 
 function compileSource(source: string): ReturnType<typeof compileLuaChunkToProgram> {
 	return compileLuaChunkToProgram(parseSource(source), [], { entrySource: source });
-}
-
-function makeProto(codeLen: number): Proto {
-	return {
-		entryPC: 0,
-		codeLen,
-		numParams: 0,
-		isVararg: false,
-		maxStack: 5,
-		upvalueDescs: [],
-		staticClosure: false,
-	};
 }
 
 function makeMetadata(instructionCount: number): ProgramMetadata {
@@ -68,7 +56,15 @@ function makeDisplacedMemoryProgram(cpu: CPU): Program {
 		programRom: code,
 		programRomTextByteLength: code.byteLength,
 		constPool: [TEST_RAM_BASE, 0x11111111, 0x22222222, 0x33333333, 0x44444444],
-		protos: [makeProto(code.length)],
+		protos: [{
+			entryPC: 0,
+			codeLen: code.length,
+			numParams: 0,
+			isVararg: false,
+			maxStack: 5,
+			upvalueDescs: [],
+			staticClosure: false,
+		}],
 		stringPool: pool,
 		constPoolStringPool: pool,
 	};

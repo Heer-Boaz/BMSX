@@ -11,7 +11,6 @@ class GeometryXform2Unit {
 public:
 	explicit GeometryXform2Unit(Memory& memory);
 
-	uint32_t validateSubmission(const GeometryJobState& job) const;
 	uint32_t processRecord(GeometryJobState& job);
 
 private:

@@ -1,5 +1,5 @@
 import type { RenderPassLibrary } from '../backend/pass/library';
-import type { RenderContext, RenderPassStateRegistry, TextureHandle } from '../backend/backend';
+import type { RenderContext, RenderPassStateRegistry } from '../backend/backend';
 import type { WebGLBackend } from '../backend/webgl/backend';
 import { TEXTURE_UNIT_POST_PROCESSING_SOURCE } from '../backend/webgl/constants';
 import vertexShaderCode from './shaders/framebuffer_2d.vert.glsl';
@@ -12,33 +12,29 @@ import {
 	type FullscreenQuad,
 } from '../backend/webgl/fullscreen_quad';
 
-let fsq: FullscreenQuad = null;
-let framebuffer2DTextureUniform: WebGLUniformLocation = null;
-let framebuffer2DResolutionUniform: WebGLUniformLocation = null;
-let framebuffer2DScaleUniform: WebGLUniformLocation = null;
-
-const framebuffer2DStateScratch: RenderPassStateRegistry['framebuffer_2d'] = {
-	width: 0,
-	height: 0,
-	baseWidth: 0,
-	baseHeight: 0,
-	colorTex: null as unknown as TextureHandle,
-};
-
-function getFramebuffer2DUniform(gl: WebGL2RenderingContext, program: WebGLProgram, name: string): WebGLUniformLocation {
-	const location = gl.getUniformLocation(program, name);
-	if (location === null) {
-		throw new Error(`[Framebuffer2D] Missing uniform ${name}.`);
-	}
-	return location;
-}
+let fsq: FullscreenQuad;
+let framebuffer2DTextureUniform: WebGLUniformLocation;
+let framebuffer2DResolutionUniform: WebGLUniformLocation;
+let framebuffer2DScaleUniform: WebGLUniformLocation;
 
 function bootstrapFramebuffer2DPass(backend: WebGLBackend): void {
 	const gl = backend.gl as WebGL2RenderingContext;
 	const program = gl.getParameter(gl.CURRENT_PROGRAM) as WebGLProgram;
-	framebuffer2DTextureUniform = getFramebuffer2DUniform(gl, program, 'u_texture');
-	framebuffer2DResolutionUniform = getFramebuffer2DUniform(gl, program, 'u_resolution');
-	framebuffer2DScaleUniform = getFramebuffer2DUniform(gl, program, 'u_scale');
+	framebuffer2DTextureUniform = gl.getUniformLocation(program, 'u_texture') as WebGLUniformLocation;
+	framebuffer2DResolutionUniform = gl.getUniformLocation(program, 'u_resolution') as WebGLUniformLocation;
+	framebuffer2DScaleUniform = gl.getUniformLocation(program, 'u_scale') as WebGLUniformLocation;
+	fsq = {
+		gl,
+		positionBuffer: null,
+		texcoordBuffer: null,
+		positionAttrib: -1,
+		texcoordAttrib: -1,
+		width: -1,
+		height: -1,
+		texcoords: POST_PROCESS_TEXCOORDS,
+		label: 'Framebuffer2D',
+	};
+	createFullscreenQuad(fsq);
 	gl.uniform1i(framebuffer2DTextureUniform, TEXTURE_UNIT_POST_PROCESSING_SOURCE);
 }
 
@@ -53,20 +49,6 @@ function renderFrameBuffer(backend: WebGLBackend, gl: WebGL2RenderingContext, co
 	gl.viewport(0, 0, state.width, state.height);
 	backend.setDepthTestEnabled(false);
 	backend.setDepthMask(false);
-	if (!fsq) {
-		fsq = {
-			gl,
-			positionBuffer: null,
-			texcoordBuffer: null,
-			positionAttrib: -1,
-			texcoordAttrib: -1,
-			width: -1,
-			height: -1,
-			texcoords: POST_PROCESS_TEXCOORDS,
-			label: 'Framebuffer2D',
-		};
-		createFullscreenQuad(fsq);
-	}
 	updateFullscreenQuad(fsq, state.width, state.height);
 	backend.setBlendEnabled(true);
 	gl.blendFunc(gl.SRC_ALPHA, gl.ONE_MINUS_SRC_ALPHA);
@@ -79,6 +61,13 @@ function renderFrameBuffer(backend: WebGLBackend, gl: WebGL2RenderingContext, co
 }
 
 export function registerFramebuffer2DPass_WebGL(registry: RenderPassLibrary): void {
+	const framebuffer2DState: RenderPassStateRegistry['framebuffer_2d'] = {
+		width: 0,
+		height: 0,
+		baseWidth: 0,
+		baseHeight: 0,
+		colorTex: registry.view.vdpFrameBufferTextures.displayTexture(),
+	};
 	registry.register({
 		id: 'framebuffer_2d',
 		name: 'Framebuffer2D',
@@ -93,7 +82,7 @@ export function registerFramebuffer2DPass_WebGL(registry: RenderPassLibrary): vo
 		},
 		prepare: (backend: WebGLBackend, _state: RenderPassStateRegistry['framebuffer_2d']) => {
 			const view = registry.view;
-			const state = framebuffer2DStateScratch;
+			const state = framebuffer2DState;
 			state.width = view.offscreenCanvasSize.x;
 			state.height = view.offscreenCanvasSize.y;
 			state.baseWidth = view.viewportSize.x;

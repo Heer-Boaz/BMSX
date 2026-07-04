@@ -4,6 +4,7 @@
 #include "machine/devices/vdp/device_output.h"
 #include "machine/devices/vdp/frame.h"
 #include <memory>
+#include <vector>
 
 namespace bmsx {
 
@@ -35,6 +36,8 @@ struct VdpVoutFrameOutput {
 
 class VdpVoutUnit {
 public:
+	VdpVoutUnit(std::vector<u8>& vdpVram, std::vector<u32>& vdpVramPageRevisions);
+
 	VdpVoutState state() const { return m_state; }
 	bool vblankActive() const { return m_scanoutPhase == VdpVoutScanoutPhase::Vblank; }
 	i32 liveDitherType() const { return m_liveDitherType; }
@@ -66,7 +69,7 @@ private:
 	i32 m_visibleDitherType = 0;
 	u32 m_visibleFrameBufferWidth = 0u;
 	u32 m_visibleFrameBufferHeight = 0u;
-	std::unique_ptr<VdpRpuFrameOutput> m_visibleRpuFrame = createVdpRpuFrameOutput();
+	std::unique_ptr<VdpRpuFrameOutput> m_visibleRpuFrame;
 	VdpVoutFrameOutput m_sealedFrameOutput;
 	VdpDeviceOutput m_deviceOutput;
 };

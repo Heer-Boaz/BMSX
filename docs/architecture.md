@@ -300,8 +300,8 @@ Asset symbol names are generated as `<asset-type>_<asset-id>_{addr,len}` after
 sanitising non-alphanumeric characters to underscores and prefixing a leading
 digit with an underscore. Public symbols are generated for ROM-backed asset
 records except Lua/code records and the ROM label. Address values are absolute
-CPU-visible ROM addresses: `SYSTEM_ROM_BASE`, `CART_ROM_BASE`, or
-`OVERLAY_ROM_BASE` plus the record offset in the corresponding ROM payload. For
+CPU-visible ROM addresses: `SYSTEM_ROM_BASE` or `CART_ROM_BASE` plus the record
+offset in the corresponding ROM payload. For
 pack-time cart assets that do not yet have a TOC range, the address is computed
 from `CART_ROM_BASE + CART_ROM_HEADER_SIZE` plus the same packed-byte order the
 ROM writer uses, and the build verifies those generated addresses against the
@@ -352,6 +352,29 @@ lane.
 - `Memory` owns RAM, ROM windows, IO slots, and MMIO callback dispatch.
 - The CPU consumes instruction words and runtime values directly from the mapped
   machine representation.
+- Reserved opcodes, malformed standalone `WIDE` prefix words, and branch skips
+  past decoded text do not become host exceptions. The CPU latches a hard-halt
+  state, stops accepting IRQs, and stays stopped until a new program/reset path
+  starts it again; save-state preserves that latch.
+- Typed memory opcodes consume the register/RK lane directly as machine data;
+  producers own the numeric address/value representation before the CPU reaches
+  RAM, ROM, VRAM, or MMIO byte/halfword/float datapaths.
+- Numeric arithmetic, bitwise, shift, unary-minus, and bitwise-not opcodes
+  consume the register/RK lane directly. The producer owns the numeric lane
+  representation before CPU dispatch reaches those datapaths.
+- Ordering compare opcodes consume interned-string lanes when both sides are
+  strings; otherwise they consume the numeric register/RK lanes directly. The
+  CPU dispatch path does not revalidate producer-owned operand kinds.
+- A CPU parked by `HALT` remains parked until an accepted interrupt. Host/native
+  closure entry does not wake it and does not throw. If an entered external
+  closure executes `HALT` and no interrupt is scheduled, the host call stops with
+  the CPU still parked and the stopped frame intact instead of converting that
+  state into a host exception or fast-forwarding device time outside the frame
+  scheduler.
+- Protected-call VM primitives are non-yieldable CPU primitives. If a protected
+  callee stops before returning, `pcall`/`xpcall` do not synthesize Lua success
+  or error results; the CPU preserves the callee's actual stop state, whether
+  hard-halted by malformed instruction flow or parked by `HALT`.
 - The frame scheduler owns CPU/device advancement and IRQ/VBlank timing. The
   host frame pump may request work; it does not own device state transitions.
 - VBlank is a machine edge. Devices with VBlank behavior expose explicit edge
@@ -376,19 +399,37 @@ captured-closure upvalue pointers are tail storage in the same GC allocation as
 the closure object, not a separate `std::vector` allocation. Static/root
 closures have no captured slots; the C++ CPU keeps them in CPU-owned indexed
 storage with stable closure addresses instead of allocating them as GC heap
-objects. TypeScript keeps the same boundary with dense `Upvalue[]` closure
-slots and a required `heapBytes` word on every closure object, so heap
-accounting consumes the producer-owned closure representation directly.
+objects. TypeScript keeps the same boundary with `Closure` instances, dense
+`Upvalue[]` closure slots, and a required `heapBytes` word on every closure, so
+heap accounting consumes the producer-owned closure representation directly.
 Save-state serializes closure upvalue references as object ids at the
 persistence boundary; it does not expose either runtime's closure slot storage
 shape.
+Snapshot object ids are reserved before an object's child values are captured,
+so cyclic/shared Lua table graphs stay object graphs rather than path lookups or
+duplicated tree materialisation.
+Object-key hashing follows the value representation. Runtime objects receive a
+producer-owned identity word when the table, closure, upvalue, native function,
+or native object is created; save-state restores that identity for CPU-owned
+objects. Table lookup and snapshot traversal do not keep separate side tables.
+Table save-state stores the table hash columns and free cursor because Lua
+iteration observes the current bucket walk. Restore rehydrates the owner-owned
+columns directly so `next` resumes the same table order after state replay.
 
 Core VM builtins (`next`, `type`, `rawget`, `pcall`, string byte/char, and the
 other BIOS-captured primitives) are fixed VM primitive slots/singletons. They
 are not native host callbacks, are not GC heap allocations, and do not
 contribute to Lua heap accounting; guest-visible names are ordinary globals
 pointing at those fixed VM primitive values. Save-state serializes their
-`BuiltinFunctionId`, not a global/module path.
+`BuiltinFunctionId`, not a global/module path. Host-native bridge values are
+runtime infrastructure, not CPU state: they are neither path-stabilized nor
+restored by save-state.
+Native/builtin argument transport is a borrowed VM register/result view. C++
+`NativeArgsView` exposes direct indexed access over the caller-owned value span;
+it does not carry a checked `at()`/exception path in builtin dispatch.
+TypeScript uses a pooled borrowed view with `get(index)`, not a `Proxy`-backed
+array facade. Both views expose Lua's nil-filled argument lane for reads beyond
+the supplied argument count without materializing an argument array per call.
 
 Executable program text is part of the memory-mapped program ROM image. The
 runtime program text view points at the text window in that ROM buffer, so
@@ -398,6 +439,10 @@ the explicit exception: it extends the CPU-visible bytecode stream while
 preserving the already-installed program-ROM mapping for guest memory reads.
 Executable const-pool relocation is an inflate-time value rewrite; it must not
 clone the full object sections just to replace the const-pool image.
+Program-ROM size/fit is owned by the linker/producer. `Memory` maps the retained
+program-ROM backing into the fixed CPU window and the window itself determines
+which bytes are observable; the memory device does not revalidate producer size
+or throw during install.
 
 System ROM and cart ROM are fixed CPU-visible address windows. The backing
 payload may be shorter than the window or absent; bytes beyond the backing read
@@ -431,7 +476,8 @@ Not saved:
 
 - host windows, WebGL/SDL handles, browser objects, editor state, build caches,
   parser caches, derived lookup tables, scratch arrays that are fully rebuilt
-  from saved device state, and output queues that belong only to a host backend.
+  from saved device state, host-native bridge callbacks/objects, and output
+  queues that belong only to a host backend.
 
 Save-state bytes start with the current property-table payload. There is no
 format-version field, old reader, or migration path. Aggregate machine
@@ -633,11 +679,19 @@ Internal units:
   intentionally overlay the same texture region. That baked layout is data, not
   a hardware allocator or BIOS policy, and cart code may stream, overwrite, or
   ignore it.
+  Firmware image rectangles are the reusable atlas-source descriptors consumed
+  by tile-run and blit helpers; cartlib must not allocate a second source table
+  that merely copies the same atlas id and UV rectangle.
+  ROMDIR indexes atlas TOC entries by numeric atlas id while parsing the ROM, so
+  firmware passes atlas ids as machine words instead of formatting `_atlas_##`
+  lookup strings at runtime.
 - `LPU` owns raw ambient, directional, and point-light register words.
 - `MFU` owns raw morph-weight register words.
 - `JTU` owns raw joint-matrix register words.
 - `unit_register_port` owns stream `REG1/REGN` range admission and raw
-  XF/LPU/MFU/JTU register writes.
+  XF/LPU/MFU/JTU register writes. XF select registers latch their raw words;
+  matrix-index interpretation belongs to render transform decode, not the
+  register-write edge.
 - `FBM` owns framebuffer pages, display pixels, GPU texture presentation latches,
   presentation transactions, and presentable display dimensions.
 - `XF` owns transform register words.
@@ -719,11 +773,14 @@ pending-sample latches, and the scheduler service edge in mirrored
 `machine/devices/audio/service_clock` files; aggregate save-state stores only
 those latch words.
 The selected-slot source/status latch is owned by mirrored
-`machine/devices/audio/selected_slot_latch` files. The active-slot datapath is
-owned by mirrored `machine/devices/audio/active_slots` files; it writes the
-CPU-visible active-mask register image, clears source-DMA slot bytes when a slot
-stops, refreshes the selected-slot latch, and emits slot-ended events from the
-advance edge. The composite APU status register read datapath is owned by
+`machine/devices/audio/selected_slot_latch` files. Slot selector words are raw
+APU register words; the command executor and selected-slot latch decode the low
+slot-index bits at the datapath boundary and preserve the raw selector word in
+the slot register image. The active-slot datapath is owned by mirrored
+`machine/devices/audio/active_slots` files; it writes the CPU-visible
+active-mask register image, clears source-DMA slot bytes when a slot stops,
+refreshes the selected-slot latch, and emits slot-ended events from the advance
+edge. The composite APU status register read datapath is owned by
 mirrored `machine/devices/audio/status_register` files. The APU slot bank owns
 slot phase/register/cursor/fade/voice-id words in mirrored
 `machine/devices/audio/slot_bank` files; aggregate save-state records
@@ -800,21 +857,18 @@ State owned by ICU:
 
 - raw control, keyboard, pointer, pad, and output latch words plus reset/restore
   register mirroring owned by `machine/devices/input/registers`;
-- `sys_inp_ctrl` command side effects owned by
-  `machine/devices/input/control_port`;
-- private sample arm, sequence, and last-cycle latches owned by
-  `machine/devices/input/sample_latch`;
-- VBlank sample-edge datapath owned by `machine/devices/input/sample_edge`;
+- `sys_inp_ctrl` command side effects, private sample arm/sequence/last-cycle
+  latches, and the VBlank sample-edge datapath owned by
+  `machine/devices/input/controller`;
 - output command datapath owned by `machine/devices/input/output_port`.
 
-The runtime VBlank owner enters through the ICU controller edge. The sample
-latch subunit remains private and only consumes the arm latch into sample
-sequence/last-cycle state. The mirrored sample-edge datapath asks the host input
-owner to fill one raw `InputControllerSnapshot`. The ICU then decodes that
-snapshot into raw MMIO words at the datapath boundary. Later cart reads consume
-only the mirrored register words. The ICU does not own action maps,
-action-expression parsing, button-name string ids, consume state, repeat
-windows, guarded presses, or a high-level event FIFO.
+The runtime VBlank owner enters through the ICU controller edge. The controller
+consumes the arm latch into sample sequence/last-cycle state, asks the host
+input owner to fill one raw `InputControllerSnapshot`, and decodes that snapshot
+into raw MMIO words at the datapath boundary. Later cart reads consume only the
+mirrored register words. The ICU does not own action maps, action-expression
+parsing, button-name string ids, consume state, repeat windows, guarded presses,
+or a high-level event FIFO.
 
 ICU device code consumes only `machine/devices/input/contracts` source ports.
 The host input manager/player layer implements those ports and remains outside

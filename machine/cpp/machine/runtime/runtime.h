@@ -26,6 +26,7 @@
 #include "machine/runtime/input.h"
 #include "machine/scheduler/frame.h"
 #include "machine/devices/vdp/vdp.h"
+#include "machine/memory/map.h"
 #include "common/primitives.h"
 #include <cstddef>
 #include <memory>
@@ -41,6 +42,7 @@ namespace bmsx {
 
 // Forward declarations
 struct ProgramImage;
+struct LinkedBootProgramImage;
 class RuntimeRomPackage;
 class MicrotaskQueue;
 
@@ -77,6 +79,7 @@ public:
 	 * Boot the runtime with a compiled program.
 	 */
 	void boot(const ProgramImage& image, std::unique_ptr<ProgramMetadata> metadata, ProgramVectorTable vectors, uint32_t dataBaseAddress, uint32_t bssBaseAddress, std::span<const std::string> systemStaticModulePaths, std::span<const std::string> cartStaticModulePaths);
+	void bootLinkedProgramImage(LinkedBootProgramImage&& linked);
 	void handleLuaError(const std::string& message);
 
 	/**
@@ -103,8 +106,8 @@ public:
 	auto isCartProgramStarted() const -> bool { return m_cartProgramStarted; }
 	auto isRebootRequested() const -> bool { return m_rebootRequested; }
 	void clearRebootRequest() { m_rebootRequested = false; }
-	auto hasCartEntry() const -> bool { return m_cartVectors.has_value(); }
-	void setLinkedCartVectors(ProgramVectorTable vectors, uint32_t dataBaseAddress, uint32_t bssBaseAddress, std::vector<std::string> staticModulePaths);
+	auto hasCartEntry() const -> bool { return m_cartEntryAvailable; }
+	void clearLinkedCartProgram(uint32_t dataByteLength);
 	void enterSystemFirmware();
 	void enterCartProgram();
 	void startCartProgram();
@@ -198,6 +201,7 @@ private:
 	};
 	void setupBuiltins();
 	void clearLuaBootPrimitives();
+	void setLinkedCartProgram(ProgramVectorTable vectors, uint32_t programDataBaseAddress, uint32_t programBssBaseAddress, uint32_t cartDataBaseAddress, uint32_t cartBssBaseAddress, std::vector<std::string> staticModulePaths);
 	void runStaticModuleInitializers(std::span<const std::string> paths);
 	void runStaticModuleInitializer(const std::string& path);
 	auto valueToString(const Value& value) const -> std::string;
@@ -226,11 +230,14 @@ private:
 	std::unique_ptr<ProgramMetadata> m_programMetadataStorage;
 	ProgramMetadata* m_programMetadata = nullptr;
 
-	std::optional<ProgramVectorTable> m_cartVectors;
+	ProgramVectorTable m_cartVectors;
+	uint32_t m_programDataBaseAddress = PROGRAM_STATIC_RAM_BASE;
+	uint32_t m_programBssBaseAddress = PROGRAM_STATIC_RAM_BASE;
+	uint32_t m_cartDataBaseAddress = PROGRAM_STATIC_RAM_BASE;
+	uint32_t m_cartBssBaseAddress = PROGRAM_STATIC_RAM_BASE;
 	std::optional<ProgramVectorTable> m_programVectors;
-	std::optional<uint32_t> m_cartDataBaseAddress;
-	std::optional<uint32_t> m_cartBssBaseAddress;
 	std::vector<std::string> m_cartStaticModulePaths;
+	bool m_cartEntryAvailable = false;
 	bool m_cartProgramStarted = false;
 
 	// State flags

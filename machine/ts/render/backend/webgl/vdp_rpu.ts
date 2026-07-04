@@ -141,6 +141,7 @@ const vdpRpuC1Words = new Uint32Array(68);
 const vdpRpuC1Floats = new Float32Array(vdpRpuC1Words.buffer);
 const vdpRpuJointWords = new Uint32Array(384);
 const vdpRpuJointFloats = new Float32Array(vdpRpuJointWords.buffer);
+const vdpRpuConstantAddressScratch = new Uint32Array(1);
 // Default C1: white ambient (intensity 1.0), all lights disabled
 const vdpRpuDefaultC1Floats = new Float32Array(68);
 vdpRpuDefaultC1Floats[0] = 1; // ambient.r
@@ -190,6 +191,14 @@ function vdpRpuIndexType(indexType: number): number {
 	return indexType === VDP_RPU_INDEX_U16 ? gl.UNSIGNED_SHORT : gl.UNSIGNED_INT;
 }
 
+function configureNearestClampTexture2D(): void {
+	const gl = vdpRpuGl;
+	gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.NEAREST);
+	gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.NEAREST);
+	gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
+	gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
+}
+
 function deleteVdpRpuSurfaceStorage(surface: VdpRpuWebglSurface): void {
 	const gl = vdpRpuGl;
 	if (surface.texture !== null) {
@@ -209,7 +218,8 @@ function deleteVdpRpuSurfaceStorage(surface: VdpRpuWebglSurface): void {
 function uploadVdpRpuBuffer(frame: VdpRpuFrameOutput, target: number, vramAddr: number, byteLength: number): WebGLBuffer {
 	const backend = vdpRpuBackend;
 	const gl = vdpRpuGl;
-	const bufferCache = target === gl.ARRAY_BUFFER ? vdpRpuArrayBuffers : vdpRpuIndexBuffers;
+	const arrayBufferTarget = target === gl.ARRAY_BUFFER;
+	const bufferCache = arrayBufferTarget ? vdpRpuArrayBuffers : vdpRpuIndexBuffers;
 	const key = vramAddr * (frame.vdpVram.byteLength + 1) + byteLength;
 	let storage = bufferCache.get(key);
 	const revision = vdpRpuVramRangeRevision(frame, vramAddr, byteLength);
@@ -219,7 +229,7 @@ function uploadVdpRpuBuffer(frame: VdpRpuFrameOutput, target: number, vramAddr: 
 			revision,
 		};
 		bufferCache.set(key, storage);
-		if (target === gl.ARRAY_BUFFER) {
+		if (arrayBufferTarget) {
 			backend.bindArrayBuffer(storage.buffer);
 		} else {
 			backend.bindElementArrayBuffer(storage.buffer);
@@ -228,7 +238,7 @@ function uploadVdpRpuBuffer(frame: VdpRpuFrameOutput, target: number, vramAddr: 
 		gl.bufferSubData(target, 0, frame.vdpVram, vramAddr, byteLength);
 		return storage.buffer;
 	}
-	if (target === gl.ARRAY_BUFFER) {
+	if (arrayBufferTarget) {
 		backend.bindArrayBuffer(storage.buffer);
 	} else {
 		backend.bindElementArrayBuffer(storage.buffer);
@@ -240,7 +250,7 @@ function uploadVdpRpuBuffer(frame: VdpRpuFrameOutput, target: number, vramAddr: 
 	return storage.buffer;
 }
 
-function ensureVdpRpuSurfaceStorage(backend: WebGLBackend, frame: VdpRpuFrameOutput, surfaceDescAddr: number): VdpRpuWebglSurface {
+function loadVdpRpuSurfaceStorage(backend: WebGLBackend, frame: VdpRpuFrameOutput, surfaceDescAddr: number): VdpRpuWebglSurface {
 	const gl = vdpRpuGl;
 	const vram = frame.vdpVram;
 	let surface = vdpRpuSurfaces.get(surfaceDescAddr);
@@ -287,10 +297,7 @@ function ensureVdpRpuSurfaceStorage(backend: WebGLBackend, frame: VdpRpuFrameOut
 		const texture = gl.createTexture()!;
 		gl.bindTexture(gl.TEXTURE_2D, texture);
 		gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA8, width, height, 0, gl.RGBA, gl.UNSIGNED_BYTE, null);
-		gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.NEAREST);
-		gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.NEAREST);
-		gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
-		gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
+		configureNearestClampTexture2D();
 		surface.texture = texture;
 	}
 	backend.invalidateTextureBindingCache();
@@ -342,11 +349,11 @@ function bindVdpRpuPassFramebuffer(backend: WebGLBackend, frame: VdpRpuFrameOutp
 		return;
 	}
 	const targetSurface = colorSurfaceDescAddr !== 0
-		? ensureVdpRpuSurfaceStorage(backend, frame, colorSurfaceDescAddr)
-		: ensureVdpRpuSurfaceStorage(backend, frame, depthSurfaceDescAddr);
+		? loadVdpRpuSurfaceStorage(backend, frame, colorSurfaceDescAddr)
+		: loadVdpRpuSurfaceStorage(backend, frame, depthSurfaceDescAddr);
 	gl.bindFramebuffer(gl.FRAMEBUFFER, targetSurface.framebuffer);
 	if (colorSurfaceDescAddr !== 0) {
-		const colorSurface = ensureVdpRpuSurfaceStorage(backend, frame, colorSurfaceDescAddr);
+		const colorSurface = loadVdpRpuSurfaceStorage(backend, frame, colorSurfaceDescAddr);
 		gl.framebufferTexture2D(gl.FRAMEBUFFER, gl.COLOR_ATTACHMENT0, gl.TEXTURE_2D, colorSurface.texture, 0);
 		colorSurface.renderedFrame = vdpRpuFrameSerial;
 		colorSurface.sourceUploaded = 0;
@@ -358,7 +365,7 @@ function bindVdpRpuPassFramebuffer(backend: WebGLBackend, frame: VdpRpuFrameOutp
 		gl.drawBuffers(vdpRpuNoColorDrawBuffers);
 	}
 	if (depthSurfaceDescAddr !== 0) {
-		const depthSurface = ensureVdpRpuSurfaceStorage(backend, frame, depthSurfaceDescAddr);
+		const depthSurface = loadVdpRpuSurfaceStorage(backend, frame, depthSurfaceDescAddr);
 		gl.framebufferRenderbuffer(gl.FRAMEBUFFER, gl.DEPTH_ATTACHMENT, gl.RENDERBUFFER, depthSurface.depthBuffer);
 		depthSurface.renderedFrame = vdpRpuFrameSerial;
 		depthSurface.sourceUploaded = 0;
@@ -468,13 +475,13 @@ function bindVdpRpuStreamAttribute(attribute: VdpRpuStreamAttributeSpec, byteStr
 	gl.vertexAttribDivisor(location, divisor);
 }
 
-function bindVdpRpuVertexStream(frame: VdpRpuFrameOutput, streamBindingIndex: number): void {
+function bindVdpRpuStreamBinding(frame: VdpRpuFrameOutput, streamBindingIndex: number, divisor: number): void {
 	const gl = vdpRpuGl;
 	const commands = frame.commands;
 	const layout = resolveVdpRpuStreamLayoutSpec(commands.streamLayoutId[streamBindingIndex]);
 	uploadVdpRpuBuffer(frame, gl.ARRAY_BUFFER, commands.streamVramAddr[streamBindingIndex], commands.streamByteLength[streamBindingIndex]);
 	for (let index = 0; index < layout.attributeCount; index += 1) {
-		bindVdpRpuStreamAttribute(layout.attributes[index], layout.byteStride, 0, 0);
+		bindVdpRpuStreamAttribute(layout.attributes[index], layout.byteStride, 0, divisor);
 	}
 }
 
@@ -528,27 +535,6 @@ function setVdpRpuDefaultInstanceAttributes(): void {
 	gl.vertexAttribDivisor(vdpRpuInstanceUvRectLocation, 0);
 }
 
-function bindVdpRpuInstanceStream(frame: VdpRpuFrameOutput, streamBindingIndex: number): void {
-	const gl = vdpRpuGl;
-	const commands = frame.commands;
-	const stepRate = commands.streamStepRate[streamBindingIndex];
-	const layout = resolveVdpRpuStreamLayoutSpec(commands.streamLayoutId[streamBindingIndex]);
-	uploadVdpRpuBuffer(frame, gl.ARRAY_BUFFER, commands.streamVramAddr[streamBindingIndex], commands.streamByteLength[streamBindingIndex]);
-	for (let index = 0; index < layout.attributeCount; index += 1) {
-		bindVdpRpuStreamAttribute(layout.attributes[index], layout.byteStride, 0, stepRate);
-	}
-}
-
-function bindVdpRpuMorphStream(frame: VdpRpuFrameOutput, streamBindingIndex: number): void {
-	const gl = vdpRpuGl;
-	const commands = frame.commands;
-	const layout = resolveVdpRpuStreamLayoutSpec(commands.streamLayoutId[streamBindingIndex]);
-	uploadVdpRpuBuffer(frame, gl.ARRAY_BUFFER, commands.streamVramAddr[streamBindingIndex], commands.streamByteLength[streamBindingIndex]);
-	for (let index = 0; index < layout.attributeCount; index += 1) {
-		bindVdpRpuStreamAttribute(layout.attributes[index], layout.byteStride, 0, 0);
-	}
-}
-
 function bindVdpRpuDrawStreams(frame: VdpRpuFrameOutput, drawIndex: number, instanceMode: number): void {
 	const commands = frame.commands;
 	const bindingEnd = commands.drawFirstStreamBinding[drawIndex] + commands.drawStreamBindingCount[drawIndex];
@@ -566,35 +552,45 @@ function bindVdpRpuDrawStreams(frame: VdpRpuFrameOutput, drawIndex: number, inst
 		}
 	}
 	if (vertexBinding >= 0) {
-		bindVdpRpuVertexStream(frame, vertexBinding);
+		bindVdpRpuStreamBinding(frame, vertexBinding, 0);
 	}
 	if (instanceMode !== VDP_RPU_INSTANCE_MODE_NONE && instanceBinding >= 0) {
-		bindVdpRpuInstanceStream(frame, instanceBinding);
+		bindVdpRpuStreamBinding(frame, instanceBinding, commands.streamStepRate[instanceBinding]);
 	}
 	if (morphBinding >= 0) {
-		bindVdpRpuMorphStream(frame, morphBinding);
+		bindVdpRpuStreamBinding(frame, morphBinding, 0);
+	}
+}
+
+function findVdpRpuConstantBindingAddress(commands: VdpRpuFrameOutput['commands'], drawIndex: number, constantSlot: number, constantByteAddr: Uint32Array): boolean {
+	const bindingEnd = commands.drawFirstConstantBinding[drawIndex] + commands.drawConstantBindingCount[drawIndex];
+	for (let bindingIndex = commands.drawFirstConstantBinding[drawIndex]; bindingIndex < bindingEnd; bindingIndex += 1) {
+		if (commands.constantBindingSlot[bindingIndex] === constantSlot) {
+			constantByteAddr[0] = commands.constantVramAddr[bindingIndex];
+			return true;
+		}
+	}
+	return false;
+}
+
+function readVdpRpuFloatWords(vram: Uint8Array, byteAddr: number, out: Uint32Array, wordOffset: number, count: number): void {
+	for (let index = 0; index < count; index += 1) {
+		out[index] = readRpuDescU32(vram, byteAddr + (wordOffset + index) * 4);
 	}
 }
 
 function setVdpRpuC0Constants(frame: VdpRpuFrameOutput, drawIndex: number, normalMode: number): void {
 	const gl = vdpRpuGl;
-	const commands = frame.commands;
-	const bindingEnd = commands.drawFirstConstantBinding[drawIndex] + commands.drawConstantBindingCount[drawIndex];
-	for (let bindingIndex = commands.drawFirstConstantBinding[drawIndex]; bindingIndex < bindingEnd; bindingIndex += 1) {
-		if (commands.constantBindingSlot[bindingIndex] === 0) {
-			const constantByteAddr = commands.constantVramAddr[bindingIndex];
-			for (let index = 0; index < 16; index += 1) {
-				vdpRpuC0Words[index] = readRpuDescU32(frame.vdpVram, constantByteAddr + index * 4);
-			}
-			gl.uniformMatrix4fv(vdpRpuC0Location, false, vdpRpuC0Floats);
-			if (normalMode !== 0) {
-				for (let index = 0; index < 9; index += 1) {
-					vdpRpuNmWords[index] = readRpuDescU32(frame.vdpVram, constantByteAddr + (16 + index) * 4);
-				}
-				gl.uniformMatrix3fv(vdpRpuNmLocation, false, vdpRpuNmFloats);
-			}
-			return;
+	if (findVdpRpuConstantBindingAddress(frame.commands, drawIndex, 0, vdpRpuConstantAddressScratch)) {
+		const constantByteAddr = vdpRpuConstantAddressScratch[0];
+		const vram = frame.vdpVram;
+		readVdpRpuFloatWords(vram, constantByteAddr, vdpRpuC0Words, 0, 16);
+		gl.uniformMatrix4fv(vdpRpuC0Location, false, vdpRpuC0Floats);
+		if (normalMode !== 0) {
+			readVdpRpuFloatWords(vram, constantByteAddr, vdpRpuNmWords, 16, 9);
+			gl.uniformMatrix3fv(vdpRpuNmLocation, false, vdpRpuNmFloats);
 		}
+		return;
 	}
 	gl.uniformMatrix4fv(vdpRpuC0Location, false, vdpRpuIdentityC0);
 	if (normalMode !== 0) {
@@ -611,17 +607,11 @@ function setVdpRpuC1Constants(frame: VdpRpuFrameOutput, drawIndex: number, shade
 		return;
 	}
 	gl.uniform1i(vdpRpuLightingModeLocation, 1);
-	const commands = frame.commands;
-	const bindingEnd = commands.drawFirstConstantBinding[drawIndex] + commands.drawConstantBindingCount[drawIndex];
-	for (let bindingIndex = commands.drawFirstConstantBinding[drawIndex]; bindingIndex < bindingEnd; bindingIndex += 1) {
-		if (commands.constantBindingSlot[bindingIndex] === constantSlot) {
-			const constantByteAddr = commands.constantVramAddr[bindingIndex];
-			for (let index = 0; index < 68; index += 1) {
-				vdpRpuC1Words[index] = readRpuDescU32(frame.vdpVram, constantByteAddr + index * 4);
-			}
-			gl.uniform4fv(vdpRpuC1Location, vdpRpuC1Floats);
-			return;
-		}
+	if (findVdpRpuConstantBindingAddress(frame.commands, drawIndex, constantSlot, vdpRpuConstantAddressScratch)) {
+		const constantByteAddr = vdpRpuConstantAddressScratch[0];
+		readVdpRpuFloatWords(frame.vdpVram, constantByteAddr, vdpRpuC1Words, 0, 68);
+		gl.uniform4fv(vdpRpuC1Location, vdpRpuC1Floats);
+		return;
 	}
 	gl.uniform4fv(vdpRpuC1Location, vdpRpuDefaultC1Floats);
 }
@@ -635,17 +625,11 @@ function setVdpRpuJointConstants(frame: VdpRpuFrameOutput, drawIndex: number, sh
 		return;
 	}
 	gl.uniform1i(vdpRpuSkinningModeLocation, 1);
-	const commands = frame.commands;
-	const bindingEnd = commands.drawFirstConstantBinding[drawIndex] + commands.drawConstantBindingCount[drawIndex];
-	for (let bindingIndex = commands.drawFirstConstantBinding[drawIndex]; bindingIndex < bindingEnd; bindingIndex += 1) {
-		if (commands.constantBindingSlot[bindingIndex] === constantSlot) {
-			const constantByteAddr = commands.constantVramAddr[bindingIndex];
-			for (let index = 0; index < 384; index += 1) {
-				vdpRpuJointWords[index] = readRpuDescU32(frame.vdpVram, constantByteAddr + index * 4);
-			}
-			gl.uniformMatrix4fv(vdpRpuJointLocation, false, vdpRpuJointFloats);
-			return;
-		}
+	if (findVdpRpuConstantBindingAddress(frame.commands, drawIndex, constantSlot, vdpRpuConstantAddressScratch)) {
+		const constantByteAddr = vdpRpuConstantAddressScratch[0];
+		readVdpRpuFloatWords(frame.vdpVram, constantByteAddr, vdpRpuJointWords, 0, 384);
+		gl.uniformMatrix4fv(vdpRpuJointLocation, false, vdpRpuJointFloats);
+		return;
 	}
 	gl.uniformMatrix4fv(vdpRpuJointLocation, false, vdpRpuDefaultJointFloats);
 }
@@ -682,7 +666,7 @@ function bindVdpRpuTextureBindings(runtime: VdpRpuRuntime, frame: VdpRpuFrameOut
 				bindVdpRpuNeutralTexture(backend);
 				gl.uniform1i(vdpRpuT0Location, 0);
 			} else {
-				const surface = ensureVdpRpuSurfaceStorage(backend, frame, surfaceDescAddr);
+				const surface = loadVdpRpuSurfaceStorage(backend, frame, surfaceDescAddr);
 				uploadVdpRpuTextureSurface(backend, frame, surface);
 				backend.setActiveTexture(0);
 				gl.bindTexture(gl.TEXTURE_2D, surface.texture);
@@ -693,7 +677,7 @@ function bindVdpRpuTextureBindings(runtime: VdpRpuRuntime, frame: VdpRpuFrameOut
 			foundT1 = true;
 			const surfaceDescAddr = commands.textureSurfaceDescAddr[bindingIndex];
 			if (surfaceDescAddr !== 0) {
-				const surface = ensureVdpRpuSurfaceStorage(backend, frame, surfaceDescAddr);
+				const surface = loadVdpRpuSurfaceStorage(backend, frame, surfaceDescAddr);
 				uploadVdpRpuTextureSurface(backend, frame, surface);
 				backend.setActiveTexture(1);
 				gl.bindTexture(gl.TEXTURE_2D, surface.texture);
@@ -763,10 +747,7 @@ export function initVdpRpuPipeline(backend: WebGLBackend): void {
 	vdpRpuNeutralTexture = gl.createTexture()!;
 	gl.bindTexture(gl.TEXTURE_2D, vdpRpuNeutralTexture);
 	gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, 1, 1, 0, gl.RGBA, gl.UNSIGNED_BYTE, vdpRpuNeutralTexturePixel);
-	gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.NEAREST);
-	gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.NEAREST);
-	gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
-	gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
+	configureNearestClampTexture2D();
 	gl.bindTexture(gl.TEXTURE_2D, null);
 	backend.invalidateTextureBindingCache();
 }

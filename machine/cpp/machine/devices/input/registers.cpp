@@ -6,10 +6,6 @@
 
 namespace bmsx {
 
-void InputControllerRegisterFile::writeThunk(void* context, uint32_t addr, Value value) {
-	static_cast<InputControllerRegisterFile*>(context)->write(addr, value);
-}
-
 void InputControllerRegisterFile::reset() {
 	state = InputControllerRegisterState{};
 }

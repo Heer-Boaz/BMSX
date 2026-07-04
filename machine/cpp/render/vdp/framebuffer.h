@@ -2,7 +2,6 @@
 
 #include "common/primitives.h"
 #include "render/backend/backend.h"
-#include "machine/devices/vdp/device_output.h"
 
 namespace bmsx {
 
@@ -10,11 +9,10 @@ class GameView;
 class TextureManager;
 class VDP;
 
-class VdpFrameBufferTextures final : public VdpFrameBufferPresentationSink {
+class VdpFrameBufferTextures final {
 public:
 	VdpFrameBufferTextures(TextureManager& textureManager, GameView& view);
 
-	void consumeVdpFrameBufferPresentation(const VdpFrameBufferPresentation& presentation) override;
 	void initialize(VDP& vdp);
 	TextureHandle displayTexture() const { return m_displayFrameBufferTexture; }
 	TextureHandle renderTexture() const { return m_renderFrameBufferTexture; }
@@ -22,8 +20,6 @@ public:
 	u32 height() const { return m_frameBufferTextureHeight; }
 
 private:
-	void presentVdpFrameBufferPages(u32 presentationCount);
-
 	TextureManager& m_textureManager;
 	GameView& m_view;
 	TextureHandle m_renderFrameBufferTexture = nullptr;

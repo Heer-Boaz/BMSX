@@ -33,24 +33,20 @@ std::string_view decodeApuFilterType(u32 kind) {
 	}
 }
 
-std::optional<ApuOutputFilter> resolveApuOutputFilter(const ApuParameterRegisterWords& registerWords) {
+void applyApuOutputFilter(ApuOutputPlayback& playback, const ApuParameterRegisterWords& registerWords) {
 	const u32 filterKind = registerWords[APU_PARAMETER_FILTER_KIND_INDEX];
-	if (filterKind == APU_FILTER_NONE) {
-		return std::nullopt;
-	}
-	ApuOutputFilter filter;
-	filter.type = decodeApuFilterType(filterKind);
-	filter.frequency = static_cast<f32>(toSignedWord(registerWords[APU_PARAMETER_FILTER_FREQ_HZ_INDEX]));
-	filter.q = static_cast<f32>(toSignedWord(registerWords[APU_PARAMETER_FILTER_Q_MILLI_INDEX])) / 1000.0f;
-	filter.gain = static_cast<f32>(toSignedWord(registerWords[APU_PARAMETER_FILTER_GAIN_MILLIDB_INDEX])) / 1000.0f;
-	return filter;
+	playback.filterEnabled = filterKind != APU_FILTER_NONE;
+	playback.filterType = decodeApuFilterType(filterKind);
+	playback.filterFrequency = static_cast<f32>(toSignedWord(registerWords[APU_PARAMETER_FILTER_FREQ_HZ_INDEX]));
+	playback.filterQ = static_cast<f32>(toSignedWord(registerWords[APU_PARAMETER_FILTER_Q_MILLI_INDEX])) / 1000.0f;
+	playback.filterGain = static_cast<f32>(toSignedWord(registerWords[APU_PARAMETER_FILTER_GAIN_MILLIDB_INDEX])) / 1000.0f;
 }
 
 ApuOutputPlayback resolveApuOutputPlayback(const ApuParameterRegisterWords& registerWords) {
 	ApuOutputPlayback playback;
 	playback.playbackRate = resolveApuPlaybackRate(registerWords[APU_PARAMETER_RATE_STEP_Q16_INDEX]);
 	playback.gainLinear = resolveApuGainLinear(registerWords[APU_PARAMETER_GAIN_Q12_INDEX]);
-	playback.filter = resolveApuOutputFilter(registerWords);
+	applyApuOutputFilter(playback, registerWords);
 	return playback;
 }
 

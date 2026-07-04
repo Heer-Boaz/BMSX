@@ -5,10 +5,10 @@ namespace bmsx {
 
 IrqController::IrqController(Memory& memory)
 	: m_memory(memory) {
-	m_memory.mapIoRead(IO_IRQ_FLAGS, this, &IrqController::onFlagsReadThunk);
-	m_memory.mapIoWrite(IO_IRQ_ACK, this, &IrqController::onAckWriteThunk);
-	m_memory.mapIoRead(IO_IRQ_MASK, this, &IrqController::onMaskReadThunk);
-	m_memory.mapIoWrite(IO_IRQ_MASK, this, &IrqController::onMaskWriteThunk);
+	m_memory.mapIoRead<&IrqController::onFlagsRead>(IO_IRQ_FLAGS, *this);
+	m_memory.mapIoWrite<&IrqController::onAckWrite>(IO_IRQ_ACK, *this);
+	m_memory.mapIoRead<&IrqController::onMaskRead>(IO_IRQ_MASK, *this);
+	m_memory.mapIoWrite<&IrqController::onMaskWrite>(IO_IRQ_MASK, *this);
 }
 
 void IrqController::reset() {
@@ -41,36 +41,22 @@ void IrqController::acknowledge(uint32_t mask) {
 	m_memory.writeIoValue(IO_IRQ_ACK, valueNumber(0.0));
 }
 
-Value IrqController::onFlagsReadThunk(void* context, uint32_t) {
-	const auto* controller = static_cast<IrqController*>(context);
-	return controller->onFlagsRead();
-}
-
-void IrqController::onAckWriteThunk(void* context, uint32_t addr, Value value) {
-	auto* controller = static_cast<IrqController*>(context);
-	controller->onAckWrite(addr, value);
-}
-
-Value IrqController::onMaskReadThunk(void* context, uint32_t) {
-	const auto* controller = static_cast<IrqController*>(context);
-	return controller->onMaskRead();
-}
-
-void IrqController::onMaskWriteThunk(void* context, uint32_t addr, Value value) {
-	auto* controller = static_cast<IrqController*>(context);
-	controller->onMaskWrite(addr, value);
-}
-
-Value IrqController::onFlagsRead() const {
+Value IrqController::onFlagsRead([[maybe_unused]] uint32_t addr) const {
 	return valueNumber(static_cast<double>(m_pendingFlags));
 }
 
 void IrqController::onAckWrite([[maybe_unused]] uint32_t addr, Value value) {
 	const uint32_t mask = toU32(value);
-	acknowledge(mask);
+	if (mask != 0u) {
+		const uint32_t next = m_pendingFlags & ~mask;
+		if (next != m_pendingFlags) {
+			m_pendingFlags = next;
+		}
+	}
+	m_memory.writeIoValue(IO_IRQ_ACK, valueNumber(0.0));
 }
 
-Value IrqController::onMaskRead() const {
+Value IrqController::onMaskRead([[maybe_unused]] uint32_t addr) const {
 	return valueNumber(static_cast<double>(m_mask));
 }
 

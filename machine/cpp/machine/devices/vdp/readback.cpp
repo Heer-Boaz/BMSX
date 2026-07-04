@@ -1,8 +1,17 @@
 #include "machine/devices/vdp/readback.h"
 
+#include "machine/bus/io.h"
+#include "machine/cpu/cpu.h"
+#include "machine/devices/device_status.h"
+#include "machine/memory/memory.h"
 #include <algorithm>
 
 namespace bmsx {
+VdpReadbackUnit::VdpReadbackUnit(Memory& memory, DeviceStatusLatch& fault)
+	: m_memory(memory)
+	, m_fault(fault) {
+}
+
 void VdpReadbackUnit::invalidateFrameBuffer() {
 	m_frameBufferCache.width = 0u;
 }
@@ -23,36 +32,22 @@ u32 VdpReadbackUnit::status() const {
 	return value;
 }
 
-bool VdpReadbackUnit::resolveSurface(u32 requestedSurfaceId, u32 mode) {
-	faultCode = VDP_FAULT_NONE;
-	faultDetail = 0u;
-	advanceReadPosition = false;
-	word = 0u;
+u32 VdpReadbackUnit::read(const VdpSurfaceBacking& surface, u32 requestedSurfaceId, u32 mode, u32 x, u32 y) {
 	if (mode != VDP_RD_MODE_RGBA8888) {
-		faultCode = VDP_FAULT_RD_UNSUPPORTED_MODE;
-		faultDetail = mode;
-		return false;
+		m_fault.raise(VDP_FAULT_RD_UNSUPPORTED_MODE, mode);
+		return 0u;
 	}
 	if (requestedSurfaceId != VDP_RD_SURFACE_FRAMEBUFFER) {
-		faultCode = VDP_FAULT_RD_SURFACE;
-		faultDetail = requestedSurfaceId;
-		return false;
+		m_fault.raise(VDP_FAULT_RD_SURFACE, requestedSurfaceId);
+		return 0u;
 	}
-	return true;
-}
-
-bool VdpReadbackUnit::readPixel(const VdpSurfaceBacking& surface, u32 x, u32 y) {
 	if (x >= surface.surfaceWidth || y >= surface.surfaceHeight) {
-		faultCode = VDP_FAULT_RD_OOB;
-		faultDetail = x | (y << 16u);
-		word = 0u;
-		return false;
+		m_fault.raise(VDP_FAULT_RD_OOB, x | (y << 16u));
+		return 0u;
 	}
 	if (m_readBudgetBytes < 4u) {
 		m_readOverflow = true;
-		word = 0u;
-		advanceReadPosition = false;
-		return true;
+		return 0u;
 	}
 	const ReadCache& cache = getReadCache(surface, x, y);
 	const u32 localX = x - cache.x0;
@@ -62,15 +57,15 @@ bool VdpReadbackUnit::readPixel(const VdpSurfaceBacking& surface, u32 x, u32 y) 
 	const u32 b = cache.data[byteIndex + 2u];
 	const u32 a = cache.data[byteIndex + 3u];
 	m_readBudgetBytes -= 4u;
-	nextX = x + 1u;
-	nextY = y;
+	u32 nextX = x + 1u;
+	u32 nextY = y;
 	if (nextX >= surface.surfaceWidth) {
 		nextX = 0u;
 		nextY = y + 1u;
 	}
-	advanceReadPosition = true;
-	word = r | (g << 8u) | (b << 16u) | (a << 24u);
-	return true;
+	m_memory.writeValue(IO_VDP_RD_X, valueNumber(static_cast<double>(nextX)));
+	m_memory.writeValue(IO_VDP_RD_Y, valueNumber(static_cast<double>(nextY)));
+	return r | (g << 8u) | (b << 16u) | (a << 24u);
 }
 
 VdpReadbackState VdpReadbackUnit::captureState() const {

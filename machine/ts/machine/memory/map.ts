@@ -8,8 +8,6 @@ export const CART_ROM_SIZE = 0x05000000; // 80 MB
 export const CART_ROM_MAGIC_OFFSET = 0x00000000;
 export const CART_ROM_MAGIC_ADDR = CART_ROM_BASE + CART_ROM_MAGIC_OFFSET;
 
-export const OVERLAY_ROM_BASE = 0x06000000;
-export const OVERLAY_ROM_SIZE = 0x02000000; // 32 MB
 
 export const RAM_BASE = 0x08000000;
 export const MAX_RAM_SIZE = 0x08000000; // 128 MB address window

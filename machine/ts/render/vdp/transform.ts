@@ -1,5 +1,5 @@
 import { decodeSignedQ16_16 } from '../../common/fixed_point';
-import { VDP_XF_MATRIX_WORDS } from '../../machine/devices/vdp/xf';
+import { VDP_XF_MATRIX_COUNT, VDP_XF_MATRIX_WORDS } from '../../machine/devices/vdp/xf';
 import { extractFrustumPlanesInto, M4 } from '../3d/math';
 
 export type VdpTransformSnapshot = {
@@ -23,8 +23,8 @@ export function createVdpTransformSnapshot(): VdpTransformSnapshot {
 }
 
 export function resolveVdpTransformSnapshot(target: VdpTransformSnapshot, matrixWords: ArrayLike<number>, viewMatrixIndex: number, projectionMatrixIndex: number): void {
-	const viewBase = viewMatrixIndex * VDP_XF_MATRIX_WORDS;
-	const projectionBase = projectionMatrixIndex * VDP_XF_MATRIX_WORDS;
+	const viewBase = (viewMatrixIndex & (VDP_XF_MATRIX_COUNT - 1)) * VDP_XF_MATRIX_WORDS;
+	const projectionBase = (projectionMatrixIndex & (VDP_XF_MATRIX_COUNT - 1)) * VDP_XF_MATRIX_WORDS;
 	for (let index = 0; index < 16; index += 1) {
 		target.view[index] = decodeSignedQ16_16(matrixWords[viewBase + index] >>> 0);
 		target.proj[index] = decodeSignedQ16_16(matrixWords[projectionBase + index] >>> 0);

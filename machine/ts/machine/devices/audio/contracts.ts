@@ -11,6 +11,7 @@ export const APU_CMD_STOP_SLOT = 2;
 export const APU_CMD_SET_SLOT_GAIN = 3;
 
 export const APU_SLOT_COUNT = 16;
+export const APU_SLOT_INDEX_MASK = APU_SLOT_COUNT - 1;
 export const APU_SLOT_PHASE_IDLE = 0;
 export const APU_SLOT_PHASE_PLAYING = 1;
 export const APU_SLOT_PHASE_FADING = 2;
@@ -55,8 +56,6 @@ export const APU_STATUS_CMD_FIFO_FULL = 1 << 6;
 
 export const APU_FAULT_NONE = 0;
 export const APU_FAULT_BAD_CMD = 0x0001;
-export const APU_FAULT_BAD_SLOT = 0x0002;
-export const APU_FAULT_CMD_FIFO_FULL = 0x0003;
 export const APU_FAULT_SOURCE_BYTES = 0x0101;
 export const APU_FAULT_SOURCE_RANGE = 0x0102;
 export const APU_FAULT_SOURCE_SAMPLE_RATE = 0x0103;
@@ -65,10 +64,6 @@ export const APU_FAULT_SOURCE_FRAME_COUNT = 0x0105;
 export const APU_FAULT_SOURCE_DATA_RANGE = 0x0106;
 export const APU_FAULT_SOURCE_BIT_DEPTH = 0x0107;
 export const APU_FAULT_UNSUPPORTED_FORMAT = 0x0201;
-export const APU_FAULT_OUTPUT_METADATA = 0x0202;
-export const APU_FAULT_OUTPUT_DATA_RANGE = 0x0203;
-export const APU_FAULT_OUTPUT_PLAYBACK_RATE = 0x0204;
-export const APU_FAULT_OUTPUT_BLOCK = 0x0205;
 
 export const APU_FILTER_NONE = 0;
 export const APU_FILTER_LOWPASS = 1;

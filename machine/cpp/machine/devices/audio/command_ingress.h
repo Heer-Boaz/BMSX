@@ -29,7 +29,6 @@ private:
 	ApuServiceClock& m_serviceClock;
 	DeviceScheduler& m_scheduler;
 
-	bool enqueueCommand(u32 command);
 };
 
 } // namespace bmsx

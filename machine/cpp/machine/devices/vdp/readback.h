@@ -7,6 +7,9 @@
 
 namespace bmsx {
 
+class DeviceStatusLatch;
+class Memory;
+
 struct VdpReadbackState {
 	u32 readBudgetBytes = 0u;
 	bool readOverflow = false;
@@ -14,18 +17,12 @@ struct VdpReadbackState {
 
 class VdpReadbackUnit {
 public:
-	u32 faultCode = VDP_FAULT_NONE;
-	u32 faultDetail = 0u;
-	u32 word = 0u;
-	u32 nextX = 0u;
-	u32 nextY = 0u;
-	bool advanceReadPosition = false;
+	VdpReadbackUnit(Memory& memory, DeviceStatusLatch& fault);
 
 	void invalidateFrameBuffer();
 	void beginFrame();
 	u32 status() const;
-	bool resolveSurface(u32 requestedSurfaceId, u32 mode);
-	bool readPixel(const VdpSurfaceBacking& surface, u32 x, u32 y);
+	u32 read(const VdpSurfaceBacking& surface, u32 requestedSurfaceId, u32 mode, u32 x, u32 y);
 	VdpReadbackState captureState() const;
 	void restoreState(const VdpReadbackState& state);
 
@@ -44,6 +41,8 @@ private:
 	void prefetchReadCache(ReadCache& cache, const VdpSurfaceBacking& surface, u32 x, u32 y);
 	void copySurfacePixels(ReadCache& cache, const VdpSurfaceBacking& surface, u32 x, u32 y, u32 width, u32 height);
 
+	Memory& m_memory;
+	DeviceStatusLatch& m_fault;
 	ReadCache m_frameBufferCache;
 	u32 m_readBudgetBytes = ReadbackBudgetBytes;
 	bool m_readOverflow = false;

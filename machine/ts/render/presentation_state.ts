@@ -86,7 +86,6 @@ export class RenderPresentationState {
 
 	private presentFrame(runtime: Runtime, hostDeltaMs: number, mode: RenderPresentationMode, commitFrame = mode === 'completed'): void {
 		machineManager.deltatime = hostDeltaMs;
-		runtime.machine.vdp.drainFrameBufferPresentation(machineManager.view.vdpFrameBufferTextures);
 		commitVdpViewSnapshot(machineManager.view, runtime.machine.vdp.readDeviceOutput());
 		machineManager.view.configurePresentation(mode, commitFrame);
 		this.recordPresentation(mode, commitFrame);
