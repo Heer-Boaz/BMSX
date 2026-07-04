@@ -497,9 +497,9 @@ test('BLua .data storage is mutable through typed pointers and shifts .bss after
 	const result = runCold(`
 data value: word = 9
 bss scratch: word
-scratch[0] = value[0] + 5
-value[0] = 21
-return value[0], scratch[0], value, scratch
+*scratch = *value + 5
+*value = 21
+return *value, *scratch, value, scratch
 `);
 	assert.deepEqual(result.values, [21, 14, PROGRAM_STATIC_RAM_BASE, PROGRAM_STATIC_RAM_BASE + 4]);
 	assert.equal(result.memory.readMappedU32LE(PROGRAM_STATIC_RAM_BASE), 21);

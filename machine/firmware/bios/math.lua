@@ -300,8 +300,8 @@ local sign<const> = function(value)
 end
 
 local next_random_unit<const> = function()
-	rng_state[0] = ((rng_state[0] * 1664525) + 1013904223) % u32_mod
-	return rng_state[0] / u32_mod
+	*rng_state = ((*rng_state * 1664525) + 1013904223) % u32_mod
+	return *rng_state / u32_mod
 end
 
 local random_number<const> = function(lower, upper)
@@ -326,10 +326,10 @@ end
 
 local randomseed<const> = function(seed)
 	if seed == nil then
-		rng_state[0] = trunc(os.clock() * 1000) % u32_mod
+		*rng_state = trunc(os.clock() * 1000) % u32_mod
 		return
 	end
-	rng_state[0] = trunc(seed) % u32_mod
+	*rng_state = trunc(seed) % u32_mod
 end
 
 return {

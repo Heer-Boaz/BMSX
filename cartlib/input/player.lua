@@ -90,7 +90,7 @@ input.default_pointer = {
 }
 
 local players<const> = {}
-local frame_serial = 0
+bss frame_serial: word
 local active_player
 
 local empty_state<const> = {
@@ -381,12 +381,12 @@ local apply_digital_edge<const> = function(player, state, pressed_now)
 		state.justreleased = false
 		state.press_id = player.next_press_id
 		player.next_press_id = player.next_press_id + 1
-		state.press_start_frame = frame_serial
-		state.last_press_frame = frame_serial
+		state.press_start_frame = *frame_serial
+		state.last_press_frame = *frame_serial
 	else
 		state.justpressed = false
 		state.justreleased = true
-		state.last_release_frame = frame_serial
+		state.last_release_frame = *frame_serial
 	end
 	state.consumed = false
 	state.pressed = pressed_now
@@ -430,20 +430,20 @@ local sample_value_button<const> = function(player, state)
 	if justpressed then
 		state.press_id = player.next_press_id
 		player.next_press_id = player.next_press_id + 1
-		state.press_start_frame = frame_serial
-		state.last_press_frame = frame_serial
+		state.press_start_frame = *frame_serial
+		state.last_press_frame = *frame_serial
 		state.consumed = false
 	elseif not pressed then
 		state.consumed = false
 	end
 	if justreleased then
-		state.last_release_frame = frame_serial
+		state.last_release_frame = *frame_serial
 	end
 	state.pressed = pressed
 end
 
 local sample_player<const> = function(player)
-	if player.sample_frame == frame_serial then
+	if player.sample_frame == *frame_serial then
 		return
 	end
 	-- 1. Clear last frame's digital edges (only the buttons that changed).
@@ -482,7 +482,7 @@ local sample_player<const> = function(player)
 			sample_value_button(player, vlist[v])
 		end
 	end
-	player.sample_frame = frame_serial
+	player.sample_frame = *frame_serial
 end
 
 local source_mapping<const> = function(ctx, source_index)
@@ -503,11 +503,11 @@ end
 -- frames-since-release delta (-1 while pressed / on the release edge), and
 -- was*/allwaspressed become `delta < window` compares on the cached minimums.
 local merge_binding<const> = function(agg, state)
-	local press_delta = frame_serial - state.last_press_frame
+	local press_delta = *frame_serial - state.last_press_frame
 	if state.pressed then
 		press_delta = -1
 	end
-	local release_delta = frame_serial - state.last_release_frame
+	local release_delta = *frame_serial - state.last_release_frame
 	if state.justreleased then
 		release_delta = -1
 	end
@@ -529,7 +529,7 @@ local merge_binding<const> = function(agg, state)
 		agg.min_release_delta = release_delta
 	end
 	if state.pressed then
-		local presstime<const> = frame_serial - state.press_start_frame
+		local presstime<const> = *frame_serial - state.press_start_frame
 		if not agg.has_presstime or presstime < agg.presstime then
 			agg.presstime = presstime
 			agg.has_presstime = true
@@ -654,7 +654,7 @@ local evaluate_guard<const> = function(player, action, state)
 		return record.last_result
 	end
 	local accepted = true
-	if record and (frame_serial - record.last_accepted_frame) <= guard_window_frames then
+	if record and (*frame_serial - record.last_accepted_frame) <= guard_window_frames then
 		accepted = false
 	end
 	if not record then
@@ -662,9 +662,9 @@ local evaluate_guard<const> = function(player, action, state)
 		player.guard_records[action] = record
 	end
 	if accepted then
-		record.last_accepted_frame = frame_serial
+		record.last_accepted_frame = *frame_serial
 	elseif not record.last_accepted_frame then
-		record.last_accepted_frame = frame_serial
+		record.last_accepted_frame = *frame_serial
 	end
 	record.last_press_id = state.press_id
 	record.last_result = accepted
@@ -677,15 +677,15 @@ local evaluate_repeat<const> = function(player, action, state)
 		repeat_record = { active = false, count = 0, press_start_frame = -1, last_frame = -1, last_result = false, last_repeat_frame = -1 }
 		player.repeat_records[action] = repeat_record
 	end
-	if repeat_record.last_frame == frame_serial then
+	if repeat_record.last_frame == *frame_serial then
 		return repeat_record.last_result, repeat_record.count
 	end
 	local result = false
 	if state.justpressed then
 		repeat_record.active = true
 		repeat_record.count = 0
-		repeat_record.press_start_frame = frame_serial
-		repeat_record.last_repeat_frame = frame_serial
+		repeat_record.press_start_frame = *frame_serial
+		repeat_record.last_repeat_frame = *frame_serial
 	elseif not state.pressed then
 		repeat_record.active = false
 		repeat_record.count = 0
@@ -695,23 +695,23 @@ local evaluate_repeat<const> = function(player, action, state)
 		if not repeat_record.active then
 			repeat_record.active = true
 			repeat_record.count = 0
-			repeat_record.press_start_frame = frame_serial
-			repeat_record.last_repeat_frame = frame_serial
+			repeat_record.press_start_frame = *frame_serial
+			repeat_record.last_repeat_frame = *frame_serial
 		end
 		local next_frame<const> = repeat_record.count == 0 and (repeat_record.press_start_frame + initial_repeat_delay_frames) or (repeat_record.last_repeat_frame + repeat_interval_frames)
-		if frame_serial >= next_frame then
+		if *frame_serial >= next_frame then
 			repeat_record.count = repeat_record.count + 1
 			repeat_record.last_repeat_frame = next_frame
 			result = true
 		end
 	end
-	repeat_record.last_frame = frame_serial
+	repeat_record.last_frame = *frame_serial
 	repeat_record.last_result = result
 	return result, repeat_record.count
 end
 
 function input.update()
-	frame_serial = frame_serial + 1
+	*frame_serial = *frame_serial + 1
 	for index = 1, player_count do
 		local player<const> = players[index]
 		if player then
@@ -773,12 +773,12 @@ local refresh_action_state<const> = function(player, state)
 			fold_source(state, agg)
 		end
 	end
-	state.timestamp = frame_serial
+	state.timestamp = *frame_serial
 	state.guardedjustpressed = evaluate_guard(player, action, state)
 	local repeatpressed<const>, repeatcount<const> = evaluate_repeat(player, action, state)
 	state.repeatpressed = repeatpressed
 	state.repeatcount = repeatcount
-	state.eval_frame = frame_serial
+	state.eval_frame = *frame_serial
 	state.eval_gen = player.eval_generation
 end
 
@@ -786,7 +786,7 @@ local evaluate_action_state<const> = function(player_index, action, window)
 	local player<const> = ensure_player(player_index)
 	sample_player(player)
 	local state<const> = ensure_action_state_record(player, action)
-	if state.eval_frame ~= frame_serial or state.eval_gen ~= player.eval_generation then
+	if state.eval_frame ~= *frame_serial or state.eval_gen ~= player.eval_generation then
 		refresh_action_state(player, state)
 	end
 	local frame_window<const> = window or buffer_frame_retention

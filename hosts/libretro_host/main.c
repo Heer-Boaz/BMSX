@@ -186,9 +186,6 @@ static CoreOptionVar g_core_option_vars[] = {
 	{"bmsx_host_show_usage_gizmo", g_opt_host_show_usage_gizmo, sizeof(g_opt_host_show_usage_gizmo)},
 };
 
-static uint32_t g_frame_number = 0;
-
-
 #ifdef BMSX_LIBRETRO_HOST_SDL
 static bool g_use_sdl = false;
 static bool g_sdl_use_gl = false;
@@ -227,6 +224,7 @@ static bool g_has_frame_time_cb = false;
 static unsigned g_last_video_w = 0;
 static unsigned g_last_video_h = 0;
 static bool g_drop_video = false;
+static uint64_t g_presented_cart_frame = 0;
 static bool g_core_presented_frame = false;
 static bool g_input_timeline_frame_pending = true;
 
@@ -1371,16 +1369,19 @@ static bool hw_present_frame(unsigned src_w, unsigned src_h) {
 	if (present_w == 0 || present_h == 0) {
 		return false;
 	}
-	if (core_cart_program_active() && input_timeline_should_capture_frame(g_frame_number)) {
-		fprintf(stderr, "[SCREENSHOT] Capturing frame %u (%ux%u)\n", g_frame_number, present_w, present_h);
-		uint8_t* pixels = malloc((size_t)present_w * (size_t)present_h * 4u);
-		if (pixels) {
-			glBindFramebuffer_ptr(GL_FRAMEBUFFER, g_hw_fbo);
-			glReadPixels_ptr(0, 0, (GLsizei)present_w, (GLsizei)present_h, GL_RGBA, GL_UNSIGNED_BYTE, pixels);
-			char filename[128];
-			snprintf(filename, sizeof(filename), "frame_%05u.png", g_frame_number);
-			screenshot_save_png(filename, present_w, present_h, pixels);
-			free(pixels);
+	if (core_cart_program_active()) {
+		uint64_t capture_frame;
+		if (input_timeline_consume_presented_capture(g_presented_cart_frame, &capture_frame)) {
+			fprintf(stderr, "[SCREENSHOT] Capturing frame %llu (%ux%u)\n", (unsigned long long)capture_frame, present_w, present_h);
+			uint8_t* pixels = malloc((size_t)present_w * (size_t)present_h * 4u);
+			if (pixels) {
+				glBindFramebuffer_ptr(GL_FRAMEBUFFER, g_hw_fbo);
+				glReadPixels_ptr(0, 0, (GLsizei)present_w, (GLsizei)present_h, GL_RGBA, GL_UNSIGNED_BYTE, pixels);
+				char filename[128];
+				snprintf(filename, sizeof(filename), "frame_%05llu.png", (unsigned long long)capture_frame);
+				screenshot_save_png(filename, present_w, present_h, pixels);
+				free(pixels);
+			}
 		}
 	}
 	int dst_x = 0, dst_y = 0, dst_w = 0, dst_h = 0;
@@ -1402,7 +1403,7 @@ static bool hw_present_frame(unsigned src_w, unsigned src_h) {
 	msg_render_hw();
 
 	if (core_cart_program_active()) {
-		g_frame_number++;
+		g_presented_cart_frame++;
 	}
 	return true;
 }
@@ -1439,26 +1440,27 @@ static void step_software_frame_capture(void) {
 	if (!core_cart_program_active()) {
 		return;
 	}
-	if (!input_timeline_should_capture_frame(g_frame_number)) {
-		g_frame_number++;
+	uint64_t capture_frame;
+	if (!input_timeline_consume_presented_capture(g_presented_cart_frame, &capture_frame)) {
+		g_presented_cart_frame++;
 		return;
 	}
-	fprintf(stderr, "[SCREENSHOT] Capturing frame %u (%ux%u)\n", g_frame_number, g_fb.width, g_fb.height);
+	fprintf(stderr, "[SCREENSHOT] Capturing frame %llu (%ux%u)\n", (unsigned long long)capture_frame, g_fb.width, g_fb.height);
 	const size_t pixel_count = (size_t)g_fb.width * (size_t)g_fb.height;
 	uint8_t* pixels = (uint8_t*)malloc(pixel_count * 4u);
 	if (pixels) {
 		for (int y = 0; y < g_fb.height; ++y) {
-				const int src_y = g_fb.height - 1 - y;
-				const uint8_t* src_line = g_fb.map + (size_t)src_y * (size_t)g_fb.stride;
-				uint8_t* dst_line = pixels + (size_t)y * (size_t)g_fb.width * 4u;
-				copy_framebuffer_row_to_rgba(dst_line, src_line, g_fb.width);
-			}
-			char filename[128];
-		snprintf(filename, sizeof(filename), "frame_%05u.png", g_frame_number);
+			const int src_y = g_fb.height - 1 - y;
+			const uint8_t* src_line = g_fb.map + (size_t)src_y * (size_t)g_fb.stride;
+			uint8_t* dst_line = pixels + (size_t)y * (size_t)g_fb.width * 4u;
+			copy_framebuffer_row_to_rgba(dst_line, src_line, g_fb.width);
+		}
+		char filename[128];
+		snprintf(filename, sizeof(filename), "frame_%05llu.png", (unsigned long long)capture_frame);
 		screenshot_save_png(filename, (uint32_t)g_fb.width, (uint32_t)g_fb.height, pixels);
 		free(pixels);
 	}
-	g_frame_number++;
+	g_presented_cart_frame++;
 }
 
 static void egl_unload(void) {
@@ -2128,8 +2130,8 @@ static void video_cb(const void* data, unsigned width, unsigned height, size_t p
 				}
 			}
 		}
-		msg_render_software();
 		step_software_frame_capture();
+		msg_render_software();
 		g_core_presented_frame = true;
 #ifdef BMSX_LIBRETRO_HOST_SDL
 		if (g_use_sdl) {
@@ -2178,8 +2180,8 @@ static void video_cb(const void* data, unsigned width, unsigned height, size_t p
 				}
 			}
 		}
-		msg_render_software();
 		step_software_frame_capture();
+		msg_render_software();
 		g_core_presented_frame = true;
 #ifdef BMSX_LIBRETRO_HOST_SDL
 		if (g_use_sdl) {
@@ -3679,8 +3681,8 @@ static void load_core(LibretroCore* core, const char* path) {
 static void usage(const char* argv0) {
 	fprintf(stderr,
 			"Usage:\n"
-			"  %s --core ./libretro_bmsx.so --no-game [--backend software|gles2] [--video fb|sdl] [--system-dir PATH] [--save-dir PATH] [--rom-folder FOLDER] [--input-timeline FILE] [--auto-timeline] [--input-debug] [--no-audio] [--max-frames N] [--crt-postprocessing on|off]\n"
-			"  %s --core ./libretro_bmsx.so GAME.rom [--backend software|gles2] [--video fb|sdl] [--system-dir PATH] [--save-dir PATH] [--rom-folder FOLDER] [--input-timeline FILE] [--auto-timeline] [--input-debug] [--no-audio] [--max-frames N] [--crt-postprocessing on|off]\n",
+			"  %s --core ./libretro_bmsx.so --no-game [--backend software|gles2] [--video fb|sdl] [--system-dir PATH] [--save-dir PATH] [--rom-folder FOLDER] [--input-timeline FILE] [--auto-timeline] [--input-debug] [--no-audio] [--max-frames N] [--crt-postprocessing on|off] [--crt-noise on|off]\n"
+			"  %s --core ./libretro_bmsx.so GAME.rom [--backend software|gles2] [--video fb|sdl] [--system-dir PATH] [--save-dir PATH] [--rom-folder FOLDER] [--input-timeline FILE] [--auto-timeline] [--input-debug] [--no-audio] [--max-frames N] [--crt-postprocessing on|off] [--crt-noise on|off]\n",
 			argv0, argv0);
 	exit(2);
 }
@@ -3762,6 +3764,14 @@ int main(int argc, char** argv) {
 				die("Invalid --crt-postprocessing %s (expected on|off)", value);
 			}
 			snprintf(g_opt_crt_postprocessing, sizeof(g_opt_crt_postprocessing), "%s", value);
+			continue;
+		}
+		if (strcmp(argv[i], "--crt-noise") == 0) {
+			const char* value = required_arg(argc, argv, &i);
+			if (strcmp(value, "on") != 0 && strcmp(value, "off") != 0) {
+				die("Invalid --crt-noise %s (expected on|off)", value);
+			}
+			snprintf(g_opt_crt_noise, sizeof(g_opt_crt_noise), "%s", value);
 			continue;
 		}
 		if (strcmp(argv[i], "--rom-folder") == 0) {

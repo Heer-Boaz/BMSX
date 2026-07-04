@@ -295,7 +295,7 @@ function timeline.new(def)
 		self.ticks_per_frame = def.ticks_per_frame
 	else
 		local frame_ms<const>: *word = 0x08010358
-		self.ticks_per_frame = frame_ms[0]
+		self.ticks_per_frame = *frame_ms
 	end
 	self.playback_mode = def.playback_mode or 'once'
 	if continuous == nil and frame_source == nil and self.tracks ~= nil then

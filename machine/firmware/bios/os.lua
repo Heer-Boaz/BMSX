@@ -285,11 +285,11 @@ local format_civil_time<const> = function(format, year, month, day, hour, min, s
 end
 
 function clock_now()
-	return time_ms[0]
+	return *time_ms
 end
 
 os.clock = function()
-	return time_ms[0] / 1000
+	return *time_ms / 1000
 end
 
 os.time = function(date_table)
@@ -304,7 +304,7 @@ os.time = function(date_table)
 		set_date_table(date_table, timestamp)
 		return timestamp
 	end
-	return time_ms[0] // 1000
+	return *time_ms // 1000
 end
 
 os.date = function(format, timestamp)
@@ -312,7 +312,7 @@ os.date = function(format, timestamp)
 	if string.sub(bmsx_format, 1, 1) == '!' then
 		bmsx_format = string.sub(bmsx_format, 2)
 	end
-	local time_value<const> = timestamp == nil and time_ms[0] // 1000 or require_time_value(timestamp)
+	local time_value<const> = timestamp == nil and *time_ms // 1000 or require_time_value(timestamp)
 	if bmsx_format == '*t' then
 		return set_date_table({}, time_value)
 	end

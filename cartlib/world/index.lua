@@ -1,5 +1,5 @@
 local frame_ms<const>: *word = 0x08010358
-local frame_delta_ms<const> = frame_ms[0]
+local frame_delta_ms<const> = *frame_ms
 -- world.lua
 -- central world: owns all objects, spaces, and the ECS system manager
 --

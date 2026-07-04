@@ -894,10 +894,11 @@ void input_timeline_tick_frame(void) {
 	++g_frame_counter;
 }
 
-bool input_timeline_should_capture_frame(uint32_t frame_number) {
+bool input_timeline_consume_presented_capture(uint64_t presented_frame, uint64_t* out_frame) {
 	bool should_capture = false;
 	while (g_test_capture_event_next < g_test_capture_event_count &&
-			g_test_capture_events[g_test_capture_event_next].frame <= frame_number) {
+			g_test_capture_events[g_test_capture_event_next].frame < presented_frame) {
+		*out_frame = g_test_capture_events[g_test_capture_event_next].frame;
 		should_capture = true;
 		++g_test_capture_event_next;
 	}

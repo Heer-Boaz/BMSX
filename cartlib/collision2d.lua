@@ -77,7 +77,7 @@ struct geo_param_registers
 	stride2: word
 end
 
-local geo_batch_token = 0
+bss geo_batch_token: word
 local geo_fault_register<const>: *word = 0x08000190
 local irq_flags_register<const>: *word = irq_flags_addr
 local irq_ack_register<const>: *word = irq_ack_addr
@@ -93,15 +93,15 @@ local direct_query_contact<const> = {
 }
 
 local next_geo_batch_token<const> = function()
-	geo_batch_token = geo_batch_token + 1
-	if geo_batch_token >= 0x7fffffff then
-		geo_batch_token = 1
+	*geo_batch_token = *geo_batch_token + 1
+	if *geo_batch_token >= 0x7fffffff then
+		*geo_batch_token = 1
 	end
-	return geo_batch_token
+	return *geo_batch_token
 end
 
 local unpack_geo_fault<const> = function()
-	local fault<const> = geo_fault_register[0]
+	local fault<const> = *geo_fault_register
 	local fault_u<const> = fault < 0 and (fault + 0x100000000) or fault
 	local fault_code<const> = (fault_u >> 0x00000010) & 0x0000ffff
 	local fault_index<const> = fault_u & 0x0000ffff
@@ -114,10 +114,10 @@ local raise_geo_fault<const> = function(label)
 end
 
 local ack_geo_irq_if_pending<const> = function()
-	local flags<const> = irq_flags_register[0]
+	local flags<const> = *irq_flags_register
 	local geo_flags<const> = flags & geo_irq_mask
 	if geo_flags ~= 0 then
-		irq_ack_register[0] = geo_flags
+		*irq_ack_register = geo_flags
 	end
 end
 
@@ -154,10 +154,10 @@ end
 
 local wait_for_geo_completion<const> = function(label)
 	repeat
-		local flags<const> = irq_flags_register[0]
+		local flags<const> = *irq_flags_register
 		local geo_flags<const> = flags & geo_irq_mask
 		if geo_flags ~= 0 then
-			irq_ack_register[0] = geo_flags
+			*irq_ack_register = geo_flags
 			if (geo_flags & irq_geo_error) ~= 0 then
 				raise_geo_fault(label)
 			end
@@ -253,7 +253,7 @@ local submit_geo_overlap_candidate_batch<const> = function(instance_base, pair_b
 	param->stride0 = 0x00000014
 	param->stride1 = 0x0000000c
 	param->stride2 = instance_count
-	geo_cmd_register[0] = 0x00000022
+	*geo_cmd_register = 0x00000022
 	wait_for_geo_completion('overlap batch')
 end
 
@@ -271,8 +271,8 @@ local submit_geo_overlap_full_pass<const> = function(instance_base, result_base,
 	param->stride0 = 0x00000014
 	param->stride1 = 0
 	param->stride2 = 0
-	geo_cmd_register[0] = 0x00000022
-	local status<const> = geo_status_register[0]
+	*geo_cmd_register = 0x00000022
+	local status<const> = *geo_status_register
 	if (status & 0x00000008) ~= 0 or (status & 0x00000004) ~= 0 then
 		ack_geo_irq_if_pending()
 		raise_geo_fault('overlap full pass')

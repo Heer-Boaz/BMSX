@@ -80,14 +80,13 @@ local irq_img_done<const> = 0x0004
 local irq_img_error<const> = 0x0008
 local irq_vblank<const> = 0x0010
 local irq_mask_addr<const> = 0x0800010c
-local boot_vblank_count = 0
-
-local boot_start
-local system_atlas_ready
-local system_atlas_failed
+bss boot_vblank_count: word
+bss boot_start: f64
+bss system_atlas_ready: word
+bss system_atlas_failed: word
 local boot_scroll_state<const> = { top = 0 }
-local boot_screen_visible = false
-local boot_screen_presented
+bss boot_screen_visible: word
+bss boot_screen_presented: word
 local render_boot_screen
 
 local cart_header_present<const> = function(base)
@@ -181,10 +180,10 @@ end
 local compute_boot_progress<const> = function(info, cart_ready, elapsed)
 	local stage_count<const> = 3
 	local stage_done = 0
-	if boot_screen_visible then
+	if *boot_screen_visible ~= 0 then
 		stage_done = stage_done + 1
 	end
-	if system_atlas_ready and not system_atlas_failed then
+	if *system_atlas_ready ~= 0 and *system_atlas_failed == 0 then
 		stage_done = stage_done + 1
 	end
 	if cart_ready then
@@ -277,20 +276,20 @@ local build_boot_content_lines<const> = function(info, cart_present, cursor, ela
 end
 
 function init()
-	boot_start = os.clock()
-	boot_screen_visible = true
-	boot_screen_presented = false
-	system_atlas_ready = false
-	system_atlas_failed = false
+	*boot_start = os.clock()
+	*boot_screen_visible = 1
+	*boot_screen_presented = 0
+	*system_atlas_ready = 0
+	*system_atlas_failed = 0
 	reset_scroll_state(boot_scroll_state)
 	system.on_irq(irq_img_done, function()
-		system_atlas_ready = true
+		*system_atlas_ready = 1
 	end)
 	system.on_irq(irq_img_error, function()
-		system_atlas_failed = true
+		*system_atlas_failed = 1
 	end)
 	system.on_irq(irq_vblank, function()
-		boot_vblank_count = boot_vblank_count + 1
+		*boot_vblank_count = *boot_vblank_count + 1
 	end)
 	local atlas<const> = romdir.system_rom_atlas(254)
 	local atlas_meta<const> = atlas.imgmeta
@@ -306,11 +305,11 @@ local key_arrow_down<const> = 81
 local key_arrow_up<const> = 82
 local boot_repeat_initial_delay_frames<const> = 15
 local boot_repeat_interval_frames<const> = 4
-local boot_input_frame = 0
-local prev_arrow_down = false
-local prev_arrow_up = false
-local down_next_repeat_frame = 0
-local up_next_repeat_frame = 0
+bss boot_input_frame: word
+bss prev_arrow_down: word
+bss prev_arrow_up: word
+bss down_next_repeat_frame: word
+bss up_next_repeat_frame: word
 
 local key_pressed<const> = function(usage)
 	local word<const> = mem[0x0800019c + ((usage >> 5) << 2)]
@@ -318,29 +317,29 @@ local key_pressed<const> = function(usage)
 end
 
 local update_boot_screen<const> = function()
-	boot_screen_visible = true
-	boot_input_frame = boot_input_frame + 1
+	*boot_screen_visible = 1
+	*boot_input_frame = *boot_input_frame + 1
 	local arrow_down<const> = key_pressed(key_arrow_down)
 	local arrow_up<const> = key_pressed(key_arrow_up)
 	local scroll_delta = 0
 	local down_repeat = false
 	if arrow_down then
-		if not prev_arrow_down then
+		if *prev_arrow_down == 0 then
 			down_repeat = true
-			down_next_repeat_frame = boot_input_frame + boot_repeat_initial_delay_frames
-		elseif boot_input_frame >= down_next_repeat_frame then
+			*down_next_repeat_frame = *boot_input_frame + boot_repeat_initial_delay_frames
+		elseif *boot_input_frame >= *down_next_repeat_frame then
 			down_repeat = true
-			down_next_repeat_frame = down_next_repeat_frame + boot_repeat_interval_frames
+			*down_next_repeat_frame = *down_next_repeat_frame + boot_repeat_interval_frames
 		end
 	end
 	local up_repeat = false
 	if arrow_up then
-		if not prev_arrow_up then
+		if *prev_arrow_up == 0 then
 			up_repeat = true
-			up_next_repeat_frame = boot_input_frame + boot_repeat_initial_delay_frames
-		elseif boot_input_frame >= up_next_repeat_frame then
+			*up_next_repeat_frame = *boot_input_frame + boot_repeat_initial_delay_frames
+		elseif *boot_input_frame >= *up_next_repeat_frame then
 			up_repeat = true
-			up_next_repeat_frame = up_next_repeat_frame + boot_repeat_interval_frames
+			*up_next_repeat_frame = *up_next_repeat_frame + boot_repeat_interval_frames
 		end
 	end
 	if down_repeat then
@@ -348,12 +347,12 @@ local update_boot_screen<const> = function()
 	elseif up_repeat then
 		scroll_delta = -1
 	end
-	prev_arrow_down = arrow_down
-	prev_arrow_up = arrow_up
+	*prev_arrow_down = arrow_down and 1 or 0
+	*prev_arrow_up = arrow_up and 1 or 0
 	local cart_present_and_ready<const> = cart_header_present(cart_rom_base)
 		and mem[cart_program_vector_addr] == cart_program_start_addr
 
-	if cart_present_and_ready and system_atlas_ready and not system_atlas_failed then
+	if cart_present_and_ready and *system_atlas_ready ~= 0 and *system_atlas_failed == 0 then
 		if (mem[0x08000144] & 0x00000002) ~= 0 then
 			return false
 		end
@@ -362,8 +361,8 @@ local update_boot_screen<const> = function()
 		return true
 	end
 	render_boot_screen(scroll_delta)
-	if not boot_screen_presented then
-		boot_screen_presented = true
+	if *boot_screen_presented == 0 then
+		*boot_screen_presented = 1
 	end
 	return false
 end
@@ -380,7 +379,7 @@ render_boot_screen = function(scroll_delta)
 	vdp_rpu_quads.fill_rect_color(0, 0, width, 24, 0, 0x00000000, color_header_bg)
 	local info<const> = build_info(width, height)
 	local cart_present<const> = cart_header_present(cart_rom_base)
-	local elapsed<const> = os.clock() - boot_start
+	local elapsed<const> = os.clock() - *boot_start
 	local cursor<const> = ((elapsed * 2) % 2 == 0) and '█' or ' '
 	local line_slots<const> = line_slots(width, left, font_width)
 	local content_lines<const> = build_boot_content_lines(info, cart_present, cursor, elapsed, line_slots)
@@ -416,8 +415,8 @@ end
 local wait_vblank<const> = function()
 	repeat
 		halt_until_irq
-	until boot_vblank_count ~= 0
-	boot_vblank_count = boot_vblank_count - 1
+	until *boot_vblank_count ~= 0
+	*boot_vblank_count = *boot_vblank_count - 1
 end
 
 init()

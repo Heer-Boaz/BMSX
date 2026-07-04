@@ -265,18 +265,18 @@ print = function(...)
 	local count<const> = select('#', ...)
 	for value_index = 1, count do
 		if value_index > 1 then
-			print_char[0] = ascii_tab
+			*print_char = ascii_tab
 		end
 		local text<const> = tostring(select(value_index, ...))
 		local char_index = 1
 		local code = byte(text, char_index)
 		while code ~= nil do
-			print_char[0] = code
+			*print_char = code
 			char_index = char_index + 1
 			code = byte(text, char_index)
 		end
 	end
-	print_flush[0] = 1
+	*print_flush = 1
 end
 
 

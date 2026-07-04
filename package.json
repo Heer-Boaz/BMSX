@@ -34,6 +34,7 @@
 		"headless:forcebuildalltest": "sh -c 'rom=\"$1\"; test=\"$2\"; if [ -z \"$rom\" ] || [ -z \"$test\" ]; then echo \"Usage: npm run headless:forcebuildalltest -- <gameromname> <test-file>\"; exit 1; fi; npm run build:platform:headless -- --debug --force && npm run build:bios -- --debug --force && npx tsx scripts/rompacker/rompacker.ts --mode rompack --skiptypecheck --debug --force -romname \"$rom\" && npm run headless:test -- \"$rom\" \"$test\"' --",
 		"test:lua": "npx tsx --test --import ./tests/lua/test_setup.ts tests/lua/*.test.ts",
 		"test:rompacker": "npx tsx --test tests/rompacker/*.ts",
+		"test:render-parity": "node scripts/render/pixel_parity.mjs",
 		"compile:machine": "npx tsc --build ./machine/ts",
 		"validate:bios": "npx tsx scripts/rompacker/rompacker.ts --mode bios --force -bootloaderpath ./machine/firmware/default_cart -respath ./machine/firmware/res",
 		"build:bios": "npx tsx scripts/rompacker/rompacker.ts --mode bios --skiptypecheck -bootloaderpath ./machine/firmware/default_cart -respath ./machine/firmware/res",

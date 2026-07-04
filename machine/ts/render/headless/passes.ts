@@ -7,11 +7,13 @@ import type { HeadlessPresentHost, HeadlessPresentedFrameBuffer } from './view';
 import { hostOverlayMenu } from '../../core/host_overlay_menu';
 import { renderHeadlessHost2DEntry, renderHeadlessHost2DSubmission } from './host_2d';
 import { renderVdpRpuSoftwareFrame } from '../backend/software/vdp_rpu';
+import { applyHeadlessDeviceQuantize } from '../post/device_quantize/headless/pipeline';
 
 export function registerHeadlessPasses(registry: RenderPassLibrary): void {
 	registerFramePasses(registry);
 	registerHeadlessRpuPass(registry);
 	registerFrameBuffer2DPass(registry);
+	registerHeadlessDeviceQuantizePass(registry);
 }
 
 export function registerHeadlessPresentPass(registry: RenderPassLibrary): void {
@@ -127,6 +129,20 @@ export function drawHeadlessHostOverlayFrame(commands: readonly Host2DSubmission
 	for (let index = 0; index < commands.length; index += 1) {
 		renderHeadlessHost2DSubmission(headlessCompositePixels, headlessFrameWidth, headlessFrameHeight, commands[index]);
 	}
+}
+
+function registerHeadlessDeviceQuantizePass(registry: RenderPassLibrary): void {
+	registry.register({
+		id: 'device_quantize',
+		name: 'HeadlessDeviceQuantize',
+		stateOnly: true,
+		graph: { reads: ['frame_color'], writes: ['device_color'] },
+		shouldExecute: (view) => view.dither_type !== 0,
+		exec: () => {
+			const view = registry.view as GameView;
+			applyHeadlessDeviceQuantize(headlessCompositePixels, headlessFrameWidth, headlessFrameHeight, view.dither_type);
+		},
+	});
 }
 
 function presentHeadlessFrame(view: GameView): void {

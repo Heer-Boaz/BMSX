@@ -507,65 +507,65 @@ local transition_start_sample<const> = function(audio_record, transition)
 end
 
 local alternate_music_slot<const> = function()
-	if current_music_slot[0] == slot_music_a then
+	if *current_music_slot == slot_music_a then
 		return slot_music_b
 	end
 	return slot_music_a
 end
 
 local clear_pending_music<const> = function()
-	pending_music_seq[0] = 0
+	*pending_music_seq = 0
 	pending_music_record = nil
 	pending_music_transition = nil
 end
 
 local clear_stinger<const> = function()
-	stinger_seq[0] = 0
-	stinger_source_addr[0] = 0
-	stinger_slot[0] = 0
+	*stinger_seq = 0
+	*stinger_source_addr = 0
+	*stinger_slot = 0
 	stinger_music_record = nil
 	stinger_music_transition = nil
 end
 
 local begin_music_request<const> = function()
-	music_request_seq[0] = music_request_seq[0] + 1
-	if stinger_source_addr[0] ~= 0 then
-		apu.stop_slot(stinger_slot[0], 0)
+	*music_request_seq = *music_request_seq + 1
+	if *stinger_source_addr ~= 0 then
+		apu.stop_slot(*stinger_slot, 0)
 	end
 	clear_slot_queue(slot_music_a)
 	clear_slot_queue(slot_music_b)
 	clear_stinger()
 	clear_pending_music()
-	return music_request_seq[0]
+	return *music_request_seq
 end
 
 local play_music_now<const> = function(audio_record, transition, gain_q12, slot)
-	local target_slot = slot or current_music_slot[0]
+	local target_slot = slot or *current_music_slot
 	if target_slot == 0 then
 		target_slot = slot_music_a
 	end
 	local source<const> = apu.source(audio_record)
-	current_music_source_addr[0] = source.source_addr
-	current_music_slot[0] = target_slot
+	*current_music_source_addr = source.source_addr
+	*current_music_slot = target_slot
 	mark_slot_active(target_slot, source.source_addr, audio_record.audiometa.priority)
 	apu.play(source, target_slot, 0x00010000, gain_q12 or 0x00001000, transition_start_sample(audio_record, transition), 0x00000000, 0, 1000, 0)
 end
 
 local queue_music_after_current<const> = function(request_seq, audio_record, transition)
-	pending_music_seq[0] = request_seq
+	*pending_music_seq = request_seq
 	pending_music_record = audio_record
 	pending_music_transition = transition
 end
 
 local play_transition_apu<const> = function(audio_record, transition)
-	if transition.__apu_wait_for_current and current_music_source_addr[0] ~= 0 then
-		queue_music_after_current(music_request_seq[0], audio_record, transition)
+	if transition.__apu_wait_for_current and *current_music_source_addr ~= 0 then
+		queue_music_after_current(*music_request_seq, audio_record, transition)
 		return
 	end
 
 	local crossfade_samples<const> = transition.__apu_crossfade_samples
-	if crossfade_samples > 0 and current_music_source_addr[0] ~= 0 then
-		local old_slot<const> = current_music_slot[0]
+	if crossfade_samples > 0 and *current_music_source_addr ~= 0 then
+		local old_slot<const> = *current_music_slot
 		local new_slot<const> = alternate_music_slot()
 		apu.stop_slot(old_slot, crossfade_samples)
 		play_music_now(audio_record, transition, 0x00001000, new_slot)
@@ -573,14 +573,14 @@ local play_transition_apu<const> = function(audio_record, transition)
 	end
 
 	local fade_samples<const> = transition.__apu_fade_samples
-	if fade_samples > 0 and current_music_source_addr[0] ~= 0 then
-		queue_music_after_current(music_request_seq[0], audio_record, transition)
-		apu.stop_slot(current_music_slot[0], fade_samples)
+	if fade_samples > 0 and *current_music_source_addr ~= 0 then
+		queue_music_after_current(*music_request_seq, audio_record, transition)
+		apu.stop_slot(*current_music_slot, fade_samples)
 		return
 	end
 
-	if current_music_source_addr[0] ~= 0 then
-		apu.stop_slot(current_music_slot[0], 0)
+	if *current_music_source_addr ~= 0 then
+		apu.stop_slot(*current_music_slot, 0)
 	end
 	play_music_now(audio_record, transition)
 end
@@ -601,7 +601,7 @@ local dispatch_music_transition<const> = function(transition)
 	local sync<const> = transition.sync
 	local target_record<const> = transition_target_record(transition, sync)
 	if sync == nil or type(sync) == 'string' then
-		if not transition.__apu_start_fresh and current_music_source_addr[0] == apu.source(target_record).source_addr then
+		if not transition.__apu_start_fresh and *current_music_source_addr == apu.source(target_record).source_addr then
 			return
 		end
 	end
@@ -609,23 +609,23 @@ local dispatch_music_transition<const> = function(transition)
 		local stinger_id<const> = sync.stinger
 		local stinger_record<const> = romdir.audio(stinger_id)
 		local stinger_type<const> = stinger_record.audiometa.audiotype
-		if current_music_source_addr[0] ~= 0 then
-			apu.stop_slot(current_music_slot[0], 0)
+		if *current_music_source_addr ~= 0 then
+			apu.stop_slot(*current_music_slot, 0)
 		end
-		current_music_source_addr[0] = 0
-		current_music_slot[0] = 0
-		stinger_seq[0] = request_seq
+		*current_music_source_addr = 0
+		*current_music_slot = 0
+		*stinger_seq = request_seq
 		local stinger_source<const> = apu.source(stinger_record)
-		stinger_source_addr[0] = stinger_source.source_addr
+		*stinger_source_addr = stinger_source.source_addr
 		local stinger_slot_value<const> = route_slot[stinger_type]
 		if stinger_slot_value == nil then
 			error('aem invalid stinger audio record type: ' .. tostring(stinger_type))
 		end
-		stinger_slot[0] = stinger_slot_value
+		*stinger_slot = stinger_slot_value
 		stinger_music_record = target_record
 		stinger_music_transition = transition
-		mark_slot_active(stinger_slot[0], stinger_source_addr[0], stinger_record.audiometa.priority)
-		apu.play_plain(stinger_source, stinger_slot[0])
+		mark_slot_active(*stinger_slot, *stinger_source_addr, stinger_record.audiometa.priority)
+		apu.play_plain(stinger_source, *stinger_slot)
 		return
 	end
 	play_transition_apu(target_record, transition)
@@ -645,8 +645,8 @@ local dispatch_action<const> = function(entry, action, payload)
 	end
 	if action.stop_music then
 		begin_music_request()
-		current_music_source_addr[0] = 0
-		current_music_slot[0] = 0
+		*current_music_source_addr = 0
+		*current_music_slot = 0
 		local fade_samples<const> = type(action.stop_music) == 'boolean' and 0 or apu.ms_to_samples(action.stop_music.fade_ms or 0)
 		apu.stop_slot(slot_music_a, fade_samples)
 		apu.stop_slot(slot_music_b, fade_samples)
@@ -683,9 +683,9 @@ local handle_event<const> = function(payload)
 end
 
 local reset_audio_state<const> = function()
-	music_request_seq[0] = 0
-	current_music_source_addr[0] = 0
-	current_music_slot[0] = 0
+	*music_request_seq = 0
+	*current_music_source_addr = 0
+	*current_music_slot = 0
 	reset_slot_state()
 	clear_pending_music()
 	clear_stinger()
@@ -714,31 +714,31 @@ local on_apu_irq<const> = function()
 		return
 	end
 
-	if stinger_source_addr[0] == source_addr
-		and stinger_slot[0] == slot
-		and stinger_seq[0] == music_request_seq[0] then
+	if *stinger_source_addr == source_addr
+		and *stinger_slot == slot
+		and *stinger_seq == *music_request_seq then
 		local target_record<const> = stinger_music_record
 		local transition<const> = stinger_music_transition
-		complete_slot_play(slot, source_addr, slot ~= current_music_slot[0])
+		complete_slot_play(slot, source_addr, slot ~= *current_music_slot)
 		clear_stinger()
 		play_transition_apu(target_record, transition)
 		return
 	end
 
-	if slot ~= current_music_slot[0] then
+	if slot ~= *current_music_slot then
 		complete_slot_play(slot, source_addr, true)
 		return
 	end
 
-	if current_music_source_addr[0] ~= source_addr then
+	if *current_music_source_addr ~= source_addr then
 		complete_slot_play(slot, source_addr, true)
 		return
 	end
 
 	complete_slot_play(slot, source_addr, false)
-	current_music_source_addr[0] = 0
-	current_music_slot[0] = 0
-	if pending_music_seq[0] == music_request_seq[0] and pending_music_record ~= nil then
+	*current_music_source_addr = 0
+	*current_music_slot = 0
+	if *pending_music_seq == *music_request_seq and pending_music_record ~= nil then
 		local target_record<const> = pending_music_record
 		local transition<const> = pending_music_transition
 		clear_pending_music()

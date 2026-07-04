@@ -34,6 +34,8 @@ Options:
 - `--backend software|gles2`: sets the `bmsx_render_backend` core option (host only provides software video)
 - `--video fb|sdl`: `fb` uses `/dev/fb0` + evdev, `sdl` opens a window and uses SDL input (software-only)
 - `--input-debug`: logs evdev events and the resulting RETRO_DEVICE_JOYPAD state
+- `--crt-postprocessing on|off`: sets the `bmsx_crt_postprocessing` core option
+- `--crt-noise on|off`: sets the `bmsx_crt_noise` core option
 
 Input timelines may include `capture: true` entries. Both the libretro host and headless runner save `.png` screenshots into a `screenshots/` subfolder next to the timeline JSON file.
 

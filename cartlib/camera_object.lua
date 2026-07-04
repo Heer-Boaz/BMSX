@@ -36,10 +36,7 @@ local tan<const> = require('bios/math').tan
 local abs<const> = require('bios/math').abs
 local atan<const> = require('bios/math').atan
 
--- ── id counter ──────────────────────────────────────────────────────────────
--- Mirrors WorldObject.generateId(): each cam_new call gets a unique string id
--- of the form "cameraobject_N", matching the TypeScript "CameraObject_N" pattern.
-local _next_cam_id = 0
+bss next_cam_id: word
 
 -- ── cam_new ───────────────────────────────────────────────────────────────────
 -- Create a new camera object.  Orientation initialises to identity (no rotation).
@@ -47,8 +44,8 @@ local _next_cam_id = 0
 -- with neutral defaults so any proj type can be activated without extra setup.
 -- The 'id' field is auto-generated (mirrors WorldObject constructor).
 local cam_new<const> = function(x, y, z, fov_deg, aspect, near, far)
-	_next_cam_id = _next_cam_id + 1
-	local id<const> = 'cameraobject_' .. _next_cam_id
+	*next_cam_id = *next_cam_id + 1
+	local id<const> = 'cameraobject_' .. *next_cam_id
 	return {
 		id     = id,
 		x = x, y = y, z = z,

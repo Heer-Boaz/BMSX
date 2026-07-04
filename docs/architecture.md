@@ -344,6 +344,9 @@ Cart library numeric latches that model machine words over time use section
 storage too: AEM keeps request/source/slot words and per-slot active
 source/priority arrays in `.bss`, while Lua tables remain only for actual
 event records and queued play objects.
+Scalar section symbols are pointers to one typed cell: firmware and cart code
+read/write them with `*symbol`. Indexing is for actual arrays and structs, not
+for pretending a scalar word is a one-element array.
 
 Const modules are the static symbol ABI. They export constants, section symbols,
 and function text-symbols without producing a runtime module table, module proto,
@@ -453,6 +456,12 @@ the explicit exception: it extends the CPU-visible bytecode stream while
 preserving the already-installed program-ROM mapping for guest memory reads.
 Executable const-pool relocation is an inflate-time value rewrite; it must not
 clone the full object sections just to replace the const-pool image.
+Release program installs retain one CPU-visible program-ROM backing for text,
+rodata, and data load image bytes. The executable code view aliases that backing
+instead of owning a second byte buffer; debug/source metadata is a debug-symbol
+asset, not release runtime residency. Runtime const-pool values, protos, module
+export records, and the CPU decode cache are their own owner data structures and
+must not keep duplicate rodata/debug payload copies.
 Program-ROM size/fit is owned by the linker/producer. `Memory` maps the retained
 program-ROM backing into the fixed CPU window and the window itself determines
 which bytes are observable; the memory device does not revalidate producer size
@@ -726,6 +735,22 @@ ownership. The browser WebGL RPU pass lives in
 `render/backend/gles2/vdp_rpu.cpp`; both consume external `vdp_rpu` shader
 files. There is no shared render/rpu pipeline and no shared `GPUBackend`
 vertex-layout facade.
+
+Pixel parity is a machine contract at the VDP/VOUT surface boundary. For the
+same ROM, timeline, model profile, and VDP mode, the TypeScript headless
+renderer and the C++ libretro/software renderer must emit byte-identical RGBA
+screenshots before host presentation effects. Nonblank screenshots or
+boot-screen parity are not evidence for render parity. The standing gate is
+`npm run test:render-parity`, which captures the same timeline through the
+headless runner and libretro host and compares PNG dimensions plus raw RGBA
+bytes.
+
+CRT postprocessing is host presentation, not runtime or machine state. CRT
+noise/grain is deliberately outside the bit-exact machine contract because its
+source is host/postprocess random noise; parity captures disable CRT
+postprocessing, including `bmsx_crt_noise`, so they prove machine pixel output
+rather than host CRT decoration.
+
 VDP save-state
 record shapes live in dedicated `machine/devices/vdp/save_state` files on both
 runtimes; the stream-ingress, VRAM/surface-memory, and readback latch/buffer

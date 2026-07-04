@@ -6,10 +6,10 @@ local ecs_pipeline<const> = require('cartlib/ecs/pipeline')
 local ecs_systems<const> = require('cartlib/ecs/systems')
 local input_action_effect_system<const> = require('cartlib/input/action_effect/system')
 
-local registered = false
+bss registered: word
 
 local register_builtin_ecs<const> = function()
-	if registered then
+	if *registered ~= 0 then
 		return
 	end
 	local r<const> = ecs_pipeline.defaultecspipelineregistry
@@ -33,7 +33,7 @@ local register_builtin_ecs<const> = function()
 		{ id = 'meshrender', group = ecs.tickgroup.presentation, default_priority = 9, create = function(p) return ecs_systems.meshrendersystem.new(p) end },
 		{ id = 'rendersubmit', group = ecs.tickgroup.presentation, default_priority = 10, create = function(p) return ecs_systems.rendersubmitsystem.new(p) end },
 	})
-	registered = true
+	*registered = 1
 end
 
 local default_pipeline_spec<const> = function()

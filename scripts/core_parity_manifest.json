@@ -231,6 +231,11 @@
 			"reason": "host_device_quantize_postprocess_backend"
 		},
 		{
+			"pattern": "machine/ts/render/post/device_quantize/headless/pipeline.ts",
+			"category": "host",
+			"reason": "headless_device_quantize_postprocess_backend"
+		},
+		{
 			"pattern": "machine/ts/render/host_overlay/webgl/**",
 			"category": "host",
 			"reason": "browser_host_overlay_not_core"
@@ -2495,7 +2500,7 @@
 			"substrings": [
 				"draw_words[draw_word_base] = vdp_rpu.shader_v2_t2_c4_i_affine2 | ((quad_primitive_index & 0xff) << 16)",
 				"stream_words[stream_word_base + 5] = vdp_rpu.layout_i_affine2_trect_c4 | (1 << 16) | (1 << 24)",
-				"local instance_batch_vram_addr<const> = instance_batch_addr - vram_staging_base"
+				"local instance_batch_vram_addr<const> = *instance_batch_addr - vram_staging_base"
 			],
 			"reason": "bios_rpu_quad_batcher_must_emit_descriptor_backed_instanced_gpu_draws"
 		},
@@ -2535,7 +2540,7 @@
 			"file": "machine/firmware/system/vdp_rpu_quads.lua",
 			"substrings": [
 				"function vdp_rpu_quads.tile_run_sources",
-				"write_instance(\n\t\t\t\t(origin_x + (tile_x * tile_size)) * ndc_x_scale - 1.0,"
+				"write_instance(\n\t\t\t\t(origin_x + (tile_x * tile_size)) * x_scale - 1.0,"
 			],
 			"reason": "bios_rpu_quad_batcher_must_have_direct_tile_run_instance_writer"
 		},
@@ -3632,37 +3637,37 @@
 		},
 		{
 			"file": "machine/firmware/system/vdp_rpu_quads.lua",
-			"start": "\tif frame_active then",
+			"start": "\tif *frame_active ~= 0 then",
 			"end": "\nend\n\nlocal flush_instances",
 			"reason": "vdp_rpu_quads_pass_begin_must_not_allocate"
 		},
 		{
 			"file": "machine/firmware/system/vdp_rpu_quads.lua",
-			"start": "\tif instance_count == 0 then",
+			"start": "\tlocal count<const> = *instance_count\n\tif count == 0 then",
 			"end": "\nend\n\nlocal switch_surface",
 			"reason": "vdp_rpu_quads_instance_flush_must_not_allocate"
 		},
 		{
 			"file": "machine/firmware/system/vdp_rpu_quads.lua",
-			"start": "\tif current_surface_desc == surface_desc_addr then",
+			"start": "\tif *current_surface_desc == surface_desc_addr then",
 			"end": "\nend\n\nlocal write_instance",
 			"reason": "vdp_rpu_quads_surface_switch_must_not_allocate"
 		},
 		{
 			"file": "machine/firmware/system/vdp_rpu_quads.lua",
-			"start": "\tif instance_count == instance_batch_capacity then",
+			"start": "\tlocal count = *instance_count\n\tif count == instance_batch_capacity then",
 			"end": "\nend\n\nfunction vdp_rpu_quads.define_atlas",
 			"reason": "vdp_rpu_quads_instance_write_must_not_allocate"
 		},
 		{
 			"file": "machine/firmware/system/vdp_rpu_quads.lua",
-			"start": "\tsurface_width[surface_desc_addr] = width\n\tsurface_height[surface_desc_addr] = height",
+			"start": "\tsurface_width[atlas_id] = width\n\tsurface_height[atlas_id] = height",
 			"end": "\nend\n\nfunction vdp_rpu_quads.clear_color",
 			"reason": "vdp_rpu_quads_define_atlas_must_not_allocate"
 		},
 		{
 			"file": "machine/firmware/system/vdp_rpu_quads.lua",
-			"start": "\tif instance_count ~= 0 then",
+			"start": "\tif *instance_count ~= 0 then",
 			"end": "\nend\n\nfunction vdp_rpu_quads.fill_rect_color",
 			"reason": "vdp_rpu_quads_clear_must_not_allocate"
 		},
@@ -3680,7 +3685,7 @@
 		},
 		{
 			"file": "machine/firmware/system/vdp_rpu_quads.lua",
-			"start": "\tlocal inv_w<const> = 1.0 / surface_width[surface_desc_addr]",
+			"start": "\tlocal inv_w<const> = 1.0 / surface_width[atlas_id]",
 			"end": "\nend\n\nfunction vdp_rpu_quads.blit_source_color",
 			"reason": "vdp_rpu_quads_blit_must_not_allocate"
 		},
@@ -3698,7 +3703,7 @@
 		},
 		{
 			"file": "machine/firmware/system/vdp_rpu_quads.lua",
-			"start": "\tif instance_count ~= 0 then\n\t\tflush_instances()\n\telseif pending_clear then",
+			"start": "\tif *instance_count ~= 0 then\n\t\tflush_instances()\n\telseif *pending_clear ~= 0 then",
 			"end": "\nend\n\nreturn vdp_rpu_quads",
 			"reason": "vdp_rpu_quads_finish_frame_must_not_allocate"
 		}
@@ -3851,6 +3856,13 @@
 				"renderDeviceQuantize"
 			],
 			"reason": "webgl_device_quantize_hot_path_must_reuse_retained_state_without_runtime_wrappers"
+		},
+		{
+			"file": "machine/ts/render/post/device_quantize/headless/pipeline.ts",
+			"functions": [
+				"applyHeadlessDeviceQuantize"
+			],
+			"reason": "headless_device_quantize_hot_path_must_reuse_retained_lookup_tables_without_frame_allocations"
 		},
 		{
 			"file": "machine/ts/render/headless/passes.ts",

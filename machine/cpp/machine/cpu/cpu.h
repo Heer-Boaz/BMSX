@@ -190,6 +190,10 @@ inline int32_t toI32(double value) {
 	return static_cast<int32_t>(toU32(value));
 }
 
+inline int32_t toI32(Value value) {
+	return static_cast<int32_t>(toU32(value));
+}
+
 inline StringId asStringId(Value v) {
 	return static_cast<StringId>(valuePayload(v));
 }
