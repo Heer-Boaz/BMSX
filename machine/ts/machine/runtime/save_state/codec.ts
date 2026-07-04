@@ -1,6 +1,6 @@
 import { decodeBinaryWithPropTable, encodeBinaryWithPropTable, requireObject, requireObjectKey } from '../../../common/serializer/binencoder';
 import type { MachineSaveState } from '../../save_state';
-import type { CpuFrameState, CpuObjectState, CpuRootValueState, CpuRuntimeRefSegment, CpuRuntimeState, CpuValueState } from '../../cpu/cpu';
+import type { BuiltinFunctionId, CpuFrameState, CpuObjectState, CpuRootValueState, CpuRuntimeRefSegment, CpuRuntimeState, CpuValueState } from '../../cpu/cpu';
 import type { IrqControllerState } from '../../devices/irq/save_state';
 import type { AudioControllerState } from '../../devices/audio/save_state';
 import type {
@@ -1051,6 +1051,8 @@ function encodeCpuValueState(state: CpuValueState): CpuValueState {
 			return { tag: 'number', value: state.value };
 		case 'string':
 			return { tag: 'string', id: state.id };
+		case 'builtin':
+			return { tag: 'builtin', id: state.id };
 		case 'ref':
 			return { tag: 'ref', id: state.id };
 		case 'stable_ref':
@@ -1070,6 +1072,8 @@ function decodeCpuValueState(value: unknown, label: string): CpuValueState {
 			return { tag: 'number', value: requireObjectKey(object, 'value', label, 'cpuValueState.value') as number };
 		case 'string':
 			return { tag: 'string', id: requireObjectKey(object, 'id', label, 'cpuValueState.id') as number };
+		case 'builtin':
+			return { tag: 'builtin', id: requireObjectKey(object, 'id', label, 'cpuValueState.id') as BuiltinFunctionId };
 		case 'ref':
 			return { tag: 'ref', id: requireObjectKey(object, 'id', label, 'cpuValueState.id') as number };
 		case 'stable_ref':

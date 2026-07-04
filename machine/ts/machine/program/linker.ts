@@ -413,11 +413,9 @@ export const inflateExecutableProgramImage = (
 	assertProgramRomFits(textByteCount + rodataByteCount + dataByteCount);
 	const rodataBaseAddress = PROGRAM_ROM_BASE + textByteCount;
 	const dataLmaAddress = rodataBaseAddress + rodataByteCount;
-	const program = inflateProgram({
-		...programImage.sections,
-		rodata: {
-			...programImage.sections.rodata,
-			constPool: resolveConstValueRelocations(
+	const executableConstPool = programImage.link.constValueRelocs.length === 0
+		? programImage.sections.rodata.constPool
+		: resolveConstValueRelocations(
 				programImage.sections.rodata.constPool,
 				programImage.link.constValueRelocs,
 				programImage.sections.data.symbols,
@@ -427,9 +425,8 @@ export const inflateExecutableProgramImage = (
 				bssBaseAddress,
 				programImage.sections.rodata.symbols,
 				rodataBaseAddress,
-			),
-		},
-	});
+			);
+	const program = inflateProgram(programImage.sections, executableConstPool);
 	if (programImage.link.constRelocs.length !== 0) {
 		resolveRuntimeProgramRelocations(program, programImage.link.symbols, programImage.link.constRelocs);
 	}

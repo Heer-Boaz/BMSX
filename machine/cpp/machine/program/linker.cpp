@@ -649,19 +649,22 @@ std::unique_ptr<Program> inflateExecutableProgramImage(
 	assertProgramRomFits(textByteCount + rodataByteCount + dataByteCount);
 	const uint32_t rodataBaseAddress = PROGRAM_ROM_BASE + static_cast<uint32_t>(textByteCount);
 	const uint32_t dataLmaAddress = rodataBaseAddress + static_cast<uint32_t>(rodataByteCount);
-	ProgramObjectSections executableSections = image.sections;
-	executableSections.rodata.constPool = resolveConstValueRelocations(
-		image.sections.rodata.constPool,
-		image.link.constValueRelocs,
-		image.sections.data.symbols,
-		dataBaseAddress,
-		dataLmaAddress,
-		image.sections.bss.symbols,
-		bssBaseAddress,
-		image.sections.rodata.symbols,
-		rodataBaseAddress
-	);
-	auto program = inflateProgram(executableSections);
+	auto program = image.link.constValueRelocs.empty()
+		? inflateProgram(image.sections, image.sections.rodata.constPool)
+		: inflateProgram(
+			image.sections,
+			resolveConstValueRelocations(
+				image.sections.rodata.constPool,
+				image.link.constValueRelocs,
+				image.sections.data.symbols,
+				dataBaseAddress,
+				dataLmaAddress,
+				image.sections.bss.symbols,
+				bssBaseAddress,
+				image.sections.rodata.symbols,
+				rodataBaseAddress
+			)
+		);
 	if (!image.link.constRelocs.empty()) {
 		resolveRuntimeProgramRelocations(*program, image.link.symbols, image.link.constRelocs);
 	}

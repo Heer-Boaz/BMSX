@@ -29,6 +29,21 @@ static constexpr NativeFnCost kNativeCostTier2 { 2, 0, 0 };
 static constexpr NativeFnCost kNativeCostTier4 { 4, 0, 0 };
 static constexpr NativeFnCost kDefaultNativeCost = kNativeCostTier1;
 
+constexpr std::array<NativeFnCost, BUILTIN_FUNCTION_COUNT> kBuiltinFunctionCosts {{
+	kNativeCostTier1,
+	kNativeCostTier1,
+	kNativeCostTier2,
+	kNativeCostTier2,
+	kNativeCostTier1,
+	kNativeCostTier1,
+	kNativeCostTier1,
+	kNativeCostTier2,
+	kNativeCostTier2,
+	kNativeCostTier2,
+	kNativeCostTier4,
+	kNativeCostTier4,
+}};
+
 static std::string formatNonFunctionCallError(Value callee, const StringPool& stringPool,
 													const std::optional<SourceRange>& range) {
 	std::string message = "Attempted to call a non-function value.";
@@ -44,7 +59,6 @@ constexpr size_t kTableArraySlotHeapBytes = 8;
 constexpr size_t kTableHashSlotHeapBytes = 20;
 constexpr size_t kClosureHeapBytes = 16;
 constexpr size_t kClosureUpvalueSlotHeapBytes = 8;
-constexpr ptrdiff_t kBuiltinFunctionHeapBytes = 16;
 constexpr ptrdiff_t kNativeFunctionHeapBytes = 16;
 constexpr ptrdiff_t kNativeObjectHeapBytes = 24;
 constexpr ptrdiff_t kUpvalueHeapBytes = 24;
@@ -703,10 +717,9 @@ void GcHeap::markValue(Value v) {
 			markObject(asTable(v));
 			break;
 		case ValueTag::Closure:
-			markObject(asClosure(v));
+			markClosure(asClosure(v));
 			break;
 		case ValueTag::BuiltinFunction:
-			markObject(asBuiltinFunction(v));
 			break;
 		case ValueTag::NativeFunction:
 			markObject(asNativeFunction(v));
@@ -723,6 +736,13 @@ void GcHeap::markValue(Value v) {
 		default:
 			break;
 	}
+}
+
+void GcHeap::markClosure(Closure* closure) {
+	if (closure->trackedHeapBytes == 0) {
+		return;
+	}
+	markObject(closure);
 }
 
 Closure* GcHeap::allocateClosure(size_t upvalueCount) {
@@ -776,8 +796,6 @@ void GcHeap::trace() {
 				}
 				break;
 			}
-			case ObjType::BuiltinFunction:
-				break;
 			case ObjType::NativeFunction:
 				break;
 			case ObjType::NativeObject: {
@@ -822,11 +840,6 @@ void GcHeap::sweep() {
 				addTrackedLuaHeapBytes(-static_cast<ptrdiff_t>(trackedClosureBytes(*static_cast<Closure*>(obj))));
 				static_cast<Closure*>(obj)->~Closure();
 				::operator delete(obj);
-				break;
-			case ObjType::BuiltinFunction:
-				m_bytesAllocated -= sizeof(BuiltinFunction);
-				addTrackedLuaHeapBytes(-kBuiltinFunctionHeapBytes);
-				delete static_cast<BuiltinFunction*>(obj);
 				break;
 			case ObjType::NativeFunction:
 				m_bytesAllocated -= sizeof(NativeFunction);
@@ -908,6 +921,14 @@ CPU::CPU(Memory& memory)
 	: m_memory(memory)
 	, m_stringPool(true)
 	, m_heap(m_stringPool) {
+	for (size_t index = 0; index < m_builtinFunctions.size(); ++index) {
+		BuiltinFunction& builtin = m_builtinFunctions[index];
+		const NativeFnCost cost = kBuiltinFunctionCosts[index];
+		builtin.id = static_cast<BuiltinFunctionId>(index);
+		builtin.cycleBase = cost.base;
+		builtin.cyclePerArg = cost.perArg;
+		builtin.cyclePerRet = cost.perRet;
+	}
 	m_heap.setRootMarker([this](GcHeap& heap) { markRoots(heap); });
 	m_externalRootMarker = [](GcHeap&) {};
 	globals = m_heap.allocate<Table>(ObjType::Table, 0, 0);
@@ -915,86 +936,7 @@ CPU::CPU(Memory& memory)
 }
 
 Value CPU::createBuiltinFunction(BuiltinFunctionId id) {
-	auto* builtin = m_heap.allocate<BuiltinFunction>(ObjType::BuiltinFunction);
-	addTrackedLuaHeapBytes(kBuiltinFunctionHeapBytes);
-	builtin->id = id;
-	switch (id) {
-		case BuiltinFunctionId::Next:
-			builtin->name = "next";
-			builtin->cycleBase = kNativeCostTier1.base;
-			builtin->cyclePerArg = kNativeCostTier1.perArg;
-			builtin->cyclePerRet = kNativeCostTier1.perRet;
-			break;
-		case BuiltinFunctionId::Type:
-			builtin->name = "type";
-			builtin->cycleBase = kNativeCostTier1.base;
-			builtin->cyclePerArg = kNativeCostTier1.perArg;
-			builtin->cyclePerRet = kNativeCostTier1.perRet;
-			break;
-		case BuiltinFunctionId::SetMetatable:
-			builtin->name = "setmetatable";
-			builtin->cycleBase = kNativeCostTier2.base;
-			builtin->cyclePerArg = kNativeCostTier2.perArg;
-			builtin->cyclePerRet = kNativeCostTier2.perRet;
-			break;
-		case BuiltinFunctionId::GetMetatable:
-			builtin->name = "getmetatable";
-			builtin->cycleBase = kNativeCostTier2.base;
-			builtin->cyclePerArg = kNativeCostTier2.perArg;
-			builtin->cyclePerRet = kNativeCostTier2.perRet;
-			break;
-		case BuiltinFunctionId::RawGet:
-			builtin->name = "rawget";
-			builtin->cycleBase = kNativeCostTier1.base;
-			builtin->cyclePerArg = kNativeCostTier1.perArg;
-			builtin->cyclePerRet = kNativeCostTier1.perRet;
-			break;
-		case BuiltinFunctionId::RawSet:
-			builtin->name = "rawset";
-			builtin->cycleBase = kNativeCostTier1.base;
-			builtin->cyclePerArg = kNativeCostTier1.perArg;
-			builtin->cyclePerRet = kNativeCostTier1.perRet;
-			break;
-		case BuiltinFunctionId::Select:
-			builtin->name = "select";
-			builtin->cycleBase = kNativeCostTier1.base;
-			builtin->cyclePerArg = kNativeCostTier1.perArg;
-			builtin->cyclePerRet = kNativeCostTier1.perRet;
-			break;
-		case BuiltinFunctionId::StringByte:
-			builtin->name = "string.byte";
-			builtin->cycleBase = kNativeCostTier2.base;
-			builtin->cyclePerArg = kNativeCostTier2.perArg;
-			builtin->cyclePerRet = kNativeCostTier2.perRet;
-			break;
-		case BuiltinFunctionId::StringChar:
-			builtin->name = "string.char";
-			builtin->cycleBase = kNativeCostTier2.base;
-			builtin->cyclePerArg = kNativeCostTier2.perArg;
-			builtin->cyclePerRet = kNativeCostTier2.perRet;
-			break;
-		case BuiltinFunctionId::Error:
-			builtin->name = "error";
-			builtin->cycleBase = kNativeCostTier2.base;
-			builtin->cyclePerArg = kNativeCostTier2.perArg;
-			builtin->cyclePerRet = kNativeCostTier2.perRet;
-			break;
-		case BuiltinFunctionId::PCall:
-			builtin->name = "pcall";
-			builtin->cycleBase = kNativeCostTier4.base;
-			builtin->cyclePerArg = kNativeCostTier4.perArg;
-			builtin->cyclePerRet = kNativeCostTier4.perRet;
-			break;
-		case BuiltinFunctionId::XPCall:
-			builtin->name = "xpcall";
-			builtin->cycleBase = kNativeCostTier4.base;
-			builtin->cyclePerArg = kNativeCostTier4.perArg;
-			builtin->cyclePerRet = kNativeCostTier4.perRet;
-			break;
-	}
-	const Value value = valueBuiltinFunction(builtin);
-	trackNativeLocalRoot(value);
-	return value;
+	return valueBuiltinFunction(&m_builtinFunctions[static_cast<size_t>(id)]);
 }
 
 Value CPU::createNativeFunction(std::string_view name, NativeFunctionInvoke fn, std::optional<NativeFnCost> cost) {
@@ -1044,17 +986,16 @@ Table* CPU::createTable(int arraySize, int hashSize) {
 
 void CPU::materializeStaticClosures() {
 	const size_t protoCount = m_program->protos.size();
-	if (m_staticClosures.size() > protoCount) {
-		m_staticClosures.resize(protoCount);
-	}
-	for (size_t index = m_staticClosures.size(); index < protoCount; ++index) {
-		m_staticClosures.push_back(m_heap.allocateClosure(0));
-	}
+	m_staticClosures.resize(protoCount);
 	for (size_t index = 0; index < protoCount; ++index) {
-		Closure* closure = m_staticClosures[index];
-		closure->protoIndex = static_cast<int>(index);
-		closure->upvalueCount = 0;
-		closure->trackedHeapBytes = 0;
+		Closure& closure = m_staticClosures[index];
+		closure.type = ObjType::Closure;
+		closure.marked = false;
+		closure.next = nullptr;
+		closure.protoIndex = static_cast<int>(index);
+		closure.upvalueCount = 0;
+		closure.upvalues = nullptr;
+		closure.trackedHeapBytes = 0;
 	}
 }
 
@@ -1321,7 +1262,7 @@ CpuRuntimeState CPU::captureRuntimeState(const std::unordered_map<std::string, V
 	std::unordered_set<const NativeObject*> stableNativeObjects;
 
 	auto recordStableValue = [&](const std::vector<CpuRuntimeRefSegment>& path, Value value) {
-		if (!valueIsBuiltinFunction(value) && !valueIsNativeFunction(value) && !valueIsNativeObject(value)) {
+		if (!valueIsNativeFunction(value) && !valueIsNativeObject(value)) {
 			return;
 		}
 		stableValueByPath[encodePathKey(path)] = value;
@@ -1444,7 +1385,12 @@ CpuRuntimeState CPU::captureRuntimeState(const std::unordered_map<std::string, V
 			state.stringId = asStringId(value);
 			return state;
 		}
-		if (valueIsBuiltinFunction(value) || valueIsNativeFunction(value) || valueIsNativeObject(value)) {
+		if (valueIsBuiltinFunction(value)) {
+			state.tag = CpuValueStateTag::Builtin;
+			state.builtinId = asBuiltinFunction(value)->id;
+			return state;
+		}
+		if (valueIsNativeFunction(value) || valueIsNativeObject(value)) {
 			const auto it = stablePathByValue.find(value);
 			if (it == stablePathByValue.end()) {
 				throw std::runtime_error(std::string("[CPU] Runtime snapshot cannot preserve native value '") + valueTypeName(value) + "' without a stable root path.");
@@ -1602,7 +1548,7 @@ void CPU::restoreRuntimeState(const CpuRuntimeState& state, std::unordered_map<s
 	std::unordered_set<const NativeObject*> stableNativeObjects;
 
 	auto recordStableValue = [&](const std::vector<CpuRuntimeRefSegment>& path, Value value) {
-		if (!valueIsBuiltinFunction(value) && !valueIsNativeFunction(value) && !valueIsNativeObject(value)) {
+		if (!valueIsNativeFunction(value) && !valueIsNativeObject(value)) {
 			return;
 		}
 		stableValueByPath[encodePathKey(path)] = value;
@@ -1728,6 +1674,8 @@ void CPU::restoreRuntimeState(const CpuRuntimeState& state, std::unordered_map<s
 				return valueNumber(valueState.numberValue);
 			case CpuValueStateTag::String:
 				return valueString(valueState.stringId);
+			case CpuValueStateTag::Builtin:
+				return createBuiltinFunction(valueState.builtinId);
 			case CpuValueStateTag::Ref: {
 				const RestoredObject& restored = restoredObjects.at(static_cast<size_t>(valueState.refId));
 				if (restored.table) return valueTable(restored.table);
@@ -3392,12 +3340,9 @@ void CPU::markRoots(GcHeap& heap) {
 			heap.markValue(value);
 		}
 	}
-	for (Closure* closure : m_staticClosures) {
-		heap.markObject(closure);
-	}
 	for (const auto& framePtr : m_frames) {
 		CallFrame* frame = framePtr.get();
-		heap.markObject(frame->closure);
+		heap.markClosure(frame->closure);
 		for (int i = 0; i < frame->top; ++i) {
 			heap.markValue(frame->registers[static_cast<size_t>(i)]);
 		}

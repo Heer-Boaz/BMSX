@@ -126,7 +126,7 @@ test('ProgramImage exposes text and rodata as ROM sections', () => {
 	image.sections.rodata.staticModulePaths.push('system/init');
 	image.sections.rodata.bytes = new Uint8Array([1, 2, 3, 4]);
 
-	const program = inflateProgram(image.sections);
+	const program = inflateProgram(image.sections, image.sections.rodata.constPool);
 
 	assert.deepEqual(image.vectors, { resetProtoIndex: 0, sectionInitProtoIndex: 0, irqProtoIndex: 0 });
 	assert.equal(image.sections.text.code.length, INSTRUCTION_BYTES);
@@ -970,7 +970,7 @@ test('resolveRuntimeProgramValueRelocations resolves runtime const-pool address 
 		byteCount: 12,
 		symbols: [{ name: 'bss_value', offset: 4, byteCount: 4, alignment: 4 }],
 	};
-	const program = inflateProgram(image.sections);
+	const program = inflateProgram(image.sections, image.sections.rodata.constPool);
 	const dataBaseAddress = PROGRAM_STATIC_RAM_BASE + 0x40;
 	const bssBaseAddress = PROGRAM_STATIC_RAM_BASE + 0x80;
 	const rodataBaseAddress = PROGRAM_ROM_BASE + program.programRomTextByteLength;
@@ -1012,7 +1012,7 @@ test('resolveRuntimeProgramRelocations resolves symbolic relocations without con
 		['runtime literal'],
 		[{ wordIndex: 1, kind: 'export_proto', symbol: 'main__entry' }],
 	);
-	const program = inflateProgram(image.sections);
+	const program = inflateProgram(image.sections, image.sections.rodata.constPool);
 	const metadata = makeProgramSymbols('main', image.sections.text.code.length / INSTRUCTION_BYTES);
 	metadata.exportProtoIdBySlot = { main__entry: 'main' };
 
@@ -1199,7 +1199,7 @@ test('ProgramLinker resolves system symbolic relocations against system symbols 
 
 test('appendLuaChunkToProgram rejects new storage sections', () => {
 	const base = makeProgramImage([{ op: OpCode.RET, a: 0, b: 1, c: 0 }], [], []);
-	const program = inflateProgram(base.sections);
+	const program = inflateProgram(base.sections, base.sections.rodata.constPool);
 	const metadata = makeProgramSymbols('base', base.sections.text.code.length / INSTRUCTION_BYTES);
 	assert.throws(
 		() => appendLuaChunkToProgram(program, metadata, parseChunk('data value: word = 1\nreturn *value', 'host_eval'), { entrySource: 'data value: word = 1\nreturn *value' }),
@@ -1217,7 +1217,7 @@ test('appendLuaChunkToProgram preserves absolute program ROM bytes', () => {
 		[],
 	);
 	base.sections.rodata.bytes = new Uint8Array([1, 2, 3, 4]);
-	const program = inflateProgram(base.sections);
+	const program = inflateProgram(base.sections, base.sections.rodata.constPool);
 	const metadata = makeProgramSymbols('base', base.sections.text.code.length / INSTRUCTION_BYTES);
 	const programRomBytes = Array.from(program.programRom);
 	const programRomTextByteLength = program.programRomTextByteLength;

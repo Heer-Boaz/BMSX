@@ -136,7 +136,7 @@ using ProgramSymbolsImage = ProgramMetadata;
 std::unique_ptr<ProgramImage> decodeProgramImage(const uint8_t* data, size_t size);
 std::vector<uint8_t> encodeProgramImage(const ProgramImage& asset);
 std::unique_ptr<ProgramSymbolsImage> decodeProgramSymbolsImage(const uint8_t* data, size_t size);
-std::unique_ptr<Program> inflateProgram(const ProgramObjectSections& sections);
+std::unique_ptr<Program> inflateProgram(const ProgramObjectSections& sections, const std::vector<EncodedValue>& executableConstPool);
 std::string stripLuaExtension(std::string_view candidate);
 std::string toLuaModulePath(std::string_view sourcePath);
 

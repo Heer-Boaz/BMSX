@@ -115,43 +115,29 @@ export class LuaThrownValueError extends Error {
 export type BuiltinFunction = {
 	readonly kind: typeof BUILTIN_FUNCTION_KIND;
 	readonly id: BuiltinFunctionId;
-	readonly name: string;
 	readonly cost: NativeFnCost;
 };
 
 const BUILTIN_COST_TIER1: NativeFnCost = { base: 1, perArg: 0, perRet: 0 };
 const BUILTIN_COST_TIER2: NativeFnCost = { base: 2, perArg: 0, perRet: 0 };
 const BUILTIN_COST_TIER4: NativeFnCost = { base: 4, perArg: 0, perRet: 0 };
-const BUILTIN_FUNCTION_HEAP_BYTES = 16;
+const BUILTIN_FUNCTIONS: readonly BuiltinFunction[] = [
+	{ kind: BUILTIN_FUNCTION_KIND, id: BuiltinFunctionId.Next, cost: BUILTIN_COST_TIER1 },
+	{ kind: BUILTIN_FUNCTION_KIND, id: BuiltinFunctionId.Type, cost: BUILTIN_COST_TIER1 },
+	{ kind: BUILTIN_FUNCTION_KIND, id: BuiltinFunctionId.SetMetatable, cost: BUILTIN_COST_TIER2 },
+	{ kind: BUILTIN_FUNCTION_KIND, id: BuiltinFunctionId.GetMetatable, cost: BUILTIN_COST_TIER2 },
+	{ kind: BUILTIN_FUNCTION_KIND, id: BuiltinFunctionId.RawGet, cost: BUILTIN_COST_TIER1 },
+	{ kind: BUILTIN_FUNCTION_KIND, id: BuiltinFunctionId.RawSet, cost: BUILTIN_COST_TIER1 },
+	{ kind: BUILTIN_FUNCTION_KIND, id: BuiltinFunctionId.Select, cost: BUILTIN_COST_TIER1 },
+	{ kind: BUILTIN_FUNCTION_KIND, id: BuiltinFunctionId.StringByte, cost: BUILTIN_COST_TIER2 },
+	{ kind: BUILTIN_FUNCTION_KIND, id: BuiltinFunctionId.StringChar, cost: BUILTIN_COST_TIER2 },
+	{ kind: BUILTIN_FUNCTION_KIND, id: BuiltinFunctionId.Error, cost: BUILTIN_COST_TIER2 },
+	{ kind: BUILTIN_FUNCTION_KIND, id: BuiltinFunctionId.PCall, cost: BUILTIN_COST_TIER4 },
+	{ kind: BUILTIN_FUNCTION_KIND, id: BuiltinFunctionId.XPCall, cost: BUILTIN_COST_TIER4 },
+];
 
 export function createBuiltinFunction(id: BuiltinFunctionId): BuiltinFunction {
-	addTrackedLuaHeapBytes(BUILTIN_FUNCTION_HEAP_BYTES);
-	switch (id) {
-		case BuiltinFunctionId.Next:
-			return { kind: BUILTIN_FUNCTION_KIND, id, name: 'next', cost: BUILTIN_COST_TIER1 };
-		case BuiltinFunctionId.Type:
-			return { kind: BUILTIN_FUNCTION_KIND, id, name: 'type', cost: BUILTIN_COST_TIER1 };
-		case BuiltinFunctionId.SetMetatable:
-			return { kind: BUILTIN_FUNCTION_KIND, id, name: 'setmetatable', cost: BUILTIN_COST_TIER2 };
-		case BuiltinFunctionId.GetMetatable:
-			return { kind: BUILTIN_FUNCTION_KIND, id, name: 'getmetatable', cost: BUILTIN_COST_TIER2 };
-		case BuiltinFunctionId.RawGet:
-			return { kind: BUILTIN_FUNCTION_KIND, id, name: 'rawget', cost: BUILTIN_COST_TIER1 };
-		case BuiltinFunctionId.RawSet:
-			return { kind: BUILTIN_FUNCTION_KIND, id, name: 'rawset', cost: BUILTIN_COST_TIER1 };
-		case BuiltinFunctionId.Select:
-			return { kind: BUILTIN_FUNCTION_KIND, id, name: 'select', cost: BUILTIN_COST_TIER1 };
-		case BuiltinFunctionId.StringByte:
-			return { kind: BUILTIN_FUNCTION_KIND, id, name: 'string.byte', cost: BUILTIN_COST_TIER2 };
-		case BuiltinFunctionId.StringChar:
-			return { kind: BUILTIN_FUNCTION_KIND, id, name: 'string.char', cost: BUILTIN_COST_TIER2 };
-		case BuiltinFunctionId.Error:
-			return { kind: BUILTIN_FUNCTION_KIND, id, name: 'error', cost: BUILTIN_COST_TIER2 };
-		case BuiltinFunctionId.PCall:
-			return { kind: BUILTIN_FUNCTION_KIND, id, name: 'pcall', cost: BUILTIN_COST_TIER4 };
-		case BuiltinFunctionId.XPCall:
-			return { kind: BUILTIN_FUNCTION_KIND, id, name: 'xpcall', cost: BUILTIN_COST_TIER4 };
-	}
+	return BUILTIN_FUNCTIONS[id];
 }
 
 export type NativeFunction = {
@@ -278,6 +264,7 @@ export type CpuValueState =
 	| { tag: 'true' }
 	| { tag: 'number'; value: number }
 	| { tag: 'string'; id: number }
+	| { tag: 'builtin'; id: BuiltinFunctionId }
 	| { tag: 'ref'; id: number }
 	| { tag: 'stable_ref'; path: CpuRuntimeRefSegment[] };
 
@@ -388,7 +375,7 @@ export type UpvalueDesc = {
 export type Closure = {
 	protoIndex: number;
 	upvalues: Upvalue[];
-	heapBytes?: number;
+	heapBytes: number;
 };
 
 export function valueIsClosure(value: Value): value is Closure {
@@ -3441,7 +3428,7 @@ export class CPU {
 		};
 
 		const recordStableValue = (path: ReadonlyArray<CpuRuntimeRefSegment>, value: Value): void => {
-			if (!isBuiltinFunction(value) && !isNativeFunction(value) && !isNativeObject(value)) {
+			if (!isNativeFunction(value) && !isNativeObject(value)) {
 				return;
 			}
 			stableValueByPath.set(encodePathKey(path), value);
@@ -3527,7 +3514,10 @@ export class CPU {
 			if (valueIsString(value)) {
 				return { tag: 'string', id: value.id };
 			}
-			if (isBuiltinFunction(value) || isNativeFunction(value) || isNativeObject(value)) {
+			if (isBuiltinFunction(value)) {
+				return { tag: 'builtin', id: value.id };
+			}
+			if (isNativeFunction(value) || isNativeObject(value)) {
 				const path = stablePathByNative.get(value);
 				if (path === undefined) {
 					throw new Error(`[CPU] Runtime snapshot cannot preserve native value '${valueTypeName(value)}' without a stable root path.`);
@@ -3681,7 +3671,7 @@ export class CPU {
 		};
 
 		const recordStableValue = (path: ReadonlyArray<CpuRuntimeRefSegment>, value: Value): void => {
-			if (!isBuiltinFunction(value) && !isNativeFunction(value) && !isNativeObject(value)) {
+			if (!isNativeFunction(value) && !isNativeObject(value)) {
 				return;
 			}
 			stableValueByPath.set(encodePathKey(path), value);
@@ -3780,6 +3770,8 @@ export class CPU {
 					return valueState.value;
 				case 'string':
 					return StringValue.get(valueState.id);
+				case 'builtin':
+					return createBuiltinFunction(valueState.id);
 				case 'ref':
 					return restoredObjects[valueState.id] as Table | Closure;
 				case 'stable_ref': {
@@ -3999,7 +3991,6 @@ export class CPU {
 					continue;
 				}
 				seen.add(value);
-				total += BUILTIN_FUNCTION_HEAP_BYTES;
 				continue;
 			}
 			if (isNativeFunction(value)) {
@@ -4026,7 +4017,7 @@ export class CPU {
 				continue;
 			}
 			seen.add(closure);
-			total += closure.heapBytes ?? 0;
+			total += closure.heapBytes;
 			for (let index = 0; index < closure.upvalues.length; index += 1) {
 				upvalueStack.push(closure.upvalues[index]);
 			}

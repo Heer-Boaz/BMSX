@@ -32,6 +32,7 @@ import type { RuntimeSaveState } from '../../machine/ts/machine/runtime/save_sta
 import { decodeRuntimeSaveState, encodeRuntimeSaveState } from '../../machine/ts/machine/runtime/save_state/codec';
 import { decodeBinaryWithPropTable } from '../../machine/ts/common/serializer/binencoder';
 import { RUNTIME_SAVE_STATE_PROP_NAMES } from '../../machine/ts/machine/runtime/save_state/schema';
+import { BuiltinFunctionId } from '../../machine/ts/machine/cpu/cpu';
 
 function numberedWords(count: number): number[] {
 	const words = new Array<number>(count);
@@ -334,6 +335,21 @@ test('runtime save-state codec preserves interrupt frame metadata', () => {
 	const decoded = decodeRuntimeSaveState(encodeRuntimeSaveState(state));
 
 	assert.deepEqual(decoded.cpuState.frames, state.cpuState.frames);
+});
+
+test('runtime save-state codec preserves builtin VM primitive ids', () => {
+	const state = createRuntimeSaveState();
+	state.cpuState.globals = [
+		{ name: 'foo', value: { tag: 'builtin', id: BuiltinFunctionId.Next } },
+	];
+	state.cpuState.lastReturnValues = [
+		{ tag: 'builtin', id: BuiltinFunctionId.StringChar },
+	];
+
+	const decoded = decodeRuntimeSaveState(encodeRuntimeSaveState(state));
+
+	assert.deepEqual(decoded.cpuState.globals, state.cpuState.globals);
+	assert.deepEqual(decoded.cpuState.lastReturnValues, state.cpuState.lastReturnValues);
 });
 
 test('runtime save-state property table preserves the retired randomSeed slot', () => {

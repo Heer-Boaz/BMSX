@@ -373,11 +373,22 @@ boundary, but steady-state table storage is columnar.
 
 Lua closures own their captured upvalue slots as VM closure storage. In C++,
 captured-closure upvalue pointers are tail storage in the same GC allocation as
-the closure object, not a separate `std::vector` allocation. TypeScript keeps
-the same boundary with dense `Upvalue[]` closure slots, which are the native VM
-container for indexed JS object references. Save-state serializes closure
-upvalue references as object ids at the persistence boundary; it does not expose
-either runtime's closure slot storage shape.
+the closure object, not a separate `std::vector` allocation. Static/root
+closures have no captured slots; the C++ CPU keeps them in CPU-owned indexed
+storage with stable closure addresses instead of allocating them as GC heap
+objects. TypeScript keeps the same boundary with dense `Upvalue[]` closure
+slots and a required `heapBytes` word on every closure object, so heap
+accounting consumes the producer-owned closure representation directly.
+Save-state serializes closure upvalue references as object ids at the
+persistence boundary; it does not expose either runtime's closure slot storage
+shape.
+
+Core VM builtins (`next`, `type`, `rawget`, `pcall`, string byte/char, and the
+other BIOS-captured primitives) are fixed VM primitive slots/singletons. They
+are not native host callbacks, are not GC heap allocations, and do not
+contribute to Lua heap accounting; guest-visible names are ordinary globals
+pointing at those fixed VM primitive values. Save-state serializes their
+`BuiltinFunctionId`, not a global/module path.
 
 Executable program text is part of the memory-mapped program ROM image. The
 runtime program text view points at the text window in that ROM buffer, so
@@ -385,6 +396,8 @@ runtime relocations patch the executable text that the CPU decodes and the bytes
 that the bus exposes at the program-ROM address range. Host-eval append code is
 the explicit exception: it extends the CPU-visible bytecode stream while
 preserving the already-installed program-ROM mapping for guest memory reads.
+Executable const-pool relocation is an inflate-time value rewrite; it must not
+clone the full object sections just to replace the const-pool image.
 
 System ROM and cart ROM are fixed CPU-visible address windows. The backing
 payload may be shorter than the window or absent; bytes beyond the backing read

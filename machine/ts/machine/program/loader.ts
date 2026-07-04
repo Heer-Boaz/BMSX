@@ -316,11 +316,11 @@ function decodeProgramRuntimeSymbols(value: unknown): ProgramRuntimeSymbols {
 	};
 }
 
-export function inflateProgram(sections: ProgramObjectSections): Program {
+export function inflateProgram(sections: ProgramObjectSections, executableConstPool: ReadonlyArray<EncodedValue>): Program {
 	const stringPool = new StringPool();
-	const constPool: Value[] = new Array(sections.rodata.constPool.length);
-	for (let index = 0; index < sections.rodata.constPool.length; index += 1) {
-		const value = sections.rodata.constPool[index];
+	const constPool: Value[] = new Array(executableConstPool.length);
+	for (let index = 0; index < executableConstPool.length; index += 1) {
+		const value = executableConstPool[index];
 		if (typeof value === 'string') {
 			constPool[index] = StringValue.get(stringPool.intern(value));
 			continue;

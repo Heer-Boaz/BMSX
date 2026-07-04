@@ -4,7 +4,7 @@ import assert from 'node:assert/strict';
 import { splitText } from '../../machine/ts/common/text_lines';
 import { LuaLexer } from '../../machine/ts/lua/syntax/lexer';
 import { LuaParser } from '../../machine/ts/lua/syntax/parser';
-import { CPU, RunResult, StringValue, Table, createNativeFunction, createNativeObject, type CpuRuntimeState } from '../../machine/ts/machine/cpu/cpu';
+import { BuiltinFunctionId, CPU, RunResult, StringValue, Table, createBuiltinFunction, createNativeFunction, createNativeObject, type CpuRuntimeState } from '../../machine/ts/machine/cpu/cpu';
 import { Memory } from '../../machine/ts/machine/memory/memory';
 import { compileLuaChunkToProgram } from '../../machine/ts/machine/program/compiler';
 
@@ -88,6 +88,34 @@ test('tracked heap bytes include explicit extra roots for native functions and h
 	const after = cpu.collectTrackedHeapBytes([nativeFn, handle]);
 
 	assert.ok(after > before, `expected explicit extra roots to increase tracked heap usage (${after} <= ${before})`);
+});
+
+test('builtin primitives are static VM slots outside Lua heap accounting', () => {
+	const memory = new Memory({ systemRom: new Uint8Array(0), cartRom: new Uint8Array(0) });
+	const cpu = new CPU(memory);
+	const next = createBuiltinFunction(BuiltinFunctionId.Next);
+	const before = cpu.collectTrackedHeapBytes();
+
+	assert.equal(createBuiltinFunction(BuiltinFunctionId.Next), next);
+	assert.equal(cpu.collectTrackedHeapBytes([next]), before);
+});
+
+test('builtin primitive save-state uses VM id instead of stable global path', () => {
+	const memory = new Memory({ systemRom: new Uint8Array(0), cartRom: new Uint8Array(0) });
+	const cpu = new CPU(memory);
+	cpu.globals.setStringKey(StringValue.get(cpu.stringPool.intern('foo')), createBuiltinFunction(BuiltinFunctionId.Next));
+
+	const state = cpu.captureRuntimeState(new Map());
+	assert.deepEqual(state.globals, [
+		{ name: 'foo', value: { tag: 'builtin', id: BuiltinFunctionId.Next } },
+	]);
+
+	const restoredCpu = new CPU(memory);
+	restoredCpu.restoreRuntimeState(state, new Map());
+	assert.equal(
+		restoredCpu.globals.getStringKey(StringValue.get(restoredCpu.stringPool.intern('foo'))),
+		createBuiltinFunction(BuiltinFunctionId.Next),
+	);
 });
 
 test('tracked heap bytes do not include raw js array capacity without native iteration entries', () => {

@@ -404,7 +404,7 @@ BinValue encodeRuntimeSymbols(const ProgramRuntimeSymbols& symbols) {
 
 } // namespace
 
-std::unique_ptr<Program> inflateProgram(const ProgramObjectSections& sections) {
+std::unique_ptr<Program> inflateProgram(const ProgramObjectSections& sections, const std::vector<EncodedValue>& executableConstPool) {
 	auto program = std::make_unique<Program>();
 	std::vector<uint8_t>& programRom = program->programRom;
 	programRom.reserve(sections.text.code.size() + sections.rodata.bytes.size() + sections.data.bytes.size());
@@ -419,8 +419,8 @@ std::unique_ptr<Program> inflateProgram(const ProgramObjectSections& sections) {
 	for (const auto& entry : program->moduleProtos) {
 		program->moduleProtoMap.emplace(entry.first, entry.second);
 	}
-	program->constPool.reserve(sections.rodata.constPool.size());
-	for (const EncodedValue& value : sections.rodata.constPool) {
+	program->constPool.reserve(executableConstPool.size());
+	for (const EncodedValue& value : executableConstPool) {
 		program->constPool.push_back(encodedValueToRuntimeValue(value, program->stringPool));
 	}
 	program->constPoolStringPool = &program->stringPool;

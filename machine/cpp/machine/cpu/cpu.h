@@ -3,6 +3,7 @@
 #include <array>
 #include <cstdint>
 #include <cstring>
+#include <deque>
 #include <exception>
 #include <cmath>
 #include <functional>
@@ -470,7 +471,6 @@ private:
 enum class ObjType : uint8_t {
 	Table,
 	Closure,
-	BuiltinFunction,
 	NativeFunction,
 	NativeObject,
 	Upvalue,
@@ -500,9 +500,10 @@ enum class BuiltinFunctionId : uint8_t {
 	XPCall = 11,
 };
 
-struct BuiltinFunction : GCObject {
+constexpr size_t BUILTIN_FUNCTION_COUNT = 12;
+
+struct BuiltinFunction {
 	BuiltinFunctionId id = BuiltinFunctionId::Next;
-	std::string name;
 	uint16_t cycleBase = 1;
 	uint8_t cyclePerArg = 0;
 	uint8_t cyclePerRet = 0;
@@ -633,7 +634,7 @@ struct Upvalue : GCObject {
 struct Closure : GCObject {
 	int protoIndex = 0;
 	size_t upvalueCount = 0;
-	Upvalue** upvalues;
+	Upvalue** upvalues = nullptr;
 	size_t trackedHeapBytes = 0;
 };
 
@@ -698,6 +699,7 @@ enum class CpuValueStateTag : uint8_t {
 	True,
 	Number,
 	String,
+	Builtin,
 	Ref,
 	StableRef,
 };
@@ -706,6 +708,7 @@ struct CpuValueState {
 	CpuValueStateTag tag = CpuValueStateTag::Nil;
 	double numberValue = 0;
 	StringId stringId = 0;
+	BuiltinFunctionId builtinId = BuiltinFunctionId::Next;
 	int refId = -1;
 	std::vector<CpuRuntimeRefSegment> path;
 };
@@ -888,6 +891,7 @@ public:
 	}
 
 	void markValue(Value v);
+	void markClosure(Closure* closure);
 	void markObject(GCObject* obj);
 
 	void setRootMarker(std::function<void(GcHeap&)> marker) { m_rootMarker = std::move(marker); }
@@ -935,7 +939,7 @@ public:
 		std::function<void(GcHeap&)> mark = nullptr
 	);
 	Table* createTable(int arraySize = 0, int hashSize = 0);
-	Closure& rootClosure(int protoIndex) { return *m_staticClosures[static_cast<size_t>(protoIndex)]; }
+	Closure& rootClosure(int protoIndex) { return m_staticClosures[static_cast<size_t>(protoIndex)]; }
 
 	void start(int entryProtoIndex, NativeArgsView args = {});
 	void call(Closure& closure, NativeArgsView args = {}, int returnCount = 0);
@@ -1081,7 +1085,8 @@ private:
 	Memory& m_memory;
 	StringPool m_stringPool;
 	GcHeap m_heap;
-	std::vector<Closure*> m_staticClosures;
+	std::array<BuiltinFunction, BUILTIN_FUNCTION_COUNT> m_builtinFunctions;
+	std::deque<Closure> m_staticClosures;
 	std::function<void(GcHeap&)> m_externalRootMarker;
 	NativeResults* m_externalReturnSink = nullptr;
 
