@@ -65,6 +65,19 @@ void resolveRuntimeProgramRelocations(
 	const std::vector<ProgramConstReloc>& relocs
 );
 
+void resolveRuntimeProgramValueRelocations(
+	Program& program,
+	const std::vector<ProgramConstValueReloc>& relocs,
+	const std::vector<ProgramDataSection::Symbol>& dataSymbols,
+	size_t dataByteCount,
+	uint32_t dataBaseAddress,
+	const std::vector<ProgramBssSection::Symbol>& bssSymbols,
+	size_t bssByteCount,
+	uint32_t bssBaseAddress,
+	const std::vector<ProgramRodataSection::Symbol>& rodataSymbols,
+	size_t rodataByteCount
+);
+
 std::unique_ptr<Program> inflateExecutableProgramImage(
 	const ProgramImage& image,
 	uint32_t dataBaseAddress,

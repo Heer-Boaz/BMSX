@@ -211,6 +211,29 @@ double resolveStorageSymbolAddress(
 	throw std::runtime_error(std::string("[ProgramLinker] Missing ") + sectionName + " symbol '" + symbolName + "'.");
 }
 
+double resolveConstValueRelocation(
+	const ProgramConstValueReloc& reloc,
+	const std::vector<ProgramDataSection::Symbol>& dataSymbols,
+	uint32_t dataBaseAddress,
+	uint32_t dataLmaAddress,
+	const std::vector<ProgramBssSection::Symbol>& bssSymbols,
+	uint32_t bssBaseAddress,
+	const std::vector<ProgramRodataSection::Symbol>& rodataSymbols,
+	uint32_t rodataBaseAddress
+) {
+	switch (reloc.kind) {
+		case ProgramConstValueRelocKind::DataAddr:
+			return resolveStorageSymbolAddress(dataSymbols, dataBaseAddress, reloc.symbol, reloc.addend, ".data");
+		case ProgramConstValueRelocKind::DataLmaAddr:
+			return resolveStorageSymbolAddress(dataSymbols, dataLmaAddress, reloc.symbol, reloc.addend, ".data");
+		case ProgramConstValueRelocKind::BssAddr:
+			return resolveStorageSymbolAddress(bssSymbols, bssBaseAddress, reloc.symbol, reloc.addend, ".bss");
+		case ProgramConstValueRelocKind::RodataAddr:
+			return resolveStorageSymbolAddress(rodataSymbols, rodataBaseAddress, reloc.symbol, reloc.addend, ".rodata");
+	}
+	__builtin_unreachable();
+}
+
 std::vector<EncodedValue> resolveConstValueRelocations(
 	const std::vector<EncodedValue>& constPool,
 	const std::vector<ProgramConstValueReloc>& relocs,
@@ -224,20 +247,16 @@ std::vector<EncodedValue> resolveConstValueRelocations(
 ) {
 	std::vector<EncodedValue> out = constPool;
 	for (const ProgramConstValueReloc& reloc : relocs) {
-		switch (reloc.kind) {
-			case ProgramConstValueRelocKind::DataAddr:
-				out[static_cast<size_t>(reloc.constIndex)] = resolveStorageSymbolAddress(dataSymbols, dataBaseAddress, reloc.symbol, reloc.addend, ".data");
-				break;
-			case ProgramConstValueRelocKind::DataLmaAddr:
-				out[static_cast<size_t>(reloc.constIndex)] = resolveStorageSymbolAddress(dataSymbols, dataLmaAddress, reloc.symbol, reloc.addend, ".data");
-				break;
-			case ProgramConstValueRelocKind::BssAddr:
-				out[static_cast<size_t>(reloc.constIndex)] = resolveStorageSymbolAddress(bssSymbols, bssBaseAddress, reloc.symbol, reloc.addend, ".bss");
-				break;
-			case ProgramConstValueRelocKind::RodataAddr:
-				out[static_cast<size_t>(reloc.constIndex)] = resolveStorageSymbolAddress(rodataSymbols, rodataBaseAddress, reloc.symbol, reloc.addend, ".rodata");
-				break;
-		}
+		out[static_cast<size_t>(reloc.constIndex)] = resolveConstValueRelocation(
+			reloc,
+			dataSymbols,
+			dataBaseAddress,
+			dataLmaAddress,
+			bssSymbols,
+			bssBaseAddress,
+			rodataSymbols,
+			rodataBaseAddress
+		);
 	}
 	return out;
 }
@@ -637,6 +656,38 @@ void resolveRuntimeProgramRelocations(
 	}
 }
 
+void resolveRuntimeProgramValueRelocations(
+	Program& program,
+	const std::vector<ProgramConstValueReloc>& relocs,
+	const std::vector<ProgramDataSection::Symbol>& dataSymbols,
+	size_t dataByteCount,
+	uint32_t dataBaseAddress,
+	const std::vector<ProgramBssSection::Symbol>& bssSymbols,
+	size_t bssByteCount,
+	uint32_t bssBaseAddress,
+	const std::vector<ProgramRodataSection::Symbol>& rodataSymbols,
+	size_t rodataByteCount
+) {
+	assertStaticRamFits(dataBaseAddress, dataByteCount);
+	assertStaticRamFits(bssBaseAddress, bssByteCount);
+	assertProgramRomFits(program.programRomTextByteLength + rodataByteCount + dataByteCount);
+	const uint32_t rodataBaseAddress = PROGRAM_ROM_BASE + static_cast<uint32_t>(program.programRomTextByteLength);
+	const uint32_t dataLmaAddress = rodataBaseAddress + static_cast<uint32_t>(rodataByteCount);
+	for (const ProgramConstValueReloc& reloc : relocs) {
+		const double address = resolveConstValueRelocation(
+			reloc,
+			dataSymbols,
+			dataBaseAddress,
+			dataLmaAddress,
+			bssSymbols,
+			bssBaseAddress,
+			rodataSymbols,
+			rodataBaseAddress
+		);
+		program.constPool[static_cast<size_t>(reloc.constIndex)] = valueNumber(address);
+	}
+}
+
 std::unique_ptr<Program> inflateExecutableProgramImage(
 	const ProgramImage& image,
 	uint32_t dataBaseAddress,
@@ -647,24 +698,21 @@ std::unique_ptr<Program> inflateExecutableProgramImage(
 	const size_t dataByteCount = image.sections.data.bytes.size();
 	assertStaticRamFits(dataBaseAddress, dataByteCount + image.sections.bss.byteCount);
 	assertProgramRomFits(textByteCount + rodataByteCount + dataByteCount);
-	const uint32_t rodataBaseAddress = PROGRAM_ROM_BASE + static_cast<uint32_t>(textByteCount);
-	const uint32_t dataLmaAddress = rodataBaseAddress + static_cast<uint32_t>(rodataByteCount);
-	auto program = image.link.constValueRelocs.empty()
-		? inflateProgram(image.sections, image.sections.rodata.constPool)
-		: inflateProgram(
-			image.sections,
-			resolveConstValueRelocations(
-				image.sections.rodata.constPool,
-				image.link.constValueRelocs,
-				image.sections.data.symbols,
-				dataBaseAddress,
-				dataLmaAddress,
-				image.sections.bss.symbols,
-				bssBaseAddress,
-				image.sections.rodata.symbols,
-				rodataBaseAddress
-			)
+	auto program = inflateProgram(image.sections, image.sections.rodata.constPool);
+	if (!image.link.constValueRelocs.empty()) {
+		resolveRuntimeProgramValueRelocations(
+			*program,
+			image.link.constValueRelocs,
+			image.sections.data.symbols,
+			dataByteCount,
+			dataBaseAddress,
+			image.sections.bss.symbols,
+			image.sections.bss.byteCount,
+			bssBaseAddress,
+			image.sections.rodata.symbols,
+			rodataByteCount
 		);
+	}
 	if (!image.link.constRelocs.empty()) {
 		resolveRuntimeProgramRelocations(*program, image.link.symbols, image.link.constRelocs);
 	}

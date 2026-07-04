@@ -231,12 +231,14 @@ int Table::getFreeIndex() {
 
 void Table::rehash(const Value& key) {
 	size_t totalKeys = 0;
-	std::vector<size_t> counts;
+	std::array<size_t, sizeof(size_t) * 8u> counts{};
+	size_t countBins = 0;
 
-	auto countIntegerKey = [&counts](size_t index) {
-		size_t log = ceilLog2(index);
-		if (log >= counts.size()) {
-			counts.resize(log + 1, 0);
+	auto countIntegerKey = [&counts, &countBins](size_t index) {
+		const size_t log = ceilLog2(index);
+		while (countBins <= log) {
+			counts[countBins] = 0;
+			++countBins;
 		}
 		counts[log] += 1;
 	};
@@ -269,7 +271,7 @@ void Table::rehash(const Value& key) {
 	size_t arrayKeys = 0;
 	size_t total = 0;
 	size_t power = 1;
-	for (size_t i = 0; i < counts.size(); ++i) {
+	for (size_t i = 0; i < countBins; ++i) {
 		total += counts[i];
 		if (total > power / 2) {
 			arraySize = power;

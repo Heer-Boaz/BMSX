@@ -400,6 +400,9 @@ allocation; the TypeScript runtime uses parallel arrays plus an `Int32Array`
 next column so hash capacity does not materialize one JavaScript object per
 slot. Save-state still serializes hash nodes as schema data at the persistence
 boundary, but steady-state table storage is columnar.
+Table rehash counts integer-key bins in VM-owned scratch/stack storage; growing
+or reshaping a table must not allocate a temporary count array/vector on every
+rehash.
 
 Lua closures own their captured upvalue slots as VM closure storage. In C++,
 captured-closure upvalue pointers are tail storage in the same GC allocation as

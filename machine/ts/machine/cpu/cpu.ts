@@ -506,6 +506,7 @@ export class Table {
 	private static readonly numberBuffer = new ArrayBuffer(8);
 	private static readonly float64View = new Float64Array(Table.numberBuffer);
 	private static readonly uint32View = new Uint32Array(Table.numberBuffer);
+	private static readonly rehashIntegerCounts: number[] = [];
 
 	constructor(arraySize: number, hashSize: number) {
 		this.array = new Array<Value>(arraySize);
@@ -896,20 +897,13 @@ export class Table {
 
 	private rehash(key: Value): void {
 		let totalKeys = 0;
-		const counts: number[] = [];
-
-		const countIntegerKey = (index: number): void => {
-			const log = ceilLog2(index);
-			while (counts.length <= log) {
-				counts.push(0);
-			}
-			counts[log] += 1;
-		};
+		const counts = Table.rehashIntegerCounts;
+		let countBins = 0;
 
 		for (let i = 0; i < this.array.length; i += 1) {
 			if (this.array[i] !== null) {
 				totalKeys += 1;
-				countIntegerKey(i + 1);
+				countBins = Table.countRehashIntegerKey(counts, countBins, i + 1);
 			}
 		}
 		for (let i = 0; i < this.hashKeys.length; i += 1) {
@@ -918,7 +912,7 @@ export class Table {
 				totalKeys += 1;
 				const index = this.getArrayIndex(key);
 				if (index !== null) {
-					countIntegerKey(index + 1);
+					countBins = Table.countRehashIntegerKey(counts, countBins, index + 1);
 				}
 			}
 		}
@@ -926,7 +920,7 @@ export class Table {
 			totalKeys += 1;
 			const index = this.getArrayIndex(key);
 			if (index !== null) {
-				countIntegerKey(index + 1);
+				countBins = Table.countRehashIntegerKey(counts, countBins, index + 1);
 			}
 		}
 
@@ -934,7 +928,7 @@ export class Table {
 		let arrayKeys = 0;
 		let total = 0;
 		let power = 1;
-		for (let i = 0; i < counts.length; i += 1) {
+		for (let i = 0; i < countBins; i += 1) {
 			total += counts[i];
 			if (total > power / 2) {
 				arraySize = power;
@@ -946,6 +940,16 @@ export class Table {
 		const hashKeys = totalKeys - arrayKeys;
 		const hashSize = hashKeys > 0 ? nextPowerOfTwo(hashKeys) : 0;
 		this.resize(arraySize, hashSize);
+	}
+
+	private static countRehashIntegerKey(counts: number[], countBins: number, index: number): number {
+		const log = ceilLog2(index);
+		while (countBins <= log) {
+			counts[countBins] = 0;
+			countBins += 1;
+		}
+		counts[log] += 1;
+		return countBins;
 	}
 
 	private resize(newArraySize: number, newHashSize: number): void {
