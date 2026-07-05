@@ -724,10 +724,17 @@ export class VdpRpuUnit {
 		}
 		switch (op & 0xff) {
 			case VDP_RPU_OP_EXEC_PASS_LIST:
-				return payloadWords === VDP_RPU_EXEC_PASS_LIST_WORDS
-					&& this.acceptExecPassList(frame, op, this.memory.readU32(cursor + IO_WORD_SIZE));
+				if (payloadWords !== VDP_RPU_EXEC_PASS_LIST_WORDS) {
+					this.fault.raise(VDP_FAULT_RPU_BAD_PACKET, op);
+					return false;
+				}
+				return this.acceptExecPassList(frame, op, this.memory.readU32(cursor + IO_WORD_SIZE));
 			case VDP_RPU_OP_SEAL_FRAME:
-				return payloadWords === VDP_RPU_SEAL_FRAME_WORDS && this.acceptSealFrame(frame);
+				if (payloadWords !== VDP_RPU_SEAL_FRAME_WORDS) {
+					this.fault.raise(VDP_FAULT_RPU_BAD_PACKET, op);
+					return false;
+				}
+				return this.acceptSealFrame(frame);
 			default:
 				this.fault.raise(VDP_FAULT_RPU_BAD_PACKET, op);
 				return false;
@@ -741,10 +748,17 @@ export class VdpRpuUnit {
 		}
 		switch (op & 0xff) {
 			case VDP_RPU_OP_EXEC_PASS_LIST:
-				return payloadWords === VDP_RPU_EXEC_PASS_LIST_WORDS
-					&& this.acceptExecPassList(frame, op, words[cursor + 1]);
+				if (payloadWords !== VDP_RPU_EXEC_PASS_LIST_WORDS) {
+					this.fault.raise(VDP_FAULT_RPU_BAD_PACKET, op);
+					return false;
+				}
+				return this.acceptExecPassList(frame, op, words[cursor + 1]);
 			case VDP_RPU_OP_SEAL_FRAME:
-				return payloadWords === VDP_RPU_SEAL_FRAME_WORDS && this.acceptSealFrame(frame);
+				if (payloadWords !== VDP_RPU_SEAL_FRAME_WORDS) {
+					this.fault.raise(VDP_FAULT_RPU_BAD_PACKET, op);
+					return false;
+				}
+				return this.acceptSealFrame(frame);
 			default:
 				this.fault.raise(VDP_FAULT_RPU_BAD_PACKET, op);
 				return false;

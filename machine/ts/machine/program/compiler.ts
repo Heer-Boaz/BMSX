@@ -403,6 +403,7 @@ class ProgramBuilder {
 	private readonly moduleExportEntries: ProgramModuleExport[] = [];
 	private readonly moduleExportEntrySlotByKey = new Map<string, number>();
 	private readonly moduleExportSlotByKey = new Map<string, string>();
+	private readonly moduleExportPathContractByKey = new Set<string>();
 	private readonly modulePathSet = new Set<string>();
 	private readonly staticModulePaths: string[] = [];
 	private readonly staticModulePathSet: Set<string> = new Set();
@@ -772,6 +773,7 @@ class ProgramBuilder {
 
 	public recordModuleExport(path: string, exportPathKey: string, slotName: string): void {
 		this.modulePathSet.add(path);
+		this.recordModuleExportPathContract(path, exportPathKey);
 		const key = this.makeModuleExportKey(path, exportPathKey);
 		const existingSlot = this.moduleExportEntrySlotByKey.get(key);
 		if (existingSlot) {
@@ -785,6 +787,14 @@ class ProgramBuilder {
 		this.moduleExportEntries.push({ path, exportPathKey, slotName });
 	}
 
+	private recordModuleExportPathContract(path: string, exportPathKey: string): void {
+		this.moduleExportPathContractByKey.add(this.makeModuleExportKey(path, ''));
+		this.moduleExportPathContractByKey.add(this.makeModuleExportKey(path, exportPathKey));
+		for (let index = exportPathKey.indexOf('.'); index >= 0; index = exportPathKey.indexOf('.', index + 1)) {
+			this.moduleExportPathContractByKey.add(this.makeModuleExportKey(path, exportPathKey.substring(0, index)));
+		}
+	}
+
 	public recordModuleExportSlot(path: string, exportPathKey: string, slotName: string, system: boolean): void {
 		this.recordModuleExport(path, exportPathKey, slotName);
 		if (system) {
@@ -796,6 +806,10 @@ class ProgramBuilder {
 
 	public hasModuleExportSlot(path: string, exportPathKey: string): boolean {
 		return this.moduleExportSlotByKey.has(this.makeModuleExportKey(path, exportPathKey));
+	}
+
+	public hasModuleExportPathContract(path: string, exportPathKey: string): boolean {
+		return this.moduleExportPathContractByKey.has(this.makeModuleExportKey(path, exportPathKey));
 	}
 
 	public resolveModuleExportSlot(path: string, exportPathKey: string): string | undefined {
@@ -2270,7 +2284,7 @@ class FunctionBuilder {
 			case 'source':
 				return binding.moduleInfo.exportSlotsByPathKey.has(exportPathKey);
 			case 'installed':
-				return this.program.hasModuleExportSlot(binding.modulePath, exportPathKey);
+				return this.program.hasModuleExportPathContract(binding.modulePath, exportPathKey);
 		}
 	}
 
@@ -2528,6 +2542,9 @@ class FunctionBuilder {
 			}
 			this.emitModuleSlotRelocLoad(rootSlot, target);
 		} else {
+			if (!this.program.hasModuleProto(modulePath)) {
+				this.failCompileTimeModuleRootRuntimeUse(modulePath);
+			}
 			this.emitLoadBool(target, true);
 		}
 	}

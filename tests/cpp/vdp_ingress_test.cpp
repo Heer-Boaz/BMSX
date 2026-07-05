@@ -216,6 +216,20 @@ void testFifoReplayAndFaults() {
 	}
 }
 
+void testRpuKnownOpsFaultOnWrongPayloadSize() {
+	const uint32_t header = bmsx::VDP_RPU_PACKET_KIND | ((bmsx::VDP_RPU_SEAL_FRAME_WORDS + 1u) << 16u);
+	{
+		Harness stream;
+		sealStream(stream, {header, bmsx::VDP_RPU_OP_SEAL_FRAME, 0u, bmsx::VDP_PKT_END});
+		expectVdpFault(stream, bmsx::VDP_FAULT_RPU_BAD_PACKET, "RPU stream packet with wrong known-op payload size should fault");
+	}
+	{
+		Harness fifo;
+		sealFifo(fifo, {header, bmsx::VDP_RPU_OP_SEAL_FRAME, 0u, bmsx::VDP_PKT_END});
+		expectVdpFault(fifo, bmsx::VDP_FAULT_RPU_BAD_PACKET, "RPU FIFO packet with wrong known-op payload size should fault");
+	}
+}
+
 void testXfPacketUpdatesRawTransformRegisterState() {
 	Harness h;
 	constexpr uint32_t viewMatrixIndex = 2u;
@@ -446,6 +460,7 @@ int main() {
 		{"raw register frame behavior", testRawRegisterWordsDoNotCancelFrame},
 		{"RPU retained output", testRpuFrameRetainsPassAndDraw},
 		{"FIFO replay and faults", testFifoReplayAndFaults},
+		{"RPU known-op payload faults", testRpuKnownOpsFaultOnWrongPayloadSize},
 		{"VDP XF packet raw state", testXfPacketUpdatesRawTransformRegisterState},
 		{"VDP XF render transform", testXfWordsResolveToRenderOwnedViewRotationInverseTransform},
 		{"VDP XF raw select register words", testXfSelectRegistersLatchRawWords},

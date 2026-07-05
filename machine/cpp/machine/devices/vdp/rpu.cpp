@@ -271,10 +271,17 @@ bool VdpRpuUnit::consumePacketPayloadFromMemory(VdpRpuFrameOutput& frame, u32 op
 	}
 	switch (op & 0xffu) {
 		case VDP_RPU_OP_EXEC_PASS_LIST:
-			return payloadWords == VDP_RPU_EXEC_PASS_LIST_WORDS
-				&& acceptExecPassList(frame, op, m_memory.readU32(cursor + IO_WORD_SIZE));
+			if (payloadWords != VDP_RPU_EXEC_PASS_LIST_WORDS) {
+				m_fault.raise(VDP_FAULT_RPU_BAD_PACKET, op);
+				return false;
+			}
+			return acceptExecPassList(frame, op, m_memory.readU32(cursor + IO_WORD_SIZE));
 		case VDP_RPU_OP_SEAL_FRAME:
-			return payloadWords == VDP_RPU_SEAL_FRAME_WORDS && acceptSealFrame(frame);
+			if (payloadWords != VDP_RPU_SEAL_FRAME_WORDS) {
+				m_fault.raise(VDP_FAULT_RPU_BAD_PACKET, op);
+				return false;
+			}
+			return acceptSealFrame(frame);
 		default:
 			m_fault.raise(VDP_FAULT_RPU_BAD_PACKET, op);
 			return false;
@@ -288,10 +295,17 @@ bool VdpRpuUnit::consumePacketPayloadFromWords(VdpRpuFrameOutput& frame, const u
 	}
 	switch (op & 0xffu) {
 		case VDP_RPU_OP_EXEC_PASS_LIST:
-			return payloadWords == VDP_RPU_EXEC_PASS_LIST_WORDS
-				&& acceptExecPassList(frame, op, words[cursor + 1u]);
+			if (payloadWords != VDP_RPU_EXEC_PASS_LIST_WORDS) {
+				m_fault.raise(VDP_FAULT_RPU_BAD_PACKET, op);
+				return false;
+			}
+			return acceptExecPassList(frame, op, words[cursor + 1u]);
 		case VDP_RPU_OP_SEAL_FRAME:
-			return payloadWords == VDP_RPU_SEAL_FRAME_WORDS && acceptSealFrame(frame);
+			if (payloadWords != VDP_RPU_SEAL_FRAME_WORDS) {
+				m_fault.raise(VDP_FAULT_RPU_BAD_PACKET, op);
+				return false;
+			}
+			return acceptSealFrame(frame);
 		default:
 			m_fault.raise(VDP_FAULT_RPU_BAD_PACKET, op);
 			return false;

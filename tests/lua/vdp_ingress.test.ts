@@ -72,6 +72,7 @@ import {
 import { VDP_VOUT_SCANOUT_PHASE_ACTIVE, VDP_VOUT_SCANOUT_PHASE_VBLANK } from '../../machine/ts/machine/devices/vdp/vout';
 import {
 	VDP_RPU_EXEC_PASS_LIST_WORDS,
+	VDP_FAULT_RPU_BAD_PACKET,
 	VDP_RPU_INDEX_NONE,
 	VDP_RPU_LAYOUT_V2_C4,
 	VDP_RPU_OP_EXEC_PASS_LIST,
@@ -322,6 +323,18 @@ test('VDP packet FIFO decodes reserved command bits and wraps register indices',
 	sealStream(memory, vdp, [VDP_PKT_REGN | (2 << 16) | 18, 0x11111111, 0x22222222, VDP_PKT_END]);
 	assert.equal(memory.readIoU32(IO_VDP_FAULT_CODE), VDP_FAULT_NONE);
 	assert.equal(memory.readValue(IO_VDP_REG_SRC_SLOT), 0x22222222);
+});
+
+test('VDP RPU packets with wrong known-op payload sizes latch packet faults', () => {
+	const { memory, vdp } = createVdp();
+	const header = VDP_RPU_PACKET_KIND | ((VDP_RPU_SEAL_FRAME_WORDS + 1) << 16);
+
+	sealStream(memory, vdp, [header, VDP_RPU_OP_SEAL_FRAME, 0, VDP_PKT_END]);
+	assertVdpFault(memory, VDP_FAULT_RPU_BAD_PACKET);
+	clearVdpFault(memory);
+
+	sealFifo(memory, [header, VDP_RPU_OP_SEAL_FRAME, 0, VDP_PKT_END]);
+	assertVdpFault(memory, VDP_FAULT_RPU_BAD_PACKET);
 });
 
 test('VDP packet FIFO allows an empty PKT_END-only frame', () => {

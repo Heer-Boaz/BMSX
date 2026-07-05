@@ -308,6 +308,49 @@ return dynamic(12, 0, 10)
 	);
 });
 
+test('installed nested const-function modules reject root runtime values', () => {
+	const modulePath = 'bios/util/nested_clamp';
+	const moduleSource = `
+local function clamp(value, low, high)
+	if value < low then return low end
+	if value > high then return high end
+	return value
+end
+return { math = { clamp = clamp } }
+`;
+	const module = { path: modulePath, chunk: parseSource(moduleSource, `${modulePath}.lua`), source: moduleSource };
+	const systemCompiled = compileLuaChunkToProgram(
+		parseSource('return nil', 'system.lua'),
+		[module],
+		{ entrySource: 'return nil', constModulePaths: [modulePath] },
+	);
+	const baseProgram = inflateExecutableProgramImage(encodeCompiledProgramImage(systemCompiled));
+	const callSource = `
+local api<const> = require("${modulePath}")
+return api.math.clamp(12, 0, 10)
+`;
+	const appended = appendLuaChunkToProgram(baseProgram, systemCompiled.metadata, parseSource(callSource, 'cart.lua'), { entrySource: callSource });
+	resolveRuntimeProgramRelocations(appended.program, appended.metadata, appended.constRelocs);
+	const cpu = new CPU(new Memory({ systemRom: new Uint8Array(0), cartRom: new Uint8Array(0) }));
+	cpu.setProgram(appended.program, appended.metadata, appended.metadata);
+	cpu.start(appended.entryProtoIndex);
+	assert.equal(cpu.runUntilDepth(0, 100000), RunResult.Halted);
+	assert.deepEqual(Array.from(cpu.lastReturnValues), [10]);
+	assert.throws(
+		() => appendLuaChunkToProgram(baseProgram, systemCompiled.metadata, parseSource(`return require("${modulePath}")`, 'cart.lua'), { entrySource: `return require("${modulePath}")` }),
+		/Module 'bios\/util\/nested_clamp' root is compile-time only/,
+	);
+	const aliasSource = `
+local api<const> = require("${modulePath}")
+local dynamic = api
+return dynamic
+`;
+	assert.throws(
+		() => appendLuaChunkToProgram(baseProgram, systemCompiled.metadata, parseSource(aliasSource, 'cart.lua'), { entrySource: aliasSource }),
+		/Module 'bios\/util\/nested_clamp' root is compile-time only/,
+	);
+});
+
 test('dynamic table-return function modules remain runtime modules', () => {
 	const moduleSource = `
 return {

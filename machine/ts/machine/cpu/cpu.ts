@@ -842,6 +842,9 @@ export class Table {
 	private hashValue(key: Value): number {
 		if (valueIsNumber(key)) {
 			const normalized = key === 0 ? 0 : key;
+			if (normalized !== normalized) {
+				return 0x7ff80000;
+			}
 			Table.float64View[0] = normalized;
 			return (Table.uint32View[0] ^ Table.uint32View[1]) >>> 0;
 		}

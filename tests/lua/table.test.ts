@@ -36,6 +36,27 @@ test('Table hashes runtime object keys from value-owned identity', () => {
 	assert.equal(table.get(nativeObjectKey), 303);
 });
 
+test('Table hashes all NaN keys through the canonical qNaN bucket', () => {
+	const buffer = new ArrayBuffer(8);
+	const words = new Uint32Array(buffer);
+	const floats = new Float64Array(buffer);
+	words[0] = 1;
+	words[1] = 0x7ff80000;
+	const firstNaN = floats[0];
+	words[0] = 2;
+	words[1] = 0x7ff80000;
+	const secondNaN = floats[0];
+	const table = new Table(0, 0);
+
+	table.set(firstNaN, 11);
+	table.set(secondNaN, 22);
+
+	assert.equal(table.get(firstNaN), 22);
+	assert.equal(table.get(secondNaN), 22);
+	table.set(firstNaN, null);
+	assert.equal(table.get(secondNaN), null);
+});
+
 test('CPU modulus follows Lua floor-modulo semantics', () => {
 	const [negativeNormalized, fnvXorNormalized] = runCompiledLua(`
 return -1 % 0x100000000, (0x84222325 ~ 0x61) % 0x100000000
