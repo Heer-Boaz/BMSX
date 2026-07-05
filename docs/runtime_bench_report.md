@@ -140,18 +140,26 @@ consoles hit a **fill-rate** wall first (pixels × blend × texture-fetch per
 second), especially at 320×240 with overdraw. Heavy overdraw is effectively free
 here — the one place cart-observable timing diverges from real silicon.
 
-Recommendation (aligns with this repo's own "cart-observable facts are hardware
-facts … timing edges" contract — a frame held longer under overdraw *is* such an
-edge): add a coverage term to the render cost.
+This aligns with the repo's own "cart-observable facts are hardware facts …
+timing edges" contract — a frame held longer under overdraw *is* such an edge.
+
+### Implemented: viewport-area per pass
+
+A fill term is now charged per pass, estimated at submit from the pass viewport
+(`machine/{cpp,ts}/machine/devices/vdp/budget.h,ts` — `rpuPassFillCost`):
 
 ```
-drawCost += ceil(coveredPixels / K)     // K = fill-units per pixel-block
-// or a clear/pass cost proportional to viewport area:
-passCost += ceil((vpW * vpH) / K)
+passCost += ceil((vpW * vpH) / K)       // K = VDP_RPU_PASS_FILL_PIXEL_DENSITY_DIVISOR = 4096
 ```
 
-Even a coarse bounding-box-area estimate introduces fill-pressure and gives the
-envelope a believable pixel-throughput ceiling.
+It is integer-only and O(passes) — computed from `bm_pass_desc.viewport_wh`,
+which is already in the descriptor, so there is no ABI change and no per-pixel
+work. This matters for the GLES2/SNES-mini target, where fragment counting is
+not available and the cost must be backend-independent anyway. Calibration at
+K=4096: a 320×240 pass costs 19 of the ~427 render units/frame; the shipped
+`bare_metal_cart` (two 256×212 passes) adds 28 units — clears and fullscreen
+passes now carry fill pressure, while heavy overdraw eventually holds frames.
+The coarser per-draw coverage refinement (a cart-declared hint) is deferred.
 
 ## Corrections log
 

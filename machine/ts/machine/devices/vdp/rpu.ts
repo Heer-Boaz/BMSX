@@ -6,6 +6,7 @@ import {
 	VDP_RPU_PACKET_COST,
 	VDP_RPU_BIND_COST,
 	rpuDrawCost,
+	rpuPassFillCost,
 } from './budget';
 import {
 	RPU_PASS_DESC_SIZE,
@@ -790,6 +791,7 @@ export class VdpRpuUnit {
 			cmd.passDepthSurfaceDescAddr[pi] = readRpuDescU32(vram, pb + RPU_PASS_DESC_DEPTH_SURFACE_DESC_ADDR_OFFSET);
 			cmd.passViewportXY[pi] = readRpuDescU32(vram, pb + RPU_PASS_DESC_VIEWPORT_XY_OFFSET);
 			cmd.passViewportWH[pi] = readRpuDescU32(vram, pb + RPU_PASS_DESC_VIEWPORT_WH_OFFSET);
+			cost += rpuPassFillCost(cmd.passViewportWH[pi]);
 			cmd.passOps[pi] = readRpuDescU32(vram, pb + RPU_PASS_DESC_OPS_OFFSET);
 			cmd.passClearColor[pi] = readRpuDescU32(vram, pb + RPU_PASS_DESC_CLEAR_COLOR_OFFSET);
 			cmd.passClearDepthWord[pi] = readRpuDescU32(vram, pb + RPU_PASS_DESC_CLEAR_DEPTH_WORD_OFFSET);
