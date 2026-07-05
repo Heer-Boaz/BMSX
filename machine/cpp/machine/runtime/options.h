@@ -5,9 +5,6 @@
 
 namespace bmsx {
 
-struct MachineManifest;
-struct CartManifest;
-
 /**
  * Runtime options for initialization.
  */
@@ -20,7 +17,6 @@ struct RuntimeOptions {
 	Vec2 viewport;
 	RomSpan systemRomBytes;
 	RomSpan cartRomBytes;
-	const MachineManifest* machineManifest;
 	uint32_t machineRegionWord;
 	i64 ufpsScaled;
 	i64 cpuHz;

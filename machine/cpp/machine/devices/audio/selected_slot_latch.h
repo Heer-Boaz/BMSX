@@ -1,5 +1,8 @@
 #pragma once
 
+#include "machine/cpu/cpu.h"
+#include "common/types.h"
+
 namespace bmsx {
 
 class ApuSlotBank;
@@ -11,7 +14,7 @@ public:
 	ApuSelectedSlotLatch(Memory& memory, DeviceStatusLatch& status, ApuSlotBank& slots);
 
 	void reset();
-	void refresh();
+	static void refreshThunk(void* context, u32 addr, Value value);
 
 private:
 	Memory& m_memory;

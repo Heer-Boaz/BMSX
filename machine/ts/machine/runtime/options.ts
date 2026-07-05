@@ -1,12 +1,13 @@
-import type { CartManifest, MachineManifest, Viewport } from '../../rompack/format';
 import type { Memory } from '../memory/memory';
 
+export type RuntimeViewport = {
+	width: number;
+	height: number;
+};
+
 export type RuntimeOptions = {
-	viewport: Viewport;
+	viewport: RuntimeViewport;
 	memory: Memory;
-	activeMachineManifest: MachineManifest;
-	cartManifest: CartManifest | null;
-	cartProjectRootPath: string | null;
 	machineRegionWord: number;
 	ufpsScaled: number;
 	cpuHz: number;

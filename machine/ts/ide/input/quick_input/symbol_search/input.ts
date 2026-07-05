@@ -66,6 +66,6 @@ export function handleSymbolSearchInput(runtime: Runtime): void {
 	});
 	symbolSearchState.query = symbolSearchState.field.text;
 	if (textChanged) {
-		updateSymbolSearchMatches(runtime);
+		updateSymbolSearchMatches();
 	}
 }

@@ -82,31 +82,31 @@ export class GeometryController {
 		this.xform2 = new GeometryXform2Unit(memory);
 		this.sat2 = new GeometrySat2Unit(memory);
 		this.overlap2d = new GeometryOverlap2dUnit(memory);
-		this.memory.mapIoWrite(IO_GEO_CMD, this.onCommandWrite.bind(this));
-		this.memory.mapIoWrite(IO_GEO_CTRL, this.onCtrlRegisterWrite.bind(this));
-		this.memory.mapIoWrite(IO_GEO_FAULT_ACK, this.onFaultAckWrite.bind(this));
+		this.memory.mapIoWrite(IO_GEO_CMD, this, GeometryController.onCommandWrite);
+		this.memory.mapIoWrite(IO_GEO_CTRL, this, GeometryController.onCtrlRegisterWrite);
+		this.memory.mapIoWrite(IO_GEO_FAULT_ACK, this, GeometryController.onFaultAckWrite);
 	}
 
-	private onCommandWrite(_addr: number, value: Value): void {
-		this.onCommandDoorbell(this.scheduler.currentNowCycles(), (value as number) >>> 0);
+	private static onCommandWrite(context: GeometryController, _addr: number, value: Value): void {
+		context.onCommandDoorbell(context.scheduler.currentNowCycles(), (value as number) >>> 0);
 	}
 
-	private onCtrlRegisterWrite(): void {
-		this.onCtrlWrite(this.scheduler.currentNowCycles());
+	private static onCtrlRegisterWrite(context: GeometryController): void {
+		context.onCtrlWrite(context.scheduler.currentNowCycles());
 	}
 
-	private onFaultAckWrite(_addr: number, value: Value): void {
+	private static onFaultAckWrite(context: GeometryController, _addr: number, value: Value): void {
 		if (((value as number) >>> 0) === 0) {
 			return;
 		}
-		const status = this.memory.readIoU32(IO_GEO_STATUS) & ~(GEO_STATUS_ERROR | GEO_STATUS_REJECTED);
-		this.memory.writeIoValue(IO_GEO_STATUS, status);
-		this.memory.writeIoValue(IO_GEO_FAULT, 0);
-		this.memory.writeIoValue(IO_GEO_FAULT_ACK, 0);
-		if (this.phase === GEOMETRY_CONTROLLER_PHASE_ERROR) {
-			this.phase = GEOMETRY_CONTROLLER_PHASE_DONE;
-		} else if (this.phase === GEOMETRY_CONTROLLER_PHASE_REJECTED) {
-			this.phase = GEOMETRY_CONTROLLER_PHASE_IDLE;
+		const status = context.memory.readIoU32(IO_GEO_STATUS) & ~(GEO_STATUS_ERROR | GEO_STATUS_REJECTED);
+		context.memory.writeIoValue(IO_GEO_STATUS, status);
+		context.memory.writeIoValue(IO_GEO_FAULT, 0);
+		context.memory.writeIoValue(IO_GEO_FAULT_ACK, 0);
+		if (context.phase === GEOMETRY_CONTROLLER_PHASE_ERROR) {
+			context.phase = GEOMETRY_CONTROLLER_PHASE_DONE;
+		} else if (context.phase === GEOMETRY_CONTROLLER_PHASE_REJECTED) {
+			context.phase = GEOMETRY_CONTROLLER_PHASE_IDLE;
 		}
 	}
 

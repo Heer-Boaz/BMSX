@@ -9,10 +9,10 @@ import { LuaParser } from '../../machine/ts/lua/syntax/parser';
 import { CPU, RunResult, type ProgramMetadata } from '../../machine/ts/machine/cpu/cpu';
 import { disassembleProgram } from '../../machine/ts/machine/cpu/disassembler';
 import { Memory } from '../../machine/ts/machine/memory/memory';
-import { appendLuaChunkToProgram, compileLuaChunkToProgram, encodeCompiledProgramImage, type CompiledProgram } from '../../machine/ts/machine/program/compiler';
+import { appendLuaChunkToProgram, compileLuaChunkToProgram, encodeCompiledProgramImage, type CompiledProgram } from '../../machine/ts/lua/compiler';
 import type { ProgramImage } from '../../machine/ts/machine/program/loader';
 import { inflateExecutableProgramImage, linkProgramImages, resolveRuntimeProgramRelocations } from '../../machine/ts/machine/program/linker';
-import type { OptimizationLevel } from '../../machine/ts/machine/program/optimizer';
+import type { OptimizationLevel } from '../../machine/ts/lua/compiler/optimizer';
 
 const BOOL01_PATH = 'bios/util/bool01';
 const DIV_TOWARD_ZERO_PATH = 'bios/util/div_toward_zero';

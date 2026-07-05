@@ -8,10 +8,10 @@ export class IrqController {
 	private mask = 0;
 
 	public constructor(private readonly memory: Memory) {
-		this.memory.mapIoRead(IO_IRQ_FLAGS, this.onFlagsRead.bind(this));
-		this.memory.mapIoWrite(IO_IRQ_ACK, this.onAckWrite.bind(this));
-		this.memory.mapIoRead(IO_IRQ_MASK, this.onMaskRead.bind(this));
-		this.memory.mapIoWrite(IO_IRQ_MASK, this.onMaskWrite.bind(this));
+		this.memory.mapIoRead(IO_IRQ_FLAGS, this, IrqController.onFlagsReadThunk);
+		this.memory.mapIoWrite(IO_IRQ_ACK, this, IrqController.onAckWriteThunk);
+		this.memory.mapIoRead(IO_IRQ_MASK, this, IrqController.onMaskReadThunk);
+		this.memory.mapIoWrite(IO_IRQ_MASK, this, IrqController.onMaskWriteThunk);
 	}
 
 	public reset(): void {
@@ -62,26 +62,30 @@ export class IrqController {
 		this.memory.writeIoValue(IO_IRQ_ACK, 0);
 	}
 
-	private onFlagsRead(_addr: number): Value {
-		return this.pendingFlags;
+	private static onFlagsReadThunk(context: IrqController, addr: number): Value {
+		void addr;
+		return context.pendingFlags;
 	}
 
-	private onAckWrite(_addr: number, value: Value): void {
+	private static onAckWriteThunk(context: IrqController, addr: number, value: Value): void {
+		void addr;
 		const ack = (value as number) >>> 0;
 		if (ack !== 0) {
-			const next = (this.pendingFlags & ~ack) >>> 0;
-			if (next !== this.pendingFlags) {
-				this.pendingFlags = next;
+			const next = (context.pendingFlags & ~ack) >>> 0;
+			if (next !== context.pendingFlags) {
+				context.pendingFlags = next;
 			}
 		}
-		this.memory.writeIoValue(IO_IRQ_ACK, 0);
+		context.memory.writeIoValue(IO_IRQ_ACK, 0);
 	}
 
-	private onMaskRead(_addr: number): Value {
-		return this.mask;
+	private static onMaskReadThunk(context: IrqController, addr: number): Value {
+		void addr;
+		return context.mask;
 	}
 
-	private onMaskWrite(_addr: number, value: Value): void {
-		this.mask = (value as number) >>> 0;
+	private static onMaskWriteThunk(context: IrqController, addr: number, value: Value): void {
+		void addr;
+		context.mask = (value as number) >>> 0;
 	}
 }

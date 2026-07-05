@@ -6,8 +6,7 @@ import { extractErrorMessage, type LuaDebuggerPauseSignal } from '../../lua/valu
 import * as constants from '../common/constants';
 import { TERMINAL_TOGGLE_KEY, EDITOR_TOGGLE_GAMEPAD_BUTTONS, EDITOR_TOGGLE_KEY, GAME_PAUSE_KEY } from '../common/constants';
 import { editorDebuggerState } from './contrib/debugger/state';
-import { showEditorWarningBanner } from '../common/feedback_state';
-import { seedDefaultLuaBuiltins } from '../../machine/firmware/builtins';
+import { seedDefaultLuaBuiltins } from '../runtime/lua_builtins';
 import type { Runtime } from '../../machine/runtime/runtime';
 import type { RenderPresentationState } from '../../render/presentation_state';
 import type { FontVariant } from '../../render/shared/bmsx_font';
@@ -37,11 +36,10 @@ export function initializeIdeFeatures(runtime: Runtime, viewport: Viewport): voi
 	machineManager.ideState = createRuntimeIdeState(runtime, viewport);
 	machineManager.faultState = createRuntimeFaultState();
 	Input.instance.setKeyboardCapture(EDITOR_TOGGLE_KEY, true);
-	seedDefaultLuaBuiltins(runtime);
-	flushLuaWarnings(runtime);
+	seedDefaultLuaBuiltins();
 	registerRuntimeShortcuts(runtime);
-	runtime.debuggerController.setBreakpoints(editorDebuggerState.breakpoints);
-	updateGamePipelineExts(runtime);
+	machineManager.ideState.debugger.controller.setBreakpoints(editorDebuggerState.breakpoints);
+	updateGamePipelineExts();
 }
 
 export function setActiveIdeFontVariant(variant: FontVariant): void {
@@ -52,14 +50,14 @@ export function setActiveIdeFontVariant(variant: FontVariant): void {
 }
 
 export function registerRuntimeShortcuts(runtime: Runtime): void {
-	disposeShortcutHandlers(runtime);
+	disposeShortcutHandlers();
 	const registry = Input.instance.getGlobalShortcutRegistry();
 	const disposers: Array<() => void> = [];
 	disposers.push(registry.registerKeyboardShortcut(1, EDITOR_TOGGLE_KEY, () => {
 		Input.instance.getPlayerInput(1).consumeRawButton(EDITOR_TOGGLE_KEY, 'keyboard');
 		toggleEditor(runtime);
 	}));
-	disposers.push(registry.registerKeyboardShortcut(1, TERMINAL_TOGGLE_KEY, () => toggleTerminalMode(runtime)));
+	disposers.push(registry.registerKeyboardShortcut(1, TERMINAL_TOGGLE_KEY, () => toggleTerminalMode()));
 	disposers.push(registry.registerGamepadChord(1, EDITOR_TOGGLE_GAMEPAD_BUTTONS, () => toggleEditor(runtime)));
 	disposers.push(registry.registerKeyboardShortcut(1, GAME_PAUSE_KEY, () => toggleDebuggerControls()));
 	disposers.push(registry.registerKeyboardShortcut(1, 'KeyT', () => {
@@ -72,23 +70,23 @@ export function registerRuntimeShortcuts(runtime: Runtime): void {
 		if (modifiers.ctrl) {
 			return;
 		}
-		if (runtime.debuggerSuspendSignal) {
+		if (machineManager.ideState.debugger.suspendSignal) {
 			stepOverLuaDebugger(runtime);
 		} else {
-			runtime.debuggerController.requestStepInto();
+			machineManager.ideState.debugger.controller.requestStepInto();
 		}
 	}));
-	runtime.shortcutDisposers = disposers;
+	machineManager.ideState.shortcutDisposers = disposers;
 }
 
-export function disposeShortcutHandlers(runtime: Runtime): void {
-	if (runtime.shortcutDisposers.length === 0) {
+export function disposeShortcutHandlers(): void {
+	if (machineManager.ideState.shortcutDisposers.length === 0) {
 		return;
 	}
-	for (let i = 0; i < runtime.shortcutDisposers.length; i++) {
-		runtime.shortcutDisposers[i]();
+	for (let i = 0; i < machineManager.ideState.shortcutDisposers.length; i++) {
+		machineManager.ideState.shortcutDisposers[i]();
 	}
-	runtime.shortcutDisposers = [];
+	machineManager.ideState.shortcutDisposers = [];
 }
 
 export function tickIdeInput(): void {
@@ -128,7 +126,7 @@ export function tickTerminalInput(runtime: Runtime): void {
 		.then(async action => {
 			switch (action) {
 				case 'deactivate_terminal':
-					deactivateTerminalMode(runtime);
+					deactivateTerminalMode();
 					return;
 				case 'clear_fault': {
 					const result = clearFaultState(runtime);
@@ -147,12 +145,12 @@ export function tickTerminalInput(runtime: Runtime): void {
 					return;
 				case 'workspace_reset':
 					terminal.appendStdout('Discarding dirty files...');
-					await resetWorkspaceDirtyBuffersAndStorage(runtime);
+					await resetWorkspaceDirtyBuffersAndStorage();
 					terminal.appendStdout('Dirty workspace buffers cleared');
 					return;
 				case 'workspace_nuke':
 					terminal.appendStdout('Warning: this will erase workspace!');
-					await nukeWorkspaceState(runtime);
+					await nukeWorkspaceState();
 					clearWorkspaceSessionState();
 					terminal.appendStdout('Workspace data wiped');
 					return;
@@ -163,21 +161,10 @@ export function tickTerminalInput(runtime: Runtime): void {
 		});
 }
 
-export function flushLuaWarnings(runtime: Runtime): void {
-	if (runtime.pendingLuaWarnings.length === 0) {
-		return;
-	}
-	const messages = runtime.pendingLuaWarnings;
-	runtime.pendingLuaWarnings = [];
-	for (const warning of messages) {
-		showEditorWarningBanner(warning, 6.0);
-	}
-}
-
-export function setDebuggerPaused(runtime: Runtime, paused: boolean): void {
-	runtime.debuggerPaused = paused;
+export function setDebuggerPaused(paused: boolean): void {
+	machineManager.ideState.debugger.paused = paused;
 	editorDebuggerState.controls.executionState = paused ? 'paused' : 'inactive';
-	editorDebuggerState.controls.sessionMetrics = runtime.debuggerMetrics;
+	editorDebuggerState.controls.sessionMetrics = machineManager.ideState.debugger.metrics;
 	if (!paused) {
 		clearExecutionStopHighlights();
 	}
@@ -189,16 +176,16 @@ export function applyDebuggerStopLocation(signal: LuaDebuggerPauseSignal): void 
 
 export function onLuaDebuggerPause(runtime: Runtime, signal: LuaDebuggerPauseSignal): void {
 	if (signal.reason === 'exception' && !isManagedOverlayEditorActive()) {
-		runtime.interpreter.markFaultEnvironment();
+		machineManager.ideState.nativeBridge.luaInterpreter.markFaultEnvironment();
 		handleLuaError(runtime, signal.exception);
 		return;
 	}
-	runtime.debuggerController.handlePause(signal);
-	const pendingException = runtime.interpreter.pendingDebuggerException;
-	runtime.pauseCoordinator.capture(signal, pendingException);
-	runtime.debuggerSuspendSignal = signal;
-	runtime.debuggerMetrics = runtime.debuggerController.getSessionMetrics();
-	setDebuggerPaused(runtime, true);
+	machineManager.ideState.debugger.controller.handlePause(signal);
+	const pendingException = machineManager.ideState.nativeBridge.luaInterpreter.pendingDebuggerException;
+	machineManager.ideState.debugger.pauseCoordinator.capture(signal, pendingException);
+	machineManager.ideState.debugger.suspendSignal = signal;
+	machineManager.ideState.debugger.metrics = machineManager.ideState.debugger.controller.getSessionMetrics();
+	setDebuggerPaused(true);
 	applyDebuggerStopLocation(signal);
 	if (signal.reason === 'exception') {
 		recordDebuggerExceptionFault(runtime, signal);
@@ -212,7 +199,7 @@ export function onLuaDebuggerPause(runtime: Runtime, signal: LuaDebuggerPauseSig
 
 export function clearActiveDebuggerPause(runtime: Runtime): void {
 	clearRuntimeDebuggerPause(runtime);
-	setDebuggerPaused(runtime, false);
+	setDebuggerPaused(false);
 	machineManager.ideState.editor.clearRuntimeErrorOverlay();
 }
 
@@ -237,21 +224,21 @@ function resolveResumeStrategy(suspension: LuaDebuggerPauseSignal): 'propagate' 
 }
 
 function resumeDebugger(runtime: Runtime, options: { mode: 'continue' | 'step_into' | 'step_over' | 'step_out'; strategy: 'propagate' | 'skip_statement' }): void {
-	const suspension = runtime.pauseCoordinator.getSuspension();
+	const suspension = machineManager.ideState.debugger.pauseCoordinator.getSuspension();
 	const stepOrigin = buildDebuggerStepOrigin(suspension);
 	if (options.mode === 'step_into') {
-		runtime.debuggerController.requestStepInto(stepOrigin);
+		machineManager.ideState.debugger.controller.requestStepInto(stepOrigin);
 	}
 	if (options.mode === 'step_over') {
-		runtime.debuggerController.requestStepOver(suspension.callStack.length, stepOrigin);
+		machineManager.ideState.debugger.controller.requestStepOver(suspension.callStack.length, stepOrigin);
 	}
 	if (options.mode === 'step_out') {
-		runtime.debuggerController.requestStepOut(suspension.callStack.length, stepOrigin);
+		machineManager.ideState.debugger.controller.requestStepOut(suspension.callStack.length, stepOrigin);
 	}
 	if (options.strategy === 'skip_statement' && suspension.reason === 'exception') {
-		runtime.debuggerController.markSkippedException();
+		machineManager.ideState.debugger.controller.markSkippedException();
 	}
-	runtime.interpreter.debuggerResumeStrategy = options.strategy;
+	machineManager.ideState.nativeBridge.luaInterpreter.debuggerResumeStrategy = options.strategy;
 	const result = suspension.resume();
 	handleDebuggerResumeResult(runtime, result);
 }
@@ -261,17 +248,17 @@ export function continueLuaDebugger(runtime: Runtime): void {
 }
 
 export function stepOverLuaDebugger(runtime: Runtime): void {
-	const suspension = runtime.pauseCoordinator.getSuspension();
+	const suspension = machineManager.ideState.debugger.pauseCoordinator.getSuspension();
 	resumeDebugger(runtime, { mode: 'step_over', strategy: resolveResumeStrategy(suspension) });
 }
 
 export function stepIntoLuaDebugger(runtime: Runtime): void {
-	const suspension = runtime.pauseCoordinator.getSuspension();
+	const suspension = machineManager.ideState.debugger.pauseCoordinator.getSuspension();
 	resumeDebugger(runtime, { mode: 'step_into', strategy: resolveResumeStrategy(suspension) });
 }
 
 export function stepOutLuaDebugger(runtime: Runtime): void {
-	const suspension = runtime.pauseCoordinator.getSuspension();
+	const suspension = machineManager.ideState.debugger.pauseCoordinator.getSuspension();
 	resumeDebugger(runtime, { mode: 'step_out', strategy: resolveResumeStrategy(suspension) });
 }
 
@@ -280,8 +267,8 @@ export function ignoreLuaException(runtime: Runtime): void {
 }
 
 export function clearFaultState(runtime: Runtime): { cleared: boolean; resumedDebugger: boolean } {
-	const hadFault = runtime.luaRuntimeFailed || machineManager.faultState.faultSnapshot !== null || runtime.debuggerSuspendSignal !== null;
-	const wasPaused = runtime.debuggerSuspendSignal !== null || runtime.debuggerPaused;
+	const hadFault = runtime.luaRuntimeFailed || machineManager.faultState.faultSnapshot !== null || machineManager.ideState.debugger.suspendSignal !== null;
+	const wasPaused = machineManager.ideState.debugger.suspendSignal !== null || machineManager.ideState.debugger.paused;
 	clearRuntimeFault(runtime);
 	if (wasPaused) {
 		clearActiveDebuggerPause(runtime);
@@ -316,9 +303,6 @@ export function tickTerminalModeDraw(runtime: Runtime): void {
 	if (!state.terminal.isActive) {
 		return;
 	}
-	if (!runtime.tickEnabled) {
-		return;
-	}
 	try {
 		drawTerminal(runtime);
 	} finally {
@@ -342,9 +326,6 @@ export function tickIDE(runtime: Runtime): void {
 }
 
 function beginOverlayUpdateFrame(runtime: Runtime, state: RuntimeIdeState): boolean {
-	if (!runtime.tickEnabled) {
-		return false;
-	}
 	if (runtime.frameLoop.frameActive || state.overlayDrawFrameOwner !== null) {
 		return false;
 	}
@@ -360,9 +341,6 @@ function finishOverlayUpdateFrame(runtime: Runtime, state: RuntimeIdeState, owne
 export function tickIDEDraw(runtime: Runtime): void {
 	const state = machineManager.ideState;
 	if (!editorBlocksRuntimePipeline() || !state.editor.isActive) {
-		return;
-	}
-	if (!runtime.tickEnabled) {
 		return;
 	}
 	try {

@@ -69,7 +69,7 @@ void FrameLoopState::runUpdatePhase(Runtime& runtime) {
 				return;
 			}
 			const RunResult result = runtime.cpuExecution.runWithBudget(runtime, frameState);
-			if (result == RunResult::Halted && cpu.getFrameDepth() == 0 && !runtime.isCartProgramStarted()) {
+			if (result == RunResult::Halted && cpu.getFrameDepth() == 0 && !runtime.cartProgramStarted) {
 				runtime.frameScheduler.clearQueuedTime();
 				abandonFrameState(runtime);
 				runtime.startCartProgram();
@@ -90,7 +90,7 @@ void FrameLoopState::runUpdatePhase(Runtime& runtime) {
 
 bool FrameLoopState::tickUpdate(Runtime& runtime) {
 	using PendingCall = Runtime::PendingCall;
-	if (!runtime.m_luaInitialized || !runtime.m_tickEnabled || runtime.m_runtimeFailed) {
+	if (!runtime.m_luaInitialized || runtime.m_runtimeFailed) {
 		return false;
 	}
 

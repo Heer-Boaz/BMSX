@@ -21,7 +21,7 @@ bool FrameSchedulerState::hasScheduledFrame(const Runtime& runtime) const {
 }
 
 bool FrameSchedulerState::canRunScheduledUpdate(const Runtime& runtime) const {
-	if (!runtime.m_luaInitialized || !runtime.m_tickEnabled || runtime.m_runtimeFailed) {
+	if (!runtime.m_luaInitialized || runtime.m_runtimeFailed) {
 		return false;
 	}
 	return (runtime.frameLoop.frameActive && runtime.frameLoop.frameState.cycleBudgetRemaining > 0)

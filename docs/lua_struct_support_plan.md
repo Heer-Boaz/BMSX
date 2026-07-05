@@ -400,9 +400,9 @@ Deliverable: parser/semantic tests that prove `sizeof`/`offsetof` and field offs
 
 Files likely touched:
 
-- `machine/ts/machine/program/compile_value_flow.ts`
-- `machine/ts/machine/program/target_semantics.ts`
-- `machine/ts/machine/program/compiler.ts`
+- `machine/ts/lua/compiler/compile_value_flow.ts`
+- `machine/ts/lua/compiler/target_semantics.ts`
+- `machine/ts/lua/compiler.ts`
 
 Work:
 
@@ -418,8 +418,8 @@ Deliverable: compiled Lua tests that field reads/writes produce exact RAM bytes.
 
 Files likely touched:
 
-- `machine/ts/machine/program/compiler.ts`
-- `machine/ts/machine/program/optimizer/index.ts`
+- `machine/ts/lua/compiler.ts`
+- `machine/ts/lua/compiler/optimizer/index.ts`
 
 Work:
 

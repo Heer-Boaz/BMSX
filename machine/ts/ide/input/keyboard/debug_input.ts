@@ -1,9 +1,8 @@
 import { machineManager } from '../../../core/machine_manager';
 import { prepareDebuggerStepOverlay, toggleBreakpointForEditorRow } from '../../workbench/contrib/debugger/controller';
-import type { Runtime } from '../../../machine/runtime/runtime';
 import { consumeIdeKey, isAltDown, isCtrlDown, isKeyJustPressed, isMetaDown, isShiftDown } from './key_input';
 
-export function handleEditorDebuggerInput(runtime: Runtime): boolean {
+export function handleEditorDebuggerInput(): boolean {
 	if (handleDebuggerShortcuts()) {
 		return true;
 	}
@@ -11,7 +10,7 @@ export function handleEditorDebuggerInput(runtime: Runtime): boolean {
 		return false;
 	}
 	consumeIdeKey('F9');
-	toggleBreakpointForEditorRow(runtime);
+	toggleBreakpointForEditorRow();
 	return true;
 }
 

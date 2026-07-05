@@ -1,7 +1,6 @@
 import { machineManager } from '../../../../core/machine_manager';
 import { lower_bound } from '../../../../common/lower_bound';
 import { EditorFont } from './font';
-import type { Runtime } from '../../../../machine/runtime/runtime';
 import type { FontVariant } from '../../../../render/shared/bmsx_font';
 import type { Viewport } from '../../../../rompack/format';
 import * as constants from '../../../common/constants';
@@ -524,7 +523,7 @@ export function getSymbolSearchBarBounds(): BarBounds { return getInlineBarBound
 export function getRenameBarBounds(): BarBounds { return getInlineBarBounds(4); }
 export function getLineJumpBarBounds(): BarBounds { return getInlineBarBounds(5); }
 
-export function configureFontVariant(runtime: Runtime, variant: FontVariant, activeCodeTabMode: CodeTabMode | null): void {
+export function configureFontVariant(variant: FontVariant, activeCodeTabMode: CodeTabMode | null): void {
 	editorViewState.fontVariant = variant;
 	editorViewState.font = new EditorFont(variant);
 	editorViewState.lineHeight = editorViewState.font.lineHeight;
@@ -540,7 +539,7 @@ export function configureFontVariant(runtime: Runtime, variant: FontVariant, act
 		maxHighlightCache: 512,
 		semanticDebounceMs: 200,
 		clockNow: editorRuntimeState.clockNow,
-		getBuiltinIdentifiers: () => getBuiltinIdentifiersSnapshot(runtime),
+		getBuiltinIdentifiers: () => getBuiltinIdentifiersSnapshot(),
 		computeWrapWidth,
 	});
 	if (activeCodeTabMode) {
@@ -550,8 +549,8 @@ export function configureFontVariant(runtime: Runtime, variant: FontVariant, act
 	editorViewState.layout.markVisualLinesDirty();
 }
 
-export function setFontVariant(runtime: Runtime, variant: FontVariant, activeCodeTabMode: CodeTabMode | null, activeContextId: string | null): void {
-	configureFontVariant(runtime, variant, activeCodeTabMode);
+export function setFontVariant(variant: FontVariant, activeCodeTabMode: CodeTabMode | null, activeContextId: string | null): void {
+	configureFontVariant(variant, activeCodeTabMode);
 	ensureVisualLines();
 	editorCaretState.cursorRevealSuspended = false;
 	ensureCursorVisible();

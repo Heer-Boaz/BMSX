@@ -10,11 +10,13 @@ import { LuaInterpreter } from '../../../../lua/runtime';
 import { extractErrorMessage, isLuaFunctionValue, isLuaTable, LuaFunctionValue, LuaNativeValue, LuaTable, LuaValue, resolveNativeTypeName } from '../../../../lua/value';
 import { API_METHOD_METADATA, type ApiMethodMetadata } from '../../../../language/lua/api_metadata';
 import { Table, type CpuFrameSnapshot, type LocalSlotDebug, type SourceRange, type Value } from '../../../../machine/cpu/cpu';
-import { DEFAULT_LUA_BUILTIN_FUNCTIONS, DEFAULT_LUA_BUILTIN_NAMES } from '../../../../machine/firmware/builtin_descriptors';
-import { buildMarshalContext, toNativeValue } from '../../../../machine/runtime/host/native_bridge';
+import { DEFAULT_LUA_BUILTIN_FUNCTIONS, DEFAULT_LUA_BUILTIN_NAMES } from '../../../../lua/builtin_descriptors';
+import { luaBuiltinMetadata } from '../../../runtime/lua_builtins';
+import { buildMarshalContext, toNativeValue } from '../../../runtime/native_bridge';
 import { buildLuaSemanticFrontend } from '../../../../lua/semantic/frontend';
 import type { Runtime } from '../../../../machine/runtime/runtime';
 import * as luaPipeline from '../../../runtime/lua_pipeline';
+import { resolveRuntimeLuaSource } from '../../../runtime/sources';
 import { asStringId, valueIsString } from '../../../../machine/cpu/cpu';
 import type { LuaBuiltinDescriptor, LuaDefinitionLocation, LuaDefinitionRange, LuaHoverResult, LuaHoverScope, LuaMemberCompletion, LuaSymbolEntry } from '../../../../lua/semantic_contracts';
 import { ensureCursorVisible, updateDesiredColumn } from '../../ui/view/caret/caret';
@@ -32,7 +34,7 @@ import { clearEditorPointerSelectionState } from '../../../input/pointer/state';
 import { parseLuaIdentifierChain } from '../../../language/lua/identifier_chain';
 import { buildLuaSemanticModel, collectModuleAliasEntriesFromChunk, LuaSemanticModel, type FileSemanticData, type ModuleAliasEntry } from '../../../../lua/semantic/model';
 import { getOrCreateSemanticWorkspace } from './semantic/workspace/state';
-import { cacheRuntimeSemanticWorkspaceAnalysis, prepareRuntimeSemanticWorkspaceForEditorBuffer, primeRuntimeSemanticWorkspaceProjectSources, syncRuntimeSemanticWorkspacePath } from './semantic/workspace/runtime';
+import { cacheRuntimeSemanticWorkspaceAnalysis, prepareRuntimeSemanticWorkspaceForEditorBuffer, primeRuntimeSemanticWorkspaceProjectSources, runtimeSemanticCache, syncRuntimeSemanticWorkspacePath } from './semantic/workspace/runtime';
 import { semanticSymbolKindToLuaSymbolKind } from '../../../../lua/semantic/common';
 import { isLuaCommentContext } from '../../../common/text';
 import { writeWrappedOverlayLine } from '../../common/text/layout';
@@ -51,6 +53,7 @@ export const PREVIEW_MAX_DEPTH = 2;
 
 const SYMBOL_PRIORITY_ORDER: LuaDefinitionKind[] = ['table_field', 'function', 'constant', 'parameter', 'variable', 'assignment'];
 const LOCAL_DEFINITION_PRIORITY_ORDER: LuaDefinitionKind[] = ['parameter', 'table_field', 'function', 'constant', 'variable', 'assignment'];
+let nativeMemberCompletionCache: WeakMap<object, { dot?: LuaMemberCompletion[]; colon?: LuaMemberCompletion[] }> = new WeakMap();
 
 function isHiddenNativeMemberName(name: string): boolean {
 	switch (name) {
@@ -139,10 +142,10 @@ function resolveTableChain(table: LuaTable): LuaTable[] {
 	return chain;
 }
 
-function resolveTableTypeName(runtime: Runtime, table: LuaTable): string {
+function resolveTableTypeName(table: LuaTable): string {
 	const chain = resolveTableChain(table);
 	for (let i = 0; i < chain.length; i += 1) {
-		const direct = runtime.interpreter.resolveValueName(chain[i]);
+		const direct = machineManager.ideState.nativeBridge.luaInterpreter.resolveValueName(chain[i]);
 		if (direct) {
 			return direct;
 		}
@@ -424,9 +427,9 @@ function pushSyntaxErrorDiagnostic(error: LuaSyntaxError): void {
 	pushDiagnostic(row, startColumn, endColumn, error.message, 'error');
 }
 
-function resolveSemanticDataForDiagnostics(runtime: Runtime, input: SemanticResolutionInput): FileSemanticData {
+function resolveSemanticDataForDiagnostics(input: SemanticResolutionInput): FileSemanticData {
 	const pathKey = input.path;
-	const cached = runtime.pathSemanticCache.get(pathKey);
+	const cached = runtimeSemanticCache.get(pathKey);
 	if (cached && cached.source === input.source) {
 		const cachedAnalysis = (cached as { analysis?: FileSemanticData }).analysis;
 		if (cachedAnalysis) {
@@ -439,7 +442,7 @@ function resolveSemanticDataForDiagnostics(runtime: Runtime, input: SemanticReso
 			return workspaceData;
 		}
 	}
-	const data = syncRuntimeSemanticWorkspacePath(runtime, {
+	const data = syncRuntimeSemanticWorkspacePath({
 		path: pathKey,
 		source: input.source,
 		lines: input.lines,
@@ -452,7 +455,7 @@ function resolveSemanticDataForDiagnostics(runtime: Runtime, input: SemanticReso
 	return null;
 }
 
-export function computeLuaDiagnostics(runtime: Runtime, options: LuaDiagnosticOptions): LuaDiagnostic[] {
+export function computeLuaDiagnostics(options: LuaDiagnosticOptions): LuaDiagnostic[] {
 	clearLuaDiagnosticSlots();
 	const parseEntry = getCachedLuaParse({
 		path: options.path,
@@ -468,7 +471,7 @@ export function computeLuaDiagnostics(runtime: Runtime, options: LuaDiagnosticOp
 		return finalizeLuaDiagnostics();
 	}
 
-	const semanticData = options.analysis ?? resolveSemanticDataForDiagnostics(runtime, {
+	const semanticData = options.analysis ?? resolveSemanticDataForDiagnostics({
 		path: options.path,
 		source: options.source,
 		lines: parseEntry.lines,
@@ -478,7 +481,7 @@ export function computeLuaDiagnostics(runtime: Runtime, options: LuaDiagnosticOp
 	if (!semanticData) {
 		return [];
 	}
-	const extraGlobalNames = Array.from(runtime.interpreter.globalEnvironment.keys());
+	const extraGlobalNames = Array.from(machineManager.ideState.nativeBridge.luaInterpreter.globalEnvironment.keys());
 	const frontend = buildLuaSemanticFrontend([{
 		path: options.path,
 		source: options.source,
@@ -629,12 +632,11 @@ export function requestSemanticRefresh(context: CodeTabContext): void {
 	editorViewState.layout.requestSemanticUpdate(editorDocumentState.buffer, editorDocumentState.textVersion, path);
 }
 export function resolveSemanticDefinitionLocation(
-	runtime: Runtime,
 	context: CodeTabContext,
 	usageRow: number,
 	usageColumn: number,
 ): LuaDefinitionLocation {
-	const frontend = buildEditorSemanticFrontend(runtime, context.descriptor.path, editorDocumentState.buffer, editorDocumentState.textVersion);
+	const frontend = buildEditorSemanticFrontend(context.descriptor.path, editorDocumentState.buffer, editorDocumentState.textVersion);
 	const hoverPath = context.descriptor.path;
 	const file = frontend.files.get(hoverPath);
 	if (!file) {
@@ -1005,7 +1007,7 @@ export function refreshGotoHoverHighlight(runtime: Runtime, row: number, column:
 		return;
 	}
 	const path = context.descriptor.path;
-	const semanticDefinition = resolveSemanticDefinitionLocation(runtime, context, row + 1, column + 1);
+	const semanticDefinition = resolveSemanticDefinitionLocation(context, row + 1, column + 1);
 	const token = extractHoverExpression(row, column, path);
 	if (!semanticDefinition && !token) {
 		clearGotoHoverHighlight();
@@ -1051,7 +1053,7 @@ export function resolveDefinitionAt(runtime: Runtime, context: CodeTabContext, r
 	if (context.mode !== 'lua') {
 		return null;
 	}
-	let definition = resolveSemanticDefinitionLocation(runtime, context, row + 1, column + 1);
+	let definition = resolveSemanticDefinitionLocation(context, row + 1, column + 1);
 	if (definition) {
 		return definition;
 	}
@@ -1082,7 +1084,7 @@ export function inspectLuaExpression(runtime: Runtime, expression: string, path:
 		return null;
 	}
 	const resolved = resolveLuaChainValue(runtime, chain, path, row, column);
-	const staticDefinition = findStaticDefinitionLocation(runtime, chain, row, column, path, activeContext);
+	const staticDefinition = findStaticDefinitionLocation(chain, row, column, path, activeContext);
 	if (!resolved) {
 		if (!staticDefinition) {
 			return null;
@@ -1112,13 +1114,13 @@ export function inspectLuaExpression(runtime: Runtime, expression: string, path:
 			definition: staticDefinition,
 		};
 	}
-	const formatted = describeLuaValueForInspector(runtime, resolved.value);
+	const formatted = describeLuaValueForInspector(resolved.value);
 	const isFunction = formatted.isFunction;
 	const isLocalFunction = isFunction && resolved.scope === 'path';
-	const isBuiltin = isFunction && chain.length === 1 && isLuaBuiltinFunctionName(runtime, chain[0]);
+	const isBuiltin = isFunction && chain.length === 1 && isLuaBuiltinFunctionName(chain[0]);
 	let definition: LuaDefinitionLocation = null;
 	if (!isBuiltin) {
-		definition = resolveLuaDefinitionMetadata(runtime, resolved.value, resolved.definitionRange);
+		definition = resolveLuaDefinitionMetadata(resolved.value, resolved.definitionRange);
 		if (!definition) {
 			definition = staticDefinition;
 		}
@@ -1154,16 +1156,16 @@ export function listLuaObjectMembers(runtime: Runtime, expression: string, path:
 		return [];
 	}
 	if (value instanceof LuaNativeValue) {
-		return getNativeMemberCompletionEntries(runtime, value, operator);
+		return getNativeMemberCompletionEntries(value, operator);
 	}
 	if (isLuaTable(value)) {
-		const typeName = resolveTableTypeName(runtime, value);
+		const typeName = resolveTableTypeName(value);
 		return buildTableMemberCompletionEntries(value, operator, typeName);
 	}
 	return [];
 }
 
-export function resolveLuaDefinitionMetadata(runtime: Runtime, value: LuaValue, definitionRange: LuaSourceRange): LuaDefinitionLocation {
+export function resolveLuaDefinitionMetadata(value: LuaValue, definitionRange: LuaSourceRange): LuaDefinitionLocation {
 	let range: LuaSourceRange = definitionRange;
 	if (!range && value && typeof value === 'object') {
 		const candidate = value as { getSourceRange?: () => LuaSourceRange };
@@ -1172,7 +1174,7 @@ export function resolveLuaDefinitionMetadata(runtime: Runtime, value: LuaValue, 
 	if (!range) {
 		return null;
 	}
-	const sourceMatch = runtime.resolveLuaSource(range.path);
+	const sourceMatch = resolveRuntimeLuaSource(machineManager.sourceState, range.path);
 	if (sourceMatch && sourceMatch.record.source_path !== range.path) {
 		range = {
 			path: sourceMatch.record.source_path,
@@ -1197,8 +1199,8 @@ export function buildDefinitionLocationFromRange(range: LuaSourceRange): LuaDefi
 	return location;
 }
 
-export function listLuaSymbols(runtime: Runtime, path: string): LuaSymbolEntry[] {
-	const bundle = getStaticDefinitions(runtime, path);
+export function listLuaSymbols(path: string): LuaSymbolEntry[] {
+	const bundle = getStaticDefinitions(path);
 	if (!bundle || bundle.definitions.length === 0) {
 		return [];
 	}
@@ -1235,7 +1237,7 @@ export function listLuaSymbols(runtime: Runtime, path: string): LuaSymbolEntry[]
 	return symbols;
 }
 
-export function listLuaBuiltinFunctions(runtime: Runtime): LuaBuiltinDescriptor[] {
+export function listLuaBuiltinFunctions(): LuaBuiltinDescriptor[] {
 	const descriptors = new Map<string, LuaBuiltinDescriptor>();
 	for (let index = 0; index < DEFAULT_LUA_BUILTIN_FUNCTIONS.length; index += 1) {
 		const descriptor = DEFAULT_LUA_BUILTIN_FUNCTIONS[index];
@@ -1248,7 +1250,7 @@ export function listLuaBuiltinFunctions(runtime: Runtime): LuaBuiltinDescriptor[
 				description: descriptor.description,
 			});
 		}
-		for (const metadata of runtime.luaBuiltinMetadata.values()) {
+		for (const metadata of luaBuiltinMetadata.values()) {
 			const optionalParams = metadata.optionalParams;
 			const optionalSet = optionalParams && optionalParams.length > 0 ? new Set(optionalParams) : undefined;
 			const params = optionalSet ? metadata.params.map(param => (optionalSet.has(param) ? `${param}?` : param)) : metadata.params.slice();
@@ -1267,9 +1269,9 @@ export function listLuaBuiltinFunctions(runtime: Runtime): LuaBuiltinDescriptor[
 	return result;
 }
 
-export function listGlobalLuaSymbols(runtime: Runtime): LuaSymbolEntry[] {
+export function listGlobalLuaSymbols(): LuaSymbolEntry[] {
 	const workspace = getOrCreateSemanticWorkspace();
-	primeRuntimeSemanticWorkspaceProjectSources(runtime, workspace);
+	primeRuntimeSemanticWorkspaceProjectSources(workspace);
 	const snapshot = workspace.getSnapshot();
 	const version = snapshot.version;
 	if (globalSymbolsCache.version === version) {
@@ -1305,21 +1307,21 @@ export function listGlobalLuaSymbols(runtime: Runtime): LuaSymbolEntry[] {
 	return entries;
 }
 
-export function findStaticDefinitionLocation(runtime: Runtime, chain: ReadonlyArray<string>, usageRow: number, usageColumn: number, preferredChunk: string, activeContext: CodeTabContext): LuaDefinitionLocation {
+export function findStaticDefinitionLocation(chain: ReadonlyArray<string>, usageRow: number, usageColumn: number, preferredChunk: string, activeContext: CodeTabContext): LuaDefinitionLocation {
 	if (chain.length === 0) {
 		return null;
 	}
 	if (preferredChunk) {
 		if (activeContext.descriptor.path === preferredChunk) {
 			const source = getTextSnapshot(editorDocumentState.buffer);
-			prepareRuntimeSemanticWorkspaceForEditorBuffer(runtime, {
+			prepareRuntimeSemanticWorkspaceForEditorBuffer({
 				path: preferredChunk,
 				source,
 				lines: getLinesSnapshot(editorDocumentState.buffer),
 				version: editorDocumentState.textVersion,
 			});
 		} else {
-			primeRuntimeSemanticWorkspaceProjectSources(runtime, getOrCreateSemanticWorkspace());
+			primeRuntimeSemanticWorkspaceProjectSources(getOrCreateSemanticWorkspace());
 		}
 		const workspaceSymbol = getOrCreateSemanticWorkspace().getSnapshot().symbolAt(preferredChunk, usageRow, usageColumn);
 		if (workspaceSymbol) {
@@ -1331,7 +1333,7 @@ export function findStaticDefinitionLocation(runtime: Runtime, chain: ReadonlyAr
 		}
 		return null;
 	}
-	const bundle = getStaticDefinitions(runtime, preferredChunk);
+	const bundle = getStaticDefinitions(preferredChunk);
 	if (!bundle || bundle.definitions.length === 0) {
 		return null;
 	}
@@ -1340,7 +1342,7 @@ export function findStaticDefinitionLocation(runtime: Runtime, chain: ReadonlyAr
 		const path = paths[index];
 		let model = models.get(path.path);
 		if (!model) {
-			const source = luaPipeline.resourceSourceForChunk(runtime, path.path);
+			const source = luaPipeline.resourceSourceForChunk(path.path);
 			if (!source) {
 				continue;
 			}
@@ -1407,10 +1409,10 @@ export function findStaticDefinitionLocation(runtime: Runtime, chain: ReadonlyAr
 	return buildDefinitionLocationFromRange(chosen.definition);
 }
 
-export function getStaticDefinitions(runtime: Runtime, preferredChunk: string): { definitions: ReadonlyArray<LuaDefinitionInfo>; paths: Array<{ path: string; info: { asset_id: string; path?: string } }>; models: Map<string, LuaSemanticModel> } {
-	const interpreter = runtime.interpreter;
+export function getStaticDefinitions(preferredChunk: string): { definitions: ReadonlyArray<LuaDefinitionInfo>; paths: Array<{ path: string; info: { asset_id: string; path?: string } }>; models: Map<string, LuaSemanticModel> } {
+	const interpreter = machineManager.ideState.nativeBridge.luaInterpreter;
 	const matchingChunks: Array<{ path: string; info: { asset_id: string; path?: string } }> = [];
-	const luaSources = runtime.cartLuaSources ? runtime.cartLuaSources : runtime.activeLuaSources;
+	const luaSources = machineManager.sourceState.cartLuaSources ? machineManager.sourceState.cartLuaSources : machineManager.sourceState.activeLuaSources;
 	for (const asset of luaSources.records) {
 		const path = asset.module_path;
 		const info: { asset_id: string; path?: string } = { asset_id: asset.resid, path: asset.source_path };
@@ -1440,8 +1442,8 @@ export function getStaticDefinitions(runtime: Runtime, preferredChunk: string): 
 				recordDefinition(pathDefinitions[defIndex]);
 			}
 		}
-		const model = buildSemanticModelForChunk(runtime, candidate.path);
-		const cacheEntry = runtime.pathSemanticCache.get(candidate.path);
+		const model = buildSemanticModelForChunk(candidate.path);
+		const cacheEntry = runtimeSemanticCache.get(candidate.path);
 		const cachedDefinitions = cacheEntry ? cacheEntry.definitions : (model ? model.definitions : []);
 		if (model) {
 			models.set(candidate.path, model);
@@ -1456,9 +1458,9 @@ export function getStaticDefinitions(runtime: Runtime, preferredChunk: string): 
 	return { definitions: Array.from(byKey.values()), paths: matchingChunks, models };
 }
 
-export function buildSemanticModelForChunk(runtime: Runtime, path: string): LuaSemanticModel {
-	const source = luaPipeline.resourceSourceForChunk(runtime, path);
-	const cached = runtime.pathSemanticCache.get(path);
+export function buildSemanticModelForChunk(path: string): LuaSemanticModel {
+	const source = luaPipeline.resourceSourceForChunk(path);
+	const cached = runtimeSemanticCache.get(path);
 	const cachedMatch = cached && cached.source === source ? cached : null;
 	if (cachedMatch) {
 		const cachedAnalysis = (cachedMatch as { analysis?: FileSemanticData }).analysis;
@@ -1475,7 +1477,7 @@ export function buildSemanticModelForChunk(runtime: Runtime, path: string): LuaS
 	const workspace = getOrCreateSemanticWorkspace();
 	const workspaceData = workspace.getSnapshot().getFileData(path);
 	if (workspaceData && workspaceData.source === source) {
-		cacheRuntimeSemanticWorkspaceAnalysis(runtime, path, source, workspaceData, cachedMatch?.parsed);
+		cacheRuntimeSemanticWorkspaceAnalysis(path, source, workspaceData, cachedMatch?.parsed);
 		return workspaceData.model;
 	}
 	const parseEntry = getCachedLuaParse({
@@ -1487,7 +1489,7 @@ export function buildSemanticModelForChunk(runtime: Runtime, path: string): LuaS
 	});
 	const baseLines = parseEntry.lines;
 	const parsed = parseEntry.parsed;
-	const data = syncRuntimeSemanticWorkspacePath(runtime, {
+	const data = syncRuntimeSemanticWorkspacePath({
 		path,
 		source: parseEntry.source,
 		lines: baseLines,
@@ -1565,7 +1567,7 @@ function resolveNativePropertyNameForIntellisense(target: object | Function, pro
 	return null;
 }
 
-function wrapHostValueForIntellisense(runtime: Runtime, value: unknown): LuaValue {
+function wrapHostValueForIntellisense(value: unknown): LuaValue {
 	if (value === null || value === undefined) {
 		return null;
 	}
@@ -1577,7 +1579,7 @@ function wrapHostValueForIntellisense(runtime: Runtime, value: unknown): LuaValu
 	}
 	if (typeof value === 'object' || value instanceof Function) {
 		const native = value as object | Function;
-		return runtime.interpreter.getOrCreateNativeValue(native, resolveNativeTypeName(native));
+		return machineManager.ideState.nativeBridge.luaInterpreter.getOrCreateNativeValue(native, resolveNativeTypeName(native));
 	}
 	return null;
 }
@@ -1589,9 +1591,10 @@ function wrapRuntimeValueForIntellisense(runtime: Runtime, value: Value): LuaVal
 	if (valueIsString(value)) {
 		return runtime.machine.cpu.stringPool.toString(asStringId(value));
 	}
-	const marshalContext = buildMarshalContext(runtime);
-	const native = toNativeValue(runtime, value, marshalContext, new WeakMap<Table, unknown>());
-	return wrapHostValueForIntellisense(runtime, native);
+	const bridge = machineManager.ideState.nativeBridge;
+	const marshalContext = buildMarshalContext();
+	const native = toNativeValue(bridge, value, marshalContext, new WeakMap<Table, unknown>());
+	return wrapHostValueForIntellisense(native);
 }
 
 export type FrameLocal = {
@@ -1651,7 +1654,7 @@ export function resolveSnapshotExpression(runtime: Runtime, expression: string):
 			if (parts.length === 1) {
 				return locals[li].value;
 			}
-			const chained = walkValueChain(runtime, locals[li].value, parts, 1);
+			const chained = walkValueChain(locals[li].value, parts, 1);
 			if (chained !== null) {
 				return chained;
 			}
@@ -1664,14 +1667,14 @@ export function resolveSnapshotExpression(runtime: Runtime, expression: string):
 	return null;
 }
 
-function walkValueChain(runtime: Runtime, root: LuaValue, parts: ReadonlyArray<string>, startIndex: number): LuaValue | null {
+function walkValueChain(root: LuaValue, parts: ReadonlyArray<string>, startIndex: number): LuaValue | null {
 	let current: LuaValue = root;
 	for (let index = startIndex; index < parts.length; index += 1) {
 		const part = parts[index];
 		if (isLuaTable(current)) {
 			current = resolveTableChainMemberValue(current, part);
 		} else if (current instanceof LuaNativeValue) {
-			current = resolveNativeChainMemberValue(runtime, current, part);
+			current = resolveNativeChainMemberValue(current, part);
 		} else {
 			return null;
 		}
@@ -1697,7 +1700,7 @@ function resolveRuntimeLocalChainValue(
 		return null;
 	}
 	let requestedPath = path;
-	const requestedSource = runtime.resolveLuaSource(path);
+	const requestedSource = resolveRuntimeLuaSource(machineManager.sourceState, path);
 	if (requestedSource) {
 		requestedPath = requestedSource.record.module_path;
 	}
@@ -1764,7 +1767,7 @@ function resolveRuntimeLocalChainValue(
 			if (upvalueIndex === -1 || !cpu.hasFrameUpvalue(frameIndex, upvalueIndex)) {
 				continue;
 			}
-			const chained = walkValueChain(runtime, wrapRuntimeValueForIntellisense(runtime, cpu.readFrameUpvalue(frameIndex, upvalueIndex)), parts, 1);
+			const chained = walkValueChain(wrapRuntimeValueForIntellisense(runtime, cpu.readFrameUpvalue(frameIndex, upvalueIndex)), parts, 1);
 			if (chained === null) {
 				return { kind: 'not_defined' };
 			}
@@ -1775,7 +1778,7 @@ function resolveRuntimeLocalChainValue(
 	const rawRegValue = faultSnapshot
 		? faultSnapshot[selectedFrameIndex].registers[selectedSlot.register]
 		: cpu.readFrameRegister(selectedFrameIndex, selectedSlot.register);
-	const chained = walkValueChain(runtime, wrapRuntimeValueForIntellisense(runtime, rawRegValue), parts, 1);
+	const chained = walkValueChain(wrapRuntimeValueForIntellisense(runtime, rawRegValue), parts, 1);
 	if (chained === null) {
 		return { kind: 'not_defined' };
 	}
@@ -1792,14 +1795,14 @@ function resolveRuntimeGlobalChainValue(runtime: Runtime, parts: ReadonlyArray<s
 	if (rootRaw === null) {
 		return null;
 	}
-	const chained = walkValueChain(runtime, wrapRuntimeValueForIntellisense(runtime, rootRaw), parts, 1);
+	const chained = walkValueChain(wrapRuntimeValueForIntellisense(runtime, rootRaw), parts, 1);
 	if (chained === null) {
 		return { kind: 'not_defined' };
 	}
 	return { kind: 'value', value: chained };
 }
 
-function resolveNativeChainMemberValue(runtime: Runtime, target: LuaNativeValue, key: string): LuaValue {
+function resolveNativeChainMemberValue(target: LuaNativeValue, key: string): LuaValue {
 	const metatable = target.metatable;
 	if (metatable) {
 		const indexHandler = metatable.get('__index');
@@ -1814,7 +1817,7 @@ function resolveNativeChainMemberValue(runtime: Runtime, target: LuaNativeValue,
 	if (!resolvedName) {
 		return null;
 	}
-	return wrapHostValueForIntellisense(runtime, Reflect.get(target.native, resolvedName));
+	return wrapHostValueForIntellisense(Reflect.get(target.native, resolvedName));
 }
 
 export function resolveLuaChainValue(
@@ -1827,7 +1830,7 @@ export function resolveLuaChainValue(
 	if (!parts || parts.length === 0) {
 		return null;
 	}
-	const interpreter = runtime.interpreter;
+	const interpreter = machineManager.ideState.nativeBridge.luaInterpreter;
 	const root = parts[0];
 	const globalEnv = interpreter.globalEnvironment;
 
@@ -1854,7 +1857,7 @@ export function resolveLuaChainValue(
 	if (frameEnv) {
 		const resolved = resolveIdentifierThroughChain(frameEnv, root, interpreter);
 		if (resolved) {
-			const chained = walkValueChain(runtime, resolved.value, parts, 1);
+			const chained = walkValueChain(resolved.value, parts, 1);
 			if (chained === null) {
 				return { kind: 'not_defined', scope: resolved.scope };
 			}
@@ -1870,12 +1873,12 @@ export function resolveLuaChainValue(
 	// Priority 4: Interpreter chunk environments
 	const envsToSearch: LuaEnvironment[] = [];
 	if (path) {
-		const env = runtime.luaChunkEnvironmentsByPath.get(path);
+		const env = machineManager.sourceState.luaChunkEnvironmentsByPath.get(path);
 		if (env) {
 			envsToSearch.push(env);
 		}
 	}
-	const currentPathEnv = runtime.currentPath ? runtime.luaChunkEnvironmentsByPath.get(runtime.currentPath) : null;
+	const currentPathEnv = machineManager.sourceState.luaChunkEnvironmentsByPath.get(machineManager.sourceState.currentPath);
 	if (currentPathEnv && !envsToSearch.includes(currentPathEnv)) {
 		envsToSearch.push(currentPathEnv);
 	}
@@ -1887,7 +1890,7 @@ export function resolveLuaChainValue(
 			continue;
 		}
 		const scope: LuaHoverScope = env === globalEnv ? 'global' : 'path';
-		const chained = walkValueChain(runtime, env.get(root) as LuaValue, parts, 1);
+		const chained = walkValueChain(env.get(root) as LuaValue, parts, 1);
 		if (chained === null) {
 			return { kind: 'not_defined', scope };
 		}
@@ -1911,8 +1914,8 @@ export function resolveIdentifierThroughChain(environment: LuaEnvironment, name:
 	return null;
 }
 
-export function describeLuaValueForInspector(runtime: Runtime, value: LuaValue): { lines: string[]; valueType: string; isFunction: boolean } {
-	const resolvedName = runtime.interpreter.resolveValueName(value);
+export function describeLuaValueForInspector(value: LuaValue): { lines: string[]; valueType: string; isFunction: boolean } {
+	const resolvedName = machineManager.ideState.nativeBridge.luaInterpreter.resolveValueName(value);
 	if (value === null) {
 		return { lines: ['Nil'], valueType: 'nil', isFunction: false };
 	}
@@ -1949,7 +1952,7 @@ export function describeLuaValueForInspector(runtime: Runtime, value: LuaValue):
 		return { lines: [summary], valueType: labelName ?? 'native', isFunction: false };
 	}
 	if (isLuaTable(value)) {
-		const tableName = resolveTableTypeName(runtime, value);
+		const tableName = resolveTableTypeName(value);
 		const preview = formatLuaValuePreview(value);
 		const lines = tableName ? [`<table ${tableName}>`] : ['<table>'];
 		lines.push(preview);
@@ -1959,7 +1962,7 @@ export function describeLuaValueForInspector(runtime: Runtime, value: LuaValue):
 	return { lines: [summary], valueType: 'unknown', isFunction: false };
 }
 
-export function getNativeMemberCompletionEntries(runtime: Runtime, value: LuaNativeValue, operator: '.' | ':'): LuaMemberCompletion[] {
+export function getNativeMemberCompletionEntries(value: LuaNativeValue, operator: '.' | ':'): LuaMemberCompletion[] {
 	const native = value.native;
 	const typeName = value.typeName && value.typeName.length > 0 ? value.typeName : resolveNativeTypeName(native);
 	const registry = new Map<string, LuaMemberCompletion>();
@@ -1968,14 +1971,14 @@ export function getNativeMemberCompletionEntries(runtime: Runtime, value: LuaNat
 	if (metatable) {
 		const indexValue = metatable.get('__index');
 		if (isLuaTable(indexValue)) {
-			const luaEntries = buildTableMemberCompletionEntries(indexValue, operator, resolveTableTypeName(runtime, indexValue));
+			const luaEntries = buildTableMemberCompletionEntries(indexValue, operator, resolveTableTypeName(indexValue));
 			for (let index = 0; index < luaEntries.length; index += 1) {
 				registerNativeCompletion(registry, luaEntries[index]);
 			}
 		}
 	}
 	populateNativeMembersFromTarget(native, operator, typeName, registry, includeProperties);
-	const prototypeEntries = getCachedPrototypeNativeEntries(runtime, native, operator, typeName);
+	const prototypeEntries = getCachedPrototypeNativeEntries(native, operator, typeName);
 	for (let index = 0; index < prototypeEntries.length; index += 1) {
 		registerNativeCompletion(registry, prototypeEntries[index]);
 	}
@@ -1992,10 +1995,10 @@ export function getNativeMemberCompletionEntries(runtime: Runtime, value: LuaNat
 	return result;
 }
 
-export function getCachedPrototypeNativeEntries(runtime: Runtime, native: object | Function, operator: '.' | ':', typeName: string): LuaMemberCompletion[] {
+export function getCachedPrototypeNativeEntries(native: object | Function, operator: '.' | ':', typeName: string): LuaMemberCompletion[] {
 	const cacheKey = resolveNativeCompletionCacheKey(native);
 	const cacheField = operator === ':' ? 'colon' : 'dot';
-	let cache = runtime.nativeMemberCompletionCache.get(cacheKey);
+	let cache = nativeMemberCompletionCache.get(cacheKey);
 	const cached = cache && cache[cacheField];
 	if (cached) {
 		return cloneMemberCompletions(cached);
@@ -2003,7 +2006,7 @@ export function getCachedPrototypeNativeEntries(runtime: Runtime, native: object
 	const built = buildNativePrototypeMemberEntries(native, operator, typeName);
 	if (!cache) {
 		cache = {};
-		runtime.nativeMemberCompletionCache.set(cacheKey, cache);
+		nativeMemberCompletionCache.set(cacheKey, cache);
 	}
 	cache[cacheField] = built;
 	return cloneMemberCompletions(built);
@@ -2191,15 +2194,15 @@ export function cloneMemberCompletions(entries: LuaMemberCompletion[]): LuaMembe
 	return cloned;
 }
 
-export function clearNativeMemberCompletionCache(runtime: Runtime): void {
-	runtime.nativeMemberCompletionCache = new WeakMap<object, { dot?: LuaMemberCompletion[]; colon?: LuaMemberCompletion[] }>();
+export function clearNativeMemberCompletionCache(): void {
+	nativeMemberCompletionCache = new WeakMap<object, { dot?: LuaMemberCompletion[]; colon?: LuaMemberCompletion[] }>();
 }
 
-export function isLuaBuiltinFunctionName(runtime: Runtime, name: string): boolean {
+export function isLuaBuiltinFunctionName(name: string): boolean {
 	if (!name || name.length === 0) {
 		return false;
 	}
-	return runtime.luaBuiltinMetadata.has(name) || hasStaticLuaBuiltinName(name);
+	return luaBuiltinMetadata.has(name) || hasStaticLuaBuiltinName(name);
 }
 
 export function describeLuaFunctionValue(value: LuaFunctionValue): string {
@@ -2421,12 +2424,12 @@ function formatLuaValuePreview(value: LuaValue, depth = 0, visited: Set<unknown>
 
 let builtinIdentifierEpoch = 0;
 
-export function getBuiltinIdentifiersSnapshot(runtime: Runtime): { epoch: number; ids: ReadonlySet<string> } {
+export function getBuiltinIdentifiersSnapshot(): { epoch: number; ids: ReadonlySet<string> } {
 	const cached = editorRuntimeState.builtinIdentifierCache;
 	if (cached && cached.caseInsensitive === editorRuntimeState.caseInsensitive) {
 		return cached;
 	}
-	const descriptors = listLuaBuiltinFunctions(runtime);
+	const descriptors = listLuaBuiltinFunctions();
 	const names: string[] = [];
 	for (let index = 0; index < descriptors.length; index += 1) {
 		names.push(descriptors[index].name);

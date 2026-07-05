@@ -31,7 +31,7 @@ export function refreshResourcePanelResourceState(options: {
 	previousIndex: number;
 	previousScroll: number;
 }): ResourcePanelRefreshResult {
-	const items = buildResourcePanelItems(options.runtime, options.filterMode);
+	const items = buildResourcePanelItems(options.filterMode);
 	const maxLineWidth = computeResourcePanelMaxLineWidth(items);
 	const capacity = resourcePanelLineCapacity(options.bounds, items.length, maxLineWidth, options.lineHeight);
 	const targetAssetId = options.targetAssetId || (options.previousDescriptor ? options.previousDescriptor.asset_id : null);

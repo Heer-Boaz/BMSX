@@ -234,8 +234,7 @@ test('core golden: DMA source bus faults latch on the memory bus while DMA progr
 	memory.writeValue(IO_DMA_SRC, RAM_END - 1);
 	memory.writeValue(IO_DMA_DST, RAM_BASE);
 	memory.writeValue(IO_DMA_LEN, 4);
-	memory.writeIoValue(IO_DMA_CTRL, DMA_CTRL_START);
-	controller.startIo();
+	memory.writeValue(IO_DMA_CTRL, DMA_CTRL_START);
 	controller.accrueCycles(1, 1);
 	controller.onService(1);
 	assert.equal(memory.readIoU32(IO_DMA_STATUS), DMA_STATUS_DONE);

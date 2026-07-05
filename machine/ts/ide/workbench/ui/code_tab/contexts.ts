@@ -1,4 +1,5 @@
 // disable cross_layer_import_pattern -- code-tab contexts own editable buffer instances stored in workbench tab state.
+import { machineManager } from '../../../../core/machine_manager';
 import { editorDocumentState } from '../../../editor/editing/document_state';
 import type {
 	CodeTabContext,
@@ -14,10 +15,9 @@ import { clearOpenWorkspacePathDirtyState, setOpenWorkspacePathDirty } from '../
 import { computeResourceTabTitle } from '../tab/titles';
 import { codeTabSessionState } from './session_state';
 import { tabSessionState } from '../tab/session_state';
-import type { Runtime } from '../../../../machine/runtime/runtime';
 
-function resolveLuaSource(runtime: Runtime, descriptor: ResourceDescriptor): string {
-	return luaPipeline.resourceSourceForChunk(runtime, descriptor.path);
+function resolveLuaSource(descriptor: ResourceDescriptor): string {
+	return luaPipeline.resourceSourceForChunk(descriptor.path);
 }
 
 function createCodeTabContext(descriptor: ResourceDescriptor, initialSource: string, mode: CodeTabMode): CodeTabContext {
@@ -89,15 +89,15 @@ export function upsertCodeEditorTab(context: CodeTabContext): EditorTabDescripto
 	return tab;
 }
 
-export function createEntryTabContext(runtime: Runtime): CodeTabContext {
-	const luaDescriptors = listResources(runtime).filter(r => r.type === 'lua');
-	const preferredRegistry = runtime.luaSourceRegistries[0];
+export function createEntryTabContext(): CodeTabContext {
+	const luaDescriptors = listResources().filter(r => r.type === 'lua');
+	const preferredRegistry = machineManager.sourceState.luaSourceRegistries[0];
 	const descriptor = luaDescriptors.find(r => r.path === preferredRegistry.entry_path)!;
-	return createLuaCodeTabContext(runtime, descriptor);
+	return createLuaCodeTabContext(descriptor);
 }
 
-export function createLuaCodeTabContext(runtime: Runtime, descriptor: ResourceDescriptor): CodeTabContext {
-	return createCodeTabContext(descriptor, resolveLuaSource(runtime, descriptor), 'lua');
+export function createLuaCodeTabContext(descriptor: ResourceDescriptor): CodeTabContext {
+	return createCodeTabContext(descriptor, resolveLuaSource(descriptor), 'lua');
 }
 
 export function createAemCodeTabContext(descriptor: ResourceDescriptor, source: string): CodeTabContext {

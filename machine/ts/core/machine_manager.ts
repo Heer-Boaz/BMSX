@@ -8,14 +8,19 @@ import { TextureManager } from "../render/texture_manager";
 import { RenderPassLibrary } from "../render/backend/pass/library";
 import { setMicrotaskQueue } from '../platform';
 import type { GameViewHost, Platform } from '../platform';
-import { PAL_REFRESH_UFPS_SCALED } from '../machine/model_registry';
+import { MACHINE_REGION_PAL_WORD, PAL_REFRESH_UFPS_SCALED, PSX_MODEL_PROFILE } from '../machine/model_registry';
 import { HZ_SCALE } from '../machine/runtime/timing/constants';
 import { RomBootManager } from './rom_boot_manager';
 import { renderGate, runGate } from '../common/taskgate';
 import { applyInitialWorkspaceOverrides, prepareRebootToBootRom, startPreparedRuntime } from '../ide/runtime/program_boot';
 import { Runtime } from '../machine/runtime/runtime';
+import { Memory } from '../machine/memory/memory';
+import { configureMemoryMap } from '../machine/memory/map';
+import { resolveRuntimeMemoryMapSpecs } from '../machine/memory/specs';
+import { applyRuntimeTiming, resolveRuntimeTiming } from '../machine/runtime/boot_timing';
 import { bootActiveProgram } from '../ide/runtime/lua_pipeline';
 import { handleLuaError } from '../ide/workbench/runtime_errors';
+import { createRuntimeSourceState, type RuntimeSourceState } from '../ide/runtime/sources';
 import type { GPUBackend } from '../render/backend/backend';
 import { clearOverlayFrame } from '../render/host_overlay/overlay_queue';
 import { VdpFrameBufferTextures } from '../render/vdp/framebuffer';
@@ -66,6 +71,7 @@ export class MachineManager {
 	private _view!: GameView;
 	private _platform!: Platform;
 	private _runtime!: Runtime;
+	public sourceState!: RuntimeSourceState;
 	public ideState!: RuntimeIdeState;
 	public faultState!: RuntimeFaultState;
 	public readonly screen = new RenderPresentationState();
@@ -138,7 +144,7 @@ export class MachineManager {
 			throw new Error('[MachineManager] Platform did not expose a GameViewHost.');
 		}
 		const bootPlan = await this.romBootManager.buildBootPlan({ systemRom, cartridge });
-		const { systemLayer, viewportSize } = bootPlan;
+		const { systemLayer, cartLayer, viewportSize } = bootPlan;
 		platform.gameviewHost = resolvedViewHost;
 		this._platform = platform;
 		setMicrotaskQueue(platform.microtasks);
@@ -157,9 +163,29 @@ export class MachineManager {
 			host: resolvedViewHost,
 		});
 		this._view = gview;
-		const runtime = await Runtime.init(systemLayer, Input.instance, platform.microtasks, cartridge);
+		this.sourceState = createRuntimeSourceState(systemLayer, cartLayer);
+		configureMemoryMap(resolveRuntimeMemoryMapSpecs());
+		const timing = resolveRuntimeTiming(PSX_MODEL_PROFILE.cpuFreqHz, MACHINE_REGION_PAL_WORD);
+		const runtime = new Runtime({
+			viewport: { width: timing.viewportWidth, height: timing.viewportHeight },
+			memory: new Memory({
+				systemRom: systemLayer.payload,
+				cartRom: cartLayer ? cartLayer.payload : new Uint8Array(0),
+			}),
+			machineRegionWord: timing.regionWord,
+			ufpsScaled: timing.ufpsScaled,
+			cpuHz: timing.cpuHz,
+			cycleBudgetPerFrame: timing.cycleBudgetPerFrame,
+			vblankCycles: timing.vblankCycles,
+			imgDecBytesPerSec: timing.imgDecBytesPerSec,
+			dmaBytesPerSecIso: timing.dmaBytesPerSecIso,
+			dmaBytesPerSecBulk: timing.dmaBytesPerSecBulk,
+			vdpWorkUnitsPerSec: timing.vdpWorkUnitsPerSec,
+			geoWorkUnitsPerSec: timing.geoWorkUnitsPerSec,
+		}, Input.instance, platform.microtasks);
+		applyRuntimeTiming(runtime, timing);
 		this._runtime = runtime;
-		await applyInitialWorkspaceOverrides(runtime);
+		await applyInitialWorkspaceOverrides();
 		this.syncAudioTiming();
 		const gpuBackend = await resolvedViewHost.createBackend() as GPUBackend;
 		gview.backend = gpuBackend;
@@ -202,7 +228,7 @@ export class MachineManager {
 	}
 
 	public async rebootToBootRom(): Promise<void> {
-		const gateToken = this.runtime.luaGate.begin({ blocking: true, tag: 'reboot_bootrom' });
+		const gateToken = this.ideState.luaGate.begin({ blocking: true, tag: 'reboot_bootrom' });
 		try {
 			await this.resetRuntime();
 			await prepareRebootToBootRom(this.runtime);
@@ -218,7 +244,7 @@ export class MachineManager {
 			flushRuntimeLuaOutputToTerminal(this.runtime, this.ideState);
 		}
 		finally {
-			this.runtime.luaGate.end(gateToken);
+			this.ideState.luaGate.end(gateToken);
 		}
 	}
 

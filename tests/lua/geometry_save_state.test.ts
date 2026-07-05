@@ -2,7 +2,7 @@ import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import { test } from 'node:test';
 
-import { DEFAULT_LUA_BUILTIN_NAMES } from '../../machine/ts/machine/firmware/builtin_descriptors';
+import { DEFAULT_LUA_BUILTIN_NAMES } from '../../machine/ts/lua/builtin_descriptors';
 import {
 	IO_GEO_CMD,
 	IO_GEO_COUNT,

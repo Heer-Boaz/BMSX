@@ -2,6 +2,7 @@ import { machineManager } from './machine_manager';
 import { hostOverlayMenu } from './host_overlay_menu';
 import * as workbenchMode from '../ide/workbench/mode';
 import { flushRuntimeLuaOutputToTerminal } from '../ide/runtime/state';
+import { syncRuntimeSourceActivity } from '../ide/runtime/sources';
 import type { Runtime } from '../machine/runtime/runtime';
 import { runRuntimeFrameStepInto, type RuntimeFrameStepResult } from '../machine/runtime/frame/step';
 
@@ -36,20 +37,21 @@ export function runMachineHostFrame(runtime: Runtime, currentTime: number, runRe
 			screen.requestHeldPresentation();
 			manager.platform.microtasks.flush();
 			screen.presentPending(runtime, hostDeltaMs);
-		} else if (manager.paused) {
+		} else if (manager.paused || manager.ideState.debugger.paused) {
 			hostOverlayMenu.queueFrameOverlayCommands();
 			manager.platform.microtasks.flush();
 			screen.presentPausedFrame(runtime, hostDeltaMs);
 		} else {
 			const hostOverlayQueued = hostOverlayMenu.queueFrameOverlayCommands();
 			screen.clearPresentation();
-			if (runtime.executionOverlayActive) {
+			if (machineManager.ideState.overlayActive) {
 				screen.runOverlay(runtime);
 			} else if (!runReady) {
 				runtime.frameScheduler.clearQueuedTime();
 			} else {
 				manager.deltatime = runtime.timing.frameDurationMs;
 				runRuntimeFrameStepInto(hostFrameStepResult, runtime, hostDeltaMs);
+				syncRuntimeSourceActivity(manager.sourceState, runtime.cartProgramStarted);
 				manager.syncRuntimeAudioTiming();
 				screen.syncAfterRuntimeUpdate(runtime, hostFrameStepResult.previousTickSequence);
 			}

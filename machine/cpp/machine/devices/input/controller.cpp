@@ -12,7 +12,7 @@ InputController::InputController(Memory& memory, InputControllerInputSource& inp
 	m_memory.mapIoWrite<&InputControllerRegisterFile::write>(IO_INP_OUTPUT_PORT, m_registers);
 	m_memory.mapIoWrite<&InputControllerRegisterFile::write>(IO_INP_OUTPUT_INTENSITY_Q16, m_registers);
 	m_memory.mapIoWrite<&InputControllerRegisterFile::write>(IO_INP_OUTPUT_DURATION_MS, m_registers);
-	m_memory.mapIoWrite<&InputControllerOutputPort::writeOutputControlRegister>(IO_INP_OUTPUT_CTRL, m_outputPort);
+	m_memory.mapIoWrite<&InputControllerOutputPort::writeOutputControlRegisterThunk>(IO_INP_OUTPUT_CTRL, m_outputPort);
 }
 
 void InputController::reset() {

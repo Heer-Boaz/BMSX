@@ -8,7 +8,7 @@ import { CPU, RunResult, type Value } from '../../machine/ts/machine/cpu/cpu';
 import { disassembleProgram } from '../../machine/ts/machine/cpu/disassembler';
 import { Memory } from '../../machine/ts/machine/memory/memory';
 import { PROGRAM_STATIC_RAM_BASE, PROGRAM_ROM_BASE } from '../../machine/ts/machine/memory/map';
-import { compileLuaChunkToProgram, encodeCompiledProgramImage, type CompiledProgram } from '../../machine/ts/machine/program/compiler';
+import { compileLuaChunkToProgram, encodeCompiledProgramImage, type CompiledProgram } from '../../machine/ts/lua/compiler';
 import { inflateExecutableProgramImage, linkProgramImages } from '../../machine/ts/machine/program/linker';
 
 function parseSource(source: string, path: string) {

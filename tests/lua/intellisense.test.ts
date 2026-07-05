@@ -9,8 +9,8 @@ import { LuaLexer } from '../../machine/ts/lua/syntax/lexer';
 import { LuaParser } from '../../machine/ts/lua/syntax/parser';
 import { CPU, RunResult, StringValue } from '../../machine/ts/machine/cpu/cpu';
 import { Memory } from '../../machine/ts/machine/memory/memory';
-import { compileLuaChunkToProgram } from '../../machine/ts/machine/program/compiler';
-import { registerLuaSourceRecord } from '../../machine/ts/machine/program/sources';
+import { compileLuaChunkToProgram } from '../../machine/ts/lua/compiler';
+import { registerLuaSourceRecord } from '../../machine/ts/lua/source_registry';
 import { machineManager } from '../../machine/ts/core/machine_manager';
 import { createRuntimeFaultState } from '../../machine/ts/ide/runtime/fault_state';
 
@@ -50,15 +50,25 @@ function runtimeStub(files: Record<string, string> = {}) {
 		};
 		registerLuaSourceRecord(systemLuaSources, record);
 	}
-	return {
-		pathSemanticCache: new Map(),
-		interpreter: { globalEnvironment: new Map() },
+	const sourceState = {
 		systemLuaSources,
+		cartLuaSources: null,
+		activeLuaSources: systemLuaSources,
+		currentPath: systemLuaSources.entry_path,
 		luaSourceRegistries: [systemLuaSources],
 		luaSourceSearchRegistries: [systemLuaSources],
 		moduleCompileLuaSources: [systemLuaSources],
-		cartLuaSources: null,
-		activeLuaSources: null,
+	};
+	(machineManager as any).sourceState = sourceState;
+	(machineManager as any).ideState = {
+		nativeBridge: {
+			luaInterpreter: { globalEnvironment: new Map() },
+		},
+	};
+	return {
+		pathSemanticCache: new Map(),
+		interpreter: { globalEnvironment: new Map() },
+		...sourceState,
 		resolveLuaSource(path: string) {
 			const record = path2lua[path] ?? module2lua[path];
 			return record ? { registry: this.systemLuaSources, record } : null;
@@ -123,6 +133,33 @@ function runtimeWithPausedCpuLocal(source: string) {
 		update_timestamp: 0,
 		base_update_timestamp: 0,
 	};
+	const cartLuaSources = {
+		records: [record],
+		path2lua: { [sourcePath]: record },
+		module2lua: { [modulePath]: record },
+		entry_path: sourcePath,
+		namespace: 'tests',
+		projectRootPath: '',
+		can_boot_from_source: true,
+	};
+	const systemLuaSources = {
+		records: [],
+		path2lua: {},
+		module2lua: {},
+		entry_path: '',
+		namespace: 'system',
+		projectRootPath: '',
+		can_boot_from_source: false,
+	};
+	const sourceState = {
+		cartLuaSources,
+		activeLuaSources: cartLuaSources,
+		systemLuaSources,
+		currentPath: sourcePath,
+		luaSourceRegistries: [cartLuaSources, systemLuaSources],
+		luaSourceSearchRegistries: [cartLuaSources, systemLuaSources],
+		moduleCompileLuaSources: [cartLuaSources, systemLuaSources],
+	};
 	const runtime = {
 			programMetadata: compiled.metadata,
 			machine: { cpu },
@@ -139,25 +176,7 @@ function runtimeWithPausedCpuLocal(source: string) {
 			luaBuiltinMetadata: new Map(),
 			nativeMemberCompletionCache: new WeakMap(),
 			pathSemanticCache: new Map(),
-			cartLuaSources: {
-				records: [record],
-				path2lua: { [sourcePath]: record },
-				module2lua: { [modulePath]: record },
-				entry_path: sourcePath,
-				namespace: 'tests',
-				projectRootPath: '',
-				can_boot_from_source: true,
-			},
-			activeLuaSources: null,
-			systemLuaSources: {
-				records: [],
-				path2lua: {},
-				module2lua: {},
-				entry_path: '',
-				namespace: 'system',
-				projectRootPath: '',
-				can_boot_from_source: false,
-			},
+			...sourceState,
 			resolveLuaSource(path: string) {
 				if (path === sourcePath || path === modulePath) {
 					return { registry: this.cartLuaSources, record };
@@ -169,6 +188,12 @@ function runtimeWithPausedCpuLocal(source: string) {
 			},
 		} as any;
 	machineManager.faultState = createRuntimeFaultState();
+	(machineManager as any).sourceState = sourceState;
+	(machineManager as any).ideState = {
+		nativeBridge: {
+			luaInterpreter: runtime.interpreter,
+		},
+	};
 	return {
 		runtime,
 		sourcePath,
@@ -273,7 +298,7 @@ test('intellisense live locals resolve editor source paths against CPU module pa
 	}
 	assert.equal(resolved.value, 42);
 
-	const definition = resolveLuaDefinitionMetadata(runtime, resolved.value, resolved.definitionRange);
+	const definition = resolveLuaDefinitionMetadata(resolved.value, resolved.definitionRange);
 	assert.ok(definition);
 	assert.equal(definition.path, sourcePath);
 	assert.equal(definition.range.startLine, 1);

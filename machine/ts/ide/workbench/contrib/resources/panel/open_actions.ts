@@ -8,14 +8,14 @@ import { releaseResourcePanelFocus } from '../../../../navigation/source_focus';
 import { toggleSelectedCallHierarchyExpansion } from './navigation';
 import type { Runtime } from '../../../../../machine/runtime/runtime';
 
-export function openResourcePanelDescriptorItem(runtime: Runtime, item: ResourceBrowserItem): boolean {
+export function openResourcePanelDescriptorItem(item: ResourceBrowserItem): boolean {
 	if (!item?.descriptor) {
 		return false;
 	}
 	if (item.descriptor.type === 'atlas') {
 		return false;
 	}
-	openResourceDescriptor(runtime, item.descriptor);
+	openResourceDescriptor(item.descriptor);
 	return true;
 }
 
@@ -27,9 +27,9 @@ export function openResourcePanelCallHierarchyLocation(runtime: Runtime, item: R
 	applyDefinitionSelection(item.location.range);
 }
 
-export function openSelectedResourcePanelItem(runtime: Runtime, items: readonly ResourceBrowserItem[], selectionIndex: number): void {
+export function openSelectedResourcePanelItem(items: readonly ResourceBrowserItem[], selectionIndex: number): void {
 	const item = items[selectionIndex];
-	if (openResourcePanelDescriptorItem(runtime, item)) {
+	if (openResourcePanelDescriptorItem(item)) {
 		return;
 	}
 	if (item?.descriptor?.type === 'atlas') {

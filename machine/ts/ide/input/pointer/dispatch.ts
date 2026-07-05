@@ -34,7 +34,7 @@ export function handleTextEditorPointerInput(runtime: Runtime): void {
 		clearGotoHoverHighlight();
 		return;
 	}
-	if (handleEditorChromePointerDispatch(runtime, snapshot, justPressed, pointerAuxJustPressed, playerInput)) {
+	if (handleEditorChromePointerDispatch(snapshot, justPressed, pointerAuxJustPressed, playerInput)) {
 		return;
 	}
 	if (handleEditorPanelPointer(snapshot, justPressed, justReleased)) {

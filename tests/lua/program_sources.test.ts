@@ -3,7 +3,7 @@ import { test } from 'node:test';
 
 import type { RawRomSource } from '../../machine/ts/rompack/source';
 import type { CartridgeIndex, CartridgeLayerId, RomAsset } from '../../machine/ts/rompack/format';
-import { buildLuaSources } from '../../machine/ts/machine/program/sources';
+import { buildLuaSources } from '../../machine/ts/lua/source_registry';
 import { PROGRAM_IMAGE_ID, toLuaModulePath } from '../../machine/ts/machine/program/loader';
 import { SYSTEM_BOOT_ENTRY_PATH } from '../../machine/ts/core/system';
 import { decodeRomToc } from '../../machine/ts/rompack/toc';

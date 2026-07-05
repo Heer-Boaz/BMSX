@@ -338,12 +338,11 @@ bool MachineManager::loadSystemRomInternal(const u8* data, size_t size) {
 	return true;
 }
 
-Runtime& MachineManager::prepareRuntimeForActiveCart(const ResolvedRuntimeTiming& timing, const MachineManifest& machine) {
+Runtime& MachineManager::prepareRuntimeForActiveCart(const ResolvedRuntimeTiming& timing) {
 	Runtime& runtime = ensureRuntime(RuntimeOptions{
 		Vec2{ static_cast<f32>(timing.viewportWidth), static_cast<f32>(timing.viewportHeight) },
 		{ m_system_rom_data, m_system_rom_size },
 		{ m_cart_rom_data, m_cart_rom_size },
-		&machine,
 		timing.regionWord,
 		timing.ufpsScaled,
 		timing.cpuHz,
@@ -355,14 +354,6 @@ Runtime& MachineManager::prepareRuntimeForActiveCart(const ResolvedRuntimeTiming
 		timing.vdpWorkUnitsPerSec,
 		timing.geoWorkUnitsPerSec,
 	});
-	runtime.setRuntimeEnvironment(
-		activeRom().machine,
-		{ m_system_rom_data, m_system_rom_size },
-		{ m_cart_rom_data, m_cart_rom_size },
-		activeRom(),
-		m_system_rom,
-		m_cart_rom_size > 0 ? &m_cart_rom : nullptr
-	);
 	applyRuntimeTiming(runtime, timing);
 	syncAudioTiming();
 	return runtime;
@@ -378,7 +369,6 @@ void MachineManager::bootRuntimeFromProgram() {
 		Vec2{ static_cast<f32>(timing.viewportWidth), static_cast<f32>(timing.viewportHeight) },
 		{ m_system_rom_data, m_system_rom_size },
 		{ m_cart_rom_data, m_cart_rom_size },
-		&romPackage.machine,
 		timing.regionWord,
 		timing.ufpsScaled,
 		timing.cpuHz,
@@ -390,14 +380,6 @@ void MachineManager::bootRuntimeFromProgram() {
 		timing.vdpWorkUnitsPerSec,
 		timing.geoWorkUnitsPerSec,
 	});
-	rt.setRuntimeEnvironment(
-		romPackage.machine,
-		{ m_system_rom_data, m_system_rom_size },
-		{ m_cart_rom_data, m_cart_rom_size },
-		romPackage,
-		m_system_rom,
-		m_cart_rom_size > 0 ? &m_cart_rom : nullptr
-	);
 	applyRuntimeTiming(rt, timing);
 	syncAudioTiming();
 	rt.resetRuntimeForProgramReload();
@@ -437,7 +419,6 @@ bool MachineManager::bootSystemStartupProgram(const MachineManifest& runtimeMach
 		Vec2{ static_cast<f32>(timing.viewportWidth), static_cast<f32>(timing.viewportHeight) },
 		{ m_system_rom_data, m_system_rom_size },
 		{ m_cart_rom_data, m_cart_rom_size },
-		&runtimeMachine,
 		timing.regionWord,
 		timing.ufpsScaled,
 		timing.cpuHz,
@@ -449,14 +430,6 @@ bool MachineManager::bootSystemStartupProgram(const MachineManifest& runtimeMach
 		timing.vdpWorkUnitsPerSec,
 		timing.geoWorkUnitsPerSec,
 	});
-	rt.setRuntimeEnvironment(
-		runtimeMachine,
-		{ m_system_rom_data, m_system_rom_size },
-		{ m_cart_rom_data, m_cart_rom_size },
-		activeRom(),
-		m_system_rom,
-		m_cart_rom_size > 0 ? &m_cart_rom : nullptr
-	);
 	applyRuntimeTiming(rt, timing);
 	syncAudioTiming();
 	rt.resetRuntimeForProgramReload();
@@ -505,7 +478,7 @@ bool MachineManager::loadRomInternal(const u8* data, size_t size) {
 		setMachineManifest(cartMachine);
 		configureMemoryMap(resolveRuntimeMemoryMapSpecs());
 		const ResolvedRuntimeTiming timing = resolveRuntimeTiming(PSX_MODEL_PROFILE.cpuFreqHz, MACHINE_REGION_PAL_WORD);
-		prepareRuntimeForActiveCart(timing, cartMachine);
+		prepareRuntimeForActiveCart(timing);
 		if (activeRom().hasProgram()) {
 			bootRuntimeFromProgram();
 		}

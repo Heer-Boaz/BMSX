@@ -11,7 +11,7 @@ import {
 	IO_INP_OUTPUT_DURATION_MS,
 	IO_INP_OUTPUT_PORT,
 } from '../../machine/ts/machine/bus/io';
-import { compileLuaChunkToProgram } from '../../machine/ts/machine/program/compiler';
+import { compileLuaChunkToProgram } from '../../machine/ts/lua/compiler';
 import { MMIO_REGISTER_SPECS } from '../../machine/ts/machine/bus/registers';
 import { runCompiledLua } from '../lua/cpu_test_harness';
 

@@ -36,7 +36,7 @@ test('hot-resume restores live state before calling cart init', () => {
 	assert.ok(start > -1, 'resumeLuaProgramState not found');
 	const nextExport = src.indexOf('\nexport function ', start + 1);
 	const snippet = src.slice(start, nextExport === -1 ? undefined : nextExport);
-	const restoreIndex = snippet.indexOf('restoreRuntimeLuaSnapshot(runtime, snapshot)');
+	const restoreIndex = snippet.indexOf('restoreRuntimeLuaSnapshot(snapshot)');
 	const initIndex = snippet.indexOf('runHotResumeInit(runtime)');
 	assert.ok(restoreIndex > -1, 'hot-resume must restore the live snapshot');
 	assert.ok(initIndex > -1, 'hot-resume must call cart init directly');
@@ -57,7 +57,7 @@ test('Lua source boot installs through the program-image executable boundary', (
 
 
 test('host eval append preserves installed program ROM while resolving appended code', () => {
-	const src = readFileSync('machine/ts/machine/program/executor.ts', 'utf8');
+	const src = readFileSync('machine/ts/ide/runtime/host_eval.ts', 'utf8');
 	const start = src.indexOf('export function runHostEvalChunk');
 	assert.ok(start > -1, 'runHostEvalChunk not found');
 	const nextExport = src.indexOf('\nexport function ', start + 1);

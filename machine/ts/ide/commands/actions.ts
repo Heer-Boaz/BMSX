@@ -3,7 +3,7 @@ import { editorRuntimeState } from '../editor/common/runtime_state';
 import { scheduleRuntimeTask } from '../common/background_tasks';
 import { applyWorkspaceOverridesToCart, applyWorkspaceOverridesToRegistry } from '../workspace/workspace';
 import type { Runtime } from '../../machine/runtime/runtime';
-import { captureRuntimeResumeSnapshot } from '../../machine/runtime/resume_snapshot';
+import { captureRuntimeResumeSnapshot } from '../runtime/resume_snapshot';
 import { resumeFromSnapshot } from '../runtime/hot_resume';
 import * as workbenchMode from '../workbench/mode';
 import { deactivateEditor } from '../workbench/overlay_modes';
@@ -21,9 +21,9 @@ export function performEditorAction(runtime: Runtime, action: ActionPromptAction
 		case 'hot-resume':
 			return performHotResume(runtime);
 		case 'reboot':
-			return performReboot(runtime);
+			return performReboot();
 		case 'close':
-			deactivateEditor(runtime);
+			deactivateEditor();
 			return true;
 		case 'theme-toggle':
 			toggleThemeMode();
@@ -33,8 +33,9 @@ export function performEditorAction(runtime: Runtime, action: ActionPromptAction
 	}
 }
 
-function hasPendingSystemModuleReload(runtime: Runtime): boolean {
-	if (!runtime.cartLuaSources) {
+function hasPendingSystemModuleReload(): boolean {
+	const sources = machineManager.sourceState;
+	if (!sources.cartLuaSources) {
 		return false;
 	}
 	for (const context of getCodeTabContexts()) {
@@ -44,7 +45,7 @@ function hasPendingSystemModuleReload(runtime: Runtime): boolean {
 		if (context.saveGeneration <= context.appliedGeneration) {
 			continue;
 		}
-		if (runtime.systemLuaSources.path2lua[context.descriptor.path]) {
+		if (sources.systemLuaSources.path2lua[context.descriptor.path]) {
 			return true;
 		}
 	}
@@ -55,27 +56,28 @@ export function performHotResume(runtime: Runtime): boolean {
 	const targetGeneration = editorDocumentState.saveGeneration;
 	const shouldUpdateGeneration = hasPendingRuntimeReload();
 	clearExecutionStopHighlights();
-	deactivateEditor(runtime);
+	deactivateEditor();
 	console.log('[IDE] Performing hot-resume');
 	scheduleRuntimeTask(async () => {
-		if (runtime.cartLuaSources) {
-			await applyWorkspaceOverridesToCart(runtime, {
-				cart: runtime.cartLuaSources,
+		const sources = machineManager.sourceState;
+		if (sources.cartLuaSources) {
+			await applyWorkspaceOverridesToCart({
+				cart: sources.cartLuaSources,
 				storage: machineManager.platform.storage,
 				includeServer: true,
-				projectRootPath: runtime.cartProjectRootPath,
+				projectRootPath: sources.cartProjectRootPath,
 			});
 		}
-		const engineChanged = await applyWorkspaceOverridesToRegistry(runtime, {
-			registry: runtime.systemLuaSources,
+		const engineChanged = await applyWorkspaceOverridesToRegistry({
+			registry: sources.systemLuaSources,
 			storage: machineManager.platform.storage,
 			includeServer: true,
-			projectRootPath: runtime.systemProjectRootPath,
+			projectRootPath: sources.systemProjectRootPath,
 		});
 		const preserveSystemModules =
 			runtime.cartProgramStarted
 			&& engineChanged.size === 0
-			&& !hasPendingSystemModuleReload(runtime);
+			&& !hasPendingSystemModuleReload();
 		const snapshot = captureRuntimeResumeSnapshot(runtime);
 		workbenchMode.clearFaultState(runtime);
 		await resumeFromSnapshot(runtime, snapshot, preserveSystemModules);
@@ -91,10 +93,10 @@ export function performHotResume(runtime: Runtime): boolean {
 	return true;
 }
 
-export function performReboot(runtime: Runtime): boolean {
+export function performReboot(): boolean {
 	const targetGeneration = editorDocumentState.saveGeneration;
 	clearExecutionStopHighlights();
-	deactivateEditor(runtime);
+	deactivateEditor();
 	scheduleRuntimeTask(async () => {
 		console.info('[IDE] Performing cold reboot through bootrom');
 		await machineManager.rebootToBootRom();

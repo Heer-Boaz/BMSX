@@ -118,11 +118,11 @@ export class ImgDecController {
 		private readonly scheduler: DeviceScheduler,
 		private readonly microtasks: MicrotaskQueue,
 	) {
-		this.memory.mapIoWrite(IO_IMG_CTRL, this.onCtrlRegisterWrite.bind(this));
+		this.memory.mapIoWrite(IO_IMG_CTRL, this, ImgDecController.onCtrlRegisterWrite);
 	}
 
-	private onCtrlRegisterWrite(): void {
-		this.onCtrlWrite(this.scheduler.currentNowCycles());
+	private static onCtrlRegisterWrite(context: ImgDecController): void {
+		context.onCtrlWrite(context.scheduler.currentNowCycles());
 	}
 
 	public setTiming(cpuHz: number, decodeBytesPerSec: number, nowCycles: number): void {

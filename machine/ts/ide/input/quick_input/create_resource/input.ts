@@ -3,11 +3,10 @@ import { applyInlineFieldEditing } from '../../../editor/ui/inline/text_field';
 import { resetBlink } from '../../../editor/render/caret';
 import { closeCreateResourcePrompt } from '../../../workbench/contrib/resources/create';
 import { confirmCreateResourcePrompt, isValidCreateResourceCharacter } from '../../../workbench/contrib/resources/create/operation';
-import type { Runtime } from '../../../../machine/runtime/runtime';
 import { consumeIdeKey, isKeyJustPressed } from '../../keyboard/key_input';
 import { createResourceState } from '../../../workbench/contrib/resources/widget_state';
 
-export function handleCreateResourceInput(runtime: Runtime): void {
+export function handleCreateResourceInput(): void {
 	if (isKeyJustPressed('Escape')) {
 		consumeIdeKey('Escape');
 		closeCreateResourcePrompt(true);
@@ -16,7 +15,7 @@ export function handleCreateResourceInput(runtime: Runtime): void {
 	if (!createResourceState.working && (isKeyJustPressed('Enter') || isKeyJustPressed('NumpadEnter'))) {
 		consumeIdeKey('Enter');
 		consumeIdeKey('NumpadEnter');
-		void confirmCreateResourcePrompt(runtime);
+		void confirmCreateResourcePrompt();
 		return;
 	}
 	if (createResourceState.working) {

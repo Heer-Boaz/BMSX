@@ -26,69 +26,29 @@
 			"reason": "cpu_interpreter_exception; semantics tested, file parity not required"
 		},
 		{
-			"pattern": "machine/ts/machine/firmware/builtins.ts",
-			"category": "cpu_interpreter_exception",
-			"reason": "ts_lua_source_interpreter_builtins_no_cpp_runtime"
+			"pattern": "machine/ts/lua/compiler.ts",
+			"category": "compiler_tooling",
+			"reason": "lua_source_compiler_outside_machine_core"
 		},
 		{
-			"pattern": "machine/ts/machine/firmware/devtools.ts",
-			"category": "cpu_interpreter_exception",
-			"reason": "ts_lua_source_interpreter_devtools_no_cpp_runtime"
+			"pattern": "machine/ts/lua/compiler/**",
+			"category": "compiler_tooling",
+			"reason": "lua_source_compiler_support_outside_machine_core"
 		},
 		{
-			"pattern": "machine/ts/machine/firmware/builtin_descriptors.ts",
+			"pattern": "machine/ts/lua/source_registry.ts",
+			"category": "compiler_tooling",
+			"reason": "lua_source_registry_outside_machine_core"
+		},
+		{
+			"pattern": "machine/ts/lua/builtin_descriptors.ts",
 			"category": "language",
 			"reason": "ts_lua_language_builtin_metadata_no_cpp_runtime"
 		},
 		{
-			"pattern": "machine/ts/machine/firmware/system_boot_symbols.ts",
+			"pattern": "machine/ts/lua/compiler/system_boot_symbols.ts",
 			"category": "compiler_tooling",
 			"reason": "ts_compiler_boot_symbol_metadata_no_cpp_runtime"
-		},
-		{
-			"pattern": "machine/ts/machine/program/optimizer/**",
-			"category": "compiler_tooling",
-			"reason": "compiler_optimizer_excluded"
-		},
-		{
-			"pattern": "machine/ts/machine/program/compiler.ts",
-			"category": "compiler_tooling",
-			"reason": "full_compiler_excluded"
-		},
-		{
-			"pattern": "machine/ts/machine/program/compiler/**",
-			"category": "compiler_tooling",
-			"reason": "compiler_support_excluded"
-		},
-		{
-			"pattern": "machine/ts/machine/program/compile_value_flow.ts",
-			"category": "compiler_tooling",
-			"reason": "compiler_tooling_excluded"
-		},
-		{
-			"pattern": "machine/ts/machine/program/control_flow.ts",
-			"category": "compiler_tooling",
-			"reason": "compiler_tooling_excluded"
-		},
-		{
-			"pattern": "machine/ts/machine/program/bound_reference.ts",
-			"category": "compiler_tooling",
-			"reason": "compiler_tooling_excluded"
-		},
-		{
-			"pattern": "machine/ts/machine/program/source_range.ts",
-			"category": "compiler_tooling",
-			"reason": "compiler_tooling_excluded"
-		},
-		{
-			"pattern": "machine/ts/machine/program/sourcemap_minimal.ts",
-			"category": "compiler_tooling",
-			"reason": "compiler_tooling_excluded"
-		},
-		{
-			"pattern": "machine/ts/machine/program/target_semantics.ts",
-			"category": "compiler_tooling",
-			"reason": "compiler_tooling_excluded"
 		},
 		{
 			"pattern": "hosts/browser/engine.ts",
@@ -104,11 +64,6 @@
 			"pattern": "machine/ts/machine_runtime.ts",
 			"category": "host",
 			"reason": "machine_runtime_js_artifact_entrypoint"
-		},
-		{
-			"pattern": "machine/ts/machine/program/sources.ts",
-			"category": "compiler_tooling",
-			"reason": "compiler_source_registry_not_native_core"
 		},
 		{
 			"pattern": "machine/ts/input/host/assignment_processor.ts",
@@ -347,9 +302,7 @@
 		"machine/ts/machine/firmware/globals.ts",
 		"machine/ts/machine/machine.ts",
 		"machine/ts/machine/runtime/cpu_state.ts",
-		"machine/ts/machine/runtime/debug.ts",
 		"machine/ts/machine/runtime/machine_state.ts",
-		"machine/ts/machine/runtime/resume_snapshot.ts",
 		"machine/ts/machine/runtime/runtime.ts",
 		"machine/ts/machine/runtime/save_machine_state.ts",
 		"machine/ts/machine/runtime/save_state.ts",
@@ -2232,7 +2185,7 @@
 		},
 		{
 			"roots": [
-				"machine/ts/machine/firmware/builtin_descriptors.ts"
+				"machine/ts/lua/builtin_descriptors.ts"
 			],
 			"substrings": [
 				"blitter command",
@@ -2792,6 +2745,39 @@
 				"machine/cpp/render/backend/software/vdp_framebuffer_rasterizer.cpp"
 			],
 			"reason": "rpu_gpu_backend_files_replace_retired_common_rpu_and_legacy_mesh_particle_skybox_and_framebuffer_execution_passes_while_ide_terminal_framebuffer_texture_presentation_remains"
+		},
+		{
+			"present": [
+				"machine/ts/lua/compiler.ts",
+				"machine/ts/lua/compiler/passes",
+				"machine/ts/lua/compiler/optimizer",
+				"machine/ts/lua/source_registry.ts",
+				"machine/ts/ide/runtime/host_eval.ts",
+				"machine/ts/ide/runtime/native_bridge.ts",
+				"machine/ts/ide/runtime/resume_snapshot.ts",
+				"machine/ts/ide/runtime/sources.ts"
+			],
+			"absent": [
+				"machine/ts/machine/program/compiler.ts",
+				"machine/ts/machine/program/compiler",
+				"machine/ts/machine/program/optimizer",
+				"machine/ts/machine/program/compile_value_flow.ts",
+				"machine/ts/machine/program/control_flow.ts",
+				"machine/ts/machine/program/bound_reference.ts",
+				"machine/ts/machine/program/source_range.ts",
+				"machine/ts/machine/program/sourcemap_minimal.ts",
+				"machine/ts/machine/program/target_semantics.ts",
+				"machine/ts/machine/program/sources.ts",
+				"machine/ts/machine/program/executor.ts",
+				"machine/ts/machine/firmware/system_boot_symbols.ts",
+				"machine/ts/machine/firmware/builtin_descriptors.ts",
+				"machine/ts/machine/firmware/builtins.ts",
+				"machine/ts/machine/firmware/devtools.ts",
+				"machine/ts/machine/firmware/handler_registry.ts",
+				"machine/ts/machine/runtime/host/native_bridge.ts",
+				"machine/ts/machine/runtime/resume_snapshot.ts"
+			],
+			"reason": "source_compiler_ide_bridge_and_hot_resume_must_stay_outside_machine_runtime_core"
 		}
 	],
 	"strict_file_pair_parity": [
@@ -3910,6 +3896,56 @@
 				"presentFrameBuffer"
 			],
 			"reason": "headless_present_host_must_reuse_presented_frame_event_object"
+		}
+	],
+	"strict_runtime_method_parity": [
+		{
+			"ts": "machine/ts/machine/runtime/runtime.ts",
+			"cpp": [
+				"machine/cpp/machine/runtime/runtime.h",
+				"machine/cpp/machine/runtime/runtime.cpp",
+				"machine/cpp/machine/program/executor.cpp"
+			],
+			"methods": [
+				"boot",
+				"bootLinkedProgramImage",
+				"clearLinkedCartProgram",
+				"enterSystemFirmware",
+				"enterCartProgram",
+				"startCartProgram",
+				"startLoadedProgram",
+				"callClosureInto",
+				"machineTimeMs",
+				"machineElapsedMs",
+				"baseRamUsedBytes",
+				"ramUsedBytes",
+				"ramTotalBytes",
+				"vramUsedBytes",
+				"vramTotalBytes",
+				"applyUfpsScaled",
+				"applyMachineRegionWord",
+				"applyVdpModeWord",
+				"internString",
+				"setGlobal"
+			],
+			"reason": "runtime_lifecycle_and_external_closure_method_contract",
+			"compare_public": true,
+			"cpp_exclusions": [
+				{
+					"name": "handleLuaError",
+					"reason": "cpp_libretro_runtime_publishes_host_faults_directly_ts_ide_owns_fault_presentation_outside_machine_runtime"
+				}
+			]
+		}
+	],
+	"cpp_missing_ts_exclusions": [
+		{
+			"cpp": "machine/cpp/machine/program/executor.cpp",
+			"reason": "C++ keeps Runtime::callClosureInto in a split implementation unit; TypeScript owns the same Runtime method in runtime.ts because TS class bodies cannot be split without prototype patching."
+		},
+		{
+			"cpp": "machine/cpp/machine/runtime/debug.cpp",
+			"reason": "C++ runtime logs native startup faults internally; TypeScript host/IDE fault presentation lives under machine/ts/ide/runtime/debug_state.ts and must not be mirrored back into machine runtime."
 		}
 	]
 }

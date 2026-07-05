@@ -7,7 +7,6 @@ import { toggleLineComments } from '../../editor/editing/line_comments';
 import { redo, undo } from '../../editor/editing/undo_controller';
 import { applyDocumentFormatting, copySelectionToClipboard, cutLineToClipboard, cutSelectionToClipboard, pasteFromClipboard } from '../../editor/editing/text_editing_and_selection';
 import * as TextEditing from '../../editor/editing/text_editing_and_selection';
-import type { Runtime } from '../../../machine/runtime/runtime';
 import { consumeIdeKey, isAltDown, isCtrlDown, isKeyJustPressed, isMetaDown, isShiftDown, shouldRepeatKeyFromPlayer } from './key_input';
 import { isInlineWidgetFocused } from '../../quick_input/inline_widget';
 import { editorSearchState } from '../../editor/contrib/find/widget_state';
@@ -55,12 +54,12 @@ function handleRedoBinding(): boolean {
 	return true;
 }
 
-function handleCloseTabBinding(runtime: Runtime): boolean {
+function handleCloseTabBinding(): boolean {
 	if (!(isCtrlDown() || isMetaDown()) || !isKeyJustPressed('KeyW')) {
 		return false;
 	}
 	consumeIdeKey('KeyW');
-	closeActiveTab(runtime);
+	closeActiveTab();
 	return true;
 }
 
@@ -161,10 +160,10 @@ export function handleCodeFormattingKeybinding(): boolean {
 	return true;
 }
 
-export function handleEditorClipboardAndCommandBindings(runtime: Runtime): boolean {
+export function handleEditorClipboardAndCommandBindings(): boolean {
 	return handleUndoBinding()
 		|| handleRedoBinding()
-		|| handleCloseTabBinding(runtime)
+		|| handleCloseTabBinding()
 		|| handleSaveBinding()
 		|| handleCopyBinding()
 		|| handleCutBinding()

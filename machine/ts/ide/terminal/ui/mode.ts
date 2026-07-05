@@ -36,7 +36,7 @@ import { CompletionController } from '../../editor/contrib/suggest/completion_co
 import type { ModuleAliasEntry } from '../../../lua/semantic/model';
 import type { Viewport } from '../../../rompack/format';
 import type { Runtime } from '../../../machine/runtime/runtime';
-import { runHostEvalChunk } from '../../../machine/program/executor';
+import { runHostEvalChunk } from '../../runtime/host_eval';
 import * as luaPipeline from '../../runtime/lua_pipeline';
 import { TerminalCommandDispatcher as TerminalCommandDispatcher, type TerminalCommandAction } from './commands';
 import { extractErrorMessage } from '../../../lua/value';
@@ -527,7 +527,7 @@ export class TerminalMode {
 			if (TerminalMode.SIMPLE_CHAIN.test(expr)) {
 				const resolved = resolveSnapshotExpression(this.runtime, expr);
 				if (resolved !== null) {
-					const { lines } = describeLuaValueForInspector(this.runtime, resolved);
+					const { lines } = describeLuaValueForInspector(resolved);
 					for (let i = 0; i < lines.length; i += 1) {
 						this.appendStdout(lines[i]);
 					}

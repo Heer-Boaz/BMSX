@@ -15,6 +15,12 @@ import { InputControllerRegisterFile } from './registers';
 import { InputControllerOutputPort } from './output_port';
 import { createInputControllerSnapshot, type InputControllerInputSource } from './contracts';
 
+const INPUT_OUTPUT_REGISTER_WRITE_ADDRS = [
+	IO_INP_OUTPUT_PORT,
+	IO_INP_OUTPUT_INTENSITY_Q16,
+	IO_INP_OUTPUT_DURATION_MS,
+] as const;
+
 export class InputController {
 	private sampleArmed = false;
 	private sampleSequence = 0;
@@ -28,12 +34,11 @@ export class InputController {
 		private readonly input: InputControllerInputSource,
 	) {
 		this.outputPort = new InputControllerOutputPort(input, this.registers, memory);
-		const registerWrite = this.registers.write.bind(this.registers);
-		this.memory.mapIoWrite(IO_INP_CTRL, this.writeControl.bind(this));
-		this.memory.mapIoWrite(IO_INP_OUTPUT_PORT, registerWrite);
-		this.memory.mapIoWrite(IO_INP_OUTPUT_INTENSITY_Q16, registerWrite);
-		this.memory.mapIoWrite(IO_INP_OUTPUT_DURATION_MS, registerWrite);
-		this.memory.mapIoWrite(IO_INP_OUTPUT_CTRL, this.outputPort.writeOutputControlRegister.bind(this.outputPort));
+		this.memory.mapIoWrite(IO_INP_CTRL, this, InputController.writeControl);
+		for (const addr of INPUT_OUTPUT_REGISTER_WRITE_ADDRS) {
+			this.memory.mapIoWrite(addr, this.registers, InputControllerRegisterFile.writeThunk);
+		}
+		this.memory.mapIoWrite(IO_INP_OUTPUT_CTRL, this.outputPort, InputControllerOutputPort.writeOutputControlRegisterThunk);
 	}
 
 	public reset(): void {
@@ -46,19 +51,19 @@ export class InputController {
 		this.memory.writeIoValue(IO_INP_STATUS, this.sampleSequence);
 	}
 
-	private writeControl(_addr: number, value: Value): void {
-		this.registers.write(IO_INP_CTRL, value);
-		switch (this.registers.state.ctrl) {
+	private static writeControl(context: InputController, _addr: number, value: Value): void {
+		context.registers.state.ctrl = (value as number) >>> 0;
+		switch (context.registers.state.ctrl) {
 			case INP_CTRL_ARM:
-				this.sampleArmed = true;
+				context.sampleArmed = true;
 				return;
 			case INP_CTRL_RESET:
-				this.sampleArmed = false;
-				this.sampleSequence = 0;
-				this.lastSampleCycle = 0;
-				this.registers.reset();
-				this.registers.mirror(this.memory);
-				this.memory.writeIoValue(IO_INP_STATUS, this.sampleSequence);
+				context.sampleArmed = false;
+				context.sampleSequence = 0;
+				context.lastSampleCycle = 0;
+				context.registers.reset();
+				context.registers.mirror(context.memory);
+				context.memory.writeIoValue(IO_INP_STATUS, context.sampleSequence);
 				return;
 		}
 	}

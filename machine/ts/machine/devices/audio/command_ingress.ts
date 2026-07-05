@@ -22,23 +22,22 @@ export class ApuCommandIngress {
 		private readonly scheduler: DeviceScheduler,
 	) {}
 
-	public onCommandWrite(): void {
-		const command = this.memory.readIoU32(IO_APU_CMD);
+	public static onCommandWriteThunk(context: ApuCommandIngress): void {
+		const command = context.memory.readIoU32(IO_APU_CMD);
 		switch (command) {
 			case APU_CMD_PLAY:
 			case APU_CMD_STOP_SLOT:
 			case APU_CMD_SET_SLOT_GAIN:
-				this.commandFifo.enqueue(command, this.memory);
-				this.serviceClock.scheduleNext(this.scheduler.currentNowCycles());
-				clearApuCommandLatch(this.memory);
+				context.commandFifo.enqueue(command, context.memory);
+				context.serviceClock.scheduleNext(context.scheduler.currentNowCycles());
+				clearApuCommandLatch(context.memory);
 				return;
 			case APU_CMD_NONE:
 				return;
 			default:
-				this.fault.raise(APU_FAULT_BAD_CMD, command);
-				clearApuCommandLatch(this.memory);
+				context.fault.raise(APU_FAULT_BAD_CMD, command);
+				clearApuCommandLatch(context.memory);
 				return;
 		}
 	}
-
 }

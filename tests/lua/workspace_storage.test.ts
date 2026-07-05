@@ -35,7 +35,7 @@ import { hydrateDirtyFiles } from '../../machine/ts/ide/workbench/workspace/rest
 import { captureActiveCodeTabSource } from '../../machine/ts/ide/workbench/ui/code_tab/activation';
 import { captureContextText } from '../../machine/ts/ide/workbench/workspace/context_snapshot';
 import { editorDocumentState } from '../../machine/ts/ide/editor/editing/document_state';
-import { registerLuaSourceRecord, type LuaSourceRegistry } from '../../machine/ts/machine/program/sources';
+import { registerLuaSourceRecord, type LuaSourceRegistry } from '../../machine/ts/lua/source_registry';
 import { saveLuaResourceSource } from '../../machine/ts/ide/workspace/workspace';
 
 class MockStorage implements StorageService {
@@ -78,6 +78,7 @@ function createPlatformStub(storage: MockStorage) {
 }
 
 const ORIGINAL_PLATFORM = (machineManager as any).platform;
+const ORIGINAL_SOURCE_STATE = (machineManager as any).sourceState;
 const ORIGINAL_FETCH = globalThis.fetch;
 // disable-next-line legacy_sentinel_string_pattern -- seeds and verifies removal of the obsolete local-only workspace marker.
 const LEGACY_LOCAL_WORKSPACE_MARKER = '__marker__';
@@ -103,6 +104,7 @@ async function resetEnvironment(storage: MockStorage): Promise<void> {
 	tabSessionState.activeTabId = null;
 	editorDocumentState.buffer = new PieceTreeBuffer('');
 	(machineManager as any).platform = ORIGINAL_PLATFORM;
+	(machineManager as any).sourceState = ORIGINAL_SOURCE_STATE;
 	globalThis.fetch = ORIGINAL_FETCH;
 }
 
@@ -268,7 +270,7 @@ test('dirty restore keeps autosave contents authoritative over canonical source'
 		throw new Error('unexpected workspace fetch');
 	};
 
-	await hydrateDirtyFiles(null, [{
+	await hydrateDirtyFiles([{
 		contextId: context.id,
 		descriptor: { path: 'src/foo.lua', type: 'lua' },
 		dirtyPath,
@@ -442,16 +444,17 @@ test('explicit lua save promotes canonical source and removes dirty entry', asyn
 		requests.push({ method: request.method, path });
 		return new Response('{}', { status: 200, headers: { 'Content-Type': 'application/json' } });
 	};
-	const runtime = {
+	(machineManager as any).sourceState = {
 		cartLuaSources: registry,
-		systemLuaSources: null,
+		systemLuaSources: registry,
 		activeLuaSources: registry,
+		currentPath: registry.entry_path,
 		cartProjectRootPath: 'offline-cart',
 		systemProjectRootPath: 'machine/ts',
 		luaGenericChunksExecuted: new Set<string>(),
-	} as any;
+	};
 
-	await saveLuaResourceSource(runtime, 'src/foo.lua', '-- saved source');
+	await saveLuaResourceSource('src/foo.lua', '-- saved source');
 
 	assert.equal(asset.src, '-- saved source');
 	assert.equal(asset.base_update_timestamp, 42);

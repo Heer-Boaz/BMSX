@@ -5,11 +5,13 @@ await t.waitForCart();
 await t.frames(20);
 
 const runtime = t.runtime();
-const storage = globalThis.bmsx.machineManager.platform.storage;
-const fontRecord = runtime.cartLuaSources.path2lua['pietious_font.lua'];
-const cartRecord = runtime.cartLuaSources.path2lua['cart.lua'];
-const lootDropRecord = runtime.cartLuaSources.path2lua['loot_drop.lua'];
-const paperfoeRecord = runtime.cartLuaSources.path2lua['enemies/paperfoe.lua'];
+const machineManager = globalThis.bmsx.machineManager;
+const storage = machineManager.platform.storage;
+const sources = machineManager.sourceState;
+const fontRecord = sources.cartLuaSources.path2lua['pietious_font.lua'];
+const cartRecord = sources.cartLuaSources.path2lua['cart.lua'];
+const lootDropRecord = sources.cartLuaSources.path2lua['loot_drop.lua'];
+const paperfoeRecord = sources.cartLuaSources.path2lua['enemies/paperfoe.lua'];
 const fontProbeSource = fontRecord.src.replace(
 	"local register_fonts<const> = function()\n",
 	"local register_fonts<const> = function()\n\t__hot_resume_init_probe = (__hot_resume_init_probe or 0) + 1\n",
@@ -26,14 +28,15 @@ const paperfoeProbeSource = paperfoeRecord.src.replace(
 	"\tmove_with_velocity(self)\n\treturn 'RUNNING'",
 	"\treturn 'SUCCESS'",
 );
-const fontDirtyPath = `${runtime.cartProjectRootPath}/.bmsx/dirty/~pietious_font.lua`;
-const cartDirtyPath = `${runtime.cartProjectRootPath}/.bmsx/dirty/~cart.lua`;
-const lootDropDirtyPath = `${runtime.cartProjectRootPath}/.bmsx/dirty/~loot_drop.lua`;
-const paperfoeDirtyPath = `${runtime.cartProjectRootPath}/.bmsx/dirty/enemies/~paperfoe.lua`;
-const fontStorageKey = `bmsx.workspace:${runtime.cartProjectRootPath}:${fontDirtyPath}`;
-const cartStorageKey = `bmsx.workspace:${runtime.cartProjectRootPath}:${cartDirtyPath}`;
-const lootDropStorageKey = `bmsx.workspace:${runtime.cartProjectRootPath}:${lootDropDirtyPath}`;
-const paperfoeStorageKey = `bmsx.workspace:${runtime.cartProjectRootPath}:${paperfoeDirtyPath}`;
+const cartProjectRootPath = sources.cartProjectRootPath;
+const fontDirtyPath = `${cartProjectRootPath}/.bmsx/dirty/~pietious_font.lua`;
+const cartDirtyPath = `${cartProjectRootPath}/.bmsx/dirty/~cart.lua`;
+const lootDropDirtyPath = `${cartProjectRootPath}/.bmsx/dirty/~loot_drop.lua`;
+const paperfoeDirtyPath = `${cartProjectRootPath}/.bmsx/dirty/enemies/~paperfoe.lua`;
+const fontStorageKey = `bmsx.workspace:${cartProjectRootPath}:${fontDirtyPath}`;
+const cartStorageKey = `bmsx.workspace:${cartProjectRootPath}:${cartDirtyPath}`;
+const lootDropStorageKey = `bmsx.workspace:${cartProjectRootPath}:${lootDropDirtyPath}`;
+const paperfoeStorageKey = `bmsx.workspace:${cartProjectRootPath}:${paperfoeDirtyPath}`;
 storage.setItem(fontStorageKey, JSON.stringify({
 	contents: fontProbeSource,
 	updatedAt: fontRecord.base_update_timestamp + 1000000,

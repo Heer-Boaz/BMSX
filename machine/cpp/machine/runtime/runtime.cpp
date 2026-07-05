@@ -7,7 +7,6 @@
 #include "machine/program/linker.h"
 #include "machine/runtime/input.h"
 #include "machine/runtime/timing/config.h"
-#include "rompack/loader.h"
 #include <iostream>
 #include <stdexcept>
 #include <utility>
@@ -31,10 +30,7 @@ Runtime::Runtime(
 		options.vdpWorkUnitsPerSec,
 		options.geoWorkUnitsPerSec
 	)
-	, m_systemRomBytes(options.systemRomBytes)
-	, m_cartRomBytes(options.cartRomBytes)
 	, m_input(input)
-	, m_machineManifest(options.machineManifest)
 	, m_memory(MemoryInit{
 		{ options.systemRomBytes.data, options.systemRomBytes.size },
 		{ options.cartRomBytes.data, options.cartRomBytes.size }
@@ -47,7 +43,7 @@ Runtime::Runtime(
 	)
 	, hostFault(*this)
 {
-	configureLuaHeapUsage({});
+	resetLuaHeapUsageHooks();
 	resetTrackedLuaHeapBytes();
 	input.setRuntimeInputFrameDurationMs(timing.frameDurationMs);
 	machine.memory.clearIoSlots();
@@ -69,19 +65,12 @@ Runtime::Runtime(
 		}
 	});
 
-	configureLuaHeapUsage({
-		.collect = [this]() {
-			machine.cpu.collectHeap();
-		},
-		.getBaseRamUsedBytes = [this]() {
-			return static_cast<size_t>(baseRamUsedBytes());
-		},
-	});
+	configureLuaHeapUsage(this, &Runtime::getBaseRamUsedBytesThunk, &Runtime::collectTrackedHeapBytesThunk);
 
 }
 
 Runtime::~Runtime() {
-	configureLuaHeapUsage({});
+	resetLuaHeapUsageHooks();
 	resetTrackedLuaHeapBytes();
 }
 
@@ -194,6 +183,16 @@ uint32_t Runtime::baseRamUsedBytes() const {
 	return BASE_RAM_USED_SIZE;
 }
 
+size_t Runtime::getBaseRamUsedBytesThunk([[maybe_unused]] void* context) {
+	return BASE_RAM_USED_SIZE;
+}
+
+size_t Runtime::collectTrackedHeapBytesThunk(void* context) {
+	auto& runtime = *static_cast<Runtime*>(context);
+	runtime.machine.cpu.collectHeap();
+	return trackedLuaHeapBytes();
+}
+
 uint32_t Runtime::ramUsedBytes() const {
 	return baseRamUsedBytes() + static_cast<uint32_t>(trackedLuaHeapBytes());
 }
@@ -210,67 +209,6 @@ uint32_t Runtime::vramTotalBytes() const {
 	return machine.vdp.trackedTotalVramBytes();
 }
 
-const CartManifest* Runtime::cartManifest() const {
-	if (!m_cartRomPackage || !m_cartRomPackage->cartManifest) {
-		return nullptr;
-	}
-	return &*m_cartRomPackage->cartManifest;
-}
-
-const std::string* Runtime::cartEntryPath() const {
-	if (!m_cartRomPackage || m_cartRomBytes.size == 0) {
-		return nullptr;
-	}
-	return &m_cartRomPackage->entryPoint;
-}
-
-const std::string* Runtime::cartProjectRootPath() const {
-	if (!m_cartRomPackage || m_cartRomBytes.size == 0) {
-		return nullptr;
-	}
-	return &m_cartRomPackage->projectRootPath;
-}
-
-RuntimeRomPackage& Runtime::activeRom() {
-	return *m_activeRomPackage;
-}
-
-const RuntimeRomPackage& Runtime::activeRom() const {
-	return *m_activeRomPackage;
-}
-
-RuntimeRomPackage& Runtime::systemRom() {
-	return *m_systemRomPackage;
-}
-
-const RuntimeRomPackage& Runtime::systemRom() const {
-	return *m_systemRomPackage;
-}
-
-RuntimeRomPackage* Runtime::cartRom() {
-	return m_cartRomPackage;
-}
-
-const RuntimeRomPackage* Runtime::cartRom() const {
-	return m_cartRomPackage;
-}
-
-void Runtime::setRuntimeEnvironment(
-	const MachineManifest& machineManifest,
-	RuntimeOptions::RomSpan systemRomBytes,
-	RuntimeOptions::RomSpan cartRomBytes,
-	RuntimeRomPackage& activeRom,
-	RuntimeRomPackage& systemRom,
-	RuntimeRomPackage* cartRom
-) {
-	m_machineManifest = &machineManifest;
-	m_systemRomBytes = systemRomBytes;
-	m_cartRomBytes = cartRomBytes;
-	m_activeRomPackage = &activeRom;
-	m_systemRomPackage = &systemRom;
-	m_cartRomPackage = cartRom;
-}
-
 void Runtime::setLinkedCartProgram(ProgramVectorTable vectors, uint32_t programDataBaseAddress, uint32_t programBssBaseAddress, uint32_t cartDataBaseAddress, uint32_t cartBssBaseAddress, std::vector<std::string> staticModulePaths) {
 	m_cartVectors = vectors;
 	m_programDataBaseAddress = programDataBaseAddress;
@@ -278,11 +216,11 @@ void Runtime::setLinkedCartProgram(ProgramVectorTable vectors, uint32_t programD
 	m_cartDataBaseAddress = cartDataBaseAddress;
 	m_cartBssBaseAddress = cartBssBaseAddress;
 	m_cartStaticModulePaths = std::move(staticModulePaths);
-	m_cartEntryAvailable = true;
+	cartEntryAvailable = true;
 }
 
 void Runtime::clearLinkedCartProgram(uint32_t dataByteLength) {
-	m_cartEntryAvailable = false;
+	cartEntryAvailable = false;
 	m_cartDataBaseAddress = PROGRAM_STATIC_RAM_BASE;
 	m_cartBssBaseAddress = PROGRAM_STATIC_RAM_BASE;
 	m_programDataBaseAddress = PROGRAM_STATIC_RAM_BASE;
@@ -291,13 +229,11 @@ void Runtime::clearLinkedCartProgram(uint32_t dataByteLength) {
 }
 
 void Runtime::enterSystemFirmware() {
-	m_cartProgramStarted = false;
-	m_activeRomPackage = m_systemRomPackage;
+	cartProgramStarted = false;
 }
 
 void Runtime::enterCartProgram() {
-	m_cartProgramStarted = true;
-	m_activeRomPackage = m_cartRomPackage;
+	cartProgramStarted = true;
 }
 
 void Runtime::startCartProgram() {
@@ -328,7 +264,7 @@ void Runtime::boot(const ProgramImage& image, std::unique_ptr<ProgramMetadata> m
 
 void Runtime::bootLinkedProgramImage(LinkedBootProgramImage&& linked) {
 	setLinkedCartProgram(linked.cartVectors, linked.dataBaseAddress, linked.bssBaseAddress, linked.cartDataBaseAddress, linked.cartBssBaseAddress, std::move(linked.cartStaticModulePaths));
-	std::span<const std::string> cartStaticModulePaths = m_cartProgramStarted
+	std::span<const std::string> cartStaticModulePaths = cartProgramStarted
 		? std::span<const std::string>{ m_cartStaticModulePaths }
 		: std::span<const std::string>{};
 	boot(
@@ -343,9 +279,10 @@ void Runtime::bootLinkedProgramImage(LinkedBootProgramImage&& linked) {
 }
 
 void Runtime::startLoadedProgram(ProgramVectorTable vectors, std::span<const std::string> systemStaticModulePaths, std::span<const std::string> cartStaticModulePaths) {
-	m_programVectors = vectors;
+	m_programVectorsStorage = vectors;
+	programVectors = &m_programVectorsStorage;
 	NativeResults sectionResults;
-	callLuaFunctionInto(machine.cpu.rootClosure(vectors.sectionInitProtoIndex), NativeArgsView(), sectionResults);
+	callClosureInto(machine.cpu.rootClosure(vectors.sectionInitProtoIndex), NativeArgsView(), sectionResults);
 	runStaticModuleInitializers(systemStaticModulePaths);
 	clearLuaBootPrimitives();
 	runStaticModuleInitializers(cartStaticModulePaths);
@@ -369,7 +306,7 @@ void Runtime::runStaticModuleInitializer(const std::string& path) {
 	Closure& closure = machine.cpu.rootClosure(protoIt->second);
 	NativeResults results;
 	try {
-		callLuaFunctionInto(closure, NativeArgsView(), results);
+		callClosureInto(closure, NativeArgsView(), results);
 	} catch (...) {
 		m_moduleCache.erase(path);
 		throw;
@@ -429,7 +366,7 @@ void Runtime::resetRuntimeForProgramReload() {
 	m_runtimeFailed = false;
 	m_luaInitialized = false;
 	m_pendingCall = PendingCall::None;
-	m_programVectors.reset();
+	programVectors = nullptr;
 	clearLinkedCartProgram(0);
 	luaOutputLineBuffer.clear();
 	hostFault.clear();
@@ -441,21 +378,9 @@ void Runtime::resetRuntimeForProgramReload() {
 	resetHardwareState();
 }
 
-void Runtime::requestProgramReload() {
-	// Reboot is executed on the next update boundary so the active Lua call can unwind first.
-	m_rebootRequested = true;
-	m_luaInitialized = false;
-	frameLoop.resetFrameState(*this);
-}
-
 // disable-next-line single_line_method_pattern -- runtime global writes keep CPU string-key encoding inside Runtime.
 void Runtime::setGlobal(std::string_view name, const Value& value) {
 	machine.cpu.setGlobalByKey(valueString(machine.cpu.stringPool().intern(name)), value);
-}
-
-void Runtime::registerNativeFunction(std::string_view name, NativeFunctionInvoke fn, std::optional<NativeFnCost> cost) {
-	const auto nativeFn = machine.cpu.createNativeFunction(name, std::move(fn), cost);
-	machine.cpu.setGlobalByKey(valueString(machine.cpu.stringPool().intern(name)), nativeFn);
 }
 
 void Runtime::resetHardwareState() {

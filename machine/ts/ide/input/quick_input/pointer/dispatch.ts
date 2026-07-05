@@ -13,7 +13,7 @@ export function handleQuickInputPointer(runtime: Runtime, snapshot: PointerSnaps
 	if (handleCreateResourcePointer(resourcePanel, snapshot, justPressed)) {
 		return true;
 	}
-	if (handleResourceSearchPointer(runtime, snapshot, justPressed)) {
+	if (handleResourceSearchPointer(snapshot, justPressed)) {
 		return true;
 	}
 	if (handleSymbolSearchPointer(runtime, snapshot, justPressed)) {
@@ -25,5 +25,5 @@ export function handleQuickInputPointer(runtime: Runtime, snapshot: PointerSnaps
 	if (handleLineJumpPointer(resourcePanel, snapshot, justPressed)) {
 		return true;
 	}
-	return handleSearchPointer(runtime, snapshot, justPressed);
+	return handleSearchPointer(snapshot, justPressed);
 }

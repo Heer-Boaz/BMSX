@@ -1,4 +1,5 @@
 import type { Runtime } from '../../../../machine/runtime/runtime';
+import { machineManager } from '../../../../core/machine_manager';
 import * as workbenchMode from '../../mode';
 import { type LuaDebuggerSessionMetrics } from '../../../../lua/debugger';
 import { editorRuntimeState } from '../../../editor/common/runtime_state';
@@ -28,7 +29,6 @@ export class DebuggerUiController {
 
 	public constructor(private readonly runtime: Runtime) {
 		updateExecutionState(getDebuggerExecutionState());
-		syncRuntimeBreakpoints(runtime);
 		this.unsubscribeLifecycle = subscribeDebuggerLifecycleEvents(event => this.handleLifecycleEvent(event));
 	}
 
@@ -138,7 +138,7 @@ export function getBreakpointsForChunk(path: string): ReadonlySet<number> {
 	return bucket ? bucket : emptyBreakpoints;
 }
 
-export function toggleBreakpoint(runtime: Runtime, path: string, line: number): BreakpointToggleResult {
+export function toggleBreakpoint(path: string, line: number): BreakpointToggleResult {
 	if (line === null) {
 		return 'unchanged';
 	}
@@ -150,11 +150,11 @@ export function toggleBreakpoint(runtime: Runtime, path: string, line: number): 
 			editorDebuggerState.breakpoints.delete(pathKey);
 		}
 
-		syncRuntimeBreakpoints(runtime);
+		syncRuntimeBreakpoints();
 		return 'removed';
 	}
 	bucket.add(line);
-	syncRuntimeBreakpoints(runtime);
+	syncRuntimeBreakpoints();
 	return 'added';
 }
 
@@ -176,10 +176,10 @@ export function serializeBreakpoints(): SerializedBreakpointMap {
 	return payload;
 }
 
-export function restoreBreakpointsFromPayload(runtime: Runtime, payload: SerializedBreakpointMap | null): void {
+export function restoreBreakpointsFromPayload(payload: SerializedBreakpointMap | null): void {
 	editorDebuggerState.breakpoints.clear();
 	if (payload === null) {
-		syncRuntimeBreakpoints(runtime);
+		syncRuntimeBreakpoints();
 		return;
 	}
 	for (const path in payload) {
@@ -189,11 +189,11 @@ export function restoreBreakpointsFromPayload(runtime: Runtime, payload: Seriali
 		}
 		editorDebuggerState.breakpoints.set(path, new Set(lineEntries));
 	}
-	syncRuntimeBreakpoints(runtime);
+	syncRuntimeBreakpoints();
 }
 
-export function syncRuntimeBreakpoints(runtime: Runtime): void {
-	runtime.debuggerController.setBreakpoints(editorDebuggerState.breakpoints);
+export function syncRuntimeBreakpoints(): void {
+	machineManager.ideState.debugger.controller.setBreakpoints(editorDebuggerState.breakpoints);
 }
 
 export function getActiveBreakpointPath(): string {
@@ -201,7 +201,7 @@ export function getActiveBreakpointPath(): string {
 	return context.descriptor.path;
 }
 
-export function toggleBreakpointForEditorRow(runtime: Runtime, row: number = editorDocumentState.cursorRow): boolean {
+export function toggleBreakpointForEditorRow(row: number = editorDocumentState.cursorRow): boolean {
 	if (row < 0 || row >= editorDocumentState.buffer.getLineCount()) {
 		return false;
 	}
@@ -211,7 +211,7 @@ export function toggleBreakpointForEditorRow(runtime: Runtime, row: number = edi
 		return false;
 	}
 	const lineNumber = row + 1;
-	const result = toggleBreakpoint(runtime, path, lineNumber);
+	const result = toggleBreakpoint(path, lineNumber);
 	if (result === 'unchanged') {
 		return false;
 	}

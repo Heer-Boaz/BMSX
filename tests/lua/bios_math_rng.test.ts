@@ -5,7 +5,7 @@ import { test } from 'node:test';
 import { splitText } from '../../machine/ts/common/text_lines';
 import { LuaLexer } from '../../machine/ts/lua/syntax/lexer';
 import { LuaParser } from '../../machine/ts/lua/syntax/parser';
-import { compileLuaChunkToProgram, encodeCompiledProgramImage } from '../../machine/ts/machine/program/compiler';
+import { compileLuaChunkToProgram, encodeCompiledProgramImage } from '../../machine/ts/lua/compiler';
 
 function parseSource(source: string, path: string) {
 	const lexer = new LuaLexer(source, path);

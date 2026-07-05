@@ -1,7 +1,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 
-import { LuaFunctionRedirectCache } from '../../machine/ts/machine/firmware/handler_registry';
+import { LuaFunctionRedirectCache } from '../../machine/ts/ide/runtime/handler_registry';
 import type { LuaFunctionValue, LuaValue } from '../../machine/ts/lua/value';
 
 function handler(name: string, value: LuaValue): LuaFunctionValue {

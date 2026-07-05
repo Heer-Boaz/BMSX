@@ -64,47 +64,47 @@ export function isManagedOverlayEditorActive(): boolean {
 	return state.editor.isActive;
 }
 
-export function updateGamePipelineExts(runtime: Runtime): void {
+export function updateGamePipelineExts(): void {
 	const state = machineManager.ideState;
 	const overlayActive = state.terminal.isActive || (state.editor.blocksRuntimePipeline && state.editor.isActive);
-	runtime.executionOverlayActive = overlayActive;
+	state.overlayActive = overlayActive;
 	machineManager.view.presentWorkbenchFrameBufferTexture = overlayActive;
 	Input.instance.setGameplayCaptureEnabled(!overlayActive);
-	updateOverlayAudioSuspension(runtime);
+	updateOverlayAudioSuspension();
 }
 
-function updateOverlayAudioSuspension(runtime: Runtime): void {
+function updateOverlayAudioSuspension(): void {
 	if (!machineManager.sndmaster.isRuntimeAudioReady()) {
 		return;
 	}
-	if (isOverlayActive(runtime)) {
+	if (isOverlayActive()) {
 		machineManager.sndmaster.suspendAll('overlay');
 	} else {
 		machineManager.sndmaster.resumeAll('overlay');
 	}
 }
 
-export function toggleTerminalMode(runtime: Runtime): void {
+export function toggleTerminalMode(): void {
 	const state = machineManager.ideState;
 	if (state.terminal.isActive) {
-		deactivateTerminalMode(runtime);
+		deactivateTerminalMode();
 		return;
 	}
-	activateTerminalMode(runtime);
+	activateTerminalMode();
 }
 
-export function activateTerminalMode(runtime: Runtime): void {
+export function activateTerminalMode(): void {
 	const state = machineManager.ideState;
 	const terminal = state.terminal;
 	if (terminal.isActive) {
 		return;
 	}
-	deactivateEditor(runtime);
+	deactivateEditor();
 	terminal.activate();
-	updateGamePipelineExts(runtime);
+	updateGamePipelineExts();
 }
 
-export function deactivateTerminalMode(runtime: Runtime): void {
+export function deactivateTerminalMode(): void {
 	const state = machineManager.ideState;
 	const terminal = state.terminal;
 	if (!terminal.isActive) {
@@ -114,24 +114,24 @@ export function deactivateTerminalMode(runtime: Runtime): void {
 	if (state.overlayDrawFrameOwner === 'terminal') {
 		state.overlayDrawFrameOwner = null;
 	}
-	updateGamePipelineExts(runtime);
+	updateGamePipelineExts();
 }
 
-function isOverlayActive(runtime: Runtime): boolean {
-	return runtime.executionOverlayActive;
+function isOverlayActive(): boolean {
+	return machineManager.ideState.overlayActive;
 }
 
 export function toggleEditor(runtime: Runtime): void {
 	const state = machineManager.ideState;
 	if (state.editor.isActive) {
-		deactivateEditor(runtime);
+		deactivateEditor();
 		return;
 	}
 	activateEditor(runtime);
 }
 
 export function activateEditor(runtime: Runtime): void {
-	if (!runtime.hasProgramSymbols) {
+	if (!runtime.programMetadata) {
 		return;
 	}
 	const state = machineManager.ideState;
@@ -156,10 +156,10 @@ export function activateEditor(runtime: Runtime): void {
 	if (!editor.isActive && !wasActive) {
 		leaveEditorRenderTargets();
 	}
-	updateGamePipelineExts(runtime);
+	updateGamePipelineExts();
 }
 
-export function deactivateEditor(runtime: Runtime): void {
+export function deactivateEditor(): void {
 	const state = machineManager.ideState;
 	const editor = state.editor;
 	if (editor.isActive) {
@@ -169,5 +169,5 @@ export function deactivateEditor(runtime: Runtime): void {
 		state.overlayDrawFrameOwner = null;
 	}
 	leaveEditorRenderTargets();
-	updateGamePipelineExts(runtime);
+	updateGamePipelineExts();
 }

@@ -5,8 +5,8 @@ import { LuaLexer } from '../../machine/ts/lua/syntax/lexer';
 import { LuaParser } from '../../machine/ts/lua/syntax/parser';
 import { CPU, RunResult, type Value } from '../../machine/ts/machine/cpu/cpu';
 import { Memory } from '../../machine/ts/machine/memory/memory';
-import { compileLuaChunkToProgram } from '../../machine/ts/machine/program/compiler';
-import type { OptimizationLevel } from '../../machine/ts/machine/program/optimizer';
+import { compileLuaChunkToProgram } from '../../machine/ts/lua/compiler';
+import type { OptimizationLevel } from '../../machine/ts/lua/compiler/optimizer';
 
 export function parseLuaChunk(source: string, path = 'test.lua') {
 	const lexer = new LuaLexer(source, path);

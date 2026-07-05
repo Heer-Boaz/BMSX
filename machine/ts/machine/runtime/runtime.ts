@@ -1,84 +1,66 @@
-import type { LuaDefinitionInfo } from '../../lua/syntax/ast';
-import type { LuaEnvironment } from '../../lua/environment';
-import { LuaRuntimeError } from '../../lua/errors';
-import { LuaHandlerCache } from '../../lua/handler_cache';
-import { LuaInterpreter } from '../../lua/runtime';
-import {
-	convertToError,
-	type LuaDebuggerPauseSignal
-} from '../../lua/value';
-import type { CartManifest, MachineManifest, RuntimeRomPackage } from '../../rompack/format';
-import { RomSourceStack, type RawRomSource, type RomSourceLayer } from '../../rompack/source';
-import { buildRuntimeRomLayer, type RuntimeRomLayer } from '../../rompack/loader';
-import { EMPTY_CALL_ARGS, StringValue, Table, type Value, type Program, type ProgramMetadata, type ProgramRuntimeSymbols, type NativeFunction, type NativeObject } from '../cpu/cpu';
-import { type LuaSemanticModel, type FileSemanticData } from '../../lua/semantic/model';
-import { registerFirmwareBuiltins } from '../firmware/builtins';
-import { clearLuaBootPrimitives } from '../firmware/globals';
-import { LuaFunctionRedirectCache } from '../firmware/handler_registry';
-import { HandlerCache, LuaJsBridge } from './host/native_bridge';
+import { AcceptedInterruptKind, EMPTY_CALL_ARGS, RunResult, StringValue, type Closure, type Value, type Program, type ProgramMetadata, type ProgramRuntimeSymbols } from '../cpu/cpu';
+import { clearLuaBootPrimitives, seedLuaGlobals } from '../firmware/globals';
 import type { RuntimeOptions } from './options';
-import type { GateGroup } from '../../common/taskgate';
-import { taskGate } from '../../common/taskgate';
-import {
-	buildLuaSources,
-	resolveLuaSourceRecord as resolveRegistryLuaSourceRecord,
-	type LuaSourceMatch,
-	type LuaSourceRegistry,
-	DEFAULT_SYSTEM_PROJECT_ROOT_PATH,
-} from '../program/sources';
-import { DebugPauseCoordinator } from '../../lua/debug_pause';
-import { LuaDebuggerController, type LuaDebuggerSessionMetrics } from '../../lua/debugger';
-import type { LuaBuiltinDescriptor, LuaMemberCompletion } from '../../lua/semantic_contracts';
-import type { ParsedLuaChunk } from '../../lua/analysis/parse';
-import { configureLuaHeapUsage, getTrackedLuaHeapBytes } from '../memory/lua_heap_usage';
+import { addTrackedLuaHeapBytes, configureLuaHeapUsage, getTrackedLuaHeapBytes, resetTrackedLuaHeapBytes } from '../memory/lua_heap_usage';
 import { FrameLoopState } from './frame/loop';
 import { FrameSchedulerState } from '../scheduler/frame';
 import { TimingState } from './timing/state';
 import { VblankState } from './vblank';
-import { CpuExecutionState } from './cpu_executor';
+import { advanceRuntimeTime, CpuExecutionState, runDueRuntimeTimers } from './cpu_executor';
 import { HostFaultState } from './host_fault';
 import { LuaScratchState } from '../program/scratch';
-import { callClosureInto, invokeClosureHandler, invokeLuaHandler } from '../program/executor';
 import type { ProgramImage, ProgramVectorTable } from '../program/loader';
 import { inflateExecutableProgramImage, type LinkedBootProgramImage } from '../program/linker';
-import { resolveRuntimeMemoryMapSpecs } from '../memory/specs';
-import { getMachineRegionTimingForWord, MACHINE_REGION_PAL_WORD, PSX_MODEL_PROFILE } from '../model_registry';
-import { applyRuntimeTiming, resolveRuntimeTiming } from './boot_timing';
+import { getMachineRegionTimingForWord } from '../model_registry';
 import { refreshDeviceTimings, setFrameTiming } from './timing/config';
 import { HZ_SCALE } from './timing/constants';
 import { calcCyclesPerFrameScaled, resolveVblankCycles } from './timing';
 import { IO_SYS_CYCLES_PER_FRAME, IO_SYS_FRAME_MS, IO_SYS_PRINT_CHAR, IO_SYS_PRINT_FLUSH, IO_SYS_REGION, IO_SYS_TIME_MS, IO_VDP_MODE } from '../bus/io';
 import { Machine } from '../machine';
 import type { RuntimeInputSource } from './input';
-import { Memory } from '../memory/memory';
 import type { MicrotaskQueue } from '../scheduler/microtask_queue';
 import {
 	BASE_RAM_USED_SIZE,
 	PROGRAM_STATIC_RAM_BASE,
 	RAM_SIZE,
-	configureMemoryMap,
 } from '../memory/map';
 
-export type RuntimeProgramVectorTable = {
-	resetProtoIndex: number;
-	sectionInitProtoIndex: number | null;
-	irqProtoIndex: number;
-};
+
+function runHaltedClosureUntilInterrupt(runtime: Runtime): number {
+	const cpu = runtime.machine.cpu;
+	const scheduler = runtime.machine.scheduler;
+	let consumed = 0;
+	let advancedDeadline = false;
+	while (cpu.isHaltedUntilIrq()) {
+		if (cpu.peekPendingInterrupt(runtime.machine.irqController) !== AcceptedInterruptKind.None) {
+			cpu.clearHaltUntilIrq();
+			return consumed;
+		}
+		if (advancedDeadline) {
+			return consumed;
+		}
+		const nextDeadline = scheduler.nextDeadline();
+		if (nextDeadline === Number.MAX_SAFE_INTEGER) {
+			return consumed;
+		}
+		const idleCycles = nextDeadline - scheduler.nowCycles;
+		if (idleCycles <= 0) {
+			if (runDueRuntimeTimers(runtime)) {
+				return consumed;
+			}
+			continue;
+		}
+		advanceRuntimeTime(runtime, idleCycles);
+		consumed += idleCycles;
+		advancedDeadline = true;
+	}
+	return consumed;
+}
 
 export const EMPTY_STATIC_MODULE_PATHS: ReadonlyArray<string> = [];
 
 export class Runtime {
-	public readonly luaJsBridge!: LuaJsBridge;
-	public readonly apiFunctionNames = new Set<string>();
-	public readonly luaBuiltinMetadata = new Map<string, LuaBuiltinDescriptor>();
-	public tickEnabled: boolean = true;
 	public readonly timing: TimingState;
-	public executionOverlayActive = false;
-	public readonly debuggerController = new LuaDebuggerController();
-	public readonly pauseCoordinator = new DebugPauseCoordinator();
-	public debuggerSuspendSignal: LuaDebuggerPauseSignal = null;
-	public debuggerPaused = false;
-	public debuggerMetrics: LuaDebuggerSessionMetrics = null;
 	public cpuUsageCyclesUsed(): number {
 		return this.frameLoop.frameActive ? this.frameLoop.frameState.activeCpuUsedCycles : this.frameScheduler.lastTickCpuUsedCycles;
 	}
@@ -99,22 +81,14 @@ export class Runtime {
 		return this.machine.vdp.lastFrameHeld();
 	}
 
-	public shortcutDisposers: Array<() => void> = [];
-	private luaInterpreter!: LuaInterpreter;
 	public pendingCall: 'entry' | null = null;
 	public get isDrawPending(): boolean {
 		return this.pendingCall === 'entry'
-			|| this.debuggerPaused
 			|| this.luaRuntimeFailed;
 	}
 
 	public programMetadata: ProgramMetadata | null = null;
 	public programRuntimeSymbols!: ProgramRuntimeSymbols;
-	public hostEvalMetadata: ProgramMetadata | null = null;
-	public _luaPath: string = null;
-	public get currentPath(): string {
-		return this._luaPath;
-	}
 	public luaInitialized = false;
 	public get isInitialized(): boolean {
 		return this.luaInitialized;
@@ -123,190 +97,25 @@ export class Runtime {
 	public get hasRuntimeFailed(): boolean {
 		return this.luaRuntimeFailed;
 	}
-	private includeJsStackTraces = false;
-	public realtimeCompileOptLevel: 0 | 1 | 2 | 3 = 3;
 	public readonly frameScheduler: FrameSchedulerState;
 	public readonly frameLoop: FrameLoopState;
-	public readonly activeMachineManifest: MachineManifest;
-	public readonly cartManifest: CartManifest | null;
-	public readonly cartProjectRootPath: string | null;
-	public systemRom: RuntimeRomLayer = null;
-	public cartRom: RuntimeRomLayer | null = null;
-	public systemPackage: RuntimeRomPackage = null;
-	public activePackage: RuntimeRomPackage = null;
-	public systemLuaSources: LuaSourceRegistry = null;
-	public cartLuaSources: LuaSourceRegistry | null = null;
-	public activeLuaSources: LuaSourceRegistry = null;
-	public readonly luaSourceRegistries: LuaSourceRegistry[] = [];
-	public readonly luaSourceSearchRegistries: LuaSourceRegistry[] = [];
-	public readonly moduleCompileLuaSources: LuaSourceRegistry[] = [];
 	public cartProgramStarted = false;
-	public programVectors: RuntimeProgramVectorTable | null = null;
+	public programVectors: ProgramVectorTable | null = null;
 	public cartVectors!: ProgramVectorTable;
 	public programDataBaseAddress = PROGRAM_STATIC_RAM_BASE;
 	public programBssBaseAddress = PROGRAM_STATIC_RAM_BASE;
 	public cartDataBaseAddress = PROGRAM_STATIC_RAM_BASE;
 	public cartBssBaseAddress = PROGRAM_STATIC_RAM_BASE;
 	public cartStaticModulePaths: ReadonlyArray<string> = [];
-	public systemRomSource: RawRomSource = null;
-	public cartRomSource: RawRomSource | null = null;
-	public activeRomSource: RawRomSource = null;
-	public systemProjectRootPath: string = DEFAULT_SYSTEM_PROJECT_ROOT_PATH;
 	public readonly vblank: VblankState;
 	public readonly cpuExecution: CpuExecutionState;
-	public pendingLuaWarnings: string[] = [];
 	public readonly luaOutputLines: string[] = [];
 	private luaOutputLineBuffer = '';
-	public readonly luaChunkEnvironmentsByPath: Map<string, LuaEnvironment> = new Map();
-	public readonly luaGenericChunksExecuted: Set<string> = new Set();
 	public readonly luaScratch = new LuaScratchState();
-	public readonly luaFunctionRedirectCache = new LuaFunctionRedirectCache();
-	// Wrap Lua closures with stable JS stubs so FSM/input/events can hold onto durable references even across hot-resume.
-	private readonly luaHandlerCache = new LuaHandlerCache(
-		(fn, thisArg, args) => invokeLuaHandler(this, fn, thisArg, args),
-		(error, meta) => this.handleLuaHandlerError(error, meta),
-	);
-	public readonly closureHandlerCache = new HandlerCache(
-		(fn, thisArg, args) => invokeClosureHandler(this, fn, thisArg, args),
-		(error, meta) => this.handleClosureHandlerError(error, meta),
-	);
 	public readonly moduleCache = new Map<string, Value>();
-	public readonly nativeObjectCache = new WeakMap<object, NativeObject>();
-	public readonly nativeFunctionCache = new WeakMap<Function, NativeFunction>();
-	public readonly nativeMemberCache = new WeakMap<object, Map<string, NativeFunction>>();
-	public readonly tableIds = new WeakMap<Table, number>();
-	public nextTableId = 1;
-	public nativeMemberCompletionCache: WeakMap<object, { dot?: LuaMemberCompletion[]; colon?: LuaMemberCompletion[] }> = new WeakMap();
-	public readonly pathSemanticCache: Map<string, { source: string; model?: LuaSemanticModel; definitions?: ReadonlyArray<LuaDefinitionInfo>; parsed?: ParsedLuaChunk; lines?: readonly string[]; analysis?: FileSemanticData }> = new Map();
-
-	public readonly luaGate: GateGroup = taskGate.group('machine:lua');
 	public cartEntryAvailable = false;
 	public readonly hostFault: HostFaultState;
 	public readonly machine: Machine;
-	public get interpreter(): LuaInterpreter {
-		return this.luaInterpreter;
-	}
-	public get hasProgramSymbols(): boolean {
-		return this.programMetadata !== null;
-	}
-
-	public static async init(systemLayer: RuntimeRomLayer, input: RuntimeInputSource, microtasks: MicrotaskQueue, cartridge?: Uint8Array): Promise<Runtime> {
-		const systemSource = new RomSourceStack([{ id: systemLayer.id, index: systemLayer.index, payload: systemLayer.payload }]);
-		const systemLuaSources = buildLuaSources(systemSource, systemSource, systemLayer.index, ['system']);
-		const systemMachine = systemLayer.index.machine;
-		if (!cartridge) {
-			const systemMemorySpecs = resolveRuntimeMemoryMapSpecs();
-			configureMemoryMap(systemMemorySpecs);
-			const timing = resolveRuntimeTiming(PSX_MODEL_PROFILE.cpuFreqHz, MACHINE_REGION_PAL_WORD);
-			const memory = new Memory({
-				systemRom: systemLayer.payload,
-				cartRom: new Uint8Array(0),
-			});
-			const runtime = new Runtime({
-				viewport: { width: timing.viewportWidth, height: timing.viewportHeight },
-				memory,
-				activeMachineManifest: systemMachine,
-				cartManifest: null,
-				cartProjectRootPath: null,
-				machineRegionWord: timing.regionWord,
-				ufpsScaled: timing.ufpsScaled,
-				cpuHz: timing.cpuHz,
-				cycleBudgetPerFrame: timing.cycleBudgetPerFrame,
-				vblankCycles: timing.vblankCycles,
-				imgDecBytesPerSec: timing.imgDecBytesPerSec,
-				dmaBytesPerSecIso: timing.dmaBytesPerSecIso,
-				dmaBytesPerSecBulk: timing.dmaBytesPerSecBulk,
-				vdpWorkUnitsPerSec: timing.vdpWorkUnitsPerSec,
-				geoWorkUnitsPerSec: timing.geoWorkUnitsPerSec,
-			}, input, microtasks);
-			applyRuntimeTiming(runtime, timing);
-			runtime.configureProgramSources({
-				systemRom: systemLayer,
-				cartRom: null,
-				systemSources: systemLuaSources,
-				cartSources: null,
-				systemRomSource: systemSource,
-				cartRomSource: null,
-			});
-			return runtime;
-		}
-
-		const cartRom = await buildRuntimeRomLayer({ blob: cartridge, id: 'cart' });
-		const sourceLayers: RomSourceLayer[] = [
-			{ id: cartRom.id, index: cartRom.index, payload: cartRom.payload },
-			{ id: systemLayer.id, index: systemLayer.index, payload: systemLayer.payload },
-		];
-		const activeRomSource = new RomSourceStack(sourceLayers);
-
-		const cartSource = new RomSourceStack([{ id: cartRom.id, index: cartRom.index, payload: cartRom.payload }]);
-		const cartLuaSources = buildLuaSources(cartSource, activeRomSource, cartRom.index, ['cart']);
-
-		const memoryLimits = resolveRuntimeMemoryMapSpecs();
-		configureMemoryMap(memoryLimits);
-		const timing = resolveRuntimeTiming(PSX_MODEL_PROFILE.cpuFreqHz, MACHINE_REGION_PAL_WORD);
-		const memory = new Memory({
-			systemRom: systemLayer.payload,
-			cartRom: cartRom.payload,
-		});
-		const runtime = new Runtime({
-			viewport: { width: timing.viewportWidth, height: timing.viewportHeight },
-			memory,
-			activeMachineManifest: cartRom.index.machine,
-			cartManifest: cartRom.index.cart_manifest,
-			cartProjectRootPath: cartRom.index.projectRootPath,
-			machineRegionWord: timing.regionWord,
-			ufpsScaled: timing.ufpsScaled,
-			cpuHz: timing.cpuHz,
-			cycleBudgetPerFrame: timing.cycleBudgetPerFrame,
-			vblankCycles: timing.vblankCycles,
-			imgDecBytesPerSec: timing.imgDecBytesPerSec,
-			dmaBytesPerSecIso: timing.dmaBytesPerSecIso,
-			dmaBytesPerSecBulk: timing.dmaBytesPerSecBulk,
-			vdpWorkUnitsPerSec: timing.vdpWorkUnitsPerSec,
-			geoWorkUnitsPerSec: timing.geoWorkUnitsPerSec,
-		}, input, microtasks);
-		applyRuntimeTiming(runtime, timing);
-		runtime.configureProgramSources({
-			systemRom: systemLayer,
-			cartRom,
-			systemSources: systemLuaSources,
-			cartSources: cartLuaSources,
-			systemRomSource: systemSource,
-			cartRomSource: cartSource,
-		});
-		return runtime;
-	}
-
-	private configureProgramSources(params: {
-		systemRom: RuntimeRomLayer;
-		cartRom: RuntimeRomLayer | null;
-		systemSources: LuaSourceRegistry;
-		cartSources: LuaSourceRegistry | null;
-		systemRomSource: RawRomSource;
-		cartRomSource: RawRomSource | null;
-	}): void {
-		this.systemRom = params.systemRom;
-		this.cartRom = params.cartRom;
-		this.systemPackage = params.systemRom.package;
-		this.activePackage = params.systemRom.package;
-		this.systemLuaSources = params.systemSources;
-		this.cartLuaSources = params.cartSources;
-		this.activeLuaSources = params.systemSources;
-		this.cartProgramStarted = false;
-		this.programVectors = null;
-		this.cartEntryAvailable = false;
-		this.programDataBaseAddress = PROGRAM_STATIC_RAM_BASE;
-		this.programBssBaseAddress = PROGRAM_STATIC_RAM_BASE;
-		this.cartDataBaseAddress = PROGRAM_STATIC_RAM_BASE;
-		this.cartBssBaseAddress = PROGRAM_STATIC_RAM_BASE;
-		this.cartStaticModulePaths = [];
-		this.luaOutputLineBuffer = '';
-		this.systemRomSource = params.systemRomSource;
-		this.cartRomSource = params.cartRomSource;
-		this.activeRomSource = params.systemRomSource;
-		this.systemProjectRootPath = params.systemSources.projectRootPath || DEFAULT_SYSTEM_PROJECT_ROOT_PATH;
-		this.rebuildLuaSourceOrders();
-	}
 
 	private setLinkedCartProgram(vectors: ProgramVectorTable, programDataBaseAddress: number, programBssBaseAddress: number, cartDataBaseAddress: number, cartBssBaseAddress: number, staticModulePaths: ReadonlyArray<string>): void {
 		this.cartVectors = vectors;
@@ -327,10 +136,35 @@ export class Runtime {
 		this.cartStaticModulePaths = EMPTY_STATIC_MODULE_PATHS;
 	}
 
+	public resetHardwareState(): void {
+		this.luaOutputLineBuffer = '';
+		this.machine.resetDevices();
+		this.vblank.reset();
+	}
+
+	public resetRuntimeForProgramReload(): void {
+		this.frameLoop.resetFrameState();
+		this.luaRuntimeFailed = false;
+		this.luaInitialized = false;
+		this.pendingCall = null;
+		this.programVectors = null;
+		this.clearLinkedCartProgram(0);
+		this.luaOutputLineBuffer = '';
+		this.hostFault.clear();
+		this.moduleCache.clear();
+		this.machine.cpu.clearGlobalSlots();
+		this.machine.cpu.globals.clear();
+		this.machine.memory.clearIoSlots();
+		this.machine.initializeSystemIo();
+		this.resetHardwareState();
+		resetTrackedLuaHeapBytes();
+		addTrackedLuaHeapBytes(this.machine.cpu.globals.getTrackedHeapBytes());
+	}
+
 	public boot(
 		image: ProgramImage,
 		metadata: ProgramMetadata | null,
-		vectors: RuntimeProgramVectorTable,
+		vectors: ProgramVectorTable,
 		dataBaseAddress: number,
 		bssBaseAddress: number,
 		systemStaticModulePaths: ReadonlyArray<string>,
@@ -339,6 +173,7 @@ export class Runtime {
 		this.programDataBaseAddress = dataBaseAddress;
 		this.programBssBaseAddress = bssBaseAddress;
 		const program = inflateExecutableProgramImage(image, dataBaseAddress, bssBaseAddress);
+		seedLuaGlobals(this);
 		this.machine.cpu.setProgram(program, image.link.symbols, metadata);
 		this.programRuntimeSymbols = image.link.symbols;
 		this.programMetadata = metadata;
@@ -360,56 +195,22 @@ export class Runtime {
 
 	public enterSystemFirmware(): void {
 		this.cartProgramStarted = false;
-		this.activeLuaSources = this.systemLuaSources;
-		this.activeRomSource = this.systemRomSource;
-		this.activePackage = this.systemPackage;
-		this.rebuildLuaSourceOrders();
 	}
 
 	public enterCartProgram(): void {
 		this.cartProgramStarted = true;
-		this.activeLuaSources = this.cartLuaSources!;
-		this.activeRomSource = this.cartRomSource!;
-		this.activePackage = this.cartRom!.package;
-		this.rebuildLuaSourceOrders();
-	}
-
-	private rebuildLuaSourceOrders(): void {
-		this.luaSourceRegistries.length = 0;
-		if (this.cartLuaSources) {
-			this.luaSourceRegistries.push(this.cartLuaSources);
-		}
-		this.luaSourceRegistries.push(this.systemLuaSources);
-
-		this.luaSourceSearchRegistries.length = 0;
-		this.luaSourceSearchRegistries.push(this.activeLuaSources);
-		if (this.cartLuaSources && this.cartLuaSources !== this.activeLuaSources) {
-			this.luaSourceSearchRegistries.push(this.cartLuaSources);
-		}
-		if (this.systemLuaSources !== this.activeLuaSources && this.systemLuaSources !== this.cartLuaSources) {
-			this.luaSourceSearchRegistries.push(this.systemLuaSources);
-		}
-
-		this.moduleCompileLuaSources.length = 0;
-		this.moduleCompileLuaSources.push(this.activeLuaSources);
-		if (this.systemLuaSources !== this.activeLuaSources) {
-			this.moduleCompileLuaSources.push(this.systemLuaSources);
-		}
 	}
 
 	public startCartProgram(): void {
 		this.programDataBaseAddress = this.cartDataBaseAddress;
 		this.programBssBaseAddress = this.cartBssBaseAddress;
 		this.enterCartProgram();
-		this._luaPath = this.activeLuaSources.entry_path;
 		this.startLoadedProgram(this.cartVectors, EMPTY_STATIC_MODULE_PATHS, this.cartStaticModulePaths);
 	}
 
-	public startLoadedProgram(vectors: RuntimeProgramVectorTable, systemStaticModulePaths: ReadonlyArray<string>, cartStaticModulePaths: ReadonlyArray<string>): void {
+	public startLoadedProgram(vectors: ProgramVectorTable, systemStaticModulePaths: ReadonlyArray<string>, cartStaticModulePaths: ReadonlyArray<string>): void {
 		this.programVectors = vectors;
-		if (vectors.sectionInitProtoIndex !== null) {
-			this.runSectionInitializer(vectors.sectionInitProtoIndex);
-		}
+		this.runSectionInitializer(vectors.sectionInitProtoIndex);
 		this.runStaticModuleInitializers(systemStaticModulePaths);
 		clearLuaBootPrimitives(this);
 		this.runStaticModuleInitializers(cartStaticModulePaths);
@@ -419,10 +220,50 @@ export class Runtime {
 		this.luaInitialized = true;
 	}
 
+
+	// start repeated-sequence-acceptable -- External closure calls keep frame/budget restore code direct instead of routing through callback plumbing.
+	public callClosureInto(fn: Closure, args: ReadonlyArray<Value>, out: Value[]): void {
+		const cpu = this.machine.cpu;
+		const depth = cpu.getFrameDepth();
+		const previousBudget = cpu.instructionBudgetRemaining;
+		const budgetSentinel = Number.MAX_SAFE_INTEGER;
+		const previousSink = cpu.swapExternalReturnSink(out);
+		let spentBudget = 0;
+		let activeBudget = 0;
+		out.length = 0;
+		cpu.enterHostExternalCall();
+		try {
+			cpu.callExternal(fn, args);
+			while (cpu.getFrameDepth() > depth) {
+				activeBudget = budgetSentinel;
+				const result = cpu.runUntilDepth(depth, budgetSentinel);
+				spentBudget += activeBudget - cpu.instructionBudgetRemaining;
+				activeBudget = 0;
+				if (cpu.getFrameDepth() > depth && result === RunResult.Halted) {
+					spentBudget += runHaltedClosureUntilInterrupt(this);
+					if (cpu.isHaltedUntilIrq()) {
+						break;
+					}
+				}
+			}
+		} catch (error) {
+			cpu.unwindToDepth(depth);
+			throw error;
+		} finally {
+			if (activeBudget > 0) {
+				spentBudget += activeBudget - cpu.instructionBudgetRemaining;
+			}
+			cpu.swapExternalReturnSink(previousSink);
+			cpu.instructionBudgetRemaining = previousBudget - spentBudget;
+			cpu.leaveHostExternalCall();
+		}
+	}
+	// end repeated-sequence-acceptable
+
 	private runSectionInitializer(protoIndex: number): void {
 		const results = this.luaScratch.values.acquire();
 		try {
-			callClosureInto(this, this.machine.cpu.rootClosure(protoIndex), EMPTY_CALL_ARGS, results);
+			this.callClosureInto(this.machine.cpu.rootClosure(protoIndex), EMPTY_CALL_ARGS, results);
 		} finally {
 			this.luaScratch.values.release(results);
 		}
@@ -441,12 +282,12 @@ export class Runtime {
 		const program = this.machine.cpu.program as Program;
 		const protoIndex = program.moduleProtoMap.get(path);
 		if (protoIndex === undefined) {
-			throw this.createApiRuntimeError(`static module init failed: module '${path}' is not compiled.`);
+			throw new Error(`static module init failed: module '${path}' is not compiled.`);
 		}
 		this.moduleCache.set(path, true);
 		const results = this.luaScratch.values.acquire();
 		try {
-			callClosureInto(this, this.machine.cpu.rootClosure(protoIndex), EMPTY_CALL_ARGS, results);
+			this.callClosureInto(this.machine.cpu.rootClosure(protoIndex), EMPTY_CALL_ARGS, results);
 		} catch (error) {
 			this.moduleCache.delete(path);
 			throw error;
@@ -456,27 +297,7 @@ export class Runtime {
 		this.moduleCache.delete(path);
 	}
 
-	public resolveCurrentModuleId(): string {
-		const currentPath = this.currentPath;
-		if (!currentPath) {
-			return 'runtime';
-		}
-		const match = this.resolveLuaSource(currentPath);
-		return match ? match.record.source_path : 'runtime';
-	}
-
-	public resolveLuaSource(path: string): LuaSourceMatch | null {
-		for (let index = 0; index < this.luaSourceSearchRegistries.length; index += 1) {
-			const registry = this.luaSourceSearchRegistries[index];
-			const record = resolveRegistryLuaSourceRecord(registry, path);
-			if (record) {
-				return { registry, record };
-			}
-		}
-		return null;
-	}
-
-	private constructor(
+	public constructor(
 		options: RuntimeOptions,
 		private readonly input: RuntimeInputSource,
 		microtasks: MicrotaskQueue,
@@ -499,10 +320,6 @@ export class Runtime {
 			options.geoWorkUnitsPerSec,
 		);
 		this.input.setRuntimeInputFrameDurationMs(this.timing.frameDurationMs);
-		this.activeMachineManifest = options.activeMachineManifest;
-		this.cartManifest = options.cartManifest;
-		this.cartProjectRootPath = options.cartProjectRootPath;
-		this.luaJsBridge = new LuaJsBridge(this, this.luaHandlerCache);
 		this.machine = new Machine(
 			options.memory,
 			options.viewport,
@@ -510,31 +327,17 @@ export class Runtime {
 			microtasks,
 		);
 		this.machine.memory.clearIoSlots();
-		this.machine.memory.mapIoRead(IO_SYS_TIME_MS, () => this.machineTimeMs());
-		this.machine.memory.mapIoRead(IO_SYS_FRAME_MS, () => this.timing.frameDurationMs);
-		this.machine.memory.mapIoRead(IO_SYS_REGION, () => this.timing.regionWord);
-		this.machine.memory.mapIoRead(IO_SYS_CYCLES_PER_FRAME, () => this.timing.cycleBudgetPerFrame);
-		this.machine.memory.mapIoWrite(IO_SYS_REGION, (_addr, value) => this.applyMachineRegionWord((value as number) >>> 0));
-		this.machine.memory.mapIoWrite(IO_SYS_PRINT_CHAR, (_addr, value) => this.writeLuaOutputCodepoint((value as number) >>> 0));
-		this.machine.memory.mapIoWrite(IO_SYS_PRINT_FLUSH, () => this.flushLuaOutputLine());
-		this.machine.memory.mapIoWrite(IO_VDP_MODE, (_addr, value) => this.applyVdpModeWord((value as number) >>> 0));
+		this.machine.memory.mapIoRead(IO_SYS_TIME_MS, this, Runtime.onTimeMsReadThunk);
+		this.machine.memory.mapIoRead(IO_SYS_FRAME_MS, this, Runtime.onFrameMsReadThunk);
+		this.machine.memory.mapIoRead(IO_SYS_REGION, this, Runtime.onMachineRegionReadThunk);
+		this.machine.memory.mapIoRead(IO_SYS_CYCLES_PER_FRAME, this, Runtime.onCyclesPerFrameReadThunk);
+		this.machine.memory.mapIoWrite(IO_SYS_REGION, this, Runtime.onMachineRegionWriteThunk);
+		this.machine.memory.mapIoWrite(IO_SYS_PRINT_CHAR, this, Runtime.onLuaOutputCodepointWriteThunk);
+		this.machine.memory.mapIoWrite(IO_SYS_PRINT_FLUSH, this, Runtime.onLuaOutputFlushWriteThunk);
+		this.machine.memory.mapIoWrite(IO_VDP_MODE, this, Runtime.onVdpModeWriteThunk);
 		this.machine.initializeSystemIo();
 		this.machine.resetDevices();
-		configureLuaHeapUsage({
-			getBaseRamUsedBytes: () => this.baseRamUsedBytes(),
-			collectTrackedHeapBytes: () => {
-				const extraRoots = this.luaScratch.values.acquire();
-				try {
-					for (const value of this.moduleCache.values()) {
-						extraRoots.push(value);
-					}
-					return this.machine.cpu.collectTrackedHeapBytes(extraRoots);
-				}
-				finally {
-					this.luaScratch.values.release(extraRoots);
-				}
-			},
-		});
+		configureLuaHeapUsage(this, Runtime.getBaseRamUsedBytesThunk, Runtime.collectTrackedHeapBytesThunk);
 		refreshDeviceTimings(this, this.machine.scheduler.currentNowCycles());
 		this.vblank.setVblankCycles(options.vblankCycles);
 	}
@@ -547,17 +350,70 @@ export class Runtime {
 		return this.machine.scheduler.currentNowCycles() * 1000 / this.timing.cpuHz;
 	}
 
+	private static onTimeMsReadThunk(context: Runtime, addr: number): Value {
+		void addr;
+		return context.machineTimeMs();
+	}
+
+	private static onFrameMsReadThunk(context: Runtime, addr: number): Value {
+		void addr;
+		return context.timing.frameDurationMs;
+	}
+
+	private static onMachineRegionReadThunk(context: Runtime, addr: number): Value {
+		void addr;
+		return context.timing.regionWord;
+	}
+
+	private static onCyclesPerFrameReadThunk(context: Runtime, addr: number): Value {
+		void addr;
+		return context.timing.cycleBudgetPerFrame;
+	}
+
+	private static onMachineRegionWriteThunk(context: Runtime, addr: number, value: Value): void {
+		void addr;
+		context.applyMachineRegionWord((value as number) >>> 0);
+	}
+
+	private static onLuaOutputCodepointWriteThunk(context: Runtime, addr: number, value: Value): void {
+		void addr;
+		context.writeLuaOutputCodepoint((value as number) >>> 0);
+	}
+
+	private static onLuaOutputFlushWriteThunk(context: Runtime): void {
+		context.luaOutputLines.push(context.luaOutputLineBuffer);
+		context.luaOutputLineBuffer = '';
+	}
+
+	private static onVdpModeWriteThunk(context: Runtime, addr: number, value: Value): void {
+		void addr;
+		context.applyVdpModeWord((value as number) >>> 0);
+	}
+
 	private writeLuaOutputCodepoint(codepoint: number): void {
 		this.luaOutputLineBuffer += String.fromCodePoint(codepoint);
 	}
 
-	private flushLuaOutputLine(): void {
-		this.luaOutputLines.push(this.luaOutputLineBuffer);
-		this.luaOutputLineBuffer = '';
-	}
-
 	public baseRamUsedBytes(): number {
 		return BASE_RAM_USED_SIZE;
+	}
+
+	private static getBaseRamUsedBytesThunk(context: Runtime): number {
+		void context;
+		return BASE_RAM_USED_SIZE;
+	}
+
+	private static collectTrackedHeapBytesThunk(context: Runtime): number {
+		const extraRoots = context.luaScratch.values.acquire();
+		try {
+			for (const value of context.moduleCache.values()) {
+				extraRoots.push(value);
+			}
+			return context.machine.cpu.collectTrackedHeapBytes(extraRoots);
+		}
+		finally {
+			context.luaScratch.values.release(extraRoots);
+		}
 	}
 
 	public ramUsedBytes(): number {
@@ -574,37 +430,6 @@ export class Runtime {
 
 	public vramTotalBytes(): number {
 		return this.machine.vdp.trackedTotalVramBytes;
-	}
-
-	public createLuaInterpreter(): LuaInterpreter {
-		const interpreter = new LuaInterpreter(this.luaJsBridge);
-		interpreter.attachDebugger(this.debuggerController);
-		interpreter.clearLastFaultEnvironment();
-		registerFirmwareBuiltins(this, interpreter);
-		interpreter.setReservedIdentifiers(this.getReservedLuaIdentifiers());
-		return interpreter;
-	}
-
-	public getReservedLuaIdentifiers(): ReadonlySet<string> {
-		return new Set<string>(this.apiFunctionNames);
-	}
-
-	public assignInterpreter(interpreter: LuaInterpreter): void {
-		this.luaInterpreter = interpreter;
-		this.hostEvalMetadata = null;
-		this.pendingCall = null;
-		this.luaRuntimeFailed = false;
-		this.luaInitialized = false;
-		this.machine.inputController.cancelSampleArm();
-		this.machine.cpu.clearHaltUntilIrq();
-	}
-
-	public set jsStackEnabled(enabled: boolean) {
-		this.includeJsStackTraces = enabled;
-	}
-
-	public get jsStackEnabled(): boolean {
-		return this.includeJsStackTraces;
 	}
 
 	public applyUfpsScaled(ufpsScaled: number): void {
@@ -640,45 +465,14 @@ export class Runtime {
 		);
 	}
 
-	public dispose(): void {
-		this.machine.audioController.dispose();
-		this.luaInitialized = false;
-		this.luaInterpreter = null;
-	}
-
-	public createApiRuntimeError(message: string): LuaRuntimeError {
-		this.luaInterpreter.markFaultEnvironment();
-		const range = this.machine.cpu.getDebugRange(this.machine.cpu.getDebugState().pc);
-		return range ? new LuaRuntimeError(message, range.path, range.start.line, range.start.column) : new LuaRuntimeError(message, (this._luaPath ?? 'lua'), 0, 0);
-	}
-
 	// disable-next-line single_line_method_pattern -- runtime string interning is the public CPU string-pool boundary.
-	public internString(value: string): StringValue {
-		return StringValue.get(this.machine.cpu.stringPool.intern(value));
+	public internString(name: string): StringValue {
+		return StringValue.get(this.machine.cpu.stringPool.intern(name));
 	}
 
 	public setGlobal(name: string, value: Value): void {
 		this.machine.cpu.setGlobalByKey(this.internString(name), value);
 	}
 
-
-	private prepareHandlerError(error: unknown, meta?: { hid: string; moduleId: string; path?: string }): Error {
-		const wrappedError = convertToError(error);
-		if (meta && meta.hid && !wrappedError.message.startsWith(`[${meta.hid}]`)) {
-			wrappedError.message = `[${meta.hid}] ${wrappedError.message}`;
-		}
-		return wrappedError;
-	}
-
-	private handleClosureHandlerError(error: unknown, meta?: { hid: string; moduleId: string; path?: string }): never {
-		const wrappedError = this.prepareHandlerError(error, meta);
-		throw wrappedError;
-	}
-
-	private handleLuaHandlerError(error: unknown, meta?: { hid: string; moduleId: string; path?: string }): never {
-		const wrappedError = this.prepareHandlerError(error, meta);
-		this.luaInterpreter.recordFaultCallStack();
-		throw wrappedError;
-	}
 
 }

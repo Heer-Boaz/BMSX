@@ -2,7 +2,7 @@ import { IO_APU_ACTIVE_MASK } from '../../bus/io';
 import type { Memory } from '../../memory/memory';
 import type { ApuEventLatch } from './event_latch';
 import type { ApuOutputMixer } from './output';
-import type { ApuSelectedSlotLatch } from './selected_slot_latch';
+import { ApuSelectedSlotLatch } from './selected_slot_latch';
 import type { ApuSourceDma } from './source';
 import type { ApuSlotAdvanceResult, ApuSlotBank } from './slot_bank';
 import {
@@ -27,7 +27,7 @@ export class ApuActiveSlots {
 
 	public writeActiveMask(): void {
 		this.memory.writeIoValue(IO_APU_ACTIVE_MASK, this.slots.activeMask);
-		this.selectedSlotLatch.refresh();
+		ApuSelectedSlotLatch.refreshThunk(this.selectedSlotLatch);
 	}
 
 	public setActive(slot: ApuAudioSlot, registerWords: ApuParameterRegisterWords, voiceId: ApuVoiceId): void {

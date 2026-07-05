@@ -52,15 +52,6 @@ bool MachineManager::runHostFrame(
 		m_screen.clearPresentation();
 		if (!platformPaused && !hostMenuActive) {
 			m_delta_time = runtime.timing.frameDurationMs / 1000.0;
-			// Handle program reload request at the frame boundary (runtime frame boundary owns reboot orchestration)
-			if (runtime.isRebootRequested()) {
-				runtime.clearRebootRequest();
-				runtime.frameScheduler.clearQueuedTime();
-				if (!rebootLoadedRom()) {
-					runtime.handleLuaError("Runtime fault: reboot to bootrom failed.");
-					frameReady = false;
-				}
-			}
 			if (frameReady) {
 				RuntimeFrameStepResult stepResult;
 				runRuntimeFrameStepInto(stepResult, runtime, hostDeltaMs);

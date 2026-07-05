@@ -1,7 +1,6 @@
 import { machineManager } from '../../../core/machine_manager';
 import type { ResourceDescriptor } from '../../common/models';
 import { restoreBreakpointsFromPayload } from '../contrib/debugger/controller';
-import type { Runtime } from '../../../machine/runtime/runtime';
 import * as workbenchMode from '../mode';
 import { initializeTabs } from '../ui/tabs';
 import {
@@ -17,7 +16,7 @@ import { restoreWorkspaceContextSource } from './context_snapshot';
 import { buildWorkspaceAutosaveSignature } from './autosave';
 import type { PersistedDirtyEntry, WorkspaceAutosavePayload } from './models';
 
-export async function restoreWorkspaceSessionFromDisk(runtime: Runtime): Promise<string> {
+export async function restoreWorkspaceSessionFromDisk(): Promise<string> {
 	const stateText = await readWorkspaceStateFile();
 	if (!stateText) {
 		return null;
@@ -32,21 +31,21 @@ export async function restoreWorkspaceSessionFromDisk(runtime: Runtime): Promise
 	if (!payload) {
 		return null;
 	}
-	await applyWorkspaceAutosavePayload(runtime, payload);
+	await applyWorkspaceAutosavePayload(payload);
 	return buildWorkspaceAutosaveSignature(payload);
 }
 
-export async function applyWorkspaceAutosavePayload(runtime: Runtime, payload: WorkspaceAutosavePayload): Promise<void> {
+export async function applyWorkspaceAutosavePayload(payload: WorkspaceAutosavePayload): Promise<void> {
 	clearCodeTabContexts();
-	initializeTabs(createEntryTabContext(runtime), machineManager.ideState.editor.resourcePanel);
+	initializeTabs(createEntryTabContext(), machineManager.ideState.editor.resourcePanel);
 	if (payload.fontVariant) {
 		workbenchMode.setActiveIdeFontVariant(payload.fontVariant);
 	}
-	await hydrateDirtyFiles(runtime, payload.dirtyFiles);
-	restoreBreakpointsFromPayload(runtime, payload.breakpoints);
+	await hydrateDirtyFiles(payload.dirtyFiles);
+	restoreBreakpointsFromPayload(payload.breakpoints);
 }
 
-export async function hydrateDirtyFiles(runtime: Runtime, entries: PersistedDirtyEntry[]): Promise<void> {
+export async function hydrateDirtyFiles(entries: PersistedDirtyEntry[]): Promise<void> {
 	for (const entry of entries) {
 		const descriptor: ResourceDescriptor = {
 			path: entry.descriptor.path,
@@ -59,7 +58,7 @@ export async function hydrateDirtyFiles(runtime: Runtime, entries: PersistedDirt
 			context = findCodeTabContext(descriptor.path);
 		}
 		if (!context) {
-			await openCodeTabForDescriptor(runtime, descriptor);
+			await openCodeTabForDescriptor(descriptor);
 			context = findCodeTabContext(descriptor.path);
 		}
 		if (!context) {

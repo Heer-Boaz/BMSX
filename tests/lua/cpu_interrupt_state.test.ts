@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 
-import { BuiltinFunctionId, CPU, EMPTY_CALL_ARGS, Table, createBuiltinFunction, OpCode, RunResult, StringValue, type Program, type ProgramMetadata, type Proto, type Value } from '../../machine/ts/machine/cpu/cpu';
+import { BuiltinFunctionId, CPU, EMPTY_CALL_ARGS, Table, createBuiltinFunction, OpCode, RunResult, StringValue, type Closure, type Program, type ProgramMetadata, type Proto, type Value } from '../../machine/ts/machine/cpu/cpu';
 import { writeInstruction, INSTRUCTION_BYTES } from '../../machine/ts/machine/cpu/instruction_format';
 import { BASE_CYCLES, encodeFixedCallArgCount } from '../../machine/ts/machine/cpu/opcode_info';
 import { IO_IRQ_MASK, IO_IRQ_FLAGS, IRQ_VBLANK } from '../../machine/ts/machine/bus/io';
@@ -10,13 +10,13 @@ import { Machine } from '../../machine/ts/machine/machine';
 import type { MicrotaskQueue } from '../../machine/ts/machine/scheduler/microtask_queue';
 import { captureMachineSaveState, captureMachineState, restoreMachineSaveState, restoreMachineState } from '../../machine/ts/machine/save_state';
 import { Memory } from '../../machine/ts/machine/memory/memory';
-import { compileLuaChunkToProgram, encodeCompiledProgramImage } from '../../machine/ts/machine/program/compiler';
-import { callClosureInto, callClosureIntoWithScheduler } from '../../machine/ts/machine/program/executor';
+import { compileLuaChunkToProgram, encodeCompiledProgramImage } from '../../machine/ts/lua/compiler';
+import { callClosureIntoWithScheduler } from '../../machine/ts/ide/runtime/closure_executor';
 import { inflateExecutableProgramImage } from '../../machine/ts/machine/program/linker';
 import { CpuExecutionState } from '../../machine/ts/machine/runtime/cpu_executor';
 import { FrameLoopState } from '../../machine/ts/machine/runtime/frame/loop';
 import { FrameSchedulerState } from '../../machine/ts/machine/scheduler/frame';
-import type { FrameState, Runtime } from '../../machine/ts/machine/runtime/runtime';
+import { Runtime, type FrameState } from '../../machine/ts/machine/runtime/runtime';
 import { parseLuaChunk } from './cpu_test_harness';
 
 function makeProto(codeLen: number): Proto {
@@ -136,13 +136,13 @@ function makeRuntime(cpu: CPU, sliceStats?: { begin: number; end: number }): Run
 		vblank: {
 			tickCompleted: false,
 		},
-		programVectors: null,
+		programVectors: { resetProtoIndex: 0, sectionInitProtoIndex: 0, irqProtoIndex: 0 },
+		callClosureInto: Runtime.prototype.callClosureInto,
 	} as unknown as Runtime;
 }
 
 function makeFrameState(): FrameState {
 	return {
-		haltGame: false,
 		updateExecuted: false,
 		luaFaulted: false,
 		cycleBudgetRemaining: 100,
@@ -219,16 +219,13 @@ function makeHaltFrameRuntime(): Runtime {
 			cycleBudgetPerFrame: 100,
 			frameDurationMs: 20,
 		},
-		tickEnabled: true,
 		luaInitialized: true,
 		luaRuntimeFailed: false,
 		pendingCall: 'entry' as const,
-		executionOverlayActive: false,
-		debuggerPaused: false,
 		cartEntryAvailable: true,
 		programVectors: {
 			resetProtoIndex: 0,
-			sectionInitProtoIndex: null,
+			sectionInitProtoIndex: 0,
 			irqProtoIndex: 1,
 		},
 		luaGate: { ready: true },
@@ -271,7 +268,7 @@ function makeCompiledIrqRuntime(source: string): { cpu: CPU; irqController: IrqC
 			advanceDevices: (cycles: number) => { scheduler.nowCycles += cycles; },
 		},
 		vblank: { tickCompleted: false, beginTick: () => {}, abandonTick: () => {}, handleBeginTimer: () => {}, handleEndTimer: () => {} },
-		programVectors: { resetProtoIndex: image.vectors.resetProtoIndex, sectionInitProtoIndex: null, irqProtoIndex: image.vectors.irqProtoIndex },
+		programVectors: { resetProtoIndex: image.vectors.resetProtoIndex, sectionInitProtoIndex: image.vectors.sectionInitProtoIndex, irqProtoIndex: image.vectors.irqProtoIndex },
 	} as unknown as Runtime;
 	return {
 		cpu,
@@ -328,6 +325,10 @@ test('CPU protected calls preserve halted callee stop state without Lua results'
 		assert.deepEqual(haltedOut, []);
 	}
 });
+
+function callClosureInto(runtime: Runtime, fn: Closure, args: ReadonlyArray<Value>, out: Value[]): void {
+	runtime.callClosureInto(fn, args, out);
+}
 
 test('CPU closure calls that execute HALT without a scheduled interrupt park without host exception', () => {
 	for (const run of [callClosureInto, callClosureIntoWithScheduler]) {
@@ -457,7 +458,6 @@ test('CPU frame executor closes scheduler slice when execution throws', () => {
 	const executor = new CpuExecutionState(runtime);
 	assert.throws(
 		() => executor.runWithBudget({
-			haltGame: false,
 			updateExecuted: false,
 			luaFaulted: false,
 			cycleBudgetRemaining: 100,

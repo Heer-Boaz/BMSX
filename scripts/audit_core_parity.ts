@@ -6,6 +6,16 @@ type Category = 'core' | 'host' | 'ide' | 'terminal' | 'language' | 'compiler_to
 type ManifestPattern = { pattern: string; category: Category; reason: string };
 type StrictRuntimeSymbolParityEntry = { ts: string; cpp: string[]; reason: string };
 type StrictRuntimeShapeParityEntry = { ts: string; cpp: string[]; symbols: string[]; reason: string };
+type StrictRuntimeMethodExclusion = { name: string; reason: string };
+type StrictRuntimeMethodParityEntry = {
+	ts: string;
+	cpp: string[];
+	methods?: string[];
+	compare_public?: boolean;
+	ts_exclusions?: StrictRuntimeMethodExclusion[];
+	cpp_exclusions?: StrictRuntimeMethodExclusion[];
+	reason: string;
+};
 type StrictRuntimeNoChurnEntry = { files: string[]; reason: string };
 type StrictRuntimeNoChurnRegionEntry = { file: string; start: string; end: string; reason: string };
 type StrictRuntimeNoHeapRegionEntry = { file: string; start: string; end: string; reason: string };
@@ -20,6 +30,7 @@ type StrictRequiredSubstringEntry = { file: string; substrings: string[]; reason
 type StrictFileLayoutEntry = { present?: string[]; absent?: string[]; reason: string };
 type StrictFilePairParityEntry = { ts: string; cpp: string[]; reason: string };
 type StrictSaveStateSchemaParityEntry = { ts: string; cpp: string; symbol: string; reason: string };
+type CppMissingTsExclusion = { cpp: string; reason: string };
 type StrictRuntimeSymbols = { constants: Map<string, string>; constantValues: Map<string, string>; functions: Map<string, string[]> };
 type Manifest = {
 	patterns: ManifestPattern[];
@@ -27,6 +38,7 @@ type Manifest = {
 	must_have_cpp?: string[];
 	strict_runtime_symbol_parity?: StrictRuntimeSymbolParityEntry[];
 	strict_runtime_shape_parity?: StrictRuntimeShapeParityEntry[];
+	strict_runtime_method_parity?: StrictRuntimeMethodParityEntry[];
 	strict_runtime_no_churn?: StrictRuntimeNoChurnEntry[];
 	strict_runtime_no_churn_regions?: StrictRuntimeNoChurnRegionEntry[];
 	strict_runtime_no_heap_regions?: StrictRuntimeNoHeapRegionEntry[];
@@ -40,6 +52,7 @@ type Manifest = {
 	strict_file_layout?: StrictFileLayoutEntry[];
 	strict_file_pair_parity?: StrictFilePairParityEntry[];
 	strict_save_state_schema_parity?: StrictSaveStateSchemaParityEntry[];
+	cpp_missing_ts_exclusions?: CppMissingTsExclusion[];
 };
 
 type ClassifiedFile = { file: string; category: Category; reason: string };
@@ -462,7 +475,7 @@ function collectTsStrictSymbols(file: string): StrictRuntimeSymbols {
 			putStrictFunction(functions, className, tsParameterNames(readParameterList(body, openIndex)));
 		}
 	}
-	for (const match of text.matchAll(/^\s*(?:public\s+|private\s+|protected\s+)?([A-Za-z_]\w*)\s*\(/gm)) {
+	for (const match of text.matchAll(/^\s*(?:public\s+|private\s+|protected\s+)?(?:static\s+)?([A-Za-z_]\w*)\s*\(/gm)) {
 		const name = match[1];
 		if (name === 'constructor' || name === 'if' || name === 'for' || name === 'while' || name === 'switch' || name === 'function' || name.endsWith('Thunk')) continue;
 		const openIndex = match.index! + match[0].length - 1;
@@ -527,6 +540,82 @@ function collectCppStrictSymbols(files: readonly string[]): StrictRuntimeSymbols
 	return { constants, constantValues, functions };
 }
 
+function collectTsClassPublicMethods(file: string, className: string): Set<string> {
+	const text = fs.readFileSync(path.join(repoRoot, file), 'utf8');
+	const source = ts.createSourceFile(file, text, ts.ScriptTarget.Latest, true, ts.ScriptKind.TS);
+	const names = new Set<string>();
+	const visit = (node: ts.Node): void => {
+		if (ts.isClassDeclaration(node) && node.name && node.name.text === className) {
+			for (const member of node.members) {
+				if (!ts.isMethodDeclaration(member) && !ts.isGetAccessorDeclaration(member) && !ts.isSetAccessorDeclaration(member)) {
+					continue;
+				}
+				const flags = ts.getCombinedModifierFlags(member);
+				if ((flags & ts.ModifierFlags.Private) !== 0 || (flags & ts.ModifierFlags.Protected) !== 0) {
+					continue;
+				}
+				if (ts.isIdentifier(member.name) || ts.isStringLiteral(member.name)) {
+					names.add(member.name.text);
+				}
+			}
+			return;
+		}
+		ts.forEachChild(node, visit);
+	};
+	visit(source);
+	return names;
+}
+
+function collectCppRuntimePublicMethods(files: readonly string[]): Set<string> {
+	const header = files.find((file) => file.endsWith('runtime.h')) ?? files[0];
+	const text = fs.readFileSync(path.join(repoRoot, header), 'utf8');
+	const classIndex = text.indexOf('class Runtime');
+	if (classIndex < 0) return new Set();
+	const openBrace = text.indexOf('{', classIndex);
+	if (openBrace < 0) return new Set();
+	const body = readBalancedBody(text, openBrace);
+	const names = new Set<string>();
+	let inPublicSection = false;
+	for (const rawLine of body.split('\n')) {
+		const line = rawLine.replace(/\/\/.*$/, '').trim();
+		if (line === 'public:') {
+			inPublicSection = true;
+			continue;
+		}
+		if (line === 'private:' || line === 'protected:') {
+			inPublicSection = false;
+			continue;
+		}
+		if (!inPublicSection || line.length === 0 || line.startsWith('friend ') || line.startsWith('using ')) {
+			continue;
+		}
+		const match = /\b([A-Za-z_]\w*)\s*\(/.exec(line);
+		if (!match) {
+			continue;
+		}
+		const name = match[1];
+		if (name === 'Runtime' || name === 'operator') {
+			continue;
+		}
+		names.add(name);
+	}
+	return names;
+}
+
+function exclusionNameSet(file: string, exclusions: readonly StrictRuntimeMethodExclusion[] | undefined, present: ReadonlySet<string>): Set<string> {
+	const names = new Set<string>();
+	for (const exclusion of exclusions ?? []) {
+		if (!present.has(exclusion.name)) {
+			throw new Error(`${file}: method parity exclusion '${exclusion.name}' does not match a public method`);
+		}
+		if (exclusion.reason.trim().length === 0) {
+			throw new Error(`${file}: method parity exclusion '${exclusion.name}' has no reason`);
+		}
+		names.add(exclusion.name);
+	}
+	return names;
+}
+
 function auditStrictRuntimeSymbolParity(manifest: Manifest): string[] {
 	const errors: string[] = [];
 	for (const entry of manifest.strict_runtime_symbol_parity ?? []) {
@@ -566,6 +655,61 @@ function auditStrictRuntimeSymbolParity(manifest: Manifest): string[] {
 	return errors;
 }
 
+
+
+function auditStrictRuntimeMethodParity(manifest: Manifest): string[] {
+	const errors: string[] = [];
+	for (const entry of manifest.strict_runtime_method_parity ?? []) {
+		const tsSymbols = collectTsStrictSymbols(entry.ts);
+		const cppSymbols = collectCppStrictSymbols(entry.cpp);
+		const compareMethod = (method: string): void => {
+			const tsParams = tsSymbols.functions.get(method);
+			const cppParams = cppSymbols.functions.get(method);
+			if (!tsParams) {
+				errors.push(`${entry.ts}: method ${method} missing (${entry.reason})`);
+				return;
+			}
+			if (!cppParams) {
+				errors.push(`${entry.cpp.join(', ')}: method ${method} missing (${entry.reason})`);
+				return;
+			}
+			if (tsParams.length !== cppParams.length || tsParams.some((param, index) => param !== cppParams[index])) {
+				errors.push(`${method}: TS params (${tsParams.join(',')}) differ from C++ (${cppParams.join(',')}) (${entry.reason})`);
+			}
+		};
+		for (const method of entry.methods ?? []) {
+			compareMethod(method);
+		}
+		if (entry.compare_public) {
+			const tsPublic = collectTsClassPublicMethods(entry.ts, 'Runtime');
+			const cppPublic = collectCppRuntimePublicMethods(entry.cpp);
+			let tsExcluded: Set<string>;
+			let cppExcluded: Set<string>;
+			try {
+				tsExcluded = exclusionNameSet(entry.ts, entry.ts_exclusions, tsPublic);
+				cppExcluded = exclusionNameSet(entry.cpp.join(', '), entry.cpp_exclusions, cppPublic);
+			} catch (error) {
+				errors.push((error as Error).message);
+				continue;
+			}
+			const tsComparable = [...tsPublic].filter((name) => !tsExcluded.has(name));
+			const cppComparable = [...cppPublic].filter((name) => !cppExcluded.has(name));
+			for (const method of tsComparable) {
+				if (!cppComparable.includes(method)) {
+					errors.push(`${entry.ts}: public method ${method} missing from ${entry.cpp.join(', ')} (${entry.reason})`);
+				}
+			}
+			for (const method of cppComparable) {
+				if (!tsComparable.includes(method)) {
+					errors.push(`${entry.cpp.join(', ')}: public method ${method} missing from ${entry.ts} (${entry.reason})`);
+					continue;
+				}
+				compareMethod(method);
+			}
+		}
+	}
+	return errors;
+}
 
 function collectTsShapeFields(file: string, symbol: string): string[] | null {
 	const text = fs.readFileSync(path.join(repoRoot, file), 'utf8');
@@ -1369,8 +1513,10 @@ function main(): void {
 	const missing: string[] = [];
 	const fake: string[] = [];
 	const cppMissingTs: string[] = [];
+	const cppMissingTsExclusions = new Set((manifest.cpp_missing_ts_exclusions ?? []).map(entry => entry.cpp));
 	const strictRuntimeSymbolParityErrors = auditStrictRuntimeSymbolParity(manifest);
 	const strictRuntimeShapeParityErrors = auditStrictRuntimeShapeParity(manifest);
+	const strictRuntimeMethodParityErrors = auditStrictRuntimeMethodParity(manifest);
 	const strictRuntimeNoChurnErrors = auditStrictRuntimeNoChurn(manifest);
 	const strictRuntimeNoChurnRegionErrors = auditStrictRuntimeNoChurnRegions(manifest);
 	const strictRuntimeNoHeapRegionErrors = auditStrictRuntimeNoHeapRegions(manifest);
@@ -1402,7 +1548,7 @@ function main(): void {
 	cppFiles.sort();
 	for (const file of cppFiles) {
 		const equivalent = tsEquivalentForCppMachineFile(file);
-		if (!fs.existsSync(path.join(repoRoot, equivalent))) {
+		if (!fs.existsSync(path.join(repoRoot, equivalent)) && !cppMissingTsExclusions.has(file)) {
 			cppMissingTs.push(`${file} -> ${equivalent}`);
 		}
 	}
@@ -1435,6 +1581,10 @@ function main(): void {
 	if (strictRuntimeShapeParityErrors.length > 0) {
 		console.error(`\nStrict runtime shape parity errors (${strictRuntimeShapeParityErrors.length}):`);
 		for (const item of strictRuntimeShapeParityErrors) console.error(`  ${item}`);
+	}
+	if (strictRuntimeMethodParityErrors.length > 0) {
+		console.error(`\nStrict runtime method parity errors (${strictRuntimeMethodParityErrors.length}):`);
+		for (const item of strictRuntimeMethodParityErrors) console.error(`  ${item}`);
 	}
 	if (strictRuntimeNoChurnErrors.length > 0) {
 		console.error(`\nStrict runtime no-churn errors (${strictRuntimeNoChurnErrors.length}):`);
@@ -1488,7 +1638,7 @@ function main(): void {
 		console.error(`\nStrict save-state schema parity errors (${strictSaveStateSchemaParityErrors.length}):`);
 		for (const item of strictSaveStateSchemaParityErrors) console.error(`  ${item}`);
 	}
-	if (manifestConflicts.length > 0 || unclassified.length > 0 || missing.length > 0 || fake.length > 0 || cppMissingTs.length > 0 || strictRuntimeSymbolParityErrors.length > 0 || strictRuntimeShapeParityErrors.length > 0 || strictRuntimeNoChurnErrors.length > 0 || strictRuntimeNoChurnRegionErrors.length > 0 || strictRuntimeNoHeapRegionErrors.length > 0 || strictRuntimeNoHeapFunctionErrors.length > 0 || strictLuaNoHeapRegionErrors.length > 0 || strictRpuTableParityErrors.length > 0 || strictShaderParityErrors.length > 0 || strictLuaVdpAbiParityErrors.length > 0 || strictForbiddenSubstringErrors.length > 0 || strictRequiredSubstringErrors.length > 0 || strictFileLayoutErrors.length > 0 || strictFilePairParityErrors.length > 0 || strictSaveStateSchemaParityErrors.length > 0) {
+	if (manifestConflicts.length > 0 || unclassified.length > 0 || missing.length > 0 || fake.length > 0 || cppMissingTs.length > 0 || strictRuntimeSymbolParityErrors.length > 0 || strictRuntimeShapeParityErrors.length > 0 || strictRuntimeMethodParityErrors.length > 0 || strictRuntimeNoChurnErrors.length > 0 || strictRuntimeNoChurnRegionErrors.length > 0 || strictRuntimeNoHeapRegionErrors.length > 0 || strictRuntimeNoHeapFunctionErrors.length > 0 || strictLuaNoHeapRegionErrors.length > 0 || strictRpuTableParityErrors.length > 0 || strictShaderParityErrors.length > 0 || strictLuaVdpAbiParityErrors.length > 0 || strictForbiddenSubstringErrors.length > 0 || strictRequiredSubstringErrors.length > 0 || strictFileLayoutErrors.length > 0 || strictFilePairParityErrors.length > 0 || strictSaveStateSchemaParityErrors.length > 0) {
 		process.exitCode = 1;
 	}
 }

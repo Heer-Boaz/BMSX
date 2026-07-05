@@ -20,7 +20,6 @@ import { activateCodeEditorTab, applyActiveCodeTabSelection, storeActiveCodeTabC
 import { endTabDrag } from './tab/drag';
 import { codeTabSessionState } from './code_tab/session_state';
 import { tabSessionState } from './tab/session_state';
-import type { Runtime } from '../../../machine/runtime/runtime';
 import type { ResourcePanelController } from '../contrib/resources/panel/controller';
 
 let resourcePanelForTabs: ResourcePanelController = undefined!;
@@ -117,7 +116,7 @@ export function isTabActive(tabId: string): boolean {
 	return tabSessionState.activeTabId === tabId;
 }
 
-export function closeTab(runtime: Runtime, tabId: string): void {
+export function closeTab(tabId: string): void {
 	const index = tabSessionState.tabs.findIndex(tab => tab.id === tabId);
 	const tab = tabSessionState.tabs[index];
 	if (!tab.closable) {
@@ -139,7 +138,7 @@ export function closeTab(runtime: Runtime, tabId: string): void {
 		editorDiagnosticsState.diagnosticsCache.delete(tab.id);
 	}
 	if (tabSessionState.tabs.length === 0) {
-		initializeTabs(createEntryTabContext(runtime), resourcePanelForTabs);
+		initializeTabs(createEntryTabContext(), resourcePanelForTabs);
 	}
 }
 
@@ -162,9 +161,9 @@ export function isActive(): boolean {
 	return editorRuntimeState.active;
 }
 
-export function closeActiveTab(runtime: Runtime): void {
+export function closeActiveTab(): void {
 	if (!tabSessionState.activeTabId) {
 		return;
 	}
-	closeTab(runtime, tabSessionState.activeTabId);
+	closeTab(tabSessionState.activeTabId);
 }

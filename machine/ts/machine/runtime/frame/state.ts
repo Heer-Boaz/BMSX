@@ -1,5 +1,4 @@
 export type FrameState = {
-	haltGame: boolean;
 	updateExecuted: boolean;
 	luaFaulted: boolean;
 	cycleBudgetRemaining: number;

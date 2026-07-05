@@ -26,7 +26,7 @@ ApuActiveSlots::ApuActiveSlots(Memory& memory,
 
 void ApuActiveSlots::writeActiveMask() {
 	m_memory.writeIoValue(IO_APU_ACTIVE_MASK, valueNumber(static_cast<double>(m_slots.activeMask())));
-	m_selectedSlotLatch.refresh();
+	ApuSelectedSlotLatch::refreshThunk(&m_selectedSlotLatch, IO_APU_SLOT, valueNil());
 }
 
 void ApuActiveSlots::setActive(ApuAudioSlot slot, const ApuParameterRegisterWords& registerWords, ApuVoiceId voiceId) {

@@ -103,19 +103,19 @@ export class InputControllerRegisterFile {
 		}
 	}
 
-	public write(addr: number, value: Value): void {
+	public static writeThunk(context: InputControllerRegisterFile, addr: number, value: Value): void {
 		switch (addr) {
 			case IO_INP_CTRL:
-				this.state.ctrl = (value as number) >>> 0;
+				context.state.ctrl = (value as number) >>> 0;
 				return;
 			case IO_INP_OUTPUT_PORT:
-				this.state.outputPort = (value as number) >>> 0;
+				context.state.outputPort = (value as number) >>> 0;
 				return;
 			case IO_INP_OUTPUT_INTENSITY_Q16:
-				this.state.outputIntensityQ16 = (value as number) >>> 0;
+				context.state.outputIntensityQ16 = (value as number) >>> 0;
 				return;
 			case IO_INP_OUTPUT_DURATION_MS:
-				this.state.outputDurationMs = (value as number) >>> 0;
+				context.state.outputDurationMs = (value as number) >>> 0;
 				return;
 		}
 	}

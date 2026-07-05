@@ -32,8 +32,8 @@ import { RPU_QUAD_SURFACE_DESC_COUNT } from '../../scripts/rompacker/texture_atl
 test('IMGDEC hardware words are raw firmware words, not host-seeded globals', () => {
 	const tsGlobals = readFileSync('machine/ts/machine/firmware/globals.ts', 'utf8');
 	const cppGlobals = readFileSync('machine/cpp/machine/firmware/globals.cpp', 'utf8');
-	const descriptors = readFileSync('machine/ts/machine/firmware/builtin_descriptors.ts', 'utf8');
-	const systemBootSymbols = readFileSync('machine/ts/machine/firmware/system_boot_symbols.ts', 'utf8');
+	const descriptors = readFileSync('machine/ts/lua/builtin_descriptors.ts', 'utf8');
+	const systemBootSymbols = readFileSync('machine/ts/lua/compiler/system_boot_symbols.ts', 'utf8');
 	for (const source of [tsGlobals, cppGlobals, descriptors, systemBootSymbols]) {
 		assert.equal(source.includes('sys_img_'), false);
 		assert.equal(source.includes('img_status_'), false);

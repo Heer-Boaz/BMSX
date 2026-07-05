@@ -196,15 +196,15 @@ export class VDP implements VramWriteSink {
 		this.pendingFrame = allocateSubmittedFrameSlot(this.vram.rpuVram, this.vram.rpuVramPageRevisions);
 		this.unitRegisterPort = new VdpUnitRegisterPort(this.fault, this.xf, this.lpu, this.mfu, this.jtu);
 		this.memory.setVramWriter(this);
-		this.memory.mapIoRead(IO_VDP_RD_STATUS, this.readVdpStatusThunk.bind(this, this));
-		this.memory.mapIoRead(IO_VDP_RD_DATA, this.readVdpDataThunk.bind(this, this));
-		this.memory.mapIoWrite(IO_VDP_DITHER, this.onDitherWriteThunk.bind(this, this));
-		this.memory.mapIoWrite(IO_VDP_FIFO, this.onFifoWriteThunk.bind(this, this));
-		this.memory.mapIoWrite(IO_VDP_FIFO_CTRL, this.onFifoCtrlWriteThunk.bind(this, this));
-		this.memory.mapIoWrite(IO_VDP_CMD, this.onCommandWriteThunk.bind(this, this));
-		this.memory.mapIoWrite(IO_VDP_FAULT_ACK, this.fault.acknowledge.bind(this.fault));
+		this.memory.mapIoRead(IO_VDP_RD_STATUS, this, this.readVdpStatusThunk);
+		this.memory.mapIoRead(IO_VDP_RD_DATA, this, this.readVdpDataThunk);
+		this.memory.mapIoWrite(IO_VDP_DITHER, this, this.onDitherWriteThunk);
+		this.memory.mapIoWrite(IO_VDP_FIFO, this, this.onFifoWriteThunk);
+		this.memory.mapIoWrite(IO_VDP_FIFO_CTRL, this, this.onFifoCtrlWriteThunk);
+		this.memory.mapIoWrite(IO_VDP_CMD, this, this.onCommandWriteThunk);
+		this.memory.mapIoWrite(IO_VDP_FAULT_ACK, this.fault, DeviceStatusLatch.acknowledgeWriteThunk);
 		for (let index = 0; index < VDP_REGISTER_COUNT; index += 1) {
-			this.memory.mapIoWrite(IO_VDP_REG0 + index * IO_WORD_SIZE, this.onRegisterWriteThunk.bind(this, this));
+			this.memory.mapIoWrite(IO_VDP_REG0 + index * IO_WORD_SIZE, this, this.onRegisterWriteThunk);
 		}
 	}
 

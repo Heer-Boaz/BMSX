@@ -36,7 +36,7 @@ export function handleEditorInput(runtime: Runtime): void {
 	if (handleSearchNavigationKeybinding()) {
 		return;
 	}
-	if (handleEditorClipboardAndCommandBindings(runtime)) {
+	if (handleEditorClipboardAndCommandBindings()) {
 		return;
 	}
 	if (machineManager.ideState.editor.completion.handleKeybindings()) {
@@ -45,7 +45,7 @@ export function handleEditorInput(runtime: Runtime): void {
 	if (handleCodeFormattingKeybinding()) {
 		return;
 	}
-	editorInput.handleEditorInput(runtime);
+	editorInput.handleEditorInput();
 }
 
 function handleFocusedResourcePanelInput(): boolean {

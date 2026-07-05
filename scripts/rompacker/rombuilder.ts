@@ -50,7 +50,7 @@ const { LuaParser } = require('../../machine/ts/lua/syntax/parser');
 // @ts-ignore
 const { splitText } = require('../../machine/ts/common/text_lines');
 // @ts-ignore
-const { compileLuaChunkToProgram, encodeCompiledProgramImage, isLuaCompileError } = require('../../machine/ts/machine/program/compiler');
+const { compileLuaChunkToProgram, encodeCompiledProgramImage, isLuaCompileError } = require('../../machine/ts/lua/compiler');
 // @ts-ignore
 const {
 	PROGRAM_IMAGE_ID,

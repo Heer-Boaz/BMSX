@@ -17,14 +17,14 @@ export function resolveCallHierarchyViewAt(runtime: Runtime, row: number, column
 		return { kind: 'missing_definition' };
 	}
 	const path = context.descriptor.path;
-	const snapshot = buildEditorSemanticSnapshot(runtime, path, editorDocumentState.buffer, editorDocumentState.textVersion);
-	const frontend = createEditorSemanticFrontend(runtime, snapshot);
+	const snapshot = buildEditorSemanticSnapshot(path, editorDocumentState.buffer, editorDocumentState.textVersion);
+	const frontend = createEditorSemanticFrontend(snapshot);
 	const resolution = frontend.findReferencesByPosition(path, row + 1, column + 1);
 	const expression = extractHoverExpression(row, column, path)?.expression;
 	if (!resolution || !expression) {
 		return { kind: 'missing_definition' };
 	}
-	const descriptors = listResources(runtime);
+	const descriptors = listResources();
 	let rootReadOnly = false;
 	for (let index = 0; index < descriptors.length; index += 1) {
 		const descriptor = descriptors[index];

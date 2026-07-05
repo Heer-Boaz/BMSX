@@ -8,7 +8,7 @@ import { openResourceViewerTab } from './view_tabs';
 import { openCodeTabForDescriptor } from '../../ui/code_tab/io';
 import type { Runtime } from '../../../../machine/runtime/runtime';
 
-export function openResourceDescriptor(runtime: Runtime, descriptor: ResourceDescriptor): void {
+export function openResourceDescriptor(descriptor: ResourceDescriptor): void {
 	const resourcePanel = machineManager.ideState.editor.resourcePanel;
 	if (descriptor.asset_id && descriptor.asset_id.length > 0) {
 		resourcePanel.queuePendingSelection(descriptor.asset_id);
@@ -22,9 +22,9 @@ export function openResourceDescriptor(runtime: Runtime, descriptor: ResourceDes
 		return;
 	}
 	if (descriptor.type === 'lua' || descriptor.type === 'aem') {
-		void openCodeTabForDescriptor(runtime, descriptor);
+		void openCodeTabForDescriptor(descriptor);
 	} else {
-		openResourceViewerTab(runtime, descriptor);
+		openResourceViewerTab(descriptor);
 	}
 	releaseResourcePanelFocus(resourcePanel);
 }
@@ -34,9 +34,9 @@ export function focusChunkSource(runtime: Runtime, path: string): void {
 	if (!path) {
 		return;
 	}
-	const descriptor = findResourceDescriptorForChunk(runtime, path);
+	const descriptor = findResourceDescriptorForChunk(path);
 	if (!descriptor) {
 		return;
 	}
-	openResourceDescriptor(runtime, descriptor);
+	openResourceDescriptor(descriptor);
 }

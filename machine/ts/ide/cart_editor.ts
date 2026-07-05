@@ -1,5 +1,6 @@
 import { machineManager } from '../core/machine_manager';
 import type { Runtime } from '../machine/runtime/runtime';
+import { resolveRuntimeLuaSource } from './runtime/sources';
 import type { Viewport } from '../rompack/format';
 import { api } from './runtime/overlay_api';
 import * as constants from './common/constants';
@@ -113,7 +114,7 @@ export type CartEditor = {
 	draw: () => void;
 	shutdown: () => void;
 	updateViewport: (viewport: Viewport) => void;
-	setFontVariant: (variant: Parameters<typeof setFontVariant>[1]) => void;
+	setFontVariant: (variant: Parameters<typeof setFontVariant>[0]) => void;
 	showRuntimeErrorInChunk: (path: string, line: number, column: number, message: string, details?: RuntimeErrorDetails) => void;
 	showRuntimeError: (line: number, column: number, message: string, details?: RuntimeErrorDetails, path?: string) => void;
 	clearRuntimeErrorOverlay: typeof clearRuntimeErrorOverlay;
@@ -126,8 +127,8 @@ export type CartEditor = {
 	handleRuntimeTaskError: (error: unknown, fallbackMessage: string) => void;
 };
 
-export function getSourceForChunk(runtime: Runtime, path: string): string {
-	const luaSource = runtime.resolveLuaSource(path);
+export function getSourceForChunk(path: string): string {
+	const luaSource = resolveRuntimeLuaSource(machineManager.sourceState, path);
 	if (!luaSource) {
 		throw new Error(`Missing Lua source for '${path}'.`);
 	}
@@ -167,22 +168,22 @@ class RuntimeCartEditor implements CartEditor {
 		},
 	};
 
-	public constructor(runtime: Runtime, viewport: Viewport, fontVariant: Parameters<typeof setFontVariant>[1]) {
+	public constructor(runtime: Runtime, viewport: Viewport, fontVariant: Parameters<typeof setFontVariant>[0]) {
 		this.runtime = runtime;
 		this.commands = new IdeCommandController(runtime);
 		this.navigation = new EditorNavigationController(runtime);
 		this.completion = new EditorCompletionController(runtime);
 		this.resourcePanel = this.initialize(viewport, fontVariant);
-		this.search = new EditorSearchController(runtime, renameController);
+		this.search = new EditorSearchController(renameController);
 		this.debugger = new DebuggerUiController(runtime);
-		this.clearNativeMemberCompletionCache = () => clearNativeMemberCompletionCache(runtime);
+		this.clearNativeMemberCompletionCache = clearNativeMemberCompletionCache;
 	}
 
 	public get isActive(): boolean { return editorRuntimeState.active; }
 
 	public activate(): void {
 		const runtime = this.runtime;
-		if (!runtime.hasProgramSymbols) {
+		if (!runtime.programMetadata) {
 			return;
 		}
 		editorInput.applyOverrides(true, captureKeys);
@@ -386,14 +387,13 @@ class RuntimeCartEditor implements CartEditor {
 		activateCodeTab();
 	}
 
-	public setFontVariant(variant: Parameters<typeof setFontVariant>[1]): void {
-		const runtime = this.runtime;
+	public setFontVariant(variant: Parameters<typeof setFontVariant>[0]): void {
 		const activeContext = getActiveCodeTabContext();
 		let activeCodeTabMode: CodeTabMode | null = null;
 		if (activeContext) {
 			activeCodeTabMode = activeContext.mode;
 		}
-		setFontVariant(runtime, variant, activeCodeTabMode, getActiveCodeTabContextId());
+		setFontVariant(variant, activeCodeTabMode, getActiveCodeTabContextId());
 		this.resourcePanel.setFontMetrics(editorViewState.lineHeight, editorViewState.charAdvance);
 	}
 
@@ -416,13 +416,11 @@ class RuntimeCartEditor implements CartEditor {
 	}
 
 	public getSourceForChunk(path: string): string {
-		const runtime = this.runtime;
-		return getSourceForChunk(runtime, path);
+		return getSourceForChunk(path);
 	}
 
 	public clearWorkspaceDirtyBuffers(): ReturnType<typeof clearWorkspaceDirtyBuffers> {
-		const runtime = this.runtime;
-		return clearWorkspaceDirtyBuffers(runtime);
+		return clearWorkspaceDirtyBuffers();
 	}
 
 	public renderFaultOverlay(): void {
@@ -476,7 +474,7 @@ class RuntimeCartEditor implements CartEditor {
 		editorSearchState.scope = 'local';
 	}
 
-	private initialize(viewport: Viewport, fontVariant: Parameters<typeof setFontVariant>[1]): ResourcePanelController {
+	private initialize(viewport: Viewport, fontVariant: Parameters<typeof setFontVariant>[0]): ResourcePanelController {
 		const runtime = this.runtime;
 		editorViewState.fontVariant = fontVariant;
 		constants.setIdeThemeVariant(constants.DEFAULT_THEME);
@@ -500,9 +498,9 @@ class RuntimeCartEditor implements CartEditor {
 			resourceVertical: editorViewState.scrollbars.resourceVertical,
 			resourceHorizontal: editorViewState.scrollbars.resourceHorizontal,
 		});
-		initializeWorkspaceStorage(runtime, runtime.cartProjectRootPath ?? runtime.systemProjectRootPath);
-		const initialContext = createEntryTabContext(runtime);
-		configureFontVariant(runtime, editorViewState.fontVariant, initialContext.mode);
+		initializeWorkspaceStorage(runtime, machineManager.sourceState.cartProjectRootPath ?? machineManager.sourceState.systemProjectRootPath);
+		const initialContext = createEntryTabContext();
+		configureFontVariant(editorViewState.fontVariant, initialContext.mode);
 		resourcePanel.setFontMetrics(editorViewState.lineHeight, editorViewState.charAdvance);
 		editorSearchState.field = createInlineTextField();
 		symbolSearchState.field = createInlineTextField();
@@ -598,6 +596,6 @@ export class EditorNavigationController {
 	}
 }
 
-export function createCartEditor(runtime: Runtime, viewport: Viewport, fontVariant: Parameters<typeof setFontVariant>[1]): CartEditor {
+export function createCartEditor(runtime: Runtime, viewport: Viewport, fontVariant: Parameters<typeof setFontVariant>[0]): CartEditor {
 	return new RuntimeCartEditor(runtime, viewport, fontVariant);
 }

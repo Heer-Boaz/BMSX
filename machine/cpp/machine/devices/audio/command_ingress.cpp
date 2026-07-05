@@ -22,28 +22,24 @@ ApuCommandIngress::ApuCommandIngress(Memory& memory,
 	, m_serviceClock(serviceClock)
 	, m_scheduler(scheduler) {}
 
-void ApuCommandIngress::onCommandWrite() {
-	const u32 command = m_memory.readIoU32(IO_APU_CMD);
+void ApuCommandIngress::onCommandWriteThunk(void* context, [[maybe_unused]] u32 addr, [[maybe_unused]] Value value) {
+	auto& ingress = *static_cast<ApuCommandIngress*>(context);
+	const u32 command = ingress.m_memory.readIoU32(IO_APU_CMD);
 	switch (command) {
 		case APU_CMD_PLAY:
 		case APU_CMD_STOP_SLOT:
 		case APU_CMD_SET_SLOT_GAIN:
-			m_commandFifo.enqueue(command, m_memory);
-			m_serviceClock.scheduleNext(m_scheduler.currentNowCycles());
-			clearApuCommandLatch(m_memory);
+			ingress.m_commandFifo.enqueue(command, ingress.m_memory);
+			ingress.m_serviceClock.scheduleNext(ingress.m_scheduler.currentNowCycles());
+			clearApuCommandLatch(ingress.m_memory);
 			return;
 		case APU_CMD_NONE:
 			return;
 		default:
-			m_fault.raise(APU_FAULT_BAD_CMD, command);
-			clearApuCommandLatch(m_memory);
+			ingress.m_fault.raise(APU_FAULT_BAD_CMD, command);
+			clearApuCommandLatch(ingress.m_memory);
 			return;
 	}
-}
-
-// disable-next-line single_line_method_pattern -- memory-map callbacks require a C-style thunk into the command-doorbell device owner.
-void ApuCommandIngress::writeThunk(void* context, u32, Value) {
-	static_cast<ApuCommandIngress*>(context)->onCommandWrite();
 }
 
 } // namespace bmsx

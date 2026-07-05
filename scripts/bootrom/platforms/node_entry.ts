@@ -12,7 +12,6 @@ import { HeadlessCaptureCoordinator, deriveHeadlessCaptureOutputDir, type Schedu
 import { printHeadlessCpuProfile } from './cpu_profile_report';
 import { runHostTest } from './hostrunner/host_test_runner';
 import { runIdeTest } from './hostrunner/ide_test_runner';
-import { installNativeGlobal, runHostEvalChunkToNative } from '../../../machine/ts/machine/program/executor';
 
 declare const __BOOTROM_TARGET__: 'cli' | 'headless';
 declare const __BOOTROM_DEBUG__: boolean;
@@ -1130,7 +1129,7 @@ async function main(): Promise<void> {
 			testPath: cliOptions.ideTestPath,
 			frameIntervalMs: frameInterval,
 			ide,
-			evaluateLua: (source) => runHostEvalChunkToNative(runtime, source),
+			evaluateLua: (source) => ide.evaluateLua(source),
 			logger: inputLogger,
 			scheduleOnce: (delayMs, cb) => scheduler.scheduleOnce(delayMs, () => cb()),
 			requestExit,
@@ -1142,13 +1141,17 @@ async function main(): Promise<void> {
 			assertCount: 0,
 			finished: false,
 		};
+		const ide = machineRuntime.ide;
+		if (!ide) {
+			throw new Error('Machine runtime did not expose the IDE harness (bmsx.ide).');
+		}
 		await runHostTest({
 			testPath: cliOptions.testPath,
 			frameIntervalMs: frameInterval,
 			logger: inputLogger,
 			isCartProgramActive,
-			evaluateLua: (source) => runHostEvalChunkToNative(runtime, source),
-			installNativeGlobal: (name, value) => installNativeGlobal(runtime, name, value),
+			evaluateLua: (source) => ide.evaluateLua(source),
+			installNativeGlobal: (name, value) => ide.installNativeGlobal(name, value),
 			postInput,
 			requestExit,
 			scheduler,

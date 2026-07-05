@@ -15,15 +15,15 @@ export class InputControllerOutputPort {
 		private readonly memory: Memory,
 	) {}
 
-	public writeOutputControlRegister(_addr: number, value: Value): void {
+	public static writeOutputControlRegisterThunk(context: InputControllerOutputPort, _addr: number, value: Value): void {
 		const command = (value as number) >>> 0;
 		if (command === INP_OUTPUT_CTRL_APPLY) {
-			this.input.applyInputControllerVibrationEffect(
-				this.registers.selectedPadIndex(),
-				this.registers.state.outputDurationMs,
-				decodeInputOutputIntensityQ16(this.registers.state.outputIntensityQ16),
+			context.input.applyInputControllerVibrationEffect(
+				context.registers.selectedPadIndex(),
+				context.registers.state.outputDurationMs,
+				decodeInputOutputIntensityQ16(context.registers.state.outputIntensityQ16),
 			);
 		}
-		this.memory.writeIoValue(IO_INP_OUTPUT_CTRL, 0);
+		context.memory.writeIoValue(IO_INP_OUTPUT_CTRL, 0);
 	}
 }

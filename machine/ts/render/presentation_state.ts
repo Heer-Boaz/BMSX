@@ -109,7 +109,7 @@ export class RenderPresentationState {
 		if (!this.pendingPresentation) {
 			return false;
 		}
-		const overlayActive = runtime.executionOverlayActive;
+		const overlayActive = machineManager.ideState.overlayActive;
 		out.mode = this.presentationMode;
 		out.commitFrame = overlayActive ? false : this.presentationCommitFrame;
 		workbenchMode.tickIDEDraw(runtime);
@@ -151,7 +151,7 @@ export class RenderPresentationState {
 	}
 
 	public syncAfterRuntimeUpdate(runtime: Runtime, previousTickSequence: number): void {
-		if (runtime.executionOverlayActive) {
+		if (machineManager.ideState.overlayActive) {
 			runtime.frameScheduler.clearQueuedTime();
 			this.markPresentation('completed', false);
 		} else if (runtime.frameScheduler.lastTickSequence !== previousTickSequence) {
@@ -166,7 +166,7 @@ export class RenderPresentationState {
 
 
 	public presentPausedFrame(runtime: Runtime, hostDeltaMs: number): void {
-		if (runtime.executionOverlayActive) {
+		if (machineManager.ideState.overlayActive) {
 			this.runOverlay(runtime);
 			this.consumePresentation(runtime, this.presentationScratch);
 			this.presentFrame(runtime, hostDeltaMs, this.presentationScratch.mode, this.presentationScratch.commitFrame);
@@ -186,7 +186,7 @@ export class RenderPresentationState {
 	}
 
 	public presentErrorOverlay(runtime: Runtime, hostDeltaMs: number): void {
-		if (!runtime.executionOverlayActive) {
+		if (!machineManager.ideState.overlayActive) {
 			return;
 		}
 		this.runOverlay(runtime);

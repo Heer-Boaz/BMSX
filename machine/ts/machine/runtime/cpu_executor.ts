@@ -8,13 +8,6 @@ import type { FrameState } from './frame/state';
 import { Runtime } from './runtime';
 
 export class CpuExecutionState {
-	private debugCycleReportAtMs = 0;
-	private debugCycleRuns = 0;
-	private debugCycleYields = 0;
-	private debugCycleRemainingAcc = 0;
-	private debugCycleRunsTotal = 0;
-	public debugCycleYieldsTotal = 0;
-
 	constructor(private readonly runtime: Runtime) {
 	}
 
@@ -28,10 +21,7 @@ export class CpuExecutionState {
 		}
 		const irqController = runtime.machine.irqController;
 		const scheduler = runtime.machine.scheduler;
-		const vectors = runtime.programVectors;
-		if (vectors === null) {
-			throw new Error('CPU halted without active program vectors.');
-		}
+		const vectors = runtime.programVectors!;
 		while (true) {
 			if (cpu.enterPendingInterrupt(irqController, vectors.irqProtoIndex)) {
 				return tickCompleted;
@@ -65,19 +55,11 @@ export class CpuExecutionState {
 
 	public runWithBudget(state: FrameState): RunResult {
 		const runtime = this.runtime;
-		const debugCycle = Boolean((globalThis as any).__bmsx_debug_tickrate);
-		if (debugCycle) {
-			if (this.debugCycleReportAtMs === 0) {
-				this.debugCycleReportAtMs = runtime.frameLoop.currentTimeMs;
-			}
-			this.debugCycleRuns += 1;
-			this.debugCycleRunsTotal += 1;
-		}
 		let remaining = state.cycleBudgetRemaining;
 		let result = RunResult.Yielded;
 		const scheduler = runtime.machine.scheduler;
 		const cpu = runtime.machine.cpu;
-		const vectors = runtime.programVectors;
+		const vectors = runtime.programVectors!;
 		let tickCompleted = runDueRuntimeTimers(runtime);
 		if (tickCompleted) {
 			state.cycleBudgetRemaining = remaining;
@@ -102,9 +84,7 @@ export class CpuExecutionState {
 			}
 			scheduler.beginCpuSlice(sliceBudget);
 			try {
-				result = vectors === null
-					? cpu.runUntilDepth(0, sliceBudget)
-					: cpu.runUntilDepth(0, sliceBudget, runtime.machine.irqController, vectors.irqProtoIndex);
+				result = cpu.runUntilDepth(0, sliceBudget, runtime.machine.irqController, vectors.irqProtoIndex);
 			} finally {
 				scheduler.endCpuSlice();
 			}
@@ -126,27 +106,6 @@ export class CpuExecutionState {
 		}
 		// end repeated-sequence-acceptable
 		state.cycleBudgetRemaining = remaining;
-		if (debugCycle) {
-			if (result === RunResult.Yielded) {
-				this.debugCycleYields += 1;
-				this.debugCycleYieldsTotal += 1;
-			}
-			this.debugCycleRemainingAcc += remaining;
-			const now = runtime.frameLoop.currentTimeMs;
-			const elapsedMs = now - this.debugCycleReportAtMs;
-			if (elapsedMs >= 1000) {
-				const scale = 1000 / elapsedMs;
-				const runsPerSec = this.debugCycleRuns * scale;
-				const yieldsPerSec = this.debugCycleYields * scale;
-				const yieldPct = (this.debugCycleYields / this.debugCycleRuns) * 100;
-				const avgRemaining = this.debugCycleRemainingAcc / this.debugCycleRuns;
-				console.info(`runs=${runsPerSec.toFixed(3)} yields=${yieldsPerSec.toFixed(3)} yield%=${yieldPct.toFixed(2)} avgRemaining=${avgRemaining.toFixed(1)} budget=${runtime.timing.cycleBudgetPerFrame}`);
-				this.debugCycleReportAtMs = now;
-				this.debugCycleRuns = 0;
-				this.debugCycleYields = 0;
-				this.debugCycleRemainingAcc = 0;
-			}
-		}
 		return result;
 	}
 

@@ -38,9 +38,6 @@ public:
 	void restoreState(const AudioControllerState& state, int64_t nowCycles);
 
 private:
-	static void onSlotWriteThunk(void* context, uint32_t addr, Value value);
-	static Value onStatusReadThunk(void* context, uint32_t addr);
-
 	Memory& m_memory;
 	ApuOutputMixer& m_audioOutput;
 	DeviceScheduler& m_scheduler;

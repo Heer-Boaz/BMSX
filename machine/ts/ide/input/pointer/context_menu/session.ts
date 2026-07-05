@@ -6,7 +6,6 @@ import { editorContextMenuState } from '../../../workbench/contrib/context_menu/
 import { closeEditorContextMenu, findEditorContextMenuEntryAt, layoutEditorContextMenu, openEditorContextMenu, updateEditorContextMenuHover } from '../../../workbench/contrib/context_menu/widget';
 import { executeEditorContextMenuAction } from '../../../workbench/contrib/context_menu/actions';
 import { getActiveCodeTabContext, isEditableCodeTab } from '../../../workbench/ui/code_tab/contexts';
-import type { Runtime } from '../../../../machine/runtime/runtime';
 
 export const CONTEXT_MENU_POINTER_IGNORED = 0;
 export const CONTEXT_MENU_POINTER_HANDLED = 1;
@@ -45,14 +44,14 @@ export function handleEditorContextMenuPointerSession(snapshot: PointerSnapshot,
 	return CONTEXT_MENU_POINTER_CONSUME_PRIMARY;
 }
 
-export function openEditorContextMenuAtPointer(runtime: Runtime, snapshot: PointerSnapshot): boolean {
+export function openEditorContextMenuAtPointer(snapshot: PointerSnapshot): boolean {
 	const bounds = getCodeAreaBounds();
 	const target = resolvePointerTextPosition(snapshot.viewportX, snapshot.viewportY, bounds);
 	const token = resolveContextMenuToken(target.row, target.column, getActiveCodeTabContext().descriptor.path);
 	if (!token) {
 		return false;
 	}
-	const entries = buildEditorContextMenuEntries(runtime, token, isEditableCodeTab());
+	const entries = buildEditorContextMenuEntries(token, isEditableCodeTab());
 	if (entries.length === 0) {
 		return false;
 	}

@@ -1,3 +1,4 @@
+import { machineManager } from '../../../../core/machine_manager';
 import { showEditorMessage, showEditorWarningBanner } from '../../../common/feedback_state';
 import type { CodeTabContext, CodeTabMode, ResourceDescriptor } from '../../../common/models';
 import * as constants from '../../../common/constants';
@@ -34,10 +35,10 @@ function applyCodeTabDescriptor(context: CodeTabContext, descriptor: ResourceDes
 	context.title = computeResourceTabTitle(descriptor);
 }
 
-export function openLuaCodeTab(runtime: Runtime, descriptor: ResourceDescriptor, selection?: CodeTabSelection): void {
+export function openLuaCodeTab(descriptor: ResourceDescriptor, selection?: CodeTabSelection): void {
 	const tabId = buildCodeTabId(descriptor);
 	if (!codeTabSessionState.contexts.has(tabId)) {
-		codeTabSessionState.contexts.set(tabId, createLuaCodeTabContext(runtime, descriptor));
+		codeTabSessionState.contexts.set(tabId, createLuaCodeTabContext(descriptor));
 	}
 	const context = codeTabSessionState.contexts.get(tabId)!;
 	applyCodeTabDescriptor(context, descriptor, 'lua');
@@ -45,12 +46,12 @@ export function openLuaCodeTab(runtime: Runtime, descriptor: ResourceDescriptor,
 	setActiveTab(tabId, selection);
 }
 
-export async function openAemCodeTab(runtime: Runtime, descriptor: ResourceDescriptor): Promise<void> {
+export async function openAemCodeTab(descriptor: ResourceDescriptor): Promise<void> {
 	const tabId = buildCodeTabId(descriptor);
 	try {
 		let context = codeTabSessionState.contexts.get(tabId);
 		if (!context) {
-			const source = await loadWorkspaceSourceFile(descriptor.path, runtime.cartProjectRootPath);
+			const source = await loadWorkspaceSourceFile(descriptor.path, machineManager.sourceState.cartProjectRootPath);
 			if (source === null) {
 				throw new Error(`AEM resource '${descriptor.path}' is unavailable.`);
 			}
@@ -65,13 +66,13 @@ export async function openAemCodeTab(runtime: Runtime, descriptor: ResourceDescr
 	}
 }
 
-export async function openCodeTabForDescriptor(runtime: Runtime, descriptor: ResourceDescriptor): Promise<void> {
+export async function openCodeTabForDescriptor(descriptor: ResourceDescriptor): Promise<void> {
 	if (descriptor.type === 'lua') {
-		openLuaCodeTab(runtime, descriptor);
+		openLuaCodeTab(descriptor);
 		return;
 	}
 	if (descriptor.type === 'aem') {
-		await openAemCodeTab(runtime, descriptor);
+		await openAemCodeTab(descriptor);
 		return;
 	}
 	throw new Error(`Unsupported code tab resource type '${descriptor.type}' for '${descriptor.path}'.`);
@@ -84,11 +85,11 @@ export async function save(runtime: Runtime): Promise<void> {
 	const previousAppliedGeneration = context.appliedGeneration;
 	try {
 		if (context.mode === 'lua') {
-			await saveLuaResourceSource(runtime, targetPath, source);
+			await saveLuaResourceSource(targetPath, source);
 			workspaceSourceCache.delete(buildDirtyFilePath(targetPath));
 			workspaceSourceCache.set(targetPath, source);
 		} else {
-			await persistWorkspaceSourceFile(targetPath, source, runtime.cartProjectRootPath);
+			await persistWorkspaceSourceFile(targetPath, source, machineManager.sourceState.cartProjectRootPath);
 			workspaceSourceCache.set(targetPath, source);
 		}
 		commitActiveCodeTabSave(context, source);

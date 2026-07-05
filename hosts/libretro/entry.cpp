@@ -140,7 +140,7 @@ extern "C" RETRO_API void bmsx_focus_changed(bool focused) {
 extern "C" RETRO_API bool bmsx_is_cart_program_active(void) {
 	// disable-next-line or_nil_fallback_pattern -- libretro may query this before platform creation; nullptr is the external host boundary.
 	auto* manager = g_platform ? g_platform->machineManager() : nullptr;
-	return manager && manager->hasRuntime() && manager->runtime().isCartProgramStarted() && manager->runtime().isInitialized();
+	return manager && manager->hasRuntime() && manager->runtime().cartProgramStarted && manager->runtime().isInitialized();
 }
 
 static constexpr const char* kOptionRenderBackend = "bmsx_render_backend";

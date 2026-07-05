@@ -13,7 +13,7 @@ InputControllerOutputPort::InputControllerOutputPort(InputControllerInputSource&
 	, m_memory(memory) {
 }
 
-void InputControllerOutputPort::writeOutputControlRegister([[maybe_unused]] u32 addr, Value value) {
+void InputControllerOutputPort::writeOutputControlRegisterThunk([[maybe_unused]] u32 addr, Value value) {
 	const u32 command = toU32(value);
 	if (command == INP_OUTPUT_CTRL_APPLY) {
 		m_input.applyInputControllerVibrationEffect(

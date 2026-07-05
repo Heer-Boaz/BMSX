@@ -6,9 +6,8 @@ import { closeTab, setActiveTab } from '../../../ui/tabs';
 import { beginTabDrag, endTabDrag } from '../../../ui/tab/drag';
 import { consumeChromePointerPress } from '../../../../input/pointer/chrome_press';
 import { tabSessionState } from '../../../ui/tab/session_state';
-import type { Runtime } from '../../../../../machine/runtime/runtime';
 
-export function handleTabBarPointer(runtime: Runtime, snapshot: PointerSnapshot): boolean {
+export function handleTabBarPointer(snapshot: PointerSnapshot): boolean {
 	const x = snapshot.viewportX;
 	const y = snapshot.viewportY;
 	if (!point_in_rect(x, y, editorChromeState.tabBarBounds)) {
@@ -19,7 +18,7 @@ export function handleTabBarPointer(runtime: Runtime, snapshot: PointerSnapshot)
 		const closeBounds = editorChromeState.tabCloseButtonBounds.get(tab.id);
 		if (closeBounds && point_in_rect(x, y, closeBounds)) {
 			endTabDrag();
-			closeTab(runtime, tab.id);
+			closeTab(tab.id);
 			editorChromeState.tabHoverId = null;
 			consumeChromePointerPress(snapshot);
 			return true;
@@ -35,7 +34,7 @@ export function handleTabBarPointer(runtime: Runtime, snapshot: PointerSnapshot)
 	return false;
 }
 
-export function handleTabBarMiddleClick(runtime: Runtime, snapshot: PointerSnapshot, playerInput: ReturnType<typeof machineManager.input.getPlayerInput>): boolean {
+export function handleTabBarMiddleClick(snapshot: PointerSnapshot, playerInput: ReturnType<typeof machineManager.input.getPlayerInput>): boolean {
 	const x = snapshot.viewportX;
 	const y = snapshot.viewportY;
 	if (!point_in_rect(x, y, editorChromeState.tabBarBounds)) {
@@ -51,7 +50,7 @@ export function handleTabBarMiddleClick(runtime: Runtime, snapshot: PointerSnaps
 			continue;
 		}
 		if (point_in_rect(x, y, bounds)) {
-			closeTab(runtime, tab.id);
+			closeTab(tab.id);
 			playerInput.consumeRawButton('pointer_aux', 'pointer');
 			consumeChromePointerPress(snapshot);
 			return true;

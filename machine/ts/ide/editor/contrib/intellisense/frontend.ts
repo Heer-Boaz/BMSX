@@ -1,17 +1,17 @@
+import { machineManager } from '../../../../core/machine_manager';
 import { createLuaSemanticFrontendFromSnapshot } from './semantic/workspace';
 import type { LuaSemanticWorkspaceSnapshot } from '../../../../lua/semantic/model';
 import { prepareRuntimeSemanticWorkspaceForEditorBuffer } from './semantic/workspace/runtime';
 import { getLinesSnapshot, getTextSnapshot } from '../../text/source_text';
 import type { TextBuffer } from '../../text/text_buffer';
-import type { Runtime } from '../../../../machine/runtime/runtime';
 
-export function runtimeSemanticExtraGlobalNames(runtime: Runtime): string[] {
-	return Array.from(runtime.interpreter.globalEnvironment.keys());
+export function runtimeSemanticExtraGlobalNames(): string[] {
+	return Array.from(machineManager.ideState.nativeBridge.luaInterpreter.globalEnvironment.keys());
 }
 
-export function buildEditorSemanticSnapshot(runtime: Runtime, path: string, buffer: TextBuffer, textVersion: number): LuaSemanticWorkspaceSnapshot {
+export function buildEditorSemanticSnapshot(path: string, buffer: TextBuffer, textVersion: number): LuaSemanticWorkspaceSnapshot {
 	const source = getTextSnapshot(buffer);
-	return prepareRuntimeSemanticWorkspaceForEditorBuffer(runtime, {
+	return prepareRuntimeSemanticWorkspaceForEditorBuffer({
 		path,
 		source,
 		lines: getLinesSnapshot(buffer),
@@ -19,12 +19,12 @@ export function buildEditorSemanticSnapshot(runtime: Runtime, path: string, buff
 	});
 }
 
-export function createEditorSemanticFrontend(runtime: Runtime, snapshot: LuaSemanticWorkspaceSnapshot): ReturnType<typeof createLuaSemanticFrontendFromSnapshot> {
+export function createEditorSemanticFrontend(snapshot: LuaSemanticWorkspaceSnapshot): ReturnType<typeof createLuaSemanticFrontendFromSnapshot> {
 	return createLuaSemanticFrontendFromSnapshot(snapshot, {
-		extraGlobalNames: runtimeSemanticExtraGlobalNames(runtime),
+		extraGlobalNames: runtimeSemanticExtraGlobalNames(),
 	});
 }
 
-export function buildEditorSemanticFrontend(runtime: Runtime, path: string, buffer: TextBuffer, textVersion: number): ReturnType<typeof createLuaSemanticFrontendFromSnapshot> {
-	return createEditorSemanticFrontend(runtime, buildEditorSemanticSnapshot(runtime, path, buffer, textVersion));
+export function buildEditorSemanticFrontend(path: string, buffer: TextBuffer, textVersion: number): ReturnType<typeof createLuaSemanticFrontendFromSnapshot> {
+	return createEditorSemanticFrontend(buildEditorSemanticSnapshot(path, buffer, textVersion));
 }

@@ -20,10 +20,10 @@ export class ApuSelectedSlotLatch {
 		this.status.setStatusFlag(APU_STATUS_SELECTED_SLOT_ACTIVE, false);
 	}
 
-	public refresh(): void {
-		const slot = this.memory.readIoU32(IO_APU_SLOT) & APU_SLOT_INDEX_MASK;
-		const active = (this.slots.activeMask & (1 << slot)) !== 0;
-		this.memory.writeIoValue(IO_APU_SELECTED_SOURCE_ADDR, active ? this.slots.registerWord(slot, APU_PARAMETER_SOURCE_ADDR_INDEX) : 0);
-		this.status.setStatusFlag(APU_STATUS_SELECTED_SLOT_ACTIVE, active);
+	public static refreshThunk(context: ApuSelectedSlotLatch): void {
+		const slot = context.memory.readIoU32(IO_APU_SLOT) & APU_SLOT_INDEX_MASK;
+		const active = (context.slots.activeMask & (1 << slot)) !== 0;
+		context.memory.writeIoValue(IO_APU_SELECTED_SOURCE_ADDR, active ? context.slots.registerWord(slot, APU_PARAMETER_SOURCE_ADDR_INDEX) : 0);
+		context.status.setStatusFlag(APU_STATUS_SELECTED_SLOT_ACTIVE, active);
 	}
 }

@@ -50,7 +50,7 @@ import {
 } from './value';
 import { LuaDebuggerController, type LuaDebuggerPauseReason } from './debugger';
 import { isLuaHandlerFunction } from './handler_cache';
-import type { LuaInteropAdapter } from '../machine/runtime/host/native_bridge';
+import type { LuaInteropAdapter } from './interop';
 import { getCachedLuaParse } from './analysis/cache';
 import { ScratchBuffer } from '../common/scratchbuffer';
 import { luaModulo } from './numeric';

@@ -9,16 +9,15 @@ import { listResources } from '../../../../workspace/workspace';
 import { editorCaretState } from '../../../../editor/ui/view/caret/state';
 import { renameController } from '../../../../editor/contrib/rename/controller';
 import { createResourceState } from '../widget_state';
-import type { Runtime } from '../../../../../machine/runtime/runtime';
 
-export function openCreateResourcePrompt(runtime: Runtime): void {
+export function openCreateResourcePrompt(): void {
 	if (createResourceState.working) {
 		return;
 	}
 	machineManager.ideState.editor.resourcePanel.setFocused(false);
 	renameController.cancel();
 	let defaultPath = createResourceState.path.length === 0
-		? determineCreateResourceDefaultPath(runtime)
+		? determineCreateResourceDefaultPath()
 		: createResourceState.path;
 	if (defaultPath.length > constants.CREATE_RESOURCE_MAX_PATH_LENGTH) {
 		defaultPath = defaultPath.slice(defaultPath.length - constants.CREATE_RESOURCE_MAX_PATH_LENGTH);
@@ -44,7 +43,7 @@ export function closeCreateResourcePrompt(focusEditor: boolean): void {
 	resetBlink();
 }
 
-export function determineCreateResourceDefaultPath(runtime: Runtime): string {
+export function determineCreateResourceDefaultPath(): string {
 	const lastDirectory = createResourceState.lastDirectory;
 	if (lastDirectory.length > 0) {
 		return lastDirectory;
@@ -54,7 +53,7 @@ export function determineCreateResourceDefaultPath(runtime: Runtime): string {
 	if (activePath.length > 0) {
 		return ensureDirectorySuffix(activePath);
 	}
-	const descriptors = listResources(runtime);
+	const descriptors = listResources();
 	const firstEditableLua = descriptors.find(entry => entry.type === 'lua' && entry.readOnly !== true && entry.path.length > 0);
 	if (firstEditableLua) {
 		return ensureDirectorySuffix(firstEditableLua.path);

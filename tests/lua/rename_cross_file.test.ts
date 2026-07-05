@@ -9,6 +9,8 @@ import { CrossFileRenameManager, convertRangeToSearchMatch } from '../../machine
 import { buildCodeTabId, clearCodeTabContexts, registerCodeTabContext } from '../../machine/ts/ide/workbench/ui/code_tab/contexts';
 import { codeTabSessionState } from '../../machine/ts/ide/workbench/ui/code_tab/session_state';
 import { tabSessionState } from '../../machine/ts/ide/workbench/ui/tab/session_state';
+import { machineManager } from '../../machine/ts/core/machine_manager';
+import { registerLuaSourceRecord, type LuaSourceRegistry } from '../../machine/ts/lua/source_registry';
 
 function codeContext(descriptor: ResourceDescriptor, source: string): CodeTabContext {
 	const buffer = new PieceTreeBuffer(source);
@@ -57,6 +59,33 @@ test('cross file rename updates an existing code tab and semantic workspace', ()
 	const workspace = new LuaSemanticWorkspace();
 	workspace.updateFile('main.lua', mainSource);
 	workspace.updateFile('usage.lua', usageSource);
+	const registry: LuaSourceRegistry = {
+		records: [],
+		path2lua: {},
+		module2lua: {},
+		entry_path: 'main.lua',
+		namespace: 'test',
+		projectRootPath: '',
+		can_boot_from_source: true,
+	};
+	registerLuaSourceRecord(registry, {
+		resid: 'usage.lua',
+		type: 'lua',
+		source_path: 'usage.lua',
+		module_path: 'usage',
+		src: usageSource,
+		base_src: usageSource,
+		update_timestamp: 0,
+	});
+	(machineManager as any).sourceState = {
+		systemLuaSources: registry,
+		cartLuaSources: null,
+		activeLuaSources: registry,
+		currentPath: registry.entry_path,
+		luaSourceRegistries: [registry],
+		luaSourceSearchRegistries: [registry],
+		moduleCompileLuaSources: [registry],
+	};
 
 	clearCodeTabContexts();
 	tabSessionState.tabs.length = 0;
@@ -85,7 +114,7 @@ test('cross file rename updates an existing code tab and semantic workspace', ()
 	assert.ok(otherRanges.length > 0);
 
 	const manager = new CrossFileRenameManager();
-	const replacements = manager.applyRenameToChunk({} as any, 'usage.lua', otherRanges, 'worldState', 'main.lua');
+	const replacements = manager.applyRenameToChunk('usage.lua', otherRanges, 'worldState', 'main.lua');
 	assert.equal(replacements, otherRanges.length);
 
 	assert.equal(usageContext.dirty, true);

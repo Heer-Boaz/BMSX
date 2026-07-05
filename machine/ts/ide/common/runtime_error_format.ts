@@ -2,7 +2,7 @@ import { LuaCallFrame } from '../../lua/runtime';
 import { StackTraceFrame } from '../../lua/value';
 import { splitText } from '../../common/text_lines';
 import { RuntimeErrorDetails } from './models';
-import { createMinimalSourceMapConsumer, InlineSourceMap, MinimalSourceMapConsumer, originalPositionFor } from '../../machine/program/sourcemap_minimal';
+import { createMinimalSourceMapConsumer, InlineSourceMap, MinimalSourceMapConsumer, originalPositionFor } from '../../lua/compiler/sourcemap_minimal';
 import { buildLuaFrameRawLabel } from '../../lua/stack_frame_label';
 
 type InlineSourceMapRegistry = Map<string, InlineSourceMap>;

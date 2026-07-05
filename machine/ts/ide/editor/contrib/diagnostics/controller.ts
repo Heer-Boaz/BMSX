@@ -27,16 +27,16 @@ const diagnosticsMinIntervalMs = 600;
 let diagnosticsTimer: TimerHandle | null = null;
 let diagnosticsScheduledForMs = 0;
 let lastDiagnosticsRunMs = 0;
-export function createDiagnosticProviders(runtime: Runtime): DiagnosticProviders {
+export function createDiagnosticProviders(): DiagnosticProviders {
 	return {
 		listLocalSymbols: (path) => {
-			return listLuaSymbols(runtime, path);
+			return listLuaSymbols(path);
 		},
 		listGlobalSymbols: () => {
-			return listGlobalLuaSymbols(runtime);
+			return listGlobalLuaSymbols();
 		},
 		listBuiltins: () => {
-			return listLuaBuiltinFunctions(runtime);
+			return listLuaBuiltinFunctions();
 		},
 	};
 }
@@ -141,7 +141,7 @@ export function enqueueDiagnosticsJob(runtime: Runtime, contextIds: readonly str
 	}
 	editorDiagnosticsState.diagnosticsTaskPending = true;
 	enqueueBackgroundTask(() => {
-		runDiagnosticsForContexts(runtime, contextIds);
+		runDiagnosticsForContexts(contextIds);
 		editorDiagnosticsState.diagnosticsTaskPending = false;
 		lastDiagnosticsRunMs = editorRuntimeState.clockNow();
 		if (editorDiagnosticsState.dirtyDiagnosticContexts.size === 0) {
@@ -165,7 +165,7 @@ export function collectDiagnosticsBatch(): string[] {
 	return [];
 }
 
-export function runDiagnosticsForContexts(runtime: Runtime, contextIds: readonly string[]): void {
+export function runDiagnosticsForContexts(contextIds: readonly string[]): void {
 	if (contextIds.length === 0) {
 		return;
 	}
@@ -214,7 +214,7 @@ export function runDiagnosticsForContexts(runtime: Runtime, contextIds: readonly
 		updateDiagnosticsAggregates();
 		return;
 	}
-	const diagnostics = computeAggregatedEditorDiagnostics(runtime, inputs, createDiagnosticProviders(runtime));
+	const diagnostics = computeAggregatedEditorDiagnostics(inputs, createDiagnosticProviders());
 	const byContext = new Map<string, EditorDiagnostic[]>();
 	for (let index = 0; index < diagnostics.length; index += 1) {
 		const diag = diagnostics[index];

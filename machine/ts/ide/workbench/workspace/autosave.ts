@@ -19,7 +19,6 @@ import {
 	resetWorkspaceContextToCleanSource,
 } from './context_snapshot';
 import type { DirtyContextEntry, PersistedDirtyEntry, SerializedDescriptor, WorkspaceAutosavePayload } from './models';
-import type { Runtime } from '../../../machine/runtime/runtime';
 
 export function collectDirtyContextEntries(): Map<string, DirtyContextEntry> {
 	if (!hasWorkspaceStorage()) {
@@ -132,20 +131,20 @@ export async function persistDirtyContextEntries(entries: Map<string, DirtyConte
 	}
 }
 
-export function loadCleanSrc(runtime: Runtime, path: string): string {
+export function loadCleanSrc(path: string): string {
 	const context = findCodeTabContext(path);
 	if (context && context.mode === 'aem') {
 		return context.lastSavedSource;
 	}
-	return luaPipeline.resourceSourceForChunk(runtime, path);
+	return luaPipeline.resourceSourceForChunk(path);
 }
 
-export function clearWorkspaceDirtyBuffers(runtime: Runtime): void {
+export function clearWorkspaceDirtyBuffers(): void {
 	workspaceSourceCache.clear();
 	workspaceState.autosaveSignature = null;
 	resetWorkspaceActiveDocumentDirtyBufferState();
 	for (const context of getCodeTabContexts()) {
-		resetWorkspaceContextToCleanSource(context, loadCleanSrc(runtime, context.descriptor.path));
+		resetWorkspaceContextToCleanSource(context, loadCleanSrc(context.descriptor.path));
 	}
 }
 

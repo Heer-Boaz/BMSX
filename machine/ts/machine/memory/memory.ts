@@ -78,8 +78,10 @@ export type VramWriteSink = {
 	readVram(addr: number, out: Uint8Array, length?: number): void;
 };
 
-export type IoReadHandler = (addr: number) => Value;
-export type IoWriteHandler = (addr: number, value: Value) => void;
+export type IoReadHandler<TContext> = (context: TContext, addr: number) => Value;
+export type IoWriteHandler<TContext> = (context: TContext, addr: number, value: Value) => void;
+type StoredIoReadHandler = (context: unknown, addr: number) => Value;
+type StoredIoWriteHandler = (context: unknown, addr: number, value: Value) => void;
 
 export type MemorySaveState = {
 	ram: Uint8Array;
@@ -104,8 +106,10 @@ export class Memory {
 	private readonly cartRom: Uint8Array;
 	private readonly ram: Uint8Array;
 	private readonly ioSlots: Value[];
-	private readonly ioReadHandlers: Array<IoReadHandler | null>;
-	private readonly ioWriteHandlers: Array<IoWriteHandler | null>;
+	private readonly ioReadContexts: unknown[];
+	private readonly ioWriteContexts: unknown[];
+	private readonly ioReadHandlers: Array<StoredIoReadHandler | null>;
+	private readonly ioWriteHandlers: Array<StoredIoWriteHandler | null>;
 	private readonly ioByteLength = IO_SLOT_COUNT * IO_WORD_SIZE;
 	private readonly busFaultCodeSlot = (IO_SYS_BUS_FAULT_CODE - IO_BASE) / IO_WORD_SIZE;
 	private readonly busFaultAddrSlot = (IO_SYS_BUS_FAULT_ADDR - IO_BASE) / IO_WORD_SIZE;
@@ -134,13 +138,18 @@ export class Memory {
 		for (let index = 0; index < this.ioSlots.length; index += 1) {
 			this.ioSlots[index] = null;
 		}
-		this.ioReadHandlers = new Array<IoReadHandler | null>(IO_SLOT_COUNT);
-		this.ioWriteHandlers = new Array<IoWriteHandler | null>(IO_SLOT_COUNT);
+		this.ioReadContexts = new Array<unknown>(IO_SLOT_COUNT);
+		this.ioWriteContexts = new Array<unknown>(IO_SLOT_COUNT);
+		this.ioReadHandlers = new Array<StoredIoReadHandler | null>(IO_SLOT_COUNT);
+		this.ioWriteHandlers = new Array<StoredIoWriteHandler | null>(IO_SLOT_COUNT);
 		for (let index = 0; index < IO_SLOT_COUNT; index += 1) {
+			this.ioReadContexts[index] = null;
+			this.ioWriteContexts[index] = null;
 			this.ioReadHandlers[index] = null;
 			this.ioWriteHandlers[index] = null;
 		}
-		this.ioWriteHandlers[this.busFaultAckSlot] = this.onBusFaultAckWrite.bind(this);
+		this.ioWriteContexts[this.busFaultAckSlot] = this;
+		this.ioWriteHandlers[this.busFaultAckSlot] = Memory.onBusFaultAckWriteThunk;
 		this.clearBusFault();
 	}
 
@@ -148,12 +157,16 @@ export class Memory {
 		this.vramWriter = writer;
 	}
 
-	public mapIoRead(addr: number, handler: IoReadHandler): void {
-		this.ioReadHandlers[(addr - IO_BASE) / IO_WORD_SIZE] = handler;
+	public mapIoRead<TContext>(addr: number, context: TContext, handler: IoReadHandler<TContext>): void {
+		const slot = (addr - IO_BASE) / IO_WORD_SIZE;
+		this.ioReadContexts[slot] = context;
+		this.ioReadHandlers[slot] = handler as StoredIoReadHandler;
 	}
 
-	public mapIoWrite(addr: number, handler: IoWriteHandler): void {
-		this.ioWriteHandlers[(addr - IO_BASE) / IO_WORD_SIZE] = handler;
+	public mapIoWrite<TContext>(addr: number, context: TContext, handler: IoWriteHandler<TContext>): void {
+		const slot = (addr - IO_BASE) / IO_WORD_SIZE;
+		this.ioWriteContexts[slot] = context;
+		this.ioWriteHandlers[slot] = handler as StoredIoWriteHandler;
 	}
 
 	public setProgramRom(rom: Uint8Array, textByteLength: number): void {
@@ -260,14 +273,14 @@ export class Memory {
 
 	private readIoSlotValue(slot: number, addr: number): Value {
 		const handler = this.ioReadHandlers[slot];
-		return handler !== null ? handler(addr) : this.ioSlots[slot];
+		return handler !== null ? handler(this.ioReadContexts[slot], addr) : this.ioSlots[slot];
 	}
 
 	private writeIoSlotValue(slot: number, addr: number, value: Value): void {
 		this.ioSlots[slot] = value;
 		const handler = this.ioWriteHandlers[slot];
 		if (handler !== null) {
-			handler(addr, value);
+			handler(this.ioWriteContexts[slot], addr, value);
 		}
 	}
 
@@ -773,9 +786,10 @@ export class Memory {
 		this.writeBusFaultSlots();
 	}
 
-	private onBusFaultAckWrite(_addr: number, value: Value): void {
+	private static onBusFaultAckWriteThunk(context: Memory, addr: number, value: Value): void {
+		void addr;
 		if (((value as number) >>> 0) !== 0) {
-			this.clearBusFault();
+			context.clearBusFault();
 		}
 	}
 

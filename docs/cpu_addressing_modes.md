@@ -216,9 +216,9 @@ This is a **mirrored ISA change** and must land in both cores simultaneously.
 | `machine/ts/machine/cpu/cpu.ts` | Remove 7 dead dispatch cases; add dispatch for `LOAD_MEM_D`, `STORE_MEM_D`, `STORE_MEM_WORDS_D`: decode `ext` as displacement, compute `base + (ext << 2)`, dispatch to existing memory access helpers |
 | `machine/ts/machine/cpu/disassembler.ts` | Replace name/format entries for all removed opcodes |
 | `machine/ts/machine/cpu/profiler.ts` | Include new memory opcodes in memory-opcode detection |
-| `machine/ts/machine/program/compiler.ts` | Rename `BR_TRUE`→`JMPIF`, `BR_FALSE`→`JMPIFNOT`; remove `GETG`/`SETG` from `isConstBxOp`/`isGlobalSlotOp`; add compiler-side emit path: fold `base_reg + word_aligned_const ≤ 1020` into the `_D` variant |
-| `machine/ts/machine/program/control_flow.ts` | Remove `LOADBOOL`; replace `BR_TRUE`/`BR_FALSE` with `JMPIF`/`JMPIFNOT` |
-| `machine/ts/machine/program/optimizer/ssa.ts` | Remove all `LOADBOOL`, `TEST`, `TESTSET` handling; replace `BR_TRUE`/`BR_FALSE` with `JMPIF`/`JMPIFNOT` |
+| `machine/ts/lua/compiler.ts` | Rename `BR_TRUE`→`JMPIF`, `BR_FALSE`→`JMPIFNOT`; remove `GETG`/`SETG` from `isConstBxOp`/`isGlobalSlotOp`; add compiler-side emit path: fold `base_reg + word_aligned_const ≤ 1020` into the `_D` variant |
+| `machine/ts/lua/compiler/control_flow.ts` | Remove `LOADBOOL`; replace `BR_TRUE`/`BR_FALSE` with `JMPIF`/`JMPIFNOT` |
+| `machine/ts/lua/compiler/optimizer/ssa.ts` | Remove all `LOADBOOL`, `TEST`, `TESTSET` handling; replace `BR_TRUE`/`BR_FALSE` with `JMPIF`/`JMPIFNOT` |
 
 ### C++
 

@@ -59,6 +59,12 @@ export class DeviceStatusLatch {
 		this.memory.writeIoValue(this.registers.ackAddr, 0);
 	}
 
+	public static acknowledgeWriteThunk(context: DeviceStatusLatch, addr: number, value: unknown): void {
+		void addr;
+		void value;
+		context.acknowledge();
+	}
+
 	public setStatusFlag(mask: number, active: boolean): void {
 		const nextStatus = active ? (this.status | mask) : (this.status & ~mask);
 		if (nextStatus === this.status) {

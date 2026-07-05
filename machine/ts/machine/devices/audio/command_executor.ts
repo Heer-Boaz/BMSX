@@ -7,7 +7,7 @@ import type { DeviceStatusLatch } from '../device_status';
 import type { ApuActiveSlots } from './active_slots';
 import type { ApuCommandFifo } from './command_fifo';
 import type { ApuOutputMixer } from './output';
-import type { ApuSelectedSlotLatch } from './selected_slot_latch';
+import { ApuSelectedSlotLatch } from './selected_slot_latch';
 import type { ApuServiceClock } from './service_clock';
 import {
 	ApuSourceDma,
@@ -76,15 +76,15 @@ export class ApuCommandExecutor {
 		);
 	}
 
-	public onSelectedSlotRegisterRead(addr: number): number {
-		const slot = this.memory.readIoU32(IO_APU_SLOT) & APU_SLOT_INDEX_MASK;
+	public static selectedSlotRegisterReadThunk(context: ApuCommandExecutor, addr: number): number {
+		const slot = context.memory.readIoU32(IO_APU_SLOT) & APU_SLOT_INDEX_MASK;
 		const parameterIndex = (addr - IO_APU_SELECTED_SLOT_REG0) / IO_ARG_STRIDE;
-		return this.slots.registerWord(slot, parameterIndex);
+		return context.slots.registerWord(slot, parameterIndex);
 	}
 
-	public onSelectedSlotRegisterWrite(addr: number, value: Value): void {
-		const slot = this.memory.readIoU32(IO_APU_SLOT) & APU_SLOT_INDEX_MASK;
-		this.writeSlotRegisterWord(slot, (addr - IO_APU_SELECTED_SLOT_REG0) / IO_ARG_STRIDE, (value as number) >>> 0);
+	public static selectedSlotRegisterWriteThunk(context: ApuCommandExecutor, addr: number, value: Value): void {
+		const slot = context.memory.readIoU32(IO_APU_SLOT) & APU_SLOT_INDEX_MASK;
+		context.writeSlotRegisterWord(slot, (addr - IO_APU_SELECTED_SLOT_REG0) / IO_ARG_STRIDE, (value as number) >>> 0);
 	}
 
 	private executeCommand(command: number, registerWords: ApuParameterRegisterWords): void {
@@ -173,7 +173,7 @@ export class ApuCommandExecutor {
 				);
 			}
 		}
-		this.selectedSlotLatch.refresh();
+		ApuSelectedSlotLatch.refreshThunk(this.selectedSlotLatch);
 	}
 
 	private playOutputVoice(slot: ApuAudioSlot, voiceId: ApuVoiceId, source: ApuAudioSource, registerWords: ApuParameterRegisterWords, fadeSamples: number): void {

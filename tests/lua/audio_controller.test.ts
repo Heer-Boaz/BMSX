@@ -92,7 +92,7 @@ import { ApuSourceDma } from '../../machine/ts/machine/devices/audio/source';
 import type { AudioControllerState, ApuOutputState, ApuOutputVoiceState } from '../../machine/ts/machine/devices/audio/save_state';
 import { CPU } from '../../machine/ts/machine/cpu/cpu';
 import { IrqController } from '../../machine/ts/machine/devices/irq/controller';
-import { DEFAULT_LUA_BUILTIN_NAMES } from '../../machine/ts/machine/firmware/builtin_descriptors';
+import { DEFAULT_LUA_BUILTIN_NAMES } from '../../machine/ts/lua/builtin_descriptors';
 import { CART_ROM_BASE, PROGRAM_ROM_BASE, RAM_BASE, SYSTEM_ROM_BASE } from '../../machine/ts/machine/memory/map';
 import { Memory } from '../../machine/ts/machine/memory/memory';
 import { DeviceScheduler } from '../../machine/ts/machine/scheduler/device';

@@ -168,7 +168,7 @@ void ApuCommandExecutor::writeSlotRegisterWord(ApuAudioSlot slot, u32 parameterI
 			);
 		}
 	}
-	m_selectedSlotLatch.refresh();
+	ApuSelectedSlotLatch::refreshThunk(&m_selectedSlotLatch, IO_APU_SLOT, valueNil());
 }
 
 void ApuCommandExecutor::playOutputVoice(ApuAudioSlot slot, ApuVoiceId voiceId, const ApuAudioSource& source, const ApuParameterRegisterWords& registerWords, u32 fadeSamples) {

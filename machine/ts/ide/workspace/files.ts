@@ -1,4 +1,4 @@
-import type { LuaSourceRecord, LuaSourceRegistry } from '../../machine/program/sources';
+import type { LuaSourceRecord, LuaSourceRegistry } from '../../lua/source_registry';
 import type { HttpResponse, StorageService } from '../../platform/index';
 import { workspaceSourceCache } from './cache';
 import { joinWorkspacePaths, resolveWorkspacePath, stripProjectRootPrefix } from './path';

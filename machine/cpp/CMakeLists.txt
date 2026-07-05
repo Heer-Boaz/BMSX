@@ -305,7 +305,6 @@ add_library(bmsx_core STATIC
 	machine/devices/audio/controller.cpp
 	machine/devices/irq/controller.cpp
 	machine/devices/irq/save_state.cpp
-	machine/firmware/handler_registry.cpp
 	machine/cpu/disassembler.cpp
 	machine/firmware/globals.cpp
 	machine/memory/lua_heap_usage.cpp
@@ -321,7 +320,6 @@ add_library(bmsx_core STATIC
 	machine/runtime/save_state.cpp
 	machine/runtime/save_state/schema.cpp
 	machine/runtime/save_state/codec.cpp
-	machine/runtime/resume_snapshot.cpp
 	machine/runtime/cpu_executor.cpp
 	machine/runtime/boot_timing.cpp
 	machine/runtime/frame/loop.cpp
@@ -336,7 +334,6 @@ add_library(bmsx_core STATIC
 	machine/runtime/timing/config.cpp
 	machine/runtime/vblank.cpp
 	machine/runtime/debug.cpp
-	machine/runtime/host/native_bridge.cpp
 	machine/memory/access_kind.cpp
 	machine/memory/memory.cpp
 	machine/memory/map.cpp

@@ -5,13 +5,13 @@ import { clampQuickInputDisplayOffset, advanceQuickInputSelection } from '../../
 import { resetBlink } from '../../../../editor/render/caret';
 import { resourceSearchWindowCapacity } from '../../../../editor/ui/view/view';
 import { resourceSearchState } from '../widget_state';
-import type { Runtime } from '../../../../../machine/runtime/runtime';
+import { machineManager } from '../../../../../core/machine_manager';
 
-export function refreshResourceCatalog(runtime: Runtime): void {
+export function refreshResourceCatalog(): void {
 	try {
-		const descriptors = listResourcesStrict(runtime);
+		const descriptors = listResourcesStrict();
 		const augmented = descriptors.slice();
-		const imageRecords = Object.values(runtime.activePackage.img);
+		const imageRecords = Object.values(machineManager.sourceState.activePackage.img);
 		for (const record of imageRecords) {
 			if (record.type !== 'atlas') {
 				continue;

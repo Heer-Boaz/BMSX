@@ -35,9 +35,9 @@ AudioController::AudioController(Memory& memory, ApuOutputMixer& audioOutput, Ir
 	, m_commandIngress(memory, m_commandFifo, m_fault, m_serviceClock, scheduler)
 	, m_queueStatusRegisters(m_commandFifo, m_audioOutput.outputRing)
 	, m_commandExecutor(memory, m_audioOutput, scheduler, m_commandFifo, m_sourceDma, m_activeSlots, m_slots, m_selectedSlotLatch, m_fault, m_serviceClock) {
-	m_memory.mapIoRead(IO_APU_STATUS, this, &AudioController::onStatusReadThunk);
-	m_memory.mapIoWrite(IO_APU_CMD, &m_commandIngress, &ApuCommandIngress::writeThunk);
-	m_memory.mapIoWrite(IO_APU_SLOT, this, &AudioController::onSlotWriteThunk);
+	m_memory.mapIoRead(IO_APU_STATUS, &m_statusRegister, &ApuStatusRegister::readThunk);
+	m_memory.mapIoWrite(IO_APU_CMD, &m_commandIngress, &ApuCommandIngress::onCommandWriteThunk);
+	m_memory.mapIoWrite(IO_APU_SLOT, &m_selectedSlotLatch, &ApuSelectedSlotLatch::refreshThunk);
 	m_memory.mapIoRead(IO_APU_OUTPUT_QUEUED_FRAMES, &m_queueStatusRegisters, &ApuQueueStatusRegisters::readThunk);
 	m_memory.mapIoRead(IO_APU_OUTPUT_FREE_FRAMES, &m_queueStatusRegisters, &ApuQueueStatusRegisters::readThunk);
 	m_memory.mapIoRead(IO_APU_OUTPUT_CAPACITY_FRAMES, &m_queueStatusRegisters, &ApuQueueStatusRegisters::readThunk);
@@ -95,16 +95,6 @@ void AudioController::onService(int64_t nowCycles) {
 	}
 	m_activeSlots.advance(m_serviceClock.consumeSamples());
 	m_serviceClock.scheduleNext(nowCycles);
-}
-
-// disable-next-line single_line_method_pattern -- memory-map callbacks require a C-style thunk back into the APU device instance.
-void AudioController::onSlotWriteThunk(void* context, uint32_t, Value) {
-	static_cast<AudioController*>(context)->m_selectedSlotLatch.refresh();
-}
-
-Value AudioController::onStatusReadThunk(void* context, uint32_t) {
-	auto& controller = *static_cast<AudioController*>(context);
-	return valueNumber(static_cast<double>(controller.m_statusRegister.read()));
 }
 
 } // namespace bmsx

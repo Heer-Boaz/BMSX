@@ -3,14 +3,15 @@ import { assertValidAemDocument, buildAemValidationLookup, parseStructuredTextDo
 import type { ResourceDescriptor } from '../../../rompack/tooling/resource';
 import { formatAemYamlDocument } from './yaml_formatter';
 import type { Runtime } from '../../../machine/runtime/runtime';
-import { runHostEvalChunkToNative } from '../../../machine/program/executor';
+import { runHostEvalChunkToNative } from '../../runtime/host_eval';
+import { machineManager } from '../../../core/machine_manager';
 
 function resolveAemSourceFormat(path: string): StructuredTextDocumentFormat {
 	return path.endsWith('.json') ? 'json' : 'yaml';
 }
 
-function buildRuntimeAemValidationLookup(runtime: Runtime) {
-	const activePackage = runtime.activePackage;
+function buildRuntimeAemValidationLookup() {
+	const activePackage = machineManager.sourceState.activePackage;
 	const audioIds = Object.keys(activePackage.audio);
 	const dataRecordNames = Object.keys(activePackage.data);
 	const dataRecords: Array<{ name: string; value: unknown }> = [];
@@ -28,11 +29,8 @@ function reloadAem(runtime: Runtime): void {
 	runHostEvalChunkToNative(runtime, `rget('aem'):reload()`);
 }
 
-export function listAemResourceDescriptors(runtime: Runtime): ResourceDescriptor[] {
-	const romSource = runtime.activeRomSource;
-	if (!romSource) {
-		return [];
-	}
+export function listAemResourceDescriptors(): ResourceDescriptor[] {
+	const romSource = machineManager.sourceState.activeRomSource;
 	const records = romSource.list('aem');
 	const descriptors: ResourceDescriptor[] = [];
 	for (let index = 0; index < records.length; index += 1) {
@@ -83,8 +81,8 @@ export function applyAemSourceToRuntime(runtime: Runtime, descriptor: ResourceDe
 		throw new Error(`AEM resource '${descriptor.path}' is missing an asset id.`);
 	}
 	const doc = parseStructuredTextDocument(source, resolveAemSourceFormat(descriptor.path), `AEM file '${descriptor.path}'`);
-	assertValidAemDocument(doc, buildRuntimeAemValidationLookup(runtime), descriptor.path);
-	const activePackage = runtime.activePackage;
+	assertValidAemDocument(doc, buildRuntimeAemValidationLookup(), descriptor.path);
+	const activePackage = machineManager.sourceState.activePackage;
 	const previousDoc = activePackage.audioevents[assetId];
 	try {
 		activePackage.audioevents[assetId] = doc as Record<string, unknown>;

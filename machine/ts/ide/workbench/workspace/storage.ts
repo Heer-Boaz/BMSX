@@ -51,7 +51,7 @@ export function initializeWorkspaceStorage(runtime: Runtime, projectRootPath: st
 	(async () => {
 		try {
 			await configureWorkspaceStorage(projectRootPath);
-			const signature = await restoreWorkspaceSessionFromDisk(runtime);
+			const signature = await restoreWorkspaceSessionFromDisk();
 			workspaceState.autosaveSignature = signature;
 			workspaceState.serverConnected = isWorkspaceServerAvailable();
 		} catch (error) {

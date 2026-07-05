@@ -34,10 +34,10 @@ export function handleCodeAreaPointerInput(
 	const inGutter = insideCodeArea
 		&& snapshot.viewportX >= bounds.gutterLeft
 		&& snapshot.viewportX < bounds.gutterRight;
-	if (handleCodeAreaSecondaryPointer(runtime, snapshot, insideCodeArea, inGutter, pointerSecondaryJustPressed, playerInput)) {
+	if (handleCodeAreaSecondaryPointer(snapshot, insideCodeArea, inGutter, pointerSecondaryJustPressed, playerInput)) {
 		return;
 	}
-	if (handleCodeAreaGutterPointer(runtime, snapshot, justPressed, inGutter, bounds)) {
+	if (handleCodeAreaGutterPointer(snapshot, justPressed, inGutter, bounds)) {
 		return;
 	}
 	if (handleCodeAreaPrimaryPressPointer(runtime, snapshot, justPressed, insideCodeArea, gotoModifierActive, bounds)) {

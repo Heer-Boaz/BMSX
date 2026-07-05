@@ -22,15 +22,15 @@ export function isInlineWidgetFocused(): boolean {
 
 export function handleInlineWidgetInput(runtime: Runtime): boolean {
 	if (createResourceState.active) {
-		handleCreateResourceInput(runtime);
+		handleCreateResourceInput();
 		return true;
 	}
 	if (renameController.isActive()) {
-		renameController.handleInput(runtime);
+		renameController.handleInput();
 		return true;
 	}
 	if (resourceSearchState.active) {
-		handleResourceSearchInput(runtime);
+		handleResourceSearchInput();
 		return true;
 	}
 	if (symbolSearchState.active) {

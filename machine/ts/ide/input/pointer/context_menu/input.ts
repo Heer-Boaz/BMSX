@@ -1,7 +1,6 @@
 import { machineManager } from '../../../../core/machine_manager';
 import { CONTEXT_MENU_POINTER_CONSUME_PRIMARY, CONTEXT_MENU_POINTER_CONSUME_SECONDARY, CONTEXT_MENU_POINTER_IGNORED, handleEditorContextMenuPointerSession, openEditorContextMenuAtPointer } from './session';
 import type { PointerSnapshot } from '../../../common/models';
-import type { Runtime } from '../../../../machine/runtime/runtime';
 
 export function handleEditorContextMenuPointer(
 	snapshot: PointerSnapshot,
@@ -24,8 +23,8 @@ export function handleEditorContextMenuPointer(
 	return true;
 }
 
-export function openEditorContextMenuFromPointer(runtime: Runtime, snapshot: PointerSnapshot, playerInput: ReturnType<typeof machineManager.input.getPlayerInput>): boolean {
-	if (!openEditorContextMenuAtPointer(runtime, snapshot)) {
+export function openEditorContextMenuFromPointer(snapshot: PointerSnapshot, playerInput: ReturnType<typeof machineManager.input.getPlayerInput>): boolean {
+	if (!openEditorContextMenuAtPointer(snapshot)) {
 		return false;
 	}
 	playerInput.consumeRawButton('pointer_secondary', 'pointer');

@@ -13,7 +13,7 @@ import {
 	type LuaStringLiteralExpression,
 } from '../syntax/ast';
 import { API_METHOD_METADATA, type ApiMethodMetadata } from '../../language/lua/api_metadata';
-import { DEFAULT_LUA_BUILTIN_FUNCTIONS } from '../../machine/firmware/builtin_descriptors';
+import { DEFAULT_LUA_BUILTIN_FUNCTIONS } from '../builtin_descriptors';
 import type { LuaBuiltinDescriptor, LuaSymbolEntry } from '../semantic_contracts';
 import {
 	buildLuaSemanticWorkspaceSnapshot,

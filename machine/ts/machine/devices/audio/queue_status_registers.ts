@@ -15,20 +15,20 @@ export class ApuQueueStatusRegisters {
 		private readonly outputRing: ApuOutputRing,
 	) {}
 
-	public read(addr: number): number {
+	public static readThunk(context: ApuQueueStatusRegisters, addr: number): number {
 		switch (addr) {
 			case IO_APU_OUTPUT_QUEUED_FRAMES:
-				return this.outputRing.queuedFrames();
+				return context.outputRing.queuedFrames();
 			case IO_APU_OUTPUT_FREE_FRAMES:
-				return this.outputRing.freeFrames();
+				return context.outputRing.freeFrames();
 			case IO_APU_OUTPUT_CAPACITY_FRAMES:
-				return this.outputRing.capacityFrames();
+				return context.outputRing.capacityFrames();
 			case IO_APU_CMD_QUEUED:
-				return this.commandFifo.count;
+				return context.commandFifo.count;
 			case IO_APU_CMD_FREE:
-				return this.commandFifo.free;
+				return context.commandFifo.free;
 			case IO_APU_CMD_CAPACITY:
-				return this.commandFifo.capacity;
+				return context.commandFifo.capacity;
 		}
 		throw new Error('[APU] Queue-status register read was mapped to an unknown address.');
 	}

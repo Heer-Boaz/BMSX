@@ -12,7 +12,6 @@ class ApuQueueStatusRegisters final {
 public:
 	ApuQueueStatusRegisters(const ApuCommandFifo& commandFifo, const ApuOutputRing& outputRing);
 
-	u32 read(u32 addr) const;
 	static Value readThunk(void* context, u32 addr);
 
 private:

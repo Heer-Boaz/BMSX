@@ -1,16 +1,19 @@
 #pragma once
 
 #include <cstddef>
-#include <functional>
 
 namespace bmsx {
 
+using LuaHeapUsageReader = size_t (*)(void* context);
+
 struct LuaHeapUsageHooks {
-	std::function<void()> collect;
-	std::function<size_t()> getBaseRamUsedBytes;
+	void* context;
+	LuaHeapUsageReader getBaseRamUsedBytes;
+	LuaHeapUsageReader collectTrackedHeapBytes;
 };
 
-void configureLuaHeapUsage(LuaHeapUsageHooks hooks);
+void configureLuaHeapUsage(void* context, LuaHeapUsageReader getBaseRamUsedBytes, LuaHeapUsageReader collectTrackedHeapBytes);
+void resetLuaHeapUsageHooks();
 void resetTrackedLuaHeapBytes();
 void addTrackedLuaHeapBytes(ptrdiff_t delta);
 size_t trackedLuaHeapBytes();

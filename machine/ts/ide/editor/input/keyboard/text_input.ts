@@ -1,5 +1,4 @@
 import { machineManager } from '../../../../core/machine_manager';
-import type { Runtime } from '../../../../machine/runtime/runtime';
 import { insertText } from '../../editing/text_editing_and_selection';
 import { handleEditorDebuggerInput } from '../../../input/keyboard/debug_input';
 import { handleEditorNavigationKeys } from './navigation_input';
@@ -8,8 +7,8 @@ import { handleEditorCharacterInput } from './character_input';
 import { consumeIdeKey, isAltDown, isCtrlDown, isKeyJustPressed, isMetaDown } from '../../../input/keyboard/key_input';
 
 export class InputController {
-	public handleEditorInput(runtime: Runtime): void {
-		if (handleEditorDebuggerInput(runtime)) {
+	public handleEditorInput(): void {
+		if (handleEditorDebuggerInput()) {
 			return;
 		}
 		handleEditorNavigationKeys();

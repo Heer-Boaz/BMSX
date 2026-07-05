@@ -61,14 +61,6 @@ export class FrameSchedulerState {
 	private tickCompletionReadIndex = 0;
 	private tickCompletionWriteIndex = 0;
 	private tickCompletionCount = 0;
-	private debugFrameReportAtMs = 0;
-	private debugFrameCount = 0;
-	private debugFrameCyclesUsedAcc = 0;
-	private debugFrameRemainingAcc = 0;
-	private debugFrameYieldsAcc = 0;
-	private debugFrameGrantedAcc = 0;
-	private debugFrameCarryAcc = 0;
-	private debugTickYieldsBefore = 0;
 
 	constructor(private readonly runtime: Runtime) {
 	}
@@ -89,7 +81,7 @@ export class FrameSchedulerState {
 
 	private canRunScheduledUpdate(): boolean {
 		const runtime = this.runtime;
-		if (!runtime.luaInitialized || !runtime.tickEnabled || runtime.luaRuntimeFailed) {
+		if (!runtime.luaInitialized || runtime.luaRuntimeFailed) {
 			return false;
 		}
 		return (runtime.frameLoop.frameActive && runtime.frameLoop.frameState.cycleBudgetRemaining > 0)
@@ -197,14 +189,6 @@ export class FrameSchedulerState {
 			slot.vdpFrameCost = 0;
 			slot.vdpFrameHeld = false;
 		}
-		this.debugFrameReportAtMs = 0;
-		this.debugFrameCount = 0;
-		this.debugFrameCyclesUsedAcc = 0;
-		this.debugFrameRemainingAcc = 0;
-		this.debugFrameYieldsAcc = 0;
-		this.debugFrameGrantedAcc = 0;
-		this.debugFrameCarryAcc = 0;
-		this.debugTickYieldsBefore = 0;
 	}
 
 	public run(hostDeltaMs: number): void {
@@ -212,10 +196,6 @@ export class FrameSchedulerState {
 		const runtime = this.runtime;
 		while (this.canRunScheduledUpdate()) {
 			const progressed = runtime.frameLoop.tickUpdate();
-			if (runtime.executionOverlayActive) {
-				this.clearQueuedTime();
-				break;
-			}
 			if (runtime.frameLoop.frameActive && !progressed) {
 				break;
 			}
@@ -270,35 +250,6 @@ export class FrameSchedulerState {
 		this.lastTickVdpFrameHeld = slot.vdpFrameHeld;
 		this.lastTickCompleted = true;
 		this.lastTickSequence = sequence;
-		const debugTickRate = Boolean((globalThis as any).__bmsx_debug_tickrate);
-		if (debugTickRate) {
-			const yieldsThisFrame = runtime.cpuExecution.debugCycleYieldsTotal - this.debugTickYieldsBefore;
-			this.debugFrameCount += 1;
-			this.debugFrameCyclesUsedAcc += cpuUsed;
-			this.debugFrameRemainingAcc += remaining;
-			this.debugFrameYieldsAcc += yieldsThisFrame;
-			this.debugFrameGrantedAcc += granted;
-			this.debugFrameCarryAcc += frameState.cycleCarryGranted;
-			const now = runtime.frameLoop.currentTimeMs;
-			const elapsedMs = now - this.debugFrameReportAtMs;
-			if (elapsedMs >= 1000) {
-				const scale = 1000 / elapsedMs;
-				const cyclesPerSec = this.debugFrameCyclesUsedAcc * scale;
-				const cyclesPerFrame = this.debugFrameCyclesUsedAcc / this.debugFrameCount;
-				const remainingPerFrame = this.debugFrameRemainingAcc / this.debugFrameCount;
-				const yieldsPerFrame = this.debugFrameYieldsAcc / this.debugFrameCount;
-				const grantedPerFrame = this.debugFrameGrantedAcc / this.debugFrameCount;
-				const carryPerFrame = this.debugFrameCarryAcc / this.debugFrameCount;
-				console.info(`cycles/sec=${cyclesPerSec.toFixed(1)} cycles/frame=${cyclesPerFrame.toFixed(1)} remaining/frame=${remainingPerFrame.toFixed(1)} yields/frame=${yieldsPerFrame.toFixed(2)} budget=${runtime.timing.cycleBudgetPerFrame} granted=${grantedPerFrame.toFixed(1)} carry=${carryPerFrame.toFixed(1)}`);
-				this.debugFrameReportAtMs = now;
-				this.debugFrameCount = 0;
-				this.debugFrameCyclesUsedAcc = 0;
-				this.debugFrameRemainingAcc = 0;
-				this.debugFrameYieldsAcc = 0;
-				this.debugFrameGrantedAcc = 0;
-				this.debugFrameCarryAcc = 0;
-			}
-		}
 	}
 
 	public refillFrameBudget(frameState: BudgetFrameState): boolean {
@@ -317,13 +268,6 @@ export class FrameSchedulerState {
 			return false;
 		}
 		const runtime = this.runtime;
-		const debugTickRate = Boolean((globalThis as any).__bmsx_debug_tickrate);
-		if (debugTickRate) {
-			if (this.debugFrameReportAtMs === 0) {
-				this.debugFrameReportAtMs = runtime.frameLoop.currentTimeMs;
-			}
-			this.debugTickYieldsBefore = runtime.cpuExecution.debugCycleYieldsTotal;
-		}
 		this.lastTickCompleted = false;
 		runtime.frameLoop.beginFrameState();
 		return true;

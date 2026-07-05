@@ -1,12 +1,12 @@
 import { convertToError } from '../../lua/value';
 import { clearOverlayFrame } from '../../render/host_overlay/overlay_queue';
-import { compileLuaChunkToProgram, encodeCompiledProgramImage } from '../../machine/program/compiler';
+import { compileLuaChunkToProgram, encodeCompiledProgramImage } from '../../lua/compiler';
 import { ROM_ASSET_SYMBOL_MODULE_PATH } from '../../rompack/asset_symbols';
 import { inflateExecutableProgramImage } from '../../machine/program/linker';
-import { callClosureIntoSuspended } from '../../machine/program/executor';
+import { callClosureIntoSuspended } from './closure_executor';
 import type { Closure } from '../../machine/cpu/cpu';
-import type { RuntimeResumeSnapshot } from '../../machine/runtime/resume_snapshot';
-import { restoreRuntimeLuaSnapshot } from '../../machine/runtime/resume_snapshot';
+import type { RuntimeResumeSnapshot } from './resume_snapshot';
+import { restoreRuntimeLuaSnapshot } from './resume_snapshot';
 import { applyRuntimeMachineState } from '../../machine/runtime/machine_state';
 import { machineManager } from '../../core/machine_manager';
 import { clearRuntimeDebuggerPause } from './debug_pause';
@@ -40,7 +40,7 @@ export async function resumeFromSnapshot(runtime: Runtime, state: RuntimeResumeS
 		throw new Error('cannot resume from invalid state snapshot.');
 	}
 	const snapshot: RuntimeResumeSnapshot = { ...state, luaRuntimeFailed: false };
-	runtime.interpreter.clearLastFaultEnvironment();
+	machineManager.ideState.nativeBridge.luaInterpreter.clearLastFaultEnvironment();
 	clearFaultSnapshot();
 
 	resetHandledLuaErrors();
@@ -54,15 +54,15 @@ export async function resumeFromSnapshot(runtime: Runtime, state: RuntimeResumeS
 export function resumeLuaProgramState(runtime: Runtime, snapshot: RuntimeResumeSnapshot, preserveSystemModules?: boolean): void {
 	const binding = snapshot.luaPath;
 	try {
-		const source = resourceSourceForChunk(runtime, binding);
-		runtime._luaPath = binding;
+		const source = resourceSourceForChunk(binding);
+		machineManager.sourceState.currentPath = binding;
 		hotResumeProgramEntry(runtime, {
 			path: binding,
 			source,
 			preserveSystemModules: preserveSystemModules ?? runtime.cartProgramStarted,
 		});
-		restoreRuntimeLuaSnapshot(runtime, snapshot);
-		refreshLuaModulesOnResume(runtime, binding);
+		restoreRuntimeLuaSnapshot(snapshot);
+		refreshLuaModulesOnResume(binding);
 		machineManager.ideState.editor.clearNativeMemberCompletionCache();
 		runHotResumeInit(runtime);
 	}
@@ -72,19 +72,18 @@ export function resumeLuaProgramState(runtime: Runtime, snapshot: RuntimeResumeS
 }
 
 export function hotResumeProgramEntry(runtime: Runtime, params: { path: string; source: string; preserveSystemModules?: boolean }): void {
-	const preserveRuntimeFailure = runtime.luaRuntimeFailed || (runtime.pauseCoordinator.hasSuspension() && runtime.pauseCoordinator.getPendingException() !== null);
+	const preserveRuntimeFailure = runtime.luaRuntimeFailed || (machineManager.ideState.debugger.pauseCoordinator.hasSuspension() && machineManager.ideState.debugger.pauseCoordinator.getPendingException() !== null);
 	const { path: binding, source } = params;
 	const baseMetadata = runtime.programMetadata;
 	if (!baseMetadata) {
 		throw new Error('hot reload requires program symbols.');
 	}
-	const interpreter = runtime.interpreter;
+	const interpreter = machineManager.ideState.nativeBridge.luaInterpreter;
 	interpreter.clearLastFaultEnvironment();
 	const chunk = interpreter.compileChunk(source, binding);
 	const { modules } = buildModuleChunks(
-		runtime,
 		toLuaModulePath(binding),
-		params.preserveSystemModules ? [runtime.activeLuaSources] : undefined,
+		params.preserveSystemModules ? [machineManager.sourceState.activeLuaSources] : undefined,
 	);
 	const baseProgram = runtime.machine.cpu.program;
 	if (!baseProgram) {
@@ -93,7 +92,7 @@ export function hotResumeProgramEntry(runtime: Runtime, params: { path: string; 
 	const compiled = compileLuaChunkToProgram(chunk, modules, {
 		baseProgram,
 		baseMetadata,
-		optLevel: runtime.realtimeCompileOptLevel,
+		optLevel: machineManager.sourceState.realtimeCompileOptLevel,
 		entrySource: source,
 		constModulePaths: [ROM_ASSET_SYMBOL_MODULE_PATH],
 	});
@@ -112,7 +111,7 @@ export function hotResumeProgramEntry(runtime: Runtime, params: { path: string; 
 	runtime.machine.vdp.resetIngressState();
 	runtime.machine.cpu.setProgram(program, programImage.link.symbols, compiled.metadata);
 	runtime.luaRuntimeFailed = preserveRuntimeFailure;
-	runtime._luaPath = binding;
+	machineManager.sourceState.currentPath = binding;
 	runtime.programRuntimeSymbols = programImage.link.symbols;
 	runtime.programMetadata = compiled.metadata;
 }
@@ -127,13 +126,13 @@ function runHotResumeInit(runtime: Runtime): void {
 	}
 }
 
-function refreshLuaModulesOnResume(runtime: Runtime, resumeModuleId: string): void {
-	const records = runtime.activeLuaSources.records;
+function refreshLuaModulesOnResume(resumeModuleId: string): void {
+	const records = machineManager.sourceState.activeLuaSources.records;
 	for (let index = 0; index < records.length; index += 1) {
 		const moduleId = records[index].source_path;
 		if (moduleId === resumeModuleId) {
 			continue;
 		}
-		refreshLuaHandlersForChunk(runtime, moduleId);
+		refreshLuaHandlersForChunk(moduleId);
 	}
 }

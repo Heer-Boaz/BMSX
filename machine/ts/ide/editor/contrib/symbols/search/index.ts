@@ -19,7 +19,7 @@ import {
 import { symbolSearchState } from './state';
 import type { Runtime } from '../../../../../machine/runtime/runtime';
 
-export function openSymbolSearch(runtime: Runtime, initialQuery: string = ''): void {
+export function openSymbolSearch(initialQuery: string = ''): void {
 	if (getActiveCodeTabContext().mode !== 'lua') {
 		return;
 	}
@@ -34,13 +34,13 @@ export function openSymbolSearch(runtime: Runtime, initialQuery: string = ''): v
 	symbolSearchState.visible = true;
 	symbolSearchState.active = true;
 	applySymbolSearchFieldText(initialQuery, true);
-	refreshSymbolCatalog(runtime, true);
-	updateSymbolSearchMatches(runtime);
+	refreshSymbolCatalog(true);
+	updateSymbolSearchMatches();
 	symbolSearchState.hoverIndex = -1;
 	resetBlink();
 }
 
-export function openGlobalSymbolSearch(runtime: Runtime, initialQuery: string = ''): void {
+export function openGlobalSymbolSearch(initialQuery: string = ''): void {
 	if (getActiveCodeTabContext().mode !== 'lua') {
 		return;
 	}
@@ -55,8 +55,8 @@ export function openGlobalSymbolSearch(runtime: Runtime, initialQuery: string = 
 	symbolSearchState.visible = true;
 	symbolSearchState.active = true;
 	applySymbolSearchFieldText(initialQuery, true);
-	refreshSymbolCatalog(runtime, true);
-	updateSymbolSearchMatches(runtime);
+	refreshSymbolCatalog(true);
+	updateSymbolSearchMatches();
 	symbolSearchState.hoverIndex = -1;
 	resetBlink();
 }

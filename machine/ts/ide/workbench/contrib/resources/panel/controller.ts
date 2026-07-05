@@ -247,7 +247,7 @@ export class ResourcePanelController {
 			this.activateSelectedCallHierarchy();
 			return;
 		}
-		openSelectedResourcePanelItem(this.runtime, this.items, this.selectionIndex);
+		openSelectedResourcePanelItem(this.items, this.selectionIndex);
 	}
 
 	openSelectedCallHierarchyLocation(): void {

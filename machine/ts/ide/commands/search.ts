@@ -30,21 +30,21 @@ export function isEditorSearchCommand(command: EditorCommandId): command is Edit
 export function executeEditorSearchCommand(runtime: Runtime, command: EditorSearchCommandId): void {
 	switch (command) {
 		case 'symbolSearch':
-			openSymbolSearch(runtime);
+			openSymbolSearch();
 			return;
 		case 'symbolSearchGlobal':
-			openGlobalSymbolSearch(runtime);
+			openGlobalSymbolSearch();
 			return;
 		case 'resourceSearch':
-			openResourceSearch(runtime);
+			openResourceSearch();
 			return;
 		case 'runtimeErrorFocus':
 			if (!focusRuntimeErrorOverlay()) {
-				openResourceSearch(runtime);
+				openResourceSearch();
 			}
 			return;
 		case 'createResource':
-			openCreateResourcePrompt(runtime);
+			openCreateResourcePrompt();
 			return;
 		case 'findGlobal':
 			machineManager.ideState.editor.search.openSearch(true, 'global');

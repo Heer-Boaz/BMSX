@@ -73,11 +73,11 @@ export class RenameController {
 		this.close();
 	}
 
-	public handleInput(runtime: Runtime): void {
+	public handleInput(): void {
 		if (!this.active) {
 			return;
 		}
-		handleRenameControllerInput(runtime, this);
+		handleRenameControllerInput(this);
 	}
 
 	public getField(): TextField {
@@ -112,7 +112,7 @@ export class RenameController {
 		return this.matches;
 	}
 
-	public commit(runtime: Runtime): void {
+	public commit(): void {
 		if (!this.active || !this.info) {
 			return;
 		}
@@ -131,7 +131,7 @@ export class RenameController {
 				this.close();
 				return;
 		}
-		const updatedMatches = commitRename(runtime, this.matches, nextName, this.activeIndex, this.info);
+		const updatedMatches = commitRename(this.matches, nextName, this.activeIndex, this.info);
 		showEditorMessage(`Renamed ${updatedMatches} reference${updatedMatches === 1 ? '' : 's'} to ${nextName}`, constants.COLOR_STATUS_SUCCESS, 1.6);
 		this.close();
 	}

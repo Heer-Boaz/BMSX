@@ -7,56 +7,62 @@ import { deactivateEditor, deactivateTerminalMode } from '../workbench/overlay_m
 import { handleLuaError } from '../workbench/runtime_errors';
 import { clearRuntimeFault } from './fault_state';
 import { bootActiveProgram, invalidateModuleLookups } from './lua_pipeline';
+import { enterSystemSources } from './sources';
 
-export async function applyInitialWorkspaceOverrides(runtime: Runtime): Promise<void> {
-	if (!runtime.cartLuaSources || !runtime.cartProjectRootPath) {
+export async function applyInitialWorkspaceOverrides(): Promise<void> {
+	const sources = machineManager.sourceState;
+	if (!sources.cartLuaSources || !sources.cartProjectRootPath) {
 		return;
 	}
-	await applyWorkspaceOverridesToCart(runtime, {
-		cart: runtime.cartLuaSources,
+	await applyWorkspaceOverridesToCart({
+		cart: sources.cartLuaSources,
 		storage: machineManager.platform.storage,
 		includeServer: true,
-		projectRootPath: runtime.cartProjectRootPath,
+		projectRootPath: sources.cartProjectRootPath,
 	});
 }
 
 export async function startPreparedRuntime(runtime: Runtime): Promise<void> {
-	await applyWorkspaceOverridesToRegistry(runtime, {
-		registry: runtime.systemLuaSources,
+	const sources = machineManager.sourceState;
+	await applyWorkspaceOverridesToRegistry({
+		registry: sources.systemLuaSources,
 		storage: machineManager.platform.storage,
 		includeServer: true,
-		projectRootPath: runtime.systemProjectRootPath,
+		projectRootPath: sources.systemProjectRootPath,
 	});
 	const vdpMode = getMachineVdpModeProfile(PSX_MODEL_PROFILE.biosVdpMode);
 	workbenchMode.initializeIdeFeatures(runtime, { width: vdpMode.renderWidth, height: vdpMode.renderHeight });
 	runtime.enterSystemFirmware();
+	enterSystemSources(sources);
 	await bootPreparedRuntimeProgram(runtime);
 }
 
 export async function prepareRebootToBootRom(runtime: Runtime): Promise<void> {
 	clearBootFaults(runtime);
-	deactivateTerminalMode(runtime);
-	deactivateEditor(runtime);
+	deactivateTerminalMode();
+	deactivateEditor();
 	clearLuaBootState(runtime);
-	if (runtime.cartLuaSources && runtime.cartProjectRootPath) {
-		await applyWorkspaceOverridesToCart(runtime, {
-			cart: runtime.cartLuaSources,
+	const sources = machineManager.sourceState;
+	if (sources.cartLuaSources && sources.cartProjectRootPath) {
+		await applyWorkspaceOverridesToCart({
+			cart: sources.cartLuaSources,
 			storage: machineManager.platform.storage,
 			includeServer: true,
-			projectRootPath: runtime.cartProjectRootPath,
+			projectRootPath: sources.cartProjectRootPath,
 		});
 	}
-	await applyWorkspaceOverridesToRegistry(runtime, {
-		registry: runtime.systemLuaSources,
+	await applyWorkspaceOverridesToRegistry({
+		registry: sources.systemLuaSources,
 		storage: machineManager.platform.storage,
 		includeServer: true,
-		projectRootPath: runtime.systemProjectRootPath,
+		projectRootPath: sources.systemProjectRootPath,
 	});
 	runtime.enterSystemFirmware();
+	enterSystemSources(sources);
 }
 
 async function bootPreparedRuntimeProgram(runtime: Runtime): Promise<void> {
-	const gateToken = runtime.luaGate.begin({ blocking: true, tag: 'boot' });
+	const gateToken = machineManager.ideState.luaGate.begin({ blocking: true, tag: 'boot' });
 	try {
 		runtime.hostFault.clear();
 		clearBootFaults(runtime);
@@ -68,7 +74,7 @@ async function bootPreparedRuntimeProgram(runtime: Runtime): Promise<void> {
 		throw new Error(`failed to boot runtime: ${error}`);
 	}
 	finally {
-		runtime.luaGate.end(gateToken);
+		machineManager.ideState.luaGate.end(gateToken);
 	}
 }
 
@@ -79,8 +85,8 @@ function clearBootFaults(runtime: Runtime): void {
 
 function clearLuaBootState(runtime: Runtime): void {
 	runtime.luaInitialized = false;
-	invalidateModuleLookups(runtime);
-	runtime.luaChunkEnvironmentsByPath.clear();
-	runtime.luaGenericChunksExecuted.clear();
+	invalidateModuleLookups();
+	machineManager.sourceState.luaChunkEnvironmentsByPath.clear();
+	machineManager.sourceState.luaGenericChunksExecuted.clear();
 	machineManager.ideState.editor.clearRuntimeErrorOverlay();
 }

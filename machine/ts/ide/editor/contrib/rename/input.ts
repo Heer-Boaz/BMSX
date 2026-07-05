@@ -2,9 +2,8 @@ import { consumeIdeKey } from '../../../input/keyboard/key_input';
 import { isCtrlDown, isKeyJustPressed, isMetaDown, isShiftDown, shouldRepeatKeyFromPlayer } from '../../../input/keyboard/key_input';
 import { redo, undo } from '../../editing/undo_controller';
 import type { RenameController } from './controller';
-import type { Runtime } from '../../../../machine/runtime/runtime';
 
-export function handleRenameControllerInput(runtime: Runtime, controller: RenameController): void {
+export function handleRenameControllerInput(controller: RenameController): void {
 	const ctrlDown = isCtrlDown();
 	const metaDown = isMetaDown();
 	const shiftDown = isShiftDown();
@@ -30,12 +29,12 @@ export function handleRenameControllerInput(runtime: Runtime, controller: Rename
 	}
 	if (isKeyJustPressed('Enter')) {
 		consumeIdeKey('Enter');
-		controller.commit(runtime);
+		controller.commit();
 		return;
 	}
 	if (isKeyJustPressed('NumpadEnter')) {
 		consumeIdeKey('NumpadEnter');
-		controller.commit(runtime);
+		controller.commit();
 		return;
 	}
 	controller.applyFieldEditing();

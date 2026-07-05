@@ -31,7 +31,7 @@ import {
 	type InputControllerInputSource,
 	type InputControllerSnapshot,
 } from '../../machine/ts/machine/devices/input/contracts';
-import { DEFAULT_LUA_BUILTIN_NAMES } from '../../machine/ts/machine/firmware/builtin_descriptors';
+import { DEFAULT_LUA_BUILTIN_NAMES } from '../../machine/ts/lua/builtin_descriptors';
 import { Memory } from '../../machine/ts/machine/memory/memory';
 
 const HID_KEY_X = 27;

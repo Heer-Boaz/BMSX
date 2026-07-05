@@ -11,9 +11,8 @@ import { closeSymbolSearch } from '../../../editor/contrib/symbols/shared';
 import { activateQuickInputField, finishQuickInputPointer, quickInputTextLeft } from '../pointer/common';
 import { editorViewState } from '../../../editor/ui/view/state';
 import { resourceSearchState } from '../../../workbench/contrib/resources/widget_state';
-import type { Runtime } from '../../../../machine/runtime/runtime';
 
-export function handleResourceSearchPointer(runtime: Runtime, snapshot: PointerSnapshot, justPressed: boolean): boolean {
+export function handleResourceSearchPointer(snapshot: PointerSnapshot, justPressed: boolean): boolean {
 	const bounds = getResourceSearchBarBounds();
 	if (!resourceSearchState.visible || !bounds) {
 		return false;
@@ -47,7 +46,7 @@ export function handleResourceSearchPointer(runtime: Runtime, snapshot: PointerS
 			resourceSearchState.selectionIndex = hoverIndex;
 			ensureResourceSearchSelectionVisible();
 		}
-		applyResourceSearchSelection(runtime, hoverIndex);
+		applyResourceSearchSelection(hoverIndex);
 		finishQuickInputPointer(snapshot);
 		return true;
 	}

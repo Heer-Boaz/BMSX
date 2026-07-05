@@ -18,14 +18,14 @@ export class ApuStatusRegister {
 		private readonly outputRing: ApuOutputRing,
 	) {}
 
-	public read(): number {
-		const busy = this.slots.activeMask !== 0 || !this.commandFifo.empty;
-		const commandFifoEmpty = this.commandFifo.empty;
-		const commandFifoFull = this.commandFifo.full;
-		const queuedFrames = this.outputRing.queuedFrames();
+	public static readThunk(context: ApuStatusRegister): number {
+		const busy = context.slots.activeMask !== 0 || !context.commandFifo.empty;
+		const commandFifoEmpty = context.commandFifo.empty;
+		const commandFifoFull = context.commandFifo.full;
+		const queuedFrames = context.outputRing.queuedFrames();
 		const outputEmpty = queuedFrames === 0;
-		const outputFull = queuedFrames >= this.outputRing.capacityFrames();
-		return (this.fault.status
+		const outputFull = queuedFrames >= context.outputRing.capacityFrames();
+		return (context.fault.status
 			| (busy ? APU_STATUS_BUSY : 0)
 			| (commandFifoEmpty ? APU_STATUS_CMD_FIFO_EMPTY : 0)
 			| (commandFifoFull ? APU_STATUS_CMD_FIFO_FULL : 0)

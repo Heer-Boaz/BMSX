@@ -6,7 +6,6 @@ export class FrameLoopState {
 	public currentTimeMs = 0;
 	public frameDeltaMs = 0;
 	public readonly frameState: FrameState = {
-		haltGame: false,
 		updateExecuted: false,
 		luaFaulted: false,
 		cycleBudgetRemaining: 0,
@@ -33,7 +32,6 @@ export class FrameLoopState {
 		const runtime = this.runtime;
 		this.abandonFrameState();
 		const state = this.frameState;
-		state.haltGame = false;
 		state.updateExecuted = false;
 		state.luaFaulted = false;
 		state.cycleBudgetRemaining = 0;
@@ -54,7 +52,6 @@ export class FrameLoopState {
 		this.frameDeltaMs = runtime.timing.frameDurationMs;
 		const budget = runtime.timing.cycleBudgetPerFrame;
 		const state = this.frameState;
-		state.haltGame = runtime.debuggerPaused;
 		state.updateExecuted = false;
 		state.luaFaulted = runtime.luaRuntimeFailed;
 		state.cycleBudgetRemaining = budget;
@@ -69,16 +66,6 @@ export class FrameLoopState {
 
 	public tickUpdate(): boolean {
 		const runtime = this.runtime;
-		if (!runtime.tickEnabled) {
-			return false;
-		}
-		if (runtime.executionOverlayActive) {
-			if (this.frameActive) {
-				this.abandonFrameState();
-				return true;
-			}
-			return false;
-		}
 		const previousFrameActive = this.frameActive;
 		const previousRemaining = previousFrameActive ? this.frameState.cycleBudgetRemaining : -1;
 		const frameScheduler = runtime.frameScheduler;
@@ -147,17 +134,8 @@ export class FrameLoopState {
 		const state = this.frameState;
 		const cpu = runtime.machine.cpu;
 		const cpuExecution = runtime.cpuExecution;
-		if (!runtime.cartEntryAvailable) {
-			return;
-		}
-		if (!runtime.luaGate.ready) {
-			return;
-		}
 		if (state.luaFaulted || runtime.luaRuntimeFailed) {
 			state.luaFaulted = true;
-			return;
-		}
-		if (state.haltGame) {
 			return;
 		}
 		try {

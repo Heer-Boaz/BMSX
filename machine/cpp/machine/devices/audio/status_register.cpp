@@ -14,25 +14,26 @@ ApuStatusRegister::ApuStatusRegister(const DeviceStatusLatch& fault, const ApuSl
 	, m_commandFifo(commandFifo)
 	, m_outputRing(outputRing) {}
 
-u32 ApuStatusRegister::read() const {
-	u32 status = m_fault.status;
-	if (m_slots.activeMask() != 0u || !m_commandFifo.empty()) {
+Value ApuStatusRegister::readThunk(void* context, [[maybe_unused]] u32 addr) {
+	auto& reg = *static_cast<ApuStatusRegister*>(context);
+	u32 status = reg.m_fault.status;
+	if (reg.m_slots.activeMask() != 0u || !reg.m_commandFifo.empty()) {
 		status |= APU_STATUS_BUSY;
 	}
-	if (m_commandFifo.empty()) {
+	if (reg.m_commandFifo.empty()) {
 		status |= APU_STATUS_CMD_FIFO_EMPTY;
 	}
-	if (m_commandFifo.full()) {
+	if (reg.m_commandFifo.full()) {
 		status |= APU_STATUS_CMD_FIFO_FULL;
 	}
-	const size_t queuedFrames = m_outputRing.queuedFrames();
+	const size_t queuedFrames = reg.m_outputRing.queuedFrames();
 	if (queuedFrames == 0u) {
 		status |= APU_STATUS_OUTPUT_EMPTY;
 	}
-	if (queuedFrames >= m_outputRing.capacityFrames()) {
+	if (queuedFrames >= reg.m_outputRing.capacityFrames()) {
 		status |= APU_STATUS_OUTPUT_FULL;
 	}
-	return status;
+	return valueNumber(static_cast<double>(status));
 }
 
 } // namespace bmsx

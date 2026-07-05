@@ -10,7 +10,7 @@ RuntimeSaveState captureRuntimeSaveState(Runtime& runtime) {
 	RuntimeSaveState state;
 	state.machineState = captureRuntimeSaveMachineState(runtime);
 	state.cpuState = captureRuntimeCpuState(runtime);
-	state.systemProgramActive = !runtime.m_cartProgramStarted;
+	state.systemProgramActive = !runtime.cartProgramStarted;
 	state.luaInitialized = runtime.m_luaInitialized;
 	state.luaRuntimeFailed = runtime.m_runtimeFailed;
 	state.pendingEntryCall = runtime.m_pendingCall == Runtime::PendingCall::Entry;

@@ -92,7 +92,61 @@ export class DmaController {
 		private readonly vdp: VDP,
 		private readonly scheduler: DeviceScheduler,
 	) {
-		this.memory.mapIoWrite(IO_DMA_CTRL, this.startIo.bind(this));
+		this.memory.mapIoWrite(IO_DMA_CTRL, this, DmaController.startIoThunk);
+	}
+
+	private static startIoThunk(context: DmaController): void {
+		const ctrlValue = context.memory.readIoU32(IO_DMA_CTRL);
+		if ((ctrlValue & DMA_CTRL_START) === 0) {
+			return;
+		}
+		const ctrl = ctrlValue >>> 0;
+		const src = context.memory.readIoU32(IO_DMA_SRC);
+		const dst = context.memory.readIoU32(IO_DMA_DST);
+		const len = context.memory.readIoU32(IO_DMA_LEN);
+		const vdpSubmit = dst === IO_VDP_FIFO;
+		const strict = (ctrl & DMA_CTRL_STRICT) !== 0;
+		context.memory.writeIoValue(IO_DMA_CTRL, ctrl & ~DMA_CTRL_START);
+		context.memory.writeValue(IO_DMA_WRITTEN, 0);
+		const maxWritable = context.resolveMaxWritable(dst);
+		if (maxWritable <= 0) {
+			context.finishIoError(false);
+			return;
+		}
+		let transferLen = len;
+		let clipped = false;
+		if (transferLen > maxWritable) {
+			clipped = true;
+			if (strict) {
+				context.finishIoError(true);
+				return;
+			}
+			transferLen = maxWritable;
+		}
+		const status = DMA_STATUS_BUSY | (clipped ? DMA_STATUS_CLIPPED : 0);
+		context.memory.writeValue(IO_DMA_STATUS, status);
+		if (transferLen === 0) {
+			if (vdpSubmit) {
+				context.vdp.acceptSubmitAttempt();
+			}
+			context.finishIoSuccess(clipped);
+			return;
+		}
+		const job: DmaIoJob = {
+			kind: 'io',
+			channel: DMA_CH_BULK,
+			started: false,
+			src,
+			dst,
+			remaining: transferLen,
+			written: 0,
+			clipped,
+			strict,
+		};
+		context.ioWrittenValue = 0;
+		context.ioWrittenDirty = true;
+		context.channels[DMA_CH_BULK].queue.push(job);
+		context.scheduleNextService(context.scheduler.currentNowCycles());
 	}
 
 	public setTiming(cpuHz: number, isoBytesPerSec: number, bulkBytesPerSec: number, nowCycles: number): void {
@@ -189,60 +243,6 @@ export class DmaController {
 			this.imgWrittenDirty = false;
 		}
 		this.scheduleNextService(nowCycles);
-	}
-
-	public startIo(): void {
-		const ctrlValue = this.memory.readIoU32(IO_DMA_CTRL);
-		if ((ctrlValue & DMA_CTRL_START) === 0) {
-			return;
-		}
-		const ctrl = ctrlValue >>> 0;
-		const src = this.memory.readIoU32(IO_DMA_SRC);
-		const dst = this.memory.readIoU32(IO_DMA_DST);
-		const len = this.memory.readIoU32(IO_DMA_LEN);
-		const vdpSubmit = dst === IO_VDP_FIFO;
-		const strict = (ctrl & DMA_CTRL_STRICT) !== 0;
-		this.memory.writeIoValue(IO_DMA_CTRL, ctrl & ~DMA_CTRL_START);
-		this.memory.writeValue(IO_DMA_WRITTEN, 0);
-		const maxWritable = this.resolveMaxWritable(dst);
-		if (maxWritable <= 0) {
-			this.finishIoError(false);
-			return;
-		}
-		let transferLen = len;
-		let clipped = false;
-		if (transferLen > maxWritable) {
-			clipped = true;
-			if (strict) {
-				this.finishIoError(true);
-				return;
-			}
-			transferLen = maxWritable;
-		}
-		const status = DMA_STATUS_BUSY | (clipped ? DMA_STATUS_CLIPPED : 0);
-		this.memory.writeValue(IO_DMA_STATUS, status);
-		if (transferLen === 0) {
-			if (vdpSubmit) {
-				this.vdp.acceptSubmitAttempt();
-			}
-			this.finishIoSuccess(clipped);
-			return;
-		}
-		const job: DmaIoJob = {
-			kind: 'io',
-			channel: DMA_CH_BULK,
-			started: false,
-			src,
-			dst,
-			remaining: transferLen,
-			written: 0,
-			clipped,
-			strict,
-		};
-		this.ioWrittenValue = 0;
-		this.ioWrittenDirty = true;
-		this.channels[DMA_CH_BULK].queue.push(job);
-		this.scheduleNextService(this.scheduler.currentNowCycles());
 	}
 
 	private tickChannel(channel: DmaChannelId): void {

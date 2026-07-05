@@ -1,4 +1,3 @@
-import { type StackTraceFrame } from '../../lua/value';
 import {
 	BuiltinFunctionId,
 	createBuiltinFunction,
@@ -8,7 +7,6 @@ import {
 	type Value,
 } from '../cpu/cpu';
 import { formatNumber } from '../common/number_format';
-import { buildLuaFrameRawLabel } from '../../lua/stack_frame_label';
 import { asStringId, valueIsString } from '../cpu/cpu';
 import type { StringPool } from '../cpu/string_pool';
 import type { Runtime } from '../runtime/runtime';
@@ -60,56 +58,6 @@ export function valueToString(value: Value, stringPool: StringPool): string {
 	return 'function';
 }
 // end repeated-sequence-acceptable
-
-function resolveLuaFunctionName(runtime: Runtime, protoIndex: number): string {
-	if (!runtime.programMetadata) {
-		return `proto:${protoIndex}`;
-	}
-	const protoId = runtime.programMetadata.protoIds[protoIndex];
-	const slashIndex = protoId.lastIndexOf('/');
-	const hint = slashIndex >= 0 ? protoId.slice(slashIndex + 1) : protoId;
-	const colonIndex = hint.indexOf(':');
-	if (colonIndex < 0) {
-		return hint;
-	}
-	const kind = hint.slice(0, colonIndex);
-	const name = hint.slice(colonIndex + 1);
-	switch (kind) {
-		case 'decl':
-		case 'assign':
-			return name;
-		case 'local': {
-			const hashIndex = name.indexOf('#');
-			return hashIndex >= 0 ? name.slice(0, hashIndex) : name;
-		}
-		case 'anon':
-			return 'anonymous';
-		default:
-			return hint;
-	}
-}
-
-export function buildLuaStackFrames(runtime: Runtime): StackTraceFrame[] {
-	const callStack = runtime.machine.cpu.getCallStack();
-	const frames: StackTraceFrame[] = [];
-	for (let index = callStack.length - 1; index >= 0; index -= 1) {
-		const entry = callStack[index];
-		const range = runtime.machine.cpu.getDebugRange(entry.pc);
-		const source = range ? range.path : runtime.currentPath;
-		const line = range ? range.start.line : 0;
-		const column = range ? range.start.column : 0;
-		const functionName = resolveLuaFunctionName(runtime, entry.protoIndex);
-		frames.push({
-			origin: 'lua',
-			functionName,
-			source,
-			line,
-			column,
-			raw: buildLuaFrameRawLabel(functionName, source),
-		});
-	}
-	return frames;
-}
 
 export function seedLuaGlobals(runtime: Runtime): void {
 	for (let index = 0; index < LUA_BOOT_PRIMITIVES.length; index += 1) {

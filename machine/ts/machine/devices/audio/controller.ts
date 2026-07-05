@@ -48,6 +48,15 @@ const APU_DEVICE_STATUS_REGISTERS: DeviceStatusRegisters = {
 	noneCode: APU_FAULT_NONE,
 };
 
+const APU_QUEUE_STATUS_REGISTER_ADDRS = [
+	IO_APU_OUTPUT_QUEUED_FRAMES,
+	IO_APU_OUTPUT_FREE_FRAMES,
+	IO_APU_OUTPUT_CAPACITY_FRAMES,
+	IO_APU_CMD_QUEUED,
+	IO_APU_CMD_FREE,
+	IO_APU_CMD_CAPACITY,
+] as const;
+
 export class AudioController {
 	private readonly sourceDma: ApuSourceDma;
 	private readonly eventLatch: ApuEventLatch;
@@ -89,23 +98,17 @@ export class AudioController {
 			this.fault,
 			this.serviceClock,
 		);
-		this.memory.mapIoRead(IO_APU_STATUS, this.statusRegister.read.bind(this.statusRegister));
-		this.memory.mapIoWrite(IO_APU_CMD, this.commandIngress.onCommandWrite.bind(this.commandIngress));
-		this.memory.mapIoWrite(IO_APU_SLOT, this.selectedSlotLatch.refresh.bind(this.selectedSlotLatch));
-		this.memory.mapIoWrite(IO_APU_FAULT_ACK, this.fault.acknowledge.bind(this.fault));
-		const queueStatusRegisterRead = this.queueStatusRegisters.read.bind(this.queueStatusRegisters);
-		this.memory.mapIoRead(IO_APU_OUTPUT_QUEUED_FRAMES, queueStatusRegisterRead);
-		this.memory.mapIoRead(IO_APU_OUTPUT_FREE_FRAMES, queueStatusRegisterRead);
-		this.memory.mapIoRead(IO_APU_OUTPUT_CAPACITY_FRAMES, queueStatusRegisterRead);
-		this.memory.mapIoRead(IO_APU_CMD_QUEUED, queueStatusRegisterRead);
-		this.memory.mapIoRead(IO_APU_CMD_FREE, queueStatusRegisterRead);
-		this.memory.mapIoRead(IO_APU_CMD_CAPACITY, queueStatusRegisterRead);
-		const selectedSlotRegisterRead = this.commandExecutor.onSelectedSlotRegisterRead.bind(this.commandExecutor);
-		const selectedSlotRegisterWrite = this.commandExecutor.onSelectedSlotRegisterWrite.bind(this.commandExecutor);
+		this.memory.mapIoRead(IO_APU_STATUS, this.statusRegister, ApuStatusRegister.readThunk);
+		this.memory.mapIoWrite(IO_APU_CMD, this.commandIngress, ApuCommandIngress.onCommandWriteThunk);
+		this.memory.mapIoWrite(IO_APU_SLOT, this.selectedSlotLatch, ApuSelectedSlotLatch.refreshThunk);
+		this.memory.mapIoWrite(IO_APU_FAULT_ACK, this.fault, DeviceStatusLatch.acknowledgeWriteThunk);
 		for (let index = 0; index < APU_PARAMETER_REGISTER_COUNT; index += 1) {
 			const registerAddr = IO_APU_SELECTED_SLOT_REG0 + index * IO_ARG_STRIDE;
-			this.memory.mapIoRead(registerAddr, selectedSlotRegisterRead);
-			this.memory.mapIoWrite(registerAddr, selectedSlotRegisterWrite);
+			this.memory.mapIoRead(registerAddr, this.commandExecutor, ApuCommandExecutor.selectedSlotRegisterReadThunk);
+			this.memory.mapIoWrite(registerAddr, this.commandExecutor, ApuCommandExecutor.selectedSlotRegisterWriteThunk);
+		}
+		for (const addr of APU_QUEUE_STATUS_REGISTER_ADDRS) {
+			this.memory.mapIoRead(addr, this.queueStatusRegisters, ApuQueueStatusRegisters.readThunk);
 		}
 	}
 

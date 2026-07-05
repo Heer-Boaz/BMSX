@@ -23,7 +23,7 @@ export function resolveReferenceLookup(options: ReferenceLookupOptions): Referen
 	if (!identifier) {
 		return { kind: 'error', message: 'No identifier at cursor', duration: 1.6 };
 	}
-	const frontend = buildEditorSemanticFrontend(options.runtime, options.path, options.buffer, options.textVersion);
+	const frontend = buildEditorSemanticFrontend(options.path, options.buffer, options.textVersion);
 	const resolution = frontend.findReferencesByPosition(options.path, options.cursorRow + 1, options.cursorColumn + 1);
 	if (!resolution) {
 		return { kind: 'error', message: `Definition not found for ${identifier.expression}`, duration: 1.8 };

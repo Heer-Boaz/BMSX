@@ -640,7 +640,7 @@ export class CompletionController {
 		if (this.cachedGlobalCompletionItems && this.cachedGlobalCompletionVersion === version) {
 			return this.cachedGlobalCompletionItems;
 		}
-		const entries = listGlobalLuaSymbols(this.runtime);
+		const entries = listGlobalLuaSymbols();
 		const items = this.buildSymbolCompletionItems(entries, 'global');
 		const apiItem: LuaCompletionItem = { label: 'api', insertText: 'api', sortKey: 'global:api', kind: 'global', detail: 'Runtime API root' };
 		items.push(apiItem);
@@ -798,7 +798,7 @@ export class CompletionController {
 		}
 		let symbols: LuaSymbolEntry[] = [];
 		try {
-			symbols = listLuaSymbols(this.runtime, moduleAlias.module);
+			symbols = listLuaSymbols(moduleAlias.module);
 		} catch {
 			symbols = [];
 		}
@@ -928,7 +928,7 @@ export class CompletionController {
 	private ensureBuiltinDescriptorCache(force = false): void {
 		if (!force && this.builtinDescriptors !== null) return;
 		let descriptors: LuaBuiltinDescriptor[];
-		try { descriptors = listLuaBuiltinFunctions(this.runtime); } catch { descriptors = []; }
+		try { descriptors = listLuaBuiltinFunctions(); } catch { descriptors = []; }
 		if (!Array.isArray(descriptors)) descriptors = [];
 		this.builtinDescriptors = descriptors;
 		this.builtinDescriptorMap.clear();

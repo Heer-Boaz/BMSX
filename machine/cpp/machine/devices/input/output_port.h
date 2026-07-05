@@ -13,7 +13,7 @@ class InputControllerOutputPort {
 public:
 	InputControllerOutputPort(InputControllerInputSource& input, const InputControllerRegisterFile& registers, Memory& memory);
 
-	void writeOutputControlRegister(u32 addr, Value value);
+	void writeOutputControlRegisterThunk(u32 addr, Value value);
 
 private:
 	InputControllerInputSource& m_input;

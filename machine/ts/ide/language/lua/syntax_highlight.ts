@@ -2,7 +2,7 @@ import type { SemanticSymbolKind } from '../../../lua/semantic/symbols';
 import type { SemanticAnnotations } from '../../../lua/semantic/tokens';
 import type { HighlightLine } from '../../common/models';
 import * as constants from '../../common/constants';
-import { DEFAULT_LUA_BUILTIN_NAMES } from '../../../machine/firmware/builtin_descriptors';
+import { DEFAULT_LUA_BUILTIN_NAMES } from '../../../lua/builtin_descriptors';
 import { LuaLexer } from '../../../lua/syntax/lexer';
 import { KEYWORDS } from '../../../lua/syntax/token';
 import { clamp } from '../../../common/clamp';

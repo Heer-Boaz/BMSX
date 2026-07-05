@@ -1,5 +1,4 @@
 import { machineManager } from '../../../core/machine_manager';
-import type { Runtime } from '../../../machine/runtime/runtime';
 import type { PointerSnapshot } from '../../common/models';
 import { handleInvalidEditorPointerSnapshot } from './invalid_snapshot';
 import { handleEditorPanelResizePointer } from './panel';
@@ -9,7 +8,6 @@ import { handleEditorTabDragPointer } from './tab_drag';
 import { handleTopBarPointer } from '../../workbench/input/pointer/top_bar/pointer';
 
 export function handleEditorChromePointerDispatch(
-	runtime: Runtime,
 	snapshot: PointerSnapshot,
 	justPressed: boolean,
 	pointerAuxJustPressed: boolean,
@@ -30,10 +28,10 @@ export function handleEditorChromePointerDispatch(
 	if (handleInvalidEditorPointerSnapshot(snapshot)) {
 		return true;
 	}
-	if (pointerAuxJustPressed && handleTabBarMiddleClick(runtime, snapshot, playerInput)) {
+	if (pointerAuxJustPressed && handleTabBarMiddleClick(snapshot, playerInput)) {
 		return true;
 	}
-	if (justPressed && handleTabBarPointer(runtime, snapshot)) {
+	if (justPressed && handleTabBarPointer(snapshot)) {
 		return true;
 	}
 	return false;

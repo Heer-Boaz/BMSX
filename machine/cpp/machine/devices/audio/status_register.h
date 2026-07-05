@@ -1,6 +1,7 @@
 #pragma once
 
 #include "common/types.h"
+#include "machine/cpu/cpu.h"
 
 namespace bmsx {
 
@@ -13,7 +14,7 @@ class ApuStatusRegister final {
 public:
 	ApuStatusRegister(const DeviceStatusLatch& fault, const ApuSlotBank& slots, const ApuCommandFifo& commandFifo, const ApuOutputRing& outputRing);
 
-	u32 read() const;
+	static Value readThunk(void* context, u32 addr);
 
 private:
 	const DeviceStatusLatch& m_fault;

@@ -7,7 +7,7 @@ import { LuaParser } from '../../machine/ts/lua/syntax/parser';
 import { CPU, RunResult, type Value } from '../../machine/ts/machine/cpu/cpu';
 import { RAM_BASE } from '../../machine/ts/machine/memory/map';
 import { Memory } from '../../machine/ts/machine/memory/memory';
-import { compileLuaChunkToProgram } from '../../machine/ts/machine/program/compiler';
+import { compileLuaChunkToProgram } from '../../machine/ts/lua/compiler';
 
 const BIN_ADDR = RAM_BASE + 0x21000;
 

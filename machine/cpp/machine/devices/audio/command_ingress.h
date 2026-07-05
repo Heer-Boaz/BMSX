@@ -19,8 +19,7 @@ public:
 		ApuServiceClock& serviceClock,
 		DeviceScheduler& scheduler);
 
-	void onCommandWrite();
-	static void writeThunk(void* context, u32 addr, Value value);
+	static void onCommandWriteThunk(void* context, u32 addr, Value value);
 
 private:
 	Memory& m_memory;

@@ -10,7 +10,7 @@ import { writeInstruction, INSTRUCTION_BYTES } from '../../machine/ts/machine/cp
 import { MemoryAccessKind } from '../../machine/ts/machine/memory/access_kind';
 import { RAM_BASE } from '../../machine/ts/machine/memory/map';
 import { Memory } from '../../machine/ts/machine/memory/memory';
-import { compileLuaChunkToProgram } from '../../machine/ts/machine/program/compiler';
+import { compileLuaChunkToProgram } from '../../machine/ts/lua/compiler';
 import { runCompiledLua } from './cpu_test_harness';
 
 const TEST_RAM_BASE = RAM_BASE + 0x20000;

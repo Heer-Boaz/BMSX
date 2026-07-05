@@ -5,10 +5,10 @@ namespace bmsx {
 
 IrqController::IrqController(Memory& memory)
 	: m_memory(memory) {
-	m_memory.mapIoRead<&IrqController::onFlagsRead>(IO_IRQ_FLAGS, *this);
-	m_memory.mapIoWrite<&IrqController::onAckWrite>(IO_IRQ_ACK, *this);
-	m_memory.mapIoRead<&IrqController::onMaskRead>(IO_IRQ_MASK, *this);
-	m_memory.mapIoWrite<&IrqController::onMaskWrite>(IO_IRQ_MASK, *this);
+	m_memory.mapIoRead(IO_IRQ_FLAGS, this, &IrqController::onFlagsReadThunk);
+	m_memory.mapIoWrite(IO_IRQ_ACK, this, &IrqController::onAckWriteThunk);
+	m_memory.mapIoRead(IO_IRQ_MASK, this, &IrqController::onMaskReadThunk);
+	m_memory.mapIoWrite(IO_IRQ_MASK, this, &IrqController::onMaskWriteThunk);
 }
 
 void IrqController::reset() {
@@ -41,27 +41,28 @@ void IrqController::acknowledge(uint32_t mask) {
 	m_memory.writeIoValue(IO_IRQ_ACK, valueNumber(0.0));
 }
 
-Value IrqController::onFlagsRead([[maybe_unused]] uint32_t addr) const {
-	return valueNumber(static_cast<double>(m_pendingFlags));
+Value IrqController::onFlagsReadThunk(void* context, [[maybe_unused]] uint32_t addr) {
+	return valueNumber(static_cast<double>(static_cast<IrqController*>(context)->m_pendingFlags));
 }
 
-void IrqController::onAckWrite([[maybe_unused]] uint32_t addr, Value value) {
+void IrqController::onAckWriteThunk(void* context, [[maybe_unused]] uint32_t addr, Value value) {
+	auto& irq = *static_cast<IrqController*>(context);
 	const uint32_t mask = toU32(value);
 	if (mask != 0u) {
-		const uint32_t next = m_pendingFlags & ~mask;
-		if (next != m_pendingFlags) {
-			m_pendingFlags = next;
+		const uint32_t next = irq.m_pendingFlags & ~mask;
+		if (next != irq.m_pendingFlags) {
+			irq.m_pendingFlags = next;
 		}
 	}
-	m_memory.writeIoValue(IO_IRQ_ACK, valueNumber(0.0));
+	irq.m_memory.writeIoValue(IO_IRQ_ACK, valueNumber(0.0));
 }
 
-Value IrqController::onMaskRead([[maybe_unused]] uint32_t addr) const {
-	return valueNumber(static_cast<double>(m_mask));
+Value IrqController::onMaskReadThunk(void* context, [[maybe_unused]] uint32_t addr) {
+	return valueNumber(static_cast<double>(static_cast<IrqController*>(context)->m_mask));
 }
 
-void IrqController::onMaskWrite([[maybe_unused]] uint32_t addr, Value value) {
-	m_mask = toU32(value);
+void IrqController::onMaskWriteThunk(void* context, [[maybe_unused]] uint32_t addr, Value value) {
+	static_cast<IrqController*>(context)->m_mask = toU32(value);
 }
 
 } // namespace bmsx

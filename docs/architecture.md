@@ -139,6 +139,9 @@ Forbidden cart-visible shapes:
 
 Host code may load files, build ROMs, display frames, play samples, edit source,
 and inject input events. It must not be the owner of cart-observable semantics.
+Debugger pause, source activity, IDE overlays, hot-eval source text, and editor
+diagnostics are host/IDE state; the machine scheduler and runtime frame loop do
+not carry those flags as emulated state.
 
 A BMSX host owns the embedding/process edge and physical host services. It may be
 a browser bootstrap, a Node executable, a libretro core entrypoint, or a local
@@ -257,6 +260,9 @@ Owners:
   `machine/cpp/rompack/source.h/.cpp`.
 - Program image layout/loading/linking:
   `machine/ts/machine/program/*` and `machine/cpp/machine/program/*`.
+- Build-time Lua source compilation and Lua source registries:
+  `machine/ts/lua/compiler.ts`, `machine/ts/lua/compiler/*`, and
+  `machine/ts/lua/source_registry.ts`.
 
 The ROM package and program image use the current wire records only. There is no
 old-format reader and no decode path for obsolete records.
@@ -272,6 +278,12 @@ the Lua engine must not cache asset payload copies behind the cart's back.
 Compiled Lua/YAML is source/program material, not mutable machine state.
 `__program__` is a linked object image. `__program_symbols__` is debug metadata
 and never counts as RAM.
+
+The emulator core consumes program images; it does not own source compilation.
+TypeScript source builds, hot-eval compilation, and source registries live in the
+Lua/tooling side and feed compiled program images into the same runtime boundary
+that native uses. `machine/ts/machine/program/*` stays the executable image,
+linker, loader, scratch, and closure-call machine boundary mirrored by C++.
 
 Runtime link symbols belong to `__program__`, not `__program_symbols__`.
 The program-image `link.symbols` record carries proto ids, global slot names,

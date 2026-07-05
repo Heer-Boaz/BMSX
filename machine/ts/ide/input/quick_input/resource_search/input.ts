@@ -9,9 +9,8 @@ import { ensureResourceSearchSelectionVisible, moveResourceSearchSelection, upda
 import { openGlobalSymbolSearch, openSymbolSearch } from '../../../editor/contrib/symbols/search';
 import { lineJumpState } from '../../../editor/contrib/find/widget_state';
 import { resourceSearchState } from '../../../workbench/contrib/resources/widget_state';
-import type { Runtime } from '../../../../machine/runtime/runtime';
 
-export function handleResourceSearchInput(runtime: Runtime): void {
+export function handleResourceSearchInput(): void {
 	const shiftDown = isShiftDown();
 	if (isKeyJustPressed('Enter') || isKeyJustPressed('NumpadEnter')) {
 		consumeIdeKey('Enter');
@@ -21,7 +20,7 @@ export function handleResourceSearchInput(runtime: Runtime): void {
 			return;
 		}
 		if (resourceSearchState.selectionIndex >= 0) {
-			applyResourceSearchSelection(runtime, resourceSearchState.selectionIndex);
+			applyResourceSearchSelection(resourceSearchState.selectionIndex);
 			return;
 		}
 		const trimmed = resourceSearchState.query.trim();
@@ -82,13 +81,13 @@ export function handleResourceSearchInput(runtime: Runtime): void {
 	if (prefix === '@') {
 		const query = resourceSearchState.query.slice(1).trimStart();
 		closeResourceSearch(true);
-		openSymbolSearch(runtime, query);
+		openSymbolSearch(query);
 		return;
 	}
 	if (prefix === '#') {
 		const query = resourceSearchState.query.slice(1).trimStart();
 		closeResourceSearch(true);
-		openGlobalSymbolSearch(runtime, query);
+		openGlobalSymbolSearch(query);
 		return;
 	}
 	if (prefix === ':') {

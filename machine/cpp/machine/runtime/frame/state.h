@@ -3,7 +3,6 @@
 namespace bmsx {
 
 struct FrameState {
-	bool haltGame = false;
 	bool updateExecuted = false;
 	bool luaFaulted = false;
 	int cycleBudgetRemaining = 0;

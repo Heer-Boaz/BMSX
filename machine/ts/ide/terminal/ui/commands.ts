@@ -4,7 +4,7 @@ import { getTrackedLuaHeapBytes } from '../../../machine/memory/lua_heap_usage';
 import { buildWorkspaceDirtyEntryPath, buildWorkspaceStorageKey, readWorkspaceTextStorageEntry } from '../../workspace/workspace';
 import { collectUnsavedWorkspaceSourcePaths } from '../../workspace/open_dirty';
 import { collectRuntimeStackFrames, formatRuntimeErrorLocation, formatRuntimeStackFrame } from '../../common/runtime_error_format';
-import type { LuaSourceRecord } from '../../../machine/program/sources';
+import type { LuaSourceRecord } from '../../../lua/source_registry';
 import { formatByteSize, lenAndHash } from '../../../common/byte_hex_string';
 
 type PathEntryKind = 'rom' | 'saved' | 'dirty' | 'saved_dirty' | 'unsaved';
@@ -222,20 +222,20 @@ export class TerminalCommandDispatcher {
 
 	public getSystemStatusLines(): string[] {
 		const overlay = machineManager.ideState.overlayRenderer.viewportSize;
-		const pathLabel = this.runtime.currentPath ?? '<none>';
+		const pathLabel = machineManager.sourceState.currentPath;
 		const runtimeState = this.runtime.isInitialized ? 'initialized' : 'not initialized';
-		const suspension = this.runtime.debuggerSuspendSignal;
+		const suspension = machineManager.ideState.debugger.suspendSignal;
 		const suspensionLocation = suspension
 			? formatRuntimeErrorLocation(suspension.location.path, suspension.location.line, suspension.location.column)
 			: null;
 		const debuggerLabel = suspension ? `${suspension.reason} @ ${suspensionLocation ?? suspension.location.path}` : 'idle';
 		const faultLabel = this.runtime.hasRuntimeFailed ? 'FAULTED' : 'OK';
-		const root = this.runtime.cartProjectRootPath;
+		const root = machineManager.sourceState.cartProjectRootPath;
 		const lines: string[] = [];
-		lines.push(`Cart: ${this.runtime.cartProjectRootPath} (${this.runtime.activeLuaSources.namespace})`);
+		lines.push(`Cart: ${machineManager.sourceState.cartProjectRootPath} (${machineManager.sourceState.activeLuaSources.namespace})`);
 		lines.push(`Lua runtime: ${runtimeState} | Entry: ${pathLabel}`);
 		lines.push(`Status: ${faultLabel} | Debugger: ${debuggerLabel}`);
-		lines.push(`Real-time compile opt: -O${this.runtime.realtimeCompileOptLevel}`);
+		lines.push(`Real-time compile opt: -O${machineManager.sourceState.realtimeCompileOptLevel}`);
 		lines.push(`Overlay: ${machineManager.ideState.overlayResolutionMode} ${overlay.width}x${overlay.height}`);
 		if (root) {
 			lines.push(`Workspace root: ${root}`);
@@ -249,13 +249,13 @@ export class TerminalCommandDispatcher {
 		} else {
 			lines.push('Last fault: none recorded');
 		}
-		lines.push(`JS stack traces: ${this.runtime.jsStackEnabled ? 'ON' : 'OFF'}`);
+		lines.push(`JS stack traces: ${machineManager.ideState.includeJsStackTraces ? 'ON' : 'OFF'}`);
 		return lines;
 	}
 
 	public getFaultStatusLines(): { lines: string[]; active: boolean } {
 		const lines: string[] = [];
-		const suspension = this.runtime.debuggerSuspendSignal;
+		const suspension = machineManager.ideState.debugger.suspendSignal;
 		const faultInfo = machineManager.faultState.faultSnapshot;
 		const faultFlag = this.runtime.hasRuntimeFailed || (suspension !== null && suspension.reason === 'exception');
 		lines.push(`Faulted: ${faultFlag ? 'YES' : 'NO'}`);
@@ -275,7 +275,7 @@ export class TerminalCommandDispatcher {
 				lines.push(`Location: ${location}`);
 			}
 			lines.push(`Message: ${faultInfo.message}`);
-			const frames = collectRuntimeStackFrames(faultInfo.details, this.runtime.jsStackEnabled);
+			const frames = collectRuntimeStackFrames(faultInfo.details, machineManager.ideState.includeJsStackTraces);
 			if (frames.length > 0) {
 				const maxStackLines = 6;
 				lines.push('Stack trace:');
@@ -373,7 +373,7 @@ export class TerminalCommandDispatcher {
 	}
 
 	private handleLsDebug(pathArg: string): void {
-		const root = this.runtime.cartProjectRootPath;
+		const root = machineManager.sourceState.cartProjectRootPath;
 		const storage = machineManager.platform.storage;
 		if (!root) {
 			machineManager.ideState.terminal.appendStderr('Workspace unavailable');
@@ -412,19 +412,19 @@ export class TerminalCommandDispatcher {
 
 	private handleJsStack(tokens: string[]): void {
 		if (tokens.length === 1) {
-			const enabled = this.runtime.jsStackEnabled;
+			const enabled = machineManager.ideState.includeJsStackTraces;
 			machineManager.ideState.terminal.appendStdout(`JS stack traces ${enabled ? 'ON' : 'OFF'}`);
 			return;
 		}
 		if (tokens.length === 2) {
 			const mode = tokens[1].toUpperCase();
 			if (mode === 'ON') {
-				this.runtime.jsStackEnabled = true;
+				machineManager.ideState.includeJsStackTraces = true;
 				machineManager.ideState.terminal.appendStdout('JS stack traces ON');
 				return;
 			}
 			if (mode === 'OFF') {
-				this.runtime.jsStackEnabled = false;
+				machineManager.ideState.includeJsStackTraces = false;
 				machineManager.ideState.terminal.appendStdout('JS stack traces OFF');
 				return;
 			}
@@ -434,13 +434,13 @@ export class TerminalCommandDispatcher {
 
 	private handleOptLevel(tokens: string[]): void {
 		if (tokens.length === 1) {
-			machineManager.ideState.terminal.appendStdout(`Real-time Lua compile optimization: -O${this.runtime.realtimeCompileOptLevel}`);
+			machineManager.ideState.terminal.appendStdout(`Real-time Lua compile optimization: -O${machineManager.sourceState.realtimeCompileOptLevel}`);
 			return;
 		}
 		if (tokens.length === 2) {
 			const parsed = Number.parseInt(tokens[1], 10);
 			if (parsed >= 0 && parsed <= 3) {
-				this.runtime.realtimeCompileOptLevel = parsed as 0 | 1 | 2 | 3;
+				machineManager.sourceState.realtimeCompileOptLevel = parsed as 0 | 1 | 2 | 3;
 				machineManager.ideState.terminal.appendStdout(`Real-time Lua compile optimization set to -O${parsed}`);
 				machineManager.ideState.terminal.appendStdout('Applies on next compile/reload/reboot.');
 				return;
@@ -488,7 +488,7 @@ export class TerminalCommandDispatcher {
 
 	private collectWorkspaceEntryFlags(luaAssets: Array<LuaSourceRecord>): Map<string, { hasSaved: boolean; hasDirty: boolean; hasUnsaved: boolean }> {
 		const flags = new Map<string, { hasSaved: boolean; hasDirty: boolean; hasUnsaved: boolean }>();
-		const root = this.runtime.cartProjectRootPath;
+		const root = machineManager.sourceState.cartProjectRootPath;
 		const storage = machineManager.platform.storage;
 		if (!root) {
 			return flags;
@@ -532,12 +532,12 @@ export class TerminalCommandDispatcher {
 	}
 
 	private getLuaAssetByPath(path: string): LuaSourceRecord | null {
-		const byNormalized = this.runtime.activeLuaSources.path2lua[path];
+		const byNormalized = machineManager.sourceState.activeLuaSources.path2lua[path];
 		if (byNormalized) {
 			return byNormalized;
 		}
 		const trimmed = path.startsWith('/') ? path.slice(1) : path;
-		const bySource = this.runtime.activeLuaSources.path2lua[trimmed];
+		const bySource = machineManager.sourceState.activeLuaSources.path2lua[trimmed];
 		if (bySource) {
 			return bySource;
 		}
@@ -563,7 +563,7 @@ export class TerminalCommandDispatcher {
 		const includeRom = mode === '-ROM' || mode === '-ALL' || !mode;
 		const includeSaved = mode === '-SAVED' || mode === '-ALL' || !mode;
 		const includeDirty = mode === '-DIRTY' || mode === '-ALL' || !mode;
-		const luaAssets = this.runtime.activeLuaSources.records;
+		const luaAssets = machineManager.sourceState.activeLuaSources.records;
 		if (includeRom) {
 			for (const asset of luaAssets) {
 				pushPath(asset.source_path, 'rom');

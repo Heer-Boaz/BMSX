@@ -4,33 +4,33 @@ import { applyInlineFieldEditing } from '../../../editor/ui/inline/text_field';
 import { consumeIdeKey, isAltDown, isCtrlDown, isKeyJustPressed, isMetaDown, isShiftDown, shouldRepeatKeyFromPlayer } from '../../keyboard/key_input';
 import { redo, undo } from '../../../editor/editing/undo_controller';
 import { save } from '../../../workbench/ui/code_tab/io';
-import type { Runtime } from '../../../../machine/runtime/runtime';
 import { openGlobalSearchMatch } from '../../../workbench/contrib/find/global_search_navigation';
 import { editorSearchState } from '../../../editor/contrib/find/widget_state';
+import type { Runtime } from '../../../../machine/runtime/runtime';
 
 type SearchSelectionOptions = {
 	preview?: boolean;
 	keepSearchActive?: boolean;
 };
 
-function openSelectedGlobalMatch(runtime: Runtime, options?: SearchSelectionOptions): void {
+function openSelectedGlobalMatch(options?: SearchSelectionOptions): void {
 	if (editorSearchState.scope !== 'global' || options?.preview) {
 		return;
 	}
 	const match = editorSearchState.globalMatches[editorSearchState.currentIndex];
 	if (match) {
-		openGlobalSearchMatch(runtime, match);
+		openGlobalSearchMatch(match);
 	}
 }
 
-function applySearchSelectionFromInput(runtime: Runtime, index: number, options?: SearchSelectionOptions): void {
+function applySearchSelectionFromInput(index: number, options?: SearchSelectionOptions): void {
 	applySearchSelection(index, options);
-	openSelectedGlobalMatch(runtime, options);
+	openSelectedGlobalMatch(options);
 }
 
-function stepSearchSelectionFromInput(runtime: Runtime, delta: number, options?: SearchSelectionOptions & { wrap?: boolean }): void {
+function stepSearchSelectionFromInput(delta: number, options?: SearchSelectionOptions & { wrap?: boolean }): void {
 	stepSearchSelection(delta, options);
-	openSelectedGlobalMatch(runtime, options);
+	openSelectedGlobalMatch(options);
 }
 
 export function handleSearchInput(runtime: Runtime): void {
@@ -72,7 +72,7 @@ export function handleSearchInput(runtime: Runtime): void {
 	if (isKeyJustPressed('Enter')) {
 		consumeIdeKey('Enter');
 		if (hasResults) {
-			stepSearchSelectionFromInput(runtime, shiftDown ? -1 : 1, { wrap: true, keepSearchActive: true });
+			stepSearchSelectionFromInput(shiftDown ? -1 : 1, { wrap: true, keepSearchActive: true });
 		} else if (shiftDown) {
 			jumpToPreviousMatch();
 		} else {
@@ -92,32 +92,32 @@ export function handleSearchInput(runtime: Runtime): void {
 	if (hasResults) {
 		if (shouldRepeatKeyFromPlayer('ArrowUp')) {
 			consumeIdeKey('ArrowUp');
-			stepSearchSelectionFromInput(runtime, -1, { preview: previewLocal });
+			stepSearchSelectionFromInput(-1, { preview: previewLocal });
 			return;
 		}
 		if (shouldRepeatKeyFromPlayer('ArrowDown')) {
 			consumeIdeKey('ArrowDown');
-			stepSearchSelectionFromInput(runtime, 1, { preview: previewLocal });
+			stepSearchSelectionFromInput(1, { preview: previewLocal });
 			return;
 		}
 		if (shouldRepeatKeyFromPlayer('PageUp')) {
 			consumeIdeKey('PageUp');
-			stepSearchSelectionFromInput(runtime, -searchPageSize(), { preview: previewLocal });
+			stepSearchSelectionFromInput(-searchPageSize(), { preview: previewLocal });
 			return;
 		}
 		if (shouldRepeatKeyFromPlayer('PageDown')) {
 			consumeIdeKey('PageDown');
-			stepSearchSelectionFromInput(runtime, searchPageSize(), { preview: previewLocal });
+			stepSearchSelectionFromInput(searchPageSize(), { preview: previewLocal });
 			return;
 		}
 		if (isKeyJustPressed('Home')) {
 			consumeIdeKey('Home');
-			applySearchSelectionFromInput(runtime, 0, { preview: true, keepSearchActive: true });
+			applySearchSelectionFromInput(0, { preview: true, keepSearchActive: true });
 			return;
 		}
 		if (isKeyJustPressed('End')) {
 			consumeIdeKey('End');
-			applySearchSelectionFromInput(runtime, activeSearchMatchCount() - 1, { preview: true, keepSearchActive: true });
+			applySearchSelectionFromInput(activeSearchMatchCount() - 1, { preview: true, keepSearchActive: true });
 			return;
 		}
 	}

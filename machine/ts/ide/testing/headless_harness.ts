@@ -1,10 +1,11 @@
 import { machineManager } from '../../core/machine_manager';
 import { getTrackedLuaHeapBytes } from '../../machine/memory/lua_heap_usage';
-import { captureRuntimeResumeSnapshot } from '../../machine/runtime/resume_snapshot';
+import { captureRuntimeResumeSnapshot } from '../runtime/resume_snapshot';
 import { resumeFromSnapshot } from '../runtime/hot_resume';
 import { performHotResume } from '../commands/actions';
 import { activateTerminalMode, deactivateTerminalMode } from '../workbench/overlay_modes';
 import type { Runtime } from '../../machine/runtime/runtime';
+import { installNativeGlobal, runHostEvalChunkToNative } from '../runtime/host_eval';
 
 /**
  * Host-side test surface for the IDE/runtime, exposed through the `bmsx` global so
@@ -28,6 +29,8 @@ export type HeadlessIdeHarness = {
 	hotResumeCore(preserveSystemModules?: boolean): Promise<void>;
 	/** Full IDE hot-resume action (fire-and-forget; settle by advancing frames). */
 	performHotResume(): void;
+	evaluateLua(source: string): unknown[];
+	installNativeGlobal(name: string, value: unknown): void;
 	activateTerminal(): void;
 	deactivateTerminal(): void;
 	isTerminalActive(): boolean;
@@ -69,8 +72,10 @@ export const headlessIdeHarness: HeadlessIdeHarness = {
 	performHotResume: () => {
 		performHotResume(requireRuntime());
 	},
-	activateTerminal: () => activateTerminalMode(requireRuntime()),
-	deactivateTerminal: () => deactivateTerminalMode(requireRuntime()),
+	evaluateLua: (source) => runHostEvalChunkToNative(requireRuntime(), source),
+	installNativeGlobal: (name, value) => installNativeGlobal(requireRuntime(), name, value),
+	activateTerminal: () => activateTerminalMode(),
+	deactivateTerminal: () => deactivateTerminalMode(),
 	isTerminalActive: () => machineManager.ideState.terminal.isActive,
 	debugStats: () => {
 		const runtime = requireRuntime();

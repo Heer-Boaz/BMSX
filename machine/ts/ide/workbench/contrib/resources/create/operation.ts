@@ -5,11 +5,10 @@ import { resetBlink } from '../../../../editor/render/caret';
 import { openLuaCodeTab } from '../../../ui/code_tab/io';
 import { createLuaResource } from '../../../../workspace/workspace';
 import { extractErrorMessage } from '../../../../../lua/value';
-import type { Runtime } from '../../../../../machine/runtime/runtime';
 import { applyCreateResourceFieldText, closeCreateResourcePrompt, ensureDirectorySuffix } from './index';
 import { createResourceState } from '../widget_state';
 
-export async function confirmCreateResourcePrompt(runtime: Runtime): Promise<void> {
+export async function confirmCreateResourcePrompt(): Promise<void> {
 	if (createResourceState.working) {
 		return;
 	}
@@ -32,13 +31,13 @@ export async function confirmCreateResourcePrompt(runtime: Runtime): Promise<voi
 	resetBlink();
 	const contents = constants.DEFAULT_NEW_LUA_RESOURCE_CONTENT;
 	try {
-		const descriptor = await createLuaResource(runtime, { path: resourcePath, contents });
+		const descriptor = await createLuaResource({ path: resourcePath, contents });
 		createResourceState.lastDirectory = directory;
 		machineManager.ideState.editor.resourcePanel.queuePendingSelection(descriptor.asset_id);
 		if (machineManager.ideState.editor.resourcePanel.isVisible()) {
 			machineManager.ideState.editor.resourcePanel.refresh();
 		}
-		openLuaCodeTab(runtime, descriptor);
+		openLuaCodeTab(descriptor);
 		showEditorMessage(`Created ${descriptor.path} (asset ${descriptor.asset_id})`, constants.COLOR_STATUS_SUCCESS, 2.5);
 		closeCreateResourcePrompt(false);
 	} catch (error) {

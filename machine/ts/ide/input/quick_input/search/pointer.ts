@@ -9,20 +9,19 @@ import { activateQuickInputField, finishQuickInputPointer, quickInputTextLeft } 
 import { editorViewState } from '../../../editor/ui/view/state';
 import { editorSearchState } from '../../../editor/contrib/find/widget_state';
 import { openGlobalSearchMatch } from '../../../workbench/contrib/find/global_search_navigation';
-import type { Runtime } from '../../../../machine/runtime/runtime';
 
-function applySearchPointerSelection(runtime: Runtime, index: number, preview?: boolean): void {
+function applySearchPointerSelection(index: number, preview?: boolean): void {
 	applySearchSelection(index, { preview });
 	if (editorSearchState.scope !== 'global' || preview) {
 		return;
 	}
 	const match = editorSearchState.globalMatches[editorSearchState.currentIndex];
 	if (match) {
-		openGlobalSearchMatch(runtime, match);
+		openGlobalSearchMatch(match);
 	}
 }
 
-export function handleSearchPointer(runtime: Runtime, snapshot: PointerSnapshot, justPressed: boolean): boolean {
+export function handleSearchPointer(snapshot: PointerSnapshot, justPressed: boolean): boolean {
 	const bounds = getSearchBarBounds();
 	if (!editorSearchState.visible || !bounds) {
 		editorSearchState.hoverIndex = -1;
@@ -57,10 +56,10 @@ export function handleSearchPointer(runtime: Runtime, snapshot: PointerSnapshot,
 			editorSearchState.currentIndex = hoverIndex;
 			ensureSearchSelectionVisible();
 			if (editorSearchState.scope === 'local') {
-				applySearchPointerSelection(runtime, hoverIndex, true);
+				applySearchPointerSelection(hoverIndex, true);
 			}
 		}
-		applySearchPointerSelection(runtime, hoverIndex);
+		applySearchPointerSelection(hoverIndex);
 		finishQuickInputPointer(snapshot);
 		return true;
 	}

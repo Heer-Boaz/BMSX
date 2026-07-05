@@ -10,26 +10,23 @@ ApuQueueStatusRegisters::ApuQueueStatusRegisters(const ApuCommandFifo& commandFi
 	: m_commandFifo(commandFifo)
 	, m_outputRing(outputRing) {}
 
-u32 ApuQueueStatusRegisters::read(u32 addr) const {
+Value ApuQueueStatusRegisters::readThunk(void* context, u32 addr) {
+	auto& regs = *static_cast<ApuQueueStatusRegisters*>(context);
 	switch (addr) {
 		case IO_APU_OUTPUT_QUEUED_FRAMES:
-			return static_cast<u32>(m_outputRing.queuedFrames());
+			return valueNumber(static_cast<double>(static_cast<u32>(regs.m_outputRing.queuedFrames())));
 		case IO_APU_OUTPUT_FREE_FRAMES:
-			return static_cast<u32>(m_outputRing.freeFrames());
+			return valueNumber(static_cast<double>(static_cast<u32>(regs.m_outputRing.freeFrames())));
 		case IO_APU_OUTPUT_CAPACITY_FRAMES:
-			return static_cast<u32>(m_outputRing.capacityFrames());
+			return valueNumber(static_cast<double>(static_cast<u32>(regs.m_outputRing.capacityFrames())));
 		case IO_APU_CMD_QUEUED:
-			return m_commandFifo.count();
+			return valueNumber(static_cast<double>(regs.m_commandFifo.count()));
 		case IO_APU_CMD_FREE:
-			return m_commandFifo.free();
+			return valueNumber(static_cast<double>(regs.m_commandFifo.free()));
 		case IO_APU_CMD_CAPACITY:
-			return m_commandFifo.capacity();
+			return valueNumber(static_cast<double>(regs.m_commandFifo.capacity()));
 	}
 	throw BMSX_RUNTIME_ERROR("[APU] Queue-status register read was mapped to an unknown address.");
-}
-
-Value ApuQueueStatusRegisters::readThunk(void* context, u32 addr) {
-	return valueNumber(static_cast<double>(static_cast<ApuQueueStatusRegisters*>(context)->read(addr)));
 }
 
 } // namespace bmsx
