@@ -7,7 +7,7 @@ import { type MachineBootOptions } from '../../../machine/ts/core/machine_manage
 import { HeadlessPlatformServices } from '../../../hosts/node/headless/platform_headless';
 import { CLIPlatformServices } from '../../../hosts/node/cli/platform_cli';
 import type { Platform, InputEvt } from 'bmsx/platform';
-import { HeadlessGameViewHost } from '../../../machine/ts/render/headless/view';
+import { HeadlessGameViewHost, type HeadlessPresentedFrame } from '../../../machine/ts/render/headless/view';
 import { HeadlessCaptureCoordinator, deriveHeadlessCaptureOutputDir, type ScheduledHeadlessCapture, type ScheduledHeadlessFrameCapture } from './headless_capture';
 import { printHeadlessCpuProfile } from './cpu_profile_report';
 import { runHostTest } from './hostrunner/host_test_runner';
@@ -67,18 +67,25 @@ interface TimelineScheduler {
 
 interface TimelineCaptureSink {
 	schedule(capture: ScheduledHeadlessCapture): void;
-	scheduleFrame(capture: ScheduledHeadlessFrameCapture): void;
+	scheduleFrame(capture: ScheduledHeadlessFrameCapture, frameClock: TimelineFrameClock | null): void;
 }
 
 interface TimelineFrameClock {
+	frameForTimeMs(timeMs: number): number;
 	delayMsForFrame(frame: number): number;
-	absoluteFrameForFrame(frame: number): number;
 	scheduleBeforeFrame(frame: number, cb: () => void): void;
+	scheduleFrameCapture(capture: ScheduledHeadlessFrameCapture, coordinator: HeadlessCaptureCoordinator): void;
 }
 
 interface PendingTimelineFrameCallback {
 	frame: number;
 	cb: () => void;
+}
+
+interface PendingTimelineFrameCapture {
+	frame: number;
+	outputFrame: number;
+	coordinator: HeadlessCaptureCoordinator;
 }
 
 type TimelineExecutionPoint = {
@@ -115,43 +122,83 @@ function createTimelineScheduler(platform: Platform): TimelineScheduler {
 	};
 }
 
-function createHeadlessTimelineFrameClock(host: HeadlessGameViewHost, frameIntervalMs: number): TimelineFrameClock {
-	const frame = host.getPresentedFrameSnapshot();
-	const baseFrameIndex = frame ? frame.frameIndex + 1 : 0;
-	const pendingCallbacks: PendingTimelineFrameCallback[] = [];
-	const runDueCallbacks = (presentedFrameIndex: number): void => {
+class HeadlessCartTimelineFrameClock implements TimelineFrameClock {
+	private presentedCartFrames = 0;
+	private timelineFrameCounter = 0;
+	private readonly pendingCallbacks: PendingTimelineFrameCallback[] = [];
+	private readonly pendingCaptures: PendingTimelineFrameCapture[] = [];
+
+	public constructor(
+		host: HeadlessGameViewHost,
+		private readonly frameIntervalMs: number,
+		private readonly isCartProgramActive: () => boolean,
+	) {
+		host.addPresentedFrameListener((presentedFrame) => {
+			this.handlePresentedFrame(presentedFrame);
+		});
+	}
+
+	public frameForTimeMs(timeMs: number): number {
+		return Math.round(timeMs / this.frameIntervalMs);
+	}
+
+	public delayMsForFrame(frame: number): number {
+		return Math.max(0, frame * this.frameIntervalMs);
+	}
+
+	public scheduleBeforeFrame(frame: number, cb: () => void): void {
+		if (frame < this.timelineFrameCounter) {
+			cb();
+			return;
+		}
+		this.pendingCallbacks.push({ frame, cb });
+	}
+
+	public scheduleFrameCapture(capture: ScheduledHeadlessFrameCapture, coordinator: HeadlessCaptureCoordinator): void {
+		this.pendingCaptures.push({
+			frame: capture.frame,
+			outputFrame: capture.outputFrame,
+			coordinator,
+		});
+	}
+
+	private handlePresentedFrame(presentedFrame: HeadlessPresentedFrame): void {
+		if (!this.isCartProgramActive()) {
+			return;
+		}
+		this.runDueCaptures(presentedFrame, this.presentedCartFrames);
+		this.presentedCartFrames += 1;
+		this.runDueCallbacks(this.timelineFrameCounter);
+		this.timelineFrameCounter += 1;
+	}
+
+	private runDueCallbacks(timelineFrame: number): void {
 		let writeIndex = 0;
-		for (let readIndex = 0; readIndex < pendingCallbacks.length; readIndex += 1) {
-			const pending = pendingCallbacks[readIndex]!;
-			if (presentedFrameIndex + 1 >= pending.frame) {
+		for (let readIndex = 0; readIndex < this.pendingCallbacks.length; readIndex += 1) {
+			const pending = this.pendingCallbacks[readIndex]!;
+			if (timelineFrame >= pending.frame) {
 				pending.cb();
 				continue;
 			}
-			pendingCallbacks[writeIndex] = pending;
+			this.pendingCallbacks[writeIndex] = pending;
 			writeIndex += 1;
 		}
-		pendingCallbacks.length = writeIndex;
-	};
-	host.addPresentedFrameListener((presentedFrame) => {
-		runDueCallbacks(presentedFrame.frameIndex);
-	});
-	return {
-		delayMsForFrame: (targetFrame: number): number => Math.max(0, targetFrame * frameIntervalMs),
-		absoluteFrameForFrame: (targetFrame: number): number => baseFrameIndex + targetFrame,
-		scheduleBeforeFrame: (targetFrame: number, cb: () => void): void => {
-			if (targetFrame <= 0) {
-				cb();
-				return;
+		this.pendingCallbacks.length = writeIndex;
+	}
+
+	private runDueCaptures(presentedFrame: HeadlessPresentedFrame, presentedCartFrames: number): void {
+		let writeIndex = 0;
+		for (let readIndex = 0; readIndex < this.pendingCaptures.length; readIndex += 1) {
+			const pending = this.pendingCaptures[readIndex]!;
+			if (presentedCartFrames > pending.frame) {
+				pending.coordinator.capturePresentedFrame(presentedFrame, pending.outputFrame);
+				continue;
 			}
-			const absoluteFrame = baseFrameIndex + targetFrame;
-			const currentFrame = host.getPresentedFrameSnapshot();
-			if (currentFrame && currentFrame.frameIndex + 1 >= absoluteFrame) {
-				cb();
-				return;
-			}
-			pendingCallbacks.push({ frame: absoluteFrame, cb });
-		},
-	};
+			this.pendingCaptures[writeIndex] = pending;
+			writeIndex += 1;
+		}
+		this.pendingCaptures.length = writeIndex;
+	}
 }
 
 if (typeof (globalThis as any).Image === 'undefined') {
@@ -615,7 +662,7 @@ async function scheduleInputTimelineFromFile(
 	scheduler: TimelineScheduler,
 	isCartProgramActive: () => boolean,
 	createFrameClock: (() => TimelineFrameClock | null) | null,
-	onScheduled?: () => void,
+	onScheduled?: (frameClock: TimelineFrameClock | null, lastFrame: number) => void,
 ): Promise<void> {
 	const resolved = path.resolve(filePath);
 	const content = await fs.readFile(resolved, 'utf8');
@@ -630,14 +677,21 @@ async function scheduleInputTimelineFromFile(
 	}
 	const source = `timeline:${path.basename(resolved)}`;
 	const entries = parsed as InputTimelineEntry[];
+	const frameClock = createFrameClock ? createFrameClock() : null;
+	if (frameClock) {
+		logger(`[${source}] arming cart-frame timeline`);
+		const lastFrame = scheduleTimelineEntries(entries, frameIntervalMs, postInput, scheduleCapture, logger, source, scheduler, frameClock);
+		onScheduled?.(frameClock, lastFrame);
+		return;
+	}
 	const pollCartActive = (): void => {
 		if (!isCartProgramActive()) {
 			scheduler.scheduleOnce(frameIntervalMs, pollCartActive);
 			return;
 		}
 		logger(`[${source}] cart active, scheduling timeline`);
-		scheduleTimelineEntries(entries, frameIntervalMs, postInput, scheduleCapture, logger, source, scheduler, createFrameClock ? createFrameClock() : null);
-		onScheduled?.();
+		const lastFrame = scheduleTimelineEntries(entries, frameIntervalMs, postInput, scheduleCapture, logger, source, scheduler, null);
+		onScheduled?.(null, lastFrame);
 	};
 	scheduler.scheduleOnce(0, pollCartActive);
 }
@@ -660,8 +714,9 @@ function scheduleTimelineEntries(
 	source: string,
 	scheduler: TimelineScheduler,
 	frameClock: TimelineFrameClock | null,
-): void {
+): number {
 	let lastAbsoluteMs = 0;
+	let lastFrame = -1;
 	entries.forEach((entry, idx) => {
 		if (!entry || typeof entry !== 'object') {
 			throw new Error(`Timeline entry ${idx} is not an object.`);
@@ -675,22 +730,27 @@ function scheduleTimelineEntries(
 		lastAbsoluteMs = basePoint.timeMs;
 		const executionPoints = expandExecutionPoints(entry, basePoint, frameIntervalMs, idx);
 		const description = entry.description ? `${entry.description}` : `entry#${idx}`;
-		if (hasCapture) {
-			executionPoints.forEach((point) => {
-				const delay = resolveTimelineScheduleDelay(point, frameClock);
-				trackScheduledDeadline(scheduler.nowMs(), delay);
-				if (point.frame !== undefined && frameClock) {
-					logger(`[${source}] capture ${description} at frame ${point.frame}`);
-					scheduleCapture?.scheduleFrame({
-						frame: frameClock.absoluteFrameForFrame(point.frame),
-						outputFrame: point.frame,
-						description,
-						source,
-					});
-				} else {
-					logger(`[${source}] capture ${description} at ${delay}ms`);
-					scheduleCapture?.schedule({
-						dueTimeMs: point.timeMs,
+			if (hasCapture) {
+				executionPoints.forEach((point) => {
+					if (frameClock) {
+						const frame = resolveTimelinePointFrame(point, frameClock);
+						if (frame > lastFrame) {
+							lastFrame = frame;
+						}
+						trackScheduledDeadline(scheduler.nowMs(), frameClock.delayMsForFrame(frame));
+						logger(`[${source}] capture ${description} at frame ${frame}`);
+						scheduleCapture?.scheduleFrame({
+							frame,
+							outputFrame: frame,
+							description,
+							source,
+						}, frameClock);
+					} else {
+						const delay = resolveTimelineScheduleDelay(point);
+						trackScheduledDeadline(scheduler.nowMs(), delay);
+						logger(`[${source}] capture ${description} at ${delay}ms`);
+						scheduleCapture?.schedule({
+							dueTimeMs: point.timeMs,
 						description,
 						source,
 					});
@@ -699,32 +759,38 @@ function scheduleTimelineEntries(
 		}
 		if (!hasEvent) {
 			return;
-		}
-		executionPoints.forEach((point) => {
-			const delay = resolveTimelineScheduleDelay(point, frameClock);
-			trackScheduledDeadline(scheduler.nowMs(), delay);
-			if (point.frame !== undefined && frameClock) {
-				logger(`[${source}] schedule ${description} at frame ${point.frame}`);
-				frameClock.scheduleBeforeFrame(point.frame, () => {
+			}
+			executionPoints.forEach((point) => {
+				if (frameClock) {
+					const frame = resolveTimelinePointFrame(point, frameClock);
+					if (frame > lastFrame) {
+						lastFrame = frame;
+					}
+					trackScheduledDeadline(scheduler.nowMs(), frameClock.delayMsForFrame(frame));
+					logger(`[${source}] schedule ${description} at frame ${frame}`);
+					frameClock.scheduleBeforeFrame(frame, () => {
+						const cloned = typeof structuredClone === 'function' ? structuredClone(entry.event) : JSON.parse(JSON.stringify(entry.event));
+						postInput(cloned);
+					});
+					return;
+				}
+				const delay = resolveTimelineScheduleDelay(point);
+				trackScheduledDeadline(scheduler.nowMs(), delay);
+				logger(`[${source}] schedule ${description} at ${delay}ms`);
+				scheduler.scheduleOnce(delay, () => {
 					const cloned = typeof structuredClone === 'function' ? structuredClone(entry.event) : JSON.parse(JSON.stringify(entry.event));
 					postInput(cloned);
-				});
-				return;
-			} else {
-				logger(`[${source}] schedule ${description} at ${delay}ms`);
-			}
-			scheduler.scheduleOnce(delay, () => {
-				const cloned = typeof structuredClone === 'function' ? structuredClone(entry.event) : JSON.parse(JSON.stringify(entry.event));
-				postInput(cloned);
 			});
 		});
 	});
+	return lastFrame;
 }
 
-function resolveTimelineScheduleDelay(point: TimelineExecutionPoint, frameClock: TimelineFrameClock | null): number {
-	if (point.frame !== undefined && frameClock) {
-		return Math.round(frameClock.delayMsForFrame(point.frame));
-	}
+function resolveTimelinePointFrame(point: TimelineExecutionPoint, frameClock: TimelineFrameClock): number {
+	return point.frame !== undefined ? point.frame : frameClock.frameForTimeMs(point.timeMs);
+}
+
+function resolveTimelineScheduleDelay(point: TimelineExecutionPoint): number {
 	return Math.max(0, Math.round(point.timeMs));
 }
 
@@ -864,9 +930,13 @@ function createHeadlessCaptureScheduler(
 			}
 			coordinator.schedule(capture);
 		},
-		scheduleFrame: (capture: ScheduledHeadlessFrameCapture): void => {
+		scheduleFrame: (capture: ScheduledHeadlessFrameCapture, frameClock: TimelineFrameClock | null): void => {
 			const coordinator = ensureHeadlessCaptureCoordinator(host, sourcePath, logger, getCoordinator, setCoordinator, scheduler);
 			if (!coordinator) {
+				return;
+			}
+			if (frameClock) {
+				frameClock.scheduleFrameCapture(capture, coordinator);
 				return;
 			}
 			coordinator.scheduleFrame(capture);
@@ -951,15 +1021,26 @@ async function main(): Promise<void> {
 	}
 	const inputLogger = (message: string) => console.log(`[bootrom:${__BOOTROM_TARGET__}:input] ${message}`);
 	const romFolder = cliOptions.romFolder;
+	const autoTimelinePath = await resolveAutoTimelinePath(romFolder);
+	const selectedTimelinePath = cliOptions.inputTimelinePath || autoTimelinePath;
+	const inputTimelineSelected = !cliOptions.ideTestPath && !cliOptions.testPath && !!selectedTimelinePath;
+	const deferStartForTimeline = __BOOTROM_TARGET__ === 'headless' && inputTimelineSelected;
 	let cartRoot: string | null = null;
 	let hostTestRunState: HostTestRunState | null = null;
 	let captureScheduler: TimelineCaptureSink | null = null;
 	let timelineAutoExitArmed = false;
-	const armTimelineAutoExit = (): void => {
+	const armTimelineAutoExit = (frameClock: TimelineFrameClock | null, lastFrame: number): void => {
 		if (timelineAutoExitArmed || hostTestRunState) {
 			return;
 		}
 		timelineAutoExitArmed = true;
+		if (frameClock && lastFrame >= 0) {
+			frameClock.scheduleBeforeFrame(lastFrame + 1, () => {
+				console.log(`[bootrom:${__BOOTROM_TARGET__}] Input timeline completed. Terminating.`);
+				requestExit(0);
+			});
+			return;
+		}
 		const timelineExitDelayMs = getPendingScheduledDelayMs(scheduler.nowMs(), frameInterval);
 		if (timelineExitDelayMs > 0) {
 			scheduler.scheduleOnce(timelineExitDelayMs, () => {
@@ -979,9 +1060,6 @@ async function main(): Promise<void> {
 			},
 			scheduler,
 		);
-	};
-	const createTimelineFrameClock = (): TimelineFrameClock | null => {
-		return headlessHost ? createHeadlessTimelineFrameClock(headlessHost, frameInterval) : null;
 	};
 	const ensureImmediateCapture = (sourcePath: string): ((description: string) => void) | null => {
 		if (!headlessHost) {
@@ -1016,6 +1094,9 @@ async function main(): Promise<void> {
 		platform,
 		viewHost: platform.gameviewHost,
 	};
+	if (deferStartForTimeline) {
+		bootArgs.autoStart = false;
+	}
 	if (debugFlag) {
 		bootArgs.debug = true;
 	}
@@ -1036,7 +1117,9 @@ async function main(): Promise<void> {
 		console.log(`[bootrom:${__BOOTROM_TARGET__}] Fantasy CPU profiler enabled.`);
 	}
 	const isCartProgramActive = (): boolean => runtime.cartProgramStarted && runtime.isInitialized;
-	const autoTimelinePath = await resolveAutoTimelinePath(romFolder);
+	const createTimelineFrameClock = (): TimelineFrameClock | null => {
+		return headlessHost ? new HeadlessCartTimelineFrameClock(headlessHost, frameInterval, isCartProgramActive) : null;
+	};
 	let scheduledTimeline = false;
 	if (cliOptions.ideTestPath) {
 		const ide = machineRuntime.ide;
@@ -1081,6 +1164,9 @@ async function main(): Promise<void> {
 		captureScheduler = ensureCaptureScheduler(autoTimelinePath);
 		await scheduleInputTimelineFromFile(autoTimelinePath, frameInterval, postInput, captureScheduler, inputLogger, scheduler, isCartProgramActive, createTimelineFrameClock, armTimelineAutoExit);
 		scheduledTimeline = true;
+	}
+	if (deferStartForTimeline) {
+		machineRuntime.machineManager.start();
 	}
 	const hasTimelineRun = scheduledTimeline;
 	const defaultTtl = hostTestRunState || hasTimelineRun || cliOptions.ideTestPath ? 60_000 : 1_000;

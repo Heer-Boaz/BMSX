@@ -31,6 +31,7 @@ export interface MachineBootOptions {
 	sndcontext?: AudioContext;
 	gainnode?: GainNode;
 	debug?: boolean;
+	autoStart?: boolean;
 	startingGamepadIndex?: number;
 	enableOnscreenGamepad?: boolean;
 	platform: Platform;
@@ -128,7 +129,7 @@ export class MachineManager {
 	}
 
 	public async boot(options: MachineBootOptions): Promise<Runtime> {
-		const { systemRom, cartridge, debug = false, startingGamepadIndex = null, enableOnscreenGamepad = false, platform, viewHost } = options;
+		const { systemRom, cartridge, debug = false, autoStart = true, startingGamepadIndex = null, enableOnscreenGamepad = false, platform, viewHost } = options;
 		if (!platform) {
 			throw new Error('[MachineManager] Platform services not provided.');
 		}
@@ -194,7 +195,9 @@ export class MachineManager {
 		}
 		this.initialized = true;
 		this.bootstrapStartupAudio();
-		this.start();
+		if (autoStart) {
+			this.start();
+		}
 		return runtime;
 	}
 
