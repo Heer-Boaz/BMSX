@@ -23,6 +23,7 @@ import { VDP_XF_MATRIX_REGISTER_WORDS } from '../machine/devices/vdp/xf';
 import { createVdpTransformSnapshot } from './vdp/transform';
 import type { VdpFrameBufferTextures } from './vdp/framebuffer';
 import type { VdpRpuFrameOutput } from '../machine/devices/vdp/rpu';
+import type { GxGpuCommandBufferView } from '../machine/devices/gx/gpu_command_buffer';
 import { renderGate } from '../common/taskgate';
 
 const PRESENTATION_PASS_IDS = ['vdp_rpu', 'framebuffer_2d', 'device_quantize', 'crt', 'host_overlay', 'host_menu'];
@@ -93,6 +94,7 @@ export class GameView implements RenderContext {
 	public readonly vdpMorphWeightWords = new Uint32Array(VDP_MFU_WEIGHT_COUNT);
 	public readonly vdpJointMatrixWords = new Uint32Array(VDP_JTU_REGISTER_WORDS);
 	public vdpRpuFrame!: VdpRpuFrameOutput;
+	public gxGpuCommandBuffer!: GxGpuCommandBufferView;
 	public presentWorkbenchFrameBufferTexture = false;
 	public pipelineRegistry?: RenderPassLibrary;
 	private presentationEnabled = true;

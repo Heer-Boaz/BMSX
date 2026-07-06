@@ -1,6 +1,7 @@
 #pragma once
 
 #include "common/primitives.h"
+#include "machine/devices/gx/device_output.h"
 #include "machine/devices/gx/gpu_command_buffer.h"
 
 #include <array>
@@ -119,7 +120,7 @@ public:
 	u32 readDisplayModeWord() const;
 	void writeDisplayModeWord(u32 word);
 	u32 readGpuReadWord() const;
-	const GxGpuCommandBuffer& readCommandBuffer() const;
+	const GxGpuDeviceOutput& readDeviceOutput() const;
 	u32 readDrawModeWord() const;
 	u32 readTextureWindowWord() const;
 	u32 readDrawingAreaTopLeftWord() const;
@@ -138,6 +139,7 @@ private:
 	u32 m_displayModeWord = 0;
 	u32 m_statusWord = GX_GPU_STATUS_RESET_WORD;
 	GxGpuCommandBuffer m_commandBuffer{};
+	GxGpuDeviceOutput m_deviceOutput{&m_commandBuffer};
 	std::array<u32, GX_GPU_GP0_COMMAND_BUFFER_WORDS> m_gp0CommandWords{};
 	u32 m_gp0CommandWordCount = 0u;
 	u32 m_gp0CommandTargetWordCount = 0u;

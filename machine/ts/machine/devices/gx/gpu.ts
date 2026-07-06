@@ -2,6 +2,7 @@ import type { Value } from '../../cpu/cpu';
 import { IO_GX_GPU_GP0, IO_GX_GPU_GP1 } from '../../bus/io';
 import type { Memory } from '../../memory/memory';
 import { PSX_GPU_DISPLAY_MODE_PAL_WORD } from '../../model_registry';
+import type { GxGpuDeviceOutput } from './device_output';
 import {
 	GX_GPU_COMMAND_COPY_VRAM_TO_VRAM,
 	GX_GPU_COMMAND_DRAW_LINE,
@@ -12,7 +13,6 @@ import {
 	GX_GPU_COMMAND_READ_VRAM_TO_CPU,
 	GX_GPU_COMMAND_UPLOAD_CPU_TO_VRAM,
 	GxGpuCommandBuffer,
-	type GxGpuCommandBufferView,
 } from './gpu_command_buffer';
 
 export const GX_GPU_GP1_RESET = 0x00;
@@ -118,6 +118,9 @@ export class GxGpu {
 	private displayModeWord = PSX_GPU_DISPLAY_MODE_PAL_WORD;
 	private statusWord = GX_GPU_STATUS_RESET_WORD;
 	private readonly commandBuffer = new GxGpuCommandBuffer();
+	private readonly deviceOutput: GxGpuDeviceOutput = {
+		commandBuffer: this.commandBuffer,
+	};
 	private readonly gp0CommandWords = new Uint32Array(GX_GPU_GP0_COMMAND_BUFFER_WORDS);
 	private gp0CommandWordCount = 0;
 	private gp0CommandTargetWordCount = 0;
@@ -344,8 +347,8 @@ export class GxGpu {
 		return this.gpuReadWord;
 	}
 
-	public readCommandBuffer(): GxGpuCommandBufferView {
-		return this.commandBuffer;
+	public readDeviceOutput(): GxGpuDeviceOutput {
+		return this.deviceOutput;
 	}
 
 	public readDrawModeWord(): number {

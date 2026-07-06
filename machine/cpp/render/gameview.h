@@ -23,6 +23,7 @@ namespace bmsx {
 
 // Forward declarations
 class GameViewHost;
+struct GxGpuCommandBuffer;
 class RenderPassLibrary;
 class RenderGraphRuntime;
 class LightingSystem;
@@ -129,6 +130,7 @@ public:
 	std::array<u32, VDP_MFU_WEIGHT_COUNT> vdpMorphWeightWords{};
 	std::array<u32, VDP_JTU_REGISTER_WORDS> vdpJointMatrixWords{};
 	const VdpRpuFrameOutput* vdpRpuFrame = nullptr;
+	const GxGpuCommandBuffer* gxGpuCommandBuffer = nullptr;
 	bool presentWorkbenchFrameBufferTexture = false;
 
 	// ─────────────────────────────────────────────────────────────────────────

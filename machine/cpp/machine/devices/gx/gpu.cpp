@@ -210,8 +210,8 @@ u32 GxGpu::readGpuReadWord() const {
 	return m_gpuReadWord;
 }
 
-const GxGpuCommandBuffer& GxGpu::readCommandBuffer() const {
-	return m_commandBuffer;
+const GxGpuDeviceOutput& GxGpu::readDeviceOutput() const {
+	return m_deviceOutput;
 }
 
 u32 GxGpu::readDrawModeWord() const {

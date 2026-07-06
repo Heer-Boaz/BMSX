@@ -214,7 +214,7 @@ test('GX-GPU handles PSX GP0 environment registers and GP1 GPU-info queries', ()
 
 test('GX-GPU emits PSX GP0 fixed-length render and blit packets into the GPU command buffer', () => {
 	const { gpu } = createGpu();
-	const commands = gpu.readCommandBuffer();
+	const commands = gpu.readDeviceOutput().commandBuffer;
 
 	gpu.writeGp0((GX_GPU_GP0_POLYGON_FIRST << 24) | 0x0000ff);
 	gpu.writeGp0((GX_GPU_GP0_SET_DRAW_MODE << 24) | 0x123456);
@@ -283,7 +283,7 @@ test('GX-GPU emits PSX GP0 fixed-length render and blit packets into the GPU com
 
 test('GX-GPU emits PSX CPU-to-VRAM image payload words into the GPU command buffer', () => {
 	const { gpu } = createGpu();
-	const commands = gpu.readCommandBuffer();
+	const commands = gpu.readDeviceOutput().commandBuffer;
 
 	gpu.writeGp0(GX_GPU_GP0_CPU_TO_VRAM_FIRST << 24);
 	gpu.writeGp0(0x00010002);
@@ -310,7 +310,7 @@ test('GX-GPU emits PSX CPU-to-VRAM image payload words into the GPU command buff
 
 test('GX-GPU emits PSX polyline payload into the GPU command buffer at terminator', () => {
 	const { gpu } = createGpu();
-	const commands = gpu.readCommandBuffer();
+	const commands = gpu.readDeviceOutput().commandBuffer;
 
 	gpu.writeGp0((0x48 << 24) | 0x0000ff);
 	gpu.writeGp0((GX_GPU_GP0_SET_DRAW_MODE << 24) | 0x000111);
@@ -332,7 +332,7 @@ test('GX-GPU emits PSX polyline payload into the GPU command buffer at terminato
 
 test('GX-GPU GP1 clear FIFO clears partial GP0 packet and image transfer state', () => {
 	const { gpu } = createGpu();
-	const commands = gpu.readCommandBuffer();
+	const commands = gpu.readDeviceOutput().commandBuffer;
 
 	gpu.writeGp0((GX_GPU_GP0_POLYGON_FIRST << 24) | 0x0000ff);
 	gpu.writeGp0((GX_GPU_GP0_SET_DRAW_MODE << 24) | 0x000111);

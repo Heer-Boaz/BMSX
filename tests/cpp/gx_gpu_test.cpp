@@ -166,7 +166,7 @@ void testGp0EnvironmentRegistersAndGpuInfoQueries() {
 void testGp0FixedLengthRenderAndBlitPacketAssembly() {
 	GpuHarness harness;
 	bmsx::GxGpu& gpu = harness.gpu;
-	const bmsx::GxGpuCommandBuffer& commands = gpu.readCommandBuffer();
+	const bmsx::GxGpuCommandBuffer& commands = *gpu.readDeviceOutput().commandBuffer;
 
 	gpu.writeGp0((bmsx::GX_GPU_GP0_POLYGON_FIRST << 24u) | 0x0000ffu);
 	gpu.writeGp0((bmsx::GX_GPU_GP0_SET_DRAW_MODE << 24u) | 0x123456u);
@@ -236,7 +236,7 @@ void testGp0FixedLengthRenderAndBlitPacketAssembly() {
 void testGp0CpuToVramImagePayloadConsumption() {
 	GpuHarness harness;
 	bmsx::GxGpu& gpu = harness.gpu;
-	const bmsx::GxGpuCommandBuffer& commands = gpu.readCommandBuffer();
+	const bmsx::GxGpuCommandBuffer& commands = *gpu.readDeviceOutput().commandBuffer;
 
 	gpu.writeGp0(bmsx::GX_GPU_GP0_CPU_TO_VRAM_FIRST << 24u);
 	gpu.writeGp0(0x00010002u);
@@ -264,7 +264,7 @@ void testGp0CpuToVramImagePayloadConsumption() {
 void testGp0PolylineConsumesPayloadUntilTerminator() {
 	GpuHarness harness;
 	bmsx::GxGpu& gpu = harness.gpu;
-	const bmsx::GxGpuCommandBuffer& commands = gpu.readCommandBuffer();
+	const bmsx::GxGpuCommandBuffer& commands = *gpu.readDeviceOutput().commandBuffer;
 
 	gpu.writeGp0((0x48u << 24u) | 0x0000ffu);
 	gpu.writeGp0((bmsx::GX_GPU_GP0_SET_DRAW_MODE << 24u) | 0x000111u);
@@ -287,7 +287,7 @@ void testGp0PolylineConsumesPayloadUntilTerminator() {
 void testGp1ClearFifoClearsPartialGp0PacketAndImageTransfer() {
 	GpuHarness harness;
 	bmsx::GxGpu& gpu = harness.gpu;
-	const bmsx::GxGpuCommandBuffer& commands = gpu.readCommandBuffer();
+	const bmsx::GxGpuCommandBuffer& commands = *gpu.readDeviceOutput().commandBuffer;
 
 	gpu.writeGp0((bmsx::GX_GPU_GP0_POLYGON_FIRST << 24u) | 0x0000ffu);
 	gpu.writeGp0((bmsx::GX_GPU_GP0_SET_DRAW_MODE << 24u) | 0x000111u);
