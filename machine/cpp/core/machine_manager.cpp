@@ -57,7 +57,7 @@ bool MachineManager::initialize(Platform* platform) {
 
 	// Get viewport size from platform
 	auto* host = platform->gameviewHost();
-	const MachineVdpModeProfile& systemVdpMode = VDP_MODE_PSX_PROFILE;
+	const MachineVdpModeSpec& systemVdpMode = PSX_VDP_MODE_SPEC;
 	Vec2 defaultViewport{
 		static_cast<f32>(systemVdpMode.renderWidth),
 		static_cast<f32>(systemVdpMode.renderHeight)
@@ -298,7 +298,7 @@ void MachineManager::setMachineManifest(const MachineManifest& manifest) {
 }
 
 void MachineManager::configureViewForModel() {
-	const MachineVdpModeProfile& vdpMode = VDP_MODE_PSX_PROFILE;
+	const MachineVdpModeSpec& vdpMode = PSX_VDP_MODE_SPEC;
 	Vec2 viewportSize{
 		static_cast<f32>(vdpMode.renderWidth),
 		static_cast<f32>(vdpMode.renderHeight)
@@ -364,7 +364,7 @@ void MachineManager::bootRuntimeFromProgram() {
 		return;
 	}
 	RuntimeRomPackage& romPackage = activeRom();
-	const ResolvedRuntimeTiming timing = resolveRuntimeTiming(PSX_MODEL_PROFILE.cpuFreqHz, MACHINE_REGION_PAL_WORD);
+	const ResolvedRuntimeTiming timing = resolveRuntimeTiming(PSX_MACHINE_SPEC.cpuFreqHz, MACHINE_REGION_PAL_WORD);
 	Runtime& rt = ensureRuntime(RuntimeOptions{
 		Vec2{ static_cast<f32>(timing.viewportWidth), static_cast<f32>(timing.viewportHeight) },
 		{ m_system_rom_data, m_system_rom_size },
@@ -411,7 +411,7 @@ bool MachineManager::bootSystemStartupProgram(const MachineManifest& runtimeMach
 
 	activateSystemRom();
 	setMachineManifest(runtimeMachine);
-	const ResolvedRuntimeTiming timing = resolveRuntimeTiming(PSX_MODEL_PROFILE.cpuFreqHz, MACHINE_REGION_PAL_WORD);
+	const ResolvedRuntimeTiming timing = resolveRuntimeTiming(PSX_MACHINE_SPEC.cpuFreqHz, MACHINE_REGION_PAL_WORD);
 	configureMemoryMap(resolveRuntimeMemoryMapSpecs());
 	configureViewForModel();
 
@@ -477,7 +477,7 @@ bool MachineManager::loadRomInternal(const u8* data, size_t size) {
 		activateCartRom();
 		setMachineManifest(cartMachine);
 		configureMemoryMap(resolveRuntimeMemoryMapSpecs());
-		const ResolvedRuntimeTiming timing = resolveRuntimeTiming(PSX_MODEL_PROFILE.cpuFreqHz, MACHINE_REGION_PAL_WORD);
+		const ResolvedRuntimeTiming timing = resolveRuntimeTiming(PSX_MACHINE_SPEC.cpuFreqHz, MACHINE_REGION_PAL_WORD);
 		prepareRuntimeForActiveCart(timing);
 		if (activeRom().hasProgram()) {
 			bootRuntimeFromProgram();

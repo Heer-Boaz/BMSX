@@ -138,7 +138,7 @@ private:
 	u32 m_vdpModeWord = VDP_MODE_PSX_WORD;
 
 	void bindVramSurfaces();
-	void applyVdpModeProfile(const MachineVdpModeProfile& profile);
+	void applyPsxVdpMode();
 	void resizeFrameBufferSurface(uint32_t width, uint32_t height);
 	void resetQueuedFrameState();
 	bool canAcceptSubmittedFrame() const {

@@ -22,8 +22,8 @@ import {
 	IO_VDP_STATUS,
 } from '../../machine/ts/machine/bus/io';
 import {
-	PSX_MODEL_PROFILE,
-	VDP_MODE_PSX_PROFILE,
+	PSX_MACHINE_SPEC,
+	PSX_VDP_MODE_SPEC,
 	PSX_VRAM_STAGING_BYTES,
 	PSX_VRAM_TEXTURE_BYTES,
 } from '../../machine/ts/machine/model_registry';
@@ -56,7 +56,7 @@ test('IMGDEC firmware consumes raw hardware words directly', () => {
 
 test('bootrom handoff waits for VDP submit idle before leaving system firmware', () => {
 	const source = readFileSync('machine/firmware/bios/bootrom.lua', 'utf8');
-	const biosVdpMode = VDP_MODE_PSX_PROFILE;
+	const biosVdpMode = PSX_VDP_MODE_SPEC;
 	const bootVramTotal = PSX_VRAM_STAGING_BYTES
 		+ PSX_VRAM_TEXTURE_BYTES
 		+ biosVdpMode.renderWidth * biosVdpMode.renderHeight * 4;

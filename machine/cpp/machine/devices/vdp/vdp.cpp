@@ -66,19 +66,19 @@ void VDP::resetStatus() {
 
 void VDP::writeModeWord(uint32_t word) {
 	if (word == VDP_MODE_PSX_WORD) {
-		applyVdpModeProfile(VDP_MODE_PSX_PROFILE);
+		applyPsxVdpMode();
 		return;
 	}
 	m_fault.raise(VDP_FAULT_MODE_UNSUPPORTED, word);
 	m_memory.writeIoValue(IO_VDP_MODE, valueNumber(static_cast<double>(m_vdpModeWord)));
 }
 
-void VDP::applyVdpModeProfile(const MachineVdpModeProfile& profile) {
-	m_vdpModeWord = static_cast<u32>(profile.mode);
-	const u32 screenWh = packLowHigh16(static_cast<u32>(profile.renderWidth), static_cast<u32>(profile.renderHeight));
+void VDP::applyPsxVdpMode() {
+	m_vdpModeWord = VDP_MODE_PSX_WORD;
+	const u32 screenWh = packLowHigh16(static_cast<u32>(PSX_VDP_MODE_SPEC.renderWidth), static_cast<u32>(PSX_VDP_MODE_SPEC.renderHeight));
 	m_memory.writeIoValue(IO_VDP_MODE, valueNumber(static_cast<double>(m_vdpModeWord)));
 	m_memory.writeIoValue(IO_VDP_SCREEN_WH, valueNumber(static_cast<double>(screenWh)));
-	resizeFrameBufferSurface(static_cast<uint32_t>(profile.renderWidth), static_cast<uint32_t>(profile.renderHeight));
+	resizeFrameBufferSurface(static_cast<uint32_t>(PSX_VDP_MODE_SPEC.renderWidth), static_cast<uint32_t>(PSX_VDP_MODE_SPEC.renderHeight));
 }
 
 void VDP::resetVdpRegisters() {
@@ -848,8 +848,6 @@ Value VDP::readVdpDataThunk(void* context, uint32_t addr) {
 
 void VDP::initializeRegisters() {
 	const i32 dither = 0;
-	m_vdpModeWord = static_cast<u32>(PSX_MODEL_PROFILE.biosVdpMode);
-	const MachineVdpModeProfile& vdpMode = VDP_MODE_PSX_PROFILE;
 	const VdpSurfaceBacking& frameBuffer = m_vram.frameBufferSurface();
 	m_fbm.configure(frameBuffer.surfaceWidth, frameBuffer.surfaceHeight);
 	resetQueuedFrameState();
@@ -860,8 +858,7 @@ void VDP::initializeRegisters() {
 	m_memory.writeIoValue(IO_VDP_RD_Y, valueNumber(0.0));
 	m_memory.writeIoValue(IO_VDP_RD_MODE, valueNumber(static_cast<double>(VDP_RD_MODE_RGBA8888)));
 	m_memory.writeIoValue(IO_VDP_DITHER, valueNumber(static_cast<double>(dither)));
-	m_memory.writeIoValue(IO_VDP_MODE, valueNumber(static_cast<double>(m_vdpModeWord)));
-	m_memory.writeIoValue(IO_VDP_SCREEN_WH, valueNumber(static_cast<double>(packLowHigh16(static_cast<u32>(vdpMode.renderWidth), static_cast<u32>(vdpMode.renderHeight)))));
+	applyPsxVdpMode();
 	m_memory.writeIoValue(IO_VDP_CMD, valueNumber(0.0));
 	resetVdpRegisters();
 	m_xf.reset();

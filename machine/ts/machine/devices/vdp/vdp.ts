@@ -68,10 +68,8 @@ import { VdpVoutUnit } from './vout';
 import { vdpUnitPacketHasFlags, vdpUnitPacketPayloadWords } from './packet';
 import { packLowHigh16, packedLow16 } from '../../common/word';
 import {
-	PSX_MODEL_PROFILE,
-	VDP_MODE_PSX_PROFILE,
+	PSX_VDP_MODE_SPEC,
 	VDP_MODE_PSX_WORD,
-	type MachineVdpModeProfile,
 } from '../../model_registry';
 import {
 	VDP_DEX_FRAME_DIRECT_OPEN,
@@ -162,7 +160,7 @@ export class VDP implements VramWriteSink {
 	private readonly vdpRegisters = new Uint32Array(VDP_REGISTER_COUNT);
 	private readonly streamIngress = new VdpStreamIngressUnit();
 	private readonly unitRegisterPort: VdpUnitRegisterPort;
-	private vdpModeWord = PSX_MODEL_PROFILE.biosVdpMode;
+	private vdpModeWord = VDP_MODE_PSX_WORD;
 	private m_lastFrameCommitted = true;
 	private m_lastFrameCost = 0;
 	private m_lastFrameHeld = false;
@@ -221,19 +219,19 @@ export class VDP implements VramWriteSink {
 
 	public writeModeWord(word: number): void {
 		if ((word >>> 0) === VDP_MODE_PSX_WORD) {
-			this.applyVdpModeProfile(VDP_MODE_PSX_PROFILE);
+			this.applyPsxVdpMode();
 			return;
 		}
 		this.fault.raise(VDP_FAULT_MODE_UNSUPPORTED, word >>> 0);
 		this.memory.writeIoValue(IO_VDP_MODE, this.vdpModeWord);
 	}
 
-	private applyVdpModeProfile(profile: MachineVdpModeProfile): void {
-		this.vdpModeWord = profile.mode;
-		const screenWh = packLowHigh16(profile.renderWidth, profile.renderHeight);
-		this.memory.writeIoValue(IO_VDP_MODE, profile.mode);
+	private applyPsxVdpMode(): void {
+		this.vdpModeWord = VDP_MODE_PSX_WORD;
+		const screenWh = packLowHigh16(PSX_VDP_MODE_SPEC.renderWidth, PSX_VDP_MODE_SPEC.renderHeight);
+		this.memory.writeIoValue(IO_VDP_MODE, VDP_MODE_PSX_WORD);
 		this.memory.writeIoValue(IO_VDP_SCREEN_WH, screenWh);
-		this.resizeFrameBufferSurface(profile.renderWidth, profile.renderHeight);
+		this.resizeFrameBufferSurface(PSX_VDP_MODE_SPEC.renderWidth, PSX_VDP_MODE_SPEC.renderHeight);
 	}
 
 	private resetVdpRegisters(): void {
@@ -1032,8 +1030,6 @@ export class VDP implements VramWriteSink {
 
 	public initializeRegisters(): void {
 		const dither = 0;
-		this.vdpModeWord = PSX_MODEL_PROFILE.biosVdpMode;
-		const vdpModeProfile = VDP_MODE_PSX_PROFILE;
 		const frameBuffer = this.vram.frameBufferSurface;
 		this.fbm.configure(frameBuffer.surfaceWidth, frameBuffer.surfaceHeight);
 		this.resetQueuedFrameState();
@@ -1044,8 +1040,7 @@ export class VDP implements VramWriteSink {
 		this.memory.writeIoValue(IO_VDP_RD_Y, 0);
 		this.memory.writeIoValue(IO_VDP_RD_MODE, VDP_RD_MODE_RGBA8888);
 		this.memory.writeIoValue(IO_VDP_DITHER, dither);
-		this.memory.writeIoValue(IO_VDP_MODE, this.vdpModeWord);
-		this.memory.writeIoValue(IO_VDP_SCREEN_WH, packLowHigh16(vdpModeProfile.renderWidth, vdpModeProfile.renderHeight));
+		this.applyPsxVdpMode();
 		this.memory.writeIoValue(IO_VDP_CMD, 0);
 		this.resetVdpRegisters();
 		this.xf.reset();

@@ -7,15 +7,15 @@ import {
 	MACHINE_REGION_NTSC_WORD,
 	MACHINE_REGION_PAL_WORD,
 	NTSC_REFRESH_UFPS_SCALED,
-	PSX_MODEL_PROFILE,
-	PSX_VDP_CLASS_PROFILE,
+	PSX_MACHINE_SPEC,
+	PSX_VDP_WORK_SPEC,
 	VDP_MODE_PSX_WORD,
-	VDP_MODE_PSX_PROFILE,
+	PSX_VDP_MODE_SPEC,
 } from '../../machine/ts/machine/model_registry';
 import { HZ_SCALE } from '../../machine/ts/machine/runtime/timing/constants';
 
 test('machine registry exposes the psx fixed hardware model', () => {
-	assert.deepEqual(PSX_MODEL_PROFILE, {
+	assert.deepEqual(PSX_MACHINE_SPEC, {
 		cpuFreqHz: 50_000_000,
 		imgDecBytesPerSec: 26_214_400,
 		dmaBytesPerSecIso: 8_388_608,
@@ -28,14 +28,14 @@ test('machine registry exposes the psx fixed hardware model', () => {
 });
 
 test('machine registry exposes the psx VDP device class throughput', () => {
-	assert.deepEqual(PSX_VDP_CLASS_PROFILE, {
+	assert.deepEqual(PSX_VDP_WORK_SPEC, {
 		vdpWorkUnitsPerSec: 25_600,
 		geoWorkUnitsPerSec: 16_384_000,
 	});
 });
 
 test('machine registry exposes only the psx VDP mode', () => {
-	assert.deepEqual(VDP_MODE_PSX_PROFILE, { mode: VDP_MODE_PSX_WORD, renderWidth: 320, renderHeight: 240 });
+	assert.deepEqual(PSX_VDP_MODE_SPEC, { mode: VDP_MODE_PSX_WORD, renderWidth: 320, renderHeight: 240 });
 });
 
 test('machine region timing uses PAL and 60000/1001 NTSC timing', () => {

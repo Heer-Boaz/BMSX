@@ -8,7 +8,7 @@ import { TextureManager } from "../render/texture_manager";
 import { RenderPassLibrary } from "../render/backend/pass/library";
 import { setMicrotaskQueue } from '../platform';
 import type { GameViewHost, Platform } from '../platform';
-import { MACHINE_REGION_PAL_WORD, PAL_REFRESH_UFPS_SCALED, PSX_MODEL_PROFILE } from '../machine/model_registry';
+import { MACHINE_REGION_PAL_WORD, PAL_REFRESH_UFPS_SCALED, PSX_MACHINE_SPEC } from '../machine/model_registry';
 import { HZ_SCALE } from '../machine/runtime/timing/constants';
 import { RomBootManager } from './rom_boot_manager';
 import { renderGate, runGate } from '../common/taskgate';
@@ -165,7 +165,7 @@ export class MachineManager {
 		this._view = gview;
 		this.sourceState = createRuntimeSourceState(systemLayer, cartLayer);
 		configureMemoryMap(resolveRuntimeMemoryMapSpecs());
-		const timing = resolveRuntimeTiming(PSX_MODEL_PROFILE.cpuFreqHz, MACHINE_REGION_PAL_WORD);
+		const timing = resolveRuntimeTiming(PSX_MACHINE_SPEC.cpuFreqHz, MACHINE_REGION_PAL_WORD);
 		const runtime = new Runtime({
 			viewport: { width: timing.viewportWidth, height: timing.viewportHeight },
 			memory: new Memory({

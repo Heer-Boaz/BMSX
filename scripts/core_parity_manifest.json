@@ -549,7 +549,7 @@
 				"machine/cpp/machine/model_registry.h",
 				"machine/cpp/machine/model_registry.cpp"
 			],
-			"reason": "machine_model_registry_hardware_profile_contract"
+			"reason": "machine_model_registry_hardware_spec_contract"
 		},
 		{
 			"ts": "machine/ts/machine/memory/specs.ts",
@@ -1003,16 +1003,6 @@
 			"reason": "rpu_joint_matrix_registerfile_shape_contract"
 		},
 		{
-			"ts": "machine/ts/render/backend/webgl/vdp_rpu.ts",
-			"cpp": [
-				"machine/cpp/render/backend/gles2/vdp_rpu.h"
-			],
-			"symbols": [
-				"VdpRpuRuntime"
-			],
-			"reason": "rpu_backend_runtime_shape_contract"
-		},
-		{
 			"ts": "machine/ts/render/backend/backend.ts",
 			"cpp": [
 				"machine/cpp/render/backend/pass/library.h"
@@ -1205,11 +1195,11 @@
 				"machine/cpp/machine/model_registry.h"
 			],
 			"symbols": [
-				"MachineModelProfile",
-				"MachineVdpClassProfile",
+				"MachineModelSpec",
+				"MachineVdpWorkSpec",
 				"MachineRegionTiming"
 			],
-			"reason": "machine_model_profile_shape_contract"
+			"reason": "machine_model_spec_shape_contract"
 		}
 	],
 	"strict_runtime_no_churn": [
@@ -3712,7 +3702,7 @@
 		},
 		{
 			"file": "machine/ts/render/backend/webgl/vdp_rpu.ts",
-			"start": "export function renderVdpRpuFrame(runtime: VdpRpuRuntime, framebuffer: WebGLFramebuffer, state: RenderPassStateRegistry['vdp_rpu']): void {",
+			"start": "function renderVdpRpuFrame(framebuffer: WebGLFramebuffer, state: RenderPassStateRegistry['vdp_rpu']): void {",
 			"end": "export function registerVdpRpuPass(registry: RenderPassLibrary): void {",
 			"reason": "webgl_rpu_draw_execution_must_not_allocate_or_use_heap_collections"
 		},
@@ -3736,7 +3726,7 @@
 		},
 		{
 			"file": "machine/cpp/render/backend/gles2/vdp_rpu.cpp",
-			"start": "void renderVdpRpuFrame(VdpRpuRuntime& runtime, void* framebuffer, const VdpRpuPipelineState& state) {",
+			"start": "void renderVdpRpuFrame(void* framebuffer, const VdpRpuPipelineState& state) {",
 			"end": "void registerVdpRpuPass(RenderPassLibrary& registry) {",
 			"reason": "gles2_rpu_draw_execution_must_not_allocate_or_use_heap_containers"
 		},

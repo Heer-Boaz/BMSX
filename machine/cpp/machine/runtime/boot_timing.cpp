@@ -10,7 +10,7 @@ ResolvedRuntimeTiming resolveRuntimeTiming(
 	i64 cpuHz,
 	uint32_t regionWord
 ) {
-	const MachineVdpModeProfile& renderSize = VDP_MODE_PSX_PROFILE;
+	const MachineVdpModeSpec& renderSize = PSX_VDP_MODE_SPEC;
 	const MachineRegionTiming regionTiming = getMachineRegionTimingForWord(regionWord);
 	return {
 		renderSize.renderWidth,
@@ -19,11 +19,11 @@ ResolvedRuntimeTiming resolveRuntimeTiming(
 		regionTiming.refreshUfpsScaled,
 		regionTiming.totalScanlines,
 		cpuHz,
-		PSX_MODEL_PROFILE.imgDecBytesPerSec,
-		PSX_MODEL_PROFILE.dmaBytesPerSecIso,
-		PSX_MODEL_PROFILE.dmaBytesPerSecBulk,
-		static_cast<int>(PSX_VDP_CLASS_PROFILE.vdpWorkUnitsPerSec),
-		static_cast<int>(PSX_VDP_CLASS_PROFILE.geoWorkUnitsPerSec),
+		PSX_MACHINE_SPEC.imgDecBytesPerSec,
+		PSX_MACHINE_SPEC.dmaBytesPerSecIso,
+		PSX_MACHINE_SPEC.dmaBytesPerSecBulk,
+		static_cast<int>(PSX_VDP_WORK_SPEC.vdpWorkUnitsPerSec),
+		static_cast<int>(PSX_VDP_WORK_SPEC.geoWorkUnitsPerSec),
 		static_cast<int>(calcCyclesPerFrameScaled(cpuHz, regionTiming.refreshUfpsScaled)),
 		static_cast<int>(resolveVblankCycles(cpuHz, regionTiming.refreshUfpsScaled, regionTiming.totalScanlines, renderSize.renderHeight)),
 	};

@@ -9,13 +9,13 @@ namespace bmsx {
 
 MemoryMapSpecs resolveRuntimeMemoryMapSpecs() {
 	MemoryMapSpecs config;
-	config.textureBytes = static_cast<uint32_t>(PSX_MODEL_PROFILE.textureBytes);
-	config.stagingBytes = static_cast<uint32_t>(PSX_MODEL_PROFILE.stagingBytes);
-	const MachineVdpModeProfile& renderSize = VDP_MODE_PSX_PROFILE;
+	config.textureBytes = static_cast<uint32_t>(PSX_MACHINE_SPEC.textureBytes);
+	config.stagingBytes = static_cast<uint32_t>(PSX_MACHINE_SPEC.stagingBytes);
+	const MachineVdpModeSpec& renderSize = PSX_VDP_MODE_SPEC;
 	const uint32_t frameBufferWidth = static_cast<uint32_t>(renderSize.renderWidth);
 	const uint32_t frameBufferHeight = static_cast<uint32_t>(renderSize.renderHeight);
 	config.frameBufferBytes = frameBufferWidth * frameBufferHeight * 4u;
-	config.ramBytes = static_cast<uint32_t>(PSX_MODEL_PROFILE.ramBytes);
+	config.ramBytes = static_cast<uint32_t>(PSX_MACHINE_SPEC.ramBytes);
 	const double ramMiB = static_cast<double>(config.ramBytes) / (1024.0 * 1024.0);
 	const uint32_t dynamicRamBytes = config.ramBytes - MIN_RAM_SIZE;
 	std::cerr

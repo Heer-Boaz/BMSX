@@ -28,7 +28,7 @@ export const NTSC_TOTAL_SCANLINES = 262;
 export const MACHINE_REGION_PAL_WORD = 0;
 export const MACHINE_REGION_NTSC_WORD = 1;
 
-export type MachineModelProfile = {
+export type MachineModelSpec = {
 	cpuFreqHz: number;
 	imgDecBytesPerSec: number;
 	dmaBytesPerSecIso: number;
@@ -39,12 +39,12 @@ export type MachineModelProfile = {
 	biosVdpMode: MachineVdpMode;
 };
 
-export type MachineVdpClassProfile = {
+export type MachineVdpWorkSpec = {
 	vdpWorkUnitsPerSec: number;
 	geoWorkUnitsPerSec: number;
 };
 
-export type MachineVdpModeProfile = {
+export type MachineVdpModeSpec = {
 	mode: MachineVdpMode;
 	renderWidth: number;
 	renderHeight: number;
@@ -56,7 +56,7 @@ export type MachineRegionTiming = {
 	totalScanlines: number;
 };
 
-export const PSX_MODEL_PROFILE: MachineModelProfile = {
+export const PSX_MACHINE_SPEC: MachineModelSpec = {
 	cpuFreqHz: PSX_CPU_FREQ_HZ,
 	imgDecBytesPerSec: PSX_IMGDEC_BYTES_PER_SEC,
 	dmaBytesPerSecIso: PSX_DMA_BYTES_PER_SEC_ISO,
@@ -67,12 +67,12 @@ export const PSX_MODEL_PROFILE: MachineModelProfile = {
 	biosVdpMode: VDP_MODE_PSX_WORD,
 };
 
-export const PSX_VDP_CLASS_PROFILE: MachineVdpClassProfile = {
+export const PSX_VDP_WORK_SPEC: MachineVdpWorkSpec = {
 	vdpWorkUnitsPerSec: PSX_VDP_WORK_UNITS_PER_SEC,
 	geoWorkUnitsPerSec: PSX_GEO_WORK_UNITS_PER_SEC,
 };
 
-export const VDP_MODE_PSX_PROFILE: MachineVdpModeProfile = {
+export const PSX_VDP_MODE_SPEC: MachineVdpModeSpec = {
 	mode: VDP_MODE_PSX_WORD,
 	renderWidth: VDP_MODE_PSX_RENDER_WIDTH,
 	renderHeight: VDP_MODE_PSX_RENDER_HEIGHT,

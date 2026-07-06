@@ -307,10 +307,11 @@ function loadVdpRpuSurfaceStorage(frame: VdpRpuFrameOutput, surfaceDescAddr: num
 	return surface;
 }
 
-function uploadVdpRpuTextureSurface(backend: WebGLBackend, frame: VdpRpuFrameOutput, surface: VdpRpuWebglSurface): void {
+function uploadVdpRpuTextureSurface(frame: VdpRpuFrameOutput, surface: VdpRpuWebglSurface): void {
 	if (surface.renderedFrame === vdpRpuFrameSerial || surface.uploadedFrame === vdpRpuFrameSerial || surface.format === VDP_RPU_SURFACE_FORMAT_DEPTH16) {
 		return;
 	}
+	const backend = vdpRpuBackend;
 	const sourceByteLength = (surface.height - 1) * surface.pitchBytes + surface.width * 4;
 	const sourceRevision = vdpRpuVramRangeRevision(frame, surface.baseAddr, sourceByteLength);
 	if (surface.sourceUploaded !== 0 && surface.sourceRevision === sourceRevision) {
@@ -628,7 +629,8 @@ function setVdpRpuJointConstants(frame: VdpRpuFrameOutput, drawIndex: number, sh
 	gl.uniformMatrix4fv(vdpRpuJointLocation, false, vdpRpuDefaultJointFloats);
 }
 
-function bindVdpRpuNeutralTexture(backend: WebGLBackend): void {
+function bindVdpRpuNeutralTexture(): void {
+	const backend = vdpRpuBackend;
 	const gl = vdpRpuGl;
 	backend.setActiveTexture(0);
 	gl.bindTexture(gl.TEXTURE_2D, vdpRpuNeutralTexture);
@@ -641,7 +643,7 @@ function bindVdpRpuTextureBindings(frame: VdpRpuFrameOutput, drawIndex: number, 
 	const gl = vdpRpuGl;
 	const t1Flag = (rawVariantWord & VDP_RPU_SHADER_FLAG_T1) !== 0;
 	if (shaderVariant.textureSlotCount === 0) {
-		bindVdpRpuNeutralTexture(backend);
+		bindVdpRpuNeutralTexture();
 		gl.uniform1i(vdpRpuTextureEnabledLocation, 0);
 		gl.uniform1i(vdpRpuT1ModeLocation, 0);
 		return;
@@ -657,11 +659,11 @@ function bindVdpRpuTextureBindings(frame: VdpRpuFrameOutput, drawIndex: number, 
 			foundT0 = true;
 			const surfaceDescAddr = commands.textureSurfaceDescAddr[bindingIndex];
 			if (surfaceDescAddr === 0) {
-				bindVdpRpuNeutralTexture(backend);
+				bindVdpRpuNeutralTexture();
 				gl.uniform1i(vdpRpuT0Location, 0);
 			} else {
 				const surface = loadVdpRpuSurfaceStorage(frame, surfaceDescAddr);
-				uploadVdpRpuTextureSurface(backend, frame, surface);
+				uploadVdpRpuTextureSurface(frame, surface);
 				backend.setActiveTexture(0);
 				gl.bindTexture(gl.TEXTURE_2D, surface.texture);
 				gl.uniform1i(vdpRpuTextureFlipYLocation, surface.renderedFrame === vdpRpuFrameSerial ? 1 : 0);
@@ -672,7 +674,7 @@ function bindVdpRpuTextureBindings(frame: VdpRpuFrameOutput, drawIndex: number, 
 			const surfaceDescAddr = commands.textureSurfaceDescAddr[bindingIndex];
 			if (surfaceDescAddr !== 0) {
 				const surface = loadVdpRpuSurfaceStorage(frame, surfaceDescAddr);
-				uploadVdpRpuTextureSurface(backend, frame, surface);
+				uploadVdpRpuTextureSurface(frame, surface);
 				backend.setActiveTexture(1);
 				gl.bindTexture(gl.TEXTURE_2D, surface.texture);
 				gl.uniform1i(vdpRpuT1Location, 1);
@@ -681,7 +683,7 @@ function bindVdpRpuTextureBindings(frame: VdpRpuFrameOutput, drawIndex: number, 
 		}
 	}
 	if (!foundT0) {
-		bindVdpRpuNeutralTexture(backend);
+		bindVdpRpuNeutralTexture();
 		gl.uniform1i(vdpRpuTextureEnabledLocation, 0);
 	}
 	if (!foundT1 || !t1Flag) {

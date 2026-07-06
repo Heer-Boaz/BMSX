@@ -34,7 +34,7 @@ constexpr i64 NTSC_TOTAL_SCANLINES = 262;
 constexpr uint32_t MACHINE_REGION_PAL_WORD = 0;
 constexpr uint32_t MACHINE_REGION_NTSC_WORD = 1;
 
-struct MachineModelProfile {
+struct MachineModelSpec {
 	i64 cpuFreqHz;
 	i64 imgDecBytesPerSec;
 	i64 dmaBytesPerSecIso;
@@ -45,12 +45,12 @@ struct MachineModelProfile {
 	MachineVdpMode biosVdpMode;
 };
 
-struct MachineVdpClassProfile {
+struct MachineVdpWorkSpec {
 	i64 vdpWorkUnitsPerSec;
 	i64 geoWorkUnitsPerSec;
 };
 
-struct MachineVdpModeProfile {
+struct MachineVdpModeSpec {
 	MachineVdpMode mode;
 	i32 renderWidth;
 	i32 renderHeight;
@@ -62,7 +62,7 @@ struct MachineRegionTiming {
 	i64 totalScanlines;
 };
 
-inline constexpr MachineModelProfile PSX_MODEL_PROFILE = {
+inline constexpr MachineModelSpec PSX_MACHINE_SPEC = {
 	PSX_CPU_FREQ_HZ,
 	PSX_IMGDEC_BYTES_PER_SEC,
 	PSX_DMA_BYTES_PER_SEC_ISO,
@@ -73,12 +73,12 @@ inline constexpr MachineModelProfile PSX_MODEL_PROFILE = {
 	MachineVdpMode::Psx,
 };
 
-inline constexpr MachineVdpClassProfile PSX_VDP_CLASS_PROFILE = {
+inline constexpr MachineVdpWorkSpec PSX_VDP_WORK_SPEC = {
 	PSX_VDP_WORK_UNITS_PER_SEC,
 	PSX_GEO_WORK_UNITS_PER_SEC,
 };
 
-inline constexpr MachineVdpModeProfile VDP_MODE_PSX_PROFILE = {
+inline constexpr MachineVdpModeSpec PSX_VDP_MODE_SPEC = {
 	MachineVdpMode::Psx,
 	VDP_MODE_PSX_RENDER_WIDTH,
 	VDP_MODE_PSX_RENDER_HEIGHT,
