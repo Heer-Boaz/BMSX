@@ -808,8 +808,11 @@ i32 GxGte::limitDepth(i32 value) {
 
 u32 GxGte::divideWithLimit(u32 numerator, u32 denominator) {
 	const u32 result = divide(numerator, denominator);
-	if (result == 0xffffffffu || result > 0x1ffffu) {
+	if (result == 0xffffffffu) {
 		setFlag(GX_GTE_FLAG_ERROR | GX_GTE_FLAG_DIV_OVERFLOW);
+		return 0x1ffffu;
+	}
+	if (result > 0x1ffffu) {
 		return 0x1ffffu;
 	}
 	return result;

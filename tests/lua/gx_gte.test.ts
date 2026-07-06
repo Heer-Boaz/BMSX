@@ -578,3 +578,17 @@ test('GX-GTE RTPS exposes PSX divide overflow as FLAG bits instead of falling ba
 	assert.equal(gte.readDataRegister(19), 1);
 	assert.equal((gte.readControlRegister(31) & (GX_GTE_FLAG_ERROR | GX_GTE_FLAG_DIV_OVERFLOW)) >>> 0, (GX_GTE_FLAG_ERROR | GX_GTE_FLAG_DIV_OVERFLOW) >>> 0);
 });
+
+test('GX-GTE RTPS saturates a 0x20000 UNR divide result without divide overflow FLAG', () => {
+	const { gte } = createGte();
+	setupIdentityProjection(gte);
+	gte.writeControlRegister(26, 0xfe3f);
+	gte.writeDataRegister(0, 0);
+	gte.writeDataRegister(1, 0x7f20);
+
+	gte.execute(GTE_SF | GX_GTE_FN_RTPS);
+
+	assert.equal(gte.readDataRegister(19), 0x7f20);
+	assert.equal(gte.readDataRegister(14), pack16(160, 120));
+	assert.equal(gte.readControlRegister(31), 0);
+});

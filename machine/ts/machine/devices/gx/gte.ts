@@ -896,8 +896,11 @@ export class GxGte {
 
 	private divideWithLimit(numerator: number, denominator: number): number {
 		const result = this.divide(numerator, denominator);
-		if (result === 0xffffffff || result > 0x1ffff) {
+		if (result === 0xffffffff) {
 			this.setFlag(GX_GTE_FLAG_ERROR | GX_GTE_FLAG_DIV_OVERFLOW);
+			return 0x1ffff;
+		}
+		if (result > 0x1ffff) {
 			return 0x1ffff;
 		}
 		return result;

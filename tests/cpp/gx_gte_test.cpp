@@ -572,6 +572,21 @@ void testRtpsDivideOverflow() {
 	require((gte.readControlRegister(31u) & (bmsx::GX_GTE_FLAG_ERROR | bmsx::GX_GTE_FLAG_DIV_OVERFLOW)) == (bmsx::GX_GTE_FLAG_ERROR | bmsx::GX_GTE_FLAG_DIV_OVERFLOW), "RTPS overflow FLAG");
 }
 
+void testRtpsUnrResultSaturatesWithoutDivideOverflow() {
+	GteHarness harness;
+	bmsx::GxGte& gte = harness.gte;
+	setupIdentityProjection(gte);
+	gte.writeControlRegister(26u, 0xfe3fu);
+	gte.writeDataRegister(0u, 0u);
+	gte.writeDataRegister(1u, 0x7f20u);
+
+	gte.execute(GTE_SF | bmsx::GX_GTE_FN_RTPS);
+
+	require(gte.readDataRegister(19u) == 0x7f20u, "RTPS UNR saturating SZ3");
+	require(gte.readDataRegister(14u) == pack16(160u, 120u), "RTPS UNR saturating SXY2");
+	require(gte.readControlRegister(31u) == 0u, "RTPS UNR saturating FLAG");
+}
+
 } // namespace
 
 int main() {
@@ -598,5 +613,6 @@ int main() {
 	testOpcodeZeroIsNotRtpsAlias();
 	testSaveStatePreservesRawRegisterWords();
 	testRtpsDivideOverflow();
+	testRtpsUnrResultSaturatesWithoutDivideOverflow();
 	return 0;
 }
