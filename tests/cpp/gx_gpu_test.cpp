@@ -166,14 +166,21 @@ void testGp0EnvironmentRegistersAndGpuInfoQueries() {
 void testGp0FixedLengthRenderAndBlitPacketAssembly() {
 	GpuHarness harness;
 	bmsx::GxGpu& gpu = harness.gpu;
+	const bmsx::GxGpuCommandBuffer& commands = gpu.readCommandBuffer();
 
 	gpu.writeGp0((bmsx::GX_GPU_GP0_POLYGON_FIRST << 24u) | 0x0000ffu);
 	gpu.writeGp0((bmsx::GX_GPU_GP0_SET_DRAW_MODE << 24u) | 0x123456u);
 	gpu.writeGp0(0x00020003u);
 
+	require(commands.commandCount == 0u, "GX-GPU GP0 partial polygon has no emitted command");
 	require(gpu.readDrawModeWord() == 0u, "GX-GPU GP0 partial polygon payload does not execute draw mode");
 
 	gpu.writeGp0(0x00040005u);
+	require(commands.commandCount == 1u, "GX-GPU GP0 flat triangle emitted command count");
+	require(commands.commandKind[0] == bmsx::GX_GPU_COMMAND_DRAW_POLYGON, "GX-GPU GP0 flat triangle command kind");
+	require(commands.commandOpcode[0] == bmsx::GX_GPU_GP0_POLYGON_FIRST, "GX-GPU GP0 flat triangle opcode");
+	require(commands.commandWordCount[0] == 4u, "GX-GPU GP0 flat triangle command words");
+	require(commands.words[commands.commandWordStart[0] + 1u] == ((bmsx::GX_GPU_GP0_SET_DRAW_MODE << 24u) | 0x123456u), "GX-GPU GP0 flat triangle raw payload word");
 	require(gpu.readDrawModeWord() == 0u, "GX-GPU GP0 completed polygon payload does not execute draw mode");
 
 	const uint32_t texturedGouraudQuad = bmsx::GX_GPU_GP0_POLYGON_FIRST
@@ -184,70 +191,108 @@ void testGp0FixedLengthRenderAndBlitPacketAssembly() {
 	for (uint32_t index = 1u; index < 12u; index += 1u) {
 		gpu.writeGp0(index == 6u ? ((bmsx::GX_GPU_GP0_SET_DRAW_MODE << 24u) | 0x000345u) : index);
 	}
+	require(commands.commandCount == 2u, "GX-GPU GP0 textured Gouraud quad emitted command count");
+	require(commands.commandKind[1] == bmsx::GX_GPU_COMMAND_DRAW_POLYGON, "GX-GPU GP0 textured Gouraud quad command kind");
+	require(commands.commandOpcode[1] == texturedGouraudQuad, "GX-GPU GP0 textured Gouraud quad opcode");
+	require(commands.commandWordCount[1] == 12u, "GX-GPU GP0 textured Gouraud quad command words");
 	require(gpu.readDrawModeWord() == 0u, "GX-GPU GP0 textured Gouraud quad payload does not execute draw mode");
 
 	gpu.writeGp0(bmsx::GX_GPU_GP0_FILL_RECTANGLE << 24u);
 	gpu.writeGp0((bmsx::GX_GPU_GP0_SET_DRAW_MODE << 24u) | 0x000222u);
-	require(gpu.readDrawModeWord() == 0u, "GX-GPU GP0 fill rectangle second word is payload");
+	require(commands.commandCount == 2u, "GX-GPU GP0 fill rectangle waits for size word");
 	gpu.writeGp0(0x000c000du);
-	require(gpu.readDrawModeWord() == 0u, "GX-GPU GP0 fill rectangle third word completes as payload");
+	require(commands.commandCount == 3u, "GX-GPU GP0 fill rectangle emitted command count");
+	require(commands.commandKind[2] == bmsx::GX_GPU_COMMAND_FILL_RECTANGLE, "GX-GPU GP0 fill rectangle command kind");
+	require(commands.commandWordCount[2] == 3u, "GX-GPU GP0 fill rectangle command words");
 
 	gpu.writeGp0((bmsx::GX_GPU_GP0_RECTANGLE_FIRST | bmsx::GX_GPU_GP0_RENDER_TEXTURE_BIT) << 24u);
 	gpu.writeGp0((bmsx::GX_GPU_GP0_SET_DRAW_MODE << 24u) | 0x000333u);
 	gpu.writeGp0(0x00030004u);
 	gpu.writeGp0(0x00050006u);
-	require(gpu.readDrawModeWord() == 0u, "GX-GPU GP0 textured variable rectangle payload does not execute draw mode");
+	require(commands.commandCount == 4u, "GX-GPU GP0 textured variable rectangle emitted command count");
+	require(commands.commandKind[3] == bmsx::GX_GPU_COMMAND_DRAW_RECTANGLE, "GX-GPU GP0 textured variable rectangle command kind");
+	require(commands.commandWordCount[3] == 4u, "GX-GPU GP0 textured variable rectangle command words");
 
 	gpu.writeGp0(bmsx::GX_GPU_GP0_VRAM_TO_VRAM_FIRST << 24u);
 	gpu.writeGp0((bmsx::GX_GPU_GP0_SET_DRAW_MODE << 24u) | 0x000444u);
 	gpu.writeGp0(0x00030004u);
 	gpu.writeGp0(0x00050006u);
-	require(gpu.readDrawModeWord() == 0u, "GX-GPU GP0 VRAM-to-VRAM payload does not execute draw mode");
+	require(commands.commandCount == 5u, "GX-GPU GP0 VRAM-to-VRAM emitted command count");
+	require(commands.commandKind[4] == bmsx::GX_GPU_COMMAND_COPY_VRAM_TO_VRAM, "GX-GPU GP0 VRAM-to-VRAM command kind");
+	require(commands.commandWordCount[4] == 4u, "GX-GPU GP0 VRAM-to-VRAM command words");
 
 	gpu.writeGp0((bmsx::GX_GPU_GP0_SET_DRAW_MODE << 24u) | 0x0007ffu);
+	require(commands.commandCount == 5u, "GX-GPU GP0 environment command does not emit GPU command");
 	require(gpu.readDrawModeWord() == 0x0007ffu, "GX-GPU GP0 command processing resumes after fixed packets");
+
+	gpu.writeGp0(0x40u << 24u);
+	gpu.writeGp0(0x00010002u);
+	gpu.writeGp0(0x00030004u);
+	require(commands.commandCount == 6u, "GX-GPU GP0 line emitted command count");
+	require(commands.commandKind[5] == bmsx::GX_GPU_COMMAND_DRAW_LINE, "GX-GPU GP0 line command kind");
+	require(commands.commandDrawModeWord[5] == 0x0007ffu, "GX-GPU GP0 line captures draw mode state");
 }
 
 void testGp0CpuToVramImagePayloadConsumption() {
 	GpuHarness harness;
 	bmsx::GxGpu& gpu = harness.gpu;
+	const bmsx::GxGpuCommandBuffer& commands = gpu.readCommandBuffer();
 
 	gpu.writeGp0(bmsx::GX_GPU_GP0_CPU_TO_VRAM_FIRST << 24u);
 	gpu.writeGp0(0x00010002u);
 	gpu.writeGp0(0x00020003u);
+	require(commands.commandCount == 0u, "GX-GPU GP0 CPU-to-VRAM header waits for payload");
 
 	gpu.writeGp0((bmsx::GX_GPU_GP0_SET_DRAW_MODE << 24u) | 0x000111u);
 	gpu.writeGp0((bmsx::GX_GPU_GP0_SET_MASK_BIT << 24u) | 0x000003u);
+	require(commands.commandCount == 0u, "GX-GPU GP0 CPU-to-VRAM partial payload has no command");
 	gpu.writeGp0((bmsx::GX_GPU_GP0_SET_DRAW_MODE << 24u) | 0x000222u);
+	require(commands.commandCount == 1u, "GX-GPU GP0 CPU-to-VRAM emitted command count");
+	require(commands.commandKind[0] == bmsx::GX_GPU_COMMAND_UPLOAD_CPU_TO_VRAM, "GX-GPU GP0 CPU-to-VRAM command kind");
+	require(commands.commandOpcode[0] == bmsx::GX_GPU_GP0_CPU_TO_VRAM_FIRST, "GX-GPU GP0 CPU-to-VRAM opcode");
+	require(commands.commandWordCount[0] == 6u, "GX-GPU GP0 CPU-to-VRAM command words");
+	require(commands.words[commands.commandWordStart[0] + 3u] == ((bmsx::GX_GPU_GP0_SET_DRAW_MODE << 24u) | 0x000111u), "GX-GPU GP0 CPU-to-VRAM first payload word");
+	require(commands.words[commands.commandWordStart[0] + 5u] == ((bmsx::GX_GPU_GP0_SET_DRAW_MODE << 24u) | 0x000222u), "GX-GPU GP0 CPU-to-VRAM final payload word");
 	require(gpu.readDrawModeWord() == 0u, "GX-GPU GP0 image payload words do not execute draw mode");
 	require(gpu.readMaskBitModeWord() == 0u, "GX-GPU GP0 image payload words do not execute mask bit");
 
 	gpu.writeGp0((bmsx::GX_GPU_GP0_SET_DRAW_MODE << 24u) | 0x0007ffu);
+	require(commands.commandCount == 1u, "GX-GPU GP0 post-transfer environment command does not emit GPU command");
 	require(gpu.readDrawModeWord() == 0x0007ffu, "GX-GPU GP0 command processing resumes after image transfer");
 }
 
 void testGp0PolylineConsumesPayloadUntilTerminator() {
 	GpuHarness harness;
 	bmsx::GxGpu& gpu = harness.gpu;
+	const bmsx::GxGpuCommandBuffer& commands = gpu.readCommandBuffer();
 
 	gpu.writeGp0((0x48u << 24u) | 0x0000ffu);
 	gpu.writeGp0((bmsx::GX_GPU_GP0_SET_DRAW_MODE << 24u) | 0x000111u);
 	gpu.writeGp0(0x00020003u);
 	gpu.writeGp0(0x00040005u);
+	require(commands.commandCount == 0u, "GX-GPU GP0 polyline waits for terminator");
 	gpu.writeGp0(0x50005000u);
+	require(commands.commandCount == 1u, "GX-GPU GP0 polyline emitted command count");
+	require(commands.commandKind[0] == bmsx::GX_GPU_COMMAND_DRAW_POLYLINE, "GX-GPU GP0 polyline command kind");
+	require(commands.commandOpcode[0] == 0x48u, "GX-GPU GP0 polyline opcode");
+	require(commands.commandWordCount[0] == 4u, "GX-GPU GP0 polyline command words");
+	require(commands.words[commands.commandWordStart[0] + 1u] == ((bmsx::GX_GPU_GP0_SET_DRAW_MODE << 24u) | 0x000111u), "GX-GPU GP0 polyline raw payload word");
 	require(gpu.readDrawModeWord() == 0u, "GX-GPU GP0 polyline payload does not execute draw mode");
 
 	gpu.writeGp0((bmsx::GX_GPU_GP0_SET_DRAW_MODE << 24u) | 0x000222u);
+	require(commands.commandCount == 1u, "GX-GPU GP0 post-polyline environment command does not emit GPU command");
 	require(gpu.readDrawModeWord() == 0x000222u, "GX-GPU GP0 command processing resumes after polyline terminator");
 }
 
 void testGp1ClearFifoClearsPartialGp0PacketAndImageTransfer() {
 	GpuHarness harness;
 	bmsx::GxGpu& gpu = harness.gpu;
+	const bmsx::GxGpuCommandBuffer& commands = gpu.readCommandBuffer();
 
 	gpu.writeGp0((bmsx::GX_GPU_GP0_POLYGON_FIRST << 24u) | 0x0000ffu);
 	gpu.writeGp0((bmsx::GX_GPU_GP0_SET_DRAW_MODE << 24u) | 0x000111u);
 	gpu.writeGp1(bmsx::GX_GPU_GP1_CLEAR_FIFO << 24u);
+	require(commands.commandCount == 0u, "GX-GPU GP1 clear FIFO does not emit abandoned partial GP0 command");
 	gpu.writeGp0((bmsx::GX_GPU_GP0_SET_DRAW_MODE << 24u) | 0x000222u);
 	require(gpu.readDrawModeWord() == 0x000222u, "GX-GPU GP1 clear FIFO clears partial GP0 command");
 
@@ -255,6 +300,7 @@ void testGp1ClearFifoClearsPartialGp0PacketAndImageTransfer() {
 	gpu.writeGp0(0x00010002u);
 	gpu.writeGp0(0x00020003u);
 	gpu.writeGp1(bmsx::GX_GPU_GP1_CLEAR_FIFO << 24u);
+	require(commands.commandCount == 0u, "GX-GPU GP1 clear FIFO does not emit abandoned CPU-to-VRAM command");
 	gpu.writeGp0((bmsx::GX_GPU_GP0_SET_MASK_BIT << 24u) | 0x000003u);
 	require(gpu.readMaskBitModeWord() == 3u, "GX-GPU GP1 clear FIFO clears image transfer state");
 }

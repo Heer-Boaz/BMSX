@@ -1,6 +1,7 @@
 #pragma once
 
 #include "common/primitives.h"
+#include "machine/devices/gx/gpu_command_buffer.h"
 
 #include <array>
 
@@ -118,6 +119,7 @@ public:
 	u32 readDisplayModeWord() const;
 	void writeDisplayModeWord(u32 word);
 	u32 readGpuReadWord() const;
+	const GxGpuCommandBuffer& readCommandBuffer() const;
 	u32 readDrawModeWord() const;
 	u32 readTextureWindowWord() const;
 	u32 readDrawingAreaTopLeftWord() const;
@@ -135,12 +137,19 @@ private:
 	u32 m_gp1Word = 0;
 	u32 m_displayModeWord = 0;
 	u32 m_statusWord = GX_GPU_STATUS_RESET_WORD;
+	GxGpuCommandBuffer m_commandBuffer{};
 	std::array<u32, GX_GPU_GP0_COMMAND_BUFFER_WORDS> m_gp0CommandWords{};
 	u32 m_gp0CommandWordCount = 0u;
 	u32 m_gp0CommandTargetWordCount = 0u;
 	u32 m_gp0ImageLoadWordsRemaining = 0u;
+	size_t m_gp0ImageLoadCommandWordStart = 0u;
+	u32 m_gp0ImageLoadCommandWordCount = 0u;
+	u8 m_gp0ImageLoadCommandOpcode = 0u;
 	u32 m_gp0PolylineWordsPerVertex = 0u;
 	u32 m_gp0PolylinePayloadPhase = 0u;
+	size_t m_gp0PolylineCommandWordStart = 0u;
+	u32 m_gp0PolylineCommandWordCount = 0u;
+	u8 m_gp0PolylineCommandOpcode = 0u;
 	u32 m_gpuReadWord = 0x00000400u;
 	u32 m_drawModeWord = 0u;
 	u32 m_textureWindowWord = 0u;
@@ -155,14 +164,17 @@ private:
 
 	void writeDisplayDisableWord(u32 word);
 	void clearGp0CommandState();
+	void consumeImageLoadWord();
 	void consumeGp0PolylinePayloadWord();
-	void beginPolylinePayload(u32 opcode);
+	void beginPolylinePayload(u32 opcode, u32 commandWordCount);
 	void executeGp0Command();
 	u32 gp0CommandWordCountForOpcode(u32 opcode) const;
 	u32 gp0PolygonWordCount(u32 opcode) const;
 	u32 gp0LineWordCount(u32 opcode) const;
 	u32 gp0RectangleWordCount(u32 opcode) const;
-	void beginImageLoadToVram();
+	void emitFixedGp0Command(u8 kind, u32 opcode, u32 commandWordCount);
+	void pushGpuCommand(u8 kind, u32 opcode, size_t wordStart, u32 commandWordCount);
+	void beginImageLoadToVram(u32 opcode, u32 commandWordCount);
 	void writeDrawModeWord(u32 word);
 	void updateDrawModeStatusBits();
 	void writeMaskBitModeWord(u32 word);

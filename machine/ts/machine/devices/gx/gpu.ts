@@ -2,6 +2,18 @@ import type { Value } from '../../cpu/cpu';
 import { IO_GX_GPU_GP0, IO_GX_GPU_GP1 } from '../../bus/io';
 import type { Memory } from '../../memory/memory';
 import { PSX_GPU_DISPLAY_MODE_PAL_WORD } from '../../model_registry';
+import {
+	GX_GPU_COMMAND_COPY_VRAM_TO_VRAM,
+	GX_GPU_COMMAND_DRAW_LINE,
+	GX_GPU_COMMAND_DRAW_POLYGON,
+	GX_GPU_COMMAND_DRAW_POLYLINE,
+	GX_GPU_COMMAND_DRAW_RECTANGLE,
+	GX_GPU_COMMAND_FILL_RECTANGLE,
+	GX_GPU_COMMAND_READ_VRAM_TO_CPU,
+	GX_GPU_COMMAND_UPLOAD_CPU_TO_VRAM,
+	GxGpuCommandBuffer,
+	type GxGpuCommandBufferView,
+} from './gpu_command_buffer';
 
 export const GX_GPU_GP1_RESET = 0x00;
 export const GX_GPU_GP1_CLEAR_FIFO = 0x01;
@@ -105,12 +117,19 @@ export class GxGpu {
 	private gp1Word = 0;
 	private displayModeWord = PSX_GPU_DISPLAY_MODE_PAL_WORD;
 	private statusWord = GX_GPU_STATUS_RESET_WORD;
+	private readonly commandBuffer = new GxGpuCommandBuffer();
 	private readonly gp0CommandWords = new Uint32Array(GX_GPU_GP0_COMMAND_BUFFER_WORDS);
 	private gp0CommandWordCount = 0;
 	private gp0CommandTargetWordCount = 0;
 	private gp0ImageLoadWordsRemaining = 0;
+	private gp0ImageLoadCommandWordStart = 0;
+	private gp0ImageLoadCommandWordCount = 0;
+	private gp0ImageLoadCommandOpcode = 0;
 	private gp0PolylineWordsPerVertex = 0;
 	private gp0PolylinePayloadPhase = 0;
+	private gp0PolylineCommandWordStart = 0;
+	private gp0PolylineCommandWordCount = 0;
+	private gp0PolylineCommandOpcode = 0;
 	private gpuReadWord = 0x00000400;
 	private drawModeWord = 0;
 	private textureWindowWord = 0;
@@ -135,6 +154,7 @@ export class GxGpu {
 		this.gp1Word = 0;
 		this.displayModeWord = PSX_GPU_DISPLAY_MODE_PAL_WORD;
 		this.statusWord = GX_GPU_STATUS_RESET_WORD;
+		this.commandBuffer.reset();
 		this.clearGp0CommandState();
 		this.gpuReadWord = 0x00000400;
 		this.drawModeWord = 0;
@@ -180,7 +200,7 @@ export class GxGpu {
 		this.memory.writeIoValue(IO_GX_GPU_GP0, this.gp0Word);
 
 		if (this.gp0ImageLoadWordsRemaining !== 0) {
-			this.gp0ImageLoadWordsRemaining -= 1;
+			this.consumeImageLoadWord();
 			return;
 		}
 
@@ -202,10 +222,14 @@ export class GxGpu {
 
 	private executeGp0Command(): void {
 		const opcode = this.gp0CommandWords[0] >>> GX_GPU_GP0_OPCODE_SHIFT;
+		const commandWordCount = this.gp0CommandWordCount;
 		this.gp0CommandWordCount = 0;
 		this.gp0CommandTargetWordCount = 0;
 
 		switch (opcode) {
+			case GX_GPU_GP0_FILL_RECTANGLE:
+				this.emitFixedGp0Command(GX_GPU_COMMAND_FILL_RECTANGLE, opcode, commandWordCount);
+				break;
 			case GX_GPU_GP0_IRQ_REQUEST:
 				this.statusWord = (this.statusWord | GX_GPU_STATUS_INTERRUPT_REQUEST) >>> 0;
 				this.writeStatusIo();
@@ -229,10 +253,22 @@ export class GxGpu {
 				this.writeMaskBitModeWord(this.gp0CommandWords[0] & GX_GPU_GP0_PARAM_MASK);
 				break;
 			default:
-				if (opcode >= GX_GPU_GP0_CPU_TO_VRAM_FIRST && opcode <= GX_GPU_GP0_CPU_TO_VRAM_LAST) {
-					this.beginImageLoadToVram();
-				} else if (opcode >= GX_GPU_GP0_LINE_FIRST && opcode <= GX_GPU_GP0_LINE_LAST && (opcode & GX_GPU_GP0_RENDER_QUAD_OR_POLYLINE_BIT) !== 0) {
-					this.beginPolylinePayload(opcode);
+				if (opcode >= GX_GPU_GP0_POLYGON_FIRST && opcode <= GX_GPU_GP0_POLYGON_LAST) {
+					this.emitFixedGp0Command(GX_GPU_COMMAND_DRAW_POLYGON, opcode, commandWordCount);
+				} else if (opcode >= GX_GPU_GP0_LINE_FIRST && opcode <= GX_GPU_GP0_LINE_LAST) {
+					if ((opcode & GX_GPU_GP0_RENDER_QUAD_OR_POLYLINE_BIT) !== 0) {
+						this.beginPolylinePayload(opcode, commandWordCount);
+					} else {
+						this.emitFixedGp0Command(GX_GPU_COMMAND_DRAW_LINE, opcode, commandWordCount);
+					}
+				} else if (opcode >= GX_GPU_GP0_RECTANGLE_FIRST && opcode <= GX_GPU_GP0_RECTANGLE_LAST) {
+					this.emitFixedGp0Command(GX_GPU_COMMAND_DRAW_RECTANGLE, opcode, commandWordCount);
+				} else if (opcode >= GX_GPU_GP0_VRAM_TO_VRAM_FIRST && opcode <= GX_GPU_GP0_VRAM_TO_VRAM_LAST) {
+					this.emitFixedGp0Command(GX_GPU_COMMAND_COPY_VRAM_TO_VRAM, opcode, commandWordCount);
+				} else if (opcode >= GX_GPU_GP0_CPU_TO_VRAM_FIRST && opcode <= GX_GPU_GP0_CPU_TO_VRAM_LAST) {
+					this.beginImageLoadToVram(opcode, commandWordCount);
+				} else if (opcode >= GX_GPU_GP0_VRAM_TO_CPU_FIRST && opcode <= GX_GPU_GP0_VRAM_TO_CPU_LAST) {
+					this.emitFixedGp0Command(GX_GPU_COMMAND_READ_VRAM_TO_CPU, opcode, commandWordCount);
 				}
 				break;
 		}
@@ -308,6 +344,10 @@ export class GxGpu {
 		return this.gpuReadWord;
 	}
 
+	public readCommandBuffer(): GxGpuCommandBufferView {
+		return this.commandBuffer;
+	}
+
 	public readDrawModeWord(): number {
 		return this.drawModeWord;
 	}
@@ -362,23 +402,60 @@ export class GxGpu {
 		this.gp0CommandWordCount = 0;
 		this.gp0CommandTargetWordCount = 0;
 		this.gp0ImageLoadWordsRemaining = 0;
+		this.gp0ImageLoadCommandWordStart = 0;
+		this.gp0ImageLoadCommandWordCount = 0;
+		this.gp0ImageLoadCommandOpcode = 0;
 		this.gp0PolylineWordsPerVertex = 0;
 		this.gp0PolylinePayloadPhase = 0;
+		this.gp0PolylineCommandWordStart = 0;
+		this.gp0PolylineCommandWordCount = 0;
+		this.gp0PolylineCommandOpcode = 0;
+	}
+
+	private consumeImageLoadWord(): void {
+		this.commandBuffer.appendWord(this.gp0Word);
+		this.gp0ImageLoadCommandWordCount += 1;
+		this.gp0ImageLoadWordsRemaining -= 1;
+		if (this.gp0ImageLoadWordsRemaining === 0) {
+			this.pushGpuCommand(
+				GX_GPU_COMMAND_UPLOAD_CPU_TO_VRAM,
+				this.gp0ImageLoadCommandOpcode,
+				this.gp0ImageLoadCommandWordStart,
+				this.gp0ImageLoadCommandWordCount,
+			);
+			this.gp0ImageLoadCommandWordStart = 0;
+			this.gp0ImageLoadCommandWordCount = 0;
+			this.gp0ImageLoadCommandOpcode = 0;
+		}
 	}
 
 	private consumeGp0PolylinePayloadWord(): void {
 		if (this.gp0PolylinePayloadPhase === 0 && (this.gp0Word & 0xf000f000) === 0x50005000) {
+			this.pushGpuCommand(
+				GX_GPU_COMMAND_DRAW_POLYLINE,
+				this.gp0PolylineCommandOpcode,
+				this.gp0PolylineCommandWordStart,
+				this.gp0PolylineCommandWordCount,
+			);
 			this.gp0PolylineWordsPerVertex = 0;
 			this.gp0PolylinePayloadPhase = 0;
+			this.gp0PolylineCommandWordStart = 0;
+			this.gp0PolylineCommandWordCount = 0;
+			this.gp0PolylineCommandOpcode = 0;
 			return;
 		}
+		this.commandBuffer.appendWord(this.gp0Word);
+		this.gp0PolylineCommandWordCount += 1;
 		this.gp0PolylinePayloadPhase += 1;
 		if (this.gp0PolylinePayloadPhase === this.gp0PolylineWordsPerVertex) {
 			this.gp0PolylinePayloadPhase = 0;
 		}
 	}
 
-	private beginPolylinePayload(opcode: number): void {
+	private beginPolylinePayload(opcode: number, commandWordCount: number): void {
+		this.gp0PolylineCommandWordStart = this.commandBuffer.appendWords(this.gp0CommandWords, commandWordCount);
+		this.gp0PolylineCommandWordCount = commandWordCount;
+		this.gp0PolylineCommandOpcode = opcode;
 		this.gp0PolylineWordsPerVertex = (opcode & GX_GPU_GP0_RENDER_GOURAUD_BIT) !== 0 ? 2 : 1;
 		this.gp0PolylinePayloadPhase = 0;
 	}
@@ -428,10 +505,33 @@ export class GxGpu {
 		return 2 + textureWordCount + sizeWordCount;
 	}
 
-	private beginImageLoadToVram(): void {
+	private emitFixedGp0Command(kind: number, opcode: number, commandWordCount: number): void {
+		const wordStart = this.commandBuffer.appendWords(this.gp0CommandWords, commandWordCount);
+		this.pushGpuCommand(kind, opcode, wordStart, commandWordCount);
+	}
+
+	private pushGpuCommand(kind: number, opcode: number, wordStart: number, commandWordCount: number): void {
+		this.commandBuffer.pushCommand(
+			kind,
+			opcode,
+			wordStart,
+			commandWordCount,
+			this.drawModeWord,
+			this.textureWindowWord,
+			this.drawingAreaTopLeftWord,
+			this.drawingAreaBottomRightWord,
+			this.drawingOffsetWord,
+			this.maskBitModeWord,
+		);
+	}
+
+	private beginImageLoadToVram(opcode: number, commandWordCount: number): void {
 		const sizeWord = this.gp0CommandWords[2];
 		const width = (((sizeWord & 0xffff) - 1) & GX_GPU_VRAM_WIDTH_MASK) + 1;
 		const height = (((sizeWord >>> 16) - 1) & GX_GPU_VRAM_HEIGHT_MASK) + 1;
+		this.gp0ImageLoadCommandWordStart = this.commandBuffer.appendWords(this.gp0CommandWords, commandWordCount);
+		this.gp0ImageLoadCommandWordCount = commandWordCount;
+		this.gp0ImageLoadCommandOpcode = opcode;
 		this.gp0ImageLoadWordsRemaining = ((width * height) + 1) >>> 1;
 	}
 

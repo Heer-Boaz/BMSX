@@ -3,6 +3,15 @@ import { test } from 'node:test';
 
 import { IO_GX_GPU_GP0, IO_GX_GPU_GP1 } from '../../machine/ts/machine/bus/io';
 import {
+	GX_GPU_COMMAND_COPY_VRAM_TO_VRAM,
+	GX_GPU_COMMAND_DRAW_POLYGON,
+	GX_GPU_COMMAND_DRAW_LINE,
+	GX_GPU_COMMAND_DRAW_POLYLINE,
+	GX_GPU_COMMAND_DRAW_RECTANGLE,
+	GX_GPU_COMMAND_FILL_RECTANGLE,
+	GX_GPU_COMMAND_UPLOAD_CPU_TO_VRAM,
+} from '../../machine/ts/machine/devices/gx/gpu_command_buffer';
+import {
 	GX_GPU_DMA_DIRECTION_CPU_TO_GP0,
 	GX_GPU_DMA_DIRECTION_GPUREAD_TO_CPU,
 	GX_GPU_DISPLAY_START_MASK,
@@ -203,16 +212,23 @@ test('GX-GPU handles PSX GP0 environment registers and GP1 GPU-info queries', ()
 	assert.equal(gpu.readGpuReadWord(), GX_GPU_DRAWING_OFFSET_MASK);
 });
 
-test('GX-GPU assembles PSX GP0 fixed-length render and blit packets before decoding later command words', () => {
+test('GX-GPU emits PSX GP0 fixed-length render and blit packets into the GPU command buffer', () => {
 	const { gpu } = createGpu();
+	const commands = gpu.readCommandBuffer();
 
 	gpu.writeGp0((GX_GPU_GP0_POLYGON_FIRST << 24) | 0x0000ff);
 	gpu.writeGp0((GX_GPU_GP0_SET_DRAW_MODE << 24) | 0x123456);
 	gpu.writeGp0(0x00020003);
 
+	assert.equal(commands.commandCount, 0);
 	assert.equal(gpu.readDrawModeWord(), 0);
 
 	gpu.writeGp0(0x00040005);
+	assert.equal(commands.commandCount, 1);
+	assert.equal(commands.commandKind[0], GX_GPU_COMMAND_DRAW_POLYGON);
+	assert.equal(commands.commandOpcode[0], GX_GPU_GP0_POLYGON_FIRST);
+	assert.equal(commands.commandWordCount[0], 4);
+	assert.equal(commands.words[commands.commandWordStart[0] + 1], ((GX_GPU_GP0_SET_DRAW_MODE << 24) | 0x123456) >>> 0);
 	assert.equal(gpu.readDrawModeWord(), 0);
 
 	const texturedGouraudQuad = GX_GPU_GP0_POLYGON_FIRST
@@ -223,67 +239,105 @@ test('GX-GPU assembles PSX GP0 fixed-length render and blit packets before decod
 	for (let index = 1; index < 12; index += 1) {
 		gpu.writeGp0(index === 6 ? ((GX_GPU_GP0_SET_DRAW_MODE << 24) | 0x000345) : index);
 	}
+	assert.equal(commands.commandCount, 2);
+	assert.equal(commands.commandKind[1], GX_GPU_COMMAND_DRAW_POLYGON);
+	assert.equal(commands.commandOpcode[1], texturedGouraudQuad);
+	assert.equal(commands.commandWordCount[1], 12);
 	assert.equal(gpu.readDrawModeWord(), 0);
 
 	gpu.writeGp0(GX_GPU_GP0_FILL_RECTANGLE << 24);
 	gpu.writeGp0((GX_GPU_GP0_SET_DRAW_MODE << 24) | 0x000222);
-	assert.equal(gpu.readDrawModeWord(), 0);
+	assert.equal(commands.commandCount, 2);
 	gpu.writeGp0(0x000c000d);
-	assert.equal(gpu.readDrawModeWord(), 0);
+	assert.equal(commands.commandCount, 3);
+	assert.equal(commands.commandKind[2], GX_GPU_COMMAND_FILL_RECTANGLE);
+	assert.equal(commands.commandWordCount[2], 3);
 
 	gpu.writeGp0((GX_GPU_GP0_RECTANGLE_FIRST | GX_GPU_GP0_RENDER_TEXTURE_BIT) << 24);
 	gpu.writeGp0((GX_GPU_GP0_SET_DRAW_MODE << 24) | 0x000333);
 	gpu.writeGp0(0x00030004);
 	gpu.writeGp0(0x00050006);
-	assert.equal(gpu.readDrawModeWord(), 0);
+	assert.equal(commands.commandCount, 4);
+	assert.equal(commands.commandKind[3], GX_GPU_COMMAND_DRAW_RECTANGLE);
+	assert.equal(commands.commandWordCount[3], 4);
 
 	gpu.writeGp0(GX_GPU_GP0_VRAM_TO_VRAM_FIRST << 24);
 	gpu.writeGp0((GX_GPU_GP0_SET_DRAW_MODE << 24) | 0x000444);
 	gpu.writeGp0(0x00030004);
 	gpu.writeGp0(0x00050006);
-	assert.equal(gpu.readDrawModeWord(), 0);
+	assert.equal(commands.commandCount, 5);
+	assert.equal(commands.commandKind[4], GX_GPU_COMMAND_COPY_VRAM_TO_VRAM);
+	assert.equal(commands.commandWordCount[4], 4);
 
 	gpu.writeGp0((GX_GPU_GP0_SET_DRAW_MODE << 24) | 0x0007ff);
+	assert.equal(commands.commandCount, 5);
 	assert.equal(gpu.readDrawModeWord(), 0x0007ff);
+
+	gpu.writeGp0(0x40 << 24);
+	gpu.writeGp0(0x00010002);
+	gpu.writeGp0(0x00030004);
+	assert.equal(commands.commandCount, 6);
+	assert.equal(commands.commandKind[5], GX_GPU_COMMAND_DRAW_LINE);
+	assert.equal(commands.commandDrawModeWord[5], 0x0007ff);
 });
 
-test('GX-GPU consumes PSX CPU-to-VRAM image payload words as transfer data', () => {
+test('GX-GPU emits PSX CPU-to-VRAM image payload words into the GPU command buffer', () => {
 	const { gpu } = createGpu();
+	const commands = gpu.readCommandBuffer();
 
 	gpu.writeGp0(GX_GPU_GP0_CPU_TO_VRAM_FIRST << 24);
 	gpu.writeGp0(0x00010002);
 	gpu.writeGp0(0x00020003);
+	assert.equal(commands.commandCount, 0);
 
 	gpu.writeGp0((GX_GPU_GP0_SET_DRAW_MODE << 24) | 0x000111);
 	gpu.writeGp0((GX_GPU_GP0_SET_MASK_BIT << 24) | 0x000003);
+	assert.equal(commands.commandCount, 0);
 	gpu.writeGp0((GX_GPU_GP0_SET_DRAW_MODE << 24) | 0x000222);
+	assert.equal(commands.commandCount, 1);
+	assert.equal(commands.commandKind[0], GX_GPU_COMMAND_UPLOAD_CPU_TO_VRAM);
+	assert.equal(commands.commandOpcode[0], GX_GPU_GP0_CPU_TO_VRAM_FIRST);
+	assert.equal(commands.commandWordCount[0], 6);
+	assert.equal(commands.words[commands.commandWordStart[0] + 3], ((GX_GPU_GP0_SET_DRAW_MODE << 24) | 0x000111) >>> 0);
+	assert.equal(commands.words[commands.commandWordStart[0] + 5], ((GX_GPU_GP0_SET_DRAW_MODE << 24) | 0x000222) >>> 0);
 	assert.equal(gpu.readDrawModeWord(), 0);
 	assert.equal(gpu.readMaskBitModeWord(), 0);
 
 	gpu.writeGp0((GX_GPU_GP0_SET_DRAW_MODE << 24) | 0x0007ff);
+	assert.equal(commands.commandCount, 1);
 	assert.equal(gpu.readDrawModeWord(), 0x0007ff);
 });
 
-test('GX-GPU consumes PSX polyline payload until terminator before decoding later command words', () => {
+test('GX-GPU emits PSX polyline payload into the GPU command buffer at terminator', () => {
 	const { gpu } = createGpu();
+	const commands = gpu.readCommandBuffer();
 
 	gpu.writeGp0((0x48 << 24) | 0x0000ff);
 	gpu.writeGp0((GX_GPU_GP0_SET_DRAW_MODE << 24) | 0x000111);
 	gpu.writeGp0(0x00020003);
 	gpu.writeGp0(0x00040005);
+	assert.equal(commands.commandCount, 0);
 	gpu.writeGp0(0x50005000);
+	assert.equal(commands.commandCount, 1);
+	assert.equal(commands.commandKind[0], GX_GPU_COMMAND_DRAW_POLYLINE);
+	assert.equal(commands.commandOpcode[0], 0x48);
+	assert.equal(commands.commandWordCount[0], 4);
+	assert.equal(commands.words[commands.commandWordStart[0] + 1], ((GX_GPU_GP0_SET_DRAW_MODE << 24) | 0x000111) >>> 0);
 	assert.equal(gpu.readDrawModeWord(), 0);
 
 	gpu.writeGp0((GX_GPU_GP0_SET_DRAW_MODE << 24) | 0x000222);
+	assert.equal(commands.commandCount, 1);
 	assert.equal(gpu.readDrawModeWord(), 0x000222);
 });
 
 test('GX-GPU GP1 clear FIFO clears partial GP0 packet and image transfer state', () => {
 	const { gpu } = createGpu();
+	const commands = gpu.readCommandBuffer();
 
 	gpu.writeGp0((GX_GPU_GP0_POLYGON_FIRST << 24) | 0x0000ff);
 	gpu.writeGp0((GX_GPU_GP0_SET_DRAW_MODE << 24) | 0x000111);
 	gpu.writeGp1(GX_GPU_GP1_CLEAR_FIFO << 24);
+	assert.equal(commands.commandCount, 0);
 	gpu.writeGp0((GX_GPU_GP0_SET_DRAW_MODE << 24) | 0x000222);
 	assert.equal(gpu.readDrawModeWord(), 0x000222);
 
@@ -291,6 +345,7 @@ test('GX-GPU GP1 clear FIFO clears partial GP0 packet and image transfer state',
 	gpu.writeGp0(0x00010002);
 	gpu.writeGp0(0x00020003);
 	gpu.writeGp1(GX_GPU_GP1_CLEAR_FIFO << 24);
+	assert.equal(commands.commandCount, 0);
 	gpu.writeGp0((GX_GPU_GP0_SET_MASK_BIT << 24) | 0x000003);
 	assert.equal(gpu.readMaskBitModeWord(), 3);
 });

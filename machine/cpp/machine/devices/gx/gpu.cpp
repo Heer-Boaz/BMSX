@@ -21,6 +21,7 @@ void GxGpu::reset() {
 	m_gp1Word = 0u;
 	m_displayModeWord = PSX_GPU_DISPLAY_MODE_PAL_WORD;
 	m_statusWord = GX_GPU_STATUS_RESET_WORD;
+	m_commandBuffer.reset();
 	clearGp0CommandState();
 	m_gpuReadWord = 0x00000400u;
 	m_drawModeWord = 0u;
@@ -66,7 +67,7 @@ void GxGpu::writeGp0(u32 word) {
 	m_memory.writeIoValue(IO_GX_GPU_GP0, valueNumber(static_cast<double>(m_gp0Word)));
 
 	if (m_gp0ImageLoadWordsRemaining != 0u) {
-		m_gp0ImageLoadWordsRemaining -= 1u;
+		consumeImageLoadWord();
 		return;
 	}
 
@@ -88,10 +89,14 @@ void GxGpu::writeGp0(u32 word) {
 
 void GxGpu::executeGp0Command() {
 	const u32 opcode = m_gp0CommandWords[0] >> GX_GPU_GP0_OPCODE_SHIFT;
+	const u32 commandWordCount = m_gp0CommandWordCount;
 	m_gp0CommandWordCount = 0u;
 	m_gp0CommandTargetWordCount = 0u;
 
 	switch (opcode) {
+	case GX_GPU_GP0_FILL_RECTANGLE:
+		emitFixedGp0Command(GX_GPU_COMMAND_FILL_RECTANGLE, opcode, commandWordCount);
+		break;
 	case GX_GPU_GP0_IRQ_REQUEST:
 		m_statusWord |= GX_GPU_STATUS_INTERRUPT_REQUEST;
 		writeStatusIo();
@@ -115,10 +120,22 @@ void GxGpu::executeGp0Command() {
 		writeMaskBitModeWord(m_gp0CommandWords[0] & GX_GPU_GP0_PARAM_MASK);
 		break;
 	default:
-		if (opcode >= GX_GPU_GP0_CPU_TO_VRAM_FIRST && opcode <= GX_GPU_GP0_CPU_TO_VRAM_LAST) {
-			beginImageLoadToVram();
-		} else if (opcode >= GX_GPU_GP0_LINE_FIRST && opcode <= GX_GPU_GP0_LINE_LAST && (opcode & GX_GPU_GP0_RENDER_QUAD_OR_POLYLINE_BIT) != 0u) {
-			beginPolylinePayload(opcode);
+		if (opcode >= GX_GPU_GP0_POLYGON_FIRST && opcode <= GX_GPU_GP0_POLYGON_LAST) {
+			emitFixedGp0Command(GX_GPU_COMMAND_DRAW_POLYGON, opcode, commandWordCount);
+		} else if (opcode >= GX_GPU_GP0_LINE_FIRST && opcode <= GX_GPU_GP0_LINE_LAST) {
+			if ((opcode & GX_GPU_GP0_RENDER_QUAD_OR_POLYLINE_BIT) != 0u) {
+				beginPolylinePayload(opcode, commandWordCount);
+			} else {
+				emitFixedGp0Command(GX_GPU_COMMAND_DRAW_LINE, opcode, commandWordCount);
+			}
+		} else if (opcode >= GX_GPU_GP0_RECTANGLE_FIRST && opcode <= GX_GPU_GP0_RECTANGLE_LAST) {
+			emitFixedGp0Command(GX_GPU_COMMAND_DRAW_RECTANGLE, opcode, commandWordCount);
+		} else if (opcode >= GX_GPU_GP0_VRAM_TO_VRAM_FIRST && opcode <= GX_GPU_GP0_VRAM_TO_VRAM_LAST) {
+			emitFixedGp0Command(GX_GPU_COMMAND_COPY_VRAM_TO_VRAM, opcode, commandWordCount);
+		} else if (opcode >= GX_GPU_GP0_CPU_TO_VRAM_FIRST && opcode <= GX_GPU_GP0_CPU_TO_VRAM_LAST) {
+			beginImageLoadToVram(opcode, commandWordCount);
+		} else if (opcode >= GX_GPU_GP0_VRAM_TO_CPU_FIRST && opcode <= GX_GPU_GP0_VRAM_TO_CPU_LAST) {
+			emitFixedGp0Command(GX_GPU_COMMAND_READ_VRAM_TO_CPU, opcode, commandWordCount);
 		}
 		break;
 	}
@@ -193,6 +210,10 @@ u32 GxGpu::readGpuReadWord() const {
 	return m_gpuReadWord;
 }
 
+const GxGpuCommandBuffer& GxGpu::readCommandBuffer() const {
+	return m_commandBuffer;
+}
+
 u32 GxGpu::readDrawModeWord() const {
 	return m_drawModeWord;
 }
@@ -247,23 +268,58 @@ void GxGpu::clearGp0CommandState() {
 	m_gp0CommandWordCount = 0u;
 	m_gp0CommandTargetWordCount = 0u;
 	m_gp0ImageLoadWordsRemaining = 0u;
+	m_gp0ImageLoadCommandWordStart = 0u;
+	m_gp0ImageLoadCommandWordCount = 0u;
+	m_gp0ImageLoadCommandOpcode = 0u;
 	m_gp0PolylineWordsPerVertex = 0u;
 	m_gp0PolylinePayloadPhase = 0u;
+	m_gp0PolylineCommandWordStart = 0u;
+	m_gp0PolylineCommandWordCount = 0u;
+	m_gp0PolylineCommandOpcode = 0u;
+}
+
+void GxGpu::consumeImageLoadWord() {
+	m_commandBuffer.appendWord(m_gp0Word);
+	m_gp0ImageLoadCommandWordCount += 1u;
+	m_gp0ImageLoadWordsRemaining -= 1u;
+	if (m_gp0ImageLoadWordsRemaining == 0u) {
+		pushGpuCommand(
+			GX_GPU_COMMAND_UPLOAD_CPU_TO_VRAM,
+			m_gp0ImageLoadCommandOpcode,
+			m_gp0ImageLoadCommandWordStart,
+			m_gp0ImageLoadCommandWordCount);
+		m_gp0ImageLoadCommandWordStart = 0u;
+		m_gp0ImageLoadCommandWordCount = 0u;
+		m_gp0ImageLoadCommandOpcode = 0u;
+	}
 }
 
 void GxGpu::consumeGp0PolylinePayloadWord() {
 	if (m_gp0PolylinePayloadPhase == 0u && (m_gp0Word & 0xf000f000u) == 0x50005000u) {
+		pushGpuCommand(
+			GX_GPU_COMMAND_DRAW_POLYLINE,
+			m_gp0PolylineCommandOpcode,
+			m_gp0PolylineCommandWordStart,
+			m_gp0PolylineCommandWordCount);
 		m_gp0PolylineWordsPerVertex = 0u;
 		m_gp0PolylinePayloadPhase = 0u;
+		m_gp0PolylineCommandWordStart = 0u;
+		m_gp0PolylineCommandWordCount = 0u;
+		m_gp0PolylineCommandOpcode = 0u;
 		return;
 	}
+	m_commandBuffer.appendWord(m_gp0Word);
+	m_gp0PolylineCommandWordCount += 1u;
 	m_gp0PolylinePayloadPhase += 1u;
 	if (m_gp0PolylinePayloadPhase == m_gp0PolylineWordsPerVertex) {
 		m_gp0PolylinePayloadPhase = 0u;
 	}
 }
 
-void GxGpu::beginPolylinePayload(u32 opcode) {
+void GxGpu::beginPolylinePayload(u32 opcode, u32 commandWordCount) {
+	m_gp0PolylineCommandWordStart = m_commandBuffer.appendWords(m_gp0CommandWords.data(), commandWordCount);
+	m_gp0PolylineCommandWordCount = commandWordCount;
+	m_gp0PolylineCommandOpcode = static_cast<u8>(opcode);
 	m_gp0PolylineWordsPerVertex = (opcode & GX_GPU_GP0_RENDER_GOURAUD_BIT) != 0u ? 2u : 1u;
 	m_gp0PolylinePayloadPhase = 0u;
 }
@@ -313,10 +369,32 @@ u32 GxGpu::gp0RectangleWordCount(u32 opcode) const {
 	return 2u + textureWordCount + sizeWordCount;
 }
 
-void GxGpu::beginImageLoadToVram() {
+void GxGpu::emitFixedGp0Command(u8 kind, u32 opcode, u32 commandWordCount) {
+	const size_t wordStart = m_commandBuffer.appendWords(m_gp0CommandWords.data(), commandWordCount);
+	pushGpuCommand(kind, opcode, wordStart, commandWordCount);
+}
+
+void GxGpu::pushGpuCommand(u8 kind, u32 opcode, size_t wordStart, u32 commandWordCount) {
+	m_commandBuffer.pushCommand(
+		kind,
+		static_cast<u8>(opcode),
+		wordStart,
+		commandWordCount,
+		m_drawModeWord,
+		m_textureWindowWord,
+		m_drawingAreaTopLeftWord,
+		m_drawingAreaBottomRightWord,
+		m_drawingOffsetWord,
+		m_maskBitModeWord);
+}
+
+void GxGpu::beginImageLoadToVram(u32 opcode, u32 commandWordCount) {
 	const u32 sizeWord = m_gp0CommandWords[2];
 	const u32 width = (((sizeWord & 0xffffu) - 1u) & GX_GPU_VRAM_WIDTH_MASK) + 1u;
 	const u32 height = (((sizeWord >> 16u) - 1u) & GX_GPU_VRAM_HEIGHT_MASK) + 1u;
+	m_gp0ImageLoadCommandWordStart = m_commandBuffer.appendWords(m_gp0CommandWords.data(), commandWordCount);
+	m_gp0ImageLoadCommandWordCount = commandWordCount;
+	m_gp0ImageLoadCommandOpcode = static_cast<u8>(opcode);
 	m_gp0ImageLoadWordsRemaining = ((width * height) + 1u) >> 1u;
 }
 
