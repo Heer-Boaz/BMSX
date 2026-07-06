@@ -34,6 +34,7 @@ void testGp1DisplayModeOwnsPalNtsc() {
 
 	require(gpu.readDisplayModeWord() == bmsx::PSX_GPU_DISPLAY_MODE_PAL_WORD, "GX-GPU reset PAL display mode");
 	require((gpu.readStatus() & bmsx::GX_GPU_STATUS_PAL_MODE) == bmsx::GX_GPU_STATUS_PAL_MODE, "GX-GPU reset GPUSTAT PAL bit");
+	require((gpu.readStatus() & bmsx::GX_GPU_STATUS_RESET_WORD) == bmsx::GX_GPU_STATUS_RESET_WORD, "GX-GPU reset GPUSTAT base bits");
 
 	require(gpu.writeGp1((bmsx::GX_GPU_GP1_SET_DISPLAY_MODE << 24u) | 0x00000000u) == bmsx::GX_GPU_GP1_SET_DISPLAY_MODE, "GX-GPU GP1 display opcode");
 
@@ -53,7 +54,7 @@ void testGp1ResetRestoresPalDisplayStatus() {
 
 	require(gpu.readDisplayModeWord() == bmsx::PSX_GPU_DISPLAY_MODE_PAL_WORD, "GX-GPU GP1 reset display mode");
 	require((gpu.readStatus() & bmsx::GX_GPU_STATUS_PAL_MODE) == bmsx::GX_GPU_STATUS_PAL_MODE, "GX-GPU GP1 reset PAL bit");
-	require((gpu.readStatus() & bmsx::GX_GPU_STATUS_READY_WORD) == bmsx::GX_GPU_STATUS_READY_WORD, "GX-GPU GP1 reset ready bits");
+	require((gpu.readStatus() & bmsx::GX_GPU_STATUS_RESET_WORD) == bmsx::GX_GPU_STATUS_RESET_WORD, "GX-GPU GP1 reset base bits");
 }
 
 void testDisplayModeStatusBits() {
@@ -72,6 +73,51 @@ void testDisplayModeStatusBits() {
 	require((gpu.readStatus() & (0x3u << 17u)) == (0x3u << 17u), "GX-GPU display mode GPUSTAT horizontal resolution");
 }
 
+void testDisplayDisableAndDmaDirectionStatusBits() {
+	GpuHarness harness;
+	bmsx::GxGpu& gpu = harness.gpu;
+
+	gpu.writeGp1(bmsx::GX_GPU_GP1_SET_DISPLAY_DISABLE << 24u);
+	require((gpu.readStatus() & bmsx::GX_GPU_STATUS_DISPLAY_DISABLE) == 0u, "GX-GPU GP1 display enable clears display-disable bit");
+
+	gpu.writeGp1((bmsx::GX_GPU_GP1_SET_DISPLAY_DISABLE << 24u) | 1u);
+	require((gpu.readStatus() & bmsx::GX_GPU_STATUS_DISPLAY_DISABLE) == bmsx::GX_GPU_STATUS_DISPLAY_DISABLE, "GX-GPU GP1 display disable bit");
+
+	gpu.writeGp1((bmsx::GX_GPU_GP1_SET_DMA_DIRECTION << 24u) | bmsx::GX_GPU_DMA_DIRECTION_CPU_TO_GP0);
+	require((gpu.readStatus() & bmsx::GX_GPU_STATUS_DMA_DIRECTION_MASK) == (bmsx::GX_GPU_DMA_DIRECTION_CPU_TO_GP0 << bmsx::GX_GPU_STATUS_DMA_DIRECTION_SHIFT), "GX-GPU GP1 DMA CPU-to-GP0 direction");
+	require((gpu.readStatus() & bmsx::GX_GPU_STATUS_DMA_DATA_REQUEST) == bmsx::GX_GPU_STATUS_DMA_DATA_REQUEST, "GX-GPU GP1 DMA request follows receive readiness");
+
+	gpu.writeGp1((bmsx::GX_GPU_GP1_SET_DMA_DIRECTION << 24u) | bmsx::GX_GPU_DMA_DIRECTION_GPUREAD_TO_CPU);
+	require((gpu.readStatus() & bmsx::GX_GPU_STATUS_DMA_DIRECTION_MASK) == (bmsx::GX_GPU_DMA_DIRECTION_GPUREAD_TO_CPU << bmsx::GX_GPU_STATUS_DMA_DIRECTION_SHIFT), "GX-GPU GP1 DMA GPUREAD-to-CPU direction");
+	require((gpu.readStatus() & bmsx::GX_GPU_STATUS_DMA_DATA_REQUEST) == 0u, "GX-GPU GP1 DMA request follows send readiness");
+}
+
+void testGp1CrtcRangeRegistersLatchMaskedRawWords() {
+	GpuHarness harness;
+	bmsx::GxGpu& gpu = harness.gpu;
+
+	gpu.writeGp1((bmsx::GX_GPU_GP1_SET_DISPLAY_START << 24u) | 0x00ffffffu);
+	gpu.writeGp1((bmsx::GX_GPU_GP1_SET_HORIZONTAL_DISPLAY_RANGE << 24u) | 0x00ffffffu);
+	gpu.writeGp1((bmsx::GX_GPU_GP1_SET_VERTICAL_DISPLAY_RANGE << 24u) | 0x00ffffffu);
+	gpu.writeGp1((bmsx::GX_GPU_GP1_SET_TEXTURE_DISABLE_MASK << 24u) | 0x00ffffffu);
+
+	require(gpu.readDisplayStartWord() == bmsx::GX_GPU_DISPLAY_START_MASK, "GX-GPU GP1 display start mask");
+	require(gpu.readHorizontalDisplayRangeWord() == bmsx::GX_GPU_HORIZONTAL_DISPLAY_RANGE_MASK, "GX-GPU GP1 horizontal display range mask");
+	require(gpu.readVerticalDisplayRangeWord() == bmsx::GX_GPU_VERTICAL_DISPLAY_RANGE_MASK, "GX-GPU GP1 vertical display range mask");
+	require(gpu.readTextureDisableMaskWord() == 1u, "GX-GPU GP1 texture-disable mask latch");
+}
+
+void testGp0IrqRequestAndGp1Acknowledge() {
+	GpuHarness harness;
+	bmsx::GxGpu& gpu = harness.gpu;
+
+	gpu.writeGp0(bmsx::GX_GPU_GP0_IRQ_REQUEST << 24u);
+	require((gpu.readStatus() & bmsx::GX_GPU_STATUS_INTERRUPT_REQUEST) == bmsx::GX_GPU_STATUS_INTERRUPT_REQUEST, "GX-GPU GP0 IRQ request bit");
+
+	gpu.writeGp1(bmsx::GX_GPU_GP1_ACK_INTERRUPT << 24u);
+	require((gpu.readStatus() & bmsx::GX_GPU_STATUS_INTERRUPT_REQUEST) == 0u, "GX-GPU GP1 IRQ acknowledge clears request bit");
+}
+
 void testMmioGp0Gp1() {
 	GpuHarness harness;
 	bmsx::Memory& memory = harness.memory;
@@ -80,7 +126,7 @@ void testMmioGp0Gp1() {
 	memory.writeMappedU32LE(bmsx::IO_GX_GPU_GP1, (bmsx::GX_GPU_GP1_SET_DISPLAY_MODE << 24u) | 0x00000000u);
 
 	require(memory.readMappedU32LE(bmsx::IO_GX_GPU_GP0) == 0x12345678u, "GX-GPU GP0 MMIO");
-	require((memory.readMappedU32LE(bmsx::IO_GX_GPU_GP1) & bmsx::GX_GPU_STATUS_READY_WORD) == bmsx::GX_GPU_STATUS_READY_WORD, "GX-GPU GP1 GPUSTAT ready bits");
+	require((memory.readMappedU32LE(bmsx::IO_GX_GPU_GP1) & bmsx::GX_GPU_STATUS_READY_TO_RECEIVE_DMA) == bmsx::GX_GPU_STATUS_READY_TO_RECEIVE_DMA, "GX-GPU GP1 GPUSTAT receive-ready bit");
 	require((memory.readMappedU32LE(bmsx::IO_GX_GPU_GP1) & bmsx::GX_GPU_STATUS_PAL_MODE) == 0u, "GX-GPU GP1 MMIO GPUSTAT PAL bit");
 }
 
@@ -90,6 +136,9 @@ int main() {
 	testGp1DisplayModeOwnsPalNtsc();
 	testGp1ResetRestoresPalDisplayStatus();
 	testDisplayModeStatusBits();
+	testDisplayDisableAndDmaDirectionStatusBits();
+	testGp1CrtcRangeRegistersLatchMaskedRawWords();
+	testGp0IrqRequestAndGp1Acknowledge();
 	testMmioGp0Gp1();
 	return 0;
 }

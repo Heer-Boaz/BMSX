@@ -20,10 +20,15 @@ void GxGpu::reset() {
 	m_gp0Word = 0u;
 	m_gp1Word = 0u;
 	m_displayModeWord = PSX_GPU_DISPLAY_MODE_PAL_WORD;
-	m_statusWord = GX_GPU_STATUS_READY_WORD;
+	m_statusWord = GX_GPU_STATUS_RESET_WORD;
+	m_displayStartWord = 0u;
+	m_horizontalDisplayRangeWord = 0x00c60260u;
+	m_verticalDisplayRangeWord = 0x0003fc10u;
+	m_textureDisableMaskWord = 0u;
 	updateDisplayModeStatusBits();
+	updateDmaRequestStatusBit();
 	m_memory.writeIoValue(IO_GX_GPU_GP0, valueNumber(0.0));
-	m_memory.writeIoValue(IO_GX_GPU_GP1, valueNumber(static_cast<double>(m_statusWord)));
+	writeStatusIo();
 }
 
 GxGpuState GxGpu::captureState() const {
@@ -51,6 +56,10 @@ u32 GxGpu::readGp0() const {
 void GxGpu::writeGp0(u32 word) {
 	m_gp0Word = word;
 	m_memory.writeIoValue(IO_GX_GPU_GP0, valueNumber(static_cast<double>(m_gp0Word)));
+	if ((m_gp0Word >> GX_GPU_GP0_OPCODE_SHIFT) == GX_GPU_GP0_IRQ_REQUEST) {
+		m_statusWord |= GX_GPU_STATUS_INTERRUPT_REQUEST;
+		writeStatusIo();
+	}
 }
 
 u32 GxGpu::readStatus() const {
@@ -64,11 +73,40 @@ u32 GxGpu::writeGp1(u32 word) {
 	case GX_GPU_GP1_RESET:
 		reset();
 		break;
+	case GX_GPU_GP1_CLEAR_FIFO:
+		writeStatusIo();
+		break;
+	case GX_GPU_GP1_ACK_INTERRUPT:
+		m_statusWord &= ~GX_GPU_STATUS_INTERRUPT_REQUEST;
+		writeStatusIo();
+		break;
+	case GX_GPU_GP1_SET_DISPLAY_DISABLE:
+		writeDisplayDisableWord(word);
+		break;
+	case GX_GPU_GP1_SET_DMA_DIRECTION:
+		writeDmaDirectionWord(word);
+		break;
+	case GX_GPU_GP1_SET_DISPLAY_START:
+		m_displayStartWord = word & GX_GPU_DISPLAY_START_MASK;
+		writeStatusIo();
+		break;
+	case GX_GPU_GP1_SET_HORIZONTAL_DISPLAY_RANGE:
+		m_horizontalDisplayRangeWord = word & GX_GPU_HORIZONTAL_DISPLAY_RANGE_MASK;
+		writeStatusIo();
+		break;
+	case GX_GPU_GP1_SET_VERTICAL_DISPLAY_RANGE:
+		m_verticalDisplayRangeWord = word & GX_GPU_VERTICAL_DISPLAY_RANGE_MASK;
+		writeStatusIo();
+		break;
 	case GX_GPU_GP1_SET_DISPLAY_MODE:
 		writeDisplayModeWord(word & GX_GPU_GP1_PARAM_MASK);
 		break;
+	case GX_GPU_GP1_SET_TEXTURE_DISABLE_MASK:
+		m_textureDisableMaskWord = word & 0x1u;
+		writeStatusIo();
+		break;
 	default:
-		m_memory.writeIoValue(IO_GX_GPU_GP1, valueNumber(static_cast<double>(m_statusWord)));
+		writeStatusIo();
 		break;
 	}
 	return opcode;
@@ -81,7 +119,58 @@ u32 GxGpu::readDisplayModeWord() const {
 void GxGpu::writeDisplayModeWord(u32 word) {
 	m_displayModeWord = word;
 	updateDisplayModeStatusBits();
-	m_memory.writeIoValue(IO_GX_GPU_GP1, valueNumber(static_cast<double>(m_statusWord)));
+	writeStatusIo();
+}
+
+u32 GxGpu::readDisplayStartWord() const {
+	return m_displayStartWord;
+}
+
+u32 GxGpu::readHorizontalDisplayRangeWord() const {
+	return m_horizontalDisplayRangeWord;
+}
+
+u32 GxGpu::readVerticalDisplayRangeWord() const {
+	return m_verticalDisplayRangeWord;
+}
+
+u32 GxGpu::readTextureDisableMaskWord() const {
+	return m_textureDisableMaskWord;
+}
+
+void GxGpu::writeDisplayDisableWord(u32 word) {
+	if ((word & 0x1u) != 0u) {
+		m_statusWord |= GX_GPU_STATUS_DISPLAY_DISABLE;
+	} else {
+		m_statusWord &= ~GX_GPU_STATUS_DISPLAY_DISABLE;
+	}
+	writeStatusIo();
+}
+
+void GxGpu::writeDmaDirectionWord(u32 word) {
+	const u32 dmaDirectionBits = (word & 0x3u) << GX_GPU_STATUS_DMA_DIRECTION_SHIFT;
+	m_statusWord = (m_statusWord & ~GX_GPU_STATUS_DMA_DIRECTION_MASK) | dmaDirectionBits;
+	updateDmaRequestStatusBit();
+	writeStatusIo();
+}
+
+void GxGpu::updateDmaRequestStatusBit() {
+	const u32 dmaDirection = (m_statusWord & GX_GPU_STATUS_DMA_DIRECTION_MASK) >> GX_GPU_STATUS_DMA_DIRECTION_SHIFT;
+	u32 dmaRequest = 0u;
+	switch (dmaDirection) {
+	case GX_GPU_DMA_DIRECTION_FIFO:
+	case GX_GPU_DMA_DIRECTION_CPU_TO_GP0:
+		dmaRequest = m_statusWord & GX_GPU_STATUS_READY_TO_RECEIVE_DMA;
+		break;
+	case GX_GPU_DMA_DIRECTION_GPUREAD_TO_CPU:
+		dmaRequest = m_statusWord & GX_GPU_STATUS_READY_TO_SEND_VRAM;
+		break;
+	}
+	if (dmaRequest != 0u) {
+		m_statusWord |= GX_GPU_STATUS_DMA_DATA_REQUEST;
+	} else {
+		m_statusWord &= ~GX_GPU_STATUS_DMA_DATA_REQUEST;
+	}
 }
 
 void GxGpu::updateDisplayModeStatusBits() {
@@ -94,6 +183,10 @@ void GxGpu::updateDisplayModeStatusBits() {
 		| ((displayMode & 0x40u) << 10u)
 		| ((displayMode & 0x80u) << 7u);
 	m_statusWord = (m_statusWord & ~GX_GPU_STATUS_DISPLAY_MODE_MASK) | statusDisplayModeBits;
+}
+
+void GxGpu::writeStatusIo() {
+	m_memory.writeIoValue(IO_GX_GPU_GP1, valueNumber(static_cast<double>(m_statusWord)));
 }
 
 u64 GxGpu::readGp0Thunk(void* context, u32 addr) {

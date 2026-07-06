@@ -7,21 +7,51 @@ namespace bmsx {
 class Memory;
 
 constexpr u32 GX_GPU_GP1_RESET = 0x00u;
+constexpr u32 GX_GPU_GP1_CLEAR_FIFO = 0x01u;
+constexpr u32 GX_GPU_GP1_ACK_INTERRUPT = 0x02u;
+constexpr u32 GX_GPU_GP1_SET_DISPLAY_DISABLE = 0x03u;
+constexpr u32 GX_GPU_GP1_SET_DMA_DIRECTION = 0x04u;
+constexpr u32 GX_GPU_GP1_SET_DISPLAY_START = 0x05u;
+constexpr u32 GX_GPU_GP1_SET_HORIZONTAL_DISPLAY_RANGE = 0x06u;
+constexpr u32 GX_GPU_GP1_SET_VERTICAL_DISPLAY_RANGE = 0x07u;
 constexpr u32 GX_GPU_GP1_SET_DISPLAY_MODE = 0x08u;
+constexpr u32 GX_GPU_GP1_SET_TEXTURE_DISABLE_MASK = 0x09u;
 constexpr u32 GX_GPU_GP1_OPCODE_SHIFT = 24u;
 constexpr u32 GX_GPU_GP1_PARAM_MASK = 0x00ffffffu;
 
+constexpr u32 GX_GPU_GP0_IRQ_REQUEST = 0x1fu;
+constexpr u32 GX_GPU_GP0_OPCODE_SHIFT = 24u;
+
+constexpr u32 GX_GPU_DISPLAY_START_MASK = 0x0007ffffu;
+constexpr u32 GX_GPU_HORIZONTAL_DISPLAY_RANGE_MASK = 0x00ffffffu;
+constexpr u32 GX_GPU_VERTICAL_DISPLAY_RANGE_MASK = 0x000fffffu;
+
+constexpr u32 GX_GPU_DMA_DIRECTION_OFF = 0u;
+constexpr u32 GX_GPU_DMA_DIRECTION_FIFO = 1u;
+constexpr u32 GX_GPU_DMA_DIRECTION_CPU_TO_GP0 = 2u;
+constexpr u32 GX_GPU_DMA_DIRECTION_GPUREAD_TO_CPU = 3u;
+
+constexpr u32 GX_GPU_STATUS_INTERLACED_FIELD = 1u << 13u;
 constexpr u32 GX_GPU_STATUS_REVERSE_FLAG = 1u << 14u;
+constexpr u32 GX_GPU_STATUS_TEXTURE_DISABLE = 1u << 15u;
 constexpr u32 GX_GPU_STATUS_HORIZONTAL_RESOLUTION_2 = 1u << 16u;
 constexpr u32 GX_GPU_STATUS_HORIZONTAL_RESOLUTION_1_SHIFT = 17u;
 constexpr u32 GX_GPU_STATUS_VERTICAL_RESOLUTION = 1u << 19u;
 constexpr u32 GX_GPU_STATUS_PAL_MODE = 1u << 20u;
 constexpr u32 GX_GPU_STATUS_DISPLAY_AREA_COLOR_DEPTH_24 = 1u << 21u;
 constexpr u32 GX_GPU_STATUS_VERTICAL_INTERLACE = 1u << 22u;
+constexpr u32 GX_GPU_STATUS_DISPLAY_DISABLE = 1u << 23u;
+constexpr u32 GX_GPU_STATUS_INTERRUPT_REQUEST = 1u << 24u;
+constexpr u32 GX_GPU_STATUS_DMA_DATA_REQUEST = 1u << 25u;
 constexpr u32 GX_GPU_STATUS_GPU_IDLE = 1u << 26u;
 constexpr u32 GX_GPU_STATUS_READY_TO_SEND_VRAM = 1u << 27u;
 constexpr u32 GX_GPU_STATUS_READY_TO_RECEIVE_DMA = 1u << 28u;
-constexpr u32 GX_GPU_STATUS_READY_WORD = GX_GPU_STATUS_GPU_IDLE | GX_GPU_STATUS_READY_TO_SEND_VRAM | GX_GPU_STATUS_READY_TO_RECEIVE_DMA;
+constexpr u32 GX_GPU_STATUS_DMA_DIRECTION_SHIFT = 29u;
+constexpr u32 GX_GPU_STATUS_DMA_DIRECTION_MASK = 0x3u << GX_GPU_STATUS_DMA_DIRECTION_SHIFT;
+constexpr u32 GX_GPU_STATUS_RESET_WORD = GX_GPU_STATUS_INTERLACED_FIELD
+	| GX_GPU_STATUS_DISPLAY_DISABLE
+	| GX_GPU_STATUS_GPU_IDLE
+	| GX_GPU_STATUS_READY_TO_RECEIVE_DMA;
 constexpr u32 GX_GPU_STATUS_DISPLAY_MODE_MASK = GX_GPU_STATUS_REVERSE_FLAG
 	| GX_GPU_STATUS_HORIZONTAL_RESOLUTION_2
 	| (0x3u << GX_GPU_STATUS_HORIZONTAL_RESOLUTION_1_SHIFT)
@@ -49,15 +79,27 @@ public:
 	u32 writeGp1(u32 word);
 	u32 readDisplayModeWord() const;
 	void writeDisplayModeWord(u32 word);
+	u32 readDisplayStartWord() const;
+	u32 readHorizontalDisplayRangeWord() const;
+	u32 readVerticalDisplayRangeWord() const;
+	u32 readTextureDisableMaskWord() const;
 
 private:
 	Memory& m_memory;
 	u32 m_gp0Word = 0;
 	u32 m_gp1Word = 0;
 	u32 m_displayModeWord = 0;
-	u32 m_statusWord = GX_GPU_STATUS_READY_WORD;
+	u32 m_statusWord = GX_GPU_STATUS_RESET_WORD;
+	u32 m_displayStartWord = 0u;
+	u32 m_horizontalDisplayRangeWord = 0x00c60260u;
+	u32 m_verticalDisplayRangeWord = 0x0003fc10u;
+	u32 m_textureDisableMaskWord = 0u;
 
+	void writeDisplayDisableWord(u32 word);
+	void writeDmaDirectionWord(u32 word);
+	void updateDmaRequestStatusBit();
 	void updateDisplayModeStatusBits();
+	void writeStatusIo();
 	static u64 readGp0Thunk(void* context, u32 addr);
 	static void writeGp0Thunk(void* context, u32 addr, u64 value);
 	static u64 readStatusThunk(void* context, u32 addr);
