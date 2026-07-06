@@ -815,7 +815,10 @@ export function setupVdpRpuLocations(backend: WebGLBackend): void {
 
 export function renderVdpRpuFrame(runtime: VdpRpuRuntime, framebuffer: WebGLFramebuffer, state: RenderPassStateRegistry['vdp_rpu']): void {
 	const backend = runtime.backend;
-	const gl = backend.gl;
+	const gl = requireVdpRpuGl(backend.gl);
+	if (vdpRpuVertexArray === null) {
+		throw new Error('[VDPRPU] render called before pipeline initialization.');
+	}
 	vdpRpuBackend = backend;
 	vdpRpuGl = gl;
 	const frame = state.frame;
