@@ -12,6 +12,8 @@ import { Memory } from '../../machine/ts/machine/memory/memory';
 
 import {
 	GX_GTE_CYCLES_AVSZ3,
+	GX_GTE_CYCLES_CC,
+	GX_GTE_CYCLES_CDP,
 	GX_GTE_CYCLES_DCPL,
 	GX_GTE_CYCLES_DPCS,
 	GX_GTE_CYCLES_DPCT,
@@ -19,7 +21,13 @@ import {
 	GX_GTE_CYCLES_GPL,
 	GX_GTE_CYCLES_INTPL,
 	GX_GTE_CYCLES_MVMVA,
+	GX_GTE_CYCLES_NCCS,
+	GX_GTE_CYCLES_NCCT,
+	GX_GTE_CYCLES_NCDS,
+	GX_GTE_CYCLES_NCDT,
 	GX_GTE_CYCLES_NCLIP,
+	GX_GTE_CYCLES_NCS,
+	GX_GTE_CYCLES_NCT,
 	GX_GTE_CYCLES_OP,
 	GX_GTE_CYCLES_RTPS,
 	GX_GTE_CYCLES_SQR,
@@ -27,6 +35,8 @@ import {
 	GX_GTE_FLAG_DIV_OVERFLOW,
 	GX_GTE_FLAG_ERROR,
 	GX_GTE_FN_AVSZ3,
+	GX_GTE_FN_CC,
+	GX_GTE_FN_CDP,
 	GX_GTE_FN_DCPL,
 	GX_GTE_FN_DPCS,
 	GX_GTE_FN_DPCT,
@@ -34,7 +44,13 @@ import {
 	GX_GTE_FN_GPL,
 	GX_GTE_FN_INTPL,
 	GX_GTE_FN_MVMVA,
+	GX_GTE_FN_NCCS,
+	GX_GTE_FN_NCCT,
+	GX_GTE_FN_NCDS,
+	GX_GTE_FN_NCDT,
 	GX_GTE_FN_NCLIP,
+	GX_GTE_FN_NCS,
+	GX_GTE_FN_NCT,
 	GX_GTE_FN_OP,
 	GX_GTE_FN_RTPS,
 	GX_GTE_FN_SQR,
@@ -65,6 +81,38 @@ function setupIdentityProjection(gte: GxGte): void {
 	gte.writeControlRegister(24, 160 << 16);
 	gte.writeControlRegister(25, 120 << 16);
 	gte.writeControlRegister(26, 256);
+}
+
+function setupIdentityLighting(gte: GxGte): void {
+	gte.writeControlRegister(8, pack16(0x1000, 0));
+	gte.writeControlRegister(9, pack16(0, 0));
+	gte.writeControlRegister(10, pack16(0x1000, 0));
+	gte.writeControlRegister(11, pack16(0, 0));
+	gte.writeControlRegister(12, 0x1000);
+	gte.writeControlRegister(13, 0);
+	gte.writeControlRegister(14, 0);
+	gte.writeControlRegister(15, 0);
+	gte.writeControlRegister(16, pack16(0x1000, 0));
+	gte.writeControlRegister(17, pack16(0, 0));
+	gte.writeControlRegister(18, pack16(0x1000, 0));
+	gte.writeControlRegister(19, pack16(0, 0));
+	gte.writeControlRegister(20, 0x1000);
+}
+
+function setupUnitLighting(gte: GxGte): void {
+	gte.writeControlRegister(8, pack16(1, 0));
+	gte.writeControlRegister(9, pack16(0, 0));
+	gte.writeControlRegister(10, pack16(1, 0));
+	gte.writeControlRegister(11, pack16(0, 0));
+	gte.writeControlRegister(12, 1);
+	gte.writeControlRegister(13, 0);
+	gte.writeControlRegister(14, 0);
+	gte.writeControlRegister(15, 0);
+	gte.writeControlRegister(16, pack16(1, 0));
+	gte.writeControlRegister(17, pack16(0, 0));
+	gte.writeControlRegister(18, pack16(1, 0));
+	gte.writeControlRegister(19, pack16(0, 0));
+	gte.writeControlRegister(20, 1);
 }
 
 test('GX-GTE RTPS follows PSX register pipeline for an identity projection', () => {
@@ -240,6 +288,157 @@ test('GX-GTE DPCT consumes RGB0/RGB1/RGB2 through the PSX color FIFO', () => {
 	assert.equal(gte.readDataRegister(21), packRgb(4, 5, 6, 0xaa));
 	assert.equal(gte.readDataRegister(22), packRgb(7, 8, 9, 0xaa));
 	assert.equal(gte.readControlRegister(31), 0);
+});
+
+test('GX-GTE NCS and NCT use the PSX light and color matrix pipeline', () => {
+	const { gte } = createGte();
+	setupIdentityLighting(gte);
+	gte.writeDataRegister(6, packRgb(0, 0, 0, 0x31));
+	gte.writeDataRegister(0, pack16(256, 512));
+	gte.writeDataRegister(1, 768);
+
+	assert.equal(gte.execute(GTE_SF | GX_GTE_FN_NCS), GX_GTE_CYCLES_NCS);
+
+	assert.equal(gte.readDataRegister(9), 256);
+	assert.equal(gte.readDataRegister(10), 512);
+	assert.equal(gte.readDataRegister(11), 768);
+	assert.equal(gte.readDataRegister(22), packRgb(16, 32, 48, 0x31));
+	assert.equal(gte.readControlRegister(31), 0);
+
+	const next = createGte().gte;
+	setupIdentityLighting(next);
+	next.writeDataRegister(6, packRgb(0, 0, 0, 0x32));
+	next.writeDataRegister(0, pack16(160, 320));
+	next.writeDataRegister(1, 480);
+	next.writeDataRegister(2, pack16(320, 480));
+	next.writeDataRegister(3, 640);
+	next.writeDataRegister(4, pack16(480, 640));
+	next.writeDataRegister(5, 800);
+
+	assert.equal(next.execute(GTE_SF | GX_GTE_FN_NCT), GX_GTE_CYCLES_NCT);
+
+	assert.equal(next.readDataRegister(20), packRgb(10, 20, 30, 0x32));
+	assert.equal(next.readDataRegister(21), packRgb(20, 30, 40, 0x32));
+	assert.equal(next.readDataRegister(22), packRgb(30, 40, 50, 0x32));
+	assert.equal(next.readControlRegister(31), 0);
+});
+
+test('GX-GTE NCCS and CC apply RGBC after the PSX color matrix', () => {
+	const { gte } = createGte();
+	setupUnitLighting(gte);
+	gte.writeDataRegister(6, packRgb(2, 3, 4, 0x71));
+	gte.writeDataRegister(0, pack16(10, 20));
+	gte.writeDataRegister(1, 30);
+
+	assert.equal(gte.execute(GX_GTE_FN_NCCS), GX_GTE_CYCLES_NCCS);
+
+	assert.equal(gte.readDataRegister(9), 320);
+	assert.equal(gte.readDataRegister(10), 960);
+	assert.equal(gte.readDataRegister(11), 1920);
+	assert.equal(gte.readDataRegister(22), packRgb(20, 60, 120, 0x71));
+	assert.equal(gte.readControlRegister(31), 0);
+
+	const next = createGte().gte;
+	setupUnitLighting(next);
+	next.writeDataRegister(6, packRgb(2, 3, 4, 0x72));
+	next.writeDataRegister(9, 10);
+	next.writeDataRegister(10, 20);
+	next.writeDataRegister(11, 30);
+
+	assert.equal(next.execute(GX_GTE_FN_CC), GX_GTE_CYCLES_CC);
+
+	assert.equal(next.readDataRegister(9), 320);
+	assert.equal(next.readDataRegister(10), 960);
+	assert.equal(next.readDataRegister(11), 1920);
+	assert.equal(next.readDataRegister(22), packRgb(20, 60, 120, 0x72));
+	assert.equal(next.readControlRegister(31), 0);
+
+	const shuffled = createGte().gte;
+	setupUnitLighting(shuffled);
+	shuffled.writeControlRegister(16, pack16(0, 1));
+	shuffled.writeControlRegister(17, pack16(0, 0));
+	shuffled.writeControlRegister(18, pack16(0, 1));
+	shuffled.writeControlRegister(19, pack16(1, 0));
+	shuffled.writeControlRegister(20, 0);
+	shuffled.writeDataRegister(6, packRgb(1, 1, 1, 0x79));
+	shuffled.writeDataRegister(9, 10);
+	shuffled.writeDataRegister(10, 20);
+	shuffled.writeDataRegister(11, 30);
+
+	assert.equal(shuffled.execute(GX_GTE_FN_CC), GX_GTE_CYCLES_CC);
+
+	assert.equal(shuffled.readDataRegister(9), 320);
+	assert.equal(shuffled.readDataRegister(10), 480);
+	assert.equal(shuffled.readDataRegister(11), 160);
+	assert.equal(shuffled.readDataRegister(22), packRgb(20, 30, 10, 0x79));
+	assert.equal(shuffled.readControlRegister(31), 0);
+});
+
+test('GX-GTE NCDS and CDP depth-cue RGBC after the PSX color matrix', () => {
+	const { gte } = createGte();
+	setupUnitLighting(gte);
+	gte.writeDataRegister(6, packRgb(2, 3, 4, 0x73));
+	gte.writeDataRegister(0, pack16(10, 20));
+	gte.writeDataRegister(1, 30);
+
+	assert.equal(gte.execute(GX_GTE_FN_NCDS), GX_GTE_CYCLES_NCDS);
+
+	assert.equal(gte.readDataRegister(9), 320);
+	assert.equal(gte.readDataRegister(10), 960);
+	assert.equal(gte.readDataRegister(11), 1920);
+	assert.equal(gte.readDataRegister(22), packRgb(20, 60, 120, 0x73));
+	assert.equal(gte.readControlRegister(31), 0);
+
+	const next = createGte().gte;
+	setupUnitLighting(next);
+	next.writeDataRegister(6, packRgb(2, 3, 4, 0x74));
+	next.writeDataRegister(9, 10);
+	next.writeDataRegister(10, 20);
+	next.writeDataRegister(11, 30);
+
+	assert.equal(next.execute(GX_GTE_FN_CDP), GX_GTE_CYCLES_CDP);
+
+	assert.equal(next.readDataRegister(9), 320);
+	assert.equal(next.readDataRegister(10), 960);
+	assert.equal(next.readDataRegister(11), 1920);
+	assert.equal(next.readDataRegister(22), packRgb(20, 60, 120, 0x74));
+	assert.equal(next.readControlRegister(31), 0);
+});
+
+test('GX-GTE NCDT and NCCT process all three PSX normal/vector slots through RGB FIFO', () => {
+	const { gte } = createGte();
+	setupUnitLighting(gte);
+	gte.writeDataRegister(6, packRgb(1, 1, 1, 0x75));
+	gte.writeDataRegister(0, pack16(1, 2));
+	gte.writeDataRegister(1, 3);
+	gte.writeDataRegister(2, pack16(4, 5));
+	gte.writeDataRegister(3, 6);
+	gte.writeDataRegister(4, pack16(7, 8));
+	gte.writeDataRegister(5, 9);
+
+	assert.equal(gte.execute(GX_GTE_FN_NCDT), GX_GTE_CYCLES_NCDT);
+
+	assert.equal(gte.readDataRegister(20), packRgb(1, 2, 3, 0x75));
+	assert.equal(gte.readDataRegister(21), packRgb(4, 5, 6, 0x75));
+	assert.equal(gte.readDataRegister(22), packRgb(7, 8, 9, 0x75));
+	assert.equal(gte.readControlRegister(31), 0);
+
+	const next = createGte().gte;
+	setupUnitLighting(next);
+	next.writeDataRegister(6, packRgb(1, 1, 1, 0x76));
+	next.writeDataRegister(0, pack16(1, 2));
+	next.writeDataRegister(1, 3);
+	next.writeDataRegister(2, pack16(4, 5));
+	next.writeDataRegister(3, 6);
+	next.writeDataRegister(4, pack16(7, 8));
+	next.writeDataRegister(5, 9);
+
+	assert.equal(next.execute(GX_GTE_FN_NCCT), GX_GTE_CYCLES_NCCT);
+
+	assert.equal(next.readDataRegister(20), packRgb(1, 2, 3, 0x76));
+	assert.equal(next.readDataRegister(21), packRgb(4, 5, 6, 0x76));
+	assert.equal(next.readDataRegister(22), packRgb(7, 8, 9, 0x76));
+	assert.equal(next.readControlRegister(31), 0);
 });
 
 test('GX-GTE GPF and GPL use PSX MAC/IR color datapaths', () => {

@@ -19,6 +19,13 @@ export const GX_GTE_FN_OP = 0x0c;
 export const GX_GTE_FN_DPCS = 0x10;
 export const GX_GTE_FN_INTPL = 0x11;
 export const GX_GTE_FN_MVMVA = 0x12;
+export const GX_GTE_FN_NCDS = 0x13;
+export const GX_GTE_FN_CDP = 0x14;
+export const GX_GTE_FN_NCDT = 0x16;
+export const GX_GTE_FN_NCCS = 0x1b;
+export const GX_GTE_FN_CC = 0x1c;
+export const GX_GTE_FN_NCS = 0x1e;
+export const GX_GTE_FN_NCT = 0x20;
 export const GX_GTE_FN_SQR = 0x28;
 export const GX_GTE_FN_DCPL = 0x29;
 export const GX_GTE_FN_DPCT = 0x2a;
@@ -27,6 +34,7 @@ export const GX_GTE_FN_AVSZ4 = 0x2e;
 export const GX_GTE_FN_RTPT = 0x30;
 export const GX_GTE_FN_GPF = 0x3d;
 export const GX_GTE_FN_GPL = 0x3e;
+export const GX_GTE_FN_NCCT = 0x3f;
 
 export const GX_GTE_CYCLES_RTPS = 15;
 export const GX_GTE_CYCLES_NCLIP = 8;
@@ -34,6 +42,13 @@ export const GX_GTE_CYCLES_OP = 6;
 export const GX_GTE_CYCLES_DPCS = 8;
 export const GX_GTE_CYCLES_INTPL = 8;
 export const GX_GTE_CYCLES_MVMVA = 8;
+export const GX_GTE_CYCLES_NCDS = 19;
+export const GX_GTE_CYCLES_CDP = 13;
+export const GX_GTE_CYCLES_NCDT = 44;
+export const GX_GTE_CYCLES_NCCS = 17;
+export const GX_GTE_CYCLES_CC = 11;
+export const GX_GTE_CYCLES_NCS = 14;
+export const GX_GTE_CYCLES_NCT = 30;
 export const GX_GTE_CYCLES_SQR = 5;
 export const GX_GTE_CYCLES_DCPL = 8;
 export const GX_GTE_CYCLES_DPCT = 17;
@@ -42,6 +57,7 @@ export const GX_GTE_CYCLES_AVSZ4 = 6;
 export const GX_GTE_CYCLES_RTPT = 23;
 export const GX_GTE_CYCLES_GPF = 5;
 export const GX_GTE_CYCLES_GPL = 5;
+export const GX_GTE_CYCLES_NCCT = 39;
 
 export const GX_GTE_FLAG_ERROR = 0x80000000;
 export const GX_GTE_FLAG_MAC1_POS = 0x40000000;
@@ -363,6 +379,38 @@ export class GxGte {
 				this.executeMvmva(opcode, sf, lm);
 				this.updateFlagError();
 				return GX_GTE_CYCLES_MVMVA;
+			case GX_GTE_FN_NCDS:
+				this.executeNcdsForVector(0, sf, lm);
+				this.updateFlagError();
+				return GX_GTE_CYCLES_NCDS;
+			case GX_GTE_FN_CDP:
+				this.executeCdp(sf, lm);
+				this.updateFlagError();
+				return GX_GTE_CYCLES_CDP;
+			case GX_GTE_FN_NCDT:
+				this.executeNcdsForVector(0, sf, lm);
+				this.executeNcdsForVector(1, sf, lm);
+				this.executeNcdsForVector(2, sf, lm);
+				this.updateFlagError();
+				return GX_GTE_CYCLES_NCDT;
+			case GX_GTE_FN_NCCS:
+				this.executeNccsForVector(0, sf, lm);
+				this.updateFlagError();
+				return GX_GTE_CYCLES_NCCS;
+			case GX_GTE_FN_CC:
+				this.executeCc(sf, lm);
+				this.updateFlagError();
+				return GX_GTE_CYCLES_CC;
+			case GX_GTE_FN_NCS:
+				this.executeNcsForVector(0, sf, lm);
+				this.updateFlagError();
+				return GX_GTE_CYCLES_NCS;
+			case GX_GTE_FN_NCT:
+				this.executeNcsForVector(0, sf, lm);
+				this.executeNcsForVector(1, sf, lm);
+				this.executeNcsForVector(2, sf, lm);
+				this.updateFlagError();
+				return GX_GTE_CYCLES_NCT;
 			case GX_GTE_FN_SQR:
 				this.executeSqr(sf, lm);
 				this.updateFlagError();
@@ -397,6 +445,12 @@ export class GxGte {
 				this.executeGpl(sf, lm);
 				this.updateFlagError();
 				return GX_GTE_CYCLES_GPL;
+			case GX_GTE_FN_NCCT:
+				this.executeNccsForVector(0, sf, lm);
+				this.executeNccsForVector(1, sf, lm);
+				this.executeNccsForVector(2, sf, lm);
+				this.updateFlagError();
+				return GX_GTE_CYCLES_NCCT;
 			default:
 				return 0;
 		}
@@ -533,6 +587,94 @@ export class GxGte {
 		this.pushRgbFromMac();
 	}
 
+	private matrixVectorMultiply(matrix: number, vectorIndex: number, controlVector: number, sf: number, lm: number): void {
+		this.currentSf = sf;
+		const x = this.vector(vectorIndex, 0);
+		const y = this.vector(vectorIndex, 1);
+		const z = this.vector(vectorIndex, 2);
+		this.accumulateSigned44(
+			this.cv(controlVector, 0) * 4096,
+			this.mx(matrix, 0, 0) * x,
+			this.mx(matrix, 0, 1) * y,
+			this.mx(matrix, 0, 2) * z,
+		);
+		const mac1 = this.accumValue;
+		const mac1PositiveOverflow = this.accumPositiveOverflow;
+		const mac1NegativeOverflow = this.accumNegativeOverflow;
+		this.accumulateSigned44(
+			this.cv(controlVector, 1) * 4096,
+			this.mx(matrix, 1, 0) * x,
+			this.mx(matrix, 1, 1) * y,
+			this.mx(matrix, 1, 2) * z,
+		);
+		const mac2 = this.accumValue;
+		const mac2PositiveOverflow = this.accumPositiveOverflow;
+		const mac2NegativeOverflow = this.accumNegativeOverflow;
+		this.accumulateSigned44(
+			this.cv(controlVector, 2) * 4096,
+			this.mx(matrix, 2, 0) * x,
+			this.mx(matrix, 2, 1) * y,
+			this.mx(matrix, 2, 2) * z,
+		);
+		const mac3 = this.accumValue;
+		const mac3PositiveOverflow = this.accumPositiveOverflow;
+		const mac3NegativeOverflow = this.accumNegativeOverflow;
+		this.writeIrFromMac(1, this.mac(1, mac1, mac1PositiveOverflow, mac1NegativeOverflow), lm);
+		this.writeIrFromMac(2, this.mac(2, mac2, mac2PositiveOverflow, mac2NegativeOverflow), lm);
+		this.writeIrFromMac(3, this.mac(3, mac3, mac3PositiveOverflow, mac3NegativeOverflow), lm);
+	}
+
+	private lightTransform(vectorIndex: number, sf: number, lm: number): void {
+		this.matrixVectorMultiply(1, vectorIndex, 3, sf, lm);
+	}
+
+	private colorMatrix(sf: number, lm: number): void {
+		this.matrixVectorMultiply(2, 3, 1, sf, lm);
+	}
+
+	private colorApply(sf: number, lm: number): void {
+		this.currentSf = sf;
+		this.writeIrFromMac(1, this.macSigned44(1, (this.rgbR() << 4) * sign16(this.dataRegisterWords[9])), lm);
+		this.writeIrFromMac(2, this.macSigned44(2, (this.rgbG() << 4) * sign16(this.dataRegisterWords[10])), lm);
+		this.writeIrFromMac(3, this.macSigned44(3, (this.rgbB() << 4) * sign16(this.dataRegisterWords[11])), lm);
+	}
+
+	private depthCueColor(sf: number, lm: number): void {
+		this.depthCue((this.rgbR() << 4) * sign16(this.dataRegisterWords[9]), (this.rgbG() << 4) * sign16(this.dataRegisterWords[10]), (this.rgbB() << 4) * sign16(this.dataRegisterWords[11]), sf, lm);
+	}
+
+	private executeNcsForVector(vectorIndex: number, sf: number, lm: number): void {
+		this.lightTransform(vectorIndex, sf, lm);
+		this.colorMatrix(sf, lm);
+		this.pushRgbFromMac();
+	}
+
+	private executeNccsForVector(vectorIndex: number, sf: number, lm: number): void {
+		this.lightTransform(vectorIndex, sf, lm);
+		this.colorMatrix(sf, lm);
+		this.colorApply(sf, lm);
+		this.pushRgbFromMac();
+	}
+
+	private executeNcdsForVector(vectorIndex: number, sf: number, lm: number): void {
+		this.lightTransform(vectorIndex, sf, lm);
+		this.colorMatrix(sf, lm);
+		this.depthCueColor(sf, lm);
+		this.pushRgbFromMac();
+	}
+
+	private executeCc(sf: number, lm: number): void {
+		this.colorMatrix(sf, lm);
+		this.colorApply(sf, lm);
+		this.pushRgbFromMac();
+	}
+
+	private executeCdp(sf: number, lm: number): void {
+		this.colorMatrix(sf, lm);
+		this.depthCueColor(sf, lm);
+		this.pushRgbFromMac();
+	}
+
 	private executeSqr(sf: number, lm: number): void {
 		this.currentSf = sf;
 		const ir1 = sign16(this.dataRegisterWords[9]);
@@ -544,7 +686,7 @@ export class GxGte {
 	}
 
 	private executeDcpl(sf: number, lm: number): void {
-		this.depthCue((this.rgbR() << 4) * sign16(this.dataRegisterWords[9]), (this.rgbG() << 4) * sign16(this.dataRegisterWords[10]), (this.rgbB() << 4) * sign16(this.dataRegisterWords[11]), sf, lm);
+		this.depthCueColor(sf, lm);
 		this.pushRgbFromMac();
 	}
 

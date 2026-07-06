@@ -283,6 +283,38 @@ u32 GxGte::execute(u32 opcode) {
 		executeMvmva(opcode, sf, lm);
 		updateFlagError();
 		return GX_GTE_CYCLES_MVMVA;
+	case GX_GTE_FN_NCDS:
+		executeNcdsForVector(0u, sf, lm);
+		updateFlagError();
+		return GX_GTE_CYCLES_NCDS;
+	case GX_GTE_FN_CDP:
+		executeCdp(sf, lm);
+		updateFlagError();
+		return GX_GTE_CYCLES_CDP;
+	case GX_GTE_FN_NCDT:
+		executeNcdsForVector(0u, sf, lm);
+		executeNcdsForVector(1u, sf, lm);
+		executeNcdsForVector(2u, sf, lm);
+		updateFlagError();
+		return GX_GTE_CYCLES_NCDT;
+	case GX_GTE_FN_NCCS:
+		executeNccsForVector(0u, sf, lm);
+		updateFlagError();
+		return GX_GTE_CYCLES_NCCS;
+	case GX_GTE_FN_CC:
+		executeCc(sf, lm);
+		updateFlagError();
+		return GX_GTE_CYCLES_CC;
+	case GX_GTE_FN_NCS:
+		executeNcsForVector(0u, sf, lm);
+		updateFlagError();
+		return GX_GTE_CYCLES_NCS;
+	case GX_GTE_FN_NCT:
+		executeNcsForVector(0u, sf, lm);
+		executeNcsForVector(1u, sf, lm);
+		executeNcsForVector(2u, sf, lm);
+		updateFlagError();
+		return GX_GTE_CYCLES_NCT;
 	case GX_GTE_FN_SQR:
 		executeSqr(sf, lm);
 		updateFlagError();
@@ -317,6 +349,12 @@ u32 GxGte::execute(u32 opcode) {
 		executeGpl(sf, lm);
 		updateFlagError();
 		return GX_GTE_CYCLES_GPL;
+	case GX_GTE_FN_NCCT:
+		executeNccsForVector(0u, sf, lm);
+		executeNccsForVector(1u, sf, lm);
+		executeNccsForVector(2u, sf, lm);
+		updateFlagError();
+		return GX_GTE_CYCLES_NCCT;
 	default:
 		return 0u;
 	}
@@ -451,6 +489,94 @@ void GxGte::executeIntpl(u32 sf, u32 lm) {
 	pushRgbFromMac();
 }
 
+void GxGte::matrixVectorMultiply(u32 matrix, u32 vectorIndex, u32 controlVector, u32 sf, u32 lm) {
+	m_currentSf = sf;
+	const i32 x = vector(vectorIndex, 0u);
+	const i32 y = vector(vectorIndex, 1u);
+	const i32 z = vector(vectorIndex, 2u);
+	accumulateSigned44(
+		static_cast<i64>(cv(controlVector, 0u)) * 4096ll,
+		static_cast<i64>(mx(matrix, 0u, 0u)) * x,
+		static_cast<i64>(mx(matrix, 0u, 1u)) * y,
+		static_cast<i64>(mx(matrix, 0u, 2u)) * z
+	);
+	const i64 mac1 = m_accumValue;
+	const bool mac1PositiveOverflow = m_accumPositiveOverflow;
+	const bool mac1NegativeOverflow = m_accumNegativeOverflow;
+	accumulateSigned44(
+		static_cast<i64>(cv(controlVector, 1u)) * 4096ll,
+		static_cast<i64>(mx(matrix, 1u, 0u)) * x,
+		static_cast<i64>(mx(matrix, 1u, 1u)) * y,
+		static_cast<i64>(mx(matrix, 1u, 2u)) * z
+	);
+	const i64 mac2 = m_accumValue;
+	const bool mac2PositiveOverflow = m_accumPositiveOverflow;
+	const bool mac2NegativeOverflow = m_accumNegativeOverflow;
+	accumulateSigned44(
+		static_cast<i64>(cv(controlVector, 2u)) * 4096ll,
+		static_cast<i64>(mx(matrix, 2u, 0u)) * x,
+		static_cast<i64>(mx(matrix, 2u, 1u)) * y,
+		static_cast<i64>(mx(matrix, 2u, 2u)) * z
+	);
+	const i64 mac3 = m_accumValue;
+	const bool mac3PositiveOverflow = m_accumPositiveOverflow;
+	const bool mac3NegativeOverflow = m_accumNegativeOverflow;
+	writeIrFromMac(1u, mac(1u, mac1, mac1PositiveOverflow, mac1NegativeOverflow), lm);
+	writeIrFromMac(2u, mac(2u, mac2, mac2PositiveOverflow, mac2NegativeOverflow), lm);
+	writeIrFromMac(3u, mac(3u, mac3, mac3PositiveOverflow, mac3NegativeOverflow), lm);
+}
+
+void GxGte::lightTransform(u32 vectorIndex, u32 sf, u32 lm) {
+	matrixVectorMultiply(1u, vectorIndex, 3u, sf, lm);
+}
+
+void GxGte::colorMatrix(u32 sf, u32 lm) {
+	matrixVectorMultiply(2u, 3u, 1u, sf, lm);
+}
+
+void GxGte::colorApply(u32 sf, u32 lm) {
+	m_currentSf = sf;
+	writeIrFromMac(1u, macSigned44(1u, static_cast<i64>(rgbR() << 4u) * sign16(m_dataRegisterWords[9])), lm);
+	writeIrFromMac(2u, macSigned44(2u, static_cast<i64>(rgbG() << 4u) * sign16(m_dataRegisterWords[10])), lm);
+	writeIrFromMac(3u, macSigned44(3u, static_cast<i64>(rgbB() << 4u) * sign16(m_dataRegisterWords[11])), lm);
+}
+
+void GxGte::depthCueColor(u32 sf, u32 lm) {
+	depthCue(static_cast<i64>(rgbR() << 4u) * sign16(m_dataRegisterWords[9]), static_cast<i64>(rgbG() << 4u) * sign16(m_dataRegisterWords[10]), static_cast<i64>(rgbB() << 4u) * sign16(m_dataRegisterWords[11]), sf, lm);
+}
+
+void GxGte::executeNcsForVector(u32 vectorIndex, u32 sf, u32 lm) {
+	lightTransform(vectorIndex, sf, lm);
+	colorMatrix(sf, lm);
+	pushRgbFromMac();
+}
+
+void GxGte::executeNccsForVector(u32 vectorIndex, u32 sf, u32 lm) {
+	lightTransform(vectorIndex, sf, lm);
+	colorMatrix(sf, lm);
+	colorApply(sf, lm);
+	pushRgbFromMac();
+}
+
+void GxGte::executeNcdsForVector(u32 vectorIndex, u32 sf, u32 lm) {
+	lightTransform(vectorIndex, sf, lm);
+	colorMatrix(sf, lm);
+	depthCueColor(sf, lm);
+	pushRgbFromMac();
+}
+
+void GxGte::executeCc(u32 sf, u32 lm) {
+	colorMatrix(sf, lm);
+	colorApply(sf, lm);
+	pushRgbFromMac();
+}
+
+void GxGte::executeCdp(u32 sf, u32 lm) {
+	colorMatrix(sf, lm);
+	depthCueColor(sf, lm);
+	pushRgbFromMac();
+}
+
 void GxGte::executeSqr(u32 sf, u32 lm) {
 	m_currentSf = sf;
 	const i32 ir1 = sign16(m_dataRegisterWords[9]);
@@ -462,7 +588,7 @@ void GxGte::executeSqr(u32 sf, u32 lm) {
 }
 
 void GxGte::executeDcpl(u32 sf, u32 lm) {
-	depthCue(static_cast<i64>(rgbR() << 4u) * sign16(m_dataRegisterWords[9]), static_cast<i64>(rgbG() << 4u) * sign16(m_dataRegisterWords[10]), static_cast<i64>(rgbB() << 4u) * sign16(m_dataRegisterWords[11]), sf, lm);
+	depthCueColor(sf, lm);
 	pushRgbFromMac();
 }
 

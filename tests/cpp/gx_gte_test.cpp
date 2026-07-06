@@ -48,6 +48,38 @@ void setupIdentityProjection(bmsx::GxGte& gte) {
 	gte.writeControlRegister(26u, 256u);
 }
 
+void setupIdentityLighting(bmsx::GxGte& gte) {
+	gte.writeControlRegister(8u, pack16(0x1000u, 0u));
+	gte.writeControlRegister(9u, pack16(0u, 0u));
+	gte.writeControlRegister(10u, pack16(0x1000u, 0u));
+	gte.writeControlRegister(11u, pack16(0u, 0u));
+	gte.writeControlRegister(12u, 0x1000u);
+	gte.writeControlRegister(13u, 0u);
+	gte.writeControlRegister(14u, 0u);
+	gte.writeControlRegister(15u, 0u);
+	gte.writeControlRegister(16u, pack16(0x1000u, 0u));
+	gte.writeControlRegister(17u, pack16(0u, 0u));
+	gte.writeControlRegister(18u, pack16(0x1000u, 0u));
+	gte.writeControlRegister(19u, pack16(0u, 0u));
+	gte.writeControlRegister(20u, 0x1000u);
+}
+
+void setupUnitLighting(bmsx::GxGte& gte) {
+	gte.writeControlRegister(8u, pack16(1u, 0u));
+	gte.writeControlRegister(9u, pack16(0u, 0u));
+	gte.writeControlRegister(10u, pack16(1u, 0u));
+	gte.writeControlRegister(11u, pack16(0u, 0u));
+	gte.writeControlRegister(12u, 1u);
+	gte.writeControlRegister(13u, 0u);
+	gte.writeControlRegister(14u, 0u);
+	gte.writeControlRegister(15u, 0u);
+	gte.writeControlRegister(16u, pack16(1u, 0u));
+	gte.writeControlRegister(17u, pack16(0u, 0u));
+	gte.writeControlRegister(18u, pack16(1u, 0u));
+	gte.writeControlRegister(19u, pack16(0u, 0u));
+	gte.writeControlRegister(20u, 1u);
+}
+
 void testRtpsIdentityProjection() {
 	GteHarness harness;
 	bmsx::GxGte& gte = harness.gte;
@@ -233,6 +265,166 @@ void testDpct() {
 	require(gte.readControlRegister(31u) == 0u, "DPCT FLAG");
 }
 
+void testNcsNct() {
+	GteHarness harness;
+	bmsx::GxGte& gte = harness.gte;
+	setupIdentityLighting(gte);
+	gte.writeDataRegister(6u, packRgb(0u, 0u, 0u, 0x31u));
+	gte.writeDataRegister(0u, pack16(256u, 512u));
+	gte.writeDataRegister(1u, 768u);
+
+	require(gte.execute(GTE_SF | bmsx::GX_GTE_FN_NCS) == bmsx::GX_GTE_CYCLES_NCS, "NCS cycles");
+
+	require(gte.readDataRegister(9u) == 256u, "NCS IR1");
+	require(gte.readDataRegister(10u) == 512u, "NCS IR2");
+	require(gte.readDataRegister(11u) == 768u, "NCS IR3");
+	require(gte.readDataRegister(22u) == packRgb(16u, 32u, 48u, 0x31u), "NCS RGB2");
+	require(gte.readControlRegister(31u) == 0u, "NCS FLAG");
+
+	GteHarness nextHarness;
+	bmsx::GxGte& next = nextHarness.gte;
+	setupIdentityLighting(next);
+	next.writeDataRegister(6u, packRgb(0u, 0u, 0u, 0x32u));
+	next.writeDataRegister(0u, pack16(160u, 320u));
+	next.writeDataRegister(1u, 480u);
+	next.writeDataRegister(2u, pack16(320u, 480u));
+	next.writeDataRegister(3u, 640u);
+	next.writeDataRegister(4u, pack16(480u, 640u));
+	next.writeDataRegister(5u, 800u);
+
+	require(next.execute(GTE_SF | bmsx::GX_GTE_FN_NCT) == bmsx::GX_GTE_CYCLES_NCT, "NCT cycles");
+
+	require(next.readDataRegister(20u) == packRgb(10u, 20u, 30u, 0x32u), "NCT RGB0");
+	require(next.readDataRegister(21u) == packRgb(20u, 30u, 40u, 0x32u), "NCT RGB1");
+	require(next.readDataRegister(22u) == packRgb(30u, 40u, 50u, 0x32u), "NCT RGB2");
+	require(next.readControlRegister(31u) == 0u, "NCT FLAG");
+}
+
+void testNccsCc() {
+	GteHarness harness;
+	bmsx::GxGte& gte = harness.gte;
+	setupUnitLighting(gte);
+	gte.writeDataRegister(6u, packRgb(2u, 3u, 4u, 0x71u));
+	gte.writeDataRegister(0u, pack16(10u, 20u));
+	gte.writeDataRegister(1u, 30u);
+
+	require(gte.execute(bmsx::GX_GTE_FN_NCCS) == bmsx::GX_GTE_CYCLES_NCCS, "NCCS cycles");
+
+	require(gte.readDataRegister(9u) == 320u, "NCCS IR1");
+	require(gte.readDataRegister(10u) == 960u, "NCCS IR2");
+	require(gte.readDataRegister(11u) == 1920u, "NCCS IR3");
+	require(gte.readDataRegister(22u) == packRgb(20u, 60u, 120u, 0x71u), "NCCS RGB2");
+	require(gte.readControlRegister(31u) == 0u, "NCCS FLAG");
+
+	GteHarness nextHarness;
+	bmsx::GxGte& next = nextHarness.gte;
+	setupUnitLighting(next);
+	next.writeDataRegister(6u, packRgb(2u, 3u, 4u, 0x72u));
+	next.writeDataRegister(9u, 10u);
+	next.writeDataRegister(10u, 20u);
+	next.writeDataRegister(11u, 30u);
+
+	require(next.execute(bmsx::GX_GTE_FN_CC) == bmsx::GX_GTE_CYCLES_CC, "CC cycles");
+
+	require(next.readDataRegister(9u) == 320u, "CC IR1");
+	require(next.readDataRegister(10u) == 960u, "CC IR2");
+	require(next.readDataRegister(11u) == 1920u, "CC IR3");
+	require(next.readDataRegister(22u) == packRgb(20u, 60u, 120u, 0x72u), "CC RGB2");
+	require(next.readControlRegister(31u) == 0u, "CC FLAG");
+
+	GteHarness shuffledHarness;
+	bmsx::GxGte& shuffled = shuffledHarness.gte;
+	setupUnitLighting(shuffled);
+	shuffled.writeControlRegister(16u, pack16(0u, 1u));
+	shuffled.writeControlRegister(17u, pack16(0u, 0u));
+	shuffled.writeControlRegister(18u, pack16(0u, 1u));
+	shuffled.writeControlRegister(19u, pack16(1u, 0u));
+	shuffled.writeControlRegister(20u, 0u);
+	shuffled.writeDataRegister(6u, packRgb(1u, 1u, 1u, 0x79u));
+	shuffled.writeDataRegister(9u, 10u);
+	shuffled.writeDataRegister(10u, 20u);
+	shuffled.writeDataRegister(11u, 30u);
+
+	require(shuffled.execute(bmsx::GX_GTE_FN_CC) == bmsx::GX_GTE_CYCLES_CC, "CC shuffled cycles");
+
+	require(shuffled.readDataRegister(9u) == 320u, "CC shuffled IR1");
+	require(shuffled.readDataRegister(10u) == 480u, "CC shuffled IR2");
+	require(shuffled.readDataRegister(11u) == 160u, "CC shuffled IR3");
+	require(shuffled.readDataRegister(22u) == packRgb(20u, 30u, 10u, 0x79u), "CC shuffled RGB2");
+	require(shuffled.readControlRegister(31u) == 0u, "CC shuffled FLAG");
+}
+
+void testNcdsCdp() {
+	GteHarness harness;
+	bmsx::GxGte& gte = harness.gte;
+	setupUnitLighting(gte);
+	gte.writeDataRegister(6u, packRgb(2u, 3u, 4u, 0x73u));
+	gte.writeDataRegister(0u, pack16(10u, 20u));
+	gte.writeDataRegister(1u, 30u);
+
+	require(gte.execute(bmsx::GX_GTE_FN_NCDS) == bmsx::GX_GTE_CYCLES_NCDS, "NCDS cycles");
+
+	require(gte.readDataRegister(9u) == 320u, "NCDS IR1");
+	require(gte.readDataRegister(10u) == 960u, "NCDS IR2");
+	require(gte.readDataRegister(11u) == 1920u, "NCDS IR3");
+	require(gte.readDataRegister(22u) == packRgb(20u, 60u, 120u, 0x73u), "NCDS RGB2");
+	require(gte.readControlRegister(31u) == 0u, "NCDS FLAG");
+
+	GteHarness nextHarness;
+	bmsx::GxGte& next = nextHarness.gte;
+	setupUnitLighting(next);
+	next.writeDataRegister(6u, packRgb(2u, 3u, 4u, 0x74u));
+	next.writeDataRegister(9u, 10u);
+	next.writeDataRegister(10u, 20u);
+	next.writeDataRegister(11u, 30u);
+
+	require(next.execute(bmsx::GX_GTE_FN_CDP) == bmsx::GX_GTE_CYCLES_CDP, "CDP cycles");
+
+	require(next.readDataRegister(9u) == 320u, "CDP IR1");
+	require(next.readDataRegister(10u) == 960u, "CDP IR2");
+	require(next.readDataRegister(11u) == 1920u, "CDP IR3");
+	require(next.readDataRegister(22u) == packRgb(20u, 60u, 120u, 0x74u), "CDP RGB2");
+	require(next.readControlRegister(31u) == 0u, "CDP FLAG");
+}
+
+void testNcdtNcct() {
+	GteHarness harness;
+	bmsx::GxGte& gte = harness.gte;
+	setupUnitLighting(gte);
+	gte.writeDataRegister(6u, packRgb(1u, 1u, 1u, 0x75u));
+	gte.writeDataRegister(0u, pack16(1u, 2u));
+	gte.writeDataRegister(1u, 3u);
+	gte.writeDataRegister(2u, pack16(4u, 5u));
+	gte.writeDataRegister(3u, 6u);
+	gte.writeDataRegister(4u, pack16(7u, 8u));
+	gte.writeDataRegister(5u, 9u);
+
+	require(gte.execute(bmsx::GX_GTE_FN_NCDT) == bmsx::GX_GTE_CYCLES_NCDT, "NCDT cycles");
+
+	require(gte.readDataRegister(20u) == packRgb(1u, 2u, 3u, 0x75u), "NCDT RGB0");
+	require(gte.readDataRegister(21u) == packRgb(4u, 5u, 6u, 0x75u), "NCDT RGB1");
+	require(gte.readDataRegister(22u) == packRgb(7u, 8u, 9u, 0x75u), "NCDT RGB2");
+	require(gte.readControlRegister(31u) == 0u, "NCDT FLAG");
+
+	GteHarness nextHarness;
+	bmsx::GxGte& next = nextHarness.gte;
+	setupUnitLighting(next);
+	next.writeDataRegister(6u, packRgb(1u, 1u, 1u, 0x76u));
+	next.writeDataRegister(0u, pack16(1u, 2u));
+	next.writeDataRegister(1u, 3u);
+	next.writeDataRegister(2u, pack16(4u, 5u));
+	next.writeDataRegister(3u, 6u);
+	next.writeDataRegister(4u, pack16(7u, 8u));
+	next.writeDataRegister(5u, 9u);
+
+	require(next.execute(bmsx::GX_GTE_FN_NCCT) == bmsx::GX_GTE_CYCLES_NCCT, "NCCT cycles");
+
+	require(next.readDataRegister(20u) == packRgb(1u, 2u, 3u, 0x76u), "NCCT RGB0");
+	require(next.readDataRegister(21u) == packRgb(4u, 5u, 6u, 0x76u), "NCCT RGB1");
+	require(next.readDataRegister(22u) == packRgb(7u, 8u, 9u, 0x76u), "NCCT RGB2");
+	require(next.readControlRegister(31u) == 0u, "NCCT FLAG");
+}
+
 void testGpfGpl() {
 	GteHarness harness;
 	bmsx::GxGte& gte = harness.gte;
@@ -357,6 +549,10 @@ int main() {
 	testIntpl();
 	testDcpl();
 	testDpct();
+	testNcsNct();
+	testNccsCc();
+	testNcdsCdp();
+	testNcdtNcct();
 	testGpfGpl();
 	testRgbColorSaturationFlags();
 	testAvsz3();
