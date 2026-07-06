@@ -392,8 +392,8 @@ void GxGpu::pushGpuCommand(u8 kind, u32 opcode, size_t wordStart, u32 commandWor
 
 void GxGpu::beginImageLoadToVram(u32 opcode, u32 commandWordCount) {
 	const u32 sizeWord = m_gp0CommandWords[2];
-	const u32 width = (((sizeWord & 0xffffu) - 1u) & GX_GPU_VRAM_WIDTH_MASK) + 1u;
-	const u32 height = (((sizeWord >> 16u) - 1u) & GX_GPU_VRAM_HEIGHT_MASK) + 1u;
+	const u32 width = gxGpuTransferWidth(sizeWord);
+	const u32 height = gxGpuTransferHeight(sizeWord);
 	m_gp0ImageLoadCommandWordStart = m_commandBuffer.appendWords(m_gp0CommandWords.data(), commandWordCount);
 	m_gp0ImageLoadCommandWordCount = commandWordCount;
 	m_gp0ImageLoadCommandOpcode = static_cast<u8>(opcode);

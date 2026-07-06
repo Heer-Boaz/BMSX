@@ -69,6 +69,26 @@ export function gxGpuCommandRectangleHeight(opcode: number, sizeWord: number): n
 	}
 }
 
+export function gxGpuTransferX(xyWord: number): number {
+	return xyWord & 0x3ff;
+}
+
+export function gxGpuTransferY(xyWord: number): number {
+	return (xyWord >>> 16) & 0x1ff;
+}
+
+export function gxGpuTransferWidth(sizeWord: number): number {
+	return (((sizeWord & 0xffff) - 1) & 0x3ff) + 1;
+}
+
+export function gxGpuTransferHeight(sizeWord: number): number {
+	return ((((sizeWord >>> 16) & 0xffff) - 1) & 0x1ff) + 1;
+}
+
+export function gxGpuTransferPixelWord(payloadWord: number, pixelIndex: number): number {
+	return (pixelIndex & 1) === 0 ? payloadWord & 0xffff : payloadWord >>> 16;
+}
+
 export type GxGpuCommandBufferView = {
 	readonly serial: number;
 	readonly commandCount: number;

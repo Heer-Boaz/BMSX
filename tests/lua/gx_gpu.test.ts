@@ -14,6 +14,11 @@ import {
 	gxGpuCommandRectangleWidth,
 	gxGpuDrawingOffsetY,
 	gxGpuSigned11,
+	gxGpuTransferHeight,
+	gxGpuTransferPixelWord,
+	gxGpuTransferWidth,
+	gxGpuTransferX,
+	gxGpuTransferY,
 	gxGpuVertexX,
 	gxGpuVertexY,
 } from '../../machine/ts/machine/devices/gx/gpu_command_buffer';
@@ -98,6 +103,15 @@ test('GX-GPU decodes PSX GP0 signed vertex and rectangle size words', () => {
 	assert.equal(gxGpuCommandRectangleHeight(GX_GPU_GP0_RECTANGLE_FIRST | 0x10, 0), 8);
 	assert.equal(gxGpuCommandRectangleWidth(GX_GPU_GP0_RECTANGLE_FIRST | 0x18, 0), 16);
 	assert.equal(gxGpuCommandRectangleHeight(GX_GPU_GP0_RECTANGLE_FIRST | 0x18, 0), 16);
+
+	assert.equal(gxGpuTransferX(0x01ff03ff), 1023);
+	assert.equal(gxGpuTransferY(0x01ff03ff), 511);
+	assert.equal(gxGpuTransferWidth(0), 1024);
+	assert.equal(gxGpuTransferHeight(0), 512);
+	assert.equal(gxGpuTransferWidth(0x012c0007), 7);
+	assert.equal(gxGpuTransferHeight(0x012c0007), 300);
+	assert.equal(gxGpuTransferPixelWord(0x89abcdef, 0), 0xcdef);
+	assert.equal(gxGpuTransferPixelWord(0x89abcdef, 1), 0x89ab);
 });
 
 test('GX-GPU exposes PSX GP1 display mode instead of a VDP profile register', () => {

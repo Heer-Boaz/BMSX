@@ -78,6 +78,26 @@ inline u32 gxGpuCommandRectangleHeight(u32 opcode, u32 sizeWord) {
 	}
 }
 
+inline u32 gxGpuTransferX(u32 xyWord) {
+	return xyWord & 0x3ffu;
+}
+
+inline u32 gxGpuTransferY(u32 xyWord) {
+	return (xyWord >> 16u) & 0x1ffu;
+}
+
+inline u32 gxGpuTransferWidth(u32 sizeWord) {
+	return (((sizeWord & 0xffffu) - 1u) & 0x3ffu) + 1u;
+}
+
+inline u32 gxGpuTransferHeight(u32 sizeWord) {
+	return ((((sizeWord >> 16u) & 0xffffu) - 1u) & 0x1ffu) + 1u;
+}
+
+inline u32 gxGpuTransferPixelWord(u32 payloadWord, u32 pixelIndex) {
+	return (pixelIndex & 1u) == 0u ? payloadWord & 0xffffu : payloadWord >> 16u;
+}
+
 struct GxGpuCommandBuffer {
 	u32 serial = 0u;
 	size_t commandCount = 0u;

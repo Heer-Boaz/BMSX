@@ -1298,6 +1298,26 @@
 			"reason": "fixed_rpu_fragment_shader_variant_contract"
 		},
 		{
+			"webgl": "machine/ts/render/backend/webgl/shaders/gx_gpu_fill.vert.glsl",
+			"gles2": "machine/cpp/render/backend/gles2/shaders/gx_gpu_fill.vert.glsl",
+			"reason": "gx_gpu_solid_vertex_shader_contract"
+		},
+		{
+			"webgl": "machine/ts/render/backend/webgl/shaders/gx_gpu_fill.frag.glsl",
+			"gles2": "machine/cpp/render/backend/gles2/shaders/gx_gpu_fill.frag.glsl",
+			"reason": "gx_gpu_raw_vram_encode_shader_contract"
+		},
+		{
+			"webgl": "machine/ts/render/backend/webgl/shaders/gx_gpu_scanout.vert.glsl",
+			"gles2": "machine/cpp/render/backend/gles2/shaders/gx_gpu_scanout.vert.glsl",
+			"reason": "gx_gpu_scanout_vertex_shader_contract"
+		},
+		{
+			"webgl": "machine/ts/render/backend/webgl/shaders/gx_gpu_scanout.frag.glsl",
+			"gles2": "machine/cpp/render/backend/gles2/shaders/gx_gpu_scanout.frag.glsl",
+			"reason": "gx_gpu_raw_vram_decode_shader_contract"
+		},
+		{
 			"webgl": "machine/ts/render/2d/shaders/2d.vert.glsl",
 			"gles2": "machine/cpp/render/2d/shaders/2d.vert.glsl",
 			"reason": "host_framebuffer_texture_vertex_shader_contract"
@@ -3938,7 +3958,11 @@
 				"appendFillRectangle",
 				"appendSolidPolygon",
 				"appendSolidRectangle",
-				"uploadNewSolidCommands",
+				"writeRawVramUploadPixel",
+				"writeCpuToVramUploadRow",
+				"uploadCpuToVram",
+				"flushSolidCommands",
+				"executeNewGxGpuCommands",
 				"renderNewSolidCommands",
 				"scanoutGxGpuVram",
 				"renderGxGpuPass",
@@ -3957,7 +3981,11 @@
 				"appendFillRectangle",
 				"appendSolidPolygon",
 				"appendSolidRectangle",
-				"uploadNewSolidCommands",
+				"writeRawVramUploadPixel",
+				"writeCpuToVramUploadRow",
+				"uploadCpuToVram",
+				"flushSolidCommands",
+				"executeNewGxGpuCommands",
 				"renderNewSolidCommands",
 				"scanoutGxGpuVram",
 				"renderGxGpuGLES2",

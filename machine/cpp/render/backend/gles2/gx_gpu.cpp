@@ -21,11 +21,14 @@ constexpr size_t kGxGpuSolidVerticesPerCommand = 6u;
 constexpr size_t kGxGpuSolidFloatCapacity = GX_GPU_COMMAND_CAPACITY * kGxGpuSolidVerticesPerCommand * kGxGpuSolidVertexFloats;
 constexpr size_t kGxGpuScanoutVertexFloats = 4u;
 constexpr size_t kGxGpuScanoutFloatCount = 6u * kGxGpuScanoutVertexFloats;
+constexpr size_t kGxGpuRawVramBytesPerPixel = 4u;
+constexpr size_t kGxGpuRawVramUploadRowBytes = static_cast<size_t>(kGxGpuVramWidth) * kGxGpuRawVramBytesPerPixel;
 constexpr GLsizeiptr kGxGpuSolidBufferBytes = static_cast<GLsizeiptr>(kGxGpuSolidFloatCapacity * sizeof(f32));
 constexpr GLsizei kGxGpuSolidVertexStride = static_cast<GLsizei>(kGxGpuSolidVertexFloats * sizeof(f32));
 constexpr GLsizei kGxGpuScanoutVertexStride = static_cast<GLsizei>(kGxGpuScanoutVertexFloats * sizeof(f32));
 
 std::array<f32, kGxGpuSolidFloatCapacity> g_solidVertices{};
+std::array<u8, kGxGpuRawVramUploadRowBytes> g_rawVramUploadRow{};
 constexpr std::array<f32, kGxGpuScanoutFloatCount> kScanoutVertices{
 	-1.0f, 1.0f, 0.0f, 1.0f,
 	-1.0f, -1.0f, 0.0f, 1.0f - kGxGpuDisplayHeight / static_cast<f32>(kGxGpuVramHeight),
@@ -271,7 +274,68 @@ size_t appendSolidRectangle(const GxGpuCommandBuffer& commandBuffer, u32 command
 	return appendSolidQuad(vertexFloatCount, x0, y0, colorWord, x0, y1, colorWord, x1, y0, colorWord, x1, y1, colorWord);
 }
 
-GLsizei uploadNewSolidCommands(const GxGpuCommandBuffer& commandBuffer) {
+size_t writeRawVramUploadPixel(size_t rowByteOffset, u32 pixelWord) {
+	g_rawVramUploadRow[rowByteOffset] = static_cast<u8>(pixelWord & 0xffu);
+	g_rawVramUploadRow[rowByteOffset + 1u] = static_cast<u8>((pixelWord >> 8u) & 0xffu);
+	g_rawVramUploadRow[rowByteOffset + 2u] = 0u;
+	g_rawVramUploadRow[rowByteOffset + 3u] = 0xffu;
+	return rowByteOffset + kGxGpuRawVramBytesPerPixel;
+}
+
+void writeCpuToVramUploadRow(const GxGpuCommandBuffer& commandBuffer, u32 payloadWordStart, u32 rowPixelStart, u32 width) {
+	size_t rowByteOffset = 0u;
+	for (u32 column = 0u; column < width; column += 1u) {
+		const u32 pixelIndex = rowPixelStart + column;
+		const u32 payloadWord = commandBuffer.words[payloadWordStart + (pixelIndex >> 1u)];
+		rowByteOffset = writeRawVramUploadPixel(rowByteOffset, gxGpuTransferPixelWord(payloadWord, pixelIndex));
+	}
+}
+
+void uploadCpuToVram(OpenGLES2Backend& backend, const GxGpuCommandBuffer& commandBuffer, u32 commandIndex) {
+	const u32 wordStart = commandBuffer.commandWordStart[commandIndex];
+	const u32 xyWord = commandBuffer.words[wordStart + 1u];
+	const u32 sizeWord = commandBuffer.words[wordStart + 2u];
+	const u32 x = gxGpuTransferX(xyWord);
+	const u32 y = gxGpuTransferY(xyWord);
+	const u32 width = gxGpuTransferWidth(sizeWord);
+	const u32 height = gxGpuTransferHeight(sizeWord);
+	const u32 payloadWordStart = wordStart + 3u;
+
+	backend.setRenderTarget(0, kGxGpuVramWidth, kGxGpuVramHeight);
+	backend.setActiveTextureUnit(kGxGpuScanoutTextureUnit);
+	backend.bindTexture2D(&g_gxGpu.vramTexture);
+	for (u32 row = 0u; row < height; row += 1u) {
+		writeCpuToVramUploadRow(commandBuffer, payloadWordStart, row * width, width);
+		const u32 targetY = (y + row) & (kGxGpuVramHeight - 1u);
+		const u32 firstWidth = width <= static_cast<u32>(kGxGpuVramWidth) - x ? width : static_cast<u32>(kGxGpuVramWidth) - x;
+		glTexSubImage2D(GL_TEXTURE_2D, 0, static_cast<GLint>(x), static_cast<GLint>(targetY), static_cast<GLsizei>(firstWidth), 1, GL_RGBA, GL_UNSIGNED_BYTE, g_rawVramUploadRow.data());
+		if (firstWidth != width) {
+			glTexSubImage2D(
+				GL_TEXTURE_2D,
+				0,
+				0,
+				static_cast<GLint>(targetY),
+				static_cast<GLsizei>(width - firstWidth),
+				1,
+				GL_RGBA,
+				GL_UNSIGNED_BYTE,
+				g_rawVramUploadRow.data() + firstWidth * kGxGpuRawVramBytesPerPixel);
+		}
+	}
+}
+
+void renderNewSolidCommands(OpenGLES2Backend& backend, GLsizei vertexCount);
+
+size_t flushSolidCommands(OpenGLES2Backend& backend, size_t vertexFloatCount) {
+	if (vertexFloatCount != 0u) {
+		glBindBuffer(GL_ARRAY_BUFFER, g_gxGpu.solidVertexBuffer);
+		glBufferSubData(GL_ARRAY_BUFFER, 0, static_cast<GLsizeiptr>(vertexFloatCount * sizeof(f32)), g_solidVertices.data());
+		renderNewSolidCommands(backend, static_cast<GLsizei>(vertexFloatCount / kGxGpuSolidVertexFloats));
+	}
+	return 0u;
+}
+
+void executeNewGxGpuCommands(OpenGLES2Backend& backend, const GxGpuCommandBuffer& commandBuffer) {
 	u32 commandIndex = g_gxGpu.processedCommandCount;
 	size_t vertexFloatCount = 0u;
 	for (; commandIndex < commandBuffer.commandCount; commandIndex += 1u) {
@@ -285,14 +349,14 @@ GLsizei uploadNewSolidCommands(const GxGpuCommandBuffer& commandBuffer) {
 		case GX_GPU_COMMAND_FILL_RECTANGLE:
 			vertexFloatCount = appendFillRectangle(commandBuffer, commandIndex, vertexFloatCount);
 			break;
+		case GX_GPU_COMMAND_UPLOAD_CPU_TO_VRAM:
+			vertexFloatCount = flushSolidCommands(backend, vertexFloatCount);
+			uploadCpuToVram(backend, commandBuffer, commandIndex);
+			break;
 		}
 	}
 	g_gxGpu.processedCommandCount = static_cast<u32>(commandBuffer.commandCount);
-	if (vertexFloatCount != 0u) {
-		glBindBuffer(GL_ARRAY_BUFFER, g_gxGpu.solidVertexBuffer);
-		glBufferSubData(GL_ARRAY_BUFFER, 0, static_cast<GLsizeiptr>(vertexFloatCount * sizeof(f32)), g_solidVertices.data());
-	}
-	return static_cast<GLsizei>(vertexFloatCount / kGxGpuSolidVertexFloats);
+	flushSolidCommands(backend, vertexFloatCount);
 }
 
 void renderNewSolidCommands(OpenGLES2Backend& backend, GLsizei vertexCount) {
@@ -334,10 +398,7 @@ void renderGxGpuGLES2(OpenGLES2Backend& backend, GLuint frameFbo, const GxGpuPip
 		g_gxGpu.processedCommandCount = 0u;
 		g_gxGpu.processedCommandSerial = state.commandBuffer->serial;
 	}
-	const GLsizei vertexCount = uploadNewSolidCommands(*state.commandBuffer);
-	if (vertexCount != 0) {
-		renderNewSolidCommands(backend, vertexCount);
-	}
+	executeNewGxGpuCommands(backend, *state.commandBuffer);
 	scanoutGxGpuVram(backend, frameFbo, state);
 }
 

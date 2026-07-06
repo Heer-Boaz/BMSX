@@ -3,6 +3,7 @@ import {
 	GX_GPU_COMMAND_DRAW_POLYGON,
 	GX_GPU_COMMAND_DRAW_RECTANGLE,
 	GX_GPU_COMMAND_FILL_RECTANGLE,
+	GX_GPU_COMMAND_UPLOAD_CPU_TO_VRAM,
 	gxGpuCommandGouraud,
 	gxGpuCommandQuadPolygon,
 	gxGpuCommandRectangleHeight,
@@ -10,6 +11,11 @@ import {
 	gxGpuCommandTextureEnabled,
 	gxGpuDrawingOffsetX,
 	gxGpuDrawingOffsetY,
+	gxGpuTransferHeight,
+	gxGpuTransferPixelWord,
+	gxGpuTransferWidth,
+	gxGpuTransferX,
+	gxGpuTransferY,
 	gxGpuVertexX,
 	gxGpuVertexY,
 	type GxGpuCommandBufferView,
@@ -31,8 +37,11 @@ const GX_GPU_SOLID_VERTEX_FLOATS = 6;
 const GX_GPU_SOLID_VERTICES_PER_COMMAND = 6;
 const GX_GPU_SOLID_FLOAT_CAPACITY = GX_GPU_COMMAND_CAPACITY * GX_GPU_SOLID_VERTICES_PER_COMMAND * GX_GPU_SOLID_VERTEX_FLOATS;
 const GX_GPU_SCANOUT_VERTEX_FLOATS = 4;
+const GX_GPU_RAW_VRAM_BYTES_PER_PIXEL = 4;
+const GX_GPU_RAW_VRAM_UPLOAD_ROW_BYTES = GX_GPU_VRAM_WIDTH * GX_GPU_RAW_VRAM_BYTES_PER_PIXEL;
 
 const gxGpuSolidVertices = new Float32Array(GX_GPU_SOLID_FLOAT_CAPACITY);
+const gxGpuRawVramUploadRow = new Uint8Array(GX_GPU_RAW_VRAM_UPLOAD_ROW_BYTES);
 const gxGpuScanoutVertices = new Float32Array([
 	-1.0, 1.0, 0.0, 1.0,
 	-1.0, -1.0, 0.0, 1.0 - GX_GPU_DISPLAY_HEIGHT / GX_GPU_VRAM_HEIGHT,
@@ -294,7 +303,57 @@ function appendSolidRectangle(commandBuffer: GxGpuCommandBufferView, commandInde
 	return appendSolidQuad(vertexFloatCount, x0, y0, colorWord, x0, y1, colorWord, x1, y0, colorWord, x1, y1, colorWord);
 }
 
-function uploadNewSolidCommands(backend: WebGLBackend, gl: WebGL2RenderingContext, commandBuffer: GxGpuCommandBufferView): number {
+function writeRawVramUploadPixel(rowByteOffset: number, pixelWord: number): number {
+	gxGpuRawVramUploadRow[rowByteOffset] = pixelWord & 0xff;
+	gxGpuRawVramUploadRow[rowByteOffset + 1] = (pixelWord >>> 8) & 0xff;
+	gxGpuRawVramUploadRow[rowByteOffset + 2] = 0;
+	gxGpuRawVramUploadRow[rowByteOffset + 3] = 0xff;
+	return rowByteOffset + GX_GPU_RAW_VRAM_BYTES_PER_PIXEL;
+}
+
+function writeCpuToVramUploadRow(commandBuffer: GxGpuCommandBufferView, payloadWordStart: number, rowPixelStart: number, width: number): void {
+	let rowByteOffset = 0;
+	for (let column = 0; column < width; column += 1) {
+		const pixelIndex = rowPixelStart + column;
+		const payloadWord = commandBuffer.words[payloadWordStart + (pixelIndex >>> 1)];
+		rowByteOffset = writeRawVramUploadPixel(rowByteOffset, gxGpuTransferPixelWord(payloadWord, pixelIndex));
+	}
+}
+
+function uploadCpuToVram(backend: WebGLBackend, gl: WebGL2RenderingContext, commandBuffer: GxGpuCommandBufferView, commandIndex: number): void {
+	const wordStart = commandBuffer.commandWordStart[commandIndex];
+	const xyWord = commandBuffer.words[wordStart + 1];
+	const sizeWord = commandBuffer.words[wordStart + 2];
+	const x = gxGpuTransferX(xyWord);
+	const y = gxGpuTransferY(xyWord);
+	const width = gxGpuTransferWidth(sizeWord);
+	const height = gxGpuTransferHeight(sizeWord);
+	const payloadWordStart = wordStart + 3;
+
+	gl.bindFramebuffer(gl.FRAMEBUFFER, null);
+	backend.setActiveTexture(GX_GPU_SCANOUT_TEXTURE_UNIT);
+	backend.bindTexture2D(gxGpuWebGLState.vramTexture);
+	for (let row = 0; row < height; row += 1) {
+		writeCpuToVramUploadRow(commandBuffer, payloadWordStart, row * width, width);
+		const targetY = (y + row) & (GX_GPU_VRAM_HEIGHT - 1);
+		const firstWidth = width <= GX_GPU_VRAM_WIDTH - x ? width : GX_GPU_VRAM_WIDTH - x;
+		gl.texSubImage2D(gl.TEXTURE_2D, 0, x, targetY, firstWidth, 1, gl.RGBA, gl.UNSIGNED_BYTE, gxGpuRawVramUploadRow, 0);
+		if (firstWidth !== width) {
+			gl.texSubImage2D(gl.TEXTURE_2D, 0, 0, targetY, width - firstWidth, 1, gl.RGBA, gl.UNSIGNED_BYTE, gxGpuRawVramUploadRow, firstWidth * GX_GPU_RAW_VRAM_BYTES_PER_PIXEL);
+		}
+	}
+}
+
+function flushSolidCommands(backend: WebGLBackend, gl: WebGL2RenderingContext, vertexFloatCount: number): number {
+	if (vertexFloatCount !== 0) {
+		backend.bindArrayBuffer(gxGpuWebGLState.solidVertexBuffer);
+		gl.bufferSubData(gl.ARRAY_BUFFER, 0, gxGpuSolidVertices, 0, vertexFloatCount);
+		renderNewSolidCommands(backend, gl, vertexFloatCount / GX_GPU_SOLID_VERTEX_FLOATS);
+	}
+	return 0;
+}
+
+function executeNewGxGpuCommands(backend: WebGLBackend, gl: WebGL2RenderingContext, commandBuffer: GxGpuCommandBufferView): void {
 	let commandIndex = gxGpuWebGLState.processedCommandCount;
 	let vertexFloatCount = 0;
 	for (; commandIndex < commandBuffer.commandCount; commandIndex += 1) {
@@ -308,14 +367,14 @@ function uploadNewSolidCommands(backend: WebGLBackend, gl: WebGL2RenderingContex
 			case GX_GPU_COMMAND_FILL_RECTANGLE:
 				vertexFloatCount = appendFillRectangle(commandBuffer, commandIndex, vertexFloatCount);
 				break;
+			case GX_GPU_COMMAND_UPLOAD_CPU_TO_VRAM:
+				vertexFloatCount = flushSolidCommands(backend, gl, vertexFloatCount);
+				uploadCpuToVram(backend, gl, commandBuffer, commandIndex);
+				break;
 		}
 	}
 	gxGpuWebGLState.processedCommandCount = commandBuffer.commandCount;
-	if (vertexFloatCount !== 0) {
-		backend.bindArrayBuffer(gxGpuWebGLState.solidVertexBuffer);
-		gl.bufferSubData(gl.ARRAY_BUFFER, 0, gxGpuSolidVertices, 0, vertexFloatCount);
-	}
-	return vertexFloatCount / GX_GPU_SOLID_VERTEX_FLOATS;
+	flushSolidCommands(backend, gl, vertexFloatCount);
 }
 
 function renderNewSolidCommands(backend: WebGLBackend, gl: WebGL2RenderingContext, vertexCount: number): void {
@@ -362,10 +421,7 @@ function renderGxGpuPass(backend: WebGLBackend, fbo: WebGLFramebuffer, state: Re
 		gxGpuWebGLState.processedCommandCount = 0;
 		gxGpuWebGLState.processedCommandSerial = state.commandBuffer.serial;
 	}
-	const vertexCount = uploadNewSolidCommands(backend, gl, state.commandBuffer);
-	if (vertexCount !== 0) {
-		renderNewSolidCommands(backend, gl, vertexCount);
-	}
+	executeNewGxGpuCommands(backend, gl, state.commandBuffer);
 	scanoutGxGpuVram(backend, gl, fbo, state);
 }
 

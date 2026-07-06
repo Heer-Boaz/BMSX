@@ -13,6 +13,8 @@ import {
 	GX_GPU_COMMAND_READ_VRAM_TO_CPU,
 	GX_GPU_COMMAND_UPLOAD_CPU_TO_VRAM,
 	GxGpuCommandBuffer,
+	gxGpuTransferHeight,
+	gxGpuTransferWidth,
 } from './gpu_command_buffer';
 
 export const GX_GPU_GP1_RESET = 0x00;
@@ -532,8 +534,8 @@ export class GxGpu {
 
 	private beginImageLoadToVram(opcode: number, commandWordCount: number): void {
 		const sizeWord = this.gp0CommandWords[2];
-		const width = (((sizeWord & 0xffff) - 1) & GX_GPU_VRAM_WIDTH_MASK) + 1;
-		const height = (((sizeWord >>> 16) - 1) & GX_GPU_VRAM_HEIGHT_MASK) + 1;
+		const width = gxGpuTransferWidth(sizeWord);
+		const height = gxGpuTransferHeight(sizeWord);
 		this.gp0ImageLoadCommandWordStart = this.commandBuffer.appendWords(this.gp0CommandWords, commandWordCount);
 		this.gp0ImageLoadCommandWordCount = commandWordCount;
 		this.gp0ImageLoadCommandOpcode = opcode;
