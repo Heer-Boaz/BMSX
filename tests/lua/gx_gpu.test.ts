@@ -10,6 +10,12 @@ import {
 	GX_GPU_COMMAND_DRAW_RECTANGLE,
 	GX_GPU_COMMAND_FILL_RECTANGLE,
 	GX_GPU_COMMAND_UPLOAD_CPU_TO_VRAM,
+	gxGpuCommandRectangleHeight,
+	gxGpuCommandRectangleWidth,
+	gxGpuDrawingOffsetY,
+	gxGpuSigned11,
+	gxGpuVertexX,
+	gxGpuVertexY,
 } from '../../machine/ts/machine/devices/gx/gpu_command_buffer';
 import {
 	GX_GPU_DMA_DIRECTION_CPU_TO_GP0,
@@ -74,6 +80,25 @@ function createGpu(): { memory: Memory; gpu: GxGpu } {
 	gpu.reset();
 	return { memory, gpu };
 }
+
+test('GX-GPU decodes PSX GP0 signed vertex and rectangle size words', () => {
+	assert.equal(gxGpuSigned11(0x000003ff), 1023);
+	assert.equal(gxGpuSigned11(0x00000400), -1024);
+	assert.equal(gxGpuSigned11(0x000007ff), -1);
+
+	assert.equal(gxGpuVertexX(0x000007ff), -1);
+	assert.equal(gxGpuVertexY(0x07ff0000), -1);
+	assert.equal(gxGpuDrawingOffsetY(0x003ff800), -1);
+
+	assert.equal(gxGpuCommandRectangleWidth(GX_GPU_GP0_RECTANGLE_FIRST, 0x012c03ff), 1023);
+	assert.equal(gxGpuCommandRectangleHeight(GX_GPU_GP0_RECTANGLE_FIRST, 0x012c03ff), 300);
+	assert.equal(gxGpuCommandRectangleWidth(GX_GPU_GP0_RECTANGLE_FIRST | 0x08, 0), 1);
+	assert.equal(gxGpuCommandRectangleHeight(GX_GPU_GP0_RECTANGLE_FIRST | 0x08, 0), 1);
+	assert.equal(gxGpuCommandRectangleWidth(GX_GPU_GP0_RECTANGLE_FIRST | 0x10, 0), 8);
+	assert.equal(gxGpuCommandRectangleHeight(GX_GPU_GP0_RECTANGLE_FIRST | 0x10, 0), 8);
+	assert.equal(gxGpuCommandRectangleWidth(GX_GPU_GP0_RECTANGLE_FIRST | 0x18, 0), 16);
+	assert.equal(gxGpuCommandRectangleHeight(GX_GPU_GP0_RECTANGLE_FIRST | 0x18, 0), 16);
+});
 
 test('GX-GPU exposes PSX GP1 display mode instead of a VDP profile register', () => {
 	const { gpu } = createGpu();

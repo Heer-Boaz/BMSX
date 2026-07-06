@@ -28,6 +28,25 @@ void require(bool condition, const char* message) {
 	}
 }
 
+void testGp0RawDrawWordDecoders() {
+	require(bmsx::gxGpuSigned11(0x000003ffu) == 1023, "GX-GPU signed 11-bit positive coordinate");
+	require(bmsx::gxGpuSigned11(0x00000400u) == -1024, "GX-GPU signed 11-bit minimum coordinate");
+	require(bmsx::gxGpuSigned11(0x000007ffu) == -1, "GX-GPU signed 11-bit negative coordinate");
+
+	require(bmsx::gxGpuVertexX(0x000007ffu) == -1, "GX-GPU vertex x decode");
+	require(bmsx::gxGpuVertexY(0x07ff0000u) == -1, "GX-GPU vertex y decode");
+	require(bmsx::gxGpuDrawingOffsetY(0x003ff800u) == -1, "GX-GPU drawing offset y decode");
+
+	require(bmsx::gxGpuCommandRectangleWidth(bmsx::GX_GPU_GP0_RECTANGLE_FIRST, 0x012c03ffu) == 1023u, "GX-GPU variable rectangle width");
+	require(bmsx::gxGpuCommandRectangleHeight(bmsx::GX_GPU_GP0_RECTANGLE_FIRST, 0x012c03ffu) == 300u, "GX-GPU variable rectangle height");
+	require(bmsx::gxGpuCommandRectangleWidth(bmsx::GX_GPU_GP0_RECTANGLE_FIRST | 0x08u, 0u) == 1u, "GX-GPU 1x1 rectangle width");
+	require(bmsx::gxGpuCommandRectangleHeight(bmsx::GX_GPU_GP0_RECTANGLE_FIRST | 0x08u, 0u) == 1u, "GX-GPU 1x1 rectangle height");
+	require(bmsx::gxGpuCommandRectangleWidth(bmsx::GX_GPU_GP0_RECTANGLE_FIRST | 0x10u, 0u) == 8u, "GX-GPU 8x8 rectangle width");
+	require(bmsx::gxGpuCommandRectangleHeight(bmsx::GX_GPU_GP0_RECTANGLE_FIRST | 0x10u, 0u) == 8u, "GX-GPU 8x8 rectangle height");
+	require(bmsx::gxGpuCommandRectangleWidth(bmsx::GX_GPU_GP0_RECTANGLE_FIRST | 0x18u, 0u) == 16u, "GX-GPU 16x16 rectangle width");
+	require(bmsx::gxGpuCommandRectangleHeight(bmsx::GX_GPU_GP0_RECTANGLE_FIRST | 0x18u, 0u) == 16u, "GX-GPU 16x16 rectangle height");
+}
+
 void testGp1DisplayModeOwnsPalNtsc() {
 	GpuHarness harness;
 	bmsx::GxGpu& gpu = harness.gpu;
@@ -320,6 +339,7 @@ void testMmioGp0Gp1() {
 } // namespace
 
 int main() {
+	testGp0RawDrawWordDecoders();
 	testGp1DisplayModeOwnsPalNtsc();
 	testGp1ResetRestoresPalDisplayStatus();
 	testDisplayModeStatusBits();

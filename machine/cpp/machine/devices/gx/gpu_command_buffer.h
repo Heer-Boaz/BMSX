@@ -19,6 +19,65 @@ constexpr u8 GX_GPU_COMMAND_COPY_VRAM_TO_VRAM = 6u;
 constexpr u8 GX_GPU_COMMAND_UPLOAD_CPU_TO_VRAM = 7u;
 constexpr u8 GX_GPU_COMMAND_READ_VRAM_TO_CPU = 8u;
 
+inline i32 gxGpuSigned11(u32 value) {
+	const i32 raw = static_cast<i32>(value & 0x7ffu);
+	return (raw & 0x400) != 0 ? raw - 0x800 : raw;
+}
+
+inline i32 gxGpuVertexX(u32 word) {
+	return gxGpuSigned11(word);
+}
+
+inline i32 gxGpuVertexY(u32 word) {
+	return gxGpuSigned11(word >> 16u);
+}
+
+inline i32 gxGpuDrawingOffsetX(u32 word) {
+	return gxGpuSigned11(word);
+}
+
+inline i32 gxGpuDrawingOffsetY(u32 word) {
+	return gxGpuSigned11(word >> 11u);
+}
+
+inline bool gxGpuCommandTextureEnabled(u32 opcode) {
+	return (opcode & 0x04u) != 0u;
+}
+
+inline bool gxGpuCommandQuadPolygon(u32 opcode) {
+	return (opcode & 0x08u) != 0u;
+}
+
+inline bool gxGpuCommandGouraud(u32 opcode) {
+	return (opcode & 0x10u) != 0u;
+}
+
+inline u32 gxGpuCommandRectangleWidth(u32 opcode, u32 sizeWord) {
+	switch (opcode & 0x18u) {
+		case 0x08u:
+			return 1u;
+		case 0x10u:
+			return 8u;
+		case 0x18u:
+			return 16u;
+		default:
+			return sizeWord & 0x3ffu;
+	}
+}
+
+inline u32 gxGpuCommandRectangleHeight(u32 opcode, u32 sizeWord) {
+	switch (opcode & 0x18u) {
+		case 0x08u:
+			return 1u;
+		case 0x10u:
+			return 8u;
+		case 0x18u:
+			return 16u;
+		default:
+			return (sizeWord >> 16u) & 0x1ffu;
+	}
+}
+
 struct GxGpuCommandBuffer {
 	u32 serial = 0u;
 	size_t commandCount = 0u;
