@@ -186,13 +186,19 @@ function vdpRpuPrimitive(primitive: number): number {
 	}
 }
 
+function requireVdpRpuGl(gl: WebGL2RenderingContext | null): WebGL2RenderingContext {
+	if (gl === null) {
+		throw new Error('[VDPRPU] WebGL2 context missing during VDP-RPU bootstrap/execution.');
+	}
+	return gl;
+}
+
 function vdpRpuIndexType(indexType: number): number {
 	const gl = vdpRpuGl;
 	return indexType === VDP_RPU_INDEX_U16 ? gl.UNSIGNED_SHORT : gl.UNSIGNED_INT;
 }
 
-function configureNearestClampTexture2D(): void {
-	const gl = vdpRpuGl;
+function configureNearestClampTexture2D(gl: WebGL2RenderingContext): void {
 	gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.NEAREST);
 	gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.NEAREST);
 	gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
@@ -251,7 +257,7 @@ function uploadVdpRpuBuffer(frame: VdpRpuFrameOutput, target: number, vramAddr: 
 }
 
 function loadVdpRpuSurfaceStorage(backend: WebGLBackend, frame: VdpRpuFrameOutput, surfaceDescAddr: number): VdpRpuWebglSurface {
-	const gl = vdpRpuGl;
+	const gl = requireVdpRpuGl(backend.gl);
 	const vram = frame.vdpVram;
 	let surface = vdpRpuSurfaces.get(surfaceDescAddr);
 	if (surface === undefined) {
@@ -297,7 +303,7 @@ function loadVdpRpuSurfaceStorage(backend: WebGLBackend, frame: VdpRpuFrameOutpu
 		const texture = gl.createTexture()!;
 		gl.bindTexture(gl.TEXTURE_2D, texture);
 		gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA8, width, height, 0, gl.RGBA, gl.UNSIGNED_BYTE, null);
-		configureNearestClampTexture2D();
+		configureNearestClampTexture2D(gl);
 		surface.texture = texture;
 	}
 	backend.invalidateTextureBindingCache();
@@ -743,14 +749,14 @@ function drawVdpRpuCommand(runtime: VdpRpuRuntime, frame: VdpRpuFrameOutput, dra
 }
 
 export function initVdpRpuPipeline(backend: WebGLBackend): void {
-	const gl = backend.gl;
+	const gl = requireVdpRpuGl(backend.gl);
 	vdpRpuBackend = backend;
 	vdpRpuGl = gl;
 	vdpRpuVertexArray = backend.createVertexArray() as WebGLVertexArrayObject;
 	vdpRpuNeutralTexture = gl.createTexture()!;
 	gl.bindTexture(gl.TEXTURE_2D, vdpRpuNeutralTexture);
 	gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, 1, 1, 0, gl.RGBA, gl.UNSIGNED_BYTE, vdpRpuNeutralTexturePixel);
-	configureNearestClampTexture2D();
+	configureNearestClampTexture2D(gl);
 	gl.bindTexture(gl.TEXTURE_2D, null);
 	backend.invalidateTextureBindingCache();
 }
