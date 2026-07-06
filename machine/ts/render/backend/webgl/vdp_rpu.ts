@@ -64,11 +64,11 @@ import type { WebGLBackend } from './backend';
 import vdpRpuVertexShader from './shaders/vdp_rpu.vert.glsl';
 import vdpRpuFragmentShader from './shaders/vdp_rpu.frag.glsl';
 
-let vdpRpuProgram: WebGLProgram = null;
-let vdpRpuBackend: WebGLBackend = null;
-let vdpRpuGl: WebGL2RenderingContext = null;
-let vdpRpuVertexArray: WebGLVertexArrayObject = null;
-let vdpRpuNeutralTexture: WebGLTexture = null;
+let vdpRpuProgram: WebGLProgram;
+let vdpRpuBackend: WebGLBackend;
+let vdpRpuGl: WebGL2RenderingContext;
+let vdpRpuVertexArray: WebGLVertexArrayObject;
+let vdpRpuNeutralTexture: WebGLTexture;
 const vdpRpuNeutralTexturePixel = new Uint8Array(4);
 let vdpRpuPositionLocation = -1;
 let vdpRpuUv0Location = -1;
@@ -84,20 +84,20 @@ let vdpRpuInstance2Location = -1;
 let vdpRpuInstance3Location = -1;
 let vdpRpuInstanceColorLocation = -1;
 let vdpRpuInstanceUvRectLocation = -1;
-let vdpRpuC0Location: WebGLUniformLocation = null;
-let vdpRpuNmLocation: WebGLUniformLocation = null;
-let vdpRpuC1Location: WebGLUniformLocation = null;
-let vdpRpuJointLocation: WebGLUniformLocation = null;
-let vdpRpuT0Location: WebGLUniformLocation = null;
-let vdpRpuT1Location: WebGLUniformLocation = null;
-let vdpRpuTextureEnabledLocation: WebGLUniformLocation = null;
-let vdpRpuTextureFlipYLocation: WebGLUniformLocation = null;
-let vdpRpuT1ModeLocation: WebGLUniformLocation = null;
-let vdpRpuInstanceModeLocation: WebGLUniformLocation = null;
-let vdpRpuSkinningModeLocation: WebGLUniformLocation = null;
-let vdpRpuMorphModeLocation: WebGLUniformLocation = null;
-let vdpRpuNormalModeLocation: WebGLUniformLocation = null;
-let vdpRpuLightingModeLocation: WebGLUniformLocation = null;
+let vdpRpuC0Location: WebGLUniformLocation;
+let vdpRpuNmLocation: WebGLUniformLocation;
+let vdpRpuC1Location: WebGLUniformLocation;
+let vdpRpuJointLocation: WebGLUniformLocation;
+let vdpRpuT0Location: WebGLUniformLocation;
+let vdpRpuT1Location: WebGLUniformLocation;
+let vdpRpuTextureEnabledLocation: WebGLUniformLocation;
+let vdpRpuTextureFlipYLocation: WebGLUniformLocation;
+let vdpRpuT1ModeLocation: WebGLUniformLocation;
+let vdpRpuInstanceModeLocation: WebGLUniformLocation;
+let vdpRpuSkinningModeLocation: WebGLUniformLocation;
+let vdpRpuMorphModeLocation: WebGLUniformLocation;
+let vdpRpuNormalModeLocation: WebGLUniformLocation;
+let vdpRpuLightingModeLocation: WebGLUniformLocation;
 type VdpRpuWebglBuffer = {
 	buffer: WebGLBuffer;
 	revision: number;
@@ -161,14 +161,6 @@ const vdpRpuPipelineStateScratch: RenderPassStateRegistry['vdp_rpu'] = {
 	width: 0,
 	height: 0,
 	frame: null,
-};
-
-export type VdpRpuRuntime = {
-	backend: WebGLBackend;
-};
-
-const vdpRpuRuntimeScratch: VdpRpuRuntime = {
-	backend: null,
 };
 
 function vdpRpuPrimitive(primitive: number): number {
@@ -643,8 +635,8 @@ function bindVdpRpuNeutralTexture(backend: WebGLBackend): void {
 	backend.invalidateTextureBindingCache();
 }
 
-function bindVdpRpuTextureBindings(runtime: VdpRpuRuntime, frame: VdpRpuFrameOutput, drawIndex: number, shaderVariant: VdpRpuShaderVariantSpec, rawVariantWord: number): void {
-	const backend = runtime.backend;
+function bindVdpRpuTextureBindings(frame: VdpRpuFrameOutput, drawIndex: number, shaderVariant: VdpRpuShaderVariantSpec, rawVariantWord: number): void {
+	const backend = vdpRpuBackend;
 	const gl = vdpRpuGl;
 	const t1Flag = (rawVariantWord & VDP_RPU_SHADER_FLAG_T1) !== 0;
 	if (shaderVariant.textureSlotCount === 0) {
@@ -696,7 +688,7 @@ function bindVdpRpuTextureBindings(runtime: VdpRpuRuntime, frame: VdpRpuFrameOut
 	}
 }
 
-function drawVdpRpuCommand(runtime: VdpRpuRuntime, frame: VdpRpuFrameOutput, drawIndex: number, vertexCount: number, instanceCount: number, indexCount: number): void {
+function drawVdpRpuCommand(frame: VdpRpuFrameOutput, drawIndex: number, vertexCount: number, instanceCount: number, indexCount: number): void {
 	const gl = vdpRpuGl;
 	const commands = frame.commands;
 	setVdpRpuPipelineState(commands.drawPipelineWord[drawIndex]);
@@ -710,7 +702,7 @@ function drawVdpRpuCommand(runtime: VdpRpuRuntime, frame: VdpRpuFrameOutput, dra
 	gl.uniform1i(vdpRpuNormalModeLocation, normalMode);
 	setVdpRpuDefaultVertexAttributes();
 	setVdpRpuDefaultInstanceAttributes();
-	bindVdpRpuTextureBindings(runtime, frame, drawIndex, shaderVariant, rawVariantWord);
+	bindVdpRpuTextureBindings(frame, drawIndex, shaderVariant, rawVariantWord);
 	if (shaderVariant.usesC0 !== 0) {
 		setVdpRpuC0Constants(frame, drawIndex, normalMode);
 	} else {
@@ -758,9 +750,6 @@ export function initVdpRpuPipeline(backend: WebGLBackend): void {
 export function setupVdpRpuLocations(): void {
 	const gl = vdpRpuGl;
 	const current = gl.getParameter(gl.CURRENT_PROGRAM) as WebGLProgram;
-	if (!current) {
-		throw new Error('[VDPRPU] shader program not bound during bootstrap.');
-	}
 	vdpRpuProgram = current;
 	vdpRpuPositionLocation = gl.getAttribLocation(vdpRpuProgram, 'a_position');
 	vdpRpuUv0Location = gl.getAttribLocation(vdpRpuProgram, 'a_uv0');
@@ -806,14 +795,9 @@ export function setupVdpRpuLocations(): void {
 	gl.uniform1i(vdpRpuLightingModeLocation, 0);
 }
 
-export function renderVdpRpuFrame(runtime: VdpRpuRuntime, framebuffer: WebGLFramebuffer, state: RenderPassStateRegistry['vdp_rpu']): void {
-	const backend = runtime.backend;
+export function renderVdpRpuFrame(framebuffer: WebGLFramebuffer, state: RenderPassStateRegistry['vdp_rpu']): void {
+	const backend = vdpRpuBackend;
 	const gl = backend.gl;
-	if (vdpRpuVertexArray === null) {
-		throw new Error('[VDPRPU] render called before pipeline initialization.');
-	}
-	vdpRpuBackend = backend;
-	vdpRpuGl = gl;
 	const frame = state.frame;
 	backend.bindVertexArray(vdpRpuVertexArray);
 	const commands = frame.commands;
@@ -853,7 +837,6 @@ export function renderVdpRpuFrame(runtime: VdpRpuRuntime, framebuffer: WebGLFram
 		const drawEnd = firstDraw + commands.passDrawCount[passIndex];
 		for (let drawIndex = firstDraw; drawIndex < drawEnd; drawIndex += 1) {
 			drawVdpRpuCommand(
-				runtime,
 				frame,
 				drawIndex,
 				commands.drawVertexCount[drawIndex],
@@ -885,12 +868,11 @@ export function registerVdpRpuPass(registry: RenderPassLibrary): void {
 			setupVdpRpuLocations();
 		},
 		shouldExecute: (view) => view.vdpRpuFrame.commands.passCount !== 0,
-		exec: (backend, fbo) => {
-			vdpRpuRuntimeScratch.backend = backend as WebGLBackend;
+		exec: (_backend, fbo) => {
 			vdpRpuPipelineStateScratch.width = view.offscreenCanvasSize.x;
 			vdpRpuPipelineStateScratch.height = view.offscreenCanvasSize.y;
 			vdpRpuPipelineStateScratch.frame = view.vdpRpuFrame;
-			renderVdpRpuFrame(vdpRpuRuntimeScratch, fbo as WebGLFramebuffer, vdpRpuPipelineStateScratch);
+			renderVdpRpuFrame(fbo as WebGLFramebuffer, vdpRpuPipelineStateScratch);
 		},
 	});
 }
