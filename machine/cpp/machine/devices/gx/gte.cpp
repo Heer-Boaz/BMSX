@@ -256,100 +256,120 @@ void GxGte::writeControlRegister(u32 index, u32 value) {
 u32 GxGte::execute(u32 opcode) {
 	const u32 sf = (opcode >> 19u) & 1u;
 	const u32 lm = (opcode >> 10u) & 1u;
-	m_controlRegisterWords[31] = 0u;
 	switch (opcode & 0x3fu) {
-	case 0x00u:
 	case GX_GTE_FN_RTPS:
+		m_controlRegisterWords[31] = 0u;
 		executeRtps(0u, sf, lm, true);
 		updateFlagError();
 		return GX_GTE_CYCLES_RTPS;
 	case GX_GTE_FN_NCLIP:
+		m_controlRegisterWords[31] = 0u;
 		executeNclip();
 		updateFlagError();
 		return GX_GTE_CYCLES_NCLIP;
 	case GX_GTE_FN_OP:
+		m_controlRegisterWords[31] = 0u;
 		executeOp(sf, lm);
 		updateFlagError();
 		return GX_GTE_CYCLES_OP;
 	case GX_GTE_FN_DPCS:
+		m_controlRegisterWords[31] = 0u;
 		executeDpcs(sf, lm);
 		updateFlagError();
 		return GX_GTE_CYCLES_DPCS;
 	case GX_GTE_FN_INTPL:
+		m_controlRegisterWords[31] = 0u;
 		executeIntpl(sf, lm);
 		updateFlagError();
 		return GX_GTE_CYCLES_INTPL;
 	case GX_GTE_FN_MVMVA:
+		m_controlRegisterWords[31] = 0u;
 		executeMvmva(opcode, sf, lm);
 		updateFlagError();
 		return GX_GTE_CYCLES_MVMVA;
 	case GX_GTE_FN_NCDS:
+		m_controlRegisterWords[31] = 0u;
 		executeNcdsForVector(0u, sf, lm);
 		updateFlagError();
 		return GX_GTE_CYCLES_NCDS;
 	case GX_GTE_FN_CDP:
+		m_controlRegisterWords[31] = 0u;
 		executeCdp(sf, lm);
 		updateFlagError();
 		return GX_GTE_CYCLES_CDP;
 	case GX_GTE_FN_NCDT:
+		m_controlRegisterWords[31] = 0u;
 		executeNcdsForVector(0u, sf, lm);
 		executeNcdsForVector(1u, sf, lm);
 		executeNcdsForVector(2u, sf, lm);
 		updateFlagError();
 		return GX_GTE_CYCLES_NCDT;
 	case GX_GTE_FN_NCCS:
+		m_controlRegisterWords[31] = 0u;
 		executeNccsForVector(0u, sf, lm);
 		updateFlagError();
 		return GX_GTE_CYCLES_NCCS;
 	case GX_GTE_FN_CC:
+		m_controlRegisterWords[31] = 0u;
 		executeCc(sf, lm);
 		updateFlagError();
 		return GX_GTE_CYCLES_CC;
 	case GX_GTE_FN_NCS:
+		m_controlRegisterWords[31] = 0u;
 		executeNcsForVector(0u, sf, lm);
 		updateFlagError();
 		return GX_GTE_CYCLES_NCS;
 	case GX_GTE_FN_NCT:
+		m_controlRegisterWords[31] = 0u;
 		executeNcsForVector(0u, sf, lm);
 		executeNcsForVector(1u, sf, lm);
 		executeNcsForVector(2u, sf, lm);
 		updateFlagError();
 		return GX_GTE_CYCLES_NCT;
 	case GX_GTE_FN_SQR:
+		m_controlRegisterWords[31] = 0u;
 		executeSqr(sf, lm);
 		updateFlagError();
 		return GX_GTE_CYCLES_SQR;
 	case GX_GTE_FN_DCPL:
+		m_controlRegisterWords[31] = 0u;
 		executeDcpl(sf, lm);
 		updateFlagError();
 		return GX_GTE_CYCLES_DCPL;
 	case GX_GTE_FN_DPCT:
+		m_controlRegisterWords[31] = 0u;
 		executeDpct(sf, lm);
 		updateFlagError();
 		return GX_GTE_CYCLES_DPCT;
 	case GX_GTE_FN_AVSZ3:
+		m_controlRegisterWords[31] = 0u;
 		executeAvsz3();
 		updateFlagError();
 		return GX_GTE_CYCLES_AVSZ3;
 	case GX_GTE_FN_AVSZ4:
+		m_controlRegisterWords[31] = 0u;
 		executeAvsz4();
 		updateFlagError();
 		return GX_GTE_CYCLES_AVSZ4;
 	case GX_GTE_FN_RTPT:
+		m_controlRegisterWords[31] = 0u;
 		executeRtps(0u, sf, lm, false);
 		executeRtps(1u, sf, lm, false);
 		executeRtps(2u, sf, lm, true);
 		updateFlagError();
 		return GX_GTE_CYCLES_RTPT;
 	case GX_GTE_FN_GPF:
+		m_controlRegisterWords[31] = 0u;
 		executeGpf(sf, lm);
 		updateFlagError();
 		return GX_GTE_CYCLES_GPF;
 	case GX_GTE_FN_GPL:
+		m_controlRegisterWords[31] = 0u;
 		executeGpl(sf, lm);
 		updateFlagError();
 		return GX_GTE_CYCLES_GPL;
 	case GX_GTE_FN_NCCT:
+		m_controlRegisterWords[31] = 0u;
 		executeNccsForVector(0u, sf, lm);
 		executeNccsForVector(1u, sf, lm);
 		executeNccsForVector(2u, sf, lm);

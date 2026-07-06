@@ -517,9 +517,27 @@ void testRtpsNarrowsMacResultToRegisterDatapath() {
 void testUnknownFunctionCodeIsDeterministicNoop() {
 	GteHarness harness;
 	bmsx::GxGte& gte = harness.gte;
+	gte.writeControlRegister(31u, bmsx::GX_GTE_FLAG_DIV_OVERFLOW);
 
 	require(gte.execute(0x02u) == 0u, "unknown GTE opcode cycles");
-	require(gte.readControlRegister(31u) == 0u, "unknown GTE opcode FLAG");
+	require(gte.readControlRegister(31u) == (bmsx::GX_GTE_FLAG_ERROR | bmsx::GX_GTE_FLAG_DIV_OVERFLOW), "unknown GTE opcode FLAG");
+}
+
+void testOpcodeZeroIsNotRtpsAlias() {
+	GteHarness harness;
+	bmsx::GxGte& gte = harness.gte;
+	setupIdentityProjection(gte);
+	gte.writeDataRegister(0u, pack16(1u, 2u));
+	gte.writeDataRegister(1u, 256u);
+	gte.writeControlRegister(31u, bmsx::GX_GTE_FLAG_DIV_OVERFLOW);
+
+	require(gte.execute(0u) == 0u, "GTE opcode 0 cycles");
+
+	require(gte.readDataRegister(9u) == 0u, "GTE opcode 0 IR1");
+	require(gte.readDataRegister(10u) == 0u, "GTE opcode 0 IR2");
+	require(gte.readDataRegister(11u) == 0u, "GTE opcode 0 IR3");
+	require(gte.readDataRegister(14u) == 0u, "GTE opcode 0 SXY2");
+	require(gte.readControlRegister(31u) == (bmsx::GX_GTE_FLAG_ERROR | bmsx::GX_GTE_FLAG_DIV_OVERFLOW), "GTE opcode 0 FLAG");
 }
 
 void testSaveStatePreservesRawRegisterWords() {
@@ -577,6 +595,7 @@ int main() {
 	testAvsz3();
 	testRtpsNarrowsMacResultToRegisterDatapath();
 	testUnknownFunctionCodeIsDeterministicNoop();
+	testOpcodeZeroIsNotRtpsAlias();
 	testSaveStatePreservesRawRegisterWords();
 	testRtpsDivideOverflow();
 	return 0;

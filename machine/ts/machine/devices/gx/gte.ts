@@ -352,100 +352,120 @@ export class GxGte {
 	public execute(opcode: number): number {
 		const sf = (opcode >>> 19) & 1;
 		const lm = (opcode >>> 10) & 1;
-		this.controlRegisterWords[31] = 0;
 		switch (opcode & 0x3f) {
-			case 0x00:
 			case GX_GTE_FN_RTPS:
+				this.controlRegisterWords[31] = 0;
 				this.executeRtps(0, sf, lm, true);
 				this.updateFlagError();
 				return GX_GTE_CYCLES_RTPS;
 			case GX_GTE_FN_NCLIP:
+				this.controlRegisterWords[31] = 0;
 				this.executeNclip();
 				this.updateFlagError();
 				return GX_GTE_CYCLES_NCLIP;
 			case GX_GTE_FN_OP:
+				this.controlRegisterWords[31] = 0;
 				this.executeOp(sf, lm);
 				this.updateFlagError();
 				return GX_GTE_CYCLES_OP;
 			case GX_GTE_FN_DPCS:
+				this.controlRegisterWords[31] = 0;
 				this.executeDpcs(sf, lm);
 				this.updateFlagError();
 				return GX_GTE_CYCLES_DPCS;
 			case GX_GTE_FN_INTPL:
+				this.controlRegisterWords[31] = 0;
 				this.executeIntpl(sf, lm);
 				this.updateFlagError();
 				return GX_GTE_CYCLES_INTPL;
 			case GX_GTE_FN_MVMVA:
+				this.controlRegisterWords[31] = 0;
 				this.executeMvmva(opcode, sf, lm);
 				this.updateFlagError();
 				return GX_GTE_CYCLES_MVMVA;
 			case GX_GTE_FN_NCDS:
+				this.controlRegisterWords[31] = 0;
 				this.executeNcdsForVector(0, sf, lm);
 				this.updateFlagError();
 				return GX_GTE_CYCLES_NCDS;
 			case GX_GTE_FN_CDP:
+				this.controlRegisterWords[31] = 0;
 				this.executeCdp(sf, lm);
 				this.updateFlagError();
 				return GX_GTE_CYCLES_CDP;
 			case GX_GTE_FN_NCDT:
+				this.controlRegisterWords[31] = 0;
 				this.executeNcdsForVector(0, sf, lm);
 				this.executeNcdsForVector(1, sf, lm);
 				this.executeNcdsForVector(2, sf, lm);
 				this.updateFlagError();
 				return GX_GTE_CYCLES_NCDT;
 			case GX_GTE_FN_NCCS:
+				this.controlRegisterWords[31] = 0;
 				this.executeNccsForVector(0, sf, lm);
 				this.updateFlagError();
 				return GX_GTE_CYCLES_NCCS;
 			case GX_GTE_FN_CC:
+				this.controlRegisterWords[31] = 0;
 				this.executeCc(sf, lm);
 				this.updateFlagError();
 				return GX_GTE_CYCLES_CC;
 			case GX_GTE_FN_NCS:
+				this.controlRegisterWords[31] = 0;
 				this.executeNcsForVector(0, sf, lm);
 				this.updateFlagError();
 				return GX_GTE_CYCLES_NCS;
 			case GX_GTE_FN_NCT:
+				this.controlRegisterWords[31] = 0;
 				this.executeNcsForVector(0, sf, lm);
 				this.executeNcsForVector(1, sf, lm);
 				this.executeNcsForVector(2, sf, lm);
 				this.updateFlagError();
 				return GX_GTE_CYCLES_NCT;
 			case GX_GTE_FN_SQR:
+				this.controlRegisterWords[31] = 0;
 				this.executeSqr(sf, lm);
 				this.updateFlagError();
 				return GX_GTE_CYCLES_SQR;
 			case GX_GTE_FN_DCPL:
+				this.controlRegisterWords[31] = 0;
 				this.executeDcpl(sf, lm);
 				this.updateFlagError();
 				return GX_GTE_CYCLES_DCPL;
 			case GX_GTE_FN_DPCT:
+				this.controlRegisterWords[31] = 0;
 				this.executeDpct(sf, lm);
 				this.updateFlagError();
 				return GX_GTE_CYCLES_DPCT;
 			case GX_GTE_FN_AVSZ3:
+				this.controlRegisterWords[31] = 0;
 				this.executeAvsz3();
 				this.updateFlagError();
 				return GX_GTE_CYCLES_AVSZ3;
 			case GX_GTE_FN_AVSZ4:
+				this.controlRegisterWords[31] = 0;
 				this.executeAvsz4();
 				this.updateFlagError();
 				return GX_GTE_CYCLES_AVSZ4;
 			case GX_GTE_FN_RTPT:
+				this.controlRegisterWords[31] = 0;
 				this.executeRtps(0, sf, lm, false);
 				this.executeRtps(1, sf, lm, false);
 				this.executeRtps(2, sf, lm, true);
 				this.updateFlagError();
 				return GX_GTE_CYCLES_RTPT;
 			case GX_GTE_FN_GPF:
+				this.controlRegisterWords[31] = 0;
 				this.executeGpf(sf, lm);
 				this.updateFlagError();
 				return GX_GTE_CYCLES_GPF;
 			case GX_GTE_FN_GPL:
+				this.controlRegisterWords[31] = 0;
 				this.executeGpl(sf, lm);
 				this.updateFlagError();
 				return GX_GTE_CYCLES_GPL;
 			case GX_GTE_FN_NCCT:
+				this.controlRegisterWords[31] = 0;
 				this.executeNccsForVector(0, sf, lm);
 				this.executeNccsForVector(1, sf, lm);
 				this.executeNccsForVector(2, sf, lm);

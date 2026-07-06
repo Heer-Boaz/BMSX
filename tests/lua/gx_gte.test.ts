@@ -525,11 +525,28 @@ test('GX-GTE RTPS narrows MAC result to the PSX 32-bit register datapath before 
 	assert.equal(gte.readDataRegister(9), 0xfffff000);
 });
 
+test('GX-GTE opcode 0 is not an RTPS alias', () => {
+	const { gte } = createGte();
+	setupIdentityProjection(gte);
+	gte.writeDataRegister(0, pack16(1, 2));
+	gte.writeDataRegister(1, 256);
+	gte.writeControlRegister(31, GX_GTE_FLAG_DIV_OVERFLOW);
+
+	assert.equal(gte.execute(0), 0);
+
+	assert.equal(gte.readDataRegister(9), 0);
+	assert.equal(gte.readDataRegister(10), 0);
+	assert.equal(gte.readDataRegister(11), 0);
+	assert.equal(gte.readDataRegister(14), 0);
+	assert.equal(gte.readControlRegister(31), (GX_GTE_FLAG_ERROR | GX_GTE_FLAG_DIV_OVERFLOW) >>> 0);
+});
+
 test('GX-GTE unknown PSX function code is deterministic no-op hardware, not a host exception', () => {
 	const { gte } = createGte();
+	gte.writeControlRegister(31, GX_GTE_FLAG_DIV_OVERFLOW);
 
 	assert.equal(gte.execute(0x02), 0);
-	assert.equal(gte.readControlRegister(31), 0);
+	assert.equal(gte.readControlRegister(31), (GX_GTE_FLAG_ERROR | GX_GTE_FLAG_DIV_OVERFLOW) >>> 0);
 });
 
 test('GX-GTE save state preserves raw PSX COP2 register words', () => {
