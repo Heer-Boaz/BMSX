@@ -8,7 +8,7 @@ export class TimingState {
 		public ufpsScaled: number,
 		public cpuHz: number,
 		public cycleBudgetPerFrame: number,
-		public regionWord: number,
+		public gpuDisplayModeWord: number,
 		public totalScanlines: number,
 		public imgDecBytesPerSec: number,
 		public dmaBytesPerSecIso: number,

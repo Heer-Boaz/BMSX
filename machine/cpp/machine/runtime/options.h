@@ -17,7 +17,7 @@ struct RuntimeOptions {
 	Vec2 viewport;
 	RomSpan systemRomBytes;
 	RomSpan cartRomBytes;
-	uint32_t machineRegionWord;
+	uint32_t psxGpuDisplayModeWord;
 	i64 ufpsScaled;
 	i64 cpuHz;
 	int cycleBudgetPerFrame;

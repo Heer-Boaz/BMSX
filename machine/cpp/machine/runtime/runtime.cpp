@@ -22,8 +22,8 @@ Runtime::Runtime(
 		options.ufpsScaled,
 		options.cpuHz,
 		options.cycleBudgetPerFrame,
-		options.machineRegionWord,
-		getMachineRegionTimingForWord(options.machineRegionWord).totalScanlines,
+		options.psxGpuDisplayModeWord,
+		getPsxGpuDisplayModeTimingForWord(options.psxGpuDisplayModeWord).totalScanlines,
 		options.imgDecBytesPerSec,
 		options.dmaBytesPerSecIso,
 		options.dmaBytesPerSecBulk,
@@ -49,14 +49,14 @@ Runtime::Runtime(
 	machine.memory.clearIoSlots();
 	machine.memory.mapIoRead(IO_SYS_TIME_MS, this, &Runtime::onTimeMsReadThunk);
 	machine.memory.mapIoRead(IO_SYS_FRAME_MS, this, &Runtime::onFrameMsReadThunk);
-	machine.memory.mapIoRead(IO_SYS_REGION, this, &Runtime::onMachineRegionReadThunk);
+	machine.memory.mapIoRead(IO_GPU_DISPLAY_MODE, this, &Runtime::onGpuDisplayModeReadThunk);
 	machine.memory.mapIoRead(IO_SYS_CYCLES_PER_FRAME, this, &Runtime::onCyclesPerFrameReadThunk);
-	machine.memory.mapIoWrite(IO_SYS_REGION, this, &Runtime::onMachineRegionWriteThunk);
+	machine.memory.mapIoWrite(IO_GPU_DISPLAY_MODE, this, &Runtime::onGpuDisplayModeWriteThunk);
 	machine.memory.mapIoWrite(IO_SYS_PRINT_CHAR, this, &Runtime::onLuaOutputCodepointWriteThunk);
 	machine.memory.mapIoWrite(IO_SYS_PRINT_FLUSH, this, &Runtime::onLuaOutputFlushWriteThunk);
-	machine.memory.mapIoWrite(IO_VDP_MODE, this, &Runtime::onVdpModeWriteThunk);
 	machine.initializeSystemIo();
 	machine.resetDevices();
+	machine.vdp.writeDisplayModeWord(timing.gpuDisplayModeWord);
 	vblank.setVblankCycles(*this, options.vblankCycles);
 	refreshDeviceTimings(*this, machine.scheduler.currentNowCycles());
 	machine.cpu.setExternalRootMarker([this](GcHeap& heap) {
@@ -102,13 +102,13 @@ Value Runtime::onFrameMsRead([[maybe_unused]] uint32_t addr) const {
 	return valueNumber(timing.frameDurationMs);
 }
 
-Value Runtime::onMachineRegionReadThunk(void* context, uint32_t addr) {
+Value Runtime::onGpuDisplayModeReadThunk(void* context, uint32_t addr) {
 	const auto* runtime = static_cast<Runtime*>(context);
-	return runtime->onMachineRegionRead(addr);
+	return runtime->onGpuDisplayModeRead(addr);
 }
 
-Value Runtime::onMachineRegionRead([[maybe_unused]] uint32_t addr) const {
-	return valueNumber(static_cast<double>(timing.regionWord));
+Value Runtime::onGpuDisplayModeRead([[maybe_unused]] uint32_t addr) const {
+	return valueNumber(static_cast<double>(timing.gpuDisplayModeWord));
 }
 
 Value Runtime::onCyclesPerFrameReadThunk(void* context, uint32_t addr) {
@@ -120,16 +120,10 @@ Value Runtime::onCyclesPerFrameRead([[maybe_unused]] uint32_t addr) const {
 	return valueNumber(static_cast<double>(timing.cycleBudgetPerFrame));
 }
 
-void Runtime::onMachineRegionWriteThunk(void* context, uint32_t addr, Value value) {
+void Runtime::onGpuDisplayModeWriteThunk(void* context, uint32_t addr, Value value) {
 	auto* runtime = static_cast<Runtime*>(context);
 	(void)addr;
-	runtime->applyMachineRegionWord(toU32(value));
-}
-
-void Runtime::onVdpModeWriteThunk(void* context, uint32_t addr, Value value) {
-	auto* runtime = static_cast<Runtime*>(context);
-	(void)addr;
-	runtime->applyVdpModeWord(toU32(value));
+	runtime->applyPsxGpuDisplayModeWord(toU32(value));
 }
 
 void Runtime::onLuaOutputCodepointWriteThunk(void* context, uint32_t addr, Value value) {
@@ -155,27 +149,17 @@ void Runtime::applyUfpsScaled(i64 ufpsScaled) {
 	m_input.setRuntimeInputFrameDurationMs(timing.frameDurationMs);
 }
 
-void Runtime::applyMachineRegionWord(uint32_t regionWord) {
-	const MachineRegionTiming regionTiming = getMachineRegionTimingForWord(regionWord);
-	timing.regionWord = regionWord;
-	timing.totalScanlines = regionTiming.totalScanlines;
-	applyUfpsScaled(regionTiming.refreshUfpsScaled);
+void Runtime::applyPsxGpuDisplayModeWord(uint32_t gpuDisplayModeWord) {
+	const PsxGpuDisplayModeTiming displayModeTiming = getPsxGpuDisplayModeTimingForWord(gpuDisplayModeWord);
+	timing.gpuDisplayModeWord = gpuDisplayModeWord;
+	timing.totalScanlines = displayModeTiming.totalScanlines;
+	machine.vdp.writeDisplayModeWord(timing.gpuDisplayModeWord);
+	applyUfpsScaled(displayModeTiming.refreshUfpsScaled);
 	setFrameTiming(
 		*this,
 		timing.cpuHz,
-		static_cast<int>(calcCyclesPerFrameScaled(timing.cpuHz, regionTiming.refreshUfpsScaled)),
-		static_cast<int>(resolveVblankCycles(timing.cpuHz, regionTiming.refreshUfpsScaled, regionTiming.totalScanlines, machine.vdp.frameBufferHeight()))
-	);
-}
-
-void Runtime::applyVdpModeWord(uint32_t modeWord) {
-	machine.vdp.writeModeWord(modeWord);
-	const MachineRegionTiming regionTiming = getMachineRegionTimingForWord(timing.regionWord);
-	setFrameTiming(
-		*this,
-		timing.cpuHz,
-		timing.cycleBudgetPerFrame,
-		static_cast<int>(resolveVblankCycles(timing.cpuHz, regionTiming.refreshUfpsScaled, regionTiming.totalScanlines, machine.vdp.frameBufferHeight()))
+		static_cast<int>(calcCyclesPerFrameScaled(timing.cpuHz, displayModeTiming.refreshUfpsScaled)),
+		static_cast<int>(resolveVblankCycles(timing.cpuHz, displayModeTiming.refreshUfpsScaled, displayModeTiming.totalScanlines, machine.vdp.frameBufferHeight()))
 	);
 }
 

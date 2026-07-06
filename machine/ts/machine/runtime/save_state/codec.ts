@@ -734,7 +734,7 @@ function decodeVdpReadbackState(value: unknown, label: string): VdpReadbackState
 
 function encodeVdpState(state: VdpState): VdpState {
 	return {
-		vdpModeWord: state.vdpModeWord,
+		displayModeWord: state.displayModeWord,
 		xf: encodeVdpXfState(state.xf),
 		vdpRegisterWords: state.vdpRegisterWords,
 		buildFrame: encodeBuildingFrameState(state.buildFrame),
@@ -758,7 +758,7 @@ function encodeVdpState(state: VdpState): VdpState {
 function decodeVdpState(value: unknown, label: string): VdpState {
 	const object = requireObject(value, label);
 	return {
-		vdpModeWord: requireBoundedU32(requireObjectKey(object, 'vdpModeWord', label, 'machine.vdp.vdpModeWord'), 'machine.vdp.vdpModeWord', 0, 0xffffffff),
+		displayModeWord: requireBoundedU32(requireObjectKey(object, 'displayModeWord', label, 'machine.vdp.displayModeWord'), 'machine.vdp.displayModeWord', 0, 0xffffffff),
 		xf: decodeVdpXfState(requireObjectKey(object, 'xf', label, 'machine.vdp.xf'), 'machine.vdp.xf'),
 		vdpRegisterWords: decodeU32FixedArray(requireObjectKey(object, 'vdpRegisterWords', label, 'machine.vdp.vdpRegisterWords'), 'machine.vdp.vdpRegisterWords', VDP_REGISTER_COUNT),
 		buildFrame: decodeBuildingFrameState(requireObjectKey(object, 'buildFrame', label, 'machine.vdp.buildFrame'), 'machine.vdp.buildFrame'),
@@ -1041,7 +1041,7 @@ function decodeMachineSaveState(value: unknown, label: string): MachineSaveState
 
 function encodeRuntimeSaveMachineState(state: RuntimeSaveMachineState): RuntimeSaveMachineState {
 	return {
-		machineRegionWord: state.machineRegionWord,
+		psxGpuDisplayModeWord: state.psxGpuDisplayModeWord,
 		machine: encodeMachineSaveState(state.machine),
 		frameScheduler: encodeFrameSchedulerState(state.frameScheduler),
 		vblank: encodeRuntimeVblankState(state.vblank),
@@ -1051,7 +1051,7 @@ function encodeRuntimeSaveMachineState(state: RuntimeSaveMachineState): RuntimeS
 function decodeRuntimeSaveMachineState(value: unknown, label: string): RuntimeSaveMachineState {
 	const object = requireObject(value, label);
 	return {
-		machineRegionWord: requireObjectKey(object, 'machineRegionWord', label, 'machineState.machineRegionWord') as number,
+		psxGpuDisplayModeWord: requireObjectKey(object, 'psxGpuDisplayModeWord', label, 'machineState.psxGpuDisplayModeWord') as number,
 		machine: decodeMachineSaveState(requireObjectKey(object, 'machine', label, 'machineState.machine'), 'machineState.machine'),
 		frameScheduler: decodeFrameSchedulerState(requireObjectKey(object, 'frameScheduler', label, 'machineState.frameScheduler'), 'machineState.frameScheduler'),
 		vblank: decodeRuntimeVblankState(requireObjectKey(object, 'vblank', label, 'machineState.vblank'), 'machineState.vblank'),

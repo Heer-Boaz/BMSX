@@ -3,7 +3,6 @@ import {
 	VDP_FIFO_CTRL_SEAL,
 	VDP_FAULT_NONE,
 	VDP_FAULT_STREAM_BAD_PACKET,
-	VDP_FAULT_MODE_UNSUPPORTED,
 	VDP_FAULT_SUBMIT_STATE,
 	VDP_FAULT_CMD_BAD_DOORBELL,
 	VDP_FAULT_SUBMIT_BUSY,
@@ -25,7 +24,7 @@ import {
 	IO_VDP_CMD,
 	IO_VDP_FIFO,
 	IO_VDP_FIFO_CTRL,
-	IO_VDP_MODE,
+	IO_GPU_DISPLAY_MODE,
 	IO_VDP_REG0,
 	IO_VDP_SCREEN_WH,
 	IO_VDP_RD_DATA,
@@ -68,8 +67,8 @@ import { VdpVoutUnit } from './vout';
 import { vdpUnitPacketHasFlags, vdpUnitPacketPayloadWords } from './packet';
 import { packLowHigh16, packedLow16 } from '../../common/word';
 import {
-	PSX_VDP_MODE_SPEC,
-	VDP_MODE_PSX_WORD,
+	PSX_GPU_DISPLAY_MODE_PAL_WORD,
+	PSX_GPU_DISPLAY_SIZE_SPEC,
 } from '../../model_registry';
 import {
 	VDP_DEX_FRAME_DIRECT_OPEN,
@@ -160,7 +159,7 @@ export class VDP implements VramWriteSink {
 	private readonly vdpRegisters = new Uint32Array(VDP_REGISTER_COUNT);
 	private readonly streamIngress = new VdpStreamIngressUnit();
 	private readonly unitRegisterPort: VdpUnitRegisterPort;
-	private vdpModeWord = VDP_MODE_PSX_WORD;
+	private displayModeWord = PSX_GPU_DISPLAY_MODE_PAL_WORD;
 	private m_lastFrameCommitted = true;
 	private m_lastFrameCost = 0;
 	private m_lastFrameHeld = false;
@@ -217,21 +216,16 @@ export class VDP implements VramWriteSink {
 		this.refreshSubmitBusyStatus();
 	}
 
-	public writeModeWord(word: number): void {
-		if ((word >>> 0) === VDP_MODE_PSX_WORD) {
-			this.applyPsxVdpMode();
-			return;
-		}
-		this.fault.raise(VDP_FAULT_MODE_UNSUPPORTED, word >>> 0);
-		this.memory.writeIoValue(IO_VDP_MODE, this.vdpModeWord);
+	public writeDisplayModeWord(word: number): void {
+		this.displayModeWord = word >>> 0;
+		this.applyFixedPsxDisplayGeometry();
 	}
 
-	private applyPsxVdpMode(): void {
-		this.vdpModeWord = VDP_MODE_PSX_WORD;
-		const screenWh = packLowHigh16(PSX_VDP_MODE_SPEC.renderWidth, PSX_VDP_MODE_SPEC.renderHeight);
-		this.memory.writeIoValue(IO_VDP_MODE, VDP_MODE_PSX_WORD);
+	private applyFixedPsxDisplayGeometry(): void {
+		const screenWh = packLowHigh16(PSX_GPU_DISPLAY_SIZE_SPEC.renderWidth, PSX_GPU_DISPLAY_SIZE_SPEC.renderHeight);
+		this.memory.writeIoValue(IO_GPU_DISPLAY_MODE, this.displayModeWord);
 		this.memory.writeIoValue(IO_VDP_SCREEN_WH, screenWh);
-		this.resizeFrameBufferSurface(PSX_VDP_MODE_SPEC.renderWidth, PSX_VDP_MODE_SPEC.renderHeight);
+		this.resizeFrameBufferSurface(PSX_GPU_DISPLAY_SIZE_SPEC.renderWidth, PSX_GPU_DISPLAY_SIZE_SPEC.renderHeight);
 	}
 
 	private resetVdpRegisters(): void {
@@ -1040,7 +1034,7 @@ export class VDP implements VramWriteSink {
 		this.memory.writeIoValue(IO_VDP_RD_Y, 0);
 		this.memory.writeIoValue(IO_VDP_RD_MODE, VDP_RD_MODE_RGBA8888);
 		this.memory.writeIoValue(IO_VDP_DITHER, dither);
-		this.applyPsxVdpMode();
+		this.writeDisplayModeWord(this.displayModeWord);
 		this.memory.writeIoValue(IO_VDP_CMD, 0);
 		this.resetVdpRegisters();
 		this.xf.reset();
@@ -1055,7 +1049,7 @@ export class VDP implements VramWriteSink {
 	}
 
 	public captureVisualStateFields(state: VdpState): void {
-		state.vdpModeWord = this.vdpModeWord;
+		state.displayModeWord = this.displayModeWord;
 		state.xf = this.xf.captureState();
 		const vdpRegisterWords = state.vdpRegisterWords;
 		for (let index = 0; index < VDP_REGISTER_COUNT; index += 1) {
@@ -1105,7 +1099,7 @@ export class VDP implements VramWriteSink {
 	}
 
 	public restoreState(state: VdpState): void {
-		this.writeModeWord(state.vdpModeWord);
+		this.writeDisplayModeWord(state.displayModeWord);
 		this.xf.restoreState(state.xf);
 		for (let index = 0; index < VDP_REGISTER_COUNT; index += 1) {
 			this.vdpRegisters[index] = state.vdpRegisterWords[index]!;

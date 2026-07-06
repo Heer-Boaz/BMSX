@@ -11,11 +11,11 @@ import { HostFaultState } from './host_fault';
 import { LuaScratchState } from '../program/scratch';
 import type { ProgramImage, ProgramVectorTable } from '../program/loader';
 import { inflateExecutableProgramImage, type LinkedBootProgramImage } from '../program/linker';
-import { getMachineRegionTimingForWord } from '../model_registry';
+import { getPsxGpuDisplayModeTimingForWord } from '../model_registry';
 import { refreshDeviceTimings, setFrameTiming } from './timing/config';
 import { HZ_SCALE } from './timing/constants';
 import { calcCyclesPerFrameScaled, resolveVblankCycles } from './timing';
-import { IO_SYS_CYCLES_PER_FRAME, IO_SYS_FRAME_MS, IO_SYS_PRINT_CHAR, IO_SYS_PRINT_FLUSH, IO_SYS_REGION, IO_SYS_TIME_MS, IO_VDP_MODE } from '../bus/io';
+import { IO_SYS_CYCLES_PER_FRAME, IO_SYS_FRAME_MS, IO_SYS_PRINT_CHAR, IO_SYS_PRINT_FLUSH, IO_GPU_DISPLAY_MODE, IO_SYS_TIME_MS } from '../bus/io';
 import { Machine } from '../machine';
 import type { RuntimeInputSource } from './input';
 import type { MicrotaskQueue } from '../scheduler/microtask_queue';
@@ -311,8 +311,8 @@ export class Runtime {
 			options.ufpsScaled,
 			options.cpuHz,
 			options.cycleBudgetPerFrame,
-			options.machineRegionWord,
-			getMachineRegionTimingForWord(options.machineRegionWord).totalScanlines,
+			options.psxGpuDisplayModeWord,
+			getPsxGpuDisplayModeTimingForWord(options.psxGpuDisplayModeWord).totalScanlines,
 			options.imgDecBytesPerSec,
 			options.dmaBytesPerSecIso,
 			options.dmaBytesPerSecBulk,
@@ -329,14 +329,14 @@ export class Runtime {
 		this.machine.memory.clearIoSlots();
 		this.machine.memory.mapIoRead(IO_SYS_TIME_MS, this, Runtime.onTimeMsReadThunk);
 		this.machine.memory.mapIoRead(IO_SYS_FRAME_MS, this, Runtime.onFrameMsReadThunk);
-		this.machine.memory.mapIoRead(IO_SYS_REGION, this, Runtime.onMachineRegionReadThunk);
+		this.machine.memory.mapIoRead(IO_GPU_DISPLAY_MODE, this, Runtime.onGpuDisplayModeReadThunk);
 		this.machine.memory.mapIoRead(IO_SYS_CYCLES_PER_FRAME, this, Runtime.onCyclesPerFrameReadThunk);
-		this.machine.memory.mapIoWrite(IO_SYS_REGION, this, Runtime.onMachineRegionWriteThunk);
+		this.machine.memory.mapIoWrite(IO_GPU_DISPLAY_MODE, this, Runtime.onGpuDisplayModeWriteThunk);
 		this.machine.memory.mapIoWrite(IO_SYS_PRINT_CHAR, this, Runtime.onLuaOutputCodepointWriteThunk);
 		this.machine.memory.mapIoWrite(IO_SYS_PRINT_FLUSH, this, Runtime.onLuaOutputFlushWriteThunk);
-		this.machine.memory.mapIoWrite(IO_VDP_MODE, this, Runtime.onVdpModeWriteThunk);
 		this.machine.initializeSystemIo();
 		this.machine.resetDevices();
+		this.machine.vdp.writeDisplayModeWord(this.timing.gpuDisplayModeWord);
 		configureLuaHeapUsage(this, Runtime.getBaseRamUsedBytesThunk, Runtime.collectTrackedHeapBytesThunk);
 		refreshDeviceTimings(this, this.machine.scheduler.currentNowCycles());
 		this.vblank.setVblankCycles(options.vblankCycles);
@@ -360,9 +360,9 @@ export class Runtime {
 		return context.timing.frameDurationMs;
 	}
 
-	private static onMachineRegionReadThunk(context: Runtime, addr: number): Value {
+	private static onGpuDisplayModeReadThunk(context: Runtime, addr: number): Value {
 		void addr;
-		return context.timing.regionWord;
+		return context.timing.gpuDisplayModeWord;
 	}
 
 	private static onCyclesPerFrameReadThunk(context: Runtime, addr: number): Value {
@@ -370,9 +370,9 @@ export class Runtime {
 		return context.timing.cycleBudgetPerFrame;
 	}
 
-	private static onMachineRegionWriteThunk(context: Runtime, addr: number, value: Value): void {
+	private static onGpuDisplayModeWriteThunk(context: Runtime, addr: number, value: Value): void {
 		void addr;
-		context.applyMachineRegionWord((value as number) >>> 0);
+		context.applyPsxGpuDisplayModeWord((value as number) >>> 0);
 	}
 
 	private static onLuaOutputCodepointWriteThunk(context: Runtime, addr: number, value: Value): void {
@@ -383,11 +383,6 @@ export class Runtime {
 	private static onLuaOutputFlushWriteThunk(context: Runtime): void {
 		context.luaOutputLines.push(context.luaOutputLineBuffer);
 		context.luaOutputLineBuffer = '';
-	}
-
-	private static onVdpModeWriteThunk(context: Runtime, addr: number, value: Value): void {
-		void addr;
-		context.applyVdpModeWord((value as number) >>> 0);
 	}
 
 	private writeLuaOutputCodepoint(codepoint: number): void {
@@ -440,28 +435,18 @@ export class Runtime {
 		this.input.setRuntimeInputFrameDurationMs(timing.frameDurationMs);
 	}
 
-	public applyMachineRegionWord(regionWord: number): void {
-		const regionTiming = getMachineRegionTimingForWord(regionWord);
-		const refreshUfpsScaled = regionTiming.refreshUfpsScaled;
-		this.timing.regionWord = regionWord >>> 0;
-		this.timing.totalScanlines = regionTiming.totalScanlines;
+	public applyPsxGpuDisplayModeWord(gpuDisplayModeWord: number): void {
+		const displayModeTiming = getPsxGpuDisplayModeTimingForWord(gpuDisplayModeWord);
+		const refreshUfpsScaled = displayModeTiming.refreshUfpsScaled;
+		this.timing.gpuDisplayModeWord = gpuDisplayModeWord >>> 0;
+		this.timing.totalScanlines = displayModeTiming.totalScanlines;
+		this.machine.vdp.writeDisplayModeWord(this.timing.gpuDisplayModeWord);
 		this.applyUfpsScaled(refreshUfpsScaled);
 		setFrameTiming(
 			this,
 			this.timing.cpuHz,
 			calcCyclesPerFrameScaled(this.timing.cpuHz, refreshUfpsScaled),
-			resolveVblankCycles(this.timing.cpuHz, refreshUfpsScaled, regionTiming.totalScanlines, this.machine.vdp.frameBufferHeight),
-		);
-	}
-
-	public applyVdpModeWord(modeWord: number): void {
-		this.machine.vdp.writeModeWord(modeWord);
-		const regionTiming = getMachineRegionTimingForWord(this.timing.regionWord);
-		setFrameTiming(
-			this,
-			this.timing.cpuHz,
-			this.timing.cycleBudgetPerFrame,
-			resolveVblankCycles(this.timing.cpuHz, regionTiming.refreshUfpsScaled, regionTiming.totalScanlines, this.machine.vdp.frameBufferHeight),
+			resolveVblankCycles(this.timing.cpuHz, refreshUfpsScaled, displayModeTiming.totalScanlines, this.machine.vdp.frameBufferHeight),
 		);
 	}
 

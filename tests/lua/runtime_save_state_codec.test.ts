@@ -28,7 +28,7 @@ import {
 	VDP_SUBMITTED_FRAME_EXECUTING,
 } from '../../machine/ts/machine/devices/vdp/frame';
 import { captureVdpRpuFrameState, createVdpRpuFrameOutput, VDP_RPU_FRAME_IDLE, VDP_RPU_PARAM_MEM_PAGE_COUNT, VDP_RPU_PARAM_MEM_SIZE } from '../../machine/ts/machine/devices/vdp/rpu';
-import { VDP_MODE_PSX_WORD } from '../../machine/ts/machine/model_registry';
+import { PSX_GPU_DISPLAY_MODE_PAL_WORD } from '../../machine/ts/machine/model_registry';
 
 import type { RuntimeSaveState } from '../../machine/ts/machine/runtime/save_state';
 import { decodeRuntimeSaveState, encodeRuntimeSaveState } from '../../machine/ts/machine/runtime/save_state/codec';
@@ -87,7 +87,7 @@ function createRuntimeSaveState(): RuntimeSaveState {
 	const audioSlotSourceBytes = Array.from({ length: APU_SLOT_COUNT }, (_, slot) => new Uint8Array(slot === 1 ? [9, 8, 7, 6] : []));
 	return {
 		machineState: {
-			machineRegionWord: 1,
+			psxGpuDisplayModeWord: PSX_GPU_DISPLAY_MODE_PAL_WORD,
 			machine: {
 				memory: {
 					ram,
@@ -219,7 +219,7 @@ function createRuntimeSaveState(): RuntimeSaveState {
 					},
 				},
 				vdp: {
-					vdpModeWord: VDP_MODE_PSX_WORD,
+					displayModeWord: PSX_GPU_DISPLAY_MODE_PAL_WORD,
 					xf: {
 						matrixWords: numberedWords(VDP_XF_MATRIX_REGISTER_WORDS),
 						viewMatrixIndex: 0xfffffffe,
@@ -317,7 +317,7 @@ test('runtime save-state codec preserves string pool ROM/runtime ownership', () 
 
 	const decoded = decodeRuntimeSaveState(encodeRuntimeSaveState(state));
 
-	assert.equal(decoded.machineState.machineRegionWord, state.machineState.machineRegionWord);
+	assert.equal(decoded.machineState.psxGpuDisplayModeWord, state.machineState.psxGpuDisplayModeWord);
 	assert.deepEqual(decoded.machineState.machine.stringPool.entries, state.machineState.machine.stringPool.entries);
 	assert.deepEqual(decoded.machineState.machine.irq, state.machineState.machine.irq);
 	assert.deepEqual(decoded.machineState.machine.geometry, state.machineState.machine.geometry);

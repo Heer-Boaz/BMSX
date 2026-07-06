@@ -9,7 +9,7 @@ struct TimingState {
 		i64 ufpsScaled,
 		i64 cpuHz,
 		int cycleBudgetPerFrame,
-		uint32_t regionWord,
+		uint32_t gpuDisplayModeWord,
 		i64 totalScanlines,
 		i64 imgDecBytesPerSec,
 		i64 dmaBytesPerSecIso,
@@ -21,7 +21,7 @@ struct TimingState {
 	i64 ufpsScaled;
 	f64 ufps;
 	f64 frameDurationMs;
-	uint32_t regionWord;
+	uint32_t gpuDisplayModeWord;
 	i64 totalScanlines;
 	i64 cpuHz;
 	int cycleBudgetPerFrame;

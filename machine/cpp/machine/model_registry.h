@@ -6,11 +6,10 @@
 namespace bmsx {
 
 // Console-model registry: the machine owns fixed PSX-class hardware, device
-// throughput/programming-model parameters, and region runtime timing state.
+// throughput/programming-model parameters, and PSX GPU display timing state.
 
 enum class MachineVdpClass { Psx };
-enum class MachineVdpMode : u32 { Psx = 2u };
-enum class MachineRegion { Pal, Ntsc };
+enum class PsxGpuVideoStandard { Pal, Ntsc };
 
 constexpr i64 PSX_CPU_FREQ_HZ = 50000000;
 constexpr i64 PSX_IMGDEC_BYTES_PER_SEC = 26214400;
@@ -19,9 +18,8 @@ constexpr i64 PSX_DMA_BYTES_PER_SEC_BULK = 26214400;
 constexpr i64 PSX_RAM_BYTES = 0x00400000;
 constexpr i64 PSX_VRAM_TEXTURE_BYTES = 0x00200000;
 constexpr i64 PSX_VRAM_STAGING_BYTES = 0x00022000;
-constexpr u32 VDP_MODE_PSX_WORD = 2u;
-constexpr i32 VDP_MODE_PSX_RENDER_WIDTH = 320;
-constexpr i32 VDP_MODE_PSX_RENDER_HEIGHT = 240;
+constexpr i32 PSX_GPU_DISPLAY_WIDTH = 320;
+constexpr i32 PSX_GPU_DISPLAY_HEIGHT = 240;
 
 
 constexpr i64 PSX_VDP_WORK_UNITS_PER_SEC = 25600;
@@ -31,8 +29,9 @@ constexpr i64 PAL_REFRESH_UFPS_SCALED = 50 * HZ_SCALE;
 constexpr i64 PAL_TOTAL_SCANLINES = 313;
 constexpr i64 NTSC_REFRESH_UFPS_SCALED = 59940060;
 constexpr i64 NTSC_TOTAL_SCANLINES = 262;
-constexpr uint32_t MACHINE_REGION_PAL_WORD = 0;
-constexpr uint32_t MACHINE_REGION_NTSC_WORD = 1;
+constexpr uint32_t PSX_GPU_DISPLAY_MODE_NTSC_WORD = 0x00000000u;
+constexpr uint32_t PSX_GPU_DISPLAY_MODE_PAL_BIT = 0x00000008u;
+constexpr uint32_t PSX_GPU_DISPLAY_MODE_PAL_WORD = PSX_GPU_DISPLAY_MODE_PAL_BIT;
 
 struct MachineModelSpec {
 	i64 cpuFreqHz;
@@ -42,7 +41,6 @@ struct MachineModelSpec {
 	i64 ramBytes;
 	i64 textureBytes;
 	i64 stagingBytes;
-	MachineVdpMode biosVdpMode;
 };
 
 struct MachineVdpWorkSpec {
@@ -50,14 +48,13 @@ struct MachineVdpWorkSpec {
 	i64 geoWorkUnitsPerSec;
 };
 
-struct MachineVdpModeSpec {
-	MachineVdpMode mode;
+struct PsxGpuDisplaySizeSpec {
 	i32 renderWidth;
 	i32 renderHeight;
 };
 
-struct MachineRegionTiming {
-	MachineRegion region;
+struct PsxGpuDisplayModeTiming {
+	PsxGpuVideoStandard videoStandard;
 	i64 refreshUfpsScaled;
 	i64 totalScanlines;
 };
@@ -70,7 +67,6 @@ inline constexpr MachineModelSpec PSX_MACHINE_SPEC = {
 	PSX_RAM_BYTES,
 	PSX_VRAM_TEXTURE_BYTES,
 	PSX_VRAM_STAGING_BYTES,
-	MachineVdpMode::Psx,
 };
 
 inline constexpr MachineVdpWorkSpec PSX_VDP_WORK_SPEC = {
@@ -78,13 +74,12 @@ inline constexpr MachineVdpWorkSpec PSX_VDP_WORK_SPEC = {
 	PSX_GEO_WORK_UNITS_PER_SEC,
 };
 
-inline constexpr MachineVdpModeSpec PSX_VDP_MODE_SPEC = {
-	MachineVdpMode::Psx,
-	VDP_MODE_PSX_RENDER_WIDTH,
-	VDP_MODE_PSX_RENDER_HEIGHT,
+inline constexpr PsxGpuDisplaySizeSpec PSX_GPU_DISPLAY_SIZE_SPEC = {
+	PSX_GPU_DISPLAY_WIDTH,
+	PSX_GPU_DISPLAY_HEIGHT,
 };
 
-MachineRegionTiming getMachineRegionTiming(MachineRegion region);
-MachineRegionTiming getMachineRegionTimingForWord(uint32_t word);
+PsxGpuDisplayModeTiming getPsxGpuVideoStandardTiming(PsxGpuVideoStandard videoStandard);
+PsxGpuDisplayModeTiming getPsxGpuDisplayModeTimingForWord(uint32_t word);
 
 } // namespace bmsx

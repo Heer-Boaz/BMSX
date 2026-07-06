@@ -8,7 +8,7 @@ class Runtime;
 struct ResolvedRuntimeTiming {
 	i32 viewportWidth;
 	i32 viewportHeight;
-	uint32_t regionWord;
+	uint32_t gpuDisplayModeWord;
 	i64 ufpsScaled;
 	i64 totalScanlines;
 	i64 cpuHz;
@@ -23,7 +23,7 @@ struct ResolvedRuntimeTiming {
 
 ResolvedRuntimeTiming resolveRuntimeTiming(
 	i64 cpuHz,
-	uint32_t regionWord
+	uint32_t gpuDisplayModeWord
 );
 void applyRuntimeTiming(Runtime& runtime, const ResolvedRuntimeTiming& timing);
 

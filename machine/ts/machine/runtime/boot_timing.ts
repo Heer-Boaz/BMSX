@@ -1,12 +1,12 @@
 import type { Runtime } from './runtime';
 import { calcCyclesPerFrameScaled, resolveVblankCycles } from './timing';
 import { setFrameTiming, setTransferRates } from './timing/config';
-import { getMachineRegionTimingForWord, PSX_MACHINE_SPEC, PSX_VDP_WORK_SPEC, PSX_VDP_MODE_SPEC } from '../model_registry';
+import { getPsxGpuDisplayModeTimingForWord, PSX_MACHINE_SPEC, PSX_VDP_WORK_SPEC, PSX_GPU_DISPLAY_SIZE_SPEC } from '../model_registry';
 
 export type ResolvedRuntimeTiming = {
 	viewportWidth: number;
 	viewportHeight: number;
-	regionWord: number;
+	gpuDisplayModeWord: number;
 	ufpsScaled: number;
 	totalScanlines: number;
 	cpuHz: number;
@@ -21,17 +21,17 @@ export type ResolvedRuntimeTiming = {
 
 export function resolveRuntimeTiming(
 	cpuHz: number,
-	regionWord: number,
+	gpuDisplayModeWord: number,
 ): ResolvedRuntimeTiming {
-	const renderSize = PSX_VDP_MODE_SPEC;
-	const regionTiming = getMachineRegionTimingForWord(regionWord);
-	const refreshUfpsScaled = regionTiming.refreshUfpsScaled;
+	const renderSize = PSX_GPU_DISPLAY_SIZE_SPEC;
+	const displayModeTiming = getPsxGpuDisplayModeTimingForWord(gpuDisplayModeWord);
+	const refreshUfpsScaled = displayModeTiming.refreshUfpsScaled;
 	return {
 		viewportWidth: renderSize.renderWidth,
 		viewportHeight: renderSize.renderHeight,
-		regionWord,
+		gpuDisplayModeWord,
 		ufpsScaled: refreshUfpsScaled,
-		totalScanlines: regionTiming.totalScanlines,
+		totalScanlines: displayModeTiming.totalScanlines,
 		cpuHz,
 		imgDecBytesPerSec: PSX_MACHINE_SPEC.imgDecBytesPerSec,
 		dmaBytesPerSecIso: PSX_MACHINE_SPEC.dmaBytesPerSecIso,
@@ -39,14 +39,15 @@ export function resolveRuntimeTiming(
 		vdpWorkUnitsPerSec: PSX_VDP_WORK_SPEC.vdpWorkUnitsPerSec,
 		geoWorkUnitsPerSec: PSX_VDP_WORK_SPEC.geoWorkUnitsPerSec,
 		cycleBudgetPerFrame: calcCyclesPerFrameScaled(cpuHz, refreshUfpsScaled),
-		vblankCycles: resolveVblankCycles(cpuHz, refreshUfpsScaled, regionTiming.totalScanlines, renderSize.renderHeight),
+		vblankCycles: resolveVblankCycles(cpuHz, refreshUfpsScaled, displayModeTiming.totalScanlines, renderSize.renderHeight),
 	};
 }
 
 export function applyRuntimeTiming(runtime: Runtime, timing: ResolvedRuntimeTiming): void {
 	runtime.applyUfpsScaled(timing.ufpsScaled);
-	runtime.timing.regionWord = timing.regionWord >>> 0;
+	runtime.timing.gpuDisplayModeWord = timing.gpuDisplayModeWord >>> 0;
 	runtime.timing.totalScanlines = timing.totalScanlines;
+	runtime.machine.vdp.writeDisplayModeWord(runtime.timing.gpuDisplayModeWord);
 	setFrameTiming(runtime, timing.cpuHz, timing.cycleBudgetPerFrame, timing.vblankCycles);
 	setTransferRates(runtime, {
 		imgDecBytesPerSec: timing.imgDecBytesPerSec,

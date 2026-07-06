@@ -1,8 +1,6 @@
 -- bootrom.lua
 -- bmsx system boot screen
 
-mem[0x08000084] = 0x00000002
-
 require('system/msx_colors')
 require('bios/base')
 require('bios/os')

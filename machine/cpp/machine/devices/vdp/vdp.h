@@ -41,7 +41,7 @@ public:
 	void initializeRegisters();
 	void resetIngressState();
 	void resetStatus();
-	void writeModeWord(uint32_t word);
+	void writeDisplayModeWord(uint32_t word);
 	void setScanoutTiming(bool vblankActive, int cyclesIntoFrame, int cyclesPerFrame, int vblankStartCycle);
 	void acceptSubmitAttempt();
 	void rejectSubmitAttempt();
@@ -135,10 +135,10 @@ private:
 	VdpFbmUnit m_fbm;
 	DeviceScheduler& m_scheduler;
 	VdpUnitRegisterPort m_unitRegisterPort;
-	u32 m_vdpModeWord = VDP_MODE_PSX_WORD;
+	u32 m_displayModeWord = PSX_GPU_DISPLAY_MODE_PAL_WORD;
 
 	void bindVramSurfaces();
-	void applyPsxVdpMode();
+	void applyFixedPsxDisplayGeometry();
 	void resizeFrameBufferSurface(uint32_t width, uint32_t height);
 	void resetQueuedFrameState();
 	bool canAcceptSubmittedFrame() const {

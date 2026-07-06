@@ -8,7 +8,7 @@ import { TextureManager } from "../render/texture_manager";
 import { RenderPassLibrary } from "../render/backend/pass/library";
 import { setMicrotaskQueue } from '../platform';
 import type { GameViewHost, Platform } from '../platform';
-import { MACHINE_REGION_PAL_WORD, PAL_REFRESH_UFPS_SCALED, PSX_MACHINE_SPEC } from '../machine/model_registry';
+import { PSX_GPU_DISPLAY_MODE_PAL_WORD, PAL_REFRESH_UFPS_SCALED, PSX_MACHINE_SPEC } from '../machine/model_registry';
 import { HZ_SCALE } from '../machine/runtime/timing/constants';
 import { RomBootManager } from './rom_boot_manager';
 import { renderGate, runGate } from '../common/taskgate';
@@ -165,14 +165,14 @@ export class MachineManager {
 		this._view = gview;
 		this.sourceState = createRuntimeSourceState(systemLayer, cartLayer);
 		configureMemoryMap(resolveRuntimeMemoryMapSpecs());
-		const timing = resolveRuntimeTiming(PSX_MACHINE_SPEC.cpuFreqHz, MACHINE_REGION_PAL_WORD);
+		const timing = resolveRuntimeTiming(PSX_MACHINE_SPEC.cpuFreqHz, PSX_GPU_DISPLAY_MODE_PAL_WORD);
 		const runtime = new Runtime({
 			viewport: { width: timing.viewportWidth, height: timing.viewportHeight },
 			memory: new Memory({
 				systemRom: systemLayer.payload,
 				cartRom: cartLayer ? cartLayer.payload : new Uint8Array(0),
 			}),
-			machineRegionWord: timing.regionWord,
+			psxGpuDisplayModeWord: timing.gpuDisplayModeWord,
 			ufpsScaled: timing.ufpsScaled,
 			cpuHz: timing.cpuHz,
 			cycleBudgetPerFrame: timing.cycleBudgetPerFrame,

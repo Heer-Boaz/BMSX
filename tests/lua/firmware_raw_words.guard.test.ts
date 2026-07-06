@@ -17,13 +17,13 @@ import {
 	IO_IRQ_MASK,
 	IO_SYS_CYCLES_PER_FRAME,
 	IO_VDP_FIFO,
-	IO_VDP_MODE,
+	IO_GPU_DISPLAY_MODE,
 	IO_VDP_SCREEN_WH,
 	IO_VDP_STATUS,
 } from '../../machine/ts/machine/bus/io';
 import {
 	PSX_MACHINE_SPEC,
-	PSX_VDP_MODE_SPEC,
+	PSX_GPU_DISPLAY_SIZE_SPEC,
 	PSX_VRAM_STAGING_BYTES,
 	PSX_VRAM_TEXTURE_BYTES,
 } from '../../machine/ts/machine/model_registry';
@@ -56,14 +56,14 @@ test('IMGDEC firmware consumes raw hardware words directly', () => {
 
 test('bootrom handoff waits for VDP submit idle before leaving system firmware', () => {
 	const source = readFileSync('machine/firmware/bios/bootrom.lua', 'utf8');
-	const biosVdpMode = PSX_VDP_MODE_SPEC;
+	const gpuDisplaySize = PSX_GPU_DISPLAY_SIZE_SPEC;
 	const bootVramTotal = PSX_VRAM_STAGING_BYTES
 		+ PSX_VRAM_TEXTURE_BYTES
-		+ biosVdpMode.renderWidth * biosVdpMode.renderHeight * 4;
+		+ gpuDisplaySize.renderWidth * gpuDisplaySize.renderHeight * 4;
 	assert.equal(source.includes('boot_requested'), false);
 	assert.equal(source.includes('sys_boot_cart'), false);
 	assert.equal(source.includes(`local vram_total<const> = 0x${bootVramTotal.toString(16).padStart(8, '0')}`), true);
-	assert.equal(source.includes(`mem[0x${IO_VDP_MODE.toString(16).padStart(8, '0')}] = 0x00000002`), true);
+	assert.equal(source.includes(`mem[0x${IO_GPU_DISPLAY_MODE.toString(16).padStart(8, '0')}] = 0x00000002`), false);
 	assert.equal(source.includes(`local irq_mask_addr<const> = 0x${IO_IRQ_MASK.toString(16).padStart(8, '0')}`), true);
 	assert.equal(source.includes(`hw_max_cycles = format_bignumbers(mem[0x${IO_SYS_CYCLES_PER_FRAME.toString(16).padStart(8, '0')}])`), true);
 	assert.equal(source.includes(`local screen_wh<const> = mem[0x${IO_VDP_SCREEN_WH.toString(16).padStart(8, '0')}]`), true);

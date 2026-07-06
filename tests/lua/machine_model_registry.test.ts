@@ -2,15 +2,14 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 
 import {
-	getMachineRegionTiming,
-	getMachineRegionTimingForWord,
-	MACHINE_REGION_NTSC_WORD,
-	MACHINE_REGION_PAL_WORD,
+	getPsxGpuVideoStandardTiming,
+	getPsxGpuDisplayModeTimingForWord,
+	PSX_GPU_DISPLAY_MODE_NTSC_WORD,
+	PSX_GPU_DISPLAY_MODE_PAL_WORD,
 	NTSC_REFRESH_UFPS_SCALED,
 	PSX_MACHINE_SPEC,
 	PSX_VDP_WORK_SPEC,
-	VDP_MODE_PSX_WORD,
-	PSX_VDP_MODE_SPEC,
+	PSX_GPU_DISPLAY_SIZE_SPEC,
 } from '../../machine/ts/machine/model_registry';
 import { HZ_SCALE } from '../../machine/ts/machine/runtime/timing/constants';
 
@@ -23,7 +22,6 @@ test('machine registry exposes the psx fixed hardware model', () => {
 		ramBytes: 0x00400000,
 		textureBytes: 0x00200000,
 		stagingBytes: 0x00022000,
-		biosVdpMode: VDP_MODE_PSX_WORD,
 	});
 });
 
@@ -34,22 +32,22 @@ test('machine registry exposes the psx VDP device class throughput', () => {
 	});
 });
 
-test('machine registry exposes only the psx VDP mode', () => {
-	assert.deepEqual(PSX_VDP_MODE_SPEC, { mode: VDP_MODE_PSX_WORD, renderWidth: 320, renderHeight: 240 });
+test('machine registry exposes the fixed PSX GPU display size without a VDP mode profile', () => {
+	assert.deepEqual(PSX_GPU_DISPLAY_SIZE_SPEC, { renderWidth: 320, renderHeight: 240 });
 });
 
-test('machine region timing uses PAL and 60000/1001 NTSC timing', () => {
-	assert.deepEqual(getMachineRegionTiming('pal'), {
-		region: 'pal',
+test('PSX GPU display mode bit 3 selects PAL and clear bit 3 selects 60000/1001 NTSC timing', () => {
+	assert.deepEqual(getPsxGpuVideoStandardTiming('pal'), {
+		videoStandard: 'pal',
 		refreshUfpsScaled: 50 * HZ_SCALE,
 		totalScanlines: 313,
 	});
-	assert.deepEqual(getMachineRegionTiming('ntsc'), {
-		region: 'ntsc',
+	assert.deepEqual(getPsxGpuVideoStandardTiming('ntsc'), {
+		videoStandard: 'ntsc',
 		refreshUfpsScaled: 59_940_060,
 		totalScanlines: 262,
 	});
 	assert.equal(NTSC_REFRESH_UFPS_SCALED, 59_940_060);
-	assert.deepEqual(getMachineRegionTimingForWord(MACHINE_REGION_PAL_WORD), getMachineRegionTiming('pal'));
-	assert.deepEqual(getMachineRegionTimingForWord(MACHINE_REGION_NTSC_WORD), getMachineRegionTiming('ntsc'));
+	assert.deepEqual(getPsxGpuDisplayModeTimingForWord(PSX_GPU_DISPLAY_MODE_PAL_WORD), getPsxGpuVideoStandardTiming('pal'));
+	assert.deepEqual(getPsxGpuDisplayModeTimingForWord(PSX_GPU_DISPLAY_MODE_NTSC_WORD), getPsxGpuVideoStandardTiming('ntsc'));
 });

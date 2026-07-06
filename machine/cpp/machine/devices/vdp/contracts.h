@@ -41,7 +41,6 @@ constexpr uint32_t VDP_FAULT_NONE = 0u;
 constexpr uint32_t VDP_FAULT_RD_UNSUPPORTED_MODE = 0x0001u;
 constexpr uint32_t VDP_FAULT_RD_SURFACE = 0x0002u;
 constexpr uint32_t VDP_FAULT_RD_OOB = 0x0003u;
-constexpr uint32_t VDP_FAULT_MODE_UNSUPPORTED = 0x0004u;
 constexpr uint32_t VDP_FAULT_VRAM_WRITE_UNMAPPED = 0x0101u;
 constexpr uint32_t VDP_FAULT_VRAM_WRITE_UNINITIALIZED = 0x0102u;
 constexpr uint32_t VDP_FAULT_VRAM_WRITE_OOB = 0x0103u;

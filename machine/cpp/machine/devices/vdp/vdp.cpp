@@ -64,21 +64,16 @@ void VDP::resetStatus() {
 	refreshSubmitBusyStatus();
 }
 
-void VDP::writeModeWord(uint32_t word) {
-	if (word == VDP_MODE_PSX_WORD) {
-		applyPsxVdpMode();
-		return;
-	}
-	m_fault.raise(VDP_FAULT_MODE_UNSUPPORTED, word);
-	m_memory.writeIoValue(IO_VDP_MODE, valueNumber(static_cast<double>(m_vdpModeWord)));
+void VDP::writeDisplayModeWord(uint32_t word) {
+	m_displayModeWord = word;
+	applyFixedPsxDisplayGeometry();
 }
 
-void VDP::applyPsxVdpMode() {
-	m_vdpModeWord = VDP_MODE_PSX_WORD;
-	const u32 screenWh = packLowHigh16(static_cast<u32>(PSX_VDP_MODE_SPEC.renderWidth), static_cast<u32>(PSX_VDP_MODE_SPEC.renderHeight));
-	m_memory.writeIoValue(IO_VDP_MODE, valueNumber(static_cast<double>(m_vdpModeWord)));
+void VDP::applyFixedPsxDisplayGeometry() {
+	const u32 screenWh = packLowHigh16(static_cast<u32>(PSX_GPU_DISPLAY_SIZE_SPEC.renderWidth), static_cast<u32>(PSX_GPU_DISPLAY_SIZE_SPEC.renderHeight));
+	m_memory.writeIoValue(IO_GPU_DISPLAY_MODE, valueNumber(static_cast<double>(m_displayModeWord)));
 	m_memory.writeIoValue(IO_VDP_SCREEN_WH, valueNumber(static_cast<double>(screenWh)));
-	resizeFrameBufferSurface(static_cast<uint32_t>(PSX_VDP_MODE_SPEC.renderWidth), static_cast<uint32_t>(PSX_VDP_MODE_SPEC.renderHeight));
+	resizeFrameBufferSurface(static_cast<uint32_t>(PSX_GPU_DISPLAY_SIZE_SPEC.renderWidth), static_cast<uint32_t>(PSX_GPU_DISPLAY_SIZE_SPEC.renderHeight));
 }
 
 void VDP::resetVdpRegisters() {
@@ -858,7 +853,7 @@ void VDP::initializeRegisters() {
 	m_memory.writeIoValue(IO_VDP_RD_Y, valueNumber(0.0));
 	m_memory.writeIoValue(IO_VDP_RD_MODE, valueNumber(static_cast<double>(VDP_RD_MODE_RGBA8888)));
 	m_memory.writeIoValue(IO_VDP_DITHER, valueNumber(static_cast<double>(dither)));
-	applyPsxVdpMode();
+	writeDisplayModeWord(m_displayModeWord);
 	m_memory.writeIoValue(IO_VDP_CMD, valueNumber(0.0));
 	resetVdpRegisters();
 	m_xf.reset();
@@ -911,7 +906,7 @@ void VDP::resizeFrameBufferSurface(uint32_t width, uint32_t height) {
 // end hot-path
 
 void VDP::captureVisualStateFields(VdpState& state) const {
-	state.vdpModeWord = m_vdpModeWord;
+	state.displayModeWord = m_displayModeWord;
 	state.xf = m_xf.captureState();
 	for (size_t index = 0u; index < state.vdpRegisterWords.size(); ++index) {
 		state.vdpRegisterWords[index] = m_vdpRegisters[index];
@@ -946,7 +941,7 @@ VdpState VDP::captureState() const {
 }
 
 void VDP::restoreState(const VdpState& state) {
-	writeModeWord(state.vdpModeWord);
+	writeDisplayModeWord(state.displayModeWord);
 	m_xf.restoreState(state.xf);
 	for (size_t index = 0u; index < m_vdpRegisters.size(); ++index) {
 		m_vdpRegisters[index] = state.vdpRegisterWords[index];

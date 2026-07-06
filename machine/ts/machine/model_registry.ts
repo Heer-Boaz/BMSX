@@ -1,11 +1,10 @@
 import { HZ_SCALE } from './runtime/timing/constants';
 
 // Console-model registry: the machine owns fixed PSX-class hardware, device
-// throughput/programming-model parameters, and region runtime timing state.
+// throughput/programming-model parameters, and PSX GPU display timing state.
 
 export type MachineVdpClass = 'psx';
-export type MachineVdpMode = typeof VDP_MODE_PSX_WORD;
-export type MachineRegion = 'pal' | 'ntsc';
+export type PsxGpuVideoStandard = 'pal' | 'ntsc';
 
 export const PSX_CPU_FREQ_HZ = 50_000_000;
 export const PSX_IMGDEC_BYTES_PER_SEC = 26_214_400;
@@ -14,9 +13,8 @@ export const PSX_DMA_BYTES_PER_SEC_BULK = 26_214_400;
 export const PSX_RAM_BYTES = 0x00400000;
 export const PSX_VRAM_TEXTURE_BYTES = 0x00200000;
 export const PSX_VRAM_STAGING_BYTES = 0x00022000;
-export const VDP_MODE_PSX_WORD = 2;
-export const VDP_MODE_PSX_RENDER_WIDTH = 320;
-export const VDP_MODE_PSX_RENDER_HEIGHT = 240;
+export const PSX_GPU_DISPLAY_WIDTH = 320;
+export const PSX_GPU_DISPLAY_HEIGHT = 240;
 
 export const PSX_VDP_WORK_UNITS_PER_SEC = 25_600;
 export const PSX_GEO_WORK_UNITS_PER_SEC = 16_384_000;
@@ -25,8 +23,9 @@ export const PAL_REFRESH_UFPS_SCALED = 50 * HZ_SCALE;
 export const PAL_TOTAL_SCANLINES = 313;
 export const NTSC_REFRESH_UFPS_SCALED = 59_940_060;
 export const NTSC_TOTAL_SCANLINES = 262;
-export const MACHINE_REGION_PAL_WORD = 0;
-export const MACHINE_REGION_NTSC_WORD = 1;
+export const PSX_GPU_DISPLAY_MODE_NTSC_WORD = 0x00000000;
+export const PSX_GPU_DISPLAY_MODE_PAL_BIT = 0x00000008;
+export const PSX_GPU_DISPLAY_MODE_PAL_WORD = PSX_GPU_DISPLAY_MODE_PAL_BIT;
 
 export type MachineModelSpec = {
 	cpuFreqHz: number;
@@ -36,7 +35,6 @@ export type MachineModelSpec = {
 	ramBytes: number;
 	textureBytes: number;
 	stagingBytes: number;
-	biosVdpMode: MachineVdpMode;
 };
 
 export type MachineVdpWorkSpec = {
@@ -44,14 +42,13 @@ export type MachineVdpWorkSpec = {
 	geoWorkUnitsPerSec: number;
 };
 
-export type MachineVdpModeSpec = {
-	mode: MachineVdpMode;
+export type PsxGpuDisplaySizeSpec = {
 	renderWidth: number;
 	renderHeight: number;
 };
 
-export type MachineRegionTiming = {
-	region: MachineRegion;
+export type PsxGpuDisplayModeTiming = {
+	videoStandard: PsxGpuVideoStandard;
 	refreshUfpsScaled: number;
 	totalScanlines: number;
 };
@@ -64,7 +61,6 @@ export const PSX_MACHINE_SPEC: MachineModelSpec = {
 	ramBytes: PSX_RAM_BYTES,
 	textureBytes: PSX_VRAM_TEXTURE_BYTES,
 	stagingBytes: PSX_VRAM_STAGING_BYTES,
-	biosVdpMode: VDP_MODE_PSX_WORD,
 };
 
 export const PSX_VDP_WORK_SPEC: MachineVdpWorkSpec = {
@@ -72,23 +68,22 @@ export const PSX_VDP_WORK_SPEC: MachineVdpWorkSpec = {
 	geoWorkUnitsPerSec: PSX_GEO_WORK_UNITS_PER_SEC,
 };
 
-export const PSX_VDP_MODE_SPEC: MachineVdpModeSpec = {
-	mode: VDP_MODE_PSX_WORD,
-	renderWidth: VDP_MODE_PSX_RENDER_WIDTH,
-	renderHeight: VDP_MODE_PSX_RENDER_HEIGHT,
+export const PSX_GPU_DISPLAY_SIZE_SPEC: PsxGpuDisplaySizeSpec = {
+	renderWidth: PSX_GPU_DISPLAY_WIDTH,
+	renderHeight: PSX_GPU_DISPLAY_HEIGHT,
 };
 
-export function getMachineRegionTiming(region: MachineRegion): MachineRegionTiming {
-	if (region === 'pal') {
-		return { region, refreshUfpsScaled: PAL_REFRESH_UFPS_SCALED, totalScanlines: PAL_TOTAL_SCANLINES };
+export function getPsxGpuVideoStandardTiming(videoStandard: PsxGpuVideoStandard): PsxGpuDisplayModeTiming {
+	if (videoStandard === 'pal') {
+		return { videoStandard, refreshUfpsScaled: PAL_REFRESH_UFPS_SCALED, totalScanlines: PAL_TOTAL_SCANLINES };
 	}
-	return { region, refreshUfpsScaled: NTSC_REFRESH_UFPS_SCALED, totalScanlines: NTSC_TOTAL_SCANLINES };
+	return { videoStandard, refreshUfpsScaled: NTSC_REFRESH_UFPS_SCALED, totalScanlines: NTSC_TOTAL_SCANLINES };
 }
 
-function decodeMachineRegionWord(word: number): MachineRegion {
-	return (word & MACHINE_REGION_NTSC_WORD) === 0 ? 'pal' : 'ntsc';
+function decodePsxGpuDisplayModeWord(word: number): PsxGpuVideoStandard {
+	return (word & PSX_GPU_DISPLAY_MODE_PAL_BIT) !== 0 ? 'pal' : 'ntsc';
 }
 
-export function getMachineRegionTimingForWord(word: number): MachineRegionTiming {
-	return getMachineRegionTiming(decodeMachineRegionWord(word));
+export function getPsxGpuDisplayModeTimingForWord(word: number): PsxGpuDisplayModeTiming {
+	return getPsxGpuVideoStandardTiming(decodePsxGpuDisplayModeWord(word));
 }

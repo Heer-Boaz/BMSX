@@ -1197,7 +1197,7 @@
 			"symbols": [
 				"MachineModelSpec",
 				"MachineVdpWorkSpec",
-				"MachineRegionTiming"
+				"PsxGpuDisplayModeTiming"
 			],
 			"reason": "machine_model_spec_shape_contract"
 		}
@@ -3922,8 +3922,7 @@
 				"vramUsedBytes",
 				"vramTotalBytes",
 				"applyUfpsScaled",
-				"applyMachineRegionWord",
-				"applyVdpModeWord",
+				"applyPsxGpuDisplayModeWord",
 				"internString",
 				"setGlobal"
 			],

@@ -10,7 +10,7 @@ namespace bmsx {
 class Runtime;
 
 struct RuntimeMachineState {
-	uint32_t machineRegionWord;
+	uint32_t psxGpuDisplayModeWord;
 	MachineState machine;
 	FrameSchedulerStateSnapshot frameScheduler;
 	RuntimeVblankSnapshot vblank;

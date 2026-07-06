@@ -8,7 +8,7 @@ TimingState::TimingState(
 	i64 ufpsScaled,
 	i64 cpuHz,
 	int cycleBudgetPerFrame,
-	uint32_t regionWord,
+	uint32_t gpuDisplayModeWord,
 	i64 totalScanlines,
 	i64 imgDecBytesPerSec,
 	i64 dmaBytesPerSecIso,
@@ -19,7 +19,7 @@ TimingState::TimingState(
 	: ufpsScaled(ufpsScaled)
 	, ufps(static_cast<f64>(ufpsScaled) / static_cast<f64>(HZ_SCALE))
 	, frameDurationMs(1000.0 / ufps)
-	, regionWord(regionWord)
+	, gpuDisplayModeWord(gpuDisplayModeWord)
 	, totalScanlines(totalScanlines)
 	, cpuHz(cpuHz)
 	, cycleBudgetPerFrame(cycleBudgetPerFrame)

@@ -94,8 +94,7 @@ public:
 	auto machineTimeMs() const -> uint32_t;
 	auto machineElapsedMs() const -> f64;
 	void applyUfpsScaled(i64 ufpsScaled);
-	void applyMachineRegionWord(uint32_t regionWord);
-	void applyVdpModeWord(uint32_t modeWord);
+	void applyPsxGpuDisplayModeWord(uint32_t gpuDisplayModeWord);
 	auto baseRamUsedBytes() const -> uint32_t;
 	auto ramUsedBytes() const -> uint32_t;
 	auto ramTotalBytes() const -> uint32_t;
@@ -190,12 +189,11 @@ private:
 	Value onTimeMsRead(uint32_t addr) const;
 	static Value onFrameMsReadThunk(void* context, uint32_t addr);
 	Value onFrameMsRead(uint32_t addr) const;
-	static Value onMachineRegionReadThunk(void* context, uint32_t addr);
-	Value onMachineRegionRead(uint32_t addr) const;
+	static Value onGpuDisplayModeReadThunk(void* context, uint32_t addr);
+	Value onGpuDisplayModeRead(uint32_t addr) const;
 	static Value onCyclesPerFrameReadThunk(void* context, uint32_t addr);
 	Value onCyclesPerFrameRead(uint32_t addr) const;
-	static void onMachineRegionWriteThunk(void* context, uint32_t addr, Value value);
-	static void onVdpModeWriteThunk(void* context, uint32_t addr, Value value);
+	static void onGpuDisplayModeWriteThunk(void* context, uint32_t addr, Value value);
 	static void onLuaOutputCodepointWriteThunk(void* context, uint32_t addr, Value value);
 	static void onLuaOutputFlushWriteThunk(void* context, uint32_t addr, Value value);
 	void onLuaOutputFlushWrite(uint32_t addr, Value value);

@@ -4,7 +4,7 @@ import type { RuntimeVblankSnapshot } from './vblank';
 import type { Runtime } from './runtime';
 
 export type RuntimeMachineState = {
-	machineRegionWord: number;
+	psxGpuDisplayModeWord: number;
 	machine: MachineState;
 	frameScheduler: FrameSchedulerStateSnapshot;
 	vblank: RuntimeVblankSnapshot;
@@ -12,7 +12,7 @@ export type RuntimeMachineState = {
 
 export function captureRuntimeMachineState(runtime: Runtime): RuntimeMachineState {
 	return {
-		machineRegionWord: runtime.timing.regionWord,
+		psxGpuDisplayModeWord: runtime.timing.gpuDisplayModeWord,
 		machine: captureMachineState(runtime.machine),
 		frameScheduler: runtime.frameScheduler.captureState(),
 		vblank: runtime.vblank.capture(),
@@ -20,7 +20,7 @@ export function captureRuntimeMachineState(runtime: Runtime): RuntimeMachineStat
 }
 
 export function applyRuntimeMachineState(runtime: Runtime, state: RuntimeMachineState): void {
-	runtime.applyMachineRegionWord(state.machineRegionWord);
+	runtime.applyPsxGpuDisplayModeWord(state.psxGpuDisplayModeWord);
 	restoreMachineState(runtime.machine, state.machine);
 	runtime.frameScheduler.restoreState(state.frameScheduler);
 	runtime.vblank.restore(state.vblank);

@@ -763,7 +763,7 @@ VdpVramState decodeVdpVramState(const BinValue& value, const char* label);
 
 BinValue encodeVdpState(const VdpState& state) {
 	BinObject object;
-	object["vdpModeWord"] = static_cast<i64>(state.vdpModeWord);
+	object["displayModeWord"] = static_cast<i64>(state.displayModeWord);
 	object["xf"] = encodeVdpXfState(state.xf);
 	object["vdpRegisterWords"] = encodeFixedArray(state.vdpRegisterWords, encodeScalar<i64, u32>);
 	object["buildFrame"] = encodeBuildingFrameState(state.buildFrame);
@@ -787,7 +787,7 @@ BinValue encodeVdpState(const VdpState& state) {
 VdpState decodeVdpState(const BinValue& value, const char* label) {
 	const BinObject& object = requireObject(value, label);
 	VdpState state;
-	state.vdpModeWord = requireU32(requireField(object, "vdpModeWord", label), "machine.vdp.vdpModeWord");
+	state.displayModeWord = requireU32(requireField(object, "displayModeWord", label), "machine.vdp.displayModeWord");
 	state.xf = decodeVdpXfState(requireField(object, "xf", label), "machine.vdp.xf");
 	state.vdpRegisterWords = decodeU32Array<VDP_REGISTER_COUNT>(requireField(object, "vdpRegisterWords", label), "machine.vdp.vdpRegisterWords");
 	state.buildFrame = decodeBuildingFrameState(requireField(object, "buildFrame", label), "machine.vdp.buildFrame");
@@ -1074,7 +1074,7 @@ MachineSaveState decodeMachineSaveState(const BinValue& value, const char* label
 
 BinValue encodeRuntimeSaveMachineState(const RuntimeSaveMachineState& state) {
 	BinObject object;
-	object["machineRegionWord"] = static_cast<i64>(state.machineRegionWord);
+	object["psxGpuDisplayModeWord"] = static_cast<i64>(state.psxGpuDisplayModeWord);
 	object["machine"] = encodeMachineSaveState(state.machine);
 	object["frameScheduler"] = encodeFrameSchedulerState(state.frameScheduler);
 	object["vblank"] = encodeRuntimeVblankState(state.vblank);
@@ -1084,7 +1084,7 @@ BinValue encodeRuntimeSaveMachineState(const RuntimeSaveMachineState& state) {
 RuntimeSaveMachineState decodeRuntimeSaveMachineState(const BinValue& value, const char* label) {
 	const BinObject& object = requireObject(value, label);
 	RuntimeSaveMachineState state;
-	state.machineRegionWord = requireU32(requireField(object, "machineRegionWord", label), "machineState.machineRegionWord");
+	state.psxGpuDisplayModeWord = requireU32(requireField(object, "psxGpuDisplayModeWord", label), "machineState.psxGpuDisplayModeWord");
 	state.machine = decodeMachineSaveState(requireField(object, "machine", label), "machineState.machine");
 	state.frameScheduler = decodeFrameSchedulerState(requireField(object, "frameScheduler", label), "machineState.frameScheduler");
 	state.vblank = decodeRuntimeVblankState(requireField(object, "vblank", label), "machineState.vblank");

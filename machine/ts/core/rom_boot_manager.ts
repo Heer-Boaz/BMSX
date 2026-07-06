@@ -4,7 +4,7 @@ import {
 	type RuntimeRomLayer,
 } from '../rompack/loader';
 import { SYSTEM_BOOT_ENTRY_PATH, SYSTEM_MACHINE_MANIFEST } from './system';
-import { PSX_VDP_MODE_SPEC } from '../machine/model_registry';
+import { PSX_GPU_DISPLAY_SIZE_SPEC } from '../machine/model_registry';
 
 export type RomBootPlan = {
 	systemLayer: RuntimeRomLayer;
@@ -23,7 +23,7 @@ export class RomBootManager {
 			? await buildRuntimeRomLayer({ blob: options.cartridge, id: 'cart' })
 			: null;
 
-		const viewport = PSX_VDP_MODE_SPEC;
+		const viewport = PSX_GPU_DISPLAY_SIZE_SPEC;
 		return {
 			systemLayer,
 			cartLayer,

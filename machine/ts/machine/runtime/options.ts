@@ -8,7 +8,7 @@ export type RuntimeViewport = {
 export type RuntimeOptions = {
 	viewport: RuntimeViewport;
 	memory: Memory;
-	machineRegionWord: number;
+	psxGpuDisplayModeWord: number;
 	ufpsScaled: number;
 	cpuHz: number;
 	cycleBudgetPerFrame: number;
