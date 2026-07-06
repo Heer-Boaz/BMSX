@@ -183,7 +183,8 @@ function vdpRpuIndexType(indexType: number): number {
 	return indexType === VDP_RPU_INDEX_U16 ? gl.UNSIGNED_SHORT : gl.UNSIGNED_INT;
 }
 
-function configureNearestClampTexture2D(gl: WebGL2RenderingContext): void {
+function configureNearestClampTexture2D(): void {
+	const gl = vdpRpuGl;
 	gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.NEAREST);
 	gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.NEAREST);
 	gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
@@ -289,7 +290,7 @@ function loadVdpRpuSurfaceStorage(frame: VdpRpuFrameOutput, surfaceDescAddr: num
 		const texture = gl.createTexture()!;
 		gl.bindTexture(gl.TEXTURE_2D, texture);
 		gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA8, width, height, 0, gl.RGBA, gl.UNSIGNED_BYTE, null);
-		configureNearestClampTexture2D(gl);
+		configureNearestClampTexture2D();
 		surface.texture = texture;
 	}
 	backend.invalidateTextureBindingCache();
@@ -734,7 +735,7 @@ function drawVdpRpuCommand(frame: VdpRpuFrameOutput, drawIndex: number, vertexCo
 	gl.drawElements(primitive, indexCount, vdpRpuIndexType(indexType), 0);
 }
 
-export function initVdpRpuPipeline(backend: WebGLBackend): void {
+function initVdpRpuPipeline(backend: WebGLBackend): void {
 	const gl = backend.gl;
 	vdpRpuBackend = backend;
 	vdpRpuGl = gl;
@@ -742,12 +743,12 @@ export function initVdpRpuPipeline(backend: WebGLBackend): void {
 	vdpRpuNeutralTexture = gl.createTexture()!;
 	gl.bindTexture(gl.TEXTURE_2D, vdpRpuNeutralTexture);
 	gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, 1, 1, 0, gl.RGBA, gl.UNSIGNED_BYTE, vdpRpuNeutralTexturePixel);
-	configureNearestClampTexture2D(gl);
+	configureNearestClampTexture2D();
 	gl.bindTexture(gl.TEXTURE_2D, null);
 	backend.invalidateTextureBindingCache();
 }
 
-export function setupVdpRpuLocations(): void {
+function setupVdpRpuLocations(): void {
 	const gl = vdpRpuGl;
 	const current = gl.getParameter(gl.CURRENT_PROGRAM) as WebGLProgram;
 	vdpRpuProgram = current;
@@ -795,9 +796,9 @@ export function setupVdpRpuLocations(): void {
 	gl.uniform1i(vdpRpuLightingModeLocation, 0);
 }
 
-export function renderVdpRpuFrame(framebuffer: WebGLFramebuffer, state: RenderPassStateRegistry['vdp_rpu']): void {
+function renderVdpRpuFrame(framebuffer: WebGLFramebuffer, state: RenderPassStateRegistry['vdp_rpu']): void {
 	const backend = vdpRpuBackend;
-	const gl = backend.gl;
+	const gl = vdpRpuGl;
 	const frame = state.frame;
 	backend.bindVertexArray(vdpRpuVertexArray);
 	const commands = frame.commands;
