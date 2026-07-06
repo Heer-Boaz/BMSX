@@ -336,17 +336,16 @@ function uploadVdpRpuTextureSurface(backend: WebGLBackend, frame: VdpRpuFrameOut
 	surface.sourceUploaded = 1;
 }
 
-function bindVdpRpuPassFramebuffer(backend: WebGLBackend, frame: VdpRpuFrameOutput, passIndex: number, framebuffer: WebGLFramebuffer, width: number, height: number): void {
+function bindVdpRpuPassFramebuffer(backend: WebGLBackend, frame: VdpRpuFrameOutput, passIndex: number, framebuffer: WebGLFramebuffer, width: number, height: number): number {
 	const gl = vdpRpuGl;
 	const commands = frame.commands;
 	const colorSurfaceDescAddr = commands.passColorSurfaceDescAddr[passIndex];
 	const depthSurfaceDescAddr = commands.passDepthSurfaceDescAddr[passIndex];
 	if (colorSurfaceDescAddr === 0 && depthSurfaceDescAddr === 0) {
 		gl.bindFramebuffer(gl.FRAMEBUFFER, framebuffer);
-		backend.setViewportRect(0, 0, width, height);
 		vdpRpuColorDrawBuffers[0] = gl.COLOR_ATTACHMENT0;
 		gl.drawBuffers(vdpRpuColorDrawBuffers);
-		return;
+		return height;
 	}
 	const targetSurface = colorSurfaceDescAddr !== 0
 		? loadVdpRpuSurfaceStorage(backend, frame, colorSurfaceDescAddr)
@@ -372,6 +371,7 @@ function bindVdpRpuPassFramebuffer(backend: WebGLBackend, frame: VdpRpuFrameOutp
 	} else {
 		gl.framebufferRenderbuffer(gl.FRAMEBUFFER, gl.DEPTH_ATTACHMENT, gl.RENDERBUFFER, null);
 	}
+	return targetSurface.height;
 }
 
 function setVdpRpuPipelineState(pipelineWord: number): void {
@@ -743,6 +743,8 @@ function drawVdpRpuCommand(runtime: VdpRpuRuntime, frame: VdpRpuFrameOutput, dra
 
 export function initVdpRpuPipeline(backend: WebGLBackend): void {
 	const gl = backend.gl;
+	vdpRpuBackend = backend;
+	vdpRpuGl = gl;
 	vdpRpuVertexArray = backend.createVertexArray() as WebGLVertexArrayObject;
 	vdpRpuNeutralTexture = gl.createTexture()!;
 	gl.bindTexture(gl.TEXTURE_2D, vdpRpuNeutralTexture);
@@ -813,14 +815,16 @@ export function renderVdpRpuFrame(runtime: VdpRpuRuntime, framebuffer: WebGLFram
 	const commands = frame.commands;
 	vdpRpuFrameSerial += 1;
 	for (let passIndex = 0; passIndex < commands.passCount; passIndex += 1) {
-		bindVdpRpuPassFramebuffer(backend, frame, passIndex, framebuffer, state.width, state.height);
+		const targetHeight = bindVdpRpuPassFramebuffer(backend, frame, passIndex, framebuffer, state.width, state.height);
 		const viewportXY = commands.passViewportXY[passIndex];
 		const viewportWH = commands.passViewportWH[passIndex];
+		const viewportY = viewportXY >>> 16;
+		const viewportHeight = viewportWH >>> 16;
 		backend.setViewportRect(
 			viewportXY & 0xffff,
-			viewportXY >>> 16,
+			targetHeight - viewportY - viewportHeight,
 			viewportWH & 0xffff,
-			viewportWH >>> 16,
+			viewportHeight,
 		);
 		let clearMask = 0;
 		const passOps = commands.passOps[passIndex];

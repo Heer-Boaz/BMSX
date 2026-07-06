@@ -29,6 +29,10 @@ struct SoftwareRpuTarget {
 	i32 stridePixels = 0;
 	i32 width = 0;
 	i32 height = 0;
+	i32 viewportX = 0;
+	i32 viewportY = 0;
+	i32 viewportRight = 0;
+	i32 viewportBottom = 0;
 	bool defaultArgb = false;
 	std::vector<f64>* depth = nullptr;
 };
@@ -117,17 +121,37 @@ void prepareDefaultDepth(i32 width, i32 height) {
 SoftwareRpuTarget passColorTarget(SoftwareBackend& backend, const VdpRpuFrameOutput& frame, size_t passIndex) {
 	const u32 colorSurfaceDescAddr = frame.commands.passColorSurfaceDescAddr[passIndex];
 	if (colorSurfaceDescAddr == 0u) {
-		return SoftwareRpuTarget{backend.framebuffer(), nullptr, 0u, backend.pitch(), backend.pitch() / static_cast<i32>(sizeof(u32)), backend.width(), backend.height(), true, &g_rpuSoftware.defaultDepth};
+		return SoftwareRpuTarget{
+			backend.framebuffer(),
+			nullptr,
+			0u,
+			backend.pitch(),
+			backend.pitch() / static_cast<i32>(sizeof(u32)),
+			backend.width(),
+			backend.height(),
+			0,
+			0,
+			backend.width(),
+			backend.height(),
+			true,
+			&g_rpuSoftware.defaultDepth,
+		};
 	}
 	u8* vram = frame.vdpVram.get().data();
+	const i32 width = static_cast<i32>(readRpuDescU16(vram, colorSurfaceDescAddr + RPU_SURFACE_DESC_WIDTH_OFFSET));
+	const i32 height = static_cast<i32>(readRpuDescU16(vram, colorSurfaceDescAddr + RPU_SURFACE_DESC_HEIGHT_OFFSET));
 	return SoftwareRpuTarget{
 		nullptr,
 		vram,
 		readRpuDescU32(vram, colorSurfaceDescAddr + RPU_SURFACE_DESC_BASE_ADDR_OFFSET),
 		static_cast<i32>(readRpuDescU16(vram, colorSurfaceDescAddr + RPU_SURFACE_DESC_PITCH_BYTES_OFFSET)),
 		0,
-		static_cast<i32>(readRpuDescU16(vram, colorSurfaceDescAddr + RPU_SURFACE_DESC_WIDTH_OFFSET)),
-		static_cast<i32>(readRpuDescU16(vram, colorSurfaceDescAddr + RPU_SURFACE_DESC_HEIGHT_OFFSET)),
+		width,
+		height,
+		0,
+		0,
+		width,
+		height,
 		false,
 		&g_rpuSoftware.defaultDepth,
 	};
@@ -322,7 +346,7 @@ void applyDefaultSkin(f64 x, f64 y, f64 z, f64 nx, f64 ny, f64 nz) {
 	ctx.attr[6] = nz * weightSum;
 }
 
-void writeVertex(const VdpRpuFrameOutput& frame, size_t drawIndex, const VdpRpuShaderVariantSpec& shaderVariant, u16 rawVariantWord, u32 vertexIndex, u32 instanceIndex, size_t outIndex, i32 width, i32 height) {
+void writeVertex(const VdpRpuFrameOutput& frame, size_t drawIndex, const VdpRpuShaderVariantSpec& shaderVariant, u16 rawVariantWord, u32 vertexIndex, u32 instanceIndex, size_t outIndex, i32 viewportX, i32 viewportY, i32 viewportWidth, i32 viewportHeight) {
 	SoftwareRpuContext& ctx = g_rpuSoftware;
 	const VdpRpuCommandBuffer& commands = frame.commands;
 	const size_t streamFirstBinding = commands.drawFirstStreamBinding[drawIndex];
@@ -504,8 +528,8 @@ void writeVertex(const VdpRpuFrameOutput& frame, size_t drawIndex, const VdpRpuS
 	const f64 ndcX = px * invW;
 	const f64 ndcY = py * invW;
 	const f64 ndcZ = pz * invW;
-	ctx.vx[outIndex] = (ndcX * 0.5 + 0.5) * static_cast<f64>(width);
-	ctx.vy[outIndex] = (0.5 - ndcY * 0.5) * static_cast<f64>(height);
+	ctx.vx[outIndex] = static_cast<f64>(viewportX) + (ndcX * 0.5 + 0.5) * static_cast<f64>(viewportWidth);
+	ctx.vy[outIndex] = static_cast<f64>(viewportY) + (0.5 - ndcY * 0.5) * static_cast<f64>(viewportHeight);
 	ctx.vz[outIndex] = ndcZ * 0.5 + 0.5;
 	ctx.vu[outIndex] = u;
 	ctx.vv[outIndex] = v;
@@ -580,6 +604,7 @@ void sampleTexture(const SoftwareRpuTextureSource& source, f64 u, f64 v) {
 
 void writePixel(SoftwareRpuTarget& target, i32 x, i32 y, f64 z, u32 pipelineWord, f64 r, f64 g, f64 b, f64 a) {
 	if (x < 0 || y < 0 || x >= target.width || y >= target.height) return;
+	if (x < target.viewportX || y < target.viewportY || x >= target.viewportRight || y >= target.viewportBottom) return;
 	const u8 srcR = floatByte(r);
 	const u8 srcG = floatByte(g);
 	const u8 srcB = floatByte(b);
@@ -678,6 +703,10 @@ void drawTriangle(const VdpRpuFrameOutput& frame, size_t drawIndex, SoftwareRpuT
 	if (minY < 0) minY = 0;
 	if (maxX > target.width) maxX = target.width;
 	if (maxY > target.height) maxY = target.height;
+	if (minX < target.viewportX) minX = target.viewportX;
+	if (minY < target.viewportY) minY = target.viewportY;
+	if (maxX > target.viewportRight) maxX = target.viewportRight;
+	if (maxY > target.viewportBottom) maxY = target.viewportBottom;
 	const f64 invArea = 1.0 / area;
 	const u32 pipelineWord = frame.commands.drawPipelineWord[drawIndex];
 	for (i32 y = minY; y < maxY; ++y) {
@@ -744,7 +773,7 @@ void drawPoint(const VdpRpuFrameOutput& frame, size_t drawIndex, SoftwareRpuTarg
 	}
 }
 
-void drawCommand(const VdpRpuFrameOutput& frame, size_t drawIndex, u32 vertexCount, u32 instanceCount, u32 indexCount, SoftwareRpuTarget& target) {
+void drawCommand(const VdpRpuFrameOutput& frame, size_t drawIndex, u32 vertexCount, u32 instanceCount, u32 indexCount, SoftwareRpuTarget& target, i32 viewportX, i32 viewportY, i32 viewportWidth, i32 viewportHeight) {
 	const auto& commands = frame.commands;
 	const u16 rawVariantWord = commands.drawShaderVariant[drawIndex];
 	const VdpRpuShaderVariantSpec& shaderVariant = resolveVdpRpuShaderVariantSpec(rawVariantWord);
@@ -762,8 +791,8 @@ void drawCommand(const VdpRpuFrameOutput& frame, size_t drawIndex, u32 vertexCou
 			for (u32 vertex = 0; vertex + 1u < elementCount; vertex += 2u) {
 				const u32 v0 = drawIndexed ? readIndex(frame, drawIndex, vertex) : vertex;
 				const u32 v1 = drawIndexed ? readIndex(frame, drawIndex, vertex + 1u) : vertex + 1u;
-				writeVertex(frame, drawIndex, shaderVariant, rawVariantWord, v0, instanceIndex, 0u, target.width, target.height);
-				writeVertex(frame, drawIndex, shaderVariant, rawVariantWord, v1, instanceIndex, 1u, target.width, target.height);
+				writeVertex(frame, drawIndex, shaderVariant, rawVariantWord, v0, instanceIndex, 0u, viewportX, viewportY, viewportWidth, viewportHeight);
+				writeVertex(frame, drawIndex, shaderVariant, rawVariantWord, v1, instanceIndex, 1u, viewportX, viewportY, viewportWidth, viewportHeight);
 				drawLine(frame, drawIndex, target);
 			}
 			continue;
@@ -771,7 +800,7 @@ void drawCommand(const VdpRpuFrameOutput& frame, size_t drawIndex, u32 vertexCou
 		if (primitive == VDP_RPU_PRIM_POINTS) {
 			for (u32 vertex = 0; vertex < elementCount; ++vertex) {
 				const u32 v0 = drawIndexed ? readIndex(frame, drawIndex, vertex) : vertex;
-				writeVertex(frame, drawIndex, shaderVariant, rawVariantWord, v0, instanceIndex, 0u, target.width, target.height);
+				writeVertex(frame, drawIndex, shaderVariant, rawVariantWord, v0, instanceIndex, 0u, viewportX, viewportY, viewportWidth, viewportHeight);
 				drawPoint(frame, drawIndex, target);
 			}
 			continue;
@@ -785,9 +814,9 @@ void drawCommand(const VdpRpuFrameOutput& frame, size_t drawIndex, u32 vertexCou
 			const u32 v0 = drawIndexed ? readIndex(frame, drawIndex, i0) : i0;
 			const u32 v1 = drawIndexed ? readIndex(frame, drawIndex, i1) : i1;
 			const u32 v2 = drawIndexed ? readIndex(frame, drawIndex, i2) : i2;
-			writeVertex(frame, drawIndex, shaderVariant, rawVariantWord, v0, instanceIndex, 0u, target.width, target.height);
-			writeVertex(frame, drawIndex, shaderVariant, rawVariantWord, v1, instanceIndex, 1u, target.width, target.height);
-			writeVertex(frame, drawIndex, shaderVariant, rawVariantWord, v2, instanceIndex, 2u, target.width, target.height);
+			writeVertex(frame, drawIndex, shaderVariant, rawVariantWord, v0, instanceIndex, 0u, viewportX, viewportY, viewportWidth, viewportHeight);
+			writeVertex(frame, drawIndex, shaderVariant, rawVariantWord, v1, instanceIndex, 1u, viewportX, viewportY, viewportWidth, viewportHeight);
+			writeVertex(frame, drawIndex, shaderVariant, rawVariantWord, v2, instanceIndex, 2u, viewportX, viewportY, viewportWidth, viewportHeight);
 			drawTriangle(frame, drawIndex, target, texture, t1Texture);
 		}
 	}
@@ -801,6 +830,16 @@ void renderVdpRpuSoftwareFrame(SoftwareBackend& backend, GameView&, const VdpRpu
 	for (size_t passIndex = 0; passIndex < commands.passCount; ++passIndex) {
 		SoftwareRpuTarget target = passColorTarget(backend, frame, passIndex);
 		target.depth = passDepthTarget(frame, passIndex, target.width, target.height);
+		const u32 viewportXY = commands.passViewportXY[passIndex];
+		const u32 viewportWH = commands.passViewportWH[passIndex];
+		const i32 viewportX = static_cast<i32>(viewportXY & 0xffffu);
+		const i32 viewportY = static_cast<i32>(viewportXY >> 16u);
+		const i32 viewportWidth = static_cast<i32>(viewportWH & 0xffffu);
+		const i32 viewportHeight = static_cast<i32>(viewportWH >> 16u);
+		target.viewportX = viewportX;
+		target.viewportY = viewportY;
+		target.viewportRight = viewportX + viewportWidth;
+		target.viewportBottom = viewportY + viewportHeight;
 		const u32 passOps = commands.passOps[passIndex];
 		if ((passOps & VDP_RPU_PASS_COLOR_CLEAR) != 0u) {
 			fillColorTarget(target, commands.passClearColor[passIndex]);
@@ -819,7 +858,11 @@ void renderVdpRpuSoftwareFrame(SoftwareBackend& backend, GameView&, const VdpRpu
 				commands.drawVertexCount[drawIndex],
 				commands.drawInstanceCount[drawIndex],
 				commands.drawIndexCount[drawIndex],
-				target
+				target,
+				viewportX,
+				viewportY,
+				viewportWidth,
+				viewportHeight
 			);
 		}
 	}

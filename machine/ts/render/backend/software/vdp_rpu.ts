@@ -59,6 +59,10 @@ type SoftwareRpuColorTarget = {
 	pitchBytes: number;
 	width: number;
 	height: number;
+	viewportX: number;
+	viewportY: number;
+	viewportRight: number;
+	viewportBottom: number;
 };
 type SoftwareRpuTextureSource = {
 	enabled: boolean;
@@ -166,15 +170,31 @@ function fillColorTarget(target: SoftwareRpuColorTarget, color: number): void {
 function passColorTarget(frame: VdpRpuFrameOutput, passIndex: number, defaultPixels: Uint8Array, defaultWidth: number, defaultHeight: number): SoftwareRpuColorTarget {
 	const colorSurfaceDescAddr = frame.commands.passColorSurfaceDescAddr[passIndex];
 	if (colorSurfaceDescAddr === 0) {
-		return { pixels: defaultPixels, baseOffset: 0, pitchBytes: defaultWidth * 4, width: defaultWidth, height: defaultHeight };
+		return {
+			pixels: defaultPixels,
+			baseOffset: 0,
+			pitchBytes: defaultWidth * 4,
+			width: defaultWidth,
+			height: defaultHeight,
+			viewportX: 0,
+			viewportY: 0,
+			viewportRight: defaultWidth,
+			viewportBottom: defaultHeight,
+		};
 	}
 	const vram = frame.vdpVram;
+	const width = readRpuDescU16(vram, colorSurfaceDescAddr + RPU_SURFACE_DESC_WIDTH_OFFSET);
+	const height = readRpuDescU16(vram, colorSurfaceDescAddr + RPU_SURFACE_DESC_HEIGHT_OFFSET);
 	return {
 		pixels: vram,
 		baseOffset: readRpuDescU32(vram, colorSurfaceDescAddr + RPU_SURFACE_DESC_BASE_ADDR_OFFSET),
 		pitchBytes: readRpuDescU16(vram, colorSurfaceDescAddr + RPU_SURFACE_DESC_PITCH_BYTES_OFFSET),
-		width: readRpuDescU16(vram, colorSurfaceDescAddr + RPU_SURFACE_DESC_WIDTH_OFFSET),
-		height: readRpuDescU16(vram, colorSurfaceDescAddr + RPU_SURFACE_DESC_HEIGHT_OFFSET),
+		width,
+		height,
+		viewportX: 0,
+		viewportY: 0,
+		viewportRight: width,
+		viewportBottom: height,
 	};
 }
 
@@ -335,7 +355,7 @@ function applyDefaultSkin(x: number, y: number, z: number, nx: number, ny: numbe
 	attr[6] = nz * weightSum;
 }
 
-function writeVertex(frame: VdpRpuFrameOutput, drawIndex: number, shaderVariant: VdpRpuShaderVariantSpec, rawVariantWord: number, vertexIndex: number, instanceIndex: number, outIndex: number, width: number, height: number): void {
+function writeVertex(frame: VdpRpuFrameOutput, drawIndex: number, shaderVariant: VdpRpuShaderVariantSpec, rawVariantWord: number, vertexIndex: number, instanceIndex: number, outIndex: number, viewportX: number, viewportY: number, viewportWidth: number, viewportHeight: number): void {
 	const commands = frame.commands;
 	const streamFirstBinding = commands.drawFirstStreamBinding[drawIndex];
 	const streamBindingCount = commands.drawStreamBindingCount[drawIndex];
@@ -547,8 +567,8 @@ function writeVertex(frame: VdpRpuFrameOutput, drawIndex: number, shaderVariant:
 	const ndcX = px * invW;
 	const ndcY = py * invW;
 	const ndcZ = pz * invW;
-	vertexX[outIndex] = (ndcX * 0.5 + 0.5) * width;
-	vertexY[outIndex] = (0.5 - ndcY * 0.5) * height;
+	vertexX[outIndex] = viewportX + (ndcX * 0.5 + 0.5) * viewportWidth;
+	vertexY[outIndex] = viewportY + (0.5 - ndcY * 0.5) * viewportHeight;
 	vertexZ[outIndex] = ndcZ * 0.5 + 0.5;
 	vertexU[outIndex] = u;
 	vertexV[outIndex] = v;
@@ -633,6 +653,7 @@ function sampleTexture(source: SoftwareRpuTextureSource, u: number, v: number): 
 
 function writePixel(target: SoftwareRpuColorTarget, depth: Float64Array, x: number, y: number, z: number, pipelineWord: number, r: number, g: number, b: number, a: number): void {
 	if (x < 0 || y < 0 || x >= target.width || y >= target.height) return;
+	if (x < target.viewportX || y < target.viewportY || x >= target.viewportRight || y >= target.viewportBottom) return;
 	const srcR = floatByte(r);
 	const srcG = floatByte(g);
 	const srcB = floatByte(b);
@@ -691,6 +712,10 @@ function drawTriangle(frame: VdpRpuFrameOutput, drawIndex: number, target: Softw
 	if (minY < 0) minY = 0;
 	if (maxX > target.width) maxX = target.width;
 	if (maxY > target.height) maxY = target.height;
+	if (minX < target.viewportX) minX = target.viewportX;
+	if (minY < target.viewportY) minY = target.viewportY;
+	if (maxX > target.viewportRight) maxX = target.viewportRight;
+	if (maxY > target.viewportBottom) maxY = target.viewportBottom;
 	const invArea = 1 / area;
 	const pipelineWord = frame.commands.drawPipelineWord[drawIndex];
 	for (let y = minY; y < maxY; y += 1) {
@@ -767,7 +792,7 @@ function drawPoint(frame: VdpRpuFrameOutput, drawIndex: number, target: Software
 	}
 }
 
-function drawCommand(frame: VdpRpuFrameOutput, drawIndex: number, vertexCount: number, instanceCount: number, indexCount: number, target: SoftwareRpuColorTarget, depth: Float64Array): void {
+function drawCommand(frame: VdpRpuFrameOutput, drawIndex: number, vertexCount: number, instanceCount: number, indexCount: number, target: SoftwareRpuColorTarget, depth: Float64Array, viewportX: number, viewportY: number, viewportWidth: number, viewportHeight: number): void {
 	const commands = frame.commands;
 	const rawVariantWord = commands.drawShaderVariant[drawIndex];
 	const shaderVariant = resolveVdpRpuShaderVariantSpec(rawVariantWord);
@@ -786,8 +811,8 @@ function drawCommand(frame: VdpRpuFrameOutput, drawIndex: number, vertexCount: n
 					v0 = readIndex(frame, drawIndex, vertex);
 					v1 = readIndex(frame, drawIndex, vertex + 1);
 				}
-				writeVertex(frame, drawIndex, shaderVariant, rawVariantWord, v0, instanceIndex, 0, target.width, target.height);
-				writeVertex(frame, drawIndex, shaderVariant, rawVariantWord, v1, instanceIndex, 1, target.width, target.height);
+				writeVertex(frame, drawIndex, shaderVariant, rawVariantWord, v0, instanceIndex, 0, viewportX, viewportY, viewportWidth, viewportHeight);
+				writeVertex(frame, drawIndex, shaderVariant, rawVariantWord, v1, instanceIndex, 1, viewportX, viewportY, viewportWidth, viewportHeight);
 				drawLine(frame, drawIndex, target, depth);
 			}
 			continue;
@@ -798,7 +823,7 @@ function drawCommand(frame: VdpRpuFrameOutput, drawIndex: number, vertexCount: n
 				if (drawIndexed) {
 					v0 = readIndex(frame, drawIndex, vertex);
 				}
-				writeVertex(frame, drawIndex, shaderVariant, rawVariantWord, v0, instanceIndex, 0, target.width, target.height);
+				writeVertex(frame, drawIndex, shaderVariant, rawVariantWord, v0, instanceIndex, 0, viewportX, viewportY, viewportWidth, viewportHeight);
 				drawPoint(frame, drawIndex, target, depth);
 			}
 			continue;
@@ -818,9 +843,9 @@ function drawCommand(frame: VdpRpuFrameOutput, drawIndex: number, vertexCount: n
 				v1 = readIndex(frame, drawIndex, i1);
 				v2 = readIndex(frame, drawIndex, i2);
 			}
-			writeVertex(frame, drawIndex, shaderVariant, rawVariantWord, v0, instanceIndex, 0, target.width, target.height);
-			writeVertex(frame, drawIndex, shaderVariant, rawVariantWord, v1, instanceIndex, 1, target.width, target.height);
-			writeVertex(frame, drawIndex, shaderVariant, rawVariantWord, v2, instanceIndex, 2, target.width, target.height);
+			writeVertex(frame, drawIndex, shaderVariant, rawVariantWord, v0, instanceIndex, 0, viewportX, viewportY, viewportWidth, viewportHeight);
+			writeVertex(frame, drawIndex, shaderVariant, rawVariantWord, v1, instanceIndex, 1, viewportX, viewportY, viewportWidth, viewportHeight);
+			writeVertex(frame, drawIndex, shaderVariant, rawVariantWord, v2, instanceIndex, 2, viewportX, viewportY, viewportWidth, viewportHeight);
 			drawTriangle(frame, drawIndex, target, depth, softwareRpuTexture0, softwareRpuTexture1);
 		}
 	}
@@ -835,6 +860,16 @@ export function renderVdpRpuSoftwareFrame(frame: VdpRpuFrameOutput, defaultPixel
 	for (let passIndex = 0; passIndex < commands.passCount; passIndex += 1) {
 		const colorTarget = passColorTarget(frame, passIndex, defaultPixels, defaultWidth, defaultHeight);
 		const depthTarget = passDepthTarget(frame, passIndex, defaultDepth, colorTarget.width, colorTarget.height);
+		const viewportXY = commands.passViewportXY[passIndex];
+		const viewportWH = commands.passViewportWH[passIndex];
+		const viewportX = viewportXY & 0xffff;
+		const viewportY = viewportXY >>> 16;
+		const viewportWidth = viewportWH & 0xffff;
+		const viewportHeight = viewportWH >>> 16;
+		colorTarget.viewportX = viewportX;
+		colorTarget.viewportY = viewportY;
+		colorTarget.viewportRight = viewportX + viewportWidth;
+		colorTarget.viewportBottom = viewportY + viewportHeight;
 		const passOps = commands.passOps[passIndex];
 		if ((passOps & VDP_RPU_PASS_COLOR_CLEAR) !== 0) {
 			fillColorTarget(colorTarget, commands.passClearColor[passIndex]);
@@ -855,6 +890,10 @@ export function renderVdpRpuSoftwareFrame(frame: VdpRpuFrameOutput, defaultPixel
 				commands.drawIndexCount[drawIndex],
 				colorTarget,
 				depthTarget.depth,
+				viewportX,
+				viewportY,
+				viewportWidth,
+				viewportHeight,
 			);
 		}
 	}

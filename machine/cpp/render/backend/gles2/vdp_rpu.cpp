@@ -223,13 +223,13 @@ void uploadVdpRpuTextureSurface(OpenGLES2Backend& backend, const VdpRpuFrameOutp
 	surface.sourceUploaded = true;
 }
 
-void bindVdpRpuPassFramebuffer(OpenGLES2Backend& backend, const VdpRpuFrameOutput& frame, size_t passIndex, void* framebuffer, i32 width, i32 height) {
+i32 bindVdpRpuPassFramebuffer(OpenGLES2Backend& backend, const VdpRpuFrameOutput& frame, size_t passIndex, void* framebuffer, i32 width, i32 height) {
 	const VdpRpuCommandBuffer& commands = frame.commands;
 	const u32 colorSurfaceDescAddr = commands.passColorSurfaceDescAddr[passIndex];
 	const u32 depthSurfaceDescAddr = commands.passDepthSurfaceDescAddr[passIndex];
 	if (colorSurfaceDescAddr == 0u && depthSurfaceDescAddr == 0u) {
 		backend.setRenderTarget(static_cast<GLuint>(reinterpret_cast<uintptr_t>(framebuffer)), width, height);
-		return;
+		return height;
 	}
 	VdpRpuGLESSurface& targetSurface = colorSurfaceDescAddr != 0u
 		? loadVdpRpuSurfaceStorage(backend, frame, colorSurfaceDescAddr)
@@ -251,6 +251,7 @@ void bindVdpRpuPassFramebuffer(OpenGLES2Backend& backend, const VdpRpuFrameOutpu
 	} else {
 		glFramebufferRenderbuffer(GL_FRAMEBUFFER, GL_DEPTH_ATTACHMENT, GL_RENDERBUFFER, 0u);
 	}
+	return static_cast<i32>(targetSurface.height);
 }
 
 void setVdpRpuPipelineState(u32 pipelineWord) {
@@ -715,14 +716,16 @@ void renderVdpRpuFrame(VdpRpuRuntime& runtime, void* framebuffer, const VdpRpuPi
 	const VdpRpuCommandBuffer& commands = frame.commands;
 	g_vdpRpu.frameSerial += 1u;
 	for (size_t passIndex = 0u; passIndex < commands.passCount; ++passIndex) {
-		bindVdpRpuPassFramebuffer(backend, frame, passIndex, framebuffer, state.width, state.height);
+		const i32 targetHeight = bindVdpRpuPassFramebuffer(backend, frame, passIndex, framebuffer, state.width, state.height);
 		const u32 viewportXY = commands.passViewportXY[passIndex];
 		const u32 viewportWH = commands.passViewportWH[passIndex];
+		const i32 viewportY = static_cast<i32>(viewportXY >> 16u);
+		const i32 viewportHeight = static_cast<i32>(viewportWH >> 16u);
 		glViewport(
 			static_cast<GLint>(viewportXY & 0xffffu),
-			static_cast<GLint>(viewportXY >> 16u),
+			static_cast<GLint>(targetHeight - viewportY - viewportHeight),
 			static_cast<GLsizei>(viewportWH & 0xffffu),
-			static_cast<GLsizei>(viewportWH >> 16u)
+			static_cast<GLsizei>(viewportHeight)
 		);
 		GLbitfield clearMask = 0u;
 		const u32 passOps = commands.passOps[passIndex];

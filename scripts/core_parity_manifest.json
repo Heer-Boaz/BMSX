@@ -2350,7 +2350,7 @@
 				"0x00000021",
 				"0x00000005",
 				"0x00000001",
-				"parallax_x * inv_half_screen_width - 1.0",
+				"while tunnel_index < affine_tunnel_instance_count do",
 				"streams[5].stream_slot = 1; streams[5].layout_id = 0x00000020; streams[5].vram_addr = rpu_instance_vram_addr; streams[5].byte_length = instance_bytes; streams[5].step_rate = 1",
 				"streams[7].stream_slot = 1; streams[7].layout_id = 0x00000021; streams[7].vram_addr = rpu_mat4_instance_vram_addr; streams[7].byte_length = mat4_instance_bytes; streams[7].step_rate = 1",
 				"streams[9].stream_slot = 0; streams[9].layout_id = 0x00000006; streams[9].vram_addr = rpu_mesh_vertex_vram_addr; streams[9].byte_length = mesh_vertex_bytes; streams[9].step_rate = 0"
@@ -3575,7 +3575,7 @@
 		},
 		{
 			"file": "carts/bare_metal_cart/cart.lua",
-			"start": "\tlocal instances<const>: *sprite_instance[instance_count] = instance_addr\n\tlocal parallax_x<const> = -32.0 + ((frame % 96) * 0.5)",
+			"start": "\tlocal instances<const>: *sprite_instance[instance_count] = instance_addr",
 			"end": "\nend\n\nlocal write_mat4_instances",
 			"reason": "bare_metal_cart_instance_hot_helper_must_not_allocate_tables_closures_or_strings"
 		},

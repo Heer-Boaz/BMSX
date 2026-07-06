@@ -1,12 +1,42 @@
 [
 	{
-		"description": "RPU cart-authored 2D and 3D draws, early frame",
-		"frame": 1000,
+		"description": "RPU affine tunnel and 3D shards, early phase",
+		"frame": 960,
 		"capture": true
 	},
 	{
-		"description": "RPU cart-authored 2D and 3D draws, later frame",
-		"frame": 1016,
+		"description": "RPU affine tunnel and 3D shards, phase A",
+		"frame": 976,
+		"capture": true
+	},
+	{
+		"description": "RPU render-to-texture post warp, phase B",
+		"frame": 992,
+		"capture": true
+	},
+	{
+		"description": "RPU render-to-texture post warp, phase C",
+		"frame": 1008,
+		"capture": true
+	},
+	{
+		"description": "RPU render-to-texture post warp, phase D",
+		"frame": 1024,
+		"capture": true
+	},
+	{
+		"description": "RPU render-to-texture post warp, phase E",
+		"frame": 1040,
+		"capture": true
+	},
+	{
+		"description": "RPU render-to-texture post warp, phase F",
+		"frame": 1056,
+		"capture": true
+	},
+	{
+		"description": "RPU render-to-texture post warp, late phase",
+		"frame": 1072,
 		"capture": true
 	}
 ]
