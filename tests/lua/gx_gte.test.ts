@@ -525,6 +525,16 @@ test('GX-GTE RTPS narrows MAC result to the PSX 32-bit register datapath before 
 	assert.equal(gte.readDataRegister(9), 0xfffff000);
 });
 
+test('GX-GTE RTPS clamps IR3 from the PSX 32-bit MAC3 register value', () => {
+	const { gte } = createGte();
+	gte.writeControlRegister(7, 0x00080000);
+
+	gte.execute(GX_GTE_FN_RTPS);
+
+	assert.equal(gte.readDataRegister(27), 0x80000000);
+	assert.equal(gte.readDataRegister(11), 0xffff8000);
+});
+
 test('GX-GTE opcode 0 is not an RTPS alias', () => {
 	const { gte } = createGte();
 	setupIdentityProjection(gte);

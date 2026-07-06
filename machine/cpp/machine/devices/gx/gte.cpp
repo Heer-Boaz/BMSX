@@ -717,7 +717,7 @@ void GxGte::executeRtps(u32 vectorIndex, u32 sf, u32 lm, bool last) {
 	dotRotation(2u, vectorIndex);
 	writeIr(1u, ir1, lm);
 	writeIr(2u, ir2, lm);
-	writeIr3FromMac3(sf, lm);
+	writeIr3FromMac3(lm);
 	pushSz(static_cast<i32>(shiftGte(m_mac3, 1u)));
 	const u32 hOverSz3 = divideWithLimit(h(), sz(3u));
 	m_dataRegisterWords[12] = m_dataRegisterWords[13];
@@ -771,8 +771,8 @@ void GxGte::writeIr(u32 index, i32 value, u32 lm) {
 	m_dataRegisterWords[8u + index] = static_cast<u32>(limitIr(index, value, lm));
 }
 
-void GxGte::writeIr3FromMac3(u32 sf, u32 lm) {
-	const i64 valueSf = shiftGte(m_mac3, sf);
+void GxGte::writeIr3FromMac3(u32 lm) {
+	const i32 valueSf = static_cast<i32>(m_dataRegisterWords[27]);
 	const i64 value12 = shiftGte(m_mac3, 1u);
 	const i32 min = lm == 0u ? -0x8000 : 0;
 	if (value12 < -0x8000 || value12 > 0x7fff) {

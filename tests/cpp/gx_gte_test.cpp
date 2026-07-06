@@ -514,6 +514,17 @@ void testRtpsNarrowsMacResultToRegisterDatapath() {
 	require(gte.readDataRegister(9u) == 0xfffff000u, "RTPS IR1 32-bit MAC narrowing");
 }
 
+void testRtpsIr3ClampsFromMac3RegisterValue() {
+	GteHarness harness;
+	bmsx::GxGte& gte = harness.gte;
+	gte.writeControlRegister(7u, 0x00080000u);
+
+	gte.execute(bmsx::GX_GTE_FN_RTPS);
+
+	require(gte.readDataRegister(27u) == 0x80000000u, "RTPS MAC3 register truncation");
+	require(gte.readDataRegister(11u) == 0xffff8000u, "RTPS IR3 clamps from MAC3 register");
+}
+
 void testUnknownFunctionCodeIsDeterministicNoop() {
 	GteHarness harness;
 	bmsx::GxGte& gte = harness.gte;
@@ -609,6 +620,7 @@ int main() {
 	testRgbColorSaturationFlags();
 	testAvsz3();
 	testRtpsNarrowsMacResultToRegisterDatapath();
+	testRtpsIr3ClampsFromMac3RegisterValue();
 	testUnknownFunctionCodeIsDeterministicNoop();
 	testOpcodeZeroIsNotRtpsAlias();
 	testSaveStatePreservesRawRegisterWords();

@@ -152,7 +152,7 @@ private:
 	void executeAvsz4();
 	void writeMac0(i64 value);
 	void writeIr(u32 index, i32 value, u32 lm);
-	void writeIr3FromMac3(u32 sf, u32 lm);
+	void writeIr3FromMac3(u32 lm);
 	void pushSz(i32 value);
 	i32 limitDepth(i32 value);
 	u32 divideWithLimit(u32 numerator, u32 denominator);

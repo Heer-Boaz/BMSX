@@ -805,7 +805,7 @@ export class GxGte {
 		this.dotRotation(2, vectorIndex);
 		this.writeIr(1, ir1, lm);
 		this.writeIr(2, ir2, lm);
-		this.writeIr3FromMac3(sf, lm);
+		this.writeIr3FromMac3(lm);
 		this.pushSz(shiftGte(this.mac3, 1));
 		const hOverSz3 = this.divideWithLimit(this.h(), this.sz(3));
 		this.dataRegisterWords[12] = this.dataRegisterWords[13];
@@ -859,8 +859,8 @@ export class GxGte {
 		this.dataRegisterWords[8 + index] = this.limitIr(index, value, lm) >>> 0;
 	}
 
-	private writeIr3FromMac3(sf: number, lm: number): void {
-		const valueSf = shiftGte(this.mac3, sf);
+	private writeIr3FromMac3(lm: number): void {
+		const valueSf = this.dataRegisterWords[27] | 0;
 		const value12 = shiftGte(this.mac3, 1);
 		const min = lm === 0 ? -0x8000 : 0;
 		if (value12 < -0x8000 || value12 > 0x7fff) {
