@@ -12,14 +12,27 @@ import { Memory } from '../../machine/ts/machine/memory/memory';
 
 import {
 	GX_GTE_CYCLES_AVSZ3,
+	GX_GTE_CYCLES_DCPL,
+	GX_GTE_CYCLES_DPCS,
+	GX_GTE_CYCLES_DPCT,
+	GX_GTE_CYCLES_GPF,
+	GX_GTE_CYCLES_GPL,
+	GX_GTE_CYCLES_INTPL,
 	GX_GTE_CYCLES_MVMVA,
 	GX_GTE_CYCLES_NCLIP,
 	GX_GTE_CYCLES_OP,
 	GX_GTE_CYCLES_RTPS,
 	GX_GTE_CYCLES_SQR,
+	GX_GTE_FLAG_COLOR_R_SAT,
 	GX_GTE_FLAG_DIV_OVERFLOW,
 	GX_GTE_FLAG_ERROR,
 	GX_GTE_FN_AVSZ3,
+	GX_GTE_FN_DCPL,
+	GX_GTE_FN_DPCS,
+	GX_GTE_FN_DPCT,
+	GX_GTE_FN_GPF,
+	GX_GTE_FN_GPL,
+	GX_GTE_FN_INTPL,
 	GX_GTE_FN_MVMVA,
 	GX_GTE_FN_NCLIP,
 	GX_GTE_FN_OP,
@@ -37,6 +50,10 @@ function createGte(): { memory: Memory; gte: GxGte } {
 
 function pack16(low: number, high: number): number {
 	return ((low & 0xffff) | ((high & 0xffff) << 16)) >>> 0;
+}
+
+function packRgb(r: number, g: number, b: number, code: number): number {
+	return (r | (g << 8) | (b << 16) | (code << 24)) >>> 0;
 }
 
 function setupIdentityProjection(gte: GxGte): void {
@@ -160,6 +177,112 @@ test('GX-GTE SQR squares PSX IR registers with SF/LM behavior', () => {
 	assert.equal(gte.readDataRegister(10), 16);
 	assert.equal(gte.readDataRegister(11), 25);
 	assert.equal(gte.readControlRegister(31), 0);
+});
+
+test('GX-GTE DPCS depth-cues RGBC through the PSX color FIFO', () => {
+	const { gte } = createGte();
+	gte.writeDataRegister(6, packRgb(10, 20, 30, 0x44));
+
+	assert.equal(gte.execute(GTE_SF | GX_GTE_FN_DPCS), GX_GTE_CYCLES_DPCS);
+
+	assert.equal(gte.readDataRegister(9), 160);
+	assert.equal(gte.readDataRegister(10), 320);
+	assert.equal(gte.readDataRegister(11), 480);
+	assert.equal(gte.readDataRegister(25), 160);
+	assert.equal(gte.readDataRegister(26), 320);
+	assert.equal(gte.readDataRegister(27), 480);
+	assert.equal(gte.readDataRegister(22), packRgb(10, 20, 30, 0x44));
+	assert.equal(gte.readControlRegister(31), 0);
+});
+
+test('GX-GTE INTPL depth-cues the IR vector and pushes RGB from MAC', () => {
+	const { gte } = createGte();
+	gte.writeDataRegister(6, packRgb(0, 0, 0, 0x55));
+	gte.writeDataRegister(9, 100);
+	gte.writeDataRegister(10, 200);
+	gte.writeDataRegister(11, 300);
+
+	assert.equal(gte.execute(GTE_SF | GX_GTE_FN_INTPL), GX_GTE_CYCLES_INTPL);
+
+	assert.equal(gte.readDataRegister(9), 100);
+	assert.equal(gte.readDataRegister(10), 200);
+	assert.equal(gte.readDataRegister(11), 300);
+	assert.equal(gte.readDataRegister(22), packRgb(6, 12, 18, 0x55));
+	assert.equal(gte.readControlRegister(31), 0);
+});
+
+test('GX-GTE DCPL multiplies RGBC by IR before depth cueing', () => {
+	const { gte } = createGte();
+	gte.writeDataRegister(6, packRgb(2, 3, 4, 0x66));
+	gte.writeDataRegister(9, 10);
+	gte.writeDataRegister(10, 20);
+	gte.writeDataRegister(11, 30);
+
+	assert.equal(gte.execute(GX_GTE_FN_DCPL), GX_GTE_CYCLES_DCPL);
+
+	assert.equal(gte.readDataRegister(9), 320);
+	assert.equal(gte.readDataRegister(10), 960);
+	assert.equal(gte.readDataRegister(11), 1920);
+	assert.equal(gte.readDataRegister(22), packRgb(20, 60, 120, 0x66));
+	assert.equal(gte.readControlRegister(31), 0);
+});
+
+test('GX-GTE DPCT consumes RGB0/RGB1/RGB2 through the PSX color FIFO', () => {
+	const { gte } = createGte();
+	gte.writeDataRegister(6, packRgb(0, 0, 0, 0xaa));
+	gte.writeDataRegister(20, packRgb(1, 2, 3, 0x10));
+	gte.writeDataRegister(21, packRgb(4, 5, 6, 0x20));
+	gte.writeDataRegister(22, packRgb(7, 8, 9, 0x30));
+
+	assert.equal(gte.execute(GTE_SF | GX_GTE_FN_DPCT), GX_GTE_CYCLES_DPCT);
+
+	assert.equal(gte.readDataRegister(20), packRgb(1, 2, 3, 0xaa));
+	assert.equal(gte.readDataRegister(21), packRgb(4, 5, 6, 0xaa));
+	assert.equal(gte.readDataRegister(22), packRgb(7, 8, 9, 0xaa));
+	assert.equal(gte.readControlRegister(31), 0);
+});
+
+test('GX-GTE GPF and GPL use PSX MAC/IR color datapaths', () => {
+	const { gte } = createGte();
+	gte.writeDataRegister(6, packRgb(0, 0, 0, 0x77));
+	gte.writeDataRegister(8, 16);
+	gte.writeDataRegister(9, 32);
+	gte.writeDataRegister(10, 64);
+	gte.writeDataRegister(11, 96);
+
+	assert.equal(gte.execute(GX_GTE_FN_GPF), GX_GTE_CYCLES_GPF);
+	assert.equal(gte.readDataRegister(9), 512);
+	assert.equal(gte.readDataRegister(10), 1024);
+	assert.equal(gte.readDataRegister(11), 1536);
+	assert.equal(gte.readDataRegister(22), packRgb(32, 64, 96, 0x77));
+
+	gte.writeDataRegister(25, 100);
+	gte.writeDataRegister(26, 200);
+	gte.writeDataRegister(27, 300);
+	gte.writeDataRegister(9, 2);
+	gte.writeDataRegister(10, 3);
+	gte.writeDataRegister(11, 4);
+
+	assert.equal(gte.execute(GX_GTE_FN_GPL), GX_GTE_CYCLES_GPL);
+	assert.equal(gte.readDataRegister(9), 132);
+	assert.equal(gte.readDataRegister(10), 248);
+	assert.equal(gte.readDataRegister(11), 364);
+	assert.equal(gte.readDataRegister(22), packRgb(8, 15, 22, 0x77));
+	assert.equal(gte.readControlRegister(31), 0);
+});
+
+test('GX-GTE RGB FIFO color saturation flags do not set the PSX error summary bit', () => {
+	const { gte } = createGte();
+	gte.writeDataRegister(6, packRgb(0, 0, 0, 0x12));
+	gte.writeDataRegister(8, 0x1000);
+	gte.writeDataRegister(9, 2);
+	gte.writeDataRegister(10, 0);
+	gte.writeDataRegister(11, 0);
+
+	assert.equal(gte.execute(GX_GTE_FN_GPF), GX_GTE_CYCLES_GPF);
+
+	assert.equal(gte.readDataRegister(22), packRgb(255, 0, 0, 0x12));
+	assert.equal(gte.readControlRegister(31), GX_GTE_FLAG_COLOR_R_SAT);
 });
 
 test('GX-GTE AVSZ3 uses ZSF3 and SZ FIFO words to produce OTZ', () => {

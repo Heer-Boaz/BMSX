@@ -16,20 +16,32 @@ export const GX_GTE_CONTROL_REGISTER_COUNT = 32;
 export const GX_GTE_FN_RTPS = 0x01;
 export const GX_GTE_FN_NCLIP = 0x06;
 export const GX_GTE_FN_OP = 0x0c;
+export const GX_GTE_FN_DPCS = 0x10;
+export const GX_GTE_FN_INTPL = 0x11;
 export const GX_GTE_FN_MVMVA = 0x12;
 export const GX_GTE_FN_SQR = 0x28;
+export const GX_GTE_FN_DCPL = 0x29;
+export const GX_GTE_FN_DPCT = 0x2a;
 export const GX_GTE_FN_AVSZ3 = 0x2d;
 export const GX_GTE_FN_AVSZ4 = 0x2e;
 export const GX_GTE_FN_RTPT = 0x30;
+export const GX_GTE_FN_GPF = 0x3d;
+export const GX_GTE_FN_GPL = 0x3e;
 
 export const GX_GTE_CYCLES_RTPS = 15;
 export const GX_GTE_CYCLES_NCLIP = 8;
 export const GX_GTE_CYCLES_OP = 6;
+export const GX_GTE_CYCLES_DPCS = 8;
+export const GX_GTE_CYCLES_INTPL = 8;
 export const GX_GTE_CYCLES_MVMVA = 8;
 export const GX_GTE_CYCLES_SQR = 5;
+export const GX_GTE_CYCLES_DCPL = 8;
+export const GX_GTE_CYCLES_DPCT = 17;
 export const GX_GTE_CYCLES_AVSZ3 = 5;
 export const GX_GTE_CYCLES_AVSZ4 = 6;
 export const GX_GTE_CYCLES_RTPT = 23;
+export const GX_GTE_CYCLES_GPF = 5;
+export const GX_GTE_CYCLES_GPL = 5;
 
 export const GX_GTE_FLAG_ERROR = 0x80000000;
 export const GX_GTE_FLAG_MAC1_POS = 0x40000000;
@@ -41,6 +53,9 @@ export const GX_GTE_FLAG_MAC3_NEG = 0x02000000;
 export const GX_GTE_FLAG_IR1_SAT = 0x01000000;
 export const GX_GTE_FLAG_IR2_SAT = 0x00800000;
 export const GX_GTE_FLAG_IR3_SAT = 0x00400000;
+export const GX_GTE_FLAG_COLOR_R_SAT = 0x00200000;
+export const GX_GTE_FLAG_COLOR_G_SAT = 0x00100000;
+export const GX_GTE_FLAG_COLOR_B_SAT = 0x00080000;
 export const GX_GTE_FLAG_SZ_OTZ_SAT = 0x00040000;
 export const GX_GTE_FLAG_DIV_OVERFLOW = 0x00020000;
 export const GX_GTE_FLAG_MAC0_POS = 0x00010000;
@@ -336,6 +351,14 @@ export class GxGte {
 				this.executeOp(sf, lm);
 				this.updateFlagError();
 				return GX_GTE_CYCLES_OP;
+			case GX_GTE_FN_DPCS:
+				this.executeDpcs(sf, lm);
+				this.updateFlagError();
+				return GX_GTE_CYCLES_DPCS;
+			case GX_GTE_FN_INTPL:
+				this.executeIntpl(sf, lm);
+				this.updateFlagError();
+				return GX_GTE_CYCLES_INTPL;
 			case GX_GTE_FN_MVMVA:
 				this.executeMvmva(opcode, sf, lm);
 				this.updateFlagError();
@@ -344,6 +367,14 @@ export class GxGte {
 				this.executeSqr(sf, lm);
 				this.updateFlagError();
 				return GX_GTE_CYCLES_SQR;
+			case GX_GTE_FN_DCPL:
+				this.executeDcpl(sf, lm);
+				this.updateFlagError();
+				return GX_GTE_CYCLES_DCPL;
+			case GX_GTE_FN_DPCT:
+				this.executeDpct(sf, lm);
+				this.updateFlagError();
+				return GX_GTE_CYCLES_DPCT;
 			case GX_GTE_FN_AVSZ3:
 				this.executeAvsz3();
 				this.updateFlagError();
@@ -358,6 +389,14 @@ export class GxGte {
 				this.executeRtps(2, sf, lm, true);
 				this.updateFlagError();
 				return GX_GTE_CYCLES_RTPT;
+			case GX_GTE_FN_GPF:
+				this.executeGpf(sf, lm);
+				this.updateFlagError();
+				return GX_GTE_CYCLES_GPF;
+			case GX_GTE_FN_GPL:
+				this.executeGpl(sf, lm);
+				this.updateFlagError();
+				return GX_GTE_CYCLES_GPL;
 			default:
 				return 0;
 		}
@@ -428,6 +467,10 @@ export class GxGte {
 		return shifted;
 	}
 
+	private macSigned44(index: number, value: number): number {
+		return this.mac(index, signExtend44(value), value > INT44_MAX, value < INT44_MIN);
+	}
+
 	private currentSf = 0;
 
 	private accumulateSigned44(initial: number, add0: number, add1: number, add2: number): void {
@@ -454,18 +497,20 @@ export class GxGte {
 	}
 
 
-	private writeIrFromMac(index: number, value: number, lm: number): void {
+	private limitIr(index: number, value: number, lm: number): number {
+		const min = lm === 0 ? -0x8000 : 0;
 		switch (index) {
 			case 1:
-				this.writeIr(1, value, lm, GX_GTE_FLAG_ERROR | GX_GTE_FLAG_IR1_SAT);
-				break;
+				return this.lim(value, 0x7fff, min, GX_GTE_FLAG_IR1_SAT);
 			case 2:
-				this.writeIr(2, value, lm, GX_GTE_FLAG_ERROR | GX_GTE_FLAG_IR2_SAT);
-				break;
-			case 3:
-				this.writeIr(3, value, lm, GX_GTE_FLAG_IR3_SAT);
-				break;
+				return this.lim(value, 0x7fff, min, GX_GTE_FLAG_IR2_SAT);
+			default:
+				return this.lim(value, 0x7fff, min, GX_GTE_FLAG_IR3_SAT);
 		}
+	}
+
+	private writeIrFromMac(index: number, value: number, lm: number): void {
+		this.dataRegisterWords[8 + index] = this.limitIr(index, value, lm) >>> 0;
 	}
 
 	private executeOp(sf: number, lm: number): void {
@@ -478,6 +523,16 @@ export class GxGte {
 		this.writeIrFromMac(3, this.mac(3, this.rt(0, 0) * ir2 - this.rt(1, 1) * ir1, false, false), lm);
 	}
 
+	private executeDpcs(sf: number, lm: number): void {
+		this.depthCue(this.rgbR() << 16, this.rgbG() << 16, this.rgbB() << 16, sf, lm);
+		this.pushRgbFromMac();
+	}
+
+	private executeIntpl(sf: number, lm: number): void {
+		this.depthCue(sign16(this.dataRegisterWords[9]) << 12, sign16(this.dataRegisterWords[10]) << 12, sign16(this.dataRegisterWords[11]) << 12, sf, lm);
+		this.pushRgbFromMac();
+	}
+
 	private executeSqr(sf: number, lm: number): void {
 		this.currentSf = sf;
 		const ir1 = sign16(this.dataRegisterWords[9]);
@@ -486,6 +541,38 @@ export class GxGte {
 		this.writeIrFromMac(1, this.mac(1, ir1 * ir1, false, false), lm);
 		this.writeIrFromMac(2, this.mac(2, ir2 * ir2, false, false), lm);
 		this.writeIrFromMac(3, this.mac(3, ir3 * ir3, false, false), lm);
+	}
+
+	private executeDcpl(sf: number, lm: number): void {
+		this.depthCue((this.rgbR() << 4) * sign16(this.dataRegisterWords[9]), (this.rgbG() << 4) * sign16(this.dataRegisterWords[10]), (this.rgbB() << 4) * sign16(this.dataRegisterWords[11]), sf, lm);
+		this.pushRgbFromMac();
+	}
+
+	private executeDpct(sf: number, lm: number): void {
+		for (let index = 0; index < 3; index += 1) {
+			const rgb0 = this.rgb0();
+			this.depthCue((rgb0 & 0xff) << 16, ((rgb0 >>> 8) & 0xff) << 16, ((rgb0 >>> 16) & 0xff) << 16, sf, lm);
+			this.pushRgbFromMac();
+		}
+	}
+
+	private executeGpf(sf: number, lm: number): void {
+		this.currentSf = sf;
+		const ir0 = this.dataRegisterWords[8] & 0xffff;
+		this.writeIrFromMac(1, this.macSigned44(1, ir0 * sign16(this.dataRegisterWords[9])), lm);
+		this.writeIrFromMac(2, this.macSigned44(2, ir0 * sign16(this.dataRegisterWords[10])), lm);
+		this.writeIrFromMac(3, this.macSigned44(3, ir0 * sign16(this.dataRegisterWords[11])), lm);
+		this.pushRgbFromMac();
+	}
+
+	private executeGpl(sf: number, lm: number): void {
+		this.currentSf = sf;
+		const ir0 = this.dataRegisterWords[8] & 0xffff;
+		const macShift = sf === 0 ? 0 : 12;
+		this.writeIrFromMac(1, this.macSigned44(1, sign16(this.dataRegisterWords[9]) * ir0 + ((this.dataRegisterWords[25] | 0) * (1 << macShift))), lm);
+		this.writeIrFromMac(2, this.macSigned44(2, sign16(this.dataRegisterWords[10]) * ir0 + ((this.dataRegisterWords[26] | 0) * (1 << macShift))), lm);
+		this.writeIrFromMac(3, this.macSigned44(3, sign16(this.dataRegisterWords[11]) * ir0 + ((this.dataRegisterWords[27] | 0) * (1 << macShift))), lm);
+		this.pushRgbFromMac();
 	}
 
 	private executeMvmva(opcode: number, sf: number, lm: number): void {
@@ -509,6 +596,16 @@ export class GxGte {
 				this.writeIrFromMac(row + 1, this.mac(row + 1, this.accumValue, this.accumPositiveOverflow, this.accumNegativeOverflow), lm);
 			}
 		}
+	}
+
+	private depthCue(inR: number, inG: number, inB: number, sf: number, lm: number): void {
+		this.currentSf = sf;
+		const r = this.limitIr(1, this.macSigned44(1, this.rfc() * 4096 - inR), 0);
+		const g = this.limitIr(2, this.macSigned44(2, this.gfc() * 4096 - inG), 0);
+		const b = this.limitIr(3, this.macSigned44(3, this.bfc() * 4096 - inB), 0);
+		this.writeIrFromMac(1, this.macSigned44(1, inR + (this.dataRegisterWords[8] & 0xffff) * r), lm);
+		this.writeIrFromMac(2, this.macSigned44(2, inG + (this.dataRegisterWords[8] & 0xffff) * g), lm);
+		this.writeIrFromMac(3, this.macSigned44(3, inB + (this.dataRegisterWords[8] & 0xffff) * b), lm);
 	}
 
 	private dotRotation(row: number, vectorIndex: number): number {
@@ -541,8 +638,8 @@ export class GxGte {
 		const ir1 = this.dotRotation(0, vectorIndex);
 		const ir2 = this.dotRotation(1, vectorIndex);
 		this.dotRotation(2, vectorIndex);
-		this.writeIr(1, ir1, lm, GX_GTE_FLAG_ERROR | GX_GTE_FLAG_IR1_SAT);
-		this.writeIr(2, ir2, lm, GX_GTE_FLAG_ERROR | GX_GTE_FLAG_IR2_SAT);
+		this.writeIr(1, ir1, lm);
+		this.writeIr(2, ir2, lm);
 		this.writeIr3FromMac3(sf, lm);
 		this.pushSz(shiftGte(this.mac3, 1));
 		const hOverSz3 = this.divideWithLimit(this.h(), this.sz(3));
@@ -593,9 +690,8 @@ export class GxGte {
 		this.dataRegisterWords[24] = value >>> 0;
 	}
 
-	private writeIr(index: number, value: number, lm: number, flag: number): void {
-		const min = lm === 0 ? -0x8000 : 0;
-		this.dataRegisterWords[8 + index] = this.lim(value, 0x7fff, min, flag) >>> 0;
+	private writeIr(index: number, value: number, lm: number): void {
+		this.dataRegisterWords[8 + index] = this.limitIr(index, value, lm) >>> 0;
 	}
 
 	private writeIr3FromMac3(sf: number, lm: number): void {
@@ -678,6 +774,28 @@ export class GxGte {
 			return 0;
 		}
 		return value;
+	}
+
+	private limitColor(value: number, flag: number): number {
+		if (value > 0xff) {
+			this.setFlag(flag);
+			return 0xff;
+		}
+		if (value < 0) {
+			this.setFlag(flag);
+			return 0;
+		}
+		return value;
+	}
+
+	private pushRgbFromMac(): void {
+		const r = this.limitColor((this.dataRegisterWords[25] | 0) >> 4, GX_GTE_FLAG_COLOR_R_SAT);
+		const g = this.limitColor((this.dataRegisterWords[26] | 0) >> 4, GX_GTE_FLAG_COLOR_G_SAT);
+		const b = this.limitColor((this.dataRegisterWords[27] | 0) >> 4, GX_GTE_FLAG_COLOR_B_SAT);
+		const code = this.rgbCode();
+		this.dataRegisterWords[20] = this.dataRegisterWords[21];
+		this.dataRegisterWords[21] = this.dataRegisterWords[22];
+		this.dataRegisterWords[22] = (r | (g << 8) | (b << 16) | (code << 24)) >>> 0;
 	}
 
 	private packRgbFromIr(): number {
@@ -798,6 +916,42 @@ export class GxGte {
 
 	private zsf4(): number {
 		return sign16(this.controlRegisterWords[30]);
+	}
+
+	private rgbc(): number {
+		return this.dataRegisterWords[6];
+	}
+
+	private rgb0(): number {
+		return this.dataRegisterWords[20];
+	}
+
+	private rgbR(): number {
+		return this.rgbc() & 0xff;
+	}
+
+	private rgbG(): number {
+		return (this.rgbc() >>> 8) & 0xff;
+	}
+
+	private rgbB(): number {
+		return (this.rgbc() >>> 16) & 0xff;
+	}
+
+	private rgbCode(): number {
+		return (this.rgbc() >>> 24) & 0xff;
+	}
+
+	private rfc(): number {
+		return this.controlRegisterWords[21] | 0;
+	}
+
+	private gfc(): number {
+		return this.controlRegisterWords[22] | 0;
+	}
+
+	private bfc(): number {
+		return this.controlRegisterWords[23] | 0;
 	}
 
 	private sx(index: number): number {

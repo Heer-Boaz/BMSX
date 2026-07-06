@@ -271,6 +271,14 @@ u32 GxGte::execute(u32 opcode) {
 		executeOp(sf, lm);
 		updateFlagError();
 		return GX_GTE_CYCLES_OP;
+	case GX_GTE_FN_DPCS:
+		executeDpcs(sf, lm);
+		updateFlagError();
+		return GX_GTE_CYCLES_DPCS;
+	case GX_GTE_FN_INTPL:
+		executeIntpl(sf, lm);
+		updateFlagError();
+		return GX_GTE_CYCLES_INTPL;
 	case GX_GTE_FN_MVMVA:
 		executeMvmva(opcode, sf, lm);
 		updateFlagError();
@@ -279,6 +287,14 @@ u32 GxGte::execute(u32 opcode) {
 		executeSqr(sf, lm);
 		updateFlagError();
 		return GX_GTE_CYCLES_SQR;
+	case GX_GTE_FN_DCPL:
+		executeDcpl(sf, lm);
+		updateFlagError();
+		return GX_GTE_CYCLES_DCPL;
+	case GX_GTE_FN_DPCT:
+		executeDpct(sf, lm);
+		updateFlagError();
+		return GX_GTE_CYCLES_DPCT;
 	case GX_GTE_FN_AVSZ3:
 		executeAvsz3();
 		updateFlagError();
@@ -293,6 +309,14 @@ u32 GxGte::execute(u32 opcode) {
 		executeRtps(2u, sf, lm, true);
 		updateFlagError();
 		return GX_GTE_CYCLES_RTPT;
+	case GX_GTE_FN_GPF:
+		executeGpf(sf, lm);
+		updateFlagError();
+		return GX_GTE_CYCLES_GPF;
+	case GX_GTE_FN_GPL:
+		executeGpl(sf, lm);
+		updateFlagError();
+		return GX_GTE_CYCLES_GPL;
 	default:
 		return 0u;
 	}
@@ -363,6 +387,10 @@ i32 GxGte::mac(u32 index, i64 value, bool positiveOverflow, bool negativeOverflo
 	return shifted;
 }
 
+i32 GxGte::macSigned44(u32 index, i64 value) {
+	return mac(index, signExtend44(value), value > int44Max, value < int44Min);
+}
+
 void GxGte::accumulateSigned44(i64 initial, i64 add0, i64 add1, i64 add2) {
 	i64 value = signExtend44(initial);
 	bool positiveOverflow = initial > int44Max;
@@ -387,18 +415,20 @@ void GxGte::accumulateSigned44(i64 initial, i64 add0, i64 add1, i64 add2) {
 }
 
 
-void GxGte::writeIrFromMac(u32 index, i32 value, u32 lm) {
+i32 GxGte::limitIr(u32 index, i32 value, u32 lm) {
+	const i32 min = lm == 0u ? -0x8000 : 0;
 	switch (index) {
 	case 1u:
-		writeIr(1u, value, lm, GX_GTE_FLAG_ERROR | GX_GTE_FLAG_IR1_SAT);
-		break;
+		return lim(value, 0x7fff, min, GX_GTE_FLAG_IR1_SAT);
 	case 2u:
-		writeIr(2u, value, lm, GX_GTE_FLAG_ERROR | GX_GTE_FLAG_IR2_SAT);
-		break;
-	case 3u:
-		writeIr(3u, value, lm, GX_GTE_FLAG_IR3_SAT);
-		break;
+		return lim(value, 0x7fff, min, GX_GTE_FLAG_IR2_SAT);
+	default:
+		return lim(value, 0x7fff, min, GX_GTE_FLAG_IR3_SAT);
 	}
+}
+
+void GxGte::writeIrFromMac(u32 index, i32 value, u32 lm) {
+	m_dataRegisterWords[8u + index] = static_cast<u32>(limitIr(index, value, lm));
 }
 
 void GxGte::executeOp(u32 sf, u32 lm) {
@@ -411,6 +441,16 @@ void GxGte::executeOp(u32 sf, u32 lm) {
 	writeIrFromMac(3u, mac(3u, static_cast<i64>(rt(0u, 0u)) * ir2 - static_cast<i64>(rt(1u, 1u)) * ir1, false, false), lm);
 }
 
+void GxGte::executeDpcs(u32 sf, u32 lm) {
+	depthCue(static_cast<i64>(rgbR()) << 16u, static_cast<i64>(rgbG()) << 16u, static_cast<i64>(rgbB()) << 16u, sf, lm);
+	pushRgbFromMac();
+}
+
+void GxGte::executeIntpl(u32 sf, u32 lm) {
+	depthCue(static_cast<i64>(sign16(m_dataRegisterWords[9])) << 12u, static_cast<i64>(sign16(m_dataRegisterWords[10])) << 12u, static_cast<i64>(sign16(m_dataRegisterWords[11])) << 12u, sf, lm);
+	pushRgbFromMac();
+}
+
 void GxGte::executeSqr(u32 sf, u32 lm) {
 	m_currentSf = sf;
 	const i32 ir1 = sign16(m_dataRegisterWords[9]);
@@ -419,6 +459,38 @@ void GxGte::executeSqr(u32 sf, u32 lm) {
 	writeIrFromMac(1u, mac(1u, static_cast<i64>(ir1) * ir1, false, false), lm);
 	writeIrFromMac(2u, mac(2u, static_cast<i64>(ir2) * ir2, false, false), lm);
 	writeIrFromMac(3u, mac(3u, static_cast<i64>(ir3) * ir3, false, false), lm);
+}
+
+void GxGte::executeDcpl(u32 sf, u32 lm) {
+	depthCue(static_cast<i64>(rgbR() << 4u) * sign16(m_dataRegisterWords[9]), static_cast<i64>(rgbG() << 4u) * sign16(m_dataRegisterWords[10]), static_cast<i64>(rgbB() << 4u) * sign16(m_dataRegisterWords[11]), sf, lm);
+	pushRgbFromMac();
+}
+
+void GxGte::executeDpct(u32 sf, u32 lm) {
+	for (u32 index = 0u; index < 3u; index += 1u) {
+		const u32 rgb = rgb0();
+		depthCue(static_cast<i64>(rgb & 0xffu) << 16u, static_cast<i64>((rgb >> 8u) & 0xffu) << 16u, static_cast<i64>((rgb >> 16u) & 0xffu) << 16u, sf, lm);
+		pushRgbFromMac();
+	}
+}
+
+void GxGte::executeGpf(u32 sf, u32 lm) {
+	m_currentSf = sf;
+	const i32 ir0 = static_cast<i32>(m_dataRegisterWords[8] & 0xffffu);
+	writeIrFromMac(1u, macSigned44(1u, static_cast<i64>(ir0) * sign16(m_dataRegisterWords[9])), lm);
+	writeIrFromMac(2u, macSigned44(2u, static_cast<i64>(ir0) * sign16(m_dataRegisterWords[10])), lm);
+	writeIrFromMac(3u, macSigned44(3u, static_cast<i64>(ir0) * sign16(m_dataRegisterWords[11])), lm);
+	pushRgbFromMac();
+}
+
+void GxGte::executeGpl(u32 sf, u32 lm) {
+	m_currentSf = sf;
+	const i32 ir0 = static_cast<i32>(m_dataRegisterWords[8] & 0xffffu);
+	const u32 macShift = sf == 0u ? 0u : 12u;
+	writeIrFromMac(1u, macSigned44(1u, static_cast<i64>(sign16(m_dataRegisterWords[9])) * ir0 + (static_cast<i64>(static_cast<i32>(m_dataRegisterWords[25])) << macShift)), lm);
+	writeIrFromMac(2u, macSigned44(2u, static_cast<i64>(sign16(m_dataRegisterWords[10])) * ir0 + (static_cast<i64>(static_cast<i32>(m_dataRegisterWords[26])) << macShift)), lm);
+	writeIrFromMac(3u, macSigned44(3u, static_cast<i64>(sign16(m_dataRegisterWords[11])) * ir0 + (static_cast<i64>(static_cast<i32>(m_dataRegisterWords[27])) << macShift)), lm);
+	pushRgbFromMac();
 }
 
 void GxGte::executeMvmva(u32 opcode, u32 sf, u32 lm) {
@@ -454,6 +526,16 @@ void GxGte::executeMvmva(u32 opcode, u32 sf, u32 lm) {
 	}
 }
 
+void GxGte::depthCue(i64 inR, i64 inG, i64 inB, u32 sf, u32 lm) {
+	m_currentSf = sf;
+	const i32 r = limitIr(1u, macSigned44(1u, static_cast<i64>(rfc()) * 4096ll - inR), 0u);
+	const i32 g = limitIr(2u, macSigned44(2u, static_cast<i64>(gfc()) * 4096ll - inG), 0u);
+	const i32 b = limitIr(3u, macSigned44(3u, static_cast<i64>(bfc()) * 4096ll - inB), 0u);
+	writeIrFromMac(1u, macSigned44(1u, inR + static_cast<i64>(m_dataRegisterWords[8] & 0xffffu) * r), lm);
+	writeIrFromMac(2u, macSigned44(2u, inG + static_cast<i64>(m_dataRegisterWords[8] & 0xffffu) * g), lm);
+	writeIrFromMac(3u, macSigned44(3u, inB + static_cast<i64>(m_dataRegisterWords[8] & 0xffffu) * b), lm);
+}
+
 i32 GxGte::dotRotation(u32 row, u32 vectorIndex) {
 	i64 value = signExtend44(static_cast<i64>(tr(row)) * 4096ll);
 	bool positiveOverflow = static_cast<i64>(tr(row)) * 4096ll > int44Max;
@@ -484,8 +566,8 @@ void GxGte::executeRtps(u32 vectorIndex, u32 sf, u32 lm, bool last) {
 	const i32 ir1 = dotRotation(0u, vectorIndex);
 	const i32 ir2 = dotRotation(1u, vectorIndex);
 	dotRotation(2u, vectorIndex);
-	writeIr(1u, ir1, lm, GX_GTE_FLAG_ERROR | GX_GTE_FLAG_IR1_SAT);
-	writeIr(2u, ir2, lm, GX_GTE_FLAG_ERROR | GX_GTE_FLAG_IR2_SAT);
+	writeIr(1u, ir1, lm);
+	writeIr(2u, ir2, lm);
 	writeIr3FromMac3(sf, lm);
 	pushSz(static_cast<i32>(shiftGte(m_mac3, 1u)));
 	const u32 hOverSz3 = divideWithLimit(h(), sz(3u));
@@ -536,9 +618,8 @@ void GxGte::writeMac0(i64 value) {
 	m_dataRegisterWords[24] = static_cast<u32>(static_cast<i32>(value));
 }
 
-void GxGte::writeIr(u32 index, i32 value, u32 lm, u32 flag) {
-	const i32 min = lm == 0u ? -0x8000 : 0;
-	m_dataRegisterWords[8u + index] = static_cast<u32>(lim(value, 0x7fff, min, flag));
+void GxGte::writeIr(u32 index, i32 value, u32 lm) {
+	m_dataRegisterWords[8u + index] = static_cast<u32>(limitIr(index, value, lm));
 }
 
 void GxGte::writeIr3FromMac3(u32 sf, u32 lm) {
@@ -620,6 +701,28 @@ i32 GxGte::limitIr0(i64 value) {
 		return 0;
 	}
 	return static_cast<i32>(value);
+}
+
+i32 GxGte::limitColor(i32 value, u32 flag) {
+	if (value > 0xff) {
+		setFlag(flag);
+		return 0xff;
+	}
+	if (value < 0) {
+		setFlag(flag);
+		return 0;
+	}
+	return value;
+}
+
+void GxGte::pushRgbFromMac() {
+	const i32 r = limitColor(static_cast<i32>(m_dataRegisterWords[25]) >> 4u, GX_GTE_FLAG_COLOR_R_SAT);
+	const i32 g = limitColor(static_cast<i32>(m_dataRegisterWords[26]) >> 4u, GX_GTE_FLAG_COLOR_G_SAT);
+	const i32 b = limitColor(static_cast<i32>(m_dataRegisterWords[27]) >> 4u, GX_GTE_FLAG_COLOR_B_SAT);
+	const u32 code = rgbCode();
+	m_dataRegisterWords[20] = m_dataRegisterWords[21];
+	m_dataRegisterWords[21] = m_dataRegisterWords[22];
+	m_dataRegisterWords[22] = static_cast<u32>(r) | (static_cast<u32>(g) << 8u) | (static_cast<u32>(b) << 16u) | (code << 24u);
 }
 
 u32 GxGte::packRgbFromIr() const {
@@ -739,6 +842,42 @@ i32 GxGte::zsf3() const {
 
 i32 GxGte::zsf4() const {
 	return sign16(m_controlRegisterWords[30]);
+}
+
+u32 GxGte::rgbc() const {
+	return m_dataRegisterWords[6];
+}
+
+u32 GxGte::rgb0() const {
+	return m_dataRegisterWords[20];
+}
+
+i32 GxGte::rgbR() const {
+	return static_cast<i32>(rgbc() & 0xffu);
+}
+
+i32 GxGte::rgbG() const {
+	return static_cast<i32>((rgbc() >> 8u) & 0xffu);
+}
+
+i32 GxGte::rgbB() const {
+	return static_cast<i32>((rgbc() >> 16u) & 0xffu);
+}
+
+u32 GxGte::rgbCode() const {
+	return (rgbc() >> 24u) & 0xffu;
+}
+
+i32 GxGte::rfc() const {
+	return static_cast<i32>(m_controlRegisterWords[21]);
+}
+
+i32 GxGte::gfc() const {
+	return static_cast<i32>(m_controlRegisterWords[22]);
+}
+
+i32 GxGte::bfc() const {
+	return static_cast<i32>(m_controlRegisterWords[23]);
 }
 
 i32 GxGte::sx(u32 index) const {

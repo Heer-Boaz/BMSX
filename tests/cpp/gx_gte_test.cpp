@@ -27,6 +27,10 @@ uint32_t pack16(uint32_t low, uint32_t high) {
 	return (low & 0xffffu) | ((high & 0xffffu) << 16u);
 }
 
+uint32_t packRgb(uint32_t r, uint32_t g, uint32_t b, uint32_t code) {
+	return r | (g << 8u) | (b << 16u) | (code << 24u);
+}
+
 void require(bool condition, const char* message) {
 	if (!condition) {
 		throw std::runtime_error(message);
@@ -162,6 +166,118 @@ void testSqr() {
 	require(gte.readControlRegister(31u) == 0u, "SQR FLAG");
 }
 
+void testDpcs() {
+	GteHarness harness;
+	bmsx::GxGte& gte = harness.gte;
+	gte.writeDataRegister(6u, packRgb(10u, 20u, 30u, 0x44u));
+
+	require(gte.execute(GTE_SF | bmsx::GX_GTE_FN_DPCS) == bmsx::GX_GTE_CYCLES_DPCS, "DPCS cycles");
+
+	require(gte.readDataRegister(9u) == 160u, "DPCS IR1");
+	require(gte.readDataRegister(10u) == 320u, "DPCS IR2");
+	require(gte.readDataRegister(11u) == 480u, "DPCS IR3");
+	require(gte.readDataRegister(25u) == 160u, "DPCS MAC1");
+	require(gte.readDataRegister(26u) == 320u, "DPCS MAC2");
+	require(gte.readDataRegister(27u) == 480u, "DPCS MAC3");
+	require(gte.readDataRegister(22u) == packRgb(10u, 20u, 30u, 0x44u), "DPCS RGB2");
+	require(gte.readControlRegister(31u) == 0u, "DPCS FLAG");
+}
+
+void testIntpl() {
+	GteHarness harness;
+	bmsx::GxGte& gte = harness.gte;
+	gte.writeDataRegister(6u, packRgb(0u, 0u, 0u, 0x55u));
+	gte.writeDataRegister(9u, 100u);
+	gte.writeDataRegister(10u, 200u);
+	gte.writeDataRegister(11u, 300u);
+
+	require(gte.execute(GTE_SF | bmsx::GX_GTE_FN_INTPL) == bmsx::GX_GTE_CYCLES_INTPL, "INTPL cycles");
+
+	require(gte.readDataRegister(9u) == 100u, "INTPL IR1");
+	require(gte.readDataRegister(10u) == 200u, "INTPL IR2");
+	require(gte.readDataRegister(11u) == 300u, "INTPL IR3");
+	require(gte.readDataRegister(22u) == packRgb(6u, 12u, 18u, 0x55u), "INTPL RGB2");
+	require(gte.readControlRegister(31u) == 0u, "INTPL FLAG");
+}
+
+void testDcpl() {
+	GteHarness harness;
+	bmsx::GxGte& gte = harness.gte;
+	gte.writeDataRegister(6u, packRgb(2u, 3u, 4u, 0x66u));
+	gte.writeDataRegister(9u, 10u);
+	gte.writeDataRegister(10u, 20u);
+	gte.writeDataRegister(11u, 30u);
+
+	require(gte.execute(bmsx::GX_GTE_FN_DCPL) == bmsx::GX_GTE_CYCLES_DCPL, "DCPL cycles");
+
+	require(gte.readDataRegister(9u) == 320u, "DCPL IR1");
+	require(gte.readDataRegister(10u) == 960u, "DCPL IR2");
+	require(gte.readDataRegister(11u) == 1920u, "DCPL IR3");
+	require(gte.readDataRegister(22u) == packRgb(20u, 60u, 120u, 0x66u), "DCPL RGB2");
+	require(gte.readControlRegister(31u) == 0u, "DCPL FLAG");
+}
+
+void testDpct() {
+	GteHarness harness;
+	bmsx::GxGte& gte = harness.gte;
+	gte.writeDataRegister(6u, packRgb(0u, 0u, 0u, 0xaau));
+	gte.writeDataRegister(20u, packRgb(1u, 2u, 3u, 0x10u));
+	gte.writeDataRegister(21u, packRgb(4u, 5u, 6u, 0x20u));
+	gte.writeDataRegister(22u, packRgb(7u, 8u, 9u, 0x30u));
+
+	require(gte.execute(GTE_SF | bmsx::GX_GTE_FN_DPCT) == bmsx::GX_GTE_CYCLES_DPCT, "DPCT cycles");
+
+	require(gte.readDataRegister(20u) == packRgb(1u, 2u, 3u, 0xaau), "DPCT RGB0");
+	require(gte.readDataRegister(21u) == packRgb(4u, 5u, 6u, 0xaau), "DPCT RGB1");
+	require(gte.readDataRegister(22u) == packRgb(7u, 8u, 9u, 0xaau), "DPCT RGB2");
+	require(gte.readControlRegister(31u) == 0u, "DPCT FLAG");
+}
+
+void testGpfGpl() {
+	GteHarness harness;
+	bmsx::GxGte& gte = harness.gte;
+	gte.writeDataRegister(6u, packRgb(0u, 0u, 0u, 0x77u));
+	gte.writeDataRegister(8u, 16u);
+	gte.writeDataRegister(9u, 32u);
+	gte.writeDataRegister(10u, 64u);
+	gte.writeDataRegister(11u, 96u);
+
+	require(gte.execute(bmsx::GX_GTE_FN_GPF) == bmsx::GX_GTE_CYCLES_GPF, "GPF cycles");
+	require(gte.readDataRegister(9u) == 512u, "GPF IR1");
+	require(gte.readDataRegister(10u) == 1024u, "GPF IR2");
+	require(gte.readDataRegister(11u) == 1536u, "GPF IR3");
+	require(gte.readDataRegister(22u) == packRgb(32u, 64u, 96u, 0x77u), "GPF RGB2");
+
+	gte.writeDataRegister(25u, 100u);
+	gte.writeDataRegister(26u, 200u);
+	gte.writeDataRegister(27u, 300u);
+	gte.writeDataRegister(9u, 2u);
+	gte.writeDataRegister(10u, 3u);
+	gte.writeDataRegister(11u, 4u);
+
+	require(gte.execute(bmsx::GX_GTE_FN_GPL) == bmsx::GX_GTE_CYCLES_GPL, "GPL cycles");
+	require(gte.readDataRegister(9u) == 132u, "GPL IR1");
+	require(gte.readDataRegister(10u) == 248u, "GPL IR2");
+	require(gte.readDataRegister(11u) == 364u, "GPL IR3");
+	require(gte.readDataRegister(22u) == packRgb(8u, 15u, 22u, 0x77u), "GPL RGB2");
+	require(gte.readControlRegister(31u) == 0u, "GPL FLAG");
+}
+
+void testRgbColorSaturationFlags() {
+	GteHarness harness;
+	bmsx::GxGte& gte = harness.gte;
+	gte.writeDataRegister(6u, packRgb(0u, 0u, 0u, 0x12u));
+	gte.writeDataRegister(8u, 0x1000u);
+	gte.writeDataRegister(9u, 2u);
+	gte.writeDataRegister(10u, 0u);
+	gte.writeDataRegister(11u, 0u);
+
+	require(gte.execute(bmsx::GX_GTE_FN_GPF) == bmsx::GX_GTE_CYCLES_GPF, "GPF color saturation cycles");
+
+	require(gte.readDataRegister(22u) == packRgb(255u, 0u, 0u, 0x12u), "GPF color saturation RGB2");
+	require(gte.readControlRegister(31u) == bmsx::GX_GTE_FLAG_COLOR_R_SAT, "GPF color saturation FLAG");
+}
+
 void testAvsz3() {
 	GteHarness harness;
 	bmsx::GxGte& gte = harness.gte;
@@ -237,6 +353,12 @@ int main() {
 	testOp();
 	testMvmva();
 	testSqr();
+	testDpcs();
+	testIntpl();
+	testDcpl();
+	testDpct();
+	testGpfGpl();
+	testRgbColorSaturationFlags();
 	testAvsz3();
 	testRtpsNarrowsMacResultToRegisterDatapath();
 	testUnknownFunctionCodeIsDeterministicNoop();
