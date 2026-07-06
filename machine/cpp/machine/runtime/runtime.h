@@ -189,11 +189,10 @@ private:
 	Value onTimeMsRead(uint32_t addr) const;
 	static Value onFrameMsReadThunk(void* context, uint32_t addr);
 	Value onFrameMsRead(uint32_t addr) const;
-	static Value onGpuDisplayModeReadThunk(void* context, uint32_t addr);
-	Value onGpuDisplayModeRead(uint32_t addr) const;
 	static Value onCyclesPerFrameReadThunk(void* context, uint32_t addr);
 	Value onCyclesPerFrameRead(uint32_t addr) const;
-	static void onGpuDisplayModeWriteThunk(void* context, uint32_t addr, Value value);
+	static void onGxGpuGp1WriteThunk(void* context, uint32_t addr, Value value);
+	void applyPsxGpuDisplayTimingWord(uint32_t gpuDisplayModeWord);
 	static void onLuaOutputCodepointWriteThunk(void* context, uint32_t addr, Value value);
 	static void onLuaOutputFlushWriteThunk(void* context, uint32_t addr, Value value);
 	void onLuaOutputFlushWrite(uint32_t addr, Value value);

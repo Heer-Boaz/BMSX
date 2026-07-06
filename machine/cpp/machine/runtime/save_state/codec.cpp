@@ -1,6 +1,7 @@
 #include "machine/runtime/save_state/codec.h"
 
 #include "common/serializer/binencoder.h"
+#include "machine/devices/gx/gpu.h"
 #include "machine/devices/gx/gte.h"
 #include "machine/devices/input/contracts.h"
 #include "machine/memory/map.h"
@@ -493,6 +494,25 @@ GeometryControllerState decodeGeometryControllerState(const BinValue& value, con
 	return state;
 }
 
+BinValue encodeGxGpuState(const GxGpuState& state) {
+	BinObject object;
+	object["gp0Word"] = static_cast<i64>(state.gp0Word);
+	object["gp1Word"] = static_cast<i64>(state.gp1Word);
+	object["displayModeWord"] = static_cast<i64>(state.displayModeWord);
+	object["statusWord"] = static_cast<i64>(state.statusWord);
+	return BinValue(std::move(object));
+}
+
+GxGpuState decodeGxGpuState(const BinValue& value, const char* label) {
+	const BinObject& object = requireObject(value, label);
+	GxGpuState state;
+	state.gp0Word = requireU32(requireField(object, "gp0Word", label), "machine.gxGpu.gp0Word");
+	state.gp1Word = requireU32(requireField(object, "gp1Word", label), "machine.gxGpu.gp1Word");
+	state.displayModeWord = requireU32(requireField(object, "displayModeWord", label), "machine.gxGpu.displayModeWord");
+	state.statusWord = requireU32(requireField(object, "statusWord", label), "machine.gxGpu.statusWord");
+	return state;
+}
+
 BinValue encodeGxGteState(const GxGteState& state) {
 	BinObject object;
 	object["dataRegisterWords"] = encodeFixedArray(state.dataRegisterWords, encodeScalar<i64, u32>);
@@ -763,7 +783,6 @@ VdpVramState decodeVdpVramState(const BinValue& value, const char* label);
 
 BinValue encodeVdpState(const VdpState& state) {
 	BinObject object;
-	object["displayModeWord"] = static_cast<i64>(state.displayModeWord);
 	object["xf"] = encodeVdpXfState(state.xf);
 	object["vdpRegisterWords"] = encodeFixedArray(state.vdpRegisterWords, encodeScalar<i64, u32>);
 	object["buildFrame"] = encodeBuildingFrameState(state.buildFrame);
@@ -787,7 +806,6 @@ BinValue encodeVdpState(const VdpState& state) {
 VdpState decodeVdpState(const BinValue& value, const char* label) {
 	const BinObject& object = requireObject(value, label);
 	VdpState state;
-	state.displayModeWord = requireU32(requireField(object, "displayModeWord", label), "machine.vdp.displayModeWord");
 	state.xf = decodeVdpXfState(requireField(object, "xf", label), "machine.vdp.xf");
 	state.vdpRegisterWords = decodeU32Array<VDP_REGISTER_COUNT>(requireField(object, "vdpRegisterWords", label), "machine.vdp.vdpRegisterWords");
 	state.buildFrame = decodeBuildingFrameState(requireField(object, "buildFrame", label), "machine.vdp.buildFrame");
@@ -1049,6 +1067,7 @@ BinValue encodeMachineSaveState(const MachineSaveState& state) {
 	BinObject object;
 	object["memory"] = encodeMemorySaveState(state.memory);
 	object["geometry"] = encodeGeometryControllerState(state.geometry);
+	object["gxGpu"] = encodeGxGpuState(state.gxGpu);
 	object["gxGte"] = encodeGxGteState(state.gxGte);
 	object["irq"] = encodeIrqControllerState(state.irq);
 	object["audio"] = encodeAudioControllerState(state.audio);
@@ -1063,6 +1082,7 @@ MachineSaveState decodeMachineSaveState(const BinValue& value, const char* label
 	MachineSaveState state;
 	state.memory = decodeMemorySaveState(requireField(object, "memory", label), "machineState.machine.memory");
 	state.geometry = decodeGeometryControllerState(requireField(object, "geometry", label), "machineState.machine.geometry");
+	state.gxGpu = decodeGxGpuState(requireField(object, "gxGpu", label), "machineState.machine.gxGpu");
 	state.gxGte = decodeGxGteState(requireField(object, "gxGte", label), "machineState.machine.gxGte");
 	state.irq = decodeIrqControllerState(requireField(object, "irq", label), "machineState.machine.irq");
 	state.audio = decodeAudioControllerState(requireField(object, "audio", label), "machineState.machine.audio");

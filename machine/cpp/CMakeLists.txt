@@ -337,6 +337,7 @@ add_library(bmsx_core STATIC
 	machine/memory/access_kind.cpp
 	machine/memory/memory.cpp
 	machine/memory/map.cpp
+	machine/devices/gx/gpu.cpp
 	machine/devices/gx/gte.cpp
 	machine/devices/vdp/fbm.cpp
 	machine/devices/vdp/frame.cpp
@@ -499,6 +500,12 @@ if(BMSX_BUILD_TESTS)
 	)
 	target_link_libraries(bmsx_gx_gte_tests PRIVATE bmsx_core)
 	add_test(NAME bmsx_gx_gte_tests COMMAND bmsx_gx_gte_tests)
+
+	add_executable(bmsx_gx_gpu_tests
+		${CMAKE_CURRENT_SOURCE_DIR}/../../tests/cpp/gx_gpu_test.cpp
+	)
+	target_link_libraries(bmsx_gx_gpu_tests PRIVATE bmsx_core)
+	add_test(NAME bmsx_gx_gpu_tests COMMAND bmsx_gx_gpu_tests)
 
 	add_executable(bmsx_vdp_ingress_tests
 		${CMAKE_CURRENT_SOURCE_DIR}/../../tests/cpp/vdp_ingress_test.cpp

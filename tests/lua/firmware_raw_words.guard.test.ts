@@ -17,7 +17,6 @@ import {
 	IO_IRQ_MASK,
 	IO_SYS_CYCLES_PER_FRAME,
 	IO_VDP_FIFO,
-	IO_GPU_DISPLAY_MODE,
 	IO_VDP_SCREEN_WH,
 	IO_VDP_STATUS,
 } from '../../machine/ts/machine/bus/io';
@@ -63,7 +62,6 @@ test('bootrom handoff waits for VDP submit idle before leaving system firmware',
 	assert.equal(source.includes('boot_requested'), false);
 	assert.equal(source.includes('sys_boot_cart'), false);
 	assert.equal(source.includes(`local vram_total<const> = 0x${bootVramTotal.toString(16).padStart(8, '0')}`), true);
-	assert.equal(source.includes(`mem[0x${IO_GPU_DISPLAY_MODE.toString(16).padStart(8, '0')}] = 0x00000002`), false);
 	assert.equal(source.includes(`local irq_mask_addr<const> = 0x${IO_IRQ_MASK.toString(16).padStart(8, '0')}`), true);
 	assert.equal(source.includes(`hw_max_cycles = format_bignumbers(mem[0x${IO_SYS_CYCLES_PER_FRAME.toString(16).padStart(8, '0')}])`), true);
 	assert.equal(source.includes(`local screen_wh<const> = mem[0x${IO_VDP_SCREEN_WH.toString(16).padStart(8, '0')}]`), true);

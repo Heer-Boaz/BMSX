@@ -23,6 +23,7 @@ void restoreSharedDeviceState(
 MachineState captureMachineState(const Machine& machine) {
 	MachineState state;
 	state.geometry = machine.geometryController.captureState();
+	state.gxGpu = machine.gxGpu.captureState();
 	state.gxGte = machine.gxGte.captureState();
 	state.irq = machine.irqController.captureState();
 	state.audio = machine.audioController.captureState();
@@ -33,6 +34,7 @@ MachineState captureMachineState(const Machine& machine) {
 
 void restoreMachineState(Machine& machine, const MachineState& state) {
 	restoreSharedDeviceState(machine, state.geometry, state.irq, state.audio, state.input);
+	machine.gxGpu.restoreState(state.gxGpu);
 	machine.gxGte.restoreState(state.gxGte);
 	machine.vdp.restoreState(state.vdp);
 }
@@ -41,6 +43,7 @@ MachineSaveState captureMachineSaveState(const Machine& machine) {
 	MachineSaveState state;
 	state.memory = machine.memory.captureSaveState();
 	state.geometry = machine.geometryController.captureState();
+	state.gxGpu = machine.gxGpu.captureState();
 	state.gxGte = machine.gxGte.captureState();
 	state.irq = machine.irqController.captureState();
 	state.audio = machine.audioController.captureState();
@@ -54,6 +57,7 @@ void restoreMachineSaveState(Machine& machine, const MachineSaveState& state) {
 	machine.memory.restoreSaveState(state.memory);
 	machine.cpu.stringPool().restoreState(state.stringPool);
 	restoreSharedDeviceState(machine, state.geometry, state.irq, state.audio, state.input);
+	machine.gxGpu.restoreState(state.gxGpu);
 	machine.gxGte.restoreState(state.gxGte);
 	machine.vdp.restoreSaveState(state.vdp);
 }

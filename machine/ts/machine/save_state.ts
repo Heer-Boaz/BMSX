@@ -1,5 +1,6 @@
 import type { AudioControllerState } from './devices/audio/save_state';
 import type { GeometryControllerState } from './devices/geometry/save_state';
+import type { GxGpuState } from './devices/gx/gpu';
 import type { GxGteState } from './devices/gx/gte';
 import type { InputControllerState } from './devices/input/save_state';
 import type { IrqControllerState } from './devices/irq/save_state';
@@ -10,6 +11,7 @@ import type { Machine } from './machine';
 
 export type MachineState = {
 	geometry: GeometryControllerState;
+	gxGpu: GxGpuState;
 	gxGte: GxGteState;
 	irq: IrqControllerState;
 	audio: AudioControllerState;
@@ -20,6 +22,7 @@ export type MachineState = {
 export type MachineSaveState = {
 	memory: MemorySaveState;
 	geometry: GeometryControllerState;
+	gxGpu: GxGpuState;
 	gxGte: GxGteState;
 	irq: IrqControllerState;
 	audio: AudioControllerState;
@@ -31,6 +34,7 @@ export type MachineSaveState = {
 export function captureMachineState(machine: Machine): MachineState {
 	return {
 		geometry: machine.geometryController.captureState(),
+		gxGpu: machine.gxGpu.captureState(),
 		gxGte: machine.gxGte.captureState(),
 		irq: machine.irqController.captureState(),
 		audio: machine.audioController.captureState(),
@@ -41,6 +45,7 @@ export function captureMachineState(machine: Machine): MachineState {
 
 export function restoreMachineState(machine: Machine, state: MachineState): void {
 	restoreSharedDeviceState(machine, state);
+	machine.gxGpu.restoreState(state.gxGpu);
 	machine.gxGte.restoreState(state.gxGte);
 	machine.vdp.restoreState(state.vdp);
 }
@@ -49,6 +54,7 @@ export function captureMachineSaveState(machine: Machine): MachineSaveState {
 	return {
 		memory: machine.memory.captureSaveState(),
 		geometry: machine.geometryController.captureState(),
+		gxGpu: machine.gxGpu.captureState(),
 		gxGte: machine.gxGte.captureState(),
 		irq: machine.irqController.captureState(),
 		audio: machine.audioController.captureState(),
@@ -62,6 +68,7 @@ export function restoreMachineSaveState(machine: Machine, state: MachineSaveStat
 	machine.memory.restoreSaveState(state.memory);
 	machine.cpu.stringPool.restoreState(state.stringPool);
 	restoreSharedDeviceState(machine, state);
+	machine.gxGpu.restoreState(state.gxGpu);
 	machine.gxGte.restoreState(state.gxGte);
 	machine.vdp.restoreSaveState(state.vdp);
 }

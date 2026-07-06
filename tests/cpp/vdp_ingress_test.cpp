@@ -8,6 +8,7 @@
 #include "machine/devices/vdp/vdp.h"
 #include "machine/memory/map.h"
 #include "machine/memory/memory.h"
+#include "machine/model_registry.h"
 #include "machine/scheduler/device.h"
 #include "render/vdp/transform.h"
 
@@ -37,7 +38,10 @@ struct Harness {
 			})
 		, cpu(memory)
 		, scheduler(cpu)
-		, vdp(memory, scheduler, {256u, 212u}) {
+		, vdp(memory, scheduler, {
+			static_cast<uint32_t>(bmsx::PSX_GPU_DISPLAY_SIZE_SPEC.renderWidth),
+			static_cast<uint32_t>(bmsx::PSX_GPU_DISPLAY_SIZE_SPEC.renderHeight)
+		}) {
 		memory.writeIoValue(bmsx::IO_VDP_DITHER, bmsx::valueNumber(static_cast<double>(0u)));
 		vdp.initializeVramSurfaces();
 		vdp.initializeRegisters();
@@ -413,14 +417,14 @@ void testVoutScanoutTimingOwnsVblankOutputPin() {
 	require(resetOutput.scanoutX == 0u, "VOUT scanout X should start at the left edge");
 	require(resetOutput.scanoutY == 0u, "VOUT scanout Y should start at the top edge");
 	require((h.memory.readIoU32(bmsx::IO_VDP_STATUS) & bmsx::VDP_STATUS_VBLANK) == 0u, "VDP status should start outside VBLANK");
-	vdp.setScanoutTiming(false, 0, 100, 80);
+	vdp.setScanoutTiming(false, 0, 100, 79);
 	h.scheduler.setNowCycles(41);
 	const bmsx::VdpDeviceOutput activeOutput = vdp.readDeviceOutput();
 	require(activeOutput.scanoutPhase == static_cast<uint32_t>(bmsx::VdpVoutScanoutPhase::Active), "VOUT scanout should remain active before VBLANK");
-	require(activeOutput.scanoutX == 166u, "VOUT active scanout X should advance through visible dots");
-	require(activeOutput.scanoutY == 108u, "VOUT active scanout Y should advance through visible lines");
+	require(activeOutput.scanoutX == 178u, "VOUT active scanout X should advance through visible dots");
+	require(activeOutput.scanoutY == 124u, "VOUT active scanout Y should advance through visible lines");
 	h.scheduler.setNowCycles(80);
-	vdp.setScanoutTiming(true, 80, 100, 80);
+	vdp.setScanoutTiming(true, 80, 100, 79);
 	h.scheduler.setNowCycles(90);
 	const bmsx::VdpDeviceOutput vblankOutput = vdp.readDeviceOutput();
 	require(vblankOutput.scanoutPhase == static_cast<uint32_t>(bmsx::VdpVoutScanoutPhase::Vblank), "VOUT scanout should enter VBLANK");
@@ -433,8 +437,8 @@ void testDitherRegisterWritesUpdateLiveLatch() {
 
 	const bmsx::VdpDeviceOutput resetOutput = vdp.readDeviceOutput();
 	require(resetOutput.ditherType == 0, "visible DITHER output should start at reset value");
-	require(resetOutput.frameBufferWidth == 256u, "visible VOUT scanout width should start at configured framebuffer width");
-	require(resetOutput.frameBufferHeight == 212u, "visible VOUT scanout height should start at configured framebuffer height");
+	require(resetOutput.frameBufferWidth == static_cast<uint32_t>(bmsx::PSX_GPU_DISPLAY_SIZE_SPEC.renderWidth), "visible VOUT scanout width should start at PSX GPU display width");
+	require(resetOutput.frameBufferHeight == static_cast<uint32_t>(bmsx::PSX_GPU_DISPLAY_SIZE_SPEC.renderHeight), "visible VOUT scanout height should start at PSX GPU display height");
 	h.memory.writeValue(bmsx::IO_VDP_DITHER, bmsx::valueNumber(static_cast<double>(3u)));
 	vdp.setDecodedVramSurfaceDimensions(bmsx::VRAM_FRAMEBUFFER_BASE, 128u, 64u);
 

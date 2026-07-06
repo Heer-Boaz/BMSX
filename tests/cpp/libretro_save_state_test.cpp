@@ -4,6 +4,7 @@
 #include "machine/bus/io.h"
 #include "machine/devices/vdp/registers.h"
 #include "machine/devices/input/contracts.h"
+#include "machine/devices/gx/gpu.h"
 #include "machine/devices/vdp/rpu.h"
 #include "machine/devices/vdp/rpu_desc.h"
 #include "machine/memory/map.h"
@@ -51,11 +52,16 @@ void testLibretroSaveStateRoundTrip() {
 	runtime.machine.gxGte.writeControlRegister(0u, 1u);
 	require(platform.getStateSize() == stateSize, "libretro state size should remain stable across RAM and device-register changes");
 
-	std::vector<bmsx::u8> saved(stateSize);
+	memory.writeMappedU32LE(bmsx::IO_GX_GPU_GP0, 0x22334455u);
+	memory.writeMappedU32LE(bmsx::IO_GX_GPU_GP1, bmsx::GX_GPU_GP1_SET_DISPLAY_MODE << 24u);
+	const size_t gpuStateSize = platform.getStateSize();
+	std::vector<bmsx::u8> saved(gpuStateSize);
 	require(platform.saveState(saved.data(), saved.size()), "libretro saveState should serialize initialized runtime state");
 
 	memory.writeMappedU32LE(bmsx::GEO_SCRATCH_BASE, 0xaabbccddu);
 	memory.writeMappedU32LE(bmsx::IO_VDP_REG_BG_COLOR, 0xff445566u);
+	memory.writeMappedU32LE(bmsx::IO_GX_GPU_GP0, 0xaabbccddu);
+	memory.writeMappedU32LE(bmsx::IO_GX_GPU_GP1, bmsx::GX_GPU_GP1_RESET << 24u);
 	runtime.machine.irqController.reset();
 	runtime.machine.gxGte.writeDataRegister(30u, 2u);
 	runtime.machine.gxGte.writeControlRegister(0u, 2u);
@@ -64,9 +70,13 @@ void testLibretroSaveStateRoundTrip() {
 	require(!runtime.machine.irqController.hasAssertedMaskableInterruptLine(), "IRQ reset should clear the maskable line before loadState");
 	require(memory.readIoU32(bmsx::IO_IRQ_MASK) == 0u, "IRQ reset should clear the vector mask before loadState");
 
-	require(platform.loadState(saved.data(), stateSize), "libretro loadState should apply runtime state bytes");
+	require(platform.loadState(saved.data(), saved.size()), "libretro loadState should apply runtime state bytes");
 	require(memory.readMappedU32LE(bmsx::GEO_SCRATCH_BASE) == 0x11223344u, "libretro loadState should restore RAM through Runtime save state");
 	require(memory.readIoU32(bmsx::IO_VDP_REG_BG_COLOR) == 0xff112233u, "libretro loadState should restore VDP raw registerfile state");
+	require(runtime.machine.gxGpu.readGp0() == 0x22334455u, "libretro loadState should restore GX-GPU GP0 word");
+	require(runtime.machine.gxGpu.readDisplayModeWord() == 0u, "libretro loadState should restore GX-GPU display mode word");
+	require((runtime.machine.gxGpu.readStatus() & bmsx::GX_GPU_STATUS_PAL_MODE) == 0u, "libretro loadState should restore GX-GPU GPUSTAT PAL bit");
+	require(runtime.timing.gpuDisplayModeWord == 0u, "libretro loadState should restore runtime GPU display timing word");
 	require(runtime.machine.irqController.hasAssertedMaskableInterruptLine(), "libretro loadState should restore asserted IRQ line state");
 	require((memory.readIoU32(bmsx::IO_IRQ_FLAGS) & bmsx::IRQ_VBLANK) != 0u, "libretro loadState should restore cart-visible IRQ flags");
 	require(memory.readIoU32(bmsx::IO_IRQ_MASK) == bmsx::IRQ_VBLANK, "libretro loadState should restore IRQ_MASK");

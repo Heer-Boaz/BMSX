@@ -33,7 +33,7 @@ void applyRuntimeTiming(Runtime& runtime, const ResolvedRuntimeTiming& timing) {
 	runtime.applyUfpsScaled(timing.ufpsScaled);
 	runtime.timing.gpuDisplayModeWord = timing.gpuDisplayModeWord;
 	runtime.timing.totalScanlines = timing.totalScanlines;
-	runtime.machine.vdp.writeDisplayModeWord(runtime.timing.gpuDisplayModeWord);
+	runtime.machine.gxGpu.writeDisplayModeWord(runtime.timing.gpuDisplayModeWord);
 	setFrameTiming(runtime, timing.cpuHz, timing.cycleBudgetPerFrame, timing.vblankCycles);
 	setTransferRates(runtime, {
 		timing.imgDecBytesPerSec,

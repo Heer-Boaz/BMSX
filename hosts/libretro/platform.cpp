@@ -133,10 +133,10 @@ LibretroPlatform::LibretroPlatform(BackendType backend_type)
 		m_backend_type = BackendType::Software;
 	}
 #endif
-	const MachineVdpModeProfile& systemVdpMode = VDP_MODE_PSX_PROFILE;
+	const PsxGpuDisplaySizeSpec& displaySize = PSX_GPU_DISPLAY_SIZE_SPEC;
 	m_framebuffer.resize(
-		static_cast<unsigned>(systemVdpMode.renderWidth),
-		static_cast<unsigned>(systemVdpMode.renderHeight)
+		static_cast<unsigned>(displaySize.renderWidth),
+		static_cast<unsigned>(displaySize.renderHeight)
 	);
 
 	m_audio_buffer.reserve(kAudioReserveFrames);

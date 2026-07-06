@@ -19,6 +19,7 @@ import {
 	GEOMETRY_CONTROLLER_REGISTER_COUNT,
 	type GeometryControllerPhase,
 } from '../../devices/geometry/contracts';
+import type { GxGpuState } from '../../devices/gx/gpu';
 import type { GxGteState } from '../../devices/gx/gte';
 import { GX_GTE_CONTROL_REGISTER_COUNT, GX_GTE_DATA_REGISTER_COUNT } from '../../devices/gx/gte';
 import type { GeometryJobState } from '../../devices/geometry/job';
@@ -460,6 +461,25 @@ function decodeGeometryControllerState(value: unknown, label: string): GeometryC
 	};
 }
 
+function encodeGxGpuState(state: GxGpuState): GxGpuState {
+	return {
+		gp0Word: state.gp0Word >>> 0,
+		gp1Word: state.gp1Word >>> 0,
+		displayModeWord: state.displayModeWord >>> 0,
+		statusWord: state.statusWord >>> 0,
+	};
+}
+
+function decodeGxGpuState(value: unknown, label: string): GxGpuState {
+	const object = requireObject(value, label);
+	return {
+		gp0Word: requireBoundedU32(requireObjectKey(object, 'gp0Word', label, `${label}.gp0Word`), `${label}.gp0Word`, 0, 0xffffffff),
+		gp1Word: requireBoundedU32(requireObjectKey(object, 'gp1Word', label, `${label}.gp1Word`), `${label}.gp1Word`, 0, 0xffffffff),
+		displayModeWord: requireBoundedU32(requireObjectKey(object, 'displayModeWord', label, `${label}.displayModeWord`), `${label}.displayModeWord`, 0, 0xffffffff),
+		statusWord: requireBoundedU32(requireObjectKey(object, 'statusWord', label, `${label}.statusWord`), `${label}.statusWord`, 0, 0xffffffff),
+	};
+}
+
 function encodeGxGteState(state: GxGteState): GxGteState {
 	return {
 		dataRegisterWords: encodeVector(state.dataRegisterWords, (word) => word >>> 0),
@@ -734,7 +754,6 @@ function decodeVdpReadbackState(value: unknown, label: string): VdpReadbackState
 
 function encodeVdpState(state: VdpState): VdpState {
 	return {
-		displayModeWord: state.displayModeWord,
 		xf: encodeVdpXfState(state.xf),
 		vdpRegisterWords: state.vdpRegisterWords,
 		buildFrame: encodeBuildingFrameState(state.buildFrame),
@@ -758,7 +777,6 @@ function encodeVdpState(state: VdpState): VdpState {
 function decodeVdpState(value: unknown, label: string): VdpState {
 	const object = requireObject(value, label);
 	return {
-		displayModeWord: requireBoundedU32(requireObjectKey(object, 'displayModeWord', label, 'machine.vdp.displayModeWord'), 'machine.vdp.displayModeWord', 0, 0xffffffff),
 		xf: decodeVdpXfState(requireObjectKey(object, 'xf', label, 'machine.vdp.xf'), 'machine.vdp.xf'),
 		vdpRegisterWords: decodeU32FixedArray(requireObjectKey(object, 'vdpRegisterWords', label, 'machine.vdp.vdpRegisterWords'), 'machine.vdp.vdpRegisterWords', VDP_REGISTER_COUNT),
 		buildFrame: decodeBuildingFrameState(requireObjectKey(object, 'buildFrame', label, 'machine.vdp.buildFrame'), 'machine.vdp.buildFrame'),
@@ -1016,6 +1034,7 @@ function encodeMachineSaveState(state: MachineSaveState): MachineSaveState {
 	return {
 		memory: encodeMemorySaveState(state.memory),
 		geometry: encodeGeometryControllerState(state.geometry),
+		gxGpu: encodeGxGpuState(state.gxGpu),
 		gxGte: encodeGxGteState(state.gxGte),
 		irq: encodeIrqControllerState(state.irq),
 		audio: encodeAudioControllerState(state.audio),
@@ -1030,6 +1049,7 @@ function decodeMachineSaveState(value: unknown, label: string): MachineSaveState
 	return {
 		memory: decodeMemorySaveState(requireObjectKey(object, 'memory', label, 'machineState.machine.memory'), 'machineState.machine.memory'),
 		geometry: decodeGeometryControllerState(requireObjectKey(object, 'geometry', label, 'machineState.machine.geometry'), 'machineState.machine.geometry'),
+		gxGpu: decodeGxGpuState(requireObjectKey(object, 'gxGpu', label, 'machineState.machine.gxGpu'), 'machineState.machine.gxGpu'),
 		gxGte: decodeGxGteState(requireObjectKey(object, 'gxGte', label, 'machineState.machine.gxGte'), 'machineState.machine.gxGte'),
 		irq: decodeIrqControllerState(requireObjectKey(object, 'irq', label, 'machineState.machine.irq'), 'machineState.machine.irq'),
 		audio: decodeAudioControllerState(requireObjectKey(object, 'audio', label, 'machineState.machine.audio'), 'machineState.machine.audio'),

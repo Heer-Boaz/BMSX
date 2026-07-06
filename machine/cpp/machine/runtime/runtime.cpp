@@ -49,14 +49,13 @@ Runtime::Runtime(
 	machine.memory.clearIoSlots();
 	machine.memory.mapIoRead(IO_SYS_TIME_MS, this, &Runtime::onTimeMsReadThunk);
 	machine.memory.mapIoRead(IO_SYS_FRAME_MS, this, &Runtime::onFrameMsReadThunk);
-	machine.memory.mapIoRead(IO_GPU_DISPLAY_MODE, this, &Runtime::onGpuDisplayModeReadThunk);
 	machine.memory.mapIoRead(IO_SYS_CYCLES_PER_FRAME, this, &Runtime::onCyclesPerFrameReadThunk);
-	machine.memory.mapIoWrite(IO_GPU_DISPLAY_MODE, this, &Runtime::onGpuDisplayModeWriteThunk);
+	machine.memory.mapIoWrite(IO_GX_GPU_GP1, this, &Runtime::onGxGpuGp1WriteThunk);
 	machine.memory.mapIoWrite(IO_SYS_PRINT_CHAR, this, &Runtime::onLuaOutputCodepointWriteThunk);
 	machine.memory.mapIoWrite(IO_SYS_PRINT_FLUSH, this, &Runtime::onLuaOutputFlushWriteThunk);
 	machine.initializeSystemIo();
 	machine.resetDevices();
-	machine.vdp.writeDisplayModeWord(timing.gpuDisplayModeWord);
+	machine.gxGpu.writeDisplayModeWord(timing.gpuDisplayModeWord);
 	vblank.setVblankCycles(*this, options.vblankCycles);
 	refreshDeviceTimings(*this, machine.scheduler.currentNowCycles());
 	machine.cpu.setExternalRootMarker([this](GcHeap& heap) {
@@ -102,15 +101,6 @@ Value Runtime::onFrameMsRead([[maybe_unused]] uint32_t addr) const {
 	return valueNumber(timing.frameDurationMs);
 }
 
-Value Runtime::onGpuDisplayModeReadThunk(void* context, uint32_t addr) {
-	const auto* runtime = static_cast<Runtime*>(context);
-	return runtime->onGpuDisplayModeRead(addr);
-}
-
-Value Runtime::onGpuDisplayModeRead([[maybe_unused]] uint32_t addr) const {
-	return valueNumber(static_cast<double>(timing.gpuDisplayModeWord));
-}
-
 Value Runtime::onCyclesPerFrameReadThunk(void* context, uint32_t addr) {
 	const auto* runtime = static_cast<Runtime*>(context);
 	return runtime->onCyclesPerFrameRead(addr);
@@ -120,10 +110,16 @@ Value Runtime::onCyclesPerFrameRead([[maybe_unused]] uint32_t addr) const {
 	return valueNumber(static_cast<double>(timing.cycleBudgetPerFrame));
 }
 
-void Runtime::onGpuDisplayModeWriteThunk(void* context, uint32_t addr, Value value) {
+void Runtime::onGxGpuGp1WriteThunk(void* context, uint32_t addr, Value value) {
 	auto* runtime = static_cast<Runtime*>(context);
 	(void)addr;
-	runtime->applyPsxGpuDisplayModeWord(toU32(value));
+	const u32 opcode = runtime->machine.gxGpu.writeGp1(toU32(value));
+	switch (opcode) {
+	case GX_GPU_GP1_RESET:
+	case GX_GPU_GP1_SET_DISPLAY_MODE:
+		runtime->applyPsxGpuDisplayTimingWord(runtime->machine.gxGpu.readDisplayModeWord());
+		break;
+	}
 }
 
 void Runtime::onLuaOutputCodepointWriteThunk(void* context, uint32_t addr, Value value) {
@@ -150,10 +146,14 @@ void Runtime::applyUfpsScaled(i64 ufpsScaled) {
 }
 
 void Runtime::applyPsxGpuDisplayModeWord(uint32_t gpuDisplayModeWord) {
+	machine.gxGpu.writeDisplayModeWord(gpuDisplayModeWord);
+	applyPsxGpuDisplayTimingWord(machine.gxGpu.readDisplayModeWord());
+}
+
+void Runtime::applyPsxGpuDisplayTimingWord(uint32_t gpuDisplayModeWord) {
 	const PsxGpuDisplayModeTiming displayModeTiming = getPsxGpuDisplayModeTimingForWord(gpuDisplayModeWord);
 	timing.gpuDisplayModeWord = gpuDisplayModeWord;
 	timing.totalScanlines = displayModeTiming.totalScanlines;
-	machine.vdp.writeDisplayModeWord(timing.gpuDisplayModeWord);
 	applyUfpsScaled(displayModeTiming.refreshUfpsScaled);
 	setFrameTiming(
 		*this,

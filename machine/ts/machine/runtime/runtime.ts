@@ -15,7 +15,8 @@ import { getPsxGpuDisplayModeTimingForWord } from '../model_registry';
 import { refreshDeviceTimings, setFrameTiming } from './timing/config';
 import { HZ_SCALE } from './timing/constants';
 import { calcCyclesPerFrameScaled, resolveVblankCycles } from './timing';
-import { IO_SYS_CYCLES_PER_FRAME, IO_SYS_FRAME_MS, IO_SYS_PRINT_CHAR, IO_SYS_PRINT_FLUSH, IO_GPU_DISPLAY_MODE, IO_SYS_TIME_MS } from '../bus/io';
+import { GX_GPU_GP1_RESET, GX_GPU_GP1_SET_DISPLAY_MODE } from '../devices/gx/gpu';
+import { IO_GX_GPU_GP1, IO_SYS_CYCLES_PER_FRAME, IO_SYS_FRAME_MS, IO_SYS_PRINT_CHAR, IO_SYS_PRINT_FLUSH, IO_SYS_TIME_MS } from '../bus/io';
 import { Machine } from '../machine';
 import type { RuntimeInputSource } from './input';
 import type { MicrotaskQueue } from '../scheduler/microtask_queue';
@@ -329,14 +330,13 @@ export class Runtime {
 		this.machine.memory.clearIoSlots();
 		this.machine.memory.mapIoRead(IO_SYS_TIME_MS, this, Runtime.onTimeMsReadThunk);
 		this.machine.memory.mapIoRead(IO_SYS_FRAME_MS, this, Runtime.onFrameMsReadThunk);
-		this.machine.memory.mapIoRead(IO_GPU_DISPLAY_MODE, this, Runtime.onGpuDisplayModeReadThunk);
 		this.machine.memory.mapIoRead(IO_SYS_CYCLES_PER_FRAME, this, Runtime.onCyclesPerFrameReadThunk);
-		this.machine.memory.mapIoWrite(IO_GPU_DISPLAY_MODE, this, Runtime.onGpuDisplayModeWriteThunk);
+		this.machine.memory.mapIoWrite(IO_GX_GPU_GP1, this, Runtime.onGxGpuGp1WriteThunk);
 		this.machine.memory.mapIoWrite(IO_SYS_PRINT_CHAR, this, Runtime.onLuaOutputCodepointWriteThunk);
 		this.machine.memory.mapIoWrite(IO_SYS_PRINT_FLUSH, this, Runtime.onLuaOutputFlushWriteThunk);
 		this.machine.initializeSystemIo();
 		this.machine.resetDevices();
-		this.machine.vdp.writeDisplayModeWord(this.timing.gpuDisplayModeWord);
+		this.machine.gxGpu.writeDisplayModeWord(this.timing.gpuDisplayModeWord);
 		configureLuaHeapUsage(this, Runtime.getBaseRamUsedBytesThunk, Runtime.collectTrackedHeapBytesThunk);
 		refreshDeviceTimings(this, this.machine.scheduler.currentNowCycles());
 		this.vblank.setVblankCycles(options.vblankCycles);
@@ -360,19 +360,20 @@ export class Runtime {
 		return context.timing.frameDurationMs;
 	}
 
-	private static onGpuDisplayModeReadThunk(context: Runtime, addr: number): Value {
-		void addr;
-		return context.timing.gpuDisplayModeWord;
-	}
-
 	private static onCyclesPerFrameReadThunk(context: Runtime, addr: number): Value {
 		void addr;
 		return context.timing.cycleBudgetPerFrame;
 	}
 
-	private static onGpuDisplayModeWriteThunk(context: Runtime, addr: number, value: Value): void {
+	private static onGxGpuGp1WriteThunk(context: Runtime, addr: number, value: Value): void {
 		void addr;
-		context.applyPsxGpuDisplayModeWord((value as number) >>> 0);
+		const opcode = context.machine.gxGpu.writeGp1(value as number);
+		switch (opcode) {
+			case GX_GPU_GP1_RESET:
+			case GX_GPU_GP1_SET_DISPLAY_MODE:
+				context.applyPsxGpuDisplayTimingWord(context.machine.gxGpu.readDisplayModeWord());
+				break;
+		}
 	}
 
 	private static onLuaOutputCodepointWriteThunk(context: Runtime, addr: number, value: Value): void {
@@ -436,11 +437,15 @@ export class Runtime {
 	}
 
 	public applyPsxGpuDisplayModeWord(gpuDisplayModeWord: number): void {
+		this.machine.gxGpu.writeDisplayModeWord(gpuDisplayModeWord);
+		this.applyPsxGpuDisplayTimingWord(this.machine.gxGpu.readDisplayModeWord());
+	}
+
+	private applyPsxGpuDisplayTimingWord(gpuDisplayModeWord: number): void {
 		const displayModeTiming = getPsxGpuDisplayModeTimingForWord(gpuDisplayModeWord);
 		const refreshUfpsScaled = displayModeTiming.refreshUfpsScaled;
 		this.timing.gpuDisplayModeWord = gpuDisplayModeWord >>> 0;
 		this.timing.totalScanlines = displayModeTiming.totalScanlines;
-		this.machine.vdp.writeDisplayModeWord(this.timing.gpuDisplayModeWord);
 		this.applyUfpsScaled(refreshUfpsScaled);
 		setFrameTiming(
 			this,

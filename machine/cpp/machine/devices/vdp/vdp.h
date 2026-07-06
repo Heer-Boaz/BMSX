@@ -41,7 +41,6 @@ public:
 	void initializeRegisters();
 	void resetIngressState();
 	void resetStatus();
-	void writeDisplayModeWord(uint32_t word);
 	void setScanoutTiming(bool vblankActive, int cyclesIntoFrame, int cyclesPerFrame, int vblankStartCycle);
 	void acceptSubmitAttempt();
 	void rejectSubmitAttempt();
@@ -135,7 +134,6 @@ private:
 	VdpFbmUnit m_fbm;
 	DeviceScheduler& m_scheduler;
 	VdpUnitRegisterPort m_unitRegisterPort;
-	u32 m_displayModeWord = PSX_GPU_DISPLAY_MODE_PAL_WORD;
 
 	void bindVramSurfaces();
 	void applyFixedPsxDisplayGeometry();

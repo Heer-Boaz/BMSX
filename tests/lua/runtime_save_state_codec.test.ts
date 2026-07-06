@@ -119,6 +119,12 @@ function createRuntimeSaveState(): RuntimeSaveState {
 					workCarry: 12,
 					availableWorkUnits: 1,
 				},
+				gxGpu: {
+					gp0Word: 0x12345678,
+					gp1Word: 0x08000008,
+					displayModeWord: PSX_GPU_DISPLAY_MODE_PAL_WORD,
+					statusWord: 0x1c100000,
+				},
 				gxGte: {
 					dataRegisterWords: numberedWords(GX_GTE_DATA_REGISTER_COUNT),
 					controlRegisterWords: numberedWords(GX_GTE_CONTROL_REGISTER_COUNT),
@@ -219,7 +225,6 @@ function createRuntimeSaveState(): RuntimeSaveState {
 					},
 				},
 				vdp: {
-					displayModeWord: PSX_GPU_DISPLAY_MODE_PAL_WORD,
 					xf: {
 						matrixWords: numberedWords(VDP_XF_MATRIX_REGISTER_WORDS),
 						viewMatrixIndex: 0xfffffffe,
@@ -321,6 +326,7 @@ test('runtime save-state codec preserves string pool ROM/runtime ownership', () 
 	assert.deepEqual(decoded.machineState.machine.stringPool.entries, state.machineState.machine.stringPool.entries);
 	assert.deepEqual(decoded.machineState.machine.irq, state.machineState.machine.irq);
 	assert.deepEqual(decoded.machineState.machine.geometry, state.machineState.machine.geometry);
+	assert.deepEqual(decoded.machineState.machine.gxGpu, state.machineState.machine.gxGpu);
 	assert.deepEqual(decoded.machineState.machine.gxGte, state.machineState.machine.gxGte);
 	assert.deepEqual(decoded.machineState.machine.audio, state.machineState.machine.audio);
 	assert.deepEqual(decoded.machineState.machine.input, state.machineState.machine.input);

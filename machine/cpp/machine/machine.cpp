@@ -17,6 +17,7 @@ Machine::Machine(Memory& memoryRef, VdpFrameBufferSize frameBufferSizeValue, Inp
 	, dmaController(memory, irqController, vdp, scheduler)
 	, imgDecController(memory, dmaController, vdp, irqController, scheduler, microtasks)
 	, geometryController(memory, irqController, scheduler)
+	, gxGpu(memory)
 	, gxGte(memory)
 	, inputController(memory, input)
 {
@@ -33,6 +34,7 @@ void Machine::resetDevices() {
 	inputController.reset();
 	dmaController.reset();
 	geometryController.reset();
+	gxGpu.reset();
 	gxGte.reset();
 	imgDecController.reset();
 	audioController.reset();

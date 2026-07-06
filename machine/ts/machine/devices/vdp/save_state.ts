@@ -6,7 +6,6 @@ import type { VdpVramState } from './vram';
 import type { VdpXfState } from './xf';
 
 export type VdpState = {
-	displayModeWord: number;
 	xf: VdpXfState;
 	vdpRegisterWords: number[];
 	buildFrame: VdpBuildingFrameSaveState;

@@ -47,7 +47,7 @@ export function applyRuntimeTiming(runtime: Runtime, timing: ResolvedRuntimeTimi
 	runtime.applyUfpsScaled(timing.ufpsScaled);
 	runtime.timing.gpuDisplayModeWord = timing.gpuDisplayModeWord >>> 0;
 	runtime.timing.totalScanlines = timing.totalScanlines;
-	runtime.machine.vdp.writeDisplayModeWord(runtime.timing.gpuDisplayModeWord);
+	runtime.machine.gxGpu.writeDisplayModeWord(runtime.timing.gpuDisplayModeWord);
 	setFrameTiming(runtime, timing.cpuHz, timing.cycleBudgetPerFrame, timing.vblankCycles);
 	setTransferRates(runtime, {
 		imgDecBytesPerSec: timing.imgDecBytesPerSec,
