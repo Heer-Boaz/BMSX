@@ -301,6 +301,14 @@ const std::vector<std::string> RUNTIME_SAVE_STATE_PROP_NAMES = {
 	"machineRegionWord",
 	"vdpModeWord",
 	"hashId",
+	"gxGte",
+	"dataRegisterWords",
+	"controlRegisterWords",
+	"mac0",
+	"mac1",
+	"mac2",
+	"mac3",
+	"currentSf",
 };
 
 } // namespace bmsx

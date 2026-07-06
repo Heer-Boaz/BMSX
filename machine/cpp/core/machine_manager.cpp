@@ -57,7 +57,7 @@ bool MachineManager::initialize(Platform* platform) {
 
 	// Get viewport size from platform
 	auto* host = platform->gameviewHost();
-	const MachineVdpModeProfile& systemVdpMode = getMachineVdpModeProfile(PSX_MODEL_PROFILE.biosVdpMode);
+	const MachineVdpModeProfile& systemVdpMode = VDP_MODE_PSX_PROFILE;
 	Vec2 defaultViewport{
 		static_cast<f32>(systemVdpMode.renderWidth),
 		static_cast<f32>(systemVdpMode.renderHeight)
@@ -298,7 +298,7 @@ void MachineManager::setMachineManifest(const MachineManifest& manifest) {
 }
 
 void MachineManager::configureViewForModel() {
-	const MachineVdpModeProfile& vdpMode = getMachineVdpModeProfile(PSX_MODEL_PROFILE.biosVdpMode);
+	const MachineVdpModeProfile& vdpMode = VDP_MODE_PSX_PROFILE;
 	Vec2 viewportSize{
 		static_cast<f32>(vdpMode.renderWidth),
 		static_cast<f32>(vdpMode.renderHeight)

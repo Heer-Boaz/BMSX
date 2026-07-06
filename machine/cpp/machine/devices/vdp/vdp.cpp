@@ -65,20 +65,12 @@ void VDP::resetStatus() {
 }
 
 void VDP::writeModeWord(uint32_t word) {
-	switch (word) {
-	case VDP_MODE_MSX1_WORD:
-		applyVdpModeProfile(VDP_MODE_MSX1_PROFILE);
-		break;
-	case VDP_MODE_MSX2_WORD:
-		applyVdpModeProfile(VDP_MODE_MSX2_PROFILE);
-		break;
-	case VDP_MODE_PSX_WORD:
+	if (word == VDP_MODE_PSX_WORD) {
 		applyVdpModeProfile(VDP_MODE_PSX_PROFILE);
-		break;
-	default:
-		m_fault.raise(VDP_FAULT_MODE_UNSUPPORTED, word);
-		m_memory.writeIoValue(IO_VDP_MODE, valueNumber(static_cast<double>(m_vdpModeWord)));
+		return;
 	}
+	m_fault.raise(VDP_FAULT_MODE_UNSUPPORTED, word);
+	m_memory.writeIoValue(IO_VDP_MODE, valueNumber(static_cast<double>(m_vdpModeWord)));
 }
 
 void VDP::applyVdpModeProfile(const MachineVdpModeProfile& profile) {
@@ -857,7 +849,7 @@ Value VDP::readVdpDataThunk(void* context, uint32_t addr) {
 void VDP::initializeRegisters() {
 	const i32 dither = 0;
 	m_vdpModeWord = static_cast<u32>(PSX_MODEL_PROFILE.biosVdpMode);
-	const MachineVdpModeProfile& vdpMode = getMachineVdpModeProfile(PSX_MODEL_PROFILE.biosVdpMode);
+	const MachineVdpModeProfile& vdpMode = VDP_MODE_PSX_PROFILE;
 	const VdpSurfaceBacking& frameBuffer = m_vram.frameBufferSurface();
 	m_fbm.configure(frameBuffer.surfaceWidth, frameBuffer.surfaceHeight);
 	resetQueuedFrameState();

@@ -1,4 +1,4 @@
-import { getMachineVdpModeProfile, PSX_MODEL_PROFILE } from '../model_registry';
+import { PSX_MODEL_PROFILE, VDP_MODE_PSX_PROFILE } from '../model_registry';
 import {
 	DEFAULT_GEO_SCRATCH_SIZE,
 	BASE_RAM_USED_SIZE,
@@ -9,7 +9,7 @@ import {
 } from './map';
 
 export function resolveRuntimeMemoryMapSpecs(): MemoryMapSpecs {
-	const renderSize = getMachineVdpModeProfile(PSX_MODEL_PROFILE.biosVdpMode);
+	const renderSize = VDP_MODE_PSX_PROFILE;
 	const frameBufferWidth = renderSize.renderWidth;
 	const frameBufferHeight = renderSize.renderHeight;
 	const frameBufferBytes = frameBufferWidth * frameBufferHeight * 4;

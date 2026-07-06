@@ -327,6 +327,7 @@
 		"machine/ts/machine/model_registry.ts",
 		"machine/ts/machine/devices/audio/biquad_filter.ts",
 		"machine/ts/machine/devices/audio/output.ts",
+		"machine/ts/machine/devices/gx/gte.ts",
 		"machine/ts/machine/devices/vdp/rpu.ts",
 		"machine/ts/machine/memory/access_kind.ts",
 		"machine/ts/machine/cpu/string_pool.ts",
@@ -341,6 +342,14 @@
 		"machine/ts/render/3d/light.ts"
 	],
 	"strict_runtime_symbol_parity": [
+		{
+			"ts": "machine/ts/machine/devices/gx/gte.ts",
+			"cpp": [
+				"machine/cpp/machine/devices/gx/gte.h",
+				"machine/cpp/machine/devices/gx/gte.cpp"
+			],
+			"reason": "gx_gte_psx_registerfile_contract"
+		},
 		{
 			"ts": "machine/ts/machine/devices/vdp/device_output.ts",
 			"cpp": [

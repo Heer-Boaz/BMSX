@@ -133,7 +133,7 @@ LibretroPlatform::LibretroPlatform(BackendType backend_type)
 		m_backend_type = BackendType::Software;
 	}
 #endif
-	const MachineVdpModeProfile& systemVdpMode = getMachineVdpModeProfile(PSX_MODEL_PROFILE.biosVdpMode);
+	const MachineVdpModeProfile& systemVdpMode = VDP_MODE_PSX_PROFILE;
 	m_framebuffer.resize(
 		static_cast<unsigned>(systemVdpMode.renderWidth),
 		static_cast<unsigned>(systemVdpMode.renderHeight)

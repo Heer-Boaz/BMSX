@@ -8,6 +8,7 @@ import { CPU } from './cpu/cpu';
 import { AudioController } from './devices/audio/controller';
 import { DmaController } from './devices/dma/controller';
 import { GeometryController } from './devices/geometry/controller';
+import { GxGte } from './devices/gx/gte';
 import { ImgDecController } from './devices/imgdec/controller';
 import { InputController } from './devices/input/controller';
 import type { InputControllerInputSource } from './devices/input/contracts';
@@ -41,6 +42,7 @@ export class Machine {
 	public readonly vdp: VDP;
 	public readonly dmaController: DmaController;
 	public readonly geometryController: GeometryController;
+	public readonly gxGte: GxGte;
 	public readonly imgDecController: ImgDecController;
 	public readonly inputController: InputController;
 	public readonly audioOutput: ApuOutputMixer;
@@ -61,6 +63,7 @@ export class Machine {
 		this.dmaController = new DmaController(this.memory, this.irqController, this.vdp, this.scheduler);
 		this.imgDecController = new ImgDecController(this.memory, this.dmaController, this.vdp, this.irqController, this.scheduler, microtasks);
 		this.geometryController = new GeometryController(this.memory, this.irqController, this.scheduler);
+		this.gxGte = new GxGte(this.memory);
 		this.inputController = new InputController(this.memory, input);
 	}
 
@@ -75,6 +78,7 @@ export class Machine {
 		this.inputController.reset();
 		this.dmaController.reset();
 		this.geometryController.reset();
+		this.gxGte.reset();
 		this.imgDecController.reset();
 		this.audioController.reset();
 		this.vdp.initializeVramSurfaces();

@@ -10,7 +10,7 @@ ResolvedRuntimeTiming resolveRuntimeTiming(
 	i64 cpuHz,
 	uint32_t regionWord
 ) {
-	const MachineVdpModeProfile& renderSize = getMachineVdpModeProfile(PSX_MODEL_PROFILE.biosVdpMode);
+	const MachineVdpModeProfile& renderSize = VDP_MODE_PSX_PROFILE;
 	const MachineRegionTiming regionTiming = getMachineRegionTimingForWord(regionWord);
 	return {
 		renderSize.renderWidth,

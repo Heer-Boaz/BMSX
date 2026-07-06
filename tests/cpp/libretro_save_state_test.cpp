@@ -47,6 +47,8 @@ void testLibretroSaveStateRoundTrip() {
 	memory.writeMappedU32LE(bmsx::IO_VDP_REG_BG_COLOR, 0xff112233u);
 	memory.writeMappedU32LE(bmsx::IO_IRQ_MASK, bmsx::IRQ_VBLANK);
 	runtime.machine.irqController.raise(bmsx::IRQ_VBLANK);
+	runtime.machine.gxGte.writeDataRegister(30u, 1u);
+	runtime.machine.gxGte.writeControlRegister(0u, 1u);
 	require(platform.getStateSize() == stateSize, "libretro state size should remain stable across RAM and device-register changes");
 
 	std::vector<bmsx::u8> saved(stateSize);
@@ -55,6 +57,8 @@ void testLibretroSaveStateRoundTrip() {
 	memory.writeMappedU32LE(bmsx::GEO_SCRATCH_BASE, 0xaabbccddu);
 	memory.writeMappedU32LE(bmsx::IO_VDP_REG_BG_COLOR, 0xff445566u);
 	runtime.machine.irqController.reset();
+	runtime.machine.gxGte.writeDataRegister(30u, 2u);
+	runtime.machine.gxGte.writeControlRegister(0u, 2u);
 	require(memory.readMappedU32LE(bmsx::GEO_SCRATCH_BASE) == 0xaabbccddu, "RAM mutation should be visible before loadState");
 	require(memory.readIoU32(bmsx::IO_VDP_REG_BG_COLOR) == 0xff445566u, "VDP register mutation should be visible before loadState");
 	require(!runtime.machine.irqController.hasAssertedMaskableInterruptLine(), "IRQ reset should clear the maskable line before loadState");
@@ -66,6 +70,8 @@ void testLibretroSaveStateRoundTrip() {
 	require(runtime.machine.irqController.hasAssertedMaskableInterruptLine(), "libretro loadState should restore asserted IRQ line state");
 	require((memory.readIoU32(bmsx::IO_IRQ_FLAGS) & bmsx::IRQ_VBLANK) != 0u, "libretro loadState should restore cart-visible IRQ flags");
 	require(memory.readIoU32(bmsx::IO_IRQ_MASK) == bmsx::IRQ_VBLANK, "libretro loadState should restore IRQ_MASK");
+	require(runtime.machine.gxGte.readDataRegister(30u) == 1u, "libretro loadState should restore GX-GTE data register words");
+	require(runtime.machine.gxGte.readControlRegister(0u) == 1u, "libretro loadState should restore GX-GTE control register words");
 
 	constexpr uint32_t passDescAddr = 0x100u;
 	constexpr uint32_t drawDescAddr = 0x140u;

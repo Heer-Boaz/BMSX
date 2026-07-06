@@ -11,7 +11,7 @@ MemoryMapSpecs resolveRuntimeMemoryMapSpecs() {
 	MemoryMapSpecs config;
 	config.textureBytes = static_cast<uint32_t>(PSX_MODEL_PROFILE.textureBytes);
 	config.stagingBytes = static_cast<uint32_t>(PSX_MODEL_PROFILE.stagingBytes);
-	const MachineVdpModeProfile& renderSize = getMachineVdpModeProfile(PSX_MODEL_PROFILE.biosVdpMode);
+	const MachineVdpModeProfile& renderSize = VDP_MODE_PSX_PROFILE;
 	const uint32_t frameBufferWidth = static_cast<uint32_t>(renderSize.renderWidth);
 	const uint32_t frameBufferHeight = static_cast<uint32_t>(renderSize.renderHeight);
 	config.frameBufferBytes = frameBufferWidth * frameBufferHeight * 4u;

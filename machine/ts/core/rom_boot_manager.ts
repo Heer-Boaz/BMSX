@@ -4,7 +4,7 @@ import {
 	type RuntimeRomLayer,
 } from '../rompack/loader';
 import { SYSTEM_BOOT_ENTRY_PATH, SYSTEM_MACHINE_MANIFEST } from './system';
-import { getMachineVdpModeProfile, PSX_MODEL_PROFILE } from '../machine/model_registry';
+import { VDP_MODE_PSX_PROFILE } from '../machine/model_registry';
 
 export type RomBootPlan = {
 	systemLayer: RuntimeRomLayer;
@@ -23,7 +23,7 @@ export class RomBootManager {
 			? await buildRuntimeRomLayer({ blob: options.cartridge, id: 'cart' })
 			: null;
 
-		const viewport = getMachineVdpModeProfile(PSX_MODEL_PROFILE.biosVdpMode);
+		const viewport = VDP_MODE_PSX_PROFILE;
 		return {
 			systemLayer,
 			cartLayer,

@@ -68,12 +68,7 @@ import { VdpVoutUnit } from './vout';
 import { vdpUnitPacketHasFlags, vdpUnitPacketPayloadWords } from './packet';
 import { packLowHigh16, packedLow16 } from '../../common/word';
 import {
-	getMachineVdpModeProfile,
 	PSX_MODEL_PROFILE,
-	VDP_MODE_MSX1_PROFILE,
-	VDP_MODE_MSX1_WORD,
-	VDP_MODE_MSX2_PROFILE,
-	VDP_MODE_MSX2_WORD,
 	VDP_MODE_PSX_PROFILE,
 	VDP_MODE_PSX_WORD,
 	type MachineVdpModeProfile,
@@ -225,20 +220,12 @@ export class VDP implements VramWriteSink {
 	}
 
 	public writeModeWord(word: number): void {
-		switch (word >>> 0) {
-			case VDP_MODE_MSX1_WORD:
-				this.applyVdpModeProfile(VDP_MODE_MSX1_PROFILE);
-				break;
-			case VDP_MODE_MSX2_WORD:
-				this.applyVdpModeProfile(VDP_MODE_MSX2_PROFILE);
-				break;
-			case VDP_MODE_PSX_WORD:
-				this.applyVdpModeProfile(VDP_MODE_PSX_PROFILE);
-				break;
-			default:
-				this.fault.raise(VDP_FAULT_MODE_UNSUPPORTED, word >>> 0);
-				this.memory.writeIoValue(IO_VDP_MODE, this.vdpModeWord);
+		if ((word >>> 0) === VDP_MODE_PSX_WORD) {
+			this.applyVdpModeProfile(VDP_MODE_PSX_PROFILE);
+			return;
 		}
+		this.fault.raise(VDP_FAULT_MODE_UNSUPPORTED, word >>> 0);
+		this.memory.writeIoValue(IO_VDP_MODE, this.vdpModeWord);
 	}
 
 	private applyVdpModeProfile(profile: MachineVdpModeProfile): void {
@@ -1044,7 +1031,7 @@ export class VDP implements VramWriteSink {
 	public initializeRegisters(): void {
 		const dither = 0;
 		this.vdpModeWord = PSX_MODEL_PROFILE.biosVdpMode;
-		const vdpModeProfile = getMachineVdpModeProfile(this.vdpModeWord);
+		const vdpModeProfile = VDP_MODE_PSX_PROFILE;
 		const frameBuffer = this.vram.frameBufferSurface;
 		this.fbm.configure(frameBuffer.surfaceWidth, frameBuffer.surfaceHeight);
 		this.resetQueuedFrameState();

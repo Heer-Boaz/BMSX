@@ -3,6 +3,7 @@
 #include "machine/cpu/string_pool.h"
 #include "machine/devices/audio/save_state.h"
 #include "machine/devices/geometry/save_state.h"
+#include "machine/devices/gx/gte.h"
 #include "machine/devices/input/save_state.h"
 #include "machine/devices/irq/save_state.h"
 #include "machine/devices/vdp/save_state.h"
@@ -14,6 +15,7 @@ class Machine;
 
 struct MachineState {
 	GeometryControllerState geometry;
+	GxGteState gxGte;
 	IrqControllerState irq;
 	AudioControllerState audio;
 	InputControllerState input;
@@ -23,6 +25,7 @@ struct MachineState {
 struct MachineSaveState {
 	MemorySaveState memory;
 	GeometryControllerState geometry;
+	GxGteState gxGte;
 	IrqControllerState irq;
 	AudioControllerState audio;
 	StringPoolState stringPool;

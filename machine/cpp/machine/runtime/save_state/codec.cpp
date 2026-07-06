@@ -1,6 +1,7 @@
 #include "machine/runtime/save_state/codec.h"
 
 #include "common/serializer/binencoder.h"
+#include "machine/devices/gx/gte.h"
 #include "machine/devices/input/contracts.h"
 #include "machine/memory/map.h"
 #include "machine/runtime/runtime.h"
@@ -489,6 +490,31 @@ GeometryControllerState decodeGeometryControllerState(const BinValue& value, con
 	}
 	state.workCarry = requireI64(requireField(object, "workCarry", label), "machine.geometry.workCarry");
 	state.availableWorkUnits = requireU32(requireField(object, "availableWorkUnits", label), "machine.geometry.availableWorkUnits");
+	return state;
+}
+
+BinValue encodeGxGteState(const GxGteState& state) {
+	BinObject object;
+	object["dataRegisterWords"] = encodeFixedArray(state.dataRegisterWords, encodeScalar<i64, u32>);
+	object["controlRegisterWords"] = encodeFixedArray(state.controlRegisterWords, encodeScalar<i64, u32>);
+	object["mac0"] = static_cast<i64>(state.mac0);
+	object["mac1"] = static_cast<i64>(state.mac1);
+	object["mac2"] = static_cast<i64>(state.mac2);
+	object["mac3"] = static_cast<i64>(state.mac3);
+	object["currentSf"] = static_cast<i64>(state.currentSf);
+	return BinValue(std::move(object));
+}
+
+GxGteState decodeGxGteState(const BinValue& value, const char* label) {
+	const BinObject& object = requireObject(value, label);
+	GxGteState state;
+	state.dataRegisterWords = decodeU32Array<GX_GTE_DATA_REGISTER_COUNT>(requireField(object, "dataRegisterWords", label), "machine.gxGte.dataRegisterWords");
+	state.controlRegisterWords = decodeU32Array<GX_GTE_CONTROL_REGISTER_COUNT>(requireField(object, "controlRegisterWords", label), "machine.gxGte.controlRegisterWords");
+	state.mac0 = requireI64(requireField(object, "mac0", label), "machine.gxGte.mac0");
+	state.mac1 = requireI64(requireField(object, "mac1", label), "machine.gxGte.mac1");
+	state.mac2 = requireI64(requireField(object, "mac2", label), "machine.gxGte.mac2");
+	state.mac3 = requireI64(requireField(object, "mac3", label), "machine.gxGte.mac3");
+	state.currentSf = requireU32(requireField(object, "currentSf", label), "machine.gxGte.currentSf");
 	return state;
 }
 
@@ -1023,6 +1049,7 @@ BinValue encodeMachineSaveState(const MachineSaveState& state) {
 	BinObject object;
 	object["memory"] = encodeMemorySaveState(state.memory);
 	object["geometry"] = encodeGeometryControllerState(state.geometry);
+	object["gxGte"] = encodeGxGteState(state.gxGte);
 	object["irq"] = encodeIrqControllerState(state.irq);
 	object["audio"] = encodeAudioControllerState(state.audio);
 	object["stringPool"] = encodeStringPoolState(state.stringPool);
@@ -1036,6 +1063,7 @@ MachineSaveState decodeMachineSaveState(const BinValue& value, const char* label
 	MachineSaveState state;
 	state.memory = decodeMemorySaveState(requireField(object, "memory", label), "machineState.machine.memory");
 	state.geometry = decodeGeometryControllerState(requireField(object, "geometry", label), "machineState.machine.geometry");
+	state.gxGte = decodeGxGteState(requireField(object, "gxGte", label), "machineState.machine.gxGte");
 	state.irq = decodeIrqControllerState(requireField(object, "irq", label), "machineState.machine.irq");
 	state.audio = decodeAudioControllerState(requireField(object, "audio", label), "machineState.machine.audio");
 	state.stringPool = decodeStringPoolState(requireField(object, "stringPool", label), "machineState.machine.stringPool");

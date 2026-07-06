@@ -1,7 +1,7 @@
 import type { Runtime } from './runtime';
 import { calcCyclesPerFrameScaled, resolveVblankCycles } from './timing';
 import { setFrameTiming, setTransferRates } from './timing/config';
-import { getMachineRegionTimingForWord, getMachineVdpModeProfile, PSX_MODEL_PROFILE, PSX_VDP_CLASS_PROFILE } from '../model_registry';
+import { getMachineRegionTimingForWord, PSX_MODEL_PROFILE, PSX_VDP_CLASS_PROFILE, VDP_MODE_PSX_PROFILE } from '../model_registry';
 
 export type ResolvedRuntimeTiming = {
 	viewportWidth: number;
@@ -23,7 +23,7 @@ export function resolveRuntimeTiming(
 	cpuHz: number,
 	regionWord: number,
 ): ResolvedRuntimeTiming {
-	const renderSize = getMachineVdpModeProfile(PSX_MODEL_PROFILE.biosVdpMode);
+	const renderSize = VDP_MODE_PSX_PROFILE;
 	const regionTiming = getMachineRegionTimingForWord(regionWord);
 	const refreshUfpsScaled = regionTiming.refreshUfpsScaled;
 	return {

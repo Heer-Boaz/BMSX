@@ -9,13 +9,8 @@ import {
 	NTSC_REFRESH_UFPS_SCALED,
 	PSX_MODEL_PROFILE,
 	PSX_VDP_CLASS_PROFILE,
-	VDP_MODE_MSX1_WORD,
-	VDP_MODE_MSX1_PROFILE,
-	VDP_MODE_MSX2_WORD,
-	VDP_MODE_MSX2_PROFILE,
 	VDP_MODE_PSX_WORD,
 	VDP_MODE_PSX_PROFILE,
-	getMachineVdpModeProfile,
 } from '../../machine/ts/machine/model_registry';
 import { HZ_SCALE } from '../../machine/ts/machine/runtime/timing/constants';
 
@@ -39,12 +34,7 @@ test('machine registry exposes the psx VDP device class throughput', () => {
 	});
 });
 
-test('machine registry exposes VDP modes', () => {
-	assert.deepEqual(getMachineVdpModeProfile(VDP_MODE_MSX1_WORD), VDP_MODE_MSX1_PROFILE);
-	assert.deepEqual(getMachineVdpModeProfile(VDP_MODE_MSX2_WORD), VDP_MODE_MSX2_PROFILE);
-	assert.deepEqual(getMachineVdpModeProfile(VDP_MODE_PSX_WORD), VDP_MODE_PSX_PROFILE);
-	assert.deepEqual(VDP_MODE_MSX1_PROFILE, { mode: VDP_MODE_MSX1_WORD, renderWidth: 256, renderHeight: 192 });
-	assert.deepEqual(VDP_MODE_MSX2_PROFILE, { mode: VDP_MODE_MSX2_WORD, renderWidth: 256, renderHeight: 212 });
+test('machine registry exposes only the psx VDP mode', () => {
 	assert.deepEqual(VDP_MODE_PSX_PROFILE, { mode: VDP_MODE_PSX_WORD, renderWidth: 320, renderHeight: 240 });
 });
 

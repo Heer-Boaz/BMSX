@@ -19,6 +19,8 @@ import {
 	GEOMETRY_CONTROLLER_REGISTER_COUNT,
 	type GeometryControllerPhase,
 } from '../../devices/geometry/contracts';
+import type { GxGteState } from '../../devices/gx/gte';
+import { GX_GTE_CONTROL_REGISTER_COUNT, GX_GTE_DATA_REGISTER_COUNT } from '../../devices/gx/gte';
 import type { GeometryJobState } from '../../devices/geometry/job';
 import type { GeometryControllerState } from '../../devices/geometry/save_state';
 import type { VdpSaveState, VdpState } from '../../devices/vdp/save_state';
@@ -455,6 +457,31 @@ function decodeGeometryControllerState(value: unknown, label: string): GeometryC
 		activeJob: activeJob === null ? null : decodeGeometryJobState(activeJob, 'machine.geometry.activeJob'),
 		workCarry: requireI64(requireObjectKey(object, 'workCarry', label, 'machine.geometry.workCarry'), 'machine.geometry.workCarry'),
 		availableWorkUnits: requireBoundedU32(requireObjectKey(object, 'availableWorkUnits', label, 'machine.geometry.availableWorkUnits'), 'machine.geometry.availableWorkUnits', 0, 0xffffffff),
+	};
+}
+
+function encodeGxGteState(state: GxGteState): GxGteState {
+	return {
+		dataRegisterWords: encodeVector(state.dataRegisterWords, (word) => word >>> 0),
+		controlRegisterWords: encodeVector(state.controlRegisterWords, (word) => word >>> 0),
+		mac0: state.mac0,
+		mac1: state.mac1,
+		mac2: state.mac2,
+		mac3: state.mac3,
+		currentSf: state.currentSf >>> 0,
+	};
+}
+
+function decodeGxGteState(value: unknown, label: string): GxGteState {
+	const object = requireObject(value, label);
+	return {
+		dataRegisterWords: decodeU32FixedArray(requireObjectKey(object, 'dataRegisterWords', label, `${label}.dataRegisterWords`), `${label}.dataRegisterWords`, GX_GTE_DATA_REGISTER_COUNT),
+		controlRegisterWords: decodeU32FixedArray(requireObjectKey(object, 'controlRegisterWords', label, `${label}.controlRegisterWords`), `${label}.controlRegisterWords`, GX_GTE_CONTROL_REGISTER_COUNT),
+		mac0: requireI64(requireObjectKey(object, 'mac0', label, `${label}.mac0`), `${label}.mac0`),
+		mac1: requireI64(requireObjectKey(object, 'mac1', label, `${label}.mac1`), `${label}.mac1`),
+		mac2: requireI64(requireObjectKey(object, 'mac2', label, `${label}.mac2`), `${label}.mac2`),
+		mac3: requireI64(requireObjectKey(object, 'mac3', label, `${label}.mac3`), `${label}.mac3`),
+		currentSf: requireBoundedU32(requireObjectKey(object, 'currentSf', label, `${label}.currentSf`), `${label}.currentSf`, 0, 0xffffffff),
 	};
 }
 
@@ -989,6 +1016,7 @@ function encodeMachineSaveState(state: MachineSaveState): MachineSaveState {
 	return {
 		memory: encodeMemorySaveState(state.memory),
 		geometry: encodeGeometryControllerState(state.geometry),
+		gxGte: encodeGxGteState(state.gxGte),
 		irq: encodeIrqControllerState(state.irq),
 		audio: encodeAudioControllerState(state.audio),
 		stringPool: encodeStringPoolState(state.stringPool),
@@ -1002,6 +1030,7 @@ function decodeMachineSaveState(value: unknown, label: string): MachineSaveState
 	return {
 		memory: decodeMemorySaveState(requireObjectKey(object, 'memory', label, 'machineState.machine.memory'), 'machineState.machine.memory'),
 		geometry: decodeGeometryControllerState(requireObjectKey(object, 'geometry', label, 'machineState.machine.geometry'), 'machineState.machine.geometry'),
+		gxGte: decodeGxGteState(requireObjectKey(object, 'gxGte', label, 'machineState.machine.gxGte'), 'machineState.machine.gxGte'),
 		irq: decodeIrqControllerState(requireObjectKey(object, 'irq', label, 'machineState.machine.irq'), 'machineState.machine.irq'),
 		audio: decodeAudioControllerState(requireObjectKey(object, 'audio', label, 'machineState.machine.audio'), 'machineState.machine.audio'),
 		stringPool: decodeStringPoolState(requireObjectKey(object, 'stringPool', label, 'machineState.machine.stringPool'), 'machineState.machine.stringPool'),

@@ -337,6 +337,7 @@ function uploadVdpRpuTextureSurface(backend: WebGLBackend, frame: VdpRpuFrameOut
 }
 
 function bindVdpRpuPassFramebuffer(backend: WebGLBackend, frame: VdpRpuFrameOutput, passIndex: number, framebuffer: WebGLFramebuffer, width: number, height: number): number {
+	void width;
 	const gl = vdpRpuGl;
 	const commands = frame.commands;
 	const colorSurfaceDescAddr = commands.passColorSurfaceDescAddr[passIndex];

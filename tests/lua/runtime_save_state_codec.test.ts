@@ -17,6 +17,7 @@ import {
 } from '../../machine/ts/machine/devices/audio/contracts';
 import { VDP_JTU_REGISTER_WORDS, VDP_MFU_WEIGHT_COUNT } from '../../machine/ts/machine/devices/vdp/contracts';
 import { GEOMETRY_CONTROLLER_PHASE_BUSY, GEOMETRY_CONTROLLER_REGISTER_COUNT } from '../../machine/ts/machine/devices/geometry/contracts';
+import { GX_GTE_CONTROL_REGISTER_COUNT, GX_GTE_DATA_REGISTER_COUNT } from '../../machine/ts/machine/devices/gx/gte';
 import { INPUT_CONTROLLER_KEY_WORD_COUNT, INPUT_CONTROLLER_PAD_AXIS_COUNT, INPUT_CONTROLLER_PAD_COUNT } from '../../machine/ts/machine/devices/input/contracts';
 import { VDP_REGISTER_COUNT } from '../../machine/ts/machine/devices/vdp/registers';
 import { VDP_LPU_REGISTER_WORDS } from '../../machine/ts/machine/devices/vdp/lpu';
@@ -117,6 +118,15 @@ function createRuntimeSaveState(): RuntimeSaveState {
 					},
 					workCarry: 12,
 					availableWorkUnits: 1,
+				},
+				gxGte: {
+					dataRegisterWords: numberedWords(GX_GTE_DATA_REGISTER_COUNT),
+					controlRegisterWords: numberedWords(GX_GTE_CONTROL_REGISTER_COUNT),
+					mac0: 1,
+					mac1: -2,
+					mac2: 3,
+					mac3: -4,
+					currentSf: 1,
 				},
 				irq: { mask: 0x00ff, pendingFlags: 0xa5a5 },
 				audio: {
@@ -311,6 +321,7 @@ test('runtime save-state codec preserves string pool ROM/runtime ownership', () 
 	assert.deepEqual(decoded.machineState.machine.stringPool.entries, state.machineState.machine.stringPool.entries);
 	assert.deepEqual(decoded.machineState.machine.irq, state.machineState.machine.irq);
 	assert.deepEqual(decoded.machineState.machine.geometry, state.machineState.machine.geometry);
+	assert.deepEqual(decoded.machineState.machine.gxGte, state.machineState.machine.gxGte);
 	assert.deepEqual(decoded.machineState.machine.audio, state.machineState.machine.audio);
 	assert.deepEqual(decoded.machineState.machine.input, state.machineState.machine.input);
 	assert.deepEqual(decoded.machineState.machine.vdp.activeFrame, state.machineState.machine.vdp.activeFrame);

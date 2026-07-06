@@ -1,11 +1,10 @@
 import { HZ_SCALE } from './runtime/timing/constants';
 
-// Console-model registry: the machine owns fixed hardware, device classes own
-// throughput/programming-model parameters, and region is runtime timing state.
-// Slice 24.1 intentionally populates only the psx model + psx VDP class.
+// Console-model registry: the machine owns fixed PSX-class hardware, device
+// throughput/programming-model parameters, and region runtime timing state.
 
 export type MachineVdpClass = 'psx';
-export type MachineVdpMode = typeof VDP_MODE_MSX1_WORD | typeof VDP_MODE_MSX2_WORD | typeof VDP_MODE_PSX_WORD;
+export type MachineVdpMode = typeof VDP_MODE_PSX_WORD;
 export type MachineRegion = 'pal' | 'ntsc';
 
 export const PSX_CPU_FREQ_HZ = 50_000_000;
@@ -15,13 +14,7 @@ export const PSX_DMA_BYTES_PER_SEC_BULK = 26_214_400;
 export const PSX_RAM_BYTES = 0x00400000;
 export const PSX_VRAM_TEXTURE_BYTES = 0x00200000;
 export const PSX_VRAM_STAGING_BYTES = 0x00022000;
-export const VDP_MODE_MSX1_WORD = 0;
-export const VDP_MODE_MSX2_WORD = 1;
 export const VDP_MODE_PSX_WORD = 2;
-export const VDP_MODE_MSX1_RENDER_WIDTH = 256;
-export const VDP_MODE_MSX1_RENDER_HEIGHT = 192;
-export const VDP_MODE_MSX2_RENDER_WIDTH = 256;
-export const VDP_MODE_MSX2_RENDER_HEIGHT = 212;
 export const VDP_MODE_PSX_RENDER_WIDTH = 320;
 export const VDP_MODE_PSX_RENDER_HEIGHT = 240;
 
@@ -79,34 +72,11 @@ export const PSX_VDP_CLASS_PROFILE: MachineVdpClassProfile = {
 	geoWorkUnitsPerSec: PSX_GEO_WORK_UNITS_PER_SEC,
 };
 
-export const VDP_MODE_MSX1_PROFILE: MachineVdpModeProfile = {
-	mode: VDP_MODE_MSX1_WORD,
-	renderWidth: VDP_MODE_MSX1_RENDER_WIDTH,
-	renderHeight: VDP_MODE_MSX1_RENDER_HEIGHT,
-};
-
-export const VDP_MODE_MSX2_PROFILE: MachineVdpModeProfile = {
-	mode: VDP_MODE_MSX2_WORD,
-	renderWidth: VDP_MODE_MSX2_RENDER_WIDTH,
-	renderHeight: VDP_MODE_MSX2_RENDER_HEIGHT,
-};
-
 export const VDP_MODE_PSX_PROFILE: MachineVdpModeProfile = {
 	mode: VDP_MODE_PSX_WORD,
 	renderWidth: VDP_MODE_PSX_RENDER_WIDTH,
 	renderHeight: VDP_MODE_PSX_RENDER_HEIGHT,
 };
-
-export function getMachineVdpModeProfile(mode: MachineVdpMode): MachineVdpModeProfile {
-	switch (mode) {
-		case VDP_MODE_MSX1_WORD:
-			return VDP_MODE_MSX1_PROFILE;
-		case VDP_MODE_MSX2_WORD:
-			return VDP_MODE_MSX2_PROFILE;
-		case VDP_MODE_PSX_WORD:
-			return VDP_MODE_PSX_PROFILE;
-	}
-}
 
 export function getMachineRegionTiming(region: MachineRegion): MachineRegionTiming {
 	if (region === 'pal') {

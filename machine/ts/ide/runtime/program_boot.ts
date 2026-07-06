@@ -1,5 +1,5 @@
 import { machineManager } from '../../core/machine_manager';
-import { getMachineVdpModeProfile, PSX_MODEL_PROFILE } from '../../machine/model_registry';
+import { VDP_MODE_PSX_PROFILE } from '../../machine/model_registry';
 import type { Runtime } from '../../machine/runtime/runtime';
 import { applyWorkspaceOverridesToCart, applyWorkspaceOverridesToRegistry } from '../workspace/workspace';
 import * as workbenchMode from '../workbench/mode';
@@ -30,7 +30,7 @@ export async function startPreparedRuntime(runtime: Runtime): Promise<void> {
 		includeServer: true,
 		projectRootPath: sources.systemProjectRootPath,
 	});
-	const vdpMode = getMachineVdpModeProfile(PSX_MODEL_PROFILE.biosVdpMode);
+	const vdpMode = VDP_MODE_PSX_PROFILE;
 	workbenchMode.initializeIdeFeatures(runtime, { width: vdpMode.renderWidth, height: vdpMode.renderHeight });
 	runtime.enterSystemFirmware();
 	enterSystemSources(sources);

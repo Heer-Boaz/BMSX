@@ -5,6 +5,7 @@
 #include "machine/devices/audio/controller.h"
 #include "machine/devices/dma/controller.h"
 #include "machine/devices/geometry/controller.h"
+#include "machine/devices/gx/gte.h"
 #include "machine/devices/imgdec/controller.h"
 #include "machine/devices/input/controller.h"
 #include "machine/devices/irq/controller.h"
@@ -41,6 +42,7 @@ public:
 	DmaController dmaController;
 	ImgDecController imgDecController;
 	GeometryController geometryController;
+	GxGte gxGte;
 	InputController inputController;
 
 	void initializeSystemIo();

@@ -16,7 +16,7 @@ std::unique_ptr<RomBootPlan> RomBootManager::buildBootPlan(
 	loadSystemRomPackageFromRom(systemRom, systemSize, plan->systemLayer, nullptr, "system");
 	plan->systemLayer.machine = defaultSystemMachineManifest();
 	plan->systemLayer.entryPoint = systemBootEntryPath();
-	const MachineVdpModeProfile& viewport = getMachineVdpModeProfile(PSX_MODEL_PROFILE.biosVdpMode);
+	const MachineVdpModeProfile& viewport = VDP_MODE_PSX_PROFILE;
 	plan->viewportSize = {
 		viewport.renderWidth,
 		viewport.renderHeight

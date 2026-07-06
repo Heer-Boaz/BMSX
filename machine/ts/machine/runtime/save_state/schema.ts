@@ -296,4 +296,12 @@ export const RUNTIME_SAVE_STATE_PROP_NAMES = [
 	'machineRegionWord',
 	'vdpModeWord',
 	'hashId',
+	'gxGte',
+	'dataRegisterWords',
+	'controlRegisterWords',
+	'mac0',
+	'mac1',
+	'mac2',
+	'mac3',
+	'currentSf',
 ] as const;

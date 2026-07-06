@@ -84,7 +84,7 @@ static bool g_cached_av_info_valid = false;
 static int64_t g_current_ufps_scaled = bmsx::PAL_REFRESH_UFPS_SCALED;
 
 static void apply_model_av_info(retro_system_av_info& av, int64_t ufps_scaled) {
-	const bmsx::MachineVdpModeProfile& vdpMode = bmsx::getMachineVdpModeProfile(bmsx::PSX_MODEL_PROFILE.biosVdpMode);
+	const bmsx::MachineVdpModeProfile& vdpMode = bmsx::VDP_MODE_PSX_PROFILE;
 	av.geometry.base_width = static_cast<unsigned>(vdpMode.renderWidth);
 	av.geometry.base_height = static_cast<unsigned>(vdpMode.renderHeight);
 	if (av.geometry.max_width < av.geometry.base_width) {
