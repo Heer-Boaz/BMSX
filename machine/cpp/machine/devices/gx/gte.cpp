@@ -624,28 +624,31 @@ void GxGte::executeMvmva(u32 opcode, u32 sf, u32 lm) {
 	const u32 matrix = (opcode >> 17u) & 3u;
 	const u32 vectorIndex = (opcode >> 15u) & 3u;
 	const u32 controlVector = (opcode >> 13u) & 3u;
+	i32 x = vector(vectorIndex, 0u);
+	i32 y = vector(vectorIndex, 1u);
+	i32 z = vector(vectorIndex, 2u);
 	for (u32 row = 0u; row < 3u; row += 1u) {
 		if (controlVector == 2u) {
 			accumulateSigned44(
 				static_cast<i64>(cv(controlVector, row)) * 4096ll,
-				static_cast<i64>(mx(matrix, row, 0u)) * vector(vectorIndex, 0u),
+				static_cast<i64>(mx(matrix, row, 0u)) * x,
 				0,
 				0
 			);
 			writeIrFromMac(row + 1u, mac(row + 1u, m_accumValue, m_accumPositiveOverflow, m_accumNegativeOverflow), 0u);
 			accumulateSigned44(
 				0,
-				static_cast<i64>(mx(matrix, row, 1u)) * vector(vectorIndex, 1u),
-				static_cast<i64>(mx(matrix, row, 2u)) * vector(vectorIndex, 2u),
+				static_cast<i64>(mx(matrix, row, 1u)) * y,
+				static_cast<i64>(mx(matrix, row, 2u)) * z,
 				0
 			);
 			writeIrFromMac(row + 1u, mac(row + 1u, m_accumValue, m_accumPositiveOverflow, m_accumNegativeOverflow), lm);
 		} else {
 			accumulateSigned44(
 				static_cast<i64>(cv(controlVector, row)) * 4096ll,
-				static_cast<i64>(mx(matrix, row, 0u)) * vector(vectorIndex, 0u),
-				static_cast<i64>(mx(matrix, row, 1u)) * vector(vectorIndex, 1u),
-				static_cast<i64>(mx(matrix, row, 2u)) * vector(vectorIndex, 2u)
+				static_cast<i64>(mx(matrix, row, 0u)) * x,
+				static_cast<i64>(mx(matrix, row, 1u)) * y,
+				static_cast<i64>(mx(matrix, row, 2u)) * z
 			);
 			writeIrFromMac(row + 1u, mac(row + 1u, m_accumValue, m_accumPositiveOverflow, m_accumNegativeOverflow), lm);
 		}

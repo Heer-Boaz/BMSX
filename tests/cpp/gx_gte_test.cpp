@@ -183,6 +183,24 @@ void testMvmva() {
 	require(gte.readControlRegister(31u) == 0u, "MVMVA FLAG");
 }
 
+void testMvmvaReadsVectorOnce() {
+	GteHarness harness;
+	bmsx::GxGte& gte = harness.gte;
+	gte.writeControlRegister(0u, pack16(1u, 2u));
+	gte.writeControlRegister(1u, pack16(3u, 4u));
+	gte.writeControlRegister(2u, pack16(5u, 6u));
+	gte.writeControlRegister(3u, pack16(7u, 8u));
+	gte.writeControlRegister(4u, pack16(9u, 0u));
+	gte.writeDataRegister(9u, 1u);
+	gte.writeDataRegister(10u, 2u);
+	gte.writeDataRegister(11u, 3u);
+
+	require(gte.execute((3u << 15u) | bmsx::GX_GTE_FN_MVMVA) == bmsx::GX_GTE_CYCLES_MVMVA, "MVMVA IR vector read-once cycles");
+	require(gte.readDataRegister(9u) == 14u, "MVMVA IR vector IR1");
+	require(gte.readDataRegister(10u) == 32u, "MVMVA IR vector IR2");
+	require(gte.readDataRegister(11u) == 50u, "MVMVA IR vector IR3");
+}
+
 void testSqr() {
 	GteHarness harness;
 	bmsx::GxGte& gte = harness.gte;
@@ -544,6 +562,7 @@ int main() {
 	testNclip();
 	testOp();
 	testMvmva();
+	testMvmvaReadsVectorOnce();
 	testSqr();
 	testDpcs();
 	testIntpl();

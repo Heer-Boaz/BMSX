@@ -722,18 +722,21 @@ export class GxGte {
 		const mx = (opcode >>> 17) & 3;
 		const vector = (opcode >>> 15) & 3;
 		const cv = (opcode >>> 13) & 3;
+		const vectorX = this.vector(vector, 0);
+		const vectorY = this.vector(vector, 1);
+		const vectorZ = this.vector(vector, 2);
 		for (let row = 0; row < 3; row += 1) {
 			if (cv === 2) {
-				this.accumulateSigned44(this.cv(cv, row) * 4096, this.mx(mx, row, 0) * this.vector(vector, 0), 0, 0);
+				this.accumulateSigned44(this.cv(cv, row) * 4096, this.mx(mx, row, 0) * vectorX, 0, 0);
 				this.writeIrFromMac(row + 1, this.mac(row + 1, this.accumValue, this.accumPositiveOverflow, this.accumNegativeOverflow), 0);
-				this.accumulateSigned44(0, this.mx(mx, row, 1) * this.vector(vector, 1), this.mx(mx, row, 2) * this.vector(vector, 2), 0);
+				this.accumulateSigned44(0, this.mx(mx, row, 1) * vectorY, this.mx(mx, row, 2) * vectorZ, 0);
 				this.writeIrFromMac(row + 1, this.mac(row + 1, this.accumValue, this.accumPositiveOverflow, this.accumNegativeOverflow), lm);
 			} else {
 				this.accumulateSigned44(
 					this.cv(cv, row) * 4096,
-					this.mx(mx, row, 0) * this.vector(vector, 0),
-					this.mx(mx, row, 1) * this.vector(vector, 1),
-					this.mx(mx, row, 2) * this.vector(vector, 2),
+					this.mx(mx, row, 0) * vectorX,
+					this.mx(mx, row, 1) * vectorY,
+					this.mx(mx, row, 2) * vectorZ,
 				);
 				this.writeIrFromMac(row + 1, this.mac(row + 1, this.accumValue, this.accumPositiveOverflow, this.accumNegativeOverflow), lm);
 			}

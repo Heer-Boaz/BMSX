@@ -213,6 +213,23 @@ test('GX-GTE MVMVA decodes PSX matrix/vector/control-vector opcode fields', () =
 	assert.equal(gte.readControlRegister(31), 0);
 });
 
+test('GX-GTE MVMVA uses vector registers as sources before writing IR1..IR3', () => {
+	const { gte } = createGte();
+	gte.writeControlRegister(0, pack16(1, 2));
+	gte.writeControlRegister(1, pack16(3, 4));
+	gte.writeControlRegister(2, pack16(5, 6));
+	gte.writeControlRegister(3, pack16(7, 8));
+	gte.writeControlRegister(4, pack16(9, 0));
+	gte.writeDataRegister(9, 1);
+	gte.writeDataRegister(10, 2);
+	gte.writeDataRegister(11, 3);
+
+	assert.equal(gte.execute((3 << 15) | GX_GTE_FN_MVMVA), GX_GTE_CYCLES_MVMVA);
+	assert.equal(gte.readDataRegister(9), 14);
+	assert.equal(gte.readDataRegister(10), 32);
+	assert.equal(gte.readDataRegister(11), 50);
+});
+
 test('GX-GTE SQR squares PSX IR registers with SF/LM behavior', () => {
 	const { gte } = createGte();
 	gte.writeDataRegister(9, 3);
