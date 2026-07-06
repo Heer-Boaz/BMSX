@@ -186,24 +186,16 @@ function vdpRpuPrimitive(primitive: number): number {
 	}
 }
 
-function requireVdpRpuGl(gl: WebGL2RenderingContext | null): WebGL2RenderingContext {
-	if (gl === null) {
-		throw new Error('[VDPRPU] WebGL2 context missing during VDP-RPU bootstrap/execution.');
-	}
-	return gl;
-}
-
 function vdpRpuIndexType(indexType: number): number {
 	const gl = vdpRpuGl;
 	return indexType === VDP_RPU_INDEX_U16 ? gl.UNSIGNED_SHORT : gl.UNSIGNED_INT;
 }
 
-function configureNearestClampTexture2D(gl: WebGL2RenderingContext | null): void {
-	const activeGl = requireVdpRpuGl(gl);
-	activeGl.texParameteri(activeGl.TEXTURE_2D, activeGl.TEXTURE_MIN_FILTER, activeGl.NEAREST);
-	activeGl.texParameteri(activeGl.TEXTURE_2D, activeGl.TEXTURE_MAG_FILTER, activeGl.NEAREST);
-	activeGl.texParameteri(activeGl.TEXTURE_2D, activeGl.TEXTURE_WRAP_S, activeGl.CLAMP_TO_EDGE);
-	activeGl.texParameteri(activeGl.TEXTURE_2D, activeGl.TEXTURE_WRAP_T, activeGl.CLAMP_TO_EDGE);
+function configureNearestClampTexture2D(gl: WebGL2RenderingContext): void {
+	gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.NEAREST);
+	gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.NEAREST);
+	gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
+	gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
 }
 
 function deleteVdpRpuSurfaceStorage(surface: VdpRpuWebglSurface): void {
@@ -257,8 +249,9 @@ function uploadVdpRpuBuffer(frame: VdpRpuFrameOutput, target: number, vramAddr: 
 	return storage.buffer;
 }
 
-function loadVdpRpuSurfaceStorage(backend: WebGLBackend, frame: VdpRpuFrameOutput, surfaceDescAddr: number): VdpRpuWebglSurface {
-	const gl = requireVdpRpuGl(backend.gl);
+function loadVdpRpuSurfaceStorage(frame: VdpRpuFrameOutput, surfaceDescAddr: number): VdpRpuWebglSurface {
+	const gl = vdpRpuGl;
+	const backend = vdpRpuBackend;
 	const vram = frame.vdpVram;
 	let surface = vdpRpuSurfaces.get(surfaceDescAddr);
 	if (surface === undefined) {
@@ -343,7 +336,7 @@ function uploadVdpRpuTextureSurface(backend: WebGLBackend, frame: VdpRpuFrameOut
 	surface.sourceUploaded = 1;
 }
 
-function bindVdpRpuPassFramebuffer(backend: WebGLBackend, frame: VdpRpuFrameOutput, passIndex: number, framebuffer: WebGLFramebuffer, width: number, height: number): number {
+function bindVdpRpuPassFramebuffer(frame: VdpRpuFrameOutput, passIndex: number, framebuffer: WebGLFramebuffer, width: number, height: number): number {
 	void width;
 	const gl = vdpRpuGl;
 	const commands = frame.commands;
@@ -356,11 +349,11 @@ function bindVdpRpuPassFramebuffer(backend: WebGLBackend, frame: VdpRpuFrameOutp
 		return height;
 	}
 	const targetSurface = colorSurfaceDescAddr !== 0
-		? loadVdpRpuSurfaceStorage(backend, frame, colorSurfaceDescAddr)
-		: loadVdpRpuSurfaceStorage(backend, frame, depthSurfaceDescAddr);
+		? loadVdpRpuSurfaceStorage(frame, colorSurfaceDescAddr)
+		: loadVdpRpuSurfaceStorage(frame, depthSurfaceDescAddr);
 	gl.bindFramebuffer(gl.FRAMEBUFFER, targetSurface.framebuffer);
 	if (colorSurfaceDescAddr !== 0) {
-		const colorSurface = loadVdpRpuSurfaceStorage(backend, frame, colorSurfaceDescAddr);
+		const colorSurface = loadVdpRpuSurfaceStorage(frame, colorSurfaceDescAddr);
 		gl.framebufferTexture2D(gl.FRAMEBUFFER, gl.COLOR_ATTACHMENT0, gl.TEXTURE_2D, colorSurface.texture, 0);
 		colorSurface.renderedFrame = vdpRpuFrameSerial;
 		colorSurface.sourceUploaded = 0;
@@ -372,7 +365,7 @@ function bindVdpRpuPassFramebuffer(backend: WebGLBackend, frame: VdpRpuFrameOutp
 		gl.drawBuffers(vdpRpuNoColorDrawBuffers);
 	}
 	if (depthSurfaceDescAddr !== 0) {
-		const depthSurface = loadVdpRpuSurfaceStorage(backend, frame, depthSurfaceDescAddr);
+		const depthSurface = loadVdpRpuSurfaceStorage(frame, depthSurfaceDescAddr);
 		gl.framebufferRenderbuffer(gl.FRAMEBUFFER, gl.DEPTH_ATTACHMENT, gl.RENDERBUFFER, depthSurface.depthBuffer);
 		depthSurface.renderedFrame = vdpRpuFrameSerial;
 		depthSurface.sourceUploaded = 0;
@@ -674,7 +667,7 @@ function bindVdpRpuTextureBindings(runtime: VdpRpuRuntime, frame: VdpRpuFrameOut
 				bindVdpRpuNeutralTexture(backend);
 				gl.uniform1i(vdpRpuT0Location, 0);
 			} else {
-				const surface = loadVdpRpuSurfaceStorage(backend, frame, surfaceDescAddr);
+				const surface = loadVdpRpuSurfaceStorage(frame, surfaceDescAddr);
 				uploadVdpRpuTextureSurface(backend, frame, surface);
 				backend.setActiveTexture(0);
 				gl.bindTexture(gl.TEXTURE_2D, surface.texture);
@@ -685,7 +678,7 @@ function bindVdpRpuTextureBindings(runtime: VdpRpuRuntime, frame: VdpRpuFrameOut
 			foundT1 = true;
 			const surfaceDescAddr = commands.textureSurfaceDescAddr[bindingIndex];
 			if (surfaceDescAddr !== 0) {
-				const surface = loadVdpRpuSurfaceStorage(backend, frame, surfaceDescAddr);
+				const surface = loadVdpRpuSurfaceStorage(frame, surfaceDescAddr);
 				uploadVdpRpuTextureSurface(backend, frame, surface);
 				backend.setActiveTexture(1);
 				gl.bindTexture(gl.TEXTURE_2D, surface.texture);
@@ -750,7 +743,7 @@ function drawVdpRpuCommand(runtime: VdpRpuRuntime, frame: VdpRpuFrameOutput, dra
 }
 
 export function initVdpRpuPipeline(backend: WebGLBackend): void {
-	const gl = requireVdpRpuGl(backend.gl);
+	const gl = backend.gl;
 	vdpRpuBackend = backend;
 	vdpRpuGl = gl;
 	vdpRpuVertexArray = backend.createVertexArray() as WebGLVertexArrayObject;
@@ -762,8 +755,8 @@ export function initVdpRpuPipeline(backend: WebGLBackend): void {
 	backend.invalidateTextureBindingCache();
 }
 
-export function setupVdpRpuLocations(backend: WebGLBackend): void {
-	const gl = requireVdpRpuGl(backend.gl);
+export function setupVdpRpuLocations(): void {
+	const gl = vdpRpuGl;
 	const current = gl.getParameter(gl.CURRENT_PROGRAM) as WebGLProgram;
 	if (!current) {
 		throw new Error('[VDPRPU] shader program not bound during bootstrap.');
@@ -815,7 +808,7 @@ export function setupVdpRpuLocations(backend: WebGLBackend): void {
 
 export function renderVdpRpuFrame(runtime: VdpRpuRuntime, framebuffer: WebGLFramebuffer, state: RenderPassStateRegistry['vdp_rpu']): void {
 	const backend = runtime.backend;
-	const gl = requireVdpRpuGl(backend.gl);
+	const gl = backend.gl;
 	if (vdpRpuVertexArray === null) {
 		throw new Error('[VDPRPU] render called before pipeline initialization.');
 	}
@@ -826,7 +819,7 @@ export function renderVdpRpuFrame(runtime: VdpRpuRuntime, framebuffer: WebGLFram
 	const commands = frame.commands;
 	vdpRpuFrameSerial += 1;
 	for (let passIndex = 0; passIndex < commands.passCount; passIndex += 1) {
-		const targetHeight = bindVdpRpuPassFramebuffer(backend, frame, passIndex, framebuffer, state.width, state.height);
+		const targetHeight = bindVdpRpuPassFramebuffer(frame, passIndex, framebuffer, state.width, state.height);
 		const viewportXY = commands.passViewportXY[passIndex];
 		const viewportWH = commands.passViewportWH[passIndex];
 		const viewportY = viewportXY >>> 16;
@@ -889,7 +882,7 @@ export function registerVdpRpuPass(registry: RenderPassLibrary): void {
 		bootstrap: (backend) => {
 			const webglBackend = backend as WebGLBackend;
 			initVdpRpuPipeline(webglBackend);
-			setupVdpRpuLocations(webglBackend);
+			setupVdpRpuLocations();
 		},
 		shouldExecute: (view) => view.vdpRpuFrame.commands.passCount !== 0,
 		exec: (backend, fbo) => {
