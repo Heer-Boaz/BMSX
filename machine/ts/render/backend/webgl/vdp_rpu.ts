@@ -198,11 +198,12 @@ function vdpRpuIndexType(indexType: number): number {
 	return indexType === VDP_RPU_INDEX_U16 ? gl.UNSIGNED_SHORT : gl.UNSIGNED_INT;
 }
 
-function configureNearestClampTexture2D(gl: WebGL2RenderingContext): void {
-	gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.NEAREST);
-	gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.NEAREST);
-	gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
-	gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
+function configureNearestClampTexture2D(gl: WebGL2RenderingContext | null): void {
+	const activeGl = requireVdpRpuGl(gl);
+	activeGl.texParameteri(activeGl.TEXTURE_2D, activeGl.TEXTURE_MIN_FILTER, activeGl.NEAREST);
+	activeGl.texParameteri(activeGl.TEXTURE_2D, activeGl.TEXTURE_MAG_FILTER, activeGl.NEAREST);
+	activeGl.texParameteri(activeGl.TEXTURE_2D, activeGl.TEXTURE_WRAP_S, activeGl.CLAMP_TO_EDGE);
+	activeGl.texParameteri(activeGl.TEXTURE_2D, activeGl.TEXTURE_WRAP_T, activeGl.CLAMP_TO_EDGE);
 }
 
 function deleteVdpRpuSurfaceStorage(surface: VdpRpuWebglSurface): void {
@@ -762,7 +763,7 @@ export function initVdpRpuPipeline(backend: WebGLBackend): void {
 }
 
 export function setupVdpRpuLocations(backend: WebGLBackend): void {
-	const gl = backend.gl;
+	const gl = requireVdpRpuGl(backend.gl);
 	const current = gl.getParameter(gl.CURRENT_PROGRAM) as WebGLProgram;
 	if (!current) {
 		throw new Error('[VDPRPU] shader program not bound during bootstrap.');
