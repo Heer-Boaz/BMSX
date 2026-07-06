@@ -9,6 +9,8 @@ namespace bmsx {
 
 constexpr size_t GX_GPU_COMMAND_CAPACITY = 4096u;
 constexpr size_t GX_GPU_COMMAND_WORD_CAPACITY = 0x80000u;
+constexpr u32 GX_GPU_VRAM_WIDTH = 1024u;
+constexpr u32 GX_GPU_VRAM_HEIGHT = 512u;
 
 constexpr u8 GX_GPU_COMMAND_DRAW_POLYGON = 1u;
 constexpr u8 GX_GPU_COMMAND_DRAW_LINE = 2u;
@@ -96,6 +98,50 @@ inline u32 gxGpuTransferHeight(u32 sizeWord) {
 
 inline u32 gxGpuTransferPixelWord(u32 payloadWord, u32 pixelIndex) {
 	return (pixelIndex & 1u) == 0u ? payloadWord & 0xffffu : payloadWord >> 16u;
+}
+
+inline u32 gxGpuDrawingAreaX(u32 word) {
+	return word & 0x3ffu;
+}
+
+inline u32 gxGpuDrawingAreaY(u32 word) {
+	return (word >> 10u) & 0x3ffu;
+}
+
+inline u32 gxGpuDrawingAreaLeft(u32 topLeftWord, u32 bottomRightWord) {
+	const u32 left = gxGpuDrawingAreaX(topLeftWord);
+	const u32 right = gxGpuDrawingAreaX(bottomRightWord);
+	return left > right ? 0u : left;
+}
+
+inline u32 gxGpuDrawingAreaTop(u32 topLeftWord, u32 bottomRightWord) {
+	const u32 top = gxGpuDrawingAreaY(topLeftWord);
+	const u32 bottom = gxGpuDrawingAreaY(bottomRightWord);
+	if (top > bottom) {
+		return 0u;
+	}
+	const u32 bottomBound = bottom < GX_GPU_VRAM_HEIGHT ? bottom : GX_GPU_VRAM_HEIGHT - 1u;
+	return top < bottomBound ? top : bottomBound;
+}
+
+inline u32 gxGpuDrawingAreaRightExclusive(u32 topLeftWord, u32 bottomRightWord) {
+	const u32 left = gxGpuDrawingAreaX(topLeftWord);
+	const u32 right = gxGpuDrawingAreaX(bottomRightWord);
+	if (left > right) {
+		return 0u;
+	}
+	const u32 rightExclusive = right + 1u;
+	return rightExclusive < GX_GPU_VRAM_WIDTH ? rightExclusive : GX_GPU_VRAM_WIDTH;
+}
+
+inline u32 gxGpuDrawingAreaBottomExclusive(u32 topLeftWord, u32 bottomRightWord) {
+	const u32 top = gxGpuDrawingAreaY(topLeftWord);
+	const u32 bottom = gxGpuDrawingAreaY(bottomRightWord);
+	if (top > bottom) {
+		return 0u;
+	}
+	const u32 bottomExclusive = bottom + 1u;
+	return bottomExclusive < GX_GPU_VRAM_HEIGHT ? bottomExclusive : GX_GPU_VRAM_HEIGHT;
 }
 
 struct GxGpuCommandBuffer {

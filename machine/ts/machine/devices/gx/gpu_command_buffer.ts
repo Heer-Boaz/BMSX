@@ -1,5 +1,7 @@
 export const GX_GPU_COMMAND_CAPACITY = 4096;
 export const GX_GPU_COMMAND_WORD_CAPACITY = 0x80000;
+export const GX_GPU_VRAM_WIDTH = 1024;
+export const GX_GPU_VRAM_HEIGHT = 512;
 
 export const GX_GPU_COMMAND_DRAW_POLYGON = 1;
 export const GX_GPU_COMMAND_DRAW_LINE = 2;
@@ -87,6 +89,50 @@ export function gxGpuTransferHeight(sizeWord: number): number {
 
 export function gxGpuTransferPixelWord(payloadWord: number, pixelIndex: number): number {
 	return (pixelIndex & 1) === 0 ? payloadWord & 0xffff : payloadWord >>> 16;
+}
+
+export function gxGpuDrawingAreaX(word: number): number {
+	return word & 0x3ff;
+}
+
+export function gxGpuDrawingAreaY(word: number): number {
+	return (word >>> 10) & 0x3ff;
+}
+
+export function gxGpuDrawingAreaLeft(topLeftWord: number, bottomRightWord: number): number {
+	const left = gxGpuDrawingAreaX(topLeftWord);
+	const right = gxGpuDrawingAreaX(bottomRightWord);
+	return left > right ? 0 : left;
+}
+
+export function gxGpuDrawingAreaTop(topLeftWord: number, bottomRightWord: number): number {
+	const top = gxGpuDrawingAreaY(topLeftWord);
+	const bottom = gxGpuDrawingAreaY(bottomRightWord);
+	if (top > bottom) {
+		return 0;
+	}
+	const bottomBound = bottom < GX_GPU_VRAM_HEIGHT ? bottom : GX_GPU_VRAM_HEIGHT - 1;
+	return top < bottomBound ? top : bottomBound;
+}
+
+export function gxGpuDrawingAreaRightExclusive(topLeftWord: number, bottomRightWord: number): number {
+	const left = gxGpuDrawingAreaX(topLeftWord);
+	const right = gxGpuDrawingAreaX(bottomRightWord);
+	if (left > right) {
+		return 0;
+	}
+	const rightExclusive = right + 1;
+	return rightExclusive < GX_GPU_VRAM_WIDTH ? rightExclusive : GX_GPU_VRAM_WIDTH;
+}
+
+export function gxGpuDrawingAreaBottomExclusive(topLeftWord: number, bottomRightWord: number): number {
+	const top = gxGpuDrawingAreaY(topLeftWord);
+	const bottom = gxGpuDrawingAreaY(bottomRightWord);
+	if (top > bottom) {
+		return 0;
+	}
+	const bottomExclusive = bottom + 1;
+	return bottomExclusive < GX_GPU_VRAM_HEIGHT ? bottomExclusive : GX_GPU_VRAM_HEIGHT;
 }
 
 export type GxGpuCommandBufferView = {

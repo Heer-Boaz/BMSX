@@ -4,11 +4,17 @@ import {
 	GX_GPU_COMMAND_DRAW_RECTANGLE,
 	GX_GPU_COMMAND_FILL_RECTANGLE,
 	GX_GPU_COMMAND_UPLOAD_CPU_TO_VRAM,
+	GX_GPU_VRAM_HEIGHT,
+	GX_GPU_VRAM_WIDTH,
 	gxGpuCommandGouraud,
 	gxGpuCommandQuadPolygon,
 	gxGpuCommandRectangleHeight,
 	gxGpuCommandRectangleWidth,
 	gxGpuCommandTextureEnabled,
+	gxGpuDrawingAreaBottomExclusive,
+	gxGpuDrawingAreaLeft,
+	gxGpuDrawingAreaRightExclusive,
+	gxGpuDrawingAreaTop,
 	gxGpuDrawingOffsetX,
 	gxGpuDrawingOffsetY,
 	gxGpuTransferHeight,
@@ -28,8 +34,6 @@ import solidFragmentShader from './shaders/gx_gpu_fill.frag.glsl';
 import scanoutVertexShader from './shaders/gx_gpu_scanout.vert.glsl';
 import scanoutFragmentShader from './shaders/gx_gpu_scanout.frag.glsl';
 
-const GX_GPU_VRAM_WIDTH = 1024;
-const GX_GPU_VRAM_HEIGHT = 512;
 const GX_GPU_DISPLAY_WIDTH = 320;
 const GX_GPU_DISPLAY_HEIGHT = 240;
 const GX_GPU_SCANOUT_TEXTURE_UNIT = 0;
@@ -39,6 +43,8 @@ const GX_GPU_SOLID_FLOAT_CAPACITY = GX_GPU_COMMAND_CAPACITY * GX_GPU_SOLID_VERTI
 const GX_GPU_SCANOUT_VERTEX_FLOATS = 4;
 const GX_GPU_RAW_VRAM_BYTES_PER_PIXEL = 4;
 const GX_GPU_RAW_VRAM_UPLOAD_ROW_BYTES = GX_GPU_VRAM_WIDTH * GX_GPU_RAW_VRAM_BYTES_PER_PIXEL;
+const GX_GPU_FULL_DRAWING_AREA_TOP_LEFT_WORD = 0;
+const GX_GPU_FULL_DRAWING_AREA_BOTTOM_RIGHT_WORD = (GX_GPU_VRAM_WIDTH - 1) | ((GX_GPU_VRAM_HEIGHT - 1) << 10);
 
 const gxGpuSolidVertices = new Float32Array(GX_GPU_SOLID_FLOAT_CAPACITY);
 const gxGpuRawVramUploadRow = new Uint8Array(GX_GPU_RAW_VRAM_UPLOAD_ROW_BYTES);
@@ -117,6 +123,7 @@ function bootstrapGxGpuPass(backend: WebGLBackend): void {
 function clearGxGpuVram(backend: WebGLBackend, gl: WebGL2RenderingContext): void {
 	gl.bindFramebuffer(gl.FRAMEBUFFER, gxGpuWebGLState.vramFramebuffer);
 	backend.setViewportRect(0, 0, GX_GPU_VRAM_WIDTH, GX_GPU_VRAM_HEIGHT);
+	gl.disable(gl.SCISSOR_TEST);
 	gl.clearColor(0, 0, 0, 1);
 	gl.clear(gl.COLOR_BUFFER_BIT);
 }
@@ -344,11 +351,26 @@ function uploadCpuToVram(backend: WebGLBackend, gl: WebGL2RenderingContext, comm
 	}
 }
 
-function flushSolidCommands(backend: WebGLBackend, gl: WebGL2RenderingContext, vertexFloatCount: number): number {
+function applyGxGpuDrawingAreaScissor(gl: WebGL2RenderingContext, topLeftWord: number, bottomRightWord: number): void {
+	const left = gxGpuDrawingAreaLeft(topLeftWord, bottomRightWord);
+	const top = gxGpuDrawingAreaTop(topLeftWord, bottomRightWord);
+	const right = gxGpuDrawingAreaRightExclusive(topLeftWord, bottomRightWord);
+	const bottom = gxGpuDrawingAreaBottomExclusive(topLeftWord, bottomRightWord);
+	gl.enable(gl.SCISSOR_TEST);
+	gl.scissor(left, GX_GPU_VRAM_HEIGHT - bottom, right - left, bottom - top);
+}
+
+function flushSolidCommands(
+	backend: WebGLBackend,
+	gl: WebGL2RenderingContext,
+	vertexFloatCount: number,
+	topLeftWord: number,
+	bottomRightWord: number,
+): number {
 	if (vertexFloatCount !== 0) {
 		backend.bindArrayBuffer(gxGpuWebGLState.solidVertexBuffer);
 		gl.bufferSubData(gl.ARRAY_BUFFER, 0, gxGpuSolidVertices, 0, vertexFloatCount);
-		renderNewSolidCommands(backend, gl, vertexFloatCount / GX_GPU_SOLID_VERTEX_FLOATS);
+		renderNewSolidCommands(backend, gl, vertexFloatCount / GX_GPU_SOLID_VERTEX_FLOATS, topLeftWord, bottomRightWord);
 	}
 	return 0;
 }
@@ -356,34 +378,64 @@ function flushSolidCommands(backend: WebGLBackend, gl: WebGL2RenderingContext, v
 function executeNewGxGpuCommands(backend: WebGLBackend, gl: WebGL2RenderingContext, commandBuffer: GxGpuCommandBufferView): void {
 	let commandIndex = gxGpuWebGLState.processedCommandCount;
 	let vertexFloatCount = 0;
+	let solidBatchTopLeftWord = GX_GPU_FULL_DRAWING_AREA_TOP_LEFT_WORD;
+	let solidBatchBottomRightWord = GX_GPU_FULL_DRAWING_AREA_BOTTOM_RIGHT_WORD;
 	for (; commandIndex < commandBuffer.commandCount; commandIndex += 1) {
 		switch (commandBuffer.commandKind[commandIndex]) {
-			case GX_GPU_COMMAND_DRAW_POLYGON:
+			case GX_GPU_COMMAND_DRAW_POLYGON: {
+				const topLeftWord = commandBuffer.commandDrawingAreaTopLeftWord[commandIndex];
+				const bottomRightWord = commandBuffer.commandDrawingAreaBottomRightWord[commandIndex];
+				if (vertexFloatCount !== 0 && (topLeftWord !== solidBatchTopLeftWord || bottomRightWord !== solidBatchBottomRightWord)) {
+					vertexFloatCount = flushSolidCommands(backend, gl, vertexFloatCount, solidBatchTopLeftWord, solidBatchBottomRightWord);
+				}
+				solidBatchTopLeftWord = topLeftWord;
+				solidBatchBottomRightWord = bottomRightWord;
 				vertexFloatCount = appendSolidPolygon(commandBuffer, commandIndex, vertexFloatCount);
 				break;
-			case GX_GPU_COMMAND_DRAW_RECTANGLE:
+			}
+			case GX_GPU_COMMAND_DRAW_RECTANGLE: {
+				const topLeftWord = commandBuffer.commandDrawingAreaTopLeftWord[commandIndex];
+				const bottomRightWord = commandBuffer.commandDrawingAreaBottomRightWord[commandIndex];
+				if (vertexFloatCount !== 0 && (topLeftWord !== solidBatchTopLeftWord || bottomRightWord !== solidBatchBottomRightWord)) {
+					vertexFloatCount = flushSolidCommands(backend, gl, vertexFloatCount, solidBatchTopLeftWord, solidBatchBottomRightWord);
+				}
+				solidBatchTopLeftWord = topLeftWord;
+				solidBatchBottomRightWord = bottomRightWord;
 				vertexFloatCount = appendSolidRectangle(commandBuffer, commandIndex, vertexFloatCount);
 				break;
+			}
 			case GX_GPU_COMMAND_FILL_RECTANGLE:
+				if (vertexFloatCount !== 0 && (solidBatchTopLeftWord !== GX_GPU_FULL_DRAWING_AREA_TOP_LEFT_WORD || solidBatchBottomRightWord !== GX_GPU_FULL_DRAWING_AREA_BOTTOM_RIGHT_WORD)) {
+					vertexFloatCount = flushSolidCommands(backend, gl, vertexFloatCount, solidBatchTopLeftWord, solidBatchBottomRightWord);
+				}
+				solidBatchTopLeftWord = GX_GPU_FULL_DRAWING_AREA_TOP_LEFT_WORD;
+				solidBatchBottomRightWord = GX_GPU_FULL_DRAWING_AREA_BOTTOM_RIGHT_WORD;
 				vertexFloatCount = appendFillRectangle(commandBuffer, commandIndex, vertexFloatCount);
 				break;
 			case GX_GPU_COMMAND_UPLOAD_CPU_TO_VRAM:
-				vertexFloatCount = flushSolidCommands(backend, gl, vertexFloatCount);
+				vertexFloatCount = flushSolidCommands(backend, gl, vertexFloatCount, solidBatchTopLeftWord, solidBatchBottomRightWord);
 				uploadCpuToVram(backend, gl, commandBuffer, commandIndex);
 				break;
 		}
 	}
 	gxGpuWebGLState.processedCommandCount = commandBuffer.commandCount;
-	flushSolidCommands(backend, gl, vertexFloatCount);
+	flushSolidCommands(backend, gl, vertexFloatCount, solidBatchTopLeftWord, solidBatchBottomRightWord);
 }
 
-function renderNewSolidCommands(backend: WebGLBackend, gl: WebGL2RenderingContext, vertexCount: number): void {
+function renderNewSolidCommands(
+	backend: WebGLBackend,
+	gl: WebGL2RenderingContext,
+	vertexCount: number,
+	topLeftWord: number,
+	bottomRightWord: number,
+): void {
 	gl.bindFramebuffer(gl.FRAMEBUFFER, gxGpuWebGLState.vramFramebuffer);
 	backend.setViewportRect(0, 0, GX_GPU_VRAM_WIDTH, GX_GPU_VRAM_HEIGHT);
 	backend.setDepthTestEnabled(false);
 	backend.setDepthMask(false);
 	backend.setCullEnabled(false);
 	backend.setBlendEnabled(false);
+	applyGxGpuDrawingAreaScissor(gl, topLeftWord, bottomRightWord);
 	backend.useProgram(gxGpuWebGLState.solidProgram);
 	backend.bindVertexArray(null);
 	backend.bindArrayBuffer(gxGpuWebGLState.solidVertexBuffer);
@@ -392,11 +444,13 @@ function renderNewSolidCommands(backend: WebGLBackend, gl: WebGL2RenderingContex
 	gl.enableVertexAttribArray(gxGpuWebGLState.solidColorAttrib);
 	gl.vertexAttribPointer(gxGpuWebGLState.solidColorAttrib, 4, gl.FLOAT, false, GX_GPU_SOLID_VERTEX_FLOATS * 4, 2 * 4);
 	gl.drawArrays(gl.TRIANGLES, 0, vertexCount);
+	gl.disable(gl.SCISSOR_TEST);
 }
 
 function scanoutGxGpuVram(backend: WebGLBackend, gl: WebGL2RenderingContext, fbo: WebGLFramebuffer, state: RenderPassStateRegistry['gx_gpu']): void {
 	gl.bindFramebuffer(gl.FRAMEBUFFER, fbo);
 	backend.setViewportRect(0, 0, state.width, state.height);
+	gl.disable(gl.SCISSOR_TEST);
 	backend.setDepthTestEnabled(false);
 	backend.setDepthMask(false);
 	backend.setCullEnabled(false);

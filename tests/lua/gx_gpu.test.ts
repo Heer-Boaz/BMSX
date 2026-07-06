@@ -12,6 +12,12 @@ import {
 	GX_GPU_COMMAND_UPLOAD_CPU_TO_VRAM,
 	gxGpuCommandRectangleHeight,
 	gxGpuCommandRectangleWidth,
+	gxGpuDrawingAreaBottomExclusive,
+	gxGpuDrawingAreaLeft,
+	gxGpuDrawingAreaRightExclusive,
+	gxGpuDrawingAreaTop,
+	gxGpuDrawingAreaX,
+	gxGpuDrawingAreaY,
 	gxGpuDrawingOffsetY,
 	gxGpuSigned11,
 	gxGpuTransferHeight,
@@ -112,6 +118,19 @@ test('GX-GPU decodes PSX GP0 signed vertex and rectangle size words', () => {
 	assert.equal(gxGpuTransferHeight(0x012c0007), 300);
 	assert.equal(gxGpuTransferPixelWord(0x89abcdef, 0), 0xcdef);
 	assert.equal(gxGpuTransferPixelWord(0x89abcdef, 1), 0x89ab);
+
+	assert.equal(gxGpuDrawingAreaX(12 | (34 << 10)), 12);
+	assert.equal(gxGpuDrawingAreaY(12 | (34 << 10)), 34);
+	assert.equal(gxGpuDrawingAreaLeft(12 | (34 << 10), 20 | (40 << 10)), 12);
+	assert.equal(gxGpuDrawingAreaTop(12 | (34 << 10), 20 | (40 << 10)), 34);
+	assert.equal(gxGpuDrawingAreaRightExclusive(12 | (34 << 10), 20 | (40 << 10)), 21);
+	assert.equal(gxGpuDrawingAreaBottomExclusive(12 | (34 << 10), 20 | (40 << 10)), 41);
+	assert.equal(gxGpuDrawingAreaLeft(20 | (34 << 10), 12 | (40 << 10)), 0);
+	assert.equal(gxGpuDrawingAreaRightExclusive(20 | (34 << 10), 12 | (40 << 10)), 0);
+	assert.equal(gxGpuDrawingAreaTop(12 | (40 << 10), 20 | (34 << 10)), 0);
+	assert.equal(gxGpuDrawingAreaBottomExclusive(12 | (40 << 10), 20 | (34 << 10)), 0);
+	assert.equal(gxGpuDrawingAreaTop(12 | (600 << 10), 20 | (700 << 10)), 511);
+	assert.equal(gxGpuDrawingAreaBottomExclusive(12 | (600 << 10), 20 | (700 << 10)), 512);
 });
 
 test('GX-GPU exposes PSX GP1 display mode instead of a VDP profile register', () => {
