@@ -521,10 +521,10 @@ void bindVdpRpuNeutralTexture(OpenGLES2Backend& backend) {
 	backend.invalidateTextureBindingCache();
 }
 
-void bindVdpRpuTextureBindings(VdpRpuRuntime& runtime, const VdpRpuFrameOutput& frame, size_t drawIndex, const VdpRpuShaderVariantSpec& shaderVariant, u32 rawVariantWord) {
+void bindVdpRpuTextureBindings(OpenGLES2Backend& backend, const VdpRpuFrameOutput& frame, size_t drawIndex, const VdpRpuShaderVariantSpec& shaderVariant, u32 rawVariantWord) {
 	const bool t1Flag = (rawVariantWord & VDP_RPU_SHADER_FLAG_T1) != 0u;
 	if (shaderVariant.textureSlotCount == 0u) {
-		bindVdpRpuNeutralTexture(runtime.backend);
+		bindVdpRpuNeutralTexture(backend);
 		glUniform1i(g_vdpRpu.uniformTextureEnabled, 0);
 		glUniform1i(g_vdpRpu.uniformT1Mode, 0);
 		return;
@@ -540,12 +540,12 @@ void bindVdpRpuTextureBindings(VdpRpuRuntime& runtime, const VdpRpuFrameOutput& 
 			foundT0 = true;
 			const u32 surfaceDescAddr = commands.textureSurfaceDescAddr[bindingIndex];
 			if (surfaceDescAddr == 0u) {
-				bindVdpRpuNeutralTexture(runtime.backend);
+				bindVdpRpuNeutralTexture(backend);
 				glUniform1i(g_vdpRpu.uniformT0, 0);
 			} else {
-				VdpRpuGLESSurface& surface = loadVdpRpuSurfaceStorage(runtime.backend, frame, surfaceDescAddr);
-				uploadVdpRpuTextureSurface(runtime.backend, frame, surface);
-				runtime.backend.setActiveTextureUnit(0);
+				VdpRpuGLESSurface& surface = loadVdpRpuSurfaceStorage(backend, frame, surfaceDescAddr);
+				uploadVdpRpuTextureSurface(backend, frame, surface);
+				backend.setActiveTextureUnit(0);
 				glBindTexture(GL_TEXTURE_2D, surface.texture);
 				glUniform1i(g_vdpRpu.uniformTextureFlipY, surface.renderedFrame == g_vdpRpu.frameSerial ? 1 : 0);
 				glUniform1i(g_vdpRpu.uniformT0, 0);
@@ -554,9 +554,9 @@ void bindVdpRpuTextureBindings(VdpRpuRuntime& runtime, const VdpRpuFrameOutput& 
 			foundT1 = true;
 			const u32 surfaceDescAddr = commands.textureSurfaceDescAddr[bindingIndex];
 			if (surfaceDescAddr != 0u) {
-				VdpRpuGLESSurface& surface = loadVdpRpuSurfaceStorage(runtime.backend, frame, surfaceDescAddr);
-				uploadVdpRpuTextureSurface(runtime.backend, frame, surface);
-				runtime.backend.setActiveTextureUnit(1);
+				VdpRpuGLESSurface& surface = loadVdpRpuSurfaceStorage(backend, frame, surfaceDescAddr);
+				uploadVdpRpuTextureSurface(backend, frame, surface);
+				backend.setActiveTextureUnit(1);
 				glBindTexture(GL_TEXTURE_2D, surface.texture);
 				glUniform1i(g_vdpRpu.uniformT1, 1);
 				glUniform1i(g_vdpRpu.uniformT1Mode, 1);
@@ -564,7 +564,7 @@ void bindVdpRpuTextureBindings(VdpRpuRuntime& runtime, const VdpRpuFrameOutput& 
 		}
 	}
 	if (!foundT0) {
-		bindVdpRpuNeutralTexture(runtime.backend);
+		bindVdpRpuNeutralTexture(backend);
 		glUniform1i(g_vdpRpu.uniformTextureEnabled, 0);
 	}
 	if (!foundT1 || !t1Flag) {
@@ -572,7 +572,7 @@ void bindVdpRpuTextureBindings(VdpRpuRuntime& runtime, const VdpRpuFrameOutput& 
 	}
 }
 
-void drawVdpRpuCommand(VdpRpuRuntime& runtime, const VdpRpuFrameOutput& frame, size_t drawIndex, u32 vertexCount, u32 instanceCount, u32 indexCount) {
+void drawVdpRpuCommand(OpenGLES2Backend& backend, const VdpRpuFrameOutput& frame, size_t drawIndex, u32 vertexCount, u32 instanceCount, u32 indexCount) {
 	const VdpRpuCommandBuffer& commands = frame.commands;
 	setVdpRpuPipelineState(commands.drawPipelineWord[drawIndex]);
 	const u32 rawVariantWord = commands.drawShaderVariant[drawIndex];
@@ -585,7 +585,7 @@ void drawVdpRpuCommand(VdpRpuRuntime& runtime, const VdpRpuFrameOutput& frame, s
 	glUniform1i(g_vdpRpu.uniformNormalMode, static_cast<GLint>(normalMode));
 	setVdpRpuDefaultVertexAttributes();
 	setVdpRpuDefaultInstanceAttributes();
-	bindVdpRpuTextureBindings(runtime, frame, drawIndex, shaderVariant, rawVariantWord);
+	bindVdpRpuTextureBindings(backend, frame, drawIndex, shaderVariant, rawVariantWord);
 	if (shaderVariant.usesC0 != 0u) {
 		setVdpRpuC0Constants(frame, drawIndex, normalMode);
 	} else {
@@ -709,8 +709,7 @@ void setupVdpRpuLocations(OpenGLES2Backend& backend) {
 	glUniform1i(runtime.uniformLightingMode, 0);
 }
 
-void renderVdpRpuFrame(VdpRpuRuntime& runtime, void* framebuffer, const VdpRpuPipelineState& state) {
-	OpenGLES2Backend& backend = runtime.backend;
+void renderVdpRpuFrame(OpenGLES2Backend& backend, void* framebuffer, const VdpRpuPipelineState& state) {
 	glUseProgram(g_vdpRpu.program);
 	const VdpRpuFrameOutput& frame = *state.frame;
 	const VdpRpuCommandBuffer& commands = frame.commands;
@@ -750,7 +749,7 @@ void renderVdpRpuFrame(VdpRpuRuntime& runtime, void* framebuffer, const VdpRpuPi
 		const size_t drawEnd = firstDraw + commands.passDrawCount[passIndex];
 		for (size_t drawIndex = firstDraw; drawIndex < drawEnd; ++drawIndex) {
 			drawVdpRpuCommand(
-				runtime,
+				backend,
 				frame,
 				drawIndex,
 				commands.drawVertexCount[drawIndex],
@@ -773,12 +772,12 @@ constexpr auto shouldExecuteVdpRpuPass = [](GameView* view, void*) {
 };
 
 constexpr auto renderVdpRpuPass = [](GPUBackend* backend, GameView* view, void* framebuffer, RenderPassStateStorage&, void*) {
-	VdpRpuRuntime runtime{*static_cast<OpenGLES2Backend*>(backend)};
+	OpenGLES2Backend& gles2Backend = *static_cast<OpenGLES2Backend*>(backend);
 	VdpRpuPipelineState state;
 	state.width = static_cast<i32>(view->offscreenCanvasSize.x);
 	state.height = static_cast<i32>(view->offscreenCanvasSize.y);
 	state.frame = view->vdpRpuFrame;
-	renderVdpRpuFrame(runtime, framebuffer, state);
+	renderVdpRpuFrame(gles2Backend, framebuffer, state);
 };
 
 void registerVdpRpuPass(RenderPassLibrary& registry) {
