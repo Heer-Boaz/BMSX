@@ -13,15 +13,31 @@ export const GX_GPU_GP1_SET_HORIZONTAL_DISPLAY_RANGE = 0x06;
 export const GX_GPU_GP1_SET_VERTICAL_DISPLAY_RANGE = 0x07;
 export const GX_GPU_GP1_SET_DISPLAY_MODE = 0x08;
 export const GX_GPU_GP1_SET_TEXTURE_DISABLE_MASK = 0x09;
+export const GX_GPU_GP1_GET_GPU_INFO = 0x10;
 export const GX_GPU_GP1_OPCODE_SHIFT = 24;
 export const GX_GPU_GP1_PARAM_MASK = 0x00ffffff;
+export const GX_GPU_GP1_OPCODE_MASK = 0x3f;
 
+export const GX_GPU_GP0_SET_DRAW_MODE = 0xe1;
+export const GX_GPU_GP0_SET_TEXTURE_WINDOW = 0xe2;
+export const GX_GPU_GP0_SET_DRAWING_AREA_TOP_LEFT = 0xe3;
+export const GX_GPU_GP0_SET_DRAWING_AREA_BOTTOM_RIGHT = 0xe4;
+export const GX_GPU_GP0_SET_DRAWING_OFFSET = 0xe5;
+export const GX_GPU_GP0_SET_MASK_BIT = 0xe6;
 export const GX_GPU_GP0_IRQ_REQUEST = 0x1f;
 export const GX_GPU_GP0_OPCODE_SHIFT = 24;
+export const GX_GPU_GP0_PARAM_MASK = 0x00ffffff;
 
 export const GX_GPU_DISPLAY_START_MASK = 0x0007ffff;
 export const GX_GPU_HORIZONTAL_DISPLAY_RANGE_MASK = 0x00ffffff;
 export const GX_GPU_VERTICAL_DISPLAY_RANGE_MASK = 0x000fffff;
+export const GX_GPU_DRAW_MODE_MASK = 0x00001fff;
+export const GX_GPU_DRAW_MODE_GPUSTAT_MASK = 0x000007ff;
+export const GX_GPU_DRAW_MODE_TEXTURE_DISABLE = 1 << 11;
+export const GX_GPU_TEXTURE_WINDOW_MASK = 0x000fffff;
+export const GX_GPU_DRAWING_AREA_MASK = 0x000fffff;
+export const GX_GPU_DRAWING_OFFSET_MASK = 0x003fffff;
+export const GX_GPU_MASK_BIT_MODE_MASK = 0x3;
 
 export const GX_GPU_DMA_DIRECTION_OFF = 0;
 export const GX_GPU_DMA_DIRECTION_FIFO = 1;
@@ -69,6 +85,13 @@ export class GxGpu {
 	private gp1Word = 0;
 	private displayModeWord = PSX_GPU_DISPLAY_MODE_PAL_WORD;
 	private statusWord = GX_GPU_STATUS_RESET_WORD;
+	private gpuReadWord = 0x00000400;
+	private drawModeWord = 0;
+	private textureWindowWord = 0;
+	private drawingAreaTopLeftWord = 0;
+	private drawingAreaBottomRightWord = 0;
+	private drawingOffsetWord = 0;
+	private maskBitModeWord = 0;
 	private displayStartWord = 0;
 	private horizontalDisplayRangeWord = 0x00c60260;
 	private verticalDisplayRangeWord = 0x0003fc10;
@@ -86,6 +109,13 @@ export class GxGpu {
 		this.gp1Word = 0;
 		this.displayModeWord = PSX_GPU_DISPLAY_MODE_PAL_WORD;
 		this.statusWord = GX_GPU_STATUS_RESET_WORD;
+		this.gpuReadWord = 0x00000400;
+		this.drawModeWord = 0;
+		this.textureWindowWord = 0;
+		this.drawingAreaTopLeftWord = 0;
+		this.drawingAreaBottomRightWord = 0;
+		this.drawingOffsetWord = 0;
+		this.maskBitModeWord = 0;
 		this.displayStartWord = 0;
 		this.horizontalDisplayRangeWord = 0x00c60260;
 		this.verticalDisplayRangeWord = 0x0003fc10;
@@ -115,15 +145,36 @@ export class GxGpu {
 	}
 
 	public readGp0(): number {
-		return this.gp0Word;
+		return this.gpuReadWord;
 	}
 
 	public writeGp0(word: number): void {
 		this.gp0Word = word >>> 0;
 		this.memory.writeIoValue(IO_GX_GPU_GP0, this.gp0Word);
-		if ((this.gp0Word >>> GX_GPU_GP0_OPCODE_SHIFT) === GX_GPU_GP0_IRQ_REQUEST) {
-			this.statusWord = (this.statusWord | GX_GPU_STATUS_INTERRUPT_REQUEST) >>> 0;
-			this.writeStatusIo();
+		const opcode = this.gp0Word >>> GX_GPU_GP0_OPCODE_SHIFT;
+		switch (opcode) {
+			case GX_GPU_GP0_IRQ_REQUEST:
+				this.statusWord = (this.statusWord | GX_GPU_STATUS_INTERRUPT_REQUEST) >>> 0;
+				this.writeStatusIo();
+				break;
+			case GX_GPU_GP0_SET_DRAW_MODE:
+				this.writeDrawModeWord(this.gp0Word & GX_GPU_GP0_PARAM_MASK);
+				break;
+			case GX_GPU_GP0_SET_TEXTURE_WINDOW:
+				this.textureWindowWord = this.gp0Word & GX_GPU_TEXTURE_WINDOW_MASK;
+				break;
+			case GX_GPU_GP0_SET_DRAWING_AREA_TOP_LEFT:
+				this.drawingAreaTopLeftWord = this.gp0Word & GX_GPU_DRAWING_AREA_MASK;
+				break;
+			case GX_GPU_GP0_SET_DRAWING_AREA_BOTTOM_RIGHT:
+				this.drawingAreaBottomRightWord = this.gp0Word & GX_GPU_DRAWING_AREA_MASK;
+				break;
+			case GX_GPU_GP0_SET_DRAWING_OFFSET:
+				this.drawingOffsetWord = this.gp0Word & GX_GPU_DRAWING_OFFSET_MASK;
+				break;
+			case GX_GPU_GP0_SET_MASK_BIT:
+				this.writeMaskBitModeWord(this.gp0Word & GX_GPU_GP0_PARAM_MASK);
+				break;
 		}
 	}
 
@@ -134,7 +185,7 @@ export class GxGpu {
 	public writeGp1(word: number): number {
 		const command = word >>> 0;
 		this.gp1Word = command;
-		const opcode = command >>> GX_GPU_GP1_OPCODE_SHIFT;
+		const opcode = (command >>> GX_GPU_GP1_OPCODE_SHIFT) & GX_GPU_GP1_OPCODE_MASK;
 		switch (opcode) {
 			case GX_GPU_GP1_RESET:
 				this.reset();
@@ -169,7 +220,11 @@ export class GxGpu {
 				break;
 			case GX_GPU_GP1_SET_TEXTURE_DISABLE_MASK:
 				this.textureDisableMaskWord = command & 0x1;
+				this.updateDrawModeStatusBits();
 				this.writeStatusIo();
+				break;
+			case GX_GPU_GP1_GET_GPU_INFO:
+				this.writeGpuInfoQuery(command);
 				break;
 			default:
 				this.writeStatusIo();
@@ -186,6 +241,34 @@ export class GxGpu {
 		this.displayModeWord = word >>> 0;
 		this.updateDisplayModeStatusBits();
 		this.writeStatusIo();
+	}
+
+	public readGpuReadWord(): number {
+		return this.gpuReadWord;
+	}
+
+	public readDrawModeWord(): number {
+		return this.drawModeWord;
+	}
+
+	public readTextureWindowWord(): number {
+		return this.textureWindowWord;
+	}
+
+	public readDrawingAreaTopLeftWord(): number {
+		return this.drawingAreaTopLeftWord;
+	}
+
+	public readDrawingAreaBottomRightWord(): number {
+		return this.drawingAreaBottomRightWord;
+	}
+
+	public readDrawingOffsetWord(): number {
+		return this.drawingOffsetWord;
+	}
+
+	public readMaskBitModeWord(): number {
+		return this.maskBitModeWord;
 	}
 
 	public readDisplayStartWord(): number {
@@ -210,6 +293,46 @@ export class GxGpu {
 		} else {
 			this.statusWord = (this.statusWord & ~GX_GPU_STATUS_DISPLAY_DISABLE) >>> 0;
 		}
+		this.writeStatusIo();
+	}
+
+	private writeDrawModeWord(word: number): void {
+		this.drawModeWord = word & GX_GPU_DRAW_MODE_MASK;
+		this.updateDrawModeStatusBits();
+		this.writeStatusIo();
+	}
+
+	private updateDrawModeStatusBits(): void {
+		const textureDisableBit = this.textureDisableMaskWord !== 0 && (this.drawModeWord & GX_GPU_DRAW_MODE_TEXTURE_DISABLE) !== 0
+			? GX_GPU_STATUS_TEXTURE_DISABLE
+			: 0;
+		this.statusWord = ((this.statusWord & ~(GX_GPU_DRAW_MODE_GPUSTAT_MASK | GX_GPU_STATUS_TEXTURE_DISABLE))
+			| (this.drawModeWord & GX_GPU_DRAW_MODE_GPUSTAT_MASK)
+			| textureDisableBit) >>> 0;
+	}
+
+	private writeMaskBitModeWord(word: number): void {
+		this.maskBitModeWord = word & GX_GPU_MASK_BIT_MODE_MASK;
+		this.statusWord = ((this.statusWord & ~((1 << 11) | (1 << 12))) | (this.maskBitModeWord << 11)) >>> 0;
+		this.writeStatusIo();
+	}
+
+	private writeGpuInfoQuery(word: number): void {
+		switch (word & 0x7) {
+			case 0x02:
+				this.gpuReadWord = this.textureWindowWord;
+				break;
+			case 0x03:
+				this.gpuReadWord = this.drawingAreaTopLeftWord;
+				break;
+			case 0x04:
+				this.gpuReadWord = this.drawingAreaBottomRightWord;
+				break;
+			case 0x05:
+				this.gpuReadWord = this.drawingOffsetWord;
+				break;
+		}
+		this.memory.writeIoValue(IO_GX_GPU_GP0, this.gpuReadWord);
 		this.writeStatusIo();
 	}
 

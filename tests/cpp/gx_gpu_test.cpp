@@ -118,6 +118,51 @@ void testGp0IrqRequestAndGp1Acknowledge() {
 	require((gpu.readStatus() & bmsx::GX_GPU_STATUS_INTERRUPT_REQUEST) == 0u, "GX-GPU GP1 IRQ acknowledge clears request bit");
 }
 
+void testGp0DrawModeAndMaskBitEnvironmentCommands() {
+	GpuHarness harness;
+	bmsx::GxGpu& gpu = harness.gpu;
+
+	gpu.writeGp0((bmsx::GX_GPU_GP0_SET_DRAW_MODE << 24u) | 0x00ffffffu);
+
+	require(gpu.readDrawModeWord() == bmsx::GX_GPU_DRAW_MODE_MASK, "GX-GPU GP0 draw-mode word mask");
+	require((gpu.readStatus() & bmsx::GX_GPU_DRAW_MODE_GPUSTAT_MASK) == bmsx::GX_GPU_DRAW_MODE_GPUSTAT_MASK, "GX-GPU GP0 draw-mode GPUSTAT bits");
+	require((gpu.readStatus() & bmsx::GX_GPU_STATUS_TEXTURE_DISABLE) == 0u, "GX-GPU GP0 texture-disable bit stays masked off");
+
+	gpu.writeGp1((bmsx::GX_GPU_GP1_SET_TEXTURE_DISABLE_MASK << 24u) | 1u);
+	require((gpu.readStatus() & bmsx::GX_GPU_STATUS_TEXTURE_DISABLE) == bmsx::GX_GPU_STATUS_TEXTURE_DISABLE, "GX-GPU GP1 permits GP0 texture-disable status bit");
+
+	gpu.writeGp0((bmsx::GX_GPU_GP0_SET_MASK_BIT << 24u) | 0x00000003u);
+	require(gpu.readMaskBitModeWord() == 3u, "GX-GPU GP0 mask-bit raw word");
+	require((gpu.readStatus() & ((1u << 11u) | (1u << 12u))) == (3u << 11u), "GX-GPU GP0 mask-bit GPUSTAT bits");
+	require((gpu.readDrawModeWord() & bmsx::GX_GPU_DRAW_MODE_TEXTURE_DISABLE) == bmsx::GX_GPU_DRAW_MODE_TEXTURE_DISABLE, "GX-GPU GP0 draw-mode texture-disable source bit");
+}
+
+void testGp0EnvironmentRegistersAndGpuInfoQueries() {
+	GpuHarness harness;
+	bmsx::Memory& memory = harness.memory;
+	bmsx::GxGpu& gpu = harness.gpu;
+
+	gpu.writeGp0((bmsx::GX_GPU_GP0_SET_TEXTURE_WINDOW << 24u) | 0x00ffffffu);
+	gpu.writeGp0((bmsx::GX_GPU_GP0_SET_DRAWING_AREA_TOP_LEFT << 24u) | 0x00ffffffu);
+	gpu.writeGp0((bmsx::GX_GPU_GP0_SET_DRAWING_AREA_BOTTOM_RIGHT << 24u) | 0x00abcdefu);
+	gpu.writeGp0((bmsx::GX_GPU_GP0_SET_DRAWING_OFFSET << 24u) | 0x00ffffffu);
+
+	require(gpu.readTextureWindowWord() == bmsx::GX_GPU_TEXTURE_WINDOW_MASK, "GX-GPU GP0 texture-window word mask");
+	require(gpu.readDrawingAreaTopLeftWord() == bmsx::GX_GPU_DRAWING_AREA_MASK, "GX-GPU GP0 drawing-area top-left mask");
+	require(gpu.readDrawingAreaBottomRightWord() == (0x00abcdefu & bmsx::GX_GPU_DRAWING_AREA_MASK), "GX-GPU GP0 drawing-area bottom-right mask");
+	require(gpu.readDrawingOffsetWord() == bmsx::GX_GPU_DRAWING_OFFSET_MASK, "GX-GPU GP0 drawing-offset mask");
+
+	gpu.writeGp1((bmsx::GX_GPU_GP1_GET_GPU_INFO << 24u) | 0x02u);
+	require(gpu.readGpuReadWord() == bmsx::GX_GPU_TEXTURE_WINDOW_MASK, "GX-GPU GP1 info texture-window query");
+	require(memory.readMappedU32LE(bmsx::IO_GX_GPU_GP0) == bmsx::GX_GPU_TEXTURE_WINDOW_MASK, "GX-GPU GPUREAD MMIO returns texture-window query");
+	gpu.writeGp1((bmsx::GX_GPU_GP1_GET_GPU_INFO << 24u) | 0x03u);
+	require(gpu.readGpuReadWord() == bmsx::GX_GPU_DRAWING_AREA_MASK, "GX-GPU GP1 info drawing-area top-left query");
+	gpu.writeGp1((bmsx::GX_GPU_GP1_GET_GPU_INFO << 24u) | 0x04u);
+	require(gpu.readGpuReadWord() == (0x00abcdefu & bmsx::GX_GPU_DRAWING_AREA_MASK), "GX-GPU GP1 info drawing-area bottom-right query");
+	gpu.writeGp1((bmsx::GX_GPU_GP1_GET_GPU_INFO << 24u) | 0x05u);
+	require(gpu.readGpuReadWord() == bmsx::GX_GPU_DRAWING_OFFSET_MASK, "GX-GPU GP1 info drawing-offset query");
+}
+
 void testMmioGp0Gp1() {
 	GpuHarness harness;
 	bmsx::Memory& memory = harness.memory;
@@ -125,7 +170,7 @@ void testMmioGp0Gp1() {
 	memory.writeMappedU32LE(bmsx::IO_GX_GPU_GP0, 0x12345678u);
 	memory.writeMappedU32LE(bmsx::IO_GX_GPU_GP1, (bmsx::GX_GPU_GP1_SET_DISPLAY_MODE << 24u) | 0x00000000u);
 
-	require(memory.readMappedU32LE(bmsx::IO_GX_GPU_GP0) == 0x12345678u, "GX-GPU GP0 MMIO");
+	require(memory.readMappedU32LE(bmsx::IO_GX_GPU_GP0) == 0x00000400u, "GX-GPU GP0 read returns GPUREAD latch");
 	require((memory.readMappedU32LE(bmsx::IO_GX_GPU_GP1) & bmsx::GX_GPU_STATUS_READY_TO_RECEIVE_DMA) == bmsx::GX_GPU_STATUS_READY_TO_RECEIVE_DMA, "GX-GPU GP1 GPUSTAT receive-ready bit");
 	require((memory.readMappedU32LE(bmsx::IO_GX_GPU_GP1) & bmsx::GX_GPU_STATUS_PAL_MODE) == 0u, "GX-GPU GP1 MMIO GPUSTAT PAL bit");
 }
@@ -139,6 +184,8 @@ int main() {
 	testDisplayDisableAndDmaDirectionStatusBits();
 	testGp1CrtcRangeRegistersLatchMaskedRawWords();
 	testGp0IrqRequestAndGp1Acknowledge();
+	testGp0DrawModeAndMaskBitEnvironmentCommands();
+	testGp0EnvironmentRegistersAndGpuInfoQueries();
 	testMmioGp0Gp1();
 	return 0;
 }

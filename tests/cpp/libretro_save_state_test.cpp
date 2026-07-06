@@ -73,7 +73,7 @@ void testLibretroSaveStateRoundTrip() {
 	require(platform.loadState(saved.data(), saved.size()), "libretro loadState should apply runtime state bytes");
 	require(memory.readMappedU32LE(bmsx::GEO_SCRATCH_BASE) == 0x11223344u, "libretro loadState should restore RAM through Runtime save state");
 	require(memory.readIoU32(bmsx::IO_VDP_REG_BG_COLOR) == 0xff112233u, "libretro loadState should restore VDP raw registerfile state");
-	require(runtime.machine.gxGpu.readGp0() == 0x22334455u, "libretro loadState should restore GX-GPU GP0 word");
+	require(runtime.machine.gxGpu.captureState().gp0Word == 0x22334455u, "libretro loadState should restore GX-GPU GP0 word");
 	require(runtime.machine.gxGpu.readDisplayModeWord() == 0u, "libretro loadState should restore GX-GPU display mode word");
 	require((runtime.machine.gxGpu.readStatus() & bmsx::GX_GPU_STATUS_PAL_MODE) == 0u, "libretro loadState should restore GX-GPU GPUSTAT PAL bit");
 	require(runtime.timing.gpuDisplayModeWord == 0u, "libretro loadState should restore runtime GPU display timing word");

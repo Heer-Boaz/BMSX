@@ -21,6 +21,13 @@ void GxGpu::reset() {
 	m_gp1Word = 0u;
 	m_displayModeWord = PSX_GPU_DISPLAY_MODE_PAL_WORD;
 	m_statusWord = GX_GPU_STATUS_RESET_WORD;
+	m_gpuReadWord = 0x00000400u;
+	m_drawModeWord = 0u;
+	m_textureWindowWord = 0u;
+	m_drawingAreaTopLeftWord = 0u;
+	m_drawingAreaBottomRightWord = 0u;
+	m_drawingOffsetWord = 0u;
+	m_maskBitModeWord = 0u;
 	m_displayStartWord = 0u;
 	m_horizontalDisplayRangeWord = 0x00c60260u;
 	m_verticalDisplayRangeWord = 0x0003fc10u;
@@ -50,15 +57,36 @@ void GxGpu::restoreState(const GxGpuState& state) {
 }
 
 u32 GxGpu::readGp0() const {
-	return m_gp0Word;
+	return m_gpuReadWord;
 }
 
 void GxGpu::writeGp0(u32 word) {
 	m_gp0Word = word;
 	m_memory.writeIoValue(IO_GX_GPU_GP0, valueNumber(static_cast<double>(m_gp0Word)));
-	if ((m_gp0Word >> GX_GPU_GP0_OPCODE_SHIFT) == GX_GPU_GP0_IRQ_REQUEST) {
+	const u32 opcode = m_gp0Word >> GX_GPU_GP0_OPCODE_SHIFT;
+	switch (opcode) {
+	case GX_GPU_GP0_IRQ_REQUEST:
 		m_statusWord |= GX_GPU_STATUS_INTERRUPT_REQUEST;
 		writeStatusIo();
+		break;
+	case GX_GPU_GP0_SET_DRAW_MODE:
+		writeDrawModeWord(m_gp0Word & GX_GPU_GP0_PARAM_MASK);
+		break;
+	case GX_GPU_GP0_SET_TEXTURE_WINDOW:
+		m_textureWindowWord = m_gp0Word & GX_GPU_TEXTURE_WINDOW_MASK;
+		break;
+	case GX_GPU_GP0_SET_DRAWING_AREA_TOP_LEFT:
+		m_drawingAreaTopLeftWord = m_gp0Word & GX_GPU_DRAWING_AREA_MASK;
+		break;
+	case GX_GPU_GP0_SET_DRAWING_AREA_BOTTOM_RIGHT:
+		m_drawingAreaBottomRightWord = m_gp0Word & GX_GPU_DRAWING_AREA_MASK;
+		break;
+	case GX_GPU_GP0_SET_DRAWING_OFFSET:
+		m_drawingOffsetWord = m_gp0Word & GX_GPU_DRAWING_OFFSET_MASK;
+		break;
+	case GX_GPU_GP0_SET_MASK_BIT:
+		writeMaskBitModeWord(m_gp0Word & GX_GPU_GP0_PARAM_MASK);
+		break;
 	}
 }
 
@@ -68,7 +96,7 @@ u32 GxGpu::readStatus() const {
 
 u32 GxGpu::writeGp1(u32 word) {
 	m_gp1Word = word;
-	const u32 opcode = word >> GX_GPU_GP1_OPCODE_SHIFT;
+	const u32 opcode = (word >> GX_GPU_GP1_OPCODE_SHIFT) & GX_GPU_GP1_OPCODE_MASK;
 	switch (opcode) {
 	case GX_GPU_GP1_RESET:
 		reset();
@@ -103,7 +131,11 @@ u32 GxGpu::writeGp1(u32 word) {
 		break;
 	case GX_GPU_GP1_SET_TEXTURE_DISABLE_MASK:
 		m_textureDisableMaskWord = word & 0x1u;
+		updateDrawModeStatusBits();
 		writeStatusIo();
+		break;
+	case GX_GPU_GP1_GET_GPU_INFO:
+		writeGpuInfoQuery(word);
 		break;
 	default:
 		writeStatusIo();
@@ -120,6 +152,34 @@ void GxGpu::writeDisplayModeWord(u32 word) {
 	m_displayModeWord = word;
 	updateDisplayModeStatusBits();
 	writeStatusIo();
+}
+
+u32 GxGpu::readGpuReadWord() const {
+	return m_gpuReadWord;
+}
+
+u32 GxGpu::readDrawModeWord() const {
+	return m_drawModeWord;
+}
+
+u32 GxGpu::readTextureWindowWord() const {
+	return m_textureWindowWord;
+}
+
+u32 GxGpu::readDrawingAreaTopLeftWord() const {
+	return m_drawingAreaTopLeftWord;
+}
+
+u32 GxGpu::readDrawingAreaBottomRightWord() const {
+	return m_drawingAreaBottomRightWord;
+}
+
+u32 GxGpu::readDrawingOffsetWord() const {
+	return m_drawingOffsetWord;
+}
+
+u32 GxGpu::readMaskBitModeWord() const {
+	return m_maskBitModeWord;
 }
 
 u32 GxGpu::readDisplayStartWord() const {
@@ -144,6 +204,46 @@ void GxGpu::writeDisplayDisableWord(u32 word) {
 	} else {
 		m_statusWord &= ~GX_GPU_STATUS_DISPLAY_DISABLE;
 	}
+	writeStatusIo();
+}
+
+void GxGpu::writeDrawModeWord(u32 word) {
+	m_drawModeWord = word & GX_GPU_DRAW_MODE_MASK;
+	updateDrawModeStatusBits();
+	writeStatusIo();
+}
+
+void GxGpu::updateDrawModeStatusBits() {
+	const u32 textureDisableBit = (m_textureDisableMaskWord != 0u && (m_drawModeWord & GX_GPU_DRAW_MODE_TEXTURE_DISABLE) != 0u)
+		? GX_GPU_STATUS_TEXTURE_DISABLE
+		: 0u;
+	m_statusWord = (m_statusWord & ~(GX_GPU_DRAW_MODE_GPUSTAT_MASK | GX_GPU_STATUS_TEXTURE_DISABLE))
+		| (m_drawModeWord & GX_GPU_DRAW_MODE_GPUSTAT_MASK)
+		| textureDisableBit;
+}
+
+void GxGpu::writeMaskBitModeWord(u32 word) {
+	m_maskBitModeWord = word & GX_GPU_MASK_BIT_MODE_MASK;
+	m_statusWord = (m_statusWord & ~((1u << 11u) | (1u << 12u))) | (m_maskBitModeWord << 11u);
+	writeStatusIo();
+}
+
+void GxGpu::writeGpuInfoQuery(u32 word) {
+	switch (word & 0x7u) {
+	case 0x02u:
+		m_gpuReadWord = m_textureWindowWord;
+		break;
+	case 0x03u:
+		m_gpuReadWord = m_drawingAreaTopLeftWord;
+		break;
+	case 0x04u:
+		m_gpuReadWord = m_drawingAreaBottomRightWord;
+		break;
+	case 0x05u:
+		m_gpuReadWord = m_drawingOffsetWord;
+		break;
+	}
+	m_memory.writeIoValue(IO_GX_GPU_GP0, valueNumber(static_cast<double>(m_gpuReadWord)));
 	writeStatusIo();
 }
 
