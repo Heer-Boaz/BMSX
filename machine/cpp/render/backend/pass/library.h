@@ -26,6 +26,7 @@ namespace bmsx {
 class GameView;
 class RenderGraphRuntime;
 class Runtime;
+struct GxGpuCommandBuffer;
 struct VdpRpuFrameOutput;
 enum class Host2DKind : u8;
 using Host2DRef = const void*;
@@ -48,6 +49,12 @@ struct VdpRpuPipelineState {
 	i32 width = 0;
 	i32 height = 0;
 	const VdpRpuFrameOutput* frame = nullptr;
+};
+
+struct GxGpuPipelineState {
+	i32 width = 0;
+	i32 height = 0;
+	const GxGpuCommandBuffer* commandBuffer = nullptr;
 };
 
 struct CRTPipelineOptions {
@@ -131,6 +138,7 @@ struct HostOverlayPipelineState : Host2DPipelineState {
 using HostMenuPipelineState = Host2DPipelineState;
 
 struct RenderPassStateStorage {
+	GxGpuPipelineState gxGpu;
 	Framebuffer2DPipelineState framebuffer2D;
 	PresentPipelineState present;
 	CRTPipelineState crt;
@@ -208,6 +216,7 @@ void bootstrapBackendRenderPass(GPUBackend* backend, void*) {
 }
 
 void setFramebuffer2DGraph(RenderPassDef& desc);
+void setGxGpuGraph(RenderPassDef& desc);
 void setAutoPresentGraph(RenderPassDef& desc);
 void setAutoCRTGraph(RenderPassDef& desc);
 void setDeviceQuantizeGraph(RenderPassDef& desc);

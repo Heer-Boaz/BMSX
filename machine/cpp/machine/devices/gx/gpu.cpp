@@ -54,6 +54,8 @@ void GxGpu::restoreState(const GxGpuState& state) {
 	m_gp1Word = state.gp1Word;
 	m_displayModeWord = state.displayModeWord;
 	m_statusWord = state.statusWord;
+	m_commandBuffer.reset();
+	clearGp0CommandState();
 	m_memory.writeIoValue(IO_GX_GPU_GP0, valueNumber(static_cast<double>(m_gp0Word)));
 	m_memory.writeIoValue(IO_GX_GPU_GP1, valueNumber(static_cast<double>(m_statusWord)));
 }

@@ -190,6 +190,8 @@ export class GxGpu {
 		this.gp1Word = state.gp1Word >>> 0;
 		this.displayModeWord = state.displayModeWord >>> 0;
 		this.statusWord = state.statusWord >>> 0;
+		this.commandBuffer.reset();
+		this.clearGp0CommandState();
 		this.memory.writeIoValue(IO_GX_GPU_GP0, this.gp0Word);
 		this.memory.writeIoValue(IO_GX_GPU_GP1, this.statusWord);
 	}

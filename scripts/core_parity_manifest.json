@@ -1790,6 +1790,17 @@
 		},
 		{
 			"roots": [
+				"machine/ts/render/backend/webgl/backend.ts",
+				"machine/cpp/render/backend/gles2/backend.cpp"
+			],
+			"substrings": [
+				"registerFramebuffer2DPass_WebGL",
+				"registerFramebuffer2DPass_GLES2"
+			],
+			"reason": "non_software_backends_must_not_register_vdp_framebuffer_presentation_after_gx_gpu_takeover"
+		},
+		{
+			"roots": [
 				"machine/ts/render/backend/webgl/vdp_rpu.ts",
 				"machine/cpp/render/backend/gles2/vdp_rpu.cpp",
 				"machine/ts/render/rpu",
@@ -2359,10 +2370,11 @@
 		{
 			"file": "machine/ts/render/backend/webgl/backend.ts",
 			"substrings": [
-				"import { registerVdpRpuPass } from './vdp_rpu';",
-				"registerVdpRpuPass(registry);"
+				"private readonly passEncoderScratch: PassEncoder = { fbo: null, desc: {} };",
+				"const key = cid * FBO_CACHE_DEPTH_ID_STRIDE + did;",
+				"return this.passEncoderScratch;"
 			],
-			"reason": "webgl_backend_owns_rpu_pass_registration"
+			"reason": "webgl_render_pass_begin_must_reuse_encoder_and_avoid_per_pass_key_strings"
 		},
 		{
 			"file": "machine/ts/render/backend/webgl/vdp_rpu.ts",
@@ -2376,10 +2388,10 @@
 		{
 			"file": "machine/cpp/render/backend/gles2/backend.cpp",
 			"substrings": [
-				"#include \"render/backend/gles2/vdp_rpu.h\"",
-				"registerVdpRpuPass(registry);"
+				"#include \"render/backend/gles2/gx_gpu.h\"",
+				"registerGxGpuPass(registry);"
 			],
-			"reason": "gles2_backend_owns_rpu_pass_registration"
+			"reason": "gles2_backend_owns_gx_gpu_pass_registration_without_vdp_rpu_registration"
 		},
 		{
 			"file": "machine/cpp/render/backend/gles2/vdp_rpu.cpp",
@@ -2535,11 +2547,10 @@
 		{
 			"file": "machine/ts/render/backend/webgl/backend.ts",
 			"substrings": [
-				"private readonly passEncoderScratch: PassEncoder = { fbo: null, desc: {} };",
-				"const key = cid * FBO_CACHE_DEPTH_ID_STRIDE + did;",
-				"return this.passEncoderScratch;"
+				"import { registerGxGpuPass } from './gx_gpu';",
+				"registerGxGpuPass(registry);"
 			],
-			"reason": "webgl_render_pass_begin_must_reuse_encoder_and_avoid_per_pass_key_strings"
+			"reason": "webgl_backend_owns_gx_gpu_pass_registration_without_vdp_rpu_registration"
 		},
 		{
 			"file": "machine/ts/render/headless/backend.ts",
@@ -2686,7 +2697,19 @@
 				"machine/cpp/render/backend/gles2/shaders/vdp_rpu_shaders.h.in",
 				"machine/ts/render/2d/framebuffer_pipeline.ts",
 				"machine/cpp/render/2d/framebuffer_pipeline.h",
-				"machine/cpp/render/2d/framebuffer_pipeline.cpp"
+				"machine/cpp/render/2d/framebuffer_pipeline.cpp",
+				"machine/ts/render/backend/webgl/gx_gpu.ts",
+				"machine/ts/render/backend/webgl/shaders/gx_gpu_fill.vert.glsl",
+				"machine/ts/render/backend/webgl/shaders/gx_gpu_fill.frag.glsl",
+				"machine/ts/render/backend/webgl/shaders/gx_gpu_scanout.vert.glsl",
+				"machine/ts/render/backend/webgl/shaders/gx_gpu_scanout.frag.glsl",
+				"machine/cpp/render/backend/gles2/gx_gpu.h",
+				"machine/cpp/render/backend/gles2/gx_gpu.cpp",
+				"machine/cpp/render/backend/gles2/shaders/gx_gpu_fill.vert.glsl",
+				"machine/cpp/render/backend/gles2/shaders/gx_gpu_fill.frag.glsl",
+				"machine/cpp/render/backend/gles2/shaders/gx_gpu_scanout.vert.glsl",
+				"machine/cpp/render/backend/gles2/shaders/gx_gpu_scanout.frag.glsl",
+				"machine/cpp/render/backend/gles2/shaders/gx_gpu_shaders.h.in"
 			],
 			"absent": [
 				"machine/ts/render/rpu/pipeline.ts",
@@ -3003,6 +3026,14 @@
 				"machine/cpp/machine/scheduler/microtask_queue.h"
 			],
 			"reason": "machine_microtask_queue_boundary_contract"
+		},
+		{
+			"ts": "machine/ts/render/backend/webgl/gx_gpu.ts",
+			"cpp": [
+				"machine/cpp/render/backend/gles2/gx_gpu.h",
+				"machine/cpp/render/backend/gles2/gx_gpu.cpp"
+			],
+			"reason": "gx_gpu_host_gpu_backend_filename_parity"
 		}
 	],
 	"public_symbol_parity": [
@@ -3895,6 +3926,34 @@
 				"presentFrameBuffer"
 			],
 			"reason": "headless_present_host_must_reuse_presented_frame_event_object"
+		},
+		{
+			"file": "machine/ts/render/backend/webgl/gx_gpu.ts",
+			"functions": [
+				"clearGxGpuVram",
+				"writeFillVertex",
+				"appendFillRectangle",
+				"uploadNewFillCommands",
+				"renderNewFillCommands",
+				"scanoutGxGpuVram",
+				"renderGxGpuPass",
+				"writeGxGpuState"
+			],
+			"reason": "webgl_gx_gpu_hot_backend_helpers_must_remain_heap_and_gc_free"
+		},
+		{
+			"file": "machine/cpp/render/backend/gles2/gx_gpu.cpp",
+			"functions": [
+				"clearGxGpuVram",
+				"writeFillVertex",
+				"appendFillRectangle",
+				"uploadNewFillCommands",
+				"renderNewFillCommands",
+				"scanoutGxGpuVram",
+				"renderGxGpuGLES2",
+				"executeGxGpuPass"
+			],
+			"reason": "gles2_gx_gpu_hot_backend_helpers_must_remain_heap_and_gc_free"
 		}
 	],
 	"strict_runtime_method_parity": [

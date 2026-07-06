@@ -7,13 +7,12 @@ import { RGBA8_LINEAR_TEXTURE_PARAMS, type TextureParams } from '../texture_para
 import { TEXTURE_UNIT_CUBEMAP, TEXTURE_UNIT_UPLOAD } from './constants';
 import { CATCH_WEBGL_ERROR, checkWebGLError } from './helpers';
 import { createSolidRgba8Pixels } from '../../shared/solid_pixels';
-import { registerFramebuffer2DPass_WebGL } from '../../2d/framebuffer_pipeline';
 import { registerHostOverlayPass_WebGL, registerHostMenuPass_WebGL } from '../../host_overlay/webgl/pipeline';
 import { registerCRT_WebGL } from '../../post/crt/webgl/pipeline';
 import { registerDeviceQuantize_WebGL } from '../../post/device_quantize/webgl/pipeline';
 import { FRAME_UNIFORM_BINDING, updateAndBindFrameUniforms } from '../frame_uniforms';
 import type { RenderPassLibrary } from '../pass/library';
-import { registerVdpRpuPass } from './vdp_rpu';
+import { registerGxGpuPass } from './gx_gpu';
 
 // (Texture units sourced from render_view constants to avoid duplication.)
 const FBO_CACHE_DEPTH_ID_STRIDE = 0x1000000;
@@ -79,8 +78,7 @@ export class WebGLBackend implements GPUBackend {
 				updateAndBindFrameUniforms(backend, gv.offscreenCanvasSize.x, gv.offscreenCanvasSize.y, gv.viewportSize.x, gv.viewportSize.y);
 			},
 		});
-		registerVdpRpuPass(registry);
-		registerFramebuffer2DPass_WebGL(registry);
+		registerGxGpuPass(registry);
 		registerDeviceQuantize_WebGL(registry);
 		registerCRT_WebGL(registry);
 		registerHostOverlayPass_WebGL(registry);
@@ -430,10 +428,12 @@ export class WebGLBackend implements GPUBackend {
 	}
 	setGraphicsPipeline(_pass: PassEncoder, pipeline: RenderPassInstanceHandle): void {
 		const prog = pipeline.backendData as WebGLProgram;
-		if (this.currentProgram !== prog) {
-			this.gl.useProgram(prog);
-			this.currentProgram = prog;
-		}
+		this.useProgram(prog);
+	}
+	useProgram(program: WebGLProgram): void {
+		if (this.currentProgram === program) return;
+		this.gl.useProgram(program);
+		this.currentProgram = program;
 	}
 	draw(_pass: PassEncoder, first: number, count: number): void {
 		this.frameStats.draws++;

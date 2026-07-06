@@ -95,6 +95,11 @@ set_property(DIRECTORY APPEND PROPERTY CMAKE_CONFIGURE_DEPENDS
 	"${CMAKE_CURRENT_SOURCE_DIR}/render/2d/shaders/framebuffer_2d.frag.glsl"
 	"${CMAKE_CURRENT_SOURCE_DIR}/render/backend/gles2/shaders/vdp_rpu.vert.glsl"
 	"${CMAKE_CURRENT_SOURCE_DIR}/render/backend/gles2/shaders/vdp_rpu.frag.glsl"
+	"${CMAKE_CURRENT_SOURCE_DIR}/render/backend/gles2/shaders/gx_gpu_fill.vert.glsl"
+	"${CMAKE_CURRENT_SOURCE_DIR}/render/backend/gles2/shaders/gx_gpu_fill.frag.glsl"
+	"${CMAKE_CURRENT_SOURCE_DIR}/render/backend/gles2/shaders/gx_gpu_scanout.vert.glsl"
+	"${CMAKE_CURRENT_SOURCE_DIR}/render/backend/gles2/shaders/gx_gpu_scanout.frag.glsl"
+	"${CMAKE_CURRENT_SOURCE_DIR}/render/backend/gles2/shaders/gx_gpu_shaders.h.in"
 	"${CMAKE_CURRENT_SOURCE_DIR}/render/post/gles2/shaders/fullscreen.vert.glsl"
 	"${CMAKE_CURRENT_SOURCE_DIR}/render/post/crt/gles2/shaders/present.frag.glsl"
 	"${CMAKE_CURRENT_SOURCE_DIR}/render/post/crt/gles2/shaders/crt.frag.glsl"
@@ -166,6 +171,27 @@ file(READ
 configure_file(
 	"${CMAKE_CURRENT_SOURCE_DIR}/render/backend/gles2/shaders/vdp_rpu_shaders.h.in"
 	"${CMAKE_CURRENT_BINARY_DIR}/generated/render/backend/gles2/shaders/vdp_rpu_shaders.h"
+	@ONLY
+)
+file(READ
+	"${CMAKE_CURRENT_SOURCE_DIR}/render/backend/gles2/shaders/gx_gpu_fill.vert.glsl"
+	BMSX_GX_GPU_FILL_VERTEX_SHADER
+)
+file(READ
+	"${CMAKE_CURRENT_SOURCE_DIR}/render/backend/gles2/shaders/gx_gpu_fill.frag.glsl"
+	BMSX_GX_GPU_FILL_FRAGMENT_SHADER
+)
+file(READ
+	"${CMAKE_CURRENT_SOURCE_DIR}/render/backend/gles2/shaders/gx_gpu_scanout.vert.glsl"
+	BMSX_GX_GPU_SCANOUT_VERTEX_SHADER
+)
+file(READ
+	"${CMAKE_CURRENT_SOURCE_DIR}/render/backend/gles2/shaders/gx_gpu_scanout.frag.glsl"
+	BMSX_GX_GPU_SCANOUT_FRAGMENT_SHADER
+)
+configure_file(
+	"${CMAKE_CURRENT_SOURCE_DIR}/render/backend/gles2/shaders/gx_gpu_shaders.h.in"
+	"${CMAKE_CURRENT_BINARY_DIR}/generated/render/backend/gles2/shaders/gx_gpu_shaders.h"
 	@ONLY
 )
 file(READ
@@ -389,6 +415,7 @@ if(BMSX_ENABLE_GLES2)
 	target_sources(bmsx_core PRIVATE
 		render/backend/gles2/backend.cpp
 		render/backend/gles2/fullscreen_quad.cpp
+		render/backend/gles2/gx_gpu.cpp
 		render/backend/gles2/vdp_rpu.cpp
 		render/post/crt/gles2/pipeline.cpp
 		render/post/device_quantize/gles2/pipeline.cpp

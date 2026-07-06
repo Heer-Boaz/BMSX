@@ -11,6 +11,7 @@ export const GX_GPU_COMMAND_UPLOAD_CPU_TO_VRAM = 7;
 export const GX_GPU_COMMAND_READ_VRAM_TO_CPU = 8;
 
 export type GxGpuCommandBufferView = {
+	readonly serial: number;
 	readonly commandCount: number;
 	readonly wordCount: number;
 	readonly commandKind: ArrayLike<number>;
@@ -27,6 +28,7 @@ export type GxGpuCommandBufferView = {
 };
 
 export class GxGpuCommandBuffer implements GxGpuCommandBufferView {
+	public serial = 0;
 	public commandCount = 0;
 	public wordCount = 0;
 	public readonly commandKind = new Uint8Array(GX_GPU_COMMAND_CAPACITY);
@@ -42,6 +44,7 @@ export class GxGpuCommandBuffer implements GxGpuCommandBufferView {
 	public readonly words = new Uint32Array(GX_GPU_COMMAND_WORD_CAPACITY);
 
 	public reset(): void {
+		this.serial = (this.serial + 1) >>> 0;
 		this.commandCount = 0;
 		this.wordCount = 0;
 	}

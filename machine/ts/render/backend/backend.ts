@@ -2,6 +2,7 @@
 
 import { type color_arr, type TextureSource, type vec2 } from '../../rompack/format';
 import type { VdpRpuFrameOutput } from '../../machine/devices/vdp/rpu';
+import type { GxGpuCommandBufferView } from '../../machine/devices/gx/gpu_command_buffer';
 import type { Host2DSubmission } from '../shared/submissions';
 import type { LightingFrameState } from '../lighting/system';
 import type { GameView } from '../gameview';
@@ -81,6 +82,7 @@ export type RenderTargetHandle = WebGLFramebuffer | WebGPURenderTargetHandle | H
 
 // High-level render pass identifiers
 export type RenderPassId =
+	| 'gx_gpu'
 	| 'vdp_rpu'
 	| 'framebuffer_2d'
 	| 'host_overlay'
@@ -260,6 +262,7 @@ export interface GPUBackend {
 }
 
 export interface RenderPassStateRegistry {
+	['gx_gpu']: GxGpuPipelineState;
 	['vdp_rpu']: VdpRpuPipelineState;
 	['framebuffer_2d']: Framebuffer2DPipelineState;
 	['host_overlay']: HostOverlayPipelineState;
@@ -279,6 +282,12 @@ export type VdpRpuPipelineState = {
 	width: number;
 	height: number;
 	frame: VdpRpuFrameOutput;
+};
+
+export type GxGpuPipelineState = {
+	width: number;
+	height: number;
+	commandBuffer: GxGpuCommandBufferView;
 };
 
 export type Framebuffer2DPipelineState = {
@@ -314,6 +323,7 @@ export interface RenderContext {
 	presentationHistorySourceIndex: 0 | 1;
 	presentationHistoryDestinationIndex: 0 | 1;
 	activeTexUnit: number;
+	gxGpuCommandBuffer: GxGpuCommandBufferView;
 	vdpRpuFrame: VdpRpuFrameOutput;
 	bind2DTex(tex: TextureHandle): void;
 	bindCubemapTex(tex: TextureHandle): void;

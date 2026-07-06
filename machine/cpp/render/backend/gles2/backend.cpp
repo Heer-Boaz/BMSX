@@ -8,9 +8,8 @@
 #include "render/host_overlay/pass_registration.h"
 #include "render/host_overlay/gles2/pipeline.h"
 #include "render/backend/pass/library.h"
-#include "render/backend/gles2/vdp_rpu.h"
+#include "render/backend/gles2/gx_gpu.h"
 #include "render/3d/axis_gizmo_pipeline.h"
-#include "render/2d/framebuffer_pipeline.h"
 #include "core/machine_manager.h"
 #include "render/shared/solid_pixels.h"
 
@@ -150,8 +149,7 @@ static const u8* prepareGLES2TextureStorageData(const u8* data, i32 width, i32 h
 void OpenGLES2Backend::registerBuiltinPasses(RenderPassLibrary& registry) {
 	registerFrameStatePasses(registry);
 
-	registerVdpRpuPass(registry);
-	registerFramebuffer2DPass_GLES2(registry);
+	registerGxGpuPass(registry);
 	DeviceQuantizePipeline::GLES2::registerPass(registry, m_post_pipelines->deviceQuantize);
 
 	CRTPipeline::registerPresentGLES2Pass(registry, m_post_pipelines->present);

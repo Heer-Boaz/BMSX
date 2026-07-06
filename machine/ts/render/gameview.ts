@@ -26,7 +26,7 @@ import type { VdpRpuFrameOutput } from '../machine/devices/vdp/rpu';
 import type { GxGpuCommandBufferView } from '../machine/devices/gx/gpu_command_buffer';
 import { renderGate } from '../common/taskgate';
 
-const PRESENTATION_PASS_IDS = ['vdp_rpu', 'framebuffer_2d', 'device_quantize', 'crt', 'host_overlay', 'host_menu'];
+const PRESENTATION_PASS_IDS = ['gx_gpu', 'vdp_rpu', 'framebuffer_2d', 'device_quantize', 'crt', 'host_overlay', 'host_menu'];
 
 interface GameViewOpts {
 	host: GameViewHost;

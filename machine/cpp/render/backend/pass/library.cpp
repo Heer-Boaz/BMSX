@@ -69,6 +69,13 @@ void writeFramebuffer2DPipelineState(const RenderPassDef::RenderGraphPassContext
 	framebufferState.colorTex = ctx.view->vdpFrameBufferTextures().displayTexture();
 }
 
+void writeGxGpuPipelineState(const RenderPassDef::RenderGraphPassContext& ctx, RenderPassStateStorage& state) {
+	GxGpuPipelineState& gxGpuState = state.gxGpu;
+	gxGpuState.width = static_cast<i32>(ctx.view->offscreenCanvasSize.x);
+	gxGpuState.height = static_cast<i32>(ctx.view->offscreenCanvasSize.y);
+	gxGpuState.commandBuffer = ctx.view->gxGpuCommandBuffer;
+}
+
 void writeAutoCRTPipelineState(const RenderPassDef::RenderGraphPassContext& ctx, RenderPassStateStorage& state) {
 	auto* view = ctx.view;
 	CRTPipelineState& crtState = state.crt;
@@ -118,6 +125,12 @@ void setFramebuffer2DGraph(RenderPassDef& desc) {
 	desc.graph = RenderPassDef::RenderPassGraphDef{};
 	desc.graph->writes = { RenderPassDef::RenderGraphSlot::FrameColor };
 	desc.graph->writeState = writeFramebuffer2DPipelineState;
+}
+
+void setGxGpuGraph(RenderPassDef& desc) {
+	desc.graph = RenderPassDef::RenderPassGraphDef{};
+	desc.graph->writes = { RenderPassDef::RenderGraphSlot::FrameColor };
+	desc.graph->writeState = writeGxGpuPipelineState;
 }
 
 void setAutoPresentGraph(RenderPassDef& desc) {

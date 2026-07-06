@@ -20,6 +20,7 @@ constexpr u8 GX_GPU_COMMAND_UPLOAD_CPU_TO_VRAM = 7u;
 constexpr u8 GX_GPU_COMMAND_READ_VRAM_TO_CPU = 8u;
 
 struct GxGpuCommandBuffer {
+	u32 serial = 0u;
 	size_t commandCount = 0u;
 	size_t wordCount = 0u;
 	std::array<u8, GX_GPU_COMMAND_CAPACITY> commandKind{};
@@ -35,6 +36,7 @@ struct GxGpuCommandBuffer {
 	std::array<u32, GX_GPU_COMMAND_WORD_CAPACITY> words{};
 
 	void reset() {
+		serial += 1u;
 		commandCount = 0u;
 		wordCount = 0u;
 	}

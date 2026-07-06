@@ -1,0 +1,10 @@
+#pragma once
+
+namespace bmsx {
+
+inline constexpr const char* kGxGpuFillVertexShader = R"(@BMSX_GX_GPU_FILL_VERTEX_SHADER@)";
+inline constexpr const char* kGxGpuFillFragmentShader = R"(@BMSX_GX_GPU_FILL_FRAGMENT_SHADER@)";
+inline constexpr const char* kGxGpuScanoutVertexShader = R"(@BMSX_GX_GPU_SCANOUT_VERTEX_SHADER@)";
+inline constexpr const char* kGxGpuScanoutFragmentShader = R"(@BMSX_GX_GPU_SCANOUT_FRAGMENT_SHADER@)";
+
+} // namespace bmsx
