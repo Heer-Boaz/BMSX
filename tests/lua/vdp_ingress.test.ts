@@ -296,7 +296,7 @@ test('VDP stream retains RPU pass and draw commands as device output', () => {
 	assert.notEqual(revisionAfter, revisionBefore);
 });
 
-test('VDP packet FIFO keeps unknown packets deterministic while preserving prior register side effects', () => {
+test('VDP packet FIFO rejects unknown packets while preserving prior deterministic register side effects', () => {
 	const { memory, vdp } = createVdp();
 
 	sealStream(memory, vdp, [
@@ -306,7 +306,7 @@ test('VDP packet FIFO keeps unknown packets deterministic while preserving prior
 		VDP_PKT_END,
 	]);
 
-	assert.equal(memory.readIoU32(IO_VDP_FAULT_CODE), VDP_FAULT_NONE);
+	assertVdpFault(memory, VDP_FAULT_STREAM_BAD_PACKET);
 	assert.equal(memory.readValue(IO_VDP_REG_BG_COLOR), 0xff102030);
 	assert.equal(vdp.getPendingRenderWorkUnits(), 0);
 });

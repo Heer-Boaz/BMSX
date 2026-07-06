@@ -505,7 +505,8 @@ export class VDP implements VramWriteSink {
 				return nextCursor;
 			}
 		}
-		return cursor;
+		this.fault.raise(VDP_FAULT_STREAM_BAD_PACKET, word);
+		return VDP_REPLAY_PACKET_FAULT;
 	}
 
 	private consumeUnitRegisterPacketFromMemory(word: number, cursor: number, end: number): number {
@@ -575,7 +576,8 @@ export class VDP implements VramWriteSink {
 				return nextCursor;
 			}
 		}
-		return cursor;
+		this.fault.raise(VDP_FAULT_STREAM_BAD_PACKET, word);
+		return VDP_REPLAY_PACKET_FAULT;
 	}
 
 	private consumeUnitRegisterPacketFromWords(words: Uint32Array, word: number, cursor: number, wordCount: number): number {
