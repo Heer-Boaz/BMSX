@@ -13,6 +13,9 @@ import {
 	GX_GPU_COMMAND_READ_VRAM_TO_CPU,
 	GX_GPU_COMMAND_UPLOAD_CPU_TO_VRAM,
 	GxGpuCommandBuffer,
+	gxGpuPolygonDrawModeWord,
+	gxGpuPolygonTexturePageWordIndex,
+	gxGpuTextureAttribute,
 	gxGpuTransferHeight,
 	gxGpuTransferWidth,
 } from './gpu_command_buffer';
@@ -261,6 +264,10 @@ export class GxGpu {
 				break;
 			default:
 				if (opcode >= GX_GPU_GP0_POLYGON_FIRST && opcode <= GX_GPU_GP0_POLYGON_LAST) {
+					if ((opcode & GX_GPU_GP0_RENDER_TEXTURE_BIT) !== 0) {
+						const texturePageWord = this.gp0CommandWords[gxGpuPolygonTexturePageWordIndex(opcode)];
+						this.writeDrawModeWord(gxGpuPolygonDrawModeWord(this.drawModeWord, gxGpuTextureAttribute(texturePageWord)));
+					}
 					this.emitFixedGp0Command(GX_GPU_COMMAND_DRAW_POLYGON, opcode, commandWordCount);
 				} else if (opcode >= GX_GPU_GP0_LINE_FIRST && opcode <= GX_GPU_GP0_LINE_LAST) {
 					if ((opcode & GX_GPU_GP0_RENDER_QUAD_OR_POLYLINE_BIT) !== 0) {

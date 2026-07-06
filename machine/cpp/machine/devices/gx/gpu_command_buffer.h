@@ -11,6 +11,10 @@ constexpr size_t GX_GPU_COMMAND_CAPACITY = 4096u;
 constexpr size_t GX_GPU_COMMAND_WORD_CAPACITY = 0x80000u;
 constexpr u32 GX_GPU_VRAM_WIDTH = 1024u;
 constexpr u32 GX_GPU_VRAM_HEIGHT = 512u;
+constexpr u32 GX_GPU_DRAW_MODE_POLYGON_TEXPAGE_MASK = 0x09ffu;
+constexpr u32 GX_GPU_TEXTURE_MODE_PALETTE4 = 0u;
+constexpr u32 GX_GPU_TEXTURE_MODE_PALETTE8 = 1u;
+constexpr u32 GX_GPU_TEXTURE_MODE_DIRECT16 = 2u;
 
 constexpr u8 GX_GPU_COMMAND_DRAW_POLYGON = 1u;
 constexpr u8 GX_GPU_COMMAND_DRAW_LINE = 2u;
@@ -40,6 +44,10 @@ inline i32 gxGpuDrawingOffsetX(u32 word) {
 
 inline i32 gxGpuDrawingOffsetY(u32 word) {
 	return gxGpuSigned11(word >> 11u);
+}
+
+inline bool gxGpuCommandRawTextureEnabled(u32 opcode) {
+	return (opcode & 0x01u) != 0u;
 }
 
 inline bool gxGpuCommandTextureEnabled(u32 opcode) {
@@ -98,6 +106,62 @@ inline u32 gxGpuTransferHeight(u32 sizeWord) {
 
 inline u32 gxGpuTransferPixelWord(u32 payloadWord, u32 pixelIndex) {
 	return (pixelIndex & 1u) == 0u ? payloadWord & 0xffffu : payloadWord >> 16u;
+}
+
+inline u32 gxGpuTextureU(u32 textureWord) {
+	return textureWord & 0xffu;
+}
+
+inline u32 gxGpuTextureV(u32 textureWord) {
+	return (textureWord >> 8u) & 0xffu;
+}
+
+inline u32 gxGpuTextureAttribute(u32 textureWord) {
+	return (textureWord >> 16u) & 0xffffu;
+}
+
+inline u32 gxGpuTextureClutBaseX(u32 textureWord) {
+	return (gxGpuTextureAttribute(textureWord) & 0x3fu) << 4u;
+}
+
+inline u32 gxGpuTextureClutBaseY(u32 textureWord) {
+	return (gxGpuTextureAttribute(textureWord) >> 6u) & 0x1ffu;
+}
+
+inline u32 gxGpuDrawModeTexturePageBaseX(u32 drawModeWord) {
+	return (drawModeWord & 0x0fu) << 6u;
+}
+
+inline u32 gxGpuDrawModeTexturePageBaseY(u32 drawModeWord) {
+	return ((drawModeWord >> 4u) & 0x01u) << 8u;
+}
+
+inline u32 gxGpuDrawModeTextureMode(u32 drawModeWord) {
+	return (drawModeWord >> 7u) & 0x03u;
+}
+
+inline u32 gxGpuPolygonTexturePageWordIndex(u32 opcode) {
+	return gxGpuCommandGouraud(opcode) ? 5u : 4u;
+}
+
+inline u32 gxGpuPolygonDrawModeWord(u32 drawModeWord, u32 textureAttribute) {
+	return (textureAttribute & GX_GPU_DRAW_MODE_POLYGON_TEXPAGE_MASK) | (drawModeWord & ~GX_GPU_DRAW_MODE_POLYGON_TEXPAGE_MASK);
+}
+
+inline u32 gxGpuTextureWindowAndX(u32 textureWindowWord) {
+	return (~((textureWindowWord & 0x1fu) << 3u)) & 0xffu;
+}
+
+inline u32 gxGpuTextureWindowAndY(u32 textureWindowWord) {
+	return (~(((textureWindowWord >> 5u) & 0x1fu) << 3u)) & 0xffu;
+}
+
+inline u32 gxGpuTextureWindowOrX(u32 textureWindowWord) {
+	return (((textureWindowWord >> 10u) & 0x1fu) & (textureWindowWord & 0x1fu)) << 3u;
+}
+
+inline u32 gxGpuTextureWindowOrY(u32 textureWindowWord) {
+	return (((textureWindowWord >> 15u) & 0x1fu) & ((textureWindowWord >> 5u) & 0x1fu)) << 3u;
 }
 
 inline u32 gxGpuDrawingAreaX(u32 word) {

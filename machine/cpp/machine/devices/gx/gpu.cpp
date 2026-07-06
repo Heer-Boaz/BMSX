@@ -123,6 +123,10 @@ void GxGpu::executeGp0Command() {
 		break;
 	default:
 		if (opcode >= GX_GPU_GP0_POLYGON_FIRST && opcode <= GX_GPU_GP0_POLYGON_LAST) {
+			if ((opcode & GX_GPU_GP0_RENDER_TEXTURE_BIT) != 0u) {
+				const u32 texturePageWord = m_gp0CommandWords[gxGpuPolygonTexturePageWordIndex(opcode)];
+				writeDrawModeWord(gxGpuPolygonDrawModeWord(m_drawModeWord, gxGpuTextureAttribute(texturePageWord)));
+			}
 			emitFixedGp0Command(GX_GPU_COMMAND_DRAW_POLYGON, opcode, commandWordCount);
 		} else if (opcode >= GX_GPU_GP0_LINE_FIRST && opcode <= GX_GPU_GP0_LINE_LAST) {
 			if ((opcode & GX_GPU_GP0_RENDER_QUAD_OR_POLYLINE_BIT) != 0u) {

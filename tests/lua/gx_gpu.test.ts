@@ -10,6 +10,8 @@ import {
 	GX_GPU_COMMAND_DRAW_RECTANGLE,
 	GX_GPU_COMMAND_FILL_RECTANGLE,
 	GX_GPU_COMMAND_UPLOAD_CPU_TO_VRAM,
+	GX_GPU_TEXTURE_MODE_DIRECT16,
+	gxGpuCommandRawTextureEnabled,
 	gxGpuCommandRectangleHeight,
 	gxGpuCommandRectangleWidth,
 	gxGpuDrawingAreaBottomExclusive,
@@ -18,8 +20,22 @@ import {
 	gxGpuDrawingAreaTop,
 	gxGpuDrawingAreaX,
 	gxGpuDrawingAreaY,
+	gxGpuDrawModeTextureMode,
+	gxGpuDrawModeTexturePageBaseX,
+	gxGpuDrawModeTexturePageBaseY,
 	gxGpuDrawingOffsetY,
+	gxGpuPolygonDrawModeWord,
+	gxGpuPolygonTexturePageWordIndex,
 	gxGpuSigned11,
+	gxGpuTextureAttribute,
+	gxGpuTextureClutBaseX,
+	gxGpuTextureClutBaseY,
+	gxGpuTextureU,
+	gxGpuTextureV,
+	gxGpuTextureWindowAndX,
+	gxGpuTextureWindowAndY,
+	gxGpuTextureWindowOrX,
+	gxGpuTextureWindowOrY,
 	gxGpuTransferHeight,
 	gxGpuTransferPixelWord,
 	gxGpuTransferWidth,
@@ -118,6 +134,26 @@ test('GX-GPU decodes PSX GP0 signed vertex and rectangle size words', () => {
 	assert.equal(gxGpuTransferHeight(0x012c0007), 300);
 	assert.equal(gxGpuTransferPixelWord(0x89abcdef, 0), 0xcdef);
 	assert.equal(gxGpuTransferPixelWord(0x89abcdef, 1), 0x89ab);
+
+	assert.equal(gxGpuCommandRawTextureEnabled(0x25), true);
+	assert.equal(gxGpuCommandRawTextureEnabled(0x24), false);
+	assert.equal(gxGpuTextureU(0x01c3ab56), 0x56);
+	assert.equal(gxGpuTextureV(0x01c3ab56), 0xab);
+	assert.equal(gxGpuTextureAttribute(0x01c3ab56), 0x01c3);
+	assert.equal(gxGpuTextureClutBaseX(0x01c3ab56), 48);
+	assert.equal(gxGpuTextureClutBaseY(0x01c3ab56), 7);
+	assert.equal(gxGpuDrawModeTexturePageBaseX(0x0013), 192);
+	assert.equal(gxGpuDrawModeTexturePageBaseY(0x0013), 256);
+	assert.equal(gxGpuDrawModeTextureMode(0x0100), GX_GPU_TEXTURE_MODE_DIRECT16);
+	assert.equal(gxGpuPolygonTexturePageWordIndex(0x24), 4);
+	assert.equal(gxGpuPolygonTexturePageWordIndex(0x34), 5);
+	assert.equal(gxGpuPolygonDrawModeWord(0x1fff, 0x0000), 0x1600);
+	assert.equal(gxGpuPolygonDrawModeWord(0x0000, 0x0183), 0x0183);
+	const textureWindowWord = 0x00010000 | 0x00000c00 | 0x00000060 | 0x00000002;
+	assert.equal(gxGpuTextureWindowAndX(textureWindowWord), 239);
+	assert.equal(gxGpuTextureWindowAndY(textureWindowWord), 231);
+	assert.equal(gxGpuTextureWindowOrX(textureWindowWord), 16);
+	assert.equal(gxGpuTextureWindowOrY(textureWindowWord), 16);
 
 	assert.equal(gxGpuDrawingAreaX(12 | (34 << 10)), 12);
 	assert.equal(gxGpuDrawingAreaY(12 | (34 << 10)), 34);
@@ -295,13 +331,14 @@ test('GX-GPU emits PSX GP0 fixed-length render and blit packets into the GPU com
 		| GX_GPU_GP0_RENDER_GOURAUD_BIT;
 	gpu.writeGp0(texturedGouraudQuad << 24);
 	for (let index = 1; index < 12; index += 1) {
-		gpu.writeGp0(index === 6 ? ((GX_GPU_GP0_SET_DRAW_MODE << 24) | 0x000345) : index);
+		gpu.writeGp0(index === 5 ? 0x01830055 : index === 6 ? ((GX_GPU_GP0_SET_DRAW_MODE << 24) | 0x000345) : index);
 	}
 	assert.equal(commands.commandCount, 2);
 	assert.equal(commands.commandKind[1], GX_GPU_COMMAND_DRAW_POLYGON);
 	assert.equal(commands.commandOpcode[1], texturedGouraudQuad);
 	assert.equal(commands.commandWordCount[1], 12);
-	assert.equal(gpu.readDrawModeWord(), 0);
+	assert.equal(commands.commandDrawModeWord[1], 0x0183);
+	assert.equal(gpu.readDrawModeWord(), 0x0183);
 
 	gpu.writeGp0(GX_GPU_GP0_FILL_RECTANGLE << 24);
 	gpu.writeGp0((GX_GPU_GP0_SET_DRAW_MODE << 24) | 0x000222);

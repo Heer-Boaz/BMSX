@@ -2,6 +2,10 @@ export const GX_GPU_COMMAND_CAPACITY = 4096;
 export const GX_GPU_COMMAND_WORD_CAPACITY = 0x80000;
 export const GX_GPU_VRAM_WIDTH = 1024;
 export const GX_GPU_VRAM_HEIGHT = 512;
+export const GX_GPU_DRAW_MODE_POLYGON_TEXPAGE_MASK = 0x09ff;
+export const GX_GPU_TEXTURE_MODE_PALETTE4 = 0;
+export const GX_GPU_TEXTURE_MODE_PALETTE8 = 1;
+export const GX_GPU_TEXTURE_MODE_DIRECT16 = 2;
 
 export const GX_GPU_COMMAND_DRAW_POLYGON = 1;
 export const GX_GPU_COMMAND_DRAW_LINE = 2;
@@ -31,6 +35,10 @@ export function gxGpuDrawingOffsetX(word: number): number {
 
 export function gxGpuDrawingOffsetY(word: number): number {
 	return gxGpuSigned11(word >>> 11);
+}
+
+export function gxGpuCommandRawTextureEnabled(opcode: number): boolean {
+	return (opcode & 0x01) !== 0;
 }
 
 export function gxGpuCommandTextureEnabled(opcode: number): boolean {
@@ -89,6 +97,62 @@ export function gxGpuTransferHeight(sizeWord: number): number {
 
 export function gxGpuTransferPixelWord(payloadWord: number, pixelIndex: number): number {
 	return (pixelIndex & 1) === 0 ? payloadWord & 0xffff : payloadWord >>> 16;
+}
+
+export function gxGpuTextureU(textureWord: number): number {
+	return textureWord & 0xff;
+}
+
+export function gxGpuTextureV(textureWord: number): number {
+	return (textureWord >>> 8) & 0xff;
+}
+
+export function gxGpuTextureAttribute(textureWord: number): number {
+	return (textureWord >>> 16) & 0xffff;
+}
+
+export function gxGpuTextureClutBaseX(textureWord: number): number {
+	return (gxGpuTextureAttribute(textureWord) & 0x3f) << 4;
+}
+
+export function gxGpuTextureClutBaseY(textureWord: number): number {
+	return (gxGpuTextureAttribute(textureWord) >>> 6) & 0x1ff;
+}
+
+export function gxGpuDrawModeTexturePageBaseX(drawModeWord: number): number {
+	return (drawModeWord & 0x0f) << 6;
+}
+
+export function gxGpuDrawModeTexturePageBaseY(drawModeWord: number): number {
+	return ((drawModeWord >>> 4) & 0x01) << 8;
+}
+
+export function gxGpuDrawModeTextureMode(drawModeWord: number): number {
+	return (drawModeWord >>> 7) & 0x03;
+}
+
+export function gxGpuPolygonTexturePageWordIndex(opcode: number): number {
+	return gxGpuCommandGouraud(opcode) ? 5 : 4;
+}
+
+export function gxGpuPolygonDrawModeWord(drawModeWord: number, textureAttribute: number): number {
+	return ((textureAttribute & GX_GPU_DRAW_MODE_POLYGON_TEXPAGE_MASK) | (drawModeWord & ~GX_GPU_DRAW_MODE_POLYGON_TEXPAGE_MASK)) >>> 0;
+}
+
+export function gxGpuTextureWindowAndX(textureWindowWord: number): number {
+	return (~((textureWindowWord & 0x1f) << 3)) & 0xff;
+}
+
+export function gxGpuTextureWindowAndY(textureWindowWord: number): number {
+	return (~(((textureWindowWord >>> 5) & 0x1f) << 3)) & 0xff;
+}
+
+export function gxGpuTextureWindowOrX(textureWindowWord: number): number {
+	return (((textureWindowWord >>> 10) & 0x1f) & (textureWindowWord & 0x1f)) << 3;
+}
+
+export function gxGpuTextureWindowOrY(textureWindowWord: number): number {
+	return (((textureWindowWord >>> 15) & 0x1f) & ((textureWindowWord >>> 5) & 0x1f)) << 3;
 }
 
 export function gxGpuDrawingAreaX(word: number): number {

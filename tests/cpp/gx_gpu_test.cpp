@@ -55,6 +55,26 @@ void testGp0RawDrawWordDecoders() {
 	require(bmsx::gxGpuTransferPixelWord(0x89abcdefu, 0u) == 0xcdefu, "GX-GPU transfer low pixel word");
 	require(bmsx::gxGpuTransferPixelWord(0x89abcdefu, 1u) == 0x89abu, "GX-GPU transfer high pixel word");
 
+	require(bmsx::gxGpuCommandRawTextureEnabled(0x25u), "GX-GPU raw texture bit enabled");
+	require(!bmsx::gxGpuCommandRawTextureEnabled(0x24u), "GX-GPU raw texture bit disabled");
+	require(bmsx::gxGpuTextureU(0x01c3ab56u) == 0x56u, "GX-GPU texture U decode");
+	require(bmsx::gxGpuTextureV(0x01c3ab56u) == 0xabu, "GX-GPU texture V decode");
+	require(bmsx::gxGpuTextureAttribute(0x01c3ab56u) == 0x01c3u, "GX-GPU texture attribute decode");
+	require(bmsx::gxGpuTextureClutBaseX(0x01c3ab56u) == 48u, "GX-GPU CLUT X base decode");
+	require(bmsx::gxGpuTextureClutBaseY(0x01c3ab56u) == 7u, "GX-GPU CLUT Y base decode");
+	require(bmsx::gxGpuDrawModeTexturePageBaseX(0x0013u) == 192u, "GX-GPU texture page X base decode");
+	require(bmsx::gxGpuDrawModeTexturePageBaseY(0x0013u) == 256u, "GX-GPU texture page Y base decode");
+	require(bmsx::gxGpuDrawModeTextureMode(0x0100u) == bmsx::GX_GPU_TEXTURE_MODE_DIRECT16, "GX-GPU texture mode decode");
+	require(bmsx::gxGpuPolygonTexturePageWordIndex(0x24u) == 4u, "GX-GPU flat textured polygon texpage word index");
+	require(bmsx::gxGpuPolygonTexturePageWordIndex(0x34u) == 5u, "GX-GPU Gouraud textured polygon texpage word index");
+	require(bmsx::gxGpuPolygonDrawModeWord(0x1fffu, 0x0000u) == 0x1600u, "GX-GPU polygon texpage preserves non-texpage draw bits");
+	require(bmsx::gxGpuPolygonDrawModeWord(0x0000u, 0x0183u) == 0x0183u, "GX-GPU polygon texpage writes page bits");
+	const uint32_t textureWindowWord = 0x00010000u | 0x00000c00u | 0x00000060u | 0x00000002u;
+	require(bmsx::gxGpuTextureWindowAndX(textureWindowWord) == 239u, "GX-GPU texture window AND X");
+	require(bmsx::gxGpuTextureWindowAndY(textureWindowWord) == 231u, "GX-GPU texture window AND Y");
+	require(bmsx::gxGpuTextureWindowOrX(textureWindowWord) == 16u, "GX-GPU texture window OR X");
+	require(bmsx::gxGpuTextureWindowOrY(textureWindowWord) == 16u, "GX-GPU texture window OR Y");
+
 	require(bmsx::gxGpuDrawingAreaX(12u | (34u << 10u)) == 12u, "GX-GPU drawing area x decode");
 	require(bmsx::gxGpuDrawingAreaY(12u | (34u << 10u)) == 34u, "GX-GPU drawing area y decode");
 	require(bmsx::gxGpuDrawingAreaLeft(12u | (34u << 10u), 20u | (40u << 10u)) == 12u, "GX-GPU drawing area left");
@@ -230,13 +250,14 @@ void testGp0FixedLengthRenderAndBlitPacketAssembly() {
 		| bmsx::GX_GPU_GP0_RENDER_GOURAUD_BIT;
 	gpu.writeGp0(texturedGouraudQuad << 24u);
 	for (uint32_t index = 1u; index < 12u; index += 1u) {
-		gpu.writeGp0(index == 6u ? ((bmsx::GX_GPU_GP0_SET_DRAW_MODE << 24u) | 0x000345u) : index);
+		gpu.writeGp0(index == 5u ? 0x01830055u : index == 6u ? ((bmsx::GX_GPU_GP0_SET_DRAW_MODE << 24u) | 0x000345u) : index);
 	}
 	require(commands.commandCount == 2u, "GX-GPU GP0 textured Gouraud quad emitted command count");
 	require(commands.commandKind[1] == bmsx::GX_GPU_COMMAND_DRAW_POLYGON, "GX-GPU GP0 textured Gouraud quad command kind");
 	require(commands.commandOpcode[1] == texturedGouraudQuad, "GX-GPU GP0 textured Gouraud quad opcode");
 	require(commands.commandWordCount[1] == 12u, "GX-GPU GP0 textured Gouraud quad command words");
-	require(gpu.readDrawModeWord() == 0u, "GX-GPU GP0 textured Gouraud quad payload does not execute draw mode");
+	require(commands.commandDrawModeWord[1] == 0x0183u, "GX-GPU textured polygon captures texpage draw mode");
+	require(gpu.readDrawModeWord() == 0x0183u, "GX-GPU textured polygon writes texpage draw mode");
 
 	gpu.writeGp0(bmsx::GX_GPU_GP0_FILL_RECTANGLE << 24u);
 	gpu.writeGp0((bmsx::GX_GPU_GP0_SET_DRAW_MODE << 24u) | 0x000222u);
