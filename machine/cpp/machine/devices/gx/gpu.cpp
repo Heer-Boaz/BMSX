@@ -21,6 +21,7 @@ void GxGpu::reset() {
 	m_gp1Word = 0u;
 	m_displayModeWord = PSX_GPU_DISPLAY_MODE_PAL_WORD;
 	m_statusWord = GX_GPU_STATUS_RESET_WORD;
+	clearGp0CommandState();
 	m_gpuReadWord = 0x00000400u;
 	m_drawModeWord = 0u;
 	m_textureWindowWord = 0u;
@@ -63,7 +64,33 @@ u32 GxGpu::readGp0() const {
 void GxGpu::writeGp0(u32 word) {
 	m_gp0Word = word;
 	m_memory.writeIoValue(IO_GX_GPU_GP0, valueNumber(static_cast<double>(m_gp0Word)));
-	const u32 opcode = m_gp0Word >> GX_GPU_GP0_OPCODE_SHIFT;
+
+	if (m_gp0ImageLoadWordsRemaining != 0u) {
+		m_gp0ImageLoadWordsRemaining -= 1u;
+		return;
+	}
+
+	if (m_gp0PolylineWordsPerVertex != 0u) {
+		consumeGp0PolylinePayloadWord();
+		return;
+	}
+
+	if (m_gp0CommandTargetWordCount == 0u) {
+		m_gp0CommandTargetWordCount = gp0CommandWordCountForOpcode(m_gp0Word >> GX_GPU_GP0_OPCODE_SHIFT);
+	}
+
+	m_gp0CommandWords[m_gp0CommandWordCount] = m_gp0Word;
+	m_gp0CommandWordCount += 1u;
+	if (m_gp0CommandWordCount == m_gp0CommandTargetWordCount) {
+		executeGp0Command();
+	}
+}
+
+void GxGpu::executeGp0Command() {
+	const u32 opcode = m_gp0CommandWords[0] >> GX_GPU_GP0_OPCODE_SHIFT;
+	m_gp0CommandWordCount = 0u;
+	m_gp0CommandTargetWordCount = 0u;
+
 	switch (opcode) {
 	case GX_GPU_GP0_IRQ_REQUEST:
 		m_statusWord |= GX_GPU_STATUS_INTERRUPT_REQUEST;
@@ -85,7 +112,14 @@ void GxGpu::writeGp0(u32 word) {
 		m_drawingOffsetWord = m_gp0Word & GX_GPU_DRAWING_OFFSET_MASK;
 		break;
 	case GX_GPU_GP0_SET_MASK_BIT:
-		writeMaskBitModeWord(m_gp0Word & GX_GPU_GP0_PARAM_MASK);
+		writeMaskBitModeWord(m_gp0CommandWords[0] & GX_GPU_GP0_PARAM_MASK);
+		break;
+	default:
+		if (opcode >= GX_GPU_GP0_CPU_TO_VRAM_FIRST && opcode <= GX_GPU_GP0_CPU_TO_VRAM_LAST) {
+			beginImageLoadToVram();
+		} else if (opcode >= GX_GPU_GP0_LINE_FIRST && opcode <= GX_GPU_GP0_LINE_LAST && (opcode & GX_GPU_GP0_RENDER_QUAD_OR_POLYLINE_BIT) != 0u) {
+			beginPolylinePayload(opcode);
+		}
 		break;
 	}
 }
@@ -102,6 +136,7 @@ u32 GxGpu::writeGp1(u32 word) {
 		reset();
 		break;
 	case GX_GPU_GP1_CLEAR_FIFO:
+		clearGp0CommandState();
 		writeStatusIo();
 		break;
 	case GX_GPU_GP1_ACK_INTERRUPT:
@@ -205,6 +240,84 @@ void GxGpu::writeDisplayDisableWord(u32 word) {
 		m_statusWord &= ~GX_GPU_STATUS_DISPLAY_DISABLE;
 	}
 	writeStatusIo();
+}
+
+void GxGpu::clearGp0CommandState() {
+	m_gp0CommandWords.fill(0u);
+	m_gp0CommandWordCount = 0u;
+	m_gp0CommandTargetWordCount = 0u;
+	m_gp0ImageLoadWordsRemaining = 0u;
+	m_gp0PolylineWordsPerVertex = 0u;
+	m_gp0PolylinePayloadPhase = 0u;
+}
+
+void GxGpu::consumeGp0PolylinePayloadWord() {
+	if (m_gp0PolylinePayloadPhase == 0u && (m_gp0Word & 0xf000f000u) == 0x50005000u) {
+		m_gp0PolylineWordsPerVertex = 0u;
+		m_gp0PolylinePayloadPhase = 0u;
+		return;
+	}
+	m_gp0PolylinePayloadPhase += 1u;
+	if (m_gp0PolylinePayloadPhase == m_gp0PolylineWordsPerVertex) {
+		m_gp0PolylinePayloadPhase = 0u;
+	}
+}
+
+void GxGpu::beginPolylinePayload(u32 opcode) {
+	m_gp0PolylineWordsPerVertex = (opcode & GX_GPU_GP0_RENDER_GOURAUD_BIT) != 0u ? 2u : 1u;
+	m_gp0PolylinePayloadPhase = 0u;
+}
+
+u32 GxGpu::gp0CommandWordCountForOpcode(u32 opcode) const {
+	if (opcode == GX_GPU_GP0_FILL_RECTANGLE) {
+		return 3u;
+	}
+	if (opcode >= GX_GPU_GP0_POLYGON_FIRST && opcode <= GX_GPU_GP0_POLYGON_LAST) {
+		return gp0PolygonWordCount(opcode);
+	}
+	if (opcode >= GX_GPU_GP0_LINE_FIRST && opcode <= GX_GPU_GP0_LINE_LAST) {
+		return gp0LineWordCount(opcode);
+	}
+	if (opcode >= GX_GPU_GP0_RECTANGLE_FIRST && opcode <= GX_GPU_GP0_RECTANGLE_LAST) {
+		return gp0RectangleWordCount(opcode);
+	}
+	if (opcode >= GX_GPU_GP0_VRAM_TO_VRAM_FIRST && opcode <= GX_GPU_GP0_VRAM_TO_VRAM_LAST) {
+		return 4u;
+	}
+	if (opcode >= GX_GPU_GP0_CPU_TO_VRAM_FIRST && opcode <= GX_GPU_GP0_VRAM_TO_CPU_LAST) {
+		return 3u;
+	}
+	return 1u;
+}
+
+u32 GxGpu::gp0PolygonWordCount(u32 opcode) const {
+	const u32 wordsPerVertex = 1u
+		+ ((opcode & GX_GPU_GP0_RENDER_TEXTURE_BIT) >> 2u)
+		+ ((opcode & GX_GPU_GP0_RENDER_GOURAUD_BIT) >> 4u);
+	const u32 vertexCount = (opcode & GX_GPU_GP0_RENDER_QUAD_OR_POLYLINE_BIT) != 0u ? 4u : 3u;
+	const u32 firstColorWord = (opcode & GX_GPU_GP0_RENDER_GOURAUD_BIT) != 0u ? 0u : 1u;
+	return wordsPerVertex * vertexCount + firstColorWord;
+}
+
+u32 GxGpu::gp0LineWordCount(u32 opcode) const {
+	const u32 gouraudLineWordCount = (opcode & GX_GPU_GP0_RENDER_GOURAUD_BIT) != 0u ? 4u : 3u;
+	if ((opcode & GX_GPU_GP0_RENDER_QUAD_OR_POLYLINE_BIT) != 0u) {
+		return (opcode & GX_GPU_GP0_RENDER_GOURAUD_BIT) != 0u ? 3u : 4u;
+	}
+	return gouraudLineWordCount;
+}
+
+u32 GxGpu::gp0RectangleWordCount(u32 opcode) const {
+	const u32 textureWordCount = (opcode & GX_GPU_GP0_RENDER_TEXTURE_BIT) >> 2u;
+	const u32 sizeWordCount = (opcode & GX_GPU_GP0_RECTANGLE_SIZE_MASK) == 0u ? 1u : 0u;
+	return 2u + textureWordCount + sizeWordCount;
+}
+
+void GxGpu::beginImageLoadToVram() {
+	const u32 sizeWord = m_gp0CommandWords[2];
+	const u32 width = (((sizeWord & 0xffffu) - 1u) & GX_GPU_VRAM_WIDTH_MASK) + 1u;
+	const u32 height = (((sizeWord >> 16u) - 1u) & GX_GPU_VRAM_HEIGHT_MASK) + 1u;
+	m_gp0ImageLoadWordsRemaining = ((width * height) + 1u) >> 1u;
 }
 
 void GxGpu::writeDrawModeWord(u32 word) {

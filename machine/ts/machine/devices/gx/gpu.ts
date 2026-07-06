@@ -27,6 +27,26 @@ export const GX_GPU_GP0_SET_MASK_BIT = 0xe6;
 export const GX_GPU_GP0_IRQ_REQUEST = 0x1f;
 export const GX_GPU_GP0_OPCODE_SHIFT = 24;
 export const GX_GPU_GP0_PARAM_MASK = 0x00ffffff;
+export const GX_GPU_GP0_FILL_RECTANGLE = 0x02;
+export const GX_GPU_GP0_POLYGON_FIRST = 0x20;
+export const GX_GPU_GP0_POLYGON_LAST = 0x3f;
+export const GX_GPU_GP0_LINE_FIRST = 0x40;
+export const GX_GPU_GP0_LINE_LAST = 0x5f;
+export const GX_GPU_GP0_RECTANGLE_FIRST = 0x60;
+export const GX_GPU_GP0_RECTANGLE_LAST = 0x7f;
+export const GX_GPU_GP0_VRAM_TO_VRAM_FIRST = 0x80;
+export const GX_GPU_GP0_VRAM_TO_VRAM_LAST = 0x9f;
+export const GX_GPU_GP0_CPU_TO_VRAM_FIRST = 0xa0;
+export const GX_GPU_GP0_CPU_TO_VRAM_LAST = 0xbf;
+export const GX_GPU_GP0_VRAM_TO_CPU_FIRST = 0xc0;
+export const GX_GPU_GP0_VRAM_TO_CPU_LAST = 0xdf;
+export const GX_GPU_GP0_RENDER_TEXTURE_BIT = 0x04;
+export const GX_GPU_GP0_RENDER_QUAD_OR_POLYLINE_BIT = 0x08;
+export const GX_GPU_GP0_RENDER_GOURAUD_BIT = 0x10;
+export const GX_GPU_GP0_RECTANGLE_SIZE_MASK = 0x18;
+export const GX_GPU_GP0_COMMAND_BUFFER_WORDS = 16;
+export const GX_GPU_VRAM_WIDTH_MASK = 0x3ff;
+export const GX_GPU_VRAM_HEIGHT_MASK = 0x1ff;
 
 export const GX_GPU_DISPLAY_START_MASK = 0x0007ffff;
 export const GX_GPU_HORIZONTAL_DISPLAY_RANGE_MASK = 0x00ffffff;
@@ -85,6 +105,12 @@ export class GxGpu {
 	private gp1Word = 0;
 	private displayModeWord = PSX_GPU_DISPLAY_MODE_PAL_WORD;
 	private statusWord = GX_GPU_STATUS_RESET_WORD;
+	private readonly gp0CommandWords = new Uint32Array(GX_GPU_GP0_COMMAND_BUFFER_WORDS);
+	private gp0CommandWordCount = 0;
+	private gp0CommandTargetWordCount = 0;
+	private gp0ImageLoadWordsRemaining = 0;
+	private gp0PolylineWordsPerVertex = 0;
+	private gp0PolylinePayloadPhase = 0;
 	private gpuReadWord = 0x00000400;
 	private drawModeWord = 0;
 	private textureWindowWord = 0;
@@ -109,6 +135,7 @@ export class GxGpu {
 		this.gp1Word = 0;
 		this.displayModeWord = PSX_GPU_DISPLAY_MODE_PAL_WORD;
 		this.statusWord = GX_GPU_STATUS_RESET_WORD;
+		this.clearGp0CommandState();
 		this.gpuReadWord = 0x00000400;
 		this.drawModeWord = 0;
 		this.textureWindowWord = 0;
@@ -151,7 +178,33 @@ export class GxGpu {
 	public writeGp0(word: number): void {
 		this.gp0Word = word >>> 0;
 		this.memory.writeIoValue(IO_GX_GPU_GP0, this.gp0Word);
-		const opcode = this.gp0Word >>> GX_GPU_GP0_OPCODE_SHIFT;
+
+		if (this.gp0ImageLoadWordsRemaining !== 0) {
+			this.gp0ImageLoadWordsRemaining -= 1;
+			return;
+		}
+
+		if (this.gp0PolylineWordsPerVertex !== 0) {
+			this.consumeGp0PolylinePayloadWord();
+			return;
+		}
+
+		if (this.gp0CommandTargetWordCount === 0) {
+			this.gp0CommandTargetWordCount = this.gp0CommandWordCountForOpcode(this.gp0Word >>> GX_GPU_GP0_OPCODE_SHIFT);
+		}
+
+		this.gp0CommandWords[this.gp0CommandWordCount] = this.gp0Word;
+		this.gp0CommandWordCount += 1;
+		if (this.gp0CommandWordCount === this.gp0CommandTargetWordCount) {
+			this.executeGp0Command();
+		}
+	}
+
+	private executeGp0Command(): void {
+		const opcode = this.gp0CommandWords[0] >>> GX_GPU_GP0_OPCODE_SHIFT;
+		this.gp0CommandWordCount = 0;
+		this.gp0CommandTargetWordCount = 0;
+
 		switch (opcode) {
 			case GX_GPU_GP0_IRQ_REQUEST:
 				this.statusWord = (this.statusWord | GX_GPU_STATUS_INTERRUPT_REQUEST) >>> 0;
@@ -173,7 +226,14 @@ export class GxGpu {
 				this.drawingOffsetWord = this.gp0Word & GX_GPU_DRAWING_OFFSET_MASK;
 				break;
 			case GX_GPU_GP0_SET_MASK_BIT:
-				this.writeMaskBitModeWord(this.gp0Word & GX_GPU_GP0_PARAM_MASK);
+				this.writeMaskBitModeWord(this.gp0CommandWords[0] & GX_GPU_GP0_PARAM_MASK);
+				break;
+			default:
+				if (opcode >= GX_GPU_GP0_CPU_TO_VRAM_FIRST && opcode <= GX_GPU_GP0_CPU_TO_VRAM_LAST) {
+					this.beginImageLoadToVram();
+				} else if (opcode >= GX_GPU_GP0_LINE_FIRST && opcode <= GX_GPU_GP0_LINE_LAST && (opcode & GX_GPU_GP0_RENDER_QUAD_OR_POLYLINE_BIT) !== 0) {
+					this.beginPolylinePayload(opcode);
+				}
 				break;
 		}
 	}
@@ -191,6 +251,7 @@ export class GxGpu {
 				this.reset();
 				break;
 			case GX_GPU_GP1_CLEAR_FIFO:
+				this.clearGp0CommandState();
 				this.writeStatusIo();
 				break;
 			case GX_GPU_GP1_ACK_INTERRUPT:
@@ -294,6 +355,84 @@ export class GxGpu {
 			this.statusWord = (this.statusWord & ~GX_GPU_STATUS_DISPLAY_DISABLE) >>> 0;
 		}
 		this.writeStatusIo();
+	}
+
+	private clearGp0CommandState(): void {
+		this.gp0CommandWords.fill(0);
+		this.gp0CommandWordCount = 0;
+		this.gp0CommandTargetWordCount = 0;
+		this.gp0ImageLoadWordsRemaining = 0;
+		this.gp0PolylineWordsPerVertex = 0;
+		this.gp0PolylinePayloadPhase = 0;
+	}
+
+	private consumeGp0PolylinePayloadWord(): void {
+		if (this.gp0PolylinePayloadPhase === 0 && (this.gp0Word & 0xf000f000) === 0x50005000) {
+			this.gp0PolylineWordsPerVertex = 0;
+			this.gp0PolylinePayloadPhase = 0;
+			return;
+		}
+		this.gp0PolylinePayloadPhase += 1;
+		if (this.gp0PolylinePayloadPhase === this.gp0PolylineWordsPerVertex) {
+			this.gp0PolylinePayloadPhase = 0;
+		}
+	}
+
+	private beginPolylinePayload(opcode: number): void {
+		this.gp0PolylineWordsPerVertex = (opcode & GX_GPU_GP0_RENDER_GOURAUD_BIT) !== 0 ? 2 : 1;
+		this.gp0PolylinePayloadPhase = 0;
+	}
+
+	private gp0CommandWordCountForOpcode(opcode: number): number {
+		if (opcode === GX_GPU_GP0_FILL_RECTANGLE) {
+			return 3;
+		}
+		if (opcode >= GX_GPU_GP0_POLYGON_FIRST && opcode <= GX_GPU_GP0_POLYGON_LAST) {
+			return this.gp0PolygonWordCount(opcode);
+		}
+		if (opcode >= GX_GPU_GP0_LINE_FIRST && opcode <= GX_GPU_GP0_LINE_LAST) {
+			return this.gp0LineWordCount(opcode);
+		}
+		if (opcode >= GX_GPU_GP0_RECTANGLE_FIRST && opcode <= GX_GPU_GP0_RECTANGLE_LAST) {
+			return this.gp0RectangleWordCount(opcode);
+		}
+		if (opcode >= GX_GPU_GP0_VRAM_TO_VRAM_FIRST && opcode <= GX_GPU_GP0_VRAM_TO_VRAM_LAST) {
+			return 4;
+		}
+		if (opcode >= GX_GPU_GP0_CPU_TO_VRAM_FIRST && opcode <= GX_GPU_GP0_VRAM_TO_CPU_LAST) {
+			return 3;
+		}
+		return 1;
+	}
+
+	private gp0PolygonWordCount(opcode: number): number {
+		const wordsPerVertex = 1
+			+ ((opcode & GX_GPU_GP0_RENDER_TEXTURE_BIT) >>> 2)
+			+ ((opcode & GX_GPU_GP0_RENDER_GOURAUD_BIT) >>> 4);
+		const vertexCount = (opcode & GX_GPU_GP0_RENDER_QUAD_OR_POLYLINE_BIT) !== 0 ? 4 : 3;
+		const firstColorWord = (opcode & GX_GPU_GP0_RENDER_GOURAUD_BIT) !== 0 ? 0 : 1;
+		return wordsPerVertex * vertexCount + firstColorWord;
+	}
+
+	private gp0LineWordCount(opcode: number): number {
+		const gouraudLineWordCount = (opcode & GX_GPU_GP0_RENDER_GOURAUD_BIT) !== 0 ? 4 : 3;
+		if ((opcode & GX_GPU_GP0_RENDER_QUAD_OR_POLYLINE_BIT) !== 0) {
+			return (opcode & GX_GPU_GP0_RENDER_GOURAUD_BIT) !== 0 ? 3 : 4;
+		}
+		return gouraudLineWordCount;
+	}
+
+	private gp0RectangleWordCount(opcode: number): number {
+		const textureWordCount = (opcode & GX_GPU_GP0_RENDER_TEXTURE_BIT) >>> 2;
+		const sizeWordCount = (opcode & GX_GPU_GP0_RECTANGLE_SIZE_MASK) === 0 ? 1 : 0;
+		return 2 + textureWordCount + sizeWordCount;
+	}
+
+	private beginImageLoadToVram(): void {
+		const sizeWord = this.gp0CommandWords[2];
+		const width = (((sizeWord & 0xffff) - 1) & GX_GPU_VRAM_WIDTH_MASK) + 1;
+		const height = (((sizeWord >>> 16) - 1) & GX_GPU_VRAM_HEIGHT_MASK) + 1;
+		this.gp0ImageLoadWordsRemaining = ((width * height) + 1) >>> 1;
 	}
 
 	private writeDrawModeWord(word: number): void {

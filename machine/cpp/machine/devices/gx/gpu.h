@@ -2,6 +2,8 @@
 
 #include "common/primitives.h"
 
+#include <array>
+
 namespace bmsx {
 
 class Memory;
@@ -30,6 +32,26 @@ constexpr u32 GX_GPU_GP0_SET_MASK_BIT = 0xe6u;
 constexpr u32 GX_GPU_GP0_IRQ_REQUEST = 0x1fu;
 constexpr u32 GX_GPU_GP0_OPCODE_SHIFT = 24u;
 constexpr u32 GX_GPU_GP0_PARAM_MASK = 0x00ffffffu;
+constexpr u32 GX_GPU_GP0_FILL_RECTANGLE = 0x02u;
+constexpr u32 GX_GPU_GP0_POLYGON_FIRST = 0x20u;
+constexpr u32 GX_GPU_GP0_POLYGON_LAST = 0x3fu;
+constexpr u32 GX_GPU_GP0_LINE_FIRST = 0x40u;
+constexpr u32 GX_GPU_GP0_LINE_LAST = 0x5fu;
+constexpr u32 GX_GPU_GP0_RECTANGLE_FIRST = 0x60u;
+constexpr u32 GX_GPU_GP0_RECTANGLE_LAST = 0x7fu;
+constexpr u32 GX_GPU_GP0_VRAM_TO_VRAM_FIRST = 0x80u;
+constexpr u32 GX_GPU_GP0_VRAM_TO_VRAM_LAST = 0x9fu;
+constexpr u32 GX_GPU_GP0_CPU_TO_VRAM_FIRST = 0xa0u;
+constexpr u32 GX_GPU_GP0_CPU_TO_VRAM_LAST = 0xbfu;
+constexpr u32 GX_GPU_GP0_VRAM_TO_CPU_FIRST = 0xc0u;
+constexpr u32 GX_GPU_GP0_VRAM_TO_CPU_LAST = 0xdfu;
+constexpr u32 GX_GPU_GP0_RENDER_TEXTURE_BIT = 0x04u;
+constexpr u32 GX_GPU_GP0_RENDER_QUAD_OR_POLYLINE_BIT = 0x08u;
+constexpr u32 GX_GPU_GP0_RENDER_GOURAUD_BIT = 0x10u;
+constexpr u32 GX_GPU_GP0_RECTANGLE_SIZE_MASK = 0x18u;
+constexpr u32 GX_GPU_GP0_COMMAND_BUFFER_WORDS = 16u;
+constexpr u32 GX_GPU_VRAM_WIDTH_MASK = 0x3ffu;
+constexpr u32 GX_GPU_VRAM_HEIGHT_MASK = 0x1ffu;
 
 constexpr u32 GX_GPU_DISPLAY_START_MASK = 0x0007ffffu;
 constexpr u32 GX_GPU_HORIZONTAL_DISPLAY_RANGE_MASK = 0x00ffffffu;
@@ -113,6 +135,12 @@ private:
 	u32 m_gp1Word = 0;
 	u32 m_displayModeWord = 0;
 	u32 m_statusWord = GX_GPU_STATUS_RESET_WORD;
+	std::array<u32, GX_GPU_GP0_COMMAND_BUFFER_WORDS> m_gp0CommandWords{};
+	u32 m_gp0CommandWordCount = 0u;
+	u32 m_gp0CommandTargetWordCount = 0u;
+	u32 m_gp0ImageLoadWordsRemaining = 0u;
+	u32 m_gp0PolylineWordsPerVertex = 0u;
+	u32 m_gp0PolylinePayloadPhase = 0u;
 	u32 m_gpuReadWord = 0x00000400u;
 	u32 m_drawModeWord = 0u;
 	u32 m_textureWindowWord = 0u;
@@ -126,6 +154,15 @@ private:
 	u32 m_textureDisableMaskWord = 0u;
 
 	void writeDisplayDisableWord(u32 word);
+	void clearGp0CommandState();
+	void consumeGp0PolylinePayloadWord();
+	void beginPolylinePayload(u32 opcode);
+	void executeGp0Command();
+	u32 gp0CommandWordCountForOpcode(u32 opcode) const;
+	u32 gp0PolygonWordCount(u32 opcode) const;
+	u32 gp0LineWordCount(u32 opcode) const;
+	u32 gp0RectangleWordCount(u32 opcode) const;
+	void beginImageLoadToVram();
 	void writeDrawModeWord(u32 word);
 	void updateDrawModeStatusBits();
 	void writeMaskBitModeWord(u32 word);

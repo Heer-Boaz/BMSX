@@ -11,14 +11,23 @@ import {
 	GX_GPU_DRAW_MODE_GPUSTAT_MASK,
 	GX_GPU_DRAW_MODE_MASK,
 	GX_GPU_DRAW_MODE_TEXTURE_DISABLE,
+	GX_GPU_GP0_CPU_TO_VRAM_FIRST,
+	GX_GPU_GP0_FILL_RECTANGLE,
 	GX_GPU_GP0_IRQ_REQUEST,
+	GX_GPU_GP0_POLYGON_FIRST,
+	GX_GPU_GP0_RECTANGLE_FIRST,
+	GX_GPU_GP0_RENDER_GOURAUD_BIT,
+	GX_GPU_GP0_RENDER_QUAD_OR_POLYLINE_BIT,
+	GX_GPU_GP0_RENDER_TEXTURE_BIT,
 	GX_GPU_GP0_SET_DRAWING_AREA_BOTTOM_RIGHT,
 	GX_GPU_GP0_SET_DRAWING_AREA_TOP_LEFT,
 	GX_GPU_GP0_SET_DRAWING_OFFSET,
 	GX_GPU_GP0_SET_DRAW_MODE,
 	GX_GPU_GP0_SET_MASK_BIT,
 	GX_GPU_GP0_SET_TEXTURE_WINDOW,
+	GX_GPU_GP0_VRAM_TO_VRAM_FIRST,
 	GX_GPU_GP1_RESET,
+	GX_GPU_GP1_CLEAR_FIFO,
 	GX_GPU_GP1_ACK_INTERRUPT,
 	GX_GPU_GP1_GET_GPU_INFO,
 	GX_GPU_GP1_SET_DISPLAY_DISABLE,
@@ -192,6 +201,98 @@ test('GX-GPU handles PSX GP0 environment registers and GP1 GPU-info queries', ()
 	assert.equal(gpu.readGpuReadWord(), 0x00abcdef & GX_GPU_DRAWING_AREA_MASK);
 	gpu.writeGp1((GX_GPU_GP1_GET_GPU_INFO << 24) | 0x05);
 	assert.equal(gpu.readGpuReadWord(), GX_GPU_DRAWING_OFFSET_MASK);
+});
+
+test('GX-GPU assembles PSX GP0 fixed-length render and blit packets before decoding later command words', () => {
+	const { gpu } = createGpu();
+
+	gpu.writeGp0((GX_GPU_GP0_POLYGON_FIRST << 24) | 0x0000ff);
+	gpu.writeGp0((GX_GPU_GP0_SET_DRAW_MODE << 24) | 0x123456);
+	gpu.writeGp0(0x00020003);
+
+	assert.equal(gpu.readDrawModeWord(), 0);
+
+	gpu.writeGp0(0x00040005);
+	assert.equal(gpu.readDrawModeWord(), 0);
+
+	const texturedGouraudQuad = GX_GPU_GP0_POLYGON_FIRST
+		| GX_GPU_GP0_RENDER_TEXTURE_BIT
+		| GX_GPU_GP0_RENDER_QUAD_OR_POLYLINE_BIT
+		| GX_GPU_GP0_RENDER_GOURAUD_BIT;
+	gpu.writeGp0(texturedGouraudQuad << 24);
+	for (let index = 1; index < 12; index += 1) {
+		gpu.writeGp0(index === 6 ? ((GX_GPU_GP0_SET_DRAW_MODE << 24) | 0x000345) : index);
+	}
+	assert.equal(gpu.readDrawModeWord(), 0);
+
+	gpu.writeGp0(GX_GPU_GP0_FILL_RECTANGLE << 24);
+	gpu.writeGp0((GX_GPU_GP0_SET_DRAW_MODE << 24) | 0x000222);
+	assert.equal(gpu.readDrawModeWord(), 0);
+	gpu.writeGp0(0x000c000d);
+	assert.equal(gpu.readDrawModeWord(), 0);
+
+	gpu.writeGp0((GX_GPU_GP0_RECTANGLE_FIRST | GX_GPU_GP0_RENDER_TEXTURE_BIT) << 24);
+	gpu.writeGp0((GX_GPU_GP0_SET_DRAW_MODE << 24) | 0x000333);
+	gpu.writeGp0(0x00030004);
+	gpu.writeGp0(0x00050006);
+	assert.equal(gpu.readDrawModeWord(), 0);
+
+	gpu.writeGp0(GX_GPU_GP0_VRAM_TO_VRAM_FIRST << 24);
+	gpu.writeGp0((GX_GPU_GP0_SET_DRAW_MODE << 24) | 0x000444);
+	gpu.writeGp0(0x00030004);
+	gpu.writeGp0(0x00050006);
+	assert.equal(gpu.readDrawModeWord(), 0);
+
+	gpu.writeGp0((GX_GPU_GP0_SET_DRAW_MODE << 24) | 0x0007ff);
+	assert.equal(gpu.readDrawModeWord(), 0x0007ff);
+});
+
+test('GX-GPU consumes PSX CPU-to-VRAM image payload words as transfer data', () => {
+	const { gpu } = createGpu();
+
+	gpu.writeGp0(GX_GPU_GP0_CPU_TO_VRAM_FIRST << 24);
+	gpu.writeGp0(0x00010002);
+	gpu.writeGp0(0x00020003);
+
+	gpu.writeGp0((GX_GPU_GP0_SET_DRAW_MODE << 24) | 0x000111);
+	gpu.writeGp0((GX_GPU_GP0_SET_MASK_BIT << 24) | 0x000003);
+	gpu.writeGp0((GX_GPU_GP0_SET_DRAW_MODE << 24) | 0x000222);
+	assert.equal(gpu.readDrawModeWord(), 0);
+	assert.equal(gpu.readMaskBitModeWord(), 0);
+
+	gpu.writeGp0((GX_GPU_GP0_SET_DRAW_MODE << 24) | 0x0007ff);
+	assert.equal(gpu.readDrawModeWord(), 0x0007ff);
+});
+
+test('GX-GPU consumes PSX polyline payload until terminator before decoding later command words', () => {
+	const { gpu } = createGpu();
+
+	gpu.writeGp0((0x48 << 24) | 0x0000ff);
+	gpu.writeGp0((GX_GPU_GP0_SET_DRAW_MODE << 24) | 0x000111);
+	gpu.writeGp0(0x00020003);
+	gpu.writeGp0(0x00040005);
+	gpu.writeGp0(0x50005000);
+	assert.equal(gpu.readDrawModeWord(), 0);
+
+	gpu.writeGp0((GX_GPU_GP0_SET_DRAW_MODE << 24) | 0x000222);
+	assert.equal(gpu.readDrawModeWord(), 0x000222);
+});
+
+test('GX-GPU GP1 clear FIFO clears partial GP0 packet and image transfer state', () => {
+	const { gpu } = createGpu();
+
+	gpu.writeGp0((GX_GPU_GP0_POLYGON_FIRST << 24) | 0x0000ff);
+	gpu.writeGp0((GX_GPU_GP0_SET_DRAW_MODE << 24) | 0x000111);
+	gpu.writeGp1(GX_GPU_GP1_CLEAR_FIFO << 24);
+	gpu.writeGp0((GX_GPU_GP0_SET_DRAW_MODE << 24) | 0x000222);
+	assert.equal(gpu.readDrawModeWord(), 0x000222);
+
+	gpu.writeGp0(GX_GPU_GP0_CPU_TO_VRAM_FIRST << 24);
+	gpu.writeGp0(0x00010002);
+	gpu.writeGp0(0x00020003);
+	gpu.writeGp1(GX_GPU_GP1_CLEAR_FIFO << 24);
+	gpu.writeGp0((GX_GPU_GP0_SET_MASK_BIT << 24) | 0x000003);
+	assert.equal(gpu.readMaskBitModeWord(), 3);
 });
 
 test('GX-GPU MMIO uses PSX GP0 data and GP1 status addresses', () => {
