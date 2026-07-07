@@ -255,6 +255,22 @@ export function gxGpuVramWrappedHeight(y: number, height: number): number {
 	return height <= edgeHeight ? height : edgeHeight;
 }
 
+export function gxGpuSpansOverlap(startA: number, endA: number, startB: number, endB: number): boolean {
+	return startA < endB && startB < endA;
+}
+
+export function gxGpuVramCopyNeedsChunking(sourceX: number, sourceY: number, targetX: number, targetY: number, width: number, height: number): boolean {
+	return sourceX !== targetX
+		&& sourceY !== targetY
+		&& gxGpuSpansOverlap(sourceX, sourceX + width, targetX, targetX + width)
+		&& gxGpuSpansOverlap(sourceY, sourceY + height, targetY, targetY + height);
+}
+
+export function gxGpuVramCopyChunkHeight(sourceY: number, targetY: number, height: number): number {
+	const rowDistance = sourceY > targetY ? sourceY - targetY : targetY - sourceY;
+	return rowDistance < height ? rowDistance : height;
+}
+
 export function gxGpuTransferX(xyWord: number): number {
 	return xyWord & 0x3ff;
 }

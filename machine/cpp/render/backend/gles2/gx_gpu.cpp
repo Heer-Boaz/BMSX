@@ -935,17 +935,15 @@ void uploadCpuToVram(OpenGLES2Backend& backend, const GxGpuCommandBuffer& comman
 	}
 }
 
-void copyVramToVram(OpenGLES2Backend& backend, const GxGpuCommandBuffer& commandBuffer, u32 commandIndex) {
-	const u32 wordStart = commandBuffer.commandWordStart[commandIndex];
-	const u32 sourceWord = commandBuffer.words[wordStart + 1u];
-	const u32 targetWord = commandBuffer.words[wordStart + 2u];
-	const u32 sizeWord = commandBuffer.words[wordStart + 3u];
-	const u32 sourceX = gxGpuTransferX(sourceWord);
-	const u32 sourceY = gxGpuTransferY(sourceWord);
-	const u32 targetX = gxGpuTransferX(targetWord);
-	const u32 targetY = gxGpuTransferY(targetWord);
-	const u32 width = gxGpuTransferWidth(sizeWord);
-	const u32 height = gxGpuTransferHeight(sizeWord);
+void copyVramToVramArea(
+	OpenGLES2Backend& backend,
+	u32 sourceX,
+	u32 sourceY,
+	u32 targetX,
+	u32 targetY,
+	u32 width,
+	u32 height,
+	u32 maskBitModeWord) {
 	size_t transferVertexFloatCount = 0u;
 	for (u32 row = 0u; row < height; row += 1u) {
 		const u32 rowSourceY = (sourceY + row) & (static_cast<u32>(kGxGpuVramHeight) - 1u);
@@ -964,7 +962,32 @@ void copyVramToVram(OpenGLES2Backend& backend, const GxGpuCommandBuffer& command
 		}
 	}
 	copyGxGpuVramToSampleTexture(backend);
-	renderTransferCommands(backend, transferVertexFloatCount, g_gxGpu.vramSampleTexture, kGxGpuTextureSampleUnit, commandBuffer.commandMaskBitModeWord[commandIndex]);
+	renderTransferCommands(backend, transferVertexFloatCount, g_gxGpu.vramSampleTexture, kGxGpuTextureSampleUnit, maskBitModeWord);
+}
+
+void copyVramToVram(OpenGLES2Backend& backend, const GxGpuCommandBuffer& commandBuffer, u32 commandIndex) {
+	const u32 wordStart = commandBuffer.commandWordStart[commandIndex];
+	const u32 sourceWord = commandBuffer.words[wordStart + 1u];
+	const u32 targetWord = commandBuffer.words[wordStart + 2u];
+	const u32 sizeWord = commandBuffer.words[wordStart + 3u];
+	const u32 sourceX = gxGpuTransferX(sourceWord);
+	const u32 sourceY = gxGpuTransferY(sourceWord);
+	const u32 targetX = gxGpuTransferX(targetWord);
+	const u32 targetY = gxGpuTransferY(targetWord);
+	const u32 width = gxGpuTransferWidth(sizeWord);
+	const u32 height = gxGpuTransferHeight(sizeWord);
+	const u32 maskBitModeWord = commandBuffer.commandMaskBitModeWord[commandIndex];
+	if (gxGpuVramCopyNeedsChunking(sourceX, sourceY, targetX, targetY, width, height)) {
+		const u32 chunkHeight = gxGpuVramCopyChunkHeight(sourceY, targetY, height);
+		for (u32 chunkTargetY = targetY; chunkTargetY < targetY + height; chunkTargetY += chunkHeight) {
+			const u32 chunkSourceY = sourceY + (chunkTargetY - targetY);
+			const u32 remainingHeight = targetY + height - chunkTargetY;
+			const u32 currentChunkHeight = chunkHeight < remainingHeight ? chunkHeight : remainingHeight;
+			copyVramToVramArea(backend, sourceX, chunkSourceY, targetX, chunkTargetY, width, currentChunkHeight, maskBitModeWord);
+		}
+		return;
+	}
+	copyVramToVramArea(backend, sourceX, sourceY, targetX, targetY, width, height, maskBitModeWord);
 }
 
 void applyGxGpuDrawingAreaScissor(u32 topLeftWord, u32 bottomRightWord) {

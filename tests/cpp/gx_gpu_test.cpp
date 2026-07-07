@@ -85,6 +85,13 @@ void testGp0RawDrawWordDecoders() {
 	require(bmsx::gxGpuVramWrappedHeight(500u, 12u) == 12u, "GX-GPU non-wrapped VRAM height run");
 	require(bmsx::gxGpuVramWrappedHeight(511u, 511u) == 1u, "GX-GPU wrapped VRAM height first run");
 	require(bmsx::gxGpuVramWrappedHeight(0u, 511u) == 511u, "GX-GPU full-start VRAM height run");
+	require(bmsx::gxGpuVramCopyNeedsChunking(10u, 20u, 12u, 24u, 32u, 16u), "GX-GPU diagonal overlapping copy chunks");
+	require(bmsx::gxGpuVramCopyChunkHeight(20u, 24u, 16u) == 4u, "GX-GPU diagonal overlapping copy chunk height");
+	require(!bmsx::gxGpuVramCopyNeedsChunking(10u, 20u, 10u, 24u, 32u, 16u), "GX-GPU vertical-only copy is not chunked");
+	require(!bmsx::gxGpuVramCopyNeedsChunking(10u, 20u, 12u, 20u, 32u, 16u), "GX-GPU horizontal-only copy is not chunked");
+	require(!bmsx::gxGpuVramCopyNeedsChunking(10u, 20u, 50u, 24u, 32u, 16u), "GX-GPU separated X copy is not chunked");
+	require(!bmsx::gxGpuVramCopyNeedsChunking(10u, 20u, 12u, 40u, 32u, 16u), "GX-GPU separated Y copy is not chunked");
+	require(bmsx::gxGpuVramCopyChunkHeight(20u, 80u, 16u) == 16u, "GX-GPU non-overlapping row distance clamps to height");
 
 	require(bmsx::gxGpuTransferX(0x01ff03ffu) == 1023u, "GX-GPU transfer x decode");
 	require(bmsx::gxGpuTransferY(0x01ff03ffu) == 511u, "GX-GPU transfer y decode");

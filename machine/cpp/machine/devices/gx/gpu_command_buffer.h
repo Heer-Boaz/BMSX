@@ -264,6 +264,22 @@ inline u32 gxGpuVramWrappedHeight(u32 y, u32 height) {
 	return height <= edgeHeight ? height : edgeHeight;
 }
 
+inline bool gxGpuSpansOverlap(u32 startA, u32 endA, u32 startB, u32 endB) {
+	return startA < endB && startB < endA;
+}
+
+inline bool gxGpuVramCopyNeedsChunking(u32 sourceX, u32 sourceY, u32 targetX, u32 targetY, u32 width, u32 height) {
+	return sourceX != targetX
+		&& sourceY != targetY
+		&& gxGpuSpansOverlap(sourceX, sourceX + width, targetX, targetX + width)
+		&& gxGpuSpansOverlap(sourceY, sourceY + height, targetY, targetY + height);
+}
+
+inline u32 gxGpuVramCopyChunkHeight(u32 sourceY, u32 targetY, u32 height) {
+	const u32 rowDistance = sourceY > targetY ? sourceY - targetY : targetY - sourceY;
+	return rowDistance < height ? rowDistance : height;
+}
+
 inline u32 gxGpuTransferX(u32 xyWord) {
 	return xyWord & 0x3ffu;
 }

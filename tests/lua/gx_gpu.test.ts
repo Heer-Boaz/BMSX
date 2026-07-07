@@ -73,6 +73,8 @@ import {
 	gxGpuTransferY,
 	gxGpuVertexX,
 	gxGpuVertexY,
+	gxGpuVramCopyChunkHeight,
+	gxGpuVramCopyNeedsChunking,
 	gxGpuVramWrappedHeight,
 	gxGpuVramWrappedWidth,
 } from '../../machine/ts/machine/devices/gx/gpu_command_buffer';
@@ -203,6 +205,13 @@ test('GX-GPU decodes PSX GP0 signed vertex and rectangle size words', () => {
 	assert.equal(gxGpuVramWrappedHeight(500, 12), 12);
 	assert.equal(gxGpuVramWrappedHeight(511, 511), 1);
 	assert.equal(gxGpuVramWrappedHeight(0, 511), 511);
+	assert.equal(gxGpuVramCopyNeedsChunking(10, 20, 12, 24, 32, 16), true);
+	assert.equal(gxGpuVramCopyChunkHeight(20, 24, 16), 4);
+	assert.equal(gxGpuVramCopyNeedsChunking(10, 20, 10, 24, 32, 16), false);
+	assert.equal(gxGpuVramCopyNeedsChunking(10, 20, 12, 20, 32, 16), false);
+	assert.equal(gxGpuVramCopyNeedsChunking(10, 20, 50, 24, 32, 16), false);
+	assert.equal(gxGpuVramCopyNeedsChunking(10, 20, 12, 40, 32, 16), false);
+	assert.equal(gxGpuVramCopyChunkHeight(20, 80, 16), 16);
 
 	assert.equal(gxGpuTransferX(0x01ff03ff), 1023);
 	assert.equal(gxGpuTransferY(0x01ff03ff), 511);

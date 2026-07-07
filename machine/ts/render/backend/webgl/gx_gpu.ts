@@ -58,6 +58,8 @@ import {
 	gxGpuTransferY,
 	gxGpuVertexX,
 	gxGpuVertexY,
+	gxGpuVramCopyChunkHeight,
+	gxGpuVramCopyNeedsChunking,
 	gxGpuVramWrappedHeight,
 	gxGpuVramWrappedWidth,
 	type GxGpuCommandBufferView,
@@ -957,17 +959,17 @@ function uploadCpuToVram(backend: WebGLBackend, gl: WebGL2RenderingContext, comm
 	}
 }
 
-function copyVramToVram(backend: WebGLBackend, gl: WebGL2RenderingContext, commandBuffer: GxGpuCommandBufferView, commandIndex: number): void {
-	const wordStart = commandBuffer.commandWordStart[commandIndex];
-	const sourceWord = commandBuffer.words[wordStart + 1];
-	const targetWord = commandBuffer.words[wordStart + 2];
-	const sizeWord = commandBuffer.words[wordStart + 3];
-	const sourceX = gxGpuTransferX(sourceWord);
-	const sourceY = gxGpuTransferY(sourceWord);
-	const targetX = gxGpuTransferX(targetWord);
-	const targetY = gxGpuTransferY(targetWord);
-	const width = gxGpuTransferWidth(sizeWord);
-	const height = gxGpuTransferHeight(sizeWord);
+function copyVramToVramArea(
+	backend: WebGLBackend,
+	gl: WebGL2RenderingContext,
+	sourceX: number,
+	sourceY: number,
+	targetX: number,
+	targetY: number,
+	width: number,
+	height: number,
+	maskBitModeWord: number,
+): void {
 	let transferVertexFloatCount = 0;
 	for (let row = 0; row < height; row += 1) {
 		const rowSourceY = (sourceY + row) & (GX_GPU_VRAM_HEIGHT - 1);
@@ -986,7 +988,32 @@ function copyVramToVram(backend: WebGLBackend, gl: WebGL2RenderingContext, comma
 		}
 	}
 	copyGxGpuVramToSampleTexture(backend, gl);
-	renderTransferCommands(backend, gl, transferVertexFloatCount, gxGpuWebGLState.vramSampleTexture, GX_GPU_TEXTURE_SAMPLE_UNIT, commandBuffer.commandMaskBitModeWord[commandIndex]);
+	renderTransferCommands(backend, gl, transferVertexFloatCount, gxGpuWebGLState.vramSampleTexture, GX_GPU_TEXTURE_SAMPLE_UNIT, maskBitModeWord);
+}
+
+function copyVramToVram(backend: WebGLBackend, gl: WebGL2RenderingContext, commandBuffer: GxGpuCommandBufferView, commandIndex: number): void {
+	const wordStart = commandBuffer.commandWordStart[commandIndex];
+	const sourceWord = commandBuffer.words[wordStart + 1];
+	const targetWord = commandBuffer.words[wordStart + 2];
+	const sizeWord = commandBuffer.words[wordStart + 3];
+	const sourceX = gxGpuTransferX(sourceWord);
+	const sourceY = gxGpuTransferY(sourceWord);
+	const targetX = gxGpuTransferX(targetWord);
+	const targetY = gxGpuTransferY(targetWord);
+	const width = gxGpuTransferWidth(sizeWord);
+	const height = gxGpuTransferHeight(sizeWord);
+	const maskBitModeWord = commandBuffer.commandMaskBitModeWord[commandIndex];
+	if (gxGpuVramCopyNeedsChunking(sourceX, sourceY, targetX, targetY, width, height)) {
+		const chunkHeight = gxGpuVramCopyChunkHeight(sourceY, targetY, height);
+		for (let chunkTargetY = targetY; chunkTargetY < targetY + height; chunkTargetY += chunkHeight) {
+			const chunkSourceY = sourceY + (chunkTargetY - targetY);
+			const remainingHeight = targetY + height - chunkTargetY;
+			const currentChunkHeight = chunkHeight < remainingHeight ? chunkHeight : remainingHeight;
+			copyVramToVramArea(backend, gl, sourceX, chunkSourceY, targetX, chunkTargetY, width, currentChunkHeight, maskBitModeWord);
+		}
+		return;
+	}
+	copyVramToVramArea(backend, gl, sourceX, sourceY, targetX, targetY, width, height, maskBitModeWord);
 }
 
 function applyGxGpuDrawingAreaScissor(gl: WebGL2RenderingContext, topLeftWord: number, bottomRightWord: number): void {
