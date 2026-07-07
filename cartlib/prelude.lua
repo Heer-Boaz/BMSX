@@ -38,6 +38,7 @@ vdp_tile_run_sources = system.vdp_tile_run_sources
 gx_reset_320x240_pal = system.gx_reset_320x240_pal
 gx_clear_color = system.gx_clear_color
 gx_fill_rect_color = system.gx_fill_rect_color
+gx_fill_rect_half_color = system.gx_fill_rect_half_color
 gx_draw_line_color = system.gx_draw_line_color
 gx_display_width = system.gx_display_width
 gx_display_height = system.gx_display_height

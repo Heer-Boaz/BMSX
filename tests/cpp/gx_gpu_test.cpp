@@ -705,6 +705,48 @@ void testSoftwareGouraudLineFixedPointRaster() {
 	require(bmsx::g_gxGpuSoftwareVram[bmsx::gxGpuSoftwareVramIndex(40, 14)] == 0x03e0u, "GX-GPU software line fixed-point green endpoint");
 }
 
+void testSoftwareBlendsUntexturedSemiTransparentRectangles() {
+	bmsx::GxGpuCommandBuffer commandBuffer;
+	commandBuffer.reset();
+	pushSoftwareCommand(
+		commandBuffer,
+		std::array<uint32_t, 3>{
+			(bmsx::GX_GPU_GP0_RECTANGLE_FIRST << 24u) | 0xff0000u,
+			(20u << 16u) | 10u,
+			(4u << 16u) | 4u,
+		},
+		3u,
+		bmsx::GX_GPU_COMMAND_DRAW_RECTANGLE,
+		bmsx::GX_GPU_GP0_RECTANGLE_FIRST);
+	pushSoftwareCommand(
+		commandBuffer,
+		std::array<uint32_t, 3>{
+			((bmsx::GX_GPU_GP0_RECTANGLE_FIRST | 0x02u) << 24u) | 0xffffffu,
+			(20u << 16u) | 10u,
+			(4u << 16u) | 4u,
+		},
+		3u,
+		bmsx::GX_GPU_COMMAND_DRAW_RECTANGLE,
+		bmsx::GX_GPU_GP0_RECTANGLE_FIRST | 0x02u);
+	pushSoftwareCommand(
+		commandBuffer,
+		std::array<uint32_t, 3>{
+			((bmsx::GX_GPU_GP0_RECTANGLE_FIRST | 0x02u) << 24u) | 0x000000u,
+			(20u << 16u) | 20u,
+			(4u << 16u) | 4u,
+		},
+		3u,
+		bmsx::GX_GPU_COMMAND_DRAW_RECTANGLE,
+		bmsx::GX_GPU_GP0_RECTANGLE_FIRST | 0x02u);
+
+	bmsx::resetGxGpuSoftwareVram();
+	bmsx::g_gxGpuSoftwareVram[bmsx::gxGpuSoftwareVramIndex(20, 20)] = 0x7c00u;
+	bmsx::executeGxGpuSoftwareCommands(commandBuffer, 0u);
+
+	require(bmsx::g_gxGpuSoftwareVram[bmsx::gxGpuSoftwareVramIndex(10, 20)] == 0x7defu, "GX-GPU software untextured semi-transparent rectangle half-blends white over blue");
+	require(bmsx::g_gxGpuSoftwareVram[bmsx::gxGpuSoftwareVramIndex(20, 20)] == 0x3c00u, "GX-GPU software untextured semi-transparent rectangle half-blends black over blue");
+}
+
 void testSoftwareScanoutConsumesTransfersAndFill() {
 	bmsx::GxGpuCommandBuffer commandBuffer;
 	commandBuffer.reset();
@@ -1166,6 +1208,7 @@ int main() {
 	testGp1ClearFifoClearsPartialGp0PacketsAndFlushesPartialCpuToVramUploads();
 	testSoftwareTextureModulationMath();
 	testSoftwareGouraudLineFixedPointRaster();
+	testSoftwareBlendsUntexturedSemiTransparentRectangles();
 	testSoftwareScanoutConsumesTransfersAndFill();
 	testSoftwareScanoutConsumesSolidPrimitives();
 	testSoftwareScanoutConsumesTexturedPrimitives();

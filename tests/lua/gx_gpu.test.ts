@@ -818,6 +818,33 @@ test('GX-GPU software backend rasterizes Gouraud lines with PSX fixed-point step
 	assert.equal(gxGpuSoftwareVram[gxGpuSoftwareVramIndex(40, 14)], 0x03e0);
 });
 
+test('GX-GPU software backend blends untextured semi-transparent rectangles', () => {
+	const commandBuffer = new GxGpuCommandBuffer();
+	commandBuffer.reset();
+	pushSoftwareCommand(commandBuffer, new Uint32Array([
+		((GX_GPU_GP0_RECTANGLE_FIRST << 24) | 0xff0000) >>> 0,
+		(20 << 16) | 10,
+		(4 << 16) | 4,
+	]), GX_GPU_COMMAND_DRAW_RECTANGLE, GX_GPU_GP0_RECTANGLE_FIRST);
+	pushSoftwareCommand(commandBuffer, new Uint32Array([
+		(((GX_GPU_GP0_RECTANGLE_FIRST | 0x02) << 24) | 0xffffff) >>> 0,
+		(20 << 16) | 10,
+		(4 << 16) | 4,
+	]), GX_GPU_COMMAND_DRAW_RECTANGLE, GX_GPU_GP0_RECTANGLE_FIRST | 0x02);
+	pushSoftwareCommand(commandBuffer, new Uint32Array([
+		(((GX_GPU_GP0_RECTANGLE_FIRST | 0x02) << 24) | 0x000000) >>> 0,
+		(20 << 16) | 20,
+		(4 << 16) | 4,
+	]), GX_GPU_COMMAND_DRAW_RECTANGLE, GX_GPU_GP0_RECTANGLE_FIRST | 0x02);
+
+	resetGxGpuSoftwareVram();
+	gxGpuSoftwareVram[gxGpuSoftwareVramIndex(20, 20)] = 0x7c00;
+	executeGxGpuSoftwareCommands(commandBuffer, 0);
+
+	assert.equal(gxGpuSoftwareVram[gxGpuSoftwareVramIndex(10, 20)], 0x7def);
+	assert.equal(gxGpuSoftwareVram[gxGpuSoftwareVramIndex(20, 20)], 0x3c00);
+});
+
 test('GX-GPU software scanout consumes CPU upload, VRAM copy, and fill commands', () => {
 	const commandBuffer = new GxGpuCommandBuffer();
 	commandBuffer.reset();

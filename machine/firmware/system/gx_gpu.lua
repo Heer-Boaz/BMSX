@@ -12,6 +12,7 @@ local gp1_display_mode_320_pal<const> = 0x08000009
 
 local gp0_fill_rectangle<const> = 0x02000000
 local gp0_draw_rectangle<const> = 0x60000000
+local gp0_draw_semitransparent_rectangle<const> = 0x62000000
 local gp0_draw_line<const> = 0x40000000
 local gp0_drawing_area_top_left_0<const> = 0xe3000000
 local gp0_drawing_area_bottom_right_320x240<const> = 0xe403bd3f
@@ -54,6 +55,12 @@ end
 
 function gx_gpu.fill_rect_color(x0, y0, x1, y1, color)
 	*gp0 = gp0_draw_rectangle | argb_to_gp0_rgb(color)
+	*gp0 = xy(x0, y0)
+	*gp0 = wh(x1 - x0, y1 - y0)
+end
+
+function gx_gpu.fill_rect_half_color(x0, y0, x1, y1, color)
+	*gp0 = gp0_draw_semitransparent_rectangle | argb_to_gp0_rgb(color)
 	*gp0 = xy(x0, y0)
 	*gp0 = wh(x1 - x0, y1 - y0)
 end

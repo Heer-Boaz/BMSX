@@ -1,17 +1,15 @@
-mem[0x08000084] = 0x00000002
 require('cartlib/prelude')
 local frame = 0
-local irq_mask_addr<const> = 0x0800010c
+local irq_mask_register<const>: *word = 0x0800010c
+local inp_ctrl_register<const>: *word = 0x08000194
 local irq_vblank<const> = 0x0010
 local irq_apu<const> = 0x0200
 local vblank_count = 0
 
-local width<const> = 160
-local height<const> = 120
 local blue<const> = 0xff2044cc
-local white_rgb<const> = 0x00ffffff
-local black_rgb<const> = 0x00000000
+local white<const> = 0xffffffff
 local black<const> = 0xff000000
+local blend_probe_bg<const> = 0xff402080
 local red<const> = 0xffff2020
 local green<const> = 0xff20ff20
 local yellow<const> = 0xffffff20
@@ -27,55 +25,41 @@ on_irq(irq_vblank, function()
 	vblank_count = vblank_count + 1
 end)
 
-local draw_static_alpha_ladders<const> = function()
-	local step_w<const> = 16
+local draw_static_blend_ladders<const> = function()
+	local step_w<const> = 32
 	for i = 0, 9 do
-		local ab<const> = (i * 255) // 9
 		local x<const> = i * step_w
-		vdp_fill_rect_color(x, 78, x + step_w, 92, 20, 0x00000000, blue)
-		vdp_fill_rect_color(x, 78, x + step_w, 92, 30, 0x00000000, (ab << 24) | white_rgb)
-		vdp_fill_rect_color(x, 98, x + step_w, 112, 20, 0x00000000, blue)
-		vdp_fill_rect_color(x, 98, x + step_w, 112, 30, 0x00000000, (ab << 24) | black_rgb)
+		gx_fill_rect_color(x, 156, x + step_w, 184, blue)
+		gx_fill_rect_half_color(x, 156, x + step_w, 184, white)
+		gx_fill_rect_color(x, 196, x + step_w, 224, blend_probe_bg)
+		gx_fill_rect_half_color(x, 196, x + step_w, 224, black)
 	end
 end
 
 local draw_cart<const> = function()
-	vdp_fill_rect_color(0, 0, width, height, 0, 0x00000000, black)
-	vdp_fill_rect_color(8, 8, 76, 64, 10, 0x00000000, blue)
-	vdp_fill_rect_color(84, 8, 152, 64, 10, 0x00000000, blue)
+	gx_clear_color(black)
+	gx_fill_rect_color(16, 16, 144, 128, blue)
+	gx_fill_rect_color(176, 16, 304, 128, blue)
 
-	local ramp_frame = frame
-	if ramp_frame > 20 then
-		ramp_frame = 20
+	if frame >= 20 then
+		gx_fill_rect_half_color(16, 16, 144, 128, white)
+		gx_fill_rect_half_color(176, 16, 304, 128, black)
 	end
-	local ab<const> = (ramp_frame * 255) // 20
-	vdp_fill_rect_color(8, 8, 76, 64, 20, 0x00000000, (ab << 24) | white_rgb)
-	vdp_fill_rect_color(84, 8, 152, 64, 20, 0x00000000, (ab << 24) | black_rgb)
 
-	vdp_fill_rect_color(8, 68, 76, 74, 20, 0x00000000, red)
-	vdp_fill_rect_color(78, 68, 82, 74, 20, 0x00000000, green)
-	vdp_fill_rect_color(84, 68, 152, 74, 20, 0x00000000, yellow)
-	draw_static_alpha_ladders()
+	gx_fill_rect_color(16, 136, 144, 148, red)
+	gx_fill_rect_color(152, 136, 168, 148, green)
+	gx_fill_rect_color(176, 136, 304, 148, yellow)
+	draw_static_blend_ladders()
 end
 
-mem[irq_mask_addr] = irq_vblank | irq_apu
-mem[0x08000194] = 0x00000001
+*irq_mask_register = irq_vblank | irq_apu
+*inp_ctrl_register = 0x00000001
 wait_vblank()
 
 while true do
-	mem[0x08000194] = 0x00000001
+	*inp_ctrl_register = 0x00000001
 	wait_vblank()
-	vdp_stream_cursor = 0x080c0000
+	gx_reset_320x240_pal()
 	draw_cart()
-	vdp_stream_finish()
-	do
-		local used_bytes<const> = vdp_stream_cursor - 0x080c0000
-		if used_bytes ~= 0 then
-			mem[0x08000110] = 0x080c0000
-			mem[0x08000114] = 0x0800007c
-			mem[0x08000118] = used_bytes
-			mem[0x0800011c] = 0x00000001
-		end
-	end
 	frame = frame + 1
 end

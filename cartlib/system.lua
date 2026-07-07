@@ -207,6 +207,7 @@ system.vdp_load_atlas = vdp_image.load_atlas
 system.gx_reset_320x240_pal = gx_gpu.reset_320x240_pal
 system.gx_clear_color = gx_gpu.clear_color
 system.gx_fill_rect_color = gx_gpu.fill_rect_color
+system.gx_fill_rect_half_color = gx_gpu.fill_rect_half_color
 system.gx_draw_line_color = gx_gpu.draw_line_color
 system.gx_display_width = gx_gpu.display_width
 system.gx_display_height = gx_gpu.display_height
