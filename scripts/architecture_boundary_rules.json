@@ -18,6 +18,9 @@
 		"hosts/libretro_host"
 	],
 	"layers": [
+		{ "name": "ts-gx-machine", "paths": ["machine/ts/machine/devices/gx/**"] },
+		{ "name": "ts-gx-webgl-render", "paths": ["machine/ts/render/backend/webgl/gx_gpu.ts"] },
+		{ "name": "ts-software-render", "paths": ["machine/ts/render/backend/software/**"] },
 		{ "name": "ts-machine", "paths": ["machine/ts/machine/**"] },
 		{ "name": "ts-rompack", "paths": ["machine/ts/rompack/**"] },
 		{ "name": "ts-runtime-api", "paths": ["machine/ts/*.ts"] },
@@ -31,6 +34,9 @@
 		{ "name": "ts-lua", "paths": ["machine/ts/lua/**"] },
 		{ "name": "ts-common", "paths": ["machine/ts/common/**"] },
 
+		{ "name": "cpp-gx-machine", "paths": ["machine/cpp/machine/devices/gx/**"] },
+		{ "name": "cpp-gx-gles2-render", "paths": ["machine/cpp/render/backend/gles2/gx_gpu.cpp", "machine/cpp/render/backend/gles2/gx_gpu.h"] },
+		{ "name": "cpp-software-render", "paths": ["machine/cpp/render/backend/software/**"] },
 		{ "name": "cpp-machine", "paths": ["machine/cpp/machine/**"] },
 		{ "name": "cpp-rompack", "paths": ["machine/cpp/rompack/**"] },
 		{ "name": "cpp-core", "paths": ["machine/cpp/core/**"] },
@@ -43,23 +49,43 @@
 	],
 	"rules": [
 		{
+			"from": "ts-gx-machine",
+			"deny": ["ts-core", "ts-ide", "ts-render", "ts-gx-webgl-render", "ts-software-render", "ts-platform", "ts-input", "ts-audio", "ts-language"],
+			"reason": "TS GX machine code must emit the GPU command contract, not depend on render backends."
+		},
+		{
+			"from": "ts-gx-webgl-render",
+			"deny": ["ts-software-render"],
+			"reason": "TS GX WebGL must remain a host-GPU accelerated backend, not import software rendering."
+		},
+		{
 			"from": "ts-machine",
-			"deny": ["ts-core", "ts-ide", "ts-render", "ts-platform", "ts-input", "ts-audio", "ts-language"],
+			"deny": ["ts-core", "ts-ide", "ts-render", "ts-gx-webgl-render", "ts-software-render", "ts-platform", "ts-input", "ts-audio", "ts-language"],
 			"reason": "TS machine code must stay below host, IDE, render, input, audio, and language layers."
 		},
 		{
 			"from": "ts-rompack",
-			"deny": ["ts-core", "ts-ide", "ts-render", "ts-platform", "ts-input", "ts-audio", "ts-language"],
+			"deny": ["ts-core", "ts-ide", "ts-render", "ts-gx-webgl-render", "ts-software-render", "ts-platform", "ts-input", "ts-audio", "ts-language"],
 			"reason": "TS ROM wire-format code must not depend on host, IDE, render, input, audio, or language layers."
 		},
 		{
+			"from": "cpp-gx-machine",
+			"deny": ["cpp-core", "cpp-render", "cpp-gx-gles2-render", "cpp-software-render", "cpp-platform", "cpp-input", "cpp-audio"],
+			"reason": "C++ GX machine code must emit the GPU command contract, not depend on render backends."
+		},
+		{
+			"from": "cpp-gx-gles2-render",
+			"deny": ["cpp-software-render"],
+			"reason": "C++ GX GLES2 must remain a host-GPU accelerated backend, not include software rendering."
+		},
+		{
 			"from": "cpp-machine",
-			"deny": ["cpp-core", "cpp-render", "cpp-platform", "cpp-input", "cpp-audio"],
+			"deny": ["cpp-core", "cpp-render", "cpp-gx-gles2-render", "cpp-software-render", "cpp-platform", "cpp-input", "cpp-audio"],
 			"reason": "C++ machine code must stay below host, render, platform, input, and audio edge layers."
 		},
 		{
 			"from": "cpp-rompack",
-			"deny": ["cpp-core", "cpp-render", "cpp-platform", "cpp-input", "cpp-audio"],
+			"deny": ["cpp-core", "cpp-render", "cpp-gx-gles2-render", "cpp-software-render", "cpp-platform", "cpp-input", "cpp-audio"],
 			"reason": "C++ ROM wire-format code must not depend on host, render, platform, input, or audio edge layers."
 		}
 	]
