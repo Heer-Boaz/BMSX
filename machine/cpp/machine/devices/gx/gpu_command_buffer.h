@@ -113,6 +113,19 @@ inline bool gxGpuDitheredPolygon(u32 drawModeWord, u32 opcode) {
 			: gxGpuCommandGouraud(opcode));
 }
 
+inline u32 gxGpuTextureModulationPreDither(u32 texture5, u32 vertex8) {
+	return (texture5 * vertex8) >> 4u;
+}
+
+inline u32 gxGpuTextureModulationChannel5(u32 texture5, u32 vertex8, i32 ditherOffset) {
+	const i32 dithered = static_cast<i32>(gxGpuTextureModulationPreDither(texture5, vertex8)) + ditherOffset;
+	if (dithered < 0) {
+		return 0u;
+	}
+	const u32 channel5 = static_cast<u32>(dithered) >> 3u;
+	return channel5 < 31u ? channel5 : 31u;
+}
+
 inline u32 gxGpuCommandRectangleWidth(u32 opcode, u32 sizeWord) {
 	switch (opcode & 0x18u) {
 		case 0x08u:

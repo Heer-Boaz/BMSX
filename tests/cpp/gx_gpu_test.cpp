@@ -82,6 +82,11 @@ void testGp0RawDrawWordDecoders() {
 	require(bmsx::gxGpuDitheredPolygon(bmsx::GX_GPU_DRAW_MODE_DITHER_ENABLED, bmsx::GX_GPU_GP0_POLYGON_FIRST | bmsx::GX_GPU_GP0_RENDER_TEXTURE_BIT), "GX-GPU blended textured polygon dithered");
 	require(!bmsx::gxGpuDitheredPolygon(bmsx::GX_GPU_DRAW_MODE_DITHER_ENABLED, bmsx::GX_GPU_GP0_POLYGON_FIRST | bmsx::GX_GPU_GP0_RENDER_TEXTURE_BIT | 0x01u), "GX-GPU raw textured polygon not dithered");
 	require(!bmsx::gxGpuDitheredPolygon(0u, bmsx::GX_GPU_GP0_POLYGON_FIRST | bmsx::GX_GPU_GP0_RENDER_GOURAUD_BIT), "GX-GPU dither disabled by draw mode");
+	require(bmsx::gxGpuTextureModulationPreDither(31u, 128u) == 248u, "GX-GPU texture modulation pre-dither half intensity");
+	require(bmsx::gxGpuTextureModulationChannel5(31u, 128u, 0) == 31u, "GX-GPU texture modulation half intensity preserves white");
+	require(bmsx::gxGpuTextureModulationChannel5(31u, 255u, 3) == 31u, "GX-GPU texture modulation saturates high dither");
+	require(bmsx::gxGpuTextureModulationChannel5(1u, 16u, -4) == 0u, "GX-GPU texture modulation clamps low dither");
+	require(bmsx::gxGpuTextureModulationChannel5(12u, 96u, 0) == 9u, "GX-GPU texture modulation divides by 128");
 	require(bmsx::gxGpuDrawModeTextureRectangleXFlip(bmsx::GX_GPU_DRAW_MODE_TEXTURE_RECTANGLE_X_FLIP), "GX-GPU textured rectangle X flip bit enabled");
 	require(!bmsx::gxGpuDrawModeTextureRectangleXFlip(bmsx::GX_GPU_DRAW_MODE_TEXTURE_RECTANGLE_Y_FLIP), "GX-GPU textured rectangle X flip bit disabled");
 	require(bmsx::gxGpuDrawModeTextureRectangleYFlip(bmsx::GX_GPU_DRAW_MODE_TEXTURE_RECTANGLE_Y_FLIP), "GX-GPU textured rectangle Y flip bit enabled");

@@ -56,14 +56,6 @@ float rawStorageVramWord(vec2 storageCoord) {
 	return lowByte + highByte * 256.0;
 }
 
-vec3 decodeRgb555(float word) {
-	float r5 = mod(word, 32.0);
-	float g5 = mod(floor(word / 32.0), 32.0);
-	float b5 = mod(floor(word / 1024.0), 32.0);
-	vec3 color5 = vec3(r5, g5, b5);
-	return (color5 * 8.0 + floor(color5 / 4.0)) / 255.0;
-}
-
 vec3 decodeRgb555To5(float word) {
 	return vec3(
 		mod(word, 32.0),
@@ -94,17 +86,17 @@ vec4 samplePsxTexture(vec2 texcoord) {
 		textureWord = rawVramWord(wordCoord);
 		float paletteIndex = palette4Index(textureWord, windowed.x);
 		float paletteWord = rawVramWord(vec2(u_clutBase.x + paletteIndex, u_clutBase.y));
-		return vec4(decodeRgb555(paletteWord), paletteWord == 0.0 ? -1.0 : wordMaskBit(paletteWord));
+		return vec4(decodeRgb555To5(paletteWord), paletteWord == 0.0 ? -1.0 : wordMaskBit(paletteWord));
 	}
 	if (u_textureMode < 1.5) {
 		vec2 wordCoord = vec2(u_texPageBase.x + floor(windowed.x / 2.0), u_texPageBase.y + windowed.y);
 		textureWord = rawVramWord(wordCoord);
 		float paletteIndex = palette8Index(textureWord, windowed.x);
 		float paletteWord = rawVramWord(vec2(u_clutBase.x + paletteIndex, u_clutBase.y));
-		return vec4(decodeRgb555(paletteWord), paletteWord == 0.0 ? -1.0 : wordMaskBit(paletteWord));
+		return vec4(decodeRgb555To5(paletteWord), paletteWord == 0.0 ? -1.0 : wordMaskBit(paletteWord));
 	}
 	textureWord = rawVramWord(u_texPageBase + windowed);
-	return vec4(decodeRgb555(textureWord), textureWord == 0.0 ? -1.0 : wordMaskBit(textureWord));
+	return vec4(decodeRgb555To5(textureWord), textureWord == 0.0 ? -1.0 : wordMaskBit(textureWord));
 }
 
 vec3 blendRgb5(vec3 src5, vec3 dst5) {
@@ -172,12 +164,13 @@ float ditherOffset() {
 	return -2.0;
 }
 
-vec3 rgbToRgb5(vec3 rgb) {
-	vec3 rgb8 = floor(rgb * 255.0);
+vec3 modulatedTextureRgb5(vec3 texture5) {
+	vec3 vertex8 = floor(v_color.rgb * 255.0);
+	vec3 preDither = floor((texture5 * vertex8) / 16.0);
 	if (u_ditherEnable > 0.5) {
-		rgb8 = clamp(rgb8 + vec3(ditherOffset()), vec3(0.0), vec3(255.0));
+		preDither += vec3(ditherOffset());
 	}
-	return floor(rgb8 / 8.0);
+	return clamp(floor(preDither / 8.0), vec3(0.0), vec3(31.0));
 }
 
 vec4 encodeRgb555(vec3 color5, float outputMaskBit) {
@@ -191,11 +184,10 @@ void main() {
 	if (textureColor.a < -0.5) {
 		discard;
 	}
-	vec3 rgb = textureColor.rgb;
+	vec3 src5 = textureColor.rgb;
 	if (u_rawTexture < 0.5) {
-		rgb = min(rgb * v_color.rgb * 2.0, vec3(1.0));
+		src5 = modulatedTextureRgb5(textureColor.rgb);
 	}
-	vec3 src5 = rgbToRgb5(rgb);
 	float dstWord = 0.0;
 	if (u_checkMaskBit > 0.5 || u_blendEnable > 0.5) {
 		dstWord = rawStorageVramWord(gl_FragCoord.xy - vec2(0.5));
