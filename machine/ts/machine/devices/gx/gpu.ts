@@ -111,6 +111,9 @@ export const GX_GPU_STATUS_READY_TO_RECEIVE_DMA = 1 << 28;
 export const GX_GPU_STATUS_DMA_DIRECTION_SHIFT = 29;
 export const GX_GPU_STATUS_DMA_DIRECTION_MASK = 0x3 << GX_GPU_STATUS_DMA_DIRECTION_SHIFT;
 export const GX_GPU_STATUS_DISPLAY_LINE_LSB = 0x80000000;
+export const GX_GPU_STATUS_COMMAND_STATE_MASK = GX_GPU_STATUS_GPU_IDLE
+	| GX_GPU_STATUS_READY_TO_SEND_VRAM
+	| GX_GPU_STATUS_READY_TO_RECEIVE_DMA;
 export const GX_GPU_STATUS_RESET_WORD = GX_GPU_STATUS_INTERLACED_FIELD
 	| GX_GPU_STATUS_DISPLAY_DISABLE
 	| GX_GPU_STATUS_GPU_IDLE
@@ -249,11 +252,13 @@ export class GxGpu {
 
 		if (this.gp0ImageLoadWordsRemaining !== 0) {
 			this.consumeImageLoadWord();
+			this.updateDynamicStatusBits();
 			return;
 		}
 
 		if (this.gp0PolylineWordsPerVertex !== 0) {
 			this.consumeGp0PolylinePayloadWord();
+			this.updateDynamicStatusBits();
 			return;
 		}
 
@@ -266,6 +271,7 @@ export class GxGpu {
 		if (this.gp0CommandWordCount === this.gp0CommandTargetWordCount) {
 			this.executeGp0Command();
 		}
+		this.updateDynamicStatusBits();
 	}
 
 	private executeGp0Command(): void {
@@ -328,6 +334,7 @@ export class GxGpu {
 
 	public readStatus(): number {
 		this.updateScanoutStatusBits();
+		this.updateDynamicStatusBits();
 		return this.statusWord;
 	}
 
@@ -422,6 +429,7 @@ export class GxGpu {
 
 	public readDeviceOutput(): GxGpuDeviceOutput {
 		this.updateScanoutStatusBits();
+		this.updateDynamicStatusBits();
 		this.deviceOutput.statusWord = this.statusWord;
 		this.deviceOutput.displayModeWord = this.displayModeWord;
 		this.deviceOutput.displayStartWord = this.displayStartWord;
@@ -661,8 +669,20 @@ export class GxGpu {
 	private writeDmaDirectionWord(word: number): void {
 		const dmaDirectionBits = (word & 0x3) << GX_GPU_STATUS_DMA_DIRECTION_SHIFT;
 		this.statusWord = ((this.statusWord & ~GX_GPU_STATUS_DMA_DIRECTION_MASK) | dmaDirectionBits) >>> 0;
-		this.updateDmaRequestStatusBit();
 		this.writeStatusIo();
+	}
+
+	private updateCommandStatusBits(): void {
+		let commandStatusBits = GX_GPU_STATUS_READY_TO_RECEIVE_DMA;
+		if (this.gp0CommandWordCount === 0 && this.gp0ImageLoadWordsRemaining === 0 && this.gp0PolylineWordsPerVertex === 0) {
+			commandStatusBits |= GX_GPU_STATUS_GPU_IDLE;
+		}
+		this.statusWord = ((this.statusWord & ~GX_GPU_STATUS_COMMAND_STATE_MASK) | commandStatusBits) >>> 0;
+	}
+
+	private updateDynamicStatusBits(): void {
+		this.updateCommandStatusBits();
+		this.updateDmaRequestStatusBit();
 	}
 
 	private updateDmaRequestStatusBit(): void {
@@ -730,6 +750,7 @@ export class GxGpu {
 	}
 
 	private writeStatusIo(): void {
+		this.updateDynamicStatusBits();
 		this.memory.writeIoValue(IO_GX_GPU_GP1, this.statusWord);
 	}
 

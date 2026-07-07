@@ -302,6 +302,68 @@ void testDisplayDisableAndDmaDirectionStatusBits() {
 	require((gpu.readStatus() & bmsx::GX_GPU_STATUS_DMA_DATA_REQUEST) == 0u, "GX-GPU GP1 DMA request follows send readiness");
 }
 
+void testGpustatReadinessTracksGp0PacketAssemblyAndPayloadPhases() {
+	GpuHarness harness;
+	bmsx::GxGpu& gpu = harness.gpu;
+	const bmsx::GxGpuCommandBuffer& commands = *gpu.readDeviceOutput().commandBuffer;
+
+	uint32_t status = gpu.readStatus();
+	require((status & bmsx::GX_GPU_STATUS_GPU_IDLE) == bmsx::GX_GPU_STATUS_GPU_IDLE, "GX-GPU GPUSTAT reset idle");
+	require((status & bmsx::GX_GPU_STATUS_READY_TO_RECEIVE_DMA) == bmsx::GX_GPU_STATUS_READY_TO_RECEIVE_DMA, "GX-GPU GPUSTAT reset receive-ready");
+	require((status & bmsx::GX_GPU_STATUS_READY_TO_SEND_VRAM) == 0u, "GX-GPU GPUSTAT reset not send-ready");
+
+	gpu.writeGp1((bmsx::GX_GPU_GP1_SET_DMA_DIRECTION << 24u) | bmsx::GX_GPU_DMA_DIRECTION_CPU_TO_GP0);
+	gpu.writeGp0((bmsx::GX_GPU_GP0_POLYGON_FIRST << 24u) | 0x00010203u);
+	status = gpu.readStatus();
+	require((status & bmsx::GX_GPU_STATUS_GPU_IDLE) == 0u, "GX-GPU GPUSTAT partial packet is not idle");
+	require((status & bmsx::GX_GPU_STATUS_READY_TO_RECEIVE_DMA) == bmsx::GX_GPU_STATUS_READY_TO_RECEIVE_DMA, "GX-GPU GPUSTAT partial packet remains receive-ready");
+	require((status & bmsx::GX_GPU_STATUS_READY_TO_SEND_VRAM) == 0u, "GX-GPU GPUSTAT partial packet is not send-ready");
+	require((status & bmsx::GX_GPU_STATUS_DMA_DATA_REQUEST) == bmsx::GX_GPU_STATUS_DMA_DATA_REQUEST, "GX-GPU GPUSTAT CPU-to-GP0 DMA request follows receive-ready partial packet");
+
+	gpu.writeGp1((bmsx::GX_GPU_GP1_SET_DMA_DIRECTION << 24u) | bmsx::GX_GPU_DMA_DIRECTION_GPUREAD_TO_CPU);
+	status = gpu.readStatus();
+	require((status & bmsx::GX_GPU_STATUS_DMA_DATA_REQUEST) == 0u, "GX-GPU GPUSTAT GPUREAD DMA request stays clear without readback data");
+
+	gpu.writeGp0(0x00000000u);
+	gpu.writeGp0(0x00000001u);
+	gpu.writeGp0(0x00000002u);
+	status = gpu.readStatus();
+	require((status & bmsx::GX_GPU_STATUS_GPU_IDLE) == bmsx::GX_GPU_STATUS_GPU_IDLE, "GX-GPU GPUSTAT fixed packet completes idle");
+	require(commands.commandCount == 1u, "GX-GPU fixed packet command emitted");
+
+	gpu.writeGp0(bmsx::GX_GPU_GP0_CPU_TO_VRAM_FIRST << 24u);
+	gpu.writeGp0(0x00010002u);
+	gpu.writeGp0(0x00020003u);
+	status = gpu.readStatus();
+	require((status & bmsx::GX_GPU_STATUS_GPU_IDLE) == 0u, "GX-GPU GPUSTAT CPU-to-VRAM payload is not idle");
+	require((status & bmsx::GX_GPU_STATUS_READY_TO_RECEIVE_DMA) == bmsx::GX_GPU_STATUS_READY_TO_RECEIVE_DMA, "GX-GPU GPUSTAT CPU-to-VRAM remains receive-ready");
+	gpu.writeGp0(0xaaaaaaaau);
+	gpu.writeGp0(0xbbbbbbbbu);
+	status = gpu.readStatus();
+	require((status & bmsx::GX_GPU_STATUS_GPU_IDLE) == 0u, "GX-GPU GPUSTAT partial CPU-to-VRAM payload remains not idle");
+	gpu.writeGp0(0xccccccccu);
+	status = gpu.readStatus();
+	require((status & bmsx::GX_GPU_STATUS_GPU_IDLE) == bmsx::GX_GPU_STATUS_GPU_IDLE, "GX-GPU GPUSTAT CPU-to-VRAM payload completes idle");
+	require(commands.commandCount == 2u, "GX-GPU CPU-to-VRAM command emitted");
+
+	gpu.writeGp0(((bmsx::GX_GPU_GP0_LINE_FIRST | bmsx::GX_GPU_GP0_RENDER_QUAD_OR_POLYLINE_BIT) << 24u) | 0x0000ffu);
+	gpu.writeGp0(0x00010002u);
+	gpu.writeGp0(0x00020003u);
+	status = gpu.readStatus();
+	require((status & bmsx::GX_GPU_STATUS_GPU_IDLE) == 0u, "GX-GPU GPUSTAT polyline waits for terminator");
+	gpu.writeGp0(0x50005000u);
+	status = gpu.readStatus();
+	require((status & bmsx::GX_GPU_STATUS_GPU_IDLE) == bmsx::GX_GPU_STATUS_GPU_IDLE, "GX-GPU GPUSTAT polyline terminator completes idle");
+	require(commands.commandCount == 3u, "GX-GPU polyline command emitted");
+
+	gpu.writeGp0(bmsx::GX_GPU_GP0_FILL_RECTANGLE << 24u);
+	status = gpu.readStatus();
+	require((status & bmsx::GX_GPU_STATUS_GPU_IDLE) == 0u, "GX-GPU GPUSTAT partial fill packet is not idle");
+	gpu.writeGp1(bmsx::GX_GPU_GP1_CLEAR_FIFO << 24u);
+	status = gpu.readStatus();
+	require((status & bmsx::GX_GPU_STATUS_GPU_IDLE) == bmsx::GX_GPU_STATUS_GPU_IDLE, "GX-GPU GP1 clear FIFO restores idle readiness");
+}
+
 void testGp1CrtcRangeRegistersLatchMaskedRawWords() {
 	GpuHarness harness;
 	bmsx::GxGpu& gpu = harness.gpu;
@@ -571,6 +633,7 @@ int main() {
 	testInterlacedScanoutStatusBits();
 	testInterlacedRenderCommandWords();
 	testDisplayDisableAndDmaDirectionStatusBits();
+	testGpustatReadinessTracksGp0PacketAssemblyAndPayloadPhases();
 	testGp1CrtcRangeRegistersLatchMaskedRawWords();
 	testGp0IrqRequestAndGp1Acknowledge();
 	testGp0DrawModeAndMaskBitEnvironmentCommands();

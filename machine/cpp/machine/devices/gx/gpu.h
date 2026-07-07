@@ -91,6 +91,9 @@ constexpr u32 GX_GPU_STATUS_READY_TO_RECEIVE_DMA = 1u << 28u;
 constexpr u32 GX_GPU_STATUS_DMA_DIRECTION_SHIFT = 29u;
 constexpr u32 GX_GPU_STATUS_DMA_DIRECTION_MASK = 0x3u << GX_GPU_STATUS_DMA_DIRECTION_SHIFT;
 constexpr u32 GX_GPU_STATUS_DISPLAY_LINE_LSB = 1u << 31u;
+constexpr u32 GX_GPU_STATUS_COMMAND_STATE_MASK = GX_GPU_STATUS_GPU_IDLE
+	| GX_GPU_STATUS_READY_TO_SEND_VRAM
+	| GX_GPU_STATUS_READY_TO_RECEIVE_DMA;
 constexpr u32 GX_GPU_STATUS_RESET_WORD = GX_GPU_STATUS_INTERLACED_FIELD
 	| GX_GPU_STATUS_DISPLAY_DISABLE
 	| GX_GPU_STATUS_GPU_IDLE
@@ -196,6 +199,8 @@ private:
 	void writeMaskBitModeWord(u32 word);
 	void writeGpuInfoQuery(u32 word);
 	void writeDmaDirectionWord(u32 word);
+	void updateCommandStatusBits();
+	void updateDynamicStatusBits();
 	void updateDmaRequestStatusBit();
 	bool gpuStatInInterleaved480iMode() const;
 	int scanoutLine() const;

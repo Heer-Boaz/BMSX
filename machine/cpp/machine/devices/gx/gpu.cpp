@@ -84,11 +84,13 @@ void GxGpu::writeGp0(u32 word) {
 
 	if (m_gp0ImageLoadWordsRemaining != 0u) {
 		consumeImageLoadWord();
+		updateDynamicStatusBits();
 		return;
 	}
 
 	if (m_gp0PolylineWordsPerVertex != 0u) {
 		consumeGp0PolylinePayloadWord();
+		updateDynamicStatusBits();
 		return;
 	}
 
@@ -101,6 +103,7 @@ void GxGpu::writeGp0(u32 word) {
 	if (m_gp0CommandWordCount == m_gp0CommandTargetWordCount) {
 		executeGp0Command();
 	}
+	updateDynamicStatusBits();
 }
 
 void GxGpu::executeGp0Command() {
@@ -163,6 +166,7 @@ void GxGpu::executeGp0Command() {
 
 u32 GxGpu::readStatus() {
 	updateScanoutStatusBits();
+	updateDynamicStatusBits();
 	return m_statusWord;
 }
 
@@ -256,6 +260,7 @@ u32 GxGpu::readGpuReadWord() const {
 
 const GxGpuDeviceOutput& GxGpu::readDeviceOutput() {
 	updateScanoutStatusBits();
+	updateDynamicStatusBits();
 	m_deviceOutput.statusWord = m_statusWord;
 	m_deviceOutput.displayModeWord = m_displayModeWord;
 	m_deviceOutput.displayStartWord = m_displayStartWord;
@@ -492,8 +497,20 @@ void GxGpu::writeGpuInfoQuery(u32 word) {
 void GxGpu::writeDmaDirectionWord(u32 word) {
 	const u32 dmaDirectionBits = (word & 0x3u) << GX_GPU_STATUS_DMA_DIRECTION_SHIFT;
 	m_statusWord = (m_statusWord & ~GX_GPU_STATUS_DMA_DIRECTION_MASK) | dmaDirectionBits;
-	updateDmaRequestStatusBit();
 	writeStatusIo();
+}
+
+void GxGpu::updateCommandStatusBits() {
+	u32 commandStatusBits = GX_GPU_STATUS_READY_TO_RECEIVE_DMA;
+	if (m_gp0CommandWordCount == 0u && m_gp0ImageLoadWordsRemaining == 0u && m_gp0PolylineWordsPerVertex == 0u) {
+		commandStatusBits |= GX_GPU_STATUS_GPU_IDLE;
+	}
+	m_statusWord = (m_statusWord & ~GX_GPU_STATUS_COMMAND_STATE_MASK) | commandStatusBits;
+}
+
+void GxGpu::updateDynamicStatusBits() {
+	updateCommandStatusBits();
+	updateDmaRequestStatusBit();
 }
 
 void GxGpu::updateDmaRequestStatusBit() {
@@ -561,6 +578,7 @@ void GxGpu::updateDisplayModeStatusBits() {
 }
 
 void GxGpu::writeStatusIo() {
+	updateDynamicStatusBits();
 	m_memory.writeIoValue(IO_GX_GPU_GP1, valueNumber(static_cast<double>(m_statusWord)));
 }
 

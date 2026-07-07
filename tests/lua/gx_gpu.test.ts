@@ -94,6 +94,7 @@ import {
 	GX_GPU_GP0_CPU_TO_VRAM_FIRST,
 	GX_GPU_GP0_FILL_RECTANGLE,
 	GX_GPU_GP0_IRQ_REQUEST,
+	GX_GPU_GP0_LINE_FIRST,
 	GX_GPU_GP0_POLYGON_FIRST,
 	GX_GPU_GP0_RECTANGLE_FIRST,
 	GX_GPU_GP0_RENDER_GOURAUD_BIT,
@@ -125,11 +126,13 @@ import {
 	GX_GPU_STATUS_DMA_DATA_REQUEST,
 	GX_GPU_STATUS_DMA_DIRECTION_MASK,
 	GX_GPU_STATUS_DMA_DIRECTION_SHIFT,
+	GX_GPU_STATUS_GPU_IDLE,
 	GX_GPU_STATUS_HORIZONTAL_RESOLUTION_2,
 	GX_GPU_STATUS_INTERLACED_FIELD,
 	GX_GPU_STATUS_INTERRUPT_REQUEST,
 	GX_GPU_STATUS_PAL_MODE,
 	GX_GPU_STATUS_READY_TO_RECEIVE_DMA,
+	GX_GPU_STATUS_READY_TO_SEND_VRAM,
 	GX_GPU_STATUS_RESET_WORD,
 	GX_GPU_STATUS_REVERSE_FLAG,
 	GX_GPU_STATUS_VERTICAL_INTERLACE,
@@ -425,6 +428,67 @@ test('GX-GPU handles PSX GP1 display disable and DMA direction status bits', () 
 	gpu.writeGp1((GX_GPU_GP1_SET_DMA_DIRECTION << 24) | GX_GPU_DMA_DIRECTION_GPUREAD_TO_CPU);
 	assert.equal((gpu.readStatus() & GX_GPU_STATUS_DMA_DIRECTION_MASK) >>> 0, GX_GPU_DMA_DIRECTION_GPUREAD_TO_CPU << GX_GPU_STATUS_DMA_DIRECTION_SHIFT);
 	assert.equal((gpu.readStatus() & GX_GPU_STATUS_DMA_DATA_REQUEST) >>> 0, 0);
+});
+
+test('GX-GPU GPUSTAT readiness tracks GP0 packet assembly and payload phases', () => {
+	const { gpu } = createGpu();
+	const commands = gpu.readDeviceOutput().commandBuffer;
+
+	let status = gpu.readStatus();
+	assert.equal((status & GX_GPU_STATUS_GPU_IDLE) >>> 0, GX_GPU_STATUS_GPU_IDLE);
+	assert.equal((status & GX_GPU_STATUS_READY_TO_RECEIVE_DMA) >>> 0, GX_GPU_STATUS_READY_TO_RECEIVE_DMA);
+	assert.equal((status & GX_GPU_STATUS_READY_TO_SEND_VRAM) >>> 0, 0);
+
+	gpu.writeGp1((GX_GPU_GP1_SET_DMA_DIRECTION << 24) | GX_GPU_DMA_DIRECTION_CPU_TO_GP0);
+	gpu.writeGp0((GX_GPU_GP0_POLYGON_FIRST << 24) | 0x00010203);
+	status = gpu.readStatus();
+	assert.equal((status & GX_GPU_STATUS_GPU_IDLE) >>> 0, 0);
+	assert.equal((status & GX_GPU_STATUS_READY_TO_RECEIVE_DMA) >>> 0, GX_GPU_STATUS_READY_TO_RECEIVE_DMA);
+	assert.equal((status & GX_GPU_STATUS_READY_TO_SEND_VRAM) >>> 0, 0);
+	assert.equal((status & GX_GPU_STATUS_DMA_DATA_REQUEST) >>> 0, GX_GPU_STATUS_DMA_DATA_REQUEST);
+
+	gpu.writeGp1((GX_GPU_GP1_SET_DMA_DIRECTION << 24) | GX_GPU_DMA_DIRECTION_GPUREAD_TO_CPU);
+	status = gpu.readStatus();
+	assert.equal((status & GX_GPU_STATUS_DMA_DATA_REQUEST) >>> 0, 0);
+
+	gpu.writeGp0(0x00000000);
+	gpu.writeGp0(0x00000001);
+	gpu.writeGp0(0x00000002);
+	status = gpu.readStatus();
+	assert.equal((status & GX_GPU_STATUS_GPU_IDLE) >>> 0, GX_GPU_STATUS_GPU_IDLE);
+	assert.equal(commands.commandCount, 1);
+
+	gpu.writeGp0(GX_GPU_GP0_CPU_TO_VRAM_FIRST << 24);
+	gpu.writeGp0(0x00010002);
+	gpu.writeGp0(0x00020003);
+	status = gpu.readStatus();
+	assert.equal((status & GX_GPU_STATUS_GPU_IDLE) >>> 0, 0);
+	assert.equal((status & GX_GPU_STATUS_READY_TO_RECEIVE_DMA) >>> 0, GX_GPU_STATUS_READY_TO_RECEIVE_DMA);
+	gpu.writeGp0(0xaaaaaaaa);
+	gpu.writeGp0(0xbbbbbbbb);
+	status = gpu.readStatus();
+	assert.equal((status & GX_GPU_STATUS_GPU_IDLE) >>> 0, 0);
+	gpu.writeGp0(0xcccccccc);
+	status = gpu.readStatus();
+	assert.equal((status & GX_GPU_STATUS_GPU_IDLE) >>> 0, GX_GPU_STATUS_GPU_IDLE);
+	assert.equal(commands.commandCount, 2);
+
+	gpu.writeGp0(((GX_GPU_GP0_LINE_FIRST | GX_GPU_GP0_RENDER_QUAD_OR_POLYLINE_BIT) << 24) | 0x0000ff);
+	gpu.writeGp0(0x00010002);
+	gpu.writeGp0(0x00020003);
+	status = gpu.readStatus();
+	assert.equal((status & GX_GPU_STATUS_GPU_IDLE) >>> 0, 0);
+	gpu.writeGp0(0x50005000);
+	status = gpu.readStatus();
+	assert.equal((status & GX_GPU_STATUS_GPU_IDLE) >>> 0, GX_GPU_STATUS_GPU_IDLE);
+	assert.equal(commands.commandCount, 3);
+
+	gpu.writeGp0(GX_GPU_GP0_FILL_RECTANGLE << 24);
+	status = gpu.readStatus();
+	assert.equal((status & GX_GPU_STATUS_GPU_IDLE) >>> 0, 0);
+	gpu.writeGp1(GX_GPU_GP1_CLEAR_FIFO << 24);
+	status = gpu.readStatus();
+	assert.equal((status & GX_GPU_STATUS_GPU_IDLE) >>> 0, GX_GPU_STATUS_GPU_IDLE);
 });
 
 test('GX-GPU latches PSX GP1 CRTC range registers as masked raw words', () => {
