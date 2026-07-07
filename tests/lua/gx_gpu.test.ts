@@ -43,6 +43,7 @@ import {
 	gxGpuFillX,
 	gxGpuMaskBitCheckBeforeDraw,
 	gxGpuMaskBitSetWhileDrawing,
+	gxGpuSegmentExceedsPrimitiveSize,
 	gxGpuPolygonDrawModeWord,
 	gxGpuPolygonTexturePageWordIndex,
 	gxGpuSigned11,
@@ -53,6 +54,7 @@ import {
 	gxGpuTextureModulationPreDither,
 	gxGpuTextureRectangleEdge0,
 	gxGpuTextureRectangleEdge1,
+	gxGpuTriangleExceedsPrimitiveSize,
 	gxGpuTextureU,
 	gxGpuTextureV,
 	gxGpuTextureWindowAndX,
@@ -226,6 +228,15 @@ test('GX-GPU decodes PSX GP0 signed vertex and rectangle size words', () => {
 	assert.equal(gxGpuTextureRectangleEdge1(8, 16, true), -8);
 	assert.equal(gxGpuTextureRectangleEdge0(0, true), 1);
 	assert.equal(gxGpuTextureRectangleEdge1(1, 16, true), -15);
+	assert.equal(gxGpuSegmentExceedsPrimitiveSize(0, 0, 1023, 0), false);
+	assert.equal(gxGpuSegmentExceedsPrimitiveSize(0, 0, 1024, 0), true);
+	assert.equal(gxGpuSegmentExceedsPrimitiveSize(0, 0, 0, 511), false);
+	assert.equal(gxGpuSegmentExceedsPrimitiveSize(0, 0, 0, 512), true);
+	assert.equal(gxGpuTriangleExceedsPrimitiveSize(0, 0, 1023, 0, 0, 511), false);
+	assert.equal(gxGpuTriangleExceedsPrimitiveSize(0, 0, 1024, 0, 0, 511), true);
+	assert.equal(gxGpuTriangleExceedsPrimitiveSize(0, 0, 1023, 0, 0, 512), true);
+	assert.equal(gxGpuTriangleExceedsPrimitiveSize(-512, -256, 511, 255, 0, 0), false);
+	assert.equal(gxGpuTriangleExceedsPrimitiveSize(-513, -256, 511, 255, 0, 0), true);
 	assert.equal(gxGpuTextureU(0x01c3ab56), 0x56);
 	assert.equal(gxGpuTextureV(0x01c3ab56), 0xab);
 	assert.equal(gxGpuTextureAttribute(0x01c3ab56), 0x01c3);

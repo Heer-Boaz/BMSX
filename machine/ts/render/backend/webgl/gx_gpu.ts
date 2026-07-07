@@ -38,10 +38,12 @@ import {
 	gxGpuFillX,
 	gxGpuMaskBitCheckBeforeDraw,
 	gxGpuMaskBitSetWhileDrawing,
+	gxGpuSegmentExceedsPrimitiveSize,
 	gxGpuTextureClutBaseX,
 	gxGpuTextureClutBaseY,
 	gxGpuTextureRectangleEdge0,
 	gxGpuTextureRectangleEdge1,
+	gxGpuTriangleExceedsPrimitiveSize,
 	gxGpuTextureU,
 	gxGpuTextureV,
 	gxGpuTextureWindowAndX,
@@ -357,6 +359,24 @@ function appendSolidTriangle(
 	return offset;
 }
 
+function appendSolidPrimitiveTriangle(
+	vertexFloatCount: number,
+	x0: number,
+	y0: number,
+	color0: number,
+	x1: number,
+	y1: number,
+	color1: number,
+	x2: number,
+	y2: number,
+	color2: number,
+): number {
+	if (gxGpuTriangleExceedsPrimitiveSize(x0, y0, x1, y1, x2, y2)) {
+		return vertexFloatCount;
+	}
+	return appendSolidTriangle(vertexFloatCount, x0, y0, color0, x1, y1, color1, x2, y2, color2);
+}
+
 function appendSolidQuad(
 	vertexFloatCount: number,
 	x0: number,
@@ -424,7 +444,7 @@ function appendSolidPolygon(commandBuffer: GxGpuCommandBufferView, commandIndex:
 		const xy1 = commandBuffer.words[wordStart + 3];
 		const color2 = commandBuffer.words[wordStart + 4];
 		const xy2 = commandBuffer.words[wordStart + 5];
-		let offset = appendSolidTriangle(
+		let offset = appendSolidPrimitiveTriangle(
 			vertexFloatCount,
 			dx + gxGpuVertexX(xy0),
 			dy + gxGpuVertexY(xy0),
@@ -439,7 +459,7 @@ function appendSolidPolygon(commandBuffer: GxGpuCommandBufferView, commandIndex:
 		if (gxGpuCommandQuadPolygon(opcode)) {
 			const color3 = commandBuffer.words[wordStart + 6];
 			const xy3 = commandBuffer.words[wordStart + 7];
-			offset = appendSolidTriangle(
+			offset = appendSolidPrimitiveTriangle(
 				offset,
 				dx + gxGpuVertexX(xy2),
 				dy + gxGpuVertexY(xy2),
@@ -459,7 +479,7 @@ function appendSolidPolygon(commandBuffer: GxGpuCommandBufferView, commandIndex:
 	const xy0 = commandBuffer.words[wordStart + 1];
 	const xy1 = commandBuffer.words[wordStart + 2];
 	const xy2 = commandBuffer.words[wordStart + 3];
-	let offset = appendSolidTriangle(
+	let offset = appendSolidPrimitiveTriangle(
 		vertexFloatCount,
 		dx + gxGpuVertexX(xy0),
 		dy + gxGpuVertexY(xy0),
@@ -473,7 +493,7 @@ function appendSolidPolygon(commandBuffer: GxGpuCommandBufferView, commandIndex:
 	);
 	if (gxGpuCommandQuadPolygon(opcode)) {
 		const xy3 = commandBuffer.words[wordStart + 4];
-		offset = appendSolidTriangle(
+		offset = appendSolidPrimitiveTriangle(
 			offset,
 			dx + gxGpuVertexX(xy2),
 			dy + gxGpuVertexY(xy2),
@@ -538,15 +558,13 @@ function writeLineVertex(
 }
 
 function appendLineSegment(vertexFloatCount: number, x0: number, y0: number, color0: number, x1: number, y1: number, color1: number): number {
+	if (gxGpuSegmentExceedsPrimitiveSize(x0, y0, x1, y1)) {
+		return vertexFloatCount;
+	}
 	const left = x0 < x1 ? x0 : x1;
 	const right = x0 > x1 ? x0 : x1;
 	const top = y0 < y1 ? y0 : y1;
 	const bottom = y0 > y1 ? y0 : y1;
-	const width = right - left + 1;
-	const height = bottom - top + 1;
-	if (width > GX_GPU_VRAM_WIDTH || height > GX_GPU_VRAM_HEIGHT) {
-		return vertexFloatCount;
-	}
 	const x2 = right + 1;
 	const y2 = bottom + 1;
 	let offset = vertexFloatCount;
@@ -595,6 +613,30 @@ function appendTexturedTriangle(
 	return offset;
 }
 
+function appendTexturedPrimitiveTriangle(
+	vertexFloatCount: number,
+	x0: number,
+	y0: number,
+	color0: number,
+	u0: number,
+	v0: number,
+	x1: number,
+	y1: number,
+	color1: number,
+	u1: number,
+	v1: number,
+	x2: number,
+	y2: number,
+	color2: number,
+	u2: number,
+	v2: number,
+): number {
+	if (gxGpuTriangleExceedsPrimitiveSize(x0, y0, x1, y1, x2, y2)) {
+		return vertexFloatCount;
+	}
+	return appendTexturedTriangle(vertexFloatCount, x0, y0, color0, u0, v0, x1, y1, color1, u1, v1, x2, y2, color2, u2, v2);
+}
+
 function appendTexturedPolygon(commandBuffer: GxGpuCommandBufferView, commandIndex: number, vertexFloatCount: number): number {
 	const opcode = commandBuffer.commandOpcode[commandIndex];
 	const wordStart = commandBuffer.commandWordStart[commandIndex];
@@ -611,7 +653,7 @@ function appendTexturedPolygon(commandBuffer: GxGpuCommandBufferView, commandInd
 		const color2 = commandBuffer.words[wordStart + 6];
 		const xy2 = commandBuffer.words[wordStart + 7];
 		const texture2 = commandBuffer.words[wordStart + 8];
-		let offset = appendTexturedTriangle(
+		let offset = appendTexturedPrimitiveTriangle(
 			vertexFloatCount,
 			dx + gxGpuVertexX(xy0),
 			dy + gxGpuVertexY(xy0),
@@ -633,7 +675,7 @@ function appendTexturedPolygon(commandBuffer: GxGpuCommandBufferView, commandInd
 			const color3 = commandBuffer.words[wordStart + 9];
 			const xy3 = commandBuffer.words[wordStart + 10];
 			const texture3 = commandBuffer.words[wordStart + 11];
-			offset = appendTexturedTriangle(
+			offset = appendTexturedPrimitiveTriangle(
 				offset,
 				dx + gxGpuVertexX(xy2),
 				dy + gxGpuVertexY(xy2),
@@ -662,7 +704,7 @@ function appendTexturedPolygon(commandBuffer: GxGpuCommandBufferView, commandInd
 	const texture1 = commandBuffer.words[wordStart + 4];
 	const xy2 = commandBuffer.words[wordStart + 5];
 	const texture2 = commandBuffer.words[wordStart + 6];
-	let offset = appendTexturedTriangle(
+	let offset = appendTexturedPrimitiveTriangle(
 		vertexFloatCount,
 		dx + gxGpuVertexX(xy0),
 		dy + gxGpuVertexY(xy0),
@@ -683,7 +725,7 @@ function appendTexturedPolygon(commandBuffer: GxGpuCommandBufferView, commandInd
 	if (gxGpuCommandQuadPolygon(opcode)) {
 		const xy3 = commandBuffer.words[wordStart + 7];
 		const texture3 = commandBuffer.words[wordStart + 8];
-		offset = appendTexturedTriangle(
+		offset = appendTexturedPrimitiveTriangle(
 			offset,
 			dx + gxGpuVertexX(xy2),
 			dy + gxGpuVertexY(xy2),

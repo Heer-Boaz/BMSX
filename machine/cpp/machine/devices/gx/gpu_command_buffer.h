@@ -11,6 +11,8 @@ constexpr size_t GX_GPU_COMMAND_CAPACITY = 4096u;
 constexpr size_t GX_GPU_COMMAND_WORD_CAPACITY = 0x80000u;
 constexpr u32 GX_GPU_VRAM_WIDTH = 1024u;
 constexpr u32 GX_GPU_VRAM_HEIGHT = 512u;
+constexpr i32 GX_GPU_MAX_PRIMITIVE_WIDTH = 1024;
+constexpr i32 GX_GPU_MAX_PRIMITIVE_HEIGHT = 512;
 constexpr u32 GX_GPU_DRAW_MODE_POLYGON_TEXPAGE_MASK = 0x09ffu;
 constexpr u32 GX_GPU_DRAW_MODE_DITHER_ENABLED = 1u << 9u;
 constexpr u32 GX_GPU_DRAW_MODE_TEXTURE_PAGE_Y_BIT9 = 1u << 11u;
@@ -146,6 +148,26 @@ inline i32 gxGpuTextureRectangleEdge0(u32 textureCoord, bool flip) {
 
 inline i32 gxGpuTextureRectangleEdge1(i32 textureEdge0, u32 size, bool flip) {
 	return textureEdge0 + (flip ? -static_cast<i32>(size) : static_cast<i32>(size));
+}
+
+inline bool gxGpuSegmentExceedsPrimitiveSize(i32 x0, i32 y0, i32 x1, i32 y1) {
+	const i32 left = x0 < x1 ? x0 : x1;
+	const i32 right = x0 > x1 ? x0 : x1;
+	const i32 top = y0 < y1 ? y0 : y1;
+	const i32 bottom = y0 > y1 ? y0 : y1;
+	return right - left + 1 > GX_GPU_MAX_PRIMITIVE_WIDTH || bottom - top + 1 > GX_GPU_MAX_PRIMITIVE_HEIGHT;
+}
+
+inline bool gxGpuTriangleExceedsPrimitiveSize(i32 x0, i32 y0, i32 x1, i32 y1, i32 x2, i32 y2) {
+	const i32 min12x = x1 < x2 ? x1 : x2;
+	const i32 max12x = x1 > x2 ? x1 : x2;
+	const i32 min12y = y1 < y2 ? y1 : y2;
+	const i32 max12y = y1 > y2 ? y1 : y2;
+	const i32 left = x0 < min12x ? x0 : min12x;
+	const i32 right = x0 > max12x ? x0 : max12x;
+	const i32 top = y0 < min12y ? y0 : min12y;
+	const i32 bottom = y0 > max12y ? y0 : max12y;
+	return right - left + 1 > GX_GPU_MAX_PRIMITIVE_WIDTH || bottom - top + 1 > GX_GPU_MAX_PRIMITIVE_HEIGHT;
 }
 
 inline bool gxGpuCommandQuadPolygon(u32 opcode) {

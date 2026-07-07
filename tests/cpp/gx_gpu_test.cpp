@@ -117,6 +117,15 @@ void testGp0RawDrawWordDecoders() {
 	require(bmsx::gxGpuTextureRectangleEdge1(8, 16u, true) == -8, "GX-GPU textured rectangle flipped edge1");
 	require(bmsx::gxGpuTextureRectangleEdge0(0u, true) == 1, "GX-GPU textured rectangle zero flipped edge0");
 	require(bmsx::gxGpuTextureRectangleEdge1(1, 16u, true) == -15, "GX-GPU textured rectangle zero flipped edge1");
+	require(!bmsx::gxGpuSegmentExceedsPrimitiveSize(0, 0, 1023, 0), "GX-GPU primitive-size line accepts 1024-pixel width");
+	require(bmsx::gxGpuSegmentExceedsPrimitiveSize(0, 0, 1024, 0), "GX-GPU primitive-size line rejects 1025-pixel width");
+	require(!bmsx::gxGpuSegmentExceedsPrimitiveSize(0, 0, 0, 511), "GX-GPU primitive-size line accepts 512-pixel height");
+	require(bmsx::gxGpuSegmentExceedsPrimitiveSize(0, 0, 0, 512), "GX-GPU primitive-size line rejects 513-pixel height");
+	require(!bmsx::gxGpuTriangleExceedsPrimitiveSize(0, 0, 1023, 0, 0, 511), "GX-GPU primitive-size triangle accepts full bounds");
+	require(bmsx::gxGpuTriangleExceedsPrimitiveSize(0, 0, 1024, 0, 0, 511), "GX-GPU primitive-size triangle rejects wide bounds");
+	require(bmsx::gxGpuTriangleExceedsPrimitiveSize(0, 0, 1023, 0, 0, 512), "GX-GPU primitive-size triangle rejects tall bounds");
+	require(!bmsx::gxGpuTriangleExceedsPrimitiveSize(-512, -256, 511, 255, 0, 0), "GX-GPU primitive-size triangle accepts signed full bounds");
+	require(bmsx::gxGpuTriangleExceedsPrimitiveSize(-513, -256, 511, 255, 0, 0), "GX-GPU primitive-size triangle rejects signed wide bounds");
 	require(bmsx::gxGpuTextureU(0x01c3ab56u) == 0x56u, "GX-GPU texture U decode");
 	require(bmsx::gxGpuTextureV(0x01c3ab56u) == 0xabu, "GX-GPU texture V decode");
 	require(bmsx::gxGpuTextureAttribute(0x01c3ab56u) == 0x01c3u, "GX-GPU texture attribute decode");

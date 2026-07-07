@@ -296,6 +296,33 @@ size_t appendSolidTriangle(
 	return offset;
 }
 
+size_t appendSolidPrimitiveTriangle(
+	size_t vertexFloatCount,
+	i32 x0,
+	i32 y0,
+	u32 color0,
+	i32 x1,
+	i32 y1,
+	u32 color1,
+	i32 x2,
+	i32 y2,
+	u32 color2) {
+	if (gxGpuTriangleExceedsPrimitiveSize(x0, y0, x1, y1, x2, y2)) {
+		return vertexFloatCount;
+	}
+	return appendSolidTriangle(
+		vertexFloatCount,
+		static_cast<f32>(x0),
+		static_cast<f32>(y0),
+		color0,
+		static_cast<f32>(x1),
+		static_cast<f32>(y1),
+		color1,
+		static_cast<f32>(x2),
+		static_cast<f32>(y2),
+		color2);
+}
+
 size_t appendSolidQuad(
 	size_t vertexFloatCount,
 	f32 x0,
@@ -374,30 +401,30 @@ size_t appendSolidPolygon(const GxGpuCommandBuffer& commandBuffer, u32 commandIn
 		const u32 xy1 = commandBuffer.words[wordStart + 3u];
 		const u32 color2 = commandBuffer.words[wordStart + 4u];
 		const u32 xy2 = commandBuffer.words[wordStart + 5u];
-		size_t offset = appendSolidTriangle(
+		size_t offset = appendSolidPrimitiveTriangle(
 			vertexFloatCount,
-			static_cast<f32>(dx + gxGpuVertexX(xy0)),
-			static_cast<f32>(dy + gxGpuVertexY(xy0)),
+			dx + gxGpuVertexX(xy0),
+			dy + gxGpuVertexY(xy0),
 			color0,
-			static_cast<f32>(dx + gxGpuVertexX(xy1)),
-			static_cast<f32>(dy + gxGpuVertexY(xy1)),
+			dx + gxGpuVertexX(xy1),
+			dy + gxGpuVertexY(xy1),
 			color1,
-			static_cast<f32>(dx + gxGpuVertexX(xy2)),
-			static_cast<f32>(dy + gxGpuVertexY(xy2)),
+			dx + gxGpuVertexX(xy2),
+			dy + gxGpuVertexY(xy2),
 			color2);
 		if (gxGpuCommandQuadPolygon(opcode)) {
 			const u32 color3 = commandBuffer.words[wordStart + 6u];
 			const u32 xy3 = commandBuffer.words[wordStart + 7u];
-			offset = appendSolidTriangle(
+			offset = appendSolidPrimitiveTriangle(
 				offset,
-				static_cast<f32>(dx + gxGpuVertexX(xy2)),
-				static_cast<f32>(dy + gxGpuVertexY(xy2)),
+				dx + gxGpuVertexX(xy2),
+				dy + gxGpuVertexY(xy2),
 				color2,
-				static_cast<f32>(dx + gxGpuVertexX(xy1)),
-				static_cast<f32>(dy + gxGpuVertexY(xy1)),
+				dx + gxGpuVertexX(xy1),
+				dy + gxGpuVertexY(xy1),
 				color1,
-				static_cast<f32>(dx + gxGpuVertexX(xy3)),
-				static_cast<f32>(dy + gxGpuVertexY(xy3)),
+				dx + gxGpuVertexX(xy3),
+				dy + gxGpuVertexY(xy3),
 				color3);
 		}
 		return offset;
@@ -407,29 +434,29 @@ size_t appendSolidPolygon(const GxGpuCommandBuffer& commandBuffer, u32 commandIn
 	const u32 xy0 = commandBuffer.words[wordStart + 1u];
 	const u32 xy1 = commandBuffer.words[wordStart + 2u];
 	const u32 xy2 = commandBuffer.words[wordStart + 3u];
-	size_t offset = appendSolidTriangle(
+	size_t offset = appendSolidPrimitiveTriangle(
 		vertexFloatCount,
-		static_cast<f32>(dx + gxGpuVertexX(xy0)),
-		static_cast<f32>(dy + gxGpuVertexY(xy0)),
+		dx + gxGpuVertexX(xy0),
+		dy + gxGpuVertexY(xy0),
 		color,
-		static_cast<f32>(dx + gxGpuVertexX(xy1)),
-		static_cast<f32>(dy + gxGpuVertexY(xy1)),
+		dx + gxGpuVertexX(xy1),
+		dy + gxGpuVertexY(xy1),
 		color,
-		static_cast<f32>(dx + gxGpuVertexX(xy2)),
-		static_cast<f32>(dy + gxGpuVertexY(xy2)),
+		dx + gxGpuVertexX(xy2),
+		dy + gxGpuVertexY(xy2),
 		color);
 	if (gxGpuCommandQuadPolygon(opcode)) {
 		const u32 xy3 = commandBuffer.words[wordStart + 4u];
-		offset = appendSolidTriangle(
+		offset = appendSolidPrimitiveTriangle(
 			offset,
-			static_cast<f32>(dx + gxGpuVertexX(xy2)),
-			static_cast<f32>(dy + gxGpuVertexY(xy2)),
+			dx + gxGpuVertexX(xy2),
+			dy + gxGpuVertexY(xy2),
 			color,
-			static_cast<f32>(dx + gxGpuVertexX(xy1)),
-			static_cast<f32>(dy + gxGpuVertexY(xy1)),
+			dx + gxGpuVertexX(xy1),
+			dy + gxGpuVertexY(xy1),
 			color,
-			static_cast<f32>(dx + gxGpuVertexX(xy3)),
-			static_cast<f32>(dy + gxGpuVertexY(xy3)),
+			dx + gxGpuVertexX(xy3),
+			dy + gxGpuVertexY(xy3),
 			color);
 	}
 	return offset;
@@ -483,15 +510,13 @@ size_t writeLineVertex(
 }
 
 size_t appendLineSegment(size_t vertexFloatCount, i32 x0, i32 y0, u32 color0, i32 x1, i32 y1, u32 color1) {
+	if (gxGpuSegmentExceedsPrimitiveSize(x0, y0, x1, y1)) {
+		return vertexFloatCount;
+	}
 	const i32 left = x0 < x1 ? x0 : x1;
 	const i32 right = x0 > x1 ? x0 : x1;
 	const i32 top = y0 < y1 ? y0 : y1;
 	const i32 bottom = y0 > y1 ? y0 : y1;
-	const i32 width = right - left + 1;
-	const i32 height = bottom - top + 1;
-	if (width > kGxGpuVramWidth || height > kGxGpuVramHeight) {
-		return vertexFloatCount;
-	}
 	const f32 leftFloat = static_cast<f32>(left);
 	const f32 topFloat = static_cast<f32>(top);
 	const f32 rightFloat = static_cast<f32>(right + 1);
@@ -545,6 +570,45 @@ size_t appendTexturedTriangle(
 	return offset;
 }
 
+size_t appendTexturedPrimitiveTriangle(
+	size_t vertexFloatCount,
+	i32 x0,
+	i32 y0,
+	u32 color0,
+	i32 u0,
+	i32 v0,
+	i32 x1,
+	i32 y1,
+	u32 color1,
+	i32 u1,
+	i32 v1,
+	i32 x2,
+	i32 y2,
+	u32 color2,
+	i32 u2,
+	i32 v2) {
+	if (gxGpuTriangleExceedsPrimitiveSize(x0, y0, x1, y1, x2, y2)) {
+		return vertexFloatCount;
+	}
+	return appendTexturedTriangle(
+		vertexFloatCount,
+		static_cast<f32>(x0),
+		static_cast<f32>(y0),
+		color0,
+		u0,
+		v0,
+		static_cast<f32>(x1),
+		static_cast<f32>(y1),
+		color1,
+		u1,
+		v1,
+		static_cast<f32>(x2),
+		static_cast<f32>(y2),
+		color2,
+		u2,
+		v2);
+}
+
 size_t appendTexturedPolygon(const GxGpuCommandBuffer& commandBuffer, u32 commandIndex, size_t vertexFloatCount) {
 	const u32 opcode = commandBuffer.commandOpcode[commandIndex];
 	const u32 wordStart = commandBuffer.commandWordStart[commandIndex];
@@ -561,20 +625,20 @@ size_t appendTexturedPolygon(const GxGpuCommandBuffer& commandBuffer, u32 comman
 		const u32 color2 = commandBuffer.words[wordStart + 6u];
 		const u32 xy2 = commandBuffer.words[wordStart + 7u];
 		const u32 texture2 = commandBuffer.words[wordStart + 8u];
-		size_t offset = appendTexturedTriangle(
+		size_t offset = appendTexturedPrimitiveTriangle(
 			vertexFloatCount,
-			static_cast<f32>(dx + gxGpuVertexX(xy0)),
-			static_cast<f32>(dy + gxGpuVertexY(xy0)),
+			dx + gxGpuVertexX(xy0),
+			dy + gxGpuVertexY(xy0),
 			color0,
 			gxGpuTextureU(texture0),
 			gxGpuTextureV(texture0),
-			static_cast<f32>(dx + gxGpuVertexX(xy1)),
-			static_cast<f32>(dy + gxGpuVertexY(xy1)),
+			dx + gxGpuVertexX(xy1),
+			dy + gxGpuVertexY(xy1),
 			color1,
 			gxGpuTextureU(texture1),
 			gxGpuTextureV(texture1),
-			static_cast<f32>(dx + gxGpuVertexX(xy2)),
-			static_cast<f32>(dy + gxGpuVertexY(xy2)),
+			dx + gxGpuVertexX(xy2),
+			dy + gxGpuVertexY(xy2),
 			color2,
 			gxGpuTextureU(texture2),
 			gxGpuTextureV(texture2));
@@ -582,20 +646,20 @@ size_t appendTexturedPolygon(const GxGpuCommandBuffer& commandBuffer, u32 comman
 			const u32 color3 = commandBuffer.words[wordStart + 9u];
 			const u32 xy3 = commandBuffer.words[wordStart + 10u];
 			const u32 texture3 = commandBuffer.words[wordStart + 11u];
-			offset = appendTexturedTriangle(
+			offset = appendTexturedPrimitiveTriangle(
 				offset,
-				static_cast<f32>(dx + gxGpuVertexX(xy2)),
-				static_cast<f32>(dy + gxGpuVertexY(xy2)),
+				dx + gxGpuVertexX(xy2),
+				dy + gxGpuVertexY(xy2),
 				color2,
 				gxGpuTextureU(texture2),
 				gxGpuTextureV(texture2),
-				static_cast<f32>(dx + gxGpuVertexX(xy1)),
-				static_cast<f32>(dy + gxGpuVertexY(xy1)),
+				dx + gxGpuVertexX(xy1),
+				dy + gxGpuVertexY(xy1),
 				color1,
 				gxGpuTextureU(texture1),
 				gxGpuTextureV(texture1),
-				static_cast<f32>(dx + gxGpuVertexX(xy3)),
-				static_cast<f32>(dy + gxGpuVertexY(xy3)),
+				dx + gxGpuVertexX(xy3),
+				dy + gxGpuVertexY(xy3),
 				color3,
 				gxGpuTextureU(texture3),
 				gxGpuTextureV(texture3));
@@ -610,40 +674,40 @@ size_t appendTexturedPolygon(const GxGpuCommandBuffer& commandBuffer, u32 comman
 	const u32 texture1 = commandBuffer.words[wordStart + 4u];
 	const u32 xy2 = commandBuffer.words[wordStart + 5u];
 	const u32 texture2 = commandBuffer.words[wordStart + 6u];
-	size_t offset = appendTexturedTriangle(
+	size_t offset = appendTexturedPrimitiveTriangle(
 		vertexFloatCount,
-		static_cast<f32>(dx + gxGpuVertexX(xy0)),
-		static_cast<f32>(dy + gxGpuVertexY(xy0)),
+		dx + gxGpuVertexX(xy0),
+		dy + gxGpuVertexY(xy0),
 		color,
 		gxGpuTextureU(texture0),
 		gxGpuTextureV(texture0),
-		static_cast<f32>(dx + gxGpuVertexX(xy1)),
-		static_cast<f32>(dy + gxGpuVertexY(xy1)),
+		dx + gxGpuVertexX(xy1),
+		dy + gxGpuVertexY(xy1),
 		color,
 		gxGpuTextureU(texture1),
 		gxGpuTextureV(texture1),
-		static_cast<f32>(dx + gxGpuVertexX(xy2)),
-		static_cast<f32>(dy + gxGpuVertexY(xy2)),
+		dx + gxGpuVertexX(xy2),
+		dy + gxGpuVertexY(xy2),
 		color,
 		gxGpuTextureU(texture2),
 		gxGpuTextureV(texture2));
 	if (gxGpuCommandQuadPolygon(opcode)) {
 		const u32 xy3 = commandBuffer.words[wordStart + 7u];
 		const u32 texture3 = commandBuffer.words[wordStart + 8u];
-		offset = appendTexturedTriangle(
+		offset = appendTexturedPrimitiveTriangle(
 			offset,
-			static_cast<f32>(dx + gxGpuVertexX(xy2)),
-			static_cast<f32>(dy + gxGpuVertexY(xy2)),
+			dx + gxGpuVertexX(xy2),
+			dy + gxGpuVertexY(xy2),
 			color,
 			gxGpuTextureU(texture2),
 			gxGpuTextureV(texture2),
-			static_cast<f32>(dx + gxGpuVertexX(xy1)),
-			static_cast<f32>(dy + gxGpuVertexY(xy1)),
+			dx + gxGpuVertexX(xy1),
+			dy + gxGpuVertexY(xy1),
 			color,
 			gxGpuTextureU(texture1),
 			gxGpuTextureV(texture1),
-			static_cast<f32>(dx + gxGpuVertexX(xy3)),
-			static_cast<f32>(dy + gxGpuVertexY(xy3)),
+			dx + gxGpuVertexX(xy3),
+			dy + gxGpuVertexY(xy3),
 			color,
 			gxGpuTextureU(texture3),
 			gxGpuTextureV(texture3));

@@ -2,6 +2,8 @@ export const GX_GPU_COMMAND_CAPACITY = 4096;
 export const GX_GPU_COMMAND_WORD_CAPACITY = 0x80000;
 export const GX_GPU_VRAM_WIDTH = 1024;
 export const GX_GPU_VRAM_HEIGHT = 512;
+export const GX_GPU_MAX_PRIMITIVE_WIDTH = 1024;
+export const GX_GPU_MAX_PRIMITIVE_HEIGHT = 512;
 export const GX_GPU_DRAW_MODE_POLYGON_TEXPAGE_MASK = 0x09ff;
 export const GX_GPU_DRAW_MODE_DITHER_ENABLED = 1 << 9;
 export const GX_GPU_DRAW_MODE_TEXTURE_PAGE_Y_BIT9 = 1 << 11;
@@ -137,6 +139,26 @@ export function gxGpuTextureRectangleEdge0(textureCoord: number, flip: boolean):
 
 export function gxGpuTextureRectangleEdge1(textureEdge0: number, size: number, flip: boolean): number {
 	return textureEdge0 + (flip ? -size : size);
+}
+
+export function gxGpuSegmentExceedsPrimitiveSize(x0: number, y0: number, x1: number, y1: number): boolean {
+	const left = x0 < x1 ? x0 : x1;
+	const right = x0 > x1 ? x0 : x1;
+	const top = y0 < y1 ? y0 : y1;
+	const bottom = y0 > y1 ? y0 : y1;
+	return right - left + 1 > GX_GPU_MAX_PRIMITIVE_WIDTH || bottom - top + 1 > GX_GPU_MAX_PRIMITIVE_HEIGHT;
+}
+
+export function gxGpuTriangleExceedsPrimitiveSize(x0: number, y0: number, x1: number, y1: number, x2: number, y2: number): boolean {
+	const min12x = x1 < x2 ? x1 : x2;
+	const max12x = x1 > x2 ? x1 : x2;
+	const min12y = y1 < y2 ? y1 : y2;
+	const max12y = y1 > y2 ? y1 : y2;
+	const left = x0 < min12x ? x0 : min12x;
+	const right = x0 > max12x ? x0 : max12x;
+	const top = y0 < min12y ? y0 : min12y;
+	const bottom = y0 > max12y ? y0 : max12y;
+	return right - left + 1 > GX_GPU_MAX_PRIMITIVE_WIDTH || bottom - top + 1 > GX_GPU_MAX_PRIMITIVE_HEIGHT;
 }
 
 export function gxGpuCommandQuadPolygon(opcode: number): boolean {
