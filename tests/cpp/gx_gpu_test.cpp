@@ -61,6 +61,7 @@ void testGp0RawDrawWordDecoders() {
 	require(!bmsx::gxGpuCommandRawTextureEnabled(0x24u), "GX-GPU raw texture bit disabled");
 	require(bmsx::gxGpuCommandSemiTransparencyEnabled(0x22u), "GX-GPU semi-transparency bit enabled");
 	require(!bmsx::gxGpuCommandSemiTransparencyEnabled(0x20u), "GX-GPU semi-transparency bit disabled");
+	require(bmsx::gxGpuDrawModeTexturePageYBit9(bmsx::GX_GPU_DRAW_MODE_TEXTURE_PAGE_Y_BIT9) == 512u, "GX-GPU texpage Y.bit9 decode");
 	require(bmsx::gxGpuTextureU(0x01c3ab56u) == 0x56u, "GX-GPU texture U decode");
 	require(bmsx::gxGpuTextureV(0x01c3ab56u) == 0xabu, "GX-GPU texture V decode");
 	require(bmsx::gxGpuTextureAttribute(0x01c3ab56u) == 0x01c3u, "GX-GPU texture attribute decode");
@@ -68,6 +69,7 @@ void testGp0RawDrawWordDecoders() {
 	require(bmsx::gxGpuTextureClutBaseY(0x01c3ab56u) == 7u, "GX-GPU CLUT Y base decode");
 	require(bmsx::gxGpuDrawModeTexturePageBaseX(0x0013u) == 192u, "GX-GPU texture page X base decode");
 	require(bmsx::gxGpuDrawModeTexturePageBaseY(0x0013u) == 256u, "GX-GPU texture page Y base decode");
+	require(bmsx::gxGpuDrawModeTexturePageBaseY(0x0810u) == 768u, "GX-GPU texture page Y bit9 extends base");
 	require(bmsx::gxGpuDrawModeTextureMode(0x0100u) == bmsx::GX_GPU_TEXTURE_MODE_DIRECT16, "GX-GPU texture mode decode");
 	require(bmsx::gxGpuDrawModeTransparencyMode(0x0060u) == 3u, "GX-GPU transparency mode decode");
 	require(bmsx::gxGpuPolygonTexturePageWordIndex(0x24u) == 4u, "GX-GPU flat textured polygon texpage word index");
@@ -116,12 +118,14 @@ void testGp1ResetRestoresPalDisplayStatus() {
 	GpuHarness harness;
 	bmsx::GxGpu& gpu = harness.gpu;
 
+	gpu.writeGp1((bmsx::GX_GPU_GP1_SET_VRAM_SIZE << 24u) | 1u);
 	gpu.writeGp1((bmsx::GX_GPU_GP1_SET_DISPLAY_MODE << 24u) | 0x00000000u);
 	require(gpu.readDisplayModeWord() == 0u, "GX-GPU GP1 display NTSC before reset");
 	require((gpu.readStatus() & bmsx::GX_GPU_STATUS_PAL_MODE) == 0u, "GX-GPU GP1 PAL bit clear before reset");
 
 	require(gpu.writeGp1(bmsx::GX_GPU_GP1_RESET << 24u) == bmsx::GX_GPU_GP1_RESET, "GX-GPU GP1 reset opcode");
 
+	require(gpu.readVramSizeWord() == 1u, "GX-GPU GP1 reset preserves VRAM size command");
 	require(gpu.readDisplayModeWord() == bmsx::PSX_GPU_DISPLAY_MODE_PAL_WORD, "GX-GPU GP1 reset display mode");
 	require((gpu.readStatus() & bmsx::GX_GPU_STATUS_PAL_MODE) == bmsx::GX_GPU_STATUS_PAL_MODE, "GX-GPU GP1 reset PAL bit");
 	require((gpu.readStatus() & bmsx::GX_GPU_STATUS_RESET_WORD) == bmsx::GX_GPU_STATUS_RESET_WORD, "GX-GPU GP1 reset base bits");
@@ -171,12 +175,12 @@ void testGp1CrtcRangeRegistersLatchMaskedRawWords() {
 	gpu.writeGp1((bmsx::GX_GPU_GP1_SET_DISPLAY_START << 24u) | 0x00ffffffu);
 	gpu.writeGp1((bmsx::GX_GPU_GP1_SET_HORIZONTAL_DISPLAY_RANGE << 24u) | 0x00ffffffu);
 	gpu.writeGp1((bmsx::GX_GPU_GP1_SET_VERTICAL_DISPLAY_RANGE << 24u) | 0x00ffffffu);
-	gpu.writeGp1((bmsx::GX_GPU_GP1_SET_TEXTURE_DISABLE_MASK << 24u) | 0x00ffffffu);
+	gpu.writeGp1((bmsx::GX_GPU_GP1_SET_VRAM_SIZE << 24u) | 0x00ffffffu);
 
 	require(gpu.readDisplayStartWord() == bmsx::GX_GPU_DISPLAY_START_MASK, "GX-GPU GP1 display start mask");
 	require(gpu.readHorizontalDisplayRangeWord() == bmsx::GX_GPU_HORIZONTAL_DISPLAY_RANGE_MASK, "GX-GPU GP1 horizontal display range mask");
 	require(gpu.readVerticalDisplayRangeWord() == bmsx::GX_GPU_VERTICAL_DISPLAY_RANGE_MASK, "GX-GPU GP1 vertical display range mask");
-	require(gpu.readTextureDisableMaskWord() == 1u, "GX-GPU GP1 texture-disable mask latch");
+	require(gpu.readVramSizeWord() == 1u, "GX-GPU GP1 VRAM size latch");
 
 	const bmsx::GxGpuDeviceOutput& output = gpu.readDeviceOutput();
 	require(output.statusWord == gpu.readStatus(), "GX-GPU output status word");
@@ -205,15 +209,16 @@ void testGp0DrawModeAndMaskBitEnvironmentCommands() {
 
 	require(gpu.readDrawModeWord() == bmsx::GX_GPU_DRAW_MODE_MASK, "GX-GPU GP0 draw-mode word mask");
 	require((gpu.readStatus() & bmsx::GX_GPU_DRAW_MODE_GPUSTAT_MASK) == bmsx::GX_GPU_DRAW_MODE_GPUSTAT_MASK, "GX-GPU GP0 draw-mode GPUSTAT bits");
-	require((gpu.readStatus() & bmsx::GX_GPU_STATUS_TEXTURE_DISABLE) == 0u, "GX-GPU GP0 texture-disable bit stays masked off");
+	require((gpu.readStatus() & bmsx::GX_GPU_STATUS_TEXTURE_PAGE_Y_BIT9) == bmsx::GX_GPU_STATUS_TEXTURE_PAGE_Y_BIT9, "GX-GPU GP0 texpage Y.bit9 mirrors to GPUSTAT");
 
-	gpu.writeGp1((bmsx::GX_GPU_GP1_SET_TEXTURE_DISABLE_MASK << 24u) | 1u);
-	require((gpu.readStatus() & bmsx::GX_GPU_STATUS_TEXTURE_DISABLE) == bmsx::GX_GPU_STATUS_TEXTURE_DISABLE, "GX-GPU GP1 permits GP0 texture-disable status bit");
+	gpu.writeGp1((bmsx::GX_GPU_GP1_SET_VRAM_SIZE << 24u) | 1u);
+	require(gpu.readVramSizeWord() == 1u, "GX-GPU GP1 VRAM size raw word");
+	require((gpu.readStatus() & bmsx::GX_GPU_STATUS_TEXTURE_PAGE_Y_BIT9) == bmsx::GX_GPU_STATUS_TEXTURE_PAGE_Y_BIT9, "GX-GPU GP1 VRAM size does not clear texpage Y.bit9 status");
 
 	gpu.writeGp0((bmsx::GX_GPU_GP0_SET_MASK_BIT << 24u) | 0x00000003u);
 	require(gpu.readMaskBitModeWord() == 3u, "GX-GPU GP0 mask-bit raw word");
 	require((gpu.readStatus() & ((1u << 11u) | (1u << 12u))) == (3u << 11u), "GX-GPU GP0 mask-bit GPUSTAT bits");
-	require((gpu.readDrawModeWord() & bmsx::GX_GPU_DRAW_MODE_TEXTURE_DISABLE) == bmsx::GX_GPU_DRAW_MODE_TEXTURE_DISABLE, "GX-GPU GP0 draw-mode texture-disable source bit");
+	require((gpu.readDrawModeWord() & bmsx::GX_GPU_DRAW_MODE_TEXTURE_PAGE_Y_BIT9) == bmsx::GX_GPU_DRAW_MODE_TEXTURE_PAGE_Y_BIT9, "GX-GPU GP0 draw-mode texpage Y.bit9 source bit");
 }
 
 void testGp0EnvironmentRegistersAndGpuInfoQueries() {

@@ -12,6 +12,7 @@ constexpr size_t GX_GPU_COMMAND_WORD_CAPACITY = 0x80000u;
 constexpr u32 GX_GPU_VRAM_WIDTH = 1024u;
 constexpr u32 GX_GPU_VRAM_HEIGHT = 512u;
 constexpr u32 GX_GPU_DRAW_MODE_POLYGON_TEXPAGE_MASK = 0x09ffu;
+constexpr u32 GX_GPU_DRAW_MODE_TEXTURE_PAGE_Y_BIT9 = 1u << 11u;
 constexpr u32 GX_GPU_TEXTURE_MODE_PALETTE4 = 0u;
 constexpr u32 GX_GPU_TEXTURE_MODE_PALETTE8 = 1u;
 constexpr u32 GX_GPU_TEXTURE_MODE_DIRECT16 = 2u;
@@ -68,6 +69,10 @@ inline bool gxGpuCommandSemiTransparencyEnabled(u32 opcode) {
 
 inline bool gxGpuCommandTextureEnabled(u32 opcode) {
 	return (opcode & 0x04u) != 0u;
+}
+
+inline u32 gxGpuDrawModeTexturePageYBit9(u32 drawModeWord) {
+	return (drawModeWord & GX_GPU_DRAW_MODE_TEXTURE_PAGE_Y_BIT9) >> 2u;
 }
 
 inline bool gxGpuCommandQuadPolygon(u32 opcode) {
@@ -149,7 +154,7 @@ inline u32 gxGpuDrawModeTexturePageBaseX(u32 drawModeWord) {
 }
 
 inline u32 gxGpuDrawModeTexturePageBaseY(u32 drawModeWord) {
-	return ((drawModeWord >> 4u) & 0x01u) << 8u;
+	return (((drawModeWord >> 4u) & 0x01u) << 8u) | gxGpuDrawModeTexturePageYBit9(drawModeWord);
 }
 
 inline u32 gxGpuDrawModeTextureMode(u32 drawModeWord) {

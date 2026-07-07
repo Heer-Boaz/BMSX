@@ -3,6 +3,7 @@ export const GX_GPU_COMMAND_WORD_CAPACITY = 0x80000;
 export const GX_GPU_VRAM_WIDTH = 1024;
 export const GX_GPU_VRAM_HEIGHT = 512;
 export const GX_GPU_DRAW_MODE_POLYGON_TEXPAGE_MASK = 0x09ff;
+export const GX_GPU_DRAW_MODE_TEXTURE_PAGE_Y_BIT9 = 1 << 11;
 export const GX_GPU_TEXTURE_MODE_PALETTE4 = 0;
 export const GX_GPU_TEXTURE_MODE_PALETTE8 = 1;
 export const GX_GPU_TEXTURE_MODE_DIRECT16 = 2;
@@ -59,6 +60,10 @@ export function gxGpuCommandSemiTransparencyEnabled(opcode: number): boolean {
 
 export function gxGpuCommandTextureEnabled(opcode: number): boolean {
 	return (opcode & 0x04) !== 0;
+}
+
+export function gxGpuDrawModeTexturePageYBit9(drawModeWord: number): number {
+	return (drawModeWord & GX_GPU_DRAW_MODE_TEXTURE_PAGE_Y_BIT9) >>> 2;
 }
 
 export function gxGpuCommandQuadPolygon(opcode: number): boolean {
@@ -140,7 +145,7 @@ export function gxGpuDrawModeTexturePageBaseX(drawModeWord: number): number {
 }
 
 export function gxGpuDrawModeTexturePageBaseY(drawModeWord: number): number {
-	return ((drawModeWord >>> 4) & 0x01) << 8;
+	return (((drawModeWord >>> 4) & 0x01) << 8) | gxGpuDrawModeTexturePageYBit9(drawModeWord);
 }
 
 export function gxGpuDrawModeTextureMode(drawModeWord: number): number {

@@ -17,6 +17,11 @@ GxGpu::GxGpu(Memory& memory)
 }
 
 void GxGpu::reset() {
+	m_vramSizeWord = 0u;
+	resetGpuRegisters();
+}
+
+void GxGpu::resetGpuRegisters() {
 	m_gp0Word = 0u;
 	m_gp1Word = 0u;
 	m_displayModeWord = PSX_GPU_DISPLAY_MODE_PAL_WORD;
@@ -33,7 +38,6 @@ void GxGpu::reset() {
 	m_displayStartWord = 0u;
 	m_horizontalDisplayRangeWord = 0x00c60260u;
 	m_verticalDisplayRangeWord = 0x0003fc10u;
-	m_textureDisableMaskWord = 0u;
 	updateDisplayModeStatusBits();
 	updateDmaRequestStatusBit();
 	m_memory.writeIoValue(IO_GX_GPU_GP0, valueNumber(0.0));
@@ -156,7 +160,7 @@ u32 GxGpu::writeGp1(u32 word) {
 	const u32 opcode = (word >> GX_GPU_GP1_OPCODE_SHIFT) & GX_GPU_GP1_OPCODE_MASK;
 	switch (opcode) {
 	case GX_GPU_GP1_RESET:
-		reset();
+		resetGpuRegisters();
 		break;
 	case GX_GPU_GP1_CLEAR_FIFO:
 		clearGp0CommandState();
@@ -187,9 +191,8 @@ u32 GxGpu::writeGp1(u32 word) {
 	case GX_GPU_GP1_SET_DISPLAY_MODE:
 		writeDisplayModeWord(word & GX_GPU_GP1_PARAM_MASK);
 		break;
-	case GX_GPU_GP1_SET_TEXTURE_DISABLE_MASK:
-		m_textureDisableMaskWord = word & 0x1u;
-		updateDrawModeStatusBits();
+	case GX_GPU_GP1_SET_VRAM_SIZE:
+		m_vramSizeWord = word & 0x1u;
 		writeStatusIo();
 		break;
 	case GX_GPU_GP1_GET_GPU_INFO:
@@ -261,8 +264,8 @@ u32 GxGpu::readVerticalDisplayRangeWord() const {
 	return m_verticalDisplayRangeWord;
 }
 
-u32 GxGpu::readTextureDisableMaskWord() const {
-	return m_textureDisableMaskWord;
+u32 GxGpu::readVramSizeWord() const {
+	return m_vramSizeWord;
 }
 
 void GxGpu::writeDisplayDisableWord(u32 word) {
@@ -413,12 +416,12 @@ void GxGpu::writeDrawModeWord(u32 word) {
 }
 
 void GxGpu::updateDrawModeStatusBits() {
-	const u32 textureDisableBit = (m_textureDisableMaskWord != 0u && (m_drawModeWord & GX_GPU_DRAW_MODE_TEXTURE_DISABLE) != 0u)
-		? GX_GPU_STATUS_TEXTURE_DISABLE
+	const u32 texturePageYBit9 = (m_drawModeWord & GX_GPU_DRAW_MODE_TEXTURE_PAGE_Y_BIT9) != 0u
+		? GX_GPU_STATUS_TEXTURE_PAGE_Y_BIT9
 		: 0u;
-	m_statusWord = (m_statusWord & ~(GX_GPU_DRAW_MODE_GPUSTAT_MASK | GX_GPU_STATUS_TEXTURE_DISABLE))
+	m_statusWord = (m_statusWord & ~(GX_GPU_DRAW_MODE_GPUSTAT_MASK | GX_GPU_STATUS_TEXTURE_PAGE_Y_BIT9))
 		| (m_drawModeWord & GX_GPU_DRAW_MODE_GPUSTAT_MASK)
-		| textureDisableBit;
+		| texturePageYBit9;
 }
 
 void GxGpu::writeMaskBitModeWord(u32 word) {

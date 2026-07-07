@@ -19,7 +19,7 @@ constexpr u32 GX_GPU_GP1_SET_DISPLAY_START = 0x05u;
 constexpr u32 GX_GPU_GP1_SET_HORIZONTAL_DISPLAY_RANGE = 0x06u;
 constexpr u32 GX_GPU_GP1_SET_VERTICAL_DISPLAY_RANGE = 0x07u;
 constexpr u32 GX_GPU_GP1_SET_DISPLAY_MODE = 0x08u;
-constexpr u32 GX_GPU_GP1_SET_TEXTURE_DISABLE_MASK = 0x09u;
+constexpr u32 GX_GPU_GP1_SET_VRAM_SIZE = 0x09u;
 constexpr u32 GX_GPU_GP1_GET_GPU_INFO = 0x10u;
 constexpr u32 GX_GPU_GP1_OPCODE_SHIFT = 24u;
 constexpr u32 GX_GPU_GP1_PARAM_MASK = 0x00ffffffu;
@@ -60,7 +60,6 @@ constexpr u32 GX_GPU_HORIZONTAL_DISPLAY_RANGE_MASK = 0x00ffffffu;
 constexpr u32 GX_GPU_VERTICAL_DISPLAY_RANGE_MASK = 0x000fffffu;
 constexpr u32 GX_GPU_DRAW_MODE_MASK = 0x00001fffu;
 constexpr u32 GX_GPU_DRAW_MODE_GPUSTAT_MASK = 0x000007ffu;
-constexpr u32 GX_GPU_DRAW_MODE_TEXTURE_DISABLE = 1u << 11u;
 constexpr u32 GX_GPU_TEXTURE_WINDOW_MASK = 0x000fffffu;
 constexpr u32 GX_GPU_DRAWING_AREA_MASK = 0x000fffffu;
 constexpr u32 GX_GPU_DRAWING_OFFSET_MASK = 0x003fffffu;
@@ -73,7 +72,7 @@ constexpr u32 GX_GPU_DMA_DIRECTION_GPUREAD_TO_CPU = 3u;
 
 constexpr u32 GX_GPU_STATUS_INTERLACED_FIELD = 1u << 13u;
 constexpr u32 GX_GPU_STATUS_REVERSE_FLAG = 1u << 14u;
-constexpr u32 GX_GPU_STATUS_TEXTURE_DISABLE = 1u << 15u;
+constexpr u32 GX_GPU_STATUS_TEXTURE_PAGE_Y_BIT9 = 1u << 15u;
 constexpr u32 GX_GPU_STATUS_HORIZONTAL_RESOLUTION_2 = 1u << 16u;
 constexpr u32 GX_GPU_STATUS_HORIZONTAL_RESOLUTION_1_SHIFT = 17u;
 constexpr u32 GX_GPU_STATUS_VERTICAL_RESOLUTION = 1u << 19u;
@@ -130,7 +129,7 @@ public:
 	u32 readDisplayStartWord() const;
 	u32 readHorizontalDisplayRangeWord() const;
 	u32 readVerticalDisplayRangeWord() const;
-	u32 readTextureDisableMaskWord() const;
+	u32 readVramSizeWord() const;
 
 private:
 	Memory& m_memory;
@@ -162,8 +161,9 @@ private:
 	u32 m_displayStartWord = 0u;
 	u32 m_horizontalDisplayRangeWord = 0x00c60260u;
 	u32 m_verticalDisplayRangeWord = 0x0003fc10u;
-	u32 m_textureDisableMaskWord = 0u;
+	u32 m_vramSizeWord = 0u;
 
+	void resetGpuRegisters();
 	void writeDisplayDisableWord(u32 word);
 	void clearGp0CommandState();
 	void consumeImageLoadWord();
