@@ -3,6 +3,7 @@ export const GX_GPU_COMMAND_WORD_CAPACITY = 0x80000;
 export const GX_GPU_VRAM_WIDTH = 1024;
 export const GX_GPU_VRAM_HEIGHT = 512;
 export const GX_GPU_DRAW_MODE_POLYGON_TEXPAGE_MASK = 0x09ff;
+export const GX_GPU_DRAW_MODE_DITHER_ENABLED = 1 << 9;
 export const GX_GPU_DRAW_MODE_TEXTURE_PAGE_Y_BIT9 = 1 << 11;
 export const GX_GPU_DRAW_MODE_TEXTURE_RECTANGLE_X_FLIP = 1 << 12;
 export const GX_GPU_DRAW_MODE_TEXTURE_RECTANGLE_Y_FLIP = 1 << 13;
@@ -68,6 +69,10 @@ export function gxGpuDrawModeTexturePageYBit9(drawModeWord: number): number {
 	return (drawModeWord & GX_GPU_DRAW_MODE_TEXTURE_PAGE_Y_BIT9) >>> 2;
 }
 
+export function gxGpuDrawModeDitherEnabled(drawModeWord: number): boolean {
+	return (drawModeWord & GX_GPU_DRAW_MODE_DITHER_ENABLED) !== 0;
+}
+
 export function gxGpuDrawModeTextureRectangleXFlip(drawModeWord: number): boolean {
 	return (drawModeWord & GX_GPU_DRAW_MODE_TEXTURE_RECTANGLE_X_FLIP) !== 0;
 }
@@ -90,6 +95,13 @@ export function gxGpuCommandQuadPolygon(opcode: number): boolean {
 
 export function gxGpuCommandGouraud(opcode: number): boolean {
 	return (opcode & 0x10) !== 0;
+}
+
+export function gxGpuDitheredPolygon(drawModeWord: number, opcode: number): boolean {
+	return gxGpuDrawModeDitherEnabled(drawModeWord)
+		&& (gxGpuCommandTextureEnabled(opcode)
+			? !gxGpuCommandRawTextureEnabled(opcode)
+			: gxGpuCommandGouraud(opcode));
 }
 
 export function gxGpuCommandRectangleWidth(opcode: number, sizeWord: number): number {

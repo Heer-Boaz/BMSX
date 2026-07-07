@@ -12,6 +12,7 @@ constexpr size_t GX_GPU_COMMAND_WORD_CAPACITY = 0x80000u;
 constexpr u32 GX_GPU_VRAM_WIDTH = 1024u;
 constexpr u32 GX_GPU_VRAM_HEIGHT = 512u;
 constexpr u32 GX_GPU_DRAW_MODE_POLYGON_TEXPAGE_MASK = 0x09ffu;
+constexpr u32 GX_GPU_DRAW_MODE_DITHER_ENABLED = 1u << 9u;
 constexpr u32 GX_GPU_DRAW_MODE_TEXTURE_PAGE_Y_BIT9 = 1u << 11u;
 constexpr u32 GX_GPU_DRAW_MODE_TEXTURE_RECTANGLE_X_FLIP = 1u << 12u;
 constexpr u32 GX_GPU_DRAW_MODE_TEXTURE_RECTANGLE_Y_FLIP = 1u << 13u;
@@ -77,6 +78,10 @@ inline u32 gxGpuDrawModeTexturePageYBit9(u32 drawModeWord) {
 	return (drawModeWord & GX_GPU_DRAW_MODE_TEXTURE_PAGE_Y_BIT9) >> 2u;
 }
 
+inline bool gxGpuDrawModeDitherEnabled(u32 drawModeWord) {
+	return (drawModeWord & GX_GPU_DRAW_MODE_DITHER_ENABLED) != 0u;
+}
+
 inline bool gxGpuDrawModeTextureRectangleXFlip(u32 drawModeWord) {
 	return (drawModeWord & GX_GPU_DRAW_MODE_TEXTURE_RECTANGLE_X_FLIP) != 0u;
 }
@@ -99,6 +104,13 @@ inline bool gxGpuCommandQuadPolygon(u32 opcode) {
 
 inline bool gxGpuCommandGouraud(u32 opcode) {
 	return (opcode & 0x10u) != 0u;
+}
+
+inline bool gxGpuDitheredPolygon(u32 drawModeWord, u32 opcode) {
+	return gxGpuDrawModeDitherEnabled(drawModeWord)
+		&& (gxGpuCommandTextureEnabled(opcode)
+			? !gxGpuCommandRawTextureEnabled(opcode)
+			: gxGpuCommandGouraud(opcode));
 }
 
 inline u32 gxGpuCommandRectangleWidth(u32 opcode, u32 sizeWord) {

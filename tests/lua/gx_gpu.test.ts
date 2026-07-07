@@ -17,6 +17,8 @@ import {
 	gxGpuCommandRectangleWidth,
 	gxGpuDisplayStartX,
 	gxGpuDisplayStartY,
+	gxGpuDitheredPolygon,
+	gxGpuDrawModeDitherEnabled,
 	gxGpuDrawModeTexturePageYBit9,
 	gxGpuDrawModeTextureRectangleXFlip,
 	gxGpuDrawModeTextureRectangleYFlip,
@@ -61,6 +63,7 @@ import {
 	GX_GPU_DISPLAY_START_MASK,
 	GX_GPU_DRAWING_AREA_MASK,
 	GX_GPU_DRAWING_OFFSET_MASK,
+	GX_GPU_DRAW_MODE_DITHER_ENABLED,
 	GX_GPU_DRAW_MODE_GPUSTAT_MASK,
 	GX_GPU_DRAW_MODE_MASK,
 	GX_GPU_DRAW_MODE_TEXTURE_PAGE_Y_BIT9,
@@ -155,6 +158,13 @@ test('GX-GPU decodes PSX GP0 signed vertex and rectangle size words', () => {
 	assert.equal(gxGpuCommandSemiTransparencyEnabled(0x22), true);
 	assert.equal(gxGpuCommandSemiTransparencyEnabled(0x20), false);
 	assert.equal(gxGpuDrawModeTexturePageYBit9(GX_GPU_DRAW_MODE_TEXTURE_PAGE_Y_BIT9), 512);
+	assert.equal(gxGpuDrawModeDitherEnabled(GX_GPU_DRAW_MODE_DITHER_ENABLED), true);
+	assert.equal(gxGpuDrawModeDitherEnabled(0), false);
+	assert.equal(gxGpuDitheredPolygon(GX_GPU_DRAW_MODE_DITHER_ENABLED, GX_GPU_GP0_POLYGON_FIRST | GX_GPU_GP0_RENDER_GOURAUD_BIT), true);
+	assert.equal(gxGpuDitheredPolygon(GX_GPU_DRAW_MODE_DITHER_ENABLED, GX_GPU_GP0_POLYGON_FIRST), false);
+	assert.equal(gxGpuDitheredPolygon(GX_GPU_DRAW_MODE_DITHER_ENABLED, GX_GPU_GP0_POLYGON_FIRST | GX_GPU_GP0_RENDER_TEXTURE_BIT), true);
+	assert.equal(gxGpuDitheredPolygon(GX_GPU_DRAW_MODE_DITHER_ENABLED, GX_GPU_GP0_POLYGON_FIRST | GX_GPU_GP0_RENDER_TEXTURE_BIT | 0x01), false);
+	assert.equal(gxGpuDitheredPolygon(0, GX_GPU_GP0_POLYGON_FIRST | GX_GPU_GP0_RENDER_GOURAUD_BIT), false);
 	assert.equal(gxGpuDrawModeTextureRectangleXFlip(GX_GPU_DRAW_MODE_TEXTURE_RECTANGLE_X_FLIP), true);
 	assert.equal(gxGpuDrawModeTextureRectangleXFlip(GX_GPU_DRAW_MODE_TEXTURE_RECTANGLE_Y_FLIP), false);
 	assert.equal(gxGpuDrawModeTextureRectangleYFlip(GX_GPU_DRAW_MODE_TEXTURE_RECTANGLE_Y_FLIP), true);
@@ -316,6 +326,7 @@ test('GX-GPU handles PSX GP0 draw mode and mask-bit environment commands', () =>
 	assert.equal(gpu.readDrawModeWord(), GX_GPU_DRAW_MODE_MASK);
 	assert.equal((gpu.readStatus() & GX_GPU_DRAW_MODE_GPUSTAT_MASK) >>> 0, GX_GPU_DRAW_MODE_GPUSTAT_MASK);
 	assert.equal((gpu.readStatus() & GX_GPU_STATUS_TEXTURE_PAGE_Y_BIT9) >>> 0, GX_GPU_STATUS_TEXTURE_PAGE_Y_BIT9);
+	assert.equal((gpu.readDrawModeWord() & GX_GPU_DRAW_MODE_DITHER_ENABLED) >>> 0, GX_GPU_DRAW_MODE_DITHER_ENABLED);
 	assert.equal((gpu.readDrawModeWord() & GX_GPU_DRAW_MODE_TEXTURE_RECTANGLE_X_FLIP) >>> 0, GX_GPU_DRAW_MODE_TEXTURE_RECTANGLE_X_FLIP);
 	assert.equal((gpu.readDrawModeWord() & GX_GPU_DRAW_MODE_TEXTURE_RECTANGLE_Y_FLIP) >>> 0, GX_GPU_DRAW_MODE_TEXTURE_RECTANGLE_Y_FLIP);
 

@@ -5,6 +5,7 @@ uniform float u_blendEnable;
 uniform float u_blendMode;
 uniform float u_checkMaskBit;
 uniform float u_setMaskBit;
+uniform float u_ditherEnable;
 varying vec4 v_color;
 
 const vec2 VRAM_SIZE = vec2(1024.0, 512.0);
@@ -42,6 +43,66 @@ vec3 blendRgb5(vec3 src5, vec3 dst5) {
 	return min(dst5 + floor(src5 * 0.25), vec3(31.0));
 }
 
+float ditherOffset() {
+	vec2 pixelCoord = floor(vec2(gl_FragCoord.x - 0.5, VRAM_SIZE.y - gl_FragCoord.y - 0.5));
+	float x = mod(pixelCoord.x, 4.0);
+	float y = mod(pixelCoord.y, 4.0);
+	if (y < 0.5) {
+		if (x < 0.5) {
+			return -4.0;
+		}
+		if (x < 1.5) {
+			return 0.0;
+		}
+		if (x < 2.5) {
+			return -3.0;
+		}
+		return 1.0;
+	}
+	if (y < 1.5) {
+		if (x < 0.5) {
+			return 2.0;
+		}
+		if (x < 1.5) {
+			return -2.0;
+		}
+		if (x < 2.5) {
+			return 3.0;
+		}
+		return -1.0;
+	}
+	if (y < 2.5) {
+		if (x < 0.5) {
+			return -3.0;
+		}
+		if (x < 1.5) {
+			return 1.0;
+		}
+		if (x < 2.5) {
+			return -4.0;
+		}
+		return 0.0;
+	}
+	if (x < 0.5) {
+		return 3.0;
+	}
+	if (x < 1.5) {
+		return -1.0;
+	}
+	if (x < 2.5) {
+		return 2.0;
+	}
+	return -2.0;
+}
+
+vec3 rgbToRgb5(vec3 rgb) {
+	vec3 rgb8 = floor(rgb * 255.0);
+	if (u_ditherEnable > 0.5) {
+		rgb8 = clamp(rgb8 + vec3(ditherOffset()), vec3(0.0), vec3(255.0));
+	}
+	return floor(rgb8 / 8.0);
+}
+
 vec4 encodeRgb555(vec3 color5, float outputMaskBit) {
 	float lowByte = mod(color5.r + color5.g * 32.0, 256.0);
 	float highByte = floor(color5.g / 8.0) + color5.b * 4.0 + outputMaskBit * 128.0;
@@ -49,7 +110,7 @@ vec4 encodeRgb555(vec3 color5, float outputMaskBit) {
 }
 
 void main() {
-	vec3 src5 = floor((v_color.rgb * 255.0) / 8.0);
+	vec3 src5 = rgbToRgb5(v_color.rgb);
 	float dstWord = 0.0;
 	if (u_checkMaskBit > 0.5 || u_blendEnable > 0.5) {
 		dstWord = rawStorageVramWord(gl_FragCoord.xy - vec2(0.5));
