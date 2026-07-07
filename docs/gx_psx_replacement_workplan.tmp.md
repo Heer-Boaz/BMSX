@@ -1,20 +1,21 @@
 # Temporary GX/PSX Replacement Workplan
 
 Status file for agents working on the active BMSX graphics replacement goal.
-This is **not** a stable ABI contract. It is a temporary execution checklist so
-agents can see the current direction, completed slices, known blockers, and next
-work.
+This is **not** a stable ABI contract and is **not** more authoritative than the
+live checkout. It is a temporary execution checklist so agents can see the
+current direction, completed slices, known blockers, and next work.
 
 Last refreshed: 2026-07-07
 Do not duplicate recent commit history here. Use `git log --oneline` for that.
 
 ## Source of truth
 
-For the GX/PSX graphics replacement work, this temporary file is the current
-goal/checklist. `docs/goal.md` is an older broad hardware-emulation goal and is
-not sufficient for this graphics replacement because it does not capture the
-current PSX-GPU/GTE direction or the TS/C++ headless software-renderer
-requirement.
+For the GX/PSX graphics replacement work, the live checkout, current diff, and
+recent commits are authoritative. This temporary file is only the current
+execution map/checklist. `docs/goal.md` is an older broad hardware-emulation
+goal and is not sufficient for this graphics replacement because it does not
+capture the current PSX-GPU/GTE direction or the TS/C++ headless
+software-renderer requirement.
 
 ## Active goal
 
@@ -40,7 +41,9 @@ Completion means all of these are true:
 
 ## Explicit non-goals for this phase
 
-- Do not migrate carts while PSX-GPU/GTE behavior is incomplete.
+- Do not do migration-only busywork. Migration is required, but every migration
+  slice must either depend on already-covered GX/PSX behavior or add the missing
+  functional GX/PSX coverage in the same vertical slice.
 - Do not design or edit save-state representation/schema/capture/restore in this
   slice of work.
 - Do not add defensive require/ensure/fallback/provider/adapter/injection
@@ -61,6 +64,10 @@ GX owners:
 - C++ command buffer: `machine/cpp/machine/devices/gx/gpu_command_buffer.h`
 - WebGL backend: `machine/ts/render/backend/webgl/gx_gpu.ts`
 - GLES2 backend: `machine/cpp/render/backend/gles2/gx_gpu.cpp`
+- TypeScript software/headless backend: `machine/ts/render/backend/software/gx_gpu*.ts`
+- C++ software backend: `machine/cpp/render/backend/software/gx_gpu*.cpp`
+- GX firmware helpers: `machine/firmware/system/gx_gpu.lua`,
+  `machine/firmware/system/gx_image.lua`
 
 Legacy VDP/RPU still exists and must not be treated as completion:
 
@@ -85,11 +92,25 @@ Implemented or partially covered GX-GPU areas include:
   behavior.
 - Texture windows/CLUT-ish paths, texture disable, modulation math, mask/fill
   behavior, oversized primitive culling, and VRAM copy overlap chunking.
-- WebGL2 and GLES2 accelerated execution for the currently handled command kinds.
+- WebGL2, GLES2, and TS/C++ software execution for the currently handled command
+  kinds.
+- GX command logs can be retired after presentation without clearing backend
+  VRAM, so carts can build frame commands without losing uploaded texture VRAM.
+- BIOS boot image rendering, `emptycart`, `fade_probe`, `vblanktest`, and
+  `nemesis_s` now use GX-visible graphics paths instead of active VDP/RPU frame
+  submission.
 
 Known gap: `GX_GPU_COMMAND_READ_VRAM_TO_CPU` is emitted by the GPU command buffer,
 but accelerated backends currently do not execute a GPUREAD/readback command
 case. This must be resolved deliberately.
+
+Known migration blocker: `machine/firmware/system/gx_image.lua` is still a
+single-residency atlas helper. It uploads one decoded atlas into a fixed PSX
+texture area. That is enough for BIOS boot art and `nemesis_s`, but not enough
+for text-heavy or multi-atlas carts such as `2025` and `pietious` without either
+a real PSX VRAM residency plan or explicit cart-managed uploads. Do not paper
+over this with per-frame whole-atlas uploads or a CPU-side accelerated-backend
+texture shadow.
 
 ## Hard open design point: GPUREAD / VRAM-to-CPU
 
@@ -118,8 +139,9 @@ and ask before coding.
 - [x] Keep PAL/NTSC 50Hz/60Hz display-mode ABI behavior visible.
 - [x] Treat the current TS/C++ software/headless renderer as a serious backend,
   not a test toy.
-- [ ] Make the software/headless renderer consume the same GX/PSX command
-  contract as oracle/backend, not as a hidden fallback inside accelerated paths.
+- [x] Make the TS/C++ software/headless renderers consume the GX command buffer
+  directly for the currently implemented command set, not as hidden fallbacks
+  inside accelerated paths.
 - [ ] Remove the old VDP/RPU from active presentation once GX is complete enough.
 - [ ] Remove old VDP/RPU cart-visible ABI use after carts are migrated.
 
@@ -142,6 +164,8 @@ and ask before coding.
 - [x] Fill rectangle masking and fill geometry wrapping.
 - [x] Oversized primitive culling.
 - [x] Overlapping VRAM-to-VRAM copy chunking.
+- [x] Command-log retirement preserves backend VRAM while resetting consumed
+  frame commands.
 - [ ] Exact triangle/quad edge rules and fill convention.
 - [ ] Exact rectangle/line/polyline raster rules.
 - [ ] Exact clipping, drawing offsets, drawing area, and negative coordinate cases.
@@ -163,6 +187,8 @@ and ask before coding.
 
 - [x] WebGL2 consumes the GX command buffer directly.
 - [x] GLES2 consumes the mirrored GX command buffer directly.
+- [x] TS software/headless consumes the GX command buffer directly.
+- [x] C++ software backend consumes the mirrored GX command buffer directly.
 - [ ] Keep WebGL2/GLES2 behavior synchronized for every new GX command.
 - [ ] Add WebGPU as another implementation of the same GX contract, not a new
   profile.
@@ -186,9 +212,39 @@ and ask before coding.
 
 ### 7. Cart migration
 
-- [ ] Do not start until PSX GPU/GTE base behavior is materially complete.
-- [ ] Replace cart graphics programming with PSX-style GPU/GTE programming.
+- [x] Migrate BIOS boot image rendering to GX.
+- [x] Migrate `emptycart` to GX.
+- [x] Migrate `fade_probe` to GX blend primitives.
+- [x] Migrate `vblanktest` to GX/GPUSTAT-visible behavior.
+- [x] Migrate `nemesis_s` boot, atlas decode/upload, clear, and sprite/tile
+  draws to GX/PSX.
+- [ ] Migrate `2025` engine/cart rendering. This needs GX texture residency and
+  PSX textured polygon/affine sprite coverage, not VDP compatibility aliases.
+- [ ] Migrate `pietious` engine/cart rendering. This needs GX tile/text/image
+  residency and tile-run ownership, not a VDP stream shim.
+- [ ] Migrate or replace `bare_metal_cart` RPU descriptor demo with GX/GTE-owned
+  PSX-style primitives.
+- [ ] Replace remaining cart graphics programming with PSX-style GPU/GTE
+  programming.
 - [ ] Keep BMSX extensions separate and post-parity.
+
+## Recommended next functional slices
+
+Pick one vertical slice and finish it before committing:
+
+1. **GX image residency for multi-atlas carts**: define a PSX-VRAM texture
+   residency model in `system/gx_image.lua`/cart-owned GPU programming that can
+   support cart atlas plus system font usage without per-frame whole-atlas
+   uploads, CPU-side accelerated-backend shadows, or hidden fallbacks. Use this
+   as the unlock for `2025` or `pietious` migration.
+2. **PSX textured quad/affine sprite firmware path**: add raw GP0 textured
+   polygon helpers in `system/gx_gpu.lua`/`system/gx_image.lua`, prove they run
+   through WebGL2/GLES2/TS software/C++ software command handling, then migrate
+   a cart-visible affine/scaled sprite path that currently uses
+   `vdp_blit_img_affine_color`.
+3. **GPUREAD/readback contract**: only start after an explicit design decision.
+   Accelerated backends must read back from real backend VRAM/render targets with
+   command ordering semantics; do not add a CPU shadow as the source of truth.
 
 ## Per-slice rules for agents
 
