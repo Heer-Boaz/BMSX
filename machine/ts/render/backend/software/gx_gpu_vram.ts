@@ -28,6 +28,19 @@ export function gxGpuSoftwareRgb555ChannelTo8(channel: number): number {
 	return (channel << 3) | (channel >>> 2);
 }
 
+export function gxGpuSoftwareTextureModulationPreDither(texture5: number, vertex8: number): number {
+	return (texture5 * vertex8) >>> 4;
+}
+
+export function gxGpuSoftwareTextureModulationChannel5(texture5: number, vertex8: number, ditherOffset: number): number {
+	const dithered = gxGpuSoftwareTextureModulationPreDither(texture5, vertex8) + ditherOffset;
+	if (dithered < 0) {
+		return 0;
+	}
+	const channel5 = dithered >> 3;
+	return channel5 < 31 ? channel5 : 31;
+}
+
 export function gxGpuSoftwareWriteMaskedVramWord(index: number, word: number, maskBitModeWord: number): void {
 	const dstWord = gxGpuSoftwareVram[index];
 	if (gxGpuMaskBitCheckBeforeDraw(maskBitModeWord) && (dstWord & 0x8000) !== 0) {

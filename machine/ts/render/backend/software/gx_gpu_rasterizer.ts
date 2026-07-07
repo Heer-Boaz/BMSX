@@ -16,7 +16,6 @@ import {
 	gxGpuDrawModeTransparencyMode,
 	gxGpuTextureClutBaseX,
 	gxGpuTextureClutBaseY,
-	gxGpuTextureModulationChannel5,
 	gxGpuSegmentExceedsPrimitiveSize,
 	gxGpuTriangleExceedsPrimitiveSize,
 	gxGpuTextureRectangleEdge0,
@@ -33,6 +32,7 @@ import {
 	gxGpuSoftwareInterlacedSkipsLine,
 	gxGpuSoftwareVram,
 	gxGpuSoftwareVramIndex,
+	gxGpuSoftwareTextureModulationChannel5,
 	gxGpuSoftwareWriteRenderVramPixel5,
 	gxGpuSoftwareWriteRenderVramPixel,
 } from './gx_gpu_vram';
@@ -118,9 +118,9 @@ function writeGxGpuSoftwareTexturedPixel(
 	let b5 = (sampleWord >>> 10) & 0x1f;
 	if (!rawTextureEnabled) {
 		const ditherOffset = ditherEnabled ? gxGpuSoftwareDitherOffset(x, y) : 0;
-		r5 = gxGpuTextureModulationChannel5(r5, colorR8(colorWord), ditherOffset);
-		g5 = gxGpuTextureModulationChannel5(g5, colorG8(colorWord), ditherOffset);
-		b5 = gxGpuTextureModulationChannel5(b5, colorB8(colorWord), ditherOffset);
+		r5 = gxGpuSoftwareTextureModulationChannel5(r5, colorR8(colorWord), ditherOffset);
+		g5 = gxGpuSoftwareTextureModulationChannel5(g5, colorG8(colorWord), ditherOffset);
+		b5 = gxGpuSoftwareTextureModulationChannel5(b5, colorB8(colorWord), ditherOffset);
 	}
 	const sampleMaskBit = sampleWord & 0x8000;
 	const blendEnabled = semiTransparencyEnabled && sampleMaskBit !== 0;

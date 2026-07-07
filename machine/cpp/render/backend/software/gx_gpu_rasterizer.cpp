@@ -81,9 +81,9 @@ inline void writeGxGpuSoftwareTexturedPixel(
 	u32 b5 = (sampleWord >> 10u) & 0x1fu;
 	if (!rawTextureEnabled) {
 		const i32 ditherOffset = ditherEnabled ? gxGpuSoftwareDitherOffset(x, y) : 0;
-		r5 = gxGpuTextureModulationChannel5(r5, colorR8(colorWord), ditherOffset);
-		g5 = gxGpuTextureModulationChannel5(g5, colorG8(colorWord), ditherOffset);
-		b5 = gxGpuTextureModulationChannel5(b5, colorB8(colorWord), ditherOffset);
+		r5 = gxGpuSoftwareTextureModulationChannel5(r5, colorR8(colorWord), ditherOffset);
+		g5 = gxGpuSoftwareTextureModulationChannel5(g5, colorG8(colorWord), ditherOffset);
+		b5 = gxGpuSoftwareTextureModulationChannel5(b5, colorB8(colorWord), ditherOffset);
 	}
 	const u32 sampleMaskBit = sampleWord & 0x8000u;
 	const bool blendEnabled = semiTransparencyEnabled && sampleMaskBit != 0u;

@@ -194,19 +194,6 @@ export function gxGpuDitheredPolygon(drawModeWord: number, opcode: number): bool
 			: gxGpuCommandGouraud(opcode));
 }
 
-export function gxGpuTextureModulationPreDither(texture5: number, vertex8: number): number {
-	return (texture5 * vertex8) >>> 4;
-}
-
-export function gxGpuTextureModulationChannel5(texture5: number, vertex8: number, ditherOffset: number): number {
-	const dithered = gxGpuTextureModulationPreDither(texture5, vertex8) + ditherOffset;
-	if (dithered < 0) {
-		return 0;
-	}
-	const channel5 = dithered >> 3;
-	return channel5 < 31 ? channel5 : 31;
-}
-
 export function gxGpuCommandRectangleWidth(opcode: number, sizeWord: number): number {
 	switch (opcode & 0x18) {
 		case 0x08:

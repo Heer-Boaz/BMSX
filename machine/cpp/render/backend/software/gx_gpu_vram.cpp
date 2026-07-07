@@ -55,6 +55,19 @@ u8 gxGpuSoftwareRgb555ChannelTo8(u32 channel) {
 	return static_cast<u8>((channel << 3u) | (channel >> 2u));
 }
 
+u32 gxGpuSoftwareTextureModulationPreDither(u32 texture5, u32 vertex8) {
+	return (texture5 * vertex8) >> 4u;
+}
+
+u32 gxGpuSoftwareTextureModulationChannel5(u32 texture5, u32 vertex8, i32 ditherOffset) {
+	const i32 dithered = static_cast<i32>(gxGpuSoftwareTextureModulationPreDither(texture5, vertex8)) + ditherOffset;
+	if (dithered < 0) {
+		return 0u;
+	}
+	const u32 channel5 = static_cast<u32>(dithered) >> 3u;
+	return channel5 < 31u ? channel5 : 31u;
+}
+
 void gxGpuSoftwareWriteMaskedVramWord(size_t index, u32 word, u32 maskBitModeWord) {
 	const u16 dstWord = g_gxGpuSoftwareVram[index];
 	if (gxGpuMaskBitCheckBeforeDraw(maskBitModeWord) && (dstWord & 0x8000u) != 0u) {

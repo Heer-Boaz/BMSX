@@ -56,8 +56,6 @@ import {
 	gxGpuTextureAttribute,
 	gxGpuTextureClutBaseX,
 	gxGpuTextureClutBaseY,
-	gxGpuTextureModulationChannel5,
-	gxGpuTextureModulationPreDither,
 	gxGpuTextureRectangleEdge0,
 	gxGpuTextureRectangleEdge1,
 	gxGpuTriangleExceedsPrimitiveSize,
@@ -153,6 +151,8 @@ import { PSX_GPU_DISPLAY_MODE_PAL_WORD } from '../../machine/ts/machine/model_re
 import { renderGxGpuSoftwareFrame } from '../../machine/ts/render/backend/software/gx_gpu';
 import { executeGxGpuSoftwareCommands } from '../../machine/ts/render/backend/software/gx_gpu_commands';
 import {
+	gxGpuSoftwareTextureModulationChannel5,
+	gxGpuSoftwareTextureModulationPreDither,
 	gxGpuSoftwareVram,
 	gxGpuSoftwareVramIndex,
 	resetGxGpuSoftwareVram,
@@ -260,11 +260,6 @@ test('GX-GPU decodes PSX GP0 signed vertex and rectangle size words', () => {
 	assert.equal(gxGpuDitheredPolygon(GX_GPU_DRAW_MODE_DITHER_ENABLED | GX_GPU_DRAW_MODE_TEXTURE_DISABLE, GX_GPU_GP0_POLYGON_FIRST | GX_GPU_GP0_RENDER_TEXTURE_BIT | GX_GPU_GP0_RENDER_GOURAUD_BIT), true);
 	assert.equal(gxGpuDitheredPolygon(GX_GPU_DRAW_MODE_DITHER_ENABLED, GX_GPU_GP0_POLYGON_FIRST | GX_GPU_GP0_RENDER_TEXTURE_BIT | 0x01), false);
 	assert.equal(gxGpuDitheredPolygon(0, GX_GPU_GP0_POLYGON_FIRST | GX_GPU_GP0_RENDER_GOURAUD_BIT), false);
-	assert.equal(gxGpuTextureModulationPreDither(31, 128), 248);
-	assert.equal(gxGpuTextureModulationChannel5(31, 128, 0), 31);
-	assert.equal(gxGpuTextureModulationChannel5(31, 255, 3), 31);
-	assert.equal(gxGpuTextureModulationChannel5(1, 16, -4), 0);
-	assert.equal(gxGpuTextureModulationChannel5(12, 96, 0), 9);
 	assert.equal(gxGpuDrawModeTextureRectangleXFlip(GX_GPU_DRAW_MODE_TEXTURE_RECTANGLE_X_FLIP), true);
 	assert.equal(gxGpuDrawModeTextureRectangleXFlip(GX_GPU_DRAW_MODE_TEXTURE_RECTANGLE_Y_FLIP), false);
 	assert.equal(gxGpuDrawModeTextureRectangleYFlip(GX_GPU_DRAW_MODE_TEXTURE_RECTANGLE_Y_FLIP), true);
@@ -793,6 +788,14 @@ function assertRgbaPixel(pixels: Uint8Array, x: number, y: number, r: number, g:
 	assert.equal(pixels[offset + 2], b);
 	assert.equal(pixels[offset + 3], 255);
 }
+
+test('GX-GPU software backend owns texture modulation math', () => {
+	assert.equal(gxGpuSoftwareTextureModulationPreDither(31, 128), 248);
+	assert.equal(gxGpuSoftwareTextureModulationChannel5(31, 128, 0), 31);
+	assert.equal(gxGpuSoftwareTextureModulationChannel5(31, 255, 3), 31);
+	assert.equal(gxGpuSoftwareTextureModulationChannel5(1, 16, -4), 0);
+	assert.equal(gxGpuSoftwareTextureModulationChannel5(12, 96, 0), 9);
+});
 
 test('GX-GPU software scanout consumes CPU upload, VRAM copy, and fill commands', () => {
 	const commandBuffer = new GxGpuCommandBuffer();
