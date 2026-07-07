@@ -12,6 +12,7 @@ import {
 	GX_GPU_COMMAND_UPLOAD_CPU_TO_VRAM,
 	GX_GPU_TEXTURE_MODE_DIRECT16,
 	gxGpuCommandRawTextureEnabled,
+	gxGpuCommandSemiTransparencyEnabled,
 	gxGpuCommandRectangleHeight,
 	gxGpuCommandRectangleWidth,
 	gxGpuDrawingAreaBottomExclusive,
@@ -21,9 +22,12 @@ import {
 	gxGpuDrawingAreaX,
 	gxGpuDrawingAreaY,
 	gxGpuDrawModeTextureMode,
+	gxGpuDrawModeTransparencyMode,
 	gxGpuDrawModeTexturePageBaseX,
 	gxGpuDrawModeTexturePageBaseY,
 	gxGpuDrawingOffsetY,
+	gxGpuMaskBitCheckBeforeDraw,
+	gxGpuMaskBitSetWhileDrawing,
 	gxGpuPolygonDrawModeWord,
 	gxGpuPolygonTexturePageWordIndex,
 	gxGpuSigned11,
@@ -137,6 +141,8 @@ test('GX-GPU decodes PSX GP0 signed vertex and rectangle size words', () => {
 
 	assert.equal(gxGpuCommandRawTextureEnabled(0x25), true);
 	assert.equal(gxGpuCommandRawTextureEnabled(0x24), false);
+	assert.equal(gxGpuCommandSemiTransparencyEnabled(0x22), true);
+	assert.equal(gxGpuCommandSemiTransparencyEnabled(0x20), false);
 	assert.equal(gxGpuTextureU(0x01c3ab56), 0x56);
 	assert.equal(gxGpuTextureV(0x01c3ab56), 0xab);
 	assert.equal(gxGpuTextureAttribute(0x01c3ab56), 0x01c3);
@@ -145,6 +151,7 @@ test('GX-GPU decodes PSX GP0 signed vertex and rectangle size words', () => {
 	assert.equal(gxGpuDrawModeTexturePageBaseX(0x0013), 192);
 	assert.equal(gxGpuDrawModeTexturePageBaseY(0x0013), 256);
 	assert.equal(gxGpuDrawModeTextureMode(0x0100), GX_GPU_TEXTURE_MODE_DIRECT16);
+	assert.equal(gxGpuDrawModeTransparencyMode(0x0060), 3);
 	assert.equal(gxGpuPolygonTexturePageWordIndex(0x24), 4);
 	assert.equal(gxGpuPolygonTexturePageWordIndex(0x34), 5);
 	assert.equal(gxGpuPolygonDrawModeWord(0x1fff, 0x0000), 0x1600);
@@ -154,6 +161,10 @@ test('GX-GPU decodes PSX GP0 signed vertex and rectangle size words', () => {
 	assert.equal(gxGpuTextureWindowAndY(textureWindowWord), 231);
 	assert.equal(gxGpuTextureWindowOrX(textureWindowWord), 16);
 	assert.equal(gxGpuTextureWindowOrY(textureWindowWord), 16);
+	assert.equal(gxGpuMaskBitSetWhileDrawing(0x03), true);
+	assert.equal(gxGpuMaskBitSetWhileDrawing(0x02), false);
+	assert.equal(gxGpuMaskBitCheckBeforeDraw(0x03), true);
+	assert.equal(gxGpuMaskBitCheckBeforeDraw(0x01), false);
 
 	assert.equal(gxGpuDrawingAreaX(12 | (34 << 10)), 12);
 	assert.equal(gxGpuDrawingAreaY(12 | (34 << 10)), 34);

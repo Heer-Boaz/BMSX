@@ -1,17 +1,25 @@
 #version 300 es
 precision highp float;
 
+uniform sampler2D u_source;
 uniform sampler2D u_vram;
-uniform float u_blendEnable;
-uniform float u_blendMode;
 uniform float u_checkMaskBit;
 uniform float u_setMaskBit;
-in vec4 v_color;
+in vec2 v_texcoord;
 out vec4 outputColor;
 
 const vec2 VRAM_SIZE = vec2(1024.0, 512.0);
 
-float rawStorageVramWord(vec2 storageCoord) {
+float rawSourceLogicalWord(vec2 logicalCoord) {
+	vec2 wrapped = mod(logicalCoord, VRAM_SIZE);
+	vec2 storage = vec2(wrapped.x, VRAM_SIZE.y - 1.0 - wrapped.y);
+	vec4 rawPixel = texture(u_source, (storage + vec2(0.5)) / VRAM_SIZE);
+	float lowByte = floor(rawPixel.r * 255.0 + 0.5);
+	float highByte = floor(rawPixel.g * 255.0 + 0.5);
+	return lowByte + highByte * 256.0;
+}
+
+float rawVramStorageWord(vec2 storageCoord) {
 	vec2 wrapped = mod(storageCoord, VRAM_SIZE);
 	vec4 rawPixel = texture(u_vram, (wrapped + vec2(0.5)) / VRAM_SIZE);
 	float lowByte = floor(rawPixel.r * 255.0 + 0.5);
@@ -27,21 +35,8 @@ vec3 decodeRgb555To5(float word) {
 	);
 }
 
-float maskBit(float word) {
+float wordMaskBit(float word) {
 	return floor(word / 32768.0);
-}
-
-vec3 blendRgb5(vec3 src5, vec3 dst5) {
-	if (u_blendMode < 0.5) {
-		return floor((src5 + dst5) * 0.5);
-	}
-	if (u_blendMode < 1.5) {
-		return min(src5 + dst5, vec3(31.0));
-	}
-	if (u_blendMode < 2.5) {
-		return max(dst5 - src5, vec3(0.0));
-	}
-	return min(dst5 + floor(src5 * 0.25), vec3(31.0));
 }
 
 vec4 encodeRgb555(vec3 color5, float outputMaskBit) {
@@ -51,16 +46,13 @@ vec4 encodeRgb555(vec3 color5, float outputMaskBit) {
 }
 
 void main() {
-	vec3 src5 = floor((v_color.rgb * 255.0) / 8.0);
-	float dstWord = 0.0;
-	if (u_checkMaskBit > 0.5 || u_blendEnable > 0.5) {
-		dstWord = rawStorageVramWord(gl_FragCoord.xy - vec2(0.5));
-		if (u_checkMaskBit > 0.5 && maskBit(dstWord) > 0.5) {
+	float sourceWord = rawSourceLogicalWord(v_texcoord);
+	if (u_checkMaskBit > 0.5) {
+		float dstWord = rawVramStorageWord(gl_FragCoord.xy - vec2(0.5));
+		if (wordMaskBit(dstWord) > 0.5) {
 			discard;
 		}
-		if (u_blendEnable > 0.5) {
-			src5 = blendRgb5(src5, decodeRgb555To5(dstWord));
-		}
 	}
-	outputColor = encodeRgb555(src5, u_setMaskBit);
+	float outputMaskBit = u_setMaskBit > 0.5 ? 1.0 : wordMaskBit(sourceWord);
+	outputColor = encodeRgb555(decodeRgb555To5(sourceWord), outputMaskBit);
 }

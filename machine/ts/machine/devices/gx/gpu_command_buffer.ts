@@ -6,6 +6,10 @@ export const GX_GPU_DRAW_MODE_POLYGON_TEXPAGE_MASK = 0x09ff;
 export const GX_GPU_TEXTURE_MODE_PALETTE4 = 0;
 export const GX_GPU_TEXTURE_MODE_PALETTE8 = 1;
 export const GX_GPU_TEXTURE_MODE_DIRECT16 = 2;
+export const GX_GPU_BLEND_MODE_HALF_BACKGROUND_HALF_FOREGROUND = 0;
+export const GX_GPU_BLEND_MODE_BACKGROUND_PLUS_FOREGROUND = 1;
+export const GX_GPU_BLEND_MODE_BACKGROUND_MINUS_FOREGROUND = 2;
+export const GX_GPU_BLEND_MODE_BACKGROUND_PLUS_QUARTER_FOREGROUND = 3;
 
 export const GX_GPU_COMMAND_DRAW_POLYGON = 1;
 export const GX_GPU_COMMAND_DRAW_LINE = 2;
@@ -39,6 +43,10 @@ export function gxGpuDrawingOffsetY(word: number): number {
 
 export function gxGpuCommandRawTextureEnabled(opcode: number): boolean {
 	return (opcode & 0x01) !== 0;
+}
+
+export function gxGpuCommandSemiTransparencyEnabled(opcode: number): boolean {
+	return (opcode & 0x02) !== 0;
 }
 
 export function gxGpuCommandTextureEnabled(opcode: number): boolean {
@@ -131,6 +139,10 @@ export function gxGpuDrawModeTextureMode(drawModeWord: number): number {
 	return (drawModeWord >>> 7) & 0x03;
 }
 
+export function gxGpuDrawModeTransparencyMode(drawModeWord: number): number {
+	return (drawModeWord >>> 5) & 0x03;
+}
+
 export function gxGpuPolygonTexturePageWordIndex(opcode: number): number {
 	return gxGpuCommandGouraud(opcode) ? 5 : 4;
 }
@@ -153,6 +165,14 @@ export function gxGpuTextureWindowOrX(textureWindowWord: number): number {
 
 export function gxGpuTextureWindowOrY(textureWindowWord: number): number {
 	return (((textureWindowWord >>> 15) & 0x1f) & ((textureWindowWord >>> 5) & 0x1f)) << 3;
+}
+
+export function gxGpuMaskBitSetWhileDrawing(maskBitModeWord: number): boolean {
+	return (maskBitModeWord & 0x01) !== 0;
+}
+
+export function gxGpuMaskBitCheckBeforeDraw(maskBitModeWord: number): boolean {
+	return (maskBitModeWord & 0x02) !== 0;
 }
 
 export function gxGpuDrawingAreaX(word: number): number {

@@ -57,6 +57,8 @@ void testGp0RawDrawWordDecoders() {
 
 	require(bmsx::gxGpuCommandRawTextureEnabled(0x25u), "GX-GPU raw texture bit enabled");
 	require(!bmsx::gxGpuCommandRawTextureEnabled(0x24u), "GX-GPU raw texture bit disabled");
+	require(bmsx::gxGpuCommandSemiTransparencyEnabled(0x22u), "GX-GPU semi-transparency bit enabled");
+	require(!bmsx::gxGpuCommandSemiTransparencyEnabled(0x20u), "GX-GPU semi-transparency bit disabled");
 	require(bmsx::gxGpuTextureU(0x01c3ab56u) == 0x56u, "GX-GPU texture U decode");
 	require(bmsx::gxGpuTextureV(0x01c3ab56u) == 0xabu, "GX-GPU texture V decode");
 	require(bmsx::gxGpuTextureAttribute(0x01c3ab56u) == 0x01c3u, "GX-GPU texture attribute decode");
@@ -65,6 +67,7 @@ void testGp0RawDrawWordDecoders() {
 	require(bmsx::gxGpuDrawModeTexturePageBaseX(0x0013u) == 192u, "GX-GPU texture page X base decode");
 	require(bmsx::gxGpuDrawModeTexturePageBaseY(0x0013u) == 256u, "GX-GPU texture page Y base decode");
 	require(bmsx::gxGpuDrawModeTextureMode(0x0100u) == bmsx::GX_GPU_TEXTURE_MODE_DIRECT16, "GX-GPU texture mode decode");
+	require(bmsx::gxGpuDrawModeTransparencyMode(0x0060u) == 3u, "GX-GPU transparency mode decode");
 	require(bmsx::gxGpuPolygonTexturePageWordIndex(0x24u) == 4u, "GX-GPU flat textured polygon texpage word index");
 	require(bmsx::gxGpuPolygonTexturePageWordIndex(0x34u) == 5u, "GX-GPU Gouraud textured polygon texpage word index");
 	require(bmsx::gxGpuPolygonDrawModeWord(0x1fffu, 0x0000u) == 0x1600u, "GX-GPU polygon texpage preserves non-texpage draw bits");
@@ -74,6 +77,10 @@ void testGp0RawDrawWordDecoders() {
 	require(bmsx::gxGpuTextureWindowAndY(textureWindowWord) == 231u, "GX-GPU texture window AND Y");
 	require(bmsx::gxGpuTextureWindowOrX(textureWindowWord) == 16u, "GX-GPU texture window OR X");
 	require(bmsx::gxGpuTextureWindowOrY(textureWindowWord) == 16u, "GX-GPU texture window OR Y");
+	require(bmsx::gxGpuMaskBitSetWhileDrawing(0x03u), "GX-GPU mask write bit enabled");
+	require(!bmsx::gxGpuMaskBitSetWhileDrawing(0x02u), "GX-GPU mask write bit disabled");
+	require(bmsx::gxGpuMaskBitCheckBeforeDraw(0x03u), "GX-GPU mask check bit enabled");
+	require(!bmsx::gxGpuMaskBitCheckBeforeDraw(0x01u), "GX-GPU mask check bit disabled");
 
 	require(bmsx::gxGpuDrawingAreaX(12u | (34u << 10u)) == 12u, "GX-GPU drawing area x decode");
 	require(bmsx::gxGpuDrawingAreaY(12u | (34u << 10u)) == 34u, "GX-GPU drawing area y decode");

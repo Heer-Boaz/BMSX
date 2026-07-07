@@ -99,6 +99,8 @@ set_property(DIRECTORY APPEND PROPERTY CMAKE_CONFIGURE_DEPENDS
 	"${CMAKE_CURRENT_SOURCE_DIR}/render/backend/gles2/shaders/gx_gpu_fill.frag.glsl"
 	"${CMAKE_CURRENT_SOURCE_DIR}/render/backend/gles2/shaders/gx_gpu_textured.vert.glsl"
 	"${CMAKE_CURRENT_SOURCE_DIR}/render/backend/gles2/shaders/gx_gpu_textured.frag.glsl"
+	"${CMAKE_CURRENT_SOURCE_DIR}/render/backend/gles2/shaders/gx_gpu_transfer.vert.glsl"
+	"${CMAKE_CURRENT_SOURCE_DIR}/render/backend/gles2/shaders/gx_gpu_transfer.frag.glsl"
 	"${CMAKE_CURRENT_SOURCE_DIR}/render/backend/gles2/shaders/gx_gpu_scanout.vert.glsl"
 	"${CMAKE_CURRENT_SOURCE_DIR}/render/backend/gles2/shaders/gx_gpu_scanout.frag.glsl"
 	"${CMAKE_CURRENT_SOURCE_DIR}/render/backend/gles2/shaders/gx_gpu_shaders.h.in"
@@ -190,6 +192,14 @@ file(READ
 file(READ
 	"${CMAKE_CURRENT_SOURCE_DIR}/render/backend/gles2/shaders/gx_gpu_textured.frag.glsl"
 	BMSX_GX_GPU_TEXTURED_FRAGMENT_SHADER
+)
+file(READ
+	"${CMAKE_CURRENT_SOURCE_DIR}/render/backend/gles2/shaders/gx_gpu_transfer.vert.glsl"
+	BMSX_GX_GPU_TRANSFER_VERTEX_SHADER
+)
+file(READ
+	"${CMAKE_CURRENT_SOURCE_DIR}/render/backend/gles2/shaders/gx_gpu_transfer.frag.glsl"
+	BMSX_GX_GPU_TRANSFER_FRAGMENT_SHADER
 )
 file(READ
 	"${CMAKE_CURRENT_SOURCE_DIR}/render/backend/gles2/shaders/gx_gpu_scanout.vert.glsl"

@@ -15,6 +15,10 @@ constexpr u32 GX_GPU_DRAW_MODE_POLYGON_TEXPAGE_MASK = 0x09ffu;
 constexpr u32 GX_GPU_TEXTURE_MODE_PALETTE4 = 0u;
 constexpr u32 GX_GPU_TEXTURE_MODE_PALETTE8 = 1u;
 constexpr u32 GX_GPU_TEXTURE_MODE_DIRECT16 = 2u;
+constexpr u32 GX_GPU_BLEND_MODE_HALF_BACKGROUND_HALF_FOREGROUND = 0u;
+constexpr u32 GX_GPU_BLEND_MODE_BACKGROUND_PLUS_FOREGROUND = 1u;
+constexpr u32 GX_GPU_BLEND_MODE_BACKGROUND_MINUS_FOREGROUND = 2u;
+constexpr u32 GX_GPU_BLEND_MODE_BACKGROUND_PLUS_QUARTER_FOREGROUND = 3u;
 
 constexpr u8 GX_GPU_COMMAND_DRAW_POLYGON = 1u;
 constexpr u8 GX_GPU_COMMAND_DRAW_LINE = 2u;
@@ -48,6 +52,10 @@ inline i32 gxGpuDrawingOffsetY(u32 word) {
 
 inline bool gxGpuCommandRawTextureEnabled(u32 opcode) {
 	return (opcode & 0x01u) != 0u;
+}
+
+inline bool gxGpuCommandSemiTransparencyEnabled(u32 opcode) {
+	return (opcode & 0x02u) != 0u;
 }
 
 inline bool gxGpuCommandTextureEnabled(u32 opcode) {
@@ -140,6 +148,10 @@ inline u32 gxGpuDrawModeTextureMode(u32 drawModeWord) {
 	return (drawModeWord >> 7u) & 0x03u;
 }
 
+inline u32 gxGpuDrawModeTransparencyMode(u32 drawModeWord) {
+	return (drawModeWord >> 5u) & 0x03u;
+}
+
 inline u32 gxGpuPolygonTexturePageWordIndex(u32 opcode) {
 	return gxGpuCommandGouraud(opcode) ? 5u : 4u;
 }
@@ -162,6 +174,14 @@ inline u32 gxGpuTextureWindowOrX(u32 textureWindowWord) {
 
 inline u32 gxGpuTextureWindowOrY(u32 textureWindowWord) {
 	return (((textureWindowWord >> 15u) & 0x1fu) & ((textureWindowWord >> 5u) & 0x1fu)) << 3u;
+}
+
+inline bool gxGpuMaskBitSetWhileDrawing(u32 maskBitModeWord) {
+	return (maskBitModeWord & 0x01u) != 0u;
+}
+
+inline bool gxGpuMaskBitCheckBeforeDraw(u32 maskBitModeWord) {
+	return (maskBitModeWord & 0x02u) != 0u;
 }
 
 inline u32 gxGpuDrawingAreaX(u32 word) {

@@ -1318,6 +1318,16 @@
 			"reason": "gx_gpu_textured_vram_sample_shader_contract"
 		},
 		{
+			"webgl": "machine/ts/render/backend/webgl/shaders/gx_gpu_transfer.vert.glsl",
+			"gles2": "machine/cpp/render/backend/gles2/shaders/gx_gpu_transfer.vert.glsl",
+			"reason": "gx_gpu_transfer_vertex_shader_contract"
+		},
+		{
+			"webgl": "machine/ts/render/backend/webgl/shaders/gx_gpu_transfer.frag.glsl",
+			"gles2": "machine/cpp/render/backend/gles2/shaders/gx_gpu_transfer.frag.glsl",
+			"reason": "gx_gpu_transfer_mask_shader_contract"
+		},
+		{
 			"webgl": "machine/ts/render/backend/webgl/shaders/gx_gpu_scanout.vert.glsl",
 			"gles2": "machine/cpp/render/backend/gles2/shaders/gx_gpu_scanout.vert.glsl",
 			"reason": "gx_gpu_scanout_vertex_shader_contract"
@@ -2733,6 +2743,8 @@
 				"machine/ts/render/backend/webgl/shaders/gx_gpu_fill.frag.glsl",
 				"machine/ts/render/backend/webgl/shaders/gx_gpu_textured.vert.glsl",
 				"machine/ts/render/backend/webgl/shaders/gx_gpu_textured.frag.glsl",
+				"machine/ts/render/backend/webgl/shaders/gx_gpu_transfer.vert.glsl",
+				"machine/ts/render/backend/webgl/shaders/gx_gpu_transfer.frag.glsl",
 				"machine/ts/render/backend/webgl/shaders/gx_gpu_scanout.vert.glsl",
 				"machine/ts/render/backend/webgl/shaders/gx_gpu_scanout.frag.glsl",
 				"machine/cpp/render/backend/gles2/gx_gpu.h",
@@ -2741,6 +2753,8 @@
 				"machine/cpp/render/backend/gles2/shaders/gx_gpu_fill.frag.glsl",
 				"machine/cpp/render/backend/gles2/shaders/gx_gpu_textured.vert.glsl",
 				"machine/cpp/render/backend/gles2/shaders/gx_gpu_textured.frag.glsl",
+				"machine/cpp/render/backend/gles2/shaders/gx_gpu_transfer.vert.glsl",
+				"machine/cpp/render/backend/gles2/shaders/gx_gpu_transfer.frag.glsl",
 				"machine/cpp/render/backend/gles2/shaders/gx_gpu_scanout.vert.glsl",
 				"machine/cpp/render/backend/gles2/shaders/gx_gpu_scanout.frag.glsl",
 				"machine/cpp/render/backend/gles2/shaders/gx_gpu_shaders.h.in"

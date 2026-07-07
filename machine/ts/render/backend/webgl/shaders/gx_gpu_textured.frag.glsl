@@ -8,6 +8,10 @@ uniform vec2 u_textureWindowAnd;
 uniform vec2 u_textureWindowOr;
 uniform float u_textureMode;
 uniform float u_rawTexture;
+uniform float u_blendEnable;
+uniform float u_blendMode;
+uniform float u_checkMaskBit;
+uniform float u_setMaskBit;
 in vec4 v_color;
 in vec2 v_texcoord;
 out vec4 outputColor;
@@ -43,12 +47,32 @@ float rawVramWord(vec2 coord) {
 	return lowByte + highByte * 256.0;
 }
 
+float rawStorageVramWord(vec2 storageCoord) {
+	vec2 wrapped = mod(storageCoord, VRAM_SIZE);
+	vec4 rawPixel = texture(u_vram, (wrapped + vec2(0.5)) / VRAM_SIZE);
+	float lowByte = floor(rawPixel.r * 255.0 + 0.5);
+	float highByte = floor(rawPixel.g * 255.0 + 0.5);
+	return lowByte + highByte * 256.0;
+}
+
 vec3 decodeRgb555(float word) {
 	float r5 = mod(word, 32.0);
 	float g5 = mod(floor(word / 32.0), 32.0);
 	float b5 = mod(floor(word / 1024.0), 32.0);
 	vec3 color5 = vec3(r5, g5, b5);
 	return (color5 * 8.0 + floor(color5 / 4.0)) / 255.0;
+}
+
+vec3 decodeRgb555To5(float word) {
+	return vec3(
+		mod(word, 32.0),
+		mod(floor(word / 32.0), 32.0),
+		mod(floor(word / 1024.0), 32.0)
+	);
+}
+
+float wordMaskBit(float word) {
+	return floor(word / 32768.0);
 }
 
 float palette4Index(float word, float u) {
@@ -69,30 +93,58 @@ vec4 samplePsxTexture(vec2 texcoord) {
 		textureWord = rawVramWord(wordCoord);
 		float paletteIndex = palette4Index(textureWord, windowed.x);
 		float paletteWord = rawVramWord(vec2(u_clutBase.x + paletteIndex, u_clutBase.y));
-		return vec4(decodeRgb555(paletteWord), paletteWord == 0.0 ? 0.0 : 1.0);
+		return vec4(decodeRgb555(paletteWord), paletteWord == 0.0 ? -1.0 : wordMaskBit(paletteWord));
 	}
 	if (u_textureMode < 1.5) {
 		vec2 wordCoord = vec2(u_texPageBase.x + floor(windowed.x / 2.0), u_texPageBase.y + windowed.y);
 		textureWord = rawVramWord(wordCoord);
 		float paletteIndex = palette8Index(textureWord, windowed.x);
 		float paletteWord = rawVramWord(vec2(u_clutBase.x + paletteIndex, u_clutBase.y));
-		return vec4(decodeRgb555(paletteWord), paletteWord == 0.0 ? 0.0 : 1.0);
+		return vec4(decodeRgb555(paletteWord), paletteWord == 0.0 ? -1.0 : wordMaskBit(paletteWord));
 	}
 	textureWord = rawVramWord(u_texPageBase + windowed);
-	return vec4(decodeRgb555(textureWord), textureWord == 0.0 ? 0.0 : 1.0);
+	return vec4(decodeRgb555(textureWord), textureWord == 0.0 ? -1.0 : wordMaskBit(textureWord));
+}
+
+vec3 blendRgb5(vec3 src5, vec3 dst5) {
+	if (u_blendMode < 0.5) {
+		return floor((src5 + dst5) * 0.5);
+	}
+	if (u_blendMode < 1.5) {
+		return min(src5 + dst5, vec3(31.0));
+	}
+	if (u_blendMode < 2.5) {
+		return max(dst5 - src5, vec3(0.0));
+	}
+	return min(dst5 + floor(src5 * 0.25), vec3(31.0));
+}
+
+vec4 encodeRgb555(vec3 color5, float outputMaskBit) {
+	float lowByte = mod(color5.r + color5.g * 32.0, 256.0);
+	float highByte = floor(color5.g / 8.0) + color5.b * 4.0 + outputMaskBit * 128.0;
+	return vec4(lowByte / 255.0, highByte / 255.0, 0.0, 1.0);
 }
 
 void main() {
 	vec4 textureColor = samplePsxTexture(v_texcoord);
-	if (textureColor.a < 0.5) {
+	if (textureColor.a < -0.5) {
 		discard;
 	}
 	vec3 rgb = textureColor.rgb;
 	if (u_rawTexture < 0.5) {
 		rgb = min(rgb * v_color.rgb * 2.0, vec3(1.0));
 	}
-	vec3 color5 = floor((rgb * 255.0) / 8.0);
-	float lowByte = mod(color5.r + color5.g * 32.0, 256.0);
-	float highByte = floor(color5.g / 8.0) + color5.b * 4.0;
-	outputColor = vec4(lowByte / 255.0, highByte / 255.0, 0.0, 1.0);
+	vec3 src5 = floor((rgb * 255.0) / 8.0);
+	float dstWord = 0.0;
+	if (u_checkMaskBit > 0.5 || u_blendEnable > 0.5) {
+		dstWord = rawStorageVramWord(gl_FragCoord.xy - vec2(0.5));
+		if (u_checkMaskBit > 0.5 && wordMaskBit(dstWord) > 0.5) {
+			discard;
+		}
+		if (u_blendEnable > 0.5 && textureColor.a > 0.5) {
+			src5 = blendRgb5(src5, decodeRgb555To5(dstWord));
+		}
+	}
+	float outputMaskBit = u_setMaskBit > 0.5 ? 1.0 : textureColor.a;
+	outputColor = encodeRgb555(src5, outputMaskBit);
 }
