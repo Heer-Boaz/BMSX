@@ -33,6 +33,9 @@ import {
 	gxGpuDrawModeTextureRectangleYFlip,
 	gxGpuDrawingOffsetX,
 	gxGpuDrawingOffsetY,
+	gxGpuFillHeight,
+	gxGpuFillWidth,
+	gxGpuFillX,
 	gxGpuMaskBitCheckBeforeDraw,
 	gxGpuMaskBitSetWhileDrawing,
 	gxGpuTextureClutBaseX,
@@ -377,14 +380,14 @@ function appendFillRectangle(commandBuffer: GxGpuCommandBufferView, commandIndex
 	const wordStart = commandBuffer.commandWordStart[commandIndex];
 	const colorWord = commandBuffer.words[wordStart];
 	const xyWord = commandBuffer.words[wordStart + 1];
-	const whWord = commandBuffer.words[wordStart + 2];
-	const width = ((whWord & 0x3ff) + 0x0f) & ~0x0f;
-	const height = (whWord >>> 16) & 0x1ff;
+	const sizeWord = commandBuffer.words[wordStart + 2];
+	const width = gxGpuFillWidth(sizeWord);
+	const height = gxGpuFillHeight(sizeWord);
 	if (width === 0 || height === 0) {
 		return vertexFloatCount;
 	}
-	const x0 = xyWord & 0x3f0;
-	const y0 = (xyWord >>> 16) & 0x1ff;
+	const x0 = gxGpuFillX(xyWord);
+	const y0 = gxGpuTransferY(xyWord);
 	const x1 = x0 + width;
 	const y1 = y0 + height;
 	return appendSolidQuad(vertexFloatCount, x0, y0, colorWord, x0, y1, colorWord, x1, y0, colorWord, x1, y1, colorWord);

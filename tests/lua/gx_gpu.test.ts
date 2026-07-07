@@ -33,6 +33,9 @@ import {
 	gxGpuDrawModeTexturePageBaseX,
 	gxGpuDrawModeTexturePageBaseY,
 	gxGpuDrawingOffsetY,
+	gxGpuFillHeight,
+	gxGpuFillWidth,
+	gxGpuFillX,
 	gxGpuMaskBitCheckBeforeDraw,
 	gxGpuMaskBitSetWhileDrawing,
 	gxGpuPolygonDrawModeWord,
@@ -143,6 +146,13 @@ test('GX-GPU decodes PSX GP0 signed vertex and rectangle size words', () => {
 	assert.equal(gxGpuCommandRectangleHeight(GX_GPU_GP0_RECTANGLE_FIRST | 0x10, 0), 8);
 	assert.equal(gxGpuCommandRectangleWidth(GX_GPU_GP0_RECTANGLE_FIRST | 0x18, 0), 16);
 	assert.equal(gxGpuCommandRectangleHeight(GX_GPU_GP0_RECTANGLE_FIRST | 0x18, 0), 16);
+	assert.equal(gxGpuFillX(0x01ff03ff), 0x03f0);
+	assert.equal(gxGpuFillWidth(0), 0);
+	assert.equal(gxGpuFillHeight(0), 0);
+	assert.equal(gxGpuFillWidth(1), 16);
+	assert.equal(gxGpuFillWidth(0x03f0), 1008);
+	assert.equal(gxGpuFillWidth(0x03f1), 1024);
+	assert.equal(gxGpuFillHeight(0x01ff0000), 511);
 
 	assert.equal(gxGpuTransferX(0x01ff03ff), 1023);
 	assert.equal(gxGpuTransferY(0x01ff03ff), 511);

@@ -130,6 +130,18 @@ export function gxGpuCommandRectangleHeight(opcode: number, sizeWord: number): n
 	}
 }
 
+export function gxGpuFillX(xyWord: number): number {
+	return xyWord & 0x3f0;
+}
+
+export function gxGpuFillWidth(sizeWord: number): number {
+	return ((sizeWord & 0x3ff) + 0x0f) & ~0x0f;
+}
+
+export function gxGpuFillHeight(sizeWord: number): number {
+	return (sizeWord >>> 16) & 0x1ff;
+}
+
 export function gxGpuTransferX(xyWord: number): number {
 	return xyWord & 0x3ff;
 }

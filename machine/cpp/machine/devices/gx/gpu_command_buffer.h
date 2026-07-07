@@ -139,6 +139,18 @@ inline u32 gxGpuCommandRectangleHeight(u32 opcode, u32 sizeWord) {
 	}
 }
 
+inline u32 gxGpuFillX(u32 xyWord) {
+	return xyWord & 0x3f0u;
+}
+
+inline u32 gxGpuFillWidth(u32 sizeWord) {
+	return ((sizeWord & 0x3ffu) + 0x0fu) & ~0x0fu;
+}
+
+inline u32 gxGpuFillHeight(u32 sizeWord) {
+	return (sizeWord >> 16u) & 0x1ffu;
+}
+
 inline u32 gxGpuTransferX(u32 xyWord) {
 	return xyWord & 0x3ffu;
 }

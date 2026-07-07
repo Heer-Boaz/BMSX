@@ -320,14 +320,14 @@ size_t appendFillRectangle(const GxGpuCommandBuffer& commandBuffer, u32 commandI
 	const u32 wordStart = commandBuffer.commandWordStart[commandIndex];
 	const u32 colorWord = commandBuffer.words[wordStart];
 	const u32 xyWord = commandBuffer.words[wordStart + 1u];
-	const u32 whWord = commandBuffer.words[wordStart + 2u];
-	const u32 width = ((whWord & 0x3ffu) + 0x0fu) & ~0x0fu;
-	const u32 height = (whWord >> 16u) & 0x1ffu;
+	const u32 sizeWord = commandBuffer.words[wordStart + 2u];
+	const u32 width = gxGpuFillWidth(sizeWord);
+	const u32 height = gxGpuFillHeight(sizeWord);
 	if (width == 0u || height == 0u) {
 		return vertexFloatCount;
 	}
-	const f32 x0 = static_cast<f32>(xyWord & 0x3f0u);
-	const f32 y0 = static_cast<f32>((xyWord >> 16u) & 0x1ffu);
+	const f32 x0 = static_cast<f32>(gxGpuFillX(xyWord));
+	const f32 y0 = static_cast<f32>(gxGpuTransferY(xyWord));
 	const f32 x1 = x0 + static_cast<f32>(width);
 	const f32 y1 = y0 + static_cast<f32>(height);
 	return appendSolidQuad(vertexFloatCount, x0, y0, colorWord, x0, y1, colorWord, x1, y0, colorWord, x1, y1, colorWord);

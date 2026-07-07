@@ -47,6 +47,13 @@ void testGp0RawDrawWordDecoders() {
 	require(bmsx::gxGpuCommandRectangleHeight(bmsx::GX_GPU_GP0_RECTANGLE_FIRST | 0x10u, 0u) == 8u, "GX-GPU 8x8 rectangle height");
 	require(bmsx::gxGpuCommandRectangleWidth(bmsx::GX_GPU_GP0_RECTANGLE_FIRST | 0x18u, 0u) == 16u, "GX-GPU 16x16 rectangle width");
 	require(bmsx::gxGpuCommandRectangleHeight(bmsx::GX_GPU_GP0_RECTANGLE_FIRST | 0x18u, 0u) == 16u, "GX-GPU 16x16 rectangle height");
+	require(bmsx::gxGpuFillX(0x01ff03ffu) == 0x03f0u, "GX-GPU fill X rounds down to 16-pixel unit");
+	require(bmsx::gxGpuFillWidth(0u) == 0u, "GX-GPU zero fill width stays zero");
+	require(bmsx::gxGpuFillHeight(0u) == 0u, "GX-GPU zero fill height stays zero");
+	require(bmsx::gxGpuFillWidth(1u) == 16u, "GX-GPU fill width rounds up to 16-pixel unit");
+	require(bmsx::gxGpuFillWidth(0x03f0u) == 1008u, "GX-GPU aligned fill width");
+	require(bmsx::gxGpuFillWidth(0x03f1u) == 1024u, "GX-GPU fill width can round up to full VRAM width");
+	require(bmsx::gxGpuFillHeight(0x01ff0000u) == 511u, "GX-GPU fill height decode");
 
 	require(bmsx::gxGpuTransferX(0x01ff03ffu) == 1023u, "GX-GPU transfer x decode");
 	require(bmsx::gxGpuTransferY(0x01ff03ffu) == 511u, "GX-GPU transfer y decode");
