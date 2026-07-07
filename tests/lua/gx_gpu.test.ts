@@ -95,6 +95,7 @@ import {
 	GX_GPU_GP1_CLEAR_FIFO,
 	GX_GPU_GP1_ACK_INTERRUPT,
 	GX_GPU_GP1_GET_GPU_INFO,
+	GX_GPU_GP1_GET_GPU_INFO_LAST,
 	GX_GPU_GP1_SET_DISPLAY_DISABLE,
 	GX_GPU_GP1_SET_DISPLAY_START,
 	GX_GPU_GP1_SET_DMA_DIRECTION,
@@ -387,6 +388,8 @@ test('GX-GPU handles PSX GP0 environment registers and GP1 GPU-info queries', ()
 	assert.equal(gpu.readGpuReadWord(), 0x00abcdef & GX_GPU_DRAWING_AREA_MASK);
 	gpu.writeGp1((GX_GPU_GP1_GET_GPU_INFO << 24) | 0x05);
 	assert.equal(gpu.readGpuReadWord(), GX_GPU_DRAWING_OFFSET_MASK);
+	gpu.writeGp1((GX_GPU_GP1_GET_GPU_INFO_LAST << 24) | 0x02);
+	assert.equal(gpu.readGpuReadWord(), GX_GPU_TEXTURE_WINDOW_MASK);
 });
 
 test('GX-GPU emits PSX GP0 fixed-length render and blit packets into the GPU command buffer', () => {

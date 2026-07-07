@@ -12,6 +12,7 @@ import { Memory } from '../../machine/ts/machine/memory/memory';
 
 import {
 	GX_GTE_CYCLES_AVSZ3,
+	GX_GTE_CYCLES_AVSZ4,
 	GX_GTE_CYCLES_CC,
 	GX_GTE_CYCLES_CDP,
 	GX_GTE_CYCLES_DCPL,
@@ -34,7 +35,9 @@ import {
 	GX_GTE_FLAG_COLOR_R_SAT,
 	GX_GTE_FLAG_DIV_OVERFLOW,
 	GX_GTE_FLAG_ERROR,
+	GX_GTE_FLAG_SZ_OTZ_SAT,
 	GX_GTE_FN_AVSZ3,
+	GX_GTE_FN_AVSZ4,
 	GX_GTE_FN_CC,
 	GX_GTE_FN_CDP,
 	GX_GTE_FN_DCPL,
@@ -228,6 +231,50 @@ test('GX-GTE MVMVA uses vector registers as sources before writing IR1..IR3', ()
 	assert.equal(gte.readDataRegister(9), 14);
 	assert.equal(gte.readDataRegister(10), 32);
 	assert.equal(gte.readDataRegister(11), 50);
+});
+
+test('GX-GTE MVMVA preserves the PSX reserved-matrix datapath quirk', () => {
+	const { gte } = createGte();
+	gte.writeDataRegister(0, pack16(2, 4));
+	gte.writeDataRegister(1, 6);
+	gte.writeDataRegister(6, packRgb(3, 0, 0, 0));
+	gte.writeDataRegister(8, 5);
+	gte.writeControlRegister(1, 7);
+	gte.writeControlRegister(2, 11);
+
+	assert.equal(gte.execute((3 << 17) | (3 << 13) | GX_GTE_FN_MVMVA), GX_GTE_CYCLES_MVMVA);
+
+	assert.equal(gte.readDataRegister(9), 126);
+	assert.equal(gte.readDataRegister(10), 84);
+	assert.equal(gte.readDataRegister(11), 132);
+	assert.equal(gte.readDataRegister(25), 126);
+	assert.equal(gte.readDataRegister(26), 84);
+	assert.equal(gte.readDataRegister(27), 132);
+	assert.equal(gte.readControlRegister(31), 0);
+});
+
+test('GX-GTE MVMVA preserves the PSX far-color translation bug', () => {
+	const { gte } = createGte();
+	gte.writeControlRegister(0, pack16(100, 2));
+	gte.writeControlRegister(1, pack16(3, 200));
+	gte.writeControlRegister(2, pack16(5, 7));
+	gte.writeControlRegister(3, pack16(300, 11));
+	gte.writeControlRegister(4, 13);
+	gte.writeControlRegister(21, 1);
+	gte.writeControlRegister(22, 2);
+	gte.writeControlRegister(23, 3);
+	gte.writeDataRegister(0, pack16(17, 19));
+	gte.writeDataRegister(1, 23);
+
+	assert.equal(gte.execute((2 << 13) | GX_GTE_FN_MVMVA), GX_GTE_CYCLES_MVMVA);
+
+	assert.equal(gte.readDataRegister(9), 107);
+	assert.equal(gte.readDataRegister(10), 256);
+	assert.equal(gte.readDataRegister(11), 508);
+	assert.equal(gte.readDataRegister(25), 107);
+	assert.equal(gte.readDataRegister(26), 256);
+	assert.equal(gte.readDataRegister(27), 508);
+	assert.equal(gte.readControlRegister(31), 0);
 });
 
 test('GX-GTE SQR squares PSX IR registers with SF/LM behavior', () => {
@@ -513,6 +560,33 @@ test('GX-GTE AVSZ3 uses ZSF3 and SZ FIFO words to produce OTZ', () => {
 	assert.equal(gte.readDataRegister(7), 600);
 	assert.equal(gte.readDataRegister(24), 0x258000);
 	assert.equal(gte.readControlRegister(31), 0);
+});
+
+test('GX-GTE AVSZ4 uses ZSF4 and all four SZ FIFO words to produce OTZ', () => {
+	const { gte } = createGte();
+	gte.writeDataRegister(16, 50);
+	gte.writeDataRegister(17, 100);
+	gte.writeDataRegister(18, 200);
+	gte.writeDataRegister(19, 300);
+	gte.writeControlRegister(30, 0x1000);
+
+	assert.equal(gte.execute(GX_GTE_FN_AVSZ4), GX_GTE_CYCLES_AVSZ4);
+
+	assert.equal(gte.readDataRegister(7), 650);
+	assert.equal(gte.readDataRegister(24), 0x28a000);
+	assert.equal(gte.readControlRegister(31), 0);
+
+	gte.writeDataRegister(16, 0xffff);
+	gte.writeDataRegister(17, 0xffff);
+	gte.writeDataRegister(18, 0xffff);
+	gte.writeDataRegister(19, 0xffff);
+	gte.writeControlRegister(30, 0x1000);
+
+	assert.equal(gte.execute(GX_GTE_FN_AVSZ4), GX_GTE_CYCLES_AVSZ4);
+
+	assert.equal(gte.readDataRegister(7), 0xffff);
+	assert.equal(gte.readDataRegister(24), 0x3fffc000);
+	assert.equal(gte.readControlRegister(31), (GX_GTE_FLAG_ERROR | GX_GTE_FLAG_SZ_OTZ_SAT) >>> 0);
 });
 
 test('GX-GTE RTPS narrows MAC result to the PSX 32-bit register datapath before IR saturation', () => {

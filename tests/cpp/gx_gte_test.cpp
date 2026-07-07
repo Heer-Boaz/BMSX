@@ -201,6 +201,52 @@ void testMvmvaReadsVectorOnce() {
 	require(gte.readDataRegister(11u) == 50u, "MVMVA IR vector IR3");
 }
 
+void testMvmvaReservedMatrixQuirk() {
+	GteHarness harness;
+	bmsx::GxGte& gte = harness.gte;
+	gte.writeDataRegister(0u, pack16(2u, 4u));
+	gte.writeDataRegister(1u, 6u);
+	gte.writeDataRegister(6u, packRgb(3u, 0u, 0u, 0u));
+	gte.writeDataRegister(8u, 5u);
+	gte.writeControlRegister(1u, 7u);
+	gte.writeControlRegister(2u, 11u);
+
+	require(gte.execute((3u << 17u) | (3u << 13u) | bmsx::GX_GTE_FN_MVMVA) == bmsx::GX_GTE_CYCLES_MVMVA, "MVMVA reserved matrix cycles");
+
+	require(gte.readDataRegister(9u) == 126u, "MVMVA reserved matrix IR1");
+	require(gte.readDataRegister(10u) == 84u, "MVMVA reserved matrix IR2");
+	require(gte.readDataRegister(11u) == 132u, "MVMVA reserved matrix IR3");
+	require(gte.readDataRegister(25u) == 126u, "MVMVA reserved matrix MAC1");
+	require(gte.readDataRegister(26u) == 84u, "MVMVA reserved matrix MAC2");
+	require(gte.readDataRegister(27u) == 132u, "MVMVA reserved matrix MAC3");
+	require(gte.readControlRegister(31u) == 0u, "MVMVA reserved matrix FLAG");
+}
+
+void testMvmvaFarColorTranslationBug() {
+	GteHarness harness;
+	bmsx::GxGte& gte = harness.gte;
+	gte.writeControlRegister(0u, pack16(100u, 2u));
+	gte.writeControlRegister(1u, pack16(3u, 200u));
+	gte.writeControlRegister(2u, pack16(5u, 7u));
+	gte.writeControlRegister(3u, pack16(300u, 11u));
+	gte.writeControlRegister(4u, 13u);
+	gte.writeControlRegister(21u, 1u);
+	gte.writeControlRegister(22u, 2u);
+	gte.writeControlRegister(23u, 3u);
+	gte.writeDataRegister(0u, pack16(17u, 19u));
+	gte.writeDataRegister(1u, 23u);
+
+	require(gte.execute((2u << 13u) | bmsx::GX_GTE_FN_MVMVA) == bmsx::GX_GTE_CYCLES_MVMVA, "MVMVA far-color bug cycles");
+
+	require(gte.readDataRegister(9u) == 107u, "MVMVA far-color bug IR1");
+	require(gte.readDataRegister(10u) == 256u, "MVMVA far-color bug IR2");
+	require(gte.readDataRegister(11u) == 508u, "MVMVA far-color bug IR3");
+	require(gte.readDataRegister(25u) == 107u, "MVMVA far-color bug MAC1");
+	require(gte.readDataRegister(26u) == 256u, "MVMVA far-color bug MAC2");
+	require(gte.readDataRegister(27u) == 508u, "MVMVA far-color bug MAC3");
+	require(gte.readControlRegister(31u) == 0u, "MVMVA far-color bug FLAG");
+}
+
 void testSqr() {
 	GteHarness harness;
 	bmsx::GxGte& gte = harness.gte;
@@ -503,6 +549,34 @@ void testAvsz3() {
 	require(gte.readControlRegister(31u) == 0u, "AVSZ3 FLAG");
 }
 
+void testAvsz4() {
+	GteHarness harness;
+	bmsx::GxGte& gte = harness.gte;
+	gte.writeDataRegister(16u, 50u);
+	gte.writeDataRegister(17u, 100u);
+	gte.writeDataRegister(18u, 200u);
+	gte.writeDataRegister(19u, 300u);
+	gte.writeControlRegister(30u, 0x1000u);
+
+	require(gte.execute(bmsx::GX_GTE_FN_AVSZ4) == bmsx::GX_GTE_CYCLES_AVSZ4, "AVSZ4 cycles");
+
+	require(gte.readDataRegister(7u) == 650u, "AVSZ4 OTZ");
+	require(gte.readDataRegister(24u) == 0x28a000u, "AVSZ4 MAC0");
+	require(gte.readControlRegister(31u) == 0u, "AVSZ4 FLAG");
+
+	gte.writeDataRegister(16u, 0xffffu);
+	gte.writeDataRegister(17u, 0xffffu);
+	gte.writeDataRegister(18u, 0xffffu);
+	gte.writeDataRegister(19u, 0xffffu);
+	gte.writeControlRegister(30u, 0x1000u);
+
+	require(gte.execute(bmsx::GX_GTE_FN_AVSZ4) == bmsx::GX_GTE_CYCLES_AVSZ4, "AVSZ4 saturating cycles");
+
+	require(gte.readDataRegister(7u) == 0xffffu, "AVSZ4 saturating OTZ");
+	require(gte.readDataRegister(24u) == 0x3fffc000u, "AVSZ4 saturating MAC0");
+	require(gte.readControlRegister(31u) == (bmsx::GX_GTE_FLAG_ERROR | bmsx::GX_GTE_FLAG_SZ_OTZ_SAT), "AVSZ4 saturating FLAG");
+}
+
 void testRtpsNarrowsMacResultToRegisterDatapath() {
 	GteHarness harness;
 	bmsx::GxGte& gte = harness.gte;
@@ -607,6 +681,8 @@ int main() {
 	testOp();
 	testMvmva();
 	testMvmvaReadsVectorOnce();
+	testMvmvaReservedMatrixQuirk();
+	testMvmvaFarColorTranslationBug();
 	testSqr();
 	testDpcs();
 	testIntpl();
@@ -619,6 +695,7 @@ int main() {
 	testGpfGpl();
 	testRgbColorSaturationFlags();
 	testAvsz3();
+	testAvsz4();
 	testRtpsNarrowsMacResultToRegisterDatapath();
 	testRtpsIr3ClampsFromMac3RegisterValue();
 	testUnknownFunctionCodeIsDeterministicNoop();

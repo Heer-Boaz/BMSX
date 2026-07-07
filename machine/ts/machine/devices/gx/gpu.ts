@@ -39,6 +39,7 @@ export const GX_GPU_GP1_SET_VERTICAL_DISPLAY_RANGE = 0x07;
 export const GX_GPU_GP1_SET_DISPLAY_MODE = 0x08;
 export const GX_GPU_GP1_SET_VRAM_SIZE = 0x09;
 export const GX_GPU_GP1_GET_GPU_INFO = 0x10;
+export const GX_GPU_GP1_GET_GPU_INFO_LAST = 0x1f;
 export const GX_GPU_GP1_OPCODE_SHIFT = 24;
 export const GX_GPU_GP1_PARAM_MASK = 0x00ffffff;
 export const GX_GPU_GP1_OPCODE_MASK = 0x3f;
@@ -353,7 +354,11 @@ export class GxGpu {
 				this.writeGpuInfoQuery(command);
 				break;
 			default:
-				this.writeStatusIo();
+				if (opcode >= GX_GPU_GP1_GET_GPU_INFO && opcode <= GX_GPU_GP1_GET_GPU_INFO_LAST) {
+					this.writeGpuInfoQuery(command);
+				} else {
+					this.writeStatusIo();
+				}
 				break;
 		}
 		return opcode;

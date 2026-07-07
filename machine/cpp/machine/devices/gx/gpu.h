@@ -21,6 +21,7 @@ constexpr u32 GX_GPU_GP1_SET_VERTICAL_DISPLAY_RANGE = 0x07u;
 constexpr u32 GX_GPU_GP1_SET_DISPLAY_MODE = 0x08u;
 constexpr u32 GX_GPU_GP1_SET_VRAM_SIZE = 0x09u;
 constexpr u32 GX_GPU_GP1_GET_GPU_INFO = 0x10u;
+constexpr u32 GX_GPU_GP1_GET_GPU_INFO_LAST = 0x1fu;
 constexpr u32 GX_GPU_GP1_OPCODE_SHIFT = 24u;
 constexpr u32 GX_GPU_GP1_PARAM_MASK = 0x00ffffffu;
 constexpr u32 GX_GPU_GP1_OPCODE_MASK = 0x3fu;

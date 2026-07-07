@@ -199,7 +199,11 @@ u32 GxGpu::writeGp1(u32 word) {
 		writeGpuInfoQuery(word);
 		break;
 	default:
-		writeStatusIo();
+		if (opcode >= GX_GPU_GP1_GET_GPU_INFO && opcode <= GX_GPU_GP1_GET_GPU_INFO_LAST) {
+			writeGpuInfoQuery(word);
+		} else {
+			writeStatusIo();
+		}
 		break;
 	}
 	return opcode;
