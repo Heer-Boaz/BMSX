@@ -19,8 +19,6 @@ import {
 	gxGpuCommandRectangleHeight,
 	gxGpuCommandRectangleWidth,
 	gxGpuCommandTextureEnabled,
-	gxGpuDisplayStartX,
-	gxGpuDisplayStartY,
 	gxGpuDrawingAreaBottomExclusive,
 	gxGpuDrawingAreaLeft,
 	gxGpuDrawingAreaRightExclusive,
@@ -50,7 +48,6 @@ import {
 	gxGpuVertexY,
 	type GxGpuCommandBufferView,
 } from '../../../machine/devices/gx/gpu_command_buffer';
-import { PSX_GPU_DISPLAY_HEIGHT, PSX_GPU_DISPLAY_WIDTH } from '../../../machine/model_registry';
 import type { RenderPassLibrary } from '../pass/library';
 import type { RenderGraphPassContext, RenderPassStateRegistry } from '../backend';
 import type { WebGLBackend } from './backend';
@@ -152,10 +149,13 @@ type GxGpuWebGLState = {
 	scanoutTexcoordAttrib: number;
 	scanoutVramUniform: WebGLUniformLocation;
 	scanoutDisplayModeUniform: WebGLUniformLocation;
-	scanoutDisplayStartUniform: WebGLUniformLocation;
+	scanoutDisplayStartWordUniform: WebGLUniformLocation;
+	scanoutHorizontalDisplayRangeUniform: WebGLUniformLocation;
+	scanoutVerticalDisplayRangeUniform: WebGLUniformLocation;
 	scanoutUniformDisplayModeWord: number;
 	scanoutUniformDisplayStartWord: number;
-	scanoutDisplayStartWord: number;
+	scanoutUniformHorizontalDisplayRangeWord: number;
+	scanoutUniformVerticalDisplayRangeWord: number;
 	processedCommandCount: number;
 	processedCommandSerial: number;
 };
@@ -220,8 +220,8 @@ function bootstrapGxGpuPass(backend: WebGLBackend): void {
 
 	const scanoutVertexBuffer = gl.createBuffer() as WebGLBuffer;
 	backend.bindArrayBuffer(scanoutVertexBuffer);
-	updateGxGpuScanoutVertices(0);
-	gl.bufferData(gl.ARRAY_BUFFER, gxGpuScanoutVertices, gl.DYNAMIC_DRAW);
+	updateGxGpuScanoutVertices();
+	gl.bufferData(gl.ARRAY_BUFFER, gxGpuScanoutVertices, gl.STATIC_DRAW);
 
 	gxGpuWebGLState = {
 		solidProgram,
@@ -279,10 +279,13 @@ function bootstrapGxGpuPass(backend: WebGLBackend): void {
 		scanoutTexcoordAttrib: gl.getAttribLocation(scanoutProgram, 'a_texcoord'),
 		scanoutVramUniform: gl.getUniformLocation(scanoutProgram, 'u_vram') as WebGLUniformLocation,
 		scanoutDisplayModeUniform: gl.getUniformLocation(scanoutProgram, 'u_displayModeWord') as WebGLUniformLocation,
-		scanoutDisplayStartUniform: gl.getUniformLocation(scanoutProgram, 'u_displayStart') as WebGLUniformLocation,
+		scanoutDisplayStartWordUniform: gl.getUniformLocation(scanoutProgram, 'u_displayStartWord') as WebGLUniformLocation,
+		scanoutHorizontalDisplayRangeUniform: gl.getUniformLocation(scanoutProgram, 'u_horizontalDisplayRangeWord') as WebGLUniformLocation,
+		scanoutVerticalDisplayRangeUniform: gl.getUniformLocation(scanoutProgram, 'u_verticalDisplayRangeWord') as WebGLUniformLocation,
 		scanoutUniformDisplayModeWord: 0xffffffff,
 		scanoutUniformDisplayStartWord: 0xffffffff,
-		scanoutDisplayStartWord: 0,
+		scanoutUniformHorizontalDisplayRangeWord: 0xffffffff,
+		scanoutUniformVerticalDisplayRangeWord: 0xffffffff,
 		processedCommandCount: 0,
 		processedCommandSerial: 0,
 	};
@@ -1332,20 +1335,14 @@ function writeScanoutVertex(offset: number, x: number, y: number, u: number, v: 
 	return offset + GX_GPU_SCANOUT_VERTEX_FLOATS;
 }
 
-function updateGxGpuScanoutVertices(displayStartWord: number): void {
-	const sourceLeft = gxGpuDisplayStartX(displayStartWord);
-	const sourceTop = gxGpuDisplayStartY(displayStartWord);
-	const u0 = sourceLeft / GX_GPU_VRAM_WIDTH;
-	const v0 = 1.0 - sourceTop / GX_GPU_VRAM_HEIGHT;
-	const u1 = (sourceLeft + PSX_GPU_DISPLAY_WIDTH) / GX_GPU_VRAM_WIDTH;
-	const v1 = 1.0 - (sourceTop + PSX_GPU_DISPLAY_HEIGHT) / GX_GPU_VRAM_HEIGHT;
+function updateGxGpuScanoutVertices(): void {
 	let offset = 0;
-	offset = writeScanoutVertex(offset, -1.0, 1.0, u0, v0);
-	offset = writeScanoutVertex(offset, -1.0, -1.0, u0, v1);
-	offset = writeScanoutVertex(offset, 1.0, 1.0, u1, v0);
-	offset = writeScanoutVertex(offset, 1.0, 1.0, u1, v0);
-	offset = writeScanoutVertex(offset, -1.0, -1.0, u0, v1);
-	writeScanoutVertex(offset, 1.0, -1.0, u1, v1);
+	offset = writeScanoutVertex(offset, -1.0, 1.0, 0.0, 0.0);
+	offset = writeScanoutVertex(offset, -1.0, -1.0, 0.0, 1.0);
+	offset = writeScanoutVertex(offset, 1.0, 1.0, 1.0, 0.0);
+	offset = writeScanoutVertex(offset, 1.0, 1.0, 1.0, 0.0);
+	offset = writeScanoutVertex(offset, -1.0, -1.0, 0.0, 1.0);
+	writeScanoutVertex(offset, 1.0, -1.0, 1.0, 1.0);
 }
 
 function scanoutGxGpuVram(backend: WebGLBackend, gl: WebGL2RenderingContext, fbo: WebGLFramebuffer, state: RenderPassStateRegistry['gx_gpu']): void {
@@ -1368,22 +1365,21 @@ function scanoutGxGpuVram(backend: WebGLBackend, gl: WebGL2RenderingContext, fbo
 		gxGpuWebGLState.scanoutUniformDisplayModeWord = state.displayModeWord;
 	}
 	if (gxGpuWebGLState.scanoutUniformDisplayStartWord !== state.displayStartWord) {
-		gl.uniform2f(
-			gxGpuWebGLState.scanoutDisplayStartUniform,
-			gxGpuDisplayStartX(state.displayStartWord),
-			gxGpuDisplayStartY(state.displayStartWord),
-		);
+		gl.uniform1f(gxGpuWebGLState.scanoutDisplayStartWordUniform, state.displayStartWord);
 		gxGpuWebGLState.scanoutUniformDisplayStartWord = state.displayStartWord;
+	}
+	if (gxGpuWebGLState.scanoutUniformHorizontalDisplayRangeWord !== state.horizontalDisplayRangeWord) {
+		gl.uniform1f(gxGpuWebGLState.scanoutHorizontalDisplayRangeUniform, state.horizontalDisplayRangeWord);
+		gxGpuWebGLState.scanoutUniformHorizontalDisplayRangeWord = state.horizontalDisplayRangeWord;
+	}
+	if (gxGpuWebGLState.scanoutUniformVerticalDisplayRangeWord !== state.verticalDisplayRangeWord) {
+		gl.uniform1f(gxGpuWebGLState.scanoutVerticalDisplayRangeUniform, state.verticalDisplayRangeWord);
+		gxGpuWebGLState.scanoutUniformVerticalDisplayRangeWord = state.verticalDisplayRangeWord;
 	}
 	backend.setActiveTexture(GX_GPU_SCANOUT_TEXTURE_UNIT);
 	backend.bindTexture2D(gxGpuWebGLState.vramTexture);
 	backend.bindVertexArray(null);
 	backend.bindArrayBuffer(gxGpuWebGLState.scanoutVertexBuffer);
-	if (gxGpuWebGLState.scanoutDisplayStartWord !== state.displayStartWord) {
-		updateGxGpuScanoutVertices(state.displayStartWord);
-		gl.bufferSubData(gl.ARRAY_BUFFER, 0, gxGpuScanoutVertices);
-		gxGpuWebGLState.scanoutDisplayStartWord = state.displayStartWord;
-	}
 	gl.enableVertexAttribArray(gxGpuWebGLState.scanoutPositionAttrib);
 	gl.vertexAttribPointer(gxGpuWebGLState.scanoutPositionAttrib, 2, gl.FLOAT, false, GX_GPU_SCANOUT_VERTEX_FLOATS * 4, 0);
 	gl.enableVertexAttribArray(gxGpuWebGLState.scanoutTexcoordAttrib);
