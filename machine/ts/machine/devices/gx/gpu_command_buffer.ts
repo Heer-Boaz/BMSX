@@ -142,6 +142,16 @@ export function gxGpuFillHeight(sizeWord: number): number {
 	return (sizeWord >>> 16) & 0x1ff;
 }
 
+export function gxGpuVramWrappedWidth(x: number, width: number): number {
+	const edgeWidth = GX_GPU_VRAM_WIDTH - x;
+	return width <= edgeWidth ? width : edgeWidth;
+}
+
+export function gxGpuVramWrappedHeight(y: number, height: number): number {
+	const edgeHeight = GX_GPU_VRAM_HEIGHT - y;
+	return height <= edgeHeight ? height : edgeHeight;
+}
+
 export function gxGpuTransferX(xyWord: number): number {
 	return xyWord & 0x3ff;
 }

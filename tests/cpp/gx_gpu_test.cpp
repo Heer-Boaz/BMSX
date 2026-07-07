@@ -54,6 +54,12 @@ void testGp0RawDrawWordDecoders() {
 	require(bmsx::gxGpuFillWidth(0x03f0u) == 1008u, "GX-GPU aligned fill width");
 	require(bmsx::gxGpuFillWidth(0x03f1u) == 1024u, "GX-GPU fill width can round up to full VRAM width");
 	require(bmsx::gxGpuFillHeight(0x01ff0000u) == 511u, "GX-GPU fill height decode");
+	require(bmsx::gxGpuVramWrappedWidth(1000u, 12u) == 12u, "GX-GPU non-wrapped VRAM width run");
+	require(bmsx::gxGpuVramWrappedWidth(1008u, 1024u) == 16u, "GX-GPU wrapped VRAM width first run");
+	require(bmsx::gxGpuVramWrappedWidth(0u, 1008u) == 1008u, "GX-GPU full-start VRAM width run");
+	require(bmsx::gxGpuVramWrappedHeight(500u, 12u) == 12u, "GX-GPU non-wrapped VRAM height run");
+	require(bmsx::gxGpuVramWrappedHeight(511u, 511u) == 1u, "GX-GPU wrapped VRAM height first run");
+	require(bmsx::gxGpuVramWrappedHeight(0u, 511u) == 511u, "GX-GPU full-start VRAM height run");
 
 	require(bmsx::gxGpuTransferX(0x01ff03ffu) == 1023u, "GX-GPU transfer x decode");
 	require(bmsx::gxGpuTransferY(0x01ff03ffu) == 511u, "GX-GPU transfer y decode");

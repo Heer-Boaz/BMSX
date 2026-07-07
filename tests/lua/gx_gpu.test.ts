@@ -59,6 +59,8 @@ import {
 	gxGpuTransferY,
 	gxGpuVertexX,
 	gxGpuVertexY,
+	gxGpuVramWrappedHeight,
+	gxGpuVramWrappedWidth,
 } from '../../machine/ts/machine/devices/gx/gpu_command_buffer';
 import {
 	GX_GPU_DMA_DIRECTION_CPU_TO_GP0,
@@ -153,6 +155,12 @@ test('GX-GPU decodes PSX GP0 signed vertex and rectangle size words', () => {
 	assert.equal(gxGpuFillWidth(0x03f0), 1008);
 	assert.equal(gxGpuFillWidth(0x03f1), 1024);
 	assert.equal(gxGpuFillHeight(0x01ff0000), 511);
+	assert.equal(gxGpuVramWrappedWidth(1000, 12), 12);
+	assert.equal(gxGpuVramWrappedWidth(1008, 1024), 16);
+	assert.equal(gxGpuVramWrappedWidth(0, 1008), 1008);
+	assert.equal(gxGpuVramWrappedHeight(500, 12), 12);
+	assert.equal(gxGpuVramWrappedHeight(511, 511), 1);
+	assert.equal(gxGpuVramWrappedHeight(0, 511), 511);
 
 	assert.equal(gxGpuTransferX(0x01ff03ff), 1023);
 	assert.equal(gxGpuTransferY(0x01ff03ff), 511);

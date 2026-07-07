@@ -151,6 +151,16 @@ inline u32 gxGpuFillHeight(u32 sizeWord) {
 	return (sizeWord >> 16u) & 0x1ffu;
 }
 
+inline u32 gxGpuVramWrappedWidth(u32 x, u32 width) {
+	const u32 edgeWidth = GX_GPU_VRAM_WIDTH - x;
+	return width <= edgeWidth ? width : edgeWidth;
+}
+
+inline u32 gxGpuVramWrappedHeight(u32 y, u32 height) {
+	const u32 edgeHeight = GX_GPU_VRAM_HEIGHT - y;
+	return height <= edgeHeight ? height : edgeHeight;
+}
+
 inline u32 gxGpuTransferX(u32 xyWord) {
 	return xyWord & 0x3ffu;
 }

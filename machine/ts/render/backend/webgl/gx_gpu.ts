@@ -55,6 +55,8 @@ import {
 	gxGpuTransferY,
 	gxGpuVertexX,
 	gxGpuVertexY,
+	gxGpuVramWrappedHeight,
+	gxGpuVramWrappedWidth,
 	type GxGpuCommandBufferView,
 } from '../../../machine/devices/gx/gpu_command_buffer';
 import type { RenderPassLibrary } from '../pass/library';
@@ -75,7 +77,7 @@ const GX_GPU_SCANOUT_TEXTURE_UNIT = 0;
 const GX_GPU_TEXTURE_SAMPLE_UNIT = 1;
 const GX_GPU_TEXTURE_TRANSFER_UNIT = 2;
 const GX_GPU_SOLID_VERTEX_FLOATS = 6;
-const GX_GPU_SOLID_VERTICES_PER_COMMAND = 6;
+const GX_GPU_SOLID_VERTICES_PER_COMMAND = 24;
 const GX_GPU_SOLID_FLOAT_CAPACITY = GX_GPU_COMMAND_CAPACITY * GX_GPU_SOLID_VERTICES_PER_COMMAND * GX_GPU_SOLID_VERTEX_FLOATS;
 const GX_GPU_LINE_VERTEX_FLOATS = 12;
 const GX_GPU_LINE_VERTICES_PER_SEGMENT = 6;
@@ -386,11 +388,23 @@ function appendFillRectangle(commandBuffer: GxGpuCommandBufferView, commandIndex
 	if (width === 0 || height === 0) {
 		return vertexFloatCount;
 	}
-	const x0 = gxGpuFillX(xyWord);
-	const y0 = gxGpuTransferY(xyWord);
-	const x1 = x0 + width;
-	const y1 = y0 + height;
-	return appendSolidQuad(vertexFloatCount, x0, y0, colorWord, x0, y1, colorWord, x1, y0, colorWord, x1, y1, colorWord);
+	let y = gxGpuTransferY(xyWord);
+	let remainingHeight = height;
+	let offset = vertexFloatCount;
+	while (remainingHeight !== 0) {
+		const rowHeight = gxGpuVramWrappedHeight(y, remainingHeight);
+		let x = gxGpuFillX(xyWord);
+		let remainingWidth = width;
+		while (remainingWidth !== 0) {
+			const runWidth = gxGpuVramWrappedWidth(x, remainingWidth);
+			offset = appendSolidQuad(offset, x, y, colorWord, x, y + rowHeight, colorWord, x + runWidth, y, colorWord, x + runWidth, y + rowHeight, colorWord);
+			x = (x + runWidth) & (GX_GPU_VRAM_WIDTH - 1);
+			remainingWidth -= runWidth;
+		}
+		y = (y + rowHeight) & (GX_GPU_VRAM_HEIGHT - 1);
+		remainingHeight -= rowHeight;
+	}
+	return offset;
 }
 
 function appendSolidPolygon(commandBuffer: GxGpuCommandBufferView, commandIndex: number, vertexFloatCount: number): number {
@@ -799,7 +813,7 @@ function uploadCpuToVram(backend: WebGLBackend, gl: WebGL2RenderingContext, comm
 		writeCpuToVramUploadRow(commandBuffer, payloadWordStart, row * width, width);
 		const targetY = (y + row) & (GX_GPU_VRAM_HEIGHT - 1);
 		const storageY = (GX_GPU_VRAM_HEIGHT - 1) - targetY;
-		const firstWidth = width <= GX_GPU_VRAM_WIDTH - x ? width : GX_GPU_VRAM_WIDTH - x;
+		const firstWidth = gxGpuVramWrappedWidth(x, width);
 		gl.texSubImage2D(gl.TEXTURE_2D, 0, x, storageY, firstWidth, 1, gl.RGBA, gl.UNSIGNED_BYTE, gxGpuRawVramUploadRow, 0);
 		if (maskBitModeWord !== 0) {
 			transferVertexFloatCount = appendTransferQuad(transferVertexFloatCount, x, targetY, firstWidth, 1, x, targetY);
@@ -838,15 +852,9 @@ function copyVramToVram(backend: WebGLBackend, gl: WebGL2RenderingContext, comma
 		let rowTargetX = targetX;
 		let remainingWidth = width;
 		while (remainingWidth !== 0) {
-			const sourceRunWidth = GX_GPU_VRAM_WIDTH - rowSourceX;
-			const targetRunWidth = GX_GPU_VRAM_WIDTH - rowTargetX;
-			let runWidth = remainingWidth;
-			if (sourceRunWidth < runWidth) {
-				runWidth = sourceRunWidth;
-			}
-			if (targetRunWidth < runWidth) {
-				runWidth = targetRunWidth;
-			}
+			const sourceRunWidth = gxGpuVramWrappedWidth(rowSourceX, remainingWidth);
+			const targetRunWidth = gxGpuVramWrappedWidth(rowTargetX, remainingWidth);
+			const runWidth = sourceRunWidth < targetRunWidth ? sourceRunWidth : targetRunWidth;
 			transferVertexFloatCount = appendTransferQuad(transferVertexFloatCount, rowTargetX, rowTargetY, runWidth, 1, rowSourceX, rowSourceY);
 			rowSourceX = (rowSourceX + runWidth) & (GX_GPU_VRAM_WIDTH - 1);
 			rowTargetX = (rowTargetX + runWidth) & (GX_GPU_VRAM_WIDTH - 1);

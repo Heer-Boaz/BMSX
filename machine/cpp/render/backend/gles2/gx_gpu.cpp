@@ -18,7 +18,7 @@ constexpr i32 kGxGpuScanoutTextureUnit = 0;
 constexpr i32 kGxGpuTextureSampleUnit = 1;
 constexpr i32 kGxGpuTextureTransferUnit = 2;
 constexpr size_t kGxGpuSolidVertexFloats = 6u;
-constexpr size_t kGxGpuSolidVerticesPerCommand = 6u;
+constexpr size_t kGxGpuSolidVerticesPerCommand = 24u;
 constexpr size_t kGxGpuSolidFloatCapacity = GX_GPU_COMMAND_CAPACITY * kGxGpuSolidVerticesPerCommand * kGxGpuSolidVertexFloats;
 constexpr size_t kGxGpuLineVertexFloats = 12u;
 constexpr size_t kGxGpuLineVerticesPerSegment = 6u;
@@ -326,11 +326,36 @@ size_t appendFillRectangle(const GxGpuCommandBuffer& commandBuffer, u32 commandI
 	if (width == 0u || height == 0u) {
 		return vertexFloatCount;
 	}
-	const f32 x0 = static_cast<f32>(gxGpuFillX(xyWord));
-	const f32 y0 = static_cast<f32>(gxGpuTransferY(xyWord));
-	const f32 x1 = x0 + static_cast<f32>(width);
-	const f32 y1 = y0 + static_cast<f32>(height);
-	return appendSolidQuad(vertexFloatCount, x0, y0, colorWord, x0, y1, colorWord, x1, y0, colorWord, x1, y1, colorWord);
+	u32 y = gxGpuTransferY(xyWord);
+	u32 remainingHeight = height;
+	size_t offset = vertexFloatCount;
+	while (remainingHeight != 0u) {
+		const u32 rowHeight = gxGpuVramWrappedHeight(y, remainingHeight);
+		u32 x = gxGpuFillX(xyWord);
+		u32 remainingWidth = width;
+		while (remainingWidth != 0u) {
+			const u32 runWidth = gxGpuVramWrappedWidth(x, remainingWidth);
+			offset = appendSolidQuad(
+				offset,
+				static_cast<f32>(x),
+				static_cast<f32>(y),
+				colorWord,
+				static_cast<f32>(x),
+				static_cast<f32>(y + rowHeight),
+				colorWord,
+				static_cast<f32>(x + runWidth),
+				static_cast<f32>(y),
+				colorWord,
+				static_cast<f32>(x + runWidth),
+				static_cast<f32>(y + rowHeight),
+				colorWord);
+			x = (x + runWidth) & (static_cast<u32>(kGxGpuVramWidth) - 1u);
+			remainingWidth -= runWidth;
+		}
+		y = (y + rowHeight) & (static_cast<u32>(kGxGpuVramHeight) - 1u);
+		remainingHeight -= rowHeight;
+	}
+	return offset;
 }
 
 size_t appendSolidPolygon(const GxGpuCommandBuffer& commandBuffer, u32 commandIndex, size_t vertexFloatCount) {
@@ -739,7 +764,7 @@ void uploadCpuToVram(OpenGLES2Backend& backend, const GxGpuCommandBuffer& comman
 		writeCpuToVramUploadRow(commandBuffer, payloadWordStart, row * width, width);
 		const u32 targetY = (y + row) & (static_cast<u32>(kGxGpuVramHeight) - 1u);
 		const u32 storageY = (static_cast<u32>(kGxGpuVramHeight) - 1u) - targetY;
-		const u32 firstWidth = width <= static_cast<u32>(kGxGpuVramWidth) - x ? width : static_cast<u32>(kGxGpuVramWidth) - x;
+		const u32 firstWidth = gxGpuVramWrappedWidth(x, width);
 		glTexSubImage2D(GL_TEXTURE_2D, 0, static_cast<GLint>(x), static_cast<GLint>(storageY), static_cast<GLsizei>(firstWidth), 1, GL_RGBA, GL_UNSIGNED_BYTE, g_rawVramUploadRow.data());
 		if (maskBitModeWord != 0u) {
 			transferVertexFloatCount = appendTransferQuad(transferVertexFloatCount, x, targetY, firstWidth, 1u, x, targetY);
@@ -787,15 +812,9 @@ void copyVramToVram(OpenGLES2Backend& backend, const GxGpuCommandBuffer& command
 		u32 rowTargetX = targetX;
 		u32 remainingWidth = width;
 		while (remainingWidth != 0u) {
-			const u32 sourceRunWidth = static_cast<u32>(kGxGpuVramWidth) - rowSourceX;
-			const u32 targetRunWidth = static_cast<u32>(kGxGpuVramWidth) - rowTargetX;
-			u32 runWidth = remainingWidth;
-			if (sourceRunWidth < runWidth) {
-				runWidth = sourceRunWidth;
-			}
-			if (targetRunWidth < runWidth) {
-				runWidth = targetRunWidth;
-			}
+			const u32 sourceRunWidth = gxGpuVramWrappedWidth(rowSourceX, remainingWidth);
+			const u32 targetRunWidth = gxGpuVramWrappedWidth(rowTargetX, remainingWidth);
+			const u32 runWidth = sourceRunWidth < targetRunWidth ? sourceRunWidth : targetRunWidth;
 			transferVertexFloatCount = appendTransferQuad(transferVertexFloatCount, rowTargetX, rowTargetY, runWidth, 1u, rowSourceX, rowSourceY);
 			rowSourceX = (rowSourceX + runWidth) & (static_cast<u32>(kGxGpuVramWidth) - 1u);
 			rowTargetX = (rowTargetX + runWidth) & (static_cast<u32>(kGxGpuVramWidth) - 1u);
