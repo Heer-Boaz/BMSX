@@ -15,6 +15,8 @@ import {
 	gxGpuCommandSemiTransparencyEnabled,
 	gxGpuCommandRectangleHeight,
 	gxGpuCommandRectangleWidth,
+	gxGpuDisplayStartX,
+	gxGpuDisplayStartY,
 	gxGpuDrawingAreaBottomExclusive,
 	gxGpuDrawingAreaLeft,
 	gxGpuDrawingAreaRightExclusive,
@@ -119,6 +121,8 @@ test('GX-GPU decodes PSX GP0 signed vertex and rectangle size words', () => {
 
 	assert.equal(gxGpuVertexX(0x000007ff), -1);
 	assert.equal(gxGpuVertexY(0x07ff0000), -1);
+	assert.equal(gxGpuDisplayStartX(123 | (456 << 10)), 123);
+	assert.equal(gxGpuDisplayStartY(123 | (456 << 10)), 456);
 	assert.equal(gxGpuDrawingOffsetY(0x003ff800), -1);
 
 	assert.equal(gxGpuCommandRectangleWidth(GX_GPU_GP0_RECTANGLE_FIRST, 0x012c03ff), 1023);
@@ -263,6 +267,11 @@ test('GX-GPU latches PSX GP1 CRTC range registers as masked raw words', () => {
 	assert.equal(gpu.readHorizontalDisplayRangeWord(), GX_GPU_HORIZONTAL_DISPLAY_RANGE_MASK);
 	assert.equal(gpu.readVerticalDisplayRangeWord(), GX_GPU_VERTICAL_DISPLAY_RANGE_MASK);
 	assert.equal(gpu.readTextureDisableMaskWord(), 1);
+
+	assert.equal(gpu.readDeviceOutput().displayModeWord, gpu.readDisplayModeWord());
+	assert.equal(gpu.readDeviceOutput().displayStartWord, GX_GPU_DISPLAY_START_MASK);
+	assert.equal(gpu.readDeviceOutput().horizontalDisplayRangeWord, GX_GPU_HORIZONTAL_DISPLAY_RANGE_MASK);
+	assert.equal(gpu.readDeviceOutput().verticalDisplayRangeWord, GX_GPU_VERTICAL_DISPLAY_RANGE_MASK);
 });
 
 test('GX-GPU handles PSX GP0 IRQ request and GP1 interrupt acknowledge', () => {

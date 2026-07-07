@@ -33,6 +33,14 @@ export function gxGpuVertexY(word: number): number {
 	return gxGpuSigned11(word >>> 16);
 }
 
+export function gxGpuDisplayStartX(word: number): number {
+	return word & 0x3ff;
+}
+
+export function gxGpuDisplayStartY(word: number): number {
+	return (word >>> 10) & 0x1ff;
+}
+
 export function gxGpuDrawingOffsetX(word: number): number {
 	return gxGpuSigned11(word);
 }

@@ -74,6 +74,10 @@ void writeGxGpuPipelineState(const RenderPassDef::RenderGraphPassContext& ctx, R
 	gxGpuState.width = static_cast<i32>(ctx.view->offscreenCanvasSize.x);
 	gxGpuState.height = static_cast<i32>(ctx.view->offscreenCanvasSize.y);
 	gxGpuState.commandBuffer = ctx.view->gxGpuCommandBuffer;
+	gxGpuState.displayModeWord = ctx.view->gxGpuDisplayModeWord;
+	gxGpuState.displayStartWord = ctx.view->gxGpuDisplayStartWord;
+	gxGpuState.horizontalDisplayRangeWord = ctx.view->gxGpuHorizontalDisplayRangeWord;
+	gxGpuState.verticalDisplayRangeWord = ctx.view->gxGpuVerticalDisplayRangeWord;
 }
 
 void writeAutoCRTPipelineState(const RenderPassDef::RenderGraphPassContext& ctx, RenderPassStateStorage& state) {

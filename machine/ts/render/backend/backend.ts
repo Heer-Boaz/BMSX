@@ -288,6 +288,10 @@ export type GxGpuPipelineState = {
 	width: number;
 	height: number;
 	commandBuffer: GxGpuCommandBufferView;
+	displayModeWord: number;
+	displayStartWord: number;
+	horizontalDisplayRangeWord: number;
+	verticalDisplayRangeWord: number;
 };
 
 export type Framebuffer2DPipelineState = {
@@ -324,6 +328,10 @@ export interface RenderContext {
 	presentationHistoryDestinationIndex: 0 | 1;
 	activeTexUnit: number;
 	gxGpuCommandBuffer: GxGpuCommandBufferView;
+	gxGpuDisplayModeWord: number;
+	gxGpuDisplayStartWord: number;
+	gxGpuHorizontalDisplayRangeWord: number;
+	gxGpuVerticalDisplayRangeWord: number;
 	vdpRpuFrame: VdpRpuFrameOutput;
 	bind2DTex(tex: TextureHandle): void;
 	bindCubemapTex(tex: TextureHandle): void;

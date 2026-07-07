@@ -16,6 +16,8 @@ import {
 	gxGpuCommandRectangleHeight,
 	gxGpuCommandRectangleWidth,
 	gxGpuCommandTextureEnabled,
+	gxGpuDisplayStartX,
+	gxGpuDisplayStartY,
 	gxGpuDrawingAreaBottomExclusive,
 	gxGpuDrawingAreaLeft,
 	gxGpuDrawingAreaRightExclusive,
@@ -45,6 +47,7 @@ import {
 	gxGpuVertexY,
 	type GxGpuCommandBufferView,
 } from '../../../machine/devices/gx/gpu_command_buffer';
+import { PSX_GPU_DISPLAY_HEIGHT, PSX_GPU_DISPLAY_WIDTH } from '../../../machine/model_registry';
 import type { RenderPassLibrary } from '../pass/library';
 import type { RenderGraphPassContext, RenderPassStateRegistry } from '../backend';
 import type { WebGLBackend } from './backend';
@@ -59,8 +62,6 @@ import transferFragmentShader from './shaders/gx_gpu_transfer.frag.glsl';
 import scanoutVertexShader from './shaders/gx_gpu_scanout.vert.glsl';
 import scanoutFragmentShader from './shaders/gx_gpu_scanout.frag.glsl';
 
-const GX_GPU_DISPLAY_WIDTH = 320;
-const GX_GPU_DISPLAY_HEIGHT = 240;
 const GX_GPU_SCANOUT_TEXTURE_UNIT = 0;
 const GX_GPU_TEXTURE_SAMPLE_UNIT = 1;
 const GX_GPU_TEXTURE_TRANSFER_UNIT = 2;
@@ -90,14 +91,7 @@ const gxGpuLineVertices = new Float32Array(GX_GPU_LINE_FLOAT_CAPACITY);
 const gxGpuTexturedVertices = new Float32Array(GX_GPU_TEXTURED_FLOAT_CAPACITY);
 const gxGpuTransferVertices = new Float32Array(GX_GPU_TRANSFER_FLOAT_CAPACITY);
 const gxGpuRawVramUploadRow = new Uint8Array(GX_GPU_RAW_VRAM_UPLOAD_ROW_BYTES);
-const gxGpuScanoutVertices = new Float32Array([
-	-1.0, 1.0, 0.0, 1.0,
-	-1.0, -1.0, 0.0, 1.0 - GX_GPU_DISPLAY_HEIGHT / GX_GPU_VRAM_HEIGHT,
-	1.0, 1.0, GX_GPU_DISPLAY_WIDTH / GX_GPU_VRAM_WIDTH, 1.0,
-	1.0, 1.0, GX_GPU_DISPLAY_WIDTH / GX_GPU_VRAM_WIDTH, 1.0,
-	-1.0, -1.0, 0.0, 1.0 - GX_GPU_DISPLAY_HEIGHT / GX_GPU_VRAM_HEIGHT,
-	1.0, -1.0, GX_GPU_DISPLAY_WIDTH / GX_GPU_VRAM_WIDTH, 1.0 - GX_GPU_DISPLAY_HEIGHT / GX_GPU_VRAM_HEIGHT,
-]);
+const gxGpuScanoutVertices = new Float32Array(6 * GX_GPU_SCANOUT_VERTEX_FLOATS);
 
 type GxGpuWebGLState = {
 	solidProgram: WebGLProgram;
@@ -154,6 +148,7 @@ type GxGpuWebGLState = {
 	scanoutPositionAttrib: number;
 	scanoutTexcoordAttrib: number;
 	scanoutVramUniform: WebGLUniformLocation;
+	scanoutDisplayStartWord: number;
 	processedCommandCount: number;
 	processedCommandSerial: number;
 };
@@ -218,7 +213,8 @@ function bootstrapGxGpuPass(backend: WebGLBackend): void {
 
 	const scanoutVertexBuffer = gl.createBuffer() as WebGLBuffer;
 	backend.bindArrayBuffer(scanoutVertexBuffer);
-	gl.bufferData(gl.ARRAY_BUFFER, gxGpuScanoutVertices, gl.STATIC_DRAW);
+	updateGxGpuScanoutVertices(0);
+	gl.bufferData(gl.ARRAY_BUFFER, gxGpuScanoutVertices, gl.DYNAMIC_DRAW);
 
 	gxGpuWebGLState = {
 		solidProgram,
@@ -275,6 +271,7 @@ function bootstrapGxGpuPass(backend: WebGLBackend): void {
 		scanoutPositionAttrib: gl.getAttribLocation(scanoutProgram, 'a_position'),
 		scanoutTexcoordAttrib: gl.getAttribLocation(scanoutProgram, 'a_texcoord'),
 		scanoutVramUniform: gl.getUniformLocation(scanoutProgram, 'u_vram') as WebGLUniformLocation,
+		scanoutDisplayStartWord: 0,
 		processedCommandCount: 0,
 		processedCommandSerial: 0,
 	};
@@ -1316,6 +1313,30 @@ function renderTexturedCommand(
 	gl.disable(gl.SCISSOR_TEST);
 }
 
+function writeScanoutVertex(offset: number, x: number, y: number, u: number, v: number): number {
+	gxGpuScanoutVertices[offset] = x;
+	gxGpuScanoutVertices[offset + 1] = y;
+	gxGpuScanoutVertices[offset + 2] = u;
+	gxGpuScanoutVertices[offset + 3] = v;
+	return offset + GX_GPU_SCANOUT_VERTEX_FLOATS;
+}
+
+function updateGxGpuScanoutVertices(displayStartWord: number): void {
+	const sourceLeft = gxGpuDisplayStartX(displayStartWord);
+	const sourceTop = gxGpuDisplayStartY(displayStartWord);
+	const u0 = sourceLeft / GX_GPU_VRAM_WIDTH;
+	const v0 = 1.0 - sourceTop / GX_GPU_VRAM_HEIGHT;
+	const u1 = (sourceLeft + PSX_GPU_DISPLAY_WIDTH) / GX_GPU_VRAM_WIDTH;
+	const v1 = 1.0 - (sourceTop + PSX_GPU_DISPLAY_HEIGHT) / GX_GPU_VRAM_HEIGHT;
+	let offset = 0;
+	offset = writeScanoutVertex(offset, -1.0, 1.0, u0, v0);
+	offset = writeScanoutVertex(offset, -1.0, -1.0, u0, v1);
+	offset = writeScanoutVertex(offset, 1.0, 1.0, u1, v0);
+	offset = writeScanoutVertex(offset, 1.0, 1.0, u1, v0);
+	offset = writeScanoutVertex(offset, -1.0, -1.0, u0, v1);
+	writeScanoutVertex(offset, 1.0, -1.0, u1, v1);
+}
+
 function scanoutGxGpuVram(backend: WebGLBackend, gl: WebGL2RenderingContext, fbo: WebGLFramebuffer, state: RenderPassStateRegistry['gx_gpu']): void {
 	gl.bindFramebuffer(gl.FRAMEBUFFER, fbo);
 	backend.setViewportRect(0, 0, state.width, state.height);
@@ -1330,6 +1351,11 @@ function scanoutGxGpuVram(backend: WebGLBackend, gl: WebGL2RenderingContext, fbo
 	backend.bindTexture2D(gxGpuWebGLState.vramTexture);
 	backend.bindVertexArray(null);
 	backend.bindArrayBuffer(gxGpuWebGLState.scanoutVertexBuffer);
+	if (gxGpuWebGLState.scanoutDisplayStartWord !== state.displayStartWord) {
+		updateGxGpuScanoutVertices(state.displayStartWord);
+		gl.bufferSubData(gl.ARRAY_BUFFER, 0, gxGpuScanoutVertices);
+		gxGpuWebGLState.scanoutDisplayStartWord = state.displayStartWord;
+	}
 	gl.enableVertexAttribArray(gxGpuWebGLState.scanoutPositionAttrib);
 	gl.vertexAttribPointer(gxGpuWebGLState.scanoutPositionAttrib, 2, gl.FLOAT, false, GX_GPU_SCANOUT_VERTEX_FLOATS * 4, 0);
 	gl.enableVertexAttribArray(gxGpuWebGLState.scanoutTexcoordAttrib);
@@ -1352,6 +1378,10 @@ function writeGxGpuState(ctx: RenderGraphPassContext, state: RenderPassStateRegi
 	state.width = ctx.view.offscreenCanvasSize.x;
 	state.height = ctx.view.offscreenCanvasSize.y;
 	state.commandBuffer = ctx.view.gxGpuCommandBuffer;
+	state.displayModeWord = ctx.view.gxGpuDisplayModeWord;
+	state.displayStartWord = ctx.view.gxGpuDisplayStartWord;
+	state.horizontalDisplayRangeWord = ctx.view.gxGpuHorizontalDisplayRangeWord;
+	state.verticalDisplayRangeWord = ctx.view.gxGpuVerticalDisplayRangeWord;
 }
 
 export function registerGxGpuPass(registry: RenderPassLibrary): void {
@@ -1359,6 +1389,10 @@ export function registerGxGpuPass(registry: RenderPassLibrary): void {
 		width: 0,
 		height: 0,
 		commandBuffer: registry.view.gxGpuCommandBuffer,
+		displayModeWord: registry.view.gxGpuDisplayModeWord,
+		displayStartWord: registry.view.gxGpuDisplayStartWord,
+		horizontalDisplayRangeWord: registry.view.gxGpuHorizontalDisplayRangeWord,
+		verticalDisplayRangeWord: registry.view.gxGpuVerticalDisplayRangeWord,
 	};
 	registry.register({
 		id: 'gx_gpu',

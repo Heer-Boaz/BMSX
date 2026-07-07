@@ -123,9 +123,6 @@ export class GxGpu {
 	private displayModeWord = PSX_GPU_DISPLAY_MODE_PAL_WORD;
 	private statusWord = GX_GPU_STATUS_RESET_WORD;
 	private readonly commandBuffer = new GxGpuCommandBuffer();
-	private readonly deviceOutput: GxGpuDeviceOutput = {
-		commandBuffer: this.commandBuffer,
-	};
 	private readonly gp0CommandWords = new Uint32Array(GX_GPU_GP0_COMMAND_BUFFER_WORDS);
 	private gp0CommandWordCount = 0;
 	private gp0CommandTargetWordCount = 0;
@@ -149,6 +146,13 @@ export class GxGpu {
 	private horizontalDisplayRangeWord = 0x00c60260;
 	private verticalDisplayRangeWord = 0x0003fc10;
 	private textureDisableMaskWord = 0;
+	private readonly deviceOutput = {
+		commandBuffer: this.commandBuffer,
+		displayModeWord: PSX_GPU_DISPLAY_MODE_PAL_WORD,
+		displayStartWord: 0,
+		horizontalDisplayRangeWord: 0x00c60260,
+		verticalDisplayRangeWord: 0x0003fc10,
+	};
 
 	public constructor(private readonly memory: Memory) {
 		this.memory.mapIoRead(IO_GX_GPU_GP0, this, GxGpu.readGp0Thunk);
@@ -359,6 +363,10 @@ export class GxGpu {
 	}
 
 	public readDeviceOutput(): GxGpuDeviceOutput {
+		this.deviceOutput.displayModeWord = this.displayModeWord;
+		this.deviceOutput.displayStartWord = this.displayStartWord;
+		this.deviceOutput.horizontalDisplayRangeWord = this.horizontalDisplayRangeWord;
+		this.deviceOutput.verticalDisplayRangeWord = this.verticalDisplayRangeWord;
 		return this.deviceOutput;
 	}
 

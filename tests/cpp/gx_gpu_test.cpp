@@ -35,6 +35,8 @@ void testGp0RawDrawWordDecoders() {
 
 	require(bmsx::gxGpuVertexX(0x000007ffu) == -1, "GX-GPU vertex x decode");
 	require(bmsx::gxGpuVertexY(0x07ff0000u) == -1, "GX-GPU vertex y decode");
+	require(bmsx::gxGpuDisplayStartX(123u | (456u << 10u)) == 123u, "GX-GPU display start x decode");
+	require(bmsx::gxGpuDisplayStartY(123u | (456u << 10u)) == 456u, "GX-GPU display start y decode");
 	require(bmsx::gxGpuDrawingOffsetY(0x003ff800u) == -1, "GX-GPU drawing offset y decode");
 
 	require(bmsx::gxGpuCommandRectangleWidth(bmsx::GX_GPU_GP0_RECTANGLE_FIRST, 0x012c03ffu) == 1023u, "GX-GPU variable rectangle width");
@@ -173,6 +175,12 @@ void testGp1CrtcRangeRegistersLatchMaskedRawWords() {
 	require(gpu.readHorizontalDisplayRangeWord() == bmsx::GX_GPU_HORIZONTAL_DISPLAY_RANGE_MASK, "GX-GPU GP1 horizontal display range mask");
 	require(gpu.readVerticalDisplayRangeWord() == bmsx::GX_GPU_VERTICAL_DISPLAY_RANGE_MASK, "GX-GPU GP1 vertical display range mask");
 	require(gpu.readTextureDisableMaskWord() == 1u, "GX-GPU GP1 texture-disable mask latch");
+
+	const bmsx::GxGpuDeviceOutput& output = gpu.readDeviceOutput();
+	require(output.displayModeWord == gpu.readDisplayModeWord(), "GX-GPU output display mode word");
+	require(output.displayStartWord == bmsx::GX_GPU_DISPLAY_START_MASK, "GX-GPU output display start word");
+	require(output.horizontalDisplayRangeWord == bmsx::GX_GPU_HORIZONTAL_DISPLAY_RANGE_MASK, "GX-GPU output horizontal range word");
+	require(output.verticalDisplayRangeWord == bmsx::GX_GPU_VERTICAL_DISPLAY_RANGE_MASK, "GX-GPU output vertical range word");
 }
 
 void testGp0IrqRequestAndGp1Acknowledge() {

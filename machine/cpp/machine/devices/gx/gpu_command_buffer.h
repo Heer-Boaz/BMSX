@@ -42,6 +42,14 @@ inline i32 gxGpuVertexY(u32 word) {
 	return gxGpuSigned11(word >> 16u);
 }
 
+inline u32 gxGpuDisplayStartX(u32 word) {
+	return word & 0x3ffu;
+}
+
+inline u32 gxGpuDisplayStartY(u32 word) {
+	return (word >> 10u) & 0x1ffu;
+}
+
 inline i32 gxGpuDrawingOffsetX(u32 word) {
 	return gxGpuSigned11(word);
 }
