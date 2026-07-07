@@ -869,6 +869,85 @@ test('GX-GPU software scanout consumes solid polygon, rectangle, and line comman
 	assertRgbaPixel(pixels, 34, 6, 0, 0, 255);
 });
 
+test('GX-GPU software scanout consumes textured primitives', () => {
+	const commandBuffer = new GxGpuCommandBuffer();
+	commandBuffer.reset();
+	pushSoftwareCommand(commandBuffer, new Uint32Array([
+		GX_GPU_GP0_CPU_TO_VRAM_FIRST << 24,
+		64,
+		(1 << 16) | 2,
+		0x03e0001f,
+	]), GX_GPU_COMMAND_UPLOAD_CPU_TO_VRAM, GX_GPU_GP0_CPU_TO_VRAM_FIRST);
+	pushSoftwareCommand(commandBuffer, new Uint32Array([
+		GX_GPU_GP0_CPU_TO_VRAM_FIRST << 24,
+		80,
+		(1 << 16) | 1,
+		0x000003ff,
+	]), GX_GPU_COMMAND_UPLOAD_CPU_TO_VRAM, GX_GPU_GP0_CPU_TO_VRAM_FIRST);
+	pushSoftwareCommand(commandBuffer, new Uint32Array([
+		GX_GPU_GP0_CPU_TO_VRAM_FIRST << 24,
+		20 << 16,
+		(1 << 16) | 2,
+		0x7c000000,
+	]), GX_GPU_COMMAND_UPLOAD_CPU_TO_VRAM, GX_GPU_GP0_CPU_TO_VRAM_FIRST);
+	pushSoftwareCommand(commandBuffer, new Uint32Array([
+		GX_GPU_GP0_CPU_TO_VRAM_FIRST << 24,
+		(1 << 16) | 64,
+		(1 << 16) | 1,
+		0x00000001,
+	]), GX_GPU_COMMAND_UPLOAD_CPU_TO_VRAM, GX_GPU_GP0_CPU_TO_VRAM_FIRST);
+
+	const rawTexturedRectangleOpcode = GX_GPU_GP0_RECTANGLE_FIRST | GX_GPU_GP0_RENDER_TEXTURE_BIT | 0x01;
+	const direct16PageWord = (GX_GPU_TEXTURE_MODE_DIRECT16 << 7) | 1;
+	pushSoftwareCommand(commandBuffer, new Uint32Array([
+		((rawTexturedRectangleOpcode << 24) | 0x808080) >>> 0,
+		(10 << 16) | 40,
+		0,
+		(1 << 16) | 2,
+	]), GX_GPU_COMMAND_DRAW_RECTANGLE, rawTexturedRectangleOpcode, direct16PageWord);
+	pushSoftwareCommand(commandBuffer, new Uint32Array([
+		((rawTexturedRectangleOpcode << 24) | 0x808080) >>> 0,
+		(10 << 16) | 47,
+		0,
+		(1 << 16) | 1,
+	]), GX_GPU_COMMAND_DRAW_RECTANGLE, rawTexturedRectangleOpcode, direct16PageWord, 0x00000802);
+	pushSoftwareCommand(commandBuffer, new Uint32Array([
+		((rawTexturedRectangleOpcode << 24) | 0x808080) >>> 0,
+		(10 << 16) | 45,
+		0x05000100,
+		(1 << 16) | 1,
+	]), GX_GPU_COMMAND_DRAW_RECTANGLE, rawTexturedRectangleOpcode, 1);
+	const rawTexturedPolygonOpcode = GX_GPU_GP0_POLYGON_FIRST | GX_GPU_GP0_RENDER_TEXTURE_BIT | 0x01;
+	pushSoftwareCommand(commandBuffer, new Uint32Array([
+		((rawTexturedPolygonOpcode << 24) | 0x808080) >>> 0,
+		(12 << 16) | 50,
+		0,
+		(12 << 16) | 52,
+		2,
+		(14 << 16) | 50,
+		0,
+	]), GX_GPU_COMMAND_DRAW_POLYGON, rawTexturedPolygonOpcode, direct16PageWord);
+
+	const pixels = new Uint8Array(GX_GPU_SOFTWARE_TEST_WIDTH * GX_GPU_SOFTWARE_TEST_HEIGHT * 4);
+	renderGxGpuSoftwareFrame({
+		width: GX_GPU_SOFTWARE_TEST_WIDTH,
+		height: GX_GPU_SOFTWARE_TEST_HEIGHT,
+		commandBuffer,
+		statusWord: 0,
+		displayModeWord: PSX_GPU_DISPLAY_MODE_PAL_WORD,
+		displayStartWord: 0,
+		horizontalDisplayRangeWord: (((638 + 256 * 10) << 12) | 638) >>> 0,
+		verticalDisplayRangeWord: (((35 + 256) << 10) | 35) >>> 0,
+	}, pixels, GX_GPU_SOFTWARE_TEST_WIDTH, GX_GPU_SOFTWARE_TEST_HEIGHT);
+
+	assertRgbaPixel(pixels, 40, 10, 255, 0, 0);
+	assertRgbaPixel(pixels, 41, 10, 0, 255, 0);
+	assertRgbaPixel(pixels, 45, 10, 0, 0, 255);
+	assertRgbaPixel(pixels, 47, 10, 255, 255, 0);
+	assertRgbaPixel(pixels, 50, 12, 255, 0, 0);
+	assertRgbaPixel(pixels, 51, 12, 0, 255, 0);
+});
+
 test('GX-GPU MMIO uses PSX GP0 data and GP1 status addresses', () => {
 	const { memory } = createGpu();
 

@@ -3,43 +3,6 @@
 namespace bmsx {
 namespace {
 
-inline i32 ditherOffset(i32 x, i32 y) {
-	switch (((y & 3) << 2) | (x & 3)) {
-		case 0:
-			return -4;
-		case 1:
-			return 0;
-		case 2:
-			return -3;
-		case 3:
-			return 1;
-		case 4:
-			return 2;
-		case 5:
-			return -2;
-		case 6:
-			return 3;
-		case 7:
-			return -1;
-		case 8:
-			return -3;
-		case 9:
-			return 1;
-		case 10:
-			return -4;
-		case 11:
-			return 0;
-		case 12:
-			return 3;
-		case 13:
-			return -1;
-		case 14:
-			return 2;
-		default:
-			return -2;
-	}
-}
-
 inline u32 ditheredByte(u32 byte, i32 offset) {
 	const i32 value = static_cast<i32>(byte) + offset;
 	if (value < 0) {
@@ -101,31 +64,72 @@ void gxGpuSoftwareWriteMaskedVramWord(size_t index, u32 word, u32 maskBitModeWor
 	g_gxGpuSoftwareVram[index] = static_cast<u16>((word & 0x7fffu) | maskBit);
 }
 
-void gxGpuSoftwareWriteRenderVramPixel(i32 x, i32 y, u32 r8, u32 g8, u32 b8, bool ditherEnabled, bool blendEnabled, u32 blendMode, u32 maskBitModeWord) {
+void gxGpuSoftwareWriteRenderVramPixel5(i32 x, i32 y, u32 r5, u32 g5, u32 b5, bool blendEnabled, u32 blendMode, u32 maskBitModeWord, u32 outputMaskBit) {
 	const size_t index = gxGpuSoftwareVramIndex(x, y);
 	const u32 dstWord = g_gxGpuSoftwareVram[index];
 	if (gxGpuMaskBitCheckBeforeDraw(maskBitModeWord) && (dstWord & 0x8000u) != 0u) {
 		return;
 	}
+	u32 blendedR5 = r5;
+	u32 blendedG5 = g5;
+	u32 blendedB5 = b5;
+	if (blendEnabled) {
+		blendedR5 = blendChannel5(blendedR5, dstWord & 0x1fu, blendMode);
+		blendedG5 = blendChannel5(blendedG5, (dstWord >> 5u) & 0x1fu, blendMode);
+		blendedB5 = blendChannel5(blendedB5, (dstWord >> 10u) & 0x1fu, blendMode);
+	}
+	const u32 maskBit = gxGpuMaskBitSetWhileDrawing(maskBitModeWord) ? 0x8000u : outputMaskBit & 0x8000u;
+	g_gxGpuSoftwareVram[index] = static_cast<u16>(blendedR5 | (blendedG5 << 5u) | (blendedB5 << 10u) | maskBit);
+}
+
+void gxGpuSoftwareWriteRenderVramPixel(i32 x, i32 y, u32 r8, u32 g8, u32 b8, bool ditherEnabled, bool blendEnabled, u32 blendMode, u32 maskBitModeWord) {
 	u32 r = r8;
 	u32 g = g8;
 	u32 b = b8;
 	if (ditherEnabled) {
-		const i32 offset = ditherOffset(x, y);
+		const i32 offset = gxGpuSoftwareDitherOffset(x, y);
 		r = ditheredByte(r, offset);
 		g = ditheredByte(g, offset);
 		b = ditheredByte(b, offset);
 	}
-	u32 r5 = r >> 3u;
-	u32 g5 = g >> 3u;
-	u32 b5 = b >> 3u;
-	if (blendEnabled) {
-		r5 = blendChannel5(r5, dstWord & 0x1fu, blendMode);
-		g5 = blendChannel5(g5, (dstWord >> 5u) & 0x1fu, blendMode);
-		b5 = blendChannel5(b5, (dstWord >> 10u) & 0x1fu, blendMode);
+	gxGpuSoftwareWriteRenderVramPixel5(x, y, r >> 3u, g >> 3u, b >> 3u, blendEnabled, blendMode, maskBitModeWord, 0u);
+}
+
+i32 gxGpuSoftwareDitherOffset(i32 x, i32 y) {
+	switch (((y & 3) << 2) | (x & 3)) {
+		case 0:
+			return -4;
+		case 1:
+			return 0;
+		case 2:
+			return -3;
+		case 3:
+			return 1;
+		case 4:
+			return 2;
+		case 5:
+			return -2;
+		case 6:
+			return 3;
+		case 7:
+			return -1;
+		case 8:
+			return -3;
+		case 9:
+			return 1;
+		case 10:
+			return -4;
+		case 11:
+			return 0;
+		case 12:
+			return 3;
+		case 13:
+			return -1;
+		case 14:
+			return 2;
+		default:
+			return -2;
 	}
-	const u32 maskBit = gxGpuMaskBitSetWhileDrawing(maskBitModeWord) ? 0x8000u : 0u;
-	g_gxGpuSoftwareVram[index] = static_cast<u16>(r5 | (g5 << 5u) | (b5 << 10u) | maskBit);
 }
 
 bool gxGpuSoftwareInterlacedSkipsLine(i32 y, u32 interlacedRenderWord) {

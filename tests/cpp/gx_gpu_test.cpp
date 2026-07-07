@@ -792,6 +792,132 @@ void testSoftwareScanoutConsumesSolidPrimitives() {
 	requireArgbPixel(framebuffer, 34u, 6u, 0xff0000ffu, "GX-GPU software scanout solid line end pixel");
 }
 
+void testSoftwareScanoutConsumesTexturedPrimitives() {
+	bmsx::GxGpuCommandBuffer commandBuffer;
+	commandBuffer.reset();
+	pushSoftwareCommand(
+		commandBuffer,
+		std::array<uint32_t, 4>{
+			bmsx::GX_GPU_GP0_CPU_TO_VRAM_FIRST << 24u,
+			64u,
+			(1u << 16u) | 2u,
+			0x03e0001fu,
+		},
+		4u,
+		bmsx::GX_GPU_COMMAND_UPLOAD_CPU_TO_VRAM,
+		bmsx::GX_GPU_GP0_CPU_TO_VRAM_FIRST);
+	pushSoftwareCommand(
+		commandBuffer,
+		std::array<uint32_t, 4>{
+			bmsx::GX_GPU_GP0_CPU_TO_VRAM_FIRST << 24u,
+			80u,
+			(1u << 16u) | 1u,
+			0x000003ffu,
+		},
+		4u,
+		bmsx::GX_GPU_COMMAND_UPLOAD_CPU_TO_VRAM,
+		bmsx::GX_GPU_GP0_CPU_TO_VRAM_FIRST);
+	pushSoftwareCommand(
+		commandBuffer,
+		std::array<uint32_t, 4>{
+			bmsx::GX_GPU_GP0_CPU_TO_VRAM_FIRST << 24u,
+			20u << 16u,
+			(1u << 16u) | 2u,
+			0x7c000000u,
+		},
+		4u,
+		bmsx::GX_GPU_COMMAND_UPLOAD_CPU_TO_VRAM,
+		bmsx::GX_GPU_GP0_CPU_TO_VRAM_FIRST);
+	pushSoftwareCommand(
+		commandBuffer,
+		std::array<uint32_t, 4>{
+			bmsx::GX_GPU_GP0_CPU_TO_VRAM_FIRST << 24u,
+			(1u << 16u) | 64u,
+			(1u << 16u) | 1u,
+			0x00000001u,
+		},
+		4u,
+		bmsx::GX_GPU_COMMAND_UPLOAD_CPU_TO_VRAM,
+		bmsx::GX_GPU_GP0_CPU_TO_VRAM_FIRST);
+
+	constexpr uint8_t rawTexturedRectangleOpcode = bmsx::GX_GPU_GP0_RECTANGLE_FIRST | bmsx::GX_GPU_GP0_RENDER_TEXTURE_BIT | 0x01u;
+	constexpr uint32_t direct16PageWord = (bmsx::GX_GPU_TEXTURE_MODE_DIRECT16 << 7u) | 1u;
+	pushSoftwareCommand(
+		commandBuffer,
+		std::array<uint32_t, 4>{
+			(rawTexturedRectangleOpcode << 24u) | 0x808080u,
+			(10u << 16u) | 40u,
+			0u,
+			(1u << 16u) | 2u,
+		},
+		4u,
+		bmsx::GX_GPU_COMMAND_DRAW_RECTANGLE,
+		rawTexturedRectangleOpcode,
+		direct16PageWord);
+	pushSoftwareCommand(
+		commandBuffer,
+		std::array<uint32_t, 4>{
+			(rawTexturedRectangleOpcode << 24u) | 0x808080u,
+			(10u << 16u) | 47u,
+			0u,
+			(1u << 16u) | 1u,
+		},
+		4u,
+		bmsx::GX_GPU_COMMAND_DRAW_RECTANGLE,
+		rawTexturedRectangleOpcode,
+		direct16PageWord,
+		0x00000802u);
+	pushSoftwareCommand(
+		commandBuffer,
+		std::array<uint32_t, 4>{
+			(rawTexturedRectangleOpcode << 24u) | 0x808080u,
+			(10u << 16u) | 45u,
+			0x05000100u,
+			(1u << 16u) | 1u,
+		},
+		4u,
+		bmsx::GX_GPU_COMMAND_DRAW_RECTANGLE,
+		rawTexturedRectangleOpcode,
+		1u);
+	constexpr uint8_t rawTexturedPolygonOpcode = bmsx::GX_GPU_GP0_POLYGON_FIRST | bmsx::GX_GPU_GP0_RENDER_TEXTURE_BIT | 0x01u;
+	pushSoftwareCommand(
+		commandBuffer,
+		std::array<uint32_t, 7>{
+			(rawTexturedPolygonOpcode << 24u) | 0x808080u,
+			(12u << 16u) | 50u,
+			0u,
+			(12u << 16u) | 52u,
+			2u,
+			(14u << 16u) | 50u,
+			0u,
+		},
+		7u,
+		bmsx::GX_GPU_COMMAND_DRAW_POLYGON,
+		rawTexturedPolygonOpcode,
+		direct16PageWord);
+
+	std::array<uint32_t, 256u * 256u> framebuffer{};
+	bmsx::SoftwareBackend backend(framebuffer.data(), 256, 256, 256 * static_cast<int32_t>(sizeof(uint32_t)));
+	bmsx::GxGpuPipelineState state;
+	state.width = 256;
+	state.height = 256;
+	state.commandBuffer = &commandBuffer;
+	state.statusWord = 0u;
+	state.displayModeWord = bmsx::PSX_GPU_DISPLAY_MODE_PAL_WORD;
+	state.displayStartWord = 0u;
+	state.horizontalDisplayRangeWord = (((638u + 256u * 10u) << 12u) | 638u);
+	state.verticalDisplayRangeWord = (((35u + 256u) << 10u) | 35u);
+
+	bmsx::renderGxGpuSoftwareFrame(backend, state);
+
+	requireArgbPixel(framebuffer, 40u, 10u, 0xffff0000u, "GX-GPU software scanout direct16 textured rectangle red pixel");
+	requireArgbPixel(framebuffer, 41u, 10u, 0xff00ff00u, "GX-GPU software scanout direct16 textured rectangle green pixel");
+	requireArgbPixel(framebuffer, 45u, 10u, 0xff0000ffu, "GX-GPU software scanout palette4 textured rectangle blue pixel");
+	requireArgbPixel(framebuffer, 47u, 10u, 0xffffff00u, "GX-GPU software scanout texture-windowed direct16 rectangle yellow pixel");
+	requireArgbPixel(framebuffer, 50u, 12u, 0xffff0000u, "GX-GPU software scanout direct16 textured polygon red pixel");
+	requireArgbPixel(framebuffer, 51u, 12u, 0xff00ff00u, "GX-GPU software scanout direct16 textured polygon green pixel");
+}
+
 void testMmioGp0Gp1() {
 	GpuHarness harness;
 	bmsx::Memory& memory = harness.memory;
@@ -825,6 +951,7 @@ int main() {
 	testGp1ClearFifoClearsPartialGp0PacketsAndFlushesPartialCpuToVramUploads();
 	testSoftwareScanoutConsumesTransfersAndFill();
 	testSoftwareScanoutConsumesSolidPrimitives();
+	testSoftwareScanoutConsumesTexturedPrimitives();
 	testMmioGp0Gp1();
 	return 0;
 }

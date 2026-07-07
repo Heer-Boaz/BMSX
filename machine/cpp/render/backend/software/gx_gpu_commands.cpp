@@ -93,15 +93,48 @@ void executeVramToVram(const GxGpuCommandBuffer& commandBuffer, size_t commandIn
 void executeDrawPolygon(const GxGpuCommandBuffer& commandBuffer, size_t commandIndex) {
 	const u32 opcode = commandBuffer.commandOpcode[commandIndex];
 	const u32 drawModeWord = commandBuffer.commandDrawModeWord[commandIndex];
-	if (gxGpuCommandDrawsTexture(opcode, drawModeWord)) {
-		return;
-	}
 	const u32 wordStart = commandBuffer.commandWordStart[commandIndex];
 	const u32 drawingOffsetWord = commandBuffer.commandDrawingOffsetWord[commandIndex];
 	const i32 dx = gxGpuDrawingOffsetX(drawingOffsetWord);
 	const i32 dy = gxGpuDrawingOffsetY(drawingOffsetWord);
 	const bool ditherEnabled = gxGpuDitheredPolygon(drawModeWord, opcode);
 	const bool gouraud = gxGpuCommandGouraud(opcode);
+	if (gxGpuCommandDrawsTexture(opcode, drawModeWord)) {
+		if (gouraud) {
+			const u32 color0 = commandBuffer.words[wordStart];
+			const u32 xy0 = commandBuffer.words[wordStart + 1u];
+			const u32 texture0 = commandBuffer.words[wordStart + 2u];
+			const u32 color1 = commandBuffer.words[wordStart + 3u];
+			const u32 xy1 = commandBuffer.words[wordStart + 4u];
+			const u32 texture1 = commandBuffer.words[wordStart + 5u];
+			const u32 color2 = commandBuffer.words[wordStart + 6u];
+			const u32 xy2 = commandBuffer.words[wordStart + 7u];
+			const u32 texture2 = commandBuffer.words[wordStart + 8u];
+			drawGxGpuSoftwareTexturedTriangle(commandBuffer, commandIndex, dx + gxGpuVertexX(xy0), dy + gxGpuVertexY(xy0), color0, gxGpuTextureU(texture0), gxGpuTextureV(texture0), dx + gxGpuVertexX(xy1), dy + gxGpuVertexY(xy1), color1, gxGpuTextureU(texture1), gxGpuTextureV(texture1), dx + gxGpuVertexX(xy2), dy + gxGpuVertexY(xy2), color2, gxGpuTextureU(texture2), gxGpuTextureV(texture2), ditherEnabled);
+			if (gxGpuCommandQuadPolygon(opcode)) {
+				const u32 color3 = commandBuffer.words[wordStart + 9u];
+				const u32 xy3 = commandBuffer.words[wordStart + 10u];
+				const u32 texture3 = commandBuffer.words[wordStart + 11u];
+				drawGxGpuSoftwareTexturedTriangle(commandBuffer, commandIndex, dx + gxGpuVertexX(xy2), dy + gxGpuVertexY(xy2), color2, gxGpuTextureU(texture2), gxGpuTextureV(texture2), dx + gxGpuVertexX(xy1), dy + gxGpuVertexY(xy1), color1, gxGpuTextureU(texture1), gxGpuTextureV(texture1), dx + gxGpuVertexX(xy3), dy + gxGpuVertexY(xy3), color3, gxGpuTextureU(texture3), gxGpuTextureV(texture3), ditherEnabled);
+			}
+			return;
+		}
+
+		const u32 color = commandBuffer.words[wordStart];
+		const u32 xy0 = commandBuffer.words[wordStart + 1u];
+		const u32 texture0 = commandBuffer.words[wordStart + 2u];
+		const u32 xy1 = commandBuffer.words[wordStart + 3u];
+		const u32 texture1 = commandBuffer.words[wordStart + 4u];
+		const u32 xy2 = commandBuffer.words[wordStart + 5u];
+		const u32 texture2 = commandBuffer.words[wordStart + 6u];
+		drawGxGpuSoftwareTexturedTriangle(commandBuffer, commandIndex, dx + gxGpuVertexX(xy0), dy + gxGpuVertexY(xy0), color, gxGpuTextureU(texture0), gxGpuTextureV(texture0), dx + gxGpuVertexX(xy1), dy + gxGpuVertexY(xy1), color, gxGpuTextureU(texture1), gxGpuTextureV(texture1), dx + gxGpuVertexX(xy2), dy + gxGpuVertexY(xy2), color, gxGpuTextureU(texture2), gxGpuTextureV(texture2), ditherEnabled);
+		if (gxGpuCommandQuadPolygon(opcode)) {
+			const u32 xy3 = commandBuffer.words[wordStart + 7u];
+			const u32 texture3 = commandBuffer.words[wordStart + 8u];
+			drawGxGpuSoftwareTexturedTriangle(commandBuffer, commandIndex, dx + gxGpuVertexX(xy2), dy + gxGpuVertexY(xy2), color, gxGpuTextureU(texture2), gxGpuTextureV(texture2), dx + gxGpuVertexX(xy1), dy + gxGpuVertexY(xy1), color, gxGpuTextureU(texture1), gxGpuTextureV(texture1), dx + gxGpuVertexX(xy3), dy + gxGpuVertexY(xy3), color, gxGpuTextureU(texture3), gxGpuTextureV(texture3), ditherEnabled);
+		}
+		return;
+	}
 	if (gxGpuCommandTextureEnabled(opcode)) {
 		if (gouraud) {
 			const u32 color0 = commandBuffer.words[wordStart];
@@ -161,9 +194,6 @@ void executeDrawPolygon(const GxGpuCommandBuffer& commandBuffer, size_t commandI
 void executeDrawRectangle(const GxGpuCommandBuffer& commandBuffer, size_t commandIndex) {
 	const u32 opcode = commandBuffer.commandOpcode[commandIndex];
 	const u32 drawModeWord = commandBuffer.commandDrawModeWord[commandIndex];
-	if (gxGpuCommandDrawsTexture(opcode, drawModeWord)) {
-		return;
-	}
 	const u32 wordStart = commandBuffer.commandWordStart[commandIndex];
 	const u32 colorWord = commandBuffer.words[wordStart];
 	const u32 xyWord = commandBuffer.words[wordStart + 1u];
@@ -173,6 +203,10 @@ void executeDrawRectangle(const GxGpuCommandBuffer& commandBuffer, size_t comman
 	const u32 drawingOffsetWord = commandBuffer.commandDrawingOffsetWord[commandIndex];
 	const i32 x = gxGpuDrawingOffsetX(drawingOffsetWord) + gxGpuVertexX(xyWord);
 	const i32 y = gxGpuDrawingOffsetY(drawingOffsetWord) + gxGpuVertexY(xyWord);
+	if (gxGpuCommandDrawsTexture(opcode, drawModeWord)) {
+		drawGxGpuSoftwareTexturedRectangle(commandBuffer, commandIndex, x, y, width, height, colorWord, commandBuffer.words[wordStart + 2u]);
+		return;
+	}
 	drawGxGpuSoftwareRectangle(commandBuffer, commandIndex, x, y, width, height, colorWord);
 }
 
