@@ -458,6 +458,21 @@ void testGp0EnvironmentRegistersAndGpuInfoQueries() {
 	require(gpu.readGpuReadWord() == bmsx::GX_GPU_DRAWING_OFFSET_MASK, "GX-GPU GP1 info drawing-offset query");
 	gpu.writeGp1((bmsx::GX_GPU_GP1_GET_GPU_INFO_LAST << 24u) | 0x02u);
 	require(gpu.readGpuReadWord() == bmsx::GX_GPU_TEXTURE_WINDOW_MASK, "GX-GPU GP1 10h-1fh info opcode range");
+	gpu.writeGp1((bmsx::GX_GPU_GP1_GET_GPU_INFO << 24u) | 0x12u);
+	require(gpu.readGpuReadWord() == bmsx::GX_GPU_TEXTURE_WINDOW_MASK, "GX-GPU GP1 info selector mirrors low nibble");
+	gpu.writeGp1((bmsx::GX_GPU_GP1_GET_GPU_INFO << 24u) | 0x07u);
+	require(gpu.readGpuReadWord() == bmsx::GX_GPU_INFO_GPU_TYPE_208PIN, "GX-GPU GP1 info GPU type query");
+	gpu.writeGp1((bmsx::GX_GPU_GP1_GET_GPU_INFO << 24u) | 0x0au);
+	require(gpu.readGpuReadWord() == bmsx::GX_GPU_INFO_GPU_TYPE_208PIN, "GX-GPU GP1 info high index keeps latch");
+	gpu.writeGp1((bmsx::GX_GPU_GP1_GET_GPU_INFO << 24u) | 0x08u);
+	require(gpu.readGpuReadWord() == 0u, "GX-GPU GP1 info unknown query");
+	gpu.writeGp1((bmsx::GX_GPU_GP1_GET_GPU_INFO_LAST << 24u) | 0x07u);
+	require(gpu.readGpuReadWord() == bmsx::GX_GPU_INFO_GPU_TYPE_208PIN, "GX-GPU GP1 info mirrored opcode GPU type query");
+	gpu.writeGp1((bmsx::GX_GPU_GP1_SET_DMA_DIRECTION << 24u) | bmsx::GX_GPU_DMA_DIRECTION_GPUREAD_TO_CPU);
+	gpu.writeGp1((bmsx::GX_GPU_GP1_GET_GPU_INFO << 24u) | 0x07u);
+	const uint32_t status = gpu.readStatus();
+	require((status & bmsx::GX_GPU_STATUS_READY_TO_SEND_VRAM) == 0u, "GX-GPU GP1 info does not mark VRAM readback ready");
+	require((status & bmsx::GX_GPU_STATUS_DMA_DATA_REQUEST) == 0u, "GX-GPU GP1 info does not request GPUREAD DMA");
 }
 
 void testGp0FixedLengthRenderAndBlitPacketAssembly() {

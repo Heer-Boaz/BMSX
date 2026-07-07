@@ -46,6 +46,8 @@ export const GX_GPU_GP1_GET_GPU_INFO_LAST = 0x1f;
 export const GX_GPU_GP1_OPCODE_SHIFT = 24;
 export const GX_GPU_GP1_PARAM_MASK = 0x00ffffff;
 export const GX_GPU_GP1_OPCODE_MASK = 0x3f;
+export const GX_GPU_GP1_GET_GPU_INFO_INDEX_MASK = 0x0f;
+export const GX_GPU_INFO_GPU_TYPE_208PIN = 0x00000002;
 
 export const GX_GPU_GP0_SET_DRAW_MODE = 0xe1;
 export const GX_GPU_GP0_SET_TEXTURE_WINDOW = 0xe2;
@@ -663,7 +665,7 @@ export class GxGpu {
 	}
 
 	private writeGpuInfoQuery(word: number): void {
-		switch (word & 0x7) {
+		switch (word & GX_GPU_GP1_GET_GPU_INFO_INDEX_MASK) {
 			case 0x02:
 				this.gpuReadWord = this.textureWindowWord;
 				break;
@@ -675,6 +677,12 @@ export class GxGpu {
 				break;
 			case 0x05:
 				this.gpuReadWord = this.drawingOffsetWord;
+				break;
+			case 0x07:
+				this.gpuReadWord = GX_GPU_INFO_GPU_TYPE_208PIN;
+				break;
+			case 0x08:
+				this.gpuReadWord = 0;
 				break;
 		}
 		this.memory.writeIoValue(IO_GX_GPU_GP0, this.gpuReadWord);

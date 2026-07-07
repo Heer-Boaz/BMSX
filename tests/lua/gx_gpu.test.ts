@@ -111,6 +111,7 @@ import {
 	GX_GPU_GP0_SET_MASK_BIT,
 	GX_GPU_GP0_SET_TEXTURE_WINDOW,
 	GX_GPU_GP0_VRAM_TO_VRAM_FIRST,
+	GX_GPU_INFO_GPU_TYPE_208PIN,
 	GX_GPU_GP1_RESET,
 	GX_GPU_GP1_CLEAR_FIFO,
 	GX_GPU_GP1_ACK_INTERRUPT,
@@ -586,6 +587,21 @@ test('GX-GPU handles PSX GP0 environment registers and GP1 GPU-info queries', ()
 	assert.equal(gpu.readGpuReadWord(), GX_GPU_DRAWING_OFFSET_MASK);
 	gpu.writeGp1((GX_GPU_GP1_GET_GPU_INFO_LAST << 24) | 0x02);
 	assert.equal(gpu.readGpuReadWord(), GX_GPU_TEXTURE_WINDOW_MASK);
+	gpu.writeGp1((GX_GPU_GP1_GET_GPU_INFO << 24) | 0x12);
+	assert.equal(gpu.readGpuReadWord(), GX_GPU_TEXTURE_WINDOW_MASK);
+	gpu.writeGp1((GX_GPU_GP1_GET_GPU_INFO << 24) | 0x07);
+	assert.equal(gpu.readGpuReadWord(), GX_GPU_INFO_GPU_TYPE_208PIN);
+	gpu.writeGp1((GX_GPU_GP1_GET_GPU_INFO << 24) | 0x0a);
+	assert.equal(gpu.readGpuReadWord(), GX_GPU_INFO_GPU_TYPE_208PIN);
+	gpu.writeGp1((GX_GPU_GP1_GET_GPU_INFO << 24) | 0x08);
+	assert.equal(gpu.readGpuReadWord(), 0);
+	gpu.writeGp1((GX_GPU_GP1_GET_GPU_INFO_LAST << 24) | 0x07);
+	assert.equal(gpu.readGpuReadWord(), GX_GPU_INFO_GPU_TYPE_208PIN);
+	gpu.writeGp1((GX_GPU_GP1_SET_DMA_DIRECTION << 24) | GX_GPU_DMA_DIRECTION_GPUREAD_TO_CPU);
+	gpu.writeGp1((GX_GPU_GP1_GET_GPU_INFO << 24) | 0x07);
+	const status = gpu.readStatus();
+	assert.equal((status & GX_GPU_STATUS_READY_TO_SEND_VRAM) >>> 0, 0);
+	assert.equal((status & GX_GPU_STATUS_DMA_DATA_REQUEST) >>> 0, 0);
 });
 
 test('GX-GPU emits PSX GP0 fixed-length render and blit packets into the GPU command buffer', () => {

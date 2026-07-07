@@ -491,7 +491,7 @@ void GxGpu::writeMaskBitModeWord(u32 word) {
 }
 
 void GxGpu::writeGpuInfoQuery(u32 word) {
-	switch (word & 0x7u) {
+	switch (word & GX_GPU_GP1_GET_GPU_INFO_INDEX_MASK) {
 	case 0x02u:
 		m_gpuReadWord = m_textureWindowWord;
 		break;
@@ -503,6 +503,12 @@ void GxGpu::writeGpuInfoQuery(u32 word) {
 		break;
 	case 0x05u:
 		m_gpuReadWord = m_drawingOffsetWord;
+		break;
+	case 0x07u:
+		m_gpuReadWord = GX_GPU_INFO_GPU_TYPE_208PIN;
+		break;
+	case 0x08u:
+		m_gpuReadWord = 0u;
 		break;
 	}
 	m_memory.writeIoValue(IO_GX_GPU_GP0, valueNumber(static_cast<double>(m_gpuReadWord)));
