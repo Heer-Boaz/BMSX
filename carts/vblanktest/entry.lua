@@ -1,147 +1,120 @@
-mem[0x08000084] = 0x00000001
 require('cartlib/prelude')
-local irq_flags_addr<const> = 0x08000108
-local irq_mask_addr<const> = 0x0800010c
+
+local gp1_status<const>: *word = 0x08010370
+local irq_mask_register<const>: *word = 0x0800010c
+local input_control_register<const>: *word = 0x08000194
+
 local irq_vblank<const> = 0x0010
 local irq_apu<const> = 0x0200
+
 local target<const> = 50
 local vblank_count = 0
 local fail_reason = nil
 local done = false
 
-local cycles_per_frame<const> = mem[0x08010368]
-local vblank_cycles = 0
-local full_frame_vblank = false
+local gpustat_interlace_field<const> = 0x00002000
+local gpustat_pal_mode<const> = 0x00100000
+local gpustat_display_disabled<const> = 0x00800000
+local gpustat_ready_command<const> = 0x04000000
+local gpustat_ready_dma<const> = 0x10000000
+local gpustat_dma_direction_mask<const> = 0x60000000
 
-local resolve_vblank_cycles<const> = function()
-	local screen_wh<const> = mem[0x08000088]
-	local render_height<const> = screen_wh >> 16
-	local active_display<const> = (cycles_per_frame // (render_height + 1)) * render_height
-	return cycles_per_frame - active_display
-end
-
-local init_vblank_cycles<const> = function()
-	vblank_cycles = resolve_vblank_cycles()
-end
+vblank_test_irq_count = 0
+vblank_test_update_count = 0
+vblank_test_last_gpustat = 0
+vblank_test_passed = false
+vblank_test_fail_reason = nil
 
 local fail<const> = function(msg)
 	if fail_reason == nil then
 		fail_reason = msg
+		vblank_test_fail_reason = msg
 	end
 end
 
-local wait_for_vblank_clear<const> = function()
-	local remaining = cycles_per_frame
-	while remaining > 0 do
-		local status<const> = mem[0x08000144]
-		if (status & 0x00000001) == 0 then
-			return true
-		end
-		remaining = remaining - 1
-	end
-	return false
+local record_gpustat<const> = function()
+	local status<const> = *gp1_status
+	vblank_test_last_gpustat = status
+	return status
 end
 
-local wait_for_vblank_set<const> = function()
-	local remaining = cycles_per_frame
-	local saw_irq = false
-	while remaining > 0 do
-		local status<const> = mem[0x08000144]
-		if (status & 0x00000001) ~= 0 then
-			return true
-		end
-		local flags<const> = mem[irq_flags_addr]
-		if (flags & irq_vblank) ~= 0 then
-			saw_irq = true
-		end
-		remaining = remaining - 1
+local check_gpustat<const> = function(label)
+	local status<const> = record_gpustat()
+	if (status & gpustat_pal_mode) == 0 then
+		fail(label .. ': GPUSTAT PAL bit clear')
 	end
-	if saw_irq then
-		fail("irq_vblank raised but VDP_STATUS_VBLANK never set")
-	else
-		fail("VDP_STATUS_VBLANK never set")
+	if (status & gpustat_display_disabled) ~= 0 then
+		fail(label .. ': GPUSTAT display disabled')
 	end
-	return false
+	if (status & gpustat_ready_command) == 0 then
+		fail(label .. ': GPUSTAT command port not ready')
+	end
+	if (status & gpustat_ready_dma) == 0 then
+		fail(label .. ': GPUSTAT DMA receive bit clear')
+	end
+	if (status & gpustat_dma_direction_mask) ~= 0 then
+		fail(label .. ': GPUSTAT DMA direction not off')
+	end
+	return status
 end
-
-on_irq(irq_vblank, function(_, flags)
-	if (flags & irq_vblank) ~= 0 then
-		vblank_count = vblank_count + 1
-
-		local status<const> = mem[0x08000144]
-		if (status & 0x00000001) == 0 then
-			fail("irq_vblank seen but VDP_STATUS_VBLANK not set")
-		end
-
-	end
-end)
 
 function init()
-	init_vblank_cycles()
-	full_frame_vblank = vblank_cycles >= cycles_per_frame
+	gx_reset_320x240_pal()
+	local status<const> = check_gpustat('init')
+	if (status & gpustat_interlace_field) == 0 then
+		fail('init: GPUSTAT interlace field bit clear in progressive mode')
+	end
 end
 
 function new_game()
 end
 
 local update_cart<const> = function()
+	vblank_test_update_count = vblank_test_update_count + 1
 	if done then
 		return
 	end
 	if fail_reason ~= nil then
-		print("VBLANK TEST FAIL: " .. fail_reason .. " (cycles_per_frame=" .. cycles_per_frame .. " vblank_cycles=" .. tostring(vblank_cycles) .. ")")
+		print("VBLANK TEST FAIL: " .. fail_reason .. " (irqs=" .. vblank_count .. " gpustat=" .. tostring(vblank_test_last_gpustat) .. ")")
 		done = true
 		return
 	end
-
-	if full_frame_vblank then
-		local status<const> = mem[0x08000144]
-		if (status & 0x00000001) == 0 then
-			fail("VDP_STATUS_VBLANK not set for full-frame VBLANK")
-		end
-	else
-		local status<const> = mem[0x08000144]
-		if (status & 0x00000001) ~= 0 then
-			if not wait_for_vblank_clear() then
-				fail("VDP_STATUS_VBLANK never cleared")
-				return
-			end
-		end
-		if not wait_for_vblank_set() then
-			return
-		end
-	end
-
 	if vblank_count >= target then
-		print("VBLANK TEST PASS: " .. vblank_count .. " IRQs")
+		print("VBLANK TEST PASS: " .. vblank_count .. " IRQs GPUSTAT=" .. tostring(vblank_test_last_gpustat))
 		done = true
 	end
 end
 
 local draw_cart<const> = function()
+	local progress<const> = vblank_count % 60
+	local bar_width<const> = 16 + progress * 4
+	local pulse<const> = (vblank_count * 5) & 0x000000ff
+	gx_clear_color(0xff081018)
+	gx_fill_rect_color(16, 24, 304, 56, 0xff102840)
+	gx_fill_rect_color(16, 24, 16 + bar_width, 56, 0xff20f0a0)
+	gx_draw_line_color(16, 72 + (progress >> 1), 304, 72, 0xffffd060)
+	gx_fill_rect_color(24, 104, 296, 136, 0xff202020 | (pulse << 8))
+end
+
+local on_vblank_irq<const> = function(_, flags)
+	if (flags & irq_vblank) ~= 0 then
+		vblank_count = vblank_count + 1
+		vblank_test_irq_count = vblank_count
+		check_gpustat('vblank_irq')
+		if vblank_count >= target then
+			vblank_test_passed = true
+		end
+		*input_control_register = 0x00000001
+		update_cart()
+		draw_cart()
+	end
 end
 
 init()
-mem[irq_mask_addr] = irq_vblank | irq_apu
+on_irq(irq_vblank, on_vblank_irq)
+*irq_mask_register = irq_vblank | irq_apu
 new_game()
-mem[0x08000194] = 0x00000001
+*input_control_register = 0x00000001
 while true do
-	local last_vblank_count<const> = vblank_count
-	repeat
-		halt_until_irq
-	until vblank_count ~= last_vblank_count
-	vdp_stream_cursor = 0x080c0000
-	update_cart()
-	draw_cart()
-	vdp_stream_finish()
-	do
-		local used_bytes<const> = vdp_stream_cursor - 0x080c0000
-		if used_bytes ~= 0 then
-			mem[0x08000110] = 0x080c0000
-			mem[0x08000114] = 0x0800007c
-			mem[0x08000118] = used_bytes
-			mem[0x0800011c] = 0x00000001
-		end
-	end
-	mem[0x08000194] = 0x00000001
+	halt_until_irq
 end

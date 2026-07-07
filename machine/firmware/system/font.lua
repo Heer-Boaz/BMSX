@@ -1,4 +1,4 @@
-local vdp_image<const> = require('system/vdp_image')
+local gx_image<const> = require('system/gx_image')
 
 local font<const> = {}
 
@@ -61,7 +61,7 @@ local build_descriptor<const> = function(definition)
 	local advance_padding<const> = definition.advance_padding or 0
 	local glyphs<const> = {}
 	for glyph, imgid in pairs(definition.glyphs) do
-		local rect<const> = vdp_image.rect(imgid)
+		local rect<const> = gx_image.rect(imgid)
 		glyphs[glyph] = {
 			imgid = imgid,
 			width = rect.w,

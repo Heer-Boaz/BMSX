@@ -94,6 +94,8 @@ test('GX image firmware maps decoded RGBA atlases into direct16 PSX texture page
 	const gxImageSource = readFileSync('machine/firmware/system/gx_image.lua', 'utf8');
 	const cartlibSystemSource = readFileSync('cartlib/system.lua', 'utf8');
 	const cartlibPreludeSource = readFileSync('cartlib/prelude.lua', 'utf8');
+	const firmwareFontSource = readFileSync('machine/firmware/system/font.lua', 'utf8');
+	const cartlibFontSource = readFileSync('cartlib/font.lua', 'utf8');
 	assert.equal(gxImageSource.includes("require('system/gx_gpu')"), true);
 	assert.equal(gxImageSource.includes('gpu_texture_base_y<const> = 256'), true);
 	assert.equal(gxImageSource.includes('gpu_texture_slice_width<const> = 1024'), true);
@@ -104,6 +106,10 @@ test('GX image firmware maps decoded RGBA atlases into direct16 PSX texture page
 	assert.equal(cartlibSystemSource.includes('system.gx_upload_atlas = gx_image.upload_atlas'), true);
 	assert.equal(cartlibSystemSource.includes('system.gx_blit_img_color = gx_image.blit_img_color'), true);
 	assert.equal(cartlibPreludeSource.includes('gx_blit_img_color = system.gx_blit_img_color'), true);
+	assert.equal(firmwareFontSource.includes("require('system/gx_image')"), true);
+	assert.equal(firmwareFontSource.includes("require('system/vdp_image')"), false);
+	assert.equal(cartlibFontSource.includes("require('system/gx_image')"), true);
+	assert.equal(cartlibFontSource.includes("require('system/vdp_image')"), false);
 });
 
 test('GX GPU firmware owns raw PSX GP0 and GP1 words for migrated primitive carts', () => {
@@ -143,4 +149,23 @@ test('empty cart uses GX output instead of VDP streams', () => {
 	assert.equal(emptyCartSource.includes('vdp_'), false);
 	assert.equal(emptyCartSource.includes('0x0800007c'), false);
 	assert.equal(emptyCartSource.includes('0x08000084'), false);
+});
+
+test('vblank test cart samples PSX GPUSTAT through GX GP1 instead of VDP status', () => {
+	const source = readFileSync('carts/vblanktest/entry.lua', 'utf8');
+	assert.equal(source.includes(`local gp1_status<const>: *word = 0x${IO_GX_GPU_GP1.toString(16).padStart(8, '0')}`), true);
+	assert.equal(source.includes(`local irq_mask_register<const>: *word = 0x${IO_IRQ_MASK.toString(16).padStart(8, '0')}`), true);
+	assert.equal(source.includes(`local input_control_register<const>: *word = 0x${IO_INP_CTRL.toString(16).padStart(8, '0')}`), true);
+	assert.equal(source.includes('*gp1_status'), true);
+	assert.equal(source.includes('gpustat_pal_mode'), true);
+	assert.equal(source.includes('gpustat_display_disabled'), true);
+	assert.equal(source.includes('gpustat_ready_command'), true);
+	assert.equal(source.includes('gx_reset_320x240_pal()'), true);
+	assert.equal(source.includes('gx_fill_rect_color'), true);
+	assert.equal(source.includes('vdp_'), false);
+	assert.equal(source.includes('0x08000144'), false);
+	assert.equal(source.includes('0x0800007c'), false);
+	assert.equal(source.includes('0x08000084'), false);
+	assert.equal(source.includes('vdp_stream_cursor'), false);
+	assert.equal(source.includes('vdp_stream_finish'), false);
 });
