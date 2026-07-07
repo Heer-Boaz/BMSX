@@ -479,7 +479,7 @@ size_t appendLineSegment(size_t vertexFloatCount, i32 x0, i32 y0, u32 color0, i3
 	return offset;
 }
 
-size_t writeTexturedVertex(size_t offset, f32 x, f32 y, u32 colorWord, u32 u, u32 v) {
+size_t writeTexturedVertex(size_t offset, f32 x, f32 y, u32 colorWord, i32 u, i32 v) {
 	g_texturedVertices[offset] = x;
 	g_texturedVertices[offset + 1u] = y;
 	g_texturedVertices[offset + 2u] = static_cast<f32>(colorWord & 0xffu) / 255.0f;
@@ -495,18 +495,18 @@ size_t appendTexturedTriangle(
 	f32 x0,
 	f32 y0,
 	u32 color0,
-	u32 u0,
-	u32 v0,
+	i32 u0,
+	i32 v0,
 	f32 x1,
 	f32 y1,
 	u32 color1,
-	u32 u1,
-	u32 v1,
+	i32 u1,
+	i32 v1,
 	f32 x2,
 	f32 y2,
 	u32 color2,
-	u32 u2,
-	u32 v2) {
+	i32 u2,
+	i32 v2) {
 	size_t offset = vertexFloatCount;
 	offset = writeTexturedVertex(offset, x0, y0, color0, u0, v0);
 	offset = writeTexturedVertex(offset, x1, y1, color1, u1, v1);
@@ -637,10 +637,13 @@ size_t appendTexturedRectangle(const GxGpuCommandBuffer& commandBuffer, u32 comm
 	const f32 y0 = static_cast<f32>(gxGpuDrawingOffsetY(drawingOffsetWord) + gxGpuVertexY(xyWord));
 	const f32 x1 = x0 + static_cast<f32>(width);
 	const f32 y1 = y0 + static_cast<f32>(height);
-	const u32 u0 = gxGpuTextureU(textureWord);
-	const u32 v0 = gxGpuTextureV(textureWord);
-	const u32 u1 = u0 + width;
-	const u32 v1 = v0 + height;
+	const u32 drawModeWord = commandBuffer.commandDrawModeWord[commandIndex];
+	const bool xFlip = gxGpuDrawModeTextureRectangleXFlip(drawModeWord);
+	const bool yFlip = gxGpuDrawModeTextureRectangleYFlip(drawModeWord);
+	const i32 u0 = gxGpuTextureRectangleEdge0(gxGpuTextureU(textureWord), xFlip);
+	const i32 v0 = gxGpuTextureRectangleEdge0(gxGpuTextureV(textureWord), yFlip);
+	const i32 u1 = gxGpuTextureRectangleEdge1(u0, width, xFlip);
+	const i32 v1 = gxGpuTextureRectangleEdge1(v0, height, yFlip);
 	size_t offset = vertexFloatCount;
 	offset = appendTexturedTriangle(offset, x0, y0, colorWord, u0, v0, x1, y0, colorWord, u1, v0, x0, y1, colorWord, u0, v1);
 	offset = appendTexturedTriangle(offset, x0, y1, colorWord, u0, v1, x1, y0, colorWord, u1, v0, x1, y1, colorWord, u1, v1);

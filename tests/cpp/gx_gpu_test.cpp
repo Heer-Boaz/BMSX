@@ -62,6 +62,16 @@ void testGp0RawDrawWordDecoders() {
 	require(bmsx::gxGpuCommandSemiTransparencyEnabled(0x22u), "GX-GPU semi-transparency bit enabled");
 	require(!bmsx::gxGpuCommandSemiTransparencyEnabled(0x20u), "GX-GPU semi-transparency bit disabled");
 	require(bmsx::gxGpuDrawModeTexturePageYBit9(bmsx::GX_GPU_DRAW_MODE_TEXTURE_PAGE_Y_BIT9) == 512u, "GX-GPU texpage Y.bit9 decode");
+	require(bmsx::gxGpuDrawModeTextureRectangleXFlip(bmsx::GX_GPU_DRAW_MODE_TEXTURE_RECTANGLE_X_FLIP), "GX-GPU textured rectangle X flip bit enabled");
+	require(!bmsx::gxGpuDrawModeTextureRectangleXFlip(bmsx::GX_GPU_DRAW_MODE_TEXTURE_RECTANGLE_Y_FLIP), "GX-GPU textured rectangle X flip bit disabled");
+	require(bmsx::gxGpuDrawModeTextureRectangleYFlip(bmsx::GX_GPU_DRAW_MODE_TEXTURE_RECTANGLE_Y_FLIP), "GX-GPU textured rectangle Y flip bit enabled");
+	require(!bmsx::gxGpuDrawModeTextureRectangleYFlip(bmsx::GX_GPU_DRAW_MODE_TEXTURE_RECTANGLE_X_FLIP), "GX-GPU textured rectangle Y flip bit disabled");
+	require(bmsx::gxGpuTextureRectangleEdge0(7u, false) == 7, "GX-GPU textured rectangle unflipped edge0");
+	require(bmsx::gxGpuTextureRectangleEdge1(7, 16u, false) == 23, "GX-GPU textured rectangle unflipped edge1");
+	require(bmsx::gxGpuTextureRectangleEdge0(7u, true) == 8, "GX-GPU textured rectangle flipped edge0");
+	require(bmsx::gxGpuTextureRectangleEdge1(8, 16u, true) == -8, "GX-GPU textured rectangle flipped edge1");
+	require(bmsx::gxGpuTextureRectangleEdge0(0u, true) == 1, "GX-GPU textured rectangle zero flipped edge0");
+	require(bmsx::gxGpuTextureRectangleEdge1(1, 16u, true) == -15, "GX-GPU textured rectangle zero flipped edge1");
 	require(bmsx::gxGpuTextureU(0x01c3ab56u) == 0x56u, "GX-GPU texture U decode");
 	require(bmsx::gxGpuTextureV(0x01c3ab56u) == 0xabu, "GX-GPU texture V decode");
 	require(bmsx::gxGpuTextureAttribute(0x01c3ab56u) == 0x01c3u, "GX-GPU texture attribute decode");
@@ -210,6 +220,8 @@ void testGp0DrawModeAndMaskBitEnvironmentCommands() {
 	require(gpu.readDrawModeWord() == bmsx::GX_GPU_DRAW_MODE_MASK, "GX-GPU GP0 draw-mode word mask");
 	require((gpu.readStatus() & bmsx::GX_GPU_DRAW_MODE_GPUSTAT_MASK) == bmsx::GX_GPU_DRAW_MODE_GPUSTAT_MASK, "GX-GPU GP0 draw-mode GPUSTAT bits");
 	require((gpu.readStatus() & bmsx::GX_GPU_STATUS_TEXTURE_PAGE_Y_BIT9) == bmsx::GX_GPU_STATUS_TEXTURE_PAGE_Y_BIT9, "GX-GPU GP0 texpage Y.bit9 mirrors to GPUSTAT");
+	require((gpu.readDrawModeWord() & bmsx::GX_GPU_DRAW_MODE_TEXTURE_RECTANGLE_X_FLIP) == bmsx::GX_GPU_DRAW_MODE_TEXTURE_RECTANGLE_X_FLIP, "GX-GPU GP0 textured rectangle X flip source bit");
+	require((gpu.readDrawModeWord() & bmsx::GX_GPU_DRAW_MODE_TEXTURE_RECTANGLE_Y_FLIP) == bmsx::GX_GPU_DRAW_MODE_TEXTURE_RECTANGLE_Y_FLIP, "GX-GPU GP0 textured rectangle Y flip source bit");
 
 	gpu.writeGp1((bmsx::GX_GPU_GP1_SET_VRAM_SIZE << 24u) | 1u);
 	require(gpu.readVramSizeWord() == 1u, "GX-GPU GP1 VRAM size raw word");

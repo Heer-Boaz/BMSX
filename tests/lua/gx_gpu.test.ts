@@ -18,6 +18,8 @@ import {
 	gxGpuDisplayStartX,
 	gxGpuDisplayStartY,
 	gxGpuDrawModeTexturePageYBit9,
+	gxGpuDrawModeTextureRectangleXFlip,
+	gxGpuDrawModeTextureRectangleYFlip,
 	gxGpuDrawingAreaBottomExclusive,
 	gxGpuDrawingAreaLeft,
 	gxGpuDrawingAreaRightExclusive,
@@ -37,6 +39,8 @@ import {
 	gxGpuTextureAttribute,
 	gxGpuTextureClutBaseX,
 	gxGpuTextureClutBaseY,
+	gxGpuTextureRectangleEdge0,
+	gxGpuTextureRectangleEdge1,
 	gxGpuTextureU,
 	gxGpuTextureV,
 	gxGpuTextureWindowAndX,
@@ -60,6 +64,8 @@ import {
 	GX_GPU_DRAW_MODE_GPUSTAT_MASK,
 	GX_GPU_DRAW_MODE_MASK,
 	GX_GPU_DRAW_MODE_TEXTURE_PAGE_Y_BIT9,
+	GX_GPU_DRAW_MODE_TEXTURE_RECTANGLE_X_FLIP,
+	GX_GPU_DRAW_MODE_TEXTURE_RECTANGLE_Y_FLIP,
 	GX_GPU_GP0_CPU_TO_VRAM_FIRST,
 	GX_GPU_GP0_FILL_RECTANGLE,
 	GX_GPU_GP0_IRQ_REQUEST,
@@ -149,6 +155,16 @@ test('GX-GPU decodes PSX GP0 signed vertex and rectangle size words', () => {
 	assert.equal(gxGpuCommandSemiTransparencyEnabled(0x22), true);
 	assert.equal(gxGpuCommandSemiTransparencyEnabled(0x20), false);
 	assert.equal(gxGpuDrawModeTexturePageYBit9(GX_GPU_DRAW_MODE_TEXTURE_PAGE_Y_BIT9), 512);
+	assert.equal(gxGpuDrawModeTextureRectangleXFlip(GX_GPU_DRAW_MODE_TEXTURE_RECTANGLE_X_FLIP), true);
+	assert.equal(gxGpuDrawModeTextureRectangleXFlip(GX_GPU_DRAW_MODE_TEXTURE_RECTANGLE_Y_FLIP), false);
+	assert.equal(gxGpuDrawModeTextureRectangleYFlip(GX_GPU_DRAW_MODE_TEXTURE_RECTANGLE_Y_FLIP), true);
+	assert.equal(gxGpuDrawModeTextureRectangleYFlip(GX_GPU_DRAW_MODE_TEXTURE_RECTANGLE_X_FLIP), false);
+	assert.equal(gxGpuTextureRectangleEdge0(7, false), 7);
+	assert.equal(gxGpuTextureRectangleEdge1(7, 16, false), 23);
+	assert.equal(gxGpuTextureRectangleEdge0(7, true), 8);
+	assert.equal(gxGpuTextureRectangleEdge1(8, 16, true), -8);
+	assert.equal(gxGpuTextureRectangleEdge0(0, true), 1);
+	assert.equal(gxGpuTextureRectangleEdge1(1, 16, true), -15);
 	assert.equal(gxGpuTextureU(0x01c3ab56), 0x56);
 	assert.equal(gxGpuTextureV(0x01c3ab56), 0xab);
 	assert.equal(gxGpuTextureAttribute(0x01c3ab56), 0x01c3);
@@ -300,6 +316,8 @@ test('GX-GPU handles PSX GP0 draw mode and mask-bit environment commands', () =>
 	assert.equal(gpu.readDrawModeWord(), GX_GPU_DRAW_MODE_MASK);
 	assert.equal((gpu.readStatus() & GX_GPU_DRAW_MODE_GPUSTAT_MASK) >>> 0, GX_GPU_DRAW_MODE_GPUSTAT_MASK);
 	assert.equal((gpu.readStatus() & GX_GPU_STATUS_TEXTURE_PAGE_Y_BIT9) >>> 0, GX_GPU_STATUS_TEXTURE_PAGE_Y_BIT9);
+	assert.equal((gpu.readDrawModeWord() & GX_GPU_DRAW_MODE_TEXTURE_RECTANGLE_X_FLIP) >>> 0, GX_GPU_DRAW_MODE_TEXTURE_RECTANGLE_X_FLIP);
+	assert.equal((gpu.readDrawModeWord() & GX_GPU_DRAW_MODE_TEXTURE_RECTANGLE_Y_FLIP) >>> 0, GX_GPU_DRAW_MODE_TEXTURE_RECTANGLE_Y_FLIP);
 
 	gpu.writeGp1((GX_GPU_GP1_SET_VRAM_SIZE << 24) | 1);
 	assert.equal(gpu.readVramSizeWord(), 1);

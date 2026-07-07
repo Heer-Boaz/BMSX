@@ -27,12 +27,16 @@ import {
 	gxGpuDrawModeTransparencyMode,
 	gxGpuDrawModeTexturePageBaseX,
 	gxGpuDrawModeTexturePageBaseY,
+	gxGpuDrawModeTextureRectangleXFlip,
+	gxGpuDrawModeTextureRectangleYFlip,
 	gxGpuDrawingOffsetX,
 	gxGpuDrawingOffsetY,
 	gxGpuMaskBitCheckBeforeDraw,
 	gxGpuMaskBitSetWhileDrawing,
 	gxGpuTextureClutBaseX,
 	gxGpuTextureClutBaseY,
+	gxGpuTextureRectangleEdge0,
+	gxGpuTextureRectangleEdge1,
 	gxGpuTextureU,
 	gxGpuTextureV,
 	gxGpuTextureWindowAndX,
@@ -693,10 +697,13 @@ function appendTexturedRectangle(commandBuffer: GxGpuCommandBufferView, commandI
 	const y0 = gxGpuDrawingOffsetY(drawingOffsetWord) + gxGpuVertexY(xyWord);
 	const x1 = x0 + width;
 	const y1 = y0 + height;
-	const u0 = gxGpuTextureU(textureWord);
-	const v0 = gxGpuTextureV(textureWord);
-	const u1 = u0 + width;
-	const v1 = v0 + height;
+	const drawModeWord = commandBuffer.commandDrawModeWord[commandIndex];
+	const xFlip = gxGpuDrawModeTextureRectangleXFlip(drawModeWord);
+	const yFlip = gxGpuDrawModeTextureRectangleYFlip(drawModeWord);
+	const u0 = gxGpuTextureRectangleEdge0(gxGpuTextureU(textureWord), xFlip);
+	const v0 = gxGpuTextureRectangleEdge0(gxGpuTextureV(textureWord), yFlip);
+	const u1 = gxGpuTextureRectangleEdge1(u0, width, xFlip);
+	const v1 = gxGpuTextureRectangleEdge1(v0, height, yFlip);
 	let offset = vertexFloatCount;
 	offset = appendTexturedTriangle(offset, x0, y0, colorWord, u0, v0, x1, y0, colorWord, u1, v0, x0, y1, colorWord, u0, v1);
 	offset = appendTexturedTriangle(offset, x0, y1, colorWord, u0, v1, x1, y0, colorWord, u1, v0, x1, y1, colorWord, u1, v1);

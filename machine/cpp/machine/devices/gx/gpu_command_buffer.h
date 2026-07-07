@@ -13,6 +13,8 @@ constexpr u32 GX_GPU_VRAM_WIDTH = 1024u;
 constexpr u32 GX_GPU_VRAM_HEIGHT = 512u;
 constexpr u32 GX_GPU_DRAW_MODE_POLYGON_TEXPAGE_MASK = 0x09ffu;
 constexpr u32 GX_GPU_DRAW_MODE_TEXTURE_PAGE_Y_BIT9 = 1u << 11u;
+constexpr u32 GX_GPU_DRAW_MODE_TEXTURE_RECTANGLE_X_FLIP = 1u << 12u;
+constexpr u32 GX_GPU_DRAW_MODE_TEXTURE_RECTANGLE_Y_FLIP = 1u << 13u;
 constexpr u32 GX_GPU_TEXTURE_MODE_PALETTE4 = 0u;
 constexpr u32 GX_GPU_TEXTURE_MODE_PALETTE8 = 1u;
 constexpr u32 GX_GPU_TEXTURE_MODE_DIRECT16 = 2u;
@@ -73,6 +75,22 @@ inline bool gxGpuCommandTextureEnabled(u32 opcode) {
 
 inline u32 gxGpuDrawModeTexturePageYBit9(u32 drawModeWord) {
 	return (drawModeWord & GX_GPU_DRAW_MODE_TEXTURE_PAGE_Y_BIT9) >> 2u;
+}
+
+inline bool gxGpuDrawModeTextureRectangleXFlip(u32 drawModeWord) {
+	return (drawModeWord & GX_GPU_DRAW_MODE_TEXTURE_RECTANGLE_X_FLIP) != 0u;
+}
+
+inline bool gxGpuDrawModeTextureRectangleYFlip(u32 drawModeWord) {
+	return (drawModeWord & GX_GPU_DRAW_MODE_TEXTURE_RECTANGLE_Y_FLIP) != 0u;
+}
+
+inline i32 gxGpuTextureRectangleEdge0(u32 textureCoord, bool flip) {
+	return static_cast<i32>(textureCoord) + (flip ? 1 : 0);
+}
+
+inline i32 gxGpuTextureRectangleEdge1(i32 textureEdge0, u32 size, bool flip) {
+	return textureEdge0 + (flip ? -static_cast<i32>(size) : static_cast<i32>(size));
 }
 
 inline bool gxGpuCommandQuadPolygon(u32 opcode) {

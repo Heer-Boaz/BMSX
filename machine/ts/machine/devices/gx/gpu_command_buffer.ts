@@ -4,6 +4,8 @@ export const GX_GPU_VRAM_WIDTH = 1024;
 export const GX_GPU_VRAM_HEIGHT = 512;
 export const GX_GPU_DRAW_MODE_POLYGON_TEXPAGE_MASK = 0x09ff;
 export const GX_GPU_DRAW_MODE_TEXTURE_PAGE_Y_BIT9 = 1 << 11;
+export const GX_GPU_DRAW_MODE_TEXTURE_RECTANGLE_X_FLIP = 1 << 12;
+export const GX_GPU_DRAW_MODE_TEXTURE_RECTANGLE_Y_FLIP = 1 << 13;
 export const GX_GPU_TEXTURE_MODE_PALETTE4 = 0;
 export const GX_GPU_TEXTURE_MODE_PALETTE8 = 1;
 export const GX_GPU_TEXTURE_MODE_DIRECT16 = 2;
@@ -64,6 +66,22 @@ export function gxGpuCommandTextureEnabled(opcode: number): boolean {
 
 export function gxGpuDrawModeTexturePageYBit9(drawModeWord: number): number {
 	return (drawModeWord & GX_GPU_DRAW_MODE_TEXTURE_PAGE_Y_BIT9) >>> 2;
+}
+
+export function gxGpuDrawModeTextureRectangleXFlip(drawModeWord: number): boolean {
+	return (drawModeWord & GX_GPU_DRAW_MODE_TEXTURE_RECTANGLE_X_FLIP) !== 0;
+}
+
+export function gxGpuDrawModeTextureRectangleYFlip(drawModeWord: number): boolean {
+	return (drawModeWord & GX_GPU_DRAW_MODE_TEXTURE_RECTANGLE_Y_FLIP) !== 0;
+}
+
+export function gxGpuTextureRectangleEdge0(textureCoord: number, flip: boolean): number {
+	return textureCoord + (flip ? 1 : 0);
+}
+
+export function gxGpuTextureRectangleEdge1(textureEdge0: number, size: number, flip: boolean): number {
+	return textureEdge0 + (flip ? -size : size);
 }
 
 export function gxGpuCommandQuadPolygon(opcode: number): boolean {

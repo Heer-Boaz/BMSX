@@ -21,7 +21,11 @@ import {
 	gxGpuTransferWidth,
 } from './gpu_command_buffer';
 
-export { GX_GPU_DRAW_MODE_TEXTURE_PAGE_Y_BIT9 } from './gpu_command_buffer';
+export {
+	GX_GPU_DRAW_MODE_TEXTURE_PAGE_Y_BIT9,
+	GX_GPU_DRAW_MODE_TEXTURE_RECTANGLE_X_FLIP,
+	GX_GPU_DRAW_MODE_TEXTURE_RECTANGLE_Y_FLIP,
+} from './gpu_command_buffer';
 
 export const GX_GPU_GP1_RESET = 0x00;
 export const GX_GPU_GP1_CLEAR_FIFO = 0x01;
@@ -71,7 +75,7 @@ export const GX_GPU_VRAM_HEIGHT_MASK = 0x1ff;
 export const GX_GPU_DISPLAY_START_MASK = 0x0007ffff;
 export const GX_GPU_HORIZONTAL_DISPLAY_RANGE_MASK = 0x00ffffff;
 export const GX_GPU_VERTICAL_DISPLAY_RANGE_MASK = 0x000fffff;
-export const GX_GPU_DRAW_MODE_MASK = 0x00001fff;
+export const GX_GPU_DRAW_MODE_MASK = 0x00003fff;
 export const GX_GPU_DRAW_MODE_GPUSTAT_MASK = 0x000007ff;
 export const GX_GPU_TEXTURE_WINDOW_MASK = 0x000fffff;
 export const GX_GPU_DRAWING_AREA_MASK = 0x000fffff;
