@@ -151,6 +151,10 @@ type GxGpuWebGLState = {
 	scanoutPositionAttrib: number;
 	scanoutTexcoordAttrib: number;
 	scanoutVramUniform: WebGLUniformLocation;
+	scanoutDisplayModeUniform: WebGLUniformLocation;
+	scanoutDisplayStartUniform: WebGLUniformLocation;
+	scanoutUniformDisplayModeWord: number;
+	scanoutUniformDisplayStartWord: number;
 	scanoutDisplayStartWord: number;
 	processedCommandCount: number;
 	processedCommandSerial: number;
@@ -274,6 +278,10 @@ function bootstrapGxGpuPass(backend: WebGLBackend): void {
 		scanoutPositionAttrib: gl.getAttribLocation(scanoutProgram, 'a_position'),
 		scanoutTexcoordAttrib: gl.getAttribLocation(scanoutProgram, 'a_texcoord'),
 		scanoutVramUniform: gl.getUniformLocation(scanoutProgram, 'u_vram') as WebGLUniformLocation,
+		scanoutDisplayModeUniform: gl.getUniformLocation(scanoutProgram, 'u_displayModeWord') as WebGLUniformLocation,
+		scanoutDisplayStartUniform: gl.getUniformLocation(scanoutProgram, 'u_displayStart') as WebGLUniformLocation,
+		scanoutUniformDisplayModeWord: 0xffffffff,
+		scanoutUniformDisplayStartWord: 0xffffffff,
 		scanoutDisplayStartWord: 0,
 		processedCommandCount: 0,
 		processedCommandSerial: 0,
@@ -1355,6 +1363,18 @@ function scanoutGxGpuVram(backend: WebGLBackend, gl: WebGL2RenderingContext, fbo
 	backend.setBlendEnabled(false);
 	backend.useProgram(gxGpuWebGLState.scanoutProgram);
 	gl.uniform1i(gxGpuWebGLState.scanoutVramUniform, GX_GPU_SCANOUT_TEXTURE_UNIT);
+	if (gxGpuWebGLState.scanoutUniformDisplayModeWord !== state.displayModeWord) {
+		gl.uniform1f(gxGpuWebGLState.scanoutDisplayModeUniform, state.displayModeWord);
+		gxGpuWebGLState.scanoutUniformDisplayModeWord = state.displayModeWord;
+	}
+	if (gxGpuWebGLState.scanoutUniformDisplayStartWord !== state.displayStartWord) {
+		gl.uniform2f(
+			gxGpuWebGLState.scanoutDisplayStartUniform,
+			gxGpuDisplayStartX(state.displayStartWord),
+			gxGpuDisplayStartY(state.displayStartWord),
+		);
+		gxGpuWebGLState.scanoutUniformDisplayStartWord = state.displayStartWord;
+	}
 	backend.setActiveTexture(GX_GPU_SCANOUT_TEXTURE_UNIT);
 	backend.bindTexture2D(gxGpuWebGLState.vramTexture);
 	backend.bindVertexArray(null);

@@ -111,6 +111,10 @@ struct GxGpuGLES2Runtime {
 	GLint scanoutPositionAttrib = -1;
 	GLint scanoutTexcoordAttrib = -1;
 	GLint scanoutVramUniform = -1;
+	GLint scanoutDisplayModeUniform = -1;
+	GLint scanoutDisplayStartUniform = -1;
+	u32 scanoutUniformDisplayModeWord = 0xffffffffu;
+	u32 scanoutUniformDisplayStartWord = 0xffffffffu;
 	u32 scanoutDisplayStartWord = 0u;
 	u32 processedCommandCount = 0;
 	u32 processedCommandSerial = 0;
@@ -228,6 +232,10 @@ void initGxGpuGLES2(OpenGLES2Backend& backend) {
 	g_gxGpu.scanoutPositionAttrib = glGetAttribLocation(g_gxGpu.scanoutProgram, "a_position");
 	g_gxGpu.scanoutTexcoordAttrib = glGetAttribLocation(g_gxGpu.scanoutProgram, "a_texcoord");
 	g_gxGpu.scanoutVramUniform = glGetUniformLocation(g_gxGpu.scanoutProgram, "u_vram");
+	g_gxGpu.scanoutDisplayModeUniform = glGetUniformLocation(g_gxGpu.scanoutProgram, "u_displayModeWord");
+	g_gxGpu.scanoutDisplayStartUniform = glGetUniformLocation(g_gxGpu.scanoutProgram, "u_displayStart");
+	g_gxGpu.scanoutUniformDisplayModeWord = 0xffffffffu;
+	g_gxGpu.scanoutUniformDisplayStartWord = 0xffffffffu;
 	g_gxGpu.scanoutDisplayStartWord = 0u;
 	glBindFramebuffer(GL_FRAMEBUFFER, 0);
 }
@@ -1325,6 +1333,17 @@ void scanoutGxGpuVram(OpenGLES2Backend& backend, GLuint frameFbo, const GxGpuPip
 	glDisable(GL_BLEND);
 	glUseProgram(g_gxGpu.scanoutProgram);
 	glUniform1i(g_gxGpu.scanoutVramUniform, kGxGpuScanoutTextureUnit);
+	if (g_gxGpu.scanoutUniformDisplayModeWord != state.displayModeWord) {
+		glUniform1f(g_gxGpu.scanoutDisplayModeUniform, static_cast<f32>(state.displayModeWord));
+		g_gxGpu.scanoutUniformDisplayModeWord = state.displayModeWord;
+	}
+	if (g_gxGpu.scanoutUniformDisplayStartWord != state.displayStartWord) {
+		glUniform2f(
+			g_gxGpu.scanoutDisplayStartUniform,
+			static_cast<f32>(gxGpuDisplayStartX(state.displayStartWord)),
+			static_cast<f32>(gxGpuDisplayStartY(state.displayStartWord)));
+		g_gxGpu.scanoutUniformDisplayStartWord = state.displayStartWord;
+	}
 	backend.setActiveTextureUnit(kGxGpuScanoutTextureUnit);
 	backend.bindTexture2D(&g_gxGpu.vramTexture);
 	glBindBuffer(GL_ARRAY_BUFFER, g_gxGpu.scanoutVertexBuffer);
