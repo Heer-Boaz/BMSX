@@ -4,6 +4,8 @@ namespace bmsx {
 
 inline constexpr const char* kGxGpuFillVertexShader = R"(@BMSX_GX_GPU_FILL_VERTEX_SHADER@)";
 inline constexpr const char* kGxGpuFillFragmentShader = R"(@BMSX_GX_GPU_FILL_FRAGMENT_SHADER@)";
+inline constexpr const char* kGxGpuLineVertexShader = R"(@BMSX_GX_GPU_LINE_VERTEX_SHADER@)";
+inline constexpr const char* kGxGpuLineFragmentShader = R"(@BMSX_GX_GPU_LINE_FRAGMENT_SHADER@)";
 inline constexpr const char* kGxGpuTexturedVertexShader = R"(@BMSX_GX_GPU_TEXTURED_VERTEX_SHADER@)";
 inline constexpr const char* kGxGpuTexturedFragmentShader = R"(@BMSX_GX_GPU_TEXTURED_FRAGMENT_SHADER@)";
 inline constexpr const char* kGxGpuTransferVertexShader = R"(@BMSX_GX_GPU_TRANSFER_VERTEX_SHADER@)";

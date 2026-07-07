@@ -1,7 +1,9 @@
 import {
 	GX_GPU_COMMAND_CAPACITY,
 	GX_GPU_COMMAND_COPY_VRAM_TO_VRAM,
+	GX_GPU_COMMAND_DRAW_LINE,
 	GX_GPU_COMMAND_DRAW_POLYGON,
+	GX_GPU_COMMAND_DRAW_POLYLINE,
 	GX_GPU_COMMAND_DRAW_RECTANGLE,
 	GX_GPU_COMMAND_FILL_RECTANGLE,
 	GX_GPU_COMMAND_UPLOAD_CPU_TO_VRAM,
@@ -48,6 +50,8 @@ import type { RenderGraphPassContext, RenderPassStateRegistry } from '../backend
 import type { WebGLBackend } from './backend';
 import solidVertexShader from './shaders/gx_gpu_fill.vert.glsl';
 import solidFragmentShader from './shaders/gx_gpu_fill.frag.glsl';
+import lineVertexShader from './shaders/gx_gpu_line.vert.glsl';
+import lineFragmentShader from './shaders/gx_gpu_line.frag.glsl';
 import texturedVertexShader from './shaders/gx_gpu_textured.vert.glsl';
 import texturedFragmentShader from './shaders/gx_gpu_textured.frag.glsl';
 import transferVertexShader from './shaders/gx_gpu_transfer.vert.glsl';
@@ -63,6 +67,11 @@ const GX_GPU_TEXTURE_TRANSFER_UNIT = 2;
 const GX_GPU_SOLID_VERTEX_FLOATS = 6;
 const GX_GPU_SOLID_VERTICES_PER_COMMAND = 6;
 const GX_GPU_SOLID_FLOAT_CAPACITY = GX_GPU_COMMAND_CAPACITY * GX_GPU_SOLID_VERTICES_PER_COMMAND * GX_GPU_SOLID_VERTEX_FLOATS;
+const GX_GPU_LINE_VERTEX_FLOATS = 12;
+const GX_GPU_LINE_VERTICES_PER_SEGMENT = 6;
+const GX_GPU_LINE_SEGMENT_FLOATS = GX_GPU_LINE_VERTICES_PER_SEGMENT * GX_GPU_LINE_VERTEX_FLOATS;
+const GX_GPU_LINE_SEGMENT_CAPACITY = 1024;
+const GX_GPU_LINE_FLOAT_CAPACITY = GX_GPU_LINE_SEGMENT_CAPACITY * GX_GPU_LINE_SEGMENT_FLOATS;
 const GX_GPU_TEXTURED_VERTEX_FLOATS = 7;
 const GX_GPU_TEXTURED_VERTICES_PER_COMMAND = 6;
 const GX_GPU_TEXTURED_FLOAT_CAPACITY = GX_GPU_TEXTURED_VERTICES_PER_COMMAND * GX_GPU_TEXTURED_VERTEX_FLOATS;
@@ -77,6 +86,7 @@ const GX_GPU_FULL_DRAWING_AREA_TOP_LEFT_WORD = 0;
 const GX_GPU_FULL_DRAWING_AREA_BOTTOM_RIGHT_WORD = (GX_GPU_VRAM_WIDTH - 1) | ((GX_GPU_VRAM_HEIGHT - 1) << 10);
 
 const gxGpuSolidVertices = new Float32Array(GX_GPU_SOLID_FLOAT_CAPACITY);
+const gxGpuLineVertices = new Float32Array(GX_GPU_LINE_FLOAT_CAPACITY);
 const gxGpuTexturedVertices = new Float32Array(GX_GPU_TEXTURED_FLOAT_CAPACITY);
 const gxGpuTransferVertices = new Float32Array(GX_GPU_TRANSFER_FLOAT_CAPACITY);
 const gxGpuRawVramUploadRow = new Uint8Array(GX_GPU_RAW_VRAM_UPLOAD_ROW_BYTES);
@@ -91,6 +101,7 @@ const gxGpuScanoutVertices = new Float32Array([
 
 type GxGpuWebGLState = {
 	solidProgram: WebGLProgram;
+	lineProgram: WebGLProgram;
 	texturedProgram: WebGLProgram;
 	transferProgram: WebGLProgram;
 	scanoutProgram: WebGLProgram;
@@ -99,6 +110,7 @@ type GxGpuWebGLState = {
 	vramTransferTexture: WebGLTexture;
 	vramFramebuffer: WebGLFramebuffer;
 	solidVertexBuffer: WebGLBuffer;
+	lineVertexBuffer: WebGLBuffer;
 	texturedVertexBuffer: WebGLBuffer;
 	transferVertexBuffer: WebGLBuffer;
 	scanoutVertexBuffer: WebGLBuffer;
@@ -109,6 +121,16 @@ type GxGpuWebGLState = {
 	solidBlendModeUniform: WebGLUniformLocation;
 	solidCheckMaskBitUniform: WebGLUniformLocation;
 	solidSetMaskBitUniform: WebGLUniformLocation;
+	linePositionAttrib: number;
+	lineStartAttrib: number;
+	lineEndAttrib: number;
+	lineColor0Attrib: number;
+	lineColor1Attrib: number;
+	lineVramUniform: WebGLUniformLocation;
+	lineBlendEnableUniform: WebGLUniformLocation;
+	lineBlendModeUniform: WebGLUniformLocation;
+	lineCheckMaskBitUniform: WebGLUniformLocation;
+	lineSetMaskBitUniform: WebGLUniformLocation;
 	texturedPositionAttrib: number;
 	texturedColorAttrib: number;
 	texturedTexcoordAttrib: number;
@@ -141,6 +163,7 @@ let gxGpuWebGLState: GxGpuWebGLState;
 function bootstrapGxGpuPass(backend: WebGLBackend): void {
 	const gl = backend.gl;
 	const solidProgram = backend.buildProgram(solidVertexShader, solidFragmentShader, 'gx_gpu_fill');
+	const lineProgram = backend.buildProgram(lineVertexShader, lineFragmentShader, 'gx_gpu_line');
 	const texturedProgram = backend.buildProgram(texturedVertexShader, texturedFragmentShader, 'gx_gpu_textured');
 	const transferProgram = backend.buildProgram(transferVertexShader, transferFragmentShader, 'gx_gpu_transfer');
 	const scanoutProgram = backend.buildProgram(scanoutVertexShader, scanoutFragmentShader, 'gx_gpu_scanout');
@@ -181,6 +204,10 @@ function bootstrapGxGpuPass(backend: WebGLBackend): void {
 	backend.bindArrayBuffer(solidVertexBuffer);
 	gl.bufferData(gl.ARRAY_BUFFER, gxGpuSolidVertices.byteLength, gl.DYNAMIC_DRAW);
 
+	const lineVertexBuffer = gl.createBuffer() as WebGLBuffer;
+	backend.bindArrayBuffer(lineVertexBuffer);
+	gl.bufferData(gl.ARRAY_BUFFER, gxGpuLineVertices.byteLength, gl.DYNAMIC_DRAW);
+
 	const texturedVertexBuffer = gl.createBuffer() as WebGLBuffer;
 	backend.bindArrayBuffer(texturedVertexBuffer);
 	gl.bufferData(gl.ARRAY_BUFFER, gxGpuTexturedVertices.byteLength, gl.DYNAMIC_DRAW);
@@ -195,6 +222,7 @@ function bootstrapGxGpuPass(backend: WebGLBackend): void {
 
 	gxGpuWebGLState = {
 		solidProgram,
+		lineProgram,
 		texturedProgram,
 		transferProgram,
 		scanoutProgram,
@@ -203,6 +231,7 @@ function bootstrapGxGpuPass(backend: WebGLBackend): void {
 		vramTransferTexture,
 		vramFramebuffer,
 		solidVertexBuffer,
+		lineVertexBuffer,
 		texturedVertexBuffer,
 		transferVertexBuffer,
 		scanoutVertexBuffer,
@@ -213,6 +242,16 @@ function bootstrapGxGpuPass(backend: WebGLBackend): void {
 		solidBlendModeUniform: gl.getUniformLocation(solidProgram, 'u_blendMode') as WebGLUniformLocation,
 		solidCheckMaskBitUniform: gl.getUniformLocation(solidProgram, 'u_checkMaskBit') as WebGLUniformLocation,
 		solidSetMaskBitUniform: gl.getUniformLocation(solidProgram, 'u_setMaskBit') as WebGLUniformLocation,
+		linePositionAttrib: gl.getAttribLocation(lineProgram, 'a_position'),
+		lineStartAttrib: gl.getAttribLocation(lineProgram, 'a_lineStart'),
+		lineEndAttrib: gl.getAttribLocation(lineProgram, 'a_lineEnd'),
+		lineColor0Attrib: gl.getAttribLocation(lineProgram, 'a_color0'),
+		lineColor1Attrib: gl.getAttribLocation(lineProgram, 'a_color1'),
+		lineVramUniform: gl.getUniformLocation(lineProgram, 'u_vram') as WebGLUniformLocation,
+		lineBlendEnableUniform: gl.getUniformLocation(lineProgram, 'u_blendEnable') as WebGLUniformLocation,
+		lineBlendModeUniform: gl.getUniformLocation(lineProgram, 'u_blendMode') as WebGLUniformLocation,
+		lineCheckMaskBitUniform: gl.getUniformLocation(lineProgram, 'u_checkMaskBit') as WebGLUniformLocation,
+		lineSetMaskBitUniform: gl.getUniformLocation(lineProgram, 'u_setMaskBit') as WebGLUniformLocation,
 		texturedPositionAttrib: gl.getAttribLocation(texturedProgram, 'a_position'),
 		texturedColorAttrib: gl.getAttribLocation(texturedProgram, 'a_color'),
 		texturedTexcoordAttrib: gl.getAttribLocation(texturedProgram, 'a_texcoord'),
@@ -430,6 +469,54 @@ function appendSolidRectangle(commandBuffer: GxGpuCommandBufferView, commandInde
 	const x1 = x0 + width;
 	const y1 = y0 + height;
 	return appendSolidQuad(vertexFloatCount, x0, y0, colorWord, x0, y1, colorWord, x1, y0, colorWord, x1, y1, colorWord);
+}
+
+function writeLineVertex(
+	offset: number,
+	x: number,
+	y: number,
+	x0: number,
+	y0: number,
+	x1: number,
+	y1: number,
+	color0: number,
+	color1: number,
+): number {
+	gxGpuLineVertices[offset] = x;
+	gxGpuLineVertices[offset + 1] = y;
+	gxGpuLineVertices[offset + 2] = x0;
+	gxGpuLineVertices[offset + 3] = y0;
+	gxGpuLineVertices[offset + 4] = x1;
+	gxGpuLineVertices[offset + 5] = y1;
+	gxGpuLineVertices[offset + 6] = (color0 & 0xff) / 255;
+	gxGpuLineVertices[offset + 7] = ((color0 >>> 8) & 0xff) / 255;
+	gxGpuLineVertices[offset + 8] = ((color0 >>> 16) & 0xff) / 255;
+	gxGpuLineVertices[offset + 9] = (color1 & 0xff) / 255;
+	gxGpuLineVertices[offset + 10] = ((color1 >>> 8) & 0xff) / 255;
+	gxGpuLineVertices[offset + 11] = ((color1 >>> 16) & 0xff) / 255;
+	return offset + GX_GPU_LINE_VERTEX_FLOATS;
+}
+
+function appendLineSegment(vertexFloatCount: number, x0: number, y0: number, color0: number, x1: number, y1: number, color1: number): number {
+	const left = x0 < x1 ? x0 : x1;
+	const right = x0 > x1 ? x0 : x1;
+	const top = y0 < y1 ? y0 : y1;
+	const bottom = y0 > y1 ? y0 : y1;
+	const width = right - left + 1;
+	const height = bottom - top + 1;
+	if (width > GX_GPU_VRAM_WIDTH || height > GX_GPU_VRAM_HEIGHT) {
+		return vertexFloatCount;
+	}
+	const x2 = right + 1;
+	const y2 = bottom + 1;
+	let offset = vertexFloatCount;
+	offset = writeLineVertex(offset, left, top, x0, y0, x1, y1, color0, color1);
+	offset = writeLineVertex(offset, left, y2, x0, y0, x1, y1, color0, color1);
+	offset = writeLineVertex(offset, x2, top, x0, y0, x1, y1, color0, color1);
+	offset = writeLineVertex(offset, x2, top, x0, y0, x1, y1, color0, color1);
+	offset = writeLineVertex(offset, left, y2, x0, y0, x1, y1, color0, color1);
+	offset = writeLineVertex(offset, x2, y2, x0, y0, x1, y1, color0, color1);
+	return offset;
 }
 
 function writeTexturedVertex(offset: number, x: number, y: number, colorWord: number, u: number, v: number): number {
@@ -766,6 +853,14 @@ function writeSolidUniforms(gl: WebGL2RenderingContext, blendEnabled: boolean, b
 	gl.uniform1f(gxGpuWebGLState.solidSetMaskBitUniform, gxGpuMaskBitSetWhileDrawing(maskBitModeWord) ? 1 : 0);
 }
 
+function writeLineUniforms(gl: WebGL2RenderingContext, blendEnabled: boolean, blendMode: number, maskBitModeWord: number): void {
+	gl.uniform1i(gxGpuWebGLState.lineVramUniform, GX_GPU_TEXTURE_SAMPLE_UNIT);
+	gl.uniform1f(gxGpuWebGLState.lineBlendEnableUniform, blendEnabled ? 1 : 0);
+	gl.uniform1f(gxGpuWebGLState.lineBlendModeUniform, blendMode);
+	gl.uniform1f(gxGpuWebGLState.lineCheckMaskBitUniform, gxGpuMaskBitCheckBeforeDraw(maskBitModeWord) ? 1 : 0);
+	gl.uniform1f(gxGpuWebGLState.lineSetMaskBitUniform, gxGpuMaskBitSetWhileDrawing(maskBitModeWord) ? 1 : 0);
+}
+
 function writeTexturedUniforms(gl: WebGL2RenderingContext, commandBuffer: GxGpuCommandBufferView, commandIndex: number): void {
 	const opcode = commandBuffer.commandOpcode[commandIndex];
 	const drawModeWord = commandBuffer.commandDrawModeWord[commandIndex];
@@ -805,6 +900,187 @@ function flushSolidCommands(
 		renderNewSolidCommands(backend, gl, vertexFloatCount / GX_GPU_SOLID_VERTEX_FLOATS, topLeftWord, bottomRightWord, false, 0, maskBitModeWord);
 	}
 	return 0;
+}
+
+function renderNewLineCommands(
+	backend: WebGLBackend,
+	gl: WebGL2RenderingContext,
+	vertexFloatCount: number,
+	topLeftWord: number,
+	bottomRightWord: number,
+	blendEnabled: boolean,
+	blendMode: number,
+	maskBitModeWord: number,
+): void {
+	backend.bindArrayBuffer(gxGpuWebGLState.lineVertexBuffer);
+	gl.bufferSubData(gl.ARRAY_BUFFER, 0, gxGpuLineVertices, 0, vertexFloatCount);
+	gl.bindFramebuffer(gl.FRAMEBUFFER, gxGpuWebGLState.vramFramebuffer);
+	backend.setViewportRect(0, 0, GX_GPU_VRAM_WIDTH, GX_GPU_VRAM_HEIGHT);
+	backend.setDepthTestEnabled(false);
+	backend.setDepthMask(false);
+	backend.setCullEnabled(false);
+	backend.setBlendEnabled(false);
+	applyGxGpuDrawingAreaScissor(gl, topLeftWord, bottomRightWord);
+	backend.useProgram(gxGpuWebGLState.lineProgram);
+	writeLineUniforms(gl, blendEnabled, blendMode, maskBitModeWord);
+	backend.setActiveTexture(GX_GPU_TEXTURE_SAMPLE_UNIT);
+	backend.bindTexture2D(gxGpuWebGLState.vramSampleTexture);
+	backend.bindVertexArray(null);
+	backend.bindArrayBuffer(gxGpuWebGLState.lineVertexBuffer);
+	gl.enableVertexAttribArray(gxGpuWebGLState.linePositionAttrib);
+	gl.vertexAttribPointer(gxGpuWebGLState.linePositionAttrib, 2, gl.FLOAT, false, GX_GPU_LINE_VERTEX_FLOATS * 4, 0);
+	gl.enableVertexAttribArray(gxGpuWebGLState.lineStartAttrib);
+	gl.vertexAttribPointer(gxGpuWebGLState.lineStartAttrib, 2, gl.FLOAT, false, GX_GPU_LINE_VERTEX_FLOATS * 4, 2 * 4);
+	gl.enableVertexAttribArray(gxGpuWebGLState.lineEndAttrib);
+	gl.vertexAttribPointer(gxGpuWebGLState.lineEndAttrib, 2, gl.FLOAT, false, GX_GPU_LINE_VERTEX_FLOATS * 4, 4 * 4);
+	gl.enableVertexAttribArray(gxGpuWebGLState.lineColor0Attrib);
+	gl.vertexAttribPointer(gxGpuWebGLState.lineColor0Attrib, 3, gl.FLOAT, false, GX_GPU_LINE_VERTEX_FLOATS * 4, 6 * 4);
+	gl.enableVertexAttribArray(gxGpuWebGLState.lineColor1Attrib);
+	gl.vertexAttribPointer(gxGpuWebGLState.lineColor1Attrib, 3, gl.FLOAT, false, GX_GPU_LINE_VERTEX_FLOATS * 4, 9 * 4);
+	gl.drawArrays(gl.TRIANGLES, 0, vertexFloatCount / GX_GPU_LINE_VERTEX_FLOATS);
+	gl.disable(gl.SCISSOR_TEST);
+}
+
+function flushLineCommands(
+	backend: WebGLBackend,
+	gl: WebGL2RenderingContext,
+	vertexFloatCount: number,
+	topLeftWord: number,
+	bottomRightWord: number,
+	blendEnabled: boolean,
+	blendMode: number,
+	maskBitModeWord: number,
+): number {
+	if (vertexFloatCount !== 0) {
+		renderNewLineCommands(backend, gl, vertexFloatCount, topLeftWord, bottomRightWord, blendEnabled, blendMode, maskBitModeWord);
+	}
+	return 0;
+}
+
+function renderLineSegmentCommand(
+	backend: WebGLBackend,
+	gl: WebGL2RenderingContext,
+	topLeftWord: number,
+	bottomRightWord: number,
+	blendEnabled: boolean,
+	blendMode: number,
+	maskBitModeWord: number,
+	x0: number,
+	y0: number,
+	color0: number,
+	x1: number,
+	y1: number,
+	color1: number,
+): void {
+	const vertexFloatCount = appendLineSegment(0, x0, y0, color0, x1, y1, color1);
+	if (vertexFloatCount !== 0) {
+		copyGxGpuVramToSampleTexture(backend, gl);
+		renderNewLineCommands(backend, gl, vertexFloatCount, topLeftWord, bottomRightWord, blendEnabled, blendMode, maskBitModeWord);
+	}
+}
+
+function appendBatchedLineSegment(
+	backend: WebGLBackend,
+	gl: WebGL2RenderingContext,
+	vertexFloatCount: number,
+	topLeftWord: number,
+	bottomRightWord: number,
+	blendEnabled: boolean,
+	blendMode: number,
+	maskBitModeWord: number,
+	x0: number,
+	y0: number,
+	color0: number,
+	x1: number,
+	y1: number,
+	color1: number,
+): number {
+	let offset = vertexFloatCount;
+	if (offset + GX_GPU_LINE_SEGMENT_FLOATS > GX_GPU_LINE_FLOAT_CAPACITY) {
+		offset = flushLineCommands(backend, gl, offset, topLeftWord, bottomRightWord, blendEnabled, blendMode, maskBitModeWord);
+	}
+	return appendLineSegment(offset, x0, y0, color0, x1, y1, color1);
+}
+
+function emitLineSegment(
+	backend: WebGLBackend,
+	gl: WebGL2RenderingContext,
+	vertexFloatCount: number,
+	topLeftWord: number,
+	bottomRightWord: number,
+	blendEnabled: boolean,
+	blendMode: number,
+	maskBitModeWord: number,
+	readsVram: boolean,
+	x0: number,
+	y0: number,
+	color0: number,
+	x1: number,
+	y1: number,
+	color1: number,
+): number {
+	if (readsVram) {
+		renderLineSegmentCommand(backend, gl, topLeftWord, bottomRightWord, blendEnabled, blendMode, maskBitModeWord, x0, y0, color0, x1, y1, color1);
+		return vertexFloatCount;
+	}
+	return appendBatchedLineSegment(backend, gl, vertexFloatCount, topLeftWord, bottomRightWord, blendEnabled, blendMode, maskBitModeWord, x0, y0, color0, x1, y1, color1);
+}
+
+function renderLineCommand(
+	backend: WebGLBackend,
+	gl: WebGL2RenderingContext,
+	commandBuffer: GxGpuCommandBufferView,
+	commandIndex: number,
+	topLeftWord: number,
+	bottomRightWord: number,
+): void {
+	const opcode = commandBuffer.commandOpcode[commandIndex];
+	const wordStart = commandBuffer.commandWordStart[commandIndex];
+	const wordEnd = wordStart + commandBuffer.commandWordCount[commandIndex];
+	const drawingOffsetWord = commandBuffer.commandDrawingOffsetWord[commandIndex];
+	const dx = gxGpuDrawingOffsetX(drawingOffsetWord);
+	const dy = gxGpuDrawingOffsetY(drawingOffsetWord);
+	const blendEnabled = gxGpuCommandSemiTransparencyEnabled(opcode);
+	const blendMode = gxGpuDrawModeTransparencyMode(commandBuffer.commandDrawModeWord[commandIndex]);
+	const maskBitModeWord = commandBuffer.commandMaskBitModeWord[commandIndex];
+	const readsVram = blendEnabled || gxGpuMaskBitCheckBeforeDraw(maskBitModeWord);
+	let vertexFloatCount = 0;
+
+	if (commandBuffer.commandKind[commandIndex] === GX_GPU_COMMAND_DRAW_LINE) {
+		const color0 = commandBuffer.words[wordStart];
+		const xy0 = commandBuffer.words[wordStart + 1];
+		if (gxGpuCommandGouraud(opcode)) {
+			const color1 = commandBuffer.words[wordStart + 2];
+			const xy1 = commandBuffer.words[wordStart + 3];
+			vertexFloatCount = emitLineSegment(backend, gl, vertexFloatCount, topLeftWord, bottomRightWord, blendEnabled, blendMode, maskBitModeWord, readsVram, dx + gxGpuVertexX(xy0), dy + gxGpuVertexY(xy0), color0, dx + gxGpuVertexX(xy1), dy + gxGpuVertexY(xy1), color1);
+		} else {
+			const xy1 = commandBuffer.words[wordStart + 2];
+			vertexFloatCount = emitLineSegment(backend, gl, vertexFloatCount, topLeftWord, bottomRightWord, blendEnabled, blendMode, maskBitModeWord, readsVram, dx + gxGpuVertexX(xy0), dy + gxGpuVertexY(xy0), color0, dx + gxGpuVertexX(xy1), dy + gxGpuVertexY(xy1), color0);
+		}
+		flushLineCommands(backend, gl, vertexFloatCount, topLeftWord, bottomRightWord, blendEnabled, blendMode, maskBitModeWord);
+		return;
+	}
+
+	if (gxGpuCommandGouraud(opcode)) {
+		let color0 = commandBuffer.words[wordStart];
+		let xy0 = commandBuffer.words[wordStart + 1];
+		for (let wordIndex = wordStart + 2; wordIndex + 1 < wordEnd; wordIndex += 2) {
+			const color1 = commandBuffer.words[wordIndex];
+			const xy1 = commandBuffer.words[wordIndex + 1];
+			vertexFloatCount = emitLineSegment(backend, gl, vertexFloatCount, topLeftWord, bottomRightWord, blendEnabled, blendMode, maskBitModeWord, readsVram, dx + gxGpuVertexX(xy0), dy + gxGpuVertexY(xy0), color0, dx + gxGpuVertexX(xy1), dy + gxGpuVertexY(xy1), color1);
+			color0 = color1;
+			xy0 = xy1;
+		}
+	} else {
+		const color = commandBuffer.words[wordStart];
+		let xy0 = commandBuffer.words[wordStart + 1];
+		for (let wordIndex = wordStart + 2; wordIndex < wordEnd; wordIndex += 1) {
+			const xy1 = commandBuffer.words[wordIndex];
+			vertexFloatCount = emitLineSegment(backend, gl, vertexFloatCount, topLeftWord, bottomRightWord, blendEnabled, blendMode, maskBitModeWord, readsVram, dx + gxGpuVertexX(xy0), dy + gxGpuVertexY(xy0), color, dx + gxGpuVertexX(xy1), dy + gxGpuVertexY(xy1), color);
+			xy0 = xy1;
+		}
+	}
+	flushLineCommands(backend, gl, vertexFloatCount, topLeftWord, bottomRightWord, blendEnabled, blendMode, maskBitModeWord);
 }
 
 function renderSolidCommand(
@@ -910,6 +1186,14 @@ function executeNewGxGpuCommands(backend: WebGLBackend, gl: WebGL2RenderingConte
 				solidBatchBottomRightWord = bottomRightWord;
 				solidBatchMaskBitModeWord = 0;
 				vertexFloatCount = appendFillRectangle(commandBuffer, commandIndex, vertexFloatCount);
+				break;
+			}
+			case GX_GPU_COMMAND_DRAW_LINE:
+			case GX_GPU_COMMAND_DRAW_POLYLINE: {
+				vertexFloatCount = flushSolidCommands(backend, gl, vertexFloatCount, solidBatchTopLeftWord, solidBatchBottomRightWord, solidBatchMaskBitModeWord);
+				const topLeftWord = commandBuffer.commandDrawingAreaTopLeftWord[commandIndex];
+				const bottomRightWord = commandBuffer.commandDrawingAreaBottomRightWord[commandIndex];
+				renderLineCommand(backend, gl, commandBuffer, commandIndex, topLeftWord, bottomRightWord);
 				break;
 			}
 			case GX_GPU_COMMAND_COPY_VRAM_TO_VRAM:

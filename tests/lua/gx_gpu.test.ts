@@ -419,21 +419,36 @@ test('GX-GPU emits PSX polyline payload into the GPU command buffer at terminato
 	const commands = gpu.readDeviceOutput().commandBuffer;
 
 	gpu.writeGp0((0x48 << 24) | 0x0000ff);
-	gpu.writeGp0((GX_GPU_GP0_SET_DRAW_MODE << 24) | 0x000111);
+	gpu.writeGp0(0x00010002);
 	gpu.writeGp0(0x00020003);
-	gpu.writeGp0(0x00040005);
 	assert.equal(commands.commandCount, 0);
 	gpu.writeGp0(0x50005000);
 	assert.equal(commands.commandCount, 1);
 	assert.equal(commands.commandKind[0], GX_GPU_COMMAND_DRAW_POLYLINE);
 	assert.equal(commands.commandOpcode[0], 0x48);
-	assert.equal(commands.commandWordCount[0], 4);
-	assert.equal(commands.words[commands.commandWordStart[0] + 1], ((GX_GPU_GP0_SET_DRAW_MODE << 24) | 0x000111) >>> 0);
+	assert.equal(commands.commandWordCount[0], 3);
+	assert.equal(commands.words[commands.commandWordStart[0] + 1], 0x00010002);
 	assert.equal(gpu.readDrawModeWord(), 0);
 
 	gpu.writeGp0((GX_GPU_GP0_SET_DRAW_MODE << 24) | 0x000222);
 	assert.equal(commands.commandCount, 1);
 	assert.equal(gpu.readDrawModeWord(), 0x000222);
+
+	gpu.writeGp0(((0x40 | GX_GPU_GP0_RENDER_QUAD_OR_POLYLINE_BIT | GX_GPU_GP0_RENDER_GOURAUD_BIT) << 24) | 0x0000ff);
+	gpu.writeGp0(0x00010002);
+	gpu.writeGp0(0x00010000);
+	gpu.writeGp0(0x00020003);
+	assert.equal(commands.commandCount, 1);
+	gpu.writeGp0(0x50005000);
+	assert.equal(commands.commandCount, 2);
+	assert.equal(commands.commandKind[1], GX_GPU_COMMAND_DRAW_POLYLINE);
+	assert.equal(commands.commandOpcode[1], 0x58);
+	assert.equal(commands.commandWordCount[1], 4);
+	assert.equal(commands.words[commands.commandWordStart[1] + 2], 0x00010000);
+
+	gpu.writeGp0((GX_GPU_GP0_SET_DRAW_MODE << 24) | 0x000333);
+	assert.equal(commands.commandCount, 2);
+	assert.equal(gpu.readDrawModeWord(), 0x000333);
 });
 
 test('GX-GPU GP1 clear FIFO clears partial GP0 packet and image transfer state', () => {

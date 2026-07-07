@@ -363,9 +363,6 @@ u32 GxGpu::gp0PolygonWordCount(u32 opcode) const {
 
 u32 GxGpu::gp0LineWordCount(u32 opcode) const {
 	const u32 gouraudLineWordCount = (opcode & GX_GPU_GP0_RENDER_GOURAUD_BIT) != 0u ? 4u : 3u;
-	if ((opcode & GX_GPU_GP0_RENDER_QUAD_OR_POLYLINE_BIT) != 0u) {
-		return (opcode & GX_GPU_GP0_RENDER_GOURAUD_BIT) != 0u ? 3u : 4u;
-	}
 	return gouraudLineWordCount;
 }
 

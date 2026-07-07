@@ -336,21 +336,36 @@ void testGp0PolylineConsumesPayloadUntilTerminator() {
 	const bmsx::GxGpuCommandBuffer& commands = *gpu.readDeviceOutput().commandBuffer;
 
 	gpu.writeGp0((0x48u << 24u) | 0x0000ffu);
-	gpu.writeGp0((bmsx::GX_GPU_GP0_SET_DRAW_MODE << 24u) | 0x000111u);
+	gpu.writeGp0(0x00010002u);
 	gpu.writeGp0(0x00020003u);
-	gpu.writeGp0(0x00040005u);
 	require(commands.commandCount == 0u, "GX-GPU GP0 polyline waits for terminator");
 	gpu.writeGp0(0x50005000u);
 	require(commands.commandCount == 1u, "GX-GPU GP0 polyline emitted command count");
 	require(commands.commandKind[0] == bmsx::GX_GPU_COMMAND_DRAW_POLYLINE, "GX-GPU GP0 polyline command kind");
 	require(commands.commandOpcode[0] == 0x48u, "GX-GPU GP0 polyline opcode");
-	require(commands.commandWordCount[0] == 4u, "GX-GPU GP0 polyline command words");
-	require(commands.words[commands.commandWordStart[0] + 1u] == ((bmsx::GX_GPU_GP0_SET_DRAW_MODE << 24u) | 0x000111u), "GX-GPU GP0 polyline raw payload word");
+	require(commands.commandWordCount[0] == 3u, "GX-GPU GP0 polyline command words");
+	require(commands.words[commands.commandWordStart[0] + 1u] == 0x00010002u, "GX-GPU GP0 polyline first vertex word");
 	require(gpu.readDrawModeWord() == 0u, "GX-GPU GP0 polyline payload does not execute draw mode");
 
 	gpu.writeGp0((bmsx::GX_GPU_GP0_SET_DRAW_MODE << 24u) | 0x000222u);
 	require(commands.commandCount == 1u, "GX-GPU GP0 post-polyline environment command does not emit GPU command");
 	require(gpu.readDrawModeWord() == 0x000222u, "GX-GPU GP0 command processing resumes after polyline terminator");
+
+	gpu.writeGp0(((0x40u | bmsx::GX_GPU_GP0_RENDER_QUAD_OR_POLYLINE_BIT | bmsx::GX_GPU_GP0_RENDER_GOURAUD_BIT) << 24u) | 0x0000ffu);
+	gpu.writeGp0(0x00010002u);
+	gpu.writeGp0(0x00010000u);
+	gpu.writeGp0(0x00020003u);
+	require(commands.commandCount == 1u, "GX-GPU GP0 shaded polyline waits for terminator");
+	gpu.writeGp0(0x50005000u);
+	require(commands.commandCount == 2u, "GX-GPU GP0 shaded polyline emitted command count");
+	require(commands.commandKind[1] == bmsx::GX_GPU_COMMAND_DRAW_POLYLINE, "GX-GPU GP0 shaded polyline command kind");
+	require(commands.commandOpcode[1] == 0x58u, "GX-GPU GP0 shaded polyline opcode");
+	require(commands.commandWordCount[1] == 4u, "GX-GPU GP0 shaded polyline command words");
+	require(commands.words[commands.commandWordStart[1] + 2u] == 0x00010000u, "GX-GPU GP0 shaded polyline second color word");
+
+	gpu.writeGp0((bmsx::GX_GPU_GP0_SET_DRAW_MODE << 24u) | 0x000333u);
+	require(commands.commandCount == 2u, "GX-GPU GP0 post-shaded-polyline environment command does not emit GPU command");
+	require(gpu.readDrawModeWord() == 0x000333u, "GX-GPU GP0 command processing resumes after shaded polyline terminator");
 }
 
 void testGp1ClearFifoClearsPartialGp0PacketAndImageTransfer() {

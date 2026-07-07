@@ -507,9 +507,6 @@ export class GxGpu {
 
 	private gp0LineWordCount(opcode: number): number {
 		const gouraudLineWordCount = (opcode & GX_GPU_GP0_RENDER_GOURAUD_BIT) !== 0 ? 4 : 3;
-		if ((opcode & GX_GPU_GP0_RENDER_QUAD_OR_POLYLINE_BIT) !== 0) {
-			return (opcode & GX_GPU_GP0_RENDER_GOURAUD_BIT) !== 0 ? 3 : 4;
-		}
 		return gouraudLineWordCount;
 	}
 
