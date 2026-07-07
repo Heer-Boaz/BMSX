@@ -94,12 +94,18 @@ void testGp0RawDrawWordDecoders() {
 	require(!bmsx::gxGpuCommandRawTextureEnabled(0x24u), "GX-GPU raw texture bit disabled");
 	require(bmsx::gxGpuCommandSemiTransparencyEnabled(0x22u), "GX-GPU semi-transparency bit enabled");
 	require(!bmsx::gxGpuCommandSemiTransparencyEnabled(0x20u), "GX-GPU semi-transparency bit disabled");
-	require(bmsx::gxGpuDrawModeTexturePageYBit9(bmsx::GX_GPU_DRAW_MODE_TEXTURE_PAGE_Y_BIT9) == 512u, "GX-GPU texpage Y.bit9 decode");
+	require(bmsx::gxGpuCommandDrawsTexture(0x24u, 0u), "GX-GPU textured opcode draws texture");
+	require(!bmsx::gxGpuCommandDrawsTexture(0x24u, bmsx::GX_GPU_DRAW_MODE_TEXTURE_DISABLE), "GX-GPU texture-disable stops texture sampling");
+	require(!bmsx::gxGpuCommandDrawsTexture(0x20u, 0u), "GX-GPU untextured opcode does not draw texture");
+	require(bmsx::gxGpuDrawModeTextureDisableEnabled(bmsx::GX_GPU_DRAW_MODE_TEXTURE_DISABLE), "GX-GPU texture-disable bit enabled");
+	require(!bmsx::gxGpuDrawModeTextureDisableEnabled(0u), "GX-GPU texture-disable bit disabled");
 	require(bmsx::gxGpuDrawModeDitherEnabled(bmsx::GX_GPU_DRAW_MODE_DITHER_ENABLED), "GX-GPU dither bit enabled");
 	require(!bmsx::gxGpuDrawModeDitherEnabled(0u), "GX-GPU dither bit disabled");
 	require(bmsx::gxGpuDitheredPolygon(bmsx::GX_GPU_DRAW_MODE_DITHER_ENABLED, bmsx::GX_GPU_GP0_POLYGON_FIRST | bmsx::GX_GPU_GP0_RENDER_GOURAUD_BIT), "GX-GPU Gouraud polygon dithered");
 	require(!bmsx::gxGpuDitheredPolygon(bmsx::GX_GPU_DRAW_MODE_DITHER_ENABLED, bmsx::GX_GPU_GP0_POLYGON_FIRST), "GX-GPU flat untextured polygon not dithered");
 	require(bmsx::gxGpuDitheredPolygon(bmsx::GX_GPU_DRAW_MODE_DITHER_ENABLED, bmsx::GX_GPU_GP0_POLYGON_FIRST | bmsx::GX_GPU_GP0_RENDER_TEXTURE_BIT), "GX-GPU blended textured polygon dithered");
+	require(!bmsx::gxGpuDitheredPolygon(bmsx::GX_GPU_DRAW_MODE_DITHER_ENABLED | bmsx::GX_GPU_DRAW_MODE_TEXTURE_DISABLE, bmsx::GX_GPU_GP0_POLYGON_FIRST | bmsx::GX_GPU_GP0_RENDER_TEXTURE_BIT), "GX-GPU texture-disabled flat polygon not dithered");
+	require(bmsx::gxGpuDitheredPolygon(bmsx::GX_GPU_DRAW_MODE_DITHER_ENABLED | bmsx::GX_GPU_DRAW_MODE_TEXTURE_DISABLE, bmsx::GX_GPU_GP0_POLYGON_FIRST | bmsx::GX_GPU_GP0_RENDER_TEXTURE_BIT | bmsx::GX_GPU_GP0_RENDER_GOURAUD_BIT), "GX-GPU texture-disabled Gouraud polygon dithered");
 	require(!bmsx::gxGpuDitheredPolygon(bmsx::GX_GPU_DRAW_MODE_DITHER_ENABLED, bmsx::GX_GPU_GP0_POLYGON_FIRST | bmsx::GX_GPU_GP0_RENDER_TEXTURE_BIT | 0x01u), "GX-GPU raw textured polygon not dithered");
 	require(!bmsx::gxGpuDitheredPolygon(0u, bmsx::GX_GPU_GP0_POLYGON_FIRST | bmsx::GX_GPU_GP0_RENDER_GOURAUD_BIT), "GX-GPU dither disabled by draw mode");
 	require(bmsx::gxGpuTextureModulationPreDither(31u, 128u) == 248u, "GX-GPU texture modulation pre-dither half intensity");
@@ -133,7 +139,7 @@ void testGp0RawDrawWordDecoders() {
 	require(bmsx::gxGpuTextureClutBaseY(0x01c3ab56u) == 7u, "GX-GPU CLUT Y base decode");
 	require(bmsx::gxGpuDrawModeTexturePageBaseX(0x0013u) == 192u, "GX-GPU texture page X base decode");
 	require(bmsx::gxGpuDrawModeTexturePageBaseY(0x0013u) == 256u, "GX-GPU texture page Y base decode");
-	require(bmsx::gxGpuDrawModeTexturePageBaseY(0x0810u) == 768u, "GX-GPU texture page Y bit9 extends base");
+	require(bmsx::gxGpuDrawModeTexturePageBaseY(0x0810u) == 256u, "GX-GPU texture page Y base ignores texture-disable bit");
 	require(bmsx::gxGpuDrawModeTextureMode(0x0100u) == bmsx::GX_GPU_TEXTURE_MODE_DIRECT16, "GX-GPU texture mode decode");
 	require(bmsx::gxGpuDrawModeTransparencyMode(0x0060u) == 3u, "GX-GPU transparency mode decode");
 	require(bmsx::gxGpuPolygonTexturePageWordIndex(0x24u) == 4u, "GX-GPU flat textured polygon texpage word index");
@@ -182,14 +188,15 @@ void testGp1ResetRestoresPalDisplayStatus() {
 	GpuHarness harness;
 	bmsx::GxGpu& gpu = harness.gpu;
 
-	gpu.writeGp1((bmsx::GX_GPU_GP1_SET_VRAM_SIZE << 24u) | 1u);
+	gpu.writeGp1((bmsx::GX_GPU_GP1_SET_ALLOW_TEXTURE_DISABLE << 24u) | 1u);
 	gpu.writeGp1((bmsx::GX_GPU_GP1_SET_DISPLAY_MODE << 24u) | 0x00000000u);
 	require(gpu.readDisplayModeWord() == 0u, "GX-GPU GP1 display NTSC before reset");
 	require((gpu.readStatus() & bmsx::GX_GPU_STATUS_PAL_MODE) == 0u, "GX-GPU GP1 PAL bit clear before reset");
 
 	require(gpu.writeGp1(bmsx::GX_GPU_GP1_RESET << 24u) == bmsx::GX_GPU_GP1_RESET, "GX-GPU GP1 reset opcode");
 
-	require(gpu.readVramSizeWord() == 1u, "GX-GPU GP1 reset preserves VRAM size command");
+	require(gpu.readTextureDisableAllowedWord() == 1u, "GX-GPU GP1 reset preserves texture-disable allowance");
+	require((gpu.readStatus() & bmsx::GX_GPU_STATUS_TEXTURE_DISABLE) == 0u, "GX-GPU GP1 reset clears texture-disable status bit");
 	require(gpu.readDisplayModeWord() == bmsx::PSX_GPU_DISPLAY_MODE_PAL_WORD, "GX-GPU GP1 reset display mode");
 	require((gpu.readStatus() & bmsx::GX_GPU_STATUS_PAL_MODE) == bmsx::GX_GPU_STATUS_PAL_MODE, "GX-GPU GP1 reset PAL bit");
 	require((gpu.readStatus() & bmsx::GX_GPU_STATUS_RESET_WORD) == bmsx::GX_GPU_STATUS_RESET_WORD, "GX-GPU GP1 reset base bits");
@@ -242,12 +249,12 @@ void testGp1CrtcRangeRegistersLatchMaskedRawWords() {
 	gpu.writeGp1((bmsx::GX_GPU_GP1_SET_DISPLAY_START << 24u) | 0x00ffffffu);
 	gpu.writeGp1((bmsx::GX_GPU_GP1_SET_HORIZONTAL_DISPLAY_RANGE << 24u) | 0x00ffffffu);
 	gpu.writeGp1((bmsx::GX_GPU_GP1_SET_VERTICAL_DISPLAY_RANGE << 24u) | 0x00ffffffu);
-	gpu.writeGp1((bmsx::GX_GPU_GP1_SET_VRAM_SIZE << 24u) | 0x00ffffffu);
+	gpu.writeGp1((bmsx::GX_GPU_GP1_SET_ALLOW_TEXTURE_DISABLE << 24u) | 0x00ffffffu);
 
 	require(gpu.readDisplayStartWord() == bmsx::GX_GPU_DISPLAY_START_MASK, "GX-GPU GP1 display start mask");
 	require(gpu.readHorizontalDisplayRangeWord() == bmsx::GX_GPU_HORIZONTAL_DISPLAY_RANGE_MASK, "GX-GPU GP1 horizontal display range mask");
 	require(gpu.readVerticalDisplayRangeWord() == bmsx::GX_GPU_VERTICAL_DISPLAY_RANGE_MASK, "GX-GPU GP1 vertical display range mask");
-	require(gpu.readVramSizeWord() == 1u, "GX-GPU GP1 VRAM size latch");
+	require(gpu.readTextureDisableAllowedWord() == 1u, "GX-GPU GP1 texture-disable allowance latch");
 
 	const bmsx::GxGpuDeviceOutput& output = gpu.readDeviceOutput();
 	require(output.statusWord == gpu.readStatus(), "GX-GPU output status word");
@@ -274,21 +281,24 @@ void testGp0DrawModeAndMaskBitEnvironmentCommands() {
 
 	gpu.writeGp0((bmsx::GX_GPU_GP0_SET_DRAW_MODE << 24u) | 0x00ffffffu);
 
-	require(gpu.readDrawModeWord() == bmsx::GX_GPU_DRAW_MODE_MASK, "GX-GPU GP0 draw-mode word mask");
+	require(gpu.readDrawModeWord() == (bmsx::GX_GPU_DRAW_MODE_MASK & ~bmsx::GX_GPU_DRAW_MODE_TEXTURE_DISABLE), "GX-GPU GP0 draw-mode ignores texture-disable before GP1 allow");
 	require((gpu.readStatus() & bmsx::GX_GPU_DRAW_MODE_GPUSTAT_MASK) == bmsx::GX_GPU_DRAW_MODE_GPUSTAT_MASK, "GX-GPU GP0 draw-mode GPUSTAT bits");
-	require((gpu.readStatus() & bmsx::GX_GPU_STATUS_TEXTURE_PAGE_Y_BIT9) == bmsx::GX_GPU_STATUS_TEXTURE_PAGE_Y_BIT9, "GX-GPU GP0 texpage Y.bit9 mirrors to GPUSTAT");
+	require((gpu.readStatus() & bmsx::GX_GPU_STATUS_TEXTURE_DISABLE) == 0u, "GX-GPU GP0 texture-disable ignored before GP1 allow");
 	require((gpu.readDrawModeWord() & bmsx::GX_GPU_DRAW_MODE_DITHER_ENABLED) == bmsx::GX_GPU_DRAW_MODE_DITHER_ENABLED, "GX-GPU GP0 dither source bit");
 	require((gpu.readDrawModeWord() & bmsx::GX_GPU_DRAW_MODE_TEXTURE_RECTANGLE_X_FLIP) == bmsx::GX_GPU_DRAW_MODE_TEXTURE_RECTANGLE_X_FLIP, "GX-GPU GP0 textured rectangle X flip source bit");
 	require((gpu.readDrawModeWord() & bmsx::GX_GPU_DRAW_MODE_TEXTURE_RECTANGLE_Y_FLIP) == bmsx::GX_GPU_DRAW_MODE_TEXTURE_RECTANGLE_Y_FLIP, "GX-GPU GP0 textured rectangle Y flip source bit");
 
-	gpu.writeGp1((bmsx::GX_GPU_GP1_SET_VRAM_SIZE << 24u) | 1u);
-	require(gpu.readVramSizeWord() == 1u, "GX-GPU GP1 VRAM size raw word");
-	require((gpu.readStatus() & bmsx::GX_GPU_STATUS_TEXTURE_PAGE_Y_BIT9) == bmsx::GX_GPU_STATUS_TEXTURE_PAGE_Y_BIT9, "GX-GPU GP1 VRAM size does not clear texpage Y.bit9 status");
+	gpu.writeGp1((bmsx::GX_GPU_GP1_SET_ALLOW_TEXTURE_DISABLE << 24u) | 1u);
+	require(gpu.readTextureDisableAllowedWord() == 1u, "GX-GPU GP1 texture-disable allowance raw word");
+	require((gpu.readStatus() & bmsx::GX_GPU_STATUS_TEXTURE_DISABLE) == 0u, "GX-GPU GP1 texture-disable allowance does not set GPUSTAT by itself");
+	gpu.writeGp0((bmsx::GX_GPU_GP0_SET_DRAW_MODE << 24u) | 0x00ffffffu);
+	require(gpu.readDrawModeWord() == bmsx::GX_GPU_DRAW_MODE_MASK, "GX-GPU GP0 draw-mode accepts texture-disable after GP1 allow");
+	require((gpu.readStatus() & bmsx::GX_GPU_STATUS_TEXTURE_DISABLE) == bmsx::GX_GPU_STATUS_TEXTURE_DISABLE, "GX-GPU GP0 texture-disable mirrors to GPUSTAT when allowed");
 
 	gpu.writeGp0((bmsx::GX_GPU_GP0_SET_MASK_BIT << 24u) | 0x00000003u);
 	require(gpu.readMaskBitModeWord() == 3u, "GX-GPU GP0 mask-bit raw word");
 	require((gpu.readStatus() & ((1u << 11u) | (1u << 12u))) == (3u << 11u), "GX-GPU GP0 mask-bit GPUSTAT bits");
-	require((gpu.readDrawModeWord() & bmsx::GX_GPU_DRAW_MODE_TEXTURE_PAGE_Y_BIT9) == bmsx::GX_GPU_DRAW_MODE_TEXTURE_PAGE_Y_BIT9, "GX-GPU GP0 draw-mode texpage Y.bit9 source bit");
+	require((gpu.readDrawModeWord() & bmsx::GX_GPU_DRAW_MODE_TEXTURE_DISABLE) == bmsx::GX_GPU_DRAW_MODE_TEXTURE_DISABLE, "GX-GPU GP0 draw-mode texture-disable source bit");
 }
 
 void testGp0EnvironmentRegistersAndGpuInfoQueries() {

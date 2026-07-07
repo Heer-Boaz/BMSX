@@ -387,14 +387,85 @@ size_t appendFillRectangle(const GxGpuCommandBuffer& commandBuffer, u32 commandI
 
 size_t appendSolidPolygon(const GxGpuCommandBuffer& commandBuffer, u32 commandIndex, size_t vertexFloatCount) {
 	const u32 opcode = commandBuffer.commandOpcode[commandIndex];
-	if (gxGpuCommandTextureEnabled(opcode)) {
+	const u32 drawModeWord = commandBuffer.commandDrawModeWord[commandIndex];
+	if (gxGpuCommandDrawsTexture(opcode, drawModeWord)) {
 		return vertexFloatCount;
 	}
 	const u32 wordStart = commandBuffer.commandWordStart[commandIndex];
 	const u32 drawingOffsetWord = commandBuffer.commandDrawingOffsetWord[commandIndex];
 	const i32 dx = gxGpuDrawingOffsetX(drawingOffsetWord);
 	const i32 dy = gxGpuDrawingOffsetY(drawingOffsetWord);
-	if (gxGpuCommandGouraud(opcode)) {
+	const bool gouraud = gxGpuCommandGouraud(opcode);
+	if (gxGpuCommandTextureEnabled(opcode)) {
+		if (gouraud) {
+			const u32 color0 = commandBuffer.words[wordStart];
+			const u32 xy0 = commandBuffer.words[wordStart + 1u];
+			const u32 color1 = commandBuffer.words[wordStart + 3u];
+			const u32 xy1 = commandBuffer.words[wordStart + 4u];
+			const u32 color2 = commandBuffer.words[wordStart + 6u];
+			const u32 xy2 = commandBuffer.words[wordStart + 7u];
+			size_t offset = appendSolidPrimitiveTriangle(
+				vertexFloatCount,
+				dx + gxGpuVertexX(xy0),
+				dy + gxGpuVertexY(xy0),
+				color0,
+				dx + gxGpuVertexX(xy1),
+				dy + gxGpuVertexY(xy1),
+				color1,
+				dx + gxGpuVertexX(xy2),
+				dy + gxGpuVertexY(xy2),
+				color2);
+			if (gxGpuCommandQuadPolygon(opcode)) {
+				const u32 color3 = commandBuffer.words[wordStart + 9u];
+				const u32 xy3 = commandBuffer.words[wordStart + 10u];
+				offset = appendSolidPrimitiveTriangle(
+					offset,
+					dx + gxGpuVertexX(xy2),
+					dy + gxGpuVertexY(xy2),
+					color2,
+					dx + gxGpuVertexX(xy1),
+					dy + gxGpuVertexY(xy1),
+					color1,
+					dx + gxGpuVertexX(xy3),
+					dy + gxGpuVertexY(xy3),
+					color3);
+			}
+			return offset;
+		}
+
+		const u32 color = commandBuffer.words[wordStart];
+		const u32 xy0 = commandBuffer.words[wordStart + 1u];
+		const u32 xy1 = commandBuffer.words[wordStart + 3u];
+		const u32 xy2 = commandBuffer.words[wordStart + 5u];
+		size_t offset = appendSolidPrimitiveTriangle(
+			vertexFloatCount,
+			dx + gxGpuVertexX(xy0),
+			dy + gxGpuVertexY(xy0),
+			color,
+			dx + gxGpuVertexX(xy1),
+			dy + gxGpuVertexY(xy1),
+			color,
+			dx + gxGpuVertexX(xy2),
+			dy + gxGpuVertexY(xy2),
+			color);
+		if (gxGpuCommandQuadPolygon(opcode)) {
+			const u32 xy3 = commandBuffer.words[wordStart + 7u];
+			offset = appendSolidPrimitiveTriangle(
+				offset,
+				dx + gxGpuVertexX(xy2),
+				dy + gxGpuVertexY(xy2),
+				color,
+				dx + gxGpuVertexX(xy1),
+				dy + gxGpuVertexY(xy1),
+				color,
+				dx + gxGpuVertexX(xy3),
+				dy + gxGpuVertexY(xy3),
+				color);
+		}
+		return offset;
+	}
+
+	if (gouraud) {
 		const u32 color0 = commandBuffer.words[wordStart];
 		const u32 xy0 = commandBuffer.words[wordStart + 1u];
 		const u32 color1 = commandBuffer.words[wordStart + 2u];
@@ -464,7 +535,8 @@ size_t appendSolidPolygon(const GxGpuCommandBuffer& commandBuffer, u32 commandIn
 
 size_t appendSolidRectangle(const GxGpuCommandBuffer& commandBuffer, u32 commandIndex, size_t vertexFloatCount) {
 	const u32 opcode = commandBuffer.commandOpcode[commandIndex];
-	if (gxGpuCommandTextureEnabled(opcode)) {
+	const u32 drawModeWord = commandBuffer.commandDrawModeWord[commandIndex];
+	if (gxGpuCommandDrawsTexture(opcode, drawModeWord)) {
 		return vertexFloatCount;
 	}
 	const u32 wordStart = commandBuffer.commandWordStart[commandIndex];
@@ -1097,20 +1169,22 @@ void executeNewGxGpuCommands(OpenGLES2Backend& backend, const GxGpuCommandBuffer
 		switch (commandBuffer.commandKind[commandIndex]) {
 		case GX_GPU_COMMAND_DRAW_POLYGON: {
 			const u32 opcode = commandBuffer.commandOpcode[commandIndex];
+			const u32 drawModeWord = commandBuffer.commandDrawModeWord[commandIndex];
 			const u32 topLeftWord = commandBuffer.commandDrawingAreaTopLeftWord[commandIndex];
 			const u32 bottomRightWord = commandBuffer.commandDrawingAreaBottomRightWord[commandIndex];
 			const u32 maskBitModeWord = commandBuffer.commandMaskBitModeWord[commandIndex];
-			const bool ditherEnabled = gxGpuDitheredPolygon(commandBuffer.commandDrawModeWord[commandIndex], opcode);
+			const bool drawsTexture = gxGpuCommandDrawsTexture(opcode, drawModeWord);
+			const bool ditherEnabled = gxGpuDitheredPolygon(drawModeWord, opcode);
 			const bool readsVram = gxGpuCommandSemiTransparencyEnabled(opcode) || gxGpuMaskBitCheckBeforeDraw(maskBitModeWord);
 			const bool batchMaskChange = gxGpuMaskBitSetWhileDrawing(maskBitModeWord) != gxGpuMaskBitSetWhileDrawing(solidBatchMaskBitModeWord);
-			if (vertexFloatCount != 0u && (topLeftWord != solidBatchTopLeftWord || bottomRightWord != solidBatchBottomRightWord || batchMaskChange || solidBatchDitherEnabled != ditherEnabled || readsVram || gxGpuCommandTextureEnabled(opcode))) {
+			if (vertexFloatCount != 0u && (topLeftWord != solidBatchTopLeftWord || bottomRightWord != solidBatchBottomRightWord || batchMaskChange || solidBatchDitherEnabled != ditherEnabled || readsVram || drawsTexture)) {
 				vertexFloatCount = flushSolidCommands(backend, vertexFloatCount, solidBatchTopLeftWord, solidBatchBottomRightWord, solidBatchMaskBitModeWord, solidBatchDitherEnabled);
 			}
 			solidBatchTopLeftWord = topLeftWord;
 			solidBatchBottomRightWord = bottomRightWord;
 			solidBatchMaskBitModeWord = maskBitModeWord;
 			solidBatchDitherEnabled = ditherEnabled;
-			if (gxGpuCommandTextureEnabled(opcode)) {
+			if (drawsTexture) {
 				renderTexturedCommand(backend, commandBuffer, commandIndex, topLeftWord, bottomRightWord);
 			} else if (readsVram) {
 				renderSolidCommand(backend, commandBuffer, commandIndex, topLeftWord, bottomRightWord);
@@ -1121,19 +1195,21 @@ void executeNewGxGpuCommands(OpenGLES2Backend& backend, const GxGpuCommandBuffer
 		}
 		case GX_GPU_COMMAND_DRAW_RECTANGLE: {
 			const u32 opcode = commandBuffer.commandOpcode[commandIndex];
+			const u32 drawModeWord = commandBuffer.commandDrawModeWord[commandIndex];
 			const u32 topLeftWord = commandBuffer.commandDrawingAreaTopLeftWord[commandIndex];
 			const u32 bottomRightWord = commandBuffer.commandDrawingAreaBottomRightWord[commandIndex];
 			const u32 maskBitModeWord = commandBuffer.commandMaskBitModeWord[commandIndex];
+			const bool drawsTexture = gxGpuCommandDrawsTexture(opcode, drawModeWord);
 			const bool readsVram = gxGpuCommandSemiTransparencyEnabled(opcode) || gxGpuMaskBitCheckBeforeDraw(maskBitModeWord);
 			const bool batchMaskChange = gxGpuMaskBitSetWhileDrawing(maskBitModeWord) != gxGpuMaskBitSetWhileDrawing(solidBatchMaskBitModeWord);
-			if (vertexFloatCount != 0u && (topLeftWord != solidBatchTopLeftWord || bottomRightWord != solidBatchBottomRightWord || batchMaskChange || solidBatchDitherEnabled || readsVram || gxGpuCommandTextureEnabled(opcode))) {
+			if (vertexFloatCount != 0u && (topLeftWord != solidBatchTopLeftWord || bottomRightWord != solidBatchBottomRightWord || batchMaskChange || solidBatchDitherEnabled || readsVram || drawsTexture)) {
 				vertexFloatCount = flushSolidCommands(backend, vertexFloatCount, solidBatchTopLeftWord, solidBatchBottomRightWord, solidBatchMaskBitModeWord, solidBatchDitherEnabled);
 			}
 			solidBatchTopLeftWord = topLeftWord;
 			solidBatchBottomRightWord = bottomRightWord;
 			solidBatchMaskBitModeWord = maskBitModeWord;
 			solidBatchDitherEnabled = false;
-			if (gxGpuCommandTextureEnabled(opcode)) {
+			if (drawsTexture) {
 				renderTexturedCommand(backend, commandBuffer, commandIndex, topLeftWord, bottomRightWord);
 			} else if (readsVram) {
 				renderSolidCommand(backend, commandBuffer, commandIndex, topLeftWord, bottomRightWord);

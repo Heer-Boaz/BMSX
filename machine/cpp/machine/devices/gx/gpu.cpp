@@ -17,7 +17,7 @@ GxGpu::GxGpu(Memory& memory)
 }
 
 void GxGpu::reset() {
-	m_vramSizeWord = 0u;
+	m_textureDisableAllowedWord = 0u;
 	resetGpuRegisters();
 }
 
@@ -191,8 +191,8 @@ u32 GxGpu::writeGp1(u32 word) {
 	case GX_GPU_GP1_SET_DISPLAY_MODE:
 		writeDisplayModeWord(word & GX_GPU_DISPLAY_MODE_MASK);
 		break;
-	case GX_GPU_GP1_SET_VRAM_SIZE:
-		m_vramSizeWord = word & 0x1u;
+	case GX_GPU_GP1_SET_ALLOW_TEXTURE_DISABLE:
+		m_textureDisableAllowedWord = word & 0x1u;
 		writeStatusIo();
 		break;
 	case GX_GPU_GP1_GET_GPU_INFO:
@@ -268,8 +268,8 @@ u32 GxGpu::readVerticalDisplayRangeWord() const {
 	return m_verticalDisplayRangeWord;
 }
 
-u32 GxGpu::readVramSizeWord() const {
-	return m_vramSizeWord;
+u32 GxGpu::readTextureDisableAllowedWord() const {
+	return m_textureDisableAllowedWord;
 }
 
 void GxGpu::writeDisplayDisableWord(u32 word) {
@@ -415,17 +415,20 @@ void GxGpu::beginImageLoadToVram(u32 opcode, u32 commandWordCount) {
 
 void GxGpu::writeDrawModeWord(u32 word) {
 	m_drawModeWord = word & GX_GPU_DRAW_MODE_MASK;
+	if (m_textureDisableAllowedWord == 0u) {
+		m_drawModeWord &= ~GX_GPU_DRAW_MODE_TEXTURE_DISABLE;
+	}
 	updateDrawModeStatusBits();
 	writeStatusIo();
 }
 
 void GxGpu::updateDrawModeStatusBits() {
-	const u32 texturePageYBit9 = (m_drawModeWord & GX_GPU_DRAW_MODE_TEXTURE_PAGE_Y_BIT9) != 0u
-		? GX_GPU_STATUS_TEXTURE_PAGE_Y_BIT9
+	const u32 textureDisable = (m_drawModeWord & GX_GPU_DRAW_MODE_TEXTURE_DISABLE) != 0u
+		? GX_GPU_STATUS_TEXTURE_DISABLE
 		: 0u;
-	m_statusWord = (m_statusWord & ~(GX_GPU_DRAW_MODE_GPUSTAT_MASK | GX_GPU_STATUS_TEXTURE_PAGE_Y_BIT9))
+	m_statusWord = (m_statusWord & ~(GX_GPU_DRAW_MODE_GPUSTAT_MASK | GX_GPU_STATUS_TEXTURE_DISABLE))
 		| (m_drawModeWord & GX_GPU_DRAW_MODE_GPUSTAT_MASK)
-		| texturePageYBit9;
+		| textureDisable;
 }
 
 void GxGpu::writeMaskBitModeWord(u32 word) {

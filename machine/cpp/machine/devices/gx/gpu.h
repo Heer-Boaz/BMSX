@@ -19,7 +19,7 @@ constexpr u32 GX_GPU_GP1_SET_DISPLAY_START = 0x05u;
 constexpr u32 GX_GPU_GP1_SET_HORIZONTAL_DISPLAY_RANGE = 0x06u;
 constexpr u32 GX_GPU_GP1_SET_VERTICAL_DISPLAY_RANGE = 0x07u;
 constexpr u32 GX_GPU_GP1_SET_DISPLAY_MODE = 0x08u;
-constexpr u32 GX_GPU_GP1_SET_VRAM_SIZE = 0x09u;
+constexpr u32 GX_GPU_GP1_SET_ALLOW_TEXTURE_DISABLE = 0x09u;
 constexpr u32 GX_GPU_GP1_GET_GPU_INFO = 0x10u;
 constexpr u32 GX_GPU_GP1_GET_GPU_INFO_LAST = 0x1fu;
 constexpr u32 GX_GPU_GP1_OPCODE_SHIFT = 24u;
@@ -74,7 +74,7 @@ constexpr u32 GX_GPU_DMA_DIRECTION_GPUREAD_TO_CPU = 3u;
 
 constexpr u32 GX_GPU_STATUS_INTERLACED_FIELD = 1u << 13u;
 constexpr u32 GX_GPU_STATUS_REVERSE_FLAG = 1u << 14u;
-constexpr u32 GX_GPU_STATUS_TEXTURE_PAGE_Y_BIT9 = 1u << 15u;
+constexpr u32 GX_GPU_STATUS_TEXTURE_DISABLE = 1u << 15u;
 constexpr u32 GX_GPU_STATUS_HORIZONTAL_RESOLUTION_2 = 1u << 16u;
 constexpr u32 GX_GPU_STATUS_HORIZONTAL_RESOLUTION_1_SHIFT = 17u;
 constexpr u32 GX_GPU_STATUS_VERTICAL_RESOLUTION = 1u << 19u;
@@ -131,7 +131,7 @@ public:
 	u32 readDisplayStartWord() const;
 	u32 readHorizontalDisplayRangeWord() const;
 	u32 readVerticalDisplayRangeWord() const;
-	u32 readVramSizeWord() const;
+	u32 readTextureDisableAllowedWord() const;
 
 private:
 	Memory& m_memory;
@@ -163,7 +163,7 @@ private:
 	u32 m_displayStartWord = 0u;
 	u32 m_horizontalDisplayRangeWord = 0x00c60260u;
 	u32 m_verticalDisplayRangeWord = 0x0003fc10u;
-	u32 m_vramSizeWord = 0u;
+	u32 m_textureDisableAllowedWord = 0u;
 
 	void resetGpuRegisters();
 	void writeDisplayDisableWord(u32 word);
