@@ -4,6 +4,7 @@ import { test } from 'node:test';
 import {
 	DMA_CTRL_START,
 	DMA_CTRL_STRICT,
+	DMA_STATUS_BUSY,
 	DMA_STATUS_CLIPPED,
 	DMA_STATUS_DONE,
 	DMA_STATUS_ERROR,
@@ -20,8 +21,12 @@ import {
 } from '../../machine/ts/machine/bus/io';
 import { CPU } from '../../machine/ts/machine/cpu/cpu';
 import { DmaController } from '../../machine/ts/machine/devices/dma/controller';
-import { GX_GPU_COMMAND_FILL_RECTANGLE } from '../../machine/ts/machine/devices/gx/gpu_command_buffer';
 import {
+	GX_GPU_COMMAND_FILL_RECTANGLE,
+	GX_GPU_COMMAND_UPLOAD_CPU_TO_VRAM,
+} from '../../machine/ts/machine/devices/gx/gpu_command_buffer';
+import {
+	GX_GPU_GP0_CPU_TO_VRAM_FIRST,
 	GX_GPU_GP0_FILL_RECTANGLE,
 	GX_GPU_GP0_SET_DRAW_MODE,
 	GX_GPU_GP0_SET_MASK_BIT,
@@ -80,6 +85,59 @@ test('DMA streams RAM words into the GX-GPU GP0 command port', () => {
 	assert.equal(commands.words[commands.commandWordStart[0]], command0 >>> 0);
 	assert.equal(commands.words[commands.commandWordStart[0] + 1], command1);
 	assert.equal(commands.words[commands.commandWordStart[0] + 2], command2);
+});
+
+test('DMA preserves GP0 CPU-to-VRAM packet assembly across service slices', () => {
+	const { memory, dma, gpu } = createDmaGpuFixture();
+	const source = PROGRAM_STATIC_RAM_BASE + 0x1c0;
+	const command0 = (GX_GPU_GP0_CPU_TO_VRAM_FIRST << 24) >>> 0;
+	const command1 = 0x00020010;
+	const command2 = 0x00020003;
+	const payload0 = 0x22221111;
+	const payload1 = 0x44443333;
+	const payload2 = 0x66665555;
+
+	dma.setTiming(1, 8, 8, 0);
+	memory.writeMappedU32LE(source, command0);
+	memory.writeMappedU32LE(source + 4, command1);
+	memory.writeMappedU32LE(source + 8, command2);
+	memory.writeMappedU32LE(source + 12, payload0);
+	memory.writeMappedU32LE(source + 16, payload1);
+	memory.writeMappedU32LE(source + 20, payload2);
+	memory.writeMappedU32LE(IO_DMA_SRC, source);
+	memory.writeMappedU32LE(IO_DMA_DST, IO_GX_GPU_GP0);
+	memory.writeMappedU32LE(IO_DMA_LEN, 24);
+	memory.writeMappedU32LE(IO_DMA_CTRL, DMA_CTRL_START);
+
+	const commands = gpu.readDeviceOutput().commandBuffer;
+	dma.accrueCycles(1, 1);
+	dma.onService(1);
+	assert.equal(memory.readIoU32(IO_DMA_STATUS), DMA_STATUS_BUSY);
+	assert.equal(memory.readIoU32(IO_DMA_WRITTEN), 8);
+	assert.equal(commands.commandCount, 0);
+
+	dma.accrueCycles(1, 2);
+	dma.onService(2);
+	assert.equal(memory.readIoU32(IO_DMA_STATUS), DMA_STATUS_BUSY);
+	assert.equal(memory.readIoU32(IO_DMA_WRITTEN), 16);
+	assert.equal(commands.commandCount, 0);
+	assert.equal(commands.wordCount, 4);
+
+	dma.accrueCycles(1, 3);
+	dma.onService(3);
+	assert.equal(memory.readIoU32(IO_DMA_STATUS), DMA_STATUS_DONE);
+	assert.equal(memory.readIoU32(IO_DMA_WRITTEN), 24);
+	assert.equal((memory.readIoU32(IO_IRQ_FLAGS) & IRQ_DMA_DONE) >>> 0, IRQ_DMA_DONE);
+	assert.equal(commands.commandCount, 1);
+	assert.equal(commands.commandKind[0], GX_GPU_COMMAND_UPLOAD_CPU_TO_VRAM);
+	assert.equal(commands.commandWordCount[0], 6);
+	const wordStart = commands.commandWordStart[0];
+	assert.equal(commands.words[wordStart], command0);
+	assert.equal(commands.words[wordStart + 1], command1);
+	assert.equal(commands.words[wordStart + 2], command2);
+	assert.equal(commands.words[wordStart + 3], payload0);
+	assert.equal(commands.words[wordStart + 4], payload1);
+	assert.equal(commands.words[wordStart + 5], payload2);
 });
 
 test('DMA clips non-strict GX-GPU GP0 stream lengths to whole words', () => {

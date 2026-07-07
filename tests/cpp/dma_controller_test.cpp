@@ -77,6 +77,60 @@ void testDmaStreamsRamWordsToGxGp0() {
 	require(commands.words[commands.commandWordStart[0] + 2u] == command2, "GX-GPU DMA GP0 third command word");
 }
 
+void testDmaPreservesCpuToVramPacketAcrossServiceSlices() {
+	DmaGpuHarness harness;
+	bmsx::Memory& memory = harness.memory;
+	const uint32_t source = bmsx::PROGRAM_STATIC_RAM_BASE + 0x1c0u;
+	const uint32_t command0 = bmsx::GX_GPU_GP0_CPU_TO_VRAM_FIRST << 24u;
+	const uint32_t command1 = 0x00020010u;
+	const uint32_t command2 = 0x00020003u;
+	const uint32_t payload0 = 0x22221111u;
+	const uint32_t payload1 = 0x44443333u;
+	const uint32_t payload2 = 0x66665555u;
+
+	harness.dma.setTiming(1, 8, 8, 0);
+	memory.writeMappedU32LE(source, command0);
+	memory.writeMappedU32LE(source + 4u, command1);
+	memory.writeMappedU32LE(source + 8u, command2);
+	memory.writeMappedU32LE(source + 12u, payload0);
+	memory.writeMappedU32LE(source + 16u, payload1);
+	memory.writeMappedU32LE(source + 20u, payload2);
+	memory.writeMappedU32LE(bmsx::IO_DMA_SRC, source);
+	memory.writeMappedU32LE(bmsx::IO_DMA_DST, bmsx::IO_GX_GPU_GP0);
+	memory.writeMappedU32LE(bmsx::IO_DMA_LEN, 24u);
+	memory.writeMappedU32LE(bmsx::IO_DMA_CTRL, bmsx::DMA_CTRL_START);
+
+	const bmsx::GxGpuCommandBuffer& commands = *harness.gpu.readDeviceOutput().commandBuffer;
+	harness.dma.accrueCycles(1, 1);
+	harness.dma.onService(1);
+	require(memory.readIoU32(bmsx::IO_DMA_STATUS) == bmsx::DMA_STATUS_BUSY, "DMA CPU-to-VRAM stream remains busy after first slice");
+	require(memory.readIoU32(bmsx::IO_DMA_WRITTEN) == 8u, "DMA CPU-to-VRAM first slice written count");
+	require(commands.commandCount == 0u, "GX-GPU CPU-to-VRAM header slice emits no command");
+
+	harness.dma.accrueCycles(1, 2);
+	harness.dma.onService(2);
+	require(memory.readIoU32(bmsx::IO_DMA_STATUS) == bmsx::DMA_STATUS_BUSY, "DMA CPU-to-VRAM stream remains busy after payload starts");
+	require(memory.readIoU32(bmsx::IO_DMA_WRITTEN) == 16u, "DMA CPU-to-VRAM second slice written count");
+	require(commands.commandCount == 0u, "GX-GPU partial CPU-to-VRAM payload emits no command");
+	require(commands.wordCount == 4u, "GX-GPU CPU-to-VRAM command buffer holds header plus first payload word");
+
+	harness.dma.accrueCycles(1, 3);
+	harness.dma.onService(3);
+	require(memory.readIoU32(bmsx::IO_DMA_STATUS) == bmsx::DMA_STATUS_DONE, "DMA CPU-to-VRAM stream completes");
+	require(memory.readIoU32(bmsx::IO_DMA_WRITTEN) == 24u, "DMA CPU-to-VRAM final written count");
+	require((memory.readIoU32(bmsx::IO_IRQ_FLAGS) & bmsx::IRQ_DMA_DONE) == bmsx::IRQ_DMA_DONE, "DMA CPU-to-VRAM stream raises done IRQ");
+	require(commands.commandCount == 1u, "GX-GPU CPU-to-VRAM command count");
+	require(commands.commandKind[0] == bmsx::GX_GPU_COMMAND_UPLOAD_CPU_TO_VRAM, "GX-GPU CPU-to-VRAM command kind");
+	require(commands.commandWordCount[0] == 6u, "GX-GPU CPU-to-VRAM command word count");
+	const uint32_t wordStart = commands.commandWordStart[0];
+	require(commands.words[wordStart] == command0, "GX-GPU CPU-to-VRAM command word 0");
+	require(commands.words[wordStart + 1u] == command1, "GX-GPU CPU-to-VRAM command word 1");
+	require(commands.words[wordStart + 2u] == command2, "GX-GPU CPU-to-VRAM command word 2");
+	require(commands.words[wordStart + 3u] == payload0, "GX-GPU CPU-to-VRAM payload word 0");
+	require(commands.words[wordStart + 4u] == payload1, "GX-GPU CPU-to-VRAM payload word 1");
+	require(commands.words[wordStart + 5u] == payload2, "GX-GPU CPU-to-VRAM payload word 2");
+}
+
 void testDmaClipsNonStrictGxGp0StreamToWholeWords() {
 	DmaGpuHarness harness;
 	bmsx::Memory& memory = harness.memory;
@@ -119,6 +173,7 @@ void testDmaStrictRejectsNonWordGxGp0StreamLength() {
 
 int main() {
 	testDmaStreamsRamWordsToGxGp0();
+	testDmaPreservesCpuToVramPacketAcrossServiceSlices();
 	testDmaClipsNonStrictGxGp0StreamToWholeWords();
 	testDmaStrictRejectsNonWordGxGp0StreamLength();
 	return 0;
