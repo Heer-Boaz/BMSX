@@ -1,4 +1,5 @@
 #include "machine/devices/gx/gpu.h"
+#include "render/backend/gx_gpu_render_rules.h"
 #include "machine/bus/io.h"
 #include "machine/cpu/cpu.h"
 #include "machine/memory/memory.h"

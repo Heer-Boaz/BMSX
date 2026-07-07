@@ -13,7 +13,6 @@ import {
 	gxGpuCommandRectangleHeight,
 	gxGpuCommandRectangleWidth,
 	gxGpuCommandTextureEnabled,
-	gxGpuDitheredPolygon,
 	gxGpuDrawingOffsetX,
 	gxGpuDrawingOffsetY,
 	gxGpuFillHeight,
@@ -31,6 +30,7 @@ import {
 	gxGpuVertexY,
 	type GxGpuCommandBufferView,
 } from '../../../machine/devices/gx/gpu_command_buffer';
+import { gxGpuDitheredPolygon } from '../gx_gpu_render_rules';
 import {
 	GX_GPU_SOFTWARE_VRAM_WORDS,
 	gxGpuSoftwareInterlacedSkipsLine,

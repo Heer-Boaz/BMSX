@@ -1,4 +1,5 @@
 #include "render/backend/software/gx_gpu_vram.h"
+#include "render/backend/gx_gpu_render_rules.h"
 
 namespace bmsx {
 namespace {

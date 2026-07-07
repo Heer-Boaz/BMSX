@@ -3,6 +3,13 @@ import {
 	GX_GPU_TEXTURE_MODE_PALETTE8,
 	gxGpuCommandSemiTransparencyEnabled,
 	gxGpuCommandRawTextureEnabled,
+	gxGpuTextureClutBaseX,
+	gxGpuTextureClutBaseY,
+	gxGpuTextureU,
+	gxGpuTextureV,
+	type GxGpuCommandBufferView,
+} from '../../../machine/devices/gx/gpu_command_buffer';
+import {
 	gxGpuDrawingAreaBottomExclusive,
 	gxGpuDrawingAreaLeft,
 	gxGpuDrawingAreaRightExclusive,
@@ -14,19 +21,14 @@ import {
 	gxGpuDrawModeTextureRectangleXFlip,
 	gxGpuDrawModeTextureRectangleYFlip,
 	gxGpuDrawModeTransparencyMode,
-	gxGpuTextureClutBaseX,
-	gxGpuTextureClutBaseY,
 	gxGpuSegmentExceedsPrimitiveSize,
-	gxGpuTriangleExceedsPrimitiveSize,
 	gxGpuTextureRectangleEdge0,
-	gxGpuTextureU,
-	gxGpuTextureV,
 	gxGpuTextureWindowAndX,
 	gxGpuTextureWindowAndY,
 	gxGpuTextureWindowOrX,
 	gxGpuTextureWindowOrY,
-	type GxGpuCommandBufferView,
-} from '../../../machine/devices/gx/gpu_command_buffer';
+	gxGpuTriangleExceedsPrimitiveSize,
+} from '../gx_gpu_render_rules';
 import {
 	gxGpuSoftwareDitherOffset,
 	gxGpuSoftwareInterlacedSkipsLine,

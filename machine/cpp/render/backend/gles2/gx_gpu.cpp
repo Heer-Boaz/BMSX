@@ -2,6 +2,7 @@
 
 #include "machine/devices/gx/gpu.h"
 #include "machine/devices/gx/gpu_command_buffer.h"
+#include "render/backend/gx_gpu_render_rules.h"
 #include "render/backend/gles2/backend.h"
 #include "render/backend/gles2/shaders/gx_gpu_shaders.h"
 #include "render/backend/pass/library.h"

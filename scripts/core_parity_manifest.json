@@ -351,6 +351,13 @@
 			"reason": "gx_gte_psx_registerfile_contract"
 		},
 		{
+			"ts": "machine/ts/render/backend/gx_gpu_render_rules.ts",
+			"cpp": [
+				"machine/cpp/render/backend/gx_gpu_render_rules.h"
+			],
+			"reason": "gx_gpu_render_rules_contract"
+		},
+		{
 			"ts": "machine/ts/machine/devices/vdp/device_output.ts",
 			"cpp": [
 				"machine/cpp/machine/devices/vdp/device_output.h"

@@ -1,6 +1,7 @@
 #include "render/backend/software/gx_gpu_rasterizer.h"
 
 #include "machine/devices/gx/gpu_command_buffer.h"
+#include "render/backend/gx_gpu_render_rules.h"
 #include "render/backend/software/gx_gpu_vram.h"
 
 namespace bmsx {
