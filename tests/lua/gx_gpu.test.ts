@@ -758,13 +758,29 @@ test('GX-GPU GP1 clear FIFO clears partial GP0 packets and flushes partial CPU-t
 	assert.equal(gpu.readDrawModeWord(), 0x000444);
 });
 
-function pushSoftwareCommand(commandBuffer: GxGpuCommandBuffer, words: Uint32Array, kind: number, opcode: number): void {
+const GX_GPU_SOFTWARE_TEST_WIDTH = 256;
+const GX_GPU_SOFTWARE_TEST_HEIGHT = 256;
+const GX_GPU_SOFTWARE_FULL_DRAWING_AREA_BOTTOM_RIGHT_WORD = 1023 | (511 << 10);
+
+function pushSoftwareCommand(
+	commandBuffer: GxGpuCommandBuffer,
+	words: Uint32Array,
+	kind: number,
+	opcode: number,
+	drawModeWord = 0,
+	textureWindowWord = 0,
+	drawingAreaTopLeftWord = 0,
+	drawingAreaBottomRightWord = GX_GPU_SOFTWARE_FULL_DRAWING_AREA_BOTTOM_RIGHT_WORD,
+	drawingOffsetWord = 0,
+	maskBitModeWord = 0,
+	interlacedRenderWord = 0,
+): void {
 	const wordStart = commandBuffer.appendWords(words, words.length);
-	commandBuffer.pushCommand(kind, opcode, wordStart, words.length, 0, 0, 0, 0, 0, 0, 0);
+	commandBuffer.pushCommand(kind, opcode, wordStart, words.length, drawModeWord, textureWindowWord, drawingAreaTopLeftWord, drawingAreaBottomRightWord, drawingOffsetWord, maskBitModeWord, interlacedRenderWord);
 }
 
 function assertRgbaPixel(pixels: Uint8Array, x: number, y: number, r: number, g: number, b: number): void {
-	const offset = (y * 256 + x) * 4;
+	const offset = (y * GX_GPU_SOFTWARE_TEST_WIDTH + x) * 4;
 	assert.equal(pixels[offset], r);
 	assert.equal(pixels[offset + 1], g);
 	assert.equal(pixels[offset + 2], b);
@@ -792,17 +808,17 @@ test('GX-GPU software scanout consumes CPU upload, VRAM copy, and fill commands'
 		(1 << 16) | 1,
 	]), GX_GPU_COMMAND_FILL_RECTANGLE, GX_GPU_GP0_FILL_RECTANGLE);
 
-	const pixels = new Uint8Array(256 * 256 * 4);
+	const pixels = new Uint8Array(GX_GPU_SOFTWARE_TEST_WIDTH * GX_GPU_SOFTWARE_TEST_HEIGHT * 4);
 	renderGxGpuSoftwareFrame({
-		width: 256,
-		height: 256,
+		width: GX_GPU_SOFTWARE_TEST_WIDTH,
+		height: GX_GPU_SOFTWARE_TEST_HEIGHT,
 		commandBuffer,
 		statusWord: 0,
 		displayModeWord: PSX_GPU_DISPLAY_MODE_PAL_WORD,
 		displayStartWord: 0,
 		horizontalDisplayRangeWord: (((638 + 256 * 10) << 12) | 638) >>> 0,
 		verticalDisplayRangeWord: (((35 + 256) << 10) | 35) >>> 0,
-	}, pixels, 256, 256);
+	}, pixels, GX_GPU_SOFTWARE_TEST_WIDTH, GX_GPU_SOFTWARE_TEST_HEIGHT);
 
 	assertRgbaPixel(pixels, 0, 0, 255, 0, 0);
 	assertRgbaPixel(pixels, 1, 0, 0, 255, 0);
@@ -811,6 +827,46 @@ test('GX-GPU software scanout consumes CPU upload, VRAM copy, and fill commands'
 	assertRgbaPixel(pixels, 0, 1, 0, 0, 255);
 	assertRgbaPixel(pixels, 15, 1, 0, 0, 255);
 	assertRgbaPixel(pixels, 16, 1, 0, 0, 0);
+});
+
+test('GX-GPU software scanout consumes solid polygon, rectangle, and line commands', () => {
+	const commandBuffer = new GxGpuCommandBuffer();
+	commandBuffer.reset();
+	pushSoftwareCommand(commandBuffer, new Uint32Array([
+		((GX_GPU_GP0_POLYGON_FIRST << 24) | 0x0000ff) >>> 0,
+		(4 << 16) | 4,
+		(4 << 16) | 12,
+		(12 << 16) | 4,
+	]), GX_GPU_COMMAND_DRAW_POLYGON, GX_GPU_GP0_POLYGON_FIRST);
+	pushSoftwareCommand(commandBuffer, new Uint32Array([
+		((GX_GPU_GP0_RECTANGLE_FIRST << 24) | 0x00ff00) >>> 0,
+		(5 << 16) | 20,
+		(2 << 16) | 3,
+	]), GX_GPU_COMMAND_DRAW_RECTANGLE, GX_GPU_GP0_RECTANGLE_FIRST);
+	pushSoftwareCommand(commandBuffer, new Uint32Array([
+		((GX_GPU_GP0_LINE_FIRST << 24) | 0xff0000) >>> 0,
+		(6 << 16) | 30,
+		(6 << 16) | 34,
+	]), GX_GPU_COMMAND_DRAW_LINE, GX_GPU_GP0_LINE_FIRST);
+
+	const pixels = new Uint8Array(GX_GPU_SOFTWARE_TEST_WIDTH * GX_GPU_SOFTWARE_TEST_HEIGHT * 4);
+	renderGxGpuSoftwareFrame({
+		width: GX_GPU_SOFTWARE_TEST_WIDTH,
+		height: GX_GPU_SOFTWARE_TEST_HEIGHT,
+		commandBuffer,
+		statusWord: 0,
+		displayModeWord: PSX_GPU_DISPLAY_MODE_PAL_WORD,
+		displayStartWord: 0,
+		horizontalDisplayRangeWord: (((638 + 256 * 10) << 12) | 638) >>> 0,
+		verticalDisplayRangeWord: (((35 + 256) << 10) | 35) >>> 0,
+	}, pixels, GX_GPU_SOFTWARE_TEST_WIDTH, GX_GPU_SOFTWARE_TEST_HEIGHT);
+
+	assertRgbaPixel(pixels, 5, 5, 255, 0, 0);
+	assertRgbaPixel(pixels, 13, 13, 0, 0, 0);
+	assertRgbaPixel(pixels, 20, 5, 0, 255, 0);
+	assertRgbaPixel(pixels, 22, 6, 0, 255, 0);
+	assertRgbaPixel(pixels, 30, 6, 0, 0, 255);
+	assertRgbaPixel(pixels, 34, 6, 0, 0, 255);
 });
 
 test('GX-GPU MMIO uses PSX GP0 data and GP1 status addresses', () => {

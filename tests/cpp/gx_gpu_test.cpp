@@ -640,9 +640,35 @@ void testGp1ClearFifoClearsPartialGp0PacketsAndFlushesPartialCpuToVramUploads() 
 	require(gpu.readDrawModeWord() == 0x000444u, "GX-GPU GP0 draw mode resumes after partial CPU-to-VRAM flush");
 }
 
-void pushSoftwareCommand(bmsx::GxGpuCommandBuffer& commandBuffer, const std::array<uint32_t, 4>& words, size_t wordCount, uint8_t kind, uint8_t opcode) {
+constexpr uint32_t GX_GPU_SOFTWARE_FULL_DRAWING_AREA_BOTTOM_RIGHT_WORD = 1023u | (511u << 10u);
+
+template<size_t N>
+void pushSoftwareCommand(
+	bmsx::GxGpuCommandBuffer& commandBuffer,
+	const std::array<uint32_t, N>& words,
+	size_t wordCount,
+	uint8_t kind,
+	uint8_t opcode,
+	uint32_t drawModeWord = 0u,
+	uint32_t textureWindowWord = 0u,
+	uint32_t drawingAreaTopLeftWord = 0u,
+	uint32_t drawingAreaBottomRightWord = GX_GPU_SOFTWARE_FULL_DRAWING_AREA_BOTTOM_RIGHT_WORD,
+	uint32_t drawingOffsetWord = 0u,
+	uint32_t maskBitModeWord = 0u,
+	uint8_t interlacedRenderWord = 0u) {
 	const size_t wordStart = commandBuffer.appendWords(words.data(), wordCount);
-	commandBuffer.pushCommand(kind, opcode, wordStart, static_cast<uint32_t>(wordCount), 0u, 0u, 0u, 0u, 0u, 0u, 0u);
+	commandBuffer.pushCommand(
+		kind,
+		opcode,
+		wordStart,
+		static_cast<uint32_t>(wordCount),
+		drawModeWord,
+		textureWindowWord,
+		drawingAreaTopLeftWord,
+		drawingAreaBottomRightWord,
+		drawingOffsetWord,
+		maskBitModeWord,
+		interlacedRenderWord);
 }
 
 void requireArgbPixel(const std::array<uint32_t, 256u * 256u>& pixels, uint32_t x, uint32_t y, uint32_t color, const char* message) {
@@ -709,6 +735,63 @@ void testSoftwareScanoutConsumesTransfersAndFill() {
 	requireArgbPixel(framebuffer, 16u, 1u, 0xff000000u, "GX-GPU software scanout fill stops at rounded edge");
 }
 
+void testSoftwareScanoutConsumesSolidPrimitives() {
+	bmsx::GxGpuCommandBuffer commandBuffer;
+	commandBuffer.reset();
+	pushSoftwareCommand(
+		commandBuffer,
+		std::array<uint32_t, 4>{
+			(bmsx::GX_GPU_GP0_POLYGON_FIRST << 24u) | 0x0000ffu,
+			(4u << 16u) | 4u,
+			(4u << 16u) | 12u,
+			(12u << 16u) | 4u,
+		},
+		4u,
+		bmsx::GX_GPU_COMMAND_DRAW_POLYGON,
+		bmsx::GX_GPU_GP0_POLYGON_FIRST);
+	pushSoftwareCommand(
+		commandBuffer,
+		std::array<uint32_t, 3>{
+			(bmsx::GX_GPU_GP0_RECTANGLE_FIRST << 24u) | 0x00ff00u,
+			(5u << 16u) | 20u,
+			(2u << 16u) | 3u,
+		},
+		3u,
+		bmsx::GX_GPU_COMMAND_DRAW_RECTANGLE,
+		bmsx::GX_GPU_GP0_RECTANGLE_FIRST);
+	pushSoftwareCommand(
+		commandBuffer,
+		std::array<uint32_t, 3>{
+			(bmsx::GX_GPU_GP0_LINE_FIRST << 24u) | 0xff0000u,
+			(6u << 16u) | 30u,
+			(6u << 16u) | 34u,
+		},
+		3u,
+		bmsx::GX_GPU_COMMAND_DRAW_LINE,
+		bmsx::GX_GPU_GP0_LINE_FIRST);
+
+	std::array<uint32_t, 256u * 256u> framebuffer{};
+	bmsx::SoftwareBackend backend(framebuffer.data(), 256, 256, 256 * static_cast<int32_t>(sizeof(uint32_t)));
+	bmsx::GxGpuPipelineState state;
+	state.width = 256;
+	state.height = 256;
+	state.commandBuffer = &commandBuffer;
+	state.statusWord = 0u;
+	state.displayModeWord = bmsx::PSX_GPU_DISPLAY_MODE_PAL_WORD;
+	state.displayStartWord = 0u;
+	state.horizontalDisplayRangeWord = (((638u + 256u * 10u) << 12u) | 638u);
+	state.verticalDisplayRangeWord = (((35u + 256u) << 10u) | 35u);
+
+	bmsx::renderGxGpuSoftwareFrame(backend, state);
+
+	requireArgbPixel(framebuffer, 5u, 5u, 0xffff0000u, "GX-GPU software scanout solid polygon pixel");
+	requireArgbPixel(framebuffer, 13u, 13u, 0xff000000u, "GX-GPU software scanout solid polygon background pixel");
+	requireArgbPixel(framebuffer, 20u, 5u, 0xff00ff00u, "GX-GPU software scanout solid rectangle left pixel");
+	requireArgbPixel(framebuffer, 22u, 6u, 0xff00ff00u, "GX-GPU software scanout solid rectangle right pixel");
+	requireArgbPixel(framebuffer, 30u, 6u, 0xff0000ffu, "GX-GPU software scanout solid line start pixel");
+	requireArgbPixel(framebuffer, 34u, 6u, 0xff0000ffu, "GX-GPU software scanout solid line end pixel");
+}
+
 void testMmioGp0Gp1() {
 	GpuHarness harness;
 	bmsx::Memory& memory = harness.memory;
@@ -741,6 +824,7 @@ int main() {
 	testGp0PolylineConsumesPayloadUntilTerminator();
 	testGp1ClearFifoClearsPartialGp0PacketsAndFlushesPartialCpuToVramUploads();
 	testSoftwareScanoutConsumesTransfersAndFill();
+	testSoftwareScanoutConsumesSolidPrimitives();
 	testMmioGp0Gp1();
 	return 0;
 }

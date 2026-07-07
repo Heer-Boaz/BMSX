@@ -431,6 +431,8 @@ export type GxGpuCommandBufferView = {
 	readonly words: ArrayLike<number>;
 };
 
+let gxGpuCommandBufferNextSerial = 0;
+
 export class GxGpuCommandBuffer implements GxGpuCommandBufferView {
 	public serial = 0;
 	public commandCount = 0;
@@ -449,7 +451,8 @@ export class GxGpuCommandBuffer implements GxGpuCommandBufferView {
 	public readonly words = new Uint32Array(GX_GPU_COMMAND_WORD_CAPACITY);
 
 	public reset(): void {
-		this.serial = (this.serial + 1) >>> 0;
+		gxGpuCommandBufferNextSerial = (gxGpuCommandBufferNextSerial + 1) >>> 0;
+		this.serial = gxGpuCommandBufferNextSerial;
 		this.commandCount = 0;
 		this.wordCount = 0;
 	}

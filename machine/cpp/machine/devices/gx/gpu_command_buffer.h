@@ -423,6 +423,10 @@ inline u32 gxGpuDrawingAreaBottomExclusive(u32 topLeftWord, u32 bottomRightWord)
 }
 
 struct GxGpuCommandBuffer {
+private:
+	inline static u32 nextSerial = 0u;
+
+public:
 	u32 serial = 0u;
 	size_t commandCount = 0u;
 	size_t wordCount = 0u;
@@ -440,7 +444,8 @@ struct GxGpuCommandBuffer {
 	std::array<u32, GX_GPU_COMMAND_WORD_CAPACITY> words{};
 
 	void reset() {
-		serial += 1u;
+		nextSerial += 1u;
+		serial = nextSerial;
 		commandCount = 0u;
 		wordCount = 0u;
 	}
