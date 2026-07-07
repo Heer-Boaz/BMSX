@@ -9,6 +9,10 @@ import {
 	IO_IMG_DST,
 	IO_IMG_LEN,
 	IO_IMG_SRC,
+	IO_GX_GTE_COMMAND,
+	IO_GX_GTE_CONTROL0,
+	IO_GX_GTE_CYCLES,
+	IO_GX_GTE_DATA0,
 	IO_GX_GPU_GP0,
 	IO_GX_GPU_GP1,
 	IO_INP_CTRL,
@@ -108,11 +112,15 @@ test('GX image firmware maps decoded RGBA atlases into direct16 PSX texture page
 	assert.equal(cartlibSystemSource.includes('system.gx_upload_rgba8888_to_direct16_stride = gx_gpu.upload_rgba8888_to_direct16_stride'), true);
 	assert.equal(cartlibSystemSource.includes('system.gx_blit_img_color = gx_image.blit_img_color'), true);
 	assert.equal(cartlibSystemSource.includes('system.gx_blit_img_affine_color = gx_image.blit_img_affine_color'), true);
+	assert.equal(cartlibSystemSource.includes('system.gx_draw_triangle_color = gx_gpu.draw_triangle_color'), true);
+	assert.equal(cartlibSystemSource.includes('system.gx_draw_gouraud_triangle_color = gx_gpu.draw_gouraud_triangle_color'), true);
 	assert.equal(cartlibSystemSource.includes('system.gx_draw_direct16_textured_quad_color = gx_gpu.draw_direct16_textured_quad_color'), true);
 	assert.equal(cartlibPreludeSource.includes('gx_reset_256x192_pal = system.gx_reset_256x192_pal'), true);
 	assert.equal(cartlibPreludeSource.includes('gx_upload_rgba8888_to_direct16_stride = system.gx_upload_rgba8888_to_direct16_stride'), true);
 	assert.equal(cartlibPreludeSource.includes('gx_blit_img_color = system.gx_blit_img_color'), true);
 	assert.equal(cartlibPreludeSource.includes('gx_blit_img_affine_color = system.gx_blit_img_affine_color'), true);
+	assert.equal(cartlibPreludeSource.includes('gx_draw_triangle_color = system.gx_draw_triangle_color'), true);
+	assert.equal(cartlibPreludeSource.includes('gx_draw_gouraud_triangle_color = system.gx_draw_gouraud_triangle_color'), true);
 	assert.equal(cartlibPreludeSource.includes('gx_draw_direct16_textured_quad_color = system.gx_draw_direct16_textured_quad_color'), true);
 	assert.equal(firmwareFontSource.includes("require('system/gx_image')"), true);
 	assert.equal(firmwareFontSource.includes("require('system/vdp_image')"), false);
@@ -126,6 +134,8 @@ test('GX GPU firmware owns raw PSX GP0 and GP1 words for migrated primitive cart
 	assert.equal(gxGpuSource.includes(`local gp0<const>: *word = 0x${IO_GX_GPU_GP0.toString(16).padStart(8, '0')}`), true);
 	assert.equal(gxGpuSource.includes(`local gp1<const>: *word = 0x${IO_GX_GPU_GP1.toString(16).padStart(8, '0')}`), true);
 	assert.equal(gxGpuSource.includes('gp0_draw_rectangle'), true);
+	assert.equal(gxGpuSource.includes('gp0_draw_triangle'), true);
+	assert.equal(gxGpuSource.includes('gp0_draw_gouraud_triangle'), true);
 	assert.equal(gxGpuSource.includes('gp0_draw_semitransparent_rectangle'), true);
 	assert.equal(gxGpuSource.includes('gp0_draw_mode'), true);
 	assert.equal(gxGpuSource.includes('draw_mode_blend_quarter'), true);
@@ -139,12 +149,44 @@ test('GX GPU firmware owns raw PSX GP0 and GP1 words for migrated primitive cart
 	assert.equal(gxGpuSource.includes('upload_rgba8888_to_direct16_stride'), true);
 	assert.equal(gxGpuSource.includes('draw_direct16_textured_rect_color'), true);
 	assert.equal(gxGpuSource.includes('draw_direct16_textured_quad_color'), true);
+	assert.equal(gxGpuSource.includes('draw_triangle_color'), true);
+	assert.equal(gxGpuSource.includes('draw_gouraud_triangle_color'), true);
 	assert.equal(gxGpuSource.includes('gp0_draw_line'), true);
 	assert.equal(renderHwTestSource.includes('gx_reset_320x240_pal()'), true);
 	assert.equal(renderHwTestSource.includes('gx_draw_direct16_textured_quad_color'), true);
 	assert.equal(renderHwTestSource.includes('gx_upload_rgba8888_to_direct16_stride'), true);
 	assert.equal(renderHwTestSource.includes('vdp_'), false);
 	assert.equal(renderHwTestSource.includes('0x0800007c'), false);
+});
+
+test('GX GTE firmware exposes raw PSX COP2 registers and RTPT/NCLIP commands', () => {
+	const gxGteSource = readFileSync('machine/firmware/system/gx_gte.lua', 'utf8');
+	assert.equal(gxGteSource.includes(`local data<const>: *word[32] = 0x${IO_GX_GTE_DATA0.toString(16).padStart(8, '0')}`), true);
+	assert.equal(gxGteSource.includes(`local control<const>: *word[32] = 0x${IO_GX_GTE_CONTROL0.toString(16).padStart(8, '0')}`), true);
+	assert.equal(gxGteSource.includes(`local command<const>: *word = 0x${IO_GX_GTE_COMMAND.toString(16).padStart(8, '0')}`), true);
+	assert.equal(gxGteSource.includes(`local cycles<const>: *word = 0x${IO_GX_GTE_CYCLES.toString(16).padStart(8, '0')}`), true);
+	assert.equal(gxGteSource.includes('local opcode_rtps<const> = 0x00000001'), true);
+	assert.equal(gxGteSource.includes('local opcode_nclip<const> = 0x00000006'), true);
+	assert.equal(gxGteSource.includes('local opcode_rtpt<const> = 0x00000030'), true);
+	assert.equal(gxGteSource.includes('function gx_gte.rtpt'), true);
+	assert.equal(gxGteSource.includes('function gx_gte.nclip'), true);
+});
+
+test('bare metal cart replaces RPU descriptors with GX GPU and GTE primitives', () => {
+	const source = readFileSync('carts/bare_metal_cart/cart.lua', 'utf8');
+	assert.equal(source.includes("require('system/gx_gpu')"), true);
+	assert.equal(source.includes("require('system/gx_gte')"), true);
+	assert.equal(source.includes('gx_gpu.reset_320x240_pal()'), true);
+	assert.equal(source.includes('gx_gpu.upload_rgba8888_to_direct16_stride'), true);
+	assert.equal(source.includes('gx_gpu.draw_direct16_textured_quad_color'), true);
+	assert.equal(source.includes('gx_gpu.draw_gouraud_triangle_color'), true);
+	assert.equal(source.includes('gx_gte.rtpt'), true);
+	assert.equal(source.includes('gx_gte.set_y_rotation_translation'), true);
+	assert.equal(source.includes('vdp_'), false);
+	assert.equal(source.includes('rpu_'), false);
+	assert.equal(source.includes('0x0800007c'), false);
+	assert.equal(source.includes('0x08000084'), false);
+	assert.equal(source.includes('vram_staging'), false);
 });
 
 test('fade probe cart uses GX semi-transparent rectangles instead of VDP streams', () => {

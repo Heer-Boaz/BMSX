@@ -227,8 +227,9 @@ and ask before coding.
   PSX textured polygon/affine sprite coverage, not VDP compatibility aliases.
 - [ ] Migrate `pietious` engine/cart rendering. This needs GX tile/text/image
   residency and tile-run ownership, not a VDP stream shim.
-- [ ] Migrate or replace `bare_metal_cart` RPU descriptor demo with GX/GTE-owned
-  PSX-style primitives.
+- [x] Replace `bare_metal_cart` RPU descriptor demo with GX/GTE-owned PSX-style
+  primitives: direct GP0 Gouraud triangles, raw direct16 textured affine quads,
+  and cart-visible RTPT projection through `system/gx_gte.lua`.
 - [ ] Replace remaining cart graphics programming with PSX-style GPU/GTE
   programming.
 - [ ] Keep BMSX extensions separate and post-parity.

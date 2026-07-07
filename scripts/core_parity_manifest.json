@@ -2401,28 +2401,20 @@
 		{
 			"file": "carts/bare_metal_cart/cart.lua",
 			"substrings": [
-				"bm_xf_matrix_packet_header",
-				"bm_lpu_register_packet_header",
-				"bm_jtu_matrix_packet_header",
-				"bm_rpu_exec_pass_list_packet",
-				"bm_rpu_seal_frame_packet",
-				"passes[0].color_surface_desc_addr = scene_color_surface",
-				"passes[0].depth_surface_desc_addr = scene_depth_surface",
-				"sampled_surface_binds[3].surface_desc_addr = scene_color_surface",
-				"0x00000000",
-				"rpu_primitive_lines",
-				"rpu_primitive_points",
-				"0x00000006",
-				"0x00000007",
-				"0x00000021",
-				"0x00000005",
-				"0x00000001",
-				"while tunnel_index < affine_tunnel_instance_count do",
-				"streams[5].stream_slot = 1; streams[5].layout_id = 0x00000020; streams[5].vram_addr = rpu_instance_vram_addr; streams[5].byte_length = instance_bytes; streams[5].step_rate = 1",
-				"streams[7].stream_slot = 1; streams[7].layout_id = 0x00000021; streams[7].vram_addr = rpu_mat4_instance_vram_addr; streams[7].byte_length = mat4_instance_bytes; streams[7].step_rate = 1",
-				"streams[9].stream_slot = 0; streams[9].layout_id = 0x00000006; streams[9].vram_addr = rpu_mesh_vertex_vram_addr; streams[9].byte_length = mesh_vertex_bytes; streams[9].step_rate = 0"
+				"require('system/gx_gpu')",
+				"require('system/gx_gte')",
+				"gx_gpu.reset_320x240_pal()",
+				"gx_gpu.upload_rgba8888_to_direct16_stride",
+				"gx_gpu.draw_direct16_textured_quad_color",
+				"gx_gpu.draw_gouraud_triangle_color",
+				"gx_gpu.draw_line_color",
+				"gx_gte.set_y_rotation_translation",
+				"gx_gte.set_screen_offset",
+				"gx_gte.set_projection_h",
+				"gx_gte.rtpt",
+				"while tunnel_index < 12 do"
 			],
-			"reason": "bare_metal_cart_must_demonstrate_descriptor_render_features_through_rpu_and_vdp_devices"
+			"reason": "bare_metal_cart_must_demonstrate_psx_gx_gpu_and_gte_primitives_without_rpu_descriptors"
 		},
 		{
 			"file": "machine/ts/render/backend/webgl/backend.ts",
@@ -2538,10 +2530,10 @@
 		{
 			"file": "carts/bare_metal_cart/cart.lua",
 			"substrings": [
-				"local instance_stride<const> = sizeof(sprite_instance)",
-				"rpu_pipeline_depth_alpha<const> = 0x00000001 | (0x00000002 << 4) | (0x00000000 << 8) | 0x00001000 | 0x000f0000"
+				"local draw_tunnel_quad<const> = function(center_x, center_y, radius_x, radius_y, turn, color)",
+				"local draw_face<const> = function(x0, y0, z0, x1, y1, z1, x2, y2, z2, color0, color1, color2)"
 			],
-			"reason": "bare_metal_cart_affine_sprite_instances_must_demonstrate_gpu_depth_ordering_with_new_rpu"
+			"reason": "bare_metal_cart_affine_and_gte_hot_helpers_must_stay_direct_gx_programming"
 		},
 		{
 			"file": "machine/ts/render/backend/webgl/shaders/vdp_rpu.vert.glsl",
@@ -2660,27 +2652,25 @@
 		{
 			"file": "carts/bare_metal_cart/cart.lua",
 			"substrings": [
-				"constant_uploads[0].vram_addr = rpu_c0_vram_addr",
-				"constant_uploads[1].vram_addr = rpu_c1_vram_addr",
-				"constant_uploads[2].vram_addr = rpu_joint_vram_addr",
-				"constants[0].binding_slot = 0; constants[0].vram_addr = rpu_c0_vram_addr; constants[0].byte_length = c0_bytes",
-				"constants[2].binding_slot = 1; constants[2].vram_addr = rpu_joint_vram_addr; constants[2].byte_length = joint_bytes",
-				"constants[3].binding_slot = 2; constants[3].vram_addr = rpu_c1_vram_addr; constants[3].byte_length = c1_bytes"
+				"local sin_q12<const> = sin_q16 >> 4",
+				"local cos_q12<const> = cos_q16 >> 4",
+				"gx_gte.set_y_rotation_translation(sin_q12, cos_q12, 0, -10, translate_z)",
+				"draw_face(0, -72, 0, -78, 58, 76, 78, 58, 76, color_shard_a, color_shard_b, color_shard_c)"
 			],
-			"reason": "bare_metal_mesh_constants_must_flow_through_vdp_local_descriptor_bindings"
+			"reason": "bare_metal_gte_shard_constants_must_flow_through_raw_psx_gte_registers"
 		},
 		{
 			"file": "carts/bare_metal_cart/cart.lua",
 			"substrings": [
-				"local write_lighting_constants<const> = function()",
-				"local write_mesh_constants<const> = function()",
-				"local write_joint_constants<const> = function()",
-				"constant_uploads[1].vram_addr = rpu_c1_vram_addr",
-				"constant_uploads[2].vram_addr = rpu_joint_vram_addr",
-				"constants[2].binding_slot = 1; constants[2].vram_addr = rpu_joint_vram_addr; constants[2].byte_length = joint_bytes",
-				"constants[3].binding_slot = 2; constants[3].vram_addr = rpu_c1_vram_addr; constants[3].byte_length = c1_bytes"
+				"gx_gpu.clear_color(color_black)",
+				"draw_background()",
+				"draw_affine_tunnel()",
+				"draw_gte_shard()",
+				"draw_second_gte_shard()",
+				"draw_sprite()",
+				"draw_vector_overlay()"
 			],
-			"reason": "bare_metal_lighting_and_joint_constants_must_flow_through_vdp_local_rpu_constant_descriptors"
+			"reason": "bare_metal_frame_build_must_remain_gx_gpu_gte_owned_after_rpu_replacement"
 		},
 		{
 			"file": "machine/ts/machine/devices/vdp/device_output.ts",
@@ -3650,45 +3640,21 @@
 		},
 		{
 			"file": "carts/bare_metal_cart/cart.lua",
-			"start": "\tlocal used_bytes<const> = vdp_stream_cursor - vdp_stream_base",
-			"end": "\nend\n\nlocal wait_interrupt",
-			"reason": "bare_metal_cart_rpu_submit_hot_helper_must_not_allocate_tables_closures_or_strings"
+			"start": "\tlocal sin_q16<const>, cos_q16<const> = sincos_turn32(turn & 0xffffffff)",
+			"end": "\nend\n\nlocal draw_affine_tunnel",
+			"reason": "bare_metal_cart_gx_affine_quad_hot_helper_must_not_allocate_tables_closures_or_strings"
 		},
 		{
 			"file": "carts/bare_metal_cart/cart.lua",
-			"start": "\tlocal top_y<const> = 0.62 + morph_a",
-			"end": "\nend\n\nlocal write_mesh_indices",
-			"reason": "bare_metal_cart_mesh_vertex_hot_helper_must_not_allocate_tables_closures_or_strings"
+			"start": "\tlocal sx0<const>, sy0<const>, sz0<const>,",
+			"end": "\nend\n\nlocal draw_gte_shard",
+			"reason": "bare_metal_cart_gte_rtpt_face_hot_helper_must_not_allocate_tables_closures_or_strings"
 		},
 		{
 			"file": "carts/bare_metal_cart/cart.lua",
-			"start": "\tlocal proj_fx<const>, proj_fy<const>, proj_a<const>, proj_b<const> =\n\t\tcam_proj_terms(active)",
-			"end": "\nend\n\nlocal write_joint_constants",
-			"reason": "bare_metal_cart_xf_matrix_hot_helper_must_not_allocate_tables_closures_or_strings"
-		},
-		{
-			"file": "carts/bare_metal_cart/cart.lua",
-			"start": "\tlocal joint_phase<const> = frame % 8",
-			"end": "\nend\n\nlocal update_camera",
-			"reason": "bare_metal_cart_jtu_matrix_hot_helper_must_not_allocate_tables_closures_or_strings"
-		},
-		{
-			"file": "carts/bare_metal_cart/cart.lua",
-			"start": "\tlocal instances<const>: *sprite_instance[instance_count] = instance_addr",
-			"end": "\nend\n\nlocal write_mat4_instances",
-			"reason": "bare_metal_cart_instance_hot_helper_must_not_allocate_tables_closures_or_strings"
-		},
-		{
-			"file": "carts/bare_metal_cart/cart.lua",
-			"start": "\t-- Projection terms from active camera.\n\tlocal proj_fx<const>, proj_fy<const>, proj_a<const>, proj_b<const> =",
-			"end": "\nend\n\nlocal write_vdp_command_descriptors",
-			"reason": "bare_metal_cart_mat4_instance_hot_helper_must_not_allocate_tables_closures_or_strings"
-		},
-		{
-			"file": "carts/bare_metal_cart/cart.lua",
-			"start": "\tlocal morph_phase<const> = frame % 32",
-			"end": "\nend\n\n\n*vdp_dither_register = 0",
-			"reason": "bare_metal_cart_rpu_frame_build_must_not_allocate_tables_closures_or_strings_per_frame"
+			"start": "\tgx_gpu.clear_color(color_black)",
+			"end": "\nend\n\n*irq_mask_register",
+			"reason": "bare_metal_cart_gx_gte_frame_build_must_not_allocate_tables_closures_or_strings_per_frame"
 		},
 		{
 			"file": "carts/bare_metal_cart/cart.lua",

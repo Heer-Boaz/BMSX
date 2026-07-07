@@ -1,41 +1,41 @@
 [
 	{
-		"description": "RPU affine tunnel and 3D shards, early phase",
+		"description": "GX affine tunnel and GTE shards, early phase",
 		"frame": 960,
 		"capture": true
 	},
 	{
-		"description": "RPU affine tunnel and 3D shards, phase A",
+		"description": "GX affine tunnel and GTE shards, phase A",
 		"frame": 976,
 		"capture": true
 	},
 	{
-		"description": "RPU render-to-texture post warp, phase B",
+		"description": "GX textured quad and GTE shard phase B",
 		"frame": 992,
 		"capture": true
 	},
 	{
-		"description": "RPU render-to-texture post warp, phase C",
+		"description": "GX textured quad and GTE shard phase C",
 		"frame": 1008,
 		"capture": true
 	},
 	{
-		"description": "RPU render-to-texture post warp, phase D",
+		"description": "GX textured quad and GTE shard phase D",
 		"frame": 1024,
 		"capture": true
 	},
 	{
-		"description": "RPU render-to-texture post warp, phase E",
+		"description": "GX textured quad and GTE shard phase E",
 		"frame": 1040,
 		"capture": true
 	},
 	{
-		"description": "RPU render-to-texture post warp, phase F",
+		"description": "GX textured quad and GTE shard phase F",
 		"frame": 1056,
 		"capture": true
 	},
 	{
-		"description": "RPU render-to-texture post warp, late phase",
+		"description": "GX textured quad and GTE shard late phase",
 		"frame": 1072,
 		"capture": true
 	}

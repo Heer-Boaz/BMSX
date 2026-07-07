@@ -1,404 +1,90 @@
-local numeric<const>          = require('bios/common/numeric')
-local camobj<const>           = require('cartlib/camera_object')
-local cam_view_terms<const>   = camobj.cam_view_terms
-local cam_proj_terms<const>   = camobj.cam_proj_terms
-local cam_screen_look<const>  = camobj.cam_screen_look
-local cam_move<const>         = camobj.cam_move
-local sincos_turn32<const>    = require('bios/util/sincos_turn32')
+local gx_gpu<const>        = require('system/gx_gpu')
+local gx_gte<const>        = require('system/gx_gte')
+local sincos_turn32<const> = require('bios/util/sincos_turn32')
 
-local vdp_stream_base<const> = 0x080c0000
-local vram_staging_base<const> = 0x11000000
-local scratch_base<const> = 0x08040000
-local irq_ack_addr<const> = 0x08000108
-local irq_mask_addr<const> = 0x0800010c
-local irq_pending_flags = 0
-
-local vdp_mode_register<const>: *word = 0x08000084
-local vdp_dither_register<const>: *word = 0x08000008
-local irq_mask_register<const>: *word = irq_mask_addr
-local irq_ack_register<const>: *word = irq_ack_addr
-local dma_src_register<const>: *word = 0x08000110
-local dma_dst_register<const>: *word = 0x08000114
-local dma_len_register<const>: *word = 0x08000118
-local dma_ctrl_register<const>: *word = 0x0800011c
+local irq_mask_register<const>: *word = 0x0800010c
+local irq_ack_register<const>: *word = 0x08000108
 local inp_keys<const>: *word[8] = 0x0800019c
 local inp_ctrl_register<const>: *word = 0x08000194
 
--- USB HID usages (page 0x07); the ICU keyboard bitmap is indexed by these.
-local key_digit1<const> = 30
-local key_digit2<const> = 31
-local key_q<const> = 20
-local key_e<const> = 8
-local key_t<const> = 23
-local key_g<const> = 10
-local key_w<const> = 26
-local key_s<const> = 22
-local key_a<const> = 4
-local key_d<const> = 7
-local key_r<const> = 21
-local key_f<const> = 9
-local key_shift_left<const> = 225
-
-local irq_dma_done<const> = 0x01
-local irq_dma_error<const> = 0x02
 local irq_vblank<const> = 0x10
-
-*vdp_mode_register = 0x00000002
+local irq_pending_flags = 0
 
 function irq(flags)
 	irq_pending_flags = irq_pending_flags | flags
 	*irq_ack_register = flags
 end
 
-local atlas_width<const> = 16
-local atlas_height<const> = 16
-local atlas_bytes<const> = atlas_width * atlas_height * 4
+local key_digit2<const> = 31
+local key_q<const> = 20
+local key_e<const> = 8
+local key_w<const> = 26
+local key_s<const> = 22
+local key_a<const> = 4
+local key_d<const> = 7
+local key_shift_left<const> = 225
+
 local screen_width<const> = 320
 local screen_height<const> = 240
-local inv_half_screen_width<const> = 1.0 / 160.0
-local inv_half_screen_height<const> = 1.0 / 120.0
-local q16_to_f32_scale<const> = numeric.q16_inv_scale
--- Binary-turn frame step for the demo mesh yaw; runtime yaw state stays turn32.
-local model_yaw_turn_step<const> = 13671306
-local turn_step_30_sin<const> = 0.5
-local turn_step_30_cos<const> = 0.8660254
-local turn_step_45_sin<const> = 0.7071068
-local turn_step_45_cos<const> = 0.7071068
-local turn_step_22_5_sin<const> = 0.3826834
-local turn_step_22_5_cos<const> = 0.9238795
+local q16_inv_scale<const> = 1.0 / 65536.0
+local texture_addr<const> = 0x08040000
+local texture_width<const> = 16
+local texture_height<const> = 16
+local texture_vram_x<const> = 512
+local texture_vram_y<const> = 256
+local texture_u0<const> = texture_vram_x
+local texture_v0<const> = texture_vram_y
+local texture_u1<const> = texture_vram_x + texture_width
+local texture_v1<const> = texture_vram_y + texture_height
 
-struct bg_vertex
-	xy: f32[2]
-	color: word
-end
-
-struct quad_vertex
-	xyzuv: f32[4]
-	color: word
-end
-
-struct mat4_vertex
-	pos: f32[3]
-	color: word
-end
-
-struct mat4_instance
-	mvp: f32[16]
-	color: word
-end
-
-struct sprite_instance
-	matrix: f32[11]
-	color: word
-end
-
-struct mesh_vertex
-	pos: f32[3]
-	normal: f32[3]
-	uv: f32[2]
-	color: word
-	joint: word
-	weight: word
-end
-
-struct morph_vertex
-	pos_delta: f32[3]
-	normal_delta: f32[3]
-end
-
-struct q16_matrix
-	m: word[16]
-end
-
-struct bm_rpu_exec_pass_list_packet
-	header: word
-	op: word
-	pass_desc_addr: word
-end
-
-struct bm_rpu_seal_frame_packet
-	header: word
-	op: word
-end
-
-struct bm_xf_matrix_packet_header
-	header: word
-	matrix_word_offset: word
-end
-
-struct bm_lpu_register_packet_header
-	header: word
-	first_register: word
-end
-
-struct bm_jtu_matrix_packet_header
-	header: word
-	matrix_word_offset: word
-end
-
-struct bm_surface_define_desc
-	desc_addr: word
-	base_addr: word
-	pitch_bytes: word
-	width: word
-	height: word
-	format: word
-end
-
-struct bm_buffer_define_desc
-	vram_addr: word
-	byte_length: word
-	upload_src_addr: word
-	upload_byte_length: word
-end
-
-struct bm_buffer_upload_desc
-	vram_addr: word
-	src_addr: word
-	byte_length: word
-end
-
-struct bm_constant_upload_desc
-	vram_addr: word
-	src_addr: word
-	byte_length: word
-end
-
-struct bm_pass_desc
-	color_surface_desc_addr: word
-	depth_surface_desc_addr: word
-	viewport_xy: word
-	viewport_wh: word
-	pass_ops: word
-	clear_color: word
-	clear_depth_word: word
-	first_draw: word
-	draw_count: word
-end
-
-struct bm_draw_desc
-	shader_variant: word
-	primitive_index_type: word
-	pipeline_word: word
-	vertex_count: word
-	instance_count: word
-	index_vram_addr: word
-	index_count: word
-	stream_first: word
-	stream_count: word
-	constant_first: word
-	constant_count: word
-	sampled_surface_first: word
-	sampled_surface_count: word
-end
-
-struct bm_stream_bind_desc
-	stream_slot: word
-	layout_id: word
-	vram_addr: word
-	byte_length: word
-	step_rate: word
-end
-
-struct bm_constant_bind_desc
-	binding_slot: word
-	vram_addr: word
-	byte_length: word
-end
-
-struct bm_sampled_surface_bind_desc
-	texture_slot: word
-	surface_desc_addr: word
-end
-
-local quad_vertex_count<const> = 4
-local quad_vertex_stride<const> = sizeof(quad_vertex)
-local quad_vertex_bytes<const> = quad_vertex_count * quad_vertex_stride
-local background_vertex_count<const> = 12
-local background_vertex_stride<const> = sizeof(bg_vertex)
-local background_vertex_bytes<const> = background_vertex_count * background_vertex_stride
-local vector_vertex_count<const> = 24
-local vector_vertex_stride<const> = sizeof(bg_vertex)
-local vector_vertex_bytes<const> = vector_vertex_count * vector_vertex_stride
-local mat4_vertex_count<const> = 3
-local mat4_vertex_stride<const> = sizeof(mat4_vertex)
-local mat4_vertex_bytes<const> = mat4_vertex_count * mat4_vertex_stride
-local mat4_instance_count<const> = 10
-local mat4_instance_stride<const> = sizeof(mat4_instance)
-local mat4_instance_bytes<const> = mat4_instance_count * mat4_instance_stride
-local mesh_vertex_count<const> = 24
-local mesh_vertex_stride<const> = sizeof(mesh_vertex)
-local mesh_vertex_bytes<const> = mesh_vertex_count * mesh_vertex_stride
-local mesh_index_count<const> = 24
-local mesh_index_bytes<const> = mesh_index_count * 2
-local affine_tunnel_instance_count<const> = 12
-local affine_actor_instance_count<const> = 4
-local sprite_instance_count<const> = affine_tunnel_instance_count + affine_actor_instance_count
-local present_instance_count<const> = 7
-local instance_count<const> = sprite_instance_count + present_instance_count
-local instance_stride<const> = sizeof(sprite_instance)
-local instance_bytes<const> = instance_count * instance_stride
-local present_instance_offset<const> = sprite_instance_count * instance_stride
-local c0_words<const> = 25
-local c1_words<const> = 68
-local joint_words<const> = 384
-local c0_bytes<const> = c0_words * 4
-local c1_bytes<const> = c1_words * 4
-local joint_matrix_bytes<const> = sizeof(q16_matrix)
-local joint_bytes<const> = joint_words * 4
-local morph_vertex_stride<const> = sizeof(morph_vertex)
-local morph_vertex_bytes<const> = mesh_vertex_count * morph_vertex_stride
-
-local quad_vertex_addr<const> = scratch_base + atlas_bytes
-local background_vertex_addr<const> = quad_vertex_addr + quad_vertex_bytes
-local vector_vertex_addr<const> = background_vertex_addr + background_vertex_bytes
-local mat4_vertex_addr<const> = vector_vertex_addr + vector_vertex_bytes
-local mat4_instance_addr<const> = mat4_vertex_addr + mat4_vertex_bytes
-local mesh_vertex_addr<const> = mat4_instance_addr + mat4_instance_bytes
-local mesh_index_addr<const> = mesh_vertex_addr + mesh_vertex_bytes
-local instance_addr<const> = mesh_index_addr + mesh_index_bytes
-local c0_addr<const> = instance_addr + instance_bytes
-local c1_addr<const> = c0_addr + c0_bytes
-local joint0_addr<const> = c1_addr + c1_bytes
-local joint1_addr<const> = joint0_addr + joint_matrix_bytes
-local morph_vertex_addr<const> = joint0_addr + joint_bytes
-local surface_desc_count<const> = 3
-local buffer_desc_count<const> = 9
-local frame_buffer_upload_desc_count<const> = 4
-local constant_upload_desc_count<const> = 3
-local pass_desc_count<const> = 2
-local draw_desc_count<const> = 9
-local stream_bind_desc_count<const> = 13
-local constant_bind_desc_count<const> = 4
-local sampled_surface_bind_desc_count<const> = 4
-local scene_draw_first<const> = 0
-local scene_draw_count<const> = 8
-local present_draw_first<const> = 8
-local present_draw_count<const> = 1
-local surface_desc_addr<const> = morph_vertex_addr + morph_vertex_bytes
-local buffer_desc_addr<const> = surface_desc_addr + surface_desc_count * sizeof(bm_surface_define_desc)
-local frame_buffer_upload_desc_addr<const> = buffer_desc_addr + buffer_desc_count * sizeof(bm_buffer_define_desc)
-local constant_upload_desc_addr<const> = frame_buffer_upload_desc_addr + frame_buffer_upload_desc_count * sizeof(bm_buffer_upload_desc)
-local pass_desc_addr<const> = constant_upload_desc_addr + constant_upload_desc_count * sizeof(bm_constant_upload_desc)
-local draw_desc_addr<const> = pass_desc_addr + pass_desc_count * sizeof(bm_pass_desc)
-local stream_bind_desc_addr<const> = draw_desc_addr + draw_desc_count * sizeof(bm_draw_desc)
-local constant_bind_desc_addr<const> = stream_bind_desc_addr + stream_bind_desc_count * sizeof(bm_stream_bind_desc)
-local sampled_surface_bind_desc_addr<const> = constant_bind_desc_addr + constant_bind_desc_count * sizeof(bm_constant_bind_desc)
-
-local rpu_atlas_vram_addr<const> = 0
-local rpu_quad_vertex_vram_addr<const> = rpu_atlas_vram_addr + atlas_bytes
-local rpu_background_vertex_vram_addr<const> = rpu_quad_vertex_vram_addr + quad_vertex_bytes
-local rpu_vector_vertex_vram_addr<const> = rpu_background_vertex_vram_addr + background_vertex_bytes
-local rpu_mat4_vertex_vram_addr<const> = rpu_vector_vertex_vram_addr + vector_vertex_bytes
-local rpu_mat4_instance_vram_addr<const> = rpu_mat4_vertex_vram_addr + mat4_vertex_bytes
-local rpu_mesh_vertex_vram_addr<const> = rpu_mat4_instance_vram_addr + mat4_instance_bytes
-local rpu_mesh_index_vram_addr<const> = rpu_mesh_vertex_vram_addr + mesh_vertex_bytes
-local rpu_instance_vram_addr<const> = rpu_mesh_index_vram_addr + mesh_index_bytes
-local rpu_c0_vram_addr<const> = rpu_instance_vram_addr + instance_bytes
-local rpu_c1_vram_addr<const> = rpu_c0_vram_addr + c0_bytes
-local rpu_joint_vram_addr<const> = rpu_c1_vram_addr + c1_bytes
-local rpu_morph_vertex_vram_addr<const> = rpu_joint_vram_addr + joint_bytes
-local rpu_surface_desc_vram_addr<const> = rpu_morph_vertex_vram_addr + morph_vertex_bytes
-local rpu_pass_desc_vram_addr<const> = rpu_surface_desc_vram_addr + surface_desc_count * 0x00000010
-local rpu_draw_desc_vram_addr<const> = rpu_pass_desc_vram_addr + pass_desc_count * 0x00000024
-local rpu_stream_desc_vram_addr<const> = rpu_draw_desc_vram_addr + draw_desc_count * 0x0000002c
-local rpu_constant_desc_vram_addr<const> = rpu_stream_desc_vram_addr + stream_bind_desc_count * 0x0000000c
-local rpu_texture_desc_vram_addr<const> = rpu_constant_desc_vram_addr + constant_bind_desc_count * 0x0000000c
-local rpu_scene_color_vram_addr<const> = rpu_texture_desc_vram_addr + sampled_surface_bind_desc_count * 0x00000008
-local rpu_scene_depth_vram_addr<const> = rpu_scene_color_vram_addr + screen_width * screen_height * 4
-
-local atlas_surface<const> = rpu_surface_desc_vram_addr
-local scene_color_surface<const> = rpu_surface_desc_vram_addr + 0x00000010
-local scene_depth_surface<const> = rpu_surface_desc_vram_addr + (0x00000010 * 2)
-
-local white<const> = 0xffffffff
-local othercolor<const> = 0x00ffffff
-local sky_top<const> = 0xff120028
-local sky_horizon<const> = 0xff003c7a
-local ground_far<const> = 0xff08124a
-local ground_near<const> = 0xff3c1020
-local vector_tint<const> = 0xfffff2a6
-local mat4_tint_a<const> = 0xff001dc4
-local mat4_tint_b<const> = 0xff48a6ff
-local mat4_tint_c<const> = 0xffff3df2
-local mat4_tint_d<const> = 0xff31f7ff
-local sprite_tint<const> = 0xffffffff
-local parallax_far_tint<const> = 0xff3df2ff
-local parallax_near_tint<const> = 0xffffc857
-local billboard_tint_a<const> = white
-local billboard_tint_b<const> = othercolor
-local mesh_tint<const> = white
-local mesh_joint_word<const> = 0x00000001
-local mesh_weight_word<const> = 0x000000ff
-
-local rpu_primitive_triangles<const> = 0x00000000 | (0x00000000 << 8)
-local rpu_primitive_triangle_strip<const> = 0x00000001 | (0x00000000 << 8)
-local rpu_primitive_lines<const> = 0x00000002 | (0x00000000 << 8)
-local rpu_primitive_points<const> = 0x00000003 | (0x00000000 << 8)
-local rpu_primitive_indexed_triangles<const> = 0x00000000 | (0x00000001 << 8)
-local rpu_pipeline_opaque<const> = 0x00000000 | (0x00000000 << 4) | (0x00000000 << 8) | 0x000f0000
-local rpu_pipeline_depth_opaque<const> = 0x00000000 | (0x00000002 << 4) | (0x00000000 << 8) | 0x00001000 | 0x000f0000
-local rpu_pipeline_depth_alpha<const> = 0x00000001 | (0x00000002 << 4) | (0x00000000 << 8) | 0x00001000 | 0x000f0000
-local rpu_pipeline_alpha<const> = 0x00000001 | (0x00000000 << 4) | (0x00000000 << 8) | 0x000f0000
-
-local vdp_stream_cursor
-vdp_stream_cursor = vdp_stream_base
+local color_black<const> = 0xff05070f
+local color_sky_top<const> = 0xff120028
+local color_sky_mid<const> = 0xff003c7a
+local color_ground<const> = 0xff3c1020
+local color_grid<const> = 0xff14355f
+local color_grid_hot<const> = 0xffffd166
+local color_tunnel_a<const> = 0xffffffff
+local color_tunnel_b<const> = 0xff3df2ff
+local color_tunnel_c<const> = 0xffff7a3d
+local color_shard_a<const> = 0xffffe062
+local color_shard_b<const> = 0xff34e8ff
+local color_shard_c<const> = 0xffff3df2
+local color_shard_d<const> = 0xff7cff6b
+local color_sprite<const> = 0xffffffff
+local color_shadow<const> = 0x80302060
 
 local frame = 0
 local sprite_x = 136
 local sprite_y = 96
 local sprite_step<const> = 4
-local sprite_direction = 1
 
--- Free-fly camera: start slightly back with a small downward pitch (≈0.1 rad).
--- Mirrors a CameraObject spawned at (0, 0.1, 3) in world.ts; id auto-generated by cam_new.
-local free_cam<const>     = camobj.cam_new(0.0, 0.1, 3.0, 60.0, 320.0/240.0, 0.1, 100.0)
-free_cam.qx = 0.04998;  free_cam.qy = 0.0;  free_cam.qz = 0.0;  free_cam.qw = 0.99875
-
--- Side camera: fixed viewpoint to the right of the scene, looking at the origin.
--- Demonstrates the multi-camera / active-camera switching pattern from world.ts.
-local side_cam<const>     = camobj.cam_new(5.0, 1.5, 0.0, 45.0, 320.0/240.0, 0.1, 100.0)
-camobj.cam_look_at(side_cam, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0)
-
--- Active camera id — mirrors world._activeCameraId (Identifier = null in TypeScript).
--- nil = no camera selected yet; default lookup resolves to free_cam.
-local active_cam_id = nil
-
-local submit_current_stream<const> = function()
-	if vdp_stream_cursor ~= vdp_stream_base then
-		local used_bytes<const> = vdp_stream_cursor - vdp_stream_base
-		*dma_src_register = vdp_stream_base
-		*dma_dst_register = 0x0800007c
-		*dma_len_register = used_bytes
-		*dma_ctrl_register = 0x00000001
-		vdp_stream_cursor = vdp_stream_base
-	end
-end
-
-local wait_interrupt<const> = function(flag_mask)
-	while (irq_pending_flags & flag_mask) == 0 do
+local wait_vblank<const> = function()
+	while (irq_pending_flags & irq_vblank) == 0 do
 		halt_until_irq
 	end
-	irq_pending_flags = irq_pending_flags - (irq_pending_flags & flag_mask)
+	irq_pending_flags = irq_pending_flags - (irq_pending_flags & irq_vblank)
 end
 
-local build_lua_atlas<const> = function()
-	local px = 0
+local key_down<const> = function(key)
+	return (inp_keys[key >> 5] & (1 << (key & 31))) ~= 0
+end
+
+local build_texture<const> = function()
+	local pixels<const>: *word = texture_addr
 	local py = 0
-	local pixels<const>: *word = scratch_base
 	local wi = 0
-	while py < atlas_height do
-		px = 0
-		while px < atlas_width do
+	while py < texture_height do
+		local px = 0
+		while px < texture_width do
 			local dx = px - 7
 			if dx < 0 then
-				dx = -dx
+				dx = 0 - dx
 			end
 			local dy = py - 7
 			if dy < 0 then
-				dy = -dy
+				dy = 0 - dy
 			end
-			local color = 0x00000000
+			local color = 0xff211031
 			if ((px * 3 + py * 5) & 7) <= 1 then
 				color = 0xff2de6ff
 			end
@@ -426,1381 +112,206 @@ local build_lua_atlas<const> = function()
 	end
 end
 
-local upload_atlas_to_vram<const> = function()
-	*dma_src_register = scratch_base
-	*dma_dst_register = vram_staging_base + rpu_atlas_vram_addr
-	*dma_len_register = atlas_bytes
-	*dma_ctrl_register = 0x00000001
-	wait_interrupt(irq_dma_done | irq_dma_error)
+local upload_texture<const> = function()
+	gx_gpu.upload_rgba8888_to_direct16_stride(
+		texture_addr, 0, 0, texture_width,
+		texture_vram_x, texture_vram_y,
+		texture_width, texture_height)
 end
 
-local write_background_vertices<const> = function()
-	local vertices<const>: *bg_vertex[background_vertex_count] = background_vertex_addr
-	vertices[0].xy[0] = -1.0
-	vertices[0].xy[1] = 1.0
-	vertices[0].color = sky_top
-	vertices[1].xy[0] = 1.0
-	vertices[1].xy[1] = 1.0
-	vertices[1].color = sky_top
-	vertices[2].xy[0] = -1.0
-	vertices[2].xy[1] = -0.24
-	vertices[2].color = sky_horizon
-	vertices[3].xy[0] = 1.0
-	vertices[3].xy[1] = 1.0
-	vertices[3].color = sky_top
-	vertices[4].xy[0] = 1.0
-	vertices[4].xy[1] = -0.24
-	vertices[4].color = sky_horizon
-	vertices[5].xy[0] = -1.0
-	vertices[5].xy[1] = -0.24
-	vertices[5].color = sky_horizon
-	vertices[6].xy[0] = -1.0
-	vertices[6].xy[1] = -0.24
-	vertices[6].color = ground_far
-	vertices[7].xy[0] = 1.0
-	vertices[7].xy[1] = -0.24
-	vertices[7].color = ground_far
-	vertices[8].xy[0] = -1.0
-	vertices[8].xy[1] = -1.0
-	vertices[8].color = ground_near
-	vertices[9].xy[0] = 1.0
-	vertices[9].xy[1] = -0.24
-	vertices[9].color = ground_far
-	vertices[10].xy[0] = 1.0
-	vertices[10].xy[1] = -1.0
-	vertices[10].color = ground_near
-	vertices[11].xy[0] = -1.0
-	vertices[11].xy[1] = -1.0
-	vertices[11].color = ground_near
-end
-
-local write_quad_vertices<const> = function()
-	local vertices<const>: *quad_vertex[quad_vertex_count] = quad_vertex_addr
-	vertices[0].xyzuv[0] = 0.0
-	vertices[0].xyzuv[1] = 0.0
-	vertices[0].xyzuv[2] = 0.0
-	vertices[0].xyzuv[3] = 0.0
-	vertices[0].color = white
-	vertices[1].xyzuv[0] = 1.0
-	vertices[1].xyzuv[1] = 0.0
-	vertices[1].xyzuv[2] = 1.0
-	vertices[1].xyzuv[3] = 0.0
-	vertices[1].color = white
-	vertices[2].xyzuv[0] = 0.0
-	vertices[2].xyzuv[1] = 1.0
-	vertices[2].xyzuv[2] = 0.0
-	vertices[2].xyzuv[3] = 1.0
-	vertices[2].color = white
-	vertices[3].xyzuv[0] = 1.0
-	vertices[3].xyzuv[1] = 1.0
-	vertices[3].xyzuv[2] = 1.0
-	vertices[3].xyzuv[3] = 1.0
-	vertices[3].color = white
-end
-
-local write_vector_vertices<const> = function()
-	local vertices<const>: *bg_vertex[vector_vertex_count] = vector_vertex_addr
-	vertices[0].xy[0] = -0.88
-	vertices[0].xy[1] = -0.94
-	vertices[0].color = vector_tint
-	vertices[1].xy[0] = 0.88
-	vertices[1].xy[1] = -0.94
-	vertices[1].color = vector_tint
-	vertices[2].xy[0] = -0.88
-	vertices[2].xy[1] = -0.90
-	vertices[2].color = vector_tint
-	vertices[3].xy[0] = 0.88
-	vertices[3].xy[1] = -0.94
-	vertices[3].color = vector_tint
-	vertices[4].xy[0] = 0.88
-	vertices[4].xy[1] = -0.90
-	vertices[4].color = vector_tint
-	vertices[5].xy[0] = -0.88
-	vertices[5].xy[1] = -0.90
-	vertices[5].color = vector_tint
-	vertices[6].xy[0] = -0.72
-	vertices[6].xy[1] = -0.78
-	vertices[6].color = vector_tint
-	vertices[7].xy[0] = 0.72
-	vertices[7].xy[1] = -0.78
-	vertices[7].color = vector_tint
-	vertices[8].xy[0] = -0.72
-	vertices[8].xy[1] = -0.74
-	vertices[8].color = vector_tint
-	vertices[9].xy[0] = 0.72
-	vertices[9].xy[1] = -0.78
-	vertices[9].color = vector_tint
-	vertices[10].xy[0] = 0.72
-	vertices[10].xy[1] = -0.74
-	vertices[10].color = vector_tint
-	vertices[11].xy[0] = -0.72
-	vertices[11].xy[1] = -0.74
-	vertices[11].color = vector_tint
-	vertices[12].xy[0] = -0.92
-	vertices[12].xy[1] = -0.62
-	vertices[12].color = vector_tint
-	vertices[13].xy[0] = -0.86
-	vertices[13].xy[1] = -0.62
-	vertices[13].color = vector_tint
-	vertices[14].xy[0] = -0.92
-	vertices[14].xy[1] = -0.56
-	vertices[14].color = vector_tint
-	vertices[15].xy[0] = -0.86
-	vertices[15].xy[1] = -0.62
-	vertices[15].color = vector_tint
-	vertices[16].xy[0] = -0.86
-	vertices[16].xy[1] = -0.56
-	vertices[16].color = vector_tint
-	vertices[17].xy[0] = -0.92
-	vertices[17].xy[1] = -0.56
-	vertices[17].color = vector_tint
-	vertices[18].xy[0] = 0.86
-	vertices[18].xy[1] = -0.62
-	vertices[18].color = vector_tint
-	vertices[19].xy[0] = 0.92
-	vertices[19].xy[1] = -0.62
-	vertices[19].color = vector_tint
-	vertices[20].xy[0] = 0.86
-	vertices[20].xy[1] = -0.56
-	vertices[20].color = vector_tint
-	vertices[21].xy[0] = 0.92
-	vertices[21].xy[1] = -0.62
-	vertices[21].color = vector_tint
-	vertices[22].xy[0] = 0.92
-	vertices[22].xy[1] = -0.56
-	vertices[22].color = vector_tint
-	vertices[23].xy[0] = 0.86
-	vertices[23].xy[1] = -0.56
-	vertices[23].color = vector_tint
-end
-
-local write_mat4_vertices<const> = function()
-	local vertices<const>: *mat4_vertex[mat4_vertex_count] = mat4_vertex_addr
-	vertices[0].pos[0] = 0.0
-	vertices[0].pos[1] = 0.12
-	vertices[0].pos[2] = 0.0
-	vertices[0].color = white
-	vertices[1].pos[0] = -0.10
-	vertices[1].pos[1] = -0.08
-	vertices[1].pos[2] = 0.0
-	vertices[1].color = white
-	vertices[2].pos[0] = 0.10
-	vertices[2].pos[1] = -0.08
-	vertices[2].pos[2] = 0.0
-	vertices[2].color = white
-end
-
-local write_mesh_vertices<const> = function(morph_a, morph_b)
-	local top_y<const> = 0.62 + morph_a
-	local bottom_y<const> = -0.62 - morph_b
-	local radius_x<const> = 0.56 + morph_b
-	local radius_z<const> = 0.56 + morph_a
-	local mesh_uv<const> = 0.46875
-	local vertices<const>: *mesh_vertex[mesh_vertex_count] = mesh_vertex_addr
-	vertices[0].pos[0] = 0.0
-	vertices[0].pos[1] = top_y
-	vertices[0].pos[2] = 0.0
-	vertices[0].normal[0] = 0.0
-	vertices[0].normal[1] = top_y
-	vertices[0].normal[2] = 0.0
-	vertices[0].uv[0] = mesh_uv
-	vertices[0].uv[1] = mesh_uv
-	vertices[0].color = mesh_tint
-	vertices[0].joint = mesh_joint_word
-	vertices[0].weight = mesh_weight_word
-	vertices[1].pos[0] = 0.0
-	vertices[1].pos[1] = 0.0
-	vertices[1].pos[2] = radius_z
-	vertices[1].normal[0] = 0.0
-	vertices[1].normal[1] = 0.0
-	vertices[1].normal[2] = radius_z
-	vertices[1].uv[0] = mesh_uv
-	vertices[1].uv[1] = mesh_uv
-	vertices[1].color = mesh_tint
-	vertices[1].joint = mesh_joint_word
-	vertices[1].weight = mesh_weight_word
-	vertices[2].pos[0] = radius_x
-	vertices[2].pos[1] = 0.0
-	vertices[2].pos[2] = 0.0
-	vertices[2].normal[0] = radius_x
-	vertices[2].normal[1] = 0.0
-	vertices[2].normal[2] = 0.0
-	vertices[2].uv[0] = mesh_uv
-	vertices[2].uv[1] = mesh_uv
-	vertices[2].color = mesh_tint
-	vertices[2].joint = mesh_joint_word
-	vertices[2].weight = mesh_weight_word
-	vertices[3].pos[0] = 0.0
-	vertices[3].pos[1] = top_y
-	vertices[3].pos[2] = 0.0
-	vertices[3].normal[0] = 0.0
-	vertices[3].normal[1] = top_y
-	vertices[3].normal[2] = 0.0
-	vertices[3].uv[0] = mesh_uv
-	vertices[3].uv[1] = mesh_uv
-	vertices[3].color = mesh_tint
-	vertices[3].joint = mesh_joint_word
-	vertices[3].weight = mesh_weight_word
-	vertices[4].pos[0] = -radius_x
-	vertices[4].pos[1] = 0.0
-	vertices[4].pos[2] = 0.0
-	vertices[4].normal[0] = -radius_x
-	vertices[4].normal[1] = 0.0
-	vertices[4].normal[2] = 0.0
-	vertices[4].uv[0] = mesh_uv
-	vertices[4].uv[1] = mesh_uv
-	vertices[4].color = mesh_tint
-	vertices[4].joint = mesh_joint_word
-	vertices[4].weight = mesh_weight_word
-	vertices[5].pos[0] = 0.0
-	vertices[5].pos[1] = 0.0
-	vertices[5].pos[2] = radius_z
-	vertices[5].normal[0] = 0.0
-	vertices[5].normal[1] = 0.0
-	vertices[5].normal[2] = radius_z
-	vertices[5].uv[0] = mesh_uv
-	vertices[5].uv[1] = mesh_uv
-	vertices[5].color = mesh_tint
-	vertices[5].joint = mesh_joint_word
-	vertices[5].weight = mesh_weight_word
-	vertices[6].pos[0] = 0.0
-	vertices[6].pos[1] = top_y
-	vertices[6].pos[2] = 0.0
-	vertices[6].normal[0] = 0.0
-	vertices[6].normal[1] = top_y
-	vertices[6].normal[2] = 0.0
-	vertices[6].uv[0] = mesh_uv
-	vertices[6].uv[1] = mesh_uv
-	vertices[6].color = mesh_tint
-	vertices[6].joint = mesh_joint_word
-	vertices[6].weight = mesh_weight_word
-	vertices[7].pos[0] = 0.0
-	vertices[7].pos[1] = 0.0
-	vertices[7].pos[2] = -radius_z
-	vertices[7].normal[0] = 0.0
-	vertices[7].normal[1] = 0.0
-	vertices[7].normal[2] = -radius_z
-	vertices[7].uv[0] = mesh_uv
-	vertices[7].uv[1] = mesh_uv
-	vertices[7].color = mesh_tint
-	vertices[7].joint = mesh_joint_word
-	vertices[7].weight = mesh_weight_word
-	vertices[8].pos[0] = -radius_x
-	vertices[8].pos[1] = 0.0
-	vertices[8].pos[2] = 0.0
-	vertices[8].normal[0] = -radius_x
-	vertices[8].normal[1] = 0.0
-	vertices[8].normal[2] = 0.0
-	vertices[8].uv[0] = mesh_uv
-	vertices[8].uv[1] = mesh_uv
-	vertices[8].color = mesh_tint
-	vertices[8].joint = mesh_joint_word
-	vertices[8].weight = mesh_weight_word
-	vertices[9].pos[0] = 0.0
-	vertices[9].pos[1] = top_y
-	vertices[9].pos[2] = 0.0
-	vertices[9].normal[0] = 0.0
-	vertices[9].normal[1] = top_y
-	vertices[9].normal[2] = 0.0
-	vertices[9].uv[0] = mesh_uv
-	vertices[9].uv[1] = mesh_uv
-	vertices[9].color = mesh_tint
-	vertices[9].joint = mesh_joint_word
-	vertices[9].weight = mesh_weight_word
-	vertices[10].pos[0] = radius_x
-	vertices[10].pos[1] = 0.0
-	vertices[10].pos[2] = 0.0
-	vertices[10].normal[0] = radius_x
-	vertices[10].normal[1] = 0.0
-	vertices[10].normal[2] = 0.0
-	vertices[10].uv[0] = mesh_uv
-	vertices[10].uv[1] = mesh_uv
-	vertices[10].color = mesh_tint
-	vertices[10].joint = mesh_joint_word
-	vertices[10].weight = mesh_weight_word
-	vertices[11].pos[0] = 0.0
-	vertices[11].pos[1] = 0.0
-	vertices[11].pos[2] = -radius_z
-	vertices[11].normal[0] = 0.0
-	vertices[11].normal[1] = 0.0
-	vertices[11].normal[2] = -radius_z
-	vertices[11].uv[0] = mesh_uv
-	vertices[11].uv[1] = mesh_uv
-	vertices[11].color = mesh_tint
-	vertices[11].joint = mesh_joint_word
-	vertices[11].weight = mesh_weight_word
-	vertices[12].pos[0] = 0.0
-	vertices[12].pos[1] = bottom_y
-	vertices[12].pos[2] = 0.0
-	vertices[12].normal[0] = 0.0
-	vertices[12].normal[1] = bottom_y
-	vertices[12].normal[2] = 0.0
-	vertices[12].uv[0] = mesh_uv
-	vertices[12].uv[1] = mesh_uv
-	vertices[12].color = mesh_tint
-	vertices[12].joint = mesh_joint_word
-	vertices[12].weight = mesh_weight_word
-	vertices[13].pos[0] = radius_x
-	vertices[13].pos[1] = 0.0
-	vertices[13].pos[2] = 0.0
-	vertices[13].normal[0] = radius_x
-	vertices[13].normal[1] = 0.0
-	vertices[13].normal[2] = 0.0
-	vertices[13].uv[0] = mesh_uv
-	vertices[13].uv[1] = mesh_uv
-	vertices[13].color = mesh_tint
-	vertices[13].joint = mesh_joint_word
-	vertices[13].weight = mesh_weight_word
-	vertices[14].pos[0] = 0.0
-	vertices[14].pos[1] = 0.0
-	vertices[14].pos[2] = radius_z
-	vertices[14].normal[0] = 0.0
-	vertices[14].normal[1] = 0.0
-	vertices[14].normal[2] = radius_z
-	vertices[14].uv[0] = mesh_uv
-	vertices[14].uv[1] = mesh_uv
-	vertices[14].color = mesh_tint
-	vertices[14].joint = mesh_joint_word
-	vertices[14].weight = mesh_weight_word
-	vertices[15].pos[0] = 0.0
-	vertices[15].pos[1] = bottom_y
-	vertices[15].pos[2] = 0.0
-	vertices[15].normal[0] = 0.0
-	vertices[15].normal[1] = bottom_y
-	vertices[15].normal[2] = 0.0
-	vertices[15].uv[0] = mesh_uv
-	vertices[15].uv[1] = mesh_uv
-	vertices[15].color = mesh_tint
-	vertices[15].joint = mesh_joint_word
-	vertices[15].weight = mesh_weight_word
-	vertices[16].pos[0] = 0.0
-	vertices[16].pos[1] = 0.0
-	vertices[16].pos[2] = radius_z
-	vertices[16].normal[0] = 0.0
-	vertices[16].normal[1] = 0.0
-	vertices[16].normal[2] = radius_z
-	vertices[16].uv[0] = mesh_uv
-	vertices[16].uv[1] = mesh_uv
-	vertices[16].color = mesh_tint
-	vertices[16].joint = mesh_joint_word
-	vertices[16].weight = mesh_weight_word
-	vertices[17].pos[0] = -radius_x
-	vertices[17].pos[1] = 0.0
-	vertices[17].pos[2] = 0.0
-	vertices[17].normal[0] = -radius_x
-	vertices[17].normal[1] = 0.0
-	vertices[17].normal[2] = 0.0
-	vertices[17].uv[0] = mesh_uv
-	vertices[17].uv[1] = mesh_uv
-	vertices[17].color = mesh_tint
-	vertices[17].joint = mesh_joint_word
-	vertices[17].weight = mesh_weight_word
-	vertices[18].pos[0] = 0.0
-	vertices[18].pos[1] = bottom_y
-	vertices[18].pos[2] = 0.0
-	vertices[18].normal[0] = 0.0
-	vertices[18].normal[1] = bottom_y
-	vertices[18].normal[2] = 0.0
-	vertices[18].uv[0] = mesh_uv
-	vertices[18].uv[1] = mesh_uv
-	vertices[18].color = mesh_tint
-	vertices[18].joint = mesh_joint_word
-	vertices[18].weight = mesh_weight_word
-	vertices[19].pos[0] = -radius_x
-	vertices[19].pos[1] = 0.0
-	vertices[19].pos[2] = 0.0
-	vertices[19].normal[0] = -radius_x
-	vertices[19].normal[1] = 0.0
-	vertices[19].normal[2] = 0.0
-	vertices[19].uv[0] = mesh_uv
-	vertices[19].uv[1] = mesh_uv
-	vertices[19].color = mesh_tint
-	vertices[19].joint = mesh_joint_word
-	vertices[19].weight = mesh_weight_word
-	vertices[20].pos[0] = 0.0
-	vertices[20].pos[1] = 0.0
-	vertices[20].pos[2] = -radius_z
-	vertices[20].normal[0] = 0.0
-	vertices[20].normal[1] = 0.0
-	vertices[20].normal[2] = -radius_z
-	vertices[20].uv[0] = mesh_uv
-	vertices[20].uv[1] = mesh_uv
-	vertices[20].color = mesh_tint
-	vertices[20].joint = mesh_joint_word
-	vertices[20].weight = mesh_weight_word
-	vertices[21].pos[0] = 0.0
-	vertices[21].pos[1] = bottom_y
-	vertices[21].pos[2] = 0.0
-	vertices[21].normal[0] = 0.0
-	vertices[21].normal[1] = bottom_y
-	vertices[21].normal[2] = 0.0
-	vertices[21].uv[0] = mesh_uv
-	vertices[21].uv[1] = mesh_uv
-	vertices[21].color = mesh_tint
-	vertices[21].joint = mesh_joint_word
-	vertices[21].weight = mesh_weight_word
-	vertices[22].pos[0] = 0.0
-	vertices[22].pos[1] = 0.0
-	vertices[22].pos[2] = -radius_z
-	vertices[22].normal[0] = 0.0
-	vertices[22].normal[1] = 0.0
-	vertices[22].normal[2] = -radius_z
-	vertices[22].uv[0] = mesh_uv
-	vertices[22].uv[1] = mesh_uv
-	vertices[22].color = mesh_tint
-	vertices[22].joint = mesh_joint_word
-	vertices[22].weight = mesh_weight_word
-	vertices[23].pos[0] = radius_x
-	vertices[23].pos[1] = 0.0
-	vertices[23].pos[2] = 0.0
-	vertices[23].normal[0] = radius_x
-	vertices[23].normal[1] = 0.0
-	vertices[23].normal[2] = 0.0
-	vertices[23].uv[0] = mesh_uv
-	vertices[23].uv[1] = mesh_uv
-	vertices[23].color = mesh_tint
-	vertices[23].joint = mesh_joint_word
-	vertices[23].weight = mesh_weight_word
-end
-
-local write_mesh_indices<const> = function()
-	local indices<const>: *word = mesh_index_addr
-	local word_index = 0
-	local index = 0
-	while index < mesh_index_count do
-		indices[word_index] = ((index + 1) << 16) | index
-		word_index = word_index + 1
-		index = index + 2
+local update_input<const> = function()
+	*inp_ctrl_register = 0x00000001
+	local step = sprite_step
+	if key_down(key_shift_left) then
+		step = sprite_step + 3
+	end
+	if key_down(key_a) then
+		sprite_x = sprite_x - step
+	end
+	if key_down(key_d) then
+		sprite_x = sprite_x + step
+	end
+	if key_down(key_w) then
+		sprite_y = sprite_y - step
+	end
+	if key_down(key_s) then
+		sprite_y = sprite_y + step
+	end
+	if sprite_x < 24 then
+		sprite_x = 24
+	end
+	if sprite_x > screen_width - 24 then
+		sprite_x = screen_width - 24
+	end
+	if sprite_y < 24 then
+		sprite_y = 24
+	end
+	if sprite_y > screen_height - 24 then
+		sprite_y = screen_height - 24
 	end
 end
 
-local write_lighting_constants<const> = function()
-	local words<const>: *word = c1_addr
-	local floats<const>: *f32 = c1_addr
-	local light_turn<const> = (frame * 59652323) & 0xffffffff
-	local light_sin_q16<const>, light_cos_q16<const> = sincos_turn32(light_turn)
-	local light_sin<const> = light_sin_q16 * q16_to_f32_scale
-	local light_cos<const> = light_cos_q16 * q16_to_f32_scale
-	local counter_sin<const> = -light_sin
-	local counter_cos<const> = -light_cos
-	local word_index = 0
-	while word_index < c1_words do
-		words[word_index] = 0
-		word_index = word_index + 1
+local draw_background<const> = function()
+	gx_gpu.draw_gouraud_triangle_color(
+		0, 0, color_sky_top,
+		screen_width, 0, color_sky_top,
+		0, 146, color_sky_mid)
+	gx_gpu.draw_gouraud_triangle_color(
+		screen_width, 0, color_sky_top,
+		screen_width, 146, color_sky_mid,
+		0, 146, color_sky_mid)
+	gx_gpu.draw_gouraud_triangle_color(
+		0, 146, color_sky_mid,
+		screen_width, 146, color_sky_mid,
+		0, screen_height, color_ground)
+	gx_gpu.draw_gouraud_triangle_color(
+		screen_width, 146, color_sky_mid,
+		screen_width, screen_height, color_ground,
+		0, screen_height, color_ground)
+	local y = 160
+	while y < screen_height do
+		gx_gpu.draw_line_color(0, y, screen_width, y + ((y - 160) >> 2), color_grid)
+		y = y + 12
 	end
-	-- Ambient: words 0-3 (r, g, b, intensity)
-	floats[0] = 0.18
-	floats[1] = 0.12
-	floats[2] = 0.28
-	floats[3] = 1.0
-	-- Dir light 0: words 4-11 (dir.xyz+pad, color.rgb+intensity)
-	floats[4] = -0.35 + light_cos * 0.25
-	floats[5] = 0.70
-	floats[6] = 0.45 + light_sin * 0.25
-	floats[7] = 0.0
-	floats[8] = 1.0
-	floats[9] = 0.55
-	floats[10] = 0.90
-	floats[11] = 0.75
-	-- Dir light 1: words 12-19 (blueish fill)
-	floats[12] = 0.50 + counter_cos * 0.20
-	floats[13] = -0.20
-	floats[14] = -0.30 + counter_sin * 0.20
-	floats[15] = 0.0
-	floats[16] = 0.25
-	floats[17] = 0.60
-	floats[18] = 1.0
-	floats[19] = 0.55
-	-- Point light 0: words 36-43 (pos.xyz+range, color.rgb+intensity)
-	floats[36] = light_cos * 1.45
-	floats[37] = 0.42 + light_sin * 0.22
-	floats[38] = light_sin * 1.25
-	floats[39] = 3.5
-	floats[40] = 1.0
-	floats[41] = 0.30
-	floats[42] = 0.85
-	floats[43] = 1.30
-	-- Point light 1: words 44-51 (counter-rotating cyan fill)
-	floats[44] = counter_cos * 1.20
-	floats[45] = 0.20 + counter_sin * 0.18
-	floats[46] = counter_sin * 1.35
-	floats[47] = 3.2
-	floats[48] = 0.20
-	floats[49] = 0.95
-	floats[50] = 1.0
-	floats[51] = 0.90
-end
-
-local write_morph_deltas<const> = function()
-	local phase<const> = frame % 16
-	local t<const> = phase < 8 and (phase * 0.125) or (2.0 - phase * 0.125)
-	local morph_dy<const> = (t - 0.5) * 0.30
-	local vertices<const>: *morph_vertex = morph_vertex_addr
-	local i = 0
-	while i < mesh_vertex_count do
-		vertices[i].pos_delta[0] = 0.0
-		vertices[i].pos_delta[1] = morph_dy
-		vertices[i].pos_delta[2] = 0.0
-		vertices[i].normal_delta[0] = 0.0
-		vertices[i].normal_delta[1] = morph_dy * 2.0
-		vertices[i].normal_delta[2] = 0.0
-		i = i + 1
+	local x = 16
+	while x < screen_width do
+		gx_gpu.draw_line_color(x, 156, 160 + ((x - 160) * 3), screen_height, color_grid)
+		x = x + 32
 	end
 end
 
-local write_mesh_constants<const> = function()
-	-- Resolve active camera from id (mirrors world.activeCamera3D getter).
-	local active<const> = active_cam_id == side_cam.id and side_cam or free_cam
-	-- Projection terms (sparse perspective-family P matrix).
-	local proj_fx<const>, proj_fy<const>, proj_a<const>, proj_b<const> =
-		cam_proj_terms(active)
-	-- View basis and translation from active camera position + quaternion.
-	local rx<const>, ry<const>, rz<const>, ux<const>, uy<const>, uz<const>, fx<const>, fy<const>, fz<const>,
-			v_tx<const>, v_ty<const>, v_tz<const> = cam_view_terms(active)
-	-- Model: slow Y-axis auto-rotation (column-major)
-	-- col0=(mc,0,-ms,0), col1=(0,1,0,0), col2=(ms,0,mc,0), col3=(0,0,0,1)
-	local model_yaw_turn<const> = (frame * model_yaw_turn_step) & 0xffffffff
-	local ms_q16<const>, mc_q16<const> = sincos_turn32(model_yaw_turn)
-	-- RPU mesh constants are f32; this is the single Q16.16 trig-to-f32 boundary.
-	local mc<const> = mc_q16 * q16_to_f32_scale
-	local ms<const> = ms_q16 * q16_to_f32_scale
-	-- VM = View * Model (column-major, pre-multiply by P below)
-	-- View col-major: col0=(rx,ux,-fx,0), col1=(ry,uy,-fy,0), col2=(rz,uz,-fz,0), col3=(v_tx,v_ty,v_tz,1)
-	-- VM_col0 = View * M_col0 = View * (mc, 0, -ms, 0)
-	local vm_00<const> = rx * mc - rz * ms
-	local vm_10<const> = ux * mc - uz * ms
-	local vm_20<const> = -fx * mc + fz * ms
-	-- VM_col1 = View * M_col1 = View * (0, 1, 0, 0)
-	local vm_01<const> = ry
-	local vm_11<const> = uy
-	local vm_21<const> = -fy
-	-- VM_col2 = View * M_col2 = View * (ms, 0, mc, 0)
-	local vm_02<const> = rx * ms + rz * mc
-	local vm_12<const> = ux * ms + uz * mc
-	local vm_22<const> = -fx * ms - fz * mc
-	-- VM_col3 = View * M_col3 = View * (0, 0, 0, 1) = view translation
-	local vm_03<const> = v_tx
-	local vm_13<const> = v_ty
-	local vm_23<const> = v_tz
-	-- MVP = P * VM  (P is sparse: rows 0,1 scale x,y; rows 2,3 are depth/w)
-	-- P row0=[proj_fx,0,0,0], row1=[0,proj_fy,0,0], row2=[0,0,proj_a,proj_b], row3=[0,0,-1,0]
-	-- Each MVP column j: (proj_fx*vm_0j, proj_fy*vm_1j, proj_a*vm_2j + proj_b*w, -vm_2j)
-	-- where w=0 for cols 0-2, w=1 for col 3 (homogeneous row of VM = (0,0,0,1))
-	local c0<const>: *f32 = c0_addr
-	local clear_index = 0
-	while clear_index < c0_words do
-		c0[clear_index] = 0.0
-		clear_index = clear_index + 1
-	end
-	c0[0] = proj_fx * vm_00
-	c0[1] = proj_fy * vm_10
-	c0[2] = proj_a * vm_20
-	c0[3] = -vm_20
-	c0[4] = proj_fx * vm_01
-	c0[5] = proj_fy * vm_11
-	c0[6] = proj_a * vm_21
-	c0[7] = -vm_21
-	c0[8] = proj_fx * vm_02
-	c0[9] = proj_fy * vm_12
-	c0[10] = proj_a * vm_22
-	c0[11] = -vm_22
-	c0[12] = proj_fx * vm_03
-	c0[13] = proj_fy * vm_13
-	c0[14] = proj_a * vm_23 + proj_b
-	c0[15] = -vm_23
-	c0[16] = 1.0
-	c0[20] = 1.0
-	c0[24] = 1.0
+local draw_tunnel_quad<const> = function(center_x, center_y, radius_x, radius_y, turn, color)
+	local sin_q16<const>, cos_q16<const> = sincos_turn32(turn & 0xffffffff)
+	local s<const> = sin_q16 * q16_inv_scale
+	local c<const> = cos_q16 * q16_inv_scale
+	local axis_xx<const> = c * radius_x
+	local axis_xy<const> = s * radius_x
+	local axis_yx<const> = (0.0 - s) * radius_y
+	local axis_yy<const> = c * radius_y
+	local x0<const> = center_x - axis_xx - axis_yx
+	local y0<const> = center_y - axis_xy - axis_yy
+	local x1<const> = center_x + axis_xx - axis_yx
+	local y1<const> = center_y + axis_xy - axis_yy
+	local x2<const> = center_x - axis_xx + axis_yx
+	local y2<const> = center_y - axis_xy + axis_yy
+	local x3<const> = center_x + axis_xx + axis_yx
+	local y3<const> = center_y + axis_xy + axis_yy
+	gx_gpu.draw_direct16_textured_quad_color(
+		texture_vram_x, texture_vram_y,
+		texture_u0, texture_v0,
+		texture_u1, texture_v0,
+		texture_u0, texture_v1,
+		texture_u1, texture_v1,
+		x0, y0,
+		x1, y1,
+		x2, y2,
+		x3, y3,
+		color)
 end
 
-local write_joint_constants<const> = function()
-	local joint_phase<const> = frame % 8
-	local joint_translate_x<const> = (joint_phase - 4) * 0.03125
-	local joints<const>: *f32 = joint0_addr
-	local joint_index = 0
-	while joint_index < 24 do
-		local base<const> = joint_index * 16
-		local word_index = 0
-		while word_index < 16 do
-			joints[base + word_index] = 0.0
-			word_index = word_index + 1
-		end
-		joints[base] = 1.0
-		joints[base + 5] = 1.0
-		joints[base + 10] = 1.0
-		joints[base + 15] = 1.0
-		joint_index = joint_index + 1
-	end
-	joints[16 + 12] = joint_translate_x
-end
-
-local update_camera<const> = function()
-	-- Camera selection (mirrors world.activeCameraId setter in TypeScript)
-	if (inp_keys[key_digit1 >> 5] & (1 << (key_digit1 & 31))) ~= 0 then active_cam_id = free_cam.id end
-	if (inp_keys[key_digit2 >> 5] & (1 << (key_digit2 & 31))) ~= 0 then active_cam_id = side_cam.id end
-	-- Resolve active camera from id (mirrors world.activeCamera3D getter).
-	local active<const> = active_cam_id == side_cam.id and side_cam or free_cam
-	-- Speed settings
-	local yaw_step = 0.035
-	local pitch_step = 0.035
-	local move = 0.075
-	if (inp_keys[key_shift_left >> 5] & (1 << (key_shift_left & 31))) ~= 0 then
-		yaw_step = 0.055
-		pitch_step = 0.055
-		move = 0.18
-	end
-	-- Rotation: screen-space look (yaw around camera-up, pitch around camera-right)
-	local dyaw = 0.0
-	local dpitch = 0.0
-	if (inp_keys[key_q >> 5] & (1 << (key_q & 31))) ~= 0 then dyaw = yaw_step end
-	if (inp_keys[key_e >> 5] & (1 << (key_e & 31))) ~= 0 then dyaw = -yaw_step end
-	if (inp_keys[key_t >> 5] & (1 << (key_t & 31))) ~= 0 then dpitch = pitch_step end
-	if (inp_keys[key_g >> 5] & (1 << (key_g & 31))) ~= 0 then dpitch = -pitch_step end
-	if dyaw ~= 0.0 or dpitch ~= 0.0 then
-		cam_screen_look(active, dyaw, dpitch, 0.0)
-	end
-	-- Translation: accumulate per-axis amounts, then apply in one cam_move call.
-	local dfwd   = 0.0
-	local dright = 0.0
-	local dup    = 0.0
-	if (inp_keys[key_w >> 5] & (1 << (key_w & 31))) ~= 0 then dfwd = move end
-	if (inp_keys[key_s >> 5] & (1 << (key_s & 31))) ~= 0 then dfwd = -move end
-	if (inp_keys[key_a >> 5] & (1 << (key_a & 31))) ~= 0 then dright = -move end
-	if (inp_keys[key_d >> 5] & (1 << (key_d & 31))) ~= 0 then dright = move end
-	if (inp_keys[key_r >> 5] & (1 << (key_r & 31))) ~= 0 then dup = move end
-	if (inp_keys[key_f >> 5] & (1 << (key_f & 31))) ~= 0 then dup = -move end
-	if dfwd ~= 0.0 or dright ~= 0.0 or dup ~= 0.0 then
-		cam_move(active, dfwd, dright, dup)
-	end
-end
-
-local write_instances<const> = function()
-	local instances<const>: *sprite_instance[instance_count] = instance_addr
-	local turn_sin_q16<const>, turn_cos_q16<const> = sincos_turn32((frame * 71582788) & 0xffffffff)
-	local turn_sin = turn_sin_q16 * q16_to_f32_scale
-	local turn_cos = turn_cos_q16 * q16_to_f32_scale
-	local orbit_sin_q16<const>, orbit_cos_q16<const> = sincos_turn32((frame * 35791394) & 0xffffffff)
-	local orbit_sin = orbit_sin_q16 * q16_to_f32_scale
-	local orbit_cos = orbit_cos_q16 * q16_to_f32_scale
+local draw_affine_tunnel<const> = function()
 	local tunnel_index = 0
-	while tunnel_index < affine_tunnel_instance_count do
-		local scale_x<const> = 0.30 + tunnel_index * 0.070
-		local scale_y<const> = 0.18 + ((tunnel_index & 3) * 0.025)
-		local axis_xx<const> = turn_cos * scale_x
-		local axis_yx<const> = turn_sin * scale_x
-		local axis_xy<const> = -turn_sin * scale_y
-		local axis_yy<const> = turn_cos * scale_y
-		local center_x<const> = orbit_cos * (0.16 + tunnel_index * 0.012)
-		local center_y<const> = 0.04 + orbit_sin * (0.10 + tunnel_index * 0.009)
-		instances[tunnel_index].matrix[0] = axis_xx
-		instances[tunnel_index].matrix[1] = axis_xy
-		instances[tunnel_index].matrix[2] = center_x - (axis_xx + axis_xy) * 0.5
-		instances[tunnel_index].matrix[3] = 0.74 - tunnel_index * 0.035
-		instances[tunnel_index].matrix[4] = axis_yx
-		instances[tunnel_index].matrix[5] = axis_yy
-		instances[tunnel_index].matrix[6] = center_y - (axis_yx + axis_yy) * 0.5
-		instances[tunnel_index].matrix[7] = 0.0
-		instances[tunnel_index].matrix[8] = 0.0
-		instances[tunnel_index].matrix[9] = 1.0
-		instances[tunnel_index].matrix[10] = 1.0
-		if (tunnel_index & 1) == 0 then
-			instances[tunnel_index].color = parallax_far_tint
-		else
-			instances[tunnel_index].color = parallax_near_tint
+	while tunnel_index < 12 do
+		local depth<const> = 12 - tunnel_index
+		local radius_x<const> = 18 + depth * 9
+		local radius_y<const> = 12 + depth * 5
+		local y<const> = 76 + tunnel_index * 4
+		local turn<const> = frame * 71582788 + tunnel_index * 268435456
+		local color = color_tunnel_a
+		if (tunnel_index & 3) == 1 then
+			color = color_tunnel_b
 		end
-		local next_turn_sin<const> = turn_sin * turn_step_30_cos + turn_cos * turn_step_30_sin
-		local next_turn_cos<const> = turn_cos * turn_step_30_cos - turn_sin * turn_step_30_sin
-		local next_orbit_sin<const> = orbit_sin * turn_step_45_cos + orbit_cos * turn_step_45_sin
-		local next_orbit_cos<const> = orbit_cos * turn_step_45_cos - orbit_sin * turn_step_45_sin
-		turn_sin = next_turn_sin
-		turn_cos = next_turn_cos
-		orbit_sin = next_orbit_sin
-		orbit_cos = next_orbit_cos
+		if (tunnel_index & 3) == 2 then
+			color = color_tunnel_c
+		end
+		draw_tunnel_quad(160, y, radius_x, radius_y, turn, color)
 		tunnel_index = tunnel_index + 1
 	end
-	local sprite_index<const> = affine_tunnel_instance_count
-	instances[sprite_index].matrix[0] = 48.0 * inv_half_screen_width
-	instances[sprite_index].matrix[1] = 0.0
-	instances[sprite_index].matrix[2] = sprite_x * inv_half_screen_width - 1.0
-	instances[sprite_index].matrix[3] = 0.18
-	instances[sprite_index].matrix[4] = 0.0
-	instances[sprite_index].matrix[5] = -48.0 * inv_half_screen_height
-	instances[sprite_index].matrix[6] = 1.0 - sprite_y * inv_half_screen_height
-	instances[sprite_index].matrix[7] = 0.0
-	instances[sprite_index].matrix[8] = 0.0
-	instances[sprite_index].matrix[9] = 1.0
-	instances[sprite_index].matrix[10] = 1.0
-	instances[sprite_index].color = sprite_tint
-	local billboard_phase<const> = (frame % 8) * 4
-	local billboard_x_a<const> = 54.0 + billboard_phase
-	local billboard_y_a<const> = 114.0
-	local billboard_x_b<const> = 174.0 - billboard_phase
-	local billboard_y_b<const> = 70.0
-	local billboard_a<const> = sprite_index + 1
-	instances[billboard_a].matrix[0] = 38.0 * inv_half_screen_width
-	instances[billboard_a].matrix[1] = 0.0
-	instances[billboard_a].matrix[2] = billboard_x_a * inv_half_screen_width - 1.0
-	instances[billboard_a].matrix[3] = 0.12
-	instances[billboard_a].matrix[4] = 0.0
-	instances[billboard_a].matrix[5] = -38.0 * inv_half_screen_height
-	instances[billboard_a].matrix[6] = 1.0 - billboard_y_a * inv_half_screen_height
-	instances[billboard_a].matrix[7] = 0.0
-	instances[billboard_a].matrix[8] = 0.0
-	instances[billboard_a].matrix[9] = 1.0
-	instances[billboard_a].matrix[10] = 1.0
-	instances[billboard_a].color = billboard_tint_a
-	local billboard_b<const> = sprite_index + 2
-	instances[billboard_b].matrix[0] = 32.0 * inv_half_screen_width
-	instances[billboard_b].matrix[1] = 0.0
-	instances[billboard_b].matrix[2] = billboard_x_b * inv_half_screen_width - 1.0
-	instances[billboard_b].matrix[3] = 0.14
-	instances[billboard_b].matrix[4] = 0.0
-	instances[billboard_b].matrix[5] = -32.0 * inv_half_screen_height
-	instances[billboard_b].matrix[6] = 1.0 - billboard_y_b * inv_half_screen_height
-	instances[billboard_b].matrix[7] = 0.0
-	instances[billboard_b].matrix[8] = 0.0
-	instances[billboard_b].matrix[9] = 1.0
-	instances[billboard_b].matrix[10] = 1.0
-	instances[billboard_b].color = billboard_tint_b
-	local flare_turn<const> = (frame * 143165576) & 0xffffffff
-	local flare_sin_q16<const>, flare_cos_q16<const> = sincos_turn32(flare_turn)
-	local flare_sin<const> = flare_sin_q16 * q16_to_f32_scale
-	local flare_cos<const> = flare_cos_q16 * q16_to_f32_scale
-	local flare_x<const> = 0.34 * flare_cos
-	local flare_y<const> = -0.18 + 0.10 * flare_sin
-	local flare_axis_xx<const> = 0.52 * flare_cos
-	local flare_axis_yx<const> = 0.52 * flare_sin
-	local flare_axis_xy<const> = -0.18 * flare_sin
-	local flare_axis_yy<const> = 0.18 * flare_cos
-	local flare_index<const> = sprite_index + 3
-	instances[flare_index].matrix[0] = flare_axis_xx
-	instances[flare_index].matrix[1] = flare_axis_xy
-	instances[flare_index].matrix[2] = flare_x - (flare_axis_xx + flare_axis_xy) * 0.5
-	instances[flare_index].matrix[3] = 0.10
-	instances[flare_index].matrix[4] = flare_axis_yx
-	instances[flare_index].matrix[5] = flare_axis_yy
-	instances[flare_index].matrix[6] = flare_y - (flare_axis_yx + flare_axis_yy) * 0.5
-	instances[flare_index].matrix[7] = 0.0
-	instances[flare_index].matrix[8] = 0.0
-	instances[flare_index].matrix[9] = 1.0
-	instances[flare_index].matrix[10] = 1.0
-	instances[flare_index].color = 0xffff3df2
-	local present_base<const> = sprite_instance_count
-	instances[present_base].matrix[0] = 2.0
-	instances[present_base].matrix[1] = 0.0
-	instances[present_base].matrix[2] = -1.0
-	instances[present_base].matrix[3] = 0.0
-	instances[present_base].matrix[4] = 0.0
-	instances[present_base].matrix[5] = -2.0
-	instances[present_base].matrix[6] = 1.0
-	instances[present_base].matrix[7] = 0.0
-	instances[present_base].matrix[8] = 0.0
-	instances[present_base].matrix[9] = 1.0
-	instances[present_base].matrix[10] = 1.0
-	instances[present_base].color = white
-	local post_sin_q16<const>, post_cos_q16<const> = sincos_turn32((frame * 35791394) & 0xffffffff)
-	local post_sin = post_sin_q16 * q16_to_f32_scale
-	local post_cos = post_cos_q16 * q16_to_f32_scale
-	local post_index = 1
-	while post_index < present_instance_count do
-		local scale_x<const> = 2.05 + post_index * 0.055
-		local scale_y<const> = 2.05 + ((post_index & 1) * 0.12)
-		local axis_xx<const> = post_cos * scale_x
-		local axis_yx<const> = post_sin * scale_x
-		local axis_xy<const> = -post_sin * scale_y
-		local axis_yy<const> = -post_cos * scale_y
-		local offset_x<const> = (post_index - 3) * 0.018
-		local offset_y<const> = ((post_index & 1) * 0.026) - 0.013
-		local instance_index<const> = present_base + post_index
-		instances[instance_index].matrix[0] = axis_xx
-		instances[instance_index].matrix[1] = axis_xy
-		instances[instance_index].matrix[2] = offset_x - (axis_xx + axis_xy) * 0.5
-		instances[instance_index].matrix[3] = 0.0
-		instances[instance_index].matrix[4] = axis_yx
-		instances[instance_index].matrix[5] = axis_yy
-		instances[instance_index].matrix[6] = offset_y - (axis_yx + axis_yy) * 0.5
-		instances[instance_index].matrix[7] = 0.0
-		instances[instance_index].matrix[8] = 0.0
-		instances[instance_index].matrix[9] = 1.0
-		instances[instance_index].matrix[10] = 1.0
-		if (post_index & 3) == 1 then
-			instances[instance_index].color = 0x46ff4058
-		end
-		if (post_index & 3) == 2 then
-			instances[instance_index].color = 0x463cffd8
-		end
-		if (post_index & 3) == 3 then
-			instances[instance_index].color = 0x4658a0ff
-		end
-		if (post_index & 3) == 0 then
-			instances[instance_index].color = 0x34ffffff
-		end
-		local next_post_sin<const> = post_sin * turn_step_22_5_cos + post_cos * turn_step_22_5_sin
-		local next_post_cos<const> = post_cos * turn_step_22_5_cos - post_sin * turn_step_22_5_sin
-		post_sin = next_post_sin
-		post_cos = next_post_cos
-		post_index = post_index + 1
-	end
 end
 
-local write_mat4_instances<const> = function()
-	-- Resolve active camera from id (mirrors world.activeCamera3D getter).
-	local active<const> = active_cam_id == side_cam.id and side_cam or free_cam
-	-- Projection terms from active camera.
-	local proj_fx<const>, proj_fy<const>, proj_a<const>, proj_b<const> =
-		cam_proj_terms(active)
-	-- View basis and translation from active camera.
-	local crx<const>, cry<const>, crz<const>, cux<const>, cuy<const>, cuz<const>, cfx<const>, cfy<const>, cfz<const>,
-			v_tx<const>, v_ty<const>, v_tz<const> = cam_view_terms(active)
-	-- Precomputed P*V col0-2 components (shared, scale applied per-instance below)
-	-- P * V_col0 = P*(crx,cux,-cfx,0) = (proj_fx*crx, proj_fy*cux, -proj_a*cfx, cfx)
-	-- P * V_col1 = P*(cry,cuy,-cfy,0) = (proj_fx*cry, proj_fy*cuy, -proj_a*cfy, cfy)
-	-- P * V_col2 = P*(crz,cuz,-cfz,0) = (proj_fx*crz, proj_fy*cuz, -proj_a*cfz, cfz)
-	local pvc0r0<const> = proj_fx * crx
-	local pvc0r1<const> = proj_fy * cux
-	local pvc0r2<const> = -proj_a * cfx
-	local pvc0r3<const> = cfx
-	local pvc1r0<const> = proj_fx * cry
-	local pvc1r1<const> = proj_fy * cuy
-	local pvc1r2<const> = -proj_a * cfy
-	local pvc1r3<const> = cfy
-	local pvc2r0<const> = proj_fx * crz
-	local pvc2r1<const> = proj_fy * cuz
-	local pvc2r2<const> = -proj_a * cfz
-	local pvc2r3<const> = cfz
-	-- Instance 1: identity rotation, world pos (-0.72, 0.58, 0)
-	-- VM_col3 = V * (wx,wy,wz,1): each component uses dot of view row with world pos
-	local wx1<const>  = -0.72
-	local wy1<const>  = 0.58
-	local wz1<const>  = 0.0
-	local vm1_03<const> = crx * wx1 + cry * wy1 + crz * wz1 + v_tx
-	local vm1_13<const> = cux * wx1 + cuy * wy1 + cuz * wz1 + v_ty
-	local vm1_23<const> = -cfx * wx1 - cfy * wy1 - cfz * wz1 + v_tz
-	-- Instance 2: scale(0.72,0.72,1), world pos (0.72, 0.50, 0)
-	local sc2<const>  = 0.72
-	local wx2<const>  = 0.72
-	local wy2<const>  = 0.50
-	local wz2<const>  = 0.0
-	local vm2_03<const> = crx * wx2 + cry * wy2 + crz * wz2 + v_tx
-	local vm2_13<const> = cux * wx2 + cuy * wy2 + cuz * wz2 + v_ty
-	local vm2_23<const> = -cfx * wx2 - cfy * wy2 - cfz * wz2 + v_tz
-	local mat4_instances<const>: *mat4_instance[mat4_instance_count] = mat4_instance_addr
-	-- Instance 1 MVP (column-major: [col0,col1,col2,col3], each 4 floats = [r0,r1,r2,r3])
-	mat4_instances[0].mvp[0] = pvc0r0
-	mat4_instances[0].mvp[1] = pvc0r1
-	mat4_instances[0].mvp[2] = pvc0r2
-	mat4_instances[0].mvp[3] = pvc0r3
-	mat4_instances[0].mvp[4] = pvc1r0
-	mat4_instances[0].mvp[5] = pvc1r1
-	mat4_instances[0].mvp[6] = pvc1r2
-	mat4_instances[0].mvp[7] = pvc1r3
-	mat4_instances[0].mvp[8] = pvc2r0
-	mat4_instances[0].mvp[9] = pvc2r1
-	mat4_instances[0].mvp[10] = pvc2r2
-	mat4_instances[0].mvp[11] = pvc2r3
-	mat4_instances[0].mvp[12] = proj_fx * vm1_03
-	mat4_instances[0].mvp[13] = proj_fy * vm1_13
-	mat4_instances[0].mvp[14] = proj_a * vm1_23 + proj_b
-	mat4_instances[0].mvp[15] = -vm1_23
-	mat4_instances[0].color = mat4_tint_a
-	-- Instance 2 MVP: xy scale applied to cols 0 and 1
-	mat4_instances[1].mvp[0] = pvc0r0 * sc2
-	mat4_instances[1].mvp[1] = pvc0r1 * sc2
-	mat4_instances[1].mvp[2] = pvc0r2 * sc2
-	mat4_instances[1].mvp[3] = pvc0r3 * sc2
-	mat4_instances[1].mvp[4] = pvc1r0 * sc2
-	mat4_instances[1].mvp[5] = pvc1r1 * sc2
-	mat4_instances[1].mvp[6] = pvc1r2 * sc2
-	mat4_instances[1].mvp[7] = pvc1r3 * sc2
-	mat4_instances[1].mvp[8] = pvc2r0
-	mat4_instances[1].mvp[9] = pvc2r1
-	mat4_instances[1].mvp[10] = pvc2r2
-	mat4_instances[1].mvp[11] = pvc2r3
-	mat4_instances[1].mvp[12] = proj_fx * vm2_03
-	mat4_instances[1].mvp[13] = proj_fy * vm2_13
-	mat4_instances[1].mvp[14] = proj_a * vm2_23 + proj_b
-	mat4_instances[1].mvp[15] = -vm2_23
-	mat4_instances[1].color = mat4_tint_b
-	local shard_orbit_sin_q16<const>, shard_orbit_cos_q16<const> = sincos_turn32((frame * 53687091) & 0xffffffff)
-	local shard_orbit_sin = shard_orbit_sin_q16 * q16_to_f32_scale
-	local shard_orbit_cos = shard_orbit_cos_q16 * q16_to_f32_scale
-	local shard_spin_sin_q16<const>, shard_spin_cos_q16<const> = sincos_turn32((frame * 119304647) & 0xffffffff)
-	local shard_spin_sin = shard_spin_sin_q16 * q16_to_f32_scale
-	local shard_spin_cos = shard_spin_cos_q16 * q16_to_f32_scale
-	local shard_index = 2
-	while shard_index < mat4_instance_count do
-		local shard<const> = shard_index - 2
-		local sx<const> = 0.52 + ((shard & 1) * 0.10)
-		local sy<const> = 0.38 + ((shard & 2) * 0.04)
-		local wx<const> = shard_orbit_cos * 1.35
-		local wy<const> = -0.26 + ((shard & 3) * 0.20)
-		local wz<const> = shard_orbit_sin * 1.10 - 0.20
-		local vm_03<const> = crx * wx + cry * wy + crz * wz + v_tx
-		local vm_13<const> = cux * wx + cuy * wy + cuz * wz + v_ty
-		local vm_23<const> = -cfx * wx - cfy * wy - cfz * wz + v_tz
-		mat4_instances[shard_index].mvp[0] = (pvc0r0 * shard_spin_cos + pvc1r0 * shard_spin_sin) * sx
-		mat4_instances[shard_index].mvp[1] = (pvc0r1 * shard_spin_cos + pvc1r1 * shard_spin_sin) * sx
-		mat4_instances[shard_index].mvp[2] = (pvc0r2 * shard_spin_cos + pvc1r2 * shard_spin_sin) * sx
-		mat4_instances[shard_index].mvp[3] = (pvc0r3 * shard_spin_cos + pvc1r3 * shard_spin_sin) * sx
-		mat4_instances[shard_index].mvp[4] = (-pvc0r0 * shard_spin_sin + pvc1r0 * shard_spin_cos) * sy
-		mat4_instances[shard_index].mvp[5] = (-pvc0r1 * shard_spin_sin + pvc1r1 * shard_spin_cos) * sy
-		mat4_instances[shard_index].mvp[6] = (-pvc0r2 * shard_spin_sin + pvc1r2 * shard_spin_cos) * sy
-		mat4_instances[shard_index].mvp[7] = (-pvc0r3 * shard_spin_sin + pvc1r3 * shard_spin_cos) * sy
-		mat4_instances[shard_index].mvp[8] = pvc2r0 * 0.42
-		mat4_instances[shard_index].mvp[9] = pvc2r1 * 0.42
-		mat4_instances[shard_index].mvp[10] = pvc2r2 * 0.42
-		mat4_instances[shard_index].mvp[11] = pvc2r3 * 0.42
-		mat4_instances[shard_index].mvp[12] = proj_fx * vm_03
-		mat4_instances[shard_index].mvp[13] = proj_fy * vm_13
-		mat4_instances[shard_index].mvp[14] = proj_a * vm_23 + proj_b
-		mat4_instances[shard_index].mvp[15] = -vm_23
-		if (shard & 1) == 0 then
-			mat4_instances[shard_index].color = mat4_tint_c
-		else
-			mat4_instances[shard_index].color = mat4_tint_d
-		end
-		local next_orbit_sin<const> = shard_orbit_sin * turn_step_45_cos + shard_orbit_cos * turn_step_45_sin
-		local next_orbit_cos<const> = shard_orbit_cos * turn_step_45_cos - shard_orbit_sin * turn_step_45_sin
-		local next_spin_sin<const> = shard_spin_sin * turn_step_22_5_cos + shard_spin_cos * turn_step_22_5_sin
-		local next_spin_cos<const> = shard_spin_cos * turn_step_22_5_cos - shard_spin_sin * turn_step_22_5_sin
-		shard_orbit_sin = next_orbit_sin
-		shard_orbit_cos = next_orbit_cos
-		shard_spin_sin = next_spin_sin
-		shard_spin_cos = next_spin_cos
-		shard_index = shard_index + 1
-	end
+local draw_sprite<const> = function()
+	local turn<const> = frame * 143165576
+	draw_tunnel_quad(sprite_x, sprite_y, 24, 24, turn, color_sprite)
+	gx_gpu.draw_line_color(sprite_x - 30, sprite_y, sprite_x + 30, sprite_y, color_grid_hot)
+	gx_gpu.draw_line_color(sprite_x, sprite_y - 30, sprite_x, sprite_y + 30, color_grid_hot)
 end
 
-local write_vdp_command_descriptors<const> = function()
-	local surfaces<const>: *bm_surface_define_desc[surface_desc_count] = surface_desc_addr
-	surfaces[0].desc_addr = atlas_surface
-	surfaces[0].base_addr = rpu_atlas_vram_addr
-	surfaces[0].pitch_bytes = atlas_width * 4
-	surfaces[0].width = atlas_width
-	surfaces[0].height = atlas_height
-	surfaces[0].format = 0x00000000
-	surfaces[1].desc_addr = scene_color_surface
-	surfaces[1].base_addr = rpu_scene_color_vram_addr
-	surfaces[1].pitch_bytes = screen_width * 4
-	surfaces[1].width = screen_width
-	surfaces[1].height = screen_height
-	surfaces[1].format = 0x00000000
-	surfaces[2].desc_addr = scene_depth_surface
-	surfaces[2].base_addr = rpu_scene_depth_vram_addr
-	surfaces[2].pitch_bytes = screen_width * 2
-	surfaces[2].width = screen_width
-	surfaces[2].height = screen_height
-	surfaces[2].format = 0x00000001
-
-	local surface_words<const>: *word = vram_staging_base + rpu_surface_desc_vram_addr
-	local surface_index = 0
-	while surface_index < surface_desc_count do
-		local surface<const>: *bm_surface_define_desc = &surfaces[surface_index]
-		local word_base<const> = (surface->desc_addr - rpu_surface_desc_vram_addr) // 4
-		surface_words[word_base] = surface->base_addr
-		surface_words[word_base + 1] = surface->pitch_bytes | (surface->width << 16)
-		surface_words[word_base + 2] = surface->height | (surface->format << 16)
-		surface_words[word_base + 3] = 0
-		surface_index = surface_index + 1
-	end
-
-	local buffers<const>: *bm_buffer_define_desc[buffer_desc_count] = buffer_desc_addr
-	buffers[0].vram_addr = rpu_quad_vertex_vram_addr
-	buffers[0].byte_length = quad_vertex_bytes
-	buffers[0].upload_src_addr = quad_vertex_addr
-	buffers[0].upload_byte_length = quad_vertex_bytes
-	buffers[1].vram_addr = rpu_background_vertex_vram_addr
-	buffers[1].byte_length = background_vertex_bytes
-	buffers[1].upload_src_addr = background_vertex_addr
-	buffers[1].upload_byte_length = background_vertex_bytes
-	buffers[2].vram_addr = rpu_vector_vertex_vram_addr
-	buffers[2].byte_length = vector_vertex_bytes
-	buffers[2].upload_src_addr = vector_vertex_addr
-	buffers[2].upload_byte_length = vector_vertex_bytes
-	buffers[3].vram_addr = rpu_mat4_vertex_vram_addr
-	buffers[3].byte_length = mat4_vertex_bytes
-	buffers[3].upload_src_addr = mat4_vertex_addr
-	buffers[3].upload_byte_length = mat4_vertex_bytes
-	buffers[4].vram_addr = rpu_mat4_instance_vram_addr
-	buffers[4].byte_length = mat4_instance_bytes
-	buffers[4].upload_src_addr = 0
-	buffers[4].upload_byte_length = 0
-	buffers[5].vram_addr = rpu_mesh_vertex_vram_addr
-	buffers[5].byte_length = mesh_vertex_bytes
-	buffers[5].upload_src_addr = 0
-	buffers[5].upload_byte_length = 0
-	buffers[6].vram_addr = rpu_mesh_index_vram_addr
-	buffers[6].byte_length = mesh_index_bytes
-	buffers[6].upload_src_addr = mesh_index_addr
-	buffers[6].upload_byte_length = mesh_index_bytes
-	buffers[7].vram_addr = rpu_morph_vertex_vram_addr
-	buffers[7].byte_length = morph_vertex_bytes
-	buffers[7].upload_src_addr = 0
-	buffers[7].upload_byte_length = 0
-	buffers[8].vram_addr = rpu_instance_vram_addr
-	buffers[8].byte_length = instance_bytes
-	buffers[8].upload_src_addr = 0
-	buffers[8].upload_byte_length = 0
-
-	local frame_uploads<const>: *bm_buffer_upload_desc[frame_buffer_upload_desc_count] = frame_buffer_upload_desc_addr
-	frame_uploads[0].vram_addr = rpu_mesh_vertex_vram_addr
-	frame_uploads[0].src_addr = mesh_vertex_addr
-	frame_uploads[0].byte_length = mesh_vertex_bytes
-	frame_uploads[1].vram_addr = rpu_morph_vertex_vram_addr
-	frame_uploads[1].src_addr = morph_vertex_addr
-	frame_uploads[1].byte_length = morph_vertex_bytes
-	frame_uploads[2].vram_addr = rpu_mat4_instance_vram_addr
-	frame_uploads[2].src_addr = mat4_instance_addr
-	frame_uploads[2].byte_length = mat4_instance_bytes
-	frame_uploads[3].vram_addr = rpu_instance_vram_addr
-	frame_uploads[3].src_addr = instance_addr
-	frame_uploads[3].byte_length = instance_bytes
-
-	local constant_uploads<const>: *bm_constant_upload_desc[constant_upload_desc_count] = constant_upload_desc_addr
-	constant_uploads[0].vram_addr = rpu_c0_vram_addr
-	constant_uploads[0].src_addr = c0_addr
-	constant_uploads[0].byte_length = c0_bytes
-	constant_uploads[1].vram_addr = rpu_c1_vram_addr
-	constant_uploads[1].src_addr = c1_addr
-	constant_uploads[1].byte_length = c1_bytes
-	constant_uploads[2].vram_addr = rpu_joint_vram_addr
-	constant_uploads[2].src_addr = joint0_addr
-	constant_uploads[2].byte_length = joint_bytes
-
-	local passes<const>: *bm_pass_desc[pass_desc_count] = pass_desc_addr
-	passes[0].color_surface_desc_addr = scene_color_surface
-	passes[0].depth_surface_desc_addr = scene_depth_surface
-	passes[0].viewport_xy = 0
-	passes[0].viewport_wh = screen_width | (screen_height << 16)
-	passes[0].pass_ops = 0x00000001 | 0x00000002
-	passes[0].clear_color = 0xff071a3a
-	passes[0].clear_depth_word = 0xffffffff
-	passes[0].first_draw = scene_draw_first
-	passes[0].draw_count = scene_draw_count
-	passes[1].color_surface_desc_addr = 0
-	passes[1].depth_surface_desc_addr = 0
-	passes[1].viewport_xy = 0
-	passes[1].viewport_wh = screen_width | (screen_height << 16)
-	passes[1].pass_ops = 0
-	passes[1].clear_color = 0
-	passes[1].clear_depth_word = 0
-	passes[1].first_draw = present_draw_first
-	passes[1].draw_count = present_draw_count
-
-	local draws<const>: *bm_draw_desc[draw_desc_count] = draw_desc_addr
-	draws[0].shader_variant = 0x00000000
-	draws[0].primitive_index_type = rpu_primitive_triangles
-	draws[0].pipeline_word = rpu_pipeline_opaque
-	draws[0].vertex_count = background_vertex_count
-	draws[0].instance_count = 1
-	draws[0].index_vram_addr = 0
-	draws[0].index_count = 0
-	draws[0].stream_first = 0
-	draws[0].stream_count = 1
-	draws[0].constant_first = 0
-	draws[0].constant_count = 0
-	draws[0].sampled_surface_first = 0
-	draws[0].sampled_surface_count = 0
-	draws[1].shader_variant = 0x00000000
-	draws[1].primitive_index_type = rpu_primitive_triangles
-	draws[1].pipeline_word = rpu_pipeline_opaque
-	draws[1].vertex_count = vector_vertex_count
-	draws[1].instance_count = 1
-	draws[1].index_vram_addr = 0
-	draws[1].index_count = 0
-	draws[1].stream_first = 1
-	draws[1].stream_count = 1
-	draws[1].constant_first = 0
-	draws[1].constant_count = 0
-	draws[1].sampled_surface_first = 0
-	draws[1].sampled_surface_count = 0
-	draws[2].shader_variant = 0x00000000
-	draws[2].primitive_index_type = rpu_primitive_lines
-	draws[2].pipeline_word = rpu_pipeline_opaque
-	draws[2].vertex_count = 2
-	draws[2].instance_count = 1
-	draws[2].index_vram_addr = 0
-	draws[2].index_count = 0
-	draws[2].stream_first = 2
-	draws[2].stream_count = 1
-	draws[2].constant_first = 0
-	draws[2].constant_count = 0
-	draws[2].sampled_surface_first = 0
-	draws[2].sampled_surface_count = 0
-	draws[3].shader_variant = 0x00000000
-	draws[3].primitive_index_type = rpu_primitive_points
-	draws[3].pipeline_word = rpu_pipeline_depth_alpha
-	draws[3].vertex_count = 1
-	draws[3].instance_count = 1
-	draws[3].index_vram_addr = 0
-	draws[3].index_count = 0
-	draws[3].stream_first = 3
-	draws[3].stream_count = 1
-	draws[3].constant_first = 0
-	draws[3].constant_count = 0
-	draws[3].sampled_surface_first = 0
-	draws[3].sampled_surface_count = 0
-	draws[4].shader_variant = 0x00000006
-	draws[4].primitive_index_type = rpu_primitive_triangle_strip
-	draws[4].pipeline_word = rpu_pipeline_depth_opaque
-	draws[4].vertex_count = quad_vertex_count
-	draws[4].instance_count = sprite_instance_count
-	draws[4].index_vram_addr = 0
-	draws[4].index_count = 0
-	draws[4].stream_first = 4
-	draws[4].stream_count = 2
-	draws[4].constant_first = 0
-	draws[4].constant_count = 0
-	draws[4].sampled_surface_first = 0
-	draws[4].sampled_surface_count = 1
-	draws[5].shader_variant = 0x00000007
-	draws[5].primitive_index_type = rpu_primitive_triangles
-	draws[5].pipeline_word = rpu_pipeline_depth_opaque
-	draws[5].vertex_count = mat4_vertex_count
-	draws[5].instance_count = mat4_instance_count
-	draws[5].index_vram_addr = 0
-	draws[5].index_count = 0
-	draws[5].stream_first = 6
-	draws[5].stream_count = 2
-	draws[5].constant_first = 0
-	draws[5].constant_count = 0
-	draws[5].sampled_surface_first = 0
-	draws[5].sampled_surface_count = 0
-	draws[6].shader_variant = 0x00000002
-	draws[6].primitive_index_type = rpu_primitive_triangles
-	draws[6].pipeline_word = rpu_pipeline_depth_opaque
-	draws[6].vertex_count = mat4_vertex_count
-	draws[6].instance_count = 1
-	draws[6].index_vram_addr = 0
-	draws[6].index_count = 0
-	draws[6].stream_first = 8
-	draws[6].stream_count = 1
-	draws[6].constant_first = 0
-	draws[6].constant_count = 1
-	draws[6].sampled_surface_first = 0
-	draws[6].sampled_surface_count = 0
-	draws[7].shader_variant = 0x00000005 | 0x00000008 | 0x00000010
-	draws[7].primitive_index_type = rpu_primitive_indexed_triangles
-	draws[7].pipeline_word = rpu_pipeline_depth_opaque
-	draws[7].vertex_count = mesh_vertex_count
-	draws[7].instance_count = 1
-	draws[7].index_vram_addr = rpu_mesh_index_vram_addr
-	draws[7].index_count = mesh_index_count
-	draws[7].stream_first = 9
-	draws[7].stream_count = 2
-	draws[7].constant_first = 1
-	draws[7].constant_count = 3
-	draws[7].sampled_surface_first = 1
-	draws[7].sampled_surface_count = 2
-	draws[8].shader_variant = 0x00000006
-	draws[8].primitive_index_type = rpu_primitive_triangle_strip
-	draws[8].pipeline_word = rpu_pipeline_alpha
-	draws[8].vertex_count = quad_vertex_count
-	draws[8].instance_count = present_instance_count
-	draws[8].index_vram_addr = 0
-	draws[8].index_count = 0
-	draws[8].stream_first = 11
-	draws[8].stream_count = 2
-	draws[8].constant_first = 0
-	draws[8].constant_count = 0
-	draws[8].sampled_surface_first = 3
-	draws[8].sampled_surface_count = 1
-
-	local streams<const>: *bm_stream_bind_desc[stream_bind_desc_count] = stream_bind_desc_addr
-	streams[0].stream_slot = 0; streams[0].layout_id = 0x00000000; streams[0].vram_addr = rpu_background_vertex_vram_addr; streams[0].byte_length = background_vertex_bytes; streams[0].step_rate = 0
-	streams[1].stream_slot = 0; streams[1].layout_id = 0x00000000; streams[1].vram_addr = rpu_vector_vertex_vram_addr; streams[1].byte_length = vector_vertex_bytes; streams[1].step_rate = 0
-	streams[2].stream_slot = 0; streams[2].layout_id = 0x00000000; streams[2].vram_addr = rpu_vector_vertex_vram_addr + vector_vertex_stride * 2; streams[2].byte_length = vector_vertex_bytes - vector_vertex_stride * 2; streams[2].step_rate = 0
-	streams[3].stream_slot = 0; streams[3].layout_id = 0x00000000; streams[3].vram_addr = rpu_vector_vertex_vram_addr + vector_vertex_stride * 2; streams[3].byte_length = vector_vertex_bytes - vector_vertex_stride * 2; streams[3].step_rate = 0
-	streams[4].stream_slot = 0; streams[4].layout_id = 0x00000001; streams[4].vram_addr = rpu_quad_vertex_vram_addr; streams[4].byte_length = quad_vertex_bytes; streams[4].step_rate = 0
-	streams[5].stream_slot = 1; streams[5].layout_id = 0x00000020; streams[5].vram_addr = rpu_instance_vram_addr; streams[5].byte_length = instance_bytes; streams[5].step_rate = 1
-	streams[6].stream_slot = 0; streams[6].layout_id = 0x00000002; streams[6].vram_addr = rpu_mat4_vertex_vram_addr; streams[6].byte_length = mat4_vertex_bytes; streams[6].step_rate = 0
-	streams[7].stream_slot = 1; streams[7].layout_id = 0x00000021; streams[7].vram_addr = rpu_mat4_instance_vram_addr; streams[7].byte_length = mat4_instance_bytes; streams[7].step_rate = 1
-	streams[8].stream_slot = 0; streams[8].layout_id = 0x00000002; streams[8].vram_addr = rpu_mat4_vertex_vram_addr; streams[8].byte_length = mat4_vertex_bytes; streams[8].step_rate = 0
-	streams[9].stream_slot = 0; streams[9].layout_id = 0x00000006; streams[9].vram_addr = rpu_mesh_vertex_vram_addr; streams[9].byte_length = mesh_vertex_bytes; streams[9].step_rate = 0
-	streams[10].stream_slot = 2; streams[10].layout_id = 0x00000008; streams[10].vram_addr = rpu_morph_vertex_vram_addr; streams[10].byte_length = morph_vertex_bytes; streams[10].step_rate = 0
-	streams[11].stream_slot = 0; streams[11].layout_id = 0x00000001; streams[11].vram_addr = rpu_quad_vertex_vram_addr; streams[11].byte_length = quad_vertex_bytes; streams[11].step_rate = 0
-	streams[12].stream_slot = 1; streams[12].layout_id = 0x00000020; streams[12].vram_addr = rpu_instance_vram_addr + present_instance_offset; streams[12].byte_length = instance_bytes - present_instance_offset; streams[12].step_rate = 1
-
-	local constants<const>: *bm_constant_bind_desc[constant_bind_desc_count] = constant_bind_desc_addr
-	constants[0].binding_slot = 0; constants[0].vram_addr = rpu_c0_vram_addr; constants[0].byte_length = c0_bytes
-	constants[1].binding_slot = 0; constants[1].vram_addr = rpu_c0_vram_addr; constants[1].byte_length = c0_bytes
-	constants[2].binding_slot = 1; constants[2].vram_addr = rpu_joint_vram_addr; constants[2].byte_length = joint_bytes
-	constants[3].binding_slot = 2; constants[3].vram_addr = rpu_c1_vram_addr; constants[3].byte_length = c1_bytes
-
-	local sampled_surface_binds<const>: *bm_sampled_surface_bind_desc[sampled_surface_bind_desc_count] = sampled_surface_bind_desc_addr
-	sampled_surface_binds[0].texture_slot = 0; sampled_surface_binds[0].surface_desc_addr = atlas_surface
-	sampled_surface_binds[1].texture_slot = 0; sampled_surface_binds[1].surface_desc_addr = atlas_surface
-	sampled_surface_binds[2].texture_slot = 1; sampled_surface_binds[2].surface_desc_addr = atlas_surface
-	sampled_surface_binds[3].texture_slot = 0; sampled_surface_binds[3].surface_desc_addr = scene_color_surface
-
-	local pass_words<const>: *word = vram_staging_base + rpu_pass_desc_vram_addr
-	local pass_index = 0
-	while pass_index < pass_desc_count do
-		local pass<const>: *bm_pass_desc = &passes[pass_index]
-		local word_base<const> = (pass_index * 0x00000024) // 4
-		pass_words[word_base] = pass->color_surface_desc_addr
-		pass_words[word_base + 1] = pass->depth_surface_desc_addr
-		pass_words[word_base + 2] = pass->viewport_xy
-		pass_words[word_base + 3] = pass->viewport_wh
-		pass_words[word_base + 4] = pass->pass_ops
-		pass_words[word_base + 5] = pass->clear_color
-		pass_words[word_base + 6] = pass->clear_depth_word
-		pass_words[word_base + 7] = rpu_draw_desc_vram_addr + pass->first_draw * 0x0000002c
-		pass_words[word_base + 8] = pass->draw_count
-		pass_index = pass_index + 1
-	end
-
-	local draw_words<const>: *word = vram_staging_base + rpu_draw_desc_vram_addr
-	local draw_index = 0
-	while draw_index < draw_desc_count do
-		local draw<const>: *bm_draw_desc = &draws[draw_index]
-		local word_base<const> = (draw_index * 0x0000002c) // 4
-		draw_words[word_base] = draw->shader_variant | ((draw->primitive_index_type & 0xff) << 16)
-		draw_words[word_base + 1] = draw->pipeline_word
-		draw_words[word_base + 2] = draw->vertex_count
-		draw_words[word_base + 3] = draw->instance_count
-		draw_words[word_base + 4] = draw->index_vram_addr
-		draw_words[word_base + 5] = draw->index_count
-		draw_words[word_base + 6] = ((draw->primitive_index_type >> 8) & 0xff) | (draw->stream_count << 8) | (draw->constant_count << 16) | (draw->sampled_surface_count << 24)
-		draw_words[word_base + 7] = rpu_stream_desc_vram_addr + draw->stream_first * 0x0000000c
-		draw_words[word_base + 8] = rpu_constant_desc_vram_addr + draw->constant_first * 0x0000000c
-		draw_words[word_base + 9] = rpu_texture_desc_vram_addr + draw->sampled_surface_first * 0x00000008
-		draw_words[word_base + 10] = 0
-		draw_index = draw_index + 1
-	end
-
-	local stream_words<const>: *word = vram_staging_base + rpu_stream_desc_vram_addr
-	local stream_index = 0
-	while stream_index < stream_bind_desc_count do
-		local stream<const>: *bm_stream_bind_desc = &streams[stream_index]
-		local word_base<const> = (stream_index * 0x0000000c) // 4
-		stream_words[word_base] = stream->vram_addr
-		stream_words[word_base + 1] = stream->byte_length
-		stream_words[word_base + 2] = stream->layout_id | (stream->stream_slot << 16) | (stream->step_rate << 24)
-		stream_index = stream_index + 1
-	end
-
-	local constant_words<const>: *word = vram_staging_base + rpu_constant_desc_vram_addr
-	local constant_index = 0
-	while constant_index < constant_bind_desc_count do
-		local constant<const>: *bm_constant_bind_desc = &constants[constant_index]
-		local word_base<const> = (constant_index * 0x0000000c) // 4
-		constant_words[word_base] = constant->vram_addr
-		constant_words[word_base + 1] = constant->byte_length
-		constant_words[word_base + 2] = constant->binding_slot
-		constant_index = constant_index + 1
-	end
-
-	local texture_words<const>: *word = vram_staging_base + rpu_texture_desc_vram_addr
-	local sampled_surface_index = 0
-	while sampled_surface_index < sampled_surface_bind_desc_count do
-		local sampled_surface_bind<const>: *bm_sampled_surface_bind_desc = &sampled_surface_binds[sampled_surface_index]
-		local word_base<const> = (sampled_surface_index * 0x00000008) // 4
-		texture_words[word_base] = sampled_surface_bind->surface_desc_addr
-		texture_words[word_base + 1] = sampled_surface_bind->texture_slot
-		sampled_surface_index = sampled_surface_index + 1
-	end
+local draw_face<const> = function(x0, y0, z0, x1, y1, z1, x2, y2, z2, color0, color1, color2)
+	local sx0<const>, sy0<const>, sz0<const>,
+		sx1<const>, sy1<const>, sz1<const>,
+		sx2<const>, sy2<const>, sz2<const> = gx_gte.rtpt(x0, y0, z0, x1, y1, z1, x2, y2, z2)
+	local shade0<const> = sz0 > sz1 and color0 or color1
+	local shade1<const> = sz1 > sz2 and color1 or color2
+	local shade2<const> = sz2 > sz0 and color2 or color0
+	gx_gpu.draw_gouraud_triangle_color(sx0, sy0, shade0, sx1, sy1, shade1, sx2, sy2, shade2)
 end
 
-
-local initialize_vdp_resources<const> = function()
-	write_quad_vertices()
-	write_background_vertices()
-	write_vector_vertices()
-	write_mat4_vertices()
-	write_mesh_indices()
-	write_lighting_constants()
-	write_vdp_command_descriptors()
-	local buffers<const>: *bm_buffer_define_desc[buffer_desc_count] = buffer_desc_addr
-	local buffer_index = 0
-	while buffer_index < buffer_desc_count do
-		local desc<const>: *bm_buffer_define_desc = &buffers[buffer_index]
-		if desc->upload_byte_length ~= 0 then
-			*dma_src_register = desc->upload_src_addr
-			*dma_dst_register = vram_staging_base + desc->vram_addr
-			*dma_len_register = desc->upload_byte_length
-			*dma_ctrl_register = 0x00000001
-			wait_interrupt(irq_dma_done | irq_dma_error)
-		end
-		buffer_index = buffer_index + 1
+local draw_gte_shard<const> = function()
+	local sin_q16<const>, cos_q16<const> = sincos_turn32((frame * 59652323) & 0xffffffff)
+	local sin_q12<const> = sin_q16 >> 4
+	local cos_q12<const> = cos_q16 >> 4
+	local translate_z = 430
+	if key_down(key_digit2) then
+		translate_z = 540
 	end
+	gx_gte.set_y_rotation_translation(sin_q12, cos_q12, 0, -10, translate_z)
+	gx_gte.set_screen_offset(160, 106)
+	gx_gte.set_projection_h(256)
+	draw_face(0, -72, 0, -78, 58, 76, 78, 58, 76, color_shard_a, color_shard_b, color_shard_c)
+	draw_face(0, -72, 0, 78, 58, 76, 0, 58, -86, color_shard_a, color_shard_c, color_shard_d)
+	draw_face(0, -72, 0, 0, 58, -86, -78, 58, 76, color_shard_a, color_shard_d, color_shard_b)
+	draw_face(-78, 58, 76, 0, 58, -86, 78, 58, 76, color_shard_b, color_shard_d, color_shard_c)
 end
 
+local draw_second_gte_shard<const> = function()
+	local sin_q16<const>, cos_q16<const> = sincos_turn32(((0 - frame) * 89478485) & 0xffffffff)
+	local sin_q12<const> = sin_q16 >> 4
+	local cos_q12<const> = cos_q16 >> 4
+	gx_gte.set_y_rotation_translation(sin_q12, cos_q12, -92, 18, 520)
+	gx_gte.set_screen_offset(160, 112)
+	gx_gte.set_projection_h(220)
+	draw_face(0, -42, 0, -50, 34, 52, 50, 34, 52, color_shard_c, color_shard_d, color_shard_a)
+	draw_face(0, -42, 0, 50, 34, 52, 0, 34, -60, color_shard_c, color_shard_a, color_shard_b)
+	draw_face(0, -42, 0, 0, 34, -60, -50, 34, 52, color_shard_c, color_shard_b, color_shard_d)
+	draw_face(-50, 34, 52, 0, 34, -60, 50, 34, 52, color_shard_d, color_shard_b, color_shard_a)
+end
+
+local draw_vector_overlay<const> = function()
+	local phase<const> = frame % 160
+	gx_gpu.draw_line_color(22, 204, 298, 204, color_grid_hot)
+	gx_gpu.draw_line_color(22, 214, 298, 214, color_grid)
+	gx_gpu.draw_line_color(22 + phase, 198, 22 + phase, 220, color_grid_hot)
+	gx_gpu.draw_line_color(26, 28, 82, 28, color_grid_hot)
+	gx_gpu.draw_line_color(26, 28, 26, 66, color_grid_hot)
+	gx_gpu.draw_line_color(82, 28, 82, 66, color_grid)
+	gx_gpu.draw_line_color(26, 66, 82, 66, color_grid)
+	if key_down(key_q) then
+		gx_gpu.fill_rect_semitrans_color(224, 24, 304, 48, color_shadow)
+	end
+	if key_down(key_e) then
+		gx_gpu.fill_rect_semitrans_color(224, 52, 304, 76, color_shadow)
+	end
+end
 
 local draw_frame<const> = function()
-	local morph_phase<const> = frame % 32
-	local morph_t<const> = morph_phase < 16 and (morph_phase / 16.0) or (2.0 - morph_phase / 16.0)
-	local morph_a<const> = morph_t * 0.22
-	local morph_b<const> = (1.0 - morph_t) * 0.16
-	write_mesh_vertices(morph_a, morph_b)
-	write_morph_deltas()
-	write_lighting_constants()
-	write_mesh_constants()
-	write_joint_constants()
-	write_instances()
-	write_mat4_instances()
-	local frame_uploads<const>: *bm_buffer_upload_desc[frame_buffer_upload_desc_count] = frame_buffer_upload_desc_addr
-	local frame_upload_index = 0
-	while frame_upload_index < frame_buffer_upload_desc_count do
-		local desc<const>: *bm_buffer_upload_desc = &frame_uploads[frame_upload_index]
-		*dma_src_register = desc->src_addr
-		*dma_dst_register = vram_staging_base + desc->vram_addr
-		*dma_len_register = desc->byte_length
-		*dma_ctrl_register = 0x00000001
-		wait_interrupt(irq_dma_done | irq_dma_error)
-		frame_upload_index = frame_upload_index + 1
-	end
-	local constant_uploads<const>: *bm_constant_upload_desc[constant_upload_desc_count] = constant_upload_desc_addr
-	local constant_upload_index = 0
-	while constant_upload_index < constant_upload_desc_count do
-		local desc<const>: *bm_constant_upload_desc = &constant_uploads[constant_upload_index]
-		*dma_src_register = desc->src_addr
-		*dma_dst_register = vram_staging_base + desc->vram_addr
-		*dma_len_register = desc->byte_length
-		*dma_ctrl_register = 0x00000001
-		wait_interrupt(irq_dma_done | irq_dma_error)
-		constant_upload_index = constant_upload_index + 1
-	end
-	local wp = vdp_stream_base
-	local exec_packet<const>: *bm_rpu_exec_pass_list_packet = wp
-	exec_packet->header = 0x18000000 | (0x00000002 << 16)
-	exec_packet->op = 0x00000040 | (pass_desc_count << 8)
-	exec_packet->pass_desc_addr = rpu_pass_desc_vram_addr
-	wp = wp + sizeof(bm_rpu_exec_pass_list_packet)
-	local seal_packet<const>: *bm_rpu_seal_frame_packet = wp
-	seal_packet->header = 0x18000000 | (0x00000001 << 16)
-	seal_packet->op = 0x00000041
-	wp = wp + sizeof(bm_rpu_seal_frame_packet)
-	local end_packet<const>: *word = wp
-	*end_packet = 0x00000000
-	wp = wp + 0x00000004
-	vdp_stream_cursor = wp
-	submit_current_stream()
-	wait_interrupt(irq_dma_done | irq_dma_error)
+	gx_gpu.clear_color(color_black)
+	draw_background()
+	draw_affine_tunnel()
+	draw_gte_shard()
+	draw_second_gte_shard()
+	draw_sprite()
+	draw_vector_overlay()
 end
 
-
-*vdp_dither_register = 0
-*irq_mask_register = irq_vblank | irq_dma_done | irq_dma_error
-build_lua_atlas()
-initialize_vdp_resources()
-upload_atlas_to_vram()
-*inp_ctrl_register = 0x00000001
+*irq_mask_register = irq_vblank
+gx_gpu.reset_320x240_pal()
+build_texture()
+upload_texture()
+wait_vblank()
 
 while true do
-	wait_interrupt(irq_vblank)
-	frame = frame + 1
-	sprite_x = sprite_x + (sprite_direction * sprite_step)
-	if sprite_x >= 184 then
-		sprite_x = 184
-		sprite_direction = -sprite_direction
-	end
-	if sprite_x <= 24 then
-		sprite_x = 24
-		sprite_direction = -sprite_direction
-	end
-	sprite_y = 88 + ((frame // 12) % 4)
-	update_camera()
+	wait_vblank()
+	update_input()
 	draw_frame()
-	*inp_ctrl_register = 0x00000001
+	frame = frame + 1
 end

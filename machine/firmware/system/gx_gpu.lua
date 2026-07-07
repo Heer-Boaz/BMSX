@@ -17,6 +17,8 @@ local gp1_display_mode_320_pal<const> = 0x08000009
 
 local gp0_fill_rectangle<const> = 0x02000000
 local gp0_draw_rectangle<const> = 0x60000000
+local gp0_draw_triangle<const> = 0x20000000
+local gp0_draw_gouraud_triangle<const> = 0x30000000
 local gp0_draw_textured_quad<const> = 0x2c000000
 local gp0_draw_raw_textured_quad<const> = 0x2d000000
 local gp0_draw_textured_rectangle<const> = 0x64000000
@@ -141,6 +143,22 @@ function gx_gpu.draw_line_color(x0, y0, x1, y1, color)
 	*gp0 = gp0_draw_line | argb_to_gp0_rgb(color)
 	*gp0 = xy(x0, y0)
 	*gp0 = xy(x1, y1)
+end
+
+function gx_gpu.draw_triangle_color(x0, y0, x1, y1, x2, y2, color)
+	*gp0 = gp0_draw_triangle | argb_to_gp0_rgb(color)
+	*gp0 = xy(x0, y0)
+	*gp0 = xy(x1, y1)
+	*gp0 = xy(x2, y2)
+end
+
+function gx_gpu.draw_gouraud_triangle_color(x0, y0, color0, x1, y1, color1, x2, y2, color2)
+	*gp0 = gp0_draw_gouraud_triangle | argb_to_gp0_rgb(color0)
+	*gp0 = xy(x0, y0)
+	*gp0 = argb_to_gp0_rgb(color1)
+	*gp0 = xy(x1, y1)
+	*gp0 = argb_to_gp0_rgb(color2)
+	*gp0 = xy(x2, y2)
 end
 
 function gx_gpu.upload_rgba8888_to_direct16_stride(source_addr, source_x, source_y, source_stride, target_x, target_y, width, height)
