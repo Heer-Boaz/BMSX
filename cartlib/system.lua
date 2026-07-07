@@ -26,6 +26,7 @@ local progression<const> = require('cartlib/progression')
 local font_module<const> = require('cartlib/font')
 local vdp_rpu_quads<const> = require('system/vdp_rpu_quads')
 local vdp_image<const> = require('system/vdp_image')
+local gx_gpu<const> = require('system/gx_gpu')
 local cart_input<const> = require('cartlib/input/player')
 
 local irq_ack_addr<const> = 0x08000108
@@ -203,6 +204,12 @@ system.vdp_fill_rect_color = vdp_rpu_quads.fill_rect_color
 system.vdp_draw_line_color = vdp_rpu_quads.draw_line_color
 system.vdp_tile_run_sources = vdp_rpu_quads.tile_run_sources
 system.vdp_load_atlas = vdp_image.load_atlas
+system.gx_reset_320x240_pal = gx_gpu.reset_320x240_pal
+system.gx_clear_color = gx_gpu.clear_color
+system.gx_fill_rect_color = gx_gpu.fill_rect_color
+system.gx_draw_line_color = gx_gpu.draw_line_color
+system.gx_display_width = gx_gpu.display_width
+system.gx_display_height = gx_gpu.display_height
 function system.vdp_blit_img_color(imgid, x, y, z, layer, scale_x, scale_y, flip_flags, color)
 	local rect<const> = vdp_image.rect(imgid)
 	vdp_rpu_quads.blit_source_color(rect.atlas_id, rect.u, rect.v, rect.w, rect.h, x, y, z, layer, scale_x, scale_y, flip_flags, color)

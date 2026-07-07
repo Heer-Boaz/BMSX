@@ -13,6 +13,8 @@ import {
 	IO_IMG_DST,
 	IO_IMG_LEN,
 	IO_IMG_SRC,
+	IO_GX_GPU_GP0,
+	IO_GX_GPU_GP1,
 	IO_INP_CTRL,
 	IO_IRQ_MASK,
 	IO_SYS_CYCLES_PER_FRAME,
@@ -89,4 +91,16 @@ test('VDP image firmware uses numeric ROMDIR atlas ids', () => {
 	assert.equal(romdirSource.includes('rom.atlases[atlas_id_from_name(entry.id)] = entry'), true);
 	assert.equal(cartlibSystemSource.includes('vdp_load_system_atlas'), false);
 	assert.equal(cartlibPreludeSource.includes('vdp_load_system_atlas'), false);
+});
+
+test('GX GPU firmware owns raw PSX GP0 and GP1 words for migrated primitive carts', () => {
+	const gxGpuSource = readFileSync('machine/firmware/system/gx_gpu.lua', 'utf8');
+	const renderHwTestSource = readFileSync('carts/renderhwtest/entry.lua', 'utf8');
+	assert.equal(gxGpuSource.includes(`local gp0<const>: *word = 0x${IO_GX_GPU_GP0.toString(16).padStart(8, '0')}`), true);
+	assert.equal(gxGpuSource.includes(`local gp1<const>: *word = 0x${IO_GX_GPU_GP1.toString(16).padStart(8, '0')}`), true);
+	assert.equal(gxGpuSource.includes('gp0_draw_rectangle'), true);
+	assert.equal(gxGpuSource.includes('gp0_draw_line'), true);
+	assert.equal(renderHwTestSource.includes('gx_reset_320x240_pal()'), true);
+	assert.equal(renderHwTestSource.includes('vdp_'), false);
+	assert.equal(renderHwTestSource.includes('0x0800007c'), false);
 });

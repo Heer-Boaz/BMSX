@@ -4,6 +4,7 @@
 #include "machine/devices/vdp/contracts.h"
 #include "machine/devices/vdp/rpu.h"
 #include "machine/devices/vdp/rpu_desc.h"
+#include "machine/devices/gx/gpu_command_buffer.h"
 #include "render/backend/gles2/backend.h"
 #include "render/gameview.h"
 #include "render/backend/gles2/shaders/vdp_rpu_shaders.h"
@@ -776,7 +777,7 @@ constexpr auto bootstrapVdpRpuPass = [](GPUBackend* backend, void*) {
 };
 
 constexpr auto shouldExecuteVdpRpuPass = [](GameView* view, void*) {
-	return view->vdpRpuFrame->commands.passCount != 0u;
+	return view->vdpRpuFrame->commands.passCount != 0u && view->gxGpuCommandBuffer->commandCount == 0u;
 };
 
 constexpr auto renderVdpRpuPass = [](GPUBackend* backend, GameView* view, void* framebuffer, RenderPassStateStorage&, void*) {

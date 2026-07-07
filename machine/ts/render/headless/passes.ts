@@ -135,7 +135,7 @@ function registerHeadlessRpuPass(registry: RenderPassLibrary): void {
 		name: 'HeadlessRPU',
 		stateOnly: true,
 		graph: { writes: ['frame_color'] },
-		shouldExecute: (view) => view.vdpRpuFrame.commands.passCount !== 0,
+		shouldExecute: (view) => view.vdpRpuFrame.commands.passCount !== 0 && view.gxGpuCommandBuffer.commandCount === 0,
 		exec: () => {
 			const view = registry.view as GameView;
 			const frame = view.vdpRpuFrame;
