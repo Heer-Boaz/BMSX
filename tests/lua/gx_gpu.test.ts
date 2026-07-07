@@ -17,6 +17,11 @@ import {
 	gxGpuCommandRectangleWidth,
 	gxGpuDisplayStartX,
 	gxGpuDisplayStartY,
+	gxGpuDisplayModeScreenWidth,
+	gxGpuDisplayModeDotClockDivider,
+	gxGpuHorizontalDisplayRangeEnd,
+	gxGpuHorizontalDisplayRangeStart,
+	gxGpuHorizontalVisibleColumns,
 	gxGpuDitheredPolygon,
 	gxGpuDrawModeDitherEnabled,
 	gxGpuDrawModeTexturePageYBit9,
@@ -141,6 +146,26 @@ test('GX-GPU decodes PSX GP0 signed vertex and rectangle size words', () => {
 	assert.equal(gxGpuVertexY(0x07ff0000), -1);
 	assert.equal(gxGpuDisplayStartX(123 | (456 << 10)), 123);
 	assert.equal(gxGpuDisplayStartY(123 | (456 << 10)), 456);
+	assert.equal(gxGpuDisplayModeScreenWidth(0), 256);
+	assert.equal(gxGpuDisplayModeScreenWidth(1), 320);
+	assert.equal(gxGpuDisplayModeScreenWidth(2), 512);
+	assert.equal(gxGpuDisplayModeScreenWidth(3), 640);
+	assert.equal(gxGpuDisplayModeScreenWidth(0x40), 368);
+	assert.equal(gxGpuDisplayModeScreenWidth(0x41), 384);
+	assert.equal(gxGpuDisplayModeDotClockDivider(0), 10);
+	assert.equal(gxGpuDisplayModeDotClockDivider(1), 8);
+	assert.equal(gxGpuDisplayModeDotClockDivider(2), 5);
+	assert.equal(gxGpuDisplayModeDotClockDivider(3), 4);
+	assert.equal(gxGpuDisplayModeDotClockDivider(0x40), 7);
+	assert.equal(gxGpuDisplayModeDotClockDivider(0x41), 7);
+	assert.equal(gxGpuHorizontalDisplayRangeStart(0x00c60260), 0x260);
+	assert.equal(gxGpuHorizontalDisplayRangeEnd(0x00c60260), 0xc60);
+	assert.equal(gxGpuHorizontalVisibleColumns(0x00c60260, 1), 320);
+	assert.equal(gxGpuHorizontalVisibleColumns((0xc5f << 12) | 0x260, 1), 320);
+	assert.equal(gxGpuHorizontalVisibleColumns((0xc3f << 12) | 0x260, 1), 316);
+	assert.equal(gxGpuHorizontalVisibleColumns(0x00c60260, 0x40), 364);
+	assert.equal(gxGpuHorizontalVisibleColumns(0x00c70260, 0x40), 368);
+	assert.equal(gxGpuHorizontalVisibleColumns(0x00ce0260, 0x41), 384);
 	assert.equal(gxGpuDrawingOffsetY(0x003ff800), -1);
 
 	assert.equal(gxGpuCommandRectangleWidth(GX_GPU_GP0_RECTANGLE_FIRST, 0x012c03ff), 1023);

@@ -15,7 +15,11 @@ const float DISPLAY_MODE_PAL_BIT = 8.0;
 const float DISPLAY_MODE_VERTICAL_RESOLUTION_BIT = 4.0;
 const float DISPLAY_MODE_VERTICAL_INTERLACE_BIT = 32.0;
 const float DISPLAY_MODE_HORIZONTAL_RESOLUTION_2_BIT = 64.0;
-const float PSX_HORIZONTAL_CYCLES_PER_320_LINE = 2560.0;
+const float DOT_CLOCK_DIVIDER_256 = 10.0;
+const float DOT_CLOCK_DIVIDER_320 = 8.0;
+const float DOT_CLOCK_DIVIDER_512 = 5.0;
+const float DOT_CLOCK_DIVIDER_640 = 4.0;
+const float DOT_CLOCK_DIVIDER_368 = 7.0;
 const float NTSC_OVERSCAN_LEFT = 608.0;
 const float PAL_OVERSCAN_LEFT = 638.0;
 const float NTSC_OVERSCAN_TOP = 16.0;
@@ -73,6 +77,23 @@ float displayScreenWidth() {
 	return 640.0;
 }
 
+float displayDotClockDivider() {
+	if (displayModeBit(DISPLAY_MODE_HORIZONTAL_RESOLUTION_2_BIT)) {
+		return DOT_CLOCK_DIVIDER_368;
+	}
+	float horizontalResolution1 = mod(floor(u_displayModeWord), 4.0);
+	if (horizontalResolution1 < 0.5) {
+		return DOT_CLOCK_DIVIDER_256;
+	}
+	if (horizontalResolution1 < 1.5) {
+		return DOT_CLOCK_DIVIDER_320;
+	}
+	if (horizontalResolution1 < 2.5) {
+		return DOT_CLOCK_DIVIDER_512;
+	}
+	return DOT_CLOCK_DIVIDER_640;
+}
+
 float displayScreenHeight() {
 	bool highVerticalResolution = displayModeBit(DISPLAY_MODE_VERTICAL_RESOLUTION_BIT);
 	if (displayModeBit(DISPLAY_MODE_PAL_BIT)) {
@@ -85,6 +106,11 @@ float displayScreenHeight() {
 		return 480.0;
 	}
 	return 240.0;
+}
+
+float horizontalVisibleColumns(float horizontalStart, float horizontalEnd, float dotClockDivider) {
+	float columns = truncateToInteger(((horizontalEnd - horizontalStart) / dotClockDivider) + 2.0);
+	return columns - mod(columns, 4.0);
 }
 
 vec3 rgb555ToRgb8(float word) {
@@ -115,6 +141,7 @@ vec3 rgb888AtSourcePixel(float sourceX, float sourceY) {
 vec3 displayRgb() {
 	float screenWidth = displayScreenWidth();
 	float screenHeight = displayScreenHeight();
+	float dotClockDivider = displayDotClockDivider();
 	float screenX = floor(v_texcoord.x * screenWidth);
 	float screenY = floor(v_texcoord.y * screenHeight);
 
@@ -130,9 +157,9 @@ vec3 displayRgb() {
 		overscanTop = PAL_OVERSCAN_TOP;
 	}
 
-	float originLeft = truncateToInteger(((horizontalStart - overscanLeft) * screenWidth) / PSX_HORIZONTAL_CYCLES_PER_320_LINE);
+	float originLeft = truncateToInteger((horizontalStart - overscanLeft) / dotClockDivider);
 	float sourceSkipX = 0.0;
-	float columns = truncateToInteger(((horizontalEnd - horizontalStart) * screenWidth) / PSX_HORIZONTAL_CYCLES_PER_320_LINE);
+	float columns = horizontalVisibleColumns(horizontalStart, horizontalEnd, dotClockDivider);
 	if (originLeft < 0.0) {
 		sourceSkipX = -originLeft;
 		columns += originLeft;

@@ -14,6 +14,11 @@ export const GX_GPU_BLEND_MODE_HALF_BACKGROUND_HALF_FOREGROUND = 0;
 export const GX_GPU_BLEND_MODE_BACKGROUND_PLUS_FOREGROUND = 1;
 export const GX_GPU_BLEND_MODE_BACKGROUND_MINUS_FOREGROUND = 2;
 export const GX_GPU_BLEND_MODE_BACKGROUND_PLUS_QUARTER_FOREGROUND = 3;
+export const GX_GPU_DOT_CLOCK_DIVIDER_256 = 10;
+export const GX_GPU_DOT_CLOCK_DIVIDER_320 = 8;
+export const GX_GPU_DOT_CLOCK_DIVIDER_512 = 5;
+export const GX_GPU_DOT_CLOCK_DIVIDER_640 = 4;
+export const GX_GPU_DOT_CLOCK_DIVIDER_368 = 7;
 
 export const GX_GPU_COMMAND_DRAW_POLYGON = 1;
 export const GX_GPU_COMMAND_DRAW_LINE = 2;
@@ -43,6 +48,51 @@ export function gxGpuDisplayStartX(word: number): number {
 
 export function gxGpuDisplayStartY(word: number): number {
 	return (word >>> 10) & 0x1ff;
+}
+
+export function gxGpuDisplayModeScreenWidth(displayModeWord: number): number {
+	const horizontalResolution1 = displayModeWord & 0x03;
+	const horizontalResolution2 = (displayModeWord & 0x40) !== 0;
+	if (horizontalResolution1 === 0) {
+		return horizontalResolution2 ? 368 : 256;
+	}
+	if (horizontalResolution1 === 1) {
+		return horizontalResolution2 ? 384 : 320;
+	}
+	if (horizontalResolution1 === 2) {
+		return 512;
+	}
+	return 640;
+}
+
+export function gxGpuDisplayModeDotClockDivider(displayModeWord: number): number {
+	if ((displayModeWord & 0x40) !== 0) {
+		return GX_GPU_DOT_CLOCK_DIVIDER_368;
+	}
+	const horizontalResolution1 = displayModeWord & 0x03;
+	if (horizontalResolution1 === 0) {
+		return GX_GPU_DOT_CLOCK_DIVIDER_256;
+	}
+	if (horizontalResolution1 === 1) {
+		return GX_GPU_DOT_CLOCK_DIVIDER_320;
+	}
+	if (horizontalResolution1 === 2) {
+		return GX_GPU_DOT_CLOCK_DIVIDER_512;
+	}
+	return GX_GPU_DOT_CLOCK_DIVIDER_640;
+}
+
+export function gxGpuHorizontalDisplayRangeStart(horizontalDisplayRangeWord: number): number {
+	return horizontalDisplayRangeWord & 0xfff;
+}
+
+export function gxGpuHorizontalDisplayRangeEnd(horizontalDisplayRangeWord: number): number {
+	return (horizontalDisplayRangeWord >>> 12) & 0xfff;
+}
+
+export function gxGpuHorizontalVisibleColumns(horizontalDisplayRangeWord: number, displayModeWord: number): number {
+	const rangeCycles = gxGpuHorizontalDisplayRangeEnd(horizontalDisplayRangeWord) - gxGpuHorizontalDisplayRangeStart(horizontalDisplayRangeWord);
+	return (((rangeCycles / gxGpuDisplayModeDotClockDivider(displayModeWord)) + 2) | 0) & ~0x03;
 }
 
 export function gxGpuDrawingOffsetX(word: number): number {

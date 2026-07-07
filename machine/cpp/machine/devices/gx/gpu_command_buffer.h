@@ -23,6 +23,11 @@ constexpr u32 GX_GPU_BLEND_MODE_HALF_BACKGROUND_HALF_FOREGROUND = 0u;
 constexpr u32 GX_GPU_BLEND_MODE_BACKGROUND_PLUS_FOREGROUND = 1u;
 constexpr u32 GX_GPU_BLEND_MODE_BACKGROUND_MINUS_FOREGROUND = 2u;
 constexpr u32 GX_GPU_BLEND_MODE_BACKGROUND_PLUS_QUARTER_FOREGROUND = 3u;
+constexpr u32 GX_GPU_DOT_CLOCK_DIVIDER_256 = 10u;
+constexpr u32 GX_GPU_DOT_CLOCK_DIVIDER_320 = 8u;
+constexpr u32 GX_GPU_DOT_CLOCK_DIVIDER_512 = 5u;
+constexpr u32 GX_GPU_DOT_CLOCK_DIVIDER_640 = 4u;
+constexpr u32 GX_GPU_DOT_CLOCK_DIVIDER_368 = 7u;
 
 constexpr u8 GX_GPU_COMMAND_DRAW_POLYGON = 1u;
 constexpr u8 GX_GPU_COMMAND_DRAW_LINE = 2u;
@@ -52,6 +57,51 @@ inline u32 gxGpuDisplayStartX(u32 word) {
 
 inline u32 gxGpuDisplayStartY(u32 word) {
 	return (word >> 10u) & 0x1ffu;
+}
+
+inline u32 gxGpuDisplayModeScreenWidth(u32 displayModeWord) {
+	const u32 horizontalResolution1 = displayModeWord & 0x03u;
+	const bool horizontalResolution2 = (displayModeWord & 0x40u) != 0u;
+	if (horizontalResolution1 == 0u) {
+		return horizontalResolution2 ? 368u : 256u;
+	}
+	if (horizontalResolution1 == 1u) {
+		return horizontalResolution2 ? 384u : 320u;
+	}
+	if (horizontalResolution1 == 2u) {
+		return 512u;
+	}
+	return 640u;
+}
+
+inline u32 gxGpuDisplayModeDotClockDivider(u32 displayModeWord) {
+	if ((displayModeWord & 0x40u) != 0u) {
+		return GX_GPU_DOT_CLOCK_DIVIDER_368;
+	}
+	const u32 horizontalResolution1 = displayModeWord & 0x03u;
+	if (horizontalResolution1 == 0u) {
+		return GX_GPU_DOT_CLOCK_DIVIDER_256;
+	}
+	if (horizontalResolution1 == 1u) {
+		return GX_GPU_DOT_CLOCK_DIVIDER_320;
+	}
+	if (horizontalResolution1 == 2u) {
+		return GX_GPU_DOT_CLOCK_DIVIDER_512;
+	}
+	return GX_GPU_DOT_CLOCK_DIVIDER_640;
+}
+
+inline u32 gxGpuHorizontalDisplayRangeStart(u32 horizontalDisplayRangeWord) {
+	return horizontalDisplayRangeWord & 0xfffu;
+}
+
+inline u32 gxGpuHorizontalDisplayRangeEnd(u32 horizontalDisplayRangeWord) {
+	return (horizontalDisplayRangeWord >> 12u) & 0xfffu;
+}
+
+inline i32 gxGpuHorizontalVisibleColumns(u32 horizontalDisplayRangeWord, u32 displayModeWord) {
+	const i32 rangeCycles = static_cast<i32>(gxGpuHorizontalDisplayRangeEnd(horizontalDisplayRangeWord)) - static_cast<i32>(gxGpuHorizontalDisplayRangeStart(horizontalDisplayRangeWord));
+	return (((rangeCycles / static_cast<i32>(gxGpuDisplayModeDotClockDivider(displayModeWord))) + 2) & ~0x03);
 }
 
 inline i32 gxGpuDrawingOffsetX(u32 word) {

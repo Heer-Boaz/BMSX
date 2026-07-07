@@ -37,6 +37,26 @@ void testGp0RawDrawWordDecoders() {
 	require(bmsx::gxGpuVertexY(0x07ff0000u) == -1, "GX-GPU vertex y decode");
 	require(bmsx::gxGpuDisplayStartX(123u | (456u << 10u)) == 123u, "GX-GPU display start x decode");
 	require(bmsx::gxGpuDisplayStartY(123u | (456u << 10u)) == 456u, "GX-GPU display start y decode");
+	require(bmsx::gxGpuDisplayModeScreenWidth(0u) == 256u, "GX-GPU 256-wide display mode");
+	require(bmsx::gxGpuDisplayModeScreenWidth(1u) == 320u, "GX-GPU 320-wide display mode");
+	require(bmsx::gxGpuDisplayModeScreenWidth(2u) == 512u, "GX-GPU 512-wide display mode");
+	require(bmsx::gxGpuDisplayModeScreenWidth(3u) == 640u, "GX-GPU 640-wide display mode");
+	require(bmsx::gxGpuDisplayModeScreenWidth(0x40u) == 368u, "GX-GPU 368-wide display mode");
+	require(bmsx::gxGpuDisplayModeScreenWidth(0x41u) == 384u, "GX-GPU 384-wide display mode");
+	require(bmsx::gxGpuDisplayModeDotClockDivider(0u) == 10u, "GX-GPU 256-wide dot clock divider");
+	require(bmsx::gxGpuDisplayModeDotClockDivider(1u) == 8u, "GX-GPU 320-wide dot clock divider");
+	require(bmsx::gxGpuDisplayModeDotClockDivider(2u) == 5u, "GX-GPU 512-wide dot clock divider");
+	require(bmsx::gxGpuDisplayModeDotClockDivider(3u) == 4u, "GX-GPU 640-wide dot clock divider");
+	require(bmsx::gxGpuDisplayModeDotClockDivider(0x40u) == 7u, "GX-GPU 368-wide dot clock divider");
+	require(bmsx::gxGpuDisplayModeDotClockDivider(0x41u) == 7u, "GX-GPU 384-wide dot clock divider");
+	require(bmsx::gxGpuHorizontalDisplayRangeStart(0x00c60260u) == 0x260u, "GX-GPU horizontal display start decode");
+	require(bmsx::gxGpuHorizontalDisplayRangeEnd(0x00c60260u) == 0xc60u, "GX-GPU horizontal display end decode");
+	require(bmsx::gxGpuHorizontalVisibleColumns(0x00c60260u, 1u) == 320u, "GX-GPU horizontal columns default 320 range");
+	require(bmsx::gxGpuHorizontalVisibleColumns((0xc5fu << 12u) | 0x260u, 1u) == 320u, "GX-GPU horizontal columns round to multiple of four");
+	require(bmsx::gxGpuHorizontalVisibleColumns((0xc3fu << 12u) | 0x260u, 1u) == 316u, "GX-GPU horizontal columns shortened multiple of four");
+	require(bmsx::gxGpuHorizontalVisibleColumns(0x00c60260u, 0x40u) == 364, "GX-GPU horizontal columns 368 dot-clock default range");
+	require(bmsx::gxGpuHorizontalVisibleColumns(0x00c70260u, 0x40u) == 368, "GX-GPU horizontal columns 368 display mode");
+	require(bmsx::gxGpuHorizontalVisibleColumns(0x00ce0260u, 0x41u) == 384, "GX-GPU horizontal columns 384 display mode");
 	require(bmsx::gxGpuDrawingOffsetY(0x003ff800u) == -1, "GX-GPU drawing offset y decode");
 
 	require(bmsx::gxGpuCommandRectangleWidth(bmsx::GX_GPU_GP0_RECTANGLE_FIRST, 0x012c03ffu) == 1023u, "GX-GPU variable rectangle width");
