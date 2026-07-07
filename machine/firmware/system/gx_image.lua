@@ -76,7 +76,8 @@ function gx_image.rect(imgid)
 	return rect
 end
 
-function gx_image.blit_rect_color(rect, x, y, color)
+function gx_image.blit_img_color(imgid, x, y, color)
+	const rect<const> = gx_image.rect(imgid)
 	local remaining_w = rect.w
 	local source_x = rect.u
 	local target_x = x
@@ -90,10 +91,6 @@ function gx_image.blit_rect_color(rect, x, y, color)
 		source_x = source_x + chunk_w
 		target_x = target_x + chunk_w
 	end
-end
-
-function gx_image.blit_img_color(imgid, x, y, color)
-	gx_image.blit_rect_color(gx_image.rect(imgid), x, y, color)
 end
 
 function gx_image.blit_rect_affine_color(
