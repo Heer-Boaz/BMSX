@@ -4,10 +4,6 @@ import { test } from 'node:test';
 
 import {
 	IMG_CTRL_START,
-	IO_DMA_CTRL,
-	IO_DMA_DST,
-	IO_DMA_LEN,
-	IO_DMA_SRC,
 	IO_IMG_CAP,
 	IO_IMG_CTRL,
 	IO_IMG_DST,
@@ -18,12 +14,8 @@ import {
 	IO_INP_CTRL,
 	IO_IRQ_MASK,
 	IO_SYS_CYCLES_PER_FRAME,
-	IO_VDP_FIFO,
-	IO_VDP_SCREEN_WH,
-	IO_VDP_STATUS,
 } from '../../machine/ts/machine/bus/io';
 import {
-	PSX_MACHINE_SPEC,
 	PSX_GPU_DISPLAY_SIZE_SPEC,
 	PSX_VRAM_STAGING_BYTES,
 	PSX_VRAM_TEXTURE_BYTES,
@@ -55,7 +47,7 @@ test('IMGDEC firmware consumes raw hardware words directly', () => {
 	assert.equal(source.includes(`mem[0x${IO_IMG_CAP.toString(16).padStart(8, '0')}] = cap`), true);
 });
 
-test('bootrom handoff waits for VDP submit idle before leaving system firmware', () => {
+test('bootrom handoff uses GX GPU output instead of VDP stream submit', () => {
 	const source = readFileSync('machine/firmware/bios/bootrom.lua', 'utf8');
 	const gpuDisplaySize = PSX_GPU_DISPLAY_SIZE_SPEC;
 	const bootVramTotal = PSX_VRAM_STAGING_BYTES
@@ -66,13 +58,17 @@ test('bootrom handoff waits for VDP submit idle before leaving system firmware',
 	assert.equal(source.includes(`local vram_total<const> = 0x${bootVramTotal.toString(16).padStart(8, '0')}`), true);
 	assert.equal(source.includes(`local irq_mask_addr<const> = 0x${IO_IRQ_MASK.toString(16).padStart(8, '0')}`), true);
 	assert.equal(source.includes(`hw_max_cycles = format_bignumbers(mem[0x${IO_SYS_CYCLES_PER_FRAME.toString(16).padStart(8, '0')}])`), true);
-	assert.equal(source.includes(`local screen_wh<const> = mem[0x${IO_VDP_SCREEN_WH.toString(16).padStart(8, '0')}]`), true);
-	assert.equal(source.includes(`if (mem[0x${IO_VDP_STATUS.toString(16).padStart(8, '0')}] & 0x00000002) ~= 0 then\n\t\t\treturn false\n\t\tend\n\t\tprint('Cart boot requested.')\n\t\tmem[irq_mask_addr] = 0\n\t\treturn true`), true);
 	assert.equal(source.includes(`mem[0x${IO_INP_CTRL.toString(16).padStart(8, '0')}] = 0x00000001`), true);
-	assert.equal(source.includes(`mem[0x${IO_DMA_SRC.toString(16).padStart(8, '0')}] = 0x080c0000`), true);
-	assert.equal(source.includes(`mem[0x${IO_DMA_DST.toString(16).padStart(8, '0')}] = 0x${IO_VDP_FIFO.toString(16).padStart(8, '0')}`), true);
-	assert.equal(source.includes(`mem[0x${IO_DMA_LEN.toString(16).padStart(8, '0')}] = used_bytes`), true);
-	assert.equal(source.includes(`mem[0x${IO_DMA_CTRL.toString(16).padStart(8, '0')}] = 0x00000001`), true);
+	assert.equal(source.includes('gx_gpu.reset_320x240_pal()'), true);
+	assert.equal(source.includes('gx_image.load_atlas(254)'), true);
+	assert.equal(source.includes('gx_image.upload_atlas(254)'), true);
+	assert.equal(source.includes('gx_gpu.clear_color(color_bg)'), true);
+	assert.equal(source.includes('gx_gpu.fill_rect_color(0, 0, width, 24, color_header_bg)'), true);
+	assert.equal(source.includes('gx_image.blit_img_color(glyph.imgid, cursor_x, y, color)'), true);
+	assert.equal(source.includes('vdp_'), false);
+	assert.equal(source.includes('0x0800007c'), false);
+	assert.equal(source.includes('0x08000144'), false);
+	assert.equal(source.includes('vdp_stream_cursor'), false);
 });
 
 test('RPU quad firmware descriptor table matches the rompacker texture contract', () => {
@@ -93,6 +89,23 @@ test('VDP image firmware uses numeric ROMDIR atlas ids', () => {
 	assert.equal(cartlibPreludeSource.includes('vdp_load_system_atlas'), false);
 });
 
+
+test('GX image firmware maps decoded RGBA atlases into direct16 PSX texture pages', () => {
+	const gxImageSource = readFileSync('machine/firmware/system/gx_image.lua', 'utf8');
+	const cartlibSystemSource = readFileSync('cartlib/system.lua', 'utf8');
+	const cartlibPreludeSource = readFileSync('cartlib/prelude.lua', 'utf8');
+	assert.equal(gxImageSource.includes("require('system/gx_gpu')"), true);
+	assert.equal(gxImageSource.includes('gpu_texture_base_y<const> = 256'), true);
+	assert.equal(gxImageSource.includes('gpu_texture_slice_width<const> = 1024'), true);
+	assert.equal(gxImageSource.includes('imgdec.start(atlas.addr, atlas.len, atlas_meta.texture_addr, atlas_meta.texture_len)'), true);
+	assert.equal(gxImageSource.includes('gx_gpu.upload_rgba8888_to_direct16_stride'), true);
+	assert.equal(gxImageSource.includes('gx_gpu.draw_direct16_textured_rect_color'), true);
+	assert.equal(cartlibSystemSource.includes('system.gx_load_atlas = gx_image.load_atlas'), true);
+	assert.equal(cartlibSystemSource.includes('system.gx_upload_atlas = gx_image.upload_atlas'), true);
+	assert.equal(cartlibSystemSource.includes('system.gx_blit_img_color = gx_image.blit_img_color'), true);
+	assert.equal(cartlibPreludeSource.includes('gx_blit_img_color = system.gx_blit_img_color'), true);
+});
+
 test('GX GPU firmware owns raw PSX GP0 and GP1 words for migrated primitive carts', () => {
 	const gxGpuSource = readFileSync('machine/firmware/system/gx_gpu.lua', 'utf8');
 	const renderHwTestSource = readFileSync('carts/renderhwtest/entry.lua', 'utf8');
@@ -102,6 +115,10 @@ test('GX GPU firmware owns raw PSX GP0 and GP1 words for migrated primitive cart
 	assert.equal(gxGpuSource.includes('gp0_draw_semitransparent_rectangle'), true);
 	assert.equal(gxGpuSource.includes('gp0_draw_mode'), true);
 	assert.equal(gxGpuSource.includes('draw_mode_blend_quarter'), true);
+	assert.equal(gxGpuSource.includes('gp0_cpu_to_vram'), true);
+	assert.equal(gxGpuSource.includes('gp0_draw_raw_textured_rectangle'), true);
+	assert.equal(gxGpuSource.includes('upload_rgba8888_to_direct16_stride'), true);
+	assert.equal(gxGpuSource.includes('draw_direct16_textured_rect_color'), true);
 	assert.equal(gxGpuSource.includes('gp0_draw_line'), true);
 	assert.equal(renderHwTestSource.includes('gx_reset_320x240_pal()'), true);
 	assert.equal(renderHwTestSource.includes('vdp_'), false);

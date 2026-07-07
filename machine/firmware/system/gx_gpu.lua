@@ -12,8 +12,11 @@ local gp1_display_mode_320_pal<const> = 0x08000009
 
 local gp0_fill_rectangle<const> = 0x02000000
 local gp0_draw_rectangle<const> = 0x60000000
+local gp0_draw_textured_rectangle<const> = 0x64000000
+local gp0_draw_raw_textured_rectangle<const> = 0x65000000
 local gp0_draw_semitransparent_rectangle<const> = 0x62000000
 local gp0_draw_line<const> = 0x40000000
+local gp0_cpu_to_vram<const> = 0xa0000000
 local gp0_draw_mode<const> = 0xe1000000
 local gp0_drawing_area_top_left_0<const> = 0xe3000000
 local gp0_drawing_area_bottom_right_320x240<const> = 0xe403bd3f
@@ -24,9 +27,13 @@ local draw_mode_blend_half<const> = 0x00000000
 local draw_mode_blend_add<const> = 0x00000020
 local draw_mode_blend_subtract<const> = 0x00000040
 local draw_mode_blend_quarter<const> = 0x00000060
+local draw_mode_texture_direct16<const> = 0x00000100
 
 local display_width<const> = 320
 local display_height<const> = 240
+local texture_page_span<const> = 256
+
+local current_draw_mode = 0
 
 local argb_to_gp0_rgb<const> = function(color)
 	return ((color & 0x00ff0000) >> 16) | (color & 0x0000ff00) | ((color & 0x000000ff) << 16)
@@ -40,13 +47,30 @@ local wh<const> = function(width, height)
 	return (width & 0x0000ffff) | ((height & 0x0000ffff) << 16)
 end
 
+local rgba8888_to_direct16<const> = function(color)
+	if (color & 0xff000000) == 0 then
+		return 0
+	end
+	local direct16<const> = ((color & 0x000000f8) >> 3) | ((color & 0x0000f800) >> 6) | ((color & 0x00f80000) >> 9)
+	return direct16 == 0 and 0x00008000 or direct16
+end
+
+local draw_mode_for_texture_page<const> = function(source_x, source_y)
+	return draw_mode_texture_direct16 | (current_draw_mode & 0x00000060) | (((source_x >> 8) & 0x00000003) << 2) | ((source_y & 0x00000100) >> 4)
+end
+
+local texture_page_remaining<const> = function(source_coord)
+	return texture_page_span - (source_coord & 0x000000ff)
+end
+
 function gx_gpu.reset_320x240_pal()
 	*gp1 = gp1_reset
 	*gp1 = gp1_display_mode_320_pal
 	*gp1 = gp1_display_start_0
 	*gp1 = gp1_horizontal_320_pal
 	*gp1 = gp1_vertical_240_pal
-	*gp0 = gp0_draw_mode | draw_mode_blend_half
+	current_draw_mode = draw_mode_blend_half
+	*gp0 = gp0_draw_mode | current_draw_mode
 	*gp0 = gp0_drawing_area_top_left_0
 	*gp0 = gp0_drawing_area_bottom_right_320x240
 	*gp0 = gp0_drawing_offset_0
@@ -67,6 +91,7 @@ function gx_gpu.fill_rect_color(x0, y0, x1, y1, color)
 end
 
 function gx_gpu.set_draw_mode(draw_mode)
+	current_draw_mode = draw_mode
 	*gp0 = gp0_draw_mode | draw_mode
 end
 
@@ -82,10 +107,72 @@ function gx_gpu.draw_line_color(x0, y0, x1, y1, color)
 	*gp0 = xy(x1, y1)
 end
 
+function gx_gpu.upload_rgba8888_to_direct16_stride(source_addr, source_x, source_y, source_stride, target_x, target_y, width, height)
+	*gp0 = gp0_cpu_to_vram
+	*gp0 = xy(target_x, target_y)
+	*gp0 = wh(width, height)
+	local source_words<const>: *word = source_addr
+	local pending_word = 0
+	local pending_half = 0
+	for row = 0, height - 1 do
+		local source_index<const> = (source_y + row) * source_stride + source_x
+		for column = 0, width - 1 do
+			local pixel<const> = rgba8888_to_direct16(source_words[source_index + column])
+			if pending_half == 0 then
+				pending_word = pixel
+				pending_half = 1
+			else
+				*gp0 = pending_word | (pixel << 16)
+				pending_half = 0
+			end
+		end
+	end
+	if pending_half ~= 0 then
+		*gp0 = pending_word
+	end
+end
+
+function gx_gpu.draw_direct16_textured_rect_color(source_x, source_y, x, y, width, height, color)
+	local remaining_h = height
+	local draw_source_y = source_y
+	local draw_y = y
+	while remaining_h > 0 do
+		local chunk_h = texture_page_remaining(draw_source_y)
+		if chunk_h > remaining_h then
+			chunk_h = remaining_h
+		end
+		local remaining_w = width
+		local draw_source_x = source_x
+		local draw_x = x
+		while remaining_w > 0 do
+			local chunk_w = texture_page_remaining(draw_source_x)
+			if chunk_w > remaining_w then
+				chunk_w = remaining_w
+			end
+			*gp0 = gp0_draw_mode | draw_mode_for_texture_page(draw_source_x, draw_source_y)
+			if color == 0xffffffff then
+				*gp0 = gp0_draw_raw_textured_rectangle | 0x00808080
+			else
+				*gp0 = gp0_draw_textured_rectangle | argb_to_gp0_rgb(color)
+			end
+			*gp0 = xy(draw_x, draw_y)
+			*gp0 = (draw_source_x & 0x000000ff) | ((draw_source_y & 0x000000ff) << 8)
+			*gp0 = wh(chunk_w, chunk_h)
+			remaining_w = remaining_w - chunk_w
+			draw_source_x = draw_source_x + chunk_w
+			draw_x = draw_x + chunk_w
+		end
+		remaining_h = remaining_h - chunk_h
+		draw_source_y = draw_source_y + chunk_h
+		draw_y = draw_y + chunk_h
+	end
+end
+
 gx_gpu.draw_mode_blend_half = draw_mode_blend_half
 gx_gpu.draw_mode_blend_add = draw_mode_blend_add
 gx_gpu.draw_mode_blend_subtract = draw_mode_blend_subtract
 gx_gpu.draw_mode_blend_quarter = draw_mode_blend_quarter
+gx_gpu.draw_mode_texture_direct16 = draw_mode_texture_direct16
 gx_gpu.display_width = display_width
 gx_gpu.display_height = display_height
 

@@ -10,10 +10,8 @@ math = require('bios/math')
 easing = require('bios/easing')
 local clamp<const> = require('bios/util/clamp')
 local wrap_text_lines<const> = require('bios/util/wrap_text_lines').wrap_text_lines
-local imgdec<const> = require('system/imgdec')
-local romdir<const> = require('system/romdir')
-local vdp_rpu_quads<const> = require('system/vdp_rpu_quads')
-local vdp_image<const> = require('system/vdp_image')
+local gx_gpu<const> = require('system/gx_gpu')
+local gx_image<const> = require('system/gx_image')
 local font_module<const> = require('system/font')
 local system<const> = require('bios/system')
 
@@ -23,11 +21,10 @@ end
 
 local reset_scroll_state<const> = function(state) state.top = 0 end
 
-local draw_glyph_line_color<const> = function(font, line, x, y, z, layer, color)
+local draw_glyph_line_color<const> = function(font, line, x, y, color)
 	local cursor_x = x
 	font_module.for_each_glyph(font, line, function(glyph)
-		local rect<const> = vdp_image.rect(glyph.imgid)
-		vdp_rpu_quads.blit_source_color(rect.atlas_id, rect.u, rect.v, rect.w, rect.h, cursor_x, y, z, layer, 1, 1, 0, color)
+		gx_image.blit_img_color(glyph.imgid, cursor_x, y, color)
 		cursor_x = cursor_x + glyph.advance
 	end)
 end
@@ -80,6 +77,7 @@ local irq_vblank<const> = 0x0010
 local irq_mask_addr<const> = 0x0800010c
 bss boot_vblank_count: word
 bss boot_start: f64
+bss system_atlas_decoded: word
 bss system_atlas_ready: word
 bss system_atlas_failed: word
 local boot_scroll_state<const> = { top = 0 }
@@ -277,11 +275,14 @@ function init()
 	*boot_start = os.clock()
 	*boot_screen_visible = 1
 	*boot_screen_presented = 0
+	*system_atlas_decoded = 0
 	*system_atlas_ready = 0
 	*system_atlas_failed = 0
+	gx_gpu.reset_320x240_pal()
+	gx_gpu.clear_color(color_bg)
 	reset_scroll_state(boot_scroll_state)
 	system.on_irq(irq_img_done, function()
-		*system_atlas_ready = 1
+		*system_atlas_decoded = 1
 	end)
 	system.on_irq(irq_img_error, function()
 		*system_atlas_failed = 1
@@ -289,10 +290,7 @@ function init()
 	system.on_irq(irq_vblank, function()
 		*boot_vblank_count = *boot_vblank_count + 1
 	end)
-	local atlas<const> = romdir.system_rom_atlas(254)
-	local atlas_meta<const> = atlas.imgmeta
-	vdp_rpu_quads.define_atlas(254, atlas_meta.texture_addr, atlas_meta.width, atlas_meta.height)
-	imgdec.start(atlas.addr, atlas.len, atlas_meta.texture_addr, atlas_meta.texture_len)
+	gx_image.load_atlas(254)
 end
 
 function new_game()
@@ -316,6 +314,10 @@ end
 
 local update_boot_screen<const> = function()
 	*boot_screen_visible = 1
+	if *system_atlas_decoded ~= 0 and *system_atlas_ready == 0 and *system_atlas_failed == 0 then
+		gx_image.upload_atlas(254)
+		*system_atlas_ready = 1
+	end
 	*boot_input_frame = *boot_input_frame + 1
 	local arrow_down<const> = key_pressed(key_arrow_down)
 	local arrow_up<const> = key_pressed(key_arrow_up)
@@ -351,9 +353,6 @@ local update_boot_screen<const> = function()
 		and mem[cart_program_vector_addr] == cart_program_start_addr
 
 	if cart_present_and_ready and *system_atlas_ready ~= 0 and *system_atlas_failed == 0 then
-		if (mem[0x08000144] & 0x00000002) ~= 0 then
-			return false
-		end
 		print('Cart boot requested.')
 		mem[irq_mask_addr] = 0
 		return true
@@ -366,15 +365,14 @@ local update_boot_screen<const> = function()
 end
 
 render_boot_screen = function(scroll_delta)
-	local screen_wh<const> = mem[0x08000088]
-	local width<const> = screen_wh & 0xffff
-	local height<const> = screen_wh >> 16
+	local width<const> = gx_gpu.display_width
+	local height<const> = gx_gpu.display_height
 	local left<const> = 8
 	local top<const> = content_top
 	local font<const> = font_module.get('default')
 
-	vdp_rpu_quads.clear_color(color_bg)
-	vdp_rpu_quads.fill_rect_color(0, 0, width, 24, 0, 0x00000000, color_header_bg)
+	gx_gpu.clear_color(color_bg)
+	gx_gpu.fill_rect_color(0, 0, width, 24, color_header_bg)
 	local info<const> = build_info(width, height)
 	local cart_present<const> = cart_header_present(cart_rom_base)
 	local elapsed<const> = os.clock() - *boot_start
@@ -384,8 +382,6 @@ render_boot_screen = function(scroll_delta)
 	local window_size<const> = window_size(height, top, line_height, 1, 1)
 	local scroll_top<const>, max_scroll<const>, visible_lines<const> = scroll_boot_lines(content_lines, window_size, scroll_delta)
 	local y = top + 1
-	local text_z<const> = 1
-
 	for i = 1, #visible_lines do
 		local line<const> = visible_lines[i]
 		local text
@@ -399,7 +395,7 @@ render_boot_screen = function(scroll_delta)
 		end
 		if string.len(text) > 0 then
 			local color<const> = line_color or color_text
-			draw_glyph_line_color(font, text, left, y, text_z, 0x00000000, color)
+			draw_glyph_line_color(font, text, left, y, color)
 		end
 		y = y + line_height
 	end
@@ -423,17 +419,7 @@ new_game()
 mem[0x08000194] = 0x00000001
 while true do
 	wait_vblank()
-	vdp_stream_cursor = 0x080c0000
 	local boot_complete<const> = update_boot_screen()
-	vdp_rpu_quads.finish_frame()
-	do local used_bytes<const> = vdp_stream_cursor - 0x080c0000
-		if used_bytes ~= 0 then
-			mem[0x08000110] = 0x080c0000
-			mem[0x08000114] = 0x0800007c
-			mem[0x08000118] = used_bytes
-			mem[0x0800011c] = 0x00000001
-		end
-	end
 	if boot_complete then
 		return
 	end
