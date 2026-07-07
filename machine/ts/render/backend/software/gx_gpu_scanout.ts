@@ -1,13 +1,15 @@
 import {
-	gxGpuDisplayModeDotClockDivider,
-	gxGpuDisplayModeScreenWidth,
-	gxGpuDisplayStartX,
 	gxGpuDisplayStartY,
-	gxGpuHorizontalDisplayRangeEnd,
-	gxGpuHorizontalDisplayRangeStart,
 } from '../../../machine/devices/gx/gpu_command_buffer';
 import { GX_GPU_STATUS_DISPLAY_DISABLE } from '../../../machine/devices/gx/gpu';
 import type { GxGpuPipelineState } from '../backend';
+import {
+	gxGpuDisplayModeDotClockDivider,
+	gxGpuDisplayModeScreenWidth,
+	gxGpuDisplayStartX,
+	gxGpuHorizontalDisplayRangeEnd,
+	gxGpuHorizontalDisplayRangeStart,
+} from '../gx_gpu_render_rules';
 import {
 	gxGpuSoftwareRgb555ChannelTo8,
 	gxGpuSoftwareVram,

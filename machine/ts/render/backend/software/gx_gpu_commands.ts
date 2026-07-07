@@ -7,30 +7,32 @@ import {
 	GX_GPU_COMMAND_FILL_RECTANGLE,
 	GX_GPU_COMMAND_UPLOAD_CPU_TO_VRAM,
 	GX_GPU_VRAM_HEIGHT,
+	gxGpuTransferHeight,
+	gxGpuTransferWidth,
+	type GxGpuCommandBufferView,
+} from '../../../machine/devices/gx/gpu_command_buffer';
+import {
 	gxGpuCommandDrawsTexture,
 	gxGpuCommandGouraud,
 	gxGpuCommandQuadPolygon,
 	gxGpuCommandRectangleHeight,
 	gxGpuCommandRectangleWidth,
 	gxGpuCommandTextureEnabled,
+	gxGpuDitheredPolygon,
 	gxGpuDrawingOffsetX,
 	gxGpuDrawingOffsetY,
 	gxGpuFillHeight,
 	gxGpuFillWidth,
 	gxGpuFillX,
 	gxGpuTransferEmittedPixelCount,
-	gxGpuTransferHeight,
 	gxGpuTransferPixelWord,
-	gxGpuTransferWidth,
 	gxGpuTransferX,
 	gxGpuTransferY,
 	gxGpuTextureU,
 	gxGpuTextureV,
 	gxGpuVertexX,
 	gxGpuVertexY,
-	type GxGpuCommandBufferView,
-} from '../../../machine/devices/gx/gpu_command_buffer';
-import { gxGpuDitheredPolygon } from '../gx_gpu_render_rules';
+} from '../gx_gpu_render_rules';
 import {
 	GX_GPU_SOFTWARE_VRAM_WORDS,
 	gxGpuSoftwareInterlacedSkipsLine,

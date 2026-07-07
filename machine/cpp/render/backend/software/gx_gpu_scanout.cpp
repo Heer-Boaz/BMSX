@@ -3,6 +3,7 @@
 #include "machine/devices/gx/gpu.h"
 #include "machine/devices/gx/gpu_command_buffer.h"
 #include "render/backend/backend.h"
+#include "render/backend/gx_gpu_render_rules.h"
 #include "render/backend/pass/library.h"
 #include "render/backend/software/gx_gpu_vram.h"
 

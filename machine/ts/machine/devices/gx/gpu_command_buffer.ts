@@ -16,11 +16,6 @@ export const GX_GPU_BLEND_MODE_HALF_BACKGROUND_HALF_FOREGROUND = 0;
 export const GX_GPU_BLEND_MODE_BACKGROUND_PLUS_FOREGROUND = 1;
 export const GX_GPU_BLEND_MODE_BACKGROUND_MINUS_FOREGROUND = 2;
 export const GX_GPU_BLEND_MODE_BACKGROUND_PLUS_QUARTER_FOREGROUND = 3;
-export const GX_GPU_DOT_CLOCK_DIVIDER_256 = 10;
-export const GX_GPU_DOT_CLOCK_DIVIDER_320 = 8;
-export const GX_GPU_DOT_CLOCK_DIVIDER_512 = 5;
-export const GX_GPU_DOT_CLOCK_DIVIDER_640 = 4;
-export const GX_GPU_DOT_CLOCK_DIVIDER_368 = 7;
 
 export const GX_GPU_COMMAND_DRAW_POLYGON = 1;
 export const GX_GPU_COMMAND_DRAW_LINE = 2;
@@ -31,98 +26,8 @@ export const GX_GPU_COMMAND_COPY_VRAM_TO_VRAM = 6;
 export const GX_GPU_COMMAND_UPLOAD_CPU_TO_VRAM = 7;
 export const GX_GPU_COMMAND_READ_VRAM_TO_CPU = 8;
 
-export function gxGpuSigned11(word: number): number {
-	const value = word & 0x7ff;
-	return (value & 0x400) !== 0 ? value - 0x800 : value;
-}
-
-export function gxGpuVertexX(word: number): number {
-	return gxGpuSigned11(word);
-}
-
-export function gxGpuVertexY(word: number): number {
-	return gxGpuSigned11(word >>> 16);
-}
-
-export function gxGpuDisplayStartX(word: number): number {
-	return word & 0x3ff;
-}
-
 export function gxGpuDisplayStartY(word: number): number {
 	return (word >>> 10) & 0x1ff;
-}
-
-export function gxGpuDisplayModeScreenWidth(displayModeWord: number): number {
-	const horizontalResolution1 = displayModeWord & 0x03;
-	const horizontalResolution2 = (displayModeWord & 0x40) !== 0;
-	if (horizontalResolution1 === 0) {
-		return horizontalResolution2 ? 368 : 256;
-	}
-	if (horizontalResolution1 === 1) {
-		return horizontalResolution2 ? 384 : 320;
-	}
-	if (horizontalResolution1 === 2) {
-		return 512;
-	}
-	return 640;
-}
-
-export function gxGpuDisplayModeDotClockDivider(displayModeWord: number): number {
-	if ((displayModeWord & 0x40) !== 0) {
-		return GX_GPU_DOT_CLOCK_DIVIDER_368;
-	}
-	const horizontalResolution1 = displayModeWord & 0x03;
-	if (horizontalResolution1 === 0) {
-		return GX_GPU_DOT_CLOCK_DIVIDER_256;
-	}
-	if (horizontalResolution1 === 1) {
-		return GX_GPU_DOT_CLOCK_DIVIDER_320;
-	}
-	if (horizontalResolution1 === 2) {
-		return GX_GPU_DOT_CLOCK_DIVIDER_512;
-	}
-	return GX_GPU_DOT_CLOCK_DIVIDER_640;
-}
-
-export function gxGpuHorizontalDisplayRangeStart(horizontalDisplayRangeWord: number): number {
-	return horizontalDisplayRangeWord & 0xfff;
-}
-
-export function gxGpuHorizontalDisplayRangeEnd(horizontalDisplayRangeWord: number): number {
-	return (horizontalDisplayRangeWord >>> 12) & 0xfff;
-}
-
-export function gxGpuHorizontalVisibleColumns(horizontalDisplayRangeWord: number, displayModeWord: number): number {
-	const rangeCycles = gxGpuHorizontalDisplayRangeEnd(horizontalDisplayRangeWord) - gxGpuHorizontalDisplayRangeStart(horizontalDisplayRangeWord);
-	return (((rangeCycles / gxGpuDisplayModeDotClockDivider(displayModeWord)) + 2) | 0) & ~0x03;
-}
-
-export function gxGpuDrawingOffsetX(word: number): number {
-	return gxGpuSigned11(word);
-}
-
-export function gxGpuDrawingOffsetY(word: number): number {
-	return gxGpuSigned11(word >>> 11);
-}
-
-export function gxGpuCommandRawTextureEnabled(opcode: number): boolean {
-	return (opcode & 0x01) !== 0;
-}
-
-export function gxGpuCommandSemiTransparencyEnabled(opcode: number): boolean {
-	return (opcode & 0x02) !== 0;
-}
-
-export function gxGpuCommandTextureEnabled(opcode: number): boolean {
-	return (opcode & 0x04) !== 0;
-}
-
-export function gxGpuDrawModeTextureDisableEnabled(drawModeWord: number): boolean {
-	return (drawModeWord & GX_GPU_DRAW_MODE_TEXTURE_DISABLE) !== 0;
-}
-
-export function gxGpuCommandDrawsTexture(opcode: number, drawModeWord: number): boolean {
-	return gxGpuCommandTextureEnabled(opcode) && !gxGpuDrawModeTextureDisableEnabled(drawModeWord);
 }
 
 export function gxGpuSkipDrawingToActiveField(statusWord: number): boolean {
@@ -137,86 +42,6 @@ export function gxGpuInterlacedRenderWord(statusWord: number, activeLineLsb: num
 		: 0;
 }
 
-export function gxGpuCommandQuadPolygon(opcode: number): boolean {
-	return (opcode & 0x08) !== 0;
-}
-
-export function gxGpuCommandGouraud(opcode: number): boolean {
-	return (opcode & 0x10) !== 0;
-}
-
-export function gxGpuCommandRectangleWidth(opcode: number, sizeWord: number): number {
-	switch (opcode & 0x18) {
-		case 0x08:
-			return 1;
-		case 0x10:
-			return 8;
-		case 0x18:
-			return 16;
-		default:
-			return sizeWord & 0x3ff;
-	}
-}
-
-export function gxGpuCommandRectangleHeight(opcode: number, sizeWord: number): number {
-	switch (opcode & 0x18) {
-		case 0x08:
-			return 1;
-		case 0x10:
-			return 8;
-		case 0x18:
-			return 16;
-		default:
-			return (sizeWord >>> 16) & 0x1ff;
-	}
-}
-
-export function gxGpuFillX(xyWord: number): number {
-	return xyWord & 0x3f0;
-}
-
-export function gxGpuFillWidth(sizeWord: number): number {
-	return ((sizeWord & 0x3ff) + 0x0f) & ~0x0f;
-}
-
-export function gxGpuFillHeight(sizeWord: number): number {
-	return (sizeWord >>> 16) & 0x1ff;
-}
-
-export function gxGpuVramWrappedWidth(x: number, width: number): number {
-	const edgeWidth = GX_GPU_VRAM_WIDTH - x;
-	return width <= edgeWidth ? width : edgeWidth;
-}
-
-export function gxGpuVramWrappedHeight(y: number, height: number): number {
-	const edgeHeight = GX_GPU_VRAM_HEIGHT - y;
-	return height <= edgeHeight ? height : edgeHeight;
-}
-
-export function gxGpuSpansOverlap(startA: number, endA: number, startB: number, endB: number): boolean {
-	return startA < endB && startB < endA;
-}
-
-export function gxGpuVramCopyNeedsChunking(sourceX: number, sourceY: number, targetX: number, targetY: number, width: number, height: number): boolean {
-	return sourceX !== targetX
-		&& sourceY !== targetY
-		&& gxGpuSpansOverlap(sourceX, sourceX + width, targetX, targetX + width)
-		&& gxGpuSpansOverlap(sourceY, sourceY + height, targetY, targetY + height);
-}
-
-export function gxGpuVramCopyChunkHeight(sourceY: number, targetY: number, height: number): number {
-	const rowDistance = sourceY > targetY ? sourceY - targetY : targetY - sourceY;
-	return rowDistance < height ? rowDistance : height;
-}
-
-export function gxGpuTransferX(xyWord: number): number {
-	return xyWord & 0x3ff;
-}
-
-export function gxGpuTransferY(xyWord: number): number {
-	return (xyWord >>> 16) & 0x1ff;
-}
-
 export function gxGpuTransferWidth(sizeWord: number): number {
 	return (((sizeWord & 0xffff) - 1) & 0x3ff) + 1;
 }
@@ -225,42 +50,12 @@ export function gxGpuTransferHeight(sizeWord: number): number {
 	return ((((sizeWord >>> 16) & 0xffff) - 1) & 0x1ff) + 1;
 }
 
-export function gxGpuTransferPixelWord(payloadWord: number, pixelIndex: number): number {
-	return (pixelIndex & 1) === 0 ? payloadWord & 0xffff : payloadWord >>> 16;
-}
-
-export function gxGpuTransferPayloadPixelCount(commandWordCount: number): number {
-	return (commandWordCount - 3) << 1;
-}
-
-export function gxGpuTransferEmittedPixelCount(width: number, height: number, commandWordCount: number): number {
-	const areaPixels = width * height;
-	const payloadPixels = gxGpuTransferPayloadPixelCount(commandWordCount);
-	return payloadPixels < areaPixels ? payloadPixels : areaPixels;
-}
-
-export function gxGpuTextureU(textureWord: number): number {
-	return textureWord & 0xff;
-}
-
-export function gxGpuTextureV(textureWord: number): number {
-	return (textureWord >>> 8) & 0xff;
-}
-
 export function gxGpuTextureAttribute(textureWord: number): number {
 	return (textureWord >>> 16) & 0xffff;
 }
 
-export function gxGpuTextureClutBaseX(textureWord: number): number {
-	return (gxGpuTextureAttribute(textureWord) & 0x3f) << 4;
-}
-
-export function gxGpuTextureClutBaseY(textureWord: number): number {
-	return (gxGpuTextureAttribute(textureWord) >>> 6) & 0x1ff;
-}
-
 export function gxGpuPolygonTexturePageWordIndex(opcode: number): number {
-	return gxGpuCommandGouraud(opcode) ? 5 : 4;
+	return (opcode & 0x10) !== 0 ? 5 : 4;
 }
 
 export function gxGpuPolygonDrawModeWord(drawModeWord: number, textureAttribute: number): number {
