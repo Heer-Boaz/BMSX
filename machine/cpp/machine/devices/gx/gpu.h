@@ -183,6 +183,9 @@ private:
 	void resetGpuRegisters();
 	void writeDisplayDisableWord(u32 word);
 	void clearGp0CommandState();
+	void clearImageLoadState();
+	void finishImageLoadToVram();
+	void flushImageLoadToVram();
 	void consumeImageLoadWord();
 	void consumeGp0PolylinePayloadWord();
 	void beginPolylinePayload(u32 opcode, u32 commandWordCount);

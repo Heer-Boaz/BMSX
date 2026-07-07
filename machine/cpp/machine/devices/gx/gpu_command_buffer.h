@@ -300,6 +300,16 @@ inline u32 gxGpuTransferPixelWord(u32 payloadWord, u32 pixelIndex) {
 	return (pixelIndex & 1u) == 0u ? payloadWord & 0xffffu : payloadWord >> 16u;
 }
 
+inline u32 gxGpuTransferPayloadPixelCount(u32 commandWordCount) {
+	return (commandWordCount - 3u) << 1u;
+}
+
+inline u32 gxGpuTransferEmittedPixelCount(u32 width, u32 height, u32 commandWordCount) {
+	const u32 areaPixels = width * height;
+	const u32 payloadPixels = gxGpuTransferPayloadPixelCount(commandWordCount);
+	return payloadPixels < areaPixels ? payloadPixels : areaPixels;
+}
+
 inline u32 gxGpuTextureU(u32 textureWord) {
 	return textureWord & 0xffu;
 }

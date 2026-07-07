@@ -895,6 +895,10 @@ void uploadCpuToVram(OpenGLES2Backend& backend, const GxGpuCommandBuffer& comman
 	const u32 y = gxGpuTransferY(xyWord);
 	const u32 width = gxGpuTransferWidth(sizeWord);
 	const u32 height = gxGpuTransferHeight(sizeWord);
+	const u32 uploadedPixels = gxGpuTransferEmittedPixelCount(width, height, commandBuffer.commandWordCount[commandIndex]);
+	const u32 fullRows = (uploadedPixels - (uploadedPixels % width)) / width;
+	const u32 lastRowWidth = uploadedPixels % width;
+	const u32 uploadHeight = fullRows + (lastRowWidth != 0u ? 1u : 0u);
 	const u32 payloadWordStart = wordStart + 3u;
 	const u32 maskBitModeWord = commandBuffer.commandMaskBitModeWord[commandIndex];
 	size_t transferVertexFloatCount = 0u;
@@ -902,28 +906,29 @@ void uploadCpuToVram(OpenGLES2Backend& backend, const GxGpuCommandBuffer& comman
 	backend.setRenderTarget(0, kGxGpuVramWidth, kGxGpuVramHeight);
 	backend.setActiveTextureUnit(maskBitModeWord == 0u ? kGxGpuScanoutTextureUnit : kGxGpuTextureTransferUnit);
 	backend.bindTexture2D(maskBitModeWord == 0u ? &g_gxGpu.vramTexture : &g_gxGpu.vramTransferTexture);
-	for (u32 row = 0u; row < height; row += 1u) {
-		writeCpuToVramUploadRow(commandBuffer, payloadWordStart, row * width, width);
+	for (u32 row = 0u; row < uploadHeight; row += 1u) {
+		const u32 rowWidth = row == fullRows ? lastRowWidth : width;
+		writeCpuToVramUploadRow(commandBuffer, payloadWordStart, row * width, rowWidth);
 		const u32 targetY = (y + row) & (static_cast<u32>(kGxGpuVramHeight) - 1u);
 		const u32 storageY = (static_cast<u32>(kGxGpuVramHeight) - 1u) - targetY;
-		const u32 firstWidth = gxGpuVramWrappedWidth(x, width);
+		const u32 firstWidth = gxGpuVramWrappedWidth(x, rowWidth);
 		glTexSubImage2D(GL_TEXTURE_2D, 0, static_cast<GLint>(x), static_cast<GLint>(storageY), static_cast<GLsizei>(firstWidth), 1, GL_RGBA, GL_UNSIGNED_BYTE, g_rawVramUploadRow.data());
 		if (maskBitModeWord != 0u) {
 			transferVertexFloatCount = appendTransferQuad(transferVertexFloatCount, x, targetY, firstWidth, 1u, x, targetY);
 		}
-		if (firstWidth != width) {
+		if (firstWidth != rowWidth) {
 			glTexSubImage2D(
 				GL_TEXTURE_2D,
 				0,
 				0,
 				static_cast<GLint>(storageY),
-				static_cast<GLsizei>(width - firstWidth),
+				static_cast<GLsizei>(rowWidth - firstWidth),
 				1,
 				GL_RGBA,
 				GL_UNSIGNED_BYTE,
 				g_rawVramUploadRow.data() + firstWidth * kGxGpuRawVramBytesPerPixel);
 			if (maskBitModeWord != 0u) {
-				transferVertexFloatCount = appendTransferQuad(transferVertexFloatCount, 0u, targetY, width - firstWidth, 1u, 0u, targetY);
+				transferVertexFloatCount = appendTransferQuad(transferVertexFloatCount, 0u, targetY, rowWidth - firstWidth, 1u, 0u, targetY);
 			}
 		}
 	}

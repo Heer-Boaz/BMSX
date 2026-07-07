@@ -291,6 +291,16 @@ export function gxGpuTransferPixelWord(payloadWord: number, pixelIndex: number):
 	return (pixelIndex & 1) === 0 ? payloadWord & 0xffff : payloadWord >>> 16;
 }
 
+export function gxGpuTransferPayloadPixelCount(commandWordCount: number): number {
+	return (commandWordCount - 3) << 1;
+}
+
+export function gxGpuTransferEmittedPixelCount(width: number, height: number, commandWordCount: number): number {
+	const areaPixels = width * height;
+	const payloadPixels = gxGpuTransferPayloadPixelCount(commandWordCount);
+	return payloadPixels < areaPixels ? payloadPixels : areaPixels;
+}
+
 export function gxGpuTextureU(textureWord: number): number {
 	return textureWord & 0xff;
 }

@@ -101,6 +101,12 @@ void testGp0RawDrawWordDecoders() {
 	require(bmsx::gxGpuTransferHeight(0x012c0007u) == 300u, "GX-GPU transfer height decode");
 	require(bmsx::gxGpuTransferPixelWord(0x89abcdefu, 0u) == 0xcdefu, "GX-GPU transfer low pixel word");
 	require(bmsx::gxGpuTransferPixelWord(0x89abcdefu, 1u) == 0x89abu, "GX-GPU transfer high pixel word");
+	require(bmsx::gxGpuTransferPayloadPixelCount(3u) == 0u, "GX-GPU transfer header has no payload pixels");
+	require(bmsx::gxGpuTransferPayloadPixelCount(5u) == 4u, "GX-GPU transfer payload pixel count");
+	require(bmsx::gxGpuTransferEmittedPixelCount(3u, 2u, 4u) == 2u, "GX-GPU partial transfer one payload word");
+	require(bmsx::gxGpuTransferEmittedPixelCount(3u, 2u, 5u) == 4u, "GX-GPU partial transfer two payload words");
+	require(bmsx::gxGpuTransferEmittedPixelCount(3u, 2u, 6u) == 6u, "GX-GPU complete transfer clamps to area");
+	require(bmsx::gxGpuTransferEmittedPixelCount(3u, 1u, 5u) == 3u, "GX-GPU odd transfer clamps padding pixel");
 
 	require(bmsx::gxGpuCommandRawTextureEnabled(0x25u), "GX-GPU raw texture bit enabled");
 	require(!bmsx::gxGpuCommandRawTextureEnabled(0x24u), "GX-GPU raw texture bit disabled");
@@ -590,7 +596,7 @@ void testGp0PolylineConsumesPayloadUntilTerminator() {
 	require(gpu.readDrawModeWord() == 0x000333u, "GX-GPU GP0 command processing resumes after shaded polyline terminator");
 }
 
-void testGp1ClearFifoClearsPartialGp0PacketAndImageTransfer() {
+void testGp1ClearFifoClearsPartialGp0PacketsAndFlushesPartialCpuToVramUploads() {
 	GpuHarness harness;
 	bmsx::GxGpu& gpu = harness.gpu;
 	const bmsx::GxGpuCommandBuffer& commands = *gpu.readDeviceOutput().commandBuffer;
@@ -609,6 +615,26 @@ void testGp1ClearFifoClearsPartialGp0PacketAndImageTransfer() {
 	require(commands.commandCount == 0u, "GX-GPU GP1 clear FIFO does not emit abandoned CPU-to-VRAM command");
 	gpu.writeGp0((bmsx::GX_GPU_GP0_SET_MASK_BIT << 24u) | 0x000003u);
 	require(gpu.readMaskBitModeWord() == 3u, "GX-GPU GP1 clear FIFO clears image transfer state");
+
+	gpu.writeGp0(bmsx::GX_GPU_GP0_CPU_TO_VRAM_FIRST << 24u);
+	gpu.writeGp0(0x00010002u);
+	gpu.writeGp0(0x00020003u);
+	gpu.writeGp0((bmsx::GX_GPU_GP0_SET_DRAW_MODE << 24u) | 0x000111u);
+	gpu.writeGp0((bmsx::GX_GPU_GP0_SET_MASK_BIT << 24u) | 0x000002u);
+	gpu.writeGp1(bmsx::GX_GPU_GP1_CLEAR_FIFO << 24u);
+	require(commands.commandCount == 1u, "GX-GPU GP1 clear FIFO emits partial CPU-to-VRAM command");
+	require(commands.commandKind[0] == bmsx::GX_GPU_COMMAND_UPLOAD_CPU_TO_VRAM, "GX-GPU partial CPU-to-VRAM command kind");
+	require(commands.commandOpcode[0] == bmsx::GX_GPU_GP0_CPU_TO_VRAM_FIRST, "GX-GPU partial CPU-to-VRAM opcode");
+	require(commands.commandWordCount[0] == 5u, "GX-GPU partial CPU-to-VRAM command words");
+	require(commands.words[commands.commandWordStart[0] + 3u] == ((bmsx::GX_GPU_GP0_SET_DRAW_MODE << 24u) | 0x000111u), "GX-GPU partial CPU-to-VRAM first payload word");
+	require(commands.words[commands.commandWordStart[0] + 4u] == ((bmsx::GX_GPU_GP0_SET_MASK_BIT << 24u) | 0x000002u), "GX-GPU partial CPU-to-VRAM final payload word");
+	require(gpu.readDrawModeWord() == 0x000222u, "GX-GPU partial CPU-to-VRAM payload does not execute draw mode");
+	require(gpu.readMaskBitModeWord() == 3u, "GX-GPU partial CPU-to-VRAM payload does not execute mask bit");
+	require((gpu.readStatus() & bmsx::GX_GPU_STATUS_GPU_IDLE) == bmsx::GX_GPU_STATUS_GPU_IDLE, "GX-GPU GP1 clear FIFO restores idle after partial CPU-to-VRAM");
+
+	gpu.writeGp0((bmsx::GX_GPU_GP0_SET_DRAW_MODE << 24u) | 0x000444u);
+	require(commands.commandCount == 1u, "GX-GPU GP0 command processing resumes after partial CPU-to-VRAM flush");
+	require(gpu.readDrawModeWord() == 0x000444u, "GX-GPU GP0 draw mode resumes after partial CPU-to-VRAM flush");
 }
 
 void testMmioGp0Gp1() {
@@ -641,7 +667,7 @@ int main() {
 	testGp0FixedLengthRenderAndBlitPacketAssembly();
 	testGp0CpuToVramImagePayloadConsumption();
 	testGp0PolylineConsumesPayloadUntilTerminator();
-	testGp1ClearFifoClearsPartialGp0PacketAndImageTransfer();
+	testGp1ClearFifoClearsPartialGp0PacketsAndFlushesPartialCpuToVramUploads();
 	testMmioGp0Gp1();
 	return 0;
 }

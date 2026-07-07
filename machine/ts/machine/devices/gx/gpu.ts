@@ -347,6 +347,7 @@ export class GxGpu {
 				this.resetGpuRegisters();
 				break;
 			case GX_GPU_GP1_CLEAR_FIFO:
+				this.flushImageLoadToVram();
 				this.clearGp0CommandState();
 				this.writeStatusIo();
 				break;
@@ -491,10 +492,7 @@ export class GxGpu {
 		this.gp0CommandWords.fill(0);
 		this.gp0CommandWordCount = 0;
 		this.gp0CommandTargetWordCount = 0;
-		this.gp0ImageLoadWordsRemaining = 0;
-		this.gp0ImageLoadCommandWordStart = 0;
-		this.gp0ImageLoadCommandWordCount = 0;
-		this.gp0ImageLoadCommandOpcode = 0;
+		this.clearImageLoadState();
 		this.gp0PolylineWordsPerVertex = 0;
 		this.gp0PolylinePayloadPhase = 0;
 		this.gp0PolylineCommandWordStart = 0;
@@ -502,20 +500,37 @@ export class GxGpu {
 		this.gp0PolylineCommandOpcode = 0;
 	}
 
+	private clearImageLoadState(): void {
+		this.gp0ImageLoadWordsRemaining = 0;
+		this.gp0ImageLoadCommandWordStart = 0;
+		this.gp0ImageLoadCommandWordCount = 0;
+		this.gp0ImageLoadCommandOpcode = 0;
+	}
+
+	private finishImageLoadToVram(): void {
+		this.pushGpuCommand(
+			GX_GPU_COMMAND_UPLOAD_CPU_TO_VRAM,
+			this.gp0ImageLoadCommandOpcode,
+			this.gp0ImageLoadCommandWordStart,
+			this.gp0ImageLoadCommandWordCount,
+		);
+		this.clearImageLoadState();
+	}
+
+	private flushImageLoadToVram(): void {
+		if (this.gp0ImageLoadCommandWordCount > 3) {
+			this.finishImageLoadToVram();
+		} else {
+			this.clearImageLoadState();
+		}
+	}
+
 	private consumeImageLoadWord(): void {
 		this.commandBuffer.appendWord(this.gp0Word);
 		this.gp0ImageLoadCommandWordCount += 1;
 		this.gp0ImageLoadWordsRemaining -= 1;
 		if (this.gp0ImageLoadWordsRemaining === 0) {
-			this.pushGpuCommand(
-				GX_GPU_COMMAND_UPLOAD_CPU_TO_VRAM,
-				this.gp0ImageLoadCommandOpcode,
-				this.gp0ImageLoadCommandWordStart,
-				this.gp0ImageLoadCommandWordCount,
-			);
-			this.gp0ImageLoadCommandWordStart = 0;
-			this.gp0ImageLoadCommandWordCount = 0;
-			this.gp0ImageLoadCommandOpcode = 0;
+			this.finishImageLoadToVram();
 		}
 	}
 

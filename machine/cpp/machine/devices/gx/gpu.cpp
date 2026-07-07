@@ -178,6 +178,7 @@ u32 GxGpu::writeGp1(u32 word) {
 		resetGpuRegisters();
 		break;
 	case GX_GPU_GP1_CLEAR_FIFO:
+		flushImageLoadToVram();
 		clearGp0CommandState();
 		writeStatusIo();
 		break;
@@ -322,10 +323,7 @@ void GxGpu::clearGp0CommandState() {
 	m_gp0CommandWords.fill(0u);
 	m_gp0CommandWordCount = 0u;
 	m_gp0CommandTargetWordCount = 0u;
-	m_gp0ImageLoadWordsRemaining = 0u;
-	m_gp0ImageLoadCommandWordStart = 0u;
-	m_gp0ImageLoadCommandWordCount = 0u;
-	m_gp0ImageLoadCommandOpcode = 0u;
+	clearImageLoadState();
 	m_gp0PolylineWordsPerVertex = 0u;
 	m_gp0PolylinePayloadPhase = 0u;
 	m_gp0PolylineCommandWordStart = 0u;
@@ -333,19 +331,36 @@ void GxGpu::clearGp0CommandState() {
 	m_gp0PolylineCommandOpcode = 0u;
 }
 
+void GxGpu::clearImageLoadState() {
+	m_gp0ImageLoadWordsRemaining = 0u;
+	m_gp0ImageLoadCommandWordStart = 0u;
+	m_gp0ImageLoadCommandWordCount = 0u;
+	m_gp0ImageLoadCommandOpcode = 0u;
+}
+
+void GxGpu::finishImageLoadToVram() {
+	pushGpuCommand(
+		GX_GPU_COMMAND_UPLOAD_CPU_TO_VRAM,
+		m_gp0ImageLoadCommandOpcode,
+		m_gp0ImageLoadCommandWordStart,
+		m_gp0ImageLoadCommandWordCount);
+	clearImageLoadState();
+}
+
+void GxGpu::flushImageLoadToVram() {
+	if (m_gp0ImageLoadCommandWordCount > 3u) {
+		finishImageLoadToVram();
+	} else {
+		clearImageLoadState();
+	}
+}
+
 void GxGpu::consumeImageLoadWord() {
 	m_commandBuffer.appendWord(m_gp0Word);
 	m_gp0ImageLoadCommandWordCount += 1u;
 	m_gp0ImageLoadWordsRemaining -= 1u;
 	if (m_gp0ImageLoadWordsRemaining == 0u) {
-		pushGpuCommand(
-			GX_GPU_COMMAND_UPLOAD_CPU_TO_VRAM,
-			m_gp0ImageLoadCommandOpcode,
-			m_gp0ImageLoadCommandWordStart,
-			m_gp0ImageLoadCommandWordCount);
-		m_gp0ImageLoadCommandWordStart = 0u;
-		m_gp0ImageLoadCommandWordCount = 0u;
-		m_gp0ImageLoadCommandOpcode = 0u;
+		finishImageLoadToVram();
 	}
 }
 
