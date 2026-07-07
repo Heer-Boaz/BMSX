@@ -79,6 +79,7 @@ import {
 	gxGpuVramCopyNeedsChunking,
 	gxGpuVramWrappedHeight,
 	gxGpuVramWrappedWidth,
+	GxGpuCommandBuffer,
 } from '../../machine/ts/machine/devices/gx/gpu_command_buffer';
 import {
 	GX_GPU_DMA_DIRECTION_CPU_TO_GP0,
@@ -148,6 +149,7 @@ import { Memory } from '../../machine/ts/machine/memory/memory';
 import { CPU } from '../../machine/ts/machine/cpu/cpu';
 import { DeviceScheduler } from '../../machine/ts/machine/scheduler/device';
 import { PSX_GPU_DISPLAY_MODE_PAL_WORD } from '../../machine/ts/machine/model_registry';
+import { renderGxGpuSoftwareFrame } from '../../machine/ts/render/backend/software/gx_gpu';
 
 function createGpu(): { memory: Memory; cpu: CPU; scheduler: DeviceScheduler; gpu: GxGpu } {
 	const memory = new Memory({ systemRom: new Uint8Array(0), cartRom: new Uint8Array(0) });
@@ -754,6 +756,61 @@ test('GX-GPU GP1 clear FIFO clears partial GP0 packets and flushes partial CPU-t
 	gpu.writeGp0((GX_GPU_GP0_SET_DRAW_MODE << 24) | 0x000444);
 	assert.equal(commands.commandCount, 1);
 	assert.equal(gpu.readDrawModeWord(), 0x000444);
+});
+
+function pushSoftwareCommand(commandBuffer: GxGpuCommandBuffer, words: Uint32Array, kind: number, opcode: number): void {
+	const wordStart = commandBuffer.appendWords(words, words.length);
+	commandBuffer.pushCommand(kind, opcode, wordStart, words.length, 0, 0, 0, 0, 0, 0, 0);
+}
+
+function assertRgbaPixel(pixels: Uint8Array, x: number, y: number, r: number, g: number, b: number): void {
+	const offset = (y * 256 + x) * 4;
+	assert.equal(pixels[offset], r);
+	assert.equal(pixels[offset + 1], g);
+	assert.equal(pixels[offset + 2], b);
+	assert.equal(pixels[offset + 3], 255);
+}
+
+test('GX-GPU software scanout consumes CPU upload, VRAM copy, and fill commands', () => {
+	const commandBuffer = new GxGpuCommandBuffer();
+	commandBuffer.reset();
+	pushSoftwareCommand(commandBuffer, new Uint32Array([
+		GX_GPU_GP0_CPU_TO_VRAM_FIRST << 24,
+		0,
+		(1 << 16) | 2,
+		0x03e0001f,
+	]), GX_GPU_COMMAND_UPLOAD_CPU_TO_VRAM, GX_GPU_GP0_CPU_TO_VRAM_FIRST);
+	pushSoftwareCommand(commandBuffer, new Uint32Array([
+		GX_GPU_GP0_VRAM_TO_VRAM_FIRST << 24,
+		0,
+		2,
+		(1 << 16) | 2,
+	]), GX_GPU_COMMAND_COPY_VRAM_TO_VRAM, GX_GPU_GP0_VRAM_TO_VRAM_FIRST);
+	pushSoftwareCommand(commandBuffer, new Uint32Array([
+		(GX_GPU_GP0_FILL_RECTANGLE << 24) | 0xff0000,
+		1 << 16,
+		(1 << 16) | 1,
+	]), GX_GPU_COMMAND_FILL_RECTANGLE, GX_GPU_GP0_FILL_RECTANGLE);
+
+	const pixels = new Uint8Array(256 * 256 * 4);
+	renderGxGpuSoftwareFrame({
+		width: 256,
+		height: 256,
+		commandBuffer,
+		statusWord: 0,
+		displayModeWord: PSX_GPU_DISPLAY_MODE_PAL_WORD,
+		displayStartWord: 0,
+		horizontalDisplayRangeWord: (((638 + 256 * 10) << 12) | 638) >>> 0,
+		verticalDisplayRangeWord: (((35 + 256) << 10) | 35) >>> 0,
+	}, pixels, 256, 256);
+
+	assertRgbaPixel(pixels, 0, 0, 255, 0, 0);
+	assertRgbaPixel(pixels, 1, 0, 0, 255, 0);
+	assertRgbaPixel(pixels, 2, 0, 255, 0, 0);
+	assertRgbaPixel(pixels, 3, 0, 0, 255, 0);
+	assertRgbaPixel(pixels, 0, 1, 0, 0, 255);
+	assertRgbaPixel(pixels, 15, 1, 0, 0, 255);
+	assertRgbaPixel(pixels, 16, 1, 0, 0, 0);
 });
 
 test('GX-GPU MMIO uses PSX GP0 data and GP1 status addresses', () => {

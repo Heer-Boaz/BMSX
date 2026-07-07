@@ -316,6 +316,7 @@ add_library(bmsx_core STATIC
 
 	# Render systems
 	render/backend/backend.cpp
+	render/backend/software/gx_gpu.cpp
 	render/backend/software/vdp_rpu.cpp
 	render/2d/framebuffer_pipeline.cpp
 	render/3d/math.cpp

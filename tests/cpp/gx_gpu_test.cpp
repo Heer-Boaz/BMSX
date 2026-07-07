@@ -4,6 +4,9 @@
 #include "machine/memory/memory.h"
 #include "machine/model_registry.h"
 #include "machine/scheduler/device.h"
+#include "render/backend/backend.h"
+#include "render/backend/pass/library.h"
+#include "render/backend/software/gx_gpu.h"
 
 #include <array>
 #include <cstdint>
@@ -637,6 +640,75 @@ void testGp1ClearFifoClearsPartialGp0PacketsAndFlushesPartialCpuToVramUploads() 
 	require(gpu.readDrawModeWord() == 0x000444u, "GX-GPU GP0 draw mode resumes after partial CPU-to-VRAM flush");
 }
 
+void pushSoftwareCommand(bmsx::GxGpuCommandBuffer& commandBuffer, const std::array<uint32_t, 4>& words, size_t wordCount, uint8_t kind, uint8_t opcode) {
+	const size_t wordStart = commandBuffer.appendWords(words.data(), wordCount);
+	commandBuffer.pushCommand(kind, opcode, wordStart, static_cast<uint32_t>(wordCount), 0u, 0u, 0u, 0u, 0u, 0u, 0u);
+}
+
+void requireArgbPixel(const std::array<uint32_t, 256u * 256u>& pixels, uint32_t x, uint32_t y, uint32_t color, const char* message) {
+	require(pixels[static_cast<size_t>(y) * 256u + x] == color, message);
+}
+
+void testSoftwareScanoutConsumesTransfersAndFill() {
+	bmsx::GxGpuCommandBuffer commandBuffer;
+	commandBuffer.reset();
+	pushSoftwareCommand(
+		commandBuffer,
+		std::array<uint32_t, 4>{
+			bmsx::GX_GPU_GP0_CPU_TO_VRAM_FIRST << 24u,
+			0u,
+			(1u << 16u) | 2u,
+			0x03e0001fu,
+		},
+		4u,
+		bmsx::GX_GPU_COMMAND_UPLOAD_CPU_TO_VRAM,
+		bmsx::GX_GPU_GP0_CPU_TO_VRAM_FIRST);
+	pushSoftwareCommand(
+		commandBuffer,
+		std::array<uint32_t, 4>{
+			bmsx::GX_GPU_GP0_VRAM_TO_VRAM_FIRST << 24u,
+			0u,
+			2u,
+			(1u << 16u) | 2u,
+		},
+		4u,
+		bmsx::GX_GPU_COMMAND_COPY_VRAM_TO_VRAM,
+		bmsx::GX_GPU_GP0_VRAM_TO_VRAM_FIRST);
+	pushSoftwareCommand(
+		commandBuffer,
+		std::array<uint32_t, 4>{
+			(bmsx::GX_GPU_GP0_FILL_RECTANGLE << 24u) | 0xff0000u,
+			1u << 16u,
+			(1u << 16u) | 1u,
+			0u,
+		},
+		3u,
+		bmsx::GX_GPU_COMMAND_FILL_RECTANGLE,
+		bmsx::GX_GPU_GP0_FILL_RECTANGLE);
+
+	std::array<uint32_t, 256u * 256u> framebuffer{};
+	bmsx::SoftwareBackend backend(framebuffer.data(), 256, 256, 256 * static_cast<int32_t>(sizeof(uint32_t)));
+	bmsx::GxGpuPipelineState state;
+	state.width = 256;
+	state.height = 256;
+	state.commandBuffer = &commandBuffer;
+	state.statusWord = 0u;
+	state.displayModeWord = bmsx::PSX_GPU_DISPLAY_MODE_PAL_WORD;
+	state.displayStartWord = 0u;
+	state.horizontalDisplayRangeWord = (((638u + 256u * 10u) << 12u) | 638u);
+	state.verticalDisplayRangeWord = (((35u + 256u) << 10u) | 35u);
+
+	bmsx::renderGxGpuSoftwareFrame(backend, state);
+
+	requireArgbPixel(framebuffer, 0u, 0u, 0xffff0000u, "GX-GPU software scanout CPU upload red pixel");
+	requireArgbPixel(framebuffer, 1u, 0u, 0xff00ff00u, "GX-GPU software scanout CPU upload green pixel");
+	requireArgbPixel(framebuffer, 2u, 0u, 0xffff0000u, "GX-GPU software scanout VRAM copy red pixel");
+	requireArgbPixel(framebuffer, 3u, 0u, 0xff00ff00u, "GX-GPU software scanout VRAM copy green pixel");
+	requireArgbPixel(framebuffer, 0u, 1u, 0xff0000ffu, "GX-GPU software scanout fill blue left pixel");
+	requireArgbPixel(framebuffer, 15u, 1u, 0xff0000ffu, "GX-GPU software scanout fill blue rounded pixel");
+	requireArgbPixel(framebuffer, 16u, 1u, 0xff000000u, "GX-GPU software scanout fill stops at rounded edge");
+}
+
 void testMmioGp0Gp1() {
 	GpuHarness harness;
 	bmsx::Memory& memory = harness.memory;
@@ -668,6 +740,7 @@ int main() {
 	testGp0CpuToVramImagePayloadConsumption();
 	testGp0PolylineConsumesPayloadUntilTerminator();
 	testGp1ClearFifoClearsPartialGp0PacketsAndFlushesPartialCpuToVramUploads();
+	testSoftwareScanoutConsumesTransfersAndFill();
 	testMmioGp0Gp1();
 	return 0;
 }

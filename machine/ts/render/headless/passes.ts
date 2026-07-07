@@ -1,16 +1,18 @@
 import type { RenderPassLibrary } from '../backend/pass/library';
-import type { Framebuffer2DPipelineState, RenderPassDef } from '../backend/backend';
+import type { Framebuffer2DPipelineState, GxGpuPipelineState, RenderPassDef } from '../backend/backend';
 import type { GameView } from '../gameview';
 import type { Host2DSubmission } from '../shared/submissions';
 import { RGBA8_SRGB_TEXTURE_PARAMS } from '../backend/texture_params';
 import type { HeadlessPresentHost, HeadlessPresentedFrameBuffer } from './view';
 import { hostOverlayMenu } from '../../core/host_overlay_menu';
 import { renderHeadlessHost2DEntry, renderHeadlessHost2DSubmission } from './host_2d';
+import { renderGxGpuSoftwareFrame } from '../backend/software/gx_gpu';
 import { renderVdpRpuSoftwareFrame } from '../backend/software/vdp_rpu';
 import { applyHeadlessDeviceQuantize } from '../post/device_quantize/headless/pipeline';
 
 export function registerHeadlessPasses(registry: RenderPassLibrary): void {
 	registerFramePasses(registry);
+	registerHeadlessGxGpuPass(registry);
 	registerHeadlessRpuPass(registry);
 	registerFrameBuffer2DPass(registry);
 	registerHeadlessDeviceQuantizePass(registry);
@@ -95,6 +97,36 @@ function countHeadlessActivePixels(): number {
 		}
 	}
 	return active;
+}
+
+function registerHeadlessGxGpuPass(registry: RenderPassLibrary): void {
+	registry.register<GxGpuPipelineState>({
+		id: 'gx_gpu',
+		name: 'HeadlessGXGPU',
+		stateOnly: true,
+		graph: { writes: ['frame_color'] },
+		prepare: () => {
+			const view = registry.view as GameView;
+			registry.setState('gx_gpu', {
+				width: view.offscreenCanvasSize.x,
+				height: view.offscreenCanvasSize.y,
+				commandBuffer: view.gxGpuCommandBuffer,
+				statusWord: view.gxGpuStatusWord,
+				displayModeWord: view.gxGpuDisplayModeWord,
+				displayStartWord: view.gxGpuDisplayStartWord,
+				horizontalDisplayRangeWord: view.gxGpuHorizontalDisplayRangeWord,
+				verticalDisplayRangeWord: view.gxGpuVerticalDisplayRangeWord,
+			});
+		},
+		exec: (_backend, _fbo, state) => {
+			const view = registry.view as GameView;
+			const width = view.offscreenCanvasSize.x;
+			const height = view.offscreenCanvasSize.y;
+			resizeHeadlessFrame(width, height);
+			renderGxGpuSoftwareFrame(state, headlessCompositePixels, width, height);
+			commitHeadlessFrame(width, height, view.canvasSize.x, view.canvasSize.y);
+		},
+	});
 }
 
 function registerHeadlessRpuPass(registry: RenderPassLibrary): void {
