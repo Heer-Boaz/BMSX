@@ -972,6 +972,28 @@ void testSoftwareScanoutConsumesTexturedPrimitives() {
 		4u,
 		bmsx::GX_GPU_COMMAND_UPLOAD_CPU_TO_VRAM,
 		bmsx::GX_GPU_GP0_CPU_TO_VRAM_FIRST);
+	pushSoftwareCommand(
+		commandBuffer,
+		std::array<uint32_t, 4>{
+			bmsx::GX_GPU_GP0_CPU_TO_VRAM_FIRST << 24u,
+			72u,
+			(1u << 16u) | 2u,
+			0x03e0001fu,
+		},
+		4u,
+		bmsx::GX_GPU_COMMAND_UPLOAD_CPU_TO_VRAM,
+		bmsx::GX_GPU_GP0_CPU_TO_VRAM_FIRST);
+	pushSoftwareCommand(
+		commandBuffer,
+		std::array<uint32_t, 4>{
+			bmsx::GX_GPU_GP0_CPU_TO_VRAM_FIRST << 24u,
+			(1u << 16u) | 72u,
+			(1u << 16u) | 2u,
+			0x03ff7c00u,
+		},
+		4u,
+		bmsx::GX_GPU_COMMAND_UPLOAD_CPU_TO_VRAM,
+		bmsx::GX_GPU_GP0_CPU_TO_VRAM_FIRST);
 
 	constexpr uint8_t rawTexturedRectangleOpcode = bmsx::GX_GPU_GP0_RECTANGLE_FIRST | bmsx::GX_GPU_GP0_RENDER_TEXTURE_BIT | 0x01u;
 	constexpr uint32_t direct16PageWord = (bmsx::GX_GPU_TEXTURE_MODE_DIRECT16 << 7u) | 1u;
@@ -1028,6 +1050,24 @@ void testSoftwareScanoutConsumesTexturedPrimitives() {
 		bmsx::GX_GPU_COMMAND_DRAW_POLYGON,
 		rawTexturedPolygonOpcode,
 		direct16PageWord);
+	constexpr uint8_t rawTexturedQuadOpcode = rawTexturedPolygonOpcode | bmsx::GX_GPU_GP0_RENDER_QUAD_OR_POLYLINE_BIT;
+	pushSoftwareCommand(
+		commandBuffer,
+		std::array<uint32_t, 9>{
+			(rawTexturedQuadOpcode << 24u) | 0x808080u,
+			(20u << 16u) | 60u,
+			8u,
+			(20u << 16u) | 62u,
+			10u | (direct16PageWord << 16u),
+			(22u << 16u) | 60u,
+			8u | (2u << 8u),
+			(22u << 16u) | 62u,
+			10u | (2u << 8u),
+		},
+		9u,
+		bmsx::GX_GPU_COMMAND_DRAW_POLYGON,
+		rawTexturedQuadOpcode,
+		direct16PageWord);
 
 	std::array<uint32_t, 256u * 256u> framebuffer{};
 	bmsx::SoftwareBackend backend(framebuffer.data(), 256, 256, 256 * static_cast<int32_t>(sizeof(uint32_t)));
@@ -1049,6 +1089,10 @@ void testSoftwareScanoutConsumesTexturedPrimitives() {
 	requireArgbPixel(framebuffer, 47u, 10u, 0xffffff00u, "GX-GPU software scanout texture-windowed direct16 rectangle yellow pixel");
 	requireArgbPixel(framebuffer, 50u, 12u, 0xffff0000u, "GX-GPU software scanout direct16 textured polygon red pixel");
 	requireArgbPixel(framebuffer, 51u, 12u, 0xff00ff00u, "GX-GPU software scanout direct16 textured polygon green pixel");
+	requireArgbPixel(framebuffer, 60u, 20u, 0xffff0000u, "GX-GPU software scanout direct16 textured quad red pixel");
+	requireArgbPixel(framebuffer, 61u, 20u, 0xff00ff00u, "GX-GPU software scanout direct16 textured quad green pixel");
+	requireArgbPixel(framebuffer, 60u, 21u, 0xff0000ffu, "GX-GPU software scanout direct16 textured quad blue pixel");
+	requireArgbPixel(framebuffer, 61u, 21u, 0xffffff00u, "GX-GPU software scanout direct16 textured quad yellow pixel");
 }
 
 void testSoftwareCommandsPreserveTextureMaskBlendAndMaskTestStoreSemantics() {

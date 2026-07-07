@@ -1010,6 +1010,18 @@ test('GX-GPU software scanout consumes textured primitives', () => {
 		(1 << 16) | 1,
 		0x00000001,
 	]), GX_GPU_COMMAND_UPLOAD_CPU_TO_VRAM, GX_GPU_GP0_CPU_TO_VRAM_FIRST);
+	pushSoftwareCommand(commandBuffer, new Uint32Array([
+		GX_GPU_GP0_CPU_TO_VRAM_FIRST << 24,
+		72,
+		(1 << 16) | 2,
+		0x03e0001f,
+	]), GX_GPU_COMMAND_UPLOAD_CPU_TO_VRAM, GX_GPU_GP0_CPU_TO_VRAM_FIRST);
+	pushSoftwareCommand(commandBuffer, new Uint32Array([
+		GX_GPU_GP0_CPU_TO_VRAM_FIRST << 24,
+		(1 << 16) | 72,
+		(1 << 16) | 2,
+		0x03ff7c00,
+	]), GX_GPU_COMMAND_UPLOAD_CPU_TO_VRAM, GX_GPU_GP0_CPU_TO_VRAM_FIRST);
 
 	const rawTexturedRectangleOpcode = GX_GPU_GP0_RECTANGLE_FIRST | GX_GPU_GP0_RENDER_TEXTURE_BIT | 0x01;
 	const direct16PageWord = (GX_GPU_TEXTURE_MODE_DIRECT16 << 7) | 1;
@@ -1041,6 +1053,18 @@ test('GX-GPU software scanout consumes textured primitives', () => {
 		(14 << 16) | 50,
 		0,
 	]), GX_GPU_COMMAND_DRAW_POLYGON, rawTexturedPolygonOpcode, direct16PageWord);
+	const rawTexturedQuadOpcode = rawTexturedPolygonOpcode | GX_GPU_GP0_RENDER_QUAD_OR_POLYLINE_BIT;
+	pushSoftwareCommand(commandBuffer, new Uint32Array([
+		((rawTexturedQuadOpcode << 24) | 0x808080) >>> 0,
+		(20 << 16) | 60,
+		8,
+		(20 << 16) | 62,
+		10 | (direct16PageWord << 16),
+		(22 << 16) | 60,
+		8 | (2 << 8),
+		(22 << 16) | 62,
+		10 | (2 << 8),
+	]), GX_GPU_COMMAND_DRAW_POLYGON, rawTexturedQuadOpcode, direct16PageWord);
 
 	const pixels = new Uint8Array(GX_GPU_SOFTWARE_TEST_WIDTH * GX_GPU_SOFTWARE_TEST_HEIGHT * 4);
 	renderGxGpuSoftwareFrame({
@@ -1060,6 +1084,10 @@ test('GX-GPU software scanout consumes textured primitives', () => {
 	assertRgbaPixel(pixels, 47, 10, 255, 255, 0);
 	assertRgbaPixel(pixels, 50, 12, 255, 0, 0);
 	assertRgbaPixel(pixels, 51, 12, 0, 255, 0);
+	assertRgbaPixel(pixels, 60, 20, 255, 0, 0);
+	assertRgbaPixel(pixels, 61, 20, 0, 255, 0);
+	assertRgbaPixel(pixels, 60, 21, 0, 0, 255);
+	assertRgbaPixel(pixels, 61, 21, 255, 255, 0);
 });
 
 test('GX-GPU software commands preserve texture mask, blend, and mask-test store semantics', () => {

@@ -92,13 +92,16 @@ Implemented or partially covered GX-GPU areas include:
   behavior.
 - Texture windows/CLUT-ish paths, texture disable, modulation math, mask/fill
   behavior, oversized primitive culling, and VRAM copy overlap chunking.
+- Raw PSX textured quad polygons are covered in TS/C++ software/headless tests
+  and have GX firmware/cartlib helpers for cart-visible affine textured draws.
 - WebGL2, GLES2, and TS/C++ software execution for the currently handled command
   kinds.
 - GX command logs can be retired after presentation without clearing backend
   VRAM, so carts can build frame commands without losing uploaded texture VRAM.
 - BIOS boot image rendering, `emptycart`, `fade_probe`, `vblanktest`, and
   `nemesis_s` now use GX-visible graphics paths instead of active VDP/RPU frame
-  submission.
+  submission. `renderhwtest` now also programs GX directly for its primitive and
+  affine textured-quad smoke path.
 
 Known gap: `GX_GPU_COMMAND_READ_VRAM_TO_CPU` is emitted by the GPU command buffer,
 but accelerated backends currently do not execute a GPUREAD/readback command
@@ -218,6 +221,8 @@ and ask before coding.
 - [x] Migrate `vblanktest` to GX/GPUSTAT-visible behavior.
 - [x] Migrate `nemesis_s` boot, atlas decode/upload, clear, and sprite/tile
   draws to GX/PSX.
+- [x] Migrate `renderhwtest` to direct GX primitive programming, including a
+  cart-visible raw PSX textured affine quad smoke.
 - [ ] Migrate `2025` engine/cart rendering. This needs GX texture residency and
   PSX textured polygon/affine sprite coverage, not VDP compatibility aliases.
 - [ ] Migrate `pietious` engine/cart rendering. This needs GX tile/text/image
@@ -237,11 +242,10 @@ Pick one vertical slice and finish it before committing:
    support cart atlas plus system font usage without per-frame whole-atlas
    uploads, CPU-side accelerated-backend shadows, or hidden fallbacks. Use this
    as the unlock for `2025` or `pietious` migration.
-2. **PSX textured quad/affine sprite firmware path**: add raw GP0 textured
-   polygon helpers in `system/gx_gpu.lua`/`system/gx_image.lua`, prove they run
-   through WebGL2/GLES2/TS software/C++ software command handling, then migrate
-   a cart-visible affine/scaled sprite path that currently uses
-   `vdp_blit_img_affine_color`.
+2. **Migrate a real 2025 or pietious image path onto GX textured polygons**:
+   use the covered raw textured quad/affine primitive, and add the missing
+   residency/tile-run ownership needed by that cart slice instead of adding VDP
+   aliases.
 3. **GPUREAD/readback contract**: only start after an explicit design decision.
    Accelerated backends must read back from real backend VRAM/render targets with
    command ordering semantics; do not add a CPU shadow as the source of truth.

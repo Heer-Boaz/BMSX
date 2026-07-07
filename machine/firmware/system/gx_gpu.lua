@@ -1,3 +1,5 @@
+local round_to_nearest<const> = require('bios/util/round_to_nearest')
+
 local gx_gpu<const> = {}
 
 local gp0<const>: *word = 0x0801036c
@@ -15,6 +17,8 @@ local gp1_display_mode_320_pal<const> = 0x08000009
 
 local gp0_fill_rectangle<const> = 0x02000000
 local gp0_draw_rectangle<const> = 0x60000000
+local gp0_draw_textured_quad<const> = 0x2c000000
+local gp0_draw_raw_textured_quad<const> = 0x2d000000
 local gp0_draw_textured_rectangle<const> = 0x64000000
 local gp0_draw_raw_textured_rectangle<const> = 0x65000000
 local gp0_draw_semitransparent_rectangle<const> = 0x62000000
@@ -47,11 +51,19 @@ local argb_to_gp0_rgb<const> = function(color)
 end
 
 local xy<const> = function(x, y)
-	return (x & 0x0000ffff) | ((y & 0x0000ffff) << 16)
+	return (round_to_nearest(x) & 0x0000ffff) | ((round_to_nearest(y) & 0x0000ffff) << 16)
 end
 
 local wh<const> = function(width, height)
 	return (width & 0x0000ffff) | ((height & 0x0000ffff) << 16)
+end
+
+local uv<const> = function(u, v)
+	return (u & 0x000000ff) | ((v & 0x000000ff) << 8)
+end
+
+local uv_texpage<const> = function(u, v, draw_mode)
+	return uv(u, v) | (draw_mode << 16)
 end
 
 local rgba8888_to_direct16<const> = function(color)
@@ -192,6 +204,34 @@ function gx_gpu.draw_direct16_textured_rect_color(source_x, source_y, x, y, widt
 	end
 end
 
+function gx_gpu.draw_direct16_textured_quad_color(
+	page_source_x, page_source_y,
+	source_x0, source_y0,
+	source_x1, source_y1,
+	source_x2, source_y2,
+	source_x3, source_y3,
+	x0, y0,
+	x1, y1,
+	x2, y2,
+	x3, y3,
+	color)
+	local draw_mode<const> = draw_mode_for_texture_page(page_source_x, page_source_y)
+	*gp0 = gp0_draw_mode | draw_mode
+	if color == 0xffffffff then
+		*gp0 = gp0_draw_raw_textured_quad | 0x00808080
+	else
+		*gp0 = gp0_draw_textured_quad | argb_to_gp0_rgb(color)
+	end
+	*gp0 = xy(x0, y0)
+	*gp0 = uv(source_x0, source_y0)
+	*gp0 = xy(x1, y1)
+	*gp0 = uv_texpage(source_x1, source_y1, draw_mode)
+	*gp0 = xy(x2, y2)
+	*gp0 = uv(source_x2, source_y2)
+	*gp0 = xy(x3, y3)
+	*gp0 = uv(source_x3, source_y3)
+end
+
 gx_gpu.draw_mode_blend_half = draw_mode_blend_half
 gx_gpu.draw_mode_blend_add = draw_mode_blend_add
 gx_gpu.draw_mode_blend_subtract = draw_mode_blend_subtract
@@ -199,5 +239,6 @@ gx_gpu.draw_mode_blend_quarter = draw_mode_blend_quarter
 gx_gpu.draw_mode_texture_direct16 = draw_mode_texture_direct16
 gx_gpu.display_width = display_width
 gx_gpu.display_height = display_height
+gx_gpu.texture_page_span = texture_page_span
 
 return gx_gpu
