@@ -797,6 +797,25 @@ test('GX-GPU software backend owns texture modulation math', () => {
 	assert.equal(gxGpuSoftwareTextureModulationChannel5(12, 96, 0), 9);
 });
 
+test('GX-GPU software backend rasterizes Gouraud lines with PSX fixed-point steps', () => {
+	const commandBuffer = new GxGpuCommandBuffer();
+	commandBuffer.reset();
+	const opcode = GX_GPU_GP0_LINE_FIRST | GX_GPU_GP0_RENDER_GOURAUD_BIT;
+	pushSoftwareCommand(commandBuffer, new Uint32Array([
+		((opcode << 24) | 0x0000ff) >>> 0,
+		(10 << 16) | 40,
+		0x00ff00,
+		(14 << 16) | 40,
+	]), GX_GPU_COMMAND_DRAW_LINE, opcode);
+
+	resetGxGpuSoftwareVram();
+	executeGxGpuSoftwareCommands(commandBuffer, 0);
+
+	assert.equal(gxGpuSoftwareVram[gxGpuSoftwareVramIndex(40, 10)], 0x001f);
+	assert.equal(gxGpuSoftwareVram[gxGpuSoftwareVramIndex(40, 12)], 0x0210);
+	assert.equal(gxGpuSoftwareVram[gxGpuSoftwareVramIndex(40, 14)], 0x03e0);
+});
+
 test('GX-GPU software scanout consumes CPU upload, VRAM copy, and fill commands', () => {
 	const commandBuffer = new GxGpuCommandBuffer();
 	commandBuffer.reset();

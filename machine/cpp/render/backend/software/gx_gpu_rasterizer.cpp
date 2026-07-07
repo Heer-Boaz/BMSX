@@ -10,10 +10,35 @@ inline i32 absI32(i32 value) {
 	return value < 0 ? -value : value;
 }
 
-inline i32 roundDivideSigned(i32 numerator, i32 denominator) {
-	return numerator < 0
-		? -((-numerator + (denominator >> 1)) / denominator)
-		: (numerator + (denominator >> 1)) / denominator;
+constexpr i64 kGxGpuSoftwareLineXYScale = 0x100000000ll;
+constexpr i64 kGxGpuSoftwareLineXYHalf = 0x80000000ll;
+constexpr i64 kGxGpuSoftwareLineSubpixelBias = 1024;
+constexpr i32 kGxGpuSoftwareLineRGBScale = 0x1000;
+constexpr i32 kGxGpuSoftwareLineRGBHalf = 0x800;
+
+inline i64 lineMakeFixedXY(i32 value) {
+	return static_cast<i64>(value) * kGxGpuSoftwareLineXYScale + kGxGpuSoftwareLineXYHalf;
+}
+
+inline i64 lineDivideFixedXYDelta(i64 delta, i32 steps) {
+	return (delta * kGxGpuSoftwareLineXYScale - ((delta < 0) ? (steps - 1) : 0) + ((delta > 0) ? (steps - 1) : 0)) / steps;
+}
+
+inline i32 lineFixedXYToCoord(i64 value) {
+	const i64 quotient = value / kGxGpuSoftwareLineXYScale;
+	return static_cast<i32>(value < 0 && (value % kGxGpuSoftwareLineXYScale) != 0 ? quotient - 1 : quotient);
+}
+
+inline i32 lineMakeFixedRgb(u32 value) {
+	return static_cast<i32>(value) * kGxGpuSoftwareLineRGBScale + kGxGpuSoftwareLineRGBHalf;
+}
+
+inline i32 lineDivideFixedRgbDelta(u32 value1, u32 value0, i32 steps) {
+	return ((static_cast<i32>(value1) - static_cast<i32>(value0)) * kGxGpuSoftwareLineRGBScale) / steps;
+}
+
+inline u32 lineFixedRgbToByte(i32 value) {
+	return static_cast<u32>(static_cast<u8>(value / kGxGpuSoftwareLineRGBScale));
 }
 
 inline i64 edgeValue(i32 ax, i32 ay, i32 bx, i32 by, i32 cx, i32 cy) {
@@ -413,11 +438,20 @@ void drawGxGpuSoftwareLineSegment(const GxGpuCommandBuffer& commandBuffer, size_
 	const i32 areaTop = static_cast<i32>(gxGpuDrawingAreaTop(topLeftWord, bottomRightWord));
 	const i32 areaRight = static_cast<i32>(gxGpuDrawingAreaRightExclusive(topLeftWord, bottomRightWord));
 	const i32 areaBottom = static_cast<i32>(gxGpuDrawingAreaBottomExclusive(topLeftWord, bottomRightWord));
-	const i32 dx = x1 - x0;
-	const i32 dy = y1 - y0;
-	const i32 absDx = absI32(dx);
-	const i32 absDy = absI32(dy);
+	const i32 absDx = absI32(x1 - x0);
+	const i32 absDy = absI32(y1 - y0);
 	const i32 steps = absDx >= absDy ? absDx : absDy;
+	if (x0 >= x1 && steps > 0) {
+		const i32 swapX = x0;
+		const i32 swapY = y0;
+		const u32 swapColor = color0;
+		x0 = x1;
+		y0 = y1;
+		color0 = color1;
+		x1 = swapX;
+		y1 = swapY;
+		color1 = swapColor;
+	}
 	const u32 opcode = commandBuffer.commandOpcode[commandIndex];
 	const u32 drawModeWord = commandBuffer.commandDrawModeWord[commandIndex];
 	const bool blendEnabled = gxGpuCommandSemiTransparencyEnabled(opcode);
@@ -425,27 +459,46 @@ void drawGxGpuSoftwareLineSegment(const GxGpuCommandBuffer& commandBuffer, size_
 	const bool ditherEnabled = gxGpuDrawModeDitherEnabled(drawModeWord);
 	const u32 maskBitModeWord = commandBuffer.commandMaskBitModeWord[commandIndex];
 	const u32 interlacedRenderWord = commandBuffer.commandInterlacedRenderWord[commandIndex];
+	i64 xStep = 0;
+	i64 yStep = 0;
+	i32 rStep = 0;
+	i32 gStep = 0;
+	i32 bStep = 0;
 	const u32 r0 = colorR8(color0);
 	const u32 g0 = colorG8(color0);
 	const u32 b0 = colorB8(color0);
-	const i32 dr = static_cast<i32>(colorR8(color1)) - static_cast<i32>(r0);
-	const i32 dg = static_cast<i32>(colorG8(color1)) - static_cast<i32>(g0);
-	const i32 db = static_cast<i32>(colorB8(color1)) - static_cast<i32>(b0);
-	if (steps == 0) {
-		if (x0 >= areaLeft && y0 >= areaTop && x0 < areaRight && y0 < areaBottom && !gxGpuSoftwareInterlacedSkipsLine(y0, interlacedRenderWord)) {
-			gxGpuSoftwareWriteRenderVramPixel(x0, y0, r0, g0, b0, ditherEnabled, blendEnabled, blendMode, maskBitModeWord);
-		}
-		return;
+	if (steps != 0) {
+		xStep = lineDivideFixedXYDelta(static_cast<i64>(x1 - x0), steps);
+		yStep = lineDivideFixedXYDelta(static_cast<i64>(y1 - y0), steps);
+		rStep = lineDivideFixedRgbDelta(colorR8(color1), r0, steps);
+		gStep = lineDivideFixedRgbDelta(colorG8(color1), g0, steps);
+		bStep = lineDivideFixedRgbDelta(colorB8(color1), b0, steps);
 	}
+	i64 currentX = lineMakeFixedXY(x0) - kGxGpuSoftwareLineSubpixelBias;
+	i64 currentY = lineMakeFixedXY(y0) - (yStep < 0 ? kGxGpuSoftwareLineSubpixelBias : 0);
+	i32 currentR = lineMakeFixedRgb(r0);
+	i32 currentG = lineMakeFixedRgb(g0);
+	i32 currentB = lineMakeFixedRgb(b0);
 	for (i32 step = 0; step <= steps; step += 1) {
-		const i32 x = x0 + roundDivideSigned(dx * step, steps);
-		const i32 y = y0 + roundDivideSigned(dy * step, steps);
+		const i32 x = lineFixedXYToCoord(currentX);
+		const i32 y = lineFixedXYToCoord(currentY);
 		if (x >= areaLeft && y >= areaTop && x < areaRight && y < areaBottom && !gxGpuSoftwareInterlacedSkipsLine(y, interlacedRenderWord)) {
-			const u32 r8 = static_cast<u32>(static_cast<i32>(r0) + roundDivideSigned(dr * step, steps));
-			const u32 g8 = static_cast<u32>(static_cast<i32>(g0) + roundDivideSigned(dg * step, steps));
-			const u32 b8 = static_cast<u32>(static_cast<i32>(b0) + roundDivideSigned(db * step, steps));
-			gxGpuSoftwareWriteRenderVramPixel(x, y, r8, g8, b8, ditherEnabled, blendEnabled, blendMode, maskBitModeWord);
+			gxGpuSoftwareWriteRenderVramPixel(
+				x,
+				y,
+				lineFixedRgbToByte(currentR),
+				lineFixedRgbToByte(currentG),
+				lineFixedRgbToByte(currentB),
+				ditherEnabled,
+				blendEnabled,
+				blendMode,
+				maskBitModeWord);
 		}
+		currentX += xStep;
+		currentY += yStep;
+		currentR += rStep;
+		currentG += gStep;
+		currentB += bStep;
 	}
 }
 

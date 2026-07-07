@@ -680,6 +680,30 @@ void testSoftwareTextureModulationMath() {
 	require(bmsx::gxGpuSoftwareTextureModulationChannel5(12u, 96u, 0) == 9u, "GX-GPU software texture modulation divides by 128");
 }
 
+void testSoftwareGouraudLineFixedPointRaster() {
+	bmsx::GxGpuCommandBuffer commandBuffer;
+	commandBuffer.reset();
+	constexpr uint8_t opcode = bmsx::GX_GPU_GP0_LINE_FIRST | bmsx::GX_GPU_GP0_RENDER_GOURAUD_BIT;
+	pushSoftwareCommand(
+		commandBuffer,
+		std::array<uint32_t, 4>{
+			(opcode << 24u) | 0x0000ffu,
+			(10u << 16u) | 40u,
+			0x00ff00u,
+			(14u << 16u) | 40u,
+		},
+		4u,
+		bmsx::GX_GPU_COMMAND_DRAW_LINE,
+		opcode);
+
+	bmsx::resetGxGpuSoftwareVram();
+	bmsx::executeGxGpuSoftwareCommands(commandBuffer, 0u);
+
+	require(bmsx::g_gxGpuSoftwareVram[bmsx::gxGpuSoftwareVramIndex(40, 10)] == 0x001fu, "GX-GPU software line fixed-point red endpoint");
+	require(bmsx::g_gxGpuSoftwareVram[bmsx::gxGpuSoftwareVramIndex(40, 12)] == 0x0210u, "GX-GPU software line fixed-point midpoint");
+	require(bmsx::g_gxGpuSoftwareVram[bmsx::gxGpuSoftwareVramIndex(40, 14)] == 0x03e0u, "GX-GPU software line fixed-point green endpoint");
+}
+
 void testSoftwareScanoutConsumesTransfersAndFill() {
 	bmsx::GxGpuCommandBuffer commandBuffer;
 	commandBuffer.reset();
@@ -1140,6 +1164,7 @@ int main() {
 	testGp0PolylineConsumesPayloadUntilTerminator();
 	testGp1ClearFifoClearsPartialGp0PacketsAndFlushesPartialCpuToVramUploads();
 	testSoftwareTextureModulationMath();
+	testSoftwareGouraudLineFixedPointRaster();
 	testSoftwareScanoutConsumesTransfersAndFill();
 	testSoftwareScanoutConsumesSolidPrimitives();
 	testSoftwareScanoutConsumesTexturedPrimitives();

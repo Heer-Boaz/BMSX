@@ -65,10 +65,40 @@ function absI32(value: number): number {
 	return value < 0 ? -value : value;
 }
 
-function roundDivideSigned(numerator: number, denominator: number): number {
-	return numerator < 0
-		? -integerDivide(-numerator + (denominator >>> 1), denominator)
-		: integerDivide(numerator + (denominator >>> 1), denominator);
+const GX_GPU_SOFTWARE_LINE_XY_SCALE = 0x100000000;
+const GX_GPU_SOFTWARE_LINE_XY_HALF = 0x80000000;
+const GX_GPU_SOFTWARE_LINE_SUBPIXEL_BIAS = 1024;
+const GX_GPU_SOFTWARE_LINE_RGB_SCALE = 0x1000;
+const GX_GPU_SOFTWARE_LINE_RGB_HALF = 0x800;
+
+function lineMakeFixedXY(value: number): number {
+	return value * GX_GPU_SOFTWARE_LINE_XY_SCALE + GX_GPU_SOFTWARE_LINE_XY_HALF;
+}
+
+function lineDivideFixedXYDelta(delta: number, steps: number): number {
+	return integerDivide(
+		delta * GX_GPU_SOFTWARE_LINE_XY_SCALE
+			- (delta < 0 ? steps - 1 : 0)
+			+ (delta > 0 ? steps - 1 : 0),
+		steps,
+	);
+}
+
+function lineFixedXYToCoord(value: number): number {
+	const quotient = integerDivide(value, GX_GPU_SOFTWARE_LINE_XY_SCALE);
+	return value < 0 && value % GX_GPU_SOFTWARE_LINE_XY_SCALE !== 0 ? quotient - 1 : quotient;
+}
+
+function lineMakeFixedRgb(value: number): number {
+	return value * GX_GPU_SOFTWARE_LINE_RGB_SCALE + GX_GPU_SOFTWARE_LINE_RGB_HALF;
+}
+
+function lineDivideFixedRgbDelta(value1: number, value0: number, steps: number): number {
+	return integerDivide((value1 - value0) * GX_GPU_SOFTWARE_LINE_RGB_SCALE, steps);
+}
+
+function lineFixedRgbToByte(value: number): number {
+	return integerDivide(value, GX_GPU_SOFTWARE_LINE_RGB_SCALE);
 }
 
 function sampleGxGpuSoftwareTextureWord(
@@ -455,11 +485,20 @@ export function drawGxGpuSoftwareLineSegment(commandBuffer: GxGpuCommandBufferVi
 	const areaTop = gxGpuDrawingAreaTop(topLeftWord, bottomRightWord);
 	const areaRight = gxGpuDrawingAreaRightExclusive(topLeftWord, bottomRightWord);
 	const areaBottom = gxGpuDrawingAreaBottomExclusive(topLeftWord, bottomRightWord);
-	const dx = x1 - x0;
-	const dy = y1 - y0;
-	const absDx = absI32(dx);
-	const absDy = absI32(dy);
+	const absDx = absI32(x1 - x0);
+	const absDy = absI32(y1 - y0);
 	const steps = absDx >= absDy ? absDx : absDy;
+	if (x0 >= x1 && steps > 0) {
+		const swapX = x0;
+		const swapY = y0;
+		const swapColor = color0;
+		x0 = x1;
+		y0 = y1;
+		color0 = color1;
+		x1 = swapX;
+		y1 = swapY;
+		color1 = swapColor;
+	}
 	const opcode = commandBuffer.commandOpcode[commandIndex];
 	const drawModeWord = commandBuffer.commandDrawModeWord[commandIndex];
 	const blendEnabled = gxGpuCommandSemiTransparencyEnabled(opcode);
@@ -467,26 +506,46 @@ export function drawGxGpuSoftwareLineSegment(commandBuffer: GxGpuCommandBufferVi
 	const ditherEnabled = gxGpuDrawModeDitherEnabled(drawModeWord);
 	const maskBitModeWord = commandBuffer.commandMaskBitModeWord[commandIndex];
 	const interlacedRenderWord = commandBuffer.commandInterlacedRenderWord[commandIndex];
+	let xStep = 0;
+	let yStep = 0;
+	let rStep = 0;
+	let gStep = 0;
+	let bStep = 0;
 	const r0 = colorR8(color0);
 	const g0 = colorG8(color0);
 	const b0 = colorB8(color0);
-	const dr = colorR8(color1) - r0;
-	const dg = colorG8(color1) - g0;
-	const db = colorB8(color1) - b0;
-	if (steps === 0) {
-		if (x0 >= areaLeft && y0 >= areaTop && x0 < areaRight && y0 < areaBottom && !gxGpuSoftwareInterlacedSkipsLine(y0, interlacedRenderWord)) {
-			gxGpuSoftwareWriteRenderVramPixel(x0, y0, r0, g0, b0, ditherEnabled, blendEnabled, blendMode, maskBitModeWord);
-		}
-		return;
+	if (steps !== 0) {
+		xStep = lineDivideFixedXYDelta(x1 - x0, steps);
+		yStep = lineDivideFixedXYDelta(y1 - y0, steps);
+		rStep = lineDivideFixedRgbDelta(colorR8(color1), r0, steps);
+		gStep = lineDivideFixedRgbDelta(colorG8(color1), g0, steps);
+		bStep = lineDivideFixedRgbDelta(colorB8(color1), b0, steps);
 	}
+	let currentX = lineMakeFixedXY(x0) - GX_GPU_SOFTWARE_LINE_SUBPIXEL_BIAS;
+	let currentY = lineMakeFixedXY(y0) - (yStep < 0 ? GX_GPU_SOFTWARE_LINE_SUBPIXEL_BIAS : 0);
+	let currentR = lineMakeFixedRgb(r0);
+	let currentG = lineMakeFixedRgb(g0);
+	let currentB = lineMakeFixedRgb(b0);
 	for (let step = 0; step <= steps; step += 1) {
-		const x = x0 + roundDivideSigned(dx * step, steps);
-		const y = y0 + roundDivideSigned(dy * step, steps);
+		const x = lineFixedXYToCoord(currentX);
+		const y = lineFixedXYToCoord(currentY);
 		if (x >= areaLeft && y >= areaTop && x < areaRight && y < areaBottom && !gxGpuSoftwareInterlacedSkipsLine(y, interlacedRenderWord)) {
-			const r8 = r0 + roundDivideSigned(dr * step, steps);
-			const g8 = g0 + roundDivideSigned(dg * step, steps);
-			const b8 = b0 + roundDivideSigned(db * step, steps);
-			gxGpuSoftwareWriteRenderVramPixel(x, y, r8, g8, b8, ditherEnabled, blendEnabled, blendMode, maskBitModeWord);
+			gxGpuSoftwareWriteRenderVramPixel(
+				x,
+				y,
+				lineFixedRgbToByte(currentR),
+				lineFixedRgbToByte(currentG),
+				lineFixedRgbToByte(currentB),
+				ditherEnabled,
+				blendEnabled,
+				blendMode,
+				maskBitModeWord,
+			);
 		}
+		currentX += xStep;
+		currentY += yStep;
+		currentR += rStep;
+		currentG += gStep;
+		currentB += bStep;
 	}
 }
