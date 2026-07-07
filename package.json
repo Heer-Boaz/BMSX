@@ -84,8 +84,5 @@
 	"allowScripts": {
 		"canvas": true,
 		"esbuild": true
-	},
-	"dependencies": {
-		"@openai/codex": "^0.142.5"
 	}
 }
