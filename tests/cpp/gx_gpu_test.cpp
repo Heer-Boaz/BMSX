@@ -149,9 +149,11 @@ void testDisplayDisableAndDmaDirectionStatusBits() {
 
 	gpu.writeGp1(bmsx::GX_GPU_GP1_SET_DISPLAY_DISABLE << 24u);
 	require((gpu.readStatus() & bmsx::GX_GPU_STATUS_DISPLAY_DISABLE) == 0u, "GX-GPU GP1 display enable clears display-disable bit");
+	require((gpu.readDeviceOutput().statusWord & bmsx::GX_GPU_STATUS_DISPLAY_DISABLE) == 0u, "GX-GPU output display enable status");
 
 	gpu.writeGp1((bmsx::GX_GPU_GP1_SET_DISPLAY_DISABLE << 24u) | 1u);
 	require((gpu.readStatus() & bmsx::GX_GPU_STATUS_DISPLAY_DISABLE) == bmsx::GX_GPU_STATUS_DISPLAY_DISABLE, "GX-GPU GP1 display disable bit");
+	require((gpu.readDeviceOutput().statusWord & bmsx::GX_GPU_STATUS_DISPLAY_DISABLE) == bmsx::GX_GPU_STATUS_DISPLAY_DISABLE, "GX-GPU output display disable status");
 
 	gpu.writeGp1((bmsx::GX_GPU_GP1_SET_DMA_DIRECTION << 24u) | bmsx::GX_GPU_DMA_DIRECTION_CPU_TO_GP0);
 	require((gpu.readStatus() & bmsx::GX_GPU_STATUS_DMA_DIRECTION_MASK) == (bmsx::GX_GPU_DMA_DIRECTION_CPU_TO_GP0 << bmsx::GX_GPU_STATUS_DMA_DIRECTION_SHIFT), "GX-GPU GP1 DMA CPU-to-GP0 direction");
@@ -177,6 +179,7 @@ void testGp1CrtcRangeRegistersLatchMaskedRawWords() {
 	require(gpu.readTextureDisableMaskWord() == 1u, "GX-GPU GP1 texture-disable mask latch");
 
 	const bmsx::GxGpuDeviceOutput& output = gpu.readDeviceOutput();
+	require(output.statusWord == gpu.readStatus(), "GX-GPU output status word");
 	require(output.displayModeWord == gpu.readDisplayModeWord(), "GX-GPU output display mode word");
 	require(output.displayStartWord == bmsx::GX_GPU_DISPLAY_START_MASK, "GX-GPU output display start word");
 	require(output.horizontalDisplayRangeWord == bmsx::GX_GPU_HORIZONTAL_DISPLAY_RANGE_MASK, "GX-GPU output horizontal range word");

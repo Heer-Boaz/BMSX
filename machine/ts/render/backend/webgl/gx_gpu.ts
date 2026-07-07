@@ -1,4 +1,7 @@
 import {
+	GX_GPU_STATUS_DISPLAY_DISABLE,
+} from '../../../machine/devices/gx/gpu';
+import {
 	GX_GPU_COMMAND_CAPACITY,
 	GX_GPU_COMMAND_COPY_VRAM_TO_VRAM,
 	GX_GPU_COMMAND_DRAW_LINE,
@@ -1341,6 +1344,11 @@ function scanoutGxGpuVram(backend: WebGLBackend, gl: WebGL2RenderingContext, fbo
 	gl.bindFramebuffer(gl.FRAMEBUFFER, fbo);
 	backend.setViewportRect(0, 0, state.width, state.height);
 	gl.disable(gl.SCISSOR_TEST);
+	if ((state.statusWord & GX_GPU_STATUS_DISPLAY_DISABLE) !== 0) {
+		gl.clearColor(0, 0, 0, 1);
+		gl.clear(gl.COLOR_BUFFER_BIT);
+		return;
+	}
 	backend.setDepthTestEnabled(false);
 	backend.setDepthMask(false);
 	backend.setCullEnabled(false);
@@ -1378,6 +1386,7 @@ function writeGxGpuState(ctx: RenderGraphPassContext, state: RenderPassStateRegi
 	state.width = ctx.view.offscreenCanvasSize.x;
 	state.height = ctx.view.offscreenCanvasSize.y;
 	state.commandBuffer = ctx.view.gxGpuCommandBuffer;
+	state.statusWord = ctx.view.gxGpuStatusWord;
 	state.displayModeWord = ctx.view.gxGpuDisplayModeWord;
 	state.displayStartWord = ctx.view.gxGpuDisplayStartWord;
 	state.horizontalDisplayRangeWord = ctx.view.gxGpuHorizontalDisplayRangeWord;
@@ -1389,6 +1398,7 @@ export function registerGxGpuPass(registry: RenderPassLibrary): void {
 		width: 0,
 		height: 0,
 		commandBuffer: registry.view.gxGpuCommandBuffer,
+		statusWord: registry.view.gxGpuStatusWord,
 		displayModeWord: registry.view.gxGpuDisplayModeWord,
 		displayStartWord: registry.view.gxGpuDisplayStartWord,
 		horizontalDisplayRangeWord: registry.view.gxGpuHorizontalDisplayRangeWord,

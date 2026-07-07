@@ -242,9 +242,11 @@ test('GX-GPU handles PSX GP1 display disable and DMA direction status bits', () 
 
 	gpu.writeGp1(GX_GPU_GP1_SET_DISPLAY_DISABLE << 24);
 	assert.equal((gpu.readStatus() & GX_GPU_STATUS_DISPLAY_DISABLE) >>> 0, 0);
+	assert.equal((gpu.readDeviceOutput().statusWord & GX_GPU_STATUS_DISPLAY_DISABLE) >>> 0, 0);
 
 	gpu.writeGp1((GX_GPU_GP1_SET_DISPLAY_DISABLE << 24) | 1);
 	assert.equal((gpu.readStatus() & GX_GPU_STATUS_DISPLAY_DISABLE) >>> 0, GX_GPU_STATUS_DISPLAY_DISABLE);
+	assert.equal((gpu.readDeviceOutput().statusWord & GX_GPU_STATUS_DISPLAY_DISABLE) >>> 0, GX_GPU_STATUS_DISPLAY_DISABLE);
 
 	gpu.writeGp1((GX_GPU_GP1_SET_DMA_DIRECTION << 24) | GX_GPU_DMA_DIRECTION_CPU_TO_GP0);
 	assert.equal((gpu.readStatus() & GX_GPU_STATUS_DMA_DIRECTION_MASK) >>> 0, GX_GPU_DMA_DIRECTION_CPU_TO_GP0 << GX_GPU_STATUS_DMA_DIRECTION_SHIFT);
@@ -269,6 +271,7 @@ test('GX-GPU latches PSX GP1 CRTC range registers as masked raw words', () => {
 	assert.equal(gpu.readTextureDisableMaskWord(), 1);
 
 	assert.equal(gpu.readDeviceOutput().displayModeWord, gpu.readDisplayModeWord());
+	assert.equal(gpu.readDeviceOutput().statusWord, gpu.readStatus());
 	assert.equal(gpu.readDeviceOutput().displayStartWord, GX_GPU_DISPLAY_START_MASK);
 	assert.equal(gpu.readDeviceOutput().horizontalDisplayRangeWord, GX_GPU_HORIZONTAL_DISPLAY_RANGE_MASK);
 	assert.equal(gpu.readDeviceOutput().verticalDisplayRangeWord, GX_GPU_VERTICAL_DISPLAY_RANGE_MASK);

@@ -148,6 +148,7 @@ export class GxGpu {
 	private textureDisableMaskWord = 0;
 	private readonly deviceOutput = {
 		commandBuffer: this.commandBuffer,
+		statusWord: GX_GPU_STATUS_RESET_WORD,
 		displayModeWord: PSX_GPU_DISPLAY_MODE_PAL_WORD,
 		displayStartWord: 0,
 		horizontalDisplayRangeWord: 0x00c60260,
@@ -363,6 +364,7 @@ export class GxGpu {
 	}
 
 	public readDeviceOutput(): GxGpuDeviceOutput {
+		this.deviceOutput.statusWord = this.statusWord;
 		this.deviceOutput.displayModeWord = this.displayModeWord;
 		this.deviceOutput.displayStartWord = this.displayStartWord;
 		this.deviceOutput.horizontalDisplayRangeWord = this.horizontalDisplayRangeWord;

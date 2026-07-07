@@ -1,5 +1,6 @@
 #include "render/backend/gles2/gx_gpu.h"
 
+#include "machine/devices/gx/gpu.h"
 #include "machine/devices/gx/gpu_command_buffer.h"
 #include "machine/model_registry.h"
 #include "render/backend/gles2/backend.h"
@@ -1313,6 +1314,11 @@ void updateGxGpuScanoutVertices(u32 displayStartWord) {
 void scanoutGxGpuVram(OpenGLES2Backend& backend, GLuint frameFbo, const GxGpuPipelineState& state) {
 	backend.setRenderTarget(frameFbo, state.width, state.height);
 	glDisable(GL_SCISSOR_TEST);
+	if ((state.statusWord & GX_GPU_STATUS_DISPLAY_DISABLE) != 0u) {
+		glClearColor(0.0f, 0.0f, 0.0f, 1.0f);
+		glClear(GL_COLOR_BUFFER_BIT);
+		return;
+	}
 	glDisable(GL_DEPTH_TEST);
 	glDepthMask(GL_FALSE);
 	glDisable(GL_CULL_FACE);

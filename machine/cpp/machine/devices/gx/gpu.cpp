@@ -217,6 +217,7 @@ u32 GxGpu::readGpuReadWord() const {
 }
 
 const GxGpuDeviceOutput& GxGpu::readDeviceOutput() const {
+	m_deviceOutput.statusWord = m_statusWord;
 	m_deviceOutput.displayModeWord = m_displayModeWord;
 	m_deviceOutput.displayStartWord = m_displayStartWord;
 	m_deviceOutput.horizontalDisplayRangeWord = m_horizontalDisplayRangeWord;

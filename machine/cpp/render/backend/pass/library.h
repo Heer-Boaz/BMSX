@@ -55,6 +55,7 @@ struct GxGpuPipelineState {
 	i32 width = 0;
 	i32 height = 0;
 	const GxGpuCommandBuffer* commandBuffer = nullptr;
+	u32 statusWord = 0u;
 	u32 displayModeWord = 0u;
 	u32 displayStartWord = 0u;
 	u32 horizontalDisplayRangeWord = 0u;

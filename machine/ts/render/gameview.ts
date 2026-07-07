@@ -95,6 +95,7 @@ export class GameView implements RenderContext {
 	public readonly vdpJointMatrixWords = new Uint32Array(VDP_JTU_REGISTER_WORDS);
 	public vdpRpuFrame!: VdpRpuFrameOutput;
 	public gxGpuCommandBuffer!: GxGpuCommandBufferView;
+	public gxGpuStatusWord = 0;
 	public gxGpuDisplayModeWord = 0;
 	public gxGpuDisplayStartWord = 0;
 	public gxGpuHorizontalDisplayRangeWord = 0;

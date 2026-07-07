@@ -131,6 +131,7 @@ public:
 	std::array<u32, VDP_JTU_REGISTER_WORDS> vdpJointMatrixWords{};
 	const VdpRpuFrameOutput* vdpRpuFrame = nullptr;
 	const GxGpuCommandBuffer* gxGpuCommandBuffer = nullptr;
+	u32 gxGpuStatusWord = 0u;
 	u32 gxGpuDisplayModeWord = 0u;
 	u32 gxGpuDisplayStartWord = 0u;
 	u32 gxGpuHorizontalDisplayRangeWord = 0u;

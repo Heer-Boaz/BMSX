@@ -288,6 +288,7 @@ export type GxGpuPipelineState = {
 	width: number;
 	height: number;
 	commandBuffer: GxGpuCommandBufferView;
+	statusWord: number;
 	displayModeWord: number;
 	displayStartWord: number;
 	horizontalDisplayRangeWord: number;
@@ -328,6 +329,7 @@ export interface RenderContext {
 	presentationHistoryDestinationIndex: 0 | 1;
 	activeTexUnit: number;
 	gxGpuCommandBuffer: GxGpuCommandBufferView;
+	gxGpuStatusWord: number;
 	gxGpuDisplayModeWord: number;
 	gxGpuDisplayStartWord: number;
 	gxGpuHorizontalDisplayRangeWord: number;
