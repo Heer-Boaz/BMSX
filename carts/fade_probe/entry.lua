@@ -9,10 +9,12 @@ local vblank_count = 0
 local blue<const> = 0xff2044cc
 local white<const> = 0xffffffff
 local black<const> = 0xff000000
-local blend_probe_bg<const> = 0xff402080
+local purple<const> = 0xff402080
 local red<const> = 0xffff2020
 local green<const> = 0xff20ff20
 local yellow<const> = 0xffffff20
+local cyan<const> = 0xff20ffff
+local column_w<const> = 68
 
 local wait_vblank<const> = function()
 	repeat
@@ -25,31 +27,48 @@ on_irq(irq_vblank, function()
 	vblank_count = vblank_count + 1
 end)
 
-local draw_static_blend_ladders<const> = function()
-	local step_w<const> = 32
-	for i = 0, 9 do
-		local x<const> = i * step_w
-		gx_fill_rect_color(x, 156, x + step_w, 184, blue)
-		gx_fill_rect_half_color(x, 156, x + step_w, 184, white)
-		gx_fill_rect_color(x, 196, x + step_w, 224, blend_probe_bg)
-		gx_fill_rect_half_color(x, 196, x + step_w, 224, black)
-	end
+local draw_blend_probe<const> = function(x, y, bg, fg, draw_mode)
+	gx_fill_rect_color(x, y, x + column_w, y + 44, bg)
+	gx_set_draw_mode(draw_mode)
+	gx_fill_rect_semitrans_color(x, y, x + column_w, y + 44, fg)
+end
+
+local draw_mode_row<const> = function(y, bg, fg)
+	draw_blend_probe(8, y, bg, fg, gx_draw_mode_blend_half)
+	draw_blend_probe(84, y, bg, fg, gx_draw_mode_blend_add)
+	draw_blend_probe(160, y, bg, fg, gx_draw_mode_blend_subtract)
+	draw_blend_probe(236, y, bg, fg, gx_draw_mode_blend_quarter)
+end
+
+local draw_mode_guides<const> = function()
+	gx_fill_rect_color(8, 72, 76, 80, red)
+	gx_fill_rect_color(84, 72, 152, 80, green)
+	gx_fill_rect_color(160, 72, 228, 80, yellow)
+	gx_fill_rect_color(236, 72, 304, 80, cyan)
+	gx_fill_rect_color(8, 148, 76, 156, red)
+	gx_fill_rect_color(84, 148, 152, 156, green)
+	gx_fill_rect_color(160, 148, 228, 156, yellow)
+	gx_fill_rect_color(236, 148, 304, 156, cyan)
 end
 
 local draw_cart<const> = function()
 	gx_clear_color(black)
-	gx_fill_rect_color(16, 16, 144, 128, blue)
-	gx_fill_rect_color(176, 16, 304, 128, blue)
 
 	if frame >= 20 then
-		gx_fill_rect_half_color(16, 16, 144, 128, white)
-		gx_fill_rect_half_color(176, 16, 304, 128, black)
+		draw_mode_row(20, blue, white)
+		draw_mode_row(96, purple, red)
+	else
+		gx_fill_rect_color(8, 20, 76, 64, blue)
+		gx_fill_rect_color(84, 20, 152, 64, blue)
+		gx_fill_rect_color(160, 20, 228, 64, blue)
+		gx_fill_rect_color(236, 20, 304, 64, blue)
+		gx_fill_rect_color(8, 96, 76, 140, purple)
+		gx_fill_rect_color(84, 96, 152, 140, purple)
+		gx_fill_rect_color(160, 96, 228, 140, purple)
+		gx_fill_rect_color(236, 96, 304, 140, purple)
 	end
 
-	gx_fill_rect_color(16, 136, 144, 148, red)
-	gx_fill_rect_color(152, 136, 168, 148, green)
-	gx_fill_rect_color(176, 136, 304, 148, yellow)
-	draw_static_blend_ladders()
+	draw_mode_guides()
 end
 
 *irq_mask_register = irq_vblank | irq_apu

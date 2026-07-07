@@ -1,7 +1,7 @@
 [
-	{ "description": "psx half blend before overlay", "frame": 8, "capture": true },
-	{ "description": "psx half blend before overlay late", "frame": 16, "capture": true },
-	{ "description": "psx half blend enabled", "frame": 24, "capture": true },
-	{ "description": "psx half blend stable", "frame": 32, "capture": true },
-	{ "description": "psx half blend final", "frame": 48, "capture": true }
+	{ "description": "psx blend modes before overlay", "frame": 8, "capture": true },
+	{ "description": "psx blend modes before overlay late", "frame": 16, "capture": true },
+	{ "description": "psx blend modes active", "frame": 24, "capture": true },
+	{ "description": "psx blend modes stable", "frame": 32, "capture": true },
+	{ "description": "psx blend modes final", "frame": 48, "capture": true }
 ]

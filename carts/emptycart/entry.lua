@@ -1,6 +1,6 @@
-mem[0x08000084] = 0x00000001
 require('cartlib/prelude')
-local irq_mask_addr<const> = 0x0800010c
+local irq_mask_register<const>: *word = 0x0800010c
+local inp_ctrl_register<const>: *word = 0x08000194
 local irq_vblank<const> = 0x0010
 local irq_apu<const> = 0x0200
 local vblank_count = 0
@@ -18,6 +18,7 @@ local update_cart<const> = function()
 end
 
 local draw_cart<const> = function()
+	gx_clear_color(0xff000000)
 end
 
 local wait_vblank<const> = function()
@@ -28,25 +29,15 @@ local wait_vblank<const> = function()
 end
 
 init()
-mem[irq_mask_addr] = irq_vblank | irq_apu
+*irq_mask_register = irq_vblank | irq_apu
 new_game()
-mem[0x08000194] = 0x00000001
+*inp_ctrl_register = 0x00000001
 wait_vblank()
 
 while true do
 	update_cart()
-	mem[0x08000194] = 0x00000001
+	*inp_ctrl_register = 0x00000001
 	wait_vblank()
-	vdp_stream_cursor = 0x080c0000
+	gx_reset_320x240_pal()
 	draw_cart()
-	vdp_stream_finish()
-	do
-		local used_bytes<const> = vdp_stream_cursor - 0x080c0000
-		if used_bytes ~= 0 then
-			mem[0x08000110] = 0x080c0000
-			mem[0x08000114] = 0x0800007c
-			mem[0x08000118] = used_bytes
-			mem[0x0800011c] = 0x00000001
-		end
-	end
 end

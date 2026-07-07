@@ -100,6 +100,8 @@ test('GX GPU firmware owns raw PSX GP0 and GP1 words for migrated primitive cart
 	assert.equal(gxGpuSource.includes(`local gp1<const>: *word = 0x${IO_GX_GPU_GP1.toString(16).padStart(8, '0')}`), true);
 	assert.equal(gxGpuSource.includes('gp0_draw_rectangle'), true);
 	assert.equal(gxGpuSource.includes('gp0_draw_semitransparent_rectangle'), true);
+	assert.equal(gxGpuSource.includes('gp0_draw_mode'), true);
+	assert.equal(gxGpuSource.includes('draw_mode_blend_quarter'), true);
 	assert.equal(gxGpuSource.includes('gp0_draw_line'), true);
 	assert.equal(renderHwTestSource.includes('gx_reset_320x240_pal()'), true);
 	assert.equal(renderHwTestSource.includes('vdp_'), false);
@@ -109,7 +111,19 @@ test('GX GPU firmware owns raw PSX GP0 and GP1 words for migrated primitive cart
 test('fade probe cart uses GX semi-transparent rectangles instead of VDP streams', () => {
 	const fadeProbeSource = readFileSync('carts/fade_probe/entry.lua', 'utf8');
 	assert.equal(fadeProbeSource.includes('gx_reset_320x240_pal()'), true);
-	assert.equal(fadeProbeSource.includes('gx_fill_rect_half_color'), true);
+	assert.equal(fadeProbeSource.includes('gx_set_draw_mode'), true);
+	assert.equal(fadeProbeSource.includes('gx_draw_mode_blend_quarter'), true);
+	assert.equal(fadeProbeSource.includes('gx_fill_rect_semitrans_color'), true);
 	assert.equal(fadeProbeSource.includes('vdp_'), false);
 	assert.equal(fadeProbeSource.includes('0x0800007c'), false);
+});
+
+
+test('empty cart uses GX output instead of VDP streams', () => {
+	const emptyCartSource = readFileSync('carts/emptycart/entry.lua', 'utf8');
+	assert.equal(emptyCartSource.includes('gx_reset_320x240_pal()'), true);
+	assert.equal(emptyCartSource.includes('gx_clear_color'), true);
+	assert.equal(emptyCartSource.includes('vdp_'), false);
+	assert.equal(emptyCartSource.includes('0x0800007c'), false);
+	assert.equal(emptyCartSource.includes('0x08000084'), false);
 });
