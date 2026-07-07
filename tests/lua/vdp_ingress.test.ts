@@ -31,6 +31,7 @@ import {
 	IO_VDP_STATUS,
 } from '../../machine/ts/machine/bus/io';
 import { CPU } from '../../machine/ts/machine/cpu/cpu';
+import { PSX_GPU_DISPLAY_SIZE_SPEC } from '../../machine/ts/machine/model_registry';
 import { VDP } from '../../machine/ts/machine/devices/vdp/vdp';
 import {
 	VDP_FIFO_CTRL_SEAL,
@@ -432,28 +433,28 @@ test('VDP VOUT scanout timing owns the VBLANK output pin', () => {
 	assert.equal(resetOutput.scanoutX, 0);
 	assert.equal(resetOutput.scanoutY, 0);
 	vdpStatusWords.push(memory.readIoU32(IO_VDP_STATUS));
-	vdp.setScanoutTiming(false, 0, 100, 80);
+	vdp.setScanoutTiming(false, 0, 100, 79);
 	scheduler.setNowCycles(41);
 	const activeOutput = vdp.readDeviceOutput();
 	assert.equal(activeOutput.scanoutPhase, VDP_VOUT_SCANOUT_PHASE_ACTIVE);
-	assert.equal(activeOutput.scanoutX, 166);
-	assert.equal(activeOutput.scanoutY, 108);
+	assert.equal(activeOutput.scanoutX, 178);
+	assert.equal(activeOutput.scanoutY, 124);
 	vdpStatusWords.push(memory.readIoU32(IO_VDP_STATUS));
 	scheduler.setNowCycles(80);
-	vdp.setScanoutTiming(true, 80, 100, 80);
+	vdp.setScanoutTiming(true, 80, 100, 79);
 	scheduler.setNowCycles(90);
 	const vblankOutput = vdp.readDeviceOutput();
 	assert.equal(vblankOutput.scanoutPhase, VDP_VOUT_SCANOUT_PHASE_VBLANK);
-	assert.equal(vblankOutput.scanoutX, 128);
-	assert.equal(vblankOutput.scanoutY, 238);
+	assert.equal(vblankOutput.scanoutX, 0);
+	assert.equal(vblankOutput.scanoutY, 273);
 	vdpStatusWords.push(memory.readIoU32(IO_VDP_STATUS));
 	scheduler.setNowCycles(100);
-	vdp.setScanoutTiming(false, 0, 100, 80);
+	vdp.setScanoutTiming(false, 0, 100, 79);
 	scheduler.setNowCycles(120);
 	const nextActiveOutput = vdp.readDeviceOutput();
 	assert.equal(nextActiveOutput.scanoutPhase, VDP_VOUT_SCANOUT_PHASE_ACTIVE);
-	assert.equal(nextActiveOutput.scanoutX, 0);
-	assert.equal(nextActiveOutput.scanoutY, 53);
+	assert.equal(nextActiveOutput.scanoutX, 243);
+	assert.equal(nextActiveOutput.scanoutY, 60);
 	vdpStatusWords.push(memory.readIoU32(IO_VDP_STATUS));
 	assert.deepEqual(vdpStatusWords.map(status => (status & VDP_STATUS_VBLANK) !== 0), [false, false, true, false]);
 });
@@ -463,8 +464,8 @@ test('VDP dither register writes update the live latch directly', () => {
 
 	const resetOutput = vdp.readDeviceOutput();
 	assert.equal(resetOutput.ditherType, 0);
-	assert.equal(resetOutput.frameBufferWidth, 256);
-	assert.equal(resetOutput.frameBufferHeight, 212);
+	assert.equal(resetOutput.frameBufferWidth, PSX_GPU_DISPLAY_SIZE_SPEC.renderWidth);
+	assert.equal(resetOutput.frameBufferHeight, PSX_GPU_DISPLAY_SIZE_SPEC.renderHeight);
 	memory.writeValue(IO_VDP_DITHER, 3);
 	vdp.setDecodedVramSurfaceDimensions(VRAM_FRAMEBUFFER_BASE, 128, 64);
 
@@ -473,16 +474,16 @@ test('VDP dither register writes update the live latch directly', () => {
 	assert.equal(liveOutput.ditherType, 0);
 	assert.equal(vdp.frameBufferWidth, 128);
 	assert.equal(vdp.frameBufferHeight, 64);
-	assert.equal(liveOutput.frameBufferWidth, 256);
-	assert.equal(liveOutput.frameBufferHeight, 212);
+	assert.equal(liveOutput.frameBufferWidth, PSX_GPU_DISPLAY_SIZE_SPEC.renderWidth);
+	assert.equal(liveOutput.frameBufferHeight, PSX_GPU_DISPLAY_SIZE_SPEC.renderHeight);
 	memory.writeValue(IO_VDP_CMD, VDP_CMD_BEGIN_FRAME);
 	memory.writeValue(IO_VDP_CMD, VDP_CMD_END_FRAME);
 	vdp.setDecodedVramSurfaceDimensions(VRAM_FRAMEBUFFER_BASE, 96, 48);
 	assert.equal(vdp.frameBufferWidth, 96);
 	assert.equal(vdp.frameBufferHeight, 48);
 	const sealedOutput = vdp.readDeviceOutput();
-	assert.equal(sealedOutput.frameBufferWidth, 256);
-	assert.equal(sealedOutput.frameBufferHeight, 212);
+	assert.equal(sealedOutput.frameBufferWidth, PSX_GPU_DISPLAY_SIZE_SPEC.renderWidth);
+	assert.equal(sealedOutput.frameBufferHeight, PSX_GPU_DISPLAY_SIZE_SPEC.renderHeight);
 	vdp.presentReadyFrameOnVblankEdge();
 	const presentedOutput = vdp.readDeviceOutput();
 	assert.equal(presentedOutput.ditherType, 3);

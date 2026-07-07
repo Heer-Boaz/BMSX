@@ -11,18 +11,21 @@ import {
 	IO_DMA_SRC,
 	IO_DMA_STATUS,
 	IO_DMA_WRITTEN,
+	IO_GX_GPU_GP0,
 	IO_IMG_WRITTEN,
 	IO_VDP_FIFO,
 	IRQ_DMA_DONE,
 	IRQ_DMA_ERROR,
 } from '../../bus/io';
 import {
+	IO_WORD_SIZE,
 	RAM_BASE,
 	RAM_END,
 	VDP_STREAM_BUFFER_SIZE,
 	isVramMappedRange,
 	vramMappedRemainingBytes,
 } from '../../memory/map';
+import { readLE32 } from '../../../common/endian';
 import type { ImageCopyPlan } from './image_copy';
 import { Memory } from '../../memory/memory';
 import type { IrqController } from '../irq/controller';
@@ -122,6 +125,14 @@ export class DmaController {
 				return;
 			}
 			transferLen = maxWritable;
+		}
+		if ((dst === IO_GX_GPU_GP0 || isVramMappedRange(dst, 1)) && (transferLen & (IO_WORD_SIZE - 1)) !== 0) {
+			clipped = true;
+			if (strict) {
+				context.finishIoError(true);
+				return;
+			}
+			transferLen &= ~(IO_WORD_SIZE - 1);
 		}
 		const status = DMA_STATUS_BUSY | (clipped ? DMA_STATUS_CLIPPED : 0);
 		context.memory.writeValue(IO_DMA_STATUS, status);
@@ -298,19 +309,26 @@ export class DmaController {
 				job.written += chunk;
 				return chunk;
 			}
-				if (isVramMappedRange(job.dst, 1)) {
-					chunk &= ~3;
-					if (chunk === 0) {
-						return 0;
-					}
+			const gp0Stream = job.dst === IO_GX_GPU_GP0;
+			if (gp0Stream || isVramMappedRange(job.dst, 1)) {
+				chunk &= ~(IO_WORD_SIZE - 1);
+				if (chunk === 0) {
+					return 0;
 				}
-				if (chunk > this.buffer.byteLength) {
-					chunk = this.buffer.byteLength;
+			}
+			if (chunk > this.buffer.byteLength) {
+				chunk = this.buffer.byteLength;
+			}
+			this.memory.readBytesInto(job.src, this.buffer, chunk);
+			if (gp0Stream) {
+				for (let offset = 0; offset < chunk; offset += IO_WORD_SIZE) {
+					this.memory.writeMappedU32LE(IO_GX_GPU_GP0, readLE32(this.buffer, offset));
 				}
-				this.memory.readBytesInto(job.src, this.buffer, chunk);
+			} else {
 				this.memory.writeBytesFrom(this.buffer, 0, job.dst, chunk);
+				job.dst += chunk;
+			}
 			job.src += chunk;
-			job.dst += chunk;
 			job.remaining -= chunk;
 			job.written += chunk;
 			return chunk;
@@ -324,7 +342,7 @@ export class DmaController {
 			const rowRemaining = job.plan.writeStride - job.rowOffset;
 			let toCopy = remaining < rowRemaining ? remaining : rowRemaining;
 			if (job.vramTarget) {
-				toCopy &= ~3;
+				toCopy &= ~(IO_WORD_SIZE - 1);
 				if (toCopy === 0) {
 					return budget - remaining;
 				}
@@ -361,6 +379,9 @@ export class DmaController {
 	private resolveMaxWritable(dst: number): number {
 		if (dst === IO_VDP_FIFO) {
 			return VDP_STREAM_BUFFER_SIZE;
+		}
+		if (dst === IO_GX_GPU_GP0) {
+			return 0xffff_ffff;
 		}
 		const vramRemaining = vramMappedRemainingBytes(dst);
 		if (vramRemaining !== 0) {

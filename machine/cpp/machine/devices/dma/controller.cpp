@@ -1,5 +1,6 @@
 #include "machine/devices/dma/controller.h"
 
+#include "common/endian.h"
 #include "machine/bus/io.h"
 #include "machine/devices/irq/controller.h"
 #include "machine/devices/vdp/vdp.h"
@@ -175,19 +176,26 @@ uint32_t DmaController::processJob(DmaJob& job, uint32_t budget) {
 			job.written += chunk;
 			return chunk;
 		}
-			if (isVramMappedRange(job.dst, 1)) {
-				chunk &= ~3u;
-				if (chunk == 0) {
-					return 0;
-				}
+		const bool gp0Stream = job.dst == IO_GX_GPU_GP0;
+		if (gp0Stream || isVramMappedRange(job.dst, 1u)) {
+			chunk &= ~(IO_WORD_SIZE - 1u);
+			if (chunk == 0u) {
+				return 0u;
 			}
-			if (chunk > m_buffer.size()) {
-				chunk = static_cast<uint32_t>(m_buffer.size());
+		}
+		if (chunk > m_buffer.size()) {
+			chunk = static_cast<uint32_t>(m_buffer.size());
+		}
+		m_memory.readBytes(job.src, m_buffer.data(), chunk);
+		if (gp0Stream) {
+			for (uint32_t offset = 0u; offset < chunk; offset += IO_WORD_SIZE) {
+				m_memory.writeMappedU32LE(IO_GX_GPU_GP0, readLE32(m_buffer.data() + offset));
 			}
-			m_memory.readBytes(job.src, m_buffer.data(), chunk);
+		} else {
 			m_memory.writeBytes(job.dst, m_buffer.data(), chunk);
+			job.dst += chunk;
+		}
 		job.src += chunk;
-		job.dst += chunk;
 		job.remaining -= chunk;
 		job.written += chunk;
 		return chunk;
@@ -201,7 +209,7 @@ uint32_t DmaController::processImageJob(DmaJob& job, uint32_t budget) {
 		const uint32_t rowRemaining = job.plan.writeStride - job.rowOffset;
 		uint32_t toCopy = remaining < rowRemaining ? remaining : rowRemaining;
 		if (job.vramTarget) {
-			toCopy &= ~3u;
+			toCopy &= ~(IO_WORD_SIZE - 1u);
 			if (toCopy == 0) {
 				return budget - remaining;
 			}
@@ -262,6 +270,14 @@ void DmaController::startIo() {
 			return;
 		}
 		transferLen = maxWritable;
+	}
+	if ((dst == IO_GX_GPU_GP0 || isVramMappedRange(dst, 1u)) && (transferLen & (IO_WORD_SIZE - 1u)) != 0u) {
+		clipped = true;
+		if (strict) {
+			finishIoError(true);
+			return;
+		}
+		transferLen &= ~(IO_WORD_SIZE - 1u);
 	}
 	const uint32_t status = DMA_STATUS_BUSY | (clipped ? DMA_STATUS_CLIPPED : 0);
 	m_memory.writeValue(IO_DMA_STATUS, valueNumber(static_cast<double>(status)));
@@ -368,6 +384,9 @@ void DmaController::scheduleNextService(int64_t nowCycles) {
 uint32_t DmaController::resolveMaxWritable(uint32_t dst) const {
 	if (dst == IO_VDP_FIFO) {
 		return VDP_STREAM_BUFFER_SIZE;
+	}
+	if (dst == IO_GX_GPU_GP0) {
+		return std::numeric_limits<uint32_t>::max();
 	}
 	if (const uint32_t vramRemaining = vramMappedRemainingBytes(dst)) {
 		return vramRemaining;

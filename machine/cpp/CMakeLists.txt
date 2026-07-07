@@ -565,6 +565,12 @@ if(BMSX_BUILD_TESTS)
 	target_link_libraries(bmsx_gx_gpu_tests PRIVATE bmsx_core)
 	add_test(NAME bmsx_gx_gpu_tests COMMAND bmsx_gx_gpu_tests)
 
+	add_executable(bmsx_dma_controller_tests
+		${CMAKE_CURRENT_SOURCE_DIR}/../../tests/cpp/dma_controller_test.cpp
+	)
+	target_link_libraries(bmsx_dma_controller_tests PRIVATE bmsx_core)
+	add_test(NAME bmsx_dma_controller_tests COMMAND bmsx_dma_controller_tests)
+
 	add_executable(bmsx_vdp_ingress_tests
 		${CMAKE_CURRENT_SOURCE_DIR}/../../tests/cpp/vdp_ingress_test.cpp
 	)

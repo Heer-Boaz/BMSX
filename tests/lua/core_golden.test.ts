@@ -296,12 +296,14 @@ test('core golden: runtime VBlank end publishes scanout at the new frame origin'
 	const memory = new Memory({ systemRom: new Uint8Array(), cartRom: new Uint8Array(0) });
 	const scheduler = new DeviceScheduler(new CPU(memory));
 	const scanoutCalls: Array<{ active: boolean; cyclesIntoFrame: number }> = [];
+	const gxScanoutCalls: Array<{ active: boolean; cyclesIntoFrame: number; cyclesPerFrame: number; totalScanlines: number }> = [];
 	const inputSampleEdges: Array<{ currentTimeMs: number; nowCycles: number }> = [];
 	let raisedIrq = 0;
 	const runtime = {
 		timing: {
 			cpuHz: 5000,
 			cycleBudgetPerFrame: 100,
+			totalScanlines: 10,
 			dmaBytesPerSecIso: 0,
 			dmaBytesPerSecBulk: 0,
 			imgDecBytesPerSec: 0,
@@ -329,6 +331,11 @@ test('core golden: runtime VBlank end publishes scanout at the new frame origin'
 					scanoutCalls.push({ active, cyclesIntoFrame });
 				},
 			},
+			gxGpu: {
+				setScanoutTiming(active: boolean, cyclesIntoFrame: number, cyclesPerFrame: number, totalScanlines: number) {
+					gxScanoutCalls.push({ active, cyclesIntoFrame, cyclesPerFrame, totalScanlines });
+				},
+			},
 			refreshDeviceTimings() { },
 		},
 		frameLoop: {
@@ -346,18 +353,23 @@ test('core golden: runtime VBlank end publishes scanout at the new frame origin'
 	assert.equal(raisedIrq, IRQ_VBLANK);
 	assert.deepEqual(inputSampleEdges[0], { currentTimeMs: 16, nowCycles: 80 });
 	assert.deepEqual(scanoutCalls[0], { active: true, cyclesIntoFrame: 80 });
+	assert.deepEqual(gxScanoutCalls[0], { active: true, cyclesIntoFrame: 80, cyclesPerFrame: 100, totalScanlines: 10 });
 
 	scheduler.setNowCycles(100);
 	vblank.handleEndTimer();
 	assert.deepEqual(scanoutCalls[1], { active: false, cyclesIntoFrame: 0 });
+	assert.deepEqual(gxScanoutCalls[1], { active: false, cyclesIntoFrame: 0, cyclesPerFrame: 100, totalScanlines: 10 });
 
 	scanoutCalls.length = 0;
+	gxScanoutCalls.length = 0;
 	scheduler.setNowCycles(0);
 	vblank.setVblankCycles(100);
 	assert.deepEqual(scanoutCalls[0], { active: true, cyclesIntoFrame: 0 });
+	assert.deepEqual(gxScanoutCalls[0], { active: true, cyclesIntoFrame: 0, cyclesPerFrame: 100, totalScanlines: 10 });
 	scheduler.setNowCycles(100);
 	vblank.handleEndTimer();
 	assert.deepEqual(scanoutCalls[1], { active: true, cyclesIntoFrame: 0 });
+	assert.deepEqual(gxScanoutCalls[1], { active: true, cyclesIntoFrame: 0, cyclesPerFrame: 100, totalScanlines: 10 });
 });
 
 test('core golden: texture keys use the canonical direct string format', () => {

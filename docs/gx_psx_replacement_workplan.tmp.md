@@ -133,6 +133,8 @@ and ask before coding.
 - [ ] Complete GPUSTAT details and timing-visible bits against references.
 - [ ] Complete GP0/GP1 command decode edge cases and command-buffer ordering.
 - [ ] DMA interaction behavior beyond the currently tested register/status paths.
+  - [x] RAM-to-GP0 DMA word streams feed the memory-mapped GX-GPU GP0 command
+    port in TS and C++.
 
 ### 3. Raster and VRAM behavior
 
