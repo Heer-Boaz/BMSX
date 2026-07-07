@@ -7,6 +7,8 @@
 #include "render/backend/backend.h"
 #include "render/backend/pass/library.h"
 #include "render/backend/software/gx_gpu.h"
+#include "render/backend/software/gx_gpu_commands.h"
+#include "render/backend/software/gx_gpu_vram.h"
 
 #include <array>
 #include <cstdint>
@@ -918,6 +920,112 @@ void testSoftwareScanoutConsumesTexturedPrimitives() {
 	requireArgbPixel(framebuffer, 51u, 12u, 0xff00ff00u, "GX-GPU software scanout direct16 textured polygon green pixel");
 }
 
+void testSoftwareCommandsPreserveTextureMaskBlendAndMaskTestStoreSemantics() {
+	bmsx::GxGpuCommandBuffer commandBuffer;
+	commandBuffer.reset();
+	pushSoftwareCommand(
+		commandBuffer,
+		std::array<uint32_t, 5>{
+			bmsx::GX_GPU_GP0_CPU_TO_VRAM_FIRST << 24u,
+			64u,
+			(1u << 16u) | 3u,
+			0x0000801fu,
+			0x00007c00u,
+		},
+		5u,
+		bmsx::GX_GPU_COMMAND_UPLOAD_CPU_TO_VRAM,
+		bmsx::GX_GPU_GP0_CPU_TO_VRAM_FIRST);
+	pushSoftwareCommand(
+		commandBuffer,
+		std::array<uint32_t, 3>{
+			(bmsx::GX_GPU_GP0_RECTANGLE_FIRST << 24u) | 0x00ff00u,
+			(20u << 16u) | 10u,
+			(1u << 16u) | 4u,
+		},
+		3u,
+		bmsx::GX_GPU_COMMAND_DRAW_RECTANGLE,
+		bmsx::GX_GPU_GP0_RECTANGLE_FIRST);
+
+	constexpr uint8_t rawTexturedSemiRectangleOpcode = bmsx::GX_GPU_GP0_RECTANGLE_FIRST | bmsx::GX_GPU_GP0_RENDER_TEXTURE_BIT | 0x03u;
+	constexpr uint32_t direct16PageWord = (bmsx::GX_GPU_TEXTURE_MODE_DIRECT16 << 7u) | 1u;
+	pushSoftwareCommand(
+		commandBuffer,
+		std::array<uint32_t, 4>{
+			(rawTexturedSemiRectangleOpcode << 24u) | 0x808080u,
+			(20u << 16u) | 10u,
+			0u,
+			(1u << 16u) | 1u,
+		},
+		4u,
+		bmsx::GX_GPU_COMMAND_DRAW_RECTANGLE,
+		rawTexturedSemiRectangleOpcode,
+		direct16PageWord);
+	pushSoftwareCommand(
+		commandBuffer,
+		std::array<uint32_t, 4>{
+			(rawTexturedSemiRectangleOpcode << 24u) | 0x808080u,
+			(20u << 16u) | 11u,
+			1u,
+			(1u << 16u) | 1u,
+		},
+		4u,
+		bmsx::GX_GPU_COMMAND_DRAW_RECTANGLE,
+		rawTexturedSemiRectangleOpcode,
+		direct16PageWord);
+	pushSoftwareCommand(
+		commandBuffer,
+		std::array<uint32_t, 4>{
+			(rawTexturedSemiRectangleOpcode << 24u) | 0x808080u,
+			(20u << 16u) | 12u,
+			2u,
+			(1u << 16u) | 1u,
+		},
+		4u,
+		bmsx::GX_GPU_COMMAND_DRAW_RECTANGLE,
+		rawTexturedSemiRectangleOpcode,
+		direct16PageWord);
+	pushSoftwareCommand(
+		commandBuffer,
+		std::array<uint32_t, 3>{
+			(bmsx::GX_GPU_GP0_RECTANGLE_FIRST << 24u) | 0x0000ffu,
+			(20u << 16u) | 13u,
+			(1u << 16u) | 1u,
+		},
+		3u,
+		bmsx::GX_GPU_COMMAND_DRAW_RECTANGLE,
+		bmsx::GX_GPU_GP0_RECTANGLE_FIRST,
+		0u,
+		0u,
+		0u,
+		GX_GPU_SOFTWARE_FULL_DRAWING_AREA_BOTTOM_RIGHT_WORD,
+		0u,
+		1u);
+	pushSoftwareCommand(
+		commandBuffer,
+		std::array<uint32_t, 3>{
+			(bmsx::GX_GPU_GP0_RECTANGLE_FIRST << 24u) | 0x00ff00u,
+			(20u << 16u) | 13u,
+			(1u << 16u) | 1u,
+		},
+		3u,
+		bmsx::GX_GPU_COMMAND_DRAW_RECTANGLE,
+		bmsx::GX_GPU_GP0_RECTANGLE_FIRST,
+		0u,
+		0u,
+		0u,
+		GX_GPU_SOFTWARE_FULL_DRAWING_AREA_BOTTOM_RIGHT_WORD,
+		0u,
+		2u);
+
+	bmsx::resetGxGpuSoftwareVram();
+	bmsx::executeGxGpuSoftwareCommands(commandBuffer, 0u);
+
+	require(bmsx::g_gxGpuSoftwareVram[bmsx::gxGpuSoftwareVramIndex(10, 20)] == 0x81efu, "GX-GPU software textured semi-transparent pixel blends and preserves texture mask bit");
+	require(bmsx::g_gxGpuSoftwareVram[bmsx::gxGpuSoftwareVramIndex(11, 20)] == 0x03e0u, "GX-GPU software zero texture pixel does not write");
+	require(bmsx::g_gxGpuSoftwareVram[bmsx::gxGpuSoftwareVramIndex(12, 20)] == 0x7c00u, "GX-GPU software unmasked textured semi-transparent pixel stores without blending");
+	require(bmsx::g_gxGpuSoftwareVram[bmsx::gxGpuSoftwareVramIndex(13, 20)] == 0x801fu, "GX-GPU software mask-test blocks writes over masked VRAM");
+}
+
 void testMmioGp0Gp1() {
 	GpuHarness harness;
 	bmsx::Memory& memory = harness.memory;
@@ -952,6 +1060,7 @@ int main() {
 	testSoftwareScanoutConsumesTransfersAndFill();
 	testSoftwareScanoutConsumesSolidPrimitives();
 	testSoftwareScanoutConsumesTexturedPrimitives();
+	testSoftwareCommandsPreserveTextureMaskBlendAndMaskTestStoreSemantics();
 	testMmioGp0Gp1();
 	return 0;
 }

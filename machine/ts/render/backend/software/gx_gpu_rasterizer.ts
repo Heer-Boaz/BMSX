@@ -58,7 +58,7 @@ function colorB8(colorWord: number): number {
 }
 
 function textureWindowCoord(coord: number, andMask: number, orMask: number): number {
-	return (coord & andMask) + orMask;
+	return (coord & andMask) | orMask;
 }
 
 function absI32(value: number): number {

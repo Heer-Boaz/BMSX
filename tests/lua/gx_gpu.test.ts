@@ -150,6 +150,12 @@ import { CPU } from '../../machine/ts/machine/cpu/cpu';
 import { DeviceScheduler } from '../../machine/ts/machine/scheduler/device';
 import { PSX_GPU_DISPLAY_MODE_PAL_WORD } from '../../machine/ts/machine/model_registry';
 import { renderGxGpuSoftwareFrame } from '../../machine/ts/render/backend/software/gx_gpu';
+import { executeGxGpuSoftwareCommands } from '../../machine/ts/render/backend/software/gx_gpu_commands';
+import {
+	gxGpuSoftwareVram,
+	gxGpuSoftwareVramIndex,
+	resetGxGpuSoftwareVram,
+} from '../../machine/ts/render/backend/software/gx_gpu_vram';
 
 function createGpu(): { memory: Memory; cpu: CPU; scheduler: DeviceScheduler; gpu: GxGpu } {
 	const memory = new Memory({ systemRom: new Uint8Array(0), cartRom: new Uint8Array(0) });
@@ -946,6 +952,62 @@ test('GX-GPU software scanout consumes textured primitives', () => {
 	assertRgbaPixel(pixels, 47, 10, 255, 255, 0);
 	assertRgbaPixel(pixels, 50, 12, 255, 0, 0);
 	assertRgbaPixel(pixels, 51, 12, 0, 255, 0);
+});
+
+test('GX-GPU software commands preserve texture mask, blend, and mask-test store semantics', () => {
+	const commandBuffer = new GxGpuCommandBuffer();
+	commandBuffer.reset();
+	pushSoftwareCommand(commandBuffer, new Uint32Array([
+		GX_GPU_GP0_CPU_TO_VRAM_FIRST << 24,
+		64,
+		(1 << 16) | 3,
+		0x0000801f,
+		0x00007c00,
+	]), GX_GPU_COMMAND_UPLOAD_CPU_TO_VRAM, GX_GPU_GP0_CPU_TO_VRAM_FIRST);
+	pushSoftwareCommand(commandBuffer, new Uint32Array([
+		((GX_GPU_GP0_RECTANGLE_FIRST << 24) | 0x00ff00) >>> 0,
+		(20 << 16) | 10,
+		(1 << 16) | 4,
+	]), GX_GPU_COMMAND_DRAW_RECTANGLE, GX_GPU_GP0_RECTANGLE_FIRST);
+
+	const rawTexturedSemiRectangleOpcode = GX_GPU_GP0_RECTANGLE_FIRST | GX_GPU_GP0_RENDER_TEXTURE_BIT | 0x03;
+	const direct16PageWord = (GX_GPU_TEXTURE_MODE_DIRECT16 << 7) | 1;
+	pushSoftwareCommand(commandBuffer, new Uint32Array([
+		((rawTexturedSemiRectangleOpcode << 24) | 0x808080) >>> 0,
+		(20 << 16) | 10,
+		0,
+		(1 << 16) | 1,
+	]), GX_GPU_COMMAND_DRAW_RECTANGLE, rawTexturedSemiRectangleOpcode, direct16PageWord);
+	pushSoftwareCommand(commandBuffer, new Uint32Array([
+		((rawTexturedSemiRectangleOpcode << 24) | 0x808080) >>> 0,
+		(20 << 16) | 11,
+		1,
+		(1 << 16) | 1,
+	]), GX_GPU_COMMAND_DRAW_RECTANGLE, rawTexturedSemiRectangleOpcode, direct16PageWord);
+	pushSoftwareCommand(commandBuffer, new Uint32Array([
+		((rawTexturedSemiRectangleOpcode << 24) | 0x808080) >>> 0,
+		(20 << 16) | 12,
+		2,
+		(1 << 16) | 1,
+	]), GX_GPU_COMMAND_DRAW_RECTANGLE, rawTexturedSemiRectangleOpcode, direct16PageWord);
+	pushSoftwareCommand(commandBuffer, new Uint32Array([
+		((GX_GPU_GP0_RECTANGLE_FIRST << 24) | 0x0000ff) >>> 0,
+		(20 << 16) | 13,
+		(1 << 16) | 1,
+	]), GX_GPU_COMMAND_DRAW_RECTANGLE, GX_GPU_GP0_RECTANGLE_FIRST, 0, 0, 0, GX_GPU_SOFTWARE_FULL_DRAWING_AREA_BOTTOM_RIGHT_WORD, 0, 1);
+	pushSoftwareCommand(commandBuffer, new Uint32Array([
+		((GX_GPU_GP0_RECTANGLE_FIRST << 24) | 0x00ff00) >>> 0,
+		(20 << 16) | 13,
+		(1 << 16) | 1,
+	]), GX_GPU_COMMAND_DRAW_RECTANGLE, GX_GPU_GP0_RECTANGLE_FIRST, 0, 0, 0, GX_GPU_SOFTWARE_FULL_DRAWING_AREA_BOTTOM_RIGHT_WORD, 0, 2);
+
+	resetGxGpuSoftwareVram();
+	executeGxGpuSoftwareCommands(commandBuffer, 0);
+
+	assert.equal(gxGpuSoftwareVram[gxGpuSoftwareVramIndex(10, 20)], 0x81ef);
+	assert.equal(gxGpuSoftwareVram[gxGpuSoftwareVramIndex(11, 20)], 0x03e0);
+	assert.equal(gxGpuSoftwareVram[gxGpuSoftwareVramIndex(12, 20)], 0x7c00);
+	assert.equal(gxGpuSoftwareVram[gxGpuSoftwareVramIndex(13, 20)], 0x801f);
 });
 
 test('GX-GPU MMIO uses PSX GP0 data and GP1 status addresses', () => {

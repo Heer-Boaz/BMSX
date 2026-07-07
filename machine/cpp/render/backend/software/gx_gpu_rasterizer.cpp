@@ -33,7 +33,7 @@ inline u32 colorB8(u32 colorWord) {
 }
 
 inline u32 textureWindowCoord(i32 coord, u32 andMask, u32 orMask) {
-	return (static_cast<u32>(coord) & andMask) + orMask;
+	return (static_cast<u32>(coord) & andMask) | orMask;
 }
 
 inline u32 sampleGxGpuSoftwareTextureWord(
