@@ -13,6 +13,7 @@ import {
 	GX_GPU_INTERLACED_RENDER_ACTIVE_LINE_LSB,
 	GX_GPU_INTERLACED_RENDER_ENABLE,
 	GX_GPU_TEXTURE_MODE_DIRECT16,
+	GX_GPU_TEXTURE_MODE_PALETTE8,
 	gxGpuCommandDrawsTexture,
 	gxGpuCommandRawTextureEnabled,
 	gxGpuCommandSemiTransparencyEnabled,
@@ -1008,6 +1009,58 @@ test('GX-GPU software commands preserve texture mask, blend, and mask-test store
 	assert.equal(gxGpuSoftwareVram[gxGpuSoftwareVramIndex(11, 20)], 0x03e0);
 	assert.equal(gxGpuSoftwareVram[gxGpuSoftwareVramIndex(12, 20)], 0x7c00);
 	assert.equal(gxGpuSoftwareVram[gxGpuSoftwareVramIndex(13, 20)], 0x801f);
+});
+
+test('GX-GPU software commands sample palette8, rectangle flip, and dithered modulation', () => {
+	const commandBuffer = new GxGpuCommandBuffer();
+	commandBuffer.reset();
+	pushSoftwareCommand(commandBuffer, new Uint32Array([
+		GX_GPU_GP0_CPU_TO_VRAM_FIRST << 24,
+		(2 << 16) | 64,
+		(1 << 16) | 1,
+		0x00000201,
+	]), GX_GPU_COMMAND_UPLOAD_CPU_TO_VRAM, GX_GPU_GP0_CPU_TO_VRAM_FIRST);
+	pushSoftwareCommand(commandBuffer, new Uint32Array([
+		GX_GPU_GP0_CPU_TO_VRAM_FIRST << 24,
+		(21 << 16) | 16,
+		(1 << 16) | 3,
+		0x03e00000,
+		0x00007c00,
+	]), GX_GPU_COMMAND_UPLOAD_CPU_TO_VRAM, GX_GPU_GP0_CPU_TO_VRAM_FIRST);
+	pushSoftwareCommand(commandBuffer, new Uint32Array([
+		GX_GPU_GP0_CPU_TO_VRAM_FIRST << 24,
+		(3 << 16) | 64,
+		(1 << 16) | 1,
+		0x00000008,
+	]), GX_GPU_COMMAND_UPLOAD_CPU_TO_VRAM, GX_GPU_GP0_CPU_TO_VRAM_FIRST);
+
+	const rawTexturedRectangleOpcode = GX_GPU_GP0_RECTANGLE_FIRST | GX_GPU_GP0_RENDER_TEXTURE_BIT | 0x01;
+	const palette8FlipPageWord = (GX_GPU_TEXTURE_MODE_PALETTE8 << 7) | GX_GPU_DRAW_MODE_TEXTURE_RECTANGLE_X_FLIP | 1;
+	pushSoftwareCommand(commandBuffer, new Uint32Array([
+		((rawTexturedRectangleOpcode << 24) | 0x808080) >>> 0,
+		(20 << 16) | 30,
+		(0x0541 << 16) | (2 << 8) | 1,
+		(1 << 16) | 2,
+	]), GX_GPU_COMMAND_DRAW_RECTANGLE, rawTexturedRectangleOpcode, palette8FlipPageWord);
+
+	const texturedPolygonOpcode = GX_GPU_GP0_POLYGON_FIRST | GX_GPU_GP0_RENDER_TEXTURE_BIT;
+	const ditheredDirect16PageWord = (GX_GPU_TEXTURE_MODE_DIRECT16 << 7) | GX_GPU_DRAW_MODE_DITHER_ENABLED | 1;
+	pushSoftwareCommand(commandBuffer, new Uint32Array([
+		((texturedPolygonOpcode << 24) | 0xffffff) >>> 0,
+		(40 << 16) | 20,
+		3 << 8,
+		(40 << 16) | 30,
+		3 << 8,
+		(50 << 16) | 20,
+		3 << 8,
+	]), GX_GPU_COMMAND_DRAW_POLYGON, texturedPolygonOpcode, ditheredDirect16PageWord);
+
+	resetGxGpuSoftwareVram();
+	executeGxGpuSoftwareCommands(commandBuffer, 0);
+
+	assert.equal(gxGpuSoftwareVram[gxGpuSoftwareVramIndex(30, 20)], 0x7c00);
+	assert.equal(gxGpuSoftwareVram[gxGpuSoftwareVramIndex(31, 20)], 0x03e0);
+	assert.equal(gxGpuSoftwareVram[gxGpuSoftwareVramIndex(22, 41)], 0x0010);
 });
 
 test('GX-GPU MMIO uses PSX GP0 data and GP1 status addresses', () => {

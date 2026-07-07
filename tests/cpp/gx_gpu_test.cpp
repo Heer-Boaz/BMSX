@@ -1026,6 +1026,85 @@ void testSoftwareCommandsPreserveTextureMaskBlendAndMaskTestStoreSemantics() {
 	require(bmsx::g_gxGpuSoftwareVram[bmsx::gxGpuSoftwareVramIndex(13, 20)] == 0x801fu, "GX-GPU software mask-test blocks writes over masked VRAM");
 }
 
+void testSoftwareCommandsSamplePalette8RectangleFlipAndDitheredModulation() {
+	bmsx::GxGpuCommandBuffer commandBuffer;
+	commandBuffer.reset();
+	pushSoftwareCommand(
+		commandBuffer,
+		std::array<uint32_t, 4>{
+			bmsx::GX_GPU_GP0_CPU_TO_VRAM_FIRST << 24u,
+			(2u << 16u) | 64u,
+			(1u << 16u) | 1u,
+			0x00000201u,
+		},
+		4u,
+		bmsx::GX_GPU_COMMAND_UPLOAD_CPU_TO_VRAM,
+		bmsx::GX_GPU_GP0_CPU_TO_VRAM_FIRST);
+	pushSoftwareCommand(
+		commandBuffer,
+		std::array<uint32_t, 5>{
+			bmsx::GX_GPU_GP0_CPU_TO_VRAM_FIRST << 24u,
+			(21u << 16u) | 16u,
+			(1u << 16u) | 3u,
+			0x03e00000u,
+			0x00007c00u,
+		},
+		5u,
+		bmsx::GX_GPU_COMMAND_UPLOAD_CPU_TO_VRAM,
+		bmsx::GX_GPU_GP0_CPU_TO_VRAM_FIRST);
+	pushSoftwareCommand(
+		commandBuffer,
+		std::array<uint32_t, 4>{
+			bmsx::GX_GPU_GP0_CPU_TO_VRAM_FIRST << 24u,
+			(3u << 16u) | 64u,
+			(1u << 16u) | 1u,
+			0x00000008u,
+		},
+		4u,
+		bmsx::GX_GPU_COMMAND_UPLOAD_CPU_TO_VRAM,
+		bmsx::GX_GPU_GP0_CPU_TO_VRAM_FIRST);
+
+	constexpr uint8_t rawTexturedRectangleOpcode = bmsx::GX_GPU_GP0_RECTANGLE_FIRST | bmsx::GX_GPU_GP0_RENDER_TEXTURE_BIT | 0x01u;
+	constexpr uint32_t palette8FlipPageWord = (bmsx::GX_GPU_TEXTURE_MODE_PALETTE8 << 7u) | bmsx::GX_GPU_DRAW_MODE_TEXTURE_RECTANGLE_X_FLIP | 1u;
+	pushSoftwareCommand(
+		commandBuffer,
+		std::array<uint32_t, 4>{
+			(rawTexturedRectangleOpcode << 24u) | 0x808080u,
+			(20u << 16u) | 30u,
+			(0x0541u << 16u) | (2u << 8u) | 1u,
+			(1u << 16u) | 2u,
+		},
+		4u,
+		bmsx::GX_GPU_COMMAND_DRAW_RECTANGLE,
+		rawTexturedRectangleOpcode,
+		palette8FlipPageWord);
+
+	constexpr uint8_t texturedPolygonOpcode = bmsx::GX_GPU_GP0_POLYGON_FIRST | bmsx::GX_GPU_GP0_RENDER_TEXTURE_BIT;
+	constexpr uint32_t ditheredDirect16PageWord = (bmsx::GX_GPU_TEXTURE_MODE_DIRECT16 << 7u) | bmsx::GX_GPU_DRAW_MODE_DITHER_ENABLED | 1u;
+	pushSoftwareCommand(
+		commandBuffer,
+		std::array<uint32_t, 7>{
+			(texturedPolygonOpcode << 24u) | 0xffffffu,
+			(40u << 16u) | 20u,
+			3u << 8u,
+			(40u << 16u) | 30u,
+			3u << 8u,
+			(50u << 16u) | 20u,
+			3u << 8u,
+		},
+		7u,
+		bmsx::GX_GPU_COMMAND_DRAW_POLYGON,
+		texturedPolygonOpcode,
+		ditheredDirect16PageWord);
+
+	bmsx::resetGxGpuSoftwareVram();
+	bmsx::executeGxGpuSoftwareCommands(commandBuffer, 0u);
+
+	require(bmsx::g_gxGpuSoftwareVram[bmsx::gxGpuSoftwareVramIndex(30, 20)] == 0x7c00u, "GX-GPU software palette8 flipped rectangle samples high byte CLUT entry first");
+	require(bmsx::g_gxGpuSoftwareVram[bmsx::gxGpuSoftwareVramIndex(31, 20)] == 0x03e0u, "GX-GPU software palette8 flipped rectangle samples low byte CLUT entry second");
+	require(bmsx::g_gxGpuSoftwareVram[bmsx::gxGpuSoftwareVramIndex(22, 41)] == 0x0010u, "GX-GPU software dithered textured polygon modulates with screen-space dither");
+}
+
 void testMmioGp0Gp1() {
 	GpuHarness harness;
 	bmsx::Memory& memory = harness.memory;
@@ -1061,6 +1140,7 @@ int main() {
 	testSoftwareScanoutConsumesSolidPrimitives();
 	testSoftwareScanoutConsumesTexturedPrimitives();
 	testSoftwareCommandsPreserveTextureMaskBlendAndMaskTestStoreSemantics();
+	testSoftwareCommandsSamplePalette8RectangleFlipAndDitheredModulation();
 	testMmioGp0Gp1();
 	return 0;
 }
