@@ -52,6 +52,13 @@ local argb_to_gp0_rgb<const> = function(color)
 	return ((color & 0x00ff0000) >> 16) | (color & 0x0000ff00) | ((color & 0x000000ff) << 16)
 end
 
+local argb_to_gp0_texture_rgb<const> = function(color)
+	local alpha<const> = (color >> 24) & 0x000000ff
+	return ((((color >> 16) & 0x000000ff) * alpha) // 255)
+		| (((((color >> 8) & 0x000000ff) * alpha) // 255) << 8)
+		| ((((color & 0x000000ff) * alpha) // 255) << 16)
+end
+
 local xy<const> = function(x, y)
 	return (round_to_nearest(x) & 0x0000ffff) | ((round_to_nearest(y) & 0x0000ffff) << 16)
 end
@@ -123,6 +130,13 @@ function gx_gpu.clear_color(color)
 end
 
 function gx_gpu.fill_rect_color(x0, y0, x1, y1, color)
+	if (color & 0xff000000) == 0 then
+		return
+	end
+	if (color & 0xff000000) ~= 0xff000000 then
+		gx_gpu.fill_rect_semitrans_color(x0, y0, x1, y1, color)
+		return
+	end
 	*gp0 = gp0_draw_rectangle | argb_to_gp0_rgb(color)
 	*gp0 = xy(x0, y0)
 	*gp0 = wh(x1 - x0, y1 - y0)
@@ -187,6 +201,9 @@ function gx_gpu.upload_rgba8888_to_direct16_stride(source_addr, source_x, source
 end
 
 function gx_gpu.draw_direct16_textured_rect_color(source_x, source_y, x, y, width, height, color)
+	if (color & 0xff000000) == 0 then
+		return
+	end
 	local remaining_h = height
 	local draw_source_y = source_y
 	local draw_y = y
@@ -207,7 +224,7 @@ function gx_gpu.draw_direct16_textured_rect_color(source_x, source_y, x, y, widt
 			if color == 0xffffffff then
 				*gp0 = gp0_draw_raw_textured_rectangle | 0x00808080
 			else
-				*gp0 = gp0_draw_textured_rectangle | argb_to_gp0_rgb(color)
+				*gp0 = gp0_draw_textured_rectangle | argb_to_gp0_texture_rgb(color)
 			end
 			*gp0 = xy(draw_x, draw_y)
 			*gp0 = (draw_source_x & 0x000000ff) | ((draw_source_y & 0x000000ff) << 8)
@@ -233,12 +250,15 @@ function gx_gpu.draw_direct16_textured_quad_color(
 	x2, y2,
 	x3, y3,
 	color)
+	if (color & 0xff000000) == 0 then
+		return
+	end
 	local draw_mode<const> = draw_mode_for_texture_page(page_source_x, page_source_y)
 	*gp0 = gp0_draw_mode | draw_mode
 	if color == 0xffffffff then
 		*gp0 = gp0_draw_raw_textured_quad | 0x00808080
 	else
-		*gp0 = gp0_draw_textured_quad | argb_to_gp0_rgb(color)
+		*gp0 = gp0_draw_textured_quad | argb_to_gp0_texture_rgb(color)
 	end
 	*gp0 = xy(x0, y0)
 	*gp0 = uv(source_x0, source_y0)

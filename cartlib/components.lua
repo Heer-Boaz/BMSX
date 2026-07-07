@@ -6,8 +6,8 @@ local timeline_module<const> = require('cartlib/timeline/index')
 local timeline_dispatch<const> = require('cartlib/timeline/dispatch')
 local collision_profiles<const> = require('cartlib/collision_profiles')
 local font_module<const> = require('cartlib/font')
-local vdp_image<const> = require('system/vdp_image')
-local vdp_rpu_quads<const> = require('system/vdp_rpu_quads')
+local gx_image<const> = require('system/gx_image')
+local gx_gpu<const> = require('system/gx_gpu')
 local romdir<const> = require('system/romdir')
 local world_instance<const> = require('cartlib/world/index').instance
 local eventemitter<const> = eventemitter_module.eventemitter
@@ -695,7 +695,6 @@ function textcomponent:render_glyphs(x, y, z, glyphs)
 	local line_offsets<const> = self.line_offsets
 	local line_widths<const> = self.line_widths
 	local line_x_offsets<const> = self.line_x_offsets
-	local layer<const> = self.layer
 	local color<const> = self.color
 	for i = 1, #glyphs do
 		local line<const> = glyphs[i]
@@ -711,8 +710,7 @@ function textcomponent:render_glyphs(x, y, z, glyphs)
 			end
 			local cursor_x = line_x
 			font_module.for_each_glyph(self.font, line, function(glyph)
-				local rect<const> = vdp_image.rect(glyph.imgid)
-				vdp_rpu_quads.blit_source_color(rect.atlas_id, rect.u, rect.v, rect.w, rect.h, cursor_x, line_y, z, layer, 1, 1, 0, color)
+				gx_image.blit_img_color(glyph.imgid, cursor_x, line_y, color)
 				cursor_x = cursor_x + glyph.advance
 			end)
 		end
@@ -729,7 +727,6 @@ function textcomponent:render(x, y, z, glyphs)
 		local line_offsets<const> = self.line_offsets
 		local line_widths<const> = self.line_widths
 		local line_x_offsets<const> = self.line_x_offsets
-		local layer<const> = self.layer
 		for i = 1, #glyphs do
 			local line<const> = glyphs[i]
 			local line_y<const> = line_offsets ~= nil and (y + line_offsets[i]) or cursor_y
@@ -744,7 +741,7 @@ function textcomponent:render(x, y, z, glyphs)
 				end
 				local cursor_x = line_x
 				font_module.for_each_glyph(self.font, line, function(glyph)
-					vdp_rpu_quads.fill_rect_color(cursor_x, line_y, cursor_x + glyph.width, line_y + glyph.height, z - 1, layer, background_color)
+					gx_gpu.fill_rect_color(cursor_x, line_y, cursor_x + glyph.width, line_y + glyph.height, background_color)
 					cursor_x = cursor_x + glyph.advance
 				end)
 			end
@@ -857,7 +854,7 @@ function customvisualcomponent:submit_rect(rect)
 	if not rect.visible or rect.width <= 0 or rect.height <= 0 then
 		return
 	end
-	vdp_rpu_quads.fill_rect_color(rect.x, rect.y, rect.x + rect.width, rect.y + rect.height, rect.z, rect.layer, rect.color)
+	gx_gpu.fill_rect_color(rect.x, rect.y, rect.x + rect.width, rect.y + rect.height, rect.color)
 end
 
 -- function customvisualcomponent:submit_poly(desc)

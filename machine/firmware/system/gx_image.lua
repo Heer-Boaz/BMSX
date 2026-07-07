@@ -6,16 +6,40 @@ local gx_gpu<const> = require('system/gx_gpu')
 local gx_image<const> = {}
 local cache<const> = {}
 
+local system_atlas_id<const> = 254
+local system_texture_base_x<const> = 512
+local cart_texture_overflow_base_x<const> = 512
+local cart_texture_overflow_base_y<const> = 136
 local gpu_texture_base_y<const> = 256
-local gpu_texture_slice_width<const> = 1024
+local gpu_texture_slice_width<const> = 256
 local gpu_texture_page_span<const> = gx_gpu.texture_page_span
 
-local atlas_gpu_y<const> = function(atlas_meta, source_x, source_y)
-	return gpu_texture_base_y + ((source_x // gpu_texture_slice_width) * atlas_meta.height) + source_y
+local atlas_gpu_x<const> = function(rect, source_x, source_y)
+	if rect.atlas_id == system_atlas_id then
+		return system_texture_base_x + (((source_x >> 8) & 1) << 8) + (source_x & 0x000000ff)
+	end
+	if source_y >= gpu_texture_page_span then
+		return cart_texture_overflow_base_x + (((source_x >> 8) & 1) << 8) + (source_x & 0x000000ff)
+	end
+	return source_x & 0x000003ff
+end
+
+local atlas_gpu_y<const> = function(rect, source_x, source_y)
+	if rect.atlas_id == system_atlas_id then
+		return ((source_x >> 9) * rect.atlas_height) + source_y
+	end
+	if source_y >= gpu_texture_page_span then
+		return cart_texture_overflow_base_y + (((source_x >> 9) * (rect.atlas_height - gpu_texture_page_span)) + (source_y - gpu_texture_page_span))
+	end
+	return gpu_texture_base_y + source_y
 end
 
 local texture_page_remaining<const> = function(source_coord)
 	return gpu_texture_page_span - (source_coord & 0x000000ff)
+end
+
+local upload_atlas_chunk<const> = function(atlas_meta, source_x, source_y, target_x, target_y, width, height)
+	gx_gpu.upload_rgba8888_to_direct16_stride(atlas_meta.texture_addr, source_x, source_y, atlas_meta.width, target_x, target_y, width, height)
 end
 
 function gx_image.load_atlas(atlas_id)
@@ -28,15 +52,34 @@ function gx_image.upload_atlas(atlas_id)
 	local atlas<const> = romdir.atlas(atlas_id)
 	local atlas_meta<const> = atlas.imgmeta
 	local source_x = 0
-	local slice_index = 0
 	while source_x < atlas_meta.width do
-		local slice_width = atlas_meta.width - source_x
-		if slice_width > gpu_texture_slice_width then
-			slice_width = gpu_texture_slice_width
+		local chunk_width = atlas_meta.width - source_x
+		if chunk_width > gpu_texture_slice_width then
+			chunk_width = gpu_texture_slice_width
 		end
-		gx_gpu.upload_rgba8888_to_direct16_stride(atlas_meta.texture_addr, source_x, 0, atlas_meta.width, 0, gpu_texture_base_y + slice_index * atlas_meta.height, slice_width, atlas_meta.height)
+		if atlas_id == system_atlas_id then
+			upload_atlas_chunk(
+				atlas_meta,
+				source_x, 0,
+				system_texture_base_x + (((source_x >> 8) & 1) << 8),
+				(source_x >> 9) * atlas_meta.height,
+				chunk_width, atlas_meta.height)
+		else
+			local chunk_height = atlas_meta.height
+			if chunk_height > gpu_texture_page_span then
+				chunk_height = gpu_texture_page_span
+			end
+			upload_atlas_chunk(atlas_meta, source_x, 0, source_x & 0x000003ff, gpu_texture_base_y, chunk_width, chunk_height)
+			if atlas_meta.height > gpu_texture_page_span then
+				upload_atlas_chunk(
+					atlas_meta,
+					source_x, gpu_texture_page_span,
+					cart_texture_overflow_base_x + (((source_x >> 8) & 1) << 8),
+					cart_texture_overflow_base_y + ((source_x >> 9) * (atlas_meta.height - gpu_texture_page_span)),
+					chunk_width, atlas_meta.height - gpu_texture_page_span)
+			end
+		end
 		source_x = source_x + gpu_texture_slice_width
-		slice_index = slice_index + 1
 	end
 end
 
@@ -77,16 +120,29 @@ function gx_image.rect(imgid)
 end
 
 function gx_image.blit_img_color(imgid, x, y, color)
-	const rect<const> = gx_image.rect(imgid)
+	local rect<const> = gx_image.rect(imgid)
 	local remaining_w = rect.w
 	local source_x = rect.u
 	local target_x = x
 	while remaining_w > 0 do
-		local chunk_w = gpu_texture_slice_width - (source_x & 0x000003ff)
+		local chunk_w = texture_page_remaining(atlas_gpu_x(rect, source_x, rect.v))
 		if chunk_w > remaining_w then
 			chunk_w = remaining_w
 		end
-		gx_gpu.draw_direct16_textured_rect_color(source_x & 0x000003ff, atlas_gpu_y(rect, source_x, rect.v), target_x, y, chunk_w, rect.h, color)
+		local remaining_h = rect.h
+		local source_y = rect.v
+		local target_y = y
+		while remaining_h > 0 do
+			local gpu_source_y<const> = atlas_gpu_y(rect, source_x, source_y)
+			local chunk_h = texture_page_remaining(gpu_source_y)
+			if chunk_h > remaining_h then
+				chunk_h = remaining_h
+			end
+			gx_gpu.draw_direct16_textured_rect_color(atlas_gpu_x(rect, source_x, source_y), gpu_source_y, target_x, target_y, chunk_w, chunk_h, color)
+			remaining_h = remaining_h - chunk_h
+			source_y = source_y + chunk_h
+			target_y = target_y + chunk_h
+		end
 		remaining_w = remaining_w - chunk_w
 		source_x = source_x + chunk_w
 		target_x = target_x + chunk_w
@@ -117,12 +173,11 @@ function gx_image.blit_rect_affine_color(
 			source_x = source_x_end - chunk_w
 		else
 			source_x = rect.u + source_offset_x
-			chunk_w = texture_page_remaining(source_x)
+			chunk_w = texture_page_remaining(atlas_gpu_x(rect, source_x, rect.v))
 			if chunk_w > remaining_w then
 				chunk_w = remaining_w
 			end
 		end
-		local gpu_source_x<const> = source_x & 0x000003ff
 		local remaining_h = rect.h
 		local source_offset_y = 0
 		while remaining_h > 0 do
@@ -144,17 +199,18 @@ function gx_image.blit_rect_affine_color(
 					chunk_h = remaining_h
 				end
 			end
+			local gpu_source_x<const> = atlas_gpu_x(rect, source_x, source_y)
 			local gpu_source_y<const> = atlas_gpu_y(rect, source_x, source_y)
 			local u0 = gpu_source_x
-			local u1 = gpu_source_x + chunk_w
+			local u1 = gpu_source_x + chunk_w - 1
 			local v0 = gpu_source_y
-			local v1 = gpu_source_y + chunk_h
+			local v1 = gpu_source_y + chunk_h - 1
 			if (flip_flags & 1) ~= 0 then
-				u0 = gpu_source_x + chunk_w
+				u0 = gpu_source_x + chunk_w - 1
 				u1 = gpu_source_x
 			end
 			if (flip_flags & 2) ~= 0 then
-				v0 = gpu_source_y + chunk_h
+				v0 = gpu_source_y + chunk_h - 1
 				v1 = gpu_source_y
 			end
 			local chunk_x0<const> = source_offset_x * inv_w

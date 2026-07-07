@@ -59,8 +59,7 @@ local clear_map<const> = require('bios/util/clear_map')
 local collision2d<const> = require('cartlib/collision2d')
 local scratchrecordbatch<const> = require('bios/util/scratchrecordbatch')
 local world_instance<const> = require('cartlib/world/index').instance
-local vdp_image<const> = require('system/vdp_image')
-local vdp_rpu_quads<const> = require('system/vdp_rpu_quads')
+local gx_image<const> = require('system/gx_image')
 
 local tickgroup<const> = ecs.tickgroup
 local ecsystem<const> = ecs.ecsystem
@@ -511,7 +510,6 @@ function spriterendersystem:update()
 		local draw_offset<const> = sc.draw_offset
 		local x<const> = obj.x + offset.x + draw_offset.x
 		local y<const> = obj.y + offset.y + draw_offset.y
-		local z<const> = obj.z + offset.z + draw_offset.z
 		local flip_flags = 0
 		if sc.flip.flip_h then
 			flip_flags = flip_flags | 1
@@ -520,8 +518,14 @@ function spriterendersystem:update()
 			flip_flags = flip_flags | 2
 		end
 		local draw_scale<const> = sc.draw_scale
-		local rect<const> = vdp_image.rect(sc.imgid)
-		vdp_rpu_quads.blit_source_color(rect.atlas_id, rect.u, rect.v, rect.w, rect.h, x, y, z, sc.layer, sc.scale.x * draw_scale.x, sc.scale.y * draw_scale.y, flip_flags, sc.color)
+		local scale_x<const> = sc.scale.x * draw_scale.x
+		local scale_y<const> = sc.scale.y * draw_scale.y
+		if flip_flags == 0 and scale_x == 1 and scale_y == 1 then
+			gx_image.blit_img_color(sc.imgid, x, y, sc.color)
+			goto continue_sprite_render
+		end
+		local rect<const> = gx_image.rect(sc.imgid)
+		gx_image.blit_rect_affine_color(rect, x, y, rect.w * scale_x, 0.0, 0.0, rect.h * scale_y, flip_flags, sc.color)
 		::continue_sprite_render::
 	end
 end

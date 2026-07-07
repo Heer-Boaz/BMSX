@@ -101,8 +101,10 @@ test('GX image firmware maps decoded RGBA atlases into direct16 PSX texture page
 	const firmwareFontSource = readFileSync('machine/firmware/system/font.lua', 'utf8');
 	const cartlibFontSource = readFileSync('cartlib/font.lua', 'utf8');
 	assert.equal(gxImageSource.includes("require('system/gx_gpu')"), true);
+	assert.equal(gxImageSource.includes('system_atlas_id<const> = 254'), true);
+	assert.equal(gxImageSource.includes('system_texture_base_x<const> = 512'), true);
 	assert.equal(gxImageSource.includes('gpu_texture_base_y<const> = 256'), true);
-	assert.equal(gxImageSource.includes('gpu_texture_slice_width<const> = 1024'), true);
+	assert.equal(gxImageSource.includes('gpu_texture_slice_width<const> = 256'), true);
 	assert.equal(gxImageSource.includes('imgdec.start(atlas.addr, atlas.len, atlas_meta.texture_addr, atlas_meta.texture_len)'), true);
 	assert.equal(gxImageSource.includes('gx_gpu.upload_rgba8888_to_direct16_stride'), true);
 	assert.equal(gxImageSource.includes('gx_gpu.draw_direct16_textured_rect_color'), true);
@@ -246,4 +248,27 @@ test('Nemesis S cart migrates atlas upload and sprite draws to GX GPU', () => {
 	assert.equal(stageSource.includes('vdp_'), false);
 	assert.equal(playerSource.includes('gx_blit_img_color'), true);
 	assert.equal(playerSource.includes('vdp_'), false);
+});
+
+test('Pietsona 2025 cart loop and direct render calls use GX GPU atlases', () => {
+	const cartSource = readFileSync('carts/2025/cart.lua', 'utf8');
+	const combatSource = readFileSync('carts/2025/combat.lua', 'utf8');
+	const transitionSource = readFileSync('carts/2025/transition.lua', 'utf8');
+	assert.equal(cartSource.includes(`local irq_mask_register<const>: *word = 0x${IO_IRQ_MASK.toString(16).padStart(8, '0')}`), true);
+	assert.equal(cartSource.includes(`local input_control_register<const>: *word = 0x${IO_INP_CTRL.toString(16).padStart(8, '0')}`), true);
+	assert.equal(cartSource.includes('gx_reset_320x240_pal()'), true);
+	assert.equal(cartSource.includes('load_gx_atlas(254)'), true);
+	assert.equal(cartSource.includes('load_gx_atlas(gx_img_rect(story.title.bg).atlas_id)'), true);
+	assert.equal(cartSource.includes('gx_clear_color(0xff000000)'), true);
+	for (const source of [cartSource, combatSource, transitionSource]) {
+		assert.equal(source.includes('vdp_'), false);
+		assert.equal(source.includes('0x0800007c'), false);
+		assert.equal(source.includes('0x08000084'), false);
+		assert.equal(source.includes('vdp_stream_cursor'), false);
+		assert.equal(source.includes('vdp_stream_finish'), false);
+	}
+	assert.equal(combatSource.includes('gx_blit_img_affine_color'), true);
+	assert.equal(combatSource.includes('gx_draw_line_color'), true);
+	assert.equal(combatSource.includes('load_gx_atlas(gx_img_rect('), true);
+	assert.equal(transitionSource.includes('load_gx_atlas(gx_img_rect('), true);
 });

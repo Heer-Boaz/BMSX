@@ -114,12 +114,10 @@ local draw_combat_parallax_sprite<const> = function(obj, weight, offset_base_y)
 	if sc.flip.flip_v then
 		flip_flags = flip_flags | 2
 	end
-	vdp_blit_img_affine_color(
+	gx_blit_img_affine_color(
 		sc.imgid,
 		obj.x + offset.x + draw_offset.x,
 		obj.y + offset.y + draw_offset.y + (offset_base_y * weight),
-		obj.z + offset.z + draw_offset.z,
-		sc.layer,
 		obj.sx * scale.x * draw_scale.x * parallax_scale,
 		0.0,
 		0.0,
@@ -240,10 +238,8 @@ function combat.define_fsm()
 				local y0<const> = points[2]
 				local x1<const> = points[3]
 				local y1<const> = points[4]
-				local z<const> = frame.slash_z
 				local color<const> = frame.slash_color
-				local thickness<const> = frame.slash_thickness
-				vdp_draw_line_color(x0, y0, x1, y1, z, 0x00000000, color, thickness)
+				gx_draw_line_color(x0, y0, x1, y1, color)
 			end)
 			hide_combat_sprites()
 			return '/idle'
@@ -423,7 +419,7 @@ function combat.define_fsm()
 			self.combat_max_points = #node.rounds
 
 			local monster<const> = oget(combat_monster_id)
-			vdp_load_atlas(vdp_img_rect(node.monster_imgid).atlas_id)
+			load_gx_atlas(gx_img_rect(node.monster_imgid).atlas_id)
 			monster:gfx(node.monster_imgid)
 			monster.visible = false
 			monster.sprite_component.color = p3_white_color
@@ -930,7 +926,7 @@ function combat.define_fsm()
 			oget(text_choice_id):set_text({ 'ALL-OUT-ATTACK!!' }, { typed = false, snap = true })
 			self.choice_index = 1
 			oget(text_choice_id).highlight_jitter_enabled = true
-			vdp_load_atlas(vdp_img_rect('all_out').atlas_id)
+			load_gx_atlas(gx_img_rect('all_out').atlas_id)
 			local monster<const> = oget(combat_monster_id)
 			local maya_a<const> = oget(combat_maya_a_id)
 			local portrait<const> = oget(combat_all_out_id)
@@ -1016,7 +1012,7 @@ function combat.define_fsm()
 			self:disable_combat_parallax()
 			clear_texts(text_ids_all)
 			local all_out<const> = oget(combat_all_out_id)
-			vdp_load_atlas(vdp_img_rect('all_out').atlas_id)
+			load_gx_atlas(gx_img_rect('all_out').atlas_id)
 			all_out:gfx('all_out')
 			all_out.sprite_component.scale = { x = 1, y = 1 }
 			all_out.visible = true
@@ -1289,7 +1285,7 @@ function combat.define_fsm()
 			},
 		},
 		entering_state = function(self)
-			vdp_load_atlas(vdp_img_rect(self.combat_exit_target_bg).atlas_id)
+			load_gx_atlas(gx_img_rect(self.combat_exit_target_bg).atlas_id)
 			local bg<const> = show_background(self.combat_exit_target_bg)
 			bg.sprite_component.color = p3_black_color
 			self:play_timeline(combat_exit_fade_in_timeline_id, { rewind = true, snap_to_start = true, target = bg })

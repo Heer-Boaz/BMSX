@@ -1,15 +1,35 @@
-mem[0x08000084] = 0x00000002
 require('cartlib/prelude')
 require('globals')
 local story<const> = require('story')
 local start_node<const> = 'title'
 -- local start_node<const> = 'combat_wekker'
-local irq_mask_addr<const> = 0x0800010c
+local irq_mask_register<const>: *word = 0x0800010c
+local input_control_register<const>: *word = 0x08000194
 local irq_img_done<const> = 0x0004
 local irq_img_error<const> = 0x0008
 local irq_vblank<const> = 0x0010
 local irq_apu<const> = 0x0200
 local vblank_count = 0
+local gx_atlas_decode_generation = 0
+local gx_atlas_ready_generation = 0
+
+local wait_vblank<const> = function()
+	repeat
+		halt_until_irq
+	until vblank_count ~= 0
+	vblank_count = vblank_count - 1
+end
+
+function load_gx_atlas(atlas_id)
+	gx_atlas_decode_generation = gx_atlas_decode_generation + 1
+	local pending_generation<const> = gx_atlas_decode_generation
+	gx_load_atlas(atlas_id)
+	repeat
+		wait_vblank()
+		*input_control_register = 0x00000001
+	until gx_atlas_ready_generation == pending_generation
+	gx_upload_atlas(atlas_id)
+end
 
 local combat_module<const> = require('combat')
 local dialogue_module<const> = require('dialogue')
@@ -237,11 +257,16 @@ end
 
 function init()
 	on_irq(irq_img_done | irq_img_error | irq_vblank, function(_, flags)
+		if (flags & irq_img_done) ~= 0 then
+			gx_atlas_ready_generation = gx_atlas_decode_generation
+		end
 		if (flags & irq_vblank) ~= 0 then
 			vblank_count = vblank_count + 1
 		end
 	end)
-	mem[irq_mask_addr] = irq_img_done | irq_img_error | irq_vblank | irq_apu
+	*irq_mask_register = irq_img_done | irq_img_error | irq_vblank | irq_apu
+	gx_reset_320x240_pal()
+	gx_clear_color(0xff000000)
 	mem[0x08000008] = 2
 	combat_module.define_fsm()
 	build_director_fsm()
@@ -340,33 +365,17 @@ function new_game()
 	inst(director_def_id, { id = director_instance_id })
 end
 
-local wait_vblank<const> = function()
-	repeat
-		halt_until_irq
-	until vblank_count ~= 0
-	vblank_count = vblank_count - 1
-end
-
 init()
-vdp_load_atlas(vdp_img_rect(story.title.bg).atlas_id)
+load_gx_atlas(254)
+load_gx_atlas(gx_img_rect(story.title.bg).atlas_id)
 new_game()
-mem[0x08000194] = 0x00000001
+*input_control_register = 0x00000001
 while true do
 	wait_vblank()
 
 	update_world()
-	vdp_stream_cursor = 0x080c0000
+	gx_clear_color(0xff000000)
 	draw_world()
-	vdp_stream_finish()
-	do
-		local used_bytes<const> = vdp_stream_cursor - 0x080c0000
-		if used_bytes ~= 0 then
-			mem[0x08000110] = 0x080c0000
-			mem[0x08000114] = 0x0800007c
-			mem[0x08000118] = used_bytes
-			mem[0x0800011c] = 0x00000001
-		end
-	end
 
-	mem[0x08000194] = 0x00000001
+	*input_control_register = 0x00000001
 end

@@ -146,7 +146,7 @@ function transition.register_states(states)
 			local transition_text<const> = oget(text_transition_id)
 			self.transition_center_x = transition_text.centered_block_x
 			self.transition_target_bg = story[node.next].bg
-			vdp_load_atlas(vdp_img_rect(self.transition_target_bg).atlas_id)
+			load_gx_atlas(gx_img_rect(self.transition_target_bg).atlas_id)
 			transition_text.centered_block_x = screen_width
 			self.transition_needs_post_fade = false
 			local next_node<const> = story[node.next]
@@ -355,7 +355,7 @@ function transition.register_states(states)
 			else
 				self.fade_target_bg = next_node.bg
 			end
-			vdp_load_atlas(vdp_img_rect(self.fade_target_bg).atlas_id)
+			load_gx_atlas(gx_img_rect(self.fade_target_bg).atlas_id)
 			show_background(nil)
 			hide_transition_layers()
 			local overlay<const> = self.transition_visual.overlay
