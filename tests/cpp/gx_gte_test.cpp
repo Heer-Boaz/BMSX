@@ -599,6 +599,82 @@ void testRtpsIr3ClampsFromMac3RegisterValue() {
 	require(gte.readDataRegister(11u) == 0xffff8000u, "RTPS IR3 clamps from MAC3 register");
 }
 
+void testRawCop2RegisterEdges() {
+	GteHarness harness;
+	bmsx::GxGte& gte = harness.gte;
+
+	gte.writeDataRegister(12u, pack16(1u, 2u));
+	gte.writeDataRegister(13u, pack16(3u, 4u));
+	gte.writeDataRegister(14u, pack16(5u, 6u));
+	gte.writeDataRegister(15u, pack16(7u, 8u));
+	require(gte.readDataRegister(12u) == pack16(3u, 4u), "SXYP pushes SXY0");
+	require(gte.readDataRegister(13u) == pack16(5u, 6u), "SXYP pushes SXY1");
+	require(gte.readDataRegister(14u) == pack16(7u, 8u), "SXYP writes SXY2");
+	require(gte.readDataRegister(15u) == pack16(7u, 8u), "SXYP reads SXY2 mirror");
+
+	gte.writeDataRegister(28u, 31u | (1u << 5u) | (16u << 10u));
+	require(gte.readDataRegister(9u) == 0x0f80u, "IRGB writes IR1");
+	require(gte.readDataRegister(10u) == 0x0080u, "IRGB writes IR2");
+	require(gte.readDataRegister(11u) == 0x0800u, "IRGB writes IR3");
+	require(gte.readDataRegister(28u) == (31u | (1u << 5u) | (16u << 10u)), "IRGB read packs IR");
+	require(gte.readDataRegister(29u) == (31u | (1u << 5u) | (16u << 10u)), "ORGB read packs IR");
+
+	gte.writeDataRegister(9u, 0xf000u);
+	gte.writeDataRegister(10u, 0x2000u);
+	gte.writeDataRegister(11u, 0x0f80u);
+	require(gte.readDataRegister(28u) == ((31u << 5u) | (31u << 10u)), "IRGB read clamps RGB5");
+	require(gte.readDataRegister(29u) == ((31u << 5u) | (31u << 10u)), "ORGB read clamps RGB5");
+
+	gte.writeDataRegister(30u, 0x00000000u);
+	require(gte.readDataRegister(31u) == 32u, "LZCR counts zero word");
+	gte.writeDataRegister(30u, 0xffffffffu);
+	require(gte.readDataRegister(31u) == 32u, "LZCR counts one word");
+	gte.writeDataRegister(30u, 0x00f00000u);
+	require(gte.readDataRegister(31u) == 8u, "LZCR counts leading zero bits");
+	gte.writeDataRegister(30u, 0xff0fffffu);
+	require(gte.readDataRegister(31u) == 8u, "LZCR counts leading one bits");
+	require(gte.readControlRegister(31u) == 0u, "raw register edge FLAG");
+}
+
+void testRtpsUsesUnsignedHWithSignExtendedReadback() {
+	GteHarness harness;
+	bmsx::GxGte& gte = harness.gte;
+	setupIdentityProjection(gte);
+	gte.writeControlRegister(4u, 0x2000u);
+	gte.writeControlRegister(26u, 0xffffu);
+	gte.writeDataRegister(0u, pack16(1u, 0u));
+	gte.writeDataRegister(1u, 0x4000u);
+
+	require(gte.readControlRegister(26u) == 0xffffffffu, "H reads sign-extended");
+	require(gte.execute(GTE_SF | bmsx::GX_GTE_FN_RTPS) == bmsx::GX_GTE_CYCLES_RTPS, "RTPS unsigned H cycles");
+
+	require(gte.readDataRegister(14u) == pack16(161u, 120u), "RTPS unsigned H SXY2");
+	require(gte.readDataRegister(19u) == 0x8000u, "RTPS unsigned H SZ3");
+	require((gte.readControlRegister(31u) & bmsx::GX_GTE_FLAG_DIV_OVERFLOW) == 0u, "RTPS unsigned H does not divide-overflow");
+}
+
+void testRtptDepthCueUsesLastVertex() {
+	GteHarness harness;
+	bmsx::GxGte& gte = harness.gte;
+	setupIdentityProjection(gte);
+	gte.writeControlRegister(27u, 0x0080u);
+	gte.writeControlRegister(28u, 0u);
+	gte.writeDataRegister(0u, pack16(0u, 0u));
+	gte.writeDataRegister(1u, 256u);
+	gte.writeDataRegister(2u, pack16(0u, 0u));
+	gte.writeDataRegister(3u, 512u);
+	gte.writeDataRegister(4u, pack16(0u, 0u));
+	gte.writeDataRegister(5u, 1024u);
+
+	require(gte.execute(GTE_SF | bmsx::GX_GTE_FN_RTPT) == bmsx::GX_GTE_CYCLES_RTPT, "RTPT DQA/DQB cycles");
+
+	require(gte.readDataRegister(8u) == 0x0200u, "RTPT IR0 from last vertex");
+	require(gte.readDataRegister(17u) == 256u, "RTPT SZ1");
+	require(gte.readDataRegister(18u) == 512u, "RTPT SZ2");
+	require(gte.readDataRegister(19u) == 1024u, "RTPT SZ3");
+	require(gte.readControlRegister(31u) == 0u, "RTPT DQA/DQB FLAG");
+}
+
 void testUnknownFunctionCodeIsDeterministicNoop() {
 	GteHarness harness;
 	bmsx::GxGte& gte = harness.gte;
@@ -698,6 +774,9 @@ int main() {
 	testAvsz4();
 	testRtpsNarrowsMacResultToRegisterDatapath();
 	testRtpsIr3ClampsFromMac3RegisterValue();
+	testRawCop2RegisterEdges();
+	testRtpsUsesUnsignedHWithSignExtendedReadback();
+	testRtptDepthCueUsesLastVertex();
 	testUnknownFunctionCodeIsDeterministicNoop();
 	testOpcodeZeroIsNotRtpsAlias();
 	testSaveStatePreservesRawRegisterWords();

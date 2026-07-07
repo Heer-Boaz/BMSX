@@ -31,6 +31,7 @@ import {
 	GX_GTE_CYCLES_NCT,
 	GX_GTE_CYCLES_OP,
 	GX_GTE_CYCLES_RTPS,
+	GX_GTE_CYCLES_RTPT,
 	GX_GTE_CYCLES_SQR,
 	GX_GTE_FLAG_COLOR_R_SAT,
 	GX_GTE_FLAG_DIV_OVERFLOW,
@@ -56,6 +57,7 @@ import {
 	GX_GTE_FN_NCT,
 	GX_GTE_FN_OP,
 	GX_GTE_FN_RTPS,
+	GX_GTE_FN_RTPT,
 	GX_GTE_FN_SQR,
 	GxGte,
 } from '../../machine/ts/machine/devices/gx/gte';
@@ -607,6 +609,79 @@ test('GX-GTE RTPS clamps IR3 from the PSX 32-bit MAC3 register value', () => {
 
 	assert.equal(gte.readDataRegister(27), 0x80000000);
 	assert.equal(gte.readDataRegister(11), 0xffff8000);
+});
+
+test('GX-GTE raw COP2 register edges match PSX FIFO and RGB packing behavior', () => {
+	const { gte } = createGte();
+
+	gte.writeDataRegister(12, pack16(1, 2));
+	gte.writeDataRegister(13, pack16(3, 4));
+	gte.writeDataRegister(14, pack16(5, 6));
+	gte.writeDataRegister(15, pack16(7, 8));
+	assert.equal(gte.readDataRegister(12), pack16(3, 4));
+	assert.equal(gte.readDataRegister(13), pack16(5, 6));
+	assert.equal(gte.readDataRegister(14), pack16(7, 8));
+	assert.equal(gte.readDataRegister(15), pack16(7, 8));
+
+	gte.writeDataRegister(28, 31 | (1 << 5) | (16 << 10));
+	assert.equal(gte.readDataRegister(9), 0x0f80);
+	assert.equal(gte.readDataRegister(10), 0x0080);
+	assert.equal(gte.readDataRegister(11), 0x0800);
+	assert.equal(gte.readDataRegister(28), 31 | (1 << 5) | (16 << 10));
+	assert.equal(gte.readDataRegister(29), 31 | (1 << 5) | (16 << 10));
+
+	gte.writeDataRegister(9, 0xf000);
+	gte.writeDataRegister(10, 0x2000);
+	gte.writeDataRegister(11, 0x0f80);
+	assert.equal(gte.readDataRegister(28), (31 << 5) | (31 << 10));
+	assert.equal(gte.readDataRegister(29), (31 << 5) | (31 << 10));
+
+	gte.writeDataRegister(30, 0x00000000);
+	assert.equal(gte.readDataRegister(31), 32);
+	gte.writeDataRegister(30, 0xffffffff);
+	assert.equal(gte.readDataRegister(31), 32);
+	gte.writeDataRegister(30, 0x00f00000);
+	assert.equal(gte.readDataRegister(31), 8);
+	gte.writeDataRegister(30, 0xff0fffff);
+	assert.equal(gte.readDataRegister(31), 8);
+	assert.equal(gte.readControlRegister(31), 0);
+});
+
+test('GX-GTE RTPS uses H as unsigned 16-bit while exposing its PSX sign-extended readback', () => {
+	const { gte } = createGte();
+	setupIdentityProjection(gte);
+	gte.writeControlRegister(4, 0x2000);
+	gte.writeControlRegister(26, 0xffff);
+	gte.writeDataRegister(0, pack16(1, 0));
+	gte.writeDataRegister(1, 0x4000);
+
+	assert.equal(gte.readControlRegister(26), 0xffffffff);
+	assert.equal(gte.execute(GTE_SF | GX_GTE_FN_RTPS), GX_GTE_CYCLES_RTPS);
+
+	assert.equal(gte.readDataRegister(14), pack16(161, 120));
+	assert.equal(gte.readDataRegister(19), 0x8000);
+	assert.equal((gte.readControlRegister(31) & GX_GTE_FLAG_DIV_OVERFLOW) >>> 0, 0);
+});
+
+test('GX-GTE RTPT applies DQA/DQB depth cueing only on the last transformed vertex', () => {
+	const { gte } = createGte();
+	setupIdentityProjection(gte);
+	gte.writeControlRegister(27, 0x0080);
+	gte.writeControlRegister(28, 0);
+	gte.writeDataRegister(0, pack16(0, 0));
+	gte.writeDataRegister(1, 256);
+	gte.writeDataRegister(2, pack16(0, 0));
+	gte.writeDataRegister(3, 512);
+	gte.writeDataRegister(4, pack16(0, 0));
+	gte.writeDataRegister(5, 1024);
+
+	assert.equal(gte.execute(GTE_SF | GX_GTE_FN_RTPT), GX_GTE_CYCLES_RTPT);
+
+	assert.equal(gte.readDataRegister(8), 0x0200);
+	assert.equal(gte.readDataRegister(17), 256);
+	assert.equal(gte.readDataRegister(18), 512);
+	assert.equal(gte.readDataRegister(19), 1024);
+	assert.equal(gte.readControlRegister(31), 0);
 });
 
 test('GX-GTE opcode 0 is not an RTPS alias', () => {
