@@ -36,6 +36,7 @@ vdp_fill_rect_color = system.vdp_fill_rect_color
 vdp_draw_line_color = system.vdp_draw_line_color
 vdp_tile_run_sources = system.vdp_tile_run_sources
 gx_reset_320x240_pal = system.gx_reset_320x240_pal
+gx_reset_256x192_pal = system.gx_reset_256x192_pal
 gx_load_atlas = system.gx_load_atlas
 gx_upload_atlas = system.gx_upload_atlas
 gx_blit_img_color = system.gx_blit_img_color

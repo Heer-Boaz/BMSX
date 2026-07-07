@@ -183,6 +183,7 @@ type GxGpuWebGLState = {
 	scanoutUniformVerticalDisplayRangeWord: number;
 	processedCommandCount: number;
 	processedCommandSerial: number;
+	vramClearSerial: number;
 };
 
 let gxGpuWebGLState: GxGpuWebGLState;
@@ -319,6 +320,7 @@ function bootstrapGxGpuPass(backend: WebGLBackend): void {
 		scanoutUniformVerticalDisplayRangeWord: 0xffffffff,
 		processedCommandCount: 0,
 		processedCommandSerial: 0,
+		vramClearSerial: 0,
 	};
 	gl.bindFramebuffer(gl.FRAMEBUFFER, null);
 }
@@ -1616,8 +1618,12 @@ function scanoutGxGpuVram(backend: WebGLBackend, gl: WebGL2RenderingContext, fbo
 
 function renderGxGpuPass(backend: WebGLBackend, fbo: WebGLFramebuffer, state: RenderPassStateRegistry['gx_gpu']): void {
 	const gl = backend.gl;
-	if (gxGpuWebGLState.processedCommandSerial !== state.commandBuffer.serial) {
+	if (gxGpuWebGLState.vramClearSerial !== state.commandBuffer.vramClearSerial) {
 		clearGxGpuVram(backend, gl);
+		gxGpuWebGLState.processedCommandCount = 0;
+		gxGpuWebGLState.processedCommandSerial = state.commandBuffer.serial;
+		gxGpuWebGLState.vramClearSerial = state.commandBuffer.vramClearSerial;
+	} else if (gxGpuWebGLState.processedCommandSerial !== state.commandBuffer.serial) {
 		gxGpuWebGLState.processedCommandCount = 0;
 		gxGpuWebGLState.processedCommandSerial = state.commandBuffer.serial;
 	}

@@ -127,6 +127,7 @@ struct GxGpuGLES2Runtime {
 	u32 scanoutUniformVerticalDisplayRangeWord = 0xffffffffu;
 	u32 processedCommandCount = 0;
 	u32 processedCommandSerial = 0;
+	u32 vramClearSerial = 0u;
 };
 
 GxGpuGLES2Runtime g_gxGpu;
@@ -1606,8 +1607,12 @@ void scanoutGxGpuVram(OpenGLES2Backend& backend, GLuint frameFbo, const GxGpuPip
 }
 
 void renderGxGpuGLES2(OpenGLES2Backend& backend, GLuint frameFbo, const GxGpuPipelineState& state) {
-	if (g_gxGpu.processedCommandSerial != state.commandBuffer->serial) {
+	if (g_gxGpu.vramClearSerial != state.commandBuffer->vramClearSerial) {
 		clearGxGpuVram(backend);
+		g_gxGpu.processedCommandCount = 0u;
+		g_gxGpu.processedCommandSerial = state.commandBuffer->serial;
+		g_gxGpu.vramClearSerial = state.commandBuffer->vramClearSerial;
+	} else if (g_gxGpu.processedCommandSerial != state.commandBuffer->serial) {
 		g_gxGpu.processedCommandCount = 0u;
 		g_gxGpu.processedCommandSerial = state.commandBuffer->serial;
 	}

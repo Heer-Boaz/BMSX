@@ -11,6 +11,7 @@ namespace {
 
 size_t g_gxGpuSoftwareProcessedCommandCount = 0u;
 u32 g_gxGpuSoftwareProcessedCommandSerial = 0u;
+u32 g_gxGpuSoftwareVramClearSerial = 0u;
 
 void executeGxGpuSoftwarePass(GPUBackend* backend, GameView*, void*, RenderPassStateStorage& stateStorage, void*) {
 	auto& typedBackend = *static_cast<SoftwareBackend*>(backend);
@@ -20,8 +21,12 @@ void executeGxGpuSoftwarePass(GPUBackend* backend, GameView*, void*, RenderPassS
 } // namespace
 
 void renderGxGpuSoftwareFrame(SoftwareBackend& backend, const GxGpuPipelineState& state) {
-	if (g_gxGpuSoftwareProcessedCommandSerial != state.commandBuffer->serial) {
+	if (g_gxGpuSoftwareVramClearSerial != state.commandBuffer->vramClearSerial) {
 		resetGxGpuSoftwareVram();
+		g_gxGpuSoftwareProcessedCommandCount = 0u;
+		g_gxGpuSoftwareProcessedCommandSerial = state.commandBuffer->serial;
+		g_gxGpuSoftwareVramClearSerial = state.commandBuffer->vramClearSerial;
+	} else if (g_gxGpuSoftwareProcessedCommandSerial != state.commandBuffer->serial) {
 		g_gxGpuSoftwareProcessedCommandCount = 0u;
 		g_gxGpuSoftwareProcessedCommandSerial = state.commandBuffer->serial;
 	}

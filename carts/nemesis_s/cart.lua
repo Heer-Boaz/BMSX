@@ -1,13 +1,16 @@
-mem[0x08000084] = 0x00000000
 require('cartlib/prelude')
 require('constants')
 local stage_module<const> = require('stage')
 local player_module<const> = require('player/index')
 local director_module<const> = require('director')
-local irq_mask_addr<const> = 0x0800010c
+local irq_mask_register<const>: *word = 0x0800010c
+local input_control_register<const>: *word = 0x08000194
+local irq_img_done<const> = 0x0004
 local irq_vblank<const> = 0x0010
 local irq_apu<const> = 0x0200
 local vblank_count = 0
+nemesis_s_atlas_decoded = false
+nemesis_s_atlas_ready = false
 
 local wait_vblank<const> = function()
 	repeat
@@ -20,14 +23,19 @@ function init()
 	on_irq(irq_vblank, function()
 		vblank_count = vblank_count + 1
 	end)
-	mem[0x08000008] = 0
+	on_irq(irq_img_done, function()
+		nemesis_s_atlas_decoded = true
+	end)
+	*irq_mask_register = irq_vblank | irq_apu | irq_img_done
+	gx_reset_256x192_pal()
+	gx_clear_color(0xff000000)
 	stage_module.define_stage_fsm()
 	director_module.define_director_fsm()
 	player_module.define_player_fsm()
 	stage_module.register_stage_subsystem_definition()
 	director_module.register_director_definition()
 	player_module.register_player_definition()
-	vdp_load_atlas(0)
+	gx_load_atlas(0)
 end
 
 function new_game()
@@ -47,25 +55,22 @@ function new_game()
 end
 
 init()
-mem[irq_mask_addr] = irq_vblank | irq_apu
+*input_control_register = 0x00000001
+repeat
+	wait_vblank()
+	*input_control_register = 0x00000001
+until nemesis_s_atlas_decoded
+gx_upload_atlas(0)
+nemesis_s_atlas_ready = true
+*irq_mask_register = irq_vblank | irq_apu
 new_game()
-mem[0x08000194] = 0x00000001
+*input_control_register = 0x00000001
 wait_vblank()
 
 while true do
 	update_world()
-	mem[0x08000194] = 0x00000001
+	*input_control_register = 0x00000001
 	wait_vblank()
-	vdp_stream_cursor = 0x080c0000
+	gx_clear_color(0xff000000)
 	draw_world()
-	vdp_stream_finish()
-	do
-		local used_bytes<const> = vdp_stream_cursor - 0x080c0000
-		if used_bytes ~= 0 then
-			mem[0x08000110] = 0x080c0000
-			mem[0x08000114] = 0x0800007c
-			mem[0x08000118] = used_bytes
-			mem[0x0800011c] = 0x00000001
-		end
-	end
 end

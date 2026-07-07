@@ -270,6 +270,12 @@ const GxGpuDeviceOutput& GxGpu::readDeviceOutput() {
 	return m_deviceOutput;
 }
 
+void GxGpu::retirePresentedCommands() {
+	if (m_gp0ImageLoadCommandWordCount == 0u && m_gp0PolylineCommandWordCount == 0u) {
+		m_commandBuffer.retireCommandsPreservingVram();
+	}
+}
+
 u32 GxGpu::readDrawModeWord() const {
 	return m_drawModeWord;
 }

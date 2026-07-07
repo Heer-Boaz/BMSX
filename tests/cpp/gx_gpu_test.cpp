@@ -817,6 +817,57 @@ void testSoftwareScanoutConsumesTransfersAndFill() {
 	requireArgbPixel(framebuffer, 16u, 1u, 0xff000000u, "GX-GPU software scanout fill stops at rounded edge");
 }
 
+void testSoftwareBackendRetiresCommandLogWithoutClearingVram() {
+	bmsx::GxGpuCommandBuffer commandBuffer;
+	commandBuffer.reset();
+	pushSoftwareCommand(
+		commandBuffer,
+		std::array<uint32_t, 3>{
+			(bmsx::GX_GPU_GP0_FILL_RECTANGLE << 24u) | 0x0000ffu,
+			0u,
+			(1u << 16u) | 1u,
+		},
+		3u,
+		bmsx::GX_GPU_COMMAND_FILL_RECTANGLE,
+		bmsx::GX_GPU_GP0_FILL_RECTANGLE);
+	std::array<uint32_t, 256u * 256u> framebuffer{};
+	bmsx::SoftwareBackend backend(framebuffer.data(), 256, 256, 256 * static_cast<int32_t>(sizeof(uint32_t)));
+	bmsx::GxGpuPipelineState state;
+	state.width = 256;
+	state.height = 256;
+	state.commandBuffer = &commandBuffer;
+	state.statusWord = 0u;
+	state.displayModeWord = bmsx::PSX_GPU_DISPLAY_MODE_PAL_WORD;
+	state.displayStartWord = 0u;
+	state.horizontalDisplayRangeWord = (((638u + 256u * 10u) << 12u) | 638u);
+	state.verticalDisplayRangeWord = (((35u + 256u) << 10u) | 35u);
+	bmsx::renderGxGpuSoftwareFrame(backend, state);
+	requireArgbPixel(framebuffer, 0u, 0u, 0xffff0000u, "GX-GPU software retire test initial red pixel");
+
+	commandBuffer.retireCommandsPreservingVram();
+	bmsx::renderGxGpuSoftwareFrame(backend, state);
+	requireArgbPixel(framebuffer, 0u, 0u, 0xffff0000u, "GX-GPU software retire preserves VRAM");
+
+	pushSoftwareCommand(
+		commandBuffer,
+		std::array<uint32_t, 3>{
+			(bmsx::GX_GPU_GP0_FILL_RECTANGLE << 24u) | 0x00ff00u,
+			16u | (1u << 16u),
+			(1u << 16u) | 1u,
+		},
+		3u,
+		bmsx::GX_GPU_COMMAND_FILL_RECTANGLE,
+		bmsx::GX_GPU_GP0_FILL_RECTANGLE);
+	bmsx::renderGxGpuSoftwareFrame(backend, state);
+	requireArgbPixel(framebuffer, 0u, 0u, 0xffff0000u, "GX-GPU software retire keeps previous VRAM after new log");
+	requireArgbPixel(framebuffer, 16u, 1u, 0xff00ff00u, "GX-GPU software retire executes commands after log reset");
+
+	commandBuffer.reset();
+	bmsx::renderGxGpuSoftwareFrame(backend, state);
+	requireArgbPixel(framebuffer, 0u, 0u, 0xff000000u, "GX-GPU software reset clears old VRAM red pixel");
+	requireArgbPixel(framebuffer, 16u, 1u, 0xff000000u, "GX-GPU software reset clears old VRAM green pixel");
+}
+
 void testSoftwareScanoutConsumesSolidPrimitives() {
 	bmsx::GxGpuCommandBuffer commandBuffer;
 	commandBuffer.reset();
@@ -1220,6 +1271,7 @@ int main() {
 	testSoftwareGouraudLineFixedPointRaster();
 	testSoftwareBlendsUntexturedSemiTransparentRectangles();
 	testSoftwareScanoutConsumesTransfersAndFill();
+	testSoftwareBackendRetiresCommandLogWithoutClearingVram();
 	testSoftwareScanoutConsumesSolidPrimitives();
 	testSoftwareScanoutConsumesTexturedPrimitives();
 	testSoftwareCommandsPreserveTextureMaskBlendAndMaskTestStoreSemantics();

@@ -93,6 +93,7 @@ export class RenderPresentationState {
 		this.recordPresentation(mode, commitFrame);
 		machineManager.sndmaster.finishFrame();
 		machineManager.view.drawgame();
+		runtime.machine.gxGpu.retirePresentedCommands();
 	}
 
 	private markPresentation(mode: RenderPresentationMode, commitFrame: boolean): void {

@@ -6,8 +6,11 @@ local gp1<const>: *word = 0x08010370
 local gp1_reset<const> = 0x00000000
 local gp1_display_enable<const> = 0x03000000
 local gp1_display_start_0<const> = 0x05000000
+local gp1_horizontal_256_pal<const> = 0x06c6a27e
 local gp1_horizontal_320_pal<const> = 0x06c6e27e
+local gp1_vertical_192_pal<const> = 0x07038c23
 local gp1_vertical_240_pal<const> = 0x07044c23
+local gp1_display_mode_256_pal<const> = 0x08000008
 local gp1_display_mode_320_pal<const> = 0x08000009
 
 local gp0_fill_rectangle<const> = 0x02000000
@@ -19,6 +22,7 @@ local gp0_draw_line<const> = 0x40000000
 local gp0_cpu_to_vram<const> = 0xa0000000
 local gp0_draw_mode<const> = 0xe1000000
 local gp0_drawing_area_top_left_0<const> = 0xe3000000
+local gp0_drawing_area_bottom_right_256x192<const> = 0xe402fcff
 local gp0_drawing_area_bottom_right_320x240<const> = 0xe403bd3f
 local gp0_drawing_offset_0<const> = 0xe5000000
 local gp0_mask_bit_mode_0<const> = 0xe6000000
@@ -31,9 +35,12 @@ local draw_mode_texture_direct16<const> = 0x00000100
 
 local display_width<const> = 320
 local display_height<const> = 240
+local display_size_256x192<const> = 0x00c00100
+local display_size_320x240<const> = 0x00f00140
 local texture_page_span<const> = 256
 
 local current_draw_mode = 0
+local current_display_size_word = 0
 
 local argb_to_gp0_rgb<const> = function(color)
 	return ((color & 0x00ff0000) >> 16) | (color & 0x0000ff00) | ((color & 0x000000ff) << 16)
@@ -69,6 +76,7 @@ function gx_gpu.reset_320x240_pal()
 	*gp1 = gp1_display_start_0
 	*gp1 = gp1_horizontal_320_pal
 	*gp1 = gp1_vertical_240_pal
+	current_display_size_word = display_size_320x240
 	current_draw_mode = draw_mode_blend_half
 	*gp0 = gp0_draw_mode | current_draw_mode
 	*gp0 = gp0_drawing_area_top_left_0
@@ -78,10 +86,26 @@ function gx_gpu.reset_320x240_pal()
 	*gp1 = gp1_display_enable
 end
 
+function gx_gpu.reset_256x192_pal()
+	*gp1 = gp1_reset
+	*gp1 = gp1_display_mode_256_pal
+	*gp1 = gp1_display_start_0
+	*gp1 = gp1_horizontal_256_pal
+	*gp1 = gp1_vertical_192_pal
+	current_display_size_word = display_size_256x192
+	current_draw_mode = draw_mode_blend_half
+	*gp0 = gp0_draw_mode | current_draw_mode
+	*gp0 = gp0_drawing_area_top_left_0
+	*gp0 = gp0_drawing_area_bottom_right_256x192
+	*gp0 = gp0_drawing_offset_0
+	*gp0 = gp0_mask_bit_mode_0
+	*gp1 = gp1_display_enable
+end
+
 function gx_gpu.clear_color(color)
 	*gp0 = gp0_fill_rectangle | argb_to_gp0_rgb(color)
 	*gp0 = 0x00000000
-	*gp0 = wh(display_width, display_height)
+	*gp0 = current_display_size_word
 end
 
 function gx_gpu.fill_rect_color(x0, y0, x1, y1, color)

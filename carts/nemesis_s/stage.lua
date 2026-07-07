@@ -504,7 +504,7 @@ function stage_subsystem:draw_star_particles(stars, imgid, hidden)
 	end
 	for i = 1, #stars do
 		local star<const> = stars[i]
-		vdp_blit_img_color(imgid, star.x, star.y, stage_star_particle_z, 0x00000000, 1, 1, 0, 0xffffffff, 0)
+		gx_blit_img_color(imgid, star.x, star.y, 0xffffffff)
 	end
 end
 
@@ -514,7 +514,6 @@ function stage_subsystem:draw()
 
 	local draw_columns<const> = self.tile_columns + 1
 	local tile_size<const> = self.tile_size
-	local z<const> = self.draw_z
 
 	for screen_column = 0, draw_columns do
 		local stage_column<const> = self.left_tile + screen_column
@@ -526,7 +525,7 @@ function stage_subsystem:draw()
 		for stage_row = 1, self.tile_rows do
 			local tile_id<const> = self.tile_tape[stage_row][stage_column]
 			if tile_id ~= nil then
-				vdp_blit_img_color(tile_id, draw_x, (stage_row - 1) * tile_size, z, 0x00000000, 1, 1, 0, 0xffffffff, 0)
+				gx_blit_img_color(tile_id, draw_x, (stage_row - 1) * tile_size, 0xffffffff)
 			end
 		end
 	end

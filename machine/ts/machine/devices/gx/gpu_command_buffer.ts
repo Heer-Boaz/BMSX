@@ -64,6 +64,7 @@ export function gxGpuPolygonDrawModeWord(drawModeWord: number, textureAttribute:
 
 export type GxGpuCommandBufferView = {
 	readonly serial: number;
+	readonly vramClearSerial: number;
 	readonly commandCount: number;
 	readonly wordCount: number;
 	readonly commandKind: ArrayLike<number>;
@@ -81,9 +82,11 @@ export type GxGpuCommandBufferView = {
 };
 
 let gxGpuCommandBufferNextSerial = 0;
+let gxGpuCommandBufferNextVramClearSerial = 0;
 
 export class GxGpuCommandBuffer implements GxGpuCommandBufferView {
 	public serial = 0;
+	public vramClearSerial = 0;
 	public commandCount = 0;
 	public wordCount = 0;
 	public readonly commandKind = new Uint8Array(GX_GPU_COMMAND_CAPACITY);
@@ -100,6 +103,15 @@ export class GxGpuCommandBuffer implements GxGpuCommandBufferView {
 	public readonly words = new Uint32Array(GX_GPU_COMMAND_WORD_CAPACITY);
 
 	public reset(): void {
+		gxGpuCommandBufferNextSerial = (gxGpuCommandBufferNextSerial + 1) >>> 0;
+		gxGpuCommandBufferNextVramClearSerial = (gxGpuCommandBufferNextVramClearSerial + 1) >>> 0;
+		this.serial = gxGpuCommandBufferNextSerial;
+		this.vramClearSerial = gxGpuCommandBufferNextVramClearSerial;
+		this.commandCount = 0;
+		this.wordCount = 0;
+	}
+
+	public retireCommandsPreservingVram(): void {
 		gxGpuCommandBufferNextSerial = (gxGpuCommandBufferNextSerial + 1) >>> 0;
 		this.serial = gxGpuCommandBufferNextSerial;
 		this.commandCount = 0;

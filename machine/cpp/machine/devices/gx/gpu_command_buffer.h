@@ -74,9 +74,11 @@ inline u32 gxGpuPolygonDrawModeWord(u32 drawModeWord, u32 textureAttribute) {
 struct GxGpuCommandBuffer {
 private:
 	inline static u32 nextSerial = 0u;
+	inline static u32 nextVramClearSerial = 0u;
 
 public:
 	u32 serial = 0u;
+	u32 vramClearSerial = 0u;
 	size_t commandCount = 0u;
 	size_t wordCount = 0u;
 	std::array<u8, GX_GPU_COMMAND_CAPACITY> commandKind{};
@@ -93,6 +95,15 @@ public:
 	std::array<u32, GX_GPU_COMMAND_WORD_CAPACITY> words{};
 
 	void reset() {
+		nextSerial += 1u;
+		nextVramClearSerial += 1u;
+		serial = nextSerial;
+		vramClearSerial = nextVramClearSerial;
+		commandCount = 0u;
+		wordCount = 0u;
+	}
+
+	void retireCommandsPreservingVram() {
 		nextSerial += 1u;
 		serial = nextSerial;
 		commandCount = 0u;

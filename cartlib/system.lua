@@ -206,6 +206,7 @@ system.vdp_draw_line_color = vdp_rpu_quads.draw_line_color
 system.vdp_tile_run_sources = vdp_rpu_quads.tile_run_sources
 system.vdp_load_atlas = vdp_image.load_atlas
 system.gx_reset_320x240_pal = gx_gpu.reset_320x240_pal
+system.gx_reset_256x192_pal = gx_gpu.reset_256x192_pal
 system.gx_load_atlas = gx_image.load_atlas
 system.gx_upload_atlas = gx_image.upload_atlas
 system.gx_blit_img_color = gx_image.blit_img_color

@@ -131,6 +131,7 @@ public:
 	void setScanoutTiming(bool vblankActive, int cyclesIntoFrame, int cyclesPerFrame, int totalScanlines);
 	u32 readGpuReadWord() const;
 	const GxGpuDeviceOutput& readDeviceOutput();
+	void retirePresentedCommands();
 	u32 readDrawModeWord() const;
 	u32 readTextureWindowWord() const;
 	u32 readDrawingAreaTopLeftWord() const;

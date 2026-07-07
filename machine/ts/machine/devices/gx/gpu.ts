@@ -441,6 +441,12 @@ export class GxGpu {
 		return this.deviceOutput;
 	}
 
+	public retirePresentedCommands(): void {
+		if (this.gp0ImageLoadCommandWordCount === 0 && this.gp0PolylineCommandWordCount === 0) {
+			this.commandBuffer.retireCommandsPreservingVram();
+		}
+	}
+
 	public readDrawModeWord(): number {
 		return this.drawModeWord;
 	}

@@ -193,6 +193,7 @@ bool RenderPresentationState::render(MachineManager& manager, Runtime& runtime, 
 		commitGxGpuViewSnapshot(*manager.m_view, runtime.machine.gxGpu.readDeviceOutput());
 		manager.m_view->configurePresentation(presentMode, commitFrame);
 		manager.m_view->drawgame();
+		runtime.machine.gxGpu.retirePresentedCommands();
 	}
 
 	flushDebugReport(runtime);

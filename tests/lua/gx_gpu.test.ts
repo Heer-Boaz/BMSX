@@ -902,6 +902,47 @@ test('GX-GPU software scanout consumes CPU upload, VRAM copy, and fill commands'
 	assertRgbaPixel(pixels, 16, 1, 0, 0, 0);
 });
 
+test('GX-GPU software backend retires consumed command logs without clearing VRAM', () => {
+	const commandBuffer = new GxGpuCommandBuffer();
+	commandBuffer.reset();
+	pushSoftwareCommand(commandBuffer, new Uint32Array([
+		(GX_GPU_GP0_FILL_RECTANGLE << 24) | 0x0000ff,
+		0,
+		(1 << 16) | 1,
+	]), GX_GPU_COMMAND_FILL_RECTANGLE, GX_GPU_GP0_FILL_RECTANGLE);
+	const state = {
+		width: GX_GPU_SOFTWARE_TEST_WIDTH,
+		height: GX_GPU_SOFTWARE_TEST_HEIGHT,
+		commandBuffer,
+		statusWord: 0,
+		displayModeWord: PSX_GPU_DISPLAY_MODE_PAL_WORD,
+		displayStartWord: 0,
+		horizontalDisplayRangeWord: (((638 + 256 * 10) << 12) | 638) >>> 0,
+		verticalDisplayRangeWord: (((35 + 256) << 10) | 35) >>> 0,
+	};
+	const pixels = new Uint8Array(GX_GPU_SOFTWARE_TEST_WIDTH * GX_GPU_SOFTWARE_TEST_HEIGHT * 4);
+	renderGxGpuSoftwareFrame(state, pixels, GX_GPU_SOFTWARE_TEST_WIDTH, GX_GPU_SOFTWARE_TEST_HEIGHT);
+	assertRgbaPixel(pixels, 0, 0, 255, 0, 0);
+
+	commandBuffer.retireCommandsPreservingVram();
+	renderGxGpuSoftwareFrame(state, pixels, GX_GPU_SOFTWARE_TEST_WIDTH, GX_GPU_SOFTWARE_TEST_HEIGHT);
+	assertRgbaPixel(pixels, 0, 0, 255, 0, 0);
+
+	pushSoftwareCommand(commandBuffer, new Uint32Array([
+		(GX_GPU_GP0_FILL_RECTANGLE << 24) | 0x00ff00,
+		16 | (1 << 16),
+		(1 << 16) | 1,
+	]), GX_GPU_COMMAND_FILL_RECTANGLE, GX_GPU_GP0_FILL_RECTANGLE);
+	renderGxGpuSoftwareFrame(state, pixels, GX_GPU_SOFTWARE_TEST_WIDTH, GX_GPU_SOFTWARE_TEST_HEIGHT);
+	assertRgbaPixel(pixels, 0, 0, 255, 0, 0);
+	assertRgbaPixel(pixels, 16, 1, 0, 255, 0);
+
+	commandBuffer.reset();
+	renderGxGpuSoftwareFrame(state, pixels, GX_GPU_SOFTWARE_TEST_WIDTH, GX_GPU_SOFTWARE_TEST_HEIGHT);
+	assertRgbaPixel(pixels, 0, 0, 0, 0, 0);
+	assertRgbaPixel(pixels, 16, 1, 0, 0, 0);
+});
+
 test('GX-GPU software scanout consumes solid polygon, rectangle, and line commands', () => {
 	const commandBuffer = new GxGpuCommandBuffer();
 	commandBuffer.reset();

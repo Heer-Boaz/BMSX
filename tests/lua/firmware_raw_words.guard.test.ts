@@ -102,9 +102,11 @@ test('GX image firmware maps decoded RGBA atlases into direct16 PSX texture page
 	assert.equal(gxImageSource.includes('imgdec.start(atlas.addr, atlas.len, atlas_meta.texture_addr, atlas_meta.texture_len)'), true);
 	assert.equal(gxImageSource.includes('gx_gpu.upload_rgba8888_to_direct16_stride'), true);
 	assert.equal(gxImageSource.includes('gx_gpu.draw_direct16_textured_rect_color'), true);
+	assert.equal(cartlibSystemSource.includes('system.gx_reset_256x192_pal = gx_gpu.reset_256x192_pal'), true);
 	assert.equal(cartlibSystemSource.includes('system.gx_load_atlas = gx_image.load_atlas'), true);
 	assert.equal(cartlibSystemSource.includes('system.gx_upload_atlas = gx_image.upload_atlas'), true);
 	assert.equal(cartlibSystemSource.includes('system.gx_blit_img_color = gx_image.blit_img_color'), true);
+	assert.equal(cartlibPreludeSource.includes('gx_reset_256x192_pal = system.gx_reset_256x192_pal'), true);
 	assert.equal(cartlibPreludeSource.includes('gx_blit_img_color = system.gx_blit_img_color'), true);
 	assert.equal(firmwareFontSource.includes("require('system/gx_image')"), true);
 	assert.equal(firmwareFontSource.includes("require('system/vdp_image')"), false);
@@ -123,6 +125,10 @@ test('GX GPU firmware owns raw PSX GP0 and GP1 words for migrated primitive cart
 	assert.equal(gxGpuSource.includes('draw_mode_blend_quarter'), true);
 	assert.equal(gxGpuSource.includes('gp0_cpu_to_vram'), true);
 	assert.equal(gxGpuSource.includes('gp0_draw_raw_textured_rectangle'), true);
+	assert.equal(gxGpuSource.includes('reset_256x192_pal'), true);
+	assert.equal(gxGpuSource.includes('gp1_display_mode_256_pal'), true);
+	assert.equal(gxGpuSource.includes('gp1_horizontal_256_pal'), true);
+	assert.equal(gxGpuSource.includes('gp1_vertical_192_pal'), true);
 	assert.equal(gxGpuSource.includes('upload_rgba8888_to_direct16_stride'), true);
 	assert.equal(gxGpuSource.includes('draw_direct16_textured_rect_color'), true);
 	assert.equal(gxGpuSource.includes('gp0_draw_line'), true);
@@ -168,4 +174,24 @@ test('vblank test cart samples PSX GPUSTAT through GX GP1 instead of VDP status'
 	assert.equal(source.includes('0x08000084'), false);
 	assert.equal(source.includes('vdp_stream_cursor'), false);
 	assert.equal(source.includes('vdp_stream_finish'), false);
+});
+
+test('Nemesis S cart migrates atlas upload and sprite draws to GX GPU', () => {
+	const cartSource = readFileSync('carts/nemesis_s/cart.lua', 'utf8');
+	const stageSource = readFileSync('carts/nemesis_s/stage.lua', 'utf8');
+	const playerSource = readFileSync('carts/nemesis_s/player/index.lua', 'utf8');
+	assert.equal(cartSource.includes(`local irq_mask_register<const>: *word = 0x${IO_IRQ_MASK.toString(16).padStart(8, '0')}`), true);
+	assert.equal(cartSource.includes(`local input_control_register<const>: *word = 0x${IO_INP_CTRL.toString(16).padStart(8, '0')}`), true);
+	assert.equal(cartSource.includes('gx_reset_256x192_pal()'), true);
+	assert.equal(cartSource.includes('gx_load_atlas(0)'), true);
+	assert.equal(cartSource.includes('gx_upload_atlas(0)'), true);
+	assert.equal(cartSource.includes('gx_clear_color(0xff000000)'), true);
+	assert.equal(cartSource.includes('vdp_'), false);
+	assert.equal(cartSource.includes('0x0800007c'), false);
+	assert.equal(cartSource.includes('0x08000084'), false);
+	assert.equal(cartSource.includes('vdp_stream_cursor'), false);
+	assert.equal(stageSource.includes('gx_blit_img_color'), true);
+	assert.equal(stageSource.includes('vdp_'), false);
+	assert.equal(playerSource.includes('gx_blit_img_color'), true);
+	assert.equal(playerSource.includes('vdp_'), false);
 });
