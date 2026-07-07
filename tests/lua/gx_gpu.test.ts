@@ -75,6 +75,7 @@ import {
 	GX_GPU_DMA_DIRECTION_CPU_TO_GP0,
 	GX_GPU_DMA_DIRECTION_GPUREAD_TO_CPU,
 	GX_GPU_DISPLAY_START_MASK,
+	GX_GPU_DISPLAY_MODE_MASK,
 	GX_GPU_DRAWING_AREA_MASK,
 	GX_GPU_DRAWING_OFFSET_MASK,
 	GX_GPU_DRAW_MODE_DITHER_ENABLED,
@@ -307,8 +308,9 @@ test('GX-GPU GP1 reset restores PAL display status', () => {
 test('GX-GPU mirrors PSX GP1 display mode fields into GPUSTAT bits', () => {
 	const { gpu } = createGpu();
 
-	gpu.writeGp1((GX_GPU_GP1_SET_DISPLAY_MODE << 24) | 0x000000ff);
+	gpu.writeGp1((GX_GPU_GP1_SET_DISPLAY_MODE << 24) | 0x00ffffff);
 
+	assert.equal(gpu.readDisplayModeWord(), GX_GPU_DISPLAY_MODE_MASK);
 	assert.equal(
 		(gpu.readStatus() & (
 			GX_GPU_STATUS_REVERSE_FLAG
@@ -353,6 +355,8 @@ test('GX-GPU handles PSX GP1 display disable and DMA direction status bits', () 
 test('GX-GPU latches PSX GP1 CRTC range registers as masked raw words', () => {
 	const { gpu } = createGpu();
 
+	gpu.writeGp1((GX_GPU_GP1_SET_DISPLAY_START << 24) | 0x00000001);
+	assert.equal(gpu.readDisplayStartWord(), 0);
 	gpu.writeGp1((GX_GPU_GP1_SET_DISPLAY_START << 24) | 0x00ffffff);
 	gpu.writeGp1((GX_GPU_GP1_SET_HORIZONTAL_DISPLAY_RANGE << 24) | 0x00ffffff);
 	gpu.writeGp1((GX_GPU_GP1_SET_VERTICAL_DISPLAY_RANGE << 24) | 0x00ffffff);

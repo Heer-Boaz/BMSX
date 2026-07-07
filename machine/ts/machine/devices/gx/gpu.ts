@@ -74,7 +74,8 @@ export const GX_GPU_GP0_COMMAND_BUFFER_WORDS = 16;
 export const GX_GPU_VRAM_WIDTH_MASK = 0x3ff;
 export const GX_GPU_VRAM_HEIGHT_MASK = 0x1ff;
 
-export const GX_GPU_DISPLAY_START_MASK = 0x0007ffff;
+export const GX_GPU_DISPLAY_START_MASK = 0x0007fffe;
+export const GX_GPU_DISPLAY_MODE_MASK = 0x000000ff;
 export const GX_GPU_HORIZONTAL_DISPLAY_RANGE_MASK = 0x00ffffff;
 export const GX_GPU_VERTICAL_DISPLAY_RANGE_MASK = 0x000fffff;
 export const GX_GPU_DRAW_MODE_MASK = 0x00003fff;
@@ -344,7 +345,7 @@ export class GxGpu {
 				this.writeStatusIo();
 				break;
 			case GX_GPU_GP1_SET_DISPLAY_MODE:
-				this.writeDisplayModeWord(command & GX_GPU_GP1_PARAM_MASK);
+				this.writeDisplayModeWord(command & GX_GPU_DISPLAY_MODE_MASK);
 				break;
 			case GX_GPU_GP1_SET_VRAM_SIZE:
 				this.vramSizeWord = command & 0x1;

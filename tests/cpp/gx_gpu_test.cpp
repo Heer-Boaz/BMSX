@@ -199,8 +199,9 @@ void testDisplayModeStatusBits() {
 	GpuHarness harness;
 	bmsx::GxGpu& gpu = harness.gpu;
 
-	gpu.writeGp1((bmsx::GX_GPU_GP1_SET_DISPLAY_MODE << 24u) | 0x000000ffu);
+	gpu.writeGp1((bmsx::GX_GPU_GP1_SET_DISPLAY_MODE << 24u) | 0x00ffffffu);
 
+	require(gpu.readDisplayModeWord() == bmsx::GX_GPU_DISPLAY_MODE_MASK, "GX-GPU GP1 display mode latches low byte");
 	const uint32_t statusBits = bmsx::GX_GPU_STATUS_REVERSE_FLAG
 		| bmsx::GX_GPU_STATUS_HORIZONTAL_RESOLUTION_2
 		| bmsx::GX_GPU_STATUS_VERTICAL_RESOLUTION
@@ -236,6 +237,8 @@ void testGp1CrtcRangeRegistersLatchMaskedRawWords() {
 	GpuHarness harness;
 	bmsx::GxGpu& gpu = harness.gpu;
 
+	gpu.writeGp1((bmsx::GX_GPU_GP1_SET_DISPLAY_START << 24u) | 0x00000001u);
+	require(gpu.readDisplayStartWord() == 0u, "GX-GPU GP1 display start forces even address");
 	gpu.writeGp1((bmsx::GX_GPU_GP1_SET_DISPLAY_START << 24u) | 0x00ffffffu);
 	gpu.writeGp1((bmsx::GX_GPU_GP1_SET_HORIZONTAL_DISPLAY_RANGE << 24u) | 0x00ffffffu);
 	gpu.writeGp1((bmsx::GX_GPU_GP1_SET_VERTICAL_DISPLAY_RANGE << 24u) | 0x00ffffffu);

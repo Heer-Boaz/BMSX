@@ -189,7 +189,7 @@ u32 GxGpu::writeGp1(u32 word) {
 		writeStatusIo();
 		break;
 	case GX_GPU_GP1_SET_DISPLAY_MODE:
-		writeDisplayModeWord(word & GX_GPU_GP1_PARAM_MASK);
+		writeDisplayModeWord(word & GX_GPU_DISPLAY_MODE_MASK);
 		break;
 	case GX_GPU_GP1_SET_VRAM_SIZE:
 		m_vramSizeWord = word & 0x1u;
