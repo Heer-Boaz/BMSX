@@ -18,6 +18,8 @@ constexpr u32 GX_GPU_DRAW_MODE_DITHER_ENABLED = 1u << 9u;
 constexpr u32 GX_GPU_DRAW_MODE_TEXTURE_DISABLE = 1u << 11u;
 constexpr u32 GX_GPU_DRAW_MODE_TEXTURE_RECTANGLE_X_FLIP = 1u << 12u;
 constexpr u32 GX_GPU_DRAW_MODE_TEXTURE_RECTANGLE_Y_FLIP = 1u << 13u;
+constexpr u8 GX_GPU_INTERLACED_RENDER_ENABLE = 0x01u;
+constexpr u8 GX_GPU_INTERLACED_RENDER_ACTIVE_LINE_LSB = 0x02u;
 constexpr u32 GX_GPU_TEXTURE_MODE_PALETTE4 = 0u;
 constexpr u32 GX_GPU_TEXTURE_MODE_PALETTE8 = 1u;
 constexpr u32 GX_GPU_TEXTURE_MODE_DIRECT16 = 2u;
@@ -144,6 +146,18 @@ inline bool gxGpuDrawModeTextureRectangleXFlip(u32 drawModeWord) {
 
 inline bool gxGpuDrawModeTextureRectangleYFlip(u32 drawModeWord) {
 	return (drawModeWord & GX_GPU_DRAW_MODE_TEXTURE_RECTANGLE_Y_FLIP) != 0u;
+}
+
+inline bool gxGpuSkipDrawingToActiveField(u32 statusWord) {
+	constexpr u32 mask = (1u << 19u) | (1u << 22u) | (1u << 10u);
+	constexpr u32 active = (1u << 19u) | (1u << 22u);
+	return (statusWord & mask) == active;
+}
+
+inline u8 gxGpuInterlacedRenderWord(u32 statusWord, u32 activeLineLsb) {
+	return gxGpuSkipDrawingToActiveField(statusWord)
+		? static_cast<u8>(GX_GPU_INTERLACED_RENDER_ENABLE | ((activeLineLsb & 1u) << 1u))
+		: 0u;
 }
 
 inline i32 gxGpuTextureRectangleEdge0(u32 textureCoord, bool flip) {
@@ -396,6 +410,7 @@ struct GxGpuCommandBuffer {
 	std::array<u32, GX_GPU_COMMAND_CAPACITY> commandDrawingAreaBottomRightWord{};
 	std::array<u32, GX_GPU_COMMAND_CAPACITY> commandDrawingOffsetWord{};
 	std::array<u32, GX_GPU_COMMAND_CAPACITY> commandMaskBitModeWord{};
+	std::array<u8, GX_GPU_COMMAND_CAPACITY> commandInterlacedRenderWord{};
 	std::array<u32, GX_GPU_COMMAND_WORD_CAPACITY> words{};
 
 	void reset() {
@@ -428,7 +443,8 @@ struct GxGpuCommandBuffer {
 		u32 drawingAreaTopLeftWord,
 		u32 drawingAreaBottomRightWord,
 		u32 drawingOffsetWord,
-		u32 maskBitModeWord) {
+		u32 maskBitModeWord,
+		u8 interlacedRenderWord) {
 		const size_t commandIndex = commandCount;
 		commandKind[commandIndex] = kind;
 		commandOpcode[commandIndex] = opcode;
@@ -440,6 +456,7 @@ struct GxGpuCommandBuffer {
 		commandDrawingAreaBottomRightWord[commandIndex] = drawingAreaBottomRightWord;
 		commandDrawingOffsetWord[commandIndex] = drawingOffsetWord;
 		commandMaskBitModeWord[commandIndex] = maskBitModeWord;
+		commandInterlacedRenderWord[commandIndex] = interlacedRenderWord;
 		commandCount = commandIndex + 1u;
 	}
 };

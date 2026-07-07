@@ -4,11 +4,13 @@
 #include "machine/cpu/cpu.h"
 #include "machine/memory/memory.h"
 #include "machine/model_registry.h"
+#include "machine/scheduler/device.h"
 
 namespace bmsx {
 
-GxGpu::GxGpu(Memory& memory)
+GxGpu::GxGpu(Memory& memory, DeviceScheduler& scheduler)
 	: m_memory(memory)
+	, m_scheduler(scheduler)
 	, m_displayModeWord(PSX_GPU_DISPLAY_MODE_PAL_WORD) {
 	m_memory.mapIoRead(IO_GX_GPU_GP0, this, &GxGpu::readGp0Thunk);
 	m_memory.mapIoWrite(IO_GX_GPU_GP0, this, &GxGpu::writeGp0Thunk);
@@ -38,7 +40,15 @@ void GxGpu::resetGpuRegisters() {
 	m_displayStartWord = 0u;
 	m_horizontalDisplayRangeWord = 0x00c60260u;
 	m_verticalDisplayRangeWord = 0x0003fc10u;
+	m_scanoutVblankActive = false;
+	m_scanoutInterlacedField = 0u;
+	m_scanoutInterlacedDisplayField = 0u;
+	m_scanoutActiveLineLsb = 0u;
+	m_scanoutFrameStartCycle = 0;
+	m_scanoutCyclesPerFrame = 1;
+	m_scanoutTotalScanlines = 313;
 	updateDisplayModeStatusBits();
+	updateScanoutStatusBits();
 	updateDmaRequestStatusBit();
 	m_memory.writeIoValue(IO_GX_GPU_GP0, valueNumber(0.0));
 	writeStatusIo();
@@ -151,7 +161,8 @@ void GxGpu::executeGp0Command() {
 	}
 }
 
-u32 GxGpu::readStatus() const {
+u32 GxGpu::readStatus() {
+	updateScanoutStatusBits();
 	return m_statusWord;
 }
 
@@ -178,6 +189,7 @@ u32 GxGpu::writeGp1(u32 word) {
 		break;
 	case GX_GPU_GP1_SET_DISPLAY_START:
 		m_displayStartWord = word & GX_GPU_DISPLAY_START_MASK;
+		updateScanoutStatusBits();
 		writeStatusIo();
 		break;
 	case GX_GPU_GP1_SET_HORIZONTAL_DISPLAY_RANGE:
@@ -219,11 +231,31 @@ void GxGpu::writeDisplayModeWord(u32 word) {
 	writeStatusIo();
 }
 
+void GxGpu::setScanoutTiming(bool vblankActive, int cyclesIntoFrame, int cyclesPerFrame, int totalScanlines) {
+	if (!m_scanoutVblankActive && vblankActive) {
+		m_scanoutInterlacedDisplayField = gpuStatInInterleaved480iMode() ? (m_scanoutInterlacedField ^ 1u) : 0u;
+	}
+	if (m_scanoutVblankActive && !vblankActive) {
+		if ((m_statusWord & GX_GPU_STATUS_VERTICAL_INTERLACE) != 0u) {
+			m_scanoutInterlacedField ^= 1u;
+		} else {
+			m_scanoutInterlacedField = 0u;
+		}
+	}
+	m_scanoutVblankActive = vblankActive;
+	m_scanoutFrameStartCycle = m_scheduler.currentNowCycles() - static_cast<i64>(cyclesIntoFrame);
+	m_scanoutCyclesPerFrame = cyclesPerFrame;
+	m_scanoutTotalScanlines = totalScanlines;
+	updateScanoutStatusBits();
+	writeStatusIo();
+}
+
 u32 GxGpu::readGpuReadWord() const {
 	return m_gpuReadWord;
 }
 
-const GxGpuDeviceOutput& GxGpu::readDeviceOutput() const {
+const GxGpuDeviceOutput& GxGpu::readDeviceOutput() {
+	updateScanoutStatusBits();
 	m_deviceOutput.statusWord = m_statusWord;
 	m_deviceOutput.displayModeWord = m_displayModeWord;
 	m_deviceOutput.displayStartWord = m_displayStartWord;
@@ -400,7 +432,8 @@ void GxGpu::pushGpuCommand(u8 kind, u32 opcode, size_t wordStart, u32 commandWor
 		m_drawingAreaTopLeftWord,
 		m_drawingAreaBottomRightWord,
 		m_drawingOffsetWord,
-		m_maskBitModeWord);
+		m_maskBitModeWord,
+		gxGpuInterlacedRenderWord(m_statusWord, m_scanoutActiveLineLsb));
 }
 
 void GxGpu::beginImageLoadToVram(u32 opcode, u32 commandWordCount) {
@@ -482,6 +515,38 @@ void GxGpu::updateDmaRequestStatusBit() {
 	}
 }
 
+bool GxGpu::gpuStatInInterleaved480iMode() const {
+	return (m_statusWord & (GX_GPU_STATUS_VERTICAL_RESOLUTION | GX_GPU_STATUS_VERTICAL_INTERLACE)) == (GX_GPU_STATUS_VERTICAL_RESOLUTION | GX_GPU_STATUS_VERTICAL_INTERLACE);
+}
+
+int GxGpu::scanoutLine() const {
+	const int cyclesIntoFrame = static_cast<int>((m_scheduler.currentNowCycles() - m_scanoutFrameStartCycle) % static_cast<i64>(m_scanoutCyclesPerFrame));
+	const int numerator = cyclesIntoFrame * m_scanoutTotalScanlines;
+	return (numerator - numerator % m_scanoutCyclesPerFrame) / m_scanoutCyclesPerFrame;
+}
+
+void GxGpu::updateScanoutStatusBits() {
+	u32 scanoutBits = 0u;
+	const u32 displayStartY = gxGpuDisplayStartY(m_displayStartWord);
+	if (gpuStatInInterleaved480iMode()) {
+		m_scanoutActiveLineLsb = (displayStartY + m_scanoutInterlacedDisplayField) & 1u;
+		const u32 displayedField = m_scanoutVblankActive ? 0u : m_scanoutInterlacedDisplayField;
+		if (((displayStartY + displayedField) & 1u) != 0u) {
+			scanoutBits |= GX_GPU_STATUS_DISPLAY_LINE_LSB;
+		}
+	} else {
+		m_scanoutActiveLineLsb = 0u;
+		m_scanoutInterlacedDisplayField = 0u;
+		if (((displayStartY + static_cast<u32>(scanoutLine())) & 1u) != 0u) {
+			scanoutBits |= GX_GPU_STATUS_DISPLAY_LINE_LSB;
+		}
+	}
+	if ((m_statusWord & GX_GPU_STATUS_VERTICAL_INTERLACE) == 0u || m_scanoutInterlacedField == 0u) {
+		scanoutBits |= GX_GPU_STATUS_INTERLACED_FIELD;
+	}
+	m_statusWord = (m_statusWord & ~GX_GPU_STATUS_SCANOUT_MASK) | scanoutBits;
+}
+
 void GxGpu::updateDisplayModeStatusBits() {
 	const u32 displayMode = m_displayModeWord;
 	const u32 statusDisplayModeBits = ((displayMode & 0x03u) << GX_GPU_STATUS_HORIZONTAL_RESOLUTION_1_SHIFT)
@@ -492,6 +557,7 @@ void GxGpu::updateDisplayModeStatusBits() {
 		| ((displayMode & 0x40u) << 10u)
 		| ((displayMode & 0x80u) << 7u);
 	m_statusWord = (m_statusWord & ~GX_GPU_STATUS_DISPLAY_MODE_MASK) | statusDisplayModeBits;
+	updateScanoutStatusBits();
 }
 
 void GxGpu::writeStatusIo() {

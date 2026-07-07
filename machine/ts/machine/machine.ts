@@ -65,7 +65,7 @@ export class Machine {
 		this.dmaController = new DmaController(this.memory, this.irqController, this.vdp, this.scheduler);
 		this.imgDecController = new ImgDecController(this.memory, this.dmaController, this.vdp, this.irqController, this.scheduler, microtasks);
 		this.geometryController = new GeometryController(this.memory, this.irqController, this.scheduler);
-		this.gxGpu = new GxGpu(this.memory);
+		this.gxGpu = new GxGpu(this.memory, this.scheduler);
 		this.gxGte = new GxGte(this.memory);
 		this.inputController = new InputController(this.memory, input);
 	}

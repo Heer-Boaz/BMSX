@@ -7,6 +7,7 @@ uniform float u_blendMode;
 uniform float u_checkMaskBit;
 uniform float u_setMaskBit;
 uniform float u_ditherEnable;
+uniform float u_interlacedRenderWord;
 in vec4 v_color;
 out vec4 outputColor;
 
@@ -111,7 +112,20 @@ vec4 encodeRgb555(vec3 color5, float outputMaskBit) {
 	return vec4(lowByte / 255.0, highByte / 255.0, 0.0, 1.0);
 }
 
+
+void discardActiveInterlacedLine() {
+	if (mod(u_interlacedRenderWord, 2.0) < 0.5) {
+		return;
+	}
+	float activeLineLsb = mod(floor(u_interlacedRenderWord * 0.5), 2.0);
+	float vramY = floor(VRAM_SIZE.y - gl_FragCoord.y);
+	if (mod(vramY, 2.0) == activeLineLsb) {
+		discard;
+	}
+}
+
 void main() {
+	discardActiveInterlacedLine();
 	vec3 src5 = rgbToRgb5(v_color.rgb);
 	float dstWord = 0.0;
 	if (u_checkMaskBit > 0.5 || u_blendEnable > 0.5) {

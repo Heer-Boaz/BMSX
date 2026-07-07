@@ -130,6 +130,7 @@ type GxGpuWebGLState = {
 	solidCheckMaskBitUniform: WebGLUniformLocation;
 	solidSetMaskBitUniform: WebGLUniformLocation;
 	solidDitherEnableUniform: WebGLUniformLocation;
+	solidInterlacedRenderWordUniform: WebGLUniformLocation;
 	linePositionAttrib: number;
 	lineStartAttrib: number;
 	lineEndAttrib: number;
@@ -141,6 +142,7 @@ type GxGpuWebGLState = {
 	lineCheckMaskBitUniform: WebGLUniformLocation;
 	lineSetMaskBitUniform: WebGLUniformLocation;
 	lineDitherEnableUniform: WebGLUniformLocation;
+	lineInterlacedRenderWordUniform: WebGLUniformLocation;
 	texturedPositionAttrib: number;
 	texturedColorAttrib: number;
 	texturedTexcoordAttrib: number;
@@ -156,6 +158,7 @@ type GxGpuWebGLState = {
 	texturedCheckMaskBitUniform: WebGLUniformLocation;
 	texturedSetMaskBitUniform: WebGLUniformLocation;
 	texturedDitherEnableUniform: WebGLUniformLocation;
+	texturedInterlacedRenderWordUniform: WebGLUniformLocation;
 	transferPositionAttrib: number;
 	transferTexcoordAttrib: number;
 	transferSourceUniform: WebGLUniformLocation;
@@ -263,6 +266,7 @@ function bootstrapGxGpuPass(backend: WebGLBackend): void {
 		solidCheckMaskBitUniform: gl.getUniformLocation(solidProgram, 'u_checkMaskBit') as WebGLUniformLocation,
 		solidSetMaskBitUniform: gl.getUniformLocation(solidProgram, 'u_setMaskBit') as WebGLUniformLocation,
 		solidDitherEnableUniform: gl.getUniformLocation(solidProgram, 'u_ditherEnable') as WebGLUniformLocation,
+		solidInterlacedRenderWordUniform: gl.getUniformLocation(solidProgram, 'u_interlacedRenderWord') as WebGLUniformLocation,
 		linePositionAttrib: gl.getAttribLocation(lineProgram, 'a_position'),
 		lineStartAttrib: gl.getAttribLocation(lineProgram, 'a_lineStart'),
 		lineEndAttrib: gl.getAttribLocation(lineProgram, 'a_lineEnd'),
@@ -274,6 +278,7 @@ function bootstrapGxGpuPass(backend: WebGLBackend): void {
 		lineCheckMaskBitUniform: gl.getUniformLocation(lineProgram, 'u_checkMaskBit') as WebGLUniformLocation,
 		lineSetMaskBitUniform: gl.getUniformLocation(lineProgram, 'u_setMaskBit') as WebGLUniformLocation,
 		lineDitherEnableUniform: gl.getUniformLocation(lineProgram, 'u_ditherEnable') as WebGLUniformLocation,
+		lineInterlacedRenderWordUniform: gl.getUniformLocation(lineProgram, 'u_interlacedRenderWord') as WebGLUniformLocation,
 		texturedPositionAttrib: gl.getAttribLocation(texturedProgram, 'a_position'),
 		texturedColorAttrib: gl.getAttribLocation(texturedProgram, 'a_color'),
 		texturedTexcoordAttrib: gl.getAttribLocation(texturedProgram, 'a_texcoord'),
@@ -289,6 +294,7 @@ function bootstrapGxGpuPass(backend: WebGLBackend): void {
 		texturedCheckMaskBitUniform: gl.getUniformLocation(texturedProgram, 'u_checkMaskBit') as WebGLUniformLocation,
 		texturedSetMaskBitUniform: gl.getUniformLocation(texturedProgram, 'u_setMaskBit') as WebGLUniformLocation,
 		texturedDitherEnableUniform: gl.getUniformLocation(texturedProgram, 'u_ditherEnable') as WebGLUniformLocation,
+		texturedInterlacedRenderWordUniform: gl.getUniformLocation(texturedProgram, 'u_interlacedRenderWord') as WebGLUniformLocation,
 		transferPositionAttrib: gl.getAttribLocation(transferProgram, 'a_position'),
 		transferTexcoordAttrib: gl.getAttribLocation(transferProgram, 'a_texcoord'),
 		transferSourceUniform: gl.getUniformLocation(transferProgram, 'u_source') as WebGLUniformLocation,
@@ -1000,22 +1006,24 @@ function copyGxGpuVramToSampleTexture(backend: WebGLBackend, gl: WebGL2Rendering
 	gl.copyTexSubImage2D(gl.TEXTURE_2D, 0, 0, 0, 0, 0, GX_GPU_VRAM_WIDTH, GX_GPU_VRAM_HEIGHT);
 }
 
-function writeSolidUniforms(gl: WebGL2RenderingContext, blendEnabled: boolean, blendMode: number, maskBitModeWord: number, ditherEnabled: boolean): void {
+function writeSolidUniforms(gl: WebGL2RenderingContext, blendEnabled: boolean, blendMode: number, maskBitModeWord: number, ditherEnabled: boolean, interlacedRenderWord: number): void {
 	gl.uniform1i(gxGpuWebGLState.solidVramUniform, GX_GPU_TEXTURE_SAMPLE_UNIT);
 	gl.uniform1f(gxGpuWebGLState.solidBlendEnableUniform, blendEnabled ? 1 : 0);
 	gl.uniform1f(gxGpuWebGLState.solidBlendModeUniform, blendMode);
 	gl.uniform1f(gxGpuWebGLState.solidCheckMaskBitUniform, gxGpuMaskBitCheckBeforeDraw(maskBitModeWord) ? 1 : 0);
 	gl.uniform1f(gxGpuWebGLState.solidSetMaskBitUniform, gxGpuMaskBitSetWhileDrawing(maskBitModeWord) ? 1 : 0);
 	gl.uniform1f(gxGpuWebGLState.solidDitherEnableUniform, ditherEnabled ? 1 : 0);
+	gl.uniform1f(gxGpuWebGLState.solidInterlacedRenderWordUniform, interlacedRenderWord);
 }
 
-function writeLineUniforms(gl: WebGL2RenderingContext, blendEnabled: boolean, blendMode: number, maskBitModeWord: number, ditherEnabled: boolean): void {
+function writeLineUniforms(gl: WebGL2RenderingContext, blendEnabled: boolean, blendMode: number, maskBitModeWord: number, ditherEnabled: boolean, interlacedRenderWord: number): void {
 	gl.uniform1i(gxGpuWebGLState.lineVramUniform, GX_GPU_TEXTURE_SAMPLE_UNIT);
 	gl.uniform1f(gxGpuWebGLState.lineBlendEnableUniform, blendEnabled ? 1 : 0);
 	gl.uniform1f(gxGpuWebGLState.lineBlendModeUniform, blendMode);
 	gl.uniform1f(gxGpuWebGLState.lineCheckMaskBitUniform, gxGpuMaskBitCheckBeforeDraw(maskBitModeWord) ? 1 : 0);
 	gl.uniform1f(gxGpuWebGLState.lineSetMaskBitUniform, gxGpuMaskBitSetWhileDrawing(maskBitModeWord) ? 1 : 0);
 	gl.uniform1f(gxGpuWebGLState.lineDitherEnableUniform, ditherEnabled ? 1 : 0);
+	gl.uniform1f(gxGpuWebGLState.lineInterlacedRenderWordUniform, interlacedRenderWord);
 }
 
 function writeTexturedUniforms(gl: WebGL2RenderingContext, commandBuffer: GxGpuCommandBufferView, commandIndex: number): void {
@@ -1035,6 +1043,7 @@ function writeTexturedUniforms(gl: WebGL2RenderingContext, commandBuffer: GxGpuC
 	gl.uniform1f(gxGpuWebGLState.texturedCheckMaskBitUniform, gxGpuMaskBitCheckBeforeDraw(commandBuffer.commandMaskBitModeWord[commandIndex]) ? 1 : 0);
 	gl.uniform1f(gxGpuWebGLState.texturedSetMaskBitUniform, gxGpuMaskBitSetWhileDrawing(commandBuffer.commandMaskBitModeWord[commandIndex]) ? 1 : 0);
 	gl.uniform1f(gxGpuWebGLState.texturedDitherEnableUniform, commandBuffer.commandKind[commandIndex] === GX_GPU_COMMAND_DRAW_POLYGON && gxGpuDitheredPolygon(drawModeWord, opcode) ? 1 : 0);
+	gl.uniform1f(gxGpuWebGLState.texturedInterlacedRenderWordUniform, commandBuffer.commandInterlacedRenderWord[commandIndex]);
 }
 
 function writeTransferUniforms(gl: WebGL2RenderingContext, sourceTextureUnit: number, maskBitModeWord: number): void {
@@ -1052,11 +1061,12 @@ function flushSolidCommands(
 	bottomRightWord: number,
 	maskBitModeWord: number,
 	ditherEnabled: boolean,
+	interlacedRenderWord: number,
 ): number {
 	if (vertexFloatCount !== 0) {
 		backend.bindArrayBuffer(gxGpuWebGLState.solidVertexBuffer);
 		gl.bufferSubData(gl.ARRAY_BUFFER, 0, gxGpuSolidVertices, 0, vertexFloatCount);
-		renderNewSolidCommands(backend, gl, vertexFloatCount / GX_GPU_SOLID_VERTEX_FLOATS, topLeftWord, bottomRightWord, false, 0, maskBitModeWord, ditherEnabled);
+		renderNewSolidCommands(backend, gl, vertexFloatCount / GX_GPU_SOLID_VERTEX_FLOATS, topLeftWord, bottomRightWord, false, 0, maskBitModeWord, ditherEnabled, interlacedRenderWord);
 	}
 	return 0;
 }
@@ -1071,6 +1081,7 @@ function renderNewLineCommands(
 	blendMode: number,
 	maskBitModeWord: number,
 	ditherEnabled: boolean,
+	interlacedRenderWord: number,
 ): void {
 	backend.bindArrayBuffer(gxGpuWebGLState.lineVertexBuffer);
 	gl.bufferSubData(gl.ARRAY_BUFFER, 0, gxGpuLineVertices, 0, vertexFloatCount);
@@ -1082,7 +1093,7 @@ function renderNewLineCommands(
 	backend.setBlendEnabled(false);
 	applyGxGpuDrawingAreaScissor(gl, topLeftWord, bottomRightWord);
 	backend.useProgram(gxGpuWebGLState.lineProgram);
-	writeLineUniforms(gl, blendEnabled, blendMode, maskBitModeWord, ditherEnabled);
+	writeLineUniforms(gl, blendEnabled, blendMode, maskBitModeWord, ditherEnabled, interlacedRenderWord);
 	backend.setActiveTexture(GX_GPU_TEXTURE_SAMPLE_UNIT);
 	backend.bindTexture2D(gxGpuWebGLState.vramSampleTexture);
 	backend.bindVertexArray(null);
@@ -1111,9 +1122,10 @@ function flushLineCommands(
 	blendMode: number,
 	maskBitModeWord: number,
 	ditherEnabled: boolean,
+	interlacedRenderWord: number,
 ): number {
 	if (vertexFloatCount !== 0) {
-		renderNewLineCommands(backend, gl, vertexFloatCount, topLeftWord, bottomRightWord, blendEnabled, blendMode, maskBitModeWord, ditherEnabled);
+		renderNewLineCommands(backend, gl, vertexFloatCount, topLeftWord, bottomRightWord, blendEnabled, blendMode, maskBitModeWord, ditherEnabled, interlacedRenderWord);
 	}
 	return 0;
 }
@@ -1127,6 +1139,7 @@ function renderLineSegmentCommand(
 	blendMode: number,
 	maskBitModeWord: number,
 	ditherEnabled: boolean,
+	interlacedRenderWord: number,
 	x0: number,
 	y0: number,
 	color0: number,
@@ -1137,7 +1150,7 @@ function renderLineSegmentCommand(
 	const vertexFloatCount = appendLineSegment(0, x0, y0, color0, x1, y1, color1);
 	if (vertexFloatCount !== 0) {
 		copyGxGpuVramToSampleTexture(backend, gl);
-		renderNewLineCommands(backend, gl, vertexFloatCount, topLeftWord, bottomRightWord, blendEnabled, blendMode, maskBitModeWord, ditherEnabled);
+		renderNewLineCommands(backend, gl, vertexFloatCount, topLeftWord, bottomRightWord, blendEnabled, blendMode, maskBitModeWord, ditherEnabled, interlacedRenderWord);
 	}
 }
 
@@ -1151,6 +1164,7 @@ function appendBatchedLineSegment(
 	blendMode: number,
 	maskBitModeWord: number,
 	ditherEnabled: boolean,
+	interlacedRenderWord: number,
 	x0: number,
 	y0: number,
 	color0: number,
@@ -1160,7 +1174,7 @@ function appendBatchedLineSegment(
 ): number {
 	let offset = vertexFloatCount;
 	if (offset + GX_GPU_LINE_SEGMENT_FLOATS > GX_GPU_LINE_FLOAT_CAPACITY) {
-		offset = flushLineCommands(backend, gl, offset, topLeftWord, bottomRightWord, blendEnabled, blendMode, maskBitModeWord, ditherEnabled);
+		offset = flushLineCommands(backend, gl, offset, topLeftWord, bottomRightWord, blendEnabled, blendMode, maskBitModeWord, ditherEnabled, interlacedRenderWord);
 	}
 	return appendLineSegment(offset, x0, y0, color0, x1, y1, color1);
 }
@@ -1175,6 +1189,7 @@ function emitLineSegment(
 	blendMode: number,
 	maskBitModeWord: number,
 	ditherEnabled: boolean,
+	interlacedRenderWord: number,
 	readsVram: boolean,
 	x0: number,
 	y0: number,
@@ -1184,10 +1199,10 @@ function emitLineSegment(
 	color1: number,
 ): number {
 	if (readsVram) {
-		renderLineSegmentCommand(backend, gl, topLeftWord, bottomRightWord, blendEnabled, blendMode, maskBitModeWord, ditherEnabled, x0, y0, color0, x1, y1, color1);
+		renderLineSegmentCommand(backend, gl, topLeftWord, bottomRightWord, blendEnabled, blendMode, maskBitModeWord, ditherEnabled, interlacedRenderWord, x0, y0, color0, x1, y1, color1);
 		return vertexFloatCount;
 	}
-	return appendBatchedLineSegment(backend, gl, vertexFloatCount, topLeftWord, bottomRightWord, blendEnabled, blendMode, maskBitModeWord, ditherEnabled, x0, y0, color0, x1, y1, color1);
+	return appendBatchedLineSegment(backend, gl, vertexFloatCount, topLeftWord, bottomRightWord, blendEnabled, blendMode, maskBitModeWord, ditherEnabled, interlacedRenderWord, x0, y0, color0, x1, y1, color1);
 }
 
 function renderLineCommand(
@@ -1209,6 +1224,7 @@ function renderLineCommand(
 	const maskBitModeWord = commandBuffer.commandMaskBitModeWord[commandIndex];
 	const ditherEnabled = gxGpuDrawModeDitherEnabled(commandBuffer.commandDrawModeWord[commandIndex]);
 	const readsVram = blendEnabled || gxGpuMaskBitCheckBeforeDraw(maskBitModeWord);
+	const interlacedRenderWord = commandBuffer.commandInterlacedRenderWord[commandIndex];
 	let vertexFloatCount = 0;
 
 	if (commandBuffer.commandKind[commandIndex] === GX_GPU_COMMAND_DRAW_LINE) {
@@ -1217,12 +1233,12 @@ function renderLineCommand(
 		if (gxGpuCommandGouraud(opcode)) {
 			const color1 = commandBuffer.words[wordStart + 2];
 			const xy1 = commandBuffer.words[wordStart + 3];
-			vertexFloatCount = emitLineSegment(backend, gl, vertexFloatCount, topLeftWord, bottomRightWord, blendEnabled, blendMode, maskBitModeWord, ditherEnabled, readsVram, dx + gxGpuVertexX(xy0), dy + gxGpuVertexY(xy0), color0, dx + gxGpuVertexX(xy1), dy + gxGpuVertexY(xy1), color1);
+			vertexFloatCount = emitLineSegment(backend, gl, vertexFloatCount, topLeftWord, bottomRightWord, blendEnabled, blendMode, maskBitModeWord, ditherEnabled, interlacedRenderWord, readsVram, dx + gxGpuVertexX(xy0), dy + gxGpuVertexY(xy0), color0, dx + gxGpuVertexX(xy1), dy + gxGpuVertexY(xy1), color1);
 		} else {
 			const xy1 = commandBuffer.words[wordStart + 2];
-			vertexFloatCount = emitLineSegment(backend, gl, vertexFloatCount, topLeftWord, bottomRightWord, blendEnabled, blendMode, maskBitModeWord, ditherEnabled, readsVram, dx + gxGpuVertexX(xy0), dy + gxGpuVertexY(xy0), color0, dx + gxGpuVertexX(xy1), dy + gxGpuVertexY(xy1), color0);
+			vertexFloatCount = emitLineSegment(backend, gl, vertexFloatCount, topLeftWord, bottomRightWord, blendEnabled, blendMode, maskBitModeWord, ditherEnabled, interlacedRenderWord, readsVram, dx + gxGpuVertexX(xy0), dy + gxGpuVertexY(xy0), color0, dx + gxGpuVertexX(xy1), dy + gxGpuVertexY(xy1), color0);
 		}
-		flushLineCommands(backend, gl, vertexFloatCount, topLeftWord, bottomRightWord, blendEnabled, blendMode, maskBitModeWord, ditherEnabled);
+		flushLineCommands(backend, gl, vertexFloatCount, topLeftWord, bottomRightWord, blendEnabled, blendMode, maskBitModeWord, ditherEnabled, interlacedRenderWord);
 		return;
 	}
 
@@ -1232,7 +1248,7 @@ function renderLineCommand(
 		for (let wordIndex = wordStart + 2; wordIndex + 1 < wordEnd; wordIndex += 2) {
 			const color1 = commandBuffer.words[wordIndex];
 			const xy1 = commandBuffer.words[wordIndex + 1];
-			vertexFloatCount = emitLineSegment(backend, gl, vertexFloatCount, topLeftWord, bottomRightWord, blendEnabled, blendMode, maskBitModeWord, ditherEnabled, readsVram, dx + gxGpuVertexX(xy0), dy + gxGpuVertexY(xy0), color0, dx + gxGpuVertexX(xy1), dy + gxGpuVertexY(xy1), color1);
+			vertexFloatCount = emitLineSegment(backend, gl, vertexFloatCount, topLeftWord, bottomRightWord, blendEnabled, blendMode, maskBitModeWord, ditherEnabled, interlacedRenderWord, readsVram, dx + gxGpuVertexX(xy0), dy + gxGpuVertexY(xy0), color0, dx + gxGpuVertexX(xy1), dy + gxGpuVertexY(xy1), color1);
 			color0 = color1;
 			xy0 = xy1;
 		}
@@ -1241,11 +1257,11 @@ function renderLineCommand(
 		let xy0 = commandBuffer.words[wordStart + 1];
 		for (let wordIndex = wordStart + 2; wordIndex < wordEnd; wordIndex += 1) {
 			const xy1 = commandBuffer.words[wordIndex];
-			vertexFloatCount = emitLineSegment(backend, gl, vertexFloatCount, topLeftWord, bottomRightWord, blendEnabled, blendMode, maskBitModeWord, ditherEnabled, readsVram, dx + gxGpuVertexX(xy0), dy + gxGpuVertexY(xy0), color, dx + gxGpuVertexX(xy1), dy + gxGpuVertexY(xy1), color);
+			vertexFloatCount = emitLineSegment(backend, gl, vertexFloatCount, topLeftWord, bottomRightWord, blendEnabled, blendMode, maskBitModeWord, ditherEnabled, interlacedRenderWord, readsVram, dx + gxGpuVertexX(xy0), dy + gxGpuVertexY(xy0), color, dx + gxGpuVertexX(xy1), dy + gxGpuVertexY(xy1), color);
 			xy0 = xy1;
 		}
 	}
-	flushLineCommands(backend, gl, vertexFloatCount, topLeftWord, bottomRightWord, blendEnabled, blendMode, maskBitModeWord, ditherEnabled);
+	flushLineCommands(backend, gl, vertexFloatCount, topLeftWord, bottomRightWord, blendEnabled, blendMode, maskBitModeWord, ditherEnabled, interlacedRenderWord);
 }
 
 function renderSolidCommand(
@@ -1288,6 +1304,7 @@ function renderSolidCommand(
 		gxGpuDrawModeTransparencyMode(commandBuffer.commandDrawModeWord[commandIndex]),
 		maskBitModeWord,
 		ditherEnabled,
+		commandBuffer.commandInterlacedRenderWord[commandIndex],
 	);
 }
 
@@ -1298,6 +1315,7 @@ function executeNewGxGpuCommands(backend: WebGLBackend, gl: WebGL2RenderingConte
 	let solidBatchBottomRightWord = GX_GPU_FULL_DRAWING_AREA_BOTTOM_RIGHT_WORD;
 	let solidBatchMaskBitModeWord = 0;
 	let solidBatchDitherEnabled = false;
+	let solidBatchInterlacedRenderWord = 0;
 	for (; commandIndex < commandBuffer.commandCount; commandIndex += 1) {
 		switch (commandBuffer.commandKind[commandIndex]) {
 			case GX_GPU_COMMAND_DRAW_POLYGON: {
@@ -1308,15 +1326,17 @@ function executeNewGxGpuCommands(backend: WebGLBackend, gl: WebGL2RenderingConte
 				const maskBitModeWord = commandBuffer.commandMaskBitModeWord[commandIndex];
 				const drawsTexture = gxGpuCommandDrawsTexture(opcode, drawModeWord);
 				const ditherEnabled = gxGpuDitheredPolygon(drawModeWord, opcode);
+				const interlacedRenderWord = commandBuffer.commandInterlacedRenderWord[commandIndex];
 				const readsVram = gxGpuCommandSemiTransparencyEnabled(opcode) || gxGpuMaskBitCheckBeforeDraw(maskBitModeWord);
 				const batchMaskChange = gxGpuMaskBitSetWhileDrawing(maskBitModeWord) !== gxGpuMaskBitSetWhileDrawing(solidBatchMaskBitModeWord);
-				if (vertexFloatCount !== 0 && (topLeftWord !== solidBatchTopLeftWord || bottomRightWord !== solidBatchBottomRightWord || batchMaskChange || solidBatchDitherEnabled !== ditherEnabled || readsVram || drawsTexture)) {
-					vertexFloatCount = flushSolidCommands(backend, gl, vertexFloatCount, solidBatchTopLeftWord, solidBatchBottomRightWord, solidBatchMaskBitModeWord, solidBatchDitherEnabled);
+				if (vertexFloatCount !== 0 && (topLeftWord !== solidBatchTopLeftWord || bottomRightWord !== solidBatchBottomRightWord || batchMaskChange || solidBatchDitherEnabled !== ditherEnabled || solidBatchInterlacedRenderWord !== interlacedRenderWord || readsVram || drawsTexture)) {
+					vertexFloatCount = flushSolidCommands(backend, gl, vertexFloatCount, solidBatchTopLeftWord, solidBatchBottomRightWord, solidBatchMaskBitModeWord, solidBatchDitherEnabled, solidBatchInterlacedRenderWord);
 				}
 				solidBatchTopLeftWord = topLeftWord;
 				solidBatchBottomRightWord = bottomRightWord;
 				solidBatchMaskBitModeWord = maskBitModeWord;
 				solidBatchDitherEnabled = ditherEnabled;
+				solidBatchInterlacedRenderWord = interlacedRenderWord;
 				if (drawsTexture) {
 					renderTexturedCommand(backend, gl, commandBuffer, commandIndex, topLeftWord, bottomRightWord);
 				} else if (readsVram) {
@@ -1334,14 +1354,16 @@ function executeNewGxGpuCommands(backend: WebGLBackend, gl: WebGL2RenderingConte
 				const maskBitModeWord = commandBuffer.commandMaskBitModeWord[commandIndex];
 				const drawsTexture = gxGpuCommandDrawsTexture(opcode, drawModeWord);
 				const readsVram = gxGpuCommandSemiTransparencyEnabled(opcode) || gxGpuMaskBitCheckBeforeDraw(maskBitModeWord);
+				const interlacedRenderWord = commandBuffer.commandInterlacedRenderWord[commandIndex];
 				const batchMaskChange = gxGpuMaskBitSetWhileDrawing(maskBitModeWord) !== gxGpuMaskBitSetWhileDrawing(solidBatchMaskBitModeWord);
-				if (vertexFloatCount !== 0 && (topLeftWord !== solidBatchTopLeftWord || bottomRightWord !== solidBatchBottomRightWord || batchMaskChange || solidBatchDitherEnabled || readsVram || drawsTexture)) {
-					vertexFloatCount = flushSolidCommands(backend, gl, vertexFloatCount, solidBatchTopLeftWord, solidBatchBottomRightWord, solidBatchMaskBitModeWord, solidBatchDitherEnabled);
+				if (vertexFloatCount !== 0 && (topLeftWord !== solidBatchTopLeftWord || bottomRightWord !== solidBatchBottomRightWord || batchMaskChange || solidBatchDitherEnabled || solidBatchInterlacedRenderWord !== interlacedRenderWord || readsVram || drawsTexture)) {
+					vertexFloatCount = flushSolidCommands(backend, gl, vertexFloatCount, solidBatchTopLeftWord, solidBatchBottomRightWord, solidBatchMaskBitModeWord, solidBatchDitherEnabled, solidBatchInterlacedRenderWord);
 				}
 				solidBatchTopLeftWord = topLeftWord;
 				solidBatchBottomRightWord = bottomRightWord;
 				solidBatchMaskBitModeWord = maskBitModeWord;
 				solidBatchDitherEnabled = false;
+				solidBatchInterlacedRenderWord = interlacedRenderWord;
 				if (drawsTexture) {
 					renderTexturedCommand(backend, gl, commandBuffer, commandIndex, topLeftWord, bottomRightWord);
 				} else if (readsVram) {
@@ -1354,37 +1376,39 @@ function executeNewGxGpuCommands(backend: WebGLBackend, gl: WebGL2RenderingConte
 			case GX_GPU_COMMAND_FILL_RECTANGLE: {
 				const topLeftWord = GX_GPU_FULL_DRAWING_AREA_TOP_LEFT_WORD;
 				const bottomRightWord = GX_GPU_FULL_DRAWING_AREA_BOTTOM_RIGHT_WORD;
+				const interlacedRenderWord = commandBuffer.commandInterlacedRenderWord[commandIndex];
 				const batchMaskChange = gxGpuMaskBitSetWhileDrawing(solidBatchMaskBitModeWord);
-				if (vertexFloatCount !== 0 && (solidBatchTopLeftWord !== topLeftWord || solidBatchBottomRightWord !== bottomRightWord || batchMaskChange || solidBatchDitherEnabled)) {
-					vertexFloatCount = flushSolidCommands(backend, gl, vertexFloatCount, solidBatchTopLeftWord, solidBatchBottomRightWord, solidBatchMaskBitModeWord, solidBatchDitherEnabled);
+				if (vertexFloatCount !== 0 && (solidBatchTopLeftWord !== topLeftWord || solidBatchBottomRightWord !== bottomRightWord || batchMaskChange || solidBatchDitherEnabled || solidBatchInterlacedRenderWord !== interlacedRenderWord)) {
+					vertexFloatCount = flushSolidCommands(backend, gl, vertexFloatCount, solidBatchTopLeftWord, solidBatchBottomRightWord, solidBatchMaskBitModeWord, solidBatchDitherEnabled, solidBatchInterlacedRenderWord);
 				}
 				solidBatchTopLeftWord = topLeftWord;
 				solidBatchBottomRightWord = bottomRightWord;
 				solidBatchMaskBitModeWord = 0;
 				solidBatchDitherEnabled = false;
+				solidBatchInterlacedRenderWord = interlacedRenderWord;
 				vertexFloatCount = appendFillRectangle(commandBuffer, commandIndex, vertexFloatCount);
 				break;
 			}
 			case GX_GPU_COMMAND_DRAW_LINE:
 			case GX_GPU_COMMAND_DRAW_POLYLINE: {
-				vertexFloatCount = flushSolidCommands(backend, gl, vertexFloatCount, solidBatchTopLeftWord, solidBatchBottomRightWord, solidBatchMaskBitModeWord, solidBatchDitherEnabled);
+				vertexFloatCount = flushSolidCommands(backend, gl, vertexFloatCount, solidBatchTopLeftWord, solidBatchBottomRightWord, solidBatchMaskBitModeWord, solidBatchDitherEnabled, solidBatchInterlacedRenderWord);
 				const topLeftWord = commandBuffer.commandDrawingAreaTopLeftWord[commandIndex];
 				const bottomRightWord = commandBuffer.commandDrawingAreaBottomRightWord[commandIndex];
 				renderLineCommand(backend, gl, commandBuffer, commandIndex, topLeftWord, bottomRightWord);
 				break;
 			}
 			case GX_GPU_COMMAND_COPY_VRAM_TO_VRAM:
-				vertexFloatCount = flushSolidCommands(backend, gl, vertexFloatCount, solidBatchTopLeftWord, solidBatchBottomRightWord, solidBatchMaskBitModeWord, solidBatchDitherEnabled);
+				vertexFloatCount = flushSolidCommands(backend, gl, vertexFloatCount, solidBatchTopLeftWord, solidBatchBottomRightWord, solidBatchMaskBitModeWord, solidBatchDitherEnabled, solidBatchInterlacedRenderWord);
 				copyVramToVram(backend, gl, commandBuffer, commandIndex);
 				break;
 			case GX_GPU_COMMAND_UPLOAD_CPU_TO_VRAM:
-				vertexFloatCount = flushSolidCommands(backend, gl, vertexFloatCount, solidBatchTopLeftWord, solidBatchBottomRightWord, solidBatchMaskBitModeWord, solidBatchDitherEnabled);
+				vertexFloatCount = flushSolidCommands(backend, gl, vertexFloatCount, solidBatchTopLeftWord, solidBatchBottomRightWord, solidBatchMaskBitModeWord, solidBatchDitherEnabled, solidBatchInterlacedRenderWord);
 				uploadCpuToVram(backend, gl, commandBuffer, commandIndex);
 				break;
 		}
 	}
 	gxGpuWebGLState.processedCommandCount = commandBuffer.commandCount;
-	flushSolidCommands(backend, gl, vertexFloatCount, solidBatchTopLeftWord, solidBatchBottomRightWord, solidBatchMaskBitModeWord, solidBatchDitherEnabled);
+	flushSolidCommands(backend, gl, vertexFloatCount, solidBatchTopLeftWord, solidBatchBottomRightWord, solidBatchMaskBitModeWord, solidBatchDitherEnabled, solidBatchInterlacedRenderWord);
 }
 
 function renderNewSolidCommands(
@@ -1397,6 +1421,7 @@ function renderNewSolidCommands(
 	blendMode: number,
 	maskBitModeWord: number,
 	ditherEnabled: boolean,
+	interlacedRenderWord: number,
 ): void {
 	gl.bindFramebuffer(gl.FRAMEBUFFER, gxGpuWebGLState.vramFramebuffer);
 	backend.setViewportRect(0, 0, GX_GPU_VRAM_WIDTH, GX_GPU_VRAM_HEIGHT);
@@ -1406,7 +1431,7 @@ function renderNewSolidCommands(
 	backend.setBlendEnabled(false);
 	applyGxGpuDrawingAreaScissor(gl, topLeftWord, bottomRightWord);
 	backend.useProgram(gxGpuWebGLState.solidProgram);
-	writeSolidUniforms(gl, blendEnabled, blendMode, maskBitModeWord, ditherEnabled);
+	writeSolidUniforms(gl, blendEnabled, blendMode, maskBitModeWord, ditherEnabled, interlacedRenderWord);
 	backend.setActiveTexture(GX_GPU_TEXTURE_SAMPLE_UNIT);
 	backend.bindTexture2D(gxGpuWebGLState.vramSampleTexture);
 	backend.bindVertexArray(null);

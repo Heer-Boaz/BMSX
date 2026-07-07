@@ -142,7 +142,9 @@ export class VblankState {
 	private publishVblankTiming(active: boolean): void {
 		const runtime = this.runtime;
 		this.vblankActive = active;
-		runtime.machine.vdp.setScanoutTiming(active, this.getCyclesIntoFrame(), runtime.timing.cycleBudgetPerFrame, this.vblankStartCycle);
+		const cyclesIntoFrame = this.getCyclesIntoFrame();
+		runtime.machine.vdp.setScanoutTiming(active, cyclesIntoFrame, runtime.timing.cycleBudgetPerFrame, this.vblankStartCycle);
+		runtime.machine.gxGpu.setScanoutTiming(active, cyclesIntoFrame, runtime.timing.cycleBudgetPerFrame, runtime.timing.totalScanlines);
 	}
 
 	private enterVblank(): void {

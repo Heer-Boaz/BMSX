@@ -3,6 +3,7 @@
 #include "machine/cpu/cpu.h"
 #include "machine/memory/memory.h"
 #include "machine/model_registry.h"
+#include "machine/scheduler/device.h"
 
 #include <array>
 #include <cstdint>
@@ -13,11 +14,15 @@ namespace {
 struct GpuHarness {
 	std::array<uint8_t, 1> emptyRom{{0}};
 	bmsx::Memory memory;
+	bmsx::CPU cpu;
+	bmsx::DeviceScheduler scheduler;
 	bmsx::GxGpu gpu;
 
 	GpuHarness()
 		: memory(bmsx::MemoryInit{ { emptyRom.data(), 0u }, { emptyRom.data(), 0u } })
-		, gpu(memory) {
+		, cpu(memory)
+		, scheduler(cpu)
+		, gpu(memory, scheduler) {
 		gpu.reset();
 	}
 };
@@ -217,6 +222,56 @@ void testDisplayModeStatusBits() {
 		| bmsx::GX_GPU_STATUS_VERTICAL_INTERLACE;
 	require((gpu.readStatus() & statusBits) == statusBits, "GX-GPU display mode GPUSTAT single-bit fields");
 	require((gpu.readStatus() & (0x3u << 17u)) == (0x3u << 17u), "GX-GPU display mode GPUSTAT horizontal resolution");
+}
+
+void testInterlacedScanoutStatusBits() {
+	GpuHarness harness;
+	bmsx::GxGpu& gpu = harness.gpu;
+
+	gpu.writeGp1((bmsx::GX_GPU_GP1_SET_DISPLAY_MODE << 24u) | 0x00000000u);
+	gpu.setScanoutTiming(false, 0, 100, 10);
+	require((gpu.readStatus() & bmsx::GX_GPU_STATUS_DISPLAY_LINE_LSB) == 0u, "GX-GPU scanout starts on even line");
+
+	harness.scheduler.advanceTo(30);
+	require((gpu.readStatus() & bmsx::GX_GPU_STATUS_DISPLAY_LINE_LSB) == bmsx::GX_GPU_STATUS_DISPLAY_LINE_LSB, "GX-GPU GPUSTAT line LSB follows current scanline");
+
+	gpu.writeGp1((bmsx::GX_GPU_GP1_SET_DISPLAY_START << 24u) | (7u << 10u));
+	gpu.writeGp1((bmsx::GX_GPU_GP1_SET_DISPLAY_MODE << 24u) | 0x00000024u);
+	gpu.setScanoutTiming(true, 90, 100, 10);
+	require((gpu.readStatus() & bmsx::GX_GPU_STATUS_DISPLAY_LINE_LSB) == bmsx::GX_GPU_STATUS_DISPLAY_LINE_LSB, "GX-GPU 480i vblank display line bit uses display start");
+	gpu.setScanoutTiming(false, 0, 100, 10);
+	require((gpu.readStatus() & bmsx::GX_GPU_STATUS_INTERLACED_FIELD) == 0u, "GX-GPU GPUSTAT interlaced field toggles on next frame");
+	require((gpu.readStatus() & bmsx::GX_GPU_STATUS_DISPLAY_LINE_LSB) == 0u, "GX-GPU 480i active display line bit follows display field");
+}
+
+void testInterlacedRenderCommandWords() {
+	GpuHarness harness;
+	bmsx::GxGpu& gpu = harness.gpu;
+	const bmsx::GxGpuCommandBuffer& commands = *gpu.readDeviceOutput().commandBuffer;
+
+	require(bmsx::gxGpuSkipDrawingToActiveField(bmsx::GX_GPU_STATUS_VERTICAL_RESOLUTION | bmsx::GX_GPU_STATUS_VERTICAL_INTERLACE), "GX-GPU detects PSX skip-active-field mode");
+	require(!bmsx::gxGpuSkipDrawingToActiveField(bmsx::GX_GPU_STATUS_VERTICAL_RESOLUTION | bmsx::GX_GPU_STATUS_VERTICAL_INTERLACE | (1u << 10u)), "GX-GPU displayed-field draw bit disables skip-active-field mode");
+	require(bmsx::gxGpuInterlacedRenderWord(bmsx::GX_GPU_STATUS_VERTICAL_RESOLUTION | bmsx::GX_GPU_STATUS_VERTICAL_INTERLACE, 1u) == (bmsx::GX_GPU_INTERLACED_RENDER_ENABLE | bmsx::GX_GPU_INTERLACED_RENDER_ACTIVE_LINE_LSB), "GX-GPU interlaced render word carries active line LSB");
+	require(bmsx::gxGpuInterlacedRenderWord(bmsx::GX_GPU_STATUS_VERTICAL_RESOLUTION | bmsx::GX_GPU_STATUS_VERTICAL_INTERLACE | (1u << 10u), 1u) == 0u, "GX-GPU interlaced render word clears when both fields are drawable");
+
+	gpu.writeGp1((bmsx::GX_GPU_GP1_SET_DISPLAY_START << 24u) | (7u << 10u));
+	gpu.writeGp1((bmsx::GX_GPU_GP1_SET_DISPLAY_MODE << 24u) | 0x00000024u);
+	gpu.writeGp0((bmsx::GX_GPU_GP0_POLYGON_FIRST << 24u) | 0x00010203u);
+	gpu.writeGp0(0x00000000u);
+	gpu.writeGp0(0x00000001u);
+	gpu.writeGp0(0x00000002u);
+
+	require(commands.commandCount == 1u, "GX-GPU records first interlaced polygon command");
+	require(commands.commandInterlacedRenderWord[0] == (bmsx::GX_GPU_INTERLACED_RENDER_ENABLE | bmsx::GX_GPU_INTERLACED_RENDER_ACTIVE_LINE_LSB), "GX-GPU command captures interlaced active line");
+
+	gpu.writeGp0((bmsx::GX_GPU_GP0_SET_DRAW_MODE << 24u) | (1u << 10u));
+	gpu.writeGp0((bmsx::GX_GPU_GP0_POLYGON_FIRST << 24u) | 0x00010203u);
+	gpu.writeGp0(0x00000000u);
+	gpu.writeGp0(0x00000001u);
+	gpu.writeGp0(0x00000002u);
+
+	require(commands.commandCount == 2u, "GX-GPU records second interlaced polygon command");
+	require(commands.commandInterlacedRenderWord[1] == 0u, "GX-GPU command clears interlaced active-line discard when drawing to displayed field");
 }
 
 void testDisplayDisableAndDmaDirectionStatusBits() {
@@ -506,6 +561,8 @@ int main() {
 	testGp1DisplayModeOwnsPalNtsc();
 	testGp1ResetRestoresPalDisplayStatus();
 	testDisplayModeStatusBits();
+	testInterlacedScanoutStatusBits();
+	testInterlacedRenderCommandWords();
 	testDisplayDisableAndDmaDirectionStatusBits();
 	testGp1CrtcRangeRegistersLatchMaskedRawWords();
 	testGp0IrqRequestAndGp1Acknowledge();

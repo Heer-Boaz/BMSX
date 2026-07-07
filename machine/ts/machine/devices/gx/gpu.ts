@@ -1,6 +1,7 @@
 import type { Value } from '../../cpu/cpu';
 import { IO_GX_GPU_GP0, IO_GX_GPU_GP1 } from '../../bus/io';
 import type { Memory } from '../../memory/memory';
+import type { DeviceScheduler } from '../../scheduler/device';
 import { PSX_GPU_DISPLAY_MODE_PAL_WORD } from '../../model_registry';
 import type { GxGpuDeviceOutput } from './device_output';
 import {
@@ -14,6 +15,8 @@ import {
 	GX_GPU_COMMAND_UPLOAD_CPU_TO_VRAM,
 	GX_GPU_DRAW_MODE_TEXTURE_DISABLE,
 	GxGpuCommandBuffer,
+	gxGpuDisplayStartY,
+	gxGpuInterlacedRenderWord,
 	gxGpuPolygonDrawModeWord,
 	gxGpuPolygonTexturePageWordIndex,
 	gxGpuTextureAttribute,
@@ -107,10 +110,12 @@ export const GX_GPU_STATUS_READY_TO_SEND_VRAM = 1 << 27;
 export const GX_GPU_STATUS_READY_TO_RECEIVE_DMA = 1 << 28;
 export const GX_GPU_STATUS_DMA_DIRECTION_SHIFT = 29;
 export const GX_GPU_STATUS_DMA_DIRECTION_MASK = 0x3 << GX_GPU_STATUS_DMA_DIRECTION_SHIFT;
+export const GX_GPU_STATUS_DISPLAY_LINE_LSB = 0x80000000;
 export const GX_GPU_STATUS_RESET_WORD = GX_GPU_STATUS_INTERLACED_FIELD
 	| GX_GPU_STATUS_DISPLAY_DISABLE
 	| GX_GPU_STATUS_GPU_IDLE
 	| GX_GPU_STATUS_READY_TO_RECEIVE_DMA;
+export const GX_GPU_STATUS_SCANOUT_MASK = GX_GPU_STATUS_INTERLACED_FIELD | GX_GPU_STATUS_DISPLAY_LINE_LSB;
 export const GX_GPU_STATUS_DISPLAY_MODE_MASK = GX_GPU_STATUS_REVERSE_FLAG
 	| GX_GPU_STATUS_HORIZONTAL_RESOLUTION_2
 	| (0x3 << GX_GPU_STATUS_HORIZONTAL_RESOLUTION_1_SHIFT)
@@ -155,6 +160,13 @@ export class GxGpu {
 	private horizontalDisplayRangeWord = 0x00c60260;
 	private verticalDisplayRangeWord = 0x0003fc10;
 	private textureDisableAllowedWord = 0;
+	private scanoutVblankActive = false;
+	private scanoutInterlacedField = 0;
+	private scanoutInterlacedDisplayField = 0;
+	private scanoutActiveLineLsb = 0;
+	private scanoutFrameStartCycle = 0;
+	private scanoutCyclesPerFrame = 1;
+	private scanoutTotalScanlines = 313;
 	private readonly deviceOutput = {
 		commandBuffer: this.commandBuffer,
 		statusWord: GX_GPU_STATUS_RESET_WORD,
@@ -164,7 +176,7 @@ export class GxGpu {
 		verticalDisplayRangeWord: 0x0003fc10,
 	};
 
-	public constructor(private readonly memory: Memory) {
+	public constructor(private readonly memory: Memory, private readonly scheduler: DeviceScheduler) {
 		this.memory.mapIoRead(IO_GX_GPU_GP0, this, GxGpu.readGp0Thunk);
 		this.memory.mapIoWrite(IO_GX_GPU_GP0, this, GxGpu.writeGp0Thunk);
 		this.memory.mapIoRead(IO_GX_GPU_GP1, this, GxGpu.readStatusThunk);
@@ -193,7 +205,15 @@ export class GxGpu {
 		this.displayStartWord = 0;
 		this.horizontalDisplayRangeWord = 0x00c60260;
 		this.verticalDisplayRangeWord = 0x0003fc10;
+		this.scanoutVblankActive = false;
+		this.scanoutInterlacedField = 0;
+		this.scanoutInterlacedDisplayField = 0;
+		this.scanoutActiveLineLsb = 0;
+		this.scanoutFrameStartCycle = 0;
+		this.scanoutCyclesPerFrame = 1;
+		this.scanoutTotalScanlines = 313;
 		this.updateDisplayModeStatusBits();
+		this.updateScanoutStatusBits();
 		this.updateDmaRequestStatusBit();
 		this.memory.writeIoValue(IO_GX_GPU_GP0, 0);
 		this.writeStatusIo();
@@ -307,6 +327,7 @@ export class GxGpu {
 	}
 
 	public readStatus(): number {
+		this.updateScanoutStatusBits();
 		return this.statusWord;
 	}
 
@@ -334,6 +355,7 @@ export class GxGpu {
 				break;
 			case GX_GPU_GP1_SET_DISPLAY_START:
 				this.displayStartWord = command & GX_GPU_DISPLAY_START_MASK;
+				this.updateScanoutStatusBits();
 				this.writeStatusIo();
 				break;
 			case GX_GPU_GP1_SET_HORIZONTAL_DISPLAY_RANGE:
@@ -375,11 +397,31 @@ export class GxGpu {
 		this.writeStatusIo();
 	}
 
+	public setScanoutTiming(vblankActive: boolean, cyclesIntoFrame: number, cyclesPerFrame: number, totalScanlines: number): void {
+		if (!this.scanoutVblankActive && vblankActive) {
+			this.scanoutInterlacedDisplayField = this.gpuStatInInterleaved480iMode() ? this.scanoutInterlacedField ^ 1 : 0;
+		}
+		if (this.scanoutVblankActive && !vblankActive) {
+			if ((this.statusWord & GX_GPU_STATUS_VERTICAL_INTERLACE) !== 0) {
+				this.scanoutInterlacedField ^= 1;
+			} else {
+				this.scanoutInterlacedField = 0;
+			}
+		}
+		this.scanoutVblankActive = vblankActive;
+		this.scanoutFrameStartCycle = this.scheduler.currentNowCycles() - cyclesIntoFrame;
+		this.scanoutCyclesPerFrame = cyclesPerFrame;
+		this.scanoutTotalScanlines = totalScanlines;
+		this.updateScanoutStatusBits();
+		this.writeStatusIo();
+	}
+
 	public readGpuReadWord(): number {
 		return this.gpuReadWord;
 	}
 
 	public readDeviceOutput(): GxGpuDeviceOutput {
+		this.updateScanoutStatusBits();
 		this.deviceOutput.statusWord = this.statusWord;
 		this.deviceOutput.displayModeWord = this.displayModeWord;
 		this.deviceOutput.displayStartWord = this.displayStartWord;
@@ -559,6 +601,7 @@ export class GxGpu {
 			this.drawingAreaBottomRightWord,
 			this.drawingOffsetWord,
 			this.maskBitModeWord,
+			gxGpuInterlacedRenderWord(this.statusWord, this.scanoutActiveLineLsb),
 		);
 	}
 
@@ -641,6 +684,38 @@ export class GxGpu {
 		}
 	}
 
+	private gpuStatInInterleaved480iMode(): boolean {
+		return (this.statusWord & (GX_GPU_STATUS_VERTICAL_RESOLUTION | GX_GPU_STATUS_VERTICAL_INTERLACE)) === (GX_GPU_STATUS_VERTICAL_RESOLUTION | GX_GPU_STATUS_VERTICAL_INTERLACE);
+	}
+
+	private scanoutLine(): number {
+		const cyclesIntoFrame = (this.scheduler.currentNowCycles() - this.scanoutFrameStartCycle) % this.scanoutCyclesPerFrame;
+		const numerator = cyclesIntoFrame * this.scanoutTotalScanlines;
+		return (numerator - numerator % this.scanoutCyclesPerFrame) / this.scanoutCyclesPerFrame;
+	}
+
+	private updateScanoutStatusBits(): void {
+		let scanoutBits = 0;
+		const displayStartY = gxGpuDisplayStartY(this.displayStartWord);
+		if (this.gpuStatInInterleaved480iMode()) {
+			this.scanoutActiveLineLsb = (displayStartY + this.scanoutInterlacedDisplayField) & 1;
+			const displayedField = this.scanoutVblankActive ? 0 : this.scanoutInterlacedDisplayField;
+			if (((displayStartY + displayedField) & 1) !== 0) {
+				scanoutBits |= GX_GPU_STATUS_DISPLAY_LINE_LSB;
+			}
+		} else {
+			this.scanoutActiveLineLsb = 0;
+			this.scanoutInterlacedDisplayField = 0;
+			if (((displayStartY + this.scanoutLine()) & 1) !== 0) {
+				scanoutBits |= GX_GPU_STATUS_DISPLAY_LINE_LSB;
+			}
+		}
+		if ((this.statusWord & GX_GPU_STATUS_VERTICAL_INTERLACE) === 0 || this.scanoutInterlacedField === 0) {
+			scanoutBits |= GX_GPU_STATUS_INTERLACED_FIELD;
+		}
+		this.statusWord = ((this.statusWord & ~GX_GPU_STATUS_SCANOUT_MASK) | scanoutBits) >>> 0;
+	}
+
 	private updateDisplayModeStatusBits(): void {
 		const displayMode = this.displayModeWord;
 		const statusDisplayModeBits = ((displayMode & 0x03) << GX_GPU_STATUS_HORIZONTAL_RESOLUTION_1_SHIFT)
@@ -651,6 +726,7 @@ export class GxGpu {
 			| ((displayMode & 0x40) << 10)
 			| ((displayMode & 0x80) << 7);
 		this.statusWord = ((this.statusWord & ~GX_GPU_STATUS_DISPLAY_MODE_MASK) | statusDisplayModeBits) >>> 0;
+		this.updateScanoutStatusBits();
 	}
 
 	private writeStatusIo(): void {

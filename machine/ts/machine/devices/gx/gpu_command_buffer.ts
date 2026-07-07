@@ -9,6 +9,8 @@ export const GX_GPU_DRAW_MODE_DITHER_ENABLED = 1 << 9;
 export const GX_GPU_DRAW_MODE_TEXTURE_DISABLE = 1 << 11;
 export const GX_GPU_DRAW_MODE_TEXTURE_RECTANGLE_X_FLIP = 1 << 12;
 export const GX_GPU_DRAW_MODE_TEXTURE_RECTANGLE_Y_FLIP = 1 << 13;
+export const GX_GPU_INTERLACED_RENDER_ENABLE = 0x01;
+export const GX_GPU_INTERLACED_RENDER_ACTIVE_LINE_LSB = 0x02;
 export const GX_GPU_TEXTURE_MODE_PALETTE4 = 0;
 export const GX_GPU_TEXTURE_MODE_PALETTE8 = 1;
 export const GX_GPU_TEXTURE_MODE_DIRECT16 = 2;
@@ -135,6 +137,18 @@ export function gxGpuDrawModeTextureRectangleXFlip(drawModeWord: number): boolea
 
 export function gxGpuDrawModeTextureRectangleYFlip(drawModeWord: number): boolean {
 	return (drawModeWord & GX_GPU_DRAW_MODE_TEXTURE_RECTANGLE_Y_FLIP) !== 0;
+}
+
+export function gxGpuSkipDrawingToActiveField(statusWord: number): boolean {
+	const mask = (1 << 19) | (1 << 22) | (1 << 10);
+	const active = (1 << 19) | (1 << 22);
+	return (statusWord & mask) === active;
+}
+
+export function gxGpuInterlacedRenderWord(statusWord: number, activeLineLsb: number): number {
+	return gxGpuSkipDrawingToActiveField(statusWord)
+		? GX_GPU_INTERLACED_RENDER_ENABLE | ((activeLineLsb & 1) << 1)
+		: 0;
 }
 
 export function gxGpuTextureRectangleEdge0(textureCoord: number, flip: boolean): number {
@@ -387,6 +401,7 @@ export type GxGpuCommandBufferView = {
 	readonly commandDrawingAreaBottomRightWord: ArrayLike<number>;
 	readonly commandDrawingOffsetWord: ArrayLike<number>;
 	readonly commandMaskBitModeWord: ArrayLike<number>;
+	readonly commandInterlacedRenderWord: ArrayLike<number>;
 	readonly words: ArrayLike<number>;
 };
 
@@ -404,6 +419,7 @@ export class GxGpuCommandBuffer implements GxGpuCommandBufferView {
 	public readonly commandDrawingAreaBottomRightWord = new Uint32Array(GX_GPU_COMMAND_CAPACITY);
 	public readonly commandDrawingOffsetWord = new Uint32Array(GX_GPU_COMMAND_CAPACITY);
 	public readonly commandMaskBitModeWord = new Uint32Array(GX_GPU_COMMAND_CAPACITY);
+	public readonly commandInterlacedRenderWord = new Uint8Array(GX_GPU_COMMAND_CAPACITY);
 	public readonly words = new Uint32Array(GX_GPU_COMMAND_WORD_CAPACITY);
 
 	public reset(): void {
@@ -437,6 +453,7 @@ export class GxGpuCommandBuffer implements GxGpuCommandBufferView {
 		drawingAreaBottomRightWord: number,
 		drawingOffsetWord: number,
 		maskBitModeWord: number,
+		interlacedRenderWord: number,
 	): void {
 		const commandIndex = this.commandCount;
 		this.commandKind[commandIndex] = kind;
@@ -449,6 +466,7 @@ export class GxGpuCommandBuffer implements GxGpuCommandBufferView {
 		this.commandDrawingAreaBottomRightWord[commandIndex] = drawingAreaBottomRightWord >>> 0;
 		this.commandDrawingOffsetWord[commandIndex] = drawingOffsetWord >>> 0;
 		this.commandMaskBitModeWord[commandIndex] = maskBitModeWord >>> 0;
+		this.commandInterlacedRenderWord[commandIndex] = interlacedRenderWord;
 		this.commandCount = commandIndex + 1;
 	}
 }

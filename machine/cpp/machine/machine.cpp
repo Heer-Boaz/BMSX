@@ -17,7 +17,7 @@ Machine::Machine(Memory& memoryRef, VdpFrameBufferSize frameBufferSizeValue, Inp
 	, dmaController(memory, irqController, vdp, scheduler)
 	, imgDecController(memory, dmaController, vdp, irqController, scheduler, microtasks)
 	, geometryController(memory, irqController, scheduler)
-	, gxGpu(memory)
+	, gxGpu(memory, scheduler)
 	, gxGte(memory)
 	, inputController(memory, input)
 {

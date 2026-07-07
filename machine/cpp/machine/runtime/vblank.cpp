@@ -115,7 +115,9 @@ void VblankState::scheduleCurrentFrameTimers(Runtime& runtime) {
 
 void VblankState::publishVblankTiming(Runtime& runtime, bool active) {
 	m_vblankActive = active;
-	runtime.machine.vdp.setScanoutTiming(active, getCyclesIntoFrame(runtime), runtime.timing.cycleBudgetPerFrame, m_vblankStartCycle);
+	const int cyclesIntoFrame = getCyclesIntoFrame(runtime);
+	runtime.machine.vdp.setScanoutTiming(active, cyclesIntoFrame, runtime.timing.cycleBudgetPerFrame, m_vblankStartCycle);
+	runtime.machine.gxGpu.setScanoutTiming(active, cyclesIntoFrame, runtime.timing.cycleBudgetPerFrame, runtime.timing.totalScanlines);
 }
 
 void VblankState::enterVblank(Runtime& runtime) {

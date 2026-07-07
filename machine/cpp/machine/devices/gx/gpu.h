@@ -9,6 +9,7 @@
 namespace bmsx {
 
 class Memory;
+class DeviceScheduler;
 
 constexpr u32 GX_GPU_GP1_RESET = 0x00u;
 constexpr u32 GX_GPU_GP1_CLEAR_FIFO = 0x01u;
@@ -89,10 +90,12 @@ constexpr u32 GX_GPU_STATUS_READY_TO_SEND_VRAM = 1u << 27u;
 constexpr u32 GX_GPU_STATUS_READY_TO_RECEIVE_DMA = 1u << 28u;
 constexpr u32 GX_GPU_STATUS_DMA_DIRECTION_SHIFT = 29u;
 constexpr u32 GX_GPU_STATUS_DMA_DIRECTION_MASK = 0x3u << GX_GPU_STATUS_DMA_DIRECTION_SHIFT;
+constexpr u32 GX_GPU_STATUS_DISPLAY_LINE_LSB = 1u << 31u;
 constexpr u32 GX_GPU_STATUS_RESET_WORD = GX_GPU_STATUS_INTERLACED_FIELD
 	| GX_GPU_STATUS_DISPLAY_DISABLE
 	| GX_GPU_STATUS_GPU_IDLE
 	| GX_GPU_STATUS_READY_TO_RECEIVE_DMA;
+constexpr u32 GX_GPU_STATUS_SCANOUT_MASK = GX_GPU_STATUS_INTERLACED_FIELD | GX_GPU_STATUS_DISPLAY_LINE_LSB;
 constexpr u32 GX_GPU_STATUS_DISPLAY_MODE_MASK = GX_GPU_STATUS_REVERSE_FLAG
 	| GX_GPU_STATUS_HORIZONTAL_RESOLUTION_2
 	| (0x3u << GX_GPU_STATUS_HORIZONTAL_RESOLUTION_1_SHIFT)
@@ -110,18 +113,19 @@ struct GxGpuState {
 
 class GxGpu {
 public:
-	explicit GxGpu(Memory& memory);
+	GxGpu(Memory& memory, DeviceScheduler& scheduler);
 	void reset();
 	GxGpuState captureState() const;
 	void restoreState(const GxGpuState& state);
 	u32 readGp0() const;
 	void writeGp0(u32 word);
-	u32 readStatus() const;
+	u32 readStatus();
 	u32 writeGp1(u32 word);
 	u32 readDisplayModeWord() const;
 	void writeDisplayModeWord(u32 word);
+	void setScanoutTiming(bool vblankActive, int cyclesIntoFrame, int cyclesPerFrame, int totalScanlines);
 	u32 readGpuReadWord() const;
-	const GxGpuDeviceOutput& readDeviceOutput() const;
+	const GxGpuDeviceOutput& readDeviceOutput();
 	u32 readDrawModeWord() const;
 	u32 readTextureWindowWord() const;
 	u32 readDrawingAreaTopLeftWord() const;
@@ -135,6 +139,7 @@ public:
 
 private:
 	Memory& m_memory;
+	DeviceScheduler& m_scheduler;
 	u32 m_gp0Word = 0;
 	u32 m_gp1Word = 0;
 	u32 m_displayModeWord = 0;
@@ -164,6 +169,13 @@ private:
 	u32 m_horizontalDisplayRangeWord = 0x00c60260u;
 	u32 m_verticalDisplayRangeWord = 0x0003fc10u;
 	u32 m_textureDisableAllowedWord = 0u;
+	bool m_scanoutVblankActive = false;
+	u32 m_scanoutInterlacedField = 0u;
+	u32 m_scanoutInterlacedDisplayField = 0u;
+	u32 m_scanoutActiveLineLsb = 0u;
+	i64 m_scanoutFrameStartCycle = 0;
+	int m_scanoutCyclesPerFrame = 1;
+	int m_scanoutTotalScanlines = 313;
 
 	void resetGpuRegisters();
 	void writeDisplayDisableWord(u32 word);
@@ -185,6 +197,9 @@ private:
 	void writeGpuInfoQuery(u32 word);
 	void writeDmaDirectionWord(u32 word);
 	void updateDmaRequestStatusBit();
+	bool gpuStatInInterleaved480iMode() const;
+	int scanoutLine() const;
+	void updateScanoutStatusBits();
 	void updateDisplayModeStatusBits();
 	void writeStatusIo();
 	static u64 readGp0Thunk(void* context, u32 addr);

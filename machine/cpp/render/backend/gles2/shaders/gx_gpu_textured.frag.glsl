@@ -12,6 +12,7 @@ uniform float u_blendMode;
 uniform float u_checkMaskBit;
 uniform float u_setMaskBit;
 uniform float u_ditherEnable;
+uniform float u_interlacedRenderWord;
 varying vec4 v_color;
 varying vec2 v_texcoord;
 
@@ -177,7 +178,20 @@ vec4 encodeRgb555(vec3 color5, float outputMaskBit) {
 	return vec4(lowByte / 255.0, highByte / 255.0, 0.0, 1.0);
 }
 
+
+void discardActiveInterlacedLine() {
+	if (mod(u_interlacedRenderWord, 2.0) < 0.5) {
+		return;
+	}
+	float activeLineLsb = mod(floor(u_interlacedRenderWord * 0.5), 2.0);
+	float vramY = floor(VRAM_SIZE.y - gl_FragCoord.y);
+	if (mod(vramY, 2.0) == activeLineLsb) {
+		discard;
+	}
+}
+
 void main() {
+	discardActiveInterlacedLine();
 	vec4 textureColor = samplePsxTexture(v_texcoord);
 	if (textureColor.a < -0.5) {
 		discard;

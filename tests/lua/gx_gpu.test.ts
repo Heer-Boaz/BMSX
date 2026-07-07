@@ -10,6 +10,8 @@ import {
 	GX_GPU_COMMAND_DRAW_RECTANGLE,
 	GX_GPU_COMMAND_FILL_RECTANGLE,
 	GX_GPU_COMMAND_UPLOAD_CPU_TO_VRAM,
+	GX_GPU_INTERLACED_RENDER_ACTIVE_LINE_LSB,
+	GX_GPU_INTERLACED_RENDER_ENABLE,
 	GX_GPU_TEXTURE_MODE_DIRECT16,
 	gxGpuCommandDrawsTexture,
 	gxGpuCommandRawTextureEnabled,
@@ -23,6 +25,7 @@ import {
 	gxGpuHorizontalDisplayRangeEnd,
 	gxGpuHorizontalDisplayRangeStart,
 	gxGpuHorizontalVisibleColumns,
+	gxGpuInterlacedRenderWord,
 	gxGpuDitheredPolygon,
 	gxGpuDrawModeDitherEnabled,
 	gxGpuDrawModeTextureDisableEnabled,
@@ -45,6 +48,7 @@ import {
 	gxGpuMaskBitCheckBeforeDraw,
 	gxGpuMaskBitSetWhileDrawing,
 	gxGpuSegmentExceedsPrimitiveSize,
+	gxGpuSkipDrawingToActiveField,
 	gxGpuPolygonDrawModeWord,
 	gxGpuPolygonTexturePageWordIndex,
 	gxGpuSigned11,
@@ -115,10 +119,12 @@ import {
 	GX_GPU_HORIZONTAL_DISPLAY_RANGE_MASK,
 	GX_GPU_STATUS_DISPLAY_AREA_COLOR_DEPTH_24,
 	GX_GPU_STATUS_DISPLAY_DISABLE,
+	GX_GPU_STATUS_DISPLAY_LINE_LSB,
 	GX_GPU_STATUS_DMA_DATA_REQUEST,
 	GX_GPU_STATUS_DMA_DIRECTION_MASK,
 	GX_GPU_STATUS_DMA_DIRECTION_SHIFT,
 	GX_GPU_STATUS_HORIZONTAL_RESOLUTION_2,
+	GX_GPU_STATUS_INTERLACED_FIELD,
 	GX_GPU_STATUS_INTERRUPT_REQUEST,
 	GX_GPU_STATUS_PAL_MODE,
 	GX_GPU_STATUS_READY_TO_RECEIVE_DMA,
@@ -132,13 +138,17 @@ import {
 	GxGpu,
 } from '../../machine/ts/machine/devices/gx/gpu';
 import { Memory } from '../../machine/ts/machine/memory/memory';
+import { CPU } from '../../machine/ts/machine/cpu/cpu';
+import { DeviceScheduler } from '../../machine/ts/machine/scheduler/device';
 import { PSX_GPU_DISPLAY_MODE_PAL_WORD } from '../../machine/ts/machine/model_registry';
 
-function createGpu(): { memory: Memory; gpu: GxGpu } {
+function createGpu(): { memory: Memory; cpu: CPU; scheduler: DeviceScheduler; gpu: GxGpu } {
 	const memory = new Memory({ systemRom: new Uint8Array(0), cartRom: new Uint8Array(0) });
-	const gpu = new GxGpu(memory);
+	const cpu = new CPU(memory);
+	const scheduler = new DeviceScheduler(cpu);
+	const gpu = new GxGpu(memory, scheduler);
 	gpu.reset();
-	return { memory, gpu };
+	return { memory, cpu, scheduler, gpu };
 }
 
 test('GX-GPU decodes PSX GP0 signed vertex and rectangle size words', () => {
@@ -338,6 +348,54 @@ test('GX-GPU mirrors PSX GP1 display mode fields into GPUSTAT bits', () => {
 		) >>> 0,
 	);
 	assert.equal((gpu.readStatus() & (0x3 << 17)) >>> 0, 0x3 << 17);
+});
+
+test('GX-GPU mirrors PSX GPUSTAT interlaced field and scanout line bits', () => {
+	const { scheduler, gpu } = createGpu();
+
+	gpu.writeGp1((GX_GPU_GP1_SET_DISPLAY_MODE << 24) | 0x00000000);
+	gpu.setScanoutTiming(false, 0, 100, 10);
+	assert.equal((gpu.readStatus() & GX_GPU_STATUS_DISPLAY_LINE_LSB) >>> 0, 0);
+
+	scheduler.advanceTo(30);
+	assert.equal((gpu.readStatus() & GX_GPU_STATUS_DISPLAY_LINE_LSB) >>> 0, GX_GPU_STATUS_DISPLAY_LINE_LSB >>> 0);
+
+	gpu.writeGp1((GX_GPU_GP1_SET_DISPLAY_START << 24) | (7 << 10));
+	gpu.writeGp1((GX_GPU_GP1_SET_DISPLAY_MODE << 24) | 0x00000024);
+	gpu.setScanoutTiming(true, 90, 100, 10);
+	assert.equal((gpu.readStatus() & GX_GPU_STATUS_DISPLAY_LINE_LSB) >>> 0, GX_GPU_STATUS_DISPLAY_LINE_LSB >>> 0);
+	gpu.setScanoutTiming(false, 0, 100, 10);
+	assert.equal((gpu.readStatus() & GX_GPU_STATUS_INTERLACED_FIELD) >>> 0, 0);
+	assert.equal((gpu.readStatus() & GX_GPU_STATUS_DISPLAY_LINE_LSB) >>> 0, 0);
+});
+
+test('GX-GPU tags PSX interlaced render commands with active field parity', () => {
+	const { gpu } = createGpu();
+	const commands = gpu.readDeviceOutput().commandBuffer;
+
+	assert.equal(gxGpuSkipDrawingToActiveField(GX_GPU_STATUS_VERTICAL_RESOLUTION | GX_GPU_STATUS_VERTICAL_INTERLACE), true);
+	assert.equal(gxGpuSkipDrawingToActiveField(GX_GPU_STATUS_VERTICAL_RESOLUTION | GX_GPU_STATUS_VERTICAL_INTERLACE | (1 << 10)), false);
+	assert.equal(gxGpuInterlacedRenderWord(GX_GPU_STATUS_VERTICAL_RESOLUTION | GX_GPU_STATUS_VERTICAL_INTERLACE, 1), GX_GPU_INTERLACED_RENDER_ENABLE | GX_GPU_INTERLACED_RENDER_ACTIVE_LINE_LSB);
+	assert.equal(gxGpuInterlacedRenderWord(GX_GPU_STATUS_VERTICAL_RESOLUTION | GX_GPU_STATUS_VERTICAL_INTERLACE | (1 << 10), 1), 0);
+
+	gpu.writeGp1((GX_GPU_GP1_SET_DISPLAY_START << 24) | (7 << 10));
+	gpu.writeGp1((GX_GPU_GP1_SET_DISPLAY_MODE << 24) | 0x00000024);
+	gpu.writeGp0((GX_GPU_GP0_POLYGON_FIRST << 24) | 0x00010203);
+	gpu.writeGp0(0x00000000);
+	gpu.writeGp0(0x00000001);
+	gpu.writeGp0(0x00000002);
+
+	assert.equal(commands.commandCount, 1);
+	assert.equal(commands.commandInterlacedRenderWord[0], GX_GPU_INTERLACED_RENDER_ENABLE | GX_GPU_INTERLACED_RENDER_ACTIVE_LINE_LSB);
+
+	gpu.writeGp0((GX_GPU_GP0_SET_DRAW_MODE << 24) | (1 << 10));
+	gpu.writeGp0((GX_GPU_GP0_POLYGON_FIRST << 24) | 0x00010203);
+	gpu.writeGp0(0x00000000);
+	gpu.writeGp0(0x00000001);
+	gpu.writeGp0(0x00000002);
+
+	assert.equal(commands.commandCount, 2);
+	assert.equal(commands.commandInterlacedRenderWord[1], 0);
 });
 
 test('GX-GPU handles PSX GP1 display disable and DMA direction status bits', () => {

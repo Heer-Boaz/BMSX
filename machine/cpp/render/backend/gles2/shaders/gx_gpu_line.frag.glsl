@@ -6,6 +6,7 @@ uniform float u_blendMode;
 uniform float u_checkMaskBit;
 uniform float u_setMaskBit;
 uniform float u_ditherEnable;
+uniform float u_interlacedRenderWord;
 varying vec2 v_lineStart;
 varying vec2 v_lineEnd;
 varying vec3 v_color0;
@@ -119,7 +120,20 @@ float lineAxisT(vec2 pixelCoord, vec2 delta, vec2 absDelta) {
 	return (pixelCoord.y - v_lineStart.y) / delta.y;
 }
 
+
+void discardActiveInterlacedLine() {
+	if (mod(u_interlacedRenderWord, 2.0) < 0.5) {
+		return;
+	}
+	float activeLineLsb = mod(floor(u_interlacedRenderWord * 0.5), 2.0);
+	float vramY = floor(VRAM_SIZE.y - gl_FragCoord.y);
+	if (mod(vramY, 2.0) == activeLineLsb) {
+		discard;
+	}
+}
+
 void main() {
+	discardActiveInterlacedLine();
 	vec2 pixelCoord = vec2(gl_FragCoord.x - 0.5, VRAM_SIZE.y - gl_FragCoord.y - 0.5);
 	vec2 delta = v_lineEnd - v_lineStart;
 	vec2 absDelta = abs(delta);
