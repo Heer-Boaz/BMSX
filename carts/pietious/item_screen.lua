@@ -54,7 +54,7 @@ local item_screen_mode_exit_events<const> = {
 
 function item_screen:bind_visual()
 	local rc<const> = self:get_component('customvisualcomponent')
-	rc.producer = function(_ctx)
+	rc.producer = function()
 		self:draw_screen()
 	end
 end

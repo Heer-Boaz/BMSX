@@ -24,8 +24,10 @@ local gp0_draw_semitransparent_quad<const> = 0x2a000000
 local gp0_draw_gouraud_triangle<const> = 0x30000000
 local gp0_draw_textured_quad<const> = 0x2c000000
 local gp0_draw_raw_textured_quad<const> = 0x2d000000
+local gp0_draw_semitransparent_textured_quad<const> = 0x2e000000
 local gp0_draw_textured_rectangle<const> = 0x64000000
 local gp0_draw_raw_textured_rectangle<const> = 0x65000000
+local gp0_draw_semitransparent_textured_rectangle<const> = 0x66000000
 local gp0_draw_semitransparent_rectangle<const> = 0x62000000
 local gp0_draw_line<const> = 0x40000000
 local gp0_draw_semitransparent_line<const> = 0x42000000
@@ -85,7 +87,7 @@ local rgba8888_to_direct16<const> = function(color)
 		return 0
 	end
 	local direct16<const> = ((color & 0x000000f8) >> 3) | ((color & 0x0000f800) >> 6) | ((color & 0x00f80000) >> 9)
-	return direct16 == 0 and 0x00008000 or direct16
+	return direct16 | 0x00008000
 end
 
 local draw_mode_for_texture_page<const> = function(source_x, source_y)
@@ -261,9 +263,12 @@ function gx_gpu.upload_rgba8888_to_direct16_stride(source_addr, source_x, source
 end
 
 function gx_gpu.draw_direct16_textured_rect_color(source_x, source_y, x, y, width, height, color)
-	if (color & 0xff000000) == 0 then
+	local alpha_bits<const> = color & 0xff000000
+	if alpha_bits == 0 then
 		return
 	end
+	local textured_opcode<const> = alpha_bits == 0xff000000 and gp0_draw_textured_rectangle or gp0_draw_semitransparent_textured_rectangle
+	local textured_rgb<const> = alpha_bits == 0xff000000 and argb_to_gp0_rgb(color) or argb_to_gp0_modulated_rgb(color)
 	local remaining_h = height
 	local draw_source_y = source_y
 	local draw_y = y
@@ -284,7 +289,7 @@ function gx_gpu.draw_direct16_textured_rect_color(source_x, source_y, x, y, widt
 			if color == 0xffffffff then
 				*gp0 = gp0_draw_raw_textured_rectangle | 0x00808080
 			else
-				*gp0 = gp0_draw_textured_rectangle | argb_to_gp0_modulated_rgb(color)
+				*gp0 = textured_opcode | textured_rgb
 			end
 			*gp0 = xy(draw_x, draw_y)
 			*gp0 = (draw_source_x & 0x000000ff) | ((draw_source_y & 0x000000ff) << 8)
@@ -310,7 +315,8 @@ function gx_gpu.draw_direct16_textured_quad_color(
 	x2, y2,
 	x3, y3,
 	color)
-	if (color & 0xff000000) == 0 then
+	local alpha_bits<const> = color & 0xff000000
+	if alpha_bits == 0 then
 		return
 	end
 	local draw_mode<const> = draw_mode_for_texture_page(page_source_x, page_source_y)
@@ -318,7 +324,9 @@ function gx_gpu.draw_direct16_textured_quad_color(
 	if color == 0xffffffff then
 		*gp0 = gp0_draw_raw_textured_quad | 0x00808080
 	else
-		*gp0 = gp0_draw_textured_quad | argb_to_gp0_modulated_rgb(color)
+		local opcode<const> = alpha_bits == 0xff000000 and gp0_draw_textured_quad or gp0_draw_semitransparent_textured_quad
+		local rgb<const> = alpha_bits == 0xff000000 and argb_to_gp0_rgb(color) or argb_to_gp0_modulated_rgb(color)
+		*gp0 = opcode | rgb
 	end
 	*gp0 = xy(x0, y0)
 	*gp0 = uv(source_x0, source_y0)

@@ -834,9 +834,9 @@ function customvisualcomponent:add_producer(fn)
 	end
 	local prev<const> = self.producer
 	if prev then
-		self.producer = function(ctx)
-			prev(ctx)
-			fn(ctx)
+		self.producer = function(parent, rc)
+			prev(parent, rc)
+			fn(parent, rc)
 		end
 	else
 		self.producer = fn
@@ -847,7 +847,7 @@ function customvisualcomponent:flush()
 	if not self.producer then
 		error('customvisualcomponent: no producer for "' .. self.parent.id .. '"')
 	end
-	self.producer({ parent = self.parent, rc = self })
+	self.producer(self.parent, self)
 end
 
 function customvisualcomponent:submit_rect(rect)

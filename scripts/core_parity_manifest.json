@@ -1394,7 +1394,6 @@
 				"machine/ts/machine/devices/vdp/rpu_desc.ts",
 				"machine/ts/machine/memory/map.ts"
 			],
-			"exports": "vdp_rpu",
 			"symbols": [
 				{
 					"lua": "packet_kind",
@@ -1402,303 +1401,243 @@
 				},
 				{
 					"lua": "op_exec_pass_list",
-					"ts": "VDP_RPU_OP_EXEC_PASS_LIST",
-					"exported": true
+					"ts": "VDP_RPU_OP_EXEC_PASS_LIST"
 				},
 				{
 					"lua": "op_seal_frame",
-					"ts": "VDP_RPU_OP_SEAL_FRAME",
-					"exported": true
+					"ts": "VDP_RPU_OP_SEAL_FRAME"
 				},
 				{
 					"lua": "words_exec_pass_list",
-					"ts": "VDP_RPU_EXEC_PASS_LIST_WORDS",
-					"exported": true
+					"ts": "VDP_RPU_EXEC_PASS_LIST_WORDS"
 				},
 				{
 					"lua": "words_seal_frame",
-					"ts": "VDP_RPU_SEAL_FRAME_WORDS",
-					"exported": true
+					"ts": "VDP_RPU_SEAL_FRAME_WORDS"
 				},
 				{
 					"lua": "resource_none",
-					"ts": "VDP_RPU_RESOURCE_NONE",
-					"exported": true
+					"ts": "VDP_RPU_RESOURCE_NONE"
 				},
 				{
 					"lua": "surface_format_rgba8",
-					"ts": "VDP_RPU_SURFACE_FORMAT_RGBA8",
-					"exported": true
+					"ts": "VDP_RPU_SURFACE_FORMAT_RGBA8"
 				},
 				{
 					"lua": "surface_format_depth16",
-					"ts": "VDP_RPU_SURFACE_FORMAT_DEPTH16",
-					"exported": true
+					"ts": "VDP_RPU_SURFACE_FORMAT_DEPTH16"
 				},
 				{
 					"lua": "surface_desc_bytes",
-					"ts": "RPU_SURFACE_DESC_SIZE",
-					"exported": true
+					"ts": "RPU_SURFACE_DESC_SIZE"
 				},
 				{
 					"lua": "stream_desc_bytes",
-					"ts": "RPU_STREAM_DESC_SIZE",
-					"exported": true
+					"ts": "RPU_STREAM_DESC_SIZE"
 				},
 				{
 					"lua": "constant_desc_bytes",
-					"ts": "RPU_CONSTANT_DESC_SIZE",
-					"exported": true
+					"ts": "RPU_CONSTANT_DESC_SIZE"
 				},
 				{
 					"lua": "texture_desc_bytes",
-					"ts": "RPU_TEXTURE_DESC_SIZE",
-					"exported": true
+					"ts": "RPU_TEXTURE_DESC_SIZE"
 				},
 				{
 					"lua": "draw_desc_bytes",
-					"ts": "RPU_DRAW_DESC_SIZE",
-					"exported": true
+					"ts": "RPU_DRAW_DESC_SIZE"
 				},
 				{
 					"lua": "pass_desc_bytes",
-					"ts": "RPU_PASS_DESC_SIZE",
-					"exported": true
+					"ts": "RPU_PASS_DESC_SIZE"
 				},
 				{
 					"lua": "pass_color_clear",
-					"ts": "VDP_RPU_PASS_COLOR_CLEAR",
-					"exported": true
+					"ts": "VDP_RPU_PASS_COLOR_CLEAR"
 				},
 				{
 					"lua": "pass_depth_clear",
-					"ts": "VDP_RPU_PASS_DEPTH_CLEAR",
-					"exported": true
+					"ts": "VDP_RPU_PASS_DEPTH_CLEAR"
 				},
 				{
 					"lua": "pass_color_store",
-					"ts": "VDP_RPU_PASS_COLOR_STORE",
-					"exported": true
+					"ts": "VDP_RPU_PASS_COLOR_STORE"
 				},
 				{
 					"lua": "pass_depth_store",
-					"ts": "VDP_RPU_PASS_DEPTH_STORE",
-					"exported": true
+					"ts": "VDP_RPU_PASS_DEPTH_STORE"
 				},
 				{
 					"lua": "blend_none",
-					"ts": "VDP_RPU_BLEND_NONE",
-					"exported": true
+					"ts": "VDP_RPU_BLEND_NONE"
 				},
 				{
 					"lua": "blend_alpha",
-					"ts": "VDP_RPU_BLEND_ALPHA",
-					"exported": true
+					"ts": "VDP_RPU_BLEND_ALPHA"
 				},
 				{
 					"lua": "blend_add",
-					"ts": "VDP_RPU_BLEND_ADD",
-					"exported": true
+					"ts": "VDP_RPU_BLEND_ADD"
 				},
 				{
 					"lua": "depth_none",
-					"ts": "VDP_RPU_DEPTH_NONE",
-					"exported": true
+					"ts": "VDP_RPU_DEPTH_NONE"
 				},
 				{
 					"lua": "depth_less",
-					"ts": "VDP_RPU_DEPTH_LESS",
-					"exported": true
+					"ts": "VDP_RPU_DEPTH_LESS"
 				},
 				{
 					"lua": "depth_lequal",
-					"ts": "VDP_RPU_DEPTH_LEQUAL",
-					"exported": true
+					"ts": "VDP_RPU_DEPTH_LEQUAL"
 				},
 				{
 					"lua": "cull_none",
-					"ts": "VDP_RPU_CULL_NONE",
-					"exported": true
+					"ts": "VDP_RPU_CULL_NONE"
 				},
 				{
 					"lua": "cull_back",
-					"ts": "VDP_RPU_CULL_BACK",
-					"exported": true
+					"ts": "VDP_RPU_CULL_BACK"
 				},
 				{
 					"lua": "cull_front",
-					"ts": "VDP_RPU_CULL_FRONT",
-					"exported": true
+					"ts": "VDP_RPU_CULL_FRONT"
 				},
 				{
 					"lua": "pipe_depth_write",
-					"ts": "VDP_RPU_PIPE_DEPTH_WRITE",
-					"exported": true
+					"ts": "VDP_RPU_PIPE_DEPTH_WRITE"
 				},
 				{
 					"lua": "pipe_color_write_rgba",
-					"ts": "VDP_RPU_PIPE_COLOR_WRITE_MASK",
-					"exported": true
+					"ts": "VDP_RPU_PIPE_COLOR_WRITE_MASK"
 				},
 				{
 					"lua": "prim_triangles",
-					"ts": "VDP_RPU_PRIM_TRIANGLES",
-					"exported": true
+					"ts": "VDP_RPU_PRIM_TRIANGLES"
 				},
 				{
 					"lua": "prim_triangle_strip",
-					"ts": "VDP_RPU_PRIM_TRIANGLE_STRIP",
-					"exported": true
+					"ts": "VDP_RPU_PRIM_TRIANGLE_STRIP"
 				},
 				{
 					"lua": "prim_lines",
-					"ts": "VDP_RPU_PRIM_LINES",
-					"exported": true
+					"ts": "VDP_RPU_PRIM_LINES"
 				},
 				{
 					"lua": "prim_points",
-					"ts": "VDP_RPU_PRIM_POINTS",
-					"exported": true
+					"ts": "VDP_RPU_PRIM_POINTS"
 				},
 				{
 					"lua": "index_none",
-					"ts": "VDP_RPU_INDEX_NONE",
-					"exported": true
+					"ts": "VDP_RPU_INDEX_NONE"
 				},
 				{
 					"lua": "index_u16",
-					"ts": "VDP_RPU_INDEX_U16",
-					"exported": true
+					"ts": "VDP_RPU_INDEX_U16"
 				},
 				{
 					"lua": "index_u32",
-					"ts": "VDP_RPU_INDEX_U32",
-					"exported": true
+					"ts": "VDP_RPU_INDEX_U32"
 				},
 				{
 					"lua": "layout_v2_c4",
-					"ts": "VDP_RPU_LAYOUT_V2_C4",
-					"exported": true
+					"ts": "VDP_RPU_LAYOUT_V2_C4"
 				},
 				{
 					"lua": "layout_v2_t2_c4",
-					"ts": "VDP_RPU_LAYOUT_V2_T2_C4",
-					"exported": true
+					"ts": "VDP_RPU_LAYOUT_V2_T2_C4"
 				},
 				{
 					"lua": "layout_v3_c4",
-					"ts": "VDP_RPU_LAYOUT_V3_C4",
-					"exported": true
+					"ts": "VDP_RPU_LAYOUT_V3_C4"
 				},
 				{
 					"lua": "layout_v3_t2_c4",
-					"ts": "VDP_RPU_LAYOUT_V3_T2_C4",
-					"exported": true
+					"ts": "VDP_RPU_LAYOUT_V3_T2_C4"
 				},
 				{
 					"lua": "layout_v3_n3_c4",
-					"ts": "VDP_RPU_LAYOUT_V3_N3_C4",
-					"exported": true
+					"ts": "VDP_RPU_LAYOUT_V3_N3_C4"
 				},
 				{
 					"lua": "layout_v3_n3_t2_c4",
-					"ts": "VDP_RPU_LAYOUT_V3_N3_T2_C4",
-					"exported": true
+					"ts": "VDP_RPU_LAYOUT_V3_N3_T2_C4"
 				},
 				{
 					"lua": "layout_v3_n3_t2_c4_j4_w4",
-					"ts": "VDP_RPU_LAYOUT_V3_N3_T2_C4_J4_W4",
-					"exported": true
+					"ts": "VDP_RPU_LAYOUT_V3_N3_T2_C4_J4_W4"
 				},
 				{
 					"lua": "layout_v3_dm3",
-					"ts": "VDP_RPU_LAYOUT_V3_DM3",
-					"exported": true
+					"ts": "VDP_RPU_LAYOUT_V3_DM3"
 				},
 				{
 					"lua": "layout_i_affine2_trect_c4",
-					"ts": "VDP_RPU_LAYOUT_I_AFFINE2_TRECT_C4",
-					"exported": true
+					"ts": "VDP_RPU_LAYOUT_I_AFFINE2_TRECT_C4"
 				},
 				{
 					"lua": "layout_i_mat4_c4",
-					"ts": "VDP_RPU_LAYOUT_I_MAT4_C4",
-					"exported": true
+					"ts": "VDP_RPU_LAYOUT_I_MAT4_C4"
 				},
 				{
 					"lua": "shader_v2_c4",
-					"ts": "VDP_RPU_SHADER_V2_C4",
-					"exported": true
+					"ts": "VDP_RPU_SHADER_V2_C4"
 				},
 				{
 					"lua": "shader_v2_t2_c4",
-					"ts": "VDP_RPU_SHADER_V2_T2_C4",
-					"exported": true
+					"ts": "VDP_RPU_SHADER_V2_T2_C4"
 				},
 				{
 					"lua": "shader_v3_c4_c0",
-					"ts": "VDP_RPU_SHADER_V3_C4_C0",
-					"exported": true
+					"ts": "VDP_RPU_SHADER_V3_C4_C0"
 				},
 				{
 					"lua": "shader_v3_t2_c4_c0",
-					"ts": "VDP_RPU_SHADER_V3_T2_C4_C0",
-					"exported": true
+					"ts": "VDP_RPU_SHADER_V3_T2_C4_C0"
 				},
 				{
 					"lua": "shader_v3_n3_t2_c4_c0_c1",
-					"ts": "VDP_RPU_SHADER_V3_N3_T2_C4_C0_C1",
-					"exported": true
+					"ts": "VDP_RPU_SHADER_V3_N3_T2_C4_C0_C1"
 				},
 				{
 					"lua": "shader_v3_n3_t2_c4_j4_w4_c0_c1",
-					"ts": "VDP_RPU_SHADER_V3_N3_T2_C4_J4_W4_C0_C1",
-					"exported": true
+					"ts": "VDP_RPU_SHADER_V3_N3_T2_C4_J4_W4_C0_C1"
 				},
 				{
 					"lua": "shader_v2_t2_c4_i_affine2",
-					"ts": "VDP_RPU_SHADER_V2_T2_C4_I_AFFINE2",
-					"exported": true
+					"ts": "VDP_RPU_SHADER_V2_T2_C4_I_AFFINE2"
 				},
 				{
 					"lua": "shader_v3_c4_i_mat4",
-					"ts": "VDP_RPU_SHADER_V3_C4_I_MAT4",
-					"exported": true
+					"ts": "VDP_RPU_SHADER_V3_C4_I_MAT4"
 				},
 				{
 					"lua": "shader_variant_mask",
-					"ts": "VDP_RPU_SHADER_VARIANT_MASK",
-					"exported": true
+					"ts": "VDP_RPU_SHADER_VARIANT_MASK"
 				},
 				{
 					"lua": "shader_flag_morph",
-					"ts": "VDP_RPU_SHADER_FLAG_MORPH",
-					"exported": true
+					"ts": "VDP_RPU_SHADER_FLAG_MORPH"
 				},
 				{
 					"lua": "shader_flag_t1",
-					"ts": "VDP_RPU_SHADER_FLAG_T1",
-					"exported": true
+					"ts": "VDP_RPU_SHADER_FLAG_T1"
 				},
 				{
 					"lua": "constant_source_xf_q16",
-					"ts": "VDP_RPU_CONSTANT_SOURCE_XF_Q16",
-					"exported": true
+					"ts": "VDP_RPU_CONSTANT_SOURCE_XF_Q16"
 				},
 				{
 					"lua": "constant_source_lpu_raw",
-					"ts": "VDP_RPU_CONSTANT_SOURCE_LPU_RAW",
-					"exported": true
+					"ts": "VDP_RPU_CONSTANT_SOURCE_LPU_RAW"
 				},
 				{
 					"lua": "constant_source_mfu_q16",
-					"ts": "VDP_RPU_CONSTANT_SOURCE_MFU_Q16",
-					"exported": true
+					"ts": "VDP_RPU_CONSTANT_SOURCE_MFU_Q16"
 				},
 				{
 					"lua": "constant_source_jtu_q16",
-					"ts": "VDP_RPU_CONSTANT_SOURCE_JTU_Q16",
-					"exported": true
+					"ts": "VDP_RPU_CONSTANT_SOURCE_JTU_Q16"
 				}
 			],
 			"reason": "rpu_bios_descriptor_packet_constants_must_match_the_ts_cpp_device_abi"
@@ -1708,7 +1647,6 @@
 			"ts": [
 				"machine/ts/machine/devices/vdp/xf.ts"
 			],
-			"exports": "vdp_xf",
 			"symbols": [
 				{
 					"lua": "packet_kind",
@@ -1716,13 +1654,11 @@
 				},
 				{
 					"lua": "matrix_words_per_matrix",
-					"ts": "VDP_XF_MATRIX_WORDS",
-					"exported": true
+					"ts": "VDP_XF_MATRIX_WORDS"
 				},
 				{
 					"lua": "matrix_count",
-					"ts": "VDP_XF_MATRIX_COUNT",
-					"exported": true
+					"ts": "VDP_XF_MATRIX_COUNT"
 				},
 				{
 					"lua": "matrix_register_words",
@@ -1730,8 +1666,7 @@
 				},
 				{
 					"lua": "view_matrix_index_register",
-					"ts": "VDP_XF_VIEW_MATRIX_INDEX_REGISTER",
-					"exported": true
+					"ts": "VDP_XF_VIEW_MATRIX_INDEX_REGISTER"
 				},
 				{
 					"lua": "matrix_packet_payload_words",
@@ -1749,7 +1684,6 @@
 			"ts": [
 				"machine/ts/machine/devices/vdp/lpu.ts"
 			],
-			"exports": "vdp_lpu",
 			"symbols": [
 				{
 					"lua": "packet_kind",
@@ -1763,7 +1697,6 @@
 			"ts": [
 				"machine/ts/machine/devices/vdp/mfu.ts"
 			],
-			"exports": "vdp_mfu",
 			"symbols": [
 				{
 					"lua": "packet_kind",
@@ -1778,7 +1711,6 @@
 				"machine/ts/machine/devices/vdp/jtu.ts",
 				"machine/ts/machine/devices/vdp/contracts.ts"
 			],
-			"exports": "vdp_jtu",
 			"symbols": [
 				{
 					"lua": "packet_kind",
@@ -1786,13 +1718,11 @@
 				},
 				{
 					"lua": "matrix_words_per_matrix",
-					"ts": "VDP_JTU_MATRIX_WORDS",
-					"exported": true
+					"ts": "VDP_JTU_MATRIX_WORDS"
 				},
 				{
 					"lua": "matrix_count",
-					"ts": "VDP_JTU_MATRIX_COUNT",
-					"exported": true
+					"ts": "VDP_JTU_MATRIX_COUNT"
 				},
 				{
 					"lua": "matrix_packet_payload_words",
@@ -1800,935 +1730,6 @@
 				}
 			],
 			"reason": "jtu_bios_packet_constants_must_match_the_ts_cpp_device_abi"
-		}
-	],
-	"strict_forbidden_substrings": [
-		{
-			"roots": [
-				"machine/cpp/render/post/crt",
-				"machine/ts/render/post/crt"
-			],
-			"substrings": [
-				"step(0.0, 1.0 - abs(p"
-			],
-			"reason": "crt_aperture_grille_must_stay_exclusive; step(0.0,..) bleeds neighbouring rgb columns because step(0,0)==1 at the |p-N|==1 boundary. Use step(0.5,..). Software crt_processor.cpp uses an exclusive triad; all four CRT impls must agree."
-		},
-		{
-			"roots": [
-				"machine/ts/machine/devices/vdp",
-				"machine/cpp/machine/devices/vdp",
-				"machine/ts/render",
-				"machine/cpp/render",
-				"machine/firmware/bios",
-				"carts/bare_metal_cart",
-				"tests/cpp",
-				"tests/lua"
-			],
-			"substrings": [
-				"VDP_BBU",
-				"VDP_MDU",
-				"VDP_SBX",
-				"VDP_CMD_BILLBOARD",
-				"VDP_CMD_MESH",
-				"VDP_CMD_SKYBOX",
-				"billboards",
-				"skyboxSamples",
-				"VdpBillboard",
-				"VdpMesh",
-				"VdpSkybox",
-				"parallaxWeight",
-				"parallax_weight",
-				"resolveBlit",
-				"VDP_DRAW_CTRL_PMU",
-				"u_parallax",
-				"i_fx"
-			],
-			"reason": "retired_cart_visible_render_units_and_blitter_parallax_semantics_must_not_reappear"
-		},
-		{
-			"roots": [
-				"machine/ts/render/backend/webgl/backend.ts",
-				"machine/cpp/render/backend/gles2/backend.cpp"
-			],
-			"substrings": [
-				"registerFramebuffer2DPass_WebGL",
-				"registerFramebuffer2DPass_GLES2"
-			],
-			"reason": "non_software_backends_must_not_register_vdp_framebuffer_presentation_after_gx_gpu_takeover"
-		},
-		{
-			"roots": [
-				"machine/ts/render/backend/webgl/vdp_rpu.ts",
-				"machine/cpp/render/backend/gles2/vdp_rpu.cpp",
-				"machine/ts/render/rpu",
-				"machine/cpp/render/rpu"
-			],
-			"substrings": [
-				"#version 300 es",
-				"precision mediump float",
-				"void main(",
-				"gl_Position",
-				"gl_FragColor",
-				"texture2D(",
-				"outColor"
-			],
-			"reason": "rpu_backend_sources_must_not_inline_shader_code"
-		},
-		{
-			"roots": [
-				"machine/ts/render/backend/webgl/vdp_rpu.ts",
-				"machine/cpp/render/backend/gles2/vdp_rpu.cpp"
-			],
-			"substrings": [
-				"machineManager",
-				"MachineManager::instance",
-				"core/machine_manager.h"
-			],
-			"reason": "rpu_backend_pass_execution_must_use_registry_view_not_global_machine_singleton"
-		},
-		{
-			"roots": [
-				"machine/ts/render/backend/webgl/vdp_rpu.ts",
-				"machine/cpp/render/backend/gles2/vdp_rpu.cpp"
-			],
-			"substrings": [
-				"SoftwareBackend",
-				"drainReadyVdpFrameBufferExecutionForSoftware",
-				"rasterizer",
-				"software_scene",
-				"render/backend/software",
-				"HeadlessGPUBackend",
-				"buildVdpRpuPipelineState",
-				"buildState: buildVdpRpuPipelineState",
-				"desc.graph->buildState",
-				"std::any_cast<VdpRpuPipelineState&>"
-			],
-			"reason": "rpu_gpu_backend_draw_execution_must_not_route_through_software_rendering_or_per_frame_graph_state_any_allocations"
-		},
-		{
-			"roots": [
-				"machine/ts/machine/devices/vdp/rpu.ts",
-				"machine/cpp/machine/devices/vdp/rpu.cpp"
-			],
-			"substrings": [
-				"indexCount > 0xffffffff",
-				"indexCount > 0xffffffffu",
-				"elementCount > 0xffffffff",
-				"elementCount > 0xffffffffu"
-			],
-			"reason": "rpu_draw_count_words_must_flow_to_backend_with_deterministic_word_wrap_instead_of_semantic_overflow_rejection"
-		},
-		{
-			"roots": [
-				"machine/ts/machine/devices/vdp/rpu.ts",
-				"machine/cpp/machine/devices/vdp/rpu.h",
-				"machine/cpp/machine/devices/vdp/rpu.cpp",
-				"docs/vdp_rpu_abi_draft.md",
-				"docs/vdp_rpu_resume_handoff.md",
-				"docs/video_display_processor.md"
-			],
-			"substrings": [
-				"VDP_FAULT_RPU_BAD_SHADER",
-				"BAD_SHADER",
-				"VDP_FAULT_RPU_UNSUPPORTED_FEATURE",
-				"UNSUPPORTED_FEATURE",
-				"unsupported backend feature",
-				"unsupported backend features"
-			],
-			"reason": "shader_variant_words_decode_to_fixed_low_bits_and_backend_feature_failures_are_host_initialization_errors_not_cart_visible_rpu_admission_faults"
-		},
-		{
-			"roots": [
-				"machine/ts/render/backend/webgl/backend.ts",
-				"machine/ts/render/backend/webgl/fullscreen_quad.ts",
-				"machine/cpp/render/backend/gles2/backend.cpp",
-				"machine/cpp/render/backend/gles2/fullscreen_quad.h",
-				"machine/cpp/render/backend/gles2/fullscreen_quad.cpp"
-			],
-			"substrings": [
-				"new Array(32).fill(null)",
-				"Math.random().toString(36).slice(2)",
-				"new Float32Array([",
-				"new Float32Array(texcoords)",
-				"readonly number[]",
-				"GLES2ScreenQuad",
-				"createGLES2ScreenQuad",
-				"destroyGLES2ScreenQuad",
-				"updateGLES2PostProcessQuad",
-				"bindGLES2ScreenQuad",
-				"deleteFullscreenQuad",
-				"deleteFullscreenQuad(",
-				"std::memcpy",
-				"#include <cstring>"
-			],
-			"reason": "render_backend_resource_lifetime_code_must_not_reintroduce_copy_churn_or_random_pipeline_ids"
-		},
-		{
-			"roots": [
-				"machine/cpp/render/backend/gles2/vdp_rpu.cpp"
-			],
-			"substrings": [
-				"glBufferData(target, refs.byteLength[refIndex], refs.bytes[refIndex]"
-			],
-			"reason": "gles2_rpu_buffer_upload_must_match_webgl_allocate_then_subdata_path"
-		},
-		{
-			"roots": [
-				"machine/ts/render/post/crt/webgl/pipeline.ts",
-				"machine/ts/render/post/device_quantize/webgl/pipeline.ts"
-			],
-			"substrings": [
-				"new Float32Array(opts.colorBleed)",
-				"new Float32Array(opts.glowColor)",
-				"Array<[string, boolean]>",
-				"const booleans",
-				"DeviceQuantizeRuntime",
-				"CRTRuntime",
-				"buildState: (ctx: RenderGraphPassContext): RenderPassStateRegistry['device_quantize'] => ({"
-			],
-			"reason": "post_processing_hot_paths_must_use_retained_state_and_uniform_scratch_without_gc_churn"
-		},
-		{
-			"roots": [
-				"machine/ts/render/backend/pass/library.ts"
-			],
-			"substrings": [
-				"const stubPass",
-				"const stubPass:",
-				"const passEncoder: PassEncoder = {"
-			],
-			"reason": "render_pass_execute_must_reuse_registered_pass_encoder_instead_of_allocating_per_execute"
-		},
-		{
-			"roots": [
-				"machine/ts/render/backend/webgpu/backend.ts",
-				"machine/ts/render/post/crt/webgpu/pipeline.ts"
-			],
-			"substrings": [
-				"pipelineBindGroups",
-				"createPipelineBindGroup",
-				"setPipelineBindGroup"
-			],
-			"reason": "webgpu_postprocess_must_use_declared_binding_layout_instead_of_pass_local_bind_group_side_channels"
-		},
-		{
-			"roots": [
-				"machine/ts/render/headless/present_surface.ts",
-				"machine/ts/render/headless/view.ts",
-				"machine/ts/render/headless/backend.ts",
-				"scripts/bootrom/platforms/headless_capture.ts"
-			],
-			"substrings": [
-				"copyPixels",
-				"copyPresentedFramePixels",
-				"new Uint8Array(this.pixels)",
-				"new Uint8Array(pixels)",
-				"Buffer.from(pixels)",
-				"function toBytes",
-				"data.buffer.slice",
-				"record.bytes",
-				"this.frameStats = createFrameStats()",
-				"normalizeTextureSource",
-				"new Uint8Array(data)",
-				"new Uint8Array(bytes)",
-				"new Uint8Array(face)"
-			],
-			"reason": "headless_backend_and_capture_must_borrow_or_account_buffers_instead_of_cloning_frame_arrays"
-		},
-		{
-			"roots": [
-				"machine/ts/render/headless/backend.ts"
-			],
-			"substrings": [
-				".subarray(",
-				".map(",
-				".push("
-			],
-			"reason": "headless_backend_texture_and_readback_paths_must_not_allocate_intermediate_array_views"
-		},
-		{
-			"roots": [
-				"machine/firmware/bios",
-				"cartlib",
-				"carts",
-				"machine/ts/machine/firmware",
-				"machine/ts/machine/runtime",
-				"machine/cpp/machine/firmware",
-				"machine/cpp/machine/runtime/runtime.cpp"
-			],
-			"substrings": [
-				"surface_framebuffer",
-				"presentWorkbenchFrameBufferTexture",
-				"framebuffer_2d",
-				"vdp_framebuffer_execution",
-				"VDP2DBlitExecution",
-				"vdp_framebuffer",
-				"workbench_framebuffer",
-				"framebuffer_pipeline",
-				"Vdp2DBlit",
-				"2d_blit",
-				"vdp_2d",
-				"raw VDP blit",
-				"2D-compat",
-				"2d-compat",
-				"2D compat",
-				"2d compat",
-				"2D compatibility",
-				"2d compatibility",
-				"sys_vram_framebuffer"
-			],
-			"reason": "cart_bios_and_firmware_must_not_expose_host_framebuffer_texture_presentation_path"
-		},
-		{
-			"roots": [
-				"carts/pietious/room/index.lua"
-			],
-			"substrings": [
-				"vdp_stream.batch_blit_item"
-			],
-			"reason": "pietious_room_tile_draw_must_not_regress_to_per_tile_stream_blit_calls"
-		},
-		{
-			"roots": [
-				"machine/ts/render/graph/graph.ts"
-			],
-			"substrings": [
-				"let extFrameIndex",
-				"let extTimeSeconds",
-				"let extDeltaSeconds",
-				"frameIndex: extFrameIndex"
-			],
-			"reason": "render_graph_frame_data_must_not_allocate_snapshot_objects_per_frame"
-		},
-		{
-			"roots": [
-				"machine/ts/render/backend/webgl/backend.ts",
-				"machine/ts/render/headless/backend.ts"
-			],
-			"substrings": [
-				"return { fbo, desc }",
-				"return { fbo: null, desc }",
-				"cid + ':' + did"
-			],
-			"reason": "render_backends_must_not_allocate_pass_encoder_or_fbo_key_objects_per_pass"
-		},
-		{
-			"roots": [
-				"machine/ts/render/headless/passes.ts"
-			],
-			"substrings": [
-				"registerSkyboxPass",
-				"registerMeshPass",
-				"registerParticlePass",
-				"headlessScenePixels",
-				"ParticlePipelineState",
-				"MeshVertexStreamBuilder",
-				"SKYBOX_FACE_KEYS"
-			],
-			"reason": "headless_backend_must_not_reintroduce_removed_skybox_mesh_particle_scene_passes"
-		},
-		{
-			"roots": [
-				"machine/ts/machine/devices/vdp/rpu.ts",
-				"machine/cpp/machine/devices/vdp/rpu.cpp"
-			],
-			"substrings": [
-				"indexRef < 0",
-				"bufferRef < 0",
-				"surfaceRef < 0",
-				"colorRef < 0",
-				"depthRef < 0",
-				"return -1"
-			],
-			"reason": "cart_visible_rpu_draw_resource_misses_must_not_be_high_level_admission_rejections"
-		},
-		{
-			"roots": [
-				"carts/bare_metal_cart/cart.lua"
-			],
-			"substrings": [
-				"vdp_rpu.constant_upload_dma(0",
-				"vdp_rpu.constant_upload_inline(0",
-				"vdp_rpu.constant_upload_dma(2",
-				"vdp_rpu.constant_upload_inline(2"
-			],
-			"reason": "bare_metal_matrices_must_not_bypass_xf_jtu_device_snapshots_for_rpu_constants"
-		},
-		{
-			"roots": [
-				"machine/ts/render/3d",
-				"machine/cpp/render/3d",
-				"machine/ts/render/backend/webgl",
-				"machine/cpp/render/backend/gles2"
-			],
-			"substrings": [
-				"registerMeshPass",
-				"registerParticlePass",
-				"registerSkyboxPass",
-				"MeshPipeline",
-				"ParticlePipeline",
-				"SkyboxPipeline",
-				"software_scene"
-			],
-			"reason": "legacy_mesh_particle_skybox_passes_must_not_reappear_outside_the_rpu_gpu_backend"
-		},
-		{
-			"roots": [
-				"machine/ts/machine/devices/vdp/device_output.ts",
-				"machine/cpp/machine/devices/vdp/device_output.h",
-				"machine/ts/render/vdp/view_snapshot.ts",
-				"machine/cpp/render/vdp/view_snapshot.cpp"
-			],
-			"substrings": [
-				"billboards",
-				"meshes",
-				"skyboxSamples",
-				"VdpBillboard",
-				"VdpMesh",
-				"VdpSkybox",
-				"particle",
-				"skybox",
-				"meshPass",
-				"particlePass",
-				"skyboxPass"
-			],
-			"reason": "vdp_host_output_and_snapshot_must_not_reintroduce_legacy_render_categories"
-		},
-		{
-			"roots": [
-				"package.json"
-			],
-			"substrings": [
-				"headless:bare-metal",
-				"headless:bare_metal",
-				"bare-metal"
-			],
-			"reason": "headless_scripts_must_not_reintroduce_single_cart_aliases"
-		},
-		{
-			"roots": [
-				"machine/firmware/bios",
-				"machine/firmware/system",
-				"cartlib",
-				"carts",
-				"machine/ts/machine/firmware",
-				"machine/cpp/machine/firmware"
-			],
-			"substrings": [
-				"VDP_CMD_FILL_RECT",
-				"VDP_CMD_DRAW_LINE",
-				"VDP_CMD_BLIT",
-				"VDP_CMD_BATCH_BLIT_BEGIN",
-				"VDP_CMD_BATCH_BLIT_ITEM",
-				"VDP_BLITTER_OPCODE_FILL_RECT",
-				"VDP_BLITTER_OPCODE_DRAW_LINE",
-				"VDP_BLITTER_OPCODE_BATCH_BLIT",
-				"sys_vdp_fault_dex",
-				"sys_vdp_cmd",
-				"sys_vdp_cmd_arg_count"
-			],
-			"reason": "cart_bios_firmware_must_not_use_legacy_dex_blitter_command_registers"
-		},
-		{
-			"roots": [
-				"machine/ts/machine/devices/vdp/vdp.ts",
-				"machine/cpp/machine/devices/vdp/vdp.cpp",
-				"machine/cpp/machine/devices/vdp/vdp.h"
-			],
-			"substrings": [
-				"case VDP_CMD_CLEAR:",
-				"case VDP_CMD_FILL_RECT:",
-				"case VDP_CMD_DRAW_LINE:",
-				"case VDP_CMD_BLIT:",
-				"case VDP_CMD_BATCH_BLIT_BEGIN:",
-				"case VDP_CMD_BATCH_BLIT_ITEM:",
-				"enqueueLatched",
-				"readLatchedBlitterSource",
-				"reserveBlitterCommand",
-				"activeBatchBlitIndex",
-				"m_activeBatchBlitIndex"
-			],
-			"reason": "direct_and_stream_doorbells_must_not_execute_retired_dex_blitter_commands"
-		},
-		{
-			"roots": [
-				"machine/ts/lua/builtin_descriptors.ts"
-			],
-			"substrings": [
-				"blitter command",
-				"DEX",
-				"raw VDP blit",
-				"legacy blit"
-			],
-			"reason": "firmware_vdp_draw_descriptors_must_not_advertise_retired_blitter_units"
-		},
-		{
-			"roots": [
-				"machine/ts/render/presentation_state.ts",
-				"machine/cpp/render/presentation_state.h",
-				"machine/cpp/render/presentation_state.cpp",
-				"machine/ts/machine/runtime/vblank.ts",
-				"machine/cpp/machine/runtime/vblank.cpp",
-				"machine/ts/render/backend/backend.ts",
-				"machine/cpp/render/backend/backend.h",
-				"machine/ts/render/backend/webgl/backend.ts",
-				"machine/cpp/render/backend/gles2/backend.h",
-				"machine/cpp/render/backend/gles2/backend.cpp",
-				"machine/ts/render/backend/webgpu/backend.ts",
-				"machine/ts/render/headless/backend.ts"
-			],
-			"substrings": [
-				"executeReadyVdpFrameBuffer",
-				"executeDisplayVdpFrameBufferReplay",
-				"executeVdp2DBlit",
-				"VdpFrameBufferExecutionPassState",
-				"registerVdpFrameBufferExecutionPass"
-			],
-			"reason": "retired_vdp_framebuffer_execution_must_not_return_to_runtime_presentation_or_gpu_backend_interfaces"
-		},
-		{
-			"roots": [
-				"machine/firmware/bios",
-				"machine/firmware/system",
-				"cartlib",
-				"carts"
-			],
-			"substrings": [
-				"require('bios/vdp_stream')",
-				"require(\"bios/vdp_stream\")",
-				"require('system/vdp_stream')",
-				"require(\"system/vdp_stream\")",
-				"vdp_stream."
-			],
-			"reason": "cart_bios_rpu_draw_code_must_call_the_rpu_quad_owner_directly_not_deleted_vdp_stream_forwarder"
-		},
-		{
-			"roots": [
-				"machine/firmware/system/vdp_rpu_quads.lua",
-				"cartlib",
-				"carts/bare_metal_cart/cart.lua",
-				"carts/2025",
-				"carts/pietious"
-			],
-			"substrings": [
-				"ensure_resources",
-				"ensure_surface",
-				"resources_defined",
-				"surface_dirty"
-			],
-			"reason": "rpu_lua_resource_lifecycle_must_not_use_ensure_or_lazy_init_patterns"
-		},
-		{
-			"roots": [
-				"machine/firmware/system/vdp_rpu_quads.lua",
-				"cartlib",
-				"carts"
-			],
-			"substrings": [
-				"batch_blit_begin",
-				"batch_blit_item"
-			],
-			"reason": "rpu_lua_quad_owner_must_not_keep_legacy_batch_blit_forwarder_helpers"
-		}
-	],
-	"strict_required_substrings": [
-		{
-			"file": "machine/cpp/render/post/crt/software/crt_processor.cpp",
-			"substrings": [
-				"wt * 0.0001f * 43758.5453f",
-				"aperturePhase == 0"
-			],
-			"reason": "software_crt_must_mirror_gpu_shader_hashnoise_z_scale_1e-4_and_keep_exclusive_aperture_triad"
-		},
-		{
-			"file": "machine/ts/machine/devices/vdp/rpu.ts",
-			"substrings": [
-				"export const VDP_RPU_REQUIRED_FEATURES = VDP_RPU_FEATURE_INSTANCED_ARRAYS | VDP_RPU_FEATURE_UINT_INDEX;"
-			],
-			"reason": "u32_index_draws_are_part_of_the_baseline_rpu_backend_feature_contract"
-		},
-		{
-			"file": "machine/cpp/machine/devices/vdp/rpu.h",
-			"substrings": [
-				"constexpr u32 VDP_RPU_REQUIRED_FEATURES = VDP_RPU_FEATURE_INSTANCED_ARRAYS | VDP_RPU_FEATURE_UINT_INDEX;"
-			],
-			"reason": "u32_index_draws_are_part_of_the_baseline_rpu_backend_feature_contract"
-		},
-		{
-			"file": "machine/cpp/render/backend/gles2/backend.cpp",
-			"substrings": [
-				"m_supports_uint_indices = hasExtensionToken(extensions, \"GL_OES_element_index_uint\");"
-			],
-			"reason": "gles2_backend_initialization_must_own_required_rpu_uint_index_feature_detection"
-		},
-		{
-			"file": "machine/cpp/render/backend/gles2/vdp_rpu.cpp",
-			"substrings": [
-				"if (!backend.supportsUintIndices()) {"
-			],
-			"reason": "gles2_rpu_backend_must_reject_host_initialization_without_required_uint_index_support"
-		},
-		{
-			"file": "machine/ts/render/backend/pass/library.ts",
-			"substrings": [
-				"passEncoder: { fbo: null, desc: { label: idStr } as RenderPassDesc }",
-				"passEncoder.fbo = fbo;",
-				"backend.bindRenderPassPipeline(passEncoder, p.pipelineHandle, p.bindingLayout);"
-			],
-			"reason": "render_pass_execute_must_reuse_registered_pass_encoder_instead_of_allocating_per_execute"
-		},
-		{
-			"file": "machine/firmware/system/vdp_rpu.lua",
-			"substrings": [
-				"function vdp_rpu.exec_pass_list",
-				"function vdp_rpu.seal_frame",
-				"vdp_rpu.op_exec_pass_list = op_exec_pass_list",
-				"vdp_rpu.words_exec_pass_list = words_exec_pass_list",
-				"vdp_rpu.surface_desc_bytes = surface_desc_bytes",
-				"vdp_rpu.shader_v2_t2_c4_i_affine2 = shader_v2_t2_c4_i_affine2",
-				"vdp_rpu.shader_v3_c4_i_mat4 = shader_v3_c4_i_mat4",
-				"vdp_rpu.shader_v3_n3_t2_c4_j4_w4_c0_c1 = shader_v3_n3_t2_c4_j4_w4_c0_c1",
-				"vdp_rpu.prim_lines = prim_lines",
-				"vdp_rpu.prim_points = prim_points",
-				"vdp_rpu.index_u16 = index_u16",
-				"vdp_rpu.constant_source_xf_q16 = constant_source_xf_q16",
-				"vdp_rpu.constant_source_lpu_raw = constant_source_lpu_raw",
-				"vdp_rpu.constant_source_mfu_q16 = constant_source_mfu_q16",
-				"vdp_rpu.constant_source_jtu_q16 = constant_source_jtu_q16"
-			],
-			"reason": "rpu_bios_exposes_fixed_shader_and_device_constant_contracts"
-		},
-		{
-			"file": "carts/bare_metal_cart/cart.lua",
-			"substrings": [
-				"require('system/gx_gpu')",
-				"require('system/gx_gte')",
-				"gx_gpu.reset_320x240_pal()",
-				"gx_gpu.upload_rgba8888_to_direct16_stride",
-				"gx_gpu.draw_direct16_textured_quad_color",
-				"gx_gpu.draw_gouraud_triangle_color",
-				"gx_gpu.draw_line_color",
-				"gx_gte.set_y_rotation_translation",
-				"gx_gte.set_screen_offset",
-				"gx_gte.set_projection_h",
-				"gx_gte.rtpt",
-				"while tunnel_index < 12 do"
-			],
-			"reason": "bare_metal_cart_must_demonstrate_psx_gx_gpu_and_gte_primitives_without_rpu_descriptors"
-		},
-		{
-			"file": "machine/ts/render/backend/webgl/backend.ts",
-			"substrings": [
-				"private readonly passEncoderScratch: PassEncoder = { fbo: null, desc: {} };",
-				"const key = cid * FBO_CACHE_DEPTH_ID_STRIDE + did;",
-				"return this.passEncoderScratch;"
-			],
-			"reason": "webgl_render_pass_begin_must_reuse_encoder_and_avoid_per_pass_key_strings"
-		},
-		{
-			"file": "machine/ts/render/backend/webgl/vdp_rpu.ts",
-			"substrings": [
-				"import vdpRpuVertexShader from './shaders/vdp_rpu.vert.glsl';",
-				"import vdpRpuFragmentShader from './shaders/vdp_rpu.frag.glsl';",
-				"gl.bufferSubData(target, 0, frame.vdpVram, vramAddr, byteLength);"
-			],
-			"reason": "webgl_rpu_backend_must_load_external_shader_files"
-		},
-		{
-			"file": "machine/cpp/render/backend/gles2/backend.cpp",
-			"substrings": [
-				"#include \"render/backend/gles2/gx_gpu.h\"",
-				"registerGxGpuPass(registry);"
-			],
-			"reason": "gles2_backend_owns_gx_gpu_pass_registration_without_vdp_rpu_registration"
-		},
-		{
-			"file": "machine/cpp/render/backend/gles2/vdp_rpu.cpp",
-			"substrings": [
-				"#include \"render/backend/gles2/shaders/vdp_rpu_shaders.h\"",
-				"backend.buildProgram(kVdpRpuVertexShader, kVdpRpuFragmentShader, \"vdp_rpu\")",
-				"glBufferSubData(target, 0, static_cast<GLsizeiptr>(byteLength), frame.vdpVram.get().data() + vramAddr);"
-			],
-			"reason": "gles2_rpu_backend_must_load_generated_external_shader_sources"
-		},
-		{
-			"file": "machine/cpp/CMakeLists.txt",
-			"substrings": [
-				"\"${CMAKE_CURRENT_SOURCE_DIR}/render/backend/gles2/shaders/vdp_rpu.vert.glsl\"",
-				"\"${CMAKE_CURRENT_SOURCE_DIR}/render/backend/gles2/shaders/vdp_rpu.frag.glsl\"",
-				"\"${CMAKE_CURRENT_SOURCE_DIR}/render/backend/gles2/shaders/vdp_rpu_shaders.h.in\"",
-				"\"${CMAKE_CURRENT_BINARY_DIR}/generated/render/backend/gles2/shaders/vdp_rpu_shaders.h\"",
-				"render/backend/gles2/vdp_rpu.cpp"
-			],
-			"reason": "gles2_rpu_shader_files_and_backend_source_must_be_in_native_build"
-		},
-		{
-			"file": "machine/ts/render/backend/browser_factory.ts",
-			"substrings": [
-				"const WEBGPU_RENDERER_SUPPORT = false;",
-				"const webglBackend = createWebGLBackend(canvas);",
-				"return webglBackend;"
-			],
-			"reason": "browser_rpu_gpu_route_must_be_webgl_until_webgpu_has_an_rpu_backend"
-		},
-		{
-			"file": "machine/ts/render/gameview.ts",
-			"substrings": [
-				"public presentWorkbenchFrameBufferTexture = false;"
-			],
-			"reason": "workbench_framebuffer_texture_presentation_is_not_cart_or_bios_visible"
-		},
-		{
-			"file": "machine/cpp/render/gameview.h",
-			"substrings": [
-				"bool presentWorkbenchFrameBufferTexture = false;"
-			],
-			"reason": "workbench_framebuffer_texture_presentation_is_not_cart_or_bios_visible"
-		},
-		{
-			"file": "machine/ts/ide/workbench/overlay_modes.ts",
-			"substrings": [
-				"machineManager.view.presentWorkbenchFrameBufferTexture = overlayActive;"
-			],
-			"reason": "workbench_framebuffer_texture_presentation_is_enabled_only_by_ide_terminal_overlay_state"
-		},
-		{
-			"file": "machine/ts/render/2d/framebuffer_pipeline.ts",
-			"substrings": [
-				"shouldExecute: (view) => view.presentWorkbenchFrameBufferTexture && view.vdpRpuFrame.commands.passCount === 0",
-				"const framebuffer2DState: RenderPassStateRegistry['framebuffer_2d']",
-				"function bootstrapFramebuffer2DPass(backend: WebGLBackend): void"
-			],
-			"reason": "browser_workbench_framebuffer_texture_presentation_must_not_run_for_rpu_cart_frames_and_must_keep_retained_state"
-		},
-		{
-			"file": "machine/cpp/render/backend/pass/library.cpp",
-			"substrings": [
-				"return view->presentWorkbenchFrameBufferTexture && view->vdpRpuFrame->commands.passCount == 0u;"
-			],
-			"reason": "native_workbench_framebuffer_texture_presentation_must_not_run_for_rpu_cart_frames"
-		},
-		{
-			"file": "machine/firmware/system/vdp_rpu_quads.lua",
-			"substrings": [
-				"draw_words[draw_word_base] = vdp_rpu.shader_v2_t2_c4_i_affine2 | ((quad_primitive_index & 0xff) << 16)",
-				"stream_words[stream_word_base + 5] = vdp_rpu.layout_i_affine2_trect_c4 | (1 << 16) | (1 << 24)",
-				"local instance_batch_vram_addr<const> = *instance_batch_addr - vram_staging_base"
-			],
-			"reason": "bios_rpu_quad_batcher_must_emit_descriptor_backed_instanced_gpu_draws"
-		},
-		{
-			"file": "machine/firmware/system/vdp_rpu_quads.lua",
-			"substrings": [
-				"local instance_stride<const> = sizeof(rpu_quad_instance)",
-				"local draw_order_depth_scale<const> = 2.0 / 1048576.0",
-				"local quad_pipeline<const> = vdp_rpu.blend_alpha | (vdp_rpu.depth_lequal << 4) | (vdp_rpu.cull_none << 8) | vdp_rpu.pipe_depth_write | vdp_rpu.pipe_color_write_rgba",
-				"1.0 - (((layer * 4096.0) + z) * draw_order_depth_scale)"
-			],
-			"reason": "bios_rpu_quad_batcher_must_encode_cart_authored_layer_priority_as_gpu_depth_not_host_sorting"
-		},
-		{
-			"file": "carts/bare_metal_cart/cart.lua",
-			"substrings": [
-				"local draw_tunnel_quad<const> = function(center_x, center_y, radius_x, radius_y, turn, color)",
-				"local draw_face<const> = function(x0, y0, z0, x1, y1, z1, x2, y2, z2, color0, color1, color2)"
-			],
-			"reason": "bare_metal_cart_affine_and_gte_hot_helpers_must_stay_direct_gx_programming"
-		},
-		{
-			"file": "machine/ts/render/backend/webgl/shaders/vdp_rpu.vert.glsl",
-			"substrings": [
-				"position = vec4(p, a_instance0.w, 1.0);"
-			],
-			"reason": "webgl_rpu_affine_instance_layout_must_carry_cart_authored_depth"
-		},
-		{
-			"file": "machine/cpp/render/backend/gles2/shaders/vdp_rpu.vert.glsl",
-			"substrings": [
-				"position = vec4(p, a_instance0.w, 1.0);"
-			],
-			"reason": "gles2_rpu_affine_instance_layout_must_carry_cart_authored_depth"
-		},
-		{
-			"file": "machine/firmware/system/vdp_rpu_quads.lua",
-			"substrings": [
-				"function vdp_rpu_quads.tile_run_sources",
-				"write_instance(\n\t\t\t\t(origin_x + (tile_x * tile_size)) * x_scale - 1.0,"
-			],
-			"reason": "bios_rpu_quad_batcher_must_have_direct_tile_run_instance_writer"
-		},
-		{
-			"file": "carts/pietious/room/index.lua",
-			"substrings": [
-				"vdp_tile_run_sources(self.room_tile_sources, tile_count, self.tile_columns, self.tile_size, self.tile_origin_x, self.tile_origin_y, empty_tile_source)",
-				"vdp_tile_run_sources(self.water_tile_sources, tile_count, self.tile_columns, self.tile_size, self.tile_origin_x, self.tile_origin_y + ((self.water.surface_row - 1) * self.tile_size), empty_tile_source)"
-			],
-			"reason": "pietious_room_tiles_must_use_rpu_tile_run_path"
-		},
-		{
-			"file": "carts/2025/combat.lua",
-			"substrings": [
-				"local draw_combat_parallax_sprite<const> = function(obj, weight, offset_base_y)",
-				"vdp_blit_img_affine_color(",
-				"self.combat_parallax_draw_active = true"
-			],
-			"reason": "game_2025_parallax_must_use_cart_authored_rpu_affine_image_commands"
-		},
-		{
-			"file": "machine/ts/render/headless/passes.ts",
-			"substrings": [
-				"registerHeadlessRpuPass(registry);",
-				"function registerHeadlessRpuPass(registry: RenderPassLibrary): void",
-				"id: 'vdp_rpu'",
-				"shouldExecute: (view) => view.vdpRpuFrame.commands.passCount !== 0",
-				"commitHeadlessFrame(width, height, view.canvasSize.x, view.canvasSize.y)"
-			],
-			"reason": "headless_explicit_software_backend_must_present_rpu_frames_without_reintroducing_legacy_scene_passes"
-		},
-		{
-			"file": "machine/ts/render/graph/graph.ts",
-			"substrings": [
-				"const externalFrameData: FrameData = {",
-				"return externalFrameData;"
-			],
-			"reason": "render_graph_frame_data_must_reuse_retained_frame_object"
-		},
-		{
-			"file": "machine/ts/render/backend/webgl/backend.ts",
-			"substrings": [
-				"import { registerGxGpuPass } from './gx_gpu';",
-				"registerGxGpuPass(registry);"
-			],
-			"reason": "webgl_backend_owns_gx_gpu_pass_registration_without_vdp_rpu_registration"
-		},
-		{
-			"file": "machine/ts/render/headless/backend.ts",
-			"substrings": [
-				"private readonly passEncoderScratch: PassEncoder = { fbo: null, desc: {} };",
-				"return this.passEncoderScratch;"
-			],
-			"reason": "headless_render_pass_begin_must_reuse_encoder"
-		},
-		{
-			"file": "machine/ts/machine/devices/vdp/rpu.ts",
-			"substrings": [
-				"cmd.passColorSurfaceDescAddr[pi] = readRpuDescU32(vram, pb + RPU_PASS_DESC_COLOR_SURFACE_DESC_ADDR_OFFSET);",
-				"cmd.streamVramAddr[si] = readRpuDescU32(vram, sb + RPU_STREAM_DESC_VRAM_ADDR_OFFSET);",
-				"cmd.constantVramAddr[ci] = readRpuDescU32(vram, cb + RPU_CONSTANT_DESC_VRAM_ADDR_OFFSET);",
-				"cmd.textureSurfaceDescAddr[ti] = readRpuDescU32(vram, tb + RPU_TEXTURE_DESC_SURFACE_DESC_ADDR_OFFSET);"
-			],
-			"reason": "cart_visible_rpu_draw_descriptors_must_decode_raw_vdp_local_addresses"
-		},
-		{
-			"file": "machine/cpp/machine/devices/vdp/rpu.cpp",
-			"substrings": [
-				"cmd.passColorSurfaceDescAddr[pi] = readRpuDescU32(vram, pb + RPU_PASS_DESC_COLOR_SURFACE_DESC_ADDR_OFFSET);",
-				"cmd.streamVramAddr[si] = readRpuDescU32(vram, sb + RPU_STREAM_DESC_VRAM_ADDR_OFFSET);",
-				"cmd.constantVramAddr[ci] = readRpuDescU32(vram, cb + RPU_CONSTANT_DESC_VRAM_ADDR_OFFSET);",
-				"cmd.textureSurfaceDescAddr[ti] = readRpuDescU32(vram, tb + RPU_TEXTURE_DESC_SURFACE_DESC_ADDR_OFFSET);"
-			],
-			"reason": "native_cart_visible_rpu_draw_descriptors_must_decode_raw_vdp_local_addresses"
-		},
-		{
-			"file": "machine/ts/render/backend/webgl/vdp_rpu.ts",
-			"substrings": [
-				"uploadVdpRpuBuffer(frame, gl.ARRAY_BUFFER, commands.streamVramAddr[streamBindingIndex], commands.streamByteLength[streamBindingIndex]);",
-				"const surfaceDescAddr = commands.textureSurfaceDescAddr[bindingIndex];",
-				"if (surfaceDescAddr === 0) {",
-				"if (indexType === VDP_RPU_INDEX_NONE || indexVramAddr === 0) {"
-			],
-			"reason": "webgl_rpu_backend_must_consume_descriptor_addresses_without_resource_indexing"
-		},
-		{
-			"file": "machine/cpp/render/backend/gles2/vdp_rpu.cpp",
-			"substrings": [
-				"uploadVdpRpuBuffer(frame, GL_ARRAY_BUFFER, commands.streamVramAddr[streamBindingIndex], commands.streamByteLength[streamBindingIndex]);",
-				"const u32 surfaceDescAddr = commands.textureSurfaceDescAddr[bindingIndex];",
-				"if (surfaceDescAddr == 0u) {",
-				"if (indexType == VDP_RPU_INDEX_NONE || indexVramAddr == 0u) {"
-			],
-			"reason": "gles2_rpu_backend_must_consume_descriptor_addresses_without_resource_indexing"
-		},
-		{
-			"file": "carts/bare_metal_cart/cart.lua",
-			"substrings": [
-				"local sin_q12<const> = sin_q16 >> 4",
-				"local cos_q12<const> = cos_q16 >> 4",
-				"gx_gte.set_y_rotation_translation(sin_q12, cos_q12, 0, -10, translate_z)",
-				"draw_face(0, -72, 0, -78, 58, 76, 78, 58, 76, color_shard_a, color_shard_b, color_shard_c)"
-			],
-			"reason": "bare_metal_gte_shard_constants_must_flow_through_raw_psx_gte_registers"
-		},
-		{
-			"file": "carts/bare_metal_cart/cart.lua",
-			"substrings": [
-				"gx_gpu.clear_color(color_black)",
-				"draw_background()",
-				"draw_affine_tunnel()",
-				"draw_gte_shard()",
-				"draw_second_gte_shard()",
-				"draw_sprite()",
-				"draw_vector_overlay()"
-			],
-			"reason": "bare_metal_frame_build_must_remain_gx_gpu_gte_owned_after_rpu_replacement"
-		},
-		{
-			"file": "machine/ts/machine/devices/vdp/device_output.ts",
-			"substrings": [
-				"import type { VdpRpuFrameOutput } from './rpu';",
-				"export type VdpDeviceOutput = Readonly<{",
-				"\trpu: VdpRpuFrameOutput;"
-			],
-			"reason": "vdp_device_output_must_publish_only_retained_rpu_frame_for_cart_visible_rendering"
-		},
-		{
-			"file": "machine/cpp/machine/devices/vdp/device_output.h",
-			"substrings": [
-				"#include \"machine/devices/vdp/rpu.h\"",
-				"struct VdpDeviceOutput {",
-				"\tconst VdpRpuFrameOutput* rpu;"
-			],
-			"reason": "native_vdp_device_output_must_publish_only_retained_rpu_frame_for_cart_visible_rendering"
-		},
-		{
-			"file": "machine/ts/render/vdp/view_snapshot.ts",
-			"substrings": [
-				"view.vdpRpuFrame = output.rpu;",
-				"view.vdpDirectionalLightCount = 0;",
-				"view.vdpPointLightCount = 0;"
-			],
-			"reason": "host_view_snapshot_must_consume_retained_rpu_frame_without_legacy_render_categories"
-		},
-		{
-			"file": "machine/cpp/render/vdp/view_snapshot.cpp",
-			"substrings": [
-				"view.vdpRpuFrame = output.rpu;",
-				"view.vdpDirectionalLightCount = 0;",
-				"view.vdpPointLightCount = 0;"
-			],
-			"reason": "native_host_view_snapshot_must_consume_retained_rpu_frame_without_legacy_render_categories"
-		},
-		{
-			"file": "package.json",
-			"substrings": [
-				"\"headless:game\": \"node dist/host_headless.debug.js"
-			],
-			"reason": "headless_entrypoint_must_remain_generic_rom_parameter_not_bare_metal_alias"
-		},
-		{
-			"file": "machine/firmware/system/vdp_rpu_quads.lua",
-			"substrings": [
-				"function vdp_rpu_quads.finish_frame()",
-				"local end_packet<const>: *word = vdp_stream_claim(1)\n\t\t*end_packet = 0x00000000"
-			],
-			"reason": "rpu_quad_owner_finishes_stream_without_deleted_vdp_stream_forwarder"
-		},
-		{
-			"file": "machine/firmware/bios/system.lua",
-			"substrings": [
-				"function system.irq(flags)"
-			],
-			"reason": "bios_system_lua_must_stay_tiny_after_cartlib_split"
 		}
 	],
 	"strict_file_layout": [

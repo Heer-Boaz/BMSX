@@ -72,13 +72,13 @@ local draw_cart<const> = function()
 end
 
 *irq_mask_register = irq_vblank | irq_apu
+gx_reset_320x240_pal()
 *inp_ctrl_register = 0x00000001
 wait_vblank()
 
 while true do
 	*inp_ctrl_register = 0x00000001
 	wait_vblank()
-	gx_reset_320x240_pal()
 	draw_cart()
 	frame = frame + 1
 end

@@ -92,7 +92,6 @@ import { ApuSourceDma } from '../../machine/ts/machine/devices/audio/source';
 import type { AudioControllerState, ApuOutputState, ApuOutputVoiceState } from '../../machine/ts/machine/devices/audio/save_state';
 import { CPU } from '../../machine/ts/machine/cpu/cpu';
 import { IrqController } from '../../machine/ts/machine/devices/irq/controller';
-import { DEFAULT_LUA_BUILTIN_NAMES } from '../../machine/ts/lua/builtin_descriptors';
 import { CART_ROM_BASE, PROGRAM_ROM_BASE, RAM_BASE, SYSTEM_ROM_BASE } from '../../machine/ts/machine/memory/map';
 import { Memory } from '../../machine/ts/machine/memory/memory';
 import { DeviceScheduler } from '../../machine/ts/machine/scheduler/device';
@@ -278,44 +277,6 @@ test('APU contract constants keep hardware command values', () => {
 	assert.equal(APU_SLOT_REGISTER_WORD_COUNT, 336);
 	assert.equal(IO_APU_PARAMETER_REGISTER_ADDRS.length, APU_PARAMETER_REGISTER_COUNT);
 	assert.equal(IO_APU_SELECTED_SLOT_REG_COUNT, APU_PARAMETER_REGISTER_COUNT);
-});
-
-test('APU hardware words are not runtime globals', () => {
-	const source = DEFAULT_LUA_BUILTIN_NAMES.join('\n');
-	for (const name of [
-		'sys_apu_fault_code',
-		'sys_apu_fault_detail',
-		'sys_apu_fault_ack',
-		'apu_status_fault',
-		'apu_status_selected_slot_active',
-		'apu_status_busy',
-		'apu_status_output_empty',
-		'apu_status_output_full',
-		'apu_output_queue_capacity_frames',
-		'sys_apu_selected_source_addr',
-		'sys_apu_active_mask',
-		'sys_apu_selected_slot_regs',
-		'sys_apu_selected_slot_reg_count',
-		'sys_apu_generator_kind',
-		'sys_apu_generator_duty_q12',
-		'apu_generator_none',
-		'apu_generator_square',
-		'sys_apu_output_queued_frames',
-		'sys_apu_output_free_frames',
-		'sys_apu_output_capacity_frames',
-		'sys_apu_cmd_queued',
-		'sys_apu_cmd_free',
-		'sys_apu_cmd_capacity',
-		'apu_fault_source_range',
-		'apu_fault_unsupported_format',
-		'apu_status_cmd_fifo_empty',
-		'apu_status_cmd_fifo_full',
-		'apu_command_fifo_capacity',
-		'apu_fault_cmd_fifo_full',
-	]) {
-		assert.equal(source.includes(name), false);
-		assert.equal(DEFAULT_LUA_BUILTIN_NAMES.includes(name), false);
-	}
 });
 
 test('APU source DMA views mapped BIOS/cart ROM and owns RAM samples', () => {

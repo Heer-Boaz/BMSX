@@ -82,7 +82,7 @@ local draw_cart<const> = function()
 	gx_fill_rect_color(24, 24, 96, 72, shadow_color)
 	gx_fill_rect_color(20, 20, 92, 68, bar_color)
 	gx_fill_rect_color(width - 92, height - 68, width - 20, height - 20, hot_color)
-	gx_draw_line_color(x0, y0, x1, y1, line_color)
+	gx_draw_thick_line_color(x0, y0, x1, y1, line_color, 4)
 	draw_affine_texture()
 	renderhwtest_draw_count = renderhwtest_draw_count + 1
 end

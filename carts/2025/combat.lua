@@ -221,8 +221,7 @@ function combat.define_fsm()
 				slash_z = combat_hit_slash_z,
 			}
 			self.combat_hit_slash_rc = attach_component(self, 'customvisualcomponent')
-			self.combat_hit_slash_rc:add_producer(function(ctx)
-				local director<const> = ctx.parent
+			self.combat_hit_slash_rc:add_producer(function(director)
 				if director.combat_parallax_draw_active then
 					local momentum<const> = director.combat_parallax_momentum_steps
 					local offset_base_y<const> = director.combat_parallax_offset_base_y
@@ -323,7 +322,9 @@ function combat.define_fsm()
 	local finish_combat_results_fade_out<const> = function(self)
 		oget(combat_maya_b_id).visible = false
 		oget(text_results_id):clear_text()
-		local bg<const> = oget(director_instance_id).combat_results_visual
+		local director<const> = oget(director_instance_id)
+		director.combat_results_maya_visible = false
+		local bg<const> = director.combat_results_visual
 		bg.visible = false
 		bg.color = p3_white_color
 		hide_combat_sprites()
@@ -1155,13 +1156,13 @@ function combat.define_fsm()
 
 			local maya_b<const> = oget(combat_maya_b_id)
 			maya_b:gfx('maya_b')
-			maya_b.visible = true
+			maya_b.visible = false
+			oget(director_instance_id).combat_results_maya_visible = true
 			self.combat_results_maya_target_x = screen_width - maya_b.sx
 			self.combat_results_maya_start_x = screen_width
 			maya_b.x = self.combat_results_maya_start_x
 			maya_b.y = screen_height - maya_b.sy
 			maya_b.sprite_component.color = p3_white_color & 0x00ffffff
-			maya_b.z = 300
 
 			local lines<const> = { 'Combat Results:' }
 			for i = 1, #rewards do

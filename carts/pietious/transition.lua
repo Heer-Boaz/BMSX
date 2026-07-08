@@ -40,7 +40,7 @@ local transition_mode_events<const> = {
 
 function transition:bind_visual()
 	local rc<const> = self:get_component('customvisualcomponent')
-	rc.producer = function(_ctx)
+	rc.producer = function()
 		self:draw_transition_overlay()
 	end
 end

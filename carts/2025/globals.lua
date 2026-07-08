@@ -237,6 +237,7 @@ function apply_background(id)
 	if id == nil then
 		return
 	end
+	load_gx_atlas(gx_img_rect(id).atlas_id)
 	local bg<const> = oget(bg_id)
 	bg:gfx(id)
 end
@@ -244,6 +245,7 @@ end
 function show_background(id)
 	local bg<const> = oget(bg_id)
 	if id ~= nil then
+		load_gx_atlas(gx_img_rect(id).atlas_id)
 		bg:gfx(id)
 	end
 	bg.visible = true

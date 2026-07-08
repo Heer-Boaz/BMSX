@@ -5,7 +5,7 @@ This is **not** a stable ABI contract and is **not** more authoritative than the
 live checkout. It is a temporary execution checklist so agents can see the
 current direction, completed slices, known blockers, and next work.
 
-Last refreshed: 2026-07-07
+Last refreshed: 2026-07-08
 Do not duplicate recent commit history here. Use `git log --oneline` for that.
 
 ## Source of truth
@@ -73,7 +73,7 @@ Legacy VDP/RPU still exists and must not be treated as completion:
 
 - TS/C++ VDP device trees under `machine/*/machine/devices/vdp/`
 - VDP/RPU render helpers under `machine/ts/render/vdp/`
-- Old VDP/RPU tests and firmware guards, including `tests/cpp/vdp_ingress_test.cpp`
+- Old VDP/RPU tests and firmware paths, including `tests/cpp/vdp_ingress_test.cpp`
 - Presentation registration still contains VDP/RPU paths; removing those is a
   later replacement milestone, not done yet.
 
@@ -98,22 +98,20 @@ Implemented or partially covered GX-GPU areas include:
   kinds.
 - GX command logs can be retired after presentation without clearing backend
   VRAM, so carts can build frame commands without losing uploaded texture VRAM.
-- BIOS boot image rendering, `emptycart`, `fade_probe`, `vblanktest`, and
-  `nemesis_s` now use GX-visible graphics paths instead of active VDP/RPU frame
-  submission. `renderhwtest` now also programs GX directly for its primitive and
-  affine textured-quad smoke path.
+- BIOS boot image rendering, `emptycart`, `fade_probe`, `vblanktest`,
+  `nemesis_s`, `renderhwtest`, and the `2025` runtime/cart path now use
+  GX-visible graphics paths instead of active VDP/RPU frame submission.
 
 Known gap: `GX_GPU_COMMAND_READ_VRAM_TO_CPU` is emitted by the GPU command buffer,
 but accelerated backends currently do not execute a GPUREAD/readback command
 case. This must be resolved deliberately.
 
-Known migration blocker: `machine/firmware/system/gx_image.lua` is still a
-single-residency atlas helper. It uploads one decoded atlas into a fixed PSX
-texture area. That is enough for BIOS boot art and `nemesis_s`, but not enough
-for text-heavy or multi-atlas carts such as `2025` and `pietious` without either
-a real PSX VRAM residency plan or explicit cart-managed uploads. Do not paper
-over this with per-frame whole-atlas uploads or a CPU-side accelerated-backend
-texture shadow.
+Known migration blocker: `machine/firmware/system/gx_image.lua` supports the
+resident system atlas plus one resident cart atlas in PSX VRAM. The `2025` cart
+now owns explicit cart-atlas decode/upload points for its transitions,
+background changes, and combat atlas swaps. `pietious` still needs a real
+cart-owned residency/tile-run slice; do not paper over that with per-frame
+whole-atlas uploads or a CPU-side accelerated-backend texture shadow.
 
 ## Hard open design point: GPUREAD / VRAM-to-CPU
 
@@ -223,13 +221,19 @@ and ask before coding.
   draws to GX/PSX.
 - [x] Migrate `renderhwtest` to direct GX primitive programming, including a
   cart-visible raw PSX textured affine quad smoke.
-- [ ] Migrate `2025` engine/cart rendering. This needs GX texture residency and
-  PSX textured polygon/affine sprite coverage, not VDP compatibility aliases.
+- [x] Migrate `2025` engine/cart rendering to GX, including cart-owned
+  single-cart-atlas residency, background transition uploads, affine parallax
+  sprites, semi-transparent textured fades, and existing custom visual
+  submission on the GX path.
 - [ ] Migrate `pietious` engine/cart rendering. This needs GX tile/text/image
   residency and tile-run ownership, not a VDP stream shim.
-- [x] Replace `bare_metal_cart` RPU descriptor demo with GX/GTE-owned PSX-style
-  primitives: direct GP0 Gouraud triangles, raw direct16 textured affine quads,
-  and cart-visible RTPT projection through `system/gx_gte.lua`.
+- [x] Replace the current `bare_metal_cart` RPU descriptor smoke path with
+  GX/GTE-owned PSX-style primitives: direct GP0 Gouraud triangles, raw direct16
+  textured affine quads, and cart-visible RTPT projection through
+  `system/gx_gte.lua`.
+- [ ] Restore full historical `bare_metal_cart` feature coverage on GX/GTE,
+  including the old offscreen/depth/mesh/post-pass coverage as real PSX/GX/GTE
+  functionality.
 - [ ] Replace remaining cart graphics programming with PSX-style GPU/GTE
   programming.
 - [ ] Keep BMSX extensions separate and post-parity.
@@ -238,15 +242,12 @@ and ask before coding.
 
 Pick one vertical slice and finish it before committing:
 
-1. **GX image residency for multi-atlas carts**: define a PSX-VRAM texture
-   residency model in `system/gx_image.lua`/cart-owned GPU programming that can
-   support cart atlas plus system font usage without per-frame whole-atlas
-   uploads, CPU-side accelerated-backend shadows, or hidden fallbacks. Use this
-   as the unlock for `2025` or `pietious` migration.
-2. **Migrate a real 2025 or pietious image path onto GX textured polygons**:
-   use the covered raw textured quad/affine primitive, and add the missing
-   residency/tile-run ownership needed by that cart slice instead of adding VDP
-   aliases.
+1. **Finish `pietious` residency/tile migration**: reuse the resident system
+   atlas plus cart-owned atlas upload model where it fits, and add the missing
+   GX tile-run ownership instead of resurrecting VDP stream aliases.
+2. **Restore full `bare_metal_cart` feature coverage on GX/GTE**: migrate the
+   old offscreen/depth/mesh/post-pass path as real PSX/GX/GTE functionality, not
+   as a small smoke replacement.
 3. **GPUREAD/readback contract**: only start after an explicit design decision.
    Accelerated backends must read back from real backend VRAM/render targets with
    command ordering semantics; do not add a CPU shadow as the source of truth.
@@ -280,7 +281,7 @@ slice, prefer a bundle like:
 
 ```text
 npm run compile:machine
-npx tsx --test --import ./tests/lua/test_setup.ts tests/lua/gx_gpu.test.ts tests/lua/gx_gte.test.ts tests/lua/machine_model_registry.test.ts tests/lua/runtime_timing.test.ts tests/lua/firmware_raw_words.guard.test.ts
+npx tsx --test --import ./tests/lua/test_setup.ts tests/lua/gx_gpu.test.ts tests/lua/gx_gte.test.ts tests/lua/machine_model_registry.test.ts tests/lua/runtime_timing.test.ts
 cmake --build build-cpp-tests --parallel $(nproc)
 ctest --test-dir build-cpp-tests --output-on-failure
 npm run audit:core-parity

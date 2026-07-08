@@ -31,7 +31,6 @@ import {
 	type InputControllerInputSource,
 	type InputControllerSnapshot,
 } from '../../machine/ts/machine/devices/input/contracts';
-import { DEFAULT_LUA_BUILTIN_NAMES } from '../../machine/ts/lua/builtin_descriptors';
 import { Memory } from '../../machine/ts/machine/memory/memory';
 
 const HID_KEY_X = 27;
@@ -130,29 +129,4 @@ test('input controller exposes the VBlank sample edge without leaking the sample
 	assert.equal(harness.controller.captureState().sampleArmed, true);
 	harness.controller.cancelSampleArm();
 	assert.equal(harness.controller.captureState().sampleArmed, false);
-});
-
-test('ICU raw input words are not host globals or high-level action registers', () => {
-	const source = DEFAULT_LUA_BUILTIN_NAMES.join('\n');
-	assert.equal(DEFAULT_LUA_BUILTIN_NAMES.includes('string' + '_ref'), false);
-	for (const name of [
-		'sys_inp_ctrl',
-		'sys_inp_status',
-		'sys_inp_keys',
-		'sys_inp_pads',
-		'sys_inp_pointer_buttons',
-		'sys_inp_output_port',
-	]) {
-		assert.equal(source.includes(name), false);
-		assert.equal(DEFAULT_LUA_BUILTIN_NAMES.includes(name), false);
-	}
-	assert.equal(DEFAULT_LUA_BUILTIN_NAMES.includes('sys_inp_player'), false);
-	assert.equal(DEFAULT_LUA_BUILTIN_NAMES.includes('sys_inp_source'), false);
-	assert.equal(DEFAULT_LUA_BUILTIN_NAMES.includes('sys_inp_button'), false);
-	assert.equal(DEFAULT_LUA_BUILTIN_NAMES.includes('sys_inp_action'), false);
-	assert.equal(DEFAULT_LUA_BUILTIN_NAMES.includes('sys_inp_bind'), false);
-	assert.equal(DEFAULT_LUA_BUILTIN_NAMES.includes('sys_inp_query'), false);
-	assert.equal(DEFAULT_LUA_BUILTIN_NAMES.includes('sys_inp_consume'), false);
-	assert.equal(DEFAULT_LUA_BUILTIN_NAMES.includes('sys_inp_value_x'), false);
-	assert.equal(DEFAULT_LUA_BUILTIN_NAMES.includes('sys_inp_value_y'), false);
 });

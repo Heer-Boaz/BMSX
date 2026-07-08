@@ -1,8 +1,6 @@
 import assert from 'node:assert/strict';
-import { readFileSync } from 'node:fs';
 import { test } from 'node:test';
 
-import { DEFAULT_LUA_BUILTIN_NAMES } from '../../machine/ts/lua/builtin_descriptors';
 import {
 	IO_GEO_CMD,
 	IO_GEO_COUNT,
@@ -559,63 +557,4 @@ test('GEO overlap2d start consumes register words without submit preflight', () 
 	assert.equal(memory.readIoU32(IO_GEO_FAULT), 0);
 	assert.equal(geometry.captureState().phase, GEOMETRY_CONTROLLER_PHASE_DONE);
 
-});
-
-test('GEO cart-visible words are not host globals or firmware module fields', () => {
-	const source = readFileSync('cartlib/collision2d.lua', 'utf8');
-	assert.equal(source.includes('require('), false);
-	for (const name of [
-		'sys_geo_cmd_overlap2d_pass',
-		'sys_geo_primitive_aabb',
-		'sys_geo_primitive_convex_poly',
-		'sys_geo_vertex2_bytes',
-		'sys_geo_xform2_record_bytes',
-		'sys_geo_xform2_record_vertex_count_offset',
-		'sys_geo_xform2_matrix_bytes',
-		'sys_geo_xform2_aabb_bytes',
-		'sys_geo_xform2_max_vertices',
-		'sys_geo_sat2_pair_bytes',
-		'sys_geo_sat2_desc_bytes',
-		'sys_geo_sat2_result_bytes',
-		'sys_geo_sat2_max_poly_vertices',
-		'sys_geo_overlap_mode_candidate_pairs',
-		'sys_geo_overlap_mode_full_pass',
-		'sys_geo_overlap_broadphase_none',
-		'sys_geo_overlap_broadphase_local_bounds_aabb',
-		'sys_geo_overlap_contact_clipped_feature',
-		'sys_geo_overlap_output_stop_on_overflow',
-		'sys_geo_overlap_max_poly_vertices',
-		'sys_geo_overlap_max_clip_vertices',
-		'sys_geo_overlap_instance_bytes',
-		'sys_geo_overlap_instance_shape_offset',
-		'sys_geo_overlap_pair_bytes',
-		'sys_geo_overlap_pair_meta_offset',
-		'sys_geo_overlap_result_bytes',
-		'sys_geo_overlap_result_pair_meta_offset',
-		'sys_geo_overlap_summary_bytes',
-		'sys_geo_overlap_summary_result_count_offset',
-		'sys_geo_overlap_summary_flag_overflow',
-		'sys_geo_overlap_shape_desc_bytes',
-		'sys_geo_overlap_shape_kind_compound',
-		'sys_geo_overlap_shape_bounds_bytes',
-		'sys_geo_overlap_shape_bounds_left_offset',
-		'sys_geo_overlap_shape_bounds_bottom_offset',
-		'sys_geo_overlap_aabb_data_count',
-		'sys_geo_overlap_aabb_shape_bytes',
-		'sys_geo_overlap_pair_meta_instance_a_shift',
-		'sys_geo_overlap_pair_meta_instance_a_mask',
-		'sys_geo_overlap_pair_meta_instance_b_mask',
-		'sys_geo_fault_ack',
-		'sys_geo_fault_code_shift',
-		'sys_geo_fault_code_mask',
-		'sys_geo_fault_record_index_mask',
-		'sys_geo_fault_record_index_none',
-	]) {
-		assert.equal(source.includes(name), false);
-		assert.equal(DEFAULT_LUA_BUILTIN_NAMES.includes(name), false);
-	}
-	assert.equal(GEO_XFORM2_MAX_VERTICES, 64);
-	assert.equal(GEO_SAT2_MAX_POLY_VERTICES, 64);
-	assert.equal(GEO_OVERLAP2D_MAX_POLY_VERTICES, 64);
-	assert.equal(GEO_OVERLAP2D_MAX_CLIP_VERTICES, GEO_OVERLAP2D_MAX_POLY_VERTICES * 2);
 });

@@ -7,9 +7,11 @@ local gx_image<const> = {}
 local cache<const> = {}
 
 local system_atlas_id<const> = 254
+local system_texture_band_width<const> = 512
+local system_atlas_meta<const> = romdir.atlas(system_atlas_id).imgmeta
 local system_texture_base_x<const> = 512
 local cart_texture_overflow_base_x<const> = 512
-local cart_texture_overflow_base_y<const> = 136
+local cart_texture_overflow_base_y<const> = ((system_atlas_meta.width + system_texture_band_width - 1) // system_texture_band_width) * system_atlas_meta.height
 local gpu_texture_base_y<const> = 256
 local gpu_texture_slice_width<const> = 256
 local gpu_texture_page_span<const> = gx_gpu.texture_page_span
@@ -185,9 +187,16 @@ function gx_image.blit_rect_affine_color(
 			local chunk_h
 			if (flip_flags & 2) ~= 0 then
 				local source_y_end<const> = rect.v + rect.h - source_offset_y
-				local gpu_source_y_end<const> = atlas_gpu_y(rect, source_x, source_y_end)
-				chunk_h = (gpu_source_y_end - 1) & 0x000000ff
+				local source_y_last<const> = source_y_end - 1
+				local gpu_source_y_end<const> = atlas_gpu_y(rect, source_x, source_y_last)
+				chunk_h = gpu_source_y_end & 0x000000ff
 				chunk_h = chunk_h + 1
+				if rect.atlas_id ~= system_atlas_id and source_y_last >= gpu_texture_page_span then
+					local overflow_chunk_h<const> = source_y_end - gpu_texture_page_span
+					if chunk_h > overflow_chunk_h then
+						chunk_h = overflow_chunk_h
+					end
+				end
 				if chunk_h > remaining_h then
 					chunk_h = remaining_h
 				end

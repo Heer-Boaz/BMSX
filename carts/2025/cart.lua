@@ -12,6 +12,8 @@ local irq_apu<const> = 0x0200
 local vblank_count = 0
 local gx_atlas_decode_generation = 0
 local gx_atlas_ready_generation = 0
+local gx_system_atlas_id<const> = 254
+local gx_cart_atlas_resident_id = -1
 
 local wait_vblank<const> = function()
 	repeat
@@ -21,6 +23,9 @@ local wait_vblank<const> = function()
 end
 
 function load_gx_atlas(atlas_id)
+	if atlas_id ~= gx_system_atlas_id and gx_cart_atlas_resident_id == atlas_id then
+		return
+	end
 	gx_atlas_decode_generation = gx_atlas_decode_generation + 1
 	local pending_generation<const> = gx_atlas_decode_generation
 	gx_load_atlas(atlas_id)
@@ -29,6 +34,9 @@ function load_gx_atlas(atlas_id)
 		*input_control_register = 0x00000001
 	until gx_atlas_ready_generation == pending_generation
 	gx_upload_atlas(atlas_id)
+	if atlas_id ~= gx_system_atlas_id then
+		gx_cart_atlas_resident_id = atlas_id
+	end
 end
 
 local combat_module<const> = require('combat')
@@ -47,28 +55,26 @@ local combat_director_instance = nil
 local director<const> = {}
 director.__index = director
 
-local create_rect_state<const> = function(z)
+local create_rect_state<const> = function()
 	return {
 		visible = false,
 		x = 0,
 		y = 0,
 		width = 0,
 		height = 0,
-		layer = 0x00000000,
-		z = z,
 		color = 0,
 	}
 end
 
 local create_transition_visuals<const> = function()
 	return {
-		overlay = create_rect_state(850),
+		overlay = create_rect_state(),
 		panels = {
-			create_rect_state(860),
-			create_rect_state(861),
-			create_rect_state(862),
+			create_rect_state(),
+			create_rect_state(),
+			create_rect_state(),
 		},
-		accent = create_rect_state(870),
+		accent = create_rect_state(),
 	}
 end
 
@@ -86,15 +92,20 @@ local build_director_fsm<const> = function()
 		boot = {
 			entering_state = function(self)
 					self.transition_visual = create_transition_visuals()
-					self.combat_results_visual = create_rect_state(10)
+					self.combat_results_visual = create_rect_state()
+					self.combat_results_maya_visible = false
 					self.transition_rc = attach_component(self, 'customvisualcomponent')
-					self.transition_rc:add_producer(function(ctx)
-						ctx.rc:submit_rect(ctx.parent.combat_results_visual)
-						ctx.rc:submit_rect(ctx.parent.transition_visual.overlay)
-						for i = 1, #ctx.parent.transition_visual.panels do
-							ctx.rc:submit_rect(ctx.parent.transition_visual.panels[i])
+					self.transition_rc:add_producer(function(parent, rc)
+						rc:submit_rect(parent.combat_results_visual)
+						if parent.combat_results_maya_visible then
+							local maya_b<const> = oget(combat_maya_b_id)
+							gx_blit_img_color(maya_b.sprite_component.imgid, maya_b.x, maya_b.y, maya_b.sprite_component.color)
 						end
-						ctx.rc:submit_rect(ctx.parent.transition_visual.accent)
+						rc:submit_rect(parent.transition_visual.overlay)
+						for i = 1, #parent.transition_visual.panels do
+							rc:submit_rect(parent.transition_visual.panels[i])
+						end
+						rc:submit_rect(parent.transition_visual.accent)
 					end)
 				self.stats = { planning = 0, opdekin = 0, rust = 0, makeup = 0 }
 				self.inline_pages = {}
@@ -366,7 +377,7 @@ function new_game()
 end
 
 init()
-load_gx_atlas(254)
+load_gx_atlas(gx_system_atlas_id)
 load_gx_atlas(gx_img_rect(story.title.bg).atlas_id)
 new_game()
 *input_control_register = 0x00000001

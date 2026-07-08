@@ -27,7 +27,7 @@ local lithograph_mode_sprite_id<const> = 'lithograph_mode'
 
 function lithograph_screen:bind_visual()
 	local rc<const> = self:get_component('customvisualcomponent')
-	rc.producer = function(_ctx)
+	rc.producer = function()
 		self:draw_screen()
 	end
 end

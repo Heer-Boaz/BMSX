@@ -852,7 +852,7 @@ end
 
 function room_object:bind_visual()
 	local rc<const> = self:get_component('customvisualcomponent')
-	rc.producer = function(_ctx)
+	rc.producer = function()
 		self:render_room()
 	end
 end

@@ -297,5 +297,10 @@
 			"pressId": 10,
 			"modifiers": { "ctrl": false, "shift": false, "alt": false, "meta": false }
 		}
+	},
+	{
+		"description": "post all-out focus capture",
+		"frame": 410,
+		"capture": true
 	}
 ]

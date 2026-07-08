@@ -10,7 +10,7 @@ end
 
 function disappearingwall:bind_visual()
 	local renderer<const> = self:get_component('customvisualcomponent')
-	renderer.producer = function(_ctx)
+	renderer.producer = function()
 		for ty = 0, self.height_tiles - 1 do
 			local draw_y<const> = self.y + (ty * room_tile_size)
 			for tx = 0, self.width_tiles - 1 do

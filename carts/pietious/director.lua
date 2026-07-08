@@ -80,7 +80,7 @@ director.__index = director
 
 function director:bind_visual()
 	local rc<const> = self:get_component('customvisualcomponent')
-	rc.producer = function(_ctx)
+	rc.producer = function()
 		if not self.seal_flash_on then
 			return
 		end

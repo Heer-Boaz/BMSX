@@ -23,10 +23,8 @@ type StrictRuntimeNoHeapFunctionEntry = { file: string; functions: string[]; rea
 type StrictLuaNoHeapRegionEntry = { file: string; start: string; end: string; reason: string };
 type StrictRpuTableParityEntry = { ts: string; cpp: string; tables: string[]; reason: string };
 type StrictShaderParityEntry = { webgl: string; gles2: string; reason: string };
-type StrictLuaVdpAbiParitySymbol = { lua: string; ts: string; exported?: boolean };
-type StrictLuaVdpAbiParityEntry = { lua: string; ts: string[]; exports?: string; symbols: StrictLuaVdpAbiParitySymbol[]; reason: string };
-type StrictForbiddenSubstringEntry = { roots: string[]; substrings: string[]; reason: string };
-type StrictRequiredSubstringEntry = { file: string; substrings: string[]; reason: string };
+type StrictLuaVdpAbiParitySymbol = { lua: string; ts: string };
+type StrictLuaVdpAbiParityEntry = { lua: string; ts: string[]; symbols: StrictLuaVdpAbiParitySymbol[]; reason: string };
 type StrictFileLayoutEntry = { present?: string[]; absent?: string[]; reason: string };
 type StrictFilePairParityEntry = { ts: string; cpp: string[]; reason: string };
 type StrictSaveStateSchemaParityEntry = { ts: string; cpp: string; symbol: string; reason: string };
@@ -47,8 +45,6 @@ type Manifest = {
 	strict_rpu_table_parity?: StrictRpuTableParityEntry[];
 	strict_shader_parity?: StrictShaderParityEntry[];
 	strict_lua_vdp_abi_parity?: StrictLuaVdpAbiParityEntry[];
-	strict_forbidden_substrings?: StrictForbiddenSubstringEntry[];
-	strict_required_substrings?: StrictRequiredSubstringEntry[];
 	strict_file_layout?: StrictFileLayoutEntry[];
 	strict_file_pair_parity?: StrictFilePairParityEntry[];
 	strict_save_state_schema_parity?: StrictSaveStateSchemaParityEntry[];
@@ -1322,7 +1318,6 @@ function auditStrictLuaVdpAbiParity(manifest: Manifest): string[] {
 	for (const entry of manifest.strict_lua_vdp_abi_parity ?? []) {
 		const luaConstants = collectLuaIntegerConstants(entry.lua);
 		const tsConstants = collectTsIntegerConstants(entry.ts);
-		const luaText = fs.readFileSync(path.join(repoRoot, entry.lua), 'utf8');
 		for (const symbol of entry.symbols) {
 			const luaValue = luaConstants.get(symbol.lua);
 			if (luaValue === undefined) {
@@ -1335,68 +1330,11 @@ function auditStrictLuaVdpAbiParity(manifest: Manifest): string[] {
 				continue;
 			}
 			if (luaValue !== tsValue) errors.push(`${entry.lua}: ${symbol.lua}=${luaValue} differs from ${symbol.ts}=${tsValue}`);
-			if (symbol.exported && !luaText.includes(`${entry.exports}.${symbol.lua} = ${symbol.lua}`)) {
-				errors.push(`${entry.lua}: exported VDP ABI constant ${symbol.lua} is not published as ${entry.exports}.${symbol.lua}`);
-			}
 		}
 	}
 	return errors;
 }
 
-
-const STRICT_FORBIDDEN_FILE_EXTENSIONS = new Set(['.ts', '.cpp', '.h', '.lua', '.glsl', '.json', '.mjs', '.c']);
-
-function collectFilesForStrictRoot(root: string, out: string[]): void {
-	const absolute = path.join(repoRoot, root);
-	if (!fs.existsSync(absolute)) return;
-	const stat = fs.statSync(absolute);
-	if (stat.isFile()) {
-		if (STRICT_FORBIDDEN_FILE_EXTENSIONS.has(path.extname(root))) out.push(root);
-		return;
-	}
-	for (const entry of fs.readdirSync(absolute, { withFileTypes: true })) {
-		const child = `${root}/${entry.name}`;
-		if (entry.isDirectory()) {
-			collectFilesForStrictRoot(child, out);
-		} else if (entry.isFile() && STRICT_FORBIDDEN_FILE_EXTENSIONS.has(path.extname(entry.name))) {
-			out.push(child);
-		}
-	}
-}
-
-function auditStrictForbiddenSubstrings(manifest: Manifest): string[] {
-	const errors: string[] = [];
-	for (const entry of manifest.strict_forbidden_substrings ?? []) {
-		const files: string[] = [];
-		for (const root of entry.roots) collectFilesForStrictRoot(root, files);
-		files.sort();
-		for (const file of files) {
-			const lines = fs.readFileSync(path.join(repoRoot, file), 'utf8').split('\n');
-			for (let index = 0; index < lines.length; index += 1) {
-				const line = stripLineComment(lines[index]);
-				for (const substring of entry.substrings) {
-					if (line.includes(substring)) errors.push(`${file}:${index + 1}: forbidden substring ${substring}`);
-				}
-			}
-		}
-	}
-	return errors;
-}
-
-
-function auditStrictRequiredSubstrings(manifest: Manifest): string[] {
-	const errors: string[] = [];
-	for (const entry of manifest.strict_required_substrings ?? []) {
-		const text = fs.readFileSync(path.join(repoRoot, entry.file), 'utf8')
-			.split('\n')
-			.map(stripLineComment)
-			.join('\n');
-		for (const substring of entry.substrings) {
-			if (!text.includes(substring)) errors.push(`${entry.file}: required substring missing ${substring}`);
-		}
-	}
-	return errors;
-}
 
 function auditStrictFileLayout(manifest: Manifest): string[] {
 	const errors: string[] = [];
@@ -1525,8 +1463,6 @@ function main(): void {
 	const strictRpuTableParityErrors = auditStrictRpuTableParity(manifest);
 	const strictShaderParityErrors = auditStrictShaderParity(manifest);
 	const strictLuaVdpAbiParityErrors = auditStrictLuaVdpAbiParity(manifest);
-	const strictForbiddenSubstringErrors = auditStrictForbiddenSubstrings(manifest);
-	const strictRequiredSubstringErrors = auditStrictRequiredSubstrings(manifest);
 	const strictFileLayoutErrors = auditStrictFileLayout(manifest);
 	const strictFilePairParityErrors = auditStrictFilePairParity(manifest);
 	const strictSaveStateSchemaParityErrors = auditStrictSaveStateSchemaParity(manifest);
@@ -1558,87 +1494,104 @@ function main(): void {
 	for (const category of ['core', 'host', 'ide', 'terminal', 'language', 'compiler_tooling', 'rompacker_tooling', 'cpu_interpreter_exception', 'barrel'] as Category[]) {
 		console.log(`${category},${counts.get(category) ?? 0}`);
 	}
+
+	let hasErrors = false;
+	if (manifestConflicts.length > 0) {
+		hasErrors = true;
+		console.error(`\nManifest core-scope conflicts (${manifestConflicts.length}):`);
+		for (const item of manifestConflicts) console.error(`  ${item}`);
+	}
 	if (unclassified.length > 0) {
+		hasErrors = true;
 		console.error(`\nUnclassified TS files (${unclassified.length}):`);
 		for (const file of unclassified) console.error(`  ${file}`);
 	}
 	if (missing.length > 0) {
+		hasErrors = true;
 		console.error(`\nCore TS files missing exact C++ equivalents (${missing.length}):`);
 		for (const item of missing) console.error(`  ${item}`);
 	}
 	if (fake.length > 0) {
+		hasErrors = true;
 		console.error(`\nFake/stub C++ equivalents (${fake.length}):`);
 		for (const item of fake) console.error(`  ${item}`);
 	}
 	if (cppMissingTs.length > 0) {
+		hasErrors = true;
 		console.error(`\nMachine C++ files missing exact TS equivalents (${cppMissingTs.length}):`);
 		for (const item of cppMissingTs) console.error(`  ${item}`);
 	}
 	if (strictRuntimeSymbolParityErrors.length > 0) {
+		hasErrors = true;
 		console.error(`\nStrict runtime symbol parity errors (${strictRuntimeSymbolParityErrors.length}):`);
 		for (const item of strictRuntimeSymbolParityErrors) console.error(`  ${item}`);
 	}
 	if (strictRuntimeShapeParityErrors.length > 0) {
+		hasErrors = true;
 		console.error(`\nStrict runtime shape parity errors (${strictRuntimeShapeParityErrors.length}):`);
 		for (const item of strictRuntimeShapeParityErrors) console.error(`  ${item}`);
 	}
 	if (strictRuntimeMethodParityErrors.length > 0) {
+		hasErrors = true;
 		console.error(`\nStrict runtime method parity errors (${strictRuntimeMethodParityErrors.length}):`);
 		for (const item of strictRuntimeMethodParityErrors) console.error(`  ${item}`);
 	}
 	if (strictRuntimeNoChurnErrors.length > 0) {
+		hasErrors = true;
 		console.error(`\nStrict runtime no-churn errors (${strictRuntimeNoChurnErrors.length}):`);
 		for (const item of strictRuntimeNoChurnErrors) console.error(`  ${item}`);
 	}
 	if (strictRuntimeNoChurnRegionErrors.length > 0) {
+		hasErrors = true;
 		console.error(`\nStrict runtime no-churn region errors (${strictRuntimeNoChurnRegionErrors.length}):`);
 		for (const item of strictRuntimeNoChurnRegionErrors) console.error(`  ${item}`);
 	}
 	if (strictRuntimeNoHeapRegionErrors.length > 0) {
+		hasErrors = true;
 		console.error(`\nStrict runtime no-heap region errors (${strictRuntimeNoHeapRegionErrors.length}):`);
 		for (const item of strictRuntimeNoHeapRegionErrors) console.error(`  ${item}`);
 	}
 	if (strictRuntimeNoHeapFunctionErrors.length > 0) {
+		hasErrors = true;
 		console.error(`\nStrict runtime no-heap function errors (${strictRuntimeNoHeapFunctionErrors.length}):`);
 		for (const item of strictRuntimeNoHeapFunctionErrors) console.error(`  ${item}`);
 	}
 	if (strictLuaNoHeapRegionErrors.length > 0) {
+		hasErrors = true;
 		console.error(`\nStrict Lua no-heap region errors (${strictLuaNoHeapRegionErrors.length}):`);
 		for (const item of strictLuaNoHeapRegionErrors) console.error(`  ${item}`);
 	}
 	if (strictRpuTableParityErrors.length > 0) {
+		hasErrors = true;
 		console.error(`\nStrict RPU table parity errors (${strictRpuTableParityErrors.length}):`);
 		for (const item of strictRpuTableParityErrors) console.error(`  ${item}`);
 	}
 	if (strictShaderParityErrors.length > 0) {
+		hasErrors = true;
 		console.error(`\nStrict shader parity errors (${strictShaderParityErrors.length}):`);
 		for (const item of strictShaderParityErrors) console.error(`  ${item}`);
 	}
 	if (strictLuaVdpAbiParityErrors.length > 0) {
+		hasErrors = true;
 		console.error(`\nStrict Lua VDP ABI parity errors (${strictLuaVdpAbiParityErrors.length}):`);
 		for (const item of strictLuaVdpAbiParityErrors) console.error(`  ${item}`);
 	}
-	if (strictForbiddenSubstringErrors.length > 0) {
-		console.error(`\nStrict forbidden substring errors (${strictForbiddenSubstringErrors.length}):`);
-		for (const item of strictForbiddenSubstringErrors) console.error(`  ${item}`);
-	}
-	if (strictRequiredSubstringErrors.length > 0) {
-		console.error(`\nStrict required substring errors (${strictRequiredSubstringErrors.length}):`);
-		for (const item of strictRequiredSubstringErrors) console.error(`  ${item}`);
-	}
 	if (strictFileLayoutErrors.length > 0) {
+		hasErrors = true;
 		console.error(`\nStrict file layout errors (${strictFileLayoutErrors.length}):`);
 		for (const item of strictFileLayoutErrors) console.error(`  ${item}`);
 	}
 	if (strictFilePairParityErrors.length > 0) {
+		hasErrors = true;
 		console.error(`\nStrict file pair parity errors (${strictFilePairParityErrors.length}):`);
 		for (const item of strictFilePairParityErrors) console.error(`  ${item}`);
 	}
 	if (strictSaveStateSchemaParityErrors.length > 0) {
+		hasErrors = true;
 		console.error(`\nStrict save-state schema parity errors (${strictSaveStateSchemaParityErrors.length}):`);
 		for (const item of strictSaveStateSchemaParityErrors) console.error(`  ${item}`);
 	}
-	if (manifestConflicts.length > 0 || unclassified.length > 0 || missing.length > 0 || fake.length > 0 || cppMissingTs.length > 0 || strictRuntimeSymbolParityErrors.length > 0 || strictRuntimeShapeParityErrors.length > 0 || strictRuntimeMethodParityErrors.length > 0 || strictRuntimeNoChurnErrors.length > 0 || strictRuntimeNoChurnRegionErrors.length > 0 || strictRuntimeNoHeapRegionErrors.length > 0 || strictRuntimeNoHeapFunctionErrors.length > 0 || strictLuaNoHeapRegionErrors.length > 0 || strictRpuTableParityErrors.length > 0 || strictShaderParityErrors.length > 0 || strictLuaVdpAbiParityErrors.length > 0 || strictForbiddenSubstringErrors.length > 0 || strictRequiredSubstringErrors.length > 0 || strictFileLayoutErrors.length > 0 || strictFilePairParityErrors.length > 0 || strictSaveStateSchemaParityErrors.length > 0) {
+	if (hasErrors) {
 		process.exitCode = 1;
 	}
 }

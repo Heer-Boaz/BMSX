@@ -111,8 +111,8 @@ Parity is a structurally enforced contract (`scripts/core_parity_manifest.json`,
 3,951 lines), checked in CI by `scripts/audit_core_parity.ts`: 71 symbol-parity
 + 28 shape-parity + method-parity entries; 30 + 8 + 13 no-heap regions/functions
 (allocation discipline statically enforced); save-state schema parity, shader
-parity (WebGL ↔ GLES2), Lua-VDP-ABI parity, plus forbidden/required-substring
-guards. This goes further than most single-runtime emulators.
+parity (WebGL ↔ GLES2), and Lua-VDP-ABI parity. This goes further than most
+single-runtime emulators.
 
 ### Timing model — rate-accurate, not per-pixel
 

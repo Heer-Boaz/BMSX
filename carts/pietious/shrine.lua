@@ -17,7 +17,7 @@ shrine.__index = shrine
 
 function shrine:bind_visual()
 	local renderer<const> = self:get_component('customvisualcomponent')
-	renderer.producer = function(_ctx)
+	renderer.producer = function()
 		self:render()
 	end
 end

@@ -30,6 +30,7 @@ end
 
 init()
 *irq_mask_register = irq_vblank | irq_apu
+gx_reset_320x240_pal()
 new_game()
 *inp_ctrl_register = 0x00000001
 wait_vblank()
@@ -38,6 +39,5 @@ while true do
 	update_cart()
 	*inp_ctrl_register = 0x00000001
 	wait_vblank()
-	gx_reset_320x240_pal()
 	draw_cart()
 end
