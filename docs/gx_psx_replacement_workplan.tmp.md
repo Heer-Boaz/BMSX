@@ -228,12 +228,14 @@ and ask before coding.
 - [ ] Migrate `pietious` engine/cart rendering. This needs GX tile/text/image
   residency and tile-run ownership, not a VDP stream shim.
 - [x] Replace the current `bare_metal_cart` RPU descriptor smoke path with
-  GX/GTE-owned PSX-style primitives: direct GP0 Gouraud triangles, raw direct16
-  textured affine quads, and cart-visible RTPT projection through
-  `system/gx_gte.lua`.
-- [ ] Restore full historical `bare_metal_cart` feature coverage on GX/GTE,
-  including the old offscreen/depth/mesh/post-pass coverage as real PSX/GX/GTE
-  functionality.
+  GX/GTE-owned PSX-style primitives. `bare_metal_cart` now programs raw GP0,
+  GP1, and GTE registers directly instead of going through BIOS/system GX
+  helpers, including direct GP0 Gouraud triangles, raw direct16 textured affine
+  quads, RTPT projection, AVSZ3/NCLIP depth ordering, and an offscreen VRAM
+  scene copied/presented through a post-pass.
+- [ ] Restore the remaining historical `bare_metal_cart` feature coverage on
+  GX/GTE, especially free-fly/side-camera behavior, morph/skinning/lighting
+  coverage, and broader mesh/post-pass cases as real PSX/GX/GTE functionality.
 - [ ] Replace remaining cart graphics programming with PSX-style GPU/GTE
   programming.
 - [ ] Keep BMSX extensions separate and post-parity.

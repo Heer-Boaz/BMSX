@@ -1,41 +1,41 @@
 [
 	{
-		"description": "GX affine tunnel and GTE shards, early phase",
+		"description": "raw GX offscreen scene, post pass, and GTE depth mesh early phase",
 		"frame": 960,
 		"capture": true
 	},
 	{
-		"description": "GX affine tunnel and GTE shards, phase A",
+		"description": "raw GX offscreen scene, post pass, and GTE depth mesh phase A",
 		"frame": 976,
 		"capture": true
 	},
 	{
-		"description": "GX textured quad and GTE shard phase B",
+		"description": "raw direct16 affine tunnel and GTE depth mesh phase B",
 		"frame": 992,
 		"capture": true
 	},
 	{
-		"description": "GX textured quad and GTE shard phase C",
+		"description": "raw direct16 affine tunnel and GTE depth mesh phase C",
 		"frame": 1008,
 		"capture": true
 	},
 	{
-		"description": "GX textured quad and GTE shard phase D",
+		"description": "raw direct16 affine tunnel and GTE depth mesh phase D",
 		"frame": 1024,
 		"capture": true
 	},
 	{
-		"description": "GX textured quad and GTE shard phase E",
+		"description": "raw direct16 affine tunnel and GTE depth mesh phase E",
 		"frame": 1040,
 		"capture": true
 	},
 	{
-		"description": "GX textured quad and GTE shard phase F",
+		"description": "raw direct16 affine tunnel and GTE depth mesh phase F",
 		"frame": 1056,
 		"capture": true
 	},
 	{
-		"description": "GX textured quad and GTE shard late phase",
+		"description": "raw GX post pass and GTE depth mesh late phase",
 		"frame": 1072,
 		"capture": true
 	}
