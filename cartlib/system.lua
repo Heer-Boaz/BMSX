@@ -225,6 +225,7 @@ system.gx_draw_mode_blend_add = gx_gpu.draw_mode_blend_add
 system.gx_draw_mode_blend_subtract = gx_gpu.draw_mode_blend_subtract
 system.gx_draw_mode_blend_quarter = gx_gpu.draw_mode_blend_quarter
 system.gx_draw_line_color = gx_gpu.draw_line_color
+system.gx_draw_thick_line_color = gx_gpu.draw_thick_line_color
 system.gx_display_width = gx_gpu.display_width
 system.gx_display_height = gx_gpu.display_height
 function system.vdp_blit_img_color(imgid, x, y, z, layer, scale_x, scale_y, flip_flags, color)

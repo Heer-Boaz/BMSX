@@ -55,6 +55,7 @@ gx_draw_mode_blend_add = system.gx_draw_mode_blend_add
 gx_draw_mode_blend_subtract = system.gx_draw_mode_blend_subtract
 gx_draw_mode_blend_quarter = system.gx_draw_mode_blend_quarter
 gx_draw_line_color = system.gx_draw_line_color
+gx_draw_thick_line_color = system.gx_draw_thick_line_color
 gx_display_width = system.gx_display_width
 gx_display_height = system.gx_display_height
 irq = system.irq

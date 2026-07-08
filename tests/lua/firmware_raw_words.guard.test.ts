@@ -117,6 +117,7 @@ test('GX image firmware maps decoded RGBA atlases into direct16 PSX texture page
 	assert.equal(cartlibSystemSource.includes('system.gx_draw_triangle_color = gx_gpu.draw_triangle_color'), true);
 	assert.equal(cartlibSystemSource.includes('system.gx_draw_gouraud_triangle_color = gx_gpu.draw_gouraud_triangle_color'), true);
 	assert.equal(cartlibSystemSource.includes('system.gx_draw_direct16_textured_quad_color = gx_gpu.draw_direct16_textured_quad_color'), true);
+	assert.equal(cartlibSystemSource.includes('system.gx_draw_thick_line_color = gx_gpu.draw_thick_line_color'), true);
 	assert.equal(cartlibPreludeSource.includes('gx_reset_256x192_pal = system.gx_reset_256x192_pal'), true);
 	assert.equal(cartlibPreludeSource.includes('gx_upload_rgba8888_to_direct16_stride = system.gx_upload_rgba8888_to_direct16_stride'), true);
 	assert.equal(cartlibPreludeSource.includes('gx_blit_img_color = system.gx_blit_img_color'), true);
@@ -124,6 +125,7 @@ test('GX image firmware maps decoded RGBA atlases into direct16 PSX texture page
 	assert.equal(cartlibPreludeSource.includes('gx_draw_triangle_color = system.gx_draw_triangle_color'), true);
 	assert.equal(cartlibPreludeSource.includes('gx_draw_gouraud_triangle_color = system.gx_draw_gouraud_triangle_color'), true);
 	assert.equal(cartlibPreludeSource.includes('gx_draw_direct16_textured_quad_color = system.gx_draw_direct16_textured_quad_color'), true);
+	assert.equal(cartlibPreludeSource.includes('gx_draw_thick_line_color = system.gx_draw_thick_line_color'), true);
 	assert.equal(firmwareFontSource.includes("require('system/gx_image')"), true);
 	assert.equal(firmwareFontSource.includes("require('system/vdp_image')"), false);
 	assert.equal(cartlibFontSource.includes("require('system/gx_image')"), true);
@@ -154,6 +156,10 @@ test('GX GPU firmware owns raw PSX GP0 and GP1 words for migrated primitive cart
 	assert.equal(gxGpuSource.includes('draw_triangle_color'), true);
 	assert.equal(gxGpuSource.includes('draw_gouraud_triangle_color'), true);
 	assert.equal(gxGpuSource.includes('gp0_draw_line'), true);
+	assert.equal(gxGpuSource.includes('gp0_draw_semitransparent_line'), true);
+	assert.equal(gxGpuSource.includes('gp0_draw_quad'), true);
+	assert.equal(gxGpuSource.includes('argb_to_gp0_modulated_rgb'), true);
+	assert.equal(gxGpuSource.includes('draw_thick_line_color'), true);
 	assert.equal(renderHwTestSource.includes('gx_reset_320x240_pal()'), true);
 	assert.equal(renderHwTestSource.includes('gx_draw_direct16_textured_quad_color'), true);
 	assert.equal(renderHwTestSource.includes('gx_upload_rgba8888_to_direct16_stride'), true);
@@ -254,6 +260,8 @@ test('Pietsona 2025 cart loop and direct render calls use GX GPU atlases', () =>
 	const cartSource = readFileSync('carts/2025/cart.lua', 'utf8');
 	const combatSource = readFileSync('carts/2025/combat.lua', 'utf8');
 	const transitionSource = readFileSync('carts/2025/transition.lua', 'utf8');
+	const globalsSource = readFileSync('carts/2025/globals.lua', 'utf8');
+	const timelineBuildersSource = readFileSync('carts/2025/timeline_builders.lua', 'utf8');
 	assert.equal(cartSource.includes(`local irq_mask_register<const>: *word = 0x${IO_IRQ_MASK.toString(16).padStart(8, '0')}`), true);
 	assert.equal(cartSource.includes(`local input_control_register<const>: *word = 0x${IO_INP_CTRL.toString(16).padStart(8, '0')}`), true);
 	assert.equal(cartSource.includes('gx_reset_320x240_pal()'), true);
@@ -268,7 +276,12 @@ test('Pietsona 2025 cart loop and direct render calls use GX GPU atlases', () =>
 		assert.equal(source.includes('vdp_stream_finish'), false);
 	}
 	assert.equal(combatSource.includes('gx_blit_img_affine_color'), true);
-	assert.equal(combatSource.includes('gx_draw_line_color'), true);
-	assert.equal(combatSource.includes('load_gx_atlas(gx_img_rect('), true);
+	assert.equal(combatSource.includes('gx_draw_thick_line_color'), true);
+	assert.equal(combatSource.includes("load_gx_atlas(gx_img_rect('maya_v_s').atlas_id)"), true);
+	assert.equal(combatSource.includes("load_gx_atlas(gx_img_rect('all_out').atlas_id)"), true);
+	assert.equal(combatSource.includes('load_gx_atlas(gx_img_rect(self.combat_monster_imgid).atlas_id)'), true);
+	assert.equal(globalsSource.includes('combat_hit_slash_visibility'), true);
+	assert.equal(timelineBuildersSource.includes('combat_hit_slash_alpha * arc * 255'), false);
+	assert.equal(timelineBuildersSource.includes('slash_color = slash_thickness > 0 and 0x80ffffff or 0x00ffffff'), true);
 	assert.equal(transitionSource.includes('load_gx_atlas(gx_img_rect('), true);
 });

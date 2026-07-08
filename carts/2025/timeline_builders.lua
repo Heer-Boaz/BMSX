@@ -606,8 +606,8 @@ function builders.build_combat_hit_frames(params)
 			local x1<const> = center_x + (path_nx * half)
 			local y1<const> = center_y + (path_ny * half)
 			slash_points = { x0, y0, x1, y1 }
-			slash_thickness = base_thickness * (combat_hit_slash_taper_floor + ((1 - combat_hit_slash_taper_floor) * arc))
-			slash_color = (((combat_hit_slash_alpha * arc * 255 + 0.5) // 1) << 24) | 0x00ffffff
+			slash_thickness = base_thickness * (combat_hit_slash_taper_floor + ((1 - combat_hit_slash_taper_floor) * arc)) * (combat_hit_slash_visibility * arc)
+			slash_color = slash_thickness > 0 and 0x80ffffff or 0x00ffffff
 		end
 
 		frames[#frames + 1] = {

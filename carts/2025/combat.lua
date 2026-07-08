@@ -239,7 +239,7 @@ function combat.define_fsm()
 				local x1<const> = points[3]
 				local y1<const> = points[4]
 				local color<const> = frame.slash_color
-				gx_draw_line_color(x0, y0, x1, y1, color)
+				gx_draw_thick_line_color(x0, y0, x1, y1, color, frame.slash_thickness)
 			end)
 			hide_combat_sprites()
 			return '/idle'
@@ -926,7 +926,7 @@ function combat.define_fsm()
 			oget(text_choice_id):set_text({ 'ALL-OUT-ATTACK!!' }, { typed = false, snap = true })
 			self.choice_index = 1
 			oget(text_choice_id).highlight_jitter_enabled = true
-			load_gx_atlas(gx_img_rect('all_out').atlas_id)
+			load_gx_atlas(gx_img_rect('maya_v_s').atlas_id)
 			local monster<const> = oget(combat_monster_id)
 			local maya_a<const> = oget(combat_maya_a_id)
 			local portrait<const> = oget(combat_all_out_id)
@@ -1088,6 +1088,7 @@ function combat.define_fsm()
 
 	states.combat_focus = {
 			entering_state = function(self)
+				load_gx_atlas(gx_img_rect(self.combat_monster_imgid).atlas_id)
 				local monster<const> = oget(combat_monster_id)
 				monster.visible = true
 
