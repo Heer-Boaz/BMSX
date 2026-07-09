@@ -15,6 +15,7 @@ const frameWindows = [
 	[460, 476, 'particles'],
 	[590, 606, 'idol'],
 	[700, 744, 'echo'],
+	[920, 936, 'morph'],
 ];
 const sceneFrames = [
 	[120, 'baseline'],
@@ -24,6 +25,8 @@ const sceneFrames = [
 	[590, 'idol'],
 	[700, 'echo'],
 	[800, 'idol-return'],
+	[920, 'morph'],
+	[1020, 'echo-return'],
 ];
 
 function readFrame(filePath) {
@@ -122,16 +125,23 @@ function assertSceneDifference(frames, leftFrame, leftLabel, rightFrame, rightLa
 function assertControlSceneIdentity(frames) {
 	const idol = frames.get(590);
 	const echo = frames.get(700);
-	const returned = frames.get(800);
-	if (!idol || !echo || !returned) {
-		throw new Error('[bare_metal_cart:frame-scan] Missing idol/echo/returned frames for ArrowLeft control assertion.');
+	const idolReturned = frames.get(800);
+	const morph = frames.get(920);
+	const echoReturned = frames.get(1020);
+	if (!idol || !echo || !idolReturned || !morph || !echoReturned) {
+		throw new Error('[bare_metal_cart:frame-scan] Missing idol/echo/morph/returned frames for carousel control assertions.');
 	}
-	const returnedToIdol = frameDifference(returned, idol);
-	const returnedToEcho = frameDifference(returned, echo);
+	const returnedToIdol = frameDifference(idolReturned, idol);
+	const returnedToEcho = frameDifference(idolReturned, echo);
 	if (returnedToIdol.meanAbs * 2 >= returnedToEcho.meanAbs) {
 		throw new Error(`[bare_metal_cart:frame-scan] ArrowLeft return frame is closer to echo (${returnedToEcho.meanAbs.toFixed(2)}) than idol (${returnedToIdol.meanAbs.toFixed(2)}).`);
 	}
-	return { returnedToIdol, returnedToEcho };
+	const morphBackToEcho = frameDifference(echoReturned, echo);
+	const morphBackToMorph = frameDifference(echoReturned, morph);
+	if (morphBackToEcho.meanAbs * 2 >= morphBackToMorph.meanAbs) {
+		throw new Error(`[bare_metal_cart:frame-scan] Morph ArrowLeft return frame is closer to morph (${morphBackToMorph.meanAbs.toFixed(2)}) than echo (${morphBackToEcho.meanAbs.toFixed(2)}).`);
+	}
+	return { returnedToIdol, returnedToEcho, morphBackToEcho, morphBackToMorph };
 }
 
 const frames = loadFrames(screenshotDir);

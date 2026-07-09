@@ -234,18 +234,29 @@ and ask before coding.
   left/right keyboard carousel of raw GX/GTE effect scenes for AVSZ3-sorted
   exploding crystal shards, a textured projected Tera-Flare shell using
   RTPT/RTPS/NCLIP/AVSZ4, a depth-cued particle storm using RTPS/DPCS/DPCT/INTPL,
-  a Gouraud-lit idol using NCT/NCDT/NCCT, and a separate framebuffer echo
-  post-pass scene. The render-parity timeline now captures consecutive frame
-  windows for the scenes instead of relying only on sparse phase samples.
+  a Gouraud-lit idol using NCT/NCDT/NCCT, a separate framebuffer echo
+  post-pass scene, and a morph/skinning/lighting plus near-plane divide-torture
+  scene that uses split raw GTE transforms, NCT/NCDT/NCCT lighting, RTPT/RTPS
+  projection, and semi-transparent GP0 primitives. The render-parity timeline now
+  captures consecutive frame windows for the scenes instead of relying only on
+  sparse phase samples.
 - [x] Fixed GX presentation so partial/held host presentations no longer
   publish or retire a half-built GP0 command stream. GX command buffers now
   distinguish queued commands from the command count published for presentation,
   and TS/C++ software/GLES/WebGL/headless backends consume only the published
   count.
+- [x] Fixed WebGPU GX backend command-encoder resource ownership so each
+  recorded VRAM render pass reads the vertex/uniform slice it was recorded
+  with. The WebGPU backend no longer overwrites one shared uniform/vertex buffer
+  slot repeatedly before submitting the encoder for a frame. WebGL fallback
+  browser captures for `bare_metal_cart` and `2025` are coherent; WSL/headless
+  Edge cannot visually validate WebGPU because its swapchain/shared-image path
+  returns black frames, so live WebGPU still needs a real browser check.
 - [ ] Restore the remaining historical `bare_metal_cart` feature coverage on
-  GX/GTE, especially free-fly/side-camera behavior, morph/skinning/lighting
-  coverage, near-plane/divide torture, and broader mesh/post-pass cases as real
-  PSX/GX/GTE functionality.
+  GX/GTE, especially free-fly/side-camera behavior and broader mesh/post-pass
+  cases as real PSX/GX/GTE functionality. Morph/skinning/lighting and
+  near-plane/divide torture now have a first raw GX/GTE scene, but can still be
+  deepened later.
 - [ ] Replace remaining cart graphics programming with PSX-style GPU/GTE
   programming.
 - [ ] Keep BMSX extensions separate and post-parity.

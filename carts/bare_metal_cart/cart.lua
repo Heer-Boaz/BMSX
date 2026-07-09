@@ -110,6 +110,10 @@ local color_post_c<const> = 0x24ff4058
 local color_flare_a<const> = 0x80ffffff
 local color_flare_b<const> = 0x703df2ff
 local color_flare_c<const> = 0x70ff7a3d
+local color_morph_a<const> = 0xffb8fff8
+local color_morph_b<const> = 0xffff8ae8
+local color_morph_c<const> = 0xff80e8ff
+local color_morph_near<const> = 0x70ffd166
 
 local scene_baseline<const> = 1
 local scene_shards<const> = 2
@@ -117,7 +121,8 @@ local scene_flare<const> = 3
 local scene_particles<const> = 4
 local scene_idol<const> = 5
 local scene_echo<const> = 6
-local scene_count<const> = 6
+local scene_morph<const> = 7
+local scene_count<const> = 7
 local frame = 0
 local scene_id = scene_baseline
 local arrow_left_was_down = false
@@ -1034,6 +1039,101 @@ local draw_gouraud_lit_idol<const> = function()
 	gpu_line(128, 176, 192, 176, 0x70ffd166)
 end
 
+local draw_near_divide_probe<const> = function()
+	gte_control[24] = 160 << 16
+	gte_control[25] = 112 << 16
+	gte_control[26] = 300
+	gte_write_y_rotation_translation(post_sin_q12, post_cos_q12, 0, 0, 76)
+	local probe = 0
+	while probe < 5 do
+		local z<const> = -44 + probe * 9
+		local extent<const> = 7 + probe * 2
+		local y<const> = -36 + probe * 18
+		local sx0<const>, sy0<const>, sx1<const>, sy1<const>, sx2<const>, sy2<const>, sx3<const>, sy3<const>, depth<const>, nclip<const> =
+			gte_project_quad(0 - extent, y - extent, z, extent, y - extent, z + 4, 0 - extent, y + extent, z + 2, extent, y + extent, z + 6)
+		if (nclip & 0x80000000) == 0 then
+			gpu_semitransparent_gouraud_triangle(sx0, sy0, color_morph_near, sx1, sy1, color_morph_c, sx2, sy2, color_morph_a)
+			gpu_semitransparent_gouraud_triangle(sx1, sy1, color_morph_c, sx3, sy3, color_morph_near, sx2, sy2, color_morph_a)
+		else
+			gpu_semitransparent_gouraud_triangle(sx1, sy1, color_morph_c, sx0, sy0, color_morph_near, sx3, sy3, color_morph_near)
+			gpu_semitransparent_gouraud_triangle(sx0, sy0, color_morph_near, sx2, sy2, color_morph_a, sx3, sy3, color_morph_near)
+		end
+		gpu_line(sx0, sy0, sx3, sy3, 0x60ffffff)
+		probe = probe + 1
+	end
+end
+
+local draw_morph_skin_panel<const> = function(panel, angle_sin, angle_cos, next_sin, next_cos, morph, lower_half)
+	local top_radius<const> = 26 + (morph >> 2) + ((panel & 1) * 8)
+	local mid_radius<const> = 58 - (morph >> 3) + ((panel & 2) * 3)
+	local bottom_radius<const> = 32 + ((64 - morph) >> 2)
+	local top_y = -68
+	local mid_y = -4
+	local bottom_y = 62
+	local command = gte_opcode_nct
+	local color_word = 0x00ffd0ff
+	if lower_half then
+		top_y = -8
+		mid_y = 18
+		bottom_y = 72
+		command = gte_opcode_ncct
+		color_word = 0x0080e8ff
+	end
+	if (panel & 3) == 1 then
+		command = gte_opcode_ncdt
+		color_word = 0x00ffe080
+	end
+	local x0<const> = (angle_cos * top_radius) >> 12
+	local z0<const> = (angle_sin * top_radius) >> 12
+	local x1<const> = (angle_cos * mid_radius) >> 12
+	local z1<const> = (angle_sin * mid_radius) >> 12
+	local x2<const> = (next_cos * mid_radius) >> 12
+	local z2<const> = (next_sin * mid_radius) >> 12
+	local x3<const> = (angle_cos * bottom_radius) >> 12
+	local z3<const> = (angle_sin * bottom_radius) >> 12
+	local x4<const> = (next_cos * bottom_radius) >> 12
+	local z4<const> = (next_sin * bottom_radius) >> 12
+	local depth_cue<const> = 0x00000300 + (panel << 7) + (morph << 2)
+	draw_idol_face(
+		x0, top_y, z0, x1, mid_y, z1, x2, mid_y, z2,
+		angle_cos, -3072, angle_sin, angle_cos, 0, angle_sin, next_cos, 0, next_sin,
+		command, color_word, depth_cue)
+	draw_idol_face(
+		x3, bottom_y, z3, x4, bottom_y, z4, x1, mid_y, z1,
+		angle_cos, 3072, angle_sin, next_cos, 3072, next_sin, angle_cos, 0, angle_sin,
+		command, color_word, depth_cue)
+end
+
+local draw_morph_skin_lighting_torture<const> = function()
+	local phase<const> = frame & 127
+	local morph = phase
+	if morph > 64 then
+		morph = 128 - morph
+	end
+	gte_control[24] = 160 << 16
+	gte_control[25] = 110 << 16
+	gte_control[26] = 260
+	gte_write_lighting_matrices()
+	local angle_sin = mesh_sin_q12
+	local angle_cos = mesh_cos_q12
+	local panel = 0
+	while panel < 8 do
+		local next_sin<const>, next_cos<const> = rotate_q12(angle_sin, angle_cos, q12_rot_ring_sin, q12_rot_ring_cos)
+		gte_write_y_rotation_translation(mesh_sin_q12, mesh_cos_q12, -28, -8, 392)
+		draw_morph_skin_panel(panel, angle_sin, angle_cos, next_sin, next_cos, morph, false)
+		gte_write_y_rotation_translation(0 - mesh_sin_q12, mesh_cos_q12, 30, 10, 428)
+		draw_morph_skin_panel(panel, angle_sin, angle_cos, next_sin, next_cos, morph, true)
+		angle_sin = next_sin
+		angle_cos = next_cos
+		panel = panel + 1
+	end
+	draw_near_divide_probe()
+	gpu_line(56, 48, 106, 30 + (morph >> 1), color_morph_a)
+	gpu_line(214, 52, 268, 74 - (morph >> 2), color_morph_b)
+	gpu_rect(118, 180, 202, 188, 0x503df2ff)
+	gpu_line(160 - morph, 184, 160 + morph, 184, color_morph_near)
+end
+
 local draw_scene<const> = function()
 	draw_background()
 	if scene_id == scene_shards then
@@ -1044,6 +1144,8 @@ local draw_scene<const> = function()
 		draw_depth_cued_particle_storm()
 	elseif scene_id == scene_idol then
 		draw_gouraud_lit_idol()
+	elseif scene_id == scene_morph then
+		draw_morph_skin_lighting_torture()
 	else
 		draw_affine_tunnel()
 		draw_depth_sorted_gte_mesh()

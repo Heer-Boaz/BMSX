@@ -88,7 +88,7 @@ const GX_GPU_LINE_SEGMENT_CAPACITY = 4096;
 const GX_GPU_LINE_FLOAT_CAPACITY = GX_GPU_LINE_SEGMENT_CAPACITY * GX_GPU_LINE_SEGMENT_FLOATS;
 const GX_GPU_TEXTURED_VERTEX_FLOATS = 7;
 const GX_GPU_TEXTURED_VERTICES_PER_COMMAND = 6;
-const GX_GPU_TEXTURED_FLOAT_CAPACITY = GX_GPU_TEXTURED_VERTICES_PER_COMMAND * GX_GPU_TEXTURED_VERTEX_FLOATS;
+const GX_GPU_TEXTURED_FLOAT_CAPACITY = GX_GPU_COMMAND_CAPACITY * GX_GPU_TEXTURED_VERTICES_PER_COMMAND * GX_GPU_TEXTURED_VERTEX_FLOATS;
 const GX_GPU_TEXTURE_PAGE_COORD_SIZE = 256;
 const GX_GPU_TEXTURE_PAGE_4BIT_WIDTH_WORDS = 64;
 const GX_GPU_TEXTURE_PAGE_8BIT_WIDTH_WORDS = 128;
@@ -99,6 +99,8 @@ const GX_GPU_TRANSFER_VERTICES_PER_SEGMENT = 6;
 const GX_GPU_TRANSFER_SEGMENTS_PER_ROW = 3;
 const GX_GPU_TRANSFER_FLOAT_CAPACITY = GX_GPU_VRAM_HEIGHT * GX_GPU_TRANSFER_SEGMENTS_PER_ROW * GX_GPU_TRANSFER_VERTICES_PER_SEGMENT * GX_GPU_TRANSFER_VERTEX_FLOATS;
 const GX_GPU_RAW_VRAM_BYTES_PER_PIXEL = 4;
+const GX_GPU_UNIFORM_SLOT_BYTES = 256;
+const GX_GPU_UNIFORM_BUFFER_BYTES = GX_GPU_COMMAND_CAPACITY * GX_GPU_UNIFORM_SLOT_BYTES;
 const GX_GPU_RAW_VRAM_UPLOAD_ROW_BYTES = GX_GPU_VRAM_WIDTH * GX_GPU_RAW_VRAM_BYTES_PER_PIXEL;
 const GX_GPU_RAW_VRAM_UPLOAD_BYTES = GX_GPU_VRAM_WIDTH * GX_GPU_VRAM_HEIGHT * GX_GPU_RAW_VRAM_BYTES_PER_PIXEL;
 const GX_GPU_FULL_DRAWING_AREA_TOP_LEFT_WORD = 0;
@@ -115,6 +117,7 @@ const primitiveUniformScratch = new Float32Array(8);
 const texturedUniformScratch = new Float32Array(16);
 const transferUniformScratch = new Float32Array(4);
 const scanoutUniformScratch = new Float32Array(4);
+const gxGpuDynamicUniformOffsets = new Uint32Array(1);
 const GX_GPU_SAMPLE_SOURCE_RECT_CAPACITY = 3;
 const GX_GPU_SAMPLE_SOURCE_RECT_WORDS = GX_GPU_SAMPLE_SOURCE_RECT_CAPACITY * 4;
 const GX_GPU_SAMPLE_SOURCE_TILE_SHIFT = 6;
@@ -194,6 +197,13 @@ type WebGpuGxGpuState = {
 	texturedUniformBuffer: GPUBuffer;
 	transferUniformBuffer: GPUBuffer;
 	scanoutUniformBuffer: GPUBuffer;
+	solidVertexByteOffset: number;
+	lineVertexByteOffset: number;
+	texturedVertexByteOffset: number;
+	transferVertexByteOffset: number;
+	primitiveUniformByteOffset: number;
+	texturedUniformByteOffset: number;
+	transferUniformByteOffset: number;
 	solidBindGroup: GPUBindGroup;
 	lineBindGroup: GPUBindGroup;
 	texturedBindGroup: GPUBindGroup;
@@ -224,7 +234,7 @@ function createVramTexture(device: GPUDevice): GPUTexture {
 function createPrimitiveBindGroupLayout(device: GPUDevice): GPUBindGroupLayout {
 	return device.createBindGroupLayout({
 		entries: [
-			{ binding: 0, visibility: GPUShaderStage.FRAGMENT, buffer: { type: 'uniform' } },
+			{ binding: 0, visibility: GPUShaderStage.FRAGMENT, buffer: { type: 'uniform', hasDynamicOffset: true } },
 			{ binding: 1, visibility: GPUShaderStage.FRAGMENT, texture: { sampleType: 'float' } },
 			{ binding: 2, visibility: GPUShaderStage.FRAGMENT, sampler: { type: 'filtering' } },
 		],
@@ -234,7 +244,7 @@ function createPrimitiveBindGroupLayout(device: GPUDevice): GPUBindGroupLayout {
 function createTransferBindGroupLayout(device: GPUDevice): GPUBindGroupLayout {
 	return device.createBindGroupLayout({
 		entries: [
-			{ binding: 0, visibility: GPUShaderStage.FRAGMENT, buffer: { type: 'uniform' } },
+			{ binding: 0, visibility: GPUShaderStage.FRAGMENT, buffer: { type: 'uniform', hasDynamicOffset: true } },
 			{ binding: 1, visibility: GPUShaderStage.FRAGMENT, texture: { sampleType: 'float' } },
 			{ binding: 2, visibility: GPUShaderStage.FRAGMENT, texture: { sampleType: 'float' } },
 			{ binding: 3, visibility: GPUShaderStage.FRAGMENT, sampler: { type: 'filtering' } },
@@ -242,22 +252,22 @@ function createTransferBindGroupLayout(device: GPUDevice): GPUBindGroupLayout {
 	});
 }
 
-function createBindGroup(device: GPUDevice, layout: GPUBindGroupLayout, uniformBuffer: GPUBuffer, textureView: GPUTextureView, sampler: GPUSampler): GPUBindGroup {
+function createBindGroup(device: GPUDevice, layout: GPUBindGroupLayout, uniformBuffer: GPUBuffer, uniformByteLength: number, textureView: GPUTextureView, sampler: GPUSampler): GPUBindGroup {
 	return device.createBindGroup({
 		layout,
 		entries: [
-			{ binding: 0, resource: { buffer: uniformBuffer } },
+			{ binding: 0, resource: { buffer: uniformBuffer, size: uniformByteLength } },
 			{ binding: 1, resource: textureView },
 			{ binding: 2, resource: sampler },
 		],
 	});
 }
 
-function createTransferBindGroup(device: GPUDevice, layout: GPUBindGroupLayout, uniformBuffer: GPUBuffer, sourceView: GPUTextureView, vramView: GPUTextureView, sampler: GPUSampler): GPUBindGroup {
+function createTransferBindGroup(device: GPUDevice, layout: GPUBindGroupLayout, uniformBuffer: GPUBuffer, uniformByteLength: number, sourceView: GPUTextureView, vramView: GPUTextureView, sampler: GPUSampler): GPUBindGroup {
 	return device.createBindGroup({
 		layout,
 		entries: [
-			{ binding: 0, resource: { buffer: uniformBuffer } },
+			{ binding: 0, resource: { buffer: uniformBuffer, size: uniformByteLength } },
 			{ binding: 1, resource: sourceView },
 			{ binding: 2, resource: vramView },
 			{ binding: 3, resource: sampler },
@@ -335,10 +345,10 @@ function bootstrapGxGpuPass(backend: WebGPUBackend): void {
 	const lineVertexBuffer = device.createBuffer({ size: gxGpuLineVertices.byteLength, usage: GPUBufferUsage.VERTEX | GPUBufferUsage.COPY_DST });
 	const texturedVertexBuffer = device.createBuffer({ size: gxGpuTexturedVertices.byteLength, usage: GPUBufferUsage.VERTEX | GPUBufferUsage.COPY_DST });
 	const transferVertexBuffer = device.createBuffer({ size: gxGpuTransferVertices.byteLength, usage: GPUBufferUsage.VERTEX | GPUBufferUsage.COPY_DST });
-	const primitiveUniformBuffer = device.createBuffer({ size: primitiveUniformScratch.byteLength, usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST });
-	const texturedUniformBuffer = device.createBuffer({ size: texturedUniformScratch.byteLength, usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST });
-	const transferUniformBuffer = device.createBuffer({ size: transferUniformScratch.byteLength, usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST });
-	const scanoutUniformBuffer = device.createBuffer({ size: scanoutUniformScratch.byteLength, usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST });
+	const primitiveUniformBuffer = device.createBuffer({ size: GX_GPU_UNIFORM_BUFFER_BYTES, usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST });
+	const texturedUniformBuffer = device.createBuffer({ size: GX_GPU_UNIFORM_BUFFER_BYTES, usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST });
+	const transferUniformBuffer = device.createBuffer({ size: GX_GPU_UNIFORM_BUFFER_BYTES, usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST });
+	const scanoutUniformBuffer = device.createBuffer({ size: GX_GPU_UNIFORM_SLOT_BYTES, usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST });
 	const vramReadbackBuffer = device.createBuffer({ size: GX_GPU_RAW_VRAM_UPLOAD_BYTES, usage: GPUBufferUsage.COPY_DST | GPUBufferUsage.MAP_READ });
 	const vramDrawColorAttachment: GPURenderPassColorAttachment = { view: vramView, loadOp: 'load', storeOp: 'store' };
 	const vramClearColorAttachment: GPURenderPassColorAttachment = { view: vramView, clearValue: [0, 0, 0, 1], loadOp: 'clear', storeOp: 'store' };
@@ -386,12 +396,19 @@ function bootstrapGxGpuPass(backend: WebGPUBackend): void {
 		texturedUniformBuffer,
 		transferUniformBuffer,
 		scanoutUniformBuffer,
-		solidBindGroup: createBindGroup(device, primitiveLayout, primitiveUniformBuffer, vramSampleView, sampler),
-		lineBindGroup: createBindGroup(device, primitiveLayout, primitiveUniformBuffer, vramSampleView, sampler),
-		texturedBindGroup: createBindGroup(device, primitiveLayout, texturedUniformBuffer, vramSampleView, sampler),
-		transferFromSampleBindGroup: createTransferBindGroup(device, transferLayout, transferUniformBuffer, vramSampleView, vramSampleView, sampler),
-		transferFromUploadBindGroup: createTransferBindGroup(device, transferLayout, transferUniformBuffer, vramTransferView, vramSampleView, sampler),
-		scanoutBindGroup: createBindGroup(device, primitiveLayout, scanoutUniformBuffer, vramView, sampler),
+		solidVertexByteOffset: 0,
+		lineVertexByteOffset: 0,
+		texturedVertexByteOffset: 0,
+		transferVertexByteOffset: 0,
+		primitiveUniformByteOffset: 0,
+		texturedUniformByteOffset: 0,
+		transferUniformByteOffset: 0,
+		solidBindGroup: createBindGroup(device, primitiveLayout, primitiveUniformBuffer, primitiveUniformScratch.byteLength, vramSampleView, sampler),
+		lineBindGroup: createBindGroup(device, primitiveLayout, primitiveUniformBuffer, primitiveUniformScratch.byteLength, vramSampleView, sampler),
+		texturedBindGroup: createBindGroup(device, primitiveLayout, texturedUniformBuffer, texturedUniformScratch.byteLength, vramSampleView, sampler),
+		transferFromSampleBindGroup: createTransferBindGroup(device, transferLayout, transferUniformBuffer, transferUniformScratch.byteLength, vramSampleView, vramSampleView, sampler),
+		transferFromUploadBindGroup: createTransferBindGroup(device, transferLayout, transferUniformBuffer, transferUniformScratch.byteLength, vramTransferView, vramSampleView, sampler),
+		scanoutBindGroup: createBindGroup(device, primitiveLayout, scanoutUniformBuffer, scanoutUniformScratch.byteLength, vramView, sampler),
 		scanoutTargetView: vramView,
 		processedCommandCount: 0,
 		processedCommandSerial: 0,
@@ -1063,11 +1080,10 @@ function writePrimitiveUniforms(blendEnabled: boolean, blendMode: number, maskBi
 	primitiveUniformScratch[7] = 0;
 }
 
-function renderVramVertices(pipeline: GPURenderPipeline, bindGroup: GPUBindGroup, vertexBuffer: GPUBuffer, vertices: Float32Array, vertexFloatCount: number, vertexFloatStride: number, topLeftWord: number, bottomRightWord: number): void {
+function renderVramVertices(pipeline: GPURenderPipeline, bindGroup: GPUBindGroup, vertexBuffer: GPUBuffer, vertices: Float32Array, vertexFloatCount: number, vertexFloatStride: number, vertexByteOffset: number, uniformByteOffset: number, topLeftWord: number, bottomRightWord: number): void {
 	const backend = gxGpuState.backend;
-	const device = backend.device;
 	const encoder = gxGpuState.activeEncoder!;
-	device.queue.writeBuffer(vertexBuffer, 0, vertices.buffer, vertices.byteOffset, vertexFloatCount * 4);
+	backend.device.queue.writeBuffer(vertexBuffer, vertexByteOffset, vertices.buffer, vertices.byteOffset, vertexFloatCount * 4);
 	const pass = encoder.beginRenderPass(gxGpuState.vramDrawPassDescriptor);
 	const left = gxGpuDrawingAreaLeft(topLeftWord, bottomRightWord);
 	const top = gxGpuDrawingAreaTop(topLeftWord, bottomRightWord);
@@ -1075,8 +1091,9 @@ function renderVramVertices(pipeline: GPURenderPipeline, bindGroup: GPUBindGroup
 	const bottom = gxGpuDrawingAreaBottomExclusive(topLeftWord, bottomRightWord);
 	pass.setScissorRect(left, top, right - left, bottom - top);
 	pass.setPipeline(pipeline);
-	pass.setBindGroup(0, bindGroup);
-	pass.setVertexBuffer(0, vertexBuffer);
+	gxGpuDynamicUniformOffsets[0] = uniformByteOffset;
+	pass.setBindGroup(0, bindGroup, gxGpuDynamicUniformOffsets);
+	pass.setVertexBuffer(0, vertexBuffer, vertexByteOffset, vertexFloatCount * 4);
 	pass.draw(vertexFloatCount / vertexFloatStride);
 	pass.end();
 	backend.accountUpload('vertex', vertexFloatCount * 4);
@@ -1091,8 +1108,12 @@ function renderSolidVertices(vertexFloatCount: number, topLeftWord: number, bott
 		gxGpuDrawingAreaBottomExclusive(topLeftWord, bottomRightWord),
 	);
 	writePrimitiveUniforms(blendEnabled, blendMode, maskBitModeWord, ditherEnabled, interlacedRenderWord);
-	gxGpuState.backend.device.queue.writeBuffer(gxGpuState.primitiveUniformBuffer, 0, primitiveUniformScratch);
-	renderVramVertices(gxGpuState.solidPipeline, gxGpuState.solidBindGroup, gxGpuState.solidVertexBuffer, gxGpuSolidVertices, vertexFloatCount, GX_GPU_SOLID_VERTEX_FLOATS, topLeftWord, bottomRightWord);
+	const uniformByteOffset = gxGpuState.primitiveUniformByteOffset;
+	const vertexByteOffset = gxGpuState.solidVertexByteOffset;
+	gxGpuState.backend.device.queue.writeBuffer(gxGpuState.primitiveUniformBuffer, uniformByteOffset, primitiveUniformScratch);
+	gxGpuState.primitiveUniformByteOffset += GX_GPU_UNIFORM_SLOT_BYTES;
+	gxGpuState.solidVertexByteOffset += vertexFloatCount * 4;
+	renderVramVertices(gxGpuState.solidPipeline, gxGpuState.solidBindGroup, gxGpuState.solidVertexBuffer, gxGpuSolidVertices, vertexFloatCount, GX_GPU_SOLID_VERTEX_FLOATS, vertexByteOffset, uniformByteOffset, topLeftWord, bottomRightWord);
 }
 
 function renderLineVertices(vertexFloatCount: number, topLeftWord: number, bottomRightWord: number, blendEnabled: boolean, blendMode: number, maskBitModeWord: number, ditherEnabled: boolean, interlacedRenderWord: number): void {
@@ -1104,8 +1125,12 @@ function renderLineVertices(vertexFloatCount: number, topLeftWord: number, botto
 		gxGpuDrawingAreaBottomExclusive(topLeftWord, bottomRightWord),
 	);
 	writePrimitiveUniforms(blendEnabled, blendMode, maskBitModeWord, ditherEnabled, interlacedRenderWord);
-	gxGpuState.backend.device.queue.writeBuffer(gxGpuState.primitiveUniformBuffer, 0, primitiveUniformScratch);
-	renderVramVertices(gxGpuState.linePipeline, gxGpuState.lineBindGroup, gxGpuState.lineVertexBuffer, gxGpuLineVertices, vertexFloatCount, GX_GPU_LINE_VERTEX_FLOATS, topLeftWord, bottomRightWord);
+	const uniformByteOffset = gxGpuState.primitiveUniformByteOffset;
+	const vertexByteOffset = gxGpuState.lineVertexByteOffset;
+	gxGpuState.backend.device.queue.writeBuffer(gxGpuState.primitiveUniformBuffer, uniformByteOffset, primitiveUniformScratch);
+	gxGpuState.primitiveUniformByteOffset += GX_GPU_UNIFORM_SLOT_BYTES;
+	gxGpuState.lineVertexByteOffset += vertexFloatCount * 4;
+	renderVramVertices(gxGpuState.linePipeline, gxGpuState.lineBindGroup, gxGpuState.lineVertexBuffer, gxGpuLineVertices, vertexFloatCount, GX_GPU_LINE_VERTEX_FLOATS, vertexByteOffset, uniformByteOffset, topLeftWord, bottomRightWord);
 }
 
 function writeTexturedUniforms(commandBuffer: GxGpuCommandBufferView, commandIndex: number): void {
@@ -1146,8 +1171,12 @@ function renderTexturedCommand(commandBuffer: GxGpuCommandBufferView, commandInd
 	setGxGpuVertexBoundsRect(gxGpuVramCopyRectScratch, gxGpuTexturedVertices, 0, vertexFloatCount, GX_GPU_TEXTURED_VERTEX_FLOATS, topLeftWord, bottomRightWord);
 	invalidateGxGpuSampleSourceCacheForWrite(gxGpuVramCopyRectScratch.left, gxGpuVramCopyRectScratch.top, gxGpuVramCopyRectScratch.right, gxGpuVramCopyRectScratch.bottom);
 	writeTexturedUniforms(commandBuffer, commandIndex);
-	gxGpuState.backend.device.queue.writeBuffer(gxGpuState.texturedUniformBuffer, 0, texturedUniformScratch);
-	renderVramVertices(gxGpuState.texturedPipeline, gxGpuState.texturedBindGroup, gxGpuState.texturedVertexBuffer, gxGpuTexturedVertices, vertexFloatCount, GX_GPU_TEXTURED_VERTEX_FLOATS, topLeftWord, bottomRightWord);
+	const uniformByteOffset = gxGpuState.texturedUniformByteOffset;
+	const vertexByteOffset = gxGpuState.texturedVertexByteOffset;
+	gxGpuState.backend.device.queue.writeBuffer(gxGpuState.texturedUniformBuffer, uniformByteOffset, texturedUniformScratch);
+	gxGpuState.texturedUniformByteOffset += GX_GPU_UNIFORM_SLOT_BYTES;
+	gxGpuState.texturedVertexByteOffset += vertexFloatCount * 4;
+	renderVramVertices(gxGpuState.texturedPipeline, gxGpuState.texturedBindGroup, gxGpuState.texturedVertexBuffer, gxGpuTexturedVertices, vertexFloatCount, GX_GPU_TEXTURED_VERTEX_FLOATS, vertexByteOffset, uniformByteOffset, topLeftWord, bottomRightWord);
 }
 
 function renderTransferCommands(vertexFloatCount: number, bindGroup: GPUBindGroup, maskBitModeWord: number): void {
@@ -1156,8 +1185,12 @@ function renderTransferCommands(vertexFloatCount: number, bindGroup: GPUBindGrou
 	transferUniformScratch[1] = gxGpuMaskBitSetWhileDrawing(maskBitModeWord) ? 1 : 0;
 	transferUniformScratch[2] = 0;
 	transferUniformScratch[3] = 0;
-	gxGpuState.backend.device.queue.writeBuffer(gxGpuState.transferUniformBuffer, 0, transferUniformScratch);
-	renderVramVertices(gxGpuState.transferPipeline, bindGroup, gxGpuState.transferVertexBuffer, gxGpuTransferVertices, vertexFloatCount, GX_GPU_TRANSFER_VERTEX_FLOATS, GX_GPU_FULL_DRAWING_AREA_TOP_LEFT_WORD, GX_GPU_FULL_DRAWING_AREA_BOTTOM_RIGHT_WORD);
+	const uniformByteOffset = gxGpuState.transferUniformByteOffset;
+	const vertexByteOffset = gxGpuState.transferVertexByteOffset;
+	gxGpuState.backend.device.queue.writeBuffer(gxGpuState.transferUniformBuffer, uniformByteOffset, transferUniformScratch);
+	gxGpuState.transferUniformByteOffset += GX_GPU_UNIFORM_SLOT_BYTES;
+	gxGpuState.transferVertexByteOffset += vertexFloatCount * 4;
+	renderVramVertices(gxGpuState.transferPipeline, bindGroup, gxGpuState.transferVertexBuffer, gxGpuTransferVertices, vertexFloatCount, GX_GPU_TRANSFER_VERTEX_FLOATS, vertexByteOffset, uniformByteOffset, GX_GPU_FULL_DRAWING_AREA_TOP_LEFT_WORD, GX_GPU_FULL_DRAWING_AREA_BOTTOM_RIGHT_WORD);
 }
 
 function uploadCpuToVram(commandBuffer: GxGpuCommandBufferView, commandIndex: number): void {
@@ -1336,6 +1369,13 @@ function executeNewGxGpuCommands(commandBuffer: GxGpuCommandBufferView): void {
 	}
 	const encoder = gxGpuState.backend.device.createCommandEncoder();
 	gxGpuState.activeEncoder = encoder;
+	gxGpuState.solidVertexByteOffset = 0;
+	gxGpuState.lineVertexByteOffset = 0;
+	gxGpuState.texturedVertexByteOffset = 0;
+	gxGpuState.transferVertexByteOffset = 0;
+	gxGpuState.primitiveUniformByteOffset = 0;
+	gxGpuState.texturedUniformByteOffset = 0;
+	gxGpuState.transferUniformByteOffset = 0;
 	for (; commandIndex < presentCommandCount; commandIndex += 1) {
 		const topLeftWord = commandBuffer.commandKind[commandIndex] === GX_GPU_COMMAND_FILL_RECTANGLE ? GX_GPU_FULL_DRAWING_AREA_TOP_LEFT_WORD : commandBuffer.commandDrawingAreaTopLeftWord[commandIndex];
 		const bottomRightWord = commandBuffer.commandKind[commandIndex] === GX_GPU_COMMAND_FILL_RECTANGLE ? GX_GPU_FULL_DRAWING_AREA_BOTTOM_RIGHT_WORD : commandBuffer.commandDrawingAreaBottomRightWord[commandIndex];
@@ -1407,7 +1447,8 @@ function scanoutGxGpuVram(state: RenderPassStateRegistry['gx_gpu']): void {
 	const pass = encoder.beginRenderPass(gxGpuState.scanoutPassDescriptor);
 	if (!clearOnly) {
 		pass.setPipeline(gxGpuState.scanoutPipeline);
-		pass.setBindGroup(0, gxGpuState.scanoutBindGroup);
+		gxGpuDynamicUniformOffsets[0] = 0;
+		pass.setBindGroup(0, gxGpuState.scanoutBindGroup, gxGpuDynamicUniformOffsets);
 		pass.draw(3);
 	}
 	pass.end();
