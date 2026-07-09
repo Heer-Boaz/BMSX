@@ -11,6 +11,7 @@
 #include "../../graph/graph.h"
 #include "../../lighting/system.h"
 #include "../../shared/submissions.h"
+#include "machine/devices/gx/gpu_command_buffer.h"
 #include <array>
 #include <string>
 #include <vector>
@@ -60,6 +61,8 @@ struct GxGpuPipelineState {
 	u32 displayStartWord = 0u;
 	u32 horizontalDisplayRangeWord = 0u;
 	u32 verticalDisplayRangeWord = 0u;
+	const std::array<u8, GX_GPU_VRAM_BYTE_COUNT>* vramSnapshotBytes = nullptr;
+	u32 vramSnapshotSerial = 0u;
 };
 
 struct CRTPipelineOptions {
@@ -82,6 +85,7 @@ struct PresentPipelineState {
 	i32 srcWidth = 0;
 	i32 srcHeight = 0;
 	TextureHandle colorTex = nullptr;
+	TextureHandle targetColorTex = nullptr;
 };
 
 struct CRTPipelineState {
@@ -220,6 +224,9 @@ void bootstrapBackendRenderPass(GPUBackend* backend, void*) {
 	Bootstrap(typedBackend);
 }
 
+void setPresentationHistoryGraph(RenderPassDef& desc, RenderPassDef::RenderGraphSlot historySlot);
+bool shouldUpdatePresentationHistoryA(GameView* view, void* context);
+bool shouldUpdatePresentationHistoryB(GameView* view, void* context);
 void setFramebuffer2DGraph(RenderPassDef& desc);
 void setGxGpuGraph(RenderPassDef& desc);
 void setAutoPresentGraph(RenderPassDef& desc);

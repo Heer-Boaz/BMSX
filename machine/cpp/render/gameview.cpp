@@ -6,9 +6,6 @@
  */
 
 #include "gameview.h"
-#if BMSX_ENABLE_GLES2
-#include "backend/gles2/backend.h"
-#endif
 #include "backend/pass/library.h"
 #include "graph/graph.h"
 #include "lighting/system.h"
@@ -38,7 +35,7 @@ GameView::~GameView() {
 }
 
 void GameView::setBackend(std::unique_ptr<GPUBackend> backend) {
-	if (m_renderGraph) { // There is a possibility that there is no render graph yet, e.g. during early init when setBackend is called and we immediately have to fallback to software rendering backend!
+	if (m_renderGraph) {
 		m_renderGraph.reset();
 	}
 	m_backend = std::move(backend);
@@ -144,7 +141,6 @@ void GameView::finalizePresentation() {
 void GameView::drawgame() {
 	if (!m_backend) return;
 
-	m_activeTexUnit = -1;
 	m_backend->beginFrame();
 
 	// Increment frame timing
@@ -159,44 +155,13 @@ void GameView::drawgame() {
 	m_backend->endFrame();
 }
 
+void GameView::captureGxGpuVramSnapshot(GxGpu& gxGpu) {
+	m_backend->captureGxGpuVramSnapshot(gxGpu);
+}
+
 void GameView::setPipelineRegistry(std::unique_ptr<RenderPassLibrary> registry) {
 	m_renderGraph.reset();
 	m_pipelineRegistry = std::move(registry);
-}
-
-// ─────────────────────────────────────────────────────────────────────────────
-// Texture binding helpers
-// ─────────────────────────────────────────────────────────────────────────────
-
-void GameView::setActiveTexUnit(i32 unit) {
-	if (backendType() != BackendType::OpenGLES2) return;
-#if !BMSX_ENABLE_GLES2
-	(void)unit;
-	throw BMSX_RUNTIME_ERROR("[GameView] OpenGLES2 backend disabled at compile time.");
-#else
-	m_activeTexUnit = unit;
-	static_cast<OpenGLES2Backend*>(m_backend.get())->setActiveTextureUnit(unit);
-#endif
-}
-
-void GameView::bind2DTex(TextureHandle tex) {
-	if (backendType() != BackendType::OpenGLES2) return;
-#if !BMSX_ENABLE_GLES2
-	(void)tex;
-	throw BMSX_RUNTIME_ERROR("[GameView] OpenGLES2 backend disabled at compile time.");
-#else
-	static_cast<OpenGLES2Backend*>(m_backend.get())->bindTexture2D(tex);
-#endif
-}
-
-void GameView::bindCubemapTex(TextureHandle tex) {
-	if (backendType() != BackendType::OpenGLES2) return;
-#if !BMSX_ENABLE_GLES2
-	(void)tex;
-	throw BMSX_RUNTIME_ERROR("[GameView] OpenGLES2 backend disabled at compile time.");
-#else
-	(void)tex;
-#endif
 }
 
 // ─────────────────────────────────────────────────────────────────────────────

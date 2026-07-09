@@ -3,6 +3,7 @@
 #include "machine/devices/vdp/contracts.h"
 #include "machine/devices/vdp/rpu.h"
 #include "machine/devices/vdp/rpu_desc.h"
+#include "machine/devices/gx/gpu.h"
 #include "machine/devices/gx/gpu_command_buffer.h"
 #include "render/backend/backend.h"
 #include "render/backend/pass/library.h"
@@ -870,7 +871,7 @@ void renderVdpRpuSoftwareFrame(SoftwareBackend& backend, GameView&, const VdpRpu
 }
 
 constexpr auto shouldExecuteVdpRpuPassSoftware = [](GameView* view, void*) {
-	return view->vdpRpuFrame->commands.passCount != 0u && view->gxGpuCommandBuffer->commandCount == 0u;
+	return view->vdpRpuFrame->commands.passCount != 0u && (view->gxGpuStatusWord & GX_GPU_STATUS_DISPLAY_DISABLE) != 0u;
 };
 
 constexpr auto renderVdpRpuPassSoftware = [](GPUBackend* backend, GameView* view, void*, RenderPassStateStorage&, void*) {

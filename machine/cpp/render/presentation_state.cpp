@@ -158,13 +158,17 @@ bool RenderPresentationState::consumePresentation(RenderPresentation& outPresent
 }
 
 void RenderPresentationState::syncAfterRuntimeUpdate(Runtime& runtime, i64 previousTickSequence) {
+	bool tickVisualCommitted = runtime.frameScheduler.lastTickVisualFrameCommitted;
+	while (runtime.frameScheduler.consumeTickCompletion(m_tickCompletionScratch)) {
+		if (m_tickCompletionScratch.visualCommitted) {
+			tickVisualCommitted = true;
+		}
+		recordTickCompletion(m_tickCompletionScratch.visualCommitted, m_tickCompletionScratch.vdpFrameHeld);
+	}
 	if (runtime.frameScheduler.lastTickSequence != previousTickSequence) {
-		markPresentation(GameView::PresentationMode::Completed, runtime.frameScheduler.lastTickVisualFrameCommitted);
+		markPresentation(GameView::PresentationMode::Completed, tickVisualCommitted);
 	} else if (runtime.isDrawPending()) {
 		markPresentation(GameView::PresentationMode::Partial, false);
-	}
-	while (runtime.frameScheduler.consumeTickCompletion(m_tickCompletionScratch)) {
-		recordTickCompletion(m_tickCompletionScratch.visualCommitted, m_tickCompletionScratch.vdpFrameHeld);
 	}
 }
 
@@ -193,7 +197,9 @@ bool RenderPresentationState::render(MachineManager& manager, Runtime& runtime, 
 		commitGxGpuViewSnapshot(*manager.m_view, runtime.machine.gxGpu.readDeviceOutput());
 		manager.m_view->configurePresentation(presentMode, commitFrame);
 		manager.m_view->drawgame();
-		runtime.machine.gxGpu.retirePresentedCommands();
+		if (commitFrame) {
+			runtime.machine.gxGpu.retirePresentedCommands();
+		}
 	}
 
 	flushDebugReport(runtime);

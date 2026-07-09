@@ -19,7 +19,6 @@ import {
 	gxGpuCommandRectangleWidth,
 	gxGpuCommandTextureEnabled,
 	gxGpuDitheredPolygon,
-	gxGpuDrawingOffsetX,
 	gxGpuDrawingOffsetY,
 	gxGpuFillHeight,
 	gxGpuFillWidth,
@@ -30,7 +29,7 @@ import {
 	gxGpuTransferY,
 	gxGpuTextureU,
 	gxGpuTextureV,
-	gxGpuVertexX,
+	gxGpuSigned11,
 	gxGpuVertexY,
 } from '../gx_gpu_render_rules';
 import {
@@ -137,7 +136,7 @@ function executeDrawPolygon(commandBuffer: GxGpuCommandBufferView, commandIndex:
 	const drawModeWord = commandBuffer.commandDrawModeWord[commandIndex];
 	const wordStart = commandBuffer.commandWordStart[commandIndex];
 	const drawingOffsetWord = commandBuffer.commandDrawingOffsetWord[commandIndex];
-	const dx = gxGpuDrawingOffsetX(drawingOffsetWord);
+	const dx = gxGpuSigned11(drawingOffsetWord);
 	const dy = gxGpuDrawingOffsetY(drawingOffsetWord);
 	const ditherEnabled = gxGpuDitheredPolygon(drawModeWord, opcode);
 	const gouraud = gxGpuCommandGouraud(opcode);
@@ -152,12 +151,12 @@ function executeDrawPolygon(commandBuffer: GxGpuCommandBufferView, commandIndex:
 			const color2 = commandBuffer.words[wordStart + 6];
 			const xy2 = commandBuffer.words[wordStart + 7];
 			const texture2 = commandBuffer.words[wordStart + 8];
-			drawGxGpuSoftwareTexturedTriangle(commandBuffer, commandIndex, dx + gxGpuVertexX(xy0), dy + gxGpuVertexY(xy0), color0, gxGpuTextureU(texture0), gxGpuTextureV(texture0), dx + gxGpuVertexX(xy1), dy + gxGpuVertexY(xy1), color1, gxGpuTextureU(texture1), gxGpuTextureV(texture1), dx + gxGpuVertexX(xy2), dy + gxGpuVertexY(xy2), color2, gxGpuTextureU(texture2), gxGpuTextureV(texture2), ditherEnabled);
+			drawGxGpuSoftwareTexturedTriangle(commandBuffer, commandIndex, dx + gxGpuSigned11(xy0), dy + gxGpuVertexY(xy0), color0, gxGpuTextureU(texture0), gxGpuTextureV(texture0), dx + gxGpuSigned11(xy1), dy + gxGpuVertexY(xy1), color1, gxGpuTextureU(texture1), gxGpuTextureV(texture1), dx + gxGpuSigned11(xy2), dy + gxGpuVertexY(xy2), color2, gxGpuTextureU(texture2), gxGpuTextureV(texture2), ditherEnabled);
 			if (gxGpuCommandQuadPolygon(opcode)) {
 				const color3 = commandBuffer.words[wordStart + 9];
 				const xy3 = commandBuffer.words[wordStart + 10];
 				const texture3 = commandBuffer.words[wordStart + 11];
-				drawGxGpuSoftwareTexturedTriangle(commandBuffer, commandIndex, dx + gxGpuVertexX(xy2), dy + gxGpuVertexY(xy2), color2, gxGpuTextureU(texture2), gxGpuTextureV(texture2), dx + gxGpuVertexX(xy1), dy + gxGpuVertexY(xy1), color1, gxGpuTextureU(texture1), gxGpuTextureV(texture1), dx + gxGpuVertexX(xy3), dy + gxGpuVertexY(xy3), color3, gxGpuTextureU(texture3), gxGpuTextureV(texture3), ditherEnabled);
+				drawGxGpuSoftwareTexturedTriangle(commandBuffer, commandIndex, dx + gxGpuSigned11(xy2), dy + gxGpuVertexY(xy2), color2, gxGpuTextureU(texture2), gxGpuTextureV(texture2), dx + gxGpuSigned11(xy1), dy + gxGpuVertexY(xy1), color1, gxGpuTextureU(texture1), gxGpuTextureV(texture1), dx + gxGpuSigned11(xy3), dy + gxGpuVertexY(xy3), color3, gxGpuTextureU(texture3), gxGpuTextureV(texture3), ditherEnabled);
 			}
 			return;
 		}
@@ -169,11 +168,11 @@ function executeDrawPolygon(commandBuffer: GxGpuCommandBufferView, commandIndex:
 		const texture1 = commandBuffer.words[wordStart + 4];
 		const xy2 = commandBuffer.words[wordStart + 5];
 		const texture2 = commandBuffer.words[wordStart + 6];
-		drawGxGpuSoftwareTexturedTriangle(commandBuffer, commandIndex, dx + gxGpuVertexX(xy0), dy + gxGpuVertexY(xy0), color, gxGpuTextureU(texture0), gxGpuTextureV(texture0), dx + gxGpuVertexX(xy1), dy + gxGpuVertexY(xy1), color, gxGpuTextureU(texture1), gxGpuTextureV(texture1), dx + gxGpuVertexX(xy2), dy + gxGpuVertexY(xy2), color, gxGpuTextureU(texture2), gxGpuTextureV(texture2), ditherEnabled);
+		drawGxGpuSoftwareTexturedTriangle(commandBuffer, commandIndex, dx + gxGpuSigned11(xy0), dy + gxGpuVertexY(xy0), color, gxGpuTextureU(texture0), gxGpuTextureV(texture0), dx + gxGpuSigned11(xy1), dy + gxGpuVertexY(xy1), color, gxGpuTextureU(texture1), gxGpuTextureV(texture1), dx + gxGpuSigned11(xy2), dy + gxGpuVertexY(xy2), color, gxGpuTextureU(texture2), gxGpuTextureV(texture2), ditherEnabled);
 		if (gxGpuCommandQuadPolygon(opcode)) {
 			const xy3 = commandBuffer.words[wordStart + 7];
 			const texture3 = commandBuffer.words[wordStart + 8];
-			drawGxGpuSoftwareTexturedTriangle(commandBuffer, commandIndex, dx + gxGpuVertexX(xy2), dy + gxGpuVertexY(xy2), color, gxGpuTextureU(texture2), gxGpuTextureV(texture2), dx + gxGpuVertexX(xy1), dy + gxGpuVertexY(xy1), color, gxGpuTextureU(texture1), gxGpuTextureV(texture1), dx + gxGpuVertexX(xy3), dy + gxGpuVertexY(xy3), color, gxGpuTextureU(texture3), gxGpuTextureV(texture3), ditherEnabled);
+			drawGxGpuSoftwareTexturedTriangle(commandBuffer, commandIndex, dx + gxGpuSigned11(xy2), dy + gxGpuVertexY(xy2), color, gxGpuTextureU(texture2), gxGpuTextureV(texture2), dx + gxGpuSigned11(xy1), dy + gxGpuVertexY(xy1), color, gxGpuTextureU(texture1), gxGpuTextureV(texture1), dx + gxGpuSigned11(xy3), dy + gxGpuVertexY(xy3), color, gxGpuTextureU(texture3), gxGpuTextureV(texture3), ditherEnabled);
 		}
 		return;
 	}
@@ -185,11 +184,11 @@ function executeDrawPolygon(commandBuffer: GxGpuCommandBufferView, commandIndex:
 			const xy1 = commandBuffer.words[wordStart + 4];
 			const color2 = commandBuffer.words[wordStart + 6];
 			const xy2 = commandBuffer.words[wordStart + 7];
-			drawGxGpuSoftwareTriangle(commandBuffer, commandIndex, dx + gxGpuVertexX(xy0), dy + gxGpuVertexY(xy0), color0, dx + gxGpuVertexX(xy1), dy + gxGpuVertexY(xy1), color1, dx + gxGpuVertexX(xy2), dy + gxGpuVertexY(xy2), color2, ditherEnabled);
+			drawGxGpuSoftwareTriangle(commandBuffer, commandIndex, dx + gxGpuSigned11(xy0), dy + gxGpuVertexY(xy0), color0, dx + gxGpuSigned11(xy1), dy + gxGpuVertexY(xy1), color1, dx + gxGpuSigned11(xy2), dy + gxGpuVertexY(xy2), color2, ditherEnabled);
 			if (gxGpuCommandQuadPolygon(opcode)) {
 				const color3 = commandBuffer.words[wordStart + 9];
 				const xy3 = commandBuffer.words[wordStart + 10];
-				drawGxGpuSoftwareTriangle(commandBuffer, commandIndex, dx + gxGpuVertexX(xy2), dy + gxGpuVertexY(xy2), color2, dx + gxGpuVertexX(xy1), dy + gxGpuVertexY(xy1), color1, dx + gxGpuVertexX(xy3), dy + gxGpuVertexY(xy3), color3, ditherEnabled);
+				drawGxGpuSoftwareTriangle(commandBuffer, commandIndex, dx + gxGpuSigned11(xy2), dy + gxGpuVertexY(xy2), color2, dx + gxGpuSigned11(xy1), dy + gxGpuVertexY(xy1), color1, dx + gxGpuSigned11(xy3), dy + gxGpuVertexY(xy3), color3, ditherEnabled);
 			}
 			return;
 		}
@@ -198,10 +197,10 @@ function executeDrawPolygon(commandBuffer: GxGpuCommandBufferView, commandIndex:
 		const xy0 = commandBuffer.words[wordStart + 1];
 		const xy1 = commandBuffer.words[wordStart + 3];
 		const xy2 = commandBuffer.words[wordStart + 5];
-		drawGxGpuSoftwareTriangle(commandBuffer, commandIndex, dx + gxGpuVertexX(xy0), dy + gxGpuVertexY(xy0), color, dx + gxGpuVertexX(xy1), dy + gxGpuVertexY(xy1), color, dx + gxGpuVertexX(xy2), dy + gxGpuVertexY(xy2), color, ditherEnabled);
+		drawGxGpuSoftwareTriangle(commandBuffer, commandIndex, dx + gxGpuSigned11(xy0), dy + gxGpuVertexY(xy0), color, dx + gxGpuSigned11(xy1), dy + gxGpuVertexY(xy1), color, dx + gxGpuSigned11(xy2), dy + gxGpuVertexY(xy2), color, ditherEnabled);
 		if (gxGpuCommandQuadPolygon(opcode)) {
 			const xy3 = commandBuffer.words[wordStart + 7];
-			drawGxGpuSoftwareTriangle(commandBuffer, commandIndex, dx + gxGpuVertexX(xy2), dy + gxGpuVertexY(xy2), color, dx + gxGpuVertexX(xy1), dy + gxGpuVertexY(xy1), color, dx + gxGpuVertexX(xy3), dy + gxGpuVertexY(xy3), color, ditherEnabled);
+			drawGxGpuSoftwareTriangle(commandBuffer, commandIndex, dx + gxGpuSigned11(xy2), dy + gxGpuVertexY(xy2), color, dx + gxGpuSigned11(xy1), dy + gxGpuVertexY(xy1), color, dx + gxGpuSigned11(xy3), dy + gxGpuVertexY(xy3), color, ditherEnabled);
 		}
 		return;
 	}
@@ -213,11 +212,11 @@ function executeDrawPolygon(commandBuffer: GxGpuCommandBufferView, commandIndex:
 		const xy1 = commandBuffer.words[wordStart + 3];
 		const color2 = commandBuffer.words[wordStart + 4];
 		const xy2 = commandBuffer.words[wordStart + 5];
-		drawGxGpuSoftwareTriangle(commandBuffer, commandIndex, dx + gxGpuVertexX(xy0), dy + gxGpuVertexY(xy0), color0, dx + gxGpuVertexX(xy1), dy + gxGpuVertexY(xy1), color1, dx + gxGpuVertexX(xy2), dy + gxGpuVertexY(xy2), color2, ditherEnabled);
+		drawGxGpuSoftwareTriangle(commandBuffer, commandIndex, dx + gxGpuSigned11(xy0), dy + gxGpuVertexY(xy0), color0, dx + gxGpuSigned11(xy1), dy + gxGpuVertexY(xy1), color1, dx + gxGpuSigned11(xy2), dy + gxGpuVertexY(xy2), color2, ditherEnabled);
 		if (gxGpuCommandQuadPolygon(opcode)) {
 			const color3 = commandBuffer.words[wordStart + 6];
 			const xy3 = commandBuffer.words[wordStart + 7];
-			drawGxGpuSoftwareTriangle(commandBuffer, commandIndex, dx + gxGpuVertexX(xy2), dy + gxGpuVertexY(xy2), color2, dx + gxGpuVertexX(xy1), dy + gxGpuVertexY(xy1), color1, dx + gxGpuVertexX(xy3), dy + gxGpuVertexY(xy3), color3, ditherEnabled);
+			drawGxGpuSoftwareTriangle(commandBuffer, commandIndex, dx + gxGpuSigned11(xy2), dy + gxGpuVertexY(xy2), color2, dx + gxGpuSigned11(xy1), dy + gxGpuVertexY(xy1), color1, dx + gxGpuSigned11(xy3), dy + gxGpuVertexY(xy3), color3, ditherEnabled);
 		}
 		return;
 	}
@@ -226,10 +225,10 @@ function executeDrawPolygon(commandBuffer: GxGpuCommandBufferView, commandIndex:
 	const xy0 = commandBuffer.words[wordStart + 1];
 	const xy1 = commandBuffer.words[wordStart + 2];
 	const xy2 = commandBuffer.words[wordStart + 3];
-	drawGxGpuSoftwareTriangle(commandBuffer, commandIndex, dx + gxGpuVertexX(xy0), dy + gxGpuVertexY(xy0), color, dx + gxGpuVertexX(xy1), dy + gxGpuVertexY(xy1), color, dx + gxGpuVertexX(xy2), dy + gxGpuVertexY(xy2), color, ditherEnabled);
+	drawGxGpuSoftwareTriangle(commandBuffer, commandIndex, dx + gxGpuSigned11(xy0), dy + gxGpuVertexY(xy0), color, dx + gxGpuSigned11(xy1), dy + gxGpuVertexY(xy1), color, dx + gxGpuSigned11(xy2), dy + gxGpuVertexY(xy2), color, ditherEnabled);
 	if (gxGpuCommandQuadPolygon(opcode)) {
 		const xy3 = commandBuffer.words[wordStart + 4];
-		drawGxGpuSoftwareTriangle(commandBuffer, commandIndex, dx + gxGpuVertexX(xy2), dy + gxGpuVertexY(xy2), color, dx + gxGpuVertexX(xy1), dy + gxGpuVertexY(xy1), color, dx + gxGpuVertexX(xy3), dy + gxGpuVertexY(xy3), color, ditherEnabled);
+		drawGxGpuSoftwareTriangle(commandBuffer, commandIndex, dx + gxGpuSigned11(xy2), dy + gxGpuVertexY(xy2), color, dx + gxGpuSigned11(xy1), dy + gxGpuVertexY(xy1), color, dx + gxGpuSigned11(xy3), dy + gxGpuVertexY(xy3), color, ditherEnabled);
 	}
 }
 
@@ -243,7 +242,7 @@ function executeDrawRectangle(commandBuffer: GxGpuCommandBufferView, commandInde
 	const width = gxGpuCommandRectangleWidth(opcode, sizeWord);
 	const height = gxGpuCommandRectangleHeight(opcode, sizeWord);
 	const drawingOffsetWord = commandBuffer.commandDrawingOffsetWord[commandIndex];
-	const x = gxGpuDrawingOffsetX(drawingOffsetWord) + gxGpuVertexX(xyWord);
+	const x = gxGpuSigned11(drawingOffsetWord) + gxGpuSigned11(xyWord);
 	const y = gxGpuDrawingOffsetY(drawingOffsetWord) + gxGpuVertexY(xyWord);
 	if (gxGpuCommandDrawsTexture(opcode, drawModeWord)) {
 		drawGxGpuSoftwareTexturedRectangle(commandBuffer, commandIndex, x, y, width, height, colorWord, commandBuffer.words[wordStart + 2]);
@@ -256,18 +255,18 @@ function executeDrawLine(commandBuffer: GxGpuCommandBufferView, commandIndex: nu
 	const opcode = commandBuffer.commandOpcode[commandIndex];
 	const wordStart = commandBuffer.commandWordStart[commandIndex];
 	const drawingOffsetWord = commandBuffer.commandDrawingOffsetWord[commandIndex];
-	const dx = gxGpuDrawingOffsetX(drawingOffsetWord);
+	const dx = gxGpuSigned11(drawingOffsetWord);
 	const dy = gxGpuDrawingOffsetY(drawingOffsetWord);
 	const color0 = commandBuffer.words[wordStart];
 	const xy0 = commandBuffer.words[wordStart + 1];
 	if (gxGpuCommandGouraud(opcode)) {
 		const color1 = commandBuffer.words[wordStart + 2];
 		const xy1 = commandBuffer.words[wordStart + 3];
-		drawGxGpuSoftwareLineSegment(commandBuffer, commandIndex, dx + gxGpuVertexX(xy0), dy + gxGpuVertexY(xy0), color0, dx + gxGpuVertexX(xy1), dy + gxGpuVertexY(xy1), color1);
+		drawGxGpuSoftwareLineSegment(commandBuffer, commandIndex, dx + gxGpuSigned11(xy0), dy + gxGpuVertexY(xy0), color0, dx + gxGpuSigned11(xy1), dy + gxGpuVertexY(xy1), color1);
 		return;
 	}
 	const xy1 = commandBuffer.words[wordStart + 2];
-	drawGxGpuSoftwareLineSegment(commandBuffer, commandIndex, dx + gxGpuVertexX(xy0), dy + gxGpuVertexY(xy0), color0, dx + gxGpuVertexX(xy1), dy + gxGpuVertexY(xy1), color0);
+	drawGxGpuSoftwareLineSegment(commandBuffer, commandIndex, dx + gxGpuSigned11(xy0), dy + gxGpuVertexY(xy0), color0, dx + gxGpuSigned11(xy1), dy + gxGpuVertexY(xy1), color0);
 }
 
 function executeDrawPolyline(commandBuffer: GxGpuCommandBufferView, commandIndex: number): void {
@@ -275,7 +274,7 @@ function executeDrawPolyline(commandBuffer: GxGpuCommandBufferView, commandIndex
 	const wordStart = commandBuffer.commandWordStart[commandIndex];
 	const wordEnd = wordStart + commandBuffer.commandWordCount[commandIndex];
 	const drawingOffsetWord = commandBuffer.commandDrawingOffsetWord[commandIndex];
-	const dx = gxGpuDrawingOffsetX(drawingOffsetWord);
+	const dx = gxGpuSigned11(drawingOffsetWord);
 	const dy = gxGpuDrawingOffsetY(drawingOffsetWord);
 	if (gxGpuCommandGouraud(opcode)) {
 		let color0 = commandBuffer.words[wordStart];
@@ -283,7 +282,7 @@ function executeDrawPolyline(commandBuffer: GxGpuCommandBufferView, commandIndex
 		for (let wordIndex = wordStart + 2; wordIndex + 1 < wordEnd; wordIndex += 2) {
 			const color1 = commandBuffer.words[wordIndex];
 			const xy1 = commandBuffer.words[wordIndex + 1];
-			drawGxGpuSoftwareLineSegment(commandBuffer, commandIndex, dx + gxGpuVertexX(xy0), dy + gxGpuVertexY(xy0), color0, dx + gxGpuVertexX(xy1), dy + gxGpuVertexY(xy1), color1);
+			drawGxGpuSoftwareLineSegment(commandBuffer, commandIndex, dx + gxGpuSigned11(xy0), dy + gxGpuVertexY(xy0), color0, dx + gxGpuSigned11(xy1), dy + gxGpuVertexY(xy1), color1);
 			color0 = color1;
 			xy0 = xy1;
 		}
@@ -293,13 +292,14 @@ function executeDrawPolyline(commandBuffer: GxGpuCommandBufferView, commandIndex
 	let xy0 = commandBuffer.words[wordStart + 1];
 	for (let wordIndex = wordStart + 2; wordIndex < wordEnd; wordIndex += 1) {
 		const xy1 = commandBuffer.words[wordIndex];
-		drawGxGpuSoftwareLineSegment(commandBuffer, commandIndex, dx + gxGpuVertexX(xy0), dy + gxGpuVertexY(xy0), color, dx + gxGpuVertexX(xy1), dy + gxGpuVertexY(xy1), color);
+		drawGxGpuSoftwareLineSegment(commandBuffer, commandIndex, dx + gxGpuSigned11(xy0), dy + gxGpuVertexY(xy0), color, dx + gxGpuSigned11(xy1), dy + gxGpuVertexY(xy1), color);
 		xy0 = xy1;
 	}
 }
 
 export function executeGxGpuSoftwareCommands(commandBuffer: GxGpuCommandBufferView, processedCommandCount: number): number {
-	for (let commandIndex = processedCommandCount; commandIndex < commandBuffer.commandCount; commandIndex += 1) {
+	const presentCommandCount = commandBuffer.presentCommandCount;
+	for (let commandIndex = processedCommandCount; commandIndex < presentCommandCount; commandIndex += 1) {
 		switch (commandBuffer.commandKind[commandIndex]) {
 			case GX_GPU_COMMAND_DRAW_POLYGON:
 				executeDrawPolygon(commandBuffer, commandIndex);
@@ -324,5 +324,5 @@ export function executeGxGpuSoftwareCommands(commandBuffer: GxGpuCommandBufferVi
 				break;
 		}
 	}
-	return commandBuffer.commandCount;
+	return presentCommandCount;
 }

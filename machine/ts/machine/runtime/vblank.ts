@@ -151,6 +151,7 @@ export class VblankState {
 		const runtime = this.runtime;
 		this.vblankSequence += 1;
 		runtime.machine.vdp.presentReadyFrameOnVblankEdge();
+		runtime.machine.gxGpu.presentReadyFrameOnVblankEdge();
 		runtime.machine.inputController.onVblankEdge(runtime.machineElapsedMs(), runtime.machine.scheduler.nowCycles);
 		this.publishVblankTiming(true);
 		runtime.machine.irqController.raise(IRQ_VBLANK);

@@ -9,8 +9,12 @@ import { gxGpuMaskBitCheckBeforeDraw, gxGpuMaskBitSetWhileDrawing } from '../gx_
 export const GX_GPU_SOFTWARE_VRAM_WORDS = GX_GPU_VRAM_WIDTH * GX_GPU_VRAM_HEIGHT;
 export const gxGpuSoftwareVram = new Uint16Array(GX_GPU_SOFTWARE_VRAM_WORDS);
 
-export function resetGxGpuSoftwareVram(): void {
-	gxGpuSoftwareVram.fill(0);
+
+export function loadGxGpuSoftwareVramBytes(source: Uint8Array): void {
+	for (let wordIndex = 0; wordIndex < GX_GPU_SOFTWARE_VRAM_WORDS; wordIndex += 1) {
+		const byteIndex = wordIndex << 1;
+		gxGpuSoftwareVram[wordIndex] = source[byteIndex] | (source[byteIndex + 1] << 8);
+	}
 }
 
 export function gxGpuSoftwareVramIndex(x: number, y: number): number {

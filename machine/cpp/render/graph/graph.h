@@ -36,6 +36,7 @@ struct TexDesc {
 	bool depth = false;
 	std::string name;
 	bool transient = false;
+	std::optional<std::array<f32, 4>> initialClearColor;
 };
 
 using RenderGraphTexHandle = i32;
@@ -213,6 +214,8 @@ private:
 	std::vector<InternalTexResource> m_texResources;
 	RenderGraphTexHandle m_frameColorHandle = -1;
 	RenderGraphTexHandle m_frameDepthHandle = -1;
+	RenderGraphTexHandle m_frameHistoryAHandle = -1;
+	RenderGraphTexHandle m_frameHistoryBHandle = -1;
 	RenderGraphTexHandle m_deviceColorHandle = -1;
 
 	bool m_compiled = false;

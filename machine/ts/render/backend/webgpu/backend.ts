@@ -3,8 +3,9 @@ import { color_arr, type TextureSource } from '../../../rompack/format';
 import { BackendCaps, ColorAttachmentSpec, GPUBackend, GraphicsPipelineBuildDesc, PassEncoder, RenderPassDesc, RenderPassInstanceHandle, RenderPassStateId, TextureFormat, TextureHandle } from '../backend';
 import type { TextureParams } from '../texture_params';
 import { createSolidRgba8Pixels, writeSolidRgba8Pixels } from '../../shared/solid_pixels';
-import { machineManager } from '../../../core/machine_manager';
-import { registerCRT_WebGPU } from '../../post/crt/webgpu/pipeline';
+import type { GxGpu } from '../../../machine/devices/gx/gpu';
+import { registerCRT } from '../../post/crt/webgpu/pipeline';
+import { captureRenderedVramSnapshot, registerGxGpuPass } from './gx_gpu';
 import { updateAndBindFrameUniforms } from '../frame_uniforms';
 import type { RenderPassLibrary } from '../pass/library';
 
@@ -13,6 +14,8 @@ const WEBGPU_ZERO_CLEAR: GPUColor = [0, 0, 0, 0];
 export type WebGPUPassEncoder = PassEncoder & { encoder: GPURenderPassEncoder };
 
 export class WebGPUBackend implements GPUBackend {
+	static readonly supportsCorePresentation = true;
+
 	get type(): 'webgpu' {
 		return 'webgpu';
 	}
@@ -39,7 +42,7 @@ export class WebGPUBackend implements GPUBackend {
 		stencilStoreOp: 'store',
 	};
 	private readonly renderPassDesc: GPURenderPassDescriptor = { colorAttachments: this.renderPassColorAttachments };
-	private _activePassEncoder: GPURenderPassEncoder | undefined;
+	private readonly commandBufferSubmitList: GPUCommandBuffer[] = [];
 
 	private _context: GPUCanvasContext = null;
 	public get context(): GPUCanvasContext {
@@ -47,7 +50,7 @@ export class WebGPUBackend implements GPUBackend {
 	}
 
 	private _bytesUploaded = 0;
-	constructor(public device: GPUDevice, context: GPUCanvasContext) {
+	constructor(public device: GPUDevice, context: GPUCanvasContext, public readonly canvasFormat: GPUTextureFormat) {
 		this.limits = this.device.limits;
 		this._context = context;
 	}
@@ -60,19 +63,23 @@ export class WebGPUBackend implements GPUBackend {
 			graph: { skip: true },
 			exec: () => { },
 			prepare: (backend) => {
-				const gv = machineManager.view;
+				const gv = registry.view;
 				updateAndBindFrameUniforms(backend, gv.offscreenCanvasSize.x, gv.offscreenCanvasSize.y, gv.viewportSize.x, gv.viewportSize.y);
 			},
 		});
+		registerGxGpuPass(registry);
+		registerCRT(registry);
 		registry.register({ id: 'frame_shared', name: 'FrameShared', stateOnly: true, graph: { skip: true }, exec: () => { } });
-		registry.register({ id: 'framebuffer_2d', name: 'Framebuffer2D', stateOnly: true, exec: () => { } });
-		registerCRT_WebGPU(registry);
 	}
 
 
 	beginFrame(): void { this._bytesUploaded = 0; }
 	endFrame(): void { }
 	getFrameStats() { return { draws: 0, drawIndexed: 0, drawsInstanced: 0, drawIndexedInstanced: 0, bytesUploaded: this._bytesUploaded, vertexBytes: 0, indexBytes: 0, uniformBytes: this._bytesUploaded, textureBytes: 0 }; }
+	captureGxGpuVramSnapshot(gxGpu: GxGpu): Promise<void> {
+		const output = gxGpu.readDeviceOutput();
+		return captureRenderedVramSnapshot(gxGpu, output);
+	}
 	accountUpload(_kind: 'vertex' | 'index' | 'uniform' | 'texture', bytes: number): void {
 		this._bytesUploaded += bytes;
 	}
@@ -128,10 +135,6 @@ export class WebGPUBackend implements GPUBackend {
 		this.accountUpload('texture', width * height * 4);
 	}
 
-	readTextureRegion(_handle: TextureHandle, _out: Uint8Array, _width: number, _height: number, _x: number, _y: number, _desc: TextureParams): void {
-		throw new Error('[WebGPUBackend] Texture readback is not yet supported, but it will be implemented in the future.');
-	}
-
 	createSolidTexture2D(width: number, height: number, color: number, _desc: TextureParams): TextureHandle {
 		const texture = this.device.createTexture({
 			size: { width, height, depthOrArrayLayers: 1 },
@@ -152,10 +155,6 @@ export class WebGPUBackend implements GPUBackend {
 
 
 	createCubemapFromSources(faces: readonly [TextureSource, TextureSource, TextureSource, TextureSource, TextureSource, TextureSource], _desc: TextureParams): TextureHandle {
-		if (faces.length !== 6 || !faces.every(f => f.width === faces[0].width && f.height === faces[0].height)) {
-			throw new Error('All cubemap faces must be the same square size');
-		}
-
 		const size = faces[0].width;
 		const texture = this.device.createTexture({
 			size: { width: size, height: size, depthOrArrayLayers: 6 },
@@ -175,12 +174,12 @@ export class WebGPUBackend implements GPUBackend {
 					{ bytesPerRow: src.width * 4 },
 					{ width: src.width, height: src.height, depthOrArrayLayers: 1 },
 				);
-				} else {
-					this.device.queue.copyExternalImageToTexture(
-						{ source: src as ImageBitmap, flipY: false },
-						{ texture, origin: { x: 0, y: 0, z: faceIndex } },
-						{ width: size, height: size }
-					);
+			} else {
+				this.device.queue.copyExternalImageToTexture(
+					{ source: src as ImageBitmap, flipY: false },
+					{ texture, origin: { x: 0, y: 0, z: faceIndex } },
+					{ width: size, height: size }
+				);
 			}
 		});
 
@@ -196,7 +195,6 @@ export class WebGPUBackend implements GPUBackend {
 			dimension: '2d',
 		});
 
-		// Create a buffer with the color repeated for each pixel per face
 		const pixelCountPerFace = size * size;
 		const data = new Uint8Array(pixelCountPerFace * 4 * 6);
 		writeSolidRgba8Pixels(data, data.byteLength, color);
@@ -209,7 +207,6 @@ export class WebGPUBackend implements GPUBackend {
 		new Uint8Array(buffer.getMappedRange()).set(data);
 		buffer.unmap();
 
-		// Copy buffer to texture, layer by layer
 		const commandEncoder = this.device.createCommandEncoder();
 		for (let layer = 0; layer < 6; layer++) {
 			commandEncoder.copyBufferToTexture(
@@ -218,7 +215,8 @@ export class WebGPUBackend implements GPUBackend {
 				{ width: size, height: size, depthOrArrayLayers: 1 }
 			);
 		}
-		this.device.queue.submit([commandEncoder.finish()]);
+		this.commandBufferSubmitList[0] = commandEncoder.finish();
+		this.device.queue.submit(this.commandBufferSubmitList);
 
 		buffer.destroy();
 		return texture;
@@ -235,7 +233,6 @@ export class WebGPUBackend implements GPUBackend {
 	}
 
 	uploadCubemapFace(cubemap: TextureHandle, face: number, src: TextureSource): void {
-		if (face < 0 || face > 5) throw new Error('Invalid cubemap face index');
 		const data = src.data;
 		if (data) {
 			const upload = new Uint8Array(data.buffer as ArrayBuffer, data.byteOffset, data.byteLength);
@@ -261,7 +258,7 @@ export class WebGPUBackend implements GPUBackend {
 		(handle as GPUTexture).destroy();
 	}
 
-	createColorTexture(desc: { width: number; height: number; format?: TextureFormat }): TextureHandle {
+	createColorTexture(desc: { width: number; height: number; format?: TextureFormat; initialClearColor?: color_arr }): TextureHandle {
 		let format: GPUTextureFormat;
 		switch (desc.format) {
 			case undefined:
@@ -276,19 +273,28 @@ export class WebGPUBackend implements GPUBackend {
 				format = 'bgra8unorm';
 				break;
 			default:
-				throw new Error(`[WebGPUBackend] Unsupported color texture format: ${String(desc.format)}.`);
+				format = desc.format as GPUTextureFormat;
+				break;
 		}
 		const texture = this.device.createTexture({
 			size: { width: desc.width, height: desc.height },
 			format,
 			usage: GPUTextureUsage.RENDER_ATTACHMENT | GPUTextureUsage.TEXTURE_BINDING | GPUTextureUsage.COPY_SRC | GPUTextureUsage.COPY_DST,
 		});
-		this.device.queue.writeTexture(
-			{ texture },
-			new Uint8Array(desc.width * desc.height * 4),
-			{ bytesPerRow: desc.width * 4 },
-			{ width: desc.width, height: desc.height, depthOrArrayLayers: 1 },
-		);
+		if (desc.initialClearColor !== undefined) {
+			const commandEncoder = this.device.createCommandEncoder();
+			const passEncoder = commandEncoder.beginRenderPass({
+				colorAttachments: [{
+					view: texture.createView(),
+					clearValue: desc.initialClearColor,
+					loadOp: 'clear',
+					storeOp: 'store',
+				}],
+			});
+			passEncoder.end();
+			this.commandBufferSubmitList[0] = commandEncoder.finish();
+			this.device.queue.submit(this.commandBufferSubmitList);
+		}
 		return texture;
 	}
 
@@ -301,7 +307,6 @@ export class WebGPUBackend implements GPUBackend {
 	}
 
 	createRenderTarget(color?: TextureHandle, depth?: TextureHandle): unknown {
-		// In WebGPU, no explicit FBO; return a descriptor-like object for compatibility
 		return { color, depth };
 	}
 
@@ -320,7 +325,6 @@ export class WebGPUBackend implements GPUBackend {
 	}
 
 	clear(color: color_arr | undefined, _depth: number | undefined): void {
-		// To clear outside a pass, create a temporary render pass for clearing
 		const commandEncoder = this.device.createCommandEncoder();
 		let colorAttachments: GPURenderPassColorAttachment[] = [];
 
@@ -336,12 +340,12 @@ export class WebGPUBackend implements GPUBackend {
 
 		const passDesc: GPURenderPassDescriptor = {
 			colorAttachments,
-			// depthStencilAttachment if needed, but skipped if no tex
 		};
 
 		const passEncoder = commandEncoder.beginRenderPass(passDesc);
 		passEncoder.end();
-		this.device.queue.submit([commandEncoder.finish()]);
+		this.commandBufferSubmitList[0] = commandEncoder.finish();
+		this.device.queue.submit(this.commandBufferSubmitList);
 	}
 
 	beginRenderPass(desc: RenderPassDesc): PassEncoder {
@@ -376,14 +380,13 @@ export class WebGPUBackend implements GPUBackend {
 		passDesc.label = desc.label;
 
 		const encoder = commandEncoder.beginRenderPass(passDesc);
-		this._activePassEncoder = encoder;
 		return { fbo: commandEncoder, desc, encoder } as WebGPUPassEncoder;
 	}
 
 	endRenderPass(pass: WebGPUPassEncoder): void {
 		pass.encoder.end();
-		this.device.queue.submit([(pass.fbo as GPUCommandEncoder).finish()]);
-		if (this._activePassEncoder === pass.encoder) this._activePassEncoder = null;
+		this.commandBufferSubmitList[0] = (pass.fbo as GPUCommandEncoder).finish();
+		this.device.queue.submit(this.commandBufferSubmitList);
 	}
 
 	getCaps(): BackendCaps {
@@ -392,6 +395,7 @@ export class WebGPUBackend implements GPUBackend {
 			maxTextureSize: this.limits.maxTextureDimension2D,
 			supportsInstancing: true,
 			supportsDepthTexture: true,
+			supportsCorePresentation: true,
 		};
 	}
 
@@ -438,23 +442,19 @@ export class WebGPUBackend implements GPUBackend {
 
 		const pipelineLayout = this.device.createPipelineLayout({ bindGroupLayouts });
 
-			if (desc.vsCode === undefined || desc.fsCode === undefined) {
-				throw new Error(`[WebGPUBackend] Pipeline '${desc.label}' requires both vertex and fragment shader code.`);
-			}
-			const pipeline = this.device.createRenderPipeline({
-				label: desc.label,
-				layout: pipelineLayout,
-				vertex: {
-					module: this.device.createShaderModule({ code: desc.vsCode }),
-					entryPoint: 'main',
-					// Add buffers if needed
-				},
-				fragment: {
-					module: this.device.createShaderModule({ code: desc.fsCode }),
-					entryPoint: 'main',
-					targets: [{ format: 'bgra8unorm' }],
+		const pipeline = this.device.createRenderPipeline({
+			label: desc.label,
+			layout: pipelineLayout,
+			vertex: {
+				module: this.device.createShaderModule({ code: desc.vsCode! }),
+				entryPoint: 'main',
 			},
-			primitive: { topology: 'triangle-list' }, // Customize as needed
+			fragment: {
+				module: this.device.createShaderModule({ code: desc.fsCode! }),
+				entryPoint: 'main',
+				targets: [{ format: 'bgra8unorm' }],
+			},
+			primitive: { topology: 'triangle-list' },
 			depthStencil: (desc.usesDepth || desc.depthTest) ? {
 				format: 'depth24plus-stencil8',
 				depthWriteEnabled: !!desc.depthWrite,
@@ -478,65 +478,67 @@ export class WebGPUBackend implements GPUBackend {
 	}
 
 	setGraphicsPipeline(pass: PassEncoder, pipelineHandle: RenderPassInstanceHandle): void {
-		const pipeline = this.pipelines.get(pipelineHandle.id);
-		if (!pipeline) return;
-		const enc = (pass as WebGPUPassEncoder).encoder ?? this._activePassEncoder;
-		if (!enc) return;
+		const pipeline = this.pipelines.get(pipelineHandle.id)!;
+		const enc = (pass as WebGPUPassEncoder).encoder;
 		enc.setPipeline(pipeline);
-		// Bind group 0 using only entries expected by this pipeline
-			const expectedCount = this.pipelineBindingEntryCount.get(pipelineHandle.id) ?? 0;
-			if (expectedCount === 0) return;
-			const expectList = this.pipelineExpected.get(pipelineHandle.id)!;
-			let bg = this.bindGroupCache.get(pipelineHandle.id);
+		const expectedCount = this.pipelineBindingEntryCount.get(pipelineHandle.id)!;
+		if (expectedCount === 0) return;
+		const expectList = this.pipelineExpected.get(pipelineHandle.id)!;
+		let bg = this.bindGroupCache.get(pipelineHandle.id);
 		const layout = (pipeline as GPURenderPipeline).getBindGroupLayout(0);
-			if (!bg) {
-				const entries: GPUBindGroupEntry[] = [];
-				let missing = false;
-				for (const exp of expectList) {
-					switch (exp.kind) {
-						case 'buffer': {
-							const buf = this.uniformBindings.get(exp.binding);
-							if (!buf) { missing = true; break; }
-							entries.push({ binding: exp.binding, resource: { buffer: buf } });
-							break;
-						}
-						case 'texture': {
-							const view = this.textureBindings.get(exp.binding);
-							if (!view) { missing = true; break; }
-							entries.push({ binding: exp.binding, resource: view });
-							break;
-						}
-						case 'sampler': {
-							const samp = this.samplerBindings.get(exp.binding);
-							if (!samp) { missing = true; break; }
-							entries.push({ binding: exp.binding, resource: samp });
-							break;
-						}
+		if (!bg) {
+			const entries: GPUBindGroupEntry[] = [];
+			for (const exp of expectList) {
+				switch (exp.kind) {
+					case 'buffer': {
+						const buf = this.uniformBindings.get(exp.binding)!;
+						entries.push({ binding: exp.binding, resource: { buffer: buf } });
+						break;
+					}
+					case 'texture': {
+						const view = this.textureBindings.get(exp.binding)!;
+						entries.push({ binding: exp.binding, resource: view });
+						break;
+					}
+					case 'sampler': {
+						const samp = this.samplerBindings.get(exp.binding)!;
+						entries.push({ binding: exp.binding, resource: samp });
+						break;
 					}
 				}
-				if (!missing && entries.length === expectList.length) {
-					bg = this.device.createBindGroup({ layout, entries });
-				this.bindGroupCache.set(pipelineHandle.id, bg);
 			}
+			bg = this.device.createBindGroup({ layout, entries });
+			this.bindGroupCache.set(pipelineHandle.id, bg);
 		}
-		if (bg && enc) enc.setBindGroup(0, bg);
+		enc.setBindGroup(0, bg);
 	}
 
-	draw(pass: PassEncoder, first: number, count: number): void { const enc = (pass as WebGPUPassEncoder).encoder ?? this._activePassEncoder; if (enc) enc.draw(count, 1, first, 0); }
-	drawIndexed(pass: PassEncoder, indexCount: number, firstIndex: number, _indexType?: number): void { const enc = (pass as WebGPUPassEncoder).encoder ?? this._activePassEncoder; if (enc) enc.drawIndexed(indexCount, 1, firstIndex, 0, 0); }
-	drawInstanced(pass: PassEncoder, vertexCount: number, instanceCount: number, firstVertex = 0, firstInstance = 0): void { const enc = (pass as WebGPUPassEncoder).encoder ?? this._activePassEncoder; if (enc) enc.draw(vertexCount, instanceCount, firstVertex, firstInstance); }
-	drawIndexedInstanced(pass: PassEncoder, indexCount: number, instanceCount: number, firstIndex = 0, baseVertex = 0, firstInstance = 0, _indexType?: number): void { const enc = (pass as WebGPUPassEncoder).encoder ?? this._activePassEncoder; if (enc) enc.drawIndexed(indexCount, instanceCount, firstIndex, baseVertex, firstInstance); }
+	draw(pass: PassEncoder, first: number, count: number): void {
+		const encoder = (pass as WebGPUPassEncoder).encoder;
+		encoder.draw(count, 1, first, 0);
+	}
+
+	drawIndexed(pass: PassEncoder, indexCount: number, firstIndex: number, _indexType?: number): void {
+		const encoder = (pass as WebGPUPassEncoder).encoder;
+		encoder.drawIndexed(indexCount, 1, firstIndex, 0, 0);
+	}
+
+	drawInstanced(pass: PassEncoder, vertexCount: number, instanceCount: number, firstVertex = 0, firstInstance = 0): void {
+		const encoder = (pass as WebGPUPassEncoder).encoder;
+		encoder.draw(vertexCount, instanceCount, firstVertex, firstInstance);
+	}
+
+	drawIndexedInstanced(pass: PassEncoder, indexCount: number, instanceCount: number, firstIndex = 0, baseVertex = 0, firstInstance = 0, _indexType?: number): void {
+		const encoder = (pass as WebGPUPassEncoder).encoder;
+		encoder.drawIndexed(indexCount, instanceCount, firstIndex, baseVertex, firstInstance);
+	}
 
 	setPassState<S = unknown>(label: RenderPassStateId, state: S): void {
 		this.stateRegistry.set(label, state);
 	}
 
 	getPassState<S = unknown>(label: RenderPassStateId): S {
-		const state = this.stateRegistry.get(label);
-		if (state === undefined && !this.stateRegistry.has(label)) {
-			throw new Error(`[WebGPUBackend] Render pass state '${String(label)}' is not registered.`);
-		}
-		return state as S;
+		return this.stateRegistry.get(label) as S;
 	}
 
 	createUniformBuffer(byteSize: number, usage: 'static' | 'dynamic'): GPUBuffer {

@@ -6,7 +6,7 @@ class RenderPassLibrary;
 class SoftwareBackend;
 struct GxGpuPipelineState;
 
-void renderGxGpuSoftwareFrame(SoftwareBackend& backend, const GxGpuPipelineState& state);
-void registerGxGpuPassSoftware(RenderPassLibrary& registry);
+void renderGxGpuSoftwareFrame(const GxGpuPipelineState& state);
+void registerGxGpuPassSoftware(RenderPassLibrary& registry, SoftwareBackend& backend);
 
 } // namespace bmsx

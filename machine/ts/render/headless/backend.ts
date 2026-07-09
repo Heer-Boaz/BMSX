@@ -9,10 +9,14 @@ import {
 	type RenderPassId,
 } from '../backend/backend';
 import type { TextureParams } from '../backend/texture_params';
-import { createSolidRgba8Pixels } from '../shared/solid_pixels';
+import { createSolidRgba8Pixels, writeColorRgba8Pixels } from '../shared/solid_pixels';
 import type { RenderPassLibrary } from '../backend/pass/library';
 import { registerHeadlessPasses, registerHeadlessPresentPass } from './passes';
 import { registerHostOverlayPass_Headless, registerHostMenuPass_Headless } from '../host_overlay/headless/pipeline';
+import { executeGxGpuSoftwareVramCommands } from '../backend/software/gx_gpu';
+import { GX_GPU_SOFTWARE_VRAM_WORDS, gxGpuSoftwareVram } from '../backend/software/gx_gpu_vram';
+import type { GxGpu } from '../../machine/devices/gx/gpu';
+import { GX_GPU_VRAM_BYTE_COUNT } from '../../machine/devices/gx/gpu_command_buffer';
 
 type HeadlessTextureRecord = {
 	id: number;
@@ -87,6 +91,7 @@ export class HeadlessGPUBackend implements GPUBackend {
 	private readonly vertexBuffers = new Map<number, HeadlessBufferRecord>();
 	private readonly uniformBuffers = new Map<number, HeadlessBufferRecord>();
 	private readonly vaos = new Set<number>();
+	private readonly gxGpuVramSnapshotScratch = new Uint8Array(GX_GPU_VRAM_BYTE_COUNT);
 	private readonly bound2DByUnit = new Map<number, TextureHandle>();
 	private readonly boundCubeByUnit = new Map<number, TextureHandle>();
 	private activeTextureUnit = 0;
@@ -255,10 +260,13 @@ export class HeadlessGPUBackend implements GPUBackend {
 		this.textures.delete(id);
 	}
 
-	createColorTexture(desc: { width: number; height: number; format?: unknown }): TextureHandle {
+	createColorTexture(desc: { width: number; height: number; format?: unknown; initialClearColor?: color_arr }): TextureHandle {
 		const handle = makeTextureHandle('color');
 		const id = this.getTextureId(handle);
 		const pixels = new Uint8Array(textureByteLength(desc.width, desc.height));
+		if (desc.initialClearColor !== undefined) {
+			writeColorRgba8Pixels(pixels, pixels.length, desc.initialClearColor);
+		}
 		this.textures.set(id, { id, kind: 'color', width: desc.width, height: desc.height, pixels, cubemapFaces: null });
 		return handle;
 	}
@@ -286,6 +294,12 @@ export class HeadlessGPUBackend implements GPUBackend {
 	clear(_color: color_arr | undefined, _depth: number | undefined): void { }
 
 	beginRenderPass(desc: RenderPassDesc): PassEncoder {
+		const colorSpec = desc.colors !== undefined && desc.colors[0] !== undefined ? desc.colors[0] : desc.color;
+		if (colorSpec !== undefined && colorSpec.clear !== undefined && colorSpec.tex !== undefined && colorSpec.tex !== null) {
+			const record = this.getTextureRecord(colorSpec.tex);
+			const pixels = this.texturePixels(record);
+			writeColorRgba8Pixels(pixels, pixels.length, colorSpec.clear);
+		}
 		this.passEncoderScratch.fbo = null;
 		this.passEncoderScratch.desc = desc;
 		return this.passEncoderScratch;
@@ -299,6 +313,7 @@ export class HeadlessGPUBackend implements GPUBackend {
 			maxTextureSize: 4096,
 			supportsInstancing: false,
 			supportsDepthTexture: true,
+			supportsCorePresentation: true,
 		};
 	}
 
@@ -396,6 +411,18 @@ export class HeadlessGPUBackend implements GPUBackend {
 
 	getFrameStats(): typeof this.frameStats {
 		return this.frameStats;
+	}
+
+	captureGxGpuVramSnapshot(gxGpu: GxGpu): void {
+		const output = gxGpu.readDeviceOutput();
+		executeGxGpuSoftwareVramCommands(output);
+		for (let wordIndex = 0; wordIndex < GX_GPU_SOFTWARE_VRAM_WORDS; wordIndex += 1) {
+			const byteIndex = wordIndex << 1;
+			const word = gxGpuSoftwareVram[wordIndex];
+			this.gxGpuVramSnapshotScratch[byteIndex] = word & 0xff;
+			this.gxGpuVramSnapshotScratch[byteIndex + 1] = word >>> 8;
+		}
+		gxGpu.commitRenderedVramSnapshotBytes(this.gxGpuVramSnapshotScratch);
 	}
 
 	accountUpload(kind: 'vertex' | 'index' | 'uniform' | 'texture', bytes: number): void {

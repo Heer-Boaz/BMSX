@@ -8,6 +8,7 @@
 #include "render/backend/backend.h"
 #include "render/backend/pass/library.h"
 #include "render/backend/software/gx_gpu.h"
+#include "render/backend/software/gx_gpu_scanout.h"
 #include "render/backend/software/gx_gpu_commands.h"
 #include "render/backend/software/gx_gpu_vram.h"
 
@@ -44,7 +45,7 @@ void testGp0RawDrawWordDecoders() {
 	require(bmsx::gxGpuSigned11(0x00000400u) == -1024, "GX-GPU signed 11-bit minimum coordinate");
 	require(bmsx::gxGpuSigned11(0x000007ffu) == -1, "GX-GPU signed 11-bit negative coordinate");
 
-	require(bmsx::gxGpuVertexX(0x000007ffu) == -1, "GX-GPU vertex x decode");
+	require(bmsx::gxGpuSigned11(0x000007ffu) == -1, "GX-GPU vertex x decode");
 	require(bmsx::gxGpuVertexY(0x07ff0000u) == -1, "GX-GPU vertex y decode");
 	require(bmsx::gxGpuDisplayStartX(123u | (456u << 10u)) == 123u, "GX-GPU display start x decode");
 	require(bmsx::gxGpuDisplayStartY(123u | (456u << 10u)) == 456u, "GX-GPU display start y decode");
@@ -288,17 +289,117 @@ void testInterlacedRenderCommandWords() {
 	require(commands.commandInterlacedRenderWord[1] == 0u, "GX-GPU command clears interlaced active-line discard when drawing to displayed field");
 }
 
+void testCommandLogIsPresentableOnlyAfterVblankFrameSeal() {
+	GpuHarness harness;
+	bmsx::GxGpu& gpu = harness.gpu;
+	const bmsx::GxGpuCommandBuffer& commands = *gpu.readDeviceOutput().commandBuffer;
+
+	gpu.writeGp0((bmsx::GX_GPU_GP0_POLYGON_FIRST << 24u) | 0x00010203u);
+	gpu.writeGp0(0x00000000u);
+	gpu.writeGp0(0x00000001u);
+	gpu.writeGp0(0x00000002u);
+
+	require(commands.commandCount == 1u, "GX-GPU records pending command before presentation publish");
+	require(commands.presentCommandCount == 0u, "GX-GPU keeps pending command off the presentable command stream");
+	require(!gpu.lastFrameCommitted(), "GX-GPU does not report a committed frame before VBLANK frame seal");
+
+	gpu.presentReadyFrameOnVblankEdge();
+	require(commands.commandCount == 1u, "GX-GPU retains command after presentation publish");
+	require(commands.presentCommandCount == 1u, "GX-GPU publishes command count for presentation");
+	require(gpu.lastFrameCommitted(), "GX-GPU reports committed frame after VBLANK frame seal");
+
+	gpu.retirePresentedCommands();
+	require(commands.commandCount == 0u, "GX-GPU retires presented command from the live queue");
+	require(commands.presentCommandCount == 0u, "GX-GPU clears sealed prefix after retire");
+	gpu.presentReadyFrameOnVblankEdge();
+	require(!gpu.lastFrameCommitted(), "GX-GPU reports no committed frame after command retire");
+
+	gpu.writeGp0((bmsx::GX_GPU_GP0_POLYGON_FIRST << 24u) | 0x00040506u);
+	gpu.writeGp0(0x00000003u);
+	gpu.writeGp0(0x00000004u);
+	gpu.writeGp0(0x00000005u);
+
+	require(commands.commandCount == 1u, "GX-GPU appends next-frame command after retire");
+	require(commands.presentCommandCount == 0u, "GX-GPU keeps next-frame command off the presentable stream until publish");
+	gpu.presentReadyFrameOnVblankEdge();
+	require(commands.presentCommandCount == 1u, "GX-GPU seals next-frame command on the next VBLANK frame boundary");
+}
+
+void testPartialPresentationSnapshotDoesNotExposeQueuedCommands() {
+	GpuHarness harness;
+	bmsx::GxGpu& gpu = harness.gpu;
+
+	gpu.writeGp0((bmsx::GX_GPU_GP0_FILL_RECTANGLE << 24u) | 0x0000ffu);
+	gpu.writeGp0(0u);
+	gpu.writeGp0((1u << 16u) | 1u);
+
+	const bmsx::GxGpuDeviceOutput& output = gpu.readDeviceOutput();
+	const bmsx::GxGpuCommandBuffer& commands = *output.commandBuffer;
+	require(commands.commandCount == 1u, "GX-GPU partial presentation snapshot keeps queued command");
+	require(commands.presentCommandCount == 0u, "GX-GPU partial presentation snapshot exposes no presentable command");
+
+	bmsx::g_gxGpuSoftwareVram.fill(0u);
+	require(bmsx::executeGxGpuSoftwareCommands(commands, 0u) == 0u, "GX-GPU software renderer ignores partial presentation command queue");
+	require(bmsx::g_gxGpuSoftwareVram[bmsx::gxGpuSoftwareVramIndex(0, 0)] == 0u, "GX-GPU software VRAM is unchanged by partial presentation");
+	require(commands.commandCount == 1u, "GX-GPU partial presentation does not retire queued command");
+	require(commands.presentCommandCount == 0u, "GX-GPU partial presentation does not publish queued command");
+
+	gpu.presentReadyFrameOnVblankEdge();
+	require(bmsx::executeGxGpuSoftwareCommands(commands, 0u) == 1u, "GX-GPU software renderer consumes committed presentation command");
+	require(bmsx::g_gxGpuSoftwareVram[bmsx::gxGpuSoftwareVramIndex(0, 0)] == 0x001fu, "GX-GPU software VRAM receives committed presentation fill");
+
+	gpu.retirePresentedCommands();
+	require(commands.commandCount == 0u, "GX-GPU committed presentation retires from the live queue");
+	require(commands.presentCommandCount == 0u, "GX-GPU committed presentation clears sealed prefix");
+}
+
+void testRetirePreservesCommandsAppendedAfterSealedVblankSnapshot() {
+	GpuHarness harness;
+	bmsx::GxGpu& gpu = harness.gpu;
+	const bmsx::GxGpuCommandBuffer& commands = *gpu.readDeviceOutput().commandBuffer;
+
+	gpu.writeGp0((bmsx::GX_GPU_GP0_FILL_RECTANGLE << 24u) | 0x0000ffu);
+	gpu.writeGp0(0u);
+	gpu.writeGp0((1u << 16u) | 1u);
+	gpu.presentReadyFrameOnVblankEdge();
+
+	gpu.writeGp0((bmsx::GX_GPU_GP0_FILL_RECTANGLE << 24u) | 0x00ff00u);
+	gpu.writeGp0(32u);
+	gpu.writeGp0((1u << 16u) | 1u);
+
+	bmsx::g_gxGpuSoftwareVram.fill(0u);
+	require(bmsx::executeGxGpuSoftwareCommands(commands, 0u) == 1u, "GX-GPU software renderer consumes only the sealed command prefix");
+	require(bmsx::g_gxGpuSoftwareVram[bmsx::gxGpuSoftwareVramIndex(0, 0)] == 0x001fu, "GX-GPU software VRAM receives sealed fill");
+	require(bmsx::g_gxGpuSoftwareVram[bmsx::gxGpuSoftwareVramIndex(32, 0)] == 0u, "GX-GPU software VRAM ignores post-seal command before next VBLANK");
+
+	gpu.retirePresentedCommands();
+	require(commands.commandCount == 1u, "GX-GPU retire preserves post-seal command");
+	require(commands.presentCommandCount == 0u, "GX-GPU retire clears sealed prefix");
+	gpu.presentReadyFrameOnVblankEdge();
+	require(bmsx::executeGxGpuSoftwareCommands(commands, 0u) == 1u, "GX-GPU software renderer consumes preserved command after next VBLANK");
+	require(bmsx::g_gxGpuSoftwareVram[bmsx::gxGpuSoftwareVramIndex(32, 0)] == 0x03e0u, "GX-GPU software VRAM receives preserved next-frame fill");
+}
+
 void testDisplayDisableAndDmaDirectionStatusBits() {
 	GpuHarness harness;
 	bmsx::GxGpu& gpu = harness.gpu;
 
 	gpu.writeGp1(bmsx::GX_GPU_GP1_SET_DISPLAY_DISABLE << 24u);
 	require((gpu.readStatus() & bmsx::GX_GPU_STATUS_DISPLAY_DISABLE) == 0u, "GX-GPU GP1 display enable clears display-disable bit");
-	require((gpu.readDeviceOutput().statusWord & bmsx::GX_GPU_STATUS_DISPLAY_DISABLE) == 0u, "GX-GPU output display enable status");
+	const bmsx::GxGpuDeviceOutput& output = gpu.readDeviceOutput();
+	require((output.statusWord & bmsx::GX_GPU_STATUS_DISPLAY_DISABLE) == bmsx::GX_GPU_STATUS_DISPLAY_DISABLE, "GX-GPU output keeps reset display-disable status before VBLANK");
+	gpu.presentReadyFrameOnVblankEdge();
+	gpu.readDeviceOutput();
+	require((output.statusWord & bmsx::GX_GPU_STATUS_DISPLAY_DISABLE) == 0u, "GX-GPU output display enable status");
 
 	gpu.writeGp1((bmsx::GX_GPU_GP1_SET_DISPLAY_DISABLE << 24u) | 1u);
 	require((gpu.readStatus() & bmsx::GX_GPU_STATUS_DISPLAY_DISABLE) == bmsx::GX_GPU_STATUS_DISPLAY_DISABLE, "GX-GPU GP1 display disable bit");
-	require((gpu.readDeviceOutput().statusWord & bmsx::GX_GPU_STATUS_DISPLAY_DISABLE) == bmsx::GX_GPU_STATUS_DISPLAY_DISABLE, "GX-GPU output display disable status");
+	gpu.readDeviceOutput();
+	require((output.statusWord & bmsx::GX_GPU_STATUS_DISPLAY_DISABLE) == 0u, "GX-GPU output keeps display status latched until VBLANK");
+	gpu.presentReadyFrameOnVblankEdge();
+	gpu.readDeviceOutput();
+	require((output.statusWord & bmsx::GX_GPU_STATUS_DISPLAY_DISABLE) == bmsx::GX_GPU_STATUS_DISPLAY_DISABLE, "GX-GPU output display disable status");
+	require(gpu.lastFrameCommitted(), "GX-GPU display status change commits a presentation frame");
 
 	gpu.writeGp1((bmsx::GX_GPU_GP1_SET_DMA_DIRECTION << 24u) | bmsx::GX_GPU_DMA_DIRECTION_CPU_TO_GP0);
 	require((gpu.readStatus() & bmsx::GX_GPU_STATUS_DMA_DIRECTION_MASK) == (bmsx::GX_GPU_DMA_DIRECTION_CPU_TO_GP0 << bmsx::GX_GPU_STATUS_DMA_DIRECTION_SHIFT), "GX-GPU GP1 DMA CPU-to-GP0 direction");
@@ -387,12 +488,15 @@ void testGp1CrtcRangeRegistersLatchMaskedRawWords() {
 	require(gpu.readVerticalDisplayRangeWord() == bmsx::GX_GPU_VERTICAL_DISPLAY_RANGE_MASK, "GX-GPU GP1 vertical display range mask");
 	require(gpu.readTextureDisableAllowedWord() == 1u, "GX-GPU GP1 texture-disable allowance latch");
 
+	require(gpu.readDeviceOutput().displayStartWord == 0u, "GX-GPU output display start remains latched before VBLANK");
+	gpu.presentReadyFrameOnVblankEdge();
 	const bmsx::GxGpuDeviceOutput& output = gpu.readDeviceOutput();
 	require(output.statusWord == gpu.readStatus(), "GX-GPU output status word");
 	require(output.displayModeWord == gpu.readDisplayModeWord(), "GX-GPU output display mode word");
 	require(output.displayStartWord == bmsx::GX_GPU_DISPLAY_START_MASK, "GX-GPU output display start word");
 	require(output.horizontalDisplayRangeWord == bmsx::GX_GPU_HORIZONTAL_DISPLAY_RANGE_MASK, "GX-GPU output horizontal range word");
 	require(output.verticalDisplayRangeWord == bmsx::GX_GPU_VERTICAL_DISPLAY_RANGE_MASK, "GX-GPU output vertical range word");
+	require(gpu.lastFrameCommitted(), "GX-GPU CRTC state change commits a presentation frame");
 }
 
 void testGp0IrqRequestAndGp1Acknowledge() {
@@ -478,7 +582,7 @@ void testGp0EnvironmentRegistersAndGpuInfoQueries() {
 void testGp0FixedLengthRenderAndBlitPacketAssembly() {
 	GpuHarness harness;
 	bmsx::GxGpu& gpu = harness.gpu;
-	const bmsx::GxGpuCommandBuffer& commands = *gpu.readDeviceOutput().commandBuffer;
+	const bmsx::GxGpuCommandBuffer& commands = *harness.gpu.readDeviceOutput().commandBuffer;
 
 	gpu.writeGp0((bmsx::GX_GPU_GP0_POLYGON_FIRST << 24u) | 0x0000ffu);
 	gpu.writeGp0((bmsx::GX_GPU_GP0_SET_DRAW_MODE << 24u) | 0x123456u);
@@ -612,13 +716,69 @@ void testGp0PolylineConsumesPayloadUntilTerminator() {
 	require(gpu.readDrawModeWord() == 0x000333u, "GX-GPU GP0 command processing resumes after shaded polyline terminator");
 }
 
+void testSaveStateRestoresPartialFixedGp0Command() {
+	GpuHarness packetHarness;
+	bmsx::GxGpu& packetGpu = packetHarness.gpu;
+	packetGpu.writeGp0((bmsx::GX_GPU_GP0_POLYGON_FIRST << 24u) | 0x0000ffu);
+	packetGpu.writeGp0(0x00010002u);
+	packetGpu.writeGp0(0x00030004u);
+
+	GpuHarness restoredPacketHarness;
+	bmsx::GxGpu& restoredPacketGpu = restoredPacketHarness.gpu;
+	restoredPacketGpu.restoreState(packetGpu.captureState());
+	restoredPacketGpu.writeGp0(0x00050006u);
+	const bmsx::GxGpuCommandBuffer& packetCommands = *restoredPacketGpu.readDeviceOutput().commandBuffer;
+	require(packetCommands.commandCount == 1u, "GX-GPU save-state restores partial fixed GP0 command");
+	require(packetCommands.commandKind[0] == bmsx::GX_GPU_COMMAND_DRAW_POLYGON, "GX-GPU restored fixed GP0 command kind");
+	require(packetCommands.commandWordCount[0] == 4u, "GX-GPU restored fixed GP0 command word count");
+	require(packetCommands.words[packetCommands.commandWordStart[0] + 2u] == 0x00030004u, "GX-GPU restored fixed GP0 command keeps middle word");
+}
+
+void testSaveStateRestoresPartialCpuToVramUpload() {
+	GpuHarness imageHarness;
+	bmsx::GxGpu& imageGpu = imageHarness.gpu;
+	imageGpu.writeGp0(bmsx::GX_GPU_GP0_CPU_TO_VRAM_FIRST << 24u);
+	imageGpu.writeGp0(0u);
+	imageGpu.writeGp0((2u << 16u) | 2u);
+	imageGpu.writeGp0(0x001f03e0u);
+
+	GpuHarness restoredImageHarness;
+	bmsx::GxGpu& restoredImageGpu = restoredImageHarness.gpu;
+	restoredImageGpu.restoreState(imageGpu.captureState());
+	restoredImageGpu.writeGp0(0x7c00ffffu);
+	const bmsx::GxGpuCommandBuffer& imageCommands = *restoredImageGpu.readDeviceOutput().commandBuffer;
+	require(imageCommands.commandCount == 1u, "GX-GPU save-state restores partial CPU-to-VRAM upload");
+	require(imageCommands.commandKind[0] == bmsx::GX_GPU_COMMAND_UPLOAD_CPU_TO_VRAM, "GX-GPU restored upload command kind");
+	require(imageCommands.commandWordCount[0] == 5u, "GX-GPU restored upload command word count");
+	require(imageCommands.words[imageCommands.commandWordStart[0] + 3u] == 0x001f03e0u, "GX-GPU restored upload keeps first payload word");
+	require(imageCommands.words[imageCommands.commandWordStart[0] + 4u] == 0x7c00ffffu, "GX-GPU restored upload accepts final payload word");
+}
+
+void testSaveStateRestoresPartialPolylineCommand() {
+	GpuHarness polylineHarness;
+	bmsx::GxGpu& polylineGpu = polylineHarness.gpu;
+	polylineGpu.writeGp0((0x48u << 24u) | 0x0000ffu);
+	polylineGpu.writeGp0(0x00010002u);
+	polylineGpu.writeGp0(0x00020003u);
+
+	GpuHarness restoredPolylineHarness;
+	bmsx::GxGpu& restoredPolylineGpu = restoredPolylineHarness.gpu;
+	restoredPolylineGpu.restoreState(polylineGpu.captureState());
+	restoredPolylineGpu.writeGp0(0x50005000u);
+	const bmsx::GxGpuCommandBuffer& polylineCommands = *restoredPolylineGpu.readDeviceOutput().commandBuffer;
+	require(polylineCommands.commandCount == 1u, "GX-GPU save-state restores partial polyline command");
+	require(polylineCommands.commandKind[0] == bmsx::GX_GPU_COMMAND_DRAW_POLYLINE, "GX-GPU restored polyline command kind");
+	require(polylineCommands.commandWordCount[0] == 3u, "GX-GPU restored polyline command word count");
+	require(polylineCommands.words[polylineCommands.commandWordStart[0] + 2u] == 0x00020003u, "GX-GPU restored polyline keeps last vertex word");
+}
+
 void testGp1ClearFifoClearsPartialGp0PacketsAndFlushesPartialCpuToVramUploads() {
 	GpuHarness harness;
+	harness.gpu.writeGp0((bmsx::GX_GPU_GP0_POLYGON_FIRST << 24u) | 0x0000ffu);
+	harness.gpu.writeGp0((bmsx::GX_GPU_GP0_SET_DRAW_MODE << 24u) | 0x000111u);
 	bmsx::GxGpu& gpu = harness.gpu;
-	const bmsx::GxGpuCommandBuffer& commands = *gpu.readDeviceOutput().commandBuffer;
+	const bmsx::GxGpuCommandBuffer& commands = *harness.gpu.readDeviceOutput().commandBuffer;
 
-	gpu.writeGp0((bmsx::GX_GPU_GP0_POLYGON_FIRST << 24u) | 0x0000ffu);
-	gpu.writeGp0((bmsx::GX_GPU_GP0_SET_DRAW_MODE << 24u) | 0x000111u);
 	gpu.writeGp1(bmsx::GX_GPU_GP1_CLEAR_FIFO << 24u);
 	require(commands.commandCount == 0u, "GX-GPU GP1 clear FIFO does not emit abandoned partial GP0 command");
 	gpu.writeGp0((bmsx::GX_GPU_GP0_SET_DRAW_MODE << 24u) | 0x000222u);
@@ -682,11 +842,50 @@ void pushSoftwareCommand(
 		drawingOffsetWord,
 		maskBitModeWord,
 		interlacedRenderWord);
+	commandBuffer.sealCommandsForPresentation();
+}
+
+void pushSoftwareVramUpload(
+	bmsx::GxGpuCommandBuffer& commandBuffer,
+	uint32_t targetWord,
+	uint32_t sizeWord,
+	uint32_t payloadWord) {
+	pushSoftwareCommand(
+		commandBuffer,
+		std::array<uint32_t, 4>{
+			bmsx::GX_GPU_GP0_CPU_TO_VRAM_FIRST << 24u,
+			targetWord,
+			sizeWord,
+			payloadWord,
+		},
+		4u,
+		bmsx::GX_GPU_COMMAND_UPLOAD_CPU_TO_VRAM,
+		bmsx::GX_GPU_GP0_CPU_TO_VRAM_FIRST);
 }
 
 void requireArgbPixel(const std::array<uint32_t, 256u * 256u>& pixels, uint32_t x, uint32_t y, uint32_t color, const char* message) {
-	require(pixels[static_cast<size_t>(y) * 256u + x] == color, message);
+	const size_t pixelIndex = static_cast<size_t>(y) * 256u + x;
+	require(pixels[pixelIndex] == color, message);
 }
+
+struct SoftwareFrameHarness {
+	std::array<uint32_t, 256u * 256u> framebuffer{};
+	bmsx::SoftwareBackend backend;
+	bmsx::GxGpuPipelineState state;
+
+	SoftwareFrameHarness(const bmsx::GxGpuCommandBuffer& commandBuffer)
+		: backend(framebuffer.data(), 256, 256, 256 * static_cast<int32_t>(sizeof(uint32_t))) {
+		bmsx::bindGxGpuSoftwareScanoutBackend(backend);
+		state.width = 256;
+		state.height = 256;
+		state.commandBuffer = &commandBuffer;
+		state.statusWord = 0u;
+		state.displayModeWord = bmsx::PSX_GPU_DISPLAY_MODE_PAL_WORD;
+		state.displayStartWord = 0u;
+		state.horizontalDisplayRangeWord = (((638u + 256u * 10u) << 12u) | 638u);
+		state.verticalDisplayRangeWord = (((35u + 256u) << 10u) | 35u);
+	}
+};
 
 void testSoftwareTextureModulationMath() {
 	require(bmsx::gxGpuSoftwareTextureModulationPreDither(31u, 128u) == 248u, "GX-GPU software texture modulation pre-dither half intensity");
@@ -694,6 +893,37 @@ void testSoftwareTextureModulationMath() {
 	require(bmsx::gxGpuSoftwareTextureModulationChannel5(31u, 255u, 3) == 31u, "GX-GPU software texture modulation saturates high dither");
 	require(bmsx::gxGpuSoftwareTextureModulationChannel5(1u, 16u, -4) == 0u, "GX-GPU software texture modulation clamps low dither");
 	require(bmsx::gxGpuSoftwareTextureModulationChannel5(12u, 96u, 0) == 9u, "GX-GPU software texture modulation divides by 128");
+}
+
+void testSoftwareBackendConsumesOnlyPresentableCommands() {
+	bmsx::GxGpuCommandBuffer commandBuffer;
+	commandBuffer.reset();
+	const std::array<uint32_t, 3> words{
+		(bmsx::GX_GPU_GP0_FILL_RECTANGLE << 24u) | 0x0000ffu,
+		(5u << 16u) | 4u,
+		(1u << 16u) | 1u,
+	};
+	const size_t wordStart = commandBuffer.appendWords(words.data(), words.size());
+	commandBuffer.pushCommand(
+		bmsx::GX_GPU_COMMAND_FILL_RECTANGLE,
+		bmsx::GX_GPU_GP0_FILL_RECTANGLE,
+		wordStart,
+		static_cast<uint32_t>(words.size()),
+		0u,
+		0u,
+		0u,
+		GX_GPU_SOFTWARE_FULL_DRAWING_AREA_BOTTOM_RIGHT_WORD,
+		0u,
+		0u,
+		0u);
+
+	bmsx::g_gxGpuSoftwareVram.fill(0u);
+	require(bmsx::executeGxGpuSoftwareCommands(commandBuffer, 0u) == 0u, "GX-GPU software command executor ignores unpresented commands");
+	require(bmsx::g_gxGpuSoftwareVram[bmsx::gxGpuSoftwareVramIndex(4, 5)] == 0u, "GX-GPU software VRAM is unchanged before presentation publish");
+
+	commandBuffer.sealCommandsForPresentation();
+	require(bmsx::executeGxGpuSoftwareCommands(commandBuffer, 0u) == 1u, "GX-GPU software command executor consumes published command");
+	require(bmsx::g_gxGpuSoftwareVram[bmsx::gxGpuSoftwareVramIndex(4, 5)] == 0x001fu, "GX-GPU software VRAM receives published fill");
 }
 
 void testSoftwareGouraudLineFixedPointRaster() {
@@ -712,7 +942,7 @@ void testSoftwareGouraudLineFixedPointRaster() {
 		bmsx::GX_GPU_COMMAND_DRAW_LINE,
 		opcode);
 
-	bmsx::resetGxGpuSoftwareVram();
+	bmsx::g_gxGpuSoftwareVram.fill(0u);
 	bmsx::executeGxGpuSoftwareCommands(commandBuffer, 0u);
 
 	require(bmsx::g_gxGpuSoftwareVram[bmsx::gxGpuSoftwareVramIndex(40, 10)] == 0x001fu, "GX-GPU software line fixed-point red endpoint");
@@ -748,7 +978,7 @@ void testSoftwareBlendsUntexturedSemiTransparentRectangles() {
 			column << 5u);
 	}
 
-	bmsx::resetGxGpuSoftwareVram();
+	bmsx::g_gxGpuSoftwareVram.fill(0u);
 	bmsx::executeGxGpuSoftwareCommands(commandBuffer, 0u);
 
 	require(bmsx::g_gxGpuSoftwareVram[bmsx::gxGpuSoftwareVramIndex(10, 20)] == 0x7defu, "GX-GPU software semitrans mode 0 half blends white over blue");
@@ -760,17 +990,11 @@ void testSoftwareBlendsUntexturedSemiTransparentRectangles() {
 void testSoftwareScanoutConsumesTransfersAndFill() {
 	bmsx::GxGpuCommandBuffer commandBuffer;
 	commandBuffer.reset();
-	pushSoftwareCommand(
+	pushSoftwareVramUpload(
 		commandBuffer,
-		std::array<uint32_t, 4>{
-			bmsx::GX_GPU_GP0_CPU_TO_VRAM_FIRST << 24u,
-			0u,
-			(1u << 16u) | 2u,
-			0x03e0001fu,
-		},
-		4u,
-		bmsx::GX_GPU_COMMAND_UPLOAD_CPU_TO_VRAM,
-		bmsx::GX_GPU_GP0_CPU_TO_VRAM_FIRST);
+		0u,
+		(1u << 16u) | 2u,
+		0x03e0001fu);
 	pushSoftwareCommand(
 		commandBuffer,
 		std::array<uint32_t, 4>{
@@ -794,27 +1018,17 @@ void testSoftwareScanoutConsumesTransfersAndFill() {
 		bmsx::GX_GPU_COMMAND_FILL_RECTANGLE,
 		bmsx::GX_GPU_GP0_FILL_RECTANGLE);
 
-	std::array<uint32_t, 256u * 256u> framebuffer{};
-	bmsx::SoftwareBackend backend(framebuffer.data(), 256, 256, 256 * static_cast<int32_t>(sizeof(uint32_t)));
-	bmsx::GxGpuPipelineState state;
-	state.width = 256;
-	state.height = 256;
-	state.commandBuffer = &commandBuffer;
-	state.statusWord = 0u;
-	state.displayModeWord = bmsx::PSX_GPU_DISPLAY_MODE_PAL_WORD;
-	state.displayStartWord = 0u;
-	state.horizontalDisplayRangeWord = (((638u + 256u * 10u) << 12u) | 638u);
-	state.verticalDisplayRangeWord = (((35u + 256u) << 10u) | 35u);
+	SoftwareFrameHarness frame(commandBuffer);
 
-	bmsx::renderGxGpuSoftwareFrame(backend, state);
+	bmsx::renderGxGpuSoftwareFrame(frame.state);
 
-	requireArgbPixel(framebuffer, 0u, 0u, 0xffff0000u, "GX-GPU software scanout CPU upload red pixel");
-	requireArgbPixel(framebuffer, 1u, 0u, 0xff00ff00u, "GX-GPU software scanout CPU upload green pixel");
-	requireArgbPixel(framebuffer, 2u, 0u, 0xffff0000u, "GX-GPU software scanout VRAM copy red pixel");
-	requireArgbPixel(framebuffer, 3u, 0u, 0xff00ff00u, "GX-GPU software scanout VRAM copy green pixel");
-	requireArgbPixel(framebuffer, 0u, 1u, 0xff0000ffu, "GX-GPU software scanout fill blue left pixel");
-	requireArgbPixel(framebuffer, 15u, 1u, 0xff0000ffu, "GX-GPU software scanout fill blue rounded pixel");
-	requireArgbPixel(framebuffer, 16u, 1u, 0xff000000u, "GX-GPU software scanout fill stops at rounded edge");
+	requireArgbPixel(frame.framebuffer, 0u, 0u, 0xffff0000u, "GX-GPU software scanout CPU upload red pixel");
+	requireArgbPixel(frame.framebuffer, 1u, 0u, 0xff00ff00u, "GX-GPU software scanout CPU upload green pixel");
+	requireArgbPixel(frame.framebuffer, 2u, 0u, 0xffff0000u, "GX-GPU software scanout VRAM copy red pixel");
+	requireArgbPixel(frame.framebuffer, 3u, 0u, 0xff00ff00u, "GX-GPU software scanout VRAM copy green pixel");
+	requireArgbPixel(frame.framebuffer, 0u, 1u, 0xff0000ffu, "GX-GPU software scanout fill blue left pixel");
+	requireArgbPixel(frame.framebuffer, 15u, 1u, 0xff0000ffu, "GX-GPU software scanout fill blue rounded pixel");
+	requireArgbPixel(frame.framebuffer, 16u, 1u, 0xff000000u, "GX-GPU software scanout fill stops at rounded edge");
 }
 
 void testSoftwareBackendRetiresCommandLogWithoutClearingVram() {
@@ -830,23 +1044,13 @@ void testSoftwareBackendRetiresCommandLogWithoutClearingVram() {
 		3u,
 		bmsx::GX_GPU_COMMAND_FILL_RECTANGLE,
 		bmsx::GX_GPU_GP0_FILL_RECTANGLE);
-	std::array<uint32_t, 256u * 256u> framebuffer{};
-	bmsx::SoftwareBackend backend(framebuffer.data(), 256, 256, 256 * static_cast<int32_t>(sizeof(uint32_t)));
-	bmsx::GxGpuPipelineState state;
-	state.width = 256;
-	state.height = 256;
-	state.commandBuffer = &commandBuffer;
-	state.statusWord = 0u;
-	state.displayModeWord = bmsx::PSX_GPU_DISPLAY_MODE_PAL_WORD;
-	state.displayStartWord = 0u;
-	state.horizontalDisplayRangeWord = (((638u + 256u * 10u) << 12u) | 638u);
-	state.verticalDisplayRangeWord = (((35u + 256u) << 10u) | 35u);
-	bmsx::renderGxGpuSoftwareFrame(backend, state);
-	requireArgbPixel(framebuffer, 0u, 0u, 0xffff0000u, "GX-GPU software retire test initial red pixel");
+	SoftwareFrameHarness frame(commandBuffer);
+	bmsx::renderGxGpuSoftwareFrame(frame.state);
+	requireArgbPixel(frame.framebuffer, 0u, 0u, 0xffff0000u, "GX-GPU software retire test initial red pixel");
 
 	commandBuffer.retireCommandsPreservingVram();
-	bmsx::renderGxGpuSoftwareFrame(backend, state);
-	requireArgbPixel(framebuffer, 0u, 0u, 0xffff0000u, "GX-GPU software retire preserves VRAM");
+	bmsx::renderGxGpuSoftwareFrame(frame.state);
+	requireArgbPixel(frame.framebuffer, 0u, 0u, 0xffff0000u, "GX-GPU software retire preserves VRAM");
 
 	pushSoftwareCommand(
 		commandBuffer,
@@ -858,14 +1062,84 @@ void testSoftwareBackendRetiresCommandLogWithoutClearingVram() {
 		3u,
 		bmsx::GX_GPU_COMMAND_FILL_RECTANGLE,
 		bmsx::GX_GPU_GP0_FILL_RECTANGLE);
-	bmsx::renderGxGpuSoftwareFrame(backend, state);
-	requireArgbPixel(framebuffer, 0u, 0u, 0xffff0000u, "GX-GPU software retire keeps previous VRAM after new log");
-	requireArgbPixel(framebuffer, 16u, 1u, 0xff00ff00u, "GX-GPU software retire executes commands after log reset");
+	bmsx::renderGxGpuSoftwareFrame(frame.state);
+	requireArgbPixel(frame.framebuffer, 0u, 0u, 0xffff0000u, "GX-GPU software retire keeps previous VRAM after new log");
+	requireArgbPixel(frame.framebuffer, 16u, 1u, 0xff00ff00u, "GX-GPU software retire executes commands after log reset");
 
 	commandBuffer.reset();
-	bmsx::renderGxGpuSoftwareFrame(backend, state);
-	requireArgbPixel(framebuffer, 0u, 0u, 0xff000000u, "GX-GPU software reset clears old VRAM red pixel");
-	requireArgbPixel(framebuffer, 16u, 1u, 0xff000000u, "GX-GPU software reset clears old VRAM green pixel");
+	bmsx::renderGxGpuSoftwareFrame(frame.state);
+	requireArgbPixel(frame.framebuffer, 0u, 0u, 0xff000000u, "GX-GPU software reset clears old VRAM red pixel");
+	requireArgbPixel(frame.framebuffer, 16u, 1u, 0xff000000u, "GX-GPU software reset clears old VRAM green pixel");
+}
+
+void testCommandBufferRestorePublishesWithoutClearingVramRevision() {
+	bmsx::GxGpuCommandBuffer commandBuffer;
+	commandBuffer.reset();
+	const uint32_t vramClearSerial = commandBuffer.vramClearSerial;
+	pushSoftwareCommand(
+		commandBuffer,
+		std::array<uint32_t, 3>{
+			(bmsx::GX_GPU_GP0_FILL_RECTANGLE << 24u) | 0x0000ffu,
+			0u,
+			(1u << 16u) | 1u,
+		},
+		3u,
+		bmsx::GX_GPU_COMMAND_FILL_RECTANGLE,
+		bmsx::GX_GPU_GP0_FILL_RECTANGLE);
+	const bmsx::GxGpuCommandBufferState state = commandBuffer.captureState();
+	const uint32_t commandSerial = commandBuffer.serial;
+
+	commandBuffer.retireCommandsPreservingVram();
+	commandBuffer.restoreState(state);
+
+	require(commandBuffer.vramClearSerial == vramClearSerial, "GX-GPU command-buffer restore does not publish a VRAM clear");
+	require(commandBuffer.serial != commandSerial, "GX-GPU command-buffer restore republishes the command stream");
+	require(commandBuffer.commandCount == 1u, "GX-GPU command-buffer restore restores command count");
+	require(commandBuffer.presentCommandCount == 1u, "GX-GPU command-buffer restore restores sealed count");
+}
+
+void testCommandBufferRetireCompactsPresentedCommandStream() {
+	bmsx::GxGpuCommandBuffer commandBuffer;
+	commandBuffer.reset();
+	pushSoftwareCommand(
+		commandBuffer,
+		std::array<uint32_t, 3>{
+			(bmsx::GX_GPU_GP0_FILL_RECTANGLE << 24u) | 0x0000ffu,
+			0u,
+			(1u << 16u) | 1u,
+		},
+		3u,
+		bmsx::GX_GPU_COMMAND_FILL_RECTANGLE,
+		bmsx::GX_GPU_GP0_FILL_RECTANGLE);
+	commandBuffer.retireCommandsPreservingVram();
+
+	bmsx::g_gxGpuSoftwareVram.fill(0u);
+	require(commandBuffer.commandCount == 0u, "GX-GPU command-buffer retire removes presented command");
+	require(commandBuffer.presentCommandCount == 0u, "GX-GPU command-buffer retire clears present prefix");
+	require(bmsx::executeGxGpuSoftwareCommands(commandBuffer, 0u) == 0u, "GX-GPU software renderer ignores retired command queue");
+	require(bmsx::g_gxGpuSoftwareVram[bmsx::gxGpuSoftwareVramIndex(0, 0)] == 0u, "GX-GPU retired command queue leaves fresh software VRAM unchanged");
+}
+
+void testCommandBufferRetirePreservesPartialPayloadWords() {
+	bmsx::GxGpuCommandBuffer commandBuffer;
+	commandBuffer.reset();
+	pushSoftwareCommand(
+		commandBuffer,
+		std::array<uint32_t, 3>{
+			(bmsx::GX_GPU_GP0_FILL_RECTANGLE << 24u) | 0x0000ffu,
+			0u,
+			(1u << 16u) | 1u,
+		},
+		3u,
+		bmsx::GX_GPU_COMMAND_FILL_RECTANGLE,
+		bmsx::GX_GPU_GP0_FILL_RECTANGLE);
+	commandBuffer.appendWord(0xa0b0c0d0u);
+
+	require(commandBuffer.retireCommandsPreservingVram() == 3u, "GX-GPU command-buffer retire reports sealed command words");
+	require(commandBuffer.commandCount == 0u, "GX-GPU command-buffer retire removes sealed command metadata");
+	require(commandBuffer.presentCommandCount == 0u, "GX-GPU command-buffer retire clears sealed prefix");
+	require(commandBuffer.wordCount == 1u, "GX-GPU command-buffer retire preserves partial payload word");
+	require(commandBuffer.words[0] == 0xa0b0c0d0u, "GX-GPU command-buffer retire moves partial payload to the front");
 }
 
 void testSoftwareScanoutConsumesSolidPrimitives() {
@@ -903,97 +1177,51 @@ void testSoftwareScanoutConsumesSolidPrimitives() {
 		bmsx::GX_GPU_COMMAND_DRAW_LINE,
 		bmsx::GX_GPU_GP0_LINE_FIRST);
 
-	std::array<uint32_t, 256u * 256u> framebuffer{};
-	bmsx::SoftwareBackend backend(framebuffer.data(), 256, 256, 256 * static_cast<int32_t>(sizeof(uint32_t)));
-	bmsx::GxGpuPipelineState state;
-	state.width = 256;
-	state.height = 256;
-	state.commandBuffer = &commandBuffer;
-	state.statusWord = 0u;
-	state.displayModeWord = bmsx::PSX_GPU_DISPLAY_MODE_PAL_WORD;
-	state.displayStartWord = 0u;
-	state.horizontalDisplayRangeWord = (((638u + 256u * 10u) << 12u) | 638u);
-	state.verticalDisplayRangeWord = (((35u + 256u) << 10u) | 35u);
+	SoftwareFrameHarness frame(commandBuffer);
 
-	bmsx::renderGxGpuSoftwareFrame(backend, state);
+	bmsx::renderGxGpuSoftwareFrame(frame.state);
 
-	requireArgbPixel(framebuffer, 5u, 5u, 0xffff0000u, "GX-GPU software scanout solid polygon pixel");
-	requireArgbPixel(framebuffer, 13u, 13u, 0xff000000u, "GX-GPU software scanout solid polygon background pixel");
-	requireArgbPixel(framebuffer, 20u, 5u, 0xff00ff00u, "GX-GPU software scanout solid rectangle left pixel");
-	requireArgbPixel(framebuffer, 22u, 6u, 0xff00ff00u, "GX-GPU software scanout solid rectangle right pixel");
-	requireArgbPixel(framebuffer, 30u, 6u, 0xff0000ffu, "GX-GPU software scanout solid line start pixel");
-	requireArgbPixel(framebuffer, 34u, 6u, 0xff0000ffu, "GX-GPU software scanout solid line end pixel");
+	requireArgbPixel(frame.framebuffer, 5u, 5u, 0xffff0000u, "GX-GPU software scanout solid polygon pixel");
+	requireArgbPixel(frame.framebuffer, 13u, 13u, 0xff000000u, "GX-GPU software scanout solid polygon background pixel");
+	requireArgbPixel(frame.framebuffer, 20u, 5u, 0xff00ff00u, "GX-GPU software scanout solid rectangle left pixel");
+	requireArgbPixel(frame.framebuffer, 22u, 6u, 0xff00ff00u, "GX-GPU software scanout solid rectangle right pixel");
+	requireArgbPixel(frame.framebuffer, 30u, 6u, 0xff0000ffu, "GX-GPU software scanout solid line start pixel");
+	requireArgbPixel(frame.framebuffer, 34u, 6u, 0xff0000ffu, "GX-GPU software scanout solid line end pixel");
 }
 
 void testSoftwareScanoutConsumesTexturedPrimitives() {
 	bmsx::GxGpuCommandBuffer commandBuffer;
 	commandBuffer.reset();
-	pushSoftwareCommand(
+	pushSoftwareVramUpload(
 		commandBuffer,
-		std::array<uint32_t, 4>{
-			bmsx::GX_GPU_GP0_CPU_TO_VRAM_FIRST << 24u,
-			64u,
-			(1u << 16u) | 2u,
-			0x03e0001fu,
-		},
-		4u,
-		bmsx::GX_GPU_COMMAND_UPLOAD_CPU_TO_VRAM,
-		bmsx::GX_GPU_GP0_CPU_TO_VRAM_FIRST);
-	pushSoftwareCommand(
+		64u,
+		(1u << 16u) | 2u,
+		0x03e0001fu);
+	pushSoftwareVramUpload(
 		commandBuffer,
-		std::array<uint32_t, 4>{
-			bmsx::GX_GPU_GP0_CPU_TO_VRAM_FIRST << 24u,
-			80u,
-			(1u << 16u) | 1u,
-			0x000003ffu,
-		},
-		4u,
-		bmsx::GX_GPU_COMMAND_UPLOAD_CPU_TO_VRAM,
-		bmsx::GX_GPU_GP0_CPU_TO_VRAM_FIRST);
-	pushSoftwareCommand(
+		80u,
+		(1u << 16u) | 1u,
+		0x000003ffu);
+	pushSoftwareVramUpload(
 		commandBuffer,
-		std::array<uint32_t, 4>{
-			bmsx::GX_GPU_GP0_CPU_TO_VRAM_FIRST << 24u,
-			20u << 16u,
-			(1u << 16u) | 2u,
-			0x7c000000u,
-		},
-		4u,
-		bmsx::GX_GPU_COMMAND_UPLOAD_CPU_TO_VRAM,
-		bmsx::GX_GPU_GP0_CPU_TO_VRAM_FIRST);
-	pushSoftwareCommand(
+		20u << 16u,
+		(1u << 16u) | 2u,
+		0x7c000000u);
+	pushSoftwareVramUpload(
 		commandBuffer,
-		std::array<uint32_t, 4>{
-			bmsx::GX_GPU_GP0_CPU_TO_VRAM_FIRST << 24u,
-			(1u << 16u) | 64u,
-			(1u << 16u) | 1u,
-			0x00000001u,
-		},
-		4u,
-		bmsx::GX_GPU_COMMAND_UPLOAD_CPU_TO_VRAM,
-		bmsx::GX_GPU_GP0_CPU_TO_VRAM_FIRST);
-	pushSoftwareCommand(
+		(1u << 16u) | 64u,
+		(1u << 16u) | 1u,
+		0x00000001u);
+	pushSoftwareVramUpload(
 		commandBuffer,
-		std::array<uint32_t, 4>{
-			bmsx::GX_GPU_GP0_CPU_TO_VRAM_FIRST << 24u,
-			72u,
-			(1u << 16u) | 2u,
-			0x03e0001fu,
-		},
-		4u,
-		bmsx::GX_GPU_COMMAND_UPLOAD_CPU_TO_VRAM,
-		bmsx::GX_GPU_GP0_CPU_TO_VRAM_FIRST);
-	pushSoftwareCommand(
+		72u,
+		(1u << 16u) | 2u,
+		0x03e0001fu);
+	pushSoftwareVramUpload(
 		commandBuffer,
-		std::array<uint32_t, 4>{
-			bmsx::GX_GPU_GP0_CPU_TO_VRAM_FIRST << 24u,
-			(1u << 16u) | 72u,
-			(1u << 16u) | 2u,
-			0x03ff7c00u,
-		},
-		4u,
-		bmsx::GX_GPU_COMMAND_UPLOAD_CPU_TO_VRAM,
-		bmsx::GX_GPU_GP0_CPU_TO_VRAM_FIRST);
+		(1u << 16u) | 72u,
+		(1u << 16u) | 2u,
+		0x03ff7c00u);
 
 	constexpr uint8_t rawTexturedRectangleOpcode = bmsx::GX_GPU_GP0_RECTANGLE_FIRST | bmsx::GX_GPU_GP0_RENDER_TEXTURE_BIT | 0x01u;
 	constexpr uint32_t direct16PageWord = (bmsx::GX_GPU_TEXTURE_MODE_DIRECT16 << 7u) | 1u;
@@ -1069,30 +1297,20 @@ void testSoftwareScanoutConsumesTexturedPrimitives() {
 		rawTexturedQuadOpcode,
 		direct16PageWord);
 
-	std::array<uint32_t, 256u * 256u> framebuffer{};
-	bmsx::SoftwareBackend backend(framebuffer.data(), 256, 256, 256 * static_cast<int32_t>(sizeof(uint32_t)));
-	bmsx::GxGpuPipelineState state;
-	state.width = 256;
-	state.height = 256;
-	state.commandBuffer = &commandBuffer;
-	state.statusWord = 0u;
-	state.displayModeWord = bmsx::PSX_GPU_DISPLAY_MODE_PAL_WORD;
-	state.displayStartWord = 0u;
-	state.horizontalDisplayRangeWord = (((638u + 256u * 10u) << 12u) | 638u);
-	state.verticalDisplayRangeWord = (((35u + 256u) << 10u) | 35u);
+	SoftwareFrameHarness frame(commandBuffer);
 
-	bmsx::renderGxGpuSoftwareFrame(backend, state);
+	bmsx::renderGxGpuSoftwareFrame(frame.state);
 
-	requireArgbPixel(framebuffer, 40u, 10u, 0xffff0000u, "GX-GPU software scanout direct16 textured rectangle red pixel");
-	requireArgbPixel(framebuffer, 41u, 10u, 0xff00ff00u, "GX-GPU software scanout direct16 textured rectangle green pixel");
-	requireArgbPixel(framebuffer, 45u, 10u, 0xff0000ffu, "GX-GPU software scanout palette4 textured rectangle blue pixel");
-	requireArgbPixel(framebuffer, 47u, 10u, 0xffffff00u, "GX-GPU software scanout texture-windowed direct16 rectangle yellow pixel");
-	requireArgbPixel(framebuffer, 50u, 12u, 0xffff0000u, "GX-GPU software scanout direct16 textured polygon red pixel");
-	requireArgbPixel(framebuffer, 51u, 12u, 0xff00ff00u, "GX-GPU software scanout direct16 textured polygon green pixel");
-	requireArgbPixel(framebuffer, 60u, 20u, 0xffff0000u, "GX-GPU software scanout direct16 textured quad red pixel");
-	requireArgbPixel(framebuffer, 61u, 20u, 0xff00ff00u, "GX-GPU software scanout direct16 textured quad green pixel");
-	requireArgbPixel(framebuffer, 60u, 21u, 0xff0000ffu, "GX-GPU software scanout direct16 textured quad blue pixel");
-	requireArgbPixel(framebuffer, 61u, 21u, 0xffffff00u, "GX-GPU software scanout direct16 textured quad yellow pixel");
+	requireArgbPixel(frame.framebuffer, 40u, 10u, 0xffff0000u, "GX-GPU software scanout direct16 textured rectangle red pixel");
+	requireArgbPixel(frame.framebuffer, 41u, 10u, 0xff00ff00u, "GX-GPU software scanout direct16 textured rectangle green pixel");
+	requireArgbPixel(frame.framebuffer, 45u, 10u, 0xff0000ffu, "GX-GPU software scanout palette4 textured rectangle blue pixel");
+	requireArgbPixel(frame.framebuffer, 47u, 10u, 0xffffff00u, "GX-GPU software scanout texture-windowed direct16 rectangle yellow pixel");
+	requireArgbPixel(frame.framebuffer, 50u, 12u, 0xffff0000u, "GX-GPU software scanout direct16 textured polygon red pixel");
+	requireArgbPixel(frame.framebuffer, 51u, 12u, 0xff00ff00u, "GX-GPU software scanout direct16 textured polygon green pixel");
+	requireArgbPixel(frame.framebuffer, 60u, 20u, 0xffff0000u, "GX-GPU software scanout direct16 textured quad red pixel");
+	requireArgbPixel(frame.framebuffer, 61u, 20u, 0xff00ff00u, "GX-GPU software scanout direct16 textured quad green pixel");
+	requireArgbPixel(frame.framebuffer, 60u, 21u, 0xff0000ffu, "GX-GPU software scanout direct16 textured quad blue pixel");
+	requireArgbPixel(frame.framebuffer, 61u, 21u, 0xffffff00u, "GX-GPU software scanout direct16 textured quad yellow pixel");
 }
 
 void testSoftwareCommandsPreserveTextureMaskBlendAndMaskTestStoreSemantics() {
@@ -1192,7 +1410,7 @@ void testSoftwareCommandsPreserveTextureMaskBlendAndMaskTestStoreSemantics() {
 		0u,
 		2u);
 
-	bmsx::resetGxGpuSoftwareVram();
+	bmsx::g_gxGpuSoftwareVram.fill(0u);
 	bmsx::executeGxGpuSoftwareCommands(commandBuffer, 0u);
 
 	require(bmsx::g_gxGpuSoftwareVram[bmsx::gxGpuSoftwareVramIndex(10, 20)] == 0x81efu, "GX-GPU software textured semi-transparent pixel blends and preserves texture mask bit");
@@ -1204,17 +1422,11 @@ void testSoftwareCommandsPreserveTextureMaskBlendAndMaskTestStoreSemantics() {
 void testSoftwareCommandsSamplePalette8RectangleFlipAndDitheredModulation() {
 	bmsx::GxGpuCommandBuffer commandBuffer;
 	commandBuffer.reset();
-	pushSoftwareCommand(
+	pushSoftwareVramUpload(
 		commandBuffer,
-		std::array<uint32_t, 4>{
-			bmsx::GX_GPU_GP0_CPU_TO_VRAM_FIRST << 24u,
-			(2u << 16u) | 64u,
-			(1u << 16u) | 1u,
-			0x00000201u,
-		},
-		4u,
-		bmsx::GX_GPU_COMMAND_UPLOAD_CPU_TO_VRAM,
-		bmsx::GX_GPU_GP0_CPU_TO_VRAM_FIRST);
+		(2u << 16u) | 64u,
+		(1u << 16u) | 1u,
+		0x00000201u);
 	pushSoftwareCommand(
 		commandBuffer,
 		std::array<uint32_t, 5>{
@@ -1227,17 +1439,11 @@ void testSoftwareCommandsSamplePalette8RectangleFlipAndDitheredModulation() {
 		5u,
 		bmsx::GX_GPU_COMMAND_UPLOAD_CPU_TO_VRAM,
 		bmsx::GX_GPU_GP0_CPU_TO_VRAM_FIRST);
-	pushSoftwareCommand(
+	pushSoftwareVramUpload(
 		commandBuffer,
-		std::array<uint32_t, 4>{
-			bmsx::GX_GPU_GP0_CPU_TO_VRAM_FIRST << 24u,
-			(3u << 16u) | 64u,
-			(1u << 16u) | 1u,
-			0x00000008u,
-		},
-		4u,
-		bmsx::GX_GPU_COMMAND_UPLOAD_CPU_TO_VRAM,
-		bmsx::GX_GPU_GP0_CPU_TO_VRAM_FIRST);
+		(3u << 16u) | 64u,
+		(1u << 16u) | 1u,
+		0x00000008u);
 
 	constexpr uint8_t rawTexturedRectangleOpcode = bmsx::GX_GPU_GP0_RECTANGLE_FIRST | bmsx::GX_GPU_GP0_RENDER_TEXTURE_BIT | 0x01u;
 	constexpr uint32_t palette8FlipPageWord = (bmsx::GX_GPU_TEXTURE_MODE_PALETTE8 << 7u) | bmsx::GX_GPU_DRAW_MODE_TEXTURE_RECTANGLE_X_FLIP | 1u;
@@ -1272,7 +1478,7 @@ void testSoftwareCommandsSamplePalette8RectangleFlipAndDitheredModulation() {
 		texturedPolygonOpcode,
 		ditheredDirect16PageWord);
 
-	bmsx::resetGxGpuSoftwareVram();
+	bmsx::g_gxGpuSoftwareVram.fill(0u);
 	bmsx::executeGxGpuSoftwareCommands(commandBuffer, 0u);
 
 	require(bmsx::g_gxGpuSoftwareVram[bmsx::gxGpuSoftwareVramIndex(30, 20)] == 0x7c00u, "GX-GPU software palette8 flipped rectangle samples high byte CLUT entry first");
@@ -1301,6 +1507,9 @@ int main() {
 	testDisplayModeStatusBits();
 	testInterlacedScanoutStatusBits();
 	testInterlacedRenderCommandWords();
+	testCommandLogIsPresentableOnlyAfterVblankFrameSeal();
+	testPartialPresentationSnapshotDoesNotExposeQueuedCommands();
+	testRetirePreservesCommandsAppendedAfterSealedVblankSnapshot();
 	testDisplayDisableAndDmaDirectionStatusBits();
 	testGpustatReadinessTracksGp0PacketAssemblyAndPayloadPhases();
 	testGp1CrtcRangeRegistersLatchMaskedRawWords();
@@ -1310,12 +1519,19 @@ int main() {
 	testGp0FixedLengthRenderAndBlitPacketAssembly();
 	testGp0CpuToVramImagePayloadConsumption();
 	testGp0PolylineConsumesPayloadUntilTerminator();
+	testSaveStateRestoresPartialFixedGp0Command();
+	testSaveStateRestoresPartialCpuToVramUpload();
+	testSaveStateRestoresPartialPolylineCommand();
 	testGp1ClearFifoClearsPartialGp0PacketsAndFlushesPartialCpuToVramUploads();
 	testSoftwareTextureModulationMath();
+	testSoftwareBackendConsumesOnlyPresentableCommands();
 	testSoftwareGouraudLineFixedPointRaster();
 	testSoftwareBlendsUntexturedSemiTransparentRectangles();
 	testSoftwareScanoutConsumesTransfersAndFill();
 	testSoftwareBackendRetiresCommandLogWithoutClearingVram();
+	testCommandBufferRestorePublishesWithoutClearingVramRevision();
+	testCommandBufferRetireCompactsPresentedCommandStream();
+	testCommandBufferRetirePreservesPartialPayloadWords();
 	testSoftwareScanoutConsumesSolidPrimitives();
 	testSoftwareScanoutConsumesTexturedPrimitives();
 	testSoftwareCommandsPreserveTextureMaskBlendAndMaskTestStoreSemantics();

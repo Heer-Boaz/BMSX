@@ -7,8 +7,10 @@
 #include "render/post/device_quantize/gles2/pipeline.h"
 #include "render/host_overlay/pass_registration.h"
 #include "render/host_overlay/gles2/pipeline.h"
+#include "render/2d/framebuffer_pipeline.h"
 #include "render/backend/pass/library.h"
 #include "render/backend/gles2/gx_gpu.h"
+#include "render/backend/gles2/vdp_rpu.h"
 #include "render/3d/axis_gizmo_pipeline.h"
 #include "core/machine_manager.h"
 #include "render/shared/solid_pixels.h"
@@ -31,17 +33,14 @@ constexpr bool kGLES2FinishFrame = false;
 #define GL_SRGB_ALPHA_EXT 0x8C42
 #endif
 
-
-void applyGLES2TextureParams(const bmsx::TextureParams& params) {
-	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, static_cast<GLint>(params.minFilter));
-	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, static_cast<GLint>(params.magFilter));
-	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, static_cast<GLint>(params.wrapS));
-	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, static_cast<GLint>(params.wrapT));
 }
+
+
+namespace {
 
 void bindGLES2TextureForUpload(GLuint texture, const bmsx::TextureParams& params) {
 	glBindTexture(GL_TEXTURE_2D, texture);
-	applyGLES2TextureParams(params);
+	bmsx::applyGLES2TextureParams(params);
 	glPixelStorei(GL_UNPACK_ALIGNMENT, 1);
 }
 
@@ -108,10 +107,23 @@ bool hasExtensionToken(const char* extensions, const char* needle) {
 
 namespace bmsx {
 
+void applyGLES2TextureParams(const TextureParams& params) {
+	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, static_cast<GLint>(params.minFilter));
+	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, static_cast<GLint>(params.magFilter));
+	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, static_cast<GLint>(params.wrapS));
+	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, static_cast<GLint>(params.wrapT));
+}
+
 struct OpenGLES2PostPipelines {
 	DeviceQuantizePipeline::GLES2::State deviceQuantize;
 	CRTPipeline::PresentGLES2State present;
 	CRTPipeline::CRTGLES2State crt;
+};
+
+struct GLES2DepthTexture {
+	GLuint id = 0;
+	i32 width = 0;
+	i32 height = 0;
 };
 
 static size_t rgba8ByteCount(i32 width, i32 height) {
@@ -126,10 +138,9 @@ static const u8* prepareGLES2UploadData(const u8* data, i32 width, i32 height, b
 	return data;
 }
 
-static const u8* prepareGLES2TextureStorageData(const u8* data, i32 width, i32 height, bool logicalSrgb, bool srgbTexture, std::vector<u8>& zeroed, std::vector<u8>& linearized) {
+static const u8* prepareGLES2TextureStorageData(const u8* data, i32 width, i32 height, bool logicalSrgb, bool srgbTexture, std::vector<u8>& linearized) {
 	if (data == nullptr) {
-		zeroed.resize(rgba8ByteCount(width, height), 0);
-		return zeroed.data();
+		return nullptr;
 	}
 	return prepareGLES2UploadData(data, width, height, logicalSrgb, srgbTexture, linearized);
 }
@@ -150,8 +161,11 @@ void OpenGLES2Backend::registerBuiltinPasses(RenderPassLibrary& registry) {
 	registerFrameStatePasses(registry);
 
 	registerGxGpuPass(registry);
+	registerVdpRpuPass(registry);
+	registerFramebuffer2DPass_GLES2(registry);
 	DeviceQuantizePipeline::GLES2::registerPass(registry, m_post_pipelines->deviceQuantize);
 
+	CRTPipeline::registerPresentationHistoryGLES2Passes(registry, m_post_pipelines->present);
 	CRTPipeline::registerPresentGLES2Pass(registry, m_post_pipelines->present);
 	CRTPipeline::registerCRTGLES2Pass(registry, m_post_pipelines->crt);
 
@@ -189,8 +203,10 @@ void* OpenGLES2Backend::resolveProcAddress(const char* coreName, const char* ang
 }
 
 OpenGLES2Backend::OpenGLES2Backend(i32 width, i32 height)
-	: m_width(width)
-	, m_height(height)
+	: m_default_width(width)
+	, m_default_height(height)
+	, m_target_width(width)
+	, m_target_height(height)
 	, m_post_pipelines(std::make_unique<OpenGLES2PostPipelines>()) {}
 
 OpenGLES2Backend::~OpenGLES2Backend() = default;
@@ -212,9 +228,8 @@ TextureHandle OpenGLES2Backend::createTexture(const u8* data, i32 width,
 	tex->logicalSrgb = params.srgb;
 	tex->srgb = params.srgb && m_supports_srgb_textures;
 
-	std::vector<u8> zeroed;
 	std::vector<u8> linearized;
-	const u8* uploadData = prepareGLES2TextureStorageData(data, width, height, tex->logicalSrgb, tex->srgb, zeroed, linearized);
+	const u8* uploadData = prepareGLES2TextureStorageData(data, width, height, tex->logicalSrgb, tex->srgb, linearized);
 
 	const GLint internalFormat = tex->srgb ? static_cast<GLint>(GL_SRGB_ALPHA_EXT) : static_cast<GLint>(GL_RGBA);
 	glGenTextures(1, &tex->id);
@@ -309,37 +324,6 @@ void OpenGLES2Backend::updateTextureRegion(TextureHandle handle, const u8* data,
 	}
 }
 
-void OpenGLES2Backend::readTextureRegion(TextureHandle handle, u8* out, i32 width, i32 height, i32 x, i32 y, const TextureParams&) {
-	auto* tex = static_cast<GLES2Texture*>(handle);
-	if (!tex || tex->id == 0) {
-		throw std::runtime_error("[GLES2] Readback texture missing.");
-	}
-	if (x < 0 || y < 0 || x + width > tex->width || y + height > tex->height) {
-		throw std::runtime_error("[GLES2] Readback out of bounds.");
-	}
-	glBindFramebuffer(GL_FRAMEBUFFER, m_readback_fbo);
-	glFramebufferTexture2D(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, GL_TEXTURE_2D, tex->id, 0);
-	const GLint glY = tex->height - y - height;
-	if (glY < 0) {
-		throw std::runtime_error("[GLES2] Readback Y coordinate out of bounds.");
-	}
-	std::vector<u8> linearized;
-	u8* readTarget = out;
-	if (tex->logicalSrgb && !tex->srgb) {
-		linearized.resize(static_cast<size_t>(width) * static_cast<size_t>(height) * 4u);
-		readTarget = linearized.data();
-	}
-	glPixelStorei(GL_PACK_ALIGNMENT, 1);
-	glReadPixels(x, glY, width, height, GL_RGBA, GL_UNSIGNED_BYTE, readTarget);
-	glBindFramebuffer(GL_FRAMEBUFFER, m_current_fbo);
-	if (readTarget != out) {
-		std::vector<u8> encoded;
-		convertLinearToSrgb(readTarget, static_cast<size_t>(width) * static_cast<size_t>(height), encoded);
-		for (size_t index = 0u; index < encoded.size(); ++index) {
-			out[index] = encoded[index];
-		}
-	}
-}
 
 TextureHandle OpenGLES2Backend::createSolidTexture2D(i32 width, i32 height, u32 color, const TextureParams& params) {
 	auto pixels = createSolidRgba8Pixels(width, height, color);
@@ -357,6 +341,73 @@ void OpenGLES2Backend::destroyTexture(TextureHandle handle) {
 	glDeleteTextures(1, &tex->id);
 	invalidateTextureBindingCache();
 	delete tex;
+}
+
+TextureHandle OpenGLES2Backend::createColorTexture(i32 width, i32 height, const std::array<f32, 4>* initialClearColor) {
+	TextureHandle handle = createTexture(nullptr, width, height, RGBA8_LINEAR_TEXTURE_PARAMS);
+	if (initialClearColor != nullptr) {
+		void* target = createRenderTarget(handle, nullptr);
+		activateRenderTarget(target, width, height);
+		glDisable(GL_SCISSOR_TEST);
+		clear(initialClearColor, nullptr);
+		destroyRenderTarget(target);
+	}
+	return handle;
+}
+
+TextureHandle OpenGLES2Backend::createDepthTexture(i32 width, i32 height) {
+	auto* depth = new GLES2DepthTexture{};
+	depth->width = width;
+	depth->height = height;
+	glGenRenderbuffers(1, &depth->id);
+	glBindRenderbuffer(GL_RENDERBUFFER, depth->id);
+	glRenderbufferStorage(GL_RENDERBUFFER, GL_DEPTH_COMPONENT16, depth->width, depth->height);
+	return static_cast<TextureHandle>(depth);
+}
+
+void OpenGLES2Backend::destroyDepthTexture(TextureHandle handle) {
+	auto* depth = static_cast<GLES2DepthTexture*>(handle);
+	glDeleteRenderbuffers(1, &depth->id);
+	delete depth;
+}
+
+void* OpenGLES2Backend::createRenderTarget(TextureHandle color, TextureHandle depth) {
+	GLuint fbo = 0;
+	glGenFramebuffers(1, &fbo);
+	glBindFramebuffer(GL_FRAMEBUFFER, fbo);
+	if (color != nullptr) {
+		auto* texture = static_cast<GLES2Texture*>(color);
+		glFramebufferTexture2D(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, GL_TEXTURE_2D, texture->id, 0);
+	}
+	if (depth != nullptr) {
+		auto* depthTexture = static_cast<GLES2DepthTexture*>(depth);
+		glFramebufferRenderbuffer(GL_FRAMEBUFFER, GL_DEPTH_ATTACHMENT, GL_RENDERBUFFER, depthTexture->id);
+	}
+	return reinterpret_cast<void*>(static_cast<uintptr_t>(fbo));
+}
+
+void OpenGLES2Backend::destroyRenderTarget(void* target) {
+	GLuint fbo = static_cast<GLuint>(reinterpret_cast<uintptr_t>(target));
+	glDeleteFramebuffers(1, &fbo);
+}
+
+void OpenGLES2Backend::activateRenderTarget(void* target, i32 width, i32 height) {
+	const GLuint fbo = static_cast<GLuint>(reinterpret_cast<uintptr_t>(target));
+	setRenderTarget(fbo, width, height);
+}
+
+void OpenGLES2Backend::activateDefaultRenderTarget() {
+	const bool fboChanged = (m_current_fbo != m_backbuffer_fbo);
+	const bool sizeChanged = (m_target_width != m_default_width) || (m_target_height != m_default_height);
+	m_current_fbo = m_backbuffer_fbo;
+	m_target_width = m_default_width;
+	m_target_height = m_default_height;
+	if (fboChanged) {
+		glBindFramebuffer(GL_FRAMEBUFFER, m_current_fbo);
+	}
+	if (fboChanged || sizeChanged) {
+		glViewport(0, 0, m_target_width, m_target_height);
+	}
 }
 
 void OpenGLES2Backend::clear(const std::array<f32, 4>* color, const f32* depth) {
@@ -429,12 +480,14 @@ void OpenGLES2Backend::beginFrame() {
 	static u32 frameIndex = 0;
 	frameIndex++;
 	std::fprintf(
-		stderr, "[BMSX][GLES2] beginFrame #%u backbuffer_fbo=%u size=%dx%d\n",
-		frameIndex, static_cast<unsigned>(m_backbuffer_fbo), m_width, m_height);
-	}
+			stderr, "[BMSX][GLES2] beginFrame #%u backbuffer_fbo=%u size=%dx%d\n",
+			frameIndex, static_cast<unsigned>(m_backbuffer_fbo), m_default_width, m_default_height);
+		}
 	m_current_fbo = m_backbuffer_fbo;
 	glBindFramebuffer(GL_FRAMEBUFFER, m_current_fbo);
-	glViewport(0, 0, m_width, m_height);
+	m_target_width = m_default_width;
+	m_target_height = m_default_height;
+	glViewport(0, 0, m_target_width, m_target_height);
 	glDisable(GL_DITHER);
 	glDisable(GL_SCISSOR_TEST);
 	glDisable(GL_STENCIL_TEST);
@@ -467,8 +520,8 @@ BackendCaps OpenGLES2Backend::getCaps() const {
 }
 
 void OpenGLES2Backend::setViewportSize(i32 width, i32 height) {
-	m_width = width;
-	m_height = height;
+	m_default_width = width;
+	m_default_height = height;
 }
 
 void OpenGLES2Backend::setFramebufferGetter(FramebufferGetter getter) {
@@ -537,10 +590,10 @@ void OpenGLES2Backend::bindTexture2D(TextureHandle tex) {
 
 void OpenGLES2Backend::setRenderTarget(GLuint fbo, i32 width, i32 height) {
 	const bool fboChanged = (m_current_fbo != fbo);
-	const bool sizeChanged = (m_width != width) || (m_height != height);
+	const bool sizeChanged = (m_target_width != width) || (m_target_height != height);
 	m_current_fbo = fbo;
-	m_width = width;
-	m_height = height;
+	m_target_width = width;
+	m_target_height = height;
 	if (fboChanged) {
 		glBindFramebuffer(GL_FRAMEBUFFER, m_current_fbo);
 	}
@@ -548,7 +601,7 @@ void OpenGLES2Backend::setRenderTarget(GLuint fbo, i32 width, i32 height) {
 	// Previously, viewport was only updated on size change, which broke rendering
 	// when switching between FBOs of same size (e.g., framebuffer text rendering)
 	if (fboChanged || sizeChanged) {
-		glViewport(0, 0, m_width, m_height);
+		glViewport(0, 0, m_target_width, m_target_height);
 	}
 	if (kGLES2VerboseLog) {
 	std::fprintf(stderr, "[BMSX][GLES2] setRenderTarget fbo=%u size=%dx%d%s\n",

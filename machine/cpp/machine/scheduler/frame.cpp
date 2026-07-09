@@ -125,7 +125,7 @@ void FrameSchedulerState::enqueueTickCompletion(Runtime& runtime, FrameState& fr
 	const auto& vdp = runtime.machine.vdp;
 	slot.sequence = sequence;
 	slot.remaining = remaining;
-	slot.visualCommitted = vdp.lastFrameCommitted();
+	slot.visualCommitted = vdp.lastFrameCommitted() || runtime.machine.gxGpu.lastFrameCommitted();
 	slot.vdpFrameCost = vdp.lastFrameCost();
 	slot.vdpFrameHeld = vdp.lastFrameHeld();
 	m_tickCompletionWriteIndex = (m_tickCompletionWriteIndex + 1) % TICK_COMPLETION_QUEUE_CAPACITY;

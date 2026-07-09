@@ -26,6 +26,7 @@ import { clearOverlayFrame } from '../render/host_overlay/overlay_queue';
 import { VdpFrameBufferTextures } from '../render/vdp/framebuffer';
 import { RenderPresentationState } from '../render/presentation_state';
 import { runMachineHostFrame } from './host_frame';
+import { captureRuntimeSaveStateBytes } from '../machine/runtime/save_state/codec';
 
 const globalScope: any = typeof window !== 'undefined' ? window : globalThis;
 global = globalScope; // Ensure global is defined
@@ -304,6 +305,11 @@ export class MachineManager {
 			runMachineHostFrame(runtime, currentTime, runGate.ready);
 		});
 		this.running = true;
+	}
+
+	public async captureRuntimeSaveStateBytes(): Promise<Uint8Array> {
+		await this.view.captureGxGpuVramSnapshot(this.runtime.machine.gxGpu);
+		return captureRuntimeSaveStateBytes(this.runtime);
 	}
 
 }

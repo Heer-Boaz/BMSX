@@ -14,6 +14,7 @@ import {
 	GX_GPU_INTERLACED_RENDER_ENABLE,
 	GX_GPU_TEXTURE_MODE_DIRECT16,
 	GX_GPU_TEXTURE_MODE_PALETTE8,
+	GX_GPU_VRAM_BYTE_COUNT,
 	gxGpuDisplayStartY,
 	gxGpuInterlacedRenderWord,
 	gxGpuSkipDrawingToActiveField,
@@ -51,7 +52,6 @@ import {
 	gxGpuTransferPixelWord,
 	gxGpuTransferX,
 	gxGpuTransferY,
-	gxGpuVertexX,
 	gxGpuVertexY,
 	gxGpuVramCopyChunkHeight,
 	gxGpuVramCopyNeedsChunking,
@@ -153,12 +153,12 @@ import { DeviceScheduler } from '../../machine/ts/machine/scheduler/device';
 import { PSX_GPU_DISPLAY_MODE_PAL_WORD } from '../../machine/ts/machine/model_registry';
 import { renderGxGpuSoftwareFrame } from '../../machine/ts/render/backend/software/gx_gpu';
 import { executeGxGpuSoftwareCommands } from '../../machine/ts/render/backend/software/gx_gpu_commands';
+import { HeadlessGPUBackend } from '../../machine/ts/render/headless/backend';
 import {
 	gxGpuSoftwareTextureModulationChannel5,
 	gxGpuSoftwareTextureModulationPreDither,
 	gxGpuSoftwareVram,
 	gxGpuSoftwareVramIndex,
-	resetGxGpuSoftwareVram,
 } from '../../machine/ts/render/backend/software/gx_gpu_vram';
 
 function createGpu(): { memory: Memory; cpu: CPU; scheduler: DeviceScheduler; gpu: GxGpu } {
@@ -175,7 +175,7 @@ test('GX-GPU decodes PSX GP0 signed vertex and rectangle size words', () => {
 	assert.equal(gxGpuSigned11(0x00000400), -1024);
 	assert.equal(gxGpuSigned11(0x000007ff), -1);
 
-	assert.equal(gxGpuVertexX(0x000007ff), -1);
+	assert.equal(gxGpuSigned11(0x000007ff), -1);
 	assert.equal(gxGpuVertexY(0x07ff0000), -1);
 	assert.equal(gxGpuDisplayStartX(123 | (456 << 10)), 123);
 	assert.equal(gxGpuDisplayStartY(123 | (456 << 10)), 456);
@@ -425,16 +425,105 @@ test('GX-GPU tags PSX interlaced render commands with active field parity', () =
 	assert.equal(commands.commandInterlacedRenderWord[1], 0);
 });
 
+test('GX-GPU command log is presentable only after VBLANK frame seal', () => {
+	const { gpu } = createGpu();
+	const commands = gpu.readDeviceOutput().commandBuffer;
+
+	gpu.writeGp0((GX_GPU_GP0_POLYGON_FIRST << 24) | 0x00010203);
+	gpu.writeGp0(0x00000000);
+	gpu.writeGp0(0x00000001);
+	gpu.writeGp0(0x00000002);
+
+	assert.deepEqual([commands.commandCount, commands.presentCommandCount], [1, 0]);
+	assert.equal(gpu.lastFrameCommitted(), false);
+
+	gpu.presentReadyFrameOnVblankEdge();
+	assert.equal(commands.commandCount, 1);
+	assert.equal(commands.presentCommandCount, 1);
+	assert.equal(gpu.lastFrameCommitted(), true);
+
+	gpu.retirePresentedCommands();
+	assert.equal(commands.commandCount, 0);
+	assert.equal(commands.presentCommandCount, 0);
+	gpu.presentReadyFrameOnVblankEdge();
+	assert.equal(gpu.lastFrameCommitted(), false);
+
+	gpu.writeGp0((GX_GPU_GP0_POLYGON_FIRST << 24) | 0x00040506);
+	gpu.writeGp0(0x00000003);
+	gpu.writeGp0(0x00000004);
+	gpu.writeGp0(0x00000005);
+
+	assert.deepEqual([commands.commandCount, commands.presentCommandCount], [1, 0]);
+	gpu.presentReadyFrameOnVblankEdge();
+	assert.equal(commands.presentCommandCount, 1);
+});
+
+test('GX-GPU partial presentation snapshot does not expose queued commands', () => {
+	const { gpu } = createGpu();
+
+	gpu.writeGp0((GX_GPU_GP0_FILL_RECTANGLE << 24) | 0x0000ff);
+	gpu.writeGp0(0);
+	gpu.writeGp0((1 << 16) | 1);
+
+	const output = gpu.readDeviceOutput();
+	const commands = output.commandBuffer;
+	assert.equal(commands.commandCount, 1);
+	assert.equal(commands.presentCommandCount, 0);
+
+	gxGpuSoftwareVram.fill(0);
+	assert.equal(executeGxGpuSoftwareCommands(commands, 0), 0);
+	assert.equal(gxGpuSoftwareVram[gxGpuSoftwareVramIndex(0, 0)], 0);
+	assert.equal(commands.commandCount, 1);
+	assert.equal(commands.presentCommandCount, 0);
+
+	gpu.presentReadyFrameOnVblankEdge();
+	assert.equal(executeGxGpuSoftwareCommands(commands, 0), 1);
+	assert.equal(gxGpuSoftwareVram[gxGpuSoftwareVramIndex(0, 0)], 0x001f);
+
+	gpu.retirePresentedCommands();
+	assert.deepEqual([commands.commandCount, commands.presentCommandCount], [0, 0]);
+});
+
+test('GX-GPU retire preserves commands appended after the sealed VBLANK snapshot', () => {
+	const { gpu } = createGpu();
+	const commands = gpu.readDeviceOutput().commandBuffer;
+
+	gpu.writeGp0((GX_GPU_GP0_FILL_RECTANGLE << 24) | 0x0000ff);
+	gpu.writeGp0(0);
+	gpu.writeGp0((1 << 16) | 1);
+	gpu.presentReadyFrameOnVblankEdge();
+
+	gpu.writeGp0((GX_GPU_GP0_FILL_RECTANGLE << 24) | 0x00ff00);
+	gpu.writeGp0(32);
+	gpu.writeGp0((1 << 16) | 1);
+
+	gxGpuSoftwareVram.fill(0);
+	assert.equal(executeGxGpuSoftwareCommands(commands, 0), 1);
+	assert.equal(gxGpuSoftwareVram[gxGpuSoftwareVramIndex(0, 0)], 0x001f);
+	assert.equal(gxGpuSoftwareVram[gxGpuSoftwareVramIndex(32, 0)], 0);
+
+	gpu.retirePresentedCommands();
+	assert.deepEqual([commands.commandCount, commands.presentCommandCount], [1, 0]);
+	gpu.presentReadyFrameOnVblankEdge();
+	assert.equal(executeGxGpuSoftwareCommands(commands, 0), 1);
+	assert.equal(gxGpuSoftwareVram[gxGpuSoftwareVramIndex(32, 0)], 0x03e0);
+});
+
 test('GX-GPU handles PSX GP1 display disable and DMA direction status bits', () => {
 	const { gpu } = createGpu();
 
 	gpu.writeGp1(GX_GPU_GP1_SET_DISPLAY_DISABLE << 24);
 	assert.equal((gpu.readStatus() & GX_GPU_STATUS_DISPLAY_DISABLE) >>> 0, 0);
+	assert.equal((gpu.readDeviceOutput().statusWord & GX_GPU_STATUS_DISPLAY_DISABLE) >>> 0, GX_GPU_STATUS_DISPLAY_DISABLE);
+	gpu.presentReadyFrameOnVblankEdge();
 	assert.equal((gpu.readDeviceOutput().statusWord & GX_GPU_STATUS_DISPLAY_DISABLE) >>> 0, 0);
 
 	gpu.writeGp1((GX_GPU_GP1_SET_DISPLAY_DISABLE << 24) | 1);
 	assert.equal((gpu.readStatus() & GX_GPU_STATUS_DISPLAY_DISABLE) >>> 0, GX_GPU_STATUS_DISPLAY_DISABLE);
+	assert.equal((gpu.readDeviceOutput().statusWord & GX_GPU_STATUS_DISPLAY_DISABLE) >>> 0, 0);
+	gpu.presentReadyFrameOnVblankEdge();
 	assert.equal((gpu.readDeviceOutput().statusWord & GX_GPU_STATUS_DISPLAY_DISABLE) >>> 0, GX_GPU_STATUS_DISPLAY_DISABLE);
+	assert.equal(gpu.lastFrameCommitted(), true);
 
 	gpu.writeGp1((GX_GPU_GP1_SET_DMA_DIRECTION << 24) | GX_GPU_DMA_DIRECTION_CPU_TO_GP0);
 	assert.equal((gpu.readStatus() & GX_GPU_STATUS_DMA_DIRECTION_MASK) >>> 0, GX_GPU_DMA_DIRECTION_CPU_TO_GP0 << GX_GPU_STATUS_DMA_DIRECTION_SHIFT);
@@ -521,11 +610,14 @@ test('GX-GPU latches PSX GP1 CRTC range registers as masked raw words', () => {
 	assert.equal(gpu.readVerticalDisplayRangeWord(), GX_GPU_VERTICAL_DISPLAY_RANGE_MASK);
 	assert.equal(gpu.readTextureDisableAllowedWord(), 1);
 
+	assert.equal(gpu.readDeviceOutput().displayStartWord, 0);
+	gpu.presentReadyFrameOnVblankEdge();
 	assert.equal(gpu.readDeviceOutput().displayModeWord, gpu.readDisplayModeWord());
 	assert.equal(gpu.readDeviceOutput().statusWord, gpu.readStatus());
 	assert.equal(gpu.readDeviceOutput().displayStartWord, GX_GPU_DISPLAY_START_MASK);
 	assert.equal(gpu.readDeviceOutput().horizontalDisplayRangeWord, GX_GPU_HORIZONTAL_DISPLAY_RANGE_MASK);
 	assert.equal(gpu.readDeviceOutput().verticalDisplayRangeWord, GX_GPU_VERTICAL_DISPLAY_RANGE_MASK);
+	assert.equal(gpu.lastFrameCommitted(), true);
 });
 
 test('GX-GPU handles PSX GP0 IRQ request and GP1 interrupt acknowledge', () => {
@@ -738,6 +830,52 @@ test('GX-GPU emits PSX polyline payload into the GPU command buffer at terminato
 	assert.equal(gpu.readDrawModeWord(), 0x000333);
 });
 
+test('GX-GPU save-state restores in-progress GP0 packet assembly', () => {
+	const { gpu } = createGpu();
+	gpu.writeGp0((GX_GPU_GP0_POLYGON_FIRST << 24) | 0x0000ff);
+	gpu.writeGp0(0x00010002);
+	gpu.writeGp0(0x00030004);
+
+	const { gpu: restoredPacketGpu } = createGpu();
+	restoredPacketGpu.restoreState(gpu.captureState());
+	restoredPacketGpu.writeGp0(0x00050006);
+	const packetCommands = restoredPacketGpu.readDeviceOutput().commandBuffer;
+	assert.equal(packetCommands.commandCount, 1);
+	assert.equal(packetCommands.commandKind[0], GX_GPU_COMMAND_DRAW_POLYGON);
+	assert.equal(packetCommands.commandWordCount[0], 4);
+	assert.equal(packetCommands.words[packetCommands.commandWordStart[0] + 2], 0x00030004);
+
+	const { gpu: imageGpu } = createGpu();
+	imageGpu.writeGp0(GX_GPU_GP0_CPU_TO_VRAM_FIRST << 24);
+	imageGpu.writeGp0(0x00000000);
+	imageGpu.writeGp0((2 << 16) | 2);
+	imageGpu.writeGp0(0x001f03e0);
+
+	const { gpu: restoredImageGpu } = createGpu();
+	restoredImageGpu.restoreState(imageGpu.captureState());
+	restoredImageGpu.writeGp0(0x7c00ffff);
+	const imageCommands = restoredImageGpu.readDeviceOutput().commandBuffer;
+	assert.equal(imageCommands.commandCount, 1);
+	assert.equal(imageCommands.commandKind[0], GX_GPU_COMMAND_UPLOAD_CPU_TO_VRAM);
+	assert.equal(imageCommands.commandWordCount[0], 5);
+	assert.equal(imageCommands.words[imageCommands.commandWordStart[0] + 3], 0x001f03e0);
+	assert.equal(imageCommands.words[imageCommands.commandWordStart[0] + 4], 0x7c00ffff);
+
+	const { gpu: polylineGpu } = createGpu();
+	polylineGpu.writeGp0((0x48 << 24) | 0x0000ff);
+	polylineGpu.writeGp0(0x00010002);
+	polylineGpu.writeGp0(0x00020003);
+
+	const { gpu: restoredPolylineGpu } = createGpu();
+	restoredPolylineGpu.restoreState(polylineGpu.captureState());
+	restoredPolylineGpu.writeGp0(0x50005000);
+	const polylineCommands = restoredPolylineGpu.readDeviceOutput().commandBuffer;
+	assert.equal(polylineCommands.commandCount, 1);
+	assert.equal(polylineCommands.commandKind[0], GX_GPU_COMMAND_DRAW_POLYLINE);
+	assert.equal(polylineCommands.commandWordCount[0], 3);
+	assert.equal(polylineCommands.words[polylineCommands.commandWordStart[0] + 2], 0x00020003);
+});
+
 test('GX-GPU GP1 clear FIFO clears partial GP0 packets and flushes partial CPU-to-VRAM uploads', () => {
 	const { gpu } = createGpu();
 	const commands = gpu.readDeviceOutput().commandBuffer;
@@ -781,6 +919,7 @@ test('GX-GPU GP1 clear FIFO clears partial GP0 packets and flushes partial CPU-t
 const GX_GPU_SOFTWARE_TEST_WIDTH = 256;
 const GX_GPU_SOFTWARE_TEST_HEIGHT = 256;
 const GX_GPU_SOFTWARE_FULL_DRAWING_AREA_BOTTOM_RIGHT_WORD = 1023 | (511 << 10);
+const GX_GPU_SOFTWARE_TEST_VRAM_SNAPSHOT = new Uint8Array(GX_GPU_VRAM_BYTE_COUNT);
 
 function pushSoftwareCommand(
 	commandBuffer: GxGpuCommandBuffer,
@@ -797,6 +936,7 @@ function pushSoftwareCommand(
 ): void {
 	const wordStart = commandBuffer.appendWords(words, words.length);
 	commandBuffer.pushCommand(kind, opcode, wordStart, words.length, drawModeWord, textureWindowWord, drawingAreaTopLeftWord, drawingAreaBottomRightWord, drawingOffsetWord, maskBitModeWord, interlacedRenderWord);
+	commandBuffer.sealCommandsForPresentation();
 }
 
 function assertRgbaPixel(pixels: Uint8Array, x: number, y: number, r: number, g: number, b: number): void {
@@ -815,6 +955,56 @@ test('GX-GPU software backend owns texture modulation math', () => {
 	assert.equal(gxGpuSoftwareTextureModulationChannel5(12, 96, 0), 9);
 });
 
+test('GX-GPU software backend consumes only presentable commands', () => {
+	const commandBuffer = new GxGpuCommandBuffer();
+	commandBuffer.reset();
+	const words = new Uint32Array([
+		(GX_GPU_GP0_FILL_RECTANGLE << 24) | 0x0000ff,
+		(5 << 16) | 4,
+		(1 << 16) | 1,
+	]);
+	const wordStart = commandBuffer.appendWords(words, words.length);
+	commandBuffer.pushCommand(GX_GPU_COMMAND_FILL_RECTANGLE, GX_GPU_GP0_FILL_RECTANGLE, wordStart, words.length, 0, 0, 0, GX_GPU_SOFTWARE_FULL_DRAWING_AREA_BOTTOM_RIGHT_WORD, 0, 0, 0);
+
+	gxGpuSoftwareVram.fill(0);
+	assert.equal(executeGxGpuSoftwareCommands(commandBuffer, 0), 0);
+	assert.equal(gxGpuSoftwareVram[gxGpuSoftwareVramIndex(4, 5)], 0);
+
+	commandBuffer.sealCommandsForPresentation();
+	assert.equal(executeGxGpuSoftwareCommands(commandBuffer, 0), 1);
+	assert.equal(gxGpuSoftwareVram[gxGpuSoftwareVramIndex(4, 5)], 0x001f);
+});
+
+test('GX-GPU software backend captures live VRAM into save-state snapshot', () => {
+	const { gpu } = createGpu();
+	gpu.writeGp0((GX_GPU_GP0_FILL_RECTANGLE << 24) | 0x0000ff);
+	gpu.writeGp0((5 << 16) | 4);
+	gpu.writeGp0((1 << 16) | 1);
+	gpu.presentReadyFrameOnVblankEdge();
+	const output = gpu.readDeviceOutput();
+	const pixels = new Uint8Array(GX_GPU_SOFTWARE_TEST_WIDTH * GX_GPU_SOFTWARE_TEST_HEIGHT * 4);
+	renderGxGpuSoftwareFrame({
+		width: GX_GPU_SOFTWARE_TEST_WIDTH,
+		height: GX_GPU_SOFTWARE_TEST_HEIGHT,
+		commandBuffer: output.commandBuffer,
+		statusWord: output.statusWord,
+		displayModeWord: output.displayModeWord,
+		displayStartWord: output.displayStartWord,
+		horizontalDisplayRangeWord: output.horizontalDisplayRangeWord,
+		verticalDisplayRangeWord: output.verticalDisplayRangeWord,
+		vramSnapshotBytes: output.vramSnapshotBytes,
+		vramSnapshotSerial: output.vramSnapshotSerial,
+	}, pixels, GX_GPU_SOFTWARE_TEST_WIDTH, GX_GPU_SOFTWARE_TEST_HEIGHT);
+
+	const backend = new HeadlessGPUBackend();
+	backend.captureGxGpuVramSnapshot(gpu);
+	const saveState = gpu.captureSaveState();
+	const byteIndex = gxGpuSoftwareVramIndex(4, 5) << 1;
+	assert.equal(saveState.vramBytes.length, GX_GPU_VRAM_BYTE_COUNT);
+	assert.equal(saveState.vramBytes[byteIndex], 0x1f);
+	assert.equal(saveState.vramBytes[byteIndex + 1], 0x00);
+});
+
 test('GX-GPU software backend rasterizes Gouraud lines with PSX fixed-point steps', () => {
 	const commandBuffer = new GxGpuCommandBuffer();
 	commandBuffer.reset();
@@ -826,7 +1016,7 @@ test('GX-GPU software backend rasterizes Gouraud lines with PSX fixed-point step
 		(14 << 16) | 40,
 	]), GX_GPU_COMMAND_DRAW_LINE, opcode);
 
-	resetGxGpuSoftwareVram();
+	gxGpuSoftwareVram.fill(0);
 	executeGxGpuSoftwareCommands(commandBuffer, 0);
 
 	assert.equal(gxGpuSoftwareVram[gxGpuSoftwareVramIndex(40, 10)], 0x001f);
@@ -851,7 +1041,7 @@ test('GX-GPU software backend blends untextured semi-transparent rectangles with
 		]), GX_GPU_COMMAND_DRAW_RECTANGLE, GX_GPU_GP0_RECTANGLE_FIRST | 0x02, column << 5);
 	}
 
-	resetGxGpuSoftwareVram();
+	gxGpuSoftwareVram.fill(0);
 	executeGxGpuSoftwareCommands(commandBuffer, 0);
 
 	assert.equal(gxGpuSoftwareVram[gxGpuSoftwareVramIndex(10, 20)], 0x7def);
@@ -891,6 +1081,8 @@ test('GX-GPU software scanout consumes CPU upload, VRAM copy, and fill commands'
 		displayStartWord: 0,
 		horizontalDisplayRangeWord: (((638 + 256 * 10) << 12) | 638) >>> 0,
 		verticalDisplayRangeWord: (((35 + 256) << 10) | 35) >>> 0,
+		vramSnapshotBytes: GX_GPU_SOFTWARE_TEST_VRAM_SNAPSHOT,
+		vramSnapshotSerial: 0,
 	}, pixels, GX_GPU_SOFTWARE_TEST_WIDTH, GX_GPU_SOFTWARE_TEST_HEIGHT);
 
 	assertRgbaPixel(pixels, 0, 0, 255, 0, 0);
@@ -919,6 +1111,8 @@ test('GX-GPU software backend retires consumed command logs without clearing VRA
 		displayStartWord: 0,
 		horizontalDisplayRangeWord: (((638 + 256 * 10) << 12) | 638) >>> 0,
 		verticalDisplayRangeWord: (((35 + 256) << 10) | 35) >>> 0,
+		vramSnapshotBytes: GX_GPU_SOFTWARE_TEST_VRAM_SNAPSHOT,
+		vramSnapshotSerial: 0,
 	};
 	const pixels = new Uint8Array(GX_GPU_SOFTWARE_TEST_WIDTH * GX_GPU_SOFTWARE_TEST_HEIGHT * 4);
 	renderGxGpuSoftwareFrame(state, pixels, GX_GPU_SOFTWARE_TEST_WIDTH, GX_GPU_SOFTWARE_TEST_HEIGHT);
@@ -973,6 +1167,8 @@ test('GX-GPU software scanout consumes solid polygon, rectangle, and line comman
 		displayStartWord: 0,
 		horizontalDisplayRangeWord: (((638 + 256 * 10) << 12) | 638) >>> 0,
 		verticalDisplayRangeWord: (((35 + 256) << 10) | 35) >>> 0,
+		vramSnapshotBytes: GX_GPU_SOFTWARE_TEST_VRAM_SNAPSHOT,
+		vramSnapshotSerial: 0,
 	}, pixels, GX_GPU_SOFTWARE_TEST_WIDTH, GX_GPU_SOFTWARE_TEST_HEIGHT);
 
 	assertRgbaPixel(pixels, 5, 5, 255, 0, 0);
@@ -1076,6 +1272,8 @@ test('GX-GPU software scanout consumes textured primitives', () => {
 		displayStartWord: 0,
 		horizontalDisplayRangeWord: (((638 + 256 * 10) << 12) | 638) >>> 0,
 		verticalDisplayRangeWord: (((35 + 256) << 10) | 35) >>> 0,
+		vramSnapshotBytes: GX_GPU_SOFTWARE_TEST_VRAM_SNAPSHOT,
+		vramSnapshotSerial: 0,
 	}, pixels, GX_GPU_SOFTWARE_TEST_WIDTH, GX_GPU_SOFTWARE_TEST_HEIGHT);
 
 	assertRgbaPixel(pixels, 40, 10, 255, 0, 0);
@@ -1137,7 +1335,7 @@ test('GX-GPU software commands preserve texture mask, blend, and mask-test store
 		(1 << 16) | 1,
 	]), GX_GPU_COMMAND_DRAW_RECTANGLE, GX_GPU_GP0_RECTANGLE_FIRST, 0, 0, 0, GX_GPU_SOFTWARE_FULL_DRAWING_AREA_BOTTOM_RIGHT_WORD, 0, 2);
 
-	resetGxGpuSoftwareVram();
+	gxGpuSoftwareVram.fill(0);
 	executeGxGpuSoftwareCommands(commandBuffer, 0);
 
 	assert.equal(gxGpuSoftwareVram[gxGpuSoftwareVramIndex(10, 20)], 0x81ef);
@@ -1190,7 +1388,7 @@ test('GX-GPU software commands sample palette8, rectangle flip, and dithered mod
 		3 << 8,
 	]), GX_GPU_COMMAND_DRAW_POLYGON, texturedPolygonOpcode, ditheredDirect16PageWord);
 
-	resetGxGpuSoftwareVram();
+	gxGpuSoftwareVram.fill(0);
 	executeGxGpuSoftwareCommands(commandBuffer, 0);
 
 	assert.equal(gxGpuSoftwareVram[gxGpuSoftwareVramIndex(30, 20)], 0x7c00);

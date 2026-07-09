@@ -1,13 +1,10 @@
-/// <reference types="@webgpu/types" />
-
 import { type color_arr, type TextureSource, type vec2 } from '../../rompack/format';
 import type { VdpRpuFrameOutput } from '../../machine/devices/vdp/rpu';
+import type { GxGpu } from '../../machine/devices/gx/gpu';
 import type { GxGpuCommandBufferView } from '../../machine/devices/gx/gpu_command_buffer';
 import type { Host2DSubmission } from '../shared/submissions';
 import type { LightingFrameState } from '../lighting/system';
 import type { GameView } from '../gameview';
-import type { WebGLBackend } from './webgl/backend';
-import type { WebGPUBackend } from './webgpu/backend';
 import type { TextureParams } from './texture_params';
 import type { RenderPassLibrary } from './pass/library';
 
@@ -16,21 +13,21 @@ import type { RenderPassLibrary } from './pass/library';
  * - Shared runtime contract in this file: TextureHandle, BackendCaps,
  *   ColorAttachmentSpec, DepthAttachmentSpec, RenderPassDesc, PassEncoder,
  *   GPUBackend texture methods, render-pass methods, draw methods except TS
- *   drawIndexed indexType, frame lifecycle, getCaps(), and stats.
+ *   drawIndexed indexType, GX VRAM snapshot capture, frame lifecycle, getCaps(),
+ *   and stats.
  * - Shared render semantics above this boundary are VDP/VOUT/RPU command
  *   records. Concrete WebGL/GLES pass code owns GPU API binding such as shader
  *   programs, VAO/buffer state, vertexAttribPointer calls, uniform block
  *   binding, texture units, and draw-call issue.
- * - TS-only public symbols here are browser/WebGL/WebGPU render-graph plumbing:
+ * - TS-only public symbols here are browser/WebGL render-graph plumbing:
  *   TextureFormat, BufferHandle, BackendContext, RenderTargetHandle,
  *   PresentationMode, GraphicsPipelineBindingLayout, RenderGraphSlot,
  *   RenderGraphPassContext, RenderPassGraphDef, RenderPassDef,
- *   GraphicsPipelineBuildDesc, RenderPassInstanceHandle, AnyBackend,
+ *   GraphicsPipelineBuildDesc, RenderPassInstanceHandle,
  *   RenderPassStateRegistry, RenderPassStateId, pipeline-state types,
  *   RenderContext, FogUniforms, AtmosphereParams, and CRTDitherType.
  *   C++ owns the equivalent native pass scheduling in render/backend/pass files.
  * - TS-only GPUBackend methods here are browser/backend-resource controls:
- *   setActiveTexture(), bindTexture2D(), bindTextureCube(),
  *   createImageBitmapFromSource(), createCubemapFromSources(),
  *   createSolidCubemap(), createCubemapEmpty(), uploadCubemapFace(),
  *   createColorTexture(), createDepthTexture(), createRenderTarget(),
@@ -48,35 +45,33 @@ import type { RenderPassLibrary } from './pass/library';
  *   concrete pass code.
  * - C++-only public symbols in backend.h are C++/libretro backend storage
  *   and ownership: BackendType, FrameStats, SoftwareTexture, DitherParams,
- *   SoftwareBackend, and readyForTextureUpload().
+ *   SoftwareBackend, readyForTextureUpload(), and native render-target
+ *   activation for the C++ render graph.
+ * - TS synchronous texture readback is concrete-backend owned; headless keeps
+ *   readTextureRegion for capture workflows, while WebGPU cannot expose that
+ *   synchronous contract.
  */
 
 export type TextureFormat = 'rgba8unorm' | 'bgra8unorm' | 'rgb8unorm' | 'depth24plus' | 'depth32float' | string | number;
 export type HeadlessTextureHandle = { id: number; kind: string };
 export type HeadlessBufferHandle = { id: number; kind: string };
 export type TextureHandle = WebGLTexture | GPUTexture | HeadlessTextureHandle;
-export type BufferHandle = WebGLBuffer | GPUBuffer | HeadlessBufferHandle | null;
+export type BufferHandle = WebGLBuffer | HeadlessBufferHandle | null;
 export type BackendContext = WebGL2RenderingContext | GPUCanvasContext | null;
 export type SizedArrayBufferView = ArrayBufferView & { readonly BYTES_PER_ELEMENT?: number; readonly length?: number };
 // ---- Unified "FBO" a.k.a. render target ------------------------------------
-
-export type WebGPURenderTargetHandle = {
-	size: vec2;
-	colors: GPUTexture[];
-	depth?: GPUTexture;
-	colorViews: GPUTextureView[];
-	depthView?: GPUTextureView;
-	sampleCount?: number;
-	format?: GPUTextureFormat;
-};
 
 export type HeadlessRenderTargetHandle = {
 	size: vec2;
 	colors: TextureHandle[];
 	depth?: TextureHandle;
 };
+export type WebGPURenderTargetHandle = {
+	color?: TextureHandle;
+	depth?: TextureHandle;
+};
 
-export type RenderTargetHandle = WebGLFramebuffer | WebGPURenderTargetHandle | HeadlessRenderTargetHandle;
+export type RenderTargetHandle = WebGLFramebuffer | HeadlessRenderTargetHandle | WebGPURenderTargetHandle;
 
 // keep your existing alias names for other handles:
 
@@ -88,6 +83,8 @@ export type RenderPassId =
 	| 'host_overlay'
 	| 'host_menu'
 	| 'device_quantize'
+	| 'presentation_history_a'
+	| 'presentation_history_b'
 	| 'present'
 	| 'crt'
 	| 'frame_shared'
@@ -100,6 +97,7 @@ export interface BackendCaps {
 	maxTextureSize: number;
 	supportsInstancing: boolean;
 	supportsDepthTexture: boolean;
+	supportsCorePresentation: boolean;
 }
 export type PresentationMode = 'partial' | 'completed';
 
@@ -172,7 +170,7 @@ export interface RenderPassDef<S = unknown> {
 	 * (e.g., buffers, VAOs, default textures). Called once at registration time.
 	 */
 	bootstrap?: (backend: GPUBackend) => void;
-	exec: (backend: AnyBackend, fbo: unknown, state: S, pipelineHandle: RenderPassInstanceHandle | null) => void;
+	exec: (backend: GPUBackend, fbo: unknown, state: S, pipelineHandle: RenderPassInstanceHandle | null) => void;
 	prepare?: (backend: GPUBackend, state: S) => void;
 }
 
@@ -193,33 +191,23 @@ export interface RenderPassInstanceHandle { id: number; label?: string; backendD
 
 export interface PassEncoder { fbo: unknown; desc: RenderPassDesc; }
 
-export type AnyBackend = WebGLBackend | WebGPUBackend | GPUBackend;
-
 export interface GPUBackend {
 	// Discriminator for runtime backend flavor
-	type: 'webgl2' | 'webgpu' | 'headless';
+	type: 'webgpu' | 'webgl2' | 'headless';
 	context: BackendContext;
 
-	// Optional WebGL-like texture binding helpers (implemented by WebGL backend).
-	// These allow higher-level code (GameView / render graph) to perform texture
-	// binds without casting to a concrete backend type.
-	setViewportRect?(x: number, y: number, w: number, h: number): void;
-	setActiveTexture?(unit: number): void;
-	bindTexture2D?(tex: TextureHandle): void;
-	bindTextureCube?(tex: TextureHandle): void;
 	createImageBitmapFromSource?(src: TextureSource): Promise<ImageBitmap>;
 	createTexture(data: Uint8Array, width: number, height: number, desc: TextureParams): TextureHandle;
 	updateTexture(handle: TextureHandle, data: Uint8Array, width: number, height: number, desc: TextureParams): void;
 	resizeTexture(handle: TextureHandle, width: number, height: number, desc: TextureParams): TextureHandle;
 	updateTextureRegion(handle: TextureHandle, data: Uint8Array, width: number, height: number, x: number, y: number, desc: TextureParams, sourceOffset?: number): void;
-	readTextureRegion(handle: TextureHandle, out: Uint8Array, width: number, height: number, x: number, y: number, desc: TextureParams): void;
 	createSolidTexture2D(width: number, height: number, color: number, desc: TextureParams): TextureHandle;
 	createCubemapFromSources(faces: readonly [TextureSource, TextureSource, TextureSource, TextureSource, TextureSource, TextureSource], desc: TextureParams): TextureHandle;
 	createSolidCubemap(size: number, color: number, desc: TextureParams): TextureHandle;
 	createCubemapEmpty(size: number, desc: TextureParams): TextureHandle;
 	uploadCubemapFace(cubemap: TextureHandle, face: number, src: TextureSource): void;
 	destroyTexture(handle: TextureHandle): void;
-	createColorTexture(desc: { width: number; height: number; format?: TextureFormat }): TextureHandle;
+	createColorTexture(desc: { width: number; height: number; format?: TextureFormat; initialClearColor?: color_arr }): TextureHandle;
 	createDepthTexture(desc: { width: number; height: number; format?: TextureFormat }): TextureHandle;
 	createRenderTarget(color?: TextureHandle, depth?: TextureHandle): RenderTargetHandle;
 	clear(color: color_arr | undefined, depth: number | undefined): void;
@@ -257,6 +245,7 @@ export interface GPUBackend {
 	beginFrame(): void;
 	endFrame(): void;
 	getFrameStats(): { draws: number; drawIndexed: number; drawsInstanced: number; drawIndexedInstanced: number; bytesUploaded: number };
+	captureGxGpuVramSnapshot(gxGpu: GxGpu): void | Promise<void>;
 	// Optional: fine-grained upload accounting for HUD
 	accountUpload(kind: 'vertex' | 'index' | 'uniform' | 'texture', bytes: number): void;
 }
@@ -268,6 +257,8 @@ export interface RenderPassStateRegistry {
 	['host_overlay']: HostOverlayPipelineState;
 	['host_menu']: HostMenuPipelineState;
 	['device_quantize']: DeviceQuantizePipelineState;
+	['presentation_history_a']: PresentPipelineState;
+	['presentation_history_b']: PresentPipelineState;
 	['present']: PresentPipelineState;
 	['crt']: CRTPipelineState;
 	['frame_shared']: FrameSharedState;
@@ -293,6 +284,9 @@ export type GxGpuPipelineState = {
 	displayStartWord: number;
 	horizontalDisplayRangeWord: number;
 	verticalDisplayRangeWord: number;
+	vramSnapshotBytes: Uint8Array;
+	vramSnapshotSerial: number;
+	targetColorTex?: TextureHandle;
 };
 
 export type Framebuffer2DPipelineState = {
@@ -320,23 +314,22 @@ export type HostMenuPipelineState = Host2DPipelineState;
 
 export interface RenderContext {
 	viewportSize: { x: number; y: number };
-	backendType: 'webgl2' | 'webgpu' | 'headless';
+	backendType: 'webgpu' | 'webgl2' | 'headless';
 	offscreenCanvasSize: { x: number; y: number; };
 	backend: GPUBackend;
 	presentationMode: PresentationMode;
 	commitPresentationFrame: boolean;
 	presentationHistorySourceIndex: 0 | 1;
 	presentationHistoryDestinationIndex: 0 | 1;
-	activeTexUnit: number;
 	gxGpuCommandBuffer: GxGpuCommandBufferView;
 	gxGpuStatusWord: number;
 	gxGpuDisplayModeWord: number;
 	gxGpuDisplayStartWord: number;
 	gxGpuHorizontalDisplayRangeWord: number;
 	gxGpuVerticalDisplayRangeWord: number;
+	gxGpuVramSnapshotBytes: Uint8Array;
+	gxGpuVramSnapshotSerial: number;
 	vdpRpuFrame: VdpRpuFrameOutput;
-	bind2DTex(tex: TextureHandle): void;
-	bindCubemapTex(tex: TextureHandle): void;
 
 }
 
@@ -373,6 +366,7 @@ export type PresentPipelineState = {
 	srcWidth: number;
 	srcHeight: number;
 	colorTex: TextureHandle;
+	targetColorTex?: TextureHandle;
 };
 
 export interface CRTPipelineOptions {

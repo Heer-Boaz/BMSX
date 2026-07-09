@@ -6,8 +6,9 @@
  * TS/C++ parity boundary:
  * - Shared runtime contract in this file: TextureHandle, BackendCaps,
  *   ColorAttachmentSpec, DepthAttachmentSpec, RenderPassDesc, PassEncoder,
- *   GPUBackend texture methods, render-pass methods, draw methods except TS
- *   drawIndexed indexType, frame lifecycle, getCaps(), and stats.
+ *   GPUBackend texture/render-target methods, render-pass methods, draw methods
+ *   except TS drawIndexed indexType, GX VRAM snapshot capture, frame lifecycle,
+ *   getCaps(), and stats.
  * - Shared render semantics above this boundary are VDP/VOUT/RPU command
  *   records. Concrete WebGL/GLES pass code owns GPU API binding such as shader
  *   programs, VAO/buffer state, glVertexAttribPointer calls, uniform binding,
@@ -16,7 +17,7 @@
  *   render-graph plumbing: TextureFormat, BufferHandle, BackendContext,
  *   RenderTargetHandle, PresentationMode, GraphicsPipelineBindingLayout,
  *   RenderGraphSlot, RenderGraphPassContext, RenderPassGraphDef, RenderPassDef,
- *   GraphicsPipelineBuildDesc, RenderPassInstanceHandle, AnyBackend,
+ *   GraphicsPipelineBuildDesc, RenderPassInstanceHandle,
  *   RenderPassStateRegistry, RenderPassStateId, pipeline-state types,
  *   RenderContext, FogUniforms, AtmosphereParams, and CRTDitherType. C++ owns
  *   the equivalent native pass scheduling in render/backend/pass files.
@@ -24,8 +25,7 @@
  *   browser/backend-resource controls: setActiveTexture(), bindTexture2D(),
  *   bindTextureCube(), createImageBitmapFromSource(),
  *   createCubemapFromSources(), createSolidCubemap(), createCubemapEmpty(),
- *   uploadCubemapFace(), createColorTexture(), createDepthTexture(),
- *   createRenderTarget(), createRenderPassInstance(),
+ *   uploadCubemapFace(), createRenderPassInstance(),
  *   destroyRenderPassInstance(), setGraphicsPipeline(), setPassState(),
  *   getPassState(), createVertexBuffer(), updateVertexBuffer(),
  *   bindArrayBuffer(), createVertexArray(), bindVertexArray(),
@@ -39,7 +39,11 @@
  *   concrete pass code.
  * - C++-only public symbols here are C++/libretro backend storage and
  *   ownership: BackendType, FrameStats, SoftwareTexture, DitherParams,
- *   SoftwareBackend, and readyForTextureUpload().
+ *   SoftwareBackend, readyForTextureUpload(), and native render-target
+ *   activation for the C++ render graph.
+ * - C++ keeps synchronous readTextureRegion on GPUBackend because native
+ *   software/GLES2 readback is synchronous; TS keeps synchronous readback on
+ *   concrete sync backends instead of the WebGPU-capable common interface.
  */
 
 #ifndef BMSX_BACKEND_H
@@ -60,6 +64,7 @@ using TextureHandle = void*;
 
 class RenderPassLibrary;
 class VDP;
+class GxGpu;
 
 const std::array<u8, 256>& srgbToLinearLut();
 const std::array<u8, 256>& linearToSrgbLut();
@@ -85,6 +90,7 @@ struct BackendCaps {
 	i32 maxTextureSize = 4096;
 	bool supportsInstancing = false;
 	bool supportsDepthTexture = true;
+	bool supportsCorePresentation = true;
 };
 
 /* ============================================================================
@@ -170,9 +176,15 @@ public:
 	virtual void updateTexture(TextureHandle handle, const u8* data, i32 width, i32 height, const TextureParams& params) = 0;
 	virtual TextureHandle resizeTexture(TextureHandle handle, i32 width, i32 height, const TextureParams& params) = 0;
 	virtual void updateTextureRegion(TextureHandle handle, const u8* data, i32 width, i32 height, i32 x, i32 y, const TextureParams& params) = 0;
-	virtual void readTextureRegion(TextureHandle handle, u8* out, i32 width, i32 height, i32 x, i32 y, const TextureParams& params) = 0;
 	virtual TextureHandle createSolidTexture2D(i32 width, i32 height, u32 color, const TextureParams& params) = 0;
 	virtual void destroyTexture(TextureHandle handle) = 0;
+	virtual TextureHandle createColorTexture(i32 width, i32 height, const std::array<f32, 4>* initialClearColor) = 0;
+	virtual TextureHandle createDepthTexture(i32 width, i32 height) = 0;
+	virtual void destroyDepthTexture(TextureHandle handle) = 0;
+	virtual void* createRenderTarget(TextureHandle color, TextureHandle depth) = 0;
+	virtual void destroyRenderTarget(void* target) = 0;
+	virtual void activateRenderTarget(void* target, i32 width, i32 height) = 0;
+	virtual void activateDefaultRenderTarget() = 0;
 	virtual void registerBuiltinPasses(RenderPassLibrary& registry) = 0;
 
 	// ─────────────────────────────────────────────────────────────────────────
@@ -194,6 +206,7 @@ public:
 	virtual void beginFrame() = 0;
 	virtual void endFrame() = 0;
 	virtual FrameStats getFrameStats() const = 0;
+	virtual void captureGxGpuVramSnapshot(GxGpu& gxGpu) = 0;
 
 	// ─────────────────────────────────────────────────────────────────────────
 	// Capabilities
@@ -220,10 +233,16 @@ class SoftwareBackend : public GPUBackend {
 	void updateTexture(TextureHandle handle, const u8* data, i32 width, i32 height, const TextureParams& params) override;
 	TextureHandle resizeTexture(TextureHandle handle, i32 width, i32 height, const TextureParams& params) override;
 	void updateTextureRegion(TextureHandle handle, const u8* data, i32 width, i32 height, i32 x, i32 y, const TextureParams& params) override;
-	void readTextureRegion(TextureHandle handle, u8* out, i32 width, i32 height, i32 x, i32 y, const TextureParams& params) override;
 	TextureHandle createSolidTexture2D(i32 width, i32 height, u32 color, const TextureParams& params) override;
 	void destroyTexture(TextureHandle handle) override;
-	void registerBuiltinPasses(RenderPassLibrary& registry) override;
+	TextureHandle createColorTexture(i32 width, i32 height, const std::array<f32, 4>* initialClearColor) override;
+		TextureHandle createDepthTexture(i32 width, i32 height) override;
+		void destroyDepthTexture(TextureHandle handle) override;
+		void* createRenderTarget(TextureHandle color, TextureHandle depth) override;
+		void destroyRenderTarget(void* target) override;
+		void activateRenderTarget(void* target, i32 width, i32 height) override;
+		void activateDefaultRenderTarget() override;
+		void registerBuiltinPasses(RenderPassLibrary& registry) override;
 
 	// Render pass management
 	void clear(const std::array<f32, 4>* color, const f32* depth) override;
@@ -238,6 +257,7 @@ class SoftwareBackend : public GPUBackend {
 	void beginFrame() override;
 	void endFrame() override;
 	FrameStats getFrameStats() const override { return m_stats; }
+	void captureGxGpuVramSnapshot(GxGpu& gxGpu) override;
 
 	// Capabilities
 	BackendCaps getCaps() const override;
@@ -260,13 +280,17 @@ class SoftwareBackend : public GPUBackend {
 	i32 height() const { return m_height; }
 	i32 pitch() const { return m_pitch; }
 
-	// Update framebuffer pointer (e.g., on resize)
-	void setFramebuffer(u32* fb, i32 width, i32 height, i32 pitch);
+		// Update framebuffer pointer (e.g., on resize)
+		void setFramebuffer(u32* fb, i32 width, i32 height, i32 pitch);
 
-private:
-	u32* m_framebuffer;
-	i32 m_width;
-	i32 m_height;
+	private:
+		u32* m_default_framebuffer;
+		i32 m_default_width;
+		i32 m_default_height;
+		i32 m_default_pitch;
+		u32* m_framebuffer;
+		i32 m_width;
+		i32 m_height;
 	i32 m_pitch;  // Bytes per row
 
 	FrameStats m_stats;
@@ -277,9 +301,10 @@ private:
 	// Depth buffer (optional)
 	std::vector<f32> m_depthBuffer;
 
-	// Helpers
-	void blendPixel(i32 x, i32 y, u32 color);
-};
+		// Helpers
+		void applyFramebufferTarget(u32* fb, i32 width, i32 height, i32 pitch);
+		void blendPixel(i32 x, i32 y, u32 color);
+	};
 
 } // namespace bmsx
 

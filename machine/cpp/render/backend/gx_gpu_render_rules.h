@@ -17,10 +17,6 @@ inline i32 gxGpuSigned11(u32 value) {
 	return (raw & 0x400) != 0 ? raw - 0x800 : raw;
 }
 
-inline i32 gxGpuVertexX(u32 word) {
-	return gxGpuSigned11(word);
-}
-
 inline i32 gxGpuVertexY(u32 word) {
 	return gxGpuSigned11(word >> 16u);
 }
@@ -72,10 +68,6 @@ inline u32 gxGpuHorizontalDisplayRangeEnd(u32 horizontalDisplayRangeWord) {
 inline i32 gxGpuHorizontalVisibleColumns(u32 horizontalDisplayRangeWord, u32 displayModeWord) {
 	const i32 rangeCycles = static_cast<i32>(gxGpuHorizontalDisplayRangeEnd(horizontalDisplayRangeWord)) - static_cast<i32>(gxGpuHorizontalDisplayRangeStart(horizontalDisplayRangeWord));
 	return (((rangeCycles / static_cast<i32>(gxGpuDisplayModeDotClockDivider(displayModeWord))) + 2) & ~0x03);
-}
-
-inline i32 gxGpuDrawingOffsetX(u32 word) {
-	return gxGpuSigned11(word);
 }
 
 inline i32 gxGpuDrawingOffsetY(u32 word) {

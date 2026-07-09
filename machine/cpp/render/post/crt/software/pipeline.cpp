@@ -12,8 +12,12 @@ namespace bmsx {
 namespace CRTPipeline {
 namespace {
 
-void renderPresentSoftware(GPUBackend* backend, GameView*, void*, RenderPassStateStorage& state, void*) {
+void renderPresentSoftware(GPUBackend* backend, GameView*, void* fbo, RenderPassStateStorage& state, void*) {
 	auto& software = *static_cast<SoftwareBackend*>(backend);
+	if (fbo != nullptr) {
+		auto* target = static_cast<SoftwareTexture*>(fbo);
+		software.activateRenderTarget(fbo, target->width, target->height);
+	}
 	const PresentPipelineState& present = state.present;
 	software.blitTexture(present.colorTex,
 		0,
@@ -34,7 +38,36 @@ void renderPresentSoftware(GPUBackend* backend, GameView*, void*, RenderPassStat
 
 } // namespace
 
+void registerPresentationHistorySoftwarePass(
+	RenderPassLibrary& registry,
+	const char* id,
+	const char* name,
+	RenderPassDef::RenderGraphSlot historySlot,
+	bool (*shouldExecute)(GameView*, void*)) {
+	RenderPassDef desc;
+	desc.id = id;
+	desc.name = name;
+	setPresentationHistoryGraph(desc, historySlot);
+	desc.exec = renderPresentSoftware;
+	desc.shouldExecute = shouldExecute;
+	registry.registerPass(desc);
+}
+
 void registerCRTPostSoftwarePass(RenderPassLibrary& registry) {
+
+	registerPresentationHistorySoftwarePass(
+		registry,
+		"presentation_history_a",
+		"PresentationHistoryA",
+		RenderPassDef::RenderGraphSlot::FrameHistoryA,
+		shouldUpdatePresentationHistoryA);
+	registerPresentationHistorySoftwarePass(
+		registry,
+		"presentation_history_b",
+		"PresentationHistoryB",
+		RenderPassDef::RenderGraphSlot::FrameHistoryB,
+		shouldUpdatePresentationHistoryB);
+
 	RenderPassDef present;
 	present.id = "present";
 	present.name = "Present";

@@ -252,26 +252,40 @@ export function drawGxGpuSoftwareTriangle(
 	const blendMode = gxGpuDrawModeTransparencyMode(drawModeWord);
 	const maskBitModeWord = commandBuffer.commandMaskBitModeWord[commandIndex];
 	const interlacedRenderWord = commandBuffer.commandInterlacedRenderWord[commandIndex];
+	const edgeSign = flip ? -1 : 1;
+	const edge0StepX = (y2 - y1) * edgeSign;
+	const edge1StepX = (y0 - y2) * edgeSign;
+	const edge2StepX = (y1 - y0) * edgeSign;
+	const edge0StepY = -(x2 - x1) * edgeSign;
+	const edge1StepY = -(x0 - x2) * edgeSign;
+	const edge2StepY = -(x1 - x0) * edgeSign;
+	let rowW0 = edgeValue(x1, y1, x2, y2, left, top) * edgeSign;
+	let rowW1 = edgeValue(x2, y2, x0, y0, left, top) * edgeSign;
+	let rowW2 = edgeValue(x0, y0, x1, y1, left, top) * edgeSign;
 	for (let y = top; y <= bottom; y += 1) {
 		if (gxGpuSoftwareInterlacedSkipsLine(y, interlacedRenderWord)) {
+			rowW0 += edge0StepY;
+			rowW1 += edge1StepY;
+			rowW2 += edge2StepY;
 			continue;
 		}
+		let w0 = rowW0;
+		let w1 = rowW1;
+		let w2 = rowW2;
 		for (let x = left; x <= right; x += 1) {
-			let w0 = edgeValue(x1, y1, x2, y2, x, y);
-			let w1 = edgeValue(x2, y2, x0, y0, x, y);
-			let w2 = edgeValue(x0, y0, x1, y1, x, y);
-			if (flip) {
-				w0 = -w0;
-				w1 = -w1;
-				w2 = -w2;
-			}
 			if (w0 >= 0 && w1 >= 0 && w2 >= 0) {
 				const r8 = sameColor ? r0 : integerDivide((r0 * w0) + (r1 * w1) + (r2 * w2), area);
 				const g8 = sameColor ? g0 : integerDivide((g0 * w0) + (g1 * w1) + (g2 * w2), area);
 				const b8 = sameColor ? b0 : integerDivide((b0 * w0) + (b1 * w1) + (b2 * w2), area);
 				gxGpuSoftwareWriteRenderVramPixel(x, y, r8, g8, b8, ditherEnabled, blendEnabled, blendMode, maskBitModeWord);
 			}
+			w0 += edge0StepX;
+			w1 += edge1StepX;
+			w2 += edge2StepX;
 		}
+		rowW0 += edge0StepY;
+		rowW1 += edge1StepY;
+		rowW2 += edge2StepY;
 	}
 }
 
@@ -354,19 +368,27 @@ export function drawGxGpuSoftwareTexturedTriangle(
 	const blendMode = gxGpuDrawModeTransparencyMode(drawModeWord);
 	const maskBitModeWord = commandBuffer.commandMaskBitModeWord[commandIndex];
 	const interlacedRenderWord = commandBuffer.commandInterlacedRenderWord[commandIndex];
+	const edgeSign = flip ? -1 : 1;
+	const edge0StepX = (y2 - y1) * edgeSign;
+	const edge1StepX = (y0 - y2) * edgeSign;
+	const edge2StepX = (y1 - y0) * edgeSign;
+	const edge0StepY = -(x2 - x1) * edgeSign;
+	const edge1StepY = -(x0 - x2) * edgeSign;
+	const edge2StepY = -(x1 - x0) * edgeSign;
+	let rowW0 = edgeValue(x1, y1, x2, y2, left, top) * edgeSign;
+	let rowW1 = edgeValue(x2, y2, x0, y0, left, top) * edgeSign;
+	let rowW2 = edgeValue(x0, y0, x1, y1, left, top) * edgeSign;
 	for (let y = top; y <= bottom; y += 1) {
 		if (gxGpuSoftwareInterlacedSkipsLine(y, interlacedRenderWord)) {
+			rowW0 += edge0StepY;
+			rowW1 += edge1StepY;
+			rowW2 += edge2StepY;
 			continue;
 		}
+		let w0 = rowW0;
+		let w1 = rowW1;
+		let w2 = rowW2;
 		for (let x = left; x <= right; x += 1) {
-			let w0 = edgeValue(x1, y1, x2, y2, x, y);
-			let w1 = edgeValue(x2, y2, x0, y0, x, y);
-			let w2 = edgeValue(x0, y0, x1, y1, x, y);
-			if (flip) {
-				w0 = -w0;
-				w1 = -w1;
-				w2 = -w2;
-			}
 			if (w0 >= 0 && w1 >= 0 && w2 >= 0) {
 				const colorWord = sameColor ? color0 : (
 					integerDivide((r0 * w0) + (r1 * w1) + (r2 * w2), area)
@@ -400,7 +422,13 @@ export function drawGxGpuSoftwareTexturedTriangle(
 					maskBitModeWord,
 				);
 			}
+			w0 += edge0StepX;
+			w1 += edge1StepX;
+			w2 += edge2StepX;
 		}
+		rowW0 += edge0StepY;
+		rowW1 += edge1StepY;
+		rowW2 += edge2StepY;
 	}
 }
 

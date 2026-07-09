@@ -1,7 +1,7 @@
 import type { RenderPassLibrary } from '../../../backend/pass/library';
 import type { RenderPassStateRegistry } from '../../../backend/backend';
 import type { WebGLBackend } from '../../../backend/webgl/backend';
-import { createCrtPassState, createPresentPassState, shouldExecuteAutoCrtPass, shouldExecuteAutoPresentPass, writeCrtPassState, writePresentPassState } from '../state';
+import { createCrtPassState, createPresentPassState, shouldExecuteAutoCrtPass, shouldExecuteAutoPresentPass, shouldUpdatePresentationHistoryA, shouldUpdatePresentationHistoryB, writeCrtPassState, writePresentationHistoryPassState, writePresentPassState } from '../state';
 import { TEXTURE_UNIT_POST_PROCESSING_SOURCE } from '../../../backend/webgl/constants';
 import fragmentShaderCRTCode from './shaders/crt.frag.glsl';
 import fragmentShaderPresentCode from './shaders/present.frag.glsl';
@@ -17,7 +17,6 @@ import {
 const crtColorBleedScratch = new Float32Array(3);
 const crtGlowColorScratch = new Float32Array(3);
 
-
 function writeCrtVec3(out: Float32Array, src: readonly number[]): Float32Array {
 	out[0] = src[0];
 	out[1] = src[1];
@@ -25,8 +24,81 @@ function writeCrtVec3(out: Float32Array, src: readonly number[]): Float32Array {
 	return out;
 }
 
-export function registerCRT_WebGL(registry: RenderPassLibrary): void {
+function bindPresentShaderInputs(backend: WebGLBackend, state: RenderPassStateRegistry['present'] | RenderPassStateRegistry['presentation_history_a'] | RenderPassStateRegistry['presentation_history_b']): void {
+	backend.setUniform2f('u_resolution', state.width, state.height);
+	backend.setUniform1f('u_scale', 1.0);
+	backend.setActiveTexture(TEXTURE_UNIT_POST_PROCESSING_SOURCE);
+	backend.bindTexture2D(state.colorTex as WebGLTexture);
+	backend.setUniform1i('u_texture', TEXTURE_UNIT_POST_PROCESSING_SOURCE);
+}
+
+export function registerCRT(registry: RenderPassLibrary): void {
+	let historyQuadA: FullscreenQuad;
+	let historyQuadB: FullscreenQuad;
 	let presentQuad: FullscreenQuad;
+
+	registry.register({
+		id: 'presentation_history_a',
+		name: 'PresentationHistoryA',
+		vsCode: vertexShaderCRTCode,
+		fsCode: fragmentShaderPresentCode,
+		initialState: createPresentPassState(),
+		graph: { reads: ['frame_color', 'device_color'], writes: ['frame_history_a'], writeState: writePresentationHistoryPassState },
+		shouldExecute: shouldUpdatePresentationHistoryA,
+		bootstrap: (backend) => {
+			const gl = (backend as WebGLBackend).gl as WebGL2RenderingContext;
+			historyQuadA = {
+				gl,
+				positionBuffer: null,
+				texcoordBuffer: null,
+				positionAttrib: -1,
+				texcoordAttrib: -1,
+				width: -1,
+				height: -1,
+				texcoords: POST_PROCESS_TEXCOORDS,
+				label: 'PresentationHistoryA',
+			};
+			createFullscreenQuad(historyQuadA);
+		},
+		exec: (_be: WebGLBackend, fbo, state: RenderPassStateRegistry['presentation_history_a']) => {
+			renderFullscreenToFramebuffer(historyQuadA, fbo as WebGLFramebuffer, state.width, state.height);
+		},
+		prepare: (be: WebGLBackend, state: RenderPassStateRegistry['presentation_history_a']) => {
+			bindPresentShaderInputs(be, state);
+		}
+	});
+
+	registry.register({
+		id: 'presentation_history_b',
+		name: 'PresentationHistoryB',
+		vsCode: vertexShaderCRTCode,
+		fsCode: fragmentShaderPresentCode,
+		initialState: createPresentPassState(),
+		graph: { reads: ['frame_color', 'device_color'], writes: ['frame_history_b'], writeState: writePresentationHistoryPassState },
+		shouldExecute: shouldUpdatePresentationHistoryB,
+		bootstrap: (backend) => {
+			const gl = (backend as WebGLBackend).gl as WebGL2RenderingContext;
+			historyQuadB = {
+				gl,
+				positionBuffer: null,
+				texcoordBuffer: null,
+				positionAttrib: -1,
+				texcoordAttrib: -1,
+				width: -1,
+				height: -1,
+				texcoords: POST_PROCESS_TEXCOORDS,
+				label: 'PresentationHistoryB',
+			};
+			createFullscreenQuad(historyQuadB);
+		},
+		exec: (_be: WebGLBackend, fbo, state: RenderPassStateRegistry['presentation_history_b']) => {
+			renderFullscreenToFramebuffer(historyQuadB, fbo as WebGLFramebuffer, state.width, state.height);
+		},
+		prepare: (be: WebGLBackend, state: RenderPassStateRegistry['presentation_history_b']) => {
+			bindPresentShaderInputs(be, state);
+		}
+	});
+
 	registry.register({
 		id: 'present',
 		name: 'Present',
@@ -52,12 +124,10 @@ export function registerCRT_WebGL(registry: RenderPassLibrary): void {
 			createFullscreenQuad(presentQuad);
 		},
 		exec: (_be: WebGLBackend, _fbo, state: RenderPassStateRegistry['present']) => {
-			renderFullscreenToBackbuffer(presentQuad, state.width, state.height);
+			renderFullscreenToFramebuffer(presentQuad, null, state.width, state.height);
 		},
 		prepare: (be: WebGLBackend, state: RenderPassStateRegistry['present']) => {
-			be.setActiveTexture(TEXTURE_UNIT_POST_PROCESSING_SOURCE);
-			be.bindTexture2D(state.colorTex as WebGLTexture);
-			be.setUniform1i('u_texture', TEXTURE_UNIT_POST_PROCESSING_SOURCE);
+			bindPresentShaderInputs(be, state);
 		}
 	});
 
@@ -87,7 +157,7 @@ export function registerCRT_WebGL(registry: RenderPassLibrary): void {
 			createFullscreenQuad(crtQuad);
 		},
 		exec: (_be: WebGLBackend, _fbo, state: RenderPassStateRegistry['crt']) => {
-			renderFullscreenToBackbuffer(crtQuad, state.width, state.height);
+			renderFullscreenToFramebuffer(crtQuad, null, state.width, state.height);
 		},
 		prepare: (be: WebGLBackend, state: RenderPassStateRegistry['crt']) => {
 			bindCRTUniforms(be, state);
@@ -97,9 +167,9 @@ export function registerCRT_WebGL(registry: RenderPassLibrary): void {
 	});
 }
 
-function renderFullscreenToBackbuffer(fullscreenQuad: FullscreenQuad, width: number, height: number): void {
+function renderFullscreenToFramebuffer(fullscreenQuad: FullscreenQuad, fbo: WebGLFramebuffer | null, width: number, height: number): void {
 	const gl = fullscreenQuad.gl;
-	gl.bindFramebuffer(gl.FRAMEBUFFER, null);
+	gl.bindFramebuffer(gl.FRAMEBUFFER, fbo);
 	gl.viewport(0, 0, width, height);
 	updateFullscreenQuad(fullscreenQuad, width, height);
 	bindFullscreenQuad(fullscreenQuad, fullscreenQuad.positionAttrib, fullscreenQuad.texcoordAttrib);

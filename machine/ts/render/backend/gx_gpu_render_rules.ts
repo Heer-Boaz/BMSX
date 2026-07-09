@@ -21,10 +21,6 @@ export function gxGpuSigned11(value: number): number {
 	return (raw & 0x400) !== 0 ? raw - 0x800 : raw;
 }
 
-export function gxGpuVertexX(word: number): number {
-	return gxGpuSigned11(word);
-}
-
 export function gxGpuVertexY(word: number): number {
 	return gxGpuSigned11(word >>> 16);
 }
@@ -76,10 +72,6 @@ export function gxGpuHorizontalDisplayRangeEnd(horizontalDisplayRangeWord: numbe
 export function gxGpuHorizontalVisibleColumns(horizontalDisplayRangeWord: number, displayModeWord: number): number {
 	const rangeCycles = gxGpuHorizontalDisplayRangeEnd(horizontalDisplayRangeWord) - gxGpuHorizontalDisplayRangeStart(horizontalDisplayRangeWord);
 	return (((rangeCycles / gxGpuDisplayModeDotClockDivider(displayModeWord)) + 2) | 0) & ~0x03;
-}
-
-export function gxGpuDrawingOffsetX(word: number): number {
-	return gxGpuSigned11(word);
 }
 
 export function gxGpuDrawingOffsetY(word: number): number {

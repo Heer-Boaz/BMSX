@@ -19,7 +19,8 @@ import {
 	GEOMETRY_CONTROLLER_REGISTER_COUNT,
 	type GeometryControllerPhase,
 } from '../../devices/geometry/contracts';
-import type { GxGpuState } from '../../devices/gx/gpu';
+import { GX_GPU_GP0_COMMAND_BUFFER_WORDS, type GxGpuSaveState, type GxGpuState } from '../../devices/gx/gpu';
+import { GX_GPU_COMMAND_CAPACITY, GX_GPU_COMMAND_WORD_CAPACITY, GX_GPU_VRAM_BYTE_COUNT, type GxGpuCommandBufferState } from '../../devices/gx/gpu_command_buffer';
 import type { GxGteState } from '../../devices/gx/gte';
 import { GX_GTE_CONTROL_REGISTER_COUNT, GX_GTE_DATA_REGISTER_COUNT } from '../../devices/gx/gte';
 import type { GeometryJobState } from '../../devices/geometry/job';
@@ -145,6 +146,14 @@ function requireBinaryValue(value: unknown, label: string): Uint8Array {
 		throw new Error(`${label} must be binary.`);
 	}
 	return value;
+}
+
+function requireBinaryFixedLength(value: unknown, label: string, byteLength: number): Uint8Array {
+	const bytes = requireBinaryValue(value, label);
+	if (bytes.byteLength !== byteLength) {
+		throw new Error(`${label} must contain ${byteLength} bytes.`);
+	}
+	return bytes;
 }
 
 function requireBoundedU32(value: unknown, label: string, min: number, max: number): number {
@@ -461,22 +470,140 @@ function decodeGeometryControllerState(value: unknown, label: string): GeometryC
 	};
 }
 
+function encodeGxGpuCommandBufferState(state: GxGpuCommandBufferState): GxGpuCommandBufferState {
+	return {
+		commandCount: state.commandCount >>> 0,
+		presentCommandCount: state.presentCommandCount >>> 0,
+		wordCount: state.wordCount >>> 0,
+		commandKind: encodeVector(state.commandKind, (word) => word >>> 0),
+		commandOpcode: encodeVector(state.commandOpcode, (word) => word >>> 0),
+		commandWordStart: encodeVector(state.commandWordStart, (word) => word >>> 0),
+		commandWordCount: encodeVector(state.commandWordCount, (word) => word >>> 0),
+		commandDrawModeWord: encodeVector(state.commandDrawModeWord, (word) => word >>> 0),
+		commandTextureWindowWord: encodeVector(state.commandTextureWindowWord, (word) => word >>> 0),
+		commandDrawingAreaTopLeftWord: encodeVector(state.commandDrawingAreaTopLeftWord, (word) => word >>> 0),
+		commandDrawingAreaBottomRightWord: encodeVector(state.commandDrawingAreaBottomRightWord, (word) => word >>> 0),
+		commandDrawingOffsetWord: encodeVector(state.commandDrawingOffsetWord, (word) => word >>> 0),
+		commandMaskBitModeWord: encodeVector(state.commandMaskBitModeWord, (word) => word >>> 0),
+		commandInterlacedRenderWord: encodeVector(state.commandInterlacedRenderWord, (word) => word >>> 0),
+		words: encodeVector(state.words, (word) => word >>> 0),
+	};
+}
+
+function decodeGxGpuCommandBufferState(value: unknown, label: string): GxGpuCommandBufferState {
+	const object = requireObject(value, label);
+	const commandCount = requireBoundedU32(requireObjectKey(object, 'commandCount', label, `${label}.commandCount`), `${label}.commandCount`, 0, GX_GPU_COMMAND_CAPACITY);
+	const presentCommandCount = requireBoundedU32(requireObjectKey(object, 'presentCommandCount', label, `${label}.presentCommandCount`), `${label}.presentCommandCount`, 0, commandCount);
+	const wordCount = requireBoundedU32(requireObjectKey(object, 'wordCount', label, `${label}.wordCount`), `${label}.wordCount`, 0, GX_GPU_COMMAND_WORD_CAPACITY);
+	return {
+		commandCount,
+		presentCommandCount,
+		wordCount,
+		commandKind: decodeU8FixedArray(requireObjectKey(object, 'commandKind', label, `${label}.commandKind`), `${label}.commandKind`, commandCount),
+		commandOpcode: decodeU8FixedArray(requireObjectKey(object, 'commandOpcode', label, `${label}.commandOpcode`), `${label}.commandOpcode`, commandCount),
+		commandWordStart: decodeU32FixedArray(requireObjectKey(object, 'commandWordStart', label, `${label}.commandWordStart`), `${label}.commandWordStart`, commandCount),
+		commandWordCount: decodeU32FixedArray(requireObjectKey(object, 'commandWordCount', label, `${label}.commandWordCount`), `${label}.commandWordCount`, commandCount),
+		commandDrawModeWord: decodeU32FixedArray(requireObjectKey(object, 'commandDrawModeWord', label, `${label}.commandDrawModeWord`), `${label}.commandDrawModeWord`, commandCount),
+		commandTextureWindowWord: decodeU32FixedArray(requireObjectKey(object, 'commandTextureWindowWord', label, `${label}.commandTextureWindowWord`), `${label}.commandTextureWindowWord`, commandCount),
+		commandDrawingAreaTopLeftWord: decodeU32FixedArray(requireObjectKey(object, 'commandDrawingAreaTopLeftWord', label, `${label}.commandDrawingAreaTopLeftWord`), `${label}.commandDrawingAreaTopLeftWord`, commandCount),
+		commandDrawingAreaBottomRightWord: decodeU32FixedArray(requireObjectKey(object, 'commandDrawingAreaBottomRightWord', label, `${label}.commandDrawingAreaBottomRightWord`), `${label}.commandDrawingAreaBottomRightWord`, commandCount),
+		commandDrawingOffsetWord: decodeU32FixedArray(requireObjectKey(object, 'commandDrawingOffsetWord', label, `${label}.commandDrawingOffsetWord`), `${label}.commandDrawingOffsetWord`, commandCount),
+		commandMaskBitModeWord: decodeU32FixedArray(requireObjectKey(object, 'commandMaskBitModeWord', label, `${label}.commandMaskBitModeWord`), `${label}.commandMaskBitModeWord`, commandCount),
+		commandInterlacedRenderWord: decodeU8FixedArray(requireObjectKey(object, 'commandInterlacedRenderWord', label, `${label}.commandInterlacedRenderWord`), `${label}.commandInterlacedRenderWord`, commandCount),
+		words: decodeU32FixedArray(requireObjectKey(object, 'words', label, `${label}.words`), `${label}.words`, wordCount),
+	};
+}
+
 function encodeGxGpuState(state: GxGpuState): GxGpuState {
 	return {
 		gp0Word: state.gp0Word >>> 0,
 		gp1Word: state.gp1Word >>> 0,
 		displayModeWord: state.displayModeWord >>> 0,
 		statusWord: state.statusWord >>> 0,
+		gp0CommandWordCount: state.gp0CommandWordCount >>> 0,
+		gp0CommandTargetWordCount: state.gp0CommandTargetWordCount >>> 0,
+		gp0CommandWords: encodeVector(state.gp0CommandWords, (word) => word >>> 0),
+		gp0ImageLoadWordsRemaining: state.gp0ImageLoadWordsRemaining >>> 0,
+		gp0ImageLoadCommandWordStart: state.gp0ImageLoadCommandWordStart >>> 0,
+		gp0ImageLoadCommandWordCount: state.gp0ImageLoadCommandWordCount >>> 0,
+		gp0ImageLoadCommandOpcode: state.gp0ImageLoadCommandOpcode >>> 0,
+		gp0PolylineWordsPerVertex: state.gp0PolylineWordsPerVertex >>> 0,
+		gp0PolylinePayloadPhase: state.gp0PolylinePayloadPhase >>> 0,
+		gp0PolylineCommandWordStart: state.gp0PolylineCommandWordStart >>> 0,
+		gp0PolylineCommandWordCount: state.gp0PolylineCommandWordCount >>> 0,
+		gp0PolylineCommandOpcode: state.gp0PolylineCommandOpcode >>> 0,
+		gpuReadWord: state.gpuReadWord >>> 0,
+		drawModeWord: state.drawModeWord >>> 0,
+		textureWindowWord: state.textureWindowWord >>> 0,
+		drawingAreaTopLeftWord: state.drawingAreaTopLeftWord >>> 0,
+		drawingAreaBottomRightWord: state.drawingAreaBottomRightWord >>> 0,
+		drawingOffsetWord: state.drawingOffsetWord >>> 0,
+		maskBitModeWord: state.maskBitModeWord >>> 0,
+		displayStartWord: state.displayStartWord >>> 0,
+		horizontalDisplayRangeWord: state.horizontalDisplayRangeWord >>> 0,
+		verticalDisplayRangeWord: state.verticalDisplayRangeWord >>> 0,
+		textureDisableAllowedWord: state.textureDisableAllowedWord >>> 0,
+		presentStatusWord: state.presentStatusWord >>> 0,
+		presentDisplayModeWord: state.presentDisplayModeWord >>> 0,
+		presentDisplayStartWord: state.presentDisplayStartWord >>> 0,
+		presentHorizontalDisplayRangeWord: state.presentHorizontalDisplayRangeWord >>> 0,
+		presentVerticalDisplayRangeWord: state.presentVerticalDisplayRangeWord >>> 0,
+		commandBuffer: encodeGxGpuCommandBufferState(state.commandBuffer),
 	};
 }
 
 function decodeGxGpuState(value: unknown, label: string): GxGpuState {
 	const object = requireObject(value, label);
+	const gp0CommandWordCount = requireBoundedU32(requireObjectKey(object, 'gp0CommandWordCount', label, `${label}.gp0CommandWordCount`), `${label}.gp0CommandWordCount`, 0, GX_GPU_GP0_COMMAND_BUFFER_WORDS);
 	return {
 		gp0Word: requireBoundedU32(requireObjectKey(object, 'gp0Word', label, `${label}.gp0Word`), `${label}.gp0Word`, 0, 0xffffffff),
 		gp1Word: requireBoundedU32(requireObjectKey(object, 'gp1Word', label, `${label}.gp1Word`), `${label}.gp1Word`, 0, 0xffffffff),
 		displayModeWord: requireBoundedU32(requireObjectKey(object, 'displayModeWord', label, `${label}.displayModeWord`), `${label}.displayModeWord`, 0, 0xffffffff),
 		statusWord: requireBoundedU32(requireObjectKey(object, 'statusWord', label, `${label}.statusWord`), `${label}.statusWord`, 0, 0xffffffff),
+		gp0CommandWordCount,
+		gp0CommandTargetWordCount: requireBoundedU32(requireObjectKey(object, 'gp0CommandTargetWordCount', label, `${label}.gp0CommandTargetWordCount`), `${label}.gp0CommandTargetWordCount`, 0, GX_GPU_GP0_COMMAND_BUFFER_WORDS),
+		gp0CommandWords: decodeU32FixedArray(requireObjectKey(object, 'gp0CommandWords', label, `${label}.gp0CommandWords`), `${label}.gp0CommandWords`, gp0CommandWordCount),
+		gp0ImageLoadWordsRemaining: requireBoundedU32(requireObjectKey(object, 'gp0ImageLoadWordsRemaining', label, `${label}.gp0ImageLoadWordsRemaining`), `${label}.gp0ImageLoadWordsRemaining`, 0, GX_GPU_COMMAND_WORD_CAPACITY),
+		gp0ImageLoadCommandWordStart: requireBoundedU32(requireObjectKey(object, 'gp0ImageLoadCommandWordStart', label, `${label}.gp0ImageLoadCommandWordStart`), `${label}.gp0ImageLoadCommandWordStart`, 0, GX_GPU_COMMAND_WORD_CAPACITY),
+		gp0ImageLoadCommandWordCount: requireBoundedU32(requireObjectKey(object, 'gp0ImageLoadCommandWordCount', label, `${label}.gp0ImageLoadCommandWordCount`), `${label}.gp0ImageLoadCommandWordCount`, 0, GX_GPU_COMMAND_WORD_CAPACITY),
+		gp0ImageLoadCommandOpcode: requireBoundedU32(requireObjectKey(object, 'gp0ImageLoadCommandOpcode', label, `${label}.gp0ImageLoadCommandOpcode`), `${label}.gp0ImageLoadCommandOpcode`, 0, 0xff),
+		gp0PolylineWordsPerVertex: requireBoundedU32(requireObjectKey(object, 'gp0PolylineWordsPerVertex', label, `${label}.gp0PolylineWordsPerVertex`), `${label}.gp0PolylineWordsPerVertex`, 0, GX_GPU_GP0_COMMAND_BUFFER_WORDS),
+		gp0PolylinePayloadPhase: requireBoundedU32(requireObjectKey(object, 'gp0PolylinePayloadPhase', label, `${label}.gp0PolylinePayloadPhase`), `${label}.gp0PolylinePayloadPhase`, 0, GX_GPU_GP0_COMMAND_BUFFER_WORDS),
+		gp0PolylineCommandWordStart: requireBoundedU32(requireObjectKey(object, 'gp0PolylineCommandWordStart', label, `${label}.gp0PolylineCommandWordStart`), `${label}.gp0PolylineCommandWordStart`, 0, GX_GPU_COMMAND_WORD_CAPACITY),
+		gp0PolylineCommandWordCount: requireBoundedU32(requireObjectKey(object, 'gp0PolylineCommandWordCount', label, `${label}.gp0PolylineCommandWordCount`), `${label}.gp0PolylineCommandWordCount`, 0, GX_GPU_COMMAND_WORD_CAPACITY),
+		gp0PolylineCommandOpcode: requireBoundedU32(requireObjectKey(object, 'gp0PolylineCommandOpcode', label, `${label}.gp0PolylineCommandOpcode`), `${label}.gp0PolylineCommandOpcode`, 0, 0xff),
+		gpuReadWord: requireBoundedU32(requireObjectKey(object, 'gpuReadWord', label, `${label}.gpuReadWord`), `${label}.gpuReadWord`, 0, 0xffffffff),
+		drawModeWord: requireBoundedU32(requireObjectKey(object, 'drawModeWord', label, `${label}.drawModeWord`), `${label}.drawModeWord`, 0, 0xffffffff),
+		textureWindowWord: requireBoundedU32(requireObjectKey(object, 'textureWindowWord', label, `${label}.textureWindowWord`), `${label}.textureWindowWord`, 0, 0xffffffff),
+		drawingAreaTopLeftWord: requireBoundedU32(requireObjectKey(object, 'drawingAreaTopLeftWord', label, `${label}.drawingAreaTopLeftWord`), `${label}.drawingAreaTopLeftWord`, 0, 0xffffffff),
+		drawingAreaBottomRightWord: requireBoundedU32(requireObjectKey(object, 'drawingAreaBottomRightWord', label, `${label}.drawingAreaBottomRightWord`), `${label}.drawingAreaBottomRightWord`, 0, 0xffffffff),
+		drawingOffsetWord: requireBoundedU32(requireObjectKey(object, 'drawingOffsetWord', label, `${label}.drawingOffsetWord`), `${label}.drawingOffsetWord`, 0, 0xffffffff),
+		maskBitModeWord: requireBoundedU32(requireObjectKey(object, 'maskBitModeWord', label, `${label}.maskBitModeWord`), `${label}.maskBitModeWord`, 0, 0xffffffff),
+		displayStartWord: requireBoundedU32(requireObjectKey(object, 'displayStartWord', label, `${label}.displayStartWord`), `${label}.displayStartWord`, 0, 0xffffffff),
+		horizontalDisplayRangeWord: requireBoundedU32(requireObjectKey(object, 'horizontalDisplayRangeWord', label, `${label}.horizontalDisplayRangeWord`), `${label}.horizontalDisplayRangeWord`, 0, 0xffffffff),
+		verticalDisplayRangeWord: requireBoundedU32(requireObjectKey(object, 'verticalDisplayRangeWord', label, `${label}.verticalDisplayRangeWord`), `${label}.verticalDisplayRangeWord`, 0, 0xffffffff),
+		textureDisableAllowedWord: requireBoundedU32(requireObjectKey(object, 'textureDisableAllowedWord', label, `${label}.textureDisableAllowedWord`), `${label}.textureDisableAllowedWord`, 0, 0xffffffff),
+		presentStatusWord: requireBoundedU32(requireObjectKey(object, 'presentStatusWord', label, `${label}.presentStatusWord`), `${label}.presentStatusWord`, 0, 0xffffffff),
+		presentDisplayModeWord: requireBoundedU32(requireObjectKey(object, 'presentDisplayModeWord', label, `${label}.presentDisplayModeWord`), `${label}.presentDisplayModeWord`, 0, 0xffffffff),
+		presentDisplayStartWord: requireBoundedU32(requireObjectKey(object, 'presentDisplayStartWord', label, `${label}.presentDisplayStartWord`), `${label}.presentDisplayStartWord`, 0, 0xffffffff),
+		presentHorizontalDisplayRangeWord: requireBoundedU32(requireObjectKey(object, 'presentHorizontalDisplayRangeWord', label, `${label}.presentHorizontalDisplayRangeWord`), `${label}.presentHorizontalDisplayRangeWord`, 0, 0xffffffff),
+		presentVerticalDisplayRangeWord: requireBoundedU32(requireObjectKey(object, 'presentVerticalDisplayRangeWord', label, `${label}.presentVerticalDisplayRangeWord`), `${label}.presentVerticalDisplayRangeWord`, 0, 0xffffffff),
+		commandBuffer: decodeGxGpuCommandBufferState(requireObjectKey(object, 'commandBuffer', label, `${label}.commandBuffer`), `${label}.commandBuffer`),
+	};
+}
+
+function encodeGxGpuSaveState(state: GxGpuSaveState): GxGpuSaveState {
+	return {
+		...encodeGxGpuState(state),
+		vramBytes: state.vramBytes,
+	};
+}
+
+function decodeGxGpuSaveState(value: unknown, label: string): GxGpuSaveState {
+	const object = requireObject(value, label);
+	return {
+		...decodeGxGpuState(value, label),
+		vramBytes: requireBinaryFixedLength(requireObjectKey(object, 'vramBytes', label, `${label}.vramBytes`), `${label}.vramBytes`, GX_GPU_VRAM_BYTE_COUNT),
 	};
 }
 
@@ -1034,7 +1161,7 @@ function encodeMachineSaveState(state: MachineSaveState): MachineSaveState {
 	return {
 		memory: encodeMemorySaveState(state.memory),
 		geometry: encodeGeometryControllerState(state.geometry),
-		gxGpu: encodeGxGpuState(state.gxGpu),
+		gxGpu: encodeGxGpuSaveState(state.gxGpu),
 		gxGte: encodeGxGteState(state.gxGte),
 		irq: encodeIrqControllerState(state.irq),
 		audio: encodeAudioControllerState(state.audio),
@@ -1049,7 +1176,7 @@ function decodeMachineSaveState(value: unknown, label: string): MachineSaveState
 	return {
 		memory: decodeMemorySaveState(requireObjectKey(object, 'memory', label, 'machineState.machine.memory'), 'machineState.machine.memory'),
 		geometry: decodeGeometryControllerState(requireObjectKey(object, 'geometry', label, 'machineState.machine.geometry'), 'machineState.machine.geometry'),
-		gxGpu: decodeGxGpuState(requireObjectKey(object, 'gxGpu', label, 'machineState.machine.gxGpu'), 'machineState.machine.gxGpu'),
+		gxGpu: decodeGxGpuSaveState(requireObjectKey(object, 'gxGpu', label, 'machineState.machine.gxGpu'), 'machineState.machine.gxGpu'),
 		gxGte: decodeGxGteState(requireObjectKey(object, 'gxGte', label, 'machineState.machine.gxGte'), 'machineState.machine.gxGte'),
 		irq: decodeIrqControllerState(requireObjectKey(object, 'irq', label, 'machineState.machine.irq'), 'machineState.machine.irq'),
 		audio: decodeAudioControllerState(requireObjectKey(object, 'audio', label, 'machineState.machine.audio'), 'machineState.machine.audio'),

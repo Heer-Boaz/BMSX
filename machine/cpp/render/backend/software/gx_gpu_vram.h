@@ -12,7 +12,7 @@ constexpr size_t kGxGpuSoftwareVramWords = static_cast<size_t>(GX_GPU_VRAM_WIDTH
 
 extern std::array<u16, kGxGpuSoftwareVramWords> g_gxGpuSoftwareVram;
 
-void resetGxGpuSoftwareVram();
+void loadGxGpuSoftwareVramBytes(const u8* source);
 size_t gxGpuSoftwareVramIndex(i32 x, i32 y);
 u16 gxGpuSoftwareRgb888WordToRgb555(u32 word);
 u8 gxGpuSoftwareRgb555ChannelTo8(u32 channel);

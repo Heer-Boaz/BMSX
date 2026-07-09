@@ -7,12 +7,15 @@ import { RGBA8_LINEAR_TEXTURE_PARAMS, type TextureParams } from '../texture_para
 import { TEXTURE_UNIT_CUBEMAP, TEXTURE_UNIT_UPLOAD } from './constants';
 import { CATCH_WEBGL_ERROR, checkWebGLError } from './helpers';
 import { createSolidRgba8Pixels } from '../../shared/solid_pixels';
-import { registerHostOverlayPass_WebGL, registerHostMenuPass_WebGL } from '../../host_overlay/webgl/pipeline';
-import { registerCRT_WebGL } from '../../post/crt/webgl/pipeline';
-import { registerDeviceQuantize_WebGL } from '../../post/device_quantize/webgl/pipeline';
+import { registerHostOverlayPass, registerHostMenuPass } from '../../host_overlay/webgl/pipeline';
+import { registerCRT } from '../../post/crt/webgl/pipeline';
+import { registerDeviceQuantize } from '../../post/device_quantize/webgl/pipeline';
+import { registerFramebuffer2DPass } from '../../2d/framebuffer_pipeline';
 import { FRAME_UNIFORM_BINDING, updateAndBindFrameUniforms } from '../frame_uniforms';
 import type { RenderPassLibrary } from '../pass/library';
-import { registerGxGpuPass } from './gx_gpu';
+import { captureRenderedVramSnapshot, registerGxGpuPass } from './gx_gpu';
+import { registerVdpRpuPass } from './vdp_rpu';
+import type { GxGpu } from '../../../machine/devices/gx/gpu';
 
 // (Texture units sourced from render_view constants to avoid duplication.)
 const FBO_CACHE_DEPTH_ID_STRIDE = 0x1000000;
@@ -79,10 +82,12 @@ export class WebGLBackend implements GPUBackend {
 			},
 		});
 		registerGxGpuPass(registry);
-		registerDeviceQuantize_WebGL(registry);
-		registerCRT_WebGL(registry);
-		registerHostOverlayPass_WebGL(registry);
-		registerHostMenuPass_WebGL(registry);
+		registerVdpRpuPass(registry);
+		registerFramebuffer2DPass(registry);
+		registerDeviceQuantize(registry);
+		registerCRT(registry);
+		registerHostOverlayPass(registry);
+		registerHostMenuPass(registry);
 		registry.register({
 			id: 'frame_shared',
 			name: 'FrameShared',
@@ -303,18 +308,26 @@ export class WebGLBackend implements GPUBackend {
 		}
 	}
 
-	createColorTexture(desc: { width: number; height: number; format?: GLenum }): WebGLTexture {
+	createColorTexture(desc: { width: number; height: number; format?: GLenum; initialClearColor?: color_arr }): WebGLTexture {
 		const gl = this.gl;
 		const tex = gl.createTexture()!;
 		gl.activeTexture(gl.TEXTURE0 + TEXTURE_UNIT_UPLOAD);
 		gl.bindTexture(gl.TEXTURE_2D, tex);
 		// Use RGBA8 when no explicit format was requested; invalid explicit formats must fail in GL.
-			const internal = (desc.format === undefined ? gl.RGBA8 : desc.format) as GLenum;
-			gl.texImage2D(gl.TEXTURE_2D, 0, internal, desc.width, desc.height, 0, gl.RGBA, gl.UNSIGNED_BYTE, new Uint8Array(desc.width * desc.height * 4));
-			GLR.glSetTexture2DParams(gl, RGBA8_LINEAR_TEXTURE_PARAMS);
-			gl.bindTexture(gl.TEXTURE_2D, null);
-			this.texInfo.set(tex, { w: desc.width, h: desc.height, srgb: false });
-			return tex;
+		const internal = (desc.format === undefined ? gl.RGBA8 : desc.format) as GLenum;
+		gl.texImage2D(gl.TEXTURE_2D, 0, internal, desc.width, desc.height, 0, gl.RGBA, gl.UNSIGNED_BYTE, null);
+		GLR.glSetTexture2DParams(gl, RGBA8_LINEAR_TEXTURE_PARAMS);
+		if (desc.initialClearColor !== undefined) {
+			const fbo = gl.createFramebuffer();
+			gl.bindFramebuffer(gl.FRAMEBUFFER, fbo);
+			gl.framebufferTexture2D(gl.FRAMEBUFFER, gl.COLOR_ATTACHMENT0, gl.TEXTURE_2D, tex, 0);
+			gl.clearColor(...desc.initialClearColor);
+			gl.clear(gl.COLOR_BUFFER_BIT);
+			gl.deleteFramebuffer(fbo);
+		}
+		gl.bindTexture(gl.TEXTURE_2D, null);
+		this.texInfo.set(tex, { w: desc.width, h: desc.height, srgb: false });
+		return tex;
 	}
 	createDepthTexture(desc: { width: number; height: number }): WebGLTexture {
 		const gl = this.gl;
@@ -413,6 +426,7 @@ export class WebGLBackend implements GPUBackend {
 			maxTextureSize: this.gl.getParameter(this.gl.MAX_TEXTURE_SIZE) as number,
 			supportsInstancing: true,
 			supportsDepthTexture: true,
+			supportsCorePresentation: true,
 		};
 	}
 	// --- Pipeline API ---
@@ -705,6 +719,10 @@ export class WebGLBackend implements GPUBackend {
 	endFrame(): void { /* no-op for now */ }
 	getFrameStats() {
 		return this.frameStats;
+	}
+	captureGxGpuVramSnapshot(gxGpu: GxGpu): void {
+		const output = gxGpu.readDeviceOutput();
+		captureRenderedVramSnapshot(gxGpu, output);
 	}
 	accountUpload(kind: 'vertex' | 'index' | 'uniform' | 'texture', bytes: number): void {
 		this.frameStats.bytesUploaded += bytes;

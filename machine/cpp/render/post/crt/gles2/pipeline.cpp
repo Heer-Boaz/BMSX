@@ -54,12 +54,13 @@ void beginFullscreenPostProcessDraw(OpenGLES2Backend& backend,
 										GLint attribPosition,
 										GLint attribUv,
 										GLint uniformTexture,
+										GLuint targetFbo,
 										i32 width,
 										i32 height) {
 	glUseProgram(program);
 	glUniform1i(uniformTexture, kTexUnitPostProcess);
 	updateFullscreenQuad(quad, width, height);
-	backend.setRenderTarget(backend.backbuffer(), width, height);
+	backend.setRenderTarget(targetFbo, width, height);
 	glDisable(GL_DEPTH_TEST);
 	glDisable(GL_CULL_FACE);
 	glDisable(GL_BLEND);
@@ -132,7 +133,8 @@ void shutdownPresentGLES2(PresentGLES2State& pipeline) {
 }
 
 
-void renderPresentGLES2State(OpenGLES2Backend& backend, PresentGLES2State& pipeline, const PresentPipelineState& state) {
+
+void renderPresentTextureGLES2State(OpenGLES2Backend& backend, PresentGLES2State& pipeline, GLuint targetFbo, const PresentPipelineState& state) {
 	beginFullscreenPostProcessDraw(
 		backend,
 		pipeline.quad,
@@ -140,6 +142,7 @@ void renderPresentGLES2State(OpenGLES2Backend& backend, PresentGLES2State& pipel
 		pipeline.attrib_pos,
 		pipeline.attrib_uv,
 		pipeline.uniform_texture,
+		targetFbo,
 		state.width,
 		state.height);
 	glUniform2f(pipeline.uniform_resolution, static_cast<float>(state.width), static_cast<float>(state.height));
@@ -149,6 +152,18 @@ void renderPresentGLES2State(OpenGLES2Backend& backend, PresentGLES2State& pipel
 	backend.bindTexture2D(state.colorTex);
 
 	glDrawArrays(GL_TRIANGLES, 0, 6);
+}
+
+void executePresentationHistoryGLES2Pass(GPUBackend* backend, GameView*, void* fbo, RenderPassStateStorage& state, void* context) {
+	auto& typedBackend = *static_cast<OpenGLES2Backend*>(backend);
+	auto& typedPipeline = *static_cast<PresentGLES2State*>(context);
+	const auto targetFbo = static_cast<GLuint>(reinterpret_cast<uintptr_t>(fbo));
+	renderPresentTextureGLES2State(typedBackend, typedPipeline, targetFbo, state.present);
+}
+
+void renderPresentGLES2State(OpenGLES2Backend& backend, PresentGLES2State& pipeline, const PresentPipelineState& state) {
+	const GLuint targetFbo = backend.backbuffer();
+	renderPresentTextureGLES2State(backend, pipeline, targetFbo, state);
 }
 
 void renderCRTGLES2State(OpenGLES2Backend& backend, CRTGLES2State& pipeline, const CRTPipelineState& state) {
@@ -167,6 +182,7 @@ void renderCRTGLES2State(OpenGLES2Backend& backend, CRTGLES2State& pipeline, con
 		pipeline.attrib_pos,
 		pipeline.attrib_uv,
 		pipeline.uniform_texture,
+		backend.backbuffer(),
 		state.width,
 		state.height);
 	glUniform2f(pipeline.uniform_resolution, static_cast<float>(state.width), static_cast<float>(state.height));
@@ -195,6 +211,41 @@ void renderCRTGLES2State(OpenGLES2Backend& backend, CRTGLES2State& pipeline, con
 	backend.bindTexture2D(state.colorTex);
 
 	glDrawArrays(GL_TRIANGLES, 0, 6);
+}
+
+
+void registerPresentationHistoryGLES2Pass(
+	RenderPassLibrary& registry,
+	PresentGLES2State& pipeline,
+	const char* id,
+	const char* name,
+	RenderPassDef::RenderGraphSlot historySlot,
+	bool (*shouldExecute)(GameView*, void*)) {
+	RenderPassDef desc;
+	desc.id = id;
+	desc.name = name;
+	setPresentationHistoryGraph(desc, historySlot);
+	desc.context = &pipeline;
+	desc.exec = executePresentationHistoryGLES2Pass;
+	desc.shouldExecute = shouldExecute;
+	registry.registerPass(desc);
+}
+
+void registerPresentationHistoryGLES2Passes(RenderPassLibrary& registry, PresentGLES2State& pipeline) {
+	registerPresentationHistoryGLES2Pass(
+		registry,
+		pipeline,
+		"presentation_history_a",
+		"PresentationHistoryA",
+		RenderPassDef::RenderGraphSlot::FrameHistoryA,
+		shouldUpdatePresentationHistoryA);
+	registerPresentationHistoryGLES2Pass(
+		registry,
+		pipeline,
+		"presentation_history_b",
+		"PresentationHistoryB",
+		RenderPassDef::RenderGraphSlot::FrameHistoryB,
+		shouldUpdatePresentationHistoryB);
 }
 
 void registerPresentGLES2Pass(RenderPassLibrary& registry, PresentGLES2State& pipeline) {

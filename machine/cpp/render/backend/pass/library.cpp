@@ -2,8 +2,6 @@
  * library.cpp - Render pass library implementation
  */
 
-// TODO: TOTAAL ANDERS DAN `library.ts`!!
-
 #include "library.h"
 #include "common/primitives.h"
 #include "../../gameview.h"
@@ -45,6 +43,24 @@ RenderPassDef::RenderPassGraphDef& resetAutoPresentGraph(RenderPassDef& desc) {
 	return *desc.graph;
 }
 
+
+RenderGraphSlot presentationHistorySlot(u8 index) {
+	return index == 0u ? RenderPassDef::RenderGraphSlot::FrameHistoryA : RenderPassDef::RenderGraphSlot::FrameHistoryB;
+}
+
+TextureHandle currentFrameSourceTexture(const RenderPassDef::RenderGraphPassContext& ctx) {
+	const GameView& view = *ctx.view;
+	return ctx.deviceColorEnabled && static_cast<i32>(view.dither_type) != 0
+		? ctx.getTexture(RenderPassDef::RenderGraphSlot::DeviceColor)
+		: ctx.getTexture(RenderPassDef::RenderGraphSlot::FrameColor);
+}
+
+TextureHandle presentedHistoryTexture(const RenderPassDef::RenderGraphPassContext& ctx) {
+	const GameView& view = *ctx.view;
+	const u8 historyIndex = view.commitPresentationFrame ? view.presentationHistoryDestinationIndex() : view.presentationHistorySourceIndex;
+	return ctx.getTexture(presentationHistorySlot(historyIndex));
+}
+
 void writeAutoPresentPipelineState(const RenderPassDef::RenderGraphPassContext& ctx, RenderPassStateStorage& state) {
 	auto* view = ctx.view;
 	PresentPipelineState& presentState = state.present;
@@ -52,10 +68,18 @@ void writeAutoPresentPipelineState(const RenderPassDef::RenderGraphPassContext& 
 	presentState.height = static_cast<i32>(view->canvasSize.y);
 	presentState.srcWidth = static_cast<i32>(view->offscreenCanvasSize.x);
 	presentState.srcHeight = static_cast<i32>(view->offscreenCanvasSize.y);
-	const bool useDither = ctx.deviceColorEnabled && static_cast<i32>(view->dither_type) != 0;
-	presentState.colorTex = useDither
-		? ctx.getTexture(RenderPassDef::RenderGraphSlot::DeviceColor)
-		: ctx.getTexture(RenderPassDef::RenderGraphSlot::FrameColor);
+	presentState.colorTex = presentedHistoryTexture(ctx);
+}
+
+
+void writePresentationHistoryPipelineState(const RenderPassDef::RenderGraphPassContext& ctx, RenderPassStateStorage& state) {
+	auto* view = ctx.view;
+	PresentPipelineState& presentState = state.present;
+	presentState.width = static_cast<i32>(view->offscreenCanvasSize.x);
+	presentState.height = static_cast<i32>(view->offscreenCanvasSize.y);
+	presentState.srcWidth = static_cast<i32>(view->offscreenCanvasSize.x);
+	presentState.srcHeight = static_cast<i32>(view->offscreenCanvasSize.y);
+	presentState.colorTex = currentFrameSourceTexture(ctx);
 }
 
 void writeFramebuffer2DPipelineState(const RenderPassDef::RenderGraphPassContext& ctx, RenderPassStateStorage& state) {
@@ -79,6 +103,8 @@ void writeGxGpuPipelineState(const RenderPassDef::RenderGraphPassContext& ctx, R
 	gxGpuState.displayStartWord = ctx.view->gxGpuDisplayStartWord;
 	gxGpuState.horizontalDisplayRangeWord = ctx.view->gxGpuHorizontalDisplayRangeWord;
 	gxGpuState.verticalDisplayRangeWord = ctx.view->gxGpuVerticalDisplayRangeWord;
+	gxGpuState.vramSnapshotBytes = ctx.view->gxGpuVramSnapshotBytes;
+	gxGpuState.vramSnapshotSerial = ctx.view->gxGpuVramSnapshotSerial;
 }
 
 void writeAutoCRTPipelineState(const RenderPassDef::RenderGraphPassContext& ctx, RenderPassStateStorage& state) {
@@ -92,10 +118,7 @@ void writeAutoCRTPipelineState(const RenderPassDef::RenderGraphPassContext& ctx,
 	crtState.srcHeight = static_cast<i32>(view->offscreenCanvasSize.y);
 	crtState.time = static_cast<f32>(ctx.time);
 
-	const bool useDither = ctx.deviceColorEnabled && static_cast<i32>(view->dither_type) != 0;
-	crtState.colorTex = useDither
-		? ctx.getTexture(RenderPassDef::RenderGraphSlot::DeviceColor)
-		: ctx.getTexture(RenderPassDef::RenderGraphSlot::FrameColor);
+	crtState.colorTex = presentedHistoryTexture(ctx);
 
 	const bool applyCrt = view->crt_postprocessing_enabled;
 	crtState.options.applyNoise = applyCrt && view->applyNoise;
@@ -126,6 +149,22 @@ void writeDeviceQuantizePipelineState(const RenderPassDef::RenderGraphPassContex
 
 } // namespace
 
+
+bool shouldUpdatePresentationHistoryA(GameView* view, void*) {
+	return view->commitPresentationFrame && view->presentationHistoryDestinationIndex() == 0u;
+}
+
+bool shouldUpdatePresentationHistoryB(GameView* view, void*) {
+	return view->commitPresentationFrame && view->presentationHistoryDestinationIndex() == 1u;
+}
+
+void setPresentationHistoryGraph(RenderPassDef& desc, RenderPassDef::RenderGraphSlot historySlot) {
+	desc.graph = RenderPassDef::RenderPassGraphDef{};
+	desc.graph->reads = { RenderPassDef::RenderGraphSlot::FrameColor, RenderPassDef::RenderGraphSlot::DeviceColor };
+	desc.graph->writes = { historySlot };
+	desc.graph->writeState = writePresentationHistoryPipelineState;
+}
+
 void setFramebuffer2DGraph(RenderPassDef& desc) {
 	desc.graph = RenderPassDef::RenderPassGraphDef{};
 	desc.graph->writes = { RenderPassDef::RenderGraphSlot::FrameColor };
@@ -133,8 +172,7 @@ void setFramebuffer2DGraph(RenderPassDef& desc) {
 }
 
 void setGxGpuGraph(RenderPassDef& desc) {
-	desc.graph = RenderPassDef::RenderPassGraphDef{};
-	desc.graph->writes = { RenderPassDef::RenderGraphSlot::FrameColor };
+	setFramebuffer2DGraph(desc);
 	desc.graph->writeState = writeGxGpuPipelineState;
 }
 

@@ -652,6 +652,7 @@ bool LibretroPlatform::saveState(void* data, size_t size) {
 		return false;
 	}
 	try {
+		m_machine_manager->view()->captureGxGpuVramSnapshot(runtime.machine.gxGpu);
 		const std::vector<u8> state = captureRuntimeSaveStateBytes(runtime);
 		if (size < state.size()) {
 			return false;

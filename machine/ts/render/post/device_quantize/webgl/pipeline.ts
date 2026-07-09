@@ -33,7 +33,7 @@ function writeDeviceQuantizeState(ctx: RenderGraphPassContext, state: RenderPass
 	state.ditherType = (ctx.view as GameView).dither_type;
 }
 
-export function registerDeviceQuantize_WebGL(registry: RenderPassLibrary): void {
+export function registerDeviceQuantize(registry: RenderPassLibrary): void {
 	let fullscreenQuad: FullscreenQuad;
 	registry.register({
 		id: 'device_quantize',

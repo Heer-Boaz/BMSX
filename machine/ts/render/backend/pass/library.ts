@@ -4,14 +4,14 @@ import { RenderGraphRuntime, type PassContext } from '../../graph/graph';
 import { LightingSystem } from '../../lighting/system';
 import { updateAndBindFrameUniforms } from '../frame_uniforms';
 import type { color_arr } from '../../../rompack/format';
-import { AnyBackend, FrameSharedState, GPUBackend, PassEncoder, RenderGraphPassContext, RenderGraphSlot, RenderPassDef, RenderPassDesc, RenderPassInstanceHandle, RenderPassStateId, RenderPassStateRegistry } from '../backend';
+import { FrameSharedState, GPUBackend, PassEncoder, RenderGraphPassContext, RenderGraphSlot, RenderPassDef, RenderPassDesc, RenderPassInstanceHandle, RenderPassStateId, RenderPassStateRegistry } from '../backend';
 
 const FRAME_CLEAR_COLOR: color_arr = [0, 0, 0, 1];
 
 interface RegisteredPassRec {
 	id: string;
-	exec: (backend: AnyBackend, fbo: unknown, state: unknown, pipelineHandle: RenderPassInstanceHandle | null) => void;
-	prepare?: (backend: AnyBackend, state: unknown) => void;
+	exec: (backend: GPUBackend, fbo: unknown, state: unknown, pipelineHandle: RenderPassInstanceHandle | null) => void;
+	prepare?: (backend: GPUBackend, state: unknown) => void;
 	pipelineHandle: RenderPassInstanceHandle | null;
 	passEncoder: PassEncoder;
 	state?: unknown;
@@ -78,7 +78,7 @@ export class RenderPassLibrary {
 				vsCode: desc.vsCode,
 				fsCode: desc.fsCode,
 				bindingLayout: desc.bindingLayout,
-				usesDepth: !!(desc.writesDepth || desc.depthTest), // TODO: HAAL ALIASING WEG!!!!!
+				usesDepth: !!(desc.writesDepth || desc.depthTest),
 				depthTest: !!desc.depthTest,
 				depthWrite: desc.depthWrite ?? !!desc.writesDepth,
 			});
@@ -146,6 +146,8 @@ export class RenderPassLibrary {
 		const viewportHeight = view.viewportSize.y;
 		let frameColorHandle: number = null;
 		let frameDepthHandle: number = null;
+		let frameHistoryAHandle: number = null;
+		let frameHistoryBHandle: number = null;
 		let deviceColorHandle: number = null;
 		let activePassContext: PassContext = null;
 		const passList = this.getPipelinePasses().filter(pass => !pass.graph?.skip);
@@ -163,11 +165,18 @@ export class RenderPassLibrary {
 				case 'frame_depth':
 					return frameDepthHandle;
 				case 'frame_history_a':
+					return frameHistoryAHandle;
 				case 'frame_history_b':
-					return null;
-				default:
+					return frameHistoryBHandle;
+				case 'device_color':
 					return deviceColorHandle;
 			}
+		};
+		const declareGraphRead = (io: { readTex(handle: number): void }, slot: RenderGraphSlot): void => {
+			if (slot === 'device_color' && !deviceColorEnabled) {
+				return;
+			}
+			io.readTex(getHandle(slot));
 		};
 		const graphCtx: RenderGraphPassContext = {
 			view,
@@ -183,13 +192,17 @@ export class RenderPassLibrary {
 			setup: (io) => {
 				const color = io.createTex({ width: offscreenWidth, height: offscreenHeight, name: 'FrameColor' });
 				const depth = io.createTex({ width: offscreenWidth, height: offscreenHeight, depth: true, name: 'FrameDepth' });
+				const historyA = io.createTex({ width: offscreenWidth, height: offscreenHeight, name: 'FrameHistoryA', initialClearColor: FRAME_CLEAR_COLOR });
+				const historyB = io.createTex({ width: offscreenWidth, height: offscreenHeight, name: 'FrameHistoryB', initialClearColor: FRAME_CLEAR_COLOR });
 				deviceColorHandle = null;
 				if (deviceColorEnabled) {
 					deviceColorHandle = io.createTex({ width: offscreenWidth, height: offscreenHeight, name: 'DeviceColor', transient: true });
 				}
-				io.exportToBackbuffer(color);
+				io.exportToBackbuffer(historyA);
 				frameColorHandle = color;
 				frameDepthHandle = depth;
+				frameHistoryAHandle = historyA;
+				frameHistoryBHandle = historyB;
 				return null;
 			},
 			execute: () => { },
@@ -283,11 +296,10 @@ export class RenderPassLibrary {
 				setup: (io) => {
 					const graph = desc.graph;
 					if (isPresent) {
-						const presentInput = graph?.presentInput ?? 'auto';
-						if (frameColorHandle != null) io.readTex(frameColorHandle);
-						if (deviceColorEnabled && presentInput !== 'frame_color') io.readTex(deviceColorHandle);
+						io.readTex(frameHistoryAHandle);
+						io.readTex(frameHistoryBHandle);
 					} else if (graph && (graph.reads?.length || graph.writes?.length)) {
-						if (graph.reads) for (const slot of graph.reads) io.readTex(getHandle(slot));
+						if (graph.reads) for (const slot of graph.reads) declareGraphRead(io, slot);
 						if (graph.writes) for (const slot of graph.writes) io.writeTex(getHandle(slot));
 					} else if (!isPresent && !isStateOnly) {
 						if (frameColorHandle != null) io.writeTex(frameColorHandle);

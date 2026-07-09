@@ -85,7 +85,7 @@ export class RenderPresentationState {
 		this.debugPresentPausedPresents = 0;
 	}
 
-	private presentFrame(runtime: Runtime, hostDeltaMs: number, mode: RenderPresentationMode, commitFrame = mode === 'completed'): void {
+	private presentFrame(runtime: Runtime, hostDeltaMs: number, mode: RenderPresentationMode, commitFrame: boolean): void {
 		machineManager.deltatime = hostDeltaMs;
 		commitVdpViewSnapshot(machineManager.view, runtime.machine.vdp.readDeviceOutput());
 		commitGxGpuViewSnapshot(machineManager.view, runtime.machine.gxGpu.readDeviceOutput());
@@ -93,7 +93,9 @@ export class RenderPresentationState {
 		this.recordPresentation(mode, commitFrame);
 		machineManager.sndmaster.finishFrame();
 		machineManager.view.drawgame();
-		runtime.machine.gxGpu.retirePresentedCommands();
+		if (commitFrame) {
+			runtime.machine.gxGpu.retirePresentedCommands();
+		}
 	}
 
 	private markPresentation(mode: RenderPresentationMode, commitFrame: boolean): void {
@@ -154,16 +156,20 @@ export class RenderPresentationState {
 	}
 
 	public syncAfterRuntimeUpdate(runtime: Runtime, previousTickSequence: number): void {
+		let tickVisualCommitted = runtime.frameScheduler.lastTickVisualFrameCommitted;
+		while (runtime.frameScheduler.consumeTickCompletion(this.tickCompletionScratch)) {
+			if (this.tickCompletionScratch.visualCommitted) {
+				tickVisualCommitted = true;
+			}
+			this.recordTickCompletion(this.tickCompletionScratch.visualCommitted, this.tickCompletionScratch.vdpFrameHeld);
+		}
 		if (machineManager.ideState.overlayActive) {
 			runtime.frameScheduler.clearQueuedTime();
 			this.markPresentation('completed', false);
 		} else if (runtime.frameScheduler.lastTickSequence !== previousTickSequence) {
-			this.markPresentation('completed', runtime.frameScheduler.lastTickVisualFrameCommitted);
+			this.markPresentation('completed', tickVisualCommitted);
 		} else if (runtime.isDrawPending || machineManager.faultState.faultSnapshot !== null) {
 			this.markPresentation('partial', false);
-		}
-		while (runtime.frameScheduler.consumeTickCompletion(this.tickCompletionScratch)) {
-			this.recordTickCompletion(this.tickCompletionScratch.visualCommitted, this.tickCompletionScratch.vdpFrameHeld);
 		}
 	}
 

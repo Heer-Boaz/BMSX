@@ -210,26 +210,40 @@ void drawGxGpuSoftwareTriangle(
 	const u32 blendMode = gxGpuDrawModeTransparencyMode(drawModeWord);
 	const u32 maskBitModeWord = commandBuffer.commandMaskBitModeWord[commandIndex];
 	const u32 interlacedRenderWord = commandBuffer.commandInterlacedRenderWord[commandIndex];
+	const i64 edgeSign = flip ? -1 : 1;
+	const i64 edge0StepX = static_cast<i64>(y2 - y1) * edgeSign;
+	const i64 edge1StepX = static_cast<i64>(y0 - y2) * edgeSign;
+	const i64 edge2StepX = static_cast<i64>(y1 - y0) * edgeSign;
+	const i64 edge0StepY = -static_cast<i64>(x2 - x1) * edgeSign;
+	const i64 edge1StepY = -static_cast<i64>(x0 - x2) * edgeSign;
+	const i64 edge2StepY = -static_cast<i64>(x1 - x0) * edgeSign;
+	i64 rowW0 = edgeValue(x1, y1, x2, y2, left, top) * edgeSign;
+	i64 rowW1 = edgeValue(x2, y2, x0, y0, left, top) * edgeSign;
+	i64 rowW2 = edgeValue(x0, y0, x1, y1, left, top) * edgeSign;
 	for (i32 y = top; y <= bottom; y += 1) {
 		if (gxGpuSoftwareInterlacedSkipsLine(y, interlacedRenderWord)) {
+			rowW0 += edge0StepY;
+			rowW1 += edge1StepY;
+			rowW2 += edge2StepY;
 			continue;
 		}
+		i64 w0 = rowW0;
+		i64 w1 = rowW1;
+		i64 w2 = rowW2;
 		for (i32 x = left; x <= right; x += 1) {
-			i64 w0 = edgeValue(x1, y1, x2, y2, x, y);
-			i64 w1 = edgeValue(x2, y2, x0, y0, x, y);
-			i64 w2 = edgeValue(x0, y0, x1, y1, x, y);
-			if (flip) {
-				w0 = -w0;
-				w1 = -w1;
-				w2 = -w2;
-			}
 			if (w0 >= 0 && w1 >= 0 && w2 >= 0) {
 				const u32 r8 = sameColor ? r0 : static_cast<u32>((static_cast<i64>(r0) * w0 + static_cast<i64>(r1) * w1 + static_cast<i64>(r2) * w2) / area);
 				const u32 g8 = sameColor ? g0 : static_cast<u32>((static_cast<i64>(g0) * w0 + static_cast<i64>(g1) * w1 + static_cast<i64>(g2) * w2) / area);
 				const u32 b8 = sameColor ? b0 : static_cast<u32>((static_cast<i64>(b0) * w0 + static_cast<i64>(b1) * w1 + static_cast<i64>(b2) * w2) / area);
 				gxGpuSoftwareWriteRenderVramPixel(x, y, r8, g8, b8, ditherEnabled, blendEnabled, blendMode, maskBitModeWord);
 			}
+			w0 += edge0StepX;
+			w1 += edge1StepX;
+			w2 += edge2StepX;
 		}
+		rowW0 += edge0StepY;
+		rowW1 += edge1StepY;
+		rowW2 += edge2StepY;
 	}
 }
 
@@ -311,19 +325,27 @@ void drawGxGpuSoftwareTexturedTriangle(
 	const u32 blendMode = gxGpuDrawModeTransparencyMode(drawModeWord);
 	const u32 maskBitModeWord = commandBuffer.commandMaskBitModeWord[commandIndex];
 	const u32 interlacedRenderWord = commandBuffer.commandInterlacedRenderWord[commandIndex];
+	const i64 edgeSign = flip ? -1 : 1;
+	const i64 edge0StepX = static_cast<i64>(y2 - y1) * edgeSign;
+	const i64 edge1StepX = static_cast<i64>(y0 - y2) * edgeSign;
+	const i64 edge2StepX = static_cast<i64>(y1 - y0) * edgeSign;
+	const i64 edge0StepY = -static_cast<i64>(x2 - x1) * edgeSign;
+	const i64 edge1StepY = -static_cast<i64>(x0 - x2) * edgeSign;
+	const i64 edge2StepY = -static_cast<i64>(x1 - x0) * edgeSign;
+	i64 rowW0 = edgeValue(x1, y1, x2, y2, left, top) * edgeSign;
+	i64 rowW1 = edgeValue(x2, y2, x0, y0, left, top) * edgeSign;
+	i64 rowW2 = edgeValue(x0, y0, x1, y1, left, top) * edgeSign;
 	for (i32 y = top; y <= bottom; y += 1) {
 		if (gxGpuSoftwareInterlacedSkipsLine(y, interlacedRenderWord)) {
+			rowW0 += edge0StepY;
+			rowW1 += edge1StepY;
+			rowW2 += edge2StepY;
 			continue;
 		}
+		i64 w0 = rowW0;
+		i64 w1 = rowW1;
+		i64 w2 = rowW2;
 		for (i32 x = left; x <= right; x += 1) {
-			i64 w0 = edgeValue(x1, y1, x2, y2, x, y);
-			i64 w1 = edgeValue(x2, y2, x0, y0, x, y);
-			i64 w2 = edgeValue(x0, y0, x1, y1, x, y);
-			if (flip) {
-				w0 = -w0;
-				w1 = -w1;
-				w2 = -w2;
-			}
 			if (w0 >= 0 && w1 >= 0 && w2 >= 0) {
 				const u32 colorWord = sameColor ? color0 : static_cast<u32>(
 					(static_cast<i64>(r0) * w0 + static_cast<i64>(r1) * w1 + static_cast<i64>(r2) * w2) / area)
@@ -354,7 +376,13 @@ void drawGxGpuSoftwareTexturedTriangle(
 					blendMode,
 					maskBitModeWord);
 			}
+			w0 += edge0StepX;
+			w1 += edge1StepX;
+			w2 += edge2StepX;
 		}
+		rowW0 += edge0StepY;
+		rowW1 += edge1StepY;
+		rowW2 += edge2StepY;
 	}
 }
 

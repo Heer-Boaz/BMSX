@@ -55,6 +55,7 @@ void initPresentGLES2(OpenGLES2Backend& backend, PresentGLES2State& pipeline);
 void shutdownPresentGLES2(PresentGLES2State& pipeline);
 void initCRTGLES2(OpenGLES2Backend& backend, CRTGLES2State& pipeline);
 void shutdownCRTGLES2(CRTGLES2State& pipeline);
+void registerPresentationHistoryGLES2Passes(RenderPassLibrary& registry, PresentGLES2State& pipeline);
 void registerPresentGLES2Pass(RenderPassLibrary& registry, PresentGLES2State& pipeline);
 void registerCRTGLES2Pass(RenderPassLibrary& registry, CRTGLES2State& pipeline);
 

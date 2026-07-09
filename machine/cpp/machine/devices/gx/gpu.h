@@ -5,6 +5,7 @@
 #include "machine/devices/gx/gpu_command_buffer.h"
 
 #include <array>
+#include <vector>
 
 namespace bmsx {
 
@@ -114,6 +115,39 @@ struct GxGpuState {
 	u32 gp1Word = 0;
 	u32 displayModeWord = 0;
 	u32 statusWord = 0;
+	u32 gp0CommandWordCount = 0;
+	u32 gp0CommandTargetWordCount = 0;
+	std::vector<u32> gp0CommandWords;
+	u32 gp0ImageLoadWordsRemaining = 0;
+	size_t gp0ImageLoadCommandWordStart = 0;
+	u32 gp0ImageLoadCommandWordCount = 0;
+	u8 gp0ImageLoadCommandOpcode = 0;
+	u32 gp0PolylineWordsPerVertex = 0;
+	u32 gp0PolylinePayloadPhase = 0;
+	size_t gp0PolylineCommandWordStart = 0;
+	u32 gp0PolylineCommandWordCount = 0;
+	u8 gp0PolylineCommandOpcode = 0;
+	u32 gpuReadWord = 0;
+	u32 drawModeWord = 0;
+	u32 textureWindowWord = 0;
+	u32 drawingAreaTopLeftWord = 0;
+	u32 drawingAreaBottomRightWord = 0;
+	u32 drawingOffsetWord = 0;
+	u32 maskBitModeWord = 0;
+	u32 displayStartWord = 0;
+	u32 horizontalDisplayRangeWord = 0;
+	u32 verticalDisplayRangeWord = 0;
+	u32 textureDisableAllowedWord = 0;
+	u32 presentStatusWord = 0;
+	u32 presentDisplayModeWord = 0;
+	u32 presentDisplayStartWord = 0;
+	u32 presentHorizontalDisplayRangeWord = 0;
+	u32 presentVerticalDisplayRangeWord = 0;
+	GxGpuCommandBufferState commandBuffer;
+};
+
+struct GxGpuSaveState : GxGpuState {
+	std::vector<u8> vramBytes;
 };
 
 class GxGpu {
@@ -122,6 +156,12 @@ public:
 	void reset();
 	GxGpuState captureState() const;
 	void restoreState(const GxGpuState& state);
+	GxGpuSaveState captureSaveState() const;
+	void restoreSaveState(const GxGpuSaveState& state);
+	void replaceVramSnapshotBytes(const u8* bytes);
+	u32 commitRenderedVramSnapshotBytes(const u8* bytes);
+	const std::array<u8, GX_GPU_VRAM_BYTE_COUNT>& readVramSnapshotBytes() const { return m_vramSnapshotBytes; }
+	u32 readVramSnapshotSerial() const { return m_vramSnapshotSerial; }
 	u32 readGp0() const;
 	void writeGp0(u32 word);
 	u32 readStatus();
@@ -131,6 +171,8 @@ public:
 	void setScanoutTiming(bool vblankActive, int cyclesIntoFrame, int cyclesPerFrame, int totalScanlines);
 	u32 readGpuReadWord() const;
 	const GxGpuDeviceOutput& readDeviceOutput();
+	void presentReadyFrameOnVblankEdge();
+	bool lastFrameCommitted() const { return m_lastFrameCommitted; }
 	void retirePresentedCommands();
 	u32 readDrawModeWord() const;
 	u32 readTextureWindowWord() const;
@@ -175,6 +217,12 @@ private:
 	u32 m_horizontalDisplayRangeWord = 0x00c60260u;
 	u32 m_verticalDisplayRangeWord = 0x0003fc10u;
 	u32 m_textureDisableAllowedWord = 0u;
+	u32 m_presentStatusWord = GX_GPU_STATUS_RESET_WORD;
+	u32 m_presentDisplayModeWord = 0u;
+	u32 m_presentDisplayStartWord = 0u;
+	u32 m_presentHorizontalDisplayRangeWord = 0x00c60260u;
+	u32 m_presentVerticalDisplayRangeWord = 0x0003fc10u;
+	bool m_lastFrameCommitted = false;
 	bool m_scanoutVblankActive = false;
 	u32 m_scanoutInterlacedField = 0u;
 	u32 m_scanoutInterlacedDisplayField = 0u;
@@ -182,10 +230,13 @@ private:
 	i64 m_scanoutFrameStartCycle = 0;
 	int m_scanoutCyclesPerFrame = 1;
 	int m_scanoutTotalScanlines = 313;
+	std::array<u8, GX_GPU_VRAM_BYTE_COUNT> m_vramSnapshotBytes{};
+	u32 m_vramSnapshotSerial = 0u;
 
 	void resetGpuRegisters();
 	void writeDisplayDisableWord(u32 word);
 	void clearGp0CommandState();
+	void clearPolylineState();
 	void clearImageLoadState();
 	void finishImageLoadToVram();
 	void flushImageLoadToVram();

@@ -14,6 +14,8 @@
 
 namespace bmsx {
 
+void applyGLES2TextureParams(const TextureParams& params);
+
 struct GLES2Texture {
 	GLuint id = 0;
 	i32 width = 0;
@@ -37,9 +39,15 @@ public:
 	void updateTexture(TextureHandle handle, const u8* data, i32 width, i32 height, const TextureParams& params) override;
 	TextureHandle resizeTexture(TextureHandle handle, i32 width, i32 height, const TextureParams& params) override;
 	void updateTextureRegion(TextureHandle handle, const u8* data, i32 width, i32 height, i32 x, i32 y, const TextureParams& params) override;
-	void readTextureRegion(TextureHandle handle, u8* out, i32 width, i32 height, i32 x, i32 y, const TextureParams& params) override;
 	TextureHandle createSolidTexture2D(i32 width, i32 height, u32 color, const TextureParams& params) override;
 	void destroyTexture(TextureHandle handle) override;
+	TextureHandle createColorTexture(i32 width, i32 height, const std::array<f32, 4>* initialClearColor) override;
+	TextureHandle createDepthTexture(i32 width, i32 height) override;
+	void destroyDepthTexture(TextureHandle handle) override;
+	void* createRenderTarget(TextureHandle color, TextureHandle depth) override;
+	void destroyRenderTarget(void* target) override;
+	void activateRenderTarget(void* target, i32 width, i32 height) override;
+	void activateDefaultRenderTarget() override;
 	void registerBuiltinPasses(RenderPassLibrary& registry) override;
 
 	void clear(const std::array<f32, 4>* color, const f32* depth) override;
@@ -52,6 +60,7 @@ public:
 	void beginFrame() override;
 	void endFrame() override;
 	FrameStats getFrameStats() const override { return m_stats; }
+	void captureGxGpuVramSnapshot(GxGpu& gxGpu) override;
 
 	BackendCaps getCaps() const override;
 	bool readyForTextureUpload() const override { return m_context_ready; }
@@ -79,8 +88,10 @@ private:
 	FramebufferGetter m_get_framebuffer = nullptr;
 	GLuint m_current_fbo = 0;
 	GLuint m_backbuffer_fbo = 0;
-	i32 m_width = 0;
-	i32 m_height = 0;
+	i32 m_default_width = 0;
+	i32 m_default_height = 0;
+	i32 m_target_width = 0;
+	i32 m_target_height = 0;
 	FrameStats m_stats{};
 	i32 m_active_texture_unit = -1;
 	std::array<GLuint, kTrackedTextureUnits> m_bound_texture_2d_by_unit{};

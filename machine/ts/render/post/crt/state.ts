@@ -23,6 +23,37 @@ export function shouldExecuteAutoCrtPass(view: GameView): boolean {
 			|| view.enable_aperture);
 }
 
+
+function currentFrameSourceTexture(ctx: RenderGraphPassContext, view: GameView) {
+	return ctx.deviceColorEnabled && view.dither_type !== 0 ? ctx.getTex('device_color') : ctx.getTex('frame_color');
+}
+
+function presentationHistorySlot(index: 0 | 1): 'frame_history_a' | 'frame_history_b' {
+	return index === 0 ? 'frame_history_a' : 'frame_history_b';
+}
+
+function presentedHistoryTexture(ctx: RenderGraphPassContext, view: GameView) {
+	const historyIndex = view.commitPresentationFrame ? view.presentationHistoryDestinationIndex : view.presentationHistorySourceIndex;
+	return ctx.getTex(presentationHistorySlot(historyIndex));
+}
+
+export function shouldUpdatePresentationHistoryA(view: GameView): boolean {
+	return view.commitPresentationFrame && view.presentationHistoryDestinationIndex === 0;
+}
+
+export function shouldUpdatePresentationHistoryB(view: GameView): boolean {
+	return view.commitPresentationFrame && view.presentationHistoryDestinationIndex === 1;
+}
+
+export function writePresentationHistoryPassState(ctx: RenderGraphPassContext, state: PresentPipelineState): void {
+	const view = ctx.view as GameView;
+	state.width = view.offscreenCanvasSize.x;
+	state.height = view.offscreenCanvasSize.y;
+	state.srcWidth = view.offscreenCanvasSize.x;
+	state.srcHeight = view.offscreenCanvasSize.y;
+	state.colorTex = currentFrameSourceTexture(ctx, view);
+}
+
 export function createPresentPassState(): PresentPipelineState {
 	return {
 		width: 0,
@@ -39,7 +70,7 @@ export function writePresentPassState(ctx: RenderGraphPassContext, state: Presen
 	state.height = view.canvasSize.y;
 	state.srcWidth = view.offscreenCanvasSize.x;
 	state.srcHeight = view.offscreenCanvasSize.y;
-	state.colorTex = ctx.deviceColorEnabled && view.dither_type !== 0 ? ctx.getTex('device_color') : ctx.getTex('frame_color');
+	state.colorTex = presentedHistoryTexture(ctx, view);
 }
 
 export function createCrtPassState(): CRTPipelineState {
@@ -78,7 +109,7 @@ export function writeCrtPassState(ctx: RenderGraphPassContext, state: CRTPipelin
 	state.srcWidth = view.offscreenCanvasSize.x;
 	state.srcHeight = view.offscreenCanvasSize.y;
 	state.time = ctx.time;
-	state.colorTex = ctx.deviceColorEnabled && view.dither_type !== 0 ? ctx.getTex('device_color') : ctx.getTex('frame_color');
+	state.colorTex = presentedHistoryTexture(ctx, view);
 	const options = state.options;
 	options.applyNoise = applyCrt && view.enable_noise;
 	options.applyColorBleed = applyCrt && view.enable_colorbleed;

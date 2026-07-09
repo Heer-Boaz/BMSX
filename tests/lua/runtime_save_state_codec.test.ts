@@ -17,6 +17,7 @@ import {
 } from '../../machine/ts/machine/devices/audio/contracts';
 import { VDP_JTU_REGISTER_WORDS, VDP_MFU_WEIGHT_COUNT } from '../../machine/ts/machine/devices/vdp/contracts';
 import { GEOMETRY_CONTROLLER_PHASE_BUSY, GEOMETRY_CONTROLLER_REGISTER_COUNT } from '../../machine/ts/machine/devices/geometry/contracts';
+import { GX_GPU_VRAM_BYTE_COUNT } from '../../machine/ts/machine/devices/gx/gpu_command_buffer';
 import { GX_GTE_CONTROL_REGISTER_COUNT, GX_GTE_DATA_REGISTER_COUNT } from '../../machine/ts/machine/devices/gx/gte';
 import { INPUT_CONTROLLER_KEY_WORD_COUNT, INPUT_CONTROLLER_PAD_AXIS_COUNT, INPUT_CONTROLLER_PAD_COUNT } from '../../machine/ts/machine/devices/input/contracts';
 import { VDP_REGISTER_COUNT } from '../../machine/ts/machine/devices/vdp/registers';
@@ -39,6 +40,11 @@ import { RAM_BASE, RAM_END } from '../../machine/ts/machine/memory/map';
 
 const codecTestRpuVram = new Uint8Array(VDP_RPU_PARAM_MEM_SIZE);
 const codecTestRpuVramPageRevisions = new Uint32Array(VDP_RPU_PARAM_MEM_PAGE_COUNT);
+const codecTestGxVram = new Uint8Array(GX_GPU_VRAM_BYTE_COUNT);
+codecTestGxVram[0] = 0x34;
+codecTestGxVram[1] = 0x12;
+codecTestGxVram[1024] = 0xcd;
+codecTestGxVram[1025] = 0xab;
 
 function numberedWords(count: number): number[] {
 	const words = new Array<number>(count);
@@ -124,6 +130,52 @@ function createRuntimeSaveState(): RuntimeSaveState {
 					gp1Word: 0x08000008,
 					displayModeWord: PSX_GPU_DISPLAY_MODE_PAL_WORD,
 					statusWord: 0x1c100000,
+					gp0CommandWordCount: 2,
+					gp0CommandTargetWordCount: 4,
+					gp0CommandWords: [0x200000ff, 0x00010002],
+					gp0ImageLoadWordsRemaining: 3,
+					gp0ImageLoadCommandWordStart: 4,
+					gp0ImageLoadCommandWordCount: 5,
+					gp0ImageLoadCommandOpcode: 0xa0,
+					gp0PolylineWordsPerVertex: 2,
+					gp0PolylinePayloadPhase: 1,
+					gp0PolylineCommandWordStart: 5,
+					gp0PolylineCommandWordCount: 6,
+					gp0PolylineCommandOpcode: 0x58,
+					gpuReadWord: 0x00000400,
+					drawModeWord: 0x00000183,
+					textureWindowWord: 0x00000f0f,
+					drawingAreaTopLeftWord: 0x00000402,
+					drawingAreaBottomRightWord: 0x000140a0,
+					drawingOffsetWord: 0x00100020,
+					maskBitModeWord: 0x00000003,
+					displayStartWord: 0x00011844,
+					horizontalDisplayRangeWord: 0x00c60260,
+					verticalDisplayRangeWord: 0x0003fc10,
+					textureDisableAllowedWord: 1,
+					presentStatusWord: 0x1c100001,
+					presentDisplayModeWord: PSX_GPU_DISPLAY_MODE_PAL_WORD,
+					presentDisplayStartWord: 0x00011844,
+					presentHorizontalDisplayRangeWord: 0x00c60260,
+					presentVerticalDisplayRangeWord: 0x0003fc10,
+					commandBuffer: {
+						commandCount: 2,
+						presentCommandCount: 1,
+						wordCount: 7,
+						commandKind: [1, 5],
+						commandOpcode: [0x20, 0x02],
+						commandWordStart: [0, 4],
+						commandWordCount: [4, 3],
+						commandDrawModeWord: [0x0183, 0x0183],
+						commandTextureWindowWord: [0x0f0f, 0x0f0f],
+						commandDrawingAreaTopLeftWord: [0, 0],
+						commandDrawingAreaBottomRightWord: [0x00ef013f, 0x00ef013f],
+						commandDrawingOffsetWord: [0, 0],
+						commandMaskBitModeWord: [0, 0],
+						commandInterlacedRenderWord: [0, 1],
+						words: [0x200000ff, 0, 1, 2, 0x0200001f, 0, 0x00100010],
+					},
+					vramBytes: codecTestGxVram,
 				},
 				gxGte: {
 					dataRegisterWords: numberedWords(GX_GTE_DATA_REGISTER_COUNT),
@@ -233,7 +285,7 @@ function createRuntimeSaveState(): RuntimeSaveState {
 					vdpRegisterWords: numberedWords(VDP_REGISTER_COUNT),
 					buildFrame: {
 						state: VDP_DEX_FRAME_IDLE,
-										rpu: captureVdpRpuFrameState(createVdpRpuFrameOutput(codecTestRpuVram, codecTestRpuVramPageRevisions)),
+						rpu: captureVdpRpuFrameState(createVdpRpuFrameOutput(codecTestRpuVram, codecTestRpuVramPageRevisions)),
 						cost: 0,
 					},
 					activeFrame: createSubmittedFrameState(VDP_SUBMITTED_FRAME_EXECUTING),

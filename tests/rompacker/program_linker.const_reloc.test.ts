@@ -118,7 +118,7 @@ function makeSystemImage(constPoolSize: number): ProgramImage {
 
 test('ProgramImage exposes text and rodata as ROM sections', () => {
 	const image = makeProgramImage(
-		[{ op: OpCode.RETURN, a: 0, b: 1, c: 0 }],
+		[{ op: OpCode.RET, a: 0, b: 1, c: 0 }],
 		['literal', 3],
 		[],
 	);
@@ -1210,7 +1210,7 @@ test('appendLuaChunkToProgram rejects new storage sections', () => {
 test('appendLuaChunkToProgram preserves absolute program ROM bytes', () => {
 	const base = makeProgramImage(
 		[
-			{ op: OpCode.MOVE, a: 0, b: 0, c: 0 },
+			{ op: OpCode.MOV, a: 0, b: 0, c: 0 },
 			{ op: OpCode.RET, a: 0, b: 1, c: 0 },
 		],
 		[],

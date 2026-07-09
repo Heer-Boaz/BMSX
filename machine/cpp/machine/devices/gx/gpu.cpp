@@ -6,12 +6,15 @@
 #include "machine/model_registry.h"
 #include "machine/scheduler/device.h"
 
+#include <algorithm>
+
 namespace bmsx {
 
 GxGpu::GxGpu(Memory& memory, DeviceScheduler& scheduler)
 	: m_memory(memory)
 	, m_scheduler(scheduler)
-	, m_displayModeWord(PSX_GPU_DISPLAY_MODE_PAL_WORD) {
+	, m_displayModeWord(PSX_GPU_DISPLAY_MODE_PAL_WORD)
+	, m_presentDisplayModeWord(PSX_GPU_DISPLAY_MODE_PAL_WORD) {
 	m_memory.mapIoRead(IO_GX_GPU_GP0, this, &GxGpu::readGp0Thunk);
 	m_memory.mapIoWrite(IO_GX_GPU_GP0, this, &GxGpu::writeGp0Thunk);
 	m_memory.mapIoRead(IO_GX_GPU_GP1, this, &GxGpu::readStatusThunk);
@@ -40,6 +43,11 @@ void GxGpu::resetGpuRegisters() {
 	m_displayStartWord = 0u;
 	m_horizontalDisplayRangeWord = 0x00c60260u;
 	m_verticalDisplayRangeWord = 0x0003fc10u;
+	m_presentStatusWord = GX_GPU_STATUS_RESET_WORD;
+	m_presentDisplayModeWord = PSX_GPU_DISPLAY_MODE_PAL_WORD;
+	m_presentDisplayStartWord = 0u;
+	m_presentHorizontalDisplayRangeWord = 0x00c60260u;
+	m_presentVerticalDisplayRangeWord = 0x0003fc10u;
 	m_scanoutVblankActive = false;
 	m_scanoutInterlacedField = 0u;
 	m_scanoutInterlacedDisplayField = 0u;
@@ -47,6 +55,7 @@ void GxGpu::resetGpuRegisters() {
 	m_scanoutFrameStartCycle = 0;
 	m_scanoutCyclesPerFrame = 1;
 	m_scanoutTotalScanlines = 313;
+	m_lastFrameCommitted = false;
 	updateDisplayModeStatusBits();
 	updateScanoutStatusBits();
 	updateDmaRequestStatusBit();
@@ -60,6 +69,35 @@ GxGpuState GxGpu::captureState() const {
 		m_gp1Word,
 		m_displayModeWord,
 		m_statusWord,
+		m_gp0CommandWordCount,
+		m_gp0CommandTargetWordCount,
+		std::vector<u32>(m_gp0CommandWords.begin(), m_gp0CommandWords.begin() + static_cast<std::ptrdiff_t>(m_gp0CommandWordCount)),
+		m_gp0ImageLoadWordsRemaining,
+		m_gp0ImageLoadCommandWordStart,
+		m_gp0ImageLoadCommandWordCount,
+		m_gp0ImageLoadCommandOpcode,
+		m_gp0PolylineWordsPerVertex,
+		m_gp0PolylinePayloadPhase,
+		m_gp0PolylineCommandWordStart,
+		m_gp0PolylineCommandWordCount,
+		m_gp0PolylineCommandOpcode,
+		m_gpuReadWord,
+		m_drawModeWord,
+		m_textureWindowWord,
+		m_drawingAreaTopLeftWord,
+		m_drawingAreaBottomRightWord,
+		m_drawingOffsetWord,
+		m_maskBitModeWord,
+		m_displayStartWord,
+		m_horizontalDisplayRangeWord,
+		m_verticalDisplayRangeWord,
+		m_textureDisableAllowedWord,
+		m_presentStatusWord,
+		m_presentDisplayModeWord,
+		m_presentDisplayStartWord,
+		m_presentHorizontalDisplayRangeWord,
+		m_presentVerticalDisplayRangeWord,
+		m_commandBuffer.captureState(),
 	};
 }
 
@@ -68,10 +106,64 @@ void GxGpu::restoreState(const GxGpuState& state) {
 	m_gp1Word = state.gp1Word;
 	m_displayModeWord = state.displayModeWord;
 	m_statusWord = state.statusWord;
-	m_commandBuffer.reset();
-	clearGp0CommandState();
+	m_gp0CommandWordCount = state.gp0CommandWordCount;
+	m_gp0CommandTargetWordCount = state.gp0CommandTargetWordCount;
+	for (size_t index = 0u; index < m_gp0CommandWordCount; index += 1u) {
+		m_gp0CommandWords[index] = state.gp0CommandWords[index];
+	}
+	m_gp0ImageLoadWordsRemaining = state.gp0ImageLoadWordsRemaining;
+	m_gp0ImageLoadCommandWordStart = state.gp0ImageLoadCommandWordStart;
+	m_gp0ImageLoadCommandWordCount = state.gp0ImageLoadCommandWordCount;
+	m_gp0ImageLoadCommandOpcode = state.gp0ImageLoadCommandOpcode;
+	m_gp0PolylineWordsPerVertex = state.gp0PolylineWordsPerVertex;
+	m_gp0PolylinePayloadPhase = state.gp0PolylinePayloadPhase;
+	m_gp0PolylineCommandWordStart = state.gp0PolylineCommandWordStart;
+	m_gp0PolylineCommandWordCount = state.gp0PolylineCommandWordCount;
+	m_gp0PolylineCommandOpcode = state.gp0PolylineCommandOpcode;
+	m_gpuReadWord = state.gpuReadWord;
+	m_drawModeWord = state.drawModeWord;
+	m_textureWindowWord = state.textureWindowWord;
+	m_drawingAreaTopLeftWord = state.drawingAreaTopLeftWord;
+	m_drawingAreaBottomRightWord = state.drawingAreaBottomRightWord;
+	m_drawingOffsetWord = state.drawingOffsetWord;
+	m_maskBitModeWord = state.maskBitModeWord;
+	m_displayStartWord = state.displayStartWord;
+	m_horizontalDisplayRangeWord = state.horizontalDisplayRangeWord;
+	m_verticalDisplayRangeWord = state.verticalDisplayRangeWord;
+	m_textureDisableAllowedWord = state.textureDisableAllowedWord;
+	m_presentStatusWord = state.presentStatusWord;
+	m_presentDisplayModeWord = state.presentDisplayModeWord;
+	m_presentDisplayStartWord = state.presentDisplayStartWord;
+	m_presentHorizontalDisplayRangeWord = state.presentHorizontalDisplayRangeWord;
+	m_presentVerticalDisplayRangeWord = state.presentVerticalDisplayRangeWord;
+	m_commandBuffer.restoreState(state.commandBuffer);
+	m_lastFrameCommitted = false;
 	m_memory.writeIoValue(IO_GX_GPU_GP0, valueNumber(static_cast<double>(m_gp0Word)));
 	m_memory.writeIoValue(IO_GX_GPU_GP1, valueNumber(static_cast<double>(m_statusWord)));
+}
+
+GxGpuSaveState GxGpu::captureSaveState() const {
+	GxGpuSaveState state;
+	static_cast<GxGpuState&>(state) = captureState();
+	state.vramBytes.assign(m_vramSnapshotBytes.begin(), m_vramSnapshotBytes.end());
+	return state;
+}
+
+void GxGpu::restoreSaveState(const GxGpuSaveState& state) {
+	restoreState(state);
+	replaceVramSnapshotBytes(state.vramBytes.data());
+}
+
+void GxGpu::replaceVramSnapshotBytes(const u8* bytes) {
+	std::copy(bytes, bytes + GX_GPU_VRAM_BYTE_COUNT, m_vramSnapshotBytes.begin());
+	m_vramSnapshotSerial += 1u;
+}
+
+u32 GxGpu::commitRenderedVramSnapshotBytes(const u8* bytes) {
+	std::copy(bytes, bytes + GX_GPU_VRAM_BYTE_COUNT, m_vramSnapshotBytes.begin());
+	m_vramSnapshotSerial += 1u;
+	retirePresentedCommands();
+	return m_vramSnapshotSerial;
 }
 
 u32 GxGpu::readGp0() const {
@@ -262,17 +354,43 @@ u32 GxGpu::readGpuReadWord() const {
 const GxGpuDeviceOutput& GxGpu::readDeviceOutput() {
 	updateScanoutStatusBits();
 	updateDynamicStatusBits();
-	m_deviceOutput.statusWord = m_statusWord;
-	m_deviceOutput.displayModeWord = m_displayModeWord;
-	m_deviceOutput.displayStartWord = m_displayStartWord;
-	m_deviceOutput.horizontalDisplayRangeWord = m_horizontalDisplayRangeWord;
-	m_deviceOutput.verticalDisplayRangeWord = m_verticalDisplayRangeWord;
+	m_deviceOutput.statusWord = m_presentStatusWord;
+	m_deviceOutput.displayModeWord = m_presentDisplayModeWord;
+	m_deviceOutput.displayStartWord = m_presentDisplayStartWord;
+	m_deviceOutput.horizontalDisplayRangeWord = m_presentHorizontalDisplayRangeWord;
+	m_deviceOutput.verticalDisplayRangeWord = m_presentVerticalDisplayRangeWord;
+	m_deviceOutput.vramSnapshotBytes = &m_vramSnapshotBytes;
+	m_deviceOutput.vramSnapshotSerial = m_vramSnapshotSerial;
 	return m_deviceOutput;
 }
 
+void GxGpu::presentReadyFrameOnVblankEdge() {
+	updateScanoutStatusBits();
+	updateDynamicStatusBits();
+	const u32 visibleStatusWord = m_statusWord & GX_GPU_STATUS_DISPLAY_DISABLE;
+	const bool scanoutStateChanged = (m_presentStatusWord & GX_GPU_STATUS_DISPLAY_DISABLE) != visibleStatusWord
+		|| m_presentDisplayModeWord != m_displayModeWord
+		|| m_presentDisplayStartWord != m_displayStartWord
+		|| m_presentHorizontalDisplayRangeWord != m_horizontalDisplayRangeWord
+		|| m_presentVerticalDisplayRangeWord != m_verticalDisplayRangeWord;
+	m_presentStatusWord = m_statusWord;
+	m_presentDisplayModeWord = m_displayModeWord;
+	m_presentDisplayStartWord = m_displayStartWord;
+	m_presentHorizontalDisplayRangeWord = m_horizontalDisplayRangeWord;
+	m_presentVerticalDisplayRangeWord = m_verticalDisplayRangeWord;
+	m_commandBuffer.sealCommandsForPresentation();
+	m_lastFrameCommitted = m_commandBuffer.hasUnretiredPresentCommands() || scanoutStateChanged;
+}
+
 void GxGpu::retirePresentedCommands() {
-	if (m_gp0ImageLoadCommandWordCount == 0u && m_gp0PolylineCommandWordCount == 0u) {
-		m_commandBuffer.retireCommandsPreservingVram();
+	const size_t retiredWords = m_commandBuffer.retireCommandsPreservingVram();
+	if (retiredWords != 0u) {
+		if (m_gp0ImageLoadCommandWordCount != 0u) {
+			m_gp0ImageLoadCommandWordStart -= retiredWords;
+		}
+		if (m_gp0PolylineCommandWordCount != 0u) {
+			m_gp0PolylineCommandWordStart -= retiredWords;
+		}
 	}
 }
 
@@ -330,6 +448,10 @@ void GxGpu::clearGp0CommandState() {
 	m_gp0CommandWordCount = 0u;
 	m_gp0CommandTargetWordCount = 0u;
 	clearImageLoadState();
+	clearPolylineState();
+}
+
+void GxGpu::clearPolylineState() {
 	m_gp0PolylineWordsPerVertex = 0u;
 	m_gp0PolylinePayloadPhase = 0u;
 	m_gp0PolylineCommandWordStart = 0u;
@@ -377,11 +499,7 @@ void GxGpu::consumeGp0PolylinePayloadWord() {
 			m_gp0PolylineCommandOpcode,
 			m_gp0PolylineCommandWordStart,
 			m_gp0PolylineCommandWordCount);
-		m_gp0PolylineWordsPerVertex = 0u;
-		m_gp0PolylinePayloadPhase = 0u;
-		m_gp0PolylineCommandWordStart = 0u;
-		m_gp0PolylineCommandWordCount = 0u;
-		m_gp0PolylineCommandOpcode = 0u;
+		clearPolylineState();
 		return;
 	}
 	m_commandBuffer.appendWord(m_gp0Word);
@@ -448,6 +566,7 @@ void GxGpu::emitFixedGp0Command(u8 kind, u32 opcode, u32 commandWordCount) {
 }
 
 void GxGpu::pushGpuCommand(u8 kind, u32 opcode, size_t wordStart, u32 commandWordCount) {
+	const u8 interlacedRenderWord = gxGpuInterlacedRenderWord(m_statusWord, m_scanoutActiveLineLsb);
 	m_commandBuffer.pushCommand(
 		kind,
 		static_cast<u8>(opcode),
@@ -459,7 +578,7 @@ void GxGpu::pushGpuCommand(u8 kind, u32 opcode, size_t wordStart, u32 commandWor
 		m_drawingAreaBottomRightWord,
 		m_drawingOffsetWord,
 		m_maskBitModeWord,
-		gxGpuInterlacedRenderWord(m_statusWord, m_scanoutActiveLineLsb));
+		interlacedRenderWord);
 }
 
 void GxGpu::beginImageLoadToVram(u32 opcode, u32 commandWordCount) {

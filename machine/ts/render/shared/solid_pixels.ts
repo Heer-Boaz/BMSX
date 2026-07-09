@@ -1,8 +1,23 @@
+import type { color_arr } from '../../rompack/format';
+
 export function writeSolidRgba8Pixels(pixels: Uint8Array, byteCount: number, argb: number): void {
 	const r = (argb >>> 16) & 0xff;
 	const g = (argb >>> 8) & 0xff;
 	const b = argb & 0xff;
 	const a = (argb >>> 24) & 0xff;
+	for (let i = 0; i < byteCount; i += 4) {
+		pixels[i + 0] = r;
+		pixels[i + 1] = g;
+		pixels[i + 2] = b;
+		pixels[i + 3] = a;
+	}
+}
+
+export function writeColorRgba8Pixels(pixels: Uint8Array, byteCount: number, color: color_arr): void {
+	const r = color[0] * 255;
+	const g = color[1] * 255;
+	const b = color[2] * 255;
+	const a = color[3] * 255;
 	for (let i = 0; i < byteCount; i += 4) {
 		pixels[i + 0] = r;
 		pixels[i + 1] = g;

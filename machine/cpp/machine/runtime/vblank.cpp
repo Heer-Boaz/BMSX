@@ -123,6 +123,7 @@ void VblankState::publishVblankTiming(Runtime& runtime, bool active) {
 void VblankState::enterVblank(Runtime& runtime) {
 	m_vblankSequence += 1;
 	runtime.machine.vdp.presentReadyFrameOnVblankEdge();
+	runtime.machine.gxGpu.presentReadyFrameOnVblankEdge();
 	runtime.machine.inputController.onVblankEdge(runtime.machineElapsedMs(), static_cast<u32>(runtime.machine.scheduler.nowCycles()));
 	publishVblankTiming(runtime, true);
 	runtime.machine.irqController.raise(IRQ_VBLANK);

@@ -1,4 +1,7 @@
 import {
+	GX_GPU_STATUS_DISPLAY_DISABLE,
+} from '../../../machine/devices/gx/gpu';
+import {
 	VDP_RPU_BLEND_ADD,
 	VDP_RPU_BLEND_ALPHA,
 	VDP_RPU_BLEND_NONE,
@@ -866,11 +869,10 @@ export function registerVdpRpuPass(registry: RenderPassLibrary): void {
 		},
 		writesDepth: true,
 		bootstrap: (backend) => {
-			const webglBackend = backend as WebGLBackend;
-			initVdpRpuPipeline(webglBackend);
+			initVdpRpuPipeline(backend as WebGLBackend);
 			setupVdpRpuLocations();
 		},
-		shouldExecute: (view) => view.vdpRpuFrame.commands.passCount !== 0 && view.gxGpuCommandBuffer.commandCount === 0,
+		shouldExecute: (view) => view.vdpRpuFrame.commands.passCount !== 0 && (view.gxGpuStatusWord & GX_GPU_STATUS_DISPLAY_DISABLE) !== 0,
 		exec: (_backend, fbo) => {
 			vdpRpuPipelineStateScratch.width = view.offscreenCanvasSize.x;
 			vdpRpuPipelineStateScratch.height = view.offscreenCanvasSize.y;

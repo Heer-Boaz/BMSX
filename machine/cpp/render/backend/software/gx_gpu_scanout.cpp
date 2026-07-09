@@ -10,6 +10,8 @@
 namespace bmsx {
 namespace {
 
+SoftwareBackend* g_gxGpuSoftwareScanoutBackend;
+
 constexpr u32 kGxGpuDisplayModeRgb24Bit = 0x10u;
 constexpr u32 kGxGpuDisplayModePalBit = 0x08u;
 constexpr u32 kGxGpuDisplayModeVerticalResolutionBit = 0x04u;
@@ -63,11 +65,11 @@ inline u32 packOutputArgb(u32 rgb) {
 	return 0xff000000u | ((rgb & 0xffu) << 16u) | (rgb & 0x00ff00u) | ((rgb >> 16u) & 0xffu);
 }
 
-void fillOutputBlack(SoftwareBackend& backend) {
-	const i32 pixelsPerRow = backend.pitch() / static_cast<i32>(sizeof(u32));
-	for (i32 y = 0; y < backend.height(); y += 1) {
-		u32* row = backend.framebuffer() + static_cast<size_t>(y) * static_cast<size_t>(pixelsPerRow);
-		for (i32 x = 0; x < backend.width(); x += 1) {
+void fillOutputBlack() {
+	const i32 pixelsPerRow = g_gxGpuSoftwareScanoutBackend->pitch() / static_cast<i32>(sizeof(u32));
+	for (i32 y = 0; y < g_gxGpuSoftwareScanoutBackend->height(); y += 1) {
+		u32* row = g_gxGpuSoftwareScanoutBackend->framebuffer() + static_cast<size_t>(y) * static_cast<size_t>(pixelsPerRow);
+		for (i32 x = 0; x < g_gxGpuSoftwareScanoutBackend->width(); x += 1) {
 			row[x] = 0xff000000u;
 		}
 	}
@@ -75,9 +77,13 @@ void fillOutputBlack(SoftwareBackend& backend) {
 
 } // namespace
 
-void scanoutGxGpuSoftwareVram(SoftwareBackend& backend, const GxGpuPipelineState& state) {
+void bindGxGpuSoftwareScanoutBackend(SoftwareBackend& backend) {
+	g_gxGpuSoftwareScanoutBackend = &backend;
+}
+
+void scanoutGxGpuSoftwareVram(const GxGpuPipelineState& state) {
 	if ((state.statusWord & GX_GPU_STATUS_DISPLAY_DISABLE) != 0u) {
-		fillOutputBlack(backend);
+		fillOutputBlack();
 		return;
 	}
 	const u32 displayModeWord = state.displayModeWord;
@@ -119,12 +125,12 @@ void scanoutGxGpuSoftwareVram(SoftwareBackend& backend, const GxGpuPipelineState
 	const i32 displayStartX = static_cast<i32>(gxGpuDisplayStartX(state.displayStartWord));
 	const i32 displayStartY = static_cast<i32>(gxGpuDisplayStartY(state.displayStartWord));
 	const bool rgb24 = (displayModeWord & kGxGpuDisplayModeRgb24Bit) != 0u;
-	const i32 targetWidth = backend.width();
-	const i32 targetHeight = backend.height();
-	const i32 pixelsPerRow = backend.pitch() / static_cast<i32>(sizeof(u32));
+	const i32 targetWidth = g_gxGpuSoftwareScanoutBackend->width();
+	const i32 targetHeight = g_gxGpuSoftwareScanoutBackend->height();
+	const i32 pixelsPerRow = g_gxGpuSoftwareScanoutBackend->pitch() / static_cast<i32>(sizeof(u32));
 	for (i32 outputY = 0; outputY < targetHeight; outputY += 1) {
 		const i32 screenY = screenYForOutputPixel(outputY, targetHeight, screenHeight);
-		u32* row = backend.framebuffer() + static_cast<size_t>(outputY) * static_cast<size_t>(pixelsPerRow);
+		u32* row = g_gxGpuSoftwareScanoutBackend->framebuffer() + static_cast<size_t>(outputY) * static_cast<size_t>(pixelsPerRow);
 		for (i32 outputX = 0; outputX < targetWidth; outputX += 1) {
 			const i32 screenX = screenXForOutputPixel(outputX, targetWidth, screenWidth);
 			u32 rgb = 0u;

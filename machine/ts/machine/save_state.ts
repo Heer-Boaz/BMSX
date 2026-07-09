@@ -1,6 +1,6 @@
 import type { AudioControllerState } from './devices/audio/save_state';
 import type { GeometryControllerState } from './devices/geometry/save_state';
-import type { GxGpuState } from './devices/gx/gpu';
+import type { GxGpuSaveState, GxGpuState } from './devices/gx/gpu';
 import type { GxGteState } from './devices/gx/gte';
 import type { InputControllerState } from './devices/input/save_state';
 import type { IrqControllerState } from './devices/irq/save_state';
@@ -22,7 +22,7 @@ export type MachineState = {
 export type MachineSaveState = {
 	memory: MemorySaveState;
 	geometry: GeometryControllerState;
-	gxGpu: GxGpuState;
+	gxGpu: GxGpuSaveState;
 	gxGte: GxGteState;
 	irq: IrqControllerState;
 	audio: AudioControllerState;
@@ -54,7 +54,7 @@ export function captureMachineSaveState(machine: Machine): MachineSaveState {
 	return {
 		memory: machine.memory.captureSaveState(),
 		geometry: machine.geometryController.captureState(),
-		gxGpu: machine.gxGpu.captureState(),
+		gxGpu: machine.gxGpu.captureSaveState(),
 		gxGte: machine.gxGte.captureState(),
 		irq: machine.irqController.captureState(),
 		audio: machine.audioController.captureState(),
@@ -68,7 +68,7 @@ export function restoreMachineSaveState(machine: Machine, state: MachineSaveStat
 	machine.memory.restoreSaveState(state.memory);
 	machine.cpu.stringPool.restoreState(state.stringPool);
 	restoreSharedDeviceState(machine, state);
-	machine.gxGpu.restoreState(state.gxGpu);
+	machine.gxGpu.restoreSaveState(state.gxGpu);
 	machine.gxGte.restoreState(state.gxGte);
 	machine.vdp.restoreSaveState(state.vdp);
 }

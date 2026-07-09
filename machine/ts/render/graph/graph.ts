@@ -13,7 +13,6 @@ import type {
 	RenderPassDesc,
 	TextureHandle,
 } from '../backend/backend';
-import { checkWebGLError } from '../backend/webgl/helpers';
 
 // Internal graph texture handle. Named distinctly to avoid collision with existing TextureManager TextureHandle.
 export type RGTexHandle = number;
@@ -25,6 +24,7 @@ export interface TexDesc {
 	depth?: boolean; // depth/stencil target if true
 	name?: string;
 	transient?: boolean; // hint: contents not needed after pass (storeOp dont_care)
+	initialClearColor?: color_arr;
 }
 
 export interface FrameData {
@@ -156,9 +156,20 @@ export class RenderGraphRuntime {
 
 		const texMap = new Map<RGTexHandle, InternalTexResource>();
 		const self = this;
-		function allocTex(desc: TexDesc): RGTexHandle {
+		function allocTex(desc: TexDesc, passIndex: number): RGTexHandle {
 			const handle = nextHandle++ as RGTexHandle;
-			const res: InternalTexResource = { desc, tex: null, fboColorOnly: null, fboDepthHandle: null, fboDepthAttachment: 0, readers: 0, readPasses: [], writerPasses: [] };
+			const res: InternalTexResource = {
+				desc,
+				tex: null,
+				fboColorOnly: null,
+				fboDepthHandle: null,
+				fboDepthAttachment: 0,
+				readers: 0,
+				readPasses: [],
+				writerPasses: [],
+				firstUse: passIndex,
+				lastUse: passIndex,
+			};
 			texMap.set(handle, res);
 			return handle;
 		}
@@ -172,7 +183,7 @@ export class RenderGraphRuntime {
 			passWrites[pIndex] = [];
 			passReads[pIndex] = [];
 			const io: IOBuilder = {
-				createTex: (desc) => allocTex(desc),
+				createTex: (desc) => allocTex(desc, pIndex),
 				readTex: (h) => { const r = texMap.get(h); if (r) { r.readers++; r.readPasses.push(pIndex); r.lastUse = Math.max(r.lastUse ?? -1, pIndex); if (r.firstUse === undefined) r.firstUse = pIndex; passReads[pIndex].push({ tex: h }); } },
 				writeTex: (h, opts) => { const r = texMap.get(h); if (r) { if (r.writerPasses[r.writerPasses.length - 1] !== pIndex) r.writerPasses.push(pIndex); r.firstUse = r.firstUse === undefined ? pIndex : Math.min(r.firstUse, pIndex); r.lastUse = Math.max(r.lastUse ?? -1, pIndex); if (opts && (opts.clearColor || opts.clearDepth !== undefined)) r.clearOnWrite = { color: opts.clearColor, depth: opts.clearDepth }; passWrites[pIndex].push({ tex: h, clear: r.clearOnWrite }); } },
 				exportToBackbuffer: (h) => { const r = texMap.get(h); if (r) { r.present = true; r.exportPass = pIndex; r.lastUse = Math.max(r.lastUse ?? -1, pIndex); } },
@@ -212,11 +223,6 @@ export class RenderGraphRuntime {
 		if (finalRes.writerPasses.length) for (const wp of finalRes.writerPasses) markPass(wp);
 		// Also seed reachability from any pass that reads the presented texture (e.g. Present pass)
 		if (finalRes.readPasses) for (const rp of finalRes.readPasses) markPass(rp);
-		// Ensure pass that does export (if different) is included
-		for (let i = 0; i < passCount; i++) {
-			// If this pass explicitly exported, include it (placeholder loop to retain structure)
-			for (const _ of passWrites[i]) { /* noop for now */ }
-		}
 		// Mark any explicitly forced passes reachable (side-effect passes w/o resource edges)
 		for (let p = 0; p < passCount; p++) {
 			if (this.passes[p].alwaysExecute) this.reachable[p] = true;
@@ -274,26 +280,23 @@ export class RenderGraphRuntime {
 			return a.format === b.format;
 		}
 		for (const lr of logicalResources) {
+			if (!lr.res.desc.transient) {
+				lr.res.physicalId = nextPhysId++;
+				continue;
+			}
 			// Expire finished actives -> freePool
 			for (let i = active.length - 1; i >= 0; i--) {
 				if (active[i].lastUse < lr.res.firstUse!) { freePool.push(active[i]); active.splice(i, 1); }
 			}
-			// Pick compatible released physical, prefer matching transient flag
+			// Pick compatible released transient physical resource.
 			let chosen: ActivePhys | null = null;
 			let chosenIndex = -1;
 			for (let i = 0; i < freePool.length; i++) {
 				const f = freePool[i];
 				if (!textureDescriptionsCompatible(f.desc, lr.res.desc)) continue;
-				const matchTransient = (!!f.desc.transient) === (!!lr.res.desc.transient);
-				if (matchTransient) {
-					chosen = f;
-					chosenIndex = i;
-					break;
-				}
-				if (!chosen) {
-					chosen = f;
-					chosenIndex = i;
-				}
+				chosen = f;
+				chosenIndex = i;
+				break;
 			}
 			if (chosen !== null) {
 				freePool.splice(chosenIndex, 1);
@@ -326,7 +329,6 @@ export class RenderGraphRuntime {
 		const depthAttachment = this.passDepthAttachment;
 		for (let oi = 0; oi < order.length; oi++) {
 			const i = order[oi];
-			checkWebGLError(`Before pass execution: ${i}: ${this.passes[i].name}`);
 			if (this.reachable.length && !this.reachable[i]) continue;
 			const pass = this.passes[i];
 			const writes = this._passWrites[i];
@@ -350,7 +352,7 @@ export class RenderGraphRuntime {
 			}
 
 			let passEnc: PassEncoder | null = null;
-			if (colorAttachmentCount !== 0 || depthRes !== null) {
+			if (!pass.alwaysExecute && (colorAttachmentCount !== 0 || depthRes !== null)) {
 				colorAttachments.length = colorAttachmentCount;
 				desc.label = pass.name;
 				desc.color = colorAttachmentCount !== 0 ? colorAttachments[0] : undefined;

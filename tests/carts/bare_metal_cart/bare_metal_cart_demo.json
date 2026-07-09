@@ -1,42 +1,302 @@
 [
 	{
-		"description": "raw GX offscreen scene, post pass, and GTE depth mesh early phase",
-		"frame": 960,
+		"description": "baseline raw GX offscreen scene and GTE depth mesh",
+		"frame": 120,
+		"capture": true,
+		"repeat": 8,
+		"repeatEveryFrames": 1
+	},
+	{
+		"description": "cycle to exploding crystal shards",
+		"frame": 140,
+		"event": {
+			"type": "button",
+			"deviceId": "keyboard:0",
+			"code": "ArrowRight",
+			"down": true,
+			"value": 1,
+			"timestamp": 2800,
+			"pressId": 2101,
+			"modifiers": {
+				"ctrl": false,
+				"shift": false,
+				"alt": false,
+				"meta": false
+			}
+		}
+	},
+	{
+		"description": "release exploding crystal shards cycle",
+		"frame": 142,
+		"event": {
+			"type": "button",
+			"deviceId": "keyboard:0",
+			"code": "ArrowRight",
+			"down": false,
+			"value": 0,
+			"timestamp": 2840,
+			"pressId": 2101,
+			"modifiers": {
+				"ctrl": false,
+				"shift": false,
+				"alt": false,
+				"meta": false
+			}
+		}
+	},
+	{
+		"description": "exploding crystal shards sorted by AVSZ3 phase A",
+		"frame": 200,
+		"capture": true,
+		"repeat": 16,
+		"repeatEveryFrames": 1
+	},
+	{
+		"description": "exploding crystal shards sorted by AVSZ3 phase B",
+		"frame": 232,
 		"capture": true
 	},
 	{
-		"description": "raw GX offscreen scene, post pass, and GTE depth mesh phase A",
-		"frame": 976,
+		"description": "cycle to Tera-Flare energy sphere",
+		"frame": 270,
+		"event": {
+			"type": "button",
+			"deviceId": "keyboard:0",
+			"code": "ArrowRight",
+			"down": true,
+			"value": 1,
+			"timestamp": 5400,
+			"pressId": 2102,
+			"modifiers": {
+				"ctrl": false,
+				"shift": false,
+				"alt": false,
+				"meta": false
+			}
+		}
+	},
+	{
+		"description": "release Tera-Flare energy sphere cycle",
+		"frame": 272,
+		"event": {
+			"type": "button",
+			"deviceId": "keyboard:0",
+			"code": "ArrowRight",
+			"down": false,
+			"value": 0,
+			"timestamp": 5440,
+			"pressId": 2102,
+			"modifiers": {
+				"ctrl": false,
+				"shift": false,
+				"alt": false,
+				"meta": false
+			}
+		}
+	},
+	{
+		"description": "Tera-Flare textured projected shell phase A",
+		"frame": 330,
+		"capture": true,
+		"repeat": 16,
+		"repeatEveryFrames": 1
+	},
+	{
+		"description": "Tera-Flare textured projected shell phase B",
+		"frame": 362,
 		"capture": true
 	},
 	{
-		"description": "raw direct16 affine tunnel and GTE depth mesh phase B",
-		"frame": 992,
+		"description": "cycle to depth-cued particle storm",
+		"frame": 400,
+		"event": {
+			"type": "button",
+			"deviceId": "keyboard:0",
+			"code": "ArrowRight",
+			"down": true,
+			"value": 1,
+			"timestamp": 8000,
+			"pressId": 2103,
+			"modifiers": {
+				"ctrl": false,
+				"shift": false,
+				"alt": false,
+				"meta": false
+			}
+		}
+	},
+	{
+		"description": "release depth-cued particle storm cycle",
+		"frame": 402,
+		"event": {
+			"type": "button",
+			"deviceId": "keyboard:0",
+			"code": "ArrowRight",
+			"down": false,
+			"value": 0,
+			"timestamp": 8040,
+			"pressId": 2103,
+			"modifiers": {
+				"ctrl": false,
+				"shift": false,
+				"alt": false,
+				"meta": false
+			}
+		}
+	},
+	{
+		"description": "depth-cued particle storm DPCS DPCT INTPL phase A",
+		"frame": 460,
+		"capture": true,
+		"repeat": 16,
+		"repeatEveryFrames": 1
+	},
+	{
+		"description": "depth-cued particle storm DPCS DPCT INTPL phase B",
+		"frame": 492,
 		"capture": true
 	},
 	{
-		"description": "raw direct16 affine tunnel and GTE depth mesh phase C",
-		"frame": 1008,
+		"description": "cycle to Gouraud-lit idol",
+		"frame": 530,
+		"event": {
+			"type": "button",
+			"deviceId": "keyboard:0",
+			"code": "ArrowRight",
+			"down": true,
+			"value": 1,
+			"timestamp": 10600,
+			"pressId": 2104,
+			"modifiers": {
+				"ctrl": false,
+				"shift": false,
+				"alt": false,
+				"meta": false
+			}
+		}
+	},
+	{
+		"description": "release Gouraud-lit idol cycle",
+		"frame": 532,
+		"event": {
+			"type": "button",
+			"deviceId": "keyboard:0",
+			"code": "ArrowRight",
+			"down": false,
+			"value": 0,
+			"timestamp": 10640,
+			"pressId": 2104,
+			"modifiers": {
+				"ctrl": false,
+				"shift": false,
+				"alt": false,
+				"meta": false
+			}
+		}
+	},
+	{
+		"description": "Gouraud-lit idol NCT NCDT NCCT phase A",
+		"frame": 590,
+		"capture": true,
+		"repeat": 16,
+		"repeatEveryFrames": 1
+	},
+	{
+		"description": "Gouraud-lit idol NCT NCDT NCCT phase B",
+		"frame": 622,
 		"capture": true
 	},
 	{
-		"description": "raw direct16 affine tunnel and GTE depth mesh phase D",
-		"frame": 1024,
+		"description": "cycle to framebuffer echo spell",
+		"frame": 660,
+		"event": {
+			"type": "button",
+			"deviceId": "keyboard:0",
+			"code": "ArrowRight",
+			"down": true,
+			"value": 1,
+			"timestamp": 13200,
+			"pressId": 2105,
+			"modifiers": {
+				"ctrl": false,
+				"shift": false,
+				"alt": false,
+				"meta": false
+			}
+		}
+	},
+	{
+		"description": "release framebuffer echo spell cycle",
+		"frame": 662,
+		"event": {
+			"type": "button",
+			"deviceId": "keyboard:0",
+			"code": "ArrowRight",
+			"down": false,
+			"value": 0,
+			"timestamp": 13240,
+			"pressId": 2105,
+			"modifiers": {
+				"ctrl": false,
+				"shift": false,
+				"alt": false,
+				"meta": false
+			}
+		}
+	},
+	{
+		"description": "framebuffer echo spell phase A",
+		"frame": 700,
+		"capture": true,
+		"repeat": 44,
+		"repeatEveryFrames": 1
+	},
+	{
+		"description": "framebuffer echo spell phase B",
+		"frame": 732,
 		"capture": true
 	},
 	{
-		"description": "raw direct16 affine tunnel and GTE depth mesh phase E",
-		"frame": 1040,
-		"capture": true
+		"description": "cycle left back to Gouraud-lit idol",
+		"frame": 760,
+		"event": {
+			"type": "button",
+			"deviceId": "keyboard:0",
+			"code": "ArrowLeft",
+			"down": true,
+			"value": 1,
+			"timestamp": 15200,
+			"pressId": 2106,
+			"modifiers": {
+				"ctrl": false,
+				"shift": false,
+				"alt": false,
+				"meta": false
+			}
+		}
 	},
 	{
-		"description": "raw direct16 affine tunnel and GTE depth mesh phase F",
-		"frame": 1056,
-		"capture": true
+		"description": "release cycle-left control",
+		"frame": 762,
+		"event": {
+			"type": "button",
+			"deviceId": "keyboard:0",
+			"code": "ArrowLeft",
+			"down": false,
+			"value": 0,
+			"timestamp": 15240,
+			"pressId": 2106,
+			"modifiers": {
+				"ctrl": false,
+				"shift": false,
+				"alt": false,
+				"meta": false
+			}
+		}
 	},
 	{
-		"description": "raw GX post pass and GTE depth mesh late phase",
-		"frame": 1072,
+		"description": "left cycle returns to Gouraud-lit idol",
+		"frame": 800,
 		"capture": true
 	}
 ]

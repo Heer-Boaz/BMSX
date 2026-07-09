@@ -36,8 +36,12 @@ inline u32 blendChannel5(u32 src, u32 dst, u32 blendMode) {
 
 std::array<u16, kGxGpuSoftwareVramWords> g_gxGpuSoftwareVram{};
 
-void resetGxGpuSoftwareVram() {
-	g_gxGpuSoftwareVram.fill(0u);
+
+void loadGxGpuSoftwareVramBytes(const u8* source) {
+	for (size_t wordIndex = 0u; wordIndex < kGxGpuSoftwareVramWords; wordIndex += 1u) {
+		const size_t byteIndex = wordIndex << 1u;
+		g_gxGpuSoftwareVram[wordIndex] = static_cast<u16>(source[byteIndex] | (static_cast<u16>(source[byteIndex + 1u]) << 8u));
+	}
 }
 
 size_t gxGpuSoftwareVramIndex(i32 x, i32 y) {

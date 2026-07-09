@@ -1,5 +1,5 @@
 import type { RenderPassLibrary } from '../backend/pass/library';
-import type { RenderContext, RenderPassStateRegistry } from '../backend/backend';
+import type { RenderPassStateRegistry } from '../backend/backend';
 import type { WebGLBackend } from '../backend/webgl/backend';
 import { TEXTURE_UNIT_POST_PROCESSING_SOURCE } from '../backend/webgl/constants';
 import vertexShaderCode from './shaders/framebuffer_2d.vert.glsl';
@@ -44,7 +44,7 @@ function bindFramebuffer2DUniforms(gl: WebGL2RenderingContext, state: RenderPass
 	gl.uniform1f(framebuffer2DScaleUniform, 1.0);
 }
 
-function renderFrameBuffer(backend: WebGLBackend, gl: WebGL2RenderingContext, context: RenderContext, fbo: WebGLFramebuffer, state: RenderPassStateRegistry['framebuffer_2d']): void {
+function renderFrameBuffer(backend: WebGLBackend, gl: WebGL2RenderingContext, fbo: WebGLFramebuffer, state: RenderPassStateRegistry['framebuffer_2d']): void {
 	gl.bindFramebuffer(gl.FRAMEBUFFER, fbo);
 	gl.viewport(0, 0, state.width, state.height);
 	backend.setDepthTestEnabled(false);
@@ -53,14 +53,14 @@ function renderFrameBuffer(backend: WebGLBackend, gl: WebGL2RenderingContext, co
 	backend.setBlendEnabled(true);
 	gl.blendFunc(gl.SRC_ALPHA, gl.ONE_MINUS_SRC_ALPHA);
 	bindFullscreenQuad(fsq, fsq.positionAttrib, fsq.texcoordAttrib);
-	context.activeTexUnit = TEXTURE_UNIT_POST_PROCESSING_SOURCE;
-	context.bind2DTex(state.colorTex);
+	backend.setActiveTexture(TEXTURE_UNIT_POST_PROCESSING_SOURCE);
+	backend.bindTexture2D(state.colorTex as WebGLTexture);
 	gl.drawArrays(gl.TRIANGLES, 0, 6);
 	backend.setBlendEnabled(false);
 	backend.setDepthMask(true);
 }
 
-export function registerFramebuffer2DPass_WebGL(registry: RenderPassLibrary): void {
+export function registerFramebuffer2DPass(registry: RenderPassLibrary): void {
 	const framebuffer2DState: RenderPassStateRegistry['framebuffer_2d'] = {
 		width: 0,
 		height: 0,
@@ -78,7 +78,7 @@ export function registerFramebuffer2DPass_WebGL(registry: RenderPassLibrary): vo
 			bootstrapFramebuffer2DPass(backend as WebGLBackend);
 		},
 		exec: (backend: WebGLBackend, fbo, state: RenderPassStateRegistry['framebuffer_2d']) => {
-			renderFrameBuffer(backend, backend.gl as WebGL2RenderingContext, registry.view, fbo as WebGLFramebuffer, state);
+			renderFrameBuffer(backend, backend.gl as WebGL2RenderingContext, fbo as WebGLFramebuffer, state);
 		},
 		prepare: (backend: WebGLBackend, _state: RenderPassStateRegistry['framebuffer_2d']) => {
 			const view = registry.view;

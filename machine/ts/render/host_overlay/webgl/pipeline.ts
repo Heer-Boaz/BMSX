@@ -123,7 +123,7 @@ function createRuntime(backend: WebGLBackend, program: WebGLProgram): HostOverla
 	};
 }
 
-export function destroyHostOverlayRuntime_WebGL(runtimeToDestroy: HostOverlayRuntime): void {
+export function destroyHostOverlayRuntime(runtimeToDestroy: HostOverlayRuntime): void {
 	const gl = runtimeToDestroy.gl;
 	gl.deleteBuffer(runtimeToDestroy.cornerBuffer);
 	gl.deleteBuffer(runtimeToDestroy.instanceFloatBuffer);
@@ -137,13 +137,13 @@ function bootstrapRuntime(backend: WebGLBackend): HostOverlayRuntime {
 	const gl = backend.gl as WebGL2RenderingContext;
 	const program = gl.getParameter(gl.CURRENT_PROGRAM) as WebGLProgram;
 	if (runtime !== null) {
-		destroyHostOverlayRuntime_WebGL(runtime);
+		destroyHostOverlayRuntime(runtime);
 	}
 	runtime = createRuntime(backend, program);
 	return runtime;
 }
 
-export function createHostOverlayRuntime_WebGL(backend: WebGLBackend): HostOverlayRuntime {
+export function createHostOverlayRuntime(backend: WebGLBackend): HostOverlayRuntime {
 	const gl = backend.gl as WebGL2RenderingContext;
 	const program = gl.getParameter(gl.CURRENT_PROGRAM) as WebGLProgram;
 	return createRuntime(backend, program);
@@ -403,14 +403,14 @@ function bindPassState(backend: WebGLBackend, state: HostOverlayRuntime, passSta
 }
 
 function renderOverlay(backend: WebGLBackend, state: HostOverlayRuntime, passState: HostOverlayPipelineState): void {
-	let boundTextures = beginHost2DEntries_WebGL(backend, state, passState);
+	let boundTextures = beginHost2DEntries(backend, state, passState);
 	for (let index = 0; index < passState.commands.length; index += 1) {
-		boundTextures = drawHost2DSubmission_WebGL(backend, state, passState.commands[index], boundTextures);
+		boundTextures = drawHost2DSubmission(backend, state, passState.commands[index], boundTextures);
 	}
-	endHost2DEntries_WebGL(backend);
+	endHost2DEntries(backend);
 }
 
-export function drawHost2DSubmission_WebGL(backend: WebGLBackend, state: HostOverlayRuntime, command: Host2DSubmission, boundTextures: BoundTextureState): BoundTextureState {
+export function drawHost2DSubmission(backend: WebGLBackend, state: HostOverlayRuntime, command: Host2DSubmission, boundTextures: BoundTextureState): BoundTextureState {
 	const imageCache = state.imageCache;
 	switch (command.type) {
 		case 'rect':
@@ -424,7 +424,7 @@ export function drawHost2DSubmission_WebGL(backend: WebGLBackend, state: HostOve
 	}
 }
 
-export function drawHost2DCommand_WebGL(backend: WebGLBackend, state: HostOverlayRuntime, kind: Host2DKind, command: Host2DRef, boundTextures: BoundTextureState): BoundTextureState {
+export function drawHost2DCommand(backend: WebGLBackend, state: HostOverlayRuntime, kind: Host2DKind, command: Host2DRef, boundTextures: BoundTextureState): BoundTextureState {
 	const imageCache = state.imageCache;
 	switch (kind) {
 		case 'rect':
@@ -440,14 +440,14 @@ export function drawHost2DCommand_WebGL(backend: WebGLBackend, state: HostOverla
 	}
 }
 
-export function beginHost2DEntries_WebGL(backend: WebGLBackend, state: HostOverlayRuntime, passState: Host2DPipelineState): BoundTextureState {
+export function beginHost2DEntries(backend: WebGLBackend, state: HostOverlayRuntime, passState: Host2DPipelineState): BoundTextureState {
 	const gl = backend.gl as WebGL2RenderingContext;
 	gl.bindFramebuffer(gl.FRAMEBUFFER, null);
 	bindPassState(backend, state, passState);
 	return null;
 }
 
-export function endHost2DEntries_WebGL(backend: WebGLBackend): void {
+export function endHost2DEntries(backend: WebGLBackend): void {
 	backend.bindVertexArray(null);
 	backend.setBlendEnabled(false);
 	backend.setDepthMask(true);
@@ -495,7 +495,7 @@ function renderHostPass(backend: WebGLBackend, state: HostOverlayRuntime, passSt
 	}
 }
 
-export function registerHostOverlayPass_WebGL(registry: RenderPassLibrary): void {
+export function registerHostOverlayPass(registry: RenderPassLibrary): void {
 	registry.register({
 		id: 'host_overlay',
 		name: 'HostOverlay',
@@ -516,15 +516,15 @@ export function registerHostOverlayPass_WebGL(registry: RenderPassLibrary): void
 }
 
 function renderHostMenuPass(backend: WebGLBackend, state: HostOverlayRuntime, passState: Host2DPipelineState): void {
-	let boundTextures = beginHost2DEntries_WebGL(backend, state, passState);
+	let boundTextures = beginHost2DEntries(backend, state, passState);
 	const count = hostOverlayMenu.queuedCommandCount();
 	for (let index = 0; index < count; index += 1) {
-		boundTextures = drawHost2DCommand_WebGL(backend, state, hostOverlayMenu.commandKind(index), hostOverlayMenu.commandRef(index), boundTextures);
+		boundTextures = drawHost2DCommand(backend, state, hostOverlayMenu.commandKind(index), hostOverlayMenu.commandRef(index), boundTextures);
 	}
-	endHost2DEntries_WebGL(backend);
+	endHost2DEntries(backend);
 }
 
-export function registerHostMenuPass_WebGL(registry: RenderPassLibrary): void {
+export function registerHostMenuPass(registry: RenderPassLibrary): void {
 	registry.register({
 		id: 'host_menu',
 		name: 'HostMenu',

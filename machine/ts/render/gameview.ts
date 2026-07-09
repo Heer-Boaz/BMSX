@@ -18,6 +18,7 @@ import {
 	VDP_JTU_REGISTER_WORDS,
 	VDP_MFU_WEIGHT_COUNT,
 } from '../machine/devices/vdp/contracts';
+import type { GxGpu } from '../machine/devices/gx/gpu';
 import { VDP_LPU_DIRECTIONAL_LIGHT_LIMIT, VDP_LPU_POINT_LIGHT_LIMIT, VDP_LPU_REGISTER_WORDS } from '../machine/devices/vdp/lpu';
 import { VDP_XF_MATRIX_REGISTER_WORDS } from '../machine/devices/vdp/xf';
 import { createVdpTransformSnapshot } from './vdp/transform';
@@ -26,7 +27,7 @@ import type { VdpRpuFrameOutput } from '../machine/devices/vdp/rpu';
 import type { GxGpuCommandBufferView } from '../machine/devices/gx/gpu_command_buffer';
 import { renderGate } from '../common/taskgate';
 
-const PRESENTATION_PASS_IDS = ['gx_gpu', 'vdp_rpu', 'framebuffer_2d', 'device_quantize', 'crt', 'host_overlay', 'host_menu'];
+const PRESENTATION_PASS_IDS = ['gx_gpu', 'vdp_rpu', 'framebuffer_2d', 'device_quantize', 'presentation_history_a', 'presentation_history_b', 'crt', 'host_overlay', 'host_menu'];
 
 interface GameViewOpts {
 	host: GameViewHost;
@@ -63,7 +64,7 @@ export class GameView implements RenderContext {
 	public canvasSize: vec2; // The size of the canvas, which may be different from the viewport size (e.g. when the GameView renders the game buffer to a larger canvas so that it can have more granular control over applying effects)
 	public canvasScale = 1;
 
-	private _nativeCtx: BackendContext = null; // The underlying native rendering context (e.g. WebGL2RenderingContext or GPUDevice)
+	private _nativeCtx: BackendContext = null; // The underlying native rendering context.
 	public get nativeCtx(): BackendContext {
 		return this._nativeCtx;
 	}
@@ -100,11 +101,11 @@ export class GameView implements RenderContext {
 	public gxGpuDisplayStartWord = 0;
 	public gxGpuHorizontalDisplayRangeWord = 0;
 	public gxGpuVerticalDisplayRangeWord = 0;
+	public gxGpuVramSnapshotBytes!: Uint8Array;
+	public gxGpuVramSnapshotSerial = 0;
 	public presentWorkbenchFrameBufferTexture = false;
 	public pipelineRegistry?: RenderPassLibrary;
 	private presentationEnabled = true;
-	// Active texture unit cache
-	private _activeTexUnit: number = null;
 	// CRT/post flags (used by passes)
 	public enable_noise = true;
 	public enable_colorbleed = true;
@@ -463,6 +464,11 @@ export class GameView implements RenderContext {
 		}
 		return this._backend;
 	}
+
+	public captureGxGpuVramSnapshot(gxGpu: GxGpu): void | Promise<void> {
+		return this.backend.captureGxGpuVramSnapshot(gxGpu);
+	}
+
 	public async initializeDefaultTextures(): Promise<void> {
 		// Default material textures for imported model assets
 		this.textures['_default_albedo'] = this.backend.createSolidTexture2D(1, 1, 0xffffffff, RGBA8_SRGB_TEXTURE_PARAMS);
@@ -487,41 +493,4 @@ export class GameView implements RenderContext {
 		renderGate.end(token);
 	}
 
-	// Texture binding helpers
-	get activeTexUnit(): number {
-		return this._activeTexUnit;
-	}
-
-	set activeTexUnit(u: number) {
-		if (this.backendType !== 'webgl2') return;
-		const backend = this.backend;
-		this._activeTexUnit = u;
-		if (u != null) {
-			const setActiveTexture = backend.setActiveTexture;
-			if (!setActiveTexture) {
-				throw new Error('[GameView] WebGL2 backend does not implement setActiveTexture.');
-			}
-			setActiveTexture.call(backend, u);
-		}
-	}
-
-	bind2DTex(tex: TextureHandle): void {
-		if (this.backendType !== 'webgl2') return;
-		const backend = this.backend;
-		const bindTexture2D = backend.bindTexture2D;
-		if (!bindTexture2D) {
-			throw new Error('[GameView] WebGL2 backend does not implement bindTexture2D.');
-		}
-		bindTexture2D.call(backend, tex);
-	}
-
-	bindCubemapTex(tex: TextureHandle): void {
-		if (this.backendType !== 'webgl2') return;
-		const backend = this.backend;
-		const bindTextureCube = backend.bindTextureCube;
-		if (!bindTextureCube) {
-			throw new Error('[GameView] WebGL2 backend does not implement bindTextureCube.');
-		}
-		bindTextureCube.call(backend, tex);
-	}
 }

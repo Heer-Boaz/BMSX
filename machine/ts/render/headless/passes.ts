@@ -2,9 +2,11 @@ import type { RenderPassLibrary } from '../backend/pass/library';
 import type { Framebuffer2DPipelineState, GxGpuPipelineState, RenderPassDef } from '../backend/backend';
 import type { GameView } from '../gameview';
 import type { Host2DSubmission } from '../shared/submissions';
+import type { HeadlessGPUBackend } from './backend';
 import { RGBA8_SRGB_TEXTURE_PARAMS } from '../backend/texture_params';
 import type { HeadlessPresentHost, HeadlessPresentedFrameBuffer } from './view';
 import { hostOverlayMenu } from '../../core/host_overlay_menu';
+import { GX_GPU_STATUS_DISPLAY_DISABLE } from '../../machine/devices/gx/gpu';
 import { renderHeadlessHost2DEntry, renderHeadlessHost2DSubmission } from './host_2d';
 import { renderGxGpuSoftwareFrame } from '../backend/software/gx_gpu';
 import { renderVdpRpuSoftwareFrame } from '../backend/software/vdp_rpu';
@@ -116,6 +118,8 @@ function registerHeadlessGxGpuPass(registry: RenderPassLibrary): void {
 				displayStartWord: view.gxGpuDisplayStartWord,
 				horizontalDisplayRangeWord: view.gxGpuHorizontalDisplayRangeWord,
 				verticalDisplayRangeWord: view.gxGpuVerticalDisplayRangeWord,
+				vramSnapshotBytes: view.gxGpuVramSnapshotBytes,
+				vramSnapshotSerial: view.gxGpuVramSnapshotSerial,
 			});
 		},
 		exec: (_backend, _fbo, state) => {
@@ -135,7 +139,7 @@ function registerHeadlessRpuPass(registry: RenderPassLibrary): void {
 		name: 'HeadlessRPU',
 		stateOnly: true,
 		graph: { writes: ['frame_color'] },
-		shouldExecute: (view) => view.vdpRpuFrame.commands.passCount !== 0 && view.gxGpuCommandBuffer.commandCount === 0,
+		shouldExecute: (view) => view.vdpRpuFrame.commands.passCount !== 0 && (view.gxGpuStatusWord & GX_GPU_STATUS_DISPLAY_DISABLE) !== 0,
 		exec: () => {
 			const view = registry.view as GameView;
 			const frame = view.vdpRpuFrame;
@@ -212,7 +216,7 @@ function registerFrameBuffer2DPass(registry: RenderPassLibrary): void {
 			const frameBufferWidth = view.vdpFrameBufferTextures.width();
 			const frameBufferHeight = view.vdpFrameBufferTextures.height();
 			resizeHeadlessFrame(frameBufferWidth, frameBufferHeight);
-			backend.readTextureRegion(state.colorTex, headlessCompositePixels, frameBufferWidth, frameBufferHeight, 0, 0, RGBA8_SRGB_TEXTURE_PARAMS);
+			(backend as HeadlessGPUBackend).readTextureRegion(state.colorTex, headlessCompositePixels, frameBufferWidth, frameBufferHeight, 0, 0, RGBA8_SRGB_TEXTURE_PARAMS);
 			commitHeadlessFrame(frameBufferWidth, frameBufferHeight, state.width, state.height);
 			const headline = `pixels=${headlessCompositePixels.length >> 2} active=${countHeadlessActivePixels()} framebuffer=${frameBufferWidth}x${frameBufferHeight} present=${state.width}x${state.height} logical=${state.baseWidth}x${state.baseHeight}`;
 			previousFrameBufferHeadline = emitHeadlessHeadline('framebuffer', previousFrameBufferHeadline, headline);

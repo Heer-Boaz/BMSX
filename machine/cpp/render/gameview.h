@@ -10,6 +10,7 @@
 #include "backend/backend.h"
 #include "shared/submissions.h"
 #include "common/registry.h"
+#include "machine/devices/gx/gpu_command_buffer.h"
 #include "machine/devices/vdp/lpu.h"
 #include "machine/devices/vdp/rpu.h"
 #include "render/vdp/transform.h"
@@ -24,6 +25,7 @@ namespace bmsx {
 // Forward declarations
 class GameViewHost;
 struct GxGpuCommandBuffer;
+class GxGpu;
 class RenderPassLibrary;
 class RenderGraphRuntime;
 class LightingSystem;
@@ -99,9 +101,10 @@ public:
 	// ─────────────────────────────────────────────────────────────────────────
 	// Frame rendering
 	// ─────────────────────────────────────────────────────────────────────────
-	void initializeDefaultTextures();
-	void drawgame();
-	void configurePresentation(PresentationMode mode, bool commitFrame);
+		void initializeDefaultTextures();
+		void drawgame();
+		void captureGxGpuVramSnapshot(GxGpu& gxGpu);
+		void configurePresentation(PresentationMode mode, bool commitFrame);
 	u8 presentationHistoryDestinationIndex() const { return presentationHistorySourceIndex == 0 ? 1 : 0; }
 
 	// ─────────────────────────────────────────────────────────────────────────
@@ -136,6 +139,8 @@ public:
 	u32 gxGpuDisplayStartWord = 0u;
 	u32 gxGpuHorizontalDisplayRangeWord = 0u;
 	u32 gxGpuVerticalDisplayRangeWord = 0u;
+	const std::array<u8, GX_GPU_VRAM_BYTE_COUNT>* gxGpuVramSnapshotBytes = nullptr;
+	u32 gxGpuVramSnapshotSerial = 0u;
 	bool presentWorkbenchFrameBufferTexture = false;
 
 	// ─────────────────────────────────────────────────────────────────────────
@@ -190,14 +195,6 @@ public:
 	AtmosphereParams atmosphere;
 
 	// ─────────────────────────────────────────────────────────────────────────
-	// Texture binding helpers
-	// ─────────────────────────────────────────────────────────────────────────
-	i32 activeTexUnit() const { return m_activeTexUnit; }
-	void setActiveTexUnit(i32 unit);
-	void bind2DTex(TextureHandle tex);
-	void bindCubemapTex(TextureHandle tex);
-
-	// ─────────────────────────────────────────────────────────────────────────
 	// Lifecycle
 	// ─────────────────────────────────────────────────────────────────────────
 	void dispose();
@@ -223,8 +220,6 @@ private:
 	std::unique_ptr<RenderGraphRuntime> m_renderGraph;
 	std::unique_ptr<LightingSystem> m_lightingSystem;
 	std::unique_ptr<VdpFrameBufferTextures> m_vdpFrameBufferTextures;
-
-	i32 m_activeTexUnit = -1;
 
 	// Frame timing
 	i32 m_renderFrameIndex = 0;

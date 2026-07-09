@@ -27,8 +27,8 @@ Completion means all of these are true:
 - The current VDP/RPU is no longer the active graphics ABI or presentation path.
 - GX-GPU/GTE owns the cart-visible graphics contract through raw PSX-style GPU,
   GTE, command, status, timing, VRAM, texture, mask, blend, and display behavior.
-- WebGL2, GLES2, future WebGPU, and the existing TS/C++ software/headless
-  backends consume the same GX command/GTE contract.
+- WebGL2, GLES2, and the existing TS/C++ software/headless backends consume the
+  same GX command/GTE contract.
 - Non-software backends are 100% host-GPU accelerated. They must not rasterize
   pixels on the CPU and then present those pixels through the host GPU.
 - Software rendering is already a serious TS/C++ headless backend path. The
@@ -191,8 +191,6 @@ and ask before coding.
 - [x] TS software/headless consumes the GX command buffer directly.
 - [x] C++ software backend consumes the mirrored GX command buffer directly.
 - [ ] Keep WebGL2/GLES2 behavior synchronized for every new GX command.
-- [ ] Add WebGPU as another implementation of the same GX contract, not a new
-  profile.
 - [ ] Wire the existing TS/C++ software/headless renderer to the same GX/PSX
   contract as oracle/backend, not as a fallback inside GPU backends.
 - [ ] Build conformance vectors that every backend can run or be compared
@@ -232,10 +230,22 @@ and ask before coding.
   GP1, and GTE registers directly instead of going through BIOS/system GX
   helpers, including direct GP0 Gouraud triangles, raw direct16 textured affine
   quads, RTPT projection, AVSZ3/NCLIP depth ordering, and an offscreen VRAM
-  scene copied/presented through a post-pass.
+  scene copied/presented through a post-pass. The cart now also has a
+  left/right keyboard carousel of raw GX/GTE effect scenes for AVSZ3-sorted
+  exploding crystal shards, a textured projected Tera-Flare shell using
+  RTPT/RTPS/NCLIP/AVSZ4, a depth-cued particle storm using RTPS/DPCS/DPCT/INTPL,
+  a Gouraud-lit idol using NCT/NCDT/NCCT, and a separate framebuffer echo
+  post-pass scene. The render-parity timeline now captures consecutive frame
+  windows for the scenes instead of relying only on sparse phase samples.
+- [x] Fixed GX presentation so partial/held host presentations no longer
+  publish or retire a half-built GP0 command stream. GX command buffers now
+  distinguish queued commands from the command count published for presentation,
+  and TS/C++ software/GLES/WebGL/headless backends consume only the published
+  count.
 - [ ] Restore the remaining historical `bare_metal_cart` feature coverage on
   GX/GTE, especially free-fly/side-camera behavior, morph/skinning/lighting
-  coverage, and broader mesh/post-pass cases as real PSX/GX/GTE functionality.
+  coverage, near-plane/divide torture, and broader mesh/post-pass cases as real
+  PSX/GX/GTE functionality.
 - [ ] Replace remaining cart graphics programming with PSX-style GPU/GTE
   programming.
 - [ ] Keep BMSX extensions separate and post-parity.
@@ -264,8 +274,8 @@ Every implementation slice should:
    MAME/psx, PCSX-Redux, or no$psx docs where appropriate.
 3. Change the owner files directly. Do not add provider/injection/facade layers.
 4. Keep TS and C++ machine behavior mirrored where both cores own the behavior.
-5. Keep accelerated backends accelerated. Do not CPU-raster pixels for WebGL,
-   GLES2, or future WebGPU. Software/headless may rasterize because it is the
+5. Keep accelerated backends accelerated. Do not CPU-raster pixels for WebGL or
+   GLES2. Software/headless may rasterize because it is the
    explicit software backend, not an accelerated backend.
 6. Add focused tests for the behavior and update both TS/C++ tests when the
    contract is mirrored.

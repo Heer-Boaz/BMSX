@@ -27,7 +27,7 @@ struct MachineState {
 struct MachineSaveState {
 	MemorySaveState memory;
 	GeometryControllerState geometry;
-	GxGpuState gxGpu;
+	GxGpuSaveState gxGpu;
 	GxGteState gxGte;
 	IrqControllerState irq;
 	AudioControllerState audio;

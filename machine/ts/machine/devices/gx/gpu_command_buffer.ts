@@ -2,6 +2,8 @@ export const GX_GPU_COMMAND_CAPACITY = 4096;
 export const GX_GPU_COMMAND_WORD_CAPACITY = 0x80000;
 export const GX_GPU_VRAM_WIDTH = 1024;
 export const GX_GPU_VRAM_HEIGHT = 512;
+export const GX_GPU_VRAM_WORD_COUNT = GX_GPU_VRAM_WIDTH * GX_GPU_VRAM_HEIGHT;
+export const GX_GPU_VRAM_BYTE_COUNT = GX_GPU_VRAM_WORD_COUNT * 2;
 export const GX_GPU_DRAW_MODE_POLYGON_TEXPAGE_MASK = 0x09ff;
 export const GX_GPU_DRAW_MODE_DITHER_ENABLED = 1 << 9;
 export const GX_GPU_DRAW_MODE_TEXTURE_DISABLE = 1 << 11;
@@ -62,10 +64,29 @@ export function gxGpuPolygonDrawModeWord(drawModeWord: number, textureAttribute:
 	return ((textureAttribute & GX_GPU_DRAW_MODE_POLYGON_TEXPAGE_MASK) | (drawModeWord & ~GX_GPU_DRAW_MODE_POLYGON_TEXPAGE_MASK)) >>> 0;
 }
 
+export type GxGpuCommandBufferState = {
+	commandCount: number;
+	presentCommandCount: number;
+	wordCount: number;
+	commandKind: number[];
+	commandOpcode: number[];
+	commandWordStart: number[];
+	commandWordCount: number[];
+	commandDrawModeWord: number[];
+	commandTextureWindowWord: number[];
+	commandDrawingAreaTopLeftWord: number[];
+	commandDrawingAreaBottomRightWord: number[];
+	commandDrawingOffsetWord: number[];
+	commandMaskBitModeWord: number[];
+	commandInterlacedRenderWord: number[];
+	words: number[];
+};
+
 export type GxGpuCommandBufferView = {
 	readonly serial: number;
 	readonly vramClearSerial: number;
 	readonly commandCount: number;
+	readonly presentCommandCount: number;
 	readonly wordCount: number;
 	readonly commandKind: ArrayLike<number>;
 	readonly commandOpcode: ArrayLike<number>;
@@ -85,9 +106,19 @@ let gxGpuCommandBufferNextSerial = 0;
 let gxGpuCommandBufferNextVramClearSerial = 0;
 
 export class GxGpuCommandBuffer implements GxGpuCommandBufferView {
+	private publishRevision(vramCleared: boolean): void {
+		gxGpuCommandBufferNextSerial = (gxGpuCommandBufferNextSerial + 1) >>> 0;
+		this.serial = gxGpuCommandBufferNextSerial;
+		if (vramCleared) {
+			gxGpuCommandBufferNextVramClearSerial = (gxGpuCommandBufferNextVramClearSerial + 1) >>> 0;
+			this.vramClearSerial = gxGpuCommandBufferNextVramClearSerial;
+		}
+	}
+
 	public serial = 0;
 	public vramClearSerial = 0;
 	public commandCount = 0;
+	public presentCommandCount = 0;
 	public wordCount = 0;
 	public readonly commandKind = new Uint8Array(GX_GPU_COMMAND_CAPACITY);
 	public readonly commandOpcode = new Uint8Array(GX_GPU_COMMAND_CAPACITY);
@@ -103,19 +134,93 @@ export class GxGpuCommandBuffer implements GxGpuCommandBufferView {
 	public readonly words = new Uint32Array(GX_GPU_COMMAND_WORD_CAPACITY);
 
 	public reset(): void {
-		gxGpuCommandBufferNextSerial = (gxGpuCommandBufferNextSerial + 1) >>> 0;
-		gxGpuCommandBufferNextVramClearSerial = (gxGpuCommandBufferNextVramClearSerial + 1) >>> 0;
-		this.serial = gxGpuCommandBufferNextSerial;
-		this.vramClearSerial = gxGpuCommandBufferNextVramClearSerial;
+		this.publishRevision(true);
 		this.commandCount = 0;
+		this.presentCommandCount = 0;
 		this.wordCount = 0;
 	}
 
-	public retireCommandsPreservingVram(): void {
-		gxGpuCommandBufferNextSerial = (gxGpuCommandBufferNextSerial + 1) >>> 0;
-		this.serial = gxGpuCommandBufferNextSerial;
-		this.commandCount = 0;
-		this.wordCount = 0;
+	public captureState(): GxGpuCommandBufferState {
+		const commandCount = this.commandCount;
+		const wordCount = this.wordCount;
+		return {
+			commandCount,
+			presentCommandCount: this.presentCommandCount,
+			wordCount,
+			commandKind: Array.from(this.commandKind.subarray(0, commandCount)),
+			commandOpcode: Array.from(this.commandOpcode.subarray(0, commandCount)),
+			commandWordStart: Array.from(this.commandWordStart.subarray(0, commandCount)),
+			commandWordCount: Array.from(this.commandWordCount.subarray(0, commandCount)),
+			commandDrawModeWord: Array.from(this.commandDrawModeWord.subarray(0, commandCount)),
+			commandTextureWindowWord: Array.from(this.commandTextureWindowWord.subarray(0, commandCount)),
+			commandDrawingAreaTopLeftWord: Array.from(this.commandDrawingAreaTopLeftWord.subarray(0, commandCount)),
+			commandDrawingAreaBottomRightWord: Array.from(this.commandDrawingAreaBottomRightWord.subarray(0, commandCount)),
+			commandDrawingOffsetWord: Array.from(this.commandDrawingOffsetWord.subarray(0, commandCount)),
+			commandMaskBitModeWord: Array.from(this.commandMaskBitModeWord.subarray(0, commandCount)),
+			commandInterlacedRenderWord: Array.from(this.commandInterlacedRenderWord.subarray(0, commandCount)),
+			words: Array.from(this.words.subarray(0, wordCount)),
+		};
+	}
+
+	public restoreState(state: GxGpuCommandBufferState): void {
+		this.publishRevision(false);
+		this.commandCount = state.commandCount;
+		this.presentCommandCount = state.presentCommandCount;
+		this.wordCount = state.wordCount;
+		this.commandKind.set(state.commandKind, 0);
+		this.commandOpcode.set(state.commandOpcode, 0);
+		this.commandWordStart.set(state.commandWordStart, 0);
+		this.commandWordCount.set(state.commandWordCount, 0);
+		this.commandDrawModeWord.set(state.commandDrawModeWord, 0);
+		this.commandTextureWindowWord.set(state.commandTextureWindowWord, 0);
+		this.commandDrawingAreaTopLeftWord.set(state.commandDrawingAreaTopLeftWord, 0);
+		this.commandDrawingAreaBottomRightWord.set(state.commandDrawingAreaBottomRightWord, 0);
+		this.commandDrawingOffsetWord.set(state.commandDrawingOffsetWord, 0);
+		this.commandMaskBitModeWord.set(state.commandMaskBitModeWord, 0);
+		this.commandInterlacedRenderWord.set(state.commandInterlacedRenderWord, 0);
+		this.words.set(state.words, 0);
+	}
+
+	public retireCommandsPreservingVram(): number {
+		const retiredCommands = this.presentCommandCount;
+		if (retiredCommands === 0) {
+			return 0;
+		}
+		const oldCommandCount = this.commandCount;
+		const oldWordCount = this.wordCount;
+		const retiredWords = retiredCommands === oldCommandCount
+			? this.commandWordStart[retiredCommands - 1] + this.commandWordCount[retiredCommands - 1]
+			: this.commandWordStart[retiredCommands];
+		const remainingCommands = oldCommandCount - retiredCommands;
+		const remainingWords = oldWordCount - retiredWords;
+		this.commandKind.copyWithin(0, retiredCommands, oldCommandCount);
+		this.commandOpcode.copyWithin(0, retiredCommands, oldCommandCount);
+		this.commandWordStart.copyWithin(0, retiredCommands, oldCommandCount);
+		this.commandWordCount.copyWithin(0, retiredCommands, oldCommandCount);
+		this.commandDrawModeWord.copyWithin(0, retiredCommands, oldCommandCount);
+		this.commandTextureWindowWord.copyWithin(0, retiredCommands, oldCommandCount);
+		this.commandDrawingAreaTopLeftWord.copyWithin(0, retiredCommands, oldCommandCount);
+		this.commandDrawingAreaBottomRightWord.copyWithin(0, retiredCommands, oldCommandCount);
+		this.commandDrawingOffsetWord.copyWithin(0, retiredCommands, oldCommandCount);
+		this.commandMaskBitModeWord.copyWithin(0, retiredCommands, oldCommandCount);
+		this.commandInterlacedRenderWord.copyWithin(0, retiredCommands, oldCommandCount);
+		for (let commandIndex = 0; commandIndex < remainingCommands; commandIndex += 1) {
+			this.commandWordStart[commandIndex] -= retiredWords;
+		}
+		this.words.copyWithin(0, retiredWords, oldWordCount);
+		this.commandCount = remainingCommands;
+		this.presentCommandCount = 0;
+		this.wordCount = remainingWords;
+		this.publishRevision(false);
+		return retiredWords;
+	}
+
+	public sealCommandsForPresentation(): void {
+		this.presentCommandCount = this.commandCount;
+	}
+
+	public hasUnretiredPresentCommands(): boolean {
+		return this.presentCommandCount !== 0;
 	}
 
 	public appendWord(word: number): void {

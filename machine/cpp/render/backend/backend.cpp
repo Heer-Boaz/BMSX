@@ -129,6 +129,13 @@ static u32 packRgba8AsArgb32(const u8* pixel) {
 	return (a << 24) | (r << 16) | (g << 8) | b;
 }
 
+static u32 packLinearColorAsArgb32(const std::array<f32, 4>& color) {
+	return (static_cast<u32>(color[3] * 255.0f) << 24u)
+		| (static_cast<u32>(color[0] * 255.0f) << 16u)
+		| (static_cast<u32>(color[1] * 255.0f) << 8u)
+		| static_cast<u32>(color[2] * 255.0f);
+}
+
 static void uploadRgba8ToSoftwareTexture(SoftwareTexture& texture, const u8* data, i32 width, i32 height) {
 	for (i32 i = 0; i < width * height; ++i) {
 		texture.data[static_cast<size_t>(i)] = packRgba8AsArgb32(data + static_cast<size_t>(i) * 4u);
@@ -235,7 +242,11 @@ static void readSoftwareTextureRegionPixels(const SoftwareTexture& texture, u8* 
  * ============================================================================ */
 
 SoftwareBackend::SoftwareBackend(u32* framebuffer, i32 width, i32 height, i32 pitch)
-	: m_framebuffer(framebuffer)
+	: m_default_framebuffer(framebuffer)
+	, m_default_width(width)
+	, m_default_height(height)
+	, m_default_pitch(pitch)
+	, m_framebuffer(framebuffer)
 	, m_width(width)
 	, m_height(height)
 	, m_pitch(pitch) {
@@ -246,7 +257,7 @@ SoftwareBackend::~SoftwareBackend() = default;
 
 void SoftwareBackend::registerBuiltinPasses(RenderPassLibrary& registry) {
 	registerFrameStatePasses(registry);
-	registerGxGpuPassSoftware(registry);
+	registerGxGpuPassSoftware(registry, *this);
 	registerVdpRpuPassSoftware(registry);
 	registerFramebuffer2DPass_Software(registry);
 	DeviceQuantizePipeline::Software::registerPass(registry);
@@ -254,12 +265,23 @@ void SoftwareBackend::registerBuiltinPasses(RenderPassLibrary& registry) {
 	registerHostOverlayBackendPasses<SoftwareBackend, nullptr, beginHostOverlaySoftware, renderHost2DEntrySoftware, endHostOverlaySoftware>(registry);
 }
 
-void SoftwareBackend::setFramebuffer(u32* fb, i32 width, i32 height, i32 pitch) {
+void SoftwareBackend::applyFramebufferTarget(u32* fb, i32 width, i32 height, i32 pitch) {
+	const bool depthSizeChanged = m_width != width || m_height != height;
 	m_framebuffer = fb;
 	m_width = width;
 	m_height = height;
 	m_pitch = pitch;
-	m_depthBuffer.resize(width * height, 1.0f);
+	if (depthSizeChanged) {
+		m_depthBuffer.resize(width * height, 1.0f);
+	}
+}
+
+void SoftwareBackend::setFramebuffer(u32* fb, i32 width, i32 height, i32 pitch) {
+	m_default_framebuffer = fb;
+	m_default_width = width;
+	m_default_height = height;
+	m_default_pitch = pitch;
+	applyFramebufferTarget(fb, width, height, pitch);
 }
 
 TextureHandle SoftwareBackend::createTexture(const u8* data, i32 width, i32 height, const TextureParams& params) {
@@ -315,20 +337,6 @@ void SoftwareBackend::updateTextureRegion(TextureHandle handle, const u8* data, 
 	}
 }
 
-void SoftwareBackend::readTextureRegion(TextureHandle handle, u8* out, i32 width, i32 height, i32 x, i32 y, const TextureParams& params) {
-	auto* tex = static_cast<SoftwareTexture*>(handle);
-	const i32 texW = tex->width;
-	const i32 texH = tex->height;
-	if (x < 0 || y < 0 || x + width > texW || y + height > texH) {
-		throw std::runtime_error("[SoftwareBackend] Readback out of bounds.");
-	}
-	if (params.srgb) {
-		const auto& lut = linearToSrgbLut();
-		readSoftwareTextureRegionPixels<true>(*tex, out, width, height, x, y, &lut);
-		return;
-	}
-	readSoftwareTextureRegionPixels<false>(*tex, out, width, height, x, y, nullptr);
-}
 
 TextureHandle SoftwareBackend::createSolidTexture2D(i32 width, i32 height, u32 color, const TextureParams& params) {
 	(void)params;
@@ -340,6 +348,60 @@ TextureHandle SoftwareBackend::createSolidTexture2D(i32 width, i32 height, u32 c
 	SoftwareTexture* ptr = tex.get();
 	m_textures.push_back(std::move(tex));
 	return static_cast<TextureHandle>(ptr);
+}
+
+TextureHandle SoftwareBackend::createColorTexture(i32 width, i32 height, const std::array<f32, 4>* initialClearColor) {
+	auto tex = std::make_unique<SoftwareTexture>();
+	tex->width = width;
+	tex->height = height;
+	tex->data.resize(static_cast<size_t>(width) * static_cast<size_t>(height));
+	if (initialClearColor != nullptr) {
+		std::fill(tex->data.begin(), tex->data.end(), packLinearColorAsArgb32(*initialClearColor));
+	}
+
+	SoftwareTexture* ptr = tex.get();
+	m_textures.push_back(std::move(tex));
+	return static_cast<TextureHandle>(ptr);
+}
+
+struct SoftwareDepthTexture {
+	i32 width = 0;
+	i32 height = 0;
+};
+
+TextureHandle SoftwareBackend::createDepthTexture(i32 width, i32 height) {
+	auto* depth = new SoftwareDepthTexture{};
+	depth->width = width;
+	depth->height = height;
+	return static_cast<TextureHandle>(depth);
+}
+
+void SoftwareBackend::destroyDepthTexture(TextureHandle handle) {
+	delete static_cast<SoftwareDepthTexture*>(handle);
+}
+
+void* SoftwareBackend::createRenderTarget(TextureHandle color, TextureHandle depth) {
+	(void)depth;
+	return color;
+}
+
+void SoftwareBackend::destroyRenderTarget(void* target) {
+	(void)target;
+}
+
+void SoftwareBackend::activateRenderTarget(void* target, i32 width, i32 height) {
+	auto* texture = static_cast<SoftwareTexture*>(target);
+	applyFramebufferTarget(texture->data.data(), width, height, width * static_cast<i32>(sizeof(u32)));
+}
+
+void SoftwareBackend::activateDefaultRenderTarget() {
+	if (m_framebuffer == m_default_framebuffer
+		&& m_width == m_default_width
+		&& m_height == m_default_height
+		&& m_pitch == m_default_pitch) {
+		return;
+	}
+	applyFramebufferTarget(m_default_framebuffer, m_default_width, m_default_height, m_default_pitch);
 }
 
 
@@ -355,10 +417,7 @@ void SoftwareBackend::destroyTexture(TextureHandle handle) {
 
 void SoftwareBackend::clear(const std::array<f32, 4>* color, const f32* depth) {
 	if (color && m_framebuffer) {
-		const u32 packed = (static_cast<u32>((*color)[3] * 255.0f) << 24u)
-			| (static_cast<u32>((*color)[0] * 255.0f) << 16u)
-			| (static_cast<u32>((*color)[1] * 255.0f) << 8u)
-			| static_cast<u32>((*color)[2] * 255.0f);
+		const u32 packed = packLinearColorAsArgb32(*color);
 		i32 pixelsPerRow = m_pitch / sizeof(u32);
 		for (i32 y = 0; y < m_height; ++y) {
 			u32* row = m_framebuffer + y * pixelsPerRow;
