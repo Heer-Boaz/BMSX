@@ -92,7 +92,9 @@ inline u32 sampleGxGpuSoftwareTextureWord(
 inline void writeGxGpuSoftwareTexturedPixel(
 	i32 x,
 	i32 y,
-	u32 colorWord,
+	u32 colorR,
+	u32 colorG,
+	u32 colorB,
 	u32 sampleWord,
 	bool ditherEnabled,
 	bool rawTextureEnabled,
@@ -107,9 +109,9 @@ inline void writeGxGpuSoftwareTexturedPixel(
 	u32 b5 = (sampleWord >> 10u) & 0x1fu;
 	if (!rawTextureEnabled) {
 		const i32 ditherOffset = ditherEnabled ? gxGpuSoftwareDitherOffset(x, y) : 0;
-		r5 = gxGpuSoftwareTextureModulationChannel5(r5, colorR8(colorWord), ditherOffset);
-		g5 = gxGpuSoftwareTextureModulationChannel5(g5, colorG8(colorWord), ditherOffset);
-		b5 = gxGpuSoftwareTextureModulationChannel5(b5, colorB8(colorWord), ditherOffset);
+		r5 = gxGpuSoftwareTextureModulationChannel5(r5, colorR, ditherOffset);
+		g5 = gxGpuSoftwareTextureModulationChannel5(g5, colorG, ditherOffset);
+		b5 = gxGpuSoftwareTextureModulationChannel5(b5, colorB, ditherOffset);
 	}
 	const u32 sampleMaskBit = sampleWord & 0x8000u;
 	const bool blendEnabled = semiTransparencyEnabled && sampleMaskBit != 0u;
@@ -220,30 +222,57 @@ void drawGxGpuSoftwareTriangle(
 	i64 rowW0 = edgeValue(x1, y1, x2, y2, left, top) * edgeSign;
 	i64 rowW1 = edgeValue(x2, y2, x0, y0, left, top) * edgeSign;
 	i64 rowW2 = edgeValue(x0, y0, x1, y1, left, top) * edgeSign;
+	const i64 rStepX = sameColor ? 0 : static_cast<i64>(r0) * edge0StepX + static_cast<i64>(r1) * edge1StepX + static_cast<i64>(r2) * edge2StepX;
+	const i64 gStepX = sameColor ? 0 : static_cast<i64>(g0) * edge0StepX + static_cast<i64>(g1) * edge1StepX + static_cast<i64>(g2) * edge2StepX;
+	const i64 bStepX = sameColor ? 0 : static_cast<i64>(b0) * edge0StepX + static_cast<i64>(b1) * edge1StepX + static_cast<i64>(b2) * edge2StepX;
+	const i64 rStepY = sameColor ? 0 : static_cast<i64>(r0) * edge0StepY + static_cast<i64>(r1) * edge1StepY + static_cast<i64>(r2) * edge2StepY;
+	const i64 gStepY = sameColor ? 0 : static_cast<i64>(g0) * edge0StepY + static_cast<i64>(g1) * edge1StepY + static_cast<i64>(g2) * edge2StepY;
+	const i64 bStepY = sameColor ? 0 : static_cast<i64>(b0) * edge0StepY + static_cast<i64>(b1) * edge1StepY + static_cast<i64>(b2) * edge2StepY;
+	i64 rowR = sameColor ? 0 : static_cast<i64>(r0) * rowW0 + static_cast<i64>(r1) * rowW1 + static_cast<i64>(r2) * rowW2;
+	i64 rowG = sameColor ? 0 : static_cast<i64>(g0) * rowW0 + static_cast<i64>(g1) * rowW1 + static_cast<i64>(g2) * rowW2;
+	i64 rowB = sameColor ? 0 : static_cast<i64>(b0) * rowW0 + static_cast<i64>(b1) * rowW1 + static_cast<i64>(b2) * rowW2;
 	for (i32 y = top; y <= bottom; y += 1) {
 		if (gxGpuSoftwareInterlacedSkipsLine(y, interlacedRenderWord)) {
 			rowW0 += edge0StepY;
 			rowW1 += edge1StepY;
 			rowW2 += edge2StepY;
+			if (!sameColor) {
+				rowR += rStepY;
+				rowG += gStepY;
+				rowB += bStepY;
+			}
 			continue;
 		}
 		i64 w0 = rowW0;
 		i64 w1 = rowW1;
 		i64 w2 = rowW2;
+		i64 r = rowR;
+		i64 g = rowG;
+		i64 b = rowB;
 		for (i32 x = left; x <= right; x += 1) {
 			if (w0 >= 0 && w1 >= 0 && w2 >= 0) {
-				const u32 r8 = sameColor ? r0 : static_cast<u32>((static_cast<i64>(r0) * w0 + static_cast<i64>(r1) * w1 + static_cast<i64>(r2) * w2) / area);
-				const u32 g8 = sameColor ? g0 : static_cast<u32>((static_cast<i64>(g0) * w0 + static_cast<i64>(g1) * w1 + static_cast<i64>(g2) * w2) / area);
-				const u32 b8 = sameColor ? b0 : static_cast<u32>((static_cast<i64>(b0) * w0 + static_cast<i64>(b1) * w1 + static_cast<i64>(b2) * w2) / area);
+				const u32 r8 = sameColor ? r0 : static_cast<u32>(r / area);
+				const u32 g8 = sameColor ? g0 : static_cast<u32>(g / area);
+				const u32 b8 = sameColor ? b0 : static_cast<u32>(b / area);
 				gxGpuSoftwareWriteRenderVramPixel(x, y, r8, g8, b8, ditherEnabled, blendEnabled, blendMode, maskBitModeWord);
 			}
 			w0 += edge0StepX;
 			w1 += edge1StepX;
 			w2 += edge2StepX;
+			if (!sameColor) {
+				r += rStepX;
+				g += gStepX;
+				b += bStepX;
+			}
 		}
 		rowW0 += edge0StepY;
 		rowW1 += edge1StepY;
 		rowW2 += edge2StepY;
+		if (!sameColor) {
+			rowR += rStepY;
+			rowG += gStepY;
+			rowB += bStepY;
+		}
 	}
 }
 
@@ -335,24 +364,50 @@ void drawGxGpuSoftwareTexturedTriangle(
 	i64 rowW0 = edgeValue(x1, y1, x2, y2, left, top) * edgeSign;
 	i64 rowW1 = edgeValue(x2, y2, x0, y0, left, top) * edgeSign;
 	i64 rowW2 = edgeValue(x0, y0, x1, y1, left, top) * edgeSign;
+	const i64 rStepX = sameColor ? 0 : static_cast<i64>(r0) * edge0StepX + static_cast<i64>(r1) * edge1StepX + static_cast<i64>(r2) * edge2StepX;
+	const i64 gStepX = sameColor ? 0 : static_cast<i64>(g0) * edge0StepX + static_cast<i64>(g1) * edge1StepX + static_cast<i64>(g2) * edge2StepX;
+	const i64 bStepX = sameColor ? 0 : static_cast<i64>(b0) * edge0StepX + static_cast<i64>(b1) * edge1StepX + static_cast<i64>(b2) * edge2StepX;
+	const i64 uStepX = static_cast<i64>(u0) * edge0StepX + static_cast<i64>(u1) * edge1StepX + static_cast<i64>(u2) * edge2StepX;
+	const i64 vStepX = static_cast<i64>(v0) * edge0StepX + static_cast<i64>(v1) * edge1StepX + static_cast<i64>(v2) * edge2StepX;
+	const i64 rStepY = sameColor ? 0 : static_cast<i64>(r0) * edge0StepY + static_cast<i64>(r1) * edge1StepY + static_cast<i64>(r2) * edge2StepY;
+	const i64 gStepY = sameColor ? 0 : static_cast<i64>(g0) * edge0StepY + static_cast<i64>(g1) * edge1StepY + static_cast<i64>(g2) * edge2StepY;
+	const i64 bStepY = sameColor ? 0 : static_cast<i64>(b0) * edge0StepY + static_cast<i64>(b1) * edge1StepY + static_cast<i64>(b2) * edge2StepY;
+	const i64 uStepY = static_cast<i64>(u0) * edge0StepY + static_cast<i64>(u1) * edge1StepY + static_cast<i64>(u2) * edge2StepY;
+	const i64 vStepY = static_cast<i64>(v0) * edge0StepY + static_cast<i64>(v1) * edge1StepY + static_cast<i64>(v2) * edge2StepY;
+	i64 rowR = sameColor ? 0 : static_cast<i64>(r0) * rowW0 + static_cast<i64>(r1) * rowW1 + static_cast<i64>(r2) * rowW2;
+	i64 rowG = sameColor ? 0 : static_cast<i64>(g0) * rowW0 + static_cast<i64>(g1) * rowW1 + static_cast<i64>(g2) * rowW2;
+	i64 rowB = sameColor ? 0 : static_cast<i64>(b0) * rowW0 + static_cast<i64>(b1) * rowW1 + static_cast<i64>(b2) * rowW2;
+	i64 rowU = static_cast<i64>(u0) * rowW0 + static_cast<i64>(u1) * rowW1 + static_cast<i64>(u2) * rowW2;
+	i64 rowV = static_cast<i64>(v0) * rowW0 + static_cast<i64>(v1) * rowW1 + static_cast<i64>(v2) * rowW2;
 	for (i32 y = top; y <= bottom; y += 1) {
 		if (gxGpuSoftwareInterlacedSkipsLine(y, interlacedRenderWord)) {
 			rowW0 += edge0StepY;
 			rowW1 += edge1StepY;
 			rowW2 += edge2StepY;
+			if (!sameColor) {
+				rowR += rStepY;
+				rowG += gStepY;
+				rowB += bStepY;
+			}
+			rowU += uStepY;
+			rowV += vStepY;
 			continue;
 		}
 		i64 w0 = rowW0;
 		i64 w1 = rowW1;
 		i64 w2 = rowW2;
+		i64 r = rowR;
+		i64 g = rowG;
+		i64 b = rowB;
+		i64 uNumerator = rowU;
+		i64 vNumerator = rowV;
 		for (i32 x = left; x <= right; x += 1) {
 			if (w0 >= 0 && w1 >= 0 && w2 >= 0) {
-				const u32 colorWord = sameColor ? color0 : static_cast<u32>(
-					(static_cast<i64>(r0) * w0 + static_cast<i64>(r1) * w1 + static_cast<i64>(r2) * w2) / area)
-					| (static_cast<u32>((static_cast<i64>(g0) * w0 + static_cast<i64>(g1) * w1 + static_cast<i64>(g2) * w2) / area) << 8u)
-					| (static_cast<u32>((static_cast<i64>(b0) * w0 + static_cast<i64>(b1) * w1 + static_cast<i64>(b2) * w2) / area) << 16u);
-				const i32 u = static_cast<i32>((static_cast<i64>(u0) * w0 + static_cast<i64>(u1) * w1 + static_cast<i64>(u2) * w2) / area);
-				const i32 v = static_cast<i32>((static_cast<i64>(v0) * w0 + static_cast<i64>(v1) * w1 + static_cast<i64>(v2) * w2) / area);
+				const u32 r8 = sameColor ? r0 : static_cast<u32>(r / area);
+				const u32 g8 = sameColor ? g0 : static_cast<u32>(g / area);
+				const u32 b8 = sameColor ? b0 : static_cast<u32>(b / area);
+				const i32 u = static_cast<i32>(uNumerator / area);
+				const i32 v = static_cast<i32>(vNumerator / area);
 				const u32 sampleWord = sampleGxGpuSoftwareTextureWord(
 					u,
 					v,
@@ -368,7 +423,9 @@ void drawGxGpuSoftwareTexturedTriangle(
 				writeGxGpuSoftwareTexturedPixel(
 					x,
 					y,
-					colorWord,
+					r8,
+					g8,
+					b8,
 					sampleWord,
 					ditherEnabled,
 					rawTextureEnabled,
@@ -379,10 +436,24 @@ void drawGxGpuSoftwareTexturedTriangle(
 			w0 += edge0StepX;
 			w1 += edge1StepX;
 			w2 += edge2StepX;
+			if (!sameColor) {
+				r += rStepX;
+				g += gStepX;
+				b += bStepX;
+			}
+			uNumerator += uStepX;
+			vNumerator += vStepX;
 		}
 		rowW0 += edge0StepY;
 		rowW1 += edge1StepY;
 		rowW2 += edge2StepY;
+		if (!sameColor) {
+			rowR += rStepY;
+			rowG += gStepY;
+			rowB += bStepY;
+		}
+		rowU += uStepY;
+		rowV += vStepY;
 	}
 }
 
@@ -422,6 +493,9 @@ void drawGxGpuSoftwareTexturedRectangle(const GxGpuCommandBuffer& commandBuffer,
 	const u32 blendMode = gxGpuDrawModeTransparencyMode(drawModeWord);
 	const u32 maskBitModeWord = commandBuffer.commandMaskBitModeWord[commandIndex];
 	const u32 interlacedRenderWord = commandBuffer.commandInterlacedRenderWord[commandIndex];
+	const u32 r8 = colorR8(colorWord);
+	const u32 g8 = colorG8(colorWord);
+	const u32 b8 = colorB8(colorWord);
 	for (i32 y = top; y < bottom; y += 1) {
 		if (gxGpuSoftwareInterlacedSkipsLine(y, interlacedRenderWord)) {
 			continue;
@@ -446,7 +520,9 @@ void drawGxGpuSoftwareTexturedRectangle(const GxGpuCommandBuffer& commandBuffer,
 			writeGxGpuSoftwareTexturedPixel(
 				x,
 				y,
-				colorWord,
+				r8,
+				g8,
+				b8,
 				sampleWord,
 				false,
 				rawTextureEnabled,

@@ -134,7 +134,9 @@ function sampleGxGpuSoftwareTextureWord(
 function writeGxGpuSoftwareTexturedPixel(
 	x: number,
 	y: number,
-	colorWord: number,
+	colorR: number,
+	colorG: number,
+	colorB: number,
 	sampleWord: number,
 	ditherEnabled: boolean,
 	rawTextureEnabled: boolean,
@@ -150,9 +152,9 @@ function writeGxGpuSoftwareTexturedPixel(
 	let b5 = (sampleWord >>> 10) & 0x1f;
 	if (!rawTextureEnabled) {
 		const ditherOffset = ditherEnabled ? gxGpuSoftwareDitherOffset(x, y) : 0;
-		r5 = gxGpuSoftwareTextureModulationChannel5(r5, colorR8(colorWord), ditherOffset);
-		g5 = gxGpuSoftwareTextureModulationChannel5(g5, colorG8(colorWord), ditherOffset);
-		b5 = gxGpuSoftwareTextureModulationChannel5(b5, colorB8(colorWord), ditherOffset);
+		r5 = gxGpuSoftwareTextureModulationChannel5(r5, colorR, ditherOffset);
+		g5 = gxGpuSoftwareTextureModulationChannel5(g5, colorG, ditherOffset);
+		b5 = gxGpuSoftwareTextureModulationChannel5(b5, colorB, ditherOffset);
 	}
 	const sampleMaskBit = sampleWord & 0x8000;
 	const blendEnabled = semiTransparencyEnabled && sampleMaskBit !== 0;
@@ -262,30 +264,57 @@ export function drawGxGpuSoftwareTriangle(
 	let rowW0 = edgeValue(x1, y1, x2, y2, left, top) * edgeSign;
 	let rowW1 = edgeValue(x2, y2, x0, y0, left, top) * edgeSign;
 	let rowW2 = edgeValue(x0, y0, x1, y1, left, top) * edgeSign;
+	const rStepX = sameColor ? 0 : (r0 * edge0StepX) + (r1 * edge1StepX) + (r2 * edge2StepX);
+	const gStepX = sameColor ? 0 : (g0 * edge0StepX) + (g1 * edge1StepX) + (g2 * edge2StepX);
+	const bStepX = sameColor ? 0 : (b0 * edge0StepX) + (b1 * edge1StepX) + (b2 * edge2StepX);
+	const rStepY = sameColor ? 0 : (r0 * edge0StepY) + (r1 * edge1StepY) + (r2 * edge2StepY);
+	const gStepY = sameColor ? 0 : (g0 * edge0StepY) + (g1 * edge1StepY) + (g2 * edge2StepY);
+	const bStepY = sameColor ? 0 : (b0 * edge0StepY) + (b1 * edge1StepY) + (b2 * edge2StepY);
+	let rowR = sameColor ? 0 : (r0 * rowW0) + (r1 * rowW1) + (r2 * rowW2);
+	let rowG = sameColor ? 0 : (g0 * rowW0) + (g1 * rowW1) + (g2 * rowW2);
+	let rowB = sameColor ? 0 : (b0 * rowW0) + (b1 * rowW1) + (b2 * rowW2);
 	for (let y = top; y <= bottom; y += 1) {
 		if (gxGpuSoftwareInterlacedSkipsLine(y, interlacedRenderWord)) {
 			rowW0 += edge0StepY;
 			rowW1 += edge1StepY;
 			rowW2 += edge2StepY;
+			if (!sameColor) {
+				rowR += rStepY;
+				rowG += gStepY;
+				rowB += bStepY;
+			}
 			continue;
 		}
 		let w0 = rowW0;
 		let w1 = rowW1;
 		let w2 = rowW2;
+		let r = rowR;
+		let g = rowG;
+		let b = rowB;
 		for (let x = left; x <= right; x += 1) {
 			if (w0 >= 0 && w1 >= 0 && w2 >= 0) {
-				const r8 = sameColor ? r0 : integerDivide((r0 * w0) + (r1 * w1) + (r2 * w2), area);
-				const g8 = sameColor ? g0 : integerDivide((g0 * w0) + (g1 * w1) + (g2 * w2), area);
-				const b8 = sameColor ? b0 : integerDivide((b0 * w0) + (b1 * w1) + (b2 * w2), area);
+				const r8 = sameColor ? r0 : integerDivide(r, area);
+				const g8 = sameColor ? g0 : integerDivide(g, area);
+				const b8 = sameColor ? b0 : integerDivide(b, area);
 				gxGpuSoftwareWriteRenderVramPixel(x, y, r8, g8, b8, ditherEnabled, blendEnabled, blendMode, maskBitModeWord);
 			}
 			w0 += edge0StepX;
 			w1 += edge1StepX;
 			w2 += edge2StepX;
+			if (!sameColor) {
+				r += rStepX;
+				g += gStepX;
+				b += bStepX;
+			}
 		}
 		rowW0 += edge0StepY;
 		rowW1 += edge1StepY;
 		rowW2 += edge2StepY;
+		if (!sameColor) {
+			rowR += rStepY;
+			rowG += gStepY;
+			rowB += bStepY;
+		}
 	}
 }
 
@@ -378,25 +407,50 @@ export function drawGxGpuSoftwareTexturedTriangle(
 	let rowW0 = edgeValue(x1, y1, x2, y2, left, top) * edgeSign;
 	let rowW1 = edgeValue(x2, y2, x0, y0, left, top) * edgeSign;
 	let rowW2 = edgeValue(x0, y0, x1, y1, left, top) * edgeSign;
+	const rStepX = sameColor ? 0 : (r0 * edge0StepX) + (r1 * edge1StepX) + (r2 * edge2StepX);
+	const gStepX = sameColor ? 0 : (g0 * edge0StepX) + (g1 * edge1StepX) + (g2 * edge2StepX);
+	const bStepX = sameColor ? 0 : (b0 * edge0StepX) + (b1 * edge1StepX) + (b2 * edge2StepX);
+	const uStepX = (u0 * edge0StepX) + (u1 * edge1StepX) + (u2 * edge2StepX);
+	const vStepX = (v0 * edge0StepX) + (v1 * edge1StepX) + (v2 * edge2StepX);
+	const rStepY = sameColor ? 0 : (r0 * edge0StepY) + (r1 * edge1StepY) + (r2 * edge2StepY);
+	const gStepY = sameColor ? 0 : (g0 * edge0StepY) + (g1 * edge1StepY) + (g2 * edge2StepY);
+	const bStepY = sameColor ? 0 : (b0 * edge0StepY) + (b1 * edge1StepY) + (b2 * edge2StepY);
+	const uStepY = (u0 * edge0StepY) + (u1 * edge1StepY) + (u2 * edge2StepY);
+	const vStepY = (v0 * edge0StepY) + (v1 * edge1StepY) + (v2 * edge2StepY);
+	let rowR = sameColor ? 0 : (r0 * rowW0) + (r1 * rowW1) + (r2 * rowW2);
+	let rowG = sameColor ? 0 : (g0 * rowW0) + (g1 * rowW1) + (g2 * rowW2);
+	let rowB = sameColor ? 0 : (b0 * rowW0) + (b1 * rowW1) + (b2 * rowW2);
+	let rowU = (u0 * rowW0) + (u1 * rowW1) + (u2 * rowW2);
+	let rowV = (v0 * rowW0) + (v1 * rowW1) + (v2 * rowW2);
 	for (let y = top; y <= bottom; y += 1) {
 		if (gxGpuSoftwareInterlacedSkipsLine(y, interlacedRenderWord)) {
 			rowW0 += edge0StepY;
 			rowW1 += edge1StepY;
 			rowW2 += edge2StepY;
+			if (!sameColor) {
+				rowR += rStepY;
+				rowG += gStepY;
+				rowB += bStepY;
+			}
+			rowU += uStepY;
+			rowV += vStepY;
 			continue;
 		}
 		let w0 = rowW0;
 		let w1 = rowW1;
 		let w2 = rowW2;
+		let r = rowR;
+		let g = rowG;
+		let b = rowB;
+		let uNumerator = rowU;
+		let vNumerator = rowV;
 		for (let x = left; x <= right; x += 1) {
 			if (w0 >= 0 && w1 >= 0 && w2 >= 0) {
-				const colorWord = sameColor ? color0 : (
-					integerDivide((r0 * w0) + (r1 * w1) + (r2 * w2), area)
-					| (integerDivide((g0 * w0) + (g1 * w1) + (g2 * w2), area) << 8)
-					| (integerDivide((b0 * w0) + (b1 * w1) + (b2 * w2), area) << 16)
-				);
-				const u = integerDivide((u0 * w0) + (u1 * w1) + (u2 * w2), area);
-				const v = integerDivide((v0 * w0) + (v1 * w1) + (v2 * w2), area);
+				const r8 = sameColor ? r0 : integerDivide(r, area);
+				const g8 = sameColor ? g0 : integerDivide(g, area);
+				const b8 = sameColor ? b0 : integerDivide(b, area);
+				const u = integerDivide(uNumerator, area);
+				const v = integerDivide(vNumerator, area);
 				const sampleWord = sampleGxGpuSoftwareTextureWord(
 					u,
 					v,
@@ -413,7 +467,9 @@ export function drawGxGpuSoftwareTexturedTriangle(
 				writeGxGpuSoftwareTexturedPixel(
 					x,
 					y,
-					colorWord,
+					r8,
+					g8,
+					b8,
 					sampleWord,
 					ditherEnabled,
 					rawTextureEnabled,
@@ -425,10 +481,24 @@ export function drawGxGpuSoftwareTexturedTriangle(
 			w0 += edge0StepX;
 			w1 += edge1StepX;
 			w2 += edge2StepX;
+			if (!sameColor) {
+				r += rStepX;
+				g += gStepX;
+				b += bStepX;
+			}
+			uNumerator += uStepX;
+			vNumerator += vStepX;
 		}
 		rowW0 += edge0StepY;
 		rowW1 += edge1StepY;
 		rowW2 += edge2StepY;
+		if (!sameColor) {
+			rowR += rStepY;
+			rowG += gStepY;
+			rowB += bStepY;
+		}
+		rowU += uStepY;
+		rowV += vStepY;
 	}
 }
 
@@ -468,6 +538,9 @@ export function drawGxGpuSoftwareTexturedRectangle(commandBuffer: GxGpuCommandBu
 	const blendMode = gxGpuDrawModeTransparencyMode(drawModeWord);
 	const maskBitModeWord = commandBuffer.commandMaskBitModeWord[commandIndex];
 	const interlacedRenderWord = commandBuffer.commandInterlacedRenderWord[commandIndex];
+	const r8 = colorR8(colorWord);
+	const g8 = colorG8(colorWord);
+	const b8 = colorB8(colorWord);
 	for (let y = top; y < bottom; y += 1) {
 		if (gxGpuSoftwareInterlacedSkipsLine(y, interlacedRenderWord)) {
 			continue;
@@ -493,7 +566,9 @@ export function drawGxGpuSoftwareTexturedRectangle(commandBuffer: GxGpuCommandBu
 			writeGxGpuSoftwareTexturedPixel(
 				x,
 				y,
-				colorWord,
+				r8,
+				g8,
+				b8,
 				sampleWord,
 				false,
 				rawTextureEnabled,
