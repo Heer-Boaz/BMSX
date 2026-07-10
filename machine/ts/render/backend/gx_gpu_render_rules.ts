@@ -220,14 +220,6 @@ export function gxGpuDrawModeTextureRectangleYFlip(drawModeWord: number): boolea
 	return (drawModeWord & GX_GPU_DRAW_MODE_TEXTURE_RECTANGLE_Y_FLIP) !== 0;
 }
 
-export function gxGpuTextureRectangleEdge0(textureCoord: number, flip: boolean): number {
-	return textureCoord + (flip ? 1 : 0);
-}
-
-export function gxGpuTextureRectangleEdge1(textureEdge0: number, size: number, flip: boolean): number {
-	return textureEdge0 + (flip ? -size : size);
-}
-
 export function gxGpuSegmentExceedsPrimitiveSize(x0: number, y0: number, x1: number, y1: number): boolean {
 	const left = x0 < x1 ? x0 : x1;
 	const right = x0 > x1 ? x0 : x1;
@@ -246,6 +238,10 @@ export function gxGpuTriangleExceedsPrimitiveSize(x0: number, y0: number, x1: nu
 	const top = y0 < min12y ? y0 : min12y;
 	const bottom = y0 > max12y ? y0 : max12y;
 	return right - left + 1 > GX_GPU_MAX_PRIMITIVE_WIDTH || bottom - top + 1 > GX_GPU_MAX_PRIMITIVE_HEIGHT;
+}
+
+export function gxGpuTriangleEdgeCoverageMinimum(stepX: number, stepY: number): number {
+	return stepX > 0 || (stepX === 0 && stepY > 0) ? 0 : 1;
 }
 
 export function gxGpuDitheredPolygon(drawModeWord: number, opcode: number): boolean {

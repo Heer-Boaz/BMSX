@@ -94,6 +94,10 @@ Implemented or partially covered GX-GPU areas include:
   behavior, oversized primitive culling, and VRAM copy overlap chunking.
 - Raw PSX textured quad polygons are covered in TS/C++ software/headless tests
   and have GX firmware/cartlib helpers for cart-visible affine textured draws.
+- TS/C++ software triangle coverage now owns the PSX integer top-left fill rule,
+  half-open bounds, and single-owner quad seams through mirrored raw-VRAM
+  vectors. WebGL2, GLES2, and WebGPU apply the matching half-pixel conversion at
+  their vertex-transform boundary; live accelerated conformance remains open.
 - WebGL2, GLES2, and TS/C++ software execution for the currently handled command
   kinds.
 - GX command logs can be retired after presentation without clearing backend
@@ -173,6 +177,11 @@ and ask before coding.
 - [x] Command-log retirement preserves backend VRAM while resetting consumed
   frame commands.
 - [ ] Exact triangle/quad edge rules and fill convention.
+  - [x] Mirror integer top-left coverage, half-open bounds, winding, textured
+    outer edges, and single-blend quad seams in TS/C++ software raw-VRAM tests.
+  - [x] Align WebGL2, GLES2, and WebGPU vertex transforms with PSX integer
+    raster positions without changing raw CPU vertex/bounds representation.
+  - [ ] Run the same conformance vectors live against all accelerated backends.
 - [ ] Exact rectangle/line/polyline raster rules.
 - [ ] Exact clipping, drawing offsets, drawing area, and negative coordinate cases.
 - [ ] Exact texture sampling/window/CLUT edge cases.

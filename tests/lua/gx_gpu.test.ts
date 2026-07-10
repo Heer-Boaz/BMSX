@@ -74,12 +74,11 @@ import {
 	gxGpuMaskBitCheckBeforeDraw,
 	gxGpuMaskBitSetWhileDrawing,
 	gxGpuSegmentExceedsPrimitiveSize,
-	gxGpuTextureRectangleEdge0,
-	gxGpuTextureRectangleEdge1,
 	gxGpuTextureWindowAndX,
 	gxGpuTextureWindowAndY,
 	gxGpuTextureWindowOrX,
 	gxGpuTextureWindowOrY,
+	gxGpuTriangleEdgeCoverageMinimum,
 	gxGpuTriangleExceedsPrimitiveSize,
 } from '../../machine/ts/render/backend/gx_gpu_render_rules';
 import {
@@ -267,12 +266,6 @@ test('GX-GPU decodes PSX GP0 signed vertex and rectangle size words', () => {
 	assert.equal(gxGpuDrawModeTextureRectangleXFlip(GX_GPU_DRAW_MODE_TEXTURE_RECTANGLE_Y_FLIP), false);
 	assert.equal(gxGpuDrawModeTextureRectangleYFlip(GX_GPU_DRAW_MODE_TEXTURE_RECTANGLE_Y_FLIP), true);
 	assert.equal(gxGpuDrawModeTextureRectangleYFlip(GX_GPU_DRAW_MODE_TEXTURE_RECTANGLE_X_FLIP), false);
-	assert.equal(gxGpuTextureRectangleEdge0(7, false), 7);
-	assert.equal(gxGpuTextureRectangleEdge1(7, 16, false), 23);
-	assert.equal(gxGpuTextureRectangleEdge0(7, true), 8);
-	assert.equal(gxGpuTextureRectangleEdge1(8, 16, true), -8);
-	assert.equal(gxGpuTextureRectangleEdge0(0, true), 1);
-	assert.equal(gxGpuTextureRectangleEdge1(1, 16, true), -15);
 	assert.equal(gxGpuSegmentExceedsPrimitiveSize(0, 0, 1023, 0), false);
 	assert.equal(gxGpuSegmentExceedsPrimitiveSize(0, 0, 1024, 0), true);
 	assert.equal(gxGpuSegmentExceedsPrimitiveSize(0, 0, 0, 511), false);
@@ -282,6 +275,10 @@ test('GX-GPU decodes PSX GP0 signed vertex and rectangle size words', () => {
 	assert.equal(gxGpuTriangleExceedsPrimitiveSize(0, 0, 1023, 0, 0, 512), true);
 	assert.equal(gxGpuTriangleExceedsPrimitiveSize(-512, -256, 511, 255, 0, 0), false);
 	assert.equal(gxGpuTriangleExceedsPrimitiveSize(-513, -256, 511, 255, 0, 0), true);
+	assert.equal(gxGpuTriangleEdgeCoverageMinimum(1, -4), 0);
+	assert.equal(gxGpuTriangleEdgeCoverageMinimum(0, 4), 0);
+	assert.equal(gxGpuTriangleEdgeCoverageMinimum(-1, 4), 1);
+	assert.equal(gxGpuTriangleEdgeCoverageMinimum(0, -4), 1);
 	assert.equal(gxGpuTextureU(0x01c3ab56), 0x56);
 	assert.equal(gxGpuTextureV(0x01c3ab56), 0xab);
 	assert.equal(gxGpuTextureAttribute(0x01c3ab56), 0x01c3);
@@ -1050,6 +1047,61 @@ test('GX-GPU software backend blends untextured semi-transparent rectangles with
 	assert.equal(gxGpuSoftwareVram[gxGpuSoftwareVramIndex(40, 20)], 0x7ce7);
 });
 
+test('GX-GPU software backend owns PSX triangle edges and quad seams exactly once', () => {
+	const commandBuffer = new GxGpuCommandBuffer();
+	commandBuffer.reset();
+	pushSoftwareCommand(commandBuffer, new Uint32Array([
+		((GX_GPU_GP0_POLYGON_FIRST << 24) | 0x0000ff) >>> 0,
+		(4 << 16) | 4,
+		(4 << 16) | 8,
+		(8 << 16) | 4,
+	]), GX_GPU_COMMAND_DRAW_POLYGON, GX_GPU_GP0_POLYGON_FIRST);
+	pushSoftwareCommand(commandBuffer, new Uint32Array([
+		((GX_GPU_GP0_POLYGON_FIRST << 24) | 0x00ff00) >>> 0,
+		(4 << 16) | 12,
+		(8 << 16) | 12,
+		(4 << 16) | 16,
+	]), GX_GPU_COMMAND_DRAW_POLYGON, GX_GPU_GP0_POLYGON_FIRST);
+	pushSoftwareCommand(commandBuffer, new Uint32Array([
+		((GX_GPU_GP0_POLYGON_FIRST << 24) | 0xff0000) >>> 0,
+		(4 << 16) | 32,
+		(5 << 16) | 34,
+		(6 << 16) | 32,
+	]), GX_GPU_COMMAND_DRAW_POLYGON, GX_GPU_GP0_POLYGON_FIRST);
+	const semiTransparentQuadOpcode = GX_GPU_GP0_POLYGON_FIRST | GX_GPU_GP0_RENDER_QUAD_OR_POLYLINE_BIT | 0x02;
+	pushSoftwareCommand(commandBuffer, new Uint32Array([
+		((semiTransparentQuadOpcode << 24) | 0x0000ff) >>> 0,
+		(20 << 16) | 20,
+		(20 << 16) | 24,
+		(24 << 16) | 20,
+		(24 << 16) | 24,
+	]), GX_GPU_COMMAND_DRAW_POLYGON, semiTransparentQuadOpcode);
+
+	gxGpuSoftwareVram.fill(0);
+	executeGxGpuSoftwareCommands(commandBuffer, 0);
+
+	for (let row = 0; row < 4; row += 1) {
+		for (let column = 0; column < 4 - row; column += 1) {
+			assert.equal(gxGpuSoftwareVram[gxGpuSoftwareVramIndex(4 + column, 4 + row)], 0x001f);
+			assert.equal(gxGpuSoftwareVram[gxGpuSoftwareVramIndex(12 + column, 4 + row)], 0x03e0);
+		}
+		assert.equal(gxGpuSoftwareVram[gxGpuSoftwareVramIndex(8 - row, 4 + row)], 0);
+		assert.equal(gxGpuSoftwareVram[gxGpuSoftwareVramIndex(16 - row, 4 + row)], 0);
+	}
+	assert.equal(gxGpuSoftwareVram[gxGpuSoftwareVramIndex(32, 4)], 0);
+	assert.equal(gxGpuSoftwareVram[gxGpuSoftwareVramIndex(32, 5)], 0x7c00);
+	assert.equal(gxGpuSoftwareVram[gxGpuSoftwareVramIndex(33, 5)], 0x7c00);
+	assert.equal(gxGpuSoftwareVram[gxGpuSoftwareVramIndex(34, 5)], 0);
+	assert.equal(gxGpuSoftwareVram[gxGpuSoftwareVramIndex(32, 6)], 0);
+	for (let y = 20; y < 24; y += 1) {
+		for (let x = 20; x < 24; x += 1) {
+			assert.equal(gxGpuSoftwareVram[gxGpuSoftwareVramIndex(x, y)], 0x000f);
+		}
+	}
+	assert.equal(gxGpuSoftwareVram[gxGpuSoftwareVramIndex(24, 20)], 0);
+	assert.equal(gxGpuSoftwareVram[gxGpuSoftwareVramIndex(20, 24)], 0);
+});
+
 test('GX-GPU software scanout consumes CPU upload, VRAM copy, and fill commands', () => {
 	const commandBuffer = new GxGpuCommandBuffer();
 	commandBuffer.reset();
@@ -1286,6 +1338,8 @@ test('GX-GPU software scanout consumes textured primitives', () => {
 	assertRgbaPixel(pixels, 61, 20, 0, 255, 0);
 	assertRgbaPixel(pixels, 60, 21, 0, 0, 255);
 	assertRgbaPixel(pixels, 61, 21, 255, 255, 0);
+	assert.equal(gxGpuSoftwareVram[gxGpuSoftwareVramIndex(62, 20)], 0);
+	assert.equal(gxGpuSoftwareVram[gxGpuSoftwareVramIndex(60, 22)], 0);
 });
 
 test('GX-GPU software commands preserve texture mask, blend, and mask-test store semantics', () => {
@@ -1366,6 +1420,18 @@ test('GX-GPU software commands sample palette8, rectangle flip, and dithered mod
 		(1 << 16) | 1,
 		0x00000008,
 	]), GX_GPU_COMMAND_UPLOAD_CPU_TO_VRAM, GX_GPU_GP0_CPU_TO_VRAM_FIRST);
+	pushSoftwareCommand(commandBuffer, new Uint32Array([
+		GX_GPU_GP0_CPU_TO_VRAM_FIRST << 24,
+		(4 << 16) | 64,
+		(1 << 16) | 1,
+		0x0000001f,
+	]), GX_GPU_COMMAND_UPLOAD_CPU_TO_VRAM, GX_GPU_GP0_CPU_TO_VRAM_FIRST);
+	pushSoftwareCommand(commandBuffer, new Uint32Array([
+		GX_GPU_GP0_CPU_TO_VRAM_FIRST << 24,
+		(4 << 16) | 319,
+		(1 << 16) | 1,
+		0x000003e0,
+	]), GX_GPU_COMMAND_UPLOAD_CPU_TO_VRAM, GX_GPU_GP0_CPU_TO_VRAM_FIRST);
 
 	const rawTexturedRectangleOpcode = GX_GPU_GP0_RECTANGLE_FIRST | GX_GPU_GP0_RENDER_TEXTURE_BIT | 0x01;
 	const palette8FlipPageWord = (GX_GPU_TEXTURE_MODE_PALETTE8 << 7) | GX_GPU_DRAW_MODE_TEXTURE_RECTANGLE_X_FLIP | 1;
@@ -1375,6 +1441,13 @@ test('GX-GPU software commands sample palette8, rectangle flip, and dithered mod
 		(0x0541 << 16) | (2 << 8) | 1,
 		(1 << 16) | 2,
 	]), GX_GPU_COMMAND_DRAW_RECTANGLE, rawTexturedRectangleOpcode, palette8FlipPageWord);
+	const direct16FlipPageWord = (GX_GPU_TEXTURE_MODE_DIRECT16 << 7) | GX_GPU_DRAW_MODE_TEXTURE_RECTANGLE_X_FLIP | 1;
+	pushSoftwareCommand(commandBuffer, new Uint32Array([
+		((rawTexturedRectangleOpcode << 24) | 0x808080) >>> 0,
+		(20 << 16) | 40,
+		4 << 8,
+		(1 << 16) | 2,
+	]), GX_GPU_COMMAND_DRAW_RECTANGLE, rawTexturedRectangleOpcode, direct16FlipPageWord);
 
 	const texturedPolygonOpcode = GX_GPU_GP0_POLYGON_FIRST | GX_GPU_GP0_RENDER_TEXTURE_BIT;
 	const ditheredDirect16PageWord = (GX_GPU_TEXTURE_MODE_DIRECT16 << 7) | GX_GPU_DRAW_MODE_DITHER_ENABLED | 1;
@@ -1393,6 +1466,8 @@ test('GX-GPU software commands sample palette8, rectangle flip, and dithered mod
 
 	assert.equal(gxGpuSoftwareVram[gxGpuSoftwareVramIndex(30, 20)], 0x7c00);
 	assert.equal(gxGpuSoftwareVram[gxGpuSoftwareVramIndex(31, 20)], 0x03e0);
+	assert.equal(gxGpuSoftwareVram[gxGpuSoftwareVramIndex(40, 20)], 0x001f);
+	assert.equal(gxGpuSoftwareVram[gxGpuSoftwareVramIndex(41, 20)], 0x03e0);
 	assert.equal(gxGpuSoftwareVram[gxGpuSoftwareVramIndex(22, 41)], 0x0010);
 });
 

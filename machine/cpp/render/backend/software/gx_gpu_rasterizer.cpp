@@ -183,15 +183,13 @@ void drawGxGpuSoftwareTriangle(
 	const i32 min12y = y1 < y2 ? y1 : y2;
 	const i32 max12y = y1 > y2 ? y1 : y2;
 	i32 left = x0 < min12x ? x0 : min12x;
-	i32 right = x0 > max12x ? x0 : max12x;
+	i32 rightExclusive = x0 > max12x ? x0 : max12x;
 	i32 top = y0 < min12y ? y0 : min12y;
-	i32 bottom = y0 > max12y ? y0 : max12y;
+	i32 bottomExclusive = y0 > max12y ? y0 : max12y;
 	left = left > areaLeft ? left : areaLeft;
 	top = top > areaTop ? top : areaTop;
-	const i32 areaRightInclusive = areaRight - 1;
-	const i32 areaBottomInclusive = areaBottom - 1;
-	right = right < areaRightInclusive ? right : areaRightInclusive;
-	bottom = bottom < areaBottomInclusive ? bottom : areaBottomInclusive;
+	rightExclusive = rightExclusive < areaRight ? rightExclusive : areaRight;
+	bottomExclusive = bottomExclusive < areaBottom ? bottomExclusive : areaBottom;
 	const bool flip = area < 0;
 	if (flip) {
 		area = -area;
@@ -231,7 +229,10 @@ void drawGxGpuSoftwareTriangle(
 	i64 rowR = sameColor ? 0 : static_cast<i64>(r0) * rowW0 + static_cast<i64>(r1) * rowW1 + static_cast<i64>(r2) * rowW2;
 	i64 rowG = sameColor ? 0 : static_cast<i64>(g0) * rowW0 + static_cast<i64>(g1) * rowW1 + static_cast<i64>(g2) * rowW2;
 	i64 rowB = sameColor ? 0 : static_cast<i64>(b0) * rowW0 + static_cast<i64>(b1) * rowW1 + static_cast<i64>(b2) * rowW2;
-	for (i32 y = top; y <= bottom; y += 1) {
+	rowW0 -= gxGpuTriangleEdgeCoverageMinimum(edge0StepX, edge0StepY);
+	rowW1 -= gxGpuTriangleEdgeCoverageMinimum(edge1StepX, edge1StepY);
+	rowW2 -= gxGpuTriangleEdgeCoverageMinimum(edge2StepX, edge2StepY);
+	for (i32 y = top; y < bottomExclusive; y += 1) {
 		if (gxGpuSoftwareInterlacedSkipsLine(y, interlacedRenderWord)) {
 			rowW0 += edge0StepY;
 			rowW1 += edge1StepY;
@@ -249,7 +250,7 @@ void drawGxGpuSoftwareTriangle(
 		i64 r = rowR;
 		i64 g = rowG;
 		i64 b = rowB;
-		for (i32 x = left; x <= right; x += 1) {
+		for (i32 x = left; x < rightExclusive; x += 1) {
 			if (w0 >= 0 && w1 >= 0 && w2 >= 0) {
 				const u32 r8 = sameColor ? r0 : static_cast<u32>(r / area);
 				const u32 g8 = sameColor ? g0 : static_cast<u32>(g / area);
@@ -313,15 +314,13 @@ void drawGxGpuSoftwareTexturedTriangle(
 	const i32 min12y = y1 < y2 ? y1 : y2;
 	const i32 max12y = y1 > y2 ? y1 : y2;
 	i32 left = x0 < min12x ? x0 : min12x;
-	i32 right = x0 > max12x ? x0 : max12x;
+	i32 rightExclusive = x0 > max12x ? x0 : max12x;
 	i32 top = y0 < min12y ? y0 : min12y;
-	i32 bottom = y0 > max12y ? y0 : max12y;
+	i32 bottomExclusive = y0 > max12y ? y0 : max12y;
 	left = left > areaLeft ? left : areaLeft;
 	top = top > areaTop ? top : areaTop;
-	const i32 areaRightInclusive = areaRight - 1;
-	const i32 areaBottomInclusive = areaBottom - 1;
-	right = right < areaRightInclusive ? right : areaRightInclusive;
-	bottom = bottom < areaBottomInclusive ? bottom : areaBottomInclusive;
+	rightExclusive = rightExclusive < areaRight ? rightExclusive : areaRight;
+	bottomExclusive = bottomExclusive < areaBottom ? bottomExclusive : areaBottom;
 	const bool flip = area < 0;
 	if (flip) {
 		area = -area;
@@ -379,7 +378,10 @@ void drawGxGpuSoftwareTexturedTriangle(
 	i64 rowB = sameColor ? 0 : static_cast<i64>(b0) * rowW0 + static_cast<i64>(b1) * rowW1 + static_cast<i64>(b2) * rowW2;
 	i64 rowU = static_cast<i64>(u0) * rowW0 + static_cast<i64>(u1) * rowW1 + static_cast<i64>(u2) * rowW2;
 	i64 rowV = static_cast<i64>(v0) * rowW0 + static_cast<i64>(v1) * rowW1 + static_cast<i64>(v2) * rowW2;
-	for (i32 y = top; y <= bottom; y += 1) {
+	rowW0 -= gxGpuTriangleEdgeCoverageMinimum(edge0StepX, edge0StepY);
+	rowW1 -= gxGpuTriangleEdgeCoverageMinimum(edge1StepX, edge1StepY);
+	rowW2 -= gxGpuTriangleEdgeCoverageMinimum(edge2StepX, edge2StepY);
+	for (i32 y = top; y < bottomExclusive; y += 1) {
 		if (gxGpuSoftwareInterlacedSkipsLine(y, interlacedRenderWord)) {
 			rowW0 += edge0StepY;
 			rowW1 += edge1StepY;
@@ -401,7 +403,7 @@ void drawGxGpuSoftwareTexturedTriangle(
 		i64 b = rowB;
 		i64 uNumerator = rowU;
 		i64 vNumerator = rowV;
-		for (i32 x = left; x <= right; x += 1) {
+		for (i32 x = left; x < rightExclusive; x += 1) {
 			if (w0 >= 0 && w1 >= 0 && w2 >= 0) {
 				const u32 r8 = sameColor ? r0 : static_cast<u32>(r / area);
 				const u32 g8 = sameColor ? g0 : static_cast<u32>(g / area);
@@ -473,10 +475,8 @@ void drawGxGpuSoftwareTexturedRectangle(const GxGpuCommandBuffer& commandBuffer,
 	const u32 drawModeWord = commandBuffer.commandDrawModeWord[commandIndex];
 	const bool xFlip = gxGpuDrawModeTextureRectangleXFlip(drawModeWord);
 	const bool yFlip = gxGpuDrawModeTextureRectangleYFlip(drawModeWord);
-	const u32 baseU = gxGpuTextureU(textureWord);
-	const u32 baseV = gxGpuTextureV(textureWord);
-	const i32 edgeU = gxGpuTextureRectangleEdge0(baseU, xFlip);
-	const i32 edgeV = gxGpuTextureRectangleEdge0(baseV, yFlip);
+	const i32 baseU = static_cast<i32>(gxGpuTextureU(textureWord));
+	const i32 baseV = static_cast<i32>(gxGpuTextureV(textureWord));
 	const u32 opcode = commandBuffer.commandOpcode[commandIndex];
 	const u32 textureWindowWord = commandBuffer.commandTextureWindowWord[commandIndex];
 	const u32 pageX = gxGpuDrawModeTexturePageBaseX(drawModeWord);
@@ -501,10 +501,10 @@ void drawGxGpuSoftwareTexturedRectangle(const GxGpuCommandBuffer& commandBuffer,
 			continue;
 		}
 		const i32 textureY = y - y0;
-		const i32 v = yFlip ? edgeV - textureY - 1 : edgeV + textureY;
+		const i32 v = yFlip ? baseV - textureY : baseV + textureY;
 		for (i32 x = left; x < right; x += 1) {
 			const i32 textureX = x - x0;
-			const i32 u = xFlip ? edgeU - textureX - 1 : edgeU + textureX;
+			const i32 u = xFlip ? baseU - textureX : baseU + textureX;
 			const u32 sampleWord = sampleGxGpuSoftwareTextureWord(
 				u,
 				v,

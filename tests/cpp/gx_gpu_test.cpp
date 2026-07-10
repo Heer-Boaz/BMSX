@@ -137,12 +137,6 @@ void testGp0RawDrawWordDecoders() {
 	require(!bmsx::gxGpuDrawModeTextureRectangleXFlip(bmsx::GX_GPU_DRAW_MODE_TEXTURE_RECTANGLE_Y_FLIP), "GX-GPU textured rectangle X flip bit disabled");
 	require(bmsx::gxGpuDrawModeTextureRectangleYFlip(bmsx::GX_GPU_DRAW_MODE_TEXTURE_RECTANGLE_Y_FLIP), "GX-GPU textured rectangle Y flip bit enabled");
 	require(!bmsx::gxGpuDrawModeTextureRectangleYFlip(bmsx::GX_GPU_DRAW_MODE_TEXTURE_RECTANGLE_X_FLIP), "GX-GPU textured rectangle Y flip bit disabled");
-	require(bmsx::gxGpuTextureRectangleEdge0(7u, false) == 7, "GX-GPU textured rectangle unflipped edge0");
-	require(bmsx::gxGpuTextureRectangleEdge1(7, 16u, false) == 23, "GX-GPU textured rectangle unflipped edge1");
-	require(bmsx::gxGpuTextureRectangleEdge0(7u, true) == 8, "GX-GPU textured rectangle flipped edge0");
-	require(bmsx::gxGpuTextureRectangleEdge1(8, 16u, true) == -8, "GX-GPU textured rectangle flipped edge1");
-	require(bmsx::gxGpuTextureRectangleEdge0(0u, true) == 1, "GX-GPU textured rectangle zero flipped edge0");
-	require(bmsx::gxGpuTextureRectangleEdge1(1, 16u, true) == -15, "GX-GPU textured rectangle zero flipped edge1");
 	require(!bmsx::gxGpuSegmentExceedsPrimitiveSize(0, 0, 1023, 0), "GX-GPU primitive-size line accepts 1024-pixel width");
 	require(bmsx::gxGpuSegmentExceedsPrimitiveSize(0, 0, 1024, 0), "GX-GPU primitive-size line rejects 1025-pixel width");
 	require(!bmsx::gxGpuSegmentExceedsPrimitiveSize(0, 0, 0, 511), "GX-GPU primitive-size line accepts 512-pixel height");
@@ -152,6 +146,10 @@ void testGp0RawDrawWordDecoders() {
 	require(bmsx::gxGpuTriangleExceedsPrimitiveSize(0, 0, 1023, 0, 0, 512), "GX-GPU primitive-size triangle rejects tall bounds");
 	require(!bmsx::gxGpuTriangleExceedsPrimitiveSize(-512, -256, 511, 255, 0, 0), "GX-GPU primitive-size triangle accepts signed full bounds");
 	require(bmsx::gxGpuTriangleExceedsPrimitiveSize(-513, -256, 511, 255, 0, 0), "GX-GPU primitive-size triangle rejects signed wide bounds");
+	require(bmsx::gxGpuTriangleEdgeCoverageMinimum(1, -4) == 0, "GX-GPU descending edge is inclusive");
+	require(bmsx::gxGpuTriangleEdgeCoverageMinimum(0, 4) == 0, "GX-GPU horizontal top edge is inclusive");
+	require(bmsx::gxGpuTriangleEdgeCoverageMinimum(-1, 4) == 1, "GX-GPU ascending edge is exclusive");
+	require(bmsx::gxGpuTriangleEdgeCoverageMinimum(0, -4) == 1, "GX-GPU horizontal bottom edge is exclusive");
 	require(bmsx::gxGpuTextureU(0x01c3ab56u) == 0x56u, "GX-GPU texture U decode");
 	require(bmsx::gxGpuTextureV(0x01c3ab56u) == 0xabu, "GX-GPU texture V decode");
 	require(bmsx::gxGpuTextureAttribute(0x01c3ab56u) == 0x01c3u, "GX-GPU texture attribute decode");
@@ -987,6 +985,81 @@ void testSoftwareBlendsUntexturedSemiTransparentRectangles() {
 	require(bmsx::g_gxGpuSoftwareVram[bmsx::gxGpuSoftwareVramIndex(40, 20)] == 0x7ce7u, "GX-GPU software semitrans mode 3 quarter-adds white over blue");
 }
 
+void testSoftwareTriangleEdgesAndQuadSeams() {
+	bmsx::GxGpuCommandBuffer commandBuffer;
+	commandBuffer.reset();
+	pushSoftwareCommand(
+		commandBuffer,
+		std::array<uint32_t, 4>{
+			(bmsx::GX_GPU_GP0_POLYGON_FIRST << 24u) | 0x0000ffu,
+			(4u << 16u) | 4u,
+			(4u << 16u) | 8u,
+			(8u << 16u) | 4u,
+		},
+		4u,
+		bmsx::GX_GPU_COMMAND_DRAW_POLYGON,
+		bmsx::GX_GPU_GP0_POLYGON_FIRST);
+	pushSoftwareCommand(
+		commandBuffer,
+		std::array<uint32_t, 4>{
+			(bmsx::GX_GPU_GP0_POLYGON_FIRST << 24u) | 0x00ff00u,
+			(4u << 16u) | 12u,
+			(8u << 16u) | 12u,
+			(4u << 16u) | 16u,
+		},
+		4u,
+		bmsx::GX_GPU_COMMAND_DRAW_POLYGON,
+		bmsx::GX_GPU_GP0_POLYGON_FIRST);
+	pushSoftwareCommand(
+		commandBuffer,
+		std::array<uint32_t, 4>{
+			(bmsx::GX_GPU_GP0_POLYGON_FIRST << 24u) | 0xff0000u,
+			(4u << 16u) | 32u,
+			(5u << 16u) | 34u,
+			(6u << 16u) | 32u,
+		},
+		4u,
+		bmsx::GX_GPU_COMMAND_DRAW_POLYGON,
+		bmsx::GX_GPU_GP0_POLYGON_FIRST);
+	constexpr uint8_t semiTransparentQuadOpcode = bmsx::GX_GPU_GP0_POLYGON_FIRST | bmsx::GX_GPU_GP0_RENDER_QUAD_OR_POLYLINE_BIT | 0x02u;
+	pushSoftwareCommand(
+		commandBuffer,
+		std::array<uint32_t, 5>{
+			(semiTransparentQuadOpcode << 24u) | 0x0000ffu,
+			(20u << 16u) | 20u,
+			(20u << 16u) | 24u,
+			(24u << 16u) | 20u,
+			(24u << 16u) | 24u,
+		},
+		5u,
+		bmsx::GX_GPU_COMMAND_DRAW_POLYGON,
+		semiTransparentQuadOpcode);
+
+	bmsx::g_gxGpuSoftwareVram.fill(0u);
+	bmsx::executeGxGpuSoftwareCommands(commandBuffer, 0u);
+
+	for (int32_t row = 0; row < 4; row += 1) {
+		for (int32_t column = 0; column < 4 - row; column += 1) {
+			require(bmsx::g_gxGpuSoftwareVram[bmsx::gxGpuSoftwareVramIndex(4 + column, 4 + row)] == 0x001fu, "GX-GPU software clockwise triangle coverage");
+			require(bmsx::g_gxGpuSoftwareVram[bmsx::gxGpuSoftwareVramIndex(12 + column, 4 + row)] == 0x03e0u, "GX-GPU software counter-clockwise triangle coverage");
+		}
+		require(bmsx::g_gxGpuSoftwareVram[bmsx::gxGpuSoftwareVramIndex(8 - row, 4 + row)] == 0u, "GX-GPU software triangle excludes right edge");
+		require(bmsx::g_gxGpuSoftwareVram[bmsx::gxGpuSoftwareVramIndex(16 - row, 4 + row)] == 0u, "GX-GPU software reversed triangle excludes right edge");
+	}
+	require(bmsx::g_gxGpuSoftwareVram[bmsx::gxGpuSoftwareVramIndex(32, 4)] == 0u, "GX-GPU software narrow triangle drops zero-width top row");
+	require(bmsx::g_gxGpuSoftwareVram[bmsx::gxGpuSoftwareVramIndex(32, 5)] == 0x7c00u, "GX-GPU software narrow triangle includes left span pixel");
+	require(bmsx::g_gxGpuSoftwareVram[bmsx::gxGpuSoftwareVramIndex(33, 5)] == 0x7c00u, "GX-GPU software narrow triangle includes right span pixel");
+	require(bmsx::g_gxGpuSoftwareVram[bmsx::gxGpuSoftwareVramIndex(34, 5)] == 0u, "GX-GPU software narrow triangle excludes zero-width apex");
+	require(bmsx::g_gxGpuSoftwareVram[bmsx::gxGpuSoftwareVramIndex(32, 6)] == 0u, "GX-GPU software narrow triangle drops zero-width bottom row");
+	for (int32_t y = 20; y < 24; y += 1) {
+		for (int32_t x = 20; x < 24; x += 1) {
+			require(bmsx::g_gxGpuSoftwareVram[bmsx::gxGpuSoftwareVramIndex(x, y)] == 0x000fu, "GX-GPU software quad blends each pixel exactly once");
+		}
+	}
+	require(bmsx::g_gxGpuSoftwareVram[bmsx::gxGpuSoftwareVramIndex(24, 20)] == 0u, "GX-GPU software quad excludes right edge");
+	require(bmsx::g_gxGpuSoftwareVram[bmsx::gxGpuSoftwareVramIndex(20, 24)] == 0u, "GX-GPU software quad excludes bottom edge");
+}
+
 void testSoftwareScanoutConsumesTransfersAndFill() {
 	bmsx::GxGpuCommandBuffer commandBuffer;
 	commandBuffer.reset();
@@ -1311,6 +1384,8 @@ void testSoftwareScanoutConsumesTexturedPrimitives() {
 	requireArgbPixel(frame.framebuffer, 61u, 20u, 0xff00ff00u, "GX-GPU software scanout direct16 textured quad green pixel");
 	requireArgbPixel(frame.framebuffer, 60u, 21u, 0xff0000ffu, "GX-GPU software scanout direct16 textured quad blue pixel");
 	requireArgbPixel(frame.framebuffer, 61u, 21u, 0xffffff00u, "GX-GPU software scanout direct16 textured quad yellow pixel");
+	require(bmsx::g_gxGpuSoftwareVram[bmsx::gxGpuSoftwareVramIndex(62, 20)] == 0u, "GX-GPU software textured quad excludes right edge");
+	require(bmsx::g_gxGpuSoftwareVram[bmsx::gxGpuSoftwareVramIndex(60, 22)] == 0u, "GX-GPU software textured quad excludes bottom edge");
 }
 
 void testSoftwareCommandsPreserveTextureMaskBlendAndMaskTestStoreSemantics() {
@@ -1444,6 +1519,16 @@ void testSoftwareCommandsSamplePalette8RectangleFlipAndDitheredModulation() {
 		(3u << 16u) | 64u,
 		(1u << 16u) | 1u,
 		0x00000008u);
+	pushSoftwareVramUpload(
+		commandBuffer,
+		(4u << 16u) | 64u,
+		(1u << 16u) | 1u,
+		0x0000001fu);
+	pushSoftwareVramUpload(
+		commandBuffer,
+		(4u << 16u) | 319u,
+		(1u << 16u) | 1u,
+		0x000003e0u);
 
 	constexpr uint8_t rawTexturedRectangleOpcode = bmsx::GX_GPU_GP0_RECTANGLE_FIRST | bmsx::GX_GPU_GP0_RENDER_TEXTURE_BIT | 0x01u;
 	constexpr uint32_t palette8FlipPageWord = (bmsx::GX_GPU_TEXTURE_MODE_PALETTE8 << 7u) | bmsx::GX_GPU_DRAW_MODE_TEXTURE_RECTANGLE_X_FLIP | 1u;
@@ -1459,6 +1544,19 @@ void testSoftwareCommandsSamplePalette8RectangleFlipAndDitheredModulation() {
 		bmsx::GX_GPU_COMMAND_DRAW_RECTANGLE,
 		rawTexturedRectangleOpcode,
 		palette8FlipPageWord);
+	constexpr uint32_t direct16FlipPageWord = (bmsx::GX_GPU_TEXTURE_MODE_DIRECT16 << 7u) | bmsx::GX_GPU_DRAW_MODE_TEXTURE_RECTANGLE_X_FLIP | 1u;
+	pushSoftwareCommand(
+		commandBuffer,
+		std::array<uint32_t, 4>{
+			(rawTexturedRectangleOpcode << 24u) | 0x808080u,
+			(20u << 16u) | 40u,
+			4u << 8u,
+			(1u << 16u) | 2u,
+		},
+		4u,
+		bmsx::GX_GPU_COMMAND_DRAW_RECTANGLE,
+		rawTexturedRectangleOpcode,
+		direct16FlipPageWord);
 
 	constexpr uint8_t texturedPolygonOpcode = bmsx::GX_GPU_GP0_POLYGON_FIRST | bmsx::GX_GPU_GP0_RENDER_TEXTURE_BIT;
 	constexpr uint32_t ditheredDirect16PageWord = (bmsx::GX_GPU_TEXTURE_MODE_DIRECT16 << 7u) | bmsx::GX_GPU_DRAW_MODE_DITHER_ENABLED | 1u;
@@ -1483,6 +1581,8 @@ void testSoftwareCommandsSamplePalette8RectangleFlipAndDitheredModulation() {
 
 	require(bmsx::g_gxGpuSoftwareVram[bmsx::gxGpuSoftwareVramIndex(30, 20)] == 0x7c00u, "GX-GPU software palette8 flipped rectangle samples high byte CLUT entry first");
 	require(bmsx::g_gxGpuSoftwareVram[bmsx::gxGpuSoftwareVramIndex(31, 20)] == 0x03e0u, "GX-GPU software palette8 flipped rectangle samples low byte CLUT entry second");
+	require(bmsx::g_gxGpuSoftwareVram[bmsx::gxGpuSoftwareVramIndex(40, 20)] == 0x001fu, "GX-GPU software flipped direct16 rectangle samples base-zero texel first");
+	require(bmsx::g_gxGpuSoftwareVram[bmsx::gxGpuSoftwareVramIndex(41, 20)] == 0x03e0u, "GX-GPU software flipped direct16 rectangle wraps base-zero texel backward");
 	require(bmsx::g_gxGpuSoftwareVram[bmsx::gxGpuSoftwareVramIndex(22, 41)] == 0x0010u, "GX-GPU software dithered textured polygon modulates with screen-space dither");
 }
 
@@ -1527,6 +1627,7 @@ int main() {
 	testSoftwareBackendConsumesOnlyPresentableCommands();
 	testSoftwareGouraudLineFixedPointRaster();
 	testSoftwareBlendsUntexturedSemiTransparentRectangles();
+	testSoftwareTriangleEdgesAndQuadSeams();
 	testSoftwareScanoutConsumesTransfersAndFill();
 	testSoftwareBackendRetiresCommandLogWithoutClearingVram();
 	testCommandBufferRestorePublishesWithoutClearingVramRevision();

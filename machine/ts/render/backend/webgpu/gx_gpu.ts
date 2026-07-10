@@ -50,8 +50,6 @@ import {
 	gxGpuSigned11,
 	gxGpuTextureClutBaseX,
 	gxGpuTextureClutBaseY,
-	gxGpuTextureRectangleEdge0,
-	gxGpuTextureRectangleEdge1,
 	gxGpuTextureU,
 	gxGpuTextureV,
 	gxGpuTextureWindowAndX,
@@ -690,10 +688,10 @@ function appendTexturedRectangle(commandBuffer: GxGpuCommandBufferView, commandI
 	const drawModeWord = commandBuffer.commandDrawModeWord[commandIndex];
 	const xFlip = gxGpuDrawModeTextureRectangleXFlip(drawModeWord);
 	const yFlip = gxGpuDrawModeTextureRectangleYFlip(drawModeWord);
-	const u0 = gxGpuTextureRectangleEdge0(gxGpuTextureU(textureWord), xFlip);
-	const v0 = gxGpuTextureRectangleEdge0(gxGpuTextureV(textureWord), yFlip);
-	const u1 = gxGpuTextureRectangleEdge1(u0, rect.width, xFlip);
-	const v1 = gxGpuTextureRectangleEdge1(v0, rect.height, yFlip);
+	const u0 = gxGpuTextureU(textureWord);
+	const v0 = gxGpuTextureV(textureWord);
+	const u1 = u0 + (xFlip ? -rect.width : rect.width);
+	const v1 = v0 + (yFlip ? -rect.height : rect.height);
 	let offset = vertexFloatCount;
 	offset = appendTexturedTriangle(offset, rect.x0, rect.y0, colorWord, u0, v0, rect.x1, rect.y0, colorWord, u1, v0, rect.x0, rect.y1, colorWord, u0, v1);
 	offset = appendTexturedTriangle(offset, rect.x0, rect.y1, colorWord, u0, v1, rect.x1, rect.y0, colorWord, u1, v0, rect.x1, rect.y1, colorWord, u1, v1);

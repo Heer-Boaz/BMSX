@@ -22,7 +22,8 @@ const VRAM_SIZE = vec2<f32>(1024.0, 512.0);
 @vertex
 fn vs_main(input: VSIn) -> VSOut {
 	var out: VSOut;
-	let clip = vec2<f32>((input.position.x / 512.0) - 1.0, 1.0 - (input.position.y / 256.0));
+	let rasterPosition = input.position + vec2<f32>(0.5);
+	let clip = vec2<f32>((rasterPosition.x / 512.0) - 1.0, 1.0 - (rasterPosition.y / 256.0));
 	out.position = vec4<f32>(clip, 0.0, 1.0);
 	out.color = input.color;
 	return out;

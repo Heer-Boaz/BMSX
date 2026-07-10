@@ -216,14 +216,6 @@ inline bool gxGpuDrawModeTextureRectangleYFlip(u32 drawModeWord) {
 	return (drawModeWord & GX_GPU_DRAW_MODE_TEXTURE_RECTANGLE_Y_FLIP) != 0u;
 }
 
-inline i32 gxGpuTextureRectangleEdge0(u32 textureCoord, bool flip) {
-	return static_cast<i32>(textureCoord) + (flip ? 1 : 0);
-}
-
-inline i32 gxGpuTextureRectangleEdge1(i32 textureEdge0, u32 size, bool flip) {
-	return textureEdge0 + (flip ? -static_cast<i32>(size) : static_cast<i32>(size));
-}
-
 inline bool gxGpuSegmentExceedsPrimitiveSize(i32 x0, i32 y0, i32 x1, i32 y1) {
 	const i32 left = x0 < x1 ? x0 : x1;
 	const i32 right = x0 > x1 ? x0 : x1;
@@ -242,6 +234,10 @@ inline bool gxGpuTriangleExceedsPrimitiveSize(i32 x0, i32 y0, i32 x1, i32 y1, i3
 	const i32 top = y0 < min12y ? y0 : min12y;
 	const i32 bottom = y0 > max12y ? y0 : max12y;
 	return right - left + 1 > GX_GPU_MAX_PRIMITIVE_WIDTH || bottom - top + 1 > GX_GPU_MAX_PRIMITIVE_HEIGHT;
+}
+
+inline i64 gxGpuTriangleEdgeCoverageMinimum(i64 stepX, i64 stepY) {
+	return stepX > 0 || (stepX == 0 && stepY > 0) ? 0 : 1;
 }
 
 inline bool gxGpuDitheredPolygon(u32 drawModeWord, u32 opcode) {

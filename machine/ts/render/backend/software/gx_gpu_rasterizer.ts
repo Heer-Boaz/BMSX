@@ -20,13 +20,13 @@ import {
 	gxGpuSegmentExceedsPrimitiveSize,
 	gxGpuTextureClutBaseX,
 	gxGpuTextureClutBaseY,
-	gxGpuTextureRectangleEdge0,
 	gxGpuTextureU,
 	gxGpuTextureV,
 	gxGpuTextureWindowAndX,
 	gxGpuTextureWindowAndY,
 	gxGpuTextureWindowOrX,
 	gxGpuTextureWindowOrY,
+	gxGpuTriangleEdgeCoverageMinimum,
 	gxGpuTriangleExceedsPrimitiveSize,
 } from '../gx_gpu_render_rules';
 import {
@@ -225,15 +225,13 @@ export function drawGxGpuSoftwareTriangle(
 	const min12y = y1 < y2 ? y1 : y2;
 	const max12y = y1 > y2 ? y1 : y2;
 	let left = x0 < min12x ? x0 : min12x;
-	let right = x0 > max12x ? x0 : max12x;
+	let rightExclusive = x0 > max12x ? x0 : max12x;
 	let top = y0 < min12y ? y0 : min12y;
-	let bottom = y0 > max12y ? y0 : max12y;
+	let bottomExclusive = y0 > max12y ? y0 : max12y;
 	left = left > areaLeft ? left : areaLeft;
 	top = top > areaTop ? top : areaTop;
-	const areaRightInclusive = areaRight - 1;
-	const areaBottomInclusive = areaBottom - 1;
-	right = right < areaRightInclusive ? right : areaRightInclusive;
-	bottom = bottom < areaBottomInclusive ? bottom : areaBottomInclusive;
+	rightExclusive = rightExclusive < areaRight ? rightExclusive : areaRight;
+	bottomExclusive = bottomExclusive < areaBottom ? bottomExclusive : areaBottom;
 	const flip = area < 0;
 	if (flip) {
 		area = -area;
@@ -273,7 +271,10 @@ export function drawGxGpuSoftwareTriangle(
 	let rowR = sameColor ? 0 : (r0 * rowW0) + (r1 * rowW1) + (r2 * rowW2);
 	let rowG = sameColor ? 0 : (g0 * rowW0) + (g1 * rowW1) + (g2 * rowW2);
 	let rowB = sameColor ? 0 : (b0 * rowW0) + (b1 * rowW1) + (b2 * rowW2);
-	for (let y = top; y <= bottom; y += 1) {
+	rowW0 -= gxGpuTriangleEdgeCoverageMinimum(edge0StepX, edge0StepY);
+	rowW1 -= gxGpuTriangleEdgeCoverageMinimum(edge1StepX, edge1StepY);
+	rowW2 -= gxGpuTriangleEdgeCoverageMinimum(edge2StepX, edge2StepY);
+	for (let y = top; y < bottomExclusive; y += 1) {
 		if (gxGpuSoftwareInterlacedSkipsLine(y, interlacedRenderWord)) {
 			rowW0 += edge0StepY;
 			rowW1 += edge1StepY;
@@ -291,7 +292,7 @@ export function drawGxGpuSoftwareTriangle(
 		let r = rowR;
 		let g = rowG;
 		let b = rowB;
-		for (let x = left; x <= right; x += 1) {
+		for (let x = left; x < rightExclusive; x += 1) {
 			if (w0 >= 0 && w1 >= 0 && w2 >= 0) {
 				const r8 = sameColor ? r0 : integerDivide(r, area);
 				const g8 = sameColor ? g0 : integerDivide(g, area);
@@ -356,15 +357,13 @@ export function drawGxGpuSoftwareTexturedTriangle(
 	const min12y = y1 < y2 ? y1 : y2;
 	const max12y = y1 > y2 ? y1 : y2;
 	let left = x0 < min12x ? x0 : min12x;
-	let right = x0 > max12x ? x0 : max12x;
+	let rightExclusive = x0 > max12x ? x0 : max12x;
 	let top = y0 < min12y ? y0 : min12y;
-	let bottom = y0 > max12y ? y0 : max12y;
+	let bottomExclusive = y0 > max12y ? y0 : max12y;
 	left = left > areaLeft ? left : areaLeft;
 	top = top > areaTop ? top : areaTop;
-	const areaRightInclusive = areaRight - 1;
-	const areaBottomInclusive = areaBottom - 1;
-	right = right < areaRightInclusive ? right : areaRightInclusive;
-	bottom = bottom < areaBottomInclusive ? bottom : areaBottomInclusive;
+	rightExclusive = rightExclusive < areaRight ? rightExclusive : areaRight;
+	bottomExclusive = bottomExclusive < areaBottom ? bottomExclusive : areaBottom;
 	const flip = area < 0;
 	if (flip) {
 		area = -area;
@@ -422,7 +421,10 @@ export function drawGxGpuSoftwareTexturedTriangle(
 	let rowB = sameColor ? 0 : (b0 * rowW0) + (b1 * rowW1) + (b2 * rowW2);
 	let rowU = (u0 * rowW0) + (u1 * rowW1) + (u2 * rowW2);
 	let rowV = (v0 * rowW0) + (v1 * rowW1) + (v2 * rowW2);
-	for (let y = top; y <= bottom; y += 1) {
+	rowW0 -= gxGpuTriangleEdgeCoverageMinimum(edge0StepX, edge0StepY);
+	rowW1 -= gxGpuTriangleEdgeCoverageMinimum(edge1StepX, edge1StepY);
+	rowW2 -= gxGpuTriangleEdgeCoverageMinimum(edge2StepX, edge2StepY);
+	for (let y = top; y < bottomExclusive; y += 1) {
 		if (gxGpuSoftwareInterlacedSkipsLine(y, interlacedRenderWord)) {
 			rowW0 += edge0StepY;
 			rowW1 += edge1StepY;
@@ -444,7 +446,7 @@ export function drawGxGpuSoftwareTexturedTriangle(
 		let b = rowB;
 		let uNumerator = rowU;
 		let vNumerator = rowV;
-		for (let x = left; x <= right; x += 1) {
+		for (let x = left; x < rightExclusive; x += 1) {
 			if (w0 >= 0 && w1 >= 0 && w2 >= 0) {
 				const r8 = sameColor ? r0 : integerDivide(r, area);
 				const g8 = sameColor ? g0 : integerDivide(g, area);
@@ -520,8 +522,6 @@ export function drawGxGpuSoftwareTexturedRectangle(commandBuffer: GxGpuCommandBu
 	const yFlip = gxGpuDrawModeTextureRectangleYFlip(drawModeWord);
 	const baseU = gxGpuTextureU(textureWord);
 	const baseV = gxGpuTextureV(textureWord);
-	const edgeU = gxGpuTextureRectangleEdge0(baseU, xFlip);
-	const edgeV = gxGpuTextureRectangleEdge0(baseV, yFlip);
 	const opcode = commandBuffer.commandOpcode[commandIndex];
 	const textureWindowWord = commandBuffer.commandTextureWindowWord[commandIndex];
 	const pageX = gxGpuDrawModeTexturePageBaseX(drawModeWord);
@@ -546,10 +546,10 @@ export function drawGxGpuSoftwareTexturedRectangle(commandBuffer: GxGpuCommandBu
 			continue;
 		}
 		const textureY = y - y0;
-		const v = yFlip ? edgeV - textureY - 1 : edgeV + textureY;
+		const v = yFlip ? baseV - textureY : baseV + textureY;
 		for (let x = left; x < right; x += 1) {
 			const textureX = x - x0;
-			const u = xFlip ? edgeU - textureX - 1 : edgeU + textureX;
+			const u = xFlip ? baseU - textureX : baseU + textureX;
 			const sampleWord = sampleGxGpuSoftwareTextureWord(
 				u,
 				v,

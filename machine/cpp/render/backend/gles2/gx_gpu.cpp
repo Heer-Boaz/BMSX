@@ -803,10 +803,10 @@ size_t appendTexturedRectangle(const GxGpuCommandBuffer& commandBuffer, u32 comm
 	const u32 drawModeWord = commandBuffer.commandDrawModeWord[commandIndex];
 	const bool xFlip = gxGpuDrawModeTextureRectangleXFlip(drawModeWord);
 	const bool yFlip = gxGpuDrawModeTextureRectangleYFlip(drawModeWord);
-	const i32 u0 = gxGpuTextureRectangleEdge0(gxGpuTextureU(textureWord), xFlip);
-	const i32 v0 = gxGpuTextureRectangleEdge0(gxGpuTextureV(textureWord), yFlip);
-	const i32 u1 = gxGpuTextureRectangleEdge1(u0, rect.width, xFlip);
-	const i32 v1 = gxGpuTextureRectangleEdge1(v0, rect.height, yFlip);
+	const i32 u0 = static_cast<i32>(gxGpuTextureU(textureWord));
+	const i32 v0 = static_cast<i32>(gxGpuTextureV(textureWord));
+	const i32 u1 = u0 + (xFlip ? -static_cast<i32>(rect.width) : static_cast<i32>(rect.width));
+	const i32 v1 = v0 + (yFlip ? -static_cast<i32>(rect.height) : static_cast<i32>(rect.height));
 	size_t offset = vertexFloatCount;
 	offset = appendTexturedTriangle(offset, rect.x0, rect.y0, colorWord, u0, v0, rect.x1, rect.y0, colorWord, u1, v0, rect.x0, rect.y1, colorWord, u0, v1);
 	offset = appendTexturedTriangle(offset, rect.x0, rect.y1, colorWord, u0, v1, rect.x1, rect.y0, colorWord, u1, v0, rect.x1, rect.y1, colorWord, u1, v1);

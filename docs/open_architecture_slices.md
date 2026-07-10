@@ -85,9 +85,17 @@ Niet doen:
 
 Status: open.
 
+Triangle/quad fill is nu in alle actieve owners geïmplementeerd: TS/C++ software
+gebruikt dezelfde integer top-left edge ownership en half-open bounds; WebGL2,
+GLES2 en WebGPU verschuiven PSX rasterposities bij de vertex-transform naar de
+native half-integer pixelcenters. De mirrored softwarevectors bewijzen winding,
+right/bottom exclusion en een semitransparante quadseam die exact eenmaal
+blendt. Live accelerated conformance blijft uitgesteld tot de expliciete
+browsersessie en houdt dit onderdeel open.
+
 Nog te sluiten:
 
-- Triangle/quad edge rules en fill convention.
+- Dezelfde triangle/quad vectors live tegen WebGL2, GLES2 en WebGPU uitvoeren.
 - Rectangle-, line- en polyline-regels.
 - Drawing area, drawing offset, clipping en negatieve coördinaten.
 - Texture window, texture-page en CLUT-randen.
