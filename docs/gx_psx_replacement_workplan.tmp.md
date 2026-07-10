@@ -98,6 +98,12 @@ Implemented or partially covered GX-GPU areas include:
   half-open bounds, and single-owner quad seams through mirrored raw-VRAM
   vectors. WebGL2, GLES2, and WebGPU apply the matching half-pixel conversion at
   their vertex-transform boundary; live accelerated conformance remains open.
+- Variable rectangles now truncate the coordinate produced by vertex plus E5
+  drawing offset back to signed 11-bit in TS/C++ software, WebGL2, GLES2, and
+  WebGPU. Mirrored raw-VRAM vectors cover inclusive drawing-area clipping,
+  negative vertices plus offsets, solid and textured rectangle clipping with UV
+  advance, line clipping, and rectangle coordinate wrap. WebGPU fills now also
+  bypass E6 mask state like the other backends and the PSX fill datapath.
 - WebGL2, GLES2, and TS/C++ software execution for the currently handled command
   kinds.
 - GX command logs can be retired after presentation without clearing backend
@@ -183,7 +189,21 @@ and ask before coding.
     raster positions without changing raw CPU vertex/bounds representation.
   - [ ] Run the same conformance vectors live against all accelerated backends.
 - [ ] Exact rectangle/line/polyline raster rules.
+  - [x] Truncate rectangle origins to signed 11-bit after applying the drawing
+    offset in every active backend.
+  - [ ] Replace accelerated line interpolation/coverage with the PSX fixed-point
+    DDA convention used by the software backends, including polyline segments.
 - [ ] Exact clipping, drawing offsets, drawing area, and negative coordinate cases.
+  - [x] Cover normal negative coordinates plus E5 offsets, inclusive E3/E4
+    clipping on every edge, and clipped textured-rectangle UV advance with
+    mirrored TS/C++ raw-VRAM vectors.
+  - [x] Keep fill commands outside E3/E4 and E6 drawing state in every backend.
+  - [ ] Implement raster-stage signed-11 wrapping for line and polygon output;
+    do not pre-truncate their vertices because +1024 can be a valid exclusive
+    edge and production PSX renderers wrap these primitives during rasterization.
+  - [ ] Decide the emulated PSX drawing-area Y hardware revision before changing
+    the current 512-row VRAM clamp for 10-bit E3/E4 Y words.
+  - [ ] Run the clipping/offset vectors live against accelerated backends.
 - [ ] Exact texture sampling/window/CLUT edge cases.
 - [ ] Exact mask bit, blend, dither, semi-transparency, and store behavior.
 - [ ] Readback-visible VRAM contents after every accelerated operation.

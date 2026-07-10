@@ -202,8 +202,8 @@ void executeDrawRectangle(const GxGpuCommandBuffer& commandBuffer, size_t comman
 	const u32 width = gxGpuCommandRectangleWidth(opcode, sizeWord);
 	const u32 height = gxGpuCommandRectangleHeight(opcode, sizeWord);
 	const u32 drawingOffsetWord = commandBuffer.commandDrawingOffsetWord[commandIndex];
-	const i32 x = gxGpuSigned11(drawingOffsetWord) + gxGpuSigned11(xyWord);
-	const i32 y = gxGpuDrawingOffsetY(drawingOffsetWord) + gxGpuVertexY(xyWord);
+	const i32 x = gxGpuSigned11(static_cast<u32>(gxGpuSigned11(drawingOffsetWord) + gxGpuSigned11(xyWord)));
+	const i32 y = gxGpuSigned11(static_cast<u32>(gxGpuDrawingOffsetY(drawingOffsetWord) + gxGpuVertexY(xyWord)));
 	if (gxGpuCommandDrawsTexture(opcode, drawModeWord)) {
 		drawGxGpuSoftwareTexturedRectangle(commandBuffer, commandIndex, x, y, width, height, colorWord, commandBuffer.words[wordStart + 2u]);
 		return;

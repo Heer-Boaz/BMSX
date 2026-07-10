@@ -1060,6 +1060,154 @@ void testSoftwareTriangleEdgesAndQuadSeams() {
 	require(bmsx::g_gxGpuSoftwareVram[bmsx::gxGpuSoftwareVramIndex(20, 24)] == 0u, "GX-GPU software quad excludes bottom edge");
 }
 
+void testSoftwareDrawingAreaOffsetClippingAndRectangleCoordinateWrap() {
+	bmsx::GxGpuCommandBuffer commandBuffer;
+	commandBuffer.reset();
+	pushSoftwareCommand(
+		commandBuffer,
+		std::array<uint32_t, 4>{
+			(bmsx::GX_GPU_GP0_POLYGON_FIRST << 24u) | 0x0000ffu,
+			0x07fe07feu,
+			0x07fe0006u,
+			0x000607feu,
+		},
+		4u,
+		bmsx::GX_GPU_COMMAND_DRAW_POLYGON,
+		bmsx::GX_GPU_GP0_POLYGON_FIRST,
+		0u,
+		0u,
+		12u | (12u << 10u),
+		15u | (15u << 10u),
+		12u | (12u << 11u));
+	pushSoftwareCommand(
+		commandBuffer,
+		std::array<uint32_t, 3>{
+			(bmsx::GX_GPU_GP0_RECTANGLE_FIRST << 24u) | 0x00ff00u,
+			(18u << 16u) | 18u,
+			(10u << 16u) | 10u,
+		},
+		3u,
+		bmsx::GX_GPU_COMMAND_DRAW_RECTANGLE,
+		bmsx::GX_GPU_GP0_RECTANGLE_FIRST,
+		0u,
+		0u,
+		20u | (20u << 10u),
+		25u | (25u << 10u));
+	pushSoftwareVramUpload(commandBuffer, (2u << 16u) | 66u, (1u << 16u) | 1u, 0x0000001fu);
+	pushSoftwareVramUpload(commandBuffer, (2u << 16u) | 71u, (1u << 16u) | 1u, 0x000003e0u);
+	pushSoftwareVramUpload(commandBuffer, (7u << 16u) | 66u, (1u << 16u) | 1u, 0x00007c00u);
+	pushSoftwareVramUpload(commandBuffer, (7u << 16u) | 71u, (1u << 16u) | 1u, 0x00007fffu);
+	constexpr uint8_t texturedRectangleOpcode = bmsx::GX_GPU_GP0_RECTANGLE_FIRST | bmsx::GX_GPU_GP0_RENDER_TEXTURE_BIT | 0x01u;
+	pushSoftwareCommand(
+		commandBuffer,
+		std::array<uint32_t, 4>{
+			(texturedRectangleOpcode << 24u) | 0x808080u,
+			(18u << 16u) | 28u,
+			0u,
+			(10u << 16u) | 10u,
+		},
+		4u,
+		bmsx::GX_GPU_COMMAND_DRAW_RECTANGLE,
+		texturedRectangleOpcode,
+		(bmsx::GX_GPU_TEXTURE_MODE_DIRECT16 << 7u) | 1u,
+		0u,
+		30u | (20u << 10u),
+		35u | (25u << 10u));
+	pushSoftwareCommand(
+		commandBuffer,
+		std::array<uint32_t, 3>{
+			(bmsx::GX_GPU_GP0_LINE_FIRST << 24u) | 0x0000ffu,
+			0x07fe07feu,
+			0x00080008u,
+		},
+		3u,
+		bmsx::GX_GPU_COMMAND_DRAW_LINE,
+		bmsx::GX_GPU_GP0_LINE_FIRST,
+		0u,
+		0u,
+		40u | (20u << 10u),
+		45u | (25u << 10u),
+		40u | (20u << 11u));
+	pushSoftwareCommand(
+		commandBuffer,
+		std::array<uint32_t, 3>{
+			(bmsx::GX_GPU_GP0_RECTANGLE_FIRST << 24u) | 0xffffffu,
+			0x04000400u,
+			(1u << 16u) | 1u,
+		},
+		3u,
+		bmsx::GX_GPU_COMMAND_DRAW_RECTANGLE,
+		bmsx::GX_GPU_GP0_RECTANGLE_FIRST,
+		0u,
+		0u,
+		0u,
+		GX_GPU_SOFTWARE_FULL_DRAWING_AREA_BOTTOM_RIGHT_WORD,
+		0x00200400u);
+
+	bmsx::g_gxGpuSoftwareVram.fill(0u);
+	bmsx::executeGxGpuSoftwareCommands(commandBuffer, 0u);
+
+	for (int32_t row = 0; row < 4; row += 1) {
+		for (int32_t column = 0; column < 4 - row; column += 1) {
+			require(bmsx::g_gxGpuSoftwareVram[bmsx::gxGpuSoftwareVramIndex(12 + column, 12 + row)] == 0x001fu, "GX-GPU software offset triangle inside drawing area");
+		}
+	}
+	require(bmsx::g_gxGpuSoftwareVram[bmsx::gxGpuSoftwareVramIndex(11, 12)] == 0u, "GX-GPU software drawing area clips triangle left");
+	require(bmsx::g_gxGpuSoftwareVram[bmsx::gxGpuSoftwareVramIndex(12, 11)] == 0u, "GX-GPU software drawing area clips triangle top");
+	require(bmsx::g_gxGpuSoftwareVram[bmsx::gxGpuSoftwareVramIndex(16, 12)] == 0u, "GX-GPU software drawing area clips triangle right");
+	require(bmsx::g_gxGpuSoftwareVram[bmsx::gxGpuSoftwareVramIndex(12, 16)] == 0u, "GX-GPU software drawing area clips triangle bottom");
+	for (int32_t y = 20; y <= 25; y += 1) {
+		for (int32_t x = 20; x <= 25; x += 1) {
+			require(bmsx::g_gxGpuSoftwareVram[bmsx::gxGpuSoftwareVramIndex(x, y)] == 0x03e0u, "GX-GPU software inclusive drawing area clips rectangle");
+		}
+	}
+	require(bmsx::g_gxGpuSoftwareVram[bmsx::gxGpuSoftwareVramIndex(19, 20)] == 0u, "GX-GPU software drawing area clips rectangle left");
+	require(bmsx::g_gxGpuSoftwareVram[bmsx::gxGpuSoftwareVramIndex(26, 25)] == 0u, "GX-GPU software drawing area clips rectangle right");
+	require(bmsx::g_gxGpuSoftwareVram[bmsx::gxGpuSoftwareVramIndex(20, 19)] == 0u, "GX-GPU software drawing area clips rectangle top");
+	require(bmsx::g_gxGpuSoftwareVram[bmsx::gxGpuSoftwareVramIndex(25, 26)] == 0u, "GX-GPU software drawing area clips rectangle bottom");
+	require(bmsx::g_gxGpuSoftwareVram[bmsx::gxGpuSoftwareVramIndex(30, 20)] == 0x001fu, "GX-GPU software clipped textured rectangle advances UV top-left");
+	require(bmsx::g_gxGpuSoftwareVram[bmsx::gxGpuSoftwareVramIndex(35, 20)] == 0x03e0u, "GX-GPU software clipped textured rectangle advances UV top-right");
+	require(bmsx::g_gxGpuSoftwareVram[bmsx::gxGpuSoftwareVramIndex(30, 25)] == 0x7c00u, "GX-GPU software clipped textured rectangle advances UV bottom-left");
+	require(bmsx::g_gxGpuSoftwareVram[bmsx::gxGpuSoftwareVramIndex(35, 25)] == 0x7fffu, "GX-GPU software clipped textured rectangle advances UV bottom-right");
+	for (int32_t coord = 0; coord < 6; coord += 1) {
+		require(bmsx::g_gxGpuSoftwareVram[bmsx::gxGpuSoftwareVramIndex(40 + coord, 20 + coord)] == 0x001fu, "GX-GPU software offset line inside drawing area");
+	}
+	require(bmsx::g_gxGpuSoftwareVram[bmsx::gxGpuSoftwareVramIndex(39, 19)] == 0u, "GX-GPU software drawing area clips line start");
+	require(bmsx::g_gxGpuSoftwareVram[bmsx::gxGpuSoftwareVramIndex(46, 26)] == 0u, "GX-GPU software drawing area clips line end");
+	require(bmsx::g_gxGpuSoftwareVram[bmsx::gxGpuSoftwareVramIndex(0, 0)] == 0x7fffu, "GX-GPU software rectangle wraps post-offset coordinates to signed 11-bit");
+}
+
+void testSoftwareFillBypassesDrawingAreaAndMaskBitDrawingState() {
+	bmsx::GxGpuCommandBuffer commandBuffer;
+	commandBuffer.reset();
+	pushSoftwareVramUpload(commandBuffer, (30u << 16u) | 80u, (1u << 16u) | 1u, 0x0000801fu);
+	pushSoftwareCommand(
+		commandBuffer,
+		std::array<uint32_t, 3>{
+			(bmsx::GX_GPU_GP0_FILL_RECTANGLE << 24u) | 0x00ff00u,
+			(30u << 16u) | 80u,
+			(1u << 16u) | 1u,
+		},
+		3u,
+		bmsx::GX_GPU_COMMAND_FILL_RECTANGLE,
+		bmsx::GX_GPU_GP0_FILL_RECTANGLE,
+		0u,
+		0u,
+		0u,
+		0u,
+		0u,
+		3u);
+
+	bmsx::g_gxGpuSoftwareVram.fill(0u);
+	bmsx::executeGxGpuSoftwareCommands(commandBuffer, 0u);
+
+	for (int32_t x = 80; x < 96; x += 1) {
+		require(bmsx::g_gxGpuSoftwareVram[bmsx::gxGpuSoftwareVramIndex(x, 30)] == 0x03e0u, "GX-GPU software fill ignores drawing-area and mask-bit state");
+	}
+	require(bmsx::g_gxGpuSoftwareVram[bmsx::gxGpuSoftwareVramIndex(79, 30)] == 0u, "GX-GPU software fill starts at aligned X");
+	require(bmsx::g_gxGpuSoftwareVram[bmsx::gxGpuSoftwareVramIndex(96, 30)] == 0u, "GX-GPU software fill ends at rounded width");
+}
+
 void testSoftwareScanoutConsumesTransfersAndFill() {
 	bmsx::GxGpuCommandBuffer commandBuffer;
 	commandBuffer.reset();
@@ -1628,6 +1776,8 @@ int main() {
 	testSoftwareGouraudLineFixedPointRaster();
 	testSoftwareBlendsUntexturedSemiTransparentRectangles();
 	testSoftwareTriangleEdgesAndQuadSeams();
+	testSoftwareDrawingAreaOffsetClippingAndRectangleCoordinateWrap();
+	testSoftwareFillBypassesDrawingAreaAndMaskBitDrawingState();
 	testSoftwareScanoutConsumesTransfersAndFill();
 	testSoftwareBackendRetiresCommandLogWithoutClearingVram();
 	testCommandBufferRestorePublishesWithoutClearingVramRevision();

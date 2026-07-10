@@ -690,8 +690,8 @@ function readGxGpuRectangle(commandBuffer: GxGpuCommandBufferView, commandIndex:
 	const width = gxGpuCommandRectangleWidth(opcode, sizeWord);
 	const height = gxGpuCommandRectangleHeight(opcode, sizeWord);
 	const drawingOffsetWord = commandBuffer.commandDrawingOffsetWord[commandIndex];
-	const x0 = gxGpuSigned11(drawingOffsetWord) + gxGpuSigned11(xyWord);
-	const y0 = gxGpuDrawingOffsetY(drawingOffsetWord) + gxGpuVertexY(xyWord);
+	const x0 = gxGpuSigned11(gxGpuSigned11(drawingOffsetWord) + gxGpuSigned11(xyWord));
+	const y0 = gxGpuSigned11(gxGpuDrawingOffsetY(drawingOffsetWord) + gxGpuVertexY(xyWord));
 	const rect = gxGpuRectangleScratch;
 	rect.x0 = x0;
 	rect.y0 = y0;

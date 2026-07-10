@@ -93,11 +93,25 @@ right/bottom exclusion en een semitransparante quadseam die exact eenmaal
 blendt. Live accelerated conformance blijft uitgesteld tot de expliciete
 browsersessie en houdt dit onderdeel open.
 
+De normale drawing-area/offset-datapath is nu eveneens gespiegeld: raw negatieve
+vertices krijgen eerst E5, E3/E4 blijft inclusief aan de GPU-kant en wordt pas
+bij raster/scissor naar half-open grenzen vertaald. Solid en textured rectangles
+clippen op alle vier randen zonder UV te herbaseren. Rectangle/sprite origins
+worden na `vertex + offset` opnieuw als signed 11-bit geïnterpreteerd in TS/C++
+software, WebGL2, GLES2 en WebGPU. Fill blijft buiten drawing-area en E6-maskstate;
+de WebGPU-afwijking daarin is verwijderd. Mirrored raw-VRAM vectors dekken deze
+contracten; live accelerated bewijs blijft uitgesteld.
+
 Nog te sluiten:
 
 - Dezelfde triangle/quad vectors live tegen WebGL2, GLES2 en WebGPU uitvoeren.
-- Rectangle-, line- en polyline-regels.
-- Drawing area, drawing offset, clipping en negatieve coördinaten.
+- Resterende rectangle-, line- en polyline-regels, met name accelerated
+  PSX-DDA-linecoverage en polyline-segmenten.
+- Raster-stage signed-11 wrapping voor lines en polygons na drawing offset;
+  vertices vooraf trunceren is niet equivalent aan het hardwaregedrag.
+- Een expliciete PSX-hardwareversiekeuze voor 10-bit drawing-area-Y tegenover
+  de huidige 512 VRAM-rijen.
+- De drawing-area/offset/clipping-vectors live tegen WebGL2, GLES2 en WebGPU.
 - Texture window, texture-page en CLUT-randen.
 - Mask-bit, blend, dither, semi-transparency en storegedrag.
 - Readback-zichtbare VRAM-inhoud na accelerated draws, fills en copies.

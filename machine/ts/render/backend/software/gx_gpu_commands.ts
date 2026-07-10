@@ -242,8 +242,8 @@ function executeDrawRectangle(commandBuffer: GxGpuCommandBufferView, commandInde
 	const width = gxGpuCommandRectangleWidth(opcode, sizeWord);
 	const height = gxGpuCommandRectangleHeight(opcode, sizeWord);
 	const drawingOffsetWord = commandBuffer.commandDrawingOffsetWord[commandIndex];
-	const x = gxGpuSigned11(drawingOffsetWord) + gxGpuSigned11(xyWord);
-	const y = gxGpuDrawingOffsetY(drawingOffsetWord) + gxGpuVertexY(xyWord);
+	const x = gxGpuSigned11(gxGpuSigned11(drawingOffsetWord) + gxGpuSigned11(xyWord));
+	const y = gxGpuSigned11(gxGpuDrawingOffsetY(drawingOffsetWord) + gxGpuVertexY(xyWord));
 	if (gxGpuCommandDrawsTexture(opcode, drawModeWord)) {
 		drawGxGpuSoftwareTexturedRectangle(commandBuffer, commandIndex, x, y, width, height, colorWord, commandBuffer.words[wordStart + 2]);
 		return;

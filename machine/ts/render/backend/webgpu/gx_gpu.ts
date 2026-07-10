@@ -557,8 +557,8 @@ function readGxGpuRectangle(commandBuffer: GxGpuCommandBufferView, commandIndex:
 	const width = gxGpuCommandRectangleWidth(opcode, sizeWord);
 	const height = gxGpuCommandRectangleHeight(opcode, sizeWord);
 	const drawingOffsetWord = commandBuffer.commandDrawingOffsetWord[commandIndex];
-	const x0 = gxGpuSigned11(drawingOffsetWord) + gxGpuSigned11(xyWord);
-	const y0 = gxGpuDrawingOffsetY(drawingOffsetWord) + gxGpuVertexY(xyWord);
+	const x0 = gxGpuSigned11(gxGpuSigned11(drawingOffsetWord) + gxGpuSigned11(xyWord));
+	const y0 = gxGpuSigned11(gxGpuDrawingOffsetY(drawingOffsetWord) + gxGpuVertexY(xyWord));
 	const rect = gxGpuRectangleScratch;
 	rect.x0 = x0;
 	rect.y0 = y0;
@@ -1301,7 +1301,7 @@ function renderSolidCommand(commandBuffer: GxGpuCommandBufferView, commandIndex:
 	if (vertexFloatCount === 0) return;
 	const opcode = commandBuffer.commandOpcode[commandIndex];
 	const drawModeWord = commandBuffer.commandDrawModeWord[commandIndex];
-	const maskBitModeWord = commandBuffer.commandMaskBitModeWord[commandIndex];
+	const maskBitModeWord = commandBuffer.commandKind[commandIndex] === GX_GPU_COMMAND_FILL_RECTANGLE ? 0 : commandBuffer.commandMaskBitModeWord[commandIndex];
 	const blendEnabled = commandBuffer.commandKind[commandIndex] !== GX_GPU_COMMAND_FILL_RECTANGLE && gxGpuCommandSemiTransparencyEnabled(opcode);
 	const blendMode = blendEnabled ? gxGpuDrawModeTransparencyMode(drawModeWord) : 0;
 	const ditherEnabled = commandBuffer.commandKind[commandIndex] === GX_GPU_COMMAND_DRAW_POLYGON && gxGpuDitheredPolygon(drawModeWord, opcode);
