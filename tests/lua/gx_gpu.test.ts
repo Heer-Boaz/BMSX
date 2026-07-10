@@ -1021,6 +1021,86 @@ test('GX-GPU software backend rasterizes Gouraud lines with PSX fixed-point step
 	assert.equal(gxGpuSoftwareVram[gxGpuSoftwareVramIndex(40, 14)], 0x03e0);
 });
 
+test('GX-GPU software backend owns PSX line DDA, sample wrap, and polyline joints', () => {
+	const commandBuffer = new GxGpuCommandBuffer();
+	commandBuffer.reset();
+	pushSoftwareCommand(commandBuffer, new Uint32Array([
+		((GX_GPU_GP0_LINE_FIRST << 24) | 0x0000ff) >>> 0,
+		(10 << 16) | 10,
+		(12 << 16) | 14,
+	]), GX_GPU_COMMAND_DRAW_LINE, GX_GPU_GP0_LINE_FIRST);
+	pushSoftwareCommand(commandBuffer, new Uint32Array([
+		((GX_GPU_GP0_LINE_FIRST << 24) | 0x00ff00) >>> 0,
+		(10 << 16) | 20,
+		(14 << 16) | 22,
+	]), GX_GPU_COMMAND_DRAW_LINE, GX_GPU_GP0_LINE_FIRST);
+	pushSoftwareCommand(commandBuffer, new Uint32Array([
+		((GX_GPU_GP0_LINE_FIRST << 24) | 0x00ffff) >>> 0,
+		0x001d000c,
+		0x00200004,
+	]), GX_GPU_COMMAND_DRAW_LINE, GX_GPU_GP0_LINE_FIRST);
+	pushSoftwareCommand(commandBuffer, new Uint32Array([
+		((GX_GPU_GP0_LINE_FIRST << 24) | 0x0000ff) >>> 0,
+		0xfc00fc00,
+		0xfc02fc02,
+	]), GX_GPU_COMMAND_DRAW_LINE, GX_GPU_GP0_LINE_FIRST, 0, 0, 0, GX_GPU_SOFTWARE_FULL_DRAWING_AREA_BOTTOM_RIGHT_WORD, 0x002fffff);
+	const semiTransparentPolylineOpcode = GX_GPU_GP0_LINE_FIRST | GX_GPU_GP0_RENDER_QUAD_OR_POLYLINE_BIT | 0x02;
+	pushSoftwareCommand(commandBuffer, new Uint32Array([
+		((semiTransparentPolylineOpcode << 24) | 0x0000f8) >>> 0,
+		(40 << 16) | 40,
+		(40 << 16) | 42,
+		(42 << 16) | 42,
+	]), GX_GPU_COMMAND_DRAW_POLYLINE, semiTransparentPolylineOpcode);
+	const polylineOpcode = GX_GPU_GP0_LINE_FIRST | GX_GPU_GP0_RENDER_QUAD_OR_POLYLINE_BIT;
+	pushSoftwareCommand(commandBuffer, new Uint32Array([
+		((polylineOpcode << 24) | 0xff0000) >>> 0,
+		0x0046ffff,
+		0x004603ff,
+		0x004a03fb,
+	]), GX_GPU_COMMAND_DRAW_POLYLINE, polylineOpcode);
+	pushSoftwareCommand(commandBuffer, new Uint32Array([
+		((polylineOpcode << 24) | 0x00ff00) >>> 0,
+		0xffff0032,
+		0x01ff0032,
+		0x01fb0036,
+	]), GX_GPU_COMMAND_DRAW_POLYLINE, polylineOpcode);
+
+	gxGpuSoftwareVram.fill(0);
+	executeGxGpuSoftwareCommands(commandBuffer, 0);
+
+	for (const [x, y] of [[10, 10], [11, 11], [12, 11], [13, 12], [14, 12]]) {
+		assert.equal(gxGpuSoftwareVram[gxGpuSoftwareVramIndex(x, y)], 0x001f);
+	}
+	assert.equal(gxGpuSoftwareVram[gxGpuSoftwareVramIndex(11, 10)], 0);
+	assert.equal(gxGpuSoftwareVram[gxGpuSoftwareVramIndex(12, 12)], 0);
+	for (const [x, y] of [[20, 10], [20, 11], [21, 12], [21, 13], [22, 14]]) {
+		assert.equal(gxGpuSoftwareVram[gxGpuSoftwareVramIndex(x, y)], 0x03e0);
+	}
+	assert.equal(gxGpuSoftwareVram[gxGpuSoftwareVramIndex(21, 11)], 0);
+	assert.equal(gxGpuSoftwareVram[gxGpuSoftwareVramIndex(22, 13)], 0);
+	for (const [x, y] of [[11, 29], [12, 29], [8, 30], [9, 30], [10, 30], [6, 31], [7, 31], [4, 32], [5, 32]]) {
+		assert.equal(gxGpuSoftwareVram[gxGpuSoftwareVramIndex(x, y)], 0x03ff);
+	}
+	assert.equal(gxGpuSoftwareVram[gxGpuSoftwareVramIndex(4, 31)], 0);
+	assert.equal(gxGpuSoftwareVram[gxGpuSoftwareVramIndex(12, 30)], 0);
+	assert.equal(gxGpuSoftwareVram[gxGpuSoftwareVramIndex(1023, 511)], 0x001f);
+	assert.equal(gxGpuSoftwareVram[gxGpuSoftwareVramIndex(40, 40)], 0x000f);
+	assert.equal(gxGpuSoftwareVram[gxGpuSoftwareVramIndex(41, 40)], 0x000f);
+	assert.equal(gxGpuSoftwareVram[gxGpuSoftwareVramIndex(42, 40)], 0x0017);
+	assert.equal(gxGpuSoftwareVram[gxGpuSoftwareVramIndex(42, 41)], 0x000f);
+	assert.equal(gxGpuSoftwareVram[gxGpuSoftwareVramIndex(42, 42)], 0x000f);
+	for (let step = 0; step < 5; step += 1) {
+		assert.equal(gxGpuSoftwareVram[gxGpuSoftwareVramIndex(1023 - step, 70 + step)], 0x7c00);
+	}
+	assert.equal(gxGpuSoftwareVram[gxGpuSoftwareVramIndex(0, 70)], 0);
+	assert.equal(gxGpuSoftwareVram[gxGpuSoftwareVramIndex(512, 70)], 0);
+	for (let step = 0; step < 5; step += 1) {
+		assert.equal(gxGpuSoftwareVram[gxGpuSoftwareVramIndex(50 + step, 511 - step)], 0x03e0);
+	}
+	assert.equal(gxGpuSoftwareVram[gxGpuSoftwareVramIndex(50, 0)], 0);
+	assert.equal(gxGpuSoftwareVram[gxGpuSoftwareVramIndex(50, 256)], 0);
+});
+
 test('GX-GPU software backend blends untextured semi-transparent rectangles with all PSX draw modes', () => {
 	const commandBuffer = new GxGpuCommandBuffer();
 	commandBuffer.reset();

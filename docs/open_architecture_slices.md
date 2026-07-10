@@ -102,13 +102,25 @@ software, WebGL2, GLES2 en WebGPU. Fill blijft buiten drawing-area en E6-masksta
 de WebGPU-afwijking daarin is verwijderd. Mirrored raw-VRAM vectors dekken deze
 contracten; live accelerated bewijs blijft uitgesteld.
 
+Lines en polylines volgen nu in alle backendowners dezelfde DDA-conventie.
+TS/C++ software wrapt iedere emitted sample pas na de 32.32-stap naar signed
+11-bit. WebGL2, GLES2 en WebGPU evalueren de equivalente gehele DDA in de
+fragmentshader en rasteren alleen een conservatieve drie pixels brede GPU-strip;
+de host emit geen lijnpixels. Fixed-12 Gouraud, beide endpoints, size rejection
+per segment en dubbele polyline-joints zijn gespiegeld. WebGPU splitst
+overlappende read-VRAM-segmentbatches zodat het tweede jointfragment de eerste
+write ziet. Mirrored softwarevectors bewijzen de oracle; accelerated live bewijs
+blijft uitgesteld.
+
 Nog te sluiten:
 
 - Dezelfde triangle/quad vectors live tegen WebGL2, GLES2 en WebGPU uitvoeren.
-- Resterende rectangle-, line- en polyline-regels, met name accelerated
-  PSX-DDA-linecoverage en polyline-segmenten.
-- Raster-stage signed-11 wrapping voor lines en polygons na drawing offset;
-  vertices vooraf trunceren is niet equivalent aan het hardwaregedrag.
+- Live accelerated line/polyline-DDA, wrap, Gouraud en double-joint conformance.
+- De verticale Gouraud-tie waar DuckStation `x0 >= x1` en Mednafen `x0 > x1`
+  gebruikt tegen hardware beslissen; alle BMSX-backends volgen nu bewust de
+  bestaande DuckStation/softwareconventie.
+- Raster-stage signed-11 wrapping voor polygons na drawing offset; vertices
+  vooraf trunceren is niet equivalent aan het hardwaregedrag.
 - Een expliciete PSX-hardwareversiekeuze voor 10-bit drawing-area-Y tegenover
   de huidige 512 VRAM-rijen.
 - De drawing-area/offset/clipping-vectors live tegen WebGL2, GLES2 en WebGPU.

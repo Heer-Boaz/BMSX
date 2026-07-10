@@ -20,6 +20,7 @@ import {
 	type GxGpuCommandBufferView,
 } from '../../../machine/devices/gx/gpu_command_buffer';
 import {
+	GX_GPU_VERTEX_COORD_PERIOD,
 	gxGpuCommandDrawsTexture,
 	gxGpuCommandGouraud,
 	gxGpuCommandQuadPolygon,
@@ -746,19 +747,51 @@ function appendLineSegment(vertexFloatCount: number, x0: number, y0: number, col
 	if (gxGpuSegmentExceedsPrimitiveSize(x0, y0, x1, y1)) {
 		return vertexFloatCount;
 	}
-	const left = x0 < x1 ? x0 : x1;
-	const right = x0 > x1 ? x0 : x1;
-	const top = y0 < y1 ? y0 : y1;
-	const bottom = y0 > y1 ? y0 : y1;
-	const x2 = right + 1;
-	const y2 = bottom + 1;
+	const absDx = x0 < x1 ? x1 - x0 : x0 - x1;
+	const absDy = y0 < y1 ? y1 - y0 : y0 - y1;
+	const steps = absDx >= absDy ? absDx : absDy;
+	if (x0 >= x1 && steps > 0) {
+		const swapX = x0;
+		const swapY = y0;
+		const swapColor = color0;
+		x0 = x1;
+		y0 = y1;
+		color0 = color1;
+		x1 = swapX;
+		y1 = swapY;
+		color1 = swapColor;
+	}
+	const xShift = (x0 < x1 ? x0 : x1) < -(GX_GPU_VERTEX_COORD_PERIOD >> 1) ? GX_GPU_VERTEX_COORD_PERIOD : 0;
+	const yShift = (y0 < y1 ? y0 : y1) < -(GX_GPU_VERTEX_COORD_PERIOD >> 1) ? GX_GPU_VERTEX_COORD_PERIOD : 0;
+	x0 += xShift;
+	y0 += yShift;
+	x1 += xShift;
+	y1 += yShift;
 	let offset = vertexFloatCount;
-	offset = writeLineVertex(offset, left, top, x0, y0, x1, y1, color0, color1);
-	offset = writeLineVertex(offset, left, y2, x0, y0, x1, y1, color0, color1);
-	offset = writeLineVertex(offset, x2, top, x0, y0, x1, y1, color0, color1);
-	offset = writeLineVertex(offset, left, y2, x0, y0, x1, y1, color0, color1);
-	offset = writeLineVertex(offset, x2, top, x0, y0, x1, y1, color0, color1);
-	offset = writeLineVertex(offset, x2, y2, x0, y0, x1, y1, color0, color1);
+	if (absDx >= absDy) {
+		offset = writeLineVertex(offset, x0, y0 - 1, x0, y0, x1, y1, color0, color1);
+		offset = writeLineVertex(offset, x0, y0 + 2, x0, y0, x1, y1, color0, color1);
+		offset = writeLineVertex(offset, x1 + 1, y1 - 1, x0, y0, x1, y1, color0, color1);
+		offset = writeLineVertex(offset, x0, y0 + 2, x0, y0, x1, y1, color0, color1);
+		offset = writeLineVertex(offset, x1 + 1, y1 - 1, x0, y0, x1, y1, color0, color1);
+		offset = writeLineVertex(offset, x1 + 1, y1 + 2, x0, y0, x1, y1, color0, color1);
+		return offset;
+	}
+	if (y0 < y1) {
+		offset = writeLineVertex(offset, x0 - 1, y0, x0, y0, x1, y1, color0, color1);
+		offset = writeLineVertex(offset, x1 - 1, y1 + 1, x0, y0, x1, y1, color0, color1);
+		offset = writeLineVertex(offset, x0 + 2, y0, x0, y0, x1, y1, color0, color1);
+		offset = writeLineVertex(offset, x1 - 1, y1 + 1, x0, y0, x1, y1, color0, color1);
+		offset = writeLineVertex(offset, x0 + 2, y0, x0, y0, x1, y1, color0, color1);
+		offset = writeLineVertex(offset, x1 + 2, y1 + 1, x0, y0, x1, y1, color0, color1);
+		return offset;
+	}
+	offset = writeLineVertex(offset, x1 - 1, y1, x0, y0, x1, y1, color0, color1);
+	offset = writeLineVertex(offset, x0 - 1, y0 + 1, x0, y0, x1, y1, color0, color1);
+	offset = writeLineVertex(offset, x1 + 2, y1, x0, y0, x1, y1, color0, color1);
+	offset = writeLineVertex(offset, x0 - 1, y0 + 1, x0, y0, x1, y1, color0, color1);
+	offset = writeLineVertex(offset, x1 + 2, y1, x0, y0, x1, y1, color0, color1);
+	offset = writeLineVertex(offset, x0 + 2, y0 + 1, x0, y0, x1, y1, color0, color1);
 	return offset;
 }
 

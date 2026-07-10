@@ -589,25 +589,55 @@ size_t appendLineSegment(size_t vertexFloatCount, i32 x0, i32 y0, u32 color0, i3
 	if (gxGpuSegmentExceedsPrimitiveSize(x0, y0, x1, y1)) {
 		return vertexFloatCount;
 	}
-	const i32 left = x0 < x1 ? x0 : x1;
-	const i32 right = x0 > x1 ? x0 : x1;
-	const i32 top = y0 < y1 ? y0 : y1;
-	const i32 bottom = y0 > y1 ? y0 : y1;
-	const f32 leftFloat = static_cast<f32>(left);
-	const f32 topFloat = static_cast<f32>(top);
-	const f32 rightFloat = static_cast<f32>(right + 1);
-	const f32 bottomFloat = static_cast<f32>(bottom + 1);
+	const i32 absDx = x0 < x1 ? x1 - x0 : x0 - x1;
+	const i32 absDy = y0 < y1 ? y1 - y0 : y0 - y1;
+	const i32 steps = absDx >= absDy ? absDx : absDy;
+	if (x0 >= x1 && steps > 0) {
+		const i32 swapX = x0;
+		const i32 swapY = y0;
+		const u32 swapColor = color0;
+		x0 = x1;
+		y0 = y1;
+		color0 = color1;
+		x1 = swapX;
+		y1 = swapY;
+		color1 = swapColor;
+	}
+	const i32 xShift = (x0 < x1 ? x0 : x1) < -(GX_GPU_VERTEX_COORD_PERIOD >> 1) ? GX_GPU_VERTEX_COORD_PERIOD : 0;
+	const i32 yShift = (y0 < y1 ? y0 : y1) < -(GX_GPU_VERTEX_COORD_PERIOD >> 1) ? GX_GPU_VERTEX_COORD_PERIOD : 0;
+	x0 += xShift;
+	y0 += yShift;
+	x1 += xShift;
+	y1 += yShift;
 	const f32 x0Float = static_cast<f32>(x0);
 	const f32 y0Float = static_cast<f32>(y0);
 	const f32 x1Float = static_cast<f32>(x1);
 	const f32 y1Float = static_cast<f32>(y1);
 	size_t offset = vertexFloatCount;
-	offset = writeLineVertex(offset, leftFloat, topFloat, x0Float, y0Float, x1Float, y1Float, color0, color1);
-	offset = writeLineVertex(offset, leftFloat, bottomFloat, x0Float, y0Float, x1Float, y1Float, color0, color1);
-	offset = writeLineVertex(offset, rightFloat, topFloat, x0Float, y0Float, x1Float, y1Float, color0, color1);
-	offset = writeLineVertex(offset, leftFloat, bottomFloat, x0Float, y0Float, x1Float, y1Float, color0, color1);
-	offset = writeLineVertex(offset, rightFloat, topFloat, x0Float, y0Float, x1Float, y1Float, color0, color1);
-	offset = writeLineVertex(offset, rightFloat, bottomFloat, x0Float, y0Float, x1Float, y1Float, color0, color1);
+	if (absDx >= absDy) {
+		offset = writeLineVertex(offset, x0Float, y0Float - 1.0f, x0Float, y0Float, x1Float, y1Float, color0, color1);
+		offset = writeLineVertex(offset, x0Float, y0Float + 2.0f, x0Float, y0Float, x1Float, y1Float, color0, color1);
+		offset = writeLineVertex(offset, x1Float + 1.0f, y1Float - 1.0f, x0Float, y0Float, x1Float, y1Float, color0, color1);
+		offset = writeLineVertex(offset, x0Float, y0Float + 2.0f, x0Float, y0Float, x1Float, y1Float, color0, color1);
+		offset = writeLineVertex(offset, x1Float + 1.0f, y1Float - 1.0f, x0Float, y0Float, x1Float, y1Float, color0, color1);
+		offset = writeLineVertex(offset, x1Float + 1.0f, y1Float + 2.0f, x0Float, y0Float, x1Float, y1Float, color0, color1);
+		return offset;
+	}
+	if (y0 < y1) {
+		offset = writeLineVertex(offset, x0Float - 1.0f, y0Float, x0Float, y0Float, x1Float, y1Float, color0, color1);
+		offset = writeLineVertex(offset, x1Float - 1.0f, y1Float + 1.0f, x0Float, y0Float, x1Float, y1Float, color0, color1);
+		offset = writeLineVertex(offset, x0Float + 2.0f, y0Float, x0Float, y0Float, x1Float, y1Float, color0, color1);
+		offset = writeLineVertex(offset, x1Float - 1.0f, y1Float + 1.0f, x0Float, y0Float, x1Float, y1Float, color0, color1);
+		offset = writeLineVertex(offset, x0Float + 2.0f, y0Float, x0Float, y0Float, x1Float, y1Float, color0, color1);
+		offset = writeLineVertex(offset, x1Float + 2.0f, y1Float + 1.0f, x0Float, y0Float, x1Float, y1Float, color0, color1);
+		return offset;
+	}
+	offset = writeLineVertex(offset, x1Float - 1.0f, y1Float, x0Float, y0Float, x1Float, y1Float, color0, color1);
+	offset = writeLineVertex(offset, x0Float - 1.0f, y0Float + 1.0f, x0Float, y0Float, x1Float, y1Float, color0, color1);
+	offset = writeLineVertex(offset, x1Float + 2.0f, y1Float, x0Float, y0Float, x1Float, y1Float, color0, color1);
+	offset = writeLineVertex(offset, x0Float - 1.0f, y0Float + 1.0f, x0Float, y0Float, x1Float, y1Float, color0, color1);
+	offset = writeLineVertex(offset, x1Float + 2.0f, y1Float, x0Float, y0Float, x1Float, y1Float, color0, color1);
+	offset = writeLineVertex(offset, x0Float + 2.0f, y0Float + 1.0f, x0Float, y0Float, x1Float, y1Float, color0, color1);
 	return offset;
 }
 

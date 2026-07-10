@@ -104,6 +104,14 @@ Implemented or partially covered GX-GPU areas include:
   negative vertices plus offsets, solid and textured rectangle clipping with UV
   advance, line clipping, and rectangle coordinate wrap. WebGPU fills now also
   bypass E6 mask state like the other backends and the PSX fill datapath.
+- TS/C++ software lines now wrap every emitted DDA sample to signed 11-bit.
+  WebGL2, GLES2, and WebGPU use the same endpoint/color ordering, rational form
+  of the PSX fixed-point DDA, inclusive endpoints, fixed-12 Gouraud steps, and a
+  conservative three-pixel GPU strip instead of geometric round-nearest
+  coverage or a full bounding-box fragment walk. Their host geometry translates
+  the one visible signed-11 bucket without CPU pixel emission. WebGPU also
+  flushes overlapping read-VRAM polyline batches so a shared endpoint observes
+  the preceding segment's write.
 - WebGL2, GLES2, and TS/C++ software execution for the currently handled command
   kinds.
 - GX command logs can be retired after presentation without clearing backend
@@ -191,16 +199,25 @@ and ask before coding.
 - [ ] Exact rectangle/line/polyline raster rules.
   - [x] Truncate rectangle origins to signed 11-bit after applying the drawing
     offset in every active backend.
-  - [ ] Replace accelerated line interpolation/coverage with the PSX fixed-point
-    DDA convention used by the software backends, including polyline segments.
+  - [x] Replace accelerated geometric line interpolation with the same
+    fixed-point DDA coverage and Gouraud convention as TS/C++ software, including
+    inclusive polyline joints and ordered read-VRAM writes.
+  - [x] Wrap each software line sample to signed 11-bit and translate the matching
+    visible coordinate bucket in every accelerated backend without CPU
+    pixel-rasterization.
+  - [ ] Run the line/polyline DDA, Gouraud, wrap, reject, and double-joint vectors
+    live against WebGL2, GLES2, and WebGPU.
+  - [ ] Resolve the DuckStation/Mednafen `x0 >= x1` versus `x0 > x1` vertical
+    Gouraud tie against hardware; all BMSX backends deliberately follow the
+    current DuckStation/software convention until then.
 - [ ] Exact clipping, drawing offsets, drawing area, and negative coordinate cases.
   - [x] Cover normal negative coordinates plus E5 offsets, inclusive E3/E4
     clipping on every edge, and clipped textured-rectangle UV advance with
     mirrored TS/C++ raw-VRAM vectors.
   - [x] Keep fill commands outside E3/E4 and E6 drawing state in every backend.
-  - [ ] Implement raster-stage signed-11 wrapping for line and polygon output;
-    do not pre-truncate their vertices because +1024 can be a valid exclusive
-    edge and production PSX renderers wrap these primitives during rasterization.
+  - [ ] Implement raster-stage signed-11 wrapping for polygon output; do not
+    pre-truncate its vertices because +1024 can be a valid exclusive edge and
+    production PSX renderers wrap polygons during rasterization.
   - [ ] Decide the emulated PSX drawing-area Y hardware revision before changing
     the current 512-row VRAM clamp for 10-bit E3/E4 Y words.
   - [ ] Run the clipping/offset vectors live against accelerated backends.

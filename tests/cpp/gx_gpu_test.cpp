@@ -948,6 +948,129 @@ void testSoftwareGouraudLineFixedPointRaster() {
 	require(bmsx::g_gxGpuSoftwareVram[bmsx::gxGpuSoftwareVramIndex(40, 14)] == 0x03e0u, "GX-GPU software line fixed-point green endpoint");
 }
 
+void testSoftwareLineDdaSampleWrapAndPolylineJoints() {
+	bmsx::GxGpuCommandBuffer commandBuffer;
+	commandBuffer.reset();
+	pushSoftwareCommand(
+		commandBuffer,
+		std::array<uint32_t, 3>{
+			(bmsx::GX_GPU_GP0_LINE_FIRST << 24u) | 0x0000ffu,
+			(10u << 16u) | 10u,
+			(12u << 16u) | 14u,
+		},
+		3u,
+		bmsx::GX_GPU_COMMAND_DRAW_LINE,
+		bmsx::GX_GPU_GP0_LINE_FIRST);
+	pushSoftwareCommand(
+		commandBuffer,
+		std::array<uint32_t, 3>{
+			(bmsx::GX_GPU_GP0_LINE_FIRST << 24u) | 0x00ff00u,
+			(10u << 16u) | 20u,
+			(14u << 16u) | 22u,
+		},
+		3u,
+		bmsx::GX_GPU_COMMAND_DRAW_LINE,
+		bmsx::GX_GPU_GP0_LINE_FIRST);
+	pushSoftwareCommand(
+		commandBuffer,
+		std::array<uint32_t, 3>{
+			(bmsx::GX_GPU_GP0_LINE_FIRST << 24u) | 0x00ffffu,
+			0x001d000cu,
+			0x00200004u,
+		},
+		3u,
+		bmsx::GX_GPU_COMMAND_DRAW_LINE,
+		bmsx::GX_GPU_GP0_LINE_FIRST);
+	pushSoftwareCommand(
+		commandBuffer,
+		std::array<uint32_t, 3>{
+			(bmsx::GX_GPU_GP0_LINE_FIRST << 24u) | 0x0000ffu,
+			0xfc00fc00u,
+			0xfc02fc02u,
+		},
+		3u,
+		bmsx::GX_GPU_COMMAND_DRAW_LINE,
+		bmsx::GX_GPU_GP0_LINE_FIRST,
+		0u,
+		0u,
+		0u,
+		GX_GPU_SOFTWARE_FULL_DRAWING_AREA_BOTTOM_RIGHT_WORD,
+		0x002fffffu);
+	constexpr uint8_t semiTransparentPolylineOpcode = bmsx::GX_GPU_GP0_LINE_FIRST | bmsx::GX_GPU_GP0_RENDER_QUAD_OR_POLYLINE_BIT | 0x02u;
+	pushSoftwareCommand(
+		commandBuffer,
+		std::array<uint32_t, 4>{
+			(semiTransparentPolylineOpcode << 24u) | 0x0000f8u,
+			(40u << 16u) | 40u,
+			(40u << 16u) | 42u,
+			(42u << 16u) | 42u,
+		},
+		4u,
+		bmsx::GX_GPU_COMMAND_DRAW_POLYLINE,
+		semiTransparentPolylineOpcode);
+	constexpr uint8_t polylineOpcode = bmsx::GX_GPU_GP0_LINE_FIRST | bmsx::GX_GPU_GP0_RENDER_QUAD_OR_POLYLINE_BIT;
+	pushSoftwareCommand(
+		commandBuffer,
+		std::array<uint32_t, 4>{
+			(polylineOpcode << 24u) | 0xff0000u,
+			0x0046ffffu,
+			0x004603ffu,
+			0x004a03fbu,
+		},
+		4u,
+		bmsx::GX_GPU_COMMAND_DRAW_POLYLINE,
+		polylineOpcode);
+	pushSoftwareCommand(
+		commandBuffer,
+		std::array<uint32_t, 4>{
+			(polylineOpcode << 24u) | 0x00ff00u,
+			0xffff0032u,
+			0x01ff0032u,
+			0x01fb0036u,
+		},
+		4u,
+		bmsx::GX_GPU_COMMAND_DRAW_POLYLINE,
+		polylineOpcode);
+
+	bmsx::g_gxGpuSoftwareVram.fill(0u);
+	bmsx::executeGxGpuSoftwareCommands(commandBuffer, 0u);
+
+	constexpr std::array<std::array<int32_t, 2>, 5> shallowPixels{{ {{ 10, 10 }}, {{ 11, 11 }}, {{ 12, 11 }}, {{ 13, 12 }}, {{ 14, 12 }} }};
+	for (const auto& pixel : shallowPixels) {
+		require(bmsx::g_gxGpuSoftwareVram[bmsx::gxGpuSoftwareVramIndex(pixel[0], pixel[1])] == 0x001fu, "GX-GPU software shallow line DDA pixel");
+	}
+	require(bmsx::g_gxGpuSoftwareVram[bmsx::gxGpuSoftwareVramIndex(11, 10)] == 0u, "GX-GPU software shallow line rejects geometric round-nearest pixel");
+	require(bmsx::g_gxGpuSoftwareVram[bmsx::gxGpuSoftwareVramIndex(12, 12)] == 0u, "GX-GPU software shallow line owns one pixel per DDA step");
+	constexpr std::array<std::array<int32_t, 2>, 5> steepPixels{{ {{ 20, 10 }}, {{ 20, 11 }}, {{ 21, 12 }}, {{ 21, 13 }}, {{ 22, 14 }} }};
+	for (const auto& pixel : steepPixels) {
+		require(bmsx::g_gxGpuSoftwareVram[bmsx::gxGpuSoftwareVramIndex(pixel[0], pixel[1])] == 0x03e0u, "GX-GPU software steep line DDA pixel");
+	}
+	require(bmsx::g_gxGpuSoftwareVram[bmsx::gxGpuSoftwareVramIndex(21, 11)] == 0u, "GX-GPU software steep line keeps X half-tie down");
+	require(bmsx::g_gxGpuSoftwareVram[bmsx::gxGpuSoftwareVramIndex(22, 13)] == 0u, "GX-GPU software steep line owns one pixel per DDA step");
+	constexpr std::array<std::array<int32_t, 2>, 9> reversedPixels{{ {{ 11, 29 }}, {{ 12, 29 }}, {{ 8, 30 }}, {{ 9, 30 }}, {{ 10, 30 }}, {{ 6, 31 }}, {{ 7, 31 }}, {{ 4, 32 }}, {{ 5, 32 }} }};
+	for (const auto& pixel : reversedPixels) {
+		require(bmsx::g_gxGpuSoftwareVram[bmsx::gxGpuSoftwareVramIndex(pixel[0], pixel[1])] == 0x03ffu, "GX-GPU software reversed line preserves canonical DDA coverage");
+	}
+	require(bmsx::g_gxGpuSoftwareVram[bmsx::gxGpuSoftwareVramIndex(4, 31)] == 0u, "GX-GPU software reversed line keeps Y direction bias");
+	require(bmsx::g_gxGpuSoftwareVram[bmsx::gxGpuSoftwareVramIndex(12, 30)] == 0u, "GX-GPU software reversed line owns one pixel per DDA step");
+	require(bmsx::g_gxGpuSoftwareVram[bmsx::gxGpuSoftwareVramIndex(1023, 511)] == 0x001fu, "GX-GPU software line wraps each post-offset DDA sample to signed 11-bit");
+	require(bmsx::g_gxGpuSoftwareVram[bmsx::gxGpuSoftwareVramIndex(40, 40)] == 0x000fu, "GX-GPU software semi-transparent polyline first pixel");
+	require(bmsx::g_gxGpuSoftwareVram[bmsx::gxGpuSoftwareVramIndex(41, 40)] == 0x000fu, "GX-GPU software semi-transparent polyline first segment");
+	require(bmsx::g_gxGpuSoftwareVram[bmsx::gxGpuSoftwareVramIndex(42, 40)] == 0x0017u, "GX-GPU software polyline joint blends both inclusive endpoints");
+	require(bmsx::g_gxGpuSoftwareVram[bmsx::gxGpuSoftwareVramIndex(42, 41)] == 0x000fu, "GX-GPU software semi-transparent polyline second segment");
+	require(bmsx::g_gxGpuSoftwareVram[bmsx::gxGpuSoftwareVramIndex(42, 42)] == 0x000fu, "GX-GPU software semi-transparent polyline last pixel");
+	for (int32_t step = 0; step < 5; step += 1) {
+		require(bmsx::g_gxGpuSoftwareVram[bmsx::gxGpuSoftwareVramIndex(1023 - step, 70 + step)] == 0x7c00u, "GX-GPU software polyline continues after rejected segment");
+	}
+	require(bmsx::g_gxGpuSoftwareVram[bmsx::gxGpuSoftwareVramIndex(0, 70)] == 0u, "GX-GPU software rejects 1024-wide polyline segment");
+	require(bmsx::g_gxGpuSoftwareVram[bmsx::gxGpuSoftwareVramIndex(512, 70)] == 0u, "GX-GPU software rejected polyline segment does not clip into drawing area");
+	for (int32_t step = 0; step < 5; step += 1) {
+		require(bmsx::g_gxGpuSoftwareVram[bmsx::gxGpuSoftwareVramIndex(50 + step, 511 - step)] == 0x03e0u, "GX-GPU software polyline continues after height-rejected segment");
+	}
+	require(bmsx::g_gxGpuSoftwareVram[bmsx::gxGpuSoftwareVramIndex(50, 0)] == 0u, "GX-GPU software rejects 512-high polyline segment");
+	require(bmsx::g_gxGpuSoftwareVram[bmsx::gxGpuSoftwareVramIndex(50, 256)] == 0u, "GX-GPU software height-rejected segment does not clip into drawing area");
+}
+
 void testSoftwareBlendsUntexturedSemiTransparentRectangles() {
 	bmsx::GxGpuCommandBuffer commandBuffer;
 	commandBuffer.reset();
@@ -1774,6 +1897,7 @@ int main() {
 	testSoftwareTextureModulationMath();
 	testSoftwareBackendConsumesOnlyPresentableCommands();
 	testSoftwareGouraudLineFixedPointRaster();
+	testSoftwareLineDdaSampleWrapAndPolylineJoints();
 	testSoftwareBlendsUntexturedSemiTransparentRectangles();
 	testSoftwareTriangleEdgesAndQuadSeams();
 	testSoftwareDrawingAreaOffsetClippingAndRectangleCoordinateWrap();

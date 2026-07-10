@@ -10,6 +10,7 @@ import {
 
 export const GX_GPU_MAX_PRIMITIVE_WIDTH = 1024;
 export const GX_GPU_MAX_PRIMITIVE_HEIGHT = 512;
+export const GX_GPU_VERTEX_COORD_PERIOD = 0x800;
 export const GX_GPU_DOT_CLOCK_DIVIDER_256 = 10;
 export const GX_GPU_DOT_CLOCK_DIVIDER_320 = 8;
 export const GX_GPU_DOT_CLOCK_DIVIDER_512 = 5;

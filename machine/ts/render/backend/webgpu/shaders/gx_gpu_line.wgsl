@@ -19,8 +19,8 @@ struct VSOut {
 	@builtin(position) position: vec4<f32>,
 	@location(0) lineStart: vec2<f32>,
 	@location(1) lineEnd: vec2<f32>,
-	@location(2) color0: vec3<f32>,
-	@location(3) color1: vec3<f32>,
+	@location(2) colorBase: vec3<f32>,
+	@location(3) colorStep: vec3<f32>,
 };
 
 const VRAM_SIZE = vec2<f32>(1024.0, 512.0);
@@ -32,8 +32,14 @@ fn vs_main(input: VSIn) -> VSOut {
 	out.position = vec4<f32>(clip, 0.0, 1.0);
 	out.lineStart = input.lineStart;
 	out.lineEnd = input.lineEnd;
-	out.color0 = input.color0;
-	out.color1 = input.color1;
+	let color0 = floor(input.color0 * 255.0 + 0.5);
+	let colorDelta = floor(input.color1 * 255.0 + 0.5) - color0;
+	let steps = max(abs(input.lineEnd.x - input.lineStart.x), abs(input.lineEnd.y - input.lineStart.y));
+	out.colorBase = color0 * 4096.0 + 2048.0;
+	out.colorStep = vec3<f32>(0.0);
+	if (steps > 0.0) {
+		out.colorStep = sign(colorDelta) * floor(abs(colorDelta) * 4096.0 / steps);
+	}
 	return out;
 }
 
@@ -70,7 +76,7 @@ fn ditherOffset(coord: vec2<f32>) -> f32 {
 }
 
 fn rgbToRgb5(rgb: vec3<f32>, fragCoord: vec2<f32>) -> vec3<f32> {
-	var rgb8 = floor(rgb * 255.0);
+	var rgb8 = rgb;
 	if (u.params1.x > 0.5) { rgb8 = clamp(rgb8 + vec3<f32>(ditherOffset(vec2<f32>(fragCoord.x - 0.5, fragCoord.y - 0.5))), vec3<f32>(0.0), vec3<f32>(255.0)); }
 	return floor(rgb8 / 8.0);
 }
@@ -89,30 +95,31 @@ fn activeInterlacedLine(fragCoord: vec2<f32>) -> bool {
 	return (vramY - floor(vramY / 2.0) * 2.0) == activeLineLsb;
 }
 
-fn lineAxisT(pixelCoord: vec2<f32>, start: vec2<f32>, delta: vec2<f32>, absDelta: vec2<f32>) -> f32 {
-	if (absDelta.x >= absDelta.y) { return (pixelCoord.x - start.x) / delta.x; }
-	return (pixelCoord.y - start.y) / delta.y;
-}
-
 @fragment
 fn fs_main(input: VSOut) -> @location(0) vec4<f32> {
 	if (activeInterlacedLine(input.position.xy)) { discard; }
-	let pixelCoord = vec2<f32>(input.position.x - 0.5, input.position.y - 0.5);
-	let delta = input.lineEnd - input.lineStart;
+	let pixelCoord = vec2<i32>(floor(input.position.xy - vec2<f32>(0.5)));
+	let lineStart = vec2<i32>(input.lineStart);
+	let delta = vec2<i32>(input.lineEnd) - lineStart;
 	let absDelta = abs(delta);
-	let major = max(absDelta.x, absDelta.y);
-	var t = 0.0;
-	if (major < 0.5) {
-		if (abs(pixelCoord.x - input.lineStart.x) > 0.25 || abs(pixelCoord.y - input.lineStart.y) > 0.25) { discard; }
+	let steps = max(absDelta.x, absDelta.y);
+	var stepIndex: i32 = 0;
+	if (steps == 0) {
+		if (any(pixelCoord != lineStart)) { discard; }
+	} else if (absDelta.x >= absDelta.y) {
+		stepIndex = pixelCoord.x - lineStart.x;
+		if (stepIndex < 0 || stepIndex > steps) { discard; }
+		let yDistance = (2 * stepIndex * absDelta.y + steps) / (2 * steps);
+		let expectedY = lineStart.y + select(yDistance, -yDistance, delta.y < 0);
+		if (pixelCoord.y != expectedY) { discard; }
 	} else {
-		t = lineAxisT(pixelCoord, input.lineStart, delta, absDelta);
-		if (t < -0.0001 || t > 1.0001) { discard; }
-		let lineCoord = input.lineStart + delta * t;
-		if (absDelta.x >= absDelta.y) {
-			if (abs(pixelCoord.y - floor(lineCoord.y + 0.5)) > 0.25) { discard; }
-		} else if (abs(pixelCoord.x - floor(lineCoord.x + 0.5)) > 0.25) { discard; }
+		stepIndex = select(pixelCoord.y - lineStart.y, lineStart.y - pixelCoord.y, delta.y < 0);
+		if (stepIndex < 0 || stepIndex > steps) { discard; }
+		let xDistance = (2 * stepIndex * delta.x + steps - 1) / (2 * steps);
+		if (pixelCoord.x != lineStart.x + xDistance) { discard; }
 	}
-	var src5 = rgbToRgb5(mix(input.color0, input.color1, clamp(t, 0.0, 1.0)), input.position.xy);
+	let rgb8 = floor((input.colorBase + f32(stepIndex) * input.colorStep) / 4096.0);
+	var src5 = rgbToRgb5(rgb8, input.position.xy);
 	var dstWord = 0.0;
 	if (u.params0.z > 0.5 || u.params0.x > 0.5) {
 		dstWord = rawStorageVramWord(input.position.xy - vec2<f32>(0.5));

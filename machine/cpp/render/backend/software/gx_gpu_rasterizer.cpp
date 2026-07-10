@@ -585,8 +585,8 @@ void drawGxGpuSoftwareLineSegment(const GxGpuCommandBuffer& commandBuffer, size_
 	i32 currentG = lineMakeFixedRgb(g0);
 	i32 currentB = lineMakeFixedRgb(b0);
 	for (i32 step = 0; step <= steps; step += 1) {
-		const i32 x = lineFixedXYToCoord(currentX);
-		const i32 y = lineFixedXYToCoord(currentY);
+		const i32 x = gxGpuSigned11(static_cast<u32>(lineFixedXYToCoord(currentX)));
+		const i32 y = gxGpuSigned11(static_cast<u32>(lineFixedXYToCoord(currentY)));
 		if (x >= areaLeft && y >= areaTop && x < areaRight && y < areaBottom && !gxGpuSoftwareInterlacedSkipsLine(y, interlacedRenderWord)) {
 			gxGpuSoftwareWriteRenderVramPixel(
 				x,

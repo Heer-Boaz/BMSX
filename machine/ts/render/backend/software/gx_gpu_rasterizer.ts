@@ -18,6 +18,7 @@ import {
 	gxGpuDrawModeTextureRectangleYFlip,
 	gxGpuDrawModeTransparencyMode,
 	gxGpuSegmentExceedsPrimitiveSize,
+	gxGpuSigned11,
 	gxGpuTextureClutBaseX,
 	gxGpuTextureClutBaseY,
 	gxGpuTextureU,
@@ -632,8 +633,8 @@ export function drawGxGpuSoftwareLineSegment(commandBuffer: GxGpuCommandBufferVi
 	let currentG = lineMakeFixedRgb(g0);
 	let currentB = lineMakeFixedRgb(b0);
 	for (let step = 0; step <= steps; step += 1) {
-		const x = lineFixedXYToCoord(currentX);
-		const y = lineFixedXYToCoord(currentY);
+		const x = gxGpuSigned11(lineFixedXYToCoord(currentX));
+		const y = gxGpuSigned11(lineFixedXYToCoord(currentY));
 		if (x >= areaLeft && y >= areaTop && x < areaRight && y < areaBottom && !gxGpuSoftwareInterlacedSkipsLine(y, interlacedRenderWord)) {
 			gxGpuSoftwareWriteRenderVramPixel(
 				x,

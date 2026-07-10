@@ -6,6 +6,7 @@ namespace bmsx {
 
 constexpr i32 GX_GPU_MAX_PRIMITIVE_WIDTH = 1024;
 constexpr i32 GX_GPU_MAX_PRIMITIVE_HEIGHT = 512;
+constexpr i32 GX_GPU_VERTEX_COORD_PERIOD = 0x800;
 constexpr u32 GX_GPU_DOT_CLOCK_DIVIDER_256 = 10u;
 constexpr u32 GX_GPU_DOT_CLOCK_DIVIDER_320 = 8u;
 constexpr u32 GX_GPU_DOT_CLOCK_DIVIDER_512 = 5u;

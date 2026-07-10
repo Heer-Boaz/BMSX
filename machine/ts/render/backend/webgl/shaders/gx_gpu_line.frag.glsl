@@ -1,5 +1,6 @@
 #version 300 es
 precision highp float;
+precision highp int;
 
 uniform sampler2D u_vram;
 uniform float u_blendEnable;
@@ -10,8 +11,8 @@ uniform float u_ditherEnable;
 uniform float u_interlacedRenderWord;
 in vec2 v_lineStart;
 in vec2 v_lineEnd;
-in vec3 v_color0;
-in vec3 v_color1;
+in vec3 v_colorBase;
+in vec3 v_colorStep;
 out vec4 outputColor;
 
 const vec2 VRAM_SIZE = vec2(1024.0, 512.0);
@@ -101,8 +102,7 @@ float ditherOffset() {
 	return -2.0;
 }
 
-vec3 rgbToRgb5(vec3 rgb) {
-	vec3 rgb8 = floor(rgb * 255.0);
+vec3 rgbToRgb5(vec3 rgb8) {
 	if (u_ditherEnable > 0.5) {
 		rgb8 = clamp(rgb8 + vec3(ditherOffset()), vec3(0.0), vec3(255.0));
 	}
@@ -114,14 +114,6 @@ vec4 encodeRgb555(vec3 color5, float outputMaskBit) {
 	float highByte = floor(color5.g / 8.0) + color5.b * 4.0 + outputMaskBit * 128.0;
 	return vec4(lowByte / 255.0, highByte / 255.0, 0.0, 1.0);
 }
-
-float lineAxisT(vec2 pixelCoord, vec2 delta, vec2 absDelta) {
-	if (absDelta.x >= absDelta.y) {
-		return (pixelCoord.x - v_lineStart.x) / delta.x;
-	}
-	return (pixelCoord.y - v_lineStart.y) / delta.y;
-}
-
 
 void discardActiveInterlacedLine() {
 	if (mod(u_interlacedRenderWord, 2.0) < 0.5) {
@@ -136,32 +128,38 @@ void discardActiveInterlacedLine() {
 
 void main() {
 	discardActiveInterlacedLine();
-	vec2 pixelCoord = vec2(gl_FragCoord.x - 0.5, VRAM_SIZE.y - gl_FragCoord.y - 0.5);
-	vec2 delta = v_lineEnd - v_lineStart;
-	vec2 absDelta = abs(delta);
-	float major = max(absDelta.x, absDelta.y);
-	float t = 0.0;
-
-	if (major < 0.5) {
-		if (abs(pixelCoord.x - v_lineStart.x) > 0.25 || abs(pixelCoord.y - v_lineStart.y) > 0.25) {
+	ivec2 pixelCoord = ivec2(floor(vec2(gl_FragCoord.x - 0.5, VRAM_SIZE.y - gl_FragCoord.y - 0.5)));
+	ivec2 lineStart = ivec2(v_lineStart);
+	ivec2 delta = ivec2(v_lineEnd) - lineStart;
+	ivec2 absDelta = abs(delta);
+	int steps = max(absDelta.x, absDelta.y);
+	int stepIndex = 0;
+	if (steps == 0) {
+		if (any(notEqual(pixelCoord, lineStart))) {
+			discard;
+		}
+	} else if (absDelta.x >= absDelta.y) {
+		stepIndex = pixelCoord.x - lineStart.x;
+		if (stepIndex < 0 || stepIndex > steps) {
+			discard;
+		}
+		int yDistance = (2 * stepIndex * absDelta.y + steps) / (2 * steps);
+		int expectedY = lineStart.y + (delta.y < 0 ? -yDistance : yDistance);
+		if (pixelCoord.y != expectedY) {
 			discard;
 		}
 	} else {
-		t = lineAxisT(pixelCoord, delta, absDelta);
-		if (t < -0.0001 || t > 1.0001) {
+		stepIndex = delta.y < 0 ? lineStart.y - pixelCoord.y : pixelCoord.y - lineStart.y;
+		if (stepIndex < 0 || stepIndex > steps) {
 			discard;
 		}
-		vec2 lineCoord = v_lineStart + delta * t;
-		if (absDelta.x >= absDelta.y) {
-			if (abs(pixelCoord.y - floor(lineCoord.y + 0.5)) > 0.25) {
-				discard;
-			}
-		} else if (abs(pixelCoord.x - floor(lineCoord.x + 0.5)) > 0.25) {
+		int xDistance = (2 * stepIndex * delta.x + steps - 1) / (2 * steps);
+		if (pixelCoord.x != lineStart.x + xDistance) {
 			discard;
 		}
 	}
-
-	vec3 src5 = rgbToRgb5(mix(v_color0, v_color1, clamp(t, 0.0, 1.0)));
+	vec3 rgb8 = floor((v_colorBase + float(stepIndex) * v_colorStep) / 4096.0);
+	vec3 src5 = rgbToRgb5(rgb8);
 	float dstWord = 0.0;
 	if (u_checkMaskBit > 0.5 || u_blendEnable > 0.5) {
 		dstWord = rawStorageVramWord(gl_FragCoord.xy - vec2(0.5));
