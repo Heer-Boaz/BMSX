@@ -465,8 +465,9 @@ async function main() {
 		}
 
 		if (!title && !isBIOSMode) throw new Error("Missing parameter for title ('title', e.g. 'Sintervania'.");
-		let romManifest = await getRomManifest(respath);
+		const romManifest = await getRomManifest(respath);
 		if (!romManifest) throw new Error(`Rom manifest not found at "${respath}"!`);
+		const { gx_texture_atlases, ...runtimeRomManifest } = romManifest;
 		rom_name = romManifest.rom_name ?? rom_name;
 		title = romManifest.title ?? title;
 		romOutputPath = `dist/${rom_name}${romPackDebug ? '.debug' : ''}.rom`;
@@ -540,7 +541,11 @@ async function main() {
 			await progress.taskCompleted();
 
 			if (GENERATE_AND_USE_TEXTURE_ATLAS) {
-				await progress.runWithDetail('Generate texture atlases', () => createAtlasses(resources, message => progress.setDetail(message)));
+				await progress.runWithDetail('Generate texture atlases', () => createAtlasses(
+					resources,
+					message => progress.setDetail(message),
+					gx_texture_atlases,
+				));
 			}
 			await progress.taskCompleted();
 
@@ -573,7 +578,7 @@ async function main() {
 
 			await progress.runWithDetail('Finalize ROM pack', () => finalizeRompack(romAssets, rom_name, {
 				projectRootPath,
-				manifest: romManifest,
+				manifest: runtimeRomManifest,
 				status: message => progress.setDetail(message),
 				debug: romPackDebug,
 				zipRom: false,

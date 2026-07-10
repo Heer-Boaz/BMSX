@@ -491,7 +491,7 @@ export function splitAtlasImagesByVramUsage(imageResources: ImageResource[], max
 			if (!packed) {
 				const singleAtlas = packOptimizedAtlas(single);
 				const detail = singleAtlas ? `${packedAtlasByteLength(singleAtlas)} atlas bytes` : 'more than the configured atlas dimensions';
-				throw new Error(`[RomPacker] Image "${image.name}" requires ${detail}, exceeding the VDP texture VRAM limit of ${maxAtlasBytes} bytes.`);
+				throw new Error(`[RomPacker] Image "${image.name}" requires ${detail}, exceeding the configured atlas byte limit of ${maxAtlasBytes} bytes.`);
 			}
 			group = single;
 			continue;
@@ -508,7 +508,7 @@ export function splitAtlasImagesByVramUsage(imageResources: ImageResource[], max
 			if (!singlePacked) {
 				const singleAtlas = packOptimizedAtlas(single);
 				const detail = singleAtlas ? `${packedAtlasByteLength(singleAtlas)} atlas bytes` : 'more than the configured atlas dimensions';
-				throw new Error(`[RomPacker] Image "${image.name}" requires ${detail}, exceeding the VDP texture VRAM limit of ${maxAtlasBytes} bytes.`);
+				throw new Error(`[RomPacker] Image "${image.name}" requires ${detail}, exceeding the configured atlas byte limit of ${maxAtlasBytes} bytes.`);
 			}
 			group = single;
 		}
@@ -527,7 +527,7 @@ export function createOptimizedAtlas(imageResources: ImageResource[], maxAtlasBy
 	}
 	const atlasByteLength = packedAtlasByteLength(packedAtlas);
 	if (atlasByteLength > maxAtlasBytes) {
-		throw new Error(`[RomPacker] Atlas for images ${atlasImageNames(imageResources)} requires ${atlasByteLength} bytes, exceeding the VDP texture VRAM limit of ${maxAtlasBytes} bytes.`);
+		throw new Error(`[RomPacker] Atlas for images ${atlasImageNames(imageResources)} requires ${atlasByteLength} bytes, exceeding the configured atlas byte limit of ${maxAtlasBytes} bytes.`);
 	}
 
 	const atlas_width = CROP_ATLAS ? packedAtlas.width : ATLAS_MAX_SIZE_IN_PIXELS;

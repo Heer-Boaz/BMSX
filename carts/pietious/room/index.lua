@@ -2,6 +2,7 @@ local rect_overlaps<const> = require('bios/util/rect_overlaps')
 require('constants')
 local castle_map<const> = require('castle/map')
 local timeline<const> = require('cartlib/timeline/index')
+local components<const> = require('cartlib/components')
 
 local room<const> = {}
 local water_surface_timeline_id<const> = 'r.ws'
@@ -873,19 +874,47 @@ function room_object:ctor()
 	self.last_water_surface_frame = 1
 	self.water_surface_sources = {}
 	for i = 1, #water_surface_frame_imgids do
-		self.water_surface_sources[i] = vdp_img_rect(water_surface_frame_imgids[i])
+		self.water_surface_sources[i] = gx_img_rect(water_surface_frame_imgids[i])
 	end
-	self.water_body_source = vdp_img_rect('water_body_msx')
+	self.water_body_source = gx_img_rect('water_body_msx')
+	self.room_tile_layer = components.tilelayercomponent.new({
+		id_local = 'room',
+		sources = self.room_tile_sources,
+		tile_count = 0,
+		columns = 1,
+		tile_size = room_tile_size,
+		offset_x = room_tile_origin_x,
+		offset_y = room_tile_origin_y,
+		empty_source = empty_tile_source,
+		visible = false,
+	})
+	self:add_component(self.room_tile_layer)
+	self.water_tile_layer = components.tilelayercomponent.new({
+		id_local = 'water',
+		sources = self.water_tile_sources,
+		tile_count = 0,
+		columns = 1,
+		tile_size = room_tile_size,
+		offset_x = room_tile_origin_x,
+		offset_y = room_tile_origin_y,
+		empty_source = empty_tile_source,
+		visible = false,
+	})
+	self:add_component(self.water_tile_layer)
 	self.tiles_visible = false
 	self:bind_visual()
 end
 
 function room_object:hide_room_tiles()
 	self.tiles_visible = false
+	self.room_tile_layer.visible = false
+	self.water_tile_layer.visible = false
 end
 
 function room_object:show_room_tiles()
 	self.tiles_visible = true
+	self.room_tile_layer.visible = self.room_tile_count ~= 0
+	self.water_tile_layer.visible = self.water_tile_count ~= 0
 end
 
 function room_object:rebuild_room_tiles()
@@ -928,7 +957,7 @@ function room_object:rebuild_room_tiles()
 					tile_id = dissolve_prefix .. tostring(dissolve_index)
 				end
 			end
-			room_tile_sources[tile_index] = vdp_img_rect(tile_id)
+			room_tile_sources[tile_index] = gx_img_rect(tile_id)
 			::continue::
 		end
 	end
@@ -937,13 +966,17 @@ function room_object:rebuild_room_tiles()
 	end
 	self.room_tile_source_count = tile_count
 	self.room_tile_count = tile_count
+	self.room_tile_layer.tile_count = tile_count
+	self.room_tile_layer.columns = tile_columns
 
 	if self.water == nil then
 		self.water_tile_count = 0
 		self.water_rows = 0
 			self.water_tile_source_count = 0
 		self.water_surface_tile_count = 0
-				self.last_water_surface_frame = 1
+		self.last_water_surface_frame = 1
+		self.water_tile_layer.tile_count = 0
+		self.water_tile_layer.visible = false
 		return
 	end
 	local prev_water_tile_source_count<const> = self.water_tile_source_count
@@ -982,6 +1015,12 @@ function room_object:rebuild_room_tiles()
 	self.water_rows = water_rows
 	self.water_surface_tile_count = water_surface_tile_count
 	self.last_water_surface_frame = 1
+	self.water_tile_layer.tile_count = water_tile_count
+	self.water_tile_layer.columns = self.tile_columns
+	self.water_tile_layer.offset_y = self.tile_origin_y + ((self.water.surface_row - 1) * self.tile_size)
+	if self.tiles_visible then
+		self.water_tile_layer.visible = true
+	end
 end
 
 function room_object:sync_water_surface_frame(water_surface_frame)
@@ -998,30 +1037,7 @@ function room_object:sync_water_surface_frame(water_surface_frame)
 	self.last_water_surface_frame = water_surface_frame
 end
 
-function room_object:render_tiles()
-	local tile_count<const> = self.room_tile_count
-	if tile_count == 0 then
-		return
-	end
-	vdp_tile_run_sources(self.room_tile_sources, tile_count, self.tile_columns, self.tile_size, self.tile_origin_x, self.tile_origin_y, empty_tile_source)
-end
-
-function room_object:render_water()
-	local tile_count<const> = self.water_tile_count
-	if tile_count == 0 then
-		return
-	end
-	vdp_tile_run_sources(self.water_tile_sources, tile_count, self.tile_columns, self.tile_size, self.tile_origin_x, self.tile_origin_y + ((self.water.surface_row - 1) * self.tile_size), empty_tile_source)
-end
-
 function room_object:render_room()
-	if self.tiles_visible then
-		if self.water ~= nil then
-			self:sync_water_surface_frame(self:get_timeline(water_surface_timeline_id):value())
-		end
-		self:render_tiles()
-		self:render_water()
-	end
 	if not self:has_tag('r.seal_fx') then
 		return
 	end
@@ -1029,7 +1045,7 @@ function room_object:render_room()
 	if not director:has_tag('d.seal.flash') then
 		return
 	end
-	vdp_fill_rect_color(0, room_tile_origin_y, screen_width, screen_height, 342, 0x00000000, 0x80ffffff)
+	gx_fill_rect_color(0, room_tile_origin_y, screen_width, screen_height, 0x80ffffff)
 end
 
 local room_runtime_state_name<const> = function(room_state)
@@ -1157,6 +1173,9 @@ local define_room_fsm<const> = function()
 									playback_mode = 'loop',
 								},
 								autoplay = true,
+								on_frame = function(self)
+									self:sync_water_surface_frame(self:get_timeline(water_surface_timeline_id):value())
+								end,
 							},
 						},
 					},

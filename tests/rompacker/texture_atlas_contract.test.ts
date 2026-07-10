@@ -5,6 +5,7 @@ import { createCanvas } from 'canvas';
 import { PSX_VRAM_STAGING_BYTES } from '../../machine/ts/machine/model_registry';
 import { BIOS_ATLAS_ID } from '../../machine/ts/rompack/format';
 import { resolveTargetAtlasId } from '../../scripts/rompacker/atlasbuilder';
+import { buildPalette4GxTextureAtlas } from '../../scripts/rompacker/gx_texture_atlas';
 import { createAtlasses } from '../../scripts/rompacker/rombuilder';
 import type { ImageResource, Resource } from '../../scripts/rompacker/rompacker.rompack';
 import {
@@ -23,6 +24,19 @@ test('cart atlas descriptor ids stop before the system atlas descriptor', () => 
 	assert.throws(
 		() => resolveTargetAtlasId('carts/example/res/player@atlas=254.png', BIOS_ATLAS_ID),
 		/reserved system atlas id/,
+	);
+});
+
+test('palette4 atlas production rejects a seventeenth RGB555 color', () => {
+	const rgba = new Uint8ClampedArray(17 * 4);
+	for (let color = 0; color < 17; color += 1) {
+		const offset = color * 4;
+		rgba[offset] = color << 3;
+		rgba[offset + 3] = 0xff;
+	}
+	assert.throws(
+		() => buildPalette4GxTextureAtlas(0, 17, 1, rgba),
+		/more than 16 RGB555\/STP colors/,
 	);
 });
 

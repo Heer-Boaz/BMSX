@@ -6,3 +6,5 @@ machine:
     vdp_class: psx
 lua:
     entry_path: cart.lua
+gx_texture_atlases:
+    0: palette4

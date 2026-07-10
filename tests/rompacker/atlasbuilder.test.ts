@@ -26,11 +26,11 @@ test('atlas splitter pages images by VDP texture VRAM bytes', () => {
 	assert.deepEqual(groups.map(group => group.map(image => image.name)), [['a'], ['b']]);
 });
 
-test('atlas generation rejects a canvas that exceeds the VDP texture VRAM limit', () => {
+test('atlas generation rejects a canvas that exceeds its configured byte limit', () => {
 	assert.throws(
 		() => createOptimizedAtlas([
 			imageResource('a', 1, 1024, 256),
 		], 1),
-		/exceeding the VDP texture VRAM limit/,
+		/exceeding the configured atlas byte limit/,
 	);
 });

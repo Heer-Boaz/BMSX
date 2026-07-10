@@ -1,6 +1,20 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import ts from 'typescript';
+import {
+	LuaBinaryOperator,
+	type LuaBlock,
+	type LuaBinaryExpression,
+	type LuaCallExpression,
+	type LuaFunctionDeclarationStatement,
+	type LuaFunctionExpression,
+	type LuaLocalAssignmentStatement,
+	type LuaLocalFunctionStatement,
+	type LuaNode,
+	type LuaStatement,
+	LuaSyntaxKind,
+} from '../machine/ts/lua/syntax/ast';
+import { parseLuaChunk } from '../machine/ts/lua/analysis/parse';
 
 type Category = 'core' | 'host' | 'ide' | 'terminal' | 'language' | 'compiler_tooling' | 'rompacker_tooling' | 'cpu_interpreter_exception' | 'barrel';
 type ManifestPattern = { pattern: string; category: Category; reason: string };
@@ -17,10 +31,8 @@ type StrictRuntimeMethodParityEntry = {
 	reason: string;
 };
 type StrictRuntimeNoChurnEntry = { files: string[]; reason: string };
-type StrictRuntimeNoChurnRegionEntry = { file: string; start: string; end: string; reason: string };
-type StrictRuntimeNoHeapRegionEntry = { file: string; start: string; end: string; reason: string };
 type StrictRuntimeNoHeapFunctionEntry = { file: string; functions: string[]; reason: string };
-type StrictLuaNoHeapRegionEntry = { file: string; start: string; end: string; reason: string };
+type StrictLuaNoHeapFunctionEntry = { file: string; functions: string[]; top_level_loops?: boolean; reason: string };
 type StrictRpuTableParityEntry = { ts: string; cpp: string; tables: string[]; reason: string };
 type StrictShaderParityEntry = { webgl: string; gles2: string; reason: string };
 type StrictLuaVdpAbiParitySymbol = { lua: string; ts: string };
@@ -38,10 +50,8 @@ type Manifest = {
 	strict_runtime_shape_parity?: StrictRuntimeShapeParityEntry[];
 	strict_runtime_method_parity?: StrictRuntimeMethodParityEntry[];
 	strict_runtime_no_churn?: StrictRuntimeNoChurnEntry[];
-	strict_runtime_no_churn_regions?: StrictRuntimeNoChurnRegionEntry[];
-	strict_runtime_no_heap_regions?: StrictRuntimeNoHeapRegionEntry[];
 	strict_runtime_no_heap_functions?: StrictRuntimeNoHeapFunctionEntry[];
-	strict_lua_no_heap_regions?: StrictLuaNoHeapRegionEntry[];
+	strict_lua_no_heap_functions?: StrictLuaNoHeapFunctionEntry[];
 	strict_rpu_table_parity?: StrictRpuTableParityEntry[];
 	strict_shader_parity?: StrictShaderParityEntry[];
 	strict_lua_vdp_abi_parity?: StrictLuaVdpAbiParityEntry[];
@@ -864,39 +874,6 @@ const STRICT_RUNTIME_NO_HEAP_PATTERNS: readonly [string, RegExp][] = [
 	['assign', /\.assign\s*\(/],
 ];
 
-const STRICT_LUA_NO_HEAP_PATTERNS: readonly [string, RegExp][] = [
-	['table literal', /[{}]/],
-	['function literal', /\bfunction\b/],
-	['table library', /\btable\./],
-	['pairs iterator', /\bpairs\s*\(/],
-	['ipairs iterator', /\bipairs\s*\(/],
-	['coroutine', /\bcoroutine\./],
-	['metatable', /\b(?:setmetatable|getmetatable)\s*\(/],
-	['string library', /\bstring\./],
-	['string concat', /\.\./],
-];
-
-const LUA_STRUCT_AGGREGATE_MEMWRITE_START = /\bmemwrite\s*\(\s*&/;
-
-function updateLuaStructAggregateMemwriteDepth(line: string, depth: { value: number }): boolean {
-	let scanStart = 0;
-	if (depth.value === 0) {
-		const match = LUA_STRUCT_AGGREGATE_MEMWRITE_START.exec(line);
-		if (!match) return false;
-		scanStart = match.index;
-	}
-	for (let index = scanStart; index < line.length; index += 1) {
-		const char = line[index];
-		if (char === '(') {
-			depth.value += 1;
-		} else if (char === ')') {
-			depth.value -= 1;
-			if (depth.value === 0) break;
-		}
-	}
-	return true;
-}
-
 function stripLineComment(line: string): string {
 	const slashCommentIndex = line.indexOf('//');
 	const dashCommentIndex = line.indexOf('--');
@@ -921,88 +898,6 @@ function auditStrictRuntimeNoChurn(manifest: Manifest): string[] {
 	}
 	return errors;
 }
-
-function auditStrictRuntimeNoChurnRegions(manifest: Manifest): string[] {
-	const errors: string[] = [];
-	for (const entry of manifest.strict_runtime_no_churn_regions ?? []) {
-		const text = fs.readFileSync(path.join(repoRoot, entry.file), 'utf8');
-		const startIndex = text.indexOf(entry.start);
-		if (startIndex < 0) {
-			errors.push(`${entry.file}: no-churn region start missing ${entry.start}`);
-			continue;
-		}
-		const endIndex = text.indexOf(entry.end, startIndex + entry.start.length);
-		if (endIndex < 0) {
-			errors.push(`${entry.file}: no-churn region end missing ${entry.end}`);
-			continue;
-		}
-		const prefixLineCount = text.slice(0, startIndex).split('\n').length - 1;
-		const regionLines = text.slice(startIndex, endIndex).split('\n');
-		for (let index = 0; index < regionLines.length; index += 1) {
-			const line = stripLineComment(regionLines[index]);
-			for (const [label, pattern] of STRICT_RUNTIME_NO_CHURN_PATTERNS) {
-				if (pattern.test(line)) errors.push(`${entry.file}:${prefixLineCount + index + 1}: forbidden churn/copy pattern ${label}`);
-			}
-		}
-	}
-	return errors;
-}
-
-function auditStrictRuntimeNoHeapRegions(manifest: Manifest): string[] {
-	const errors: string[] = [];
-	for (const entry of manifest.strict_runtime_no_heap_regions ?? []) {
-		const text = fs.readFileSync(path.join(repoRoot, entry.file), 'utf8');
-		const startIndex = text.indexOf(entry.start);
-		if (startIndex < 0) {
-			errors.push(`${entry.file}: no-heap region start missing ${entry.start}`);
-			continue;
-		}
-		const endIndex = text.indexOf(entry.end, startIndex + entry.start.length);
-		if (endIndex < 0) {
-			errors.push(`${entry.file}: no-heap region end missing ${entry.end}`);
-			continue;
-		}
-		const prefixLineCount = text.slice(0, startIndex).split('\n').length - 1;
-		const regionLines = text.slice(startIndex, endIndex).split('\n');
-		for (let index = 0; index < regionLines.length; index += 1) {
-			const line = stripLineComment(regionLines[index]);
-			for (const [label, pattern] of STRICT_RUNTIME_NO_HEAP_PATTERNS) {
-				if (pattern.test(line)) errors.push(`${entry.file}:${prefixLineCount + index + 1}: forbidden heap/container pattern ${label}`);
-			}
-		}
-	}
-	return errors;
-}
-
-function auditStrictLuaNoHeapRegions(manifest: Manifest): string[] {
-	const errors: string[] = [];
-	for (const entry of manifest.strict_lua_no_heap_regions ?? []) {
-		const text = fs.readFileSync(path.join(repoRoot, entry.file), 'utf8');
-		const startIndex = text.indexOf(entry.start);
-		if (startIndex < 0) {
-			errors.push(`${entry.file}: lua no-heap region start missing ${entry.start}`);
-			continue;
-		}
-		const endIndex = text.indexOf(entry.end, startIndex + entry.start.length);
-		if (endIndex < 0) {
-			errors.push(`${entry.file}: lua no-heap region end missing ${entry.end}`);
-			continue;
-		}
-		const prefixLineCount = text.slice(0, startIndex).split('\n').length - 1;
-		const regionLines = text.slice(startIndex, endIndex).split('\n');
-		const structAggregateMemwriteDepth = { value: 0 };
-		for (let index = 0; index < regionLines.length; index += 1) {
-			const line = stripLineComment(regionLines[index]);
-			const inStructAggregateMemwrite = updateLuaStructAggregateMemwriteDepth(line, structAggregateMemwriteDepth);
-			for (const [label, pattern] of STRICT_LUA_NO_HEAP_PATTERNS) {
-				if (label === 'table literal' && inStructAggregateMemwrite) continue;
-				if (pattern.test(line)) errors.push(`${entry.file}:${prefixLineCount + index + 1}: forbidden lua heap/gc pattern ${label}`);
-			}
-		}
-	}
-	return errors;
-}
-
 
 function readBalancedBody(text: string, openIndex: number): string {
 	const openChar = text[openIndex];
@@ -1059,6 +954,132 @@ function auditStrictRuntimeNoHeapFunctions(manifest: Manifest): string[] {
 				const line = stripLineComment(lines[index]);
 				for (const [label, pattern] of STRICT_RUNTIME_NO_HEAP_PATTERNS) {
 					if (pattern.test(line)) errors.push(`${entry.file}:${region.lineOffset + index + 1}: function ${name} forbidden heap/container pattern ${label}`);
+				}
+			}
+		}
+	}
+	return errors;
+}
+
+type LuaNamedFunction = { name: string; expression: LuaFunctionExpression };
+
+function luaNamedFunction(statement: LuaStatement): LuaNamedFunction | null {
+	switch (statement.kind) {
+		case LuaSyntaxKind.LocalFunctionStatement: {
+			const localFunction = statement as LuaLocalFunctionStatement;
+			return { name: localFunction.name.name, expression: localFunction.functionExpression };
+		}
+		case LuaSyntaxKind.FunctionDeclarationStatement: {
+			const declaration = statement as LuaFunctionDeclarationStatement;
+			const prefix = declaration.name.identifiers.join('.');
+			const name = declaration.name.methodName === null ? prefix : `${prefix}:${declaration.name.methodName}`;
+			return { name, expression: declaration.functionExpression };
+		}
+		case LuaSyntaxKind.LocalAssignmentStatement: {
+			const assignment = statement as LuaLocalAssignmentStatement;
+			if (assignment.names.length !== 1 || assignment.values.length !== 1 || assignment.values[0].kind !== LuaSyntaxKind.FunctionExpression) {
+				return null;
+			}
+			return { name: assignment.names[0].name, expression: assignment.values[0] as LuaFunctionExpression };
+		}
+		default:
+			return null;
+	}
+}
+
+function walkLuaAst(value: unknown, parent: LuaNode | null, visit: (node: LuaNode, parent: LuaNode | null) => void): void {
+	if (Array.isArray(value)) {
+		for (let index = 0; index < value.length; index += 1) {
+			walkLuaAst(value[index], parent, visit);
+		}
+		return;
+	}
+	if (value === null || typeof value !== 'object') {
+		return;
+	}
+	const record = value as Record<string, unknown>;
+	let childParent = parent;
+	if ('kind' in record && 'range' in record) {
+		const node = value as LuaNode;
+		visit(node, parent);
+		childParent = node;
+	}
+	for (const [key, child] of Object.entries(record)) {
+		if (key !== 'range') {
+			walkLuaAst(child, childParent, visit);
+		}
+	}
+}
+
+function luaCallRootName(call: LuaCallExpression): string | null {
+	const callee = call.callee;
+	if (callee.kind === LuaSyntaxKind.IdentifierExpression) {
+		return callee.name;
+	}
+	if (callee.kind === LuaSyntaxKind.MemberExpression && callee.base.kind === LuaSyntaxKind.IdentifierExpression) {
+		return callee.base.name;
+	}
+	return null;
+}
+
+function auditLuaNoHeapBody(file: string, label: string, body: LuaBlock): string[] {
+	const errors: string[] = [];
+	walkLuaAst(body, null, (node) => {
+		let allocation: string | null = null;
+		switch (node.kind) {
+			case LuaSyntaxKind.TableConstructorExpression:
+				allocation = 'table literal';
+				break;
+			case LuaSyntaxKind.FunctionExpression:
+				allocation = 'function literal';
+				break;
+			case LuaSyntaxKind.BinaryExpression:
+				if ((node as LuaBinaryExpression).operator === LuaBinaryOperator.Concat) {
+					allocation = 'string concat';
+				}
+				break;
+			case LuaSyntaxKind.CallExpression: {
+				const root = luaCallRootName(node as LuaCallExpression);
+				if (root === 'table') allocation = 'table library';
+				else if (root === 'string') allocation = 'string library';
+				else if (root === 'coroutine') allocation = 'coroutine';
+				else if (root === 'pairs' || root === 'ipairs') allocation = `${root} iterator`;
+				else if (root === 'setmetatable' || root === 'getmetatable') allocation = 'metatable';
+				break;
+			}
+		}
+		if (allocation !== null) {
+			errors.push(`${file}:${node.range.start.line}: function ${label} forbidden lua heap/gc pattern ${allocation}`);
+		}
+	});
+	return errors;
+}
+
+function auditStrictLuaNoHeapFunctions(manifest: Manifest): string[] {
+	const errors: string[] = [];
+	for (const entry of manifest.strict_lua_no_heap_functions ?? []) {
+		const source = fs.readFileSync(path.join(repoRoot, entry.file), 'utf8');
+		const lines = source.split('\n');
+		const parsed = parseLuaChunk(source, entry.file, lines);
+		const functions = new Map<string, LuaFunctionExpression>();
+		for (const statement of parsed.chunk.body) {
+			const named = luaNamedFunction(statement);
+			if (named !== null) {
+				functions.set(named.name, named.expression);
+			}
+		}
+		for (const name of entry.functions) {
+			const expression = functions.get(name);
+			if (expression === undefined) {
+				errors.push(`${entry.file}: lua no-heap function missing ${name}`);
+				continue;
+			}
+			errors.push(...auditLuaNoHeapBody(entry.file, name, expression.body));
+		}
+		if (entry.top_level_loops) {
+			for (const statement of parsed.chunk.body) {
+				if (statement.kind === LuaSyntaxKind.WhileStatement || statement.kind === LuaSyntaxKind.RepeatStatement || statement.kind === LuaSyntaxKind.ForNumericStatement || statement.kind === LuaSyntaxKind.ForGenericStatement) {
+					errors.push(...auditLuaNoHeapBody(entry.file, '<top-level-loop>', statement.block));
 				}
 			}
 		}
@@ -1456,10 +1477,8 @@ function main(): void {
 	const strictRuntimeShapeParityErrors = auditStrictRuntimeShapeParity(manifest);
 	const strictRuntimeMethodParityErrors = auditStrictRuntimeMethodParity(manifest);
 	const strictRuntimeNoChurnErrors = auditStrictRuntimeNoChurn(manifest);
-	const strictRuntimeNoChurnRegionErrors = auditStrictRuntimeNoChurnRegions(manifest);
-	const strictRuntimeNoHeapRegionErrors = auditStrictRuntimeNoHeapRegions(manifest);
 	const strictRuntimeNoHeapFunctionErrors = auditStrictRuntimeNoHeapFunctions(manifest);
-	const strictLuaNoHeapRegionErrors = auditStrictLuaNoHeapRegions(manifest);
+	const strictLuaNoHeapFunctionErrors = auditStrictLuaNoHeapFunctions(manifest);
 	const strictRpuTableParityErrors = auditStrictRpuTableParity(manifest);
 	const strictShaderParityErrors = auditStrictShaderParity(manifest);
 	const strictLuaVdpAbiParityErrors = auditStrictLuaVdpAbiParity(manifest);
@@ -1541,25 +1560,15 @@ function main(): void {
 		console.error(`\nStrict runtime no-churn errors (${strictRuntimeNoChurnErrors.length}):`);
 		for (const item of strictRuntimeNoChurnErrors) console.error(`  ${item}`);
 	}
-	if (strictRuntimeNoChurnRegionErrors.length > 0) {
-		hasErrors = true;
-		console.error(`\nStrict runtime no-churn region errors (${strictRuntimeNoChurnRegionErrors.length}):`);
-		for (const item of strictRuntimeNoChurnRegionErrors) console.error(`  ${item}`);
-	}
-	if (strictRuntimeNoHeapRegionErrors.length > 0) {
-		hasErrors = true;
-		console.error(`\nStrict runtime no-heap region errors (${strictRuntimeNoHeapRegionErrors.length}):`);
-		for (const item of strictRuntimeNoHeapRegionErrors) console.error(`  ${item}`);
-	}
 	if (strictRuntimeNoHeapFunctionErrors.length > 0) {
 		hasErrors = true;
 		console.error(`\nStrict runtime no-heap function errors (${strictRuntimeNoHeapFunctionErrors.length}):`);
 		for (const item of strictRuntimeNoHeapFunctionErrors) console.error(`  ${item}`);
 	}
-	if (strictLuaNoHeapRegionErrors.length > 0) {
+	if (strictLuaNoHeapFunctionErrors.length > 0) {
 		hasErrors = true;
-		console.error(`\nStrict Lua no-heap region errors (${strictLuaNoHeapRegionErrors.length}):`);
-		for (const item of strictLuaNoHeapRegionErrors) console.error(`  ${item}`);
+		console.error(`\nStrict Lua no-heap function errors (${strictLuaNoHeapFunctionErrors.length}):`);
+		for (const item of strictLuaNoHeapFunctionErrors) console.error(`  ${item}`);
 	}
 	if (strictRpuTableParityErrors.length > 0) {
 		hasErrors = true;

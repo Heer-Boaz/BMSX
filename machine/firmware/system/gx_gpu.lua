@@ -43,7 +43,10 @@ local draw_mode_blend_half<const> = 0x00000000
 local draw_mode_blend_add<const> = 0x00000020
 local draw_mode_blend_subtract<const> = 0x00000040
 local draw_mode_blend_quarter<const> = 0x00000060
-local draw_mode_texture_direct16<const> = 0x00000100
+local texture_mode_palette4<const> = 0x00000000
+local texture_mode_direct16<const> = 0x00000002
+local draw_mode_texture_palette4<const> = texture_mode_palette4 << 7
+local draw_mode_texture_direct16<const> = texture_mode_direct16 << 7
 
 local display_width<const> = 320
 local display_height<const> = 240
@@ -92,6 +95,15 @@ end
 
 local draw_mode_for_texture_page<const> = function(source_x, source_y)
 	return draw_mode_texture_direct16 | (current_draw_mode & 0x00000060) | (((source_x >> 8) & 0x00000003) << 2) | ((source_y & 0x00000100) >> 4)
+end
+
+local draw_mode_for_palette4_page<const> = function(texture_x, source_x, source_y)
+	local page_x<const> = texture_x + ((source_x >> 8) << 6)
+	return draw_mode_texture_palette4 | (current_draw_mode & 0x00000060) | ((page_x >> 6) & 0x0000000f) | ((source_y & 0x00000100) >> 4)
+end
+
+local uv_clut<const> = function(u, v, clut_x, clut_y)
+	return uv(u, v) | ((((clut_x >> 4) & 0x0000003f) | ((clut_y & 0x000001ff) << 6)) << 16)
 end
 
 local texture_page_remaining<const> = function(source_coord)
@@ -269,6 +281,18 @@ function gx_gpu.draw_direct16_textured_rect_color(source_x, source_y, x, y, widt
 	end
 	local textured_opcode<const> = alpha_bits == 0xff000000 and gp0_draw_textured_rectangle or gp0_draw_semitransparent_textured_rectangle
 	local textured_rgb<const> = alpha_bits == 0xff000000 and argb_to_gp0_rgb(color) or argb_to_gp0_modulated_rgb(color)
+	if width <= texture_page_remaining(source_x) and height <= texture_page_remaining(source_y) then
+		*gp0 = gp0_draw_mode | draw_mode_for_texture_page(source_x, source_y)
+		if color == 0xffffffff then
+			*gp0 = gp0_draw_raw_textured_rectangle | 0x00808080
+		else
+			*gp0 = textured_opcode | textured_rgb
+		end
+		*gp0 = xy(x, y)
+		*gp0 = (source_x & 0x000000ff) | ((source_y & 0x000000ff) << 8)
+		*gp0 = wh(width, height)
+		return
+	end
 	local remaining_h = height
 	local draw_source_y = source_y
 	local draw_y = y
@@ -302,6 +326,24 @@ function gx_gpu.draw_direct16_textured_rect_color(source_x, source_y, x, y, widt
 		draw_source_y = draw_source_y + chunk_h
 		draw_y = draw_y + chunk_h
 	end
+end
+
+function gx_gpu.draw_palette4_textured_rect_color(texture_x, clut_x, clut_y, source_x, source_y, x, y, width, height, color)
+	local alpha_bits<const> = color & 0xff000000
+	if alpha_bits == 0 then
+		return
+	end
+	*gp0 = gp0_draw_mode | draw_mode_for_palette4_page(texture_x, source_x, source_y)
+	if color == 0xffffffff then
+		*gp0 = gp0_draw_raw_textured_rectangle | 0x00808080
+	else
+		local textured_opcode<const> = alpha_bits == 0xff000000 and gp0_draw_textured_rectangle or gp0_draw_semitransparent_textured_rectangle
+		local textured_rgb<const> = alpha_bits == 0xff000000 and argb_to_gp0_rgb(color) or argb_to_gp0_modulated_rgb(color)
+		*gp0 = textured_opcode | textured_rgb
+	end
+	*gp0 = xy(x, y)
+	*gp0 = uv_clut(source_x, source_y, clut_x, clut_y)
+	*gp0 = wh(width, height)
 end
 
 function gx_gpu.draw_direct16_textured_quad_color(
@@ -338,11 +380,47 @@ function gx_gpu.draw_direct16_textured_quad_color(
 	*gp0 = uv(source_x3, source_y3)
 end
 
+function gx_gpu.draw_palette4_textured_quad_color(
+	texture_x, clut_x, clut_y,
+	page_source_x, page_source_y,
+	source_x0, source_y0,
+	source_x1, source_y1,
+	source_x2, source_y2,
+	source_x3, source_y3,
+	x0, y0,
+	x1, y1,
+	x2, y2,
+	x3, y3,
+	color)
+	local alpha_bits<const> = color & 0xff000000
+	if alpha_bits == 0 then
+		return
+	end
+	local draw_mode<const> = draw_mode_for_palette4_page(texture_x, page_source_x, page_source_y)
+	*gp0 = gp0_draw_mode | draw_mode
+	if color == 0xffffffff then
+		*gp0 = gp0_draw_raw_textured_quad | 0x00808080
+	else
+		local opcode<const> = alpha_bits == 0xff000000 and gp0_draw_textured_quad or gp0_draw_semitransparent_textured_quad
+		local rgb<const> = alpha_bits == 0xff000000 and argb_to_gp0_rgb(color) or argb_to_gp0_modulated_rgb(color)
+		*gp0 = opcode | rgb
+	end
+	*gp0 = xy(x0, y0)
+	*gp0 = uv_clut(source_x0, source_y0, clut_x, clut_y)
+	*gp0 = xy(x1, y1)
+	*gp0 = uv_texpage(source_x1, source_y1, draw_mode)
+	*gp0 = xy(x2, y2)
+	*gp0 = uv(source_x2, source_y2)
+	*gp0 = xy(x3, y3)
+	*gp0 = uv(source_x3, source_y3)
+end
+
 gx_gpu.draw_mode_blend_half = draw_mode_blend_half
 gx_gpu.draw_mode_blend_add = draw_mode_blend_add
 gx_gpu.draw_mode_blend_subtract = draw_mode_blend_subtract
 gx_gpu.draw_mode_blend_quarter = draw_mode_blend_quarter
-gx_gpu.draw_mode_texture_direct16 = draw_mode_texture_direct16
+gx_gpu.texture_mode_palette4 = texture_mode_palette4
+gx_gpu.texture_mode_direct16 = texture_mode_direct16
 gx_gpu.display_width = display_width
 gx_gpu.display_height = display_height
 gx_gpu.texture_page_span = texture_page_span

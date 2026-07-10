@@ -3,6 +3,7 @@
  */
 import { Buffer } from 'buffer';
 import type { Canvas, Image as NodeCanvasImage } from 'canvas';
+import type { GxTextureAtlas } from './gx_texture_atlas';
 import type { asset_type } from '../../machine/ts/rompack/format';
 
 export type RomPackerTarget = 'browser' | 'cli' | 'headless' | 'libretro-wsl' | 'libretro-win' | 'libretro-snesmini';
@@ -65,6 +66,7 @@ export interface TextureAtlasResource extends BaseResource<'atlas'> {
 	atlasId: number;
 	textureAddr?: number;
 	textureBytes?: number;
+	gxTexture?: GxTextureAtlas;
 	img?: Canvas & { toBuffer?: (format: string) => Buffer; };
 }
 

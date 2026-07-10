@@ -18,6 +18,12 @@ import {
 	RPU_TEXTURE_VRAM_BASE_ADDR,
 	TEXTURE_ATLAS_RGBA_BYTES_PER_PIXEL,
 } from './texture_atlas_contract';
+import {
+	buildPalette4GxTextureAtlas,
+	GX_PALETTE4_ATLAS_RGBA_BYTE_LIMIT,
+	type GxTextureAtlasBuildMode,
+} from './gx_texture_atlas';
+import { GX_GPU_TEXTURE_MODE_DIRECT16 } from '../../machine/ts/machine/devices/gx/gpu_command_buffer';
 import { BoundingBoxExtractor } from './boundingbox_extractor';
 import { collectGLTFExternalBufferFileSet, loadGLTFModel } from './gltfloader';
 import type { TextureAtlasResource, ImageResource, Resource, resourcetype, RomPackerTarget } from './rompacker.rompack';
@@ -263,7 +269,11 @@ export async function getFiles(dirPath: string, arrayOfFiles?: string[], filterE
 	return array;
 }
 
-export async function getRomManifest(dirPath: string): Promise<RomManifest> {
+export type RomBuildManifest = RomManifest & {
+	gx_texture_atlases?: Record<string, GxTextureAtlasBuildMode>;
+};
+
+export async function getRomManifest(dirPath: string): Promise<RomBuildManifest | null> {
 	const files = await getFiles(dirPath, [], '.rommanifest');
 
 	if (files.length > 1) {
@@ -272,11 +282,11 @@ export async function getRomManifest(dirPath: string): Promise<RomManifest> {
 	else if (files.length === 1) {
 		const res = (await readFile(files[0])).toString();
 		// Read and return the rommanifest file
-		let manifest: RomManifest;
+		let manifest: RomBuildManifest;
 		try {
-			manifest = JSON.parse(res) as RomManifest;
+			manifest = JSON.parse(res) as RomBuildManifest;
 		} catch {
-			manifest = yaml.load(res) as RomManifest;
+			manifest = yaml.load(res) as RomBuildManifest;
 		}
 		return manifest;
 	}
@@ -1478,7 +1488,11 @@ export async function generateRomAssets(resources: Resource[], reportProgress?: 
 				break;
 			case 'atlas': {
 				const imgmeta = buildImgMetaForAtlas(res);
-				romAssets.push({ resid, type, imgmeta, buffer, source_path: sourcePath });
+				const atlasAsset: RomAsset = { resid, type, imgmeta, buffer, source_path: sourcePath };
+				if (res.gxTexture !== undefined) {
+					atlasAsset.texture_buffer = res.gxTexture.stream;
+				}
+				romAssets.push(atlasAsset);
 				break;
 			}
 			case 'romlabel':
@@ -1646,13 +1660,23 @@ export function appendProgramImage(
 }
 
 export function buildImgMetaForAtlas(res: TextureAtlasResource): ImgMeta {
-	return {
+	const meta: ImgMeta = {
 		atlasid: res.atlasId,
 		width: res.img.width,
 		height: res.img.height,
-		texture_addr: res.textureAddr,
-		texture_len: res.textureBytes,
 	};
+	if (res.gxTexture === undefined) {
+		meta.texture_addr = res.textureAddr;
+		meta.texture_len = res.textureBytes;
+		meta.gx_texture_mode = GX_GPU_TEXTURE_MODE_DIRECT16;
+	} else {
+		meta.gx_texture_mode = res.gxTexture.mode;
+		meta.gx_texture_x = res.gxTexture.x;
+		meta.gx_texture_y = res.gxTexture.y;
+		meta.gx_clut_x = res.gxTexture.clutX;
+		meta.gx_clut_y = res.gxTexture.clutY;
+	}
+	return meta;
 }
 
 type CartAtlasResidencyPlan = {
@@ -1755,12 +1779,17 @@ function planCartAtlasResidency(sourceAtlases: TextureAtlasResource[], imageAsse
  * Generates texture atlases from the loaded image resources.
  *
  * @param resources - An array of resources, including the texture atlas to be processed.
- * @param assetList - An array of RomAsset objects to be updated with image metadata.
- * @param bufferPointer - The starting position where texture atlas data should be written in the output buffers.
- * @param buffers - An array of Buffers where the texture atlas image data will be appended.
  * @returns A Promise that resolves once the texture atlas image is written to disk and metadata is updated.
  */
-export async function createAtlasses(resources: Resource[], reportProgress?: ProgressNote) {
+type AtlasBuildQueueEntry =
+	| { kind: 'direct16'; atlas: TextureAtlasResource; images: ImageResource[]; textureAddr: number; byteLimit: number }
+	| { kind: 'palette4'; atlas: TextureAtlasResource; images: ImageResource[]; byteLimit: number };
+
+export async function createAtlasses(
+	resources: Resource[],
+	reportProgress?: ProgressNote,
+	gxTextureAtlasModes?: Readonly<Record<string, GxTextureAtlasBuildMode>>,
+) {
 	if (GENERATE_AND_USE_TEXTURE_ATLAS) {
 		const atlases = resources.filter((res): res is TextureAtlasResource => res.type === 'atlas');
 		const image_assets = resources.filter((resource): resource is ImageResource => resource.type === 'image');
@@ -1770,15 +1799,28 @@ export async function createAtlasses(resources: Resource[], reportProgress?: Pro
 		if (atlases.length === 0) throw new Error('No texture atlas resources found in the "resources"-list. The process of preparing the list of all resources (assets) should also add any texture atlases that are to be generated. Thus, this is a bug in the code that prepares the list of resources :-(');
 		let nextAtlasResourceId = resources.reduce((maxId, resource) => resource.id && resource.id > maxId ? resource.id : maxId, 0) + 1;
 		let nextAtlasId = atlases.reduce((maxId, atlas) => atlas.atlasId > maxId ? atlas.atlasId : maxId, 0) + 1;
-		const cartPlans = planCartAtlasResidency(atlases, image_assets);
-		const atlasQueue: Array<{ atlas: TextureAtlasResource; images: ImageResource[]; textureAddr: number; byteLimit: number }> = [];
+		const direct16Atlases: TextureAtlasResource[] = [];
+		const atlasQueue: AtlasBuildQueueEntry[] = [];
 		for (let atlasIndex = 0; atlasIndex < atlases.length; atlasIndex += 1) {
 			const atlas = atlases[atlasIndex];
 			const filteredImages = image_assets.filter(resource => resource.targetAtlasId === atlas.atlasId);
 			if (atlas.atlasId === BIOS_ATLAS_ID) {
-				atlasQueue.push({ atlas, images: filteredImages, textureAddr: RPU_TEXTURE_VRAM_BASE_ADDR, byteLimit: RPU_SYSTEM_TEXTURE_RESERVED_BYTES });
+				direct16Atlases.push(atlas);
+				atlasQueue.push({ kind: 'direct16', atlas, images: filteredImages, textureAddr: RPU_TEXTURE_VRAM_BASE_ADDR, byteLimit: RPU_SYSTEM_TEXTURE_RESERVED_BYTES });
+				continue;
 			}
+			const gxTextureMode = gxTextureAtlasModes === undefined ? undefined : gxTextureAtlasModes[atlas.atlasId];
+			if (gxTextureMode === undefined) {
+				direct16Atlases.push(atlas);
+				continue;
+			}
+			assertCartAtlasDescriptorId(atlas.atlasId, atlas.name);
+			if (gxTextureMode !== 'palette4') {
+				throw new Error(`[RomPacker] GX atlas ${atlas.atlasId} uses unsupported texture mode ${gxTextureMode}.`);
+			}
+			atlasQueue.push({ kind: 'palette4', atlas, images: filteredImages, byteLimit: GX_PALETTE4_ATLAS_RGBA_BYTE_LIMIT });
 		}
+		const cartPlans = planCartAtlasResidency(direct16Atlases, image_assets);
 		for (let planIndex = 0; planIndex < cartPlans.length; planIndex += 1) {
 			const plan = cartPlans[planIndex];
 			for (let pageIndex = 0; pageIndex < plan.pages.length; pageIndex += 1) {
@@ -1802,7 +1844,7 @@ export async function createAtlasses(resources: Resource[], reportProgress?: Pro
 						page[imageIndex].targetAtlasId = splitAtlasId;
 					}
 				}
-				atlasQueue.push({ atlas, images: page, textureAddr: plan.textureAddr, byteLimit: plan.regionBytes });
+				atlasQueue.push({ kind: 'direct16', atlas, images: page, textureAddr: plan.textureAddr, byteLimit: plan.regionBytes });
 			}
 		}
 		for (let atlasIndex = 0; atlasIndex < atlasQueue.length; atlasIndex += 1) {
@@ -1811,8 +1853,16 @@ export async function createAtlasses(resources: Resource[], reportProgress?: Pro
 			reportProgress?.(`atlas ${atlas.name} (${entry.images.length} images)`);
 			const atlasCanvas = createOptimizedAtlas(entry.images, entry.byteLimit);
 			atlas.img = atlasCanvas; // Store the canvas in the resource (to extract the image properties later during `processResources`)
-			atlas.textureAddr = entry.textureAddr;
-			atlas.textureBytes = atlasCanvas.width * atlasCanvas.height * TEXTURE_ATLAS_RGBA_BYTES_PER_PIXEL;
+			if (entry.kind === 'direct16') {
+				atlas.textureAddr = entry.textureAddr;
+				atlas.textureBytes = atlasCanvas.width * atlasCanvas.height * TEXTURE_ATLAS_RGBA_BYTES_PER_PIXEL;
+			} else {
+				atlas.gxTexture = buildPalette4GxTextureAtlas(
+					atlas.atlasId,
+					atlasCanvas.width,
+					atlasCanvas.height,
+					atlasCanvas.getContext('2d').getImageData(0, 0, atlasCanvas.width, atlasCanvas.height).data);
+			}
 			atlas.buffer = atlasCanvas.toBuffer('image/png'); // Convert canvas to PNG buffer
 			reportProgress?.(`write atlas ${atlas.name}`);
 			await writeFile(`./rom/_ignore/${generateAtlasAssetId(atlas.atlasId)}.png`, atlas.buffer);

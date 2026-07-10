@@ -32,17 +32,10 @@ local castle_map<const> = require('castle/map')
 local init_epoch = 0
 local pending_title_boot_epoch = -1
 
-local irq_flags_addr<const> = 0x08000108
-local irq_ack_addr<const> = 0x08000108
 local irq_mask_addr<const> = 0x0800010c
-local irq_dma_done<const> = 0x01
-local irq_dma_error<const> = 0x02
-local irq_dma_mask<const> = irq_dma_done | irq_dma_error
 local irq_vblank<const> = 0x0010
 local irq_apu<const> = 0x0200
 local vblank_count = 0
-local irq_flags_register<const>: *word = irq_flags_addr
-local irq_ack_register<const>: *word = irq_ack_addr
 
 local register_collision_profiles<const> = function()
 	collision_profiles.define('player', {
@@ -68,17 +61,6 @@ local wait_vblank<const> = function()
 		halt_until_irq
 	until vblank_count ~= 0
 	vblank_count = vblank_count - 1
-end
-
-local wait_dma<const> = function()
-	repeat
-		local flags<const> = irq_flags_register[0]
-		local dma_flags<const> = flags & irq_dma_mask
-		if dma_flags ~= 0 then
-			irq_ack_register[0] = dma_flags
-			return
-		end
-	until false
 end
 
 local grant_starting_loadout<const> = function()
@@ -142,10 +124,12 @@ function new_game()
 end
 
 function init()
+	mem[irq_mask_addr] = 0
 	on_irq(irq_vblank, function()
 		vblank_count = vblank_count + 1
 	end)
-	mem[0x08000008] = 0
+	gx_reset_256x192_pal()
+	gx_clear_color(0xff000000)
 	pietious_font.register_fonts()
 
 	player_module.define_player_fsm()
@@ -191,16 +175,16 @@ function init()
 	title_screen_module.register_title_screen_definition()
 	director_module.register_director_definition()
 	register_collision_profiles()
-	vdp_load_atlas(0)
 	init_epoch = init_epoch + 1
 	pending_title_boot_epoch = init_epoch
 end
 
 -- Pietious owns the hardware cadence explicitly. Input is armed before the
 -- VBLANK that samples it, game logic runs during the following visible frame,
--- rendering/DMA happens in the next VBLANK, and the extra wait keeps the game
+-- GP0 submission happens in the next VBLANK, and the extra wait keeps the game
 -- tick at half the display refresh rate.
 init()
+gx_upload_atlas(0)
 mem[irq_mask_addr] = irq_vblank | irq_apu
 new_game()
 mem[0x08000194] = 0x00000001
@@ -210,14 +194,8 @@ while true do
 	update_world()
 
 	wait_vblank()
-	vdp_stream_cursor = 0x080c0000
+	gx_clear_color(0xff000000)
 	draw_world()
-	vdp_stream_finish()
-	mem[0x08000110] = 0x080c0000
-	mem[0x08000114] = 0x0800007c
-	mem[0x08000118] = vdp_stream_cursor - 0x080c0000
-	mem[0x0800011c] = 0x00000001
-	wait_dma()
 
 	mem[0x08000194] = 0x00000001
 	wait_vblank()

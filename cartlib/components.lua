@@ -171,6 +171,28 @@ function spritecomponent:set_imgid(imgid)
 	self.imgid = imgid
 end
 
+local tilelayercomponent<const> = {}
+tilelayercomponent.__index = tilelayercomponent
+setmetatable(tilelayercomponent, { __index = component })
+
+function tilelayercomponent.new(opts)
+	opts = opts or {}
+	opts.type_name = 'tilelayercomponent'
+	local self<const> = setmetatable(component.new(opts), tilelayercomponent)
+	self.sources = opts.sources
+	self.tile_count = opts.tile_count or 0
+	self.columns = opts.columns or 1
+	self.tile_size = opts.tile_size or 0
+	self.offset_x = opts.offset_x or 0
+	self.offset_y = opts.offset_y or 0
+	self.empty_source = opts.empty_source
+	self.visible = opts.visible
+	if self.visible == nil then
+		self.visible = true
+	end
+	return self
+end
+
 -- collider2dcomponent: holds hit areas / polys
 --
 -- DESIGN PRINCIPLES — collider setup
@@ -1110,6 +1132,7 @@ end
 local componentregistry<const> = {
 	component = component,
 	spritecomponent = spritecomponent,
+	tilelayercomponent = tilelayercomponent,
 	collider2dcomponent = collider2dcomponent,
 	timelinecomponent = timelinecomponent,
 	transformcomponent = transformcomponent,
@@ -1143,6 +1166,7 @@ end
 return {
 	component = component,
 	spritecomponent = spritecomponent,
+	tilelayercomponent = tilelayercomponent,
 	collider2dcomponent = collider2dcomponent,
 	timelinecomponent = timelinecomponent,
 	transformcomponent = transformcomponent,

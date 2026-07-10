@@ -18,10 +18,10 @@
 require('constants')
 local font_module<const> = require('cartlib/font')
 
-local draw_glyph_line_color<const> = function(font, line, x, y, z, layer, color)
+local draw_glyph_line_color<const> = function(font, line, x, y, color)
 	local cursor_x = x
 	font_module.for_each_glyph(font, line, function(glyph)
-		vdp_glyph_color(glyph, cursor_x, y, z, layer, color)
+		gx_blit_img_color(glyph.imgid, cursor_x, y, color)
 		cursor_x = cursor_x + glyph.advance
 	end)
 end
@@ -46,7 +46,7 @@ function transition:bind_visual()
 end
 
 function transition:draw_transition_overlay()
-	vdp_fill_rect_color(0, 0, screen_width, screen_height, 340, 0x00000001, 0xff000000)
+	gx_fill_rect_color(0, 0, screen_width, screen_height, 0xff000000)
 	if not oget('d'):has_tag('d.bt') then
 		return
 	end
@@ -57,7 +57,7 @@ function transition:draw_transition_overlay()
 		for i = 1, #lines do
 			local line<const> = lines[i]
 			if string.len(line) > 0 then
-				draw_glyph_line_color(banner_font, line, (screen_width - font_module.measure_line_width(banner_font, line)) // 2, base_y + ((i - 1) * banner_font.line_height), 341, 0x00000001, 0xffffffff)
+				draw_glyph_line_color(banner_font, line, (screen_width - font_module.measure_line_width(banner_font, line)) // 2, base_y + ((i - 1) * banner_font.line_height), 0xffffffff)
 			end
 		end
 	end

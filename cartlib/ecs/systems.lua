@@ -65,6 +65,7 @@ local tickgroup<const> = ecs.tickgroup
 local ecsystem<const> = ecs.ecsystem
 
 local spritecomponent<const> = 'spritecomponent'
+local tilelayercomponent<const> = 'tilelayercomponent'
 local timelinecomponent<const> = 'timelinecomponent'
 local textcomponent<const> = 'textcomponent'
 local meshcomponent<const> = 'meshcomponent'
@@ -460,6 +461,34 @@ function timelinesystem:update(dt_ms)
 	end
 end
 
+local tilelayerrendersystem<const> = {}
+tilelayerrendersystem.__index = tilelayerrendersystem
+setmetatable(tilelayerrendersystem, { __index = ecsystem })
+
+function tilelayerrendersystem.new(priority)
+	return setmetatable(ecsystem.new(tickgroup.presentation, priority), tilelayerrendersystem)
+end
+
+function tilelayerrendersystem:update()
+	local components<const> = world_instance.active_space.active_components_by_type[tilelayercomponent]
+	for i = 1, #components do
+		local layer<const> = components[i]
+		if not layer.visible then
+			goto continue_tile_layer
+		end
+		local parent<const> = layer.parent
+		gx_image.tile_run_sources(
+			layer.sources,
+			layer.tile_count,
+			layer.columns,
+			layer.tile_size,
+			parent.x + layer.offset_x,
+			parent.y + layer.offset_y,
+			layer.empty_source)
+		::continue_tile_layer::
+	end
+end
+
 local textrendersystem<const> = {}
 textrendersystem.__index = textrendersystem
 setmetatable(textrendersystem, { __index = ecsystem })
@@ -640,6 +669,7 @@ return {
 	tilecollisionsystem = tilecollisionsystem,
 	overlap2dsystem = overlap2dsystem,
 	timelinesystem = timelinesystem,
+	tilelayerrendersystem = tilelayerrendersystem,
 	textrendersystem = textrendersystem,
 	spriterendersystem = spriterendersystem,
 	lightrendersystem = lightrendersystem,

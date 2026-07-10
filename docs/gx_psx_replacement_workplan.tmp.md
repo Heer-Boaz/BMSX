@@ -5,7 +5,7 @@ This is **not** a stable ABI contract and is **not** more authoritative than the
 live checkout. It is a temporary execution checklist so agents can see the
 current direction, completed slices, known blockers, and next work.
 
-Last refreshed: 2026-07-08
+Last refreshed: 2026-07-10
 Do not duplicate recent commit history here. Use `git log --oneline` for that.
 
 ## Source of truth
@@ -106,12 +106,17 @@ Known gap: `GX_GPU_COMMAND_READ_VRAM_TO_CPU` is emitted by the GPU command buffe
 but accelerated backends currently do not execute a GPUREAD/readback command
 case. This must be resolved deliberately.
 
-Known migration blocker: `machine/firmware/system/gx_image.lua` supports the
-resident system atlas plus one resident cart atlas in PSX VRAM. The `2025` cart
-now owns explicit cart-atlas decode/upload points for its transitions,
-background changes, and combat atlas swaps. `pietious` still needs a real
-cart-owned residency/tile-run slice; do not paper over that with per-frame
-whole-atlas uploads or a CPU-side accelerated-backend texture shadow.
+Cart texture residency is owned by the ROM texture producer and PSX GPU
+firmware. It is independent of the active GP1 display dimensions, and the GTE
+does not participate in texture or atlas handling.
+`machine/firmware/system/gx_image.lua` supports the resident system atlas plus
+one resident cart atlas in PSX VRAM.
+The `2025` cart owns explicit direct16 cart-atlas decode/upload points for its
+transitions, background changes, and combat atlas swaps. `pietious` now uses a
+manifest-required, ROM-produced native PSX 4-bpp texture plus CLUT and GP0
+upload stream. Its atlas bypasses the legacy RGBA residency planner and has no
+CPU texture-staging allocation. It no longer decodes a whole RGBA atlas at boot
+or submits VDP tile streams.
 
 ## Hard open design point: GPUREAD / VRAM-to-CPU
 
@@ -223,8 +228,12 @@ and ask before coding.
   single-cart-atlas residency, background transition uploads, affine parallax
   sprites, semi-transparent textured fades, and existing custom visual
   submission on the GX path.
-- [ ] Migrate `pietious` engine/cart rendering. This needs GX tile/text/image
-  residency and tile-run ownership, not a VDP stream shim.
+- [x] Migrate `pietious` engine/cart rendering. Its cart atlas is packed at ROM
+  build time under an explicit Palette4 asset contract as native PSX 4-bpp
+  texture data plus CLUT and GP0 upload commands, DMA-uploaded directly to GPU
+  VRAM, and consumed by retained GX tile sources. The per-frame tile path emits
+  raw textured rectangles without rebuilding tables, decoding RGBA pixels, or
+  using a VDP stream shim.
 - [x] Replace the current `bare_metal_cart` RPU descriptor smoke path with
   GX/GTE-owned PSX-style primitives. `bare_metal_cart` now programs raw GP0,
   GP1, and GTE registers directly instead of going through BIOS/system GX
@@ -265,13 +274,10 @@ and ask before coding.
 
 Pick one vertical slice and finish it before committing:
 
-1. **Finish `pietious` residency/tile migration**: reuse the resident system
-   atlas plus cart-owned atlas upload model where it fits, and add the missing
-   GX tile-run ownership instead of resurrecting VDP stream aliases.
-2. **Restore full `bare_metal_cart` feature coverage on GX/GTE**: migrate the
+1. **Restore full `bare_metal_cart` feature coverage on GX/GTE**: migrate the
    old offscreen/depth/mesh/post-pass path as real PSX/GX/GTE functionality, not
    as a small smoke replacement.
-3. **GPUREAD/readback contract**: only start after an explicit design decision.
+2. **GPUREAD/readback contract**: only start after an explicit design decision.
    Accelerated backends must read back from real backend VRAM/render targets with
    command ordering semantics; do not add a CPU shadow as the source of truth.
 

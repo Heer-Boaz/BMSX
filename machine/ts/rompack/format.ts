@@ -360,6 +360,11 @@ export interface ImgMeta {
 	height: number; // The height of the image.
 	texture_addr?: number; // Concrete CPU-visible VRAM address for atlas assets.
 	texture_len?: number; // Contiguous RGBA byte footprint for atlas assets.
+	gx_texture_mode?: number; // PSX GPU texture mode for atlas residency.
+	gx_texture_x?: number; // Native atlas base X in PSX VRAM words.
+	gx_texture_y?: number; // Native atlas base Y in PSX VRAM rows.
+	gx_clut_x?: number; // Native atlas CLUT base X in PSX VRAM words.
+	gx_clut_y?: number; // Native atlas CLUT base Y in PSX VRAM rows.
 	texcoords?: number[]; // The texture coordinates for the image, used for rendering.
 	texcoords_fliph?: number[]; // The texture coordinates for the image, when flipped horizontally.
 	texcoords_flipv?: number[]; // The texture coordinates for the image, when flipped vertically.

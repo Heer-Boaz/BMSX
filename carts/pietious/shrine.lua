@@ -4,10 +4,10 @@
 require('constants')
 local font_module<const> = require('cartlib/font')
 
-local draw_glyph_line_color<const> = function(font, line, x, y, z, layer, color)
+local draw_glyph_line_color<const> = function(font, line, x, y, color)
 	local cursor_x = x
 	font_module.for_each_glyph(font, line, function(glyph)
-		vdp_glyph_color(glyph, cursor_x, y, z, layer, color)
+		gx_blit_img_color(glyph.imgid, cursor_x, y, color)
 		cursor_x = cursor_x + glyph.advance
 	end)
 end
@@ -29,11 +29,11 @@ function shrine:ctor()
 end
 
 function shrine:render()
-	vdp_blit_img_color('shrine_inside', 0, room_tile_origin_y, 340, 0x00000001, 1, 1, 0, 0xffffffff, 0)
+	gx_blit_img_color('shrine_inside', 0, room_tile_origin_y, 0xffffffff)
 	local lines<const> = self.lines
 	for i = 1, #lines do
 		local text_font<const> = self.text_font
-		draw_glyph_line_color(text_font, lines[i], shrine_text_x, shrine_text_y + ((i - 1) * room_tile_size), 341, 0x00000001, 0xffffffff)
+		draw_glyph_line_color(text_font, lines[i], shrine_text_x, shrine_text_y + ((i - 1) * room_tile_size), 0xffffffff)
 	end
 end
 

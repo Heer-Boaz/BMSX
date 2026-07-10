@@ -58,6 +58,7 @@ local active_component_bucket_types<const> = {
 	'screenboundarycomponent',
 	'spritecomponent',
 	'textcomponent',
+	'tilelayercomponent',
 	'tilecollisioncomponent',
 	'timelinecomponent',
 }

@@ -8,23 +8,23 @@ function disappearingwall:update_wall_size()
 	self.sy = self.height_tiles * room_tile_size
 end
 
-function disappearingwall:bind_visual()
-	local renderer<const> = self:get_component('customvisualcomponent')
-	renderer.producer = function()
-		for ty = 0, self.height_tiles - 1 do
-			local draw_y<const> = self.y + (ty * room_tile_size)
-			for tx = 0, self.width_tiles - 1 do
-				local draw_x<const> = self.x + (tx * room_tile_size)
-				vdp_blit_img_color(self.tiletype, draw_x, draw_y, 22, 0x00000000, 1, 1, 0, 0xffffffff, 0)
-			end
-		end
-	end
-end
-
 function disappearingwall:ctor()
 	self:get_component('collider2dcomponent'):apply_collision_profile('enemy')
 	self:update_wall_size()
-	self:bind_visual()
+	local tile_layer<const> = self:get_component('tilelayercomponent')
+	local tile_count<const> = self.width_tiles * self.height_tiles
+	local tile_source<const> = gx_img_rect(self.tiletype)
+	local sources<const> = {}
+	for index = 1, tile_count do
+		sources[index] = tile_source
+	end
+	tile_layer.sources = sources
+	tile_layer.tile_count = tile_count
+	tile_layer.columns = self.width_tiles
+	tile_layer.tile_size = room_tile_size
+	tile_layer.offset_x = 0
+	tile_layer.offset_y = 0
+	tile_layer.empty_source = false
 end
 
 function disappearingwall.register_enemy_fsm()
@@ -48,7 +48,7 @@ function disappearingwall.register_enemy_definition()
 		def_id = 'enemy.disappearingwall',
 		class = disappearingwall,
 		fsms = { 'disappearingwall' },
-		components = { 'collider2dcomponent', 'customvisualcomponent' },
+		components = { 'collider2dcomponent', 'tilelayercomponent' },
 		defaults = {
 			trigger = nil,
 			conditions = {},

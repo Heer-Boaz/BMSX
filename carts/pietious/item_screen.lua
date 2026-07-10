@@ -87,7 +87,7 @@ function item_screen:draw_inventory_items()
 		if player.inventory_items[item_type] then
 			if item_type ~= 'map_world1' or world_number > 0 then
 				local x<const>, y<const> = self:item_position_px(item_type)
-				vdp_blit_img_color(world_item_sprite[item_type], x, y, 321, 0x00000001, 1, 1, 0, 0xffffffff, 0)
+				gx_blit_img_color(world_item_sprite[item_type], x, y, 0xffffffff)
 			end
 		end
 	end
@@ -99,7 +99,7 @@ function item_screen:draw_secondary_weapon_selector()
 	end
 	local x<const> = (14 * room_tile_size) + (self.secondary_weapon_selection_index * (3 * room_tile_size))
 	local y<const> = room_hud_height + (16 * room_tile_size) + room_tile_half - 1
-	vdp_blit_img_color('f1_selector_white', x, y, 322, 0x00000001, 1, 1, 0, 0xffffffff, 0)
+	gx_blit_img_color('f1_selector_white', x, y, 0xffffffff)
 end
 
 function item_screen:draw_map()
@@ -115,7 +115,7 @@ function item_screen:draw_map()
 
 	local map_proxies<const> = castle_map.map_world_proxies[world_number]
 
-	vdp_blit_img_color('f1_map_title', map_title_x, 103 + room_hud_height, 323, 0x00000001, 1, 1, 0, 0xffffffff, 0)
+	gx_blit_img_color('f1_map_title', map_title_x, 103 + room_hud_height, 0xffffffff)
 
 	for i = 1, #map_proxies do
 		local proxy<const> = map_proxies[i]
@@ -129,7 +129,7 @@ function item_screen:draw_map()
 		end
 		local proxy_x<const> = (5 * room_tile_size) + (proxy.x * room_tile_size)
 		local proxy_y<const> = room_hud_height + (14 * room_tile_size) + room_tile_half + (proxy.y * room_tile_half)
-		vdp_blit_img_color(sprite_id, proxy_x, proxy_y, 323, 0x00000001, 1, 1, 0, 0xffffffff, 0)
+		gx_blit_img_color(sprite_id, proxy_x, proxy_y, 0xffffffff)
 	end
 end
 
@@ -166,7 +166,7 @@ function item_screen:shift_secondary_weapon_selection(direction)
 end
 
 function item_screen:draw_screen()
-	vdp_blit_img_color('f1_screen', 0, room_hud_height, 320, 0x00000001, 1, 1, 0, 0xffffffff, 0)
+	gx_blit_img_color('f1_screen', 0, room_hud_height, 0xffffffff)
 	self:draw_inventory_items()
 	self:draw_secondary_weapon_selector()
 	self:draw_map()
