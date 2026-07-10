@@ -18,19 +18,15 @@ local gp1_display_mode_320_pal<const> = 0x08000009
 local gp0_fill_rectangle<const> = 0x02000000
 local gp0_draw_rectangle<const> = 0x60000000
 local gp0_draw_triangle<const> = 0x20000000
-local gp0_draw_semitransparent_triangle<const> = 0x22000000
 local gp0_draw_quad<const> = 0x28000000
 local gp0_draw_semitransparent_quad<const> = 0x2a000000
 local gp0_draw_gouraud_triangle<const> = 0x30000000
 local gp0_draw_textured_quad<const> = 0x2c000000
 local gp0_draw_raw_textured_quad<const> = 0x2d000000
-local gp0_draw_semitransparent_textured_quad<const> = 0x2e000000
 local gp0_draw_textured_rectangle<const> = 0x64000000
 local gp0_draw_raw_textured_rectangle<const> = 0x65000000
-local gp0_draw_semitransparent_textured_rectangle<const> = 0x66000000
 local gp0_draw_semitransparent_rectangle<const> = 0x62000000
 local gp0_draw_line<const> = 0x40000000
-local gp0_draw_semitransparent_line<const> = 0x42000000
 local gp0_cpu_to_vram<const> = 0xa0000000
 local gp0_draw_mode<const> = 0xe1000000
 local gp0_drawing_area_top_left_0<const> = 0xe3000000
@@ -62,11 +58,10 @@ local argb_to_gp0_rgb<const> = function(color)
 	return ((color & 0x00ff0000) >> 16) | (color & 0x0000ff00) | ((color & 0x000000ff) << 16)
 end
 
-local argb_to_gp0_modulated_rgb<const> = function(color)
-	local alpha<const> = (color >> 24) & 0x000000ff
-	return ((((color >> 16) & 0x000000ff) * alpha) // 255)
-		| (((((color >> 8) & 0x000000ff) * alpha) // 255) << 8)
-		| ((((color & 0x000000ff) * alpha) // 255) << 16)
+local argb_to_gp0_texture_rgb<const> = function(color)
+	return (((((color >> 16) & 0x000000ff) * 128) + 127) // 255)
+		| ((((((color >> 8) & 0x000000ff) * 128) + 127) // 255) << 8)
+		| (((((color & 0x000000ff) * 128) + 127) // 255) << 16)
 end
 
 local xy<const> = function(x, y)
@@ -148,17 +143,14 @@ function gx_gpu.clear_color(color)
 	*gp0 = current_display_size_word
 end
 
-function gx_gpu.fill_rect_color(x0, y0, x1, y1, color)
-	if (color & 0xff000000) == 0 then
-		return
-	end
-	if (color & 0xff000000) ~= 0xff000000 then
-		gx_gpu.fill_rect_semitrans_color(x0, y0, x1, y1, color)
-		return
-	end
-	*gp0 = gp0_draw_rectangle | argb_to_gp0_rgb(color)
+local emit_rect_color<const> = function(opcode, x0, y0, x1, y1, color)
+	*gp0 = opcode | argb_to_gp0_rgb(color)
 	*gp0 = xy(x0, y0)
 	*gp0 = wh(x1 - x0, y1 - y0)
+end
+
+function gx_gpu.fill_rect_color(x0, y0, x1, y1, color)
+	emit_rect_color(gp0_draw_rectangle, x0, y0, x1, y1, color)
 end
 
 function gx_gpu.set_draw_mode(draw_mode)
@@ -167,46 +159,29 @@ function gx_gpu.set_draw_mode(draw_mode)
 end
 
 function gx_gpu.fill_rect_semitrans_color(x0, y0, x1, y1, color)
-	if (color & 0xff000000) == 0 then
-		return
-	end
-	*gp0 = gp0_draw_semitransparent_rectangle | argb_to_gp0_modulated_rgb(color)
-	*gp0 = xy(x0, y0)
-	*gp0 = wh(x1 - x0, y1 - y0)
+	emit_rect_color(gp0_draw_semitransparent_rectangle, x0, y0, x1, y1, color)
 end
 
 function gx_gpu.draw_line_color(x0, y0, x1, y1, color)
-	local alpha_bits<const> = color & 0xff000000
-	if alpha_bits == 0 then
-		return
-	end
-	local opcode<const> = alpha_bits == 0xff000000 and gp0_draw_line or gp0_draw_semitransparent_line
-	local rgb<const> = alpha_bits == 0xff000000 and argb_to_gp0_rgb(color) or argb_to_gp0_modulated_rgb(color)
-	*gp0 = opcode | rgb
+	*gp0 = gp0_draw_line | argb_to_gp0_rgb(color)
 	*gp0 = xy(x0, y0)
 	*gp0 = xy(x1, y1)
 end
 
-local draw_quad_color<const> = function(x0, y0, x1, y1, x2, y2, x3, y3, color)
-	local alpha_bits<const> = color & 0xff000000
-	if alpha_bits == 0 then
-		return
-	end
-	local opcode<const> = alpha_bits == 0xff000000 and gp0_draw_quad or gp0_draw_semitransparent_quad
-	local rgb<const> = alpha_bits == 0xff000000 and argb_to_gp0_rgb(color) or argb_to_gp0_modulated_rgb(color)
-	*gp0 = opcode | rgb
+local emit_quad_color<const> = function(opcode, x0, y0, x1, y1, x2, y2, x3, y3, color)
+	*gp0 = opcode | argb_to_gp0_rgb(color)
 	*gp0 = xy(x0, y0)
 	*gp0 = xy(x1, y1)
 	*gp0 = xy(x2, y2)
 	*gp0 = xy(x3, y3)
 end
 
-function gx_gpu.draw_thick_line_color(x0, y0, x1, y1, color, thickness)
+local draw_thick_line<const> = function(rect_opcode, quad_opcode, x0, y0, x1, y1, color, thickness)
 	local dx<const> = x1 - x0
 	local dy<const> = y1 - y0
 	local half<const> = thickness * 0.5
 	if dx == 0 and dy == 0 then
-		gx_gpu.fill_rect_color(x0 - half, y0 - half, x0 + half, y0 + half, color)
+		emit_rect_color(rect_opcode, x0 - half, y0 - half, x0 + half, y0 + half, color)
 		return
 	end
 	local length<const> = sqrt(dx * dx + dy * dy)
@@ -214,7 +189,8 @@ function gx_gpu.draw_thick_line_color(x0, y0, x1, y1, color, thickness)
 	local tangent_y<const> = dy / length
 	local normal_x<const> = -tangent_y
 	local normal_y<const> = tangent_x
-	draw_quad_color(
+	emit_quad_color(
+		quad_opcode,
 		x0 - tangent_x * half - normal_x * half,
 		y0 - tangent_y * half - normal_y * half,
 		x1 + tangent_x * half - normal_x * half,
@@ -227,14 +203,16 @@ function gx_gpu.draw_thick_line_color(x0, y0, x1, y1, color, thickness)
 	)
 end
 
+function gx_gpu.draw_thick_line_color(x0, y0, x1, y1, color, thickness)
+	draw_thick_line(gp0_draw_rectangle, gp0_draw_quad, x0, y0, x1, y1, color, thickness)
+end
+
+function gx_gpu.draw_thick_line_semitrans_color(x0, y0, x1, y1, color, thickness)
+	draw_thick_line(gp0_draw_semitransparent_rectangle, gp0_draw_semitransparent_quad, x0, y0, x1, y1, color, thickness)
+end
+
 function gx_gpu.draw_triangle_color(x0, y0, x1, y1, x2, y2, color)
-	local alpha_bits<const> = color & 0xff000000
-	if alpha_bits == 0 then
-		return
-	end
-	local opcode<const> = alpha_bits == 0xff000000 and gp0_draw_triangle or gp0_draw_semitransparent_triangle
-	local rgb<const> = alpha_bits == 0xff000000 and argb_to_gp0_rgb(color) or argb_to_gp0_modulated_rgb(color)
-	*gp0 = opcode | rgb
+	*gp0 = gp0_draw_triangle | argb_to_gp0_rgb(color)
 	*gp0 = xy(x0, y0)
 	*gp0 = xy(x1, y1)
 	*gp0 = xy(x2, y2)
@@ -275,18 +253,17 @@ function gx_gpu.upload_rgba8888_to_direct16_stride(source_addr, source_x, source
 end
 
 function gx_gpu.draw_direct16_textured_rect_color(source_x, source_y, x, y, width, height, color)
-	local alpha_bits<const> = color & 0xff000000
-	if alpha_bits == 0 then
-		return
+	local raw_texture<const> = (color & 0x00ffffff) == 0x00ffffff
+	local textured_word
+	if not raw_texture then
+		textured_word = gp0_draw_textured_rectangle | argb_to_gp0_texture_rgb(color)
 	end
-	local textured_opcode<const> = alpha_bits == 0xff000000 and gp0_draw_textured_rectangle or gp0_draw_semitransparent_textured_rectangle
-	local textured_rgb<const> = alpha_bits == 0xff000000 and argb_to_gp0_rgb(color) or argb_to_gp0_modulated_rgb(color)
 	if width <= texture_page_remaining(source_x) and height <= texture_page_remaining(source_y) then
 		*gp0 = gp0_draw_mode | draw_mode_for_texture_page(source_x, source_y)
-		if color == 0xffffffff then
+		if raw_texture then
 			*gp0 = gp0_draw_raw_textured_rectangle | 0x00808080
 		else
-			*gp0 = textured_opcode | textured_rgb
+			*gp0 = textured_word
 		end
 		*gp0 = xy(x, y)
 		*gp0 = (source_x & 0x000000ff) | ((source_y & 0x000000ff) << 8)
@@ -310,10 +287,10 @@ function gx_gpu.draw_direct16_textured_rect_color(source_x, source_y, x, y, widt
 				chunk_w = remaining_w
 			end
 			*gp0 = gp0_draw_mode | draw_mode_for_texture_page(draw_source_x, draw_source_y)
-			if color == 0xffffffff then
+			if raw_texture then
 				*gp0 = gp0_draw_raw_textured_rectangle | 0x00808080
 			else
-				*gp0 = textured_opcode | textured_rgb
+				*gp0 = textured_word
 			end
 			*gp0 = xy(draw_x, draw_y)
 			*gp0 = (draw_source_x & 0x000000ff) | ((draw_source_y & 0x000000ff) << 8)
@@ -329,17 +306,11 @@ function gx_gpu.draw_direct16_textured_rect_color(source_x, source_y, x, y, widt
 end
 
 function gx_gpu.draw_palette4_textured_rect_color(texture_x, clut_x, clut_y, source_x, source_y, x, y, width, height, color)
-	local alpha_bits<const> = color & 0xff000000
-	if alpha_bits == 0 then
-		return
-	end
 	*gp0 = gp0_draw_mode | draw_mode_for_palette4_page(texture_x, source_x, source_y)
-	if color == 0xffffffff then
+	if (color & 0x00ffffff) == 0x00ffffff then
 		*gp0 = gp0_draw_raw_textured_rectangle | 0x00808080
 	else
-		local textured_opcode<const> = alpha_bits == 0xff000000 and gp0_draw_textured_rectangle or gp0_draw_semitransparent_textured_rectangle
-		local textured_rgb<const> = alpha_bits == 0xff000000 and argb_to_gp0_rgb(color) or argb_to_gp0_modulated_rgb(color)
-		*gp0 = textured_opcode | textured_rgb
+		*gp0 = gp0_draw_textured_rectangle | argb_to_gp0_texture_rgb(color)
 	end
 	*gp0 = xy(x, y)
 	*gp0 = uv_clut(source_x, source_y, clut_x, clut_y)
@@ -357,18 +328,12 @@ function gx_gpu.draw_direct16_textured_quad_color(
 	x2, y2,
 	x3, y3,
 	color)
-	local alpha_bits<const> = color & 0xff000000
-	if alpha_bits == 0 then
-		return
-	end
 	local draw_mode<const> = draw_mode_for_texture_page(page_source_x, page_source_y)
 	*gp0 = gp0_draw_mode | draw_mode
-	if color == 0xffffffff then
+	if (color & 0x00ffffff) == 0x00ffffff then
 		*gp0 = gp0_draw_raw_textured_quad | 0x00808080
 	else
-		local opcode<const> = alpha_bits == 0xff000000 and gp0_draw_textured_quad or gp0_draw_semitransparent_textured_quad
-		local rgb<const> = alpha_bits == 0xff000000 and argb_to_gp0_rgb(color) or argb_to_gp0_modulated_rgb(color)
-		*gp0 = opcode | rgb
+		*gp0 = gp0_draw_textured_quad | argb_to_gp0_texture_rgb(color)
 	end
 	*gp0 = xy(x0, y0)
 	*gp0 = uv(source_x0, source_y0)
@@ -392,18 +357,12 @@ function gx_gpu.draw_palette4_textured_quad_color(
 	x2, y2,
 	x3, y3,
 	color)
-	local alpha_bits<const> = color & 0xff000000
-	if alpha_bits == 0 then
-		return
-	end
 	local draw_mode<const> = draw_mode_for_palette4_page(texture_x, page_source_x, page_source_y)
 	*gp0 = gp0_draw_mode | draw_mode
-	if color == 0xffffffff then
+	if (color & 0x00ffffff) == 0x00ffffff then
 		*gp0 = gp0_draw_raw_textured_quad | 0x00808080
 	else
-		local opcode<const> = alpha_bits == 0xff000000 and gp0_draw_textured_quad or gp0_draw_semitransparent_textured_quad
-		local rgb<const> = alpha_bits == 0xff000000 and argb_to_gp0_rgb(color) or argb_to_gp0_modulated_rgb(color)
-		*gp0 = opcode | rgb
+		*gp0 = gp0_draw_textured_quad | argb_to_gp0_texture_rgb(color)
 	end
 	*gp0 = xy(x0, y0)
 	*gp0 = uv_clut(source_x0, source_y0, clut_x, clut_y)

@@ -4,6 +4,8 @@ local linear<const> = require('bios/easing').linear
 local ease_out_quad<const> = require('bios/easing').ease_out_quad
 local ease_out_back<const> = require('bios/easing').ease_out_back
 local smoothstep<const> = require('bios/easing').smoothstep
+local color<const> = require('bios/common/color')
+local round_number<const> = require('bios/util/round_to_nearest')
 local stagger_timeline_prefix<const> = 'p3.stagger.'
 
 local presets<const> = {
@@ -12,7 +14,7 @@ local presets<const> = {
 		bg_duration = 0.18,
 		pose_duration = 0.2,
 		text_duration = 0.18,
-		bg_alpha = 0.75,
+		bg_brightness = 0.75,
 		pose_from = 0.98,
 		pose_to = 1.0,
 		pose_text_nudge = 1,
@@ -25,7 +27,7 @@ local presets<const> = {
 		bg_duration = 0.16,
 		pose_duration = 0.2,
 		text_duration = 0.16,
-		bg_alpha = 0.78,
+		bg_brightness = 0.78,
 		pose_from = 0.985,
 		pose_to = 1.0,
 		pose_text_nudge = 2,
@@ -38,7 +40,7 @@ local presets<const> = {
 		bg_duration = 0.12,
 		pose_duration = 0.18,
 		text_duration = 0.14,
-		bg_alpha = 0.7,
+		bg_brightness = 0.7,
 		pose_from = 0.97,
 		pose_to = 1.0,
 		pose_text_nudge = 2,
@@ -72,16 +74,6 @@ local tween_u<const> = function(time, start_time, duration, ease)
 	return ease(u)
 end
 
-local apply_text_alpha<const> = function(text_obj, alpha)
-	local ab<const> = ((alpha * 255 + 0.5) // 1) & 0xff
-	text_obj.text_color = (ab << 24) | (text_obj.text_color & 0x00ffffff)
-end
-
-local apply_bg_alpha<const> = function(bg, base, alpha)
-	local ab<const> = ((alpha * 255 + 0.5) // 1) & 0xff
-	bg.sprite_component.color = (ab << 24) | (base & 0x00ffffff)
-end
-
 local pose_apply<const> = function(entry, scale, nudge)
 	local obj<const> = entry.obj
 	local sc<const> = obj.sprite_component
@@ -107,8 +99,8 @@ local stagger_track<const> = function(target, params, event)
 
 	if bg then
 		local u<const> = tween_u(t, cfg.bg_start, cfg.bg_duration, bg_ease)
-		local alpha<const> = cfg.bg_from + ((cfg.bg_to - cfg.bg_from) * u)
-		apply_bg_alpha(bg, params.bg_base_color, alpha)
+		local brightness<const> = cfg.bg_from + ((cfg.bg_to - cfg.bg_from) * u)
+		bg.sprite_component.color = color.mix_rgb_with_alpha(p3_black_color, params.bg_base_color, round_number(brightness * 255), 1)
 	end
 
 	local poses<const> = params.pose_targets
@@ -135,15 +127,16 @@ local stagger_track<const> = function(target, params, event)
 	end
 
 	local text_u<const> = tween_u(t, cfg.text_start, cfg.text_duration, text_ease)
-	local text_alpha<const> = cfg.text_from + ((cfg.text_to - cfg.text_from) * text_u)
+	local text_brightness<const> = cfg.text_from + ((cfg.text_to - cfg.text_from) * text_u)
+	local text_level<const> = round_number(text_brightness * 255)
 	if text_main then
-		apply_text_alpha(text_main, params.text_base_alpha * text_alpha)
+		text_main.text_color = color.mix_rgb_with_alpha(p3_black_color, params.text_main_base_color, text_level, 1)
 	end
 	if text_choice then
-		apply_text_alpha(text_choice, params.text_base_alpha * text_alpha)
+		text_choice.text_color = color.mix_rgb_with_alpha(p3_black_color, params.text_choice_base_color, text_level, 1)
 	end
 	if text_prompt then
-		apply_text_alpha(text_prompt, params.text_base_alpha * text_alpha)
+		text_prompt.text_color = color.mix_rgb_with_alpha(p3_black_color, params.text_prompt_base_color, text_level, 1)
 	end
 end
 
@@ -194,7 +187,7 @@ function stagger.play(owner, preset_id, opts)
 		text_start = 0,
 		text_duration = cfg.text_duration,
 		bg_from = 1,
-		bg_to = cfg.bg_alpha,
+		bg_to = cfg.bg_brightness,
 		pose_from = cfg.pose_from,
 		pose_to = cfg.pose_to,
 		text_from = 0,
@@ -205,31 +198,34 @@ function stagger.play(owner, preset_id, opts)
 	local text_main<const> = opts.text_main
 	local text_choice<const> = opts.text_choice
 	local text_prompt<const> = opts.text_prompt
-	local text_base_alpha = 1
+	local text_main_base_color
+	local text_choice_base_color
+	local text_prompt_base_color
 
 	if bg then
 		local base<const> = bg.sprite_component.color
-		local base_alpha<const> = ((base >> 24) & 0xff) / 255
 		timeline_cfg.bg_base_color = base
-		timeline_cfg.bg_from = base_alpha
+		timeline_cfg.bg_from = 1
 		if opts.bg_dim ~= nil and not opts.bg_dim then
-			timeline_cfg.bg_to = base_alpha
-		elseif opts.bg_alpha ~= nil then
-			timeline_cfg.bg_to = opts.bg_alpha
+			timeline_cfg.bg_to = 1
+		elseif opts.bg_brightness ~= nil then
+			timeline_cfg.bg_to = opts.bg_brightness
 		end
-		apply_bg_alpha(bg, timeline_cfg.bg_base_color, timeline_cfg.bg_from)
+		bg.sprite_component.color = base
 	end
 
 	if text_main then
-		text_base_alpha = ((text_main.text_color >> 24) & 0xff) / 255
-		apply_text_alpha(text_main, 0)
+		text_main_base_color = text_main.text_color
+		text_main.text_color = p3_black_color
 	end
 	if text_choice then
-		apply_text_alpha(text_choice, 0)
+		text_choice_base_color = text_choice.text_color
+		text_choice.text_color = p3_black_color
 		text_choice.highlighted_line_index = nil
 	end
 	if text_prompt then
-		apply_text_alpha(text_prompt, 0)
+		text_prompt_base_color = text_prompt.text_color
+		text_prompt.text_color = p3_black_color
 	end
 
 	if opts.text_lines == nil and text_main then
@@ -253,9 +249,11 @@ function stagger.play(owner, preset_id, opts)
 			text_lines = opts.text_lines,
 			text_choice_lines = opts.text_choice_lines,
 			text_prompt_line = opts.text_prompt_line,
-				text_typed = opts.text_typed,
+			text_typed = opts.text_typed,
 			text_started = false,
-			text_base_alpha = text_base_alpha,
+			text_main_base_color = text_main_base_color,
+			text_choice_base_color = text_choice_base_color,
+			text_prompt_base_color = text_prompt_base_color,
 			pose_text_nudge = opts.pose_text_nudge or cfg.pose_text_nudge or 0,
 			bg_ease = resolve_ease(cfg.bg_ease),
 			pose_ease = resolve_ease(cfg.pose_ease),

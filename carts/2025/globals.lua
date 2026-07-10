@@ -147,7 +147,7 @@ combat_exchange_hit_impact_scale_x = 0.24
 combat_exchange_hit_impact_scale_y = -0.2
 combat_exchange_hit_shake_x = 20
 combat_exchange_hit_shake_y = 16
-combat_exchange_hit_overlay_alpha = 0.35
+combat_exchange_hit_overlay_strength = 0.35
 combat_exchange_miss_dodge_distance = -54
 combat_exchange_miss_dodge_lift = 4
 combat_exchange_miss_dodge_hold_frames = 4
@@ -223,9 +223,7 @@ p3_transition_palette_ending = {
 }
 p3_transition_palette_choice = p3_transition_palette_dialogue
 
-combat_results_bg_color = p3_blue_color
-combat_results_bg_alpha_byte = 0xd9
-combat_results_bg_visible_color = (combat_results_bg_alpha_byte << 24) | (combat_results_bg_color & 0x00ffffff)
+combat_results_bg_visible_color = 0xff0f3cae
 
 function clear_texts(text_ids)
 	for i = 1, #text_ids do
@@ -266,6 +264,7 @@ function hide_transition_layers()
 	local overlay<const> = director.transition_visual.overlay
 	overlay.visible = false
 	overlay.color = 0
+	overlay.blend_color = 0
 	for i = 1, #director.transition_visual.panels do
 		local panel<const> = director.transition_visual.panels[i]
 		panel.visible = false

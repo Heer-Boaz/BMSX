@@ -118,6 +118,7 @@ function transition.register_states(states)
 	end
 
 	local finish_transition_fade_in<const> = function(self)
+		oget(bg_id).sprite_component.color = p3_white_color
 		hide_transition_layers()
 		return '/run_node'
 	end
@@ -191,16 +192,19 @@ function transition.register_states(states)
 			self.transition_finish_frame = finish_frame
 			show_background(nil)
 			local overlay<const> = self.transition_visual.overlay
+			local background<const> = oget(bg_id)
 			local base<const> = self.transition_palette.overlay
 			overlay.visible = true
 			overlay.x = 0
 			overlay.y = 0
 			overlay.width = screen_width
 			overlay.height = screen_height
+			overlay.blend_mode = gx_draw_mode_blend_subtract
+			overlay.blend_color = 0
 			if self.skip_transition_fade then
 				overlay.color = base
 			else
-				overlay.color = base & 0x00ffffff
+				overlay.color = 0
 			end
 			for i = 1, #self.transition_panels do
 				local panel<const> = self.transition_panels[i]
@@ -210,7 +214,7 @@ function transition.register_states(states)
 				visual.y = panel.y
 				visual.width = panel.width
 				visual.height = panel.height
-				visual.color = panel.color & 0x00ffffff
+				visual.color = 0
 			end
 			local accent<const> = self.transition_visual.accent
 			accent.visible = true
@@ -218,12 +222,16 @@ function transition.register_states(states)
 			accent.y = self.transition_accent.y
 			accent.width = self.transition_accent.width
 			accent.height = self.transition_accent.height
-			accent.color = self.transition_accent.color & 0x00ffffff
+			accent.color = 0
 			if self.skip_transition_fade then
 				apply_background(self.transition_target_bg)
+				background.sprite_component.color = p3_black_color
+			else
+				background.sprite_component.color = p3_white_color
 			end
 			local w<const> = screen_width
 			local target<const> = {
+				bg = background,
 				overlay = overlay,
 				panels = self.transition_visual.panels,
 				accent = accent,
@@ -292,24 +300,16 @@ function transition.register_states(states)
 	states.transition_fade_in = {
 		entering_state = function(self)
 			oget(text_transition_id):clear_text()
-			show_background(nil)
+			local background<const> = show_background(nil)
 			hide_transition_layers()
-			local overlay<const> = self.transition_visual.overlay
-			local base<const> = self.transition_palette.overlay
-			overlay.visible = true
-			overlay.x = 0
-			overlay.y = 0
-			overlay.width = screen_width
-			overlay.height = screen_height
-			overlay.color = base
-			local target<const> = { overlay = overlay }
-			local frames<const> = build_transition_fade_in_frames(self.transition_palette)
+			background.sprite_component.color = p3_black_color
+			local frames<const> = build_transition_fade_in_frames()
 			self:define_timeline(timeline.new({
 				id = overgang_post_fade_in_timeline_id,
 				frames = frames,
 				ticks_per_frame = overgang_ticks_per_frame,
 				playback_mode = 'once',
-				target = target,
+				target = background,
 				apply = true,
 			}))
 			self:play_timeline(overgang_post_fade_in_timeline_id, { rewind = true, snap_to_start = true })
@@ -331,6 +331,7 @@ function transition.register_states(states)
 		},
 		leaving_state = function(self)
 			self:stop_timeline(overgang_post_fade_in_timeline_id)
+			oget(bg_id).sprite_component.color = p3_white_color
 			hide_transition_layers()
 		end,
 	}
@@ -357,16 +358,18 @@ function transition.register_states(states)
 			show_background(nil)
 			hide_transition_layers()
 			local overlay<const> = self.transition_visual.overlay
-			local base<const> = self.fade_palette.overlay
+			local background<const> = oget(bg_id)
 			overlay.visible = true
 			overlay.x = 0
 			overlay.y = 0
 			overlay.width = screen_width
 			overlay.height = screen_height
-			overlay.color = base & 0x00ffffff
-			local target<const> = { overlay = overlay }
+			overlay.color = 0
+			overlay.blend_mode = gx_draw_mode_blend_subtract
+			overlay.blend_color = 0
+			background.sprite_component.color = p3_white_color
+			local target<const> = { bg = background, overlay = overlay }
 			local frames<const> = build_fade_frames({
-				palette = self.fade_palette,
 				hold_black = self.fade_hold_black,
 				frame_count = next_kind == 'transition' and fade_out_frames or fade_frame_count,
 			})

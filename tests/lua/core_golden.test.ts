@@ -299,6 +299,7 @@ test('core golden: runtime VBlank end publishes scanout at the new frame origin'
 	const gxScanoutCalls: Array<{ active: boolean; cyclesIntoFrame: number; cyclesPerFrame: number; totalScanlines: number }> = [];
 	const inputSampleEdges: Array<{ currentTimeMs: number; nowCycles: number }> = [];
 	let raisedIrq = 0;
+	let gxPresentCount = 0;
 	const runtime = {
 		timing: {
 			cpuHz: 5000,
@@ -332,6 +333,9 @@ test('core golden: runtime VBlank end publishes scanout at the new frame origin'
 				},
 			},
 			gxGpu: {
+				presentReadyFrameOnVblankEdge() {
+					gxPresentCount += 1;
+				},
 				setScanoutTiming(active: boolean, cyclesIntoFrame: number, cyclesPerFrame: number, totalScanlines: number) {
 					gxScanoutCalls.push({ active, cyclesIntoFrame, cyclesPerFrame, totalScanlines });
 				},
@@ -351,6 +355,7 @@ test('core golden: runtime VBlank end publishes scanout at the new frame origin'
 	scheduler.setNowCycles(80);
 	vblank.handleBeginTimer();
 	assert.equal(raisedIrq, IRQ_VBLANK);
+	assert.equal(gxPresentCount, 1);
 	assert.deepEqual(inputSampleEdges[0], { currentTimeMs: 16, nowCycles: 80 });
 	assert.deepEqual(scanoutCalls[0], { active: true, cyclesIntoFrame: 80 });
 	assert.deepEqual(gxScanoutCalls[0], { active: true, cyclesIntoFrame: 80, cyclesPerFrame: 100, totalScanlines: 10 });

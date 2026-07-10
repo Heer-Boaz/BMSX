@@ -44,15 +44,10 @@ local gp1_vertical_240_pal<const> = 0x07044c23
 local gp1_display_mode_320_pal<const> = 0x08000009
 
 local gp0_fill_rectangle<const> = 0x02000000
-local gp0_draw_triangle<const> = 0x20000000
 local gp0_draw_semitransparent_triangle<const> = 0x22000000
-local gp0_draw_quad<const> = 0x28000000
 local gp0_draw_semitransparent_quad<const> = 0x2a000000
 local gp0_draw_gouraud_triangle<const> = 0x30000000
 local gp0_draw_semitransparent_gouraud_triangle<const> = 0x32000000
-local gp0_draw_textured_quad<const> = 0x2c000000
-local gp0_draw_raw_textured_quad<const> = 0x2d000000
-local gp0_draw_semitransparent_textured_quad<const> = 0x2e000000
 local gp0_draw_rectangle<const> = 0x60000000
 local gp0_draw_semitransparent_rectangle<const> = 0x62000000
 local gp0_draw_line<const> = 0x40000000
@@ -95,25 +90,25 @@ local color_sky_mid<const> = 0xff003c7a
 local color_ground<const> = 0xff3c1020
 local color_grid<const> = 0xff14355f
 local color_grid_hot<const> = 0xffffd166
-local color_tunnel_a<const> = 0xffffffff
-local color_tunnel_b<const> = 0xff3df2ff
-local color_tunnel_c<const> = 0xffff7a3d
 local color_shard_a<const> = 0xffffe062
 local color_shard_b<const> = 0xff34e8ff
 local color_shard_c<const> = 0xffff3df2
 local color_shard_d<const> = 0xff7cff6b
-local color_sprite<const> = 0xffffffff
-local color_shadow<const> = 0x80302060
-local color_post_a<const> = 0x28ffffff
-local color_post_b<const> = 0x243cffd8
-local color_post_c<const> = 0x24ff4058
-local color_flare_a<const> = 0x80ffffff
-local color_flare_b<const> = 0x703df2ff
-local color_flare_c<const> = 0x70ff7a3d
+local color_shadow<const> = 0xff181030
 local color_morph_a<const> = 0xffb8fff8
 local color_morph_b<const> = 0xffff8ae8
 local color_morph_c<const> = 0xff80e8ff
-local color_morph_near<const> = 0x70ffd166
+local color_morph_near<const> = 0xffffd166
+
+local texture_command_tunnel_a<const> = 0x2d808080
+local texture_command_tunnel_b<const> = 0x2c80791f
+local texture_command_tunnel_c<const> = 0x2c1f3d80
+local texture_command_post_a<const> = 0x2e282828
+local texture_command_post_b<const> = 0x2e1e2408
+local texture_command_post_c<const> = 0x2e0c0924
+local texture_command_flare_a<const> = 0x2f808080
+local texture_command_flare_b<const> = 0x2e706a1a
+local texture_command_flare_c<const> = 0x2e1a3570
 
 local scene_baseline<const> = 1
 local scene_shards<const> = 2
@@ -150,6 +145,7 @@ local shard_stride<const> = 8
 local particle_words<const>: *word = 0x08045000
 local particle_count<const> = 72
 local particle_stride<const> = 4
+local particle_brightness_q8<const> = 176
 local angle_words<const>: *word = 0x08046000
 
 local wait_vblank<const> = function()
@@ -165,13 +161,6 @@ end
 
 local argb_to_gp0_rgb<const> = function(color)
 	return ((color & 0x00ff0000) >> 16) | (color & 0x0000ff00) | ((color & 0x000000ff) << 16)
-end
-
-local argb_to_gp0_modulated_rgb<const> = function(color)
-	local alpha<const> = (color >> 24) & 0x000000ff
-	return ((((color >> 16) & 0x000000ff) * alpha) // 255)
-		| (((((color >> 8) & 0x000000ff) * alpha) // 255) << 8)
-		| ((((color & 0x000000ff) * alpha) // 255) << 16)
 end
 
 local xy<const> = function(x, y)
@@ -237,10 +226,7 @@ local update_animation_vectors<const> = function()
 	post_cos_q12 = angle_words[post_base + 1]
 end
 
-local direct16_from_rgba8888<const> = function(color)
-	if (color & 0xff000000) == 0 then
-		return 0
-	end
+local direct16_from_rgb888<const> = function(color)
 	return ((color & 0x000000f8) >> 3)
 		| ((color & 0x0000f800) >> 6)
 		| ((color & 0x00f80000) >> 9)
@@ -290,46 +276,38 @@ local gpu_copy_vram<const> = function(source_x, source_y, target_x, target_y, wi
 end
 
 local gpu_rect<const> = function(x0, y0, x1, y1, color)
-	local alpha<const> = color & 0xff000000
-	if alpha == 0xff000000 then
-		*gp0 = gp0_draw_rectangle | argb_to_gp0_rgb(color)
-	else
-		*gp0 = gp0_draw_semitransparent_rectangle | argb_to_gp0_modulated_rgb(color)
-	end
+	*gp0 = gp0_draw_rectangle | argb_to_gp0_rgb(color)
+	*gp0 = xy(x0, y0)
+	*gp0 = wh(x1 - x0, y1 - y0)
+end
+
+local gpu_semitransparent_rect<const> = function(x0, y0, x1, y1, color)
+	*gp0 = gp0_draw_semitransparent_rectangle | argb_to_gp0_rgb(color)
 	*gp0 = xy(x0, y0)
 	*gp0 = wh(x1 - x0, y1 - y0)
 end
 
 local gpu_line<const> = function(x0, y0, x1, y1, color)
-	local alpha<const> = color & 0xff000000
-	if alpha == 0xff000000 then
-		*gp0 = gp0_draw_line | argb_to_gp0_rgb(color)
-	else
-		*gp0 = gp0_draw_semitransparent_line | argb_to_gp0_modulated_rgb(color)
-	end
+	*gp0 = gp0_draw_line | argb_to_gp0_rgb(color)
 	*gp0 = xy(x0, y0)
 	*gp0 = xy(x1, y1)
 end
 
-local gpu_triangle<const> = function(x0, y0, x1, y1, x2, y2, color)
-	local alpha<const> = color & 0xff000000
-	if alpha == 0xff000000 then
-		*gp0 = gp0_draw_triangle | argb_to_gp0_rgb(color)
-	else
-		*gp0 = gp0_draw_semitransparent_triangle | argb_to_gp0_modulated_rgb(color)
-	end
+local gpu_semitransparent_line<const> = function(x0, y0, x1, y1, color)
+	*gp0 = gp0_draw_semitransparent_line | argb_to_gp0_rgb(color)
+	*gp0 = xy(x0, y0)
+	*gp0 = xy(x1, y1)
+end
+
+local gpu_semitransparent_triangle<const> = function(x0, y0, x1, y1, x2, y2, color)
+	*gp0 = gp0_draw_semitransparent_triangle | argb_to_gp0_rgb(color)
 	*gp0 = xy(x0, y0)
 	*gp0 = xy(x1, y1)
 	*gp0 = xy(x2, y2)
 end
 
-local gpu_quad<const> = function(x0, y0, x1, y1, x2, y2, x3, y3, color)
-	local alpha<const> = color & 0xff000000
-	if alpha == 0xff000000 then
-		*gp0 = gp0_draw_quad | argb_to_gp0_rgb(color)
-	else
-		*gp0 = gp0_draw_semitransparent_quad | argb_to_gp0_modulated_rgb(color)
-	end
+local gpu_semitransparent_quad<const> = function(x0, y0, x1, y1, x2, y2, x3, y3, color)
+	*gp0 = gp0_draw_semitransparent_quad | argb_to_gp0_rgb(color)
 	*gp0 = xy(x0, y0)
 	*gp0 = xy(x1, y1)
 	*gp0 = xy(x2, y2)
@@ -358,19 +336,10 @@ local gpu_direct16_textured_quad<const> = function(
 		page_x, page_y,
 		u0, v0, u1, v1, u2, v2, u3, v3,
 		x0, y0, x1, y1, x2, y2, x3, y3,
-		color, blend_mode)
+		command, blend_mode)
 	local draw_mode<const> = gpu_draw_mode_for_page(page_x, page_y, blend_mode)
 	*gp0 = gp0_draw_mode | draw_mode
-	if color == 0xffffffff then
-		*gp0 = gp0_draw_raw_textured_quad | 0x00808080
-	else
-		local alpha<const> = color & 0xff000000
-		if alpha == 0xff000000 then
-			*gp0 = gp0_draw_textured_quad | argb_to_gp0_rgb(color)
-		else
-			*gp0 = gp0_draw_semitransparent_textured_quad | argb_to_gp0_modulated_rgb(color)
-		end
-	end
+	*gp0 = command
 	*gp0 = xy(x0, y0)
 	*gp0 = uv(u0, v0)
 	*gp0 = xy(x1, y1)
@@ -388,8 +357,8 @@ local upload_texture<const> = function()
 	local pixels<const>: *word = texture_addr
 	local pixel_index = 0
 	while pixel_index < texture_width * texture_height do
-		local lo<const> = direct16_from_rgba8888(pixels[pixel_index])
-		local hi<const> = direct16_from_rgba8888(pixels[pixel_index + 1])
+		local lo<const> = direct16_from_rgb888(pixels[pixel_index])
+		local hi<const> = direct16_from_rgb888(pixels[pixel_index + 1])
 		*gp0 = lo | (hi << 16)
 		pixel_index = pixel_index + 2
 	end
@@ -586,7 +555,7 @@ local draw_background<const> = function()
 	end
 end
 
-local draw_tunnel_quad<const> = function(center_x, center_y, radius_x, radius_y, sin_q12, cos_q12, color)
+local draw_tunnel_quad<const> = function(center_x, center_y, radius_x, radius_y, sin_q12, cos_q12, command)
 	local axis_xx<const> = (cos_q12 * radius_x) >> 12
 	local axis_xy<const> = (sin_q12 * radius_x) >> 12
 	local axis_yx<const> = ((0 - sin_q12) * radius_y) >> 12
@@ -603,7 +572,7 @@ local draw_tunnel_quad<const> = function(center_x, center_y, radius_x, radius_y,
 		texture_vram_x, texture_vram_y,
 		0, 0, texture_width, 0, 0, texture_height, texture_width, texture_height,
 		x0, y0, x1, y1, x2, y2, x3, y3,
-		color, draw_mode_blend_half)
+		command, draw_mode_blend_half)
 end
 
 local draw_affine_tunnel<const> = function()
@@ -615,21 +584,21 @@ local draw_affine_tunnel<const> = function()
 		local radius_x<const> = 18 + depth * 9
 		local radius_y<const> = 12 + depth * 5
 		local y<const> = 76 + tunnel_index * 4
-		local color = color_tunnel_a
+		local command = texture_command_tunnel_a
 		if (tunnel_index & 3) == 1 then
-			color = color_tunnel_b
+			command = texture_command_tunnel_b
 		end
 		if (tunnel_index & 3) == 2 then
-			color = color_tunnel_c
+			command = texture_command_tunnel_c
 		end
-		draw_tunnel_quad(160, y, radius_x, radius_y, ring_sin, ring_cos, color)
+		draw_tunnel_quad(160, y, radius_x, radius_y, ring_sin, ring_cos, command)
 		ring_sin, ring_cos = rotate_q12(ring_sin, ring_cos, q12_rot_ring_sin, q12_rot_ring_cos)
 		tunnel_index = tunnel_index + 1
 	end
 end
 
 local draw_sprite<const> = function()
-	draw_tunnel_quad(sprite_x, sprite_y, 24, 24, sprite_sin_q12, sprite_cos_q12, color_sprite)
+	draw_tunnel_quad(sprite_x, sprite_y, 24, 24, sprite_sin_q12, sprite_cos_q12, texture_command_tunnel_a)
 	gpu_line(sprite_x - 30, sprite_y, sprite_x + 30, sprite_y, color_grid_hot)
 	gpu_line(sprite_x, sprite_y - 30, sprite_x, sprite_y + 30, color_grid_hot)
 end
@@ -677,7 +646,7 @@ local draw_depth_sorted_gte_mesh<const> = function()
 	end
 end
 
-local draw_post_quad<const> = function(center_x, center_y, radius_x, radius_y, sin_q12, cos_q12, color)
+local draw_post_quad<const> = function(center_x, center_y, radius_x, radius_y, sin_q12, cos_q12, command)
 	local axis_xx<const> = (cos_q12 * radius_x) >> 12
 	local axis_xy<const> = (sin_q12 * radius_x) >> 12
 	local axis_yx<const> = ((0 - sin_q12) * radius_y) >> 12
@@ -689,17 +658,17 @@ local draw_post_quad<const> = function(center_x, center_y, radius_x, radius_y, s
 		center_x + axis_xx - axis_yx, center_y + axis_xy - axis_yy,
 		center_x - axis_xx + axis_yx, center_y - axis_xy + axis_yy,
 		center_x + axis_xx + axis_yx, center_y + axis_xy + axis_yy,
-		color, draw_mode_blend_half)
+		command, draw_mode_blend_half)
 end
 
 local draw_post_pass<const> = function()
 	local s0<const> = post_sin_q12
 	local c0<const> = post_cos_q12
-	draw_post_quad(160, 120, 122, 90, s0, c0, color_post_a)
+	draw_post_quad(160, 120, 122, 90, s0, c0, texture_command_post_a)
 	local s1<const>, c1<const> = rotate_q12(s0, c0, q12_rot_ring_sin, q12_rot_ring_cos)
-	draw_post_quad(160, 120, 138, 100, s1, c1, color_post_b)
+	draw_post_quad(160, 120, 138, 100, s1, c1, texture_command_post_b)
 	local s2<const>, c2<const> = rotate_q12(s1, c1, q12_rot_ring_sin, q12_rot_ring_cos)
-	draw_post_quad(160, 120, 154, 110, s2, c2, color_post_c)
+	draw_post_quad(160, 120, 154, 110, s2, c2, texture_command_post_c)
 end
 
 local draw_vector_overlay<const> = function()
@@ -721,11 +690,16 @@ local draw_vector_overlay<const> = function()
 		gpu_rect(marker_x, 34, marker_x + 5, 42, marker_color)
 		marker = marker + 1
 	end
-	if key_down(key_q) then
-		gpu_rect(224, 24, 304, 48, color_shadow)
+	local q_down<const> = key_down(key_q)
+	local e_down<const> = key_down(key_e)
+	if q_down or e_down then
+		*gp0 = gp0_draw_mode | draw_mode_blend_half
 	end
-	if key_down(key_e) then
-		gpu_rect(224, 52, 304, 76, color_shadow)
+	if q_down then
+		gpu_semitransparent_rect(224, 24, 304, 48, color_shadow)
+	end
+	if e_down then
+		gpu_semitransparent_rect(224, 52, 304, 76, color_shadow)
 	end
 end
 
@@ -818,11 +792,12 @@ local draw_exploding_crystal_shards<const> = function()
 		stage_projected_shard(shard_index, burst)
 		shard_index = shard_index + 1
 	end
+	*gp0 = gp0_draw_mode | draw_mode_blend_half
 	draw_staged_shards()
-	gpu_rect(118 - (burst >> 2), 70 - (burst >> 3), 202 + (burst >> 2), 142 + (burst >> 3), 0x24ffffff)
+	gpu_semitransparent_rect(118 - (burst >> 2), 70 - (burst >> 3), 202 + (burst >> 2), 142 + (burst >> 3), 0xff242424)
 end
 
-local draw_tera_flare_panel<const> = function(layer, angle_sin, angle_cos, next_sin, next_cos, radius_outer, radius_inner, z_wave, color)
+local draw_tera_flare_panel<const> = function(layer, angle_sin, angle_cos, next_sin, next_cos, radius_outer, radius_inner, z_wave, command)
 	local outer_x0<const> = (angle_cos * radius_outer) >> 12
 	local outer_y0<const> = (angle_sin * radius_outer) >> 12
 	local outer_x1<const> = (next_cos * radius_outer) >> 12
@@ -841,13 +816,13 @@ local draw_tera_flare_panel<const> = function(layer, angle_sin, angle_cos, next_
 			texture_vram_x, texture_vram_y,
 			u, 0, u + 32, 0, u, 32, u + 32, 32,
 			sx0, sy0, sx1, sy1, sx2, sy2, sx3, sy3,
-			color, draw_mode_blend_add)
+			command, draw_mode_blend_add)
 	else
 		gpu_direct16_textured_quad(
 			texture_vram_x, texture_vram_y,
 			u + 32, 0, u, 0, u + 32, 32, u, 32,
 			sx1, sy1, sx0, sy0, sx3, sy3, sx2, sy2,
-			color, draw_mode_blend_add)
+			command, draw_mode_blend_add)
 	end
 end
 
@@ -875,21 +850,22 @@ local draw_tera_flare_energy_sphere<const> = function()
 			local next_sin<const>, next_cos<const> = rotate_q12(angle_sin, angle_cos, q12_rot_ring_sin, q12_rot_ring_cos)
 			local outer<const> = 46 + layer * 18 + pulse
 			local inner<const> = outer - 20
-			local color = color_flare_a
+			local command = texture_command_flare_a
 			if (layer & 3) == 1 then
-				color = color_flare_b
+				command = texture_command_flare_b
 			end
 			if (layer & 3) == 2 then
-				color = color_flare_c
+				command = texture_command_flare_c
 			end
-			draw_tera_flare_panel(layer, angle_sin, angle_cos, next_sin, next_cos, outer, inner, 36 + layer * 12, color)
+			draw_tera_flare_panel(layer, angle_sin, angle_cos, next_sin, next_cos, outer, inner, 36 + layer * 12, command)
 			angle_sin = next_sin
 			angle_cos = next_cos
 			panel = panel + 1
 		end
 		layer = layer + 1
 	end
-	gpu_rect(132 - (pulse >> 2), 84 - (pulse >> 2), 188 + (pulse >> 2), 136 + (pulse >> 2), 0x34ffffff)
+	*gp0 = gp0_draw_mode | draw_mode_blend_add
+	gpu_semitransparent_rect(132 - (pulse >> 2), 84 - (pulse >> 2), 188 + (pulse >> 2), 136 + (pulse >> 2), 0xff343434)
 end
 
 local stage_depth_cued_particle<const> = function(particle_index)
@@ -930,9 +906,13 @@ local stage_depth_cued_particle<const> = function(particle_index)
 		depth = gte_data[7]
 	end
 	local word_base<const> = particle_index * particle_stride
+	local particle_rgb<const> = (gte_rgb_to_argb(gte_data[22]) & 0x00ffffff) | 0x00101828
 	particle_words[word_base] = pack_i16_pair(sx, sy)
 	particle_words[word_base + 1] = depth
-	particle_words[word_base + 2] = 0xb0000000 | (gte_rgb_to_argb(gte_data[22]) & 0x00ffffff) | 0x00101828
+	particle_words[word_base + 2] = 0xff000000
+		| (((((particle_rgb >> 16) & 0x000000ff) * particle_brightness_q8) >> 8) << 16)
+		| (((((particle_rgb >> 8) & 0x000000ff) * particle_brightness_q8) >> 8) << 8)
+		| (((particle_rgb & 0x000000ff) * particle_brightness_q8) >> 8)
 	particle_words[word_base + 3] = 2 + (fade >> 10)
 end
 
@@ -949,8 +929,8 @@ local draw_staged_particles<const> = function()
 				local y<const> = unpack_sy(sxy)
 				local color<const> = particle_words[word_base + 2]
 				local size<const> = particle_words[word_base + 3]
-				gpu_line(x - size * 4, y - size, x + size, y + size, color)
-				gpu_rect(x - size, y - size, x + size + 1, y + size + 1, color)
+				gpu_semitransparent_line(x - size * 4, y - size, x + size, y + size, color)
+				gpu_semitransparent_rect(x - size, y - size, x + size + 1, y + size + 1, color)
 			end
 			particle_index = particle_index + 1
 		end
@@ -971,8 +951,9 @@ local draw_depth_cued_particle_storm<const> = function()
 		stage_depth_cued_particle(particle_index)
 		particle_index = particle_index + 1
 	end
-	gpu_rect(138, 88, 182, 132, 0x2820f0ff)
-	gpu_line(84, 120, 236, 120, 0x70ffffff)
+	*gp0 = gp0_draw_mode | draw_mode_blend_half
+	gpu_semitransparent_rect(138, 88, 182, 132, 0xff052528)
+	gpu_semitransparent_line(84, 120, 236, 120, 0xff707070)
 	draw_staged_particles()
 end
 
@@ -1035,8 +1016,9 @@ local draw_gouraud_lit_idol<const> = function()
 		angle_cos = next_cos
 		panel = panel + 1
 	end
-	gpu_line(112, 166, 208, 166, 0x80ffffff)
-	gpu_line(128, 176, 192, 176, 0x70ffd166)
+	*gp0 = gp0_draw_mode | draw_mode_blend_half
+	gpu_semitransparent_line(112, 166, 208, 166, 0xff808080)
+	gpu_semitransparent_line(128, 176, 192, 176, 0xff705b2c)
 end
 
 local draw_near_divide_probe<const> = function()
@@ -1058,7 +1040,7 @@ local draw_near_divide_probe<const> = function()
 			gpu_semitransparent_gouraud_triangle(sx1, sy1, color_morph_c, sx0, sy0, color_morph_near, sx3, sy3, color_morph_near)
 			gpu_semitransparent_gouraud_triangle(sx0, sy0, color_morph_near, sx2, sy2, color_morph_a, sx3, sy3, color_morph_near)
 		end
-		gpu_line(sx0, sy0, sx3, sy3, 0x60ffffff)
+		gpu_semitransparent_line(sx0, sy0, sx3, sy3, 0xff606060)
 		probe = probe + 1
 	end
 end
@@ -1127,11 +1109,12 @@ local draw_morph_skin_lighting_torture<const> = function()
 		angle_cos = next_cos
 		panel = panel + 1
 	end
+	*gp0 = gp0_draw_mode | draw_mode_blend_half
 	draw_near_divide_probe()
 	gpu_line(56, 48, 106, 30 + (morph >> 1), color_morph_a)
 	gpu_line(214, 52, 268, 74 - (morph >> 2), color_morph_b)
-	gpu_rect(118, 180, 202, 188, 0x503df2ff)
-	gpu_line(160 - morph, 184, 160 + morph, 184, color_morph_near)
+	gpu_semitransparent_rect(118, 180, 202, 188, 0xff134b50)
+	gpu_semitransparent_line(160 - morph, 184, 160 + morph, 184, 0xff705b2c)
 end
 
 local draw_scene<const> = function()
@@ -1150,8 +1133,9 @@ local draw_scene<const> = function()
 		draw_affine_tunnel()
 		draw_depth_sorted_gte_mesh()
 		draw_sprite()
-		gpu_triangle(108, 34, 126, 54, 92, 58, 0x70ffd166)
-		gpu_quad(240, 178, 286, 188, 224, 218, 286, 228, 0x583cffd8)
+		*gp0 = gp0_draw_mode | draw_mode_blend_half
+		gpu_semitransparent_triangle(108, 34, 126, 54, 92, 58, 0xff705b2c)
+		gpu_semitransparent_quad(240, 178, 286, 188, 224, 218, 286, 228, 0xff14584a)
 	end
 end
 

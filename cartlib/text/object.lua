@@ -324,9 +324,8 @@ function textobject.new(opts)
 	self.wrapped_line_to_logical_line = {}
 	self.wrapped_line_y_offsets = { 0 }
 	self.text_color = opts.text_color or 0xffffffff
-	self.highlight_color = opts.highlight_color or 0xb3000080
 	self.normal_bg_color = opts.normal_bg_color or 0xff000000
-	self.highlight_bg_color = opts.highlight_bg_color or 0xb3000080
+	self.highlight_bg_color = opts.highlight_bg_color or 0xff000080
 	self.font = opts.font or font_module.get('default')
 	local dimensions = opts.dimensions
 	if not dimensions then
@@ -606,7 +605,8 @@ function textobject:submit_highlight()
 		local offset_x<const> = self.highlight_jitter_enabled and self.highlight_vibe_offset_x or 0
 		local offset_y<const> = self.highlight_jitter_enabled and self.highlight_vibe_offset_y or 0
 		local padded_x<const> = horizontal_margin * scale
-		gx_gpu.fill_rect_color(dims.left - padded_x + offset_x, self.highlight_anim_y + offset_y, dims.right + padded_x + offset_x, self.highlight_anim_y + self.highlight_anim_h + offset_y, self.highlight_bg_color)
+		gx_gpu.set_draw_mode(gx_gpu.draw_mode_blend_half)
+		gx_gpu.fill_rect_semitrans_color(dims.left - padded_x + offset_x, self.highlight_anim_y + offset_y, dims.right + padded_x + offset_x, self.highlight_anim_y + self.highlight_anim_h + offset_y, self.highlight_bg_color)
 	end
 end
 

@@ -226,8 +226,16 @@ and ask before coding.
   cart-visible raw PSX textured affine quad smoke.
 - [x] Migrate `2025` engine/cart rendering to GX, including cart-owned
   single-cart-atlas residency, background transition uploads, affine parallax
-  sprites, semi-transparent textured fades, and existing custom visual
-  submission on the GX path.
+  sprites, fixed-function PSX transition/combat blending, texture-modulated
+  fades, and existing custom visual submission on the GX path. Transition and
+  combat-result fades no longer pretend that the PSX GPU supports arbitrary
+  ARGB alpha: they author subtractive/additive GP0 passes and opaque texture
+  brightness directly. Firmware exposes separate opaque and semi-transparent
+  primitive emitters instead of treating ARGB alpha as a PSX blend factor. The
+  raw bare-metal cart now emits precomputed GP0 texture command words and owns
+  every semi-transparent pass's opcode and ABR mode explicitly; it neither uses
+  ARGB alpha as a blend factor nor compares signed register words with wide host
+  literals.
 - [x] Migrate `pietious` engine/cart rendering. Its cart atlas is packed at ROM
   build time under an explicit Palette4 asset contract as native PSX 4-bpp
   texture data plus CLUT and GP0 upload commands, DMA-uploaded directly to GPU
@@ -318,6 +326,7 @@ npm run audit:architecture-boundaries:strict
 cmake --build build-libretro-host-wsl --parallel $(nproc)
 npm run headless:game -- <rom>
 npm run run:libretro-host:wsl:headless -- <rom-or-timeline-as-needed>
+npm run test:2025-frame-scan
 npm run test:render-parity
 npm run check:indent
 git diff --check

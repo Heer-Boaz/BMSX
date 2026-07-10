@@ -9,6 +9,7 @@ local ease_out_quad<const> = require('bios/easing').ease_out_quad
 local ease_in_quad<const> = require('bios/easing').ease_in_quad
 local ease_out_back<const> = require('bios/easing').ease_out_back
 local sqrt<const> = require('bios/math').sqrt
+local color<const> = require('bios/common/color')
 
 local shake_hash<const> = function(seed)
 	seed = seed ~ (seed << 13)
@@ -128,9 +129,12 @@ function builders.build_combat_fade_frames()
 			local u<const> = frame_index / (combat_fade_out_frames - 1)
 			a = smoothstep(u)
 		end
-		local ab<const> = ((a * 255 + 0.5) // 1) & 0xff
+		local level<const> = round_number(a * 255)
 		frames[#frames + 1] = {
-			overlay = { color = ab << 24 },
+			overlay = {
+				color = 0,
+				blend_color = level == 0 and 0 or color.mix_rgb_with_alpha(p3_black_color, p3_white_color, level, 1),
+			},
 		}
 	end
 	return frames
@@ -180,15 +184,14 @@ function builders.build_combat_focus_frames(params)
 		local bottom_y<const> = vanish_bottom_y + (combat_focus_vanish_lift * melt) + (combat_focus_vanish_arc_y * turn)
 		local x<const> = center_x - (monster_sx * sx) / 2
 		local y<const> = bottom_y - (monster_sy * sy)
-		local alpha<const> = 1 - ease_in_quad(u)
-		local ab<const> = ((alpha * 255 + 0.5) // 1) & 0xff
+		local level<const> = round_number((1 - ease_in_quad(u)) * 255)
 
 		frames[#frames + 1] = {
-			visible = alpha > 0,
+			visible = level > 0,
 			x = x,
 			y = y,
 			sprite_component = {
-				color = (ab << 24) | (p3_white_color & 0x00ffffff),
+				color = color.mix_rgb_with_alpha(p3_black_color, p3_white_color, level, 1),
 				scale = { x = sx, y = sy },
 			},
 		}
@@ -438,7 +441,7 @@ function builders.build_combat_exchange_frames(params)
 		local maya_y = maya_base_y
 		local maya_scale = { x = 1, y = 1 }
 		local maya_flash = false
-		local overlay_alpha = 0
+		local overlay_strength = 0
 		local bob = 0
 
 			if maya_u > 0 then
@@ -471,14 +474,14 @@ function builders.build_combat_exchange_frames(params)
 			monster_y = monster_y + cam_dy
 			maya_x = maya_x + cam_dx
 			maya_y = maya_y + cam_dy
-			overlay_alpha = params.overlay_alpha * impact_u
+			overlay_strength = params.overlay_strength * impact_u
 		end
 		maya_y = maya_y + bob
 
-		local overlay_color = 0
-		if overlay_alpha > 0 then
-			local ab<const> = ((overlay_alpha * 255 + 0.5) // 1) & 0xff
-			overlay_color = (ab << 24) | (params.flash_color & 0x00ffffff)
+		local overlay_blend_color = 0
+		if overlay_strength > 0 then
+			local level<const> = round_number(overlay_strength * 255)
+			overlay_blend_color = color.mix_rgb_with_alpha(p3_black_color, params.flash_color, level, 1)
 		end
 
 		frames[#frames + 1] = {
@@ -498,7 +501,7 @@ function builders.build_combat_exchange_frames(params)
 					scale = maya_scale,
 				},
 			},
-			overlay = { color = overlay_color },
+			overlay = { color = 0, blend_color = overlay_blend_color },
 		}
 	end
 
@@ -590,10 +593,10 @@ function builders.build_combat_hit_frames(params)
 			end
 		end
 
-		local slash_active<const> = frame_index >= combat_hit_stop_frames and frame_index <= slash_end
+		local slash_active = frame_index >= combat_hit_stop_frames and frame_index <= slash_end
 		local slash_points = { 0, 0, 0, 0 }
 		local slash_thickness = 0
-		local slash_color = 0x00ffffff
+		local slash_color<const> = p3_white_color
 		if slash_active then
 			local u<const> = (frame_index - combat_hit_stop_frames) / (slash_end - combat_hit_stop_frames)
 			local arc<const> = arc01(u)
@@ -607,7 +610,7 @@ function builders.build_combat_hit_frames(params)
 			local y1<const> = center_y + (path_ny * half)
 			slash_points = { x0, y0, x1, y1 }
 			slash_thickness = base_thickness * (combat_hit_slash_taper_floor + ((1 - combat_hit_slash_taper_floor) * arc)) * (combat_hit_slash_visibility * arc)
-			slash_color = slash_thickness > 0 and 0x80ffffff or 0x00ffffff
+			slash_active = slash_thickness > 0
 		end
 
 		frames[#frames + 1] = {
@@ -642,18 +645,18 @@ function builders.build_combat_results_fade_in_frames(params)
 	for frame_index = 0, combat_results_fade_in_frames - 1 do
 		local u<const> = frame_index / (combat_results_fade_in_frames - 1)
 		local a<const> = smoothstep(u)
-		local ab<const> = ((a * 255 + 0.5) // 1) & 0xff
-		local bg_ab<const> = ((combat_results_bg_alpha_byte * a + 0.5) // 1) & 0xff
+		local level<const> = round_number(a * 255)
+		local brightness<const> = color.mix_rgb_with_alpha(p3_black_color, p3_white_color, level, 1)
 		frames[#frames + 1] = {
 			bg = {
-				color = (bg_ab << 24) | (combat_results_bg_color & 0x00ffffff),
+				color = color.mix_rgb_with_alpha(p3_black_color, combat_results_bg_visible_color, level, 1),
 			},
 			maya_b = {
-				sprite_component = { color = (ab << 24) | (p3_white_color & 0x00ffffff) },
+				sprite_component = { color = brightness },
 				x = maya_start_x + (maya_target_x - maya_start_x) * a,
 			},
 			results = {
-				text_color = (ab << 24) | (p3_white_color & 0x00ffffff),
+				text_color = brightness,
 				centered_block_x = text_start_x + (text_target_x - text_start_x) * a,
 			},
 		}
@@ -667,17 +670,17 @@ function builders.build_combat_results_fade_out_frames()
 	for frame_index = 0, combat_results_fade_out_frames - 1 do
 		local u<const> = frame_index / (combat_results_fade_out_frames - 1)
 		local a<const> = 1 - smoothstep(u)
-		local ab<const> = ((a * 255 + 0.5) // 1) & 0xff
-		local bg_ab<const> = ((combat_results_bg_alpha_byte * a + 0.5) // 1) & 0xff
+		local level<const> = round_number(a * 255)
+		local brightness<const> = color.mix_rgb_with_alpha(p3_black_color, p3_white_color, level, 1)
 		frames[#frames + 1] = {
 			bg = {
-				color = (bg_ab << 24) | (combat_results_bg_color & 0x00ffffff),
+				color = color.mix_rgb_with_alpha(p3_black_color, combat_results_bg_visible_color, level, 1),
 			},
 			maya_b = {
-				sprite_component = { color = (ab << 24) | (p3_white_color & 0x00ffffff) },
+				sprite_component = { color = brightness },
 			},
 			results = {
-				text_color = (ab << 24) | (p3_white_color & 0x00ffffff),
+				text_color = brightness,
 			},
 		}
 	end
@@ -689,10 +692,10 @@ function builders.build_combat_exit_fade_in_frames()
 	for frame_index = 0, combat_exit_fade_in_frames - 1 do
 		local u<const> = frame_index / (combat_exit_fade_in_frames - 1)
 		local c<const> = smoothstep(u)
-		local cb<const> = ((c * 255 + 0.5) // 1) & 0xff
+		local level<const> = round_number(c * 255)
 		frames[#frames + 1] = {
 			sprite_component = {
-				color = 0xff000000 | (cb << 16) | (cb << 8) | cb,
+				color = color.mix_rgb_with_alpha(p3_black_color, p3_white_color, level, 1),
 			},
 		}
 	end
@@ -717,16 +720,21 @@ function builders.build_transition_frames(params)
 	local base<const> = palette.overlay
 
 	for frame_index = 0, finish_frame do
-		local fade_alpha = 1
+		local overlay_color = base
+		local overlay_blend_color = 0
+		local background_color = p3_black_color
 		if not skip_fade then
 			if frame_index < fade_out_frames then
 				local u<const> = frame_index / (fade_out_frames - 1)
-				fade_alpha = smoothstep(u)
-			elseif frame_index < fade_in_start then
-				fade_alpha = 1
-			else
+				local level<const> = round_number(smoothstep(u) * 255)
+				overlay_color = 0
+				overlay_blend_color = level == 0 and 0 or color.mix_rgb_with_alpha(p3_black_color, p3_white_color, level, 1)
+				background_color = p3_white_color
+			elseif frame_index >= fade_in_start then
 				local u<const> = (frame_index - fade_in_start) / (fade_in_frames - 1)
-				fade_alpha = 1 - smoothstep(u)
+				local level<const> = round_number(smoothstep(u) * 255)
+				overlay_color = 0
+				background_color = color.mix_rgb_with_alpha(p3_black_color, p3_white_color, level, 1)
 			end
 		end
 
@@ -734,17 +742,15 @@ function builders.build_transition_frames(params)
 		for i = 1, #panels do
 			local panel<const> = panels[i]
 			local x<const> , y<const> , a<const> = panel_motion(frame_index, panel, transition_panel_in_frames, transition_panel_hold_frames, transition_panel_out_frames)
-			local ab<const> = ((a * 255 + 0.5) // 1) & 0xff
 			panel_states[i] = {
 				visible = a > 0,
 				x = x,
 				y = y,
-				color = (ab << 24) | (panel.color & 0x00ffffff),
+				color = a > 0 and panel.color or 0,
 			}
 		end
 
 		local ax<const> , ay<const> , aa<const> = panel_motion(frame_index, accent_panel, transition_accent_in_frames, transition_accent_hold_frames, transition_accent_out_frames)
-		local accent_ab<const> = ((aa * 255 + 0.5) // 1) & 0xff
 
 		local text_x = end_x
 		if frame_index < transition_text_in_frames then
@@ -758,15 +764,15 @@ function builders.build_transition_frames(params)
 			text_x = center_x + (end_x - center_x) * smoothstep(u)
 		end
 
-		local overlay_ab<const> = ((fade_alpha * 255 + 0.5) // 1) & 0xff
 		frames[#frames + 1] = {
-			overlay = { color = (overlay_ab << 24) | (base & 0x00ffffff) },
+			bg = { sprite_component = { color = background_color } },
+			overlay = { color = overlay_color, blend_color = overlay_blend_color },
 			panels = panel_states,
 			accent = {
 				visible = aa > 0,
 				x = ax,
 				y = ay,
-				color = (accent_ab << 24) | (accent_panel.color & 0x00ffffff),
+				color = aa > 0 and accent_panel.color or 0,
 			},
 			text = { centered_block_x = text_x },
 		}
@@ -775,15 +781,15 @@ function builders.build_transition_frames(params)
 	return frames
 end
 
-function builders.build_transition_fade_in_frames(palette)
+function builders.build_transition_fade_in_frames()
 	local frames<const> = {}
-	local base<const> = palette.overlay
 	for frame_index = 0, overgang_fade_in_frames - 1 do
 		local u<const> = frame_index / (overgang_fade_in_frames - 1)
-		local a<const> = 1 - smoothstep(u)
-		local ab<const> = ((a * 255 + 0.5) // 1) & 0xff
+		local level<const> = round_number(smoothstep(u) * 255)
 		frames[#frames + 1] = {
-			overlay = { color = (ab << 24) | (base & 0x00ffffff) },
+			sprite_component = {
+				color = color.mix_rgb_with_alpha(p3_black_color, p3_white_color, level, 1),
+			},
 		}
 	end
 	return frames
@@ -791,27 +797,31 @@ end
 
 function builders.build_fade_frames(params)
 	local frames<const> = {}
-	local palette<const> = params.palette
 	local hold_black<const> = params.hold_black
 	local frame_count<const> = params.frame_count
-	local base<const> = palette.overlay
 	local fade_in_start<const> = fade_out_frames + fade_hold_frames
 
 	for frame_index = 0, frame_count - 1 do
-		local a
+		local blend_level
+		local background_color = p3_white_color
 		if frame_index < fade_out_frames then
-			a = smoothstep(frame_index / (fade_out_frames - 1))
+			blend_level = round_number(smoothstep(frame_index / (fade_out_frames - 1)) * 255)
 		else
 			if hold_black or frame_index < fade_in_start then
-				a = 1
+				blend_level = 255
 			else
-				a = 1 - smoothstep((frame_index - fade_in_start) / (fade_in_frames - 1))
+				blend_level = 0
+				local level<const> = round_number(smoothstep((frame_index - fade_in_start) / (fade_in_frames - 1)) * 255)
+				background_color = color.mix_rgb_with_alpha(p3_black_color, p3_white_color, level, 1)
 			end
 		end
 
-		local ab<const> = ((a * 255 + 0.5) // 1) & 0xff
 		frames[#frames + 1] = {
-			overlay = { color = (ab << 24) | (base & 0x00ffffff) },
+			bg = { sprite_component = { color = background_color } },
+			overlay = {
+				color = 0,
+				blend_color = blend_level == 0 and 0 or color.mix_rgb_with_alpha(p3_black_color, p3_white_color, blend_level, 1),
+			},
 		}
 	end
 

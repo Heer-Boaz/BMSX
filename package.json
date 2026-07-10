@@ -35,6 +35,7 @@
 		"test:lua": "npx tsx --test --import ./tests/lua/test_setup.ts tests/lua/*.test.ts",
 		"test:rompacker": "npx tsx --test tests/rompacker/*.ts",
 		"test:render-parity": "node scripts/render/pixel_parity.mjs",
+		"test:2025-frame-scan": "npm run build:platform:headless -- --debug --force && npm run build:bios -- --debug --force && npm run build:game -- 2025 --debug --force && rm -rf tests/carts/2025/screenshots && npm run headless:game -- --input-timeline tests/carts/2025/2025_demo.json 2025 && node tests/carts/2025/analyze_transition_sequence.mjs tests/carts/2025/screenshots && rm -rf tests/carts/2025/screenshots && npm run headless:test -- 2025 tests/carts/2025/2025_visual_fades_capture.lua && node tests/carts/2025/analyze_visual_fades.mjs tests/carts/2025/screenshots",
 		"test:bare-metal-frame-scan": "rm -rf tests/carts/bare_metal_cart/screenshots && npm run headless:game -- --input-timeline tests/carts/bare_metal_cart/bare_metal_cart_demo.json bare_metal_cart && node tests/carts/bare_metal_cart/analyze_frame_sequence.mjs tests/carts/bare_metal_cart/screenshots",
 		"compile:machine": "npx tsc --build ./machine/ts",
 		"validate:bios": "npx tsx scripts/rompacker/rompacker.ts --mode bios --force -bootloaderpath ./machine/firmware/default_cart -respath ./machine/firmware/res",

@@ -67,8 +67,11 @@ local create_rect_state<const> = function()
 end
 
 local create_transition_visuals<const> = function()
+	local overlay<const> = create_rect_state()
+	overlay.blend_color = 0
+	overlay.blend_mode = gx_draw_mode_blend_half
 	return {
-		overlay = create_rect_state(),
+		overlay = overlay,
 		panels = {
 			create_rect_state(),
 			create_rect_state(),
@@ -101,7 +104,14 @@ local build_director_fsm<const> = function()
 							local maya_b<const> = oget(combat_maya_b_id)
 							gx_blit_img_color(maya_b.sprite_component.imgid, maya_b.x, maya_b.y, maya_b.sprite_component.color)
 						end
-						rc:submit_rect(parent.transition_visual.overlay)
+						local overlay<const> = parent.transition_visual.overlay
+						if overlay.color ~= 0 then
+							rc:submit_rect(overlay)
+						end
+						if overlay.blend_color ~= 0 then
+							gx_set_draw_mode(overlay.blend_mode)
+							gx_fill_rect_semitrans_color(overlay.x, overlay.y, overlay.x + overlay.width, overlay.y + overlay.height, overlay.blend_color)
+						end
 						for i = 1, #parent.transition_visual.panels do
 							rc:submit_rect(parent.transition_visual.panels[i])
 						end

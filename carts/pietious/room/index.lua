@@ -1045,7 +1045,8 @@ function room_object:render_room()
 	if not director:has_tag('d.seal.flash') then
 		return
 	end
-	gx_fill_rect_color(0, room_tile_origin_y, screen_width, screen_height, 0x80ffffff)
+	gx_set_draw_mode(gx_draw_mode_blend_half)
+	gx_fill_rect_semitrans_color(0, room_tile_origin_y, screen_width, screen_height, 0xffffffff)
 end
 
 local room_runtime_state_name<const> = function(room_state)

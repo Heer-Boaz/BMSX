@@ -84,7 +84,8 @@ function director:bind_visual()
 		if not self.seal_flash_on then
 			return
 		end
-		gx_fill_rect_color(0, room_tile_origin_y, screen_width, screen_height, 0xb3ffffff)
+		gx_set_draw_mode(gx_draw_mode_blend_half)
+		gx_fill_rect_semitrans_color(0, room_tile_origin_y, screen_width, screen_height, 0xffffffff)
 	end
 end
 

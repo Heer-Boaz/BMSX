@@ -217,7 +217,7 @@ function combat.define_fsm()
 				slash_active = false,
 				slash_points = { 0, 0, 0, 0 },
 				slash_thickness = 0,
-				slash_color = 0x00ffffff,
+				slash_color = p3_white_color,
 				slash_z = combat_hit_slash_z,
 			}
 			self.combat_hit_slash_rc = attach_component(self, 'customvisualcomponent')
@@ -238,7 +238,8 @@ function combat.define_fsm()
 				local x1<const> = points[3]
 				local y1<const> = points[4]
 				local color<const> = frame.slash_color
-				gx_draw_thick_line_color(x0, y0, x1, y1, color, frame.slash_thickness)
+				gx_set_draw_mode(gx_draw_mode_blend_half)
+				gx_draw_thick_line_semitrans_color(x0, y0, x1, y1, color, frame.slash_thickness)
 			end)
 			hide_combat_sprites()
 			return '/idle'
@@ -326,7 +327,7 @@ function combat.define_fsm()
 		director.combat_results_maya_visible = false
 		local bg<const> = director.combat_results_visual
 		bg.visible = false
-		bg.color = p3_white_color
+		bg.color = p3_black_color
 		hide_combat_sprites()
 		local next_kind<const> = story[self.node_id].kind
 		if next_kind == 'transition' then
@@ -366,6 +367,8 @@ function combat.define_fsm()
 			overlay.width = screen_width
 			overlay.height = screen_height
 			overlay.color = 0
+			overlay.blend_mode = gx_draw_mode_blend_subtract
+			overlay.blend_color = 0
 			self:play_timeline(combat_fade_timeline_id, { rewind = true, snap_to_start = true, target = { overlay = overlay } })
 		end,
 		input_eval = 'first',
@@ -376,6 +379,7 @@ function combat.define_fsm()
 			local overlay<const> = oget(director_instance_id).transition_visual.overlay
 			overlay.visible = false
 			overlay.color = 0
+			overlay.blend_color = 0
 		end,
 	}
 
@@ -397,6 +401,8 @@ function combat.define_fsm()
 			overlay.width = screen_width
 			overlay.height = screen_height
 			overlay.color = 0
+			overlay.blend_mode = gx_draw_mode_blend_subtract
+			overlay.blend_color = 0
 			self:play_timeline(combat_fade_timeline_id, { rewind = true, snap_to_start = true, target = { overlay = overlay } })
 		end,
 		input_eval = 'first',
@@ -744,25 +750,27 @@ function combat.define_fsm()
 		entering_state = function(self)
 			local monster<const> = oget(combat_monster_id)
 			local maya_a<const> = oget(combat_maya_a_id)
-				local overlay<const> = oget(director_instance_id).transition_visual.overlay
+			local overlay<const> = oget(director_instance_id).transition_visual.overlay
 			clear_texts(text_ids_choice_prompt)
 			self:push_combat_momentum('monster', combat_parallax_momentum_step)
 			monster.visible = true
-				maya_a.visible = true
-				monster.x = self.combat_monster_base_x
-				monster.y = self.combat_monster_base_y
-				maya_a.x = self.combat_maya_a_base_x
-				maya_a.y = self.combat_maya_a_base_y
-				monster.sprite_component.scale = { x = 1, y = 1 }
-				maya_a.sprite_component.scale = { x = 1, y = 1 }
-				monster.sprite_component.color = p3_white_color
-				maya_a.sprite_component.color = p3_white_color
-				overlay.visible = true
-				overlay.x = 0
-				overlay.y = 0
-					overlay.width = screen_width
-					overlay.height = screen_height
-					overlay.color = 0
+			maya_a.visible = true
+			monster.x = self.combat_monster_base_x
+			monster.y = self.combat_monster_base_y
+			maya_a.x = self.combat_maya_a_base_x
+			maya_a.y = self.combat_maya_a_base_y
+			monster.sprite_component.scale = { x = 1, y = 1 }
+			maya_a.sprite_component.scale = { x = 1, y = 1 }
+			monster.sprite_component.color = p3_white_color
+			maya_a.sprite_component.color = p3_white_color
+			overlay.visible = true
+			overlay.x = 0
+			overlay.y = 0
+			overlay.width = screen_width
+			overlay.height = screen_height
+			overlay.color = 0
+			overlay.blend_mode = gx_draw_mode_blend_add
+			overlay.blend_color = 0
 			local targets<const> = {
 				monster = monster,
 				maya_a = maya_a,
@@ -793,7 +801,7 @@ function combat.define_fsm()
 					squash = true,
 					cam_shake_x = combat_exchange_hit_shake_x,
 					cam_shake_y = combat_exchange_hit_shake_y,
-					overlay_alpha = combat_exchange_hit_overlay_alpha,
+					overlay_strength = combat_exchange_hit_overlay_strength,
 				},
 			})
 			monster.visible = false
@@ -812,16 +820,17 @@ function combat.define_fsm()
 			local monster<const> = oget(combat_monster_id)
 			local maya_a<const> = oget(combat_maya_a_id)
 			local overlay<const> = oget(director_instance_id).transition_visual.overlay
-					monster.x = self.combat_monster_base_x
-				monster.y = self.combat_monster_base_y
-				maya_a.x = self.combat_maya_a_base_x
-				maya_a.y = self.combat_maya_a_base_y
-				monster.sprite_component.scale = { x = 1, y = 1 }
-				maya_a.sprite_component.scale = { x = 1, y = 1 }
-				monster.sprite_component.color = p3_white_color
-				maya_a.sprite_component.color = p3_white_color
-				overlay.visible = false
-				overlay.color = 0
+			monster.x = self.combat_monster_base_x
+			monster.y = self.combat_monster_base_y
+			maya_a.x = self.combat_maya_a_base_x
+			maya_a.y = self.combat_maya_a_base_y
+			monster.sprite_component.scale = { x = 1, y = 1 }
+			maya_a.sprite_component.scale = { x = 1, y = 1 }
+			monster.sprite_component.color = p3_white_color
+			maya_a.sprite_component.color = p3_white_color
+			overlay.visible = false
+			overlay.color = 0
+			overlay.blend_color = 0
 		end,
 	}
 
@@ -843,21 +852,23 @@ function combat.define_fsm()
 			local overlay<const> = oget(director_instance_id).transition_visual.overlay
 			clear_texts(text_ids_choice_prompt)
 			monster.visible = true
-				maya_a.visible = true
-				monster.x = self.combat_monster_base_x
-				monster.y = self.combat_monster_base_y
-				maya_a.x = self.combat_maya_a_base_x
-				maya_a.y = self.combat_maya_a_base_y
-				monster.sprite_component.scale = { x = 1, y = 1 }
-				maya_a.sprite_component.scale = { x = 1, y = 1 }
-				monster.sprite_component.color = p3_white_color
-				maya_a.sprite_component.color = p3_white_color
-				overlay.visible = true
-				overlay.x = 0
-				overlay.y = 0
-					overlay.width = screen_width
-					overlay.height = screen_height
-					overlay.color = 0
+			maya_a.visible = true
+			monster.x = self.combat_monster_base_x
+			monster.y = self.combat_monster_base_y
+			maya_a.x = self.combat_maya_a_base_x
+			maya_a.y = self.combat_maya_a_base_y
+			monster.sprite_component.scale = { x = 1, y = 1 }
+			maya_a.sprite_component.scale = { x = 1, y = 1 }
+			monster.sprite_component.color = p3_white_color
+			maya_a.sprite_component.color = p3_white_color
+			overlay.visible = true
+			overlay.x = 0
+			overlay.y = 0
+			overlay.width = screen_width
+			overlay.height = screen_height
+			overlay.color = 0
+			overlay.blend_mode = gx_draw_mode_blend_add
+			overlay.blend_color = 0
 			local targets<const> = {
 				monster = monster,
 				maya_a = maya_a,
@@ -888,7 +899,7 @@ function combat.define_fsm()
 					squash = false,
 					cam_shake_x = 0,
 					cam_shake_y = 0,
-					overlay_alpha = 0,
+					overlay_strength = 0,
 				},
 			})
 			monster.visible = false
@@ -907,16 +918,17 @@ function combat.define_fsm()
 			local monster<const> = oget(combat_monster_id)
 			local maya_a<const> = oget(combat_maya_a_id)
 			local overlay<const> = oget(director_instance_id).transition_visual.overlay
-					monster.x = self.combat_monster_base_x
-				monster.y = self.combat_monster_base_y
-				maya_a.x = self.combat_maya_a_base_x
-				maya_a.y = self.combat_maya_a_base_y
-				monster.sprite_component.scale = { x = 1, y = 1 }
-				maya_a.sprite_component.scale = { x = 1, y = 1 }
-				monster.sprite_component.color = p3_white_color
-				maya_a.sprite_component.color = p3_white_color
-				overlay.visible = false
-				overlay.color = 0
+			monster.x = self.combat_monster_base_x
+			monster.y = self.combat_monster_base_y
+			maya_a.x = self.combat_maya_a_base_x
+			maya_a.y = self.combat_maya_a_base_y
+			monster.sprite_component.scale = { x = 1, y = 1 }
+			maya_a.sprite_component.scale = { x = 1, y = 1 }
+			monster.sprite_component.color = p3_white_color
+			maya_a.sprite_component.color = p3_white_color
+			overlay.visible = false
+			overlay.color = 0
+			overlay.blend_color = 0
 		end,
 	}
 
@@ -1130,7 +1142,7 @@ function combat.define_fsm()
 		entering_state = function(self)
 			self:disable_combat_parallax()
 			local node<const> = story[self.node_id]
-				local rewards<const> = node.rewards[self.combat_points + 1]
+			local rewards<const> = node.rewards[self.combat_points + 1]
 			self.combat_rewards = rewards
 			oget(director_instance_id).events:emit('combat.results', {
 				combat_node_id = self.combat_node_id,
@@ -1146,13 +1158,13 @@ function combat.define_fsm()
 			local all_out<const> = oget(combat_all_out_id)
 			all_out.visible = false
 
-				local bg<const> = oget(director_instance_id).combat_results_visual
-				bg.visible = true
-				bg.x = 0
-				bg.y = 0
-				bg.width = screen_width
-				bg.height = screen_height
-				bg.color = combat_results_bg_color & 0x00ffffff
+			local bg<const> = oget(director_instance_id).combat_results_visual
+			bg.visible = true
+			bg.x = 0
+			bg.y = 0
+			bg.width = screen_width
+			bg.height = screen_height
+			bg.color = p3_black_color
 
 			local maya_b<const> = oget(combat_maya_b_id)
 			maya_b:gfx('maya_b')
@@ -1162,7 +1174,7 @@ function combat.define_fsm()
 			self.combat_results_maya_start_x = screen_width
 			maya_b.x = self.combat_results_maya_start_x
 			maya_b.y = screen_height - maya_b.sy
-			maya_b.sprite_component.color = p3_white_color & 0x00ffffff
+			maya_b.sprite_component.color = p3_black_color
 
 			local lines<const> = { 'Combat Results:' }
 			for i = 1, #rewards do
@@ -1171,7 +1183,7 @@ function combat.define_fsm()
 			end
 			oget(text_results_id):set_text(lines, { typed = false, snap = true })
 			local results<const> = oget(text_results_id)
-			results.text_color = p3_white_color & 0x00ffffff
+			results.text_color = p3_black_color
 			self.combat_results_text_target_x = results.centered_block_x / 2
 			self.combat_results_text_start_x = -screen_width
 			results.centered_block_x = self.combat_results_text_start_x
