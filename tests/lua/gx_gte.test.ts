@@ -329,6 +329,19 @@ test('GX-GTE INTPL depth-cues the IR vector and pushes RGB from MAC', () => {
 	assert.equal(gte.readDataRegister(11), 300);
 	assert.equal(gte.readDataRegister(22), packRgb(6, 12, 18, 0x55));
 	assert.equal(gte.readControlRegister(31), 0);
+
+	gte.writeDataRegister(9, 0xff9c);
+	gte.writeDataRegister(10, 0xff38);
+	gte.writeDataRegister(11, 0xfed4);
+	assert.equal(gte.execute(GTE_SF | GX_GTE_FN_INTPL), GX_GTE_CYCLES_INTPL);
+	assert.equal(gte.readDataRegister(25), 0xffffff9c);
+	assert.equal(gte.readDataRegister(26), 0xffffff38);
+	assert.equal(gte.readDataRegister(27), 0xfffffed4);
+	assert.equal(gte.readDataRegister(9), 0xffffff9c);
+	assert.equal(gte.readDataRegister(10), 0xffffff38);
+	assert.equal(gte.readDataRegister(11), 0xfffffed4);
+	assert.equal(gte.readDataRegister(22), packRgb(0, 0, 0, 0x55));
+	assert.equal(gte.readControlRegister(31), GX_GTE_FLAG_COLOR_R_SAT | GX_GTE_FLAG_COLOR_G_SAT | GX_GTE_FLAG_COLOR_B_SAT);
 });
 
 test('GX-GTE DCPL multiplies RGBC by IR before depth cueing', () => {

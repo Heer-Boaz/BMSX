@@ -294,6 +294,19 @@ void testIntpl() {
 	require(gte.readDataRegister(11u) == 300u, "INTPL IR3");
 	require(gte.readDataRegister(22u) == packRgb(6u, 12u, 18u, 0x55u), "INTPL RGB2");
 	require(gte.readControlRegister(31u) == 0u, "INTPL FLAG");
+
+	gte.writeDataRegister(9u, 0xff9cu);
+	gte.writeDataRegister(10u, 0xff38u);
+	gte.writeDataRegister(11u, 0xfed4u);
+	require(gte.execute(GTE_SF | bmsx::GX_GTE_FN_INTPL) == bmsx::GX_GTE_CYCLES_INTPL, "INTPL negative cycles");
+	require(gte.readDataRegister(25u) == 0xffffff9cu, "INTPL negative MAC1");
+	require(gte.readDataRegister(26u) == 0xffffff38u, "INTPL negative MAC2");
+	require(gte.readDataRegister(27u) == 0xfffffed4u, "INTPL negative MAC3");
+	require(gte.readDataRegister(9u) == 0xffffff9cu, "INTPL negative IR1");
+	require(gte.readDataRegister(10u) == 0xffffff38u, "INTPL negative IR2");
+	require(gte.readDataRegister(11u) == 0xfffffed4u, "INTPL negative IR3");
+	require(gte.readDataRegister(22u) == packRgb(0u, 0u, 0u, 0x55u), "INTPL negative RGB2");
+	require(gte.readControlRegister(31u) == (bmsx::GX_GTE_FLAG_COLOR_R_SAT | bmsx::GX_GTE_FLAG_COLOR_G_SAT | bmsx::GX_GTE_FLAG_COLOR_B_SAT), "INTPL negative FLAG");
 }
 
 void testDcpl() {

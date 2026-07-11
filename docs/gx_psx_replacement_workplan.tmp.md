@@ -266,10 +266,14 @@ and ask before coding.
 - [x] Consume IR0 as a signed raw halfword in GPF/GPL and every shared depth-cue
   opcode; mirror negative-IR0, GPL 44-bit wrap/FLAG, and save-state CYCLES-latch
   vectors in TS and C++.
-- [ ] Audit all implemented GTE opcodes against a serious PSX reference.
-- [ ] Fill missing edge cases for flags, saturation, divide overflow, MAC/IR
+- [x] Audit all 22 implemented canonical GTE opcodes against DuckStation,
+  Mednafen, and MAME, then differential-test TS and C++ independently against
+  all 1,100 runs in the pinned
+  [JaCzekanski hardware log](https://github.com/JaCzekanski/ps1-tests/blob/f727802fead11f1daa7549285548392ef87749cb/gte-fuzz/gte_valid_0xc0ffee_50.log).
+  Both owners match all 64 output register words in every run.
+- [x] Fill missing edge cases for flags, saturation, divide overflow, MAC/IR
   behavior, and unusual register combinations.
-- [ ] Keep TS and C++ GTE behavior mirrored.
+- [x] Keep TS and C++ GTE behavior mirrored.
 
 ### 5. Backend parity
 

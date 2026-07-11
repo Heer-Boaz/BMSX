@@ -507,7 +507,7 @@ void GxGte::executeDpcs(u32 sf, u32 lm) {
 }
 
 void GxGte::executeIntpl(u32 sf, u32 lm) {
-	depthCue(static_cast<i64>(sign16(m_dataRegisterWords[9])) << 12u, static_cast<i64>(sign16(m_dataRegisterWords[10])) << 12u, static_cast<i64>(sign16(m_dataRegisterWords[11])) << 12u, sf, lm);
+	depthCue(static_cast<i64>(sign16(m_dataRegisterWords[9])) * 4096ll, static_cast<i64>(sign16(m_dataRegisterWords[10])) * 4096ll, static_cast<i64>(sign16(m_dataRegisterWords[11])) * 4096ll, sf, lm);
 	pushRgbFromMac();
 }
 
@@ -635,9 +635,10 @@ void GxGte::executeGpl(u32 sf, u32 lm) {
 	m_currentSf = sf;
 	const i32 ir0 = sign16(m_dataRegisterWords[8]);
 	const u32 macShift = sf == 0u ? 0u : 12u;
-	writeIrFromMac(1u, macSigned44(1u, static_cast<i64>(sign16(m_dataRegisterWords[9])) * ir0 + (static_cast<i64>(static_cast<i32>(m_dataRegisterWords[25])) << macShift)), lm);
-	writeIrFromMac(2u, macSigned44(2u, static_cast<i64>(sign16(m_dataRegisterWords[10])) * ir0 + (static_cast<i64>(static_cast<i32>(m_dataRegisterWords[26])) << macShift)), lm);
-	writeIrFromMac(3u, macSigned44(3u, static_cast<i64>(sign16(m_dataRegisterWords[11])) * ir0 + (static_cast<i64>(static_cast<i32>(m_dataRegisterWords[27])) << macShift)), lm);
+	const i64 macScale = 1ll << macShift;
+	writeIrFromMac(1u, macSigned44(1u, static_cast<i64>(sign16(m_dataRegisterWords[9])) * ir0 + static_cast<i64>(static_cast<i32>(m_dataRegisterWords[25])) * macScale), lm);
+	writeIrFromMac(2u, macSigned44(2u, static_cast<i64>(sign16(m_dataRegisterWords[10])) * ir0 + static_cast<i64>(static_cast<i32>(m_dataRegisterWords[26])) * macScale), lm);
+	writeIrFromMac(3u, macSigned44(3u, static_cast<i64>(sign16(m_dataRegisterWords[11])) * ir0 + static_cast<i64>(static_cast<i32>(m_dataRegisterWords[27])) * macScale), lm);
 	pushRgbFromMac();
 }
 

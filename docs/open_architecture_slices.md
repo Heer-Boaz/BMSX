@@ -188,36 +188,6 @@ Richting:
 - Fix decode/raster/storegedrag bij de GPU-owner; niet met cart-compensatie of
   backend-specifieke kleurcorrecties.
 
-## Volledige GTE-pariteitsaudit
-
-Status: open.
-
-Een eerste gerichte opcode-differential tegen DuckStation, Mednafen en MAME
-heeft een gemirrorde registerfout gesloten: IR0 werd bij GPF/GPL en de gedeelde
-depth-cue datapath opnieuw als unsigned 16-bit gedecodeerd, terwijl het raw
-registerwoord al signed-halfword readback draagt. TS en C++ consumeren dat woord
-nu rechtstreeks als signed IR0. Daarmee volgen DPCS, INTPL, NCDS/NCDT, CDP,
-DCPL, DPCT, GPF en GPL ook voor bit 15 dezelfde MAC/IR- en FLAG-datapath. Raw
-vectors bewijzen negatieve IR0 voor zowel GPF als depth cue, plus GPL 44-bit
-positieve en negatieve accumulatorwrap vóór de `sf`-shift. De cart-zichtbare
-GTE CYCLES-latch zit nu eveneens in beide save-state owners; restore verliest
-de laatst uitgevoerde commandolatentie niet meer.
-
-Nog te sluiten:
-
-- Audit alle geïmplementeerde opcodes tegen een serieuze PSX-referentie.
-- Flags, saturation, divide overflow, MAC/IR-gedrag en ongebruikelijke
-  registercombinaties.
-- Exact dezelfde registerwoorden, flags en commandresultaten in TS en C++.
-
-Richting:
-
-- Gebruik raw register/opcode vectors en observeer echte uitvoerwoorden; voeg
-  geen high-level geometry-semantiek aan de GTE toe.
-- Weird maar representeerbare bits moeten deterministisch door de datapath lopen.
-- Geen clamps, fallbacks of normalisatie buiten het gedocumenteerde
-  hardwaregedrag.
-
 ## Resterende cartmigratie en bare-metal dekking
 
 Status: open ondanks dat de bekende hoofdcarts nu een GX-pad hebben.
