@@ -37,29 +37,6 @@ Niet doen:
 - Geen backend-specifieke capture/readback-ownership naar `GameView` of een
   algemene facade verplaatsen.
 
-## C++ GX software-rasterizer hotspots
-
-Status: open. Eerst profileren op de echte libretro/software-path; niet
-optimaliseren op basis van vermoedens.
-
-Open contract:
-
-- Transparante driehoeken, particles en overdraw mogen op een krachtige machine
-  geen zichtbare slowdown of frametime-spikes veroorzaken, ook als het gemiddelde
-  nog boven realtime ligt.
-- Waarschijnlijke eigenaren zijn de C++ triangle/span- en blend-inner loops,
-  command iteration en VRAM/cache-invalidatie. De meting moet aanwijzen welke
-  datapath werkelijk tijd kost.
-- Optimalisaties moeten PSX-rastergedrag behouden en TS/C++ conformance niet
-  vervangen door een snellere afwijkende renderer.
-
-Niet doen:
-
-- Geen cart-scenes afzwakken, particles reduceren, transparantie uitschakelen of
-  frames overslaan als performance-oplossing.
-- Geen hot-path tabellen/objecten, herhaalde decode, O(n)-invalidatie of algemene
-  wrapperlagen toevoegen.
-
 ## GPUREAD en accelerated VRAM-to-CPU readback
 
 Status: open ontwerpbesluit vóór implementatie.

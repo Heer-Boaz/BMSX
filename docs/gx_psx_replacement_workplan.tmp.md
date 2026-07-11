@@ -283,6 +283,16 @@ and ask before coding.
 - [x] GLES2 consumes the mirrored GX command buffer directly.
 - [x] TS software/headless consumes the GX command buffer directly.
 - [x] C++ software backend consumes the mirrored GX command buffer directly.
+- [x] Profile the release C++ libretro/software path before changing its
+  rasterizer. Four unpaced 3,000-frame `bare_metal_cart` runs with audio and CRT
+  postprocessing disabled measured the complete `retro_run` boundary, including
+  machine execution, GX rasterization and scanout. Baseline, particles, echo and
+  morph averaged 2.124 ms, 1.785 ms, 2.611 ms and 1.788 ms per frame; their
+  maximum frames were 9.779 ms, 10.695 ms, 12.219 ms and 9.691 ms against the
+  20 ms PAL budget. The temporary host timing probe was reverted. DuckStation,
+  Mednafen and MAME confirm specialization and scanline spans as the mature next
+  steps if target-hardware profiling later proves a problem, but this desktop
+  measurement does not justify a speculative rasterizer rewrite now.
 - [ ] Keep WebGL2/GLES2 behavior synchronized for every new GX command.
 - [ ] Wire the existing TS/C++ software/headless renderer to the same GX/PSX
   contract as oracle/backend, not as a fallback inside GPU backends.
