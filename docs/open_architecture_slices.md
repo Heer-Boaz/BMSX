@@ -10,6 +10,20 @@ de nog open architectuurgrenzen; een groene headless test of TS/C++ pixel parity
 sluit zo'n grens niet automatisch tegen echte hardware of een accelerated
 backend.
 
+## Actuele zichtbare regressies na de GX-migratie
+
+Status: open; deze regressies zijn niet opgelost door de huidige headless- en
+pariteitsvalidatie en moeten als harde acceptatieblokkades blijven staan.
+
+- Terminal mode en de IDE renderen niet meer.
+- Het quick menu rendert niet meer.
+- `pietious` is volledig verticaal samengedrukt en de z-ordering is omgekeerd.
+- De transition- en combat-results-kleuren in `2025` kloppen niet meer: ze zijn
+  donkerblauw tot bijna zwart in plaats van de lichtere Persona 3-blauwtint.
+- Ondanks alle optimalisatiewerk zijn de performanceproblemen van de
+  libretro-versie niet opgelost. Zelfs op een Intel Core Ultra 7 met een
+  RTX 5070 Ti vertoont `bare_metal_cart` bizarre, zeer zware slowdown.
+
 ## WebGPU/browser-presentatie live bewijzen
 
 Status: open, maar uitgesteld tot een expliciete browsersessie. Niet tussendoor
