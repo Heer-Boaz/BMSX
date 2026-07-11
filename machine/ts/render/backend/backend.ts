@@ -1,6 +1,6 @@
 import { type color_arr, type TextureSource, type vec2 } from '../../rompack/format';
 import type { GxGpu } from '../../machine/devices/gx/gpu';
-import type { GxGpuCommandBufferView } from '../../machine/devices/gx/gpu_command_buffer';
+import type { GxGpuCommandBufferView, GxGpuReadbackPortView } from '../../machine/devices/gx/gpu_command_buffer';
 import type { Host2DSubmission } from '../shared/submissions';
 import type { GameView } from '../gameview';
 import type { DeviceQuantizeMode } from '../post/device_quantize/mode';
@@ -262,6 +262,7 @@ export type GxGpuPipelineState = {
 	width: number;
 	height: number;
 	commandBuffer: GxGpuCommandBufferView;
+	readbackPort: GxGpuReadbackPortView;
 	statusWord: number;
 	displayModeWord: number;
 	displayStartWord: number;
@@ -297,6 +298,7 @@ export interface RenderContext {
 	presentationHistorySourceIndex: 0 | 1;
 	presentationHistoryDestinationIndex: 0 | 1;
 	gxGpuCommandBuffer: GxGpuCommandBufferView;
+	gxGpuReadbackPort: GxGpuReadbackPortView;
 	gxGpuStatusWord: number;
 	gxGpuDisplayModeWord: number;
 	gxGpuDisplayStartWord: number;

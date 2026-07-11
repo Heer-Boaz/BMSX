@@ -879,6 +879,11 @@
 			"reason": "gx_gpu_raw_vram_decode_shader_contract"
 		},
 		{
+			"webgl": "machine/ts/render/backend/webgl/shaders/gx_gpu_readback.frag.glsl",
+			"gles2": "machine/cpp/render/backend/gles2/shaders/gx_gpu_readback.frag.glsl",
+			"reason": "gx_gpu_gp0_c0_packed_readback_shader_contract"
+		},
+		{
 			"webgl": "machine/ts/render/post/crt/webgl/shaders/present.frag.glsl",
 			"gles2": "machine/cpp/render/post/crt/gles2/shaders/present.frag.glsl",
 			"reason": "crt_present_copy_shader_contract"

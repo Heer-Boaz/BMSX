@@ -7,6 +7,7 @@ namespace bmsx {
 
 void commitGxGpuViewSnapshot(GameView& view, const GxGpuDeviceOutput& output) {
 	view.gxGpuCommandBuffer = output.commandBuffer;
+	view.gxGpuReadbackPort = output.readbackPort;
 	view.gxGpuStatusWord = output.statusWord;
 	view.gxGpuDisplayModeWord = output.displayModeWord;
 	view.gxGpuDisplayStartWord = output.displayStartWord;

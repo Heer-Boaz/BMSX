@@ -12,5 +12,6 @@ inline constexpr const char* kGxGpuTransferVertexShader = R"(@BMSX_GX_GPU_TRANSF
 inline constexpr const char* kGxGpuTransferFragmentShader = R"(@BMSX_GX_GPU_TRANSFER_FRAGMENT_SHADER@)";
 inline constexpr const char* kGxGpuScanoutVertexShader = R"(@BMSX_GX_GPU_SCANOUT_VERTEX_SHADER@)";
 inline constexpr const char* kGxGpuScanoutFragmentShader = R"(@BMSX_GX_GPU_SCANOUT_FRAGMENT_SHADER@)";
+inline constexpr const char* kGxGpuReadbackFragmentShader = R"(@BMSX_GX_GPU_READBACK_FRAGMENT_SHADER@)";
 
 } // namespace bmsx

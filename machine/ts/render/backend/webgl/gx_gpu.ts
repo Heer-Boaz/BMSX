@@ -93,6 +93,7 @@ import transferVertexShader from './shaders/gx_gpu_transfer.vert.glsl';
 import transferFragmentShader from './shaders/gx_gpu_transfer.frag.glsl';
 import scanoutVertexShader from './shaders/gx_gpu_scanout.vert.glsl';
 import scanoutFragmentShader from './shaders/gx_gpu_scanout.frag.glsl';
+import readbackFragmentShader from './shaders/gx_gpu_readback.frag.glsl';
 
 const GX_GPU_SCANOUT_TEXTURE_UNIT = 0;
 const GX_GPU_TEXTURE_SAMPLE_UNIT = 1;
@@ -122,6 +123,7 @@ const GX_GPU_SCANOUT_VERTEX_FLOATS = 4;
 const GX_GPU_RAW_VRAM_BYTES_PER_PIXEL = 4;
 const GX_GPU_RAW_VRAM_UPLOAD_ROW_BYTES = GX_GPU_VRAM_WIDTH * GX_GPU_RAW_VRAM_BYTES_PER_PIXEL;
 const GX_GPU_RAW_VRAM_READBACK_BYTES = GX_GPU_VRAM_WIDTH * GX_GPU_VRAM_HEIGHT * GX_GPU_RAW_VRAM_BYTES_PER_PIXEL;
+const GX_GPU_READBACK_PACK_WIDTH = 512;
 const GX_GPU_FULL_DRAWING_AREA_TOP_LEFT_WORD = 0;
 const GX_GPU_FULL_DRAWING_AREA_BOTTOM_RIGHT_WORD = (GX_GPU_VRAM_WIDTH - 1) | ((GX_GPU_VRAM_HEIGHT - 1) << 10);
 
@@ -170,7 +172,7 @@ type GxGpuRectangle = {
 	height: number;
 };
 
-type GxGpuVramSource = Pick<GxGpuDeviceOutput, 'commandBuffer' | 'vramSnapshotBytes' | 'vramSnapshotSerial'>;
+type GxGpuVramSource = Pick<GxGpuDeviceOutput, 'commandBuffer' | 'readbackPort' | 'vramSnapshotBytes' | 'vramSnapshotSerial'>;
 
 const gxGpuVramCopyRectScratch: GxGpuVramCopyRect = {
 	left: 0,
@@ -220,10 +222,13 @@ type GxGpuState = {
 	texturedProgram: WebGLProgram;
 	transferProgram: WebGLProgram;
 	scanoutProgram: WebGLProgram;
+	readbackProgram: WebGLProgram;
 	vramTexture: WebGLTexture;
 	vramSampleTexture: WebGLTexture;
 	vramTransferTexture: WebGLTexture;
 	vramFramebuffer: WebGLFramebuffer;
+	readbackTexture: WebGLTexture;
+	readbackFramebuffer: WebGLFramebuffer;
 	solidVertexBuffer: WebGLBuffer;
 	lineVertexBuffer: WebGLBuffer;
 	texturedVertexBuffer: WebGLBuffer;
@@ -288,6 +293,9 @@ type GxGpuState = {
 	scanoutDisplayStartWordUniform: WebGLUniformLocation;
 	scanoutHorizontalDisplayRangeUniform: WebGLUniformLocation;
 	scanoutVerticalDisplayRangeUniform: WebGLUniformLocation;
+	readbackPositionAttrib: number;
+	readbackVramUniform: WebGLUniformLocation;
+	readbackParamsUniform: WebGLUniformLocation;
 	scanoutUniformDisplayModeWord: number;
 	scanoutUniformDisplayStartWord: number;
 	scanoutUniformHorizontalDisplayRangeWord: number;
@@ -315,6 +323,7 @@ function bootstrapGxGpuPass(backend: WebGLBackend): void {
 	const texturedProgram = backend.buildProgram(texturedVertexShader, texturedFragmentShader, 'gx_gpu_textured');
 	const transferProgram = backend.buildProgram(transferVertexShader, transferFragmentShader, 'gx_gpu_transfer');
 	const scanoutProgram = backend.buildProgram(scanoutVertexShader, scanoutFragmentShader, 'gx_gpu_scanout');
+	const readbackProgram = backend.buildProgram(scanoutVertexShader, readbackFragmentShader, 'gx_gpu_readback');
 	const vramTexture = gl.createTexture() as WebGLTexture;
 	initializeGxGpuTexture(backend, vramTexture, GX_GPU_SCANOUT_TEXTURE_UNIT);
 
@@ -329,6 +338,14 @@ function bootstrapGxGpuPass(backend: WebGLBackend): void {
 	backend.setViewportRect(0, 0, GX_GPU_VRAM_WIDTH, GX_GPU_VRAM_HEIGHT);
 	gl.clearColor(0, 0, 0, 1);
 	gl.clear(gl.COLOR_BUFFER_BIT);
+	const readbackTexture = gl.createTexture() as WebGLTexture;
+	backend.setActiveTexture(GX_GPU_SCANOUT_TEXTURE_UNIT);
+	backend.bindTexture2D(readbackTexture);
+	gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, GX_GPU_READBACK_PACK_WIDTH, GX_GPU_VRAM_HEIGHT, 0, gl.RGBA, gl.UNSIGNED_BYTE, null);
+	glSetTexture2DParams(gl, RGBA8_LINEAR_TEXTURE_PARAMS);
+	const readbackFramebuffer = gl.createFramebuffer() as WebGLFramebuffer;
+	gl.bindFramebuffer(gl.FRAMEBUFFER, readbackFramebuffer);
+	gl.framebufferTexture2D(gl.FRAMEBUFFER, gl.COLOR_ATTACHMENT0, gl.TEXTURE_2D, readbackTexture, 0);
 
 	const solidVertexBuffer = gl.createBuffer() as WebGLBuffer;
 	backend.bindArrayBuffer(solidVertexBuffer);
@@ -359,10 +376,13 @@ function bootstrapGxGpuPass(backend: WebGLBackend): void {
 		texturedProgram,
 		transferProgram,
 		scanoutProgram,
+		readbackProgram,
 		vramTexture,
 		vramSampleTexture,
 		vramTransferTexture,
 		vramFramebuffer,
+		readbackTexture,
+		readbackFramebuffer,
 		solidVertexBuffer,
 		lineVertexBuffer,
 		texturedVertexBuffer,
@@ -427,6 +447,9 @@ function bootstrapGxGpuPass(backend: WebGLBackend): void {
 		scanoutDisplayStartWordUniform: gl.getUniformLocation(scanoutProgram, 'u_displayStartWord') as WebGLUniformLocation,
 		scanoutHorizontalDisplayRangeUniform: gl.getUniformLocation(scanoutProgram, 'u_horizontalDisplayRangeWord') as WebGLUniformLocation,
 		scanoutVerticalDisplayRangeUniform: gl.getUniformLocation(scanoutProgram, 'u_verticalDisplayRangeWord') as WebGLUniformLocation,
+		readbackPositionAttrib: gl.getAttribLocation(readbackProgram, 'a_position'),
+		readbackVramUniform: gl.getUniformLocation(readbackProgram, 'u_vram') as WebGLUniformLocation,
+		readbackParamsUniform: gl.getUniformLocation(readbackProgram, 'u_readback') as WebGLUniformLocation,
 		scanoutUniformDisplayModeWord: 0xffffffff,
 		scanoutUniformDisplayStartWord: 0xffffffff,
 		scanoutUniformHorizontalDisplayRangeWord: 0xffffffff,
@@ -2371,6 +2394,40 @@ function executeGxGpuVramCommands(source: GxGpuVramSource): void {
 		gxGpuState.processedCommandSerial = commandSerial;
 	}
 	executeNewGxGpuCommands(commandBuffer);
+	completeGxGpuReadback(commandBuffer, source.readbackPort);
+}
+
+function completeGxGpuReadback(commandBuffer: GxGpuCommandBufferView, readback: GxGpuVramSource['readbackPort']): void {
+	if (!readback.claimReadback(commandBuffer.presentCommandCount)) {
+		return;
+	}
+	const readbackToken = readback.token;
+	const pixelCount = readback.width * readback.height;
+	const wordCount = (pixelCount + 1) >> 1;
+	const packedWidth = wordCount < GX_GPU_READBACK_PACK_WIDTH ? wordCount : GX_GPU_READBACK_PACK_WIDTH;
+	const packedHeight = ((wordCount - 1) / packedWidth | 0) + 1;
+	const gl = gxGpuState.gl;
+	gl.bindFramebuffer(gl.FRAMEBUFFER, gxGpuState.readbackFramebuffer);
+	gxGpuState.backend.setViewportRect(0, 0, packedWidth, packedHeight);
+	gl.disable(gl.SCISSOR_TEST);
+	gxGpuState.backend.setDepthTestEnabled(false);
+	gxGpuState.backend.setDepthMask(false);
+	gxGpuState.backend.setCullEnabled(false);
+	gxGpuState.backend.setBlendEnabled(false);
+	gl.colorMask(true, true, true, true);
+	gxGpuState.backend.useProgram(gxGpuState.readbackProgram);
+	gl.uniform1i(gxGpuState.readbackVramUniform, GX_GPU_SCANOUT_TEXTURE_UNIT);
+	gl.uniform4f(gxGpuState.readbackParamsUniform, readback.x, readback.y, readback.width, packedWidth);
+	gxGpuState.backend.setActiveTexture(GX_GPU_SCANOUT_TEXTURE_UNIT);
+	gxGpuState.backend.bindTexture2D(gxGpuState.vramTexture);
+	gxGpuState.backend.bindVertexArray(null);
+	gxGpuState.backend.bindArrayBuffer(gxGpuState.scanoutVertexBuffer);
+	gl.enableVertexAttribArray(gxGpuState.readbackPositionAttrib);
+	gl.vertexAttribPointer(gxGpuState.readbackPositionAttrib, 2, gl.FLOAT, false, GX_GPU_SCANOUT_VERTEX_FLOATS * 4, 0);
+	gl.drawArrays(gl.TRIANGLES, 0, 6);
+	gl.pixelStorei(gl.PACK_ALIGNMENT, 1);
+	gl.readPixels(0, 0, packedWidth, packedHeight, gl.RGBA, gl.UNSIGNED_BYTE, readback.pixelBytes);
+	readback.completeReadback(readbackToken);
 }
 
 export function captureRenderedVramSnapshot(gxGpu: GxGpu, output: GxGpuVramSource): void {
@@ -2401,6 +2458,7 @@ function writeGxGpuState(ctx: RenderGraphPassContext, state: RenderPassStateRegi
 	state.width = ctx.view.offscreenCanvasSize.x;
 	state.height = ctx.view.offscreenCanvasSize.y;
 	state.commandBuffer = ctx.view.gxGpuCommandBuffer;
+	state.readbackPort = ctx.view.gxGpuReadbackPort;
 	state.statusWord = ctx.view.gxGpuStatusWord;
 	state.displayModeWord = ctx.view.gxGpuDisplayModeWord;
 	state.displayStartWord = ctx.view.gxGpuDisplayStartWord;
@@ -2415,6 +2473,7 @@ export function registerGxGpuPass(registry: RenderPassLibrary): void {
 		width: 0,
 		height: 0,
 		commandBuffer: registry.view.gxGpuCommandBuffer,
+		readbackPort: registry.view.gxGpuReadbackPort,
 		statusWord: registry.view.gxGpuStatusWord,
 		displayModeWord: registry.view.gxGpuDisplayModeWord,
 		displayStartWord: registry.view.gxGpuDisplayStartWord,

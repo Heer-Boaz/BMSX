@@ -91,6 +91,7 @@ public:
 	// Video snapshot fields consumed by the renderer
 	// ─────────────────────────────────────────────────────────────────────────
 	const GxGpuCommandBuffer* gxGpuCommandBuffer = nullptr;
+	GxGpuReadbackPort* gxGpuReadbackPort = nullptr;
 	u32 gxGpuStatusWord = 0u;
 	u32 gxGpuDisplayModeWord = 0u;
 	u32 gxGpuDisplayStartWord = 0u;

@@ -4,6 +4,7 @@
 
 #include "platform.h"
 #include "core/machine_manager.h"
+#include "common/endian.h"
 #include "common/primitives.h"
 #include "core/rom_boot_manager.h"
 #include "input/manager.h"
@@ -51,6 +52,9 @@ constexpr const char* kDebugRomSuffix = ".debug.rom";
 constexpr const char* kKeyboardDeviceId = "keyboard:0";
 constexpr const char* kPointerDeviceId = "pointer:0";
 constexpr const char* kGamepadDevicePrefix = "gamepad:";
+constexpr u32 kSaveStateMagic = 0x31534d42u;
+constexpr size_t kSaveStateHeaderBytes = 8u;
+constexpr size_t kSaveStateEnvelopeBytes = kSaveStateHeaderBytes + RUNTIME_SAVE_STATE_WIRE_CAPACITY;
 
 static void installBuiltinRenderPipeline(GameView* view, GPUBackend* backend) {
 	auto registry = std::make_unique<RenderPassLibrary>(backend, view);
@@ -631,7 +635,7 @@ size_t LibretroPlatform::getStateSize() const {
 	if (!runtime.isInitialized()) {
 		return 0;
 	}
-	return captureRuntimeSaveStateBytes(runtime).size();
+	return kSaveStateEnvelopeBytes;
 }
 
 // start fallible-boundary -- libretro serialization callbacks report failure as false after logging.
@@ -643,16 +647,17 @@ bool LibretroPlatform::saveState(void* data, size_t size) {
 	if (!runtime.isInitialized()) {
 		return false;
 	}
+	if (size < kSaveStateEnvelopeBytes) {
+		return false;
+	}
 	try {
 		m_machine_manager->view()->captureGxGpuVramSnapshot(runtime.machine.gxGpu);
 		const std::vector<u8> state = captureRuntimeSaveStateBytes(runtime);
-		if (size < state.size()) {
-			return false;
-		}
-		std::memcpy(data, state.data(), state.size());
-		if (size > state.size()) {
-			std::memset(static_cast<u8*>(data) + state.size(), 0, size - state.size());
-		}
+		u8* const envelope = static_cast<u8*>(data);
+		writeLE32(envelope, kSaveStateMagic);
+		writeLE32(envelope + 4u, static_cast<u32>(state.size()));
+		std::memcpy(envelope + kSaveStateHeaderBytes, state.data(), state.size());
+		std::memset(envelope + kSaveStateHeaderBytes + state.size(), 0, RUNTIME_SAVE_STATE_WIRE_CAPACITY - state.size());
 		return true;
 	}
 	catch (const std::exception& error) {
@@ -670,7 +675,18 @@ bool LibretroPlatform::loadState(const void* data, size_t size) {
 		return false;
 	}
 	try {
-		applyRuntimeSaveStateBytes(runtime, static_cast<const u8*>(data), size);
+		if (size < kSaveStateEnvelopeBytes) {
+			return false;
+		}
+		const u8* const envelope = static_cast<const u8*>(data);
+		if (readLE32(envelope) != kSaveStateMagic) {
+			return false;
+		}
+		const size_t payloadBytes = readLE32(envelope + 4u);
+		if (payloadBytes > size - kSaveStateHeaderBytes) {
+			return false;
+		}
+		applyRuntimeSaveStateBytes(runtime, envelope + kSaveStateHeaderBytes, payloadBytes);
 		m_audio_service->resetQueue();
 		m_audio_buffer.clear();
 		return true;

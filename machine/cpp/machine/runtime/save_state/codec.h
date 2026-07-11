@@ -9,6 +9,8 @@ namespace bmsx {
 
 class Runtime;
 
+constexpr size_t RUNTIME_SAVE_STATE_WIRE_CAPACITY = 0x01000000u;
+
 std::vector<u8> encodeRuntimeSaveState(const RuntimeSaveState& state);
 RuntimeSaveState decodeRuntimeSaveState(const u8* data, size_t size);
 RuntimeSaveState decodeRuntimeSaveState(const std::vector<u8>& data);

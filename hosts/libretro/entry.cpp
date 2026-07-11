@@ -992,9 +992,7 @@ void retro_set_environment(retro_environment_t cb) {
 	bool no_game = true;
 	cb(RETRO_ENVIRONMENT_SET_SUPPORT_NO_GAME, &no_game);
 
-	uint64_t serialization_quirks =
-		RETRO_SERIALIZATION_QUIRK_MUST_INITIALIZE |
-		RETRO_SERIALIZATION_QUIRK_CORE_VARIABLE_SIZE;
+	uint64_t serialization_quirks = RETRO_SERIALIZATION_QUIRK_MUST_INITIALIZE;
 	cb(RETRO_ENVIRONMENT_SET_SERIALIZATION_QUIRKS, &serialization_quirks);
 
 	static retro_frame_time_callback frame_time = { bmsx_set_frame_time_usec, 0 };

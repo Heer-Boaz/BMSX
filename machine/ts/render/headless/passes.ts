@@ -80,6 +80,7 @@ function registerHeadlessGxGpuPass(registry: RenderPassLibrary): void {
 				width: view.offscreenCanvasSize.x,
 				height: view.offscreenCanvasSize.y,
 				commandBuffer: view.gxGpuCommandBuffer,
+				readbackPort: view.gxGpuReadbackPort,
 				statusWord: view.gxGpuStatusWord,
 				displayModeWord: view.gxGpuDisplayModeWord,
 				displayStartWord: view.gxGpuDisplayStartWord,

@@ -150,6 +150,80 @@ void testDmaCodecRejectsQueuesBeyondHardwareCapacity() {
 	require(rejected, "save-state codec should reject DMA queues beyond the hardware FIFO capacity");
 }
 
+void testGpureadCodecStoresReadyBytesAndRejectsBackendPhase() {
+	bmsx::LibretroPlatform platform(bmsx::BackendType::Software);
+	platform.setLogCallback(discardRetroLog);
+	const std::vector<bmsx::u8> rom = bmsx::test::makeMinimalProgramCartRom();
+	require(platform.loadRom(rom.data(), rom.size()), "libretro should load a program cart ROM for GPUREAD codec validation");
+	bmsx::RuntimeSaveState ready = bmsx::captureRuntimeSaveState(platform.machineManager()->runtime());
+	bmsx::GxGpuCommandBufferState& readyReadback = ready.machineState.machine.gxGpu.commandBuffer;
+	readyReadback.readbackPhase = bmsx::GX_GPU_READBACK_READY;
+	readyReadback.readbackX = 1023u;
+	readyReadback.readbackY = 511u;
+	readyReadback.readbackWidth = 3u;
+	readyReadback.readbackHeight = 1u;
+	readyReadback.readbackPixelCursor = 1u;
+	readyReadback.readbackPixelBytes = { 0x11u, 0x11u, 0x22u, 0x22u, 0x33u, 0x33u };
+	const bmsx::RuntimeSaveState decodedReady = bmsx::decodeRuntimeSaveState(bmsx::encodeRuntimeSaveState(ready));
+	const bmsx::GxGpuCommandBufferState& decodedReadyReadback = decodedReady.machineState.machine.gxGpu.commandBuffer;
+	require(decodedReadyReadback.readbackPhase == bmsx::GX_GPU_READBACK_READY, "native codec preserves READY GPUREAD phase");
+	require(decodedReadyReadback.readbackPixelCursor == 1u, "native codec preserves READY GPUREAD cursor");
+	require(decodedReadyReadback.readbackPixelBytes == readyReadback.readbackPixelBytes, "native codec preserves READY GPUREAD bytes");
+
+	bmsx::RuntimeSaveState submitted = bmsx::captureRuntimeSaveState(platform.machineManager()->runtime());
+	bmsx::GxGpuCommandBufferState& submittedReadback = submitted.machineState.machine.gxGpu.commandBuffer;
+	submittedReadback.readbackPhase = bmsx::GX_GPU_READBACK_SUBMITTED;
+	submittedReadback.readbackWidth = bmsx::GX_GPU_VRAM_WIDTH;
+	submittedReadback.readbackHeight = bmsx::GX_GPU_VRAM_HEIGHT;
+	submittedReadback.readbackPixelBytes.clear();
+	bool rejected = false;
+	try {
+		(void)bmsx::decodeRuntimeSaveState(bmsx::encodeRuntimeSaveState(submitted));
+	}
+	catch (const std::exception&) {
+		rejected = true;
+	}
+	require(rejected, "native codec rejects backend-only SUBMITTED GPUREAD phase");
+
+	bmsx::RuntimeSaveState oversized = bmsx::captureRuntimeSaveState(platform.machineManager()->runtime());
+	oversized.machineState.machine.gxGpu.vramBytes.resize(bmsx::RUNTIME_SAVE_STATE_WIRE_CAPACITY);
+	rejected = false;
+	try {
+		(void)bmsx::encodeRuntimeSaveState(oversized);
+	}
+	catch (const std::exception&) {
+		rejected = true;
+	}
+	require(rejected, "native codec rejects payloads beyond the current-format wire capacity");
+	oversized.machineState.machine.gxGpu.vramBytes.clear();
+	std::vector<bmsx::u8> oversizedWire(bmsx::RUNTIME_SAVE_STATE_WIRE_CAPACITY + 1u);
+	rejected = false;
+	try {
+		(void)bmsx::decodeRuntimeSaveState(oversizedWire);
+	}
+	catch (const std::exception&) {
+		rejected = true;
+	}
+	require(rejected, "native codec rejects oversized current-format wire input before decoding");
+}
+
+void testLibretroStateEnvelopeSupportsMaximumGpuread() {
+	bmsx::LibretroPlatform platform(bmsx::BackendType::Software);
+	platform.setLogCallback(discardRetroLog);
+	const std::vector<bmsx::u8> rom = bmsx::test::makeMinimalProgramCartRom();
+	require(platform.loadRom(rom.data(), rom.size()), "libretro should load a program cart ROM for GPUREAD envelope validation");
+	const size_t stateSize = platform.getStateSize();
+	bmsx::GxGpu& gpu = platform.machineManager()->runtime().machine.gxGpu;
+	gpu.writeGp0(bmsx::GX_GPU_GP0_VRAM_TO_CPU_FIRST << 24u);
+	gpu.writeGp0(0u);
+	gpu.writeGp0(0u);
+	gpu.presentReadyFrameOnVblankEdge();
+	require(platform.getStateSize() == stateSize, "libretro state envelope remains fixed with maximum READY GPUREAD payload");
+	std::vector<bmsx::u8> state(stateSize + 16u);
+	require(platform.saveState(state.data(), state.size()), "libretro fixed envelope should contain maximum GPUREAD payload");
+	require(platform.loadState(state.data(), state.size()), "libretro fixed envelope decodes its explicit payload length from a larger caller buffer");
+}
+
 void testInputSnapshotReflectsHeldKey() {
 	bmsx::LibretroPlatform platform(bmsx::BackendType::Software);
 	platform.setLogCallback(discardRetroLog);
@@ -171,6 +245,8 @@ void testInputSnapshotReflectsHeldKey() {
 int main() {
 	testLibretroSaveStateRoundTrip();
 	testDmaCodecRejectsQueuesBeyondHardwareCapacity();
+	testGpureadCodecStoresReadyBytesAndRejectsBackendPhase();
+	testLibretroStateEnvelopeSupportsMaximumGpuread();
 	testInputSnapshotReflectsHeldKey();
 	return 0;
 }

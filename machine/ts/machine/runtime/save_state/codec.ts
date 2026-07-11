@@ -21,7 +21,7 @@ import {
 	type GeometryControllerPhase,
 } from '../../devices/geometry/contracts';
 import { GX_GPU_GP0_COMMAND_BUFFER_WORDS, type GxGpuSaveState, type GxGpuState } from '../../devices/gx/gpu';
-import { GX_GPU_COMMAND_CAPACITY, GX_GPU_COMMAND_WORD_CAPACITY, GX_GPU_VRAM_BYTE_COUNT, type GxGpuCommandBufferState } from '../../devices/gx/gpu_command_buffer';
+import { GX_GPU_COMMAND_CAPACITY, GX_GPU_COMMAND_WORD_CAPACITY, GX_GPU_READBACK_READY, GX_GPU_READBACK_SUBMITTED, GX_GPU_VRAM_BYTE_COUNT, type GxGpuCommandBufferState } from '../../devices/gx/gpu_command_buffer';
 import type { GxGteState } from '../../devices/gx/gte';
 import { GX_GTE_CONTROL_REGISTER_COUNT, GX_GTE_DATA_REGISTER_COUNT } from '../../devices/gx/gte';
 import type { GeometryJobState } from '../../devices/geometry/job';
@@ -34,6 +34,8 @@ import type { RuntimeSaveState } from '../save_state';
 import { applyRuntimeSaveState, captureRuntimeSaveState } from '../save_state';
 import { RUNTIME_SAVE_STATE_PROP_NAMES } from './schema';
 import type { Runtime } from '../runtime';
+
+export const RUNTIME_SAVE_STATE_WIRE_CAPACITY = 0x01000000;
 
 type CpuTableHashNodeState = Extract<CpuObjectState, { kind: 'table' }>['hash'][number];
 
@@ -451,6 +453,14 @@ function encodeGxGpuCommandBufferState(state: GxGpuCommandBufferState): GxGpuCom
 		commandMaskBitModeWord: encodeVector(state.commandMaskBitModeWord, (word) => word >>> 0),
 		commandInterlacedRenderWord: encodeVector(state.commandInterlacedRenderWord, (word) => word >>> 0),
 		words: encodeVector(state.words, (word) => word >>> 0),
+		readbackPhase: state.readbackPhase,
+		readbackFenceCommandCount: state.readbackFenceCommandCount,
+		readbackX: state.readbackX,
+		readbackY: state.readbackY,
+		readbackWidth: state.readbackWidth,
+		readbackHeight: state.readbackHeight,
+		readbackPixelCursor: state.readbackPixelCursor,
+		readbackPixelBytes: state.readbackPixelBytes,
 	};
 }
 
@@ -459,6 +469,13 @@ function decodeGxGpuCommandBufferState(value: unknown, label: string): GxGpuComm
 	const commandCount = requireBoundedU32(requireObjectKey(object, 'commandCount', label, `${label}.commandCount`), `${label}.commandCount`, 0, GX_GPU_COMMAND_CAPACITY);
 	const presentCommandCount = requireBoundedU32(requireObjectKey(object, 'presentCommandCount', label, `${label}.presentCommandCount`), `${label}.presentCommandCount`, 0, commandCount);
 	const wordCount = requireBoundedU32(requireObjectKey(object, 'wordCount', label, `${label}.wordCount`), `${label}.wordCount`, 0, GX_GPU_COMMAND_WORD_CAPACITY);
+	const readbackWidth = requireBoundedU32(requireObjectKey(object, 'readbackWidth', label, `${label}.readbackWidth`), `${label}.readbackWidth`, 0, 1024);
+	const readbackHeight = requireBoundedU32(requireObjectKey(object, 'readbackHeight', label, `${label}.readbackHeight`), `${label}.readbackHeight`, 0, 512);
+	const readbackPixelCount = readbackWidth * readbackHeight;
+	const readbackPhase = requireBoundedU32(requireObjectKey(object, 'readbackPhase', label, `${label}.readbackPhase`), `${label}.readbackPhase`, 0, GX_GPU_READBACK_READY);
+	if (readbackPhase === GX_GPU_READBACK_SUBMITTED) {
+		throw new Error(`${label}.readbackPhase cannot contain the backend-submitted phase.`);
+	}
 	return {
 		commandCount,
 		presentCommandCount,
@@ -475,6 +492,14 @@ function decodeGxGpuCommandBufferState(value: unknown, label: string): GxGpuComm
 		commandMaskBitModeWord: decodeU32FixedArray(requireObjectKey(object, 'commandMaskBitModeWord', label, `${label}.commandMaskBitModeWord`), `${label}.commandMaskBitModeWord`, commandCount),
 		commandInterlacedRenderWord: decodeU8FixedArray(requireObjectKey(object, 'commandInterlacedRenderWord', label, `${label}.commandInterlacedRenderWord`), `${label}.commandInterlacedRenderWord`, commandCount),
 		words: decodeU32FixedArray(requireObjectKey(object, 'words', label, `${label}.words`), `${label}.words`, wordCount),
+		readbackPhase,
+		readbackFenceCommandCount: requireBoundedU32(requireObjectKey(object, 'readbackFenceCommandCount', label, `${label}.readbackFenceCommandCount`), `${label}.readbackFenceCommandCount`, 0, commandCount),
+		readbackX: requireBoundedU32(requireObjectKey(object, 'readbackX', label, `${label}.readbackX`), `${label}.readbackX`, 0, 1023),
+		readbackY: requireBoundedU32(requireObjectKey(object, 'readbackY', label, `${label}.readbackY`), `${label}.readbackY`, 0, 511),
+		readbackWidth,
+		readbackHeight,
+		readbackPixelCursor: requireBoundedU32(requireObjectKey(object, 'readbackPixelCursor', label, `${label}.readbackPixelCursor`), `${label}.readbackPixelCursor`, 0, readbackPixelCount),
+		readbackPixelBytes: requireBinaryFixedLength(requireObjectKey(object, 'readbackPixelBytes', label, `${label}.readbackPixelBytes`), `${label}.readbackPixelBytes`, readbackPhase === GX_GPU_READBACK_READY ? readbackPixelCount * 2 : 0),
 	};
 }
 
@@ -1164,10 +1189,17 @@ function decodeRuntimeSaveStateValue(value: unknown, label: string): RuntimeSave
 }
 
 export function encodeRuntimeSaveState(state: RuntimeSaveState): Uint8Array {
-	return encodeBinaryWithPropTable(encodeRuntimeSaveStateValue(state), RUNTIME_SAVE_STATE_PROP_NAMES);
+	const bytes = encodeBinaryWithPropTable(encodeRuntimeSaveStateValue(state), RUNTIME_SAVE_STATE_PROP_NAMES);
+	if (bytes.byteLength > RUNTIME_SAVE_STATE_WIRE_CAPACITY) {
+		throw new Error('Runtime save-state payload exceeds the current-format wire capacity.');
+	}
+	return bytes;
 }
 
 export function decodeRuntimeSaveState(bytes: Uint8Array): RuntimeSaveState {
+	if (bytes.byteLength > RUNTIME_SAVE_STATE_WIRE_CAPACITY) {
+		throw new Error('Runtime save-state payload exceeds the current-format wire capacity.');
+	}
 	return decodeRuntimeSaveStateValue(
 		decodeBinaryWithPropTable(bytes, RUNTIME_SAVE_STATE_PROP_NAMES),
 		'runtimeSaveState',

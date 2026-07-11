@@ -14,7 +14,7 @@ import type {
 	SubscriptionHandle,
 } from '../platform';
 import type { GxGpu } from '../machine/devices/gx/gpu';
-import type { GxGpuCommandBufferView } from '../machine/devices/gx/gpu_command_buffer';
+import type { GxGpuCommandBufferView, GxGpuReadbackPortView } from '../machine/devices/gx/gpu_command_buffer';
 import { renderGate } from '../common/taskgate';
 
 const PRESENTATION_PASS_IDS = ['gx_gpu', 'device_quantize', 'presentation_history_a', 'presentation_history_b', 'crt', 'host_overlay', 'host_menu'];
@@ -69,6 +69,7 @@ export class GameView implements RenderContext {
 	public offscreenCanvasSize!: vec2;
 	public textures: { [k: string]: TextureHandle } = {};
 	public gxGpuCommandBuffer!: GxGpuCommandBufferView;
+	public gxGpuReadbackPort!: GxGpuReadbackPortView;
 	public gxGpuStatusWord = 0;
 	public gxGpuDisplayModeWord = 0;
 	public gxGpuDisplayStartWord = 0;

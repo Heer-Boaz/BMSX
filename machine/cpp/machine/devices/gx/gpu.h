@@ -162,7 +162,7 @@ public:
 	u32 commitRenderedVramSnapshotBytes(const u8* bytes);
 	const std::array<u8, GX_GPU_VRAM_BYTE_COUNT>& readVramSnapshotBytes() const { return m_vramSnapshotBytes; }
 	u32 readVramSnapshotSerial() const { return m_vramSnapshotSerial; }
-	u32 readGp0() const;
+	u32 readGp0();
 	void writeGp0(u32 word);
 	u32 readStatus();
 	u32 writeGp1(u32 word);
@@ -193,7 +193,7 @@ private:
 	u32 m_displayModeWord = 0;
 	u32 m_statusWord = GX_GPU_STATUS_RESET_WORD;
 	GxGpuCommandBuffer m_commandBuffer{};
-	mutable GxGpuDeviceOutput m_deviceOutput{&m_commandBuffer};
+	mutable GxGpuDeviceOutput m_deviceOutput{&m_commandBuffer, &m_commandBuffer.readback};
 	std::array<u32, GX_GPU_GP0_COMMAND_BUFFER_WORDS> m_gp0CommandWords{};
 	u32 m_gp0CommandWordCount = 0u;
 	u32 m_gp0CommandTargetWordCount = 0u;

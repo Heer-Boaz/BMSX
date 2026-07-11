@@ -39,7 +39,8 @@ Niet doen:
 
 ## GPUREAD en accelerated VRAM-to-CPU readback
 
-Status: implementatie open; het owner- en orderingcontract is vastgesteld.
+Status: CPU-GPUREAD is in alle backends geïmplementeerd; GPUREAD-naar-RAM DMA en
+live accelerated conformance staan nog open.
 
 Het gekozen contract volgt de productiepatronen van DuckStation en MAME waar
 GP0(C0h) eerst een transfercursor zet, GPUREAD telkens twee 16-bit pixels
@@ -49,22 +50,28 @@ eerdere GPU-work. BMSX neemt die ordering over, maar niet DuckStations blijvende
 CPU-VRAM-shadow: de backend levert uitsluitend het resultaat van de aangevraagde
 transfer aan het device.
 
-Open contract:
+Geïmplementeerd contract:
 
 - GPUREAD moet de inhoud lezen die door de echte backend-VRAM/render targets is
   geproduceerd, inclusief voorafgaande accelerated draws en copies.
 - GP0(C0h) zet in de bestaande GX-commandbuffer een harde readbackfence. Eerdere
   commands worden tot en met die marker uitgevoerd; latere GP0-commands blijven
-  achter de fence totdat de volledige transfer via GPUREAD is geconsumeerd.
-- De GX-commandbuffer bezit de retained backend-exchange: requestwoorden,
-  fencecount, completionfase en een vooraf gealloceerde 512K-pixelbuffer. De GPU
-  bezit GPUREAD-latch, transfercursor en GPUSTAT. Dit zijn hardwarebuffers en
-  latches, geen host-DTO of tweede VRAM-representatie.
+  achter de fence totdat de volledige transfer via GPUREAD is geconsumeerd. Een
+  volgende C0-marker blijft daarbij als command in de FIFO staan en overschrijft
+  de actieve requestlatches niet.
+- De commandstream blijft read-only aan de renderkant. Een echte retained
+  `GxGpuReadbackPort` bezit requestlatches, fencecount, completionfase en de
+  vooraf gealloceerde 512K-pixelbuffer en de consumptiecursor/datapath; alleen
+  die smalle hardwareport is schrijfbaar voor de backend. De GPU bezit de
+  GPUREAD-latch en GPUSTAT en consumeert woorden via de port. Dit zijn
+  hardwarebuffers en latches, geen proxy, host-DTO of tweede VRAM-representatie.
 - De GX-pass van iedere backend handelt de request rechtstreeks af. TS/C++
-  software kopiëren uit hun raw VRAM-owner; WebGL2/GLES2 lezen alleen de logisch
-  benodigde backend-VRAM-regio (met gesplitste wraprects waar nodig); WebGPU
-  plaatst een geordende texture-to-buffer copy na de voorafgaande submit en
-  publiceert completion pas na `mapAsync`.
+  software kopiëren uit hun raw VRAM-owner. WebGL2/GLES2 en WebGPU voeren eerst
+  een retained packpass uit die telkens twee logisch gewrapte 16-bit VRAM-pixels
+  als vier little-endian RGBA8-bytes wegschrijft. WebGL2/GLES2 lezen dat packed
+  target met één `readPixels` rechtstreeks in de exchangebuffer; WebGPU encodeert
+  packpass en texture-to-buffer copy in dezelfde commandencoder/submission en
+  publiceert completion pas na `mapAsync`. Er staat geen pixelpackloop op de CPU.
 - GPUSTAT bit 27 wordt pas gezet wanneer de backendcompletion zichtbaar is en
   er woorden resteren. Bit 25 blijft daarvan afgeleid wanneer GP1 DMA-direction
   GPUREAD-to-CPU selecteert. Een te vroege CPU-read leest alleen de bestaande
@@ -73,18 +80,35 @@ Open contract:
   transfer-X/Y wrappen per pixel over 1024x512 en een oneven laatste pixel vult
   de hoge helft met nul. Na het laatste woord blijft de laatste GPUREAD-latch
   staan en mag de commandprocessor voorbij de fence.
+- Current-format save-state bewaart requestfase, fence, cursor, latch en alleen
+  bij READY de voltooide transferpixels. SUBMITTED is backendinfrastructuur:
+  capture schrijft die fase als de logische PENDING-request en de codec weigert
+  SUBMITTED op de wire;
+  TS-save capture wacht een reeds ingediende WebGPU-readback af voordat de codec
+  encodeert. Een completion uit een oudere reset/restore-generatie controleert
+  zijn token voordat hij resultaatbytes schrijft of de nieuwe fase publiceert.
+- Het current-format codeccontract heeft in TS/C++ exact dezelfde harde 16 MiB
+  wire-capaciteit; encode én decode falen bij overschrijding. Libretro meldt een
+  vaste header + 16 MiB envelope. Iedere save capturet en encodeert eenmaal en
+  schrijft header en payload rechtstreeks in de frontendbuffer; de resterende
+  suffix wordt daar genuld zonder retained 16 MiB tussenbuffer of extra kopie.
+- TS en C++ moeten hetzelfde cart-zichtbare command/status/read-contract houden,
+  ook wanneer browser-GPU completion asynchroon is.
+- Alle BMSX-owned request-, staging- en packbuffers, descriptors, bindgroepen en
+  uniforms zijn backend/device-owned en retained. De door WebGPU vereiste
+  `Promise` en typed mapped-range-view bestaan alleen op de browser-API-boundary;
+  de view wordt met één bulkcopy geconsumeerd en is geen tweede resultbuffer.
+- De exchange en codec bewaren dezelfde little-endian pixelbytes. Restore is een
+  bulkcopy naar de retained buffer en doet geen pixel-voor-pixel u8/u16-conversie.
+
+Nog te sluiten:
+
 - De custom DMA-route moet `IO_GX_GPU_GP0 -> RAM` als dezelfde GPUREAD-consument
   gebruiken en pauzeren zolang bit 27 laag is; hij mag de latch dan niet als
   transferdata behandelen.
-- Current-format save-state bewaart requestfase, fence, cursor, latch en reeds
-  voltooide transferpixels. TS-save capture wacht een reeds ingediende WebGPU-
-  readback af voordat de codec encodeert; een completion uit een oudere
-  reset/restore-generatie mag de nieuwe devicefase niet publiceren.
-- TS en C++ moeten hetzelfde cart-zichtbare command/status/read-contract houden,
-  ook wanneer browser-GPU completion asynchroon is.
-- Alle request-, staging- en packbuffers zijn backend/device-owned en retained.
-  Geen per-request arrays, commandobjecten, bindgroepen of readback-DTO's in de
-  frame- of fragment-hot-path.
+- De raw wrap/odd/fence/status/save-statevector draait exact in TS en C++
+  software. Dezelfde vector moet tijdens de uitgestelde browsersessie live tegen
+  WebGL2, GLES2 en WebGPU worden uitgevoerd.
 
 Niet doen:
 

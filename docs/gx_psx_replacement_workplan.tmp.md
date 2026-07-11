@@ -181,34 +181,53 @@ required black-frame hold.
 
 ## GPUREAD / VRAM-to-CPU implementation contract
 
-The design decision is now explicit; implementation remains open.
+The design is implemented for CPU GPUREAD in TS/C++ software, WebGL2, GLES2 and
+WebGPU. GPUREAD-to-RAM DMA and live accelerated conformance remain open.
 
 - GP0(C0h) creates a command-buffer execution fence. All earlier GPU work must
   reach the real backend VRAM before readback; later commands remain behind the
-  fence until the read transfer is consumed.
-- The retained GX command buffer owns the backend exchange state and maximum
-  1024x512 pixel result buffer. The GPU device owns GPUREAD, GPUSTAT and the raw
-  X/Y/width/height/cursor latches. Do not introduce a host readback DTO or a
-  second VRAM owner.
-- Software reads its raw VRAM directly. WebGL2/GLES2 issue region readback from
-  their VRAM framebuffer. WebGPU queues texture-to-buffer work after preceding
-  command submissions and only signals ready after asynchronous mapping.
+  fence until the read transfer is consumed. A later C0 marker remains queued
+  and cannot overwrite the active request latches.
+- The command stream stays read-only to render code. A retained
+  `GxGpuReadbackPort` is the real owner of the request latches, fence,
+  completion phase, maximum 1024x512 pixel result buffer and the consumption
+  cursor/datapath; only that narrow hardware port is mutable to backends. The
+  GPU device owns the GPUREAD latch and GPUSTAT and consumes words through the
+  port. Do not introduce a proxy, host readback DTO or a second VRAM owner.
+- Software reads its raw VRAM directly. WebGL2/GLES2 and WebGPU run a retained
+  GPU pack pass that emits two wrapped 16-bit pixels as one RGBA8 word.
+  WebGL2/GLES2 then use one direct `readPixels`; WebGPU records pack and
+  texture-to-buffer work in the same ordered submission and signals ready only
+  after asynchronous mapping. Accelerated backends do no CPU per-pixel packing.
 - GPUSTAT ready-to-send and GPUREAD-to-CPU DMA request stay low until completion.
   GPUREAD packs low/high RGB555 words, wraps each coordinate, zero-fills an odd
   high pixel and leaves the final word latched after transfer completion.
-- DMA with GPUREAD as source consumes exactly that port and waits when it is not
-  ready; it never copies a stale latch as transfer payload.
-- Save-state capture drains an already submitted accelerated readback, then the
-  current-format codec stores phase/fence/cursor/latch/completed pixels. Async
-  completion is generation-bound across reset and restore.
-- Every result/staging buffer and WebGPU copy descriptor is retained. No
-  per-request allocation, full-frame CPU raster, CPU VRAM shadow, fake sync,
-  stale fallback or `GameView` readback facade is allowed.
+- The remaining GPUREAD-source DMA route must consume exactly that port and wait
+  when it is not ready; it must never copy a stale latch as transfer payload.
+- Save-state capture drains an already submitted accelerated readback where the
+  host API permits it. Device capture otherwise stores backend-only SUBMITTED as
+  logical PENDING; the current-format codec stores phase/fence/cursor/latch and
+  READY result pixels and rejects SUBMITTED on the wire. Async completion checks
+  its generation before writing any result byte.
+- The mirrored TS/C++ current-format codec has one explicit 16 MiB wire
+  capacity and rejects overflow before both encode and decode. Libretro reports
+  a fixed header + 16 MiB envelope. Every save captures and encodes once, then
+  writes its header and payload directly into the frontend buffer and clears
+  the remaining suffix there, without a retained 16 MiB intermediate buffer or
+  an extra copy.
+- Every BMSX-owned result/staging/pack buffer, uniform, bind group and copy
+  descriptor is retained. The WebGPU API's mapping promise and mapped typed view
+  are consumed once with a bulkcopy. No full-frame CPU raster, CPU VRAM shadow,
+  fake sync, stale fallback or `GameView` readback facade is allowed.
+- Readback exchange and save state use the same little-endian pixel bytes, so
+  restore bulk-copies the retained range instead of rebuilding u16 pixels in a
+  host loop.
 
 Reference basis: DuckStation
 [`GPU::ReadGPUREAD`](https://github.com/stenzek/duckstation/blob/35bcff15276dfa474349ea199201d024469487a9/src/core/gpu.cpp#L1887-L1919),
 [`GPU::HandleCopyRectangleVRAMToCPUCommand`](https://github.com/stenzek/duckstation/blob/35bcff15276dfa474349ea199201d024469487a9/src/core/gpu.cpp#L3799-L3829),
 [`GPU_HW::DownloadVRAMFromGPU`](https://github.com/stenzek/duckstation/blob/35bcff15276dfa474349ea199201d024469487a9/src/core/gpu_hw.cpp#L3452-L3513),
+[`GPU_HW_ShaderGen::GenerateVRAMReadFragmentShader`](https://github.com/stenzek/duckstation/blob/master/src/core/gpu_hw_shadergen.cpp#L2880-L2943),
 and MAME
 [`psxgpu_device::gpu_read`](https://github.com/mamedev/mame/blob/2f09baf036f4c95b6a86407f7e826e6ca7dbaf78/src/devices/video/psx.cpp#L3403-L3445).
 
@@ -246,8 +265,12 @@ and MAME
 - [ ] GPUREAD / VRAM-to-CPU command execution and ordering.
   - [x] Fix the device/backend owner, fence, completion, cursor, DMA and
     save-state contract before implementation.
-  - [ ] Implement and validate the contract in TS/C++ software, WebGL2, GLES2
-    and WebGPU without live browser execution.
+  - [x] Implement the CPU GPUREAD contract in TS/C++ software, WebGL2, GLES2
+    and WebGPU and validate the mirrored raw software vector without live
+    browser execution.
+  - [ ] Feed GPUREAD into RAM through the custom DMA controller without polling
+    or consuming the latch while GPUSTAT ready-to-send is low.
+  - [ ] Run the same vector live against WebGL2, GLES2 and WebGPU.
 - [ ] Complete GPUSTAT details and timing-visible bits against references.
 - [ ] Complete GP0/GP1 command decode edge cases and command-buffer ordering.
 - [ ] DMA interaction behavior beyond the currently tested register/status paths.

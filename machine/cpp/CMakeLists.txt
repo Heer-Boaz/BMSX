@@ -97,6 +97,7 @@ set_property(DIRECTORY APPEND PROPERTY CMAKE_CONFIGURE_DEPENDS
 	"${CMAKE_CURRENT_SOURCE_DIR}/render/backend/gles2/shaders/gx_gpu_transfer.frag.glsl"
 	"${CMAKE_CURRENT_SOURCE_DIR}/render/backend/gles2/shaders/gx_gpu_scanout.vert.glsl"
 	"${CMAKE_CURRENT_SOURCE_DIR}/render/backend/gles2/shaders/gx_gpu_scanout.frag.glsl"
+	"${CMAKE_CURRENT_SOURCE_DIR}/render/backend/gles2/shaders/gx_gpu_readback.frag.glsl"
 	"${CMAKE_CURRENT_SOURCE_DIR}/render/backend/gles2/shaders/gx_gpu_shaders.h.in"
 	"${CMAKE_CURRENT_SOURCE_DIR}/render/post/gles2/shaders/fullscreen.vert.glsl"
 	"${CMAKE_CURRENT_SOURCE_DIR}/render/post/crt/gles2/shaders/present.frag.glsl"
@@ -158,6 +159,10 @@ file(READ
 file(READ
 	"${CMAKE_CURRENT_SOURCE_DIR}/render/backend/gles2/shaders/gx_gpu_scanout.frag.glsl"
 	BMSX_GX_GPU_SCANOUT_FRAGMENT_SHADER
+)
+file(READ
+	"${CMAKE_CURRENT_SOURCE_DIR}/render/backend/gles2/shaders/gx_gpu_readback.frag.glsl"
+	BMSX_GX_GPU_READBACK_FRAGMENT_SHADER
 )
 configure_file(
 	"${CMAKE_CURRENT_SOURCE_DIR}/render/backend/gles2/shaders/gx_gpu_shaders.h.in"

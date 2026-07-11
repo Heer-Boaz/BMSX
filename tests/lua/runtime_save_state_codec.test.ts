@@ -17,13 +17,13 @@ import {
 } from '../../machine/ts/machine/devices/audio/contracts';
 import { GEOMETRY_CONTROLLER_PHASE_BUSY, GEOMETRY_CONTROLLER_REGISTER_COUNT } from '../../machine/ts/machine/devices/geometry/contracts';
 import { DMA_JOB_QUEUE_CAPACITY } from '../../machine/ts/machine/devices/dma/controller';
-import { GX_GPU_VRAM_BYTE_COUNT } from '../../machine/ts/machine/devices/gx/gpu_command_buffer';
+import { GX_GPU_READBACK_READY, GX_GPU_READBACK_SUBMITTED, GX_GPU_VRAM_BYTE_COUNT } from '../../machine/ts/machine/devices/gx/gpu_command_buffer';
 import { GX_GTE_CONTROL_REGISTER_COUNT, GX_GTE_DATA_REGISTER_COUNT } from '../../machine/ts/machine/devices/gx/gte';
 import { INPUT_CONTROLLER_KEY_WORD_COUNT, INPUT_CONTROLLER_PAD_AXIS_COUNT, INPUT_CONTROLLER_PAD_COUNT } from '../../machine/ts/machine/devices/input/contracts';
 import { PSX_GPU_DISPLAY_MODE_PAL_WORD } from '../../machine/ts/machine/model_registry';
 
 import type { RuntimeSaveState } from '../../machine/ts/machine/runtime/save_state';
-import { decodeRuntimeSaveState, encodeRuntimeSaveState } from '../../machine/ts/machine/runtime/save_state/codec';
+import { RUNTIME_SAVE_STATE_WIRE_CAPACITY, decodeRuntimeSaveState, encodeRuntimeSaveState } from '../../machine/ts/machine/runtime/save_state/codec';
 import { decodeBinaryWithPropTable } from '../../machine/ts/common/serializer/binencoder';
 import { RUNTIME_SAVE_STATE_PROP_NAMES } from '../../machine/ts/machine/runtime/save_state/schema';
 import { BuiltinFunctionId } from '../../machine/ts/machine/cpu/cpu';
@@ -151,6 +151,14 @@ function createRuntimeSaveState(): RuntimeSaveState {
 						commandMaskBitModeWord: [0, 0],
 						commandInterlacedRenderWord: [0, 1],
 						words: [0x200000ff, 0, 1, 2, 0x0200001f, 0, 0x00100010],
+						readbackPhase: 0,
+						readbackFenceCommandCount: 0,
+						readbackX: 0,
+						readbackY: 0,
+						readbackWidth: 0,
+						readbackHeight: 0,
+						readbackPixelCursor: 0,
+						readbackPixelBytes: new Uint8Array(),
 					},
 					vramBytes: codecTestGxVram,
 				},
@@ -315,6 +323,44 @@ test('runtime save-state codec preserves string pool ROM/runtime ownership', () 
 	assert.deepEqual(decoded.machineState.machine.audio, state.machineState.machine.audio);
 	assert.deepEqual(decoded.machineState.machine.input, state.machineState.machine.input);
 	assert.deepEqual(decoded.machineState.frameScheduler, state.machineState.frameScheduler);
+});
+
+test('runtime save-state codec stores READY GPUREAD bytes and rejects backend-only phases', () => {
+	const ready = createRuntimeSaveState();
+	const readyReadback = ready.machineState.machine.gxGpu.commandBuffer;
+	readyReadback.readbackPhase = GX_GPU_READBACK_READY;
+	readyReadback.readbackX = 1023;
+	readyReadback.readbackY = 511;
+	readyReadback.readbackWidth = 3;
+	readyReadback.readbackHeight = 1;
+	readyReadback.readbackPixelCursor = 1;
+	readyReadback.readbackPixelBytes = new Uint8Array([0x11, 0x11, 0x22, 0x22, 0x33, 0x33]);
+	const decodedReady = decodeRuntimeSaveState(encodeRuntimeSaveState(ready)).machineState.machine.gxGpu.commandBuffer;
+	assert.equal(decodedReady.readbackPhase, GX_GPU_READBACK_READY);
+	assert.equal(decodedReady.readbackPixelCursor, 1);
+	assert.deepEqual(decodedReady.readbackPixelBytes, readyReadback.readbackPixelBytes);
+
+	const submitted = createRuntimeSaveState();
+	const submittedReadback = submitted.machineState.machine.gxGpu.commandBuffer;
+	submittedReadback.readbackPhase = GX_GPU_READBACK_SUBMITTED;
+	submittedReadback.readbackWidth = 1024;
+	submittedReadback.readbackHeight = 512;
+	submittedReadback.readbackPixelBytes = new Uint8Array(0);
+	assert.throws(
+		() => decodeRuntimeSaveState(encodeRuntimeSaveState(submitted)),
+		/backend-submitted phase/,
+	);
+
+	const oversized = createRuntimeSaveState();
+	oversized.machineState.machine.gxGpu.vramBytes = new Uint8Array(RUNTIME_SAVE_STATE_WIRE_CAPACITY);
+	assert.throws(
+		() => encodeRuntimeSaveState(oversized),
+		/current-format wire capacity/,
+	);
+	assert.throws(
+		() => decodeRuntimeSaveState(new Uint8Array(RUNTIME_SAVE_STATE_WIRE_CAPACITY + 1)),
+		/current-format wire capacity/,
+	);
 });
 
 test('runtime save-state codec rejects DMA queues beyond the hardware FIFO capacity', () => {

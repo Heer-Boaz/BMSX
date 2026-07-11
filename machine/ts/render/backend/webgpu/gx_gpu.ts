@@ -12,6 +12,8 @@ import {
 	GX_GPU_COMMAND_FILL_RECTANGLE,
 	GX_GPU_COMMAND_UPLOAD_CPU_TO_VRAM,
 	GX_GPU_COMMAND_CAPACITY,
+	GX_GPU_READBACK_PENDING,
+	GX_GPU_READBACK_SUBMITTED,
 	GX_GPU_VRAM_BYTE_COUNT,
 	GX_GPU_VRAM_HEIGHT,
 	GX_GPU_VRAM_WIDTH,
@@ -85,6 +87,7 @@ import lineShaderCode from './shaders/gx_gpu_line.wgsl';
 import texturedShaderCode from './shaders/gx_gpu_textured.wgsl';
 import transferShaderCode from './shaders/gx_gpu_transfer.wgsl';
 import scanoutShaderCode from './shaders/gx_gpu_scanout.wgsl';
+import readbackShaderCode from './shaders/gx_gpu_readback.wgsl';
 
 const GX_GPU_SOLID_VERTEX_FLOATS = 6;
 const GX_GPU_SOLID_TRIANGLE_FLOATS = 3 * GX_GPU_SOLID_VERTEX_FLOATS;
@@ -112,6 +115,8 @@ const GX_GPU_UNIFORM_SLOT_BYTES = 256;
 const GX_GPU_UNIFORM_BUFFER_BYTES = GX_GPU_COMMAND_CAPACITY * GX_GPU_UNIFORM_SLOT_BYTES;
 const GX_GPU_RAW_VRAM_UPLOAD_ROW_BYTES = GX_GPU_VRAM_WIDTH * GX_GPU_RAW_VRAM_BYTES_PER_PIXEL;
 const GX_GPU_RAW_VRAM_UPLOAD_BYTES = GX_GPU_VRAM_WIDTH * GX_GPU_VRAM_HEIGHT * GX_GPU_RAW_VRAM_BYTES_PER_PIXEL;
+const GX_GPU_READBACK_PACK_WIDTH = 512;
+const GX_GPU_READBACK_UNIFORM_BYTES = 16;
 const GX_GPU_FULL_DRAWING_AREA_TOP_LEFT_WORD = 0;
 const GX_GPU_FULL_DRAWING_AREA_BOTTOM_RIGHT_WORD = (GX_GPU_VRAM_WIDTH - 1) | ((GX_GPU_VRAM_HEIGHT - 1) << 10);
 
@@ -129,6 +134,7 @@ const texturedUniformScratch = new Float32Array(32);
 const texturedUniformWords = new Uint32Array(texturedUniformScratch.buffer);
 const transferUniformScratch = new Float32Array(4);
 const scanoutUniformScratch = new Float32Array(4);
+const readbackUniformScratch = new Uint32Array(GX_GPU_READBACK_UNIFORM_BYTES >> 2);
 const gxGpuDynamicUniformOffsets = new Uint32Array(1);
 const GX_GPU_SAMPLE_SOURCE_RECT_CAPACITY = 3;
 const GX_GPU_SAMPLE_SOURCE_RECT_WORDS = GX_GPU_SAMPLE_SOURCE_RECT_CAPACITY * 4;
@@ -166,7 +172,7 @@ type GxGpuRectangle = {
 	height: number;
 };
 
-type GxGpuVramSource = Pick<GxGpuDeviceOutput, 'commandBuffer' | 'vramSnapshotBytes' | 'vramSnapshotSerial'>;
+type GxGpuVramSource = Pick<GxGpuDeviceOutput, 'commandBuffer' | 'readbackPort' | 'vramSnapshotBytes' | 'vramSnapshotSerial'>;
 
 type WebGpuGxGpuState = {
 	backend: WebGPUBackend;
@@ -189,6 +195,19 @@ type WebGpuGxGpuState = {
 	vramReadbackSource: GPUTexelCopyTextureInfo;
 	vramReadbackDestination: GPUTexelCopyBufferInfo;
 	vramReadbackExtent: GPUExtent3DDict;
+	gpureadBuffer: GPUBuffer;
+	gpureadTexture: GPUTexture;
+	gpureadPassDescriptor: GPURenderPassDescriptor;
+	gpureadPipeline: GPURenderPipeline;
+	gpureadUniformBuffer: GPUBuffer;
+	gpureadBindGroup: GPUBindGroup;
+	gpureadSource: GPUTexelCopyTextureInfo;
+	gpureadDestination: GPUTexelCopyBufferInfo;
+	gpureadExtent: GPUExtent3DDict;
+	gpureadMappedByteCount: number;
+	gpureadToken: number;
+	gpureadPort: GxGpuVramSource['readbackPort'] | null;
+	gpureadCompletion: Promise<void> | null;
 	vramTexture: GPUTexture;
 	vramSampleTexture: GPUTexture;
 	vramTransferTexture: GPUTexture;
@@ -311,17 +330,40 @@ function createScanoutPipeline(device: GPUDevice, bindGroupLayout: GPUBindGroupL
 	});
 }
 
+function createReadbackPipeline(device: GPUDevice, bindGroupLayout: GPUBindGroupLayout): GPURenderPipeline {
+	const module = device.createShaderModule({ label: 'gx_gpu_readback', code: readbackShaderCode });
+	return device.createRenderPipeline({
+		label: 'gx_gpu_readback',
+		layout: device.createPipelineLayout({ bindGroupLayouts: [bindGroupLayout] }),
+		vertex: { module, entryPoint: 'vs_main' },
+		fragment: { module, entryPoint: 'fs_main', targets: [{ format: 'rgba8unorm' }] },
+		primitive: { topology: 'triangle-list' },
+	});
+}
+
 function bootstrapGxGpuPass(backend: WebGPUBackend): void {
 	const device = backend.device;
 	const vramTexture = createVramTexture(device);
 	const vramSampleTexture = createVramTexture(device);
 	const vramTransferTexture = createVramTexture(device);
+	const gpureadTexture = device.createTexture({
+		size: { width: GX_GPU_READBACK_PACK_WIDTH, height: GX_GPU_VRAM_HEIGHT, depthOrArrayLayers: 1 },
+		format: 'rgba8unorm',
+		usage: GPUTextureUsage.RENDER_ATTACHMENT | GPUTextureUsage.COPY_SRC,
+	});
 	const vramView = vramTexture.createView();
 	const vramSampleView = vramSampleTexture.createView();
 	const vramTransferView = vramTransferTexture.createView();
+	const gpureadView = gpureadTexture.createView();
 	const sampler = device.createSampler({ magFilter: 'nearest', minFilter: 'nearest', addressModeU: 'repeat', addressModeV: 'repeat' });
 	const primitiveLayout = createPrimitiveBindGroupLayout(device);
 	const transferLayout = createTransferBindGroupLayout(device);
+	const readbackLayout = device.createBindGroupLayout({
+		entries: [
+			{ binding: 0, visibility: GPUShaderStage.FRAGMENT, buffer: { type: 'uniform' } },
+			{ binding: 1, visibility: GPUShaderStage.FRAGMENT, texture: { sampleType: 'float' } },
+		],
+	});
 	const solidPipeline = createPipeline(device, 'gx_gpu_solid', solidShaderCode, primitiveLayout, {
 		arrayStride: GX_GPU_SOLID_VERTEX_FLOATS * 4,
 		attributes: [
@@ -355,6 +397,7 @@ function bootstrapGxGpuPass(backend: WebGPUBackend): void {
 		],
 	}, 'rgba8unorm');
 	const scanoutPipeline = createScanoutPipeline(device, primitiveLayout);
+	const gpureadPipeline = createReadbackPipeline(device, readbackLayout);
 	const solidVertexBuffer = device.createBuffer({ size: gxGpuSolidVertices.byteLength, usage: GPUBufferUsage.VERTEX | GPUBufferUsage.COPY_DST });
 	const lineVertexBuffer = device.createBuffer({ size: gxGpuLineVertices.byteLength, usage: GPUBufferUsage.VERTEX | GPUBufferUsage.COPY_DST });
 	const texturedVertexBuffer = device.createBuffer({ size: gxGpuTexturedVertices.byteLength, usage: GPUBufferUsage.VERTEX | GPUBufferUsage.COPY_DST });
@@ -363,10 +406,13 @@ function bootstrapGxGpuPass(backend: WebGPUBackend): void {
 	const texturedUniformBuffer = device.createBuffer({ size: GX_GPU_UNIFORM_BUFFER_BYTES * 2, usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST });
 	const transferUniformBuffer = device.createBuffer({ size: GX_GPU_UNIFORM_BUFFER_BYTES, usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST });
 	const scanoutUniformBuffer = device.createBuffer({ size: GX_GPU_UNIFORM_SLOT_BYTES, usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST });
+	const gpureadUniformBuffer = device.createBuffer({ size: GX_GPU_READBACK_UNIFORM_BYTES, usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST });
 	const vramReadbackBuffer = device.createBuffer({ size: GX_GPU_RAW_VRAM_UPLOAD_BYTES, usage: GPUBufferUsage.COPY_DST | GPUBufferUsage.MAP_READ });
+	const gpureadBuffer = device.createBuffer({ size: GX_GPU_VRAM_BYTE_COUNT, usage: GPUBufferUsage.COPY_DST | GPUBufferUsage.MAP_READ });
 	const vramDrawColorAttachment: GPURenderPassColorAttachment = { view: vramView, loadOp: 'load', storeOp: 'store' };
 	const vramClearColorAttachment: GPURenderPassColorAttachment = { view: vramView, clearValue: [0, 0, 0, 1], loadOp: 'clear', storeOp: 'store' };
 	const scanoutColorAttachment: GPURenderPassColorAttachment = { view: vramView, clearValue: [0, 0, 0, 1], loadOp: 'load', storeOp: 'store' };
+	const gpureadColorAttachment: GPURenderPassColorAttachment = { view: gpureadView, loadOp: 'load', storeOp: 'store' };
 	const vramCopySourceOrigin: GPUOrigin3DDict = { x: 0, y: 0, z: 0 };
 	const vramCopyDestinationOrigin: GPUOrigin3DDict = { x: 0, y: 0, z: 0 };
 	const vramUploadDestinationOrigin: GPUOrigin3DDict = { x: 0, y: 0, z: 0 };
@@ -390,6 +436,25 @@ function bootstrapGxGpuPass(backend: WebGPUBackend): void {
 		vramReadbackSource: { texture: vramTexture },
 		vramReadbackDestination: { buffer: vramReadbackBuffer, bytesPerRow: GX_GPU_RAW_VRAM_UPLOAD_ROW_BYTES, rowsPerImage: GX_GPU_VRAM_HEIGHT },
 		vramReadbackExtent: { width: GX_GPU_VRAM_WIDTH, height: GX_GPU_VRAM_HEIGHT, depthOrArrayLayers: 1 },
+		gpureadBuffer,
+		gpureadTexture,
+		gpureadPassDescriptor: { colorAttachments: [gpureadColorAttachment] },
+		gpureadPipeline,
+		gpureadUniformBuffer,
+		gpureadBindGroup: device.createBindGroup({
+			layout: readbackLayout,
+			entries: [
+				{ binding: 0, resource: { buffer: gpureadUniformBuffer, size: GX_GPU_READBACK_UNIFORM_BYTES } },
+				{ binding: 1, resource: vramView },
+			],
+		}),
+		gpureadSource: { texture: gpureadTexture },
+		gpureadDestination: { buffer: gpureadBuffer, bytesPerRow: 256, rowsPerImage: 1 },
+		gpureadExtent: { width: 0, height: 0, depthOrArrayLayers: 1 },
+		gpureadMappedByteCount: 0,
+		gpureadToken: 0,
+		gpureadPort: null,
+		gpureadCompletion: null,
 		vramTexture,
 		vramSampleTexture,
 		vramTransferTexture,
@@ -1536,10 +1601,13 @@ function renderLineCommand(commandBuffer: GxGpuCommandBufferView, commandIndex: 
 	resetGxGpuVramCopyRect(gxGpuLineBatchRect);
 }
 
-function executeNewGxGpuCommands(commandBuffer: GxGpuCommandBufferView): void {
+function executeNewGxGpuCommands(commandBuffer: GxGpuCommandBufferView, readback: GxGpuVramSource['readbackPort']): void {
 	let commandIndex = gxGpuState.processedCommandCount;
 	const presentCommandCount = commandBuffer.presentCommandCount;
-	if (commandIndex === presentCommandCount) {
+	const readbackCanSubmit = gxGpuState.gpureadCompletion === null
+		&& readback.phase === GX_GPU_READBACK_PENDING
+		&& commandBuffer.presentCommandCount === readback.fenceCommandCount;
+	if (commandIndex === presentCommandCount && !readbackCanSubmit) {
 		return;
 	}
 	const encoder = gxGpuState.backend.device.createCommandEncoder();
@@ -1575,10 +1643,41 @@ function executeNewGxGpuCommands(commandBuffer: GxGpuCommandBufferView): void {
 				break;
 		}
 	}
+	let readbackSubmitted = false;
+	if (gxGpuState.gpureadCompletion === null && readback.claimReadback(commandBuffer.presentCommandCount)) {
+		const pixelCount = readback.width * readback.height;
+		const wordCount = (pixelCount + 1) >> 1;
+		const packedWidth = wordCount < GX_GPU_READBACK_PACK_WIDTH ? wordCount : GX_GPU_READBACK_PACK_WIDTH;
+		const packedHeight = ((wordCount - 1) / packedWidth | 0) + 1;
+		readbackUniformScratch[0] = readback.x;
+		readbackUniformScratch[1] = readback.y;
+		readbackUniformScratch[2] = readback.width;
+		readbackUniformScratch[3] = packedWidth;
+		gxGpuState.backend.device.queue.writeBuffer(gxGpuState.gpureadUniformBuffer, 0, readbackUniformScratch);
+		const pass = encoder.beginRenderPass(gxGpuState.gpureadPassDescriptor);
+		pass.setViewport(0, 0, packedWidth, packedHeight, 0, 1);
+		pass.setScissorRect(0, 0, packedWidth, packedHeight);
+		pass.setPipeline(gxGpuState.gpureadPipeline);
+		pass.setBindGroup(0, gxGpuState.gpureadBindGroup);
+		pass.draw(3);
+		pass.end();
+		gxGpuState.gpureadDestination.bytesPerRow = (packedWidth * 4 + 255) & ~255;
+		gxGpuState.gpureadDestination.rowsPerImage = packedHeight;
+		gxGpuState.gpureadExtent.width = packedWidth;
+		gxGpuState.gpureadExtent.height = packedHeight;
+		encoder.copyTextureToBuffer(gxGpuState.gpureadSource, gxGpuState.gpureadDestination, gxGpuState.gpureadExtent);
+		gxGpuState.gpureadMappedByteCount = wordCount * 4;
+		gxGpuState.gpureadToken = readback.token;
+		gxGpuState.gpureadPort = readback;
+		readbackSubmitted = true;
+	}
 	gxGpuState.submitCommandBuffers[0] = encoder.finish();
 	gxGpuState.backend.device.queue.submit(gxGpuState.submitCommandBuffers);
 	gxGpuState.activeEncoder = undefined;
 	gxGpuState.processedCommandCount = presentCommandCount;
+	if (readbackSubmitted) {
+		gxGpuState.gpureadCompletion = gxGpuState.gpureadBuffer.mapAsync(GPUMapMode.READ, 0, gxGpuState.gpureadMappedByteCount).then(completeGxGpuReadback);
+	}
 }
 
 function executeGxGpuVramCommands(source: GxGpuVramSource): void {
@@ -1600,7 +1699,22 @@ function executeGxGpuVramCommands(source: GxGpuVramSource): void {
 		gxGpuState.processedCommandCount = 0;
 		gxGpuState.processedCommandSerial = commandSerial;
 	}
-	executeNewGxGpuCommands(commandBuffer);
+	executeNewGxGpuCommands(commandBuffer, source.readbackPort);
+}
+
+function completeGxGpuReadback(): void {
+	const readback = gxGpuState.gpureadPort!;
+	if (readback.phase !== GX_GPU_READBACK_SUBMITTED || readback.token !== gxGpuState.gpureadToken) {
+		gxGpuState.gpureadBuffer.unmap();
+		gxGpuState.gpureadPort = null;
+		gxGpuState.gpureadCompletion = null;
+		return;
+	}
+	readback.pixelBytes.set(new Uint8Array(gxGpuState.gpureadBuffer.getMappedRange(0, gxGpuState.gpureadMappedByteCount)));
+	gxGpuState.gpureadBuffer.unmap();
+	readback.completeReadback(gxGpuState.gpureadToken);
+	gxGpuState.gpureadPort = null;
+	gxGpuState.gpureadCompletion = null;
 }
 
 function scanoutGxGpuVram(state: RenderPassStateRegistry['gx_gpu']): void {
@@ -1640,6 +1754,7 @@ function writeGxGpuState(ctx: RenderGraphPassContext, state: RenderPassStateRegi
 	state.width = ctx.view.offscreenCanvasSize.x;
 	state.height = ctx.view.offscreenCanvasSize.y;
 	state.commandBuffer = ctx.view.gxGpuCommandBuffer;
+	state.readbackPort = ctx.view.gxGpuReadbackPort;
 	state.statusWord = ctx.view.gxGpuStatusWord;
 	state.displayModeWord = ctx.view.gxGpuDisplayModeWord;
 	state.displayStartWord = ctx.view.gxGpuDisplayStartWord;
@@ -1655,6 +1770,7 @@ export function registerGxGpuPass(registry: RenderPassLibrary): void {
 		width: 0,
 		height: 0,
 		commandBuffer: registry.view.gxGpuCommandBuffer,
+		readbackPort: registry.view.gxGpuReadbackPort,
 		statusWord: registry.view.gxGpuStatusWord,
 		displayModeWord: registry.view.gxGpuDisplayModeWord,
 		displayStartWord: registry.view.gxGpuDisplayStartWord,
@@ -1677,6 +1793,9 @@ export function registerGxGpuPass(registry: RenderPassLibrary): void {
 
 export async function captureRenderedVramSnapshot(gxGpu: GxGpu, output: GxGpuVramSource): Promise<void> {
 	executeGxGpuVramCommands(output);
+	if (gxGpuState.gpureadCompletion !== null) {
+		await gxGpuState.gpureadCompletion;
+	}
 	const device = gxGpuState.backend.device;
 	const encoder = device.createCommandEncoder();
 	encoder.copyTextureToBuffer(gxGpuState.vramReadbackSource, gxGpuState.vramReadbackDestination, gxGpuState.vramReadbackExtent);

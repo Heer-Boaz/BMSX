@@ -86,6 +86,7 @@ void writeGxGpuPipelineState(const RenderPassDef::RenderGraphPassContext& ctx, R
 	gxGpuState.width = static_cast<i32>(ctx.view->offscreenCanvasSize.x);
 	gxGpuState.height = static_cast<i32>(ctx.view->offscreenCanvasSize.y);
 	gxGpuState.commandBuffer = ctx.view->gxGpuCommandBuffer;
+	gxGpuState.readbackPort = ctx.view->gxGpuReadbackPort;
 	gxGpuState.statusWord = ctx.view->gxGpuStatusWord;
 	gxGpuState.displayModeWord = ctx.view->gxGpuDisplayModeWord;
 	gxGpuState.displayStartWord = ctx.view->gxGpuDisplayStartWord;

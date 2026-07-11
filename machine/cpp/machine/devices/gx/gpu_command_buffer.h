@@ -2,11 +2,15 @@
 
 #include "common/primitives.h"
 
+#include <algorithm>
 #include <array>
 #include <cstddef>
+#include <memory>
 #include <vector>
 
 namespace bmsx {
+
+class GxGpu;
 
 constexpr size_t GX_GPU_COMMAND_CAPACITY = 4096u;
 constexpr size_t GX_GPU_COMMAND_WORD_CAPACITY = 0x80000u;
@@ -37,6 +41,10 @@ constexpr u8 GX_GPU_COMMAND_FILL_RECTANGLE = 5u;
 constexpr u8 GX_GPU_COMMAND_COPY_VRAM_TO_VRAM = 6u;
 constexpr u8 GX_GPU_COMMAND_UPLOAD_CPU_TO_VRAM = 7u;
 constexpr u8 GX_GPU_COMMAND_READ_VRAM_TO_CPU = 8u;
+constexpr u8 GX_GPU_READBACK_IDLE = 0u;
+constexpr u8 GX_GPU_READBACK_PENDING = 1u;
+constexpr u8 GX_GPU_READBACK_SUBMITTED = 2u;
+constexpr u8 GX_GPU_READBACK_READY = 3u;
 
 inline u32 gxGpuDisplayStartY(u32 word) {
 	return (word >> 10u) & 0x1ffu;
@@ -90,6 +98,100 @@ struct GxGpuCommandBufferState {
 	std::vector<u32> commandMaskBitModeWord;
 	std::vector<u8> commandInterlacedRenderWord;
 	std::vector<u32> words;
+	u8 readbackPhase = GX_GPU_READBACK_IDLE;
+	size_t readbackFenceCommandCount = 0u;
+	u32 readbackX = 0u;
+	u32 readbackY = 0u;
+	u32 readbackWidth = 0u;
+	u32 readbackHeight = 0u;
+	u32 readbackPixelCursor = 0u;
+	std::vector<u8> readbackPixelBytes;
+};
+
+class GxGpuReadbackPort {
+public:
+	u8 phase() const { return m_phase; }
+	size_t fenceCommandCount() const { return m_fenceCommandCount; }
+	u32 x() const { return m_x; }
+	u32 y() const { return m_y; }
+	u32 width() const { return m_width; }
+	u32 height() const { return m_height; }
+	u32 pixelCursor() const { return m_pixelCursor; }
+	u32 token() const { return m_token; }
+	u8* pixelBytes() { return m_pixelBytes.get(); }
+	const u8* pixelBytes() const { return m_pixelBytes.get(); }
+
+	bool claimReadback(size_t presentCommandCount) {
+		if (m_phase != GX_GPU_READBACK_PENDING || presentCommandCount != m_fenceCommandCount) {
+			return false;
+		}
+		m_phase = GX_GPU_READBACK_SUBMITTED;
+		return true;
+	}
+
+	void completeReadback(u32 token) {
+		if (m_phase == GX_GPU_READBACK_SUBMITTED && m_token == token) {
+			m_phase = GX_GPU_READBACK_READY;
+		}
+	}
+
+private:
+	friend class GxGpu;
+	friend struct GxGpuCommandBuffer;
+
+	u32 readWord() {
+		size_t byteIndex = static_cast<size_t>(m_pixelCursor) * 2u;
+		u32 word = static_cast<u32>(m_pixelBytes[byteIndex]) | (static_cast<u32>(m_pixelBytes[byteIndex + 1u]) << 8u);
+		m_pixelCursor += 1u;
+		const u32 pixelCount = m_width * m_height;
+		if (m_pixelCursor < pixelCount) {
+			byteIndex = static_cast<size_t>(m_pixelCursor) * 2u;
+			word |= (static_cast<u32>(m_pixelBytes[byteIndex]) | (static_cast<u32>(m_pixelBytes[byteIndex + 1u]) << 8u)) << 16u;
+			m_pixelCursor += 1u;
+		}
+		if (m_pixelCursor == pixelCount) {
+			m_phase = GX_GPU_READBACK_IDLE;
+			m_fenceCommandCount = 0u;
+			m_x = 0u;
+			m_y = 0u;
+			m_width = 0u;
+			m_height = 0u;
+			m_pixelCursor = 0u;
+		}
+		return word;
+	}
+
+	void activate(u32 positionWord, u32 sizeWord, size_t fenceCommandCount) {
+		m_x = positionWord & (GX_GPU_VRAM_WIDTH - 1u);
+		m_y = (positionWord >> 16u) & (GX_GPU_VRAM_HEIGHT - 1u);
+		m_width = gxGpuTransferWidth(sizeWord);
+		m_height = gxGpuTransferHeight(sizeWord);
+		m_pixelCursor = 0u;
+		m_fenceCommandCount = fenceCommandCount;
+		m_token += 1u;
+		m_phase = GX_GPU_READBACK_PENDING;
+	}
+
+	void reset() {
+		m_phase = GX_GPU_READBACK_IDLE;
+		m_fenceCommandCount = 0u;
+		m_x = 0u;
+		m_y = 0u;
+		m_width = 0u;
+		m_height = 0u;
+		m_pixelCursor = 0u;
+		m_token += 1u;
+	}
+
+	u8 m_phase = GX_GPU_READBACK_IDLE;
+	size_t m_fenceCommandCount = 0u;
+	u32 m_x = 0u;
+	u32 m_y = 0u;
+	u32 m_width = 0u;
+	u32 m_height = 0u;
+	u32 m_pixelCursor = 0u;
+	std::unique_ptr<u8[]> m_pixelBytes = std::make_unique<u8[]>(GX_GPU_VRAM_BYTE_COUNT);
+	u32 m_token = 0u;
 };
 
 struct GxGpuCommandBuffer {
@@ -104,6 +206,11 @@ private:
 			nextVramClearSerial += 1u;
 			vramClearSerial = nextVramClearSerial;
 		}
+	}
+
+	void activateReadback(size_t commandIndex) {
+		const size_t wordStart = commandWordStart[commandIndex];
+		readback.activate(words[wordStart + 1u], words[wordStart + 2u], commandIndex + 1u);
 	}
 
 public:
@@ -124,12 +231,14 @@ public:
 	std::array<u32, GX_GPU_COMMAND_CAPACITY> commandMaskBitModeWord{};
 	std::array<u8, GX_GPU_COMMAND_CAPACITY> commandInterlacedRenderWord{};
 	std::array<u32, GX_GPU_COMMAND_WORD_CAPACITY> words{};
+	GxGpuReadbackPort readback;
 
 	void reset() {
 		publishRevision(true);
 		commandCount = 0u;
 		presentCommandCount = 0u;
 		wordCount = 0u;
+		readback.reset();
 	}
 
 	GxGpuCommandBufferState captureState() const {
@@ -149,6 +258,17 @@ public:
 		state.commandMaskBitModeWord.assign(commandMaskBitModeWord.begin(), commandMaskBitModeWord.begin() + static_cast<std::ptrdiff_t>(commandCount));
 		state.commandInterlacedRenderWord.assign(commandInterlacedRenderWord.begin(), commandInterlacedRenderWord.begin() + static_cast<std::ptrdiff_t>(commandCount));
 		state.words.assign(words.begin(), words.begin() + static_cast<std::ptrdiff_t>(wordCount));
+		state.readbackPhase = readback.m_phase == GX_GPU_READBACK_SUBMITTED ? GX_GPU_READBACK_PENDING : readback.m_phase;
+		state.readbackFenceCommandCount = readback.m_fenceCommandCount;
+		state.readbackX = readback.m_x;
+		state.readbackY = readback.m_y;
+		state.readbackWidth = readback.m_width;
+		state.readbackHeight = readback.m_height;
+		state.readbackPixelCursor = readback.m_pixelCursor;
+		if (readback.m_phase == GX_GPU_READBACK_READY) {
+			const size_t readbackPixelCount = static_cast<size_t>(readback.m_width) * static_cast<size_t>(readback.m_height);
+			state.readbackPixelBytes.assign(readback.m_pixelBytes.get(), readback.m_pixelBytes.get() + static_cast<std::ptrdiff_t>(readbackPixelCount * 2u));
+		}
 		return state;
 	}
 
@@ -173,6 +293,15 @@ public:
 		for (size_t index = 0u; index < wordCount; index += 1u) {
 			words[index] = state.words[index];
 		}
+		readback.m_phase = state.readbackPhase;
+		readback.m_fenceCommandCount = state.readbackFenceCommandCount;
+		readback.m_x = state.readbackX;
+		readback.m_y = state.readbackY;
+		readback.m_width = state.readbackWidth;
+		readback.m_height = state.readbackHeight;
+		readback.m_pixelCursor = state.readbackPixelCursor;
+		std::copy(state.readbackPixelBytes.begin(), state.readbackPixelBytes.end(), readback.m_pixelBytes.get());
+		readback.m_token += 1u;
 	}
 
 	size_t retireCommandsPreservingVram() {
@@ -206,16 +335,34 @@ public:
 		commandCount = remainingCommands;
 		presentCommandCount = 0u;
 		wordCount = remainingWords;
+		readback.m_fenceCommandCount = retiredCommands < readback.m_fenceCommandCount
+			? readback.m_fenceCommandCount - retiredCommands
+			: 0u;
 		publishRevision(false);
 		return retiredWords;
 	}
 
 	void sealCommandsForPresentation() {
-		presentCommandCount = commandCount;
+		if (readback.m_phase == GX_GPU_READBACK_PENDING) {
+			presentCommandCount = readback.m_fenceCommandCount;
+		} else if (readback.m_phase == GX_GPU_READBACK_IDLE) {
+			for (size_t commandIndex = 0u; commandIndex < commandCount; commandIndex += 1u) {
+				if (commandKind[commandIndex] != GX_GPU_COMMAND_READ_VRAM_TO_CPU) {
+					continue;
+				}
+				activateReadback(commandIndex);
+				presentCommandCount = readback.m_fenceCommandCount;
+				return;
+			}
+			presentCommandCount = commandCount;
+		} else {
+			presentCommandCount = 0u;
+		}
 	}
 
 	bool hasUnretiredPresentCommands() const {
-		return presentCommandCount != 0u;
+		return presentCommandCount != 0u
+			|| (readback.m_phase == GX_GPU_READBACK_PENDING && presentCommandCount == readback.m_fenceCommandCount);
 	}
 
 	void appendWord(u32 word) {
@@ -256,6 +403,9 @@ public:
 		commandMaskBitModeWord[commandIndex] = maskBitModeWord;
 		commandInterlacedRenderWord[commandIndex] = interlacedRenderWord;
 		commandCount = commandIndex + 1u;
+		if (kind == GX_GPU_COMMAND_READ_VRAM_TO_CPU && readback.m_phase == GX_GPU_READBACK_IDLE) {
+			activateReadback(commandIndex);
+		}
 	}
 };
 

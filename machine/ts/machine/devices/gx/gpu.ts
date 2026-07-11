@@ -13,6 +13,8 @@ import {
 	GX_GPU_COMMAND_FILL_RECTANGLE,
 	GX_GPU_COMMAND_READ_VRAM_TO_CPU,
 	GX_GPU_COMMAND_UPLOAD_CPU_TO_VRAM,
+	GX_GPU_READBACK_IDLE,
+	GX_GPU_READBACK_READY,
 	GX_GPU_VRAM_BYTE_COUNT,
 	GX_GPU_DRAW_MODE_TEXTURE_DISABLE,
 	GxGpuCommandBuffer,
@@ -217,6 +219,7 @@ export class GxGpu {
 	private vramSnapshotSerial = 0;
 	private readonly deviceOutput = {
 		commandBuffer: this.commandBuffer,
+		readbackPort: this.commandBuffer.readback,
 		statusWord: GX_GPU_STATUS_RESET_WORD,
 		displayModeWord: PSX_GPU_DISPLAY_MODE_PAL_WORD,
 		displayStartWord: 0,
@@ -385,6 +388,11 @@ export class GxGpu {
 	}
 
 	public readGp0(): number {
+		if (this.commandBuffer.readback.phase === GX_GPU_READBACK_READY) {
+			this.gpuReadWord = this.commandBuffer.readback.readWord();
+			this.updateDynamicStatusBits();
+			this.memory.writeIoValue(IO_GX_GPU_GP0, this.gpuReadWord);
+		}
 		return this.gpuReadWord;
 	}
 
@@ -872,8 +880,14 @@ export class GxGpu {
 	}
 
 	private updateCommandStatusBits(): void {
-		let commandStatusBits = GX_GPU_STATUS_READY_TO_RECEIVE_DMA;
-		if (this.gp0CommandWordCount === 0 && this.gp0ImageLoadWordsRemaining === 0 && this.gp0PolylineWordsPerVertex === 0) {
+		let commandStatusBits = 0;
+		if (this.commandBuffer.readback.phase === GX_GPU_READBACK_IDLE) {
+			commandStatusBits |= GX_GPU_STATUS_READY_TO_RECEIVE_DMA;
+		}
+		if (this.commandBuffer.readback.phase === GX_GPU_READBACK_READY) {
+			commandStatusBits |= GX_GPU_STATUS_READY_TO_SEND_VRAM;
+		}
+		if (this.commandBuffer.readback.phase === GX_GPU_READBACK_IDLE && this.gp0CommandWordCount === 0 && this.gp0ImageLoadWordsRemaining === 0 && this.gp0PolylineWordsPerVertex === 0) {
 			commandStatusBits |= GX_GPU_STATUS_GPU_IDLE;
 		}
 		this.statusWord = ((this.statusWord & ~GX_GPU_STATUS_COMMAND_STATE_MASK) | commandStatusBits) >>> 0;

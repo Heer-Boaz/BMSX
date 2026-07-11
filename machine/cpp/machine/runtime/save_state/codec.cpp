@@ -523,6 +523,14 @@ BinValue encodeGxGpuCommandBufferState(const GxGpuCommandBufferState& state) {
 	object["commandMaskBitModeWord"] = encodeVector(state.commandMaskBitModeWord, encodeScalar<i64, u32>);
 	object["commandInterlacedRenderWord"] = encodeVector(state.commandInterlacedRenderWord, encodeScalar<i64, u8>);
 	object["words"] = encodeVector(state.words, encodeScalar<i64, u32>);
+	object["readbackPhase"] = static_cast<i64>(state.readbackPhase);
+	object["readbackFenceCommandCount"] = static_cast<i64>(state.readbackFenceCommandCount);
+	object["readbackX"] = static_cast<i64>(state.readbackX);
+	object["readbackY"] = static_cast<i64>(state.readbackY);
+	object["readbackWidth"] = static_cast<i64>(state.readbackWidth);
+	object["readbackHeight"] = static_cast<i64>(state.readbackHeight);
+	object["readbackPixelCursor"] = static_cast<i64>(state.readbackPixelCursor);
+	object["readbackPixelBytes"] = BinBinary(state.readbackPixelBytes);
 	return BinValue(std::move(object));
 }
 
@@ -544,6 +552,18 @@ GxGpuCommandBufferState decodeGxGpuCommandBufferState(const BinValue& value, con
 	state.commandMaskBitModeWord = decodeU32VectorWithLength(requireField(object, "commandMaskBitModeWord", label), "machine.gxGpu.commandBuffer.commandMaskBitModeWord", state.commandCount);
 	state.commandInterlacedRenderWord = decodeU8VectorWithLength(requireField(object, "commandInterlacedRenderWord", label), "machine.gxGpu.commandBuffer.commandInterlacedRenderWord", state.commandCount);
 	state.words = decodeU32VectorWithLength(requireField(object, "words", label), "machine.gxGpu.commandBuffer.words", state.wordCount);
+	state.readbackPhase = static_cast<u8>(requireBoundedU32(requireField(object, "readbackPhase", label), "machine.gxGpu.commandBuffer.readbackPhase", 0u, GX_GPU_READBACK_READY));
+	if (state.readbackPhase == GX_GPU_READBACK_SUBMITTED) {
+		throw BMSX_RUNTIME_ERROR("machine.gxGpu.commandBuffer.readbackPhase cannot contain the backend-submitted phase.");
+	}
+	state.readbackFenceCommandCount = requireBoundedU32(requireField(object, "readbackFenceCommandCount", label), "machine.gxGpu.commandBuffer.readbackFenceCommandCount", 0u, static_cast<u32>(state.commandCount));
+	state.readbackX = requireBoundedU32(requireField(object, "readbackX", label), "machine.gxGpu.commandBuffer.readbackX", 0u, GX_GPU_VRAM_WIDTH - 1u);
+	state.readbackY = requireBoundedU32(requireField(object, "readbackY", label), "machine.gxGpu.commandBuffer.readbackY", 0u, GX_GPU_VRAM_HEIGHT - 1u);
+	state.readbackWidth = requireBoundedU32(requireField(object, "readbackWidth", label), "machine.gxGpu.commandBuffer.readbackWidth", 0u, GX_GPU_VRAM_WIDTH);
+	state.readbackHeight = requireBoundedU32(requireField(object, "readbackHeight", label), "machine.gxGpu.commandBuffer.readbackHeight", 0u, GX_GPU_VRAM_HEIGHT);
+	const size_t readbackPixelCount = static_cast<size_t>(state.readbackWidth) * static_cast<size_t>(state.readbackHeight);
+	state.readbackPixelCursor = requireBoundedU32(requireField(object, "readbackPixelCursor", label), "machine.gxGpu.commandBuffer.readbackPixelCursor", 0u, static_cast<u32>(readbackPixelCount));
+	state.readbackPixelBytes = requireBinaryWithLength(requireField(object, "readbackPixelBytes", label), "machine.gxGpu.commandBuffer.readbackPixelBytes", state.readbackPhase == GX_GPU_READBACK_READY ? readbackPixelCount * 2u : 0u);
 	return state;
 }
 
@@ -1270,10 +1290,17 @@ RuntimeSaveState decodeRuntimeSaveStateValue(const BinValue& value, const char* 
 } // namespace
 
 std::vector<u8> encodeRuntimeSaveState(const RuntimeSaveState& state) {
-	return encodeBinaryWithPropTable(encodeRuntimeSaveStateValue(state), RUNTIME_SAVE_STATE_PROP_NAMES);
+	std::vector<u8> bytes = encodeBinaryWithPropTable(encodeRuntimeSaveStateValue(state), RUNTIME_SAVE_STATE_PROP_NAMES);
+	if (bytes.size() > RUNTIME_SAVE_STATE_WIRE_CAPACITY) {
+		throw BMSX_RUNTIME_ERROR("Runtime save-state payload exceeds the current-format wire capacity.");
+	}
+	return bytes;
 }
 
 RuntimeSaveState decodeRuntimeSaveState(const u8* data, size_t size) {
+	if (size > RUNTIME_SAVE_STATE_WIRE_CAPACITY) {
+		throw BMSX_RUNTIME_ERROR("Runtime save-state payload exceeds the current-format wire capacity.");
+	}
 	return decodeRuntimeSaveStateValue(
 		decodeBinaryWithPropTable(data, size, RUNTIME_SAVE_STATE_PROP_NAMES),
 		"runtimeSaveState");

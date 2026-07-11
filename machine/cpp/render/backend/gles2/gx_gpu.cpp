@@ -45,6 +45,7 @@ constexpr size_t kGxGpuScanoutFloatCount = 6u * kGxGpuScanoutVertexFloats;
 constexpr size_t kGxGpuRawVramBytesPerPixel = 4u;
 constexpr size_t kGxGpuRawVramUploadRowBytes = static_cast<size_t>(kGxGpuVramWidth) * kGxGpuRawVramBytesPerPixel;
 constexpr size_t kGxGpuRawVramReadbackBytes = static_cast<size_t>(kGxGpuVramWidth) * static_cast<size_t>(kGxGpuVramHeight) * kGxGpuRawVramBytesPerPixel;
+constexpr i32 kGxGpuReadbackPackWidth = 512;
 constexpr u32 kGxGpuFullDrawingAreaTopLeftWord = 0u;
 constexpr u32 kGxGpuFullDrawingAreaBottomRightWord = (static_cast<u32>(kGxGpuVramWidth) - 1u) | ((static_cast<u32>(kGxGpuVramHeight) - 1u) << 10u);
 constexpr u32 kGxGpuSampleSourceTileShift = 6u;
@@ -103,10 +104,13 @@ struct GxGpuRuntime {
 	GLuint texturedProgram = 0;
 	GLuint transferProgram = 0;
 	GLuint scanoutProgram = 0;
+	GLuint readbackProgram = 0;
 	GLES2Texture vramTexture{};
 	GLES2Texture vramSampleTexture{};
 	GLES2Texture vramTransferTexture{};
+	GLES2Texture readbackTexture{};
 	GLuint vramFramebuffer = 0;
+	GLuint readbackFramebuffer = 0;
 	GLuint solidVertexBuffer = 0;
 	GLuint lineVertexBuffer = 0;
 	GLuint texturedVertexBuffer = 0;
@@ -171,6 +175,9 @@ struct GxGpuRuntime {
 	GLint scanoutDisplayStartWordUniform = -1;
 	GLint scanoutHorizontalDisplayRangeUniform = -1;
 	GLint scanoutVerticalDisplayRangeUniform = -1;
+	GLint readbackPositionAttrib = -1;
+	GLint readbackVramUniform = -1;
+	GLint readbackParamsUniform = -1;
 	u32 scanoutUniformDisplayModeWord = 0xffffffffu;
 	u32 scanoutUniformDisplayStartWord = 0xffffffffu;
 	u32 scanoutUniformHorizontalDisplayRangeWord = 0xffffffffu;
@@ -199,13 +206,13 @@ GxGpuRuntime g_gxGpu;
 
 void updateGxGpuScanoutVertices();
 
-void initializeGxGpuTexture(GLES2Texture& texture, i32 textureUnit) {
+void initializeGxGpuTexture(GLES2Texture& texture, i32 textureUnit, i32 width, i32 height) {
 	glGenTextures(1, &texture.id);
-	texture.width = kGxGpuVramWidth;
-	texture.height = kGxGpuVramHeight;
+	texture.width = width;
+	texture.height = height;
 	g_gxGpu.backend->setActiveTextureUnit(textureUnit);
 	g_gxGpu.backend->bindTexture2D(&texture);
-	glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA, kGxGpuVramWidth, kGxGpuVramHeight, 0, GL_RGBA, GL_UNSIGNED_BYTE, nullptr);
+	glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA, width, height, 0, GL_RGBA, GL_UNSIGNED_BYTE, nullptr);
 	applyGLES2TextureParams(RGBA8_LINEAR_TEXTURE_PARAMS);
 }
 
@@ -216,10 +223,12 @@ void initGxGpu(OpenGLES2Backend& backend) {
 	g_gxGpu.texturedProgram = g_gxGpu.backend->buildProgram(kGxGpuTexturedVertexShader, kGxGpuTexturedFragmentShader, "gx_gpu_textured");
 	g_gxGpu.transferProgram = g_gxGpu.backend->buildProgram(kGxGpuTransferVertexShader, kGxGpuTransferFragmentShader, "gx_gpu_transfer");
 	g_gxGpu.scanoutProgram = g_gxGpu.backend->buildProgram(kGxGpuScanoutVertexShader, kGxGpuScanoutFragmentShader, "gx_gpu_scanout");
+	g_gxGpu.readbackProgram = g_gxGpu.backend->buildProgram(kGxGpuScanoutVertexShader, kGxGpuReadbackFragmentShader, "gx_gpu_readback");
 
-	initializeGxGpuTexture(g_gxGpu.vramTexture, kGxGpuScanoutTextureUnit);
-	initializeGxGpuTexture(g_gxGpu.vramSampleTexture, kGxGpuTextureSampleUnit);
-	initializeGxGpuTexture(g_gxGpu.vramTransferTexture, kGxGpuTextureTransferUnit);
+	initializeGxGpuTexture(g_gxGpu.vramTexture, kGxGpuScanoutTextureUnit, kGxGpuVramWidth, kGxGpuVramHeight);
+	initializeGxGpuTexture(g_gxGpu.vramSampleTexture, kGxGpuTextureSampleUnit, kGxGpuVramWidth, kGxGpuVramHeight);
+	initializeGxGpuTexture(g_gxGpu.vramTransferTexture, kGxGpuTextureTransferUnit, kGxGpuVramWidth, kGxGpuVramHeight);
+	initializeGxGpuTexture(g_gxGpu.readbackTexture, kGxGpuScanoutTextureUnit, kGxGpuReadbackPackWidth, kGxGpuVramHeight);
 
 	glGenFramebuffers(1, &g_gxGpu.vramFramebuffer);
 	glBindFramebuffer(GL_FRAMEBUFFER, g_gxGpu.vramFramebuffer);
@@ -227,6 +236,9 @@ void initGxGpu(OpenGLES2Backend& backend) {
 	glViewport(0, 0, kGxGpuVramWidth, kGxGpuVramHeight);
 	glClearColor(0.0f, 0.0f, 0.0f, 1.0f);
 	glClear(GL_COLOR_BUFFER_BIT);
+	glGenFramebuffers(1, &g_gxGpu.readbackFramebuffer);
+	glBindFramebuffer(GL_FRAMEBUFFER, g_gxGpu.readbackFramebuffer);
+	glFramebufferTexture2D(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, GL_TEXTURE_2D, g_gxGpu.readbackTexture.id, 0);
 
 	glGenBuffers(1, &g_gxGpu.solidVertexBuffer);
 	glBindBuffer(GL_ARRAY_BUFFER, g_gxGpu.solidVertexBuffer);
@@ -308,6 +320,9 @@ void initGxGpu(OpenGLES2Backend& backend) {
 	g_gxGpu.scanoutDisplayStartWordUniform = glGetUniformLocation(g_gxGpu.scanoutProgram, "u_displayStartWord");
 	g_gxGpu.scanoutHorizontalDisplayRangeUniform = glGetUniformLocation(g_gxGpu.scanoutProgram, "u_horizontalDisplayRangeWord");
 	g_gxGpu.scanoutVerticalDisplayRangeUniform = glGetUniformLocation(g_gxGpu.scanoutProgram, "u_verticalDisplayRangeWord");
+	g_gxGpu.readbackPositionAttrib = glGetAttribLocation(g_gxGpu.readbackProgram, "a_position");
+	g_gxGpu.readbackVramUniform = glGetUniformLocation(g_gxGpu.readbackProgram, "u_vram");
+	g_gxGpu.readbackParamsUniform = glGetUniformLocation(g_gxGpu.readbackProgram, "u_readback");
 	g_gxGpu.scanoutUniformDisplayModeWord = 0xffffffffu;
 	g_gxGpu.scanoutUniformDisplayStartWord = 0xffffffffu;
 	g_gxGpu.scanoutUniformHorizontalDisplayRangeWord = 0xffffffffu;
@@ -967,6 +982,36 @@ void writeGxGpuVramSnapshotFromReadback() {
 			readbackByteOffset += kGxGpuRawVramBytesPerPixel;
 		}
 	}
+}
+
+void completeGxGpuReadback(const GxGpuCommandBuffer& commandBuffer, GxGpuReadbackPort& readback) {
+	if (!readback.claimReadback(commandBuffer.presentCommandCount)) {
+		return;
+	}
+	const u32 readbackToken = readback.token();
+	const u32 pixelCount = readback.width() * readback.height();
+	const u32 wordCount = (pixelCount + 1u) >> 1u;
+	const u32 packedWidth = wordCount < static_cast<u32>(kGxGpuReadbackPackWidth) ? wordCount : static_cast<u32>(kGxGpuReadbackPackWidth);
+	const u32 packedHeight = ((wordCount - 1u) / packedWidth) + 1u;
+	g_gxGpu.backend->setRenderTarget(g_gxGpu.readbackFramebuffer, static_cast<i32>(packedWidth), static_cast<i32>(packedHeight));
+	glDisable(GL_SCISSOR_TEST);
+	glDisable(GL_DEPTH_TEST);
+	glDepthMask(GL_FALSE);
+	glDisable(GL_CULL_FACE);
+	glDisable(GL_BLEND);
+	glDisable(GL_DITHER);
+	glColorMask(GL_TRUE, GL_TRUE, GL_TRUE, GL_TRUE);
+	glUseProgram(g_gxGpu.readbackProgram);
+	glUniform1i(g_gxGpu.readbackVramUniform, kGxGpuScanoutTextureUnit);
+	glUniform4f(g_gxGpu.readbackParamsUniform, static_cast<f32>(readback.x()), static_cast<f32>(readback.y()), static_cast<f32>(readback.width()), static_cast<f32>(packedWidth));
+	g_gxGpu.backend->setActiveTextureUnit(kGxGpuScanoutTextureUnit);
+	g_gxGpu.backend->bindTexture2D(&g_gxGpu.vramTexture);
+	glBindBuffer(GL_ARRAY_BUFFER, g_gxGpu.scanoutVertexBuffer);
+	glEnableVertexAttribArray(static_cast<GLuint>(g_gxGpu.readbackPositionAttrib));
+	glVertexAttribPointer(static_cast<GLuint>(g_gxGpu.readbackPositionAttrib), 2, GL_FLOAT, GL_FALSE, kGxGpuScanoutVertexStride, nullptr);
+	glDrawArrays(GL_TRIANGLES, 0, 6);
+	glReadPixels(0, 0, static_cast<GLsizei>(packedWidth), static_cast<GLsizei>(packedHeight), GL_RGBA, GL_UNSIGNED_BYTE, readback.pixelBytes());
+	readback.completeReadback(readbackToken);
 }
 
 void writeCpuToVramUploadRow(const GxGpuCommandBuffer& commandBuffer, u32 payloadWordStart, u32 rowPixelStart, u32 width) {
@@ -2150,7 +2195,7 @@ void scanoutGxGpuVram(GLuint frameFbo, const GxGpuPipelineState& state) {
 	glDrawArrays(GL_TRIANGLES, 0, 6);
 }
 
-void executeGxGpuVramCommands(const GxGpuCommandBuffer& commandBuffer, const std::array<u8, GX_GPU_VRAM_BYTE_COUNT>& snapshotBytes, u32 snapshotSerial) {
+void executeGxGpuVramCommands(const GxGpuCommandBuffer& commandBuffer, GxGpuReadbackPort& readback, const std::array<u8, GX_GPU_VRAM_BYTE_COUNT>& snapshotBytes, u32 snapshotSerial) {
 	if (g_gxGpu.vramSnapshotSerial != snapshotSerial) {
 		uploadGxGpuVramSnapshot(snapshotBytes);
 		g_gxGpu.processedCommandCount = 0u;
@@ -2167,10 +2212,11 @@ void executeGxGpuVramCommands(const GxGpuCommandBuffer& commandBuffer, const std
 		g_gxGpu.processedCommandSerial = commandBuffer.serial;
 	}
 	executeNewGxGpuCommands(commandBuffer);
+	completeGxGpuReadback(commandBuffer, readback);
 }
 
 void renderGxGpu(GLuint frameFbo, const GxGpuPipelineState& state) {
-	executeGxGpuVramCommands(*state.commandBuffer, *state.vramSnapshotBytes, state.vramSnapshotSerial);
+	executeGxGpuVramCommands(*state.commandBuffer, *state.readbackPort, *state.vramSnapshotBytes, state.vramSnapshotSerial);
 	scanoutGxGpuVram(frameFbo, state);
 }
 
@@ -2183,7 +2229,7 @@ void executeGxGpuPass(GPUBackend*, GameView*, void* fbo, RenderPassStateStorage&
 
 void OpenGLES2Backend::captureGxGpuVramSnapshot(GxGpu& gxGpu) {
 	const GxGpuDeviceOutput& output = gxGpu.readDeviceOutput();
-	executeGxGpuVramCommands(*output.commandBuffer, *output.vramSnapshotBytes, output.vramSnapshotSerial);
+	executeGxGpuVramCommands(*output.commandBuffer, *output.readbackPort, *output.vramSnapshotBytes, output.vramSnapshotSerial);
 	setRenderTarget(g_gxGpu.vramFramebuffer, kGxGpuVramWidth, kGxGpuVramHeight);
 	glReadPixels(0, 0, kGxGpuVramWidth, kGxGpuVramHeight, GL_RGBA, GL_UNSIGNED_BYTE, g_rawVramReadback.data());
 	writeGxGpuVramSnapshotFromReadback();

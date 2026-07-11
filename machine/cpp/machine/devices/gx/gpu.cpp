@@ -166,7 +166,12 @@ u32 GxGpu::commitRenderedVramSnapshotBytes(const u8* bytes) {
 	return m_vramSnapshotSerial;
 }
 
-u32 GxGpu::readGp0() const {
+u32 GxGpu::readGp0() {
+	if (m_commandBuffer.readback.phase() == GX_GPU_READBACK_READY) {
+		m_gpuReadWord = m_commandBuffer.readback.readWord();
+		updateDynamicStatusBits();
+		m_memory.writeIoValue(IO_GX_GPU_GP0, valueNumber(static_cast<double>(m_gpuReadWord)));
+	}
 	return m_gpuReadWord;
 }
 
@@ -647,8 +652,14 @@ void GxGpu::writeDmaDirectionWord(u32 word) {
 }
 
 void GxGpu::updateCommandStatusBits() {
-	u32 commandStatusBits = GX_GPU_STATUS_READY_TO_RECEIVE_DMA;
-	if (m_gp0CommandWordCount == 0u && m_gp0ImageLoadWordsRemaining == 0u && m_gp0PolylineWordsPerVertex == 0u) {
+	u32 commandStatusBits = 0u;
+	if (m_commandBuffer.readback.phase() == GX_GPU_READBACK_IDLE) {
+		commandStatusBits |= GX_GPU_STATUS_READY_TO_RECEIVE_DMA;
+	}
+	if (m_commandBuffer.readback.phase() == GX_GPU_READBACK_READY) {
+		commandStatusBits |= GX_GPU_STATUS_READY_TO_SEND_VRAM;
+	}
+	if (m_commandBuffer.readback.phase() == GX_GPU_READBACK_IDLE && m_gp0CommandWordCount == 0u && m_gp0ImageLoadWordsRemaining == 0u && m_gp0PolylineWordsPerVertex == 0u) {
 		commandStatusBits |= GX_GPU_STATUS_GPU_IDLE;
 	}
 	m_statusWord = (m_statusWord & ~GX_GPU_STATUS_COMMAND_STATE_MASK) | commandStatusBits;
