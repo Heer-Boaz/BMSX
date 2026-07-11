@@ -418,14 +418,6 @@
 			"reason": "rpu_vram_surface_upload_contract"
 		},
 		{
-			"ts": "machine/ts/render/vdp/view_snapshot.ts",
-			"cpp": [
-				"machine/cpp/render/vdp/view_snapshot.h",
-				"machine/cpp/render/vdp/view_snapshot.cpp"
-			],
-			"reason": "rpu_view_snapshot_commit_contract"
-		},
-		{
 			"ts": "machine/ts/machine/devices/vdp/ingress.ts",
 			"cpp": [
 				"machine/cpp/machine/devices/vdp/ingress.h",
@@ -1186,8 +1178,6 @@
 				"machine/ts/render/host_overlay/webgl/pipeline.ts",
 				"machine/ts/machine/devices/vdp/vout.ts",
 				"machine/cpp/machine/devices/vdp/vout.cpp",
-				"machine/ts/render/vdp/view_snapshot.ts",
-				"machine/cpp/render/vdp/view_snapshot.cpp",
 				"machine/ts/machine/devices/vdp/vdp.ts",
 				"machine/ts/machine/devices/vdp/frame.ts",
 				"machine/ts/machine/devices/vdp/save_state.ts",
@@ -1454,7 +1444,10 @@
 				"machine/ts/render/3d/shadowmap.ts",
 				"machine/ts/render/lighting/system.ts",
 				"machine/ts/render/vdp/transform.ts",
-				"machine/ts/render/2d/sprites_pipeline.wgpu.ts"
+				"machine/ts/render/2d/sprites_pipeline.wgpu.ts",
+				"machine/ts/render/vdp/view_snapshot.ts",
+				"machine/cpp/render/vdp/view_snapshot.h",
+				"machine/cpp/render/vdp/view_snapshot.cpp"
 			],
 			"reason": "gx_gpu_backends_replace_retired_rpu_presentation_and_legacy_scene_and_framebuffer_execution_paths_while_ide_terminal_framebuffer_texture_presentation_remains"
 		},
@@ -1500,6 +1493,13 @@
 				"machine/cpp/render/post/crt/gles2/pipeline.cpp"
 			],
 			"reason": "webgl_crt_pipeline_mirrors_cpp_gles2_crt_pipeline"
+		},
+		{
+			"ts": "machine/ts/render/post/device_quantize/mode.ts",
+			"cpp": [
+				"machine/cpp/render/post/device_quantize/mode.h"
+			],
+			"reason": "device_quantize_mode_owner_filename_parity"
 		},
 		{
 			"ts": "machine/ts/render/post/device_quantize/webgl/pipeline.ts",
@@ -1617,14 +1617,6 @@
 				"machine/cpp/render/backend/gles2/fullscreen_quad.cpp"
 			],
 			"reason": "fullscreen_quad_backend_filename_parity"
-		},
-		{
-			"ts": "machine/ts/render/vdp/view_snapshot.ts",
-			"cpp": [
-				"machine/cpp/render/vdp/view_snapshot.h",
-				"machine/cpp/render/vdp/view_snapshot.cpp"
-			],
-			"reason": "vdp_view_snapshot_filename_parity"
 		},
 		{
 			"ts": "machine/ts/render/2d/framebuffer_pipeline.ts",
@@ -2264,20 +2256,6 @@
 				"presentFrame"
 			],
 			"reason": "vout_presentation_hot_path_must_swap_retained_frames_without_allocating"
-		},
-		{
-			"file": "machine/ts/render/vdp/view_snapshot.ts",
-			"functions": [
-				"commitVdpViewSnapshot"
-			],
-			"reason": "host_view_snapshot_commit_must_publish_vdp_state_without_allocating"
-		},
-		{
-			"file": "machine/cpp/render/vdp/view_snapshot.cpp",
-			"functions": [
-				"commitVdpViewSnapshot"
-			],
-			"reason": "host_view_snapshot_commit_must_publish_vdp_state_without_allocating"
 		},
 		{
 			"file": "machine/ts/machine/devices/vdp/vram_garbage.ts",

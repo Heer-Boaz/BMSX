@@ -3,7 +3,7 @@
 This is the remaining CPU-visible contract for the Video Display Processor
 (VDP) while its residual ownership is migrated. GX GPU/GTE is the active cart
 graphics ABI. The cart-visible VDP/RPU firmware ABI and every host RPU execution
-pass have been removed; no host renderer consumes the retained RPU frame.
+pass have been removed; no host renderer consumes `VdpDeviceOutput`.
 
 The VDP still owns raw register words, FIFO/stream ingress, mapped
 staging/texture/framebuffer memory, status/fault latches, scheduler/VBlank state,
@@ -149,7 +149,7 @@ unknown packet kinds consume the header as a deterministic no-op.
 | RPU | Packet admission retains raw buffers, surfaces, constants, passes, draws, and bindings as residual device/save-state state. No presentation backend executes it. | Malformed packets and structural resource ranges fault; representable weird state remains deterministic. |
 | FBM | Framebuffer page transitions happen on VBlank for display/readback state. | Framebuffer presentation and display readback page. |
 | Readback | `IO_VDP_RD_*` reads resolve the framebuffer surface, serve retained cache chunks, advance X/Y, and consume per-frame budget. | Readback status/data and VDP fault registers. |
-| VOUT | Dither/dimension/output latches are sampled at frame seal and become visible at frame presentation. | Host consumes `VdpDeviceOutput`; cart sees MMIO/status only. |
+| VOUT | Dither/dimension/output latches are sampled at frame seal and retained as residual device/save-state state. | No host presentation consumer remains; cart sees MMIO/status only. |
 
 The boundary follows the same device-shape discipline used by mature emulator
 codebases: address-space ingress, device timing/service, VBlank/screen edges,
@@ -178,10 +178,10 @@ datapath rejects them.
 
 ## Host output and save state
 
-VOUT still owns live, frame-sealed, and visible device-output buffers. Host view
-snapshot code copies only the residual dither/output state it still needs; the
-retained RPU frame is not published to presentation. GX command buffers and GX
-VRAM scanout are the graphics path for accelerated and software/headless
+VOUT still owns live, frame-sealed, and visible device-output buffers, but no
+host presentation path reads `VdpDeviceOutput`. Output quantization is now a
+host `GameView` option rather than a VDP dither snapshot. GX command buffers and
+GX VRAM scanout are the graphics path for accelerated and software/headless
 backends.
 
 Saved VDP state includes:
@@ -220,8 +220,6 @@ restore.
   and `registers.h`
 - C++ subunits: `fbm.cpp/.h`, `frame.cpp/.h`, `jtu.cpp/.h`, `lpu.cpp/.h`,
   `mfu.cpp/.h`, `rpu.cpp/.h`, `vout.cpp/.h`, and `xf.cpp/.h`
-- Residual host dither/output snapshot consumers: `machine/ts/render/vdp/*` and
-  `machine/cpp/render/vdp/*`
 - Host-only IDE/terminal framebuffer presentation:
   `machine/ts/render/2d/framebuffer_pipeline.ts` and
   `machine/cpp/render/2d/framebuffer_pipeline.cpp`

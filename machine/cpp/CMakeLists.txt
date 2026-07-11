@@ -303,7 +303,6 @@ add_library(bmsx_core STATIC
 	render/host_overlay/gles2/pipeline.cpp
 	render/gx/view_snapshot.cpp
 	render/vdp/framebuffer.cpp
-	render/vdp/view_snapshot.cpp
 	render/texture_manager.cpp
 	render/backend/pass/library.cpp
 	render/graph/graph.cpp

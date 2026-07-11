@@ -6,7 +6,7 @@ import type { vec2 } from '../rompack/format';
 import type { BackendContext, GPUBackend, PresentationMode, RenderContext, TextureHandle } from './backend/backend';
 import { RGBA8_LINEAR_TEXTURE_PARAMS, RGBA8_SRGB_TEXTURE_PARAMS } from './backend/texture_params';
 import { RenderPassLibrary } from './backend/pass/library';
-import { CRTDitherType as DitherType } from './backend/backend';
+import { DeviceQuantizeMode } from './post/device_quantize/mode';
 import { RenderGraphRuntime, buildFrameData, updateExternalFrameTiming } from './graph/graph';
 import type {
 	GameViewHost,
@@ -90,7 +90,7 @@ export class GameView implements RenderContext {
 	public enable_fringing = true;
 	public enable_aperture = false; // Whether to apply an aperture mask in the CRT shader; This is a stylistic choice that can be toggled independently of the other CRT effects
 	public show_resource_usage_gizmo = false;
-	public dither_type: number = DitherType.None;
+	public deviceQuantizeMode: DeviceQuantizeMode = DeviceQuantizeMode.None;
 	public noiseIntensity = 0.3;
 	public colorBleed: [number, number, number] = [0.02, 0.0, 0.0];
 	public blurIntensity = 0.6;

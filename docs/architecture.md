@@ -681,7 +681,8 @@ yet been migrated:
   machine DMA/image and residual device paths;
 - its scheduler/VBlank, register, fault, readback, and save-state state is still
   wired into both runtimes;
-- its dither latch is still copied into the host view snapshot;
+- its dither and VOUT latches remain residual device/save-state state, but host
+  presentation no longer consumes `VdpDeviceOutput`;
 - the TypeScript IDE/terminal overlay can explicitly present the legacy
   framebuffer texture; carts and BIOS code cannot target that host-only pass.
 
@@ -699,9 +700,9 @@ boot-screen parity are not render-parity evidence. `npm run test:render-parity`
 captures the same timeline through both runtimes and compares dimensions and raw
 RGBA bytes.
 
-CRT postprocessing is host presentation, not runtime or machine state. Parity
-captures disable CRT postprocessing, including `bmsx_crt_noise`, so they prove
-machine pixel output rather than host CRT decoration.
+CRT postprocessing and output quantization are host presentation, not runtime or
+machine state. Parity captures disable these effects, including
+`bmsx_crt_noise`, so they prove machine pixel output rather than host decoration.
 
 ### APU and AOUT
 

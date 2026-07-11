@@ -1,4 +1,5 @@
 import { clamp01 } from '../../../../common/clamp';
+import { DeviceQuantizeMode } from '../mode';
 
 const TABLE_SIZE = 4096;
 const TABLE_SCALE = 4095.0;
@@ -70,7 +71,7 @@ function byteFromLinear(c: number): number {
 	return (clamp01(c) * 255.0) | 0;
 }
 
-export function applyHeadlessDeviceQuantize(pixels: Uint8Array, width: number, height: number, ditherType: number): void {
+export function applyHeadlessDeviceQuantize(pixels: Uint8Array, width: number, height: number, deviceQuantizeMode: DeviceQuantizeMode): void {
 	for (let y = 0; y < height; y += 1) {
 		let offset = y * width * 4;
 		for (let x = 0; x < width; x += 1) {
@@ -80,16 +81,16 @@ export function applyHeadlessDeviceQuantize(pixels: Uint8Array, width: number, h
 			let outR = signalR;
 			let outG = signalG;
 			let outB = signalB;
-			if (ditherType === 1) {
+			if (deviceQuantizeMode === DeviceQuantizeMode.PsxRgb555) {
 				const ditherOffset = PSX_DITHER[(x & 3) + ((y & 3) << 2)];
 				outR = quantizeRgb555Psx(signalR, ditherOffset);
 				outG = quantizeRgb555Psx(signalG, ditherOffset);
 				outB = quantizeRgb555Psx(signalB, ditherOffset);
-			} else if (ditherType === 2) {
+			} else if (deviceQuantizeMode === DeviceQuantizeMode.Rgb777Output) {
 				outR = quantizeOrderedConditional(signalR, 127.0, bayer4x4(x, y));
 				outG = quantizeOrderedConditional(signalG, 127.0, bayer4x4(x + 1, y + 2));
 				outB = quantizeOrderedConditional(signalB, 127.0, bayer4x4(x + 2, y + 1));
-			} else if (ditherType === 3) {
+			} else if (deviceQuantizeMode === DeviceQuantizeMode.Msx10Rgb343) {
 				const threshold = bayer4x4(x, y);
 				outR = quantizeOrderedConditional(signalR, 7.0, threshold);
 				outG = quantizeOrderedConditional(signalG, 15.0, threshold);

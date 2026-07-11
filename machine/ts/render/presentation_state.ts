@@ -2,7 +2,6 @@ import { machineManager } from '../core/machine_manager';
 import type { Runtime } from '../machine/runtime/runtime';
 import type { TickCompletion } from '../machine/scheduler/frame';
 import * as workbenchMode from '../ide/workbench/mode';
-import { commitVdpViewSnapshot } from './vdp/view_snapshot';
 import { commitGxGpuViewSnapshot } from './gx/view_snapshot';
 
 export type RenderPresentationMode = 'partial' | 'completed';
@@ -87,7 +86,6 @@ export class RenderPresentationState {
 
 	private presentFrame(runtime: Runtime, hostDeltaMs: number, mode: RenderPresentationMode, commitFrame: boolean): void {
 		machineManager.deltatime = hostDeltaMs;
-		commitVdpViewSnapshot(machineManager.view, runtime.machine.vdp.readDeviceOutput());
 		commitGxGpuViewSnapshot(machineManager.view, runtime.machine.gxGpu.readDeviceOutput());
 		machineManager.view.configurePresentation(mode, commitFrame);
 		this.recordPresentation(mode, commitFrame);

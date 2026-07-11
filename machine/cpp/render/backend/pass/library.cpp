@@ -50,7 +50,7 @@ RenderGraphSlot presentationHistorySlot(u8 index) {
 
 TextureHandle currentFrameSourceTexture(const RenderPassDef::RenderGraphPassContext& ctx) {
 	const GameView& view = *ctx.view;
-	return ctx.deviceColorEnabled && static_cast<i32>(view.dither_type) != 0
+	return ctx.deviceColorEnabled && view.deviceQuantizeMode != DeviceQuantizeMode::None
 		? ctx.getTexture(RenderPassDef::RenderGraphSlot::DeviceColor)
 		: ctx.getTexture(RenderPassDef::RenderGraphSlot::FrameColor);
 }
@@ -144,7 +144,7 @@ void writeDeviceQuantizePipelineState(const RenderPassDef::RenderGraphPassContex
 		deviceQuantizeState.baseHeight,
 		*view);
 	deviceQuantizeState.colorTex = ctx.getTexture(RenderPassDef::RenderGraphSlot::FrameColor);
-	deviceQuantizeState.ditherType = static_cast<i32>(view->dither_type);
+	deviceQuantizeState.deviceQuantizeMode = view->deviceQuantizeMode;
 }
 
 } // namespace
@@ -220,7 +220,7 @@ bool shouldExecuteAutoCRTPass(GameView* view, void*) {
 }
 
 bool shouldExecuteDeviceQuantizePass(GameView* view, void*) {
-	return static_cast<i32>(view->dither_type) != 0;
+	return view->deviceQuantizeMode != DeviceQuantizeMode::None;
 }
 
 void registerFrameResolvePass(RenderPassLibrary& registry) {

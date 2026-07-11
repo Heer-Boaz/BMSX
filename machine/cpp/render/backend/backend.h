@@ -18,9 +18,9 @@
  *   RenderTargetHandle, PresentationMode, GraphicsPipelineBindingLayout,
  *   RenderGraphSlot, RenderGraphPassContext, RenderPassGraphDef, RenderPassDef,
  *   GraphicsPipelineBuildDesc, RenderPassInstanceHandle,
- *   RenderPassStateRegistry, RenderPassStateId, pipeline-state types,
- *   RenderContext and CRTDitherType. C++ owns its native pass scheduling in
- *   render/backend/pass files.
+ *   RenderPassStateRegistry, RenderPassStateId, pipeline-state types, and
+ *   RenderContext. C++ owns its native pass scheduling in render/backend/pass
+ *   files.
  * - TS-only GPUBackend methods in render/backend/backend.ts are
  *   browser/backend-resource controls: setActiveTexture(), bindTexture2D(),
  *   bindTextureCube(), createImageBitmapFromSource(),

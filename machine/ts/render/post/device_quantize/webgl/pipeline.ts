@@ -5,6 +5,7 @@ import { TEXTURE_UNIT_POST_PROCESSING_SOURCE } from '../../../backend/webgl/cons
 import fragmentShaderDeviceCode from './shaders/device_quantize.frag.glsl';
 import vertexShaderCRTCode from '../../webgl/shaders/fullscreen.vert.glsl';
 import type { GameView } from '../../../gameview';
+import { DeviceQuantizeMode } from '../mode';
 import {
 	bindFullscreenQuad,
 	createFullscreenQuad,
@@ -20,7 +21,7 @@ function createDeviceQuantizeState(): RenderPassStateRegistry['device_quantize']
 		baseWidth: 0,
 		baseHeight: 0,
 		colorTex: null as TextureHandle,
-		ditherType: 0,
+		deviceQuantizeMode: DeviceQuantizeMode.None,
 	};
 }
 
@@ -30,7 +31,7 @@ function writeDeviceQuantizeState(ctx: RenderGraphPassContext, state: RenderPass
 	state.baseWidth = ctx.view.viewportSize.x;
 	state.baseHeight = ctx.view.viewportSize.y;
 	state.colorTex = ctx.getTex('frame_color');
-	state.ditherType = (ctx.view as GameView).dither_type;
+	state.deviceQuantizeMode = (ctx.view as GameView).deviceQuantizeMode;
 }
 
 export function registerDeviceQuantize(registry: RenderPassLibrary): void {
@@ -61,7 +62,7 @@ export function registerDeviceQuantize(registry: RenderPassLibrary): void {
 			};
 			createFullscreenQuad(fullscreenQuad);
 		},
-		shouldExecute: (view) => view.dither_type !== 0,
+		shouldExecute: (view) => view.deviceQuantizeMode !== DeviceQuantizeMode.None,
 		exec: (_be: WebGLBackend, fbo, state: RenderPassStateRegistry['device_quantize']) => {
 			renderDeviceQuantize(fullscreenQuad, fbo as WebGLFramebuffer, state);
 		},
@@ -87,6 +88,6 @@ function bindDeviceQuantizeUniforms(backend: WebGLBackend, state: RenderPassStat
 	backend.setUniform1f('u_scale', 1.0);
 	backend.setUniform2f('u_srcResolution', state.baseWidth, state.baseHeight);
 	backend.setUniform1f('u_fragscale', state.width / state.baseWidth);
-	backend.setUniform1i('u_dither_type', state.ditherType);
+	backend.setUniform1i('u_device_quantize_mode', state.deviceQuantizeMode);
 	backend.setUniform1i('u_texture', TEXTURE_UNIT_POST_PROCESSING_SOURCE);
 }

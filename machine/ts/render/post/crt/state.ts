@@ -1,5 +1,6 @@
 import type { CRTPipelineState, PresentPipelineState, RenderGraphPassContext } from '../../backend/backend';
 import type { GameView } from '../../gameview';
+import { DeviceQuantizeMode } from '../device_quantize/mode';
 
 export function shouldExecuteAutoPresentPass(view: GameView): boolean {
 	return !view.crt_postprocessing_enabled
@@ -25,7 +26,7 @@ export function shouldExecuteAutoCrtPass(view: GameView): boolean {
 
 
 function currentFrameSourceTexture(ctx: RenderGraphPassContext, view: GameView) {
-	return ctx.deviceColorEnabled && view.dither_type !== 0 ? ctx.getTex('device_color') : ctx.getTex('frame_color');
+	return ctx.deviceColorEnabled && view.deviceQuantizeMode !== DeviceQuantizeMode.None ? ctx.getTex('device_color') : ctx.getTex('frame_color');
 }
 
 function presentationHistorySlot(index: 0 | 1): 'frame_history_a' | 'frame_history_b' {

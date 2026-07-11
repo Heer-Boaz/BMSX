@@ -6,7 +6,6 @@
 #include "render/backend/pass/library.h"
 #include "render/gx/view_snapshot.h"
 #include "render/vdp/framebuffer.h"
-#include "render/vdp/view_snapshot.h"
 #include <cstdio>
 #include <cstdlib>
 
@@ -193,7 +192,6 @@ bool RenderPresentationState::render(MachineManager& manager, Runtime& runtime, 
 			: m_presentationScratch.commitFrame;
 		recordPresentation(presentMode, commitFrame, pausedPresent);
 
-		commitVdpViewSnapshot(*manager.m_view, runtime.machine.vdp.readDeviceOutput());
 		commitGxGpuViewSnapshot(*manager.m_view, runtime.machine.gxGpu.readDeviceOutput());
 		manager.m_view->configurePresentation(presentMode, commitFrame);
 		manager.m_view->drawgame();

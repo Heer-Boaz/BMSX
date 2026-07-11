@@ -4,7 +4,7 @@ precision highp float;
 uniform sampler2D u_texture;
 uniform vec2 u_srcResolution;
 uniform float u_fragscale;
-uniform int u_dither_type;
+uniform int u_device_quantize_mode;
 
 in vec2 v_texcoord;
 out vec4 outputColor;
@@ -84,11 +84,11 @@ void main(){
 
 	vec3 color = texture(u_texture, v_texcoord).rgb;
 	vec3 sigS = linear_to_srgb(color);
-	if (u_dither_type == 1) {
+	if (u_device_quantize_mode == 1) {
 		sigS = quantize_rgb555_psx(sigS, sPix);
-	} else if (u_dither_type == 2) {
+	} else if (u_device_quantize_mode == 2) {
 		sigS = quantize_rgb777_output(sigS, sPix);
-	} else if (u_dither_type == 3) {
+	} else if (u_device_quantize_mode == 3) {
 		sigS = quantize_msx10_343(sigS, sPix);
 	}
 	color = srgb_to_linear(sigS);

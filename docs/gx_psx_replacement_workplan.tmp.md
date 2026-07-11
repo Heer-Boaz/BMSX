@@ -73,7 +73,6 @@ Residual VDP machine ownership still exists and must not be treated as
 completion:
 
 - TS/C++ VDP device trees under `machine/*/machine/devices/vdp/`
-- residual VDP dither/output snapshot helpers under `machine/*/render/vdp/`
 - the host-only TS IDE/terminal framebuffer presentation path
 - Old VDP/RPU tests and firmware paths, including `tests/cpp/vdp_ingress_test.cpp`
 - mapped VDP staging/texture/framebuffer memory plus scheduler/VBlank,
@@ -83,7 +82,7 @@ completion:
 
 GTE is relatively far along. GPU is in the middle of the replacement work. GX
 is the only cart graphics route executed by host backends, but residual VDP
-machine, dither, memory, IDE/terminal framebuffer, and save-state ownership has
+machine, memory, IDE/terminal framebuffer, and save-state ownership has
 not yet been removed. This is not close to done if the goal is read literally.
 
 Implemented or partially covered GX-GPU areas include:
@@ -194,8 +193,10 @@ and ask before coding.
 - [x] Remove the old RPU render passes from active presentation once GX is
   complete enough. WebGL, GLES2, TS headless/software, and C++ software no
   longer register or execute an RPU frame; WebGPU never registered one.
-- [ ] Remove residual VDP dither and host-only IDE/terminal framebuffer
-  presentation ownership after their real owners are established.
+- [x] Move output quantization to host presentation state. The host menu no
+  longer writes VDP MMIO and presentation no longer consumes `VdpDeviceOutput`.
+- [ ] Remove host-only IDE/terminal framebuffer presentation ownership after its
+  real owner is established.
 - [x] Remove old VDP/RPU cart-visible ABI use after carts are migrated. Cartlib
   consumes GX-owned display metrics directly and the rejected Lua VDP/RPU
   firmware modules are gone rather than retained behind compatibility shims.
@@ -312,16 +313,18 @@ and ask before coding.
 
 - [x] Identify every active VDP/RPU presentation registration and machine output
   dependency. The remaining blockers are mapped VDP memory, scheduler/VBlank,
-  register/readback/save-state state, dither snapshotting, and the TS host-only
-  IDE/terminal framebuffer path.
+  register/readback/save-state state, and the TS host-only IDE/terminal
+  framebuffer path.
 - [x] Remove the dormant WebGL, GLES2, TS headless/software, and C++ software RPU
   presentation executors. GX command buffers are the only cart graphics input
   consumed by host backends; WebGPU already had no RPU executor.
 - [x] Remove the orphaned host-side XF/LPU/MFU/JTU transform, lighting, fog, and
   frame-shared structures plus the never-enabled axis-gizmo and dead scene
   math/material/shadow code from both runtimes.
-- [ ] Move residual VDP dither and host-only framebuffer presentation to their
-  real owners without a compatibility facade.
+- [x] Move output quantization from VDP MMIO/VOUT into the host presentation
+  owner and remove the mirrored VDP view-snapshot consumers.
+- [ ] Move host-only framebuffer presentation to its real owner without a
+  compatibility facade.
 - [ ] Migrate remaining mapped memory and machine timing/state ownership before
   deleting the VDP device.
 - [x] Retire old VDP/RPU firmware/system paths after cart migration planning.

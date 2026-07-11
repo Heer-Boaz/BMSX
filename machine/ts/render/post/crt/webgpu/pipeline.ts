@@ -6,6 +6,7 @@ import { createCrtPassState, createPresentPassState, shouldExecuteAutoCrtPass, s
 import fragmentShaderCRTCode from './shaders/crt.frag.wgsl';
 import fragmentShaderPresentCode from './shaders/present.frag.wgsl';
 import vertexShaderCRTCode from './shaders/crt.vert.wgsl';
+import { DeviceQuantizeMode } from '../../device_quantize/mode';
 
 const CRT_UNIFORM_FLOATS = 24;
 const crtUniformScratch = new Float32Array(CRT_UNIFORM_FLOATS);
@@ -126,7 +127,7 @@ function renderFullscreen(backend: GPUBackend, pipeline: GPURenderPipeline, bind
 }
 
 function currentFrameSourceTexture(ctx: RenderGraphPassContext, view: GameView): TextureHandle {
-	return ctx.deviceColorEnabled && view.dither_type !== 0 ? ctx.getTex('device_color') : ctx.getTex('frame_color');
+	return ctx.deviceColorEnabled && view.deviceQuantizeMode !== DeviceQuantizeMode.None ? ctx.getTex('device_color') : ctx.getTex('frame_color');
 }
 
 export function registerCRT(registry: RenderPassLibrary): void {

@@ -3,6 +3,7 @@ import type { GxGpu } from '../../machine/devices/gx/gpu';
 import type { GxGpuCommandBufferView } from '../../machine/devices/gx/gpu_command_buffer';
 import type { Host2DSubmission } from '../shared/submissions';
 import type { GameView } from '../gameview';
+import type { DeviceQuantizeMode } from '../post/device_quantize/mode';
 import type { TextureParams } from './texture_params';
 import type { RenderPassLibrary } from './pass/library';
 
@@ -22,8 +23,8 @@ import type { RenderPassLibrary } from './pass/library';
  *   PresentationMode, GraphicsPipelineBindingLayout, RenderGraphSlot,
  *   RenderGraphPassContext, RenderPassGraphDef, RenderPassDef,
  *   GraphicsPipelineBuildDesc, RenderPassInstanceHandle,
- *   RenderPassStateRegistry, RenderPassStateId, pipeline-state types,
- *   RenderContext and CRTDitherType.
+ *   RenderPassStateRegistry, RenderPassStateId, pipeline-state types, and
+ *   RenderContext.
  *   C++ owns the equivalent native pass scheduling in render/backend/pass files.
  * - TS-only GPUBackend methods here are browser/backend-resource controls:
  *   createImageBitmapFromSource(), createCubemapFromSources(),
@@ -317,20 +318,13 @@ export interface RenderContext {
 
 export type RenderingViewportType = 'viewport' | 'offscreen';
 
-export const enum CRTDitherType {
-	None = 0,
-	PSX = 1,
-	RGB777Output = 2,
-	MSX10 = 3,
-}
-
 export interface DeviceQuantizePipelineState {
 	width: number;
 	height: number;
 	baseWidth: number;
 	baseHeight: number;
 	colorTex: TextureHandle;
-	ditherType: CRTDitherType;
+	deviceQuantizeMode: DeviceQuantizeMode;
 }
 
 export type PresentPipelineState = {

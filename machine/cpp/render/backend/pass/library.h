@@ -11,6 +11,7 @@
 #include "../../graph/graph.h"
 #include "../../shared/submissions.h"
 #include "machine/devices/gx/gpu_command_buffer.h"
+#include "render/post/device_quantize/mode.h"
 #include <array>
 #include <string>
 #include <vector>
@@ -98,7 +99,7 @@ struct DeviceQuantizePipelineState {
 	i32 baseWidth = 0;
 	i32 baseHeight = 0;
 	TextureHandle colorTex = nullptr;
-	i32 ditherType = 0;
+	DeviceQuantizeMode deviceQuantizeMode = DeviceQuantizeMode::None;
 };
 
 struct Host2DPipelineState {

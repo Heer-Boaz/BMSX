@@ -119,16 +119,16 @@ void renderDeviceQuantizeSoftware(SoftwareBackend& backend, const DeviceQuantize
 			f32 outR = signalR;
 			f32 outG = signalG;
 			f32 outB = signalB;
-			if (state.ditherType == 1) {
+			if (state.deviceQuantizeMode == DeviceQuantizeMode::PsxRgb555) {
 				const i32 off = psxDitherOffset4x4(sx, sy);
 				outR = quantizeRgb555PSX(signalR, off);
 				outG = quantizeRgb555PSX(signalG, off);
 				outB = quantizeRgb555PSX(signalB, off);
-			} else if (state.ditherType == 2) {
+			} else if (state.deviceQuantizeMode == DeviceQuantizeMode::Rgb777Output) {
 				outR = quantizeOrderedConditional(signalR, 127.0f, bayer4x4_0_1(sx, sy));
 				outG = quantizeOrderedConditional(signalG, 127.0f, bayer4x4_0_1(sx + 1, sy + 2));
 				outB = quantizeOrderedConditional(signalB, 127.0f, bayer4x4_0_1(sx + 2, sy + 1));
-			} else if (state.ditherType == 3) {
+			} else if (state.deviceQuantizeMode == DeviceQuantizeMode::Msx10Rgb343) {
 				const f32 threshold = bayer4x4_0_1(sx, sy);
 				outR = quantizeOrderedConditional(signalR, 7.0f, threshold);
 				outG = quantizeOrderedConditional(signalG, 15.0f, threshold);

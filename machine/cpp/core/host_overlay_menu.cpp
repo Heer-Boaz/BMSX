@@ -5,7 +5,6 @@
 #include "core/rom_boot_manager.h"
 #include "input/manager.h"
 #include "input/player.h"
-#include "machine/bus/io.h"
 #include "machine/runtime/runtime.h"
 #include "platform/platform.h"
 #include "render/gameview.h"
@@ -17,7 +16,7 @@ namespace {
 
 constexpr i32 kMenuOptionCount = 13;
 constexpr const char* kToggleValues[] = {"OFF", "ON"};
-constexpr const char* kDitherValues[] = {"OFF", "PSX RGB555", "RGB777 OUTPUT", "MSX10 3:4:3"};
+constexpr const char* kDeviceQuantizeValues[] = {"OFF", "PSX RGB555", "RGB777 OUTPUT", "MSX10 3:4:3"};
 constexpr const char* kTitleText = "CORE OPTIONS";
 constexpr const char* kFpsPrefix = "HOST: ";
 constexpr i32 kUsageLabelWidth = 28;
@@ -75,7 +74,7 @@ enum class HostMenuOptionId : i32 {
 	CrtGlow,
 	CrtFringing,
 	CrtAperture,
-	Dither,
+	DeviceQuantize,
 	HostShowFps,
 	RebootCart,
 	ExitGame,
@@ -98,7 +97,7 @@ constexpr std::array<HostMenuOptionDef, kMenuOptionCount> kOptions{{
 	{HostMenuOptionId::CrtGlow, "CRT Glow", kToggleValues, 2},
 	{HostMenuOptionId::CrtFringing, "CRT Fringing", kToggleValues, 2},
 	{HostMenuOptionId::CrtAperture, "CRT Aperture", kToggleValues, 2},
-	{HostMenuOptionId::Dither, "Dither", kDitherValues, 4},
+	{HostMenuOptionId::DeviceQuantize, "Output Quantize", kDeviceQuantizeValues, 4},
 	{HostMenuOptionId::HostShowFps, "HOST: SHOW FPS", kToggleValues, 2},
 	{HostMenuOptionId::RebootCart, "REBOOT CART", nullptr, 0},
 	{HostMenuOptionId::ExitGame, "EXIT GAME", nullptr, 0},
@@ -140,7 +139,7 @@ i32 optionIndex(MachineManager& manager, GameView& view, i32 option) {
 		case HostMenuOptionId::CrtGlow: return boolIndex(view.applyGlow);
 		case HostMenuOptionId::CrtFringing: return boolIndex(view.applyFringing);
 		case HostMenuOptionId::CrtAperture: return boolIndex(view.applyAperture);
-		case HostMenuOptionId::Dither: return static_cast<i32>(manager.runtime().machine.memory.readIoU32(IO_VDP_DITHER));
+		case HostMenuOptionId::DeviceQuantize: return static_cast<i32>(view.deviceQuantizeMode);
 		case HostMenuOptionId::HostShowFps: return boolIndex(manager.hostShowFps);
 		case HostMenuOptionId::RebootCart: return 0;
 		case HostMenuOptionId::ExitGame: return 0;
@@ -159,7 +158,7 @@ void setOptionIndex(MachineManager& manager, GameView& view, i32 option, i32 val
 		case HostMenuOptionId::CrtGlow: view.applyGlow = boolFromIndex(value); break;
 		case HostMenuOptionId::CrtFringing: view.applyFringing = boolFromIndex(value); break;
 		case HostMenuOptionId::CrtAperture: view.applyAperture = boolFromIndex(value); break;
-		case HostMenuOptionId::Dither: manager.runtime().machine.memory.writeValue(IO_VDP_DITHER, valueNumber(static_cast<double>(value))); break;
+		case HostMenuOptionId::DeviceQuantize: view.deviceQuantizeMode = static_cast<DeviceQuantizeMode>(value); break;
 		case HostMenuOptionId::HostShowFps: manager.hostShowFps = boolFromIndex(value); break;
 		case HostMenuOptionId::RebootCart: break;
 		case HostMenuOptionId::ExitGame: break;

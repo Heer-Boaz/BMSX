@@ -4,7 +4,7 @@ import type { Host2DKind, Host2DRef } from '../render/shared/submissions';
 import { machineManager } from './machine_manager';
 import { Input } from '../input/manager';
 import type { PlayerInput } from '../input/player';
-import { IO_VDP_DITHER } from '../machine/bus/io';
+import type { DeviceQuantizeMode } from '../render/post/device_quantize/mode';
 
 type HostMenuValue = {
 	readonly label: string;
@@ -65,7 +65,7 @@ const FPS_TEXT_TENTHS_INVALID = -1;
 const HOST_MENU_COMMAND_CAPACITY = 128;
 
 const TOGGLE_VALUES: readonly HostMenuValue[] = [{ label: 'OFF' }, { label: 'ON' }];
-const DITHER_VALUES: readonly HostMenuValue[] = [
+const DEVICE_QUANTIZE_VALUES: readonly HostMenuValue[] = [
 	{ label: 'OFF' },
 	{ label: 'PSX RGB555' },
 	{ label: 'RGB777 OUTPUT' },
@@ -247,10 +247,10 @@ export class HostOverlayMenu {
 		},
 		{
 			kind: 'value',
-			label: 'Dither',
-			values: DITHER_VALUES,
-			getIndex: () => machineManager.runtime.machine.memory.readIoU32(IO_VDP_DITHER),
-			setIndex: index => { machineManager.runtime.machine.memory.writeValue(IO_VDP_DITHER, index); },
+			label: 'Output Quantize',
+			values: DEVICE_QUANTIZE_VALUES,
+			getIndex: () => machineManager.view.deviceQuantizeMode,
+			setIndex: index => { machineManager.view.deviceQuantizeMode = index as DeviceQuantizeMode; },
 		},
 		{
 			kind: 'value',

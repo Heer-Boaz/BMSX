@@ -32,7 +32,7 @@ void init(OpenGLES2Backend& backend, State& pipeline) {
 	pipeline.uniform_src_resolution = glGetUniformLocation(pipeline.program, "u_srcResolution");
 	pipeline.uniform_scale = glGetUniformLocation(pipeline.program, "u_scale");
 	pipeline.uniform_fragscale = glGetUniformLocation(pipeline.program, "u_fragscale");
-	pipeline.uniform_dither_type = glGetUniformLocation(pipeline.program, "u_dither_type");
+	pipeline.uniform_device_quantize_mode = glGetUniformLocation(pipeline.program, "u_device_quantize_mode");
 	pipeline.uniform_texture = glGetUniformLocation(pipeline.program, "u_texture");
 
 	createFullscreenQuad(pipeline.quad);
@@ -82,7 +82,7 @@ void renderDeviceQuantizeGLES2(OpenGLES2Backend& backend, State& pipeline, const
 	glUniform2f(pipeline.uniform_src_resolution, static_cast<float>(state.baseWidth), static_cast<float>(state.baseHeight));
 	glUniform1f(pipeline.uniform_scale, 1.0f);
 	glUniform1f(pipeline.uniform_fragscale, static_cast<float>(state.width) / static_cast<float>(state.baseWidth));
-	glUniform1i(pipeline.uniform_dither_type, state.ditherType);
+	glUniform1i(pipeline.uniform_device_quantize_mode, static_cast<i32>(state.deviceQuantizeMode));
 
 	backend.setActiveTextureUnit(kTexUnitPostProcess);
 	backend.bindTexture2D(state.colorTex);

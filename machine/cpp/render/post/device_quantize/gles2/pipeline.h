@@ -25,7 +25,7 @@ struct State {
 	GLint uniform_src_resolution = -1;
 	GLint uniform_scale = -1;
 	GLint uniform_fragscale = -1;
-	GLint uniform_dither_type = -1;
+	GLint uniform_device_quantize_mode = -1;
 	GLint uniform_texture = -1;
 	FullscreenQuad quad;
 };

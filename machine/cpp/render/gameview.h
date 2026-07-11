@@ -11,6 +11,7 @@
 #include "shared/submissions.h"
 #include "common/registry.h"
 #include "machine/devices/gx/gpu_command_buffer.h"
+#include "render/post/device_quantize/mode.h"
 #include "common/subscription.h"
 #include <array>
 #include <memory>
@@ -38,12 +39,6 @@ public:
 	enum class PresentationMode : i32 {
 		Partial = 0,
 		Completed = 1,
-	};
-	enum class DitherType : i32 {
-		None = 0,
-		PSX = 1,
-		RGB777Output = 2,
-		MSX10 = 3
 	};
 	GameView(GameViewHost* host, i32 viewportWidth, i32 viewportHeight);
 	~GameView();
@@ -124,7 +119,7 @@ public:
 	// Post-processing settings
 	// ─────────────────────────────────────────────────────────────────────────
 	bool crt_postprocessing_enabled = true;
-	DitherType dither_type = DitherType::None;
+	DeviceQuantizeMode deviceQuantizeMode = DeviceQuantizeMode::None;
 
 	// CRT effect toggles and parameters
 	bool applyNoise = true;

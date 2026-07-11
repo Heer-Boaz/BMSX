@@ -9,6 +9,7 @@ import { hostOverlayMenu } from '../../core/host_overlay_menu';
 import { renderHeadlessHost2DEntry, renderHeadlessHost2DSubmission } from './host_2d';
 import { renderGxGpuSoftwareFrame } from '../backend/software/gx_gpu';
 import { applyHeadlessDeviceQuantize } from '../post/device_quantize/headless/pipeline';
+import { DeviceQuantizeMode } from '../post/device_quantize/mode';
 
 export function registerHeadlessPasses(registry: RenderPassLibrary): void {
 	registerFramePasses(registry);
@@ -139,10 +140,10 @@ function registerHeadlessDeviceQuantizePass(registry: RenderPassLibrary): void {
 		name: 'HeadlessDeviceQuantize',
 		stateOnly: true,
 		graph: { reads: ['frame_color'], writes: ['device_color'] },
-		shouldExecute: (view) => view.dither_type !== 0,
+		shouldExecute: (view) => view.deviceQuantizeMode !== DeviceQuantizeMode.None,
 		exec: () => {
 			const view = registry.view as GameView;
-			applyHeadlessDeviceQuantize(headlessCompositePixels, headlessFrameWidth, headlessFrameHeight, view.dither_type);
+			applyHeadlessDeviceQuantize(headlessCompositePixels, headlessFrameWidth, headlessFrameHeight, view.deviceQuantizeMode);
 		},
 	});
 }
