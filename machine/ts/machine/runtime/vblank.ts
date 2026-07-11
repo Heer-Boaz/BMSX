@@ -71,7 +71,6 @@ export class VblankState {
 		const runtime = this.runtime;
 		runtime.machine.inputController.cancelSampleArm();
 		runtime.machine.irqController.postLoad();
-		runtime.machine.vdp.resetStatus();
 		if (this.vblankStartCycle === 0) {
 			this.publishVblankTiming(true);
 		}
@@ -143,14 +142,12 @@ export class VblankState {
 		const runtime = this.runtime;
 		this.vblankActive = active;
 		const cyclesIntoFrame = this.getCyclesIntoFrame();
-		runtime.machine.vdp.setScanoutTiming(active, cyclesIntoFrame, runtime.timing.cycleBudgetPerFrame, this.vblankStartCycle);
 		runtime.machine.gxGpu.setScanoutTiming(active, cyclesIntoFrame, runtime.timing.cycleBudgetPerFrame, runtime.timing.totalScanlines);
 	}
 
 	private enterVblank(): void {
 		const runtime = this.runtime;
 		this.vblankSequence += 1;
-		runtime.machine.vdp.presentReadyFrameOnVblankEdge();
 		runtime.machine.gxGpu.presentReadyFrameOnVblankEdge();
 		runtime.machine.inputController.onVblankEdge(runtime.machineElapsedMs(), runtime.machine.scheduler.nowCycles);
 		this.publishVblankTiming(true);

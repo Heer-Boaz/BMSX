@@ -8,7 +8,7 @@
 #define BMSX_RENDER_TYPES_H
 
 #include "common/primitives.h"
-#include "machine/devices/vdp/contracts.h"
+#include "render/shared/layers.h"
 #include <cstddef>
 #include <limits>
 #include <string>

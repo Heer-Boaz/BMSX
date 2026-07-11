@@ -28,7 +28,7 @@ public:
 	bool render(MachineManager& manager, Runtime& runtime, bool heldPresent = false);
 
 private:
-	void recordTickCompletion(bool visualCommitted, bool vdpFrameHeld);
+	void recordTickCompletion(bool visualCommitted);
 	void recordPresentation(GameView::PresentationMode mode, bool commitFrame, bool paused);
 	void flushDebugReport(const Runtime& runtime);
 	void markPresentation(GameView::PresentationMode mode, bool commitFrame);
@@ -43,7 +43,6 @@ private:
 	u64 m_debugPresentTickCompleted = 0;
 	u64 m_debugPresentTickCommitted = 0;
 	u64 m_debugPresentTickDeferred = 0;
-	u64 m_debugPresentTickHeld = 0;
 	u64 m_debugPresentPartialPresents = 0;
 	u64 m_debugPresentCommitPresents = 0;
 	u64 m_debugPresentHoldPresents = 0;

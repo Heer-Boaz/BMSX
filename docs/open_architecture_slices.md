@@ -167,10 +167,9 @@ Richting:
 
 ## VDP/RPU uit actieve machine en presentatie verwijderen
 
-Status: de cart-zichtbare firmware-ABI en de WebGL, GLES2 en
-software/headless RPU-presentatie-executors zijn verwijderd. GX is daarmee de
-enige cart graphics route naar de host backends. De VDP-machine-owner is nog
-niet verwijderd.
+Status: afgerond. GX is de enige cart graphics route en bezit GPU-registers,
+commandbuffers, de vaste 1 MiB VRAM, scanout en save-state in beide runtimes.
+De oude VDP/RPU- en IMGDEC-devices zijn uit de machine verwijderd.
 
 Afgerond:
 
@@ -187,9 +186,7 @@ Afgerond:
   rect-pool; de oude `framebuffer_2d`-passes en `VdpFrameBufferTextures` zijn in
   TS en C++ verwijderd;
 - geen enkele host-presentatieroute consumeert nog VDP-, VOUT- of
-  framebuffer-output. De VDP blijft uitsluitend als residual machine-owner
-  bestaan totdat zijn memory-, timing-, register-, readback- en save-state-
-  afhankelijkheden zijn gemigreerd;
+  framebuffer-output;
 - de laatste actieve texture-aperturegebruiker is verwijderd: de ROM-producer
   encodeert nu voor alle direct16- en palette4-atlassen native GP0-uploadwords,
   waarna DMA de ROM-stream rechtstreeks aan GX GP0 levert. Runtime PNG-decode,
@@ -212,19 +209,22 @@ Texture-residency boundary resolved for the migrated carts:
   moet vaste VRAM-page/CLUT-slots bij de GPU-residencyowner toevoegen. Bouw zo'n
   generieke cache niet speculatief en maak geen nieuwe atlas-swapwrapper.
 
-Resterende volgorde:
+- de residual staging-, texture- en framebuffer-apertures, VDP scheduler- en
+  VBlank-hooks, registers, readback, save-state, tests en mirrored device trees
+  zijn verwijderd;
+- IMGDEC en zijn runtime decoder, DMA-imagepad en native `stb_image`-dependency
+  zijn verwijderd. De ROM-producent blijft de enige atlas-codecgrens;
+- MMIO, IRQ en scheduler service-id's zijn compact gemaakt. Er zijn geen
+  compatibility-gaten of lege devicefacades behouden;
+- DMA heeft één retained GP0/RAM-queue en één bandbreedtelatch; beëindigde work
+  lekt geen carry of budget naar een volgende transfer.
 
-1. Verwijder de nu uitsluitend residual VDP staging-, texture- en
-   framebuffer-apertures samen met hun RPU/readback-owner; maak geen GX-facade
-   voor bytes die de actieve GX-route niet gebruikt.
-2. Verwijder daarna VDP scheduler/VBlank-, register-, readback-, save-state- en
-   devicepaden plus tests die uitsluitend de afgewezen ABI beschermen.
-3. Bewaar eventueel nuttige fantasy-hardware-ideeën alleen als documentatie voor
-   latere GX-extensies; behoud daarvoor niet de oude ABI.
+Resterend graphicswerk staat bij de GX-pariteitsslices hierboven: met name
+GPUREAD/accelerated readback en live accelerated conformance zodra echte
+browser/GPU-runs weer beschikbaar zijn.
 
 Niet doen:
 
-- Niet verwijderen zolang de actieve presentatie er werkelijk nog van afhangt.
 - Geen compatibility shim, dual-write of verborgen fallback waarmee beide
   architecturen permanent actief blijven.
 

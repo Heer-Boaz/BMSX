@@ -5,10 +5,10 @@ require('globals')
 local story<const> = require('story')
 local start_node<const> = 'title'
 -- local start_node<const> = 'combat_wekker'
-local irq_mask_register<const>: *word = 0x0800010c
-local input_control_register<const>: *word = 0x08000194
-local irq_vblank<const> = 0x0010
-local irq_apu<const> = 0x0200
+local irq_mask_register<const>: *word = 0x08000010
+local input_control_register<const>: *word = 0x0800006c
+local irq_vblank<const> = 0x0004
+local irq_apu<const> = 0x0020
 local vblank_count = 0
 local gx_system_atlas_id<const> = 254
 
@@ -267,7 +267,6 @@ function init()
 	end)
 	*irq_mask_register = irq_vblank | irq_apu
 	gx_clear_color(0xff000000)
-	mem[0x08000008] = 2
 	combat_module.define_fsm()
 	build_director_fsm()
 	combat_module.register_director()

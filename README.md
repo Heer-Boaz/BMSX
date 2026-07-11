@@ -81,20 +81,14 @@ Current artifact names encode that split:
 
 ## Runtime Timing
 
-BMSX derives VBLANK length automatically from `machine.ufps`, CPU frequency, and visible render height. It does not use a cart manifest `vblank_cycles` override.
+BMSX takes video standard from the raw PSX GP1 display-mode word. Bit 3 selects
+PAL (50 Hz, 313 scanlines); a clear bit selects NTSC (60000/1001 Hz,
+262 scanlines). The machine model fixes the CPU at 50 MHz and scanout at
+320×240. Cart manifests do not own refresh rate, render size, or a
+`vblank_cycles` override.
 
-The runtime assumes 50 Hz class machines are PAL-like 313-scanline frames and faster refresh rates are NTSC-like 262-scanline frames. This replaces the old `renderHeight + 1` derivation, which made Pietious at 5 MHz/50 Hz/192 visible lines get only 544 VBLANK cycles. The scanline model gives 38659 VBLANK cycles for that same case.
-
-Keep `machine.ufps` as the display refresh rate, normally 50 or 60 Hz. Implement 25/30 Hz MSX/Konami-style game cadence in cart code by waiting for two VBLANK IRQs per game tick, not by lowering `machine.ufps`.
-
-The runtime uses a simplified CRT scanline model:
-
-- `machine.ufps <= 55 Hz` is PAL-like and uses 313 total scanlines.
-- `machine.ufps > 55 Hz` is NTSC-like and uses 262 total scanlines.
-- `machine.ufps` remains the display refresh rate, normally 50 or 60 Hz.
-- A 25 or 30 Hz game loop is implemented by cart code waiting for two VBLANK IRQs per game tick.
-
-The VBLANK calculation is:
+The runtime derives the frame and VBLANK cycle budgets from those hardware
+words:
 
 ```text
 cyclesPerFrame = cpuHz / refreshHz
@@ -102,18 +96,9 @@ visibleCycles = floor(cyclesPerFrame * renderHeight / totalScanlines)
 vblankCycles = cyclesPerFrame - visibleCycles
 ```
 
-The scanline model produces:
-
-```text
-cyclesPerFrame = 100000
-totalScanlines = 313
-visibleCycles = floor(100000 * 192 / 313) = 61341
-vblankCycles = 38659
-```
-
-This keeps the machine refresh at 50/60 Hz while giving carts enough VBLANK budget to use explicit MSX/Konami-style loops: arm input before waiting for VBLANK, update/draw according to the cart cadence, and submit VDP work inside the VBLANK window.
-
-The BIOS exposes `update_world()` and `draw_world()` as separate cart-facing phases. Carts own the hardware cadence: arm input before the VBLANK that samples it, run `update_world()` during visible-frame CPU time, reset the VDP stream and call `draw_world()` in the next VBLANK, then DMA-submit the stream. There is no cart-facing `update()` wrapper.
+Carts own lower game cadence by counting VBLANK IRQs. They program GX through
+GP0/GP1 and may DMA native GP0 streams directly from ROM/RAM; there is no VDP
+stream or manifest timing facade.
 
 ## Common Commands
 

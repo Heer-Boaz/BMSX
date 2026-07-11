@@ -29,18 +29,11 @@ struct MemoryInit {
 
 class Memory {
 public:
-	class VramWriter {
-	public:
-		virtual ~VramWriter() = default;
-		virtual void writeVram(uint32_t addr, const u8* data, size_t srcOffset, size_t length) = 0;
-		virtual void readVram(uint32_t addr, u8* out, size_t length) const = 0;
-	};
 	using IoReadHandler = Value (*)(void* context, uint32_t addr);
 	using IoWriteHandler = void (*)(void* context, uint32_t addr, Value value);
 
 	explicit Memory(const MemoryInit& init);
 
-	void setVramWriter(VramWriter* writer);
 	void mapIoRead(uint32_t addr, void* context, IoReadHandler handler);
 	template <auto Method, typename TObject>
 	void mapIoRead(uint32_t addr, TObject& object) {
@@ -111,7 +104,6 @@ private:
 	mutable std::vector<Value> m_ioSlots;
 	std::vector<IoReadBinding> m_ioReadHandlers;
 	std::vector<IoWriteBinding> m_ioWriteHandlers;
-	VramWriter* m_vramWriter = nullptr;
 	mutable uint32_t m_busFaultCode = BUS_FAULT_NONE;
 	mutable uint32_t m_busFaultAddr = 0;
 	mutable uint32_t m_busFaultAccess = 0;
@@ -145,8 +137,6 @@ private:
 	void onBusFaultAckWrite(uint32_t addr, Value value);
 	void raiseBusFault(uint32_t code, uint32_t addr, uint32_t access) const;
 	u8 readMainMemoryU8(uint32_t addr, uint32_t faultAccess) const;
-	void writeVramU16LE(uint32_t addr, uint32_t value);
-	void writeVramU32LE(uint32_t addr, uint32_t value);
 	void writeBusFaultSlots() const;
 };
 

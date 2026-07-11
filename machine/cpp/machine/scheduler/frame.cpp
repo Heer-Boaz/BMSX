@@ -62,8 +62,6 @@ void FrameSchedulerState::resetTickTelemetry() {
 	lastTickCpuUsedCycles = 0;
 	lastTickBudgetRemaining = 0;
 	lastTickVisualFrameCommitted = true;
-	lastTickVdpFrameCost = 0;
-	lastTickVdpFrameHeld = false;
 	lastTickSequence = 0;
 	lastTickConsumedSequence = 0;
 }
@@ -77,8 +75,6 @@ FrameSchedulerStateSnapshot FrameSchedulerState::captureState() const {
 	state.lastTickCpuUsedCycles = lastTickCpuUsedCycles;
 	state.lastTickBudgetRemaining = lastTickBudgetRemaining;
 	state.lastTickVisualFrameCommitted = lastTickVisualFrameCommitted;
-	state.lastTickVdpFrameCost = lastTickVdpFrameCost;
-	state.lastTickVdpFrameHeld = lastTickVdpFrameHeld;
 	state.lastTickCompleted = lastTickCompleted;
 	state.lastTickConsumedSequence = lastTickConsumedSequence;
 	state.queuedTickCompletions.reserve(m_tickCompletionCount);
@@ -96,8 +92,6 @@ void FrameSchedulerState::restoreState(const FrameSchedulerStateSnapshot& state)
 	lastTickCpuUsedCycles = state.lastTickCpuUsedCycles;
 	lastTickBudgetRemaining = state.lastTickBudgetRemaining;
 	lastTickVisualFrameCommitted = state.lastTickVisualFrameCommitted;
-	lastTickVdpFrameCost = state.lastTickVdpFrameCost;
-	lastTickVdpFrameHeld = state.lastTickVdpFrameHeld;
 	lastTickCompleted = state.lastTickCompleted;
 	lastTickConsumedSequence = state.lastTickConsumedSequence;
 	m_tickCompletionReadIndex = 0;
@@ -122,12 +116,9 @@ void FrameSchedulerState::enqueueTickCompletion(Runtime& runtime, FrameState& fr
 	const i64 sequence = lastTickSequence + 1;
 	const int remaining = frameState.cycleBudgetRemaining;
 	const int granted = frameState.cycleBudgetGranted;
-	const auto& vdp = runtime.machine.vdp;
 	slot.sequence = sequence;
 	slot.remaining = remaining;
-	slot.visualCommitted = vdp.lastFrameCommitted() || runtime.machine.gxGpu.lastFrameCommitted();
-	slot.vdpFrameCost = vdp.lastFrameCost();
-	slot.vdpFrameHeld = vdp.lastFrameHeld();
+	slot.visualCommitted = runtime.machine.gxGpu.lastFrameCommitted();
 	m_tickCompletionWriteIndex = (m_tickCompletionWriteIndex + 1) % TICK_COMPLETION_QUEUE_CAPACITY;
 	m_tickCompletionCount += 1;
 	lastTickBudgetGranted = granted;
@@ -135,8 +126,6 @@ void FrameSchedulerState::enqueueTickCompletion(Runtime& runtime, FrameState& fr
 	lastTickCpuUsedCycles = frameState.activeCpuUsedCycles;
 	lastTickBudgetRemaining = remaining;
 	lastTickVisualFrameCommitted = slot.visualCommitted;
-	lastTickVdpFrameCost = slot.vdpFrameCost;
-	lastTickVdpFrameHeld = slot.vdpFrameHeld;
 	lastTickCompleted = true;
 	lastTickSequence = sequence;
 }

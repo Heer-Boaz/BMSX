@@ -11,24 +11,14 @@ import {
 	BUS_FAULT_READ_ONLY,
 	BUS_FAULT_UNALIGNED_IO,
 	BUS_FAULT_UNMAPPED,
-	BUS_FAULT_VRAM_RANGE,
 	DMA_CTRL_START,
 	DMA_STATUS_DONE,
-	IMG_CTRL_START,
-	IMG_STATUS_DONE,
-	IMG_STATUS_ERROR,
 	IO_DMA_CTRL,
 	IO_DMA_DST,
 	IO_DMA_LEN,
 	IO_DMA_SRC,
 	IO_DMA_STATUS,
 	IO_DMA_WRITTEN,
-	IO_IMG_CAP,
-	IO_IMG_CTRL,
-	IO_IMG_DST,
-	IO_IMG_LEN,
-	IO_IMG_SRC,
-	IO_IMG_STATUS,
 	IO_INP_KEYS,
 	IO_INP_OUTPUT_STATUS,
 	IO_INP_PADS,
@@ -43,17 +33,14 @@ import {
 	IO_SYS_BUS_FAULT_ADDR,
 	IO_SYS_BUS_FAULT_CODE,
 	IRQ_DMA_DONE,
-	IRQ_IMG_ERROR,
 	IRQ_VBLANK,
 } from '../../machine/ts/machine/bus/io';
 import { transformFixed16 } from '../../machine/ts/machine/common/numeric';
 import { CPU } from '../../machine/ts/machine/cpu/cpu';
 import { DmaController } from '../../machine/ts/machine/devices/dma/controller';
-import { ImgDecController } from '../../machine/ts/machine/devices/imgdec/controller';
 import { IrqController } from '../../machine/ts/machine/devices/irq/controller';
-import { Memory, type VramWriteSink } from '../../machine/ts/machine/memory/memory';
-import { GEO_SCRATCH_BASE, PROGRAM_ROM_BASE, PROGRAM_ROM_SIZE, RAM_BASE, RAM_END, SYSTEM_ROM_BASE, VRAM_FRAMEBUFFER_BASE, VRAM_STAGING_BASE } from '../../machine/ts/machine/memory/map';
-import type { VDP } from '../../machine/ts/machine/devices/vdp/vdp';
+import { Memory } from '../../machine/ts/machine/memory/memory';
+import { GEO_SCRATCH_BASE, PROGRAM_ROM_BASE, PROGRAM_ROM_SIZE, RAM_BASE, RAM_END, SYSTEM_ROM_BASE } from '../../machine/ts/machine/memory/map';
 import type { Runtime } from '../../machine/ts/machine/runtime/runtime';
 import { VblankState } from '../../machine/ts/machine/runtime/vblank';
 import { cyclesUntilBudgetUnits } from '../../machine/ts/machine/scheduler/budget';
@@ -82,31 +69,14 @@ function clearBusFault(memory: Memory): void {
 	assert.equal(memory.readIoU32(IO_SYS_BUS_FAULT_CODE), BUS_FAULT_NONE);
 }
 
-function createImageDecoderFixture(): { memory: Memory; controller: ImgDecController } {
-	const memory = new Memory({ systemRom: new Uint8Array(), cartRom: new Uint8Array(0) });
-	const scheduler = new DeviceScheduler(new CPU(memory));
-	const irq = new IrqController(memory);
-	const controller = new ImgDecController(memory, {} as DmaController, {} as VDP, irq, scheduler);
-	controller.reset();
-	irq.reset();
-	return { memory, controller };
-}
-
 function createDmaFixture(): { memory: Memory; controller: DmaController } {
 	const memory = new Memory({ systemRom: new Uint8Array(), cartRom: new Uint8Array(0) });
 	const scheduler = new DeviceScheduler(new CPU(memory));
 	const irq = new IrqController(memory);
-	const vdp = {
-		acceptSubmitAttempt: () => { },
-		rejectSubmitAttempt: () => { },
-		beginDmaSubmit: () => { },
-		endDmaSubmit: () => { },
-		sealDmaTransfer: () => { },
-	} as unknown as VDP;
-	const controller = new DmaController(memory, irq, vdp, scheduler);
+	const controller = new DmaController(memory, irq, scheduler);
 	controller.reset();
 	irq.reset();
-	controller.setTiming(1, 64, 64, 0);
+	controller.setTiming(1, 64, 0);
 	return { memory, controller };
 }
 
@@ -152,66 +122,6 @@ test('core golden: program ROM window zero-fills consistently across memory path
 	assert.equal(memory.readIoU32(IO_SYS_BUS_FAULT_CODE), BUS_FAULT_NONE);
 });
 
-test('core golden: mapped memory hot paths keep boundary faults and contained VRAM transfers explicit', () => {
-	class RecordingVram implements VramWriteSink {
-		public readonly reads: Array<{ addr: number; length: number }> = [];
-		public readonly writes: Array<{ addr: number; bytes: number[] }> = [];
-
-		public writeVram(addr: number, bytes: Uint8Array, srcOffset = 0, length = bytes.byteLength - srcOffset): void {
-			const out: number[] = [];
-			for (let index = 0; index < length; index += 1) {
-				out.push(bytes[srcOffset + index]!);
-			}
-			this.writes.push({ addr, bytes: out });
-		}
-
-		public readVram(addr: number, out: Uint8Array): void {
-			this.reads.push({ addr, length: out.byteLength });
-			for (let index = 0; index < out.byteLength; index += 1) {
-				out[index] = index + 1;
-			}
-		}
-	}
-
-	const memory = new Memory({ systemRom: new Uint8Array([0x11, 0x22, 0x33, 0x44]), cartRom: new Uint8Array(0) });
-	const vram = new RecordingVram();
-	const readU32Access = BUS_FAULT_ACCESS_READ | BUS_FAULT_ACCESS_U32;
-	memory.setVramWriter(vram);
-
-	assert.equal(memory.readMappedU32LE(0xffff_fffc), 0);
-	assertBusFault(memory, BUS_FAULT_UNMAPPED, 0xffff_fffc, readU32Access);
-	clearBusFault(memory);
-	memory.writeMappedU32LE(0xffff_fffc, 0);
-	assertBusFault(memory, BUS_FAULT_UNMAPPED, 0xffff_fffc, BUS_FAULT_ACCESS_WRITE | BUS_FAULT_ACCESS_U32);
-	clearBusFault(memory);
-	assert.equal(memory.readMappedU32LE(RAM_END - 3), 0);
-	assertBusFault(memory, BUS_FAULT_UNMAPPED, RAM_END - 3, readU32Access);
-	clearBusFault(memory);
-	memory.writeMappedU16LE(RAM_END - 1, 0);
-	assertBusFault(memory, BUS_FAULT_UNMAPPED, RAM_END - 1, BUS_FAULT_ACCESS_WRITE | BUS_FAULT_ACCESS_U16);
-	clearBusFault(memory);
-
-	assert.equal(memory.readMappedU32LE(VRAM_STAGING_BASE - 1), 0);
-	assertBusFault(memory, BUS_FAULT_VRAM_RANGE, VRAM_STAGING_BASE - 1, BUS_FAULT_ACCESS_READ | BUS_FAULT_ACCESS_U32);
-	clearBusFault(memory);
-	memory.writeMappedU32LE(VRAM_STAGING_BASE - 1, 0xabcdef01);
-	assertBusFault(memory, BUS_FAULT_VRAM_RANGE, VRAM_STAGING_BASE - 1, BUS_FAULT_ACCESS_WRITE | BUS_FAULT_ACCESS_U32);
-	clearBusFault(memory);
-	memory.readMappedF64LE(VRAM_STAGING_BASE - 4);
-	assert.equal(memory.readIoU32(IO_SYS_BUS_FAULT_CODE), BUS_FAULT_NONE);
-	clearBusFault(memory);
-	memory.writeMappedF64LE(VRAM_STAGING_BASE - 4, 1);
-	assertBusFault(memory, BUS_FAULT_UNMAPPED, VRAM_STAGING_BASE - 4, BUS_FAULT_ACCESS_WRITE | BUS_FAULT_ACCESS_U32);
-	clearBusFault(memory);
-	assert.deepEqual(vram.reads, [{ addr: VRAM_STAGING_BASE, length: 4 }]);
-	assert.deepEqual(vram.writes, [{ addr: VRAM_STAGING_BASE, bytes: [0, 0, 0xf0, 0x3f] }]);
-
-	assert.equal(memory.readMappedU32LE(VRAM_STAGING_BASE), 0x04030201);
-	memory.writeMappedU32LE(VRAM_STAGING_BASE, 0x78563412);
-	assert.deepEqual(vram.reads, [{ addr: VRAM_STAGING_BASE, length: 4 }, { addr: VRAM_STAGING_BASE, length: 4 }]);
-	assert.deepEqual(vram.writes, [{ addr: VRAM_STAGING_BASE, bytes: [0, 0, 0xf0, 0x3f] }, { addr: VRAM_STAGING_BASE, bytes: [0x12, 0x34, 0x56, 0x78] }]);
-});
-
 test('core golden: raw memory byte paths latch bus faults instead of throwing', () => {
 	const memory = new Memory({ systemRom: new Uint8Array([0x11, 0x22, 0x33, 0x44]), cartRom: new Uint8Array(0) });
 	assert.equal(memory.readU8(0xffff_ffff), 0);
@@ -243,47 +153,6 @@ test('core golden: DMA source bus faults latch on the memory bus while DMA progr
 	assertBusFault(memory, BUS_FAULT_UNMAPPED, RAM_END - 1, BUS_FAULT_ACCESS_READ | BUS_FAULT_ACCESS_U8);
 });
 
-test('core golden: image decoder register faults complete as device status', () => {
-	for (const [dst, cap] of [[0xffff_0000, 4], [VRAM_FRAMEBUFFER_BASE, 0]]) {
-		const { memory, controller } = createImageDecoderFixture();
-		memory.writeValue(IO_IMG_SRC, RAM_BASE);
-		memory.writeValue(IO_IMG_LEN, 0);
-		memory.writeValue(IO_IMG_DST, dst);
-		memory.writeValue(IO_IMG_CAP, cap);
-		memory.writeIoValue(IO_IMG_CTRL, IMG_CTRL_START);
-			assert.doesNotThrow(() => controller.onCtrlWrite(0));
-			assert.equal(memory.readIoU32(IO_IMG_STATUS), IMG_STATUS_DONE | IMG_STATUS_ERROR);
-			assert.notEqual(memory.readIoU32(IO_IRQ_FLAGS) & IRQ_IMG_ERROR, 0);
-		}
-
-});
-
-test('core golden: queued image decoder faults reject and drain', async () => {
-	const { controller } = createImageDecoderFixture();
-	let invalidDstRejected = false;
-	let invalidCapRejected = false;
-	const invalidDst = controller.decodeToVram({ bytes: new Uint8Array(), dst: 0xffff_0000, cap: 4 }).then(
-		() => assert.fail('queued invalid destination should reject'),
-		() => {
-			invalidDstRejected = true;
-		},
-	);
-	const invalidCap = controller.decodeToVram({ bytes: new Uint8Array(), dst: VRAM_FRAMEBUFFER_BASE, cap: 0 }).then(
-		() => assert.fail('queued invalid capacity should reject'),
-		() => {
-			invalidCapRejected = true;
-		},
-	);
-	controller.onService(0);
-	await invalidDst;
-	await Promise.resolve();
-	assert.equal(invalidDstRejected, true);
-	assert.equal(invalidCapRejected, false);
-	controller.onService(0);
-	await invalidCap;
-	assert.equal(invalidCapRejected, true);
-});
-
 test('core golden: budget and fixed16 datapaths match native integer semantics', () => {
 	assert.equal(cyclesUntilBudgetUnits(60, 7, 0, 1), 9);
 	assert.equal(cyclesUntilBudgetUnits(60, 7, 59, 1), 1);
@@ -295,7 +164,6 @@ test('core golden: budget and fixed16 datapaths match native integer semantics',
 test('core golden: runtime VBlank end publishes scanout at the new frame origin', () => {
 	const memory = new Memory({ systemRom: new Uint8Array(), cartRom: new Uint8Array(0) });
 	const scheduler = new DeviceScheduler(new CPU(memory));
-	const scanoutCalls: Array<{ active: boolean; cyclesIntoFrame: number }> = [];
 	const gxScanoutCalls: Array<{ active: boolean; cyclesIntoFrame: number; cyclesPerFrame: number; totalScanlines: number }> = [];
 	const inputSampleEdges: Array<{ currentTimeMs: number; nowCycles: number }> = [];
 	let raisedIrq = 0;
@@ -305,11 +173,8 @@ test('core golden: runtime VBlank end publishes scanout at the new frame origin'
 			cpuHz: 5000,
 			cycleBudgetPerFrame: 100,
 			totalScanlines: 10,
-			dmaBytesPerSecIso: 0,
-			dmaBytesPerSecBulk: 0,
-			imgDecBytesPerSec: 0,
+			dmaBytesPerSec: 0,
 			geoWorkUnitsPerSec: 0,
-			vdpWorkUnitsPerSec: 0,
 		},
 		machine: {
 			scheduler,
@@ -323,13 +188,6 @@ test('core golden: runtime VBlank end publishes scanout at the new frame origin'
 				postLoad() { },
 				raise(irq: number) {
 					raisedIrq = irq;
-				},
-			},
-			vdp: {
-				resetStatus() { },
-				presentReadyFrameOnVblankEdge() { },
-				setScanoutTiming(active: boolean, cyclesIntoFrame: number) {
-					scanoutCalls.push({ active, cyclesIntoFrame });
 				},
 			},
 			gxGpu: {
@@ -357,23 +215,18 @@ test('core golden: runtime VBlank end publishes scanout at the new frame origin'
 	assert.equal(raisedIrq, IRQ_VBLANK);
 	assert.equal(gxPresentCount, 1);
 	assert.deepEqual(inputSampleEdges[0], { currentTimeMs: 16, nowCycles: 80 });
-	assert.deepEqual(scanoutCalls[0], { active: true, cyclesIntoFrame: 80 });
 	assert.deepEqual(gxScanoutCalls[0], { active: true, cyclesIntoFrame: 80, cyclesPerFrame: 100, totalScanlines: 10 });
 
 	scheduler.setNowCycles(100);
 	vblank.handleEndTimer();
-	assert.deepEqual(scanoutCalls[1], { active: false, cyclesIntoFrame: 0 });
 	assert.deepEqual(gxScanoutCalls[1], { active: false, cyclesIntoFrame: 0, cyclesPerFrame: 100, totalScanlines: 10 });
 
-	scanoutCalls.length = 0;
 	gxScanoutCalls.length = 0;
 	scheduler.setNowCycles(0);
 	vblank.setVblankCycles(100);
-	assert.deepEqual(scanoutCalls[0], { active: true, cyclesIntoFrame: 0 });
 	assert.deepEqual(gxScanoutCalls[0], { active: true, cyclesIntoFrame: 0, cyclesPerFrame: 100, totalScanlines: 10 });
 	scheduler.setNowCycles(100);
 	vblank.handleEndTimer();
-	assert.deepEqual(scanoutCalls[1], { active: true, cyclesIntoFrame: 0 });
 	assert.deepEqual(gxScanoutCalls[1], { active: true, cyclesIntoFrame: 0, cyclesPerFrame: 100, totalScanlines: 10 });
 });
 

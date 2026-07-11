@@ -4,8 +4,6 @@ export type TickCompletion = {
 	sequence: number;
 	remaining: number;
 	visualCommitted: boolean;
-	vdpFrameCost: number;
-	vdpFrameHeld: boolean;
 };
 
 export type FrameSchedulerStateSnapshot = {
@@ -17,8 +15,6 @@ export type FrameSchedulerStateSnapshot = {
 	lastTickCpuUsedCycles: number;
 	lastTickBudgetRemaining: number;
 	lastTickVisualFrameCommitted: boolean;
-	lastTickVdpFrameCost: number;
-	lastTickVdpFrameHeld: boolean;
 	lastTickCompleted: boolean;
 	lastTickConsumedSequence: number;
 };
@@ -38,8 +34,6 @@ function createTickCompletionQueue(): TickCompletion[] {
 			sequence: 0,
 			remaining: 0,
 			visualCommitted: true,
-			vdpFrameCost: 0,
-			vdpFrameHeld: false,
 		};
 	}
 	return queue;
@@ -52,8 +46,6 @@ export class FrameSchedulerState {
 	public lastTickCpuUsedCycles = 0;
 	public lastTickBudgetRemaining = 0;
 	public lastTickVisualFrameCommitted = true;
-	public lastTickVdpFrameCost = 0;
-	public lastTickVdpFrameHeld = false;
 	public lastTickCompleted = false;
 	public lastTickConsumedSequence = 0;
 	private accumulatedHostTimeMs = 0;
@@ -123,8 +115,6 @@ export class FrameSchedulerState {
 		this.lastTickCpuUsedCycles = 0;
 		this.lastTickBudgetRemaining = 0;
 		this.lastTickVisualFrameCommitted = true;
-		this.lastTickVdpFrameCost = 0;
-		this.lastTickVdpFrameHeld = false;
 		this.lastTickSequence = 0;
 		this.lastTickConsumedSequence = 0;
 	}
@@ -137,8 +127,6 @@ export class FrameSchedulerState {
 				sequence: slot.sequence,
 				remaining: slot.remaining,
 				visualCommitted: slot.visualCommitted,
-				vdpFrameCost: slot.vdpFrameCost,
-				vdpFrameHeld: slot.vdpFrameHeld,
 			};
 		}
 		return {
@@ -150,8 +138,6 @@ export class FrameSchedulerState {
 			lastTickCpuUsedCycles: this.lastTickCpuUsedCycles,
 			lastTickBudgetRemaining: this.lastTickBudgetRemaining,
 			lastTickVisualFrameCommitted: this.lastTickVisualFrameCommitted,
-			lastTickVdpFrameCost: this.lastTickVdpFrameCost,
-			lastTickVdpFrameHeld: this.lastTickVdpFrameHeld,
 			lastTickCompleted: this.lastTickCompleted,
 			lastTickConsumedSequence: this.lastTickConsumedSequence,
 		};
@@ -165,8 +151,6 @@ export class FrameSchedulerState {
 		this.lastTickCpuUsedCycles = state.lastTickCpuUsedCycles;
 		this.lastTickBudgetRemaining = state.lastTickBudgetRemaining;
 		this.lastTickVisualFrameCommitted = state.lastTickVisualFrameCommitted;
-		this.lastTickVdpFrameCost = state.lastTickVdpFrameCost;
-		this.lastTickVdpFrameHeld = state.lastTickVdpFrameHeld;
 		this.lastTickCompleted = state.lastTickCompleted;
 		this.lastTickConsumedSequence = state.lastTickConsumedSequence;
 		this.tickCompletionReadIndex = 0;
@@ -179,15 +163,11 @@ export class FrameSchedulerState {
 				slot.sequence = queued.sequence;
 				slot.remaining = queued.remaining;
 				slot.visualCommitted = queued.visualCommitted;
-				slot.vdpFrameCost = queued.vdpFrameCost;
-				slot.vdpFrameHeld = queued.vdpFrameHeld;
 				continue;
 			}
 			slot.sequence = 0;
 			slot.remaining = 0;
 			slot.visualCommitted = true;
-			slot.vdpFrameCost = 0;
-			slot.vdpFrameHeld = false;
 		}
 	}
 
@@ -210,8 +190,6 @@ export class FrameSchedulerState {
 		out.sequence = slot.sequence;
 		out.remaining = slot.remaining;
 		out.visualCommitted = slot.visualCommitted;
-		out.vdpFrameCost = slot.vdpFrameCost;
-		out.vdpFrameHeld = slot.vdpFrameHeld;
 		this.tickCompletionReadIndex = (this.tickCompletionReadIndex + 1) % TICK_COMPLETION_QUEUE_CAPACITY;
 		this.tickCompletionCount -= 1;
 		this.lastTickConsumedSequence = out.sequence;
@@ -233,12 +211,9 @@ export class FrameSchedulerState {
 		const granted = frameState.cycleBudgetGranted;
 		const cpuUsed = frameState.activeCpuUsedCycles;
 		const runtime = this.runtime;
-		const vdp = runtime.machine.vdp;
 		slot.sequence = sequence;
 		slot.remaining = remaining;
-		slot.visualCommitted = vdp.lastFrameCommitted() || runtime.machine.gxGpu.lastFrameCommitted();
-		slot.vdpFrameCost = vdp.lastFrameCost();
-		slot.vdpFrameHeld = vdp.lastFrameHeld();
+		slot.visualCommitted = runtime.machine.gxGpu.lastFrameCommitted();
 		this.tickCompletionWriteIndex = (this.tickCompletionWriteIndex + 1) % TICK_COMPLETION_QUEUE_CAPACITY;
 		this.tickCompletionCount += 1;
 		this.lastTickBudgetGranted = granted;
@@ -246,8 +221,6 @@ export class FrameSchedulerState {
 		this.lastTickCpuUsedCycles = cpuUsed;
 		this.lastTickBudgetRemaining = remaining;
 		this.lastTickVisualFrameCommitted = slot.visualCommitted;
-		this.lastTickVdpFrameCost = slot.vdpFrameCost;
-		this.lastTickVdpFrameHeld = slot.vdpFrameHeld;
 		this.lastTickCompleted = true;
 		this.lastTickSequence = sequence;
 	}

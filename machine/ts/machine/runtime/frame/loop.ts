@@ -58,7 +58,6 @@ export class FrameLoopState {
 		state.cycleBudgetGranted = budget;
 		state.cycleCarryGranted = 0;
 		state.activeCpuUsedCycles = 0;
-		runtime.machine.vdp.beginFrame();
 		runtime.vblank.beginTick();
 		this.frameActive = true;
 		return state;

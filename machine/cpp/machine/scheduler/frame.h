@@ -13,8 +13,6 @@ struct TickCompletion {
 	i64 sequence = 0;
 	int remaining = 0;
 	bool visualCommitted = true;
-	int vdpFrameCost = 0;
-	bool vdpFrameHeld = false;
 };
 
 struct FrameSchedulerStateSnapshot {
@@ -26,8 +24,6 @@ struct FrameSchedulerStateSnapshot {
 	int lastTickCpuUsedCycles = 0;
 	int lastTickBudgetRemaining = 0;
 	bool lastTickVisualFrameCommitted = true;
-	int lastTickVdpFrameCost = 0;
-	bool lastTickVdpFrameHeld = false;
 	bool lastTickCompleted = false;
 	i64 lastTickConsumedSequence = 0;
 };
@@ -54,8 +50,6 @@ public:
 	int lastTickCpuUsedCycles = 0;
 	int lastTickBudgetRemaining = 0;
 	bool lastTickVisualFrameCommitted = true;
-	int lastTickVdpFrameCost = 0;
-	bool lastTickVdpFrameHeld = false;
 	bool lastTickCompleted = false;
 	i64 lastTickConsumedSequence = 0;
 

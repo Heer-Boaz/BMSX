@@ -144,7 +144,7 @@ local resolve_binding<const> = function(player, source_index, button, state)
 	if source_index == source_keyboard then
 		local usage<const> = keys[button]
 		if usage then
-			state.level_addr = 0x0800019c + ((usage >> 5) << 2)
+			state.level_addr = 0x08000074 + ((usage >> 5) << 2)
 			state.level_mask = 1 << (usage & 31)
 		end
 		return
@@ -152,7 +152,7 @@ local resolve_binding<const> = function(player, source_index, button, state)
 	if source_index == source_gamepad then
 		local bit<const> = gamepad_bits[button]
 		if bit then
-			local pad_base<const> = 0x080001cc + (player.index - 1) * 0x0000001c
+			local pad_base<const> = 0x080000a4 + (player.index - 1) * 0x0000001c
 			state.level_addr = pad_base + 0x00000000
 			state.level_mask = 1 << bit
 			if button == 'ls' then
@@ -171,15 +171,15 @@ local resolve_binding<const> = function(player, source_index, button, state)
 	end
 	local bit<const> = pointer_bits[button]
 	if bit then
-		state.level_addr = 0x080001bc
+		state.level_addr = 0x08000094
 		state.level_mask = 1 << bit
 	elseif button == 'pointer_position' then
-		state.value_x_addr = 0x080001c0
-		state.value_y_addr = 0x080001c4
+		state.value_x_addr = 0x08000098
+		state.value_y_addr = 0x0800009c
 	elseif button == 'pointer_delta' then
 		state.is_pointer_delta = true
 	elseif button == 'pointer_wheel' then
-		state.value_addr = 0x080001c8
+		state.value_addr = 0x080000a0
 		state.pressed_from_value = true
 	end
 end
@@ -407,8 +407,8 @@ local sample_value_button<const> = function(player, state)
 		state.value_y_q16 = mem[state.value_y_addr]
 	end
 	if state.is_pointer_delta then
-		local x<const> = mem[0x080001c0]
-		local y<const> = mem[0x080001c4]
+		local x<const> = mem[0x08000098]
+		local y<const> = mem[0x0800009c]
 		state.value_x_q16 = x - state.prev_x_q16
 		state.value_y_q16 = y - state.prev_y_q16
 		state.prev_x_q16 = x

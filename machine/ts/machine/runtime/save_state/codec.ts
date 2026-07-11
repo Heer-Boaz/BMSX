@@ -3,6 +3,7 @@ import type { MachineSaveState } from '../../save_state';
 import type { BuiltinFunctionId, CpuFrameState, CpuObjectState, CpuRootValueState, CpuRuntimeState, CpuValueState } from '../../cpu/cpu';
 import type { IrqControllerState } from '../../devices/irq/save_state';
 import type { AudioControllerState } from '../../devices/audio/save_state';
+import { DMA_JOB_QUEUE_CAPACITY, type DmaControllerState, type DmaJobState } from '../../devices/dma/controller';
 import type {
 	ApuBadpDecoderSaveState,
 	ApuBiquadFilterState,
@@ -25,37 +26,8 @@ import type { GxGteState } from '../../devices/gx/gte';
 import { GX_GTE_CONTROL_REGISTER_COUNT, GX_GTE_DATA_REGISTER_COUNT } from '../../devices/gx/gte';
 import type { GeometryJobState } from '../../devices/geometry/job';
 import type { GeometryControllerState } from '../../devices/geometry/save_state';
-import type { VdpSaveState, VdpState } from '../../devices/vdp/save_state';
-import type { VdpSurfacePixelsState, VdpVramState } from '../../devices/vdp/vram';
-import type { VdpStreamIngressState } from '../../devices/vdp/ingress';
-import type { VdpReadbackState } from '../../devices/vdp/readback';
-import { VDP_JTU_REGISTER_WORDS, VDP_MFU_WEIGHT_COUNT } from '../../devices/vdp/contracts';
-import { VDP_LPU_REGISTER_WORDS } from '../../devices/vdp/lpu';
-import {
-	VDP_DEX_FRAME_DIRECT_OPEN,
-	VDP_DEX_FRAME_IDLE,
-	VDP_DEX_FRAME_STREAM_OPEN,
-	VDP_SUBMITTED_FRAME_EMPTY,
-	VDP_SUBMITTED_FRAME_EXECUTING,
-	VDP_SUBMITTED_FRAME_QUEUED,
-	VDP_SUBMITTED_FRAME_READY,
-	type VdpBuildingFrameSaveState,
-	type VdpSubmittedFrameSaveState,
-} from '../../devices/vdp/frame';
-import { VDP_REGISTER_COUNT } from '../../devices/vdp/registers';
-import {
-	VDP_RPU_DRAW_CAPACITY,
-	VDP_RPU_PASS_CAPACITY,
-	VDP_RPU_STREAM_BINDING_CAPACITY,
-	VDP_RPU_CONSTANT_BINDING_CAPACITY,
-	VDP_RPU_TEXTURE_BINDING_CAPACITY,
-	type VdpRpuCommandBufferSaveState,
-	type VdpRpuFrameSaveState,
-	type VdpRpuSaveState,
-} from '../../devices/vdp/rpu';
-import { VDP_XF_MATRIX_REGISTER_WORDS, type VdpXfState } from '../../devices/vdp/xf';
 import type { MemorySaveState } from '../../memory/memory';
-import { RAM_BASE, RAM_END, VDP_STREAM_CAPACITY_WORDS } from '../../memory/map';
+import { RAM_BASE, RAM_END } from '../../memory/map';
 import type { FrameSchedulerStateSnapshot, TickCompletion } from '../../scheduler/frame';
 import type { RuntimeSaveMachineState } from '../save_machine_state';
 import type { RuntimeSaveState } from '../save_state';
@@ -206,8 +178,6 @@ function encodeTickCompletion(state: TickCompletion): TickCompletion {
 		sequence: state.sequence,
 		remaining: state.remaining,
 		visualCommitted: state.visualCommitted,
-		vdpFrameCost: state.vdpFrameCost,
-		vdpFrameHeld: state.vdpFrameHeld,
 	};
 }
 
@@ -217,8 +187,6 @@ function decodeTickCompletion(value: unknown, label: string): TickCompletion {
 		sequence: requireObjectKey(object, 'sequence', label, 'tickCompletion.sequence') as number,
 		remaining: requireObjectKey(object, 'remaining', label, 'tickCompletion.remaining') as number,
 		visualCommitted: requireObjectKey(object, 'visualCommitted', label, 'tickCompletion.visualCommitted') as boolean,
-		vdpFrameCost: requireObjectKey(object, 'vdpFrameCost', label, 'tickCompletion.vdpFrameCost') as number,
-		vdpFrameHeld: requireObjectKey(object, 'vdpFrameHeld', label, 'tickCompletion.vdpFrameHeld') as boolean,
 	};
 }
 
@@ -232,8 +200,6 @@ function encodeFrameSchedulerState(state: FrameSchedulerStateSnapshot): FrameSch
 		lastTickCpuUsedCycles: state.lastTickCpuUsedCycles,
 		lastTickBudgetRemaining: state.lastTickBudgetRemaining,
 		lastTickVisualFrameCommitted: state.lastTickVisualFrameCommitted,
-		lastTickVdpFrameCost: state.lastTickVdpFrameCost,
-		lastTickVdpFrameHeld: state.lastTickVdpFrameHeld,
 		lastTickCompleted: state.lastTickCompleted,
 		lastTickConsumedSequence: state.lastTickConsumedSequence,
 	};
@@ -254,8 +220,6 @@ function decodeFrameSchedulerState(value: unknown, label: string): FrameSchedule
 		lastTickCpuUsedCycles: requireObjectKey(object, 'lastTickCpuUsedCycles', label, 'frameScheduler.lastTickCpuUsedCycles') as number,
 		lastTickBudgetRemaining: requireObjectKey(object, 'lastTickBudgetRemaining', label, 'frameScheduler.lastTickBudgetRemaining') as number,
 		lastTickVisualFrameCommitted: requireObjectKey(object, 'lastTickVisualFrameCommitted', label, 'frameScheduler.lastTickVisualFrameCommitted') as boolean,
-		lastTickVdpFrameCost: requireObjectKey(object, 'lastTickVdpFrameCost', label, 'frameScheduler.lastTickVdpFrameCost') as number,
-		lastTickVdpFrameHeld: requireObjectKey(object, 'lastTickVdpFrameHeld', label, 'frameScheduler.lastTickVdpFrameHeld') as boolean,
 		lastTickCompleted: requireObjectKey(object, 'lastTickCompleted', label, 'frameScheduler.lastTickCompleted') as boolean,
 		lastTickConsumedSequence: requireObjectKey(object, 'lastTickConsumedSequence', label, 'frameScheduler.lastTickConsumedSequence') as number,
 	};
@@ -634,351 +598,6 @@ function decodeGxGteState(value: unknown, label: string): GxGteState {
 	};
 }
 
-function encodeVdpXfState(state: VdpXfState): VdpXfState {
-	return {
-		matrixWords: state.matrixWords,
-		viewMatrixIndex: state.viewMatrixIndex,
-		projectionMatrixIndex: state.projectionMatrixIndex,
-	};
-}
-
-function decodeVdpXfState(value: unknown, label: string): VdpXfState {
-	const object = requireObject(value, label);
-	return {
-		matrixWords: decodeU32FixedArray(requireObjectKey(object, 'matrixWords', label, `${label}.matrixWords`), `${label}.matrixWords`, VDP_XF_MATRIX_REGISTER_WORDS),
-		viewMatrixIndex: requireBoundedU32(requireObjectKey(object, 'viewMatrixIndex', label, `${label}.viewMatrixIndex`), `${label}.viewMatrixIndex`, 0, 0xffffffff),
-		projectionMatrixIndex: requireBoundedU32(requireObjectKey(object, 'projectionMatrixIndex', label, `${label}.projectionMatrixIndex`), `${label}.projectionMatrixIndex`, 0, 0xffffffff),
-	};
-}
-
-function decodeBoundedWordVector(value: unknown, label: string, capacity: number, maxValue: number): number[] {
-	const entries = decodeVector(value, label, (entry) => requireBoundedU32(entry, `${label}[]`, 0, maxValue));
-	if (entries.length > capacity) {
-		throw new Error(`${label} exceeds capacity ${capacity}.`);
-	}
-	return entries;
-}
-
-function requireVectorCount<T>(values: T[], label: string, count: number): T[] {
-	if (values.length !== count) {
-		throw new Error(`${label} must contain ${count} entries.`);
-	}
-	return values;
-}
-
-function encodeVdpRpuCommandBufferState(state: VdpRpuCommandBufferSaveState): VdpRpuCommandBufferSaveState {
-	return {
-		passCount: state.passCount,
-		drawCount: state.drawCount,
-		streamBindingCount: state.streamBindingCount,
-		constantBindingCount: state.constantBindingCount,
-		textureBindingCount: state.textureBindingCount,
-		passFirstDraw: state.passFirstDraw,
-		passDrawCount: state.passDrawCount,
-		passColorSurfaceDescAddr: state.passColorSurfaceDescAddr,
-		passDepthSurfaceDescAddr: state.passDepthSurfaceDescAddr,
-		passViewportXY: state.passViewportXY,
-		passViewportWH: state.passViewportWH,
-		passOps: state.passOps,
-		passClearColor: state.passClearColor,
-		passClearDepthWord: state.passClearDepthWord,
-		drawShaderVariant: state.drawShaderVariant,
-		drawPrimitive: state.drawPrimitive,
-		drawPipelineWord: state.drawPipelineWord,
-		drawVertexCount: state.drawVertexCount,
-		drawInstanceCount: state.drawInstanceCount,
-		drawIndexVramAddr: state.drawIndexVramAddr,
-		drawIndexCount: state.drawIndexCount,
-		drawIndexType: state.drawIndexType,
-		drawFirstStreamBinding: state.drawFirstStreamBinding,
-		drawStreamBindingCount: state.drawStreamBindingCount,
-		drawFirstConstantBinding: state.drawFirstConstantBinding,
-		drawConstantBindingCount: state.drawConstantBindingCount,
-		drawFirstTextureBinding: state.drawFirstTextureBinding,
-		drawTextureBindingCount: state.drawTextureBindingCount,
-		streamLayoutId: state.streamLayoutId,
-		streamSlot: state.streamSlot,
-		streamVramAddr: state.streamVramAddr,
-		streamByteLength: state.streamByteLength,
-		streamStepRate: state.streamStepRate,
-		constantBindingSlot: state.constantBindingSlot,
-		constantVramAddr: state.constantVramAddr,
-		constantByteLength: state.constantByteLength,
-		textureSlot: state.textureSlot,
-		textureSurfaceDescAddr: state.textureSurfaceDescAddr,
-	};
-}
-
-function decodeVdpRpuCommandBufferState(value: unknown, label: string): VdpRpuCommandBufferSaveState {
-	const object = requireObject(value, label);
-	const passCount = requireBoundedU32(requireObjectKey(object, 'passCount', label, `${label}.passCount`), `${label}.passCount`, 0, VDP_RPU_PASS_CAPACITY);
-	const drawCount = requireBoundedU32(requireObjectKey(object, 'drawCount', label, `${label}.drawCount`), `${label}.drawCount`, 0, VDP_RPU_DRAW_CAPACITY);
-	const streamBindingCount = requireBoundedU32(requireObjectKey(object, 'streamBindingCount', label, `${label}.streamBindingCount`), `${label}.streamBindingCount`, 0, VDP_RPU_STREAM_BINDING_CAPACITY);
-	const constantBindingCount = requireBoundedU32(requireObjectKey(object, 'constantBindingCount', label, `${label}.constantBindingCount`), `${label}.constantBindingCount`, 0, VDP_RPU_CONSTANT_BINDING_CAPACITY);
-	const textureBindingCount = requireBoundedU32(requireObjectKey(object, 'textureBindingCount', label, `${label}.textureBindingCount`), `${label}.textureBindingCount`, 0, VDP_RPU_TEXTURE_BINDING_CAPACITY);
-	return {
-		passCount,
-		drawCount,
-		streamBindingCount,
-		constantBindingCount,
-		textureBindingCount,
-		passFirstDraw: requireVectorCount(decodeBoundedWordVector(requireObjectKey(object, 'passFirstDraw', label, `${label}.passFirstDraw`), `${label}.passFirstDraw`, VDP_RPU_PASS_CAPACITY, 0xffffffff), `${label}.passFirstDraw`, passCount),
-		passDrawCount: requireVectorCount(decodeBoundedWordVector(requireObjectKey(object, 'passDrawCount', label, `${label}.passDrawCount`), `${label}.passDrawCount`, VDP_RPU_PASS_CAPACITY, 0xffff), `${label}.passDrawCount`, passCount),
-		passColorSurfaceDescAddr: requireVectorCount(decodeBoundedWordVector(requireObjectKey(object, 'passColorSurfaceDescAddr', label, `${label}.passColorSurfaceDescAddr`), `${label}.passColorSurfaceDescAddr`, VDP_RPU_PASS_CAPACITY, 0xffffffff), `${label}.passColorSurfaceDescAddr`, passCount),
-		passDepthSurfaceDescAddr: requireVectorCount(decodeBoundedWordVector(requireObjectKey(object, 'passDepthSurfaceDescAddr', label, `${label}.passDepthSurfaceDescAddr`), `${label}.passDepthSurfaceDescAddr`, VDP_RPU_PASS_CAPACITY, 0xffffffff), `${label}.passDepthSurfaceDescAddr`, passCount),
-		passViewportXY: requireVectorCount(decodeBoundedWordVector(requireObjectKey(object, 'passViewportXY', label, `${label}.passViewportXY`), `${label}.passViewportXY`, VDP_RPU_PASS_CAPACITY, 0xffffffff), `${label}.passViewportXY`, passCount),
-		passViewportWH: requireVectorCount(decodeBoundedWordVector(requireObjectKey(object, 'passViewportWH', label, `${label}.passViewportWH`), `${label}.passViewportWH`, VDP_RPU_PASS_CAPACITY, 0xffffffff), `${label}.passViewportWH`, passCount),
-		passOps: requireVectorCount(decodeBoundedWordVector(requireObjectKey(object, 'passOps', label, `${label}.passOps`), `${label}.passOps`, VDP_RPU_PASS_CAPACITY, 0xffffffff), `${label}.passOps`, passCount),
-		passClearColor: requireVectorCount(decodeBoundedWordVector(requireObjectKey(object, 'passClearColor', label, `${label}.passClearColor`), `${label}.passClearColor`, VDP_RPU_PASS_CAPACITY, 0xffffffff), `${label}.passClearColor`, passCount),
-		passClearDepthWord: requireVectorCount(decodeBoundedWordVector(requireObjectKey(object, 'passClearDepthWord', label, `${label}.passClearDepthWord`), `${label}.passClearDepthWord`, VDP_RPU_PASS_CAPACITY, 0xffffffff), `${label}.passClearDepthWord`, passCount),
-		drawShaderVariant: requireVectorCount(decodeBoundedWordVector(requireObjectKey(object, 'drawShaderVariant', label, `${label}.drawShaderVariant`), `${label}.drawShaderVariant`, VDP_RPU_DRAW_CAPACITY, 0xffff), `${label}.drawShaderVariant`, drawCount),
-		drawPrimitive: requireVectorCount(decodeBoundedWordVector(requireObjectKey(object, 'drawPrimitive', label, `${label}.drawPrimitive`), `${label}.drawPrimitive`, VDP_RPU_DRAW_CAPACITY, 0xff), `${label}.drawPrimitive`, drawCount),
-		drawPipelineWord: requireVectorCount(decodeBoundedWordVector(requireObjectKey(object, 'drawPipelineWord', label, `${label}.drawPipelineWord`), `${label}.drawPipelineWord`, VDP_RPU_DRAW_CAPACITY, 0xffffffff), `${label}.drawPipelineWord`, drawCount),
-		drawVertexCount: requireVectorCount(decodeBoundedWordVector(requireObjectKey(object, 'drawVertexCount', label, `${label}.drawVertexCount`), `${label}.drawVertexCount`, VDP_RPU_DRAW_CAPACITY, 0xffffffff), `${label}.drawVertexCount`, drawCount),
-		drawInstanceCount: requireVectorCount(decodeBoundedWordVector(requireObjectKey(object, 'drawInstanceCount', label, `${label}.drawInstanceCount`), `${label}.drawInstanceCount`, VDP_RPU_DRAW_CAPACITY, 0xffffffff), `${label}.drawInstanceCount`, drawCount),
-		drawIndexVramAddr: requireVectorCount(decodeBoundedWordVector(requireObjectKey(object, 'drawIndexVramAddr', label, `${label}.drawIndexVramAddr`), `${label}.drawIndexVramAddr`, VDP_RPU_DRAW_CAPACITY, 0xffffffff), `${label}.drawIndexVramAddr`, drawCount),
-		drawIndexCount: requireVectorCount(decodeBoundedWordVector(requireObjectKey(object, 'drawIndexCount', label, `${label}.drawIndexCount`), `${label}.drawIndexCount`, VDP_RPU_DRAW_CAPACITY, 0xffffffff), `${label}.drawIndexCount`, drawCount),
-		drawIndexType: requireVectorCount(decodeBoundedWordVector(requireObjectKey(object, 'drawIndexType', label, `${label}.drawIndexType`), `${label}.drawIndexType`, VDP_RPU_DRAW_CAPACITY, 0xff), `${label}.drawIndexType`, drawCount),
-		drawFirstStreamBinding: requireVectorCount(decodeBoundedWordVector(requireObjectKey(object, 'drawFirstStreamBinding', label, `${label}.drawFirstStreamBinding`), `${label}.drawFirstStreamBinding`, VDP_RPU_DRAW_CAPACITY, 0xffffffff), `${label}.drawFirstStreamBinding`, drawCount),
-		drawStreamBindingCount: requireVectorCount(decodeBoundedWordVector(requireObjectKey(object, 'drawStreamBindingCount', label, `${label}.drawStreamBindingCount`), `${label}.drawStreamBindingCount`, VDP_RPU_DRAW_CAPACITY, 0xff), `${label}.drawStreamBindingCount`, drawCount),
-		drawFirstConstantBinding: requireVectorCount(decodeBoundedWordVector(requireObjectKey(object, 'drawFirstConstantBinding', label, `${label}.drawFirstConstantBinding`), `${label}.drawFirstConstantBinding`, VDP_RPU_DRAW_CAPACITY, 0xffffffff), `${label}.drawFirstConstantBinding`, drawCount),
-		drawConstantBindingCount: requireVectorCount(decodeBoundedWordVector(requireObjectKey(object, 'drawConstantBindingCount', label, `${label}.drawConstantBindingCount`), `${label}.drawConstantBindingCount`, VDP_RPU_DRAW_CAPACITY, 0xff), `${label}.drawConstantBindingCount`, drawCount),
-		drawFirstTextureBinding: requireVectorCount(decodeBoundedWordVector(requireObjectKey(object, 'drawFirstTextureBinding', label, `${label}.drawFirstTextureBinding`), `${label}.drawFirstTextureBinding`, VDP_RPU_DRAW_CAPACITY, 0xffffffff), `${label}.drawFirstTextureBinding`, drawCount),
-		drawTextureBindingCount: requireVectorCount(decodeBoundedWordVector(requireObjectKey(object, 'drawTextureBindingCount', label, `${label}.drawTextureBindingCount`), `${label}.drawTextureBindingCount`, VDP_RPU_DRAW_CAPACITY, 0xff), `${label}.drawTextureBindingCount`, drawCount),
-		streamLayoutId: requireVectorCount(decodeBoundedWordVector(requireObjectKey(object, 'streamLayoutId', label, `${label}.streamLayoutId`), `${label}.streamLayoutId`, VDP_RPU_STREAM_BINDING_CAPACITY, 0xffff), `${label}.streamLayoutId`, streamBindingCount),
-		streamSlot: requireVectorCount(decodeBoundedWordVector(requireObjectKey(object, 'streamSlot', label, `${label}.streamSlot`), `${label}.streamSlot`, VDP_RPU_STREAM_BINDING_CAPACITY, 0xff), `${label}.streamSlot`, streamBindingCount),
-		streamVramAddr: requireVectorCount(decodeBoundedWordVector(requireObjectKey(object, 'streamVramAddr', label, `${label}.streamVramAddr`), `${label}.streamVramAddr`, VDP_RPU_STREAM_BINDING_CAPACITY, 0xffffffff), `${label}.streamVramAddr`, streamBindingCount),
-		streamByteLength: requireVectorCount(decodeBoundedWordVector(requireObjectKey(object, 'streamByteLength', label, `${label}.streamByteLength`), `${label}.streamByteLength`, VDP_RPU_STREAM_BINDING_CAPACITY, 0xffffffff), `${label}.streamByteLength`, streamBindingCount),
-		streamStepRate: requireVectorCount(decodeBoundedWordVector(requireObjectKey(object, 'streamStepRate', label, `${label}.streamStepRate`), `${label}.streamStepRate`, VDP_RPU_STREAM_BINDING_CAPACITY, 0xff), `${label}.streamStepRate`, streamBindingCount),
-		constantBindingSlot: requireVectorCount(decodeBoundedWordVector(requireObjectKey(object, 'constantBindingSlot', label, `${label}.constantBindingSlot`), `${label}.constantBindingSlot`, VDP_RPU_CONSTANT_BINDING_CAPACITY, 0xff), `${label}.constantBindingSlot`, constantBindingCount),
-		constantVramAddr: requireVectorCount(decodeBoundedWordVector(requireObjectKey(object, 'constantVramAddr', label, `${label}.constantVramAddr`), `${label}.constantVramAddr`, VDP_RPU_CONSTANT_BINDING_CAPACITY, 0xffffffff), `${label}.constantVramAddr`, constantBindingCount),
-		constantByteLength: requireVectorCount(decodeBoundedWordVector(requireObjectKey(object, 'constantByteLength', label, `${label}.constantByteLength`), `${label}.constantByteLength`, VDP_RPU_CONSTANT_BINDING_CAPACITY, 0xffffffff), `${label}.constantByteLength`, constantBindingCount),
-		textureSlot: requireVectorCount(decodeBoundedWordVector(requireObjectKey(object, 'textureSlot', label, `${label}.textureSlot`), `${label}.textureSlot`, VDP_RPU_TEXTURE_BINDING_CAPACITY, 0xff), `${label}.textureSlot`, textureBindingCount),
-		textureSurfaceDescAddr: requireVectorCount(decodeBoundedWordVector(requireObjectKey(object, 'textureSurfaceDescAddr', label, `${label}.textureSurfaceDescAddr`), `${label}.textureSurfaceDescAddr`, VDP_RPU_TEXTURE_BINDING_CAPACITY, 0xffffffff), `${label}.textureSurfaceDescAddr`, textureBindingCount),
-	};
-}
-
-function encodeVdpRpuFrameState(state: VdpRpuFrameSaveState): VdpRpuFrameSaveState {
-	return {
-		commands: encodeVdpRpuCommandBufferState(state.commands),
-	};
-}
-
-function decodeVdpRpuFrameState(value: unknown, label: string): VdpRpuFrameSaveState {
-	const object = requireObject(value, label);
-	return {
-		commands: decodeVdpRpuCommandBufferState(requireObjectKey(object, 'commands', label, `${label}.commands`), `${label}.commands`),
-	};
-}
-
-function encodeVdpRpuState(state: VdpRpuSaveState): VdpRpuSaveState {
-	return {
-		buildState: state.buildState,
-	};
-}
-
-function decodeVdpRpuState(value: unknown, label: string): VdpRpuSaveState {
-	const object = requireObject(value, label);
-	return {
-		buildState: requireBoundedU32(requireObjectKey(object, 'buildState', label, `${label}.buildState`), `${label}.buildState`, 0, 3) as VdpRpuSaveState['buildState'],
-	};
-}
-
-function encodeBuildingFrameState(state: VdpBuildingFrameSaveState): VdpBuildingFrameSaveState {
-	return {
-		state: state.state,
-		rpu: encodeVdpRpuFrameState(state.rpu),
-		cost: state.cost,
-	};
-}
-
-function decodeBuildingFrameState(value: unknown, label: string): VdpBuildingFrameSaveState {
-	const object = requireObject(value, label);
-	return {
-		state: requireBoundedU32(requireObjectKey(object, 'state', label, `${label}.state`), `${label}.state`, VDP_DEX_FRAME_IDLE, VDP_DEX_FRAME_STREAM_OPEN) as typeof VDP_DEX_FRAME_IDLE | typeof VDP_DEX_FRAME_DIRECT_OPEN | typeof VDP_DEX_FRAME_STREAM_OPEN,
-		rpu: decodeVdpRpuFrameState(requireObjectKey(object, 'rpu', label, `${label}.rpu`), `${label}.rpu`),
-		cost: requireI32(requireObjectKey(object, 'cost', label, `${label}.cost`), `${label}.cost`),
-	};
-}
-
-function encodeSubmittedFrameState(state: VdpSubmittedFrameSaveState): VdpSubmittedFrameSaveState {
-	return {
-		state: state.state,
-		hasCommands: state.hasCommands,
-		cost: state.cost,
-		workRemaining: state.workRemaining,
-		ditherType: state.ditherType,
-		frameBufferWidth: state.frameBufferWidth,
-		frameBufferHeight: state.frameBufferHeight,
-		xf: state.xf,
-		lightRegisterWords: state.lightRegisterWords,
-		morphWeightWords: state.morphWeightWords,
-		jointMatrixWords: state.jointMatrixWords,
-		rpu: encodeVdpRpuFrameState(state.rpu),
-	};
-}
-
-function decodeSubmittedFrameState(value: unknown, label: string): VdpSubmittedFrameSaveState {
-	const object = requireObject(value, label);
-	return {
-		state: requireBoundedU32(requireObjectKey(object, 'state', label, `${label}.state`), `${label}.state`, VDP_SUBMITTED_FRAME_EMPTY, VDP_SUBMITTED_FRAME_READY) as typeof VDP_SUBMITTED_FRAME_EMPTY | typeof VDP_SUBMITTED_FRAME_QUEUED | typeof VDP_SUBMITTED_FRAME_EXECUTING | typeof VDP_SUBMITTED_FRAME_READY,
-		hasCommands: requireBooleanValue(requireObjectKey(object, 'hasCommands', label, `${label}.hasCommands`), `${label}.hasCommands`),
-		cost: requireI32(requireObjectKey(object, 'cost', label, `${label}.cost`), `${label}.cost`),
-		workRemaining: requireI32(requireObjectKey(object, 'workRemaining', label, `${label}.workRemaining`), `${label}.workRemaining`),
-		ditherType: requireI32(requireObjectKey(object, 'ditherType', label, `${label}.ditherType`), `${label}.ditherType`),
-		frameBufferWidth: requireBoundedU32(requireObjectKey(object, 'frameBufferWidth', label, `${label}.frameBufferWidth`), `${label}.frameBufferWidth`, 0, 0xffffffff),
-		frameBufferHeight: requireBoundedU32(requireObjectKey(object, 'frameBufferHeight', label, `${label}.frameBufferHeight`), `${label}.frameBufferHeight`, 0, 0xffffffff),
-		xf: decodeVdpXfState(requireObjectKey(object, 'xf', label, `${label}.xf`), `${label}.xf`),
-		lightRegisterWords: decodeU32FixedArray(requireObjectKey(object, 'lightRegisterWords', label, `${label}.lightRegisterWords`), `${label}.lightRegisterWords`, VDP_LPU_REGISTER_WORDS),
-		morphWeightWords: decodeU32FixedArray(requireObjectKey(object, 'morphWeightWords', label, `${label}.morphWeightWords`), `${label}.morphWeightWords`, VDP_MFU_WEIGHT_COUNT),
-		jointMatrixWords: decodeU32FixedArray(requireObjectKey(object, 'jointMatrixWords', label, `${label}.jointMatrixWords`), `${label}.jointMatrixWords`, VDP_JTU_REGISTER_WORDS),
-		rpu: decodeVdpRpuFrameState(requireObjectKey(object, 'rpu', label, `${label}.rpu`), `${label}.rpu`),
-	};
-}
-
-function encodeVdpStreamIngressState(state: VdpStreamIngressState): VdpStreamIngressState {
-	return {
-		dmaSubmitActive: state.dmaSubmitActive,
-		fifoWordScratch: state.fifoWordScratch,
-		fifoWordByteCount: state.fifoWordByteCount,
-		fifoStreamWords: state.fifoStreamWords,
-		fifoStreamWordCount: state.fifoStreamWordCount,
-	};
-}
-
-function decodeVdpStreamIngressState(value: unknown, label: string): VdpStreamIngressState {
-	const object = requireObject(value, label);
-	const fifoStreamWords = decodeVector(
-		requireObjectKey(object, 'fifoStreamWords', label, `${label}.fifoStreamWords`),
-		`${label}.fifoStreamWords`,
-		(entry) => requireBoundedU32(entry, `${label}.fifoStreamWords[]`, 0, 0xffffffff),
-	);
-	const fifoStreamWordCount = requireBoundedU32(requireObjectKey(object, 'fifoStreamWordCount', label, `${label}.fifoStreamWordCount`), `${label}.fifoStreamWordCount`, 0, 0xffffffff);
-	if (fifoStreamWords.length !== fifoStreamWordCount || fifoStreamWordCount > VDP_STREAM_CAPACITY_WORDS) {
-		throw new Error('machine.vdp.streamIngress state is inconsistent.');
-	}
-	return {
-		dmaSubmitActive: requireBooleanValue(requireObjectKey(object, 'dmaSubmitActive', label, `${label}.dmaSubmitActive`), `${label}.dmaSubmitActive`),
-		fifoWordScratch: decodeU8FixedArray(requireObjectKey(object, 'fifoWordScratch', label, `${label}.fifoWordScratch`), `${label}.fifoWordScratch`, 4),
-		fifoWordByteCount: requireBoundedU32(requireObjectKey(object, 'fifoWordByteCount', label, `${label}.fifoWordByteCount`), `${label}.fifoWordByteCount`, 0, 3),
-		fifoStreamWords,
-		fifoStreamWordCount,
-	};
-}
-
-function encodeVdpReadbackState(state: VdpReadbackState): VdpReadbackState {
-	return {
-		readBudgetBytes: state.readBudgetBytes,
-		readOverflow: state.readOverflow,
-	};
-}
-
-function decodeVdpReadbackState(value: unknown, label: string): VdpReadbackState {
-	const object = requireObject(value, label);
-	return {
-		readBudgetBytes: requireBoundedU32(requireObjectKey(object, 'readBudgetBytes', label, `${label}.readBudgetBytes`), `${label}.readBudgetBytes`, 0, 0xffffffff),
-		readOverflow: requireBooleanValue(requireObjectKey(object, 'readOverflow', label, `${label}.readOverflow`), `${label}.readOverflow`),
-	};
-}
-
-function encodeVdpState(state: VdpState): VdpState {
-	return {
-		xf: encodeVdpXfState(state.xf),
-		vdpRegisterWords: state.vdpRegisterWords,
-		buildFrame: encodeBuildingFrameState(state.buildFrame),
-		activeFrame: encodeSubmittedFrameState(state.activeFrame),
-		pendingFrame: encodeSubmittedFrameState(state.pendingFrame),
-		rpu: encodeVdpRpuState(state.rpu),
-		vram: encodeVdpVramState(state.vram),
-		workCarry: state.workCarry,
-		availableWorkUnits: state.availableWorkUnits,
-		streamIngress: encodeVdpStreamIngressState(state.streamIngress),
-		readback: encodeVdpReadbackState(state.readback),
-		lightRegisterWords: state.lightRegisterWords,
-		morphWeightWords: state.morphWeightWords,
-		jointMatrixWords: state.jointMatrixWords,
-		ditherType: state.ditherType,
-		vdpFaultCode: state.vdpFaultCode,
-		vdpFaultDetail: state.vdpFaultDetail,
-	};
-}
-
-function decodeVdpState(value: unknown, label: string): VdpState {
-	const object = requireObject(value, label);
-	return {
-		xf: decodeVdpXfState(requireObjectKey(object, 'xf', label, 'machine.vdp.xf'), 'machine.vdp.xf'),
-		vdpRegisterWords: decodeU32FixedArray(requireObjectKey(object, 'vdpRegisterWords', label, 'machine.vdp.vdpRegisterWords'), 'machine.vdp.vdpRegisterWords', VDP_REGISTER_COUNT),
-		buildFrame: decodeBuildingFrameState(requireObjectKey(object, 'buildFrame', label, 'machine.vdp.buildFrame'), 'machine.vdp.buildFrame'),
-		activeFrame: decodeSubmittedFrameState(requireObjectKey(object, 'activeFrame', label, 'machine.vdp.activeFrame'), 'machine.vdp.activeFrame'),
-		pendingFrame: decodeSubmittedFrameState(requireObjectKey(object, 'pendingFrame', label, 'machine.vdp.pendingFrame'), 'machine.vdp.pendingFrame'),
-		rpu: decodeVdpRpuState(requireObjectKey(object, 'rpu', label, 'machine.vdp.rpu'), 'machine.vdp.rpu'),
-		vram: decodeVdpVramState(requireObjectKey(object, 'vram', label, 'machine.vdp.vram'), 'machine.vdp.vram'),
-		workCarry: requireI64(requireObjectKey(object, 'workCarry', label, 'machine.vdp.workCarry'), 'machine.vdp.workCarry'),
-		availableWorkUnits: requireI32(requireObjectKey(object, 'availableWorkUnits', label, 'machine.vdp.availableWorkUnits'), 'machine.vdp.availableWorkUnits'),
-		streamIngress: decodeVdpStreamIngressState(requireObjectKey(object, 'streamIngress', label, 'machine.vdp.streamIngress'), 'machine.vdp.streamIngress'),
-		readback: decodeVdpReadbackState(requireObjectKey(object, 'readback', label, 'machine.vdp.readback'), 'machine.vdp.readback'),
-		lightRegisterWords: decodeU32FixedArray(requireObjectKey(object, 'lightRegisterWords', label, 'machine.vdp.lightRegisterWords'), 'machine.vdp.lightRegisterWords', VDP_LPU_REGISTER_WORDS),
-		morphWeightWords: decodeU32FixedArray(requireObjectKey(object, 'morphWeightWords', label, 'machine.vdp.morphWeightWords'), 'machine.vdp.morphWeightWords', VDP_MFU_WEIGHT_COUNT),
-		jointMatrixWords: decodeU32FixedArray(requireObjectKey(object, 'jointMatrixWords', label, 'machine.vdp.jointMatrixWords'), 'machine.vdp.jointMatrixWords', VDP_JTU_REGISTER_WORDS),
-		ditherType: requireI32(requireObjectKey(object, 'ditherType', label, 'machine.vdp.ditherType'), 'machine.vdp.ditherType'),
-		vdpFaultCode: requireBoundedU32(requireObjectKey(object, 'vdpFaultCode', label, 'machine.vdp.vdpFaultCode'), 'machine.vdp.vdpFaultCode', 0, 0xffffffff),
-		vdpFaultDetail: requireBoundedU32(requireObjectKey(object, 'vdpFaultDetail', label, 'machine.vdp.vdpFaultDetail'), 'machine.vdp.vdpFaultDetail', 0, 0xffffffff),
-	};
-}
-
-function encodeVdpSurfacePixelsState(state: VdpSurfacePixelsState): VdpSurfacePixelsState {
-	return {
-		surfaceId: state.surfaceId,
-		surfaceWidth: state.surfaceWidth,
-		surfaceHeight: state.surfaceHeight,
-		pixels: state.pixels,
-	};
-}
-
-function decodeVdpSurfacePixelsState(value: unknown, label: string): VdpSurfacePixelsState {
-	const object = requireObject(value, label);
-	return {
-		surfaceId: requireObjectKey(object, 'surfaceId', label, 'machine.vdp.vram.surfacePixels.surfaceId') as number,
-		surfaceWidth: requireObjectKey(object, 'surfaceWidth', label, 'machine.vdp.vram.surfacePixels.surfaceWidth') as number,
-		surfaceHeight: requireObjectKey(object, 'surfaceHeight', label, 'machine.vdp.vram.surfacePixels.surfaceHeight') as number,
-		pixels: requireBinaryValue(requireObjectKey(object, 'pixels', label, 'machine.vdp.vram.surfacePixels.pixels'), 'machine.vdp.vram.surfacePixels.pixels'),
-	};
-}
-
-function encodeVdpVramState(state: VdpVramState): VdpVramState {
-	return {
-		rpuVram: state.rpuVram,
-		surfacePixels: encodeVector(state.surfacePixels, encodeVdpSurfacePixelsState),
-	};
-}
-
-function decodeVdpVramState(value: unknown, label: string): VdpVramState {
-	const object = requireObject(value, label);
-	return {
-		rpuVram: requireBinaryValue(requireObjectKey(object, 'rpuVram', label, 'machine.vdp.vram.rpuVram'), 'machine.vdp.vram.rpuVram'),
-		surfacePixels: decodeVector(
-			requireObjectKey(object, 'surfacePixels', label, 'machine.vdp.vram.surfacePixels'),
-			'machine.vdp.vram.surfacePixels',
-			(entry) => decodeVdpSurfacePixelsState(entry, 'machine.vdp.vram.surfacePixels[]'),
-		),
-	};
-}
-
-function encodeVdpSaveState(state: VdpSaveState): VdpSaveState {
-	return {
-		...encodeVdpState(state),
-		displayFrameBufferPixels: state.displayFrameBufferPixels,
-	};
-}
-
-function decodeVdpSaveState(value: unknown, label: string): VdpSaveState {
-	const object = requireObject(value, label);
-	return {
-		...decodeVdpState(value, label),
-		displayFrameBufferPixels: requireBinaryValue(requireObjectKey(object, 'displayFrameBufferPixels', label, 'machine.vdp.displayFrameBufferPixels'), 'machine.vdp.displayFrameBufferPixels'),
-	};
-}
-
 function encodeApuBiquadFilterState(state: ApuBiquadFilterState): ApuBiquadFilterState {
 	return {
 		enabled: state.enabled,
@@ -1159,9 +778,72 @@ function decodeAudioControllerState(value: unknown, label: string): AudioControl
 	};
 }
 
+function encodeDmaJobState(state: DmaJobState): DmaJobState {
+	return {
+		src: state.src,
+		dst: state.dst,
+		remaining: state.remaining,
+		written: state.written,
+		clipped: state.clipped,
+	};
+}
+
+function decodeDmaJobState(value: unknown, label: string): DmaJobState {
+	const object = requireObject(value, label);
+	return {
+		src: requireBoundedU32(requireObjectKey(object, 'src', label, `${label}.src`), `${label}.src`, 0, 0xffffffff),
+		dst: requireBoundedU32(requireObjectKey(object, 'dst', label, `${label}.dst`), `${label}.dst`, 0, 0xffffffff),
+		remaining: requireBoundedU32(requireObjectKey(object, 'remaining', label, `${label}.remaining`), `${label}.remaining`, 0, 0xffffffff),
+		written: requireBoundedU32(requireObjectKey(object, 'written', label, `${label}.written`), `${label}.written`, 0, 0xffffffff),
+		clipped: requireBooleanValue(requireObjectKey(object, 'clipped', label, `${label}.clipped`), `${label}.clipped`),
+	};
+}
+
+function encodeDmaControllerState(state: DmaControllerState): DmaControllerState {
+	return {
+		queue: encodeVector(state.queue, encodeDmaJobState),
+		budget: state.budget,
+		carry: state.carry,
+		writtenValue: state.writtenValue,
+		writtenDirty: state.writtenDirty,
+		sourceRegisterWord: state.sourceRegisterWord,
+		destinationRegisterWord: state.destinationRegisterWord,
+		lengthRegisterWord: state.lengthRegisterWord,
+		controlRegisterWord: state.controlRegisterWord,
+		statusRegisterWord: state.statusRegisterWord,
+		writtenRegisterWord: state.writtenRegisterWord,
+	};
+}
+
+function decodeDmaControllerState(value: unknown, label: string): DmaControllerState {
+	const object = requireObject(value, label);
+	const queueEntries = requireArray(requireObjectKey(object, 'queue', label, `${label}.queue`), `${label}.queue`);
+	if (queueEntries.length > DMA_JOB_QUEUE_CAPACITY) {
+		throw new Error(`${label}.queue exceeds the ${DMA_JOB_QUEUE_CAPACITY}-job DMA FIFO capacity.`);
+	}
+	const queue = new Array<DmaJobState>(queueEntries.length);
+	for (let index = 0; index < queueEntries.length; index += 1) {
+		queue[index] = decodeDmaJobState(queueEntries[index], `${label}.queue[${index}]`);
+	}
+	return {
+		queue,
+		budget: requireI64(requireObjectKey(object, 'budget', label, `${label}.budget`), `${label}.budget`),
+		carry: requireI64(requireObjectKey(object, 'carry', label, `${label}.carry`), `${label}.carry`),
+		writtenValue: requireBoundedU32(requireObjectKey(object, 'writtenValue', label, `${label}.writtenValue`), `${label}.writtenValue`, 0, 0xffffffff),
+		writtenDirty: requireBooleanValue(requireObjectKey(object, 'writtenDirty', label, `${label}.writtenDirty`), `${label}.writtenDirty`),
+		sourceRegisterWord: requireBoundedU32(requireObjectKey(object, 'sourceRegisterWord', label, `${label}.sourceRegisterWord`), `${label}.sourceRegisterWord`, 0, 0xffffffff),
+		destinationRegisterWord: requireBoundedU32(requireObjectKey(object, 'destinationRegisterWord', label, `${label}.destinationRegisterWord`), `${label}.destinationRegisterWord`, 0, 0xffffffff),
+		lengthRegisterWord: requireBoundedU32(requireObjectKey(object, 'lengthRegisterWord', label, `${label}.lengthRegisterWord`), `${label}.lengthRegisterWord`, 0, 0xffffffff),
+		controlRegisterWord: requireBoundedU32(requireObjectKey(object, 'controlRegisterWord', label, `${label}.controlRegisterWord`), `${label}.controlRegisterWord`, 0, 0xffffffff),
+		statusRegisterWord: requireBoundedU32(requireObjectKey(object, 'statusRegisterWord', label, `${label}.statusRegisterWord`), `${label}.statusRegisterWord`, 0, 0xffffffff),
+		writtenRegisterWord: requireBoundedU32(requireObjectKey(object, 'writtenRegisterWord', label, `${label}.writtenRegisterWord`), `${label}.writtenRegisterWord`, 0, 0xffffffff),
+	};
+}
+
 function encodeMachineSaveState(state: MachineSaveState): MachineSaveState {
 	return {
 		memory: encodeMemorySaveState(state.memory),
+		dma: encodeDmaControllerState(state.dma),
 		geometry: encodeGeometryControllerState(state.geometry),
 		gxGpu: encodeGxGpuSaveState(state.gxGpu),
 		gxGte: encodeGxGteState(state.gxGte),
@@ -1169,7 +851,6 @@ function encodeMachineSaveState(state: MachineSaveState): MachineSaveState {
 		audio: encodeAudioControllerState(state.audio),
 		stringPool: encodeStringPoolState(state.stringPool),
 		input: encodeInputControllerState(state.input),
-		vdp: encodeVdpSaveState(state.vdp),
 	};
 }
 
@@ -1177,6 +858,7 @@ function decodeMachineSaveState(value: unknown, label: string): MachineSaveState
 	const object = requireObject(value, label);
 	return {
 		memory: decodeMemorySaveState(requireObjectKey(object, 'memory', label, 'machineState.machine.memory'), 'machineState.machine.memory'),
+		dma: decodeDmaControllerState(requireObjectKey(object, 'dma', label, 'machineState.machine.dma'), 'machineState.machine.dma'),
 		geometry: decodeGeometryControllerState(requireObjectKey(object, 'geometry', label, 'machineState.machine.geometry'), 'machineState.machine.geometry'),
 		gxGpu: decodeGxGpuSaveState(requireObjectKey(object, 'gxGpu', label, 'machineState.machine.gxGpu'), 'machineState.machine.gxGpu'),
 		gxGte: decodeGxGteState(requireObjectKey(object, 'gxGte', label, 'machineState.machine.gxGte'), 'machineState.machine.gxGte'),
@@ -1184,7 +866,6 @@ function decodeMachineSaveState(value: unknown, label: string): MachineSaveState
 		audio: decodeAudioControllerState(requireObjectKey(object, 'audio', label, 'machineState.machine.audio'), 'machineState.machine.audio'),
 		stringPool: decodeStringPoolState(requireObjectKey(object, 'stringPool', label, 'machineState.machine.stringPool'), 'machineState.machine.stringPool'),
 		input: decodeInputControllerState(requireObjectKey(object, 'input', label, 'machineState.machine.input'), 'machineState.machine.input'),
-		vdp: decodeVdpSaveState(requireObjectKey(object, 'vdp', label, 'machineState.machine.vdp'), 'machineState.machine.vdp'),
 	};
 }
 

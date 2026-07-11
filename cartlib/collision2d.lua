@@ -3,10 +3,10 @@
 
 local collision2d<const> = {}
 
-local irq_flags_addr<const> = 0x08000108
-local irq_ack_addr<const> = 0x08000108
-local irq_geo_done<const> = 0x0080
-local irq_geo_error<const> = 0x0100
+local irq_flags_addr<const> = 0x08000008
+local irq_ack_addr<const> = 0x0800000c
+local irq_geo_done<const> = 0x0008
+local irq_geo_error<const> = 0x0010
 
 local geo_overlap_candidate_param0<const> = 0x00000001 | 0x00000000 | 0x00000000 | 0x00000000
 local geo_overlap_full_pass_param0<const> = 0x00000002 | 0x00000004 | 0x00000000 | 0x00000000
@@ -78,11 +78,11 @@ struct geo_param_registers
 end
 
 bss geo_batch_token: word
-local geo_fault_register<const>: *word = 0x08000190
+local geo_fault_register<const>: *word = 0x08000068
 local irq_flags_register<const>: *word = irq_flags_addr
 local irq_ack_register<const>: *word = irq_ack_addr
-local geo_cmd_register<const>: *word = 0x0800016c
-local geo_status_register<const>: *word = 0x08000174
+local geo_cmd_register<const>: *word = 0x08000044
+local geo_status_register<const>: *word = 0x0800004c
 local direct_query_contact<const> = {
 	normal = { x = 0, y = 0 },
 	depth = 0,
@@ -240,8 +240,8 @@ local decode_overlap_results<const> = function(colliders, collider_count, result
 end
 
 local submit_geo_overlap_candidate_batch<const> = function(instance_base, pair_base, result_base, summary_base, instance_count, pair_count)
-	local src<const>: *geo_src_registers = 0x08000154
-	local param<const>: *geo_param_registers = 0x08000178
+	local src<const>: *geo_src_registers = 0x0800002c
+	local param<const>: *geo_param_registers = 0x08000050
 	src->instance_base = instance_base
 	src->pair_base = pair_base
 	src->reserved = 0
@@ -258,8 +258,8 @@ local submit_geo_overlap_candidate_batch<const> = function(instance_base, pair_b
 end
 
 local submit_geo_overlap_full_pass<const> = function(instance_base, result_base, summary_base, instance_count, result_capacity)
-	local src<const>: *geo_src_registers = 0x08000154
-	local param<const>: *geo_param_registers = 0x08000178
+	local src<const>: *geo_src_registers = 0x0800002c
+	local param<const>: *geo_param_registers = 0x08000050
 	src->instance_base = instance_base
 	src->pair_base = 0
 	src->reserved = 0

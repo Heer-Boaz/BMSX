@@ -3,7 +3,6 @@
 #include "machine/cpu/cpu.h"
 #include "machine/devices/dma/controller.h"
 #include "machine/devices/geometry/controller.h"
-#include "machine/devices/imgdec/controller.h"
 #include "machine/devices/input/controller.h"
 #include "machine/devices/audio/controller.h"
 #include "machine/devices/irq/controller.h"
@@ -24,7 +23,6 @@
 #include "machine/runtime/host_fault.h"
 #include "machine/runtime/input.h"
 #include "machine/scheduler/frame.h"
-#include "machine/devices/vdp/vdp.h"
 #include "machine/memory/map.h"
 #include "common/primitives.h"
 #include <cstddef>
@@ -41,7 +39,6 @@ namespace bmsx {
 // Forward declarations
 struct ProgramImage;
 struct LinkedBootProgramImage;
-class MicrotaskQueue;
 
 /**
  * Runtime owns the live machine and full runtime save-state boundaries.
@@ -60,8 +57,7 @@ public:
 
 	Runtime(
 		const RuntimeOptions& options,
-		RuntimeInputSource& input,
-		MicrotaskQueue& microtasks
+		RuntimeInputSource& input
 	);
 	~Runtime();
 
@@ -127,8 +123,6 @@ public:
 			? frameLoop.frameState.cycleBudgetGranted
 			: (frameScheduler.lastTickSequence == 0 ? timing.cycleBudgetPerFrame : frameScheduler.lastTickCpuBudgetGranted);
 	}
-	auto vdpUsageWorkUnitsLast() const -> int { return machine.vdp.lastFrameCost(); }
-	auto vdpUsageFrameHeld() const -> bool { return machine.vdp.lastFrameHeld(); }
 	auto isDrawPending() const -> bool { return m_runtimeFailed || m_pendingCall == PendingCall::Entry; }
 	TimingState timing;
 	FrameSchedulerState frameScheduler;

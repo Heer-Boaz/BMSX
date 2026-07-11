@@ -1,6 +1,5 @@
 #pragma once
 
-#include <cstddef>
 #include <cstdint>
 
 namespace bmsx {
@@ -31,17 +30,10 @@ constexpr uint32_t CART_PROGRAM_VECTOR_ADDR = PROGRAM_ROM_BASE + CART_PROGRAM_VE
 constexpr uint32_t IO_REGION_SIZE = 0x00040000u; // 256 KB
 
 constexpr uint32_t DEFAULT_GEO_SCRATCH_SIZE = 0x00080000u; // 512 KB
-constexpr uint32_t DEFAULT_VRAM_FRAMEBUFFER_SIZE = 256u * 212u * 4u;
-constexpr uint32_t VDP_CMD_ARG_COUNT = 19u;
-constexpr uint32_t VDP_STREAM_CAPACITY_WORDS = 16384u;
-constexpr uint32_t VDP_STREAM_BUFFER_SIZE = VDP_STREAM_CAPACITY_WORDS * IO_WORD_SIZE;
 constexpr uint32_t MIN_RAM_SIZE = IO_REGION_SIZE
-	+ DEFAULT_GEO_SCRATCH_SIZE
-	+ VDP_STREAM_BUFFER_SIZE;
-constexpr uint32_t BASE_RAM_USED_SIZE = DEFAULT_GEO_SCRATCH_SIZE
-	+ VDP_STREAM_BUFFER_SIZE;
+	+ DEFAULT_GEO_SCRATCH_SIZE;
+constexpr uint32_t BASE_RAM_USED_SIZE = DEFAULT_GEO_SCRATCH_SIZE;
 constexpr uint32_t PROGRAM_STATIC_RAM_BASE = RAM_BASE + MIN_RAM_SIZE;
-constexpr uint32_t VRAM_BASE = PROGRAM_ROM_BASE + PROGRAM_ROM_SIZE;
 
 extern uint32_t RAM_SIZE;
 extern uint32_t RAM_END;
@@ -49,26 +41,7 @@ extern uint32_t RAM_END;
 constexpr uint32_t IO_BASE = RAM_BASE;
 constexpr uint32_t GEO_SCRATCH_BASE = IO_BASE + IO_REGION_SIZE;
 constexpr uint32_t GEO_SCRATCH_SIZE = DEFAULT_GEO_SCRATCH_SIZE;
-constexpr uint32_t VDP_STREAM_BUFFER_BASE = GEO_SCRATCH_BASE + GEO_SCRATCH_SIZE;
-constexpr uint32_t DEFAULT_VRAM_TEXTURE_SIZE = 0x00200000u; // 2 MB
-constexpr uint32_t DEFAULT_VRAM_STAGING_SIZE = 0x00022000u; // 136 KB
-extern uint32_t VRAM_TEXTURE_SIZE;
-extern uint32_t VRAM_STAGING_SIZE;
-extern uint32_t VRAM_FRAMEBUFFER_SIZE;
-extern uint32_t VRAM_STAGING_BASE;
-extern uint32_t VRAM_TEXTURE_BASE;
-extern uint32_t VRAM_FRAMEBUFFER_BASE;
 
-struct MemoryMapSpecs {
-	uint32_t ramBytes = DEFAULT_RAM_SIZE;
-	uint32_t textureBytes = DEFAULT_VRAM_TEXTURE_SIZE;
-	uint32_t stagingBytes = DEFAULT_VRAM_STAGING_SIZE;
-	uint32_t frameBufferBytes = DEFAULT_VRAM_FRAMEBUFFER_SIZE;
-};
-
-void configureMemoryMap(const MemoryMapSpecs& specs);
-bool isVramMappedRange(uint32_t addr, size_t length);
-bool isVramMappedContiguousRange(uint32_t addr, size_t length);
-uint32_t vramMappedRemainingBytes(uint32_t addr);
+void configureMemoryMap(uint32_t ramBytes);
 
 } // namespace bmsx

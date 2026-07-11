@@ -57,22 +57,8 @@ vec3 quantize_msx10_343(vec3 sRGB, vec2 pix){
 	return quantize_ordered_conditional(sRGB, vec3(7.0, 15.0, 7.0), vec3(bayer4x4_0_1(pix)));
 }
 
-float psxDitherOffset4x4(vec2 pix){
-	return float(int(bayer4x4_raw(pix) * 0.5)) - 4.0;
-}
-
-vec3 quantize_rgb777_output(vec3 sRGB, vec2 pix){
-	vec3 thr = vec3(
-		bayer4x4_0_1(pix),
-		bayer4x4_0_1(pix + vec2(1.0, 2.0)),
-		bayer4x4_0_1(pix + vec2(2.0, 1.0))
-	);
-	return quantize_ordered_conditional(sRGB, vec3(127.0), thr);
-}
-
-vec3 quantize_rgb555_psx(vec3 sRGB, vec2 pix){
-	vec3 v = (sRGB * 255.0 + vec3(psxDitherOffset4x4(pix))) * 0.125;
-	return vec3(float(int(v.r)), float(int(v.g)), float(int(v.b))) * (1.0 / 31.0);
+vec3 quantize_rgb565(vec3 sRGB, vec2 pix){
+	return quantize_ordered_conditional(sRGB, vec3(31.0, 63.0, 31.0), vec3(bayer4x4_0_1(pix)));
 }
 
 void main(){
@@ -85,10 +71,8 @@ void main(){
 	vec3 color = texture(u_texture, v_texcoord).rgb;
 	vec3 sigS = linear_to_srgb(color);
 	if (u_device_quantize_mode == 1) {
-		sigS = quantize_rgb555_psx(sigS, sPix);
+		sigS = quantize_rgb565(sigS, sPix);
 	} else if (u_device_quantize_mode == 2) {
-		sigS = quantize_rgb777_output(sigS, sPix);
-	} else if (u_device_quantize_mode == 3) {
 		sigS = quantize_msx10_343(sigS, sPix);
 	}
 	color = srgb_to_linear(sigS);

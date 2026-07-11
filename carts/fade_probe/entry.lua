@@ -2,10 +2,10 @@ local gx_gpu<const> = require('system/gx_gpu')
 gx_gpu.reset_320x240_pal()
 require('cartlib/prelude')
 local frame = 0
-local irq_mask_register<const>: *word = 0x0800010c
-local inp_ctrl_register<const>: *word = 0x08000194
-local irq_vblank<const> = 0x0010
-local irq_apu<const> = 0x0200
+local irq_mask_register<const>: *word = 0x08000010
+local inp_ctrl_register<const>: *word = 0x0800006c
+local irq_vblank<const> = 0x0004
+local irq_apu<const> = 0x0020
 local vblank_count = 0
 
 local blue<const> = 0xff2044cc

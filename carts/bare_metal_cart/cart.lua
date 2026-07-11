@@ -1,14 +1,14 @@
-local irq_mask_register<const>: *word = 0x0800010c
-local irq_ack_register<const>: *word = 0x08000108
-local inp_keys<const>: *word[8] = 0x0800019c
-local inp_ctrl_register<const>: *word = 0x08000194
-local gp0<const>: *word = 0x0801036c
-local gp1<const>: *word = 0x08010370
-local gte_data<const>: *word[32] = 0x08010374
-local gte_control<const>: *word[32] = 0x080103f4
-local gte_command<const>: *word = 0x08010474
+local irq_mask_register<const>: *word = 0x08000010
+local irq_ack_register<const>: *word = 0x0800000c
+local inp_keys<const>: *word[8] = 0x08000074
+local inp_ctrl_register<const>: *word = 0x0800006c
+local gp0<const>: *word = 0x08010240
+local gp1<const>: *word = 0x08010244
+local gte_data<const>: *word[32] = 0x08010248
+local gte_control<const>: *word[32] = 0x080102c8
+local gte_command<const>: *word = 0x08010348
 
-local irq_vblank<const> = 0x10
+local irq_vblank<const> = 0x0004
 local irq_pending_flags = 0
 
 function irq(flags)

@@ -5,7 +5,7 @@ This is **not** a stable ABI contract and is **not** more authoritative than the
 live checkout. It is a temporary execution checklist so agents can see the
 current direction, completed slices, known blockers, and next work.
 
-Last refreshed: 2026-07-10
+Last refreshed: 2026-07-11
 Do not duplicate recent commit history here. Use `git log --oneline` for that.
 
 ## Source of truth
@@ -44,8 +44,7 @@ Completion means all of these are true:
 - Do not do migration-only busywork. Migration is required, but every migration
   slice must either depend on already-covered GX/PSX behavior or add the missing
   functional GX/PSX coverage in the same vertical slice.
-- Do not design or edit save-state representation/schema/capture/restore in this
-  slice of work.
+- Do not preserve retired save-state fields or readers as a compatibility path.
 - Do not add defensive require/ensure/fallback/provider/adapter/injection
   patterns.
 - Do not keep adding features to the old VDP/RPU spectacle path.
@@ -69,21 +68,16 @@ GX owners:
 - GX firmware helpers: `machine/firmware/system/gx_gpu.lua`,
   `machine/firmware/system/gx_image.lua`
 
-Residual VDP machine ownership still exists and must not be treated as
-completion:
-
-- TS/C++ VDP device trees under `machine/*/machine/devices/vdp/`
-- Old VDP/RPU tests, including `tests/lua/vdp_ingress.test.ts` and
-  `tests/cpp/vdp_ingress_test.cpp`
-- mapped VDP staging/texture/framebuffer memory plus scheduler/VBlank,
-  register, readback, and save-state dependencies
+Residual VDP/IMGDEC machine ownership has been removed from both runtimes.
+The ROM `vdp_class: psx` field remains a package-format compatibility marker;
+it is not a live VDP device contract.
 
 ## Current high-level state
 
 GTE is relatively far along. GPU is in the middle of the replacement work. GX
-is the only cart graphics route executed by host backends, but residual VDP
-machine, memory, timing, register, readback, and save-state ownership has not
-yet been removed. This is not close to done if the goal is read literally.
+is the only cart graphics route executed by host backends. GPU parity and
+accelerated conformance remain open; the old VDP/RPU and IMGDEC machine paths
+are no longer blockers.
 
 Implemented or partially covered GX-GPU areas include:
 
@@ -220,6 +214,8 @@ and ask before coding.
   longer register or execute an RPU frame; WebGPU never registered one.
 - [x] Move output quantization to host presentation state. The host menu no
   longer writes VDP MMIO and presentation no longer consumes `VdpDeviceOutput`.
+  Retained host modes are RGB565 and MSX10 3:4:3; RGB777 is removed. WebGL,
+  GLES2, WebGPU, TS headless and C++ software execute the same mode contract.
 - [x] Remove host-only IDE/terminal framebuffer presentation ownership. The
   workbench overlay owns its opaque base through the existing retained rect
   pool; the VDP framebuffer texture and pass no longer exist.
@@ -338,8 +334,7 @@ and ask before coding.
 ### 6. VDP/RPU removal
 
 - [x] Identify every active VDP/RPU presentation registration and machine output
-  dependency. The remaining blockers are mapped VDP memory, scheduler/VBlank,
-  and register/readback/save-state state.
+  dependency.
 - [x] Remove the dormant WebGL, GLES2, TS headless/software, and C++ software RPU
   presentation executors. GX command buffers are the only cart graphics input
   consumed by host backends; WebGPU already had no RPU executor.
@@ -351,13 +346,13 @@ and ask before coding.
 - [x] Move host-only framebuffer presentation to its real owner without a
   compatibility facade. The workbench overlay seeds a pooled opaque base rect;
   the mirrored framebuffer texture/pass plumbing is removed.
-- [ ] Migrate remaining mapped memory and machine timing/state ownership before
-  deleting the VDP device.
+- [x] Remove mapped VDP memory and its timing/register/readback/save-state
+  ownership, then delete the mirrored VDP and IMGDEC devices without a facade.
 - [x] Retire old VDP/RPU firmware/system paths after cart migration planning.
   The cart-visible Lua firmware path and its prelude exports are removed; the
-  residual machine implementation remains a separate removal slice.
-- [ ] Remove or quarantine old VDP/RPU tests that only protect the failed
-  renderer-descriptor ABI.
+  residual machine implementation is removed.
+- [x] Remove old VDP/RPU and IMGDEC tests that only protected the failed
+  renderer-descriptor and runtime decode ABIs.
 - [ ] Keep useful BMSX fantasy hardware ideas documented for later GX extensions,
   but do not preserve the old ABI.
 
@@ -373,7 +368,7 @@ and ask before coding.
 - [x] Migrate `renderhwtest` to direct GX primitive programming, including a
   cart-visible raw PSX textured affine quad smoke.
 - [x] Migrate `2025` engine/cart rendering to GX, including cart-owned
-  single-cart-atlas residency, background transition uploads, affine parallax
+  producer-owned working-set banks, background transition uploads, affine parallax
   sprites, fixed-function PSX transition/combat blending, texture-modulated
   fades, and existing custom visual submission on the GX path. Transition and
   combat-result fades no longer pretend that the PSX GPU supports arbitrary

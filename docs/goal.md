@@ -53,7 +53,7 @@ The goal is not complete until all of these are true in the current checkout:
    service points.
 2. Keep ICU moving toward distinct register, action-table, FIFO, sample-latch,
    query, and output datapaths without creating wrapper layers.
-3. Keep VDP/APU/GEO contracts honest: device-visible state first, host queues and
+3. Keep GX GPU/APU/GEO contracts honest: device-visible state first, host queues and
    renderer/audio backends only at output edges.
 4. Treat save-state as passive persistence of live machine state; do not create
    parallel contracts when the live hardware owner already has the record shape.

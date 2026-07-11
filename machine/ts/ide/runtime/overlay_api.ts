@@ -1,6 +1,6 @@
 import type { BFont } from '../../render/shared/bitmap_font';
 import { type color } from '../../render/shared/submissions';
-import { LAYER_2D_IDE } from '../../machine/devices/vdp/contracts';
+import { LAYER_2D_IDE } from '../../render/shared/layers';
 import { resolveThemeTokenColor } from '../theme/tokens';
 import { OverlayRenderer } from './overlay_renderer';
 

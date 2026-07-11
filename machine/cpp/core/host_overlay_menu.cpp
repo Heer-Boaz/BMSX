@@ -16,7 +16,7 @@ namespace {
 
 constexpr i32 kMenuOptionCount = 13;
 constexpr const char* kToggleValues[] = {"OFF", "ON"};
-constexpr const char* kDeviceQuantizeValues[] = {"OFF", "PSX RGB555", "RGB777 OUTPUT", "MSX10 3:4:3"};
+constexpr const char* kDeviceQuantizeValues[] = {"OFF", "RGB565", "MSX10 3:4:3"};
 constexpr const char* kTitleText = "CORE OPTIONS";
 constexpr const char* kFpsPrefix = "HOST: ";
 constexpr i32 kUsageLabelWidth = 28;
@@ -27,11 +27,11 @@ constexpr i32 kUsageBarX = kUsageX + kUsageLabelWidth;
 constexpr i32 kUsageY = 8;
 constexpr f32 kUsageZ = 9000.0f;
 constexpr i32 kUsagePanelWidth = 112;
-constexpr i32 kUsagePanelHeight = 42;
+constexpr i32 kUsagePanelHeight = 32;
 constexpr i32 kUsageRowHeight = 10;
 constexpr i32 kUsageLowPercentTenthsLimit = 100;
 constexpr i32 kUsagePercentTenthsFlag = 1000000;
-constexpr std::array<const char*, 4> kUsageLabels{"CPU", "RAM", "VRAM", "VDP"};
+constexpr std::array<const char*, 3> kUsageLabels{"CPU", "RAM", "VRAM"};
 
 struct HostMenuButton {
 	const char* gamepad;
@@ -97,7 +97,7 @@ constexpr std::array<HostMenuOptionDef, kMenuOptionCount> kOptions{{
 	{HostMenuOptionId::CrtGlow, "CRT Glow", kToggleValues, 2},
 	{HostMenuOptionId::CrtFringing, "CRT Fringing", kToggleValues, 2},
 	{HostMenuOptionId::CrtAperture, "CRT Aperture", kToggleValues, 2},
-	{HostMenuOptionId::DeviceQuantize, "Output Quantize", kDeviceQuantizeValues, 4},
+	{HostMenuOptionId::DeviceQuantize, "Output Quantize", kDeviceQuantizeValues, 3},
 	{HostMenuOptionId::HostShowFps, "HOST: SHOW FPS", kToggleValues, 2},
 	{HostMenuOptionId::RebootCart, "REBOOT CART", nullptr, 0},
 	{HostMenuOptionId::ExitGame, "EXIT GAME", nullptr, 0},
@@ -428,20 +428,15 @@ bool HostOverlayMenu::queueFrameOverlayCommands(MachineManager& manager, GameVie
 	}
 	if (view.showResourceUsageGizmo) {
 		Runtime& runtime = manager.runtime();
-		const i32 vdpBudget = static_cast<i32>(
-			(static_cast<double>(runtime.timing.vdpWorkUnitsPerSec) * 1000000.0 / static_cast<double>(runtime.timing.ufpsScaled)) + 0.5
-		);
 		const std::array<double, UsageBarCount> used{
 			static_cast<double>(runtime.cpuUsageCyclesUsed()),
 			static_cast<double>(runtime.ramUsedBytes()),
 			static_cast<double>(runtime.vramUsedBytes()),
-			static_cast<double>(runtime.vdpUsageWorkUnitsLast()),
 		};
 		const std::array<double, UsageBarCount> total{
 			static_cast<double>(runtime.cpuUsageCyclesGranted()),
 			static_cast<double>(runtime.ramTotalBytes()),
 			static_cast<double>(runtime.vramTotalBytes()),
-			static_cast<double>(vdpBudget),
 		};
 		queueCommand(rectKind, &m_usagePanelRect);
 		for (i32 index = 0; index < UsageBarCount; index += 1) {
@@ -450,7 +445,7 @@ bool HostOverlayMenu::queueFrameOverlayCommands(MachineManager& manager, GameVie
 			const i32 fillWidth = usageFillWidth(used[offset], total[offset]);
 			RectRenderSubmission& fill = m_usageBarFills[offset];
 			fill.area.right = static_cast<f32>(kUsageBarX + fillWidth);
-			fill.color = (index == 3 && runtime.vdpUsageFrameHeld()) ? kUsageDangerColor : usageColor(ratio);
+			fill.color = usageColor(ratio);
 			GlyphRenderSubmission& label = m_usageLabels[offset];
 			GlyphRenderSubmission& percent = m_usagePercents[offset];
 			label.font = font;

@@ -15,8 +15,7 @@ namespace bmsx {
 
 Runtime::Runtime(
 	const RuntimeOptions& options,
-	RuntimeInputSource& input,
-	MicrotaskQueue& microtasks
+	RuntimeInputSource& input
 )
 	: timing(
 		options.ufpsScaled,
@@ -24,10 +23,7 @@ Runtime::Runtime(
 		options.cycleBudgetPerFrame,
 		options.psxGpuDisplayModeWord,
 		getPsxGpuDisplayModeTimingForWord(options.psxGpuDisplayModeWord).totalScanlines,
-		options.imgDecBytesPerSec,
-		options.dmaBytesPerSecIso,
-		options.dmaBytesPerSecBulk,
-		options.vdpWorkUnitsPerSec,
+		options.dmaBytesPerSec,
 		options.geoWorkUnitsPerSec
 	)
 	, m_input(input)
@@ -35,12 +31,7 @@ Runtime::Runtime(
 		{ options.systemRomBytes.data, options.systemRomBytes.size },
 		{ options.cartRomBytes.data, options.cartRomBytes.size }
 	})
-	, machine(
-		m_memory,
-		VdpFrameBufferSize{ static_cast<uint32_t>(options.viewport.x), static_cast<uint32_t>(options.viewport.y) },
-		input,
-		microtasks
-	)
+	, machine(m_memory, input)
 	, hostFault(*this)
 {
 	resetLuaHeapUsageHooks();
@@ -159,7 +150,7 @@ void Runtime::applyPsxGpuDisplayTimingWord(uint32_t gpuDisplayModeWord) {
 		*this,
 		timing.cpuHz,
 		static_cast<int>(calcCyclesPerFrameScaled(timing.cpuHz, displayModeTiming.refreshUfpsScaled)),
-		static_cast<int>(resolveVblankCycles(timing.cpuHz, displayModeTiming.refreshUfpsScaled, displayModeTiming.totalScanlines, machine.vdp.frameBufferHeight()))
+		static_cast<int>(resolveVblankCycles(timing.cpuHz, displayModeTiming.refreshUfpsScaled, displayModeTiming.totalScanlines, PSX_GPU_DISPLAY_HEIGHT))
 	);
 }
 
@@ -186,11 +177,11 @@ uint32_t Runtime::ramTotalBytes() const {
 }
 
 uint32_t Runtime::vramUsedBytes() const {
-	return machine.vdp.trackedUsedVramBytes();
+	return static_cast<uint32_t>(GX_GPU_VRAM_BYTE_COUNT);
 }
 
 uint32_t Runtime::vramTotalBytes() const {
-	return machine.vdp.trackedTotalVramBytes();
+	return static_cast<uint32_t>(GX_GPU_VRAM_BYTE_COUNT);
 }
 
 void Runtime::setLinkedCartProgram(ProgramVectorTable vectors, uint32_t programDataBaseAddress, uint32_t programBssBaseAddress, uint32_t cartDataBaseAddress, uint32_t cartBssBaseAddress, std::vector<std::string> staticModulePaths) {

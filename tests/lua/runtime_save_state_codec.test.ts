@@ -15,20 +15,11 @@ import {
 	APU_SLOT_REGISTER_WORD_COUNT,
 	apuSlotRegisterWordIndex,
 } from '../../machine/ts/machine/devices/audio/contracts';
-import { VDP_JTU_REGISTER_WORDS, VDP_MFU_WEIGHT_COUNT } from '../../machine/ts/machine/devices/vdp/contracts';
 import { GEOMETRY_CONTROLLER_PHASE_BUSY, GEOMETRY_CONTROLLER_REGISTER_COUNT } from '../../machine/ts/machine/devices/geometry/contracts';
+import { DMA_JOB_QUEUE_CAPACITY } from '../../machine/ts/machine/devices/dma/controller';
 import { GX_GPU_VRAM_BYTE_COUNT } from '../../machine/ts/machine/devices/gx/gpu_command_buffer';
 import { GX_GTE_CONTROL_REGISTER_COUNT, GX_GTE_DATA_REGISTER_COUNT } from '../../machine/ts/machine/devices/gx/gte';
 import { INPUT_CONTROLLER_KEY_WORD_COUNT, INPUT_CONTROLLER_PAD_AXIS_COUNT, INPUT_CONTROLLER_PAD_COUNT } from '../../machine/ts/machine/devices/input/contracts';
-import { VDP_REGISTER_COUNT } from '../../machine/ts/machine/devices/vdp/registers';
-import { VDP_LPU_REGISTER_WORDS } from '../../machine/ts/machine/devices/vdp/lpu';
-import { VDP_XF_MATRIX_REGISTER_WORDS } from '../../machine/ts/machine/devices/vdp/xf';
-import {
-	VDP_DEX_FRAME_IDLE,
-	VDP_SUBMITTED_FRAME_EMPTY,
-	VDP_SUBMITTED_FRAME_EXECUTING,
-} from '../../machine/ts/machine/devices/vdp/frame';
-import { captureVdpRpuFrameState, createVdpRpuFrameOutput, VDP_RPU_FRAME_IDLE, VDP_RPU_PARAM_MEM_PAGE_COUNT, VDP_RPU_PARAM_MEM_SIZE } from '../../machine/ts/machine/devices/vdp/rpu';
 import { PSX_GPU_DISPLAY_MODE_PAL_WORD } from '../../machine/ts/machine/model_registry';
 
 import type { RuntimeSaveState } from '../../machine/ts/machine/runtime/save_state';
@@ -38,8 +29,6 @@ import { RUNTIME_SAVE_STATE_PROP_NAMES } from '../../machine/ts/machine/runtime/
 import { BuiltinFunctionId } from '../../machine/ts/machine/cpu/cpu';
 import { RAM_BASE, RAM_END } from '../../machine/ts/machine/memory/map';
 
-const codecTestRpuVram = new Uint8Array(VDP_RPU_PARAM_MEM_SIZE);
-const codecTestRpuVramPageRevisions = new Uint32Array(VDP_RPU_PARAM_MEM_PAGE_COUNT);
 const codecTestGxVram = new Uint8Array(GX_GPU_VRAM_BYTE_COUNT);
 codecTestGxVram[0] = 0x34;
 codecTestGxVram[1] = 0x12;
@@ -52,33 +41,6 @@ function numberedWords(count: number): number[] {
 		words[index] = index + 1;
 	}
 	return words;
-}
-
-function createSubmittedFrameState(state = VDP_SUBMITTED_FRAME_EMPTY) {
-	return {
-		state,
-		hasCommands: state !== VDP_SUBMITTED_FRAME_EMPTY,
-		cost: state === VDP_SUBMITTED_FRAME_EMPTY ? 0 : 9,
-		workRemaining: state === VDP_SUBMITTED_FRAME_EMPTY ? 0 : 7,
-		ditherType: 2,
-		frameBufferWidth: 256,
-		frameBufferHeight: 212,
-		xf: {
-			matrixWords: numberedWords(VDP_XF_MATRIX_REGISTER_WORDS),
-			viewMatrixIndex: 0xfffffffe,
-			projectionMatrixIndex: 0xffffffff,
-		},
-		lightRegisterWords: numberedWords(VDP_LPU_REGISTER_WORDS),
-		morphWeightWords: numberedWords(VDP_MFU_WEIGHT_COUNT),
-		jointMatrixWords: numberedWords(VDP_JTU_REGISTER_WORDS),
-		rpu: captureVdpRpuFrameState(createVdpRpuFrameOutput(codecTestRpuVram, codecTestRpuVramPageRevisions)),
-	};
-}
-
-function createRpuState() {
-	return {
-		buildState: VDP_RPU_FRAME_IDLE,
-	};
 }
 
 function createRuntimeSaveState(): RuntimeSaveState {
@@ -100,6 +62,21 @@ function createRuntimeSaveState(): RuntimeSaveState {
 					busFaultCode: 2,
 					busFaultAddr: 0x12345678,
 					busFaultAccess: 0x400,
+				},
+				dma: {
+					queue: [
+						{ src: 0x01002010, dst: 0x08010240, remaining: 20, written: 12, clipped: false },
+					],
+					budget: 4,
+					carry: 12345,
+					writtenValue: 12,
+					writtenDirty: true,
+					sourceRegisterWord: 0x01002010,
+					destinationRegisterWord: 0x08010240,
+					lengthRegisterWord: 32,
+					controlRegisterWord: 0,
+					statusRegisterWord: 1,
+					writtenRegisterWord: 12,
 				},
 				geometry: {
 					phase: GEOMETRY_CONTROLLER_PHASE_BUSY,
@@ -277,49 +254,6 @@ function createRuntimeSaveState(): RuntimeSaveState {
 						outputStatus: 4,
 					},
 				},
-				vdp: {
-					xf: {
-						matrixWords: numberedWords(VDP_XF_MATRIX_REGISTER_WORDS),
-						viewMatrixIndex: 0xfffffffe,
-						projectionMatrixIndex: 0xffffffff,
-					},
-					vdpRegisterWords: numberedWords(VDP_REGISTER_COUNT),
-					buildFrame: {
-						state: VDP_DEX_FRAME_IDLE,
-						rpu: captureVdpRpuFrameState(createVdpRpuFrameOutput(codecTestRpuVram, codecTestRpuVramPageRevisions)),
-						cost: 0,
-					},
-					activeFrame: createSubmittedFrameState(VDP_SUBMITTED_FRAME_EXECUTING),
-					pendingFrame: createSubmittedFrameState(),
-					rpu: createRpuState(),
-					workCarry: 12,
-					availableWorkUnits: 3,
-					streamIngress: {
-						dmaSubmitActive: true,
-						fifoWordScratch: [1, 2, 3, 4],
-						fifoWordByteCount: 2,
-						fifoStreamWords: [0x12345678],
-						fifoStreamWordCount: 1,
-					},
-					readback: {
-						readBudgetBytes: 12,
-						readOverflow: true,
-					},
-					lightRegisterWords: numberedWords(VDP_LPU_REGISTER_WORDS),
-					morphWeightWords: numberedWords(VDP_MFU_WEIGHT_COUNT),
-					jointMatrixWords: numberedWords(VDP_JTU_REGISTER_WORDS),
-
-					ditherType: 1,
-					vdpFaultCode: 0,
-					vdpFaultDetail: 0,
-					vram: {
-						rpuVram: new Uint8Array([7, 8]),
-						surfacePixels: [
-							{ surfaceId: 4, surfaceWidth: 1, surfaceHeight: 1, pixels: new Uint8Array([9, 10, 11, 12]) },
-						],
-					},
-					displayFrameBufferPixels: new Uint8Array([13, 14]),
-				},
 			},
 			frameScheduler: {
 				accumulatedHostTimeMs: 1.5,
@@ -328,8 +262,6 @@ function createRuntimeSaveState(): RuntimeSaveState {
 						sequence: 11,
 						remaining: 22,
 						visualCommitted: true,
-						vdpFrameCost: 33,
-						vdpFrameHeld: false,
 					},
 				],
 				lastTickSequence: 44,
@@ -338,8 +270,6 @@ function createRuntimeSaveState(): RuntimeSaveState {
 				lastTickCpuUsedCycles: 77,
 				lastTickBudgetRemaining: 88,
 				lastTickVisualFrameCommitted: true,
-				lastTickVdpFrameCost: 99,
-				lastTickVdpFrameHeld: false,
 				lastTickCompleted: true,
 				lastTickConsumedSequence: 111,
 			},
@@ -378,18 +308,24 @@ test('runtime save-state codec preserves string pool ROM/runtime ownership', () 
 	assert.equal(decoded.machineState.psxGpuDisplayModeWord, state.machineState.psxGpuDisplayModeWord);
 	assert.deepEqual(decoded.machineState.machine.stringPool.entries, state.machineState.machine.stringPool.entries);
 	assert.deepEqual(decoded.machineState.machine.irq, state.machineState.machine.irq);
+	assert.deepEqual(decoded.machineState.machine.dma, state.machineState.machine.dma);
 	assert.deepEqual(decoded.machineState.machine.geometry, state.machineState.machine.geometry);
 	assert.deepEqual(decoded.machineState.machine.gxGpu, state.machineState.machine.gxGpu);
 	assert.deepEqual(decoded.machineState.machine.gxGte, state.machineState.machine.gxGte);
 	assert.deepEqual(decoded.machineState.machine.audio, state.machineState.machine.audio);
 	assert.deepEqual(decoded.machineState.machine.input, state.machineState.machine.input);
-	assert.deepEqual(decoded.machineState.machine.vdp.activeFrame, state.machineState.machine.vdp.activeFrame);
-	assert.deepEqual(decoded.machineState.machine.vdp.rpu, state.machineState.machine.vdp.rpu);
-	assert.deepEqual(decoded.machineState.machine.vdp.streamIngress.fifoWordScratch, state.machineState.machine.vdp.streamIngress.fifoWordScratch);
-	assert.deepEqual(decoded.machineState.machine.vdp.streamIngress.fifoStreamWords, state.machineState.machine.vdp.streamIngress.fifoStreamWords);
-	assert.deepEqual(decoded.machineState.machine.vdp.readback, state.machineState.machine.vdp.readback);
 	assert.deepEqual(decoded.machineState.frameScheduler, state.machineState.frameScheduler);
-	assert.deepEqual(decoded.machineState.machine.vdp.vram, state.machineState.machine.vdp.vram);
+});
+
+test('runtime save-state codec rejects DMA queues beyond the hardware FIFO capacity', () => {
+	const state = createRuntimeSaveState();
+	const job = state.machineState.machine.dma.queue[0]!;
+	state.machineState.machine.dma.queue = Array.from({ length: DMA_JOB_QUEUE_CAPACITY + 1 }, () => ({ ...job }));
+
+	assert.throws(
+		() => decodeRuntimeSaveState(encodeRuntimeSaveState(state)),
+		/DMA FIFO capacity/,
+	);
 });
 
 test('runtime save-state codec preserves interrupt frame metadata', () => {
@@ -429,23 +365,9 @@ test('runtime save-state codec preserves builtin VM primitive ids', () => {
 	assert.deepEqual(decoded.cpuState.lastReturnValues, state.cpuState.lastReturnValues);
 });
 
-test('runtime save-state property table preserves the retired randomSeed slot', () => {
-	const registersIndex = RUNTIME_SAVE_STATE_PROP_NAMES.indexOf('registers');
-	assert.equal(RUNTIME_SAVE_STATE_PROP_NAMES[registersIndex - 1], 'randomSeed');
-});
-
 test('runtime save-state bytes start at the current property-table payload', () => {
 	const encoded = encodeRuntimeSaveState(createRuntimeSaveState());
 
 	assert.doesNotThrow(() => decodeBinaryWithPropTable(encoded, RUNTIME_SAVE_STATE_PROP_NAMES));
 	assert.throws(() => decodeBinaryWithPropTable(encoded.subarray(2), RUNTIME_SAVE_STATE_PROP_NAMES));
-});
-
-test('runtime save-state codec rejects invalid VDP fixed register snapshots before device restore', () => {
-	const badVdpRegisterState = createRuntimeSaveState();
-	badVdpRegisterState.machineState.machine.vdp.vdpRegisterWords = numberedWords(VDP_REGISTER_COUNT - 1);
-	assert.throws(
-		() => decodeRuntimeSaveState(encodeRuntimeSaveState(badVdpRegisterState)),
-		/machine\.vdp\.vdpRegisterWords must contain/,
-	);
 });

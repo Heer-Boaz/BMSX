@@ -12,17 +12,11 @@ enum class MachineVdpClass { Psx };
 enum class PsxGpuVideoStandard { Pal, Ntsc };
 
 constexpr i64 PSX_CPU_FREQ_HZ = 50000000;
-constexpr i64 PSX_IMGDEC_BYTES_PER_SEC = 26214400;
-constexpr i64 PSX_DMA_BYTES_PER_SEC_ISO = 8388608;
-constexpr i64 PSX_DMA_BYTES_PER_SEC_BULK = 26214400;
+constexpr i64 PSX_DMA_BYTES_PER_SEC = 26214400;
 constexpr i64 PSX_RAM_BYTES = 0x00400000;
-constexpr i64 PSX_VRAM_TEXTURE_BYTES = 0x00200000;
-constexpr i64 PSX_VRAM_STAGING_BYTES = 0x00022000;
 constexpr i32 PSX_GPU_DISPLAY_WIDTH = 320;
 constexpr i32 PSX_GPU_DISPLAY_HEIGHT = 240;
 
-
-constexpr i64 PSX_VDP_WORK_UNITS_PER_SEC = 25600;
 constexpr i64 PSX_GEO_WORK_UNITS_PER_SEC = 16384000;
 
 constexpr i64 PAL_REFRESH_UFPS_SCALED = 50 * HZ_SCALE;
@@ -35,16 +29,8 @@ constexpr uint32_t PSX_GPU_DISPLAY_MODE_PAL_WORD = PSX_GPU_DISPLAY_MODE_PAL_BIT;
 
 struct MachineModelSpec {
 	i64 cpuFreqHz;
-	i64 imgDecBytesPerSec;
-	i64 dmaBytesPerSecIso;
-	i64 dmaBytesPerSecBulk;
+	i64 dmaBytesPerSec;
 	i64 ramBytes;
-	i64 textureBytes;
-	i64 stagingBytes;
-};
-
-struct MachineVdpWorkSpec {
-	i64 vdpWorkUnitsPerSec;
 	i64 geoWorkUnitsPerSec;
 };
 
@@ -61,16 +47,8 @@ struct PsxGpuDisplayModeTiming {
 
 inline constexpr MachineModelSpec PSX_MACHINE_SPEC = {
 	PSX_CPU_FREQ_HZ,
-	PSX_IMGDEC_BYTES_PER_SEC,
-	PSX_DMA_BYTES_PER_SEC_ISO,
-	PSX_DMA_BYTES_PER_SEC_BULK,
+	PSX_DMA_BYTES_PER_SEC,
 	PSX_RAM_BYTES,
-	PSX_VRAM_TEXTURE_BYTES,
-	PSX_VRAM_STAGING_BYTES,
-};
-
-inline constexpr MachineVdpWorkSpec PSX_VDP_WORK_SPEC = {
-	PSX_VDP_WORK_UNITS_PER_SEC,
 	PSX_GEO_WORK_UNITS_PER_SEC,
 };
 

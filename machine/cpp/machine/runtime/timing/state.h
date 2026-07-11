@@ -11,10 +11,7 @@ struct TimingState {
 		int cycleBudgetPerFrame,
 		uint32_t gpuDisplayModeWord,
 		i64 totalScanlines,
-		i64 imgDecBytesPerSec,
-		i64 dmaBytesPerSecIso,
-		i64 dmaBytesPerSecBulk,
-		int vdpWorkUnitsPerSec,
+		i64 dmaBytesPerSec,
 		int geoWorkUnitsPerSec
 	);
 
@@ -25,11 +22,8 @@ struct TimingState {
 	i64 totalScanlines;
 	i64 cpuHz;
 	int cycleBudgetPerFrame;
-	int vdpWorkUnitsPerSec;
 	int geoWorkUnitsPerSec;
-	i64 imgDecBytesPerSec;
-	i64 dmaBytesPerSecIso;
-	i64 dmaBytesPerSecBulk;
+	i64 dmaBytesPerSec;
 };
 
 } // namespace bmsx

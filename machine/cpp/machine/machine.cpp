@@ -5,17 +5,14 @@
 #include <stdexcept>
 
 namespace bmsx {
-Machine::Machine(Memory& memoryRef, VdpFrameBufferSize frameBufferSizeValue, InputControllerInputSource& input, MicrotaskQueue& microtasks)
+Machine::Machine(Memory& memoryRef, InputControllerInputSource& input)
 	: memory(memoryRef)
-	, frameBufferSize(frameBufferSizeValue)
 	, cpu(memory)
 	, scheduler(cpu)
 	, irqController(memory)
-	, vdp(memory, scheduler, frameBufferSize)
 	, audioOutput()
 	, audioController(memory, audioOutput, irqController, scheduler)
-	, dmaController(memory, irqController, vdp, scheduler)
-	, imgDecController(memory, dmaController, vdp, irqController, scheduler, microtasks)
+	, dmaController(memory, irqController, scheduler)
 	, geometryController(memory, irqController, scheduler)
 	, gxGpu(memory, scheduler)
 	, gxGte(memory)
@@ -36,27 +33,20 @@ void Machine::resetDevices() {
 	geometryController.reset();
 	gxGpu.reset();
 	gxGte.reset();
-	imgDecController.reset();
 	audioController.reset();
-	vdp.initializeVramSurfaces();
-	vdp.initializeRegisters();
 }
 
 void Machine::refreshDeviceTimings(const MachineTiming& timing, i64 nowCycles) {
-	dmaController.setTiming(timing.cpuHz, timing.dmaBytesPerSecIso, timing.dmaBytesPerSecBulk, nowCycles);
-	imgDecController.setTiming(timing.cpuHz, timing.imgDecBytesPerSec, nowCycles);
+	dmaController.setTiming(timing.cpuHz, timing.dmaBytesPerSec, nowCycles);
 	geometryController.setTiming(timing.cpuHz, timing.geoWorkUnitsPerSec, nowCycles);
 	audioController.setTiming(timing.cpuHz, nowCycles);
-	vdp.setTiming(timing.cpuHz, timing.vdpWorkUnitsPerSec, nowCycles);
 }
 
 void Machine::advanceDevices(int cycles) {
 	const i64 nextNow = scheduler.nowCycles() + cycles;
 	dmaController.accrueCycles(cycles, nextNow);
-	imgDecController.accrueCycles(cycles, nextNow);
 	geometryController.accrueCycles(cycles, nextNow);
 	audioController.accrueCycles(cycles, nextNow);
-	vdp.accrueCycles(cycles, nextNow);
 	scheduler.advanceTo(nextNow);
 }
 
@@ -69,14 +59,8 @@ void Machine::runDeviceService(uint8_t deviceKind) {
 		case DEVICE_SERVICE_DMA:
 			dmaController.onService(nowCycles);
 			return;
-		case DEVICE_SERVICE_IMG:
-			imgDecController.onService(nowCycles);
-			return;
 		case DEVICE_SERVICE_APU:
 			audioController.onService(nowCycles);
-			return;
-		case DEVICE_SERVICE_VDP:
-			vdp.onService(nowCycles);
 			return;
 		default:
 			throw BMSX_RUNTIME_ERROR("unknown device service kind " + std::to_string(deviceKind) + ".");

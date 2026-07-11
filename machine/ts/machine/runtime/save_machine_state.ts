@@ -21,7 +21,7 @@ export function captureRuntimeSaveMachineState(runtime: Runtime): RuntimeSaveMac
 
 export function applyRuntimeSaveMachineState(runtime: Runtime, state: RuntimeSaveMachineState): void {
 	runtime.applyPsxGpuDisplayModeWord(state.psxGpuDisplayModeWord);
+	runtime.vblank.restore(state.vblank);
 	restoreMachineSaveState(runtime.machine, state.machine);
 	runtime.frameScheduler.restoreState(state.frameScheduler);
-	runtime.vblank.restore(state.vblank);
 }

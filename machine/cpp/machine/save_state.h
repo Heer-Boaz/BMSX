@@ -2,12 +2,12 @@
 
 #include "machine/cpu/string_pool.h"
 #include "machine/devices/audio/save_state.h"
+#include "machine/devices/dma/controller.h"
 #include "machine/devices/geometry/save_state.h"
 #include "machine/devices/gx/gpu.h"
 #include "machine/devices/gx/gte.h"
 #include "machine/devices/input/save_state.h"
 #include "machine/devices/irq/save_state.h"
-#include "machine/devices/vdp/save_state.h"
 #include "machine/memory/memory.h"
 
 namespace bmsx {
@@ -15,17 +15,18 @@ namespace bmsx {
 class Machine;
 
 struct MachineState {
+	DmaControllerState dma;
 	GeometryControllerState geometry;
 	GxGpuState gxGpu;
 	GxGteState gxGte;
 	IrqControllerState irq;
 	AudioControllerState audio;
 	InputControllerState input;
-	VdpState vdp;
 };
 
 struct MachineSaveState {
 	MemorySaveState memory;
+	DmaControllerState dma;
 	GeometryControllerState geometry;
 	GxGpuSaveState gxGpu;
 	GxGteState gxGte;
@@ -33,7 +34,6 @@ struct MachineSaveState {
 	AudioControllerState audio;
 	StringPoolState stringPool;
 	InputControllerState input;
-	VdpSaveState vdp;
 };
 
 MachineState captureMachineState(const Machine& machine);

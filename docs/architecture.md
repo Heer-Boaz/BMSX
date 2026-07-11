@@ -150,28 +150,23 @@ frontend executable. It never owns cart-observable machine semantics.
 ## Console model and timing
 
 The active machine model is `psx`. The model owns fixed hardware facts:
-50 MHz CPU clock, 4 MB RAM, PSX DMA/IMGDEC transfer rates, 136 KiB RPU
-descriptor/scratch staging, 2 MB texture VRAM, a PSX-mode 320×240 framebuffer,
-and BIOS default VDP mode `2`.
+50 MHz CPU clock, 4 MB RAM, a 26,214,400 byte/s DMA datapath, a 16,384,000
+work-unit/s geometry unit, a PSX-style GPU with 1 MiB of raw VRAM, and a
+320×240 host scanout size.
 
-The active VDP class is also `psx`. A cart ROM carries a VDP-class marker in
-the ROM header; the only supported marker today is `psx`. A second VDP/APU or
+The cart ROM still carries a `psx` VDP-class marker in its package header. This
+is a ROM format marker, not a live VDP device or graphics ABI. A second GPU/APU or
 device-class contract starts only when a real producer consumes it; it is not an
 open slice by itself. Guest Lua does not receive a `machine_manifest`,
 `cart_manifest`, or raw hardware globals to discover these facts. The header and
 machine registry are host/tooling input; cart-visible behavior is still
 programmed through CPU-visible ROM, RAM, MMIO, BIOS Lua, and link symbols.
 
-Region is runtime machine state, not a model field. The `sys_region` MMIO word
-selects PAL (`0`, 50 Hz, 313 total scanlines) or NTSC (`1`, 59.940060 Hz, 262
-total scanlines). Runtime timing, cycle budget, audio mixer pacing, libretro AV
-publication, and save-state restore consume that region state. There is no
-refresh-rate inference from ufps.
-
-VDP modes are VDP register state inside the active VDP class: mode `0` is
-MSX1 256x192, mode `1` is MSX2 256x212, and mode `2` is PSX 320x240. Carts and
-firmware program the VDP mode explicitly. Manifests do not own `vdp_mode` or
-derived `render_size`.
+Video standard is GPU register state. GP1 display-mode bit 3 selects PAL
+(50 Hz, 313 total scanlines); a clear bit selects NTSC (59.940060 Hz, 262 total
+scanlines). Runtime timing, cycle budget, audio mixer pacing, libretro AV
+publication, and save-state restore consume that raw GPU word. There is no VDP
+mode register or host-inferred region state.
 
 ## Runtime container vocabulary
 
@@ -496,10 +491,9 @@ Saved:
 - CPU registers, stack/frame/root runtime values, string pool ownership, RAM/IO
   state, scheduler/VBlank state, device registerfiles/latches/FIFOs/buffers, and
   device-visible memory.
-- VDP registerfile, VDP-owned VRAM/surface memory, build/submitted-frame
-  state, RPU retained surface records, constants, passes, and draw commands,
-  named stream-ingress latches/FIFO words, readback budget/overflow latches,
-  display/readback pixels, and VOUT state that determines future output.
+- GX GPU raw register words, GP0 packet assembly, retained command-buffer state,
+  raw 1 MiB VRAM, transfer/readback latches, and display timing state that
+  determines future output.
 - APU command/source/output state that determines future audio output,
   including the command FIFO ring, queued parameter latch words, active AOUT
   voice position, gain-ramp, filter history, and BADP decoder state.
@@ -536,10 +530,10 @@ Bus fault registers:
 
 | Register | Address | Meaning |
 | --- | ---: | --- |
-| `BUS_FAULT_CODE` | `0x080102d0` | Sticky fault code for the first visible bus fault. |
-| `BUS_FAULT_ADDR` | `0x080102d4` | Address captured with the sticky bus fault. |
-| `BUS_FAULT_ACCESS` | `0x080102d8` | Access flags captured with the sticky bus fault. |
-| `BUS_FAULT_ACK` | `0x080102dc` | Write nonzero to clear the sticky bus fault. |
+| `BUS_FAULT_CODE` | `0x0801020c` | Sticky fault code for the first visible bus fault. |
+| `BUS_FAULT_ADDR` | `0x08010210` | Address captured with the sticky bus fault. |
+| `BUS_FAULT_ACCESS` | `0x08010214` | Access flags captured with the sticky bus fault. |
+| `BUS_FAULT_ACK` | `0x08010218` | Write nonzero to clear the sticky bus fault. |
 
 Bus fault code values:
 
@@ -549,7 +543,6 @@ Bus fault code values:
 | `BUS_FAULT_UNMAPPED` | `1` | The mapped-memory access targeted no mapped bus owner. |
 | `BUS_FAULT_UNALIGNED_IO` | `2` | A non-word access targeted word-only MMIO. |
 | `BUS_FAULT_READ_ONLY` | `3` | A mapped-memory write targeted a read-only MMIO register. |
-| `BUS_FAULT_VRAM_RANGE` | `4` | A mapped VRAM access fell outside the selected VRAM aperture. |
 
 Bus fault access flag values:
 
@@ -642,60 +635,39 @@ hardware interrupt-storm semantics rather than being discarded by the emulator.
 
 | Register | Address | Meaning |
 | --- | ---: | --- |
-| `IRQ_FLAGS` | `0x08000104` | Read pending IRQ bits. |
-| `IRQ_ACK` | `0x08000108` | Write bits to clear. |
-| `IRQ_MASK` | `0x0800010c` | Read/write per-source vector mask; bit set means that pending source may vector. Reset `0`. |
+| `IRQ_FLAGS` | `0x08000008` | Read pending IRQ bits. |
+| `IRQ_ACK` | `0x0800000c` | Write bits to clear. |
+| `IRQ_MASK` | `0x08000010` | Read/write per-source vector mask; bit set means that pending source may vector. Reset `0`. |
 
 | Name | Value | Meaning |
 | --- | ---: | --- |
 | `IRQ_DMA_DONE` | `0x0001` | DMA completion. |
 | `IRQ_DMA_ERROR` | `0x0002` | DMA error. |
-| `IRQ_IMG_DONE` | `0x0004` | Image decode completion. |
-| `IRQ_IMG_ERROR` | `0x0008` | Image decode error. |
-| `IRQ_VBLANK` | `0x0010` | VBLANK entry. |
-| `IRQ_GEO_DONE` | `0x0080` | Geometry command completion. |
-| `IRQ_GEO_ERROR` | `0x0100` | Geometry command error. |
-| `IRQ_APU` | `0x0200` | APU voice event. |
+| `IRQ_VBLANK` | `0x0004` | VBLANK entry. |
+| `IRQ_GEO_DONE` | `0x0008` | Geometry command completion. |
+| `IRQ_GEO_ERROR` | `0x0010` | Geometry command error. |
+| `IRQ_APU` | `0x0020` | APU voice event. |
 
-### DMA and image decode
+### DMA
 
-DMA and IMGDEC are MMIO devices. Command words latch work, device status/fault
-registers expose completion or rejection, and bus faults become device-visible
-fault state.
-The ROM texture producer emits native RGB555/STP GP0 streams for every atlas,
-so BIOS/cart atlas upload uses DMA directly and has no IMGDEC or mapped
-RGBA-staging dependency. IMGDEC remains a residual machine device until its
-remaining MMIO/tests/save-state ownership is removed.
+DMA is one MMIO device with one retained queue and one bandwidth accumulator.
+It copies RAM-to-RAM bytes or streams aligned words from ROM/RAM directly to GX
+GP0. Command words latch work, status and written-count registers expose
+progress, and completion/error raises the corresponding IRQ. The ROM texture
+producer emits native RGB555/STP GP0 streams; there is no runtime IMGDEC,
+mapped RGBA staging aperture, or image-copy DMA channel.
 
-### VDP (residual)
+### GX GPU/GTE
 
-GX GPU/GTE is the active cart graphics ABI and the only cart graphics path
+GX GPU/GTE is the cart graphics ABI and the only cart graphics path
 executed by host render backends. The old cart-visible VDP/RPU firmware ABI and
 the WebGL, GLES2, and software/headless RPU presentation executors are removed.
 Backend-local shader programs, buffers, textures, render targets, and draw-call
 issue remain concrete GX backend ownership; there is no presentation facade
-between GX command buffers and those backends.
-
-The VDP device remains temporarily because existing machine ownership has not
-yet been migrated:
-
-- its mapped staging, texture, and framebuffer memory is still reached by
-  machine DMA/image and residual device paths;
-- its scheduler/VBlank, register, fault, readback, and save-state state is still
-  wired into both runtimes;
-- its dither and VOUT latches remain residual device/save-state state, but host
-  presentation no longer consumes `VdpDeviceOutput`.
-
-No host presentation path consumes VDP/VOUT/framebuffer output. The mapped VDP
-framebuffer remains residual machine memory reached by mapped CPU/DMA/device
-reads and writes, readback, and save-state ownership; the IDE/terminal overlay
-owns its opaque pooled base surface.
-
-The retained RPU records inside the residual VDP device are no longer published
-to a presentation pass. They remain device/save-state state until their owning
-VDP dependencies are removed; they are not a compatibility graphics route.
-The detailed residual register and state contract is
-`docs/video_display_processor.md`.
+between GX command buffers and those backends. The mirrored VDP/RPU and IMGDEC
+device trees, mapped apertures, scheduler services, VBlank hooks, MMIO words,
+readback state and save-state fields are removed. The ROM package marker is the
+only remaining `vdp_class` name and must not be used as a compatibility route.
 
 Pixel parity is a machine contract at GX VRAM scanout. For the same ROM,
 timeline, model profile, and GX display registers, the TypeScript headless
@@ -705,8 +677,8 @@ boot-screen parity are not render-parity evidence. `npm run test:render-parity`
 captures the same timeline through both runtimes and compares dimensions and raw
 RGBA bytes.
 
-CRT postprocessing and output quantization are host presentation, not runtime or
-machine state. Parity captures disable these effects, including
+CRT postprocessing and RGB565/MSX10 output quantization are host presentation,
+not runtime or machine state. Parity captures disable these effects, including
 `bmsx_crt_noise`, so they prove machine pixel output rather than host decoration.
 
 ### APU and AOUT
@@ -899,7 +871,7 @@ host renderer/audio state.
 
 BIOS and cart libraries may hide register programming behind helpers, but those
 helpers must write/read the same RAM/MMIO words the cart could use directly.
-Gameplay/cart files own intent values only. They must not define VDP/APU/GEO/ICU
+Gameplay/cart files own intent values only. They must not define GX GPU/APU/GEO/ICU
 ABI encoders, fixed-point helpers, register maps, packet layouts, or hardware
 fallbacks locally.
 

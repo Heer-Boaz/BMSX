@@ -112,7 +112,6 @@ const CART_LINT_RULES: readonly LintRuleName[] = [
 	'forbidden_math_floor_pattern',
 	'function_body_require_pattern',
 	'forbidden_random_helper_pattern',
-	'forbidden_render_layer_string_pattern',
 	'forbidden_render_module_require_pattern',
 	'forbidden_render_wrapper_call_pattern',
 	'forbidden_runtime_compiler_call_pattern',

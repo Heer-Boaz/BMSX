@@ -198,9 +198,6 @@ function makeHaltFrameRuntime(): Runtime {
 			memory,
 			irqController: new IrqController(memory),
 			scheduler,
-			vdp: {
-				beginFrame: () => {},
-			},
 			advanceDevices: (cycles: number) => {
 				scheduler.nowCycles += cycles;
 			},
@@ -264,7 +261,6 @@ function makeCompiledIrqRuntime(source: string): { cpu: CPU; irqController: IrqC
 			memory,
 			irqController,
 			scheduler,
-			vdp: { beginFrame: () => {} },
 			advanceDevices: (cycles: number) => { scheduler.nowCycles += cycles; },
 		},
 		vblank: { tickCompleted: false, beginTick: () => {}, abandonTick: () => {}, handleBeginTimer: () => {}, handleEndTimer: () => {} },
@@ -508,9 +504,9 @@ test('frame loop vectors a pending IRQ above a halted cart frame', () => {
 
 test('compiled IRQ vector dispatches through cart irq and acknowledges the device line', () => {
 	const source = `
-local irq_ack_addr<const> = 0x08000108
-local irq_mask_addr<const> = 0x0800010c
-local irq_vblank<const> = 0x0010
+local irq_ack_addr<const> = 0x0800000c
+local irq_mask_addr<const> = 0x08000010
+local irq_vblank<const> = 0x0004
 irq_seen = 0
 function irq(flags)
 	irq_seen = flags
@@ -530,8 +526,8 @@ end
 
 test('compiled IRQ vector storms on an unacknowledged level line', () => {
 	const source = `
-local irq_mask_addr<const> = 0x0800010c
-local irq_vblank<const> = 0x0010
+local irq_mask_addr<const> = 0x08000010
+local irq_vblank<const> = 0x0004
 irq_seen = 0
 function irq(flags)
 	irq_seen = irq_seen + 1
@@ -548,9 +544,9 @@ end
 
 test('IRQ_MASK accepts pending IRQ at the next guest instruction boundary', () => {
 	const source = `
-local irq_ack_addr<const> = 0x08000108
-local irq_mask_addr<const> = 0x0800010c
-local irq_vblank<const> = 0x0010
+local irq_ack_addr<const> = 0x0800000c
+local irq_mask_addr<const> = 0x08000010
+local irq_vblank<const> = 0x0004
 irq_seen = 0
 after_enable = 0
 function irq(flags)

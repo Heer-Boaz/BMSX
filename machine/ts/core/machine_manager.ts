@@ -15,8 +15,7 @@ import { renderGate, runGate } from '../common/taskgate';
 import { applyInitialWorkspaceOverrides, prepareRebootToBootRom, startPreparedRuntime } from '../ide/runtime/program_boot';
 import { Runtime } from '../machine/runtime/runtime';
 import { Memory } from '../machine/memory/memory';
-import { configureMemoryMap } from '../machine/memory/map';
-import { resolveRuntimeMemoryMapSpecs } from '../machine/memory/specs';
+import { configureRuntimeMemoryMap } from '../machine/memory/specs';
 import { applyRuntimeTiming, resolveRuntimeTiming } from '../machine/runtime/boot_timing';
 import { bootActiveProgram } from '../ide/runtime/lua_pipeline';
 import { handleLuaError } from '../ide/workbench/runtime_errors';
@@ -164,10 +163,9 @@ export class MachineManager {
 		});
 		this._view = gview;
 		this.sourceState = createRuntimeSourceState(systemLayer, cartLayer);
-		configureMemoryMap(resolveRuntimeMemoryMapSpecs());
+		configureRuntimeMemoryMap();
 		const timing = resolveRuntimeTiming(PSX_MACHINE_SPEC.cpuFreqHz, PSX_GPU_DISPLAY_MODE_PAL_WORD);
 		const runtime = new Runtime({
-			viewport: { width: timing.viewportWidth, height: timing.viewportHeight },
 			memory: new Memory({
 				systemRom: systemLayer.payload,
 				cartRom: cartLayer ? cartLayer.payload : new Uint8Array(0),
@@ -177,12 +175,9 @@ export class MachineManager {
 			cpuHz: timing.cpuHz,
 			cycleBudgetPerFrame: timing.cycleBudgetPerFrame,
 			vblankCycles: timing.vblankCycles,
-			imgDecBytesPerSec: timing.imgDecBytesPerSec,
-			dmaBytesPerSecIso: timing.dmaBytesPerSecIso,
-			dmaBytesPerSecBulk: timing.dmaBytesPerSecBulk,
-			vdpWorkUnitsPerSec: timing.vdpWorkUnitsPerSec,
+			dmaBytesPerSec: timing.dmaBytesPerSec,
 			geoWorkUnitsPerSec: timing.geoWorkUnitsPerSec,
-		}, Input.instance, platform.microtasks);
+		}, Input.instance);
 		applyRuntimeTiming(runtime, timing);
 		this._runtime = runtime;
 		await applyInitialWorkspaceOverrides();
@@ -261,7 +256,6 @@ export class MachineManager {
 			const runtime = this.runtime;
 			this.sndmaster.resetPlaybackState();
 			this.debug_runSingleFrameAndPause = false;
-			runtime.machine.vdp.initializeRegisters();
 			clearOverlayFrame();
 
 			runtime.frameScheduler.clearQueuedTime();

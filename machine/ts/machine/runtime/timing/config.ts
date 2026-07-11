@@ -1,21 +1,15 @@
 import type { Runtime } from '../runtime';
 
 export type RuntimeTransferRates = {
-	imgDecBytesPerSec: number;
-	dmaBytesPerSecIso: number;
-	dmaBytesPerSecBulk: number;
-	vdpWorkUnitsPerSec: number;
+	dmaBytesPerSec: number;
 	geoWorkUnitsPerSec: number;
 };
 
 export function refreshDeviceTimings(runtime: Runtime, nowCycles: number): void {
 	runtime.machine.refreshDeviceTimings({
 		cpuHz: runtime.timing.cpuHz,
-		dmaBytesPerSecIso: runtime.timing.dmaBytesPerSecIso,
-		dmaBytesPerSecBulk: runtime.timing.dmaBytesPerSecBulk,
-		imgDecBytesPerSec: runtime.timing.imgDecBytesPerSec,
+		dmaBytesPerSec: runtime.timing.dmaBytesPerSec,
 		geoWorkUnitsPerSec: runtime.timing.geoWorkUnitsPerSec,
-		vdpWorkUnitsPerSec: runtime.timing.vdpWorkUnitsPerSec,
 	}, nowCycles);
 }
 
@@ -39,10 +33,7 @@ export function setFrameTiming(runtime: Runtime, cpuHz: number, cycleBudgetPerFr
 }
 
 export function setTransferRates(runtime: Runtime, rates: RuntimeTransferRates): void {
-	runtime.timing.imgDecBytesPerSec = rates.imgDecBytesPerSec;
-	runtime.timing.dmaBytesPerSecIso = rates.dmaBytesPerSecIso;
-	runtime.timing.dmaBytesPerSecBulk = rates.dmaBytesPerSecBulk;
-	runtime.timing.vdpWorkUnitsPerSec = rates.vdpWorkUnitsPerSec;
+	runtime.timing.dmaBytesPerSec = rates.dmaBytesPerSec;
 	runtime.timing.geoWorkUnitsPerSec = rates.geoWorkUnitsPerSec;
 	refreshDeviceTimings(runtime, runtime.machine.scheduler.currentNowCycles());
 }

@@ -1,6 +1,6 @@
 import type { BFont } from './bitmap_font';
 import type { Polygon } from '../../rompack/format';
-import type { Layer2D } from '../../machine/devices/vdp/contracts';
+import type { Layer2D } from './layers';
 
 export type color = number;
 

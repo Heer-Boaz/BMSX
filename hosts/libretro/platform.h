@@ -12,6 +12,7 @@
 #include "libretro.h"
 #include "platform/platform.h"
 #include "render/backend/backend.h"
+#include "render/post/device_quantize/mode.h"
 #include <vector>
 #include <array>
 #include <memory>
@@ -174,7 +175,7 @@ public:
 								bool applyGlow,
 								bool applyFringing,
 								bool applyAperture);
-	void setDitherType(i32 type);
+	void setDeviceQuantizeMode(DeviceQuantizeMode mode);
 	void setResourceUsageGizmo(bool enabled);
 	void setPlatformPaused(bool paused);
 	bool platformPaused() const { return m_platform_paused; }
@@ -257,7 +258,6 @@ private:
 	retro_hw_get_current_framebuffer_t m_hw_get_current_framebuffer = nullptr;
 	bool m_crt_postprocessing_enabled = true;
 	i32 m_postprocess_scale = 1;
-	i32 m_dither_type = 0;
 	bool m_render_surfaces_need_refresh = true;
 
 	// Controller configuration
@@ -287,6 +287,7 @@ private:
 
 	bool m_rom_loaded = false;
 	bool m_platform_paused = false;
+	DeviceQuantizeMode m_device_quantize_mode = DeviceQuantizeMode::None;
 };
 
 /* ============================================================================

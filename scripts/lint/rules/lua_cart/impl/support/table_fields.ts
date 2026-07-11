@@ -1,6 +1,5 @@
 import { type LuaExpression as Expression, type LuaFunctionExpression as CartFunctionExpression, type LuaStatement as Statement, LuaSyntaxKind as SyntaxKind, type LuaTableField as TableField, LuaTableFieldKind as TableFieldKind } from '../../../../../../machine/ts/lua/syntax/ast';
 import { type CartLintIssue } from '../../../../lua_rule';
-import { lintForbiddenRenderLayerString } from '../../forbidden_render_layer_string_pattern';
 import { lintExpression } from '../../../../../rompacker/cart_lua_linter_runtime';
 import { lintCollectionLabelPatterns } from '../../fsm_id_label_pattern';
 import { lintInjectedServiceIdPropertyTableField } from '../../injected_service_id_property_pattern';
@@ -215,7 +214,6 @@ export function visitTableFieldsRecursively(
 export function lintTableField(field: TableField, issues: CartLintIssue[], insideFunction = false): void {
 	lintCollectionLabelPatterns(field, issues);
 	lintInjectedServiceIdPropertyTableField(field, issues);
-	lintForbiddenRenderLayerString(field, issues, pushIssue);
 	if (field.kind === TableFieldKind.IdentifierKey
 		&& field.name === 'tick'
 		&& field.value.kind === SyntaxKind.FunctionExpression) {

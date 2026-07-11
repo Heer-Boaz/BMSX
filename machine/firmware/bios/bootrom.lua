@@ -71,8 +71,8 @@ local cart_rom_base<const> = 0x01000000
 local cart_program_start_addr<const> = 0x10080000
 local cart_program_vector_addr<const> = cart_program_start_addr - 4
 local cart_rom_magic<const> = 0x58534d42
-local irq_vblank<const> = 0x0010
-local irq_mask_addr<const> = 0x0800010c
+local irq_vblank<const> = 0x0004
+local irq_mask_addr<const> = 0x08000010
 bss boot_vblank_count: word
 bss boot_start: f64
 local boot_scroll_state<const> = { top = 0 }
@@ -146,7 +146,7 @@ end
 
 local build_info<const> = function(width, height)
 	local cart_entry_ready<const> = mem[cart_program_vector_addr] == cart_program_start_addr
-	local vram_total<const> = 0x0026d000
+	local vram_total<const> = 0x00100000
 
 	return {
 		cart_entry_ready = cart_entry_ready,
@@ -154,7 +154,7 @@ local build_info<const> = function(width, height)
 		hw_ram_total = format_bytes(0x00400000),
 		hw_vram_total = format_bytes(vram_total),
 		hw_screen = tostring(width) .. 'x' .. tostring(height),
-		hw_max_cycles = format_bignumbers(mem[0x08010368]),
+		hw_max_cycles = format_bignumbers(mem[0x0801023c]),
 	}
 end
 
@@ -291,7 +291,7 @@ bss down_next_repeat_frame: word
 bss up_next_repeat_frame: word
 
 local key_pressed<const> = function(usage)
-	local word<const> = mem[0x0800019c + ((usage >> 5) << 2)]
+	local word<const> = mem[0x08000074 + ((usage >> 5) << 2)]
 	return ((word >> (usage & 31)) & 1) ~= 0
 end
 
@@ -394,12 +394,12 @@ end
 init()
 mem[irq_mask_addr] = irq_vblank
 new_game()
-mem[0x08000194] = 0x00000001
+mem[0x0800006c] = 0x00000001
 while true do
 	wait_vblank()
 	local boot_complete<const> = update_boot_screen()
 	if boot_complete then
 		return
 	end
-	mem[0x08000194] = 0x00000001
+	mem[0x0800006c] = 0x00000001
 end

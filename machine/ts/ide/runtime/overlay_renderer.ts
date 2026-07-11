@@ -1,6 +1,6 @@
 import type { BFont } from '../../render/shared/bitmap_font';
 import { RectRenderKind, TextAlign, TextBaseline, type Host2DSubmission, type color } from '../../render/shared/submissions';
-import { LAYER_2D_IDE, type Layer2D } from '../../machine/devices/vdp/contracts';
+import { LAYER_2D_IDE, type Layer2D } from '../../render/shared/layers';
 import { machineManager } from '../../core/machine_manager';
 import { clearOverlayFrame, publishOverlayFrame, type HostOverlayFrame } from '../../render/host_overlay/overlay_queue';
 import type { GameView } from '../../render/gameview';

@@ -1,8 +1,8 @@
 /*
  * Render pass scheduler for the frontend presentation pipeline.
  *
- * Machine-visible VDP state enters through device output snapshots; this graph
- * only orders frontend texture passes and owns no emulated state.
+ * Machine-visible render state enters through device output snapshots; this
+ * graph only orders frontend texture passes and owns no emulated state.
  */
 import type { color_arr } from '../../rompack/format';
 import type {

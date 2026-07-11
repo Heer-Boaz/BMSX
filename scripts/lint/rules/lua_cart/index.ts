@@ -66,7 +66,6 @@ import { requireExtensionPatternRule } from './require_lua_extension_pattern';
 import { branchUninitializedLocalPatternRule } from './branch_uninitialized_local_pattern';
 import { forbiddenRenderWrapperCallPatternRule } from './forbidden_render_wrapper_call_pattern';
 import { forbiddenRenderModuleRequirePatternRule } from './forbidden_render_module_require_pattern';
-import { forbiddenRenderLayerStringPatternRule } from './forbidden_render_layer_string_pattern';
 import { forbiddenRuntimeCompilerCallPatternRule } from './forbidden_runtime_compiler_call_pattern';
 
 export { ensurePatternRule };
@@ -136,7 +135,6 @@ export { requireExtensionPatternRule };
 export { branchUninitializedLocalPatternRule };
 export { forbiddenRenderWrapperCallPatternRule };
 export { forbiddenRenderModuleRequirePatternRule };
-export { forbiddenRenderLayerStringPatternRule };
 export { forbiddenRuntimeCompilerCallPatternRule };
 
 export const CART_ONLY_LINT_RULE_DEFINITIONS = [
@@ -207,7 +205,6 @@ export const CART_ONLY_LINT_RULE_DEFINITIONS = [
 	branchUninitializedLocalPatternRule,
 	forbiddenRenderWrapperCallPatternRule,
 	forbiddenRenderModuleRequirePatternRule,
-	forbiddenRenderLayerStringPatternRule,
 	forbiddenRuntimeCompilerCallPatternRule,
 ] as const;
 export const CART_ONLY_LINT_RULES = ruleNames(CART_ONLY_LINT_RULE_DEFINITIONS);

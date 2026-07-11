@@ -25,7 +25,7 @@ public:
 
 private:
 	static constexpr i32 OptionCount = 13;
-	static constexpr i32 UsageBarCount = 4;
+	static constexpr i32 UsageBarCount = 3;
 	static constexpr size_t CommandCapacity = 128;
 
 	void clearRenderCommands();

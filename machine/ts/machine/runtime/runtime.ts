@@ -11,15 +11,15 @@ import { HostFaultState } from './host_fault';
 import { LuaScratchState } from '../program/scratch';
 import type { ProgramImage, ProgramVectorTable } from '../program/loader';
 import { inflateExecutableProgramImage, type LinkedBootProgramImage } from '../program/linker';
-import { getPsxGpuDisplayModeTimingForWord } from '../model_registry';
+import { getPsxGpuDisplayModeTimingForWord, PSX_GPU_DISPLAY_SIZE_SPEC } from '../model_registry';
 import { refreshDeviceTimings, setFrameTiming } from './timing/config';
 import { HZ_SCALE } from './timing/constants';
 import { calcCyclesPerFrameScaled, resolveVblankCycles } from './timing';
 import { GX_GPU_GP1_RESET, GX_GPU_GP1_SET_DISPLAY_MODE } from '../devices/gx/gpu';
+import { GX_GPU_VRAM_BYTE_COUNT } from '../devices/gx/gpu_command_buffer';
 import { IO_GX_GPU_GP1, IO_SYS_CYCLES_PER_FRAME, IO_SYS_FRAME_MS, IO_SYS_PRINT_CHAR, IO_SYS_PRINT_FLUSH, IO_SYS_TIME_MS } from '../bus/io';
 import { Machine } from '../machine';
 import type { RuntimeInputSource } from './input';
-import type { MicrotaskQueue } from '../scheduler/microtask_queue';
 import {
 	BASE_RAM_USED_SIZE,
 	PROGRAM_STATIC_RAM_BASE,
@@ -70,16 +70,6 @@ export class Runtime {
 		return this.frameLoop.frameActive
 			? this.frameLoop.frameState.cycleBudgetGranted
 			: (this.frameScheduler.lastTickSequence === 0 ? this.timing.cycleBudgetPerFrame : this.frameScheduler.lastTickCpuBudgetGranted);
-	}
-
-	// disable-next-line single_line_method_pattern -- runtime telemetry boundary mirrors native Runtime and keeps host UI out of VDP internals.
-	public vdpUsageWorkUnitsLast(): number {
-		return this.machine.vdp.lastFrameCost();
-	}
-
-	// disable-next-line single_line_method_pattern -- runtime telemetry boundary mirrors native Runtime and keeps host UI out of VDP internals.
-	public vdpUsageFrameHeld(): boolean {
-		return this.machine.vdp.lastFrameHeld();
 	}
 
 	public pendingCall: 'entry' | null = null;
@@ -301,7 +291,6 @@ export class Runtime {
 	public constructor(
 		options: RuntimeOptions,
 		private readonly input: RuntimeInputSource,
-		microtasks: MicrotaskQueue,
 	) {
 		this.frameScheduler = new FrameSchedulerState(this);
 		this.frameLoop = new FrameLoopState(this);
@@ -314,18 +303,13 @@ export class Runtime {
 			options.cycleBudgetPerFrame,
 			options.psxGpuDisplayModeWord,
 			getPsxGpuDisplayModeTimingForWord(options.psxGpuDisplayModeWord).totalScanlines,
-			options.imgDecBytesPerSec,
-			options.dmaBytesPerSecIso,
-			options.dmaBytesPerSecBulk,
-			options.vdpWorkUnitsPerSec,
+			options.dmaBytesPerSec,
 			options.geoWorkUnitsPerSec,
 		);
 		this.input.setRuntimeInputFrameDurationMs(this.timing.frameDurationMs);
 		this.machine = new Machine(
 			options.memory,
-			options.viewport,
 			input,
-			microtasks,
 		);
 		this.machine.memory.clearIoSlots();
 		this.machine.memory.mapIoRead(IO_SYS_TIME_MS, this, Runtime.onTimeMsReadThunk);
@@ -421,11 +405,11 @@ export class Runtime {
 	}
 
 	public vramUsedBytes(): number {
-		return this.machine.vdp.trackedUsedVramBytes;
+		return GX_GPU_VRAM_BYTE_COUNT;
 	}
 
 	public vramTotalBytes(): number {
-		return this.machine.vdp.trackedTotalVramBytes;
+		return GX_GPU_VRAM_BYTE_COUNT;
 	}
 
 	public applyUfpsScaled(ufpsScaled: number): void {
@@ -451,7 +435,7 @@ export class Runtime {
 			this,
 			this.timing.cpuHz,
 			calcCyclesPerFrameScaled(this.timing.cpuHz, refreshUfpsScaled),
-			resolveVblankCycles(this.timing.cpuHz, refreshUfpsScaled, displayModeTiming.totalScanlines, this.machine.vdp.frameBufferHeight),
+			resolveVblankCycles(this.timing.cpuHz, refreshUfpsScaled, displayModeTiming.totalScanlines, PSX_GPU_DISPLAY_SIZE_SPEC.renderHeight),
 		);
 	}
 

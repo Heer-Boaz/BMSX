@@ -7,16 +7,11 @@ export type MachineVdpClass = 'psx';
 export type PsxGpuVideoStandard = 'pal' | 'ntsc';
 
 export const PSX_CPU_FREQ_HZ = 50_000_000;
-export const PSX_IMGDEC_BYTES_PER_SEC = 26_214_400;
-export const PSX_DMA_BYTES_PER_SEC_ISO = 8_388_608;
-export const PSX_DMA_BYTES_PER_SEC_BULK = 26_214_400;
+export const PSX_DMA_BYTES_PER_SEC = 26_214_400;
 export const PSX_RAM_BYTES = 0x00400000;
-export const PSX_VRAM_TEXTURE_BYTES = 0x00200000;
-export const PSX_VRAM_STAGING_BYTES = 0x00022000;
 export const PSX_GPU_DISPLAY_WIDTH = 320;
 export const PSX_GPU_DISPLAY_HEIGHT = 240;
 
-export const PSX_VDP_WORK_UNITS_PER_SEC = 25_600;
 export const PSX_GEO_WORK_UNITS_PER_SEC = 16_384_000;
 
 export const PAL_REFRESH_UFPS_SCALED = 50 * HZ_SCALE;
@@ -29,16 +24,8 @@ export const PSX_GPU_DISPLAY_MODE_PAL_WORD = PSX_GPU_DISPLAY_MODE_PAL_BIT;
 
 export type MachineModelSpec = {
 	cpuFreqHz: number;
-	imgDecBytesPerSec: number;
-	dmaBytesPerSecIso: number;
-	dmaBytesPerSecBulk: number;
+	dmaBytesPerSec: number;
 	ramBytes: number;
-	textureBytes: number;
-	stagingBytes: number;
-};
-
-export type MachineVdpWorkSpec = {
-	vdpWorkUnitsPerSec: number;
 	geoWorkUnitsPerSec: number;
 };
 
@@ -55,16 +42,8 @@ export type PsxGpuDisplayModeTiming = {
 
 export const PSX_MACHINE_SPEC: MachineModelSpec = {
 	cpuFreqHz: PSX_CPU_FREQ_HZ,
-	imgDecBytesPerSec: PSX_IMGDEC_BYTES_PER_SEC,
-	dmaBytesPerSecIso: PSX_DMA_BYTES_PER_SEC_ISO,
-	dmaBytesPerSecBulk: PSX_DMA_BYTES_PER_SEC_BULK,
+	dmaBytesPerSec: PSX_DMA_BYTES_PER_SEC,
 	ramBytes: PSX_RAM_BYTES,
-	textureBytes: PSX_VRAM_TEXTURE_BYTES,
-	stagingBytes: PSX_VRAM_STAGING_BYTES,
-};
-
-export const PSX_VDP_WORK_SPEC: MachineVdpWorkSpec = {
-	vdpWorkUnitsPerSec: PSX_VDP_WORK_UNITS_PER_SEC,
 	geoWorkUnitsPerSec: PSX_GEO_WORK_UNITS_PER_SEC,
 };
 

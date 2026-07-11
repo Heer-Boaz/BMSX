@@ -67,26 +67,11 @@ inline f32 bayer4x4_0_1(i32 x, i32 y) {
 	return (bayer[(x & 3) + ((y & 3) << 2)] + 0.5f) * (1.0f / 16.0f);
 }
 
-inline i32 psxDitherOffset4x4(i32 x, i32 y) {
-	static constexpr i32 dither[16] = {
-		-4,  0, -3,  1,
-			2, -2,  3, -1,
-		-3,  1, -4,  0,
-			3, -1,  2, -2,
-	};
-	return dither[(x & 3) + ((y & 3) << 2)];
-}
-
 inline f32 quantizeOrderedConditional(f32 c, f32 levels, f32 threshold) {
 	const f32 v = c * levels;
 	const f32 q = static_cast<f32>(static_cast<i32>(v));
 	const f32 f = v - q;
 	return (q + (f >= threshold ? 1.0f : 0.0f)) / levels;
-}
-
-inline f32 quantizeRgb555PSX(f32 c, i32 ditherOffset) {
-	const f32 v = (c * 255.0f + static_cast<f32>(ditherOffset)) * 0.125f;
-	return static_cast<f32>(static_cast<i32>(v)) / 31.0f;
 }
 
 inline u8 byteFromLinear(f32 c) {
@@ -119,15 +104,11 @@ void renderDeviceQuantizeSoftware(SoftwareBackend& backend, const DeviceQuantize
 			f32 outR = signalR;
 			f32 outG = signalG;
 			f32 outB = signalB;
-			if (state.deviceQuantizeMode == DeviceQuantizeMode::PsxRgb555) {
-				const i32 off = psxDitherOffset4x4(sx, sy);
-				outR = quantizeRgb555PSX(signalR, off);
-				outG = quantizeRgb555PSX(signalG, off);
-				outB = quantizeRgb555PSX(signalB, off);
-			} else if (state.deviceQuantizeMode == DeviceQuantizeMode::Rgb777Output) {
-				outR = quantizeOrderedConditional(signalR, 127.0f, bayer4x4_0_1(sx, sy));
-				outG = quantizeOrderedConditional(signalG, 127.0f, bayer4x4_0_1(sx + 1, sy + 2));
-				outB = quantizeOrderedConditional(signalB, 127.0f, bayer4x4_0_1(sx + 2, sy + 1));
+			if (state.deviceQuantizeMode == DeviceQuantizeMode::Rgb565) {
+				const f32 threshold = bayer4x4_0_1(sx, sy);
+				outR = quantizeOrderedConditional(signalR, 31.0f, threshold);
+				outG = quantizeOrderedConditional(signalG, 63.0f, threshold);
+				outB = quantizeOrderedConditional(signalB, 31.0f, threshold);
 			} else if (state.deviceQuantizeMode == DeviceQuantizeMode::Msx10Rgb343) {
 				const f32 threshold = bayer4x4_0_1(sx, sy);
 				outR = quantizeOrderedConditional(signalR, 7.0f, threshold);

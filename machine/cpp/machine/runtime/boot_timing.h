@@ -12,10 +12,7 @@ struct ResolvedRuntimeTiming {
 	i64 ufpsScaled;
 	i64 totalScanlines;
 	i64 cpuHz;
-	i64 imgDecBytesPerSec;
-	i64 dmaBytesPerSecIso;
-	i64 dmaBytesPerSecBulk;
-	int vdpWorkUnitsPerSec;
+	i64 dmaBytesPerSec;
 	int geoWorkUnitsPerSec;
 	int cycleBudgetPerFrame;
 	int vblankCycles;

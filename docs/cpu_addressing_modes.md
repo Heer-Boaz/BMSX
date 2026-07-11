@@ -129,14 +129,14 @@ All BMSX struct fields that are 4 bytes or larger (`u32`, `i32`, `f32`, `addr`,
 8 bits × 4 bytes = 1020-byte maximum displacement
 ```
 
-This covers every realistic RPU/VDP packet struct and scene-buffer record. The
+This covers every realistic GX command record, GTE structure, and MMIO block. The
 largest current struct-like block in `cart.lua` is the joint skeleton at 384
 bytes; the largest single scene-buffer record with camera constants and MVP is
 under 256 bytes.
 
 For `U8` and `U16LE` fields at non-word-aligned byte offsets, the compiler
 falls back to the existing `ADD + LOAD_MEM/STORE_MEM` path. Such fields are
-uncommon in RPU/VDP packet layouts.
+uncommon in GX/GTE register and command layouts.
 
 ---
 
@@ -263,4 +263,3 @@ This is a **mirrored ISA change** and must land in both cores simultaneously.
    `emitMemoryStoreWords`.
 7. **Add compiler tests.**
 8. Run `npm run audit:core-parity`.
-

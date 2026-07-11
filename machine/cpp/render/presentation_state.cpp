@@ -33,7 +33,7 @@ void RenderPresentationState::recordHostFrame() {
 	m_debugPresentHostFrames += 1;
 }
 
-void RenderPresentationState::recordTickCompletion(bool visualCommitted, bool vdpFrameHeld) {
+void RenderPresentationState::recordTickCompletion(bool visualCommitted) {
 	if (!isPresentRateDebugEnabled()) {
 		return;
 	}
@@ -42,9 +42,6 @@ void RenderPresentationState::recordTickCompletion(bool visualCommitted, bool vd
 		m_debugPresentTickCommitted += 1;
 	} else {
 		m_debugPresentTickDeferred += 1;
-	}
-	if (vdpFrameHeld) {
-		m_debugPresentTickHeld += 1;
 	}
 }
 
@@ -85,14 +82,13 @@ void RenderPresentationState::flushDebugReport(const Runtime& runtime) {
 	const double hostFps = static_cast<double>(m_debugPresentHostFrames) * scale;
 	std::fprintf(
 		stderr,
-		"[BMSX] host_frames=%llu host_fps=%.2f ufps=%.2f tick_completed=%llu tick_committed=%llu tick_deferred=%llu tick_held=%llu present_partial=%llu present_commit=%llu present_hold=%llu present_paused=%llu draw_pending=%d active_tick=%d\n",
+		"[BMSX] host_frames=%llu host_fps=%.2f ufps=%.2f tick_completed=%llu tick_committed=%llu tick_deferred=%llu present_partial=%llu present_commit=%llu present_hold=%llu present_paused=%llu draw_pending=%d active_tick=%d\n",
 		static_cast<unsigned long long>(m_debugPresentHostFrames),
 		hostFps,
 		runtime.timing.ufps,
 		static_cast<unsigned long long>(m_debugPresentTickCompleted),
 		static_cast<unsigned long long>(m_debugPresentTickCommitted),
 		static_cast<unsigned long long>(m_debugPresentTickDeferred),
-		static_cast<unsigned long long>(m_debugPresentTickHeld),
 		static_cast<unsigned long long>(m_debugPresentPartialPresents),
 		static_cast<unsigned long long>(m_debugPresentCommitPresents),
 		static_cast<unsigned long long>(m_debugPresentHoldPresents),
@@ -105,7 +101,6 @@ void RenderPresentationState::flushDebugReport(const Runtime& runtime) {
 	m_debugPresentTickCompleted = 0;
 	m_debugPresentTickCommitted = 0;
 	m_debugPresentTickDeferred = 0;
-	m_debugPresentTickHeld = 0;
 	m_debugPresentPartialPresents = 0;
 	m_debugPresentCommitPresents = 0;
 	m_debugPresentHoldPresents = 0;
@@ -125,7 +120,6 @@ void RenderPresentationState::reset() {
 	m_debugPresentTickCompleted = 0;
 	m_debugPresentTickCommitted = 0;
 	m_debugPresentTickDeferred = 0;
-	m_debugPresentTickHeld = 0;
 	m_debugPresentPartialPresents = 0;
 	m_debugPresentCommitPresents = 0;
 	m_debugPresentHoldPresents = 0;
@@ -161,7 +155,7 @@ void RenderPresentationState::syncAfterRuntimeUpdate(Runtime& runtime, i64 previ
 		if (m_tickCompletionScratch.visualCommitted) {
 			tickVisualCommitted = true;
 		}
-		recordTickCompletion(m_tickCompletionScratch.visualCommitted, m_tickCompletionScratch.vdpFrameHeld);
+		recordTickCompletion(m_tickCompletionScratch.visualCommitted);
 	}
 	if (runtime.frameScheduler.lastTickSequence != previousTickSequence) {
 		markPresentation(GameView::PresentationMode::Completed, tickVisualCommitted);

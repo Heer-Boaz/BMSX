@@ -1,5 +1,5 @@
 import { RectRenderKind, TextAlign, TextBaseline, type GlyphRenderSubmission, type RectRenderSubmission } from '../render/shared/submissions';
-import { LAYER_2D_IDE } from '../machine/devices/vdp/contracts';
+import { LAYER_2D_IDE } from '../render/shared/layers';
 import type { Host2DKind, Host2DRef } from '../render/shared/submissions';
 import { machineManager } from './machine_manager';
 import { Input } from '../input/manager';
@@ -47,7 +47,7 @@ const MENU_NAV_BUTTONS = [BUTTON_UP, BUTTON_DOWN, BUTTON_LEFT, BUTTON_RIGHT, BUT
 
 const TITLE_TEXT = 'CORE OPTIONS';
 const FPS_PREFIX = 'HOST: ';
-const USAGE_BAR_COUNT = 4;
+const USAGE_BAR_COUNT = 3;
 const USAGE_LABEL_WIDTH = 28;
 const USAGE_BAR_WIDTH = 54;
 const USAGE_BAR_HEIGHT = 5;
@@ -56,9 +56,9 @@ const USAGE_BAR_X = USAGE_X + USAGE_LABEL_WIDTH;
 const USAGE_Y = 8;
 const USAGE_Z = 9000;
 const USAGE_PANEL_WIDTH = 112;
-const USAGE_PANEL_HEIGHT = 42;
+const USAGE_PANEL_HEIGHT = 32;
 const USAGE_ROW_HEIGHT = 10;
-const USAGE_LABELS = ['CPU', 'RAM', 'VRAM', 'VDP'] as const;
+const USAGE_LABELS = ['CPU', 'RAM', 'VRAM'] as const;
 const USAGE_LOW_PERCENT_TENTHS_LIMIT = 100;
 const USAGE_PERCENT_TENTHS_FLAG = 1000000;
 const FPS_TEXT_TENTHS_INVALID = -1;
@@ -67,8 +67,7 @@ const HOST_MENU_COMMAND_CAPACITY = 128;
 const TOGGLE_VALUES: readonly HostMenuValue[] = [{ label: 'OFF' }, { label: 'ON' }];
 const DEVICE_QUANTIZE_VALUES: readonly HostMenuValue[] = [
 	{ label: 'OFF' },
-	{ label: 'PSX RGB555' },
-	{ label: 'RGB777 OUTPUT' },
+	{ label: 'RGB565' },
 	{ label: 'MSX10 3:4:3' },
 ];
 
@@ -443,12 +442,10 @@ export class HostOverlayMenu {
 		}
 		if (view.show_resource_usage_gizmo) {
 			const runtime = machineManager.runtime;
-			const vdpBudget = ((runtime.timing.vdpWorkUnitsPerSec * 1000000 / runtime.timing.ufpsScaled) + 0.5) | 0;
 			this.queueCommand('rect', this.usagePanelRect);
 			this.queueUsageBar(0, runtime.cpuUsageCyclesUsed(), runtime.cpuUsageCyclesGranted(), font);
 			this.queueUsageBar(1, runtime.ramUsedBytes(), runtime.ramTotalBytes(), font);
 			this.queueUsageBar(2, runtime.vramUsedBytes(), runtime.vramTotalBytes(), font);
-			this.queueUsageBar(3, runtime.vdpUsageWorkUnitsLast(), vdpBudget, font, runtime.vdpUsageFrameHeld() ? COLOR_USAGE_DANGER : undefined);
 			queued = true;
 		}
 		return queued;

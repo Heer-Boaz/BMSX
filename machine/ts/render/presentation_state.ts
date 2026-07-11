@@ -20,7 +20,6 @@ export class RenderPresentationState {
 	private debugPresentTickCompleted = 0;
 	private debugPresentTickCommitted = 0;
 	private debugPresentTickDeferred = 0;
-	private debugPresentTickHeld = 0;
 	private debugPresentPartialPresents = 0;
 	private debugPresentCommitPresents = 0;
 	private debugPresentHoldPresents = 0;
@@ -33,11 +32,9 @@ export class RenderPresentationState {
 		sequence: 0,
 		remaining: 0,
 		visualCommitted: true,
-		vdpFrameCost: 0,
-		vdpFrameHeld: false,
 	};
 
-	private recordTickCompletion(visualCommitted: boolean, vdpFrameHeld: boolean): void {
+	private recordTickCompletion(visualCommitted: boolean): void {
 		if (!Boolean((globalThis as any).__bmsx_debug_presentrate)) {
 			return;
 		}
@@ -46,9 +43,6 @@ export class RenderPresentationState {
 			this.debugPresentTickCommitted += 1;
 		} else {
 			this.debugPresentTickDeferred += 1;
-		}
-		if (vdpFrameHeld) {
-			this.debugPresentTickHeld += 1;
 		}
 	}
 
@@ -77,7 +71,6 @@ export class RenderPresentationState {
 		this.debugPresentTickCompleted = 0;
 		this.debugPresentTickCommitted = 0;
 		this.debugPresentTickDeferred = 0;
-		this.debugPresentTickHeld = 0;
 		this.debugPresentPartialPresents = 0;
 		this.debugPresentCommitPresents = 0;
 		this.debugPresentHoldPresents = 0;
@@ -159,7 +152,7 @@ export class RenderPresentationState {
 			if (this.tickCompletionScratch.visualCommitted) {
 				tickVisualCommitted = true;
 			}
-			this.recordTickCompletion(this.tickCompletionScratch.visualCommitted, this.tickCompletionScratch.vdpFrameHeld);
+			this.recordTickCompletion(this.tickCompletionScratch.visualCommitted);
 		}
 		if (machineManager.ideState.overlayActive) {
 			runtime.frameScheduler.clearQueuedTime();
@@ -218,7 +211,7 @@ export class RenderPresentationState {
 		console.warn(
 			`[BMSX][present] host_frames=${this.debugPresentHostFrames} host_fps=${hostFps.toFixed(2)} ufps=${runtime.timing.ufps.toFixed(2)} `
 			+ `tick_completed=${this.debugPresentTickCompleted} tick_committed=${this.debugPresentTickCommitted} `
-			+ `tick_deferred=${this.debugPresentTickDeferred} tick_held=${this.debugPresentTickHeld} `
+			+ `tick_deferred=${this.debugPresentTickDeferred} `
 			+ `present_partial=${this.debugPresentPartialPresents} present_commit=${this.debugPresentCommitPresents} `
 			+ `present_hold=${this.debugPresentHoldPresents} present_paused=${this.debugPresentPausedPresents} `
 			+ `draw_pending=${runtime.isDrawPending || machineManager.faultState.faultSnapshot !== null ? 1 : 0} active_tick=${runtime.frameLoop.frameActive ? 1 : 0}`

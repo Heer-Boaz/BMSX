@@ -1,6 +1,6 @@
 -- cartlib/input/keys.lua
 -- W3C KeyboardEvent.code name -> USB HID usage ID (usage page 0x07).
--- The ICU keyboard bitmap at 0x0800019c is indexed by these usage IDs.
+-- The ICU keyboard bitmap at 0x08000074 is indexed by these usage IDs.
 -- Mirrors machine/ts/input/hid_keys.ts and machine/cpp/input/hid_keys.cpp.
 
 return {

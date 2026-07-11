@@ -30,6 +30,6 @@ export function lintForbiddenRenderWrapperCall(expression: CallExpression, issue
 		issues,
 		forbiddenRenderWrapperCallPatternRule.name,
 		expression.callee,
-		`Legacy render wrapper "${calleeName}" is forbidden. Submit VDP work through MMIO registers instead of Lua draw-wrapper calls.`,
+		`Legacy render wrapper "${calleeName}" is forbidden. Program GX through MMIO instead of Lua draw-wrapper calls.`,
 	);
 }

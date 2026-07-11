@@ -41,7 +41,7 @@ local apu<const> = {
 	},
 }
 
-local command_registers<const>: *apu_command_registers = 0x08000250
+local command_registers<const>: *apu_command_registers = 0x08000128
 
 function apu.seconds_to_samples(seconds)
 	return seconds * 0x0000ac44

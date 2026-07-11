@@ -1,11 +1,11 @@
 import type { RenderPassLibrary } from '../../../backend/pass/library';
-import type { RenderGraphPassContext, RenderPassStateRegistry, TextureHandle } from '../../../backend/backend';
+import type { RenderPassStateRegistry } from '../../../backend/backend';
 import type { WebGLBackend } from '../../../backend/webgl/backend';
 import { TEXTURE_UNIT_POST_PROCESSING_SOURCE } from '../../../backend/webgl/constants';
 import fragmentShaderDeviceCode from './shaders/device_quantize.frag.glsl';
 import vertexShaderCRTCode from '../../webgl/shaders/fullscreen.vert.glsl';
-import type { GameView } from '../../../gameview';
 import { DeviceQuantizeMode } from '../mode';
+import { createDeviceQuantizeState, writeDeviceQuantizeState } from '../state';
 import {
 	bindFullscreenQuad,
 	createFullscreenQuad,
@@ -13,26 +13,6 @@ import {
 	POST_PROCESS_TEXCOORDS,
 	type FullscreenQuad,
 } from '../../../backend/webgl/fullscreen_quad';
-
-function createDeviceQuantizeState(): RenderPassStateRegistry['device_quantize'] {
-	return {
-		width: 0,
-		height: 0,
-		baseWidth: 0,
-		baseHeight: 0,
-		colorTex: null as TextureHandle,
-		deviceQuantizeMode: DeviceQuantizeMode.None,
-	};
-}
-
-function writeDeviceQuantizeState(ctx: RenderGraphPassContext, state: RenderPassStateRegistry['device_quantize']): void {
-	state.width = ctx.view.offscreenCanvasSize.x;
-	state.height = ctx.view.offscreenCanvasSize.y;
-	state.baseWidth = ctx.view.viewportSize.x;
-	state.baseHeight = ctx.view.viewportSize.y;
-	state.colorTex = ctx.getTex('frame_color');
-	state.deviceQuantizeMode = (ctx.view as GameView).deviceQuantizeMode;
-}
 
 export function registerDeviceQuantize(registry: RenderPassLibrary): void {
 	let fullscreenQuad: FullscreenQuad;

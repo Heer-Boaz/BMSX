@@ -196,9 +196,6 @@ add_library(bmsx_core STATIC
 	platform/platform.cpp
 	common/subscription.cpp
 
-	# Vendor (header-only implementations)
-	vendor/stb_impl.c
-
 	# Core systems
 	common/vector.cpp
 	core/machine_manager.cpp
@@ -207,7 +204,6 @@ add_library(bmsx_core STATIC
 	core/host_overlay_menu.cpp
 	core/system.cpp
 	common/registry.cpp
-	common/image_decode.cpp
 	rompack/loader.cpp
 	rompack/tokens.cpp
 	rompack/toc.cpp
@@ -291,7 +287,6 @@ add_library(bmsx_core STATIC
 	machine/devices/geometry/overlap2d.cpp
 	machine/devices/geometry/controller.cpp
 	machine/devices/geometry/save_state.cpp
-	machine/devices/imgdec/controller.cpp
 	machine/devices/input/controller.cpp
 	machine/devices/input/output_port.cpp
 	machine/devices/input/registers.cpp
@@ -333,28 +328,12 @@ add_library(bmsx_core STATIC
 	machine/memory/map.cpp
 	machine/devices/gx/gpu.cpp
 	machine/devices/gx/gte.cpp
-	machine/devices/vdp/fbm.cpp
-	machine/devices/vdp/frame.cpp
-	machine/devices/vdp/ingress.cpp
-	machine/devices/vdp/jtu.cpp
-	machine/devices/vdp/lpu.cpp
-	machine/devices/vdp/mfu.cpp
-	machine/devices/vdp/readback.cpp
-	machine/devices/vdp/registers.cpp
-	machine/devices/vdp/rpu.cpp
-	machine/devices/vdp/unit_register_port.cpp
-	machine/devices/vdp/vout.cpp
-	machine/devices/vdp/vram.cpp
-	machine/devices/vdp/xf.cpp
 	machine/common/hash.cpp
-	machine/devices/vdp/vram_garbage.cpp
-	machine/devices/vdp/vdp.cpp
 	machine/cpu/string_pool.cpp
 	machine/program/loader.cpp
 	machine/program/linker.cpp
 )
 
-# stb is plain C; compile it as C to avoid libstdc++'s legacy C wrappers (e.g. <math.h>)
 
 # Required for linking static library into shared library.
 set(BMSX_MACHINE_ARTIFACT_DIR "${CMAKE_CURRENT_SOURCE_DIR}/../../lib")
@@ -506,12 +485,6 @@ if(BMSX_BUILD_TESTS)
 	)
 	target_link_libraries(bmsx_dma_controller_tests PRIVATE bmsx_core)
 	add_test(NAME bmsx_dma_controller_tests COMMAND bmsx_dma_controller_tests)
-
-	add_executable(bmsx_vdp_ingress_tests
-		${CMAKE_CURRENT_SOURCE_DIR}/../../tests/cpp/vdp_ingress_test.cpp
-	)
-	target_link_libraries(bmsx_vdp_ingress_tests PRIVATE bmsx_core)
-	add_test(NAME bmsx_vdp_ingress_tests COMMAND bmsx_vdp_ingress_tests)
 
 	add_executable(bmsx_libretro_save_state_tests
 		${CMAKE_CURRENT_SOURCE_DIR}/../../tests/cpp/libretro_save_state_test.cpp

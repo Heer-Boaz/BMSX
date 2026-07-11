@@ -238,7 +238,6 @@ function bootSystemSourceProgram(runtime: Runtime, interpreter: LuaInterpreter, 
 		runtime.resetRuntimeForProgramReload();
 	}
 	runtime.moduleCache.clear();
-	runtime.machine.vdp.resetIngressState();
 	runtime.cartEntryAvailable = cartProgramImage !== null;
 	if (cartProgramImage) {
 		runtime.bootLinkedProgramImage(linkBootProgramImages(system.image, system.symbols, cartProgramImage, cartSymbols, 'system'));
@@ -260,7 +259,6 @@ function bootProgramImage(runtime: Runtime, preserveState = false): boolean {
 	}
 
 	runtime.moduleCache.clear();
-	runtime.machine.vdp.resetIngressState();
 
 	try {
 		const sources = machineManager.sourceState;
@@ -326,7 +324,6 @@ function bootLuaProgram(runtime: Runtime, options?: { preserveState?: boolean; s
 		});
 		const programImage = encodeCompiledProgramImage(compiled);
 		runtime.moduleCache.clear();
-		runtime.machine.vdp.resetIngressState();
 		runtime.boot(programImage, compiled.metadata, programImage.vectors, PROGRAM_STATIC_RAM_BASE, PROGRAM_STATIC_RAM_BASE + programImage.sections.data.bytes.byteLength, EMPTY_STATIC_MODULE_PATHS, programImage.sections.rodata.staticModulePaths);
 		return true;
 	} catch (error) {

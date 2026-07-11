@@ -116,11 +116,6 @@
 			"reason": "host_render_pool_not_runtime_core"
 		},
 		{
-			"pattern": "machine/ts/common/image_decode.ts",
-			"category": "host",
-			"reason": "host_or_tooling_image_decode_not_core"
-		},
-		{
 			"pattern": "machine/ts/common/wav.ts",
 			"category": "host",
 			"reason": "host_or_tooling_audio_decode_not_core"
@@ -186,6 +181,16 @@
 			"reason": "host_device_quantize_postprocess_backend"
 		},
 		{
+			"pattern": "machine/ts/render/post/device_quantize/state.ts",
+			"category": "host",
+			"reason": "host_device_quantize_present_state_mirrored_by_cpp_render_backend_pass_library"
+		},
+		{
+			"pattern": "machine/ts/render/post/device_quantize/webgpu/pipeline.ts",
+			"category": "host",
+			"reason": "webgpu_device_quantize_postprocess_backend"
+		},
+		{
 			"pattern": "machine/ts/render/post/device_quantize/headless/pipeline.ts",
 			"category": "host",
 			"reason": "headless_device_quantize_postprocess_backend"
@@ -209,21 +214,6 @@
 			"pattern": "machine/ts/render/texture_load_barrier.ts",
 			"category": "host",
 			"reason": "host_texture_loading_not_core"
-		},
-		{
-			"pattern": "machine/ts/render/vdp/blitter/webgl.ts",
-			"category": "host",
-			"reason": "browser_vdp_blitter_backend_not_core"
-		},
-		{
-			"pattern": "machine/ts/render/vdp/blitter/headless.ts",
-			"category": "host",
-			"reason": "headless_vdp_blitter_backend_not_core"
-		},
-		{
-			"pattern": "machine/ts/render/vdp/blitter/index.ts",
-			"category": "host",
-			"reason": "ts_blitter_backend_selector_not_core"
 		},
 		{
 			"pattern": "machine/ts/render/graph/**",
@@ -286,12 +276,13 @@
 		"machine/ts/render/host_overlay/pipeline.ts",
 		"machine/ts/render/runtime_state.ts",
 		"machine/ts/render/shared/glyph_runs.ts",
-		"machine/ts/render/vdp/source_pixels.ts",
 		"machine/ts/rompack/format.ts",
 		"machine/ts/machine/program/linker.ts",
 		"machine/ts/machine/program/loader.ts",
 		"machine/ts/render/shared/submissions.ts",
-		"machine/ts/render/shared/solid_pixels.ts"
+		"machine/ts/render/shared/solid_pixels.ts",
+		"machine/ts/common/fixed_point.ts",
+		"machine/ts/machine/common/word.ts"
 	],
 	"must_have_cpp": [
 		"machine/ts/common/arrays_equal.ts",
@@ -303,7 +294,6 @@
 		"machine/ts/machine/devices/audio/biquad_filter.ts",
 		"machine/ts/machine/devices/audio/output.ts",
 		"machine/ts/machine/devices/gx/gte.ts",
-		"machine/ts/machine/devices/vdp/rpu.ts",
 		"machine/ts/machine/memory/access_kind.ts",
 		"machine/ts/machine/cpu/string_pool.ts",
 		"machine/ts/machine/cpu/opcode_info.ts",
@@ -332,173 +322,11 @@
 			"reason": "gx_gpu_render_rules_contract"
 		},
 		{
-			"ts": "machine/ts/machine/devices/vdp/device_output.ts",
-			"cpp": [
-				"machine/cpp/machine/devices/vdp/device_output.h"
-			],
-			"reason": "vdp_output_host_surface_contract"
-		},
-		{
-			"ts": "machine/ts/machine/devices/vdp/contracts.ts",
-			"cpp": [
-				"machine/cpp/machine/devices/vdp/contracts.h"
-			],
-			"reason": "vdp_shared_register_and_surface_constant_contract"
-		},
-		{
-			"ts": "machine/ts/machine/devices/vdp/rpu.ts",
-			"cpp": [
-				"machine/cpp/machine/devices/vdp/rpu.h",
-				"machine/cpp/machine/devices/vdp/rpu.cpp"
-			],
-			"reason": "rpu_device_runtime_contract"
-		},
-		{
-			"ts": "machine/ts/machine/devices/vdp/xf.ts",
-			"cpp": [
-				"machine/cpp/machine/devices/vdp/xf.h",
-				"machine/cpp/machine/devices/vdp/xf.cpp"
-			],
-			"reason": "rpu_hardware_matrix_xf_contract"
-		},
-		{
-			"ts": "machine/ts/machine/devices/vdp/lpu.ts",
-			"cpp": [
-				"machine/cpp/machine/devices/vdp/lpu.h",
-				"machine/cpp/machine/devices/vdp/lpu.cpp"
-			],
-			"reason": "rpu_lighting_registerfile_contract"
-		},
-		{
-			"ts": "machine/ts/machine/devices/vdp/mfu.ts",
-			"cpp": [
-				"machine/cpp/machine/devices/vdp/mfu.h",
-				"machine/cpp/machine/devices/vdp/mfu.cpp"
-			],
-			"reason": "rpu_morph_weight_registerfile_contract"
-		},
-		{
-			"ts": "machine/ts/machine/devices/vdp/jtu.ts",
-			"cpp": [
-				"machine/cpp/machine/devices/vdp/jtu.h",
-				"machine/cpp/machine/devices/vdp/jtu.cpp"
-			],
-			"reason": "rpu_joint_matrix_registerfile_contract"
-		},
-		{
-			"ts": "machine/ts/machine/devices/vdp/unit_register_port.ts",
-			"cpp": [
-				"machine/cpp/machine/devices/vdp/unit_register_port.h",
-				"machine/cpp/machine/devices/vdp/unit_register_port.cpp"
-			],
-			"reason": "rpu_registerfile_packet_boundary_contract"
-		},
-		{
-			"ts": "machine/ts/machine/devices/vdp/vout.ts",
-			"cpp": [
-				"machine/cpp/machine/devices/vdp/vout.h",
-				"machine/cpp/machine/devices/vdp/vout.cpp"
-			],
-			"reason": "rpu_vout_presentation_contract"
-		},
-		{
-			"ts": "machine/ts/machine/devices/vdp/fbm.ts",
-			"cpp": [
-				"machine/cpp/machine/devices/vdp/fbm.h",
-				"machine/cpp/machine/devices/vdp/fbm.cpp"
-			],
-			"reason": "rpu_framebuffer_presentation_contract"
-		},
-		{
-			"ts": "machine/ts/machine/devices/vdp/vram.ts",
-			"cpp": [
-				"machine/cpp/machine/devices/vdp/vram.h",
-				"machine/cpp/machine/devices/vdp/vram.cpp"
-			],
-			"reason": "rpu_vram_surface_upload_contract"
-		},
-		{
-			"ts": "machine/ts/machine/devices/vdp/ingress.ts",
-			"cpp": [
-				"machine/cpp/machine/devices/vdp/ingress.h",
-				"machine/cpp/machine/devices/vdp/ingress.cpp"
-			],
-			"reason": "vdp_stream_ingress_runtime_contract"
-		},
-		{
-			"ts": "machine/ts/machine/devices/vdp/registers.ts",
-			"cpp": [
-				"machine/cpp/machine/devices/vdp/registers.h",
-				"machine/cpp/machine/devices/vdp/registers.cpp"
-			],
-			"reason": "vdp_registerfile_constant_and_decode_contract"
-		},
-		{
-			"ts": "machine/ts/machine/devices/vdp/packet.ts",
-			"cpp": [
-				"machine/cpp/machine/devices/vdp/packet.h"
-			],
-			"reason": "vdp_unit_packet_header_contract"
-		},
-		{
-			"ts": "machine/ts/machine/devices/vdp/budget.ts",
-			"cpp": [
-				"machine/cpp/machine/devices/vdp/budget.h"
-			],
-			"reason": "vdp_render_budget_math_contract"
-		},
-		{
 			"ts": "machine/ts/common/fixed_point.ts",
 			"cpp": [
 				"machine/cpp/common/fixed_point.h"
 			],
 			"reason": "common_fixed_point_decode_contract"
-		},
-		{
-			"ts": "machine/ts/machine/devices/vdp/matrix_words.ts",
-			"cpp": [
-				"machine/cpp/machine/devices/vdp/matrix_words.h"
-			],
-			"reason": "vdp_matrix_word_contract"
-		},
-		{
-			"ts": "machine/ts/machine/devices/vdp/vram_garbage.ts",
-			"cpp": [
-				"machine/cpp/machine/devices/vdp/vram_garbage.h",
-				"machine/cpp/machine/devices/vdp/vram_garbage.cpp"
-			],
-			"reason": "vdp_vram_garbage_stream_contract"
-		},
-		{
-			"ts": "machine/ts/machine/devices/vdp/readback.ts",
-			"cpp": [
-				"machine/cpp/machine/devices/vdp/readback.h",
-				"machine/cpp/machine/devices/vdp/readback.cpp"
-			],
-			"reason": "vdp_readback_runtime_contract"
-		},
-		{
-			"ts": "machine/ts/machine/devices/vdp/frame.ts",
-			"cpp": [
-				"machine/cpp/machine/devices/vdp/frame.h",
-				"machine/cpp/machine/devices/vdp/frame.cpp"
-			],
-			"reason": "vdp_submitted_frame_runtime_contract"
-		},
-		{
-			"ts": "machine/ts/machine/devices/vdp/save_state.ts",
-			"cpp": [
-				"machine/cpp/machine/devices/vdp/save_state.h"
-			],
-			"reason": "vdp_device_save_state_type_contract"
-		},
-		{
-			"ts": "machine/ts/machine/devices/vdp/vdp.ts",
-			"cpp": [
-				"machine/cpp/machine/devices/vdp/vdp.h",
-				"machine/cpp/machine/devices/vdp/vdp.cpp"
-			],
-			"reason": "vdp_device_runtime_contract"
 		},
 		{
 			"ts": "machine/ts/render/backend/webgl/fullscreen_quad.ts",
@@ -773,25 +601,11 @@
 			"reason": "geometry_projection_contract"
 		},
 		{
-			"ts": "machine/ts/machine/devices/dma/image_copy.ts",
-			"cpp": [
-				"machine/cpp/machine/devices/dma/image_copy.h"
-			],
-			"reason": "dma_image_copy_contract"
-		},
-		{
 			"ts": "machine/ts/machine/program/layout.ts",
 			"cpp": [
 				"machine/cpp/machine/program/layout.h"
 			],
 			"reason": "program_memory_layout_contract"
-		},
-		{
-			"ts": "machine/ts/machine/devices/vdp/rpu_desc.ts",
-			"cpp": [
-				"machine/cpp/machine/devices/vdp/rpu_desc.h"
-			],
-			"reason": "vdp_rpu_descriptor_contract"
 		},
 		{
 			"ts": "machine/ts/machine/scheduler/budget.ts",
@@ -867,107 +681,6 @@
 	],
 	"strict_runtime_shape_parity": [
 		{
-			"ts": "machine/ts/machine/devices/vdp/device_output.ts",
-			"cpp": [
-				"machine/cpp/machine/devices/vdp/device_output.h"
-			],
-			"symbols": [
-				"VdpSurfaceBacking",
-				"VdpDeviceOutput"
-			],
-			"reason": "residual_vdp_device_output_shape_contract"
-		},
-		{
-			"ts": "machine/ts/machine/devices/vdp/contracts.ts",
-			"cpp": [
-				"machine/cpp/machine/devices/vdp/contracts.h"
-			],
-			"symbols": [
-				"VdpAtlasSource"
-			],
-			"reason": "vdp_shared_register_shape_contract"
-		},
-		{
-			"ts": "machine/ts/machine/devices/vdp/frame.ts",
-			"cpp": [
-				"machine/cpp/machine/devices/vdp/frame.h"
-			],
-			"symbols": [
-				"VdpBuildingFrameSaveState",
-				"VdpSubmittedFrameSaveState"
-			],
-			"reason": "vdp_submitted_frame_snapshot_shape_contract"
-		},
-		{
-			"ts": "machine/ts/machine/devices/vdp/save_state.ts",
-			"cpp": [
-				"machine/cpp/machine/devices/vdp/save_state.h"
-			],
-			"symbols": [
-				"VdpState",
-				"VdpSaveState"
-			],
-			"reason": "vdp_device_save_state_shape_contract"
-		},
-		{
-			"ts": "machine/ts/machine/devices/vdp/rpu.ts",
-			"cpp": [
-				"machine/cpp/machine/devices/vdp/rpu.h"
-			],
-			"symbols": [
-				"VdpRpuCommandBuffer",
-				"VdpRpuFrameOutput",
-				"VdpRpuStreamAttributeSpec",
-				"VdpRpuStreamLayoutSpec",
-				"VdpRpuShaderConstantSlotSpec",
-				"VdpRpuShaderVariantSpec",
-				"VdpRpuCommandBufferSaveState",
-				"VdpRpuFrameSaveState",
-				"VdpRpuSaveState"
-			],
-			"reason": "rpu_retained_command_buffer_shape_contract"
-		},
-		{
-			"ts": "machine/ts/machine/devices/vdp/xf.ts",
-			"cpp": [
-				"machine/cpp/machine/devices/vdp/xf.h"
-			],
-			"symbols": [
-				"VdpXfState"
-			],
-			"reason": "xf_hardware_matrix_state_shape_contract"
-		},
-		{
-			"ts": "machine/ts/machine/devices/vdp/lpu.ts",
-			"cpp": [
-				"machine/cpp/machine/devices/vdp/lpu.h"
-			],
-			"symbols": [
-				"VdpLpuUnit"
-			],
-			"reason": "rpu_lighting_registerfile_shape_contract"
-		},
-		{
-			"ts": "machine/ts/machine/devices/vdp/mfu.ts",
-			"cpp": [
-				"machine/cpp/machine/devices/vdp/mfu.h"
-			],
-			"symbols": [
-				"VdpMfuUnit"
-			],
-			"reason": "rpu_morph_weight_registerfile_shape_contract"
-		},
-		{
-			"ts": "machine/ts/machine/devices/vdp/jtu.ts",
-			"cpp": [
-				"machine/cpp/machine/devices/vdp/jtu.h"
-			],
-			"symbols": [
-				"VdpJtuUnit"
-			],
-			"reason": "rpu_joint_matrix_registerfile_shape_contract"
-		},
-		{
 			"ts": "machine/ts/render/backend/backend.ts",
 			"cpp": [
 				"machine/cpp/render/backend/pass/library.h"
@@ -979,71 +692,6 @@
 				"DeviceQuantizePipelineState"
 			],
 			"reason": "render_pass_pipeline_state_shape_contract"
-		},
-		{
-			"ts": "machine/ts/machine/devices/vdp/vout.ts",
-			"cpp": [
-				"machine/cpp/machine/devices/vdp/vout.h"
-			],
-			"symbols": [
-				"VdpVoutFrameOutput"
-			],
-			"reason": "vout_frame_output_shape_contract"
-		},
-		{
-			"ts": "machine/ts/machine/devices/vdp/vram.ts",
-			"cpp": [
-				"machine/cpp/machine/devices/vdp/vram.h"
-			],
-			"symbols": [
-				"VdpFrameBufferSize",
-				"VdpEntropySeeds",
-				"VdpSurfacePixelsState",
-				"VdpVramState"
-			],
-			"reason": "vram_framebuffer_surface_state_shape_contract"
-		},
-		{
-			"ts": "machine/ts/machine/devices/vdp/ingress.ts",
-			"cpp": [
-				"machine/cpp/machine/devices/vdp/ingress.h"
-			],
-			"symbols": [
-				"VdpStreamIngressState",
-				"VdpStreamIngressUnit"
-			],
-			"reason": "vdp_stream_ingress_state_shape_contract"
-		},
-		{
-			"ts": "machine/ts/machine/devices/vdp/registers.ts",
-			"cpp": [
-				"machine/cpp/machine/devices/vdp/registers.h"
-			],
-			"symbols": [
-				"VdpLatchedGeometry",
-				"VdpDrawCtrl"
-			],
-			"reason": "vdp_registerfile_shape_contract"
-		},
-		{
-			"ts": "machine/ts/machine/devices/vdp/vram_garbage.ts",
-			"cpp": [
-				"machine/cpp/machine/devices/vdp/vram_garbage.h"
-			],
-			"symbols": [
-				"VramGarbageStream"
-			],
-			"reason": "vdp_vram_garbage_stream_shape_contract"
-		},
-		{
-			"ts": "machine/ts/machine/devices/vdp/readback.ts",
-			"cpp": [
-				"machine/cpp/machine/devices/vdp/readback.h"
-			],
-			"symbols": [
-				"VdpReadbackState"
-			],
-			"reason": "vdp_readback_state_shape_contract"
 		},
 		{
 			"ts": "machine/ts/machine/devices/input/contracts.ts",
@@ -1159,7 +807,6 @@
 			],
 			"symbols": [
 				"MachineModelSpec",
-				"MachineVdpWorkSpec",
 				"PsxGpuDisplayModeTiming"
 			],
 			"reason": "machine_model_spec_shape_contract"
@@ -1168,69 +815,18 @@
 	"strict_runtime_no_churn": [
 		{
 			"files": [
-				"machine/ts/machine/devices/vdp/contracts.ts",
-				"machine/ts/machine/devices/vdp/rpu.ts",
-				"machine/cpp/machine/devices/vdp/contracts.h",
-				"machine/cpp/machine/devices/vdp/rpu.cpp",
 				"carts/bare_metal_cart/cart.lua",
 				"machine/ts/render/backend/webgl/instanced_buffers.ts",
 				"machine/ts/render/host_overlay/webgl/pipeline.ts",
-				"machine/ts/machine/devices/vdp/vout.ts",
-				"machine/cpp/machine/devices/vdp/vout.cpp",
-				"machine/ts/machine/devices/vdp/vdp.ts",
-				"machine/ts/machine/devices/vdp/frame.ts",
-				"machine/ts/machine/devices/vdp/save_state.ts",
-				"machine/ts/machine/devices/vdp/ingress.ts",
-				"machine/ts/machine/devices/vdp/unit_register_port.ts",
-				"machine/ts/machine/devices/vdp/xf.ts",
-				"machine/ts/machine/devices/vdp/lpu.ts",
-				"machine/ts/machine/devices/vdp/mfu.ts",
-				"machine/ts/machine/devices/vdp/jtu.ts",
-				"machine/cpp/machine/devices/vdp/vdp.cpp",
-				"machine/cpp/machine/devices/vdp/frame.cpp",
-				"machine/cpp/machine/devices/vdp/ingress.cpp",
-				"machine/cpp/machine/devices/vdp/unit_register_port.cpp",
-				"machine/cpp/machine/devices/vdp/xf.cpp",
-				"machine/cpp/machine/devices/vdp/lpu.cpp",
-				"machine/cpp/machine/devices/vdp/mfu.cpp",
-				"machine/cpp/machine/devices/vdp/jtu.cpp",
-				"machine/cpp/machine/devices/vdp/save_state.h",
-				"machine/ts/machine/devices/vdp/vram.ts",
-				"machine/ts/machine/devices/vdp/fbm.ts",
-				"machine/ts/machine/devices/vdp/readback.ts",
-				"machine/ts/machine/devices/vdp/vram_garbage.ts",
-				"machine/cpp/machine/devices/vdp/vram.cpp",
-				"machine/cpp/machine/devices/vdp/fbm.cpp",
-				"machine/cpp/machine/devices/vdp/readback.cpp",
-				"machine/cpp/machine/devices/vdp/vram_garbage.cpp",
-				"machine/ts/machine/devices/vdp/registers.ts",
-				"machine/cpp/machine/devices/vdp/registers.cpp",
-				"machine/cpp/machine/devices/vdp/registers.h",
-				"machine/ts/machine/devices/vdp/packet.ts",
-				"machine/cpp/machine/devices/vdp/packet.h",
-				"machine/ts/machine/devices/vdp/budget.ts",
-				"machine/cpp/machine/devices/vdp/budget.h",
 				"machine/ts/common/fixed_point.ts",
 				"machine/cpp/common/fixed_point.h",
-				"machine/ts/machine/devices/vdp/matrix_words.ts",
-				"machine/cpp/machine/devices/vdp/matrix_words.h",
 				"machine/ts/render/headless/passes.ts",
 				"machine/ts/render/headless/view.ts"
 			],
-			"reason": "vdp_device_bios_cart_and_headless_hot_paths"
+			"reason": "cart_and_headless_hot_paths_must_not_allocate"
 		}
 	],
-	"strict_rpu_table_parity": [
-		{
-			"ts": "machine/ts/machine/devices/vdp/rpu.ts",
-			"cpp": "machine/cpp/machine/devices/vdp/rpu.h",
-			"tables": [
-				"VDP_RPU_STREAM_LAYOUTS",
-				"VDP_RPU_SHADER_VARIANTS"
-			],
-			"reason": "fixed_rpu_stream_layout_and_shader_variant_tables_must_match_token_for_token"
-		}
-	],
+	"strict_rpu_table_parity": [],
 	"strict_shader_parity": [
 		{
 			"webgl": "machine/ts/render/backend/webgl/shaders/gx_gpu_fill.vert.glsl",
@@ -1316,9 +912,27 @@
 				"machine/firmware/system/vdp_mfu.lua",
 				"machine/firmware/system/vdp_rpu.lua",
 				"machine/firmware/system/vdp_rpu_quads.lua",
-				"machine/firmware/system/vdp_xf.lua"
+				"machine/firmware/system/vdp_xf.lua",
+				"machine/ts/machine/devices/vdp",
+				"machine/cpp/machine/devices/vdp",
+				"machine/ts/machine/devices/imgdec",
+				"machine/cpp/machine/devices/imgdec",
+				"machine/ts/machine/devices/dma/image_copy.ts",
+				"machine/cpp/machine/devices/dma/image_copy.h",
+				"machine/ts/common/image_decode.ts",
+				"machine/cpp/common/image_decode.cpp",
+				"machine/cpp/common/image_decode.h",
+				"machine/cpp/vendor/stb_image.h",
+				"machine/cpp/vendor/stb_impl.c",
+				"tests/lua/vdp_ingress.test.ts",
+				"tests/cpp/vdp_ingress_test.cpp",
+				"tests/lua/image_decode.test.ts",
+				"schemas/rommanifest.schema.json",
+				"docs/video_display_processor.md",
+				"docs/runtime_bench_report.md",
+				"scripts/lint/rules/lua_cart/forbidden_render_layer_string_pattern.ts"
 			],
-			"reason": "retired_lua_vdp_rpu_and_runtime_atlas_decode_firmware_must_not_return"
+			"reason": "retired_vdp_rpu_image_decoder_and_runtime_atlas_decode_paths_must_not_return"
 		},
 		{
 			"present": [
@@ -1511,107 +1125,6 @@
 			"reason": "webgl_device_quantize_pipeline_mirrors_cpp_gles2_device_quantize_pipeline"
 		},
 		{
-			"ts": "machine/ts/machine/devices/vdp/device_output.ts",
-			"cpp": [
-				"machine/cpp/machine/devices/vdp/device_output.h"
-			],
-			"reason": "vdp_output_host_contract_filename_parity"
-		},
-		{
-			"ts": "machine/ts/machine/devices/vdp/contracts.ts",
-			"cpp": [
-				"machine/cpp/machine/devices/vdp/contracts.h"
-			],
-			"reason": "vdp_contracts_filename_parity"
-		},
-		{
-			"ts": "machine/ts/machine/devices/vdp/frame.ts",
-			"cpp": [
-				"machine/cpp/machine/devices/vdp/frame.h",
-				"machine/cpp/machine/devices/vdp/frame.cpp"
-			],
-			"reason": "vdp_frame_snapshot_filename_parity"
-		},
-		{
-			"ts": "machine/ts/machine/devices/vdp/save_state.ts",
-			"cpp": [
-				"machine/cpp/machine/devices/vdp/save_state.h"
-			],
-			"reason": "vdp_save_state_filename_parity"
-		},
-		{
-			"ts": "machine/ts/machine/devices/vdp/rpu.ts",
-			"cpp": [
-				"machine/cpp/machine/devices/vdp/rpu.h",
-				"machine/cpp/machine/devices/vdp/rpu.cpp"
-			],
-			"reason": "rpu_device_filename_parity"
-		},
-		{
-			"ts": "machine/ts/machine/devices/vdp/xf.ts",
-			"cpp": [
-				"machine/cpp/machine/devices/vdp/xf.h",
-				"machine/cpp/machine/devices/vdp/xf.cpp"
-			],
-			"reason": "xf_hardware_matrix_filename_parity"
-		},
-		{
-			"ts": "machine/ts/machine/devices/vdp/lpu.ts",
-			"cpp": [
-				"machine/cpp/machine/devices/vdp/lpu.h",
-				"machine/cpp/machine/devices/vdp/lpu.cpp"
-			],
-			"reason": "lpu_registerfile_filename_parity"
-		},
-		{
-			"ts": "machine/ts/machine/devices/vdp/mfu.ts",
-			"cpp": [
-				"machine/cpp/machine/devices/vdp/mfu.h",
-				"machine/cpp/machine/devices/vdp/mfu.cpp"
-			],
-			"reason": "mfu_registerfile_filename_parity"
-		},
-		{
-			"ts": "machine/ts/machine/devices/vdp/jtu.ts",
-			"cpp": [
-				"machine/cpp/machine/devices/vdp/jtu.h",
-				"machine/cpp/machine/devices/vdp/jtu.cpp"
-			],
-			"reason": "jtu_registerfile_filename_parity"
-		},
-		{
-			"ts": "machine/ts/machine/devices/vdp/unit_register_port.ts",
-			"cpp": [
-				"machine/cpp/machine/devices/vdp/unit_register_port.h",
-				"machine/cpp/machine/devices/vdp/unit_register_port.cpp"
-			],
-			"reason": "unit_register_port_filename_parity"
-		},
-		{
-			"ts": "machine/ts/machine/devices/vdp/vout.ts",
-			"cpp": [
-				"machine/cpp/machine/devices/vdp/vout.h",
-				"machine/cpp/machine/devices/vdp/vout.cpp"
-			],
-			"reason": "vout_presentation_filename_parity"
-		},
-		{
-			"ts": "machine/ts/machine/devices/vdp/fbm.ts",
-			"cpp": [
-				"machine/cpp/machine/devices/vdp/fbm.h",
-				"machine/cpp/machine/devices/vdp/fbm.cpp"
-			],
-			"reason": "fbm_presentation_filename_parity"
-		},
-		{
-			"ts": "machine/ts/machine/devices/vdp/vram.ts",
-			"cpp": [
-				"machine/cpp/machine/devices/vdp/vram.h",
-				"machine/cpp/machine/devices/vdp/vram.cpp"
-			],
-			"reason": "vram_surface_upload_filename_parity"
-		},
-		{
 			"ts": "machine/ts/render/backend/webgl/fullscreen_quad.ts",
 			"cpp": [
 				"machine/cpp/render/backend/gles2/fullscreen_quad.h",
@@ -1620,72 +1133,11 @@
 			"reason": "fullscreen_quad_backend_filename_parity"
 		},
 		{
-			"ts": "machine/ts/machine/devices/vdp/ingress.ts",
-			"cpp": [
-				"machine/cpp/machine/devices/vdp/ingress.h",
-				"machine/cpp/machine/devices/vdp/ingress.cpp"
-			],
-			"reason": "vdp_stream_ingress_filename_parity"
-		},
-		{
-			"ts": "machine/ts/machine/devices/vdp/registers.ts",
-			"cpp": [
-				"machine/cpp/machine/devices/vdp/registers.h",
-				"machine/cpp/machine/devices/vdp/registers.cpp"
-			],
-			"reason": "vdp_registerfile_constant_and_decode_filename_parity"
-		},
-		{
-			"ts": "machine/ts/machine/devices/vdp/packet.ts",
-			"cpp": [
-				"machine/cpp/machine/devices/vdp/packet.h"
-			],
-			"reason": "vdp_unit_packet_header_filename_parity"
-		},
-		{
-			"ts": "machine/ts/machine/devices/vdp/budget.ts",
-			"cpp": [
-				"machine/cpp/machine/devices/vdp/budget.h"
-			],
-			"reason": "vdp_render_budget_math_filename_parity"
-		},
-		{
 			"ts": "machine/ts/common/fixed_point.ts",
 			"cpp": [
 				"machine/cpp/common/fixed_point.h"
 			],
 			"reason": "common_fixed_point_decode_filename_parity"
-		},
-		{
-			"ts": "machine/ts/machine/devices/vdp/matrix_words.ts",
-			"cpp": [
-				"machine/cpp/machine/devices/vdp/matrix_words.h"
-			],
-			"reason": "vdp_matrix_word_filename_parity"
-		},
-		{
-			"ts": "machine/ts/machine/devices/vdp/vram_garbage.ts",
-			"cpp": [
-				"machine/cpp/machine/devices/vdp/vram_garbage.h",
-				"machine/cpp/machine/devices/vdp/vram_garbage.cpp"
-			],
-			"reason": "vdp_vram_garbage_filename_parity"
-		},
-		{
-			"ts": "machine/ts/machine/devices/vdp/readback.ts",
-			"cpp": [
-				"machine/cpp/machine/devices/vdp/readback.h",
-				"machine/cpp/machine/devices/vdp/readback.cpp"
-			],
-			"reason": "vdp_readback_filename_parity"
-		},
-		{
-			"ts": "machine/ts/machine/devices/vdp/vdp.ts",
-			"cpp": [
-				"machine/cpp/machine/devices/vdp/vdp.h",
-				"machine/cpp/machine/devices/vdp/vdp.cpp"
-			],
-			"reason": "vdp_device_filename_parity"
 		},
 		{
 			"ts": "machine/ts/machine/scheduler/microtask_queue.ts",
@@ -2158,19 +1610,6 @@
 			]
 		},
 		{
-			"ts": "machine/ts/render/vdp/source_pixels.ts",
-			"cpp": [
-				"machine/cpp/render/vdp/source_pixels.h"
-			],
-			"shape_exclude": [
-				{
-					"symbol": "VdpSurfacePixels",
-					"field": "pixels",
-					"reason": "TS VDP surface pixels are a Uint8Array view; C++ stores the same pixel buffer as a native u8 pointer."
-				}
-			]
-		},
-		{
 			"ts": "machine/ts/machine/runtime/cpu_state.ts",
 			"cpp": [
 				"machine/cpp/machine/runtime/cpu_state.h"
@@ -2211,64 +1650,6 @@
 	],
 	"strict_runtime_no_heap_functions": [
 		{
-			"file": "machine/ts/machine/devices/vdp/rpu.ts",
-			"functions": [
-				"consumePacketFromMemory",
-				"consumePacketFromWords",
-				"consumePacketPayloadFromMemory",
-				"consumePacketPayloadFromWords",
-				"acceptExecPassList",
-				"acceptSealFrame",
-				"checkVramRange"
-			],
-			"reason": "rpu_packet_ingress_and_retained_command_buffer_hot_path_must_not_allocate"
-		},
-		{
-			"file": "machine/cpp/machine/devices/vdp/rpu.cpp",
-			"functions": [
-				"consumePacketFromMemory",
-				"consumePacketFromWords",
-				"consumePacketPayloadFromMemory",
-				"consumePacketPayloadFromWords",
-				"acceptExecPassList",
-				"acceptSealFrame",
-				"checkVramRange"
-			],
-			"reason": "rpu_packet_ingress_and_retained_command_buffer_hot_path_must_not_allocate"
-		},
-		{
-			"file": "machine/ts/machine/devices/vdp/vout.ts",
-			"functions": [
-				"presentFrame"
-			],
-			"reason": "vout_presentation_hot_path_must_swap_retained_frames_without_allocating"
-		},
-		{
-			"file": "machine/cpp/machine/devices/vdp/vout.cpp",
-			"functions": [
-				"presentFrame"
-			],
-			"reason": "vout_presentation_hot_path_must_swap_retained_frames_without_allocating"
-		},
-		{
-			"file": "machine/ts/machine/devices/vdp/vram_garbage.ts",
-			"functions": [
-				"makeBiasConfig",
-				"initBlockGen",
-				"fillVramGarbageScratch"
-			],
-			"reason": "vram_garbage_generation_must_use_retained_scratch_without_heap_churn"
-		},
-		{
-			"file": "machine/cpp/machine/devices/vdp/vram_garbage.cpp",
-			"functions": [
-				"makeBiasConfig",
-				"initBlockGen",
-				"fillVramGarbageScratch"
-			],
-			"reason": "vram_garbage_generation_must_use_stack_or_retained_state_without_heap_churn"
-		},
-		{
 			"file": "machine/ts/render/post/crt/webgl/pipeline.ts",
 			"functions": [
 				"writeCrtVec3",
@@ -2280,11 +1661,24 @@
 		{
 			"file": "machine/ts/render/post/device_quantize/webgl/pipeline.ts",
 			"functions": [
-				"writeDeviceQuantizeState",
 				"bindDeviceQuantizeUniforms",
 				"renderDeviceQuantize"
 			],
 			"reason": "webgl_device_quantize_hot_path_must_reuse_retained_state_without_runtime_wrappers"
+		},
+		{
+			"file": "machine/ts/render/post/device_quantize/state.ts",
+			"functions": [
+				"writeDeviceQuantizeState"
+			],
+			"reason": "device_quantize_graph_state_must_be_written_into_retained_storage"
+		},
+		{
+			"file": "machine/ts/render/post/device_quantize/webgpu/pipeline.ts",
+			"functions": [
+				"writeDeviceQuantizeUniforms"
+			],
+			"reason": "webgpu_device_quantize_hot_path_must_reuse_retained_uniform_storage"
 		},
 		{
 			"file": "machine/ts/render/post/device_quantize/headless/pipeline.ts",
@@ -2330,6 +1724,13 @@
 				"beginRenderPass"
 			],
 			"reason": "webgl_render_pass_begin_must_not_allocate_encoder_or_cache_key"
+		},
+		{
+			"file": "machine/ts/render/backend/webgpu/backend.ts",
+			"functions": [
+				"beginRenderPass"
+			],
+			"reason": "webgpu_render_pass_begin_must_reuse_host_pass_wrapper_and_attachment_storage"
 		},
 		{
 			"file": "machine/ts/render/headless/present_surface.ts",
@@ -2418,6 +1819,28 @@
 				"executeGxGpuPass"
 			],
 			"reason": "gles2_gx_gpu_hot_backend_helpers_must_remain_heap_and_gc_free"
+		},
+		{
+			"file": "machine/ts/machine/devices/dma/controller.ts",
+			"functions": [
+				"startIoThunk",
+				"accrueCycles",
+				"onService",
+				"processJob",
+				"scheduleNextService"
+			],
+			"reason": "dma_transfer_and_service_hot_path_must_reuse_queue_columns_and_scratch"
+		},
+		{
+			"file": "machine/cpp/machine/devices/dma/controller.cpp",
+			"functions": [
+				"startIo",
+				"accrueCycles",
+				"onService",
+				"processJob",
+				"scheduleNextService"
+			],
+			"reason": "dma_transfer_and_service_hot_path_must_reuse_queue_and_scratch"
 		}
 	],
 	"strict_lua_no_heap_functions": [

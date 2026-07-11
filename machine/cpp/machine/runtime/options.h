@@ -14,7 +14,6 @@ struct RuntimeOptions {
 		size_t size;
 	};
 
-	Vec2 viewport;
 	RomSpan systemRomBytes;
 	RomSpan cartRomBytes;
 	uint32_t psxGpuDisplayModeWord;
@@ -22,10 +21,7 @@ struct RuntimeOptions {
 	i64 cpuHz;
 	int cycleBudgetPerFrame;
 	int vblankCycles;
-	i64 imgDecBytesPerSec;
-	i64 dmaBytesPerSecIso;
-	i64 dmaBytesPerSecBulk;
-	int vdpWorkUnitsPerSec;
+	i64 dmaBytesPerSec;
 	int geoWorkUnitsPerSec;
 };
 

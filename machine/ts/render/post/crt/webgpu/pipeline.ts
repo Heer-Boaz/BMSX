@@ -5,7 +5,7 @@ import type { GameView } from '../../../gameview';
 import { createCrtPassState, createPresentPassState, shouldExecuteAutoCrtPass, shouldExecuteAutoPresentPass, shouldUpdatePresentationHistoryA, shouldUpdatePresentationHistoryB, writeCrtPassState, writePresentPassState } from '../state';
 import fragmentShaderCRTCode from './shaders/crt.frag.wgsl';
 import fragmentShaderPresentCode from './shaders/present.frag.wgsl';
-import vertexShaderCRTCode from './shaders/crt.vert.wgsl';
+import vertexShaderCRTCode from '../../webgpu/shaders/fullscreen.vert.wgsl';
 import { DeviceQuantizeMode } from '../../device_quantize/mode';
 
 const CRT_UNIFORM_FLOATS = 24;

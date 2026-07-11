@@ -12,7 +12,6 @@ import { machineManager } from '../../core/machine_manager';
 import { clearRuntimeDebuggerPause } from './debug_pause';
 import { clearFaultSnapshot, resetHandledLuaErrors } from './fault_state';
 import { toLuaModulePath } from '../../machine/program/loader';
-import { IRQ_IMG_DONE, IRQ_IMG_ERROR } from '../../machine/bus/io';
 import {
 	buildModuleChunks,
 	refreshLuaHandlersForChunk,
@@ -99,15 +98,12 @@ export function hotResumeProgramEntry(runtime: Runtime, params: { path: string; 
 	const program = inflateExecutableProgramImage(programImage, runtime.programDataBaseAddress, runtime.programBssBaseAddress);
 	if (!params.preserveSystemModules) {
 		runtime.moduleCache.clear();
-		runtime.machine.imgDecController.reset();
-		runtime.machine.irqController.acknowledge(IRQ_IMG_DONE | IRQ_IMG_ERROR);
 	}
 	// True hot-resume: keep every live module object. Closures reference their
 	// proto by index, and compiling against baseProgram replaces those protos in
 	// place, so already-loaded modules run the new code without being re-required.
 	// Re-requiring would build a redundant second module generation (the heap
 	// doubling that pushed resume over the RAM budget) and discard live state.
-	runtime.machine.vdp.resetIngressState();
 	runtime.machine.cpu.setProgram(program, programImage.link.symbols, compiled.metadata);
 	runtime.luaRuntimeFailed = preserveRuntimeFailure;
 	machineManager.sourceState.currentPath = binding;

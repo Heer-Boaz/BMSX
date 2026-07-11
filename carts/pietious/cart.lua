@@ -33,9 +33,9 @@ local castle_map<const> = require('castle/map')
 local init_epoch = 0
 local pending_title_boot_epoch = -1
 
-local irq_mask_addr<const> = 0x0800010c
-local irq_vblank<const> = 0x0010
-local irq_apu<const> = 0x0200
+local irq_mask_addr<const> = 0x08000010
+local irq_vblank<const> = 0x0004
+local irq_apu<const> = 0x0020
 local vblank_count = 0
 
 local register_collision_profiles<const> = function()
@@ -187,7 +187,7 @@ init()
 gx_upload_atlas(0)
 mem[irq_mask_addr] = irq_vblank | irq_apu
 new_game()
-mem[0x08000194] = 0x00000001
+mem[0x0800006c] = 0x00000001
 wait_vblank()
 
 while true do
@@ -197,6 +197,6 @@ while true do
 	gx_clear_color(0xff000000)
 	draw_world()
 
-	mem[0x08000194] = 0x00000001
+	mem[0x0800006c] = 0x00000001
 	wait_vblank()
 end

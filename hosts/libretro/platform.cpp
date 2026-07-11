@@ -240,8 +240,6 @@ void LibretroPlatform::onContextReset() {
 	backend->setFramebufferGetter(m_hw_get_current_framebuffer);
 	log(RETRO_LOG_INFO, "[BMSX] onContextReset: backend reset\n");
 	backend->onContextReset();
-	log(RETRO_LOG_INFO, "[BMSX] onContextReset: set dither\n");
-	setDitherType(m_dither_type);
 	log(RETRO_LOG_INFO, "[BMSX] onContextReset: update backend host\n");
 	static_cast<LibretroGameViewHost*>(m_gameview_host.get())->updateBackend(backend);
 
@@ -343,12 +341,9 @@ void LibretroPlatform::setCrtEffectOptions(bool applyNoise,
 	view->applyAperture = applyAperture;
 }
 
-void LibretroPlatform::setDitherType(i32 type) {
-	m_dither_type = type;
-	if (!m_machine_manager->hasRuntime()) {
-		return;
-	}
-	m_machine_manager->runtime().machine.memory.writeValue(IO_VDP_DITHER, valueNumber(static_cast<double>(m_dither_type)));
+void LibretroPlatform::setDeviceQuantizeMode(DeviceQuantizeMode mode) {
+	m_device_quantize_mode = mode;
+	m_machine_manager->view()->deviceQuantizeMode = mode;
 }
 
 void LibretroPlatform::setResourceUsageGizmo(bool enabled) {
@@ -395,7 +390,7 @@ bool LibretroPlatform::loadRomOwned(std::vector<uint8_t>&& data) {
 		log(RETRO_LOG_ERROR, "[BMSX] Failed to load ROM\n");
 		return false;
 	}
-	setDitherType(m_dither_type);
+	setDeviceQuantizeMode(m_device_quantize_mode);
 #if defined(__GLIBC__)
 	malloc_trim(0);
 #endif
@@ -451,7 +446,7 @@ bool LibretroPlatform::loadRomFromPath(const char* path) {
 		log(RETRO_LOG_ERROR, "[BMSX] Failed to load ROM file: %s\n", path);
 		return false;
 	}
-	setDitherType(m_dither_type);
+	setDeviceQuantizeMode(m_device_quantize_mode);
 #if defined(__GLIBC__)
 	malloc_trim(0);
 #endif

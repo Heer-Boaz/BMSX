@@ -706,9 +706,9 @@ local reload<const> = function()
 end
 
 local on_apu_irq<const> = function()
-	local kind<const> = mem[0x080002ac]
-	local slot<const> = mem[0x080002b0]
-	local source_addr<const> = mem[0x080002b4]
+	local kind<const> = mem[0x08000184]
+	local slot<const> = mem[0x08000188]
+	local source_addr<const> = mem[0x0800018c]
 
 	if kind ~= 0x00000001 then
 		return

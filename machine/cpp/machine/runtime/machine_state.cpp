@@ -16,9 +16,9 @@ RuntimeMachineState captureRuntimeMachineState(const Runtime& runtime) {
 
 void applyRuntimeMachineState(Runtime& runtime, const RuntimeMachineState& state) {
 	runtime.applyPsxGpuDisplayModeWord(state.psxGpuDisplayModeWord);
+	runtime.vblank.restore(runtime, state.vblank);
 	restoreMachineState(runtime.machine, state.machine);
 	runtime.frameScheduler.restoreState(state.frameScheduler);
-	runtime.vblank.restore(runtime, state.vblank);
 }
 
 } // namespace bmsx

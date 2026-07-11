@@ -1,8 +1,7 @@
 /*
  * gameview.cpp - GameView implementation
  *
- * Routes host/editor render submissions to render queues. BMSX machine VDP work
- * enters through VDP MMIO/FIFO/DMA, not renderer submissions.
+ * Routes host/editor render submissions to render queues.
  */
 
 #include "gameview.h"

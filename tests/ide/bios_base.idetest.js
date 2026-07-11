@@ -161,13 +161,3 @@ t.assert(primitiveValues[16] === 'vm-error', `pcall(error, message) should prese
 	const value = runtime.machine.cpu.getGlobalByKey(runtime.internString(name));
 	t.assert(value === null, `${name} ${expectation}`);
 });
-
-const rawMachineValues = t.evaluateLua(`
-local screen_wh<const> = mem[0x08000088]
-return mem[0x08000084],
-	screen_wh & 0xffff,
-	screen_wh >> 16
-`);
-t.assert(rawMachineValues[0] === 2, `bare_metal_cart should boot VDP mode 2, got ${rawMachineValues[0]}`);
-t.assert(rawMachineValues[1] === 320, `sys_vdp_screen_wh width should derive from mode 2, got ${rawMachineValues[1]}`);
-t.assert(rawMachineValues[2] === 240, `sys_vdp_screen_wh height should derive from mode 2, got ${rawMachineValues[2]}`);

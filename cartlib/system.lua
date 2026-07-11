@@ -28,8 +28,8 @@ local gx_gpu<const> = require('system/gx_gpu')
 local gx_image<const> = require('system/gx_image')
 local cart_input<const> = require('cartlib/input/player')
 
-local irq_ack_addr<const> = 0x08000108
-local irq_apu<const> = 0x0200
+local irq_ack_addr<const> = 0x0800000c
+local irq_apu<const> = 0x0020
 
 local world_instance<const> = world_module.instance
 

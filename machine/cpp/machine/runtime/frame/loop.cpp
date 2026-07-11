@@ -29,7 +29,6 @@ void FrameLoopState::beginFrameState(Runtime& runtime) {
 	frameState.cycleBudgetGranted = runtime.timing.cycleBudgetPerFrame;
 	frameState.cycleCarryGranted = 0;
 	frameDeltaMs = runtime.timing.frameDurationMs;
-	runtime.machine.vdp.beginFrame();
 }
 
 void FrameLoopState::abandonFrameState(Runtime& runtime) {

@@ -5,7 +5,6 @@
 #include "machine/devices/gx/gpu.h"
 #include "machine/devices/gx/gpu_command_buffer.h"
 #include "machine/devices/irq/controller.h"
-#include "machine/devices/vdp/vdp.h"
 #include "machine/memory/map.h"
 #include "machine/memory/memory.h"
 #include "machine/scheduler/device.h"
@@ -22,7 +21,6 @@ struct DmaGpuHarness {
 	bmsx::CPU cpu;
 	bmsx::DeviceScheduler scheduler;
 	bmsx::IrqController irq;
-	bmsx::VDP vdp;
 	bmsx::DmaController dma;
 	bmsx::GxGpu gpu;
 
@@ -31,13 +29,12 @@ struct DmaGpuHarness {
 		, cpu(memory)
 		, scheduler(cpu)
 		, irq(memory)
-		, vdp(memory, scheduler, bmsx::VdpFrameBufferSize{16u, 16u})
-		, dma(memory, irq, vdp, scheduler)
+		, dma(memory, irq, scheduler)
 		, gpu(memory, scheduler) {
 		dma.reset();
 		gpu.reset();
 		irq.reset();
-		dma.setTiming(1, 64, 64, 0);
+		dma.setTiming(1, 64, 0);
 	}
 };
 
@@ -88,7 +85,7 @@ void testDmaPreservesCpuToVramPacketAcrossServiceSlices() {
 	const uint32_t payload1 = 0x44443333u;
 	const uint32_t payload2 = 0x66665555u;
 
-	harness.dma.setTiming(1, 8, 8, 0);
+	harness.dma.setTiming(1, 8, 0);
 	memory.writeMappedU32LE(source, command0);
 	memory.writeMappedU32LE(source + 4u, command1);
 	memory.writeMappedU32LE(source + 8u, command2);
@@ -169,6 +166,38 @@ void testDmaStrictRejectsNonWordGxGp0StreamLength() {
 	require(harness.gpu.readDrawModeWord() == 0u, "GX-GPU GP0 strict rejected stream issues no command word");
 }
 
+void testDmaFullFifoRejectionPreservesQueuedProgressLatch() {
+	DmaGpuHarness harness;
+	bmsx::Memory& memory = harness.memory;
+	const uint32_t source = bmsx::PROGRAM_STATIC_RAM_BASE + 0x240u;
+	bmsx::DmaControllerState restored;
+	restored.queue.resize(bmsx::DMA_JOB_QUEUE_CAPACITY);
+	for (size_t index = 0u; index < restored.queue.size(); index += 1u) {
+		restored.queue[index].src = source + static_cast<uint32_t>(index * 4u);
+		restored.queue[index].dst = bmsx::IO_GX_GPU_GP0;
+		restored.queue[index].remaining = 4u;
+	}
+	restored.writtenValue = 37u;
+	restored.sourceRegisterWord = source;
+	restored.destinationRegisterWord = bmsx::IO_GX_GPU_GP0;
+	restored.lengthRegisterWord = 4u;
+	restored.statusRegisterWord = bmsx::DMA_STATUS_BUSY;
+	restored.writtenRegisterWord = 37u;
+	harness.dma.restoreState(restored, 0);
+
+	memory.writeMappedU32LE(bmsx::IO_DMA_SRC, source);
+	memory.writeMappedU32LE(bmsx::IO_DMA_DST, bmsx::IO_GX_GPU_GP0);
+	memory.writeMappedU32LE(bmsx::IO_DMA_LEN, 4u);
+	memory.writeMappedU32LE(bmsx::IO_DMA_CTRL, bmsx::DMA_CTRL_START);
+
+	const bmsx::DmaControllerState state = harness.dma.captureState();
+	require(state.queue.size() == bmsx::DMA_JOB_QUEUE_CAPACITY, "DMA full-FIFO rejection should retain the existing jobs");
+	require(state.writtenValue == 37u, "DMA full-FIFO rejection should preserve the queued progress latch value");
+	require(!state.writtenDirty, "DMA full-FIFO rejection should preserve the queued progress latch dirty bit");
+	require(memory.readIoU32(bmsx::IO_DMA_STATUS) == (bmsx::DMA_STATUS_DONE | bmsx::DMA_STATUS_ERROR), "DMA full-FIFO rejection should publish an error");
+	require(memory.readIoU32(bmsx::IO_DMA_WRITTEN) == 0u, "DMA full-FIFO rejection should publish zero bytes for the rejected request");
+}
+
 } // namespace
 
 int main() {
@@ -176,5 +205,6 @@ int main() {
 	testDmaPreservesCpuToVramPacketAcrossServiceSlices();
 	testDmaClipsNonStrictGxGp0StreamToWholeWords();
 	testDmaStrictRejectsNonWordGxGp0StreamLength();
+	testDmaFullFifoRejectionPreservesQueuedProgressLatch();
 	return 0;
 }

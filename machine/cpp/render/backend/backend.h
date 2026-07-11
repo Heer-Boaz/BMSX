@@ -63,7 +63,6 @@ namespace bmsx {
 using TextureHandle = void*;
 
 class RenderPassLibrary;
-class VDP;
 class GxGpu;
 
 const std::array<u8, 256>& srgbToLinearLut();

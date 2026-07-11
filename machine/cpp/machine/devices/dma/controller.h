@@ -1,100 +1,79 @@
 #pragma once
 
-#include "machine/devices/dma/image_copy.h"
 #include "machine/memory/memory.h"
 #include "machine/scheduler/device.h"
 
 #include <array>
+#include <cstddef>
 #include <cstdint>
-#include <functional>
 #include <vector>
 
 namespace bmsx {
 
 class IrqController;
-class VDP;
+
+inline constexpr size_t DMA_JOB_QUEUE_CAPACITY = 16u;
+
+struct DmaJobState {
+	uint32_t src = 0;
+	uint32_t dst = 0;
+	uint32_t remaining = 0;
+	uint32_t written = 0;
+	bool clipped = false;
+};
+
+struct DmaControllerState {
+	std::vector<DmaJobState> queue;
+	int64_t budget = 0;
+	int64_t carry = 0;
+	uint32_t writtenValue = 0;
+	bool writtenDirty = false;
+	uint32_t sourceRegisterWord = 0;
+	uint32_t destinationRegisterWord = 0;
+	uint32_t lengthRegisterWord = 0;
+	uint32_t controlRegisterWord = 0;
+	uint32_t statusRegisterWord = 0;
+	uint32_t writtenRegisterWord = 0;
+};
 
 class DmaController {
 public:
-	enum class Channel : uint8_t {
-		Iso = 0,
-		Bulk = 1,
-	};
+	DmaController(Memory& memory, IrqController& irq, DeviceScheduler& scheduler);
 
-		DmaController(
-				Memory& memory,
-				IrqController& irq,
-				VDP& vdp,
-				DeviceScheduler& scheduler
-	);
-
-	void setTiming(int64_t cpuHz, int64_t isoBytesPerSec, int64_t bulkBytesPerSec, int64_t nowCycles);
+	void setTiming(int64_t cpuHz, int64_t bytesPerSec, int64_t nowCycles);
 	void accrueCycles(int cycles, int64_t nowCycles);
 	void onService(int64_t nowCycles);
 	void startIo();
-		void enqueueImageCopy(const ImageCopyPlan& plan, std::vector<uint8_t>&& pixels, std::function<void(bool clipped)> onComplete);
 	void reset();
+	DmaControllerState captureState() const;
+	void restoreState(const DmaControllerState& state, int64_t nowCycles);
 
-		private:
-			static constexpr uint32_t DMA_SERVICE_BATCH_BYTES = 64u;
-			static void onCtrlWriteThunk(void* context, uint32_t addr, Value value);
+private:
+	static constexpr uint32_t DMA_SERVICE_BATCH_BYTES = 64u;
+	static void onCtrlWriteThunk(void* context, uint32_t addr, Value value);
 
-		struct DmaJob {
-		enum class Kind : uint8_t { Io, Image };
-		Kind kind = Kind::Io;
-		Channel channel = Channel::Bulk;
-		bool started = false;
-			uint32_t written = 0;
-			bool clipped = false;
-
-			uint32_t src = 0;
-			uint32_t dst = 0;
-			uint32_t remaining = 0;
-			bool strict = false;
-
-			ImageCopyPlan plan;
-			std::vector<uint8_t> pixels;
-			uint32_t row = 0;
-			uint32_t rowOffset = 0;
-			bool vramTarget = false;
-			std::function<void(bool clipped)> onComplete;
-	};
-
-	struct DmaChannelState {
-		uint32_t budget = 0;
-		std::vector<DmaJob> queue;
-		size_t queueHead = 0;
-	};
-
-	void accrueChannel(Channel channel, int64_t bytesPerSec, int64_t& carry, int cycles);
 	void scheduleNextService(int64_t nowCycles);
-	bool hasPendingTransfer(Channel channel) const;
-	void tickChannel(Channel channel);
-	uint32_t processJob(DmaJob& job, uint32_t budget);
-	uint32_t processImageJob(DmaJob& job, uint32_t budget);
-	bool isJobComplete(const DmaJob& job) const;
-	void finishJob(DmaJob& job);
-	void finishIoJob(DmaJob& job);
+	bool hasPendingTransfer() const;
+	void tick();
+	uint32_t processJob(DmaJobState& job, int64_t budget);
 	void finishIoSuccess(bool clipped);
 	void finishIoError(bool clipped);
 	uint32_t resolveMaxWritable(uint32_t dst) const;
-	uint32_t getPendingBytesForChannel(Channel channel) const;
+	int64_t getPendingBytes() const;
 
-	DmaChannelState m_channels[2];
+	std::array<DmaJobState, DMA_JOB_QUEUE_CAPACITY> m_queue{};
+	size_t m_queueHead = 0;
+	size_t m_queueCount = 0;
 	int64_t m_cpuHz = 1;
-	int64_t m_isoBytesPerSec = 1;
-	int64_t m_bulkBytesPerSec = 1;
-	int64_t m_isoCarry = 0;
-	int64_t m_bulkCarry = 0;
-	uint32_t m_ioWrittenValue = 0;
-	bool m_ioWrittenDirty = false;
-	uint32_t m_imgWrittenValue = 0;
-	bool m_imgWrittenDirty = false;
-			Memory& m_memory;
-			VDP& m_vdp;
-			IrqController& m_irq;
-			DeviceScheduler& m_scheduler;
-		std::array<uint8_t, DMA_SERVICE_BATCH_BYTES> m_buffer{};
-	};
+	int64_t m_bytesPerSec = 1;
+	int64_t m_carry = 0;
+	int64_t m_budget = 0;
+	uint32_t m_writtenValue = 0;
+	bool m_writtenDirty = false;
+	Memory& m_memory;
+	IrqController& m_irq;
+	DeviceScheduler& m_scheduler;
+	std::array<uint8_t, DMA_SERVICE_BATCH_BYTES> m_buffer{};
+};
 
 } // namespace bmsx

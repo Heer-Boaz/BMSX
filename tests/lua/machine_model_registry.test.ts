@@ -8,7 +8,6 @@ import {
 	PSX_GPU_DISPLAY_MODE_PAL_WORD,
 	NTSC_REFRESH_UFPS_SCALED,
 	PSX_MACHINE_SPEC,
-	PSX_VDP_WORK_SPEC,
 	PSX_GPU_DISPLAY_SIZE_SPEC,
 } from '../../machine/ts/machine/model_registry';
 import { HZ_SCALE } from '../../machine/ts/machine/runtime/timing/constants';
@@ -16,18 +15,8 @@ import { HZ_SCALE } from '../../machine/ts/machine/runtime/timing/constants';
 test('machine registry exposes the psx fixed hardware model', () => {
 	assert.deepEqual(PSX_MACHINE_SPEC, {
 		cpuFreqHz: 50_000_000,
-		imgDecBytesPerSec: 26_214_400,
-		dmaBytesPerSecIso: 8_388_608,
-		dmaBytesPerSecBulk: 26_214_400,
+		dmaBytesPerSec: 26_214_400,
 		ramBytes: 0x00400000,
-		textureBytes: 0x00200000,
-		stagingBytes: 0x00022000,
-	});
-});
-
-test('machine registry exposes the psx VDP device class throughput', () => {
-	assert.deepEqual(PSX_VDP_WORK_SPEC, {
-		vdpWorkUnitsPerSec: 25_600,
 		geoWorkUnitsPerSec: 16_384_000,
 	});
 });

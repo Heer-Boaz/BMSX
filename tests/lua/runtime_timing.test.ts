@@ -41,10 +41,7 @@ function createTimingRuntime(): Runtime {
 		cpuHz: timing.cpuHz,
 		cycleBudgetPerFrame: timing.cycleBudgetPerFrame,
 		vblankCycles: timing.vblankCycles,
-		imgDecBytesPerSec: timing.imgDecBytesPerSec,
-		dmaBytesPerSecIso: timing.dmaBytesPerSecIso,
-		dmaBytesPerSecBulk: timing.dmaBytesPerSecBulk,
-		vdpWorkUnitsPerSec: timing.vdpWorkUnitsPerSec,
+		dmaBytesPerSec: timing.dmaBytesPerSec,
 		geoWorkUnitsPerSec: timing.geoWorkUnitsPerSec,
 	}, new TimingInputSource(), INLINE_MICROTASKS);
 }

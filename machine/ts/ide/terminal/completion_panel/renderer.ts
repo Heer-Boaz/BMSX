@@ -1,7 +1,7 @@
 import type { OverlayRenderer } from '../../runtime/overlay_renderer';
 import type { TerminalPanelGridLayout } from './model';
 import { type color } from '../../../render/shared/submissions';
-import { LAYER_2D_IDE } from '../../../machine/devices/vdp/contracts';
+import { LAYER_2D_IDE } from '../../../render/shared/layers';
 
 export type TerminalGridPanelRenderParams = {
 	renderer: OverlayRenderer;

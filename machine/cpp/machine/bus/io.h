@@ -10,8 +10,6 @@ namespace bmsx {
  * Runtime I/O memory layout constants.
  *
  * The runtime exposes a memory-mapped register bank.
- * Variable-length VDP submit data lives in CPU RAM and is pushed through
- * the VDP FIFO or submitted via the fixed VDP command doorbell.
  */
 
 constexpr int IO_SYS_BASE_INDEX = 0;
@@ -20,25 +18,7 @@ constexpr int IO_SYS_HOST_FAULT_FLAGS_INDEX = IO_SYS_BASE_INDEX;
 constexpr int IO_SYS_HOST_FAULT_STAGE_INDEX = IO_SYS_BASE_INDEX + 1;
 
 constexpr int IO_SYS_SIZE = 2;
-constexpr int IO_VDP_BASE_INDEX = IO_SYS_BASE_INDEX + IO_SYS_SIZE;
-constexpr int IO_VDP_DITHER_INDEX = IO_VDP_BASE_INDEX;
-constexpr int IO_VDP_RD_SURFACE_INDEX = IO_VDP_BASE_INDEX + 3;
-constexpr int IO_VDP_RD_X_INDEX = IO_VDP_BASE_INDEX + 4;
-constexpr int IO_VDP_RD_Y_INDEX = IO_VDP_BASE_INDEX + 5;
-constexpr int IO_VDP_RD_MODE_INDEX = IO_VDP_BASE_INDEX + 6;
-constexpr int IO_VDP_RD_STATUS_INDEX = IO_VDP_BASE_INDEX + 7;
-constexpr int IO_VDP_RD_DATA_INDEX = IO_VDP_BASE_INDEX + 8;
-constexpr int IO_VDP_CMD_INDEX = IO_VDP_BASE_INDEX + 9;
-constexpr int IO_VDP_CMD_ARG0_INDEX = IO_VDP_BASE_INDEX + 10;
-constexpr int IO_VDP_CMD_ARG_COUNT = static_cast<int>(VDP_CMD_ARG_COUNT);
-constexpr int IO_VDP_FIFO_INDEX = IO_VDP_CMD_ARG0_INDEX + IO_VDP_CMD_ARG_COUNT;
-constexpr int IO_VDP_FIFO_CTRL_INDEX = IO_VDP_FIFO_INDEX + 1;
-constexpr int IO_VDP_RETIRED_DISPLAY_MODE_INDEX = IO_VDP_FIFO_CTRL_INDEX + 1;
-constexpr int IO_VDP_SCREEN_WH_INDEX = IO_VDP_FIFO_CTRL_INDEX + 2;
-constexpr int IO_VDP_RETIRED_RENDER_UNIT_WINDOW_SIZE = 32;
-constexpr int IO_VDP_SIZE = 12 + IO_VDP_CMD_ARG_COUNT + IO_VDP_RETIRED_RENDER_UNIT_WINDOW_SIZE;
-
-constexpr int IO_IRQ_BASE_INDEX = IO_VDP_BASE_INDEX + IO_VDP_SIZE;
+constexpr int IO_IRQ_BASE_INDEX = IO_SYS_BASE_INDEX + IO_SYS_SIZE;
 constexpr int IO_IRQ_FLAGS_INDEX = IO_IRQ_BASE_INDEX;
 constexpr int IO_IRQ_ACK_INDEX = IO_IRQ_BASE_INDEX + 1;
 constexpr int IO_IRQ_MASK_INDEX = IO_IRQ_BASE_INDEX + 2;
@@ -53,23 +33,7 @@ constexpr int IO_DMA_STATUS_INDEX = IO_DMA_BASE_INDEX + 4;
 constexpr int IO_DMA_WRITTEN_INDEX = IO_DMA_BASE_INDEX + 5;
 constexpr int IO_DMA_SIZE = 6;
 
-constexpr int IO_IMG_BASE_INDEX = IO_DMA_BASE_INDEX + IO_DMA_SIZE;
-constexpr int IO_IMG_SRC_INDEX = IO_IMG_BASE_INDEX;
-constexpr int IO_IMG_LEN_INDEX = IO_IMG_BASE_INDEX + 1;
-constexpr int IO_IMG_DST_INDEX = IO_IMG_BASE_INDEX + 2;
-constexpr int IO_IMG_CAP_INDEX = IO_IMG_BASE_INDEX + 3;
-constexpr int IO_IMG_CTRL_INDEX = IO_IMG_BASE_INDEX + 4;
-constexpr int IO_IMG_STATUS_INDEX = IO_IMG_BASE_INDEX + 5;
-constexpr int IO_IMG_WRITTEN_INDEX = IO_IMG_BASE_INDEX + 6;
-constexpr int IO_IMG_SIZE = 7;
-
-constexpr int IO_VDP_STATUS_INDEX = IO_IMG_BASE_INDEX + IO_IMG_SIZE;
-constexpr int IO_VDP_FAULT_CODE_INDEX = IO_VDP_STATUS_INDEX + 1;
-constexpr int IO_VDP_FAULT_DETAIL_INDEX = IO_VDP_STATUS_INDEX + 2;
-constexpr int IO_VDP_FAULT_ACK_INDEX = IO_VDP_STATUS_INDEX + 3;
-constexpr int IO_VDP_STATUS_SIZE = 4;
-
-constexpr int IO_GEO_BASE_INDEX = IO_VDP_STATUS_INDEX + IO_VDP_STATUS_SIZE;
+constexpr int IO_GEO_BASE_INDEX = IO_DMA_BASE_INDEX + IO_DMA_SIZE;
 constexpr int IO_GEO_SRC0_INDEX = IO_GEO_BASE_INDEX;
 constexpr int IO_GEO_SRC1_INDEX = IO_GEO_BASE_INDEX + 1;
 constexpr int IO_GEO_SRC2_INDEX = IO_GEO_BASE_INDEX + 2;
@@ -161,8 +125,7 @@ constexpr int IO_APU_FAULT_ACK_INDEX = IO_APU_FAULT_CODE_INDEX + 2;
 constexpr int IO_GEO_FAULT_ACK_INDEX = IO_APU_FAULT_ACK_INDEX + 1;
 constexpr int IO_SYS_TIME_MS_INDEX = IO_GEO_FAULT_ACK_INDEX + 1;
 constexpr int IO_SYS_FRAME_MS_INDEX = IO_SYS_TIME_MS_INDEX + 1;
-constexpr int IO_SYS_RETIRED_REGION_INDEX = IO_SYS_FRAME_MS_INDEX + 1;
-constexpr int IO_SYS_PRINT_CHAR_INDEX = IO_SYS_RETIRED_REGION_INDEX + 1;
+constexpr int IO_SYS_PRINT_CHAR_INDEX = IO_SYS_FRAME_MS_INDEX + 1;
 constexpr int IO_SYS_PRINT_FLUSH_INDEX = IO_SYS_PRINT_CHAR_INDEX + 1;
 constexpr int IO_SYS_CYCLES_PER_FRAME_INDEX = IO_SYS_PRINT_FLUSH_INDEX + 1;
 constexpr int IO_GX_GPU_GP0_INDEX = IO_SYS_CYCLES_PER_FRAME_INDEX + 1;
@@ -197,44 +160,6 @@ constexpr uint32_t IO_SYS_BUS_FAULT_CODE = IO_BASE + IO_SYS_BUS_FAULT_CODE_INDEX
 constexpr uint32_t IO_SYS_BUS_FAULT_ADDR = IO_BASE + IO_SYS_BUS_FAULT_ADDR_INDEX * IO_WORD_SIZE;
 constexpr uint32_t IO_SYS_BUS_FAULT_ACCESS = IO_BASE + IO_SYS_BUS_FAULT_ACCESS_INDEX * IO_WORD_SIZE;
 constexpr uint32_t IO_SYS_BUS_FAULT_ACK = IO_BASE + IO_SYS_BUS_FAULT_ACK_INDEX * IO_WORD_SIZE;
-constexpr uint32_t IO_VDP_BASE = IO_BASE + IO_VDP_BASE_INDEX * IO_WORD_SIZE;
-constexpr uint32_t IO_VDP_DITHER = IO_BASE + IO_VDP_DITHER_INDEX * IO_WORD_SIZE;
-constexpr uint32_t IO_VDP_RD_SURFACE = IO_BASE + IO_VDP_RD_SURFACE_INDEX * IO_WORD_SIZE;
-constexpr uint32_t IO_VDP_RD_X = IO_BASE + IO_VDP_RD_X_INDEX * IO_WORD_SIZE;
-constexpr uint32_t IO_VDP_RD_Y = IO_BASE + IO_VDP_RD_Y_INDEX * IO_WORD_SIZE;
-constexpr uint32_t IO_VDP_RD_MODE = IO_BASE + IO_VDP_RD_MODE_INDEX * IO_WORD_SIZE;
-constexpr uint32_t IO_VDP_RD_STATUS = IO_BASE + IO_VDP_RD_STATUS_INDEX * IO_WORD_SIZE;
-constexpr uint32_t IO_VDP_RD_DATA = IO_BASE + IO_VDP_RD_DATA_INDEX * IO_WORD_SIZE;
-constexpr uint32_t IO_VDP_CMD = IO_BASE + IO_VDP_CMD_INDEX * IO_WORD_SIZE;
-constexpr uint32_t IO_VDP_CMD_ARG0 = IO_BASE + IO_VDP_CMD_ARG0_INDEX * IO_WORD_SIZE;
-constexpr uint32_t IO_VDP_REG0 = IO_VDP_CMD_ARG0;
-constexpr uint32_t IO_VDP_REG_SRC_SLOT = IO_VDP_REG0 + 0u * IO_WORD_SIZE;
-constexpr uint32_t IO_VDP_REG_SRC_UV = IO_VDP_REG0 + 1u * IO_WORD_SIZE;
-constexpr uint32_t IO_VDP_REG_SRC_WH = IO_VDP_REG0 + 2u * IO_WORD_SIZE;
-constexpr uint32_t IO_VDP_REG_DST_X = IO_VDP_REG0 + 3u * IO_WORD_SIZE;
-constexpr uint32_t IO_VDP_REG_DST_Y = IO_VDP_REG0 + 4u * IO_WORD_SIZE;
-constexpr uint32_t IO_VDP_REG_GEOM_X0 = IO_VDP_REG0 + 5u * IO_WORD_SIZE;
-constexpr uint32_t IO_VDP_REG_GEOM_Y0 = IO_VDP_REG0 + 6u * IO_WORD_SIZE;
-constexpr uint32_t IO_VDP_REG_GEOM_X1 = IO_VDP_REG0 + 7u * IO_WORD_SIZE;
-constexpr uint32_t IO_VDP_REG_GEOM_Y1 = IO_VDP_REG0 + 8u * IO_WORD_SIZE;
-constexpr uint32_t IO_VDP_REG_LINE_WIDTH = IO_VDP_REG0 + 9u * IO_WORD_SIZE;
-constexpr uint32_t IO_VDP_REG_DRAW_LAYER = IO_VDP_REG0 + 10u * IO_WORD_SIZE;
-constexpr uint32_t IO_VDP_REG_DRAW_PRIORITY = IO_VDP_REG0 + 11u * IO_WORD_SIZE;
-constexpr uint32_t IO_VDP_REG_DRAW_CTRL = IO_VDP_REG0 + 12u * IO_WORD_SIZE;
-constexpr uint32_t IO_VDP_REG_DRAW_SCALE_X = IO_VDP_REG0 + 13u * IO_WORD_SIZE;
-constexpr uint32_t IO_VDP_REG_DRAW_SCALE_Y = IO_VDP_REG0 + 14u * IO_WORD_SIZE;
-constexpr uint32_t IO_VDP_REG_DRAW_COLOR = IO_VDP_REG0 + 15u * IO_WORD_SIZE;
-constexpr uint32_t IO_VDP_REG_BG_COLOR = IO_VDP_REG0 + 16u * IO_WORD_SIZE;
-constexpr uint32_t IO_VDP_REG_SLOT_INDEX = IO_VDP_REG0 + 17u * IO_WORD_SIZE;
-constexpr uint32_t IO_VDP_REG_SLOT_DIM = IO_VDP_REG0 + 18u * IO_WORD_SIZE;
-constexpr uint32_t IO_VDP_FIFO = IO_BASE + IO_VDP_FIFO_INDEX * IO_WORD_SIZE;
-constexpr uint32_t IO_VDP_FIFO_CTRL = IO_BASE + IO_VDP_FIFO_CTRL_INDEX * IO_WORD_SIZE;
-constexpr uint32_t IO_VDP_SCREEN_WH = IO_BASE + IO_VDP_SCREEN_WH_INDEX * IO_WORD_SIZE;
-constexpr uint32_t IO_VDP_STATUS = IO_BASE + IO_VDP_STATUS_INDEX * IO_WORD_SIZE;
-constexpr uint32_t IO_VDP_FAULT_CODE = IO_BASE + IO_VDP_FAULT_CODE_INDEX * IO_WORD_SIZE;
-constexpr uint32_t IO_VDP_FAULT_DETAIL = IO_BASE + IO_VDP_FAULT_DETAIL_INDEX * IO_WORD_SIZE;
-constexpr uint32_t IO_VDP_FAULT_ACK = IO_BASE + IO_VDP_FAULT_ACK_INDEX * IO_WORD_SIZE;
-
 constexpr uint32_t IO_IRQ_BASE = IO_BASE + IO_IRQ_BASE_INDEX * IO_WORD_SIZE;
 constexpr uint32_t IO_IRQ_FLAGS = IO_BASE + IO_IRQ_FLAGS_INDEX * IO_WORD_SIZE;
 constexpr uint32_t IO_IRQ_ACK = IO_BASE + IO_IRQ_ACK_INDEX * IO_WORD_SIZE;
@@ -248,14 +173,6 @@ constexpr uint32_t IO_DMA_CTRL = IO_BASE + IO_DMA_CTRL_INDEX * IO_WORD_SIZE;
 constexpr uint32_t IO_DMA_STATUS = IO_BASE + IO_DMA_STATUS_INDEX * IO_WORD_SIZE;
 constexpr uint32_t IO_DMA_WRITTEN = IO_BASE + IO_DMA_WRITTEN_INDEX * IO_WORD_SIZE;
 
-constexpr uint32_t IO_IMG_BASE = IO_BASE + IO_IMG_BASE_INDEX * IO_WORD_SIZE;
-constexpr uint32_t IO_IMG_SRC = IO_BASE + IO_IMG_SRC_INDEX * IO_WORD_SIZE;
-constexpr uint32_t IO_IMG_LEN = IO_BASE + IO_IMG_LEN_INDEX * IO_WORD_SIZE;
-constexpr uint32_t IO_IMG_DST = IO_BASE + IO_IMG_DST_INDEX * IO_WORD_SIZE;
-constexpr uint32_t IO_IMG_CAP = IO_BASE + IO_IMG_CAP_INDEX * IO_WORD_SIZE;
-constexpr uint32_t IO_IMG_CTRL = IO_BASE + IO_IMG_CTRL_INDEX * IO_WORD_SIZE;
-constexpr uint32_t IO_IMG_STATUS = IO_BASE + IO_IMG_STATUS_INDEX * IO_WORD_SIZE;
-constexpr uint32_t IO_IMG_WRITTEN = IO_BASE + IO_IMG_WRITTEN_INDEX * IO_WORD_SIZE;
 constexpr uint32_t IO_GEO_BASE = IO_BASE + IO_GEO_BASE_INDEX * IO_WORD_SIZE;
 constexpr uint32_t IO_GEO_SRC0 = IO_BASE + IO_GEO_SRC0_INDEX * IO_WORD_SIZE;
 constexpr uint32_t IO_GEO_SRC1 = IO_BASE + IO_GEO_SRC1_INDEX * IO_WORD_SIZE;
@@ -380,12 +297,10 @@ constexpr uint32_t IO_APU_CMD_CAPACITY = IO_BASE + IO_APU_CMD_CAPACITY_INDEX * I
 
 constexpr uint32_t IRQ_DMA_DONE = 1 << 0;
 constexpr uint32_t IRQ_DMA_ERROR = 1 << 1;
-constexpr uint32_t IRQ_IMG_DONE = 1 << 2;
-constexpr uint32_t IRQ_IMG_ERROR = 1 << 3;
-constexpr uint32_t IRQ_VBLANK = 1 << 4;
-constexpr uint32_t IRQ_GEO_DONE = 1 << 7;
-constexpr uint32_t IRQ_GEO_ERROR = 1 << 8;
-constexpr uint32_t IRQ_APU = 1 << 9;
+constexpr uint32_t IRQ_VBLANK = 1 << 2;
+constexpr uint32_t IRQ_GEO_DONE = 1 << 3;
+constexpr uint32_t IRQ_GEO_ERROR = 1 << 4;
+constexpr uint32_t IRQ_APU = 1 << 5;
 
 
 constexpr uint32_t DMA_CTRL_START = 1 << 0;
@@ -394,13 +309,6 @@ constexpr uint32_t DMA_STATUS_BUSY = 1 << 0;
 constexpr uint32_t DMA_STATUS_DONE = 1 << 1;
 constexpr uint32_t DMA_STATUS_ERROR = 1 << 2;
 constexpr uint32_t DMA_STATUS_CLIPPED = 1 << 3;
-
-constexpr uint32_t IMG_CTRL_START = 1 << 0;
-constexpr uint32_t IMG_STATUS_BUSY = 1 << 0;
-constexpr uint32_t IMG_STATUS_DONE = 1 << 1;
-constexpr uint32_t IMG_STATUS_ERROR = 1 << 2;
-constexpr uint32_t IMG_STATUS_CLIPPED = 1 << 3;
-constexpr uint32_t IMG_STATUS_REJECTED = 1 << 4;
 
 constexpr uint32_t HOST_FAULT_FLAG_ACTIVE = 1u << 0u;
 constexpr uint32_t HOST_FAULT_FLAG_STARTUP_BLOCKING = 1u << 1u;
@@ -411,7 +319,6 @@ constexpr uint32_t BUS_FAULT_NONE = 0u;
 constexpr uint32_t BUS_FAULT_UNMAPPED = 1u;
 constexpr uint32_t BUS_FAULT_UNALIGNED_IO = 2u;
 constexpr uint32_t BUS_FAULT_READ_ONLY = 3u;
-constexpr uint32_t BUS_FAULT_VRAM_RANGE = 4u;
 constexpr uint32_t BUS_FAULT_ACCESS_READ = 1u << 0u;
 constexpr uint32_t BUS_FAULT_ACCESS_WRITE = 1u << 1u;
 constexpr uint32_t BUS_FAULT_ACCESS_U8 = 1u << 8u;

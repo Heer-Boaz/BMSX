@@ -10,10 +10,7 @@ TimingState::TimingState(
 	int cycleBudgetPerFrame,
 	uint32_t gpuDisplayModeWord,
 	i64 totalScanlines,
-	i64 imgDecBytesPerSec,
-	i64 dmaBytesPerSecIso,
-	i64 dmaBytesPerSecBulk,
-	int vdpWorkUnitsPerSec,
+	i64 dmaBytesPerSec,
 	int geoWorkUnitsPerSec
 )
 	: ufpsScaled(ufpsScaled)
@@ -23,11 +20,8 @@ TimingState::TimingState(
 	, totalScanlines(totalScanlines)
 	, cpuHz(cpuHz)
 	, cycleBudgetPerFrame(cycleBudgetPerFrame)
-	, vdpWorkUnitsPerSec(vdpWorkUnitsPerSec)
 	, geoWorkUnitsPerSec(geoWorkUnitsPerSec)
-	, imgDecBytesPerSec(imgDecBytesPerSec)
-	, dmaBytesPerSecIso(dmaBytesPerSecIso)
-	, dmaBytesPerSecBulk(dmaBytesPerSecBulk) {
+	, dmaBytesPerSec(dmaBytesPerSec) {
 }
 
 } // namespace bmsx

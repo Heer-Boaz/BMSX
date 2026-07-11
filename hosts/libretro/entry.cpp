@@ -164,8 +164,7 @@ static constexpr const char* kOptionHostShowUsageGizmo = "bmsx_host_show_usage_g
 static constexpr const char* kToggleOff = "off";
 static constexpr const char* kToggleOn = "on";
 static constexpr const char* kDitherOff = "off";
-static constexpr const char* kDitherPSX = "psx";
-static constexpr const char* kDitherRGB777Output = "rgb777_output";
+static constexpr const char* kDitherRGB565 = "rgb565";
 static constexpr const char* kDitherMSX10 = "msx10";
 
 enum class RenderBackendPreference {
@@ -184,7 +183,7 @@ static bool g_crt_blur_enabled = true;
 static bool g_crt_glow_enabled = true;
 static bool g_crt_fringing_enabled = true;
 static bool g_crt_aperture_enabled = false;
-static int g_dither_type = 0;
+static bmsx::DeviceQuantizeMode g_device_quantize_mode = bmsx::DeviceQuantizeMode::None;
 static bool g_resource_usage_gizmo_enabled = false;
 
 static retro_core_option_v2_category g_option_categories_us[] = {
@@ -335,15 +334,14 @@ static retro_core_option_v2_definition g_option_defs_us[] = {
 	},
 	{
 		kOptionDither,
-		"Dither",
-		"Dither",
-		"Select dithering mode.",
-		"Select dithering mode.",
+		"Output Dither",
+		"Output Dither",
+		"Select host output color quantization.",
+		"Select host output color quantization.",
 		"video",
 		{
 			{kDitherOff, "Off"},
-			{kDitherPSX, "PSX RGB555"},
-			{kDitherRGB777Output, "RGB777 Output"},
+			{kDitherRGB565, "RGB565"},
 			{kDitherMSX10, "MSX10 3:4:3"},
 			{nullptr, nullptr},
 		},
@@ -353,8 +351,8 @@ static retro_core_option_v2_definition g_option_defs_us[] = {
 		kOptionHostShowUsageGizmo,
 		"Show Usage Gizmo",
 		"Show Usage Gizmo",
-		"Toggle the CPU/RAM/VRAM/VDP usage overlay.",
-		"Toggle the CPU/RAM/VRAM/VDP usage overlay.",
+		"Toggle the CPU/RAM/VRAM usage overlay.",
+		"Toggle the CPU/RAM/VRAM usage overlay.",
 		"video",
 		{
 			{kToggleOff, "Off"},
@@ -484,12 +482,11 @@ static retro_core_option_definition g_option_defs_v1_us[] = {
 	},
 	{
 		kOptionDither,
-		"Dither",
-		"Select dithering mode.",
+		"Output Dither",
+		"Select host output color quantization.",
 		{
 			{kDitherOff, "Off"},
-			{kDitherPSX, "PSX RGB555"},
-			{kDitherRGB777Output, "RGB777 Output"},
+			{kDitherRGB565, "RGB565"},
 			{kDitherMSX10, "MSX10 3:4:3"},
 			{nullptr, nullptr},
 		},
@@ -498,7 +495,7 @@ static retro_core_option_definition g_option_defs_v1_us[] = {
 	{
 		kOptionHostShowUsageGizmo,
 		"Show Usage Gizmo",
-		"Toggle the CPU/RAM/VRAM/VDP usage overlay.",
+		"Toggle the CPU/RAM/VRAM usage overlay.",
 		{
 			{kToggleOff, "Off"},
 			{kToggleOn, "On"},
@@ -558,7 +555,7 @@ static bool read_crt_blur_enabled();
 static bool read_crt_glow_enabled();
 static bool read_crt_fringing_enabled();
 static bool read_crt_aperture_enabled();
-static int read_dither_type();
+static bmsx::DeviceQuantizeMode read_device_quantize_mode();
 static bool read_toggle_option(const char* key, const char* label, bool default_value);
 static bool read_resource_usage_gizmo_enabled();
 
@@ -704,15 +701,13 @@ static void set_core_options(bool default_gles2) {
 	g_option_defs_us[10].default_value = kDitherOff;
 	g_option_defs_v1_us[10].default_value = kDitherOff;
 	g_option_defs_us[10].values[0] = {kDitherOff, "Off"};
-	g_option_defs_us[10].values[1] = {kDitherPSX, "PSX RGB555"};
-	g_option_defs_us[10].values[2] = {kDitherRGB777Output, "RGB777 Output"};
-	g_option_defs_us[10].values[3] = {kDitherMSX10, "MSX10 3:4:3"};
-	g_option_defs_us[10].values[4] = {nullptr, nullptr};
+	g_option_defs_us[10].values[1] = {kDitherRGB565, "RGB565"};
+	g_option_defs_us[10].values[2] = {kDitherMSX10, "MSX10 3:4:3"};
+	g_option_defs_us[10].values[3] = {nullptr, nullptr};
 	g_option_defs_v1_us[10].values[0] = {kDitherOff, "Off"};
-	g_option_defs_v1_us[10].values[1] = {kDitherPSX, "PSX RGB555"};
-	g_option_defs_v1_us[10].values[2] = {kDitherRGB777Output, "RGB777 Output"};
-	g_option_defs_v1_us[10].values[3] = {kDitherMSX10, "MSX10 3:4:3"};
-	g_option_defs_v1_us[10].values[4] = {nullptr, nullptr};
+	g_option_defs_v1_us[10].values[1] = {kDitherRGB565, "RGB565"};
+	g_option_defs_v1_us[10].values[2] = {kDitherMSX10, "MSX10 3:4:3"};
+	g_option_defs_v1_us[10].values[3] = {nullptr, nullptr};
 
 	g_option_defs_us[11].default_value = kToggleOff;
 	g_option_defs_v1_us[11].default_value = kToggleOff;
@@ -773,7 +768,7 @@ static void set_core_options(bool default_gles2) {
 					kToggleOff, kToggleOn);
 	g_option_vars[9].value = g_option_crt_aperture_var;
 	std::snprintf(g_option_dither_var, sizeof(g_option_dither_var),
-					"Dither; %s|%s|%s|%s", kDitherOff, kDitherPSX, kDitherRGB777Output, kDitherMSX10);
+					"Output Dither; %s|%s|%s", kDitherOff, kDitherRGB565, kDitherMSX10);
 	g_option_vars[10].value = g_option_dither_var;
 	std::snprintf(g_option_host_show_usage_gizmo_var, sizeof(g_option_host_show_usage_gizmo_var),
 					"Show Usage Gizmo; %s|%s", kToggleOff, kToggleOn);
@@ -886,19 +881,15 @@ static bool read_crt_aperture_enabled() {
 	return read_toggle_option(kOptionCrtAperture, "CRT Aperture", false);
 }
 
-static int read_dither_type() {
+static bmsx::DeviceQuantizeMode read_device_quantize_mode() {
 	retro_variable var;
 	var.key = kOptionDither;
 	var.value = kDitherOff;
 	if (environ_cb(RETRO_ENVIRONMENT_GET_VARIABLE, &var) && var.value) {
-		if (std::strcmp(var.value, kDitherOff) == 0) return 0;
-		if (std::strcmp(var.value, kDitherPSX) == 0) return 1;
-		if (std::strcmp(var.value, kDitherRGB777Output) == 0) return 2;
-		if (std::strcmp(var.value, kDitherMSX10) == 0) return 3;
-		if (std::strcmp(var.value, kToggleOn) == 0) return 2;
-		if (std::strcmp(var.value, kToggleOff) == 0) return 0;
+		if (std::strcmp(var.value, kDitherRGB565) == 0) return bmsx::DeviceQuantizeMode::Rgb565;
+		if (std::strcmp(var.value, kDitherMSX10) == 0) return bmsx::DeviceQuantizeMode::Msx10Rgb343;
 	}
-	return 0;
+	return bmsx::DeviceQuantizeMode::None;
 }
 
 static void fail_hardware_backend(bmsx::BackendType backend, const char* reason) {
@@ -1092,7 +1083,7 @@ void retro_init(void) {
 	g_crt_glow_enabled = read_crt_glow_enabled();
 	g_crt_fringing_enabled = read_crt_fringing_enabled();
 	g_crt_aperture_enabled = read_crt_aperture_enabled();
-	g_dither_type = read_dither_type();
+	g_device_quantize_mode = read_device_quantize_mode();
 	g_resource_usage_gizmo_enabled = read_resource_usage_gizmo_enabled();
 	request_hw_context_for_backend(desired_backend);
 	apply_backend_preference(preference);
@@ -1150,7 +1141,7 @@ void retro_init(void) {
 									g_crt_glow_enabled,
 									g_crt_fringing_enabled,
 									g_crt_aperture_enabled);
-	g_platform->setDitherType(g_dither_type);
+	g_platform->setDeviceQuantizeMode(g_device_quantize_mode);
 	g_platform->setResourceUsageGizmo(g_resource_usage_gizmo_enabled);
 	if (isHardwareBackendActive()) {
 	try {
@@ -1389,10 +1380,10 @@ void retro_run(void) {
 										g_crt_fringing_enabled,
 										g_crt_aperture_enabled);
 	}
-	const int new_dither = read_dither_type();
-	if (new_dither != g_dither_type) {
-		g_dither_type = new_dither;
-		g_platform->setDitherType(g_dither_type);
+	const bmsx::DeviceQuantizeMode new_device_quantize_mode = read_device_quantize_mode();
+	if (new_device_quantize_mode != g_device_quantize_mode) {
+		g_device_quantize_mode = new_device_quantize_mode;
+		g_platform->setDeviceQuantizeMode(g_device_quantize_mode);
 	}
 	const bool new_resource_usage_gizmo = read_resource_usage_gizmo_enabled();
 	if (new_resource_usage_gizmo != g_resource_usage_gizmo_enabled) {

@@ -2,8 +2,8 @@ local round_to_nearest<const> = require('bios/util/round_to_nearest')
 
 local gx_gpu<const> = {}
 
-local gp0<const>: *word = 0x0801036c
-local gp1<const>: *word = 0x08010370
+local gp0<const>: *word = 0x08010240
+local gp1<const>: *word = 0x08010244
 
 local gp1_reset<const> = 0x00000000
 local gp1_display_enable<const> = 0x03000000

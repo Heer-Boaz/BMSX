@@ -5,10 +5,10 @@ require('constants')
 local stage_module<const> = require('stage')
 local player_module<const> = require('player/index')
 local director_module<const> = require('director')
-local irq_mask_register<const>: *word = 0x0800010c
-local input_control_register<const>: *word = 0x08000194
-local irq_vblank<const> = 0x0010
-local irq_apu<const> = 0x0200
+local irq_mask_register<const>: *word = 0x08000010
+local input_control_register<const>: *word = 0x0800006c
+local irq_vblank<const> = 0x0004
+local irq_apu<const> = 0x0020
 local vblank_count = 0
 
 local wait_vblank<const> = function()

@@ -12,8 +12,6 @@ import {
 	IO_DMA_STATUS,
 	IO_DMA_WRITTEN,
 	IO_GX_GPU_GP0,
-	IO_IMG_WRITTEN,
-	IO_VDP_FIFO,
 	IRQ_DMA_DONE,
 	IRQ_DMA_ERROR,
 } from '../../bus/io';
@@ -21,78 +19,58 @@ import {
 	IO_WORD_SIZE,
 	RAM_BASE,
 	RAM_END,
-	VDP_STREAM_BUFFER_SIZE,
-	isVramMappedRange,
-	vramMappedRemainingBytes,
 } from '../../memory/map';
 import { readLE32 } from '../../../common/endian';
-import type { ImageCopyPlan } from './image_copy';
 import { Memory } from '../../memory/memory';
 import type { IrqController } from '../irq/controller';
-import type { VDP } from '../vdp/vdp';
 import { accrueBudgetUnits, cyclesUntilBudgetUnits, type BudgetAccrual } from '../../scheduler/budget';
 import { DEVICE_SERVICE_DMA, type DeviceScheduler } from '../../scheduler/device';
 
-type DmaChannelId = 0 | 1;
-const DMA_CH_ISO: DmaChannelId = 0;
-const DMA_CH_BULK: DmaChannelId = 1;
 const DMA_SERVICE_BATCH_BYTES = 64;
+export const DMA_JOB_QUEUE_CAPACITY = 16;
 
-type DmaJobBase = {
-	kind: 'io' | 'image';
-	channel: DmaChannelId;
-	started: boolean;
+export type DmaJobState = {
+	src: number;
+	dst: number;
+	remaining: number;
 	written: number;
 	clipped: boolean;
 };
 
-type DmaIoJob = DmaJobBase & {
-	kind: 'io';
-	src: number;
-	dst: number;
-	remaining: number;
-	strict: boolean;
-};
-
-type DmaImageJob = DmaJobBase & {
-	kind: 'image';
-	plan: ImageCopyPlan;
-	pixels: Uint8Array;
-	row: number;
-	rowOffset: number;
-	vramTarget: boolean;
-	onComplete: (clipped: boolean) => void;
-};
-
-type DmaJob = DmaIoJob | DmaImageJob;
-
-type DmaChannelState = {
+export type DmaControllerState = {
+	queue: DmaJobState[];
 	budget: number;
-	queue: DmaJob[];
-	queueHead: number;
+	carry: number;
+	writtenValue: number;
+	writtenDirty: boolean;
+	sourceRegisterWord: number;
+	destinationRegisterWord: number;
+	lengthRegisterWord: number;
+	controlRegisterWord: number;
+	statusRegisterWord: number;
+	writtenRegisterWord: number;
 };
 
 export class DmaController {
-	private readonly channels: [DmaChannelState, DmaChannelState] = [
-		{ budget: 0, queue: [], queueHead: 0 },
-		{ budget: 0, queue: [], queueHead: 0 },
-	];
+	private readonly queueSrc = new Uint32Array(DMA_JOB_QUEUE_CAPACITY);
+	private readonly queueDst = new Uint32Array(DMA_JOB_QUEUE_CAPACITY);
+	private readonly queueRemaining = new Uint32Array(DMA_JOB_QUEUE_CAPACITY);
+	private readonly queueWritten = new Uint32Array(DMA_JOB_QUEUE_CAPACITY);
+	private readonly queueClipped = new Uint8Array(DMA_JOB_QUEUE_CAPACITY);
+	private queueCount = 0;
+	private queueHead = 0;
+	private budget = 0;
 	private cpuHz = 1;
-	private isoBytesPerSec = 1;
-	private bulkBytesPerSec = 1;
-	private isoCarry = 0;
-	private bulkCarry = 0;
+	private bytesPerSec = 1;
+	private carry = 0;
 	private readonly budgetAccrual: BudgetAccrual = { wholeUnits: 0, carry: 0 };
 	private ioWrittenValue = 0;
 	private ioWrittenDirty = false;
-	private imgWrittenValue = 0;
-	private imgWrittenDirty = false;
 	private readonly buffer = new Uint8Array(DMA_SERVICE_BATCH_BYTES);
 
 	public constructor(
 		private readonly memory: Memory,
 		private readonly irq: IrqController,
-		private readonly vdp: VDP,
 		private readonly scheduler: DeviceScheduler,
 	) {
 		this.memory.mapIoWrite(IO_DMA_CTRL, this, DmaController.startIoThunk);
@@ -107,7 +85,6 @@ export class DmaController {
 		const src = context.memory.readIoU32(IO_DMA_SRC);
 		const dst = context.memory.readIoU32(IO_DMA_DST);
 		const len = context.memory.readIoU32(IO_DMA_LEN);
-		const vdpSubmit = dst === IO_VDP_FIFO;
 		const strict = (ctrl & DMA_CTRL_STRICT) !== 0;
 		context.memory.writeIoValue(IO_DMA_CTRL, ctrl & ~DMA_CTRL_START);
 		context.memory.writeValue(IO_DMA_WRITTEN, 0);
@@ -126,7 +103,7 @@ export class DmaController {
 			}
 			transferLen = maxWritable;
 		}
-		if ((dst === IO_GX_GPU_GP0 || isVramMappedRange(dst, 1)) && (transferLen & (IO_WORD_SIZE - 1)) !== 0) {
+		if (dst === IO_GX_GPU_GP0 && (transferLen & (IO_WORD_SIZE - 1)) !== 0) {
 			clipped = true;
 			if (strict) {
 				context.finishIoError(true);
@@ -134,40 +111,32 @@ export class DmaController {
 			}
 			transferLen &= ~(IO_WORD_SIZE - 1);
 		}
-		const status = DMA_STATUS_BUSY | (clipped ? DMA_STATUS_CLIPPED : 0);
-		context.memory.writeValue(IO_DMA_STATUS, status);
+		context.memory.writeValue(IO_DMA_STATUS, DMA_STATUS_BUSY | (clipped ? DMA_STATUS_CLIPPED : 0));
 		if (transferLen === 0) {
-			if (vdpSubmit) {
-				context.vdp.acceptSubmitAttempt();
-			}
 			context.finishIoSuccess(clipped);
 			return;
 		}
-		const job: DmaIoJob = {
-			kind: 'io',
-			channel: DMA_CH_BULK,
-			started: false,
-			src,
-			dst,
-			remaining: transferLen,
-			written: 0,
-			clipped,
-			strict,
-		};
+		if (context.queueCount === DMA_JOB_QUEUE_CAPACITY) {
+			context.finishIoError(false);
+			return;
+		}
 		context.ioWrittenValue = 0;
 		context.ioWrittenDirty = true;
-		context.channels[DMA_CH_BULK].queue.push(job);
+		const jobIndex = (context.queueHead + context.queueCount) % DMA_JOB_QUEUE_CAPACITY;
+		context.queueSrc[jobIndex] = src;
+		context.queueDst[jobIndex] = dst;
+		context.queueRemaining[jobIndex] = transferLen;
+		context.queueWritten[jobIndex] = 0;
+		context.queueClipped[jobIndex] = clipped ? 1 : 0;
+		context.queueCount += 1;
 		context.scheduleNextService(context.scheduler.currentNowCycles());
 	}
 
-	public setTiming(cpuHz: number, isoBytesPerSec: number, bulkBytesPerSec: number, nowCycles: number): void {
+	public setTiming(cpuHz: number, bytesPerSec: number, nowCycles: number): void {
 		this.cpuHz = cpuHz;
-		this.isoBytesPerSec = isoBytesPerSec;
-		this.bulkBytesPerSec = bulkBytesPerSec;
-		this.isoCarry = 0;
-		this.bulkCarry = 0;
-		this.channels[DMA_CH_ISO].budget = 0;
-		this.channels[DMA_CH_BULK].budget = 0;
+		this.bytesPerSec = bytesPerSec;
+		this.carry = 0;
+		this.budget = 0;
 		this.scheduleNextService(nowCycles);
 	}
 
@@ -175,41 +144,42 @@ export class DmaController {
 		if (cycles <= 0) {
 			return;
 		}
-		this.accrueChannel(DMA_CH_ISO, this.isoBytesPerSec, 'isoCarry', cycles);
-		this.accrueChannel(DMA_CH_BULK, this.bulkBytesPerSec, 'bulkCarry', cycles);
+		const pendingBytes = this.getPendingBytes();
+		if (pendingBytes <= 0) {
+			this.carry = 0;
+			this.budget = 0;
+			this.scheduleNextService(nowCycles);
+			return;
+		}
+		accrueBudgetUnits(this.budgetAccrual, this.cpuHz, this.bytesPerSec, this.carry, cycles);
+		this.carry = this.budgetAccrual.carry;
+		const wholeBytes = this.budgetAccrual.wholeUnits;
+		if (wholeBytes > 0) {
+			const maxGrant = pendingBytes - this.budget;
+			this.budget += wholeBytes > maxGrant ? maxGrant : wholeBytes;
+		}
 		this.scheduleNextService(nowCycles);
 	}
 
-	private hasPendingTransfer(channel: DmaChannelId): boolean {
-		const state = this.channels[channel];
-		return state.queueHead !== state.queue.length;
+	private hasPendingTransfer(): boolean {
+		return this.queueCount !== 0;
 	}
 
-	private getPendingBytesForChannel(channel: DmaChannelId): number {
-		const state = this.channels[channel];
+	private getPendingBytes(): number {
 		let pendingBytes = 0;
-		for (let index = state.queueHead; index < state.queue.length; index += 1) {
-			const job = state.queue[index]!;
-			pendingBytes += job.kind === 'io'
-				? job.remaining
-				: job.plan.writeSize - job.written;
+		for (let offset = 0; offset < this.queueCount; offset += 1) {
+			pendingBytes += this.queueRemaining[(this.queueHead + offset) % DMA_JOB_QUEUE_CAPACITY]!;
 		}
 		return pendingBytes;
 	}
 
 	public reset(): void {
-		this.isoCarry = 0;
-		this.bulkCarry = 0;
-		this.channels[DMA_CH_ISO].queue.length = 0;
-		this.channels[DMA_CH_ISO].queueHead = 0;
-		this.channels[DMA_CH_ISO].budget = 0;
-		this.channels[DMA_CH_BULK].queue.length = 0;
-		this.channels[DMA_CH_BULK].queueHead = 0;
-		this.channels[DMA_CH_BULK].budget = 0;
+		this.carry = 0;
+		this.queueCount = 0;
+		this.queueHead = 0;
+		this.budget = 0;
 		this.ioWrittenValue = 0;
 		this.ioWrittenDirty = false;
-		this.imgWrittenValue = 0;
-		this.imgWrittenDirty = false;
 		this.scheduler.cancelDeviceService(DEVICE_SERVICE_DMA);
 		this.memory.writeValue(IO_DMA_SRC, 0);
 		this.memory.writeValue(IO_DMA_DST, 0);
@@ -219,173 +189,76 @@ export class DmaController {
 		this.memory.writeValue(IO_DMA_WRITTEN, 0);
 	}
 
-	public enqueueImageCopy(plan: ImageCopyPlan, pixels: Uint8Array, onComplete: (clipped: boolean) => void): void {
-		const vramTarget = isVramMappedRange(plan.baseAddr, plan.writeSize > 0 ? plan.writeSize : 1);
-		const job: DmaImageJob = {
-			kind: 'image',
-			channel: DMA_CH_BULK,
-			started: false,
-			plan,
-			pixels,
-			row: 0,
-			rowOffset: 0,
-			vramTarget,
-			written: 0,
-			clipped: plan.clipped,
-			onComplete,
-		};
-		this.channels[DMA_CH_BULK].queue.push(job);
-		this.scheduleNextService(this.scheduler.currentNowCycles());
-	}
-
 	public onService(nowCycles: number): void {
-		if (!this.hasPendingTransfer(DMA_CH_ISO) && !this.hasPendingTransfer(DMA_CH_BULK)) {
+		if (!this.hasPendingTransfer()) {
 			this.scheduler.cancelDeviceService(DEVICE_SERVICE_DMA);
 			return;
 		}
-		this.tickChannel(DMA_CH_ISO);
-		this.tickChannel(DMA_CH_BULK);
-		if (this.ioWrittenDirty) {
-			this.memory.writeValue(IO_DMA_WRITTEN, this.ioWrittenValue);
-			this.ioWrittenDirty = false;
-		}
-		if (this.imgWrittenDirty) {
-			this.memory.writeValue(IO_IMG_WRITTEN, this.imgWrittenValue);
-			this.imgWrittenDirty = false;
-		}
-		this.scheduleNextService(nowCycles);
-	}
-
-	private tickChannel(channel: DmaChannelId): void {
-		const state = this.channels[channel];
-		let budget = state.budget;
+		let budget = this.budget;
 		while (budget > 0) {
-			if (state.queueHead === state.queue.length) {
-				state.budget = budget;
-				return;
+			if (!this.hasPendingTransfer()) {
+				break;
 			}
-			const job = state.queue[state.queueHead]!;
-			if (!job.started) {
-				job.started = true;
-				if (job.kind === 'io' && job.dst === IO_VDP_FIFO) {
-					this.vdp.beginDmaSubmit();
-				}
-			}
-			const written = this.processJob(job, budget);
+			const jobIndex = this.queueHead;
+			const written = this.processJob(jobIndex, budget);
 			budget -= written;
-			if (job.kind === 'io') {
-				this.ioWrittenValue = job.written;
-				this.ioWrittenDirty = true;
-			}
-			if (job.kind === 'image') {
-				this.imgWrittenValue = job.written;
-				this.imgWrittenDirty = true;
-			}
-			if (this.isJobComplete(job)) {
-				this.finishJob(job);
-				state.queueHead += 1;
-				if (state.queueHead === state.queue.length) {
-					state.queue.length = 0;
-					state.queueHead = 0;
+			this.ioWrittenValue = this.queueWritten[jobIndex]!;
+			this.ioWrittenDirty = true;
+			if (this.queueRemaining[jobIndex] === 0) {
+				this.finishIoSuccess(this.queueClipped[jobIndex] !== 0);
+				this.queueHead = (this.queueHead + 1) % DMA_JOB_QUEUE_CAPACITY;
+				this.queueCount -= 1;
+				if (!this.hasPendingTransfer()) {
+					this.queueHead = 0;
+					this.carry = 0;
+					budget = 0;
+					break;
 				}
 				continue;
 			}
 			if (written === 0) {
-				state.budget = budget;
-				return;
+				break;
 			}
 		}
-		state.budget = budget;
+		this.budget = budget;
+		if (this.ioWrittenDirty) {
+			this.memory.writeValue(IO_DMA_WRITTEN, this.ioWrittenValue);
+			this.ioWrittenDirty = false;
+		}
+		this.scheduleNextService(nowCycles);
 	}
 
-	private processJob(job: DmaJob, budget: number): number {
-		if (job.kind === 'io') {
-			let chunk = job.remaining > budget ? budget : job.remaining;
+	private processJob(jobIndex: number, budget: number): number {
+		const remaining = this.queueRemaining[jobIndex]!;
+		let chunk = remaining > budget ? budget : remaining;
+		const dst = this.queueDst[jobIndex]!;
+		if (dst === IO_GX_GPU_GP0) {
+			chunk &= ~(IO_WORD_SIZE - 1);
 			if (chunk === 0) {
 				return 0;
 			}
-			if (job.dst === IO_VDP_FIFO) {
-				job.remaining -= chunk;
-				job.written += chunk;
-				return chunk;
-			}
-			const gp0Stream = job.dst === IO_GX_GPU_GP0;
-			if (gp0Stream || isVramMappedRange(job.dst, 1)) {
-				chunk &= ~(IO_WORD_SIZE - 1);
-				if (chunk === 0) {
-					return 0;
-				}
-			}
-			if (chunk > this.buffer.byteLength) {
-				chunk = this.buffer.byteLength;
-			}
-			this.memory.readBytesInto(job.src, this.buffer, chunk);
-			if (gp0Stream) {
-				for (let offset = 0; offset < chunk; offset += IO_WORD_SIZE) {
-					this.memory.writeMappedU32LE(IO_GX_GPU_GP0, readLE32(this.buffer, offset));
-				}
-			} else {
-				this.memory.writeBytesFrom(this.buffer, 0, job.dst, chunk);
-				job.dst += chunk;
-			}
-			job.src += chunk;
-			job.remaining -= chunk;
-			job.written += chunk;
-			return chunk;
 		}
-		return this.processImageJob(job, budget);
-	}
-
-	private processImageJob(job: DmaImageJob, budget: number): number {
-		let remaining = budget;
-		while (remaining > 0 && job.row < job.plan.writeHeight) {
-			const rowRemaining = job.plan.writeStride - job.rowOffset;
-			let toCopy = remaining < rowRemaining ? remaining : rowRemaining;
-			if (job.vramTarget) {
-				toCopy &= ~(IO_WORD_SIZE - 1);
-				if (toCopy === 0) {
-					return budget - remaining;
-				}
+		if (chunk > this.buffer.byteLength) {
+			chunk = this.buffer.byteLength;
+		}
+		this.memory.readBytesInto(this.queueSrc[jobIndex]!, this.buffer, chunk);
+		if (dst === IO_GX_GPU_GP0) {
+			for (let offset = 0; offset < chunk; offset += IO_WORD_SIZE) {
+				this.memory.writeMappedU32LE(IO_GX_GPU_GP0, readLE32(this.buffer, offset));
 			}
-			const srcOffset = job.row * job.plan.sourceStride + job.rowOffset;
-			const dstAddr = job.plan.baseAddr + (job.row * job.plan.targetStride) + job.rowOffset;
-			this.memory.writeBytesFrom(job.pixels, srcOffset, dstAddr, toCopy);
-			remaining -= toCopy;
-			job.rowOffset += toCopy;
-			job.written += toCopy;
-			if (job.rowOffset >= job.plan.writeStride) {
-				job.row += 1;
-				job.rowOffset = 0;
-			}
+		} else {
+			this.memory.writeBytesFrom(this.buffer, 0, dst, chunk);
+			this.queueDst[jobIndex] = dst + chunk;
 		}
-		return budget - remaining;
-	}
-
-	private isJobComplete(job: DmaJob): boolean {
-		if (job.kind === 'io') {
-			return job.remaining === 0;
-		}
-		return job.row >= job.plan.writeHeight;
-	}
-
-	private finishJob(job: DmaJob): void {
-		if (job.kind === 'io') {
-			this.finishIoJob(job);
-			return;
-		}
-		job.onComplete(job.clipped);
+		this.queueSrc[jobIndex] = this.queueSrc[jobIndex]! + chunk;
+		this.queueRemaining[jobIndex] = remaining - chunk;
+		this.queueWritten[jobIndex] = this.queueWritten[jobIndex]! + chunk;
+		return chunk;
 	}
 
 	private resolveMaxWritable(dst: number): number {
-		if (dst === IO_VDP_FIFO) {
-			return VDP_STREAM_BUFFER_SIZE;
-		}
 		if (dst === IO_GX_GPU_GP0) {
 			return 0xffff_ffff;
-		}
-		const vramRemaining = vramMappedRemainingBytes(dst);
-		if (vramRemaining !== 0) {
-			return vramRemaining;
 		}
 		if (dst >= RAM_BASE && dst < RAM_END) {
 			return RAM_END - dst;
@@ -393,84 +266,81 @@ export class DmaController {
 		return 0;
 	}
 
-	private finishIoJob(job: DmaIoJob): void {
-		if (job.dst === IO_VDP_FIFO) {
-			this.vdp.sealDmaTransfer(job.src, job.written);
-		}
-		this.finishIoSuccess(job.clipped);
-	}
-
 	private finishIoSuccess(clipped: boolean): void {
-		let status = DMA_STATUS_DONE;
-		if (clipped) {
-			status |= DMA_STATUS_CLIPPED;
-		}
-		this.memory.writeValue(IO_DMA_STATUS, status);
+		this.memory.writeValue(IO_DMA_STATUS, DMA_STATUS_DONE | (clipped ? DMA_STATUS_CLIPPED : 0));
 		this.irq.raise(IRQ_DMA_DONE);
 	}
 
 	private finishIoError(clipped: boolean): void {
-		let status = DMA_STATUS_DONE | DMA_STATUS_ERROR;
-		if (clipped) {
-			status |= DMA_STATUS_CLIPPED;
-		}
-		this.memory.writeValue(IO_DMA_STATUS, status);
+		this.memory.writeValue(IO_DMA_STATUS, DMA_STATUS_DONE | DMA_STATUS_ERROR | (clipped ? DMA_STATUS_CLIPPED : 0));
 		this.irq.raise(IRQ_DMA_ERROR);
 	}
 
-	private accrueChannel(channel: DmaChannelId, bytesPerSec: number, carryKey: 'isoCarry' | 'bulkCarry', cycles: number): void {
-		const pendingBytes = this.getPendingBytesForChannel(channel);
-		if (pendingBytes <= 0) {
-			if (carryKey === 'isoCarry') {
-				this.isoCarry = 0;
-			} else {
-				this.bulkCarry = 0;
-			}
-			this.channels[channel].budget = 0;
-			return;
+	public captureState(): DmaControllerState {
+		const queue = new Array<DmaJobState>(this.queueCount);
+		for (let offset = 0; offset < this.queueCount; offset += 1) {
+			const index = (this.queueHead + offset) % DMA_JOB_QUEUE_CAPACITY;
+			queue[offset] = {
+				src: this.queueSrc[index]!,
+				dst: this.queueDst[index]!,
+				remaining: this.queueRemaining[index]!,
+				written: this.queueWritten[index]!,
+				clipped: this.queueClipped[index] !== 0,
+			};
 		}
-		const state = this.channels[channel];
-		const carry = carryKey === 'isoCarry' ? this.isoCarry : this.bulkCarry;
-		accrueBudgetUnits(this.budgetAccrual, this.cpuHz, bytesPerSec, carry, cycles);
-		const wholeBytes = this.budgetAccrual.wholeUnits;
-		if (carryKey === 'isoCarry') {
-			this.isoCarry = this.budgetAccrual.carry;
-		} else {
-			this.bulkCarry = this.budgetAccrual.carry;
+		return {
+			queue,
+			budget: this.budget,
+			carry: this.carry,
+			writtenValue: this.ioWrittenValue,
+			writtenDirty: this.ioWrittenDirty,
+			sourceRegisterWord: this.memory.readIoU32(IO_DMA_SRC),
+			destinationRegisterWord: this.memory.readIoU32(IO_DMA_DST),
+			lengthRegisterWord: this.memory.readIoU32(IO_DMA_LEN),
+			controlRegisterWord: this.memory.readIoU32(IO_DMA_CTRL),
+			statusRegisterWord: this.memory.readIoU32(IO_DMA_STATUS),
+			writtenRegisterWord: this.memory.readIoU32(IO_DMA_WRITTEN),
+		};
+	}
+
+	public restoreState(state: DmaControllerState, nowCycles: number): void {
+		for (let index = 0; index < state.queue.length; index += 1) {
+			const source = state.queue[index]!;
+			this.queueSrc[index] = source.src;
+			this.queueDst[index] = source.dst;
+			this.queueRemaining[index] = source.remaining;
+			this.queueWritten[index] = source.written;
+			this.queueClipped[index] = source.clipped ? 1 : 0;
 		}
-		if (wholeBytes <= 0) {
-			return;
-		}
-		const maxGrant = pendingBytes - state.budget;
-		state.budget += wholeBytes > maxGrant ? maxGrant : wholeBytes;
+		this.queueCount = state.queue.length;
+		this.queueHead = 0;
+		this.budget = state.budget;
+		this.carry = state.carry;
+		this.ioWrittenValue = state.writtenValue;
+		this.ioWrittenDirty = state.writtenDirty;
+		this.memory.writeValue(IO_DMA_SRC, state.sourceRegisterWord);
+		this.memory.writeValue(IO_DMA_DST, state.destinationRegisterWord);
+		this.memory.writeValue(IO_DMA_LEN, state.lengthRegisterWord);
+		this.memory.writeIoValue(IO_DMA_CTRL, state.controlRegisterWord);
+		this.memory.writeValue(IO_DMA_STATUS, state.statusRegisterWord);
+		this.memory.writeValue(IO_DMA_WRITTEN, state.writtenRegisterWord);
+		this.scheduleNextService(nowCycles);
 	}
 
 	private scheduleNextService(nowCycles: number): void {
-		const pendingIso = this.hasPendingTransfer(DMA_CH_ISO);
-		const pendingBulk = this.hasPendingTransfer(DMA_CH_BULK);
-		if (!pendingIso && !pendingBulk) {
+		if (!this.hasPendingTransfer()) {
 			this.scheduler.cancelDeviceService(DEVICE_SERVICE_DMA);
 			return;
 		}
-		let nextDeadline = Number.MAX_SAFE_INTEGER;
-		if (pendingIso) {
-			const pendingBytes = this.getPendingBytesForChannel(DMA_CH_ISO);
-			const targetBytes = Math.min(pendingBytes, DMA_SERVICE_BATCH_BYTES);
-			if (this.channels[DMA_CH_ISO].budget >= targetBytes) {
-				this.scheduler.scheduleDeviceService(DEVICE_SERVICE_DMA, nowCycles);
-				return;
-			}
-			nextDeadline = Math.min(nextDeadline, nowCycles + cyclesUntilBudgetUnits(this.cpuHz, this.isoBytesPerSec, this.isoCarry, targetBytes - this.channels[DMA_CH_ISO].budget));
+		const pendingBytes = this.getPendingBytes();
+		const targetBytes = pendingBytes < DMA_SERVICE_BATCH_BYTES ? pendingBytes : DMA_SERVICE_BATCH_BYTES;
+		if (this.budget >= targetBytes) {
+			this.scheduler.scheduleDeviceService(DEVICE_SERVICE_DMA, nowCycles);
+			return;
 		}
-		if (pendingBulk) {
-			const pendingBytes = this.getPendingBytesForChannel(DMA_CH_BULK);
-			const targetBytes = Math.min(pendingBytes, DMA_SERVICE_BATCH_BYTES);
-			if (this.channels[DMA_CH_BULK].budget >= targetBytes) {
-				this.scheduler.scheduleDeviceService(DEVICE_SERVICE_DMA, nowCycles);
-				return;
-			}
-			nextDeadline = Math.min(nextDeadline, nowCycles + cyclesUntilBudgetUnits(this.cpuHz, this.bulkBytesPerSec, this.bulkCarry, targetBytes - this.channels[DMA_CH_BULK].budget));
-		}
-		this.scheduler.scheduleDeviceService(DEVICE_SERVICE_DMA, nextDeadline);
+		this.scheduler.scheduleDeviceService(
+			DEVICE_SERVICE_DMA,
+			nowCycles + cyclesUntilBudgetUnits(this.cpuHz, this.bytesPerSec, this.carry, targetBytes - this.budget),
+		);
 	}
 }

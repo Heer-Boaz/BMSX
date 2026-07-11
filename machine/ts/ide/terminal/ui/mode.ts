@@ -1,6 +1,6 @@
 import { machineManager } from '../../../core/machine_manager';
 import { type color } from '../../../render/shared/submissions';
-import { LAYER_2D_IDE } from '../../../machine/devices/vdp/contracts';
+import { LAYER_2D_IDE } from '../../../render/shared/layers';
 import { resolveThemeTokenColor, THEME_TOKEN_TERMINAL_LIGHT_YELLOW, THEME_TOKEN_WHITE } from '../../theme/tokens';
 import { EditorFont } from '../../editor/ui/view/font';
 import type { FontVariant } from '../../../render/shared/bmsx_font';

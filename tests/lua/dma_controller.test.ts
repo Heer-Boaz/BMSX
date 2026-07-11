@@ -20,7 +20,7 @@ import {
 	IRQ_DMA_ERROR,
 } from '../../machine/ts/machine/bus/io';
 import { CPU } from '../../machine/ts/machine/cpu/cpu';
-import { DmaController } from '../../machine/ts/machine/devices/dma/controller';
+import { DMA_JOB_QUEUE_CAPACITY, DmaController } from '../../machine/ts/machine/devices/dma/controller';
 import {
 	GX_GPU_COMMAND_FILL_RECTANGLE,
 	GX_GPU_COMMAND_UPLOAD_CPU_TO_VRAM,
@@ -33,7 +33,6 @@ import {
 	GxGpu,
 } from '../../machine/ts/machine/devices/gx/gpu';
 import { IrqController } from '../../machine/ts/machine/devices/irq/controller';
-import { VDP } from '../../machine/ts/machine/devices/vdp/vdp';
 import { Memory } from '../../machine/ts/machine/memory/memory';
 import { PROGRAM_STATIC_RAM_BASE } from '../../machine/ts/machine/memory/map';
 import { DeviceScheduler } from '../../machine/ts/machine/scheduler/device';
@@ -48,13 +47,12 @@ function createDmaGpuFixture(): DmaGpuFixture {
 	const memory = new Memory({ systemRom: new Uint8Array(), cartRom: new Uint8Array(0) });
 	const scheduler = new DeviceScheduler(new CPU(memory));
 	const irq = new IrqController(memory);
-	const vdp = new VDP(memory, scheduler, { width: 16, height: 16 });
-	const dma = new DmaController(memory, irq, vdp, scheduler);
+	const dma = new DmaController(memory, irq, scheduler);
 	const gpu = new GxGpu(memory, scheduler);
 	dma.reset();
 	gpu.reset();
 	irq.reset();
-	dma.setTiming(1, 64, 64, 0);
+	dma.setTiming(1, 64, 0);
 	return { memory, dma, gpu };
 }
 
@@ -97,7 +95,7 @@ test('DMA preserves GP0 CPU-to-VRAM packet assembly across service slices', () =
 	const payload1 = 0x44443333;
 	const payload2 = 0x66665555;
 
-	dma.setTiming(1, 8, 8, 0);
+	dma.setTiming(1, 8, 0);
 	memory.writeMappedU32LE(source, command0);
 	memory.writeMappedU32LE(source + 4, command1);
 	memory.writeMappedU32LE(source + 8, command2);
@@ -115,6 +113,7 @@ test('DMA preserves GP0 CPU-to-VRAM packet assembly across service slices', () =
 	assert.equal(memory.readIoU32(IO_DMA_STATUS), DMA_STATUS_BUSY);
 	assert.equal(memory.readIoU32(IO_DMA_WRITTEN), 8);
 	assert.equal(commands.commandCount, 0);
+	const savedDma = dma.captureState();
 
 	dma.accrueCycles(1, 2);
 	dma.onService(2);
@@ -138,6 +137,51 @@ test('DMA preserves GP0 CPU-to-VRAM packet assembly across service slices', () =
 	assert.equal(commands.words[wordStart + 3], payload0);
 	assert.equal(commands.words[wordStart + 4], payload1);
 	assert.equal(commands.words[wordStart + 5], payload2);
+
+	dma.restoreState(savedDma, 3);
+	assert.equal(memory.readIoU32(IO_DMA_SRC), source);
+	assert.equal(memory.readIoU32(IO_DMA_DST), IO_GX_GPU_GP0);
+	assert.equal(memory.readIoU32(IO_DMA_LEN), 24);
+	assert.equal(memory.readIoU32(IO_DMA_CTRL), 0);
+	assert.equal(memory.readIoU32(IO_DMA_STATUS), DMA_STATUS_BUSY);
+	assert.equal(memory.readIoU32(IO_DMA_WRITTEN), 8);
+});
+
+test('DMA full-FIFO rejection preserves the queued progress latch', () => {
+	const { memory, dma } = createDmaGpuFixture();
+	const source = PROGRAM_STATIC_RAM_BASE + 0x240;
+	const queue = Array.from({ length: DMA_JOB_QUEUE_CAPACITY }, (_, index) => ({
+		src: source + index * 4,
+		dst: IO_GX_GPU_GP0,
+		remaining: 4,
+		written: 0,
+		clipped: false,
+	}));
+	dma.restoreState({
+		queue,
+		budget: 0,
+		carry: 0,
+		writtenValue: 37,
+		writtenDirty: false,
+		sourceRegisterWord: source,
+		destinationRegisterWord: IO_GX_GPU_GP0,
+		lengthRegisterWord: 4,
+		controlRegisterWord: 0,
+		statusRegisterWord: DMA_STATUS_BUSY,
+		writtenRegisterWord: 37,
+	}, 0);
+
+	memory.writeMappedU32LE(IO_DMA_SRC, source);
+	memory.writeMappedU32LE(IO_DMA_DST, IO_GX_GPU_GP0);
+	memory.writeMappedU32LE(IO_DMA_LEN, 4);
+	memory.writeMappedU32LE(IO_DMA_CTRL, DMA_CTRL_START);
+
+	const state = dma.captureState();
+	assert.equal(state.queue.length, DMA_JOB_QUEUE_CAPACITY);
+	assert.equal(state.writtenValue, 37);
+	assert.equal(state.writtenDirty, false);
+	assert.equal(memory.readIoU32(IO_DMA_STATUS), DMA_STATUS_DONE | DMA_STATUS_ERROR);
+	assert.equal(memory.readIoU32(IO_DMA_WRITTEN), 0);
 });
 
 test('DMA clips non-strict GX-GPU GP0 stream lengths to whole words', () => {

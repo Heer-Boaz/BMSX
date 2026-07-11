@@ -5,6 +5,7 @@ import type { TextureParams } from '../texture_params';
 import { createSolidRgba8Pixels, writeSolidRgba8Pixels } from '../../shared/solid_pixels';
 import type { GxGpu } from '../../../machine/devices/gx/gpu';
 import { registerCRT } from '../../post/crt/webgpu/pipeline';
+import { registerDeviceQuantize } from '../../post/device_quantize/webgpu/pipeline';
 import { captureRenderedVramSnapshot, registerGxGpuPass } from './gx_gpu';
 import { updateAndBindFrameUniforms } from '../frame_uniforms';
 import type { RenderPassLibrary } from '../pass/library';
@@ -31,6 +32,7 @@ export class WebGPUBackend implements GPUBackend {
 	private textureBindings: Map<number, GPUTextureView> = new Map();
 	private samplerBindings: Map<number, GPUSampler> = new Map();
 	private bindGroupCache: Map<number, GPUBindGroup> = new Map();
+	private readonly textureViewCache = new WeakMap<GPUTexture, GPUTextureView>();
 	private readonly renderPassColorAttachments: GPURenderPassColorAttachment[] = [];
 	private readonly renderPassDepthStencilAttachment: GPURenderPassDepthStencilAttachment = {
 		view: null,
@@ -42,6 +44,11 @@ export class WebGPUBackend implements GPUBackend {
 		stencilStoreOp: 'store',
 	};
 	private readonly renderPassDesc: GPURenderPassDescriptor = { colorAttachments: this.renderPassColorAttachments };
+	private readonly passEncoder: WebGPUPassEncoder = {
+		fbo: null,
+		desc: null as RenderPassDesc,
+		encoder: null as GPURenderPassEncoder,
+	};
 	private readonly commandBufferSubmitList: GPUCommandBuffer[] = [];
 
 	private _context: GPUCanvasContext = null;
@@ -68,6 +75,7 @@ export class WebGPUBackend implements GPUBackend {
 			},
 		});
 		registerGxGpuPass(registry);
+		registerDeviceQuantize(registry);
 		registerCRT(registry);
 	}
 
@@ -254,7 +262,9 @@ export class WebGPUBackend implements GPUBackend {
 	destroyTexture(handle: TextureHandle): void {
 		this.textureBindings.clear();
 		this.bindGroupCache.clear();
-		(handle as GPUTexture).destroy();
+		const texture = handle as GPUTexture;
+		this.textureViewCache.delete(texture);
+		texture.destroy();
 	}
 
 	createColorTexture(desc: { width: number; height: number; format?: TextureFormat; initialClearColor?: color_arr }): TextureHandle {
@@ -317,10 +327,19 @@ export class WebGPUBackend implements GPUBackend {
 			colorAttachments[colorAttachmentIndex] = attachment;
 		}
 		const clear = color.clear;
-		attachment.view = (color.tex as GPUTexture).createView();
+		attachment.view = this.textureView(color.tex as GPUTexture);
 		attachment.clearValue = clear !== undefined ? clear : WEBGPU_ZERO_CLEAR;
 		attachment.loadOp = clear !== undefined ? 'clear' : 'load';
 		attachment.storeOp = color.discardAfter ? 'discard' : 'store';
+	}
+
+	private textureView(texture: GPUTexture): GPUTextureView {
+		let view = this.textureViewCache.get(texture);
+		if (view === undefined) {
+			view = texture.createView();
+			this.textureViewCache.set(texture, view);
+		}
+		return view;
 	}
 
 	clear(color: color_arr | undefined, _depth: number | undefined): void {
@@ -368,7 +387,7 @@ export class WebGPUBackend implements GPUBackend {
 			const depth = desc.depth;
 			const depthStencilAttachment = this.renderPassDepthStencilAttachment;
 			const depthClear = depth.clearDepth;
-			depthStencilAttachment.view = (depth.tex as GPUTexture).createView();
+			depthStencilAttachment.view = this.textureView(depth.tex as GPUTexture);
 			depthStencilAttachment.depthClearValue = depthClear !== undefined ? depthClear : 1.0;
 			depthStencilAttachment.depthLoadOp = depthClear !== undefined ? 'clear' : 'load';
 			depthStencilAttachment.depthStoreOp = depth.discardAfter ? 'discard' : 'store';
@@ -378,8 +397,11 @@ export class WebGPUBackend implements GPUBackend {
 		}
 		passDesc.label = desc.label;
 
-		const encoder = commandEncoder.beginRenderPass(passDesc);
-		return { fbo: commandEncoder, desc, encoder } as WebGPUPassEncoder;
+		const passEncoder = this.passEncoder;
+		passEncoder.fbo = commandEncoder;
+		passEncoder.desc = desc;
+		passEncoder.encoder = commandEncoder.beginRenderPass(passDesc);
+		return passEncoder;
 	}
 
 	endRenderPass(pass: WebGPUPassEncoder): void {

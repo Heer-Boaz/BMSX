@@ -10,10 +10,7 @@ export class TimingState {
 		public cycleBudgetPerFrame: number,
 		public gpuDisplayModeWord: number,
 		public totalScanlines: number,
-		public imgDecBytesPerSec: number,
-		public dmaBytesPerSecIso: number,
-		public dmaBytesPerSecBulk: number,
-		public vdpWorkUnitsPerSec: number,
+		public dmaBytesPerSec: number,
 		public geoWorkUnitsPerSec: number,
 	) {
 		this.ufps = ufpsScaled / HZ_SCALE;

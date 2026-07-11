@@ -48,7 +48,6 @@ void VblankState::reset(Runtime& runtime) {
 	m_lastCompletedVblankSequence = 0;
 	runtime.machine.inputController.cancelSampleArm();
 	runtime.machine.irqController.postLoad();
-	runtime.machine.vdp.resetStatus();
 	if (m_vblankStartCycle == 0) {
 		publishVblankTiming(runtime, true);
 	}
@@ -116,13 +115,11 @@ void VblankState::scheduleCurrentFrameTimers(Runtime& runtime) {
 void VblankState::publishVblankTiming(Runtime& runtime, bool active) {
 	m_vblankActive = active;
 	const int cyclesIntoFrame = getCyclesIntoFrame(runtime);
-	runtime.machine.vdp.setScanoutTiming(active, cyclesIntoFrame, runtime.timing.cycleBudgetPerFrame, m_vblankStartCycle);
 	runtime.machine.gxGpu.setScanoutTiming(active, cyclesIntoFrame, runtime.timing.cycleBudgetPerFrame, runtime.timing.totalScanlines);
 }
 
 void VblankState::enterVblank(Runtime& runtime) {
 	m_vblankSequence += 1;
-	runtime.machine.vdp.presentReadyFrameOnVblankEdge();
 	runtime.machine.gxGpu.presentReadyFrameOnVblankEdge();
 	runtime.machine.inputController.onVblankEdge(runtime.machineElapsedMs(), static_cast<u32>(runtime.machine.scheduler.nowCycles()));
 	publishVblankTiming(runtime, true);
