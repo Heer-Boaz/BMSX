@@ -665,112 +665,43 @@ fault state.
 IMGDEC's BIOS-facing Lua helper owns the register words it uses; IMGDEC
 addresses, command bits, and status bits are not host-seeded Lua globals.
 
-### VDP
+### VDP (residual)
 
-VDP is a video device, not a render API. Its detailed register, timing,
-fault, subunit-state, host-output, and save-state contract is
+GX GPU/GTE is the active cart graphics ABI and the only cart graphics path
+executed by host render backends. The old cart-visible VDP/RPU firmware ABI and
+the WebGL, GLES2, and software/headless RPU presentation executors are removed.
+Backend-local shader programs, buffers, textures, render targets, and draw-call
+issue remain concrete GX backend ownership; there is no presentation facade
+between GX command buffers and those backends.
+
+The VDP device remains temporarily because existing machine ownership has not
+yet been migrated:
+
+- its mapped staging, texture, and framebuffer memory is still reached by
+  machine DMA/image and residual device paths;
+- its scheduler/VBlank, register, fault, readback, and save-state state is still
+  wired into both runtimes;
+- its dither latch is still copied into the host view snapshot;
+- the TypeScript IDE/terminal overlay can explicitly present the legacy
+  framebuffer texture; carts and BIOS code cannot target that host-only pass.
+
+The retained RPU records inside the residual VDP device are no longer published
+to a presentation pass. They remain device/save-state state until their owning
+VDP dependencies are removed; they are not a compatibility graphics route.
+The detailed residual register and state contract is
 `docs/video_display_processor.md`.
 
-Cart-visible ingress:
-
-- raw VDP register writes;
-- doorbell/status/fault words;
-- packet/FIFO/stream words;
-- RPU staging, texture VRAM, and framebuffer memory owned by the VDP;
-- BIOS helpers that emit those same words.
-
-Internal units:
-
-- The VDP owns the mode register/state. Mode 0 = MSX1 256×192, mode 1 =
-  MSX2 256×212, mode 2 = PSX 320×240. The cart/firmware owner programs this
-  VDP mode explicitly during startup, like real VDP register programming; it is
-  not selected by a ROM manifest field.
-- Guest manifests do not expose `vdp_mode` or derived `render_size`. The live
-  visible dimensions are the VDP `sys_vdp_screen_wh` register word, updated by
-  the same VDP mode write that resizes the framebuffer surface.
-- `registers` owns the raw VDP transform, surface, mode, dither, and
-  control words; shared `machine/devices/device_status` owns VDP
-  status/fault/code/detail register images and the fault-ack write edge.
-- The old framebuffer texture presentation path is IDE/terminal host plumbing
-  only. Cart and BIOS drawing code must emit RPU packets; they must not
-  target the IDE/terminal framebuffer texture presentation pass.
-- `streamIngress` owns the DMA submit latch, FIFO partial-word bytes, and sealed
-  FIFO packet words.
-- `VRAM` owns RPU descriptor/scratch staging, texture VRAM bytes, the
-  framebuffer surface backing, dirty spans, and CPU readback pixels.
-- `readback` owns framebuffer readback cache, per-frame read budget, and
-  overflow latch.
-- `RPU` owns the raw cart-visible render contract: buffer records, surface
-  records, constant banks, fixed stream layouts, fixed shader-variant ids,
-  retained render passes, and retained draw commands. RPU frame outputs point
-  at the VDP-owned VRAM bytes and page-revision words; the RPU does not own a
-  second param-memory copy.
-  Firmware quad helpers keep descriptors in the 136 KiB staging range and point
-  texture descriptors at the fixed texture-VRAM range. The first 288 KiB of
-  texture VRAM is reserved for the system atlas; the remaining cart texture
-  range is build-time materialised by the rompacker. If authored cart atlases
-  exceed resident texture VRAM, the rompacker splits them into ROM atlas pages
-  and assigns concrete texture addresses; pages from the same authored atlas may
-  intentionally overlay the same texture region. That baked layout is data, not
-  a hardware allocator or BIOS policy, and cart code may stream, overwrite, or
-  ignore it.
-  Firmware image rectangles are the reusable atlas-source descriptors consumed
-  by tile-run and blit helpers; cartlib must not allocate a second source table
-  that merely copies the same atlas id and UV rectangle.
-  ROMDIR indexes atlas TOC entries by numeric atlas id while parsing the ROM, so
-  firmware passes atlas ids as machine words instead of formatting `_atlas_##`
-  lookup strings at runtime.
-- `LPU` owns raw ambient, directional, and point-light register words.
-- `MFU` owns raw morph-weight register words.
-- `JTU` owns raw joint-matrix register words.
-- `unit_register_port` owns stream `REG1/REGN` range admission and raw
-  XF/LPU/MFU/JTU register writes. XF select registers latch their raw words;
-  matrix-index interpretation belongs to render transform decode, not the
-  register-write edge.
-- `FBM` owns framebuffer pages, display pixels, GPU texture presentation latches,
-  presentation transactions, and presentable display dimensions.
-- `XF` owns transform register words.
-- `VOUT` owns live, frame-sealed, and visible host-output buffers, including
-  the retained RPU frame, scanout phase, beam position, and retained
-  `VdpDeviceOutput`.
-
-Host render backends consume VOUT output transactions. They do not receive cart
-intent such as sprites, rectangles, labels, tile runs, scene objects,
-billboards, meshes, parallax, particles, or skyboxes.
-The cart expresses those effects by uploading raw RPU vertex, instance,
-constant, texture, surface, pass, and draw data. Backend-local mechanics such
-as render-pass viewport state, framebuffer attachment ownership, shader program
-objects, VAO/buffer binding, `vertexAttribPointer`/`glVertexAttribPointer`
-calls, texture-unit binding, and draw-call issue remain concrete backend
-ownership. The browser WebGL RPU pass lives in
-`render/backend/webgl/vdp_rpu.ts`; the C++ GLES2 RPU pass lives in
-`render/backend/gles2/vdp_rpu.cpp`; both consume external `vdp_rpu` shader
-files. There is no shared render/rpu pipeline and no shared `GPUBackend`
-vertex-layout facade.
-
-Pixel parity is a machine contract at the VDP/VOUT surface boundary. For the
-same ROM, timeline, model profile, and VDP mode, the TypeScript headless
-renderer and the C++ libretro/software renderer must emit byte-identical RGBA
+Pixel parity is a machine contract at GX VRAM scanout. For the same ROM,
+timeline, model profile, and GX display registers, the TypeScript headless
+renderer and C++ libretro/software renderer must emit byte-identical RGBA
 screenshots before host presentation effects. Nonblank screenshots or
-boot-screen parity are not evidence for render parity. The standing gate is
-`npm run test:render-parity`, which captures the same timeline through the
-headless runner and libretro host and compares PNG dimensions plus raw RGBA
-bytes.
+boot-screen parity are not render-parity evidence. `npm run test:render-parity`
+captures the same timeline through both runtimes and compares dimensions and raw
+RGBA bytes.
 
-CRT postprocessing is host presentation, not runtime or machine state. CRT
-noise/grain is deliberately outside the bit-exact machine contract because its
-source is host/postprocess random noise; parity captures disable CRT
-postprocessing, including `bmsx_crt_noise`, so they prove machine pixel output
-rather than host CRT decoration.
-
-VDP save-state
-record shapes live in dedicated `machine/devices/vdp/save_state` files on both
-runtimes; the stream-ingress, VRAM/surface-memory, and readback latch/buffer
-owners live in mirrored `machine/devices/vdp/ingress`, `machine/devices/vdp/vram`,
-and `machine/devices/vdp/readback` files. C++ keeps aggregate VDP capture/restore
-method bodies in the VDP save-state translation unit; TS aggregate capture/restore
-stays on the device boundary and imports only the save-state record shapes while
-subunit state is owned by the subunit files.
+CRT postprocessing is host presentation, not runtime or machine state. Parity
+captures disable CRT postprocessing, including `bmsx_crt_noise`, so they prove
+machine pixel output rather than host CRT decoration.
 
 ### APU and AOUT
 

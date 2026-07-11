@@ -6,16 +6,13 @@ import type { HeadlessGPUBackend } from './backend';
 import { RGBA8_SRGB_TEXTURE_PARAMS } from '../backend/texture_params';
 import type { HeadlessPresentHost, HeadlessPresentedFrameBuffer } from './view';
 import { hostOverlayMenu } from '../../core/host_overlay_menu';
-import { GX_GPU_STATUS_DISPLAY_DISABLE } from '../../machine/devices/gx/gpu';
 import { renderHeadlessHost2DEntry, renderHeadlessHost2DSubmission } from './host_2d';
 import { renderGxGpuSoftwareFrame } from '../backend/software/gx_gpu';
-import { renderVdpRpuSoftwareFrame } from '../backend/software/vdp_rpu';
 import { applyHeadlessDeviceQuantize } from '../post/device_quantize/headless/pipeline';
 
 export function registerHeadlessPasses(registry: RenderPassLibrary): void {
 	registerFramePasses(registry);
 	registerHeadlessGxGpuPass(registry);
-	registerHeadlessRpuPass(registry);
 	registerFrameBuffer2DPass(registry);
 	registerHeadlessDeviceQuantizePass(registry);
 }
@@ -52,7 +49,6 @@ let headlessFrameHeight = 0;
 let headlessPresentWidth = 0;
 let headlessPresentHeight = 0;
 let previousFrameBufferHeadline = '';
-let previousRpuHeadline = '';
 const headlessPresentedFrameBuffer: HeadlessPresentedFrameBuffer = {
 	pixels: headlessCompositePixels,
 	srcWidth: 0,
@@ -81,14 +77,6 @@ function commitHeadlessFrame(frameBufferWidth: number, frameBufferHeight: number
 	resizeHeadlessFrame(frameBufferWidth, frameBufferHeight);
 	headlessPresentWidth = presentWidth;
 	headlessPresentHeight = presentHeight;
-}
-
-function fillHeadlessFrame(width: number, height: number): void {
-	resizeHeadlessFrame(width, height);
-	headlessCompositePixels.fill(0);
-	for (let offset = 3; offset < headlessCompositePixels.length; offset += 4) {
-		headlessCompositePixels[offset] = 255;
-	}
 }
 
 function countHeadlessActivePixels(): number {
@@ -129,27 +117,6 @@ function registerHeadlessGxGpuPass(registry: RenderPassLibrary): void {
 			resizeHeadlessFrame(width, height);
 			renderGxGpuSoftwareFrame(state, headlessCompositePixels, width, height);
 			commitHeadlessFrame(width, height, view.canvasSize.x, view.canvasSize.y);
-		},
-	});
-}
-
-function registerHeadlessRpuPass(registry: RenderPassLibrary): void {
-	registry.register({
-		id: 'vdp_rpu',
-		name: 'HeadlessRPU',
-		stateOnly: true,
-		graph: { writes: ['frame_color'] },
-		shouldExecute: (view) => view.vdpRpuFrame.commands.passCount !== 0 && (view.gxGpuStatusWord & GX_GPU_STATUS_DISPLAY_DISABLE) !== 0,
-		exec: () => {
-			const view = registry.view as GameView;
-			const frame = view.vdpRpuFrame;
-			const width = view.offscreenCanvasSize.x;
-			const height = view.offscreenCanvasSize.y;
-			fillHeadlessFrame(width, height);
-			renderVdpRpuSoftwareFrame(frame, headlessCompositePixels, width, height);
-			commitHeadlessFrame(width, height, view.canvasSize.x, view.canvasSize.y);
-			const headline = `pixels=${headlessCompositePixels.length >> 2} active=${countHeadlessActivePixels()} framebuffer=${width}x${height} present=${view.canvasSize.x}x${view.canvasSize.y} passes=${frame.commands.passCount}`;
-			previousRpuHeadline = emitHeadlessHeadline('rpu', previousRpuHeadline, headline);
 		},
 	});
 }
@@ -200,7 +167,7 @@ function registerFrameBuffer2DPass(registry: RenderPassLibrary): void {
 		name: 'HeadlessFramebuffer2D',
 		stateOnly: true,
 		graph: { writes: ['frame_color'] },
-		shouldExecute: (view) => view.presentWorkbenchFrameBufferTexture && view.vdpRpuFrame.commands.passCount === 0,
+		shouldExecute: (view) => view.presentWorkbenchFrameBufferTexture,
 		prepare: () => {
 			const view = registry.view as GameView;
 			registry.setState('framebuffer_2d', {

@@ -1,16 +1,15 @@
-# Video Display Processor
+# Video Display Processor (residual)
 
-This is the CPU-visible contract for the Video Display Processor (VDP). The VDP
-is a machine device with raw register words, command doorbells, FIFO/stream
-packet ingress, VRAM/surface memory, subunit state machines, status/fault
-latches, scheduler-visible render work, an FBM presentation transaction, and a VOUT host-output transaction edge.
+This is the remaining CPU-visible contract for the Video Display Processor
+(VDP) while its residual ownership is migrated. GX GPU/GTE is the active cart
+graphics ABI. The cart-visible VDP/RPU firmware ABI and every host RPU execution
+pass have been removed; no host renderer consumes the retained RPU frame.
 
-Host renderers consume VOUT transactions. They do not receive cart intent such
-as sprites, rectangles, labels, glyph runs, tile runs, or scene objects. Cart and
-BIOS drawing code emits RPU packets: raw buffers, raw surfaces, raw constants,
-render passes, stream bindings, fixed shader variants, and draw commands. The
-VDP stores those words as retained RPU frame state and exposes only that frame
-through VOUT. The old framebuffer texture presentation path is IDE/terminal host plumbing; it is not a cart-visible or BIOS-visible render unit.
+The VDP still owns raw register words, FIFO/stream ingress, mapped
+staging/texture/framebuffer memory, status/fault latches, scheduler/VBlank state,
+readback, dither, and save-state records. Its old framebuffer texture
+presentation path is explicit IDE/terminal host plumbing and is not a
+cart-visible or BIOS-visible render unit.
 
 ## Register map
 
@@ -54,13 +53,13 @@ decoded as VDP packet words, not as host renderer commands.
 | `VDP_RD_STATUS_READY` | Readback data is available. |
 | `VDP_RD_STATUS_OVERFLOW` | Readback requested more data than the readback budget/window can provide. |
 
-## RPU stream ownership
+## Residual RPU stream state
 
-The cart-visible stream is RPU-first. BIOS helpers may expose convenient sprite,
-glyph, rectangle, or tile-run functions, but those helpers must compile the work
-into RPU buffer uploads, surface definitions, constants, passes, stream binds,
-and draws before sealing the stream. No cart or BIOS draw path may rely on the
-IDE/terminal framebuffer texture presentation path.
+No active cart or BIOS graphics producer targets this stream. The mapped
+FIFO/DMA ingress and RPU packet decoder remain machine state until their memory,
+timing, and save-state owners are migrated. Accepted words still flow through
+the existing device datapath deterministically, but no retained RPU frame is
+executed by presentation.
 
 ## Commands and packets
 
@@ -71,7 +70,7 @@ Direct `IO_VDP_CMD` accepts:
 | `VDP_CMD_NOP` | No operation. |
 | `VDP_CMD_BEGIN_FRAME` | Opens a direct VDP build frame. |
 | `VDP_CMD_END_FRAME` | Seals the direct build frame into active/pending submitted-frame state. |
-| `VDP_CMD_CLEAR` / `VDP_CMD_FILL_RECT` / `VDP_CMD_DRAW_LINE` / `VDP_CMD_BLIT` | Retired for cart and BIOS rendering; BIOS drawing helpers emit RPU packets instead. |
+| `VDP_CMD_CLEAR` / `VDP_CMD_FILL_RECT` / `VDP_CMD_DRAW_LINE` / `VDP_CMD_BLIT` | Retired for cart and BIOS rendering; active graphics use GX. |
 
 FIFO/DMA stream packets use `VDP_PKT_*` headers:
 
@@ -109,14 +108,13 @@ LPU register windows:
 | point | 37 | 9 | 4 | control, pos X, pos Y, pos Z, range, color R, color G, color B, intensity |
 
 Control bit 0 enables the light record. Color, intensity, direction, position,
-and range words are stored raw and decoded as signed Q16.16 only when render
-snapshots build the frame lighting view.
+and range words are stored raw; the residual RPU datapath decodes the fixed
+representation only at its consuming boundary.
 
-RPU packets define raw buffers, surfaces, constants, passes, draws, and fixed
-shader bindings. The VDP does not assign billboard, mesh, parallax, or skybox
-meaning to those packets; carts build the required vertex, instance, texture,
-and constant data themselves. Retired BBU/MDU/SBX packet headers have no
-payload contract and therefore consume only their header word.
+Residual RPU packets define raw buffers, surfaces, constants, passes, draws, and
+fixed shader bindings. The VDP does not assign higher-level scene meaning to
+those words. Retired BBU/MDU/SBX packet headers have no payload contract and
+therefore consume only their header word.
 
 Malformed stream headers, missing payload words, illegal BEGIN/END stream
 commands, and bad unit-packet ranges fault with `VDP_FAULT_STREAM_BAD_PACKET`
@@ -143,12 +141,12 @@ unknown packet kinds consume the header as a deterministic no-op.
 
 | Unit/path | Work timing | CPU-visible polling/edge |
 |---|---|---|
-| Direct command | BEGIN/END/doorbell writes execute admission immediately. Cart/BIOS draw payloads are RPU packets. | `VDP_STATUS_SUBMIT_BUSY`, `VDP_STATUS_SUBMIT_REJECTED`, and fault registers. |
+| Direct command | Legacy BEGIN/END/doorbell writes execute admission immediately; active cart and BIOS graphics use GX instead. | `VDP_STATUS_SUBMIT_BUSY`, `VDP_STATUS_SUBMIT_REJECTED`, and fault registers. |
 | FIFO stream | `IO_VDP_FIFO` collects words through the stream-ingress unit. `VDP_FIFO_CTRL_SEAL` decodes/replays the sealed stream immediately into submitted-frame state. | Stream-ingress partial words and submitted frames keep submit busy set. |
 | DMA stream | DMA owner opens the stream-ingress DMA submit latch, copies bytes into VDP stream memory, then seals. The VDP decodes the stream on seal. | Submit busy remains set while DMA submit is active. |
 | IDE/terminal framebuffer texture presentation | Host-managed IDE/terminal presentation may display the old framebuffer texture when explicitly enabled by the host overlay mode. Cart and BIOS code do not target this path. | `machine/ts/render/2d/framebuffer_pipeline.ts`, `machine/cpp/render/2d/framebuffer_pipeline.cpp`. |
 | XF/LPU/MFU/JTU register port | Stream unit packets write raw live register words during sealed stream replay. RPU `CONSTANT_UPLOAD_DEVICE` copies those register words into RPU constant banks. | Bad register ranges fault and abort the sealed stream frame. |
-| RPU | Packet admission retains raw buffers, surfaces, constants, passes, draws, and bindings. Host GPU backends execute the retained command buffer. | Malformed packets and structural resource ranges fault; representable weird state renders weirdly. |
+| RPU | Packet admission retains raw buffers, surfaces, constants, passes, draws, and bindings as residual device/save-state state. No presentation backend executes it. | Malformed packets and structural resource ranges fault; representable weird state remains deterministic. |
 | FBM | Framebuffer page transitions happen on VBlank for display/readback state. | Framebuffer presentation and display readback page. |
 | Readback | `IO_VDP_RD_*` reads resolve the framebuffer surface, serve retained cache chunks, advance X/Y, and consume per-frame budget. | Readback status/data and VDP fault registers. |
 | VOUT | Dither/dimension/output latches are sampled at frame seal and become visible at frame presentation. | Host consumes `VdpDeviceOutput`; cart sees MMIO/status only. |
@@ -176,15 +174,15 @@ datapath rejects them.
 | Direct bad submit state | `VDP_FAULT_SUBMIT_STATE` | Reject/drop command and keep or cancel the direct frame according to the command path. |
 | Unknown draw doorbell | `VDP_FAULT_CMD_BAD_DOORBELL` | Latch fault; drop the doorbell. |
 | Submit queue busy | `VDP_FAULT_SUBMIT_BUSY` | Reject the attempt; no visible frame mutation. |
-| Retired DEX command payload | `VDP_FAULT_DEX_INVALID_SCALE`, `VDP_FAULT_DEX_INVALID_LINE_WIDTH`, `VDP_FAULT_DEX_UNSUPPORTED_DRAW_CTRL`, `VDP_FAULT_DEX_SOURCE_SLOT`, `VDP_FAULT_DEX_SOURCE_OOB`, `VDP_FAULT_DEX_OVERFLOW` | Faults retained for stale direct-command payloads; cart and BIOS drawing helpers emit RPU packets instead. |
+| Retired DEX command payload | `VDP_FAULT_DEX_INVALID_SCALE`, `VDP_FAULT_DEX_INVALID_LINE_WIDTH`, `VDP_FAULT_DEX_UNSUPPORTED_DRAW_CTRL`, `VDP_FAULT_DEX_SOURCE_SLOT`, `VDP_FAULT_DEX_SOURCE_OOB`, `VDP_FAULT_DEX_OVERFLOW` | Faults retained for stale direct-command payloads; active cart and BIOS graphics use GX. |
 
 ## Host output and save state
 
-VOUT owns live, frame-sealed, and visible host-output buffers. Host backends read
-`VdpDeviceOutput` scanout metadata plus the retained RPU frame. They must not own
-or interpret cart intent such as billboard, mesh, parallax, or skybox. GPU
-backends execute the retained RPU command buffer directly; CPU rendering is only
-for the explicit software/headless backend.
+VOUT still owns live, frame-sealed, and visible device-output buffers. Host view
+snapshot code copies only the residual dither/output state it still needs; the
+retained RPU frame is not published to presentation. GX command buffers and GX
+VRAM scanout are the graphics path for accelerated and software/headless
+backends.
 
 Saved VDP state includes:
 
@@ -222,14 +220,10 @@ restore.
   and `registers.h`
 - C++ subunits: `fbm.cpp/.h`, `frame.cpp/.h`, `jtu.cpp/.h`, `lpu.cpp/.h`,
   `mfu.cpp/.h`, `rpu.cpp/.h`, `vout.cpp/.h`, and `xf.cpp/.h`
-- Host framebuffer/RPU execution passes and software framebuffer rasterizers:
-  `machine/ts/render/backend/software/*`,
-  `machine/ts/render/backend/webgl/vdp_2d_blit.ts`,
-  `machine/ts/render/backend/webgl/vdp_rpu.ts`,
-  `machine/cpp/render/backend/software/*`,
-  `machine/cpp/render/backend/gles2/vdp_2d_blit.cpp`, and
-  `machine/cpp/render/backend/gles2/vdp_rpu.cpp`
-- Host render output consumers: `machine/ts/render/vdp/*` and
+- Residual host dither/output snapshot consumers: `machine/ts/render/vdp/*` and
   `machine/cpp/render/vdp/*`
+- Host-only IDE/terminal framebuffer presentation:
+  `machine/ts/render/2d/framebuffer_pipeline.ts` and
+  `machine/cpp/render/2d/framebuffer_pipeline.cpp`
 - Runtime save-state codecs: `machine/ts/machine/runtime/save_state/*` and
   `machine/cpp/machine/runtime/save_state/*`

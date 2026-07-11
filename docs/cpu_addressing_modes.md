@@ -264,16 +264,3 @@ This is a **mirrored ISA change** and must land in both cores simultaneously.
 7. **Add compiler tests.**
 8. Run `npm run audit:core-parity`.
 
----
-
-## Relationship to struct support
-
-Struct support (see `docs/lua_struct_support_plan.md`) is the primary producer
-of the `base_reg + compile_time_field_offset` pattern. The `_D` opcodes are not
-a prerequisite for struct support — struct field writes compile correctly without
-them, using `ADD + STORE_MEM`. Addressing modes are a performance layer added on
-top of a working struct compiler.
-
-Recommended order: land struct support (phases 1–3), measure actual `ADD +
-STORE_MEM` density in compiled output, then land addressing modes.
-

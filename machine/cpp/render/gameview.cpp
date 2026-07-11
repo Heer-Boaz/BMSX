@@ -135,7 +135,7 @@ void GameView::finalizePresentation() {
 /**
  * Main render loop - executes the render graph.
  *
- * The render graph executes the RPU, framebuffer texture presentation when explicitly enabled, post, and host passes
+ * The render graph executes the GX GPU, framebuffer texture presentation when explicitly enabled, post, and host passes
  * in the correct order.
  */
 void GameView::drawgame() {

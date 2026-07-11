@@ -9,8 +9,8 @@
  *   GPUBackend texture/render-target methods, render-pass methods, draw methods
  *   except TS drawIndexed indexType, GX VRAM snapshot capture, frame lifecycle,
  *   getCaps(), and stats.
- * - Shared render semantics above this boundary are VDP/VOUT/RPU command
- *   records. Concrete WebGL/GLES pass code owns GPU API binding such as shader
+ * - Shared render semantics above this boundary are GX GPU command buffers.
+ *   Concrete WebGL/GLES pass code owns GPU API binding such as shader
  *   programs, VAO/buffer state, glVertexAttribPointer calls, uniform binding,
  *   texture units, and draw-call issue.
  * - TS-only public symbols in render/backend/backend.ts are browser/WebGL

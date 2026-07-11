@@ -28,7 +28,6 @@ class GameView;
 class RenderGraphRuntime;
 class Runtime;
 struct GxGpuCommandBuffer;
-struct VdpRpuFrameOutput;
 enum class Host2DKind : u8;
 using Host2DRef = const void*;
 
@@ -44,12 +43,6 @@ struct Framebuffer2DPipelineState {
 	i32 baseWidth = 0;
 	i32 baseHeight = 0;
 	TextureHandle colorTex = nullptr;
-};
-
-struct VdpRpuPipelineState {
-	i32 width = 0;
-	i32 height = 0;
-	const VdpRpuFrameOutput* frame = nullptr;
 };
 
 struct GxGpuPipelineState {

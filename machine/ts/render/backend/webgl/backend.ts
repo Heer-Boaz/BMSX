@@ -14,7 +14,6 @@ import { registerFramebuffer2DPass } from '../../2d/framebuffer_pipeline';
 import { FRAME_UNIFORM_BINDING, updateAndBindFrameUniforms } from '../frame_uniforms';
 import type { RenderPassLibrary } from '../pass/library';
 import { captureRenderedVramSnapshot, registerGxGpuPass } from './gx_gpu';
-import { registerVdpRpuPass } from './vdp_rpu';
 import type { GxGpu } from '../../../machine/devices/gx/gpu';
 
 // (Texture units sourced from render_view constants to avoid duplication.)
@@ -82,7 +81,6 @@ export class WebGLBackend implements GPUBackend {
 			},
 		});
 		registerGxGpuPass(registry);
-		registerVdpRpuPass(registry);
 		registerFramebuffer2DPass(registry);
 		registerDeviceQuantize(registry);
 		registerCRT(registry);

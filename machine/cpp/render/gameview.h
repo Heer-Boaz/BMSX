@@ -12,7 +12,6 @@
 #include "common/registry.h"
 #include "machine/devices/gx/gpu_command_buffer.h"
 #include "machine/devices/vdp/lpu.h"
-#include "machine/devices/vdp/rpu.h"
 #include "render/vdp/transform.h"
 #include "common/subscription.h"
 #include <array>
@@ -132,7 +131,6 @@ public:
 	i32 vdpPointLightCount = 0;
 	std::array<u32, VDP_MFU_WEIGHT_COUNT> vdpMorphWeightWords{};
 	std::array<u32, VDP_JTU_REGISTER_WORDS> vdpJointMatrixWords{};
-	const VdpRpuFrameOutput* vdpRpuFrame = nullptr;
 	const GxGpuCommandBuffer* gxGpuCommandBuffer = nullptr;
 	u32 gxGpuStatusWord = 0u;
 	u32 gxGpuDisplayModeWord = 0u;

@@ -194,7 +194,7 @@ void setDeviceQuantizeGraph(RenderPassDef& desc) {
 }
 
 bool shouldExecuteFramebuffer2DPass(GameView* view, void*) {
-	return view->presentWorkbenchFrameBufferTexture && view->vdpRpuFrame->commands.passCount == 0u;
+	return view->presentWorkbenchFrameBufferTexture;
 }
 
 bool shouldExecuteAutoPresentPass(GameView* view, void*) {

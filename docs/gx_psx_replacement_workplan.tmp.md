@@ -69,19 +69,22 @@ GX owners:
 - GX firmware helpers: `machine/firmware/system/gx_gpu.lua`,
   `machine/firmware/system/gx_image.lua`
 
-Legacy VDP/RPU still exists and must not be treated as completion:
+Residual VDP machine ownership still exists and must not be treated as
+completion:
 
 - TS/C++ VDP device trees under `machine/*/machine/devices/vdp/`
-- VDP/RPU render helpers under `machine/ts/render/vdp/`
+- residual VDP dither/output snapshot helpers under `machine/*/render/vdp/`
+- the host-only TS IDE/terminal framebuffer presentation path
 - Old VDP/RPU tests and firmware paths, including `tests/cpp/vdp_ingress_test.cpp`
-- Presentation registration still contains VDP/RPU paths; removing those is a
-  later replacement milestone, not done yet.
+- mapped VDP staging/texture/framebuffer memory plus scheduler/VBlank,
+  register, readback, and save-state dependencies
 
 ## Current high-level state
 
-GTE is relatively far along. GPU is in the middle of the replacement work. The
-old VDP/RPU has not yet been removed from the active machine/presentation world.
-This is not close to done if the goal is read literally.
+GTE is relatively far along. GPU is in the middle of the replacement work. GX
+is the only cart graphics route executed by host backends, but residual VDP
+machine, dither, memory, IDE/terminal framebuffer, and save-state ownership has
+not yet been removed. This is not close to done if the goal is read literally.
 
 Implemented or partially covered GX-GPU areas include:
 
@@ -188,7 +191,11 @@ and ask before coding.
 - [x] Make the TS/C++ software/headless renderers consume the GX command buffer
   directly for the currently implemented command set, not as hidden fallbacks
   inside accelerated paths.
-- [ ] Remove the old VDP/RPU from active presentation once GX is complete enough.
+- [x] Remove the old RPU render passes from active presentation once GX is
+  complete enough. WebGL, GLES2, TS headless/software, and C++ software no
+  longer register or execute an RPU frame; WebGPU never registered one.
+- [ ] Remove residual VDP dither and host-only IDE/terminal framebuffer
+  presentation ownership after their real owners are established.
 - [x] Remove old VDP/RPU cart-visible ABI use after carts are migrated. Cartlib
   consumes GX-owned display metrics directly and the rejected Lua VDP/RPU
   firmware modules are gone rather than retained behind compatibility shims.
@@ -303,13 +310,22 @@ and ask before coding.
 
 ### 6. VDP/RPU removal
 
-- [ ] Identify every active VDP/RPU presentation registration and machine output
-  dependency.
-- [ ] Replace active presentation routing with GX output when GX is sufficient.
+- [x] Identify every active VDP/RPU presentation registration and machine output
+  dependency. The remaining blockers are mapped VDP memory, scheduler/VBlank,
+  register/readback/save-state state, dither snapshotting, and the TS host-only
+  IDE/terminal framebuffer path. Host-side XF/LPU/MFU/JTU transform, lighting,
+  and frame-shared structures also remain after their RPU consumer was removed.
+- [x] Remove the dormant WebGL, GLES2, TS headless/software, and C++ software RPU
+  presentation executors. GX command buffers are the only cart graphics input
+  consumed by host backends; WebGPU already had no RPU executor.
+- [ ] Move residual VDP dither and host-only framebuffer presentation to their
+  real owners and delete the orphaned host transform/lighting/frame-shared
+  structures without a compatibility facade.
+- [ ] Migrate remaining mapped memory and machine timing/state ownership before
+  deleting the VDP device.
 - [x] Retire old VDP/RPU firmware/system paths after cart migration planning.
   The cart-visible Lua firmware path and its prelude exports are removed; the
-  still-active machine/presentation implementation remains a separate removal
-  slice.
+  residual machine implementation remains a separate removal slice.
 - [ ] Remove or quarantine old VDP/RPU tests that only protect the failed
   renderer-descriptor ABI.
 - [ ] Keep useful BMSX fantasy hardware ideas documented for later GX extensions,

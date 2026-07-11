@@ -1,5 +1,4 @@
 import { type color_arr, type TextureSource, type vec2 } from '../../rompack/format';
-import type { VdpRpuFrameOutput } from '../../machine/devices/vdp/rpu';
 import type { GxGpu } from '../../machine/devices/gx/gpu';
 import type { GxGpuCommandBufferView } from '../../machine/devices/gx/gpu_command_buffer';
 import type { Host2DSubmission } from '../shared/submissions';
@@ -15,8 +14,8 @@ import type { RenderPassLibrary } from './pass/library';
  *   GPUBackend texture methods, render-pass methods, draw methods except TS
  *   drawIndexed indexType, GX VRAM snapshot capture, frame lifecycle, getCaps(),
  *   and stats.
- * - Shared render semantics above this boundary are VDP/VOUT/RPU command
- *   records. Concrete WebGL/GLES pass code owns GPU API binding such as shader
+ * - Shared render semantics above this boundary are GX GPU command buffers.
+ *   Concrete WebGL/GLES pass code owns GPU API binding such as shader
  *   programs, VAO/buffer state, vertexAttribPointer calls, uniform block
  *   binding, texture units, and draw-call issue.
  * - TS-only public symbols here are browser/WebGL render-graph plumbing:
@@ -78,7 +77,6 @@ export type RenderTargetHandle = WebGLFramebuffer | HeadlessRenderTargetHandle |
 // High-level render pass identifiers
 export type RenderPassId =
 	| 'gx_gpu'
-	| 'vdp_rpu'
 	| 'framebuffer_2d'
 	| 'host_overlay'
 	| 'host_menu'
@@ -252,7 +250,6 @@ export interface GPUBackend {
 
 export interface RenderPassStateRegistry {
 	['gx_gpu']: GxGpuPipelineState;
-	['vdp_rpu']: VdpRpuPipelineState;
 	['framebuffer_2d']: Framebuffer2DPipelineState;
 	['host_overlay']: HostOverlayPipelineState;
 	['host_menu']: HostMenuPipelineState;
@@ -268,12 +265,6 @@ export interface RenderPassStateRegistry {
 	['sprites']: never;
 }
 export type RenderPassStateId = keyof RenderPassStateRegistry;
-
-export type VdpRpuPipelineState = {
-	width: number;
-	height: number;
-	frame: VdpRpuFrameOutput;
-};
 
 export type GxGpuPipelineState = {
 	width: number;
@@ -329,8 +320,6 @@ export interface RenderContext {
 	gxGpuVerticalDisplayRangeWord: number;
 	gxGpuVramSnapshotBytes: Uint8Array;
 	gxGpuVramSnapshotSerial: number;
-	vdpRpuFrame: VdpRpuFrameOutput;
-
 }
 
 export type FogUniforms = {

@@ -410,14 +410,6 @@
 			"reason": "rpu_registerfile_packet_boundary_contract"
 		},
 		{
-			"ts": "machine/ts/render/backend/webgl/vdp_rpu.ts",
-			"cpp": [
-				"machine/cpp/render/backend/gles2/vdp_rpu.h",
-				"machine/cpp/render/backend/gles2/vdp_rpu.cpp"
-			],
-			"reason": "rpu_webgl_gles2_backend_contract"
-		},
-		{
 			"ts": "machine/ts/machine/devices/vdp/vout.ts",
 			"cpp": [
 				"machine/cpp/machine/devices/vdp/vout.h",
@@ -1005,7 +997,6 @@
 				"machine/cpp/render/backend/pass/library.h"
 			],
 			"symbols": [
-				"VdpRpuPipelineState",
 				"Framebuffer2DPipelineState",
 				"PresentPipelineState",
 				"CRTPipelineOptions",
@@ -1202,8 +1193,6 @@
 	"strict_runtime_no_churn": [
 		{
 			"files": [
-				"machine/ts/render/backend/webgl/vdp_rpu.ts",
-				"machine/cpp/render/backend/gles2/vdp_rpu.cpp",
 				"machine/ts/machine/devices/vdp/contracts.ts",
 				"machine/ts/machine/devices/vdp/rpu.ts",
 				"machine/cpp/machine/devices/vdp/contracts.h",
@@ -1255,7 +1244,7 @@
 				"machine/ts/render/headless/passes.ts",
 				"machine/ts/render/headless/view.ts"
 			],
-			"reason": "rpu_backend_bios_cart_hot_paths"
+			"reason": "vdp_device_bios_cart_and_headless_hot_paths"
 		}
 	],
 	"strict_rpu_table_parity": [
@@ -1270,16 +1259,6 @@
 		}
 	],
 	"strict_shader_parity": [
-		{
-			"webgl": "machine/ts/render/backend/webgl/shaders/vdp_rpu.vert.glsl",
-			"gles2": "machine/cpp/render/backend/gles2/shaders/vdp_rpu.vert.glsl",
-			"reason": "fixed_rpu_vertex_shader_variant_contract"
-		},
-		{
-			"webgl": "machine/ts/render/backend/webgl/shaders/vdp_rpu.frag.glsl",
-			"gles2": "machine/cpp/render/backend/gles2/shaders/vdp_rpu.frag.glsl",
-			"reason": "fixed_rpu_fragment_shader_variant_contract"
-		},
 		{
 			"webgl": "machine/ts/render/backend/webgl/shaders/gx_gpu_fill.vert.glsl",
 			"gles2": "machine/cpp/render/backend/gles2/shaders/gx_gpu_fill.vert.glsl",
@@ -1365,6 +1344,8 @@
 		{
 			"absent": [
 				"docs/vdp_rpu_resume_handoff.md",
+				"docs/vdp_rpu_abi_draft.md",
+				"docs/lua_struct_support_plan.md",
 				"machine/firmware/system/vdp_image.lua",
 				"machine/firmware/system/vdp_jtu.lua",
 				"machine/firmware/system/vdp_lpu.lua",
@@ -1373,18 +1354,10 @@
 				"machine/firmware/system/vdp_rpu_quads.lua",
 				"machine/firmware/system/vdp_xf.lua"
 			],
-			"reason": "legacy_lua_vdp_rpu_firmware_abi_and_stale_handoff_must_not_return"
+			"reason": "legacy_lua_vdp_rpu_firmware_abi_and_stale_docs_must_not_return"
 		},
 		{
 			"present": [
-				"machine/ts/render/backend/webgl/vdp_rpu.ts",
-				"machine/ts/render/backend/webgl/shaders/vdp_rpu.vert.glsl",
-				"machine/ts/render/backend/webgl/shaders/vdp_rpu.frag.glsl",
-				"machine/cpp/render/backend/gles2/vdp_rpu.h",
-				"machine/cpp/render/backend/gles2/vdp_rpu.cpp",
-				"machine/cpp/render/backend/gles2/shaders/vdp_rpu.vert.glsl",
-				"machine/cpp/render/backend/gles2/shaders/vdp_rpu.frag.glsl",
-				"machine/cpp/render/backend/gles2/shaders/vdp_rpu_shaders.h.in",
 				"machine/ts/render/2d/framebuffer_pipeline.ts",
 				"machine/cpp/render/2d/framebuffer_pipeline.h",
 				"machine/cpp/render/2d/framebuffer_pipeline.cpp",
@@ -1464,9 +1437,20 @@
 				"machine/cpp/render/backend/software/vdp_framebuffer_execution.h",
 				"machine/cpp/render/backend/software/vdp_framebuffer_execution.cpp",
 				"machine/cpp/render/backend/software/vdp_framebuffer_rasterizer.h",
-				"machine/cpp/render/backend/software/vdp_framebuffer_rasterizer.cpp"
+				"machine/cpp/render/backend/software/vdp_framebuffer_rasterizer.cpp",
+				"machine/ts/render/backend/webgl/vdp_rpu.ts",
+				"machine/ts/render/backend/webgl/shaders/vdp_rpu.vert.glsl",
+				"machine/ts/render/backend/webgl/shaders/vdp_rpu.frag.glsl",
+				"machine/ts/render/backend/software/vdp_rpu.ts",
+				"machine/cpp/render/backend/gles2/vdp_rpu.h",
+				"machine/cpp/render/backend/gles2/vdp_rpu.cpp",
+				"machine/cpp/render/backend/gles2/shaders/vdp_rpu.vert.glsl",
+				"machine/cpp/render/backend/gles2/shaders/vdp_rpu.frag.glsl",
+				"machine/cpp/render/backend/gles2/shaders/vdp_rpu_shaders.h.in",
+				"machine/cpp/render/backend/software/vdp_rpu.h",
+				"machine/cpp/render/backend/software/vdp_rpu.cpp"
 			],
-			"reason": "rpu_gpu_backend_files_replace_retired_common_rpu_and_legacy_mesh_particle_skybox_and_framebuffer_execution_passes_while_ide_terminal_framebuffer_texture_presentation_remains"
+			"reason": "gx_gpu_backends_replace_retired_rpu_presentation_and_legacy_scene_and_framebuffer_execution_paths_while_ide_terminal_framebuffer_texture_presentation_remains"
 		},
 		{
 			"present": [
@@ -1627,14 +1611,6 @@
 				"machine/cpp/render/backend/gles2/fullscreen_quad.cpp"
 			],
 			"reason": "fullscreen_quad_backend_filename_parity"
-		},
-		{
-			"ts": "machine/ts/render/backend/webgl/vdp_rpu.ts",
-			"cpp": [
-				"machine/cpp/render/backend/gles2/vdp_rpu.h",
-				"machine/cpp/render/backend/gles2/vdp_rpu.cpp"
-			],
-			"reason": "rpu_gpu_backend_filename_parity"
 		},
 		{
 			"ts": "machine/ts/render/vdp/view_snapshot.ts",
@@ -2288,76 +2264,14 @@
 			"functions": [
 				"commitVdpViewSnapshot"
 			],
-			"reason": "host_view_snapshot_commit_must_publish_retained_rpu_state_without_allocating"
+			"reason": "host_view_snapshot_commit_must_publish_vdp_state_without_allocating"
 		},
 		{
 			"file": "machine/cpp/render/vdp/view_snapshot.cpp",
 			"functions": [
 				"commitVdpViewSnapshot"
 			],
-			"reason": "host_view_snapshot_commit_must_publish_retained_rpu_state_without_allocating"
-		},
-		{
-			"file": "machine/ts/render/backend/webgl/vdp_rpu.ts",
-			"functions": [
-				"vdpRpuPrimitive",
-				"vdpRpuIndexType",
-				"configureNearestClampTexture2D",
-				"deleteVdpRpuSurfaceStorage",
-				"uploadVdpRpuBuffer",
-				"loadVdpRpuSurfaceStorage",
-				"uploadVdpRpuTextureSurface",
-				"bindVdpRpuPassFramebuffer",
-				"setVdpRpuPipelineState",
-				"vdpRpuAttributeLocation",
-				"vdpRpuAttributeType",
-				"bindVdpRpuStreamAttribute",
-				"bindVdpRpuStreamBinding",
-				"setVdpRpuDefaultVertexAttributes",
-				"setVdpRpuDefaultInstanceAttributes",
-				"bindVdpRpuDrawStreams",
-				"findVdpRpuConstantBindingAddress",
-				"readVdpRpuFloatWords",
-				"setVdpRpuC0Constants",
-				"setVdpRpuC1Constants",
-				"setVdpRpuJointConstants",
-				"bindVdpRpuNeutralTexture",
-				"bindVdpRpuTextureBindings",
-				"drawVdpRpuCommand",
-				"renderVdpRpuFrame"
-			],
-			"reason": "webgl_rpu_hot_backend_helpers_must_remain_heap_and_gc_free"
-		},
-		{
-			"file": "machine/cpp/render/backend/gles2/vdp_rpu.cpp",
-			"functions": [
-				"vdpRpuPrimitive",
-				"vdpRpuIndexType",
-				"configureNearestClampTexture2D",
-				"deleteVdpRpuSurfaceStorage",
-				"uploadVdpRpuBuffer",
-				"loadVdpRpuSurfaceStorage",
-				"uploadVdpRpuTextureSurface",
-				"bindVdpRpuPassFramebuffer",
-				"setVdpRpuPipelineState",
-				"vdpRpuAttributeLocation",
-				"vdpRpuAttributeType",
-				"bindVdpRpuStreamAttribute",
-				"bindVdpRpuStreamBinding",
-				"setVdpRpuDefaultVertexAttributes",
-				"setVdpRpuDefaultInstanceAttributes",
-				"bindVdpRpuDrawStreams",
-				"findVdpRpuConstantBindingAddress",
-				"readVdpRpuFloatWords",
-				"setVdpRpuC0Constants",
-				"setVdpRpuC1Constants",
-				"setVdpRpuJointConstants",
-				"bindVdpRpuNeutralTexture",
-				"bindVdpRpuTextureBindings",
-				"drawVdpRpuCommand",
-				"renderVdpRpuFrame"
-			],
-			"reason": "gles2_rpu_hot_backend_helpers_must_remain_heap_and_gc_free"
+			"reason": "host_view_snapshot_commit_must_publish_vdp_state_without_allocating"
 		},
 		{
 			"file": "machine/ts/machine/devices/vdp/vram_garbage.ts",
@@ -2406,11 +2320,10 @@
 			"file": "machine/ts/render/headless/passes.ts",
 			"functions": [
 				"commitHeadlessFrame",
-				"fillHeadlessFrame",
 				"countHeadlessActivePixels",
 				"presentHeadlessFrame"
 			],
-			"reason": "headless_rpu_and_present_hot_helpers_must_not_allocate_per_frame"
+			"reason": "headless_present_hot_helpers_must_not_allocate_per_frame"
 		},
 		{
 			"file": "machine/ts/render/headless/backend.ts",

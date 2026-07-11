@@ -93,8 +93,6 @@ set_property(DIRECTORY APPEND PROPERTY CMAKE_CONFIGURE_DEPENDS
 	"${CMAKE_CURRENT_SOURCE_DIR}/render/2d/shaders/2d.frag.glsl"
 	"${CMAKE_CURRENT_SOURCE_DIR}/render/2d/shaders/framebuffer_2d.vert.glsl"
 	"${CMAKE_CURRENT_SOURCE_DIR}/render/2d/shaders/framebuffer_2d.frag.glsl"
-	"${CMAKE_CURRENT_SOURCE_DIR}/render/backend/gles2/shaders/vdp_rpu.vert.glsl"
-	"${CMAKE_CURRENT_SOURCE_DIR}/render/backend/gles2/shaders/vdp_rpu.frag.glsl"
 	"${CMAKE_CURRENT_SOURCE_DIR}/render/backend/gles2/shaders/gx_gpu_fill.vert.glsl"
 	"${CMAKE_CURRENT_SOURCE_DIR}/render/backend/gles2/shaders/gx_gpu_fill.frag.glsl"
 	"${CMAKE_CURRENT_SOURCE_DIR}/render/backend/gles2/shaders/gx_gpu_line.vert.glsl"
@@ -164,19 +162,6 @@ file(READ
 configure_file(
 	"${CMAKE_CURRENT_SOURCE_DIR}/render/2d/shaders/framebuffer_2d_shaders.h.in"
 	"${CMAKE_CURRENT_BINARY_DIR}/generated/render/2d/shaders/framebuffer_2d_shaders.h"
-	@ONLY
-)
-file(READ
-	"${CMAKE_CURRENT_SOURCE_DIR}/render/backend/gles2/shaders/vdp_rpu.vert.glsl"
-	BMSX_VDP_RPU_VERTEX_SHADER
-)
-file(READ
-	"${CMAKE_CURRENT_SOURCE_DIR}/render/backend/gles2/shaders/vdp_rpu.frag.glsl"
-	BMSX_VDP_RPU_FRAGMENT_SHADER
-)
-configure_file(
-	"${CMAKE_CURRENT_SOURCE_DIR}/render/backend/gles2/shaders/vdp_rpu_shaders.h.in"
-	"${CMAKE_CURRENT_BINARY_DIR}/generated/render/backend/gles2/shaders/vdp_rpu_shaders.h"
 	@ONLY
 )
 file(READ
@@ -321,7 +306,6 @@ add_library(bmsx_core STATIC
 	render/backend/software/gx_gpu_rasterizer.cpp
 	render/backend/software/gx_gpu_scanout.cpp
 	render/backend/software/gx_gpu_vram.cpp
-	render/backend/software/vdp_rpu.cpp
 	render/2d/framebuffer_pipeline.cpp
 	render/3d/math.cpp
 	render/3d/axis_gizmo_pipeline.cpp
@@ -451,7 +435,6 @@ if(BMSX_ENABLE_GLES2)
 		render/backend/gles2/backend.cpp
 		render/backend/gles2/fullscreen_quad.cpp
 		render/backend/gles2/gx_gpu.cpp
-		render/backend/gles2/vdp_rpu.cpp
 		render/post/crt/gles2/pipeline.cpp
 		render/post/device_quantize/gles2/pipeline.cpp
 	)

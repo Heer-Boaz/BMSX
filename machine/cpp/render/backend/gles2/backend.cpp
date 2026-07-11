@@ -10,7 +10,6 @@
 #include "render/2d/framebuffer_pipeline.h"
 #include "render/backend/pass/library.h"
 #include "render/backend/gles2/gx_gpu.h"
-#include "render/backend/gles2/vdp_rpu.h"
 #include "render/3d/axis_gizmo_pipeline.h"
 #include "core/machine_manager.h"
 #include "render/shared/solid_pixels.h"
@@ -161,7 +160,6 @@ void OpenGLES2Backend::registerBuiltinPasses(RenderPassLibrary& registry) {
 	registerFrameStatePasses(registry);
 
 	registerGxGpuPass(registry);
-	registerVdpRpuPass(registry);
 	registerFramebuffer2DPass_GLES2(registry);
 	DeviceQuantizePipeline::GLES2::registerPass(registry, m_post_pipelines->deviceQuantize);
 

@@ -23,11 +23,10 @@ import { VDP_LPU_DIRECTIONAL_LIGHT_LIMIT, VDP_LPU_POINT_LIGHT_LIMIT, VDP_LPU_REG
 import { VDP_XF_MATRIX_REGISTER_WORDS } from '../machine/devices/vdp/xf';
 import { createVdpTransformSnapshot } from './vdp/transform';
 import type { VdpFrameBufferTextures } from './vdp/framebuffer';
-import type { VdpRpuFrameOutput } from '../machine/devices/vdp/rpu';
 import type { GxGpuCommandBufferView } from '../machine/devices/gx/gpu_command_buffer';
 import { renderGate } from '../common/taskgate';
 
-const PRESENTATION_PASS_IDS = ['gx_gpu', 'vdp_rpu', 'framebuffer_2d', 'device_quantize', 'presentation_history_a', 'presentation_history_b', 'crt', 'host_overlay', 'host_menu'];
+const PRESENTATION_PASS_IDS = ['gx_gpu', 'framebuffer_2d', 'device_quantize', 'presentation_history_a', 'presentation_history_b', 'crt', 'host_overlay', 'host_menu'];
 
 interface GameViewOpts {
 	host: GameViewHost;
@@ -94,7 +93,6 @@ export class GameView implements RenderContext {
 	public vdpPointLightCount = 0;
 	public readonly vdpMorphWeightWords = new Uint32Array(VDP_MFU_WEIGHT_COUNT);
 	public readonly vdpJointMatrixWords = new Uint32Array(VDP_JTU_REGISTER_WORDS);
-	public vdpRpuFrame!: VdpRpuFrameOutput;
 	public gxGpuCommandBuffer!: GxGpuCommandBufferView;
 	public gxGpuStatusWord = 0;
 	public gxGpuDisplayModeWord = 0;
