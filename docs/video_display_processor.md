@@ -7,9 +7,9 @@ pass have been removed; no host renderer consumes `VdpDeviceOutput`.
 
 The VDP still owns raw register words, FIFO/stream ingress, mapped
 staging/texture/framebuffer memory, status/fault latches, scheduler/VBlank state,
-readback, dither, and save-state records. Its old framebuffer texture
-presentation path is explicit IDE/terminal host plumbing and is not a
-cart-visible or BIOS-visible render unit.
+readback, dither, and save-state records. No host presentation route consumes
+its framebuffer or VOUT state; IDE/terminal presentation is owned by the host
+overlay.
 
 ## Register map
 
@@ -144,10 +144,9 @@ unknown packet kinds consume the header as a deterministic no-op.
 | Direct command | Legacy BEGIN/END/doorbell writes execute admission immediately; active cart and BIOS graphics use GX instead. | `VDP_STATUS_SUBMIT_BUSY`, `VDP_STATUS_SUBMIT_REJECTED`, and fault registers. |
 | FIFO stream | `IO_VDP_FIFO` collects words through the stream-ingress unit. `VDP_FIFO_CTRL_SEAL` decodes/replays the sealed stream immediately into submitted-frame state. | Stream-ingress partial words and submitted frames keep submit busy set. |
 | DMA stream | DMA owner opens the stream-ingress DMA submit latch, copies bytes into VDP stream memory, then seals. The VDP decodes the stream on seal. | Submit busy remains set while DMA submit is active. |
-| IDE/terminal framebuffer texture presentation | Host-managed IDE/terminal presentation may display the old framebuffer texture when explicitly enabled by the host overlay mode. Cart and BIOS code do not target this path. | `machine/ts/render/2d/framebuffer_pipeline.ts`, `machine/cpp/render/2d/framebuffer_pipeline.cpp`. |
 | XF/LPU/MFU/JTU register port | Stream unit packets write raw live register words during sealed stream replay. RPU `CONSTANT_UPLOAD_DEVICE` copies those register words into RPU constant banks. | Bad register ranges fault and abort the sealed stream frame. |
 | RPU | Packet admission retains raw buffers, surfaces, constants, passes, draws, and bindings as residual device/save-state state. No presentation backend executes it. | Malformed packets and structural resource ranges fault; representable weird state remains deterministic. |
-| FBM | Framebuffer page transitions happen on VBlank for display/readback state. | Framebuffer presentation and display readback page. |
+| FBM | Framebuffer page transitions happen on VBlank for residual display/readback state. | Display/readback page latches. |
 | Readback | `IO_VDP_RD_*` reads resolve the framebuffer surface, serve retained cache chunks, advance X/Y, and consume per-frame budget. | Readback status/data and VDP fault registers. |
 | VOUT | Dither/dimension/output latches are sampled at frame seal and retained as residual device/save-state state. | No host presentation consumer remains; cart sees MMIO/status only. |
 
@@ -220,8 +219,7 @@ restore.
   and `registers.h`
 - C++ subunits: `fbm.cpp/.h`, `frame.cpp/.h`, `jtu.cpp/.h`, `lpu.cpp/.h`,
   `mfu.cpp/.h`, `rpu.cpp/.h`, `vout.cpp/.h`, and `xf.cpp/.h`
-- Host-only IDE/terminal framebuffer presentation:
-  `machine/ts/render/2d/framebuffer_pipeline.ts` and
-  `machine/cpp/render/2d/framebuffer_pipeline.cpp`
+- Mapped framebuffer pixels remain residual CPU/DMA/device read/write,
+  readback, and save-state memory; they have no host presentation consumer
 - Runtime save-state codecs: `machine/ts/machine/runtime/save_state/*` and
   `machine/cpp/machine/runtime/save_state/*`

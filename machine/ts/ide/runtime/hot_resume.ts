@@ -47,7 +47,6 @@ export async function resumeFromSnapshot(runtime: Runtime, state: RuntimeResumeS
 	runtime.luaRuntimeFailed = false;
 	clearOverlayFrame();
 	applyRuntimeMachineState(runtime, snapshot.machineState);
-	machineManager.view.vdpFrameBufferTextures.initialize(runtime.machine.vdp);
 	resumeLuaProgramState(runtime, snapshot, preserveSystemModules);
 }
 

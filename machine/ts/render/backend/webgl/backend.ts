@@ -10,7 +10,6 @@ import { createSolidRgba8Pixels } from '../../shared/solid_pixels';
 import { registerHostOverlayPass, registerHostMenuPass } from '../../host_overlay/webgl/pipeline';
 import { registerCRT } from '../../post/crt/webgl/pipeline';
 import { registerDeviceQuantize } from '../../post/device_quantize/webgl/pipeline';
-import { registerFramebuffer2DPass } from '../../2d/framebuffer_pipeline';
 import { FRAME_UNIFORM_BINDING, updateAndBindFrameUniforms } from '../frame_uniforms';
 import type { RenderPassLibrary } from '../pass/library';
 import { captureRenderedVramSnapshot, registerGxGpuPass } from './gx_gpu';
@@ -81,7 +80,6 @@ export class WebGLBackend implements GPUBackend {
 			},
 		});
 		registerGxGpuPass(registry);
-		registerFramebuffer2DPass(registry);
 		registerDeviceQuantize(registry);
 		registerCRT(registry);
 		registerHostOverlayPass(registry);

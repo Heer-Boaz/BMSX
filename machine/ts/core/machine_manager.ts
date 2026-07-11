@@ -23,7 +23,6 @@ import { handleLuaError } from '../ide/workbench/runtime_errors';
 import { createRuntimeSourceState, type RuntimeSourceState } from '../ide/runtime/sources';
 import type { GPUBackend } from '../render/backend/backend';
 import { clearOverlayFrame } from '../render/host_overlay/overlay_queue';
-import { VdpFrameBufferTextures } from '../render/vdp/framebuffer';
 import { RenderPresentationState } from '../render/presentation_state';
 import { runMachineHostFrame } from './host_frame';
 import { captureRuntimeSaveStateBytes } from '../machine/runtime/save_state/codec';
@@ -190,8 +189,7 @@ export class MachineManager {
 		this.syncAudioTiming();
 		const gpuBackend = await resolvedViewHost.createBackend() as GPUBackend;
 		gview.backend = gpuBackend;
-		const textureManager = new TextureManager(gpuBackend);
-		gview.vdpFrameBufferTextures = new VdpFrameBufferTextures(textureManager, gview);
+		new TextureManager(gpuBackend);
 		const pipelineRegistry = new RenderPassLibrary(gpuBackend, runtime, gview);
 		gview.pipelineRegistry = pipelineRegistry;
 		gview.applyPresentationPassState();
@@ -212,7 +210,6 @@ export class MachineManager {
 		});
 
 		await gview.initializeDefaultTextures();
-		gview.vdpFrameBufferTextures.initialize(runtime.machine.vdp);
 		this.view.default_font = new Font();
 		await startPreparedRuntime(runtime);
 		flushRuntimeLuaOutputToTerminal(runtime, this.ideState);
@@ -252,7 +249,6 @@ export class MachineManager {
 	public async refreshRenderSurfaces(): Promise<void> {
 		this.texmanager.setBackend(this.view.backend);
 		await this.view.initializeDefaultTextures();
-		this.view.vdpFrameBufferTextures.initialize(this.runtime.machine.vdp);
 	}
 
 	public async resetRuntime(preserveTextures = false): Promise<void> {

@@ -87,10 +87,6 @@ endif()
 set_property(DIRECTORY APPEND PROPERTY CMAKE_CONFIGURE_DEPENDS
 	"${CMAKE_CURRENT_SOURCE_DIR}/render/host_overlay/gles2/shaders/host_overlay.vert.glsl"
 	"${CMAKE_CURRENT_SOURCE_DIR}/render/host_overlay/gles2/shaders/host_overlay.frag.glsl"
-	"${CMAKE_CURRENT_SOURCE_DIR}/render/2d/shaders/2d.vert.glsl"
-	"${CMAKE_CURRENT_SOURCE_DIR}/render/2d/shaders/2d.frag.glsl"
-	"${CMAKE_CURRENT_SOURCE_DIR}/render/2d/shaders/framebuffer_2d.vert.glsl"
-	"${CMAKE_CURRENT_SOURCE_DIR}/render/2d/shaders/framebuffer_2d.frag.glsl"
 	"${CMAKE_CURRENT_SOURCE_DIR}/render/backend/gles2/shaders/gx_gpu_fill.vert.glsl"
 	"${CMAKE_CURRENT_SOURCE_DIR}/render/backend/gles2/shaders/gx_gpu_fill.frag.glsl"
 	"${CMAKE_CURRENT_SOURCE_DIR}/render/backend/gles2/shaders/gx_gpu_line.vert.glsl"
@@ -121,32 +117,6 @@ file(READ
 configure_file(
 	"${CMAKE_CURRENT_SOURCE_DIR}/render/host_overlay/gles2/shaders/host_overlay_shaders.h.in"
 	"${CMAKE_CURRENT_BINARY_DIR}/generated/render/host_overlay/gles2/host_overlay_shaders.h"
-	@ONLY
-)
-file(READ
-	"${CMAKE_CURRENT_SOURCE_DIR}/render/2d/shaders/2d.vert.glsl"
-	BMSX_RENDER_2D_VERTEX_SHADER
-)
-file(READ
-	"${CMAKE_CURRENT_SOURCE_DIR}/render/2d/shaders/2d.frag.glsl"
-	BMSX_RENDER_2D_FRAGMENT_SHADER
-)
-configure_file(
-	"${CMAKE_CURRENT_SOURCE_DIR}/render/2d/shaders/2d_shaders.h.in"
-	"${CMAKE_CURRENT_BINARY_DIR}/generated/render/2d/shaders/2d_shaders.h"
-	@ONLY
-)
-file(READ
-	"${CMAKE_CURRENT_SOURCE_DIR}/render/2d/shaders/framebuffer_2d.vert.glsl"
-	BMSX_RENDER_FRAMEBUFFER_2D_VERTEX_SHADER
-)
-file(READ
-	"${CMAKE_CURRENT_SOURCE_DIR}/render/2d/shaders/framebuffer_2d.frag.glsl"
-	BMSX_RENDER_FRAMEBUFFER_2D_FRAGMENT_SHADER
-)
-configure_file(
-	"${CMAKE_CURRENT_SOURCE_DIR}/render/2d/shaders/framebuffer_2d_shaders.h.in"
-	"${CMAKE_CURRENT_BINARY_DIR}/generated/render/2d/shaders/framebuffer_2d_shaders.h"
 	@ONLY
 )
 file(READ
@@ -291,7 +261,6 @@ add_library(bmsx_core STATIC
 	render/backend/software/gx_gpu_rasterizer.cpp
 	render/backend/software/gx_gpu_scanout.cpp
 	render/backend/software/gx_gpu_vram.cpp
-	render/2d/framebuffer_pipeline.cpp
 	render/gameview.cpp
 	render/post/crt/software/pipeline.cpp
 	render/post/crt/software/crt_processor.cpp
@@ -302,7 +271,6 @@ add_library(bmsx_core STATIC
 	render/host_overlay/software/renderer.cpp
 	render/host_overlay/gles2/pipeline.cpp
 	render/gx/view_snapshot.cpp
-	render/vdp/framebuffer.cpp
 	render/texture_manager.cpp
 	render/backend/pass/library.cpp
 	render/graph/graph.cpp

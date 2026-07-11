@@ -14,11 +14,10 @@ import type {
 	SubscriptionHandle,
 } from '../platform';
 import type { GxGpu } from '../machine/devices/gx/gpu';
-import type { VdpFrameBufferTextures } from './vdp/framebuffer';
 import type { GxGpuCommandBufferView } from '../machine/devices/gx/gpu_command_buffer';
 import { renderGate } from '../common/taskgate';
 
-const PRESENTATION_PASS_IDS = ['gx_gpu', 'framebuffer_2d', 'device_quantize', 'presentation_history_a', 'presentation_history_b', 'crt', 'host_overlay', 'host_menu'];
+const PRESENTATION_PASS_IDS = ['gx_gpu', 'device_quantize', 'presentation_history_a', 'presentation_history_b', 'crt', 'host_overlay', 'host_menu'];
 
 interface GameViewOpts {
 	host: GameViewHost;
@@ -69,7 +68,6 @@ export class GameView implements RenderContext {
 	public renderGraph: RenderGraphRuntime = null;
 	public offscreenCanvasSize!: vec2;
 	public textures: { [k: string]: TextureHandle } = {};
-	public vdpFrameBufferTextures!: VdpFrameBufferTextures;
 	public gxGpuCommandBuffer!: GxGpuCommandBufferView;
 	public gxGpuStatusWord = 0;
 	public gxGpuDisplayModeWord = 0;
@@ -78,7 +76,6 @@ export class GameView implements RenderContext {
 	public gxGpuVerticalDisplayRangeWord = 0;
 	public gxGpuVramSnapshotBytes!: Uint8Array;
 	public gxGpuVramSnapshotSerial = 0;
-	public presentWorkbenchFrameBufferTexture = false;
 	public pipelineRegistry?: RenderPassLibrary;
 	private presentationEnabled = true;
 	// CRT/post flags (used by passes)

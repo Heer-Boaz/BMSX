@@ -682,9 +682,12 @@ yet been migrated:
 - its scheduler/VBlank, register, fault, readback, and save-state state is still
   wired into both runtimes;
 - its dither and VOUT latches remain residual device/save-state state, but host
-  presentation no longer consumes `VdpDeviceOutput`;
-- the TypeScript IDE/terminal overlay can explicitly present the legacy
-  framebuffer texture; carts and BIOS code cannot target that host-only pass.
+  presentation no longer consumes `VdpDeviceOutput`.
+
+No host presentation path consumes VDP/VOUT/framebuffer output. The mapped VDP
+framebuffer remains residual machine memory reached by mapped CPU/DMA/device
+reads and writes, readback, and save-state ownership; the IDE/terminal overlay
+owns its opaque pooled base surface.
 
 The retained RPU records inside the residual VDP device are no longer published
 to a presentation pass. They remain device/save-state state until their owning

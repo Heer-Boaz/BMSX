@@ -68,7 +68,6 @@ export function updateGamePipelineExts(): void {
 	const state = machineManager.ideState;
 	const overlayActive = state.terminal.isActive || (state.editor.blocksRuntimePipeline && state.editor.isActive);
 	state.overlayActive = overlayActive;
-	machineManager.view.presentWorkbenchFrameBufferTexture = overlayActive;
 	Input.instance.setGameplayCaptureEnabled(!overlayActive);
 	updateOverlayAudioSuspension();
 }

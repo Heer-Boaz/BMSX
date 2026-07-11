@@ -7,7 +7,6 @@
 #include "render/post/device_quantize/gles2/pipeline.h"
 #include "render/host_overlay/pass_registration.h"
 #include "render/host_overlay/gles2/pipeline.h"
-#include "render/2d/framebuffer_pipeline.h"
 #include "render/backend/pass/library.h"
 #include "render/backend/gles2/gx_gpu.h"
 #include "core/machine_manager.h"
@@ -159,7 +158,6 @@ void OpenGLES2Backend::registerBuiltinPasses(RenderPassLibrary& registry) {
 	registerFrameResolvePass(registry);
 
 	registerGxGpuPass(registry);
-	registerFramebuffer2DPass_GLES2(registry);
 	DeviceQuantizePipeline::GLES2::registerPass(registry, m_post_pipelines->deviceQuantize);
 
 	CRTPipeline::registerPresentationHistoryGLES2Passes(registry, m_post_pipelines->present);

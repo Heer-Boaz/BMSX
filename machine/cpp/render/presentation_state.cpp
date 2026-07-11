@@ -5,7 +5,6 @@
 #include "machine/runtime/runtime.h"
 #include "render/backend/pass/library.h"
 #include "render/gx/view_snapshot.h"
-#include "render/vdp/framebuffer.h"
 #include <cstdio>
 #include <cstdlib>
 

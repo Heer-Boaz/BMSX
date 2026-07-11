@@ -5,7 +5,6 @@
 #include "library.h"
 #include "common/primitives.h"
 #include "../../gameview.h"
-#include "../../vdp/framebuffer.h"
 #include "../../graph/graph.h"
 #include "machine/runtime/runtime.h"
 #include <algorithm>
@@ -82,17 +81,6 @@ void writePresentationHistoryPipelineState(const RenderPassDef::RenderGraphPassC
 	presentState.colorTex = currentFrameSourceTexture(ctx);
 }
 
-void writeFramebuffer2DPipelineState(const RenderPassDef::RenderGraphPassContext& ctx, RenderPassStateStorage& state) {
-	Framebuffer2DPipelineState& framebufferState = state.framebuffer2D;
-	writeRenderPassViewportSize(
-		framebufferState.width,
-		framebufferState.height,
-		framebufferState.baseWidth,
-		framebufferState.baseHeight,
-		*ctx.view);
-	framebufferState.colorTex = ctx.view->vdpFrameBufferTextures().displayTexture();
-}
-
 void writeGxGpuPipelineState(const RenderPassDef::RenderGraphPassContext& ctx, RenderPassStateStorage& state) {
 	GxGpuPipelineState& gxGpuState = state.gxGpu;
 	gxGpuState.width = static_cast<i32>(ctx.view->offscreenCanvasSize.x);
@@ -165,14 +153,9 @@ void setPresentationHistoryGraph(RenderPassDef& desc, RenderPassDef::RenderGraph
 	desc.graph->writeState = writePresentationHistoryPipelineState;
 }
 
-void setFramebuffer2DGraph(RenderPassDef& desc) {
+void setGxGpuGraph(RenderPassDef& desc) {
 	desc.graph = RenderPassDef::RenderPassGraphDef{};
 	desc.graph->writes = { RenderPassDef::RenderGraphSlot::FrameColor };
-	desc.graph->writeState = writeFramebuffer2DPipelineState;
-}
-
-void setGxGpuGraph(RenderPassDef& desc) {
-	setFramebuffer2DGraph(desc);
 	desc.graph->writeState = writeGxGpuPipelineState;
 }
 
@@ -191,10 +174,6 @@ void setDeviceQuantizeGraph(RenderPassDef& desc) {
 	desc.graph->reads = { RenderPassDef::RenderGraphSlot::FrameColor };
 	desc.graph->writes = { RenderPassDef::RenderGraphSlot::DeviceColor };
 	desc.graph->writeState = writeDeviceQuantizePipelineState;
-}
-
-bool shouldExecuteFramebuffer2DPass(GameView* view, void*) {
-	return view->presentWorkbenchFrameBufferTexture;
 }
 
 bool shouldExecuteAutoPresentPass(GameView* view, void*) {

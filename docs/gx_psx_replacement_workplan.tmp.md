@@ -73,8 +73,8 @@ Residual VDP machine ownership still exists and must not be treated as
 completion:
 
 - TS/C++ VDP device trees under `machine/*/machine/devices/vdp/`
-- the host-only TS IDE/terminal framebuffer presentation path
-- Old VDP/RPU tests and firmware paths, including `tests/cpp/vdp_ingress_test.cpp`
+- Old VDP/RPU tests, including `tests/lua/vdp_ingress.test.ts` and
+  `tests/cpp/vdp_ingress_test.cpp`
 - mapped VDP staging/texture/framebuffer memory plus scheduler/VBlank,
   register, readback, and save-state dependencies
 
@@ -82,8 +82,8 @@ completion:
 
 GTE is relatively far along. GPU is in the middle of the replacement work. GX
 is the only cart graphics route executed by host backends, but residual VDP
-machine, memory, IDE/terminal framebuffer, and save-state ownership has
-not yet been removed. This is not close to done if the goal is read literally.
+machine, memory, timing, register, readback, and save-state ownership has not
+yet been removed. This is not close to done if the goal is read literally.
 
 Implemented or partially covered GX-GPU areas include:
 
@@ -195,8 +195,9 @@ and ask before coding.
   longer register or execute an RPU frame; WebGPU never registered one.
 - [x] Move output quantization to host presentation state. The host menu no
   longer writes VDP MMIO and presentation no longer consumes `VdpDeviceOutput`.
-- [ ] Remove host-only IDE/terminal framebuffer presentation ownership after its
-  real owner is established.
+- [x] Remove host-only IDE/terminal framebuffer presentation ownership. The
+  workbench overlay owns its opaque base through the existing retained rect
+  pool; the VDP framebuffer texture and pass no longer exist.
 - [x] Remove old VDP/RPU cart-visible ABI use after carts are migrated. Cartlib
   consumes GX-owned display metrics directly and the rejected Lua VDP/RPU
   firmware modules are gone rather than retained behind compatibility shims.
@@ -313,8 +314,7 @@ and ask before coding.
 
 - [x] Identify every active VDP/RPU presentation registration and machine output
   dependency. The remaining blockers are mapped VDP memory, scheduler/VBlank,
-  register/readback/save-state state, and the TS host-only IDE/terminal
-  framebuffer path.
+  and register/readback/save-state state.
 - [x] Remove the dormant WebGL, GLES2, TS headless/software, and C++ software RPU
   presentation executors. GX command buffers are the only cart graphics input
   consumed by host backends; WebGPU already had no RPU executor.
@@ -323,8 +323,9 @@ and ask before coding.
   math/material/shadow code from both runtimes.
 - [x] Move output quantization from VDP MMIO/VOUT into the host presentation
   owner and remove the mirrored VDP view-snapshot consumers.
-- [ ] Move host-only framebuffer presentation to its real owner without a
-  compatibility facade.
+- [x] Move host-only framebuffer presentation to its real owner without a
+  compatibility facade. The workbench overlay seeds a pooled opaque base rect;
+  the mirrored framebuffer texture/pass plumbing is removed.
 - [ ] Migrate remaining mapped memory and machine timing/state ownership before
   deleting the VDP device.
 - [x] Retire old VDP/RPU firmware/system paths after cart migration planning.

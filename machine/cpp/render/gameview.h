@@ -26,7 +26,6 @@ struct GxGpuCommandBuffer;
 class GxGpu;
 class RenderPassLibrary;
 class RenderGraphRuntime;
-class VdpFrameBufferTextures;
 
 /* ============================================================================
  * GameView - Main rendering view
@@ -87,9 +86,6 @@ public:
 	// Textures map
 	// ─────────────────────────────────────────────────────────────────────────
 	std::unordered_map<std::string, TextureHandle> textures;
-	void setVdpTextureState(std::unique_ptr<VdpFrameBufferTextures> frameBufferTextures);
-	VdpFrameBufferTextures& vdpFrameBufferTextures();
-	const VdpFrameBufferTextures& vdpFrameBufferTextures() const;
 
 	// ─────────────────────────────────────────────────────────────────────────
 	// Video snapshot fields consumed by the renderer
@@ -102,7 +98,6 @@ public:
 	u32 gxGpuVerticalDisplayRangeWord = 0u;
 	const std::array<u8, GX_GPU_VRAM_BYTE_COUNT>* gxGpuVramSnapshotBytes = nullptr;
 	u32 gxGpuVramSnapshotSerial = 0u;
-	bool presentWorkbenchFrameBufferTexture = false;
 
 	// ─────────────────────────────────────────────────────────────────────────
 	// Pipeline registry
@@ -167,7 +162,6 @@ private:
 	std::unique_ptr<GPUBackend> m_backend;
 	std::unique_ptr<RenderPassLibrary> m_pipelineRegistry;
 	std::unique_ptr<RenderGraphRuntime> m_renderGraph;
-	std::unique_ptr<VdpFrameBufferTextures> m_vdpFrameBufferTextures;
 
 	// Frame timing
 	i32 m_renderFrameIndex = 0;

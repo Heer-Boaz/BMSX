@@ -875,7 +875,7 @@
 				"VdpSurfaceBacking",
 				"VdpDeviceOutput"
 			],
-			"reason": "vdp_host_output_contract"
+			"reason": "residual_vdp_device_output_shape_contract"
 		},
 		{
 			"ts": "machine/ts/machine/devices/vdp/contracts.ts",
@@ -973,7 +973,6 @@
 				"machine/cpp/render/backend/pass/library.h"
 			],
 			"symbols": [
-				"Framebuffer2DPipelineState",
 				"PresentPipelineState",
 				"CRTPipelineOptions",
 				"CRTPipelineState",
@@ -1284,16 +1283,6 @@
 			"reason": "gx_gpu_raw_vram_decode_shader_contract"
 		},
 		{
-			"webgl": "machine/ts/render/2d/shaders/2d.vert.glsl",
-			"gles2": "machine/cpp/render/2d/shaders/2d.vert.glsl",
-			"reason": "host_framebuffer_texture_vertex_shader_contract"
-		},
-		{
-			"webgl": "machine/ts/render/2d/shaders/2d.frag.glsl",
-			"gles2": "machine/cpp/render/2d/shaders/2d.frag.glsl",
-			"reason": "host_framebuffer_texture_fragment_shader_contract"
-		},
-		{
 			"webgl": "machine/ts/render/post/crt/webgl/shaders/present.frag.glsl",
 			"gles2": "machine/cpp/render/post/crt/gles2/shaders/present.frag.glsl",
 			"reason": "crt_present_copy_shader_contract"
@@ -1332,9 +1321,6 @@
 		},
 		{
 			"present": [
-				"machine/ts/render/2d/framebuffer_pipeline.ts",
-				"machine/cpp/render/2d/framebuffer_pipeline.h",
-				"machine/cpp/render/2d/framebuffer_pipeline.cpp",
 				"machine/ts/render/backend/webgl/gx_gpu.ts",
 				"machine/ts/render/backend/webgl/shaders/gx_gpu_fill.vert.glsl",
 				"machine/ts/render/backend/webgl/shaders/gx_gpu_fill.frag.glsl",
@@ -1447,9 +1433,23 @@
 				"machine/ts/render/2d/sprites_pipeline.wgpu.ts",
 				"machine/ts/render/vdp/view_snapshot.ts",
 				"machine/cpp/render/vdp/view_snapshot.h",
-				"machine/cpp/render/vdp/view_snapshot.cpp"
+				"machine/cpp/render/vdp/view_snapshot.cpp",
+				"machine/cpp/render/2d/framebuffer_pipeline.cpp",
+				"machine/cpp/render/2d/framebuffer_pipeline.h",
+				"machine/cpp/render/2d/shaders/2d.frag.glsl",
+				"machine/cpp/render/2d/shaders/2d.vert.glsl",
+				"machine/cpp/render/2d/shaders/2d_shaders.h.in",
+				"machine/cpp/render/2d/shaders/framebuffer_2d.frag.glsl",
+				"machine/cpp/render/2d/shaders/framebuffer_2d.vert.glsl",
+				"machine/cpp/render/2d/shaders/framebuffer_2d_shaders.h.in",
+				"machine/cpp/render/vdp/framebuffer.cpp",
+				"machine/cpp/render/vdp/framebuffer.h",
+				"machine/ts/render/2d/framebuffer_pipeline.ts",
+				"machine/ts/render/2d/shaders/framebuffer_2d.frag.glsl",
+				"machine/ts/render/2d/shaders/framebuffer_2d.vert.glsl",
+				"machine/ts/render/vdp/framebuffer.ts"
 			],
-			"reason": "gx_gpu_backends_replace_retired_rpu_presentation_and_legacy_scene_and_framebuffer_execution_paths_while_ide_terminal_framebuffer_texture_presentation_remains"
+			"reason": "gx_gpu_and_host_overlay_replace_retired_rpu_scene_and_vdp_framebuffer_presentation_paths"
 		},
 		{
 			"present": [
@@ -1617,14 +1617,6 @@
 				"machine/cpp/render/backend/gles2/fullscreen_quad.cpp"
 			],
 			"reason": "fullscreen_quad_backend_filename_parity"
-		},
-		{
-			"ts": "machine/ts/render/2d/framebuffer_pipeline.ts",
-			"cpp": [
-				"machine/cpp/render/2d/framebuffer_pipeline.h",
-				"machine/cpp/render/2d/framebuffer_pipeline.cpp"
-			],
-			"reason": "workbench_framebuffer_texture_presentation_filename_parity"
 		},
 		{
 			"ts": "machine/ts/machine/devices/vdp/ingress.ts",
@@ -2304,7 +2296,6 @@
 			"file": "machine/ts/render/headless/passes.ts",
 			"functions": [
 				"commitHeadlessFrame",
-				"countHeadlessActivePixels",
 				"presentHeadlessFrame"
 			],
 			"reason": "headless_present_hot_helpers_must_not_allocate_per_frame"

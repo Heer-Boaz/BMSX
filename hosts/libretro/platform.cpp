@@ -12,13 +12,11 @@
 #include "input/pointer.h"
 #include "render/backend/pass/library.h"
 #include "render/texture_manager.h"
-#include "render/vdp/framebuffer.h"
 #include "common/mem_snapshot.h"
 #include "machine/model_registry.h"
 #include "machine/runtime/runtime.h"
 #include "machine/runtime/save_state/codec.h"
 #if BMSX_ENABLE_GLES2
-#include "render/2d/framebuffer_pipeline.h"
 #include "render/backend/gles2/backend.h"
 #endif
 #include <chrono>
@@ -266,7 +264,6 @@ void LibretroPlatform::onContextDestroy() {
 	auto* backend = static_cast<OpenGLES2Backend*>(view->backend());
 	m_machine_manager->texmanager()->clear();
 	m_render_surfaces_need_refresh = true;
-	shutdownFramebuffer2DGLES2();
 	view->setPipelineRegistry(std::unique_ptr<RenderPassLibrary>());
 	backend->onContextDestroy();
 #else
@@ -679,7 +676,6 @@ bool LibretroPlatform::loadState(const void* data, size_t size) {
 	}
 	try {
 		applyRuntimeSaveStateBytes(runtime, static_cast<const u8*>(data), size);
-		m_machine_manager->view()->vdpFrameBufferTextures().initialize(runtime.machine.vdp);
 		m_audio_service->resetQueue();
 		m_audio_buffer.clear();
 		return true;

@@ -5,7 +5,6 @@
 #include "backend.h"
 #include "common/clamp.h"
 #include "render/shared/software_pixels.h"
-#include "render/2d/framebuffer_pipeline.h"
 #include "render/backend/pass/library.h"
 #include "render/backend/software/gx_gpu.h"
 #include "render/host_overlay/pass_registration.h"
@@ -257,7 +256,6 @@ SoftwareBackend::~SoftwareBackend() = default;
 void SoftwareBackend::registerBuiltinPasses(RenderPassLibrary& registry) {
 	registerFrameResolvePass(registry);
 	registerGxGpuPassSoftware(registry, *this);
-	registerFramebuffer2DPass_Software(registry);
 	DeviceQuantizePipeline::Software::registerPass(registry);
 	CRTPipeline::registerCRTPostSoftwarePass(registry);
 	registerHostOverlayBackendPasses<SoftwareBackend, nullptr, beginHostOverlaySoftware, renderHost2DEntrySoftware, endHostOverlaySoftware>(registry);

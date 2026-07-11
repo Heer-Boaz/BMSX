@@ -77,7 +77,6 @@ export type RenderTargetHandle = WebGLFramebuffer | HeadlessRenderTargetHandle |
 // High-level render pass identifiers
 export type RenderPassId =
 	| 'gx_gpu'
-	| 'framebuffer_2d'
 	| 'host_overlay'
 	| 'host_menu'
 	| 'device_quantize'
@@ -247,7 +246,6 @@ export interface GPUBackend {
 
 export interface RenderPassStateRegistry {
 	['gx_gpu']: GxGpuPipelineState;
-	['framebuffer_2d']: Framebuffer2DPipelineState;
 	['host_overlay']: HostOverlayPipelineState;
 	['host_menu']: HostMenuPipelineState;
 	['device_quantize']: DeviceQuantizePipelineState;
@@ -272,14 +270,6 @@ export type GxGpuPipelineState = {
 	vramSnapshotBytes: Uint8Array;
 	vramSnapshotSerial: number;
 	targetColorTex?: TextureHandle;
-};
-
-export type Framebuffer2DPipelineState = {
-	width: number;
-	height: number;
-	baseWidth: number;
-	baseHeight: number;
-	colorTex: TextureHandle;
 };
 
 export type Host2DPipelineState = {

@@ -9,9 +9,6 @@
 #include "backend/pass/library.h"
 #include "graph/graph.h"
 #include "core/machine_manager.h"
-#include "rompack/format.h"
-#include "texture_manager.h"
-#include "vdp/framebuffer.h"
 #include <stdexcept>
 #include <utility>
 
@@ -101,18 +98,6 @@ void GameView::initializeDefaultTextures() {
 	textures["_default_mr"] = m_backend->createSolidTexture2D(1, 1, 0xffffffffu, RGBA8_LINEAR_TEXTURE_PARAMS);
 }
 
-void GameView::setVdpTextureState(std::unique_ptr<VdpFrameBufferTextures> frameBufferTextures) {
-	m_vdpFrameBufferTextures = std::move(frameBufferTextures);
-}
-
-VdpFrameBufferTextures& GameView::vdpFrameBufferTextures() {
-	return *m_vdpFrameBufferTextures;
-}
-
-const VdpFrameBufferTextures& GameView::vdpFrameBufferTextures() const {
-	return *m_vdpFrameBufferTextures;
-}
-
 void GameView::configurePresentation(PresentationMode mode, bool commitFrame) {
 	presentationMode = mode;
 	commitPresentationFrame = commitFrame;
@@ -134,7 +119,7 @@ void GameView::finalizePresentation() {
 /**
  * Main render loop - executes the render graph.
  *
- * The render graph executes the GX GPU, framebuffer texture presentation when explicitly enabled, post, and host passes
+ * The render graph executes the GX GPU, post, and host passes
  * in the correct order.
  */
 void GameView::drawgame() {

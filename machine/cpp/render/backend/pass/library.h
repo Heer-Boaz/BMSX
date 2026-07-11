@@ -37,14 +37,6 @@ void writeRenderPassViewportSize(i32& width, i32& height, i32& baseWidth, i32& b
  * Render pass state types
  * ============================================================================ */
 
-struct Framebuffer2DPipelineState {
-	i32 width = 0;
-	i32 height = 0;
-	i32 baseWidth = 0;
-	i32 baseHeight = 0;
-	TextureHandle colorTex = nullptr;
-};
-
 struct GxGpuPipelineState {
 	i32 width = 0;
 	i32 height = 0;
@@ -121,7 +113,6 @@ using HostMenuPipelineState = Host2DPipelineState;
 
 struct RenderPassStateStorage {
 	GxGpuPipelineState gxGpu;
-	Framebuffer2DPipelineState framebuffer2D;
 	PresentPipelineState present;
 	CRTPipelineState crt;
 	DeviceQuantizePipelineState deviceQuantize;
@@ -199,12 +190,10 @@ void bootstrapBackendRenderPass(GPUBackend* backend, void*) {
 void setPresentationHistoryGraph(RenderPassDef& desc, RenderPassDef::RenderGraphSlot historySlot);
 bool shouldUpdatePresentationHistoryA(GameView* view, void* context);
 bool shouldUpdatePresentationHistoryB(GameView* view, void* context);
-void setFramebuffer2DGraph(RenderPassDef& desc);
 void setGxGpuGraph(RenderPassDef& desc);
 void setAutoPresentGraph(RenderPassDef& desc);
 void setAutoCRTGraph(RenderPassDef& desc);
 void setDeviceQuantizeGraph(RenderPassDef& desc);
-bool shouldExecuteFramebuffer2DPass(GameView* view, void*);
 bool shouldExecuteAutoPresentPass(GameView* view, void*);
 bool shouldExecuteAutoCRTPass(GameView* view, void*);
 bool shouldExecuteDeviceQuantizePass(GameView* view, void*);
@@ -257,8 +246,7 @@ private:
 
 	template<typename T>
 	static T& stateRef(RenderPassStateStorage& state) {
-		if constexpr (std::is_same_v<T, Framebuffer2DPipelineState>) return state.framebuffer2D;
-		else if constexpr (std::is_same_v<T, PresentPipelineState>) return state.present;
+		if constexpr (std::is_same_v<T, PresentPipelineState>) return state.present;
 		else if constexpr (std::is_same_v<T, CRTPipelineState>) return state.crt;
 		else if constexpr (std::is_same_v<T, DeviceQuantizePipelineState>) return state.deviceQuantize;
 		else if constexpr (std::is_same_v<T, HostOverlayPipelineState>) return state.hostOverlay;

@@ -152,9 +152,6 @@ export interface RegisterablePersistent extends Registerable {
  */
 export const BIOS_ATLAS_ID = 254;
 
-export const FRAMEBUFFER_TEXTURE_KEY = '_framebuffer_2d';
-export const FRAMEBUFFER_RENDER_TEXTURE_KEY = '_framebuffer_render_2d';
-
 const atlasAssetIdCache = new Map<number, string>();
 
 export function generateAtlasAssetId(atlasId: number): string {
