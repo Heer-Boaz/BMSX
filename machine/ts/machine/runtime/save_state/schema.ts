@@ -353,4 +353,5 @@ export const RUNTIME_SAVE_STATE_PROP_NAMES = [
 	'mac2',
 	'mac3',
 	'currentSf',
+	'lastCycles',
 ] as const;

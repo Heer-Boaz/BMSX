@@ -672,6 +672,7 @@ BinValue encodeGxGteState(const GxGteState& state) {
 	object["mac2"] = static_cast<i64>(state.mac2);
 	object["mac3"] = static_cast<i64>(state.mac3);
 	object["currentSf"] = static_cast<i64>(state.currentSf);
+	object["lastCycles"] = static_cast<i64>(state.lastCycles);
 	return BinValue(std::move(object));
 }
 
@@ -685,6 +686,7 @@ GxGteState decodeGxGteState(const BinValue& value, const char* label) {
 	state.mac2 = requireI64(requireField(object, "mac2", label), "machine.gxGte.mac2");
 	state.mac3 = requireI64(requireField(object, "mac3", label), "machine.gxGte.mac3");
 	state.currentSf = requireU32(requireField(object, "currentSf", label), "machine.gxGte.currentSf");
+	state.lastCycles = requireU32(requireField(object, "lastCycles", label), "machine.gxGte.lastCycles");
 	return state;
 }
 

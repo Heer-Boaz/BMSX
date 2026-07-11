@@ -616,6 +616,7 @@ function encodeGxGteState(state: GxGteState): GxGteState {
 		mac2: state.mac2,
 		mac3: state.mac3,
 		currentSf: state.currentSf >>> 0,
+		lastCycles: state.lastCycles >>> 0,
 	};
 }
 
@@ -629,6 +630,7 @@ function decodeGxGteState(value: unknown, label: string): GxGteState {
 		mac2: requireI64(requireObjectKey(object, 'mac2', label, `${label}.mac2`), `${label}.mac2`),
 		mac3: requireI64(requireObjectKey(object, 'mac3', label, `${label}.mac3`), `${label}.mac3`),
 		currentSf: requireBoundedU32(requireObjectKey(object, 'currentSf', label, `${label}.currentSf`), `${label}.currentSf`, 0, 0xffffffff),
+		lastCycles: requireBoundedU32(requireObjectKey(object, 'lastCycles', label, `${label}.lastCycles`), `${label}.lastCycles`, 0, 0xffffffff),
 	};
 }
 

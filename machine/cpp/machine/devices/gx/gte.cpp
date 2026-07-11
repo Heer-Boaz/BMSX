@@ -114,6 +114,7 @@ GxGteState GxGte::captureState() const {
 	state.mac2 = m_mac2;
 	state.mac3 = m_mac3;
 	state.currentSf = m_currentSf;
+	state.lastCycles = m_lastCycles;
 	return state;
 }
 
@@ -125,6 +126,7 @@ void GxGte::restoreState(const GxGteState& state) {
 	m_mac2 = state.mac2;
 	m_mac3 = state.mac3;
 	m_currentSf = state.currentSf;
+	m_lastCycles = state.lastCycles;
 }
 
 
@@ -622,7 +624,7 @@ void GxGte::executeDpct(u32 sf, u32 lm) {
 
 void GxGte::executeGpf(u32 sf, u32 lm) {
 	m_currentSf = sf;
-	const i32 ir0 = static_cast<i32>(m_dataRegisterWords[8] & 0xffffu);
+	const i32 ir0 = sign16(m_dataRegisterWords[8]);
 	writeIrFromMac(1u, macSigned44(1u, static_cast<i64>(ir0) * sign16(m_dataRegisterWords[9])), lm);
 	writeIrFromMac(2u, macSigned44(2u, static_cast<i64>(ir0) * sign16(m_dataRegisterWords[10])), lm);
 	writeIrFromMac(3u, macSigned44(3u, static_cast<i64>(ir0) * sign16(m_dataRegisterWords[11])), lm);
@@ -631,7 +633,7 @@ void GxGte::executeGpf(u32 sf, u32 lm) {
 
 void GxGte::executeGpl(u32 sf, u32 lm) {
 	m_currentSf = sf;
-	const i32 ir0 = static_cast<i32>(m_dataRegisterWords[8] & 0xffffu);
+	const i32 ir0 = sign16(m_dataRegisterWords[8]);
 	const u32 macShift = sf == 0u ? 0u : 12u;
 	writeIrFromMac(1u, macSigned44(1u, static_cast<i64>(sign16(m_dataRegisterWords[9])) * ir0 + (static_cast<i64>(static_cast<i32>(m_dataRegisterWords[25])) << macShift)), lm);
 	writeIrFromMac(2u, macSigned44(2u, static_cast<i64>(sign16(m_dataRegisterWords[10])) * ir0 + (static_cast<i64>(static_cast<i32>(m_dataRegisterWords[26])) << macShift)), lm);
@@ -677,12 +679,13 @@ void GxGte::executeMvmva(u32 opcode, u32 sf, u32 lm) {
 
 void GxGte::depthCue(i64 inR, i64 inG, i64 inB, u32 sf, u32 lm) {
 	m_currentSf = sf;
+	const i32 ir0 = sign16(m_dataRegisterWords[8]);
 	const i32 r = limitIr(1u, macSigned44(1u, static_cast<i64>(rfc()) * 4096ll - inR), 0u);
 	const i32 g = limitIr(2u, macSigned44(2u, static_cast<i64>(gfc()) * 4096ll - inG), 0u);
 	const i32 b = limitIr(3u, macSigned44(3u, static_cast<i64>(bfc()) * 4096ll - inB), 0u);
-	writeIrFromMac(1u, macSigned44(1u, inR + static_cast<i64>(m_dataRegisterWords[8] & 0xffffu) * r), lm);
-	writeIrFromMac(2u, macSigned44(2u, inG + static_cast<i64>(m_dataRegisterWords[8] & 0xffffu) * g), lm);
-	writeIrFromMac(3u, macSigned44(3u, inB + static_cast<i64>(m_dataRegisterWords[8] & 0xffffu) * b), lm);
+	writeIrFromMac(1u, macSigned44(1u, inR + static_cast<i64>(ir0) * r), lm);
+	writeIrFromMac(2u, macSigned44(2u, inG + static_cast<i64>(ir0) * g), lm);
+	writeIrFromMac(3u, macSigned44(3u, inB + static_cast<i64>(ir0) * b), lm);
 }
 
 i32 GxGte::dotRotation(u32 row, u32 vectorIndex) {

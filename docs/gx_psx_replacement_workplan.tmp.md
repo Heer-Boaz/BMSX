@@ -263,6 +263,9 @@ and ask before coding.
 - [x] Broad raw COP2/GTE register and opcode implementation exists.
 - [x] RTPS/RTPT, NCLIP, OP, MVMVA, depth, lighting/color, SQR, GPF/GPL families
   have focused coverage.
+- [x] Consume IR0 as a signed raw halfword in GPF/GPL and every shared depth-cue
+  opcode; mirror negative-IR0, GPL 44-bit wrap/FLAG, and save-state CYCLES-latch
+  vectors in TS and C++.
 - [ ] Audit all implemented GTE opcodes against a serious PSX reference.
 - [ ] Fill missing edge cases for flags, saturation, divide overflow, MAC/IR
   behavior, and unusual register combinations.

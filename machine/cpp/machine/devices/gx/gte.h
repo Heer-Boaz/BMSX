@@ -88,6 +88,7 @@ struct GxGteState {
 	i64 mac2 = 0;
 	i64 mac3 = 0;
 	u32 currentSf = 0;
+	u32 lastCycles = 0;
 };
 
 class GxGte {

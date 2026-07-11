@@ -185,6 +185,7 @@ function createRuntimeSaveState(): RuntimeSaveState {
 					mac2: 3,
 					mac3: -4,
 					currentSf: 1,
+					lastCycles: 8,
 				},
 				irq: { mask: 0x00ff, pendingFlags: 0xa5a5 },
 				audio: {

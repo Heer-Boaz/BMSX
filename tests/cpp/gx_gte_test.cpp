@@ -519,6 +519,79 @@ void testGpfGpl() {
 	require(gte.readControlRegister(31u) == 0u, "GPL FLAG");
 }
 
+void testGpfUsesSignedIr0() {
+	GteHarness harness;
+	bmsx::GxGte& gte = harness.gte;
+	gte.writeDataRegister(8u, 0xffffu);
+	gte.writeDataRegister(9u, 1u);
+	gte.writeDataRegister(10u, 2u);
+	gte.writeDataRegister(11u, 3u);
+
+	require(gte.execute(bmsx::GX_GTE_FN_GPF) == bmsx::GX_GTE_CYCLES_GPF, "GPF signed IR0 cycles");
+
+	require(gte.readDataRegister(25u) == 0xffffffffu, "GPF signed IR0 MAC1");
+	require(gte.readDataRegister(26u) == 0xfffffffeu, "GPF signed IR0 MAC2");
+	require(gte.readDataRegister(27u) == 0xfffffffdu, "GPF signed IR0 MAC3");
+	require(gte.readDataRegister(9u) == 0xffffffffu, "GPF signed IR0 IR1");
+	require(gte.readDataRegister(10u) == 0xfffffffeu, "GPF signed IR0 IR2");
+	require(gte.readDataRegister(11u) == 0xfffffffdu, "GPF signed IR0 IR3");
+	require(gte.readDataRegister(22u) == 0u, "GPF signed IR0 RGB2");
+	require(gte.readControlRegister(31u) == (bmsx::GX_GTE_FLAG_COLOR_R_SAT | bmsx::GX_GTE_FLAG_COLOR_G_SAT | bmsx::GX_GTE_FLAG_COLOR_B_SAT), "GPF signed IR0 FLAG");
+}
+
+void testDepthCueUsesSignedIr0() {
+	GteHarness harness;
+	bmsx::GxGte& gte = harness.gte;
+	gte.writeDataRegister(6u, packRgb(0u, 0u, 0u, 0x5au));
+	gte.writeDataRegister(8u, 0xffffu);
+	gte.writeControlRegister(21u, 1u);
+	gte.writeControlRegister(22u, 1u);
+	gte.writeControlRegister(23u, 1u);
+
+	require(gte.execute(bmsx::GX_GTE_FN_DPCS) == bmsx::GX_GTE_CYCLES_DPCS, "DPCS signed IR0 cycles");
+
+	require(gte.readDataRegister(25u) == 0xfffff000u, "DPCS signed IR0 MAC1");
+	require(gte.readDataRegister(26u) == 0xfffff000u, "DPCS signed IR0 MAC2");
+	require(gte.readDataRegister(27u) == 0xfffff000u, "DPCS signed IR0 MAC3");
+	require(gte.readDataRegister(9u) == 0xfffff000u, "DPCS signed IR0 IR1");
+	require(gte.readDataRegister(10u) == 0xfffff000u, "DPCS signed IR0 IR2");
+	require(gte.readDataRegister(11u) == 0xfffff000u, "DPCS signed IR0 IR3");
+	require(gte.readDataRegister(22u) == packRgb(0u, 0u, 0u, 0x5au), "DPCS signed IR0 RGB2");
+	require(gte.readControlRegister(31u) == (bmsx::GX_GTE_FLAG_COLOR_R_SAT | bmsx::GX_GTE_FLAG_COLOR_G_SAT | bmsx::GX_GTE_FLAG_COLOR_B_SAT), "DPCS signed IR0 FLAG");
+}
+
+void testGplWrapsMac44BeforeShift() {
+	GteHarness harness;
+	bmsx::GxGte& gte = harness.gte;
+	gte.writeDataRegister(6u, packRgb(0u, 0u, 0u, 0x5au));
+	gte.writeDataRegister(8u, 0x1000u);
+	gte.writeDataRegister(9u, 0x7fffu);
+	gte.writeDataRegister(10u, 0x8000u);
+	gte.writeDataRegister(11u, 1u);
+	gte.writeDataRegister(25u, 0x7fffffffu);
+	gte.writeDataRegister(26u, 0x80000000u);
+	gte.writeDataRegister(27u, 0u);
+
+	require(gte.execute(GTE_SF | bmsx::GX_GTE_FN_GPL) == bmsx::GX_GTE_CYCLES_GPL, "GPL MAC44 cycles");
+
+	require(gte.readDataRegister(25u) == 0x80007ffeu, "GPL MAC44 positive wrap");
+	require(gte.readDataRegister(26u) == 0x7fff8000u, "GPL MAC44 negative wrap");
+	require(gte.readDataRegister(27u) == 1u, "GPL MAC44 MAC3");
+	require(gte.readDataRegister(9u) == 0xffff8000u, "GPL MAC44 IR1");
+	require(gte.readDataRegister(10u) == 0x7fffu, "GPL MAC44 IR2");
+	require(gte.readDataRegister(11u) == 1u, "GPL MAC44 IR3");
+	require(gte.readDataRegister(22u) == packRgb(0u, 0xffu, 0u, 0x5au), "GPL MAC44 RGB2");
+	require(gte.readControlRegister(31u) == (
+		bmsx::GX_GTE_FLAG_ERROR
+		| bmsx::GX_GTE_FLAG_MAC1_POS
+		| bmsx::GX_GTE_FLAG_MAC2_NEG
+		| bmsx::GX_GTE_FLAG_IR1_SAT
+		| bmsx::GX_GTE_FLAG_IR2_SAT
+		| bmsx::GX_GTE_FLAG_COLOR_R_SAT
+		| bmsx::GX_GTE_FLAG_COLOR_G_SAT
+	), "GPL MAC44 FLAG");
+}
+
 void testRgbColorSaturationFlags() {
 	GteHarness harness;
 	bmsx::GxGte& gte = harness.gte;
@@ -704,9 +777,11 @@ void testOpcodeZeroIsNotRtpsAlias() {
 void testSaveStatePreservesRawRegisterWords() {
 	GteHarness harness;
 	bmsx::GxGte& gte = harness.gte;
+	bmsx::Memory& memory = harness.memory;
 	gte.execute(bmsx::GX_GTE_FN_RTPS);
 	gte.writeDataRegister(30u, 0x80000000u);
 	gte.writeControlRegister(24u, 160u << 16u);
+	memory.writeMappedU32LE(bmsx::IO_GX_GTE_COMMAND, bmsx::GX_GTE_FN_DPCS);
 	gte.writeControlRegister(31u, bmsx::GX_GTE_FLAG_DIV_OVERFLOW);
 	const bmsx::GxGteState state = gte.captureState();
 
@@ -718,6 +793,7 @@ void testSaveStatePreservesRawRegisterWords() {
 	require(gte.readControlRegister(24u) == (160u << 16u), "GTE save OFX");
 	require(gte.readControlRegister(31u) == (bmsx::GX_GTE_FLAG_ERROR | bmsx::GX_GTE_FLAG_DIV_OVERFLOW), "GTE save FLAG");
 	require(gte.captureState().mac3 == state.mac3, "GTE save hidden MAC3");
+	require(memory.readMappedU32LE(bmsx::IO_GX_GTE_CYCLES) == bmsx::GX_GTE_CYCLES_DPCS, "GTE save cycles latch");
 }
 
 void testRtpsDivideOverflow() {
@@ -769,6 +845,9 @@ int main() {
 	testNcdsCdp();
 	testNcdtNcct();
 	testGpfGpl();
+	testGpfUsesSignedIr0();
+	testDepthCueUsesSignedIr0();
+	testGplWrapsMac44BeforeShift();
 	testRgbColorSaturationFlags();
 	testAvsz3();
 	testAvsz4();

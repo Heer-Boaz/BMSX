@@ -33,9 +33,15 @@ import {
 	GX_GTE_CYCLES_RTPS,
 	GX_GTE_CYCLES_RTPT,
 	GX_GTE_CYCLES_SQR,
+	GX_GTE_FLAG_COLOR_B_SAT,
+	GX_GTE_FLAG_COLOR_G_SAT,
 	GX_GTE_FLAG_COLOR_R_SAT,
 	GX_GTE_FLAG_DIV_OVERFLOW,
 	GX_GTE_FLAG_ERROR,
+	GX_GTE_FLAG_IR1_SAT,
+	GX_GTE_FLAG_IR2_SAT,
+	GX_GTE_FLAG_MAC1_POS,
+	GX_GTE_FLAG_MAC2_NEG,
 	GX_GTE_FLAG_SZ_OTZ_SAT,
 	GX_GTE_FN_AVSZ3,
 	GX_GTE_FN_AVSZ4,
@@ -536,6 +542,76 @@ test('GX-GTE GPF and GPL use PSX MAC/IR color datapaths', () => {
 	assert.equal(gte.readControlRegister(31), 0);
 });
 
+test('GX-GTE GPF consumes the raw IR0 register as a signed halfword', () => {
+	const { gte } = createGte();
+	gte.writeDataRegister(8, 0xffff);
+	gte.writeDataRegister(9, 1);
+	gte.writeDataRegister(10, 2);
+	gte.writeDataRegister(11, 3);
+
+	assert.equal(gte.execute(GX_GTE_FN_GPF), GX_GTE_CYCLES_GPF);
+
+	assert.equal(gte.readDataRegister(25), 0xffffffff);
+	assert.equal(gte.readDataRegister(26), 0xfffffffe);
+	assert.equal(gte.readDataRegister(27), 0xfffffffd);
+	assert.equal(gte.readDataRegister(9), 0xffffffff);
+	assert.equal(gte.readDataRegister(10), 0xfffffffe);
+	assert.equal(gte.readDataRegister(11), 0xfffffffd);
+	assert.equal(gte.readDataRegister(22), 0);
+	assert.equal(gte.readControlRegister(31), GX_GTE_FLAG_COLOR_R_SAT | GX_GTE_FLAG_COLOR_G_SAT | GX_GTE_FLAG_COLOR_B_SAT);
+});
+
+test('GX-GTE depth cue opcodes consume the raw IR0 register as a signed halfword', () => {
+	const { gte } = createGte();
+	gte.writeDataRegister(6, packRgb(0, 0, 0, 0x5a));
+	gte.writeDataRegister(8, 0xffff);
+	gte.writeControlRegister(21, 1);
+	gte.writeControlRegister(22, 1);
+	gte.writeControlRegister(23, 1);
+
+	assert.equal(gte.execute(GX_GTE_FN_DPCS), GX_GTE_CYCLES_DPCS);
+
+	assert.equal(gte.readDataRegister(25), 0xfffff000);
+	assert.equal(gte.readDataRegister(26), 0xfffff000);
+	assert.equal(gte.readDataRegister(27), 0xfffff000);
+	assert.equal(gte.readDataRegister(9), 0xfffff000);
+	assert.equal(gte.readDataRegister(10), 0xfffff000);
+	assert.equal(gte.readDataRegister(11), 0xfffff000);
+	assert.equal(gte.readDataRegister(22), packRgb(0, 0, 0, 0x5a));
+	assert.equal(gte.readControlRegister(31), GX_GTE_FLAG_COLOR_R_SAT | GX_GTE_FLAG_COLOR_G_SAT | GX_GTE_FLAG_COLOR_B_SAT);
+});
+
+test('GX-GTE GPL wraps the 44-bit MAC datapath before sf shift and reports both overflow directions', () => {
+	const { gte } = createGte();
+	gte.writeDataRegister(6, packRgb(0, 0, 0, 0x5a));
+	gte.writeDataRegister(8, 0x1000);
+	gte.writeDataRegister(9, 0x7fff);
+	gte.writeDataRegister(10, 0x8000);
+	gte.writeDataRegister(11, 1);
+	gte.writeDataRegister(25, 0x7fffffff);
+	gte.writeDataRegister(26, 0x80000000);
+	gte.writeDataRegister(27, 0);
+
+	assert.equal(gte.execute(GTE_SF | GX_GTE_FN_GPL), GX_GTE_CYCLES_GPL);
+
+	assert.equal(gte.readDataRegister(25), 0x80007ffe);
+	assert.equal(gte.readDataRegister(26), 0x7fff8000);
+	assert.equal(gte.readDataRegister(27), 1);
+	assert.equal(gte.readDataRegister(9), 0xffff8000);
+	assert.equal(gte.readDataRegister(10), 0x7fff);
+	assert.equal(gte.readDataRegister(11), 1);
+	assert.equal(gte.readDataRegister(22), packRgb(0, 0xff, 0, 0x5a));
+	assert.equal(gte.readControlRegister(31), (
+		GX_GTE_FLAG_ERROR
+		| GX_GTE_FLAG_MAC1_POS
+		| GX_GTE_FLAG_MAC2_NEG
+		| GX_GTE_FLAG_IR1_SAT
+		| GX_GTE_FLAG_IR2_SAT
+		| GX_GTE_FLAG_COLOR_R_SAT
+		| GX_GTE_FLAG_COLOR_G_SAT
+	) >>> 0);
+});
+
 test('GX-GTE RGB FIFO color saturation flags do not set the PSX error summary bit', () => {
 	const { gte } = createGte();
 	gte.writeDataRegister(6, packRgb(0, 0, 0, 0x12));
@@ -709,10 +785,11 @@ test('GX-GTE unknown PSX function code is deterministic no-op hardware, not a ho
 });
 
 test('GX-GTE save state preserves raw PSX COP2 register words', () => {
-	const { gte } = createGte();
+	const { memory, gte } = createGte();
 	gte.execute(GX_GTE_FN_RTPS);
 	gte.writeDataRegister(30, 0x80000000);
 	gte.writeControlRegister(24, 160 << 16);
+	memory.writeMappedU32LE(IO_GX_GTE_COMMAND, GX_GTE_FN_DPCS);
 	gte.writeControlRegister(31, GX_GTE_FLAG_DIV_OVERFLOW);
 	const state = gte.captureState();
 
@@ -724,6 +801,7 @@ test('GX-GTE save state preserves raw PSX COP2 register words', () => {
 	assert.equal(gte.readControlRegister(24), 160 << 16);
 	assert.equal(gte.readControlRegister(31), (GX_GTE_FLAG_ERROR | GX_GTE_FLAG_DIV_OVERFLOW) >>> 0);
 	assert.equal(gte.captureState().mac3, state.mac3);
+	assert.equal(memory.readMappedU32LE(IO_GX_GTE_CYCLES), GX_GTE_CYCLES_DPCS);
 });
 
 test('GX-GTE RTPS exposes PSX divide overflow as FLAG bits instead of falling back', () => {

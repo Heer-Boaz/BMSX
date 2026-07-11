@@ -162,6 +162,7 @@ export type GxGteState = {
 	mac2: number;
 	mac3: number;
 	currentSf: number;
+	lastCycles: number;
 };
 
 export class GxGte {
@@ -214,6 +215,7 @@ export class GxGte {
 			mac2: this.mac2,
 			mac3: this.mac3,
 			currentSf: this.currentSf,
+			lastCycles: this.lastCycles,
 		};
 	}
 
@@ -229,6 +231,7 @@ export class GxGte {
 		this.mac2 = state.mac2;
 		this.mac3 = state.mac3;
 		this.currentSf = state.currentSf >>> 0;
+		this.lastCycles = state.lastCycles >>> 0;
 	}
 
 
@@ -720,7 +723,7 @@ export class GxGte {
 
 	private executeGpf(sf: number, lm: number): void {
 		this.currentSf = sf;
-		const ir0 = this.dataRegisterWords[8] & 0xffff;
+		const ir0 = sign16(this.dataRegisterWords[8]);
 		this.writeIrFromMac(1, this.macSigned44(1, ir0 * sign16(this.dataRegisterWords[9])), lm);
 		this.writeIrFromMac(2, this.macSigned44(2, ir0 * sign16(this.dataRegisterWords[10])), lm);
 		this.writeIrFromMac(3, this.macSigned44(3, ir0 * sign16(this.dataRegisterWords[11])), lm);
@@ -729,7 +732,7 @@ export class GxGte {
 
 	private executeGpl(sf: number, lm: number): void {
 		this.currentSf = sf;
-		const ir0 = this.dataRegisterWords[8] & 0xffff;
+		const ir0 = sign16(this.dataRegisterWords[8]);
 		const macShift = sf === 0 ? 0 : 12;
 		this.writeIrFromMac(1, this.macSigned44(1, sign16(this.dataRegisterWords[9]) * ir0 + ((this.dataRegisterWords[25] | 0) * (1 << macShift))), lm);
 		this.writeIrFromMac(2, this.macSigned44(2, sign16(this.dataRegisterWords[10]) * ir0 + ((this.dataRegisterWords[26] | 0) * (1 << macShift))), lm);
@@ -765,12 +768,13 @@ export class GxGte {
 
 	private depthCue(inR: number, inG: number, inB: number, sf: number, lm: number): void {
 		this.currentSf = sf;
+		const ir0 = sign16(this.dataRegisterWords[8]);
 		const r = this.limitIr(1, this.macSigned44(1, this.rfc() * 4096 - inR), 0);
 		const g = this.limitIr(2, this.macSigned44(2, this.gfc() * 4096 - inG), 0);
 		const b = this.limitIr(3, this.macSigned44(3, this.bfc() * 4096 - inB), 0);
-		this.writeIrFromMac(1, this.macSigned44(1, inR + (this.dataRegisterWords[8] & 0xffff) * r), lm);
-		this.writeIrFromMac(2, this.macSigned44(2, inG + (this.dataRegisterWords[8] & 0xffff) * g), lm);
-		this.writeIrFromMac(3, this.macSigned44(3, inB + (this.dataRegisterWords[8] & 0xffff) * b), lm);
+		this.writeIrFromMac(1, this.macSigned44(1, inR + ir0 * r), lm);
+		this.writeIrFromMac(2, this.macSigned44(2, inG + ir0 * g), lm);
+		this.writeIrFromMac(3, this.macSigned44(3, inB + ir0 * b), lm);
 	}
 
 	private dotRotation(row: number, vectorIndex: number): number {
