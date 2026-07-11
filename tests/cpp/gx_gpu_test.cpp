@@ -1159,6 +1159,18 @@ void testSoftwareTriangleEdgesAndQuadSeams() {
 		5u,
 		bmsx::GX_GPU_COMMAND_DRAW_POLYGON,
 		semiTransparentQuadOpcode);
+	pushSoftwareCommand(
+		commandBuffer,
+		std::array<uint32_t, 5>{
+			(semiTransparentQuadOpcode << 24u) | 0x0000ffu,
+			(30u << 16u) | 30u,
+			(30u << 16u) | 34u,
+			(34u << 16u) | 30u,
+			(31u << 16u) | 31u,
+		},
+		5u,
+		bmsx::GX_GPU_COMMAND_DRAW_POLYGON,
+		semiTransparentQuadOpcode);
 
 	bmsx::g_gxGpuSoftwareVram.fill(0u);
 	bmsx::executeGxGpuSoftwareCommands(commandBuffer, 0u);
@@ -1183,6 +1195,10 @@ void testSoftwareTriangleEdgesAndQuadSeams() {
 	}
 	require(bmsx::g_gxGpuSoftwareVram[bmsx::gxGpuSoftwareVramIndex(24, 20)] == 0u, "GX-GPU software quad excludes right edge");
 	require(bmsx::g_gxGpuSoftwareVram[bmsx::gxGpuSoftwareVramIndex(20, 24)] == 0u, "GX-GPU software quad excludes bottom edge");
+	require(bmsx::g_gxGpuSoftwareVram[bmsx::gxGpuSoftwareVramIndex(30, 31)] == 0x000fu, "GX-GPU software representable quad first triangle single hit");
+	require(bmsx::g_gxGpuSoftwareVram[bmsx::gxGpuSoftwareVramIndex(31, 31)] == 0x0017u, "GX-GPU software representable quad second triangle observes the first write");
+	require(bmsx::g_gxGpuSoftwareVram[bmsx::gxGpuSoftwareVramIndex(32, 31)] == 0x0017u, "GX-GPU software representable quad overlapping row blends twice");
+	require(bmsx::g_gxGpuSoftwareVram[bmsx::gxGpuSoftwareVramIndex(31, 32)] == 0x0017u, "GX-GPU software representable quad overlapping column blends twice");
 }
 
 void testSoftwarePolygonRasterBucketWrap() {
@@ -1999,7 +2015,34 @@ void testSoftwareCommandsPreserveTextureMaskBlendAndMaskTestStoreSemantics() {
 		GX_GPU_SOFTWARE_FULL_DRAWING_AREA_BOTTOM_RIGHT_WORD,
 		0u,
 		2u);
-
+	pushSoftwareVramUpload(commandBuffer, (30u << 16u) | 10u, (1u << 16u) | 1u, 0x0000fc00u);
+	pushSoftwareVramUpload(commandBuffer, (30u << 16u) | 20u, (1u << 16u) | 1u, 0x0000fc00u);
+	pushSoftwareCommand(
+		commandBuffer,
+		std::array<uint32_t, 3>{
+			((bmsx::GX_GPU_GP0_RECTANGLE_FIRST | 0x02u) << 24u) | 0x0000ffu,
+			(30u << 16u) | 10u,
+			(1u << 16u) | 1u,
+		},
+		3u,
+		bmsx::GX_GPU_COMMAND_DRAW_RECTANGLE,
+		bmsx::GX_GPU_GP0_RECTANGLE_FIRST | 0x02u);
+	pushSoftwareCommand(
+		commandBuffer,
+		std::array<uint32_t, 3>{
+			((bmsx::GX_GPU_GP0_RECTANGLE_FIRST | 0x02u) << 24u) | 0x0000ffu,
+			(30u << 16u) | 20u,
+			(1u << 16u) | 1u,
+		},
+		3u,
+		bmsx::GX_GPU_COMMAND_DRAW_RECTANGLE,
+		bmsx::GX_GPU_GP0_RECTANGLE_FIRST | 0x02u,
+		0u,
+		0u,
+		0u,
+		GX_GPU_SOFTWARE_FULL_DRAWING_AREA_BOTTOM_RIGHT_WORD,
+		0u,
+		2u);
 	bmsx::g_gxGpuSoftwareVram.fill(0u);
 	bmsx::executeGxGpuSoftwareCommands(commandBuffer, 0u);
 
@@ -2007,6 +2050,8 @@ void testSoftwareCommandsPreserveTextureMaskBlendAndMaskTestStoreSemantics() {
 	require(bmsx::g_gxGpuSoftwareVram[bmsx::gxGpuSoftwareVramIndex(11, 20)] == 0x03e0u, "GX-GPU software zero texture pixel does not write");
 	require(bmsx::g_gxGpuSoftwareVram[bmsx::gxGpuSoftwareVramIndex(12, 20)] == 0x7c00u, "GX-GPU software unmasked textured semi-transparent pixel stores without blending");
 	require(bmsx::g_gxGpuSoftwareVram[bmsx::gxGpuSoftwareVramIndex(13, 20)] == 0x801fu, "GX-GPU software mask-test blocks writes over masked VRAM");
+	require(bmsx::g_gxGpuSoftwareVram[bmsx::gxGpuSoftwareVramIndex(10, 30)] == 0x3c0fu, "GX-GPU software semi-transparent solid pixel writes when mask checking is disabled");
+	require(bmsx::g_gxGpuSoftwareVram[bmsx::gxGpuSoftwareVramIndex(20, 30)] == 0xfc00u, "GX-GPU software semi-transparent solid pixel preserves a checked masked destination");
 }
 
 void testSoftwareCommandsSamplePalette8RectangleFlipAndDitheredModulation() {

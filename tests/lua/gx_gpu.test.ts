@@ -1159,6 +1159,13 @@ test('GX-GPU software backend owns PSX triangle edges and quad seams exactly onc
 		(24 << 16) | 20,
 		(24 << 16) | 24,
 	]), GX_GPU_COMMAND_DRAW_POLYGON, semiTransparentQuadOpcode);
+	pushSoftwareCommand(commandBuffer, new Uint32Array([
+		((semiTransparentQuadOpcode << 24) | 0x0000ff) >>> 0,
+		(30 << 16) | 30,
+		(30 << 16) | 34,
+		(34 << 16) | 30,
+		(31 << 16) | 31,
+	]), GX_GPU_COMMAND_DRAW_POLYGON, semiTransparentQuadOpcode);
 
 	gxGpuSoftwareVram.fill(0);
 	executeGxGpuSoftwareCommands(commandBuffer, 0);
@@ -1183,6 +1190,10 @@ test('GX-GPU software backend owns PSX triangle edges and quad seams exactly onc
 	}
 	assert.equal(gxGpuSoftwareVram[gxGpuSoftwareVramIndex(24, 20)], 0);
 	assert.equal(gxGpuSoftwareVram[gxGpuSoftwareVramIndex(20, 24)], 0);
+	assert.equal(gxGpuSoftwareVram[gxGpuSoftwareVramIndex(30, 31)], 0x000f);
+	assert.equal(gxGpuSoftwareVram[gxGpuSoftwareVramIndex(31, 31)], 0x0017);
+	assert.equal(gxGpuSoftwareVram[gxGpuSoftwareVramIndex(32, 31)], 0x0017);
+	assert.equal(gxGpuSoftwareVram[gxGpuSoftwareVramIndex(31, 32)], 0x0017);
 });
 
 test('GX-GPU software polygons wrap the raster bucket after drawing offset and primitive-size rejection', () => {
@@ -1774,7 +1785,28 @@ test('GX-GPU software commands preserve texture mask, blend, and mask-test store
 		(20 << 16) | 13,
 		(1 << 16) | 1,
 	]), GX_GPU_COMMAND_DRAW_RECTANGLE, GX_GPU_GP0_RECTANGLE_FIRST, 0, 0, 0, GX_GPU_SOFTWARE_FULL_DRAWING_AREA_BOTTOM_RIGHT_WORD, 0, 2);
-
+	pushSoftwareCommand(commandBuffer, new Uint32Array([
+		GX_GPU_GP0_CPU_TO_VRAM_FIRST << 24,
+		(30 << 16) | 10,
+		(1 << 16) | 1,
+		0x0000fc00,
+	]), GX_GPU_COMMAND_UPLOAD_CPU_TO_VRAM, GX_GPU_GP0_CPU_TO_VRAM_FIRST);
+	pushSoftwareCommand(commandBuffer, new Uint32Array([
+		GX_GPU_GP0_CPU_TO_VRAM_FIRST << 24,
+		(30 << 16) | 20,
+		(1 << 16) | 1,
+		0x0000fc00,
+	]), GX_GPU_COMMAND_UPLOAD_CPU_TO_VRAM, GX_GPU_GP0_CPU_TO_VRAM_FIRST);
+	pushSoftwareCommand(commandBuffer, new Uint32Array([
+		(((GX_GPU_GP0_RECTANGLE_FIRST | 0x02) << 24) | 0x0000ff) >>> 0,
+		(30 << 16) | 10,
+		(1 << 16) | 1,
+	]), GX_GPU_COMMAND_DRAW_RECTANGLE, GX_GPU_GP0_RECTANGLE_FIRST | 0x02);
+	pushSoftwareCommand(commandBuffer, new Uint32Array([
+		(((GX_GPU_GP0_RECTANGLE_FIRST | 0x02) << 24) | 0x0000ff) >>> 0,
+		(30 << 16) | 20,
+		(1 << 16) | 1,
+	]), GX_GPU_COMMAND_DRAW_RECTANGLE, GX_GPU_GP0_RECTANGLE_FIRST | 0x02, 0, 0, 0, GX_GPU_SOFTWARE_FULL_DRAWING_AREA_BOTTOM_RIGHT_WORD, 0, 2);
 	gxGpuSoftwareVram.fill(0);
 	executeGxGpuSoftwareCommands(commandBuffer, 0);
 
@@ -1782,6 +1814,8 @@ test('GX-GPU software commands preserve texture mask, blend, and mask-test store
 	assert.equal(gxGpuSoftwareVram[gxGpuSoftwareVramIndex(11, 20)], 0x03e0);
 	assert.equal(gxGpuSoftwareVram[gxGpuSoftwareVramIndex(12, 20)], 0x7c00);
 	assert.equal(gxGpuSoftwareVram[gxGpuSoftwareVramIndex(13, 20)], 0x801f);
+	assert.equal(gxGpuSoftwareVram[gxGpuSoftwareVramIndex(10, 30)], 0x3c0f);
+	assert.equal(gxGpuSoftwareVram[gxGpuSoftwareVramIndex(20, 30)], 0xfc00);
 });
 
 test('GX-GPU software commands sample palette8, rectangle flip, and dithered modulation', () => {

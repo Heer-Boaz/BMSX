@@ -87,6 +87,7 @@ import transferShaderCode from './shaders/gx_gpu_transfer.wgsl';
 import scanoutShaderCode from './shaders/gx_gpu_scanout.wgsl';
 
 const GX_GPU_SOLID_VERTEX_FLOATS = 6;
+const GX_GPU_SOLID_TRIANGLE_FLOATS = 3 * GX_GPU_SOLID_VERTEX_FLOATS;
 const GX_GPU_SOLID_VERTICES_PER_COMMAND = 24;
 const GX_GPU_SOLID_FLOAT_CAPACITY = GX_GPU_COMMAND_CAPACITY * GX_GPU_SOLID_VERTICES_PER_COMMAND * GX_GPU_SOLID_VERTEX_FLOATS;
 const GX_GPU_LINE_VERTEX_FLOATS = 12;
@@ -1190,6 +1191,30 @@ function renderSolidVertices(vertexFloatCount: number, topLeftWord: number, bott
 	renderVramVertices(gxGpuState.solidPipeline, gxGpuState.solidBindGroup, gxGpuState.solidVertexBuffer, gxGpuSolidVertices, vertexFloatCount, GX_GPU_SOLID_VERTEX_FLOATS, vertexByteOffset, uniformByteOffset, topLeftWord, bottomRightWord);
 }
 
+function renderReadVramSolidQuad(topLeftWord: number, bottomRightWord: number, blendEnabled: boolean, blendMode: number, maskBitModeWord: number, ditherEnabled: boolean, interlacedRenderWord: number): void {
+	setGxGpuVertexBoundsRect(gxGpuVramCopyRectScratch, gxGpuSolidVertices, 0, GX_GPU_SOLID_TRIANGLE_FLOATS, GX_GPU_SOLID_VERTEX_FLOATS, topLeftWord, bottomRightWord);
+	copyGxGpuVramAreaToSampleTexture(gxGpuVramCopyRectScratch.left, gxGpuVramCopyRectScratch.top, gxGpuVramCopyRectScratch.right, gxGpuVramCopyRectScratch.bottom);
+	invalidateGxGpuSampleSourceCacheForWrite(
+		gxGpuDrawingAreaLeft(topLeftWord, bottomRightWord),
+		gxGpuDrawingAreaTop(topLeftWord, bottomRightWord),
+		gxGpuDrawingAreaRightExclusive(topLeftWord, bottomRightWord),
+		gxGpuDrawingAreaBottomExclusive(topLeftWord, bottomRightWord),
+	);
+	writePrimitiveUniforms(blendEnabled, blendMode, maskBitModeWord, ditherEnabled, interlacedRenderWord);
+	const uniformByteOffset = gxGpuState.primitiveUniformByteOffset;
+	const vertexByteOffset = gxGpuState.solidVertexByteOffset;
+	const vertexFloatCount = GX_GPU_SOLID_TRIANGLE_FLOATS * 2;
+	gxGpuState.backend.device.queue.writeBuffer(gxGpuState.primitiveUniformBuffer, uniformByteOffset, primitiveUniformScratch);
+	gxGpuState.backend.device.queue.writeBuffer(gxGpuState.solidVertexBuffer, vertexByteOffset, gxGpuSolidVertices.buffer, gxGpuSolidVertices.byteOffset, vertexFloatCount * 4);
+	gxGpuState.primitiveUniformByteOffset += GX_GPU_UNIFORM_SLOT_BYTES;
+	gxGpuState.solidVertexByteOffset += vertexFloatCount * 4;
+	gxGpuState.backend.accountUpload('vertex', vertexFloatCount * 4);
+	drawVramVertices(gxGpuState.solidPipeline, gxGpuState.solidBindGroup, gxGpuState.solidVertexBuffer, GX_GPU_SOLID_TRIANGLE_FLOATS, GX_GPU_SOLID_VERTEX_FLOATS, vertexByteOffset, uniformByteOffset, topLeftWord, bottomRightWord);
+	setGxGpuVertexBoundsRect(gxGpuVramCopyRectScratch, gxGpuSolidVertices, GX_GPU_SOLID_TRIANGLE_FLOATS, vertexFloatCount, GX_GPU_SOLID_VERTEX_FLOATS, topLeftWord, bottomRightWord);
+	copyGxGpuVramAreaToSampleTexture(gxGpuVramCopyRectScratch.left, gxGpuVramCopyRectScratch.top, gxGpuVramCopyRectScratch.right, gxGpuVramCopyRectScratch.bottom);
+	drawVramVertices(gxGpuState.solidPipeline, gxGpuState.solidBindGroup, gxGpuState.solidVertexBuffer, GX_GPU_SOLID_TRIANGLE_FLOATS, GX_GPU_SOLID_VERTEX_FLOATS, vertexByteOffset + GX_GPU_SOLID_TRIANGLE_FLOATS * 4, uniformByteOffset, topLeftWord, bottomRightWord);
+}
+
 function renderLineVertices(vertexFloatCount: number, topLeftWord: number, bottomRightWord: number, uniformByteOffset: number): void {
 	if (vertexFloatCount === 0) return;
 	invalidateGxGpuSampleSourceCacheForWrite(
@@ -1416,6 +1441,13 @@ function renderSolidCommand(commandBuffer: GxGpuCommandBufferView, commandIndex:
 	const blendMode = blendEnabled ? gxGpuDrawModeTransparencyMode(drawModeWord) : 0;
 	const ditherEnabled = commandBuffer.commandKind[commandIndex] === GX_GPU_COMMAND_DRAW_POLYGON && gxGpuDitheredPolygon(drawModeWord, opcode);
 	const readsVram = blendEnabled || gxGpuMaskBitCheckBeforeDraw(maskBitModeWord);
+	if (readsVram
+		&& commandBuffer.commandKind[commandIndex] === GX_GPU_COMMAND_DRAW_POLYGON
+		&& gxGpuCommandQuadPolygon(opcode)
+		&& vertexFloatCount === GX_GPU_SOLID_TRIANGLE_FLOATS * 2) {
+		renderReadVramSolidQuad(topLeftWord, bottomRightWord, blendEnabled, blendMode, maskBitModeWord, ditherEnabled, commandBuffer.commandInterlacedRenderWord[commandIndex]);
+		return;
+	}
 	if (readsVram) copyGxGpuVertexBoundsToSampleTexture(gxGpuSolidVertices, vertexFloatCount, GX_GPU_SOLID_VERTEX_FLOATS, topLeftWord, bottomRightWord);
 	renderSolidVertices(vertexFloatCount, topLeftWord, bottomRightWord, blendEnabled, blendMode, maskBitModeWord, ditherEnabled, commandBuffer.commandInterlacedRenderWord[commandIndex]);
 }

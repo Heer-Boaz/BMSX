@@ -138,6 +138,19 @@ horizontale CLUT-wrap op dezelfde VRAM-rij. Accelerated source-copy blijft de
 logisch gewrapte page- en CLUT-regio's gebruiken; alleen het live draaien van
 deze raw vectors tegen de drie accelerated backends staat nog open.
 
+Mask-bit, semi-transparency, blending, dithering en final-store volgen nu ook als
+commandvolgorde dezelfde PSX-datapath in alle owners. WebGL2/GLES2 nemen beide
+E6-bits rechtstreeks op in de solid-batch identity; een check-mask-wijziging kan
+dus niet meer verdwijnen wanneer semi-transparency de batch al read-VRAM maakt.
+Read-VRAM solid quads tekenen bovendien net als software en textured quads hun
+twee triangles op volgorde en verversen de destination snapshot ertussen. Dit
+houdt concave, bow-tie en andere representabele overlap deterministisch zonder
+CPU-pixels, per-command buffers of extra werk voor opaque quads. Gemirrorde raw
+vectors zetten STP-gated textureblend, E6 set/check voor solid draws en
+single-versus-double-hit quadpixels vast. De vier 5-bit blendmodes, dithermatrix
+en gemaskerde upload/copy-datapaths waren al gemirrord; live accelerated bewijs
+blijft open.
+
 Lines en polylines volgen nu in alle backendowners dezelfde DDA-conventie.
 TS/C++ software wrapt iedere emitted sample pas na de 32.32-stap naar signed
 11-bit. WebGL2, GLES2 en WebGPU evalueren de equivalente gehele DDA in de
@@ -162,7 +175,8 @@ Nog te sluiten:
 - De drawing-area/offset/clipping-vectors live tegen WebGL2, GLES2 en WebGPU.
 - De texture-window/page/packed-texel/CLUT-vectors live tegen WebGL2, GLES2 en
   WebGPU uitvoeren.
-- Mask-bit, blend, dither, semi-transparency en storegedrag.
+- De mask/STP/blend/dither/store- en read-VRAM-quadvectors live tegen WebGL2,
+  GLES2 en WebGPU uitvoeren.
 - Readback-zichtbare VRAM-inhoud na accelerated draws, fills en copies.
 
 Richting:

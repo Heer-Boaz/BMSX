@@ -114,6 +114,12 @@ Implemented or partially covered GX-GPU areas include:
 - Mirrored raw software vectors now lock E2 bit replacement, direct16 page X/Y
   wrap, palette4 nibble selection across a page edge, and palette8 byte plus
   horizontal CLUT wrap. The matching accelerated live run remains open.
+- WebGL2/GLES2 solid batch identity now includes both E6 bits instead of only
+  force-mask state. Read-VRAM solid quads are sequenced as two triangle draws in
+  WebGL2, GLES2, and WebGPU, with destination refresh between them, matching the
+  software command order for concave/bow-tie and other representable overlap.
+  Mirrored raw vectors also lock STP-gated blending and E6 solid-draw stores; no
+  CPU pixels or per-command side buffers were added.
 - Variable rectangles now truncate the coordinate produced by vertex plus E5
   drawing offset back to signed 11-bit in TS/C++ software, WebGL2, GLES2, and
   WebGPU. Mirrored raw-VRAM vectors cover inclusive drawing-area clipping,
@@ -244,6 +250,12 @@ and ask before coding.
     packed palette4/palette8 texels, and same-row CLUT wrap in TS/C++.
   - [ ] Run the same raw vectors live against WebGL2, GLES2, and WebGPU.
 - [ ] Exact mask bit, blend, dither, semi-transparency, and store behavior.
+  - [x] Keep both E6 bits in accelerated solid batch identity and sequence
+    read-VRAM solid quad triangles with a destination refresh between them.
+  - [x] Mirror raw software vectors for STP-gated texture stores, E6 solid-draw
+    behavior, and representable overlapping solid quads in TS/C++.
+  - [ ] Run the same mask/STP/blend/dither/store vectors live against WebGL2,
+    GLES2, and WebGPU.
 - [ ] Readback-visible VRAM contents after every accelerated operation.
 
 ### 4. GTE parity
