@@ -35,12 +35,12 @@ The old cart-visible SBX MMIO window is retired and intentionally left as an
 unassigned hole so IRQ/DMA and later public MMIO addresses do not move during
 the RPU migration.
 
-The VDP exposes three CPU-visible memory ranges: RPU staging/scratch, texture
-VRAM, and framebuffer VRAM. Texture residency is plain VRAM contents: the ROM
-build may materialise initial atlas bytes and coordinates, but the VDP has no
-primary/secondary/system atlas slots and no runtime atlas-binding MMIO. The
-DMA/FIFO stream buffer starts at `VDP_STREAM_BUFFER_BASE`; sealed streams are
-decoded as VDP packet words, not as host renderer commands.
+The residual VDP exposes three CPU-visible memory ranges: RPU staging/scratch,
+texture VRAM, and framebuffer VRAM. No active BIOS/cart atlas path consumes
+them: the ROM producer emits native RGB555/STP GP0 streams and DMA sends those
+ROM words directly to GX GP0. The DMA/FIFO stream buffer starts at
+`VDP_STREAM_BUFFER_BASE`; sealed streams are decoded as VDP packet words, not
+as host renderer commands.
 
 ## Status bits
 

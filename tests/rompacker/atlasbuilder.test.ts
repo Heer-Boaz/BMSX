@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { createCanvas } from 'canvas';
-import { createOptimizedAtlas, measureOptimizedAtlasBytes, splitAtlasImagesByVramUsage } from '../../scripts/rompacker/atlasbuilder';
+import { createOptimizedAtlas, measureOptimizedAtlasBytes, splitAtlasImagesByDirect16Capacity } from '../../scripts/rompacker/atlasbuilder';
 import type { ImageResource } from '../../scripts/rompacker/rompacker.rompack';
 
 function imageResource(name: string, id: number, width: number, height: number): ImageResource {
@@ -14,11 +14,11 @@ function imageResource(name: string, id: number, width: number, height: number):
 	};
 }
 
-test('atlas splitter pages images by GX texture residency bytes', () => {
+test('atlas splitter pages images by native direct16 source capacity', () => {
 	const pageBudget = measureOptimizedAtlasBytes([
 		imageResource('a', 1, 512, 256),
 	]);
-	const groups = splitAtlasImagesByVramUsage([
+	const groups = splitAtlasImagesByDirect16Capacity([
 		imageResource('a', 1, 512, 256),
 		imageResource('b', 2, 512, 256),
 	], pageBudget);

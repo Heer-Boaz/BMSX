@@ -189,12 +189,26 @@ Afgerond:
 - geen enkele host-presentatieroute consumeert nog VDP-, VOUT- of
   framebuffer-output. De VDP blijft uitsluitend als residual machine-owner
   bestaan totdat zijn memory-, timing-, register-, readback- en save-state-
-  afhankelijkheden zijn gemigreerd.
+  afhankelijkheden zijn gemigreerd;
+- de laatste actieve texture-aperturegebruiker is verwijderd: de ROM-producer
+  encodeert nu voor alle direct16- en palette4-atlassen native GP0-uploadwords,
+  waarna DMA de ROM-stream rechtstreeks aan GX GP0 levert. Runtime PNG-decode,
+  mapped RGBA-staging en `gx_load_atlas` zijn uit BIOS en carts verdwenen.
+
+Open texture-residency boundary:
+
+- `pietious` gebruikt een compacte native 4-bpp atlas plus CLUT en past daarmee
+  bij een expliciete PSX-VRAM-residencyvorm;
+- `2025` wisselt nog grote direct16 whole-atlasgroepen op VBlank. Dat is een
+  migratiebrug, niet de gewenste eindarchitectuur. Vervang die route later door
+  producer-owned kleinere texture packs met expliciete VRAM-page/CLUT-
+  residency; ga de atlas-swapwrapper niet verder abstraheren of optimaliseren.
 
 Resterende volgorde:
 
-1. Migreer de nog gebruikte mapped staging-, texture- en framebuffer-memory uit
-   de VDP-owner naar de daadwerkelijke DMA/image/GX-eigenaren.
+1. Verwijder de nu uitsluitend residual VDP staging-, texture- en
+   framebuffer-apertures samen met hun RPU/readback-owner; maak geen GX-facade
+   voor bytes die de actieve GX-route niet gebruikt.
 2. Verwijder daarna VDP scheduler/VBlank-, register-, readback-, save-state- en
    devicepaden plus tests die uitsluitend de afgewezen ABI beschermen.
 3. Bewaar eventueel nuttige fantasy-hardware-ideeën alleen als documentatie voor

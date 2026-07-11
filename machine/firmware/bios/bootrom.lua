@@ -71,15 +71,10 @@ local cart_rom_base<const> = 0x01000000
 local cart_program_start_addr<const> = 0x10080000
 local cart_program_vector_addr<const> = cart_program_start_addr - 4
 local cart_rom_magic<const> = 0x58534d42
-local irq_img_done<const> = 0x0004
-local irq_img_error<const> = 0x0008
 local irq_vblank<const> = 0x0010
 local irq_mask_addr<const> = 0x0800010c
 bss boot_vblank_count: word
 bss boot_start: f64
-bss system_atlas_decoded: word
-bss system_atlas_ready: word
-bss system_atlas_failed: word
 local boot_scroll_state<const> = { top = 0 }
 bss boot_screen_visible: word
 bss boot_screen_presented: word
@@ -174,12 +169,9 @@ local build_progress_bar<const> = function(progress, width)
 end
 
 local compute_boot_progress<const> = function(info, cart_ready, elapsed)
-	local stage_count<const> = 3
+	local stage_count<const> = 2
 	local stage_done = 0
 	if *boot_screen_visible ~= 0 then
-		stage_done = stage_done + 1
-	end
-	if *system_atlas_ready ~= 0 and *system_atlas_failed == 0 then
 		stage_done = stage_done + 1
 	end
 	if cart_ready then
@@ -275,22 +267,13 @@ function init()
 	*boot_start = os.clock()
 	*boot_screen_visible = 1
 	*boot_screen_presented = 0
-	*system_atlas_decoded = 0
-	*system_atlas_ready = 0
-	*system_atlas_failed = 0
 	gx_gpu.reset_320x240_pal()
 	gx_gpu.clear_color(color_bg)
 	reset_scroll_state(boot_scroll_state)
-	system.on_irq(irq_img_done, function()
-		*system_atlas_decoded = 1
-	end)
-	system.on_irq(irq_img_error, function()
-		*system_atlas_failed = 1
-	end)
 	system.on_irq(irq_vblank, function()
 		*boot_vblank_count = *boot_vblank_count + 1
 	end)
-	gx_image.load_atlas(254)
+	gx_image.upload_atlas(254)
 end
 
 function new_game()
@@ -314,10 +297,6 @@ end
 
 local update_boot_screen<const> = function()
 	*boot_screen_visible = 1
-	if *system_atlas_decoded ~= 0 and *system_atlas_ready == 0 and *system_atlas_failed == 0 then
-		gx_image.upload_atlas(254)
-		*system_atlas_ready = 1
-	end
 	*boot_input_frame = *boot_input_frame + 1
 	local arrow_down<const> = key_pressed(key_arrow_down)
 	local arrow_up<const> = key_pressed(key_arrow_up)
@@ -352,7 +331,7 @@ local update_boot_screen<const> = function()
 	local cart_present_and_ready<const> = cart_header_present(cart_rom_base)
 		and mem[cart_program_vector_addr] == cart_program_start_addr
 
-	if cart_present_and_ready and *system_atlas_ready ~= 0 and *system_atlas_failed == 0 then
+	if cart_present_and_ready then
 		print('Cart boot requested.')
 		mem[irq_mask_addr] = 0
 		return true
@@ -413,7 +392,7 @@ local wait_vblank<const> = function()
 end
 
 init()
-mem[irq_mask_addr] = irq_img_done | irq_img_error | irq_vblank
+mem[irq_mask_addr] = irq_vblank
 new_game()
 mem[0x08000194] = 0x00000001
 while true do

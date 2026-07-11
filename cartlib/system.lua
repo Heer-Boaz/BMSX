@@ -196,7 +196,6 @@ end
 
 local system<const> = {}
 system.clear_map = clear_map
-system.gx_load_atlas = gx_image.load_atlas
 system.gx_upload_atlas = gx_image.upload_atlas
 system.gx_upload_rgba8888_to_direct16_stride = gx_gpu.upload_rgba8888_to_direct16_stride
 system.gx_blit_img_color = gx_image.blit_img_color

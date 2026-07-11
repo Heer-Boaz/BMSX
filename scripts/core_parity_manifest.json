@@ -1309,6 +1309,7 @@
 				"docs/vdp_rpu_resume_handoff.md",
 				"docs/vdp_rpu_abi_draft.md",
 				"docs/lua_struct_support_plan.md",
+				"machine/firmware/system/imgdec.lua",
 				"machine/firmware/system/vdp_image.lua",
 				"machine/firmware/system/vdp_jtu.lua",
 				"machine/firmware/system/vdp_lpu.lua",
@@ -1317,7 +1318,7 @@
 				"machine/firmware/system/vdp_rpu_quads.lua",
 				"machine/firmware/system/vdp_xf.lua"
 			],
-			"reason": "legacy_lua_vdp_rpu_firmware_abi_and_stale_docs_must_not_return"
+			"reason": "retired_lua_vdp_rpu_and_runtime_atlas_decode_firmware_must_not_return"
 		},
 		{
 			"present": [

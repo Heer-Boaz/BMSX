@@ -1,5 +1,4 @@
 local round_to_nearest<const> = require('bios/util/round_to_nearest')
-local imgdec<const> = require('system/imgdec')
 local romdir<const> = require('system/romdir')
 local gx_gpu<const> = require('system/gx_gpu')
 
@@ -13,7 +12,6 @@ local system_texture_base_x<const> = 512
 local cart_texture_overflow_base_x<const> = 512
 local cart_texture_overflow_base_y<const> = ((system_atlas_meta.width + system_texture_band_width - 1) // system_texture_band_width) * system_atlas_meta.height
 local gpu_texture_base_y<const> = 256
-local gpu_texture_slice_width<const> = 256
 local gpu_texture_page_span<const> = gx_gpu.texture_page_span
 local gx_texture_mode_palette4<const> = gx_gpu.texture_mode_palette4
 local dma_source_addr<const> = 0x08000110
@@ -98,59 +96,18 @@ local resolve_cached_atlas_residency<const> = function(atlas_id)
 	end
 end
 
-function gx_image.load_atlas(atlas_id)
-	local atlas<const> = romdir.atlas(atlas_id)
-	local atlas_meta<const> = atlas.imgmeta
-	imgdec.start(atlas.addr, atlas.len, atlas_meta.texture_addr, atlas_meta.texture_len)
-end
-
 function gx_image.upload_atlas(atlas_id)
-	local atlas<const> = romdir.atlas(atlas_id)
-	local atlas_meta<const> = atlas.imgmeta
-	if atlas_meta.gx_texture_mode == gx_texture_mode_palette4 then
-		mem[dma_source_addr] = atlas.texture_addr
-		mem[dma_target_addr] = gx_gp0_addr
-		mem[dma_length_addr] = atlas.texture_len
-		mem[dma_control_addr] = dma_control_start_strict
-		repeat
-		until (mem[dma_status_addr] & dma_status_done) ~= 0
-		mem[irq_ack_addr] = irq_dma_done_error
-		resident_cart_atlas_id = atlas_id
-		resolve_cached_atlas_residency(atlas_id)
+	if atlas_id ~= system_atlas_id and resident_cart_atlas_id == atlas_id then
 		return
 	end
-	local source_x = 0
-	while source_x < atlas_meta.width do
-		local chunk_width = atlas_meta.width - source_x
-		if chunk_width > gpu_texture_slice_width then
-			chunk_width = gpu_texture_slice_width
-		end
-		if atlas_id == system_atlas_id then
-			gx_gpu.upload_rgba8888_to_direct16_stride(
-				atlas_meta.texture_addr,
-				source_x, 0,
-				atlas_meta.width,
-				system_texture_base_x + (((source_x >> 8) & 1) << 8),
-				(source_x >> 9) * atlas_meta.height,
-				chunk_width, atlas_meta.height)
-		else
-			local chunk_height = atlas_meta.height
-			if chunk_height > gpu_texture_page_span then
-				chunk_height = gpu_texture_page_span
-			end
-			gx_gpu.upload_rgba8888_to_direct16_stride(atlas_meta.texture_addr, source_x, 0, atlas_meta.width, source_x & 0x000003ff, gpu_texture_base_y, chunk_width, chunk_height)
-			if atlas_meta.height > gpu_texture_page_span then
-				gx_gpu.upload_rgba8888_to_direct16_stride(
-					atlas_meta.texture_addr,
-					source_x, gpu_texture_page_span,
-					atlas_meta.width,
-					cart_texture_overflow_base_x + (((source_x >> 8) & 1) << 8),
-					cart_texture_overflow_base_y + ((source_x >> 9) * (atlas_meta.height - gpu_texture_page_span)),
-					chunk_width, atlas_meta.height - gpu_texture_page_span)
-			end
-		end
-		source_x = source_x + gpu_texture_slice_width
-	end
+	local atlas<const> = romdir.atlas(atlas_id)
+	mem[dma_source_addr] = atlas.texture_addr
+	mem[dma_target_addr] = gx_gp0_addr
+	mem[dma_length_addr] = atlas.texture_len
+	mem[dma_control_addr] = dma_control_start_strict
+	repeat
+	until (mem[dma_status_addr] & dma_status_done) ~= 0
+	mem[irq_ack_addr] = irq_dma_done_error
 	if atlas_id ~= system_atlas_id then
 		resident_cart_atlas_id = atlas_id
 		resolve_cached_atlas_residency(atlas_id)

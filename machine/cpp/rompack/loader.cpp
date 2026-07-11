@@ -1251,12 +1251,6 @@ static bool loadRomAssetPayloadInternal(const u8* romData,
 						if (imgMeta.count("atlasid")) {
 							imgAsset.meta.atlasid = imgMeta.at("atlasid").toI32();
 						}
-						if (imgMeta.count("texture_addr")) {
-							imgAsset.meta.textureAddr = imgMeta.at("texture_addr").toI32();
-						}
-						if (imgMeta.count("texture_len")) {
-							imgAsset.meta.textureLen = imgMeta.at("texture_len").toI32();
-						}
 						if (imgMeta.count("gx_texture_mode")) {
 							imgAsset.meta.gxTextureMode = imgMeta.at("gx_texture_mode").toI32();
 						}

@@ -152,13 +152,27 @@ Cart texture residency is owned by the ROM texture producer and PSX GPU
 firmware. It is independent of the active GP1 display dimensions, and the GTE
 does not participate in texture or atlas handling.
 `machine/firmware/system/gx_image.lua` supports the resident system atlas plus
-one resident cart atlas in PSX VRAM.
-The `2025` cart owns explicit direct16 cart-atlas decode/upload points for its
-transitions, background changes, and combat atlas swaps. `pietious` now uses a
+one resident cart atlas in PSX VRAM. Every system/cart atlas is emitted by the
+ROM producer as native RGB555/STP GP0 upload words and DMA streams those ROM
+words directly to GP0; runtime PNG decode and mapped RGBA texture staging are
+not part of atlas residency. Atlas PNGs remain tooling previews and are not
+packed as runtime ROM payloads.
+The `2025` cart owns explicit direct16 cart-atlas upload points for its
+transitions, background changes, and combat atlas swaps. It crosses a VBlank
+before an atlas swap so the preceding GX command buffer is presented before the
+new GP0 upload stream is submitted. `pietious` now uses a
 manifest-required, ROM-produced native PSX 4-bpp texture plus CLUT and GP0
 upload stream. Its atlas bypasses the legacy RGBA residency planner and has no
 CPU texture-staging allocation. It no longer decodes a whole RGBA atlas at boot
 or submits VDP tile streams.
+
+The native stream migration does not make the current `2025` whole-atlas swap
+policy the final PSX-style residency design. `pietious` has a plausible compact
+4-bpp atlas/CLUT shape; `2025` still groups large direct16 content into one
+resident cart atlas at a time and swaps that grouping at scene/combat
+boundaries. A later vertical slice must replace that migration-era policy with
+explicit VRAM page/CLUT residency and smaller producer-owned texture packs,
+rather than optimizing the whole-atlas swap wrapper.
 
 ## Hard open design point: GPUREAD / VRAM-to-CPU
 
@@ -342,8 +356,9 @@ and ask before coding.
 - [x] Migrate `emptycart` to GX.
 - [x] Migrate `fade_probe` to GX blend primitives.
 - [x] Migrate `vblanktest` to GX/GPUSTAT-visible behavior.
-- [x] Migrate `nemesis_s` boot, atlas decode/upload, clear, and sprite/tile
-  draws to GX/PSX.
+- [x] Migrate `nemesis_s` boot, atlas upload, clear, and sprite/tile draws to
+  GX/PSX. The ROM now carries the native GP0 upload stream; runtime atlas decode
+  is removed.
 - [x] Migrate `renderhwtest` to direct GX primitive programming, including a
   cart-visible raw PSX textured affine quad smoke.
 - [x] Migrate `2025` engine/cart rendering to GX, including cart-owned

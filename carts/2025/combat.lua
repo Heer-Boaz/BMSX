@@ -426,7 +426,7 @@ function combat.define_fsm()
 			self.combat_max_points = #node.rounds
 
 			local monster<const> = oget(combat_monster_id)
-			load_gx_atlas(gx_img_rect(node.monster_imgid).atlas_id)
+			upload_gx_atlas_on_vblank(gx_img_rect(node.monster_imgid).atlas_id)
 			monster:gfx(node.monster_imgid)
 			monster.visible = false
 			monster.sprite_component.color = p3_white_color
@@ -939,7 +939,7 @@ function combat.define_fsm()
 			oget(text_choice_id):set_text({ 'ALL-OUT-ATTACK!!' }, { typed = false, snap = true })
 			self.choice_index = 1
 			oget(text_choice_id).highlight_jitter_enabled = true
-			load_gx_atlas(gx_img_rect('maya_v_s').atlas_id)
+			upload_gx_atlas_on_vblank(gx_img_rect('maya_v_s').atlas_id)
 			local monster<const> = oget(combat_monster_id)
 			local maya_a<const> = oget(combat_maya_a_id)
 			local portrait<const> = oget(combat_all_out_id)
@@ -1025,7 +1025,7 @@ function combat.define_fsm()
 			self:disable_combat_parallax()
 			clear_texts(text_ids_all)
 			local all_out<const> = oget(combat_all_out_id)
-			load_gx_atlas(gx_img_rect('all_out').atlas_id)
+			upload_gx_atlas_on_vblank(gx_img_rect('all_out').atlas_id)
 			all_out:gfx('all_out')
 			all_out.sprite_component.scale = { x = 1, y = 1 }
 			all_out.visible = true
@@ -1101,7 +1101,7 @@ function combat.define_fsm()
 
 	states.combat_focus = {
 			entering_state = function(self)
-				load_gx_atlas(gx_img_rect(self.combat_monster_imgid).atlas_id)
+				upload_gx_atlas_on_vblank(gx_img_rect(self.combat_monster_imgid).atlas_id)
 				local monster<const> = oget(combat_monster_id)
 				monster.visible = true
 
@@ -1299,7 +1299,7 @@ function combat.define_fsm()
 			},
 		},
 		entering_state = function(self)
-			load_gx_atlas(gx_img_rect(self.combat_exit_target_bg).atlas_id)
+			upload_gx_atlas_on_vblank(gx_img_rect(self.combat_exit_target_bg).atlas_id)
 			local bg<const> = show_background(self.combat_exit_target_bg)
 			bg.sprite_component.color = p3_black_color
 			self:play_timeline(combat_exit_fade_in_timeline_id, { rewind = true, snap_to_start = true, target = bg })

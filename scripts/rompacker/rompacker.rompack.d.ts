@@ -60,12 +60,10 @@ export interface ImageResource extends BaseResource<'image'> {
 	atlasTexcoords?: AtlasTexcoords;
 }
 
-// Serialized as a ROM atlas asset with concrete build-time texture-VRAM placement.
+// Serialized as a ROM atlas asset with a native GX upload stream.
 export interface TextureAtlasResource extends BaseResource<'atlas'> {
 	id: number;
 	atlasId: number;
-	textureAddr?: number;
-	textureBytes?: number;
 	gxTexture?: GxTextureAtlas;
 	img?: Canvas & { toBuffer?: (format: string) => Buffer; };
 }

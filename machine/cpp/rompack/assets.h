@@ -44,8 +44,6 @@ struct ImgMeta {
 	i32 width = 0;
 	i32 height = 0;
 	std::optional<i32> atlasid;
-	std::optional<i32> textureAddr;
-	std::optional<i32> textureLen;
 	std::optional<i32> gxTextureMode;
 	std::optional<i32> gxTextureX;
 	std::optional<i32> gxTextureY;

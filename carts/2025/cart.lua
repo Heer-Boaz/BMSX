@@ -7,15 +7,10 @@ local start_node<const> = 'title'
 -- local start_node<const> = 'combat_wekker'
 local irq_mask_register<const>: *word = 0x0800010c
 local input_control_register<const>: *word = 0x08000194
-local irq_img_done<const> = 0x0004
-local irq_img_error<const> = 0x0008
 local irq_vblank<const> = 0x0010
 local irq_apu<const> = 0x0200
 local vblank_count = 0
-local gx_atlas_decode_generation = 0
-local gx_atlas_ready_generation = 0
 local gx_system_atlas_id<const> = 254
-local gx_cart_atlas_resident_id = -1
 
 local wait_vblank<const> = function()
 	repeat
@@ -24,21 +19,9 @@ local wait_vblank<const> = function()
 	vblank_count = vblank_count - 1
 end
 
-function load_gx_atlas(atlas_id)
-	if atlas_id ~= gx_system_atlas_id and gx_cart_atlas_resident_id == atlas_id then
-		return
-	end
-	gx_atlas_decode_generation = gx_atlas_decode_generation + 1
-	local pending_generation<const> = gx_atlas_decode_generation
-	gx_load_atlas(atlas_id)
-	repeat
-		wait_vblank()
-		*input_control_register = 0x00000001
-	until gx_atlas_ready_generation == pending_generation
+function upload_gx_atlas_on_vblank(atlas_id)
+	wait_vblank()
 	gx_upload_atlas(atlas_id)
-	if atlas_id ~= gx_system_atlas_id then
-		gx_cart_atlas_resident_id = atlas_id
-	end
 end
 
 local combat_module<const> = require('combat')
@@ -279,15 +262,10 @@ local register_director<const> = function()
 end
 
 function init()
-	on_irq(irq_img_done | irq_img_error | irq_vblank, function(_, flags)
-		if (flags & irq_img_done) ~= 0 then
-			gx_atlas_ready_generation = gx_atlas_decode_generation
-		end
-		if (flags & irq_vblank) ~= 0 then
-			vblank_count = vblank_count + 1
-		end
+	on_irq(irq_vblank, function()
+		vblank_count = vblank_count + 1
 	end)
-	*irq_mask_register = irq_img_done | irq_img_error | irq_vblank | irq_apu
+	*irq_mask_register = irq_vblank | irq_apu
 	gx_clear_color(0xff000000)
 	mem[0x08000008] = 2
 	combat_module.define_fsm()
@@ -388,8 +366,8 @@ function new_game()
 end
 
 init()
-load_gx_atlas(gx_system_atlas_id)
-load_gx_atlas(gx_img_rect(story.title.bg).atlas_id)
+upload_gx_atlas_on_vblank(gx_system_atlas_id)
+upload_gx_atlas_on_vblank(gx_img_rect(story.title.bg).atlas_id)
 new_game()
 *input_control_register = 0x00000001
 while true do

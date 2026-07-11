@@ -662,8 +662,10 @@ hardware interrupt-storm semantics rather than being discarded by the emulator.
 DMA and IMGDEC are MMIO devices. Command words latch work, device status/fault
 registers expose completion or rejection, and bus faults become device-visible
 fault state.
-IMGDEC's BIOS-facing Lua helper owns the register words it uses; IMGDEC
-addresses, command bits, and status bits are not host-seeded Lua globals.
+The ROM texture producer emits native RGB555/STP GP0 streams for every atlas,
+so BIOS/cart atlas upload uses DMA directly and has no IMGDEC or mapped
+RGBA-staging dependency. IMGDEC remains a residual machine device until its
+remaining MMIO/tests/save-state ownership is removed.
 
 ### VDP (residual)
 

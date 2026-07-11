@@ -7,12 +7,9 @@ local player_module<const> = require('player/index')
 local director_module<const> = require('director')
 local irq_mask_register<const>: *word = 0x0800010c
 local input_control_register<const>: *word = 0x08000194
-local irq_img_done<const> = 0x0004
 local irq_vblank<const> = 0x0010
 local irq_apu<const> = 0x0200
 local vblank_count = 0
-nemesis_s_atlas_decoded = false
-nemesis_s_atlas_ready = false
 
 local wait_vblank<const> = function()
 	repeat
@@ -25,10 +22,7 @@ function init()
 	on_irq(irq_vblank, function()
 		vblank_count = vblank_count + 1
 	end)
-	on_irq(irq_img_done, function()
-		nemesis_s_atlas_decoded = true
-	end)
-	*irq_mask_register = irq_vblank | irq_apu | irq_img_done
+	*irq_mask_register = irq_vblank | irq_apu
 	gx_clear_color(0xff000000)
 	stage_module.define_stage_fsm()
 	director_module.define_director_fsm()
@@ -36,7 +30,7 @@ function init()
 	stage_module.register_stage_subsystem_definition()
 	director_module.register_director_definition()
 	player_module.register_player_definition()
-	gx_load_atlas(0)
+	gx_upload_atlas(0)
 end
 
 function new_game()
@@ -57,12 +51,6 @@ end
 
 init()
 *input_control_register = 0x00000001
-repeat
-	wait_vblank()
-	*input_control_register = 0x00000001
-until nemesis_s_atlas_decoded
-gx_upload_atlas(0)
-nemesis_s_atlas_ready = true
 *irq_mask_register = irq_vblank | irq_apu
 new_game()
 *input_control_register = 0x00000001

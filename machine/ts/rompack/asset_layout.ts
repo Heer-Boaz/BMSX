@@ -19,7 +19,7 @@ export function collectRomAssetPayloadRanges(assetList: ReadonlyArray<RomAsset>,
 			continue;
 		}
 		const buffer = asset.buffer;
-		if (buffer !== undefined && buffer.length > 0) {
+		if (asset.type !== 'atlas' && buffer !== undefined && buffer.length > 0) {
 			const start = offset;
 			offset += buffer.length;
 			ranges.push({ asset, kind: 'buffer', start, end: offset, buffer });

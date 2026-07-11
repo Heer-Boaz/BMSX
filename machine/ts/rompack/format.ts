@@ -355,8 +355,6 @@ export interface ImgMeta {
 	atlasid?: number; // ROM atlas containing this image or identifying this atlas asset.
 	width: number; // The width of the image.
 	height: number; // The height of the image.
-	texture_addr?: number; // Concrete CPU-visible VRAM address for atlas assets.
-	texture_len?: number; // Contiguous RGBA byte footprint for atlas assets.
 	gx_texture_mode?: number; // PSX GPU texture mode for atlas residency.
 	gx_texture_x?: number; // Native atlas base X in PSX VRAM words.
 	gx_texture_y?: number; // Native atlas base Y in PSX VRAM rows.
