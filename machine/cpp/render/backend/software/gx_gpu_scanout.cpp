@@ -12,38 +12,6 @@ namespace {
 
 SoftwareBackend* g_gxGpuSoftwareScanoutBackend;
 
-constexpr u32 kGxGpuDisplayModeRgb24Bit = 0x10u;
-constexpr u32 kGxGpuDisplayModePalBit = 0x08u;
-constexpr u32 kGxGpuDisplayModeVerticalResolutionBit = 0x04u;
-constexpr u32 kGxGpuDisplayModeVerticalInterlaceBit = 0x20u;
-constexpr i32 kGxGpuScanoutNtscOverscanLeft = 608;
-constexpr i32 kGxGpuScanoutPalOverscanLeft = 638;
-constexpr i32 kGxGpuScanoutNtscOverscanTop = 16;
-constexpr i32 kGxGpuScanoutPalOverscanTop = 35;
-
-inline i32 displayModeScreenHeight(u32 displayModeWord) {
-	const bool highVerticalResolution = (displayModeWord & kGxGpuDisplayModeVerticalResolutionBit) != 0u;
-	if ((displayModeWord & kGxGpuDisplayModePalBit) != 0u) {
-		return highVerticalResolution ? 512 : 256;
-	}
-	return highVerticalResolution ? 480 : 240;
-}
-
-inline i32 screenXForOutputPixel(i32 outputX, i32 targetWidth, i32 screenWidth) {
-	return (((outputX << 1) + 1) * screenWidth) / (targetWidth << 1);
-}
-
-inline i32 screenYForOutputPixel(i32 outputY, i32 targetHeight, i32 screenHeight) {
-	return (((outputY << 1) + 1) * screenHeight) / (targetHeight << 1);
-}
-
-inline i32 visibleColumns(u32 horizontalDisplayRangeWord, u32 dotClockDivider) {
-	const i32 rangeCycles = static_cast<i32>(gxGpuHorizontalDisplayRangeEnd(horizontalDisplayRangeWord))
-		- static_cast<i32>(gxGpuHorizontalDisplayRangeStart(horizontalDisplayRangeWord));
-	const i32 columns = (rangeCycles / static_cast<i32>(dotClockDivider)) + 2;
-	return columns & ~0x03;
-}
-
 inline u32 rgb888AtSourcePixel(i32 sourceX, i32 sourceY, i32 displayStartX) {
 	const i32 wordX = displayStartX + (sourceX * 3) / 2;
 	const u32 word0 = g_gxGpuSoftwareVram[gxGpuSoftwareVramIndex(wordX, sourceY)];
@@ -87,58 +55,20 @@ void scanoutGxGpuSoftwareVram(const GxGpuPipelineState& state) {
 		return;
 	}
 	const u32 displayModeWord = state.displayModeWord;
-	const i32 screenWidth = static_cast<i32>(gxGpuDisplayModeScreenWidth(displayModeWord));
-	const i32 screenHeight = displayModeScreenHeight(displayModeWord);
-	const u32 dotClockDivider = gxGpuDisplayModeDotClockDivider(displayModeWord);
-	const i32 horizontalStart = static_cast<i32>(gxGpuHorizontalDisplayRangeStart(state.horizontalDisplayRangeWord));
-	const i32 verticalStart = static_cast<i32>(state.verticalDisplayRangeWord & 0x3ffu);
-	const i32 verticalEnd = static_cast<i32>((state.verticalDisplayRangeWord >> 10u) & 0x3ffu);
-	const i32 overscanLeft = (displayModeWord & kGxGpuDisplayModePalBit) != 0u ? kGxGpuScanoutPalOverscanLeft : kGxGpuScanoutNtscOverscanLeft;
-	const i32 overscanTop = (displayModeWord & kGxGpuDisplayModePalBit) != 0u ? kGxGpuScanoutPalOverscanTop : kGxGpuScanoutNtscOverscanTop;
-	i32 originLeft = (horizontalStart - overscanLeft) / static_cast<i32>(dotClockDivider);
-	i32 sourceSkipX = 0;
-	i32 columns = visibleColumns(state.horizontalDisplayRangeWord, dotClockDivider);
-	if (originLeft < 0) {
-		sourceSkipX = -originLeft;
-		columns += originLeft;
-		originLeft = 0;
-	}
-	const i32 maxColumns = screenWidth - originLeft;
-	if (columns > maxColumns) {
-		columns = maxColumns;
-	}
-	i32 originTop = verticalStart - overscanTop;
-	i32 sourceSkipY = 0;
-	i32 lines = verticalEnd - verticalStart;
-	if (originTop < 0) {
-		sourceSkipY = -originTop;
-		lines += originTop;
-		originTop = 0;
-	}
-	if ((displayModeWord & kGxGpuDisplayModeVerticalInterlaceBit) != 0u) {
-		lines <<= 1;
-	}
-	const i32 maxLines = screenHeight - originTop;
-	if (lines > maxLines) {
-		lines = maxLines;
-	}
+	const i32 columns = gxGpuHorizontalVisibleColumns(state.horizontalDisplayRangeWord, displayModeWord);
+	const i32 lines = gxGpuVerticalVisibleLines(state.verticalDisplayRangeWord, displayModeWord);
 	const i32 displayStartX = static_cast<i32>(gxGpuDisplayStartX(state.displayStartWord));
 	const i32 displayStartY = static_cast<i32>(gxGpuDisplayStartY(state.displayStartWord));
-	const bool rgb24 = (displayModeWord & kGxGpuDisplayModeRgb24Bit) != 0u;
+	const bool rgb24 = (displayModeWord & GX_GPU_DISPLAY_MODE_RGB24_BIT) != 0u;
 	const i32 targetWidth = g_gxGpuSoftwareScanoutBackend->width();
 	const i32 targetHeight = g_gxGpuSoftwareScanoutBackend->height();
 	const i32 pixelsPerRow = g_gxGpuSoftwareScanoutBackend->pitch() / static_cast<i32>(sizeof(u32));
 	for (i32 outputY = 0; outputY < targetHeight; outputY += 1) {
-		const i32 screenY = screenYForOutputPixel(outputY, targetHeight, screenHeight);
+		const i32 sourceY = displayStartY + (((outputY << 1) + 1) * lines) / (targetHeight << 1);
 		u32* row = g_gxGpuSoftwareScanoutBackend->framebuffer() + static_cast<size_t>(outputY) * static_cast<size_t>(pixelsPerRow);
 		for (i32 outputX = 0; outputX < targetWidth; outputX += 1) {
-			const i32 screenX = screenXForOutputPixel(outputX, targetWidth, screenWidth);
-			u32 rgb = 0u;
-			if (screenX >= originLeft && screenY >= originTop && screenX < originLeft + columns && screenY < originTop + lines) {
-				const i32 sourceX = sourceSkipX + screenX - originLeft;
-				const i32 sourceY = displayStartY + sourceSkipY + screenY - originTop;
-				rgb = rgb24 ? rgb888AtSourcePixel(sourceX, sourceY, displayStartX) : rgb555AtSourcePixel(displayStartX + sourceX, sourceY);
-			}
+			const i32 sourceX = (((outputX << 1) + 1) * columns) / (targetWidth << 1);
+			const u32 rgb = rgb24 ? rgb888AtSourcePixel(sourceX, sourceY, displayStartX) : rgb555AtSourcePixel(displayStartX + sourceX, sourceY);
 			row[outputX] = packOutputArgb(rgb);
 		}
 	}

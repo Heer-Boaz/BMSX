@@ -15,11 +15,13 @@ import {
 	GX_GPU_VRAM_BYTE_COUNT,
 	GX_GPU_VRAM_HEIGHT,
 	GX_GPU_VRAM_WIDTH,
+	gxGpuDisplayStartY,
 	gxGpuTransferHeight,
 	gxGpuTransferWidth,
 	type GxGpuCommandBufferView,
 } from '../../../machine/devices/gx/gpu_command_buffer';
 import {
+	GX_GPU_DISPLAY_MODE_RGB24_BIT,
 	GX_GPU_VERTEX_COORD_PERIOD,
 	GX_GPU_TRIANGLE_UV_ACCUMULATOR_MASK,
 	GX_GPU_TRIANGLE_UV_BASE_U,
@@ -43,6 +45,7 @@ import {
 	gxGpuDrawingAreaRightExclusive,
 	gxGpuDrawingAreaTop,
 	gxGpuDrawingOffsetY,
+	gxGpuDisplayStartX,
 	gxGpuDrawModeDitherEnabled,
 	gxGpuDrawModeTextureMode,
 	gxGpuDrawModeTexturePageBaseX,
@@ -53,6 +56,7 @@ import {
 	gxGpuFillHeight,
 	gxGpuFillWidth,
 	gxGpuFillX,
+	gxGpuHorizontalVisibleColumns,
 	gxGpuMaskBitCheckBeforeDraw,
 	gxGpuMaskBitSetWhileDrawing,
 	gxGpuSegmentExceedsPrimitiveSize,
@@ -73,6 +77,7 @@ import {
 	gxGpuTriangleUvPlane,
 	gxGpuSigned11,
 	gxGpuVertexY,
+	gxGpuVerticalVisibleLines,
 	gxGpuVramCopyChunkHeight,
 	gxGpuVramCopyNeedsChunking,
 	gxGpuVramWrappedHeight,
@@ -289,10 +294,8 @@ type GxGpuState = {
 	scanoutPositionAttrib: number;
 	scanoutTexcoordAttrib: number;
 	scanoutVramUniform: WebGLUniformLocation;
-	scanoutDisplayModeUniform: WebGLUniformLocation;
-	scanoutDisplayStartWordUniform: WebGLUniformLocation;
-	scanoutHorizontalDisplayRangeUniform: WebGLUniformLocation;
-	scanoutVerticalDisplayRangeUniform: WebGLUniformLocation;
+	scanoutDisplayRectUniform: WebGLUniformLocation;
+	scanoutDisplayRgb24Uniform: WebGLUniformLocation;
 	readbackPositionAttrib: number;
 	readbackVramUniform: WebGLUniformLocation;
 	readbackParamsUniform: WebGLUniformLocation;
@@ -443,10 +446,8 @@ function bootstrapGxGpuPass(backend: WebGLBackend): void {
 		scanoutPositionAttrib: gl.getAttribLocation(scanoutProgram, 'a_position'),
 		scanoutTexcoordAttrib: gl.getAttribLocation(scanoutProgram, 'a_texcoord'),
 		scanoutVramUniform: gl.getUniformLocation(scanoutProgram, 'u_vram') as WebGLUniformLocation,
-		scanoutDisplayModeUniform: gl.getUniformLocation(scanoutProgram, 'u_displayModeWord') as WebGLUniformLocation,
-		scanoutDisplayStartWordUniform: gl.getUniformLocation(scanoutProgram, 'u_displayStartWord') as WebGLUniformLocation,
-		scanoutHorizontalDisplayRangeUniform: gl.getUniformLocation(scanoutProgram, 'u_horizontalDisplayRangeWord') as WebGLUniformLocation,
-		scanoutVerticalDisplayRangeUniform: gl.getUniformLocation(scanoutProgram, 'u_verticalDisplayRangeWord') as WebGLUniformLocation,
+		scanoutDisplayRectUniform: gl.getUniformLocation(scanoutProgram, 'u_displayRect') as WebGLUniformLocation,
+		scanoutDisplayRgb24Uniform: gl.getUniformLocation(scanoutProgram, 'u_displayRgb24') as WebGLUniformLocation,
 		readbackPositionAttrib: gl.getAttribLocation(readbackProgram, 'a_position'),
 		readbackVramUniform: gl.getUniformLocation(readbackProgram, 'u_vram') as WebGLUniformLocation,
 		readbackParamsUniform: gl.getUniformLocation(readbackProgram, 'u_readback') as WebGLUniformLocation,
@@ -2347,20 +2348,21 @@ function scanoutGxGpuVram(fbo: WebGLFramebuffer, state: RenderPassStateRegistry[
 	backend.setBlendEnabled(false);
 	backend.useProgram(gxGpuState.scanoutProgram);
 	gl.uniform1i(gxGpuState.scanoutVramUniform, GX_GPU_SCANOUT_TEXTURE_UNIT);
-	if (gxGpuState.scanoutUniformDisplayModeWord !== state.displayModeWord) {
-		gl.uniform1f(gxGpuState.scanoutDisplayModeUniform, state.displayModeWord);
+	if (gxGpuState.scanoutUniformDisplayModeWord !== state.displayModeWord
+		|| gxGpuState.scanoutUniformDisplayStartWord !== state.displayStartWord
+		|| gxGpuState.scanoutUniformHorizontalDisplayRangeWord !== state.horizontalDisplayRangeWord
+		|| gxGpuState.scanoutUniformVerticalDisplayRangeWord !== state.verticalDisplayRangeWord) {
+		gl.uniform4f(
+			gxGpuState.scanoutDisplayRectUniform,
+			gxGpuDisplayStartX(state.displayStartWord),
+			gxGpuDisplayStartY(state.displayStartWord),
+			gxGpuHorizontalVisibleColumns(state.horizontalDisplayRangeWord, state.displayModeWord),
+			gxGpuVerticalVisibleLines(state.verticalDisplayRangeWord, state.displayModeWord),
+		);
+		gl.uniform1f(gxGpuState.scanoutDisplayRgb24Uniform, (state.displayModeWord & GX_GPU_DISPLAY_MODE_RGB24_BIT) !== 0 ? 1 : 0);
 		gxGpuState.scanoutUniformDisplayModeWord = state.displayModeWord;
-	}
-	if (gxGpuState.scanoutUniformDisplayStartWord !== state.displayStartWord) {
-		gl.uniform1f(gxGpuState.scanoutDisplayStartWordUniform, state.displayStartWord);
 		gxGpuState.scanoutUniformDisplayStartWord = state.displayStartWord;
-	}
-	if (gxGpuState.scanoutUniformHorizontalDisplayRangeWord !== state.horizontalDisplayRangeWord) {
-		gl.uniform1f(gxGpuState.scanoutHorizontalDisplayRangeUniform, state.horizontalDisplayRangeWord);
 		gxGpuState.scanoutUniformHorizontalDisplayRangeWord = state.horizontalDisplayRangeWord;
-	}
-	if (gxGpuState.scanoutUniformVerticalDisplayRangeWord !== state.verticalDisplayRangeWord) {
-		gl.uniform1f(gxGpuState.scanoutVerticalDisplayRangeUniform, state.verticalDisplayRangeWord);
 		gxGpuState.scanoutUniformVerticalDisplayRangeWord = state.verticalDisplayRangeWord;
 	}
 	backend.setActiveTexture(GX_GPU_SCANOUT_TEXTURE_UNIT);

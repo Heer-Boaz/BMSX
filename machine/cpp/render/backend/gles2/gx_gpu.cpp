@@ -171,10 +171,8 @@ struct GxGpuRuntime {
 	GLint scanoutPositionAttrib = -1;
 	GLint scanoutTexcoordAttrib = -1;
 	GLint scanoutVramUniform = -1;
-	GLint scanoutDisplayModeUniform = -1;
-	GLint scanoutDisplayStartWordUniform = -1;
-	GLint scanoutHorizontalDisplayRangeUniform = -1;
-	GLint scanoutVerticalDisplayRangeUniform = -1;
+	GLint scanoutDisplayRectUniform = -1;
+	GLint scanoutDisplayRgb24Uniform = -1;
 	GLint readbackPositionAttrib = -1;
 	GLint readbackVramUniform = -1;
 	GLint readbackParamsUniform = -1;
@@ -316,10 +314,8 @@ void initGxGpu(OpenGLES2Backend& backend) {
 	g_gxGpu.scanoutPositionAttrib = glGetAttribLocation(g_gxGpu.scanoutProgram, "a_position");
 	g_gxGpu.scanoutTexcoordAttrib = glGetAttribLocation(g_gxGpu.scanoutProgram, "a_texcoord");
 	g_gxGpu.scanoutVramUniform = glGetUniformLocation(g_gxGpu.scanoutProgram, "u_vram");
-	g_gxGpu.scanoutDisplayModeUniform = glGetUniformLocation(g_gxGpu.scanoutProgram, "u_displayModeWord");
-	g_gxGpu.scanoutDisplayStartWordUniform = glGetUniformLocation(g_gxGpu.scanoutProgram, "u_displayStartWord");
-	g_gxGpu.scanoutHorizontalDisplayRangeUniform = glGetUniformLocation(g_gxGpu.scanoutProgram, "u_horizontalDisplayRangeWord");
-	g_gxGpu.scanoutVerticalDisplayRangeUniform = glGetUniformLocation(g_gxGpu.scanoutProgram, "u_verticalDisplayRangeWord");
+	g_gxGpu.scanoutDisplayRectUniform = glGetUniformLocation(g_gxGpu.scanoutProgram, "u_displayRect");
+	g_gxGpu.scanoutDisplayRgb24Uniform = glGetUniformLocation(g_gxGpu.scanoutProgram, "u_displayRgb24");
 	g_gxGpu.readbackPositionAttrib = glGetAttribLocation(g_gxGpu.readbackProgram, "a_position");
 	g_gxGpu.readbackVramUniform = glGetUniformLocation(g_gxGpu.readbackProgram, "u_vram");
 	g_gxGpu.readbackParamsUniform = glGetUniformLocation(g_gxGpu.readbackProgram, "u_readback");
@@ -2169,20 +2165,20 @@ void scanoutGxGpuVram(GLuint frameFbo, const GxGpuPipelineState& state) {
 	glDisable(GL_BLEND);
 	glUseProgram(g_gxGpu.scanoutProgram);
 	glUniform1i(g_gxGpu.scanoutVramUniform, kGxGpuScanoutTextureUnit);
-	if (g_gxGpu.scanoutUniformDisplayModeWord != state.displayModeWord) {
-		glUniform1f(g_gxGpu.scanoutDisplayModeUniform, static_cast<f32>(state.displayModeWord));
+	if (g_gxGpu.scanoutUniformDisplayModeWord != state.displayModeWord
+		|| g_gxGpu.scanoutUniformDisplayStartWord != state.displayStartWord
+		|| g_gxGpu.scanoutUniformHorizontalDisplayRangeWord != state.horizontalDisplayRangeWord
+		|| g_gxGpu.scanoutUniformVerticalDisplayRangeWord != state.verticalDisplayRangeWord) {
+		glUniform4f(
+			g_gxGpu.scanoutDisplayRectUniform,
+			static_cast<f32>(gxGpuDisplayStartX(state.displayStartWord)),
+			static_cast<f32>(gxGpuDisplayStartY(state.displayStartWord)),
+			static_cast<f32>(gxGpuHorizontalVisibleColumns(state.horizontalDisplayRangeWord, state.displayModeWord)),
+			static_cast<f32>(gxGpuVerticalVisibleLines(state.verticalDisplayRangeWord, state.displayModeWord)));
+		glUniform1f(g_gxGpu.scanoutDisplayRgb24Uniform, (state.displayModeWord & GX_GPU_DISPLAY_MODE_RGB24_BIT) != 0u ? 1.0f : 0.0f);
 		g_gxGpu.scanoutUniformDisplayModeWord = state.displayModeWord;
-	}
-	if (g_gxGpu.scanoutUniformDisplayStartWord != state.displayStartWord) {
-		glUniform1f(g_gxGpu.scanoutDisplayStartWordUniform, static_cast<f32>(state.displayStartWord));
 		g_gxGpu.scanoutUniformDisplayStartWord = state.displayStartWord;
-	}
-	if (g_gxGpu.scanoutUniformHorizontalDisplayRangeWord != state.horizontalDisplayRangeWord) {
-		glUniform1f(g_gxGpu.scanoutHorizontalDisplayRangeUniform, static_cast<f32>(state.horizontalDisplayRangeWord));
 		g_gxGpu.scanoutUniformHorizontalDisplayRangeWord = state.horizontalDisplayRangeWord;
-	}
-	if (g_gxGpu.scanoutUniformVerticalDisplayRangeWord != state.verticalDisplayRangeWord) {
-		glUniform1f(g_gxGpu.scanoutVerticalDisplayRangeUniform, static_cast<f32>(state.verticalDisplayRangeWord));
 		g_gxGpu.scanoutUniformVerticalDisplayRangeWord = state.verticalDisplayRangeWord;
 	}
 	g_gxGpu.backend->setActiveTextureUnit(kGxGpuScanoutTextureUnit);

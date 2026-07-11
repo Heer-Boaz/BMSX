@@ -20,7 +20,11 @@ pariteitsvalidatie en moeten als harde acceptatieblokkades blijven staan.
   TS/C++, WebGPU heeft een native overlay/menu-renderpad en de split-bundle
   headless integratie rendert beide weer. De live WebGPU-browseracceptatie
   blijft uitgesteld en houdt dit punt visueel open.
-- `pietious` is volledig verticaal samengedrukt en de z-ordering is omgekeerd.
+- De verticale `pietious`-compressie is in TS/C++ software, WebGL2, GLES2 en
+  WebGPU hersteld door de geprogrammeerde actieve displayrange over het vaste
+  hostdoel te schalen. Headless en GLES2/llvmpipe bereiken aantoonbaar de
+  onderste hostrijen; live WebGL2/WebGPU-acceptatie blijft uitgesteld. De
+  omgekeerde producer-z-ordering is nog open.
 - De transition- en combat-results-kleuren in `2025` kloppen niet meer: ze zijn
   donkerblauw tot bijna zwart in plaats van de lichtere Persona 3-blauwtint.
 - Ondanks alle optimalisatiewerk zijn de performanceproblemen van de
@@ -52,6 +56,35 @@ Nog te sluiten:
 
 - Terminal, IDE en quick menu tijdens de expliciete browsersessie live tegen
   WebGPU en de WebGL2-fallback uitvoeren.
+
+## GX actieve scanout naar het vaste hostdoel
+
+Status: implementatie afgerond; live WebGL2/WebGPU-presentatie blijft
+uitgesteld.
+
+- De GP1 display-start-, horizontale-range-, verticale-range- en modewoorden
+  blijven raw GPU-registerstate. De centrale gespiegeld TS/C++ renderregels
+  leiden pas aan de backenddatapathgrens de actieve bronrechthoek af.
+- TS/C++ software, WebGL2, GLES2 en WebGPU schalen die actieve rechthoek
+  rechtstreeks over het vaste BMSX-doel. De oude PAL/NTSC-overscancanvaslaag
+  die 192 actieve regels eerst in 256 timingregels plaatste en daarna naar 240
+  hostregels verkleinde, bestaat niet meer.
+- WebGL2/GLES2 decoderen de registerwoorden alleen wanneer een scanoutwoord
+  wijzigt en sturen één afgeleide `vec4` plus de RGB24-latch naar de shader.
+  WebGPU hergebruikt één retained uniformscratchbuffer; er is geen per-frame
+  object-, array- of DTO-allocatie toegevoegd.
+- Gespiegelde softwarevectors bewijzen non-zero display-start, X/Y-VRAM-wrap en
+  dat zowel 192 als 240 actieve regels de laatste hostrij bereiken. De
+  `pietious`-headless gate telt 4.275 actieve pixels in hostrijen 225--239; een
+  GLES2/llvmpipe-run van dezelfde frame-620-timeline telt 4.245.
+
+Nog te sluiten:
+
+- Dezelfde `pietious`-scene tijdens de uitgestelde browsersessie live tegen
+  WebGL2 en WebGPU controleren.
+- Field-aware 480i-scanout is hiermee niet geclaimd. De huidige line-countlatch
+  verdubbelt de actieve range, maar volledige fieldweave/-bobsemantiek blijft
+  onderdeel van latere timing/displaypariteit.
 
 ## WebGPU/browser-presentatie live bewijzen
 

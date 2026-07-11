@@ -5,7 +5,7 @@ This is **not** a stable ABI contract and is **not** more authoritative than the
 live checkout. It is a temporary execution checklist so agents can see the
 current direction, completed slices, known blockers, and next work.
 
-Last refreshed: 2026-07-11
+Last refreshed: 2026-07-12
 Do not duplicate recent commit history here. Use `git log --oneline` for that.
 
 ## Source of truth
@@ -86,6 +86,13 @@ Implemented or partially covered GX-GPU areas include:
 - GP1 display/status register work, DMA direction, display mode bits, info
   command range, PAL/NTSC timing-visible state, and interlaced active-field
   behavior.
+- The programmed active GP1 display range now maps directly over the fixed BMSX
+  host target in TS/C++ software, WebGL2, GLES2, and WebGPU. Raw register words
+  remain device/pass/save-state state; the backends derive the compact scanout
+  rectangle at their datapath boundary without per-frame object allocation.
+  Mirrored vectors cover non-zero start, VRAM wrap, 192- and 240-line ranges;
+  the `pietious` frame-620 gate reaches the bottom rows in TS headless and
+  GLES2/llvmpipe. This does not claim complete field-aware 480i scanout.
 - Texture windows/CLUT-ish paths, texture disable, modulation math, mask/fill
   behavior, oversized primitive culling, and VRAM copy overlap chunking.
 - Raw PSX textured quad polygons are covered in TS/C++ software/headless tests
@@ -267,6 +274,10 @@ and MAME
 - [x] GP1 display-mode register masking and PSX dot-clock display sizing.
 - [x] GPU info command range behavior.
 - [x] Interlaced field drawing behavior in accelerated backends.
+- [x] Scale the programmed active horizontal/vertical display range over the
+  fixed host target in every software and accelerated backend, without cart
+  compensation or a PAL/NTSC overscancanvas. Live WebGL2/WebGPU browser proof
+  remains deferred.
 - [x] Texture disable.
 - [ ] GPUREAD / VRAM-to-CPU command execution and ordering.
   - [x] Fix the device/backend owner, fence, completion, cursor, DMA and
@@ -482,9 +493,9 @@ and MAME
 
 Pick one vertical slice and finish it before committing:
 
-1. **Visible GX migration regressions**: finish live host-UI proof when a real
-   browser is available, then fix the 192-line scanout mapping and producer-side
-   painter ordering without cart compensation.
+1. **Visible GX migration regressions**: fix producer-side painter ordering
+   without cart compensation; finish live host-UI and scanout proof when a real
+   browser is available.
 2. **Accelerated feedback performance**: remove per-primitive framebuffer
    snapshots using the measured full-scene gates above, while preserving raw
    PSX blend/mask/store parity in GLES2, WebGL2 and WebGPU.

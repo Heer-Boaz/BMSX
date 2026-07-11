@@ -1,27 +1,11 @@
 precision highp float;
 
 uniform sampler2D u_vram;
-uniform float u_displayModeWord;
-uniform float u_displayStartWord;
-uniform float u_horizontalDisplayRangeWord;
-uniform float u_verticalDisplayRangeWord;
+uniform vec4 u_displayRect;
+uniform float u_displayRgb24;
 varying vec2 v_texcoord;
 
 const vec2 VRAM_SIZE = vec2(1024.0, 512.0);
-const float DISPLAY_MODE_RGB24_BIT = 16.0;
-const float DISPLAY_MODE_PAL_BIT = 8.0;
-const float DISPLAY_MODE_VERTICAL_RESOLUTION_BIT = 4.0;
-const float DISPLAY_MODE_VERTICAL_INTERLACE_BIT = 32.0;
-const float DISPLAY_MODE_HORIZONTAL_RESOLUTION_2_BIT = 64.0;
-const float DOT_CLOCK_DIVIDER_256 = 10.0;
-const float DOT_CLOCK_DIVIDER_320 = 8.0;
-const float DOT_CLOCK_DIVIDER_512 = 5.0;
-const float DOT_CLOCK_DIVIDER_640 = 4.0;
-const float DOT_CLOCK_DIVIDER_368 = 7.0;
-const float NTSC_OVERSCAN_LEFT = 608.0;
-const float PAL_OVERSCAN_LEFT = 638.0;
-const float NTSC_OVERSCAN_TOP = 16.0;
-const float PAL_OVERSCAN_TOP = 35.0;
 
 float rawWordFromPixel(vec4 rawPixel) {
 	float lowByte = floor(rawPixel.r * 255.0 + 0.5);
@@ -35,82 +19,6 @@ float rawWordAtLogical(float x, float y) {
 	return rawWordFromPixel(texture2D(u_vram, texcoord));
 }
 
-float truncateToInteger(float value) {
-	if (value < 0.0) {
-		return -floor(-value);
-	}
-	return floor(value);
-}
-
-bool displayModeBit(float bitValue) {
-	return mod(floor(u_displayModeWord / bitValue), 2.0) > 0.5;
-}
-
-float displayStartX() {
-	return mod(u_displayStartWord, 1024.0);
-}
-
-float displayStartY() {
-	return mod(floor(u_displayStartWord / 1024.0), 512.0);
-}
-
-float displayScreenWidth() {
-	float horizontalResolution1 = mod(floor(u_displayModeWord), 4.0);
-	bool horizontalResolution2 = displayModeBit(DISPLAY_MODE_HORIZONTAL_RESOLUTION_2_BIT);
-	if (horizontalResolution1 < 0.5) {
-		if (horizontalResolution2) {
-			return 368.0;
-		}
-		return 256.0;
-	}
-	if (horizontalResolution1 < 1.5) {
-		if (horizontalResolution2) {
-			return 384.0;
-		}
-		return 320.0;
-	}
-	if (horizontalResolution1 < 2.5) {
-		return 512.0;
-	}
-	return 640.0;
-}
-
-float displayDotClockDivider() {
-	if (displayModeBit(DISPLAY_MODE_HORIZONTAL_RESOLUTION_2_BIT)) {
-		return DOT_CLOCK_DIVIDER_368;
-	}
-	float horizontalResolution1 = mod(floor(u_displayModeWord), 4.0);
-	if (horizontalResolution1 < 0.5) {
-		return DOT_CLOCK_DIVIDER_256;
-	}
-	if (horizontalResolution1 < 1.5) {
-		return DOT_CLOCK_DIVIDER_320;
-	}
-	if (horizontalResolution1 < 2.5) {
-		return DOT_CLOCK_DIVIDER_512;
-	}
-	return DOT_CLOCK_DIVIDER_640;
-}
-
-float displayScreenHeight() {
-	bool highVerticalResolution = displayModeBit(DISPLAY_MODE_VERTICAL_RESOLUTION_BIT);
-	if (displayModeBit(DISPLAY_MODE_PAL_BIT)) {
-		if (highVerticalResolution) {
-			return 512.0;
-		}
-		return 256.0;
-	}
-	if (highVerticalResolution) {
-		return 480.0;
-	}
-	return 240.0;
-}
-
-float horizontalVisibleColumns(float horizontalStart, float horizontalEnd, float dotClockDivider) {
-	float columns = truncateToInteger(((horizontalEnd - horizontalStart) / dotClockDivider) + 2.0);
-	return columns - mod(columns, 4.0);
-}
-
 vec3 rgb555ToRgb8(float word) {
 	float lowByte = mod(word, 256.0);
 	float highByte = floor(word / 256.0);
@@ -122,81 +30,30 @@ vec3 rgb555ToRgb8(float word) {
 }
 
 vec3 rgb888AtSourcePixel(float sourceX, float sourceY) {
-	float wordX = displayStartX() + floor(sourceX * 1.5);
-	float outputX = floor(sourceX);
+	float scaledWordX = sourceX * 1.5;
+	float wordX = u_displayRect.x + sign(scaledWordX) * floor(abs(scaledWordX));
 	float word0 = rawWordAtLogical(wordX, sourceY);
 	float word1 = rawWordAtLogical(wordX + 1.0, sourceY);
 	float low0 = mod(word0, 256.0);
 	float high0 = floor(word0 / 256.0);
 	float low1 = mod(word1, 256.0);
 	float high1 = floor(word1 / 256.0);
-	if (mod(outputX, 2.0) < 0.5) {
+	if (mod(sourceX, 2.0) < 0.5) {
 		return vec3(low0, high0, low1);
 	}
 	return vec3(high0, low1, high1);
 }
 
-vec3 displayRgb() {
-	float screenWidth = displayScreenWidth();
-	float screenHeight = displayScreenHeight();
-	float dotClockDivider = displayDotClockDivider();
-	float screenX = floor(v_texcoord.x * screenWidth);
-	float screenY = floor(v_texcoord.y * screenHeight);
-
-	float horizontalStart = mod(u_horizontalDisplayRangeWord, 4096.0);
-	float horizontalEnd = mod(floor(u_horizontalDisplayRangeWord / 4096.0), 4096.0);
-	float verticalStart = mod(u_verticalDisplayRangeWord, 1024.0);
-	float verticalEnd = mod(floor(u_verticalDisplayRangeWord / 1024.0), 1024.0);
-
-	float overscanLeft = NTSC_OVERSCAN_LEFT;
-	float overscanTop = NTSC_OVERSCAN_TOP;
-	if (displayModeBit(DISPLAY_MODE_PAL_BIT)) {
-		overscanLeft = PAL_OVERSCAN_LEFT;
-		overscanTop = PAL_OVERSCAN_TOP;
-	}
-
-	float originLeft = truncateToInteger((horizontalStart - overscanLeft) / dotClockDivider);
-	float sourceSkipX = 0.0;
-	float columns = horizontalVisibleColumns(horizontalStart, horizontalEnd, dotClockDivider);
-	if (originLeft < 0.0) {
-		sourceSkipX = -originLeft;
-		columns += originLeft;
-		originLeft = 0.0;
-	}
-	float maxColumns = screenWidth - originLeft;
-	if (columns > maxColumns) {
-		columns = maxColumns;
-	}
-
-	float originTop = verticalStart - overscanTop;
-	float sourceSkipY = 0.0;
-	float lines = verticalEnd - verticalStart;
-	if (originTop < 0.0) {
-		sourceSkipY = -originTop;
-		lines += originTop;
-		originTop = 0.0;
-	}
-	if (displayModeBit(DISPLAY_MODE_VERTICAL_INTERLACE_BIT)) {
-		lines *= 2.0;
-	}
-	float maxLines = screenHeight - originTop;
-	if (lines > maxLines) {
-		lines = maxLines;
-	}
-
-	if (screenX < originLeft || screenY < originTop || screenX >= originLeft + columns || screenY >= originTop + lines) {
-		return vec3(0.0, 0.0, 0.0);
-	}
-
-	float sourceX = sourceSkipX + screenX - originLeft;
-	float sourceY = displayStartY() + sourceSkipY + screenY - originTop;
-	if (displayModeBit(DISPLAY_MODE_RGB24_BIT)) {
-		return rgb888AtSourcePixel(sourceX, sourceY);
-	}
-	return rgb555ToRgb8(rawWordAtLogical(displayStartX() + sourceX, sourceY));
-}
-
 void main() {
-	vec3 rgb8 = displayRgb();
+	float scaledX = v_texcoord.x * u_displayRect.z;
+	float scaledY = v_texcoord.y * u_displayRect.w;
+	float sourceX = sign(scaledX) * floor(abs(scaledX));
+	float sourceY = u_displayRect.y + sign(scaledY) * floor(abs(scaledY));
+	vec3 rgb8;
+	if (u_displayRgb24 > 0.5) {
+		rgb8 = rgb888AtSourcePixel(sourceX, sourceY);
+	} else {
+		rgb8 = rgb555ToRgb8(rawWordAtLogical(u_displayRect.x + sourceX, sourceY));
+	}
 	gl_FragColor = vec4(rgb8 / 255.0, 1.0);
 }

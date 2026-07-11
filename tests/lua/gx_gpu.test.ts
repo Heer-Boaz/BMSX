@@ -40,6 +40,9 @@ import {
 	gxGpuHorizontalDisplayRangeEnd,
 	gxGpuHorizontalDisplayRangeStart,
 	gxGpuHorizontalVisibleColumns,
+	gxGpuVerticalDisplayRangeEnd,
+	gxGpuVerticalDisplayRangeStart,
+	gxGpuVerticalVisibleLines,
 	gxGpuDrawModeTextureDisableEnabled,
 	gxGpuDrawingOffsetY,
 	gxGpuFillHeight,
@@ -157,6 +160,7 @@ import { DeviceScheduler } from '../../machine/ts/machine/scheduler/device';
 import { PSX_GPU_DISPLAY_MODE_PAL_WORD } from '../../machine/ts/machine/model_registry';
 import { executeGxGpuSoftwareVramCommands, renderGxGpuSoftwareFrame } from '../../machine/ts/render/backend/software/gx_gpu';
 import { executeGxGpuSoftwareCommands } from '../../machine/ts/render/backend/software/gx_gpu_commands';
+import { scanoutGxGpuSoftwareVram } from '../../machine/ts/render/backend/software/gx_gpu_scanout';
 import { HeadlessGPUBackend } from '../../machine/ts/render/headless/backend';
 import {
 	gxGpuSoftwareTextureModulationChannel5,
@@ -368,6 +372,12 @@ test('GX-GPU decodes PSX GP0 signed vertex and rectangle size words', () => {
 	assert.equal(gxGpuHorizontalVisibleColumns(0x00c60260, 0x40), 364);
 	assert.equal(gxGpuHorizontalVisibleColumns(0x00c70260, 0x40), 368);
 	assert.equal(gxGpuHorizontalVisibleColumns(0x00ce0260, 0x41), 384);
+	assert.equal(gxGpuVerticalDisplayRangeStart((227 << 10) | 35), 35);
+	assert.equal(gxGpuVerticalDisplayRangeEnd((227 << 10) | 35), 227);
+	assert.equal(gxGpuVerticalVisibleLines((227 << 10) | 35, 0x08), 192);
+	assert.equal(gxGpuVerticalVisibleLines((275 << 10) | 35, 0x08), 240);
+	assert.equal(gxGpuVerticalVisibleLines((275 << 10) | 35, 0x28), 480);
+	assert.equal(gxGpuVerticalVisibleLines((35 << 10) | 227, 0x08), -192);
 	assert.equal(gxGpuDrawingOffsetY(0x003ff800), -1);
 
 	assert.equal(gxGpuCommandRectangleWidth(GX_GPU_GP0_RECTANGLE_FIRST, 0x012c03ff), 1023);
@@ -1712,6 +1722,40 @@ test('GX-GPU software scanout consumes CPU upload, VRAM copy, and fill commands'
 	assertRgbaPixel(pixels, 0, 1, 0, 0, 255);
 	assertRgbaPixel(pixels, 15, 1, 0, 0, 255);
 	assertRgbaPixel(pixels, 16, 1, 0, 0, 0);
+});
+
+test('GX-GPU software scanout scales the programmed 256x192 active range over the fixed host target', () => {
+	const commandBuffer = new GxGpuCommandBuffer();
+	const pixels = new Uint8Array(240 * 4);
+	const state = {
+		width: 1,
+		height: 240,
+		commandBuffer,
+		readbackPort: commandBuffer.readback,
+		statusWord: 0,
+		displayModeWord: PSX_GPU_DISPLAY_MODE_PAL_WORD,
+		displayStartWord: 900 | (400 << 10),
+		horizontalDisplayRangeWord: (((638 + 256 * 10) << 12) | 638) >>> 0,
+		verticalDisplayRangeWord: (((35 + 192) << 10) | 35) >>> 0,
+		vramSnapshotBytes: GX_GPU_SOFTWARE_TEST_VRAM_SNAPSHOT,
+		vramSnapshotSerial: 0,
+	};
+	gxGpuSoftwareVram.fill(0);
+	gxGpuSoftwareVram[gxGpuSoftwareVramIndex(4, 400)] = 0x001f;
+	gxGpuSoftwareVram[gxGpuSoftwareVramIndex(4, 496)] = 0x03e0;
+	gxGpuSoftwareVram[gxGpuSoftwareVramIndex(4, 79)] = 0x7c00;
+	scanoutGxGpuSoftwareVram(state, pixels, 1, 240);
+
+	assert.equal(pixels[0], 255);
+	assert.equal(pixels[120 * 4 + 1], 255);
+	assert.equal(pixels[239 * 4 + 2], 255);
+
+	state.displayStartWord = 0;
+	state.verticalDisplayRangeWord = (((35 + 240) << 10) | 35) >>> 0;
+	gxGpuSoftwareVram.fill(0);
+	gxGpuSoftwareVram[gxGpuSoftwareVramIndex(128, 239)] = 0x001f;
+	scanoutGxGpuSoftwareVram(state, pixels, 1, 240);
+	assert.equal(pixels[239 * 4], 255);
 });
 
 test('GX-GPU software backend retires consumed command logs without clearing VRAM', () => {

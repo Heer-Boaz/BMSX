@@ -26,6 +26,8 @@ export const GX_GPU_DOT_CLOCK_DIVIDER_320 = 8;
 export const GX_GPU_DOT_CLOCK_DIVIDER_512 = 5;
 export const GX_GPU_DOT_CLOCK_DIVIDER_640 = 4;
 export const GX_GPU_DOT_CLOCK_DIVIDER_368 = 7;
+export const GX_GPU_DISPLAY_MODE_RGB24_BIT = 0x10;
+export const GX_GPU_DISPLAY_MODE_VERTICAL_INTERLACE_BIT = 0x20;
 
 export function gxGpuSigned11(value: number): number {
 	const raw = value & 0x7ff;
@@ -129,6 +131,19 @@ export function gxGpuHorizontalDisplayRangeEnd(horizontalDisplayRangeWord: numbe
 export function gxGpuHorizontalVisibleColumns(horizontalDisplayRangeWord: number, displayModeWord: number): number {
 	const rangeCycles = gxGpuHorizontalDisplayRangeEnd(horizontalDisplayRangeWord) - gxGpuHorizontalDisplayRangeStart(horizontalDisplayRangeWord);
 	return (((rangeCycles / gxGpuDisplayModeDotClockDivider(displayModeWord)) + 2) | 0) & ~0x03;
+}
+
+export function gxGpuVerticalDisplayRangeStart(verticalDisplayRangeWord: number): number {
+	return verticalDisplayRangeWord & 0x3ff;
+}
+
+export function gxGpuVerticalDisplayRangeEnd(verticalDisplayRangeWord: number): number {
+	return (verticalDisplayRangeWord >>> 10) & 0x3ff;
+}
+
+export function gxGpuVerticalVisibleLines(verticalDisplayRangeWord: number, displayModeWord: number): number {
+	const lines = gxGpuVerticalDisplayRangeEnd(verticalDisplayRangeWord) - gxGpuVerticalDisplayRangeStart(verticalDisplayRangeWord);
+	return (displayModeWord & GX_GPU_DISPLAY_MODE_VERTICAL_INTERLACE_BIT) !== 0 ? lines * 2 : lines;
 }
 
 export function gxGpuDrawingOffsetY(word: number): number {

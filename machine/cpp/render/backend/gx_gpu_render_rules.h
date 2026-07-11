@@ -22,6 +22,8 @@ constexpr u32 GX_GPU_DOT_CLOCK_DIVIDER_320 = 8u;
 constexpr u32 GX_GPU_DOT_CLOCK_DIVIDER_512 = 5u;
 constexpr u32 GX_GPU_DOT_CLOCK_DIVIDER_640 = 4u;
 constexpr u32 GX_GPU_DOT_CLOCK_DIVIDER_368 = 7u;
+constexpr u32 GX_GPU_DISPLAY_MODE_RGB24_BIT = 0x10u;
+constexpr u32 GX_GPU_DISPLAY_MODE_VERTICAL_INTERLACE_BIT = 0x20u;
 
 inline i32 gxGpuSigned11(u32 value) {
 	const i32 raw = static_cast<i32>(value & 0x7ffu);
@@ -116,6 +118,19 @@ inline u32 gxGpuHorizontalDisplayRangeEnd(u32 horizontalDisplayRangeWord) {
 inline i32 gxGpuHorizontalVisibleColumns(u32 horizontalDisplayRangeWord, u32 displayModeWord) {
 	const i32 rangeCycles = static_cast<i32>(gxGpuHorizontalDisplayRangeEnd(horizontalDisplayRangeWord)) - static_cast<i32>(gxGpuHorizontalDisplayRangeStart(horizontalDisplayRangeWord));
 	return (((rangeCycles / static_cast<i32>(gxGpuDisplayModeDotClockDivider(displayModeWord))) + 2) & ~0x03);
+}
+
+inline u32 gxGpuVerticalDisplayRangeStart(u32 verticalDisplayRangeWord) {
+	return verticalDisplayRangeWord & 0x3ffu;
+}
+
+inline u32 gxGpuVerticalDisplayRangeEnd(u32 verticalDisplayRangeWord) {
+	return (verticalDisplayRangeWord >> 10u) & 0x3ffu;
+}
+
+inline i32 gxGpuVerticalVisibleLines(u32 verticalDisplayRangeWord, u32 displayModeWord) {
+	const i32 lines = static_cast<i32>(gxGpuVerticalDisplayRangeEnd(verticalDisplayRangeWord)) - static_cast<i32>(gxGpuVerticalDisplayRangeStart(verticalDisplayRangeWord));
+	return (displayModeWord & GX_GPU_DISPLAY_MODE_VERTICAL_INTERLACE_BIT) != 0u ? lines * 2 : lines;
 }
 
 inline i32 gxGpuDrawingOffsetY(u32 word) {

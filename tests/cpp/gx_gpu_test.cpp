@@ -70,6 +70,12 @@ void testGp0RawDrawWordDecoders() {
 	require(bmsx::gxGpuHorizontalVisibleColumns(0x00c60260u, 0x40u) == 364, "GX-GPU horizontal columns 368 dot-clock default range");
 	require(bmsx::gxGpuHorizontalVisibleColumns(0x00c70260u, 0x40u) == 368, "GX-GPU horizontal columns 368 display mode");
 	require(bmsx::gxGpuHorizontalVisibleColumns(0x00ce0260u, 0x41u) == 384, "GX-GPU horizontal columns 384 display mode");
+	require(bmsx::gxGpuVerticalDisplayRangeStart((227u << 10u) | 35u) == 35u, "GX-GPU vertical display start decode");
+	require(bmsx::gxGpuVerticalDisplayRangeEnd((227u << 10u) | 35u) == 227u, "GX-GPU vertical display end decode");
+	require(bmsx::gxGpuVerticalVisibleLines((227u << 10u) | 35u, 0x08u) == 192, "GX-GPU progressive 192-line display range");
+	require(bmsx::gxGpuVerticalVisibleLines((275u << 10u) | 35u, 0x08u) == 240, "GX-GPU progressive 240-line display range");
+	require(bmsx::gxGpuVerticalVisibleLines((275u << 10u) | 35u, 0x28u) == 480, "GX-GPU interlaced display range line count");
+	require(bmsx::gxGpuVerticalVisibleLines((35u << 10u) | 227u, 0x08u) == -192, "GX-GPU inverted vertical range remains signed datapath state");
 	require(bmsx::gxGpuDrawingOffsetY(0x003ff800u) == -1, "GX-GPU drawing offset y decode");
 
 	require(bmsx::gxGpuCommandRectangleWidth(bmsx::GX_GPU_GP0_RECTANGLE_FIRST, 0x012c03ffu) == 1023u, "GX-GPU variable rectangle width");
@@ -1819,6 +1825,34 @@ void testSoftwareScanoutConsumesTransfersAndFill() {
 	requireArgbPixel(frame.framebuffer, 16u, 1u, 0xff000000u, "GX-GPU software scanout fill stops at rounded edge");
 }
 
+void testSoftwareScanoutScalesProgrammed256x192ActiveRange() {
+	std::array<uint32_t, 240u> framebuffer{};
+	bmsx::SoftwareBackend backend(framebuffer.data(), 1, 240, static_cast<int32_t>(sizeof(uint32_t)));
+	bmsx::bindGxGpuSoftwareScanoutBackend(backend);
+	bmsx::GxGpuPipelineState state{};
+	state.statusWord = 0u;
+	state.displayModeWord = bmsx::PSX_GPU_DISPLAY_MODE_PAL_WORD;
+	state.displayStartWord = 900u | (400u << 10u);
+	state.horizontalDisplayRangeWord = (((638u + 256u * 10u) << 12u) | 638u);
+	state.verticalDisplayRangeWord = (((35u + 192u) << 10u) | 35u);
+	bmsx::g_gxGpuSoftwareVram.fill(0u);
+	bmsx::g_gxGpuSoftwareVram[bmsx::gxGpuSoftwareVramIndex(4, 400)] = 0x001fu;
+	bmsx::g_gxGpuSoftwareVram[bmsx::gxGpuSoftwareVramIndex(4, 496)] = 0x03e0u;
+	bmsx::g_gxGpuSoftwareVram[bmsx::gxGpuSoftwareVramIndex(4, 79)] = 0x7c00u;
+	bmsx::scanoutGxGpuSoftwareVram(state);
+
+	require(framebuffer[0] == 0xffff0000u, "GX-GPU 192-line active scanout maps the first source line");
+	require(framebuffer[120] == 0xff00ff00u, "GX-GPU 192-line active scanout maps the center source line");
+	require(framebuffer[239] == 0xff0000ffu, "GX-GPU 192-line active scanout reaches the last host row");
+
+	state.displayStartWord = 0u;
+	state.verticalDisplayRangeWord = (((35u + 240u) << 10u) | 35u);
+	bmsx::g_gxGpuSoftwareVram.fill(0u);
+	bmsx::g_gxGpuSoftwareVram[bmsx::gxGpuSoftwareVramIndex(128, 239)] = 0x001fu;
+	bmsx::scanoutGxGpuSoftwareVram(state);
+	require(framebuffer[239] == 0xffff0000u, "GX-GPU 240-line active scanout reaches the last host row");
+}
+
 void testSoftwareBackendRetiresCommandLogWithoutClearingVram() {
 	bmsx::GxGpuCommandBuffer commandBuffer;
 	commandBuffer.reset();
@@ -2384,6 +2418,7 @@ int main() {
 	testSoftwareDrawingAreaOffsetClippingAndRectangleCoordinateWrap();
 	testSoftwareFillBypassesDrawingAreaAndMaskBitDrawingState();
 	testSoftwareScanoutConsumesTransfersAndFill();
+	testSoftwareScanoutScalesProgrammed256x192ActiveRange();
 	testSoftwareBackendRetiresCommandLogWithoutClearingVram();
 	testCommandBufferRestorePublishesWithoutClearingVramRevision();
 	testCommandBufferRetireCompactsPresentedCommandStream();
