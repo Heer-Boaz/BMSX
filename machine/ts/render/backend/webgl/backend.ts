@@ -487,6 +487,7 @@ export class WebGLBackend implements GPUBackend {
 			this.accountUpload('vertex', data.byteLength);
 			this.bufferSizes.set(buf, data.byteLength);
 			gl.bindBuffer(gl.ARRAY_BUFFER, null);
+			this.currentArrayBuffer = null;
 			return buf;
 	}
 	updateVertexBuffer(buf: WebGLBuffer, data: ArrayBufferView, dstOffset = 0, sourceOffset = 0, elementCount?: number): void {
@@ -506,6 +507,7 @@ export class WebGLBackend implements GPUBackend {
 		gl.bufferSubData(gl.ARRAY_BUFFER, dstOffset, data, sourceOffset, uploadElements);
 		this.accountUpload('vertex', uploadBytes);
 		gl.bindBuffer(gl.ARRAY_BUFFER, null);
+		this.currentArrayBuffer = null;
 	}
 	// moved below with cached variants
 

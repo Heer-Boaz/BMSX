@@ -1,432 +1,173 @@
 import type { RenderPassLibrary } from '../../backend/pass/library';
 import type {
 	Host2DPipelineState,
+	HostMenuPipelineState,
 	HostOverlayPipelineState,
 	PassEncoder,
 	RenderPassDesc,
 	RenderPassStateRegistry,
 } from '../../backend/backend';
 import { FRAME_UNIFORM_BINDING, updateAndBindFrameUniforms } from '../../backend/frame_uniforms';
-import { RGBA8_LINEAR_TEXTURE_PARAMS, RGBA8_SRGB_TEXTURE_PARAMS } from '../../backend/texture_params';
+import { RGBA8_SRGB_TEXTURE_PARAMS } from '../../backend/texture_params';
 import type { WebGLBackend } from '../../backend/webgl/backend';
 import {
-	bindWebGLInstancedQuadVertexArray,
-	createWebGLInstancedQuadRuntime,
-	ensureWebGLInstanceBufferCapacity,
-	flushWebGLInstanceBatch,
-	type WebGLInstancedFloatAttribute,
-	type WebGLSpriteQuadUniforms,
-} from '../../backend/webgl/instanced_buffers';
-import { ZCOORD_MAX } from '../../backend/webgl/constants';
-import type {
-	GlyphRenderSubmission,
-	HostImageRenderSubmission,
-	Host2DKind,
-	Host2DRef,
-	Host2DSubmission,
-	PolyRenderSubmission,
-	RectRenderSubmission,
-	color,
-} from '../../shared/submissions';
-import { RectRenderKind } from '../../shared/submissions';
+	HOST_OVERLAY_INSTANCE_FLOAT_BYTES,
+	HOST_OVERLAY_INSTANCE_FLOATS,
+	HostOverlayQuadStream,
+} from '../quad_stream';
+import { hasPendingHostMenuFrame, hasPendingOverlayFrame } from '../overlay_queue';
+import { createHostMenuState, createHostOverlayState, writeHostMenuState, writeHostOverlayState } from '../pipeline';
 import {
 	HOST_SYSTEM_ATLAS_HEIGHT,
 	HOST_SYSTEM_ATLAS_WIDTH,
-	hostSystemAtlasImage,
 	hostSystemAtlasPixels,
 } from '../../../rompack/host_system_atlas';
-import { forEachBatchBlitGlyph } from '../../shared/glyph_runs';
-import { hasPendingOverlayFrame } from '../overlay_queue';
-import { buildHostMenuState, buildHostOverlayState } from '../pipeline';
-import { hostOverlayMenu } from '../../../core/host_overlay_menu';
-import vertexShaderCode from '../../2d/shaders/2d.vert.glsl';
-import fragmentShaderCode from '../shaders/host_overlay.frag.glsl';
+import vertexShaderCode from './shaders/host_overlay.vert.glsl';
+import fragmentShaderCode from './shaders/host_overlay.frag.glsl';
 
-type HostOverlayImageSource = {
-	u0: number;
-	v0: number;
-	u1: number;
-	v1: number;
-	width: number;
-	height: number;
-};
-
-type BoundTextureState = WebGLTexture | null;
-export type Host2DBoundTextureState = BoundTextureState;
-
-export type HostOverlayRuntime = {
+type HostOverlayRuntime = {
 	gl: WebGL2RenderingContext;
 	program: WebGLProgram;
 	vao: WebGLVertexArrayObject;
 	cornerBuffer: WebGLBuffer;
 	instanceFloatBuffer: WebGLBuffer;
-	instanceSlotBuffer: WebGLBuffer;
-	floatData: Float32Array;
-	slotData: Uint8Array;
-	capacity: number;
-	whiteTexture: WebGLTexture;
+	instanceTextureKindBuffer: WebGLBuffer;
 	hostAtlasTexture: WebGLTexture;
-	imageCache: Map<string, HostOverlayImageSource>;
-	uniforms: WebGLSpriteQuadUniforms;
+	stream: HostOverlayQuadStream;
+	instanceCapacity: number;
 };
 
-const INSTANCE_FLOATS = 15;
-const INSTANCE_STRIDE_BYTES = INSTANCE_FLOATS * 4;
-const INITIAL_BATCH_CAPACITY = 256;
-const SOLID_TEXCOORD_0 = 0;
-const SOLID_TEXCOORD_1 = 1;
 const HOST_OVERLAY_TEXTURE_UNIT = 0;
-const HOST_OVERLAY_SLOT_ID = 0;
 const HOST_OVERLAY_DRAW_PASS: PassEncoder = { fbo: null, desc: { label: 'host_overlay' } as RenderPassDesc };
-const INSTANCE_FLOAT_ATTRIBUTES: readonly WebGLInstancedFloatAttribute[] = [
-	['i_origin', 2, 0],
-	['i_axis_x', 2, 2 * 4],
-	['i_axis_y', 2, 4 * 4],
-	['i_uv0', 2, 6 * 4],
-	['i_uv1', 2, 8 * 4],
-	['i_color', 4, 11 * 4],
-];
+const UNIT_QUAD_CORNERS = new Float32Array([
+	0, 0,
+	0, 1,
+	1, 0,
+	1, 0,
+	0, 1,
+	1, 1,
+]);
 
 let runtime: HostOverlayRuntime | null = null;
 
+function bindFloatAttribute(gl: WebGL2RenderingContext, program: WebGLProgram, name: string, size: number, offset: number): void {
+	const location = gl.getAttribLocation(program, name);
+	gl.enableVertexAttribArray(location);
+	gl.vertexAttribPointer(location, size, gl.FLOAT, false, HOST_OVERLAY_INSTANCE_FLOAT_BYTES, offset);
+	gl.vertexAttribDivisor(location, 1);
+}
+
 function createRuntime(backend: WebGLBackend, program: WebGLProgram): HostOverlayRuntime {
 	const gl = backend.gl as WebGL2RenderingContext;
+	const stream = new HostOverlayQuadStream();
 	const vao = backend.createVertexArray() as WebGLVertexArrayObject;
-	const quad = createWebGLInstancedQuadRuntime(backend, gl, program, INITIAL_BATCH_CAPACITY, INSTANCE_FLOATS);
-	const whiteTexture = backend.createSolidTexture2D(1, 1, 0xffffffff, RGBA8_LINEAR_TEXTURE_PARAMS) as WebGLTexture;
+	const cornerBuffer = backend.createVertexBuffer(UNIT_QUAD_CORNERS, 'static') as WebGLBuffer;
+	const instanceFloatBuffer = backend.createVertexBuffer(stream.floatData, 'dynamic') as WebGLBuffer;
+	const instanceTextureKindBuffer = backend.createVertexBuffer(stream.textureKinds, 'dynamic') as WebGLBuffer;
 	const hostAtlasTexture = backend.createTexture(hostSystemAtlasPixels(), HOST_SYSTEM_ATLAS_WIDTH, HOST_SYSTEM_ATLAS_HEIGHT, RGBA8_SRGB_TEXTURE_PARAMS) as WebGLTexture;
-	bindWebGLInstancedQuadVertexArray(backend, vao, program, quad, INSTANCE_STRIDE_BYTES, INSTANCE_FLOAT_ATTRIBUTES);
+
+	backend.bindVertexArray(vao);
+	backend.bindArrayBuffer(cornerBuffer);
+	const cornerLocation = gl.getAttribLocation(program, 'a_corner');
+	gl.enableVertexAttribArray(cornerLocation);
+	gl.vertexAttribPointer(cornerLocation, 2, gl.FLOAT, false, 0, 0);
+	backend.bindArrayBuffer(instanceFloatBuffer);
+	bindFloatAttribute(gl, program, 'i_origin', 2, 0);
+	bindFloatAttribute(gl, program, 'i_axis_x', 2, 2 * Float32Array.BYTES_PER_ELEMENT);
+	bindFloatAttribute(gl, program, 'i_axis_y', 2, 4 * Float32Array.BYTES_PER_ELEMENT);
+	bindFloatAttribute(gl, program, 'i_uv0', 2, 6 * Float32Array.BYTES_PER_ELEMENT);
+	bindFloatAttribute(gl, program, 'i_uv1', 2, 8 * Float32Array.BYTES_PER_ELEMENT);
+	bindFloatAttribute(gl, program, 'i_color', 4, 10 * Float32Array.BYTES_PER_ELEMENT);
+	backend.bindArrayBuffer(instanceTextureKindBuffer);
+	const textureKindLocation = gl.getAttribLocation(program, 'i_texture_kind');
+	gl.enableVertexAttribArray(textureKindLocation);
+	gl.vertexAttribIPointer(textureKindLocation, 1, gl.UNSIGNED_INT, Uint32Array.BYTES_PER_ELEMENT, 0);
+	gl.vertexAttribDivisor(textureKindLocation, 1);
+	backend.bindVertexArray(null);
+	backend.bindArrayBuffer(null);
+	gl.useProgram(program);
+	gl.uniform1i(gl.getUniformLocation(program, 'u_texture0'), HOST_OVERLAY_TEXTURE_UNIT);
+
 	return {
 		gl,
 		program,
 		vao,
-		cornerBuffer: quad.cornerBuffer,
-		uniforms: quad.uniforms,
-		instanceFloatBuffer: quad.instanceFloatBuffer,
-		instanceSlotBuffer: quad.instanceSlotBuffer,
-		floatData: quad.floatData,
-		slotData: quad.slotData,
-		capacity: quad.capacity,
-		whiteTexture,
+		cornerBuffer,
+		instanceFloatBuffer,
+		instanceTextureKindBuffer,
 		hostAtlasTexture,
-		imageCache: new Map<string, HostOverlayImageSource>(),
+		stream,
+		instanceCapacity: stream.capacity,
 	};
 }
 
-export function destroyHostOverlayRuntime(runtimeToDestroy: HostOverlayRuntime): void {
+function destroyRuntime(runtimeToDestroy: HostOverlayRuntime): void {
 	const gl = runtimeToDestroy.gl;
 	gl.deleteBuffer(runtimeToDestroy.cornerBuffer);
 	gl.deleteBuffer(runtimeToDestroy.instanceFloatBuffer);
-	gl.deleteBuffer(runtimeToDestroy.instanceSlotBuffer);
+	gl.deleteBuffer(runtimeToDestroy.instanceTextureKindBuffer);
 	gl.deleteVertexArray(runtimeToDestroy.vao);
-	gl.deleteTexture(runtimeToDestroy.whiteTexture);
 	gl.deleteTexture(runtimeToDestroy.hostAtlasTexture);
 }
 
-function bootstrapRuntime(backend: WebGLBackend): HostOverlayRuntime {
+function bootstrapRuntime(backend: WebGLBackend): void {
 	const gl = backend.gl as WebGL2RenderingContext;
-	const program = gl.getParameter(gl.CURRENT_PROGRAM) as WebGLProgram;
 	if (runtime !== null) {
-		destroyHostOverlayRuntime(runtime);
+		destroyRuntime(runtime);
 	}
-	runtime = createRuntime(backend, program);
-	return runtime;
-}
-
-export function createHostOverlayRuntime(backend: WebGLBackend): HostOverlayRuntime {
-	const gl = backend.gl as WebGL2RenderingContext;
-	const program = gl.getParameter(gl.CURRENT_PROGRAM) as WebGLProgram;
-	return createRuntime(backend, program);
-}
-
-function writeQuad(state: HostOverlayRuntime, index: number, originX: number, originY: number, axisXX: number, axisXY: number, axisYX: number, axisYY: number, u0: number, v0: number, u1: number, v1: number, z: number, colorValue: color): void {
-	const base = index * INSTANCE_FLOATS;
-	const data = state.floatData;
-	data[base + 0] = originX;
-	data[base + 1] = originY;
-	data[base + 2] = axisXX;
-	data[base + 3] = axisXY;
-	data[base + 4] = axisYX;
-	data[base + 5] = axisYY;
-	data[base + 6] = u0;
-	data[base + 7] = v0;
-	data[base + 8] = u1;
-	data[base + 9] = v1;
-	data[base + 10] = 1 - z / ZCOORD_MAX;
-	data[base + 11] = ((colorValue >>> 16) & 0xff) / 255;
-	data[base + 12] = ((colorValue >>> 8) & 0xff) / 255;
-	data[base + 13] = (colorValue & 0xff) / 255;
-	data[base + 14] = ((colorValue >>> 24) & 0xff) / 255;
-	state.slotData[index] = HOST_OVERLAY_SLOT_ID;
-}
-
-function resolveImageSource(cache: Map<string, HostOverlayImageSource>, imgid: string): HostOverlayImageSource {
-	const cached = cache.get(imgid);
-	if (cached) {
-		return cached;
-	}
-	const hostImage = hostSystemAtlasImage(imgid);
-	const source: HostOverlayImageSource = {
-		u0: hostImage.u / HOST_SYSTEM_ATLAS_WIDTH,
-		v0: hostImage.v / HOST_SYSTEM_ATLAS_HEIGHT,
-		u1: (hostImage.u + hostImage.w) / HOST_SYSTEM_ATLAS_WIDTH,
-		v1: (hostImage.v + hostImage.h) / HOST_SYSTEM_ATLAS_HEIGHT,
-		width: hostImage.width,
-		height: hostImage.height,
-	};
-	cache.set(imgid, source);
-	return source;
-}
-
-function bindHostTexture(backend: WebGLBackend, texture: WebGLTexture, boundTextures: BoundTextureState): BoundTextureState {
-	if (boundTextures === texture) {
-		return boundTextures;
-	}
-	backend.setActiveTexture(HOST_OVERLAY_TEXTURE_UNIT);
-	backend.bindTexture2D(texture);
-	return texture;
-}
-
-function drawHostImage(backend: WebGLBackend, state: HostOverlayRuntime, cache: Map<string, HostOverlayImageSource>, imgid: string, x: number, y: number, z: number, scaleX: number, scaleY: number, flipH: boolean, flipV: boolean, colorValue: color, boundTextures: BoundTextureState): BoundTextureState {
-	const source = resolveImageSource(cache, imgid);
-	const nextBoundTextures = bindHostTexture(backend, state.hostAtlasTexture, boundTextures);
-	let { u0, v0, u1, v1 } = source;
-	if (flipH) {
-		const swap = u0;
-		u0 = u1;
-		u1 = swap;
-	}
-	if (flipV) {
-		const swap = v0;
-		v0 = v1;
-		v1 = swap;
-	}
-	const width = source.width * scaleX;
-	const height = source.height * scaleY;
-	if (width === 0 || height === 0) {
-		return nextBoundTextures;
-	}
-	writeQuad(
-		state,
-		0,
-		x,
-		y,
-		width,
-		0,
-		0,
-		height,
-		u0,
-		v0,
-		u1,
-		v1,
-		z,
-		colorValue,
-	);
-	flushWebGLInstanceBatch(backend, HOST_OVERLAY_DRAW_PASS, state, 1, INSTANCE_FLOATS);
-	return nextBoundTextures;
-}
-
-function pushFillRect(state: HostOverlayRuntime, index: number, leftValue: number, topValue: number, rightValue: number, bottomValue: number, z: number, colorValue: color): number {
-	let left = leftValue;
-	let top = topValue;
-	let right = rightValue;
-	let bottom = bottomValue;
-	if (right < left) {
-		const swap = left;
-		left = right;
-		right = swap;
-	}
-	if (bottom < top) {
-		const swap = top;
-		top = bottom;
-		bottom = swap;
-	}
-	const width = right - left;
-	const height = bottom - top;
-	if (width === 0 || height === 0) {
-		return 0;
-	}
-	writeQuad(state, index, left, top, width, 0, 0, height, SOLID_TEXCOORD_0, SOLID_TEXCOORD_0, SOLID_TEXCOORD_1, SOLID_TEXCOORD_1, z, colorValue);
-	return 1;
-}
-
-function drawRectCommand(backend: WebGLBackend, state: HostOverlayRuntime, command: RectRenderSubmission, boundTextures: BoundTextureState): BoundTextureState {
-	const nextBoundTextures = bindHostTexture(backend, state.whiteTexture, boundTextures);
-	if (command.kind === RectRenderKind.Fill) {
-		const written = pushFillRect(state, 0, command.area.left, command.area.top, command.area.right, command.area.bottom, command.area.z, command.color);
-		if (written !== 0) {
-			flushWebGLInstanceBatch(backend, HOST_OVERLAY_DRAW_PASS, state, written, INSTANCE_FLOATS);
-		}
-		return nextBoundTextures;
-	}
-	let count = 0;
-	count += pushFillRect(state, count, command.area.left, command.area.top, command.area.right, command.area.top + 1, command.area.z, command.color);
-	count += pushFillRect(state, count, command.area.left, command.area.bottom - 1, command.area.right, command.area.bottom, command.area.z, command.color);
-	count += pushFillRect(state, count, command.area.left, command.area.top, command.area.left + 1, command.area.bottom, command.area.z, command.color);
-	count += pushFillRect(state, count, command.area.right - 1, command.area.top, command.area.right, command.area.bottom, command.area.z, command.color);
-	if (count !== 0) {
-		flushWebGLInstanceBatch(backend, HOST_OVERLAY_DRAW_PASS, state, count, INSTANCE_FLOATS);
-	}
-	return nextBoundTextures;
-}
-
-function pushLine(state: HostOverlayRuntime, index: number, x0: number, y0: number, x1: number, y1: number, z: number, colorValue: color, thickness: number): number {
-	const dx = x1 - x0;
-	const dy = y1 - y0;
-	if (dx === 0 && dy === 0) {
-		return pushFillRect(state, index, x0, y0, x0 + thickness, y0 + thickness, z, colorValue);
-	}
-	const length = Math.sqrt(dx * dx + dy * dy);
-	const half = thickness * 0.5;
-	const normalX = -dy / length;
-	const normalY = dx / length;
-	writeQuad(
-		state,
-		index,
-		x0 - normalX * half,
-		y0 - normalY * half,
-		dx,
-		dy,
-		normalX * thickness,
-		normalY * thickness,
-		SOLID_TEXCOORD_0,
-		SOLID_TEXCOORD_0,
-		SOLID_TEXCOORD_1,
-		SOLID_TEXCOORD_1,
-		z,
-		colorValue,
-	);
-	return 1;
-}
-
-function drawPolyCommand(backend: WebGLBackend, state: HostOverlayRuntime, command: PolyRenderSubmission, boundTextures: BoundTextureState): BoundTextureState {
-	const nextBoundTextures = bindHostTexture(backend, state.whiteTexture, boundTextures);
-	let count = 0;
-	const points = command.points;
-	for (let index = 0; index + 3 < points.length; index += 2) {
-		ensureWebGLInstanceBufferCapacity(backend, state, count + 1, INSTANCE_FLOATS);
-		count += pushLine(state, count, points[index], points[index + 1], points[index + 2], points[index + 3], command.z, command.color, command.thickness);
-	}
-	if (count !== 0) {
-		flushWebGLInstanceBatch(backend, HOST_OVERLAY_DRAW_PASS, state, count, INSTANCE_FLOATS);
-	}
-	return nextBoundTextures;
-}
-
-function drawBatchBlitBackgrounds(backend: WebGLBackend, state: HostOverlayRuntime, command: GlyphRenderSubmission, boundTextures: BoundTextureState): BoundTextureState {
-	if (!command.has_background_color) {
-		return boundTextures;
-	}
-	const font = command.font;
-	const lineHeight = font.lineHeight;
-	const nextBoundTextures = bindHostTexture(backend, state.whiteTexture, boundTextures);
-	let count = 0;
-	forEachBatchBlitGlyph(command, (item, x, y) => {
-		ensureWebGLInstanceBufferCapacity(backend, state, count + 1, INSTANCE_FLOATS);
-		count += pushFillRect(state, count, x, y, x + item.advance, y + lineHeight, command.z, command.background_color);
-	});
-	if (count !== 0) {
-		flushWebGLInstanceBatch(backend, HOST_OVERLAY_DRAW_PASS, state, count, INSTANCE_FLOATS);
-	}
-	return nextBoundTextures;
-}
-
-function drawBatchBlitGlyphs(backend: WebGLBackend, state: HostOverlayRuntime, cache: Map<string, HostOverlayImageSource>, command: GlyphRenderSubmission, boundTextures: BoundTextureState): BoundTextureState {
-	const currentBoundTextures = bindHostTexture(backend, state.hostAtlasTexture, boundTextures);
-	let count = 0;
-	forEachBatchBlitGlyph(command, (item, x, y) => {
-		const source = resolveImageSource(cache, item.imgid);
-		ensureWebGLInstanceBufferCapacity(backend, state, count + 1, INSTANCE_FLOATS);
-		writeQuad(
-			state,
-			count,
-			x,
-			y,
-			item.width,
-			0,
-			0,
-			item.height,
-			source.u0,
-			source.v0,
-			source.u1,
-			source.v1,
-			command.z,
-			command.color,
-		);
-		count += 1;
-	});
-	if (count !== 0) {
-		flushWebGLInstanceBatch(backend, HOST_OVERLAY_DRAW_PASS, state, count, INSTANCE_FLOATS);
-	}
-	return currentBoundTextures;
-}
-
-function drawBatchBlitCommand(backend: WebGLBackend, state: HostOverlayRuntime, cache: Map<string, HostOverlayImageSource>, command: GlyphRenderSubmission, boundTextures: BoundTextureState): BoundTextureState {
-	let currentBoundTextures = drawBatchBlitBackgrounds(backend, state, command, boundTextures);
-	currentBoundTextures = drawBatchBlitGlyphs(backend, state, cache, command, currentBoundTextures);
-	return currentBoundTextures;
+	runtime = createRuntime(backend, gl.getParameter(gl.CURRENT_PROGRAM) as WebGLProgram);
 }
 
 function bindPassState(backend: WebGLBackend, state: HostOverlayRuntime, passState: Host2DPipelineState): void {
 	const gl = backend.gl as WebGL2RenderingContext;
+	gl.bindFramebuffer(gl.FRAMEBUFFER, null);
 	gl.useProgram(state.program);
 	updateAndBindFrameUniforms(backend, passState.width, passState.height, passState.overlayWidth, passState.overlayHeight, passState.time, passState.delta);
 	backend.setUniformBlockBinding('FrameUniforms', FRAME_UNIFORM_BINDING);
-	gl.uniform1f(state.uniforms.scale, 1);
 	backend.setViewportRect(0, 0, passState.width, passState.height);
 	backend.setAlphaBlended2DState(gl.SRC_ALPHA, gl.ONE_MINUS_SRC_ALPHA);
+	backend.setActiveTexture(HOST_OVERLAY_TEXTURE_UNIT);
+	backend.bindTexture2D(state.hostAtlasTexture);
 	backend.bindVertexArray(state.vao);
 }
 
-function renderOverlay(backend: WebGLBackend, state: HostOverlayRuntime, passState: HostOverlayPipelineState): void {
-	let boundTextures = beginHost2DEntries(backend, state, passState);
-	for (let index = 0; index < passState.commands.length; index += 1) {
-		boundTextures = drawHost2DSubmission(backend, state, passState.commands[index], boundTextures);
+function renderStream(backend: WebGLBackend, state: HostOverlayRuntime, passState: Host2DPipelineState): void {
+	const stream = state.stream;
+	const count = stream.count;
+	if (count === 0) {
+		return;
 	}
-	endHost2DEntries(backend);
-}
-
-export function drawHost2DSubmission(backend: WebGLBackend, state: HostOverlayRuntime, command: Host2DSubmission, boundTextures: BoundTextureState): BoundTextureState {
-	const imageCache = state.imageCache;
-	switch (command.type) {
-		case 'rect':
-			return drawRectCommand(backend, state, command, boundTextures);
-		case 'img':
-			return drawHostImage(backend, state, imageCache, command.imgid, command.pos.x, command.pos.y, command.pos.z, command.scale.x, command.scale.y, command.flip.flip_h, command.flip.flip_v, command.colorize, boundTextures);
-		case 'items':
-			return drawBatchBlitCommand(backend, state, imageCache, command, boundTextures);
-		case 'poly':
-			return drawPolyCommand(backend, state, command, boundTextures);
-	}
-}
-
-export function drawHost2DCommand(backend: WebGLBackend, state: HostOverlayRuntime, kind: Host2DKind, command: Host2DRef, boundTextures: BoundTextureState): BoundTextureState {
-	const imageCache = state.imageCache;
-	switch (kind) {
-		case 'rect':
-			return drawRectCommand(backend, state, command as RectRenderSubmission, boundTextures);
-		case 'img': {
-			const image = command as HostImageRenderSubmission;
-			return drawHostImage(backend, state, imageCache, image.imgid, image.pos.x, image.pos.y, image.pos.z, image.scale.x, image.scale.y, image.flip.flip_h, image.flip.flip_v, image.colorize, boundTextures);
-		}
-		case 'items':
-			return drawBatchBlitCommand(backend, state, imageCache, command as GlyphRenderSubmission, boundTextures);
-		case 'poly':
-			return drawPolyCommand(backend, state, command as PolyRenderSubmission, boundTextures);
-	}
-}
-
-export function beginHost2DEntries(backend: WebGLBackend, state: HostOverlayRuntime, passState: Host2DPipelineState): BoundTextureState {
-	const gl = backend.gl as WebGL2RenderingContext;
-	gl.bindFramebuffer(gl.FRAMEBUFFER, null);
 	bindPassState(backend, state, passState);
-	return null;
-}
-
-export function endHost2DEntries(backend: WebGLBackend): void {
+	if (state.instanceCapacity !== stream.capacity) {
+		backend.updateVertexBuffer(state.instanceFloatBuffer, stream.floatData);
+		backend.updateVertexBuffer(state.instanceTextureKindBuffer, stream.textureKinds);
+		state.instanceCapacity = stream.capacity;
+	} else {
+		backend.updateVertexBuffer(state.instanceFloatBuffer, stream.floatData, 0, 0, count * HOST_OVERLAY_INSTANCE_FLOATS);
+		backend.updateVertexBuffer(state.instanceTextureKindBuffer, stream.textureKinds, 0, 0, count);
+	}
+	backend.drawInstanced(HOST_OVERLAY_DRAW_PASS, 6, count, 0, 0);
 	backend.bindVertexArray(null);
 	backend.setBlendEnabled(false);
 	backend.setDepthMask(true);
+}
+
+function renderOverlay(backend: WebGLBackend, state: HostOverlayRuntime, passState: HostOverlayPipelineState): void {
+	const stream = state.stream;
+	stream.reset();
+	for (let index = 0; index < passState.commands.length; index += 1) {
+		stream.appendSubmission(passState.commands[index]);
+	}
+	renderStream(backend, state, passState);
+}
+
+function renderHostMenu(backend: WebGLBackend, state: HostOverlayRuntime, passState: HostMenuPipelineState): void {
+	const stream = state.stream;
+	stream.reset();
+	for (let index = 0; index < passState.commandCount; index += 1) {
+		stream.appendEntry(passState.commandKinds[index], passState.commandRefs[index]);
+	}
+	renderStream(backend, state, passState);
 }
 
 export function registerHostOverlayPass(registry: RenderPassLibrary): void {
@@ -436,25 +177,16 @@ export function registerHostOverlayPass(registry: RenderPassLibrary): void {
 		vsCode: vertexShaderCode,
 		fsCode: fragmentShaderCode,
 		present: true,
-		graph: { buildState: buildHostOverlayState },
+		initialState: createHostOverlayState(),
+		graph: { writeState: writeHostOverlayState },
 		bootstrap: (backend) => {
-			const webglBackend = backend as WebGLBackend;
-			bootstrapRuntime(webglBackend);
+			bootstrapRuntime(backend as WebGLBackend);
 		},
 		shouldExecute: () => hasPendingOverlayFrame(),
 		exec: (backend: WebGLBackend, _fbo, state: RenderPassStateRegistry['host_overlay']) => {
-			renderOverlay(backend, runtime!, state);
+			renderOverlay(backend, runtime as HostOverlayRuntime, state);
 		},
 	});
-}
-
-function renderHostMenuPass(backend: WebGLBackend, state: HostOverlayRuntime, passState: Host2DPipelineState): void {
-	let boundTextures = beginHost2DEntries(backend, state, passState);
-	const count = hostOverlayMenu.queuedCommandCount();
-	for (let index = 0; index < count; index += 1) {
-		boundTextures = drawHost2DCommand(backend, state, hostOverlayMenu.commandKind(index), hostOverlayMenu.commandRef(index), boundTextures);
-	}
-	endHost2DEntries(backend);
 }
 
 export function registerHostMenuPass(registry: RenderPassLibrary): void {
@@ -463,10 +195,11 @@ export function registerHostMenuPass(registry: RenderPassLibrary): void {
 		name: 'HostMenu',
 		sharedPipelineWith: 'host_overlay',
 		present: true,
-		graph: { buildState: buildHostMenuState },
-		shouldExecute: () => hostOverlayMenu.queuedCommandCount() !== 0,
+		initialState: createHostMenuState(),
+		graph: { writeState: writeHostMenuState },
+		shouldExecute: () => hasPendingHostMenuFrame(),
 		exec: (backend: WebGLBackend, _fbo, state: RenderPassStateRegistry['host_menu']) => {
-			renderHostMenuPass(backend, runtime!, state);
+			renderHostMenu(backend, runtime as HostOverlayRuntime, state);
 		},
 	});
 }

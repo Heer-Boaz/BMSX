@@ -9,6 +9,7 @@ import { registerDeviceQuantize } from '../../post/device_quantize/webgpu/pipeli
 import { captureRenderedVramSnapshot, registerGxGpuPass } from './gx_gpu';
 import { updateAndBindFrameUniforms } from '../frame_uniforms';
 import type { RenderPassLibrary } from '../pass/library';
+import { registerHostOverlayPassesWebGPU } from '../../host_overlay/webgpu/pipeline';
 
 const WEBGPU_ZERO_CLEAR: GPUColor = [0, 0, 0, 0];
 
@@ -77,6 +78,7 @@ export class WebGPUBackend implements GPUBackend {
 		registerGxGpuPass(registry);
 		registerDeviceQuantize(registry);
 		registerCRT(registry);
+		registerHostOverlayPassesWebGPU(registry);
 	}
 
 

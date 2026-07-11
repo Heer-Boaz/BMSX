@@ -5,6 +5,7 @@ import { machineManager } from './machine_manager';
 import { Input } from '../input/manager';
 import type { PlayerInput } from '../input/player';
 import type { DeviceQuantizeMode } from '../render/post/device_quantize/mode';
+import { clearHostMenuFrame, publishHostMenuFrame, type HostMenuFrame } from '../render/host_overlay/overlay_queue';
 
 type HostMenuValue = {
 	readonly label: string;
@@ -177,6 +178,11 @@ export class HostOverlayMenu {
 	private readonly optionGlyphs: GlyphRenderSubmission[];
 	private readonly commandKinds = new Array<Host2DKind>(HOST_MENU_COMMAND_CAPACITY);
 	private readonly commandRefs = new Array<Host2DRef>(HOST_MENU_COMMAND_CAPACITY);
+	private readonly renderFrame: HostMenuFrame = {
+		commandKinds: this.commandKinds,
+		commandRefs: this.commandRefs,
+		commandCount: 0,
+	};
 	private commandCount = 0;
 	private fpsTextTenths = FPS_TEXT_TENTHS_INVALID;
 	private fpsTextWidth = 0;
@@ -291,18 +297,6 @@ export class HostOverlayMenu {
 		return this.active;
 	}
 
-	public queuedCommandCount(): number {
-		return this.commandCount;
-	}
-
-	public commandKind(index: number): Host2DKind {
-		return this.commandKinds[index];
-	}
-
-	public commandRef(index: number): Host2DRef {
-		return this.commandRefs[index];
-	}
-
 	public tickInput(): boolean {
 		const player = Input.instance.getPlayerInput(1);
 		const comboEdge = buttonPressed(player, BUTTON_START)
@@ -352,6 +346,12 @@ export class HostOverlayMenu {
 
 	private clearRenderCommands(): void {
 		this.commandCount = 0;
+		clearHostMenuFrame();
+	}
+
+	private publishRenderCommands(): void {
+		this.renderFrame.commandCount = this.commandCount;
+		publishHostMenuFrame(this.renderFrame);
 	}
 
 	private queueCommand(kind: Host2DKind, ref: Host2DRef): void {
@@ -412,6 +412,7 @@ export class HostOverlayMenu {
 			line.color = index === this.selected ? COLOR_TEXT : COLOR_DIM;
 			this.queueCommand('items', line);
 		}
+		this.publishRenderCommands();
 	}
 
 	public queueFrameOverlayCommands(): boolean {
@@ -447,6 +448,9 @@ export class HostOverlayMenu {
 			this.queueUsageBar(1, runtime.ramUsedBytes(), runtime.ramTotalBytes(), font);
 			this.queueUsageBar(2, runtime.vramUsedBytes(), runtime.vramTotalBytes(), font);
 			queued = true;
+		}
+		if (queued) {
+			this.publishRenderCommands();
 		}
 		return queued;
 	}

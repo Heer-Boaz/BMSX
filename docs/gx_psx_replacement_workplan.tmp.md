@@ -252,6 +252,12 @@ and MAME
 - [x] Remove host-only IDE/terminal framebuffer presentation ownership. The
   workbench overlay owns its opaque base through the existing retained rect
   pool; the VDP framebuffer texture and pass no longer exist.
+- [x] Complete the retained host-UI publication boundary. Workbench and menu
+  publish separate retained lanes rather than exposing the menu controller to
+  render backends; WebGPU now renders both lanes natively and WebGL2 consumes
+  the same allocation-conscious quad stream. Split-bundle headless execution
+  proves terminal and quick-menu commands reach the backend. Live browser proof
+  remains part of the deferred accelerated session.
 - [x] Remove old VDP/RPU cart-visible ABI use after carts are migrated. Cartlib
   consumes GX-owned display metrics directly and the rejected Lua VDP/RPU
   firmware modules are gone rather than retained behind compatibility shims.
@@ -364,6 +370,17 @@ and MAME
   Mednafen and MAME confirm specialization and scanline spans as the mature next
   steps if target-hardware profiling later proves a problem, but this desktop
   measurement does not justify a speculative rasterizer rewrite now.
+- [x] Profile the full 1,100-frame libretro/GLES2 `bare_metal_cart` timeline,
+  including the scenes missed by the earlier short run. Baseline measured
+  2.85 ms with five framebuffer copies/frame; Tera-Flare 12.24 ms with 70
+  copies/frame; particles 14.20 ms with 72 average and 147 maximum copies.
+  One representative particle frame spent 21.5 ms in copies and 2.1 ms in
+  draws, with no `glReadPixels`.
+- [ ] Replace the shared accelerated O(primitives) destination-snapshot path.
+  Use concrete GLES framebuffer-fetch/barrier capabilities where available,
+  retained compatible-command streams in every backend, dirty/valid source
+  coverage, and coalesced non-overlapping VRAM copies. Do not substitute naive
+  expanded RGBA8 fixed blending unless chained raw 5-bit stores prove exact.
 - [ ] Keep WebGL2/GLES2 behavior synchronized for every new GX command.
 - [ ] Wire the existing TS/C++ software/headless renderer to the same GX/PSX
   contract as oracle/backend, not as a fallback inside GPU backends.
@@ -465,9 +482,14 @@ and MAME
 
 Pick one vertical slice and finish it before committing:
 
-1. **GPUREAD/readback contract**: only start after an explicit design decision.
-   Accelerated backends must read back from real backend VRAM/render targets with
-   command ordering semantics; do not add a CPU shadow as the source of truth.
+1. **Visible GX migration regressions**: finish live host-UI proof when a real
+   browser is available, then fix the 192-line scanout mapping and producer-side
+   painter ordering without cart compensation.
+2. **Accelerated feedback performance**: remove per-primitive framebuffer
+   snapshots using the measured full-scene gates above, while preserving raw
+   PSX blend/mask/store parity in GLES2, WebGL2 and WebGPU.
+3. **GPUREAD DMA completion**: feed the implemented GPUREAD port into RAM through
+   the custom DMA controller without consuming a stale latch while not ready.
 
 ## Per-slice rules for agents
 

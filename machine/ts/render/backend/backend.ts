@@ -1,7 +1,7 @@
 import { type color_arr, type TextureSource, type vec2 } from '../../rompack/format';
 import type { GxGpu } from '../../machine/devices/gx/gpu';
 import type { GxGpuCommandBufferView, GxGpuReadbackPortView } from '../../machine/devices/gx/gpu_command_buffer';
-import type { Host2DSubmission } from '../shared/submissions';
+import type { Host2DKind, Host2DRef, Host2DSubmission } from '../shared/submissions';
 import type { GameView } from '../gameview';
 import type { DeviceQuantizeMode } from '../post/device_quantize/mode';
 import type { TextureParams } from './texture_params';
@@ -286,7 +286,11 @@ export type HostOverlayPipelineState = Host2DPipelineState & {
 	commands: Host2DSubmission[];
 };
 
-export type HostMenuPipelineState = Host2DPipelineState;
+export type HostMenuPipelineState = Host2DPipelineState & {
+	commandKinds: readonly Host2DKind[];
+	commandRefs: readonly Host2DRef[];
+	commandCount: number;
+};
 
 export interface RenderContext {
 	viewportSize: { x: number; y: number };

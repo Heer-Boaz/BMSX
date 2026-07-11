@@ -16,6 +16,27 @@ import type {
 } from '../shared/submissions';
 import { RectRenderKind } from '../shared/submissions';
 import { blendPixel } from './pixel_ops';
+import type { FontGlyph } from '../shared/bitmap_font';
+
+type HeadlessGlyphContext = {
+	target: Uint8Array;
+	width: number;
+	height: number;
+	colorValue: number;
+	hasBackgroundColor: boolean;
+	backgroundColor: number;
+	lineHeight: number;
+};
+
+const headlessGlyphContext: HeadlessGlyphContext = {
+	target: new Uint8Array(0),
+	width: 0,
+	height: 0,
+	colorValue: 0,
+	hasBackgroundColor: false,
+	backgroundColor: 0,
+	lineHeight: 0,
+};
 
 export function renderHeadlessHost2DSubmission(target: Uint8Array, width: number, height: number, command: Host2DSubmission): void {
 	switch (command.type) {
@@ -125,12 +146,22 @@ function drawImage(target: Uint8Array, width: number, height: number, command: H
 }
 
 function drawBatchBlit(target: Uint8Array, width: number, height: number, command: GlyphRenderSubmission): void {
-	const colorValue = command.color;
-	const hasBackgroundColor = command.has_background_color;
-	const backgroundColor = command.background_color;
-	const lineHeight = command.font.lineHeight;
-	forEachBatchBlitGlyph(command, (item, x, y) => {
-		if (hasBackgroundColor) {
+	const context = headlessGlyphContext;
+	context.target = target;
+	context.width = width;
+	context.height = height;
+	context.colorValue = command.color;
+	context.hasBackgroundColor = command.has_background_color;
+	context.backgroundColor = command.background_color;
+	context.lineHeight = command.font.lineHeight;
+	forEachBatchBlitGlyph(command, context, drawHeadlessGlyph);
+}
+
+function drawHeadlessGlyph(context: HeadlessGlyphContext, item: FontGlyph, x: number, y: number): void {
+	const target = context.target;
+	const width = context.width;
+	const height = context.height;
+	if (context.hasBackgroundColor) {
 			fillRect(
 				target,
 				width,
@@ -138,28 +169,27 @@ function drawBatchBlit(target: Uint8Array, width: number, height: number, comman
 				x,
 				y,
 				x + item.advance,
-				y + lineHeight,
-				backgroundColor,
+				y + context.lineHeight,
+				context.backgroundColor,
 			);
-		}
-		const source = hostSystemAtlasImage(item.imgid);
-		drawHostAtlasRect(
-			target,
-			width,
-			height,
-			source.u,
-			source.v,
-			source.w,
-			source.h,
-			x,
-			y,
-			item.width,
-			item.height,
-			false,
-			false,
-			colorValue,
-		);
-	});
+	}
+	const source = hostSystemAtlasImage(item.imgid);
+	drawHostAtlasRect(
+		target,
+		width,
+		height,
+		source.u,
+		source.v,
+		source.w,
+		source.h,
+		x,
+		y,
+		item.width,
+		item.height,
+		false,
+		false,
+		context.colorValue,
+	);
 }
 
 function fillRect(target: Uint8Array, width: number, height: number, left: number, top: number, right: number, bottom: number, colorValue: color): void {

@@ -110,7 +110,11 @@ struct HostOverlayPipelineState : Host2DPipelineState {
 	size_t commandCount = 0;
 };
 
-using HostMenuPipelineState = Host2DPipelineState;
+struct HostMenuPipelineState : Host2DPipelineState {
+	const Host2DKind* commandKinds = nullptr;
+	const Host2DRef* commandRefs = nullptr;
+	size_t commandCount = 0;
+};
 
 struct RenderPassStateStorage {
 	GxGpuPipelineState gxGpu;

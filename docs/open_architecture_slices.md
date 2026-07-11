@@ -15,14 +15,43 @@ backend.
 Status: open; deze regressies zijn niet opgelost door de huidige headless- en
 pariteitsvalidatie en moeten als harde acceptatieblokkades blijven staan.
 
-- Terminal mode en de IDE renderen niet meer.
-- Het quick menu rendert niet meer.
+- De ontbrekende WebGPU-passes en de gesplitste-bundlemenuqueue zijn hersteld:
+  terminal/IDE en quick menu delen nu een retained host-UI-publicatiegrens in
+  TS/C++, WebGPU heeft een native overlay/menu-renderpad en de split-bundle
+  headless integratie rendert beide weer. De live WebGPU-browseracceptatie
+  blijft uitgesteld en houdt dit punt visueel open.
 - `pietious` is volledig verticaal samengedrukt en de z-ordering is omgekeerd.
 - De transition- en combat-results-kleuren in `2025` kloppen niet meer: ze zijn
   donkerblauw tot bijna zwart in plaats van de lichtere Persona 3-blauwtint.
 - Ondanks alle optimalisatiewerk zijn de performanceproblemen van de
   libretro-versie niet opgelost. Zelfs op een Intel Core Ultra 7 met een
   RTX 5070 Ti vertoont `bare_metal_cart` bizarre, zeer zware slowdown.
+
+## Host-UI-publicatie en WebGPU-overlay live bewijzen
+
+Status: implementatie afgerond; live WebGPU-presentatie blijft uitgesteld.
+
+- `overlay_queue` is de enige retained publicatiegrens tussen host-UI-producers
+  en renderbackends. Workbench en menu hebben afzonderlijke lanes, zodat de
+  vaste overlay->menuvolgorde behouden blijft zonder commandkopie of
+  per-frame-arrayallocatie.
+- Geen TS/C++ backend leest de `HostOverlayMenu`-controller. De producer
+  publiceert uitsluitend verwijzingen naar zijn bestaande kinds/refs/count;
+  de pass-state neemt die drie waarden over en de backend consumeert alleen de
+  pass-state.
+- WebGPU rendert terminal, IDE en menu rechtstreeks bovenop de bestaande
+  swapchainkleur met retained pipeline, atlas, bindgroep, uniforms en groeiende
+  instancebuffers. Solid en atlasquads gaan in één geordende instanced draw.
+- WebGL2 consumeert dezelfde centrale retained quadstream en uploadt per lane
+  eenmaal floatdata en texture-kinddata in plaats van per UI-command te flushen.
+- De echte split-bundle headless route bewijst terminalweergave en een menu met
+  16 gepubliceerde commands; TS/C++ queuetests bewijzen pointer-/arrayidentiteit,
+  consume en clear.
+
+Nog te sluiten:
+
+- Terminal, IDE en quick menu tijdens de expliciete browsersessie live tegen
+  WebGPU en de WebGL2-fallback uitvoeren.
 
 ## WebGPU/browser-presentatie live bewijzen
 
@@ -239,6 +268,51 @@ Richting:
   zichzelf bewijs van echte PSX-pariteit.
 - Fix decode/raster/storegedrag bij de GPU-owner; niet met cart-compensatie of
   backend-specifieke kleurcorrecties.
+
+## Accelerated framebuffer-feedback performance
+
+Status: root cause gemeten; ownerfix open.
+
+Een capture-vrije 1100-frame libretro/GLES2-run is nu lang genoeg om de echte
+`bare_metal_cart`-slowdownscenes te bereiken. De eerdere korte meting miste die.
+Op llvmpipe meet de baseline 2,85 ms met vijf framebuffercopies per frame;
+Tera-Flare 12,24 ms met gemiddeld 70 copies en de particle-scene 14,20 ms met
+gemiddeld 72 en maximaal 147 copies. Een representatief particleframe besteedt
+21,5 ms aan copies tegenover 2,1 ms aan draws. `glReadPixels` draait daar niet.
+
+De ziekte zit in alle accelerated owners: destination-read primitives verversen
+per command/triangle een VRAM-sampletexture (`glCopyTexSubImage2D` in GLES2 en
+WebGL2, `copyTextureToTexture` in WebGPU). Losse semi-transparante particlelines
+en read-VRAM textured quads maken de kosten daardoor O(primitives), terwijl ook
+uniform- en vertexuploads per klein command blijven terugkomen.
+
+Open contract:
+
+- GLES2 moet, waar de concrete context dat bezit, raw destinationwoorden via
+  framebuffer-fetch/texture-barrier consumeren en alleen op echte
+  dependencygrenzen synchroniseren. Capabilitykeuze hoort in de concrete
+  backend, niet in cartcode of een algemene facade.
+- Alle accelerated backends moeten retained line/solid/textured streams over
+  opeenvolgende compatibele GP0-commands gebruiken en alleen flushen op een
+  pipeline- of read-after-writegrens.
+- Source sampling krijgt afzonderlijke retained valid/dirty coverage; wisselende
+  UV-rects mogen statische atlasdelen niet telkens volledig kopiëren.
+- Een niet-overlappende contiguous VRAM-copy is één quad; rij- of gesplitste
+  paden zijn alleen voor echte overlap, wrap of maskdependencies.
+- Geen universele RGBA8 fixed-function-blendshortcut: tussenliggende sub-5-bit
+  resten veranderen chained PSX-blends. Een alternatief moet raw 5-bit stores,
+  vier blendmodes, STP, maskbits en opeenvolgende overlap tegen VRAM-woorden
+  bewijzen.
+
+Acceptatiepoort:
+
+- Meet afzonderlijk baseline 100--139, flare 274--399, particles 404--529,
+  echo 664--759 en morph 864--979; de particle-scene moet in de run zitten.
+- Normale destinationcopies in particles gaan naar nul; sourcecopies volgen
+  dirty coverage in plaats van primitivecount. Geen `glFinish` of per-frame
+  `readPixels` als meet- of synchronisatieworkaround.
+- Raw-VRAM parity omvat alle vier blendmodes, chained blends, STP, E6 set/check,
+  overlappende lijnen/rectangles en concave/bow-tie quads.
 
 ## VDP/RPU uit actieve machine en presentatie verwijderen
 

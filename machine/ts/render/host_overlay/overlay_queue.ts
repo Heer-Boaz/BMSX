@@ -1,4 +1,4 @@
-import type { Host2DSubmission } from '../shared/submissions';
+import type { Host2DKind, Host2DRef, Host2DSubmission } from '../shared/submissions';
 
 export type HostOverlayFrame = {
 	width: number;
@@ -10,10 +10,17 @@ export type HostOverlayFrame = {
 	commands: Host2DSubmission[];
 };
 
+export type HostMenuFrame = {
+	commandKinds: readonly Host2DKind[];
+	commandRefs: readonly Host2DRef[];
+	commandCount: number;
+};
+
 const HOST_OVERLAY_QUEUE_GLOBAL = '__bmsxHostOverlayQueue';
 
 type HostOverlayQueueState = {
 	pendingFrame: HostOverlayFrame;
+	pendingMenuFrame: HostMenuFrame;
 };
 
 type HostOverlayQueueGlobal = typeof globalThis & {
@@ -24,7 +31,7 @@ function hostOverlayQueueState(): HostOverlayQueueState {
 	const globalScope = globalThis as HostOverlayQueueGlobal;
 	let state = globalScope[HOST_OVERLAY_QUEUE_GLOBAL];
 	if (state === undefined) {
-		state = { pendingFrame: null };
+		state = { pendingFrame: null, pendingMenuFrame: null };
 		globalScope[HOST_OVERLAY_QUEUE_GLOBAL] = state;
 	}
 	return state;
@@ -47,4 +54,23 @@ export function consumeOverlayFrame(): HostOverlayFrame {
 
 export function clearOverlayFrame(): void {
 	hostOverlayQueueState().pendingFrame = null;
+}
+
+export function publishHostMenuFrame(frame: HostMenuFrame): void {
+	hostOverlayQueueState().pendingMenuFrame = frame;
+}
+
+export function hasPendingHostMenuFrame(): boolean {
+	return hostOverlayQueueState().pendingMenuFrame !== null;
+}
+
+export function consumeHostMenuFrame(): HostMenuFrame {
+	const state = hostOverlayQueueState();
+	const frame = state.pendingMenuFrame;
+	state.pendingMenuFrame = null;
+	return frame;
+}
+
+export function clearHostMenuFrame(): void {
+	hostOverlayQueueState().pendingMenuFrame = null;
 }

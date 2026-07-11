@@ -1,6 +1,5 @@
 #pragma once
 
-#include "core/host_overlay_menu.h"
 #include "render/backend/pass/library.h"
 #include "render/host_overlay/overlay_queue.h"
 #include "render/host_overlay/pipeline.h"
@@ -27,7 +26,7 @@ inline bool shouldExecuteHostOverlayPass(GameView*, void*) {
 }
 
 inline bool shouldExecuteHostMenuPass(GameView*, void*) {
-	return hostOverlayMenu().queuedCommandCount() != 0U;
+	return hasPendingHostMenuFrame();
 }
 
 template<typename Backend, auto Begin, auto RenderEntry, auto End>
@@ -44,11 +43,10 @@ void renderHostOverlayPass(GPUBackend* backend, GameView*, void*, RenderPassStat
 template<typename Backend, auto Begin, auto RenderEntry, auto End>
 void renderHostMenuPass(GPUBackend* backend, GameView*, void*, RenderPassStateStorage& stateStorage, void*) {
 	Backend& typedBackend = *static_cast<Backend*>(backend);
-	HostOverlayMenu const& menu = hostOverlayMenu();
-	Begin(typedBackend, stateStorage.hostMenu);
-	const size_t commandCount = menu.queuedCommandCount();
-	for (size_t index = 0; index < commandCount; index += 1) {
-		RenderEntry(typedBackend, menu.commandKind(index), menu.commandRef(index));
+	const HostMenuPipelineState& state = stateStorage.hostMenu;
+	Begin(typedBackend, state);
+	for (size_t index = 0; index < state.commandCount; index += 1) {
+		RenderEntry(typedBackend, state.commandKinds[index], state.commandRefs[index]);
 	}
 	End(typedBackend);
 }

@@ -17,9 +17,19 @@ struct HostOverlayFrame {
 	size_t commandCount = 0;
 };
 
+struct HostMenuFrame {
+	const Host2DKind* commandKinds = nullptr;
+	const Host2DRef* commandRefs = nullptr;
+	size_t commandCount = 0;
+};
+
 void publishOverlayFrame(const HostOverlayFrame& frame);
 bool hasPendingOverlayFrame();
 HostOverlayFrame consumeOverlayFrame();
 void clearOverlayFrame();
+void publishHostMenuFrame(const HostMenuFrame& frame);
+bool hasPendingHostMenuFrame();
+HostMenuFrame consumeHostMenuFrame();
+void clearHostMenuFrame();
 
 } // namespace bmsx

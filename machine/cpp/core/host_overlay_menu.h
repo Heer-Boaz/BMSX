@@ -18,9 +18,6 @@ public:
 	bool tickInput(MachineManager& manager);
 	void queueRenderCommands(MachineManager& manager, GameView& view);
 	bool queueFrameOverlayCommands(MachineManager& manager, GameView& view);
-	size_t queuedCommandCount() const;
-	Host2DKind commandKind(size_t index) const;
-	Host2DRef commandRef(size_t index) const;
 	bool active() const { return m_active; }
 
 private:
@@ -29,6 +26,7 @@ private:
 	static constexpr size_t CommandCapacity = 128;
 
 	void clearRenderCommands();
+	void publishRenderCommands();
 	void queueCommand(Host2DKind kind, Host2DRef ref);
 	void toggle();
 	void close();

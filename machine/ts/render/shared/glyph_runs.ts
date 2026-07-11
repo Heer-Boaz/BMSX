@@ -1,7 +1,7 @@
 import { TAB_SPACES, type FontGlyph } from './bitmap_font';
 import type { GlyphRenderSubmission } from './submissions';
 
-export function forEachBatchBlitGlyph(command: GlyphRenderSubmission, fn: (item: FontGlyph, x: number, y: number) => void): void {
+export function forEachBatchBlitGlyph<T>(command: GlyphRenderSubmission, context: T, fn: (context: T, item: FontGlyph, x: number, y: number) => void): void {
 	const font = command.font;
 	const arrayLines = Array.isArray(command.items);
 	const lineCount = arrayLines ? command.items.length : 1;
@@ -32,7 +32,7 @@ export function forEachBatchBlitGlyph(command: GlyphRenderSubmission, fn: (item:
 				continue;
 			}
 			const item = font.getGlyph(char);
-			fn(item, originX, originY);
+			fn(context, item, originX, originY);
 			originX += item.advance;
 			itemIndex += 1;
 		}

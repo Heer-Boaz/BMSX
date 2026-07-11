@@ -201,14 +201,19 @@
 			"reason": "browser_host_overlay_not_core"
 		},
 		{
+			"pattern": "machine/ts/render/host_overlay/webgpu/**",
+			"category": "host",
+			"reason": "browser_webgpu_host_overlay_not_core"
+		},
+		{
+			"pattern": "machine/ts/render/host_overlay/quad_stream.ts",
+			"category": "host",
+			"reason": "browser_host_overlay_retained_quad_stream"
+		},
+		{
 			"pattern": "machine/ts/render/host_overlay/headless/**",
 			"category": "host",
 			"reason": "headless_host_overlay_not_core"
-		},
-		{
-			"pattern": "machine/ts/render/2d/**",
-			"category": "host",
-			"reason": "host_2d_render_pipeline_not_core"
 		},
 		{
 			"pattern": "machine/ts/render/texture_load_barrier.ts",
@@ -816,8 +821,9 @@
 		{
 			"files": [
 				"carts/bare_metal_cart/cart.lua",
-				"machine/ts/render/backend/webgl/instanced_buffers.ts",
+				"machine/ts/render/host_overlay/quad_stream.ts",
 				"machine/ts/render/host_overlay/webgl/pipeline.ts",
+				"machine/ts/render/host_overlay/webgpu/pipeline.ts",
 				"machine/ts/common/fixed_point.ts",
 				"machine/cpp/common/fixed_point.h",
 				"machine/ts/render/headless/passes.ts",

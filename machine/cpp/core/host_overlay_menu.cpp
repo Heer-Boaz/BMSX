@@ -8,6 +8,7 @@
 #include "machine/runtime/runtime.h"
 #include "platform/platform.h"
 #include "render/gameview.h"
+#include "render/host_overlay/overlay_queue.h"
 #include <array>
 #include <cstdio>
 
@@ -287,20 +288,13 @@ HostOverlayMenu& hostOverlayMenu() {
 	return menu;
 }
 
-size_t HostOverlayMenu::queuedCommandCount() const {
-	return m_commandCount;
-}
-
-Host2DKind HostOverlayMenu::commandKind(size_t index) const {
-	return m_commandKinds[index];
-}
-
-Host2DRef HostOverlayMenu::commandRef(size_t index) const {
-	return m_commandRefs[index];
-}
-
 void HostOverlayMenu::clearRenderCommands() {
 	m_commandCount = 0;
+	clearHostMenuFrame();
+}
+
+void HostOverlayMenu::publishRenderCommands() {
+	publishHostMenuFrame(HostMenuFrame{m_commandKinds.data(), m_commandRefs.data(), m_commandCount});
 }
 
 void HostOverlayMenu::queueCommand(Host2DKind kind, Host2DRef ref) {
@@ -397,6 +391,7 @@ void HostOverlayMenu::queueRenderCommands(MachineManager& manager, GameView& vie
 		items.color = index == m_selected ? kTextColor : kDimColor;
 		queueCommand(itemsKind, &items);
 	}
+	publishRenderCommands();
 }
 
 bool HostOverlayMenu::queueFrameOverlayCommands(MachineManager& manager, GameView& view) {
@@ -466,6 +461,9 @@ bool HostOverlayMenu::queueFrameOverlayCommands(MachineManager& manager, GameVie
 			queueCommand(itemsKind, &percent);
 		}
 		queued = true;
+	}
+	if (queued) {
+		publishRenderCommands();
 	}
 	return queued;
 }
