@@ -1251,6 +1251,12 @@ test('GX-GPU software textured polygons use PSX fixed-point UV gradients and hal
 		(1 << 16) | 2,
 		0x03e0001f,
 	]), GX_GPU_COMMAND_UPLOAD_CPU_TO_VRAM, GX_GPU_GP0_CPU_TO_VRAM_FIRST);
+	pushSoftwareCommand(commandBuffer, new Uint32Array([
+		GX_GPU_GP0_CPU_TO_VRAM_FIRST << 24,
+		0,
+		(2 << 16) | 1,
+		0x03e0001f,
+	]), GX_GPU_COMMAND_UPLOAD_CPU_TO_VRAM, GX_GPU_GP0_CPU_TO_VRAM_FIRST);
 	const opcode = GX_GPU_GP0_POLYGON_FIRST | GX_GPU_GP0_RENDER_TEXTURE_BIT | 0x01;
 	pushSoftwareCommand(commandBuffer, new Uint32Array([
 		((opcode << 24) | 0x808080) >>> 0,
@@ -1273,6 +1279,18 @@ test('GX-GPU software textured polygons use PSX fixed-point UV gradients and hal
 		(30 << 16) | 36, 0x01000000,
 		(36 << 16) | 30, 1,
 	]), GX_GPU_COMMAND_DRAW_POLYGON, opcode, GX_GPU_TEXTURE_MODE_DIRECT16 << 7);
+	pushSoftwareCommand(commandBuffer, new Uint32Array([
+		((opcode << 24) | 0x808080) >>> 0,
+		(500 << 16) | 1016, 0,
+		(500 << 16) | 1022, 0x01000001,
+		(506 << 16) | 1016, 0,
+	]), GX_GPU_COMMAND_DRAW_POLYGON, opcode, GX_GPU_TEXTURE_MODE_DIRECT16 << 7);
+	pushSoftwareCommand(commandBuffer, new Uint32Array([
+		((opcode << 24) | 0x808080) >>> 0,
+		(500 << 16) | 100, 0,
+		(500 << 16) | 106, 0,
+		(506 << 16) | 100, 0x00000100,
+	]), GX_GPU_COMMAND_DRAW_POLYGON, opcode, GX_GPU_TEXTURE_MODE_DIRECT16 << 7);
 
 	gxGpuSoftwareVram.fill(0);
 	executeGxGpuSoftwareCommands(commandBuffer, 0);
@@ -1285,6 +1303,75 @@ test('GX-GPU software textured polygons use PSX fixed-point UV gradients and hal
 	assert.equal(gxGpuSoftwareVram[gxGpuSoftwareVramIndex(24, 20)], 0x03e0);
 	assert.equal(gxGpuSoftwareVram[gxGpuSoftwareVramIndex(33, 30)], 0x03e0);
 	assert.equal(gxGpuSoftwareVram[gxGpuSoftwareVramIndex(34, 30)], 0x001f);
+	assert.equal(gxGpuSoftwareVram[gxGpuSoftwareVramIndex(1019, 500)], 0x001f);
+	assert.equal(gxGpuSoftwareVram[gxGpuSoftwareVramIndex(1020, 500)], 0x03e0);
+	assert.equal(gxGpuSoftwareVram[gxGpuSoftwareVramIndex(100, 503)], 0x001f);
+	assert.equal(gxGpuSoftwareVram[gxGpuSoftwareVramIndex(100, 504)], 0x03e0);
+});
+
+test('GX-GPU software texture sampling owns window, page, packed texel, and CLUT wrap edges', () => {
+	const commandBuffer = new GxGpuCommandBuffer();
+	commandBuffer.reset();
+	const opcode = GX_GPU_GP0_RECTANGLE_FIRST | GX_GPU_GP0_RENDER_TEXTURE_BIT | 0x01;
+	pushSoftwareCommand(commandBuffer, new Uint32Array([
+		((opcode << 24) | 0x808080) >>> 0,
+		(10 << 16) | 10,
+		0x00000707,
+		(2 << 16) | 2,
+	]), GX_GPU_COMMAND_DRAW_RECTANGLE, opcode, GX_GPU_TEXTURE_MODE_DIRECT16 << 7, 0x00008421);
+	pushSoftwareCommand(commandBuffer, new Uint32Array([
+		((opcode << 24) | 0x808080) >>> 0,
+		(20 << 16) | 20,
+		0x00001e3f,
+		(1 << 16) | 2,
+	]), GX_GPU_COMMAND_DRAW_RECTANGLE, opcode, (GX_GPU_TEXTURE_MODE_DIRECT16 << 7) | 0x0f);
+	pushSoftwareCommand(commandBuffer, new Uint32Array([
+		((opcode << 24) | 0x808080) >>> 0,
+		(30 << 16) | 30,
+		0x0000ff05,
+		(2 << 16) | 1,
+	]), GX_GPU_COMMAND_DRAW_RECTANGLE, opcode, (GX_GPU_TEXTURE_MODE_DIRECT16 << 7) | 0x11);
+	pushSoftwareCommand(commandBuffer, new Uint32Array([
+		((opcode << 24) | 0x808080) >>> 0,
+		(40 << 16) | 40,
+		0x0f3f3200,
+		(1 << 16) | 2,
+	]), GX_GPU_COMMAND_DRAW_RECTANGLE, opcode, (GX_GPU_TEXTURE_MODE_PALETTE8 << 7) | 0x02);
+	pushSoftwareCommand(commandBuffer, new Uint32Array([
+		((opcode << 24) | 0x808080) >>> 0,
+		(50 << 16) | 50,
+		0x140146ff,
+		(1 << 16) | 2,
+	]), GX_GPU_COMMAND_DRAW_RECTANGLE, opcode, 0x0f);
+
+	gxGpuSoftwareVram.fill(0);
+	gxGpuSoftwareVram[gxGpuSoftwareVramIndex(15, 15)] = 0x001f;
+	gxGpuSoftwareVram[gxGpuSoftwareVramIndex(8, 15)] = 0x03e0;
+	gxGpuSoftwareVram[gxGpuSoftwareVramIndex(15, 8)] = 0x7c00;
+	gxGpuSoftwareVram[gxGpuSoftwareVramIndex(8, 8)] = 0x7fff;
+	gxGpuSoftwareVram[gxGpuSoftwareVramIndex(1023, 30)] = 0x001f;
+	gxGpuSoftwareVram[gxGpuSoftwareVramIndex(0, 30)] = 0x03e0;
+	gxGpuSoftwareVram[gxGpuSoftwareVramIndex(69, 511)] = 0x001f;
+	gxGpuSoftwareVram[gxGpuSoftwareVramIndex(69, 256)] = 0x03e0;
+	gxGpuSoftwareVram[gxGpuSoftwareVramIndex(128, 50)] = 0x100f;
+	gxGpuSoftwareVram[gxGpuSoftwareVramIndex(1023, 60)] = 0x001f;
+	gxGpuSoftwareVram[gxGpuSoftwareVramIndex(0, 60)] = 0x03e0;
+	gxGpuSoftwareVram[gxGpuSoftwareVramIndex(1023, 70)] = 0x1000;
+	gxGpuSoftwareVram[gxGpuSoftwareVramIndex(960, 70)] = 0x0002;
+	gxGpuSoftwareVram[gxGpuSoftwareVramIndex(17, 80)] = 0x001f;
+	gxGpuSoftwareVram[gxGpuSoftwareVramIndex(18, 80)] = 0x03e0;
+	executeGxGpuSoftwareCommands(commandBuffer, 0);
+
+	assert.deepEqual([
+		gxGpuSoftwareVram[gxGpuSoftwareVramIndex(10, 10)], gxGpuSoftwareVram[gxGpuSoftwareVramIndex(11, 10)],
+		gxGpuSoftwareVram[gxGpuSoftwareVramIndex(10, 11)], gxGpuSoftwareVram[gxGpuSoftwareVramIndex(11, 11)],
+	], [0x001f, 0x03e0, 0x7c00, 0x7fff]);
+	assert.deepEqual([
+		gxGpuSoftwareVram[gxGpuSoftwareVramIndex(20, 20)], gxGpuSoftwareVram[gxGpuSoftwareVramIndex(21, 20)],
+		gxGpuSoftwareVram[gxGpuSoftwareVramIndex(30, 30)], gxGpuSoftwareVram[gxGpuSoftwareVramIndex(30, 31)],
+		gxGpuSoftwareVram[gxGpuSoftwareVramIndex(40, 40)], gxGpuSoftwareVram[gxGpuSoftwareVramIndex(41, 40)],
+		gxGpuSoftwareVram[gxGpuSoftwareVramIndex(50, 50)], gxGpuSoftwareVram[gxGpuSoftwareVramIndex(51, 50)],
+	], [0x001f, 0x03e0, 0x001f, 0x03e0, 0x001f, 0x03e0, 0x001f, 0x03e0]);
 });
 
 test('GX-GPU software backend applies drawing offsets, inclusive drawing areas, and rectangle coordinate wrap', () => {

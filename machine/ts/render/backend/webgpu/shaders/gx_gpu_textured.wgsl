@@ -3,10 +3,10 @@ struct TexturedUniforms {
 	textureWindow: vec4<f32>,
 	params0: vec4<f32>,
 	params1: vec4<f32>,
-	uvPlaneParams: vec4<f32>,
-	uvPlaneBase: vec4<f32>,
-	uvPlaneStepX: vec4<f32>,
-	uvPlaneStepY: vec4<f32>,
+	uvPlaneParams: vec4<u32>,
+	uvPlaneBase: vec4<u32>,
+	uvPlaneStepX: vec4<u32>,
+	uvPlaneStepY: vec4<u32>,
 };
 
 @group(0) @binding(0) var<uniform> u: TexturedUniforms;
@@ -55,18 +55,6 @@ fn applyTextureWindow(texcoord: vec2<f32>) -> vec2<f32> {
 	return vec2<f32>(bitAnd8(coord.x, u.textureWindow.x) + u.textureWindow.z, bitAnd8(coord.y, u.textureWindow.y) + u.textureWindow.w);
 }
 
-fn planeWord(chunks: vec2<f32>) -> u32 {
-	return u32(chunks.x) + (u32(chunks.y) << 10u);
-}
-
-fn polygonTexcoord(pixel: vec2<f32>) -> vec2<f32> {
-	let x = u32(pixel.x);
-	let y = u32(pixel.y);
-	let accumulatorU = (planeWord(u.uvPlaneBase.xy) + planeWord(u.uvPlaneStepX.xy) * x + planeWord(u.uvPlaneStepY.xy) * y) & 0xfffffu;
-	let accumulatorV = (planeWord(u.uvPlaneBase.zw) + planeWord(u.uvPlaneStepX.zw) * x + planeWord(u.uvPlaneStepY.zw) * y) & 0xfffffu;
-	return vec2<f32>(f32(accumulatorU >> 12u), f32(accumulatorV >> 12u));
-}
-
 fn rawVramWord(coord: vec2<f32>) -> f32 {
 	let wrapped = coord - floor(coord / VRAM_SIZE) * VRAM_SIZE;
 	let rawPixel = textureSample(u_vram, u_sampler, (wrapped + vec2<f32>(0.5)) / VRAM_SIZE);
@@ -103,8 +91,10 @@ fn palette8Index(word: f32, textureU: f32) -> f32 {
 
 fn samplePsxTexture(texcoord: vec2<f32>, fragCoord: vec2<f32>) -> vec4<f32> {
 	var sampleCoord = texcoord;
-	if (u.uvPlaneParams.x > 0.5) {
-		sampleCoord = polygonTexcoord(floor(fragCoord));
+	if (u.uvPlaneParams.x != 0u) {
+		let pixel = vec2<u32>(u32(fragCoord.x), u32(fragCoord.y));
+		let accumulator = u.uvPlaneBase.xy + u.uvPlaneStepX.xy * pixel.x + u.uvPlaneStepY.xy * pixel.y;
+		sampleCoord = vec2<f32>((accumulator >> vec2<u32>(12u)) & vec2<u32>(0xffu));
 	}
 	let windowed = applyTextureWindow(sampleCoord);
 	let pageBase = u.texPageClut.xy;

@@ -116,16 +116,27 @@ Y-bucket met drawing-area clipping en Gouraud-interpolatie.
 Textured polygons gebruiken nu eveneens één gemirrorde PSX-attribuutplane. De
 TS/C++ softwareowners stappen U/V met 12 fractionele bits, de halve-texel seed
 en de 20-bit accumulatorwrap uit de DuckStation/Mednafen-rasterdatapath in plaats
-van een exacte barycentrische deling per pixel. WebGL2, WebGPU en GLES2 krijgen
-per triangle dezelfde gekwantiseerde plane als gesplitste vaste uniforms; de
-fragmentdatapath evalueert de 20-bit accumulator exact zonder CPU-pixelwerk.
-Quads tekenen hun twee planes afzonderlijk en verversen read-VRAM tussen beide
-triangles wanneer blend- of maskstate dat vereist. Rectangles behouden hun
-bestaande 7-float direct-UV vertexpad. Raw polygon-UV's blijven in diezelfde
-vertexstream de source-cachebounds leveren, dus er zijn geen per-command
-allocaties, extra volledige texture-page copies of rectangle-bandwidthkosten.
-Mirrored vectors bewijzen de halve-texel tie, niet-integrale gradienttruncatie en
+van een exacte barycentrische deling per pixel. WebGPU consumeert de raw plane
+als native unsigned multiply/add/shift-datapath. WebGL2 en GLES2 verplaatsen de
+coordinatenvermenigvuldiging uit de fragment-hot-path: hun gemirrorde vertexstage
+interpoleert vijf radix-16 digits binnen de gegarandeerde `highp` precisierange,
+waarna de fragmentstage alleen afrondt en carries doorgeeft. De eerdere keten
+van gesplitste 20-bit fragmentvermenigvuldigingen, `floor` en `mod` bestaat dus
+niet meer. Quads tekenen hun twee planes afzonderlijk en verversen read-VRAM
+tussen beide triangles wanneer blend- of maskstate dat vereist. Rectangles
+behouden hun bestaande 7-float direct-UV vertexpad. Raw polygon-UV's blijven in
+diezelfde vertexstream de source-cachebounds leveren; alle plane- en
+uniformscratch is backend-owned en wordt hergebruikt. Mirrored vectors bewijzen
+de halve-texel tie, niet-integrale X/Y-gradienttruncatie, vertaalinvariantie en
 dalende accumulatorwrap.
+
+Texture-window, texture-page, packed-texel en CLUT-adressering volgen al dezelfde
+raw rekenvolgorde in de actieve owners. Nieuwe gemirrorde softwarevectors zetten
+die grens vast voor niet-aaneengesloten E2 U/V-bit replacement, direct16 X- en
+Y-wrap, palette4-nibbleselectie over een page-edge en palette8-byteselectie met
+horizontale CLUT-wrap op dezelfde VRAM-rij. Accelerated source-copy blijft de
+logisch gewrapte page- en CLUT-regio's gebruiken; alleen het live draaien van
+deze raw vectors tegen de drie accelerated backends staat nog open.
 
 Lines en polylines volgen nu in alle backendowners dezelfde DDA-conventie.
 TS/C++ software wrapt iedere emitted sample pas na de 32.32-stap naar signed
@@ -149,7 +160,8 @@ Nog te sluiten:
 - Een expliciete PSX-hardwareversiekeuze voor 10-bit drawing-area-Y tegenover
   de huidige 512 VRAM-rijen.
 - De drawing-area/offset/clipping-vectors live tegen WebGL2, GLES2 en WebGPU.
-- Texture window, texture-page en CLUT-randen.
+- De texture-window/page/packed-texel/CLUT-vectors live tegen WebGL2, GLES2 en
+  WebGPU uitvoeren.
 - Mask-bit, blend, dither, semi-transparency en storegedrag.
 - Readback-zichtbare VRAM-inhoud na accelerated draws, fills en copies.
 

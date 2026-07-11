@@ -125,6 +125,7 @@ const gxGpuRawVramUpload = new Uint8Array(GX_GPU_RAW_VRAM_UPLOAD_BYTES);
 const gxGpuVramSnapshotScratch = new Uint8Array(GX_GPU_VRAM_BYTE_COUNT);
 const primitiveUniformScratch = new Float32Array(8);
 const texturedUniformScratch = new Float32Array(32);
+const texturedUniformWords = new Uint32Array(texturedUniformScratch.buffer);
 const transferUniformScratch = new Float32Array(4);
 const scanoutUniformScratch = new Float32Array(4);
 const gxGpuDynamicUniformOffsets = new Uint32Array(1);
@@ -1224,7 +1225,7 @@ function writeTexturedUniforms(commandBuffer: GxGpuCommandBufferView, commandInd
 	texturedUniformScratch[13] = gxGpuMaskBitSetWhileDrawing(maskBitModeWord) ? 1 : 0;
 	texturedUniformScratch[14] = commandBuffer.commandKind[commandIndex] === GX_GPU_COMMAND_DRAW_POLYGON && gxGpuDitheredPolygon(drawModeWord, opcode) ? 1 : 0;
 	texturedUniformScratch[15] = commandBuffer.commandInterlacedRenderWord[commandIndex];
-	texturedUniformScratch[16] = 0;
+	texturedUniformWords[16] = 0;
 }
 
 function writeTexturedUvPlaneUniforms(planeIndex: number): void {
@@ -1235,19 +1236,13 @@ function writeTexturedUvPlaneUniforms(planeIndex: number): void {
 	const stepXV = gxGpuTexturedUvPlanes[offset + GX_GPU_TRIANGLE_UV_STEP_X_V];
 	const stepYU = gxGpuTexturedUvPlanes[offset + GX_GPU_TRIANGLE_UV_STEP_Y_U];
 	const stepYV = gxGpuTexturedUvPlanes[offset + GX_GPU_TRIANGLE_UV_STEP_Y_V];
-	texturedUniformScratch[16] = 1;
-	texturedUniformScratch[20] = baseU & 0x3ff;
-	texturedUniformScratch[21] = baseU >>> 10;
-	texturedUniformScratch[22] = baseV & 0x3ff;
-	texturedUniformScratch[23] = baseV >>> 10;
-	texturedUniformScratch[24] = stepXU & 0x3ff;
-	texturedUniformScratch[25] = stepXU >>> 10;
-	texturedUniformScratch[26] = stepXV & 0x3ff;
-	texturedUniformScratch[27] = stepXV >>> 10;
-	texturedUniformScratch[28] = stepYU & 0x3ff;
-	texturedUniformScratch[29] = stepYU >>> 10;
-	texturedUniformScratch[30] = stepYV & 0x3ff;
-	texturedUniformScratch[31] = stepYV >>> 10;
+	texturedUniformWords[16] = 1;
+	texturedUniformWords[20] = baseU;
+	texturedUniformWords[21] = baseV;
+	texturedUniformWords[24] = stepXU;
+	texturedUniformWords[25] = stepXV;
+	texturedUniformWords[28] = stepYU;
+	texturedUniformWords[29] = stepYV;
 }
 
 function renderTexturedCommand(commandBuffer: GxGpuCommandBufferView, commandIndex: number, topLeftWord: number, bottomRightWord: number): void {

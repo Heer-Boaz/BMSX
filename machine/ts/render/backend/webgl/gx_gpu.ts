@@ -21,6 +21,7 @@ import {
 } from '../../../machine/devices/gx/gpu_command_buffer';
 import {
 	GX_GPU_VERTEX_COORD_PERIOD,
+	GX_GPU_TRIANGLE_UV_ACCUMULATOR_MASK,
 	GX_GPU_TRIANGLE_UV_BASE_U,
 	GX_GPU_TRIANGLE_UV_BASE_V,
 	GX_GPU_TRIANGLE_UV_PLANE_WORDS,
@@ -265,9 +266,14 @@ type GxGpuState = {
 	texturedDitherEnableUniform: WebGLUniformLocation;
 	texturedInterlacedRenderWordUniform: WebGLUniformLocation;
 	texturedUvPlaneEnableUniform: WebGLUniformLocation;
-	texturedUvPlaneBaseUniform: WebGLUniformLocation;
-	texturedUvPlaneStepXUniform: WebGLUniformLocation;
-	texturedUvPlaneStepYUniform: WebGLUniformLocation;
+	texturedUvPlaneBase01Uniform: WebGLUniformLocation;
+	texturedUvPlaneBase23Uniform: WebGLUniformLocation;
+	texturedUvPlaneStepX01Uniform: WebGLUniformLocation;
+	texturedUvPlaneStepX23Uniform: WebGLUniformLocation;
+	texturedUvPlaneStepY01Uniform: WebGLUniformLocation;
+	texturedUvPlaneStepY23Uniform: WebGLUniformLocation;
+	texturedUvPlaneDigit4BaseStepXUniform: WebGLUniformLocation;
+	texturedUvPlaneDigit4StepYOriginUniform: WebGLUniformLocation;
 	transferPositionAttrib: number;
 	transferTexcoordAttrib: number;
 	transferSourceUniform: WebGLUniformLocation;
@@ -399,9 +405,14 @@ function bootstrapGxGpuPass(backend: WebGLBackend): void {
 		texturedDitherEnableUniform: gl.getUniformLocation(texturedProgram, 'u_ditherEnable') as WebGLUniformLocation,
 		texturedInterlacedRenderWordUniform: gl.getUniformLocation(texturedProgram, 'u_interlacedRenderWord') as WebGLUniformLocation,
 		texturedUvPlaneEnableUniform: gl.getUniformLocation(texturedProgram, 'u_uvPlaneEnable') as WebGLUniformLocation,
-		texturedUvPlaneBaseUniform: gl.getUniformLocation(texturedProgram, 'u_uvPlaneBase') as WebGLUniformLocation,
-		texturedUvPlaneStepXUniform: gl.getUniformLocation(texturedProgram, 'u_uvPlaneStepX') as WebGLUniformLocation,
-		texturedUvPlaneStepYUniform: gl.getUniformLocation(texturedProgram, 'u_uvPlaneStepY') as WebGLUniformLocation,
+		texturedUvPlaneBase01Uniform: gl.getUniformLocation(texturedProgram, 'u_uvPlaneBase01') as WebGLUniformLocation,
+		texturedUvPlaneBase23Uniform: gl.getUniformLocation(texturedProgram, 'u_uvPlaneBase23') as WebGLUniformLocation,
+		texturedUvPlaneStepX01Uniform: gl.getUniformLocation(texturedProgram, 'u_uvPlaneStepX01') as WebGLUniformLocation,
+		texturedUvPlaneStepX23Uniform: gl.getUniformLocation(texturedProgram, 'u_uvPlaneStepX23') as WebGLUniformLocation,
+		texturedUvPlaneStepY01Uniform: gl.getUniformLocation(texturedProgram, 'u_uvPlaneStepY01') as WebGLUniformLocation,
+		texturedUvPlaneStepY23Uniform: gl.getUniformLocation(texturedProgram, 'u_uvPlaneStepY23') as WebGLUniformLocation,
+		texturedUvPlaneDigit4BaseStepXUniform: gl.getUniformLocation(texturedProgram, 'u_uvPlaneDigit4BaseStepX') as WebGLUniformLocation,
+		texturedUvPlaneDigit4StepYOriginUniform: gl.getUniformLocation(texturedProgram, 'u_uvPlaneDigit4StepYOrigin') as WebGLUniformLocation,
 		transferPositionAttrib: gl.getAttribLocation(transferProgram, 'a_position'),
 		transferTexcoordAttrib: gl.getAttribLocation(transferProgram, 'a_texcoord'),
 		transferSourceUniform: gl.getUniformLocation(transferProgram, 'u_source') as WebGLUniformLocation,
@@ -1639,10 +1650,20 @@ function writeTexturedUvPlaneUniforms(planeIndex: number): void {
 	const stepXV = gxGpuTexturedUvPlanes[offset + GX_GPU_TRIANGLE_UV_STEP_X_V];
 	const stepYU = gxGpuTexturedUvPlanes[offset + GX_GPU_TRIANGLE_UV_STEP_Y_U];
 	const stepYV = gxGpuTexturedUvPlanes[offset + GX_GPU_TRIANGLE_UV_STEP_Y_V];
+	const vertexOffset = planeIndex * 3 * GX_GPU_TEXTURED_VERTEX_FLOATS;
+	const originX = gxGpuTexturedVertices[vertexOffset];
+	const originY = gxGpuTexturedVertices[vertexOffset + 1];
+	const originU = (baseU + (originX * stepXU) + (originY * stepYU)) & GX_GPU_TRIANGLE_UV_ACCUMULATOR_MASK;
+	const originV = (baseV + (originX * stepXV) + (originY * stepYV)) & GX_GPU_TRIANGLE_UV_ACCUMULATOR_MASK;
 	gl.uniform1f(gxGpuState.texturedUvPlaneEnableUniform, 1);
-	gl.uniform4f(gxGpuState.texturedUvPlaneBaseUniform, baseU & 0x3ff, baseU >>> 10, baseV & 0x3ff, baseV >>> 10);
-	gl.uniform4f(gxGpuState.texturedUvPlaneStepXUniform, stepXU & 0x3ff, stepXU >>> 10, stepXV & 0x3ff, stepXV >>> 10);
-	gl.uniform4f(gxGpuState.texturedUvPlaneStepYUniform, stepYU & 0x3ff, stepYU >>> 10, stepYV & 0x3ff, stepYV >>> 10);
+	gl.uniform4f(gxGpuState.texturedUvPlaneBase01Uniform, originU & 0x0f, originV & 0x0f, (originU >>> 4) & 0x0f, (originV >>> 4) & 0x0f);
+	gl.uniform4f(gxGpuState.texturedUvPlaneBase23Uniform, (originU >>> 8) & 0x0f, (originV >>> 8) & 0x0f, (originU >>> 12) & 0x0f, (originV >>> 12) & 0x0f);
+	gl.uniform4f(gxGpuState.texturedUvPlaneStepX01Uniform, stepXU & 0x0f, stepXV & 0x0f, (stepXU >>> 4) & 0x0f, (stepXV >>> 4) & 0x0f);
+	gl.uniform4f(gxGpuState.texturedUvPlaneStepX23Uniform, (stepXU >>> 8) & 0x0f, (stepXV >>> 8) & 0x0f, (stepXU >>> 12) & 0x0f, (stepXV >>> 12) & 0x0f);
+	gl.uniform4f(gxGpuState.texturedUvPlaneStepY01Uniform, stepYU & 0x0f, stepYV & 0x0f, (stepYU >>> 4) & 0x0f, (stepYV >>> 4) & 0x0f);
+	gl.uniform4f(gxGpuState.texturedUvPlaneStepY23Uniform, (stepYU >>> 8) & 0x0f, (stepYV >>> 8) & 0x0f, (stepYU >>> 12) & 0x0f, (stepYV >>> 12) & 0x0f);
+	gl.uniform4f(gxGpuState.texturedUvPlaneDigit4BaseStepXUniform, (originU >>> 16) & 0x0f, (originV >>> 16) & 0x0f, (stepXU >>> 16) & 0x0f, (stepXV >>> 16) & 0x0f);
+	gl.uniform4f(gxGpuState.texturedUvPlaneDigit4StepYOriginUniform, (stepYU >>> 16) & 0x0f, (stepYV >>> 16) & 0x0f, originX, originY);
 }
 
 function writeTransferUniforms(sourceTextureUnit: number, maskBitModeWord: number): void {

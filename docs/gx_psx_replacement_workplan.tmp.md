@@ -105,10 +105,15 @@ Implemented or partially covered GX-GPU areas include:
   drawing-area clipping without accelerated CPU rasterization.
 - Textured polygons now use the same 12-fraction-bit UV gradients, half-texel
   seed, and 20-bit accumulator wrap in TS/C++ software, WebGL2, GLES2, and
-  WebGPU. Accelerated backends evaluate split per-triangle plane uniforms in the
-  fragment datapath while the unchanged raw-UV vertex stream retains
-  sample-cache bounds. Quads refresh read-VRAM between triangle draws when
-  required; rectangles keep their lean direct integer UV path.
+  WebGPU. WebGPU consumes the raw plane with native unsigned arithmetic;
+  WebGL2/GLES2 interpolate bounded radix-16 digit planes and only resolve their
+  carry chain per fragment, removing the split multiply/mod fragment hot path.
+  The unchanged raw-UV vertex stream retains sample-cache bounds. Quads refresh
+  read-VRAM between triangle draws when required; rectangles keep their lean
+  direct integer UV path.
+- Mirrored raw software vectors now lock E2 bit replacement, direct16 page X/Y
+  wrap, palette4 nibble selection across a page edge, and palette8 byte plus
+  horizontal CLUT wrap. The matching accelerated live run remains open.
 - Variable rectangles now truncate the coordinate produced by vertex plus E5
   drawing offset back to signed 11-bit in TS/C++ software, WebGL2, GLES2, and
   WebGPU. Mirrored raw-VRAM vectors cover inclusive drawing-area clipping,
@@ -235,6 +240,9 @@ and ask before coding.
     the current 512-row VRAM clamp for 10-bit E3/E4 Y words.
   - [ ] Run the clipping/offset vectors live against accelerated backends.
 - [ ] Exact texture sampling/window/CLUT edge cases.
+  - [x] Mirror raw software vectors for E2 U/V replacement, direct16 page wrap,
+    packed palette4/palette8 texels, and same-row CLUT wrap in TS/C++.
+  - [ ] Run the same raw vectors live against WebGL2, GLES2, and WebGPU.
 - [ ] Exact mask bit, blend, dither, semi-transparency, and store behavior.
 - [ ] Readback-visible VRAM contents after every accelerated operation.
 

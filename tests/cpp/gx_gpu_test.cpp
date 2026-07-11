@@ -1291,6 +1291,17 @@ void testSoftwareTexturedPolygonFixedUvGradient() {
 		4u,
 		bmsx::GX_GPU_COMMAND_UPLOAD_CPU_TO_VRAM,
 		bmsx::GX_GPU_GP0_CPU_TO_VRAM_FIRST);
+	pushSoftwareCommand(
+		commandBuffer,
+		std::array<uint32_t, 4>{
+			bmsx::GX_GPU_GP0_CPU_TO_VRAM_FIRST << 24u,
+			0u,
+			(2u << 16u) | 1u,
+			0x03e0001fu,
+		},
+		4u,
+		bmsx::GX_GPU_COMMAND_UPLOAD_CPU_TO_VRAM,
+		bmsx::GX_GPU_GP0_CPU_TO_VRAM_FIRST);
 	constexpr uint8_t opcode = bmsx::GX_GPU_GP0_POLYGON_FIRST | bmsx::GX_GPU_GP0_RENDER_TEXTURE_BIT | 0x01u;
 	pushSoftwareCommand(
 		commandBuffer,
@@ -1319,6 +1330,18 @@ void testSoftwareTexturedPolygonFixedUvGradient() {
 		(30u << 16u) | 36u, 0x01000000u,
 		(36u << 16u) | 30u, 1u,
 	}, 7u, bmsx::GX_GPU_COMMAND_DRAW_POLYGON, opcode, bmsx::GX_GPU_TEXTURE_MODE_DIRECT16 << 7u);
+	pushSoftwareCommand(commandBuffer, std::array<uint32_t, 7>{
+		(opcode << 24u) | 0x808080u,
+		(500u << 16u) | 1016u, 0u,
+		(500u << 16u) | 1022u, 0x01000001u,
+		(506u << 16u) | 1016u, 0u,
+	}, 7u, bmsx::GX_GPU_COMMAND_DRAW_POLYGON, opcode, bmsx::GX_GPU_TEXTURE_MODE_DIRECT16 << 7u);
+	pushSoftwareCommand(commandBuffer, std::array<uint32_t, 7>{
+		(opcode << 24u) | 0x808080u,
+		(500u << 16u) | 100u, 0u,
+		(500u << 16u) | 106u, 0u,
+		(506u << 16u) | 100u, 0x00000100u,
+	}, 7u, bmsx::GX_GPU_COMMAND_DRAW_POLYGON, opcode, bmsx::GX_GPU_TEXTURE_MODE_DIRECT16 << 7u);
 
 	bmsx::g_gxGpuSoftwareVram.fill(0u);
 	bmsx::executeGxGpuSoftwareCommands(commandBuffer, 0u);
@@ -1331,6 +1354,77 @@ void testSoftwareTexturedPolygonFixedUvGradient() {
 	require(bmsx::g_gxGpuSoftwareVram[bmsx::gxGpuSoftwareVramIndex(24, 20)] == 0x03e0u, "GX-GPU software fixed UV plane advances after the truncated boundary");
 	require(bmsx::g_gxGpuSoftwareVram[bmsx::gxGpuSoftwareVramIndex(33, 30)] == 0x03e0u, "GX-GPU software fixed UV plane preserves a descending boundary texel");
 	require(bmsx::g_gxGpuSoftwareVram[bmsx::gxGpuSoftwareVramIndex(34, 30)] == 0x001fu, "GX-GPU software fixed UV plane wraps a negative gradient accumulator");
+	require(bmsx::g_gxGpuSoftwareVram[bmsx::gxGpuSoftwareVramIndex(1019, 500)] == 0x001fu, "GX-GPU software translated fixed UV plane preserves the truncated boundary");
+	require(bmsx::g_gxGpuSoftwareVram[bmsx::gxGpuSoftwareVramIndex(1020, 500)] == 0x03e0u, "GX-GPU software translated fixed UV plane advances after the truncated boundary");
+	require(bmsx::g_gxGpuSoftwareVram[bmsx::gxGpuSoftwareVramIndex(100, 503)] == 0x001fu, "GX-GPU software vertical fixed UV plane preserves the truncated boundary");
+	require(bmsx::g_gxGpuSoftwareVram[bmsx::gxGpuSoftwareVramIndex(100, 504)] == 0x03e0u, "GX-GPU software vertical fixed UV plane advances after the truncated boundary");
+}
+
+void testSoftwareTextureWindowPageAndClutEdges() {
+	bmsx::GxGpuCommandBuffer commandBuffer;
+	commandBuffer.reset();
+	constexpr uint8_t opcode = bmsx::GX_GPU_GP0_RECTANGLE_FIRST | bmsx::GX_GPU_GP0_RENDER_TEXTURE_BIT | 0x01u;
+	pushSoftwareCommand(commandBuffer, std::array<uint32_t, 4>{
+		(opcode << 24u) | 0x808080u,
+		(10u << 16u) | 10u,
+		0x00000707u,
+		(2u << 16u) | 2u,
+	}, 4u, bmsx::GX_GPU_COMMAND_DRAW_RECTANGLE, opcode, bmsx::GX_GPU_TEXTURE_MODE_DIRECT16 << 7u, 0x00008421u);
+	pushSoftwareCommand(commandBuffer, std::array<uint32_t, 4>{
+		(opcode << 24u) | 0x808080u,
+		(20u << 16u) | 20u,
+		0x00001e3fu,
+		(1u << 16u) | 2u,
+	}, 4u, bmsx::GX_GPU_COMMAND_DRAW_RECTANGLE, opcode, (bmsx::GX_GPU_TEXTURE_MODE_DIRECT16 << 7u) | 0x0fu);
+	pushSoftwareCommand(commandBuffer, std::array<uint32_t, 4>{
+		(opcode << 24u) | 0x808080u,
+		(30u << 16u) | 30u,
+		0x0000ff05u,
+		(2u << 16u) | 1u,
+	}, 4u, bmsx::GX_GPU_COMMAND_DRAW_RECTANGLE, opcode, (bmsx::GX_GPU_TEXTURE_MODE_DIRECT16 << 7u) | 0x11u);
+	pushSoftwareCommand(commandBuffer, std::array<uint32_t, 4>{
+		(opcode << 24u) | 0x808080u,
+		(40u << 16u) | 40u,
+		0x0f3f3200u,
+		(1u << 16u) | 2u,
+	}, 4u, bmsx::GX_GPU_COMMAND_DRAW_RECTANGLE, opcode, (bmsx::GX_GPU_TEXTURE_MODE_PALETTE8 << 7u) | 0x02u);
+	pushSoftwareCommand(commandBuffer, std::array<uint32_t, 4>{
+		(opcode << 24u) | 0x808080u,
+		(50u << 16u) | 50u,
+		0x140146ffu,
+		(1u << 16u) | 2u,
+	}, 4u, bmsx::GX_GPU_COMMAND_DRAW_RECTANGLE, opcode, 0x0fu);
+
+	bmsx::g_gxGpuSoftwareVram.fill(0u);
+	bmsx::g_gxGpuSoftwareVram[bmsx::gxGpuSoftwareVramIndex(15, 15)] = 0x001fu;
+	bmsx::g_gxGpuSoftwareVram[bmsx::gxGpuSoftwareVramIndex(8, 15)] = 0x03e0u;
+	bmsx::g_gxGpuSoftwareVram[bmsx::gxGpuSoftwareVramIndex(15, 8)] = 0x7c00u;
+	bmsx::g_gxGpuSoftwareVram[bmsx::gxGpuSoftwareVramIndex(8, 8)] = 0x7fffu;
+	bmsx::g_gxGpuSoftwareVram[bmsx::gxGpuSoftwareVramIndex(1023, 30)] = 0x001fu;
+	bmsx::g_gxGpuSoftwareVram[bmsx::gxGpuSoftwareVramIndex(0, 30)] = 0x03e0u;
+	bmsx::g_gxGpuSoftwareVram[bmsx::gxGpuSoftwareVramIndex(69, 511)] = 0x001fu;
+	bmsx::g_gxGpuSoftwareVram[bmsx::gxGpuSoftwareVramIndex(69, 256)] = 0x03e0u;
+	bmsx::g_gxGpuSoftwareVram[bmsx::gxGpuSoftwareVramIndex(128, 50)] = 0x100fu;
+	bmsx::g_gxGpuSoftwareVram[bmsx::gxGpuSoftwareVramIndex(1023, 60)] = 0x001fu;
+	bmsx::g_gxGpuSoftwareVram[bmsx::gxGpuSoftwareVramIndex(0, 60)] = 0x03e0u;
+	bmsx::g_gxGpuSoftwareVram[bmsx::gxGpuSoftwareVramIndex(1023, 70)] = 0x1000u;
+	bmsx::g_gxGpuSoftwareVram[bmsx::gxGpuSoftwareVramIndex(960, 70)] = 0x0002u;
+	bmsx::g_gxGpuSoftwareVram[bmsx::gxGpuSoftwareVramIndex(17, 80)] = 0x001fu;
+	bmsx::g_gxGpuSoftwareVram[bmsx::gxGpuSoftwareVramIndex(18, 80)] = 0x03e0u;
+	bmsx::executeGxGpuSoftwareCommands(commandBuffer, 0u);
+
+	require(bmsx::g_gxGpuSoftwareVram[bmsx::gxGpuSoftwareVramIndex(10, 10)] == 0x001fu, "GX-GPU software texture window replaces the masked U bits");
+	require(bmsx::g_gxGpuSoftwareVram[bmsx::gxGpuSoftwareVramIndex(11, 10)] == 0x03e0u, "GX-GPU software texture window preserves the unmasked U bits");
+	require(bmsx::g_gxGpuSoftwareVram[bmsx::gxGpuSoftwareVramIndex(10, 11)] == 0x7c00u, "GX-GPU software texture window replaces the masked V bits");
+	require(bmsx::g_gxGpuSoftwareVram[bmsx::gxGpuSoftwareVramIndex(11, 11)] == 0x7fffu, "GX-GPU software texture window preserves the unmasked V bits");
+	require(bmsx::g_gxGpuSoftwareVram[bmsx::gxGpuSoftwareVramIndex(20, 20)] == 0x001fu, "GX-GPU software direct16 page samples the final VRAM column");
+	require(bmsx::g_gxGpuSoftwareVram[bmsx::gxGpuSoftwareVramIndex(21, 20)] == 0x03e0u, "GX-GPU software direct16 page wraps X at the VRAM edge");
+	require(bmsx::g_gxGpuSoftwareVram[bmsx::gxGpuSoftwareVramIndex(30, 30)] == 0x001fu, "GX-GPU software direct16 page samples the final VRAM row");
+	require(bmsx::g_gxGpuSoftwareVram[bmsx::gxGpuSoftwareVramIndex(30, 31)] == 0x03e0u, "GX-GPU software direct16 page wraps V within its page");
+	require(bmsx::g_gxGpuSoftwareVram[bmsx::gxGpuSoftwareVramIndex(40, 40)] == 0x001fu, "GX-GPU software palette8 samples the low byte at the page edge");
+	require(bmsx::g_gxGpuSoftwareVram[bmsx::gxGpuSoftwareVramIndex(41, 40)] == 0x03e0u, "GX-GPU software palette8 samples the high byte and wraps the CLUT lookup horizontally");
+	require(bmsx::g_gxGpuSoftwareVram[bmsx::gxGpuSoftwareVramIndex(50, 50)] == 0x001fu, "GX-GPU software palette4 samples the high nibble at the page edge");
+	require(bmsx::g_gxGpuSoftwareVram[bmsx::gxGpuSoftwareVramIndex(51, 50)] == 0x03e0u, "GX-GPU software palette4 advances into the wrapped texture word");
 }
 
 void testSoftwareDrawingAreaOffsetClippingAndRectangleCoordinateWrap() {
@@ -2052,6 +2146,7 @@ int main() {
 	testSoftwareTriangleEdgesAndQuadSeams();
 	testSoftwarePolygonRasterBucketWrap();
 	testSoftwareTexturedPolygonFixedUvGradient();
+	testSoftwareTextureWindowPageAndClutEdges();
 	testSoftwareDrawingAreaOffsetClippingAndRectangleCoordinateWrap();
 	testSoftwareFillBypassesDrawingAreaAndMaskBitDrawingState();
 	testSoftwareScanoutConsumesTransfersAndFill();

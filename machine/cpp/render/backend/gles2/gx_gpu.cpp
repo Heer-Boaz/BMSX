@@ -149,9 +149,14 @@ struct GxGpuRuntime {
 	GLint texturedDitherEnableUniform = -1;
 	GLint texturedInterlacedRenderWordUniform = -1;
 	GLint texturedUvPlaneEnableUniform = -1;
-	GLint texturedUvPlaneBaseUniform = -1;
-	GLint texturedUvPlaneStepXUniform = -1;
-	GLint texturedUvPlaneStepYUniform = -1;
+	GLint texturedUvPlaneBase01Uniform = -1;
+	GLint texturedUvPlaneBase23Uniform = -1;
+	GLint texturedUvPlaneStepX01Uniform = -1;
+	GLint texturedUvPlaneStepX23Uniform = -1;
+	GLint texturedUvPlaneStepY01Uniform = -1;
+	GLint texturedUvPlaneStepY23Uniform = -1;
+	GLint texturedUvPlaneDigit4BaseStepXUniform = -1;
+	GLint texturedUvPlaneDigit4StepYOriginUniform = -1;
 	GLint transferPositionAttrib = -1;
 	GLint transferTexcoordAttrib = -1;
 	GLint transferSourceUniform = -1;
@@ -281,9 +286,14 @@ void initGxGpu(OpenGLES2Backend& backend) {
 	g_gxGpu.texturedDitherEnableUniform = glGetUniformLocation(g_gxGpu.texturedProgram, "u_ditherEnable");
 	g_gxGpu.texturedInterlacedRenderWordUniform = glGetUniformLocation(g_gxGpu.texturedProgram, "u_interlacedRenderWord");
 	g_gxGpu.texturedUvPlaneEnableUniform = glGetUniformLocation(g_gxGpu.texturedProgram, "u_uvPlaneEnable");
-	g_gxGpu.texturedUvPlaneBaseUniform = glGetUniformLocation(g_gxGpu.texturedProgram, "u_uvPlaneBase");
-	g_gxGpu.texturedUvPlaneStepXUniform = glGetUniformLocation(g_gxGpu.texturedProgram, "u_uvPlaneStepX");
-	g_gxGpu.texturedUvPlaneStepYUniform = glGetUniformLocation(g_gxGpu.texturedProgram, "u_uvPlaneStepY");
+	g_gxGpu.texturedUvPlaneBase01Uniform = glGetUniformLocation(g_gxGpu.texturedProgram, "u_uvPlaneBase01");
+	g_gxGpu.texturedUvPlaneBase23Uniform = glGetUniformLocation(g_gxGpu.texturedProgram, "u_uvPlaneBase23");
+	g_gxGpu.texturedUvPlaneStepX01Uniform = glGetUniformLocation(g_gxGpu.texturedProgram, "u_uvPlaneStepX01");
+	g_gxGpu.texturedUvPlaneStepX23Uniform = glGetUniformLocation(g_gxGpu.texturedProgram, "u_uvPlaneStepX23");
+	g_gxGpu.texturedUvPlaneStepY01Uniform = glGetUniformLocation(g_gxGpu.texturedProgram, "u_uvPlaneStepY01");
+	g_gxGpu.texturedUvPlaneStepY23Uniform = glGetUniformLocation(g_gxGpu.texturedProgram, "u_uvPlaneStepY23");
+	g_gxGpu.texturedUvPlaneDigit4BaseStepXUniform = glGetUniformLocation(g_gxGpu.texturedProgram, "u_uvPlaneDigit4BaseStepX");
+	g_gxGpu.texturedUvPlaneDigit4StepYOriginUniform = glGetUniformLocation(g_gxGpu.texturedProgram, "u_uvPlaneDigit4StepYOrigin");
 	g_gxGpu.transferPositionAttrib = glGetAttribLocation(g_gxGpu.transferProgram, "a_position");
 	g_gxGpu.transferTexcoordAttrib = glGetAttribLocation(g_gxGpu.transferProgram, "a_texcoord");
 	g_gxGpu.transferSourceUniform = glGetUniformLocation(g_gxGpu.transferProgram, "u_source");
@@ -1500,10 +1510,20 @@ void writeTexturedUvPlaneUniforms(size_t planeIndex) {
 	const u32 stepXV = static_cast<u32>(g_texturedUvPlanes[offset + GX_GPU_TRIANGLE_UV_STEP_X_V]);
 	const u32 stepYU = static_cast<u32>(g_texturedUvPlanes[offset + GX_GPU_TRIANGLE_UV_STEP_Y_U]);
 	const u32 stepYV = static_cast<u32>(g_texturedUvPlanes[offset + GX_GPU_TRIANGLE_UV_STEP_Y_V]);
+	const size_t vertexOffset = planeIndex * 3u * kGxGpuTexturedVertexFloats;
+	const i32 originX = static_cast<i32>(g_texturedVertices[vertexOffset]);
+	const i32 originY = static_cast<i32>(g_texturedVertices[vertexOffset + 1u]);
+	const u32 originU = static_cast<u32>((static_cast<i64>(baseU) + static_cast<i64>(originX) * stepXU + static_cast<i64>(originY) * stepYU) & GX_GPU_TRIANGLE_UV_ACCUMULATOR_MASK);
+	const u32 originV = static_cast<u32>((static_cast<i64>(baseV) + static_cast<i64>(originX) * stepXV + static_cast<i64>(originY) * stepYV) & GX_GPU_TRIANGLE_UV_ACCUMULATOR_MASK);
 	glUniform1f(g_gxGpu.texturedUvPlaneEnableUniform, 1.0f);
-	glUniform4f(g_gxGpu.texturedUvPlaneBaseUniform, static_cast<f32>(baseU & 0x3ffu), static_cast<f32>(baseU >> 10u), static_cast<f32>(baseV & 0x3ffu), static_cast<f32>(baseV >> 10u));
-	glUniform4f(g_gxGpu.texturedUvPlaneStepXUniform, static_cast<f32>(stepXU & 0x3ffu), static_cast<f32>(stepXU >> 10u), static_cast<f32>(stepXV & 0x3ffu), static_cast<f32>(stepXV >> 10u));
-	glUniform4f(g_gxGpu.texturedUvPlaneStepYUniform, static_cast<f32>(stepYU & 0x3ffu), static_cast<f32>(stepYU >> 10u), static_cast<f32>(stepYV & 0x3ffu), static_cast<f32>(stepYV >> 10u));
+	glUniform4f(g_gxGpu.texturedUvPlaneBase01Uniform, static_cast<f32>(originU & 0x0fu), static_cast<f32>(originV & 0x0fu), static_cast<f32>((originU >> 4u) & 0x0fu), static_cast<f32>((originV >> 4u) & 0x0fu));
+	glUniform4f(g_gxGpu.texturedUvPlaneBase23Uniform, static_cast<f32>((originU >> 8u) & 0x0fu), static_cast<f32>((originV >> 8u) & 0x0fu), static_cast<f32>((originU >> 12u) & 0x0fu), static_cast<f32>((originV >> 12u) & 0x0fu));
+	glUniform4f(g_gxGpu.texturedUvPlaneStepX01Uniform, static_cast<f32>(stepXU & 0x0fu), static_cast<f32>(stepXV & 0x0fu), static_cast<f32>((stepXU >> 4u) & 0x0fu), static_cast<f32>((stepXV >> 4u) & 0x0fu));
+	glUniform4f(g_gxGpu.texturedUvPlaneStepX23Uniform, static_cast<f32>((stepXU >> 8u) & 0x0fu), static_cast<f32>((stepXV >> 8u) & 0x0fu), static_cast<f32>((stepXU >> 12u) & 0x0fu), static_cast<f32>((stepXV >> 12u) & 0x0fu));
+	glUniform4f(g_gxGpu.texturedUvPlaneStepY01Uniform, static_cast<f32>(stepYU & 0x0fu), static_cast<f32>(stepYV & 0x0fu), static_cast<f32>((stepYU >> 4u) & 0x0fu), static_cast<f32>((stepYV >> 4u) & 0x0fu));
+	glUniform4f(g_gxGpu.texturedUvPlaneStepY23Uniform, static_cast<f32>((stepYU >> 8u) & 0x0fu), static_cast<f32>((stepYV >> 8u) & 0x0fu), static_cast<f32>((stepYU >> 12u) & 0x0fu), static_cast<f32>((stepYV >> 12u) & 0x0fu));
+	glUniform4f(g_gxGpu.texturedUvPlaneDigit4BaseStepXUniform, static_cast<f32>((originU >> 16u) & 0x0fu), static_cast<f32>((originV >> 16u) & 0x0fu), static_cast<f32>((stepXU >> 16u) & 0x0fu), static_cast<f32>((stepXV >> 16u) & 0x0fu));
+	glUniform4f(g_gxGpu.texturedUvPlaneDigit4StepYOriginUniform, static_cast<f32>((stepYU >> 16u) & 0x0fu), static_cast<f32>((stepYV >> 16u) & 0x0fu), static_cast<f32>(originX), static_cast<f32>(originY));
 }
 
 void writeTransferUniforms(i32 sourceTextureUnit, u32 maskBitModeWord) {

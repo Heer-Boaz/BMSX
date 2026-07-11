@@ -14,11 +14,11 @@ uniform float u_setMaskBit;
 uniform float u_ditherEnable;
 uniform float u_interlacedRenderWord;
 uniform float u_uvPlaneEnable;
-uniform vec4 u_uvPlaneBase;
-uniform vec4 u_uvPlaneStepX;
-uniform vec4 u_uvPlaneStepY;
 varying vec4 v_color;
 varying vec2 v_texcoord;
+varying vec4 v_uvPlane01;
+varying vec4 v_uvPlane23;
+varying vec2 v_uvPlane4;
 
 const vec2 VRAM_SIZE = vec2(1024.0, 512.0);
 
@@ -40,30 +40,6 @@ vec2 applyTextureWindow(vec2 texcoord) {
 		bitAnd8(coord.x, u_textureWindowAnd.x) + u_textureWindowOr.x,
 		bitAnd8(coord.y, u_textureWindowAnd.y) + u_textureWindowOr.y
 	);
-}
-
-vec2 multiplyMod20(vec2 chunks, float coord) {
-	float coordLow = mod(coord, 32.0);
-	float coordHigh = floor(coord / 32.0);
-	float lowHighProduct = chunks.x * coordHigh;
-	float lowTerm = chunks.x * coordLow + mod(lowHighProduct, 32.0) * 32.0;
-	float low = mod(lowTerm, 1024.0);
-	float carry = floor(lowTerm / 1024.0) + floor(lowHighProduct / 32.0);
-	float high = mod(carry + chunks.y * coordLow + mod(chunks.y * coordHigh, 32.0) * 32.0, 1024.0);
-	return vec2(low, high);
-}
-
-vec2 addMod20(vec2 base, vec2 xProduct, vec2 yProduct) {
-	float lowSum = base.x + xProduct.x + yProduct.x;
-	return vec2(mod(lowSum, 1024.0), mod(base.y + xProduct.y + yProduct.y + floor(lowSum / 1024.0), 1024.0));
-}
-
-vec2 polygonTexcoord() {
-	float x = floor(gl_FragCoord.x);
-	float y = floor(VRAM_SIZE.y - gl_FragCoord.y);
-	vec2 accumulatorU = addMod20(u_uvPlaneBase.xy, multiplyMod20(u_uvPlaneStepX.xy, x), multiplyMod20(u_uvPlaneStepY.xy, y));
-	vec2 accumulatorV = addMod20(u_uvPlaneBase.zw, multiplyMod20(u_uvPlaneStepX.zw, x), multiplyMod20(u_uvPlaneStepY.zw, y));
-	return floor(vec2(accumulatorU.y, accumulatorV.y) / 4.0);
 }
 
 float rawVramWord(vec2 coord) {
@@ -108,7 +84,16 @@ float palette8Index(float word, float u) {
 vec4 samplePsxTexture(vec2 texcoord) {
 	vec2 sampleCoord = texcoord;
 	if (u_uvPlaneEnable > 0.5) {
-		sampleCoord = polygonTexcoord();
+		vec4 plane01 = floor(v_uvPlane01 + 0.5);
+		vec4 plane23 = floor(v_uvPlane23 + 0.5);
+		vec2 plane4 = floor(v_uvPlane4 + 0.5);
+		vec2 carry = floor(plane01.xy / 16.0);
+		carry = floor((plane01.zw + carry) / 16.0);
+		carry = floor((plane23.xy + carry) / 16.0);
+		vec2 digit3 = plane23.zw + carry;
+		carry = floor(digit3 / 16.0);
+		vec2 digit4 = plane4 + carry;
+		sampleCoord = mod(digit3, 16.0) + mod(digit4, 16.0) * 16.0;
 	}
 	vec2 windowed = applyTextureWindow(sampleCoord);
 	float textureWord;
