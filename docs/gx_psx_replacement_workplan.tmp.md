@@ -103,6 +103,12 @@ Implemented or partially covered GX-GPU areas include:
   GLES2, and WebGPU. Mirrored vectors preserve the valid `+1024` exclusive edge
   and cover negative X/direct16 texture interpolation plus negative Y/Gouraud
   drawing-area clipping without accelerated CPU rasterization.
+- Textured polygons now use the same 12-fraction-bit UV gradients, half-texel
+  seed, and 20-bit accumulator wrap in TS/C++ software, WebGL2, GLES2, and
+  WebGPU. Accelerated backends evaluate split per-triangle plane uniforms in the
+  fragment datapath while the unchanged raw-UV vertex stream retains
+  sample-cache bounds. Quads refresh read-VRAM between triangle draws when
+  required; rectangles keep their lean direct integer UV path.
 - Variable rectangles now truncate the coordinate produced by vertex plus E5
   drawing offset back to signed 11-bit in TS/C++ software, WebGL2, GLES2, and
   WebGPU. Mirrored raw-VRAM vectors cover inclusive drawing-area clipping,
@@ -200,6 +206,8 @@ and ask before coding.
     outer edges, and single-blend quad seams in TS/C++ software raw-VRAM tests.
   - [x] Align WebGL2, GLES2, and WebGPU vertex transforms with PSX integer
     raster positions without changing raw CPU vertex/bounds representation.
+  - [x] Replace exact barycentric/native polygon UV interpolation with the
+    mirrored PSX 12-bit fixed gradient and half-texel seed in every backend.
   - [ ] Run the same conformance vectors live against all accelerated backends.
 - [ ] Exact rectangle/line/polyline raster rules.
   - [x] Truncate rectangle origins to signed 11-bit after applying the drawing

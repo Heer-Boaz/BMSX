@@ -14,6 +14,10 @@ uniform float u_checkMaskBit;
 uniform float u_setMaskBit;
 uniform float u_ditherEnable;
 uniform float u_interlacedRenderWord;
+uniform float u_uvPlaneEnable;
+uniform vec4 u_uvPlaneBase;
+uniform vec4 u_uvPlaneStepX;
+uniform vec4 u_uvPlaneStepY;
 in vec4 v_color;
 in vec2 v_texcoord;
 out vec4 outputColor;
@@ -38,6 +42,30 @@ vec2 applyTextureWindow(vec2 texcoord) {
 		bitAnd8(coord.x, u_textureWindowAnd.x) + u_textureWindowOr.x,
 		bitAnd8(coord.y, u_textureWindowAnd.y) + u_textureWindowOr.y
 	);
+}
+
+vec2 multiplyMod20(vec2 chunks, float coord) {
+	float coordLow = mod(coord, 32.0);
+	float coordHigh = floor(coord / 32.0);
+	float lowHighProduct = chunks.x * coordHigh;
+	float lowTerm = chunks.x * coordLow + mod(lowHighProduct, 32.0) * 32.0;
+	float low = mod(lowTerm, 1024.0);
+	float carry = floor(lowTerm / 1024.0) + floor(lowHighProduct / 32.0);
+	float high = mod(carry + chunks.y * coordLow + mod(chunks.y * coordHigh, 32.0) * 32.0, 1024.0);
+	return vec2(low, high);
+}
+
+vec2 addMod20(vec2 base, vec2 xProduct, vec2 yProduct) {
+	float lowSum = base.x + xProduct.x + yProduct.x;
+	return vec2(mod(lowSum, 1024.0), mod(base.y + xProduct.y + yProduct.y + floor(lowSum / 1024.0), 1024.0));
+}
+
+vec2 polygonTexcoord() {
+	float x = floor(gl_FragCoord.x);
+	float y = floor(VRAM_SIZE.y - gl_FragCoord.y);
+	vec2 accumulatorU = addMod20(u_uvPlaneBase.xy, multiplyMod20(u_uvPlaneStepX.xy, x), multiplyMod20(u_uvPlaneStepY.xy, y));
+	vec2 accumulatorV = addMod20(u_uvPlaneBase.zw, multiplyMod20(u_uvPlaneStepX.zw, x), multiplyMod20(u_uvPlaneStepY.zw, y));
+	return floor(vec2(accumulatorU.y, accumulatorV.y) / 4.0);
 }
 
 float rawVramWord(vec2 coord) {
@@ -80,7 +108,11 @@ float palette8Index(float word, float u) {
 }
 
 vec4 samplePsxTexture(vec2 texcoord) {
-	vec2 windowed = applyTextureWindow(texcoord);
+	vec2 sampleCoord = texcoord;
+	if (u_uvPlaneEnable > 0.5) {
+		sampleCoord = polygonTexcoord();
+	}
+	vec2 windowed = applyTextureWindow(sampleCoord);
 	float textureWord;
 	if (u_textureMode < 0.5) {
 		vec2 wordCoord = vec2(u_texPageBase.x + floor(windowed.x / 4.0), u_texPageBase.y + windowed.y);

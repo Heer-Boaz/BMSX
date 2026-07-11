@@ -113,6 +113,20 @@ in DuckStation en Mednafen. Mirrored TS/C++ softwarevectors dekken de positieve
 `+1024` edge, negatieve X-bucket met direct16 texture-interpolatie en negatieve
 Y-bucket met drawing-area clipping en Gouraud-interpolatie.
 
+Textured polygons gebruiken nu eveneens één gemirrorde PSX-attribuutplane. De
+TS/C++ softwareowners stappen U/V met 12 fractionele bits, de halve-texel seed
+en de 20-bit accumulatorwrap uit de DuckStation/Mednafen-rasterdatapath in plaats
+van een exacte barycentrische deling per pixel. WebGL2, WebGPU en GLES2 krijgen
+per triangle dezelfde gekwantiseerde plane als gesplitste vaste uniforms; de
+fragmentdatapath evalueert de 20-bit accumulator exact zonder CPU-pixelwerk.
+Quads tekenen hun twee planes afzonderlijk en verversen read-VRAM tussen beide
+triangles wanneer blend- of maskstate dat vereist. Rectangles behouden hun
+bestaande 7-float direct-UV vertexpad. Raw polygon-UV's blijven in diezelfde
+vertexstream de source-cachebounds leveren, dus er zijn geen per-command
+allocaties, extra volledige texture-page copies of rectangle-bandwidthkosten.
+Mirrored vectors bewijzen de halve-texel tie, niet-integrale gradienttruncatie en
+dalende accumulatorwrap.
+
 Lines en polylines volgen nu in alle backendowners dezelfde DDA-conventie.
 TS/C++ software wrapt iedere emitted sample pas na de 32.32-stap naar signed
 11-bit. WebGL2, GLES2 en WebGPU evalueren de equivalente gehele DDA in de
@@ -126,6 +140,8 @@ blijft uitgesteld.
 Nog te sluiten:
 
 - Dezelfde triangle/quad vectors live tegen WebGL2, GLES2 en WebGPU uitvoeren.
+- De fixed-point polygon-UV grensvector live tegen WebGL2, GLES2 en WebGPU
+  uitvoeren.
 - Live accelerated line/polyline-DDA, wrap, Gouraud en double-joint conformance.
 - De verticale Gouraud-tie waar DuckStation `x0 >= x1` en Mednafen `x0 > x1`
   gebruikt tegen hardware beslissen; alle BMSX-backends volgen nu bewust de

@@ -61,6 +61,8 @@ constexpr GLsizei kGxGpuScanoutVertexStride = static_cast<GLsizei>(kGxGpuScanout
 std::array<f32, kGxGpuSolidFloatCapacity> g_solidVertices{};
 std::array<f32, kGxGpuLineFloatCapacity> g_lineVertices{};
 std::array<f32, kGxGpuTexturedFloatCapacity> g_texturedVertices{};
+std::array<i64, GX_GPU_TRIANGLE_UV_PLANE_WORDS * 2> g_texturedUvPlanes{};
+size_t g_texturedUvPlaneCount = 0u;
 std::array<f32, kGxGpuTransferFloatCapacity> g_transferVertices{};
 std::array<u8, kGxGpuRawVramUploadRowBytes> g_rawVramUploadRow{};
 std::array<u8, kGxGpuRawVramReadbackBytes> g_rawVramReadback{};
@@ -146,6 +148,10 @@ struct GxGpuRuntime {
 	GLint texturedSetMaskBitUniform = -1;
 	GLint texturedDitherEnableUniform = -1;
 	GLint texturedInterlacedRenderWordUniform = -1;
+	GLint texturedUvPlaneEnableUniform = -1;
+	GLint texturedUvPlaneBaseUniform = -1;
+	GLint texturedUvPlaneStepXUniform = -1;
+	GLint texturedUvPlaneStepYUniform = -1;
 	GLint transferPositionAttrib = -1;
 	GLint transferTexcoordAttrib = -1;
 	GLint transferSourceUniform = -1;
@@ -274,6 +280,10 @@ void initGxGpu(OpenGLES2Backend& backend) {
 	g_gxGpu.texturedSetMaskBitUniform = glGetUniformLocation(g_gxGpu.texturedProgram, "u_setMaskBit");
 	g_gxGpu.texturedDitherEnableUniform = glGetUniformLocation(g_gxGpu.texturedProgram, "u_ditherEnable");
 	g_gxGpu.texturedInterlacedRenderWordUniform = glGetUniformLocation(g_gxGpu.texturedProgram, "u_interlacedRenderWord");
+	g_gxGpu.texturedUvPlaneEnableUniform = glGetUniformLocation(g_gxGpu.texturedProgram, "u_uvPlaneEnable");
+	g_gxGpu.texturedUvPlaneBaseUniform = glGetUniformLocation(g_gxGpu.texturedProgram, "u_uvPlaneBase");
+	g_gxGpu.texturedUvPlaneStepXUniform = glGetUniformLocation(g_gxGpu.texturedProgram, "u_uvPlaneStepX");
+	g_gxGpu.texturedUvPlaneStepYUniform = glGetUniformLocation(g_gxGpu.texturedProgram, "u_uvPlaneStepY");
 	g_gxGpu.transferPositionAttrib = glGetAttribLocation(g_gxGpu.transferProgram, "a_position");
 	g_gxGpu.transferTexcoordAttrib = glGetAttribLocation(g_gxGpu.transferProgram, "a_texcoord");
 	g_gxGpu.transferSourceUniform = glGetUniformLocation(g_gxGpu.transferProgram, "u_source");
@@ -698,22 +708,34 @@ size_t appendTexturedPrimitiveTriangle(
 	if (gxGpuTriangleExceedsPrimitiveSize(x0, y0, x1, y1, x2, y2)) {
 		return vertexFloatCount;
 	}
+	const i64 determinant = static_cast<i64>(x1 - x0) * (y2 - y1) - static_cast<i64>(x2 - x1) * (y1 - y0);
+	if (determinant == 0) {
+		return vertexFloatCount;
+	}
 	const i32 xShift = gxGpuTriangleRasterShift(x0, x1, x2);
 	const i32 yShift = gxGpuTriangleRasterShift(y0, y1, y2);
+	x0 += xShift;
+	y0 += yShift;
+	x1 += xShift;
+	y1 += yShift;
+	x2 += xShift;
+	y2 += yShift;
+	gxGpuTriangleUvPlane(g_texturedUvPlanes.data(), static_cast<i32>(g_texturedUvPlaneCount * GX_GPU_TRIANGLE_UV_PLANE_WORDS), determinant, x0, y0, u0, v0, x1, y1, u1, v1, x2, y2, u2, v2);
+	g_texturedUvPlaneCount += 1u;
 	return appendTexturedTriangle(
 		vertexFloatCount,
-		static_cast<f32>(x0 + xShift),
-		static_cast<f32>(y0 + yShift),
+		static_cast<f32>(x0),
+		static_cast<f32>(y0),
 		color0,
 		u0,
 		v0,
-		static_cast<f32>(x1 + xShift),
-		static_cast<f32>(y1 + yShift),
+		static_cast<f32>(x1),
+		static_cast<f32>(y1),
 		color1,
 		u1,
 		v1,
-		static_cast<f32>(x2 + xShift),
-		static_cast<f32>(y2 + yShift),
+		static_cast<f32>(x2),
+		static_cast<f32>(y2),
 		color2,
 		u2,
 		v2);
@@ -1470,6 +1492,20 @@ void writeTexturedUniforms(const GxGpuCommandBuffer& commandBuffer, u32 commandI
 	glUniform1f(g_gxGpu.texturedInterlacedRenderWordUniform, static_cast<f32>(commandBuffer.commandInterlacedRenderWord[commandIndex]));
 }
 
+void writeTexturedUvPlaneUniforms(size_t planeIndex) {
+	const size_t offset = planeIndex * GX_GPU_TRIANGLE_UV_PLANE_WORDS;
+	const u32 baseU = static_cast<u32>(g_texturedUvPlanes[offset + GX_GPU_TRIANGLE_UV_BASE_U]);
+	const u32 baseV = static_cast<u32>(g_texturedUvPlanes[offset + GX_GPU_TRIANGLE_UV_BASE_V]);
+	const u32 stepXU = static_cast<u32>(g_texturedUvPlanes[offset + GX_GPU_TRIANGLE_UV_STEP_X_U]);
+	const u32 stepXV = static_cast<u32>(g_texturedUvPlanes[offset + GX_GPU_TRIANGLE_UV_STEP_X_V]);
+	const u32 stepYU = static_cast<u32>(g_texturedUvPlanes[offset + GX_GPU_TRIANGLE_UV_STEP_Y_U]);
+	const u32 stepYV = static_cast<u32>(g_texturedUvPlanes[offset + GX_GPU_TRIANGLE_UV_STEP_Y_V]);
+	glUniform1f(g_gxGpu.texturedUvPlaneEnableUniform, 1.0f);
+	glUniform4f(g_gxGpu.texturedUvPlaneBaseUniform, static_cast<f32>(baseU & 0x3ffu), static_cast<f32>(baseU >> 10u), static_cast<f32>(baseV & 0x3ffu), static_cast<f32>(baseV >> 10u));
+	glUniform4f(g_gxGpu.texturedUvPlaneStepXUniform, static_cast<f32>(stepXU & 0x3ffu), static_cast<f32>(stepXU >> 10u), static_cast<f32>(stepXV & 0x3ffu), static_cast<f32>(stepXV >> 10u));
+	glUniform4f(g_gxGpu.texturedUvPlaneStepYUniform, static_cast<f32>(stepYU & 0x3ffu), static_cast<f32>(stepYU >> 10u), static_cast<f32>(stepYV & 0x3ffu), static_cast<f32>(stepYV >> 10u));
+}
+
 void writeTransferUniforms(i32 sourceTextureUnit, u32 maskBitModeWord) {
 	glUniform1i(g_gxGpu.transferSourceUniform, sourceTextureUnit);
 	glUniform1i(g_gxGpu.transferVramUniform, kGxGpuTextureSampleUnit);
@@ -1979,6 +2015,7 @@ void renderTexturedCommand(
 	u32 topLeftWord,
 	u32 bottomRightWord) {
 	size_t vertexFloatCount = 0u;
+	g_texturedUvPlaneCount = 0u;
 	if (commandBuffer.commandKind[commandIndex] == GX_GPU_COMMAND_DRAW_POLYGON) {
 		vertexFloatCount = appendTexturedPolygon(commandBuffer, commandIndex, vertexFloatCount);
 	} else {
@@ -2005,7 +2042,21 @@ void renderTexturedCommand(
 	glVertexAttribPointer(static_cast<GLuint>(g_gxGpu.texturedColorAttrib), 3, GL_FLOAT, GL_FALSE, kGxGpuTexturedVertexStride, reinterpret_cast<const void*>(2u * sizeof(f32)));
 	glEnableVertexAttribArray(static_cast<GLuint>(g_gxGpu.texturedTexcoordAttrib));
 	glVertexAttribPointer(static_cast<GLuint>(g_gxGpu.texturedTexcoordAttrib), 2, GL_FLOAT, GL_FALSE, kGxGpuTexturedVertexStride, reinterpret_cast<const void*>(5u * sizeof(f32)));
-	glDrawArrays(GL_TRIANGLES, 0, static_cast<GLsizei>(vertexFloatCount / kGxGpuTexturedVertexFloats));
+	if (g_texturedUvPlaneCount == 0u) {
+		glUniform1f(g_gxGpu.texturedUvPlaneEnableUniform, 0.0f);
+		glDrawArrays(GL_TRIANGLES, 0, static_cast<GLsizei>(vertexFloatCount / kGxGpuTexturedVertexFloats));
+	} else {
+		const u32 opcode = commandBuffer.commandOpcode[commandIndex];
+		const u32 maskBitModeWord = commandBuffer.commandMaskBitModeWord[commandIndex];
+		const bool readsVram = gxGpuCommandSemiTransparencyEnabled(opcode) || gxGpuMaskBitCheckBeforeDraw(maskBitModeWord);
+		for (size_t planeIndex = 0u; planeIndex < g_texturedUvPlaneCount; planeIndex += 1u) {
+			writeTexturedUvPlaneUniforms(planeIndex);
+			glDrawArrays(GL_TRIANGLES, static_cast<GLint>(planeIndex * 3u), 3);
+			if (readsVram && planeIndex + 1u < g_texturedUvPlaneCount) {
+				copyGxGpuVertexBoundsToSampleTexture(g_texturedVertices.data(), kGxGpuTexturedVertexFloats * 3u, kGxGpuTexturedVertexFloats, topLeftWord, bottomRightWord);
+			}
+		}
+	}
 	glDisable(GL_SCISSOR_TEST);
 }
 

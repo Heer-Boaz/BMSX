@@ -4,6 +4,13 @@ import {
 	type GxGpuCommandBufferView,
 } from '../../../machine/devices/gx/gpu_command_buffer';
 import {
+	GX_GPU_TRIANGLE_UV_BASE_U,
+	GX_GPU_TRIANGLE_UV_BASE_V,
+	GX_GPU_TRIANGLE_UV_PLANE_WORDS,
+	GX_GPU_TRIANGLE_UV_STEP_X_U,
+	GX_GPU_TRIANGLE_UV_STEP_X_V,
+	GX_GPU_TRIANGLE_UV_STEP_Y_U,
+	GX_GPU_TRIANGLE_UV_STEP_Y_V,
 	gxGpuCommandRawTextureEnabled,
 	gxGpuCommandSemiTransparencyEnabled,
 	gxGpuDrawingAreaBottomExclusive,
@@ -30,6 +37,7 @@ import {
 	gxGpuTriangleEdgeCoverageMinimum,
 	gxGpuTriangleExceedsPrimitiveSize,
 	gxGpuTriangleRasterShift,
+	gxGpuTriangleUvPlane,
 } from '../gx_gpu_render_rules';
 import {
 	gxGpuSoftwareDitherOffset,
@@ -74,6 +82,7 @@ const GX_GPU_SOFTWARE_LINE_XY_HALF = 0x80000000;
 const GX_GPU_SOFTWARE_LINE_SUBPIXEL_BIAS = 1024;
 const GX_GPU_SOFTWARE_LINE_RGB_SCALE = 0x1000;
 const GX_GPU_SOFTWARE_LINE_RGB_HALF = 0x800;
+const gxGpuTriangleUvPlaneScratch = new Float64Array(GX_GPU_TRIANGLE_UV_PLANE_WORDS);
 
 function lineMakeFixedXY(value: number): number {
 	return value * GX_GPU_SOFTWARE_LINE_XY_SCALE + GX_GPU_SOFTWARE_LINE_XY_HALF;
@@ -427,18 +436,19 @@ export function drawGxGpuSoftwareTexturedTriangle(
 	const rStepX = sameColor ? 0 : (r0 * edge0StepX) + (r1 * edge1StepX) + (r2 * edge2StepX);
 	const gStepX = sameColor ? 0 : (g0 * edge0StepX) + (g1 * edge1StepX) + (g2 * edge2StepX);
 	const bStepX = sameColor ? 0 : (b0 * edge0StepX) + (b1 * edge1StepX) + (b2 * edge2StepX);
-	const uStepX = (u0 * edge0StepX) + (u1 * edge1StepX) + (u2 * edge2StepX);
-	const vStepX = (v0 * edge0StepX) + (v1 * edge1StepX) + (v2 * edge2StepX);
 	const rStepY = sameColor ? 0 : (r0 * edge0StepY) + (r1 * edge1StepY) + (r2 * edge2StepY);
 	const gStepY = sameColor ? 0 : (g0 * edge0StepY) + (g1 * edge1StepY) + (g2 * edge2StepY);
 	const bStepY = sameColor ? 0 : (b0 * edge0StepY) + (b1 * edge1StepY) + (b2 * edge2StepY);
-	const uStepY = (u0 * edge0StepY) + (u1 * edge1StepY) + (u2 * edge2StepY);
-	const vStepY = (v0 * edge0StepY) + (v1 * edge1StepY) + (v2 * edge2StepY);
 	let rowR = sameColor ? 0 : (r0 * rowW0) + (r1 * rowW1) + (r2 * rowW2);
 	let rowG = sameColor ? 0 : (g0 * rowW0) + (g1 * rowW1) + (g2 * rowW2);
 	let rowB = sameColor ? 0 : (b0 * rowW0) + (b1 * rowW1) + (b2 * rowW2);
-	let rowU = (u0 * rowW0) + (u1 * rowW1) + (u2 * rowW2);
-	let rowV = (v0 * rowW0) + (v1 * rowW1) + (v2 * rowW2);
+	gxGpuTriangleUvPlane(gxGpuTriangleUvPlaneScratch, 0, -area * edgeSign, x0, y0, u0, v0, x1, y1, u1, v1, x2, y2, u2, v2);
+	const uStepX = gxGpuTriangleUvPlaneScratch[GX_GPU_TRIANGLE_UV_STEP_X_U];
+	const vStepX = gxGpuTriangleUvPlaneScratch[GX_GPU_TRIANGLE_UV_STEP_X_V];
+	const uStepY = gxGpuTriangleUvPlaneScratch[GX_GPU_TRIANGLE_UV_STEP_Y_U];
+	const vStepY = gxGpuTriangleUvPlaneScratch[GX_GPU_TRIANGLE_UV_STEP_Y_V];
+	let rowU = gxGpuTriangleUvPlaneScratch[GX_GPU_TRIANGLE_UV_BASE_U] + (left * uStepX) + (top * uStepY);
+	let rowV = gxGpuTriangleUvPlaneScratch[GX_GPU_TRIANGLE_UV_BASE_V] + (left * vStepX) + (top * vStepY);
 	rowW0 -= gxGpuTriangleEdgeCoverageMinimum(edge0StepX, edge0StepY);
 	rowW1 -= gxGpuTriangleEdgeCoverageMinimum(edge1StepX, edge1StepY);
 	rowW2 -= gxGpuTriangleEdgeCoverageMinimum(edge2StepX, edge2StepY);
@@ -462,15 +472,15 @@ export function drawGxGpuSoftwareTexturedTriangle(
 		let r = rowR;
 		let g = rowG;
 		let b = rowB;
-		let uNumerator = rowU;
-		let vNumerator = rowV;
+		let uFixed = rowU;
+		let vFixed = rowV;
 		for (let x = left; x < rightExclusive; x += 1) {
 			if (w0 >= 0 && w1 >= 0 && w2 >= 0) {
 				const r8 = sameColor ? r0 : integerDivide(r, area);
 				const g8 = sameColor ? g0 : integerDivide(g, area);
 				const b8 = sameColor ? b0 : integerDivide(b, area);
-				const u = integerDivide(uNumerator, area);
-				const v = integerDivide(vNumerator, area);
+				const u = (uFixed >>> 12) & 0xff;
+				const v = (vFixed >>> 12) & 0xff;
 				const sampleWord = sampleGxGpuSoftwareTextureWord(
 					u,
 					v,
@@ -506,8 +516,8 @@ export function drawGxGpuSoftwareTexturedTriangle(
 				g += gStepX;
 				b += bStepX;
 			}
-			uNumerator += uStepX;
-			vNumerator += vStepX;
+			uFixed += uStepX;
+			vFixed += vStepX;
 		}
 		rowW0 += edge0StepY;
 		rowW1 += edge1StepY;

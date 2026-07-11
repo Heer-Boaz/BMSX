@@ -1277,6 +1277,62 @@ void testSoftwarePolygonRasterBucketWrap() {
 	require(bmsx::g_gxGpuSoftwareVram[bmsx::gxGpuSoftwareVramIndex(12, 510)] == 0u, "GX-GPU software wrapped Gouraud polygon clips bottom-right drawing area");
 }
 
+void testSoftwareTexturedPolygonFixedUvGradient() {
+	bmsx::GxGpuCommandBuffer commandBuffer;
+	commandBuffer.reset();
+	pushSoftwareCommand(
+		commandBuffer,
+		std::array<uint32_t, 4>{
+			bmsx::GX_GPU_GP0_CPU_TO_VRAM_FIRST << 24u,
+			0u,
+			(1u << 16u) | 2u,
+			0x03e0001fu,
+		},
+		4u,
+		bmsx::GX_GPU_COMMAND_UPLOAD_CPU_TO_VRAM,
+		bmsx::GX_GPU_GP0_CPU_TO_VRAM_FIRST);
+	constexpr uint8_t opcode = bmsx::GX_GPU_GP0_POLYGON_FIRST | bmsx::GX_GPU_GP0_RENDER_TEXTURE_BIT | 0x01u;
+	pushSoftwareCommand(
+		commandBuffer,
+		std::array<uint32_t, 7>{
+			(opcode << 24u) | 0x808080u,
+			(10u << 16u) | 10u,
+			0u,
+			(10u << 16u) | 12u,
+			0x01000001u,
+			(12u << 16u) | 10u,
+			0u,
+		},
+		7u,
+		bmsx::GX_GPU_COMMAND_DRAW_POLYGON,
+		opcode,
+		bmsx::GX_GPU_TEXTURE_MODE_DIRECT16 << 7u);
+	pushSoftwareCommand(commandBuffer, std::array<uint32_t, 7>{
+		(opcode << 24u) | 0x808080u,
+		(20u << 16u) | 20u, 0u,
+		(20u << 16u) | 26u, 0x01000001u,
+		(26u << 16u) | 20u, 0u,
+	}, 7u, bmsx::GX_GPU_COMMAND_DRAW_POLYGON, opcode, bmsx::GX_GPU_TEXTURE_MODE_DIRECT16 << 7u);
+	pushSoftwareCommand(commandBuffer, std::array<uint32_t, 7>{
+		(opcode << 24u) | 0x808080u,
+		(30u << 16u) | 30u, 1u,
+		(30u << 16u) | 36u, 0x01000000u,
+		(36u << 16u) | 30u, 1u,
+	}, 7u, bmsx::GX_GPU_COMMAND_DRAW_POLYGON, opcode, bmsx::GX_GPU_TEXTURE_MODE_DIRECT16 << 7u);
+
+	bmsx::g_gxGpuSoftwareVram.fill(0u);
+	bmsx::executeGxGpuSoftwareCommands(commandBuffer, 0u);
+
+	require(bmsx::g_gxGpuSoftwareVram[bmsx::gxGpuSoftwareVramIndex(10, 10)] == 0x001fu, "GX-GPU software fixed UV plane samples the seeded texel at the first pixel");
+	require(bmsx::g_gxGpuSoftwareVram[bmsx::gxGpuSoftwareVramIndex(11, 10)] == 0x03e0u, "GX-GPU software fixed UV plane rounds the half-texel boundary up");
+	require(bmsx::g_gxGpuSoftwareVram[bmsx::gxGpuSoftwareVramIndex(10, 11)] == 0x001fu, "GX-GPU software fixed UV plane preserves the vertical sample");
+	require(bmsx::g_gxGpuSoftwareVram[bmsx::gxGpuSoftwareVramIndex(12, 10)] == 0u, "GX-GPU software fixed UV triangle excludes its right edge");
+	require(bmsx::g_gxGpuSoftwareVram[bmsx::gxGpuSoftwareVramIndex(23, 20)] == 0x001fu, "GX-GPU software fixed UV plane truncates a non-integral positive gradient");
+	require(bmsx::g_gxGpuSoftwareVram[bmsx::gxGpuSoftwareVramIndex(24, 20)] == 0x03e0u, "GX-GPU software fixed UV plane advances after the truncated boundary");
+	require(bmsx::g_gxGpuSoftwareVram[bmsx::gxGpuSoftwareVramIndex(33, 30)] == 0x03e0u, "GX-GPU software fixed UV plane preserves a descending boundary texel");
+	require(bmsx::g_gxGpuSoftwareVram[bmsx::gxGpuSoftwareVramIndex(34, 30)] == 0x001fu, "GX-GPU software fixed UV plane wraps a negative gradient accumulator");
+}
+
 void testSoftwareDrawingAreaOffsetClippingAndRectangleCoordinateWrap() {
 	bmsx::GxGpuCommandBuffer commandBuffer;
 	commandBuffer.reset();
@@ -1995,6 +2051,7 @@ int main() {
 	testSoftwareBlendsUntexturedSemiTransparentRectangles();
 	testSoftwareTriangleEdgesAndQuadSeams();
 	testSoftwarePolygonRasterBucketWrap();
+	testSoftwareTexturedPolygonFixedUvGradient();
 	testSoftwareDrawingAreaOffsetClippingAndRectangleCoordinateWrap();
 	testSoftwareFillBypassesDrawingAreaAndMaskBitDrawingState();
 	testSoftwareScanoutConsumesTransfersAndFill();

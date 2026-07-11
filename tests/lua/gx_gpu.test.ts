@@ -1242,6 +1242,51 @@ test('GX-GPU software polygons wrap the raster bucket after drawing offset and p
 	assert.equal(gxGpuSoftwareVram[gxGpuSoftwareVramIndex(12, 510)], 0);
 });
 
+test('GX-GPU software textured polygons use PSX fixed-point UV gradients and half-texel seed', () => {
+	const commandBuffer = new GxGpuCommandBuffer();
+	commandBuffer.reset();
+	pushSoftwareCommand(commandBuffer, new Uint32Array([
+		GX_GPU_GP0_CPU_TO_VRAM_FIRST << 24,
+		0,
+		(1 << 16) | 2,
+		0x03e0001f,
+	]), GX_GPU_COMMAND_UPLOAD_CPU_TO_VRAM, GX_GPU_GP0_CPU_TO_VRAM_FIRST);
+	const opcode = GX_GPU_GP0_POLYGON_FIRST | GX_GPU_GP0_RENDER_TEXTURE_BIT | 0x01;
+	pushSoftwareCommand(commandBuffer, new Uint32Array([
+		((opcode << 24) | 0x808080) >>> 0,
+		(10 << 16) | 10,
+		0,
+		(10 << 16) | 12,
+		0x01000001,
+		(12 << 16) | 10,
+		0,
+	]), GX_GPU_COMMAND_DRAW_POLYGON, opcode, GX_GPU_TEXTURE_MODE_DIRECT16 << 7);
+	pushSoftwareCommand(commandBuffer, new Uint32Array([
+		((opcode << 24) | 0x808080) >>> 0,
+		(20 << 16) | 20, 0,
+		(20 << 16) | 26, 0x01000001,
+		(26 << 16) | 20, 0,
+	]), GX_GPU_COMMAND_DRAW_POLYGON, opcode, GX_GPU_TEXTURE_MODE_DIRECT16 << 7);
+	pushSoftwareCommand(commandBuffer, new Uint32Array([
+		((opcode << 24) | 0x808080) >>> 0,
+		(30 << 16) | 30, 1,
+		(30 << 16) | 36, 0x01000000,
+		(36 << 16) | 30, 1,
+	]), GX_GPU_COMMAND_DRAW_POLYGON, opcode, GX_GPU_TEXTURE_MODE_DIRECT16 << 7);
+
+	gxGpuSoftwareVram.fill(0);
+	executeGxGpuSoftwareCommands(commandBuffer, 0);
+
+	assert.equal(gxGpuSoftwareVram[gxGpuSoftwareVramIndex(10, 10)], 0x001f);
+	assert.equal(gxGpuSoftwareVram[gxGpuSoftwareVramIndex(11, 10)], 0x03e0);
+	assert.equal(gxGpuSoftwareVram[gxGpuSoftwareVramIndex(10, 11)], 0x001f);
+	assert.equal(gxGpuSoftwareVram[gxGpuSoftwareVramIndex(12, 10)], 0);
+	assert.equal(gxGpuSoftwareVram[gxGpuSoftwareVramIndex(23, 20)], 0x001f);
+	assert.equal(gxGpuSoftwareVram[gxGpuSoftwareVramIndex(24, 20)], 0x03e0);
+	assert.equal(gxGpuSoftwareVram[gxGpuSoftwareVramIndex(33, 30)], 0x03e0);
+	assert.equal(gxGpuSoftwareVram[gxGpuSoftwareVramIndex(34, 30)], 0x001f);
+});
+
 test('GX-GPU software backend applies drawing offsets, inclusive drawing areas, and rectangle coordinate wrap', () => {
 	const commandBuffer = new GxGpuCommandBuffer();
 	commandBuffer.reset();

@@ -21,6 +21,13 @@ import {
 } from '../../../machine/devices/gx/gpu_command_buffer';
 import {
 	GX_GPU_VERTEX_COORD_PERIOD,
+	GX_GPU_TRIANGLE_UV_BASE_U,
+	GX_GPU_TRIANGLE_UV_BASE_V,
+	GX_GPU_TRIANGLE_UV_PLANE_WORDS,
+	GX_GPU_TRIANGLE_UV_STEP_X_U,
+	GX_GPU_TRIANGLE_UV_STEP_X_V,
+	GX_GPU_TRIANGLE_UV_STEP_Y_U,
+	GX_GPU_TRIANGLE_UV_STEP_Y_V,
 	gxGpuCommandDrawsTexture,
 	gxGpuCommandGouraud,
 	gxGpuCommandQuadPolygon,
@@ -62,6 +69,7 @@ import {
 	gxGpuTransferY,
 	gxGpuTriangleExceedsPrimitiveSize,
 	gxGpuTriangleRasterShift,
+	gxGpuTriangleUvPlane,
 	gxGpuSigned11,
 	gxGpuVertexY,
 	gxGpuVramCopyChunkHeight,
@@ -118,6 +126,8 @@ const GX_GPU_FULL_DRAWING_AREA_BOTTOM_RIGHT_WORD = (GX_GPU_VRAM_WIDTH - 1) | ((G
 const gxGpuSolidVertices = new Float32Array(GX_GPU_SOLID_FLOAT_CAPACITY);
 const gxGpuLineVertices = new Float32Array(GX_GPU_LINE_FLOAT_CAPACITY);
 const gxGpuTexturedVertices = new Float32Array(GX_GPU_TEXTURED_FLOAT_CAPACITY);
+const gxGpuTexturedUvPlanes = new Float64Array(GX_GPU_TRIANGLE_UV_PLANE_WORDS * 2);
+let gxGpuTexturedUvPlaneCount = 0;
 const gxGpuTransferVertices = new Float32Array(GX_GPU_TRANSFER_FLOAT_CAPACITY);
 const gxGpuRawVramUploadRow = new Uint8Array(GX_GPU_RAW_VRAM_UPLOAD_ROW_BYTES);
 const gxGpuRawVramReadback = new Uint8Array(GX_GPU_RAW_VRAM_READBACK_BYTES);
@@ -254,6 +264,10 @@ type GxGpuState = {
 	texturedSetMaskBitUniform: WebGLUniformLocation;
 	texturedDitherEnableUniform: WebGLUniformLocation;
 	texturedInterlacedRenderWordUniform: WebGLUniformLocation;
+	texturedUvPlaneEnableUniform: WebGLUniformLocation;
+	texturedUvPlaneBaseUniform: WebGLUniformLocation;
+	texturedUvPlaneStepXUniform: WebGLUniformLocation;
+	texturedUvPlaneStepYUniform: WebGLUniformLocation;
 	transferPositionAttrib: number;
 	transferTexcoordAttrib: number;
 	transferSourceUniform: WebGLUniformLocation;
@@ -384,6 +398,10 @@ function bootstrapGxGpuPass(backend: WebGLBackend): void {
 		texturedSetMaskBitUniform: gl.getUniformLocation(texturedProgram, 'u_setMaskBit') as WebGLUniformLocation,
 		texturedDitherEnableUniform: gl.getUniformLocation(texturedProgram, 'u_ditherEnable') as WebGLUniformLocation,
 		texturedInterlacedRenderWordUniform: gl.getUniformLocation(texturedProgram, 'u_interlacedRenderWord') as WebGLUniformLocation,
+		texturedUvPlaneEnableUniform: gl.getUniformLocation(texturedProgram, 'u_uvPlaneEnable') as WebGLUniformLocation,
+		texturedUvPlaneBaseUniform: gl.getUniformLocation(texturedProgram, 'u_uvPlaneBase') as WebGLUniformLocation,
+		texturedUvPlaneStepXUniform: gl.getUniformLocation(texturedProgram, 'u_uvPlaneStepX') as WebGLUniformLocation,
+		texturedUvPlaneStepYUniform: gl.getUniformLocation(texturedProgram, 'u_uvPlaneStepY') as WebGLUniformLocation,
 		transferPositionAttrib: gl.getAttribLocation(transferProgram, 'a_position'),
 		transferTexcoordAttrib: gl.getAttribLocation(transferProgram, 'a_texcoord'),
 		transferSourceUniform: gl.getUniformLocation(transferProgram, 'u_source') as WebGLUniformLocation,
@@ -855,9 +873,21 @@ function appendTexturedPrimitiveTriangle(
 	if (gxGpuTriangleExceedsPrimitiveSize(x0, y0, x1, y1, x2, y2)) {
 		return vertexFloatCount;
 	}
+	const determinant = ((x1 - x0) * (y2 - y1)) - ((x2 - x1) * (y1 - y0));
+	if (determinant === 0) {
+		return vertexFloatCount;
+	}
 	const xShift = gxGpuTriangleRasterShift(x0, x1, x2);
 	const yShift = gxGpuTriangleRasterShift(y0, y1, y2);
-	return appendTexturedTriangle(vertexFloatCount, x0 + xShift, y0 + yShift, color0, u0, v0, x1 + xShift, y1 + yShift, color1, u1, v1, x2 + xShift, y2 + yShift, color2, u2, v2);
+	x0 += xShift;
+	y0 += yShift;
+	x1 += xShift;
+	y1 += yShift;
+	x2 += xShift;
+	y2 += yShift;
+	gxGpuTriangleUvPlane(gxGpuTexturedUvPlanes, gxGpuTexturedUvPlaneCount * GX_GPU_TRIANGLE_UV_PLANE_WORDS, determinant, x0, y0, u0, v0, x1, y1, u1, v1, x2, y2, u2, v2);
+	gxGpuTexturedUvPlaneCount += 1;
+	return appendTexturedTriangle(vertexFloatCount, x0, y0, color0, u0, v0, x1, y1, color1, u1, v1, x2, y2, color2, u2, v2);
 }
 
 function appendTexturedPolygon(commandBuffer: GxGpuCommandBufferView, commandIndex: number, vertexFloatCount: number): number {
@@ -1600,6 +1630,21 @@ function writeTexturedUniforms(commandBuffer: GxGpuCommandBufferView, commandInd
 	gl.uniform1f(gxGpuState.texturedInterlacedRenderWordUniform, commandBuffer.commandInterlacedRenderWord[commandIndex]);
 }
 
+function writeTexturedUvPlaneUniforms(planeIndex: number): void {
+	const gl = gxGpuState.gl;
+	const offset = planeIndex * GX_GPU_TRIANGLE_UV_PLANE_WORDS;
+	const baseU = gxGpuTexturedUvPlanes[offset + GX_GPU_TRIANGLE_UV_BASE_U];
+	const baseV = gxGpuTexturedUvPlanes[offset + GX_GPU_TRIANGLE_UV_BASE_V];
+	const stepXU = gxGpuTexturedUvPlanes[offset + GX_GPU_TRIANGLE_UV_STEP_X_U];
+	const stepXV = gxGpuTexturedUvPlanes[offset + GX_GPU_TRIANGLE_UV_STEP_X_V];
+	const stepYU = gxGpuTexturedUvPlanes[offset + GX_GPU_TRIANGLE_UV_STEP_Y_U];
+	const stepYV = gxGpuTexturedUvPlanes[offset + GX_GPU_TRIANGLE_UV_STEP_Y_V];
+	gl.uniform1f(gxGpuState.texturedUvPlaneEnableUniform, 1);
+	gl.uniform4f(gxGpuState.texturedUvPlaneBaseUniform, baseU & 0x3ff, baseU >>> 10, baseV & 0x3ff, baseV >>> 10);
+	gl.uniform4f(gxGpuState.texturedUvPlaneStepXUniform, stepXU & 0x3ff, stepXU >>> 10, stepXV & 0x3ff, stepXV >>> 10);
+	gl.uniform4f(gxGpuState.texturedUvPlaneStepYUniform, stepYU & 0x3ff, stepYU >>> 10, stepYV & 0x3ff, stepYV >>> 10);
+}
+
 function writeTransferUniforms(sourceTextureUnit: number, maskBitModeWord: number): void {
 	const gl = gxGpuState.gl;
 	gl.uniform1i(gxGpuState.transferSourceUniform, sourceTextureUnit);
@@ -2161,6 +2206,7 @@ function renderTexturedCommand(
 	bottomRightWord: number,
 ): void {
 	let vertexFloatCount = 0;
+	gxGpuTexturedUvPlaneCount = 0;
 	if (commandBuffer.commandKind[commandIndex] === GX_GPU_COMMAND_DRAW_POLYGON) {
 		vertexFloatCount = appendTexturedPolygon(commandBuffer, commandIndex, vertexFloatCount);
 	} else {
@@ -2191,7 +2237,21 @@ function renderTexturedCommand(
 	gl.vertexAttribPointer(gxGpuState.texturedColorAttrib, 3, gl.FLOAT, false, texturedVertexStrideBytes, 2 * 4);
 	gl.enableVertexAttribArray(gxGpuState.texturedTexcoordAttrib);
 	gl.vertexAttribPointer(gxGpuState.texturedTexcoordAttrib, 2, gl.FLOAT, false, texturedVertexStrideBytes, 5 * 4);
-	gl.drawArrays(gl.TRIANGLES, 0, vertexFloatCount / GX_GPU_TEXTURED_VERTEX_FLOATS);
+	if (gxGpuTexturedUvPlaneCount === 0) {
+		gl.uniform1f(gxGpuState.texturedUvPlaneEnableUniform, 0);
+		gl.drawArrays(gl.TRIANGLES, 0, vertexFloatCount / GX_GPU_TEXTURED_VERTEX_FLOATS);
+	} else {
+		const opcode = commandBuffer.commandOpcode[commandIndex];
+		const maskBitModeWord = commandBuffer.commandMaskBitModeWord[commandIndex];
+		const readsVram = gxGpuCommandSemiTransparencyEnabled(opcode) || gxGpuMaskBitCheckBeforeDraw(maskBitModeWord);
+		for (let planeIndex = 0; planeIndex < gxGpuTexturedUvPlaneCount; planeIndex += 1) {
+			writeTexturedUvPlaneUniforms(planeIndex);
+			gl.drawArrays(gl.TRIANGLES, planeIndex * 3, 3);
+			if (readsVram && planeIndex + 1 < gxGpuTexturedUvPlaneCount) {
+				copyGxGpuVertexBoundsToSampleTexture(gxGpuTexturedVertices, GX_GPU_TEXTURED_VERTEX_FLOATS * 3, GX_GPU_TEXTURED_VERTEX_FLOATS, topLeftWord, bottomRightWord);
+			}
+		}
+	}
 	gl.disable(gl.SCISSOR_TEST);
 }
 

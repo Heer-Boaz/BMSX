@@ -4,8 +4,12 @@
 #include "render/backend/gx_gpu_render_rules.h"
 #include "render/backend/software/gx_gpu_vram.h"
 
+#include <array>
+
 namespace bmsx {
 namespace {
+
+std::array<i64, GX_GPU_TRIANGLE_UV_PLANE_WORDS> g_triangleUvPlaneScratch{};
 
 inline i32 absI32(i32 value) {
 	return value < 0 ? -value : value;
@@ -382,18 +386,19 @@ void drawGxGpuSoftwareTexturedTriangle(
 	const i64 rStepX = sameColor ? 0 : static_cast<i64>(r0) * edge0StepX + static_cast<i64>(r1) * edge1StepX + static_cast<i64>(r2) * edge2StepX;
 	const i64 gStepX = sameColor ? 0 : static_cast<i64>(g0) * edge0StepX + static_cast<i64>(g1) * edge1StepX + static_cast<i64>(g2) * edge2StepX;
 	const i64 bStepX = sameColor ? 0 : static_cast<i64>(b0) * edge0StepX + static_cast<i64>(b1) * edge1StepX + static_cast<i64>(b2) * edge2StepX;
-	const i64 uStepX = static_cast<i64>(u0) * edge0StepX + static_cast<i64>(u1) * edge1StepX + static_cast<i64>(u2) * edge2StepX;
-	const i64 vStepX = static_cast<i64>(v0) * edge0StepX + static_cast<i64>(v1) * edge1StepX + static_cast<i64>(v2) * edge2StepX;
 	const i64 rStepY = sameColor ? 0 : static_cast<i64>(r0) * edge0StepY + static_cast<i64>(r1) * edge1StepY + static_cast<i64>(r2) * edge2StepY;
 	const i64 gStepY = sameColor ? 0 : static_cast<i64>(g0) * edge0StepY + static_cast<i64>(g1) * edge1StepY + static_cast<i64>(g2) * edge2StepY;
 	const i64 bStepY = sameColor ? 0 : static_cast<i64>(b0) * edge0StepY + static_cast<i64>(b1) * edge1StepY + static_cast<i64>(b2) * edge2StepY;
-	const i64 uStepY = static_cast<i64>(u0) * edge0StepY + static_cast<i64>(u1) * edge1StepY + static_cast<i64>(u2) * edge2StepY;
-	const i64 vStepY = static_cast<i64>(v0) * edge0StepY + static_cast<i64>(v1) * edge1StepY + static_cast<i64>(v2) * edge2StepY;
 	i64 rowR = sameColor ? 0 : static_cast<i64>(r0) * rowW0 + static_cast<i64>(r1) * rowW1 + static_cast<i64>(r2) * rowW2;
 	i64 rowG = sameColor ? 0 : static_cast<i64>(g0) * rowW0 + static_cast<i64>(g1) * rowW1 + static_cast<i64>(g2) * rowW2;
 	i64 rowB = sameColor ? 0 : static_cast<i64>(b0) * rowW0 + static_cast<i64>(b1) * rowW1 + static_cast<i64>(b2) * rowW2;
-	i64 rowU = static_cast<i64>(u0) * rowW0 + static_cast<i64>(u1) * rowW1 + static_cast<i64>(u2) * rowW2;
-	i64 rowV = static_cast<i64>(v0) * rowW0 + static_cast<i64>(v1) * rowW1 + static_cast<i64>(v2) * rowW2;
+	gxGpuTriangleUvPlane(g_triangleUvPlaneScratch.data(), 0, -area * edgeSign, x0, y0, u0, v0, x1, y1, u1, v1, x2, y2, u2, v2);
+	const i64 uStepX = g_triangleUvPlaneScratch[GX_GPU_TRIANGLE_UV_STEP_X_U];
+	const i64 vStepX = g_triangleUvPlaneScratch[GX_GPU_TRIANGLE_UV_STEP_X_V];
+	const i64 uStepY = g_triangleUvPlaneScratch[GX_GPU_TRIANGLE_UV_STEP_Y_U];
+	const i64 vStepY = g_triangleUvPlaneScratch[GX_GPU_TRIANGLE_UV_STEP_Y_V];
+	i64 rowU = g_triangleUvPlaneScratch[GX_GPU_TRIANGLE_UV_BASE_U] + static_cast<i64>(left) * uStepX + static_cast<i64>(top) * uStepY;
+	i64 rowV = g_triangleUvPlaneScratch[GX_GPU_TRIANGLE_UV_BASE_V] + static_cast<i64>(left) * vStepX + static_cast<i64>(top) * vStepY;
 	rowW0 -= gxGpuTriangleEdgeCoverageMinimum(edge0StepX, edge0StepY);
 	rowW1 -= gxGpuTriangleEdgeCoverageMinimum(edge1StepX, edge1StepY);
 	rowW2 -= gxGpuTriangleEdgeCoverageMinimum(edge2StepX, edge2StepY);
@@ -417,15 +422,15 @@ void drawGxGpuSoftwareTexturedTriangle(
 		i64 r = rowR;
 		i64 g = rowG;
 		i64 b = rowB;
-		i64 uNumerator = rowU;
-		i64 vNumerator = rowV;
+		i64 uFixed = rowU;
+		i64 vFixed = rowV;
 		for (i32 x = left; x < rightExclusive; x += 1) {
 			if (w0 >= 0 && w1 >= 0 && w2 >= 0) {
 				const u32 r8 = sameColor ? r0 : static_cast<u32>(r / area);
 				const u32 g8 = sameColor ? g0 : static_cast<u32>(g / area);
 				const u32 b8 = sameColor ? b0 : static_cast<u32>(b / area);
-				const i32 u = static_cast<i32>(uNumerator / area);
-				const i32 v = static_cast<i32>(vNumerator / area);
+				const i32 u = static_cast<i32>((static_cast<u64>(uFixed) >> 12u) & 0xffu);
+				const i32 v = static_cast<i32>((static_cast<u64>(vFixed) >> 12u) & 0xffu);
 				const u32 sampleWord = sampleGxGpuSoftwareTextureWord(
 					u,
 					v,
@@ -459,8 +464,8 @@ void drawGxGpuSoftwareTexturedTriangle(
 				g += gStepX;
 				b += bStepX;
 			}
-			uNumerator += uStepX;
-			vNumerator += vStepX;
+			uFixed += uStepX;
+			vFixed += vStepX;
 		}
 		rowW0 += edge0StepY;
 		rowW1 += edge1StepY;

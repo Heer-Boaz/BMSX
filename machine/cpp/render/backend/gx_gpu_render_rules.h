@@ -7,6 +7,16 @@ namespace bmsx {
 constexpr i32 GX_GPU_MAX_PRIMITIVE_WIDTH = 1024;
 constexpr i32 GX_GPU_MAX_PRIMITIVE_HEIGHT = 512;
 constexpr i32 GX_GPU_VERTEX_COORD_PERIOD = 0x800;
+constexpr i32 GX_GPU_TRIANGLE_UV_PLANE_WORDS = 6;
+constexpr i32 GX_GPU_TRIANGLE_UV_BASE_U = 0;
+constexpr i32 GX_GPU_TRIANGLE_UV_BASE_V = 1;
+constexpr i32 GX_GPU_TRIANGLE_UV_STEP_X_U = 2;
+constexpr i32 GX_GPU_TRIANGLE_UV_STEP_X_V = 3;
+constexpr i32 GX_GPU_TRIANGLE_UV_STEP_Y_U = 4;
+constexpr i32 GX_GPU_TRIANGLE_UV_STEP_Y_V = 5;
+constexpr i32 GX_GPU_TRIANGLE_UV_FRACTION_BITS = 12;
+constexpr i64 GX_GPU_TRIANGLE_UV_FRACTION_SCALE = 1 << GX_GPU_TRIANGLE_UV_FRACTION_BITS;
+constexpr i64 GX_GPU_TRIANGLE_UV_ACCUMULATOR_MASK = 0xfffff;
 constexpr u32 GX_GPU_DOT_CLOCK_DIVIDER_256 = 10u;
 constexpr u32 GX_GPU_DOT_CLOCK_DIVIDER_320 = 8u;
 constexpr u32 GX_GPU_DOT_CLOCK_DIVIDER_512 = 5u;
@@ -21,6 +31,38 @@ inline i32 gxGpuSigned11(u32 value) {
 inline i32 gxGpuTriangleRasterShift(i32 coord0, i32 coord1, i32 coord2) {
 	const i32 minimum = coord0 < coord1 ? (coord0 < coord2 ? coord0 : coord2) : (coord1 < coord2 ? coord1 : coord2);
 	return minimum < -(GX_GPU_VERTEX_COORD_PERIOD >> 1) ? GX_GPU_VERTEX_COORD_PERIOD : 0;
+}
+
+inline void gxGpuTriangleUvPlane(
+	i64* out,
+	i32 outOffset,
+	i64 determinant,
+	i32 x0, i32 y0, i32 u0, i32 v0,
+	i32 x1, i32 y1, i32 u1, i32 v1,
+	i32 x2, i32 y2, i32 u2, i32 v2) {
+	const i64 stepXUQuotient = (static_cast<i64>(u1 - u0) * (y2 - y1) - static_cast<i64>(u2 - u1) * (y1 - y0)) * GX_GPU_TRIANGLE_UV_FRACTION_SCALE / determinant;
+	const i64 stepXVQuotient = (static_cast<i64>(v1 - v0) * (y2 - y1) - static_cast<i64>(v2 - v1) * (y1 - y0)) * GX_GPU_TRIANGLE_UV_FRACTION_SCALE / determinant;
+	const i64 stepYUQuotient = (static_cast<i64>(x1 - x0) * (u2 - u1) - static_cast<i64>(x2 - x1) * (u1 - u0)) * GX_GPU_TRIANGLE_UV_FRACTION_SCALE / determinant;
+	const i64 stepYVQuotient = (static_cast<i64>(x1 - x0) * (v2 - v1) - static_cast<i64>(x2 - x1) * (v1 - v0)) * GX_GPU_TRIANGLE_UV_FRACTION_SCALE / determinant;
+	const i64 stepXURaw = stepXUQuotient & GX_GPU_TRIANGLE_UV_ACCUMULATOR_MASK;
+	const i64 stepXVRaw = stepXVQuotient & GX_GPU_TRIANGLE_UV_ACCUMULATOR_MASK;
+	const i64 stepYURaw = stepYUQuotient & GX_GPU_TRIANGLE_UV_ACCUMULATOR_MASK;
+	const i64 stepYVRaw = stepYVQuotient & GX_GPU_TRIANGLE_UV_ACCUMULATOR_MASK;
+	const i64 stepXU = (stepXURaw & 0x80000ll) != 0 ? stepXURaw - 0x100000ll : stepXURaw;
+	const i64 stepXV = (stepXVRaw & 0x80000ll) != 0 ? stepXVRaw - 0x100000ll : stepXVRaw;
+	const i64 stepYU = (stepYURaw & 0x80000ll) != 0 ? stepYURaw - 0x100000ll : stepYURaw;
+	const i64 stepYV = (stepYVRaw & 0x80000ll) != 0 ? stepYVRaw - 0x100000ll : stepYVRaw;
+	const i32 anchor = x1 <= x0 ? (x2 <= x1 ? 2 : 1) : (x2 < x0 ? 2 : 0);
+	const i32 anchorX = anchor == 0 ? x0 : (anchor == 1 ? x1 : x2);
+	const i32 anchorY = anchor == 0 ? y0 : (anchor == 1 ? y1 : y2);
+	const i32 anchorU = anchor == 0 ? u0 : (anchor == 1 ? u1 : u2);
+	const i32 anchorV = anchor == 0 ? v0 : (anchor == 1 ? v1 : v2);
+	out[outOffset + GX_GPU_TRIANGLE_UV_BASE_U] = (static_cast<i64>(anchorU) * GX_GPU_TRIANGLE_UV_FRACTION_SCALE + (GX_GPU_TRIANGLE_UV_FRACTION_SCALE >> 1u) - static_cast<i64>(anchorX) * stepXU - static_cast<i64>(anchorY) * stepYU) & GX_GPU_TRIANGLE_UV_ACCUMULATOR_MASK;
+	out[outOffset + GX_GPU_TRIANGLE_UV_BASE_V] = (static_cast<i64>(anchorV) * GX_GPU_TRIANGLE_UV_FRACTION_SCALE + (GX_GPU_TRIANGLE_UV_FRACTION_SCALE >> 1u) - static_cast<i64>(anchorX) * stepXV - static_cast<i64>(anchorY) * stepYV) & GX_GPU_TRIANGLE_UV_ACCUMULATOR_MASK;
+	out[outOffset + GX_GPU_TRIANGLE_UV_STEP_X_U] = stepXURaw;
+	out[outOffset + GX_GPU_TRIANGLE_UV_STEP_X_V] = stepXVRaw;
+	out[outOffset + GX_GPU_TRIANGLE_UV_STEP_Y_U] = stepYURaw;
+	out[outOffset + GX_GPU_TRIANGLE_UV_STEP_Y_V] = stepYVRaw;
 }
 
 inline i32 gxGpuVertexY(u32 word) {

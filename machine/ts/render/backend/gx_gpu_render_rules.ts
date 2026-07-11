@@ -11,6 +11,16 @@ import {
 export const GX_GPU_MAX_PRIMITIVE_WIDTH = 1024;
 export const GX_GPU_MAX_PRIMITIVE_HEIGHT = 512;
 export const GX_GPU_VERTEX_COORD_PERIOD = 0x800;
+export const GX_GPU_TRIANGLE_UV_PLANE_WORDS = 6;
+export const GX_GPU_TRIANGLE_UV_BASE_U = 0;
+export const GX_GPU_TRIANGLE_UV_BASE_V = 1;
+export const GX_GPU_TRIANGLE_UV_STEP_X_U = 2;
+export const GX_GPU_TRIANGLE_UV_STEP_X_V = 3;
+export const GX_GPU_TRIANGLE_UV_STEP_Y_U = 4;
+export const GX_GPU_TRIANGLE_UV_STEP_Y_V = 5;
+export const GX_GPU_TRIANGLE_UV_FRACTION_BITS = 12;
+export const GX_GPU_TRIANGLE_UV_FRACTION_SCALE = 1 << GX_GPU_TRIANGLE_UV_FRACTION_BITS;
+export const GX_GPU_TRIANGLE_UV_ACCUMULATOR_MASK = 0xfffff;
 export const GX_GPU_DOT_CLOCK_DIVIDER_256 = 10;
 export const GX_GPU_DOT_CLOCK_DIVIDER_320 = 8;
 export const GX_GPU_DOT_CLOCK_DIVIDER_512 = 5;
@@ -25,6 +35,47 @@ export function gxGpuSigned11(value: number): number {
 export function gxGpuTriangleRasterShift(coord0: number, coord1: number, coord2: number): number {
 	const minimum = coord0 < coord1 ? (coord0 < coord2 ? coord0 : coord2) : (coord1 < coord2 ? coord1 : coord2);
 	return minimum < -(GX_GPU_VERTEX_COORD_PERIOD >> 1) ? GX_GPU_VERTEX_COORD_PERIOD : 0;
+}
+
+export function gxGpuTriangleUvPlane(
+	out: Float64Array,
+	outOffset: number,
+	determinant: number,
+	x0: number, y0: number, u0: number, v0: number,
+	x1: number, y1: number, u1: number, v1: number,
+	x2: number, y2: number, u2: number, v2: number,
+): void {
+	const stepXUNumerator = ((u1 - u0) * (y2 - y1)) - ((u2 - u1) * (y1 - y0));
+	const stepXVNumerator = ((v1 - v0) * (y2 - y1)) - ((v2 - v1) * (y1 - y0));
+	const stepYUNumerator = ((x1 - x0) * (u2 - u1)) - ((x2 - x1) * (u1 - u0));
+	const stepYVNumerator = ((x1 - x0) * (v2 - v1)) - ((x2 - x1) * (v1 - v0));
+	const stepXUScaled = stepXUNumerator * GX_GPU_TRIANGLE_UV_FRACTION_SCALE;
+	const stepXVScaled = stepXVNumerator * GX_GPU_TRIANGLE_UV_FRACTION_SCALE;
+	const stepYUScaled = stepYUNumerator * GX_GPU_TRIANGLE_UV_FRACTION_SCALE;
+	const stepYVScaled = stepYVNumerator * GX_GPU_TRIANGLE_UV_FRACTION_SCALE;
+	const stepXUQuotient = (stepXUScaled - (stepXUScaled % determinant)) / determinant;
+	const stepXVQuotient = (stepXVScaled - (stepXVScaled % determinant)) / determinant;
+	const stepYUQuotient = (stepYUScaled - (stepYUScaled % determinant)) / determinant;
+	const stepYVQuotient = (stepYVScaled - (stepYVScaled % determinant)) / determinant;
+	const stepXURaw = stepXUQuotient & GX_GPU_TRIANGLE_UV_ACCUMULATOR_MASK;
+	const stepXVRaw = stepXVQuotient & GX_GPU_TRIANGLE_UV_ACCUMULATOR_MASK;
+	const stepYURaw = stepYUQuotient & GX_GPU_TRIANGLE_UV_ACCUMULATOR_MASK;
+	const stepYVRaw = stepYVQuotient & GX_GPU_TRIANGLE_UV_ACCUMULATOR_MASK;
+	const stepXU = (stepXURaw & 0x80000) !== 0 ? stepXURaw - 0x100000 : stepXURaw;
+	const stepXV = (stepXVRaw & 0x80000) !== 0 ? stepXVRaw - 0x100000 : stepXVRaw;
+	const stepYU = (stepYURaw & 0x80000) !== 0 ? stepYURaw - 0x100000 : stepYURaw;
+	const stepYV = (stepYVRaw & 0x80000) !== 0 ? stepYVRaw - 0x100000 : stepYVRaw;
+	const anchor = x1 <= x0 ? (x2 <= x1 ? 2 : 1) : (x2 < x0 ? 2 : 0);
+	const anchorX = anchor === 0 ? x0 : (anchor === 1 ? x1 : x2);
+	const anchorY = anchor === 0 ? y0 : (anchor === 1 ? y1 : y2);
+	const anchorU = anchor === 0 ? u0 : (anchor === 1 ? u1 : u2);
+	const anchorV = anchor === 0 ? v0 : (anchor === 1 ? v1 : v2);
+	out[outOffset + GX_GPU_TRIANGLE_UV_BASE_U] = ((anchorU * GX_GPU_TRIANGLE_UV_FRACTION_SCALE) + (GX_GPU_TRIANGLE_UV_FRACTION_SCALE >> 1) - (anchorX * stepXU) - (anchorY * stepYU)) & GX_GPU_TRIANGLE_UV_ACCUMULATOR_MASK;
+	out[outOffset + GX_GPU_TRIANGLE_UV_BASE_V] = ((anchorV * GX_GPU_TRIANGLE_UV_FRACTION_SCALE) + (GX_GPU_TRIANGLE_UV_FRACTION_SCALE >> 1) - (anchorX * stepXV) - (anchorY * stepYV)) & GX_GPU_TRIANGLE_UV_ACCUMULATOR_MASK;
+	out[outOffset + GX_GPU_TRIANGLE_UV_STEP_X_U] = stepXURaw;
+	out[outOffset + GX_GPU_TRIANGLE_UV_STEP_X_V] = stepXVRaw;
+	out[outOffset + GX_GPU_TRIANGLE_UV_STEP_Y_U] = stepYURaw;
+	out[outOffset + GX_GPU_TRIANGLE_UV_STEP_Y_V] = stepYVRaw;
 }
 
 export function gxGpuVertexY(word: number): number {
