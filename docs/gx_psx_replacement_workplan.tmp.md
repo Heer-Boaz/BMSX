@@ -179,24 +179,38 @@ For the current assets this changes a background transition from a generated
 fade/montage timing and no longer treats the duration of the oversized DMA as a
 required black-frame hold.
 
-## Hard open design point: GPUREAD / VRAM-to-CPU
+## GPUREAD / VRAM-to-CPU implementation contract
 
-This is the next dangerous boundary.
+The design decision is now explicit; implementation remains open.
 
-Acceptable directions:
+- GP0(C0h) creates a command-buffer execution fence. All earlier GPU work must
+  reach the real backend VRAM before readback; later commands remain behind the
+  fence until the read transfer is consumed.
+- The retained GX command buffer owns the backend exchange state and maximum
+  1024x512 pixel result buffer. The GPU device owns GPUREAD, GPUSTAT and the raw
+  X/Y/width/height/cursor latches. Do not introduce a host readback DTO or a
+  second VRAM owner.
+- Software reads its raw VRAM directly. WebGL2/GLES2 issue region readback from
+  their VRAM framebuffer. WebGPU queues texture-to-buffer work after preceding
+  command submissions and only signals ready after asynchronous mapping.
+- GPUSTAT ready-to-send and GPUREAD-to-CPU DMA request stay low until completion.
+  GPUREAD packs low/high RGB555 words, wraps each coordinate, zero-fills an odd
+  high pixel and leaves the final word latched after transfer completion.
+- DMA with GPUREAD as source consumes exactly that port and waits when it is not
+  ready; it never copies a stale latch as transfer payload.
+- Save-state capture drains an already submitted accelerated readback, then the
+  current-format codec stores phase/fence/cursor/latch/completed pixels. Async
+  completion is generation-bound across reset and restore.
+- Every result/staging buffer and WebGPU copy descriptor is retained. No
+  per-request allocation, full-frame CPU raster, CPU VRAM shadow, fake sync,
+  stale fallback or `GameView` readback facade is allowed.
 
-- Model GPUREAD as real GPU readback from the accelerated backend VRAM/render
-  target, with explicit command ordering and completion semantics.
-- Defer full GPUREAD until the command/readback contract is designed.
-
-Rejected direction:
-
-- Do not add a CPU-side raster/VRAM shadow as the source of truth for accelerated
-  backends. That violates the 100% host-GPU accelerated requirement and creates a
-  second graphics machine.
-
-If implementation reaches this point and the correct contract is unclear, stop
-and ask before coding.
+Reference basis: DuckStation
+[`GPU::ReadGPUREAD`](https://github.com/stenzek/duckstation/blob/35bcff15276dfa474349ea199201d024469487a9/src/core/gpu.cpp#L1887-L1919),
+[`GPU::HandleCopyRectangleVRAMToCPUCommand`](https://github.com/stenzek/duckstation/blob/35bcff15276dfa474349ea199201d024469487a9/src/core/gpu.cpp#L3799-L3829),
+[`GPU_HW::DownloadVRAMFromGPU`](https://github.com/stenzek/duckstation/blob/35bcff15276dfa474349ea199201d024469487a9/src/core/gpu_hw.cpp#L3452-L3513),
+and MAME
+[`psxgpu_device::gpu_read`](https://github.com/mamedev/mame/blob/2f09baf036f4c95b6a86407f7e826e6ca7dbaf78/src/devices/video/psx.cpp#L3403-L3445).
 
 ## Main checklist
 
@@ -230,6 +244,10 @@ and ask before coding.
 - [x] Interlaced field drawing behavior in accelerated backends.
 - [x] Texture disable.
 - [ ] GPUREAD / VRAM-to-CPU command execution and ordering.
+  - [x] Fix the device/backend owner, fence, completion, cursor, DMA and
+    save-state contract before implementation.
+  - [ ] Implement and validate the contract in TS/C++ software, WebGL2, GLES2
+    and WebGPU without live browser execution.
 - [ ] Complete GPUSTAT details and timing-visible bits against references.
 - [ ] Complete GP0/GP1 command decode edge cases and command-buffer ordering.
 - [ ] DMA interaction behavior beyond the currently tested register/status paths.

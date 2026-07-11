@@ -39,17 +39,52 @@ Niet doen:
 
 ## GPUREAD en accelerated VRAM-to-CPU readback
 
-Status: open ontwerpbesluit vóór implementatie.
+Status: implementatie open; het owner- en orderingcontract is vastgesteld.
+
+Het gekozen contract volgt de productiepatronen van DuckStation en MAME waar
+GP0(C0h) eerst een transfercursor zet, GPUREAD telkens twee 16-bit pixels
+uitgeeft, wrap per pixel toepast en een oneven laatste pixel met nul aanvult.
+DuckStation synchroniseert vóór de transfer een hardware-backendread met alle
+eerdere GPU-work. BMSX neemt die ordering over, maar niet DuckStations blijvende
+CPU-VRAM-shadow: de backend levert uitsluitend het resultaat van de aangevraagde
+transfer aan het device.
 
 Open contract:
 
 - GPUREAD moet de inhoud lezen die door de echte backend-VRAM/render targets is
   geproduceerd, inclusief voorafgaande accelerated draws en copies.
-- GP0 ordering, transfer-cursor, completion en CPU-zichtbaarheid moeten expliciet
-  onderdeel van het devicecontract zijn. Een read mag een nog niet afgeronde GPU
-  submit niet stilzwijgend passeren.
+- GP0(C0h) zet in de bestaande GX-commandbuffer een harde readbackfence. Eerdere
+  commands worden tot en met die marker uitgevoerd; latere GP0-commands blijven
+  achter de fence totdat de volledige transfer via GPUREAD is geconsumeerd.
+- De GX-commandbuffer bezit de retained backend-exchange: requestwoorden,
+  fencecount, completionfase en een vooraf gealloceerde 512K-pixelbuffer. De GPU
+  bezit GPUREAD-latch, transfercursor en GPUSTAT. Dit zijn hardwarebuffers en
+  latches, geen host-DTO of tweede VRAM-representatie.
+- De GX-pass van iedere backend handelt de request rechtstreeks af. TS/C++
+  software kopiëren uit hun raw VRAM-owner; WebGL2/GLES2 lezen alleen de logisch
+  benodigde backend-VRAM-regio (met gesplitste wraprects waar nodig); WebGPU
+  plaatst een geordende texture-to-buffer copy na de voorafgaande submit en
+  publiceert completion pas na `mapAsync`.
+- GPUSTAT bit 27 wordt pas gezet wanneer de backendcompletion zichtbaar is en
+  er woorden resteren. Bit 25 blijft daarvan afgeleid wanneer GP1 DMA-direction
+  GPUREAD-to-CPU selecteert. Een te vroege CPU-read leest alleen de bestaande
+  GPUREAD-latch en voltooit of verschuift de transfer niet.
+- Iedere geldige read levert het lage pixelwoord eerst, daarna het hoge;
+  transfer-X/Y wrappen per pixel over 1024x512 en een oneven laatste pixel vult
+  de hoge helft met nul. Na het laatste woord blijft de laatste GPUREAD-latch
+  staan en mag de commandprocessor voorbij de fence.
+- De custom DMA-route moet `IO_GX_GPU_GP0 -> RAM` als dezelfde GPUREAD-consument
+  gebruiken en pauzeren zolang bit 27 laag is; hij mag de latch dan niet als
+  transferdata behandelen.
+- Current-format save-state bewaart requestfase, fence, cursor, latch en reeds
+  voltooide transferpixels. TS-save capture wacht een reeds ingediende WebGPU-
+  readback af voordat de codec encodeert; een completion uit een oudere
+  reset/restore-generatie mag de nieuwe devicefase niet publiceren.
 - TS en C++ moeten hetzelfde cart-zichtbare command/status/read-contract houden,
   ook wanneer browser-GPU completion asynchroon is.
+- Alle request-, staging- en packbuffers zijn backend/device-owned en retained.
+  Geen per-request arrays, commandobjecten, bindgroepen of readback-DTO's in de
+  frame- of fragment-hot-path.
 
 Niet doen:
 
@@ -57,6 +92,8 @@ Niet doen:
   GLES2.
 - Geen stale-data fallback, fictieve synchrone read of backend-private shortcut
   als publieke machine-semantiek.
+- Geen GPUREAD-dispatch, completionpolling of backendresource-ownership in
+  `GameView`; de bestaande GX backendpass is de uitvoerende owner.
 
 ## Exacte GX raster- en VRAM-pariteit
 
