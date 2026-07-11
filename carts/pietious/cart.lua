@@ -1,4 +1,5 @@
-mem[0x08000084] = 0x00000000
+local gx_gpu<const> = require('system/gx_gpu')
+gx_gpu.reset_256x192_pal()
 require('cartlib/prelude')
 require('constants')
 local enemy_registry<const> = require('enemy/registry')
@@ -128,7 +129,6 @@ function init()
 	on_irq(irq_vblank, function()
 		vblank_count = vblank_count + 1
 	end)
-	gx_reset_256x192_pal()
 	gx_clear_color(0xff000000)
 	pietious_font.register_fonts()
 

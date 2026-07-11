@@ -1059,11 +1059,9 @@ local init_screenboundary_fields<const> = function(self, opts)
 	if opts.stick_to_edge ~= nil then
 		self.stick_to_edge = opts.stick_to_edge
 	end
-	local screen_wh<const> = mem[0x08000088]
 	self.boundary_left = 0
 	self.boundary_top = 0
-	self.boundary_right = screen_wh & 0xffff
-	self.boundary_bottom = screen_wh >> 16
+	self.boundary_right, self.boundary_bottom = gx_gpu.display_size()
 	local bounds<const> = opts.bounds
 	if bounds then
 		self.boundary_left = bounds.left

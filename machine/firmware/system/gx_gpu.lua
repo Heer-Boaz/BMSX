@@ -44,8 +44,6 @@ local texture_mode_direct16<const> = 0x00000002
 local draw_mode_texture_palette4<const> = texture_mode_palette4 << 7
 local draw_mode_texture_direct16<const> = texture_mode_direct16 << 7
 
-local display_width<const> = 320
-local display_height<const> = 240
 local display_size_256x192<const> = 0x00c00100
 local display_size_320x240<const> = 0x00f00140
 local texture_page_span<const> = 256
@@ -135,6 +133,10 @@ function gx_gpu.reset_256x192_pal()
 	*gp0 = gp0_drawing_offset_0
 	*gp0 = gp0_mask_bit_mode_0
 	*gp1 = gp1_display_enable
+end
+
+function gx_gpu.display_size()
+	return current_display_size_word & 0x0000ffff, current_display_size_word >> 16
 end
 
 function gx_gpu.clear_color(color)
@@ -380,8 +382,6 @@ gx_gpu.draw_mode_blend_subtract = draw_mode_blend_subtract
 gx_gpu.draw_mode_blend_quarter = draw_mode_blend_quarter
 gx_gpu.texture_mode_palette4 = texture_mode_palette4
 gx_gpu.texture_mode_direct16 = texture_mode_direct16
-gx_gpu.display_width = display_width
-gx_gpu.display_height = display_height
 gx_gpu.texture_page_span = texture_page_span
 
 return gx_gpu

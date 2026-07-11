@@ -35,8 +35,6 @@ type StrictRuntimeNoHeapFunctionEntry = { file: string; functions: string[]; rea
 type StrictLuaNoHeapFunctionEntry = { file: string; functions: string[]; top_level_loops?: boolean; reason: string };
 type StrictRpuTableParityEntry = { ts: string; cpp: string; tables: string[]; reason: string };
 type StrictShaderParityEntry = { webgl: string; gles2: string; reason: string };
-type StrictLuaVdpAbiParitySymbol = { lua: string; ts: string };
-type StrictLuaVdpAbiParityEntry = { lua: string; ts: string[]; symbols: StrictLuaVdpAbiParitySymbol[]; reason: string };
 type StrictFileLayoutEntry = { present?: string[]; absent?: string[]; reason: string };
 type StrictFilePairParityEntry = { ts: string; cpp: string[]; reason: string };
 type StrictSaveStateSchemaParityEntry = { ts: string; cpp: string; symbol: string; reason: string };
@@ -54,7 +52,6 @@ type Manifest = {
 	strict_lua_no_heap_functions?: StrictLuaNoHeapFunctionEntry[];
 	strict_rpu_table_parity?: StrictRpuTableParityEntry[];
 	strict_shader_parity?: StrictShaderParityEntry[];
-	strict_lua_vdp_abi_parity?: StrictLuaVdpAbiParityEntry[];
 	strict_file_layout?: StrictFileLayoutEntry[];
 	strict_file_pair_parity?: StrictFilePairParityEntry[];
 	strict_save_state_schema_parity?: StrictSaveStateSchemaParityEntry[];
@@ -1174,189 +1171,6 @@ function auditStrictShaderParity(manifest: Manifest): string[] {
 	return errors;
 }
 
-type StrictIntegerToken = { kind: 'number' | 'identifier' | 'operator' | 'lparen' | 'rparen'; text: string };
-
-const STRICT_INTEGER_OPERATOR_PRECEDENCE = new Map<string, number>([
-	['|', 1],
-	['^', 2],
-	['&', 3],
-	['<<', 4],
-	['>>', 4],
-	['>>>', 4],
-	['+', 5],
-	['-', 5],
-	['*', 6],
-]);
-
-function tokenizeStrictIntegerExpression(expression: string): StrictIntegerToken[] {
-	const tokens: StrictIntegerToken[] = [];
-	for (let index = 0; index < expression.length;) {
-		const char = expression[index];
-		if (/\s/.test(char)) {
-			index += 1;
-			continue;
-		}
-		if (char === '(') {
-			tokens.push({ kind: 'lparen', text: char });
-			index += 1;
-			continue;
-		}
-		if (char === ')') {
-			tokens.push({ kind: 'rparen', text: char });
-			index += 1;
-			continue;
-		}
-		const rest = expression.slice(index);
-		const numberMatch = /^(?:0x[0-9a-fA-F]+|\d+)u?/.exec(rest);
-		if (numberMatch) {
-			tokens.push({ kind: 'number', text: numberMatch[0].replace(/u$/, '') });
-			index += numberMatch[0].length;
-			continue;
-		}
-		const identifierMatch = /^[A-Za-z_]\w*/.exec(rest);
-		if (identifierMatch) {
-			tokens.push({ kind: 'identifier', text: identifierMatch[0] });
-			index += identifierMatch[0].length;
-			continue;
-		}
-		const operatorMatch = /^(?:>>>|<<|>>|[|&^+*-])/.exec(rest);
-		if (operatorMatch) {
-			tokens.push({ kind: 'operator', text: operatorMatch[0] });
-			index += operatorMatch[0].length;
-			continue;
-		}
-		throw new Error(`unsupported integer token near ${rest}`);
-	}
-	return tokens;
-}
-
-function applyStrictIntegerOperator(operator: string, left: bigint, right: bigint): bigint {
-	switch (operator) {
-		case '|':
-			return left | right;
-		case '^':
-			return left ^ right;
-		case '&':
-			return left & right;
-		case '<<':
-			return left << right;
-		case '>>':
-		case '>>>':
-			return left >> right;
-		case '+':
-			return left + right;
-		case '-':
-			return left - right;
-		case '*':
-			return left * right;
-		default:
-			throw new Error(`unsupported integer operator ${operator}`);
-	}
-}
-
-function evaluateStrictIntegerExpression(expression: string, resolveIdentifier: (name: string) => bigint): bigint {
-	const tokens = tokenizeStrictIntegerExpression(expression);
-	let cursor = 0;
-	const parsePrimary = (): bigint => {
-		const token = tokens[cursor];
-		if (!token) throw new Error(`missing integer expression operand in ${expression}`);
-		cursor += 1;
-		if (token.kind === 'number') return BigInt(token.text);
-		if (token.kind === 'identifier') return resolveIdentifier(token.text);
-		if (token.kind === 'operator' && token.text === '-') return -parsePrimary();
-		if (token.kind === 'lparen') {
-			const value = parseExpression(1);
-			const close = tokens[cursor];
-			if (!close || close.kind !== 'rparen') throw new Error(`missing closing parenthesis in ${expression}`);
-			cursor += 1;
-			return value;
-		}
-		throw new Error(`unexpected token ${token.text} in ${expression}`);
-	};
-	const parseExpression = (minimumPrecedence: number): bigint => {
-		let left = parsePrimary();
-		for (;;) {
-			const token = tokens[cursor];
-			if (!token || token.kind !== 'operator') break;
-			const precedence = STRICT_INTEGER_OPERATOR_PRECEDENCE.get(token.text);
-			if (!precedence || precedence < minimumPrecedence) break;
-			cursor += 1;
-			const right = parseExpression(precedence + 1);
-			left = applyStrictIntegerOperator(token.text, left, right);
-		}
-		return left;
-	};
-	const value = parseExpression(1);
-	if (cursor !== tokens.length) throw new Error(`trailing token ${tokens[cursor].text} in ${expression}`);
-	return value;
-}
-
-function collectTsIntegerConstants(files: readonly string[]): Map<string, bigint> {
-	const expressions = new Map<string, string>();
-	for (const file of files) {
-		const text = fs.readFileSync(path.join(repoRoot, file), 'utf8');
-		for (const match of text.matchAll(/^export const\s+([A-Z0-9_]+)(?:\s*:[^\n=]+)?\s*=\s*([\s\S]*?);/gm)) {
-			const expression = match[2].trim();
-			if (expression.startsWith('[') || expression.startsWith('{') || expression.startsWith('new ')) continue;
-			expressions.set(match[1], expression);
-		}
-	}
-	return evaluateStrictIntegerConstants(expressions);
-}
-
-function collectLuaIntegerConstants(file: string): Map<string, bigint> {
-	const expressions = new Map<string, string>();
-	const text = fs.readFileSync(path.join(repoRoot, file), 'utf8');
-	for (const match of text.matchAll(/^local\s+([a-z0-9_]+)<const>\s*=\s*([^\n]+)/gm)) {
-		const expression = match[2].trim();
-		if (expression.startsWith('function') || expression.startsWith('{') || expression.includes('require(')) continue;
-		expressions.set(match[1], expression);
-	}
-	return evaluateStrictIntegerConstants(expressions);
-}
-
-function evaluateStrictIntegerConstants(expressions: Map<string, string>): Map<string, bigint> {
-	const values = new Map<string, bigint>();
-	const visiting = new Set<string>();
-	const resolve = (name: string): bigint => {
-		const existing = values.get(name);
-		if (existing !== undefined) return existing;
-		const expression = expressions.get(name);
-		if (expression === undefined) throw new Error(`unknown integer constant ${name}`);
-		if (visiting.has(name)) throw new Error(`cyclic integer constant ${name}`);
-		visiting.add(name);
-		const value = evaluateStrictIntegerExpression(expression, resolve);
-		visiting.delete(name);
-		values.set(name, value);
-		return value;
-	};
-	for (const name of expressions.keys()) resolve(name);
-	return values;
-}
-
-function auditStrictLuaVdpAbiParity(manifest: Manifest): string[] {
-	const errors: string[] = [];
-	for (const entry of manifest.strict_lua_vdp_abi_parity ?? []) {
-		const luaConstants = collectLuaIntegerConstants(entry.lua);
-		const tsConstants = collectTsIntegerConstants(entry.ts);
-		for (const symbol of entry.symbols) {
-			const luaValue = luaConstants.get(symbol.lua);
-			if (luaValue === undefined) {
-				errors.push(`${entry.lua}: Lua VDP ABI constant ${symbol.lua} missing (${entry.reason})`);
-				continue;
-			}
-			const tsValue = tsConstants.get(symbol.ts);
-			if (tsValue === undefined) {
-				errors.push(`${entry.ts.join(', ')}: TS VDP ABI constant ${symbol.ts} missing (${entry.reason})`);
-				continue;
-			}
-			if (luaValue !== tsValue) errors.push(`${entry.lua}: ${symbol.lua}=${luaValue} differs from ${symbol.ts}=${tsValue}`);
-		}
-	}
-	return errors;
-}
-
-
 function auditStrictFileLayout(manifest: Manifest): string[] {
 	const errors: string[] = [];
 	for (const entry of manifest.strict_file_layout ?? []) {
@@ -1481,7 +1295,6 @@ function main(): void {
 	const strictLuaNoHeapFunctionErrors = auditStrictLuaNoHeapFunctions(manifest);
 	const strictRpuTableParityErrors = auditStrictRpuTableParity(manifest);
 	const strictShaderParityErrors = auditStrictShaderParity(manifest);
-	const strictLuaVdpAbiParityErrors = auditStrictLuaVdpAbiParity(manifest);
 	const strictFileLayoutErrors = auditStrictFileLayout(manifest);
 	const strictFilePairParityErrors = auditStrictFilePairParity(manifest);
 	const strictSaveStateSchemaParityErrors = auditStrictSaveStateSchemaParity(manifest);
@@ -1579,11 +1392,6 @@ function main(): void {
 		hasErrors = true;
 		console.error(`\nStrict shader parity errors (${strictShaderParityErrors.length}):`);
 		for (const item of strictShaderParityErrors) console.error(`  ${item}`);
-	}
-	if (strictLuaVdpAbiParityErrors.length > 0) {
-		hasErrors = true;
-		console.error(`\nStrict Lua VDP ABI parity errors (${strictLuaVdpAbiParityErrors.length}):`);
-		for (const item of strictLuaVdpAbiParityErrors) console.error(`  ${item}`);
 	}
 	if (strictFileLayoutErrors.length > 0) {
 		hasErrors = true;

@@ -1,3 +1,5 @@
+local gx_gpu<const> = require('system/gx_gpu')
+gx_gpu.reset_320x240_pal()
 require('cartlib/prelude')
 require('globals')
 local story<const> = require('story')
@@ -286,7 +288,6 @@ function init()
 		end
 	end)
 	*irq_mask_register = irq_img_done | irq_img_error | irq_vblank | irq_apu
-	gx_reset_320x240_pal()
 	gx_clear_color(0xff000000)
 	mem[0x08000008] = 2
 	combat_module.define_fsm()

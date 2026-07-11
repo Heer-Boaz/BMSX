@@ -189,7 +189,9 @@ and ask before coding.
   directly for the currently implemented command set, not as hidden fallbacks
   inside accelerated paths.
 - [ ] Remove the old VDP/RPU from active presentation once GX is complete enough.
-- [ ] Remove old VDP/RPU cart-visible ABI use after carts are migrated.
+- [x] Remove old VDP/RPU cart-visible ABI use after carts are migrated. Cartlib
+  consumes GX-owned display metrics directly and the rejected Lua VDP/RPU
+  firmware modules are gone rather than retained behind compatibility shims.
 
 ### 2. PSX GPU command/status/display parity
 
@@ -294,7 +296,10 @@ and ask before coding.
 - [ ] Identify every active VDP/RPU presentation registration and machine output
   dependency.
 - [ ] Replace active presentation routing with GX output when GX is sufficient.
-- [ ] Retire old VDP/RPU firmware/system paths after cart migration planning.
+- [x] Retire old VDP/RPU firmware/system paths after cart migration planning.
+  The cart-visible Lua firmware path and its prelude exports are removed; the
+  still-active machine/presentation implementation remains a separate removal
+  slice.
 - [ ] Remove or quarantine old VDP/RPU tests that only protect the failed
   renderer-descriptor ABI.
 - [ ] Keep useful BMSX fantasy hardware ideas documented for later GX extensions,
@@ -355,23 +360,19 @@ and ask before coding.
   browser captures for `bare_metal_cart` and `2025` are coherent; WSL/headless
   Edge cannot visually validate WebGPU because its swapchain/shared-image path
   returns black frames, so live WebGPU still needs a real browser check.
-- [ ] Restore the remaining historical `bare_metal_cart` feature coverage on
-  GX/GTE, especially free-fly/side-camera behavior and broader mesh/post-pass
-  cases as real PSX/GX/GTE functionality. Morph/skinning/lighting and
-  near-plane/divide torture now have a first raw GX/GTE scene, but can still be
-  deepened later.
-- [ ] Replace remaining cart graphics programming with PSX-style GPU/GTE
-  programming.
+- [x] Keep the current raw GX/GTE carousel as the `bare_metal_cart` coverage
+  owner. Do not recreate the rejected historical free-fly/side-camera behavior.
+- [x] Replace remaining cart graphics programming with PSX-style GPU/GTE
+  programming. Cartlib/prelude no longer publishes the old VDP/RPU ABI, the
+  seven Lua VDP/RPU firmware modules are removed, and carts consume GX-owned
+  display metrics instead of retired VDP MMIO words.
 - [ ] Keep BMSX extensions separate and post-parity.
 
 ## Recommended next functional slices
 
 Pick one vertical slice and finish it before committing:
 
-1. **Restore full `bare_metal_cart` feature coverage on GX/GTE**: migrate the
-   old offscreen/depth/mesh/post-pass path as real PSX/GX/GTE functionality, not
-   as a small smoke replacement.
-2. **GPUREAD/readback contract**: only start after an explicit design decision.
+1. **GPUREAD/readback contract**: only start after an explicit design decision.
    Accelerated backends must read back from real backend VRAM/render targets with
    command ordering semantics; do not add a CPU shadow as the source of truth.
 

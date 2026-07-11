@@ -1,3 +1,5 @@
+local gx_gpu<const> = require('system/gx_gpu')
+gx_gpu.reset_320x240_pal()
 require('cartlib/prelude')
 local irq_mask_register<const>: *word = 0x0800010c
 local inp_ctrl_register<const>: *word = 0x08000194
@@ -30,7 +32,6 @@ end
 
 init()
 *irq_mask_register = irq_vblank | irq_apu
-gx_reset_320x240_pal()
 new_game()
 *inp_ctrl_register = 0x00000001
 wait_vblank()

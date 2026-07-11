@@ -2,25 +2,15 @@ import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import { createCanvas } from 'canvas';
 
-import { PSX_VRAM_STAGING_BYTES } from '../../machine/ts/machine/model_registry';
 import { BIOS_ATLAS_ID } from '../../machine/ts/rompack/format';
 import { resolveTargetAtlasId } from '../../scripts/rompacker/atlasbuilder';
 import { buildPalette4GxTextureAtlas } from '../../scripts/rompacker/gx_texture_atlas';
 import { createAtlasses } from '../../scripts/rompacker/rombuilder';
 import type { ImageResource, Resource } from '../../scripts/rompacker/rompacker.rompack';
-import {
-	RPU_CART_ATLAS_ID_LIMIT,
-	RPU_QUAD_DESCRIPTOR_END_VRAM_ADDR,
-	RPU_QUAD_SURFACE_DESC_COUNT,
-} from '../../scripts/rompacker/texture_atlas_contract';
+import { GX_CART_ATLAS_ID_LIMIT } from '../../scripts/rompacker/texture_atlas_contract';
 
-test('RPU quad descriptors stay inside staging VRAM', () => {
-	assert.equal(RPU_QUAD_DESCRIPTOR_END_VRAM_ADDR <= PSX_VRAM_STAGING_BYTES, true);
-});
-
-test('cart atlas descriptor ids stop before the system atlas descriptor', () => {
-	assert.equal(RPU_CART_ATLAS_ID_LIMIT, BIOS_ATLAS_ID);
-	assert.equal(RPU_CART_ATLAS_ID_LIMIT < RPU_QUAD_SURFACE_DESC_COUNT, true);
+test('cart atlas ids stop before the system atlas id', () => {
+	assert.equal(GX_CART_ATLAS_ID_LIMIT, BIOS_ATLAS_ID);
 	assert.throws(
 		() => resolveTargetAtlasId('carts/example/res/player@atlas=254.png', BIOS_ATLAS_ID),
 		/reserved system atlas id/,
@@ -40,7 +30,7 @@ test('palette4 atlas production rejects a seventeenth RGB555 color', () => {
 	);
 });
 
-test('split atlas allocation cannot enter the system atlas descriptor id', async () => {
+test('split atlas allocation cannot enter the system atlas id', async () => {
 	const resources: Resource[] = [
 		{ type: 'atlas', name: '_atlas_253', ext: '.atlas', id: 1, atlasId: 253 },
 		{

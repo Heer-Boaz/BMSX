@@ -379,9 +379,6 @@ function world_class.new()
 	self.active_space = nil
 	self.systems = ecs.ecsystemmanager.new()
 	self.current_phase = nil
-	local screen_wh<const> = mem[0x08000088]
-	self.gamewidth = screen_wh & 0xffff
-	self.gameheight = screen_wh >> 16
 	-- id counter for unique id generation
 	self.idcounter = 0
 	self:add_space('main')

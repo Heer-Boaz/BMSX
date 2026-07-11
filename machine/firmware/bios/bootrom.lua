@@ -365,8 +365,7 @@ local update_boot_screen<const> = function()
 end
 
 render_boot_screen = function(scroll_delta)
-	local width<const> = gx_gpu.display_width
-	local height<const> = gx_gpu.display_height
+	local width<const>, height<const> = gx_gpu.display_size()
 	local left<const> = 8
 	local top<const> = content_top
 	local font<const> = font_module.get('default')

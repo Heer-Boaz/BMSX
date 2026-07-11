@@ -24,8 +24,6 @@ local timeline<const> = require('cartlib/timeline/index')
 local aem<const> = require('cartlib/aem')
 local progression<const> = require('cartlib/progression')
 local font_module<const> = require('cartlib/font')
-local vdp_rpu_quads<const> = require('system/vdp_rpu_quads')
-local vdp_image<const> = require('system/vdp_image')
 local gx_gpu<const> = require('system/gx_gpu')
 local gx_image<const> = require('system/gx_image')
 local cart_input<const> = require('cartlib/input/player')
@@ -198,15 +196,6 @@ end
 
 local system<const> = {}
 system.clear_map = clear_map
-system.vdp_stream_claim = vdp_stream_claim
-system.vdp_stream_finish = vdp_rpu_quads.finish_frame
-system.vdp_clear_color = vdp_rpu_quads.clear_color
-system.vdp_fill_rect_color = vdp_rpu_quads.fill_rect_color
-system.vdp_draw_line_color = vdp_rpu_quads.draw_line_color
-system.vdp_tile_run_sources = vdp_rpu_quads.tile_run_sources
-system.vdp_load_atlas = vdp_image.load_atlas
-system.gx_reset_320x240_pal = gx_gpu.reset_320x240_pal
-system.gx_reset_256x192_pal = gx_gpu.reset_256x192_pal
 system.gx_load_atlas = gx_image.load_atlas
 system.gx_upload_atlas = gx_image.upload_atlas
 system.gx_upload_rgba8888_to_direct16_stride = gx_gpu.upload_rgba8888_to_direct16_stride
@@ -227,22 +216,6 @@ system.gx_draw_mode_blend_quarter = gx_gpu.draw_mode_blend_quarter
 system.gx_draw_line_color = gx_gpu.draw_line_color
 system.gx_draw_thick_line_color = gx_gpu.draw_thick_line_color
 system.gx_draw_thick_line_semitrans_color = gx_gpu.draw_thick_line_semitrans_color
-system.gx_display_width = gx_gpu.display_width
-system.gx_display_height = gx_gpu.display_height
-function system.vdp_blit_img_color(imgid, x, y, z, layer, scale_x, scale_y, flip_flags, color)
-	local rect<const> = vdp_image.rect(imgid)
-	vdp_rpu_quads.blit_source_color(rect.atlas_id, rect.u, rect.v, rect.w, rect.h, x, y, z, layer, scale_x, scale_y, flip_flags, color)
-end
-function system.vdp_blit_img_affine_color(imgid, origin_x, origin_y, z, layer, axis_xx, axis_xy, axis_yx, axis_yy, flip_flags, color)
-	local rect<const> = vdp_image.rect(imgid)
-	vdp_rpu_quads.blit_source_affine_color(rect.atlas_id, rect.u, rect.v, rect.w, rect.h, origin_x, origin_y, z, layer, axis_xx, axis_xy, axis_yx, axis_yy, flip_flags, color)
-end
-function system.vdp_glyph_color(glyph, x, y, z, layer, color)
-	local rect<const> = vdp_image.rect(glyph.imgid)
-	vdp_rpu_quads.blit_source_color(rect.atlas_id, rect.u, rect.v, rect.w, rect.h, x, y, z, layer, 1, 1, 0, color)
-end
-system.vdp_img_rect = vdp_image.rect
-system.vdp_write_source = vdp_image.write_source
 system.font = font_module
 system.input = cart_input
 system.consume_axis_accum = velocity.consume_axis_accum

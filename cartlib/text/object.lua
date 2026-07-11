@@ -329,8 +329,8 @@ function textobject.new(opts)
 	self.font = opts.font or font_module.get('default')
 	local dimensions = opts.dimensions
 	if not dimensions then
-		local screen_wh<const> = mem[0x08000088]
-		dimensions = { left = 0, top = 0, right = screen_wh & 0xffff, bottom = screen_wh >> 16 }
+		local width<const>, height<const> = gx_gpu.display_size()
+		dimensions = { left = 0, top = 0, right = width, bottom = height }
 	end
 	self.dimensions = dimensions
 	self.centered_block_x = 0

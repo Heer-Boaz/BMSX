@@ -14,7 +14,7 @@ function imageResource(name: string, id: number, width: number, height: number):
 	};
 }
 
-test('atlas splitter pages images by VDP texture VRAM bytes', () => {
+test('atlas splitter pages images by GX texture residency bytes', () => {
 	const pageBudget = measureOptimizedAtlasBytes([
 		imageResource('a', 1, 512, 256),
 	]);

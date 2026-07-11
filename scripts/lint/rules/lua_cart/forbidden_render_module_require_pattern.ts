@@ -21,7 +21,7 @@ export function lintForbiddenRenderModuleRequirePattern(expression: StringLitera
 		issues,
 		forbiddenRenderModuleRequirePatternRule.name,
 		expression,
-		`require('${expression.value}') is forbidden. The legacy Lua render wrapper modules are removed; submit VDP work through MMIO registers instead.`,
+		`require('${expression.value}') is forbidden. The legacy Lua render wrapper modules are removed; submit graphics work through the GX GPU/GTE owners instead.`,
 	);
 	return true;
 }

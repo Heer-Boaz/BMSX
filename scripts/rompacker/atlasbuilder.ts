@@ -2,7 +2,7 @@ import type { Canvas, CanvasRenderingContext2D } from 'canvas';
 import { resolve as resolvePath, sep as pathSep } from 'path';
 import { commonResPath } from './rombuilder';
 import { BIOS_ATLAS_ID, generateAtlasAssetId } from '../../machine/ts/rompack/format';
-import { RPU_CART_ATLAS_ID_LIMIT, RPU_TEXTURE_VRAM_BYTES, TEXTURE_ATLAS_RGBA_BYTES_PER_PIXEL } from './texture_atlas_contract';
+import { GX_CART_ATLAS_ID_LIMIT, GX_TEXTURE_RESIDENCY_BYTES, TEXTURE_ATLAS_RGBA_BYTES_PER_PIXEL } from './texture_atlas_contract';
 import { AtlasTexcoords, ImageResource } from './rompacker.rompack';
 export { generateAtlasAssetId };
 
@@ -35,8 +35,8 @@ export function resolveTargetAtlasId(filepath: string, current = 0): number {
 			return BIOS_ATLAS_ID;
 		}
 	}
-	if (current >= RPU_CART_ATLAS_ID_LIMIT) {
-		throw new Error(`[RomPacker] Cart atlas descriptor id ${current} collides with reserved system atlas id ${BIOS_ATLAS_ID}.`);
+	if (current >= GX_CART_ATLAS_ID_LIMIT) {
+		throw new Error(`[RomPacker] Cart atlas id ${current} collides with reserved system atlas id ${BIOS_ATLAS_ID}.`);
 	}
 	return current;
 };
@@ -476,7 +476,7 @@ export function measureOptimizedAtlasBytes(imageResources: ImageResource[]): num
 	return packedAtlasByteLength(packedAtlas);
 }
 
-export function splitAtlasImagesByVramUsage(imageResources: ImageResource[], maxAtlasBytes = RPU_TEXTURE_VRAM_BYTES): ImageResource[][] {
+export function splitAtlasImagesByVramUsage(imageResources: ImageResource[], maxAtlasBytes = GX_TEXTURE_RESIDENCY_BYTES): ImageResource[][] {
 	if (imageResources.length === 0) {
 		return [];
 	}
@@ -517,7 +517,7 @@ export function splitAtlasImagesByVramUsage(imageResources: ImageResource[], max
 	return groups;
 }
 
-export function createOptimizedAtlas(imageResources: ImageResource[], maxAtlasBytes = RPU_TEXTURE_VRAM_BYTES): Canvas {
+export function createOptimizedAtlas(imageResources: ImageResource[], maxAtlasBytes = GX_TEXTURE_RESIDENCY_BYTES): Canvas {
 	if (imageResources.length === 0) {
 		return createCanvas(1, 1);
 	}

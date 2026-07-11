@@ -188,43 +188,24 @@ Richting:
 - Fix decode/raster/storegedrag bij de GPU-owner; niet met cart-compensatie of
   backend-specifieke kleurcorrecties.
 
-## Resterende cartmigratie en bare-metal dekking
+## VDP/RPU uit actieve machine en presentatie verwijderen
 
-Status: open ondanks dat de bekende hoofdcarts nu een GX-pad hebben.
-
-Nog te sluiten:
-
-- Inventariseer alle actieve cart- en firmware-aanroepen naar de oude VDP/RPU-ABI
-  en vervang de resterende graphics-programmering door GPU/GTE-programmering.
-- Herstel de nog ontbrekende historische `bare_metal_cart`-dekking, vooral
-  free-fly/side-camera en bredere mesh/post-pass-torture.
-- Blijf met echte cart-owned GX residency werken; geen VDP stream shim, per-frame
-  whole-atlas upload of CPU texture shadow voor accelerated backends.
-
-Klaarcriterium:
-
-- Geen actieve cartpresentatie is nog afhankelijk van VDP/RPU. Expliciete
-  device-tests mogen het oude device alleen testen zolang dat device nog bestaat;
-  ze zijn geen reden om de cart-ABI te behouden.
-
-## VDP/RPU uit actieve machine en firmware verwijderen
-
-Status: geblokkeerd op voltooide cartmigratie, GX-presentatie en voldoende
+Status: de cart-zichtbare firmware-ABI is verwijderd; actieve machine- en
+presentatieroutes blijven geblokkeerd op GX-presentatie en voldoende
 raster/readback-pariteit.
 
 Volgorde:
 
-1. Identificeer alle actieve presentation registrations, machine-output routes en
-   cart-zichtbare ABI-aanroepen.
+1. Identificeer alle actieve presentation registrations en machine-output routes.
 2. Laat GX de enige actieve graphics/presentation-owner worden.
-3. Verwijder daarna oude firmware/system-paden en tests die uitsluitend de
+3. Verwijder daarna oude device/backend-paden en tests die uitsluitend de
    afgewezen renderer-descriptor-ABI beschermen.
 4. Bewaar eventueel nuttige fantasy-hardware-ideeën alleen als documentatie voor
    latere GX-extensies; behoud daarvoor niet de oude ABI.
 
 Niet doen:
 
-- Niet verwijderen zolang carts of presentatie er werkelijk nog van afhangen.
+- Niet verwijderen zolang de actieve presentatie er werkelijk nog van afhangt.
 - Geen compatibility shim, dual-write of verborgen fallback waarmee beide
   architecturen permanent actief blijven.
 

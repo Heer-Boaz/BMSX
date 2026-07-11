@@ -11,11 +11,11 @@ import type { LuaChunk } from '../../machine/ts/lua/syntax/ast';
 import { encodeAudioAssetToAdpcm } from './adpcm';
 import { resolveTargetAtlasId, createOptimizedAtlas, generateAtlasAssetId, measureOptimizedAtlasBytes, splitAtlasImagesByVramUsage } from './atlasbuilder';
 import {
-	RPU_CART_ATLAS_ID_LIMIT,
-	RPU_CART_TEXTURE_VRAM_BASE_ADDR,
-	RPU_CART_TEXTURE_VRAM_BYTES,
-	RPU_SYSTEM_TEXTURE_RESERVED_BYTES,
-	RPU_TEXTURE_VRAM_BASE_ADDR,
+	GX_CART_ATLAS_ID_LIMIT,
+	GX_CART_TEXTURE_RESIDENCY_BASE_ADDR,
+	GX_CART_TEXTURE_RESIDENCY_BYTES,
+	GX_SYSTEM_TEXTURE_RESERVED_BYTES,
+	GX_TEXTURE_RESIDENCY_BASE_ADDR,
 	TEXTURE_ATLAS_RGBA_BYTES_PER_PIXEL,
 } from './texture_atlas_contract';
 import {
@@ -1711,9 +1711,9 @@ function atlasPagesRegionBytes(pages: ImageResource[][]): number {
 	return bytes;
 }
 
-function assertCartAtlasDescriptorId(atlasId: number, atlasName: string): void {
-	if (atlasId >= RPU_CART_ATLAS_ID_LIMIT) {
-		throw new Error(`[RomPacker] Cart atlas ${atlasName} uses descriptor id ${atlasId}, colliding with reserved system atlas id ${BIOS_ATLAS_ID}.`);
+function assertCartAtlasId(atlasId: number, atlasName: string): void {
+	if (atlasId >= GX_CART_ATLAS_ID_LIMIT) {
+		throw new Error(`[RomPacker] Cart atlas ${atlasName} uses id ${atlasId}, colliding with reserved system atlas id ${BIOS_ATLAS_ID}.`);
 	}
 }
 
@@ -1724,13 +1724,13 @@ function planCartAtlasResidency(sourceAtlases: TextureAtlasResource[], imageAsse
 		if (sourceAtlas.atlasId === BIOS_ATLAS_ID) {
 			continue;
 		}
-		assertCartAtlasDescriptorId(sourceAtlas.atlasId, sourceAtlas.name);
+		assertCartAtlasId(sourceAtlas.atlasId, sourceAtlas.name);
 		const images = imageAssets.filter(resource => resource.targetAtlasId === sourceAtlas.atlasId);
 		plans.push({
 			sourceAtlas,
 			images,
 			pages: [],
-			budget: RPU_CART_TEXTURE_VRAM_BYTES,
+			budget: GX_CART_TEXTURE_RESIDENCY_BYTES,
 			regionBytes: 0,
 			minRegionBytes: atlasResidencyMinimumBytes(images),
 			textureAddr: 0,
@@ -1746,11 +1746,11 @@ function planCartAtlasResidency(sourceAtlases: TextureAtlasResource[], imageAsse
 			plan.regionBytes = atlasPagesRegionBytes(plan.pages);
 			totalRegionBytes += plan.regionBytes;
 		}
-		if (totalRegionBytes <= RPU_CART_TEXTURE_VRAM_BYTES) {
+		if (totalRegionBytes <= GX_CART_TEXTURE_RESIDENCY_BYTES) {
 			planned = true;
 			continue;
 		}
-		const overflowBytes = totalRegionBytes - RPU_CART_TEXTURE_VRAM_BYTES;
+		const overflowBytes = totalRegionBytes - GX_CART_TEXTURE_RESIDENCY_BYTES;
 		let selectedPlanIndex = -1;
 		for (let index = 0; index < plans.length; index += 1) {
 			const plan = plans[index];
@@ -1759,14 +1759,14 @@ function planCartAtlasResidency(sourceAtlases: TextureAtlasResource[], imageAsse
 			}
 		}
 		if (selectedPlanIndex < 0) {
-			throw new Error(`[RomPacker] Cart texture residency needs ${totalRegionBytes} bytes, exceeding the VDP texture VRAM limit of ${RPU_CART_TEXTURE_VRAM_BYTES} bytes.`);
+			throw new Error(`[RomPacker] Cart texture residency needs ${totalRegionBytes} bytes, exceeding the GX texture residency limit of ${GX_CART_TEXTURE_RESIDENCY_BYTES} bytes.`);
 		}
 		const selectedPlan = plans[selectedPlanIndex];
 		const reducedBudget = selectedPlan.regionBytes - overflowBytes;
 		selectedPlan.budget = reducedBudget > selectedPlan.minRegionBytes ? reducedBudget : selectedPlan.minRegionBytes;
 	}
 
-	let textureCursor = RPU_CART_TEXTURE_VRAM_BASE_ADDR;
+	let textureCursor = GX_CART_TEXTURE_RESIDENCY_BASE_ADDR;
 	for (let index = 0; index < plans.length; index += 1) {
 		const plan = plans[index];
 		plan.textureAddr = textureCursor;
@@ -1806,7 +1806,7 @@ export async function createAtlasses(
 			const filteredImages = image_assets.filter(resource => resource.targetAtlasId === atlas.atlasId);
 			if (atlas.atlasId === BIOS_ATLAS_ID) {
 				direct16Atlases.push(atlas);
-				atlasQueue.push({ kind: 'direct16', atlas, images: filteredImages, textureAddr: RPU_TEXTURE_VRAM_BASE_ADDR, byteLimit: RPU_SYSTEM_TEXTURE_RESERVED_BYTES });
+				atlasQueue.push({ kind: 'direct16', atlas, images: filteredImages, textureAddr: GX_TEXTURE_RESIDENCY_BASE_ADDR, byteLimit: GX_SYSTEM_TEXTURE_RESERVED_BYTES });
 				continue;
 			}
 			const gxTextureMode = gxTextureAtlasModes === undefined ? undefined : gxTextureAtlasModes[atlas.atlasId];
@@ -1814,7 +1814,7 @@ export async function createAtlasses(
 				direct16Atlases.push(atlas);
 				continue;
 			}
-			assertCartAtlasDescriptorId(atlas.atlasId, atlas.name);
+			assertCartAtlasId(atlas.atlasId, atlas.name);
 			if (gxTextureMode !== 'palette4') {
 				throw new Error(`[RomPacker] GX atlas ${atlas.atlasId} uses unsupported texture mode ${gxTextureMode}.`);
 			}
@@ -1829,7 +1829,7 @@ export async function createAtlasses(
 				if (pageIndex !== 0) {
 					const splitAtlasId = nextAtlasId;
 					const splitAtlasName = generateAtlasAssetId(splitAtlasId);
-					assertCartAtlasDescriptorId(splitAtlasId, splitAtlasName);
+					assertCartAtlasId(splitAtlasId, splitAtlasName);
 					nextAtlasId += 1;
 					atlas = {
 						name: splitAtlasName,

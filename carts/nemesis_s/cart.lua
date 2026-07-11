@@ -1,3 +1,5 @@
+local gx_gpu<const> = require('system/gx_gpu')
+gx_gpu.reset_256x192_pal()
 require('cartlib/prelude')
 require('constants')
 local stage_module<const> = require('stage')
@@ -27,7 +29,6 @@ function init()
 		nemesis_s_atlas_decoded = true
 	end)
 	*irq_mask_register = irq_vblank | irq_apu | irq_img_done
-	gx_reset_256x192_pal()
 	gx_clear_color(0xff000000)
 	stage_module.define_stage_fsm()
 	director_module.define_director_fsm()

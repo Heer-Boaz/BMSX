@@ -1,3 +1,5 @@
+local gx_gpu<const> = require('system/gx_gpu')
+gx_gpu.reset_320x240_pal()
 require('cartlib/prelude')
 
 bss affine_pixels: word[4]
@@ -11,8 +13,7 @@ local vblank_count = 0
 renderhwtest_affine_ready = false
 renderhwtest_draw_count = 0
 
-local width<const> = gx_display_width
-local height<const> = gx_display_height
+local width<const>, height<const> = gx_gpu.display_size()
 local background<const> = 0xff07111f
 local grid_color<const> = 0xff18365a
 local bar_color<const> = 0xff3dd6ff
@@ -88,7 +89,6 @@ local draw_cart<const> = function()
 end
 
 *irq_mask_register = irq_vblank | irq_apu
-gx_reset_320x240_pal()
 gx_clear_color(background)
 upload_affine_texture()
 renderhwtest_affine_ready = true

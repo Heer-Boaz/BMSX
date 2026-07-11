@@ -1,3 +1,5 @@
+local gx_gpu<const> = require('system/gx_gpu')
+gx_gpu.reset_320x240_pal()
 require('cartlib/prelude')
 
 local gp1_status<const>: *word = 0x08010370
@@ -59,7 +61,6 @@ local check_gpustat<const> = function(label)
 end
 
 function init()
-	gx_reset_320x240_pal()
 	local status<const> = check_gpustat('init')
 	if (status & gpustat_interlace_field) == 0 then
 		fail('init: GPUSTAT interlace field bit clear in progressive mode')
