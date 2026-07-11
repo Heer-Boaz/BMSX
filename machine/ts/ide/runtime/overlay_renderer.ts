@@ -13,6 +13,7 @@ type GlyphSubmission = Extract<Host2DSubmission, { type: 'items' }>;
 
 type OverlayCommandBuffer = {
 	commands: RenderCommand[];
+	frame: HostOverlayFrame;
 	rectPool: RectSubmission[];
 	imagePool: ImgSubmission[];
 	itemPool: GlyphSubmission[];
@@ -67,8 +68,18 @@ function createGlyphSubmission(): GlyphSubmission {
 }
 
 function createOverlayCommandBuffer(): OverlayCommandBuffer {
+	const commands: RenderCommand[] = [];
 	return {
-		commands: [],
+		commands,
+		frame: {
+			width: 0,
+			height: 0,
+			logicalWidth: 0,
+			logicalHeight: 0,
+			renderWidth: 0,
+			renderHeight: 0,
+			commands,
+		},
 		rectPool: [],
 		imagePool: [],
 		itemPool: [],
@@ -241,15 +252,13 @@ export class OverlayRenderer {
 		}
 		this.activeBuffer = this.standbyBuffer;
 		this.standbyBuffer = publishedBuffer;
-		const frame: HostOverlayFrame = {
-			width: this.frameRenderWidth,
-			height: this.frameRenderHeight,
-			logicalWidth: this.frameLogicalWidth,
-			logicalHeight: this.frameLogicalHeight,
-			renderWidth: this.frameRenderWidth,
-			renderHeight: this.frameRenderHeight,
-			commands: publishedBuffer.commands,
-		};
+		const frame = publishedBuffer.frame;
+		frame.width = this.frameRenderWidth;
+		frame.height = this.frameRenderHeight;
+		frame.logicalWidth = this.frameLogicalWidth;
+		frame.logicalHeight = this.frameLogicalHeight;
+		frame.renderWidth = this.frameRenderWidth;
+		frame.renderHeight = this.frameRenderHeight;
 		publishOverlayFrame(frame);
 	}
 

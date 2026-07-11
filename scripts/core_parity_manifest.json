@@ -2293,6 +2293,13 @@
 			"reason": "headless_device_quantize_hot_path_must_reuse_retained_lookup_tables_without_frame_allocations"
 		},
 		{
+			"file": "machine/ts/ide/runtime/overlay_renderer.ts",
+			"functions": [
+				"endFrame"
+			],
+			"reason": "workbench_overlay_publish_must_reuse_retained_frame_descriptors"
+		},
+		{
 			"file": "machine/ts/render/headless/passes.ts",
 			"functions": [
 				"commitHeadlessFrame",
