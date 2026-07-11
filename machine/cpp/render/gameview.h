@@ -11,8 +11,6 @@
 #include "shared/submissions.h"
 #include "common/registry.h"
 #include "machine/devices/gx/gpu_command_buffer.h"
-#include "machine/devices/vdp/lpu.h"
-#include "render/vdp/transform.h"
 #include "common/subscription.h"
 #include <array>
 #include <memory>
@@ -27,23 +25,7 @@ struct GxGpuCommandBuffer;
 class GxGpu;
 class RenderPassLibrary;
 class RenderGraphRuntime;
-class LightingSystem;
 class VdpFrameBufferTextures;
-
-/* ============================================================================
- * Atmosphere parameters (fog, etc.)
- * ============================================================================ */
-
-struct AtmosphereParams {
-	f32 fogD50 = 320.0f;
-	f32 fogStart = 120.0f;
-	std::array<f32, 3> fogColorLow = {0.90f, 0.95f, 1.00f};
-	std::array<f32, 3> fogColorHigh = {1.05f, 1.02f, 0.95f};
-	f32 fogYMin = 0.0f;
-	f32 fogYMax = 200.0f;
-	f32 progressFactor = 0.0f;
-	bool enableAutoAnimation = false;
-};
 
 /* ============================================================================
  * GameView - Main rendering view
@@ -115,22 +97,8 @@ public:
 	const VdpFrameBufferTextures& vdpFrameBufferTextures() const;
 
 	// ─────────────────────────────────────────────────────────────────────────
-	// Video snapshot fields (owned by VDP, consumed by renderer)
+	// Video snapshot fields consumed by the renderer
 	// ─────────────────────────────────────────────────────────────────────────
-	VdpTransformSnapshot vdpTransform{};
-	std::array<u32, VDP_XF_MATRIX_REGISTER_WORDS> vdpXfMatrixWords{};
-	std::array<u32, VDP_LPU_REGISTER_WORDS> vdpLightRegisterWords{};
-	std::array<f32, 4> vdpAmbientLightColorIntensity{};
-	std::array<f32, VDP_LPU_DIRECTIONAL_LIGHT_LIMIT * 3u> vdpDirectionalLightDirections{};
-	std::array<f32, VDP_LPU_DIRECTIONAL_LIGHT_LIMIT * 3u> vdpDirectionalLightColors{};
-	std::array<f32, VDP_LPU_DIRECTIONAL_LIGHT_LIMIT> vdpDirectionalLightIntensities{};
-	i32 vdpDirectionalLightCount = 0;
-	std::array<f32, VDP_LPU_POINT_LIGHT_LIMIT * 3u> vdpPointLightPositions{};
-	std::array<f32, VDP_LPU_POINT_LIGHT_LIMIT * 3u> vdpPointLightColors{};
-	std::array<f32, VDP_LPU_POINT_LIGHT_LIMIT * 2u> vdpPointLightParams{};
-	i32 vdpPointLightCount = 0;
-	std::array<u32, VDP_MFU_WEIGHT_COUNT> vdpMorphWeightWords{};
-	std::array<u32, VDP_JTU_REGISTER_WORDS> vdpJointMatrixWords{};
 	const GxGpuCommandBuffer* gxGpuCommandBuffer = nullptr;
 	u32 gxGpuStatusWord = 0u;
 	u32 gxGpuDisplayModeWord = 0u;
@@ -173,10 +141,8 @@ public:
 	std::array<f32, 3> glowColor = {0.12f, 0.10f, 0.09f};
 
 	// ─────────────────────────────────────────────────────────────────────────
-	// Sprite ambient settings
+	// Presentation history
 	// ─────────────────────────────────────────────────────────────────────────
-	bool spriteAmbientEnabledDefault = false;
-	f32 spriteAmbientFactorDefault = 1.0f;
 	PresentationMode presentationMode = PresentationMode::Completed;
 	bool commitPresentationFrame = false;
 	u8 presentationHistorySourceIndex = 0;
@@ -186,11 +152,6 @@ public:
 	// ─────────────────────────────────────────────────────────────────────────
 	enum class ViewportType { Viewport, Offscreen };
 	ViewportType viewportTypeIde = ViewportType::Viewport;
-
-	// ─────────────────────────────────────────────────────────────────────────
-	// Atmosphere (fog)
-	// ─────────────────────────────────────────────────────────────────────────
-	AtmosphereParams atmosphere;
 
 	// ─────────────────────────────────────────────────────────────────────────
 	// Lifecycle
@@ -203,11 +164,6 @@ public:
 	void rebuildGraph();
 	RenderGraphRuntime* renderGraph() { return m_renderGraph.get(); }
 
-	// ─────────────────────────────────────────────────────────────────────────
-	// Ambient control API
-	// ─────────────────────────────────────────────────────────────────────────
-	void setSpritesAmbient(bool enabled, f32 factor = 1.0f);
-
 private:
 	void finalizePresentation();
 	void resetPresentationHistory();
@@ -216,7 +172,6 @@ private:
 	std::unique_ptr<GPUBackend> m_backend;
 	std::unique_ptr<RenderPassLibrary> m_pipelineRegistry;
 	std::unique_ptr<RenderGraphRuntime> m_renderGraph;
-	std::unique_ptr<LightingSystem> m_lightingSystem;
 	std::unique_ptr<VdpFrameBufferTextures> m_vdpFrameBufferTextures;
 
 	// Frame timing

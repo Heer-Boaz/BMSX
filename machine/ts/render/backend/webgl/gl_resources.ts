@@ -1,9 +1,7 @@
 // Centralized low-level WebGL helper & resource creation utilities.
 // Moved out of backend.ts to keep backend focused on orchestration.
 import { machineManager } from '../../../core/machine_manager';
-import { formatNumberAsHex } from '../../../common/byte_hex_string';
 import { RGBA8_SRGB_TEXTURE_PARAMS, type TextureParams } from '../texture_params';
-import { TEXTURE_UNIT_SHADOW_MAP } from './constants';
 
 function getRenderContext() {
 	return machineManager.view;
@@ -125,45 +123,6 @@ export function glSetTextureCubeParams(gl: WebGL2RenderingContext, desc: Texture
 	gl.texParameteri(gl.TEXTURE_CUBE_MAP, gl.TEXTURE_WRAP_S, desc.wrapS);
 	gl.texParameteri(gl.TEXTURE_CUBE_MAP, gl.TEXTURE_WRAP_T, desc.wrapT);
 	gl.texParameteri(gl.TEXTURE_CUBE_MAP, gl.TEXTURE_WRAP_R, gl.CLAMP_TO_EDGE);
-}
-
-export function glCreateShadowMapTextureAndFramebuffer(
-	gl: WebGL2RenderingContext,
-	desc: TextureParams,
-	unit = TEXTURE_UNIT_SHADOW_MAP,
-) {
-	const tex = gl.createTexture()!;
-	gl.activeTexture(gl.TEXTURE0 + unit);
-	gl.bindTexture(gl.TEXTURE_2D, tex);
-	gl.texImage2D(
-		gl.TEXTURE_2D,
-		0,
-		gl.DEPTH_COMPONENT16,
-		desc.size.x,
-		desc.size.y,
-		0,
-		gl.DEPTH_COMPONENT,
-		gl.UNSIGNED_SHORT,
-		null,
-	);
-	const backendShadow = getRenderContext().backend;
-	backendShadow.accountUpload('texture', desc.size.x * desc.size.y * 2);
-
-	glSetTexture2DParams(gl, desc);
-
-	const fbo = gl.createFramebuffer()!;
-	gl.bindFramebuffer(gl.FRAMEBUFFER, fbo);
-	gl.framebufferTexture2D(gl.FRAMEBUFFER, gl.DEPTH_ATTACHMENT, gl.TEXTURE_2D, tex, 0);
-	gl.drawBuffers([gl.NONE]);
-	gl.readBuffer(gl.NONE);
-
-	const status = gl.checkFramebufferStatus(gl.FRAMEBUFFER);
-	if (status !== gl.FRAMEBUFFER_COMPLETE) {
-		throw new Error(`Shadow FBO incomplete: ${formatNumberAsHex(status)}`);
-	}
-
-	gl.bindFramebuffer(gl.FRAMEBUFFER, null);
-	return { texture: tex, framebuffer: fbo };
 }
 
 export function glCreateTextureFromImage(

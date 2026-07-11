@@ -8,7 +8,6 @@
 #include "gameview.h"
 #include "backend/pass/library.h"
 #include "graph/graph.h"
-#include "lighting/system.h"
 #include "core/machine_manager.h"
 #include "rompack/format.h"
 #include "texture_manager.h"
@@ -165,15 +164,6 @@ void GameView::setPipelineRegistry(std::unique_ptr<RenderPassLibrary> registry) 
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
-// Ambient control API
-// ─────────────────────────────────────────────────────────────────────────────
-
-void GameView::setSpritesAmbient(bool enabled, f32 factor) {
-	spriteAmbientEnabledDefault = enabled;
-	spriteAmbientFactorDefault = factor;
-}
-
-// ─────────────────────────────────────────────────────────────────────────────
 // Render graph
 // ─────────────────────────────────────────────────────────────────────────────
 
@@ -182,11 +172,8 @@ void GameView::rebuildGraph() {
 		// No pipeline registry yet - this is OK during early init
 		return;
 	}
-	if (!m_lightingSystem) {
-		m_lightingSystem = std::make_unique<LightingSystem>();
-	}
 	resetPresentationHistory();
-	m_renderGraph = m_pipelineRegistry->buildRenderGraph(this, *m_lightingSystem);
+	m_renderGraph = m_pipelineRegistry->buildRenderGraph();
 }
 
 // ─────────────────────────────────────────────────────────────────────────────

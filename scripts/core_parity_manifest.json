@@ -206,21 +206,6 @@
 			"reason": "host_2d_render_pipeline_not_core"
 		},
 		{
-			"pattern": "machine/ts/render/3d/axis_gizmo_pipeline.ts",
-			"category": "host",
-			"reason": "debug_render_gizmo_not_core"
-		},
-		{
-			"pattern": "machine/ts/render/3d/material.ts",
-			"category": "host",
-			"reason": "host_render_material_not_core"
-		},
-		{
-			"pattern": "machine/ts/render/3d/shadowmap.ts",
-			"category": "host",
-			"reason": "host_render_shadowmap_not_core"
-		},
-		{
 			"pattern": "machine/ts/render/texture_load_barrier.ts",
 			"category": "host",
 			"reason": "host_texture_loading_not_core"
@@ -328,8 +313,7 @@
 		"machine/ts/rompack/toc.ts",
 		"machine/ts/rompack/source.ts",
 		"machine/ts/rompack/metadata.ts",
-		"machine/ts/render/shared/solid_pixels.ts",
-		"machine/ts/render/3d/light.ts"
+		"machine/ts/render/shared/solid_pixels.ts"
 	],
 	"strict_runtime_symbol_parity": [
 		{
@@ -1448,7 +1432,29 @@
 				"machine/cpp/render/backend/gles2/shaders/vdp_rpu.frag.glsl",
 				"machine/cpp/render/backend/gles2/shaders/vdp_rpu_shaders.h.in",
 				"machine/cpp/render/backend/software/vdp_rpu.h",
-				"machine/cpp/render/backend/software/vdp_rpu.cpp"
+				"machine/cpp/render/backend/software/vdp_rpu.cpp",
+				"machine/cpp/render/3d/axis_gizmo_pipeline.cpp",
+				"machine/cpp/render/3d/axis_gizmo_pipeline.h",
+				"machine/cpp/render/3d/light.h",
+				"machine/cpp/render/3d/math.cpp",
+				"machine/cpp/render/3d/math.h",
+				"machine/cpp/render/3d/shaders/axis_gizmo.frag.glsl",
+				"machine/cpp/render/3d/shaders/axis_gizmo.vert.glsl",
+				"machine/cpp/render/3d/shaders/render_3d_shaders.h.in",
+				"machine/cpp/render/lighting/system.cpp",
+				"machine/cpp/render/lighting/system.h",
+				"machine/cpp/render/vdp/transform.cpp",
+				"machine/cpp/render/vdp/transform.h",
+				"machine/ts/render/3d/axis_gizmo_pipeline.ts",
+				"machine/ts/render/3d/light.ts",
+				"machine/ts/render/3d/material.ts",
+				"machine/ts/render/3d/math.ts",
+				"machine/ts/render/3d/shaders/axis_gizmo.frag.glsl",
+				"machine/ts/render/3d/shaders/axis_gizmo.vert.glsl",
+				"machine/ts/render/3d/shadowmap.ts",
+				"machine/ts/render/lighting/system.ts",
+				"machine/ts/render/vdp/transform.ts",
+				"machine/ts/render/2d/sprites_pipeline.wgpu.ts"
 			],
 			"reason": "gx_gpu_backends_replace_retired_rpu_presentation_and_legacy_scene_and_framebuffer_execution_paths_while_ide_terminal_framebuffer_texture_presentation_remains"
 		},

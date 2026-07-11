@@ -69,7 +69,6 @@ export class WebGPUBackend implements GPUBackend {
 		});
 		registerGxGpuPass(registry);
 		registerCRT(registry);
-		registry.register({ id: 'frame_shared', name: 'FrameShared', stateOnly: true, graph: { skip: true }, exec: () => { } });
 	}
 
 

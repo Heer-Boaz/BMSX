@@ -9,7 +9,6 @@
 
 #include "../backend.h"
 #include "../../graph/graph.h"
-#include "../../lighting/system.h"
 #include "../../shared/submissions.h"
 #include "machine/devices/gx/gpu_command_buffer.h"
 #include <array>
@@ -102,26 +101,6 @@ struct DeviceQuantizePipelineState {
 	i32 ditherType = 0;
 };
 
-struct FrameSharedState {
-	struct {
-		std::array<f32, 3> camPos;
-		std::array<f32, 16> viewProj;
-		std::array<f32, 16> viewRotationInverse;
-		std::array<f32, 16> proj;
-	} view;
-
-	LightingFrameState lighting;
-
-	struct {
-		f32 fogD50;
-		f32 fogStart;
-		std::array<f32, 3> fogColorLow;
-		std::array<f32, 3> fogColorHigh;
-		f32 fogYMin;
-		f32 fogYMax;
-	} fog;
-};
-
 struct Host2DPipelineState {
 	i32 width = 0;
 	i32 height = 0;
@@ -145,7 +124,6 @@ struct RenderPassStateStorage {
 	PresentPipelineState present;
 	CRTPipelineState crt;
 	DeviceQuantizePipelineState deviceQuantize;
-	FrameSharedState frameShared;
 	HostOverlayPipelineState hostOverlay;
 	HostMenuPipelineState hostMenu;
 };
@@ -229,7 +207,7 @@ bool shouldExecuteFramebuffer2DPass(GameView* view, void*);
 bool shouldExecuteAutoPresentPass(GameView* view, void*);
 bool shouldExecuteAutoCRTPass(GameView* view, void*);
 bool shouldExecuteDeviceQuantizePass(GameView* view, void*);
-void registerFrameStatePasses(RenderPassLibrary& registry);
+void registerFrameResolvePass(RenderPassLibrary& registry);
 
 /* ============================================================================
  * RenderPassLibrary
@@ -263,7 +241,7 @@ public:
 	void setPassEnabled(const std::string& id, bool enabled);
 	bool isPassEnabled(const std::string& id) const;
 
-	std::unique_ptr<RenderGraphRuntime> buildRenderGraph(GameView* view, LightingSystem& lightingSystem);
+	std::unique_ptr<RenderGraphRuntime> buildRenderGraph();
 
 private:
 	struct RegisteredPassRec {
@@ -282,7 +260,6 @@ private:
 		else if constexpr (std::is_same_v<T, PresentPipelineState>) return state.present;
 		else if constexpr (std::is_same_v<T, CRTPipelineState>) return state.crt;
 		else if constexpr (std::is_same_v<T, DeviceQuantizePipelineState>) return state.deviceQuantize;
-		else if constexpr (std::is_same_v<T, FrameSharedState>) return state.frameShared;
 		else if constexpr (std::is_same_v<T, HostOverlayPipelineState>) return state.hostOverlay;
 		else if constexpr (std::is_same_v<T, HostMenuPipelineState>) return state.hostMenu;
 		else static_assert(!std::is_same_v<T, T>, "Unsupported render pass state type");

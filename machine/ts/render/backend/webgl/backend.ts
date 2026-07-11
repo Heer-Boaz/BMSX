@@ -86,13 +86,6 @@ export class WebGLBackend implements GPUBackend {
 		registerCRT(registry);
 		registerHostOverlayPass(registry);
 		registerHostMenuPass(registry);
-		registry.register({
-			id: 'frame_shared',
-			name: 'FrameShared',
-			stateOnly: true,
-			graph: { skip: true },
-			exec: () => { },
-		});
 	}
 
 	bindRenderPassPipeline(pass: PassEncoder, pipeline: RenderPassInstanceHandle, bindingLayout?: GraphicsPipelineBindingLayout): void {
@@ -103,12 +96,6 @@ export class WebGLBackend implements GPUBackend {
 				switch (uniformName) {
 					case 'FrameUniforms':
 						this.setUniformBlockBinding('FrameUniforms', FRAME_UNIFORM_BINDING);
-						break;
-					case 'DirLightBlock':
-						this.setUniformBlockBinding('DirLightBlock', 0);
-						break;
-					case 'PointLightBlock':
-						this.setUniformBlockBinding('PointLightBlock', 1);
 						break;
 				}
 			}

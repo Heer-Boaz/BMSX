@@ -117,7 +117,6 @@ import {
 import {
 	VDP_XF_MATRIX_COUNT,
 	VDP_XF_MATRIX_PACKET_PAYLOAD_WORDS,
-	VDP_XF_MATRIX_REGISTER_WORDS,
 	VDP_XF_MATRIX_WORDS,
 	VDP_XF_PACKET_KIND,
 	VDP_XF_SELECT_PACKET_PAYLOAD_WORDS,
@@ -126,7 +125,6 @@ import {
 import { Memory } from '../../machine/ts/machine/memory/memory';
 import { IO_WORD_SIZE, VDP_STREAM_BUFFER_BASE, VRAM_FRAMEBUFFER_BASE, VRAM_STAGING_BASE } from '../../machine/ts/machine/memory/map';
 import { DeviceScheduler } from '../../machine/ts/machine/scheduler/device';
-import { createVdpTransformSnapshot, resolveVdpTransformSnapshot } from '../../machine/ts/render/vdp/transform';
 
 const VDP_XF_MATRIX_HEADER = VDP_XF_PACKET_KIND | (VDP_XF_MATRIX_PACKET_PAYLOAD_WORDS << 16);
 const VDP_XF_SELECT_HEADER = VDP_XF_PACKET_KIND | (VDP_XF_SELECT_PACKET_PAYLOAD_WORDS << 16);
@@ -530,44 +528,6 @@ test('VDP XF packet updates raw transform register state', () => {
 		assert.equal(state.xf.matrixWords[viewBase + index] >>> 0, viewWords[index] >>> 0);
 		assert.equal(state.xf.matrixWords[projectionBase + index] >>> 0, projWords[index] >>> 0);
 	}
-});
-
-test('VDP XF words resolve to render-owned view rotation inverse transform', () => {
-	const transform = createVdpTransformSnapshot();
-	const viewMatrixIndex = 2;
-	const projectionMatrixIndex = 3;
-	const viewMatrixIndexWord = viewMatrixIndex + VDP_XF_MATRIX_COUNT;
-	const projectionMatrixIndexWord = projectionMatrixIndex + VDP_XF_MATRIX_COUNT;
-	const matrixWords = new Array<number>(VDP_XF_MATRIX_REGISTER_WORDS).fill(0);
-	const viewWords = [
-		0x00020000, 0, 0, 0,
-		0, 0x00040000, 0, 0,
-		0, 0, 0x00080000, 0,
-		0x00060000, 0x00080000, 0x00100000, 0x00010000,
-	];
-	const projWords = [
-		0x00010000, 0, 0, 0,
-		0, 0x00010000, 0, 0,
-		0, 0, 0x00010000, 0,
-		0, 0, 0, 0x00010000,
-	];
-	for (let index = 0; index < VDP_XF_MATRIX_WORDS; index += 1) {
-		matrixWords[viewMatrixIndex * VDP_XF_MATRIX_WORDS + index] = viewWords[index];
-		matrixWords[projectionMatrixIndex * VDP_XF_MATRIX_WORDS + index] = projWords[index];
-	}
-
-	resolveVdpTransformSnapshot(transform, matrixWords, viewMatrixIndexWord, projectionMatrixIndexWord);
-
-	assert.equal(transform.view[0], 2);
-	assert.equal(transform.viewRotationInverse[0], 0.5);
-	assert.equal(transform.viewRotationInverse[5], 0.25);
-	assert.equal(transform.viewRotationInverse[10], 0.125);
-	assert.equal(transform.viewRotationInverse[12], 0);
-	assert.equal(transform.viewRotationInverse[13], 0);
-	assert.equal(transform.viewRotationInverse[14], 0);
-	assert.equal(transform.eye[0], -3);
-	assert.equal(transform.eye[1], -2);
-	assert.equal(transform.eye[2], -2);
 });
 
 test('VDP XF select registers latch raw words', () => {

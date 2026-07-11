@@ -1,10 +1,8 @@
 import type { Runtime } from '../../../machine/runtime/runtime';
 import type { GameView } from '../../gameview';
 import { RenderGraphRuntime, type PassContext } from '../../graph/graph';
-import { LightingSystem } from '../../lighting/system';
-import { updateAndBindFrameUniforms } from '../frame_uniforms';
 import type { color_arr } from '../../../rompack/format';
-import { FrameSharedState, GPUBackend, PassEncoder, RenderGraphPassContext, RenderGraphSlot, RenderPassDef, RenderPassDesc, RenderPassInstanceHandle, RenderPassStateId, RenderPassStateRegistry } from '../backend';
+import { GPUBackend, PassEncoder, RenderGraphPassContext, RenderGraphSlot, RenderPassDef, RenderPassDesc, RenderPassInstanceHandle, RenderPassStateId, RenderPassStateRegistry } from '../backend';
 
 const FRAME_CLEAR_COLOR: color_arr = [0, 0, 0, 1];
 
@@ -23,34 +21,6 @@ export class RenderPassLibrary {
 	private passes: RenderPassDef[] = []; // Mutable list for ordering/scheduling
 	private passEnabled = new Map<string, boolean>();
 	private registered = new Map<string, RegisteredPassRec>();
-	private readonly frameSharedState: FrameSharedState = {
-		view: {
-			camPos: new Float32Array(3),
-			viewProj: new Float32Array(16),
-			viewRotationInverse: new Float32Array(16),
-			proj: new Float32Array(16),
-		},
-		lighting: {
-			ambient: null,
-			dirCount: 0,
-			pointCount: 0,
-			dirDirections: new Float32Array(0),
-			dirColors: new Float32Array(0),
-			dirIntensity: new Float32Array(0),
-			pointPositions: new Float32Array(0),
-			pointColors: new Float32Array(0),
-			pointParams: new Float32Array(0),
-			dirty: true,
-		},
-		fog: {
-			fogD50: 0,
-			fogStart: 0,
-			fogColorLow: [0, 0, 0],
-			fogColorHigh: [0, 0, 0],
-			fogYMin: 0,
-			fogYMax: 0,
-		},
-	};
 	constructor(private backend: GPUBackend, public readonly runtime: Runtime, public readonly view: GameView) {
 		this.backend.registerBuiltinPasses(this);
 	}
@@ -138,12 +108,11 @@ export class RenderPassLibrary {
 	}
 
 	// Build render graph from current pass registry with Clear/Present wiring
-	buildRenderGraph(view: GameView, lightingSystem: LightingSystem): RenderGraphRuntime {
+	buildRenderGraph(): RenderGraphRuntime {
+		const view = this.view;
 		const rg = new RenderGraphRuntime(view.backend);
 		const offscreenWidth = view.offscreenCanvasSize.x;
 		const offscreenHeight = view.offscreenCanvasSize.y;
-		const viewportWidth = view.viewportSize.x;
-		const viewportHeight = view.viewportSize.y;
 		let frameColorHandle: number = null;
 		let frameDepthHandle: number = null;
 		let frameHistoryAHandle: number = null;
@@ -226,63 +195,6 @@ export class RenderPassLibrary {
 			setup: () => null,
 			execute: () => {
 				this.execute('frame_resolve', null);
-			},
-		});
-
-		// Per-frame shared state aggregation (camera + lighting + frame UBO update)
-		rg.addPass({
-			name: 'FrameSharedState',
-			alwaysExecute: true,
-			setup: () => null,
-			execute: (_ctx, frame) => {
-				const frameTime = frame ? frame.time : 0;
-				const frameDelta = frame ? frame.delta : 0;
-				const gv = view;
-				updateAndBindFrameUniforms(gv.backend, offscreenWidth, offscreenHeight, viewportWidth, viewportHeight, frameTime, frameDelta);
-				const transform = gv.vdpTransform;
-				const lighting = lightingSystem.update(gv);
-				const frameShared = this.frameSharedState;
-				frameShared.view.camPos = transform.eye;
-				frameShared.view.viewProj = transform.viewProj;
-				frameShared.view.viewRotationInverse = transform.viewRotationInverse;
-				frameShared.view.proj = transform.proj;
-				frameShared.lighting = lighting;
-				frameShared.fog.fogD50 = gv.atmosphere.fogD50;
-				frameShared.fog.fogStart = gv.atmosphere.fogStart;
-				frameShared.fog.fogColorLow = gv.atmosphere.fogColorLow;
-				frameShared.fog.fogColorHigh = gv.atmosphere.fogColorHigh;
-				frameShared.fog.fogYMin = gv.atmosphere.fogYMin;
-				frameShared.fog.fogYMax = gv.atmosphere.fogYMax;
-				this.setState('frame_shared', frameShared);
-				if (lighting.ambient) {
-					updateAndBindFrameUniforms(
-						gv.backend,
-						offscreenWidth,
-						offscreenHeight,
-						viewportWidth,
-						viewportHeight,
-						frameTime,
-						frameDelta,
-						transform.view,
-						transform.proj,
-						transform.eye,
-						lighting.ambient.color,
-						lighting.ambient.intensity,
-					);
-				} else {
-					updateAndBindFrameUniforms(
-						gv.backend,
-						offscreenWidth,
-						offscreenHeight,
-						viewportWidth,
-						viewportHeight,
-						frameTime,
-						frameDelta,
-						transform.view,
-						transform.proj,
-						transform.eye,
-					);
-				}
 			},
 		});
 

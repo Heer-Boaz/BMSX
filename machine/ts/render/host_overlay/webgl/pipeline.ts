@@ -1,5 +1,4 @@
 import type { RenderPassLibrary } from '../../backend/pass/library';
-import type { GameView } from '../../gameview';
 import type {
 	Host2DPipelineState,
 	HostOverlayPipelineState,
@@ -19,7 +18,6 @@ import {
 	type WebGLSpriteQuadUniforms,
 } from '../../backend/webgl/instanced_buffers';
 import { ZCOORD_MAX } from '../../backend/webgl/constants';
-import { bootstrapAxisGizmo_WebGL, renderAxisGizmo_WebGL, shouldRenderAxisGizmo } from '../../3d/axis_gizmo_pipeline';
 import type {
 	GlyphRenderSubmission,
 	HostImageRenderSubmission,
@@ -80,13 +78,6 @@ const SOLID_TEXCOORD_1 = 1;
 const HOST_OVERLAY_TEXTURE_UNIT = 0;
 const HOST_OVERLAY_SLOT_ID = 0;
 const HOST_OVERLAY_DRAW_PASS: PassEncoder = { fbo: null, desc: { label: 'host_overlay' } as RenderPassDesc };
-const AXIS_GIZMO_LABEL_CAPACITY = 6;
-const axisLabelImgIds = ['', '', '', '', '', ''];
-const axisLabelX = new Float32Array(AXIS_GIZMO_LABEL_CAPACITY);
-const axisLabelY = new Float32Array(AXIS_GIZMO_LABEL_CAPACITY);
-const axisLabelZ = new Float32Array(AXIS_GIZMO_LABEL_CAPACITY);
-const axisLabelScale = new Float32Array(AXIS_GIZMO_LABEL_CAPACITY);
-const axisLabelColors = [0, 0, 0, 0, 0, 0];
 const INSTANCE_FLOAT_ATTRIBUTES: readonly WebGLInstancedFloatAttribute[] = [
 	['i_origin', 2, 0],
 	['i_axis_x', 2, 2 * 4],
@@ -97,7 +88,6 @@ const INSTANCE_FLOAT_ATTRIBUTES: readonly WebGLInstancedFloatAttribute[] = [
 ];
 
 let runtime: HostOverlayRuntime | null = null;
-let axisLabelCount = 0;
 
 function createRuntime(backend: WebGLBackend, program: WebGLProgram): HostOverlayRuntime {
 	const gl = backend.gl as WebGL2RenderingContext;
@@ -195,20 +185,6 @@ function bindHostTexture(backend: WebGLBackend, texture: WebGLTexture, boundText
 	backend.setActiveTexture(HOST_OVERLAY_TEXTURE_UNIT);
 	backend.bindTexture2D(texture);
 	return texture;
-}
-
-function captureAxisGizmoImage(imgid: string, x: number, y: number, z: number, scale: number, colorValue: color): void {
-	if (axisLabelCount >= AXIS_GIZMO_LABEL_CAPACITY) {
-		throw new Error('[AxisGizmo] Host label scratch capacity exhausted.');
-	}
-	const index = axisLabelCount;
-	axisLabelImgIds[index] = imgid;
-	axisLabelX[index] = x;
-	axisLabelY[index] = y;
-	axisLabelZ[index] = z;
-	axisLabelScale[index] = scale;
-	axisLabelColors[index] = colorValue;
-	axisLabelCount += 1;
 }
 
 function drawHostImage(backend: WebGLBackend, state: HostOverlayRuntime, cache: Map<string, HostOverlayImageSource>, imgid: string, x: number, y: number, z: number, scaleX: number, scaleY: number, flipH: boolean, flipV: boolean, colorValue: color, boundTextures: BoundTextureState): BoundTextureState {
@@ -453,48 +429,6 @@ export function endHost2DEntries(backend: WebGLBackend): void {
 	backend.setDepthMask(true);
 }
 
-function renderAxisGizmoLabels(backend: WebGLBackend, state: HostOverlayRuntime, passState: HostOverlayPipelineState): void {
-	const gl = backend.gl as WebGL2RenderingContext;
-	gl.bindFramebuffer(gl.FRAMEBUFFER, null);
-	bindPassState(backend, state, passState);
-	const imageCache = state.imageCache;
-	let boundTextures: BoundTextureState = null;
-	for (let index = 0; index < axisLabelCount; index += 1) {
-		boundTextures = drawHostImage(
-			backend,
-			state,
-			imageCache,
-			axisLabelImgIds[index],
-			axisLabelX[index],
-			axisLabelY[index],
-			axisLabelZ[index],
-			axisLabelScale[index],
-			axisLabelScale[index],
-			false,
-			false,
-			axisLabelColors[index],
-			boundTextures,
-		);
-	}
-	backend.bindVertexArray(null);
-	backend.setBlendEnabled(false);
-	backend.setDepthMask(true);
-}
-
-function renderHostPass(backend: WebGLBackend, state: HostOverlayRuntime, passState: HostOverlayPipelineState, view: GameView): void {
-	if (passState.commands.length !== 0) {
-		renderOverlay(backend, state, passState);
-	}
-	if (!shouldRenderAxisGizmo()) {
-		return;
-	}
-	axisLabelCount = 0;
-	renderAxisGizmo_WebGL(backend, view, captureAxisGizmoImage);
-	if (axisLabelCount !== 0) {
-		renderAxisGizmoLabels(backend, state, passState);
-	}
-}
-
 export function registerHostOverlayPass(registry: RenderPassLibrary): void {
 	registry.register({
 		id: 'host_overlay',
@@ -506,11 +440,10 @@ export function registerHostOverlayPass(registry: RenderPassLibrary): void {
 		bootstrap: (backend) => {
 			const webglBackend = backend as WebGLBackend;
 			bootstrapRuntime(webglBackend);
-			bootstrapAxisGizmo_WebGL(webglBackend);
 		},
-		shouldExecute: () => hasPendingOverlayFrame() || shouldRenderAxisGizmo(),
+		shouldExecute: () => hasPendingOverlayFrame(),
 		exec: (backend: WebGLBackend, _fbo, state: RenderPassStateRegistry['host_overlay']) => {
-			renderHostPass(backend, runtime!, state, registry.view);
+			renderOverlay(backend, runtime!, state);
 		},
 	});
 }

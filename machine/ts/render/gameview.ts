@@ -3,25 +3,17 @@ import { machineManager } from '../core/machine_manager';
 import { multiply_vec2 } from '../common/vector';
 import { shallowcopy } from '../common/shallowcopy';
 import type { vec2 } from '../rompack/format';
-import type { AtmosphereParams, BackendContext, GPUBackend, PresentationMode, RenderContext, TextureHandle } from './backend/backend';
+import type { BackendContext, GPUBackend, PresentationMode, RenderContext, TextureHandle } from './backend/backend';
 import { RGBA8_LINEAR_TEXTURE_PARAMS, RGBA8_SRGB_TEXTURE_PARAMS } from './backend/texture_params';
 import { RenderPassLibrary } from './backend/pass/library';
 import { CRTDitherType as DitherType } from './backend/backend';
 import { RenderGraphRuntime, buildFrameData, updateExternalFrameTiming } from './graph/graph';
-import { LightingSystem } from './lighting/system';
 import type {
 	GameViewHost,
 	GameViewCanvas,
 	SubscriptionHandle,
 } from '../platform';
-import {
-	VDP_JTU_REGISTER_WORDS,
-	VDP_MFU_WEIGHT_COUNT,
-} from '../machine/devices/vdp/contracts';
 import type { GxGpu } from '../machine/devices/gx/gpu';
-import { VDP_LPU_DIRECTIONAL_LIGHT_LIMIT, VDP_LPU_POINT_LIGHT_LIMIT, VDP_LPU_REGISTER_WORDS } from '../machine/devices/vdp/lpu';
-import { VDP_XF_MATRIX_REGISTER_WORDS } from '../machine/devices/vdp/xf';
-import { createVdpTransformSnapshot } from './vdp/transform';
 import type { VdpFrameBufferTextures } from './vdp/framebuffer';
 import type { GxGpuCommandBufferView } from '../machine/devices/gx/gpu_command_buffer';
 import { renderGate } from '../common/taskgate';
@@ -75,24 +67,9 @@ export class GameView implements RenderContext {
 		return this._backend.type;
 	}
 	public renderGraph: RenderGraphRuntime = null;
-	private lightingSystem: LightingSystem = null;
 	public offscreenCanvasSize!: vec2;
 	public textures: { [k: string]: TextureHandle } = {};
-	public readonly vdpTransform = createVdpTransformSnapshot();
-	public readonly vdpXfMatrixWords = new Uint32Array(VDP_XF_MATRIX_REGISTER_WORDS);
 	public vdpFrameBufferTextures!: VdpFrameBufferTextures;
-	public readonly vdpLightRegisterWords = new Uint32Array(VDP_LPU_REGISTER_WORDS);
-	public readonly vdpAmbientLightColorIntensity = new Float32Array(4);
-	public readonly vdpDirectionalLightDirections = new Float32Array(VDP_LPU_DIRECTIONAL_LIGHT_LIMIT * 3);
-	public readonly vdpDirectionalLightColors = new Float32Array(VDP_LPU_DIRECTIONAL_LIGHT_LIMIT * 3);
-	public readonly vdpDirectionalLightIntensities = new Float32Array(VDP_LPU_DIRECTIONAL_LIGHT_LIMIT);
-	public vdpDirectionalLightCount = 0;
-	public readonly vdpPointLightPositions = new Float32Array(VDP_LPU_POINT_LIGHT_LIMIT * 3);
-	public readonly vdpPointLightColors = new Float32Array(VDP_LPU_POINT_LIGHT_LIMIT * 3);
-	public readonly vdpPointLightParams = new Float32Array(VDP_LPU_POINT_LIGHT_LIMIT * 2);
-	public vdpPointLightCount = 0;
-	public readonly vdpMorphWeightWords = new Uint32Array(VDP_MFU_WEIGHT_COUNT);
-	public readonly vdpJointMatrixWords = new Uint32Array(VDP_JTU_REGISTER_WORDS);
 	public gxGpuCommandBuffer!: GxGpuCommandBufferView;
 	public gxGpuStatusWord = 0;
 	public gxGpuDisplayModeWord = 0;
@@ -120,31 +97,12 @@ export class GameView implements RenderContext {
 	public glowColor: [number, number, number] = [0.12, 0.10, 0.09];
 	public crt_postprocessing_enabled = true; // Whether to apply postprocessing in the CRT-shader, such as scanlines, noise, glow, etc.
 
-	// Sprite ambient defaults (used when per-sprite override not provided)
-	public spriteAmbientEnabledDefault = false;
-	public spriteAmbientFactorDefault = 1.0;
 	public viewportTypeIde: 'viewport' | 'offscreen' = 'viewport';
 	public presentationMode: PresentationMode = 'completed';
 	public commitPresentationFrame = false;
 	public presentationHistorySourceIndex: 0 | 1 = 0;
 	private renderFrameIndex = 0;
 	private lastRenderTimeSeconds = 0;
-
-	public atmosphere: AtmosphereParams = {
-		fogD50: 320.0,
-		fogStart: 120.0,
-		fogColorLow: [0.90, 0.95, 1.00],
-		fogColorHigh: [1.05, 1.02, 0.95],
-		fogYMin: 0.0,
-		fogYMax: 200.0,
-		progressFactor: 0,
-		enableAutoAnimation: false,
-	};
-
-	public setSpritesAmbient(enabled: boolean, factor = 1.0): void {
-		this.spriteAmbientEnabledDefault = !!enabled;
-		this.spriteAmbientFactorDefault = factor;
-	}
 
 	public applyPresentationPassState(): void {
 		const registry = this.pipelineRegistry;
@@ -480,14 +438,13 @@ export class GameView implements RenderContext {
 
 	public rebuildGraph(): void {
 		const token = renderGate.begin({ blocking: true, category: 'rebuild_graph', tag: 'frame' });
-		if (!this.lightingSystem) this.lightingSystem = new LightingSystem();
 		if (!this.pipelineRegistry) {
 			renderGate.end(token);
 			throw new Error('[GameView] PipelineRegistry not configured before rebuildGraph.');
 		}
 		this.resetPresentationHistory();
 		// GameView implements RenderContext directly
-		this.renderGraph = this.pipelineRegistry.buildRenderGraph(this, this.lightingSystem);
+		this.renderGraph = this.pipelineRegistry.buildRenderGraph();
 		renderGate.end(token);
 	}
 

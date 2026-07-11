@@ -1,8 +1,6 @@
 #include "render/host_overlay/gles2/pipeline.h"
 
 #if BMSX_ENABLE_GLES2
-#include "core/machine_manager.h"
-#include "render/3d/axis_gizmo_pipeline.h"
 #include "render/host_overlay/gles2/host_overlay_shaders.h"
 #include "render/shared/glyph_runs.h"
 #include "rompack/host_system_atlas.h"
@@ -25,13 +23,6 @@ struct HostOverlayGLES2State {
 };
 
 HostOverlayGLES2State g_gles2;
-
-struct AxisGizmoHostImageContext {
-	OpenGLES2Backend* backend = nullptr;
-	const GameView* view = nullptr;
-	FlipOptions noFlip{};
-	bool prepared = false;
-};
 
 void bindTexture(OpenGLES2Backend& backend, TextureHandle texture) {
 	backend.setActiveTextureUnit(0);
@@ -198,16 +189,6 @@ void drawGlyphsGLES2(OpenGLES2Backend& backend, const GlyphRenderSubmission& com
 	});
 }
 
-void emitAxisGizmoImageGLES2(void* context, std::string_view imgid, f32 x, f32 y, f32, f32 scale, color colorValue) {
-	auto& axisContext = *static_cast<AxisGizmoHostImageContext*>(context);
-	if (!axisContext.prepared) {
-		glUseProgram(g_gles2.program);
-		glUniform2f(g_gles2.uniformResolution, axisContext.view->viewportSize.x, axisContext.view->viewportSize.y);
-		axisContext.prepared = true;
-	}
-	drawHostAtlasImageGLES2(*axisContext.backend, imgid, x, y, scale, scale, axisContext.noFlip, colorValue);
-}
-
 } // namespace
 
 void bootstrapHostOverlayGLES2(OpenGLES2Backend& backend) {
@@ -222,7 +203,6 @@ void bootstrapHostOverlayGLES2(OpenGLES2Backend& backend) {
 	const u8 whitePixel[4] = {255u, 255u, 255u, 255u};
 	g_gles2.whiteTexture = backend.createTexture(whitePixel, 1, 1, params);
 	g_gles2.hostAtlasTexture = backend.createTexture(hostSystemAtlasPixels().data(), static_cast<i32>(hostSystemAtlasWidth()), static_cast<i32>(hostSystemAtlasHeight()), params);
-	bootstrapAxisGizmo_GLES2(backend);
 }
 
 void beginHostOverlayGLES2(OpenGLES2Backend& backend, const Host2DPipelineState& state) {
@@ -249,17 +229,7 @@ void renderHost2DEntryGLES2(OpenGLES2Backend& backend, Host2DKind kind, Host2DRe
 	}
 }
 
-void endHostOverlayGLES2(OpenGLES2Backend& backend) {
-	if (shouldRenderAxisGizmo()) {
-		const GameView& view = *MachineManager::instance().view();
-		backend.setRenderTarget(backend.backbuffer(), static_cast<i32>(view.offscreenCanvasSize.x), static_cast<i32>(view.offscreenCanvasSize.y));
-		glDisable(GL_DEPTH_TEST);
-		glDisable(GL_CULL_FACE);
-		glEnable(GL_BLEND);
-		glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
-		AxisGizmoHostImageContext context{&backend, &view, FlipOptions{}};
-		renderAxisGizmo_GLES2(backend, emitAxisGizmoImageGLES2, &context);
-	}
+void endHostOverlayGLES2(OpenGLES2Backend&) {
 	glDisable(GL_BLEND);
 	glDepthMask(GL_TRUE);
 }

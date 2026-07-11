@@ -313,14 +313,15 @@ and ask before coding.
 - [x] Identify every active VDP/RPU presentation registration and machine output
   dependency. The remaining blockers are mapped VDP memory, scheduler/VBlank,
   register/readback/save-state state, dither snapshotting, and the TS host-only
-  IDE/terminal framebuffer path. Host-side XF/LPU/MFU/JTU transform, lighting,
-  and frame-shared structures also remain after their RPU consumer was removed.
+  IDE/terminal framebuffer path.
 - [x] Remove the dormant WebGL, GLES2, TS headless/software, and C++ software RPU
   presentation executors. GX command buffers are the only cart graphics input
   consumed by host backends; WebGPU already had no RPU executor.
+- [x] Remove the orphaned host-side XF/LPU/MFU/JTU transform, lighting, fog, and
+  frame-shared structures plus the never-enabled axis-gizmo and dead scene
+  math/material/shadow code from both runtimes.
 - [ ] Move residual VDP dither and host-only framebuffer presentation to their
-  real owners and delete the orphaned host transform/lighting/frame-shared
-  structures without a compatibility facade.
+  real owners without a compatibility facade.
 - [ ] Migrate remaining mapped memory and machine timing/state ownership before
   deleting the VDP device.
 - [x] Retire old VDP/RPU firmware/system paths after cart migration planning.

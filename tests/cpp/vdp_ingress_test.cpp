@@ -10,7 +10,6 @@
 #include "machine/memory/memory.h"
 #include "machine/model_registry.h"
 #include "machine/scheduler/device.h"
-#include "render/vdp/transform.h"
 
 #include <array>
 #include <cstdint>
@@ -269,40 +268,6 @@ void testXfPacketUpdatesRawTransformRegisterState() {
 	}
 }
 
-void testXfWordsResolveToRenderOwnedViewRotationInverseTransform() {
-	bmsx::VdpTransformSnapshot transform;
-	constexpr uint32_t viewMatrixIndex = 2u;
-	constexpr uint32_t projectionMatrixIndex = 3u;
-	constexpr uint32_t viewMatrixIndexWord = viewMatrixIndex + bmsx::VDP_XF_MATRIX_COUNT;
-	constexpr uint32_t projectionMatrixIndexWord = projectionMatrixIndex + bmsx::VDP_XF_MATRIX_COUNT;
-	std::array<uint32_t, bmsx::VDP_XF_MATRIX_REGISTER_WORDS> matrixWords{};
-	const std::array<uint32_t, bmsx::VDP_XF_MATRIX_WORDS> viewWords{{
-		0x00020000u, 0u, 0u, 0u,
-		0u, 0x00040000u, 0u, 0u,
-		0u, 0u, 0x00080000u, 0u,
-		0x00060000u, 0x00080000u, 0x00100000u, 0x00010000u,
-	}};
-	const std::array<uint32_t, bmsx::VDP_XF_MATRIX_WORDS> projWords{{
-		0x00010000u, 0u, 0u, 0u,
-		0u, 0x00010000u, 0u, 0u,
-		0u, 0u, 0x00010000u, 0u,
-		0u, 0u, 0u, 0x00010000u,
-	}};
-	for (size_t index = 0; index < bmsx::VDP_XF_MATRIX_WORDS; ++index) {
-		matrixWords[static_cast<size_t>(viewMatrixIndex * bmsx::VDP_XF_MATRIX_WORDS) + index] = viewWords[index];
-		matrixWords[static_cast<size_t>(projectionMatrixIndex * bmsx::VDP_XF_MATRIX_WORDS) + index] = projWords[index];
-	}
-
-	bmsx::resolveVdpTransformSnapshot(transform, matrixWords, viewMatrixIndexWord, projectionMatrixIndexWord);
-
-	require(transform.view[0] == 2.0f, "XF view should decode Q16.16 words");
-	require(transform.viewRotationInverse[0] == 0.5f, "XF view rotation inverse should invert affine X scale");
-	require(transform.viewRotationInverse[5] == 0.25f, "XF view rotation inverse should invert affine Y scale");
-	require(transform.viewRotationInverse[10] == 0.125f, "XF view rotation inverse should invert affine Z scale");
-	require(transform.viewRotationInverse[12] == 0.0f && transform.viewRotationInverse[13] == 0.0f && transform.viewRotationInverse[14] == 0.0f, "XF view rotation inverse should remove translation");
-	require(transform.eye.x == -3.0f && transform.eye.y == -2.0f && transform.eye.z == -2.0f, "XF eye should come from affine inverse");
-}
-
 void testXfSelectRegistersLatchRawWords() {
 	Harness h;
 	constexpr uint32_t viewMatrixIndex = bmsx::VDP_XF_MATRIX_COUNT;
@@ -466,7 +431,6 @@ int main() {
 		{"FIFO replay and faults", testFifoReplayAndFaults},
 		{"RPU known-op payload faults", testRpuKnownOpsFaultOnWrongPayloadSize},
 		{"VDP XF packet raw state", testXfPacketUpdatesRawTransformRegisterState},
-		{"VDP XF render transform", testXfWordsResolveToRenderOwnedViewRotationInverseTransform},
 		{"VDP XF raw select register words", testXfSelectRegistersLatchRawWords},
 		{"empty FIFO frame", testEmptyFifoFrame},
 		{"VDP readback fault status", testReadbackFaultsLatchStatus},

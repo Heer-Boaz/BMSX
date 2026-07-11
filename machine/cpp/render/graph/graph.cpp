@@ -5,7 +5,6 @@
 #include "graph.h"
 #include "../backend/pass/library.h"
 #include "../gameview.h"
-#include "../lighting/system.h"
 #include <algorithm>
 #include <cstdint>
 #include <cstdio>
@@ -178,7 +177,6 @@ void RenderGraphRuntime::setupPass(const RenderGraphPass& pass, RenderGraphIO& i
 			io.writeTex(m_frameDepthHandle);
 			break;
 		case RenderGraphPass::Kind::FrameResolve:
-		case RenderGraphPass::Kind::FrameShared:
 			io.writeTex(m_frameColorHandle);
 			break;
 		case RenderGraphPass::Kind::Registered:
@@ -225,27 +223,6 @@ void RenderGraphRuntime::executePass(RenderGraphPass& pass, RenderGraphContext& 
 		case RenderGraphPass::Kind::FrameResolve:
 			pass.registry->execute("frame_resolve", nullptr);
 			break;
-		case RenderGraphPass::Kind::FrameShared: {
-			GameView* view = pass.view;
-			const VdpTransformSnapshot& transform = view->vdpTransform;
-			FrameSharedState& frameShared = pass.registry->getStateRef<FrameSharedState>("frame_shared");
-			frameShared.view.camPos = {
-				transform.eye.x,
-				transform.eye.y,
-				transform.eye.z,
-			};
-			frameShared.view.viewProj = transform.viewProj;
-			frameShared.view.viewRotationInverse = transform.viewRotationInverse;
-			frameShared.view.proj = transform.proj;
-			frameShared.lighting = pass.lightingSystem->update(*view);
-			frameShared.fog.fogD50 = view->atmosphere.fogD50;
-			frameShared.fog.fogStart = view->atmosphere.fogStart;
-			frameShared.fog.fogColorLow = view->atmosphere.fogColorLow;
-			frameShared.fog.fogColorHigh = view->atmosphere.fogColorHigh;
-			frameShared.fog.fogYMin = view->atmosphere.fogYMin;
-			frameShared.fog.fogYMax = view->atmosphere.fogYMax;
-			break;
-		}
 		case RenderGraphPass::Kind::Registered: {
 			if (!pass.registry->isPassEnabled(pass.passId)) return;
 			if (pass.shouldExecute && !pass.shouldExecute(pass.view, pass.passContext)) return;

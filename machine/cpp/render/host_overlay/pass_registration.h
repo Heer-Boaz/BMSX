@@ -22,13 +22,8 @@ void bootstrapHostOverlayPass(GPUBackend* backend, void*) {
 	}
 }
 
-template<auto ShouldExecuteExtra>
-bool shouldExecuteHostOverlayPass(GameView*, void*) {
-	if constexpr (ShouldExecuteExtra != nullptr) {
-		return hasPendingOverlayFrame() || ShouldExecuteExtra();
-	} else {
-		return hasPendingOverlayFrame();
-	}
+inline bool shouldExecuteHostOverlayPass(GameView*, void*) {
+	return hasPendingOverlayFrame();
 }
 
 inline bool shouldExecuteHostMenuPass(GameView*, void*) {
@@ -58,7 +53,7 @@ void renderHostMenuPass(GPUBackend* backend, GameView*, void*, RenderPassStateSt
 	End(typedBackend);
 }
 
-template<typename Backend, auto Bootstrap, auto Begin, auto RenderEntry, auto End, auto ShouldExecuteExtra = nullptr>
+template<typename Backend, auto Bootstrap, auto Begin, auto RenderEntry, auto End>
 void registerHostOverlayPass(RenderPassLibrary& registry) {
 	RenderPassDef desc;
 	desc.id = "host_overlay";
@@ -70,7 +65,7 @@ void registerHostOverlayPass(RenderPassLibrary& registry) {
 	if constexpr (Bootstrap != nullptr) {
 		desc.bootstrap = bootstrapHostOverlayPass<Backend, Bootstrap>;
 	}
-	desc.shouldExecute = shouldExecuteHostOverlayPass<ShouldExecuteExtra>;
+	desc.shouldExecute = shouldExecuteHostOverlayPass;
 	desc.exec = renderHostOverlayPass<Backend, Begin, RenderEntry, End>;
 	registry.registerPass(desc);
 }
@@ -89,9 +84,9 @@ void registerHostMenuPass(RenderPassLibrary& registry) {
 	registry.registerPass(desc);
 }
 
-template<typename Backend, auto Bootstrap, auto Begin, auto RenderEntry, auto End, auto ShouldExecuteExtra = nullptr>
+template<typename Backend, auto Bootstrap, auto Begin, auto RenderEntry, auto End>
 void registerHostOverlayBackendPasses(RenderPassLibrary& registry) {
-	registerHostOverlayPass<Backend, Bootstrap, Begin, RenderEntry, End, ShouldExecuteExtra>(registry);
+	registerHostOverlayPass<Backend, Bootstrap, Begin, RenderEntry, End>(registry);
 	registerHostMenuPass<Backend, Begin, RenderEntry, End>(registry);
 }
 

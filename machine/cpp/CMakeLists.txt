@@ -87,8 +87,6 @@ endif()
 set_property(DIRECTORY APPEND PROPERTY CMAKE_CONFIGURE_DEPENDS
 	"${CMAKE_CURRENT_SOURCE_DIR}/render/host_overlay/gles2/shaders/host_overlay.vert.glsl"
 	"${CMAKE_CURRENT_SOURCE_DIR}/render/host_overlay/gles2/shaders/host_overlay.frag.glsl"
-	"${CMAKE_CURRENT_SOURCE_DIR}/render/3d/shaders/axis_gizmo.vert.glsl"
-	"${CMAKE_CURRENT_SOURCE_DIR}/render/3d/shaders/axis_gizmo.frag.glsl"
 	"${CMAKE_CURRENT_SOURCE_DIR}/render/2d/shaders/2d.vert.glsl"
 	"${CMAKE_CURRENT_SOURCE_DIR}/render/2d/shaders/2d.frag.glsl"
 	"${CMAKE_CURRENT_SOURCE_DIR}/render/2d/shaders/framebuffer_2d.vert.glsl"
@@ -123,19 +121,6 @@ file(READ
 configure_file(
 	"${CMAKE_CURRENT_SOURCE_DIR}/render/host_overlay/gles2/shaders/host_overlay_shaders.h.in"
 	"${CMAKE_CURRENT_BINARY_DIR}/generated/render/host_overlay/gles2/host_overlay_shaders.h"
-	@ONLY
-)
-file(READ
-	"${CMAKE_CURRENT_SOURCE_DIR}/render/3d/shaders/axis_gizmo.vert.glsl"
-	BMSX_RENDER_3D_AXIS_GIZMO_VERTEX_SHADER
-)
-file(READ
-	"${CMAKE_CURRENT_SOURCE_DIR}/render/3d/shaders/axis_gizmo.frag.glsl"
-	BMSX_RENDER_3D_AXIS_GIZMO_FRAGMENT_SHADER
-)
-configure_file(
-	"${CMAKE_CURRENT_SOURCE_DIR}/render/3d/shaders/render_3d_shaders.h.in"
-	"${CMAKE_CURRENT_BINARY_DIR}/generated/render/3d/shaders/render_3d_shaders.h"
 	@ONLY
 )
 file(READ
@@ -307,21 +292,17 @@ add_library(bmsx_core STATIC
 	render/backend/software/gx_gpu_scanout.cpp
 	render/backend/software/gx_gpu_vram.cpp
 	render/2d/framebuffer_pipeline.cpp
-	render/3d/math.cpp
-	render/3d/axis_gizmo_pipeline.cpp
 	render/gameview.cpp
 	render/post/crt/software/pipeline.cpp
 	render/post/crt/software/crt_processor.cpp
 	render/post/device_quantize/software/pipeline.cpp
 	render/backend/frame_uniforms.cpp
-	render/lighting/system.cpp
 	render/host_overlay/pipeline.cpp
 	render/host_overlay/overlay_queue.cpp
 	render/host_overlay/software/renderer.cpp
 	render/host_overlay/gles2/pipeline.cpp
 	render/gx/view_snapshot.cpp
 	render/vdp/framebuffer.cpp
-	render/vdp/transform.cpp
 	render/vdp/view_snapshot.cpp
 	render/texture_manager.cpp
 	render/backend/pass/library.cpp

@@ -255,7 +255,7 @@ SoftwareBackend::SoftwareBackend(u32* framebuffer, i32 width, i32 height, i32 pi
 SoftwareBackend::~SoftwareBackend() = default;
 
 void SoftwareBackend::registerBuiltinPasses(RenderPassLibrary& registry) {
-	registerFrameStatePasses(registry);
+	registerFrameResolvePass(registry);
 	registerGxGpuPassSoftware(registry, *this);
 	registerFramebuffer2DPass_Software(registry);
 	DeviceQuantizePipeline::Software::registerPass(registry);

@@ -2,7 +2,6 @@ import { type color_arr, type TextureSource, type vec2 } from '../../rompack/for
 import type { GxGpu } from '../../machine/devices/gx/gpu';
 import type { GxGpuCommandBufferView } from '../../machine/devices/gx/gpu_command_buffer';
 import type { Host2DSubmission } from '../shared/submissions';
-import type { LightingFrameState } from '../lighting/system';
 import type { GameView } from '../gameview';
 import type { TextureParams } from './texture_params';
 import type { RenderPassLibrary } from './pass/library';
@@ -24,7 +23,7 @@ import type { RenderPassLibrary } from './pass/library';
  *   RenderGraphPassContext, RenderPassGraphDef, RenderPassDef,
  *   GraphicsPipelineBuildDesc, RenderPassInstanceHandle,
  *   RenderPassStateRegistry, RenderPassStateId, pipeline-state types,
- *   RenderContext, FogUniforms, AtmosphereParams, and CRTDitherType.
+ *   RenderContext and CRTDitherType.
  *   C++ owns the equivalent native pass scheduling in render/backend/pass files.
  * - TS-only GPUBackend methods here are browser/backend-resource controls:
  *   createImageBitmapFromSource(), createCubemapFromSources(),
@@ -85,10 +84,7 @@ export type RenderPassId =
 	| 'presentation_history_b'
 	| 'present'
 	| 'crt'
-	| 'frame_shared'
-	| 'frame_resolve'
-	| 'axis_gizmo'
-	| 'sprites';
+	| 'frame_resolve';
 
 export interface BackendCaps {
 	maxColorAttachments: number;
@@ -258,11 +254,8 @@ export interface RenderPassStateRegistry {
 	['presentation_history_b']: PresentPipelineState;
 	['present']: PresentPipelineState;
 	['crt']: CRTPipelineState;
-	['frame_shared']: FrameSharedState;
 	['frame_resolve']: never;
 	['headless_present']: never;
-	['axis_gizmo']: never;
-	['sprites']: never;
 }
 export type RenderPassStateId = keyof RenderPassStateRegistry;
 
@@ -322,15 +315,6 @@ export interface RenderContext {
 	gxGpuVramSnapshotSerial: number;
 }
 
-export type FogUniforms = {
-	fogD50: number;
-	fogStart: number;
-	fogColorLow: [number, number, number];
-	fogColorHigh: [number, number, number];
-	fogYMin: number;
-	fogYMax: number;
-};
-
 export type RenderingViewportType = 'viewport' | 'offscreen';
 
 export const enum CRTDitherType {
@@ -382,23 +366,4 @@ export interface CRTPipelineState {
 	time: number;
 	colorTex: TextureHandle;
 	options: CRTPipelineOptions;
-}
-export interface FrameSharedState {
-	view: {
-		camPos: Float32Array | { x: number; y: number; z: number; };
-		viewProj: Float32Array;
-		viewRotationInverse: Float32Array;
-		proj: Float32Array;
-	};
-	lighting: LightingFrameState;
-	fog: FogUniforms;
-}export interface AtmosphereParams {
-	fogD50: number;
-	fogStart: number;
-	fogColorLow: [number, number, number];
-	fogColorHigh: [number, number, number];
-	fogYMin: number;
-	fogYMax: number;
-	progressFactor: number;
-	enableAutoAnimation: boolean;
 }

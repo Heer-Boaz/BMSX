@@ -40,7 +40,6 @@ function registerFramePasses(registry: RenderPassLibrary): void {
 			commitHeadlessFrame(view.vdpFrameBufferTextures.width(), view.vdpFrameBufferTextures.height(), view.canvasSize.x, view.canvasSize.y);
 		},
 	});
-	registry.register({ id: 'frame_shared', name: 'HeadlessFrameShared', stateOnly: true, graph: { skip: true }, exec: () => { /* noop */ } });
 }
 
 let headlessCompositePixels = new Uint8Array(0);

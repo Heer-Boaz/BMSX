@@ -71,8 +71,7 @@ export interface RenderPass<SetupOut = unknown> {
 	execute(ctx: PassContext, frame: FrameData, data: SetupOut): void; // issue GL commands
 	/**
 	 * Force execution even if the pass has no declared resource dependencies making it unreachable
-	 * from the exported backbuffer resource. Useful for side-effect / state aggregation passes
-	 * (e.g. FrameSharedState) or passes that perform manual FBO rendering without declaring
+	 * from the exported backbuffer resource. Useful for passes that perform manual FBO rendering without declaring
 	 * writes while pass ownership is being moved into the graph. Long term these should declare proper writeTex() calls and the
 	 * single-writer restriction relaxed to allow sequential writers.
 	 */

@@ -178,6 +178,9 @@ Afgerond:
   geïnventariseerd;
 - de nog intern geproduceerde RPU-frameoutput wordt niet meer naar `GameView`
   gekopieerd of door een backend uitgevoerd;
+- de verweesde host-side XF/LPU/MFU/JTU transform-, lighting-, fog- en
+  frame-shared state plus de nooit ingeschakelde axis-gizmo/scene-code zijn
+  verwijderd uit beide runtimes;
 - de host-only IDE/terminal-framebufferroute blijft expliciet en kan niet door
   carts of BIOS-code worden aangestuurd.
 
@@ -186,9 +189,7 @@ Resterende volgorde:
 1. Migreer de nog gebruikte mapped staging-, texture- en framebuffer-memory uit
    de VDP-owner naar de daadwerkelijke DMA/image/GX-eigenaren.
 2. Verplaats de resterende VDP-dither- en IDE/terminal-framebufferpresentatie
-   naar hun echte owners en verwijder de verweesde host-side
-   XF/LPU/MFU/JTU-transform-, lighting- en frame-shared structuren; bouw geen
-   VDP-facade om de oude types heen.
+   naar hun echte owners; bouw geen VDP-facade om de oude types heen.
 3. Verwijder daarna VDP scheduler/VBlank-, register-, readback-, save-state- en
    devicepaden plus tests die uitsluitend de afgewezen ABI beschermen.
 4. Bewaar eventueel nuttige fantasy-hardware-ideeën alleen als documentatie voor

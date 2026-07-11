@@ -223,17 +223,13 @@ bool shouldExecuteDeviceQuantizePass(GameView* view, void*) {
 	return static_cast<i32>(view->dither_type) != 0;
 }
 
-void registerFrameStatePasses(RenderPassLibrary& registry) {
+void registerFrameResolvePass(RenderPassLibrary& registry) {
 	RenderPassDef frameResolve;
 	setSkippedStatePass(frameResolve, "frame_resolve", "FrameResolve");
 	frameResolve.exec = noopRenderPass;
 	registry.registerPass(frameResolve);
-
-	RenderPassDef frameShared;
-	setSkippedStatePass(frameShared, "frame_shared", "FrameShared");
-	frameShared.exec = noopRenderPass;
-	registry.registerPass(frameShared);
 }
+
 RenderPassLibrary::RenderPassLibrary(GPUBackend* backend, GameView* view)
 	: m_backend(backend)
 	, m_view(view)
@@ -305,7 +301,8 @@ bool RenderPassLibrary::isPassEnabled(const std::string& id) const {
 	return it == m_passEnabled.end() || it->second;
 }
 
-std::unique_ptr<RenderGraphRuntime> RenderPassLibrary::buildRenderGraph(GameView* view, LightingSystem& lightingSystem) {
+std::unique_ptr<RenderGraphRuntime> RenderPassLibrary::buildRenderGraph() {
+	GameView* view = m_view;
 	auto rg = std::make_unique<RenderGraphRuntime>(m_backend);
 	std::vector<const RenderPassDef*> passList;
 	passList.reserve(m_passes.size());
@@ -344,17 +341,6 @@ std::unique_ptr<RenderGraphRuntime> RenderPassLibrary::buildRenderGraph(GameView
 		pass.alwaysExecute = true;
 		pass.kind = RenderGraphPass::Kind::FrameResolve;
 		pass.registry = this;
-		rg->addPass(pass);
-	}
-
-	{
-		RenderGraphPass pass;
-		pass.name = "FrameSharedState";
-		pass.alwaysExecute = true;
-		pass.kind = RenderGraphPass::Kind::FrameShared;
-		pass.registry = this;
-		pass.view = view;
-		pass.lightingSystem = &lightingSystem;
 		rg->addPass(pass);
 	}
 

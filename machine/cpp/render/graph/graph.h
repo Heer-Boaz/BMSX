@@ -43,7 +43,6 @@ using RenderGraphTexHandle = i32;
 
 class RenderGraphRuntime;
 class GameView;
-class LightingSystem;
 class RenderPassLibrary;
 struct RenderPassStateStorage;
 
@@ -115,7 +114,6 @@ struct RenderGraphPass {
 		FrameTargets,
 		FrameClear,
 		FrameResolve,
-		FrameShared,
 		Registered,
 	};
 
@@ -124,7 +122,6 @@ struct RenderGraphPass {
 	Kind kind = Kind::Registered;
 	GameView* view = nullptr;
 	RenderPassLibrary* registry = nullptr;
-	LightingSystem* lightingSystem = nullptr;
 	std::string passId;
 	void* passContext = nullptr;
 	bool (*shouldExecute)(GameView*, void*) = nullptr;

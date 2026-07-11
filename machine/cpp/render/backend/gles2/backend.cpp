@@ -10,7 +10,6 @@
 #include "render/2d/framebuffer_pipeline.h"
 #include "render/backend/pass/library.h"
 #include "render/backend/gles2/gx_gpu.h"
-#include "render/3d/axis_gizmo_pipeline.h"
 #include "core/machine_manager.h"
 #include "render/shared/solid_pixels.h"
 
@@ -157,7 +156,7 @@ static const u8* prepareGLES2TextureStorageData(const u8* data, i32 width, i32 h
 */
 
 void OpenGLES2Backend::registerBuiltinPasses(RenderPassLibrary& registry) {
-	registerFrameStatePasses(registry);
+	registerFrameResolvePass(registry);
 
 	registerGxGpuPass(registry);
 	registerFramebuffer2DPass_GLES2(registry);
@@ -167,7 +166,7 @@ void OpenGLES2Backend::registerBuiltinPasses(RenderPassLibrary& registry) {
 	CRTPipeline::registerPresentGLES2Pass(registry, m_post_pipelines->present);
 	CRTPipeline::registerCRTGLES2Pass(registry, m_post_pipelines->crt);
 
-	registerHostOverlayBackendPasses<OpenGLES2Backend, bootstrapHostOverlayGLES2, beginHostOverlayGLES2, renderHost2DEntryGLES2, endHostOverlayGLES2, shouldRenderAxisGizmo>(registry);
+	registerHostOverlayBackendPasses<OpenGLES2Backend, bootstrapHostOverlayGLES2, beginHostOverlayGLES2, renderHost2DEntryGLES2, endHostOverlayGLES2>(registry);
 }
 
 void* OpenGLES2Backend::resolveProcAddress(const char* name) const {
