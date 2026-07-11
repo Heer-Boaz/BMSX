@@ -18,6 +18,11 @@ inline i32 gxGpuSigned11(u32 value) {
 	return (raw & 0x400) != 0 ? raw - 0x800 : raw;
 }
 
+inline i32 gxGpuTriangleRasterShift(i32 coord0, i32 coord1, i32 coord2) {
+	const i32 minimum = coord0 < coord1 ? (coord0 < coord2 ? coord0 : coord2) : (coord1 < coord2 ? coord1 : coord2);
+	return minimum < -(GX_GPU_VERTEX_COORD_PERIOD >> 1) ? GX_GPU_VERTEX_COORD_PERIOD : 0;
+}
+
 inline i32 gxGpuVertexY(u32 word) {
 	return gxGpuSigned11(word >> 16u);
 }

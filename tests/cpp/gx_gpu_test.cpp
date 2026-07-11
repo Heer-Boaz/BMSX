@@ -146,6 +146,8 @@ void testGp0RawDrawWordDecoders() {
 	require(bmsx::gxGpuTriangleExceedsPrimitiveSize(0, 0, 1023, 0, 0, 512), "GX-GPU primitive-size triangle rejects tall bounds");
 	require(!bmsx::gxGpuTriangleExceedsPrimitiveSize(-512, -256, 511, 255, 0, 0), "GX-GPU primitive-size triangle accepts signed full bounds");
 	require(bmsx::gxGpuTriangleExceedsPrimitiveSize(-513, -256, 511, 255, 0, 0), "GX-GPU primitive-size triangle rejects signed wide bounds");
+	require(bmsx::gxGpuTriangleRasterShift(-1025, -1024, -1) == 2048, "GX-GPU triangle raster stage shifts the negative signed-coordinate bucket");
+	require(bmsx::gxGpuTriangleRasterShift(-1024, 0, 1024) == 0, "GX-GPU triangle raster stage preserves the positive exclusive edge");
 	require(bmsx::gxGpuTriangleEdgeCoverageMinimum(1, -4) == 0, "GX-GPU descending edge is inclusive");
 	require(bmsx::gxGpuTriangleEdgeCoverageMinimum(0, 4) == 0, "GX-GPU horizontal top edge is inclusive");
 	require(bmsx::gxGpuTriangleEdgeCoverageMinimum(-1, 4) == 1, "GX-GPU ascending edge is exclusive");
@@ -1183,6 +1185,98 @@ void testSoftwareTriangleEdgesAndQuadSeams() {
 	require(bmsx::g_gxGpuSoftwareVram[bmsx::gxGpuSoftwareVramIndex(20, 24)] == 0u, "GX-GPU software quad excludes bottom edge");
 }
 
+void testSoftwarePolygonRasterBucketWrap() {
+	bmsx::GxGpuCommandBuffer commandBuffer;
+	commandBuffer.reset();
+	pushSoftwareCommand(
+		commandBuffer,
+		std::array<uint32_t, 4>{
+			(bmsx::GX_GPU_GP0_POLYGON_FIRST << 24u) | 0x0000ffu,
+			0x000a03f8u,
+			0x000a03fcu,
+			0x000e03f8u,
+		},
+		4u,
+		bmsx::GX_GPU_COMMAND_DRAW_POLYGON,
+		bmsx::GX_GPU_GP0_POLYGON_FIRST,
+		0u,
+		0u,
+		0u,
+		GX_GPU_SOFTWARE_FULL_DRAWING_AREA_BOTTOM_RIGHT_WORD,
+		0x00000004u);
+	pushSoftwareCommand(
+		commandBuffer,
+		std::array<uint32_t, 5>{
+			bmsx::GX_GPU_GP0_CPU_TO_VRAM_FIRST << 24u,
+			0u,
+			(1u << 16u) | 4u,
+			0x03e0001fu,
+			0x7fff7c00u,
+		},
+		5u,
+		bmsx::GX_GPU_COMMAND_UPLOAD_CPU_TO_VRAM,
+		bmsx::GX_GPU_GP0_CPU_TO_VRAM_FIRST);
+	constexpr uint8_t rawTexturedPolygonOpcode = bmsx::GX_GPU_GP0_POLYGON_FIRST | bmsx::GX_GPU_GP0_RENDER_TEXTURE_BIT | 0x01u;
+	pushSoftwareCommand(
+		commandBuffer,
+		std::array<uint32_t, 7>{
+			(rawTexturedPolygonOpcode << 24u) | 0x808080u,
+			0x00140400u,
+			0x00000000u,
+			0x00140404u,
+			0x01000004u,
+			0x00180400u,
+			0x00000400u,
+		},
+		7u,
+		bmsx::GX_GPU_COMMAND_DRAW_POLYGON,
+		rawTexturedPolygonOpcode,
+		bmsx::GX_GPU_TEXTURE_MODE_DIRECT16 << 7u,
+		0u,
+		0u,
+		GX_GPU_SOFTWARE_FULL_DRAWING_AREA_BOTTOM_RIGHT_WORD,
+		0x000007fcu);
+	constexpr uint8_t gouraudPolygonOpcode = bmsx::GX_GPU_GP0_POLYGON_FIRST | bmsx::GX_GPU_GP0_RENDER_GOURAUD_BIT;
+	pushSoftwareCommand(
+		commandBuffer,
+		std::array<uint32_t, 6>{
+			(gouraudPolygonOpcode << 24u) | 0x0000ffu,
+			0x05fc000au,
+			0x0000ff00u,
+			0x05fc000eu,
+			0x00ff0000u,
+			0x0600000au,
+		},
+		6u,
+		bmsx::GX_GPU_COMMAND_DRAW_POLYGON,
+		gouraudPolygonOpcode,
+		0u,
+		0u,
+		0x0007f40bu,
+		0x0007f80cu,
+		0x00200000u);
+
+	bmsx::g_gxGpuSoftwareVram.fill(0u);
+	bmsx::executeGxGpuSoftwareCommands(commandBuffer, 0u);
+
+	for (int32_t row = 0; row < 4; row += 1) {
+		for (int32_t column = 0; column < 4 - row; column += 1) {
+			require(bmsx::g_gxGpuSoftwareVram[bmsx::gxGpuSoftwareVramIndex(1020 + column, 10 + row)] == 0x001fu, "GX-GPU software polygon preserves the positive 1024 exclusive edge");
+		}
+	}
+	require(bmsx::g_gxGpuSoftwareVram[bmsx::gxGpuSoftwareVramIndex(0, 10)] == 0u, "GX-GPU software polygon does not pre-wrap the positive 1024 edge");
+	require(bmsx::g_gxGpuSoftwareVram[bmsx::gxGpuSoftwareVramIndex(1020, 20)] == 0x001fu, "GX-GPU software wrapped textured polygon samples first texel");
+	require(bmsx::g_gxGpuSoftwareVram[bmsx::gxGpuSoftwareVramIndex(1021, 20)] == 0x03e0u, "GX-GPU software wrapped textured polygon samples second texel");
+	require(bmsx::g_gxGpuSoftwareVram[bmsx::gxGpuSoftwareVramIndex(1022, 20)] == 0x7c00u, "GX-GPU software wrapped textured polygon samples third texel");
+	require(bmsx::g_gxGpuSoftwareVram[bmsx::gxGpuSoftwareVramIndex(1023, 20)] == 0x7fffu, "GX-GPU software wrapped textured polygon samples fourth texel");
+	require(bmsx::g_gxGpuSoftwareVram[bmsx::gxGpuSoftwareVramIndex(0, 20)] == 0u, "GX-GPU software wrapped textured polygon stays in one raster bucket");
+	require(bmsx::g_gxGpuSoftwareVram[bmsx::gxGpuSoftwareVramIndex(11, 509)] == 0x1cefu, "GX-GPU software wrapped Gouraud polygon first clipped pixel");
+	require(bmsx::g_gxGpuSoftwareVram[bmsx::gxGpuSoftwareVramIndex(12, 509)] == 0x1de7u, "GX-GPU software wrapped Gouraud polygon second clipped pixel");
+	require(bmsx::g_gxGpuSoftwareVram[bmsx::gxGpuSoftwareVramIndex(11, 510)] == 0x3ce7u, "GX-GPU software wrapped Gouraud polygon lower clipped pixel");
+	require(bmsx::g_gxGpuSoftwareVram[bmsx::gxGpuSoftwareVramIndex(10, 509)] == 0u, "GX-GPU software wrapped Gouraud polygon clips left drawing area");
+	require(bmsx::g_gxGpuSoftwareVram[bmsx::gxGpuSoftwareVramIndex(12, 510)] == 0u, "GX-GPU software wrapped Gouraud polygon clips bottom-right drawing area");
+}
+
 void testSoftwareDrawingAreaOffsetClippingAndRectangleCoordinateWrap() {
 	bmsx::GxGpuCommandBuffer commandBuffer;
 	commandBuffer.reset();
@@ -1900,6 +1994,7 @@ int main() {
 	testSoftwareLineDdaSampleWrapAndPolylineJoints();
 	testSoftwareBlendsUntexturedSemiTransparentRectangles();
 	testSoftwareTriangleEdgesAndQuadSeams();
+	testSoftwarePolygonRasterBucketWrap();
 	testSoftwareDrawingAreaOffsetClippingAndRectangleCoordinateWrap();
 	testSoftwareFillBypassesDrawingAreaAndMaskBitDrawingState();
 	testSoftwareScanoutConsumesTransfersAndFill();

@@ -80,6 +80,7 @@ import {
 	gxGpuTextureWindowOrY,
 	gxGpuTriangleEdgeCoverageMinimum,
 	gxGpuTriangleExceedsPrimitiveSize,
+	gxGpuTriangleRasterShift,
 } from '../../machine/ts/render/backend/gx_gpu_render_rules';
 import {
 	GX_GPU_DMA_DIRECTION_CPU_TO_GP0,
@@ -275,6 +276,8 @@ test('GX-GPU decodes PSX GP0 signed vertex and rectangle size words', () => {
 	assert.equal(gxGpuTriangleExceedsPrimitiveSize(0, 0, 1023, 0, 0, 512), true);
 	assert.equal(gxGpuTriangleExceedsPrimitiveSize(-512, -256, 511, 255, 0, 0), false);
 	assert.equal(gxGpuTriangleExceedsPrimitiveSize(-513, -256, 511, 255, 0, 0), true);
+	assert.equal(gxGpuTriangleRasterShift(-1025, -1024, -1), 2048);
+	assert.equal(gxGpuTriangleRasterShift(-1024, 0, 1024), 0);
 	assert.equal(gxGpuTriangleEdgeCoverageMinimum(1, -4), 0);
 	assert.equal(gxGpuTriangleEdgeCoverageMinimum(0, 4), 0);
 	assert.equal(gxGpuTriangleEdgeCoverageMinimum(-1, 4), 1);
@@ -1180,6 +1183,63 @@ test('GX-GPU software backend owns PSX triangle edges and quad seams exactly onc
 	}
 	assert.equal(gxGpuSoftwareVram[gxGpuSoftwareVramIndex(24, 20)], 0);
 	assert.equal(gxGpuSoftwareVram[gxGpuSoftwareVramIndex(20, 24)], 0);
+});
+
+test('GX-GPU software polygons wrap the raster bucket after drawing offset and primitive-size rejection', () => {
+	const commandBuffer = new GxGpuCommandBuffer();
+	commandBuffer.reset();
+	pushSoftwareCommand(commandBuffer, new Uint32Array([
+		((GX_GPU_GP0_POLYGON_FIRST << 24) | 0x0000ff) >>> 0,
+		0x000a03f8,
+		0x000a03fc,
+		0x000e03f8,
+	]), GX_GPU_COMMAND_DRAW_POLYGON, GX_GPU_GP0_POLYGON_FIRST, 0, 0, 0, GX_GPU_SOFTWARE_FULL_DRAWING_AREA_BOTTOM_RIGHT_WORD, 0x00000004);
+	pushSoftwareCommand(commandBuffer, new Uint32Array([
+		GX_GPU_GP0_CPU_TO_VRAM_FIRST << 24,
+		0,
+		(1 << 16) | 4,
+		0x03e0001f,
+		0x7fff7c00,
+	]), GX_GPU_COMMAND_UPLOAD_CPU_TO_VRAM, GX_GPU_GP0_CPU_TO_VRAM_FIRST);
+	const rawTexturedPolygonOpcode = GX_GPU_GP0_POLYGON_FIRST | GX_GPU_GP0_RENDER_TEXTURE_BIT | 0x01;
+	pushSoftwareCommand(commandBuffer, new Uint32Array([
+		((rawTexturedPolygonOpcode << 24) | 0x808080) >>> 0,
+		0x00140400,
+		0x00000000,
+		0x00140404,
+		0x01000004,
+		0x00180400,
+		0x00000400,
+	]), GX_GPU_COMMAND_DRAW_POLYGON, rawTexturedPolygonOpcode, GX_GPU_TEXTURE_MODE_DIRECT16 << 7, 0, 0, GX_GPU_SOFTWARE_FULL_DRAWING_AREA_BOTTOM_RIGHT_WORD, 0x000007fc);
+	const gouraudPolygonOpcode = GX_GPU_GP0_POLYGON_FIRST | GX_GPU_GP0_RENDER_GOURAUD_BIT;
+	pushSoftwareCommand(commandBuffer, new Uint32Array([
+		((gouraudPolygonOpcode << 24) | 0x0000ff) >>> 0,
+		0x05fc000a,
+		0x0000ff00,
+		0x05fc000e,
+		0x00ff0000,
+		0x0600000a,
+	]), GX_GPU_COMMAND_DRAW_POLYGON, gouraudPolygonOpcode, 0, 0, 0x0007f40b, 0x0007f80c, 0x00200000);
+
+	gxGpuSoftwareVram.fill(0);
+	executeGxGpuSoftwareCommands(commandBuffer, 0);
+
+	for (let row = 0; row < 4; row += 1) {
+		for (let column = 0; column < 4 - row; column += 1) {
+			assert.equal(gxGpuSoftwareVram[gxGpuSoftwareVramIndex(1020 + column, 10 + row)], 0x001f);
+		}
+	}
+	assert.equal(gxGpuSoftwareVram[gxGpuSoftwareVramIndex(0, 10)], 0);
+	assert.equal(gxGpuSoftwareVram[gxGpuSoftwareVramIndex(1020, 20)], 0x001f);
+	assert.equal(gxGpuSoftwareVram[gxGpuSoftwareVramIndex(1021, 20)], 0x03e0);
+	assert.equal(gxGpuSoftwareVram[gxGpuSoftwareVramIndex(1022, 20)], 0x7c00);
+	assert.equal(gxGpuSoftwareVram[gxGpuSoftwareVramIndex(1023, 20)], 0x7fff);
+	assert.equal(gxGpuSoftwareVram[gxGpuSoftwareVramIndex(0, 20)], 0);
+	assert.equal(gxGpuSoftwareVram[gxGpuSoftwareVramIndex(11, 509)], 0x1cef);
+	assert.equal(gxGpuSoftwareVram[gxGpuSoftwareVramIndex(12, 509)], 0x1de7);
+	assert.equal(gxGpuSoftwareVram[gxGpuSoftwareVramIndex(11, 510)], 0x3ce7);
+	assert.equal(gxGpuSoftwareVram[gxGpuSoftwareVramIndex(10, 509)], 0);
+	assert.equal(gxGpuSoftwareVram[gxGpuSoftwareVramIndex(12, 510)], 0);
 });
 
 test('GX-GPU software backend applies drawing offsets, inclusive drawing areas, and rectangle coordinate wrap', () => {

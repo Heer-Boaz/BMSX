@@ -22,6 +22,11 @@ export function gxGpuSigned11(value: number): number {
 	return (raw & 0x400) !== 0 ? raw - 0x800 : raw;
 }
 
+export function gxGpuTriangleRasterShift(coord0: number, coord1: number, coord2: number): number {
+	const minimum = coord0 < coord1 ? (coord0 < coord2 ? coord0 : coord2) : (coord1 < coord2 ? coord1 : coord2);
+	return minimum < -(GX_GPU_VERTEX_COORD_PERIOD >> 1) ? GX_GPU_VERTEX_COORD_PERIOD : 0;
+}
+
 export function gxGpuVertexY(word: number): number {
 	return gxGpuSigned11(word >>> 16);
 }

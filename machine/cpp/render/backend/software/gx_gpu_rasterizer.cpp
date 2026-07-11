@@ -168,6 +168,14 @@ void drawGxGpuSoftwareTriangle(
 	if (gxGpuTriangleExceedsPrimitiveSize(x0, y0, x1, y1, x2, y2)) {
 		return;
 	}
+	const i32 xShift = gxGpuTriangleRasterShift(x0, x1, x2);
+	const i32 yShift = gxGpuTriangleRasterShift(y0, y1, y2);
+	x0 += xShift;
+	y0 += yShift;
+	x1 += xShift;
+	y1 += yShift;
+	x2 += xShift;
+	y2 += yShift;
 	i64 area = edgeValue(x0, y0, x1, y1, x2, y2);
 	if (area == 0) {
 		return;
@@ -299,6 +307,14 @@ void drawGxGpuSoftwareTexturedTriangle(
 	if (gxGpuTriangleExceedsPrimitiveSize(x0, y0, x1, y1, x2, y2)) {
 		return;
 	}
+	const i32 xShift = gxGpuTriangleRasterShift(x0, x1, x2);
+	const i32 yShift = gxGpuTriangleRasterShift(y0, y1, y2);
+	x0 += xShift;
+	y0 += yShift;
+	x1 += xShift;
+	y1 += yShift;
+	x2 += xShift;
+	y2 += yShift;
 	i64 area = edgeValue(x0, y0, x1, y1, x2, y2);
 	if (area == 0) {
 		return;

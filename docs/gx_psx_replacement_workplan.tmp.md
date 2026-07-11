@@ -98,6 +98,11 @@ Implemented or partially covered GX-GPU areas include:
   half-open bounds, and single-owner quad seams through mirrored raw-VRAM
   vectors. WebGL2, GLES2, and WebGPU apply the matching half-pixel conversion at
   their vertex-transform boundary; live accelerated conformance remains open.
+- Polygon raster output now translates the one visible signed-11 coordinate
+  bucket after E5 and primitive-size rejection in TS/C++ software, WebGL2,
+  GLES2, and WebGPU. Mirrored vectors preserve the valid `+1024` exclusive edge
+  and cover negative X/direct16 texture interpolation plus negative Y/Gouraud
+  drawing-area clipping without accelerated CPU rasterization.
 - Variable rectangles now truncate the coordinate produced by vertex plus E5
   drawing offset back to signed 11-bit in TS/C++ software, WebGL2, GLES2, and
   WebGPU. Mirrored raw-VRAM vectors cover inclusive drawing-area clipping,
@@ -215,7 +220,7 @@ and ask before coding.
     clipping on every edge, and clipped textured-rectangle UV advance with
     mirrored TS/C++ raw-VRAM vectors.
   - [x] Keep fill commands outside E3/E4 and E6 drawing state in every backend.
-  - [ ] Implement raster-stage signed-11 wrapping for polygon output; do not
+  - [x] Implement raster-stage signed-11 wrapping for polygon output; do not
     pre-truncate its vertices because +1024 can be a valid exclusive edge and
     production PSX renderers wrap polygons during rasterization.
   - [ ] Decide the emulated PSX drawing-area Y hardware revision before changing

@@ -61,6 +61,7 @@ import {
 	gxGpuTransferX,
 	gxGpuTransferY,
 	gxGpuTriangleExceedsPrimitiveSize,
+	gxGpuTriangleRasterShift,
 	gxGpuSigned11,
 	gxGpuVertexY,
 	gxGpuVramCopyChunkHeight,
@@ -474,7 +475,9 @@ function appendSolidPrimitiveTriangle(
 	if (gxGpuTriangleExceedsPrimitiveSize(x0, y0, x1, y1, x2, y2)) {
 		return vertexFloatCount;
 	}
-	return appendSolidTriangle(vertexFloatCount, x0, y0, color0, x1, y1, color1, x2, y2, color2);
+	const xShift = gxGpuTriangleRasterShift(x0, x1, x2);
+	const yShift = gxGpuTriangleRasterShift(y0, y1, y2);
+	return appendSolidTriangle(vertexFloatCount, x0 + xShift, y0 + yShift, color0, x1 + xShift, y1 + yShift, color1, x2 + xShift, y2 + yShift, color2);
 }
 
 function appendSolidQuad(
@@ -852,7 +855,9 @@ function appendTexturedPrimitiveTriangle(
 	if (gxGpuTriangleExceedsPrimitiveSize(x0, y0, x1, y1, x2, y2)) {
 		return vertexFloatCount;
 	}
-	return appendTexturedTriangle(vertexFloatCount, x0, y0, color0, u0, v0, x1, y1, color1, u1, v1, x2, y2, color2, u2, v2);
+	const xShift = gxGpuTriangleRasterShift(x0, x1, x2);
+	const yShift = gxGpuTriangleRasterShift(y0, y1, y2);
+	return appendTexturedTriangle(vertexFloatCount, x0 + xShift, y0 + yShift, color0, u0, v0, x1 + xShift, y1 + yShift, color1, u1, v1, x2 + xShift, y2 + yShift, color2, u2, v2);
 }
 
 function appendTexturedPolygon(commandBuffer: GxGpuCommandBufferView, commandIndex: number, vertexFloatCount: number): number {

@@ -354,16 +354,18 @@ size_t appendSolidPrimitiveTriangle(
 	if (gxGpuTriangleExceedsPrimitiveSize(x0, y0, x1, y1, x2, y2)) {
 		return vertexFloatCount;
 	}
+	const i32 xShift = gxGpuTriangleRasterShift(x0, x1, x2);
+	const i32 yShift = gxGpuTriangleRasterShift(y0, y1, y2);
 	return appendSolidTriangle(
 		vertexFloatCount,
-		static_cast<f32>(x0),
-		static_cast<f32>(y0),
+		static_cast<f32>(x0 + xShift),
+		static_cast<f32>(y0 + yShift),
 		color0,
-		static_cast<f32>(x1),
-		static_cast<f32>(y1),
+		static_cast<f32>(x1 + xShift),
+		static_cast<f32>(y1 + yShift),
 		color1,
-		static_cast<f32>(x2),
-		static_cast<f32>(y2),
+		static_cast<f32>(x2 + xShift),
+		static_cast<f32>(y2 + yShift),
 		color2);
 }
 
@@ -696,20 +698,22 @@ size_t appendTexturedPrimitiveTriangle(
 	if (gxGpuTriangleExceedsPrimitiveSize(x0, y0, x1, y1, x2, y2)) {
 		return vertexFloatCount;
 	}
+	const i32 xShift = gxGpuTriangleRasterShift(x0, x1, x2);
+	const i32 yShift = gxGpuTriangleRasterShift(y0, y1, y2);
 	return appendTexturedTriangle(
 		vertexFloatCount,
-		static_cast<f32>(x0),
-		static_cast<f32>(y0),
+		static_cast<f32>(x0 + xShift),
+		static_cast<f32>(y0 + yShift),
 		color0,
 		u0,
 		v0,
-		static_cast<f32>(x1),
-		static_cast<f32>(y1),
+		static_cast<f32>(x1 + xShift),
+		static_cast<f32>(y1 + yShift),
 		color1,
 		u1,
 		v1,
-		static_cast<f32>(x2),
-		static_cast<f32>(y2),
+		static_cast<f32>(x2 + xShift),
+		static_cast<f32>(y2 + yShift),
 		color2,
 		u2,
 		v2);

@@ -102,6 +102,17 @@ software, WebGL2, GLES2 en WebGPU. Fill blijft buiten drawing-area en E6-masksta
 de WebGPU-afwijking daarin is verwijderd. Mirrored raw-VRAM vectors dekken deze
 contracten; live accelerated bewijs blijft uitgesteld.
 
+Polygon raster-bucket wrapping volgt nu eveneens dezelfde regel in alle actieve
+owners. De primitive-size reject ziet eerst de onverkorte `vertex + E5`
+coordinaten; pas daarna vertaalt de rasterstage een volledige geaccepteerde
+triangle per as met één signed-11 periode wanneer de minimumcoordinaat onder
+`-1024` ligt. Daardoor blijft `+1024` een geldige exclusieve edge en blijven
+winding, interpolatie en quadseams intact zonder extra draw, vertexallocatie of
+CPU-rasterwerk in accelerated backends. Dit sluit aan op de scanline/span-volgorde
+in DuckStation en Mednafen. Mirrored TS/C++ softwarevectors dekken de positieve
+`+1024` edge, negatieve X-bucket met direct16 texture-interpolatie en negatieve
+Y-bucket met drawing-area clipping en Gouraud-interpolatie.
+
 Lines en polylines volgen nu in alle backendowners dezelfde DDA-conventie.
 TS/C++ software wrapt iedere emitted sample pas na de 32.32-stap naar signed
 11-bit. WebGL2, GLES2 en WebGPU evalueren de equivalente gehele DDA in de
@@ -119,8 +130,6 @@ Nog te sluiten:
 - De verticale Gouraud-tie waar DuckStation `x0 >= x1` en Mednafen `x0 > x1`
   gebruikt tegen hardware beslissen; alle BMSX-backends volgen nu bewust de
   bestaande DuckStation/softwareconventie.
-- Raster-stage signed-11 wrapping voor polygons na drawing offset; vertices
-  vooraf trunceren is niet equivalent aan het hardwaregedrag.
 - Een expliciete PSX-hardwareversiekeuze voor 10-bit drawing-area-Y tegenover
   de huidige 512 VRAM-rijen.
 - De drawing-area/offset/clipping-vectors live tegen WebGL2, GLES2 en WebGPU.

@@ -29,6 +29,7 @@ import {
 	gxGpuTextureWindowOrY,
 	gxGpuTriangleEdgeCoverageMinimum,
 	gxGpuTriangleExceedsPrimitiveSize,
+	gxGpuTriangleRasterShift,
 } from '../gx_gpu_render_rules';
 import {
 	gxGpuSoftwareDitherOffset,
@@ -211,6 +212,14 @@ export function drawGxGpuSoftwareTriangle(
 	if (gxGpuTriangleExceedsPrimitiveSize(x0, y0, x1, y1, x2, y2)) {
 		return;
 	}
+	const xShift = gxGpuTriangleRasterShift(x0, x1, x2);
+	const yShift = gxGpuTriangleRasterShift(y0, y1, y2);
+	x0 += xShift;
+	y0 += yShift;
+	x1 += xShift;
+	y1 += yShift;
+	x2 += xShift;
+	y2 += yShift;
 	let area = edgeValue(x0, y0, x1, y1, x2, y2);
 	if (area === 0) {
 		return;
@@ -343,6 +352,14 @@ export function drawGxGpuSoftwareTexturedTriangle(
 	if (gxGpuTriangleExceedsPrimitiveSize(x0, y0, x1, y1, x2, y2)) {
 		return;
 	}
+	const xShift = gxGpuTriangleRasterShift(x0, x1, x2);
+	const yShift = gxGpuTriangleRasterShift(y0, y1, y2);
+	x0 += xShift;
+	y0 += yShift;
+	x1 += xShift;
+	y1 += yShift;
+	x2 += xShift;
+	y2 += yShift;
 	let area = edgeValue(x0, y0, x1, y1, x2, y2);
 	if (area === 0) {
 		return;
