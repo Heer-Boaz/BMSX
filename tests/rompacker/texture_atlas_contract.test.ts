@@ -77,6 +77,17 @@ test('direct16 cart atlas production places overflow rows in the right-half band
 	]);
 });
 
+test('direct16 cart atlas production rejects source geometry that aliases in VRAM', () => {
+	assert.throws(
+		() => buildDirect16GxTextureAtlas(0, 1025, 1, new Uint8ClampedArray(1025 * 4)),
+		/does not fit the fixed cart texture region/,
+	);
+	assert.throws(
+		() => buildDirect16GxTextureAtlas(0, 513, 377, new Uint8ClampedArray(513 * 377 * 4)),
+		/does not fit the fixed cart texture region/,
+	);
+});
+
 test('default atlas production keeps PNG tooling data out of the ROM payload', async () => {
 	const atlas: TextureAtlasResource = { type: 'atlas', name: '_atlas_0', ext: '.atlas', id: 1, atlasId: 0 };
 	const image = createCanvas(1, 1);

@@ -939,7 +939,6 @@ function combat.define_fsm()
 			oget(text_choice_id):set_text({ 'ALL-OUT-ATTACK!!' }, { typed = false, snap = true })
 			self.choice_index = 1
 			oget(text_choice_id).highlight_jitter_enabled = true
-			upload_gx_atlas_on_vblank(gx_img_rect('maya_v_s').atlas_id)
 			local monster<const> = oget(combat_monster_id)
 			local maya_a<const> = oget(combat_maya_a_id)
 			local portrait<const> = oget(combat_all_out_id)
@@ -1299,7 +1298,6 @@ function combat.define_fsm()
 			},
 		},
 		entering_state = function(self)
-			upload_gx_atlas_on_vblank(gx_img_rect(self.combat_exit_target_bg).atlas_id)
 			local bg<const> = show_background(self.combat_exit_target_bg)
 			bg.sprite_component.color = p3_black_color
 			self:play_timeline(combat_exit_fade_in_timeline_id, { rewind = true, snap_to_start = true, target = bg })

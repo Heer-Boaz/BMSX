@@ -195,14 +195,22 @@ Afgerond:
   waarna DMA de ROM-stream rechtstreeks aan GX GP0 levert. Runtime PNG-decode,
   mapped RGBA-staging en `gx_load_atlas` zijn uit BIOS en carts verdwenen.
 
-Open texture-residency boundary:
+Texture-residency boundary resolved for the migrated carts:
 
 - `pietious` gebruikt een compacte native 4-bpp atlas plus CLUT en past daarmee
   bij een expliciete PSX-VRAM-residencyvorm;
-- `2025` wisselt nog grote direct16 whole-atlasgroepen op VBlank. Dat is een
-  migratiebrug, niet de gewenste eindarchitectuur. Vervang die route later door
-  producer-owned kleinere texture packs met expliciete VRAM-page/CLUT-
-  residency; ga de atlas-swapwrapper niet verder abstraheren of optimaliseren.
+- `2025` behandelt de ROM-atlas niet langer als universele runtime-eenheid:
+  ieder actief full-screen direct16-achtergrondbeeld heeft een eigen producer-
+  owned bank, de gelijktijdig gebruikte combatsprites delen een expliciete bank
+  en het opaque all-outscherm heeft zijn eigen transitionbank. Daardoor uploadt
+  een sceneovergang alleen de actuele werkset in plaats van een toevallig door
+  de auto-packer samengestelde multi-backgroundatlas. De actieve background-
+  uploads dalen daarmee van 718.812--896.976 bytes naar 155.872--199.224 bytes;
+- de direct16-producent weigert brongeometrie die door de vaste PSX-VRAM-
+  plaatsing over andere texturedata heen of buiten VRAM zou schrijven;
+- een toekomstige cart met meerdere onafhankelijk wisselende texturewerksets
+  moet vaste VRAM-page/CLUT-slots bij de GPU-residencyowner toevoegen. Bouw zo'n
+  generieke cache niet speculatief en maak geen nieuwe atlas-swapwrapper.
 
 Resterende volgorde:
 

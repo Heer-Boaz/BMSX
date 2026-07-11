@@ -16,11 +16,11 @@ const GX_DIRECT16_PAGE_HEIGHT = GX_GPU_VRAM_HEIGHT >> 1;
 const GX_DIRECT16_CART_BASE_Y = GX_DIRECT16_PAGE_HEIGHT;
 const GX_PALETTE4_PIXELS_PER_WORD = 4;
 const GX_PALETTE4_CLUT_WORDS = 16;
-const GX_PALETTE4_TEXTURE_Y = ((HOST_SYSTEM_ATLAS_WIDTH + GX_SYSTEM_DIRECT16_BAND_WIDTH - 1) >> 9) * HOST_SYSTEM_ATLAS_HEIGHT;
+const GX_CART_TEXTURE_RIGHT_BAND_Y = ((HOST_SYSTEM_ATLAS_WIDTH + GX_SYSTEM_DIRECT16_BAND_WIDTH - 1) >> 9) * HOST_SYSTEM_ATLAS_HEIGHT;
 
 export const GX_PALETTE4_ATLAS_RGBA_BYTE_LIMIT =
 	(GX_GPU_VRAM_WIDTH - GX_GPU_VRAM_RIGHT_HALF_X)
-	* (GX_GPU_VRAM_HEIGHT - GX_PALETTE4_TEXTURE_Y - 1)
+	* (GX_GPU_VRAM_HEIGHT - GX_CART_TEXTURE_RIGHT_BAND_Y - 1)
 	* GX_PALETTE4_PIXELS_PER_WORD
 	* TEXTURE_ATLAS_RGBA_BYTES_PER_PIXEL;
 
@@ -118,6 +118,20 @@ function writeDirect16Upload(
 }
 
 export function buildDirect16GxTextureAtlas(atlasId: number, width: number, height: number, rgba: Uint8ClampedArray): GxTextureAtlas {
+	if (atlasId === BIOS_ATLAS_ID) {
+		const occupiedRows = ((width + GX_SYSTEM_DIRECT16_BAND_WIDTH - 1) >> 9) * height;
+		if (occupiedRows > GX_DIRECT16_PAGE_HEIGHT) {
+			throw new Error(`[RomPacker] GX system direct16 atlas ${atlasId} does not fit the fixed system texture region.`);
+		}
+	} else {
+		const overflowHeight = height - GX_DIRECT16_PAGE_HEIGHT;
+		const overflowBottom = GX_CART_TEXTURE_RIGHT_BAND_Y
+			+ (((width + GX_GPU_VRAM_RIGHT_HALF_X - 1) >> 9) * overflowHeight);
+		const overflowLimit = width <= GX_GPU_VRAM_RIGHT_HALF_X ? GX_GPU_VRAM_HEIGHT : GX_DIRECT16_PAGE_HEIGHT;
+		if (width > GX_GPU_VRAM_WIDTH || (overflowHeight > 0 && overflowBottom > overflowLimit)) {
+			throw new Error(`[RomPacker] GX cart direct16 atlas ${atlasId} does not fit the fixed cart texture region.`);
+		}
+	}
 	let byteLength = 0;
 	for (let sourceX = 0; sourceX < width; sourceX += GX_DIRECT16_SLICE_WIDTH) {
 		const sliceWidth = width - sourceX < GX_DIRECT16_SLICE_WIDTH ? width - sourceX : GX_DIRECT16_SLICE_WIDTH;
@@ -155,7 +169,7 @@ export function buildDirect16GxTextureAtlas(atlasId: number, width: number, heig
 			streamOffset = writeDirect16Upload(
 				stream, streamOffset, rgba, sourceX, firstHeight, width,
 				GX_GPU_VRAM_RIGHT_HALF_X + (((sourceX >> 8) & 1) << 8),
-				GX_PALETTE4_TEXTURE_Y + ((sourceX >> 9) * (height - firstHeight)),
+				GX_CART_TEXTURE_RIGHT_BAND_Y + ((sourceX >> 9) * (height - firstHeight)),
 				sliceWidth, height - firstHeight,
 			);
 		}
@@ -171,7 +185,7 @@ export function buildPalette4GxTextureAtlas(atlasId: number, width: number, heig
 
 	const textureWordWidth = (width + GX_PALETTE4_PIXELS_PER_WORD - 1) >> 2;
 	const textureX = GX_GPU_VRAM_RIGHT_HALF_X;
-	const textureY = GX_PALETTE4_TEXTURE_Y;
+	const textureY = GX_CART_TEXTURE_RIGHT_BAND_Y;
 	const clutX = textureX;
 	const clutY = textureY + height;
 	if (textureX + textureWordWidth > GX_GPU_VRAM_WIDTH || clutY >= GX_GPU_VRAM_HEIGHT) {

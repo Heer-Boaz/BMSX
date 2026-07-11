@@ -157,22 +157,33 @@ ROM producer as native RGB555/STP GP0 upload words and DMA streams those ROM
 words directly to GP0; runtime PNG decode and mapped RGBA texture staging are
 not part of atlas residency. Atlas PNGs remain tooling previews and are not
 packed as runtime ROM payloads.
-The `2025` cart owns explicit direct16 cart-atlas upload points for its
-transitions, background changes, and combat atlas swaps. It crosses a VBlank
-before an atlas swap so the preceding GX command buffer is presented before the
-new GP0 upload stream is submitted. `pietious` now uses a
+The `2025` cart owns explicit direct16 texture-bank upload points for its
+transitions, background changes, and combat working-set changes. Each active
+full-screen background is its own ROM-produced bank, the sprites that coexist
+through combat share one explicit bank, and the opaque all-out screen is a
+separate transition bank. It crosses a VBlank before a bank change so the
+preceding GX command buffer is presented before the new GP0 upload stream is
+submitted. `pietious` now uses a
 manifest-required, ROM-produced native PSX 4-bpp texture plus CLUT and GP0
 upload stream. Its atlas bypasses the legacy RGBA residency planner and has no
 CPU texture-staging allocation. It no longer decodes a whole RGBA atlas at boot
 or submits VDP tile streams.
 
-The native stream migration does not make the current `2025` whole-atlas swap
-policy the final PSX-style residency design. `pietious` has a plausible compact
-4-bpp atlas/CLUT shape; `2025` still groups large direct16 content into one
-resident cart atlas at a time and swaps that grouping at scene/combat
-boundaries. A later vertical slice must replace that migration-era policy with
-explicit VRAM page/CLUT residency and smaller producer-owned texture packs,
-rather than optimizing the whole-atlas swap wrapper.
+The ROM atlas is a packing artifact, not a universal runtime residency unit.
+`pietious` has a compact stable 4-bpp atlas/CLUT working set, while `2025` uses
+smaller producer-owned banks that match what is simultaneously visible. Its
+full-screen direct16 backgrounds legitimately bulk-upload at scene transitions;
+they are no longer incidental members of multi-background auto-atlases. A cart
+that needs several independently changing texture sets must introduce explicit
+fixed VRAM page/CLUT slots at the GPU residency owner instead of growing another
+whole-atlas swap wrapper. No migrated cart currently requires that extra
+runtime mechanism.
+
+For the current assets this changes a background transition from a generated
+718,812--896,976-byte multi-background upload to the active image's
+155,872--199,224-byte stream. The transition regression follows the authored
+fade/montage timing and no longer treats the duration of the oversized DMA as a
+required black-frame hold.
 
 ## Hard open design point: GPUREAD / VRAM-to-CPU
 
