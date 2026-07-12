@@ -286,6 +286,7 @@ export const IRQ_VBLANK = 1 << 2;
 export const IRQ_GEO_DONE = 1 << 3;
 export const IRQ_GEO_ERROR = 1 << 4;
 export const IRQ_APU = 1 << 5;
+export const IRQ_GPU = 1 << 6;
 
 export const DMA_CTRL_START = 1 << 0;
 export const DMA_CTRL_STRICT = 1 << 1;

@@ -219,6 +219,27 @@ Niet doen:
 - Geen GPUREAD-dispatch, completionpolling of backendresource-ownership in
   `GameView`; de bestaande GX backendpass is de uitvoerende owner.
 
+## GPUSTAT-interrupt en commandotiming
+
+Status: de interruptbron is hersteld; cycle-visible commandotiming blijft open.
+
+GP0(1Fh) zet niet alleen GPUSTAT bit 24 maar drijft nu ook de concrete
+`IRQ_GPU`-bron van de centrale IRQ-controller. Net als in DuckStation en
+Mednafen ontstaat de pending IRQ alleen op de lage-naar-hoge overgang van de
+GPU-bron. `IRQ_ACK` consumeert de pending edge zonder de GPUSTAT-bron te
+deasserten; nog een GP0(1Fh) terwijl bit 24 hoog blijft maakt dus geen fictieve
+tweede interrupt. GP1(02h) deassert de bron maar laat een reeds pending
+`IRQ_GPU` staan voor de IRQ-owner, waarna de volgende GP0(1Fh) weer een echte
+edge kan leveren. TS en C++ delen dezelfde raw MMIO-vector voor die volledige
+volgorde. Er is geen callbackfacade of tweede interruptstatus toegevoegd.
+
+Nog te sluiten:
+
+- GPUSTAT bit 26 en de receive-readybits moeten uiteindelijk de echte
+  command/FIFO-uitvoeringstijd volgen. Voltooide packetassembly geldt nu nog
+  onmiddellijk als idle; voeg geen losse delay of cartzichtbare wachttruc toe
+  zonder een centrale GPU-commandotimingowner.
+
 ## Exacte GX raster- en VRAM-pariteit
 
 Status: open.

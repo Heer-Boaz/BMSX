@@ -647,6 +647,7 @@ hardware interrupt-storm semantics rather than being discarded by the emulator.
 | `IRQ_GEO_DONE` | `0x0008` | Geometry command completion. |
 | `IRQ_GEO_ERROR` | `0x0010` | Geometry command error. |
 | `IRQ_APU` | `0x0020` | APU voice event. |
+| `IRQ_GPU` | `0x0040` | Rising edge of the GX-GPU GP0 interrupt-request source. |
 
 ### DMA
 
@@ -668,6 +669,14 @@ between GX command buffers and those backends. The mirrored VDP/RPU and IMGDEC
 device trees, mapped apertures, scheduler services, VBlank hooks, MMIO words,
 readback state and save-state fields are removed. The ROM package marker is the
 only remaining `vdp_class` name and must not be used as a compatibility route.
+
+GP0(1Fh) asserts the GPUSTAT interrupt-request source and raises `IRQ_GPU` only
+on its low-to-high transition. `IRQ_ACK` clears the IRQ controller's pending
+edge without changing GPUSTAT, so another GP0(1Fh) cannot retrigger while the
+GPU source remains asserted. GP1(02h) deasserts the GPU source but does not
+clear an already-pending `IRQ_GPU`; cart code acknowledges that pending bit
+through `IRQ_ACK`. This keeps the GPU source latch and the system interrupt
+pending latch as two distinct hardware words.
 
 Pixel parity is a machine contract at GX VRAM scanout. For the same ROM,
 timeline, model profile, and GX display registers, the TypeScript headless

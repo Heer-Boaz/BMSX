@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 
-import { IO_GX_GPU_GP0, IO_GX_GPU_GP1 } from '../../machine/ts/machine/bus/io';
+import { IO_GX_GPU_GP0, IO_GX_GPU_GP1, IO_IRQ_ACK, IO_IRQ_FLAGS, IRQ_GPU } from '../../machine/ts/machine/bus/io';
 import {
 	GX_GPU_COMMAND_COPY_VRAM_TO_VRAM,
 	GX_GPU_COMMAND_DRAW_POLYGON,
@@ -346,7 +346,7 @@ function createGpu(): { memory: Memory; cpu: CPU; scheduler: DeviceScheduler; dm
 	const scheduler = new DeviceScheduler(cpu);
 	const irq = new IrqController(memory);
 	const dma = new DmaController(memory, irq, scheduler);
-	const gpu = new GxGpu(memory, scheduler, dma);
+	const gpu = new GxGpu(memory, irq, scheduler, dma);
 	dma.reset();
 	gpu.reset();
 	irq.reset();
@@ -822,13 +822,24 @@ test('GX-GPU latches PSX GP1 CRTC range registers as masked raw words', () => {
 });
 
 test('GX-GPU handles PSX GP0 IRQ request and GP1 interrupt acknowledge', () => {
-	const { gpu } = createGpu();
+	const { memory, gpu } = createGpu();
 
 	gpu.writeGp0(GX_GPU_GP0_IRQ_REQUEST << 24);
 	assert.equal((gpu.readStatus() & GX_GPU_STATUS_INTERRUPT_REQUEST) >>> 0, GX_GPU_STATUS_INTERRUPT_REQUEST);
+	assert.equal((memory.readIoU32(IO_IRQ_FLAGS) & IRQ_GPU) >>> 0, IRQ_GPU);
+
+	memory.writeMappedU32LE(IO_IRQ_ACK, IRQ_GPU);
+	assert.equal((memory.readIoU32(IO_IRQ_FLAGS) & IRQ_GPU) >>> 0, 0);
+	gpu.writeGp0(GX_GPU_GP0_IRQ_REQUEST << 24);
+	assert.equal((memory.readIoU32(IO_IRQ_FLAGS) & IRQ_GPU) >>> 0, 0);
 
 	gpu.writeGp1(GX_GPU_GP1_ACK_INTERRUPT << 24);
 	assert.equal((gpu.readStatus() & GX_GPU_STATUS_INTERRUPT_REQUEST) >>> 0, 0);
+
+	gpu.writeGp0(GX_GPU_GP0_IRQ_REQUEST << 24);
+	assert.equal((memory.readIoU32(IO_IRQ_FLAGS) & IRQ_GPU) >>> 0, IRQ_GPU);
+	gpu.writeGp1(GX_GPU_GP1_ACK_INTERRUPT << 24);
+	assert.equal((memory.readIoU32(IO_IRQ_FLAGS) & IRQ_GPU) >>> 0, IRQ_GPU);
 });
 
 test('GX-GPU handles PSX GP0 draw mode and mask-bit environment commands', () => {

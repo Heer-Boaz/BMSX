@@ -11,6 +11,7 @@ namespace bmsx {
 
 class Memory;
 class DeviceScheduler;
+class IrqController;
 
 constexpr u32 GX_GPU_GP1_RESET = 0x00u;
 constexpr u32 GX_GPU_GP1_CLEAR_FIFO = 0x01u;
@@ -152,7 +153,7 @@ struct GxGpuSaveState : GxGpuState {
 
 class GxGpu {
 public:
-	GxGpu(Memory& memory, DeviceScheduler& scheduler, DmaController& dmaController);
+	GxGpu(Memory& memory, IrqController& irq, DeviceScheduler& scheduler, DmaController& dmaController);
 	void reset();
 	GxGpuState captureState() const;
 	void restoreState(const GxGpuState& state);
@@ -187,6 +188,7 @@ public:
 
 private:
 	Memory& m_memory;
+	IrqController& m_irq;
 	DeviceScheduler& m_scheduler;
 	u32 m_gp0Word = 0;
 	u32 m_gp1Word = 0;

@@ -36,7 +36,7 @@ struct GpuHarness {
 		, scheduler(cpu)
 		, irq(memory)
 		, dma(memory, irq, scheduler)
-		, gpu(memory, scheduler, dma) {
+		, gpu(memory, irq, scheduler, dma) {
 		dma.reset();
 		gpu.reset();
 		irq.reset();
@@ -548,12 +548,24 @@ void testGp1CrtcRangeRegistersLatchMaskedRawWords() {
 void testGp0IrqRequestAndGp1Acknowledge() {
 	GpuHarness harness;
 	bmsx::GxGpu& gpu = harness.gpu;
+	bmsx::Memory& memory = harness.memory;
 
 	gpu.writeGp0(bmsx::GX_GPU_GP0_IRQ_REQUEST << 24u);
 	require((gpu.readStatus() & bmsx::GX_GPU_STATUS_INTERRUPT_REQUEST) == bmsx::GX_GPU_STATUS_INTERRUPT_REQUEST, "GX-GPU GP0 IRQ request bit");
+	require((memory.readIoU32(bmsx::IO_IRQ_FLAGS) & bmsx::IRQ_GPU) == bmsx::IRQ_GPU, "GX-GPU GP0 IRQ request raises the GPU interrupt source");
+
+	memory.writeMappedU32LE(bmsx::IO_IRQ_ACK, bmsx::IRQ_GPU);
+	require((memory.readIoU32(bmsx::IO_IRQ_FLAGS) & bmsx::IRQ_GPU) == 0u, "GX-GPU system IRQ acknowledge clears the pending edge");
+	gpu.writeGp0(bmsx::GX_GPU_GP0_IRQ_REQUEST << 24u);
+	require((memory.readIoU32(bmsx::IO_IRQ_FLAGS) & bmsx::IRQ_GPU) == 0u, "GX-GPU repeated GP0 IRQ request does not retrigger an asserted source");
 
 	gpu.writeGp1(bmsx::GX_GPU_GP1_ACK_INTERRUPT << 24u);
 	require((gpu.readStatus() & bmsx::GX_GPU_STATUS_INTERRUPT_REQUEST) == 0u, "GX-GPU GP1 IRQ acknowledge clears request bit");
+
+	gpu.writeGp0(bmsx::GX_GPU_GP0_IRQ_REQUEST << 24u);
+	require((memory.readIoU32(bmsx::IO_IRQ_FLAGS) & bmsx::IRQ_GPU) == bmsx::IRQ_GPU, "GX-GPU GP0 IRQ request retriggers after GP1 deasserts the source");
+	gpu.writeGp1(bmsx::GX_GPU_GP1_ACK_INTERRUPT << 24u);
+	require((memory.readIoU32(bmsx::IO_IRQ_FLAGS) & bmsx::IRQ_GPU) == bmsx::IRQ_GPU, "GX-GPU GP1 IRQ acknowledge leaves the system pending latch for IRQ_ACK");
 }
 
 void testGp0DrawModeAndMaskBitEnvironmentCommands() {

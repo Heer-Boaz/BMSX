@@ -307,6 +307,13 @@ and MAME
     or consuming the latch while GPUSTAT ready-to-send is low.
   - [ ] Run the same vector live against WebGL2, GLES2 and WebGPU.
 - [ ] Complete GPUSTAT details and timing-visible bits against references.
+  - [x] Route GP0(1Fh) through a real `IRQ_GPU` source edge. GP1(02h)
+    deasserts GPUSTAT bit 24 without consuming the IRQ controller's pending
+    latch; `IRQ_ACK` owns that latch. Repeated GP0(1Fh) words while the source
+    stays asserted do not synthesize extra edges. TS/C++ raw MMIO tests mirror
+    the full assert, system-ack, no-retrigger, GPU-ack and retrigger sequence.
+  - [ ] Model command execution time and FIFO-capacity-visible readiness rather
+    than treating completed packet assembly as immediate GPU idleness.
 - [ ] Complete GP0/GP1 command decode edge cases and command-buffer ordering.
 - [ ] DMA interaction behavior beyond the currently tested register/status paths.
   - [x] RAM-to-GP0 DMA word streams feed the memory-mapped GX-GPU GP0 command

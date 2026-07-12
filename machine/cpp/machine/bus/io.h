@@ -301,6 +301,7 @@ constexpr uint32_t IRQ_VBLANK = 1 << 2;
 constexpr uint32_t IRQ_GEO_DONE = 1 << 3;
 constexpr uint32_t IRQ_GEO_ERROR = 1 << 4;
 constexpr uint32_t IRQ_APU = 1 << 5;
+constexpr uint32_t IRQ_GPU = 1 << 6;
 
 
 constexpr uint32_t DMA_CTRL_START = 1 << 0;

@@ -51,7 +51,7 @@ function createDmaGpuFixture(): DmaGpuFixture {
 	const scheduler = new DeviceScheduler(new CPU(memory));
 	const irq = new IrqController(memory);
 	const dma = new DmaController(memory, irq, scheduler);
-	const gpu = new GxGpu(memory, scheduler, dma);
+	const gpu = new GxGpu(memory, irq, scheduler, dma);
 	dma.reset();
 	gpu.reset();
 	irq.reset();

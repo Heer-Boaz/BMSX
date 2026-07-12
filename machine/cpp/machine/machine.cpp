@@ -14,7 +14,7 @@ Machine::Machine(Memory& memoryRef, InputControllerInputSource& input)
 	, audioController(memory, audioOutput, irqController, scheduler)
 	, dmaController(memory, irqController, scheduler)
 	, geometryController(memory, irqController, scheduler)
-	, gxGpu(memory, scheduler, dmaController)
+	, gxGpu(memory, irqController, scheduler, dmaController)
 	, gxGte(memory)
 	, inputController(memory, input)
 {

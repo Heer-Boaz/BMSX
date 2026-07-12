@@ -2,6 +2,7 @@
 
 #include "machine/bus/io.h"
 #include "machine/cpu/cpu.h"
+#include "machine/devices/irq/controller.h"
 #include "machine/memory/memory.h"
 #include "machine/model_registry.h"
 #include "machine/scheduler/device.h"
@@ -10,8 +11,9 @@
 
 namespace bmsx {
 
-GxGpu::GxGpu(Memory& memory, DeviceScheduler& scheduler, DmaController& dmaController)
+GxGpu::GxGpu(Memory& memory, IrqController& irq, DeviceScheduler& scheduler, DmaController& dmaController)
 	: m_memory(memory)
+	, m_irq(irq)
 	, m_scheduler(scheduler)
 	, m_displayModeWord(PSX_GPU_DISPLAY_MODE_PAL_WORD)
 	, m_commandBuffer(dmaController)
@@ -215,7 +217,10 @@ void GxGpu::executeGp0Command() {
 		emitFixedGp0Command(GX_GPU_COMMAND_FILL_RECTANGLE, opcode, commandWordCount);
 		break;
 	case GX_GPU_GP0_IRQ_REQUEST:
-		m_statusWord |= GX_GPU_STATUS_INTERRUPT_REQUEST;
+		if ((m_statusWord & GX_GPU_STATUS_INTERRUPT_REQUEST) == 0u) {
+			m_statusWord |= GX_GPU_STATUS_INTERRUPT_REQUEST;
+			m_irq.raise(IRQ_GPU);
+		}
 		writeStatusIo();
 		break;
 	case GX_GPU_GP0_SET_DRAW_MODE:

@@ -1,8 +1,9 @@
 import type { Value } from '../../cpu/cpu';
-import { IO_GX_GPU_GP0, IO_GX_GPU_GP1 } from '../../bus/io';
+import { IO_GX_GPU_GP0, IO_GX_GPU_GP1, IRQ_GPU } from '../../bus/io';
 import type { Memory } from '../../memory/memory';
 import type { DeviceScheduler } from '../../scheduler/device';
 import type { DmaController } from '../dma/controller';
+import type { IrqController } from '../irq/controller';
 import { PSX_GPU_DISPLAY_MODE_PAL_WORD } from '../../model_registry';
 import type { GxGpuDeviceOutput } from './device_output';
 import {
@@ -220,7 +221,12 @@ export class GxGpu {
 	private vramSnapshotSerial = 0;
 	private readonly deviceOutput: { -readonly [Key in keyof GxGpuDeviceOutput]: GxGpuDeviceOutput[Key] };
 
-	public constructor(private readonly memory: Memory, private readonly scheduler: DeviceScheduler, dmaController: DmaController) {
+	public constructor(
+		private readonly memory: Memory,
+		private readonly irq: IrqController,
+		private readonly scheduler: DeviceScheduler,
+		dmaController: DmaController,
+	) {
 		this.commandBuffer = new GxGpuCommandBuffer(dmaController);
 		this.deviceOutput = {
 			commandBuffer: this.commandBuffer,
@@ -438,7 +444,10 @@ export class GxGpu {
 				this.emitFixedGp0Command(GX_GPU_COMMAND_FILL_RECTANGLE, opcode, commandWordCount);
 				break;
 			case GX_GPU_GP0_IRQ_REQUEST:
-				this.statusWord = (this.statusWord | GX_GPU_STATUS_INTERRUPT_REQUEST) >>> 0;
+				if ((this.statusWord & GX_GPU_STATUS_INTERRUPT_REQUEST) === 0) {
+					this.statusWord = (this.statusWord | GX_GPU_STATUS_INTERRUPT_REQUEST) >>> 0;
+					this.irq.raise(IRQ_GPU);
+				}
 				this.writeStatusIo();
 				break;
 			case GX_GPU_GP0_SET_DRAW_MODE:

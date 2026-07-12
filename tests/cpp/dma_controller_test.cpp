@@ -31,7 +31,7 @@ struct DmaGpuHarness {
 		, scheduler(cpu)
 		, irq(memory)
 		, dma(memory, irq, scheduler)
-		, gpu(memory, scheduler, dma) {
+		, gpu(memory, irq, scheduler, dma) {
 		dma.reset();
 		gpu.reset();
 		irq.reset();
