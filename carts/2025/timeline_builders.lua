@@ -718,6 +718,7 @@ function builders.build_transition_frames(params)
 	local text_out_start<const> = transition_text_in_frames + transition_text_hold_frames
 	local text_out_end<const> = text_out_start + transition_text_out_frames
 	local base<const> = palette.overlay
+	local overlay_fade_out_start<const> = fade_in_start - transition_panel_out_frames
 
 	for frame_index = 0, finish_frame do
 		local overlay_color = base
@@ -736,6 +737,11 @@ function builders.build_transition_frames(params)
 				overlay_color = 0
 				background_color = color.mix_rgb_with_alpha(p3_black_color, p3_white_color, level, 1)
 			end
+		end
+		if frame_index >= overlay_fade_out_start and frame_index < fade_in_start then
+			local u<const> = (frame_index - overlay_fade_out_start) / (transition_panel_out_frames - 1)
+			local level<const> = round_number(smoothstep(u) * 255)
+			overlay_color = color.mix_rgb_with_alpha(base, p3_black_color, level, 1)
 		end
 
 		local panel_states<const> = {}

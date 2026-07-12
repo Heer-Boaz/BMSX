@@ -76,11 +76,11 @@ for (let frameNumber = 74; frameNumber <= 78; frameNumber += 1) {
 }
 
 const ink = pixel(frame(79), 10, 100);
-assert(ink[2] > ink[1] && ink[1] >= ink[0], `transition ink background lost its blue hue: ${ink}`);
+assert.deepEqual(ink, [0, 24, 57], 'transition ink background lost its Persona blue');
 const blue = pixel(frame(84), 160, 30);
-assert(blue[2] > 150 && blue[2] > blue[1] * 2, `transition primary panel is not saturated blue: ${blue}`);
+assert.deepEqual(blue, [16, 66, 206], 'transition primary panel lost its Persona blue');
 const cyan = pixel(frame(104), 20, 90);
-assert(cyan[1] > 180 && cyan[2] > 220 && cyan[0] < 120, `transition accent is not cyan: ${cyan}`);
+assert.deepEqual(cyan, [82, 222, 255], 'transition accent lost its Persona cyan');
 
 let montageBluePixels = 0;
 let montageCyanPixels = 0;
@@ -103,7 +103,7 @@ for (let frameNumber = 79; frameNumber <= 121; frameNumber += 1) {
 		if (green > 180 && blueChannel > 220 && red < 120) {
 			montageCyanPixels += 1;
 		}
-		if (blueChannel >= 16 && blueChannel > green && green >= red && red <= 8) {
+		if (blueChannel >= 48 && blueChannel > green && green >= red && red <= 8) {
 			montageInkPixels += 1;
 		}
 	}

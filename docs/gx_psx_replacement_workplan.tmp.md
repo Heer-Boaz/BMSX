@@ -455,7 +455,11 @@ and MAME
   raw bare-metal cart now emits precomputed GP0 texture command words and owns
   every semi-transparent pass's opcode and ABR mode explicitly; it neither uses
   ARGB alpha as a blend factor nor compares signed register words with wide host
-  literals.
+  literals. The transition ink and combat-results background now use the cart's
+  intended packed Persona-blue palette words. Consecutive-frame gates lock the
+  exact RGB555 scanout in TS headless, C++ software, and GLES2/llvmpipe. The
+  montage overlay also reaches black before the separate post-fade state when
+  the incoming fade is skipped, instead of ending in a full-screen hard cut.
 - [x] Migrate `pietious` engine/cart rendering. Its cart atlas is packed at ROM
   build time under an explicit Palette4 asset contract as native PSX 4-bpp
   texture data plus CLUT and GP0 upload commands, DMA-uploaded directly to GPU
@@ -502,8 +506,7 @@ and MAME
 Pick one vertical slice and finish it before committing:
 
 1. **Visible GX migration regressions**: finish live host-UI and scanout proof
-   when a real browser is available, and restore the incorrect `2025`
-   transition/combat-results blue at its producer.
+   when a real browser is available.
 2. **Accelerated feedback performance**: remove per-primitive framebuffer
    snapshots using the measured full-scene gates above, while preserving raw
    PSX blend/mask/store parity in GLES2, WebGL2 and WebGPU.

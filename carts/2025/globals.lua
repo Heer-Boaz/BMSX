@@ -182,25 +182,10 @@ combat_parallax_momentum_step = 1
 combat_parallax_momentum_limit_steps = 5
 combat_parallax_scale_delta = 245 / 65536
 
-p3_blue_r = 0.07
-p3_blue_g = 0.28
-p3_blue_b = 0.8
 p3_blue_color = 0xff1247cc
-p3_cyan_r = 0.32
-p3_cyan_g = 0.86
-p3_cyan_b = 0.98
 p3_cyan_color = 0xff52dbfa
-p3_ink_r = 0.02
-p3_ink_g = 0.05
-p3_ink_b = 0.12
-p3_ink_color = 0xff050d1f
-p3_white_r = 1
-p3_white_g = 1
-p3_white_b = 1
+p3_ink_color = 0xff00183e
 p3_white_color = 0xffffffff
-p3_black_r = 0
-p3_black_g = 0
-p3_black_b = 0
 p3_black_color = 0xff000000
 
 p3_transition_palette_dialogue = {
@@ -223,7 +208,7 @@ p3_transition_palette_ending = {
 }
 p3_transition_palette_choice = p3_transition_palette_dialogue
 
-combat_results_bg_visible_color = 0xff0f3cae
+combat_results_bg_visible_color = p3_blue_color
 
 function clear_texts(text_ids)
 	for i = 1, #text_ids do

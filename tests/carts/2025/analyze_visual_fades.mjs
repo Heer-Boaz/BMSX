@@ -49,7 +49,7 @@ for (let frameIndex = 14; frameIndex < frames.length; frameIndex += 1) {
 const finalResult = frames[frames.length - 1];
 const finalOffset = (220 * finalResult.width + 10) * 4;
 const finalColor = [finalResult.data[finalOffset], finalResult.data[finalOffset + 1], finalResult.data[finalOffset + 2]];
-assert(finalColor[2] > 160 && finalColor[2] > finalColor[1] * 2, `combat-results background is not saturated blue: ${finalColor}`);
+assert.deepEqual(finalColor, [16, 66, 206], 'combat-results background lost its Persona blue');
 
 console.log(JSON.stringify({
 	screenshotDir,

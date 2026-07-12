@@ -31,8 +31,6 @@ pariteitsvalidatie en moeten als harde acceptatieblokkades blijven staan.
   de eerste volgorde als een runtime-z-wijziging. De lange regressiescène raakt
   bovendien de concrete overlap tussen de speler op z=250 en een later
   gespawnde explosie op z=114.
-- De transition- en combat-results-kleuren in `2025` kloppen niet meer: ze zijn
-  donkerblauw tot bijna zwart in plaats van de lichtere Persona 3-blauwtint.
 - Ondanks alle optimalisatiewerk zijn de performanceproblemen van de
   libretro-versie niet opgelost. Zelfs op een Intel Core Ultra 7 met een
   RTX 5070 Ti vertoont `bare_metal_cart` bizarre, zeer zware slowdown.
