@@ -198,7 +198,7 @@ private:
 	void activateSystemRom();
 	void activateCartRom();
 	void setMachineManifest(const MachineManifest& manifest);
-	void configureViewForModel();
+	void configureViewForGpuReset();
 	LoadedProgramImages loadProgramImagesFromRom(const RuntimeRomPackage& romPackage, const u8* romData) const;
 	bool loadSystemRomInternal(const u8* data, size_t size);
 	bool loadRomInternal(const u8* data, size_t size);

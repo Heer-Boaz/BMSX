@@ -298,6 +298,7 @@
 		"machine/ts/machine/model_registry.ts",
 		"machine/ts/machine/devices/audio/biquad_filter.ts",
 		"machine/ts/machine/devices/audio/output.ts",
+		"machine/ts/machine/devices/gx/gpu_display.ts",
 		"machine/ts/machine/devices/gx/gte.ts",
 		"machine/ts/machine/memory/access_kind.ts",
 		"machine/ts/machine/cpu/string_pool.ts",
@@ -311,6 +312,13 @@
 		"machine/ts/render/shared/solid_pixels.ts"
 	],
 	"strict_runtime_symbol_parity": [
+		{
+			"ts": "machine/ts/machine/devices/gx/gpu_display.ts",
+			"cpp": [
+				"machine/cpp/machine/devices/gx/gpu_display.h"
+			],
+			"reason": "gx_gpu_raw_display_register_decode_contract"
+		},
 		{
 			"ts": "machine/ts/machine/devices/gx/gte.ts",
 			"cpp": [
@@ -1708,7 +1716,6 @@
 		{
 			"file": "machine/ts/render/headless/passes.ts",
 			"functions": [
-				"commitHeadlessFrame",
 				"presentHeadlessFrame"
 			],
 			"reason": "headless_present_hot_helpers_must_not_allocate_per_frame"
@@ -2005,7 +2012,7 @@
 				"vramUsedBytes",
 				"vramTotalBytes",
 				"applyUfpsScaled",
-				"applyPsxGpuDisplayModeWord",
+				"applyPublishedPsxGpuDisplayTiming",
 				"internString",
 				"setGlobal"
 			],

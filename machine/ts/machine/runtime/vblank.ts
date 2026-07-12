@@ -52,6 +52,11 @@ export class VblankState {
 		this.reset();
 	}
 
+	public setNextFrameTiming(cycleBudgetPerFrame: number, vblankCycles: number): void {
+		this.vblankCycles = vblankCycles;
+		this.vblankStartCycle = cycleBudgetPerFrame - vblankCycles;
+	}
+
 	public getCyclesIntoFrame(): number {
 		const runtime = this.runtime;
 		return runtime.machine.scheduler.nowCycles - this.frameStartCycle;
@@ -119,6 +124,8 @@ export class VblankState {
 	public handleEndTimer(): void {
 		const runtime = this.runtime;
 		this.frameStartCycle = runtime.machine.scheduler.nowCycles;
+		const output = runtime.machine.gxGpu.readDeviceOutput();
+		runtime.applyPublishedPsxGpuDisplayTiming(output.displayModeWord, output.verticalDisplayRangeWord);
 		if (this.vblankStartCycle === 0) {
 			this.scheduleCurrentFrameTimers();
 			this.enterVblank();

@@ -7,13 +7,14 @@ local gp1<const>: *word = 0x08010244
 
 local gp1_reset<const> = 0x00000000
 local gp1_display_enable<const> = 0x03000000
-local gp1_display_start_0<const> = 0x05000000
-local gp1_horizontal_256_pal<const> = 0x06c6a27e
-local gp1_horizontal_320_pal<const> = 0x06c6e27e
-local gp1_vertical_192_pal<const> = 0x07038c23
-local gp1_vertical_240_pal<const> = 0x07044c23
-local gp1_display_mode_256_pal<const> = 0x08000008
-local gp1_display_mode_320_pal<const> = 0x08000009
+local gp1_display_start<const> = 0x05000000
+local gp1_horizontal_display_range<const> = 0x06c60260
+local gp1_vertical_display_range<const> = 0x07000000
+local gp1_display_mode<const> = 0x08000000
+local horizontal_resolution_256<const> = 0x00000000
+local horizontal_resolution_320<const> = 0x00000001
+local video_standard_pal<const> = 0x00000008
+local vertical_display_range_start<const> = 35
 
 local gp0_fill_rectangle<const> = 0x02000000
 local gp0_draw_rectangle<const> = 0x60000000
@@ -29,11 +30,10 @@ local gp0_draw_semitransparent_rectangle<const> = 0x62000000
 local gp0_draw_line<const> = 0x40000000
 local gp0_cpu_to_vram<const> = 0xa0000000
 local gp0_draw_mode<const> = 0xe1000000
-local gp0_drawing_area_top_left_0<const> = 0xe3000000
-local gp0_drawing_area_bottom_right_256x192<const> = 0xe402fcff
-local gp0_drawing_area_bottom_right_320x240<const> = 0xe403bd3f
-local gp0_drawing_offset_0<const> = 0xe5000000
-local gp0_mask_bit_mode_0<const> = 0xe6000000
+local gp0_drawing_area_top_left<const> = 0xe3000000
+local gp0_drawing_area_bottom_right<const> = 0xe4000000
+local gp0_drawing_offset<const> = 0xe5000000
+local gp0_mask_bit_mode<const> = 0xe6000000
 
 local draw_mode_blend_half<const> = 0x00000000
 local draw_mode_blend_add<const> = 0x00000020
@@ -44,8 +44,6 @@ local texture_mode_direct16<const> = 0x00000002
 local draw_mode_texture_palette4<const> = texture_mode_palette4 << 7
 local draw_mode_texture_direct16<const> = texture_mode_direct16 << 7
 
-local display_size_256x192<const> = 0x00c00100
-local display_size_320x240<const> = 0x00f00140
 local texture_page_span<const> = 256
 local sqrt<const> = require('bios/math').sqrt
 
@@ -103,36 +101,32 @@ local texture_page_remaining<const> = function(source_coord)
 	return texture_page_span - (source_coord & 0x000000ff)
 end
 
-function gx_gpu.reset_320x240_pal()
+local program_display<const> = function(horizontal_resolution, video_standard, vertical_start, width, height)
 	*gp1 = gp1_reset
-	*gp1 = gp1_display_mode_320_pal
-	*gp1 = gp1_display_start_0
-	*gp1 = gp1_horizontal_320_pal
-	*gp1 = gp1_vertical_240_pal
-	current_display_size_word = display_size_320x240
+	*gp1 = gp1_display_mode | horizontal_resolution | video_standard
+	*gp1 = gp1_display_start
+	*gp1 = gp1_horizontal_display_range
+	*gp1 = gp1_vertical_display_range | vertical_start | ((vertical_start + height) << 10)
+	current_display_size_word = width | (height << 16)
 	current_draw_mode = draw_mode_blend_half
 	*gp0 = gp0_draw_mode | current_draw_mode
-	*gp0 = gp0_drawing_area_top_left_0
-	*gp0 = gp0_drawing_area_bottom_right_320x240
-	*gp0 = gp0_drawing_offset_0
-	*gp0 = gp0_mask_bit_mode_0
+	*gp0 = gp0_drawing_area_top_left
+	*gp0 = gp0_drawing_area_bottom_right | (width - 1) | ((height - 1) << 10)
+	*gp0 = gp0_drawing_offset
+	*gp0 = gp0_mask_bit_mode
 	*gp1 = gp1_display_enable
 end
 
+function gx_gpu.reset_320x240_pal()
+	program_display(horizontal_resolution_320, video_standard_pal, vertical_display_range_start, 320, 240)
+end
+
 function gx_gpu.reset_256x192_pal()
-	*gp1 = gp1_reset
-	*gp1 = gp1_display_mode_256_pal
-	*gp1 = gp1_display_start_0
-	*gp1 = gp1_horizontal_256_pal
-	*gp1 = gp1_vertical_192_pal
-	current_display_size_word = display_size_256x192
-	current_draw_mode = draw_mode_blend_half
-	*gp0 = gp0_draw_mode | current_draw_mode
-	*gp0 = gp0_drawing_area_top_left_0
-	*gp0 = gp0_drawing_area_bottom_right_256x192
-	*gp0 = gp0_drawing_offset_0
-	*gp0 = gp0_mask_bit_mode_0
-	*gp1 = gp1_display_enable
+	program_display(horizontal_resolution_256, video_standard_pal, vertical_display_range_start, 256, 192)
+end
+
+function gx_gpu.reset_256x212_pal()
+	program_display(horizontal_resolution_256, video_standard_pal, vertical_display_range_start, 256, 212)
 end
 
 function gx_gpu.display_size()

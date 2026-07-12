@@ -153,7 +153,6 @@ static char g_system_dir[1024] = "";
 static char g_save_dir[1024] = "";
 static char g_opt_render_backend[16] = "software";
 static char g_opt_crt_postprocessing[8] = "on";
-static char g_opt_postprocess_detail[8] = "off";
 static char g_opt_crt_noise[8] = "on";
 static char g_opt_crt_color_bleed[8] = "on";
 static char g_opt_crt_scanlines[8] = "on";
@@ -174,7 +173,6 @@ typedef struct CoreOptionVar {
 static CoreOptionVar g_core_option_vars[] = {
 	{"bmsx_render_backend", g_opt_render_backend, sizeof(g_opt_render_backend)},
 	{"bmsx_crt_postprocessing", g_opt_crt_postprocessing, sizeof(g_opt_crt_postprocessing)},
-	{"bmsx_postprocess_detail", g_opt_postprocess_detail, sizeof(g_opt_postprocess_detail)},
 	{"bmsx_crt_noise", g_opt_crt_noise, sizeof(g_opt_crt_noise)},
 	{"bmsx_crt_color_bleed", g_opt_crt_color_bleed, sizeof(g_opt_crt_color_bleed)},
 	{"bmsx_crt_scanlines", g_opt_crt_scanlines, sizeof(g_opt_crt_scanlines)},

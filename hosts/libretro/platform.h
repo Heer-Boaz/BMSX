@@ -59,24 +59,25 @@ private:
 
 class LibretroGameViewHost : public GameViewHost {
 public:
-	LibretroGameViewHost(Framebuffer& framebuffer, BackendType backend_type);
+	LibretroGameViewHost(Framebuffer& framebuffer, BackendType backend_type, retro_environment_t& environ_cb, retro_system_av_info& av_info);
 
 	// GameViewHost interface
 	void* getCapability(std::string_view name) override;
 	ViewportDimensions getSize(Vec2 viewportSize, Vec2 canvasSize) override;
 	SubscriptionHandle onResize(std::function<void(const ViewportDimensions&)> handler) override;
 	SubscriptionHandle onFocusChange(std::function<void(bool)> handler) override;
+	void setRenderTargetSize(GPUBackend& backend, i32 width, i32 height) override;
 
 	// Create a backend for this platform
 	std::unique_ptr<GPUBackend> createBackend() override;
 
-	// Update backend when framebuffer changes
-	void updateBackend(GPUBackend* backend);
 	void notifyFocusChange(bool focused);
 
 private:
 	Framebuffer& m_framebuffer;
 	BackendType m_backend_type;
+	retro_environment_t& m_environ_cb;
+	retro_system_av_info& m_av_info;
 	std::unordered_map<uint32_t, std::function<void(bool)>> m_focus_handlers;
 	uint32_t m_next_focus_handler_id = 1;
 };
@@ -151,7 +152,7 @@ struct InputState {
 
 class LibretroPlatform : public Platform {
 public:
-	explicit LibretroPlatform(BackendType backend_type);
+	LibretroPlatform(BackendType backend_type, retro_system_av_info& av_info);
 	~LibretroPlatform() override;
 
 	// Libretro callback setters
@@ -168,7 +169,6 @@ public:
 								retro_hw_get_proc_address_t get_proc_address);
 	void onContextReset();
 	void onContextDestroy();
-	void setPostProcessOptions(bool enableCrt, bool highDetail);
 	void setCrtEffectOptions(bool applyNoise,
 								bool applyColorBleed,
 								bool applyScanlines,
@@ -251,13 +251,8 @@ private:
 	AudioBuffer m_audio_buffer;
 	InputState m_input_state;
 
-	// AV info
-	retro_system_av_info m_av_info{};
-	bool m_has_av_info = false;
 	double m_frame_time_sec;
 	BackendType m_backend_type = BackendType::Software;
-	bool m_crt_postprocessing_enabled = true;
-	i32 m_postprocess_scale = 1;
 	bool m_render_surfaces_need_refresh = true;
 
 	// Controller configuration

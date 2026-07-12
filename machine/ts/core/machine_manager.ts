@@ -8,7 +8,7 @@ import { TextureManager } from "../render/texture_manager";
 import { RenderPassLibrary } from "../render/backend/pass/library";
 import { setMicrotaskQueue } from '../platform';
 import type { GameViewHost, Platform } from '../platform';
-import { PSX_GPU_DISPLAY_MODE_PAL_WORD, PAL_REFRESH_UFPS_SCALED, PSX_MACHINE_SPEC } from '../machine/model_registry';
+import { PAL_REFRESH_UFPS_SCALED, PSX_MACHINE_SPEC } from '../machine/model_registry';
 import { HZ_SCALE } from '../machine/runtime/timing/constants';
 import { RomBootManager } from './rom_boot_manager';
 import { renderGate, runGate } from '../common/taskgate';
@@ -25,6 +25,8 @@ import { clearOverlayFrame } from '../render/host_overlay/overlay_queue';
 import { RenderPresentationState } from '../render/presentation_state';
 import { runMachineHostFrame } from './host_frame';
 import { captureRuntimeSaveStateBytes } from '../machine/runtime/save_state/codec';
+import { GX_GPU_RESET_DISPLAY_MODE_WORD, gxGpuDisplayModeScreenWidth, gxGpuVerticalVisibleLines } from '../machine/devices/gx/gpu_display';
+import { commitGxGpuViewSnapshot } from '../render/gx/view_snapshot';
 
 const globalScope: any = typeof window !== 'undefined' ? window : globalThis;
 global = globalScope; // Ensure global is defined
@@ -143,7 +145,7 @@ export class MachineManager {
 			throw new Error('[MachineManager] Platform did not expose a GameViewHost.');
 		}
 		const bootPlan = await this.romBootManager.buildBootPlan({ systemRom, cartridge });
-		const { systemLayer, cartLayer, viewportSize } = bootPlan;
+		const { systemLayer, cartLayer } = bootPlan;
 		platform.gameviewHost = resolvedViewHost;
 		this._platform = platform;
 		setMicrotaskQueue(platform.microtasks);
@@ -157,14 +159,9 @@ export class MachineManager {
 			this.input.enableOnscreenGamepad();
 		}
 
-		const gview = new GameView({
-			viewportSize,
-			host: resolvedViewHost,
-		});
-		this._view = gview;
 		this.sourceState = createRuntimeSourceState(systemLayer, cartLayer);
 		configureRuntimeMemoryMap();
-		const timing = resolveRuntimeTiming(PSX_MACHINE_SPEC.cpuFreqHz, PSX_GPU_DISPLAY_MODE_PAL_WORD);
+		const timing = resolveRuntimeTiming(PSX_MACHINE_SPEC.cpuFreqHz, GX_GPU_RESET_DISPLAY_MODE_WORD);
 		const runtime = new Runtime({
 			memory: new Memory({
 				systemRom: systemLayer.payload,
@@ -180,6 +177,17 @@ export class MachineManager {
 		}, Input.instance);
 		applyRuntimeTiming(runtime, timing);
 		this._runtime = runtime;
+		const gpuOutput = runtime.machine.gxGpu.readDeviceOutput();
+		const viewportSize = {
+			x: gxGpuDisplayModeScreenWidth(gpuOutput.displayModeWord),
+			y: gxGpuVerticalVisibleLines(gpuOutput.verticalDisplayRangeWord, gpuOutput.displayModeWord),
+		};
+		const gview = new GameView({
+			viewportSize,
+			host: resolvedViewHost,
+		});
+		this._view = gview;
+		commitGxGpuViewSnapshot(gview, gpuOutput);
 		await applyInitialWorkspaceOverrides();
 		this.syncAudioTiming();
 		const gpuBackend = await resolvedViewHost.createBackend() as GPUBackend;
@@ -191,18 +199,14 @@ export class MachineManager {
 		gview.init();
 
 		resolvedViewHost.onResize((dims) => {
-			gview.configureRenderTargets({
-				viewportScale: dims.viewportScale,
-				canvasScale: dims.canvasScale,
-			});
+			gview.viewportScale = dims.viewportScale;
+			gview.canvasScale = dims.canvasScale;
 		});
 
 		// Perform initial layout - this will call host.getSize which triggers browser layout
 		const initialDims = resolvedViewHost.getSize(viewportSize, gview.canvasSize);
-		gview.configureRenderTargets({
-			viewportScale: initialDims.viewportScale,
-			canvasScale: initialDims.canvasScale,
-		});
+		gview.viewportScale = initialDims.viewportScale;
+		gview.canvasScale = initialDims.canvasScale;
 
 		await gview.initializeDefaultTextures();
 		this.view.default_font = new Font();

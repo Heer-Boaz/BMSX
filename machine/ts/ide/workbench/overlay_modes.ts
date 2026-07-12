@@ -1,54 +1,33 @@
-import { setOverlayResolutionMode, type RenderTargetSnapshot } from '../runtime/state';
+import { setOverlayResolutionMode } from '../runtime/state';
 import { machineManager } from '../../core/machine_manager';
 import { Input } from '../../input/manager';
 import type { Runtime } from '../../machine/runtime/runtime';
 
-const EDITOR_TARGET = { x: 384, y: 288 };
-
-function captureCurrentTargets(): RenderTargetSnapshot {
-	const view = machineManager.view;
-	return {
-		viewportSize: { x: view.viewportSize.x, y: view.viewportSize.y },
-		canvasSize: { x: view.canvasSize.x, y: view.canvasSize.y },
-		offscreenSize: { x: view.offscreenCanvasSize.x, y: view.offscreenCanvasSize.y },
-	};
-}
-
-function applyFixedEditorTargets(): void {
-	machineManager.view.configureRenderTargets({
-		viewportSize: EDITOR_TARGET,
-		canvasSize: EDITOR_TARGET,
-		offscreenSize: EDITOR_TARGET,
-	});
-	setOverlayResolutionMode(machineManager.ideState, machineManager.view, 'viewport');
-}
-
-function restoreTargets(snapshot: RenderTargetSnapshot): void {
-	machineManager.view.configureRenderTargets({
-		viewportSize: snapshot.viewportSize,
-		canvasSize: snapshot.canvasSize,
-		offscreenSize: snapshot.offscreenSize,
-	});
-	setOverlayResolutionMode(machineManager.ideState, machineManager.view, 'viewport');
-}
+const EDITOR_TARGET_WIDTH = 384;
+const EDITOR_TARGET_HEIGHT = 288;
 
 function enterEditorRenderTargets(): void {
 	const state = machineManager.ideState;
-	if (state.editorRenderTargetBaseline !== null) {
+	if (state.editorRenderTargetBaselineActive) {
 		return;
 	}
-	state.editorRenderTargetBaseline = captureCurrentTargets();
-	applyFixedEditorTargets();
+	const view = machineManager.view;
+	state.editorRenderTargetBaselineWidth = view.viewportSize.x;
+	state.editorRenderTargetBaselineHeight = view.viewportSize.y;
+	state.editorRenderTargetBaselineActive = true;
+	view.setRenderTargetSize(EDITOR_TARGET_WIDTH, EDITOR_TARGET_HEIGHT);
+	setOverlayResolutionMode(state, view, 'viewport');
 }
 
 function leaveEditorRenderTargets(): void {
 	const state = machineManager.ideState;
-	const snapshot = state.editorRenderTargetBaseline;
-	if (snapshot === null) {
+	if (!state.editorRenderTargetBaselineActive) {
 		return;
 	}
-	restoreTargets(snapshot);
-	state.editorRenderTargetBaseline = null;
+	const view = machineManager.view;
+	view.setRenderTargetSize(state.editorRenderTargetBaselineWidth, state.editorRenderTargetBaselineHeight);
+	setOverlayResolutionMode(state, view, 'viewport');
+	state.editorRenderTargetBaselineActive = false;
 }
 
 export function editorBlocksRuntimePipeline(): boolean {

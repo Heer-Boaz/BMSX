@@ -28,8 +28,8 @@ import {
 import {
 	GX_GPU_GP0_CPU_TO_VRAM_FIRST,
 	GX_GPU_GP0_FILL_RECTANGLE,
-	GX_GPU_GP0_SET_DRAW_MODE,
-	GX_GPU_GP0_SET_MASK_BIT,
+	GX_GPU_GP0_DRAW_MODE,
+	GX_GPU_GP0_MASK_BIT,
 	GX_GPU_GP0_VRAM_TO_CPU_FIRST,
 	GX_GPU_STATUS_READY_TO_SEND_VRAM,
 	GxGpu,
@@ -306,8 +306,8 @@ test('DMA clips non-strict GX-GPU GP0 stream lengths to whole words', () => {
 	const { memory, dma, gpu } = createDmaGpuFixture();
 	const source = PROGRAM_STATIC_RAM_BASE + 0x140;
 
-	memory.writeMappedU32LE(source, (GX_GPU_GP0_SET_DRAW_MODE << 24) | 0x000123);
-	memory.writeMappedU32LE(source + 4, (GX_GPU_GP0_SET_MASK_BIT << 24) | 0x000003);
+	memory.writeMappedU32LE(source, (GX_GPU_GP0_DRAW_MODE << 24) | 0x000123);
+	memory.writeMappedU32LE(source + 4, (GX_GPU_GP0_MASK_BIT << 24) | 0x000003);
 	memory.writeMappedU32LE(IO_DMA_SRC, source);
 	memory.writeMappedU32LE(IO_DMA_DST, IO_GX_GPU_GP0);
 	memory.writeMappedU32LE(IO_DMA_LEN, 6);
@@ -326,7 +326,7 @@ test('DMA strict mode rejects non-word GX-GPU GP0 stream lengths before issuing 
 	const { memory, gpu } = createDmaGpuFixture();
 	const source = PROGRAM_STATIC_RAM_BASE + 0x180;
 
-	memory.writeMappedU32LE(source, (GX_GPU_GP0_SET_DRAW_MODE << 24) | 0x000456);
+	memory.writeMappedU32LE(source, (GX_GPU_GP0_DRAW_MODE << 24) | 0x000456);
 	memory.writeMappedU32LE(IO_DMA_SRC, source);
 	memory.writeMappedU32LE(IO_DMA_DST, IO_GX_GPU_GP0);
 	memory.writeMappedU32LE(IO_DMA_LEN, 6);

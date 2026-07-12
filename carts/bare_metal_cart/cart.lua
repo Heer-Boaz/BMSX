@@ -38,10 +38,13 @@ local texture_vram_y<const> = 256
 
 local gp1_reset<const> = 0x00000000
 local gp1_display_enable<const> = 0x03000000
-local gp1_display_start_0<const> = 0x05000000
-local gp1_horizontal_320_pal<const> = 0x06c6e27e
-local gp1_vertical_240_pal<const> = 0x07044c23
-local gp1_display_mode_320_pal<const> = 0x08000009
+local gp1_display_start<const> = 0x05000000
+local gp1_horizontal_display_range<const> = 0x06c6e27e
+local gp1_vertical_display_range<const> = 0x07000000
+local gp1_display_mode<const> = 0x08000000
+local horizontal_resolution_320<const> = 0x00000001
+local video_standard_pal<const> = 0x00000008
+local vertical_display_range_start<const> = 35
 
 local gp0_fill_rectangle<const> = 0x02000000
 local gp0_draw_semitransparent_triangle<const> = 0x22000000
@@ -58,7 +61,7 @@ local gp0_draw_mode<const> = 0xe1000000
 local gp0_drawing_area_top_left<const> = 0xe3000000
 local gp0_drawing_area_bottom_right<const> = 0xe4000000
 local gp0_drawing_offset<const> = 0xe5000000
-local gp0_mask_bit_mode_0<const> = 0xe6000000
+local gp0_mask_bit_mode<const> = 0xe6000000
 
 local draw_mode_blend_half<const> = 0x00000000
 local draw_mode_blend_add<const> = 0x00000020
@@ -251,14 +254,14 @@ end
 
 local gpu_reset_320x240_pal<const> = function()
 	*gp1 = gp1_reset
-	*gp1 = gp1_display_mode_320_pal
-	*gp1 = gp1_display_start_0
-	*gp1 = gp1_horizontal_320_pal
-	*gp1 = gp1_vertical_240_pal
+	*gp1 = gp1_display_mode | horizontal_resolution_320 | video_standard_pal
+	*gp1 = gp1_display_start
+	*gp1 = gp1_horizontal_display_range
+	*gp1 = gp1_vertical_display_range | vertical_display_range_start | ((vertical_display_range_start + screen_height) << 10)
 	*gp0 = gp0_draw_mode | draw_mode_blend_half
 	gpu_drawing_window(0, 0, screen_width - 1, screen_height - 1)
 	gpu_drawing_offset(0, 0)
-	*gp0 = gp0_mask_bit_mode_0
+	*gp0 = gp0_mask_bit_mode
 	*gp1 = gp1_display_enable
 end
 

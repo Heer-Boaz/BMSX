@@ -90,7 +90,7 @@ public:
 	auto machineTimeMs() const -> uint32_t;
 	auto machineElapsedMs() const -> f64;
 	void applyUfpsScaled(i64 ufpsScaled);
-	void applyPsxGpuDisplayModeWord(uint32_t gpuDisplayModeWord);
+	void applyPublishedPsxGpuDisplayTiming(u32 displayModeWord, u32 verticalDisplayRangeWord);
 	auto baseRamUsedBytes() const -> uint32_t;
 	auto ramUsedBytes() const -> uint32_t;
 	auto ramTotalBytes() const -> uint32_t;
@@ -186,7 +186,6 @@ private:
 	static Value onCyclesPerFrameReadThunk(void* context, uint32_t addr);
 	Value onCyclesPerFrameRead(uint32_t addr) const;
 	static void onGxGpuGp1WriteThunk(void* context, uint32_t addr, Value value);
-	void applyPsxGpuDisplayTimingWord(uint32_t gpuDisplayModeWord);
 	static void onLuaOutputCodepointWriteThunk(void* context, uint32_t addr, Value value);
 	static void onLuaOutputFlushWriteThunk(void* context, uint32_t addr, Value value);
 	void onLuaOutputFlushWrite(uint32_t addr, Value value);

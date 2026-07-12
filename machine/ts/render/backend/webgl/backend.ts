@@ -270,6 +270,17 @@ export class WebGLBackend implements GPUBackend {
 		gl.bindTexture(gl.TEXTURE_CUBE_MAP, null);
 	}
 	destroyTexture(handle: WebGLTexture): void {
+		const textureId = this.texIds.get(handle);
+		if (textureId !== undefined) {
+			for (const [key, framebuffer] of this.fboCache) {
+				const depthId = key % FBO_CACHE_DEPTH_ID_STRIDE;
+				const colorId = (key - depthId) / FBO_CACHE_DEPTH_ID_STRIDE;
+				if (colorId === textureId || depthId === textureId) {
+					this.gl.deleteFramebuffer(framebuffer);
+					this.fboCache.delete(key);
+				}
+			}
+		}
 		for (let unit = 0; unit < this.boundTex2D.length; unit += 1) {
 			if (this.boundTex2D[unit] === handle) {
 				this.boundTex2D[unit] = null;
@@ -340,6 +351,9 @@ export class WebGLBackend implements GPUBackend {
 		}
 		gl.bindFramebuffer(gl.FRAMEBUFFER, null);
 		return fbo;
+	}
+	destroyRenderTarget(handle: WebGLFramebuffer): void {
+		this.gl.deleteFramebuffer(handle);
 	}
 	clear(color: color_arr | undefined, depth: number | undefined): void {
 		const gl = this.gl;

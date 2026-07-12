@@ -15,13 +15,16 @@ import {
 	GX_GPU_VRAM_BYTE_COUNT,
 	GX_GPU_VRAM_HEIGHT,
 	GX_GPU_VRAM_WIDTH,
-	gxGpuDisplayStartY,
 	gxGpuTransferHeight,
 	gxGpuTransferWidth,
 	type GxGpuCommandBufferView,
 } from '../../../machine/devices/gx/gpu_command_buffer';
 import {
 	GX_GPU_DISPLAY_MODE_RGB24_BIT,
+	gxGpuDisplayStartX,
+	gxGpuDisplayStartY,
+} from '../../../machine/devices/gx/gpu_display';
+import {
 	GX_GPU_TEXTURE_SOURCE_BATCH_OVERLAP,
 	GX_GPU_TEXTURE_SOURCE_COMMAND_OVERLAP,
 	GX_GPU_TRIANGLE_ATTRIBUTE_FRACTION_BITS,
@@ -41,7 +44,6 @@ import {
 	gxGpuDrawingAreaRightExclusive,
 	gxGpuDrawingAreaTop,
 	gxGpuDrawingOffsetY,
-	gxGpuDisplayStartX,
 	gxGpuDrawModeDitherEnabled,
 	gxGpuDrawModeTextureMode,
 	gxGpuDrawModeTexturePageBaseX,
@@ -52,7 +54,6 @@ import {
 	gxGpuFillHeight,
 	gxGpuFillWidth,
 	gxGpuFillX,
-	gxGpuHorizontalVisibleColumns,
 	gxGpuMaskBitCheckBeforeDraw,
 	gxGpuMaskBitSetWhileDrawing,
 	gxGpuSegmentExceedsPrimitiveSize,
@@ -76,7 +77,6 @@ import {
 	gxGpuVramLogicalAreaOverlapsBounds,
 	gxGpuSigned11,
 	gxGpuVertexY,
-	gxGpuVerticalVisibleLines,
 	gxGpuVramCopyChunkHeight,
 	gxGpuVramCopyNeedsChunking,
 	gxGpuVramWrappedHeight,
@@ -129,7 +129,7 @@ const GX_GPU_TRANSFER_VERTEX_FLOATS = 4;
 const GX_GPU_TRANSFER_VERTICES_PER_SEGMENT = 6;
 const GX_GPU_TRANSFER_SEGMENTS_PER_ROW = 3;
 const GX_GPU_TRANSFER_FLOAT_CAPACITY = GX_GPU_VRAM_HEIGHT * GX_GPU_TRANSFER_SEGMENTS_PER_ROW * GX_GPU_TRANSFER_VERTICES_PER_SEGMENT * GX_GPU_TRANSFER_VERTEX_FLOATS;
-const GX_GPU_SCANOUT_VERTEX_FLOATS = 4;
+const GX_GPU_SCANOUT_VERTEX_FLOATS = 2;
 const GX_GPU_RAW_VRAM_BYTES_PER_PIXEL = 4;
 const GX_GPU_RAW_VRAM_UPLOAD_ROW_BYTES = GX_GPU_VRAM_WIDTH * GX_GPU_RAW_VRAM_BYTES_PER_PIXEL;
 const GX_GPU_RAW_VRAM_READBACK_BYTES = GX_GPU_VRAM_WIDTH * GX_GPU_VRAM_HEIGHT * GX_GPU_RAW_VRAM_BYTES_PER_PIXEL;
@@ -147,7 +147,7 @@ const gxGpuTransferVertices = new Float32Array(GX_GPU_TRANSFER_FLOAT_CAPACITY);
 const gxGpuRawVramUploadRow = new Uint8Array(GX_GPU_RAW_VRAM_UPLOAD_ROW_BYTES);
 const gxGpuRawVramReadback = new Uint8Array(GX_GPU_RAW_VRAM_READBACK_BYTES);
 const gxGpuVramSnapshotScratch = new Uint8Array(GX_GPU_VRAM_BYTE_COUNT);
-const gxGpuScanoutVertices = new Float32Array(6 * GX_GPU_SCANOUT_VERTEX_FLOATS);
+const gxGpuScanoutVertices = new Float32Array([-1, -1, 3, -1, -1, 3]);
 type GxGpuVramCopyRect = {
 	left: number;
 	top: number;
@@ -349,17 +349,14 @@ type GxGpuState = {
 	transferCheckMaskBitUniform: WebGLUniformLocation;
 	transferSetMaskBitUniform: WebGLUniformLocation;
 	scanoutPositionAttrib: number;
-	scanoutTexcoordAttrib: number;
 	scanoutVramUniform: WebGLUniformLocation;
-	scanoutDisplayRectUniform: WebGLUniformLocation;
-	scanoutDisplayRgb24Uniform: WebGLUniformLocation;
+	scanoutDisplayUniform: WebGLUniformLocation;
 	readbackPositionAttrib: number;
 	readbackVramUniform: WebGLUniformLocation;
 	readbackParamsUniform: WebGLUniformLocation;
 	scanoutUniformDisplayModeWord: number;
 	scanoutUniformDisplayStartWord: number;
-	scanoutUniformHorizontalDisplayRangeWord: number;
-	scanoutUniformVerticalDisplayRangeWord: number;
+	scanoutUniformHeight: number;
 	processedCommandCount: number;
 	processedCommandSerial: number;
 	vramClearSerial: number;
@@ -431,7 +428,6 @@ function bootstrapGxGpuPass(backend: WebGLBackend): void {
 
 	const scanoutVertexBuffer = gl.createBuffer() as WebGLBuffer;
 	backend.bindArrayBuffer(scanoutVertexBuffer);
-	updateGxGpuScanoutVertices();
 	gl.bufferData(gl.ARRAY_BUFFER, gxGpuScanoutVertices, gl.STATIC_DRAW);
 
 	gxGpuState = {
@@ -537,17 +533,14 @@ function bootstrapGxGpuPass(backend: WebGLBackend): void {
 		transferCheckMaskBitUniform: gl.getUniformLocation(transferProgram, 'u_checkMaskBit') as WebGLUniformLocation,
 		transferSetMaskBitUniform: gl.getUniformLocation(transferProgram, 'u_setMaskBit') as WebGLUniformLocation,
 		scanoutPositionAttrib: gl.getAttribLocation(scanoutProgram, 'a_position'),
-		scanoutTexcoordAttrib: gl.getAttribLocation(scanoutProgram, 'a_texcoord'),
 		scanoutVramUniform: gl.getUniformLocation(scanoutProgram, 'u_vram') as WebGLUniformLocation,
-		scanoutDisplayRectUniform: gl.getUniformLocation(scanoutProgram, 'u_displayRect') as WebGLUniformLocation,
-		scanoutDisplayRgb24Uniform: gl.getUniformLocation(scanoutProgram, 'u_displayRgb24') as WebGLUniformLocation,
+		scanoutDisplayUniform: gl.getUniformLocation(scanoutProgram, 'u_display') as WebGLUniformLocation,
 		readbackPositionAttrib: gl.getAttribLocation(readbackProgram, 'a_position'),
 		readbackVramUniform: gl.getUniformLocation(readbackProgram, 'u_vram') as WebGLUniformLocation,
 		readbackParamsUniform: gl.getUniformLocation(readbackProgram, 'u_readback') as WebGLUniformLocation,
 		scanoutUniformDisplayModeWord: 0xffffffff,
 		scanoutUniformDisplayStartWord: 0xffffffff,
-		scanoutUniformHorizontalDisplayRangeWord: 0xffffffff,
-		scanoutUniformVerticalDisplayRangeWord: 0xffffffff,
+		scanoutUniformHeight: 0,
 		processedCommandCount: 0,
 		processedCommandSerial: 0,
 		vramClearSerial: 0,
@@ -2450,16 +2443,6 @@ function flushTexturedCommands(commandBuffer: GxGpuCommandBufferView, vertexFloa
 	return 0;
 }
 
-function updateGxGpuScanoutVertices(): void {
-	let offset = 0;
-	offset = writeUvVertex(gxGpuScanoutVertices, offset, GX_GPU_SCANOUT_VERTEX_FLOATS, -1.0, 1.0, 0.0, 0.0);
-	offset = writeUvVertex(gxGpuScanoutVertices, offset, GX_GPU_SCANOUT_VERTEX_FLOATS, -1.0, -1.0, 0.0, 1.0);
-	offset = writeUvVertex(gxGpuScanoutVertices, offset, GX_GPU_SCANOUT_VERTEX_FLOATS, 1.0, 1.0, 1.0, 0.0);
-	offset = writeUvVertex(gxGpuScanoutVertices, offset, GX_GPU_SCANOUT_VERTEX_FLOATS, -1.0, -1.0, 0.0, 1.0);
-	offset = writeUvVertex(gxGpuScanoutVertices, offset, GX_GPU_SCANOUT_VERTEX_FLOATS, 1.0, -1.0, 1.0, 1.0);
-	writeUvVertex(gxGpuScanoutVertices, offset, GX_GPU_SCANOUT_VERTEX_FLOATS, 1.0, 1.0, 1.0, 0.0);
-}
-
 function scanoutGxGpuVram(fbo: WebGLFramebuffer, state: RenderPassStateRegistry['gx_gpu']): void {
 	const backend = gxGpuState.backend;
 	const gl = gxGpuState.gl;
@@ -2479,20 +2462,17 @@ function scanoutGxGpuVram(fbo: WebGLFramebuffer, state: RenderPassStateRegistry[
 	gl.uniform1i(gxGpuState.scanoutVramUniform, GX_GPU_SCANOUT_TEXTURE_UNIT);
 	if (gxGpuState.scanoutUniformDisplayModeWord !== state.displayModeWord
 		|| gxGpuState.scanoutUniformDisplayStartWord !== state.displayStartWord
-		|| gxGpuState.scanoutUniformHorizontalDisplayRangeWord !== state.horizontalDisplayRangeWord
-		|| gxGpuState.scanoutUniformVerticalDisplayRangeWord !== state.verticalDisplayRangeWord) {
+		|| gxGpuState.scanoutUniformHeight !== state.height) {
 		gl.uniform4f(
-			gxGpuState.scanoutDisplayRectUniform,
+			gxGpuState.scanoutDisplayUniform,
 			gxGpuDisplayStartX(state.displayStartWord),
 			gxGpuDisplayStartY(state.displayStartWord),
-			gxGpuHorizontalVisibleColumns(state.horizontalDisplayRangeWord, state.displayModeWord),
-			gxGpuVerticalVisibleLines(state.verticalDisplayRangeWord, state.displayModeWord),
+			state.height,
+			(state.displayModeWord & GX_GPU_DISPLAY_MODE_RGB24_BIT) !== 0 ? 1 : 0,
 		);
-		gl.uniform1f(gxGpuState.scanoutDisplayRgb24Uniform, (state.displayModeWord & GX_GPU_DISPLAY_MODE_RGB24_BIT) !== 0 ? 1 : 0);
 		gxGpuState.scanoutUniformDisplayModeWord = state.displayModeWord;
 		gxGpuState.scanoutUniformDisplayStartWord = state.displayStartWord;
-		gxGpuState.scanoutUniformHorizontalDisplayRangeWord = state.horizontalDisplayRangeWord;
-		gxGpuState.scanoutUniformVerticalDisplayRangeWord = state.verticalDisplayRangeWord;
+		gxGpuState.scanoutUniformHeight = state.height;
 	}
 	backend.setActiveTexture(GX_GPU_SCANOUT_TEXTURE_UNIT);
 	backend.bindTexture2D(gxGpuState.vramTexture);
@@ -2500,9 +2480,7 @@ function scanoutGxGpuVram(fbo: WebGLFramebuffer, state: RenderPassStateRegistry[
 	backend.bindArrayBuffer(gxGpuState.scanoutVertexBuffer);
 	gl.enableVertexAttribArray(gxGpuState.scanoutPositionAttrib);
 	gl.vertexAttribPointer(gxGpuState.scanoutPositionAttrib, 2, gl.FLOAT, false, GX_GPU_SCANOUT_VERTEX_FLOATS * 4, 0);
-	gl.enableVertexAttribArray(gxGpuState.scanoutTexcoordAttrib);
-	gl.vertexAttribPointer(gxGpuState.scanoutTexcoordAttrib, 2, gl.FLOAT, false, GX_GPU_SCANOUT_VERTEX_FLOATS * 4, 2 * 4);
-	gl.drawArrays(gl.TRIANGLES, 0, 6);
+	gl.drawArrays(gl.TRIANGLES, 0, 3);
 }
 
 function executeGxGpuVramCommands(source: GxGpuVramSource): void {
@@ -2555,7 +2533,7 @@ function completeGxGpuReadback(commandBuffer: GxGpuCommandBufferView, readback: 
 	gxGpuState.backend.bindArrayBuffer(gxGpuState.scanoutVertexBuffer);
 	gl.enableVertexAttribArray(gxGpuState.readbackPositionAttrib);
 	gl.vertexAttribPointer(gxGpuState.readbackPositionAttrib, 2, gl.FLOAT, false, GX_GPU_SCANOUT_VERTEX_FLOATS * 4, 0);
-	gl.drawArrays(gl.TRIANGLES, 0, 6);
+	gl.drawArrays(gl.TRIANGLES, 0, 3);
 	gl.pixelStorei(gl.PACK_ALIGNMENT, 1);
 	gl.readPixels(0, 0, packedWidth, packedHeight, gl.RGBA, gl.UNSIGNED_BYTE, readback.pixelBytes);
 	readback.completeReadback(readbackToken);
@@ -2593,8 +2571,6 @@ function writeGxGpuState(ctx: RenderGraphPassContext, state: RenderPassStateRegi
 	state.statusWord = ctx.view.gxGpuStatusWord;
 	state.displayModeWord = ctx.view.gxGpuDisplayModeWord;
 	state.displayStartWord = ctx.view.gxGpuDisplayStartWord;
-	state.horizontalDisplayRangeWord = ctx.view.gxGpuHorizontalDisplayRangeWord;
-	state.verticalDisplayRangeWord = ctx.view.gxGpuVerticalDisplayRangeWord;
 	state.vramSnapshotBytes = ctx.view.gxGpuVramSnapshotBytes;
 	state.vramSnapshotSerial = ctx.view.gxGpuVramSnapshotSerial;
 }
@@ -2608,8 +2584,6 @@ export function registerGxGpuPass(registry: RenderPassLibrary): void {
 		statusWord: registry.view.gxGpuStatusWord,
 		displayModeWord: registry.view.gxGpuDisplayModeWord,
 		displayStartWord: registry.view.gxGpuDisplayStartWord,
-		horizontalDisplayRangeWord: registry.view.gxGpuHorizontalDisplayRangeWord,
-		verticalDisplayRangeWord: registry.view.gxGpuVerticalDisplayRangeWord,
 		vramSnapshotBytes: registry.view.gxGpuVramSnapshotBytes,
 		vramSnapshotSerial: registry.view.gxGpuVramSnapshotSerial,
 	};

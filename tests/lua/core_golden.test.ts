@@ -168,6 +168,12 @@ test('core golden: runtime VBlank end publishes scanout at the new frame origin'
 	const inputSampleEdges: Array<{ currentTimeMs: number; nowCycles: number }> = [];
 	let raisedIrq = 0;
 	let gxPresentCount = 0;
+	let appliedDisplayModeWord = 0;
+	let appliedVerticalDisplayRangeWord = 0;
+	const gpuOutput = {
+		displayModeWord: 0x09,
+		verticalDisplayRangeWord: 0x00044c23,
+	};
 	const runtime = {
 		timing: {
 			cpuHz: 5000,
@@ -191,6 +197,9 @@ test('core golden: runtime VBlank end publishes scanout at the new frame origin'
 				},
 			},
 			gxGpu: {
+				readDeviceOutput() {
+					return gpuOutput;
+				},
 				presentReadyFrameOnVblankEdge() {
 					gxPresentCount += 1;
 				},
@@ -206,6 +215,10 @@ test('core golden: runtime VBlank end publishes scanout at the new frame origin'
 		machineElapsedMs() {
 			return scheduler.currentNowCycles() * 1000 / 5000;
 		},
+		applyPublishedPsxGpuDisplayTiming(displayModeWord: number, verticalDisplayRangeWord: number) {
+			appliedDisplayModeWord = displayModeWord;
+			appliedVerticalDisplayRangeWord = verticalDisplayRangeWord;
+		},
 	} as unknown as Runtime;
 	const vblank = new VblankState(runtime);
 	vblank.setVblankCycles(20);
@@ -219,6 +232,8 @@ test('core golden: runtime VBlank end publishes scanout at the new frame origin'
 
 	scheduler.setNowCycles(100);
 	vblank.handleEndTimer();
+	assert.equal(appliedDisplayModeWord, gpuOutput.displayModeWord);
+	assert.equal(appliedVerticalDisplayRangeWord, gpuOutput.verticalDisplayRangeWord);
 	assert.deepEqual(gxScanoutCalls[1], { active: false, cyclesIntoFrame: 0, cyclesPerFrame: 100, totalScanlines: 10 });
 
 	gxScanoutCalls.length = 0;

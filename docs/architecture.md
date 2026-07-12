@@ -151,8 +151,9 @@ frontend executable. It never owns cart-observable machine semantics.
 
 The active machine model is `psx`. The model owns fixed hardware facts:
 50 MHz CPU clock, 4 MB RAM, a 26,214,400 byte/s DMA datapath, a 16,384,000
-work-unit/s geometry unit, a PSX-style GPU with 1 MiB of raw VRAM, and a
-320×240 host scanout size.
+work-unit/s geometry unit, and a PSX-style GPU with 1 MiB of raw VRAM. GPU reset
+starts from a 320×240 PAL display configuration; that is a reset register state,
+not a fixed host scanout size.
 
 The cart ROM still carries a `psx` VDP-class marker in its package header. This
 is a ROM format marker, not a live VDP device or graphics ABI. A second GPU/APU or
@@ -162,11 +163,24 @@ open slice by itself. Guest Lua does not receive a `machine_manifest`,
 machine registry are host/tooling input; cart-visible behavior is still
 programmed through CPU-visible ROM, RAM, MMIO, BIOS Lua, and link symbols.
 
-Video standard is GPU register state. GP1 display-mode bit 3 selects PAL
-(50 Hz, 313 total scanlines); a clear bit selects NTSC (59.940060 Hz, 262 total
-scanlines). Runtime timing, cycle budget, audio mixer pacing, libretro AV
-publication, and save-state restore consume that raw GPU word. There is no VDP
-mode register or host-inferred region state.
+Display configuration is raw GPU register state. GP1(08h) horizontal-resolution
+bits own native scanout width, GP1(07h) start/end own the active line count, and
+GP1(05h) owns the VRAM scanout origin. GP1(06h) is retained horizontal timing
+state; changing it does not manufacture a logical width or resize a target.
+Software, WebGL2, WebGPU, and GLES2 scan out those native pixel coordinates
+directly. Presentation resizes the retained canvas, framebuffer, and backend
+targets only when the dimensions derived from the latched raw words change; it
+does not scale an active range over a fixed 320×240 target. Physical 4:3 display
+layout is separate host presentation policy and does not change the native
+buffer.
+
+GP1 display-mode bit 3 selects PAL (50 Hz, 313 total scanlines); a clear bit
+selects NTSC (59.940060 Hz, 262 total scanlines). The GPU publishes display mode
+and vertical range at VBlank; runtime timing consumes that publication before
+scheduling the next frame, using the active line count for the VBlank boundary.
+Cycle budget, audio mixer pacing, libretro AV publication, and current-format
+save-state restore consume the same raw GPU state. There is no VDP mode register,
+host-inferred region state, cart-name mode map, or asset-size proxy.
 
 The GPU owns its interlaced field, displayed-field, and active-line parity
 latches. Current-format save-state preserves those three raw latches so a

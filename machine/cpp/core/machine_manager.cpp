@@ -10,6 +10,7 @@
 #include "render/texture_manager.h"
 #include "../machine/runtime/runtime.h"
 #include "machine/model_registry.h"
+#include "machine/devices/gx/gpu_display.h"
 #include "machine/memory/map.h"
 #include "machine/memory/specs.h"
 #include "machine/runtime/boot_timing.h"
@@ -56,12 +57,11 @@ bool MachineManager::initialize(Platform* platform) {
 
 	// Get viewport size from platform
 	auto* host = platform->gameviewHost();
-	const PsxGpuDisplaySizeSpec& systemDisplaySize = PSX_GPU_DISPLAY_SIZE_SPEC;
 	Vec2 defaultViewport{
-		static_cast<f32>(systemDisplaySize.renderWidth),
-		static_cast<f32>(systemDisplaySize.renderHeight)
+		static_cast<f32>(gxGpuDisplayModeScreenWidth(GX_GPU_RESET_DISPLAY_MODE_WORD)),
+		static_cast<f32>(gxGpuVerticalVisibleLines(GX_GPU_RESET_VERTICAL_DISPLAY_RANGE_WORD, GX_GPU_RESET_DISPLAY_MODE_WORD))
 	};
-	ViewportDimensions dims = host->getSize(defaultViewport, {defaultViewport.x * 2.0f, defaultViewport.y * 2.0f});
+	ViewportDimensions dims = host->getSize(defaultViewport, defaultViewport);
 
 	// Create GameView with logical viewport
 	m_view = std::make_unique<GameView>(host, static_cast<i32>(defaultViewport.x), static_cast<i32>(defaultViewport.y));
@@ -75,7 +75,8 @@ bool MachineManager::initialize(Platform* platform) {
 		m_viewport_scale = dims.viewportScale;
 		m_canvas_scale = dims.canvasScale;
 		if (m_view) {
-			m_view->configureRenderTargets(nullptr, nullptr, nullptr, &m_viewport_scale, &m_canvas_scale);
+			m_view->viewportScale = m_viewport_scale;
+			m_view->canvasScale = m_canvas_scale;
 		}
 	});
 
@@ -87,9 +88,6 @@ bool MachineManager::initialize(Platform* platform) {
 		}
 	}
 	registry().registerObject(m_view.get());
-
-	// Update view with initial size (after backend is set)
-	m_view->configureRenderTargets(nullptr, nullptr, nullptr, &m_viewport_scale, &m_canvas_scale);
 
 	m_texture_manager = std::make_unique<TextureManager>(m_view->backend());
 	if (m_view->backend()->readyForTextureUpload()) {
@@ -290,14 +288,11 @@ void MachineManager::setMachineManifest(const MachineManifest& manifest) {
 	machine_manifest = &manifest;
 }
 
-void MachineManager::configureViewForModel() {
-	const PsxGpuDisplaySizeSpec& displaySize = PSX_GPU_DISPLAY_SIZE_SPEC;
-	Vec2 viewportSize{
-		static_cast<f32>(displaySize.renderWidth),
-		static_cast<f32>(displaySize.renderHeight)
-	};
-	Vec2 offscreenSize{ viewportSize.x * 2.0f, viewportSize.y * 2.0f };
-	m_view->configureRenderTargets(&viewportSize, &viewportSize, &offscreenSize, &m_viewport_scale, &m_canvas_scale);
+void MachineManager::configureViewForGpuReset() {
+	m_view->setRenderTargetSize(
+		static_cast<i32>(gxGpuDisplayModeScreenWidth(GX_GPU_RESET_DISPLAY_MODE_WORD)),
+		gxGpuVerticalVisibleLines(GX_GPU_RESET_VERTICAL_DISPLAY_RANGE_WORD, GX_GPU_RESET_DISPLAY_MODE_WORD)
+	);
 }
 
 MachineManager::LoadedProgramImages MachineManager::loadProgramImagesFromRom(const RuntimeRomPackage& romPackage, const u8* romData) const {
@@ -353,7 +348,7 @@ void MachineManager::bootRuntimeFromProgram() {
 		return;
 	}
 	RuntimeRomPackage& romPackage = activeRom();
-	const ResolvedRuntimeTiming timing = resolveRuntimeTiming(PSX_MACHINE_SPEC.cpuFreqHz, PSX_GPU_DISPLAY_MODE_PAL_WORD);
+	const ResolvedRuntimeTiming timing = resolveRuntimeTiming(PSX_MACHINE_SPEC.cpuFreqHz, GX_GPU_RESET_DISPLAY_MODE_WORD);
 	Runtime& rt = ensureRuntime(RuntimeOptions{
 		{ m_system_rom_data, m_system_rom_size },
 		{ m_cart_rom_data, m_cart_rom_size },
@@ -396,9 +391,9 @@ bool MachineManager::bootSystemStartupProgram(const MachineManifest& runtimeMach
 
 	activateSystemRom();
 	setMachineManifest(runtimeMachine);
-	const ResolvedRuntimeTiming timing = resolveRuntimeTiming(PSX_MACHINE_SPEC.cpuFreqHz, PSX_GPU_DISPLAY_MODE_PAL_WORD);
+	const ResolvedRuntimeTiming timing = resolveRuntimeTiming(PSX_MACHINE_SPEC.cpuFreqHz, GX_GPU_RESET_DISPLAY_MODE_WORD);
 	configureRuntimeMemoryMap();
-	configureViewForModel();
+	configureViewForGpuReset();
 
 	Runtime& rt = ensureRuntime(RuntimeOptions{
 		{ m_system_rom_data, m_system_rom_size },
@@ -446,7 +441,7 @@ bool MachineManager::loadRomInternal(const u8* data, size_t size) {
 	m_loaded_cart_has_program = m_cart_rom.hasProgram();
 
 	const MachineManifest& cartMachine = m_cart_rom.machine;
-	configureViewForModel();
+	configureViewForGpuReset();
 
 	const bool hasSystemProgram = m_system_rom_loaded
 		&& m_system_rom.hasProgram();
@@ -458,7 +453,7 @@ bool MachineManager::loadRomInternal(const u8* data, size_t size) {
 		activateCartRom();
 		setMachineManifest(cartMachine);
 		configureRuntimeMemoryMap();
-		const ResolvedRuntimeTiming timing = resolveRuntimeTiming(PSX_MACHINE_SPEC.cpuFreqHz, PSX_GPU_DISPLAY_MODE_PAL_WORD);
+		const ResolvedRuntimeTiming timing = resolveRuntimeTiming(PSX_MACHINE_SPEC.cpuFreqHz, GX_GPU_RESET_DISPLAY_MODE_WORD);
 		prepareRuntimeForActiveCart(timing);
 		if (activeRom().hasProgram()) {
 			bootRuntimeFromProgram();

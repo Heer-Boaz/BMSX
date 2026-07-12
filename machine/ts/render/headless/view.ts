@@ -23,10 +23,8 @@ import { HeadlessPresentSurface } from './present_surface';
 
 export interface HeadlessPresentedFrameBuffer {
 	pixels: Uint8Array;
-	srcWidth: number;
-	srcHeight: number;
-	dstWidth: number;
-	dstHeight: number;
+	width: number;
+	height: number;
 }
 
 export interface HeadlessPresentedFrame {
@@ -175,11 +173,11 @@ export class HeadlessGameViewHost implements GameViewHost {
 	}
 
 	public presentFrameBuffer(frame: HeadlessPresentedFrameBuffer): void {
-		this.presentSurface.present2D(frame.pixels, frame.srcWidth, frame.srcHeight, frame.dstWidth, frame.dstHeight);
+		this.presentSurface.present2D(frame.pixels, frame.width, frame.height);
 		const presentedFrame = this.presentedFrameScratch;
 		presentedFrame.frameIndex = this.presentedFrameIndex;
-		presentedFrame.width = frame.dstWidth;
-		presentedFrame.height = frame.dstHeight;
+		presentedFrame.width = frame.width;
+		presentedFrame.height = frame.height;
 		this.presentedFrameIndex += 1;
 		for (const listener of this.presentedFrameListeners) {
 			listener(presentedFrame);

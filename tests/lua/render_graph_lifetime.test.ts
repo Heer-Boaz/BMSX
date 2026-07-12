@@ -55,3 +55,55 @@ test('render graph does not alias frame-persistent color resources', () => {
 	assert.notEqual(resources[source].physicalId, resources[transient].physicalId);
 	assert.notEqual(resources[history].physicalId, resources[transient].physicalId);
 });
+
+test('render graph realizes retained resources once and destroys them with the graph', () => {
+	let createdTextures = 0;
+	let createdRenderTargets = 0;
+	let destroyedTextures = 0;
+	let destroyedRenderTargets = 0;
+	const backend = {
+		createColorTexture: () => {
+			createdTextures += 1;
+			return { texture: createdTextures };
+		},
+		createRenderTarget: () => {
+			createdRenderTargets += 1;
+			return { renderTarget: createdRenderTargets };
+		},
+		destroyTexture: () => {
+			destroyedTextures += 1;
+		},
+		destroyRenderTarget: () => {
+			destroyedRenderTargets += 1;
+		},
+		beginRenderPass: () => ({}),
+		endRenderPass: () => { },
+	} as unknown as GPUBackend;
+	const graph = new RenderGraphRuntime(backend);
+	let frameColor: RGTexHandle = 0;
+	graph.addPass({
+		name: 'Targets',
+		setup: (io) => {
+			frameColor = io.createTex({ width: 256, height: 212, name: 'FrameColor' });
+			io.exportToBackbuffer(frameColor);
+			return 0;
+		},
+		execute: () => { },
+	});
+	graph.addPass({
+		name: 'WriteFrameColor',
+		setup: (io) => {
+			io.writeTex(frameColor);
+			return 0;
+		},
+		execute: () => { },
+	});
+
+	graph.execute({ frameIndex: 0, time: 0, delta: 0 });
+	graph.execute({ frameIndex: 1, time: 0.02, delta: 0.02 });
+	assert.equal(createdTextures, 1);
+	assert.equal(createdRenderTargets, 1);
+	graph.dispose();
+	assert.equal(destroyedTextures, 1);
+	assert.equal(destroyedRenderTargets, 1);
+});

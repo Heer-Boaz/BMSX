@@ -34,10 +34,6 @@ export const GX_GPU_READBACK_PENDING = 1;
 export const GX_GPU_READBACK_SUBMITTED = 2;
 export const GX_GPU_READBACK_READY = 3;
 
-export function gxGpuDisplayStartY(word: number): number {
-	return (word >>> 10) & 0x1ff;
-}
-
 export function gxGpuSkipDrawingToActiveField(statusWord: number): boolean {
 	const mask = (1 << 19) | (1 << 22) | (1 << 10);
 	const active = (1 << 19) | (1 << 22);

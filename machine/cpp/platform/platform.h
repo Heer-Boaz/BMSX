@@ -118,6 +118,7 @@ public:
 	virtual auto getSize(Vec2 viewportSize, Vec2 canvasSize) -> ViewportDimensions = 0;
 	virtual auto onResize(std::function<void(const ViewportDimensions&)> handler) -> SubscriptionHandle = 0;
 	virtual auto onFocusChange(std::function<void(bool)> handler) -> SubscriptionHandle = 0;
+	virtual void setRenderTargetSize(GPUBackend& backend, i32 width, i32 height) = 0;
 
 	// Create a GPU backend for rendering (platform-specific implementation)
 	// Returns nullptr if the platform doesn't provide its own backend

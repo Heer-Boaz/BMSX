@@ -46,8 +46,9 @@ constexpr size_t kGxGpuTransferVertexFloats = 4u;
 constexpr size_t kGxGpuTransferVerticesPerSegment = 6u;
 constexpr size_t kGxGpuTransferSegmentsPerRow = 3u;
 constexpr size_t kGxGpuTransferFloatCapacity = static_cast<size_t>(kGxGpuVramHeight) * kGxGpuTransferSegmentsPerRow * kGxGpuTransferVerticesPerSegment * kGxGpuTransferVertexFloats;
-constexpr size_t kGxGpuScanoutVertexFloats = 4u;
-constexpr size_t kGxGpuScanoutFloatCount = 6u * kGxGpuScanoutVertexFloats;
+constexpr size_t kGxGpuScanoutVertexFloats = 2u;
+constexpr size_t kGxGpuScanoutVertexCount = 3u;
+constexpr size_t kGxGpuScanoutFloatCount = kGxGpuScanoutVertexCount * kGxGpuScanoutVertexFloats;
 constexpr size_t kGxGpuRawVramBytesPerPixel = 4u;
 constexpr size_t kGxGpuRawVramUploadRowBytes = static_cast<size_t>(kGxGpuVramWidth) * kGxGpuRawVramBytesPerPixel;
 constexpr size_t kGxGpuRawVramReadbackBytes = static_cast<size_t>(kGxGpuVramWidth) * static_cast<size_t>(kGxGpuVramHeight) * kGxGpuRawVramBytesPerPixel;
@@ -76,7 +77,11 @@ std::array<f32, kGxGpuTransferFloatCapacity> g_transferVertices{};
 std::array<u8, kGxGpuRawVramUploadRowBytes> g_rawVramUploadRow{};
 std::array<u8, kGxGpuRawVramReadbackBytes> g_rawVramReadback{};
 std::array<u8, GX_GPU_VRAM_BYTE_COUNT> g_vramSnapshotScratch{};
-std::array<f32, kGxGpuScanoutFloatCount> g_scanoutVertices{};
+constexpr std::array<f32, kGxGpuScanoutFloatCount> g_scanoutVertices{
+	-1.0f, -1.0f,
+	3.0f, -1.0f,
+	-1.0f, 3.0f,
+};
 
 struct GxGpuVramCopyRect {
 	i32 left = 0;
@@ -218,17 +223,14 @@ struct GxGpuRuntime {
 	GLint transferCheckMaskBitUniform = -1;
 	GLint transferSetMaskBitUniform = -1;
 	GLint scanoutPositionAttrib = -1;
-	GLint scanoutTexcoordAttrib = -1;
 	GLint scanoutVramUniform = -1;
-	GLint scanoutDisplayRectUniform = -1;
-	GLint scanoutDisplayRgb24Uniform = -1;
+	GLint scanoutDisplayUniform = -1;
 	GLint readbackPositionAttrib = -1;
 	GLint readbackVramUniform = -1;
 	GLint readbackParamsUniform = -1;
 	u32 scanoutUniformDisplayModeWord = 0xffffffffu;
 	u32 scanoutUniformDisplayStartWord = 0xffffffffu;
-	u32 scanoutUniformHorizontalDisplayRangeWord = 0xffffffffu;
-	u32 scanoutUniformVerticalDisplayRangeWord = 0xffffffffu;
+	i32 scanoutUniformHeight = -1;
 	u32 processedCommandCount = 0;
 	u32 processedCommandSerial = 0;
 	u32 vramClearSerial = 0u;
@@ -237,8 +239,6 @@ struct GxGpuRuntime {
 };
 
 GxGpuRuntime g_gxGpu;
-
-void updateGxGpuScanoutVertices();
 
 void initializeGxGpuTexture(GLES2Texture& texture, i32 textureUnit, i32 width, i32 height) {
 	glGenTextures(1, &texture.id);
@@ -296,7 +296,6 @@ void initGxGpu(OpenGLES2Backend& backend) {
 
 	glGenBuffers(1, &g_gxGpu.scanoutVertexBuffer);
 	glBindBuffer(GL_ARRAY_BUFFER, g_gxGpu.scanoutVertexBuffer);
-	updateGxGpuScanoutVertices();
 	glBufferData(GL_ARRAY_BUFFER, static_cast<GLsizeiptr>(g_scanoutVertices.size() * sizeof(f32)), g_scanoutVertices.data(), GL_STATIC_DRAW);
 
 	g_gxGpu.solidPositionAttrib = glGetAttribLocation(g_gxGpu.solidProgram, "a_position");
@@ -380,17 +379,14 @@ void initGxGpu(OpenGLES2Backend& backend) {
 	g_gxGpu.transferCheckMaskBitUniform = glGetUniformLocation(g_gxGpu.transferProgram, "u_checkMaskBit");
 	g_gxGpu.transferSetMaskBitUniform = glGetUniformLocation(g_gxGpu.transferProgram, "u_setMaskBit");
 	g_gxGpu.scanoutPositionAttrib = glGetAttribLocation(g_gxGpu.scanoutProgram, "a_position");
-	g_gxGpu.scanoutTexcoordAttrib = glGetAttribLocation(g_gxGpu.scanoutProgram, "a_texcoord");
 	g_gxGpu.scanoutVramUniform = glGetUniformLocation(g_gxGpu.scanoutProgram, "u_vram");
-	g_gxGpu.scanoutDisplayRectUniform = glGetUniformLocation(g_gxGpu.scanoutProgram, "u_displayRect");
-	g_gxGpu.scanoutDisplayRgb24Uniform = glGetUniformLocation(g_gxGpu.scanoutProgram, "u_displayRgb24");
+	g_gxGpu.scanoutDisplayUniform = glGetUniformLocation(g_gxGpu.scanoutProgram, "u_display");
 	g_gxGpu.readbackPositionAttrib = glGetAttribLocation(g_gxGpu.readbackProgram, "a_position");
 	g_gxGpu.readbackVramUniform = glGetUniformLocation(g_gxGpu.readbackProgram, "u_vram");
 	g_gxGpu.readbackParamsUniform = glGetUniformLocation(g_gxGpu.readbackProgram, "u_readback");
 	g_gxGpu.scanoutUniformDisplayModeWord = 0xffffffffu;
 	g_gxGpu.scanoutUniformDisplayStartWord = 0xffffffffu;
-	g_gxGpu.scanoutUniformHorizontalDisplayRangeWord = 0xffffffffu;
-	g_gxGpu.scanoutUniformVerticalDisplayRangeWord = 0xffffffffu;
+	g_gxGpu.scanoutUniformHeight = -1;
 	glBindFramebuffer(GL_FRAMEBUFFER, 0);
 }
 
@@ -1129,7 +1125,7 @@ void completeGxGpuReadback(const GxGpuCommandBuffer& commandBuffer, GxGpuReadbac
 	glBindBuffer(GL_ARRAY_BUFFER, g_gxGpu.scanoutVertexBuffer);
 	glEnableVertexAttribArray(static_cast<GLuint>(g_gxGpu.readbackPositionAttrib));
 	glVertexAttribPointer(static_cast<GLuint>(g_gxGpu.readbackPositionAttrib), 2, GL_FLOAT, GL_FALSE, kGxGpuScanoutVertexStride, nullptr);
-	glDrawArrays(GL_TRIANGLES, 0, 6);
+	glDrawArrays(GL_TRIANGLES, 0, static_cast<GLsizei>(kGxGpuScanoutVertexCount));
 	glReadPixels(0, 0, static_cast<GLsizei>(packedWidth), static_cast<GLsizei>(packedHeight), GL_RGBA, GL_UNSIGNED_BYTE, readback.pixelBytes());
 	readback.completeReadback(readbackToken);
 }
@@ -2287,17 +2283,6 @@ size_t flushTexturedCommands(const GxGpuCommandBuffer& commandBuffer, size_t ver
 	return 0u;
 }
 
-void updateGxGpuScanoutVertices() {
-	size_t offset = 0u;
-	f32* scanoutVertices = g_scanoutVertices.data();
-	offset = writeUvVertex(scanoutVertices, offset, kGxGpuScanoutVertexFloats, -1.0f, 1.0f, 0.0f, 0.0f);
-	offset = writeUvVertex(scanoutVertices, offset, kGxGpuScanoutVertexFloats, -1.0f, -1.0f, 0.0f, 1.0f);
-	offset = writeUvVertex(scanoutVertices, offset, kGxGpuScanoutVertexFloats, 1.0f, 1.0f, 1.0f, 0.0f);
-	offset = writeUvVertex(scanoutVertices, offset, kGxGpuScanoutVertexFloats, -1.0f, -1.0f, 0.0f, 1.0f);
-	offset = writeUvVertex(scanoutVertices, offset, kGxGpuScanoutVertexFloats, 1.0f, -1.0f, 1.0f, 1.0f);
-	writeUvVertex(scanoutVertices, offset, kGxGpuScanoutVertexFloats, 1.0f, 1.0f, 1.0f, 0.0f);
-}
-
 void scanoutGxGpuVram(GLuint frameFbo, const GxGpuPipelineState& state) {
 	g_gxGpu.backend->setRenderTarget(frameFbo, state.width, state.height);
 	glDisable(GL_SCISSOR_TEST);
@@ -2314,28 +2299,23 @@ void scanoutGxGpuVram(GLuint frameFbo, const GxGpuPipelineState& state) {
 	glUniform1i(g_gxGpu.scanoutVramUniform, kGxGpuScanoutTextureUnit);
 	if (g_gxGpu.scanoutUniformDisplayModeWord != state.displayModeWord
 		|| g_gxGpu.scanoutUniformDisplayStartWord != state.displayStartWord
-		|| g_gxGpu.scanoutUniformHorizontalDisplayRangeWord != state.horizontalDisplayRangeWord
-		|| g_gxGpu.scanoutUniformVerticalDisplayRangeWord != state.verticalDisplayRangeWord) {
+		|| g_gxGpu.scanoutUniformHeight != state.height) {
 		glUniform4f(
-			g_gxGpu.scanoutDisplayRectUniform,
+			g_gxGpu.scanoutDisplayUniform,
 			static_cast<f32>(gxGpuDisplayStartX(state.displayStartWord)),
 			static_cast<f32>(gxGpuDisplayStartY(state.displayStartWord)),
-			static_cast<f32>(gxGpuHorizontalVisibleColumns(state.horizontalDisplayRangeWord, state.displayModeWord)),
-			static_cast<f32>(gxGpuVerticalVisibleLines(state.verticalDisplayRangeWord, state.displayModeWord)));
-		glUniform1f(g_gxGpu.scanoutDisplayRgb24Uniform, (state.displayModeWord & GX_GPU_DISPLAY_MODE_RGB24_BIT) != 0u ? 1.0f : 0.0f);
+			static_cast<f32>(state.height),
+			(state.displayModeWord & GX_GPU_DISPLAY_MODE_RGB24_BIT) != 0u ? 1.0f : 0.0f);
 		g_gxGpu.scanoutUniformDisplayModeWord = state.displayModeWord;
 		g_gxGpu.scanoutUniformDisplayStartWord = state.displayStartWord;
-		g_gxGpu.scanoutUniformHorizontalDisplayRangeWord = state.horizontalDisplayRangeWord;
-		g_gxGpu.scanoutUniformVerticalDisplayRangeWord = state.verticalDisplayRangeWord;
+		g_gxGpu.scanoutUniformHeight = state.height;
 	}
 	g_gxGpu.backend->setActiveTextureUnit(kGxGpuScanoutTextureUnit);
 	g_gxGpu.backend->bindTexture2D(&g_gxGpu.vramTexture);
 	glBindBuffer(GL_ARRAY_BUFFER, g_gxGpu.scanoutVertexBuffer);
 	glEnableVertexAttribArray(static_cast<GLuint>(g_gxGpu.scanoutPositionAttrib));
 	glVertexAttribPointer(static_cast<GLuint>(g_gxGpu.scanoutPositionAttrib), 2, GL_FLOAT, GL_FALSE, kGxGpuScanoutVertexStride, nullptr);
-	glEnableVertexAttribArray(static_cast<GLuint>(g_gxGpu.scanoutTexcoordAttrib));
-	glVertexAttribPointer(static_cast<GLuint>(g_gxGpu.scanoutTexcoordAttrib), 2, GL_FLOAT, GL_FALSE, kGxGpuScanoutVertexStride, reinterpret_cast<const void*>(2u * sizeof(f32)));
-	glDrawArrays(GL_TRIANGLES, 0, 6);
+	glDrawArrays(GL_TRIANGLES, 0, static_cast<GLsizei>(kGxGpuScanoutVertexCount));
 }
 
 void executeGxGpuVramCommands(const GxGpuCommandBuffer& commandBuffer, GxGpuReadbackPort& readback, const std::array<u8, GX_GPU_VRAM_BYTE_COUNT>& snapshotBytes, u32 snapshotSerial) {

@@ -17,13 +17,11 @@ import {
 	GX_GPU_VRAM_BYTE_COUNT,
 	GX_GPU_VRAM_HEIGHT,
 	GX_GPU_VRAM_WIDTH,
-	gxGpuDisplayStartY,
 	gxGpuTransferHeight,
 	gxGpuTransferWidth,
 	type GxGpuCommandBufferView,
 } from '../../../machine/devices/gx/gpu_command_buffer';
 import {
-	GX_GPU_DISPLAY_MODE_RGB24_BIT,
 	GX_GPU_TEXTURE_SOURCE_BATCH_OVERLAP,
 	GX_GPU_TEXTURE_SOURCE_COMMAND_OVERLAP,
 	GX_GPU_TRIANGLE_ATTRIBUTE_ACCUMULATOR_MASK,
@@ -44,7 +42,6 @@ import {
 	gxGpuDrawingAreaRightExclusive,
 	gxGpuDrawingAreaTop,
 	gxGpuDrawingOffsetY,
-	gxGpuDisplayStartX,
 	gxGpuDrawModeDitherEnabled,
 	gxGpuDrawModeTextureMode,
 	gxGpuDrawModeTexturePageBaseX,
@@ -55,7 +52,6 @@ import {
 	gxGpuFillHeight,
 	gxGpuFillWidth,
 	gxGpuFillX,
-	gxGpuHorizontalVisibleColumns,
 	gxGpuMaskBitCheckBeforeDraw,
 	gxGpuMaskBitSetWhileDrawing,
 	gxGpuSegmentExceedsPrimitiveSize,
@@ -77,7 +73,6 @@ import {
 	gxGpuTriangleAttributePlane,
 	gxGpuVramLogicalAreaOverlapsBounds,
 	gxGpuVertexY,
-	gxGpuVerticalVisibleLines,
 	gxGpuVramCopyChunkHeight,
 	gxGpuVramCopyNeedsChunking,
 	gxGpuVramWrappedHeight,
@@ -143,7 +138,7 @@ const gxGpuVramSnapshotScratch = new Uint8Array(GX_GPU_VRAM_BYTE_COUNT);
 const primitiveUniformScratch = new Float32Array(8);
 const texturedUniformScratch = new Float32Array(16);
 const transferUniformScratch = new Float32Array(4);
-const scanoutUniformScratch = new Float32Array(8);
+const scanoutUniformScratch = new Uint32Array(4);
 const readbackUniformScratch = new Uint32Array(GX_GPU_READBACK_UNIFORM_BYTES >> 2);
 const gxGpuDynamicUniformOffsets = new Uint32Array(1);
 type GxGpuVramCopyRect = {
@@ -254,6 +249,8 @@ type WebGpuGxGpuState = {
 	scanoutBindGroup: GPUBindGroup;
 	scanoutTargetTexture?: GPUTexture;
 	scanoutTargetView: GPUTextureView;
+	scanoutUniformDisplayStartWord: number;
+	scanoutUniformDisplayModeWord: number;
 	processedCommandCount: number;
 	processedCommandSerial: number;
 	vramClearSerial: number;
@@ -557,6 +554,8 @@ function bootstrapGxGpuPass(backend: WebGPUBackend): void {
 		transferFromUploadBindGroup: createTransferBindGroup(device, transferLayout, transferUniformBuffer, transferUniformScratch.byteLength, vramTransferView, vramSampleView, sampler),
 		scanoutBindGroup: createBindGroup(device, primitiveLayout, scanoutUniformBuffer, scanoutUniformScratch.byteLength, vramView, sampler),
 		scanoutTargetView: vramView,
+		scanoutUniformDisplayStartWord: 0xffffffff,
+		scanoutUniformDisplayModeWord: 0xffffffff,
 		processedCommandCount: 0,
 		processedCommandSerial: 0,
 		vramClearSerial: 0,
@@ -1954,13 +1953,13 @@ function scanoutGxGpuVram(state: RenderPassStateRegistry['gx_gpu']): void {
 	const target = state.targetColorTex as GPUTexture;
 	const device = gxGpuState.backend.device;
 	const clearOnly = (state.statusWord & GX_GPU_STATUS_DISPLAY_DISABLE) !== 0;
-	if (!clearOnly) {
-		scanoutUniformScratch[0] = gxGpuDisplayStartX(state.displayStartWord);
-		scanoutUniformScratch[1] = gxGpuDisplayStartY(state.displayStartWord);
-		scanoutUniformScratch[2] = gxGpuHorizontalVisibleColumns(state.horizontalDisplayRangeWord, state.displayModeWord);
-		scanoutUniformScratch[3] = gxGpuVerticalVisibleLines(state.verticalDisplayRangeWord, state.displayModeWord);
-		scanoutUniformScratch[4] = (state.displayModeWord & GX_GPU_DISPLAY_MODE_RGB24_BIT) !== 0 ? 1 : 0;
+	if (!clearOnly && (gxGpuState.scanoutUniformDisplayStartWord !== state.displayStartWord
+		|| gxGpuState.scanoutUniformDisplayModeWord !== state.displayModeWord)) {
+		scanoutUniformScratch[0] = state.displayStartWord;
+		scanoutUniformScratch[1] = state.displayModeWord;
 		device.queue.writeBuffer(gxGpuState.scanoutUniformBuffer, 0, scanoutUniformScratch);
+		gxGpuState.scanoutUniformDisplayStartWord = state.displayStartWord;
+		gxGpuState.scanoutUniformDisplayModeWord = state.displayModeWord;
 	}
 	if (gxGpuState.scanoutTargetTexture !== target) {
 		gxGpuState.scanoutTargetTexture = target;
@@ -1994,8 +1993,6 @@ function writeGxGpuState(ctx: RenderGraphPassContext, state: RenderPassStateRegi
 	state.statusWord = ctx.view.gxGpuStatusWord;
 	state.displayModeWord = ctx.view.gxGpuDisplayModeWord;
 	state.displayStartWord = ctx.view.gxGpuDisplayStartWord;
-	state.horizontalDisplayRangeWord = ctx.view.gxGpuHorizontalDisplayRangeWord;
-	state.verticalDisplayRangeWord = ctx.view.gxGpuVerticalDisplayRangeWord;
 	state.vramSnapshotBytes = ctx.view.gxGpuVramSnapshotBytes;
 	state.vramSnapshotSerial = ctx.view.gxGpuVramSnapshotSerial;
 	state.targetColorTex = ctx.getTex('frame_color');
@@ -2010,8 +2007,6 @@ export function registerGxGpuPass(registry: RenderPassLibrary): void {
 		statusWord: registry.view.gxGpuStatusWord,
 		displayModeWord: registry.view.gxGpuDisplayModeWord,
 		displayStartWord: registry.view.gxGpuDisplayStartWord,
-		horizontalDisplayRangeWord: registry.view.gxGpuHorizontalDisplayRangeWord,
-		verticalDisplayRangeWord: registry.view.gxGpuVerticalDisplayRangeWord,
 		vramSnapshotBytes: registry.view.gxGpuVramSnapshotBytes,
 		vramSnapshotSerial: registry.view.gxGpuVramSnapshotSerial,
 		targetColorTex: null,

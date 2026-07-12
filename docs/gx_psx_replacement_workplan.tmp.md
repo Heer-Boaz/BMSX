@@ -86,18 +86,21 @@ Implemented or partially covered GX-GPU areas include:
 - GP1 display/status register work, DMA direction, display mode bits, info
   command range, PAL/NTSC timing-visible state, and interlaced active-field
   behavior.
-- The programmed active GP1 display range currently maps over a fixed 320x240
-  host target in TS/C++ software, WebGL2, GLES2, and WebGPU. That scaling route
-  is rejected and remains an open regression: the next slice must make 256x192
-  and 256x212 real native presentation sizes, resizing host/backend targets only
-  on the existing latched raw-word transition. No mode enum, cart map, crop,
-  letterbox, or runtime asset scaling may replace that owner fix. `pietious` and
-  `nemesis_s` remain 256x192; the BIOS/engine default and `2025` must move to
-  native 256x212, including its fullscreen producers. Current-format save-state
-  retains the GPU-owned
-  interlaced field, displayed-field, and active-line latches; the runtime owns
-  and republishes VBlank timing separately. A mirrored restore vector proves
-  GPUSTAT phase and the next draw's field tag. This does not claim complete
+- Latched GP1 display state now produces native 320x240, 256x192, and 256x212
+  presentation targets in TS/C++ software, WebGL2, WebGPU, and GLES2. Width
+  comes only from GP1(08h), active height from GP1(07h), and the retained
+  GP1(06h) horizontal timing range does not trigger a target transition.
+  Backends consume native VRAM coordinates directly without active-range
+  resampling or inner-loop scale divisions. The presentation owner rebuilds
+  retained targets only when the derived dimensions change; the runtime applies
+  published active-line timing at the frame boundary. `pietious` remains native
+  256x192 and `2025` remains native 320x240 without cart, asset, atlas-builder,
+  or rompacker changes. Focused TS/C++ vectors cover non-zero origins, VRAM
+  wrap, 192/212 timing, restore, and one-shot libretro geometry transitions;
+  software pixel data matches at Pietious frame 620, and GLES2/llvmpipe captures
+  prove 320x240, 256x192, and 256x212 targets. Live browser proof remains
+  deferred. Current-format save-state retains the GPU-owned interlaced field,
+  displayed-field, and active-line latches; this does not claim complete
   field-aware 480i scanout.
 - The sprite render system now submits its existing retained component bucket in
   ascending effective z order, so the painter-ordered GX GPU draws higher-z
@@ -314,10 +317,11 @@ and MAME
 - [x] GPU info command range behavior.
 - [x] Interlaced field drawing behavior in accelerated backends, including
   current-format restore of the three GPU-owned field/parity latches.
-- [x] Scale the programmed active horizontal/vertical display range over the
-  fixed host target in every software and accelerated backend, without cart
-  compensation or a PAL/NTSC overscancanvas. Live WebGL2/WebGPU browser proof
-  remains deferred.
+- [x] Present 320x240, 256x192, and 256x212 directly from the latched
+  GP1 display configuration in every software and accelerated backend. Do not
+  scale an active range over a fixed host target and do not modify cart assets.
+  Mirrored software vectors, libretro transitions, and GLES2/llvmpipe captures
+  are green; live WebGL2/WebGPU browser proof remains deferred.
 - [x] Texture disable.
 - [ ] GPUREAD / VRAM-to-CPU command execution and ordering.
   - [x] Fix the device/backend owner, fence, completion, cursor, DMA and
@@ -636,8 +640,8 @@ and MAME
 
 Pick one vertical slice and finish it before committing:
 
-1. **Visible GX migration regressions**: finish live host-UI and scanout proof
-   when a real browser is available.
+1. **Visible GX migration regressions**: finish live host-UI and accelerated
+   browser scanout proof when a real browser is available.
 2. **Accelerated feedback performance**: run the frontend-resolved NV barrier
    path in the real Windows RetroArch context. If that concrete context does not
    expose NV texture barrier, measure its actual extensions and ordering before

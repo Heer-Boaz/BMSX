@@ -30,6 +30,7 @@ import type { RenderPassLibrary } from './pass/library';
  *   createImageBitmapFromSource(), createCubemapFromSources(),
  *   createSolidCubemap(), createCubemapEmpty(), uploadCubemapFace(),
  *   createColorTexture(), createDepthTexture(), createRenderTarget(),
+ *   destroyRenderTarget(),
  *   createRenderPassInstance(),
  *   destroyRenderPassInstance(), setGraphicsPipeline(), setPassState(),
  *   getPassState(), createVertexBuffer(), updateVertexBuffer(),
@@ -204,6 +205,7 @@ export interface GPUBackend {
 	createColorTexture(desc: { width: number; height: number; format?: TextureFormat; initialClearColor?: color_arr }): TextureHandle;
 	createDepthTexture(desc: { width: number; height: number; format?: TextureFormat }): TextureHandle;
 	createRenderTarget(color?: TextureHandle, depth?: TextureHandle): RenderTargetHandle;
+	destroyRenderTarget(handle: RenderTargetHandle): void;
 	clear(color: color_arr | undefined, depth: number | undefined): void;
 	beginRenderPass(desc: RenderPassDesc): PassEncoder;
 	endRenderPass(pass: PassEncoder): void;
@@ -266,8 +268,6 @@ export type GxGpuPipelineState = {
 	statusWord: number;
 	displayModeWord: number;
 	displayStartWord: number;
-	horizontalDisplayRangeWord: number;
-	verticalDisplayRangeWord: number;
 	vramSnapshotBytes: Uint8Array;
 	vramSnapshotSerial: number;
 	targetColorTex?: TextureHandle;

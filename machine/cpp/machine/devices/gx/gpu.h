@@ -3,6 +3,7 @@
 #include "common/primitives.h"
 #include "machine/devices/gx/device_output.h"
 #include "machine/devices/gx/gpu_command_buffer.h"
+#include "machine/devices/gx/gpu_display.h"
 
 #include <array>
 #include <vector>
@@ -16,13 +17,13 @@ class IrqController;
 constexpr u32 GX_GPU_GP1_RESET = 0x00u;
 constexpr u32 GX_GPU_GP1_CLEAR_FIFO = 0x01u;
 constexpr u32 GX_GPU_GP1_ACK_INTERRUPT = 0x02u;
-constexpr u32 GX_GPU_GP1_SET_DISPLAY_DISABLE = 0x03u;
-constexpr u32 GX_GPU_GP1_SET_DMA_DIRECTION = 0x04u;
-constexpr u32 GX_GPU_GP1_SET_DISPLAY_START = 0x05u;
-constexpr u32 GX_GPU_GP1_SET_HORIZONTAL_DISPLAY_RANGE = 0x06u;
-constexpr u32 GX_GPU_GP1_SET_VERTICAL_DISPLAY_RANGE = 0x07u;
-constexpr u32 GX_GPU_GP1_SET_DISPLAY_MODE = 0x08u;
-constexpr u32 GX_GPU_GP1_SET_ALLOW_TEXTURE_DISABLE = 0x09u;
+constexpr u32 GX_GPU_GP1_DISPLAY_DISABLE = 0x03u;
+constexpr u32 GX_GPU_GP1_DMA_DIRECTION = 0x04u;
+constexpr u32 GX_GPU_GP1_DISPLAY_START = 0x05u;
+constexpr u32 GX_GPU_GP1_HORIZONTAL_DISPLAY_RANGE = 0x06u;
+constexpr u32 GX_GPU_GP1_VERTICAL_DISPLAY_RANGE = 0x07u;
+constexpr u32 GX_GPU_GP1_DISPLAY_MODE = 0x08u;
+constexpr u32 GX_GPU_GP1_ALLOW_TEXTURE_DISABLE = 0x09u;
 constexpr u32 GX_GPU_GP1_GET_GPU_INFO = 0x10u;
 constexpr u32 GX_GPU_GP1_GET_GPU_INFO_LAST = 0x1fu;
 constexpr u32 GX_GPU_GP1_OPCODE_SHIFT = 24u;
@@ -31,12 +32,12 @@ constexpr u32 GX_GPU_GP1_OPCODE_MASK = 0x3fu;
 constexpr u32 GX_GPU_GP1_GET_GPU_INFO_INDEX_MASK = 0x0fu;
 constexpr u32 GX_GPU_INFO_GPU_TYPE_208PIN = 0x00000002u;
 
-constexpr u32 GX_GPU_GP0_SET_DRAW_MODE = 0xe1u;
-constexpr u32 GX_GPU_GP0_SET_TEXTURE_WINDOW = 0xe2u;
-constexpr u32 GX_GPU_GP0_SET_DRAWING_AREA_TOP_LEFT = 0xe3u;
-constexpr u32 GX_GPU_GP0_SET_DRAWING_AREA_BOTTOM_RIGHT = 0xe4u;
-constexpr u32 GX_GPU_GP0_SET_DRAWING_OFFSET = 0xe5u;
-constexpr u32 GX_GPU_GP0_SET_MASK_BIT = 0xe6u;
+constexpr u32 GX_GPU_GP0_DRAW_MODE = 0xe1u;
+constexpr u32 GX_GPU_GP0_TEXTURE_WINDOW = 0xe2u;
+constexpr u32 GX_GPU_GP0_DRAWING_AREA_TOP_LEFT = 0xe3u;
+constexpr u32 GX_GPU_GP0_DRAWING_AREA_BOTTOM_RIGHT = 0xe4u;
+constexpr u32 GX_GPU_GP0_DRAWING_OFFSET = 0xe5u;
+constexpr u32 GX_GPU_GP0_MASK_BIT = 0xe6u;
 constexpr u32 GX_GPU_GP0_IRQ_REQUEST = 0x1fu;
 constexpr u32 GX_GPU_GP0_OPCODE_SHIFT = 24u;
 constexpr u32 GX_GPU_GP0_PARAM_MASK = 0x00ffffffu;
@@ -195,7 +196,7 @@ private:
 	DeviceScheduler& m_scheduler;
 	u32 m_gp0Word = 0;
 	u32 m_gp1Word = 0;
-	u32 m_displayModeWord = 0;
+	u32 m_displayModeWord = GX_GPU_RESET_DISPLAY_MODE_WORD;
 	u32 m_statusWord = GX_GPU_STATUS_RESET_WORD;
 	GxGpuCommandBuffer m_commandBuffer;
 	mutable GxGpuDeviceOutput m_deviceOutput{&m_commandBuffer, &m_commandBuffer.readback};
@@ -219,14 +220,14 @@ private:
 	u32 m_drawingOffsetWord = 0u;
 	u32 m_maskBitModeWord = 0u;
 	u32 m_displayStartWord = 0u;
-	u32 m_horizontalDisplayRangeWord = 0x00c60260u;
-	u32 m_verticalDisplayRangeWord = 0x0003fc10u;
+	u32 m_horizontalDisplayRangeWord = GX_GPU_RESET_HORIZONTAL_DISPLAY_RANGE_WORD;
+	u32 m_verticalDisplayRangeWord = GX_GPU_RESET_VERTICAL_DISPLAY_RANGE_WORD;
 	u32 m_textureDisableAllowedWord = 0u;
 	u32 m_presentStatusWord = GX_GPU_STATUS_RESET_WORD;
-	u32 m_presentDisplayModeWord = 0u;
+	u32 m_presentDisplayModeWord = GX_GPU_RESET_DISPLAY_MODE_WORD;
 	u32 m_presentDisplayStartWord = 0u;
-	u32 m_presentHorizontalDisplayRangeWord = 0x00c60260u;
-	u32 m_presentVerticalDisplayRangeWord = 0x0003fc10u;
+	u32 m_presentHorizontalDisplayRangeWord = GX_GPU_RESET_HORIZONTAL_DISPLAY_RANGE_WORD;
+	u32 m_presentVerticalDisplayRangeWord = GX_GPU_RESET_VERTICAL_DISPLAY_RANGE_WORD;
 	bool m_lastFrameCommitted = false;
 	bool m_scanoutVblankActive = false;
 	u32 m_scanoutInterlacedField = 0u;

@@ -5,7 +5,6 @@ namespace bmsx {
 class SoftwareBackend;
 struct GxGpuPipelineState;
 
-void bindGxGpuSoftwareScanoutBackend(SoftwareBackend& backend);
-void scanoutGxGpuSoftwareVram(const GxGpuPipelineState& state);
+void scanoutGxGpuSoftwareVram(SoftwareBackend& backend, const GxGpuPipelineState& state);
 
 } // namespace bmsx

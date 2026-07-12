@@ -14,12 +14,6 @@ import { taskGate } from '../../common/taskgate';
 
 export const DEFAULT_IDE_FONT_VARIANT: FontVariant = 'tiny';
 export type OverlayResolutionMode = 'offscreen' | 'viewport';
-export type RenderTargetVec2 = { x: number; y: number };
-export type RenderTargetSnapshot = {
-	viewportSize: RenderTargetVec2;
-	canvasSize: RenderTargetVec2;
-	offscreenSize: RenderTargetVec2;
-};
 
 export type RuntimeIdeState = {
 	editor: CartEditor;
@@ -29,7 +23,9 @@ export type RuntimeIdeState = {
 	overlayResolutionMode: OverlayResolutionMode;
 	overlayActive: boolean;
 	overlayDrawFrameOwner: 'terminal' | 'ide' | null;
-	editorRenderTargetBaseline: RenderTargetSnapshot | null;
+	editorRenderTargetBaselineActive: boolean;
+	editorRenderTargetBaselineWidth: number;
+	editorRenderTargetBaselineHeight: number;
 	lastIdeInputFrame: number;
 	lastTerminalInputFrame: number;
 	debugger: RuntimeDebuggerState;
@@ -52,7 +48,9 @@ export function createRuntimeIdeState(runtime: Runtime, viewport: Viewport): Run
 		overlayResolutionMode: 'viewport',
 		overlayActive: false,
 		overlayDrawFrameOwner: null,
-		editorRenderTargetBaseline: null,
+		editorRenderTargetBaselineActive: false,
+		editorRenderTargetBaselineWidth: 0,
+		editorRenderTargetBaselineHeight: 0,
 		lastIdeInputFrame: -1,
 		lastTerminalInputFrame: -1,
 		debugger: createRuntimeDebuggerState(),

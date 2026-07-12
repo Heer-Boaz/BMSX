@@ -47,10 +47,6 @@ constexpr u8 GX_GPU_READBACK_PENDING = 1u;
 constexpr u8 GX_GPU_READBACK_SUBMITTED = 2u;
 constexpr u8 GX_GPU_READBACK_READY = 3u;
 
-inline u32 gxGpuDisplayStartY(u32 word) {
-	return (word >> 10u) & 0x1ffu;
-}
-
 inline bool gxGpuSkipDrawingToActiveField(u32 statusWord) {
 	constexpr u32 mask = (1u << 19u) | (1u << 22u) | (1u << 10u);
 	constexpr u32 active = (1u << 19u) | (1u << 22u);

@@ -2,9 +2,7 @@
 precision highp float;
 
 uniform sampler2D u_vram;
-uniform vec4 u_displayRect;
-uniform float u_displayRgb24;
-in vec2 v_texcoord;
+uniform vec4 u_display;
 out vec4 outputColor;
 
 const vec2 VRAM_SIZE = vec2(1024.0, 512.0);
@@ -32,8 +30,7 @@ vec3 rgb555ToRgb8(float word) {
 }
 
 vec3 rgb888AtSourcePixel(float sourceX, float sourceY) {
-	float scaledWordX = sourceX * 1.5;
-	float wordX = u_displayRect.x + sign(scaledWordX) * floor(abs(scaledWordX));
+	float wordX = u_display.x + floor(sourceX * 1.5);
 	float word0 = rawWordAtLogical(wordX, sourceY);
 	float word1 = rawWordAtLogical(wordX + 1.0, sourceY);
 	float low0 = mod(word0, 256.0);
@@ -47,15 +44,13 @@ vec3 rgb888AtSourcePixel(float sourceX, float sourceY) {
 }
 
 void main() {
-	float scaledX = v_texcoord.x * u_displayRect.z;
-	float scaledY = v_texcoord.y * u_displayRect.w;
-	float sourceX = sign(scaledX) * floor(abs(scaledX));
-	float sourceY = u_displayRect.y + sign(scaledY) * floor(abs(scaledY));
+	float sourceX = floor(gl_FragCoord.x);
+	float sourceY = u_display.y + floor(u_display.z - gl_FragCoord.y);
 	vec3 rgb8;
-	if (u_displayRgb24 > 0.5) {
+	if (u_display.w > 0.5) {
 		rgb8 = rgb888AtSourcePixel(sourceX, sourceY);
 	} else {
-		rgb8 = rgb555ToRgb8(rawWordAtLogical(u_displayRect.x + sourceX, sourceY));
+		rgb8 = rgb555ToRgb8(rawWordAtLogical(u_display.x + sourceX, sourceY));
 	}
 	outputColor = vec4(rgb8 / 255.0, 1.0);
 }

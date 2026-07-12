@@ -35,7 +35,7 @@ function registerFramePasses(registry: RenderPassLibrary): void {
 		graph: { skip: true },
 		exec: () => {
 			const view = registry.view as GameView;
-			commitHeadlessFrame(view.offscreenCanvasSize.x, view.offscreenCanvasSize.y, view.canvasSize.x, view.canvasSize.y);
+			resizeHeadlessFrame(view.offscreenCanvasSize.x, view.offscreenCanvasSize.y);
 		},
 	});
 }
@@ -43,14 +43,10 @@ function registerFramePasses(registry: RenderPassLibrary): void {
 let headlessCompositePixels = new Uint8Array(0);
 let headlessFrameWidth = 0;
 let headlessFrameHeight = 0;
-let headlessPresentWidth = 0;
-let headlessPresentHeight = 0;
 const headlessPresentedFrameBuffer: HeadlessPresentedFrameBuffer = {
 	pixels: headlessCompositePixels,
-	srcWidth: 0,
-	srcHeight: 0,
-	dstWidth: 0,
-	dstHeight: 0,
+	width: 0,
+	height: 0,
 };
 
 function resizeHeadlessFrame(width: number, height: number): void {
@@ -62,41 +58,40 @@ function resizeHeadlessFrame(width: number, height: number): void {
 	headlessFrameHeight = height;
 }
 
-function commitHeadlessFrame(frameBufferWidth: number, frameBufferHeight: number, presentWidth: number, presentHeight: number): void {
-	resizeHeadlessFrame(frameBufferWidth, frameBufferHeight);
-	headlessPresentWidth = presentWidth;
-	headlessPresentHeight = presentHeight;
-}
-
 function registerHeadlessGxGpuPass(registry: RenderPassLibrary): void {
+	const state: GxGpuPipelineState = {
+		width: 0,
+		height: 0,
+		commandBuffer: registry.view.gxGpuCommandBuffer,
+		readbackPort: registry.view.gxGpuReadbackPort,
+		statusWord: registry.view.gxGpuStatusWord,
+		displayModeWord: registry.view.gxGpuDisplayModeWord,
+		displayStartWord: registry.view.gxGpuDisplayStartWord,
+		vramSnapshotBytes: registry.view.gxGpuVramSnapshotBytes,
+		vramSnapshotSerial: registry.view.gxGpuVramSnapshotSerial,
+	};
 	registry.register<GxGpuPipelineState>({
 		id: 'gx_gpu',
 		name: 'HeadlessGXGPU',
 		stateOnly: true,
-		graph: { writes: ['frame_color'] },
-		prepare: () => {
-			const view = registry.view as GameView;
-			registry.setState('gx_gpu', {
-				width: view.offscreenCanvasSize.x,
-				height: view.offscreenCanvasSize.y,
-				commandBuffer: view.gxGpuCommandBuffer,
-				readbackPort: view.gxGpuReadbackPort,
-				statusWord: view.gxGpuStatusWord,
-				displayModeWord: view.gxGpuDisplayModeWord,
-				displayStartWord: view.gxGpuDisplayStartWord,
-				horizontalDisplayRangeWord: view.gxGpuHorizontalDisplayRangeWord,
-				verticalDisplayRangeWord: view.gxGpuVerticalDisplayRangeWord,
-				vramSnapshotBytes: view.gxGpuVramSnapshotBytes,
-				vramSnapshotSerial: view.gxGpuVramSnapshotSerial,
-			});
+		initialState: state,
+		graph: {
+			writes: ['frame_color'],
+			writeState: (ctx, gxGpuState) => {
+				const view = ctx.view;
+				gxGpuState.width = view.offscreenCanvasSize.x;
+				gxGpuState.height = view.offscreenCanvasSize.y;
+				gxGpuState.commandBuffer = view.gxGpuCommandBuffer;
+				gxGpuState.readbackPort = view.gxGpuReadbackPort;
+				gxGpuState.statusWord = view.gxGpuStatusWord;
+				gxGpuState.displayModeWord = view.gxGpuDisplayModeWord;
+				gxGpuState.displayStartWord = view.gxGpuDisplayStartWord;
+				gxGpuState.vramSnapshotBytes = view.gxGpuVramSnapshotBytes;
+				gxGpuState.vramSnapshotSerial = view.gxGpuVramSnapshotSerial;
+			},
 		},
 		exec: (_backend, _fbo, state) => {
-			const view = registry.view as GameView;
-			const width = view.offscreenCanvasSize.x;
-			const height = view.offscreenCanvasSize.y;
-			resizeHeadlessFrame(width, height);
-			renderGxGpuSoftwareFrame(state, headlessCompositePixels, width, height);
-			commitHeadlessFrame(width, height, view.canvasSize.x, view.canvasSize.y);
+			renderGxGpuSoftwareFrame(state, headlessCompositePixels);
 		},
 	});
 }
@@ -133,9 +128,7 @@ function presentHeadlessFrame(view: GameView): void {
 	}
 	const host = view.host as unknown as HeadlessPresentHost;
 	headlessPresentedFrameBuffer.pixels = headlessCompositePixels;
-	headlessPresentedFrameBuffer.srcWidth = headlessFrameWidth;
-	headlessPresentedFrameBuffer.srcHeight = headlessFrameHeight;
-	headlessPresentedFrameBuffer.dstWidth = headlessPresentWidth;
-	headlessPresentedFrameBuffer.dstHeight = headlessPresentHeight;
+	headlessPresentedFrameBuffer.width = headlessFrameWidth;
+	headlessPresentedFrameBuffer.height = headlessFrameHeight;
 	host.presentFrameBuffer(headlessPresentedFrameBuffer);
 }

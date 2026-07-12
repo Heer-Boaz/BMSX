@@ -1,11 +1,10 @@
 import type { Runtime } from './runtime';
 import { calcCyclesPerFrameScaled, resolveVblankCycles } from './timing';
 import { setFrameTiming, setTransferRates } from './timing/config';
-import { getPsxGpuDisplayModeTimingForWord, PSX_MACHINE_SPEC, PSX_GPU_DISPLAY_SIZE_SPEC } from '../model_registry';
+import { getPsxGpuDisplayModeTimingForWord, PSX_MACHINE_SPEC } from '../model_registry';
+import { GX_GPU_RESET_VERTICAL_DISPLAY_RANGE_WORD, gxGpuVerticalVisibleLines } from '../devices/gx/gpu_display';
 
 export type ResolvedRuntimeTiming = {
-	viewportWidth: number;
-	viewportHeight: number;
 	gpuDisplayModeWord: number;
 	ufpsScaled: number;
 	totalScanlines: number;
@@ -20,12 +19,10 @@ export function resolveRuntimeTiming(
 	cpuHz: number,
 	gpuDisplayModeWord: number,
 ): ResolvedRuntimeTiming {
-	const renderSize = PSX_GPU_DISPLAY_SIZE_SPEC;
 	const displayModeTiming = getPsxGpuDisplayModeTimingForWord(gpuDisplayModeWord);
 	const refreshUfpsScaled = displayModeTiming.refreshUfpsScaled;
+	const activeDisplayLines = gxGpuVerticalVisibleLines(GX_GPU_RESET_VERTICAL_DISPLAY_RANGE_WORD, gpuDisplayModeWord);
 	return {
-		viewportWidth: renderSize.renderWidth,
-		viewportHeight: renderSize.renderHeight,
 		gpuDisplayModeWord,
 		ufpsScaled: refreshUfpsScaled,
 		totalScanlines: displayModeTiming.totalScanlines,
@@ -33,13 +30,14 @@ export function resolveRuntimeTiming(
 		dmaBytesPerSec: PSX_MACHINE_SPEC.dmaBytesPerSec,
 		geoWorkUnitsPerSec: PSX_MACHINE_SPEC.geoWorkUnitsPerSec,
 		cycleBudgetPerFrame: calcCyclesPerFrameScaled(cpuHz, refreshUfpsScaled),
-		vblankCycles: resolveVblankCycles(cpuHz, refreshUfpsScaled, displayModeTiming.totalScanlines, renderSize.renderHeight),
+		vblankCycles: resolveVblankCycles(cpuHz, refreshUfpsScaled, displayModeTiming.totalScanlines, activeDisplayLines),
 	};
 }
 
 export function applyRuntimeTiming(runtime: Runtime, timing: ResolvedRuntimeTiming): void {
 	runtime.applyUfpsScaled(timing.ufpsScaled);
 	runtime.timing.gpuDisplayModeWord = timing.gpuDisplayModeWord >>> 0;
+	runtime.timing.gpuVerticalDisplayRangeWord = GX_GPU_RESET_VERTICAL_DISPLAY_RANGE_WORD;
 	runtime.timing.totalScanlines = timing.totalScanlines;
 	runtime.machine.gxGpu.writeDisplayModeWord(runtime.timing.gpuDisplayModeWord);
 	setFrameTiming(runtime, timing.cpuHz, timing.cycleBudgetPerFrame, timing.vblankCycles);

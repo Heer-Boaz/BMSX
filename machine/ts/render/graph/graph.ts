@@ -11,6 +11,7 @@ import type {
 	GPUBackend,
 	PassEncoder,
 	RenderPassDesc,
+	RenderTargetHandle,
 	TextureHandle,
 } from '../backend/backend';
 
@@ -104,6 +105,8 @@ export class RenderGraphRuntime {
 	private passes: RenderPass<unknown>[] = [];
 	private compiled = false;
 	private texResources: InternalTexResource[] = [];
+	private physicalTextures: TextureHandle[] = [];
+	private resourcesRealized = false;
 	// DAG data
 	private passOrder: number[] = []; // topologically sorted indices
 	private reachable: boolean[] = [];
@@ -374,9 +377,33 @@ export class RenderGraphRuntime {
 		}
 	}
 
+	dispose(): void {
+		for (let resourceIndex = 0; resourceIndex < this.texResources.length; resourceIndex += 1) {
+			const resource = this.texResources[resourceIndex];
+			if (!resource) continue;
+			if (resource.fboDepthHandle !== null) {
+				this.backend.destroyRenderTarget(resource.fboDepthHandle as RenderTargetHandle);
+			}
+			if (resource.fboColorOnly !== null) {
+				this.backend.destroyRenderTarget(resource.fboColorOnly as RenderTargetHandle);
+			}
+		}
+		for (let physicalId = 1; physicalId < this.physicalTextures.length; physicalId += 1) {
+			const texture = this.physicalTextures[physicalId];
+			if (texture !== undefined) {
+				this.backend.destroyTexture(texture);
+			}
+		}
+		this.texResources.length = 0;
+		this.physicalTextures.length = 0;
+		this.resourcesRealized = false;
+	}
+
 	private realizeAll(): void {
-		// Create physical textures for each alias group lazily; map physicalId -> backend TextureHandle
-		const physTex = new Map<number, TextureHandle>();
+		if (this.resourcesRealized) {
+			return;
+		}
+		// Create physical textures for each alias group once per compiled graph.
 		for (let h = 0; h < this.texResources.length; h++) {
 			const res = this.texResources[h];
 			if (!res) continue;
@@ -385,12 +412,13 @@ export class RenderGraphRuntime {
 			if (pid === undefined) {
 				throw new Error('[RenderGraph] Texture was not assigned a physical resource.');
 			}
-			if (!physTex.has(pid)) {
+			let texture = this.physicalTextures[pid];
+			if (texture === undefined) {
 				const desc = res.desc;
-				const tex = desc.depth ? this.backend.createDepthTexture(desc) : this.backend.createColorTexture(desc);
-				physTex.set(pid, tex);
+				texture = desc.depth ? this.backend.createDepthTexture(desc) : this.backend.createColorTexture(desc);
+				this.physicalTextures[pid] = texture;
 			}
-			res.tex = physTex.get(pid)!;
+			res.tex = texture;
 			// Build color-only FBO for color targets
 			if (!res.desc.depth && !res.fboColorOnly) {
 				res.fboColorOnly = this.backend.createRenderTarget(res.tex, null) as FramebufferHandle;
@@ -419,5 +447,6 @@ export class RenderGraphRuntime {
 				}
 			}
 		}
+		this.resourcesRealized = true;
 	}
 }

@@ -321,6 +321,9 @@ export class WebGPUBackend implements GPUBackend {
 		return { color, depth };
 	}
 
+	destroyRenderTarget(_handle: unknown): void {
+	}
+
 	private writeRenderPassColorAttachment(colorAttachmentIndex: number, color: ColorAttachmentSpec): void {
 		const colorAttachments = this.renderPassColorAttachments;
 		let attachment = colorAttachments[colorAttachmentIndex];

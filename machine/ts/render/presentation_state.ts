@@ -2,6 +2,7 @@ import { machineManager } from '../core/machine_manager';
 import type { Runtime } from '../machine/runtime/runtime';
 import type { TickCompletion } from '../machine/scheduler/frame';
 import * as workbenchMode from '../ide/workbench/mode';
+import { gxGpuDisplayModeScreenWidth, gxGpuVerticalVisibleLines } from '../machine/devices/gx/gpu_display';
 import { commitGxGpuViewSnapshot } from './gx/view_snapshot';
 
 export type RenderPresentationMode = 'partial' | 'completed';
@@ -79,8 +80,17 @@ export class RenderPresentationState {
 
 	private presentFrame(runtime: Runtime, hostDeltaMs: number, mode: RenderPresentationMode, commitFrame: boolean): void {
 		machineManager.deltatime = hostDeltaMs;
-		commitGxGpuViewSnapshot(machineManager.view, runtime.machine.gxGpu.readDeviceOutput());
-		machineManager.view.configurePresentation(mode, commitFrame);
+		const view = machineManager.view;
+		const output = runtime.machine.gxGpu.readDeviceOutput();
+		const displayConfigurationChanged = view.gxGpuDisplayModeWord !== output.displayModeWord
+			|| view.gxGpuVerticalDisplayRangeWord !== output.verticalDisplayRangeWord;
+		commitGxGpuViewSnapshot(view, output);
+		if (displayConfigurationChanged) {
+			const width = gxGpuDisplayModeScreenWidth(output.displayModeWord);
+			const height = gxGpuVerticalVisibleLines(output.verticalDisplayRangeWord, output.displayModeWord);
+			view.setRenderTargetSize(width, height);
+		}
+		view.configurePresentation(mode, commitFrame);
 		this.recordPresentation(mode, commitFrame);
 		machineManager.sndmaster.finishFrame();
 		machineManager.view.drawgame();

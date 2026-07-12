@@ -4,7 +4,6 @@
 #include "machine/cpu/cpu.h"
 #include "machine/devices/irq/controller.h"
 #include "machine/memory/memory.h"
-#include "machine/model_registry.h"
 #include "machine/scheduler/device.h"
 
 #include <algorithm>
@@ -15,9 +14,7 @@ GxGpu::GxGpu(Memory& memory, IrqController& irq, DeviceScheduler& scheduler, Dma
 	: m_memory(memory)
 	, m_irq(irq)
 	, m_scheduler(scheduler)
-	, m_displayModeWord(PSX_GPU_DISPLAY_MODE_PAL_WORD)
-	, m_commandBuffer(dmaController)
-	, m_presentDisplayModeWord(PSX_GPU_DISPLAY_MODE_PAL_WORD) {
+	, m_commandBuffer(dmaController) {
 	m_memory.mapIoRead(IO_GX_GPU_GP0, this, &GxGpu::readGp0Thunk);
 	m_memory.mapIoWrite(IO_GX_GPU_GP0, this, &GxGpu::writeGp0Thunk);
 	m_memory.mapIoRead(IO_GX_GPU_GP1, this, &GxGpu::readStatusThunk);
@@ -35,7 +32,7 @@ void GxGpu::reset() {
 void GxGpu::resetGpuRegisters() {
 	m_gp0Word = 0u;
 	m_gp1Word = 0u;
-	m_displayModeWord = PSX_GPU_DISPLAY_MODE_PAL_WORD;
+	m_displayModeWord = GX_GPU_RESET_DISPLAY_MODE_WORD;
 	m_statusWord = GX_GPU_STATUS_RESET_WORD;
 	m_drawModeWord = 0u;
 	m_textureWindowWord = 0u;
@@ -44,13 +41,13 @@ void GxGpu::resetGpuRegisters() {
 	m_drawingOffsetWord = 0u;
 	m_maskBitModeWord = 0u;
 	m_displayStartWord = 0u;
-	m_horizontalDisplayRangeWord = 0x00c60260u;
-	m_verticalDisplayRangeWord = 0x0003fc10u;
+	m_horizontalDisplayRangeWord = GX_GPU_RESET_HORIZONTAL_DISPLAY_RANGE_WORD;
+	m_verticalDisplayRangeWord = GX_GPU_RESET_VERTICAL_DISPLAY_RANGE_WORD;
 	m_presentStatusWord = GX_GPU_STATUS_RESET_WORD;
-	m_presentDisplayModeWord = PSX_GPU_DISPLAY_MODE_PAL_WORD;
+	m_presentDisplayModeWord = GX_GPU_RESET_DISPLAY_MODE_WORD;
 	m_presentDisplayStartWord = 0u;
-	m_presentHorizontalDisplayRangeWord = 0x00c60260u;
-	m_presentVerticalDisplayRangeWord = 0x0003fc10u;
+	m_presentHorizontalDisplayRangeWord = GX_GPU_RESET_HORIZONTAL_DISPLAY_RANGE_WORD;
+	m_presentVerticalDisplayRangeWord = GX_GPU_RESET_VERTICAL_DISPLAY_RANGE_WORD;
 	m_scanoutVblankActive = false;
 	m_scanoutInterlacedField = 0u;
 	m_scanoutInterlacedDisplayField = 0u;
@@ -229,22 +226,22 @@ void GxGpu::executeGp0Command() {
 		}
 		writeStatusIo();
 		break;
-	case GX_GPU_GP0_SET_DRAW_MODE:
+	case GX_GPU_GP0_DRAW_MODE:
 		writeDrawModeWord(m_gp0Word & GX_GPU_GP0_PARAM_MASK);
 		break;
-	case GX_GPU_GP0_SET_TEXTURE_WINDOW:
+	case GX_GPU_GP0_TEXTURE_WINDOW:
 		m_textureWindowWord = m_gp0Word & GX_GPU_TEXTURE_WINDOW_MASK;
 		break;
-	case GX_GPU_GP0_SET_DRAWING_AREA_TOP_LEFT:
+	case GX_GPU_GP0_DRAWING_AREA_TOP_LEFT:
 		m_drawingAreaTopLeftWord = m_gp0Word & GX_GPU_DRAWING_AREA_MASK;
 		break;
-	case GX_GPU_GP0_SET_DRAWING_AREA_BOTTOM_RIGHT:
+	case GX_GPU_GP0_DRAWING_AREA_BOTTOM_RIGHT:
 		m_drawingAreaBottomRightWord = m_gp0Word & GX_GPU_DRAWING_AREA_MASK;
 		break;
-	case GX_GPU_GP0_SET_DRAWING_OFFSET:
+	case GX_GPU_GP0_DRAWING_OFFSET:
 		m_drawingOffsetWord = m_gp0Word & GX_GPU_DRAWING_OFFSET_MASK;
 		break;
-	case GX_GPU_GP0_SET_MASK_BIT:
+	case GX_GPU_GP0_MASK_BIT:
 		writeMaskBitModeWord(m_gp0CommandWords[0] & GX_GPU_GP0_PARAM_MASK);
 		break;
 	default:
@@ -295,29 +292,29 @@ u32 GxGpu::writeGp1(u32 word) {
 		m_statusWord &= ~GX_GPU_STATUS_INTERRUPT_REQUEST;
 		writeStatusIo();
 		break;
-	case GX_GPU_GP1_SET_DISPLAY_DISABLE:
+	case GX_GPU_GP1_DISPLAY_DISABLE:
 		writeDisplayDisableWord(word);
 		break;
-	case GX_GPU_GP1_SET_DMA_DIRECTION:
+	case GX_GPU_GP1_DMA_DIRECTION:
 		writeDmaDirectionWord(word);
 		break;
-	case GX_GPU_GP1_SET_DISPLAY_START:
+	case GX_GPU_GP1_DISPLAY_START:
 		m_displayStartWord = word & GX_GPU_DISPLAY_START_MASK;
 		updateScanoutStatusBits();
 		writeStatusIo();
 		break;
-	case GX_GPU_GP1_SET_HORIZONTAL_DISPLAY_RANGE:
+	case GX_GPU_GP1_HORIZONTAL_DISPLAY_RANGE:
 		m_horizontalDisplayRangeWord = word & GX_GPU_HORIZONTAL_DISPLAY_RANGE_MASK;
 		writeStatusIo();
 		break;
-	case GX_GPU_GP1_SET_VERTICAL_DISPLAY_RANGE:
+	case GX_GPU_GP1_VERTICAL_DISPLAY_RANGE:
 		m_verticalDisplayRangeWord = word & GX_GPU_VERTICAL_DISPLAY_RANGE_MASK;
 		writeStatusIo();
 		break;
-	case GX_GPU_GP1_SET_DISPLAY_MODE:
+	case GX_GPU_GP1_DISPLAY_MODE:
 		writeDisplayModeWord(word & GX_GPU_DISPLAY_MODE_MASK);
 		break;
-	case GX_GPU_GP1_SET_ALLOW_TEXTURE_DISABLE:
+	case GX_GPU_GP1_ALLOW_TEXTURE_DISABLE:
 		m_textureDisableAllowedWord = word & 0x1u;
 		writeStatusIo();
 		break;

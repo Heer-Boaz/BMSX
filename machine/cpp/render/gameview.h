@@ -64,14 +64,13 @@ public:
 	// ─────────────────────────────────────────────────────────────────────────
 	// Viewport and canvas sizes
 	// ─────────────────────────────────────────────────────────────────────────
-	Vec2 viewportSize;       // The logical game resolution (e.g. 256x212 for MSX2)
+	Vec2 viewportSize;       // Native machine scanout size.
 	Vec2 canvasSize;         // The backing buffer size
 	Vec2 offscreenCanvasSize;// Offscreen render target size
 	f32 viewportScale = 1.0f;
 	f32 canvasScale = 1.0f;
 
-	void setViewportSize(i32 width, i32 height);
-	void configureRenderTargets(const Vec2* viewportDimensions = nullptr, const Vec2* canvasDimensions = nullptr, const Vec2* offscreenDimensions = nullptr, const f32* viewportScaleOverride = nullptr, const f32* canvasScaleOverride = nullptr);
+	void setRenderTargetSize(i32 width, i32 height);
 
 	// ─────────────────────────────────────────────────────────────────────────
 	// Frame rendering

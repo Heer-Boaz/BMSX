@@ -20,18 +20,6 @@ pariteitsvalidatie en moeten als harde acceptatieblokkades blijven staan.
   TS/C++, WebGPU heeft een native overlay/menu-renderpad en de split-bundle
   headless integratie rendert beide weer. De live WebGPU-browseracceptatie
   blijft uitgesteld en houdt dit punt visueel open.
-- De verticale `pietious`-compressie is niet opgelost: de huidige route schaalt
-  256x192 naar een vast 320x240-hostdoel en is expliciet verworpen. De volgende
-  prioriteit na de lopende GX-raster-slice is echte native 256x192-output plus
-  echte native 256x212-output, bestuurd door de raw gelatchte GPU-displayrange.
-  Geen cartcompensatie, letterbox, crop of andere schaalroute geldt als fix. De
-  producer emitteert sprites inmiddels wel in oplopende effectieve z-volgorde,
-  zodat hoge z als laatste door de painter-ordered GX-GPU wordt getekend. De bestaande
-  componentbucket wordt rechtstreeks gesorteerd; de BIOS-sort scant een reeds
-  gesorteerde bucket eenmaal en alloceert niet. Een headless gate bewijst zowel
-  de eerste volgorde als een runtime-z-wijziging. De lange regressiescène raakt
-  bovendien de concrete overlap tussen de speler op z=250 en een later
-  gespawnde explosie op z=114.
 - De concrete libretro/GLES-proceduregrens achter een groot deel van de
   Windows-slowdown is hersteld, maar de echte Windows-RetroArch-acceptatie
   blijft open. De frontend leverde zowel zijn framebuffergetter als zijn
@@ -70,44 +58,6 @@ Nog te sluiten:
 
 - Terminal, IDE en quick menu tijdens de expliciete browsersessie live tegen
   WebGPU en de WebGL2-fallback uitvoeren.
-
-## GX native actieve output op 256x192 en 256x212
-
-Status: open; hoogste prioriteit na de lopende GX-raster-slice.
-
-- GP1 display-start, horizontal range, vertical range en display mode blijven
-  raw GPU-registerwoorden. De reeds atomaire VBlank-publicatie van die woorden
-  is de enige modeovergang; voeg geen cartnaammap, manifestprofiel, extra enum,
-  DTO of codecveld toe.
-- De presentation-owner moet uit de gelatchte ranges rechtstreeks een native
-  doel van 256x192 of 256x212 afleiden en alleen op een echte overgang canvas,
-  viewport, framebuffer en backendtargets resizen. Steady state vergelijkt
-  uitsluitend de bestaande raw woorden en alloceert niets.
-- Verwijder de huidige actieve-range-naar-vast-320x240-schaalroute in TS/C++
-  software, WebGL2, GLES2 en WebGPU. Native outputcoördinaten consumeren dezelfde
-  VRAM-coordinaten rechtstreeks; expliciete postprocess-schaal blijft een apart
-  hostpresentatiebeleid en mag deze machinegrens niet vervangen.
-- PAL/NTSC behoudt 313/262 totale scanlines. Alleen de actieve 192/212-range en
-  bijbehorende VBlankgrens veranderen. Current-format save-state bevat de raw
-  range- en timingstate al; restore moet de presentation-resize opnieuw laten
-  consumeren, niet nog een modus opslaan.
-- `pietious` en `nemesis_s` blijven 256x192. De BIOS/engine-standaard wordt
-  256x212. `2025` moet zijn 320x240-layout en zestien actieve fullscreenassets
-  bij de producer naar native 256x212 migreren; runtime scale, crop of
-  letterboxfallback is verboden. `bare_metal_cart` mag 320x240 alleen als raw
-  GPU-conformancevector blijven programmeren.
-
-Acceptatie:
-
-- Gemirrorde TS/C++ native 256x192- en 256x212-vectors met non-zero start en
-  VRAM-wrap; geen inner-loop schaaldivisies.
-- `pietious` frame 620 exact 256x192 en een normale enginecart exact 256x212,
-  byte-identiek tussen TS headless en C++ software.
-- GLES2/llvmpipe-captures voor beide native modi en een libretrotest die AV-
-  geometry plus framebuffer/backendtarget exact eenmaal per 192/212-overgang
-  publiceert. Browserruns blijven uitgesteld.
-- Een 192<->212 timing- en restorevector zonder wijziging aan PAL/NTSC-totalen.
-- Field-aware 480i weave/bob blijft een afzonderlijke latere grens.
 
 ## WebGPU/browser-presentatie live bewijzen
 

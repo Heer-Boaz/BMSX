@@ -254,8 +254,8 @@ void testDmaClipsNonStrictGxGp0StreamToWholeWords() {
 	bmsx::Memory& memory = harness.memory;
 	const uint32_t source = bmsx::PROGRAM_STATIC_RAM_BASE + 0x140u;
 
-	memory.writeMappedU32LE(source, (bmsx::GX_GPU_GP0_SET_DRAW_MODE << 24u) | 0x000123u);
-	memory.writeMappedU32LE(source + 4u, (bmsx::GX_GPU_GP0_SET_MASK_BIT << 24u) | 0x000003u);
+	memory.writeMappedU32LE(source, (bmsx::GX_GPU_GP0_DRAW_MODE << 24u) | 0x000123u);
+	memory.writeMappedU32LE(source + 4u, (bmsx::GX_GPU_GP0_MASK_BIT << 24u) | 0x000003u);
 	memory.writeMappedU32LE(bmsx::IO_DMA_SRC, source);
 	memory.writeMappedU32LE(bmsx::IO_DMA_DST, bmsx::IO_GX_GPU_GP0);
 	memory.writeMappedU32LE(bmsx::IO_DMA_LEN, 6u);
@@ -275,7 +275,7 @@ void testDmaStrictRejectsNonWordGxGp0StreamLength() {
 	bmsx::Memory& memory = harness.memory;
 	const uint32_t source = bmsx::PROGRAM_STATIC_RAM_BASE + 0x180u;
 
-	memory.writeMappedU32LE(source, (bmsx::GX_GPU_GP0_SET_DRAW_MODE << 24u) | 0x000456u);
+	memory.writeMappedU32LE(source, (bmsx::GX_GPU_GP0_DRAW_MODE << 24u) | 0x000456u);
 	memory.writeMappedU32LE(bmsx::IO_DMA_SRC, source);
 	memory.writeMappedU32LE(bmsx::IO_DMA_DST, bmsx::IO_GX_GPU_GP0);
 	memory.writeMappedU32LE(bmsx::IO_DMA_LEN, 6u);

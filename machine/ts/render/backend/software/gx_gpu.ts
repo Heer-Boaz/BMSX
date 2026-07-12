@@ -54,7 +54,7 @@ export function executeGxGpuSoftwareVramCommands(source: GxGpuSoftwareVramSource
 	}
 }
 
-export function renderGxGpuSoftwareFrame(state: GxGpuPipelineState, target: Uint8Array, targetWidth: number, targetHeight: number): void {
+export function renderGxGpuSoftwareFrame(state: GxGpuPipelineState, target: Uint8Array): void {
 	executeGxGpuSoftwareVramCommands(state);
-	scanoutGxGpuSoftwareVram(state, target, targetWidth, targetHeight);
+	scanoutGxGpuSoftwareVram(state, target);
 }

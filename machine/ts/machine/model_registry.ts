@@ -9,8 +9,10 @@ export type PsxGpuVideoStandard = 'pal' | 'ntsc';
 export const PSX_CPU_FREQ_HZ = 50_000_000;
 export const PSX_DMA_BYTES_PER_SEC = 26_214_400;
 export const PSX_RAM_BYTES = 0x00400000;
-export const PSX_GPU_DISPLAY_WIDTH = 320;
-export const PSX_GPU_DISPLAY_HEIGHT = 240;
+export const PSX_GPU_MAX_DISPLAY_WIDTH = 640;
+export const PSX_GPU_MAX_DISPLAY_HEIGHT = 480;
+export const PSX_GPU_DISPLAY_ASPECT_WIDTH = 4;
+export const PSX_GPU_DISPLAY_ASPECT_HEIGHT = 3;
 
 export const PSX_GEO_WORK_UNITS_PER_SEC = 16_384_000;
 
@@ -29,11 +31,6 @@ export type MachineModelSpec = {
 	geoWorkUnitsPerSec: number;
 };
 
-export type PsxGpuDisplaySizeSpec = {
-	renderWidth: number;
-	renderHeight: number;
-};
-
 export type PsxGpuDisplayModeTiming = {
 	videoStandard: PsxGpuVideoStandard;
 	refreshUfpsScaled: number;
@@ -45,11 +42,6 @@ export const PSX_MACHINE_SPEC: MachineModelSpec = {
 	dmaBytesPerSec: PSX_DMA_BYTES_PER_SEC,
 	ramBytes: PSX_RAM_BYTES,
 	geoWorkUnitsPerSec: PSX_GEO_WORK_UNITS_PER_SEC,
-};
-
-export const PSX_GPU_DISPLAY_SIZE_SPEC: PsxGpuDisplaySizeSpec = {
-	renderWidth: PSX_GPU_DISPLAY_WIDTH,
-	renderHeight: PSX_GPU_DISPLAY_HEIGHT,
 };
 
 export function getPsxGpuVideoStandardTiming(videoStandard: PsxGpuVideoStandard): PsxGpuDisplayModeTiming {

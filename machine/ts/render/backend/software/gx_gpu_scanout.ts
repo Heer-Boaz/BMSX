@@ -1,26 +1,18 @@
-import {
-	gxGpuDisplayStartY,
-} from '../../../machine/devices/gx/gpu_command_buffer';
 import { GX_GPU_STATUS_DISPLAY_DISABLE } from '../../../machine/devices/gx/gpu';
-import type { GxGpuPipelineState } from '../backend';
 import {
 	GX_GPU_DISPLAY_MODE_RGB24_BIT,
 	gxGpuDisplayStartX,
-	gxGpuHorizontalVisibleColumns,
-	gxGpuVerticalVisibleLines,
-} from '../gx_gpu_render_rules';
+	gxGpuDisplayStartY,
+} from '../../../machine/devices/gx/gpu_display';
+import type { GxGpuPipelineState } from '../backend';
 import {
 	gxGpuSoftwareRgb555ChannelTo8,
 	gxGpuSoftwareVram,
 	gxGpuSoftwareVramIndex,
 } from './gx_gpu_vram';
 
-function integerDivide(numerator: number, denominator: number): number {
-	return (numerator - (numerator % denominator)) / denominator;
-}
-
 function rgb888AtSourcePixel(sourceX: number, sourceY: number, displayStartX: number): number {
-	const wordX = displayStartX + integerDivide(sourceX * 3, 2);
+	const wordX = displayStartX + ((sourceX * 3) >> 1);
 	const word0 = gxGpuSoftwareVram[gxGpuSoftwareVramIndex(wordX, sourceY)];
 	const word1 = gxGpuSoftwareVram[gxGpuSoftwareVramIndex(wordX + 1, sourceY)];
 	if ((sourceX & 1) === 0) {
@@ -43,7 +35,7 @@ function writeOutputRgb(target: Uint8Array, offset: number, rgb: number): void {
 	target[offset + 3] = 255;
 }
 
-export function scanoutGxGpuSoftwareVram(state: GxGpuPipelineState, target: Uint8Array, targetWidth: number, targetHeight: number): void {
+export function scanoutGxGpuSoftwareVram(state: GxGpuPipelineState, target: Uint8Array): void {
 	if ((state.statusWord & GX_GPU_STATUS_DISPLAY_DISABLE) !== 0) {
 		target.fill(0);
 		for (let offset = 3; offset < target.length; offset += 4) {
@@ -52,17 +44,14 @@ export function scanoutGxGpuSoftwareVram(state: GxGpuPipelineState, target: Uint
 		return;
 	}
 	const displayModeWord = state.displayModeWord;
-	const columns = gxGpuHorizontalVisibleColumns(state.horizontalDisplayRangeWord, displayModeWord);
-	const lines = gxGpuVerticalVisibleLines(state.verticalDisplayRangeWord, displayModeWord);
 	const displayStartX = gxGpuDisplayStartX(state.displayStartWord);
 	const displayStartY = gxGpuDisplayStartY(state.displayStartWord);
 	const rgb24 = (displayModeWord & GX_GPU_DISPLAY_MODE_RGB24_BIT) !== 0;
 	let offset = 0;
-	for (let outputY = 0; outputY < targetHeight; outputY += 1) {
-		const sourceY = displayStartY + integerDivide(((outputY << 1) + 1) * lines, targetHeight << 1);
-		for (let outputX = 0; outputX < targetWidth; outputX += 1) {
-			const sourceX = integerDivide(((outputX << 1) + 1) * columns, targetWidth << 1);
-			const rgb = rgb24 ? rgb888AtSourcePixel(sourceX, sourceY, displayStartX) : rgb555AtSourcePixel(displayStartX + sourceX, sourceY);
+	for (let outputY = 0; outputY < state.height; outputY += 1) {
+		const sourceY = displayStartY + outputY;
+		for (let outputX = 0; outputX < state.width; outputX += 1) {
+			const rgb = rgb24 ? rgb888AtSourcePixel(outputX, sourceY, displayStartX) : rgb555AtSourcePixel(displayStartX + outputX, sourceY);
 			writeOutputRgb(target, offset, rgb);
 			offset += 4;
 		}

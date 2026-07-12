@@ -10,7 +10,6 @@ namespace bmsx {
 
 struct RomBootPlan {
 	RuntimeRomPackage systemLayer;
-	struct { int x = 0; int y = 0; } viewportSize;
 };
 
 class RomBootManager {

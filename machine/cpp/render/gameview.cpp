@@ -40,53 +40,17 @@ BackendType GameView::backendType() const {
 	return m_backend ? m_backend->type() : BackendType::Headless;
 }
 
-void GameView::setViewportSize(i32 width, i32 height) {
-	viewportSize.x = static_cast<f32>(width);
-	viewportSize.y = static_cast<f32>(height);
-}
-
-void GameView::configureRenderTargets(const Vec2* viewport, const Vec2* canvas, const Vec2* offscreen, const f32* viewportScaleOverride, const f32* canvasScaleOverride) {
-	bool viewportChanged = false;
-	bool canvasChanged = false;
-	bool offscreenChanged = false;
-	bool viewportScaleChanged = false;
-	bool canvasScaleChanged = false;
-
-	if (viewport) {
-		viewportChanged = (viewportSize.x != viewport->x || viewportSize.y != viewport->y);
-		viewportSize = *viewport;
-	}
-	if (canvas) {
-		canvasChanged = (canvasSize.x != canvas->x || canvasSize.y != canvas->y);
-		canvasSize = *canvas;
-	}
-	if (offscreen) {
-		offscreenChanged = (offscreenCanvasSize.x != offscreen->x || offscreenCanvasSize.y != offscreen->y);
-		offscreenCanvasSize = *offscreen;
-	}
-
-	const ViewportDimensions dims = m_host->getSize(viewportSize, canvasSize);
-
-	f32 targetViewportScale = viewportScaleOverride ? *viewportScaleOverride : dims.viewportScale;
-	f32 targetCanvasScale = canvasScaleOverride ? *canvasScaleOverride : dims.canvasScale;
-
-	if (viewportScale != targetViewportScale) {
-		viewportScaleChanged = true;
-		viewportScale = targetViewportScale;
-	}
-	if (canvasScale != targetCanvasScale) {
-		canvasScaleChanged = true;
-		canvasScale = targetCanvasScale;
-	}
-
-	if (!(viewportChanged || canvasChanged || offscreenChanged || viewportScaleChanged || canvasScaleChanged)) {
+void GameView::setRenderTargetSize(i32 width, i32 height) {
+	if (viewportSize.x == static_cast<f32>(width) && viewportSize.y == static_cast<f32>(height)) {
 		return;
 	}
-
+	viewportSize = {static_cast<f32>(width), static_cast<f32>(height)};
+	canvasSize = viewportSize;
+	offscreenCanvasSize = viewportSize;
+	m_host->setRenderTargetSize(*m_backend, width, height);
 	resetPresentationHistory();
 	rebuildGraph();
 }
-
 void GameView::initializeDefaultTextures() {
 	if (!m_backend) {
 		throw BMSX_RUNTIME_ERROR("[GameView] initializeDefaultTextures called before backend was configured.");

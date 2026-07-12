@@ -21,7 +21,8 @@ uintptr_t RETRO_CALLCONV frontendGetCurrentFramebuffer() {
 } // namespace
 
 int main() {
-	bmsx::LibretroPlatform platform(bmsx::BackendType::OpenGLES2);
+	retro_system_av_info avInfo{};
+	bmsx::LibretroPlatform platform(bmsx::BackendType::OpenGLES2, avInfo);
 	platform.setHwRenderCallbacks(frontendGetCurrentFramebuffer, frontendGetProcAddress);
 	auto* backend = static_cast<bmsx::OpenGLES2Backend*>(platform.machineManager()->view()->backend());
 	if (backend->resolveProcAddress("glTextureBarrierNV") != frontendGlProc) {

@@ -83,8 +83,11 @@ Current artifact names encode that split:
 
 BMSX takes video standard from the raw PSX GP1 display-mode word. Bit 3 selects
 PAL (50 Hz, 313 scanlines); a clear bit selects NTSC (60000/1001 Hz,
-262 scanlines). The machine model fixes the CPU at 50 MHz and scanout at
-320×240. Cart manifests do not own refresh rate, render size, or a
+262 scanlines). The machine model fixes the CPU at 50 MHz; the GPU reset display
+configuration is 320×240 PAL. GP1(08h) owns native scanout width and GP1(07h)
+owns the active vertical range, so carts can also program native 256×192 and
+256×212 output. GP1(06h) remains a horizontal timing range and does not select
+logical width. Cart manifests do not own refresh rate, render size, or a
 `vblank_cycles` override.
 
 The runtime derives the frame and VBLANK cycle budgets from those hardware
@@ -92,13 +95,15 @@ words:
 
 ```text
 cyclesPerFrame = cpuHz / refreshHz
-visibleCycles = floor(cyclesPerFrame * renderHeight / totalScanlines)
+visibleCycles = floor(cyclesPerFrame * activeDisplayLines / totalScanlines)
 vblankCycles = cyclesPerFrame - visibleCycles
 ```
 
-Carts own lower game cadence by counting VBLANK IRQs. They program GX through
-GP0/GP1 and may DMA native GP0 streams directly from ROM/RAM; there is no VDP
-stream or manifest timing facade.
+The GPU publishes the raw display words at VBlank and the scheduler applies the
+published video standard and active-line count to the next frame. Carts own
+lower game cadence by counting VBLANK IRQs. They program GX through GP0/GP1 and
+may DMA native GP0 streams directly from ROM/RAM; there is no VDP stream or
+manifest timing facade.
 
 ## Common Commands
 

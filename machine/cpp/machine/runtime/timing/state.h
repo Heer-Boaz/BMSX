@@ -10,6 +10,7 @@ struct TimingState {
 		i64 cpuHz,
 		int cycleBudgetPerFrame,
 		uint32_t gpuDisplayModeWord,
+		uint32_t gpuVerticalDisplayRangeWord,
 		i64 totalScanlines,
 		i64 dmaBytesPerSec,
 		int geoWorkUnitsPerSec
@@ -19,6 +20,7 @@ struct TimingState {
 	f64 ufps;
 	f64 frameDurationMs;
 	uint32_t gpuDisplayModeWord;
+	uint32_t gpuVerticalDisplayRangeWord;
 	i64 totalScanlines;
 	i64 cpuHz;
 	int cycleBudgetPerFrame;

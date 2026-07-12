@@ -14,8 +14,10 @@ enum class PsxGpuVideoStandard { Pal, Ntsc };
 constexpr i64 PSX_CPU_FREQ_HZ = 50000000;
 constexpr i64 PSX_DMA_BYTES_PER_SEC = 26214400;
 constexpr i64 PSX_RAM_BYTES = 0x00400000;
-constexpr i32 PSX_GPU_DISPLAY_WIDTH = 320;
-constexpr i32 PSX_GPU_DISPLAY_HEIGHT = 240;
+constexpr i32 PSX_GPU_MAX_DISPLAY_WIDTH = 640;
+constexpr i32 PSX_GPU_MAX_DISPLAY_HEIGHT = 480;
+constexpr i32 PSX_GPU_DISPLAY_ASPECT_WIDTH = 4;
+constexpr i32 PSX_GPU_DISPLAY_ASPECT_HEIGHT = 3;
 
 constexpr i64 PSX_GEO_WORK_UNITS_PER_SEC = 16384000;
 
@@ -34,11 +36,6 @@ struct MachineModelSpec {
 	i64 geoWorkUnitsPerSec;
 };
 
-struct PsxGpuDisplaySizeSpec {
-	i32 renderWidth;
-	i32 renderHeight;
-};
-
 struct PsxGpuDisplayModeTiming {
 	PsxGpuVideoStandard videoStandard;
 	i64 refreshUfpsScaled;
@@ -50,11 +47,6 @@ inline constexpr MachineModelSpec PSX_MACHINE_SPEC = {
 	PSX_DMA_BYTES_PER_SEC,
 	PSX_RAM_BYTES,
 	PSX_GEO_WORK_UNITS_PER_SEC,
-};
-
-inline constexpr PsxGpuDisplaySizeSpec PSX_GPU_DISPLAY_SIZE_SPEC = {
-	PSX_GPU_DISPLAY_WIDTH,
-	PSX_GPU_DISPLAY_HEIGHT,
 };
 
 PsxGpuDisplayModeTiming getPsxGpuVideoStandardTiming(PsxGpuVideoStandard videoStandard);

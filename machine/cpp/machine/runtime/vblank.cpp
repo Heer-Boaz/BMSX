@@ -1,6 +1,7 @@
 #include "machine/runtime/vblank.h"
 
 #include "machine/bus/io.h"
+#include "machine/devices/gx/device_output.h"
 #include "machine/runtime/runtime.h"
 #include "machine/runtime/timing/config.h"
 #include "machine/scheduler/device.h"
@@ -30,6 +31,11 @@ void VblankState::setVblankCycles(Runtime& runtime, int cycles) {
 	m_vblankCycles = cycles;
 	m_vblankStartCycle = cycleBudgetPerFrame - m_vblankCycles;
 	reset(runtime);
+}
+
+void VblankState::setNextFrameTiming(int cycleBudgetPerFrame, int vblankCycles) {
+	m_vblankCycles = vblankCycles;
+	m_vblankStartCycle = cycleBudgetPerFrame - vblankCycles;
 }
 
 int VblankState::getCyclesIntoFrame(const Runtime& runtime) const {
@@ -93,6 +99,8 @@ void VblankState::handleBeginTimer(Runtime& runtime) {
 
 void VblankState::handleEndTimer(Runtime& runtime) {
 	m_frameStartCycle = runtime.machine.scheduler.nowCycles();
+	const GxGpuDeviceOutput& output = runtime.machine.gxGpu.readDeviceOutput();
+	runtime.applyPublishedPsxGpuDisplayTiming(output.displayModeWord, output.verticalDisplayRangeWord);
 	if (m_vblankStartCycle == 0) {
 		scheduleCurrentFrameTimers(runtime);
 		enterVblank(runtime);

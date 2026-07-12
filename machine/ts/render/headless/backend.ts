@@ -291,6 +291,9 @@ export class HeadlessGPUBackend implements GPUBackend {
 		return { size: { x: 0, y: 0 }, colors, depth };
 	}
 
+	destroyRenderTarget(_handle: { size: { x: number; y: number }; colors: TextureHandle[]; depth?: TextureHandle }): void {
+	}
+
 	clear(_color: color_arr | undefined, _depth: number | undefined): void { }
 
 	beginRenderPass(desc: RenderPassDesc): PassEncoder {

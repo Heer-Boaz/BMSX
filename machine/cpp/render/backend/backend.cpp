@@ -255,7 +255,7 @@ SoftwareBackend::~SoftwareBackend() = default;
 
 void SoftwareBackend::registerBuiltinPasses(RenderPassLibrary& registry) {
 	registerFrameResolvePass(registry);
-	registerGxGpuPassSoftware(registry, *this);
+	registerGxGpuPassSoftware(registry);
 	DeviceQuantizePipeline::Software::registerPass(registry);
 	CRTPipeline::registerCRTPostSoftwarePass(registry);
 	registerHostOverlayBackendPasses<SoftwareBackend, nullptr, beginHostOverlaySoftware, renderHost2DEntrySoftware, endHostOverlaySoftware>(registry);

@@ -18,8 +18,8 @@ u32 g_gxGpuSoftwareVramClearSerial = 0u;
 u32 g_gxGpuSoftwareVramSnapshotSerial = 0u;
 std::array<u8, GX_GPU_VRAM_BYTE_COUNT> g_gxGpuSoftwareVramSnapshotScratch{};
 
-void executeGxGpuSoftwarePass(GPUBackend*, GameView*, void*, RenderPassStateStorage& stateStorage, void*) {
-	renderGxGpuSoftwareFrame(stateStorage.gxGpu);
+void executeGxGpuSoftwarePass(GPUBackend* backend, GameView*, void*, RenderPassStateStorage& stateStorage, void*) {
+	renderGxGpuSoftwareFrame(static_cast<SoftwareBackend&>(*backend), stateStorage.gxGpu);
 }
 
 void executeGxGpuSoftwareVramCommands(const GxGpuCommandBuffer& commandBuffer, GxGpuReadbackPort& readback, const std::array<u8, GX_GPU_VRAM_BYTE_COUNT>& snapshotBytes, u32 snapshotSerial) {
@@ -61,9 +61,9 @@ void executeGxGpuSoftwareVramCommands(const GxGpuCommandBuffer& commandBuffer, G
 
 } // namespace
 
-void renderGxGpuSoftwareFrame(const GxGpuPipelineState& state) {
+void renderGxGpuSoftwareFrame(SoftwareBackend& backend, const GxGpuPipelineState& state) {
 	executeGxGpuSoftwareVramCommands(*state.commandBuffer, *state.readbackPort, *state.vramSnapshotBytes, state.vramSnapshotSerial);
-	scanoutGxGpuSoftwareVram(state);
+	scanoutGxGpuSoftwareVram(backend, state);
 }
 
 void SoftwareBackend::captureGxGpuVramSnapshot(GxGpu& gxGpu) {
@@ -78,8 +78,7 @@ void SoftwareBackend::captureGxGpuVramSnapshot(GxGpu& gxGpu) {
 	g_gxGpuSoftwareVramSnapshotSerial = gxGpu.commitRenderedVramSnapshotBytes(g_gxGpuSoftwareVramSnapshotScratch.data());
 }
 
-void registerGxGpuPassSoftware(RenderPassLibrary& registry, SoftwareBackend& backend) {
-	bindGxGpuSoftwareScanoutBackend(backend);
+void registerGxGpuPassSoftware(RenderPassLibrary& registry) {
 	RenderPassDef desc;
 	desc.id = "gx_gpu";
 	desc.name = "GXGPU";

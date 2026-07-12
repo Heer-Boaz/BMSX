@@ -1,6 +1,7 @@
 #pragma once
 
 #include "machine/devices/gx/gpu_command_buffer.h"
+#include "machine/devices/gx/gpu_display.h"
 
 namespace bmsx {
 
@@ -15,13 +16,6 @@ constexpr size_t GX_GPU_TRIANGLE_ATTRIBUTE_RADIX_BITS = 4u;
 constexpr size_t GX_GPU_TRIANGLE_ATTRIBUTE_RADIX_DIGITS = 5u;
 constexpr u32 GX_GPU_TEXTURE_SOURCE_COMMAND_OVERLAP = 1u;
 constexpr u32 GX_GPU_TEXTURE_SOURCE_BATCH_OVERLAP = 2u;
-constexpr u32 GX_GPU_DOT_CLOCK_DIVIDER_256 = 10u;
-constexpr u32 GX_GPU_DOT_CLOCK_DIVIDER_320 = 8u;
-constexpr u32 GX_GPU_DOT_CLOCK_DIVIDER_512 = 5u;
-constexpr u32 GX_GPU_DOT_CLOCK_DIVIDER_640 = 4u;
-constexpr u32 GX_GPU_DOT_CLOCK_DIVIDER_368 = 7u;
-constexpr u32 GX_GPU_DISPLAY_MODE_RGB24_BIT = 0x10u;
-constexpr u32 GX_GPU_DISPLAY_MODE_VERTICAL_INTERLACE_BIT = 0x20u;
 
 inline i32 gxGpuSigned11(u32 value) {
 	const i32 raw = static_cast<i32>(value & 0x7ffu);
@@ -110,68 +104,6 @@ inline u32 gxGpuTriangleAttributePlaneInterpolantValue(
 
 inline i32 gxGpuVertexY(u32 word) {
 	return gxGpuSigned11(word >> 16u);
-}
-
-inline u32 gxGpuDisplayStartX(u32 word) {
-	return word & 0x3ffu;
-}
-
-inline u32 gxGpuDisplayModeScreenWidth(u32 displayModeWord) {
-	const u32 horizontalResolution1 = displayModeWord & 0x03u;
-	const bool horizontalResolution2 = (displayModeWord & 0x40u) != 0u;
-	if (horizontalResolution1 == 0u) {
-		return horizontalResolution2 ? 368u : 256u;
-	}
-	if (horizontalResolution1 == 1u) {
-		return horizontalResolution2 ? 384u : 320u;
-	}
-	if (horizontalResolution1 == 2u) {
-		return 512u;
-	}
-	return 640u;
-}
-
-inline u32 gxGpuDisplayModeDotClockDivider(u32 displayModeWord) {
-	if ((displayModeWord & 0x40u) != 0u) {
-		return GX_GPU_DOT_CLOCK_DIVIDER_368;
-	}
-	const u32 horizontalResolution1 = displayModeWord & 0x03u;
-	if (horizontalResolution1 == 0u) {
-		return GX_GPU_DOT_CLOCK_DIVIDER_256;
-	}
-	if (horizontalResolution1 == 1u) {
-		return GX_GPU_DOT_CLOCK_DIVIDER_320;
-	}
-	if (horizontalResolution1 == 2u) {
-		return GX_GPU_DOT_CLOCK_DIVIDER_512;
-	}
-	return GX_GPU_DOT_CLOCK_DIVIDER_640;
-}
-
-inline u32 gxGpuHorizontalDisplayRangeStart(u32 horizontalDisplayRangeWord) {
-	return horizontalDisplayRangeWord & 0xfffu;
-}
-
-inline u32 gxGpuHorizontalDisplayRangeEnd(u32 horizontalDisplayRangeWord) {
-	return (horizontalDisplayRangeWord >> 12u) & 0xfffu;
-}
-
-inline i32 gxGpuHorizontalVisibleColumns(u32 horizontalDisplayRangeWord, u32 displayModeWord) {
-	const i32 rangeCycles = static_cast<i32>(gxGpuHorizontalDisplayRangeEnd(horizontalDisplayRangeWord)) - static_cast<i32>(gxGpuHorizontalDisplayRangeStart(horizontalDisplayRangeWord));
-	return (((rangeCycles / static_cast<i32>(gxGpuDisplayModeDotClockDivider(displayModeWord))) + 2) & ~0x03);
-}
-
-inline u32 gxGpuVerticalDisplayRangeStart(u32 verticalDisplayRangeWord) {
-	return verticalDisplayRangeWord & 0x3ffu;
-}
-
-inline u32 gxGpuVerticalDisplayRangeEnd(u32 verticalDisplayRangeWord) {
-	return (verticalDisplayRangeWord >> 10u) & 0x3ffu;
-}
-
-inline i32 gxGpuVerticalVisibleLines(u32 verticalDisplayRangeWord, u32 displayModeWord) {
-	const i32 lines = static_cast<i32>(gxGpuVerticalDisplayRangeEnd(verticalDisplayRangeWord)) - static_cast<i32>(gxGpuVerticalDisplayRangeStart(verticalDisplayRangeWord));
-	return (displayModeWord & GX_GPU_DISPLAY_MODE_VERTICAL_INTERLACE_BIT) != 0u ? lines * 2 : lines;
 }
 
 inline i32 gxGpuDrawingOffsetY(u32 word) {

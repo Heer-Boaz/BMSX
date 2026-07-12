@@ -6,8 +6,6 @@ namespace bmsx {
 
 class Runtime;
 struct ResolvedRuntimeTiming {
-	i32 viewportWidth;
-	i32 viewportHeight;
 	uint32_t gpuDisplayModeWord;
 	i64 ufpsScaled;
 	i64 totalScanlines;

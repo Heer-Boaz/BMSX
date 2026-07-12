@@ -4,11 +4,15 @@
 #include "machine/bus/io.h"
 #include "machine/devices/input/contracts.h"
 #include "machine/devices/gx/gpu.h"
+#include "machine/devices/gx/gpu_display.h"
 #include "machine/devices/gx/gte.h"
+#include "machine/model_registry.h"
 #include "machine/memory/map.h"
+#include "machine/runtime/boot_timing.h"
 #include "machine/runtime/runtime.h"
 #include "machine/runtime/save_state.h"
 #include "machine/runtime/save_state/codec.h"
+#include "machine/runtime/timing/index.h"
 #include "platform.h"
 #include "support/program_cart_fixture.h"
 
@@ -28,8 +32,27 @@ void require(bool condition, const char* message) {
 void discardRetroLog(enum retro_log_level, const char*, ...) {
 }
 
+void discardInputPoll() {
+}
+
+int16_t discardInputState(unsigned, unsigned, unsigned, unsigned) {
+	return 0;
+}
+
+unsigned geometryChangeCount = 0u;
+retro_game_geometry lastGeometry{};
+
+bool captureEnvironment(unsigned command, void* data) {
+	if (command == RETRO_ENVIRONMENT_SET_GEOMETRY) {
+		lastGeometry = *static_cast<retro_game_geometry*>(data);
+		geometryChangeCount += 1u;
+	}
+	return true;
+}
+
 void testLibretroSaveStateRoundTrip() {
-	bmsx::LibretroPlatform platform(bmsx::BackendType::Software);
+	retro_system_av_info avInfo{};
+	bmsx::LibretroPlatform platform(bmsx::BackendType::Software, avInfo);
 	platform.setLogCallback(discardRetroLog);
 	require(platform.getStateSize() == 0u, "libretro state size should be zero before a ROM is loaded");
 
@@ -53,9 +76,9 @@ void testLibretroSaveStateRoundTrip() {
 	require(memory.readMappedU32LE(bmsx::IO_GX_GTE_CYCLES) == bmsx::GX_GTE_CYCLES_DPCS, "GTE command should publish DPCS cycles before saveState");
 	require(platform.getStateSize() == stateSize, "libretro state size should remain stable across RAM and device-register changes");
 
-	const uint32_t savedGp0Word = (bmsx::GX_GPU_GP0_SET_DRAW_MODE << 24u) | 0x123u;
+	const uint32_t savedGp0Word = (bmsx::GX_GPU_GP0_DRAW_MODE << 24u) | 0x123u;
 	memory.writeMappedU32LE(bmsx::IO_GX_GPU_GP0, savedGp0Word);
-	memory.writeMappedU32LE(bmsx::IO_GX_GPU_GP1, bmsx::GX_GPU_GP1_SET_DISPLAY_MODE << 24u);
+	memory.writeMappedU32LE(bmsx::IO_GX_GPU_GP1, bmsx::GX_GPU_GP1_DISPLAY_MODE << 24u);
 	std::vector<bmsx::u8> expectedVram(bmsx::GX_GPU_VRAM_BYTE_COUNT);
 	expectedVram[0u] = 0x12u;
 	expectedVram[0x45678u] = 0x34u;
@@ -93,7 +116,7 @@ void testLibretroSaveStateRoundTrip() {
 
 	memory.writeMappedU32LE(bmsx::GEO_SCRATCH_BASE, 0xaabbccddu);
 	memory.writeMappedU32LE(bmsx::IO_GX_GPU_GP1, bmsx::GX_GPU_GP1_RESET << 24u);
-	memory.writeMappedU32LE(bmsx::IO_GX_GPU_GP0, (bmsx::GX_GPU_GP0_SET_DRAW_MODE << 24u) | 0x456u);
+	memory.writeMappedU32LE(bmsx::IO_GX_GPU_GP0, (bmsx::GX_GPU_GP0_DRAW_MODE << 24u) | 0x456u);
 	std::vector<bmsx::u8> mutatedVram(bmsx::GX_GPU_VRAM_BYTE_COUNT, 0xa5u);
 	runtime.machine.gxGpu.replaceVramSnapshotBytes(mutatedVram.data());
 	runtime.machine.irqController.reset();
@@ -114,7 +137,7 @@ void testLibretroSaveStateRoundTrip() {
 	require(std::equal(expectedVram.begin(), expectedVram.end(), restoredVram.begin()), "libretro loadState should restore GX-owned raw VRAM");
 	require(runtime.machine.gxGpu.readDisplayModeWord() == 0u, "libretro loadState should restore GX-GPU display mode word");
 	require((runtime.machine.gxGpu.readStatus() & bmsx::GX_GPU_STATUS_PAL_MODE) == 0u, "libretro loadState should restore GX-GPU GPUSTAT PAL bit");
-	require(runtime.timing.gpuDisplayModeWord == 0u, "libretro loadState should restore runtime GPU display timing word");
+	require(runtime.timing.gpuDisplayModeWord == bmsx::GX_GPU_RESET_DISPLAY_MODE_WORD, "libretro loadState should derive runtime timing from the restored published GPU mode");
 	require(runtime.machine.irqController.hasAssertedMaskableInterruptLine(), "libretro loadState should restore asserted IRQ line state");
 	require((memory.readIoU32(bmsx::IO_IRQ_FLAGS) & bmsx::IRQ_VBLANK) != 0u, "libretro loadState should restore cart-visible IRQ flags");
 	require(memory.readIoU32(bmsx::IO_IRQ_MASK) == bmsx::IRQ_VBLANK, "libretro loadState should restore IRQ_MASK");
@@ -134,7 +157,8 @@ void testLibretroSaveStateRoundTrip() {
 }
 
 void testDmaCodecRejectsQueuesBeyondHardwareCapacity() {
-	bmsx::LibretroPlatform platform(bmsx::BackendType::Software);
+	retro_system_av_info avInfo{};
+	bmsx::LibretroPlatform platform(bmsx::BackendType::Software, avInfo);
 	platform.setLogCallback(discardRetroLog);
 	const std::vector<bmsx::u8> rom = bmsx::test::makeMinimalProgramCartRom();
 	require(platform.loadRom(rom.data(), rom.size()), "libretro should load a program cart ROM for codec validation");
@@ -151,7 +175,8 @@ void testDmaCodecRejectsQueuesBeyondHardwareCapacity() {
 }
 
 void testGpureadCodecStoresReadyBytesAndRejectsBackendPhase() {
-	bmsx::LibretroPlatform platform(bmsx::BackendType::Software);
+	retro_system_av_info avInfo{};
+	bmsx::LibretroPlatform platform(bmsx::BackendType::Software, avInfo);
 	platform.setLogCallback(discardRetroLog);
 	const std::vector<bmsx::u8> rom = bmsx::test::makeMinimalProgramCartRom();
 	require(platform.loadRom(rom.data(), rom.size()), "libretro should load a program cart ROM for GPUREAD codec validation");
@@ -208,7 +233,8 @@ void testGpureadCodecStoresReadyBytesAndRejectsBackendPhase() {
 }
 
 void testLibretroStateEnvelopeSupportsMaximumGpuread() {
-	bmsx::LibretroPlatform platform(bmsx::BackendType::Software);
+	retro_system_av_info avInfo{};
+	bmsx::LibretroPlatform platform(bmsx::BackendType::Software, avInfo);
 	platform.setLogCallback(discardRetroLog);
 	const std::vector<bmsx::u8> rom = bmsx::test::makeMinimalProgramCartRom();
 	require(platform.loadRom(rom.data(), rom.size()), "libretro should load a program cart ROM for GPUREAD envelope validation");
@@ -225,7 +251,8 @@ void testLibretroStateEnvelopeSupportsMaximumGpuread() {
 }
 
 void testInputSnapshotReflectsHeldKey() {
-	bmsx::LibretroPlatform platform(bmsx::BackendType::Software);
+	retro_system_av_info avInfo{};
+	bmsx::LibretroPlatform platform(bmsx::BackendType::Software, avInfo);
 	platform.setLogCallback(discardRetroLog);
 
 	bmsx::Input& input = bmsx::Input::instance();
@@ -240,6 +267,133 @@ void testInputSnapshotReflectsHeldKey() {
 		"raw ICU snapshot should set the keyboard bit for a held key");
 }
 
+void testLibretroTracksPublishedNativeOutputGeometry() {
+	retro_system_av_info avInfo{};
+	avInfo.geometry.base_width = 320u;
+	avInfo.geometry.base_height = 240u;
+	avInfo.geometry.max_width = static_cast<unsigned>(bmsx::PSX_GPU_MAX_DISPLAY_WIDTH);
+	avInfo.geometry.max_height = static_cast<unsigned>(bmsx::PSX_GPU_MAX_DISPLAY_HEIGHT);
+	avInfo.geometry.aspect_ratio = static_cast<float>(bmsx::PSX_GPU_DISPLAY_ASPECT_WIDTH) / static_cast<float>(bmsx::PSX_GPU_DISPLAY_ASPECT_HEIGHT);
+	geometryChangeCount = 0u;
+	lastGeometry = {};
+	bmsx::LibretroPlatform platform(bmsx::BackendType::Software, avInfo);
+	platform.setEnvironmentCallback(captureEnvironment);
+	platform.setLogCallback(discardRetroLog);
+	platform.setInputPollCallback(discardInputPoll);
+	platform.setInputStateCallback(discardInputState);
+	const std::vector<bmsx::u8> rom = bmsx::test::makeMinimalProgramCartRom();
+	require(platform.loadRom(rom.data(), rom.size()), "libretro should load a program cart ROM for native geometry validation");
+	platform.machineManager()->start();
+	platform.setPlatformPaused(true);
+
+	bmsx::Runtime& runtime = platform.machineManager()->runtime();
+	bmsx::GxGpu& gpu = runtime.machine.gxGpu;
+	const uint32_t range192 = ((35u + 192u) << 10u) | 35u;
+	const uint32_t range212 = ((35u + 212u) << 10u) | 35u;
+	gpu.writeGp1((bmsx::GX_GPU_GP1_DISPLAY_MODE << 24u) | bmsx::PSX_GPU_DISPLAY_MODE_PAL_WORD);
+	gpu.writeGp1((bmsx::GX_GPU_GP1_VERTICAL_DISPLAY_RANGE << 24u) | range192);
+	gpu.presentReadyFrameOnVblankEdge();
+	require(platform.runFrame(), "libretro paused frame should present the published 192-line output");
+	require(geometryChangeCount == 1u, "libretro should publish one geometry transition for 256x192");
+	require(lastGeometry.base_width == 256u && lastGeometry.base_height == 192u, "libretro geometry transition should expose native 256x192");
+	require(lastGeometry.max_width == static_cast<unsigned>(bmsx::PSX_GPU_MAX_DISPLAY_WIDTH), "libretro geometry should retain the maximum display width");
+	require(lastGeometry.max_height == static_cast<unsigned>(bmsx::PSX_GPU_MAX_DISPLAY_HEIGHT), "libretro geometry should retain the maximum display height");
+	require(lastGeometry.aspect_ratio == static_cast<float>(bmsx::PSX_GPU_DISPLAY_ASPECT_WIDTH) / static_cast<float>(bmsx::PSX_GPU_DISPLAY_ASPECT_HEIGHT), "libretro geometry should retain the model aspect ratio");
+	require(platform.getFramebuffer().width == 256u && platform.getFramebuffer().height == 192u, "libretro framebuffer should resize to native 256x192");
+	require(avInfo.geometry.base_width == 256u && avInfo.geometry.base_height == 192u, "libretro AV cache should track the published 256x192 output");
+
+	require(platform.runFrame(), "libretro paused frame should hold the unchanged 192-line output");
+	require(geometryChangeCount == 1u, "libretro should not republish unchanged native geometry");
+
+	const uint32_t alternateHorizontalRange = 0x00c6e27eu;
+	gpu.writeGp1((bmsx::GX_GPU_GP1_HORIZONTAL_DISPLAY_RANGE << 24u) | alternateHorizontalRange);
+	gpu.presentReadyFrameOnVblankEdge();
+	require(platform.runFrame(), "libretro paused frame should consume the changed horizontal timing range");
+	require(gpu.readDeviceOutput().horizontalDisplayRangeWord == alternateHorizontalRange, "GX-GPU should publish the changed horizontal timing range as raw state");
+	require(geometryChangeCount == 1u, "horizontal timing range must not act as a logical-width transition");
+	require(platform.getFramebuffer().width == 256u && platform.getFramebuffer().height == 192u, "horizontal timing range must not resize the native framebuffer");
+
+	gpu.writeGp1((bmsx::GX_GPU_GP1_VERTICAL_DISPLAY_RANGE << 24u) | range212);
+	require(gpu.readVerticalDisplayRangeWord() == range212, "GX-GPU live vertical range should retain the pending 212-line write");
+	require(gpu.readDeviceOutput().verticalDisplayRangeWord == range192, "GX-GPU published output should retain 192 lines until the next vblank latch");
+	const size_t stateSize = platform.getStateSize();
+	std::vector<bmsx::u8> saved(stateSize);
+	require(platform.saveState(saved.data(), saved.size()), "libretro should save pending live 212-line state with published 192-line output");
+	gpu.presentReadyFrameOnVblankEdge();
+	require(platform.runFrame(), "libretro paused frame should present the published 212-line output");
+	require(geometryChangeCount == 2u, "libretro should publish one geometry transition back to 256x212");
+	require(platform.getFramebuffer().width == 256u && platform.getFramebuffer().height == 212u, "libretro framebuffer should resize to native 256x212");
+	require(avInfo.geometry.base_width == 256u && avInfo.geometry.base_height == 212u, "libretro AV cache should track the published 256x212 output");
+
+	require(platform.loadState(saved.data(), saved.size()), "libretro should restore the published 192-line output state");
+	require(gpu.readVerticalDisplayRangeWord() == range212, "libretro state restore should preserve the pending live 212-line range");
+	require(gpu.readDeviceOutput().verticalDisplayRangeWord == range192, "libretro state restore should preserve the published 192-line range");
+	require(runtime.timing.gpuVerticalDisplayRangeWord == range192, "libretro state restore should derive runtime timing from the restored published vertical range");
+	require(platform.runFrame(), "libretro paused frame should present restored 192-line output");
+	require(geometryChangeCount == 3u, "libretro restore should publish one transition to restored 256x192 geometry");
+	require(platform.getFramebuffer().width == 256u && platform.getFramebuffer().height == 192u, "libretro restore should resize the framebuffer to restored native geometry");
+	require(avInfo.geometry.base_width == 256u && avInfo.geometry.base_height == 192u, "libretro AV cache should track restored native geometry");
+}
+
+void testPublishedDisplayTimingAppliesAtFrameEnd() {
+	const bmsx::ResolvedRuntimeTiming pal240 = bmsx::resolveRuntimeTiming(5000000, bmsx::GX_GPU_RESET_DISPLAY_MODE_WORD);
+	const bmsx::ResolvedRuntimeTiming ntsc240 = bmsx::resolveRuntimeTiming(5000000, bmsx::GX_GPU_RESET_DISPLAY_MODE_WORD & ~bmsx::PSX_GPU_DISPLAY_MODE_PAL_BIT);
+	require(pal240.vblankCycles == 23323, "PAL 240-line mode should expose 23323 vblank cycles at 5MHz");
+	require(ntsc240.vblankCycles == 7005, "NTSC 240-line mode should expose 7005 vblank cycles at 5MHz");
+	require(bmsx::resolveVblankCycles(5000000, bmsx::PAL_REFRESH_UFPS_SCALED, bmsx::PAL_TOTAL_SCANLINES, 212) == 32269, "PAL 212-line mode should expose 32269 vblank cycles at 5MHz");
+	require(bmsx::resolveVblankCycles(5000000, bmsx::NTSC_REFRESH_UFPS_SCALED, bmsx::NTSC_TOTAL_SCANLINES, 212) == 15920, "NTSC 212-line mode should expose 15920 vblank cycles at 5MHz");
+	require(bmsx::resolveVblankCycles(5000000, bmsx::PAL_REFRESH_UFPS_SCALED, bmsx::PAL_TOTAL_SCANLINES, 192) == 38659, "PAL 192-line mode should expose 38659 vblank cycles at 5MHz");
+	require(bmsx::resolveVblankCycles(5000000, bmsx::NTSC_REFRESH_UFPS_SCALED, bmsx::NTSC_TOTAL_SCANLINES, 192) == 22287, "NTSC 192-line mode should expose 22287 vblank cycles at 5MHz");
+
+	retro_system_av_info avInfo{};
+	bmsx::LibretroPlatform platform(bmsx::BackendType::Software, avInfo);
+	platform.setLogCallback(discardRetroLog);
+	const std::vector<bmsx::u8> rom = bmsx::test::makeMinimalProgramCartRom();
+	require(platform.loadRom(rom.data(), rom.size()), "libretro should load a program cart ROM for published timing validation");
+	bmsx::Runtime& runtime = platform.machineManager()->runtime();
+	bmsx::applyRuntimeTiming(runtime, pal240);
+	bmsx::GxGpu& gpu = runtime.machine.gxGpu;
+	const uint32_t range192 = ((35u + 192u) << 10u) | 35u;
+	const uint32_t range212 = ((35u + 212u) << 10u) | 35u;
+
+	gpu.writeGp1((bmsx::GX_GPU_GP1_VERTICAL_DISPLAY_RANGE << 24u) | range192);
+	require(runtime.timing.gpuVerticalDisplayRangeWord == bmsx::GX_GPU_RESET_VERTICAL_DISPLAY_RANGE_WORD, "GP1 vertical range write should not change runtime timing before publication");
+	runtime.vblank.handleBeginTimer(runtime);
+	require(gpu.readDeviceOutput().verticalDisplayRangeWord == range192, "vblank begin should latch the live 192-line range for presentation");
+	require(runtime.timing.gpuVerticalDisplayRangeWord == bmsx::GX_GPU_RESET_VERTICAL_DISPLAY_RANGE_WORD, "vblank begin should not change current-frame timing");
+	runtime.machine.scheduler.reset();
+	runtime.vblank.handleEndTimer(runtime);
+	require(runtime.timing.gpuVerticalDisplayRangeWord == range192, "vblank end should apply the published 192-line range to next-frame timing");
+	require(runtime.machine.scheduler.nextDeadline() == 61341, "PAL 192-line mode should expose 38659 vblank cycles at 5MHz");
+
+	gpu.writeGp1((bmsx::GX_GPU_GP1_VERTICAL_DISPLAY_RANGE << 24u) | range212);
+	require(runtime.timing.gpuVerticalDisplayRangeWord == range192, "pending 212-line GP1 write should leave 192-line timing active");
+	runtime.vblank.handleBeginTimer(runtime);
+	require(runtime.timing.gpuVerticalDisplayRangeWord == range192, "212-line range latch should wait until frame end before changing timing");
+	runtime.machine.scheduler.reset();
+	runtime.vblank.handleEndTimer(runtime);
+	require(runtime.timing.gpuVerticalDisplayRangeWord == range212, "frame end should activate published PAL 212-line timing");
+	require(runtime.machine.scheduler.nextDeadline() == 67731, "PAL 212-line frame scheduling should start vblank after 67731 active cycles");
+
+	gpu.writeGp1(bmsx::GX_GPU_GP1_DISPLAY_MODE << 24u);
+	gpu.writeGp1((bmsx::GX_GPU_GP1_VERTICAL_DISPLAY_RANGE << 24u) | range192);
+	require(runtime.timing.gpuDisplayModeWord == bmsx::GX_GPU_RESET_DISPLAY_MODE_WORD, "GP1 display-mode write should not change runtime timing before publication");
+	runtime.vblank.handleBeginTimer(runtime);
+	require(runtime.timing.gpuDisplayModeWord == bmsx::GX_GPU_RESET_DISPLAY_MODE_WORD, "NTSC display-mode latch should wait until frame end before changing timing");
+	runtime.machine.scheduler.reset();
+	runtime.vblank.handleEndTimer(runtime);
+	require(runtime.timing.gpuDisplayModeWord == bmsx::PSX_GPU_DISPLAY_MODE_NTSC_WORD, "frame end should activate published NTSC timing");
+	require(runtime.timing.gpuVerticalDisplayRangeWord == range192, "frame end should activate published NTSC 192-line timing");
+	require(runtime.machine.scheduler.nextDeadline() == 61129, "NTSC 192-line mode should expose 22287 vblank cycles at 5MHz");
+
+	gpu.writeGp1((bmsx::GX_GPU_GP1_VERTICAL_DISPLAY_RANGE << 24u) | range212);
+	runtime.vblank.handleBeginTimer(runtime);
+	runtime.machine.scheduler.reset();
+	runtime.vblank.handleEndTimer(runtime);
+	require(runtime.timing.gpuVerticalDisplayRangeWord == range212, "frame end should activate published NTSC 212-line timing");
+	require(runtime.machine.scheduler.nextDeadline() == 67496, "NTSC 212-line frame scheduling should start vblank after 67496 active cycles");
+}
+
 } // namespace
 
 int main() {
@@ -248,5 +402,7 @@ int main() {
 	testGpureadCodecStoresReadyBytesAndRejectsBackendPhase();
 	testLibretroStateEnvelopeSupportsMaximumGpuread();
 	testInputSnapshotReflectsHeldKey();
+	testLibretroTracksPublishedNativeOutputGeometry();
+	testPublishedDisplayTimingAppliesAtFrameEnd();
 	return 0;
 }

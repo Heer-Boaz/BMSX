@@ -1,6 +1,7 @@
 #include "machine/runtime/runtime.h"
 #include "common/utf8.h"
 #include "machine/bus/io.h"
+#include "machine/devices/gx/gpu_display.h"
 #include "machine/memory/lua_heap_usage.h"
 #include "machine/memory/map.h"
 #include "machine/model_registry.h"
@@ -16,12 +17,13 @@ namespace bmsx {
 Runtime::Runtime(
 	const RuntimeOptions& options,
 	RuntimeInputSource& input
-)
+	)
 	: timing(
 		options.ufpsScaled,
 		options.cpuHz,
 		options.cycleBudgetPerFrame,
 		options.psxGpuDisplayModeWord,
+		GX_GPU_RESET_VERTICAL_DISPLAY_RANGE_WORD,
 		getPsxGpuDisplayModeTimingForWord(options.psxGpuDisplayModeWord).totalScanlines,
 		options.dmaBytesPerSec,
 		options.geoWorkUnitsPerSec
@@ -104,13 +106,7 @@ Value Runtime::onCyclesPerFrameRead([[maybe_unused]] uint32_t addr) const {
 void Runtime::onGxGpuGp1WriteThunk(void* context, uint32_t addr, Value value) {
 	auto* runtime = static_cast<Runtime*>(context);
 	(void)addr;
-	const u32 opcode = runtime->machine.gxGpu.writeGp1(toU32(value));
-	switch (opcode) {
-	case GX_GPU_GP1_RESET:
-	case GX_GPU_GP1_SET_DISPLAY_MODE:
-		runtime->applyPsxGpuDisplayTimingWord(runtime->machine.gxGpu.readDisplayModeWord());
-		break;
-	}
+	runtime->machine.gxGpu.writeGp1(toU32(value));
 }
 
 void Runtime::onLuaOutputCodepointWriteThunk(void* context, uint32_t addr, Value value) {
@@ -136,22 +132,24 @@ void Runtime::applyUfpsScaled(i64 ufpsScaled) {
 	m_input.setRuntimeInputFrameDurationMs(timing.frameDurationMs);
 }
 
-void Runtime::applyPsxGpuDisplayModeWord(uint32_t gpuDisplayModeWord) {
-	machine.gxGpu.writeDisplayModeWord(gpuDisplayModeWord);
-	applyPsxGpuDisplayTimingWord(machine.gxGpu.readDisplayModeWord());
-}
-
-void Runtime::applyPsxGpuDisplayTimingWord(uint32_t gpuDisplayModeWord) {
-	const PsxGpuDisplayModeTiming displayModeTiming = getPsxGpuDisplayModeTimingForWord(gpuDisplayModeWord);
-	timing.gpuDisplayModeWord = gpuDisplayModeWord;
+void Runtime::applyPublishedPsxGpuDisplayTiming(u32 displayModeWord, u32 verticalDisplayRangeWord) {
+	if (displayModeWord == timing.gpuDisplayModeWord && verticalDisplayRangeWord == timing.gpuVerticalDisplayRangeWord) {
+		return;
+	}
+	const PsxGpuDisplayModeTiming displayModeTiming = getPsxGpuDisplayModeTimingForWord(displayModeWord);
+	const int cycleBudgetPerFrame = static_cast<int>(calcCyclesPerFrameScaled(timing.cpuHz, displayModeTiming.refreshUfpsScaled));
+	const int vblankCycles = static_cast<int>(resolveVblankCycles(
+		timing.cpuHz,
+		displayModeTiming.refreshUfpsScaled,
+		displayModeTiming.totalScanlines,
+		gxGpuVerticalVisibleLines(verticalDisplayRangeWord, displayModeWord)
+	));
+	timing.gpuDisplayModeWord = displayModeWord;
+	timing.gpuVerticalDisplayRangeWord = verticalDisplayRangeWord;
 	timing.totalScanlines = displayModeTiming.totalScanlines;
 	applyUfpsScaled(displayModeTiming.refreshUfpsScaled);
-	setFrameTiming(
-		*this,
-		timing.cpuHz,
-		static_cast<int>(calcCyclesPerFrameScaled(timing.cpuHz, displayModeTiming.refreshUfpsScaled)),
-		static_cast<int>(resolveVblankCycles(timing.cpuHz, displayModeTiming.refreshUfpsScaled, displayModeTiming.totalScanlines, PSX_GPU_DISPLAY_HEIGHT))
-	);
+	timing.cycleBudgetPerFrame = cycleBudgetPerFrame;
+	vblank.setNextFrameTiming(cycleBudgetPerFrame, vblankCycles);
 }
 
 uint32_t Runtime::baseRamUsedBytes() const {

@@ -5,6 +5,7 @@
 #include "machine/runtime/runtime.h"
 #include "render/backend/pass/library.h"
 #include "render/gx/view_snapshot.h"
+#include "machine/devices/gx/gpu_display.h"
 #include <cstdio>
 #include <cstdlib>
 
@@ -185,7 +186,15 @@ bool RenderPresentationState::render(MachineManager& manager, Runtime& runtime, 
 			: m_presentationScratch.commitFrame;
 		recordPresentation(presentMode, commitFrame, pausedPresent);
 
-		commitGxGpuViewSnapshot(*manager.m_view, runtime.machine.gxGpu.readDeviceOutput());
+		const GxGpuDeviceOutput& output = runtime.machine.gxGpu.readDeviceOutput();
+		const bool displayConfigurationChanged = manager.m_view->gxGpuDisplayModeWord != output.displayModeWord
+			|| manager.m_view->gxGpuVerticalDisplayRangeWord != output.verticalDisplayRangeWord;
+		commitGxGpuViewSnapshot(*manager.m_view, output);
+		if (displayConfigurationChanged) {
+			const i32 width = static_cast<i32>(gxGpuDisplayModeScreenWidth(output.displayModeWord));
+			const i32 height = gxGpuVerticalVisibleLines(output.verticalDisplayRangeWord, output.displayModeWord);
+			manager.m_view->setRenderTargetSize(width, height);
+		}
 		manager.m_view->configurePresentation(presentMode, commitFrame);
 		manager.m_view->drawgame();
 		if (commitFrame) {

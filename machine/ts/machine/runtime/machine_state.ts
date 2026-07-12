@@ -11,8 +11,9 @@ export type RuntimeMachineState = {
 };
 
 export function captureRuntimeMachineState(runtime: Runtime): RuntimeMachineState {
+	const gpuOutput = runtime.machine.gxGpu.readDeviceOutput();
 	return {
-		psxGpuDisplayModeWord: runtime.timing.gpuDisplayModeWord,
+		psxGpuDisplayModeWord: gpuOutput.displayModeWord,
 		machine: captureMachineState(runtime.machine),
 		frameScheduler: runtime.frameScheduler.captureState(),
 		vblank: runtime.vblank.capture(),
@@ -20,7 +21,7 @@ export function captureRuntimeMachineState(runtime: Runtime): RuntimeMachineStat
 }
 
 export function applyRuntimeMachineState(runtime: Runtime, state: RuntimeMachineState): void {
-	runtime.applyPsxGpuDisplayModeWord(state.psxGpuDisplayModeWord);
+	runtime.applyPublishedPsxGpuDisplayTiming(state.machine.gxGpu.presentDisplayModeWord, state.machine.gxGpu.presentVerticalDisplayRangeWord);
 	runtime.vblank.restore(state.vblank);
 	restoreMachineState(runtime.machine, state.machine);
 	runtime.frameScheduler.restoreState(state.frameScheduler);

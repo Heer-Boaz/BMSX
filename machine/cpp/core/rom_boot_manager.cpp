@@ -1,6 +1,5 @@
 #include "core/rom_boot_manager.h"
 #include "core/system.h"
-#include "machine/model_registry.h"
 #include "rompack/loader.h"
 
 namespace bmsx {
@@ -16,11 +15,6 @@ std::unique_ptr<RomBootPlan> RomBootManager::buildBootPlan(
 	loadSystemRomPackageFromRom(systemRom, systemSize, plan->systemLayer, nullptr, "system");
 	plan->systemLayer.machine = defaultSystemMachineManifest();
 	plan->systemLayer.entryPoint = systemBootEntryPath();
-	const PsxGpuDisplaySizeSpec& viewport = PSX_GPU_DISPLAY_SIZE_SPEC;
-	plan->viewportSize = {
-		viewport.renderWidth,
-		viewport.renderHeight
-	};
 
 	return plan;
 }

@@ -7,15 +7,18 @@ namespace bmsx {
 
 RuntimeMachineState captureRuntimeMachineState(const Runtime& runtime) {
 	RuntimeMachineState state;
-	state.psxGpuDisplayModeWord = runtime.timing.gpuDisplayModeWord;
 	state.machine = captureMachineState(runtime.machine);
+	state.psxGpuDisplayModeWord = state.machine.gxGpu.presentDisplayModeWord;
 	state.frameScheduler = runtime.frameScheduler.captureState();
 	state.vblank = runtime.vblank.capture(runtime);
 	return state;
 }
 
 void applyRuntimeMachineState(Runtime& runtime, const RuntimeMachineState& state) {
-	runtime.applyPsxGpuDisplayModeWord(state.psxGpuDisplayModeWord);
+	runtime.applyPublishedPsxGpuDisplayTiming(
+		state.machine.gxGpu.presentDisplayModeWord,
+		state.machine.gxGpu.presentVerticalDisplayRangeWord
+	);
 	runtime.vblank.restore(runtime, state.vblank);
 	restoreMachineState(runtime.machine, state.machine);
 	runtime.frameScheduler.restoreState(state.frameScheduler);

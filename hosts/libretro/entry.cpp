@@ -21,6 +21,7 @@
 #include "platform.h"
 #include "core/machine_manager.h"
 #include "machine/model_registry.h"
+#include "machine/devices/gx/gpu_display.h"
 #include "machine/runtime/runtime.h"
 
 // Core info
@@ -83,37 +84,25 @@ static retro_system_av_info g_cached_av_info{};
 static bool g_cached_av_info_valid = false;
 static int64_t g_current_ufps_scaled = bmsx::PAL_REFRESH_UFPS_SCALED;
 
-static void apply_model_av_info(retro_system_av_info& av, int64_t ufps_scaled) {
-	const bmsx::PsxGpuDisplaySizeSpec& displaySize = bmsx::PSX_GPU_DISPLAY_SIZE_SPEC;
-	av.geometry.base_width = static_cast<unsigned>(displaySize.renderWidth);
-	av.geometry.base_height = static_cast<unsigned>(displaySize.renderHeight);
-	if (av.geometry.max_width < av.geometry.base_width) {
-		av.geometry.max_width = av.geometry.base_width;
-	}
-	if (av.geometry.max_height < av.geometry.base_height) {
-		av.geometry.max_height = av.geometry.base_height;
-	}
-	av.geometry.aspect_ratio = static_cast<float>(av.geometry.base_width)
-		/ static_cast<float>(av.geometry.base_height);
-	av.timing.fps = static_cast<double>(ufps_scaled) / static_cast<double>(bmsx::HZ_SCALE);
-}
-
 static void initialize_default_av_info(retro_system_av_info& av) {
 	std::memset(&av, 0, sizeof(av));
+	av.geometry.base_width = bmsx::gxGpuDisplayModeScreenWidth(bmsx::GX_GPU_RESET_DISPLAY_MODE_WORD);
+	av.geometry.base_height = static_cast<unsigned>(bmsx::gxGpuVerticalVisibleLines(bmsx::GX_GPU_RESET_VERTICAL_DISPLAY_RANGE_WORD, bmsx::GX_GPU_RESET_DISPLAY_MODE_WORD));
+	av.geometry.max_width = static_cast<unsigned>(bmsx::PSX_GPU_MAX_DISPLAY_WIDTH);
+	av.geometry.max_height = static_cast<unsigned>(bmsx::PSX_GPU_MAX_DISPLAY_HEIGHT);
+	av.geometry.aspect_ratio = static_cast<float>(bmsx::PSX_GPU_DISPLAY_ASPECT_WIDTH) / static_cast<float>(bmsx::PSX_GPU_DISPLAY_ASPECT_HEIGHT);
 	av.timing.sample_rate = bmsx::DEFAULT_LIBRETRO_AUDIO_SAMPLE_RATE;
-	apply_model_av_info(av, bmsx::PAL_REFRESH_UFPS_SCALED);
+	av.timing.fps = static_cast<double>(bmsx::PAL_REFRESH_UFPS_SCALED) / static_cast<double>(bmsx::HZ_SCALE);
 }
 
 static void sync_current_av_info(int64_t ufps_scaled) {
-	retro_system_av_info av = g_cached_av_info;
 	if (!g_cached_av_info_valid) {
-		initialize_default_av_info(av);
+		initialize_default_av_info(g_cached_av_info);
 	}
-	apply_model_av_info(av, ufps_scaled);
-	g_cached_av_info = av;
+	g_cached_av_info.timing.fps = static_cast<double>(ufps_scaled) / static_cast<double>(bmsx::HZ_SCALE);
 	g_cached_av_info_valid = true;
 	g_current_ufps_scaled = ufps_scaled;
-	g_platform->setAVInfo(av);
+	g_platform->setAVInfo(g_cached_av_info);
 }
 
 extern "C" RETRO_API void bmsx_keyboard_event(const char* code, bool down) {
@@ -149,9 +138,6 @@ static constexpr const char* kRenderBackendGLES2 = "gles2";
 static constexpr const char* kOptionCrtPostprocessing = "bmsx_crt_postprocessing";
 static constexpr const char* kCrtPostprocessingOff = "off";
 static constexpr const char* kCrtPostprocessingOn = "on";
-static constexpr const char* kOptionPostprocessDetail = "bmsx_postprocess_detail";
-static constexpr const char* kPostprocessDetailOff = "off";
-static constexpr const char* kPostprocessDetailOn = "on";
 static constexpr const char* kOptionCrtNoise = "bmsx_crt_noise";
 static constexpr const char* kOptionCrtColorBleed = "bmsx_crt_color_bleed";
 static constexpr const char* kOptionCrtScanlines = "bmsx_crt_scanlines";
@@ -175,7 +161,6 @@ enum class RenderBackendPreference {
 
 static RenderBackendPreference g_backend_preference = RenderBackendPreference::Auto;
 static bool g_crt_postprocessing_enabled = true;
-static bool g_postprocess_detail_enabled = false;
 static bool g_crt_noise_enabled = true;
 static bool g_crt_color_bleed_enabled = true;
 static bool g_crt_scanlines_enabled = true;
@@ -219,20 +204,6 @@ static retro_core_option_v2_definition g_option_defs_us[] = {
 			{nullptr, nullptr},
 		},
 		kCrtPostprocessingOn
-	},
-	{
-		kOptionPostprocessDetail,
-		"Post-processing Detail",
-		"Post-processing Detail",
-		"Increase post-processing detail (higher offscreen scale).",
-		"Increase post-processing detail (higher offscreen scale).",
-		"video",
-		{
-			{kPostprocessDetailOff, "Off"},
-			{kPostprocessDetailOn, "On"},
-			{nullptr, nullptr},
-		},
-		kPostprocessDetailOff
 	},
 	{
 		kOptionCrtNoise,
@@ -393,17 +364,6 @@ static retro_core_option_definition g_option_defs_v1_us[] = {
 		kCrtPostprocessingOff
 	},
 	{
-		kOptionPostprocessDetail,
-		"Post-processing Detail",
-		"Increase post-processing detail (higher offscreen scale).",
-		{
-			{kPostprocessDetailOff, "Off"},
-			{kPostprocessDetailOn, "On"},
-			{nullptr, nullptr},
-		},
-		kPostprocessDetailOff
-	},
-	{
 		kOptionCrtNoise,
 		"CRT Noise",
 		"Toggle CRT noise/grain.",
@@ -508,7 +468,6 @@ static retro_core_option_definition g_option_defs_v1_us[] = {
 
 static char g_option_render_backend_var[128] = {};
 static char g_option_crt_postprocessing_var[128] = {};
-static char g_option_postprocess_detail_var[128] = {};
 static char g_option_crt_noise_var[128] = {};
 static char g_option_crt_color_bleed_var[128] = {};
 static char g_option_crt_scanlines_var[128] = {};
@@ -521,7 +480,6 @@ static char g_option_host_show_usage_gizmo_var[128] = {};
 static retro_variable g_option_vars[] = {
 	{kOptionRenderBackend, nullptr},
 	{kOptionCrtPostprocessing, nullptr},
-	{kOptionPostprocessDetail, nullptr},
 	{kOptionCrtNoise, nullptr},
 	{kOptionCrtColorBleed, nullptr},
 	{kOptionCrtScanlines, nullptr},
@@ -547,7 +505,6 @@ static const char* backend_label(bmsx::BackendType type);
 static void apply_backend_preference(RenderBackendPreference preference);
 static void fail_hardware_backend(bmsx::BackendType backend, const char* reason);
 static bool read_crt_postprocessing_enabled();
-static bool read_postprocess_detail_enabled();
 static bool read_crt_noise_enabled();
 static bool read_crt_color_bleed_enabled();
 static bool read_crt_scanlines_enabled();
@@ -644,17 +601,15 @@ static void set_crt_option_values(bool enabled) {
 	set_toggle(6, allow_crt);
 	set_toggle(7, allow_crt);
 	set_toggle(8, allow_crt);
-	set_toggle(9, allow_crt);
 
 	set_default(1, kCrtPostprocessingOff);
-	set_default(2, kPostprocessDetailOff);
+	set_default(2, kToggleOff);
 	set_default(3, kToggleOff);
 	set_default(4, kToggleOff);
 	set_default(5, kToggleOff);
 	set_default(6, kToggleOff);
 	set_default(7, kToggleOff);
 	set_default(8, kToggleOff);
-	set_default(9, kToggleOff);
 }
 
 static void set_core_options(bool default_gles2) {
@@ -688,35 +643,28 @@ static void set_core_options(bool default_gles2) {
 	g_option_defs_v1_us[1].values[0] = {kCrtPostprocessingOff, "Off"};
 	g_option_defs_v1_us[1].values[1] = {kCrtPostprocessingOn, "On"};
 	g_option_defs_v1_us[1].values[2] = {nullptr, nullptr};
-	g_option_defs_us[2].values[0] = {kPostprocessDetailOff, "Off"};
-	g_option_defs_us[2].values[1] = {kPostprocessDetailOn, "On"};
-	g_option_defs_us[2].values[2] = {nullptr, nullptr};
-	g_option_defs_v1_us[2].values[0] = {kPostprocessDetailOff, "Off"};
-	g_option_defs_v1_us[2].values[1] = {kPostprocessDetailOn, "On"};
-	g_option_defs_v1_us[2].values[2] = {nullptr, nullptr};
-
 	const bool crt_readonly = false;
 	set_crt_option_values(true);
 
-	g_option_defs_us[10].default_value = kDitherOff;
-	g_option_defs_v1_us[10].default_value = kDitherOff;
-	g_option_defs_us[10].values[0] = {kDitherOff, "Off"};
-	g_option_defs_us[10].values[1] = {kDitherRGB565, "RGB565"};
-	g_option_defs_us[10].values[2] = {kDitherMSX10, "MSX10 3:4:3"};
-	g_option_defs_us[10].values[3] = {nullptr, nullptr};
-	g_option_defs_v1_us[10].values[0] = {kDitherOff, "Off"};
-	g_option_defs_v1_us[10].values[1] = {kDitherRGB565, "RGB565"};
-	g_option_defs_v1_us[10].values[2] = {kDitherMSX10, "MSX10 3:4:3"};
-	g_option_defs_v1_us[10].values[3] = {nullptr, nullptr};
+	g_option_defs_us[9].default_value = kDitherOff;
+	g_option_defs_v1_us[9].default_value = kDitherOff;
+	g_option_defs_us[9].values[0] = {kDitherOff, "Off"};
+	g_option_defs_us[9].values[1] = {kDitherRGB565, "RGB565"};
+	g_option_defs_us[9].values[2] = {kDitherMSX10, "MSX10 3:4:3"};
+	g_option_defs_us[9].values[3] = {nullptr, nullptr};
+	g_option_defs_v1_us[9].values[0] = {kDitherOff, "Off"};
+	g_option_defs_v1_us[9].values[1] = {kDitherRGB565, "RGB565"};
+	g_option_defs_v1_us[9].values[2] = {kDitherMSX10, "MSX10 3:4:3"};
+	g_option_defs_v1_us[9].values[3] = {nullptr, nullptr};
 
-	g_option_defs_us[11].default_value = kToggleOff;
-	g_option_defs_v1_us[11].default_value = kToggleOff;
-	g_option_defs_us[11].values[0] = {kToggleOff, "Off"};
-	g_option_defs_us[11].values[1] = {kToggleOn, "On"};
-	g_option_defs_us[11].values[2] = {nullptr, nullptr};
-	g_option_defs_v1_us[11].values[0] = {kToggleOff, "Off"};
-	g_option_defs_v1_us[11].values[1] = {kToggleOn, "On"};
-	g_option_defs_v1_us[11].values[2] = {nullptr, nullptr};
+	g_option_defs_us[10].default_value = kToggleOff;
+	g_option_defs_v1_us[10].default_value = kToggleOff;
+	g_option_defs_us[10].values[0] = {kToggleOff, "Off"};
+	g_option_defs_us[10].values[1] = {kToggleOn, "On"};
+	g_option_defs_us[10].values[2] = {nullptr, nullptr};
+	g_option_defs_v1_us[10].values[0] = {kToggleOff, "Off"};
+	g_option_defs_v1_us[10].values[1] = {kToggleOn, "On"};
+	g_option_defs_v1_us[10].values[2] = {nullptr, nullptr};
 
 #if BMSX_ENABLE_GLES2
 	if (default_gles2) {
@@ -735,44 +683,40 @@ static void set_core_options(bool default_gles2) {
 					crt_readonly ? "CRT Post-processing; %s" : "CRT Post-processing; %s|%s",
 					kCrtPostprocessingOn, kCrtPostprocessingOff);
 	g_option_vars[1].value = g_option_crt_postprocessing_var;
-	std::snprintf(g_option_postprocess_detail_var, sizeof(g_option_postprocess_detail_var),
-					crt_readonly ? "Post-processing Detail; %s" : "Post-processing Detail; %s|%s",
-					kPostprocessDetailOff, kPostprocessDetailOn);
-	g_option_vars[2].value = g_option_postprocess_detail_var;
 	std::snprintf(g_option_crt_noise_var, sizeof(g_option_crt_noise_var),
 					crt_readonly ? "CRT Noise; %s" : "CRT Noise; %s|%s",
 					kToggleOn, kToggleOff);
-	g_option_vars[3].value = g_option_crt_noise_var;
+	g_option_vars[2].value = g_option_crt_noise_var;
 	std::snprintf(g_option_crt_color_bleed_var, sizeof(g_option_crt_color_bleed_var),
 					crt_readonly ? "CRT Color Bleed; %s" : "CRT Color Bleed; %s|%s",
 					kToggleOn, kToggleOff);
-	g_option_vars[4].value = g_option_crt_color_bleed_var;
+	g_option_vars[3].value = g_option_crt_color_bleed_var;
 	std::snprintf(g_option_crt_scanlines_var, sizeof(g_option_crt_scanlines_var),
 					crt_readonly ? "CRT Scanlines; %s" : "CRT Scanlines; %s|%s",
 					kToggleOn, kToggleOff);
-	g_option_vars[5].value = g_option_crt_scanlines_var;
+	g_option_vars[4].value = g_option_crt_scanlines_var;
 	std::snprintf(g_option_crt_blur_var, sizeof(g_option_crt_blur_var),
 					crt_readonly ? "CRT Blur; %s" : "CRT Blur; %s|%s",
 					kToggleOn, kToggleOff);
-	g_option_vars[6].value = g_option_crt_blur_var;
+	g_option_vars[5].value = g_option_crt_blur_var;
 	std::snprintf(g_option_crt_glow_var, sizeof(g_option_crt_glow_var),
 					crt_readonly ? "CRT Glow; %s" : "CRT Glow; %s|%s",
 					kToggleOn, kToggleOff);
-	g_option_vars[7].value = g_option_crt_glow_var;
+	g_option_vars[6].value = g_option_crt_glow_var;
 	std::snprintf(g_option_crt_fringing_var, sizeof(g_option_crt_fringing_var),
 					crt_readonly ? "CRT Fringing; %s" : "CRT Fringing; %s|%s",
 					kToggleOn, kToggleOff);
-	g_option_vars[8].value = g_option_crt_fringing_var;
+	g_option_vars[7].value = g_option_crt_fringing_var;
 	std::snprintf(g_option_crt_aperture_var, sizeof(g_option_crt_aperture_var),
 					crt_readonly ? "CRT Aperture; %s" : "CRT Aperture; %s|%s",
 					kToggleOff, kToggleOn);
-	g_option_vars[9].value = g_option_crt_aperture_var;
+	g_option_vars[8].value = g_option_crt_aperture_var;
 	std::snprintf(g_option_dither_var, sizeof(g_option_dither_var),
 					"Output Dither; %s|%s|%s", kDitherOff, kDitherRGB565, kDitherMSX10);
-	g_option_vars[10].value = g_option_dither_var;
+	g_option_vars[9].value = g_option_dither_var;
 	std::snprintf(g_option_host_show_usage_gizmo_var, sizeof(g_option_host_show_usage_gizmo_var),
 					"Show Usage Gizmo; %s|%s", kToggleOff, kToggleOn);
-	g_option_vars[11].value = g_option_host_show_usage_gizmo_var;
+	g_option_vars[10].value = g_option_host_show_usage_gizmo_var;
 
 	unsigned version = 0;
 	if (environ_cb(RETRO_ENVIRONMENT_GET_CORE_OPTIONS_VERSION, &version) && version >= 2) {
@@ -833,10 +777,6 @@ static RenderBackendPreference read_backend_preference() {
 
 static bool read_crt_postprocessing_enabled() {
 	return read_toggle_option(kOptionCrtPostprocessing, "CRT post-processing", true);
-}
-
-static bool read_postprocess_detail_enabled() {
-	return read_toggle_option(kOptionPostprocessDetail, "post-processing detail", false);
 }
 
 static bool read_resource_usage_gizmo_enabled() {
@@ -1073,7 +1013,6 @@ void retro_init(void) {
 	const RenderBackendPreference preference = read_backend_preference();
 	const bmsx::BackendType desired_backend = resolve_backend_preference(preference);
 	g_crt_postprocessing_enabled = read_crt_postprocessing_enabled();
-	g_postprocess_detail_enabled = read_postprocess_detail_enabled();
 	g_crt_noise_enabled = read_crt_noise_enabled();
 	g_crt_color_bleed_enabled = read_crt_color_bleed_enabled();
 	g_crt_scanlines_enabled = read_crt_scanlines_enabled();
@@ -1124,14 +1063,17 @@ void retro_init(void) {
 	}
 
 	// Create platform instance
-	g_platform = new bmsx::LibretroPlatform(g_active_backend);
+	initialize_default_av_info(g_cached_av_info);
+	g_cached_av_info_valid = true;
+	g_current_ufps_scaled = bmsx::PAL_REFRESH_UFPS_SCALED;
+	g_platform = new bmsx::LibretroPlatform(g_active_backend, g_cached_av_info);
 	g_platform->setEnvironmentCallback(environ_cb);
 	g_platform->setLogCallback(logging.log);
 	g_platform->setSystemDirectory(g_system_dir);
 	g_platform->setVideoCallback(video_cb);
 	g_platform->setInputPollCallback(input_poll_cb);
 	g_platform->setInputStateCallback(input_state_cb);
-	g_platform->setPostProcessOptions(g_crt_postprocessing_enabled, g_postprocess_detail_enabled);
+	g_platform->machineManager()->view()->crt_postprocessing_enabled = g_crt_postprocessing_enabled;
 	g_platform->setCrtEffectOptions(g_crt_noise_enabled,
 									g_crt_color_bleed_enabled,
 									g_crt_scanlines_enabled,
@@ -1142,28 +1084,26 @@ void retro_init(void) {
 	g_platform->setDeviceQuantizeMode(g_device_quantize_mode);
 	g_platform->setResourceUsageGizmo(g_resource_usage_gizmo_enabled);
 	if (isHardwareBackendActive()) {
-	try {
-		g_platform->setHwRenderCallbacks(g_hw_render.get_current_framebuffer, g_hw_render.get_proc_address);
-	} catch (const std::exception& err) {
-		logging.log(RETRO_LOG_ERROR,
-					"[BMSX] %s setup exception: %s\n",
-					backend_label(g_active_backend),
-					err.what());
-		g_hw_render_failure_reason = err.what();
-		const std::string reason =
-			std::string("[BMSX] ") + backend_label(g_active_backend) +
-			" setup failed: " + err.what();
-		fail_hardware_backend(g_active_backend, reason.c_str());
+		try {
+			g_platform->setHwRenderCallbacks(g_hw_render.get_current_framebuffer, g_hw_render.get_proc_address);
+		} catch (const std::exception& err) {
+			logging.log(RETRO_LOG_ERROR,
+						"[BMSX] %s setup exception: %s\n",
+						backend_label(g_active_backend),
+						err.what());
+			g_hw_render_failure_reason = err.what();
+			const std::string reason =
+				std::string("[BMSX] ") + backend_label(g_active_backend) +
+				" setup failed: " + err.what();
+			fail_hardware_backend(g_active_backend, reason.c_str());
+		}
 	}
-	}
-	if (g_cached_av_info_valid) {
 	g_platform->setAVInfo(g_cached_av_info);
-	}
 	if (g_has_pending_frame_time) {
-	g_platform->setFrameTimeUsec(g_pending_frame_time_usec);
-	g_has_pending_frame_time = false;
+		g_platform->setFrameTimeUsec(g_pending_frame_time_usec);
+		g_has_pending_frame_time = false;
 	}
-	
+
 	// Defer actual context reset to retro_run. Some frontends/devices (notably
 	// older embedded hosts) are not stable when heavy GL init work is done
 	// directly in the context_reset callback/init path.
@@ -1289,105 +1229,103 @@ void retro_reset(void) {
 
 void retro_run(void) {
 	if (isHardwareBackendActive() && g_hw_context_pending && g_platform) {
-	try {
-		g_platform->onContextReset();
-		g_hw_context_ready = true;
-		g_hw_context_pending = false;
-		g_hw_render_failure_reason.clear();
-	} catch (const std::exception& err) {
-		logging.log(RETRO_LOG_ERROR,
-					"[BMSX] %s context reset exception: %s\n",
-					backend_label(g_active_backend),
-					err.what());
-		g_hw_render_failure_reason = err.what();
+		try {
+			g_platform->onContextReset();
+			g_hw_context_ready = true;
+			g_hw_context_pending = false;
+			g_hw_render_failure_reason.clear();
+		} catch (const std::exception& err) {
+			logging.log(RETRO_LOG_ERROR,
+						"[BMSX] %s context reset exception: %s\n",
+						backend_label(g_active_backend),
+						err.what());
+			g_hw_render_failure_reason = err.what();
+			const std::string reason =
+				std::string("[BMSX] ") + backend_label(g_active_backend) +
+				" context reset failed: " + err.what();
+			fail_hardware_backend(g_active_backend, reason.c_str());
+			return;
+		}
+	}
+	if (isHardwareBackendActive() && !g_hw_context_ready) {
 		const std::string reason =
 			std::string("[BMSX] ") + backend_label(g_active_backend) +
-			" context reset failed: " + err.what();
+			" hw render context not initialized.";
 		fail_hardware_backend(g_active_backend, reason.c_str());
 		return;
 	}
-	}
-	if (isHardwareBackendActive() && !g_hw_context_ready) {
-	const std::string reason =
-		std::string("[BMSX] ") + backend_label(g_active_backend) +
-		" hw render context not initialized.";
-	fail_hardware_backend(g_active_backend, reason.c_str());
-	return;
-	}
 	bool vars_updated = false;
 	if (environ_cb(RETRO_ENVIRONMENT_GET_VARIABLE_UPDATE, &vars_updated) && vars_updated) {
-	const RenderBackendPreference new_preference = read_backend_preference();
-	if (new_preference != g_backend_preference) {
-		g_backend_preference = new_preference;
-		retro_message msg;
-		msg.msg = "BMSX: Render backend change requires core restart.";
-		msg.frames = 180;
-		environ_cb(RETRO_ENVIRONMENT_SET_MESSAGE, &msg);
-		logging.log(RETRO_LOG_WARN,
-					"[BMSX] Render backend change detected; restart required\n");
-	}
-	const bool new_crt = read_crt_postprocessing_enabled();
-	const bool new_detail = read_postprocess_detail_enabled();
-	if (new_crt != g_crt_postprocessing_enabled || new_detail != g_postprocess_detail_enabled) {
-		g_crt_postprocessing_enabled = new_crt;
-		g_postprocess_detail_enabled = new_detail;
-		g_platform->setPostProcessOptions(g_crt_postprocessing_enabled, g_postprocess_detail_enabled);
-	}
-	const bool new_crt_noise = read_crt_noise_enabled();
-	const bool new_crt_color_bleed = read_crt_color_bleed_enabled();
-	const bool new_crt_scanlines = read_crt_scanlines_enabled();
-	const bool new_crt_blur = read_crt_blur_enabled();
-	const bool new_crt_glow = read_crt_glow_enabled();
-	const bool new_crt_fringing = read_crt_fringing_enabled();
-	const bool new_crt_aperture = read_crt_aperture_enabled();
-	bool crt_effects_changed = false;
-	if (new_crt_noise != g_crt_noise_enabled) {
-		g_crt_noise_enabled = new_crt_noise;
-		crt_effects_changed = true;
-	}
-	if (new_crt_color_bleed != g_crt_color_bleed_enabled) {
-		g_crt_color_bleed_enabled = new_crt_color_bleed;
-		crt_effects_changed = true;
-	}
-	if (new_crt_scanlines != g_crt_scanlines_enabled) {
-		g_crt_scanlines_enabled = new_crt_scanlines;
-		crt_effects_changed = true;
-	}
-	if (new_crt_blur != g_crt_blur_enabled) {
-		g_crt_blur_enabled = new_crt_blur;
-		crt_effects_changed = true;
-	}
-	if (new_crt_glow != g_crt_glow_enabled) {
-		g_crt_glow_enabled = new_crt_glow;
-		crt_effects_changed = true;
-	}
-	if (new_crt_fringing != g_crt_fringing_enabled) {
-		g_crt_fringing_enabled = new_crt_fringing;
-		crt_effects_changed = true;
-	}
-	if (new_crt_aperture != g_crt_aperture_enabled) {
-		g_crt_aperture_enabled = new_crt_aperture;
-		crt_effects_changed = true;
-	}
-	if (crt_effects_changed) {
-		g_platform->setCrtEffectOptions(g_crt_noise_enabled,
-										g_crt_color_bleed_enabled,
-										g_crt_scanlines_enabled,
-										g_crt_blur_enabled,
-										g_crt_glow_enabled,
-										g_crt_fringing_enabled,
-										g_crt_aperture_enabled);
-	}
-	const bmsx::DeviceQuantizeMode new_device_quantize_mode = read_device_quantize_mode();
-	if (new_device_quantize_mode != g_device_quantize_mode) {
-		g_device_quantize_mode = new_device_quantize_mode;
-		g_platform->setDeviceQuantizeMode(g_device_quantize_mode);
-	}
-	const bool new_resource_usage_gizmo = read_resource_usage_gizmo_enabled();
-	if (new_resource_usage_gizmo != g_resource_usage_gizmo_enabled) {
-		g_resource_usage_gizmo_enabled = new_resource_usage_gizmo;
-		g_platform->setResourceUsageGizmo(g_resource_usage_gizmo_enabled);
-	}
+		const RenderBackendPreference new_preference = read_backend_preference();
+		if (new_preference != g_backend_preference) {
+			g_backend_preference = new_preference;
+			retro_message msg;
+			msg.msg = "BMSX: Render backend change requires core restart.";
+			msg.frames = 180;
+			environ_cb(RETRO_ENVIRONMENT_SET_MESSAGE, &msg);
+			logging.log(RETRO_LOG_WARN,
+						"[BMSX] Render backend change detected; restart required\n");
+		}
+		const bool new_crt = read_crt_postprocessing_enabled();
+		if (new_crt != g_crt_postprocessing_enabled) {
+			g_crt_postprocessing_enabled = new_crt;
+			g_platform->machineManager()->view()->crt_postprocessing_enabled = g_crt_postprocessing_enabled;
+		}
+		const bool new_crt_noise = read_crt_noise_enabled();
+		const bool new_crt_color_bleed = read_crt_color_bleed_enabled();
+		const bool new_crt_scanlines = read_crt_scanlines_enabled();
+		const bool new_crt_blur = read_crt_blur_enabled();
+		const bool new_crt_glow = read_crt_glow_enabled();
+		const bool new_crt_fringing = read_crt_fringing_enabled();
+		const bool new_crt_aperture = read_crt_aperture_enabled();
+		bool crt_effects_changed = false;
+		if (new_crt_noise != g_crt_noise_enabled) {
+			g_crt_noise_enabled = new_crt_noise;
+			crt_effects_changed = true;
+		}
+		if (new_crt_color_bleed != g_crt_color_bleed_enabled) {
+			g_crt_color_bleed_enabled = new_crt_color_bleed;
+			crt_effects_changed = true;
+		}
+		if (new_crt_scanlines != g_crt_scanlines_enabled) {
+			g_crt_scanlines_enabled = new_crt_scanlines;
+			crt_effects_changed = true;
+		}
+		if (new_crt_blur != g_crt_blur_enabled) {
+			g_crt_blur_enabled = new_crt_blur;
+			crt_effects_changed = true;
+		}
+		if (new_crt_glow != g_crt_glow_enabled) {
+			g_crt_glow_enabled = new_crt_glow;
+			crt_effects_changed = true;
+		}
+		if (new_crt_fringing != g_crt_fringing_enabled) {
+			g_crt_fringing_enabled = new_crt_fringing;
+			crt_effects_changed = true;
+		}
+		if (new_crt_aperture != g_crt_aperture_enabled) {
+			g_crt_aperture_enabled = new_crt_aperture;
+			crt_effects_changed = true;
+		}
+		if (crt_effects_changed) {
+			g_platform->setCrtEffectOptions(g_crt_noise_enabled,
+											g_crt_color_bleed_enabled,
+											g_crt_scanlines_enabled,
+											g_crt_blur_enabled,
+											g_crt_glow_enabled,
+											g_crt_fringing_enabled,
+											g_crt_aperture_enabled);
+		}
+		const bmsx::DeviceQuantizeMode new_device_quantize_mode = read_device_quantize_mode();
+		if (new_device_quantize_mode != g_device_quantize_mode) {
+			g_device_quantize_mode = new_device_quantize_mode;
+			g_platform->setDeviceQuantizeMode(g_device_quantize_mode);
+		}
+		const bool new_resource_usage_gizmo = read_resource_usage_gizmo_enabled();
+		if (new_resource_usage_gizmo != g_resource_usage_gizmo_enabled) {
+			g_resource_usage_gizmo_enabled = new_resource_usage_gizmo;
+			g_platform->setResourceUsageGizmo(g_resource_usage_gizmo_enabled);
+		}
 	}
 //   static auto lastFrameTime = std::chrono::steady_clock::now();
 //   static double accSec = 0.0;

@@ -127,7 +127,7 @@ void appendSystemRomCandidates(std::vector<std::string>& paths, const std::strin
  * LibretroPlatform implementation
  * ============================================================================ */
 
-LibretroPlatform::LibretroPlatform(BackendType backend_type)
+LibretroPlatform::LibretroPlatform(BackendType backend_type, retro_system_av_info& av_info)
 	: m_frame_time_sec(static_cast<double>(HZ_SCALE) / static_cast<double>(PAL_REFRESH_UFPS_SCALED))
 	, m_backend_type(backend_type) {
 #if !BMSX_ENABLE_GLES2
@@ -135,10 +135,9 @@ LibretroPlatform::LibretroPlatform(BackendType backend_type)
 		m_backend_type = BackendType::Software;
 	}
 #endif
-	const PsxGpuDisplaySizeSpec& displaySize = PSX_GPU_DISPLAY_SIZE_SPEC;
 	m_framebuffer.resize(
-		static_cast<unsigned>(displaySize.renderWidth),
-		static_cast<unsigned>(displaySize.renderHeight)
+		gxGpuDisplayModeScreenWidth(GX_GPU_RESET_DISPLAY_MODE_WORD),
+		static_cast<unsigned>(gxGpuVerticalVisibleLines(GX_GPU_RESET_VERTICAL_DISPLAY_RANGE_WORD, GX_GPU_RESET_DISPLAY_MODE_WORD))
 	);
 
 	m_audio_buffer.reserve(kAudioReserveFrames);
@@ -149,7 +148,7 @@ LibretroPlatform::LibretroPlatform(BackendType backend_type)
 	m_lifecycle = std::make_unique<DefaultLifecycle>();
 	m_input_hub = std::make_unique<LibretroInputHub>(this);
 	m_audio_service = std::make_unique<LibretroAudioService>(this);
-	m_gameview_host = std::make_unique<LibretroGameViewHost>(m_framebuffer, m_backend_type);
+	m_gameview_host = std::make_unique<LibretroGameViewHost>(m_framebuffer, m_backend_type, m_environ_cb, av_info);
 	m_microtask_queue = std::make_unique<DefaultMicrotaskQueue>();
 
 	// Initialize controller devices
@@ -158,7 +157,6 @@ LibretroPlatform::LibretroPlatform(BackendType backend_type)
 	// Create and initialize the machine manager
 	m_machine_manager = std::make_unique<MachineManager>();
 	m_machine_manager->initialize(this);
-	m_machine_manager->view()->crt_postprocessing_enabled = m_crt_postprocessing_enabled;
 	if (m_backend_type == BackendType::Software) {
 		auto* view = m_machine_manager->view();
 		auto* backend = view->backend();
@@ -243,8 +241,7 @@ void LibretroPlatform::onContextReset() {
 	auto* backend = static_cast<OpenGLES2Backend*>(view->backend());
 	log(RETRO_LOG_INFO, "[BMSX] onContextReset: backend reset\n");
 	backend->onContextReset();
-	log(RETRO_LOG_INFO, "[BMSX] onContextReset: update backend host\n");
-	static_cast<LibretroGameViewHost*>(m_gameview_host.get())->updateBackend(backend);
+	backend->setViewportSize(static_cast<i32>(m_framebuffer.width), static_cast<i32>(m_framebuffer.height));
 
 	log(RETRO_LOG_INFO, "[BMSX] onContextReset: rebuild render graph\n");
 	installBuiltinRenderPipeline(view, backend);
@@ -273,19 +270,11 @@ void LibretroPlatform::onContextDestroy() {
 }
 
 void LibretroPlatform::setAVInfo(const retro_system_av_info& info) {
-	m_av_info = info;
-	m_has_av_info = true;
 	const auto& geometry = info.geometry;
 	const unsigned baseWidth = geometry.base_width;
 	const unsigned baseHeight = geometry.base_height;
 
-	if (baseWidth == 0 || baseHeight == 0) {
-		log(RETRO_LOG_WARN, "[BMSX] Ignoring invalid geometry %ux%u\n", baseWidth, baseHeight);
-		return;
-	}
-
 	m_frame_time_sec = 1.0 / info.timing.fps;
-	m_framebuffer.resize(baseWidth, baseHeight);
 	log(RETRO_LOG_INFO, "[BMSX] AV Info set: %ux%u @ %.2fHz, Sample Rate: %.2fHz\n",
 		baseWidth,
 		baseHeight,
@@ -297,34 +286,11 @@ void LibretroPlatform::setAVInfo(const retro_system_av_info& info) {
 		info.timing.fps
 	);
 
-	auto* view = m_machine_manager->view();
-	Vec2 renderTargetSize{
-		static_cast<f32>(baseWidth),
-		static_cast<f32>(baseHeight)
-	};
-	const f32 offscreenScale = static_cast<f32>(m_postprocess_scale);
-	Vec2 offscreenSize{
-		renderTargetSize.x * offscreenScale,
-		renderTargetSize.y * offscreenScale
-	};
-	view->configureRenderTargets(&renderTargetSize, &renderTargetSize, &offscreenSize);
-	auto* backend = view->backend();
-	static_cast<LibretroGameViewHost*>(m_gameview_host.get())->updateBackend(backend);
+	if (m_framebuffer.width != baseWidth || m_framebuffer.height != baseHeight) {
+		m_machine_manager->view()->setRenderTargetSize(static_cast<i32>(baseWidth), static_cast<i32>(baseHeight));
+	}
 
 	m_audio_service->setTiming(info.timing.sample_rate);
-}
-
-void LibretroPlatform::setPostProcessOptions(bool enableCrt, bool highDetail) {
-	m_crt_postprocessing_enabled = enableCrt;
-	m_postprocess_scale = highDetail ? 2 : 1;
-
-	auto* view = m_machine_manager->view();
-	view->crt_postprocessing_enabled = enableCrt;
-	const Vec2 offscreenSize{
-		view->viewportSize.x * static_cast<f32>(m_postprocess_scale),
-		view->viewportSize.y * static_cast<f32>(m_postprocess_scale)
-	};
-	view->configureRenderTargets(nullptr, nullptr, &offscreenSize);
 }
 
 void LibretroPlatform::setCrtEffectOptions(bool applyNoise,
@@ -1112,9 +1078,11 @@ void LibretroFrameLoop::stop() {
  * LibretroGameViewHost implementation
  * ============================================================================ */
 
-LibretroGameViewHost::LibretroGameViewHost(Framebuffer& framebuffer, BackendType backend_type)
+LibretroGameViewHost::LibretroGameViewHost(Framebuffer& framebuffer, BackendType backend_type, retro_environment_t& environ_cb, retro_system_av_info& av_info)
 	: m_framebuffer(framebuffer)
-	, m_backend_type(backend_type) {
+	, m_backend_type(backend_type)
+	, m_environ_cb(environ_cb)
+	, m_av_info(av_info) {
 }
 
 std::unique_ptr<GPUBackend> LibretroGameViewHost::createBackend() {
@@ -1140,24 +1108,28 @@ std::unique_ptr<GPUBackend> LibretroGameViewHost::createBackend() {
 	}
 }
 
-void LibretroGameViewHost::updateBackend(GPUBackend* backend) {
+void LibretroGameViewHost::setRenderTargetSize(GPUBackend& backend, i32 width, i32 height) {
+	m_av_info.geometry.base_width = static_cast<unsigned>(width);
+	m_av_info.geometry.base_height = static_cast<unsigned>(height);
+	m_av_info.geometry.aspect_ratio = static_cast<float>(PSX_GPU_DISPLAY_ASPECT_WIDTH) / static_cast<float>(PSX_GPU_DISPLAY_ASPECT_HEIGHT);
+	m_environ_cb(RETRO_ENVIRONMENT_SET_GEOMETRY, &m_av_info.geometry);
+	m_framebuffer.resize(static_cast<unsigned>(width), static_cast<unsigned>(height));
 #if BMSX_ENABLE_GLES2
-	if (backend->type() == BackendType::OpenGLES2) {
-		auto* glBackend = static_cast<OpenGLES2Backend*>(backend);
-		glBackend->setViewportSize(static_cast<i32>(m_framebuffer.width),
-									static_cast<i32>(m_framebuffer.height));
+	if (backend.type() == BackendType::OpenGLES2) {
+		auto& glBackend = static_cast<OpenGLES2Backend&>(backend);
+		glBackend.setViewportSize(width, height);
 		return;
 	}
 #else
-	if (backend->type() == BackendType::OpenGLES2) {
+	if (backend.type() == BackendType::OpenGLES2) {
 		throw BMSX_RUNTIME_ERROR("[LibretroGameViewHost] OpenGLES2 backend disabled at compile time.");
 	}
 #endif
-	auto* softBackend = static_cast<SoftwareBackend*>(backend);
-	softBackend->setFramebuffer(
+	auto& softBackend = static_cast<SoftwareBackend&>(backend);
+	softBackend.setFramebuffer(
 		m_framebuffer.data,
-		static_cast<i32>(m_framebuffer.width),
-		static_cast<i32>(m_framebuffer.height),
+		width,
+		height,
 		static_cast<i32>(m_framebuffer.pitch)
 	);
 }

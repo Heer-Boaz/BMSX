@@ -11,11 +11,11 @@ import { HostFaultState } from './host_fault';
 import { LuaScratchState } from '../program/scratch';
 import type { ProgramImage, ProgramVectorTable } from '../program/loader';
 import { inflateExecutableProgramImage, type LinkedBootProgramImage } from '../program/linker';
-import { getPsxGpuDisplayModeTimingForWord, PSX_GPU_DISPLAY_SIZE_SPEC } from '../model_registry';
-import { refreshDeviceTimings, setFrameTiming } from './timing/config';
+import { getPsxGpuDisplayModeTimingForWord } from '../model_registry';
+import { refreshDeviceTimings } from './timing/config';
 import { HZ_SCALE } from './timing/constants';
 import { calcCyclesPerFrameScaled, resolveVblankCycles } from './timing';
-import { GX_GPU_GP1_RESET, GX_GPU_GP1_SET_DISPLAY_MODE } from '../devices/gx/gpu';
+import { GX_GPU_RESET_VERTICAL_DISPLAY_RANGE_WORD, gxGpuVerticalVisibleLines } from '../devices/gx/gpu_display';
 import { GX_GPU_VRAM_BYTE_COUNT } from '../devices/gx/gpu_command_buffer';
 import { IO_GX_GPU_GP1, IO_SYS_CYCLES_PER_FRAME, IO_SYS_FRAME_MS, IO_SYS_PRINT_CHAR, IO_SYS_PRINT_FLUSH, IO_SYS_TIME_MS } from '../bus/io';
 import { Machine } from '../machine';
@@ -302,6 +302,7 @@ export class Runtime {
 			options.cpuHz,
 			options.cycleBudgetPerFrame,
 			options.psxGpuDisplayModeWord,
+			GX_GPU_RESET_VERTICAL_DISPLAY_RANGE_WORD,
 			getPsxGpuDisplayModeTimingForWord(options.psxGpuDisplayModeWord).totalScanlines,
 			options.dmaBytesPerSec,
 			options.geoWorkUnitsPerSec,
@@ -351,13 +352,7 @@ export class Runtime {
 
 	private static onGxGpuGp1WriteThunk(context: Runtime, addr: number, value: Value): void {
 		void addr;
-		const opcode = context.machine.gxGpu.writeGp1(value as number);
-		switch (opcode) {
-			case GX_GPU_GP1_RESET:
-			case GX_GPU_GP1_SET_DISPLAY_MODE:
-				context.applyPsxGpuDisplayTimingWord(context.machine.gxGpu.readDisplayModeWord());
-				break;
-		}
+		context.machine.gxGpu.writeGp1(value as number);
 	}
 
 	private static onLuaOutputCodepointWriteThunk(context: Runtime, addr: number, value: Value): void {
@@ -420,22 +415,24 @@ export class Runtime {
 		this.input.setRuntimeInputFrameDurationMs(timing.frameDurationMs);
 	}
 
-	public applyPsxGpuDisplayModeWord(gpuDisplayModeWord: number): void {
-		this.machine.gxGpu.writeDisplayModeWord(gpuDisplayModeWord);
-		this.applyPsxGpuDisplayTimingWord(this.machine.gxGpu.readDisplayModeWord());
-	}
-
-	private applyPsxGpuDisplayTimingWord(gpuDisplayModeWord: number): void {
-		const displayModeTiming = getPsxGpuDisplayModeTimingForWord(gpuDisplayModeWord);
+	public applyPublishedPsxGpuDisplayTiming(displayModeWord: number, verticalDisplayRangeWord: number): void {
+		const timing = this.timing;
+		if (timing.gpuDisplayModeWord === displayModeWord
+			&& timing.gpuVerticalDisplayRangeWord === verticalDisplayRangeWord) {
+			return;
+		}
+		const displayModeTiming = getPsxGpuDisplayModeTimingForWord(displayModeWord);
 		const refreshUfpsScaled = displayModeTiming.refreshUfpsScaled;
-		this.timing.gpuDisplayModeWord = gpuDisplayModeWord >>> 0;
-		this.timing.totalScanlines = displayModeTiming.totalScanlines;
+		const cycleBudgetPerFrame = calcCyclesPerFrameScaled(timing.cpuHz, refreshUfpsScaled);
+		const activeDisplayLines = gxGpuVerticalVisibleLines(verticalDisplayRangeWord, displayModeWord);
+		timing.gpuDisplayModeWord = displayModeWord;
+		timing.gpuVerticalDisplayRangeWord = verticalDisplayRangeWord;
+		timing.totalScanlines = displayModeTiming.totalScanlines;
+		timing.cycleBudgetPerFrame = cycleBudgetPerFrame;
 		this.applyUfpsScaled(refreshUfpsScaled);
-		setFrameTiming(
-			this,
-			this.timing.cpuHz,
-			calcCyclesPerFrameScaled(this.timing.cpuHz, refreshUfpsScaled),
-			resolveVblankCycles(this.timing.cpuHz, refreshUfpsScaled, displayModeTiming.totalScanlines, PSX_GPU_DISPLAY_SIZE_SPEC.renderHeight),
+		this.vblank.setNextFrameTiming(
+			cycleBudgetPerFrame,
+			resolveVblankCycles(timing.cpuHz, refreshUfpsScaled, displayModeTiming.totalScanlines, activeDisplayLines),
 		);
 	}
 

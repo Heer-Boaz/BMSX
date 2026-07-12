@@ -9,6 +9,7 @@ export class TimingState {
 		public cpuHz: number,
 		public cycleBudgetPerFrame: number,
 		public gpuDisplayModeWord: number,
+		public gpuVerticalDisplayRangeWord: number,
 		public totalScanlines: number,
 		public dmaBytesPerSec: number,
 		public geoWorkUnitsPerSec: number,
