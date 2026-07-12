@@ -318,9 +318,17 @@ and MAME
   - [x] Distinguish machine/device reset from GP1(00h): both clear GPU
     registers, packet/FIFO state, retained commands and the active readback
     request, while only machine reset advances the shared backend VRAM-clear
-    revision and clears the GPUREAD data latch to zero. Mirrored TS/C++ tests prove
-    GP1 reset preserves both the GPUREAD data latch and raw VRAM for every
+    revision and clears the GPUREAD data latch to zero. Mirrored TS/C++ tests
+    prove GP1 reset preserves both the GPUREAD data latch and raw VRAM for every
     backend consumer.
+  - [x] Make GP1(01h) abort active C0 readback state and its queued suffix.
+    Pending fences retain the stable command prefix without a revision; a
+    submitted/ready transfer invalidates its backend generation and publishes a
+    non-VRAM-clearing stream revision. Mirrored tests cover ready/DMA lowering,
+    stale completion rejection, queued-C0 removal, prior VRAM writes and resumed
+    command processing. Abandoned image headers and partial polylines also
+    truncate their uncommitted word suffix, while received image payload remains
+    a partial upload command.
 - [ ] DMA interaction behavior beyond the currently tested register/status paths.
   - [x] RAM-to-GP0 DMA word streams feed the memory-mapped GX-GPU GP0 command
     port in TS and C++.

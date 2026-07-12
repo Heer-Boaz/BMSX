@@ -183,6 +183,20 @@ Geïmplementeerd contract:
   transfer-X/Y wrappen per pixel over 1024x512 en een oneven laatste pixel vult
   de hoge helft met nul. Na het laatste woord blijft de laatste GPUREAD-latch
   staan en mag de commandprocessor voorbij de fence.
+- GP1(01h) breekt een actieve C0-transfer af zoals DuckStation en Mednafen. Bij
+  een nog pending fence blijft de stabiele commandprefix staan en verdwijnen de
+  C0-marker en de volledige commandsuffix via een O(1)-truncate.
+  Een submitted/ready request wist de inmiddels losstaande queuesuffix en
+  publiceert een nieuwe commandstreamrevision. Beide paden maken de readbackport
+  idle, trekken DMA-ready laag en verhogen de bestaande generationtoken, zodat
+  een late WebGPU-completion geen nieuwe request kan voltooien. GPUREAD-datalatch,
+  eerdere VRAM-writes en de VRAM-clear-revision blijven behouden.
+- Diezelfde GP1(01h)-transitie laat geen onbereikbare woorden in de retained
+  commandbuffer achter. Een imageheader zonder payload en een onafgesloten
+  polyline truncaten hun nog niet gecommitte suffix rechtstreeks naar het
+  opgeslagen beginwoord; een imageupload waarvoor al payloadwoorden ontvangen
+  zijn blijft juist als één partial uploadcommand behouden. De volgende command
+  hergebruikt de suffix zonder compaction, allocatie of groeiend woordlek.
 - Current-format save-state bewaart requestfase, fence, cursor, latch en alleen
   bij READY de voltooide transferpixels. SUBMITTED is backendinfrastructuur:
   capture schrijft die fase als de logische PENDING-request en de codec weigert

@@ -686,6 +686,15 @@ the 1 MiB VRAM contents. Machine reset also clears the GPUREAD latch to zero.
 Every render backend consumes the same command-stream and VRAM-clear revisions,
 so this distinction is not backend-specific.
 
+GP1(01h) clears in-progress GP0 packet/FIFO state and aborts an active
+VRAM-to-CPU transfer. Commands before a still-pending C0 fence remain in their
+stable retained prefix; the C0 marker and its queued suffix are discarded.
+Abandoned image headers and partial polylines truncate their uncommitted word
+suffix; already received image payload remains one partial upload command.
+Submitted or ready readback state is invalidated by generation, lowers the DMA
+ready line, and cannot be completed by a stale backend callback. The GPUREAD
+data latch and raw VRAM remain unchanged.
+
 Pixel parity is a machine contract at GX VRAM scanout. For the same ROM,
 timeline, model profile, and GX display registers, the TypeScript headless
 renderer and C++ libretro/software renderer must emit byte-identical RGBA

@@ -511,6 +511,10 @@ export class GxGpu {
 				break;
 			case GX_GPU_GP1_CLEAR_FIFO:
 				this.flushImageLoadToVram();
+				if (this.gp0PolylineCommandWordCount !== 0) {
+					this.commandBuffer.wordCount = this.gp0PolylineCommandWordStart;
+				}
+				this.commandBuffer.abortReadbackAndQueuedCommands();
 				this.clearGp0CommandState();
 				this.writeStatusIo();
 				break;
@@ -720,9 +724,13 @@ export class GxGpu {
 	}
 
 	private flushImageLoadToVram(): void {
+		if (this.gp0ImageLoadCommandWordCount === 0) {
+			return;
+		}
 		if (this.gp0ImageLoadCommandWordCount > 3) {
 			this.finishImageLoadToVram();
 		} else {
+			this.commandBuffer.wordCount = this.gp0ImageLoadCommandWordStart;
 			this.clearImageLoadState();
 		}
 	}

@@ -264,6 +264,23 @@ public:
 		clearCommandState();
 	}
 
+	void abortReadbackAndQueuedCommands() {
+		if (readback.m_phase == GX_GPU_READBACK_IDLE) {
+			return;
+		}
+		if (readback.m_phase == GX_GPU_READBACK_PENDING && readback.m_fenceCommandCount != 0u) {
+			commandCount = readback.m_fenceCommandCount - 1u;
+			wordCount = commandWordStart[commandCount];
+			if (presentCommandCount > commandCount) {
+				presentCommandCount = commandCount;
+			}
+			readback.reset();
+			return;
+		}
+		publishRevision(false);
+		clearCommandState();
+	}
+
 	GxGpuCommandBufferState captureState() const {
 		GxGpuCommandBufferState state;
 		state.commandCount = commandCount;

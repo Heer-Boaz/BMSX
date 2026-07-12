@@ -12,7 +12,9 @@ import {
 	GX_GPU_COMMAND_UPLOAD_CPU_TO_VRAM,
 	GX_GPU_INTERLACED_RENDER_ACTIVE_LINE_LSB,
 	GX_GPU_INTERLACED_RENDER_ENABLE,
+	GX_GPU_READBACK_IDLE,
 	GX_GPU_READBACK_PENDING,
+	GX_GPU_READBACK_READY,
 	GX_GPU_READBACK_SUBMITTED,
 	GX_GPU_TEXTURE_MODE_DIRECT16,
 	GX_GPU_TEXTURE_MODE_PALETTE8,
@@ -294,6 +296,116 @@ test('GX-GPU does not claim a C0 appended after the published frame fence', () =
 	output = gpu.readDeviceOutput();
 	executeGxGpuSoftwareVramCommands(output);
 	assert.equal(gpu.readGp0(), 0x00001234);
+});
+
+test('GX-GPU GP1 clear FIFO aborts a pending GPUREAD without dropping prior commands', () => {
+	const { gpu } = createGpu();
+	gpu.writeGp1((GX_GPU_GP1_GET_GPU_INFO << 24) | 0x07);
+	gpu.writeGp0((GX_GPU_GP0_FILL_RECTANGLE << 24) | 0x0000ff);
+	gpu.writeGp0(0);
+	gpu.writeGp0((1 << 16) | 1);
+	gpu.writeGp0(GX_GPU_GP0_VRAM_TO_CPU_FIRST << 24);
+	gpu.writeGp0(0);
+	gpu.writeGp0((1 << 16) | 1);
+	gpu.writeGp0((GX_GPU_GP0_FILL_RECTANGLE << 24) | 0x00ff00);
+	gpu.writeGp0(16);
+	gpu.writeGp0((1 << 16) | 1);
+	gpu.writeGp0(GX_GPU_GP0_VRAM_TO_CPU_FIRST << 24);
+	gpu.writeGp0(16);
+	gpu.writeGp0((1 << 16) | 1);
+	gpu.presentReadyFrameOnVblankEdge();
+	const output = gpu.readDeviceOutput();
+	const commandBuffer = output.commandBuffer;
+	const readback = output.readbackPort;
+	const commandSerial = commandBuffer.serial;
+	const vramClearSerial = commandBuffer.vramClearSerial;
+	const readbackToken = readback.token;
+	assert.equal(commandBuffer.commandCount, 4);
+	assert.equal(readback.phase, GX_GPU_READBACK_PENDING);
+
+	gpu.writeGp1(GX_GPU_GP1_CLEAR_FIFO << 24);
+
+	assert.equal(commandBuffer.commandCount, 1);
+	assert.equal(commandBuffer.presentCommandCount, 1);
+	assert.equal(commandBuffer.wordCount, 3);
+	assert.equal(commandBuffer.serial, commandSerial);
+	assert.equal(commandBuffer.vramClearSerial, vramClearSerial);
+	assert.equal(readback.phase, GX_GPU_READBACK_IDLE);
+	assert.notEqual(readback.token, readbackToken);
+	assert.equal(gpu.readGp0(), GX_GPU_INFO_GPU_TYPE_208PIN);
+	assert.equal((gpu.readStatus() & GX_GPU_STATUS_GPU_IDLE) >>> 0, GX_GPU_STATUS_GPU_IDLE);
+	assert.equal((gpu.readStatus() & GX_GPU_STATUS_READY_TO_RECEIVE_DMA) >>> 0, GX_GPU_STATUS_READY_TO_RECEIVE_DMA);
+
+	gpu.presentReadyFrameOnVblankEdge();
+	assert.equal(readback.phase, GX_GPU_READBACK_IDLE);
+	executeGxGpuSoftwareVramCommands(gpu.readDeviceOutput());
+	assert.equal(gxGpuSoftwareVram[gxGpuSoftwareVramIndex(0, 0)], 0x001f);
+	assert.equal(gxGpuSoftwareVram[gxGpuSoftwareVramIndex(16, 0)], 0);
+});
+
+test('GX-GPU GP1 clear FIFO aborts a ready GPUREAD and its queued suffix', () => {
+	const { gpu } = createGpu();
+	gpu.writeGp1((GX_GPU_GP1_GET_GPU_INFO << 24) | 0x07);
+	gpu.writeGp0((GX_GPU_GP0_FILL_RECTANGLE << 24) | 0x0000ff);
+	gpu.writeGp0(0);
+	gpu.writeGp0((1 << 16) | 1);
+	gpu.writeGp0(GX_GPU_GP0_VRAM_TO_CPU_FIRST << 24);
+	gpu.writeGp0(0);
+	gpu.writeGp0((1 << 16) | 1);
+	gpu.writeGp0((GX_GPU_GP0_FILL_RECTANGLE << 24) | 0x00ff00);
+	gpu.writeGp0(16);
+	gpu.writeGp0((1 << 16) | 1);
+	gpu.writeGp1((GX_GPU_GP1_SET_DMA_DIRECTION << 24) | GX_GPU_DMA_DIRECTION_GPUREAD_TO_CPU);
+	gpu.presentReadyFrameOnVblankEdge();
+	let output = gpu.readDeviceOutput();
+	executeGxGpuSoftwareVramCommands(output);
+	const commandBuffer = output.commandBuffer;
+	const readback = output.readbackPort;
+	const readbackToken = readback.token;
+	assert.equal(readback.phase, GX_GPU_READBACK_READY);
+	assert.equal((gpu.readStatus() & GX_GPU_STATUS_READY_TO_SEND_VRAM) >>> 0, GX_GPU_STATUS_READY_TO_SEND_VRAM);
+	assert.equal((gpu.readStatus() & GX_GPU_STATUS_DMA_DATA_REQUEST) >>> 0, GX_GPU_STATUS_DMA_DATA_REQUEST);
+	gpu.retirePresentedCommands();
+	assert.equal(commandBuffer.commandCount, 1);
+	assert.equal(readback.fenceCommandCount, 0);
+	const commandSerialBeforeAbort = commandBuffer.serial;
+	const vramClearSerial = commandBuffer.vramClearSerial;
+
+	gpu.writeGp1(GX_GPU_GP1_CLEAR_FIFO << 24);
+
+	assert.equal(commandBuffer.commandCount, 0);
+	assert.equal(commandBuffer.presentCommandCount, 0);
+	assert.equal(commandBuffer.wordCount, 0);
+	assert.notEqual(commandBuffer.serial, commandSerialBeforeAbort);
+	assert.equal(commandBuffer.vramClearSerial, vramClearSerial);
+	assert.equal(readback.phase, GX_GPU_READBACK_IDLE);
+	assert.equal((gpu.readStatus() & GX_GPU_STATUS_READY_TO_SEND_VRAM) >>> 0, 0);
+	assert.equal((gpu.readStatus() & GX_GPU_STATUS_DMA_DATA_REQUEST) >>> 0, 0);
+	assert.equal(gpu.readGp0(), GX_GPU_INFO_GPU_TYPE_208PIN);
+
+	gpu.writeGp0(GX_GPU_GP0_VRAM_TO_CPU_FIRST << 24);
+	gpu.writeGp0(32);
+	gpu.writeGp0((1 << 16) | 1);
+	gpu.presentReadyFrameOnVblankEdge();
+	assert.equal(readback.claimReadback(commandBuffer.presentCommandCount), true);
+	const currentReadbackToken = readback.token;
+	assert.equal(readback.phase, GX_GPU_READBACK_SUBMITTED);
+	readback.completeReadback(readbackToken);
+	assert.equal(readback.phase, GX_GPU_READBACK_SUBMITTED);
+	readback.completeReadback(currentReadbackToken);
+	assert.equal(readback.phase, GX_GPU_READBACK_READY);
+	gpu.writeGp1(GX_GPU_GP1_CLEAR_FIFO << 24);
+	assert.equal(readback.phase, GX_GPU_READBACK_IDLE);
+
+	gpu.writeGp0((GX_GPU_GP0_FILL_RECTANGLE << 24) | 0xff0000);
+	gpu.writeGp0(32);
+	gpu.writeGp0((1 << 16) | 1);
+	gpu.presentReadyFrameOnVblankEdge();
+	output = gpu.readDeviceOutput();
+	executeGxGpuSoftwareVramCommands(output);
+	assert.equal(gxGpuSoftwareVram[gxGpuSoftwareVramIndex(0, 0)], 0x001f);
+	assert.equal(gxGpuSoftwareVram[gxGpuSoftwareVramIndex(16, 0)], 0);
+	assert.equal(gxGpuSoftwareVram[gxGpuSoftwareVramIndex(32, 0)], 0x7c00);
 });
 
 test('GX-GPU restore re-arms submitted GPUREAD and reset clears its retained request', () => {
@@ -1111,6 +1223,7 @@ test('GX-GPU GP1 clear FIFO clears partial GP0 packets and flushes partial CPU-t
 	gpu.writeGp0((GX_GPU_GP0_SET_DRAW_MODE << 24) | 0x000111);
 	gpu.writeGp1(GX_GPU_GP1_CLEAR_FIFO << 24);
 	assert.equal(commands.commandCount, 0);
+	assert.equal(commands.wordCount, 0);
 	gpu.writeGp0((GX_GPU_GP0_SET_DRAW_MODE << 24) | 0x000222);
 	assert.equal(gpu.readDrawModeWord(), 0x000222);
 
@@ -1119,6 +1232,7 @@ test('GX-GPU GP1 clear FIFO clears partial GP0 packets and flushes partial CPU-t
 	gpu.writeGp0(0x00020003);
 	gpu.writeGp1(GX_GPU_GP1_CLEAR_FIFO << 24);
 	assert.equal(commands.commandCount, 0);
+	assert.equal(commands.wordCount, 0);
 	gpu.writeGp0((GX_GPU_GP0_SET_MASK_BIT << 24) | 0x000003);
 	assert.equal(gpu.readMaskBitModeWord(), 3);
 
@@ -1132,14 +1246,30 @@ test('GX-GPU GP1 clear FIFO clears partial GP0 packets and flushes partial CPU-t
 	assert.equal(commands.commandKind[0], GX_GPU_COMMAND_UPLOAD_CPU_TO_VRAM);
 	assert.equal(commands.commandOpcode[0], GX_GPU_GP0_CPU_TO_VRAM_FIRST);
 	assert.equal(commands.commandWordCount[0], 5);
+	assert.equal(commands.wordCount, 5);
 	assert.equal(commands.words[commands.commandWordStart[0] + 3], ((GX_GPU_GP0_SET_DRAW_MODE << 24) | 0x000111) >>> 0);
 	assert.equal(commands.words[commands.commandWordStart[0] + 4], ((GX_GPU_GP0_SET_MASK_BIT << 24) | 0x000002) >>> 0);
 	assert.equal(gpu.readDrawModeWord(), 0x000222);
 	assert.equal(gpu.readMaskBitModeWord(), 3);
 	assert.equal((gpu.readStatus() & GX_GPU_STATUS_GPU_IDLE) >>> 0, GX_GPU_STATUS_GPU_IDLE);
 
-	gpu.writeGp0((GX_GPU_GP0_SET_DRAW_MODE << 24) | 0x000444);
+	gpu.writeGp0((0x48 << 24) | 0x0000ff);
+	gpu.writeGp0(0x00010002);
+	gpu.writeGp0(0x00020003);
+	gpu.writeGp0(0x00030004);
+	assert.equal(commands.wordCount, 9);
+	gpu.writeGp1(GX_GPU_GP1_CLEAR_FIFO << 24);
 	assert.equal(commands.commandCount, 1);
+	assert.equal(commands.wordCount, 5);
+
+	gpu.writeGp0((GX_GPU_GP0_FILL_RECTANGLE << 24) | 0x0000ff);
+	gpu.writeGp0(32);
+	gpu.writeGp0((1 << 16) | 1);
+	assert.equal(commands.commandCount, 2);
+	assert.equal(commands.commandWordStart[1], 5);
+
+	gpu.writeGp0((GX_GPU_GP0_SET_DRAW_MODE << 24) | 0x000444);
+	assert.equal(commands.commandCount, 2);
 	assert.equal(gpu.readDrawModeWord(), 0x000444);
 });
 

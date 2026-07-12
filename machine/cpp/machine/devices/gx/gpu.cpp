@@ -283,6 +283,10 @@ u32 GxGpu::writeGp1(u32 word) {
 		break;
 	case GX_GPU_GP1_CLEAR_FIFO:
 		flushImageLoadToVram();
+		if (m_gp0PolylineCommandWordCount != 0u) {
+			m_commandBuffer.wordCount = m_gp0PolylineCommandWordStart;
+		}
+		m_commandBuffer.abortReadbackAndQueuedCommands();
 		clearGp0CommandState();
 		writeStatusIo();
 		break;
@@ -488,9 +492,13 @@ void GxGpu::finishImageLoadToVram() {
 }
 
 void GxGpu::flushImageLoadToVram() {
+	if (m_gp0ImageLoadCommandWordCount == 0u) {
+		return;
+	}
 	if (m_gp0ImageLoadCommandWordCount > 3u) {
 		finishImageLoadToVram();
 	} else {
+		m_commandBuffer.wordCount = m_gp0ImageLoadCommandWordStart;
 		clearImageLoadState();
 	}
 }
