@@ -522,6 +522,15 @@ local spriterendersystem<const> = {}
 spriterendersystem.__index = spriterendersystem
 setmetatable(spriterendersystem, { __index = ecsystem })
 
+local sprite_depth_less<const> = function(a, b)
+	local a_depth<const> = a.parent.z + a.offset.z + a.draw_offset.z
+	local b_depth<const> = b.parent.z + b.offset.z + b.draw_offset.z
+	if a_depth ~= b_depth then
+		return a_depth < b_depth
+	end
+	return a._active_component_index < b._active_component_index
+end
+
 function spriterendersystem.new(priority)
 	local self<const> = setmetatable(ecsystem.new(tickgroup.presentation, priority), spriterendersystem)
 	return self
@@ -529,6 +538,10 @@ end
 
 function spriterendersystem:update()
 	local components<const> = world_instance.active_space.active_components_by_type[spritecomponent]
+	table.sort(components, sprite_depth_less)
+	for i = 1, #components do
+		components[i]._active_component_index = i
+	end
 	for i = 1, #components do
 		local sc<const> = components[i]
 		local obj<const> = sc.parent

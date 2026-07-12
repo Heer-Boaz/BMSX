@@ -141,7 +141,20 @@ end
 
 table.sort = function(target, compare)
 	local length<const> = #target
-	if length > 1 then
+	if length < 2 then
+		return
+	end
+	local index = 2
+	if compare == nil then
+		while index <= length and not (target[index] < target[index - 1]) do
+			index = index + 1
+		end
+	else
+		while index <= length and not compare(target[index], target[index - 1]) do
+			index = index + 1
+		end
+	end
+	if index <= length then
 		quicksort(target, 1, length, compare)
 	end
 end

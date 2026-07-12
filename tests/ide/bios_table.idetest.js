@@ -73,3 +73,14 @@ t.assert(sortedWithComparator[0] === 'dddd', `table.sort comparator first mismat
 t.assert(sortedWithComparator[1] === 'ccc', `table.sort comparator second mismatch: ${sortedWithComparator[1]}`);
 t.assert(sortedWithComparator[2] === 'bb', `table.sort comparator third mismatch: ${sortedWithComparator[2]}`);
 t.assert(sortedWithComparator[3] === 'a', `table.sort comparator fourth mismatch: ${sortedWithComparator[3]}`);
+
+const sortedComparisonCount = t.evaluateLua(`
+local values<const> = { 1, 2, 3, 4, 5, 6 }
+local counter<const> = { comparisons = 0 }
+table.sort(values, function(left, right)
+	counter.comparisons = counter.comparisons + 1
+	return left < right
+end)
+return counter.comparisons
+`);
+t.assert(sortedComparisonCount[0] === 5, `table.sort should scan an already sorted list once, got ${sortedComparisonCount[0]}`);

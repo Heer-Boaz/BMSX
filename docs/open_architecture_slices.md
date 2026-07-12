@@ -24,7 +24,13 @@ pariteitsvalidatie en moeten als harde acceptatieblokkades blijven staan.
   WebGPU hersteld door de geprogrammeerde actieve displayrange over het vaste
   hostdoel te schalen. Headless en GLES2/llvmpipe bereiken aantoonbaar de
   onderste hostrijen; live WebGL2/WebGPU-acceptatie blijft uitgesteld. De
-  omgekeerde producer-z-ordering is nog open.
+  producer emitteert sprites nu in oplopende effectieve z-volgorde, zodat hoge
+  z als laatste door de painter-ordered GX-GPU wordt getekend. De bestaande
+  componentbucket wordt rechtstreeks gesorteerd; de BIOS-sort scant een reeds
+  gesorteerde bucket eenmaal en alloceert niet. Een headless gate bewijst zowel
+  de eerste volgorde als een runtime-z-wijziging. De lange regressiescène raakt
+  bovendien de concrete overlap tussen de speler op z=250 en een later
+  gespawnde explosie op z=114.
 - De transition- en combat-results-kleuren in `2025` kloppen niet meer: ze zijn
   donkerblauw tot bijna zwart in plaats van de lichtere Persona 3-blauwtint.
 - Ondanks alle optimalisatiewerk zijn de performanceproblemen van de

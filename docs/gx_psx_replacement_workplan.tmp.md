@@ -93,6 +93,14 @@ Implemented or partially covered GX-GPU areas include:
   Mirrored vectors cover non-zero start, VRAM wrap, 192- and 240-line ranges;
   the `pietious` frame-620 gate reaches the bottom rows in TS headless and
   GLES2/llvmpipe. This does not claim complete field-aware 480i scanout.
+- The sprite render system now submits its existing retained component bucket in
+  ascending effective z order, so the painter-ordered GX GPU draws higher-z
+  sprites last. Equal depths retain their previous bucket order, and component
+  indices are repaired after the in-place sort for ECS removal ownership. The
+  BIOS sort first scans an already sorted list once, keeping unchanged frames
+  O(n) without allocating or introducing a second display list. The focused
+  Pietious capture gate proves initial and runtime-mutated z order; the long
+  scene reaches the formerly inverted z=250 player/z=114 explosion overlap.
 - Texture windows/CLUT-ish paths, texture disable, modulation math, mask/fill
   behavior, oversized primitive culling, and VRAM copy overlap chunking.
 - Raw PSX textured quad polygons are covered in TS/C++ software/headless tests
@@ -493,9 +501,9 @@ and MAME
 
 Pick one vertical slice and finish it before committing:
 
-1. **Visible GX migration regressions**: fix producer-side painter ordering
-   without cart compensation; finish live host-UI and scanout proof when a real
-   browser is available.
+1. **Visible GX migration regressions**: finish live host-UI and scanout proof
+   when a real browser is available, and restore the incorrect `2025`
+   transition/combat-results blue at its producer.
 2. **Accelerated feedback performance**: remove per-primitive framebuffer
    snapshots using the measured full-scene gates above, while preserving raw
    PSX blend/mask/store parity in GLES2, WebGL2 and WebGPU.
