@@ -250,22 +250,33 @@ void testGp1DisplayModeOwnsPalNtsc() {
 	require((gpu.readStatus() & bmsx::GX_GPU_STATUS_PAL_MODE) == 0u, "GX-GPU GP1 clears GPUSTAT PAL bit");
 }
 
-void testGp1ResetRestoresPalDisplayStatus() {
+void testGp1ResetRestoresRegistersAndPreservesVram() {
 	GpuHarness harness;
 	bmsx::GxGpu& gpu = harness.gpu;
+	const bmsx::GxGpuCommandBuffer& commandBuffer = *gpu.readDeviceOutput().commandBuffer;
+	const uint32_t vramClearSerial = commandBuffer.vramClearSerial;
 
 	gpu.writeGp1((bmsx::GX_GPU_GP1_SET_ALLOW_TEXTURE_DISABLE << 24u) | 1u);
 	gpu.writeGp1((bmsx::GX_GPU_GP1_SET_DISPLAY_MODE << 24u) | 0x00000000u);
+	gpu.writeGp0((bmsx::GX_GPU_GP0_FILL_RECTANGLE << 24u) | 0x0000ffu);
+	gpu.writeGp0(0u);
+	gpu.writeGp0((1u << 16u) | 1u);
 	require(gpu.readDisplayModeWord() == 0u, "GX-GPU GP1 display NTSC before reset");
 	require((gpu.readStatus() & bmsx::GX_GPU_STATUS_PAL_MODE) == 0u, "GX-GPU GP1 PAL bit clear before reset");
+	require(commandBuffer.commandCount == 1u, "GX-GPU GP1 reset test has a queued command");
 
 	require(gpu.writeGp1(bmsx::GX_GPU_GP1_RESET << 24u) == bmsx::GX_GPU_GP1_RESET, "GX-GPU GP1 reset opcode");
 
+	require(commandBuffer.commandCount == 0u, "GX-GPU GP1 reset clears queued commands");
+	require(commandBuffer.vramClearSerial == vramClearSerial, "GX-GPU GP1 reset preserves backend VRAM");
 	require(gpu.readTextureDisableAllowedWord() == 1u, "GX-GPU GP1 reset preserves texture-disable allowance");
 	require((gpu.readStatus() & bmsx::GX_GPU_STATUS_TEXTURE_DISABLE) == 0u, "GX-GPU GP1 reset clears texture-disable status bit");
 	require(gpu.readDisplayModeWord() == bmsx::PSX_GPU_DISPLAY_MODE_PAL_WORD, "GX-GPU GP1 reset display mode");
 	require((gpu.readStatus() & bmsx::GX_GPU_STATUS_PAL_MODE) == bmsx::GX_GPU_STATUS_PAL_MODE, "GX-GPU GP1 reset PAL bit");
 	require((gpu.readStatus() & bmsx::GX_GPU_STATUS_RESET_WORD) == bmsx::GX_GPU_STATUS_RESET_WORD, "GX-GPU GP1 reset base bits");
+
+	gpu.reset();
+	require(commandBuffer.vramClearSerial != vramClearSerial, "GX-GPU device reset publishes a backend VRAM clear");
 }
 
 void testDisplayModeStatusBits() {
@@ -2432,7 +2443,7 @@ void testMmioGp0Gp1() {
 int main() {
 	testGp0RawDrawWordDecoders();
 	testGp1DisplayModeOwnsPalNtsc();
-	testGp1ResetRestoresPalDisplayStatus();
+	testGp1ResetRestoresRegistersAndPreservesVram();
 	testDisplayModeStatusBits();
 	testInterlacedScanoutStatusBits();
 	testInterlacedRenderCommandWords();

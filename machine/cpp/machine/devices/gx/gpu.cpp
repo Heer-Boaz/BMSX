@@ -26,6 +26,7 @@ GxGpu::GxGpu(Memory& memory, IrqController& irq, DeviceScheduler& scheduler, Dma
 
 void GxGpu::reset() {
 	m_textureDisableAllowedWord = 0u;
+	m_commandBuffer.reset();
 	resetGpuRegisters();
 }
 
@@ -34,7 +35,6 @@ void GxGpu::resetGpuRegisters() {
 	m_gp1Word = 0u;
 	m_displayModeWord = PSX_GPU_DISPLAY_MODE_PAL_WORD;
 	m_statusWord = GX_GPU_STATUS_RESET_WORD;
-	m_commandBuffer.reset();
 	clearGp0CommandState();
 	m_gpuReadWord = 0x00000400u;
 	m_drawModeWord = 0u;
@@ -278,6 +278,7 @@ u32 GxGpu::writeGp1(u32 word) {
 	const u32 opcode = (word >> GX_GPU_GP1_OPCODE_SHIFT) & GX_GPU_GP1_OPCODE_MASK;
 	switch (opcode) {
 	case GX_GPU_GP1_RESET:
+		m_commandBuffer.resetPreservingVram();
 		resetGpuRegisters();
 		break;
 	case GX_GPU_GP1_CLEAR_FIFO:

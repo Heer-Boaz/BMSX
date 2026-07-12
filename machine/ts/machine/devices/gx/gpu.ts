@@ -247,6 +247,7 @@ export class GxGpu {
 
 	public reset(): void {
 		this.textureDisableAllowedWord = 0;
+		this.commandBuffer.reset();
 		this.resetGpuRegisters();
 	}
 
@@ -255,7 +256,6 @@ export class GxGpu {
 		this.gp1Word = 0;
 		this.displayModeWord = PSX_GPU_DISPLAY_MODE_PAL_WORD;
 		this.statusWord = GX_GPU_STATUS_RESET_WORD;
-		this.commandBuffer.reset();
 		this.clearGp0CommandState();
 		this.gpuReadWord = 0x00000400;
 		this.drawModeWord = 0;
@@ -506,6 +506,7 @@ export class GxGpu {
 		const opcode = (command >>> GX_GPU_GP1_OPCODE_SHIFT) & GX_GPU_GP1_OPCODE_MASK;
 		switch (opcode) {
 			case GX_GPU_GP1_RESET:
+				this.commandBuffer.resetPreservingVram();
 				this.resetGpuRegisters();
 				break;
 			case GX_GPU_GP1_CLEAR_FIFO:

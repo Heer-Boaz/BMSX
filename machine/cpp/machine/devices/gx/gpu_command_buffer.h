@@ -223,6 +223,13 @@ private:
 		readback.activate(words[wordStart + 1u], words[wordStart + 2u], commandIndex + 1u);
 	}
 
+	void clearCommandState() {
+		commandCount = 0u;
+		presentCommandCount = 0u;
+		wordCount = 0u;
+		readback.reset();
+	}
+
 public:
 	explicit GxGpuCommandBuffer(DmaController& dmaController)
 		: readback(dmaController) {
@@ -249,10 +256,12 @@ public:
 
 	void reset() {
 		publishRevision(true);
-		commandCount = 0u;
-		presentCommandCount = 0u;
-		wordCount = 0u;
-		readback.reset();
+		clearCommandState();
+	}
+
+	void resetPreservingVram() {
+		publishRevision(false);
+		clearCommandState();
 	}
 
 	GxGpuCommandBufferState captureState() const {

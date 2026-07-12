@@ -678,6 +678,13 @@ clear an already-pending `IRQ_GPU`; cart code acknowledges that pending bit
 through `IRQ_ACK`. This keeps the GPU source latch and the system interrupt
 pending latch as two distinct hardware words.
 
+Machine/device reset and GP1(00h) are distinct GPU transitions. A machine reset
+publishes a raw-VRAM clear revision and clears the retained command stream;
+GP1(00h) resets GPU registers, packet/FIFO state, retained commands, and
+readback state while preserving the 1 MiB VRAM contents. Every render backend
+consumes the same command-stream and VRAM-clear revisions, so this distinction
+is not backend-specific.
+
 Pixel parity is a machine contract at GX VRAM scanout. For the same ROM,
 timeline, model profile, and GX display registers, the TypeScript headless
 renderer and C++ libretro/software renderer must emit byte-identical RGBA

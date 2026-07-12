@@ -232,6 +232,13 @@ export class GxGpuCommandBuffer implements GxGpuCommandBufferView {
 		this.readback.activate(this.words[wordStart + 1], this.words[wordStart + 2], commandIndex + 1);
 	}
 
+	private clearCommandState(): void {
+		this.commandCount = 0;
+		this.presentCommandCount = 0;
+		this.wordCount = 0;
+		this.readback.reset();
+	}
+
 	public serial = 0;
 	public vramClearSerial = 0;
 	public commandCount = 0;
@@ -257,10 +264,12 @@ export class GxGpuCommandBuffer implements GxGpuCommandBufferView {
 
 	public reset(): void {
 		this.publishRevision(true);
-		this.commandCount = 0;
-		this.presentCommandCount = 0;
-		this.wordCount = 0;
-		this.readback.reset();
+		this.clearCommandState();
+	}
+
+	public resetPreservingVram(): void {
+		this.publishRevision(false);
+		this.clearCommandState();
 	}
 
 	public captureState(): GxGpuCommandBufferState {

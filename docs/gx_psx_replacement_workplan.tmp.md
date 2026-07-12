@@ -315,6 +315,11 @@ and MAME
   - [ ] Model command execution time and FIFO-capacity-visible readiness rather
     than treating completed packet assembly as immediate GPU idleness.
 - [ ] Complete GP0/GP1 command decode edge cases and command-buffer ordering.
+  - [x] Distinguish machine/device reset from GP1(00h): both clear GPU
+    registers, packet/FIFO state, retained commands and readback state, while
+    only machine reset advances the shared backend VRAM-clear revision. Mirrored
+    TS/C++ command-buffer tests prove GP1 reset preserves raw VRAM for every
+    backend consumer.
 - [ ] DMA interaction behavior beyond the currently tested register/status paths.
   - [x] RAM-to-GP0 DMA word streams feed the memory-mapped GX-GPU GP0 command
     port in TS and C++.
