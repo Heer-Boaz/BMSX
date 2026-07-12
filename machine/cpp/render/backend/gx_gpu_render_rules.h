@@ -7,16 +7,12 @@ namespace bmsx {
 constexpr i32 GX_GPU_MAX_PRIMITIVE_WIDTH = 1024;
 constexpr i32 GX_GPU_MAX_PRIMITIVE_HEIGHT = 512;
 constexpr i32 GX_GPU_VERTEX_COORD_PERIOD = 0x800;
-constexpr i32 GX_GPU_TRIANGLE_UV_PLANE_WORDS = 6;
-constexpr i32 GX_GPU_TRIANGLE_UV_BASE_U = 0;
-constexpr i32 GX_GPU_TRIANGLE_UV_BASE_V = 1;
-constexpr i32 GX_GPU_TRIANGLE_UV_STEP_X_U = 2;
-constexpr i32 GX_GPU_TRIANGLE_UV_STEP_X_V = 3;
-constexpr i32 GX_GPU_TRIANGLE_UV_STEP_Y_U = 4;
-constexpr i32 GX_GPU_TRIANGLE_UV_STEP_Y_V = 5;
-constexpr i32 GX_GPU_TRIANGLE_UV_FRACTION_BITS = 12;
-constexpr i64 GX_GPU_TRIANGLE_UV_FRACTION_SCALE = 1 << GX_GPU_TRIANGLE_UV_FRACTION_BITS;
-constexpr i64 GX_GPU_TRIANGLE_UV_ACCUMULATOR_MASK = 0xfffff;
+constexpr size_t GX_GPU_TRIANGLE_ATTRIBUTE_PLANE_PHASES = 3u;
+constexpr i32 GX_GPU_TRIANGLE_ATTRIBUTE_FRACTION_BITS = 12;
+constexpr i64 GX_GPU_TRIANGLE_ATTRIBUTE_FRACTION_SCALE = 1 << GX_GPU_TRIANGLE_ATTRIBUTE_FRACTION_BITS;
+constexpr i64 GX_GPU_TRIANGLE_ATTRIBUTE_ACCUMULATOR_MASK = 0xfffff;
+constexpr size_t GX_GPU_TRIANGLE_ATTRIBUTE_RADIX_BITS = 4u;
+constexpr size_t GX_GPU_TRIANGLE_ATTRIBUTE_RADIX_DIGITS = 5u;
 constexpr u32 GX_GPU_TEXTURE_SOURCE_COMMAND_OVERLAP = 1u;
 constexpr u32 GX_GPU_TEXTURE_SOURCE_BATCH_OVERLAP = 2u;
 constexpr u32 GX_GPU_DOT_CLOCK_DIVIDER_256 = 10u;
@@ -37,75 +33,79 @@ inline i32 gxGpuTriangleRasterShift(i32 coord0, i32 coord1, i32 coord2) {
 	return minimum < -(GX_GPU_VERTEX_COORD_PERIOD >> 1) ? GX_GPU_VERTEX_COORD_PERIOD : 0;
 }
 
-inline void gxGpuTriangleUvPlane(
+inline void gxGpuTriangleAttributePlane(
 	i64* out,
-	i32 outOffset,
-	i64 determinant,
-	i32 x0, i32 y0, i32 u0, i32 v0,
-	i32 x1, i32 y1, i32 u1, i32 v1,
-	i32 x2, i32 y2, i32 u2, i32 v2) {
-	const i64 stepXUQuotient = (static_cast<i64>(u1 - u0) * (y2 - y1) - static_cast<i64>(u2 - u1) * (y1 - y0)) * GX_GPU_TRIANGLE_UV_FRACTION_SCALE / determinant;
-	const i64 stepXVQuotient = (static_cast<i64>(v1 - v0) * (y2 - y1) - static_cast<i64>(v2 - v1) * (y1 - y0)) * GX_GPU_TRIANGLE_UV_FRACTION_SCALE / determinant;
-	const i64 stepYUQuotient = (static_cast<i64>(x1 - x0) * (u2 - u1) - static_cast<i64>(x2 - x1) * (u1 - u0)) * GX_GPU_TRIANGLE_UV_FRACTION_SCALE / determinant;
-	const i64 stepYVQuotient = (static_cast<i64>(x1 - x0) * (v2 - v1) - static_cast<i64>(x2 - x1) * (v1 - v0)) * GX_GPU_TRIANGLE_UV_FRACTION_SCALE / determinant;
-	const i64 stepXURaw = stepXUQuotient & GX_GPU_TRIANGLE_UV_ACCUMULATOR_MASK;
-	const i64 stepXVRaw = stepXVQuotient & GX_GPU_TRIANGLE_UV_ACCUMULATOR_MASK;
-	const i64 stepYURaw = stepYUQuotient & GX_GPU_TRIANGLE_UV_ACCUMULATOR_MASK;
-	const i64 stepYVRaw = stepYVQuotient & GX_GPU_TRIANGLE_UV_ACCUMULATOR_MASK;
-	const i64 stepXU = (stepXURaw & 0x80000ll) != 0 ? stepXURaw - 0x100000ll : stepXURaw;
-	const i64 stepXV = (stepXVRaw & 0x80000ll) != 0 ? stepXVRaw - 0x100000ll : stepXVRaw;
-	const i64 stepYU = (stepYURaw & 0x80000ll) != 0 ? stepYURaw - 0x100000ll : stepYURaw;
-	const i64 stepYV = (stepYVRaw & 0x80000ll) != 0 ? stepYVRaw - 0x100000ll : stepYVRaw;
-	const i32 anchor = x1 <= x0 ? (x2 <= x1 ? 2 : 1) : (x2 < x0 ? 2 : 0);
-	const i32 anchorX = anchor == 0 ? x0 : (anchor == 1 ? x1 : x2);
-	const i32 anchorY = anchor == 0 ? y0 : (anchor == 1 ? y1 : y2);
-	const i32 anchorU = anchor == 0 ? u0 : (anchor == 1 ? u1 : u2);
-	const i32 anchorV = anchor == 0 ? v0 : (anchor == 1 ? v1 : v2);
-	out[outOffset + GX_GPU_TRIANGLE_UV_BASE_U] = (static_cast<i64>(anchorU) * GX_GPU_TRIANGLE_UV_FRACTION_SCALE + (GX_GPU_TRIANGLE_UV_FRACTION_SCALE >> 1u) - static_cast<i64>(anchorX) * stepXU - static_cast<i64>(anchorY) * stepYU) & GX_GPU_TRIANGLE_UV_ACCUMULATOR_MASK;
-	out[outOffset + GX_GPU_TRIANGLE_UV_BASE_V] = (static_cast<i64>(anchorV) * GX_GPU_TRIANGLE_UV_FRACTION_SCALE + (GX_GPU_TRIANGLE_UV_FRACTION_SCALE >> 1u) - static_cast<i64>(anchorX) * stepXV - static_cast<i64>(anchorY) * stepYV) & GX_GPU_TRIANGLE_UV_ACCUMULATOR_MASK;
-	out[outOffset + GX_GPU_TRIANGLE_UV_STEP_X_U] = stepXURaw;
-	out[outOffset + GX_GPU_TRIANGLE_UV_STEP_X_V] = stepXVRaw;
-	out[outOffset + GX_GPU_TRIANGLE_UV_STEP_Y_U] = stepYURaw;
-	out[outOffset + GX_GPU_TRIANGLE_UV_STEP_Y_V] = stepYVRaw;
-}
-
-inline void gxGpuTriangleUvPlaneInterpolants(
-	f32* out,
 	size_t outOffset,
-	size_t vertexFloatStride,
-	const i64* plane,
+	size_t componentCount,
+	i64 determinant,
 	i32 x0,
 	i32 y0,
 	i32 x1,
 	i32 y1,
 	i32 x2,
 	i32 y2) {
-	const i64 baseU = plane[GX_GPU_TRIANGLE_UV_BASE_U];
-	const i64 baseV = plane[GX_GPU_TRIANGLE_UV_BASE_V];
-	const i64 stepXU = plane[GX_GPU_TRIANGLE_UV_STEP_X_U];
-	const i64 stepXV = plane[GX_GPU_TRIANGLE_UV_STEP_X_V];
-	const i64 stepYU = plane[GX_GPU_TRIANGLE_UV_STEP_Y_U];
-	const i64 stepYV = plane[GX_GPU_TRIANGLE_UV_STEP_Y_V];
-	const i64 originU = (baseU + static_cast<i64>(x0) * stepXU + static_cast<i64>(y0) * stepYU) & GX_GPU_TRIANGLE_UV_ACCUMULATOR_MASK;
-	const i64 originV = (baseV + static_cast<i64>(x0) * stepXV + static_cast<i64>(y0) * stepYV) & GX_GPU_TRIANGLE_UV_ACCUMULATOR_MASK;
-	for (i32 vertex = 0; vertex < 3; vertex += 1) {
-		const i32 x = vertex == 0 ? x0 : (vertex == 1 ? x1 : x2);
-		const i32 y = vertex == 0 ? y0 : (vertex == 1 ? y1 : y2);
-		const i32 localX = x - x0;
-		const i32 localY = y - y0;
-		const size_t offset = outOffset + static_cast<size_t>(vertex) * vertexFloatStride;
-		out[offset] = 1.0f;
-		out[offset + 1u] = static_cast<f32>((originU & 0x0fll) + (stepXU & 0x0fll) * localX + (stepYU & 0x0fll) * localY);
-		out[offset + 2u] = static_cast<f32>((originV & 0x0fll) + (stepXV & 0x0fll) * localX + (stepYV & 0x0fll) * localY);
-		out[offset + 3u] = static_cast<f32>(((originU >> 4u) & 0x0fll) + ((stepXU >> 4u) & 0x0fll) * localX + ((stepYU >> 4u) & 0x0fll) * localY);
-		out[offset + 4u] = static_cast<f32>(((originV >> 4u) & 0x0fll) + ((stepXV >> 4u) & 0x0fll) * localX + ((stepYV >> 4u) & 0x0fll) * localY);
-		out[offset + 5u] = static_cast<f32>(((originU >> 8u) & 0x0fll) + ((stepXU >> 8u) & 0x0fll) * localX + ((stepYU >> 8u) & 0x0fll) * localY);
-		out[offset + 6u] = static_cast<f32>(((originV >> 8u) & 0x0fll) + ((stepXV >> 8u) & 0x0fll) * localX + ((stepYV >> 8u) & 0x0fll) * localY);
-		out[offset + 7u] = static_cast<f32>(((originU >> 12u) & 0x0fll) + ((stepXU >> 12u) & 0x0fll) * localX + ((stepYU >> 12u) & 0x0fll) * localY);
-		out[offset + 8u] = static_cast<f32>(((originV >> 12u) & 0x0fll) + ((stepXV >> 12u) & 0x0fll) * localX + ((stepYV >> 12u) & 0x0fll) * localY);
-		out[offset + 9u] = static_cast<f32>(((originU >> 16u) & 0x0fll) + ((stepXU >> 16u) & 0x0fll) * localX + ((stepYU >> 16u) & 0x0fll) * localY);
-		out[offset + 10u] = static_cast<f32>(((originV >> 16u) & 0x0fll) + ((stepXV >> 16u) & 0x0fll) * localX + ((stepYV >> 16u) & 0x0fll) * localY);
+	const i32 anchor = x1 <= x0 ? (x2 <= x1 ? 2 : 1) : (x2 < x0 ? 2 : 0);
+	const i32 anchorX = anchor == 0 ? x0 : (anchor == 1 ? x1 : x2);
+	const i32 anchorY = anchor == 0 ? y0 : (anchor == 1 ? y1 : y2);
+	for (size_t component = 0; component < componentCount; component += 1u) {
+		const i64 value0 = out[outOffset + component];
+		const i64 value1 = out[outOffset + componentCount + component];
+		const i64 value2 = out[outOffset + componentCount * 2u + component];
+		const i64 stepXQuotient = ((value1 - value0) * static_cast<i64>(y2 - y1) - (value2 - value1) * static_cast<i64>(y1 - y0)) * GX_GPU_TRIANGLE_ATTRIBUTE_FRACTION_SCALE / determinant;
+		const i64 stepYQuotient = (static_cast<i64>(x1 - x0) * (value2 - value1) - static_cast<i64>(x2 - x1) * (value1 - value0)) * GX_GPU_TRIANGLE_ATTRIBUTE_FRACTION_SCALE / determinant;
+		const i64 stepXRaw = stepXQuotient & GX_GPU_TRIANGLE_ATTRIBUTE_ACCUMULATOR_MASK;
+		const i64 stepYRaw = stepYQuotient & GX_GPU_TRIANGLE_ATTRIBUTE_ACCUMULATOR_MASK;
+		const i64 stepX = (stepXRaw & 0x80000ll) != 0 ? stepXRaw - 0x100000ll : stepXRaw;
+		const i64 stepY = (stepYRaw & 0x80000ll) != 0 ? stepYRaw - 0x100000ll : stepYRaw;
+		const i64 anchorValue = anchor == 0 ? value0 : (anchor == 1 ? value1 : value2);
+		out[outOffset + component] = (anchorValue * GX_GPU_TRIANGLE_ATTRIBUTE_FRACTION_SCALE + (GX_GPU_TRIANGLE_ATTRIBUTE_FRACTION_SCALE >> 1u) - static_cast<i64>(anchorX) * stepX - static_cast<i64>(anchorY) * stepY) & GX_GPU_TRIANGLE_ATTRIBUTE_ACCUMULATOR_MASK;
+		out[outOffset + componentCount + component] = stepXRaw;
+		out[outOffset + componentCount * 2u + component] = stepYRaw;
 	}
+}
+
+inline void gxGpuTriangleAttributePlaneInterpolants(
+	f32* out,
+	size_t outOffset,
+	size_t vertexFloatStride,
+	const i64* plane,
+	size_t componentCount,
+	i32 x0,
+	i32 y0,
+	i32 x1,
+	i32 y1,
+	i32 x2,
+	i32 y2) {
+	for (size_t component = 0; component < componentCount; component += 1u) {
+		const i64 stepX = plane[componentCount + component];
+		const i64 stepY = plane[componentCount * 2u + component];
+		const i64 origin = (plane[component] + static_cast<i64>(x0) * stepX + static_cast<i64>(y0) * stepY) & GX_GPU_TRIANGLE_ATTRIBUTE_ACCUMULATOR_MASK;
+		for (i32 vertex = 0; vertex < 3; vertex += 1) {
+			const i32 x = vertex == 0 ? x0 : (vertex == 1 ? x1 : x2);
+			const i32 y = vertex == 0 ? y0 : (vertex == 1 ? y1 : y2);
+			const i32 localX = x - x0;
+			const i32 localY = y - y0;
+			const size_t offset = outOffset + static_cast<size_t>(vertex) * vertexFloatStride + component;
+			for (size_t digit = 0; digit < GX_GPU_TRIANGLE_ATTRIBUTE_RADIX_DIGITS; digit += 1u) {
+				const size_t shift = digit * GX_GPU_TRIANGLE_ATTRIBUTE_RADIX_BITS;
+				out[offset + digit * componentCount] = static_cast<f32>(((origin >> shift) & 0x0fll) + ((stepX >> shift) & 0x0fll) * localX + ((stepY >> shift) & 0x0fll) * localY);
+			}
+		}
+	}
+}
+
+inline u32 gxGpuTriangleAttributePlaneInterpolantValue(
+	const f32* interpolants,
+	size_t offset,
+	size_t componentCount) {
+	i32 carry = 0;
+	u32 value = 0u;
+	for (size_t digit = 0; digit < GX_GPU_TRIANGLE_ATTRIBUTE_RADIX_DIGITS; digit += 1u) {
+		const i32 sum = static_cast<i32>(interpolants[offset + digit * componentCount]) + carry;
+		value |= (static_cast<u32>(sum) & 0x0fu) << (digit * GX_GPU_TRIANGLE_ATTRIBUTE_RADIX_BITS);
+		carry = sum >> GX_GPU_TRIANGLE_ATTRIBUTE_RADIX_BITS;
+	}
+	return value & static_cast<u32>(GX_GPU_TRIANGLE_ATTRIBUTE_ACCUMULATOR_MASK);
 }
 
 inline i32 gxGpuVertexY(u32 word) {

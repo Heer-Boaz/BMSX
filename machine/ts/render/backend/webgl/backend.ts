@@ -449,11 +449,15 @@ export class WebGLBackend implements GPUBackend {
 		// Migrate to external manager.setState; for now keep extraStates
 		this.extraStates[label] = state;
 	}
-	buildProgram(vsSource: string, fsSource: string, label: string): WebGLProgram {
+	buildProgram(vsSource: string, fsSource: string, label: string, shaderDefines = ''): WebGLProgram {
 		const gl = this.gl;
 		function compile(type: number, source: string, stage: string): WebGLShader {
 			const shader = gl.createShader(type);
 			if (!shader) return null;
+			if (shaderDefines.length !== 0) {
+				const versionEnd = source.indexOf('\n') + 1;
+				source = source.slice(0, versionEnd) + shaderDefines + source.slice(versionEnd);
+			}
 			gl.shaderSource(shader, source);
 			gl.compileShader(shader);
 			if (!gl.getShaderParameter(shader, gl.COMPILE_STATUS)) {

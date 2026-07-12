@@ -89,9 +89,11 @@ import {
 	gxGpuTriangleEdgeCoverageMinimum,
 	gxGpuTriangleExceedsPrimitiveSize,
 	gxGpuTriangleRasterShift,
-	GX_GPU_TRIANGLE_UV_PLANE_WORDS,
-	gxGpuTriangleUvPlane,
-	gxGpuTriangleUvPlaneInterpolants,
+	GX_GPU_TRIANGLE_ATTRIBUTE_FRACTION_BITS,
+	GX_GPU_TRIANGLE_ATTRIBUTE_PLANE_PHASES,
+	gxGpuTriangleAttributePlane,
+	gxGpuTriangleAttributePlaneInterpolants,
+	gxGpuTriangleAttributePlaneInterpolantValue,
 	gxGpuVramLogicalAreaOverlapsBounds,
 } from '../../machine/ts/render/backend/gx_gpu_render_rules';
 import {
@@ -534,14 +536,22 @@ test('GX-GPU decodes PSX GP0 signed vertex and rectangle size words', () => {
 	assert.equal(gxGpuVramCopyNeedsChunking(10, 20, 50, 24, 32, 16), false);
 	assert.equal(gxGpuVramCopyNeedsChunking(10, 20, 12, 40, 32, 16), false);
 	assert.equal(gxGpuVramCopyChunkHeight(20, 80, 16), 16);
-	const uvPlane = new Float64Array(GX_GPU_TRIANGLE_UV_PLANE_WORDS);
+	const uvPlane = new Float64Array(2 * GX_GPU_TRIANGLE_ATTRIBUTE_PLANE_PHASES);
+	uvPlane.set([1, 2, 17, 2, 1, 18]);
 	const uvInterpolants = new Float32Array(33);
-	gxGpuTriangleUvPlane(uvPlane, 0, 256, 0, 0, 1, 2, 16, 0, 17, 2, 0, 16, 1, 18);
-	gxGpuTriangleUvPlaneInterpolants(uvInterpolants, 0, 11, uvPlane, 0, 0, 16, 0, 0, 16);
-	assert.equal(uvInterpolants[0], 1);
-	assert.equal(uvInterpolants[7], 1);
-	assert.equal(uvInterpolants[18], 17);
-	assert.equal(uvInterpolants[30], 18);
+	uvInterpolants[10] = 1;
+	uvInterpolants[21] = 1;
+	uvInterpolants[32] = 1;
+	gxGpuTriangleAttributePlane(uvPlane, 0, 2, 256, 0, 0, 16, 0, 0, 16);
+	gxGpuTriangleAttributePlaneInterpolants(uvInterpolants, 0, 11, uvPlane, 2, 0, 0, 16, 0, 0, 16);
+	assert.equal(uvInterpolants[10], 1);
+	assert.equal(uvInterpolants[21], 1);
+	assert.equal(uvInterpolants[6], 1);
+	assert.equal(uvInterpolants[17], 17);
+	assert.equal(uvInterpolants[29], 18);
+	assert.equal(gxGpuTriangleAttributePlaneInterpolantValue(uvInterpolants, 0, 2) >>> GX_GPU_TRIANGLE_ATTRIBUTE_FRACTION_BITS, 1);
+	assert.equal(gxGpuTriangleAttributePlaneInterpolantValue(uvInterpolants, 11, 2) >>> GX_GPU_TRIANGLE_ATTRIBUTE_FRACTION_BITS, 17);
+	assert.equal(gxGpuTriangleAttributePlaneInterpolantValue(uvInterpolants, 23, 2) >>> GX_GPU_TRIANGLE_ATTRIBUTE_FRACTION_BITS, 18);
 
 	assert.equal(gxGpuTransferX(0x01ff03ff), 1023);
 	assert.equal(gxGpuTransferY(0x01ff03ff), 511);
@@ -1595,6 +1605,44 @@ test('GX-GPU software backend owns PSX triangle edges and quad seams exactly onc
 	assert.equal(gxGpuSoftwareVram[gxGpuSoftwareVramIndex(31, 32)], 0x0017);
 });
 
+test('GX-GPU software Gouraud triangles use PSX fixed-12 color planes before storage and texture modulation', () => {
+	const commandBuffer = new GxGpuCommandBuffer(standaloneCommandBufferDma);
+	commandBuffer.reset();
+	pushSoftwareCommand(commandBuffer, new Uint32Array([
+		GX_GPU_GP0_CPU_TO_VRAM_FIRST << 24,
+		0,
+		(1 << 16) | 1,
+		0x00000010,
+	]), GX_GPU_COMMAND_UPLOAD_CPU_TO_VRAM, GX_GPU_GP0_CPU_TO_VRAM_FIRST);
+	const gouraudOpcode = GX_GPU_GP0_POLYGON_FIRST | GX_GPU_GP0_RENDER_GOURAUD_BIT;
+	pushSoftwareCommand(commandBuffer, new Uint32Array([
+		gouraudOpcode << 24,
+		(10 << 16) | 10,
+		0x0000ff,
+		(11 << 16) | 17,
+		0,
+		(19 << 16) | 12,
+	]), GX_GPU_COMMAND_DRAW_POLYGON, gouraudOpcode);
+	const texturedGouraudOpcode = gouraudOpcode | GX_GPU_GP0_RENDER_TEXTURE_BIT;
+	pushSoftwareCommand(commandBuffer, new Uint32Array([
+		texturedGouraudOpcode << 24,
+		(30 << 16) | 30,
+		0,
+		0x0000ff,
+		(31 << 16) | 37,
+		0,
+		0,
+		(39 << 16) | 32,
+		0,
+	]), GX_GPU_COMMAND_DRAW_POLYGON, texturedGouraudOpcode, GX_GPU_TEXTURE_MODE_DIRECT16 << 7);
+
+	gxGpuSoftwareVram.fill(0);
+	executeGxGpuSoftwareCommands(commandBuffer, 0);
+
+	assert.equal(gxGpuSoftwareVram[gxGpuSoftwareVramIndex(13, 13)], 0x000b);
+	assert.equal(gxGpuSoftwareVram[gxGpuSoftwareVramIndex(33, 33)], 0x000b);
+});
+
 test('GX-GPU software polygons wrap the raster bucket after drawing offset and primitive-size rejection', () => {
 	const commandBuffer = new GxGpuCommandBuffer(standaloneCommandBufferDma);
 	commandBuffer.reset();
@@ -1645,9 +1693,9 @@ test('GX-GPU software polygons wrap the raster bucket after drawing offset and p
 	assert.equal(gxGpuSoftwareVram[gxGpuSoftwareVramIndex(1022, 20)], 0x7c00);
 	assert.equal(gxGpuSoftwareVram[gxGpuSoftwareVramIndex(1023, 20)], 0x7fff);
 	assert.equal(gxGpuSoftwareVram[gxGpuSoftwareVramIndex(0, 20)], 0);
-	assert.equal(gxGpuSoftwareVram[gxGpuSoftwareVramIndex(11, 509)], 0x1cef);
-	assert.equal(gxGpuSoftwareVram[gxGpuSoftwareVramIndex(12, 509)], 0x1de7);
-	assert.equal(gxGpuSoftwareVram[gxGpuSoftwareVramIndex(11, 510)], 0x3ce7);
+	assert.equal(gxGpuSoftwareVram[gxGpuSoftwareVramIndex(11, 509)], 0x2110);
+	assert.equal(gxGpuSoftwareVram[gxGpuSoftwareVramIndex(12, 509)], 0x2208);
+	assert.equal(gxGpuSoftwareVram[gxGpuSoftwareVramIndex(11, 510)], 0x4108);
 	assert.equal(gxGpuSoftwareVram[gxGpuSoftwareVramIndex(10, 509)], 0);
 	assert.equal(gxGpuSoftwareVram[gxGpuSoftwareVramIndex(12, 510)], 0);
 });

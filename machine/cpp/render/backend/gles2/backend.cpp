@@ -41,9 +41,14 @@ void bindGLES2TextureForUpload(GLuint texture, const bmsx::TextureParams& params
 	glPixelStorei(GL_UNPACK_ALIGNMENT, 1);
 }
 
-GLuint compileGLES2Shader(GLenum type, const char* source, const char* label, const char* stage) {
+GLuint compileGLES2Shader(GLenum type, const char* source, const char* shaderDefines, const char* label, const char* stage) {
 	const GLuint shader = glCreateShader(type);
-	glShaderSource(shader, 1, &source, nullptr);
+	if (shaderDefines != nullptr) {
+		const char* sources[] = {shaderDefines, source};
+		glShaderSource(shader, 2, sources, nullptr);
+	} else {
+		glShaderSource(shader, 1, &source, nullptr);
+	}
 	glCompileShader(shader);
 	GLint ok = GL_FALSE;
 	glGetShaderiv(shader, GL_COMPILE_STATUS, &ok);
@@ -614,9 +619,9 @@ void OpenGLES2Backend::setRenderTarget(GLuint fbo, i32 width, i32 height) {
 	}
 }
 
-GLuint OpenGLES2Backend::buildProgram(const char* vertexShaderSource, const char* fragmentShaderSource, const char* label) {
-	const GLuint vertexShader = compileGLES2Shader(GL_VERTEX_SHADER, vertexShaderSource, label, "vertex");
-	const GLuint fragmentShader = compileGLES2Shader(GL_FRAGMENT_SHADER, fragmentShaderSource, label, "fragment");
+GLuint OpenGLES2Backend::buildProgram(const char* vertexShaderSource, const char* fragmentShaderSource, const char* label, const char* shaderDefines) {
+	const GLuint vertexShader = compileGLES2Shader(GL_VERTEX_SHADER, vertexShaderSource, shaderDefines, label, "vertex");
+	const GLuint fragmentShader = compileGLES2Shader(GL_FRAGMENT_SHADER, fragmentShaderSource, shaderDefines, label, "fragment");
 	return linkGLES2Program(vertexShader, fragmentShader, label);
 }
 

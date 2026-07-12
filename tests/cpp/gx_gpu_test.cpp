@@ -137,14 +137,21 @@ void testGp0RawDrawWordDecoders() {
 	require(!bmsx::gxGpuVramCopyNeedsChunking(10u, 20u, 50u, 24u, 32u, 16u), "GX-GPU separated X copy is not chunked");
 	require(!bmsx::gxGpuVramCopyNeedsChunking(10u, 20u, 12u, 40u, 32u, 16u), "GX-GPU separated Y copy is not chunked");
 	require(bmsx::gxGpuVramCopyChunkHeight(20u, 80u, 16u) == 16u, "GX-GPU non-overlapping row distance clamps to height");
-	std::array<bmsx::i64, bmsx::GX_GPU_TRIANGLE_UV_PLANE_WORDS> uvPlane{};
+	std::array<bmsx::i64, 2u * bmsx::GX_GPU_TRIANGLE_ATTRIBUTE_PLANE_PHASES> uvPlane{1, 2, 17, 2, 1, 18};
 	std::array<bmsx::f32, 33u> uvInterpolants{};
-	bmsx::gxGpuTriangleUvPlane(uvPlane.data(), 0, 256, 0, 0, 1, 2, 16, 0, 17, 2, 0, 16, 1, 18);
-	bmsx::gxGpuTriangleUvPlaneInterpolants(uvInterpolants.data(), 0u, 11u, uvPlane.data(), 0, 0, 16, 0, 0, 16);
-	require(uvInterpolants[0] == 1.0f, "GX-GPU UV plane enables first affine vertex");
-	require(uvInterpolants[7] == 1.0f, "GX-GPU UV plane keeps origin U digit");
-	require(uvInterpolants[18] == 17.0f, "GX-GPU UV plane carries X gradient through digit 3");
-	require(uvInterpolants[30] == 18.0f, "GX-GPU UV plane carries Y gradient through digit 3");
+	uvInterpolants[10] = 1.0f;
+	uvInterpolants[21] = 1.0f;
+	uvInterpolants[32] = 1.0f;
+	bmsx::gxGpuTriangleAttributePlane(uvPlane.data(), 0u, 2u, 256, 0, 0, 16, 0, 0, 16);
+	bmsx::gxGpuTriangleAttributePlaneInterpolants(uvInterpolants.data(), 0u, 11u, uvPlane.data(), 2u, 0, 0, 16, 0, 0, 16);
+	require((bmsx::gxGpuTriangleAttributePlaneInterpolantValue(uvInterpolants.data(), 0u, 2u) >> bmsx::GX_GPU_TRIANGLE_ATTRIBUTE_FRACTION_BITS) == 1u, "GX-GPU fixed attribute first vertex decode");
+	require((bmsx::gxGpuTriangleAttributePlaneInterpolantValue(uvInterpolants.data(), 11u, 2u) >> bmsx::GX_GPU_TRIANGLE_ATTRIBUTE_FRACTION_BITS) == 17u, "GX-GPU fixed attribute second vertex decode");
+	require((bmsx::gxGpuTriangleAttributePlaneInterpolantValue(uvInterpolants.data(), 23u, 2u) >> bmsx::GX_GPU_TRIANGLE_ATTRIBUTE_FRACTION_BITS) == 18u, "GX-GPU fixed attribute third vertex decode");
+	require(uvInterpolants[10] == 1.0f, "GX-GPU attribute digits preserve first enable slot");
+	require(uvInterpolants[21] == 1.0f, "GX-GPU attribute digits preserve second enable slot");
+	require(uvInterpolants[6] == 1.0f, "GX-GPU attribute plane keeps origin U digit");
+	require(uvInterpolants[17] == 17.0f, "GX-GPU attribute plane carries X gradient through digit 3");
+	require(uvInterpolants[29] == 18.0f, "GX-GPU attribute plane carries Y gradient through digit 3");
 
 	require(bmsx::gxGpuTransferX(0x01ff03ffu) == 1023u, "GX-GPU transfer x decode");
 	require(bmsx::gxGpuTransferY(0x01ff03ffu) == 511u, "GX-GPU transfer y decode");
@@ -1632,6 +1639,60 @@ void testSoftwareTriangleEdgesAndQuadSeams() {
 	require(bmsx::g_gxGpuSoftwareVram[bmsx::gxGpuSoftwareVramIndex(31, 32)] == 0x0017u, "GX-GPU software representable quad overlapping column blends twice");
 }
 
+void testSoftwareGouraudTriangleFixedColorPlane() {
+	bmsx::GxGpuCommandBuffer commandBuffer(commandBufferDmaHarness.dma);
+	commandBuffer.reset();
+	pushSoftwareCommand(
+		commandBuffer,
+		std::array<uint32_t, 4>{
+			bmsx::GX_GPU_GP0_CPU_TO_VRAM_FIRST << 24u,
+			0u,
+			(1u << 16u) | 1u,
+			0x00000010u,
+		},
+		4u,
+		bmsx::GX_GPU_COMMAND_UPLOAD_CPU_TO_VRAM,
+		bmsx::GX_GPU_GP0_CPU_TO_VRAM_FIRST);
+	constexpr uint8_t gouraudOpcode = bmsx::GX_GPU_GP0_POLYGON_FIRST | bmsx::GX_GPU_GP0_RENDER_GOURAUD_BIT;
+	pushSoftwareCommand(
+		commandBuffer,
+		std::array<uint32_t, 6>{
+			gouraudOpcode << 24u,
+			(10u << 16u) | 10u,
+			0x0000ffu,
+			(11u << 16u) | 17u,
+			0u,
+			(19u << 16u) | 12u,
+		},
+		6u,
+		bmsx::GX_GPU_COMMAND_DRAW_POLYGON,
+		gouraudOpcode);
+	constexpr uint8_t texturedGouraudOpcode = gouraudOpcode | bmsx::GX_GPU_GP0_RENDER_TEXTURE_BIT;
+	pushSoftwareCommand(
+		commandBuffer,
+		std::array<uint32_t, 9>{
+			texturedGouraudOpcode << 24u,
+			(30u << 16u) | 30u,
+			0u,
+			0x0000ffu,
+			(31u << 16u) | 37u,
+			0u,
+			0u,
+			(39u << 16u) | 32u,
+			0u,
+		},
+		9u,
+		bmsx::GX_GPU_COMMAND_DRAW_POLYGON,
+		texturedGouraudOpcode,
+		bmsx::GX_GPU_TEXTURE_MODE_DIRECT16 << 7u);
+
+	bmsx::g_gxGpuSoftwareVram.fill(0u);
+	bmsx::executeGxGpuSoftwareCommands(commandBuffer, 0u);
+
+	require(bmsx::g_gxGpuSoftwareVram[bmsx::gxGpuSoftwareVramIndex(13, 13)] == 0x000bu, "GX-GPU software Gouraud triangle truncates the fixed-12 color plane before RGB555 storage");
+	require(bmsx::g_gxGpuSoftwareVram[bmsx::gxGpuSoftwareVramIndex(33, 33)] == 0x000bu, "GX-GPU software textured Gouraud triangle modulates from the fixed-12 color plane");
+}
+
 void testSoftwarePolygonRasterBucketWrap() {
 	bmsx::GxGpuCommandBuffer commandBuffer(commandBufferDmaHarness.dma);
 	commandBuffer.reset();
@@ -1717,9 +1778,9 @@ void testSoftwarePolygonRasterBucketWrap() {
 	require(bmsx::g_gxGpuSoftwareVram[bmsx::gxGpuSoftwareVramIndex(1022, 20)] == 0x7c00u, "GX-GPU software wrapped textured polygon samples third texel");
 	require(bmsx::g_gxGpuSoftwareVram[bmsx::gxGpuSoftwareVramIndex(1023, 20)] == 0x7fffu, "GX-GPU software wrapped textured polygon samples fourth texel");
 	require(bmsx::g_gxGpuSoftwareVram[bmsx::gxGpuSoftwareVramIndex(0, 20)] == 0u, "GX-GPU software wrapped textured polygon stays in one raster bucket");
-	require(bmsx::g_gxGpuSoftwareVram[bmsx::gxGpuSoftwareVramIndex(11, 509)] == 0x1cefu, "GX-GPU software wrapped Gouraud polygon first clipped pixel");
-	require(bmsx::g_gxGpuSoftwareVram[bmsx::gxGpuSoftwareVramIndex(12, 509)] == 0x1de7u, "GX-GPU software wrapped Gouraud polygon second clipped pixel");
-	require(bmsx::g_gxGpuSoftwareVram[bmsx::gxGpuSoftwareVramIndex(11, 510)] == 0x3ce7u, "GX-GPU software wrapped Gouraud polygon lower clipped pixel");
+	require(bmsx::g_gxGpuSoftwareVram[bmsx::gxGpuSoftwareVramIndex(11, 509)] == 0x2110u, "GX-GPU software wrapped Gouraud polygon first clipped fixed-12 color");
+	require(bmsx::g_gxGpuSoftwareVram[bmsx::gxGpuSoftwareVramIndex(12, 509)] == 0x2208u, "GX-GPU software wrapped Gouraud polygon second clipped fixed-12 color");
+	require(bmsx::g_gxGpuSoftwareVram[bmsx::gxGpuSoftwareVramIndex(11, 510)] == 0x4108u, "GX-GPU software wrapped Gouraud polygon lower clipped fixed-12 color");
 	require(bmsx::g_gxGpuSoftwareVram[bmsx::gxGpuSoftwareVramIndex(10, 509)] == 0u, "GX-GPU software wrapped Gouraud polygon clips left drawing area");
 	require(bmsx::g_gxGpuSoftwareVram[bmsx::gxGpuSoftwareVramIndex(12, 510)] == 0u, "GX-GPU software wrapped Gouraud polygon clips bottom-right drawing area");
 }
@@ -2656,6 +2717,7 @@ int main() {
 	testSoftwareLineDdaSampleWrapAndPolylineJoints();
 	testSoftwareBlendsUntexturedSemiTransparentRectangles();
 	testSoftwareTriangleEdgesAndQuadSeams();
+	testSoftwareGouraudTriangleFixedColorPlane();
 	testSoftwarePolygonRasterBucketWrap();
 	testSoftwareTexturedPolygonFixedUvGradient();
 	testSoftwareTextureWindowPageAndClutEdges();

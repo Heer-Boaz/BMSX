@@ -11,16 +11,12 @@ import {
 export const GX_GPU_MAX_PRIMITIVE_WIDTH = 1024;
 export const GX_GPU_MAX_PRIMITIVE_HEIGHT = 512;
 export const GX_GPU_VERTEX_COORD_PERIOD = 0x800;
-export const GX_GPU_TRIANGLE_UV_PLANE_WORDS = 6;
-export const GX_GPU_TRIANGLE_UV_BASE_U = 0;
-export const GX_GPU_TRIANGLE_UV_BASE_V = 1;
-export const GX_GPU_TRIANGLE_UV_STEP_X_U = 2;
-export const GX_GPU_TRIANGLE_UV_STEP_X_V = 3;
-export const GX_GPU_TRIANGLE_UV_STEP_Y_U = 4;
-export const GX_GPU_TRIANGLE_UV_STEP_Y_V = 5;
-export const GX_GPU_TRIANGLE_UV_FRACTION_BITS = 12;
-export const GX_GPU_TRIANGLE_UV_FRACTION_SCALE = 1 << GX_GPU_TRIANGLE_UV_FRACTION_BITS;
-export const GX_GPU_TRIANGLE_UV_ACCUMULATOR_MASK = 0xfffff;
+export const GX_GPU_TRIANGLE_ATTRIBUTE_PLANE_PHASES = 3;
+export const GX_GPU_TRIANGLE_ATTRIBUTE_FRACTION_BITS = 12;
+export const GX_GPU_TRIANGLE_ATTRIBUTE_FRACTION_SCALE = 1 << GX_GPU_TRIANGLE_ATTRIBUTE_FRACTION_BITS;
+export const GX_GPU_TRIANGLE_ATTRIBUTE_ACCUMULATOR_MASK = 0xfffff;
+export const GX_GPU_TRIANGLE_ATTRIBUTE_RADIX_BITS = 4;
+export const GX_GPU_TRIANGLE_ATTRIBUTE_RADIX_DIGITS = 5;
 export const GX_GPU_TEXTURE_SOURCE_COMMAND_OVERLAP = 1;
 export const GX_GPU_TEXTURE_SOURCE_BATCH_OVERLAP = 2;
 export const GX_GPU_DOT_CLOCK_DIVIDER_256 = 10;
@@ -41,52 +37,11 @@ export function gxGpuTriangleRasterShift(coord0: number, coord1: number, coord2:
 	return minimum < -(GX_GPU_VERTEX_COORD_PERIOD >> 1) ? GX_GPU_VERTEX_COORD_PERIOD : 0;
 }
 
-export function gxGpuTriangleUvPlane(
+export function gxGpuTriangleAttributePlane(
 	out: Float64Array,
 	outOffset: number,
+	componentCount: number,
 	determinant: number,
-	x0: number, y0: number, u0: number, v0: number,
-	x1: number, y1: number, u1: number, v1: number,
-	x2: number, y2: number, u2: number, v2: number,
-): void {
-	const stepXUNumerator = ((u1 - u0) * (y2 - y1)) - ((u2 - u1) * (y1 - y0));
-	const stepXVNumerator = ((v1 - v0) * (y2 - y1)) - ((v2 - v1) * (y1 - y0));
-	const stepYUNumerator = ((x1 - x0) * (u2 - u1)) - ((x2 - x1) * (u1 - u0));
-	const stepYVNumerator = ((x1 - x0) * (v2 - v1)) - ((x2 - x1) * (v1 - v0));
-	const stepXUScaled = stepXUNumerator * GX_GPU_TRIANGLE_UV_FRACTION_SCALE;
-	const stepXVScaled = stepXVNumerator * GX_GPU_TRIANGLE_UV_FRACTION_SCALE;
-	const stepYUScaled = stepYUNumerator * GX_GPU_TRIANGLE_UV_FRACTION_SCALE;
-	const stepYVScaled = stepYVNumerator * GX_GPU_TRIANGLE_UV_FRACTION_SCALE;
-	const stepXUQuotient = (stepXUScaled - (stepXUScaled % determinant)) / determinant;
-	const stepXVQuotient = (stepXVScaled - (stepXVScaled % determinant)) / determinant;
-	const stepYUQuotient = (stepYUScaled - (stepYUScaled % determinant)) / determinant;
-	const stepYVQuotient = (stepYVScaled - (stepYVScaled % determinant)) / determinant;
-	const stepXURaw = stepXUQuotient & GX_GPU_TRIANGLE_UV_ACCUMULATOR_MASK;
-	const stepXVRaw = stepXVQuotient & GX_GPU_TRIANGLE_UV_ACCUMULATOR_MASK;
-	const stepYURaw = stepYUQuotient & GX_GPU_TRIANGLE_UV_ACCUMULATOR_MASK;
-	const stepYVRaw = stepYVQuotient & GX_GPU_TRIANGLE_UV_ACCUMULATOR_MASK;
-	const stepXU = (stepXURaw & 0x80000) !== 0 ? stepXURaw - 0x100000 : stepXURaw;
-	const stepXV = (stepXVRaw & 0x80000) !== 0 ? stepXVRaw - 0x100000 : stepXVRaw;
-	const stepYU = (stepYURaw & 0x80000) !== 0 ? stepYURaw - 0x100000 : stepYURaw;
-	const stepYV = (stepYVRaw & 0x80000) !== 0 ? stepYVRaw - 0x100000 : stepYVRaw;
-	const anchor = x1 <= x0 ? (x2 <= x1 ? 2 : 1) : (x2 < x0 ? 2 : 0);
-	const anchorX = anchor === 0 ? x0 : (anchor === 1 ? x1 : x2);
-	const anchorY = anchor === 0 ? y0 : (anchor === 1 ? y1 : y2);
-	const anchorU = anchor === 0 ? u0 : (anchor === 1 ? u1 : u2);
-	const anchorV = anchor === 0 ? v0 : (anchor === 1 ? v1 : v2);
-	out[outOffset + GX_GPU_TRIANGLE_UV_BASE_U] = ((anchorU * GX_GPU_TRIANGLE_UV_FRACTION_SCALE) + (GX_GPU_TRIANGLE_UV_FRACTION_SCALE >> 1) - (anchorX * stepXU) - (anchorY * stepYU)) & GX_GPU_TRIANGLE_UV_ACCUMULATOR_MASK;
-	out[outOffset + GX_GPU_TRIANGLE_UV_BASE_V] = ((anchorV * GX_GPU_TRIANGLE_UV_FRACTION_SCALE) + (GX_GPU_TRIANGLE_UV_FRACTION_SCALE >> 1) - (anchorX * stepXV) - (anchorY * stepYV)) & GX_GPU_TRIANGLE_UV_ACCUMULATOR_MASK;
-	out[outOffset + GX_GPU_TRIANGLE_UV_STEP_X_U] = stepXURaw;
-	out[outOffset + GX_GPU_TRIANGLE_UV_STEP_X_V] = stepXVRaw;
-	out[outOffset + GX_GPU_TRIANGLE_UV_STEP_Y_U] = stepYURaw;
-	out[outOffset + GX_GPU_TRIANGLE_UV_STEP_Y_V] = stepYVRaw;
-}
-
-export function gxGpuTriangleUvPlaneInterpolants(
-	out: Float32Array,
-	outOffset: number,
-	vertexFloatStride: number,
-	plane: Float64Array,
 	x0: number,
 	y0: number,
 	x1: number,
@@ -94,32 +49,72 @@ export function gxGpuTriangleUvPlaneInterpolants(
 	x2: number,
 	y2: number,
 ): void {
-	const baseU = plane[GX_GPU_TRIANGLE_UV_BASE_U];
-	const baseV = plane[GX_GPU_TRIANGLE_UV_BASE_V];
-	const stepXU = plane[GX_GPU_TRIANGLE_UV_STEP_X_U];
-	const stepXV = plane[GX_GPU_TRIANGLE_UV_STEP_X_V];
-	const stepYU = plane[GX_GPU_TRIANGLE_UV_STEP_Y_U];
-	const stepYV = plane[GX_GPU_TRIANGLE_UV_STEP_Y_V];
-	const originU = (baseU + (x0 * stepXU) + (y0 * stepYU)) & GX_GPU_TRIANGLE_UV_ACCUMULATOR_MASK;
-	const originV = (baseV + (x0 * stepXV) + (y0 * stepYV)) & GX_GPU_TRIANGLE_UV_ACCUMULATOR_MASK;
-	for (let vertex = 0; vertex < 3; vertex += 1) {
-		const x = vertex === 0 ? x0 : (vertex === 1 ? x1 : x2);
-		const y = vertex === 0 ? y0 : (vertex === 1 ? y1 : y2);
-		const localX = x - x0;
-		const localY = y - y0;
-		const offset = outOffset + vertex * vertexFloatStride;
-		out[offset] = 1;
-		out[offset + 1] = (originU & 0x0f) + (stepXU & 0x0f) * localX + (stepYU & 0x0f) * localY;
-		out[offset + 2] = (originV & 0x0f) + (stepXV & 0x0f) * localX + (stepYV & 0x0f) * localY;
-		out[offset + 3] = ((originU >>> 4) & 0x0f) + ((stepXU >>> 4) & 0x0f) * localX + ((stepYU >>> 4) & 0x0f) * localY;
-		out[offset + 4] = ((originV >>> 4) & 0x0f) + ((stepXV >>> 4) & 0x0f) * localX + ((stepYV >>> 4) & 0x0f) * localY;
-		out[offset + 5] = ((originU >>> 8) & 0x0f) + ((stepXU >>> 8) & 0x0f) * localX + ((stepYU >>> 8) & 0x0f) * localY;
-		out[offset + 6] = ((originV >>> 8) & 0x0f) + ((stepXV >>> 8) & 0x0f) * localX + ((stepYV >>> 8) & 0x0f) * localY;
-		out[offset + 7] = ((originU >>> 12) & 0x0f) + ((stepXU >>> 12) & 0x0f) * localX + ((stepYU >>> 12) & 0x0f) * localY;
-		out[offset + 8] = ((originV >>> 12) & 0x0f) + ((stepXV >>> 12) & 0x0f) * localX + ((stepYV >>> 12) & 0x0f) * localY;
-		out[offset + 9] = ((originU >>> 16) & 0x0f) + ((stepXU >>> 16) & 0x0f) * localX + ((stepYU >>> 16) & 0x0f) * localY;
-		out[offset + 10] = ((originV >>> 16) & 0x0f) + ((stepXV >>> 16) & 0x0f) * localX + ((stepYV >>> 16) & 0x0f) * localY;
+	const anchor = x1 <= x0 ? (x2 <= x1 ? 2 : 1) : (x2 < x0 ? 2 : 0);
+	const anchorX = anchor === 0 ? x0 : (anchor === 1 ? x1 : x2);
+	const anchorY = anchor === 0 ? y0 : (anchor === 1 ? y1 : y2);
+	for (let component = 0; component < componentCount; component += 1) {
+		const value0 = out[outOffset + component];
+		const value1 = out[outOffset + componentCount + component];
+		const value2 = out[outOffset + componentCount * 2 + component];
+		const stepXScaled = (((value1 - value0) * (y2 - y1)) - ((value2 - value1) * (y1 - y0))) * GX_GPU_TRIANGLE_ATTRIBUTE_FRACTION_SCALE;
+		const stepYScaled = (((x1 - x0) * (value2 - value1)) - ((x2 - x1) * (value1 - value0))) * GX_GPU_TRIANGLE_ATTRIBUTE_FRACTION_SCALE;
+		const stepXQuotient = (stepXScaled - (stepXScaled % determinant)) / determinant;
+		const stepYQuotient = (stepYScaled - (stepYScaled % determinant)) / determinant;
+		const stepXRaw = stepXQuotient & GX_GPU_TRIANGLE_ATTRIBUTE_ACCUMULATOR_MASK;
+		const stepYRaw = stepYQuotient & GX_GPU_TRIANGLE_ATTRIBUTE_ACCUMULATOR_MASK;
+		const stepX = (stepXRaw & 0x80000) !== 0 ? stepXRaw - 0x100000 : stepXRaw;
+		const stepY = (stepYRaw & 0x80000) !== 0 ? stepYRaw - 0x100000 : stepYRaw;
+		const anchorValue = anchor === 0 ? value0 : (anchor === 1 ? value1 : value2);
+		out[outOffset + component] = ((anchorValue * GX_GPU_TRIANGLE_ATTRIBUTE_FRACTION_SCALE) + (GX_GPU_TRIANGLE_ATTRIBUTE_FRACTION_SCALE >> 1) - (anchorX * stepX) - (anchorY * stepY)) & GX_GPU_TRIANGLE_ATTRIBUTE_ACCUMULATOR_MASK;
+		out[outOffset + componentCount + component] = stepXRaw;
+		out[outOffset + componentCount * 2 + component] = stepYRaw;
 	}
+}
+
+export function gxGpuTriangleAttributePlaneInterpolants(
+	out: Float32Array,
+	outOffset: number,
+	vertexFloatStride: number,
+	plane: Float64Array,
+	componentCount: number,
+	x0: number,
+	y0: number,
+	x1: number,
+	y1: number,
+	x2: number,
+	y2: number,
+): void {
+	for (let component = 0; component < componentCount; component += 1) {
+		const stepX = plane[componentCount + component];
+		const stepY = plane[componentCount * 2 + component];
+		const origin = (plane[component] + (x0 * stepX) + (y0 * stepY)) & GX_GPU_TRIANGLE_ATTRIBUTE_ACCUMULATOR_MASK;
+		for (let vertex = 0; vertex < 3; vertex += 1) {
+			const x = vertex === 0 ? x0 : (vertex === 1 ? x1 : x2);
+			const y = vertex === 0 ? y0 : (vertex === 1 ? y1 : y2);
+			const localX = x - x0;
+			const localY = y - y0;
+			const offset = outOffset + vertex * vertexFloatStride + component;
+			for (let digit = 0; digit < GX_GPU_TRIANGLE_ATTRIBUTE_RADIX_DIGITS; digit += 1) {
+				const shift = digit * GX_GPU_TRIANGLE_ATTRIBUTE_RADIX_BITS;
+				out[offset + digit * componentCount] = ((origin >>> shift) & 0x0f) + ((stepX >>> shift) & 0x0f) * localX + ((stepY >>> shift) & 0x0f) * localY;
+			}
+		}
+	}
+}
+
+export function gxGpuTriangleAttributePlaneInterpolantValue(
+	interpolants: Float32Array,
+	offset: number,
+	componentCount: number,
+): number {
+	let carry = 0;
+	let value = 0;
+	for (let digit = 0; digit < GX_GPU_TRIANGLE_ATTRIBUTE_RADIX_DIGITS; digit += 1) {
+		const sum = interpolants[offset + digit * componentCount] + carry;
+		value |= (sum & 0x0f) << (digit * GX_GPU_TRIANGLE_ATTRIBUTE_RADIX_BITS);
+		carry = sum >> GX_GPU_TRIANGLE_ATTRIBUTE_RADIX_BITS;
+	}
+	return value & GX_GPU_TRIANGLE_ATTRIBUTE_ACCUMULATOR_MASK;
 }
 
 export function gxGpuVertexY(word: number): number {

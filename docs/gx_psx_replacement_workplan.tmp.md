@@ -86,13 +86,15 @@ Implemented or partially covered GX-GPU areas include:
 - GP1 display/status register work, DMA direction, display mode bits, info
   command range, PAL/NTSC timing-visible state, and interlaced active-field
   behavior.
-- The programmed active GP1 display range now maps directly over the fixed BMSX
-  host target in TS/C++ software, WebGL2, GLES2, and WebGPU. Raw register words
-  remain device/pass/save-state state; the backends derive the compact scanout
-  rectangle at their datapath boundary without per-frame object allocation.
-  Mirrored vectors cover non-zero start, VRAM wrap, 192- and 240-line ranges;
-  the `pietious` frame-620 gate reaches the bottom rows in TS headless and
-  GLES2/llvmpipe. Current-format save-state now also retains the GPU-owned
+- The programmed active GP1 display range currently maps over a fixed 320x240
+  host target in TS/C++ software, WebGL2, GLES2, and WebGPU. That scaling route
+  is rejected and remains an open regression: the next slice must make 256x192
+  and 256x212 real native presentation sizes, resizing host/backend targets only
+  on the existing latched raw-word transition. No mode enum, cart map, crop,
+  letterbox, or runtime asset scaling may replace that owner fix. `pietious` and
+  `nemesis_s` remain 256x192; the BIOS/engine default and `2025` must move to
+  native 256x212, including its fullscreen producers. Current-format save-state
+  retains the GPU-owned
   interlaced field, displayed-field, and active-line latches; the runtime owns
   and republishes VBlank timing separately. A mirrored restore vector proves
   GPUSTAT phase and the next draw's field tag. This does not claim complete
@@ -123,9 +125,24 @@ Implemented or partially covered GX-GPU areas include:
   WebGPU. WebGPU consumes the raw plane with native unsigned arithmetic;
   WebGL2/GLES2 interpolate bounded radix-16 digit planes and only resolve their
   carry chain per fragment, removing the split multiply/mod fragment hot path.
-  The unchanged raw-UV vertex stream retains sample-cache bounds. Quads refresh
+  The normal raw-UV vertex stream retains sample-cache bounds. Quads refresh
   read-VRAM between triangle draws when required; rectangles keep their lean
   direct integer UV path.
+- Gouraud polygons now use that same fixed-12 attribute-plane contract for RGB
+  before dither, RGB555 store, and texture modulation in TS/C++ software,
+  WebGL2, GLES2, and WebGPU. Software steps one retained three-component plane
+  instead of dividing three barycentric numerators per pixel and skips color
+  work for raw textures. WebGPU streams raw plane words; WebGL2/GLES2 use
+  retained radix-16 streams and shader permutations, with the fixed textured
+  layout staying within eight GLES2 vertex attributes. Representation changes
+  split batches, raw-textured Gouraud stays on the normal path, and quads build
+  each triangle plane independently. Normal and fixed layouts share one
+  retained CPU stream and GPU buffer per primitive family. Mirrored raw vectors
+  lock the truncation tie for solid RGB555 store and direct16 modulation;
+  accelerated live conformance remains open. The full frame-1,020
+  `bare_metal_cart` timeline produces all 146 captures on GLES2/llvmpipe without
+  shader/runtime errors, while the same captures match byte-for-byte between TS
+  headless and C++ software. Browser execution remains deferred.
 - Mirrored raw software vectors now lock E2 bit replacement, direct16 page X/Y
   wrap, palette4 nibble selection across a page edge, and palette8 byte plus
   horizontal CLUT wrap. The matching accelerated live run remains open.
@@ -356,6 +373,9 @@ and MAME
     raster positions without changing raw CPU vertex/bounds representation.
   - [x] Replace exact barycentric/native polygon UV interpolation with the
     mirrored PSX 12-bit fixed gradient and half-texel seed in every backend.
+  - [x] Replace exact barycentric/native Gouraud RGB interpolation with the
+    same mirrored fixed-12 plane in every backend, without per-command buffers
+    or accelerated CPU rasterization.
   - [ ] Run the same conformance vectors live against all accelerated backends.
 - [ ] Exact rectangle/line/polyline raster rules.
   - [x] Truncate rectangle origins to signed 11-bit after applying the drawing

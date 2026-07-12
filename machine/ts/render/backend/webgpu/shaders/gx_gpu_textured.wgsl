@@ -29,6 +29,26 @@ struct VSOut {
 	@location(5) @interpolate(flat) uvPlaneStepY: vec2<u32>,
 };
 
+struct FixedVSIn {
+	@location(0) position: vec2<f32>,
+	@location(1) uvPlaneBase: vec2<u32>,
+	@location(2) uvPlaneStepX: vec2<u32>,
+	@location(3) uvPlaneStepY: vec2<u32>,
+	@location(4) colorPlaneBase: vec3<u32>,
+	@location(5) colorPlaneStepX: vec3<u32>,
+	@location(6) colorPlaneStepY: vec3<u32>,
+};
+
+struct FixedVSOut {
+	@builtin(position) position: vec4<f32>,
+	@location(0) @interpolate(flat) uvPlaneBase: vec2<u32>,
+	@location(1) @interpolate(flat) uvPlaneStepX: vec2<u32>,
+	@location(2) @interpolate(flat) uvPlaneStepY: vec2<u32>,
+	@location(3) @interpolate(flat) colorPlaneBase: vec3<u32>,
+	@location(4) @interpolate(flat) colorPlaneStepX: vec3<u32>,
+	@location(5) @interpolate(flat) colorPlaneStepY: vec3<u32>,
+};
+
 const VRAM_SIZE = vec2<f32>(1024.0, 512.0);
 
 @vertex
@@ -43,6 +63,21 @@ fn vs_main(input: VSIn) -> VSOut {
 	out.uvPlaneBase = input.uvPlaneBase;
 	out.uvPlaneStepX = input.uvPlaneStepX;
 	out.uvPlaneStepY = input.uvPlaneStepY;
+	return out;
+}
+
+@vertex
+fn vs_fixed(input: FixedVSIn) -> FixedVSOut {
+	var out: FixedVSOut;
+	let rasterPosition = input.position + vec2<f32>(0.5);
+	let clip = vec2<f32>((rasterPosition.x / 512.0) - 1.0, 1.0 - (rasterPosition.y / 256.0));
+	out.position = vec4<f32>(clip, 0.0, 1.0);
+	out.uvPlaneBase = input.uvPlaneBase;
+	out.uvPlaneStepX = input.uvPlaneStepX;
+	out.uvPlaneStepY = input.uvPlaneStepY;
+	out.colorPlaneBase = input.colorPlaneBase;
+	out.colorPlaneStepX = input.colorPlaneStepX;
+	out.colorPlaneStepY = input.colorPlaneStepY;
 	return out;
 }
 
@@ -97,13 +132,17 @@ fn palette8Index(word: f32, textureU: f32) -> f32 {
 	return floor(word / divisor) - floor(floor(word / divisor) / 256.0) * 256.0;
 }
 
-fn samplePsxTexture(texcoord: vec2<f32>, fragCoord: vec2<f32>, uvPlaneEnable: u32, uvPlaneBase: vec2<u32>, uvPlaneStepX: vec2<u32>, uvPlaneStepY: vec2<u32>) -> vec4<f32> {
+fn polygonTexcoord(texcoord: vec2<f32>, fragCoord: vec2<f32>, uvPlaneEnable: u32, uvPlaneBase: vec2<u32>, uvPlaneStepX: vec2<u32>, uvPlaneStepY: vec2<u32>) -> vec2<f32> {
 	var sampleCoord = texcoord;
 	if (uvPlaneEnable != 0u) {
 		let pixel = vec2<u32>(u32(fragCoord.x), u32(fragCoord.y));
 		let accumulator = uvPlaneBase + uvPlaneStepX * pixel.x + uvPlaneStepY * pixel.y;
 		sampleCoord = vec2<f32>((accumulator >> vec2<u32>(12u)) & vec2<u32>(0xffu));
 	}
+	return sampleCoord;
+}
+
+fn samplePsxTexture(sampleCoord: vec2<f32>) -> vec4<f32> {
 	let windowed = applyTextureWindow(sampleCoord);
 	let pageBase = u.texPageClut.xy;
 	let clutBase = u.texPageClut.zw;
@@ -147,8 +186,7 @@ fn ditherOffset(coord: vec2<f32>) -> f32 {
 	if (x < 0.5) { return 3.0; } if (x < 1.5) { return -1.0; } if (x < 2.5) { return 2.0; } return -2.0;
 }
 
-fn modulatedTextureRgb5(texture5: vec3<f32>, vertexColor: vec3<f32>, fragCoord: vec2<f32>) -> vec3<f32> {
-	let vertex8 = floor(vertexColor * 255.0);
+fn modulatedTextureRgb5(texture5: vec3<f32>, vertex8: vec3<f32>, fragCoord: vec2<f32>) -> vec3<f32> {
 	var preDither = floor((texture5 * vertex8) / 16.0);
 	if (u.params1.z > 0.5) { preDither += vec3<f32>(ditherOffset(vec2<f32>(fragCoord.x - 0.5, fragCoord.y - 0.5))); }
 	return clamp(floor(preDither / 8.0), vec3<f32>(0.0), vec3<f32>(31.0));
@@ -168,19 +206,34 @@ fn activeInterlacedLine(fragCoord: vec2<f32>) -> bool {
 	return (vramY - floor(vramY / 2.0) * 2.0) == activeLineLsb;
 }
 
-@fragment
-fn fs_main(input: VSOut) -> @location(0) vec4<f32> {
-	if (activeInterlacedLine(input.position.xy)) { discard; }
-	let textureColor = samplePsxTexture(input.texcoord, input.position.xy, input.uvPlaneEnable, input.uvPlaneBase, input.uvPlaneStepX, input.uvPlaneStepY);
+fn shadeTextured(vertex8: vec3<f32>, fragCoord: vec2<f32>, texcoord: vec2<f32>) -> vec4<f32> {
+	if (activeInterlacedLine(fragCoord)) { discard; }
+	let textureColor = samplePsxTexture(texcoord);
 	if (textureColor.a < -0.5) { discard; }
 	var src5 = textureColor.rgb;
-	if (u.params0.y < 0.5) { src5 = modulatedTextureRgb5(textureColor.rgb, input.color, input.position.xy); }
+	if (u.params0.y < 0.5) { src5 = modulatedTextureRgb5(textureColor.rgb, vertex8, fragCoord); }
 	var dstWord = 0.0;
 	if (u.params1.x > 0.5 || u.params0.z > 0.5) {
-		dstWord = rawStorageVramWord(input.position.xy - vec2<f32>(0.5));
+		dstWord = rawStorageVramWord(fragCoord - vec2<f32>(0.5));
 		if (u.params1.x > 0.5 && wordMaskBit(dstWord) > 0.5) { discard; }
 		if (u.params0.z > 0.5 && textureColor.a > 0.5) { src5 = blendRgb5(src5, decodeRgb555To5(dstWord)); }
 	}
 	let outputMaskBit = select(textureColor.a, 1.0, u.params1.y > 0.5);
 	return encodeRgb555(src5, outputMaskBit);
+}
+
+@fragment
+fn fs_main(input: VSOut) -> @location(0) vec4<f32> {
+	let texcoord = polygonTexcoord(input.texcoord, input.position.xy, input.uvPlaneEnable, input.uvPlaneBase, input.uvPlaneStepX, input.uvPlaneStepY);
+	return shadeTextured(floor(input.color * 255.0), input.position.xy, texcoord);
+}
+
+@fragment
+fn fs_fixed(input: FixedVSOut) -> @location(0) vec4<f32> {
+	let pixel = vec2<u32>(u32(input.position.x), u32(input.position.y));
+	let colorAccumulator = input.colorPlaneBase + input.colorPlaneStepX * pixel.x + input.colorPlaneStepY * pixel.y;
+	let uvAccumulator = input.uvPlaneBase + input.uvPlaneStepX * pixel.x + input.uvPlaneStepY * pixel.y;
+	let color8 = vec3<f32>((colorAccumulator >> vec3<u32>(12u)) & vec3<u32>(0xffu));
+	let texcoord = vec2<f32>((uvAccumulator >> vec2<u32>(12u)) & vec2<u32>(0xffu));
+	return shadeTextured(color8, input.position.xy, texcoord);
 }

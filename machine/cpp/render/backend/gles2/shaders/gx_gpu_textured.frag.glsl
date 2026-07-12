@@ -1,5 +1,9 @@
 precision highp float;
 
+#ifndef GX_GPU_FIXED_COLOR_PLANE
+#define GX_GPU_FIXED_COLOR_PLANE 0
+#endif
+
 uniform sampler2D u_vram;
 uniform vec2 u_texPageBase;
 uniform vec2 u_clutBase;
@@ -13,12 +17,22 @@ uniform float u_checkMaskBit;
 uniform float u_setMaskBit;
 uniform float u_ditherEnable;
 uniform float u_interlacedRenderWord;
+#if GX_GPU_FIXED_COLOR_PLANE
+varying vec4 v_uvPlane01;
+varying vec4 v_uvPlane23;
+varying vec2 v_uvPlane4;
+varying vec4 v_colorPlane0;
+varying vec4 v_colorPlane1;
+varying vec4 v_colorPlane2;
+varying vec3 v_colorPlane3;
+#else
 varying vec4 v_color;
 varying vec2 v_texcoord;
 varying float v_uvPlaneEnable;
 varying vec4 v_uvPlane01;
 varying vec4 v_uvPlane23;
 varying vec2 v_uvPlane4;
+#endif
 
 const vec2 VRAM_SIZE = vec2(1024.0, 512.0);
 
@@ -81,8 +95,20 @@ float palette8Index(float word, float u) {
 	return mod(floor(word / exp2(subpixel * 8.0)), 256.0);
 }
 
-vec4 samplePsxTexture(vec2 texcoord) {
-	vec2 sampleCoord = texcoord;
+vec4 samplePsxTexture() {
+#if GX_GPU_FIXED_COLOR_PLANE
+	vec4 plane01 = floor(v_uvPlane01 + 0.5);
+	vec4 plane23 = floor(v_uvPlane23 + 0.5);
+	vec2 plane4 = floor(v_uvPlane4 + 0.5);
+	vec2 carry = floor(plane01.xy / 16.0);
+	carry = floor((plane01.zw + carry) / 16.0);
+	carry = floor((plane23.xy + carry) / 16.0);
+	vec2 digit3 = plane23.zw + carry;
+	carry = floor(digit3 / 16.0);
+	vec2 digit4 = plane4 + carry;
+	vec2 sampleCoord = mod(digit3, 16.0) + mod(digit4, 16.0) * 16.0;
+#else
+	vec2 sampleCoord = v_texcoord;
 	if (v_uvPlaneEnable > 0.5) {
 		vec4 plane01 = floor(v_uvPlane01 + 0.5);
 		vec4 plane23 = floor(v_uvPlane23 + 0.5);
@@ -95,6 +121,7 @@ vec4 samplePsxTexture(vec2 texcoord) {
 		vec2 digit4 = plane4 + carry;
 		sampleCoord = mod(digit3, 16.0) + mod(digit4, 16.0) * 16.0;
 	}
+#endif
 	vec2 windowed = applyTextureWindow(sampleCoord);
 	float textureWord;
 	if (u_textureMode < 0.5) {
@@ -180,8 +207,27 @@ float ditherOffset() {
 	return -2.0;
 }
 
+#if GX_GPU_FIXED_COLOR_PLANE
+vec3 fixedColor8() {
+	vec4 plane0 = floor(v_colorPlane0 + 0.5);
+	vec4 plane1 = floor(v_colorPlane1 + 0.5);
+	vec4 plane2 = floor(v_colorPlane2 + 0.5);
+	vec3 plane3 = floor(v_colorPlane3 + 0.5);
+	vec3 digit0 = plane0.xyz;
+	vec3 digit1 = vec3(plane0.w, plane1.xy) + floor(digit0 / 16.0);
+	vec3 digit2 = vec3(plane1.zw, plane2.x) + floor(digit1 / 16.0);
+	vec3 digit3 = plane2.yzw + floor(digit2 / 16.0);
+	vec3 digit4 = plane3 + floor(digit3 / 16.0);
+	return mod(digit3, 16.0) + mod(digit4, 16.0) * 16.0;
+}
+#endif
+
 vec3 modulatedTextureRgb5(vec3 texture5) {
+#if GX_GPU_FIXED_COLOR_PLANE
+	vec3 vertex8 = fixedColor8();
+#else
 	vec3 vertex8 = floor(v_color.rgb * 255.0);
+#endif
 	vec3 preDither = floor((texture5 * vertex8) / 16.0);
 	if (u_ditherEnable > 0.5) {
 		preDither += vec3(ditherOffset());
@@ -209,7 +255,7 @@ void discardActiveInterlacedLine() {
 
 void main() {
 	discardActiveInterlacedLine();
-	vec4 textureColor = samplePsxTexture(v_texcoord);
+	vec4 textureColor = samplePsxTexture();
 	if (textureColor.a < -0.5) {
 		discard;
 	}

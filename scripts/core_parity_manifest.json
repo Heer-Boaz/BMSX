@@ -1760,20 +1760,22 @@
 		{
 			"file": "machine/ts/render/backend/gx_gpu_render_rules.ts",
 			"functions": [
-				"gxGpuTriangleUvPlane",
-				"gxGpuTriangleUvPlaneInterpolants",
+				"gxGpuTriangleAttributePlane",
+				"gxGpuTriangleAttributePlaneInterpolants",
+				"gxGpuTriangleAttributePlaneInterpolantValue",
 				"gxGpuVramLogicalAreaOverlapsBounds"
 			],
-			"reason": "shared_gx_gpu_fixed_uv_and_wrapped_dependency_rules_must_remain_gc_free"
+			"reason": "shared_gx_gpu_fixed_attributes_and_wrapped_dependency_rules_must_remain_gc_free"
 		},
 		{
 			"file": "machine/cpp/render/backend/gx_gpu_render_rules.h",
 			"functions": [
-				"gxGpuTriangleUvPlane",
-				"gxGpuTriangleUvPlaneInterpolants",
+				"gxGpuTriangleAttributePlane",
+				"gxGpuTriangleAttributePlaneInterpolants",
+				"gxGpuTriangleAttributePlaneInterpolantValue",
 				"gxGpuVramLogicalAreaOverlapsBounds"
 			],
-			"reason": "shared_gx_gpu_fixed_uv_and_wrapped_dependency_rules_must_remain_heap_free"
+			"reason": "shared_gx_gpu_fixed_attributes_and_wrapped_dependency_rules_must_remain_heap_free"
 		},
 		{
 			"file": "machine/ts/render/backend/webgl/gx_gpu.ts",
@@ -1782,6 +1784,8 @@
 				"writeSolidVertex",
 				"writeSolidColorVertex",
 				"appendSolidTriangle",
+				"appendSolidPrimitiveTriangle",
+				"appendFixedSolidPrimitiveTriangle",
 				"appendSolidQuad",
 				"appendFillRectangle",
 				"appendSolidPolygon",
@@ -1832,12 +1836,16 @@
 				"writeSolidVertex",
 				"writeSolidColorVertex",
 				"appendSolidTriangle",
+				"appendSolidPrimitiveTriangle",
+				"writeFixedSolidVertex",
+				"appendFixedSolidPrimitiveTriangle",
 				"appendSolidQuad",
 				"appendFillRectangle",
 				"appendSolidPolygon",
 				"appendSolidRectangle",
 				"writeTexturedVertex",
 				"appendTexturedTriangle",
+				"writeFixedTexturedVertex",
 				"appendTexturedPrimitiveTriangle",
 				"appendTexturedPolygon",
 				"appendTexturedRectangle",
@@ -1875,6 +1883,7 @@
 				"writeSolidVertex",
 				"writeSolidColorVertex",
 				"appendSolidTriangle",
+				"appendSolidPrimitiveTriangle",
 				"appendSolidQuad",
 				"appendFillRectangle",
 				"appendSolidPolygon",

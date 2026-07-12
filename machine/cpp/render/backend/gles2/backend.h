@@ -76,7 +76,7 @@ public:
 	void bindTexture2D(TextureHandle tex);
 	void invalidateTextureBindingCache();
 	void setRenderTarget(GLuint fbo, i32 width, i32 height);
-	GLuint buildProgram(const char* vertexShaderSource, const char* fragmentShaderSource, const char* label);
+	GLuint buildProgram(const char* vertexShaderSource, const char* fragmentShaderSource, const char* label, const char* shaderDefines = nullptr);
 	ProcAddress resolveProcAddress(const char* name) const;
 	ProcAddress resolveProcAddress(const char* coreName, const char* angleName, const char* extName) const;
 	bool supportsUintIndices() const { return m_supports_uint_indices; }

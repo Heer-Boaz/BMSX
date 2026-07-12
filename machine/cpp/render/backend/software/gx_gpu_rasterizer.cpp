@@ -9,7 +9,10 @@
 namespace bmsx {
 namespace {
 
-std::array<i64, GX_GPU_TRIANGLE_UV_PLANE_WORDS> g_triangleUvPlaneScratch{};
+constexpr size_t kGxGpuTriangleUvComponents = 2u;
+constexpr size_t kGxGpuTriangleColorComponents = 3u;
+std::array<i64, kGxGpuTriangleUvComponents * GX_GPU_TRIANGLE_ATTRIBUTE_PLANE_PHASES> g_triangleUvPlaneScratch{};
+std::array<i64, kGxGpuTriangleColorComponents * GX_GPU_TRIANGLE_ATTRIBUTE_PLANE_PHASES> g_triangleColorPlaneScratch{};
 
 inline i32 absI32(i32 value) {
 	return value < 0 ? -value : value;
@@ -232,15 +235,37 @@ void drawGxGpuSoftwareTriangle(
 	i64 rowW0 = edgeValue(x1, y1, x2, y2, left, top) * edgeSign;
 	i64 rowW1 = edgeValue(x2, y2, x0, y0, left, top) * edgeSign;
 	i64 rowW2 = edgeValue(x0, y0, x1, y1, left, top) * edgeSign;
-	const i64 rStepX = sameColor ? 0 : static_cast<i64>(r0) * edge0StepX + static_cast<i64>(r1) * edge1StepX + static_cast<i64>(r2) * edge2StepX;
-	const i64 gStepX = sameColor ? 0 : static_cast<i64>(g0) * edge0StepX + static_cast<i64>(g1) * edge1StepX + static_cast<i64>(g2) * edge2StepX;
-	const i64 bStepX = sameColor ? 0 : static_cast<i64>(b0) * edge0StepX + static_cast<i64>(b1) * edge1StepX + static_cast<i64>(b2) * edge2StepX;
-	const i64 rStepY = sameColor ? 0 : static_cast<i64>(r0) * edge0StepY + static_cast<i64>(r1) * edge1StepY + static_cast<i64>(r2) * edge2StepY;
-	const i64 gStepY = sameColor ? 0 : static_cast<i64>(g0) * edge0StepY + static_cast<i64>(g1) * edge1StepY + static_cast<i64>(g2) * edge2StepY;
-	const i64 bStepY = sameColor ? 0 : static_cast<i64>(b0) * edge0StepY + static_cast<i64>(b1) * edge1StepY + static_cast<i64>(b2) * edge2StepY;
-	i64 rowR = sameColor ? 0 : static_cast<i64>(r0) * rowW0 + static_cast<i64>(r1) * rowW1 + static_cast<i64>(r2) * rowW2;
-	i64 rowG = sameColor ? 0 : static_cast<i64>(g0) * rowW0 + static_cast<i64>(g1) * rowW1 + static_cast<i64>(g2) * rowW2;
-	i64 rowB = sameColor ? 0 : static_cast<i64>(b0) * rowW0 + static_cast<i64>(b1) * rowW1 + static_cast<i64>(b2) * rowW2;
+	i64 rStepX = 0;
+	i64 gStepX = 0;
+	i64 bStepX = 0;
+	i64 rStepY = 0;
+	i64 gStepY = 0;
+	i64 bStepY = 0;
+	i64 rowR = 0;
+	i64 rowG = 0;
+	i64 rowB = 0;
+	if (!sameColor) {
+		g_triangleColorPlaneScratch[0] = r0;
+		g_triangleColorPlaneScratch[1] = g0;
+		g_triangleColorPlaneScratch[2] = b0;
+		g_triangleColorPlaneScratch[3] = r1;
+		g_triangleColorPlaneScratch[4] = g1;
+		g_triangleColorPlaneScratch[5] = b1;
+		g_triangleColorPlaneScratch[6] = r2;
+		g_triangleColorPlaneScratch[7] = g2;
+		g_triangleColorPlaneScratch[8] = b2;
+		const i64 determinant = -area * edgeSign;
+		gxGpuTriangleAttributePlane(g_triangleColorPlaneScratch.data(), 0u, kGxGpuTriangleColorComponents, determinant, x0, y0, x1, y1, x2, y2);
+		rStepX = g_triangleColorPlaneScratch[3];
+		gStepX = g_triangleColorPlaneScratch[4];
+		bStepX = g_triangleColorPlaneScratch[5];
+		rStepY = g_triangleColorPlaneScratch[6];
+		gStepY = g_triangleColorPlaneScratch[7];
+		bStepY = g_triangleColorPlaneScratch[8];
+		rowR = g_triangleColorPlaneScratch[0] + static_cast<i64>(left) * rStepX + static_cast<i64>(top) * rStepY;
+		rowG = g_triangleColorPlaneScratch[1] + static_cast<i64>(left) * gStepX + static_cast<i64>(top) * gStepY;
+		rowB = g_triangleColorPlaneScratch[2] + static_cast<i64>(left) * bStepX + static_cast<i64>(top) * bStepY;
+	}
 	rowW0 -= gxGpuTriangleEdgeCoverageMinimum(edge0StepX, edge0StepY);
 	rowW1 -= gxGpuTriangleEdgeCoverageMinimum(edge1StepX, edge1StepY);
 	rowW2 -= gxGpuTriangleEdgeCoverageMinimum(edge2StepX, edge2StepY);
@@ -259,23 +284,23 @@ void drawGxGpuSoftwareTriangle(
 		i64 w0 = rowW0;
 		i64 w1 = rowW1;
 		i64 w2 = rowW2;
-		i64 r = rowR;
-		i64 g = rowG;
-		i64 b = rowB;
+		i64 rFixed = rowR;
+		i64 gFixed = rowG;
+		i64 bFixed = rowB;
 		for (i32 x = left; x < rightExclusive; x += 1) {
 			if (w0 >= 0 && w1 >= 0 && w2 >= 0) {
-				const u32 r8 = sameColor ? r0 : static_cast<u32>(r / area);
-				const u32 g8 = sameColor ? g0 : static_cast<u32>(g / area);
-				const u32 b8 = sameColor ? b0 : static_cast<u32>(b / area);
+				const u32 r8 = sameColor ? r0 : static_cast<u32>((static_cast<u64>(rFixed) >> GX_GPU_TRIANGLE_ATTRIBUTE_FRACTION_BITS) & 0xffu);
+				const u32 g8 = sameColor ? g0 : static_cast<u32>((static_cast<u64>(gFixed) >> GX_GPU_TRIANGLE_ATTRIBUTE_FRACTION_BITS) & 0xffu);
+				const u32 b8 = sameColor ? b0 : static_cast<u32>((static_cast<u64>(bFixed) >> GX_GPU_TRIANGLE_ATTRIBUTE_FRACTION_BITS) & 0xffu);
 				gxGpuSoftwareWriteRenderVramPixel(x, y, r8, g8, b8, ditherEnabled, blendEnabled, blendMode, maskBitModeWord);
 			}
 			w0 += edge0StepX;
 			w1 += edge1StepX;
 			w2 += edge2StepX;
 			if (!sameColor) {
-				r += rStepX;
-				g += gStepX;
-				b += bStepX;
+				rFixed += rStepX;
+				gFixed += gStepX;
+				bFixed += bStepX;
 			}
 		}
 		rowW0 += edge0StepY;
@@ -369,6 +394,7 @@ void drawGxGpuSoftwareTexturedTriangle(
 	const u32 clutBaseX = gxGpuTextureClutBaseX(textureWord0);
 	const u32 clutBaseY = gxGpuTextureClutBaseY(textureWord0);
 	const bool rawTextureEnabled = gxGpuCommandRawTextureEnabled(opcode);
+	const bool interpolatesColor = !sameColor && !rawTextureEnabled;
 	const bool semiTransparencyEnabled = gxGpuCommandSemiTransparencyEnabled(opcode);
 	const u32 blendMode = gxGpuDrawModeTransparencyMode(drawModeWord);
 	const u32 maskBitModeWord = commandBuffer.commandMaskBitModeWord[commandIndex];
@@ -383,22 +409,50 @@ void drawGxGpuSoftwareTexturedTriangle(
 	i64 rowW0 = edgeValue(x1, y1, x2, y2, left, top) * edgeSign;
 	i64 rowW1 = edgeValue(x2, y2, x0, y0, left, top) * edgeSign;
 	i64 rowW2 = edgeValue(x0, y0, x1, y1, left, top) * edgeSign;
-	const i64 rStepX = sameColor ? 0 : static_cast<i64>(r0) * edge0StepX + static_cast<i64>(r1) * edge1StepX + static_cast<i64>(r2) * edge2StepX;
-	const i64 gStepX = sameColor ? 0 : static_cast<i64>(g0) * edge0StepX + static_cast<i64>(g1) * edge1StepX + static_cast<i64>(g2) * edge2StepX;
-	const i64 bStepX = sameColor ? 0 : static_cast<i64>(b0) * edge0StepX + static_cast<i64>(b1) * edge1StepX + static_cast<i64>(b2) * edge2StepX;
-	const i64 rStepY = sameColor ? 0 : static_cast<i64>(r0) * edge0StepY + static_cast<i64>(r1) * edge1StepY + static_cast<i64>(r2) * edge2StepY;
-	const i64 gStepY = sameColor ? 0 : static_cast<i64>(g0) * edge0StepY + static_cast<i64>(g1) * edge1StepY + static_cast<i64>(g2) * edge2StepY;
-	const i64 bStepY = sameColor ? 0 : static_cast<i64>(b0) * edge0StepY + static_cast<i64>(b1) * edge1StepY + static_cast<i64>(b2) * edge2StepY;
-	i64 rowR = sameColor ? 0 : static_cast<i64>(r0) * rowW0 + static_cast<i64>(r1) * rowW1 + static_cast<i64>(r2) * rowW2;
-	i64 rowG = sameColor ? 0 : static_cast<i64>(g0) * rowW0 + static_cast<i64>(g1) * rowW1 + static_cast<i64>(g2) * rowW2;
-	i64 rowB = sameColor ? 0 : static_cast<i64>(b0) * rowW0 + static_cast<i64>(b1) * rowW1 + static_cast<i64>(b2) * rowW2;
-	gxGpuTriangleUvPlane(g_triangleUvPlaneScratch.data(), 0, -area * edgeSign, x0, y0, u0, v0, x1, y1, u1, v1, x2, y2, u2, v2);
-	const i64 uStepX = g_triangleUvPlaneScratch[GX_GPU_TRIANGLE_UV_STEP_X_U];
-	const i64 vStepX = g_triangleUvPlaneScratch[GX_GPU_TRIANGLE_UV_STEP_X_V];
-	const i64 uStepY = g_triangleUvPlaneScratch[GX_GPU_TRIANGLE_UV_STEP_Y_U];
-	const i64 vStepY = g_triangleUvPlaneScratch[GX_GPU_TRIANGLE_UV_STEP_Y_V];
-	i64 rowU = g_triangleUvPlaneScratch[GX_GPU_TRIANGLE_UV_BASE_U] + static_cast<i64>(left) * uStepX + static_cast<i64>(top) * uStepY;
-	i64 rowV = g_triangleUvPlaneScratch[GX_GPU_TRIANGLE_UV_BASE_V] + static_cast<i64>(left) * vStepX + static_cast<i64>(top) * vStepY;
+	i64 rStepX = 0;
+	i64 gStepX = 0;
+	i64 bStepX = 0;
+	i64 rStepY = 0;
+	i64 gStepY = 0;
+	i64 bStepY = 0;
+	i64 rowR = 0;
+	i64 rowG = 0;
+	i64 rowB = 0;
+	const i64 determinant = -area * edgeSign;
+	if (interpolatesColor) {
+		g_triangleColorPlaneScratch[0] = r0;
+		g_triangleColorPlaneScratch[1] = g0;
+		g_triangleColorPlaneScratch[2] = b0;
+		g_triangleColorPlaneScratch[3] = r1;
+		g_triangleColorPlaneScratch[4] = g1;
+		g_triangleColorPlaneScratch[5] = b1;
+		g_triangleColorPlaneScratch[6] = r2;
+		g_triangleColorPlaneScratch[7] = g2;
+		g_triangleColorPlaneScratch[8] = b2;
+		gxGpuTriangleAttributePlane(g_triangleColorPlaneScratch.data(), 0u, kGxGpuTriangleColorComponents, determinant, x0, y0, x1, y1, x2, y2);
+		rStepX = g_triangleColorPlaneScratch[3];
+		gStepX = g_triangleColorPlaneScratch[4];
+		bStepX = g_triangleColorPlaneScratch[5];
+		rStepY = g_triangleColorPlaneScratch[6];
+		gStepY = g_triangleColorPlaneScratch[7];
+		bStepY = g_triangleColorPlaneScratch[8];
+		rowR = g_triangleColorPlaneScratch[0] + static_cast<i64>(left) * rStepX + static_cast<i64>(top) * rStepY;
+		rowG = g_triangleColorPlaneScratch[1] + static_cast<i64>(left) * gStepX + static_cast<i64>(top) * gStepY;
+		rowB = g_triangleColorPlaneScratch[2] + static_cast<i64>(left) * bStepX + static_cast<i64>(top) * bStepY;
+	}
+	g_triangleUvPlaneScratch[0] = u0;
+	g_triangleUvPlaneScratch[1] = v0;
+	g_triangleUvPlaneScratch[2] = u1;
+	g_triangleUvPlaneScratch[3] = v1;
+	g_triangleUvPlaneScratch[4] = u2;
+	g_triangleUvPlaneScratch[5] = v2;
+	gxGpuTriangleAttributePlane(g_triangleUvPlaneScratch.data(), 0u, kGxGpuTriangleUvComponents, determinant, x0, y0, x1, y1, x2, y2);
+	const i64 uStepX = g_triangleUvPlaneScratch[2];
+	const i64 vStepX = g_triangleUvPlaneScratch[3];
+	const i64 uStepY = g_triangleUvPlaneScratch[4];
+	const i64 vStepY = g_triangleUvPlaneScratch[5];
+	i64 rowU = g_triangleUvPlaneScratch[0] + static_cast<i64>(left) * uStepX + static_cast<i64>(top) * uStepY;
+	i64 rowV = g_triangleUvPlaneScratch[1] + static_cast<i64>(left) * vStepX + static_cast<i64>(top) * vStepY;
 	rowW0 -= gxGpuTriangleEdgeCoverageMinimum(edge0StepX, edge0StepY);
 	rowW1 -= gxGpuTriangleEdgeCoverageMinimum(edge1StepX, edge1StepY);
 	rowW2 -= gxGpuTriangleEdgeCoverageMinimum(edge2StepX, edge2StepY);
@@ -407,7 +461,7 @@ void drawGxGpuSoftwareTexturedTriangle(
 			rowW0 += edge0StepY;
 			rowW1 += edge1StepY;
 			rowW2 += edge2StepY;
-			if (!sameColor) {
+			if (interpolatesColor) {
 				rowR += rStepY;
 				rowG += gStepY;
 				rowB += bStepY;
@@ -419,18 +473,18 @@ void drawGxGpuSoftwareTexturedTriangle(
 		i64 w0 = rowW0;
 		i64 w1 = rowW1;
 		i64 w2 = rowW2;
-		i64 r = rowR;
-		i64 g = rowG;
-		i64 b = rowB;
+		i64 rFixed = rowR;
+		i64 gFixed = rowG;
+		i64 bFixed = rowB;
 		i64 uFixed = rowU;
 		i64 vFixed = rowV;
 		for (i32 x = left; x < rightExclusive; x += 1) {
 			if (w0 >= 0 && w1 >= 0 && w2 >= 0) {
-				const u32 r8 = sameColor ? r0 : static_cast<u32>(r / area);
-				const u32 g8 = sameColor ? g0 : static_cast<u32>(g / area);
-				const u32 b8 = sameColor ? b0 : static_cast<u32>(b / area);
-				const i32 u = static_cast<i32>((static_cast<u64>(uFixed) >> 12u) & 0xffu);
-				const i32 v = static_cast<i32>((static_cast<u64>(vFixed) >> 12u) & 0xffu);
+				const u32 r8 = interpolatesColor ? static_cast<u32>((static_cast<u64>(rFixed) >> GX_GPU_TRIANGLE_ATTRIBUTE_FRACTION_BITS) & 0xffu) : r0;
+				const u32 g8 = interpolatesColor ? static_cast<u32>((static_cast<u64>(gFixed) >> GX_GPU_TRIANGLE_ATTRIBUTE_FRACTION_BITS) & 0xffu) : g0;
+				const u32 b8 = interpolatesColor ? static_cast<u32>((static_cast<u64>(bFixed) >> GX_GPU_TRIANGLE_ATTRIBUTE_FRACTION_BITS) & 0xffu) : b0;
+				const i32 u = static_cast<i32>((static_cast<u64>(uFixed) >> GX_GPU_TRIANGLE_ATTRIBUTE_FRACTION_BITS) & 0xffu);
+				const i32 v = static_cast<i32>((static_cast<u64>(vFixed) >> GX_GPU_TRIANGLE_ATTRIBUTE_FRACTION_BITS) & 0xffu);
 				const u32 sampleWord = sampleGxGpuSoftwareTextureWord(
 					u,
 					v,
@@ -459,10 +513,10 @@ void drawGxGpuSoftwareTexturedTriangle(
 			w0 += edge0StepX;
 			w1 += edge1StepX;
 			w2 += edge2StepX;
-			if (!sameColor) {
-				r += rStepX;
-				g += gStepX;
-				b += bStepX;
+			if (interpolatesColor) {
+				rFixed += rStepX;
+				gFixed += gStepX;
+				bFixed += bStepX;
 			}
 			uFixed += uStepX;
 			vFixed += vStepX;
@@ -470,7 +524,7 @@ void drawGxGpuSoftwareTexturedTriangle(
 		rowW0 += edge0StepY;
 		rowW1 += edge1StepY;
 		rowW2 += edge2StepY;
-		if (!sameColor) {
+		if (interpolatesColor) {
 			rowR += rStepY;
 			rowG += gStepY;
 			rowB += bStepY;

@@ -17,6 +17,20 @@ struct VSOut {
 	@location(0) color: vec4<f32>,
 };
 
+struct FixedVSIn {
+	@location(0) position: vec2<f32>,
+	@location(1) colorPlaneBase: vec3<u32>,
+	@location(2) colorPlaneStepX: vec3<u32>,
+	@location(3) colorPlaneStepY: vec3<u32>,
+};
+
+struct FixedVSOut {
+	@builtin(position) position: vec4<f32>,
+	@location(0) @interpolate(flat) colorPlaneBase: vec3<u32>,
+	@location(1) @interpolate(flat) colorPlaneStepX: vec3<u32>,
+	@location(2) @interpolate(flat) colorPlaneStepY: vec3<u32>,
+};
+
 const VRAM_SIZE = vec2<f32>(1024.0, 512.0);
 
 @vertex
@@ -26,6 +40,18 @@ fn vs_main(input: VSIn) -> VSOut {
 	let clip = vec2<f32>((rasterPosition.x / 512.0) - 1.0, 1.0 - (rasterPosition.y / 256.0));
 	out.position = vec4<f32>(clip, 0.0, 1.0);
 	out.color = input.color;
+	return out;
+}
+
+@vertex
+fn vs_fixed(input: FixedVSIn) -> FixedVSOut {
+	var out: FixedVSOut;
+	let rasterPosition = input.position + vec2<f32>(0.5);
+	let clip = vec2<f32>((rasterPosition.x / 512.0) - 1.0, 1.0 - (rasterPosition.y / 256.0));
+	out.position = vec4<f32>(clip, 0.0, 1.0);
+	out.colorPlaneBase = input.colorPlaneBase;
+	out.colorPlaneStepX = input.colorPlaneStepX;
+	out.colorPlaneStepY = input.colorPlaneStepY;
 	return out;
 }
 
@@ -91,8 +117,8 @@ fn ditherOffset(coord: vec2<f32>) -> f32 {
 	return -2.0;
 }
 
-fn rgbToRgb5(rgb: vec3<f32>, fragCoord: vec2<f32>) -> vec3<f32> {
-	var rgb8 = floor(rgb * 255.0);
+fn rgb8ToRgb5(color8: vec3<f32>, fragCoord: vec2<f32>) -> vec3<f32> {
+	var rgb8 = color8;
 	if (u.params1.x > 0.5) {
 		rgb8 = clamp(rgb8 + vec3<f32>(ditherOffset(vec2<f32>(fragCoord.x - 0.5, fragCoord.y - 0.5))), vec3<f32>(0.0), vec3<f32>(255.0));
 	}
@@ -114,15 +140,14 @@ fn activeInterlacedLine(fragCoord: vec2<f32>) -> bool {
 	return (vramY - floor(vramY / 2.0) * 2.0) == activeLineLsb;
 }
 
-@fragment
-fn fs_main(input: VSOut) -> @location(0) vec4<f32> {
-	if (activeInterlacedLine(input.position.xy)) {
+fn shadeSolid(color8: vec3<f32>, fragCoord: vec2<f32>) -> vec4<f32> {
+	if (activeInterlacedLine(fragCoord)) {
 		discard;
 	}
-	var src5 = rgbToRgb5(input.color.rgb, input.position.xy);
+	var src5 = rgb8ToRgb5(color8, fragCoord);
 	var dstWord = 0.0;
 	if (u.params0.z > 0.5 || u.params0.x > 0.5) {
-		dstWord = rawStorageVramWord(input.position.xy - vec2<f32>(0.5));
+		dstWord = rawStorageVramWord(fragCoord - vec2<f32>(0.5));
 		if (u.params0.z > 0.5 && maskBit(dstWord) > 0.5) {
 			discard;
 		}
@@ -131,4 +156,17 @@ fn fs_main(input: VSOut) -> @location(0) vec4<f32> {
 		}
 	}
 	return encodeRgb555(src5, u.params0.w);
+}
+
+@fragment
+fn fs_main(input: VSOut) -> @location(0) vec4<f32> {
+	return shadeSolid(floor(input.color.rgb * 255.0), input.position.xy);
+}
+
+@fragment
+fn fs_fixed(input: FixedVSOut) -> @location(0) vec4<f32> {
+	let pixel = vec2<u32>(u32(input.position.x), u32(input.position.y));
+	let accumulator = input.colorPlaneBase + input.colorPlaneStepX * pixel.x + input.colorPlaneStepY * pixel.y;
+	let color8 = vec3<f32>((accumulator >> vec3<u32>(12u)) & vec3<u32>(0xffu));
+	return shadeSolid(color8, input.position.xy);
 }

@@ -1,6 +1,10 @@
 #version 300 es
 precision highp float;
 
+#ifndef GX_GPU_FIXED_COLOR_PLANE
+#define GX_GPU_FIXED_COLOR_PLANE 0
+#endif
+
 uniform sampler2D u_vram;
 uniform float u_blendEnable;
 uniform float u_blendMode;
@@ -8,7 +12,14 @@ uniform float u_checkMaskBit;
 uniform float u_setMaskBit;
 uniform float u_ditherEnable;
 uniform float u_interlacedRenderWord;
+#if GX_GPU_FIXED_COLOR_PLANE
+in vec4 v_colorPlane0;
+in vec4 v_colorPlane1;
+in vec4 v_colorPlane2;
+in vec3 v_colorPlane3;
+#else
 in vec4 v_color;
+#endif
 out vec4 outputColor;
 
 const vec2 VRAM_SIZE = vec2(1024.0, 512.0);
@@ -98,8 +109,22 @@ float ditherOffset() {
 	return -2.0;
 }
 
-vec3 rgbToRgb5(vec3 rgb) {
-	vec3 rgb8 = floor(rgb * 255.0);
+#if GX_GPU_FIXED_COLOR_PLANE
+vec3 fixedColor8() {
+	vec4 plane0 = floor(v_colorPlane0 + 0.5);
+	vec4 plane1 = floor(v_colorPlane1 + 0.5);
+	vec4 plane2 = floor(v_colorPlane2 + 0.5);
+	vec3 plane3 = floor(v_colorPlane3 + 0.5);
+	vec3 digit0 = plane0.xyz;
+	vec3 digit1 = vec3(plane0.w, plane1.xy) + floor(digit0 / 16.0);
+	vec3 digit2 = vec3(plane1.zw, plane2.x) + floor(digit1 / 16.0);
+	vec3 digit3 = plane2.yzw + floor(digit2 / 16.0);
+	vec3 digit4 = plane3 + floor(digit3 / 16.0);
+	return mod(digit3, 16.0) + mod(digit4, 16.0) * 16.0;
+}
+#endif
+
+vec3 rgb8ToRgb5(vec3 rgb8) {
 	if (u_ditherEnable > 0.5) {
 		rgb8 = clamp(rgb8 + vec3(ditherOffset()), vec3(0.0), vec3(255.0));
 	}
@@ -126,7 +151,11 @@ void discardActiveInterlacedLine() {
 
 void main() {
 	discardActiveInterlacedLine();
-	vec3 src5 = rgbToRgb5(v_color.rgb);
+#if GX_GPU_FIXED_COLOR_PLANE
+	vec3 src5 = rgb8ToRgb5(fixedColor8());
+#else
+	vec3 src5 = rgb8ToRgb5(floor(v_color.rgb * 255.0));
+#endif
 	float dstWord = 0.0;
 	if (u_checkMaskBit > 0.5 || u_blendEnable > 0.5) {
 		dstWord = rawStorageVramWord(gl_FragCoord.xy - vec2(0.5));
