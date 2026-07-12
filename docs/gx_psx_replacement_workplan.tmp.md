@@ -153,9 +153,8 @@ Implemented or partially covered GX-GPU areas include:
   `nemesis_s`, `renderhwtest`, and the `2025` runtime/cart path now use
   GX-visible graphics paths instead of active VDP/RPU frame submission.
 
-Known gap: `GX_GPU_COMMAND_READ_VRAM_TO_CPU` is emitted by the GPU command buffer,
-but accelerated backends currently do not execute a GPUREAD/readback command
-case. This must be resolved deliberately.
+`GX_GPU_COMMAND_READ_VRAM_TO_CPU` is executed at its retained fence by software,
+WebGL2, GLES2, and WebGPU. Only live accelerated conformance remains deferred.
 
 Cart texture residency is owned by the ROM texture producer and PSX GPU
 firmware. It is independent of the active GP1 display dimensions, and the GTE
@@ -197,7 +196,7 @@ required black-frame hold.
 ## GPUREAD / VRAM-to-CPU implementation contract
 
 The design is implemented for CPU GPUREAD in TS/C++ software, WebGL2, GLES2 and
-WebGPU. GPUREAD-to-RAM DMA and live accelerated conformance remain open.
+WebGPU, including GPUREAD-to-RAM DMA. Live accelerated conformance remains open.
 
 - GP0(C0h) creates a command-buffer execution fence. All earlier GPU work must
   reach the real backend VRAM before readback; later commands remain behind the
@@ -217,8 +216,17 @@ WebGPU. GPUREAD-to-RAM DMA and live accelerated conformance remain open.
 - GPUSTAT ready-to-send and GPUREAD-to-CPU DMA request stay low until completion.
   GPUREAD packs low/high RGB555 words, wraps each coordinate, zero-fills an odd
   high pixel and leaves the final word latched after transfer completion.
-- The remaining GPUREAD-source DMA route must consume exactly that port and wait
-  when it is not ready; it must never copy a stale latch as transfer payload.
+- The retained readback port drives the DMA ready line directly. A valid backend
+  completion wakes a waiting source job at the current machine cycle; final-word
+  consumption, reset, and restore publish the matching low/derived state. A low
+  line cancels DMA service instead of scheduling a status poll.
+- A custom DMA job with `IO_GX_GPU_GP0` as source keeps that device address fixed,
+  consumes the same mapped GPUREAD word datapath as the CPU, and writes each real
+  little-endian word directly to ascending RAM. It bypasses the ordinary
+  64-byte memory-source staging buffer. If its requested length outlives one C0
+  transfer, the job remains BUSY and resumes on a later completion without ever
+  treating the retained latch as payload. Strict/non-strict length handling is
+  word-oriented on both GP0 directions.
 - Save-state capture drains an already submitted accelerated readback where the
   host API permits it. Device capture otherwise stores backend-only SUBMITTED as
   logical PENDING; the current-format codec stores phase/fence/cursor/latch and
@@ -240,6 +248,8 @@ WebGPU. GPUREAD-to-RAM DMA and live accelerated conformance remain open.
 
 Reference basis: DuckStation
 [`GPU::ReadGPUREAD`](https://github.com/stenzek/duckstation/blob/35bcff15276dfa474349ea199201d024469487a9/src/core/gpu.cpp#L1887-L1919),
+[`GPU::UpdateDMARequest`](https://github.com/stenzek/duckstation/blob/35bcff15276dfa474349ea199201d024469487a9/src/core/gpu.cpp#L772-L827),
+[`DMA::TransferDeviceToMemory`](https://github.com/stenzek/duckstation/blob/35bcff15276dfa474349ea199201d024469487a9/src/core/dma.cpp#L843-L919),
 [`GPU::HandleCopyRectangleVRAMToCPUCommand`](https://github.com/stenzek/duckstation/blob/35bcff15276dfa474349ea199201d024469487a9/src/core/gpu.cpp#L3799-L3829),
 [`GPU_HW::DownloadVRAMFromGPU`](https://github.com/stenzek/duckstation/blob/35bcff15276dfa474349ea199201d024469487a9/src/core/gpu_hw.cpp#L3452-L3513),
 [`GPU_HW_ShaderGen::GenerateVRAMReadFragmentShader`](https://github.com/stenzek/duckstation/blob/master/src/core/gpu_hw_shadergen.cpp#L2880-L2943),
@@ -293,7 +303,7 @@ and MAME
   - [x] Implement the CPU GPUREAD contract in TS/C++ software, WebGL2, GLES2
     and WebGPU and validate the mirrored raw software vector without live
     browser execution.
-  - [ ] Feed GPUREAD into RAM through the custom DMA controller without polling
+  - [x] Feed GPUREAD into RAM through the custom DMA controller without polling
     or consuming the latch while GPUSTAT ready-to-send is low.
   - [ ] Run the same vector live against WebGL2, GLES2 and WebGPU.
 - [ ] Complete GPUSTAT details and timing-visible bits against references.
@@ -301,6 +311,9 @@ and MAME
 - [ ] DMA interaction behavior beyond the currently tested register/status paths.
   - [x] RAM-to-GP0 DMA word streams feed the memory-mapped GX-GPU GP0 command
     port in TS and C++.
+  - [x] GP0-to-RAM DMA consumes retained GPUREAD words only while the
+    producer-driven ready line is high and resumes a paused job on the next
+    completion edge.
 
 ### 3. Raster and VRAM behavior
 
@@ -568,8 +581,6 @@ Pick one vertical slice and finish it before committing:
 2. **Accelerated feedback performance**: remove per-primitive framebuffer
    snapshots using the measured full-scene gates above, while preserving raw
    PSX blend/mask/store parity in GLES2, WebGL2 and WebGPU.
-3. **GPUREAD DMA completion**: feed the implemented GPUREAD port into RAM through
-   the custom DMA controller without consuming a stale latch while not ready.
 
 ## Per-slice rules for agents
 

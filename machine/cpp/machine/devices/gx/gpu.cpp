@@ -10,10 +10,11 @@
 
 namespace bmsx {
 
-GxGpu::GxGpu(Memory& memory, DeviceScheduler& scheduler)
+GxGpu::GxGpu(Memory& memory, DeviceScheduler& scheduler, DmaController& dmaController)
 	: m_memory(memory)
 	, m_scheduler(scheduler)
 	, m_displayModeWord(PSX_GPU_DISPLAY_MODE_PAL_WORD)
+	, m_commandBuffer(dmaController)
 	, m_presentDisplayModeWord(PSX_GPU_DISPLAY_MODE_PAL_WORD) {
 	m_memory.mapIoRead(IO_GX_GPU_GP0, this, &GxGpu::readGp0Thunk);
 	m_memory.mapIoWrite(IO_GX_GPU_GP0, this, &GxGpu::writeGp0Thunk);

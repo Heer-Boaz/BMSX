@@ -11,6 +11,7 @@
 
 #include <array>
 #include <cstdint>
+#include <limits>
 #include <stdexcept>
 
 namespace {
@@ -30,7 +31,7 @@ struct DmaGpuHarness {
 		, scheduler(cpu)
 		, irq(memory)
 		, dma(memory, irq, scheduler)
-		, gpu(memory, scheduler) {
+		, gpu(memory, scheduler, dma) {
 		dma.reset();
 		gpu.reset();
 		irq.reset();
@@ -128,6 +129,126 @@ void testDmaPreservesCpuToVramPacketAcrossServiceSlices() {
 	require(commands.words[wordStart + 5u] == payload2, "GX-GPU CPU-to-VRAM payload word 2");
 }
 
+void testDmaConsumesGpureadOnlyWhileReadbackReady() {
+	DmaGpuHarness harness;
+	bmsx::Memory& memory = harness.memory;
+	bmsx::GxGpu& gpu = harness.gpu;
+	const uint32_t destination = bmsx::PROGRAM_STATIC_RAM_BASE + 0x300u;
+	constexpr uint32_t sentinel = 0xa5a5a5a5u;
+	memory.writeMappedU32LE(destination, sentinel);
+	memory.writeMappedU32LE(destination + 4u, sentinel);
+	memory.writeMappedU32LE(destination + 8u, sentinel);
+
+	gpu.writeGp0(bmsx::GX_GPU_GP0_VRAM_TO_CPU_FIRST << 24u);
+	gpu.writeGp0(0u);
+	gpu.writeGp0((1u << 16u) | 3u);
+	memory.writeMappedU32LE(bmsx::IO_DMA_SRC, bmsx::IO_GX_GPU_GP0);
+	memory.writeMappedU32LE(bmsx::IO_DMA_DST, destination);
+	memory.writeMappedU32LE(bmsx::IO_DMA_LEN, 12u);
+	memory.writeMappedU32LE(bmsx::IO_DMA_CTRL, bmsx::DMA_CTRL_START);
+	harness.dma.accrueCycles(12, 12);
+	harness.dma.onService(12);
+
+	require(harness.scheduler.nextDeadline() == std::numeric_limits<int64_t>::max(), "DMA GPUREAD source has no service deadline while readback is pending");
+	require(memory.readIoU32(bmsx::IO_DMA_STATUS) == bmsx::DMA_STATUS_BUSY, "DMA GPUREAD source remains busy while readback is pending");
+	require(memory.readIoU32(bmsx::IO_DMA_WRITTEN) == 0u, "DMA GPUREAD source makes no pending progress");
+	require(memory.readMappedU32LE(destination) == sentinel, "DMA GPUREAD pending transfer preserves destination word 0");
+	require(memory.readMappedU32LE(destination + 4u) == sentinel, "DMA GPUREAD pending transfer preserves destination word 1");
+	require(memory.readMappedU32LE(destination + 8u) == sentinel, "DMA GPUREAD pending transfer preserves destination word 2");
+
+	gpu.presentReadyFrameOnVblankEdge();
+	const bmsx::GxGpuDeviceOutput& firstOutput = gpu.readDeviceOutput();
+	bmsx::GxGpuReadbackPort& firstReadback = *firstOutput.readbackPort;
+	firstReadback.pixelBytes()[0u] = 0x11u;
+	firstReadback.pixelBytes()[1u] = 0x11u;
+	firstReadback.pixelBytes()[2u] = 0x22u;
+	firstReadback.pixelBytes()[3u] = 0x22u;
+	firstReadback.pixelBytes()[4u] = 0x33u;
+	firstReadback.pixelBytes()[5u] = 0x33u;
+	require(firstReadback.claimReadback(firstOutput.commandBuffer->presentCommandCount), "DMA GPUREAD first backend request claims its fence");
+	harness.scheduler.advanceTo(12);
+	firstReadback.completeReadback(firstReadback.token());
+	require((gpu.readStatus() & bmsx::GX_GPU_STATUS_READY_TO_SEND_VRAM) != 0u, "DMA GPUREAD first backend completion asserts ready-to-send");
+	require(harness.scheduler.nextDeadline() == 12, "DMA GPUREAD ready edge schedules service immediately");
+	const bmsx::DmaControllerState readyDmaState = harness.dma.captureState();
+	const bmsx::GxGpuState readyGpuState = gpu.captureState();
+	harness.dma.onService(12);
+
+	require(memory.readIoU32(bmsx::IO_DMA_STATUS) == bmsx::DMA_STATUS_BUSY, "DMA GPUREAD source pauses when the finite readback is exhausted");
+	require(memory.readIoU32(bmsx::IO_DMA_WRITTEN) == 8u, "DMA GPUREAD source publishes only real readback bytes");
+	require(memory.readMappedU32LE(destination) == 0x22221111u, "DMA GPUREAD source writes packed pixel word 0");
+	require(memory.readMappedU32LE(destination + 4u) == 0x00003333u, "DMA GPUREAD source writes odd zero-filled pixel word");
+	require(memory.readMappedU32LE(destination + 8u) == sentinel, "DMA GPUREAD source does not copy the retained latch after exhaustion");
+	require(gpu.readGpuReadWord() == 0x00003333u, "DMA GPUREAD source leaves the final word latched");
+	require((gpu.readStatus() & bmsx::GX_GPU_STATUS_READY_TO_SEND_VRAM) == 0u, "DMA GPUREAD source drops ready-to-send after the final real word");
+	require(harness.scheduler.nextDeadline() == std::numeric_limits<int64_t>::max(), "DMA GPUREAD exhausted source cancels service instead of polling");
+	harness.dma.restoreState(readyDmaState, 12);
+	gpu.restoreState(readyGpuState);
+	require((gpu.readStatus() & bmsx::GX_GPU_STATUS_READY_TO_SEND_VRAM) != 0u, "DMA GPUREAD restore republishes the ready line from port state");
+	require(harness.scheduler.nextDeadline() == 12, "DMA GPUREAD restored ready state re-arms service");
+	harness.dma.onService(12);
+	require(memory.readIoU32(bmsx::IO_DMA_WRITTEN) == 8u, "DMA GPUREAD restored ready state consumes real words again");
+	require(memory.readMappedU32LE(destination + 8u) == sentinel, "DMA GPUREAD restored ready state still stops before the retained latch");
+	const bmsx::DmaControllerState stalledState = harness.dma.captureState();
+	const bmsx::DmaJobState& stalled = stalledState.queue[0u];
+	require(stalled.src == bmsx::IO_GX_GPU_GP0, "DMA GPUREAD source port address remains fixed");
+	require(stalled.dst == destination + 8u, "DMA GPUREAD destination advances by consumed words");
+	require(stalled.remaining == 4u, "DMA GPUREAD exhausted request retains remaining length");
+	require(stalled.written == 8u, "DMA GPUREAD exhausted request retains written length");
+
+	gpu.retirePresentedCommands();
+	gpu.writeGp0(bmsx::GX_GPU_GP0_VRAM_TO_CPU_FIRST << 24u);
+	gpu.writeGp0(0u);
+	gpu.writeGp0((1u << 16u) | 2u);
+	gpu.presentReadyFrameOnVblankEdge();
+	const bmsx::GxGpuDeviceOutput& secondOutput = gpu.readDeviceOutput();
+	bmsx::GxGpuReadbackPort& secondReadback = *secondOutput.readbackPort;
+	secondReadback.pixelBytes()[0u] = 0x55u;
+	secondReadback.pixelBytes()[1u] = 0x55u;
+	secondReadback.pixelBytes()[2u] = 0x66u;
+	secondReadback.pixelBytes()[3u] = 0x66u;
+	require(secondReadback.claimReadback(secondOutput.commandBuffer->presentCommandCount), "DMA GPUREAD second backend request claims its fence");
+	harness.scheduler.advanceTo(13);
+	secondReadback.completeReadback(secondReadback.token());
+	require(harness.scheduler.nextDeadline() == 13, "DMA GPUREAD second ready edge resumes the retained job");
+	harness.dma.onService(13);
+
+	require(memory.readIoU32(bmsx::IO_DMA_STATUS) == bmsx::DMA_STATUS_DONE, "DMA GPUREAD source completes across ready requests");
+	require(memory.readIoU32(bmsx::IO_DMA_WRITTEN) == 12u, "DMA GPUREAD source publishes final written count");
+	require(memory.readMappedU32LE(destination + 8u) == 0x66665555u, "DMA GPUREAD resumed source writes the next real word");
+	require((memory.readIoU32(bmsx::IO_IRQ_FLAGS) & bmsx::IRQ_DMA_DONE) == bmsx::IRQ_DMA_DONE, "DMA GPUREAD source raises done IRQ");
+}
+
+void testDmaClipsGpureadSourceLengthToWholeWords() {
+	DmaGpuHarness harness;
+	bmsx::Memory& memory = harness.memory;
+	const uint32_t destination = bmsx::PROGRAM_STATIC_RAM_BASE + 0x380u;
+	memory.writeMappedU32LE(bmsx::IO_DMA_SRC, bmsx::IO_GX_GPU_GP0);
+	memory.writeMappedU32LE(bmsx::IO_DMA_DST, destination);
+	memory.writeMappedU32LE(bmsx::IO_DMA_LEN, 6u);
+	memory.writeMappedU32LE(bmsx::IO_DMA_CTRL, bmsx::DMA_CTRL_START);
+
+	const bmsx::DmaControllerState state = harness.dma.captureState();
+	require(memory.readIoU32(bmsx::IO_DMA_STATUS) == (bmsx::DMA_STATUS_BUSY | bmsx::DMA_STATUS_CLIPPED), "DMA GPUREAD source clips non-word length before waiting");
+	require(state.queue.size() == 1u, "DMA GPUREAD clipped source queues one job");
+	require(state.queue[0u].remaining == 4u, "DMA GPUREAD clipped source retains one complete word");
+}
+
+void testDmaStrictRejectsNonWordGpureadSourceLength() {
+	DmaGpuHarness harness;
+	bmsx::Memory& memory = harness.memory;
+	const uint32_t destination = bmsx::PROGRAM_STATIC_RAM_BASE + 0x3c0u;
+	memory.writeMappedU32LE(bmsx::IO_DMA_SRC, bmsx::IO_GX_GPU_GP0);
+	memory.writeMappedU32LE(bmsx::IO_DMA_DST, destination);
+	memory.writeMappedU32LE(bmsx::IO_DMA_LEN, 6u);
+	memory.writeMappedU32LE(bmsx::IO_DMA_CTRL, bmsx::DMA_CTRL_START | bmsx::DMA_CTRL_STRICT);
+
+	require(memory.readIoU32(bmsx::IO_DMA_STATUS) == (bmsx::DMA_STATUS_DONE | bmsx::DMA_STATUS_ERROR | bmsx::DMA_STATUS_CLIPPED), "DMA strict GPUREAD source rejects non-word length");
+	require(memory.readIoU32(bmsx::IO_DMA_WRITTEN) == 0u, "DMA strict GPUREAD source consumes zero bytes");
+	require(harness.dma.captureState().queue.empty(), "DMA strict GPUREAD source queues no job");
+	require((memory.readIoU32(bmsx::IO_IRQ_FLAGS) & bmsx::IRQ_DMA_ERROR) == bmsx::IRQ_DMA_ERROR, "DMA strict GPUREAD source raises error IRQ");
+}
+
 void testDmaClipsNonStrictGxGp0StreamToWholeWords() {
 	DmaGpuHarness harness;
 	bmsx::Memory& memory = harness.memory;
@@ -203,6 +324,9 @@ void testDmaFullFifoRejectionPreservesQueuedProgressLatch() {
 int main() {
 	testDmaStreamsRamWordsToGxGp0();
 	testDmaPreservesCpuToVramPacketAcrossServiceSlices();
+	testDmaConsumesGpureadOnlyWhileReadbackReady();
+	testDmaClipsGpureadSourceLengthToWholeWords();
+	testDmaStrictRejectsNonWordGpureadSourceLength();
 	testDmaClipsNonStrictGxGp0StreamToWholeWords();
 	testDmaStrictRejectsNonWordGxGp0StreamLength();
 	testDmaFullFifoRejectionPreservesQueuedProgressLatch();

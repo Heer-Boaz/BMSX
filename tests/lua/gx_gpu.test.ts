@@ -160,6 +160,8 @@ import {
 } from '../../machine/ts/machine/devices/gx/gpu';
 import { Memory } from '../../machine/ts/machine/memory/memory';
 import { CPU } from '../../machine/ts/machine/cpu/cpu';
+import { DmaController } from '../../machine/ts/machine/devices/dma/controller';
+import { IrqController } from '../../machine/ts/machine/devices/irq/controller';
 import { DeviceScheduler } from '../../machine/ts/machine/scheduler/device';
 import { PSX_GPU_DISPLAY_MODE_PAL_WORD } from '../../machine/ts/machine/model_registry';
 import { executeGxGpuSoftwareVramCommands, renderGxGpuSoftwareFrame } from '../../machine/ts/render/backend/software/gx_gpu';
@@ -338,14 +340,20 @@ test('GX-GPU restore re-arms submitted GPUREAD and reset clears its retained req
 	assert.equal(resetState.readbackPixelBytes.byteLength, 0);
 });
 
-function createGpu(): { memory: Memory; cpu: CPU; scheduler: DeviceScheduler; gpu: GxGpu } {
+function createGpu(): { memory: Memory; cpu: CPU; scheduler: DeviceScheduler; dma: DmaController; gpu: GxGpu } {
 	const memory = new Memory({ systemRom: new Uint8Array(0), cartRom: new Uint8Array(0) });
 	const cpu = new CPU(memory);
 	const scheduler = new DeviceScheduler(cpu);
-	const gpu = new GxGpu(memory, scheduler);
+	const irq = new IrqController(memory);
+	const dma = new DmaController(memory, irq, scheduler);
+	const gpu = new GxGpu(memory, scheduler, dma);
+	dma.reset();
 	gpu.reset();
-	return { memory, cpu, scheduler, gpu };
+	irq.reset();
+	return { memory, cpu, scheduler, dma, gpu };
 }
+
+const standaloneCommandBufferDma = createGpu().dma;
 
 test('GX-GPU decodes PSX GP0 signed vertex and rectangle size words', () => {
 	assert.equal(gxGpuSigned11(0x000003ff), 1023);
@@ -1149,7 +1157,7 @@ test('GX-GPU software backend owns texture modulation math', () => {
 });
 
 test('GX-GPU software backend consumes only presentable commands', () => {
-	const commandBuffer = new GxGpuCommandBuffer();
+	const commandBuffer = new GxGpuCommandBuffer(standaloneCommandBufferDma);
 	commandBuffer.reset();
 	const words = new Uint32Array([
 		(GX_GPU_GP0_FILL_RECTANGLE << 24) | 0x0000ff,
@@ -1200,7 +1208,7 @@ test('GX-GPU software backend captures live VRAM into save-state snapshot', () =
 });
 
 test('GX-GPU software backend rasterizes Gouraud lines with PSX fixed-point steps', () => {
-	const commandBuffer = new GxGpuCommandBuffer();
+	const commandBuffer = new GxGpuCommandBuffer(standaloneCommandBufferDma);
 	commandBuffer.reset();
 	const opcode = GX_GPU_GP0_LINE_FIRST | GX_GPU_GP0_RENDER_GOURAUD_BIT;
 	pushSoftwareCommand(commandBuffer, new Uint32Array([
@@ -1219,7 +1227,7 @@ test('GX-GPU software backend rasterizes Gouraud lines with PSX fixed-point step
 });
 
 test('GX-GPU software backend owns PSX line DDA, sample wrap, and polyline joints', () => {
-	const commandBuffer = new GxGpuCommandBuffer();
+	const commandBuffer = new GxGpuCommandBuffer(standaloneCommandBufferDma);
 	commandBuffer.reset();
 	pushSoftwareCommand(commandBuffer, new Uint32Array([
 		((GX_GPU_GP0_LINE_FIRST << 24) | 0x0000ff) >>> 0,
@@ -1299,7 +1307,7 @@ test('GX-GPU software backend owns PSX line DDA, sample wrap, and polyline joint
 });
 
 test('GX-GPU software backend blends untextured semi-transparent rectangles with all PSX draw modes', () => {
-	const commandBuffer = new GxGpuCommandBuffer();
+	const commandBuffer = new GxGpuCommandBuffer(standaloneCommandBufferDma);
 	commandBuffer.reset();
 	for (let column = 0; column < 4; column += 1) {
 		const x = 10 + column * 10;
@@ -1325,7 +1333,7 @@ test('GX-GPU software backend blends untextured semi-transparent rectangles with
 });
 
 test('GX-GPU software backend owns PSX triangle edges and quad seams exactly once', () => {
-	const commandBuffer = new GxGpuCommandBuffer();
+	const commandBuffer = new GxGpuCommandBuffer(standaloneCommandBufferDma);
 	commandBuffer.reset();
 	pushSoftwareCommand(commandBuffer, new Uint32Array([
 		((GX_GPU_GP0_POLYGON_FIRST << 24) | 0x0000ff) >>> 0,
@@ -1391,7 +1399,7 @@ test('GX-GPU software backend owns PSX triangle edges and quad seams exactly onc
 });
 
 test('GX-GPU software polygons wrap the raster bucket after drawing offset and primitive-size rejection', () => {
-	const commandBuffer = new GxGpuCommandBuffer();
+	const commandBuffer = new GxGpuCommandBuffer(standaloneCommandBufferDma);
 	commandBuffer.reset();
 	pushSoftwareCommand(commandBuffer, new Uint32Array([
 		((GX_GPU_GP0_POLYGON_FIRST << 24) | 0x0000ff) >>> 0,
@@ -1448,7 +1456,7 @@ test('GX-GPU software polygons wrap the raster bucket after drawing offset and p
 });
 
 test('GX-GPU software textured polygons use PSX fixed-point UV gradients and half-texel seed', () => {
-	const commandBuffer = new GxGpuCommandBuffer();
+	const commandBuffer = new GxGpuCommandBuffer(standaloneCommandBufferDma);
 	commandBuffer.reset();
 	pushSoftwareCommand(commandBuffer, new Uint32Array([
 		GX_GPU_GP0_CPU_TO_VRAM_FIRST << 24,
@@ -1515,7 +1523,7 @@ test('GX-GPU software textured polygons use PSX fixed-point UV gradients and hal
 });
 
 test('GX-GPU software texture sampling owns window, page, packed texel, and CLUT wrap edges', () => {
-	const commandBuffer = new GxGpuCommandBuffer();
+	const commandBuffer = new GxGpuCommandBuffer(standaloneCommandBufferDma);
 	commandBuffer.reset();
 	const opcode = GX_GPU_GP0_RECTANGLE_FIRST | GX_GPU_GP0_RENDER_TEXTURE_BIT | 0x01;
 	pushSoftwareCommand(commandBuffer, new Uint32Array([
@@ -1580,7 +1588,7 @@ test('GX-GPU software texture sampling owns window, page, packed texel, and CLUT
 });
 
 test('GX-GPU software backend applies drawing offsets, inclusive drawing areas, and rectangle coordinate wrap', () => {
-	const commandBuffer = new GxGpuCommandBuffer();
+	const commandBuffer = new GxGpuCommandBuffer(standaloneCommandBufferDma);
 	commandBuffer.reset();
 	pushSoftwareCommand(commandBuffer, new Uint32Array([
 		((GX_GPU_GP0_POLYGON_FIRST << 24) | 0x0000ff) >>> 0,
@@ -1669,7 +1677,7 @@ test('GX-GPU software backend applies drawing offsets, inclusive drawing areas, 
 });
 
 test('GX-GPU software fill bypasses drawing-area and mask-bit drawing state', () => {
-	const commandBuffer = new GxGpuCommandBuffer();
+	const commandBuffer = new GxGpuCommandBuffer(standaloneCommandBufferDma);
 	commandBuffer.reset();
 	pushSoftwareCommand(commandBuffer, new Uint32Array([
 		GX_GPU_GP0_CPU_TO_VRAM_FIRST << 24,
@@ -1694,7 +1702,7 @@ test('GX-GPU software fill bypasses drawing-area and mask-bit drawing state', ()
 });
 
 test('GX-GPU software scanout consumes CPU upload, VRAM copy, and fill commands', () => {
-	const commandBuffer = new GxGpuCommandBuffer();
+	const commandBuffer = new GxGpuCommandBuffer(standaloneCommandBufferDma);
 	commandBuffer.reset();
 	pushSoftwareCommand(commandBuffer, new Uint32Array([
 		GX_GPU_GP0_CPU_TO_VRAM_FIRST << 24,
@@ -1739,7 +1747,7 @@ test('GX-GPU software scanout consumes CPU upload, VRAM copy, and fill commands'
 });
 
 test('GX-GPU software scanout scales the programmed 256x192 active range over the fixed host target', () => {
-	const commandBuffer = new GxGpuCommandBuffer();
+	const commandBuffer = new GxGpuCommandBuffer(standaloneCommandBufferDma);
 	const pixels = new Uint8Array(240 * 4);
 	const state = {
 		width: 1,
@@ -1773,7 +1781,7 @@ test('GX-GPU software scanout scales the programmed 256x192 active range over th
 });
 
 test('GX-GPU software backend retires consumed command logs without clearing VRAM', () => {
-	const commandBuffer = new GxGpuCommandBuffer();
+	const commandBuffer = new GxGpuCommandBuffer(standaloneCommandBufferDma);
 	commandBuffer.reset();
 	pushSoftwareCommand(commandBuffer, new Uint32Array([
 		(GX_GPU_GP0_FILL_RECTANGLE << 24) | 0x0000ff,
@@ -1817,7 +1825,7 @@ test('GX-GPU software backend retires consumed command logs without clearing VRA
 });
 
 test('GX-GPU software scanout consumes solid polygon, rectangle, and line commands', () => {
-	const commandBuffer = new GxGpuCommandBuffer();
+	const commandBuffer = new GxGpuCommandBuffer(standaloneCommandBufferDma);
 	commandBuffer.reset();
 	pushSoftwareCommand(commandBuffer, new Uint32Array([
 		((GX_GPU_GP0_POLYGON_FIRST << 24) | 0x0000ff) >>> 0,
@@ -1860,7 +1868,7 @@ test('GX-GPU software scanout consumes solid polygon, rectangle, and line comman
 });
 
 test('GX-GPU software scanout consumes textured primitives', () => {
-	const commandBuffer = new GxGpuCommandBuffer();
+	const commandBuffer = new GxGpuCommandBuffer(standaloneCommandBufferDma);
 	commandBuffer.reset();
 	pushSoftwareCommand(commandBuffer, new Uint32Array([
 		GX_GPU_GP0_CPU_TO_VRAM_FIRST << 24,
@@ -1972,7 +1980,7 @@ test('GX-GPU software scanout consumes textured primitives', () => {
 });
 
 test('GX-GPU software commands preserve texture mask, blend, and mask-test store semantics', () => {
-	const commandBuffer = new GxGpuCommandBuffer();
+	const commandBuffer = new GxGpuCommandBuffer(standaloneCommandBufferDma);
 	commandBuffer.reset();
 	pushSoftwareCommand(commandBuffer, new Uint32Array([
 		GX_GPU_GP0_CPU_TO_VRAM_FIRST << 24,
@@ -2051,7 +2059,7 @@ test('GX-GPU software commands preserve texture mask, blend, and mask-test store
 });
 
 test('GX-GPU software commands sample palette8, rectangle flip, and dithered modulation', () => {
-	const commandBuffer = new GxGpuCommandBuffer();
+	const commandBuffer = new GxGpuCommandBuffer(standaloneCommandBufferDma);
 	commandBuffer.reset();
 	pushSoftwareCommand(commandBuffer, new Uint32Array([
 		GX_GPU_GP0_CPU_TO_VRAM_FIRST << 24,

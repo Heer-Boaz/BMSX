@@ -1922,6 +1922,7 @@
 			"file": "machine/ts/machine/devices/dma/controller.ts",
 			"functions": [
 				"startIoThunk",
+				"setGxGpuReadReady",
 				"accrueCycles",
 				"onService",
 				"processJob",
@@ -1933,12 +1934,29 @@
 			"file": "machine/cpp/machine/devices/dma/controller.cpp",
 			"functions": [
 				"startIo",
+				"setGxGpuReadReady",
 				"accrueCycles",
 				"onService",
 				"processJob",
 				"scheduleNextService"
 			],
 			"reason": "dma_transfer_and_service_hot_path_must_reuse_queue_and_scratch"
+		},
+		{
+			"file": "machine/ts/machine/devices/gx/gpu_command_buffer.ts",
+			"functions": [
+				"completeReadback",
+				"readWord"
+			],
+			"reason": "gpuread_completion_and_word_consumption_must_only_advance_retained_hardware_state"
+		},
+		{
+			"file": "machine/cpp/machine/devices/gx/gpu_command_buffer.h",
+			"functions": [
+				"completeReadback",
+				"readWord"
+			],
+			"reason": "gpuread_completion_and_word_consumption_must_only_advance_retained_hardware_state"
 		}
 	],
 	"strict_lua_no_heap_functions": [

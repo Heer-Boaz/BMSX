@@ -2,6 +2,7 @@ import type { Value } from '../../cpu/cpu';
 import { IO_GX_GPU_GP0, IO_GX_GPU_GP1 } from '../../bus/io';
 import type { Memory } from '../../memory/memory';
 import type { DeviceScheduler } from '../../scheduler/device';
+import type { DmaController } from '../dma/controller';
 import { PSX_GPU_DISPLAY_MODE_PAL_WORD } from '../../model_registry';
 import type { GxGpuDeviceOutput } from './device_output';
 import {
@@ -178,7 +179,7 @@ export class GxGpu {
 	private gp1Word = 0;
 	private displayModeWord = PSX_GPU_DISPLAY_MODE_PAL_WORD;
 	private statusWord = GX_GPU_STATUS_RESET_WORD;
-	private readonly commandBuffer = new GxGpuCommandBuffer();
+	private readonly commandBuffer: GxGpuCommandBuffer;
 	private readonly gp0CommandWords = new Uint32Array(GX_GPU_GP0_COMMAND_BUFFER_WORDS);
 	private gp0CommandWordCount = 0;
 	private gp0CommandTargetWordCount = 0;
@@ -217,19 +218,21 @@ export class GxGpu {
 	private m_lastFrameCommitted = false;
 	private readonly vramSnapshotBytes = new Uint8Array(GX_GPU_VRAM_BYTE_COUNT);
 	private vramSnapshotSerial = 0;
-	private readonly deviceOutput = {
-		commandBuffer: this.commandBuffer,
-		readbackPort: this.commandBuffer.readback,
-		statusWord: GX_GPU_STATUS_RESET_WORD,
-		displayModeWord: PSX_GPU_DISPLAY_MODE_PAL_WORD,
-		displayStartWord: 0,
-		horizontalDisplayRangeWord: 0x00c60260,
-		verticalDisplayRangeWord: 0x0003fc10,
-		vramSnapshotBytes: this.vramSnapshotBytes,
-		vramSnapshotSerial: 0,
-	};
+	private readonly deviceOutput: { -readonly [Key in keyof GxGpuDeviceOutput]: GxGpuDeviceOutput[Key] };
 
-	public constructor(private readonly memory: Memory, private readonly scheduler: DeviceScheduler) {
+	public constructor(private readonly memory: Memory, private readonly scheduler: DeviceScheduler, dmaController: DmaController) {
+		this.commandBuffer = new GxGpuCommandBuffer(dmaController);
+		this.deviceOutput = {
+			commandBuffer: this.commandBuffer,
+			readbackPort: this.commandBuffer.readback,
+			statusWord: GX_GPU_STATUS_RESET_WORD,
+			displayModeWord: PSX_GPU_DISPLAY_MODE_PAL_WORD,
+			displayStartWord: 0,
+			horizontalDisplayRangeWord: 0x00c60260,
+			verticalDisplayRangeWord: 0x0003fc10,
+			vramSnapshotBytes: this.vramSnapshotBytes,
+			vramSnapshotSerial: 0,
+		};
 		this.memory.mapIoRead(IO_GX_GPU_GP0, this, GxGpu.readGp0Thunk);
 		this.memory.mapIoWrite(IO_GX_GPU_GP0, this, GxGpu.writeGp0Thunk);
 		this.memory.mapIoRead(IO_GX_GPU_GP1, this, GxGpu.readStatusThunk);

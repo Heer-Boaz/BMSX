@@ -119,8 +119,8 @@ Niet doen:
 
 ## GPUREAD en accelerated VRAM-to-CPU readback
 
-Status: CPU-GPUREAD is in alle backends geïmplementeerd; GPUREAD-naar-RAM DMA en
-live accelerated conformance staan nog open.
+Status: CPU-GPUREAD en GPUREAD-naar-RAM DMA zijn geïmplementeerd; live
+accelerated conformance staat nog open.
 
 Het gekozen contract volgt de productiepatronen van DuckStation en MAME waar
 GP0(C0h) eerst een transfercursor zet, GPUREAD telkens twee 16-bit pixels
@@ -156,6 +156,20 @@ Geïmplementeerd contract:
   er woorden resteren. Bit 25 blijft daarvan afgeleid wanneer GP1 DMA-direction
   GPUREAD-to-CPU selecteert. Een te vroege CPU-read leest alleen de bestaande
   GPUREAD-latch en voltooit of verschuift de transfer niet.
+- De retained readbackport drijft dezelfde ready-to-send-toestand als een echte
+  requestlijn naar de DMA-controller. Completion zet de lijn en plant een
+  wachtende GPUREAD-sourcejob direct op de huidige machinecyclus. De laatste
+  geldige woordread maakt hem laag; reset en restore publiceren rechtstreeks de
+  bijbehorende portfase. Een lage lijn annuleert de DMA-service volledig. Er
+  bestaat geen periodieke statuspoll, polltimer of tweede geserialiseerde
+  readinesslatch.
+- `IO_GX_GPU_GP0 -> RAM` is een woordgerichte device-to-memorydatapad in de
+  bestaande custom DMA-owner. De sourcepoort blijft vast, iedere geldige mapped
+  GP0-read schrijft één little-endian woord rechtstreeks naar de oplopende
+  RAM-destination en alleen echte woorden verhogen remaining/written/budget.
+  De 64-byte stagingbuffer van normale memory-sources wordt hiervoor niet
+  gebruikt. Een langere job blijft BUSY na het laatste woord en hervat op een
+  volgende echte C0-completion zonder de retained GPUREAD-latch te kopiëren.
 - Iedere geldige read levert het lage pixelwoord eerst, daarna het hoge;
   transfer-X/Y wrappen per pixel over 1024x512 en een oneven laatste pixel vult
   de hoge helft met nul. Na het laatste woord blijft de laatste GPUREAD-latch
@@ -183,10 +197,7 @@ Geïmplementeerd contract:
 
 Nog te sluiten:
 
-- De custom DMA-route moet `IO_GX_GPU_GP0 -> RAM` als dezelfde GPUREAD-consument
-  gebruiken en pauzeren zolang bit 27 laag is; hij mag de latch dan niet als
-  transferdata behandelen.
-- De raw wrap/odd/fence/status/save-statevector draait exact in TS en C++
+- De raw wrap/odd/fence/status/save-state/DMA-vector draait exact in TS en C++
   software. Dezelfde vector moet tijdens de uitgestelde browsersessie live tegen
   WebGL2, GLES2 en WebGPU worden uitgevoerd.
 
@@ -535,9 +546,9 @@ Texture-residency boundary resolved for the migrated carts:
 - DMA heeft één retained GP0/RAM-queue en één bandbreedtelatch; beëindigde work
   lekt geen carry of budget naar een volgende transfer.
 
-Resterend graphicswerk staat bij de GX-pariteitsslices hierboven: met name
-GPUREAD/accelerated readback en live accelerated conformance zodra echte
-browser/GPU-runs weer beschikbaar zijn.
+Resterend graphicswerk staat bij de GX-pariteitsslices hierboven: met name live
+accelerated GPUREAD-conformance zodra echte browser/GPU-runs weer beschikbaar
+zijn.
 
 Niet doen:
 

@@ -5,11 +5,21 @@ import {
 	GX_GPU_COMMAND_FILL_RECTANGLE,
 	GxGpuCommandBuffer,
 } from '../../machine/ts/machine/devices/gx/gpu_command_buffer';
+import { CPU } from '../../machine/ts/machine/cpu/cpu';
+import { DmaController } from '../../machine/ts/machine/devices/dma/controller';
 import { GX_GPU_GP0_FILL_RECTANGLE } from '../../machine/ts/machine/devices/gx/gpu';
+import { IrqController } from '../../machine/ts/machine/devices/irq/controller';
+import { Memory } from '../../machine/ts/machine/memory/memory';
+import { DeviceScheduler } from '../../machine/ts/machine/scheduler/device';
 import { executeGxGpuSoftwareCommands } from '../../machine/ts/render/backend/software/gx_gpu_commands';
 import { gxGpuSoftwareVram, gxGpuSoftwareVramIndex } from '../../machine/ts/render/backend/software/gx_gpu_vram';
 
 const GX_GPU_SOFTWARE_FULL_DRAWING_AREA_BOTTOM_RIGHT_WORD = 1023 | (511 << 10);
+const commandBufferMemory = new Memory({ systemRom: new Uint8Array(0), cartRom: new Uint8Array(0) });
+const commandBufferCpu = new CPU(commandBufferMemory);
+const commandBufferScheduler = new DeviceScheduler(commandBufferCpu);
+const commandBufferIrq = new IrqController(commandBufferMemory);
+const commandBufferDma = new DmaController(commandBufferMemory, commandBufferIrq, commandBufferScheduler);
 
 function pushFillCommand(commandBuffer: GxGpuCommandBuffer): void {
 	const words = new Uint32Array([
@@ -35,7 +45,7 @@ function pushFillCommand(commandBuffer: GxGpuCommandBuffer): void {
 }
 
 test('GX-GPU command-buffer restore republishes command stream without clearing VRAM revision', () => {
-	const commandBuffer = new GxGpuCommandBuffer();
+	const commandBuffer = new GxGpuCommandBuffer(commandBufferDma);
 	commandBuffer.reset();
 	const vramClearSerial = commandBuffer.vramClearSerial;
 	pushFillCommand(commandBuffer);
@@ -52,7 +62,7 @@ test('GX-GPU command-buffer restore republishes command stream without clearing 
 });
 
 test('GX-GPU command-buffer retire compacts presented command stream', () => {
-	const commandBuffer = new GxGpuCommandBuffer();
+	const commandBuffer = new GxGpuCommandBuffer(commandBufferDma);
 	commandBuffer.reset();
 	pushFillCommand(commandBuffer);
 	commandBuffer.retireCommandsPreservingVram();
@@ -65,7 +75,7 @@ test('GX-GPU command-buffer retire compacts presented command stream', () => {
 });
 
 test('GX-GPU command-buffer retire preserves partial payload words after sealed commands', () => {
-	const commandBuffer = new GxGpuCommandBuffer();
+	const commandBuffer = new GxGpuCommandBuffer(commandBufferDma);
 	commandBuffer.reset();
 	pushFillCommand(commandBuffer);
 	commandBuffer.appendWord(0xa0b0c0d0);

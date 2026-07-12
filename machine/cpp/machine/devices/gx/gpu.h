@@ -152,7 +152,7 @@ struct GxGpuSaveState : GxGpuState {
 
 class GxGpu {
 public:
-	GxGpu(Memory& memory, DeviceScheduler& scheduler);
+	GxGpu(Memory& memory, DeviceScheduler& scheduler, DmaController& dmaController);
 	void reset();
 	GxGpuState captureState() const;
 	void restoreState(const GxGpuState& state);
@@ -192,7 +192,7 @@ private:
 	u32 m_gp1Word = 0;
 	u32 m_displayModeWord = 0;
 	u32 m_statusWord = GX_GPU_STATUS_RESET_WORD;
-	GxGpuCommandBuffer m_commandBuffer{};
+	GxGpuCommandBuffer m_commandBuffer;
 	mutable GxGpuDeviceOutput m_deviceOutput{&m_commandBuffer, &m_commandBuffer.readback};
 	std::array<u32, GX_GPU_GP0_COMMAND_BUFFER_WORDS> m_gp0CommandWords{};
 	u32 m_gp0CommandWordCount = 0u;

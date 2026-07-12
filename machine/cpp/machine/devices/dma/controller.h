@@ -41,6 +41,7 @@ public:
 	DmaController(Memory& memory, IrqController& irq, DeviceScheduler& scheduler);
 
 	void setTiming(int64_t cpuHz, int64_t bytesPerSec, int64_t nowCycles);
+	void setGxGpuReadReady(bool ready);
 	void accrueCycles(int cycles, int64_t nowCycles);
 	void onService(int64_t nowCycles);
 	void startIo();
@@ -70,6 +71,7 @@ private:
 	int64_t m_budget = 0;
 	uint32_t m_writtenValue = 0;
 	bool m_writtenDirty = false;
+	bool m_gxGpuReadReady = false;
 	Memory& m_memory;
 	IrqController& m_irq;
 	DeviceScheduler& m_scheduler;

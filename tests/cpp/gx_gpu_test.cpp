@@ -1,4 +1,6 @@
 #include "machine/devices/gx/gpu.h"
+#include "machine/devices/dma/controller.h"
+#include "machine/devices/irq/controller.h"
 #include "render/backend/gx_gpu_render_rules.h"
 #include "machine/bus/io.h"
 #include "machine/cpu/cpu.h"
@@ -24,16 +26,43 @@ struct GpuHarness {
 	bmsx::Memory memory;
 	bmsx::CPU cpu;
 	bmsx::DeviceScheduler scheduler;
+	bmsx::IrqController irq;
+	bmsx::DmaController dma;
 	bmsx::GxGpu gpu;
 
 	GpuHarness()
 		: memory(bmsx::MemoryInit{ { emptyRom.data(), 0u }, { emptyRom.data(), 0u } })
 		, cpu(memory)
 		, scheduler(cpu)
-		, gpu(memory, scheduler) {
+		, irq(memory)
+		, dma(memory, irq, scheduler)
+		, gpu(memory, scheduler, dma) {
+		dma.reset();
 		gpu.reset();
+		irq.reset();
 	}
 };
+
+struct CommandBufferDmaHarness {
+	std::array<uint8_t, 1> emptyRom{{0}};
+	bmsx::Memory memory;
+	bmsx::CPU cpu;
+	bmsx::DeviceScheduler scheduler;
+	bmsx::IrqController irq;
+	bmsx::DmaController dma;
+
+	CommandBufferDmaHarness()
+		: memory(bmsx::MemoryInit{ { emptyRom.data(), 0u }, { emptyRom.data(), 0u } })
+		, cpu(memory)
+		, scheduler(cpu)
+		, irq(memory)
+		, dma(memory, irq, scheduler) {
+		dma.reset();
+		irq.reset();
+	}
+};
+
+CommandBufferDmaHarness commandBufferDmaHarness;
 
 void require(bool condition, const char* message) {
 	if (!condition) {
@@ -1096,7 +1125,7 @@ void testGpureadRestoreRearmsSubmittedAndResetClearsRequest() {
 }
 
 void testSoftwareBackendConsumesOnlyPresentableCommands() {
-	bmsx::GxGpuCommandBuffer commandBuffer;
+	bmsx::GxGpuCommandBuffer commandBuffer(commandBufferDmaHarness.dma);
 	commandBuffer.reset();
 	const std::array<uint32_t, 3> words{
 		(bmsx::GX_GPU_GP0_FILL_RECTANGLE << 24u) | 0x0000ffu,
@@ -1127,7 +1156,7 @@ void testSoftwareBackendConsumesOnlyPresentableCommands() {
 }
 
 void testSoftwareGouraudLineFixedPointRaster() {
-	bmsx::GxGpuCommandBuffer commandBuffer;
+	bmsx::GxGpuCommandBuffer commandBuffer(commandBufferDmaHarness.dma);
 	commandBuffer.reset();
 	constexpr uint8_t opcode = bmsx::GX_GPU_GP0_LINE_FIRST | bmsx::GX_GPU_GP0_RENDER_GOURAUD_BIT;
 	pushSoftwareCommand(
@@ -1151,7 +1180,7 @@ void testSoftwareGouraudLineFixedPointRaster() {
 }
 
 void testSoftwareLineDdaSampleWrapAndPolylineJoints() {
-	bmsx::GxGpuCommandBuffer commandBuffer;
+	bmsx::GxGpuCommandBuffer commandBuffer(commandBufferDmaHarness.dma);
 	commandBuffer.reset();
 	pushSoftwareCommand(
 		commandBuffer,
@@ -1274,7 +1303,7 @@ void testSoftwareLineDdaSampleWrapAndPolylineJoints() {
 }
 
 void testSoftwareBlendsUntexturedSemiTransparentRectangles() {
-	bmsx::GxGpuCommandBuffer commandBuffer;
+	bmsx::GxGpuCommandBuffer commandBuffer(commandBufferDmaHarness.dma);
 	commandBuffer.reset();
 	for (uint32_t column = 0u; column < 4u; column += 1u) {
 		const uint32_t x = 10u + column * 10u;
@@ -1311,7 +1340,7 @@ void testSoftwareBlendsUntexturedSemiTransparentRectangles() {
 }
 
 void testSoftwareTriangleEdgesAndQuadSeams() {
-	bmsx::GxGpuCommandBuffer commandBuffer;
+	bmsx::GxGpuCommandBuffer commandBuffer(commandBufferDmaHarness.dma);
 	commandBuffer.reset();
 	pushSoftwareCommand(
 		commandBuffer,
@@ -1402,7 +1431,7 @@ void testSoftwareTriangleEdgesAndQuadSeams() {
 }
 
 void testSoftwarePolygonRasterBucketWrap() {
-	bmsx::GxGpuCommandBuffer commandBuffer;
+	bmsx::GxGpuCommandBuffer commandBuffer(commandBufferDmaHarness.dma);
 	commandBuffer.reset();
 	pushSoftwareCommand(
 		commandBuffer,
@@ -1494,7 +1523,7 @@ void testSoftwarePolygonRasterBucketWrap() {
 }
 
 void testSoftwareTexturedPolygonFixedUvGradient() {
-	bmsx::GxGpuCommandBuffer commandBuffer;
+	bmsx::GxGpuCommandBuffer commandBuffer(commandBufferDmaHarness.dma);
 	commandBuffer.reset();
 	pushSoftwareCommand(
 		commandBuffer,
@@ -1577,7 +1606,7 @@ void testSoftwareTexturedPolygonFixedUvGradient() {
 }
 
 void testSoftwareTextureWindowPageAndClutEdges() {
-	bmsx::GxGpuCommandBuffer commandBuffer;
+	bmsx::GxGpuCommandBuffer commandBuffer(commandBufferDmaHarness.dma);
 	commandBuffer.reset();
 	constexpr uint8_t opcode = bmsx::GX_GPU_GP0_RECTANGLE_FIRST | bmsx::GX_GPU_GP0_RENDER_TEXTURE_BIT | 0x01u;
 	pushSoftwareCommand(commandBuffer, std::array<uint32_t, 4>{
@@ -1644,7 +1673,7 @@ void testSoftwareTextureWindowPageAndClutEdges() {
 }
 
 void testSoftwareDrawingAreaOffsetClippingAndRectangleCoordinateWrap() {
-	bmsx::GxGpuCommandBuffer commandBuffer;
+	bmsx::GxGpuCommandBuffer commandBuffer(commandBufferDmaHarness.dma);
 	commandBuffer.reset();
 	pushSoftwareCommand(
 		commandBuffer,
@@ -1761,7 +1790,7 @@ void testSoftwareDrawingAreaOffsetClippingAndRectangleCoordinateWrap() {
 }
 
 void testSoftwareFillBypassesDrawingAreaAndMaskBitDrawingState() {
-	bmsx::GxGpuCommandBuffer commandBuffer;
+	bmsx::GxGpuCommandBuffer commandBuffer(commandBufferDmaHarness.dma);
 	commandBuffer.reset();
 	pushSoftwareVramUpload(commandBuffer, (30u << 16u) | 80u, (1u << 16u) | 1u, 0x0000801fu);
 	pushSoftwareCommand(
@@ -1792,7 +1821,7 @@ void testSoftwareFillBypassesDrawingAreaAndMaskBitDrawingState() {
 }
 
 void testSoftwareScanoutConsumesTransfersAndFill() {
-	bmsx::GxGpuCommandBuffer commandBuffer;
+	bmsx::GxGpuCommandBuffer commandBuffer(commandBufferDmaHarness.dma);
 	commandBuffer.reset();
 	pushSoftwareVramUpload(
 		commandBuffer,
@@ -1864,7 +1893,7 @@ void testSoftwareScanoutScalesProgrammed256x192ActiveRange() {
 }
 
 void testSoftwareBackendRetiresCommandLogWithoutClearingVram() {
-	bmsx::GxGpuCommandBuffer commandBuffer;
+	bmsx::GxGpuCommandBuffer commandBuffer(commandBufferDmaHarness.dma);
 	commandBuffer.reset();
 	pushSoftwareCommand(
 		commandBuffer,
@@ -1905,7 +1934,7 @@ void testSoftwareBackendRetiresCommandLogWithoutClearingVram() {
 }
 
 void testCommandBufferRestorePublishesWithoutClearingVramRevision() {
-	bmsx::GxGpuCommandBuffer commandBuffer;
+	bmsx::GxGpuCommandBuffer commandBuffer(commandBufferDmaHarness.dma);
 	commandBuffer.reset();
 	const uint32_t vramClearSerial = commandBuffer.vramClearSerial;
 	pushSoftwareCommand(
@@ -1931,7 +1960,7 @@ void testCommandBufferRestorePublishesWithoutClearingVramRevision() {
 }
 
 void testCommandBufferRetireCompactsPresentedCommandStream() {
-	bmsx::GxGpuCommandBuffer commandBuffer;
+	bmsx::GxGpuCommandBuffer commandBuffer(commandBufferDmaHarness.dma);
 	commandBuffer.reset();
 	pushSoftwareCommand(
 		commandBuffer,
@@ -1953,7 +1982,7 @@ void testCommandBufferRetireCompactsPresentedCommandStream() {
 }
 
 void testCommandBufferRetirePreservesPartialPayloadWords() {
-	bmsx::GxGpuCommandBuffer commandBuffer;
+	bmsx::GxGpuCommandBuffer commandBuffer(commandBufferDmaHarness.dma);
 	commandBuffer.reset();
 	pushSoftwareCommand(
 		commandBuffer,
@@ -1975,7 +2004,7 @@ void testCommandBufferRetirePreservesPartialPayloadWords() {
 }
 
 void testSoftwareScanoutConsumesSolidPrimitives() {
-	bmsx::GxGpuCommandBuffer commandBuffer;
+	bmsx::GxGpuCommandBuffer commandBuffer(commandBufferDmaHarness.dma);
 	commandBuffer.reset();
 	pushSoftwareCommand(
 		commandBuffer,
@@ -2022,7 +2051,7 @@ void testSoftwareScanoutConsumesSolidPrimitives() {
 }
 
 void testSoftwareScanoutConsumesTexturedPrimitives() {
-	bmsx::GxGpuCommandBuffer commandBuffer;
+	bmsx::GxGpuCommandBuffer commandBuffer(commandBufferDmaHarness.dma);
 	commandBuffer.reset();
 	pushSoftwareVramUpload(
 		commandBuffer,
@@ -2148,7 +2177,7 @@ void testSoftwareScanoutConsumesTexturedPrimitives() {
 }
 
 void testSoftwareCommandsPreserveTextureMaskBlendAndMaskTestStoreSemantics() {
-	bmsx::GxGpuCommandBuffer commandBuffer;
+	bmsx::GxGpuCommandBuffer commandBuffer(commandBufferDmaHarness.dma);
 	commandBuffer.reset();
 	pushSoftwareCommand(
 		commandBuffer,
@@ -2283,7 +2312,7 @@ void testSoftwareCommandsPreserveTextureMaskBlendAndMaskTestStoreSemantics() {
 }
 
 void testSoftwareCommandsSamplePalette8RectangleFlipAndDitheredModulation() {
-	bmsx::GxGpuCommandBuffer commandBuffer;
+	bmsx::GxGpuCommandBuffer commandBuffer(commandBufferDmaHarness.dma);
 	commandBuffer.reset();
 	pushSoftwareVramUpload(
 		commandBuffer,

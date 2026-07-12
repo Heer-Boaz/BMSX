@@ -34,6 +34,16 @@ void DmaController::setTiming(int64_t cpuHz, int64_t bytesPerSec, int64_t nowCyc
 	scheduleNextService(nowCycles);
 }
 
+void DmaController::setGxGpuReadReady(bool ready) {
+	if (m_gxGpuReadReady == ready) {
+		return;
+	}
+	m_gxGpuReadReady = ready;
+	if (m_queueCount != 0u && m_queue[m_queueHead].src == IO_GX_GPU_GP0) {
+		scheduleNextService(m_scheduler.currentNowCycles());
+	}
+}
+
 void DmaController::accrueCycles(int cycles, int64_t nowCycles) {
 	if (cycles <= 0) {
 		return;
@@ -84,6 +94,7 @@ void DmaController::reset() {
 	m_budget = 0;
 	m_writtenValue = 0;
 	m_writtenDirty = false;
+	m_gxGpuReadReady = false;
 	m_scheduler.cancelDeviceService(DEVICE_SERVICE_DMA);
 	m_memory.writeValue(IO_DMA_SRC, valueNumber(0.0));
 	m_memory.writeValue(IO_DMA_DST, valueNumber(0.0));
@@ -123,7 +134,7 @@ void DmaController::tick() {
 
 uint32_t DmaController::processJob(DmaJobState& job, int64_t budget) {
 	uint32_t chunk = static_cast<int64_t>(job.remaining) > budget ? static_cast<uint32_t>(budget) : job.remaining;
-	if (job.dst == IO_GX_GPU_GP0) {
+	if (job.src == IO_GX_GPU_GP0 || job.dst == IO_GX_GPU_GP0) {
 		chunk &= ~(IO_WORD_SIZE - 1u);
 		if (chunk == 0u) {
 			return 0u;
@@ -131,6 +142,24 @@ uint32_t DmaController::processJob(DmaJobState& job, int64_t budget) {
 	}
 	if (chunk > m_buffer.size()) {
 		chunk = static_cast<uint32_t>(m_buffer.size());
+	}
+	if (job.src == IO_GX_GPU_GP0) {
+		uint32_t transferred = 0u;
+		while (transferred < chunk && m_gxGpuReadReady) {
+			const uint32_t word = m_memory.readMappedU32LE(IO_GX_GPU_GP0);
+			if (job.dst == IO_GX_GPU_GP0) {
+				m_memory.writeMappedU32LE(IO_GX_GPU_GP0, word);
+			} else {
+				m_memory.writeMappedU32LE(job.dst + transferred, word);
+			}
+			transferred += IO_WORD_SIZE;
+		}
+		if (job.dst != IO_GX_GPU_GP0) {
+			job.dst += transferred;
+		}
+		job.remaining -= transferred;
+		job.written += transferred;
+		return transferred;
 	}
 	m_memory.readBytes(job.src, m_buffer.data(), chunk);
 	if (job.dst == IO_GX_GPU_GP0) {
@@ -173,7 +202,7 @@ void DmaController::startIo() {
 		}
 		transferLen = maxWritable;
 	}
-	if (dst == IO_GX_GPU_GP0 && (transferLen & (IO_WORD_SIZE - 1u)) != 0u) {
+	if ((src == IO_GX_GPU_GP0 || dst == IO_GX_GPU_GP0) && (transferLen & (IO_WORD_SIZE - 1u)) != 0u) {
 		clipped = true;
 		if (strict) {
 			finishIoError(true);
@@ -252,6 +281,10 @@ void DmaController::restoreState(const DmaControllerState& state, int64_t nowCyc
 
 void DmaController::scheduleNextService(int64_t nowCycles) {
 	if (!hasPendingTransfer()) {
+		m_scheduler.cancelDeviceService(DEVICE_SERVICE_DMA);
+		return;
+	}
+	if (m_queue[m_queueHead].src == IO_GX_GPU_GP0 && !m_gxGpuReadReady) {
 		m_scheduler.cancelDeviceService(DEVICE_SERVICE_DMA);
 		return;
 	}

@@ -1,3 +1,5 @@
+import type { DmaController } from '../dma/controller';
+
 export const GX_GPU_COMMAND_CAPACITY = 4096;
 export const GX_GPU_COMMAND_WORD_CAPACITY = 0x80000;
 export const GX_GPU_VRAM_WIDTH = 1024;
@@ -142,6 +144,9 @@ class GxGpuReadbackPort implements GxGpuReadbackPortView {
 	public readonly pixelBytes = new Uint8Array(GX_GPU_VRAM_BYTE_COUNT);
 	public token = 0;
 
+	public constructor(public readonly dmaController: DmaController) {
+	}
+
 	/** @internal Command-buffer owner transition; excluded from GxGpuReadbackPortView. */
 	public activate(positionWord: number, sizeWord: number, fenceCommandCount: number): void {
 		this.x = positionWord & (GX_GPU_VRAM_WIDTH - 1);
@@ -152,6 +157,7 @@ class GxGpuReadbackPort implements GxGpuReadbackPortView {
 		this.fenceCommandCount = fenceCommandCount;
 		this.token = (this.token + 1) >>> 0;
 		this.phase = GX_GPU_READBACK_PENDING;
+		this.dmaController.setGxGpuReadReady(false);
 	}
 
 	/** @internal Command-buffer owner transition; excluded from GxGpuReadbackPortView. */
@@ -164,6 +170,7 @@ class GxGpuReadbackPort implements GxGpuReadbackPortView {
 		this.height = 0;
 		this.pixelCursor = 0;
 		this.token = (this.token + 1) >>> 0;
+		this.dmaController.setGxGpuReadReady(false);
 	}
 
 	public claimReadback(presentCommandCount: number): boolean {
@@ -177,6 +184,7 @@ class GxGpuReadbackPort implements GxGpuReadbackPortView {
 	public completeReadback(token: number): void {
 		if (this.phase === GX_GPU_READBACK_SUBMITTED && this.token === token) {
 			this.phase = GX_GPU_READBACK_READY;
+			this.dmaController.setGxGpuReadReady(true);
 		}
 	}
 
@@ -199,6 +207,7 @@ class GxGpuReadbackPort implements GxGpuReadbackPortView {
 			this.width = 0;
 			this.height = 0;
 			this.pixelCursor = 0;
+			this.dmaController.setGxGpuReadReady(false);
 		}
 		return word >>> 0;
 	}
@@ -240,7 +249,11 @@ export class GxGpuCommandBuffer implements GxGpuCommandBufferView {
 	public readonly commandMaskBitModeWord = new Uint32Array(GX_GPU_COMMAND_CAPACITY);
 	public readonly commandInterlacedRenderWord = new Uint8Array(GX_GPU_COMMAND_CAPACITY);
 	public readonly words = new Uint32Array(GX_GPU_COMMAND_WORD_CAPACITY);
-	public readonly readback = new GxGpuReadbackPort();
+	public readonly readback: GxGpuReadbackPort;
+
+	public constructor(dmaController: DmaController) {
+		this.readback = new GxGpuReadbackPort(dmaController);
+	}
 
 	public reset(): void {
 		this.publishRevision(true);
@@ -308,6 +321,7 @@ export class GxGpuCommandBuffer implements GxGpuCommandBufferView {
 		this.readback.pixelCursor = state.readbackPixelCursor;
 		this.readback.pixelBytes.set(state.readbackPixelBytes, 0);
 		this.readback.token = (this.readback.token + 1) >>> 0;
+		this.readback.dmaController.setGxGpuReadReady(this.readback.phase === GX_GPU_READBACK_READY);
 	}
 
 	public retireCommandsPreservingVram(): number {
