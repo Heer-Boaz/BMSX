@@ -139,6 +139,9 @@ struct GxGpuState {
 	u32 horizontalDisplayRangeWord = 0;
 	u32 verticalDisplayRangeWord = 0;
 	u32 textureDisableAllowedWord = 0;
+	u32 scanoutInterlacedField = 0;
+	u32 scanoutInterlacedDisplayField = 0;
+	u32 scanoutActiveLineLsb = 0;
 	u32 presentStatusWord = 0;
 	u32 presentDisplayModeWord = 0;
 	u32 presentDisplayStartWord = 0;

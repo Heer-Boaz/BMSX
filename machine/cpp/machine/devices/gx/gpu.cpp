@@ -95,6 +95,9 @@ GxGpuState GxGpu::captureState() const {
 		m_horizontalDisplayRangeWord,
 		m_verticalDisplayRangeWord,
 		m_textureDisableAllowedWord,
+		m_scanoutInterlacedField,
+		m_scanoutInterlacedDisplayField,
+		m_scanoutActiveLineLsb,
 		m_presentStatusWord,
 		m_presentDisplayModeWord,
 		m_presentDisplayStartWord,
@@ -134,6 +137,9 @@ void GxGpu::restoreState(const GxGpuState& state) {
 	m_horizontalDisplayRangeWord = state.horizontalDisplayRangeWord;
 	m_verticalDisplayRangeWord = state.verticalDisplayRangeWord;
 	m_textureDisableAllowedWord = state.textureDisableAllowedWord;
+	m_scanoutInterlacedField = state.scanoutInterlacedField;
+	m_scanoutInterlacedDisplayField = state.scanoutInterlacedDisplayField;
+	m_scanoutActiveLineLsb = state.scanoutActiveLineLsb;
 	m_presentStatusWord = state.presentStatusWord;
 	m_presentDisplayModeWord = state.presentDisplayModeWord;
 	m_presentDisplayStartWord = state.presentDisplayStartWord;

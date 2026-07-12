@@ -334,6 +334,32 @@ void testInterlacedScanoutStatusBits() {
 	require((gpu.readStatus() & bmsx::GX_GPU_STATUS_DISPLAY_LINE_LSB) == 0u, "GX-GPU 480i active display line bit follows display field");
 }
 
+void testStateRestorePreservesInterlacedFieldLatches() {
+	GpuHarness harness;
+	bmsx::GxGpu& gpu = harness.gpu;
+	const bmsx::GxGpuCommandBuffer& commands = *gpu.readDeviceOutput().commandBuffer;
+	constexpr uint32_t scanoutMask = bmsx::GX_GPU_STATUS_INTERLACED_FIELD | bmsx::GX_GPU_STATUS_DISPLAY_LINE_LSB;
+
+	gpu.writeGp1((bmsx::GX_GPU_GP1_SET_DISPLAY_START << 24u) | (7u << 10u));
+	gpu.writeGp1((bmsx::GX_GPU_GP1_SET_DISPLAY_MODE << 24u) | 0x00000024u);
+	gpu.setScanoutTiming(true, 90, 100, 10);
+	gpu.setScanoutTiming(false, 0, 100, 10);
+	const bmsx::GxGpuState saved = gpu.captureState();
+	require((gpu.readStatus() & scanoutMask) == 0u, "GX-GPU captured interlaced field phase");
+
+	gpu.setScanoutTiming(true, 90, 100, 10);
+	gpu.setScanoutTiming(false, 0, 100, 10);
+	require((gpu.readStatus() & scanoutMask) == scanoutMask, "GX-GPU interlaced field phase mutates before restore");
+
+	gpu.restoreState(saved);
+	gpu.writeGp0((bmsx::GX_GPU_GP0_POLYGON_FIRST << 24u) | 0x00010203u);
+	gpu.writeGp0(0u);
+	gpu.writeGp0(1u);
+	gpu.writeGp0(2u);
+	require(commands.commandInterlacedRenderWord[0] == bmsx::GX_GPU_INTERLACED_RENDER_ENABLE, "GX-GPU restored active line parity tags the next draw");
+	require((gpu.readStatus() & scanoutMask) == 0u, "GX-GPU restore reinstates interlaced status phase");
+}
+
 void testInterlacedRenderCommandWords() {
 	GpuHarness harness;
 	bmsx::GxGpu& gpu = harness.gpu;
@@ -2599,6 +2625,7 @@ int main() {
 	testGp1ResetRestoresRegistersAndPreservesAcceptedGpuWork();
 	testDisplayModeStatusBits();
 	testInterlacedScanoutStatusBits();
+	testStateRestorePreservesInterlacedFieldLatches();
 	testInterlacedRenderCommandWords();
 	testCommandLogIsPresentableOnlyAfterVblankFrameSeal();
 	testPartialPresentationSnapshotDoesNotExposeQueuedCommands();

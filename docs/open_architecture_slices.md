@@ -90,6 +90,11 @@ uitgesteld.
   dat zowel 192 als 240 actieve regels de laatste hostrij bereiken. De
   `pietious`-headless gate telt 4.275 actieve pixels in hostrijen 225--239; een
   GLES2/llvmpipe-run van dezelfde frame-620-timeline telt 4.245.
+- Current-format save-state bewaart de drie GPU-eigen interlacelatches voor
+  huidig field, displayed field en active-linepariteit. De runtime-VBlankowner
+  publiceert na restore opnieuw framefase en timing; de devicecodec dupliceert
+  die schedulerstate niet. Een gespiegeld TS/C++-regressie bewijst zowel de
+  herstelde GPUSTAT-bits als de fieldtag van het eerstvolgende drawcommand.
 
 Nog te sluiten:
 

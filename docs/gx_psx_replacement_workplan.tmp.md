@@ -92,7 +92,11 @@ Implemented or partially covered GX-GPU areas include:
   rectangle at their datapath boundary without per-frame object allocation.
   Mirrored vectors cover non-zero start, VRAM wrap, 192- and 240-line ranges;
   the `pietious` frame-620 gate reaches the bottom rows in TS headless and
-  GLES2/llvmpipe. This does not claim complete field-aware 480i scanout.
+  GLES2/llvmpipe. Current-format save-state now also retains the GPU-owned
+  interlaced field, displayed-field, and active-line latches; the runtime owns
+  and republishes VBlank timing separately. A mirrored restore vector proves
+  GPUSTAT phase and the next draw's field tag. This does not claim complete
+  field-aware 480i scanout.
 - The sprite render system now submits its existing retained component bucket in
   ascending effective z order, so the painter-ordered GX GPU draws higher-z
   sprites last. Equal depths retain their previous bucket order, and component
@@ -291,7 +295,8 @@ and MAME
 
 - [x] GP1 display-mode register masking and PSX dot-clock display sizing.
 - [x] GPU info command range behavior.
-- [x] Interlaced field drawing behavior in accelerated backends.
+- [x] Interlaced field drawing behavior in accelerated backends, including
+  current-format restore of the three GPU-owned field/parity latches.
 - [x] Scale the programmed active horizontal/vertical display range over the
   fixed host target in every software and accelerated backend, without cart
   compensation or a PAL/NTSC overscancanvas. Live WebGL2/WebGPU browser proof

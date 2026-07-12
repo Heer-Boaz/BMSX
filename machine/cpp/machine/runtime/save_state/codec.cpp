@@ -596,6 +596,9 @@ BinValue encodeGxGpuState(const GxGpuState& state) {
 	object["horizontalDisplayRangeWord"] = static_cast<i64>(state.horizontalDisplayRangeWord);
 	object["verticalDisplayRangeWord"] = static_cast<i64>(state.verticalDisplayRangeWord);
 	object["textureDisableAllowedWord"] = static_cast<i64>(state.textureDisableAllowedWord);
+	object["scanoutInterlacedField"] = static_cast<i64>(state.scanoutInterlacedField);
+	object["scanoutInterlacedDisplayField"] = static_cast<i64>(state.scanoutInterlacedDisplayField);
+	object["scanoutActiveLineLsb"] = static_cast<i64>(state.scanoutActiveLineLsb);
 	object["presentStatusWord"] = static_cast<i64>(state.presentStatusWord);
 	object["presentDisplayModeWord"] = static_cast<i64>(state.presentDisplayModeWord);
 	object["presentDisplayStartWord"] = static_cast<i64>(state.presentDisplayStartWord);
@@ -635,6 +638,9 @@ GxGpuState decodeGxGpuState(const BinValue& value, const char* label) {
 	state.horizontalDisplayRangeWord = requireU32(requireField(object, "horizontalDisplayRangeWord", label), "machine.gxGpu.horizontalDisplayRangeWord");
 	state.verticalDisplayRangeWord = requireU32(requireField(object, "verticalDisplayRangeWord", label), "machine.gxGpu.verticalDisplayRangeWord");
 	state.textureDisableAllowedWord = requireU32(requireField(object, "textureDisableAllowedWord", label), "machine.gxGpu.textureDisableAllowedWord");
+	state.scanoutInterlacedField = requireBoundedU32(requireField(object, "scanoutInterlacedField", label), "machine.gxGpu.scanoutInterlacedField", 0u, 1u);
+	state.scanoutInterlacedDisplayField = requireBoundedU32(requireField(object, "scanoutInterlacedDisplayField", label), "machine.gxGpu.scanoutInterlacedDisplayField", 0u, 1u);
+	state.scanoutActiveLineLsb = requireBoundedU32(requireField(object, "scanoutActiveLineLsb", label), "machine.gxGpu.scanoutActiveLineLsb", 0u, 1u);
 	state.presentStatusWord = requireU32(requireField(object, "presentStatusWord", label), "machine.gxGpu.presentStatusWord");
 	state.presentDisplayModeWord = requireU32(requireField(object, "presentDisplayModeWord", label), "machine.gxGpu.presentDisplayModeWord");
 	state.presentDisplayStartWord = requireU32(requireField(object, "presentDisplayStartWord", label), "machine.gxGpu.presentDisplayStartWord");

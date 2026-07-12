@@ -168,6 +168,13 @@ scanlines). Runtime timing, cycle budget, audio mixer pacing, libretro AV
 publication, and save-state restore consume that raw GPU word. There is no VDP
 mode register or host-inferred region state.
 
+The GPU owns its interlaced field, displayed-field, and active-line parity
+latches. Current-format save-state preserves those three raw latches so a
+restored GPUSTAT read and the next interlaced draw continue the captured field.
+VBlank phase and frame-cycle timing remain runtime-scheduler state and are
+republished to the GPU during restore rather than duplicated in the device
+record.
+
 ## Runtime container vocabulary
 
 Ownership terms are architectural roles, not interchangeable directory labels:

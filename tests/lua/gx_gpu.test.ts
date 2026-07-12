@@ -738,6 +738,33 @@ test('GX-GPU mirrors PSX GPUSTAT interlaced field and scanout line bits', () => 
 	assert.equal((gpu.readStatus() & GX_GPU_STATUS_DISPLAY_LINE_LSB) >>> 0, 0);
 });
 
+test('GX-GPU state restore preserves interlaced field latches', () => {
+	const { gpu } = createGpu();
+	const commands = gpu.readDeviceOutput().commandBuffer;
+
+	gpu.writeGp1((GX_GPU_GP1_SET_DISPLAY_START << 24) | (7 << 10));
+	gpu.writeGp1((GX_GPU_GP1_SET_DISPLAY_MODE << 24) | 0x00000024);
+	gpu.setScanoutTiming(true, 90, 100, 10);
+	gpu.setScanoutTiming(false, 0, 100, 10);
+	const saved = gpu.captureState();
+	assert.equal((gpu.readStatus() & (GX_GPU_STATUS_INTERLACED_FIELD | GX_GPU_STATUS_DISPLAY_LINE_LSB)) >>> 0, 0);
+
+	gpu.setScanoutTiming(true, 90, 100, 10);
+	gpu.setScanoutTiming(false, 0, 100, 10);
+	assert.equal(
+		(gpu.readStatus() & (GX_GPU_STATUS_INTERLACED_FIELD | GX_GPU_STATUS_DISPLAY_LINE_LSB)) >>> 0,
+		(GX_GPU_STATUS_INTERLACED_FIELD | GX_GPU_STATUS_DISPLAY_LINE_LSB) >>> 0,
+	);
+
+	gpu.restoreState(saved);
+	gpu.writeGp0((GX_GPU_GP0_POLYGON_FIRST << 24) | 0x00010203);
+	gpu.writeGp0(0);
+	gpu.writeGp0(1);
+	gpu.writeGp0(2);
+	assert.equal(commands.commandInterlacedRenderWord[0], GX_GPU_INTERLACED_RENDER_ENABLE);
+	assert.equal((gpu.readStatus() & (GX_GPU_STATUS_INTERLACED_FIELD | GX_GPU_STATUS_DISPLAY_LINE_LSB)) >>> 0, 0);
+});
+
 test('GX-GPU tags PSX interlaced render commands with active field parity', () => {
 	const { gpu } = createGpu();
 	const commands = gpu.readDeviceOutput().commandBuffer;

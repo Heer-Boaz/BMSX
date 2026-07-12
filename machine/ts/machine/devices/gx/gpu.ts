@@ -163,6 +163,9 @@ export type GxGpuState = {
 	horizontalDisplayRangeWord: number;
 	verticalDisplayRangeWord: number;
 	textureDisableAllowedWord: number;
+	scanoutInterlacedField: number;
+	scanoutInterlacedDisplayField: number;
+	scanoutActiveLineLsb: number;
 	presentStatusWord: number;
 	presentDisplayModeWord: number;
 	presentDisplayStartWord: number;
@@ -316,6 +319,9 @@ export class GxGpu {
 			horizontalDisplayRangeWord: this.horizontalDisplayRangeWord,
 			verticalDisplayRangeWord: this.verticalDisplayRangeWord,
 			textureDisableAllowedWord: this.textureDisableAllowedWord,
+			scanoutInterlacedField: this.scanoutInterlacedField,
+			scanoutInterlacedDisplayField: this.scanoutInterlacedDisplayField,
+			scanoutActiveLineLsb: this.scanoutActiveLineLsb,
 			presentStatusWord: this.presentStatusWord,
 			presentDisplayModeWord: this.presentDisplayModeWord,
 			presentDisplayStartWord: this.presentDisplayStartWord,
@@ -353,6 +359,9 @@ export class GxGpu {
 		this.horizontalDisplayRangeWord = state.horizontalDisplayRangeWord >>> 0;
 		this.verticalDisplayRangeWord = state.verticalDisplayRangeWord >>> 0;
 		this.textureDisableAllowedWord = state.textureDisableAllowedWord >>> 0;
+		this.scanoutInterlacedField = state.scanoutInterlacedField >>> 0;
+		this.scanoutInterlacedDisplayField = state.scanoutInterlacedDisplayField >>> 0;
+		this.scanoutActiveLineLsb = state.scanoutActiveLineLsb >>> 0;
 		this.presentStatusWord = state.presentStatusWord >>> 0;
 		this.presentDisplayModeWord = state.presentDisplayModeWord >>> 0;
 		this.presentDisplayStartWord = state.presentDisplayStartWord >>> 0;
