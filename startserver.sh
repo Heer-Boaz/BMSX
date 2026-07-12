@@ -1,4 +1,11 @@
-npm run serve:dist:wsl
+#!/usr/bin/env bash
+set -euo pipefail
+
+if grep -qi microsoft /proc/version 2>/dev/null; then
+	npm run serve:dist:wsl
+else
+	npm run serve:dist
+fi
 
 # scripts/serve-dist-wsl.sh: Bash helper that:
 # Best‑effort opens Windows Firewall for the chosen port (Private profile) via PowerShell.

@@ -28,10 +28,18 @@ ROOT_DIR=$(cd -- "${SCRIPT_DIR}/.." && pwd)
 is_wsl=0
 if grep -qi microsoft /proc/version 2>/dev/null; then is_wsl=1; fi
 
-# Attempt to open Windows Firewall for the selected port (Private profile).
+POWERSHELL_EXE="/mnt/c/Windows/System32/WindowsPowerShell/v1.0/powershell.exe"
+can_use_windows_powershell=0
 if [[ "$is_wsl" == "1" ]]; then
+	if "$POWERSHELL_EXE" -NoProfile -NonInteractive -Command '$PSVersionTable.PSVersion.Major' >/dev/null 2>&1; then
+		can_use_windows_powershell=1
+	fi
+fi
+
+# Attempt to open Windows Firewall for the selected port (Private profile).
+if [[ "$can_use_windows_powershell" == "1" ]]; then
 	# Best-effort: ignore failures (e.g., no admin privileges). Pass PORT via env.
-	PORT="$PORT" /mnt/c/Windows/System32/WindowsPowerShell/v1.0/powershell.exe -NoProfile -NonInteractive -Command '
+	PORT="$PORT" "$POWERSHELL_EXE" -NoProfile -NonInteractive -Command '
 	try {
 		[int]$p = [int]$env:PORT
 		$name = "BMSX Dist $p"
@@ -42,7 +50,7 @@ if [[ "$is_wsl" == "1" ]]; then
 	' >/dev/null 2>&1 || true
 
 	# Fetch Windows active IPv4 addresses to display friendly URLs
-	WIN_IPS=$(/mnt/c/Windows/System32/WindowsPowerShell/v1.0/powershell.exe -NoProfile -NonInteractive -Command '
+	WIN_IPS=$("$POWERSHELL_EXE" -NoProfile -NonInteractive -Command '
 	try {
 		$ips = Get-NetIPConfiguration | Where-Object { $_.IPv4DefaultGateway -ne $null -and $_.NetAdapter.Status -eq "Up" } | ForEach-Object { $_.IPv4Address.IPAddress }
 		($ips -join " ")
