@@ -167,15 +167,18 @@ void OpenGLES2Backend::registerBuiltinPasses(RenderPassLibrary& registry) {
 	registerHostOverlayBackendPasses<OpenGLES2Backend, bootstrapHostOverlayGLES2, beginHostOverlayGLES2, renderHost2DEntryGLES2, endHostOverlayGLES2>(registry);
 }
 
-void* OpenGLES2Backend::resolveProcAddress(const char* name) const {
+OpenGLES2Backend::ProcAddress OpenGLES2Backend::resolveProcAddress(const char* name) const {
+	if (m_get_proc_address != nullptr) {
+		return m_get_proc_address(name);
+	}
 #if defined(__unix__) || defined(__APPLE__)
 	void* proc = dlsym(RTLD_DEFAULT, name);
 	if (proc) {
-		return proc;
+		return reinterpret_cast<ProcAddress>(proc);
 	}
 	void* eglProc = dlsym(RTLD_DEFAULT, "eglGetProcAddress");
 	if (eglProc) {
-		using EglGetProcAddress = void* (*)(const char*);
+		using EglGetProcAddress = ProcAddress (*)(const char*);
 		auto getProcAddress = reinterpret_cast<EglGetProcAddress>(eglProc);
 		return getProcAddress(name);
 	}
@@ -185,8 +188,8 @@ void* OpenGLES2Backend::resolveProcAddress(const char* name) const {
 	return nullptr;
 }
 
-void* OpenGLES2Backend::resolveProcAddress(const char* coreName, const char* angleName, const char* extName) const {
-	void* proc = resolveProcAddress(coreName);
+OpenGLES2Backend::ProcAddress OpenGLES2Backend::resolveProcAddress(const char* coreName, const char* angleName, const char* extName) const {
+	ProcAddress proc = resolveProcAddress(coreName);
 	if (proc) {
 		return proc;
 	}
@@ -519,8 +522,9 @@ void OpenGLES2Backend::setViewportSize(i32 width, i32 height) {
 	m_default_height = height;
 }
 
-void OpenGLES2Backend::setFramebufferGetter(FramebufferGetter getter) {
-	m_get_framebuffer = getter;
+void OpenGLES2Backend::setContextCallbacks(FramebufferGetter framebufferGetter, ProcAddressGetter procAddressGetter) {
+	m_get_framebuffer = framebufferGetter;
+	m_get_proc_address = procAddressGetter;
 }
 
 void OpenGLES2Backend::onContextReset() {
@@ -532,7 +536,7 @@ void OpenGLES2Backend::onContextReset() {
 	m_supports_srgb_textures = hasExtensionToken(extensions, "GL_EXT_sRGB");
 	m_supports_uint_indices = hasExtensionToken(extensions, "GL_OES_element_index_uint");
 	m_texture_barrier = hasExtensionToken(extensions, "GL_NV_texture_barrier")
-		? reinterpret_cast<TextureBarrierProc>(resolveProcAddress("glTextureBarrierNV"))
+		? resolveProcAddress("glTextureBarrierNV")
 		: nullptr;
 	glGenFramebuffers(1, &m_readback_fbo);
 	DeviceQuantizePipeline::GLES2::init(*this, m_post_pipelines->deviceQuantize);

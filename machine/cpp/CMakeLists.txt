@@ -507,6 +507,18 @@ if(BMSX_BUILD_TESTS)
 		${BMSX_LIBRETRO_DIR}
 	)
 	add_test(NAME bmsx_libretro_save_state_tests COMMAND bmsx_libretro_save_state_tests)
+
+	if(BMSX_ENABLE_GLES2)
+		add_executable(bmsx_libretro_hw_context_tests
+			${CMAKE_CURRENT_SOURCE_DIR}/../../tests/cpp/libretro_hw_context_test.cpp
+			${BMSX_LIBRETRO_DIR}/platform.cpp
+		)
+		target_link_libraries(bmsx_libretro_hw_context_tests PRIVATE bmsx_core)
+		target_include_directories(bmsx_libretro_hw_context_tests PRIVATE
+			${BMSX_LIBRETRO_DIR}
+		)
+		add_test(NAME bmsx_libretro_hw_context_tests COMMAND bmsx_libretro_hw_context_tests)
+	endif()
 endif()
 
 # =============================================================================

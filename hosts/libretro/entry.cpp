@@ -1143,7 +1143,7 @@ void retro_init(void) {
 	g_platform->setResourceUsageGizmo(g_resource_usage_gizmo_enabled);
 	if (isHardwareBackendActive()) {
 	try {
-		g_platform->setHwRenderCallbacks(g_hw_render.get_current_framebuffer);
+		g_platform->setHwRenderCallbacks(g_hw_render.get_current_framebuffer, g_hw_render.get_proc_address);
 	} catch (const std::exception& err) {
 		logging.log(RETRO_LOG_ERROR,
 					"[BMSX] %s setup exception: %s\n",

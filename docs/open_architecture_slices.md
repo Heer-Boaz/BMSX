@@ -31,9 +31,18 @@ pariteitsvalidatie en moeten als harde acceptatieblokkades blijven staan.
   de eerste volgorde als een runtime-z-wijziging. De lange regressiescène raakt
   bovendien de concrete overlap tussen de speler op z=250 en een later
   gespawnde explosie op z=114.
-- Ondanks alle optimalisatiewerk zijn de performanceproblemen van de
-  libretro-versie niet opgelost. Zelfs op een Intel Core Ultra 7 met een
-  RTX 5070 Ti vertoont `bare_metal_cart` bizarre, zeer zware slowdown.
+- De concrete libretro/GLES-proceduregrens achter een groot deel van de
+  Windows-slowdown is hersteld, maar de echte Windows-RetroArch-acceptatie
+  blijft open. De frontend leverde zowel zijn framebuffergetter als zijn
+  contextgebonden `get_proc_address`, maar BMSX gooide die tweede callback weg.
+  Op Windows kon de backend daardoor nooit `glTextureBarrierNV` vinden en koos
+  hij ongeacht de RTX 5070 Ti altijd de dure dependencycopyroute. De backend
+  resolveert extensieprocedures nu rechtstreeks via de frontend die de context bezit.
+  De WSL D3D12-GLES-route op die RTX exposeert `GL_NV_texture_barrier`, vraagt
+  aantoonbaar exact `glTextureBarrierNV` via de libretrocallback en doorloopt de
+  volledige slowdowntimeline zonder de gemelde zware vertraging. Alle 146
+  captures blijven pixel-identiek. Pas een echte Windows-RetroArch-run mag deze
+  zichtbare regressie definitief sluiten.
 
 ## Host-UI-publicatie en WebGPU-overlay live bewijzen
 
@@ -319,8 +328,9 @@ Richting:
 
 ## Accelerated framebuffer-feedback performance
 
-Status: concrete retained ownerfixes afgerond; live WebGL2/WebGPU-
-capabilityvalidatie blijft bewust uitgesteld tot de browsersessie.
+Status: concrete retained ownerfixes en de libretro-contextresolver zijn
+afgerond; echte Windows-RetroArch- en live WebGL2/WebGPU-capabilityvalidatie
+blijven open.
 
 Een capture-vrije 1100-frame libretro/GLES2-run is nu lang genoeg om de echte
 `bare_metal_cart`-slowdownscenes te bereiken. De eerdere korte meting miste die.
@@ -344,6 +354,28 @@ totale aantal sampletexturecopies daardoor van 147 naar 1; solid/line-
 destinationcopies zijn nul. De volledige 1.030-frame timeline levert met en
 zonder de capability 146 byte-identieke captures, inclusief particles, echo en
 morph.
+
+De libretrofrontend is daarbij de eigenaar van de GL-procedureresolver. BMSX
+bewaarde voorheen alleen `get_current_framebuffer`; de GLES-backend probeerde
+extensieprocedures zelf via `dlsym`/`eglGetProcAddress` te vinden en retourneerde
+op niet-Unixplatforms altijd nul. Nu reist `get_proc_address` samen met de
+framebuffergetter door de bestaande hardwarecontextgrens en gebruikt de backend
+die resolver rechtstreeks. Een gerichte native regressie bewijst deze
+callbackidentiteit. Op de WSL D3D12-route met de RTX 5070 Ti wordt daardoor de
+exacte `glTextureBarrierNV`-procedure opgevraagd. Drie capturevrije runs van de
+volledige 1.020-frame timeline kosten 6,48, 6,83 en 6,65 seconden wall time; een
+capture-run passeert alle slowdownvensters en alle 146 beelden zijn exact gelijk
+aan de voorafgaande native-barrierrun.
+
+`GL_EXT_shader_framebuffer_fetch` is onderzocht maar niet blind als tweede pad
+toegevoegd. De lokale Mesa 25.2.8-llvmpipe adverteert de extensie maar geeft bij
+iedere levende `gl_LastFragData`-read nul output; upstream Mesa heeft precies
+die color-fbfetchfout pas in maart 2026 gerepareerd. ANGLE kan de coherent-
+extensiestring bovendien exposen terwijl het zelf documenteert dat de emulatie
+alleen tussen drawcalls ordent en self-overlap binnen één draw niet garandeert.
+Daarom staan er geen driverblacklist, runtimeprobe, shadertruc of onbewezen
+fallback in BMSX. Deze capability wordt pas toegevoegd nadat de echte
+Windowscontext haar live kan bewijzen.
 
 Textured draws gebruiken datzelfde concrete barrierpad nu wanneer hun fysieke
 page/CLUT-coverage niet met de geclipte destination overlapt. Dan leest de
@@ -470,9 +502,11 @@ lager.
 Bewaard contract en meetgedreven vervolg:
 
 - GLES-contexts zonder texture barrier en de WebGL2/WebGPU-owners blijven op
-  expliciete dependencycopies. Andere framebuffer-feedbackmogelijkheden zijn
-  pas relevant als hun concrete backend ze werkelijk bezit; capabilitykeuze
-  hoort niet in cartcode of een algemene facade.
+  expliciete dependencycopies. Een geadverteerde framebuffer-fetchextensie is
+  niet op zichzelf voldoende bewijs van een bruikbaar pad. Andere
+  framebuffer-feedbackmogelijkheden zijn pas relevant als hun concrete backend
+  en ordering live bewezen zijn; capabilitykeuze hoort niet in cartcode of een
+  algemene facade.
 - De huidige retained dirty-unie is correct maar kan bij ver uit elkaar liggende
   of wrappende writes grof worden. Alleen wanneer metingen dat als volgende
   bottleneck aanwijzen, wordt zij bounded fijnmaziger; cleanbits mogen dan pas

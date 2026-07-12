@@ -419,6 +419,20 @@ and MAME
   the existing overlap splits remain the barrier boundaries. A steady particle
   frame drops from 147 sampletexturecopies to 1, while the full 1,030-frame
   barrier and forced-copy runs produce 146 byte-identical captures.
+- [x] Preserve libretro ownership of extension procedure resolution. The core
+  now forwards the frontend's `get_proc_address` together with its framebuffer
+  getter instead of guessing through process-global symbols. This removes the
+  unconditional null resolver on Windows and lets the retained NV barrier path
+  exist there. A native regression proves callback identity; WSL D3D12 on the
+  RTX 5070 Ti requests `glTextureBarrierNV` through that callback, passes all
+  146 slowdown-timeline captures exactly, and completes three capture-free
+  1,020-frame runs in 6.48--6.83 seconds wall time.
+- [ ] Run that resolved NV path in the actual Windows RetroArch frontend before
+  closing the reported RTX slowdown. `GL_EXT_shader_framebuffer_fetch` remains
+  deliberately unimplemented: Mesa 25.2.8 llvmpipe has a confirmed zero-output
+  color-fbfetch bug, while ANGLE documents that its advertised coherent
+  emulation may order only between draw calls. Do not add a driver blacklist,
+  runtime capability probe, or shader fallback in lieu of live proof.
 - [x] Route native GLES2 textured draws through the same barrier only when the
   physical page/CLUT coverage is disjoint from the clipped destination. Aliased
   texture sources retain the explicit sampletexture path. Tera-Flare drops from
@@ -578,9 +592,11 @@ Pick one vertical slice and finish it before committing:
 
 1. **Visible GX migration regressions**: finish live host-UI and scanout proof
    when a real browser is available.
-2. **Accelerated feedback performance**: remove per-primitive framebuffer
-   snapshots using the measured full-scene gates above, while preserving raw
-   PSX blend/mask/store parity in GLES2, WebGL2 and WebGPU.
+2. **Accelerated feedback performance**: run the frontend-resolved NV barrier
+   path in the real Windows RetroArch context. If that concrete context does not
+   expose NV texture barrier, measure its actual extensions and ordering before
+   choosing another GPU feedback mechanism; do not infer one from the GPU name
+   or an extension string alone.
 
 ## Per-slice rules for agents
 

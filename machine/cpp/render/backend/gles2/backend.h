@@ -29,7 +29,8 @@ struct OpenGLES2PostPipelines;
 class OpenGLES2Backend : public GPUBackend {
 public:
 	using FramebufferGetter = uintptr_t (*)();
-	using TextureBarrierProc = void (*)();
+	using ProcAddress = void (*)();
+	using ProcAddressGetter = ProcAddress (*)(const char*);
 
 	OpenGLES2Backend(i32 width, i32 height);
 	~OpenGLES2Backend() override;
@@ -67,7 +68,7 @@ public:
 	bool readyForTextureUpload() const override { return m_context_ready; }
 
 	void setViewportSize(i32 width, i32 height);
-	void setFramebufferGetter(FramebufferGetter getter);
+	void setContextCallbacks(FramebufferGetter framebufferGetter, ProcAddressGetter procAddressGetter);
 	void onContextReset();
 	void onContextDestroy();
 
@@ -76,8 +77,8 @@ public:
 	void invalidateTextureBindingCache();
 	void setRenderTarget(GLuint fbo, i32 width, i32 height);
 	GLuint buildProgram(const char* vertexShaderSource, const char* fragmentShaderSource, const char* label);
-	void* resolveProcAddress(const char* name) const;
-	void* resolveProcAddress(const char* coreName, const char* angleName, const char* extName) const;
+	ProcAddress resolveProcAddress(const char* name) const;
+	ProcAddress resolveProcAddress(const char* coreName, const char* angleName, const char* extName) const;
 	bool supportsUintIndices() const { return m_supports_uint_indices; }
 	bool textureBarrierAvailable() const { return m_texture_barrier != nullptr; }
 	void textureBarrier() const { m_texture_barrier(); }
@@ -89,6 +90,7 @@ public:
 private:
 	static constexpr i32 kTrackedTextureUnits = 16;
 	FramebufferGetter m_get_framebuffer = nullptr;
+	ProcAddressGetter m_get_proc_address = nullptr;
 	GLuint m_current_fbo = 0;
 	GLuint m_backbuffer_fbo = 0;
 	i32 m_default_width = 0;
@@ -104,7 +106,7 @@ private:
 	bool m_context_ready = false;
 	bool m_supports_srgb_textures = false;
 	bool m_supports_uint_indices = false;
-	TextureBarrierProc m_texture_barrier = nullptr;
+	ProcAddress m_texture_barrier = nullptr;
 };
 
 } // namespace bmsx

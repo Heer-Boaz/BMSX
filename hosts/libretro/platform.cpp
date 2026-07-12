@@ -224,13 +224,14 @@ void LibretroPlatform::notifyFocusChange(bool focused) {
 	static_cast<LibretroGameViewHost*>(m_gameview_host.get())->notifyFocusChange(focused);
 }
 
-void LibretroPlatform::setHwRenderCallbacks(retro_hw_get_current_framebuffer_t get_current_framebuffer) {
+void LibretroPlatform::setHwRenderCallbacks(retro_hw_get_current_framebuffer_t get_current_framebuffer,
+											retro_hw_get_proc_address_t get_proc_address) {
 #if BMSX_ENABLE_GLES2
-	m_hw_get_current_framebuffer = get_current_framebuffer;
 	auto* backend = static_cast<OpenGLES2Backend*>(m_machine_manager->view()->backend());
-	backend->setFramebufferGetter(m_hw_get_current_framebuffer);
+	backend->setContextCallbacks(get_current_framebuffer, get_proc_address);
 #else
 	(void)get_current_framebuffer;
+	(void)get_proc_address;
 	throw BMSX_RUNTIME_ERROR("[LibretroPlatform] OpenGLES2 backend disabled at compile time.");
 #endif
 }
@@ -240,8 +241,6 @@ void LibretroPlatform::onContextReset() {
 	log(RETRO_LOG_INFO, "[BMSX] onContextReset: begin\n");
 	auto* view = m_machine_manager->view();
 	auto* backend = static_cast<OpenGLES2Backend*>(view->backend());
-	log(RETRO_LOG_INFO, "[BMSX] onContextReset: set framebuffer getter\n");
-	backend->setFramebufferGetter(m_hw_get_current_framebuffer);
 	log(RETRO_LOG_INFO, "[BMSX] onContextReset: backend reset\n");
 	backend->onContextReset();
 	log(RETRO_LOG_INFO, "[BMSX] onContextReset: update backend host\n");

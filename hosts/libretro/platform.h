@@ -164,7 +164,8 @@ public:
 	void resetFocusState();
 	void setLogCallback(void (*cb)(enum retro_log_level, const char*, ...)) { m_log_cb = cb; }
 	void setSystemDirectory(std::string_view path) { m_system_dir = std::string(path); }
-	void setHwRenderCallbacks(retro_hw_get_current_framebuffer_t get_current_framebuffer);
+	void setHwRenderCallbacks(retro_hw_get_current_framebuffer_t get_current_framebuffer,
+								retro_hw_get_proc_address_t get_proc_address);
 	void onContextReset();
 	void onContextDestroy();
 	void setPostProcessOptions(bool enableCrt, bool highDetail);
@@ -255,7 +256,6 @@ private:
 	bool m_has_av_info = false;
 	double m_frame_time_sec;
 	BackendType m_backend_type = BackendType::Software;
-	retro_hw_get_current_framebuffer_t m_hw_get_current_framebuffer = nullptr;
 	bool m_crt_postprocessing_enabled = true;
 	i32 m_postprocess_scale = 1;
 	bool m_render_surfaces_need_refresh = true;
