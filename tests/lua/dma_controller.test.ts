@@ -88,6 +88,36 @@ test('DMA streams RAM words into the GX-GPU GP0 command port', () => {
 	assert.equal(commands.words[commands.commandWordStart[0] + 2], command2);
 });
 
+test('DMA admits one GP0 FIFO block and resumes the suffix on the GPU ready edge', () => {
+	const { memory, dma, gpu, scheduler } = createDmaGpuFixture();
+	const source = PROGRAM_STATIC_RAM_BASE + 0x140;
+	dma.setTiming(1, 80, 0);
+	gpu.writeGp0((GX_GPU_GP0_FILL_RECTANGLE << 24) | 0x0000003f);
+	gpu.writeGp0(0);
+	gpu.writeGp0((0x1ff << 16) | 0x3ff);
+	const fillDeadline = scheduler.nextDeadline();
+	for (let index = 0; index < 20; index += 1) {
+		memory.writeMappedU32LE(source + index * 4, ((GX_GPU_GP0_DRAW_MODE << 24) | index) >>> 0);
+	}
+	memory.writeMappedU32LE(IO_DMA_SRC, source);
+	memory.writeMappedU32LE(IO_DMA_DST, IO_GX_GPU_GP0);
+	memory.writeMappedU32LE(IO_DMA_LEN, 80);
+	memory.writeMappedU32LE(IO_DMA_CTRL, DMA_CTRL_START);
+	dma.accrueCycles(80, 1);
+	dma.onService(1);
+
+	assert.equal(memory.readIoU32(IO_DMA_STATUS), DMA_STATUS_BUSY);
+	assert.equal(memory.readIoU32(IO_DMA_WRITTEN), 64);
+	assert.equal(scheduler.nextDeadline(), fillDeadline);
+
+	scheduler.advanceTo(fillDeadline + 15);
+	gpu.onService(fillDeadline + 15);
+	assert.equal(scheduler.nextDeadline(), fillDeadline + 15);
+	dma.onService(fillDeadline + 15);
+	assert.equal(memory.readIoU32(IO_DMA_STATUS), DMA_STATUS_DONE);
+	assert.equal(memory.readIoU32(IO_DMA_WRITTEN), 80);
+});
+
 test('DMA preserves GP0 CPU-to-VRAM packet assembly across service slices', () => {
 	const { memory, dma, gpu } = createDmaGpuFixture();
 	const source = PROGRAM_STATIC_RAM_BASE + 0x1c0;
@@ -167,6 +197,8 @@ test('DMA consumes GPUREAD words into RAM only while the readback ready line is 
 	memory.writeMappedU32LE(IO_DMA_CTRL, DMA_CTRL_START);
 	dma.accrueCycles(12, 12);
 	dma.onService(12);
+	scheduler.advanceTo(1);
+	gpu.onService(1);
 
 	assert.equal(scheduler.nextDeadline(), Number.MAX_SAFE_INTEGER);
 	assert.equal(memory.readIoU32(IO_DMA_STATUS), DMA_STATUS_BUSY);
@@ -218,6 +250,8 @@ test('DMA consumes GPUREAD words into RAM only while the readback ready line is 
 	gpu.writeGp0(GX_GPU_GP0_VRAM_TO_CPU_FIRST << 24);
 	gpu.writeGp0(0);
 	gpu.writeGp0((1 << 16) | 2);
+	scheduler.advanceTo(13);
+	gpu.onService(13);
 	gpu.presentReadyFrameOnVblankEdge();
 	output = gpu.readDeviceOutput();
 	readback = output.readbackPort;

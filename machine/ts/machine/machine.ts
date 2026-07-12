@@ -18,6 +18,7 @@ import {
 	DEVICE_SERVICE_APU,
 	DEVICE_SERVICE_DMA,
 	DEVICE_SERVICE_GEO,
+	DEVICE_SERVICE_GPU,
 	DeviceScheduler,
 } from './scheduler/device';
 
@@ -96,6 +97,9 @@ export class Machine {
 				return;
 			case DEVICE_SERVICE_APU:
 				this.audioController.onService(nowCycles);
+				return;
+			case DEVICE_SERVICE_GPU:
+				this.gxGpu.onService(nowCycles);
 				return;
 			default:
 				throw new Error(`Runtime fault: unknown device service kind ${deviceKind}.`);

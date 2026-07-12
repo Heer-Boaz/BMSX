@@ -766,6 +766,7 @@ struct CpuRuntimeState {
 	uint32_t lastInstruction = 0;
 	int instructionBudgetRemaining = 0;
 	bool haltedUntilIrq = false;
+	bool memoryWriteBlocked = false;
 	bool maskableInterruptsEnabled = true;
 	bool maskableInterruptsRestoreEnabled = true;
 	bool nonMaskableInterruptPending = false;
@@ -954,6 +955,8 @@ public:
 	void haltUntilIrq();
 	void clearHaltUntilIrq();
 	bool isHaltedUntilIrq() const { return m_haltedUntilIrq; }
+	bool isMemoryWriteBlocked() const { return m_memoryWriteBlocked; }
+	void resumeMemoryWrite() { m_memoryWriteBlocked = false; }
 	void enableMaskableInterrupts();
 	void disableMaskableInterrupts();
 	void requestNonMaskableInterrupt();
@@ -1069,6 +1072,7 @@ private:
 	void skipNextInstruction(CallFrame& frame);
 	void clearHaltAfterAcceptedInterrupt();
 	void hardHalt();
+	void blockMappedWrite(CallFrame& frame);
 	void markRoots(GcHeap& heap);
 
 	Program* m_program = nullptr;
@@ -1076,6 +1080,8 @@ private:
 	std::vector<std::unique_ptr<CallFrame>> m_frames;
 	std::vector<OpenUpvalueSlot> m_openUpvalues;
 	bool m_haltedUntilIrq = false;
+	bool m_memoryWriteBlocked = false;
+	int m_currentInstructionPc = 0;
 	bool m_hardHalted = false;
 	bool m_maskableInterruptsEnabled = true;
 	bool m_maskableInterruptsRestoreEnabled = true;

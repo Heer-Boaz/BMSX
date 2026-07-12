@@ -338,8 +338,11 @@ and MAME
     latch; `IRQ_ACK` owns that latch. Repeated GP0(1Fh) words while the source
     stays asserted do not synthesize extra edges. TS/C++ raw MMIO tests mirror
     the full assert, system-ack, no-retrigger, GPU-ack and retrigger sequence.
-  - [ ] Model command execution time and FIFO-capacity-visible readiness rather
-    than treating completed packet assembly as immediate GPU idleness.
+  - [x] Model command execution time and FIFO-capacity-visible readiness with a
+    central integer GPU scheduler, fixed FIFO, execution frontier and mirrored
+    save-state. DMA stalls between admitted 64-byte blocks; CPU GP0 stores use
+    the MMIO write-ready line and jump to the device completion edge without
+    polling, dropped words or producer-side waits.
 - [ ] Complete GP0/GP1 command decode edge cases and command-buffer ordering.
   - [x] Distinguish machine/device reset from GP1(00h): both clear GPU
     registers, packet/FIFO state and the active readback request, while only

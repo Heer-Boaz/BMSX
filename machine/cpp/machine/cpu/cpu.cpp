@@ -1225,6 +1225,7 @@ void CPU::start(int entryProtoIndex, NativeArgsView args) {
 	lastReturnValues.clear();
 	clearCallStack();
 	m_haltedUntilIrq = false;
+	m_memoryWriteBlocked = false;
 	m_hardHalted = false;
 	m_maskableInterruptsEnabled = true;
 	m_maskableInterruptsRestoreEnabled = true;
@@ -1432,6 +1433,7 @@ CpuRuntimeState CPU::captureRuntimeState(const std::unordered_map<std::string, V
 	state.lastInstruction = lastInstruction;
 	state.instructionBudgetRemaining = instructionBudgetRemaining;
 	state.haltedUntilIrq = m_haltedUntilIrq;
+	state.memoryWriteBlocked = m_memoryWriteBlocked;
 	state.maskableInterruptsEnabled = m_maskableInterruptsEnabled;
 	state.maskableInterruptsRestoreEnabled = m_maskableInterruptsRestoreEnabled;
 	state.nonMaskableInterruptPending = m_nonMaskableInterruptPending;
@@ -1628,6 +1630,7 @@ void CPU::restoreRuntimeState(const CpuRuntimeState& state, std::unordered_map<s
 	lastInstruction = state.lastInstruction;
 	instructionBudgetRemaining = state.instructionBudgetRemaining;
 	m_haltedUntilIrq = state.haltedUntilIrq;
+	m_memoryWriteBlocked = state.memoryWriteBlocked;
 	m_maskableInterruptsEnabled = state.maskableInterruptsEnabled;
 	m_maskableInterruptsRestoreEnabled = state.maskableInterruptsRestoreEnabled;
 	m_nonMaskableInterruptPending = state.nonMaskableInterruptPending;
@@ -1980,6 +1983,11 @@ void CPU::clearHaltAfterAcceptedInterrupt() {
 	m_yieldRequested = false;
 }
 
+void CPU::blockMappedWrite(CallFrame& frame) {
+	frame.pc = m_currentInstructionPc;
+	m_memoryWriteBlocked = true;
+}
+
 RunResult CPU::run(int instructionBudget, const IrqController* irqController, int irqProtoIndex) {
 	instructionBudgetRemaining = instructionBudget;
 	auto& frames = m_frames;
@@ -2011,7 +2019,7 @@ dispatch_loop_check:
 	if (frames.empty()) {
 		return RunResult::Halted;
 	}
-	if (m_hardHalted || m_haltedUntilIrq) {
+	if (m_hardHalted || m_haltedUntilIrq || m_memoryWriteBlocked) {
 		return RunResult::Halted;
 	}
 	if (m_yieldRequested) {
@@ -2038,6 +2046,7 @@ dispatch_loop_check:
 		return RunResult::Halted;
 	}
 	decoded = &decodedAtWordIndex(wordIndex);
+	m_currentInstructionPc = pc;
 	frame->pc = pc + (static_cast<int>(decoded->width) * INSTRUCTION_BYTES);
 	lastPc = pc + ((static_cast<int>(decoded->width) - 1) * INSTRUCTION_BYTES);
 	lastInstruction = decoded->word;
@@ -2066,6 +2075,7 @@ dispatch_loop_check:
 } while (0)
 #define TABLE_CACHE_INDEX() (decoded->tableCacheIndex)
 #define DISPATCH_CONTINUE() do { goto dispatch_continue; } while (0)
+#define DISPATCH_BLOCKED() do { return RunResult::Halted; } while (0)
 
 #if BMSX_USE_COMPUTED_GOTO
 #pragma GCC diagnostic push
@@ -2081,6 +2091,7 @@ dispatch_loop_check:
 #endif
 
 dispatch_continue:
+#undef DISPATCH_BLOCKED
 #undef DISPATCH_CONTINUE
 #undef SKIP_NEXT_INSTRUCTION
 #undef TABLE_CACHE_INDEX
@@ -2108,7 +2119,9 @@ dispatch_continue:
 #define TABLE_CACHE_INDEX() (decoded->tableCacheIndex)
 #define DISPATCH_LABEL(name) dispatch_##name:
 #define DISPATCH_CONTINUE() do { goto dispatch_continue; } while (0)
+#define DISPATCH_BLOCKED() do { return RunResult::Halted; } while (0)
 #include "machine/cpu/cpu_dispatch.inl"
+#undef DISPATCH_BLOCKED
 #undef DISPATCH_CONTINUE
 #undef SKIP_NEXT_INSTRUCTION
 #undef TABLE_CACHE_INDEX
@@ -2151,7 +2164,7 @@ dispatch_loop_check:
 	if (static_cast<int>(frames.size()) <= targetDepth) {
 		return RunResult::Halted;
 	}
-	if (m_hardHalted || m_haltedUntilIrq) {
+	if (m_hardHalted || m_haltedUntilIrq || m_memoryWriteBlocked) {
 		return RunResult::Halted;
 	}
 	if (m_yieldRequested) {
@@ -2178,6 +2191,7 @@ dispatch_loop_check:
 		return RunResult::Halted;
 	}
 	decoded = &decodedAtWordIndex(wordIndex);
+	m_currentInstructionPc = pc;
 	frame->pc = pc + (static_cast<int>(decoded->width) * INSTRUCTION_BYTES);
 	lastPc = pc + ((static_cast<int>(decoded->width) - 1) * INSTRUCTION_BYTES);
 	lastInstruction = decoded->word;
@@ -2206,6 +2220,7 @@ dispatch_loop_check:
 } while (0)
 #define TABLE_CACHE_INDEX() (decoded->tableCacheIndex)
 #define DISPATCH_CONTINUE() do { goto dispatch_continue; } while (0)
+#define DISPATCH_BLOCKED() do { return RunResult::Halted; } while (0)
 
 #if BMSX_USE_COMPUTED_GOTO
 #pragma GCC diagnostic push
@@ -2221,6 +2236,7 @@ dispatch_loop_check:
 #endif
 
 dispatch_continue:
+#undef DISPATCH_BLOCKED
 #undef DISPATCH_CONTINUE
 #undef SKIP_NEXT_INSTRUCTION
 #undef TABLE_CACHE_INDEX
@@ -2248,7 +2264,9 @@ dispatch_continue:
 #define TABLE_CACHE_INDEX() (decoded->tableCacheIndex)
 #define DISPATCH_LABEL(name) dispatch_##name:
 #define DISPATCH_CONTINUE() do { goto dispatch_continue; } while (0)
+#define DISPATCH_BLOCKED() do { return RunResult::Halted; } while (0)
 #include "machine/cpu/cpu_dispatch.inl"
+#undef DISPATCH_BLOCKED
 #undef DISPATCH_CONTINUE
 #undef SKIP_NEXT_INSTRUCTION
 #undef TABLE_CACHE_INDEX
@@ -2293,7 +2311,7 @@ void CPU::tickHotLoopHousekeeping() {
 
 void CPU::step() {
 	if (m_frames.empty()) return;
-	if (m_hardHalted || m_haltedUntilIrq) return;
+	if (m_hardHalted || m_haltedUntilIrq || m_memoryWriteBlocked) return;
 	runHousekeeping();
 	CallFrame& frame = *m_frames.back();
 	int pc = frame.pc;
@@ -2303,6 +2321,7 @@ void CPU::step() {
 		return;
 	}
 	const DecodedInstruction& decoded = decodedAtWordIndex(wordIndex);
+	m_currentInstructionPc = pc;
 	frame.pc = pc + (static_cast<int>(decoded.width) * INSTRUCTION_BYTES);
 	lastPc = pc + ((static_cast<int>(decoded.width) - 1) * INSTRUCTION_BYTES);
 	lastInstruction = decoded.word;
@@ -2375,9 +2394,11 @@ void CPU::executeInstruction(CallFrame& frame, const DecodedInstruction& decoded
 #define TABLE_CACHE_INDEX() (decoded.tableCacheIndex)
 #define DISPATCH_LABEL(name) case OpCode::name:
 #define DISPATCH_CONTINUE() do { return; } while (0)
+#define DISPATCH_BLOCKED() do { return; } while (0)
 	switch (static_cast<OpCode>(decoded.op)) {
 #include "machine/cpu/cpu_dispatch.inl"
 	}
+#undef DISPATCH_BLOCKED
 #undef DISPATCH_CONTINUE
 #undef SKIP_NEXT_INSTRUCTION
 #undef TABLE_CACHE_INDEX

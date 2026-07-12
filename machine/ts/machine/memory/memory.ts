@@ -65,8 +65,10 @@ const BUS_ACCESS_WRITE_U32 = BUS_FAULT_ACCESS_WRITE | BUS_FAULT_ACCESS_U32;
 
 export type IoReadHandler<TContext> = (context: TContext, addr: number) => Value;
 export type IoWriteHandler<TContext> = (context: TContext, addr: number, value: Value) => void;
+export type IoWriteReadyHandler<TContext> = (context: TContext, addr: number) => boolean;
 type StoredIoReadHandler = (context: unknown, addr: number) => Value;
 type StoredIoWriteHandler = (context: unknown, addr: number, value: Value) => void;
+type StoredIoWriteReadyHandler = (context: unknown, addr: number) => boolean;
 
 export type MemorySaveState = {
 	ram: Uint8Array;
@@ -95,6 +97,7 @@ export class Memory {
 	private readonly ioWriteContexts: unknown[];
 	private readonly ioReadHandlers: Array<StoredIoReadHandler | null>;
 	private readonly ioWriteHandlers: Array<StoredIoWriteHandler | null>;
+	private readonly ioWriteReadyHandlers: Array<StoredIoWriteReadyHandler | null>;
 	private readonly ioByteLength = IO_SLOT_COUNT * IO_WORD_SIZE;
 	private readonly busFaultCodeSlot = (IO_SYS_BUS_FAULT_CODE - IO_BASE) / IO_WORD_SIZE;
 	private readonly busFaultAddrSlot = (IO_SYS_BUS_FAULT_ADDR - IO_BASE) / IO_WORD_SIZE;
@@ -120,11 +123,13 @@ export class Memory {
 		this.ioWriteContexts = new Array<unknown>(IO_SLOT_COUNT);
 		this.ioReadHandlers = new Array<StoredIoReadHandler | null>(IO_SLOT_COUNT);
 		this.ioWriteHandlers = new Array<StoredIoWriteHandler | null>(IO_SLOT_COUNT);
+		this.ioWriteReadyHandlers = new Array<StoredIoWriteReadyHandler | null>(IO_SLOT_COUNT);
 		for (let index = 0; index < IO_SLOT_COUNT; index += 1) {
 			this.ioReadContexts[index] = null;
 			this.ioWriteContexts[index] = null;
 			this.ioReadHandlers[index] = null;
 			this.ioWriteHandlers[index] = null;
+			this.ioWriteReadyHandlers[index] = null;
 		}
 		this.ioWriteContexts[this.busFaultAckSlot] = this;
 		this.ioWriteHandlers[this.busFaultAckSlot] = Memory.onBusFaultAckWriteThunk;
@@ -141,6 +146,18 @@ export class Memory {
 		const slot = (addr - IO_BASE) / IO_WORD_SIZE;
 		this.ioWriteContexts[slot] = context;
 		this.ioWriteHandlers[slot] = handler as StoredIoWriteHandler;
+	}
+
+	public mapIoWriteReady<TContext>(addr: number, handler: IoWriteReadyHandler<TContext>): void {
+		const slot = (addr - IO_BASE) / IO_WORD_SIZE;
+		this.ioWriteReadyHandlers[slot] = handler as StoredIoWriteReadyHandler;
+	}
+
+	public mappedWriteReady(addr: number): boolean {
+		const slot = this.ioAlignedSlot(addr);
+		if (slot < 0) return true;
+		const handler = this.ioWriteReadyHandlers[slot];
+		return handler === null || handler(this.ioWriteContexts[slot], addr);
 	}
 
 	public setProgramRom(rom: Uint8Array, textByteLength: number): void {

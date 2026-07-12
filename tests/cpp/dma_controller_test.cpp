@@ -75,6 +75,37 @@ void testDmaStreamsRamWordsToGxGp0() {
 	require(commands.words[commands.commandWordStart[0] + 2u] == command2, "GX-GPU DMA GP0 third command word");
 }
 
+void testDmaAdmitsOneGp0FifoBlockAndResumesSuffixOnGpuReadyEdge() {
+	DmaGpuHarness harness;
+	bmsx::Memory& memory = harness.memory;
+	const uint32_t source = bmsx::PROGRAM_STATIC_RAM_BASE + 0x140u;
+	harness.dma.setTiming(1, 80, 0);
+	harness.gpu.writeGp0((bmsx::GX_GPU_GP0_FILL_RECTANGLE << 24u) | 0x0000003fu);
+	harness.gpu.writeGp0(0u);
+	harness.gpu.writeGp0((0x1ffu << 16u) | 0x3ffu);
+	const int64_t fillDeadline = harness.scheduler.nextDeadline();
+	for (uint32_t index = 0u; index < 20u; index += 1u) {
+		memory.writeMappedU32LE(source + index * 4u, (bmsx::GX_GPU_GP0_DRAW_MODE << 24u) | index);
+	}
+	memory.writeMappedU32LE(bmsx::IO_DMA_SRC, source);
+	memory.writeMappedU32LE(bmsx::IO_DMA_DST, bmsx::IO_GX_GPU_GP0);
+	memory.writeMappedU32LE(bmsx::IO_DMA_LEN, 80u);
+	memory.writeMappedU32LE(bmsx::IO_DMA_CTRL, bmsx::DMA_CTRL_START);
+	harness.dma.accrueCycles(80, 1);
+	harness.dma.onService(1);
+
+	require(memory.readIoU32(bmsx::IO_DMA_STATUS) == bmsx::DMA_STATUS_BUSY, "DMA GP0 FIFO block leaves its suffix busy");
+	require(memory.readIoU32(bmsx::IO_DMA_WRITTEN) == 64u, "DMA GP0 FIFO block admits exactly sixteen words");
+	require(harness.scheduler.nextDeadline() == fillDeadline, "DMA GP0 FIFO backpressure cancels its own service deadline");
+
+	harness.scheduler.advanceTo(fillDeadline + 15);
+	harness.gpu.onService(fillDeadline + 15);
+	require(harness.scheduler.nextDeadline() == fillDeadline + 15, "GPU ready edge schedules the retained DMA suffix immediately");
+	harness.dma.onService(fillDeadline + 15);
+	require(memory.readIoU32(bmsx::IO_DMA_STATUS) == bmsx::DMA_STATUS_DONE, "DMA GP0 FIFO suffix completes on the ready edge");
+	require(memory.readIoU32(bmsx::IO_DMA_WRITTEN) == 80u, "DMA GP0 FIFO suffix publishes the complete byte count");
+}
+
 void testDmaPreservesCpuToVramPacketAcrossServiceSlices() {
 	DmaGpuHarness harness;
 	bmsx::Memory& memory = harness.memory;
@@ -148,6 +179,8 @@ void testDmaConsumesGpureadOnlyWhileReadbackReady() {
 	memory.writeMappedU32LE(bmsx::IO_DMA_CTRL, bmsx::DMA_CTRL_START);
 	harness.dma.accrueCycles(12, 12);
 	harness.dma.onService(12);
+	harness.scheduler.advanceTo(1);
+	gpu.onService(1);
 
 	require(harness.scheduler.nextDeadline() == std::numeric_limits<int64_t>::max(), "DMA GPUREAD source has no service deadline while readback is pending");
 	require(memory.readIoU32(bmsx::IO_DMA_STATUS) == bmsx::DMA_STATUS_BUSY, "DMA GPUREAD source remains busy while readback is pending");
@@ -200,6 +233,8 @@ void testDmaConsumesGpureadOnlyWhileReadbackReady() {
 	gpu.writeGp0(bmsx::GX_GPU_GP0_VRAM_TO_CPU_FIRST << 24u);
 	gpu.writeGp0(0u);
 	gpu.writeGp0((1u << 16u) | 2u);
+	harness.scheduler.advanceTo(13);
+	gpu.onService(13);
 	gpu.presentReadyFrameOnVblankEdge();
 	const bmsx::GxGpuDeviceOutput& secondOutput = gpu.readDeviceOutput();
 	bmsx::GxGpuReadbackPort& secondReadback = *secondOutput.readbackPort;
@@ -323,6 +358,7 @@ void testDmaFullFifoRejectionPreservesQueuedProgressLatch() {
 
 int main() {
 	testDmaStreamsRamWordsToGxGp0();
+	testDmaAdmitsOneGp0FifoBlockAndResumesSuffixOnGpuReadyEdge();
 	testDmaPreservesCpuToVramPacketAcrossServiceSlices();
 	testDmaConsumesGpureadOnlyWhileReadbackReady();
 	testDmaClipsGpureadSourceLengthToWholeWords();

@@ -31,6 +31,7 @@ class Memory {
 public:
 	using IoReadHandler = Value (*)(void* context, uint32_t addr);
 	using IoWriteHandler = void (*)(void* context, uint32_t addr, Value value);
+	using IoWriteReadyHandler = bool (*)(void* context, uint32_t addr);
 
 	explicit Memory(const MemoryInit& init);
 
@@ -40,11 +41,13 @@ public:
 		m_ioReadHandlers[static_cast<size_t>((addr - IO_BASE) / IO_WORD_SIZE)] = { &object, &readMember<Method, TObject> };
 	}
 	void mapIoWrite(uint32_t addr, void* context, IoWriteHandler handler);
+	void mapIoWriteReady(uint32_t addr, IoWriteReadyHandler handler);
 	template <auto Method, typename TObject>
 	void mapIoWrite(uint32_t addr, TObject& object) {
 		m_ioWriteHandlers[static_cast<size_t>((addr - IO_BASE) / IO_WORD_SIZE)] = { &object, &writeMember<Method, TObject> };
 	}
 	void setProgramRom(const u8* data, size_t size, size_t textByteLength);
+	bool mappedWriteReady(uint32_t addr);
 
 	Value readValue(uint32_t addr) const;
 	Value readMappedValue(uint32_t addr) const;
@@ -95,6 +98,7 @@ private:
 	struct IoWriteBinding {
 		void* context = nullptr;
 		IoWriteHandler handler = nullptr;
+		IoWriteReadyHandler ready = nullptr;
 	};
 	RomSpan m_systemRom;
 	RomSpan m_cartRom;

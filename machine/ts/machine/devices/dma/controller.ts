@@ -67,6 +67,7 @@ export class DmaController {
 	private ioWrittenValue = 0;
 	private ioWrittenDirty = false;
 	private gxGpuReadReady = false;
+	private gxGpuWriteReady = false;
 	private readonly buffer = new Uint8Array(DMA_SERVICE_BATCH_BYTES);
 
 	public constructor(
@@ -151,6 +152,16 @@ export class DmaController {
 		}
 	}
 
+	public setGxGpuWriteReady(ready: boolean): void {
+		if (this.gxGpuWriteReady === ready) {
+			return;
+		}
+		this.gxGpuWriteReady = ready;
+		if (this.queueCount !== 0 && this.queueDst[this.queueHead] === IO_GX_GPU_GP0) {
+			this.scheduleNextService(this.scheduler.currentNowCycles());
+		}
+	}
+
 	public accrueCycles(cycles: number, nowCycles: number): void {
 		if (cycles <= 0) {
 			return;
@@ -192,6 +203,7 @@ export class DmaController {
 		this.ioWrittenValue = 0;
 		this.ioWrittenDirty = false;
 		this.gxGpuReadReady = false;
+		this.gxGpuWriteReady = false;
 		this.scheduler.cancelDeviceService(DEVICE_SERVICE_DMA);
 		this.memory.writeValue(IO_DMA_SRC, 0);
 		this.memory.writeValue(IO_DMA_DST, 0);
@@ -245,6 +257,9 @@ export class DmaController {
 		let chunk = remaining > budget ? budget : remaining;
 		const src = this.queueSrc[jobIndex]!;
 		const dst = this.queueDst[jobIndex]!;
+		if (dst === IO_GX_GPU_GP0 && !this.gxGpuWriteReady) {
+			return 0;
+		}
 		if (src === IO_GX_GPU_GP0 || dst === IO_GX_GPU_GP0) {
 			chunk &= ~(IO_WORD_SIZE - 1);
 			if (chunk === 0) {
@@ -363,7 +378,8 @@ export class DmaController {
 			this.scheduler.cancelDeviceService(DEVICE_SERVICE_DMA);
 			return;
 		}
-		if (this.queueSrc[this.queueHead] === IO_GX_GPU_GP0 && !this.gxGpuReadReady) {
+		if ((this.queueSrc[this.queueHead] === IO_GX_GPU_GP0 && !this.gxGpuReadReady)
+			|| (this.queueDst[this.queueHead] === IO_GX_GPU_GP0 && !this.gxGpuWriteReady)) {
 			this.scheduler.cancelDeviceService(DEVICE_SERVICE_DMA);
 			return;
 		}

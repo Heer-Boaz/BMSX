@@ -17,11 +17,6 @@ constexpr size_t GX_GPU_TRIANGLE_ATTRIBUTE_RADIX_DIGITS = 5u;
 constexpr u32 GX_GPU_TEXTURE_SOURCE_COMMAND_OVERLAP = 1u;
 constexpr u32 GX_GPU_TEXTURE_SOURCE_BATCH_OVERLAP = 2u;
 
-inline i32 gxGpuSigned11(u32 value) {
-	const i32 raw = static_cast<i32>(value & 0x7ffu);
-	return (raw & 0x400) != 0 ? raw - 0x800 : raw;
-}
-
 inline i32 gxGpuTriangleRasterShift(i32 coord0, i32 coord1, i32 coord2) {
 	const i32 minimum = coord0 < coord1 ? (coord0 < coord2 ? coord0 : coord2) : (coord1 < coord2 ? coord1 : coord2);
 	return minimum < -(GX_GPU_VERTEX_COORD_PERIOD >> 1) ? GX_GPU_VERTEX_COORD_PERIOD : 0;
@@ -348,42 +343,6 @@ inline u32 gxGpuDrawingAreaX(u32 word) {
 
 inline u32 gxGpuDrawingAreaY(u32 word) {
 	return (word >> 10u) & 0x3ffu;
-}
-
-inline u32 gxGpuDrawingAreaLeft(u32 topLeftWord, u32 bottomRightWord) {
-	const u32 left = gxGpuDrawingAreaX(topLeftWord);
-	const u32 right = gxGpuDrawingAreaX(bottomRightWord);
-	return left > right ? 0u : left;
-}
-
-inline u32 gxGpuDrawingAreaTop(u32 topLeftWord, u32 bottomRightWord) {
-	const u32 top = gxGpuDrawingAreaY(topLeftWord);
-	const u32 bottom = gxGpuDrawingAreaY(bottomRightWord);
-	if (top > bottom) {
-		return 0u;
-	}
-	const u32 bottomBound = bottom < GX_GPU_VRAM_HEIGHT ? bottom : GX_GPU_VRAM_HEIGHT - 1u;
-	return top < bottomBound ? top : bottomBound;
-}
-
-inline u32 gxGpuDrawingAreaRightExclusive(u32 topLeftWord, u32 bottomRightWord) {
-	const u32 left = gxGpuDrawingAreaX(topLeftWord);
-	const u32 right = gxGpuDrawingAreaX(bottomRightWord);
-	if (left > right) {
-		return 0u;
-	}
-	const u32 rightExclusive = right + 1u;
-	return rightExclusive < GX_GPU_VRAM_WIDTH ? rightExclusive : GX_GPU_VRAM_WIDTH;
-}
-
-inline u32 gxGpuDrawingAreaBottomExclusive(u32 topLeftWord, u32 bottomRightWord) {
-	const u32 top = gxGpuDrawingAreaY(topLeftWord);
-	const u32 bottom = gxGpuDrawingAreaY(bottomRightWord);
-	if (top > bottom) {
-		return 0u;
-	}
-	const u32 bottomExclusive = bottom + 1u;
-	return bottomExclusive < GX_GPU_VRAM_HEIGHT ? bottomExclusive : GX_GPU_VRAM_HEIGHT;
 }
 
 } // namespace bmsx

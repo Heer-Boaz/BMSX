@@ -41,6 +41,7 @@ function pushFillCommand(commandBuffer: GxGpuCommandBuffer): void {
 		0,
 		0,
 	);
+	commandBuffer.completeCommandExecution(commandBuffer.commandCount);
 	commandBuffer.sealCommandsForPresentation();
 }
 

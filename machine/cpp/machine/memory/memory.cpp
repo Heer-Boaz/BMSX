@@ -100,7 +100,20 @@ void Memory::mapIoRead(uint32_t addr, void* context, IoReadHandler handler) {
 }
 
 void Memory::mapIoWrite(uint32_t addr, void* context, IoWriteHandler handler) {
-	m_ioWriteHandlers[static_cast<size_t>((addr - IO_BASE) / IO_WORD_SIZE)] = { context, handler };
+	IoWriteBinding& binding = m_ioWriteHandlers[static_cast<size_t>((addr - IO_BASE) / IO_WORD_SIZE)];
+	binding.context = context;
+	binding.handler = handler;
+}
+
+void Memory::mapIoWriteReady(uint32_t addr, IoWriteReadyHandler handler) {
+	m_ioWriteHandlers[static_cast<size_t>((addr - IO_BASE) / IO_WORD_SIZE)].ready = handler;
+}
+
+bool Memory::mappedWriteReady(uint32_t addr) {
+	const int slot = ioAlignedSlot(addr);
+	if (slot < 0) return true;
+	IoWriteBinding& binding = m_ioWriteHandlers[static_cast<size_t>(slot)];
+	return binding.ready == nullptr || binding.ready(binding.context, addr);
 }
 
 void Memory::setProgramRom(const u8* data, size_t size, size_t textByteLength) {

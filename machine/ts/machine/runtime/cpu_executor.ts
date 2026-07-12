@@ -89,14 +89,28 @@ export class CpuExecutionState {
 				scheduler.endCpuSlice();
 			}
 			const consumed = sliceBudget - cpu.instructionBudgetRemaining;
-				if (consumed > 0) {
-					remaining -= consumed;
-					state.activeCpuUsedCycles += consumed;
-					tickCompleted = advanceRuntimeTime(runtime, consumed);
+			if (consumed > 0) {
+				remaining -= consumed;
+				state.activeCpuUsedCycles += consumed;
+				tickCompleted = advanceRuntimeTime(runtime, consumed);
+			}
+			if (tickCompleted) {
+				break;
+			}
+			if (cpu.isMemoryWriteBlocked()) {
+				const readyCycle = scheduler.nextDeadline();
+				const waitCycles = Math.min(readyCycle - scheduler.nowCycles, remaining);
+				remaining -= waitCycles;
+				state.activeCpuUsedCycles += waitCycles;
+				tickCompleted = advanceRuntimeTime(runtime, waitCycles);
+				if (scheduler.nowCycles >= readyCycle) {
+					cpu.resumeMemoryWrite();
 				}
 				if (tickCompleted) {
 					break;
 				}
+				continue;
+			}
 			if (cpu.isHaltedUntilIrq() || result === RunResult.Halted) {
 				break;
 			}

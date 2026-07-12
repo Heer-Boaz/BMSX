@@ -18,6 +18,7 @@
 
 #include <algorithm>
 #include <cstdint>
+#include <limits>
 #include <stdexcept>
 #include <vector>
 
@@ -103,6 +104,7 @@ void testLibretroSaveStateRoundTrip() {
 	memory.writeMappedU32LE(bmsx::IO_DMA_CTRL, bmsx::DMA_CTRL_START);
 	runtime.machine.dmaController.accrueCycles(1, runtime.machine.scheduler.currentNowCycles() + 1);
 	runtime.machine.dmaController.onService(runtime.machine.scheduler.currentNowCycles() + 1);
+	runtime.machine.gxGpu.onService(runtime.machine.scheduler.currentNowCycles() + 1);
 	require(memory.readIoU32(bmsx::IO_DMA_STATUS) == bmsx::DMA_STATUS_BUSY, "DMA should remain in flight at saveState");
 	require(memory.readIoU32(bmsx::IO_DMA_WRITTEN) == 8u, "DMA should save after the first GP0 packet slice");
 	const uint32_t savedGp0Latch = runtime.machine.gxGpu.captureState().gp0Word;
@@ -117,6 +119,7 @@ void testLibretroSaveStateRoundTrip() {
 	memory.writeMappedU32LE(bmsx::GEO_SCRATCH_BASE, 0xaabbccddu);
 	memory.writeMappedU32LE(bmsx::IO_GX_GPU_GP1, bmsx::GX_GPU_GP1_RESET << 24u);
 	memory.writeMappedU32LE(bmsx::IO_GX_GPU_GP0, (bmsx::GX_GPU_GP0_DRAW_MODE << 24u) | 0x456u);
+	runtime.machine.gxGpu.onService(std::numeric_limits<bmsx::i64>::max() >> 1u);
 	std::vector<bmsx::u8> mutatedVram(bmsx::GX_GPU_VRAM_BYTE_COUNT, 0xa5u);
 	runtime.machine.gxGpu.replaceVramSnapshotBytes(mutatedVram.data());
 	runtime.machine.irqController.reset();
@@ -243,6 +246,7 @@ void testLibretroStateEnvelopeSupportsMaximumGpuread() {
 	gpu.writeGp0(bmsx::GX_GPU_GP0_VRAM_TO_CPU_FIRST << 24u);
 	gpu.writeGp0(0u);
 	gpu.writeGp0(0u);
+	gpu.onService(platform.machineManager()->runtime().machine.scheduler.currentNowCycles() + 1);
 	gpu.presentReadyFrameOnVblankEdge();
 	require(platform.getStateSize() == stateSize, "libretro state envelope remains fixed with maximum READY GPUREAD payload");
 	std::vector<bmsx::u8> state(stateSize + 16u);

@@ -42,6 +42,7 @@ public:
 
 	void setTiming(int64_t cpuHz, int64_t bytesPerSec, int64_t nowCycles);
 	void setGxGpuReadReady(bool ready);
+	void setGxGpuWriteReady(bool ready);
 	void accrueCycles(int cycles, int64_t nowCycles);
 	void onService(int64_t nowCycles);
 	void startIo();
@@ -72,6 +73,7 @@ private:
 	uint32_t m_writtenValue = 0;
 	bool m_writtenDirty = false;
 	bool m_gxGpuReadReady = false;
+	bool m_gxGpuWriteReady = false;
 	Memory& m_memory;
 	IrqController& m_irq;
 	DeviceScheduler& m_scheduler;

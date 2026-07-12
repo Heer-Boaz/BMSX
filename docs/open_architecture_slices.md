@@ -195,7 +195,7 @@ Niet doen:
 
 ## GPUSTAT-interrupt en commandotiming
 
-Status: de interruptbron is hersteld; cycle-visible commandotiming blijft open.
+Status: gesloten voor de huidige commandoset.
 
 GP0(1Fh) zet niet alleen GPUSTAT bit 24 maar drijft nu ook de concrete
 `IRQ_GPU`-bron van de centrale IRQ-controller. Net als in DuckStation en
@@ -218,12 +218,31 @@ echte 1 MiB backend-VRAM in TS/C++ software, WebGL2, GLES2 en WebGPU. De
 gespiegelde raw-VRAM-vector bewijst pre-reset fill/upload, latch/revision en de
 harde-resettransitie; er is geen backend-uitzondering of CPU-VRAM-shadow.
 
+De GPU bezit nu daarnaast een centrale, integer commandotimingdatapath met twee
+GPU-ticks per CPU-cycle. GP0 packets komen in een vaste 16-word hardware-FIFO;
+de scheduler voltooit het actieve commando op zijn absolute device-deadline.
+GPUSTAT idle, command receive-ready, DMA-request en de VBlank execution frontier
+volgen diezelfde toestand in TS en C++. Readback wordt pas actief wanneer het
+C0-commando zijn uitvoering voltooit. Save-state bewaart FIFO, actieve deadline
+relatief aan schedulertijd en de geexecuteerde commandofrontier.
+
+RAM-naar-GP0 DMA laat een eenmaal geaccepteerd 64-byte DMA-blok atomair door en
+stalt het volgende blok op de GPU-ready-edge. CPU-writes gebruiken de echte
+MMIO write-ready-lijn: de CPU bewaart het nog niet uitgevoerde store-instruction
+en de scheduler springt eenmaal naar de eerstvolgende device-deadline. Er is
+geen polling, busy-wait, gedropt woord, BIOS/cart-wachtroutine of hostfacade.
+`bare_metal_cart` doorloopt daarmee alle frame-scan-scenes, inclusief idol en
+framebuffer echo, zonder producerwijzigingen.
+
 Nog te sluiten:
 
-- GPUSTAT bit 26 en de receive-readybits moeten uiteindelijk de echte
-  command/FIFO-uitvoeringstijd volgen. Voltooide packetassembly geldt nu nog
-  onmiddellijk als idle; voeg geen losse delay of cartzichtbare wachttruc toe
-  zonder een centrale GPU-commandotimingowner.
+- De langere `2025`-transitieregressie toont dat de eerste blauwe transition-
+  frame nu een frame later wordt gepubliceerd: frame 79 blijft zwart en frame
+  80 bevat de verwachte ink-kleur. Een hogere fictieve GPU-klok verandert die
+  framegrens niet en mag het probleem dus niet verstoppen. De volgende slice
+  moet de cart-frame, VBlank-IRQ en commandpublicatievolgorde bij deze overgang
+  sluiten zonder captureverwachtingen te verschuiven of producerpolling toe te
+  voegen.
 
 ## Exacte GX raster- en VRAM-pariteit
 

@@ -332,6 +332,7 @@ export type CpuRuntimeState = {
 	lastInstruction: number;
 	instructionBudgetRemaining: number;
 	haltedUntilIrq: boolean;
+	memoryWriteBlocked: boolean;
 	maskableInterruptsEnabled: boolean;
 	maskableInterruptsRestoreEnabled: boolean;
 	nonMaskableInterruptPending: boolean;
@@ -1480,6 +1481,8 @@ export class CPU {
 	public readonly stringPool: StringPool;
 	private indexKey: StringValue = null;
 	private haltedUntilIrq = false;
+	private memoryWriteBlocked = false;
+	private currentInstructionPc = 0;
 	private hardHalted = false;
 	private maskableInterruptsEnabled = true;
 	private maskableInterruptsRestoreEnabled = true;
@@ -2006,6 +2009,7 @@ export class CPU {
 		this.lastReturnValues.length = 0;
 		this.clearCallStack();
 		this.haltedUntilIrq = false;
+		this.memoryWriteBlocked = false;
 		this.hardHalted = false;
 		this.maskableInterruptsEnabled = true;
 		this.maskableInterruptsRestoreEnabled = true;
@@ -2068,6 +2072,19 @@ export class CPU {
 
 	public isHaltedUntilIrq(): boolean {
 		return this.haltedUntilIrq;
+	}
+
+	public isMemoryWriteBlocked(): boolean {
+		return this.memoryWriteBlocked;
+	}
+
+	public resumeMemoryWrite(): void {
+		this.memoryWriteBlocked = false;
+	}
+
+	private blockMappedWrite(frame: CallFrame): void {
+		frame.pc = this.currentInstructionPc;
+		this.memoryWriteBlocked = true;
 	}
 
 
@@ -2138,7 +2155,7 @@ export class CPU {
 		const baseCycles = BASE_CYCLES;
 		const decodedPages = this.decodedPages;
 		while (frames.length > targetDepth) {
-			if (this.hardHalted || this.haltedUntilIrq) {
+			if (this.hardHalted || this.haltedUntilIrq || this.memoryWriteBlocked) {
 				return RunResult.Halted;
 			}
 			if (this.yieldRequested) {
@@ -2168,6 +2185,7 @@ export class CPU {
 			const pageOffset = wordIndex & DECODED_PAGE_MASK;
 			const width = page.widths[pageOffset];
 			const op = page.ops[pageOffset];
+			this.currentInstructionPc = pc;
 			frame.pc = pc + (width * INSTRUCTION_BYTES);
 			this.lastPc = pc + ((width - 1) * INSTRUCTION_BYTES);
 			this.lastInstruction = page.words[pageOffset];
@@ -2217,7 +2235,7 @@ export class CPU {
 	}
 
 	public step(): void {
-		if (this.hardHalted || this.haltedUntilIrq) {
+		if (this.hardHalted || this.haltedUntilIrq || this.memoryWriteBlocked) {
 			return;
 		}
 		const frame = this.frames[this.frames.length - 1];
@@ -2232,6 +2250,7 @@ export class CPU {
 		const pageOffset = wordIndex & DECODED_PAGE_MASK;
 		const width = page.widths[pageOffset];
 		const op = page.ops[pageOffset];
+		this.currentInstructionPc = pc;
 		frame.pc = pc + (width * INSTRUCTION_BYTES);
 		this.lastPc = pc + ((width - 1) * INSTRUCTION_BYTES);
 		this.lastInstruction = page.words[pageOffset];
@@ -2754,6 +2773,10 @@ export class CPU {
 				case OpCode.STORE_MEM_D:
 				case OpCode.STORE_MEM_WORDS_D: {
 					const addr = (registers.get(b) as number) + (disp << 2);
+					if (op !== OpCode.LOAD_MEM_D && !this.memory.mappedWriteReady(addr)) {
+						this.blockMappedWrite(frame);
+						return;
+					}
 					if (op === OpCode.STORE_MEM_WORDS_D) {
 						this.charge(ceilDiv4(c));
 						this.writeMappedWordSequence(frame, addr, a, c);
@@ -2832,6 +2855,10 @@ export class CPU {
 				}
 				case OpCode.STORE_MEM: {
 					const addr = this.readRK(frame, rkB) as number;
+					if (!this.memory.mappedWriteReady(addr)) {
+						this.blockMappedWrite(frame);
+						return;
+					}
 					const value = registers.get(a);
 					if (c === MemoryAccessKind.Word) {
 						this.memory.writeMappedValue(addr, value);
@@ -2857,8 +2884,13 @@ export class CPU {
 					return;
 				}
 				case OpCode.STORE_MEM_WORDS: {
+					const addr = this.readRK(frame, rkB) as number;
+					if (!this.memory.mappedWriteReady(addr)) {
+						this.blockMappedWrite(frame);
+						return;
+					}
 					this.charge(ceilDiv4(c));
-					this.writeMappedWordSequence(frame, this.readRK(frame, rkB) as number, a, c);
+					this.writeMappedWordSequence(frame, addr, a, c);
 					return;
 				}
 		}
@@ -3612,6 +3644,7 @@ export class CPU {
 			lastInstruction: this.lastInstruction,
 			instructionBudgetRemaining: this.instructionBudgetRemaining,
 			haltedUntilIrq: this.haltedUntilIrq,
+			memoryWriteBlocked: this.memoryWriteBlocked,
 			maskableInterruptsEnabled: this.maskableInterruptsEnabled,
 			maskableInterruptsRestoreEnabled: this.maskableInterruptsRestoreEnabled,
 			nonMaskableInterruptPending: this.nonMaskableInterruptPending,
@@ -3781,6 +3814,7 @@ export class CPU {
 		this.lastInstruction = state.lastInstruction;
 		this.instructionBudgetRemaining = state.instructionBudgetRemaining;
 		this.haltedUntilIrq = state.haltedUntilIrq;
+		this.memoryWriteBlocked = state.memoryWriteBlocked;
 		this.maskableInterruptsEnabled = state.maskableInterruptsEnabled;
 		this.maskableInterruptsRestoreEnabled = state.maskableInterruptsRestoreEnabled;
 		this.nonMaskableInterruptPending = state.nonMaskableInterruptPending;

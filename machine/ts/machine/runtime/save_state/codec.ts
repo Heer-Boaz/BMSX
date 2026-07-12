@@ -22,6 +22,7 @@ import {
 } from '../../devices/geometry/contracts';
 import { GX_GPU_GP0_COMMAND_BUFFER_WORDS, type GxGpuSaveState, type GxGpuState } from '../../devices/gx/gpu';
 import { GX_GPU_COMMAND_CAPACITY, GX_GPU_COMMAND_WORD_CAPACITY, GX_GPU_READBACK_READY, GX_GPU_READBACK_SUBMITTED, GX_GPU_VRAM_BYTE_COUNT, type GxGpuCommandBufferState } from '../../devices/gx/gpu_command_buffer';
+import { GX_GPU_COMMAND_FIFO_STORAGE_WORD_CAPACITY } from '../../devices/gx/gpu_command_fifo';
 import type { GxGteState } from '../../devices/gx/gte';
 import { GX_GTE_CONTROL_REGISTER_COUNT, GX_GTE_DATA_REGISTER_COUNT } from '../../devices/gx/gte';
 import type { GeometryJobState } from '../../devices/geometry/job';
@@ -439,6 +440,7 @@ function decodeGeometryControllerState(value: unknown, label: string): GeometryC
 function encodeGxGpuCommandBufferState(state: GxGpuCommandBufferState): GxGpuCommandBufferState {
 	return {
 		commandCount: state.commandCount >>> 0,
+		executedCommandCount: state.executedCommandCount >>> 0,
 		presentCommandCount: state.presentCommandCount >>> 0,
 		wordCount: state.wordCount >>> 0,
 		commandKind: encodeVector(state.commandKind, (word) => word >>> 0),
@@ -467,7 +469,8 @@ function encodeGxGpuCommandBufferState(state: GxGpuCommandBufferState): GxGpuCom
 function decodeGxGpuCommandBufferState(value: unknown, label: string): GxGpuCommandBufferState {
 	const object = requireObject(value, label);
 	const commandCount = requireBoundedU32(requireObjectKey(object, 'commandCount', label, `${label}.commandCount`), `${label}.commandCount`, 0, GX_GPU_COMMAND_CAPACITY);
-	const presentCommandCount = requireBoundedU32(requireObjectKey(object, 'presentCommandCount', label, `${label}.presentCommandCount`), `${label}.presentCommandCount`, 0, commandCount);
+	const executedCommandCount = requireBoundedU32(requireObjectKey(object, 'executedCommandCount', label, `${label}.executedCommandCount`), `${label}.executedCommandCount`, 0, commandCount);
+	const presentCommandCount = requireBoundedU32(requireObjectKey(object, 'presentCommandCount', label, `${label}.presentCommandCount`), `${label}.presentCommandCount`, 0, executedCommandCount);
 	const wordCount = requireBoundedU32(requireObjectKey(object, 'wordCount', label, `${label}.wordCount`), `${label}.wordCount`, 0, GX_GPU_COMMAND_WORD_CAPACITY);
 	const readbackWidth = requireBoundedU32(requireObjectKey(object, 'readbackWidth', label, `${label}.readbackWidth`), `${label}.readbackWidth`, 0, 1024);
 	const readbackHeight = requireBoundedU32(requireObjectKey(object, 'readbackHeight', label, `${label}.readbackHeight`), `${label}.readbackHeight`, 0, 512);
@@ -478,6 +481,7 @@ function decodeGxGpuCommandBufferState(value: unknown, label: string): GxGpuComm
 	}
 	return {
 		commandCount,
+		executedCommandCount,
 		presentCommandCount,
 		wordCount,
 		commandKind: decodeU8FixedArray(requireObjectKey(object, 'commandKind', label, `${label}.commandKind`), `${label}.commandKind`, commandCount),
@@ -512,6 +516,10 @@ function encodeGxGpuState(state: GxGpuState): GxGpuState {
 		gp0CommandWordCount: state.gp0CommandWordCount >>> 0,
 		gp0CommandTargetWordCount: state.gp0CommandTargetWordCount >>> 0,
 		gp0CommandWords: encodeVector(state.gp0CommandWords, (word) => word >>> 0),
+		gp0FifoWordCount: state.gp0FifoWordCount >>> 0,
+		gp0FifoWords: encodeVector(state.gp0FifoWords, (word) => word >>> 0),
+		pendingCommandCycles: state.pendingCommandCycles,
+		pendingCommandTargetCount: state.pendingCommandTargetCount >>> 0,
 		gp0ImageLoadWordsRemaining: state.gp0ImageLoadWordsRemaining >>> 0,
 		gp0ImageLoadCommandWordStart: state.gp0ImageLoadCommandWordStart >>> 0,
 		gp0ImageLoadCommandWordCount: state.gp0ImageLoadCommandWordCount >>> 0,
@@ -547,6 +555,8 @@ function encodeGxGpuState(state: GxGpuState): GxGpuState {
 function decodeGxGpuState(value: unknown, label: string): GxGpuState {
 	const object = requireObject(value, label);
 	const gp0CommandWordCount = requireBoundedU32(requireObjectKey(object, 'gp0CommandWordCount', label, `${label}.gp0CommandWordCount`), `${label}.gp0CommandWordCount`, 0, GX_GPU_GP0_COMMAND_BUFFER_WORDS);
+	const gp0FifoWordCount = requireBoundedU32(requireObjectKey(object, 'gp0FifoWordCount', label, `${label}.gp0FifoWordCount`), `${label}.gp0FifoWordCount`, 0, GX_GPU_COMMAND_FIFO_STORAGE_WORD_CAPACITY);
+	const commandBuffer = decodeGxGpuCommandBufferState(requireObjectKey(object, 'commandBuffer', label, `${label}.commandBuffer`), `${label}.commandBuffer`);
 	return {
 		gp0Word: requireBoundedU32(requireObjectKey(object, 'gp0Word', label, `${label}.gp0Word`), `${label}.gp0Word`, 0, 0xffffffff),
 		gp1Word: requireBoundedU32(requireObjectKey(object, 'gp1Word', label, `${label}.gp1Word`), `${label}.gp1Word`, 0, 0xffffffff),
@@ -555,6 +565,10 @@ function decodeGxGpuState(value: unknown, label: string): GxGpuState {
 		gp0CommandWordCount,
 		gp0CommandTargetWordCount: requireBoundedU32(requireObjectKey(object, 'gp0CommandTargetWordCount', label, `${label}.gp0CommandTargetWordCount`), `${label}.gp0CommandTargetWordCount`, 0, GX_GPU_GP0_COMMAND_BUFFER_WORDS),
 		gp0CommandWords: decodeU32FixedArray(requireObjectKey(object, 'gp0CommandWords', label, `${label}.gp0CommandWords`), `${label}.gp0CommandWords`, gp0CommandWordCount),
+		gp0FifoWordCount,
+		gp0FifoWords: decodeU32FixedArray(requireObjectKey(object, 'gp0FifoWords', label, `${label}.gp0FifoWords`), `${label}.gp0FifoWords`, gp0FifoWordCount),
+		pendingCommandCycles: requireBoundedU32(requireObjectKey(object, 'pendingCommandCycles', label, `${label}.pendingCommandCycles`), `${label}.pendingCommandCycles`, 0, 0xffffffff),
+		pendingCommandTargetCount: requireBoundedU32(requireObjectKey(object, 'pendingCommandTargetCount', label, `${label}.pendingCommandTargetCount`), `${label}.pendingCommandTargetCount`, 0, commandBuffer.commandCount),
 		gp0ImageLoadWordsRemaining: requireBoundedU32(requireObjectKey(object, 'gp0ImageLoadWordsRemaining', label, `${label}.gp0ImageLoadWordsRemaining`), `${label}.gp0ImageLoadWordsRemaining`, 0, GX_GPU_COMMAND_WORD_CAPACITY),
 		gp0ImageLoadCommandWordStart: requireBoundedU32(requireObjectKey(object, 'gp0ImageLoadCommandWordStart', label, `${label}.gp0ImageLoadCommandWordStart`), `${label}.gp0ImageLoadCommandWordStart`, 0, GX_GPU_COMMAND_WORD_CAPACITY),
 		gp0ImageLoadCommandWordCount: requireBoundedU32(requireObjectKey(object, 'gp0ImageLoadCommandWordCount', label, `${label}.gp0ImageLoadCommandWordCount`), `${label}.gp0ImageLoadCommandWordCount`, 0, GX_GPU_COMMAND_WORD_CAPACITY),
@@ -583,7 +597,7 @@ function decodeGxGpuState(value: unknown, label: string): GxGpuState {
 		presentDisplayStartWord: requireBoundedU32(requireObjectKey(object, 'presentDisplayStartWord', label, `${label}.presentDisplayStartWord`), `${label}.presentDisplayStartWord`, 0, 0xffffffff),
 		presentHorizontalDisplayRangeWord: requireBoundedU32(requireObjectKey(object, 'presentHorizontalDisplayRangeWord', label, `${label}.presentHorizontalDisplayRangeWord`), `${label}.presentHorizontalDisplayRangeWord`, 0, 0xffffffff),
 		presentVerticalDisplayRangeWord: requireBoundedU32(requireObjectKey(object, 'presentVerticalDisplayRangeWord', label, `${label}.presentVerticalDisplayRangeWord`), `${label}.presentVerticalDisplayRangeWord`, 0, 0xffffffff),
-		commandBuffer: decodeGxGpuCommandBufferState(requireObjectKey(object, 'commandBuffer', label, `${label}.commandBuffer`), `${label}.commandBuffer`),
+		commandBuffer,
 	};
 }
 
@@ -1120,6 +1134,7 @@ function encodeCpuRuntimeState(state: CpuRuntimeState): CpuRuntimeState {
 		lastInstruction: state.lastInstruction,
 		instructionBudgetRemaining: state.instructionBudgetRemaining,
 		haltedUntilIrq: state.haltedUntilIrq,
+		memoryWriteBlocked: state.memoryWriteBlocked,
 		maskableInterruptsEnabled: state.maskableInterruptsEnabled,
 		maskableInterruptsRestoreEnabled: state.maskableInterruptsRestoreEnabled,
 		nonMaskableInterruptPending: state.nonMaskableInterruptPending,
@@ -1164,6 +1179,7 @@ function decodeCpuRuntimeState(value: unknown, label: string): CpuRuntimeState {
 		lastInstruction: requireObjectKey(object, 'lastInstruction', label, 'cpuState.lastInstruction') as number,
 		instructionBudgetRemaining: requireObjectKey(object, 'instructionBudgetRemaining', label, 'cpuState.instructionBudgetRemaining') as number,
 		haltedUntilIrq: requireObjectKey(object, 'haltedUntilIrq', label, 'cpuState.haltedUntilIrq') as boolean,
+		memoryWriteBlocked: requireObjectKey(object, 'memoryWriteBlocked', label, 'cpuState.memoryWriteBlocked') as boolean,
 		maskableInterruptsEnabled: requireObjectKey(object, 'maskableInterruptsEnabled', label, 'cpuState.maskableInterruptsEnabled') as boolean,
 		maskableInterruptsRestoreEnabled: requireObjectKey(object, 'maskableInterruptsRestoreEnabled', label, 'cpuState.maskableInterruptsRestoreEnabled') as boolean,
 		nonMaskableInterruptPending: requireObjectKey(object, 'nonMaskableInterruptPending', label, 'cpuState.nonMaskableInterruptPending') as boolean,

@@ -231,6 +231,7 @@ test('restored static closures reuse the static proto cache', () => {
 		lastInstruction: 0,
 		instructionBudgetRemaining: 0,
 		haltedUntilIrq: false,
+		memoryWriteBlocked: false,
 		maskableInterruptsEnabled: true,
 		maskableInterruptsRestoreEnabled: true,
 		nonMaskableInterruptPending: false,

@@ -5,6 +5,7 @@ import {
 	GX_GPU_DRAW_MODE_TEXTURE_RECTANGLE_Y_FLIP,
 	GX_GPU_VRAM_HEIGHT,
 	GX_GPU_VRAM_WIDTH,
+	gxGpuSigned11,
 	gxGpuTextureAttribute,
 } from '../../machine/devices/gx/gpu_command_buffer';
 
@@ -19,11 +20,6 @@ export const GX_GPU_TRIANGLE_ATTRIBUTE_RADIX_BITS = 4;
 export const GX_GPU_TRIANGLE_ATTRIBUTE_RADIX_DIGITS = 5;
 export const GX_GPU_TEXTURE_SOURCE_COMMAND_OVERLAP = 1;
 export const GX_GPU_TEXTURE_SOURCE_BATCH_OVERLAP = 2;
-
-export function gxGpuSigned11(value: number): number {
-	const raw = value & 0x7ff;
-	return (raw & 0x400) !== 0 ? raw - 0x800 : raw;
-}
 
 export function gxGpuTriangleRasterShift(coord0: number, coord1: number, coord2: number): number {
 	const minimum = coord0 < coord1 ? (coord0 < coord2 ? coord0 : coord2) : (coord1 < coord2 ? coord1 : coord2);
@@ -356,40 +352,4 @@ export function gxGpuDrawingAreaX(word: number): number {
 
 export function gxGpuDrawingAreaY(word: number): number {
 	return (word >>> 10) & 0x3ff;
-}
-
-export function gxGpuDrawingAreaLeft(topLeftWord: number, bottomRightWord: number): number {
-	const left = gxGpuDrawingAreaX(topLeftWord);
-	const right = gxGpuDrawingAreaX(bottomRightWord);
-	return left > right ? 0 : left;
-}
-
-export function gxGpuDrawingAreaTop(topLeftWord: number, bottomRightWord: number): number {
-	const top = gxGpuDrawingAreaY(topLeftWord);
-	const bottom = gxGpuDrawingAreaY(bottomRightWord);
-	if (top > bottom) {
-		return 0;
-	}
-	const bottomBound = bottom < GX_GPU_VRAM_HEIGHT ? bottom : GX_GPU_VRAM_HEIGHT - 1;
-	return top < bottomBound ? top : bottomBound;
-}
-
-export function gxGpuDrawingAreaRightExclusive(topLeftWord: number, bottomRightWord: number): number {
-	const left = gxGpuDrawingAreaX(topLeftWord);
-	const right = gxGpuDrawingAreaX(bottomRightWord);
-	if (left > right) {
-		return 0;
-	}
-	const rightExclusive = right + 1;
-	return rightExclusive < GX_GPU_VRAM_WIDTH ? rightExclusive : GX_GPU_VRAM_WIDTH;
-}
-
-export function gxGpuDrawingAreaBottomExclusive(topLeftWord: number, bottomRightWord: number): number {
-	const top = gxGpuDrawingAreaY(topLeftWord);
-	const bottom = gxGpuDrawingAreaY(bottomRightWord);
-	if (top > bottom) {
-		return 0;
-	}
-	const bottomExclusive = bottom + 1;
-	return bottomExclusive < GX_GPU_VRAM_HEIGHT ? bottomExclusive : GX_GPU_VRAM_HEIGHT;
 }

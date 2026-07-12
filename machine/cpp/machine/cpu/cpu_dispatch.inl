@@ -488,6 +488,10 @@ DISPATCH_LABEL(LOAD_MEM_D) {
 
 DISPATCH_LABEL(STORE_MEM_D) {
 	const uint32_t addr = static_cast<uint32_t>(asNumber(REG(b))) + (static_cast<uint32_t>(disp) << 2);
+	if (!m_memory.mappedWriteReady(addr)) {
+		blockMappedWrite(FRAME);
+		DISPATCH_BLOCKED();
+	}
 	const Value value = REG(a);
 	switch (static_cast<MemoryAccessKind>(c)) {
 		case MemoryAccessKind::Word: m_memory.writeMappedValue(addr, value); break;
@@ -502,6 +506,10 @@ DISPATCH_LABEL(STORE_MEM_D) {
 
 DISPATCH_LABEL(STORE_MEM_WORDS_D) {
 	const uint32_t addr = static_cast<uint32_t>(asNumber(REG(b))) + (static_cast<uint32_t>(disp) << 2);
+	if (!m_memory.mappedWriteReady(addr)) {
+		blockMappedWrite(FRAME);
+		DISPATCH_BLOCKED();
+	}
 	CYCLES_ADD(ceilDiv4(c));
 	writeMappedWordSequence(FRAME, addr, a, c);
 	DISPATCH_CONTINUE();
@@ -522,6 +530,10 @@ DISPATCH_LABEL(LOAD_MEM) {
 
 DISPATCH_LABEL(STORE_MEM) {
 	const uint32_t addr = static_cast<uint32_t>(asNumber(readRK(FRAME, rkB)));
+	if (!m_memory.mappedWriteReady(addr)) {
+		blockMappedWrite(FRAME);
+		DISPATCH_BLOCKED();
+	}
 	const Value value = REG(a);
 	switch (static_cast<MemoryAccessKind>(c)) {
 		case MemoryAccessKind::Word: m_memory.writeMappedValue(addr, value); break;
@@ -536,6 +548,10 @@ DISPATCH_LABEL(STORE_MEM) {
 
 DISPATCH_LABEL(STORE_MEM_WORDS) {
 	const uint32_t addr = static_cast<uint32_t>(asNumber(readRK(FRAME, rkB)));
+	if (!m_memory.mappedWriteReady(addr)) {
+		blockMappedWrite(FRAME);
+		DISPATCH_BLOCKED();
+	}
 	CYCLES_ADD(ceilDiv4(c));
 	writeMappedWordSequence(FRAME, addr, a, c);
 	DISPATCH_CONTINUE();

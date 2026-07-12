@@ -332,6 +332,7 @@ add_library(bmsx_core STATIC
 	machine/memory/memory.cpp
 	machine/memory/map.cpp
 	machine/devices/gx/gpu.cpp
+	machine/devices/gx/gpu_command_timing.cpp
 	machine/devices/gx/gte.cpp
 	machine/common/hash.cpp
 	machine/cpu/string_pool.cpp

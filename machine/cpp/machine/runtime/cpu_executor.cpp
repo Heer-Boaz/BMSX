@@ -112,6 +112,20 @@ RunResult CpuExecutionState::runWithBudget(Runtime& runtime, FrameState& frameSt
 		if (tickCompleted) {
 			break;
 		}
+		if (cpu.isMemoryWriteBlocked()) {
+			const i64 readyCycle = scheduler.nextDeadline();
+			const int waitCycles = static_cast<int>(std::min<i64>(readyCycle - scheduler.nowCycles(), remaining));
+			remaining -= waitCycles;
+			frameState.activeCpuUsedCycles += waitCycles;
+			tickCompleted = advanceRuntimeTime(runtime, waitCycles);
+			if (scheduler.nowCycles() >= readyCycle) {
+				cpu.resumeMemoryWrite();
+			}
+			if (tickCompleted) {
+				break;
+			}
+			continue;
+		}
 		if (cpu.isHaltedUntilIrq() || result == RunResult::Halted) {
 			break;
 		}

@@ -34,6 +34,38 @@ export const GX_GPU_READBACK_PENDING = 1;
 export const GX_GPU_READBACK_SUBMITTED = 2;
 export const GX_GPU_READBACK_READY = 3;
 
+export function gxGpuSigned11(value: number): number {
+	const raw = value & 0x7ff;
+	return (raw & 0x400) !== 0 ? raw - 0x800 : raw;
+}
+
+export function gxGpuDrawingAreaLeft(topLeftWord: number, bottomRightWord: number): number {
+	const left = topLeftWord & 0x3ff;
+	return left <= (bottomRightWord & 0x3ff) ? left : 0;
+}
+
+export function gxGpuDrawingAreaTop(topLeftWord: number, bottomRightWord: number): number {
+	const top = (topLeftWord >>> 10) & 0x3ff;
+	const bottom = (bottomRightWord >>> 10) & 0x3ff;
+	if (top > bottom) return 0;
+	const bottomBound = bottom < GX_GPU_VRAM_HEIGHT ? bottom : GX_GPU_VRAM_HEIGHT - 1;
+	return top < bottomBound ? top : bottomBound;
+}
+
+export function gxGpuDrawingAreaRightExclusive(topLeftWord: number, bottomRightWord: number): number {
+	const left = topLeftWord & 0x3ff;
+	const right = bottomRightWord & 0x3ff;
+	if (left > right) return 0;
+	return right < GX_GPU_VRAM_WIDTH - 1 ? right + 1 : GX_GPU_VRAM_WIDTH;
+}
+
+export function gxGpuDrawingAreaBottomExclusive(topLeftWord: number, bottomRightWord: number): number {
+	const top = (topLeftWord >>> 10) & 0x3ff;
+	const bottom = (bottomRightWord >>> 10) & 0x3ff;
+	if (top > bottom) return 0;
+	return bottom < GX_GPU_VRAM_HEIGHT - 1 ? bottom + 1 : GX_GPU_VRAM_HEIGHT;
+}
+
 export function gxGpuSkipDrawingToActiveField(statusWord: number): boolean {
 	const mask = (1 << 19) | (1 << 22) | (1 << 10);
 	const active = (1 << 19) | (1 << 22);
@@ -68,6 +100,7 @@ export function gxGpuPolygonDrawModeWord(drawModeWord: number, textureAttribute:
 
 export type GxGpuCommandBufferState = {
 	commandCount: number;
+	executedCommandCount: number;
 	presentCommandCount: number;
 	wordCount: number;
 	commandKind: number[];
@@ -96,6 +129,7 @@ export type GxGpuCommandBufferView = {
 	readonly serial: number;
 	readonly vramClearSerial: number;
 	readonly commandCount: number;
+	readonly executedCommandCount: number;
 	readonly presentCommandCount: number;
 	readonly wordCount: number;
 	readonly commandKind: ArrayLike<number>;
@@ -230,6 +264,7 @@ export class GxGpuCommandBuffer implements GxGpuCommandBufferView {
 
 	private clearCommandState(): void {
 		this.commandCount = 0;
+		this.executedCommandCount = 0;
 		this.presentCommandCount = 0;
 		this.wordCount = 0;
 		this.readback.reset();
@@ -238,6 +273,7 @@ export class GxGpuCommandBuffer implements GxGpuCommandBufferView {
 	public serial = 0;
 	public vramClearSerial = 0;
 	public commandCount = 0;
+	public executedCommandCount = 0;
 	public presentCommandCount = 0;
 	public wordCount = 0;
 	public readonly commandKind = new Uint8Array(GX_GPU_COMMAND_CAPACITY);
@@ -270,6 +306,9 @@ export class GxGpuCommandBuffer implements GxGpuCommandBufferView {
 		if (this.readback.phase === GX_GPU_READBACK_PENDING && this.readback.fenceCommandCount !== 0) {
 			this.commandCount = this.readback.fenceCommandCount - 1;
 			this.wordCount = this.commandWordStart[this.commandCount];
+			if (this.executedCommandCount > this.commandCount) {
+				this.executedCommandCount = this.commandCount;
+			}
 			if (this.presentCommandCount > this.commandCount) {
 				this.presentCommandCount = this.commandCount;
 			}
@@ -285,6 +324,7 @@ export class GxGpuCommandBuffer implements GxGpuCommandBufferView {
 		const wordCount = this.wordCount;
 		return {
 			commandCount,
+			executedCommandCount: this.executedCommandCount,
 			presentCommandCount: this.presentCommandCount,
 			wordCount,
 			commandKind: Array.from(this.commandKind.subarray(0, commandCount)),
@@ -315,6 +355,7 @@ export class GxGpuCommandBuffer implements GxGpuCommandBufferView {
 	public restoreState(state: GxGpuCommandBufferState): void {
 		this.publishRevision(false);
 		this.commandCount = state.commandCount;
+		this.executedCommandCount = state.executedCommandCount;
 		this.presentCommandCount = state.presentCommandCount;
 		this.wordCount = state.wordCount;
 		this.commandKind.set(state.commandKind, 0);
@@ -369,6 +410,7 @@ export class GxGpuCommandBuffer implements GxGpuCommandBufferView {
 		}
 		this.words.copyWithin(0, retiredWords, oldWordCount);
 		this.commandCount = remainingCommands;
+		this.executedCommandCount -= retiredCommands;
 		this.presentCommandCount = 0;
 		this.wordCount = remainingWords;
 		this.readback.fenceCommandCount = retiredCommands < this.readback.fenceCommandCount
@@ -382,15 +424,7 @@ export class GxGpuCommandBuffer implements GxGpuCommandBufferView {
 		if (this.readback.phase === GX_GPU_READBACK_PENDING) {
 			this.presentCommandCount = this.readback.fenceCommandCount;
 		} else if (this.readback.phase === GX_GPU_READBACK_IDLE) {
-			for (let commandIndex = 0; commandIndex < this.commandCount; commandIndex += 1) {
-				if (this.commandKind[commandIndex] !== GX_GPU_COMMAND_READ_VRAM_TO_CPU) {
-					continue;
-				}
-				this.activateReadback(commandIndex);
-				this.presentCommandCount = this.readback.fenceCommandCount;
-				return;
-			}
-			this.presentCommandCount = this.commandCount;
+			this.presentCommandCount = this.executedCommandCount;
 		} else {
 			this.presentCommandCount = 0;
 		}
@@ -413,6 +447,14 @@ export class GxGpuCommandBuffer implements GxGpuCommandBufferView {
 			this.wordCount += 1;
 		}
 		return wordStart;
+	}
+
+	public completeCommandExecution(commandCount: number): void {
+		this.executedCommandCount = commandCount;
+		const commandIndex = commandCount - 1;
+		if (this.commandKind[commandIndex] === GX_GPU_COMMAND_READ_VRAM_TO_CPU) {
+			this.activateReadback(commandIndex);
+		}
 	}
 
 	public pushCommand(
@@ -441,8 +483,5 @@ export class GxGpuCommandBuffer implements GxGpuCommandBufferView {
 		this.commandMaskBitModeWord[commandIndex] = maskBitModeWord >>> 0;
 		this.commandInterlacedRenderWord[commandIndex] = interlacedRenderWord;
 		this.commandCount = commandIndex + 1;
-		if (kind === GX_GPU_COMMAND_READ_VRAM_TO_CPU && this.readback.phase === GX_GPU_READBACK_IDLE) {
-			this.activateReadback(commandIndex);
-		}
 	}
 }

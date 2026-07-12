@@ -509,6 +509,7 @@ GeometryControllerState decodeGeometryControllerState(const BinValue& value, con
 BinValue encodeGxGpuCommandBufferState(const GxGpuCommandBufferState& state) {
 	BinObject object;
 	object["commandCount"] = static_cast<i64>(state.commandCount);
+	object["executedCommandCount"] = static_cast<i64>(state.executedCommandCount);
 	object["presentCommandCount"] = static_cast<i64>(state.presentCommandCount);
 	object["wordCount"] = static_cast<i64>(state.wordCount);
 	object["commandKind"] = encodeVector(state.commandKind, encodeScalar<i64, u8>);
@@ -538,7 +539,8 @@ GxGpuCommandBufferState decodeGxGpuCommandBufferState(const BinValue& value, con
 	const BinObject& object = requireObject(value, label);
 	GxGpuCommandBufferState state;
 	state.commandCount = requireBoundedU32(requireField(object, "commandCount", label), "machine.gxGpu.commandBuffer.commandCount", 0u, static_cast<u32>(GX_GPU_COMMAND_CAPACITY));
-	state.presentCommandCount = requireBoundedU32(requireField(object, "presentCommandCount", label), "machine.gxGpu.commandBuffer.presentCommandCount", 0u, static_cast<u32>(state.commandCount));
+	state.executedCommandCount = requireBoundedU32(requireField(object, "executedCommandCount", label), "machine.gxGpu.commandBuffer.executedCommandCount", 0u, static_cast<u32>(state.commandCount));
+	state.presentCommandCount = requireBoundedU32(requireField(object, "presentCommandCount", label), "machine.gxGpu.commandBuffer.presentCommandCount", 0u, static_cast<u32>(state.executedCommandCount));
 	state.wordCount = requireBoundedU32(requireField(object, "wordCount", label), "machine.gxGpu.commandBuffer.wordCount", 0u, static_cast<u32>(GX_GPU_COMMAND_WORD_CAPACITY));
 	state.commandKind = decodeU8VectorWithLength(requireField(object, "commandKind", label), "machine.gxGpu.commandBuffer.commandKind", state.commandCount);
 	state.commandOpcode = decodeU8VectorWithLength(requireField(object, "commandOpcode", label), "machine.gxGpu.commandBuffer.commandOpcode", state.commandCount);
@@ -569,6 +571,11 @@ GxGpuCommandBufferState decodeGxGpuCommandBufferState(const BinValue& value, con
 
 BinValue encodeGxGpuState(const GxGpuState& state) {
 	BinObject object;
+	BinArray gp0FifoWords;
+	gp0FifoWords.reserve(state.gp0FifoWordCount);
+	for (size_t index = 0u; index < state.gp0FifoWordCount; index += 1u) {
+		gp0FifoWords.emplace_back(static_cast<i64>(state.gp0FifoWords[index]));
+	}
 	object["gp0Word"] = static_cast<i64>(state.gp0Word);
 	object["gp1Word"] = static_cast<i64>(state.gp1Word);
 	object["displayModeWord"] = static_cast<i64>(state.displayModeWord);
@@ -576,6 +583,10 @@ BinValue encodeGxGpuState(const GxGpuState& state) {
 	object["gp0CommandWordCount"] = static_cast<i64>(state.gp0CommandWordCount);
 	object["gp0CommandTargetWordCount"] = static_cast<i64>(state.gp0CommandTargetWordCount);
 	object["gp0CommandWords"] = encodeVector(state.gp0CommandWords, encodeScalar<i64, u32>);
+	object["gp0FifoWordCount"] = static_cast<i64>(state.gp0FifoWordCount);
+	object["gp0FifoWords"] = BinValue(std::move(gp0FifoWords));
+	object["pendingCommandCycles"] = state.pendingCommandCycles;
+	object["pendingCommandTargetCount"] = static_cast<i64>(state.pendingCommandTargetCount);
 	object["gp0ImageLoadWordsRemaining"] = static_cast<i64>(state.gp0ImageLoadWordsRemaining);
 	object["gp0ImageLoadCommandWordStart"] = static_cast<i64>(state.gp0ImageLoadCommandWordStart);
 	object["gp0ImageLoadCommandWordCount"] = static_cast<i64>(state.gp0ImageLoadCommandWordCount);
@@ -611,6 +622,7 @@ BinValue encodeGxGpuState(const GxGpuState& state) {
 GxGpuState decodeGxGpuState(const BinValue& value, const char* label) {
 	const BinObject& object = requireObject(value, label);
 	GxGpuState state;
+	state.commandBuffer = decodeGxGpuCommandBufferState(requireField(object, "commandBuffer", label), "machine.gxGpu.commandBuffer");
 	state.gp0Word = requireU32(requireField(object, "gp0Word", label), "machine.gxGpu.gp0Word");
 	state.gp1Word = requireU32(requireField(object, "gp1Word", label), "machine.gxGpu.gp1Word");
 	state.displayModeWord = requireU32(requireField(object, "displayModeWord", label), "machine.gxGpu.displayModeWord");
@@ -618,6 +630,16 @@ GxGpuState decodeGxGpuState(const BinValue& value, const char* label) {
 	state.gp0CommandWordCount = requireBoundedU32(requireField(object, "gp0CommandWordCount", label), "machine.gxGpu.gp0CommandWordCount", 0u, GX_GPU_GP0_COMMAND_BUFFER_WORDS);
 	state.gp0CommandTargetWordCount = requireBoundedU32(requireField(object, "gp0CommandTargetWordCount", label), "machine.gxGpu.gp0CommandTargetWordCount", 0u, GX_GPU_GP0_COMMAND_BUFFER_WORDS);
 	state.gp0CommandWords = decodeU32VectorWithLength(requireField(object, "gp0CommandWords", label), "machine.gxGpu.gp0CommandWords", state.gp0CommandWordCount);
+	state.gp0FifoWordCount = requireBoundedU32(requireField(object, "gp0FifoWordCount", label), "machine.gxGpu.gp0FifoWordCount", 0u, GX_GPU_COMMAND_FIFO_STORAGE_WORD_CAPACITY);
+	const BinArray& gp0FifoWords = requireArray(requireField(object, "gp0FifoWords", label), "machine.gxGpu.gp0FifoWords");
+	if (gp0FifoWords.size() != state.gp0FifoWordCount) {
+		throw BMSX_RUNTIME_ERROR("machine.gxGpu.gp0FifoWords length does not match gp0FifoWordCount.");
+	}
+	for (size_t index = 0u; index < state.gp0FifoWordCount; index += 1u) {
+		state.gp0FifoWords[index] = requireU32(gp0FifoWords[index], "machine.gxGpu.gp0FifoWords[]");
+	}
+	state.pendingCommandCycles = requireBoundedU32(requireField(object, "pendingCommandCycles", label), "machine.gxGpu.pendingCommandCycles", 0u, 0xffffffffu);
+	state.pendingCommandTargetCount = requireBoundedU32(requireField(object, "pendingCommandTargetCount", label), "machine.gxGpu.pendingCommandTargetCount", 0u, static_cast<u32>(state.commandBuffer.commandCount));
 	state.gp0ImageLoadWordsRemaining = requireBoundedU32(requireField(object, "gp0ImageLoadWordsRemaining", label), "machine.gxGpu.gp0ImageLoadWordsRemaining", 0u, GX_GPU_COMMAND_WORD_CAPACITY);
 	state.gp0ImageLoadCommandWordStart = requireBoundedU32(requireField(object, "gp0ImageLoadCommandWordStart", label), "machine.gxGpu.gp0ImageLoadCommandWordStart", 0u, GX_GPU_COMMAND_WORD_CAPACITY);
 	state.gp0ImageLoadCommandWordCount = requireBoundedU32(requireField(object, "gp0ImageLoadCommandWordCount", label), "machine.gxGpu.gp0ImageLoadCommandWordCount", 0u, GX_GPU_COMMAND_WORD_CAPACITY);
@@ -646,7 +668,6 @@ GxGpuState decodeGxGpuState(const BinValue& value, const char* label) {
 	state.presentDisplayStartWord = requireU32(requireField(object, "presentDisplayStartWord", label), "machine.gxGpu.presentDisplayStartWord");
 	state.presentHorizontalDisplayRangeWord = requireU32(requireField(object, "presentHorizontalDisplayRangeWord", label), "machine.gxGpu.presentHorizontalDisplayRangeWord");
 	state.presentVerticalDisplayRangeWord = requireU32(requireField(object, "presentVerticalDisplayRangeWord", label), "machine.gxGpu.presentVerticalDisplayRangeWord");
-	state.commandBuffer = decodeGxGpuCommandBufferState(requireField(object, "commandBuffer", label), "machine.gxGpu.commandBuffer");
 	return state;
 }
 
@@ -1225,6 +1246,7 @@ BinValue encodeCpuRuntimeState(const CpuRuntimeState& state) {
 	object["lastInstruction"] = static_cast<i64>(state.lastInstruction);
 	object["instructionBudgetRemaining"] = static_cast<i64>(state.instructionBudgetRemaining);
 	object["haltedUntilIrq"] = state.haltedUntilIrq;
+	object["memoryWriteBlocked"] = state.memoryWriteBlocked;
 	object["maskableInterruptsEnabled"] = state.maskableInterruptsEnabled;
 	object["maskableInterruptsRestoreEnabled"] = state.maskableInterruptsRestoreEnabled;
 	object["nonMaskableInterruptPending"] = state.nonMaskableInterruptPending;
@@ -1263,6 +1285,7 @@ CpuRuntimeState decodeCpuRuntimeState(const BinValue& value, const char* label) 
 	state.lastInstruction = requireU32(requireField(object, "lastInstruction", label), "cpuState.lastInstruction");
 	state.instructionBudgetRemaining = requireI32(requireField(object, "instructionBudgetRemaining", label), "cpuState.instructionBudgetRemaining");
 	state.haltedUntilIrq = requireBool(requireField(object, "haltedUntilIrq", label), "cpuState.haltedUntilIrq");
+	state.memoryWriteBlocked = requireBool(requireField(object, "memoryWriteBlocked", label), "cpuState.memoryWriteBlocked");
 	state.maskableInterruptsEnabled = requireBool(requireField(object, "maskableInterruptsEnabled", label), "cpuState.maskableInterruptsEnabled");
 	state.maskableInterruptsRestoreEnabled = requireBool(requireField(object, "maskableInterruptsRestoreEnabled", label), "cpuState.maskableInterruptsRestoreEnabled");
 	state.nonMaskableInterruptPending = requireBool(requireField(object, "nonMaskableInterruptPending", label), "cpuState.nonMaskableInterruptPending");

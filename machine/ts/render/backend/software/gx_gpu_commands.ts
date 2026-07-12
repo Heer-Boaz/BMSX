@@ -10,6 +10,7 @@ import {
 	gxGpuTransferHeight,
 	gxGpuTransferWidth,
 	type GxGpuCommandBufferView,
+	gxGpuSigned11,
 } from '../../../machine/devices/gx/gpu_command_buffer';
 import {
 	gxGpuCommandDrawsTexture,
@@ -29,7 +30,6 @@ import {
 	gxGpuTransferY,
 	gxGpuTextureU,
 	gxGpuTextureV,
-	gxGpuSigned11,
 	gxGpuVertexY,
 } from '../gx_gpu_render_rules';
 import {

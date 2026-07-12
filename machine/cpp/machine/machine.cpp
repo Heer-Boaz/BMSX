@@ -62,6 +62,9 @@ void Machine::runDeviceService(uint8_t deviceKind) {
 		case DEVICE_SERVICE_APU:
 			audioController.onService(nowCycles);
 			return;
+		case DEVICE_SERVICE_GPU:
+			gxGpu.onService(nowCycles);
+			return;
 		default:
 			throw BMSX_RUNTIME_ERROR("unknown device service kind " + std::to_string(deviceKind) + ".");
 	}

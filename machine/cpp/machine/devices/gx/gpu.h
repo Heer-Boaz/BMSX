@@ -3,6 +3,7 @@
 #include "common/primitives.h"
 #include "machine/devices/gx/device_output.h"
 #include "machine/devices/gx/gpu_command_buffer.h"
+#include "machine/devices/gx/gpu_command_fifo.h"
 #include "machine/devices/gx/gpu_display.h"
 
 #include <array>
@@ -120,6 +121,10 @@ struct GxGpuState {
 	u32 gp0CommandWordCount = 0;
 	u32 gp0CommandTargetWordCount = 0;
 	std::vector<u32> gp0CommandWords;
+	size_t gp0FifoWordCount = 0u;
+	std::array<u32, GX_GPU_COMMAND_FIFO_STORAGE_WORD_CAPACITY> gp0FifoWords{};
+	i64 pendingCommandCycles = 0;
+	size_t pendingCommandTargetCount = 0u;
 	u32 gp0ImageLoadWordsRemaining = 0;
 	size_t gp0ImageLoadCommandWordStart = 0;
 	u32 gp0ImageLoadCommandWordCount = 0;
@@ -171,6 +176,7 @@ public:
 	void writeGp0(u32 word);
 	u32 readStatus();
 	u32 writeGp1(u32 word);
+	void onService(i64 nowCycles);
 	u32 readDisplayModeWord() const;
 	void writeDisplayModeWord(u32 word);
 	void setScanoutTiming(bool vblankActive, int cyclesIntoFrame, int cyclesPerFrame, int totalScanlines);
@@ -194,10 +200,14 @@ private:
 	Memory& m_memory;
 	IrqController& m_irq;
 	DeviceScheduler& m_scheduler;
+	DmaController& m_dmaController;
 	u32 m_gp0Word = 0;
 	u32 m_gp1Word = 0;
 	u32 m_displayModeWord = GX_GPU_RESET_DISPLAY_MODE_WORD;
 	u32 m_statusWord = GX_GPU_STATUS_RESET_WORD;
+	GxGpuCommandFifo m_gp0Fifo;
+	i64 m_pendingCommandCompletionCycle = 0;
+	size_t m_pendingCommandTargetCount = 0u;
 	GxGpuCommandBuffer m_commandBuffer;
 	mutable GxGpuDeviceOutput m_deviceOutput{&m_commandBuffer, &m_commandBuffer.readback};
 	std::array<u32, GX_GPU_GP0_COMMAND_BUFFER_WORDS> m_gp0CommandWords{};
@@ -242,21 +252,24 @@ private:
 	void resetGpuRegisters();
 	void writeDisplayDisableWord(u32 word);
 	void clearGp0CommandState();
-	void clearGp0Fifo();
+	void clearGp0Fifo(i64 nowCycles);
 	void clearPolylineState();
 	void clearImageLoadState();
-	void finishImageLoadToVram();
-	void flushImageLoadToVram();
-	void consumeImageLoadWord();
-	void consumeGp0PolylinePayloadWord();
+	void finishImageLoadToVram(i64 commandStartCycle);
+	void flushImageLoadToVram(i64 commandStartCycle);
+	void consumeImageLoadWord(u32 word, i64 commandStartCycle);
+	void consumeGp0PolylinePayloadWord(u32 word, i64 commandStartCycle);
 	void beginPolylinePayload(u32 opcode, u32 commandWordCount);
-	void executeGp0Command();
+	void consumeGp0Fifo(i64 commandStartCycle);
+	void synchronizeCommandExecution(i64 nowCycles);
+	void beginCommandCompletion(i64 commandTicks, size_t targetCommandCount, i64 commandStartCycle);
+	void executeGp0Command(i64 commandStartCycle);
 	u32 gp0CommandWordCountForOpcode(u32 opcode) const;
 	u32 gp0PolygonWordCount(u32 opcode) const;
 	u32 gp0LineWordCount(u32 opcode) const;
 	u32 gp0RectangleWordCount(u32 opcode) const;
-	void emitFixedGp0Command(u8 kind, u32 opcode, u32 commandWordCount);
-	void pushGpuCommand(u8 kind, u32 opcode, size_t wordStart, u32 commandWordCount);
+	void emitFixedGp0Command(u8 kind, u32 opcode, u32 commandWordCount, i64 commandStartCycle);
+	void pushGpuCommand(u8 kind, u32 opcode, size_t wordStart, u32 commandWordCount, i64 commandStartCycle);
 	void beginImageLoadToVram(u32 opcode, u32 commandWordCount);
 	void writeDrawModeWord(u32 word);
 	void updateDrawModeStatusBits();
@@ -271,8 +284,10 @@ private:
 	void updateScanoutStatusBits();
 	void updateDisplayModeStatusBits();
 	void writeStatusIo();
+	bool gp0WriteReady();
 	static u64 readGp0Thunk(void* context, u32 addr);
 	static void writeGp0Thunk(void* context, u32 addr, u64 value);
+	static bool gp0WriteReadyThunk(void* context, u32 addr);
 	static u64 readStatusThunk(void* context, u32 addr);
 	static void writeGp1Thunk(void* context, u32 addr, u64 value);
 };
