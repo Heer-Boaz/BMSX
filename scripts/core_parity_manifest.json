@@ -1775,6 +1775,8 @@
 				"writeRawVramUploadPixel",
 				"writeCpuToVramUploadRow",
 				"uploadCpuToVram",
+				"copyVramToVramArea",
+				"copyVramToVram",
 				"applyGxGpuDrawingAreaScissor",
 				"resetGxGpuVramCopyRect",
 				"includeGxGpuVramCopyVertex",
@@ -1808,10 +1810,12 @@
 				"syncGxGpuSampleTextureLogicalArea",
 				"resetGxGpuVramCopyRect",
 				"includeGxGpuVramCopyVertex",
+				"copyVramToVramArea",
+				"copyVramToVram",
 				"syncGxGpuVertexBoundsToSampleTexture",
 				"syncGxGpuTexturedSourceTexture"
 			],
-			"reason": "webgpu_gx_gpu_dirty_coverage_helpers_must_not_allocate_js_containers_or_closures"
+			"reason": "webgpu_gx_gpu_dirty_and_transfer_hot_paths_must_not_allocate_js_containers_or_closures"
 		},
 		{
 			"file": "machine/cpp/render/backend/gles2/gx_gpu.cpp",
@@ -1831,6 +1835,8 @@
 				"writeRawVramUploadPixel",
 				"writeCpuToVramUploadRow",
 				"uploadCpuToVram",
+				"copyVramToVramArea",
+				"copyVramToVram",
 				"applyGxGpuDrawingAreaScissor",
 				"resetGxGpuVramCopyRect",
 				"includeGxGpuVramCopyVertex",

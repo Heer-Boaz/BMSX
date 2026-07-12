@@ -1077,21 +1077,28 @@ void copyVramToVramArea(
 	u32 height,
 	u32 maskBitModeWord) {
 	size_t transferVertexFloatCount = 0u;
-	for (u32 row = 0u; row < height; row += 1u) {
-		const u32 rowSourceY = (sourceY + row) & (static_cast<u32>(kGxGpuVramHeight) - 1u);
-		const u32 rowTargetY = (targetY + row) & (static_cast<u32>(kGxGpuVramHeight) - 1u);
-		u32 rowSourceX = sourceX;
-		u32 rowTargetX = targetX;
+	u32 runSourceY = sourceY & (static_cast<u32>(kGxGpuVramHeight) - 1u);
+	u32 runTargetY = targetY & (static_cast<u32>(kGxGpuVramHeight) - 1u);
+	u32 remainingHeight = height;
+	while (remainingHeight != 0u) {
+		const u32 sourceRunHeight = gxGpuVramWrappedHeight(runSourceY, remainingHeight);
+		const u32 targetRunHeight = gxGpuVramWrappedHeight(runTargetY, remainingHeight);
+		const u32 runHeight = sourceRunHeight < targetRunHeight ? sourceRunHeight : targetRunHeight;
+		u32 runSourceX = sourceX;
+		u32 runTargetX = targetX;
 		u32 remainingWidth = width;
 		while (remainingWidth != 0u) {
-			const u32 sourceRunWidth = gxGpuVramWrappedWidth(rowSourceX, remainingWidth);
-			const u32 targetRunWidth = gxGpuVramWrappedWidth(rowTargetX, remainingWidth);
+			const u32 sourceRunWidth = gxGpuVramWrappedWidth(runSourceX, remainingWidth);
+			const u32 targetRunWidth = gxGpuVramWrappedWidth(runTargetX, remainingWidth);
 			const u32 runWidth = sourceRunWidth < targetRunWidth ? sourceRunWidth : targetRunWidth;
-			transferVertexFloatCount = appendTransferQuad(transferVertexFloatCount, rowTargetX, rowTargetY, runWidth, 1u, rowSourceX, rowSourceY);
-			rowSourceX = (rowSourceX + runWidth) & (static_cast<u32>(kGxGpuVramWidth) - 1u);
-			rowTargetX = (rowTargetX + runWidth) & (static_cast<u32>(kGxGpuVramWidth) - 1u);
+			transferVertexFloatCount = appendTransferQuad(transferVertexFloatCount, runTargetX, runTargetY, runWidth, runHeight, runSourceX, runSourceY);
+			runSourceX = (runSourceX + runWidth) & (static_cast<u32>(kGxGpuVramWidth) - 1u);
+			runTargetX = (runTargetX + runWidth) & (static_cast<u32>(kGxGpuVramWidth) - 1u);
 			remainingWidth -= runWidth;
 		}
+		runSourceY = (runSourceY + runHeight) & (static_cast<u32>(kGxGpuVramHeight) - 1u);
+		runTargetY = (runTargetY + runHeight) & (static_cast<u32>(kGxGpuVramHeight) - 1u);
+		remainingHeight -= runHeight;
 	}
 	syncGxGpuSampleTextureLogicalArea(sourceX, sourceY, width, height);
 	if (gxGpuMaskBitCheckBeforeDraw(maskBitModeWord)) {

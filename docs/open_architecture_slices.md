@@ -367,6 +367,27 @@ niet meer vóór oudere draws op de queue komen en kan een volgende masked uploa
 de transfertexture niet overschrijven voordat de vorige transferdraw haar heeft
 gelezen.
 
+VRAM-to-VRAM-transfer bouwt in GLES2, WebGL2 en WebGPU ook niet langer één
+transferquad per rij. De backend loopt rechtstreeks over de fysieke X- en
+Y-runs van source en destination en emitteert één rechthoekige quad tot de
+eerstvolgende VRAM-rand. Een niet-wrappende copy is daardoor exact één quad;
+een dubbel gewrapte copy blijft begrensd op maximaal drie bij drie quads. De
+320x240 offscreen-copy die `bare_metal_cart` ieder frame presenteert daalt van
+240 quads, 5.760 vertexfloats en 23.040 uploadbytes naar één quad, 24 floats en
+96 bytes. Echte diagonale overlap behoudt de bestaande chunkgrenzen en E6
+set/check blijft per pixel in de transferdatapath. Deze hot paths staan nu ook
+expliciet onder de no-heap/no-GC-audit. De volledige 1.030-frame
+GLES2/llvmpipe-run blijft op alle 146 deterministic raw captures byte-identiek
+aan de voorafgaande implementatie. Vier afwisselende capturevrije A/B-runs van
+die volledige timeline meten voor het oude rijpad gemiddeld 10,59 s user-CPU en
+voor de rechthoekige runs 9,97 s: 5,9% minder over de hele run, niet alleen de
+copy zelf.
+
+Referencebasis: DuckStation kiest in
+[`GPU_HW::CopyVRAM`](https://github.com/stenzek/duckstation/blob/ad7519d72c935b57b6a6e1c17f5fcba3c15783ff/src/core/gpu_hw.cpp#L3620-L3757)
+eveneens één shadercopy voor mask/wrap, een directe texture-region-copy voor de
+eenvoudige contiguous case en afzonderlijke chunks voor diagonale overlap.
+
 Open contract:
 
 - GLES-contexts zonder texture barrier en de WebGL2/WebGPU-owners blijven op
@@ -380,8 +401,6 @@ Open contract:
   of wrappende writes grof worden. Alleen wanneer metingen dat als volgende
   bottleneck aanwijzen, wordt zij bounded fijnmaziger; cleanbits mogen dan pas
   verdwijnen nadat de volledige gerepresenteerde tile of rect is gekopieerd.
-- Een niet-overlappende contiguous VRAM-copy is één quad; rij- of gesplitste
-  paden zijn alleen voor echte overlap, wrap of maskdependencies.
 - Geen universele RGBA8 fixed-function-blendshortcut: tussenliggende sub-5-bit
   resten veranderen chained PSX-blends. Een alternatief moet raw 5-bit stores,
   vier blendmodes, STP, maskbits en opeenvolgende overlap tegen VRAM-woorden

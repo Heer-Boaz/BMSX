@@ -422,6 +422,14 @@ and MAME
   pixel-identical to the preceding accelerated implementation. WebGPU also
   submits older encoded GP0 work before direct CPU `queue.writeTexture`
   uploads, preserving transfertexture and raw-VRAM command order.
+- [x] Replace the accelerated per-row VRAM-copy vertex stream in GLES2, WebGL2
+  and WebGPU with bounded physical X/Y runs. The per-frame 320x240
+  `bare_metal_cart` present-copy now emits one quad/24 floats/96 bytes instead
+  of 240 quads/5,760 floats/23,040 bytes; wrap uses at most nine quads per
+  transfer area, while diagonal overlap retains its ordered chunk boundaries.
+  All 146 deterministic captures in the 1,030-frame GLES2 timeline remain
+  byte-identical to the preceding backend. Four interleaved capture-free A/B
+  runs reduce mean full-timeline user CPU from 10.59 s to 9.97 s (5.9%).
 - [ ] Keep WebGL2/GLES2 behavior synchronized for every new GX command.
 - [ ] Wire the existing TS/C++ software/headless renderer to the same GX/PSX
   contract as oracle/backend, not as a fallback inside GPU backends.
