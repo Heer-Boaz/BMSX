@@ -29,6 +29,7 @@ struct OpenGLES2PostPipelines;
 class OpenGLES2Backend : public GPUBackend {
 public:
 	using FramebufferGetter = uintptr_t (*)();
+	using TextureBarrierProc = void (*)();
 
 	OpenGLES2Backend(i32 width, i32 height);
 	~OpenGLES2Backend() override;
@@ -78,6 +79,8 @@ public:
 	void* resolveProcAddress(const char* name) const;
 	void* resolveProcAddress(const char* coreName, const char* angleName, const char* extName) const;
 	bool supportsUintIndices() const { return m_supports_uint_indices; }
+	bool textureBarrierAvailable() const { return m_texture_barrier != nullptr; }
+	void textureBarrier() const { m_texture_barrier(); }
 	GLuint backbuffer() const { return m_backbuffer_fbo; }
 	u32 contextGeneration() const { return m_context_generation; }
 
@@ -101,6 +104,7 @@ private:
 	bool m_context_ready = false;
 	bool m_supports_srgb_textures = false;
 	bool m_supports_uint_indices = false;
+	TextureBarrierProc m_texture_barrier = nullptr;
 };
 
 } // namespace bmsx

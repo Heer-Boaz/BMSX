@@ -400,6 +400,13 @@ and MAME
   retained compatible-command streams in every backend, dirty/valid source
   coverage, and coalesced non-overlapping VRAM copies. Do not substitute naive
   expanded RGBA8 fixed blending unless chained raw 5-bit stores prove exact.
+- [x] Route native GLES2 solid/line destination reads through
+  `GL_NV_texture_barrier` when the context exposes both the exact extension and
+  procedure. The shaders sample the attached raw-VRAM texture at the same pixel;
+  the existing overlap splits remain the barrier boundaries. A steady particle
+  frame drops from 147 sampletexturecopies to 1, while the full 1,030-frame
+  barrier and forced-copy runs produce 146 byte-identical captures. Textured
+  feedback and the WebGL2/WebGPU owners remain in the open item above.
 - [ ] Keep WebGL2/GLES2 behavior synchronized for every new GX command.
 - [ ] Wire the existing TS/C++ software/headless renderer to the same GX/PSX
   contract as oracle/backend, not as a fallback inside GPU backends.

@@ -323,12 +323,22 @@ WebGL2, `copyTextureToTexture` in WebGPU). Losse semi-transparante particlelines
 en read-VRAM textured quads maken de kosten daardoor O(primitives), terwijl ook
 uniform- en vertexuploads per klein command blijven terugkomen.
 
+De eerste native GLES2-ownerfix is actief. Een context die exact
+`GL_NV_texture_barrier` plus de procedure bezit, laat solid- en line-shaders het
+attached raw-VRAM-texture op dezelfde pixel lezen en zet een texture barrier op
+de bestaande overlapgrenzen. De bestaande copyroute blijft het concrete pad
+voor contexts zonder die capability. In een steady particleframe daalt het
+totale aantal sampletexturecopies daardoor van 147 naar 1; solid/line-
+destinationcopies zijn nul. De volledige 1.030-frame timeline levert met en
+zonder de capability 146 byte-identieke captures, inclusief particles, echo en
+morph. Textured feedback, WebGL2 en WebGPU zijn hiermee nog niet opgelost.
+
 Open contract:
 
-- GLES2 moet, waar de concrete context dat bezit, raw destinationwoorden via
-  framebuffer-fetch/texture-barrier consumeren en alleen op echte
-  dependencygrenzen synchroniseren. Capabilitykeuze hoort in de concrete
-  backend, niet in cartcode of een algemene facade.
+- GLES2 moet het gerealiseerde texture-barrierpad uitbreiden naar textured
+  feedback; andere concrete framebuffer-fetchmogelijkheden zijn pas nodig voor
+  contexts die geen texture barrier bezitten. Capabilitykeuze blijft in de
+  concrete backend, niet in cartcode of een algemene facade.
 - Alle accelerated backends moeten retained line/solid/textured streams over
   opeenvolgende compatibele GP0-commands gebruiken en alleen flushen op een
   pipeline- of read-after-writegrens.

@@ -531,14 +531,18 @@ void OpenGLES2Backend::onContextReset() {
 	const char* extensions = reinterpret_cast<const char*>(glGetString(GL_EXTENSIONS));
 	m_supports_srgb_textures = hasExtensionToken(extensions, "GL_EXT_sRGB");
 	m_supports_uint_indices = hasExtensionToken(extensions, "GL_OES_element_index_uint");
+	m_texture_barrier = hasExtensionToken(extensions, "GL_NV_texture_barrier")
+		? reinterpret_cast<TextureBarrierProc>(resolveProcAddress("glTextureBarrierNV"))
+		: nullptr;
 	glGenFramebuffers(1, &m_readback_fbo);
 	DeviceQuantizePipeline::GLES2::init(*this, m_post_pipelines->deviceQuantize);
 	CRTPipeline::initPresentGLES2(*this, m_post_pipelines->present);
 	CRTPipeline::initCRTGLES2(*this, m_post_pipelines->crt);
 	if (kGLES2VerboseLog) {
-		std::fprintf(stderr, "[BMSX][GLES2] EXT_sRGB=%d OES_element_index_uint=%d\n",
+		std::fprintf(stderr, "[BMSX][GLES2] EXT_sRGB=%d OES_element_index_uint=%d NV_texture_barrier=%d\n",
 			m_supports_srgb_textures ? 1 : 0,
-			m_supports_uint_indices ? 1 : 0);
+			m_supports_uint_indices ? 1 : 0,
+			m_texture_barrier != nullptr ? 1 : 0);
 	}
 }
 
@@ -551,6 +555,7 @@ void OpenGLES2Backend::onContextDestroy() {
 	invalidateTextureBindingCache();
 	m_supports_srgb_textures = false;
 	m_supports_uint_indices = false;
+	m_texture_barrier = nullptr;
 	if (m_readback_fbo != 0) {
 		glDeleteFramebuffers(1, &m_readback_fbo);
 		m_readback_fbo = 0;
