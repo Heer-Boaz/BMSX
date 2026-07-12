@@ -1758,6 +1758,24 @@
 			"reason": "headless_present_host_must_reuse_presented_frame_event_object"
 		},
 		{
+			"file": "machine/ts/render/backend/gx_gpu_render_rules.ts",
+			"functions": [
+				"gxGpuTriangleUvPlane",
+				"gxGpuTriangleUvPlaneInterpolants",
+				"gxGpuVramLogicalAreaOverlapsBounds"
+			],
+			"reason": "shared_gx_gpu_fixed_uv_and_wrapped_dependency_rules_must_remain_gc_free"
+		},
+		{
+			"file": "machine/cpp/render/backend/gx_gpu_render_rules.h",
+			"functions": [
+				"gxGpuTriangleUvPlane",
+				"gxGpuTriangleUvPlaneInterpolants",
+				"gxGpuVramLogicalAreaOverlapsBounds"
+			],
+			"reason": "shared_gx_gpu_fixed_uv_and_wrapped_dependency_rules_must_remain_heap_free"
+		},
+		{
 			"file": "machine/ts/render/backend/webgl/gx_gpu.ts",
 			"functions": [
 				"clearGxGpuVram",
@@ -1770,6 +1788,7 @@
 				"appendSolidRectangle",
 				"writeTexturedVertex",
 				"appendTexturedTriangle",
+				"appendTexturedPrimitiveTriangle",
 				"appendTexturedPolygon",
 				"appendTexturedRectangle",
 				"writeRawVramUploadPixel",
@@ -1779,15 +1798,15 @@
 				"copyVramToVram",
 				"applyGxGpuDrawingAreaScissor",
 				"resetGxGpuVramCopyRect",
+				"includeGxGpuVramCopyRect",
 				"includeGxGpuVramCopyVertex",
 				"markGxGpuSampleTextureDirtyArea",
 				"markGxGpuSampleTextureDirtyLogicalArea",
 				"copyGxGpuVramAreaToSampleTexture",
 				"syncGxGpuSampleTextureArea",
 				"syncGxGpuSampleTextureLogicalArea",
-				"syncGxGpuVertexBoundsToSampleTexture",
+				"setGxGpuVertexBoundsRect",
 				"syncGxGpuTexturedSourceTexture",
-				"syncGxGpuTexturedSampleRegions",
 				"writeTexturedUniforms",
 				"flushSolidCommands",
 				"renderNewLineCommands",
@@ -1796,7 +1815,10 @@
 				"appendLineCommandVertices",
 				"executeNewGxGpuCommands",
 				"renderNewSolidCommands",
+				"appendTexturedCommandVertices",
+				"renderTexturedVertices",
 				"renderTexturedCommand",
+				"flushTexturedCommands",
 				"scanoutGxGpuVram",
 				"renderGxGpuPass",
 				"writeGxGpuState"
@@ -1814,16 +1836,22 @@
 				"appendFillRectangle",
 				"appendSolidPolygon",
 				"appendSolidRectangle",
+				"writeTexturedVertex",
+				"appendTexturedTriangle",
+				"appendTexturedPrimitiveTriangle",
+				"appendTexturedPolygon",
+				"appendTexturedRectangle",
 				"markGxGpuSampleTextureDirtyArea",
 				"markGxGpuSampleTextureDirtyLogicalArea",
 				"copyGxGpuVramAreaToSampleTexture",
 				"syncGxGpuSampleTextureArea",
 				"syncGxGpuSampleTextureLogicalArea",
 				"resetGxGpuVramCopyRect",
+				"includeGxGpuVramCopyRect",
 				"includeGxGpuVramCopyVertex",
 				"copyVramToVramArea",
 				"copyVramToVram",
-				"syncGxGpuVertexBoundsToSampleTexture",
+				"setGxGpuVertexBoundsRect",
 				"syncGxGpuTexturedSourceTexture",
 				"flushSolidCommands",
 				"renderReadVramSolidQuad",
@@ -1832,7 +1860,11 @@
 				"flushLineCommands",
 				"appendBatchedLineSegment",
 				"appendLineCommandVertices",
-				"executeNewGxGpuCommands"
+				"executeNewGxGpuCommands",
+				"appendTexturedCommandVertices",
+				"renderTexturedVertices",
+				"renderTexturedCommand",
+				"flushTexturedCommands"
 			],
 			"reason": "webgpu_gx_gpu_dirty_transfer_and_primitive_hot_paths_must_not_allocate_js_containers_or_closures"
 		},
@@ -1849,6 +1881,7 @@
 				"appendSolidRectangle",
 				"writeTexturedVertex",
 				"appendTexturedTriangle",
+				"appendTexturedPrimitiveTriangle",
 				"appendTexturedPolygon",
 				"appendTexturedRectangle",
 				"writeRawVramUploadPixel",
@@ -1858,8 +1891,9 @@
 				"copyVramToVram",
 				"applyGxGpuDrawingAreaScissor",
 				"resetGxGpuVramCopyRect",
+				"includeGxGpuVramCopyRect",
 				"includeGxGpuVramCopyVertex",
-				"gxGpuVramLogicalAreaOverlapsRect",
+				"setGxGpuVertexBoundsRect",
 				"markGxGpuSampleTextureDirtyArea",
 				"markGxGpuSampleTextureDirtyLogicalArea",
 				"copyGxGpuVramAreaToSampleTexture",
@@ -1874,7 +1908,10 @@
 				"appendLineCommandVertices",
 				"executeNewGxGpuCommands",
 				"renderNewSolidCommands",
+				"appendTexturedCommandVertices",
+				"renderTexturedVertices",
 				"renderTexturedCommand",
+				"flushTexturedCommands",
 				"scanoutGxGpuVram",
 				"renderGxGpu",
 				"executeGxGpuPass"

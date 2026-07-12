@@ -308,7 +308,8 @@ Richting:
 
 ## Accelerated framebuffer-feedback performance
 
-Status: root cause gemeten; concrete ownerfixes lopen.
+Status: concrete retained ownerfixes afgerond; live WebGL2/WebGPU-
+capabilityvalidatie blijft bewust uitgesteld tot de browsersessie.
 
 Een capture-vrije 1100-frame libretro/GLES2-run is nu lang genoeg om de echte
 `bare_metal_cart`-slowdownscenes te bereiken. De eerdere korte meting miste die.
@@ -421,15 +422,46 @@ append/flushroute staat onder de no-heap/no-GC-audit. Hiermee zijn solid en line
 in alle accelerated owners retained; live WebGPU-validatie blijft onderdeel van
 de reeds uitgestelde browsersessie, niet van de software/headless claim.
 
-Open contract:
+Textured polygonen en rectangles volgen diezelfde retained grens nu in GLES2,
+WebGL2 en WebGPU. De affine UV-plane zit niet langer in per-triangle uniforms:
+GLES2/WebGL2 dragen de carry-veilige 20-bit interpolanten in de vertexstream en
+WebGPU draagt de raw base- en stepwords als flat `u32` vertexdata. De plane-
+scratch, vertices, batchbounds en state zijn backend-retained; append, source-
+dependencyanalyse, upload en flush staan onder de no-heap/no-GC-audit.
+
+Een drawing-area-, drawmode-, texture-window-, CLUT-, raw/semi-transparency-,
+mask-, dither- of interlacewissel blijft een batchgrens. Ook een texture/CLUT-
+read uit een nog pending destination flusht eerst en synchroniseert daarna de
+source opnieuw. Een command waarvan source en eigen destination aliasen blijft
+op het geordende immediate pad. Opaque GLES2-batches lezen bewust de stabiele
+sampletexture: anders kan een latere destination in dezelfde draw een eerdere
+source raken. Alleen echte read-VRAM-batches lezen attached VRAM en houden per
+triangle de noodzakelijke barrier/draw-volgorde. WebGL2 en WebGPU behouden op
+diezelfde grens hun concrete dependencycopy.
+
+De profiler bewijst daardoor driver-callreductie zonder de echte dependencies
+weg te liegen. In baseline gaan 13 textured commands van 13 vertex/uniform-
+uploads en 26 draws naar 8 uploads/draws. Tera-Flare gaat van 32 naar 3 uploads;
+de 62--64 geordende triangledraws blijven staan omdat alle 32 quads echt
+destination-read zijn. Echo gaat van 16 uploads/32 draws naar 9/14. Particles en
+morph bevatten in hun stabiele venster geen textured commands. De native-
+barrierroute en de geforceerde copyroute blijven over alle 146 captures van de
+1.030-frame timeline byte-identiek aan de voorafgaande accelerated owner.
+
+Dit volgt ook DuckStations retained `BatchVertex`/`PrepareDraw`-grens en zijn
+[`DrawBarrier::Full`](https://github.com/stenzek/duckstation/blob/ad7519d72c935b57b6a6e1c17f5fcba3c15783ff/src/util/vulkan_device.cpp#L3628-L3646):
+state en vertices worden eenmaal geüpload, terwijl echte shader-blendfeedback
+per primitive geordend blijft. Vier afwisselende llvmpipe-runs met één worker
+over de 982-frame capturevrije slowdown-timeline meten gemiddeld 6,37 naar
+6,23 s user-CPU en 6,75 naar 6,56 s totale CPU: respectievelijk 2,2% en 2,9%
+lager.
+
+Bewaard contract en meetgedreven vervolg:
 
 - GLES-contexts zonder texture barrier en de WebGL2/WebGPU-owners blijven op
   expliciete dependencycopies. Andere framebuffer-feedbackmogelijkheden zijn
   pas relevant als hun concrete backend ze werkelijk bezit; capabilitykeuze
   hoort niet in cartcode of een algemene facade.
-- Textured commands moeten in alle drie accelerated owners nog over compatibele
-  GP0-commands retained worden. Alleen een pipeline- of echte read-after-write-
-  grens mag die streams flushen.
 - De huidige retained dirty-unie is correct maar kan bij ver uit elkaar liggende
   of wrappende writes grof worden. Alleen wanneer metingen dat als volgende
   bottleneck aanwijzen, wordt zij bounded fijnmaziger; cleanbits mogen dan pas

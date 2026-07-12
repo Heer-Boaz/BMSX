@@ -3,10 +3,6 @@ struct TexturedUniforms {
 	textureWindow: vec4<f32>,
 	params0: vec4<f32>,
 	params1: vec4<f32>,
-	uvPlaneParams: vec4<u32>,
-	uvPlaneBase: vec4<u32>,
-	uvPlaneStepX: vec4<u32>,
-	uvPlaneStepY: vec4<u32>,
 };
 
 @group(0) @binding(0) var<uniform> u: TexturedUniforms;
@@ -17,12 +13,20 @@ struct VSIn {
 	@location(0) position: vec2<f32>,
 	@location(1) color: vec3<f32>,
 	@location(2) texcoord: vec2<f32>,
+	@location(3) uvPlaneEnable: u32,
+	@location(4) uvPlaneBase: vec2<u32>,
+	@location(5) uvPlaneStepX: vec2<u32>,
+	@location(6) uvPlaneStepY: vec2<u32>,
 };
 
 struct VSOut {
 	@builtin(position) position: vec4<f32>,
 	@location(0) color: vec3<f32>,
 	@location(1) texcoord: vec2<f32>,
+	@location(2) @interpolate(flat) uvPlaneEnable: u32,
+	@location(3) @interpolate(flat) uvPlaneBase: vec2<u32>,
+	@location(4) @interpolate(flat) uvPlaneStepX: vec2<u32>,
+	@location(5) @interpolate(flat) uvPlaneStepY: vec2<u32>,
 };
 
 const VRAM_SIZE = vec2<f32>(1024.0, 512.0);
@@ -35,6 +39,10 @@ fn vs_main(input: VSIn) -> VSOut {
 	out.position = vec4<f32>(clip, 0.0, 1.0);
 	out.color = input.color;
 	out.texcoord = input.texcoord;
+	out.uvPlaneEnable = input.uvPlaneEnable;
+	out.uvPlaneBase = input.uvPlaneBase;
+	out.uvPlaneStepX = input.uvPlaneStepX;
+	out.uvPlaneStepY = input.uvPlaneStepY;
 	return out;
 }
 
@@ -89,11 +97,11 @@ fn palette8Index(word: f32, textureU: f32) -> f32 {
 	return floor(word / divisor) - floor(floor(word / divisor) / 256.0) * 256.0;
 }
 
-fn samplePsxTexture(texcoord: vec2<f32>, fragCoord: vec2<f32>) -> vec4<f32> {
+fn samplePsxTexture(texcoord: vec2<f32>, fragCoord: vec2<f32>, uvPlaneEnable: u32, uvPlaneBase: vec2<u32>, uvPlaneStepX: vec2<u32>, uvPlaneStepY: vec2<u32>) -> vec4<f32> {
 	var sampleCoord = texcoord;
-	if (u.uvPlaneParams.x != 0u) {
+	if (uvPlaneEnable != 0u) {
 		let pixel = vec2<u32>(u32(fragCoord.x), u32(fragCoord.y));
-		let accumulator = u.uvPlaneBase.xy + u.uvPlaneStepX.xy * pixel.x + u.uvPlaneStepY.xy * pixel.y;
+		let accumulator = uvPlaneBase + uvPlaneStepX * pixel.x + uvPlaneStepY * pixel.y;
 		sampleCoord = vec2<f32>((accumulator >> vec2<u32>(12u)) & vec2<u32>(0xffu));
 	}
 	let windowed = applyTextureWindow(sampleCoord);
@@ -163,7 +171,7 @@ fn activeInterlacedLine(fragCoord: vec2<f32>) -> bool {
 @fragment
 fn fs_main(input: VSOut) -> @location(0) vec4<f32> {
 	if (activeInterlacedLine(input.position.xy)) { discard; }
-	let textureColor = samplePsxTexture(input.texcoord, input.position.xy);
+	let textureColor = samplePsxTexture(input.texcoord, input.position.xy, input.uvPlaneEnable, input.uvPlaneBase, input.uvPlaneStepX, input.uvPlaneStepY);
 	if (textureColor.a < -0.5) { discard; }
 	var src5 = textureColor.rgb;
 	if (u.params0.y < 0.5) { src5 = modulatedTextureRgb5(textureColor.rgb, input.color, input.position.xy); }

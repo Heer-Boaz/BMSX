@@ -17,6 +17,8 @@ constexpr i32 GX_GPU_TRIANGLE_UV_STEP_Y_V = 5;
 constexpr i32 GX_GPU_TRIANGLE_UV_FRACTION_BITS = 12;
 constexpr i64 GX_GPU_TRIANGLE_UV_FRACTION_SCALE = 1 << GX_GPU_TRIANGLE_UV_FRACTION_BITS;
 constexpr i64 GX_GPU_TRIANGLE_UV_ACCUMULATOR_MASK = 0xfffff;
+constexpr u32 GX_GPU_TEXTURE_SOURCE_COMMAND_OVERLAP = 1u;
+constexpr u32 GX_GPU_TEXTURE_SOURCE_BATCH_OVERLAP = 2u;
 constexpr u32 GX_GPU_DOT_CLOCK_DIVIDER_256 = 10u;
 constexpr u32 GX_GPU_DOT_CLOCK_DIVIDER_320 = 8u;
 constexpr u32 GX_GPU_DOT_CLOCK_DIVIDER_512 = 5u;
@@ -65,6 +67,45 @@ inline void gxGpuTriangleUvPlane(
 	out[outOffset + GX_GPU_TRIANGLE_UV_STEP_X_V] = stepXVRaw;
 	out[outOffset + GX_GPU_TRIANGLE_UV_STEP_Y_U] = stepYURaw;
 	out[outOffset + GX_GPU_TRIANGLE_UV_STEP_Y_V] = stepYVRaw;
+}
+
+inline void gxGpuTriangleUvPlaneInterpolants(
+	f32* out,
+	size_t outOffset,
+	size_t vertexFloatStride,
+	const i64* plane,
+	i32 x0,
+	i32 y0,
+	i32 x1,
+	i32 y1,
+	i32 x2,
+	i32 y2) {
+	const i64 baseU = plane[GX_GPU_TRIANGLE_UV_BASE_U];
+	const i64 baseV = plane[GX_GPU_TRIANGLE_UV_BASE_V];
+	const i64 stepXU = plane[GX_GPU_TRIANGLE_UV_STEP_X_U];
+	const i64 stepXV = plane[GX_GPU_TRIANGLE_UV_STEP_X_V];
+	const i64 stepYU = plane[GX_GPU_TRIANGLE_UV_STEP_Y_U];
+	const i64 stepYV = plane[GX_GPU_TRIANGLE_UV_STEP_Y_V];
+	const i64 originU = (baseU + static_cast<i64>(x0) * stepXU + static_cast<i64>(y0) * stepYU) & GX_GPU_TRIANGLE_UV_ACCUMULATOR_MASK;
+	const i64 originV = (baseV + static_cast<i64>(x0) * stepXV + static_cast<i64>(y0) * stepYV) & GX_GPU_TRIANGLE_UV_ACCUMULATOR_MASK;
+	for (i32 vertex = 0; vertex < 3; vertex += 1) {
+		const i32 x = vertex == 0 ? x0 : (vertex == 1 ? x1 : x2);
+		const i32 y = vertex == 0 ? y0 : (vertex == 1 ? y1 : y2);
+		const i32 localX = x - x0;
+		const i32 localY = y - y0;
+		const size_t offset = outOffset + static_cast<size_t>(vertex) * vertexFloatStride;
+		out[offset] = 1.0f;
+		out[offset + 1u] = static_cast<f32>((originU & 0x0fll) + (stepXU & 0x0fll) * localX + (stepYU & 0x0fll) * localY);
+		out[offset + 2u] = static_cast<f32>((originV & 0x0fll) + (stepXV & 0x0fll) * localX + (stepYV & 0x0fll) * localY);
+		out[offset + 3u] = static_cast<f32>(((originU >> 4u) & 0x0fll) + ((stepXU >> 4u) & 0x0fll) * localX + ((stepYU >> 4u) & 0x0fll) * localY);
+		out[offset + 4u] = static_cast<f32>(((originV >> 4u) & 0x0fll) + ((stepXV >> 4u) & 0x0fll) * localX + ((stepYV >> 4u) & 0x0fll) * localY);
+		out[offset + 5u] = static_cast<f32>(((originU >> 8u) & 0x0fll) + ((stepXU >> 8u) & 0x0fll) * localX + ((stepYU >> 8u) & 0x0fll) * localY);
+		out[offset + 6u] = static_cast<f32>(((originV >> 8u) & 0x0fll) + ((stepXV >> 8u) & 0x0fll) * localX + ((stepYV >> 8u) & 0x0fll) * localY);
+		out[offset + 7u] = static_cast<f32>(((originU >> 12u) & 0x0fll) + ((stepXU >> 12u) & 0x0fll) * localX + ((stepYU >> 12u) & 0x0fll) * localY);
+		out[offset + 8u] = static_cast<f32>(((originV >> 12u) & 0x0fll) + ((stepXV >> 12u) & 0x0fll) * localX + ((stepYV >> 12u) & 0x0fll) * localY);
+		out[offset + 9u] = static_cast<f32>(((originU >> 16u) & 0x0fll) + ((stepXU >> 16u) & 0x0fll) * localX + ((stepYU >> 16u) & 0x0fll) * localY);
+		out[offset + 10u] = static_cast<f32>(((originV >> 16u) & 0x0fll) + ((stepXV >> 16u) & 0x0fll) * localX + ((stepYV >> 16u) & 0x0fll) * localY);
+	}
 }
 
 inline i32 gxGpuVertexY(u32 word) {
@@ -211,6 +252,25 @@ inline u32 gxGpuVramWrappedWidth(u32 x, u32 width) {
 inline u32 gxGpuVramWrappedHeight(u32 y, u32 height) {
 	const u32 edgeHeight = GX_GPU_VRAM_HEIGHT - y;
 	return height <= edgeHeight ? height : edgeHeight;
+}
+
+inline bool gxGpuVramLogicalAreaOverlapsBounds(u32 x, u32 y, u32 width, u32 height, i32 left, i32 top, i32 right, i32 bottom) {
+	u32 rowY = y & (GX_GPU_VRAM_HEIGHT - 1u);
+	u32 remainingHeight = height;
+	while (remainingHeight != 0u) {
+		const u32 runHeight = gxGpuVramWrappedHeight(rowY, remainingHeight);
+		u32 columnX = x & (GX_GPU_VRAM_WIDTH - 1u);
+		u32 remainingWidth = width;
+		while (remainingWidth != 0u) {
+			const u32 runWidth = gxGpuVramWrappedWidth(columnX, remainingWidth);
+			if (static_cast<i32>(columnX) < right && left < static_cast<i32>(columnX + runWidth) && static_cast<i32>(rowY) < bottom && top < static_cast<i32>(rowY + runHeight)) return true;
+			columnX = (columnX + runWidth) & (GX_GPU_VRAM_WIDTH - 1u);
+			remainingWidth -= runWidth;
+		}
+		rowY = (rowY + runHeight) & (GX_GPU_VRAM_HEIGHT - 1u);
+		remainingHeight -= runHeight;
+	}
+	return false;
 }
 
 inline bool gxGpuSpansOverlap(u32 startA, u32 endA, u32 startB, u32 endB) {

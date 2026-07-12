@@ -14,9 +14,9 @@ uniform float u_checkMaskBit;
 uniform float u_setMaskBit;
 uniform float u_ditherEnable;
 uniform float u_interlacedRenderWord;
-uniform float u_uvPlaneEnable;
 in vec4 v_color;
 in vec2 v_texcoord;
+in float v_uvPlaneEnable;
 in vec4 v_uvPlane01;
 in vec4 v_uvPlane23;
 in vec2 v_uvPlane4;
@@ -85,7 +85,7 @@ float palette8Index(float word, float u) {
 
 vec4 samplePsxTexture(vec2 texcoord) {
 	vec2 sampleCoord = texcoord;
-	if (u_uvPlaneEnable > 0.5) {
+	if (v_uvPlaneEnable > 0.5) {
 		vec4 plane01 = floor(v_uvPlane01 + 0.5);
 		vec4 plane23 = floor(v_uvPlane23 + 0.5);
 		vec2 plane4 = floor(v_uvPlane4 + 0.5);

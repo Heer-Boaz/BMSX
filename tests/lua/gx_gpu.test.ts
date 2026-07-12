@@ -87,6 +87,10 @@ import {
 	gxGpuTriangleEdgeCoverageMinimum,
 	gxGpuTriangleExceedsPrimitiveSize,
 	gxGpuTriangleRasterShift,
+	GX_GPU_TRIANGLE_UV_PLANE_WORDS,
+	gxGpuTriangleUvPlane,
+	gxGpuTriangleUvPlaneInterpolants,
+	gxGpuVramLogicalAreaOverlapsBounds,
 } from '../../machine/ts/render/backend/gx_gpu_render_rules';
 import {
 	GX_GPU_DMA_DIRECTION_CPU_TO_GP0,
@@ -401,6 +405,8 @@ test('GX-GPU decodes PSX GP0 signed vertex and rectangle size words', () => {
 	assert.equal(gxGpuVramWrappedHeight(500, 12), 12);
 	assert.equal(gxGpuVramWrappedHeight(511, 511), 1);
 	assert.equal(gxGpuVramWrappedHeight(0, 511), 511);
+	assert.equal(gxGpuVramLogicalAreaOverlapsBounds(1008, 500, 32, 24, 0, 0, 8, 8), true);
+	assert.equal(gxGpuVramLogicalAreaOverlapsBounds(1008, 500, 32, 24, 512, 256, 520, 264), false);
 	assert.equal(gxGpuVramCopyNeedsChunking(10, 20, 12, 24, 32, 16), true);
 	assert.equal(gxGpuVramCopyChunkHeight(20, 24, 16), 4);
 	assert.equal(gxGpuVramCopyNeedsChunking(10, 20, 10, 24, 32, 16), false);
@@ -408,6 +414,14 @@ test('GX-GPU decodes PSX GP0 signed vertex and rectangle size words', () => {
 	assert.equal(gxGpuVramCopyNeedsChunking(10, 20, 50, 24, 32, 16), false);
 	assert.equal(gxGpuVramCopyNeedsChunking(10, 20, 12, 40, 32, 16), false);
 	assert.equal(gxGpuVramCopyChunkHeight(20, 80, 16), 16);
+	const uvPlane = new Float64Array(GX_GPU_TRIANGLE_UV_PLANE_WORDS);
+	const uvInterpolants = new Float32Array(33);
+	gxGpuTriangleUvPlane(uvPlane, 0, 256, 0, 0, 1, 2, 16, 0, 17, 2, 0, 16, 1, 18);
+	gxGpuTriangleUvPlaneInterpolants(uvInterpolants, 0, 11, uvPlane, 0, 0, 16, 0, 0, 16);
+	assert.equal(uvInterpolants[0], 1);
+	assert.equal(uvInterpolants[7], 1);
+	assert.equal(uvInterpolants[18], 17);
+	assert.equal(uvInterpolants[30], 18);
 
 	assert.equal(gxGpuTransferX(0x01ff03ff), 1023);
 	assert.equal(gxGpuTransferY(0x01ff03ff), 511);

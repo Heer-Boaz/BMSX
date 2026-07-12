@@ -395,7 +395,7 @@ and MAME
   copies/frame; particles 14.20 ms with 72 average and 147 maximum copies.
   One representative particle frame spent 21.5 ms in copies and 2.1 ms in
   draws, with no `glReadPixels`.
-- [ ] Replace the shared accelerated O(primitives) destination-snapshot path.
+- [x] Replace the shared accelerated O(primitives) destination-snapshot path.
   Use concrete GLES framebuffer-fetch/barrier capabilities where available,
   retained compatible-command streams in every backend, dirty/valid source
   coverage, and coalesced non-overlapping VRAM copies. Do not substitute naive
@@ -445,6 +445,19 @@ and MAME
   read-VRAM quads retain their ordered two-triangle path. All new batch state
   and bounds are retained and covered by the no-heap/no-GC audit; live browser
   execution remains in the explicitly deferred WebGPU validation session.
+- [x] Retain compatible textured commands across GLES2, WebGL2 and WebGPU.
+  Exact affine UV-plane state now travels in retained per-vertex data instead
+  of per-triangle uniforms. Pipeline state, source reads from pending
+  destinations and self-aliasing remain hard ordering boundaries. Opaque GLES2
+  batches use the stable sample texture; read-VRAM batches preserve ordered
+  per-triangle barriers, matching DuckStation's full-barrier retained batches.
+  Baseline textured uploads/draws fall from 13/26 to 8/8, Tera-Flare uploads
+  fall from 32 to 3 while its true 62--64 dependency draws remain, and echo
+  falls from 16/32 to 9/14. Both native-barrier and forced-copy GLES2 runs keep
+  all 146 captures exact. Four interleaved single-worker runs over the
+  982-frame capture-free slowdown timeline reduce mean user CPU from 6.37 s to
+  6.23 s and total CPU from 6.75 s to 6.56 s; live browser execution remains
+  deferred.
 - [ ] Keep WebGL2/GLES2 behavior synchronized for every new GX command.
 - [ ] Wire the existing TS/C++ software/headless renderer to the same GX/PSX
   contract as oracle/backend, not as a fallback inside GPU backends.

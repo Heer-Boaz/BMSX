@@ -21,6 +21,8 @@ export const GX_GPU_TRIANGLE_UV_STEP_Y_V = 5;
 export const GX_GPU_TRIANGLE_UV_FRACTION_BITS = 12;
 export const GX_GPU_TRIANGLE_UV_FRACTION_SCALE = 1 << GX_GPU_TRIANGLE_UV_FRACTION_BITS;
 export const GX_GPU_TRIANGLE_UV_ACCUMULATOR_MASK = 0xfffff;
+export const GX_GPU_TEXTURE_SOURCE_COMMAND_OVERLAP = 1;
+export const GX_GPU_TEXTURE_SOURCE_BATCH_OVERLAP = 2;
 export const GX_GPU_DOT_CLOCK_DIVIDER_256 = 10;
 export const GX_GPU_DOT_CLOCK_DIVIDER_320 = 8;
 export const GX_GPU_DOT_CLOCK_DIVIDER_512 = 5;
@@ -78,6 +80,46 @@ export function gxGpuTriangleUvPlane(
 	out[outOffset + GX_GPU_TRIANGLE_UV_STEP_X_V] = stepXVRaw;
 	out[outOffset + GX_GPU_TRIANGLE_UV_STEP_Y_U] = stepYURaw;
 	out[outOffset + GX_GPU_TRIANGLE_UV_STEP_Y_V] = stepYVRaw;
+}
+
+export function gxGpuTriangleUvPlaneInterpolants(
+	out: Float32Array,
+	outOffset: number,
+	vertexFloatStride: number,
+	plane: Float64Array,
+	x0: number,
+	y0: number,
+	x1: number,
+	y1: number,
+	x2: number,
+	y2: number,
+): void {
+	const baseU = plane[GX_GPU_TRIANGLE_UV_BASE_U];
+	const baseV = plane[GX_GPU_TRIANGLE_UV_BASE_V];
+	const stepXU = plane[GX_GPU_TRIANGLE_UV_STEP_X_U];
+	const stepXV = plane[GX_GPU_TRIANGLE_UV_STEP_X_V];
+	const stepYU = plane[GX_GPU_TRIANGLE_UV_STEP_Y_U];
+	const stepYV = plane[GX_GPU_TRIANGLE_UV_STEP_Y_V];
+	const originU = (baseU + (x0 * stepXU) + (y0 * stepYU)) & GX_GPU_TRIANGLE_UV_ACCUMULATOR_MASK;
+	const originV = (baseV + (x0 * stepXV) + (y0 * stepYV)) & GX_GPU_TRIANGLE_UV_ACCUMULATOR_MASK;
+	for (let vertex = 0; vertex < 3; vertex += 1) {
+		const x = vertex === 0 ? x0 : (vertex === 1 ? x1 : x2);
+		const y = vertex === 0 ? y0 : (vertex === 1 ? y1 : y2);
+		const localX = x - x0;
+		const localY = y - y0;
+		const offset = outOffset + vertex * vertexFloatStride;
+		out[offset] = 1;
+		out[offset + 1] = (originU & 0x0f) + (stepXU & 0x0f) * localX + (stepYU & 0x0f) * localY;
+		out[offset + 2] = (originV & 0x0f) + (stepXV & 0x0f) * localX + (stepYV & 0x0f) * localY;
+		out[offset + 3] = ((originU >>> 4) & 0x0f) + ((stepXU >>> 4) & 0x0f) * localX + ((stepYU >>> 4) & 0x0f) * localY;
+		out[offset + 4] = ((originV >>> 4) & 0x0f) + ((stepXV >>> 4) & 0x0f) * localX + ((stepYV >>> 4) & 0x0f) * localY;
+		out[offset + 5] = ((originU >>> 8) & 0x0f) + ((stepXU >>> 8) & 0x0f) * localX + ((stepYU >>> 8) & 0x0f) * localY;
+		out[offset + 6] = ((originV >>> 8) & 0x0f) + ((stepXV >>> 8) & 0x0f) * localX + ((stepYV >>> 8) & 0x0f) * localY;
+		out[offset + 7] = ((originU >>> 12) & 0x0f) + ((stepXU >>> 12) & 0x0f) * localX + ((stepYU >>> 12) & 0x0f) * localY;
+		out[offset + 8] = ((originV >>> 12) & 0x0f) + ((stepXV >>> 12) & 0x0f) * localX + ((stepYV >>> 12) & 0x0f) * localY;
+		out[offset + 9] = ((originU >>> 16) & 0x0f) + ((stepXU >>> 16) & 0x0f) * localX + ((stepYU >>> 16) & 0x0f) * localY;
+		out[offset + 10] = ((originV >>> 16) & 0x0f) + ((stepXV >>> 16) & 0x0f) * localX + ((stepYV >>> 16) & 0x0f) * localY;
+	}
 }
 
 export function gxGpuVertexY(word: number): number {
@@ -224,6 +266,25 @@ export function gxGpuVramWrappedWidth(x: number, width: number): number {
 export function gxGpuVramWrappedHeight(y: number, height: number): number {
 	const edgeHeight = GX_GPU_VRAM_HEIGHT - y;
 	return height <= edgeHeight ? height : edgeHeight;
+}
+
+export function gxGpuVramLogicalAreaOverlapsBounds(x: number, y: number, width: number, height: number, left: number, top: number, right: number, bottom: number): boolean {
+	let rowY = y & (GX_GPU_VRAM_HEIGHT - 1);
+	let remainingHeight = height;
+	while (remainingHeight !== 0) {
+		const runHeight = gxGpuVramWrappedHeight(rowY, remainingHeight);
+		let columnX = x & (GX_GPU_VRAM_WIDTH - 1);
+		let remainingWidth = width;
+		while (remainingWidth !== 0) {
+			const runWidth = gxGpuVramWrappedWidth(columnX, remainingWidth);
+			if (columnX < right && left < columnX + runWidth && rowY < bottom && top < rowY + runHeight) return true;
+			columnX = (columnX + runWidth) & (GX_GPU_VRAM_WIDTH - 1);
+			remainingWidth -= runWidth;
+		}
+		rowY = (rowY + runHeight) & (GX_GPU_VRAM_HEIGHT - 1);
+		remainingHeight -= runHeight;
+	}
+	return false;
 }
 
 export function gxGpuSpansOverlap(startA: number, endA: number, startB: number, endB: number): boolean {

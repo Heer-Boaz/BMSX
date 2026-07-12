@@ -99,6 +99,8 @@ void testGp0RawDrawWordDecoders() {
 	require(bmsx::gxGpuVramWrappedHeight(500u, 12u) == 12u, "GX-GPU non-wrapped VRAM height run");
 	require(bmsx::gxGpuVramWrappedHeight(511u, 511u) == 1u, "GX-GPU wrapped VRAM height first run");
 	require(bmsx::gxGpuVramWrappedHeight(0u, 511u) == 511u, "GX-GPU full-start VRAM height run");
+	require(bmsx::gxGpuVramLogicalAreaOverlapsBounds(1008u, 500u, 32u, 24u, 0, 0, 8, 8), "GX-GPU wrapped VRAM area overlaps low corner bounds");
+	require(!bmsx::gxGpuVramLogicalAreaOverlapsBounds(1008u, 500u, 32u, 24u, 512, 256, 520, 264), "GX-GPU wrapped VRAM area excludes separated bounds");
 	require(bmsx::gxGpuVramCopyNeedsChunking(10u, 20u, 12u, 24u, 32u, 16u), "GX-GPU diagonal overlapping copy chunks");
 	require(bmsx::gxGpuVramCopyChunkHeight(20u, 24u, 16u) == 4u, "GX-GPU diagonal overlapping copy chunk height");
 	require(!bmsx::gxGpuVramCopyNeedsChunking(10u, 20u, 10u, 24u, 32u, 16u), "GX-GPU vertical-only copy is not chunked");
@@ -106,6 +108,14 @@ void testGp0RawDrawWordDecoders() {
 	require(!bmsx::gxGpuVramCopyNeedsChunking(10u, 20u, 50u, 24u, 32u, 16u), "GX-GPU separated X copy is not chunked");
 	require(!bmsx::gxGpuVramCopyNeedsChunking(10u, 20u, 12u, 40u, 32u, 16u), "GX-GPU separated Y copy is not chunked");
 	require(bmsx::gxGpuVramCopyChunkHeight(20u, 80u, 16u) == 16u, "GX-GPU non-overlapping row distance clamps to height");
+	std::array<bmsx::i64, bmsx::GX_GPU_TRIANGLE_UV_PLANE_WORDS> uvPlane{};
+	std::array<bmsx::f32, 33u> uvInterpolants{};
+	bmsx::gxGpuTriangleUvPlane(uvPlane.data(), 0, 256, 0, 0, 1, 2, 16, 0, 17, 2, 0, 16, 1, 18);
+	bmsx::gxGpuTriangleUvPlaneInterpolants(uvInterpolants.data(), 0u, 11u, uvPlane.data(), 0, 0, 16, 0, 0, 16);
+	require(uvInterpolants[0] == 1.0f, "GX-GPU UV plane enables first affine vertex");
+	require(uvInterpolants[7] == 1.0f, "GX-GPU UV plane keeps origin U digit");
+	require(uvInterpolants[18] == 17.0f, "GX-GPU UV plane carries X gradient through digit 3");
+	require(uvInterpolants[30] == 18.0f, "GX-GPU UV plane carries Y gradient through digit 3");
 
 	require(bmsx::gxGpuTransferX(0x01ff03ffu) == 1023u, "GX-GPU transfer x decode");
 	require(bmsx::gxGpuTransferY(0x01ff03ffu) == 511u, "GX-GPU transfer y decode");
