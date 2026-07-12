@@ -308,7 +308,7 @@ Richting:
 
 ## Accelerated framebuffer-feedback performance
 
-Status: root cause gemeten; ownerfix open.
+Status: root cause gemeten; concrete ownerfixes lopen.
 
 Een capture-vrije 1100-frame libretro/GLES2-run is nu lang genoeg om de echte
 `bare_metal_cart`-slowdownscenes te bereiken. De eerdere korte meting miste die.
@@ -331,7 +331,33 @@ voor contexts zonder die capability. In een steady particleframe daalt het
 totale aantal sampletexturecopies daardoor van 147 naar 1; solid/line-
 destinationcopies zijn nul. De volledige 1.030-frame timeline levert met en
 zonder de capability 146 byte-identieke captures, inclusief particles, echo en
-morph. Textured feedback, WebGL2 en WebGPU zijn hiermee nog niet opgelost.
+morph. Textured feedback heeft nog geen barrierpad; WebGL2 en WebGPU hebben geen
+native attached-readroute.
+
+De sampletexture heeft nu in GLES2, WebGL2 en WebGPU ook retained dirty-
+coverage in plaats van een cache van alleen de laatst aangevraagde page/CLUT-
+rects. `vramTexture` blijft de autoriteit; init, clear en snapshotupload maken
+de volledige shadow dirty, iedere raw-targetwrite markeert na de draw zijn
+werkelijke geclipte bounds en een source- of destination-read synchroniseert
+alleen als de aangevraagde coverage de retained dirty-unie raakt. De sync
+kopieert dan die volledige unie en maakt haar clean. Daardoor blijven
+ongewijzigde atlasdelen geldig wanneer opeenvolgende primitives andere UV-
+rects gebruiken. De oude drie rectarrays, hashes en vier grove tilemaskwords
+zijn uit alle drie owners verwijderd.
+
+Op dezelfde meetvensters daalt de expliciete copyroute zonder texture barrier
+naar drie copies in baseline, gemiddeld 62,75 en maximaal 65 in Tera-Flare, en
+gemiddeld 40,43 en maximaal 94 in particles. Voor particles was dat gemiddeld
+72 en maximaal 147; met de native barrier blijft het totaal één niet-
+destinationcopy. De 1.030-frame barrier- en copyruns leveren onderling 146
+pixel-identieke captures. Met CRT en noise uit is de retained-dirty-run ook op
+alle 146 captures pixel-identiek aan de voorafgaande accelerated implementatie.
+
+De WebGPU-owner submit nu bovendien de reeds encoded GP0-draws vóór een directe
+`queue.writeTexture`-CPU-upload. Daardoor kan een latere raw- of transferupload
+niet meer vóór oudere draws op de queue komen en kan een volgende masked upload
+de transfertexture niet overschrijven voordat de vorige transferdraw haar heeft
+gelezen.
 
 Open contract:
 
@@ -342,8 +368,10 @@ Open contract:
 - Alle accelerated backends moeten retained line/solid/textured streams over
   opeenvolgende compatibele GP0-commands gebruiken en alleen flushen op een
   pipeline- of read-after-writegrens.
-- Source sampling krijgt afzonderlijke retained valid/dirty coverage; wisselende
-  UV-rects mogen statische atlasdelen niet telkens volledig kopiëren.
+- De huidige retained dirty-unie is correct maar kan bij ver uit elkaar liggende
+  of wrappende writes grof worden. Alleen wanneer metingen dat als volgende
+  bottleneck aanwijzen, wordt zij bounded fijnmaziger; cleanbits mogen dan pas
+  verdwijnen nadat de volledige gerepresenteerde tile of rect is gekopieerd.
 - Een niet-overlappende contiguous VRAM-copy is één quad; rij- of gesplitste
   paden zijn alleen voor echte overlap, wrap of maskdependencies.
 - Geen universele RGBA8 fixed-function-blendshortcut: tussenliggende sub-5-bit

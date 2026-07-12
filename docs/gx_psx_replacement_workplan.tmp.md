@@ -406,7 +406,17 @@ and MAME
   the existing overlap splits remain the barrier boundaries. A steady particle
   frame drops from 147 sampletexturecopies to 1, while the full 1,030-frame
   barrier and forced-copy runs produce 146 byte-identical captures. Textured
-  feedback and the WebGL2/WebGPU owners remain in the open item above.
+  feedback remains in the open item above.
+- [x] Replace the accelerated last-source rect/hash/tile cache with retained
+  raw-to-sample dirty coverage in GLES2, WebGL2 and WebGPU. Raw writes mark
+  clipped bounds after their draw; page/CLUT/destination reads copy and clear
+  the retained dirty union only on intersection. The forced-copy particle
+  window drops from 72 average/147 maximum copies to 40.43/94, while the native
+  barrier path remains at one non-destinationcopy. Barrier and forced-copy runs
+  are pixel-identical over all 146 captures, and CRT-disabled output is
+  pixel-identical to the preceding accelerated implementation. WebGPU also
+  submits older encoded GP0 work before direct CPU `queue.writeTexture`
+  uploads, preserving transfertexture and raw-VRAM command order.
 - [ ] Keep WebGL2/GLES2 behavior synchronized for every new GX command.
 - [ ] Wire the existing TS/C++ software/headless renderer to the same GX/PSX
   contract as oracle/backend, not as a fallback inside GPU backends.
