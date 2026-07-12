@@ -316,9 +316,10 @@ and MAME
     than treating completed packet assembly as immediate GPU idleness.
 - [ ] Complete GP0/GP1 command decode edge cases and command-buffer ordering.
   - [x] Distinguish machine/device reset from GP1(00h): both clear GPU
-    registers, packet/FIFO state, retained commands and readback state, while
-    only machine reset advances the shared backend VRAM-clear revision. Mirrored
-    TS/C++ command-buffer tests prove GP1 reset preserves raw VRAM for every
+    registers, packet/FIFO state, retained commands and the active readback
+    request, while only machine reset advances the shared backend VRAM-clear
+    revision and clears the GPUREAD data latch to zero. Mirrored TS/C++ tests prove
+    GP1 reset preserves both the GPUREAD data latch and raw VRAM for every
     backend consumer.
 - [ ] DMA interaction behavior beyond the currently tested register/status paths.
   - [x] RAM-to-GP0 DMA word streams feed the memory-mapped GX-GPU GP0 command

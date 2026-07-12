@@ -193,7 +193,7 @@ export class GxGpu {
 	private gp0PolylineCommandWordStart = 0;
 	private gp0PolylineCommandWordCount = 0;
 	private gp0PolylineCommandOpcode = 0;
-	private gpuReadWord = 0x00000400;
+	private gpuReadWord = 0;
 	private drawModeWord = 0;
 	private textureWindowWord = 0;
 	private drawingAreaTopLeftWord = 0;
@@ -247,6 +247,7 @@ export class GxGpu {
 
 	public reset(): void {
 		this.textureDisableAllowedWord = 0;
+		this.gpuReadWord = 0;
 		this.commandBuffer.reset();
 		this.resetGpuRegisters();
 	}
@@ -257,7 +258,6 @@ export class GxGpu {
 		this.displayModeWord = PSX_GPU_DISPLAY_MODE_PAL_WORD;
 		this.statusWord = GX_GPU_STATUS_RESET_WORD;
 		this.clearGp0CommandState();
-		this.gpuReadWord = 0x00000400;
 		this.drawModeWord = 0;
 		this.textureWindowWord = 0;
 		this.drawingAreaTopLeftWord = 0;
@@ -283,7 +283,7 @@ export class GxGpu {
 		this.updateDisplayModeStatusBits();
 		this.updateScanoutStatusBits();
 		this.updateDmaRequestStatusBit();
-		this.memory.writeIoValue(IO_GX_GPU_GP0, 0);
+		this.memory.writeIoValue(IO_GX_GPU_GP0, this.gpuReadWord);
 		this.writeStatusIo();
 	}
 

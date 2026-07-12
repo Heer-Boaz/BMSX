@@ -681,9 +681,10 @@ pending latch as two distinct hardware words.
 Machine/device reset and GP1(00h) are distinct GPU transitions. A machine reset
 publishes a raw-VRAM clear revision and clears the retained command stream;
 GP1(00h) resets GPU registers, packet/FIFO state, retained commands, and
-readback state while preserving the 1 MiB VRAM contents. Every render backend
-consumes the same command-stream and VRAM-clear revisions, so this distinction
-is not backend-specific.
+the active readback request while preserving both the GPUREAD data latch and
+the 1 MiB VRAM contents. Machine reset also clears the GPUREAD latch to zero.
+Every render backend consumes the same command-stream and VRAM-clear revisions,
+so this distinction is not backend-specific.
 
 Pixel parity is a machine contract at GX VRAM scanout. For the same ROM,
 timeline, model profile, and GX display registers, the TypeScript headless

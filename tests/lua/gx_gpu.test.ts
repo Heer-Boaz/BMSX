@@ -541,6 +541,8 @@ test('GX-GPU GP1 reset restores registers and preserves VRAM', () => {
 
 	gpu.writeGp1((GX_GPU_GP1_SET_ALLOW_TEXTURE_DISABLE << 24) | 1);
 	gpu.writeGp1((GX_GPU_GP1_SET_DISPLAY_MODE << 24) | 0x00000000);
+	gpu.writeGp0((GX_GPU_GP0_SET_DRAWING_AREA_TOP_LEFT << 24) | 0x00054321);
+	gpu.writeGp1((GX_GPU_GP1_GET_GPU_INFO << 24) | 0x03);
 	gpu.writeGp0((GX_GPU_GP0_FILL_RECTANGLE << 24) | 0x0000ff);
 	gpu.writeGp0(0);
 	gpu.writeGp0((1 << 16) | 1);
@@ -552,6 +554,7 @@ test('GX-GPU GP1 reset restores registers and preserves VRAM', () => {
 
 	assert.equal(commandBuffer.commandCount, 0);
 	assert.equal(commandBuffer.vramClearSerial, vramClearSerial);
+	assert.equal(gpu.readGp0(), 0x00054321);
 	assert.equal(gpu.readTextureDisableAllowedWord(), 1);
 	assert.equal((gpu.readStatus() & GX_GPU_STATUS_TEXTURE_DISABLE) >>> 0, 0);
 	assert.equal(gpu.readDisplayModeWord(), PSX_GPU_DISPLAY_MODE_PAL_WORD);
@@ -560,6 +563,7 @@ test('GX-GPU GP1 reset restores registers and preserves VRAM', () => {
 
 	gpu.reset();
 	assert.notEqual(commandBuffer.vramClearSerial, vramClearSerial);
+	assert.equal(gpu.readGp0(), 0);
 });
 
 test('GX-GPU mirrors PSX GP1 display mode fields into GPUSTAT bits', () => {
@@ -2159,7 +2163,7 @@ test('GX-GPU MMIO uses PSX GP0 data and GP1 status addresses', () => {
 	memory.writeMappedU32LE(IO_GX_GPU_GP0, 0x12345678);
 	memory.writeMappedU32LE(IO_GX_GPU_GP1, (GX_GPU_GP1_SET_DISPLAY_MODE << 24) | 0x00000000);
 
-	assert.equal(memory.readMappedU32LE(IO_GX_GPU_GP0), 0x00000400);
+	assert.equal(memory.readMappedU32LE(IO_GX_GPU_GP0), 0);
 	assert.equal((memory.readMappedU32LE(IO_GX_GPU_GP1) & GX_GPU_STATUS_READY_TO_RECEIVE_DMA) >>> 0, GX_GPU_STATUS_READY_TO_RECEIVE_DMA);
 	assert.equal((memory.readMappedU32LE(IO_GX_GPU_GP1) & GX_GPU_STATUS_PAL_MODE) >>> 0, 0);
 });

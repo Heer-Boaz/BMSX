@@ -258,6 +258,8 @@ void testGp1ResetRestoresRegistersAndPreservesVram() {
 
 	gpu.writeGp1((bmsx::GX_GPU_GP1_SET_ALLOW_TEXTURE_DISABLE << 24u) | 1u);
 	gpu.writeGp1((bmsx::GX_GPU_GP1_SET_DISPLAY_MODE << 24u) | 0x00000000u);
+	gpu.writeGp0((bmsx::GX_GPU_GP0_SET_DRAWING_AREA_TOP_LEFT << 24u) | 0x00054321u);
+	gpu.writeGp1((bmsx::GX_GPU_GP1_GET_GPU_INFO << 24u) | 0x03u);
 	gpu.writeGp0((bmsx::GX_GPU_GP0_FILL_RECTANGLE << 24u) | 0x0000ffu);
 	gpu.writeGp0(0u);
 	gpu.writeGp0((1u << 16u) | 1u);
@@ -269,6 +271,7 @@ void testGp1ResetRestoresRegistersAndPreservesVram() {
 
 	require(commandBuffer.commandCount == 0u, "GX-GPU GP1 reset clears queued commands");
 	require(commandBuffer.vramClearSerial == vramClearSerial, "GX-GPU GP1 reset preserves backend VRAM");
+	require(gpu.readGp0() == 0x00054321u, "GX-GPU GP1 reset preserves the GPUREAD data latch");
 	require(gpu.readTextureDisableAllowedWord() == 1u, "GX-GPU GP1 reset preserves texture-disable allowance");
 	require((gpu.readStatus() & bmsx::GX_GPU_STATUS_TEXTURE_DISABLE) == 0u, "GX-GPU GP1 reset clears texture-disable status bit");
 	require(gpu.readDisplayModeWord() == bmsx::PSX_GPU_DISPLAY_MODE_PAL_WORD, "GX-GPU GP1 reset display mode");
@@ -277,6 +280,7 @@ void testGp1ResetRestoresRegistersAndPreservesVram() {
 
 	gpu.reset();
 	require(commandBuffer.vramClearSerial != vramClearSerial, "GX-GPU device reset publishes a backend VRAM clear");
+	require(gpu.readGp0() == 0u, "GX-GPU device reset clears the GPUREAD data latch");
 }
 
 void testDisplayModeStatusBits() {
@@ -2433,7 +2437,7 @@ void testMmioGp0Gp1() {
 	memory.writeMappedU32LE(bmsx::IO_GX_GPU_GP0, 0x12345678u);
 	memory.writeMappedU32LE(bmsx::IO_GX_GPU_GP1, (bmsx::GX_GPU_GP1_SET_DISPLAY_MODE << 24u) | 0x00000000u);
 
-	require(memory.readMappedU32LE(bmsx::IO_GX_GPU_GP0) == 0x00000400u, "GX-GPU GP0 read returns GPUREAD latch");
+	require(memory.readMappedU32LE(bmsx::IO_GX_GPU_GP0) == 0u, "GX-GPU GP0 read returns reset GPUREAD latch");
 	require((memory.readMappedU32LE(bmsx::IO_GX_GPU_GP1) & bmsx::GX_GPU_STATUS_READY_TO_RECEIVE_DMA) == bmsx::GX_GPU_STATUS_READY_TO_RECEIVE_DMA, "GX-GPU GP1 GPUSTAT receive-ready bit");
 	require((memory.readMappedU32LE(bmsx::IO_GX_GPU_GP1) & bmsx::GX_GPU_STATUS_PAL_MODE) == 0u, "GX-GPU GP1 MMIO GPUSTAT PAL bit");
 }

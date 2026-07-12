@@ -208,7 +208,7 @@ private:
 	size_t m_gp0PolylineCommandWordStart = 0u;
 	u32 m_gp0PolylineCommandWordCount = 0u;
 	u8 m_gp0PolylineCommandOpcode = 0u;
-	u32 m_gpuReadWord = 0x00000400u;
+	u32 m_gpuReadWord = 0u;
 	u32 m_drawModeWord = 0u;
 	u32 m_textureWindowWord = 0u;
 	u32 m_drawingAreaTopLeftWord = 0u;

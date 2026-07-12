@@ -234,11 +234,13 @@ edge kan leveren. TS en C++ delen dezelfde raw MMIO-vector voor die volledige
 volgorde. Er is geen callbackfacade of tweede interruptstatus toegevoegd.
 
 GP1(00h) is daarnaast losgetrokken van machine/device reset. Beide wissen de
-registers, packet/FIFO-state, retained commandstream en readbacklatch, maar
-alleen machine reset publiceert een VRAM-clear-revision. GP1 reset behoudt dus
-de echte 1 MiB backend-VRAM in TS/C++ software, WebGL2, GLES2 en WebGPU. De
-gespiegelde commandbuffervector bewijst zowel het behouden van die revision als
-de harde-resettransitie; er is geen backend-uitzondering of CPU-VRAM-shadow.
+registers, packet/FIFO-state, retained commandstream en de actieve
+readbackrequest, maar alleen machine reset publiceert een VRAM-clear-revision en
+maakt de GPUREAD-datalatch nul. Net als DuckStation en Mednafen behoudt GP1
+reset de bestaande GPUREAD-datalatch en de echte 1 MiB backend-VRAM in TS/C++
+software, WebGL2, GLES2 en WebGPU. De gespiegelde vector bewijst de bewaarde
+latch/revision en de harde-resettransitie; er is geen backend-uitzondering of
+CPU-VRAM-shadow.
 
 Nog te sluiten:
 

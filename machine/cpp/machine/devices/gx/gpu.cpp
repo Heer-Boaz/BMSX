@@ -26,6 +26,7 @@ GxGpu::GxGpu(Memory& memory, IrqController& irq, DeviceScheduler& scheduler, Dma
 
 void GxGpu::reset() {
 	m_textureDisableAllowedWord = 0u;
+	m_gpuReadWord = 0u;
 	m_commandBuffer.reset();
 	resetGpuRegisters();
 }
@@ -36,7 +37,6 @@ void GxGpu::resetGpuRegisters() {
 	m_displayModeWord = PSX_GPU_DISPLAY_MODE_PAL_WORD;
 	m_statusWord = GX_GPU_STATUS_RESET_WORD;
 	clearGp0CommandState();
-	m_gpuReadWord = 0x00000400u;
 	m_drawModeWord = 0u;
 	m_textureWindowWord = 0u;
 	m_drawingAreaTopLeftWord = 0u;
@@ -62,7 +62,7 @@ void GxGpu::resetGpuRegisters() {
 	updateDisplayModeStatusBits();
 	updateScanoutStatusBits();
 	updateDmaRequestStatusBit();
-	m_memory.writeIoValue(IO_GX_GPU_GP0, valueNumber(0.0));
+	m_memory.writeIoValue(IO_GX_GPU_GP0, valueNumber(static_cast<double>(m_gpuReadWord)));
 	writeStatusIo();
 }
 
