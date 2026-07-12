@@ -249,6 +249,7 @@ export class GxGpu {
 		this.textureDisableAllowedWord = 0;
 		this.gpuReadWord = 0;
 		this.commandBuffer.reset();
+		this.clearGp0CommandState();
 		this.resetGpuRegisters();
 	}
 
@@ -257,7 +258,6 @@ export class GxGpu {
 		this.gp1Word = 0;
 		this.displayModeWord = PSX_GPU_DISPLAY_MODE_PAL_WORD;
 		this.statusWord = GX_GPU_STATUS_RESET_WORD;
-		this.clearGp0CommandState();
 		this.drawModeWord = 0;
 		this.textureWindowWord = 0;
 		this.drawingAreaTopLeftWord = 0;
@@ -506,16 +506,11 @@ export class GxGpu {
 		const opcode = (command >>> GX_GPU_GP1_OPCODE_SHIFT) & GX_GPU_GP1_OPCODE_MASK;
 		switch (opcode) {
 			case GX_GPU_GP1_RESET:
-				this.commandBuffer.resetPreservingVram();
+				this.clearGp0Fifo();
 				this.resetGpuRegisters();
 				break;
 			case GX_GPU_GP1_CLEAR_FIFO:
-				this.flushImageLoadToVram();
-				if (this.gp0PolylineCommandWordCount !== 0) {
-					this.commandBuffer.wordCount = this.gp0PolylineCommandWordStart;
-				}
-				this.commandBuffer.abortReadbackAndQueuedCommands();
-				this.clearGp0CommandState();
+				this.clearGp0Fifo();
 				this.writeStatusIo();
 				break;
 			case GX_GPU_GP1_ACK_INTERRUPT:
@@ -696,6 +691,15 @@ export class GxGpu {
 		this.gp0CommandTargetWordCount = 0;
 		this.clearImageLoadState();
 		this.clearPolylineState();
+	}
+
+	private clearGp0Fifo(): void {
+		this.flushImageLoadToVram();
+		if (this.gp0PolylineCommandWordCount !== 0) {
+			this.commandBuffer.wordCount = this.gp0PolylineCommandWordStart;
+		}
+		this.commandBuffer.abortReadbackAndQueuedCommands();
+		this.clearGp0CommandState();
 	}
 
 	private clearPolylineState(): void {

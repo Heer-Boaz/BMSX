@@ -250,10 +250,11 @@ void testGp1DisplayModeOwnsPalNtsc() {
 	require((gpu.readStatus() & bmsx::GX_GPU_STATUS_PAL_MODE) == 0u, "GX-GPU GP1 clears GPUSTAT PAL bit");
 }
 
-void testGp1ResetRestoresRegistersAndPreservesVram() {
+void testGp1ResetRestoresRegistersAndPreservesAcceptedGpuWork() {
 	GpuHarness harness;
 	bmsx::GxGpu& gpu = harness.gpu;
 	const bmsx::GxGpuCommandBuffer& commandBuffer = *gpu.readDeviceOutput().commandBuffer;
+	const uint32_t commandSerial = commandBuffer.serial;
 	const uint32_t vramClearSerial = commandBuffer.vramClearSerial;
 
 	gpu.writeGp1((bmsx::GX_GPU_GP1_SET_ALLOW_TEXTURE_DISABLE << 24u) | 1u);
@@ -263,13 +264,18 @@ void testGp1ResetRestoresRegistersAndPreservesVram() {
 	gpu.writeGp0((bmsx::GX_GPU_GP0_FILL_RECTANGLE << 24u) | 0x0000ffu);
 	gpu.writeGp0(0u);
 	gpu.writeGp0((1u << 16u) | 1u);
+	gpu.writeGp0(bmsx::GX_GPU_GP0_CPU_TO_VRAM_FIRST << 24u);
+	gpu.writeGp0(32u);
+	gpu.writeGp0((1u << 16u) | 4u);
+	gpu.writeGp0(0x03e0001fu);
 	require(gpu.readDisplayModeWord() == 0u, "GX-GPU GP1 display NTSC before reset");
 	require((gpu.readStatus() & bmsx::GX_GPU_STATUS_PAL_MODE) == 0u, "GX-GPU GP1 PAL bit clear before reset");
 	require(commandBuffer.commandCount == 1u, "GX-GPU GP1 reset test has a queued command");
 
 	require(gpu.writeGp1(bmsx::GX_GPU_GP1_RESET << 24u) == bmsx::GX_GPU_GP1_RESET, "GX-GPU GP1 reset opcode");
 
-	require(commandBuffer.commandCount == 0u, "GX-GPU GP1 reset clears queued commands");
+	require(commandBuffer.commandCount == 2u, "GX-GPU GP1 reset preserves accepted commands and received upload payload");
+	require(commandBuffer.serial == commandSerial, "GX-GPU GP1 reset preserves stable accepted command revision");
 	require(commandBuffer.vramClearSerial == vramClearSerial, "GX-GPU GP1 reset preserves backend VRAM");
 	require(gpu.readGp0() == 0x00054321u, "GX-GPU GP1 reset preserves the GPUREAD data latch");
 	require(gpu.readTextureDisableAllowedWord() == 1u, "GX-GPU GP1 reset preserves texture-disable allowance");
@@ -277,8 +283,16 @@ void testGp1ResetRestoresRegistersAndPreservesVram() {
 	require(gpu.readDisplayModeWord() == bmsx::PSX_GPU_DISPLAY_MODE_PAL_WORD, "GX-GPU GP1 reset display mode");
 	require((gpu.readStatus() & bmsx::GX_GPU_STATUS_PAL_MODE) == bmsx::GX_GPU_STATUS_PAL_MODE, "GX-GPU GP1 reset PAL bit");
 	require((gpu.readStatus() & bmsx::GX_GPU_STATUS_RESET_WORD) == bmsx::GX_GPU_STATUS_RESET_WORD, "GX-GPU GP1 reset base bits");
+	gpu.presentReadyFrameOnVblankEdge();
+	bmsx::g_gxGpuSoftwareVram.fill(0u);
+	require(bmsx::executeGxGpuSoftwareCommands(commandBuffer, 0u) == 2u, "GX-GPU GP1 reset publishes accepted pre-reset work");
+	require(bmsx::g_gxGpuSoftwareVram[bmsx::gxGpuSoftwareVramIndex(0, 0)] == 0x001fu, "GX-GPU GP1 reset preserves accepted fill");
+	require(bmsx::g_gxGpuSoftwareVram[bmsx::gxGpuSoftwareVramIndex(32, 0)] == 0x001fu, "GX-GPU GP1 reset preserves first received upload pixel");
+	require(bmsx::g_gxGpuSoftwareVram[bmsx::gxGpuSoftwareVramIndex(33, 0)] == 0x03e0u, "GX-GPU GP1 reset preserves second received upload pixel");
+	require(bmsx::g_gxGpuSoftwareVram[bmsx::gxGpuSoftwareVramIndex(34, 0)] == 0u, "GX-GPU GP1 reset does not invent missing upload payload");
 
 	gpu.reset();
+	require(commandBuffer.commandCount == 0u, "GX-GPU device reset clears retained commands");
 	require(commandBuffer.vramClearSerial != vramClearSerial, "GX-GPU device reset publishes a backend VRAM clear");
 	require(gpu.readGp0() == 0u, "GX-GPU device reset clears the GPUREAD data latch");
 }
@@ -2582,7 +2596,7 @@ void testMmioGp0Gp1() {
 int main() {
 	testGp0RawDrawWordDecoders();
 	testGp1DisplayModeOwnsPalNtsc();
-	testGp1ResetRestoresRegistersAndPreservesVram();
+	testGp1ResetRestoresRegistersAndPreservesAcceptedGpuWork();
 	testDisplayModeStatusBits();
 	testInterlacedScanoutStatusBits();
 	testInterlacedRenderCommandWords();

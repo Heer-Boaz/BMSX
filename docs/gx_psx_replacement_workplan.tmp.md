@@ -316,11 +316,11 @@ and MAME
     than treating completed packet assembly as immediate GPU idleness.
 - [ ] Complete GP0/GP1 command decode edge cases and command-buffer ordering.
   - [x] Distinguish machine/device reset from GP1(00h): both clear GPU
-    registers, packet/FIFO state, retained commands and the active readback
-    request, while only machine reset advances the shared backend VRAM-clear
-    revision and clears the GPUREAD data latch to zero. Mirrored TS/C++ tests
-    prove GP1 reset preserves both the GPUREAD data latch and raw VRAM for every
-    backend consumer.
+    registers, packet/FIFO state and the active readback request, while only
+    machine reset clears the accepted backend log, advances the shared
+    VRAM-clear revision and clears GPUREAD to zero. GP1 reset retains accepted
+    commands and received A0 payload alongside the GPUREAD latch and raw VRAM.
+    Mirrored TS/C++ raw-VRAM tests cover the distinction.
   - [x] Make GP1(01h) abort active C0 readback state and its queued suffix.
     Pending fences retain the stable command prefix without a revision; a
     submitted/ready transfer invalidates its backend generation and publishes a

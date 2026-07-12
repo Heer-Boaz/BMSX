@@ -646,9 +646,10 @@ test('GX-GPU exposes PSX GP1 display mode instead of a VDP profile register', ()
 	assert.equal((gpu.readStatus() & GX_GPU_STATUS_PAL_MODE) >>> 0, 0);
 });
 
-test('GX-GPU GP1 reset restores registers and preserves VRAM', () => {
+test('GX-GPU GP1 reset restores registers and preserves accepted GPU work', () => {
 	const { gpu } = createGpu();
 	const commandBuffer = gpu.readDeviceOutput().commandBuffer;
+	const commandSerial = commandBuffer.serial;
 	const vramClearSerial = commandBuffer.vramClearSerial;
 
 	gpu.writeGp1((GX_GPU_GP1_SET_ALLOW_TEXTURE_DISABLE << 24) | 1);
@@ -658,13 +659,18 @@ test('GX-GPU GP1 reset restores registers and preserves VRAM', () => {
 	gpu.writeGp0((GX_GPU_GP0_FILL_RECTANGLE << 24) | 0x0000ff);
 	gpu.writeGp0(0);
 	gpu.writeGp0((1 << 16) | 1);
+	gpu.writeGp0(GX_GPU_GP0_CPU_TO_VRAM_FIRST << 24);
+	gpu.writeGp0(32);
+	gpu.writeGp0((1 << 16) | 4);
+	gpu.writeGp0(0x03e0001f);
 	assert.equal(gpu.readDisplayModeWord(), 0);
 	assert.equal((gpu.readStatus() & GX_GPU_STATUS_PAL_MODE) >>> 0, 0);
 	assert.equal(commandBuffer.commandCount, 1);
 
 	assert.equal(gpu.writeGp1(GX_GPU_GP1_RESET << 24), GX_GPU_GP1_RESET);
 
-	assert.equal(commandBuffer.commandCount, 0);
+	assert.equal(commandBuffer.commandCount, 2);
+	assert.equal(commandBuffer.serial, commandSerial);
 	assert.equal(commandBuffer.vramClearSerial, vramClearSerial);
 	assert.equal(gpu.readGp0(), 0x00054321);
 	assert.equal(gpu.readTextureDisableAllowedWord(), 1);
@@ -672,8 +678,16 @@ test('GX-GPU GP1 reset restores registers and preserves VRAM', () => {
 	assert.equal(gpu.readDisplayModeWord(), PSX_GPU_DISPLAY_MODE_PAL_WORD);
 	assert.equal((gpu.readStatus() & GX_GPU_STATUS_PAL_MODE) >>> 0, GX_GPU_STATUS_PAL_MODE);
 	assert.equal((gpu.readStatus() & GX_GPU_STATUS_RESET_WORD) >>> 0, GX_GPU_STATUS_RESET_WORD);
+	gpu.presentReadyFrameOnVblankEdge();
+	gxGpuSoftwareVram.fill(0);
+	assert.equal(executeGxGpuSoftwareCommands(commandBuffer, 0), 2);
+	assert.equal(gxGpuSoftwareVram[gxGpuSoftwareVramIndex(0, 0)], 0x001f);
+	assert.equal(gxGpuSoftwareVram[gxGpuSoftwareVramIndex(32, 0)], 0x001f);
+	assert.equal(gxGpuSoftwareVram[gxGpuSoftwareVramIndex(33, 0)], 0x03e0);
+	assert.equal(gxGpuSoftwareVram[gxGpuSoftwareVramIndex(34, 0)], 0);
 
 	gpu.reset();
+	assert.equal(commandBuffer.commandCount, 0);
 	assert.notEqual(commandBuffer.vramClearSerial, vramClearSerial);
 	assert.equal(gpu.readGp0(), 0);
 });

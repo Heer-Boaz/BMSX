@@ -680,11 +680,13 @@ pending latch as two distinct hardware words.
 
 Machine/device reset and GP1(00h) are distinct GPU transitions. A machine reset
 publishes a raw-VRAM clear revision and clears the retained command stream;
-GP1(00h) resets GPU registers, packet/FIFO state, retained commands, and
-the active readback request while preserving both the GPUREAD data latch and
-the 1 MiB VRAM contents. Machine reset also clears the GPUREAD latch to zero.
-Every render backend consumes the same command-stream and VRAM-clear revisions,
-so this distinction is not backend-specific.
+GP1(00h) resets GPU registers and applies the same packet/FIFO transition as
+GP1(01h). Already accepted backend commands and received image payload remain
+in the retained execution log, while an incomplete packet/polyline and an
+active readback suffix are discarded. GP1(00h) preserves both the GPUREAD data
+latch and the 1 MiB VRAM contents; machine reset clears the latch to zero. Every
+render backend consumes the same command-stream and VRAM-clear revisions, so
+this distinction is not backend-specific.
 
 GP1(01h) clears in-progress GP0 packet/FIFO state and aborts an active
 VRAM-to-CPU transfer. Commands before a still-pending C0 fence remain in their

@@ -238,6 +238,7 @@ private:
 	void resetGpuRegisters();
 	void writeDisplayDisableWord(u32 word);
 	void clearGp0CommandState();
+	void clearGp0Fifo();
 	void clearPolylineState();
 	void clearImageLoadState();
 	void finishImageLoadToVram();

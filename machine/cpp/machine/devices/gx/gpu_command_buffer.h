@@ -259,11 +259,6 @@ public:
 		clearCommandState();
 	}
 
-	void resetPreservingVram() {
-		publishRevision(false);
-		clearCommandState();
-	}
-
 	void abortReadbackAndQueuedCommands() {
 		if (readback.m_phase == GX_GPU_READBACK_IDLE) {
 			return;

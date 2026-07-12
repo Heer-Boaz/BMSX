@@ -267,11 +267,6 @@ export class GxGpuCommandBuffer implements GxGpuCommandBufferView {
 		this.clearCommandState();
 	}
 
-	public resetPreservingVram(): void {
-		this.publishRevision(false);
-		this.clearCommandState();
-	}
-
 	public abortReadbackAndQueuedCommands(): void {
 		if (this.readback.phase === GX_GPU_READBACK_IDLE) {
 			return;
