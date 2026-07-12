@@ -3919,7 +3919,6 @@ int main(int argc, char** argv) {
 	}
 	const bool unpaced_timeline = input_timeline_is_active();
 	uint64_t next_frame_ns = monotonic_ns();
-	uint64_t last_core_frame_ns = 0;
 
 	while (!g_should_quit) {
 		uint64_t now_ns = monotonic_ns();
@@ -3937,17 +3936,12 @@ int main(int argc, char** argv) {
 				next_frame_ns = now_ns;
 			}
 		}
+		/* Missed deadlines are caught up by subsequent host-loop iterations.
+		 * Drop their presentation and advance exactly one machine frame per call. */
+		g_drop_video = !unpaced_timeline && now_ns > next_frame_ns + g_frame_ns;
 		if (g_has_frame_time_cb) {
-			retro_usec_t frame_time_usec = (retro_usec_t)g_frame_usec;
-			if (!unpaced_timeline && last_core_frame_ns != 0) {
-				const uint64_t elapsed_ns = now_ns - last_core_frame_ns;
-				if (elapsed_ns > 0) {
-					frame_time_usec = (retro_usec_t)(elapsed_ns / 1000ull);
-				}
-			}
-			g_frame_time_cb.callback(frame_time_usec);
+			g_frame_time_cb.callback((retro_usec_t)g_frame_usec);
 		}
-		last_core_frame_ns = now_ns;
 		const bool cart_program_active = core_cart_program_active();
 		if (!cart_program_active) {
 			g_input_timeline_frame_pending = true;
@@ -3970,7 +3964,6 @@ int main(int argc, char** argv) {
 					(unsigned long long)g_run_frame_count);
 			g_should_quit = 1;
 		}
-		g_drop_video = false;
 		now_ns = monotonic_ns();
 		if (unpaced_timeline) {
 			next_frame_ns = now_ns;

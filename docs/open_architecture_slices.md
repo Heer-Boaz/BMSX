@@ -377,8 +377,11 @@ Richting:
 ## Accelerated framebuffer-feedback performance
 
 Status: concrete retained ownerfixes en de libretro-contextresolver zijn
-afgerond; echte Windows-RetroArch- en live WebGL2/WebGPU-capabilityvalidatie
-blijven open.
+afgerond; de live gepacete libretro/SNES-mini-performance blijft open. De
+huidige worktree bevat een C++-experiment dat de cumulatieve slowdown sterk
+vermindert, maar de gemeten frametime-staart is nog zichtbaar en dus niet
+geaccepteerd. Echte Windows-RetroArch- en live WebGL2/WebGPU-capabilityvalidatie
+blijven eveneens open.
 
 Een capture-vrije 1100-frame libretro/GLES2-run is nu lang genoeg om de echte
 `bare_metal_cart`-slowdownscenes te bereiken. De eerdere korte meting miste die.
@@ -546,6 +549,119 @@ per primitive geordend blijft. Vier afwisselende llvmpipe-runs met één worker
 over de 982-frame capturevrije slowdown-timeline meten gemiddeld 6,37 naar
 6,23 s user-CPU en 6,75 naar 6,56 s totale CPU: respectievelijk 2,2% en 2,9%
 lager.
+
+### Openstaande live libretro/SNES-mini slowdown — overdracht 2026-07-13
+
+Deze overdracht vervangt de eerdere conclusie op basis van korte of ongepacete
+runs. Een capturetimeline van 130 of 1.100 frames bewijst pixels en
+determinisme, maar niet de gemelde langdurige slowdown. De fout is zichtbaar
+wanneer de directe libretrohost echt pace't, `SwapWindow`/`eglSwapBuffers` kan
+blokkeren en de zware particle-scene lang genoeg actief blijft.
+
+Waargenomen feedbacklus:
+
+- De host hield een absolute `next_frame_ns`-deadline bij en voerde na een
+  gemiste deadline volgende hostloop-iterations zonder slaap uit.
+- Tegelijk gaf hij de volledige verstreken wall-clocktijd via de libretro
+  frame-timecallback aan de core. De machinescheduler mocht daardoor in één
+  `retro_run()` maximaal vijf ticks catch-up uitvoeren.
+- Eén dure present of driversynchronisatie veroorzaakte dus zowel interne
+  multi-tick catch-up als extra hostloop-calls. De bijbehorende GX-commandstreams
+  werden samen gerenderd, waarna de volgende blocking present de achterstand
+  verder vergrootte.
+- Alleen een vaste delta doorgeven was geen oplossing: zonder host-side
+  presentation skip werden daarna alle gemiste frames alsnog afzonderlijk
+  gepresenteerd. Dat schakelde effectief frameskip uit en maakte de zichtbare
+  slowdown erger.
+
+Huidig worktree-experiment:
+
+- `hosts/libretro_host/main.c` laat de deadline-loop iedere `retro_run()` exact
+  één machineframe geven. Een iteration die meer dan één deadline achterloopt
+  zet de bestaande `g_drop_video`-latch, zodat de machine wel catch-up draait
+  maar de tussenliggende SDL/EGL-presentatie niet blokkeert. Frameskip blijft
+  daarmee actief; tijd wordt niet weggegooid en de core doet niet tegelijk een
+  tweede catch-up.
+- `machine/cpp/render/backend/gles2/gx_gpu.cpp` plant opeenvolgende compatibele
+  semitransparante line/rectanglecommands in dependencylagen. Alleen werkelijk
+  overlappende rasterpixels behouden de oorspronkelijke volgorde; onafhankelijke
+  commands delen een upload/draw en een sampletexturesync. De lijncoverage volgt
+  dezelfde integer rasterformules als de GLES2-lineshader.
+- Die planner gebruikt alleen retained `std::array`-scratch voor maximaal de
+  bestaande 1.024 lijnsegmenten. Er staat geen `vector`, map, closure, string,
+  `new`, lokale heapbuffer of per-frameobject in het nieuwe hot path. Dit is nog
+  geen volledige allocatie-audit: stabiele RSS bewijst geen afwezigheid van
+  allocatorchurn elders in core, host of driver.
+- Het pad gebruikt uitsluitend GLES2-baselinefunctionaliteit. Het mag niet
+  afhankelijk worden van `GL_NV_texture_barrier`, framebuffer fetch, GLES3
+  blits of een capability die de SNES Mini niet bezit. De lokaal gemeten WSL-
+  context was `D3D12 (Intel UHD Graphics), OpenGL ES 3.0`; die meting is geen
+  targethardwarebewijs.
+
+Meetresultaten en wat zij wel/niet bewijzen:
+
+- De afgekeurde korte baseline met de zware scene actief: 1.550 calls,
+  47,79 s wall, gemiddeld 29,94 ms in `retro_run`, p99 175 ms, 102 calls boven
+  100 ms.
+- Alleen het eerste GLES2-laagexperiment was onvoldoende. In een gepacete soak
+  van 15.003 calls duurde het 370,84 s, gemiddeld 23,43 ms, p99 102 ms,
+  1.585 calls boven 40 ms en 182 boven 100 ms. Dit reproduceerde de klacht en
+  verwierp de eerdere korte benchmark.
+- Het gecombineerde host-frameskip/dependencyplan draaide daarna 15.050 calls
+  in 297,83 s, met gemiddeld 18,81 ms, p99 96 ms, 1.049 calls boven 40 ms en
+  117 boven 100 ms. De oplopende slow-motionfeedback is lokaal verdwenen, maar
+  een p99 van 96 ms is nog een zichtbare hitch en mag niet als perfecte of
+  afgeronde performance worden gepresenteerd.
+- Tijdens de vijfminutenrun bleven `VmRSS` en `VmHWM` vlak rond 191 MiB en
+  `/usr/bin/time` meldde maximaal 190.968 KiB. Dit weerlegt groei, maar is geen
+  malloc/free- of driverallocatietelling.
+- De volledige 1.030-frame capturetimeline bleef over alle 146 PNG's
+  byte-identiek aan de voorafgaande core en de frame-sequence-analyse slaagde.
+  Dat bewijst de geteste rastervolgorde, niet performance.
+- De SNES-mini-crossbuild kon in deze omgeving niet worden herhaald omdat het
+  sysrootdoel interactief `sudo` vereiste. Er is geen meting op een echte SNES
+  Mini; claim die dus niet.
+
+Verplichte aanpak voor de volgende agent:
+
+1. Begin met `git diff` en behandel beide huidige wijzigingen als een
+   onbewezen experiment, niet als vaststaande architectuur. Revert of vervang
+   ze wanneer de lange data dat eist; stapel geen derde workaround erbovenop.
+2. Maak een reproduceerbare particle-soaktimeline in de testowner: cycle vroeg
+   naar particles, houd die scene minstens 15.000 machineframes vast en laat de
+   host echt pacen. Gebruik de bestaande ongepacete timeline alleen voor
+   deterministic captures.
+3. Meet afzonderlijk machine-update, GX-commandexecution, final blit en
+   SDL/EGL-swap. Rapporteer histogram/p95/p99/max en dropped presentations na
+   warm-up; alleen wall-average of CPU-percentage is onvoldoende.
+4. Instrumenteer allocaties aan de core/hostgrens of gebruik een targetgeschikte
+   allocatorprofiler. Acceptatie is nul nieuwe hot-pathallocaties en geen
+   groeiende retained buffers; RSS alleen is ondersteunend bewijs.
+5. Draai A/B met identieke binary/config/timeline: huidige `HEAD`, alleen de
+   hostcorrectie, alleen het GLES2-plan en gecombineerd. De eerdere losse cijfers
+   kwamen uit verschillende hypotheses en mogen niet opnieuw als zuivere A/B
+   worden voorgesteld.
+6. Bouw en meet op echte SNES Mini-hardware. Vereist zijn sustained 50 Hz,
+   correcte audio, geen cumulatieve achterstand en geen zichtbare periodieke
+   hitch in particles. Desktop/WSL mag alleen de profiler en pixelpariteit
+   voorbereiden.
+7. Als blocking present na de corefix de resterende staart bezit, los ownership
+   op bij de libretrohost/presentatiegrens. Verander niet opnieuw de machine-
+   delta om een presentatiestall te verbergen en verzwak de cartscene niet.
+8. Als de dependencycopy nog domineert op extensionloze GLES2, optimaliseer de
+   concrete raw-VRAM-ordering. Iedere reorder moet vier blendmodes, chained
+   rounding, STP/mask en exacte lijncoverage behouden; een RGBA8 fixed-blend-
+   benadering is zonder die vectors ongeldig.
+
+Nieuwe acceptatie-evidence moet minimaal bevatten:
+
+- vijf minuten live gepacete particles na warm-up, plus een langere targetrun;
+- frame/present-histogrammen en expliciete dropped-framecount;
+- allocatiecount/bytes per frame voor BMSX-owned code;
+- alle 146 bestaande captures byte-identiek en de raw-VRAM blend/maskvectors;
+- een Release-crossbuild en een echte SNES-mini-run met dezelfde ROM/config;
+- geen `glFinish`, `readPixels`, vaste-delta-zonder-catch-up, cartversimpeling,
+  extension-only fast path of softwarefallback als prestatieclaim.
 
 Bewaard contract en meetgedreven vervolg:
 
