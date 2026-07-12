@@ -388,15 +388,38 @@ Referencebasis: DuckStation kiest in
 eveneens één shadercopy voor mask/wrap, een directe texture-region-copy voor de
 eenvoudige contiguous case en afzonderlijke chunks voor diagonale overlap.
 
+De overblijvende commandprofiler liet daarna zien dat kleine lijncommands nog
+steeds ieder hun eigen vertexupload, uniforms en draw kregen: 26 lijndraws in
+baseline/echo, gemiddeld 96,63 en maximaal 97 in particles, en 32 in morph.
+GLES2, WebGL2 en WebGPU houden opeenvolgende compatibele lijnen nu in dezelfde
+retained vertexstream. Een statewissel, een ander primitieftype, volle
+vertexbuffer of een echte read-VRAM-overlap flusht; interleaved line/solid-
+volgorde wordt dus niet herschikt. De batchstate en scratchbuffers zijn retained
+en staan samen met append/flush/execute onder de no-heap/no-GC-audit. Baseline
+en echo dalen van 26 naar 3 lijndraws, flare van 24 naar 2, particles naar
+gemiddeld 73,78 en maximaal 75, en morph van 32 naar 9. Het aantal geüploade
+vertexbytes blijft gelijk, maar bufferuploads, uniformupdates en draws volgen nu
+deze batchgrenzen in plaats van ieder GP0-lijncommand. Alle 146 deterministic
+raw captures van de volledige GLES2-timeline blijven byte-identiek. Vier
+afwisselende capturevrije llvmpipe-runs met één worker meten over de hele
+timeline 6,70 tegenover 6,66 s CPU: vrijwel vlak, dus de bewezen driver-call-
+reductie is niet de dominante llvmpipe-kost.
+
+Dit volgt dezelfde grens als DuckStation
+[`GPU_HW::PrepareDraw`/`FlushRender`](https://github.com/stenzek/duckstation/blob/ad7519d72c935b57b6a6e1c17f5fcba3c15783ff/src/core/gpu_hw.cpp#L3774-L4009):
+vertices blijven retained totdat renderstate, buffercapaciteit of een echte
+dependency een flush vereist.
+
 Open contract:
 
 - GLES-contexts zonder texture barrier en de WebGL2/WebGPU-owners blijven op
   expliciete dependencycopies. Andere framebuffer-feedbackmogelijkheden zijn
   pas relevant als hun concrete backend ze werkelijk bezit; capabilitykeuze
   hoort niet in cartcode of een algemene facade.
-- Alle accelerated backends moeten retained line/solid/textured streams over
-  opeenvolgende compatibele GP0-commands gebruiken en alleen flushen op een
-  pipeline- of read-after-writegrens.
+- WebGPU moet compatibele solid commands net als GLES2/WebGL2 retained
+  uitvoeren; textured commands moeten in alle drie owners nog over compatibele
+  GP0-commands retained worden. Alleen een pipeline- of echte read-after-write-
+  grens mag die streams flushen.
 - De huidige retained dirty-unie is correct maar kan bij ver uit elkaar liggende
   of wrappende writes grof worden. Alleen wanneer metingen dat als volgende
   bottleneck aanwijzen, wordt zij bounded fijnmaziger; cleanbits mogen dan pas

@@ -85,6 +85,17 @@ struct GxGpuRectangle {
 	u32 height = 0u;
 };
 
+struct GxGpuLineBatchState {
+	u32 topLeftWord = 0u;
+	u32 bottomRightWord = 0u;
+	u32 maskBitModeWord = 0u;
+	bool ditherEnabled = false;
+	u32 interlacedRenderWord = 0u;
+	bool blendEnabled = false;
+	u32 blendMode = 0u;
+	bool readsVram = false;
+};
+
 GxGpuVramCopyRect g_vramCopyRectScratch{};
 GxGpuVramCopyRect g_solidBatchRect{};
 GxGpuVramCopyRect g_solidCommandRect{};
@@ -93,6 +104,7 @@ GxGpuVramCopyRect g_lineCommandRect{};
 GxGpuVramCopyRect g_texturedCommandRect{};
 GxGpuVramCopyRect g_sampleDirtyRect{};
 GxGpuRectangle g_rectangleScratch{};
+GxGpuLineBatchState g_lineBatchState{};
 
 struct GxGpuRuntime {
 	OpenGLES2Backend* backend = nullptr;
@@ -1473,7 +1485,7 @@ void writeTransferUniforms(i32 sourceTextureUnit, u32 maskBitModeWord) {
 
 void renderNewSolidCommands(GLint firstVertex, GLsizei vertexCount, u32 topLeftWord, u32 bottomRightWord, bool blendEnabled, u32 blendMode, u32 maskBitModeWord, bool ditherEnabled, u32 interlacedRenderWord);
 void renderReadVramSolidQuad(u32 topLeftWord, u32 bottomRightWord, bool blendEnabled, u32 blendMode, u32 maskBitModeWord, bool ditherEnabled, u32 interlacedRenderWord);
-void renderLineCommand(const GxGpuCommandBuffer& commandBuffer, u32 commandIndex, u32 topLeftWord, u32 bottomRightWord);
+size_t appendLineCommandVertices(const GxGpuCommandBuffer& commandBuffer, u32 commandIndex, size_t vertexFloatCount);
 void renderTexturedCommand(const GxGpuCommandBuffer& commandBuffer, u32 commandIndex, u32 topLeftWord, u32 bottomRightWord);
 
 size_t flushSolidCommands(
@@ -1583,36 +1595,19 @@ void renderNewLineCommands(
 	glDisable(GL_SCISSOR_TEST);
 }
 
-size_t flushLineCommands(
-		size_t vertexFloatCount,
-	u32 topLeftWord,
-	u32 bottomRightWord,
-	bool blendEnabled,
-	u32 blendMode,
-	u32 maskBitModeWord,
-	bool ditherEnabled,
-	u32 interlacedRenderWord,
-	bool readsVram,
-	const GxGpuVramCopyRect& batchRect) {
+size_t flushLineCommands(size_t vertexFloatCount) {
 	if (vertexFloatCount != 0u) {
-		if (readsVram && !g_gxGpu.textureBarrier) {
-			syncGxGpuSampleTextureArea(batchRect.left, batchRect.top, batchRect.right, batchRect.bottom);
+		if (g_lineBatchState.readsVram && !g_gxGpu.textureBarrier) {
+			syncGxGpuSampleTextureArea(g_lineBatchRect.left, g_lineBatchRect.top, g_lineBatchRect.right, g_lineBatchRect.bottom);
 		}
-		renderNewLineCommands(vertexFloatCount, topLeftWord, bottomRightWord, blendEnabled, blendMode, maskBitModeWord, ditherEnabled, interlacedRenderWord);
+		renderNewLineCommands(vertexFloatCount, g_lineBatchState.topLeftWord, g_lineBatchState.bottomRightWord, g_lineBatchState.blendEnabled, g_lineBatchState.blendMode, g_lineBatchState.maskBitModeWord, g_lineBatchState.ditherEnabled, g_lineBatchState.interlacedRenderWord);
 	}
+	resetGxGpuVramCopyRect(g_lineBatchRect);
 	return 0u;
 }
 
 size_t appendBatchedLineSegment(
 		size_t vertexFloatCount,
-	u32 topLeftWord,
-	u32 bottomRightWord,
-	bool blendEnabled,
-	u32 blendMode,
-	u32 maskBitModeWord,
-	bool ditherEnabled,
-	u32 interlacedRenderWord,
-	bool readsVram,
 	i32 x0,
 	i32 y0,
 	u32 color0,
@@ -1621,43 +1616,21 @@ size_t appendBatchedLineSegment(
 	u32 color1) {
 	size_t offset = vertexFloatCount;
 	if (offset + kGxGpuLineSegmentFloats > kGxGpuLineFloatCapacity) {
-		offset = flushLineCommands(
-			offset,
-			topLeftWord,
-			bottomRightWord,
-			blendEnabled,
-			blendMode,
-			maskBitModeWord,
-			ditherEnabled,
-			interlacedRenderWord,
-			readsVram,
-			g_lineBatchRect);
-		resetGxGpuVramCopyRect(g_lineBatchRect);
+		offset = flushLineCommands(offset);
 	}
 	const size_t commandVertexStart = offset;
 	offset = appendLineSegment(offset, x0, y0, color0, x1, y1, color1);
-	if (readsVram && offset != commandVertexStart) {
+	if (g_lineBatchState.readsVram && offset != commandVertexStart) {
 		setGxGpuVertexBoundsRect(
 			g_lineCommandRect,
 			g_lineVertices.data(),
 			commandVertexStart,
 			offset,
 			kGxGpuLineVertexFloats,
-			topLeftWord,
-			bottomRightWord);
+			g_lineBatchState.topLeftWord,
+			g_lineBatchState.bottomRightWord);
 		if (commandVertexStart != 0u && gxGpuVramCopyRectsOverlap(g_lineBatchRect, g_lineCommandRect)) {
-			offset = flushLineCommands(
-				commandVertexStart,
-				topLeftWord,
-				bottomRightWord,
-				blendEnabled,
-				blendMode,
-				maskBitModeWord,
-				ditherEnabled,
-				interlacedRenderWord,
-				readsVram,
-				g_lineBatchRect);
-			resetGxGpuVramCopyRect(g_lineBatchRect);
+			offset = flushLineCommands(commandVertexStart);
 			offset = appendLineSegment(offset, x0, y0, color0, x1, y1, color1);
 			setGxGpuVertexBoundsRect(
 				g_lineCommandRect,
@@ -1665,8 +1638,8 @@ size_t appendBatchedLineSegment(
 				0u,
 				offset,
 				kGxGpuLineVertexFloats,
-				topLeftWord,
-				bottomRightWord);
+				g_lineBatchState.topLeftWord,
+				g_lineBatchState.bottomRightWord);
 		}
 		includeGxGpuVramCopyRect(g_lineBatchRect, g_lineCommandRect);
 	}
@@ -1685,9 +1658,15 @@ void executeNewGxGpuCommands(const GxGpuCommandBuffer& commandBuffer) {
 	bool solidBatchBlendEnabled = false;
 	u32 solidBatchBlendMode = 0u;
 	bool solidBatchReadsVram = false;
+	size_t lineVertexFloatCount = 0u;
 	resetGxGpuVramCopyRect(g_solidBatchRect);
+	resetGxGpuVramCopyRect(g_lineBatchRect);
 	for (; commandIndex < presentCommandCount; commandIndex += 1u) {
-		switch (commandBuffer.commandKind[commandIndex]) {
+		const u8 commandKind = commandBuffer.commandKind[commandIndex];
+		if (lineVertexFloatCount != 0u && commandKind != GX_GPU_COMMAND_DRAW_LINE && commandKind != GX_GPU_COMMAND_DRAW_POLYLINE) {
+			lineVertexFloatCount = flushLineCommands(lineVertexFloatCount);
+		}
+		switch (commandKind) {
 		case GX_GPU_COMMAND_DRAW_POLYGON:
 		case GX_GPU_COMMAND_DRAW_RECTANGLE: {
 			const u32 opcode = commandBuffer.commandOpcode[commandIndex];
@@ -1766,9 +1745,35 @@ void executeNewGxGpuCommands(const GxGpuCommandBuffer& commandBuffer) {
 		case GX_GPU_COMMAND_DRAW_LINE:
 		case GX_GPU_COMMAND_DRAW_POLYLINE: {
 			vertexFloatCount = finishSolidBatch(vertexFloatCount, solidBatchTopLeftWord, solidBatchBottomRightWord, solidBatchBlendEnabled, solidBatchBlendMode, solidBatchMaskBitModeWord, solidBatchDitherEnabled, solidBatchInterlacedRenderWord, solidBatchReadsVram);
+			const u32 opcode = commandBuffer.commandOpcode[commandIndex];
+			const u32 drawModeWord = commandBuffer.commandDrawModeWord[commandIndex];
 			const u32 topLeftWord = commandBuffer.commandDrawingAreaTopLeftWord[commandIndex];
 			const u32 bottomRightWord = commandBuffer.commandDrawingAreaBottomRightWord[commandIndex];
-			renderLineCommand(commandBuffer, commandIndex, topLeftWord, bottomRightWord);
+			const u32 maskBitModeWord = commandBuffer.commandMaskBitModeWord[commandIndex];
+			const bool blendEnabled = gxGpuCommandSemiTransparencyEnabled(opcode);
+			const u32 blendMode = blendEnabled ? gxGpuDrawModeTransparencyMode(drawModeWord) : 0u;
+			const bool ditherEnabled = gxGpuDrawModeDitherEnabled(drawModeWord);
+			const u32 interlacedRenderWord = commandBuffer.commandInterlacedRenderWord[commandIndex];
+			const bool readsVram = blendEnabled || gxGpuMaskBitCheckBeforeDraw(maskBitModeWord);
+			if (lineVertexFloatCount != 0u && (topLeftWord != g_lineBatchState.topLeftWord
+				|| bottomRightWord != g_lineBatchState.bottomRightWord
+				|| maskBitModeWord != g_lineBatchState.maskBitModeWord
+				|| ditherEnabled != g_lineBatchState.ditherEnabled
+				|| interlacedRenderWord != g_lineBatchState.interlacedRenderWord
+				|| blendEnabled != g_lineBatchState.blendEnabled
+				|| blendMode != g_lineBatchState.blendMode
+				|| readsVram != g_lineBatchState.readsVram)) {
+				lineVertexFloatCount = flushLineCommands(lineVertexFloatCount);
+			}
+			g_lineBatchState.topLeftWord = topLeftWord;
+			g_lineBatchState.bottomRightWord = bottomRightWord;
+			g_lineBatchState.maskBitModeWord = maskBitModeWord;
+			g_lineBatchState.ditherEnabled = ditherEnabled;
+			g_lineBatchState.interlacedRenderWord = interlacedRenderWord;
+			g_lineBatchState.blendEnabled = blendEnabled;
+			g_lineBatchState.blendMode = blendMode;
+			g_lineBatchState.readsVram = readsVram;
+			lineVertexFloatCount = appendLineCommandVertices(commandBuffer, commandIndex, lineVertexFloatCount);
 			break;
 		}
 		case GX_GPU_COMMAND_COPY_VRAM_TO_VRAM:
@@ -1783,27 +1788,19 @@ void executeNewGxGpuCommands(const GxGpuCommandBuffer& commandBuffer) {
 	}
 	g_gxGpu.processedCommandCount = static_cast<u32>(presentCommandCount);
 	finishSolidBatch(vertexFloatCount, solidBatchTopLeftWord, solidBatchBottomRightWord, solidBatchBlendEnabled, solidBatchBlendMode, solidBatchMaskBitModeWord, solidBatchDitherEnabled, solidBatchInterlacedRenderWord, solidBatchReadsVram);
+	flushLineCommands(lineVertexFloatCount);
 }
 
-void renderLineCommand(
+size_t appendLineCommandVertices(
 		const GxGpuCommandBuffer& commandBuffer,
 	u32 commandIndex,
-	u32 topLeftWord,
-	u32 bottomRightWord) {
+	size_t vertexFloatCount) {
 	const u32 opcode = commandBuffer.commandOpcode[commandIndex];
 	const u32 wordStart = commandBuffer.commandWordStart[commandIndex];
 	const u32 wordEnd = wordStart + commandBuffer.commandWordCount[commandIndex];
 	const u32 drawingOffsetWord = commandBuffer.commandDrawingOffsetWord[commandIndex];
 	const i32 dx = gxGpuSigned11(drawingOffsetWord);
 	const i32 dy = gxGpuDrawingOffsetY(drawingOffsetWord);
-	const bool blendEnabled = gxGpuCommandSemiTransparencyEnabled(opcode);
-	const u32 blendMode = gxGpuDrawModeTransparencyMode(commandBuffer.commandDrawModeWord[commandIndex]);
-	const u32 maskBitModeWord = commandBuffer.commandMaskBitModeWord[commandIndex];
-	const bool ditherEnabled = gxGpuDrawModeDitherEnabled(commandBuffer.commandDrawModeWord[commandIndex]);
-	const bool readsVram = blendEnabled || gxGpuMaskBitCheckBeforeDraw(maskBitModeWord);
-	const u32 interlacedRenderWord = commandBuffer.commandInterlacedRenderWord[commandIndex];
-	size_t vertexFloatCount = 0u;
-	resetGxGpuVramCopyRect(g_lineBatchRect);
 
 	if (commandBuffer.commandKind[commandIndex] == GX_GPU_COMMAND_DRAW_LINE) {
 		const u32 color0 = commandBuffer.words[wordStart];
@@ -1813,14 +1810,6 @@ void renderLineCommand(
 			const u32 xy1 = commandBuffer.words[wordStart + 3u];
 			vertexFloatCount = appendBatchedLineSegment(
 				vertexFloatCount,
-				topLeftWord,
-				bottomRightWord,
-				blendEnabled,
-				blendMode,
-				maskBitModeWord,
-				ditherEnabled,
-				interlacedRenderWord,
-				readsVram,
 				dx + gxGpuSigned11(xy0),
 				dy + gxGpuVertexY(xy0),
 				color0,
@@ -1831,14 +1820,6 @@ void renderLineCommand(
 			const u32 xy1 = commandBuffer.words[wordStart + 2u];
 			vertexFloatCount = appendBatchedLineSegment(
 				vertexFloatCount,
-				topLeftWord,
-				bottomRightWord,
-				blendEnabled,
-				blendMode,
-				maskBitModeWord,
-				ditherEnabled,
-				interlacedRenderWord,
-				readsVram,
 				dx + gxGpuSigned11(xy0),
 				dy + gxGpuVertexY(xy0),
 				color0,
@@ -1846,19 +1827,7 @@ void renderLineCommand(
 				dy + gxGpuVertexY(xy1),
 				color0);
 		}
-		flushLineCommands(
-			vertexFloatCount,
-			topLeftWord,
-			bottomRightWord,
-			blendEnabled,
-			blendMode,
-			maskBitModeWord,
-			ditherEnabled,
-			interlacedRenderWord,
-			readsVram,
-			g_lineBatchRect);
-		resetGxGpuVramCopyRect(g_lineBatchRect);
-		return;
+		return vertexFloatCount;
 	}
 
 	if (gxGpuCommandGouraud(opcode)) {
@@ -1869,14 +1838,6 @@ void renderLineCommand(
 			const u32 xy1 = commandBuffer.words[wordIndex + 1u];
 			vertexFloatCount = appendBatchedLineSegment(
 				vertexFloatCount,
-				topLeftWord,
-				bottomRightWord,
-				blendEnabled,
-				blendMode,
-				maskBitModeWord,
-				ditherEnabled,
-				interlacedRenderWord,
-				readsVram,
 				dx + gxGpuSigned11(xy0),
 				dy + gxGpuVertexY(xy0),
 				color0,
@@ -1893,14 +1854,6 @@ void renderLineCommand(
 			const u32 xy1 = commandBuffer.words[wordIndex];
 			vertexFloatCount = appendBatchedLineSegment(
 				vertexFloatCount,
-				topLeftWord,
-				bottomRightWord,
-				blendEnabled,
-				blendMode,
-				maskBitModeWord,
-				ditherEnabled,
-				interlacedRenderWord,
-				readsVram,
 				dx + gxGpuSigned11(xy0),
 				dy + gxGpuVertexY(xy0),
 				color,
@@ -1910,18 +1863,7 @@ void renderLineCommand(
 			xy0 = xy1;
 		}
 	}
-	flushLineCommands(
-		vertexFloatCount,
-		topLeftWord,
-		bottomRightWord,
-		blendEnabled,
-		blendMode,
-		maskBitModeWord,
-		ditherEnabled,
-		interlacedRenderWord,
-		readsVram,
-		g_lineBatchRect);
-	resetGxGpuVramCopyRect(g_lineBatchRect);
+	return vertexFloatCount;
 }
 
 void renderNewSolidCommands(GLint firstVertex, GLsizei vertexCount, u32 topLeftWord, u32 bottomRightWord, bool blendEnabled, u32 blendMode, u32 maskBitModeWord, bool ditherEnabled, u32 interlacedRenderWord) {

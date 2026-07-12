@@ -430,6 +430,15 @@ and MAME
   All 146 deterministic captures in the 1,030-frame GLES2 timeline remain
   byte-identical to the preceding backend. Four interleaved capture-free A/B
   runs reduce mean full-timeline user CPU from 10.59 s to 9.97 s (5.9%).
+- [x] Retain consecutive compatible line commands across GLES2, WebGL2 and
+  WebGPU instead of uploading uniforms and vertices once per GP0 command.
+  State changes, non-line commands, capacity and read-VRAM overlap remain hard
+  flush boundaries, so interleaved primitive order is unchanged. Baseline and
+  echo fall from 26 to 3 line draws, flare from 24 to 2, particles from
+  96.63 average/97 maximum to 73.78/75, and morph from 32 to 9. All 146 raw
+  captures remain byte-identical. Single-worker llvmpipe whole-run CPU stays
+  essentially flat (6.70 s to 6.66 s), so this removes driver calls without
+  pretending line submission was the remaining dominant software-GPU cost.
 - [ ] Keep WebGL2/GLES2 behavior synchronized for every new GX command.
 - [ ] Wire the existing TS/C++ software/headless renderer to the same GX/PSX
   contract as oracle/backend, not as a fallback inside GPU backends.

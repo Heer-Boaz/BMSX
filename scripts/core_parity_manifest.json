@@ -1790,6 +1790,10 @@
 				"syncGxGpuTexturedSampleRegions",
 				"writeTexturedUniforms",
 				"flushSolidCommands",
+				"renderNewLineCommands",
+				"flushLineCommands",
+				"appendBatchedLineSegment",
+				"appendLineCommandVertices",
 				"executeNewGxGpuCommands",
 				"renderNewSolidCommands",
 				"renderTexturedCommand",
@@ -1813,9 +1817,14 @@
 				"copyVramToVramArea",
 				"copyVramToVram",
 				"syncGxGpuVertexBoundsToSampleTexture",
-				"syncGxGpuTexturedSourceTexture"
+				"syncGxGpuTexturedSourceTexture",
+				"renderLineVertices",
+				"flushLineCommands",
+				"appendBatchedLineSegment",
+				"appendLineCommandVertices",
+				"executeNewGxGpuCommands"
 			],
-			"reason": "webgpu_gx_gpu_dirty_and_transfer_hot_paths_must_not_allocate_js_containers_or_closures"
+			"reason": "webgpu_gx_gpu_dirty_transfer_and_line_hot_paths_must_not_allocate_js_containers_or_closures"
 		},
 		{
 			"file": "machine/cpp/render/backend/gles2/gx_gpu.cpp",
@@ -1849,6 +1858,10 @@
 				"syncGxGpuTexturedSourceTexture",
 				"writeTexturedUniforms",
 				"flushSolidCommands",
+				"renderNewLineCommands",
+				"flushLineCommands",
+				"appendBatchedLineSegment",
+				"appendLineCommandVertices",
 				"executeNewGxGpuCommands",
 				"renderNewSolidCommands",
 				"renderTexturedCommand",
