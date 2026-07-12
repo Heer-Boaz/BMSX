@@ -410,14 +410,24 @@ Dit volgt dezelfde grens als DuckStation
 vertices blijven retained totdat renderstate, buffercapaciteit of een echte
 dependency een flush vereist.
 
+De WebGPU-solidroute volgt nu eveneens die retained grens in plaats van per
+GP0-command een uniformslot, vertexupload en renderpass te maken. Compatibele
+fills, rectangles en polygonen delen één stream; drawing area, mask/dither,
+interlace, blendstate, een ander primitieftype en een echte read-VRAM-overlap
+blijven flushgrenzen. Een read-VRAM-quad blijft bewust twee geordende
+triangledraws, omdat de tweede triangle het resultaat van de eerste kan lezen.
+De scratch, batchstate en bounds zijn backend-retained en de volledige solid
+append/flushroute staat onder de no-heap/no-GC-audit. Hiermee zijn solid en line
+in alle accelerated owners retained; live WebGPU-validatie blijft onderdeel van
+de reeds uitgestelde browsersessie, niet van de software/headless claim.
+
 Open contract:
 
 - GLES-contexts zonder texture barrier en de WebGL2/WebGPU-owners blijven op
   expliciete dependencycopies. Andere framebuffer-feedbackmogelijkheden zijn
   pas relevant als hun concrete backend ze werkelijk bezit; capabilitykeuze
   hoort niet in cartcode of een algemene facade.
-- WebGPU moet compatibele solid commands net als GLES2/WebGL2 retained
-  uitvoeren; textured commands moeten in alle drie owners nog over compatibele
+- Textured commands moeten in alle drie accelerated owners nog over compatibele
   GP0-commands retained worden. Alleen een pipeline- of echte read-after-write-
   grens mag die streams flushen.
 - De huidige retained dirty-unie is correct maar kan bij ver uit elkaar liggende

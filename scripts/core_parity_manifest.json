@@ -1807,6 +1807,13 @@
 			"file": "machine/ts/render/backend/webgpu/gx_gpu.ts",
 			"functions": [
 				"clearGxGpuVram",
+				"writeSolidVertex",
+				"writeSolidColorVertex",
+				"appendSolidTriangle",
+				"appendSolidQuad",
+				"appendFillRectangle",
+				"appendSolidPolygon",
+				"appendSolidRectangle",
 				"markGxGpuSampleTextureDirtyArea",
 				"markGxGpuSampleTextureDirtyLogicalArea",
 				"copyGxGpuVramAreaToSampleTexture",
@@ -1818,13 +1825,16 @@
 				"copyVramToVram",
 				"syncGxGpuVertexBoundsToSampleTexture",
 				"syncGxGpuTexturedSourceTexture",
+				"flushSolidCommands",
+				"renderReadVramSolidQuad",
+				"appendSolidCommandVertices",
 				"renderLineVertices",
 				"flushLineCommands",
 				"appendBatchedLineSegment",
 				"appendLineCommandVertices",
 				"executeNewGxGpuCommands"
 			],
-			"reason": "webgpu_gx_gpu_dirty_transfer_and_line_hot_paths_must_not_allocate_js_containers_or_closures"
+			"reason": "webgpu_gx_gpu_dirty_transfer_and_primitive_hot_paths_must_not_allocate_js_containers_or_closures"
 		},
 		{
 			"file": "machine/cpp/render/backend/gles2/gx_gpu.cpp",

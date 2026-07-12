@@ -439,6 +439,12 @@ and MAME
   captures remain byte-identical. Single-worker llvmpipe whole-run CPU stays
   essentially flat (6.70 s to 6.66 s), so this removes driver calls without
   pretending line submission was the remaining dominant software-GPU cost.
+- [x] Retain compatible WebGPU solid commands using the same state and
+  read-VRAM-overlap boundaries as GLES2/WebGL2. Fills, rectangles and polygons
+  now share one uniform upload, vertex upload and render pass per batch, while
+  read-VRAM quads retain their ordered two-triangle path. All new batch state
+  and bounds are retained and covered by the no-heap/no-GC audit; live browser
+  execution remains in the explicitly deferred WebGPU validation session.
 - [ ] Keep WebGL2/GLES2 behavior synchronized for every new GX command.
 - [ ] Wire the existing TS/C++ software/headless renderer to the same GX/PSX
   contract as oracle/backend, not as a fallback inside GPU backends.
