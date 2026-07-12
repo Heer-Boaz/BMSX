@@ -405,8 +405,13 @@ and MAME
   procedure. The shaders sample the attached raw-VRAM texture at the same pixel;
   the existing overlap splits remain the barrier boundaries. A steady particle
   frame drops from 147 sampletexturecopies to 1, while the full 1,030-frame
-  barrier and forced-copy runs produce 146 byte-identical captures. Textured
-  feedback remains in the open item above.
+  barrier and forced-copy runs produce 146 byte-identical captures.
+- [x] Route native GLES2 textured draws through the same barrier only when the
+  physical page/CLUT coverage is disjoint from the clipped destination. Aliased
+  texture sources retain the explicit sampletexture path. Tera-Flare drops from
+  62.75 average/65 maximum copies to exactly one per frame; all 146 deterministic
+  captures remain pixel-identical to both forced-copy mode and the preceding
+  retained-dirty implementation.
 - [x] Replace the accelerated last-source rect/hash/tile cache with retained
   raw-to-sample dirty coverage in GLES2, WebGL2 and WebGPU. Raw writes mark
   clipped bounds after their draw; page/CLUT/destination reads copy and clear

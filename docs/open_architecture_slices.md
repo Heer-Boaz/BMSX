@@ -331,8 +331,16 @@ voor contexts zonder die capability. In een steady particleframe daalt het
 totale aantal sampletexturecopies daardoor van 147 naar 1; solid/line-
 destinationcopies zijn nul. De volledige 1.030-frame timeline levert met en
 zonder de capability 146 byte-identieke captures, inclusief particles, echo en
-morph. Textured feedback heeft nog geen barrierpad; WebGL2 en WebGPU hebben geen
-native attached-readroute.
+morph.
+
+Textured draws gebruiken datzelfde concrete barrierpad nu wanneer hun fysieke
+page/CLUT-coverage niet met de geclipte destination overlapt. Dan leest de
+shader source en destination rechtstreeks uit attached raw VRAM; tussen de
+afzonderlijke polygontriangles staat opnieuw een barrier. Een aliassende page,
+CLUT of texture window blijft op de sampletexture zodat de framebufferfeedback
+niet buiten de `GL_NV_texture_barrier`-regels valt. Tera-Flare gaat daarmee van
+gemiddeld 62,75 en maximaal 65 copies naar exact één retained-sourcecopy per
+frame. In dat venster gebruiken gemiddeld 32 textured commands het barrierpad.
 
 De sampletexture heeft nu in GLES2, WebGL2 en WebGPU ook retained dirty-
 coverage in plaats van een cache van alleen de laatst aangevraagde page/CLUT-
@@ -361,10 +369,10 @@ gelezen.
 
 Open contract:
 
-- GLES2 moet het gerealiseerde texture-barrierpad uitbreiden naar textured
-  feedback; andere concrete framebuffer-fetchmogelijkheden zijn pas nodig voor
-  contexts die geen texture barrier bezitten. Capabilitykeuze blijft in de
-  concrete backend, niet in cartcode of een algemene facade.
+- GLES-contexts zonder texture barrier en de WebGL2/WebGPU-owners blijven op
+  expliciete dependencycopies. Andere framebuffer-feedbackmogelijkheden zijn
+  pas relevant als hun concrete backend ze werkelijk bezit; capabilitykeuze
+  hoort niet in cartcode of een algemene facade.
 - Alle accelerated backends moeten retained line/solid/textured streams over
   opeenvolgende compatibele GP0-commands gebruiken en alleen flushen op een
   pipeline- of read-after-writegrens.
