@@ -480,7 +480,7 @@ function createGpu(): { memory: Memory; cpu: CPU; scheduler: DeviceScheduler; dm
 	const cpu = new CPU(memory);
 	const scheduler = new DeviceScheduler(cpu);
 	const irq = new IrqController(memory);
-	const dma = new DmaController(memory, irq, scheduler);
+	const dma = new DmaController(memory, cpu, irq, scheduler);
 	const gpu = new GxGpu(memory, irq, scheduler, dma);
 	dma.reset();
 	gpu.reset();

@@ -703,12 +703,10 @@ function builders.build_combat_exit_fade_in_frames()
 	return frames
 end
 
-function builders.build_transition_frames(params)
-	local frames<const> = {}
+function builders.apply_transition_frame(target, frame_index, params)
 	local fade_out_frames<const> = params.fade_out_frames
 	local fade_in_frames<const> = params.fade_in_frames
 	local fade_in_start<const> = params.fade_in_start
-	local finish_frame<const> = params.finish_frame
 	local skip_fade<const> = params.skip_fade
 	local palette<const> = params.palette
 	local panels<const> = params.panels
@@ -720,72 +718,64 @@ function builders.build_transition_frames(params)
 	local text_out_end<const> = text_out_start + transition_text_out_frames
 	local base<const> = palette.overlay
 	local overlay_fade_out_start<const> = fade_in_start - transition_panel_out_frames
-
-	for frame_index = 0, finish_frame do
-		local overlay_color = base
-		local overlay_blend_color = 0
-		local background_color = p3_black_color
-		if not skip_fade then
-			if frame_index < fade_out_frames then
-				local u<const> = frame_index / (fade_out_frames - 1)
-				local level<const> = round_number(smoothstep(u) * 255)
-				overlay_color = 0
-				overlay_blend_color = level == 0 and 0 or color.mix_rgb_with_alpha(p3_black_color, p3_white_color, level, 1)
-				background_color = p3_white_color
-			elseif frame_index >= fade_in_start then
-				local u<const> = (frame_index - fade_in_start) / (fade_in_frames - 1)
-				local level<const> = round_number(smoothstep(u) * 255)
-				overlay_color = 0
-				background_color = color.mix_rgb_with_alpha(p3_black_color, p3_white_color, level, 1)
-			end
-		end
-		if frame_index >= overlay_fade_out_start and frame_index < fade_in_start then
-			local u<const> = (frame_index - overlay_fade_out_start) / (transition_panel_out_frames - 1)
-			local level<const> = round_number(smoothstep(u) * 255)
-			overlay_color = color.mix_rgb_with_alpha(base, p3_black_color, level, 1)
-		end
-
-		local panel_states<const> = {}
-		for i = 1, #panels do
-			local panel<const> = panels[i]
-			local x<const> , y<const> , a<const> = panel_motion(frame_index, panel, transition_panel_in_frames, transition_panel_hold_frames, transition_panel_out_frames)
-			panel_states[i] = {
-				visible = a > 0,
-				x = x,
-				y = y,
-				color = a > 0 and panel.color or 0,
-			}
-		end
-
-		local ax<const> , ay<const> , aa<const> = panel_motion(frame_index, accent_panel, transition_accent_in_frames, transition_accent_hold_frames, transition_accent_out_frames)
-
-		local text_x = end_x
-		if frame_index < transition_text_in_frames then
-			local u<const> = frame_index / (transition_text_in_frames - 1)
-			text_x = start_x + (center_x - start_x) * smoothstep(u)
-		elseif frame_index < text_out_start then
-			text_x = center_x
-		elseif frame_index < text_out_end then
-			local out_index<const> = frame_index - text_out_start
-			local u<const> = out_index / (transition_text_out_frames - 1)
-			text_x = center_x + (end_x - center_x) * smoothstep(u)
-		end
-
-		frames[#frames + 1] = {
-			bg = { sprite_component = { color = background_color } },
-			overlay = { color = overlay_color, blend_color = overlay_blend_color },
-			panels = panel_states,
-			accent = {
-				visible = aa > 0,
-				x = ax,
-				y = ay,
-				color = aa > 0 and accent_panel.color or 0,
-			},
-			text = { text_component = { offset = { x = text_x } } },
-		}
+	if skip_fade and frame_index == 0 then
+		return
 	end
 
-	return frames
+	local overlay_color = base
+	local overlay_blend_color = 0
+	local background_color = p3_black_color
+	if not skip_fade then
+		if frame_index < fade_out_frames then
+			local u<const> = frame_index / (fade_out_frames - 1)
+			local level<const> = round_number(smoothstep(u) * 255)
+			overlay_color = 0
+			overlay_blend_color = level == 0 and 0 or color.mix_rgb_with_alpha(p3_black_color, p3_white_color, level, 1)
+			background_color = p3_white_color
+		elseif frame_index >= fade_in_start then
+			local u<const> = (frame_index - fade_in_start) / (fade_in_frames - 1)
+			local level<const> = round_number(smoothstep(u) * 255)
+			overlay_color = 0
+			background_color = color.mix_rgb_with_alpha(p3_black_color, p3_white_color, level, 1)
+		end
+	end
+	if frame_index >= overlay_fade_out_start and frame_index < fade_in_start then
+		local u<const> = (frame_index - overlay_fade_out_start) / (transition_panel_out_frames - 1)
+		local level<const> = round_number(smoothstep(u) * 255)
+		overlay_color = color.mix_rgb_with_alpha(base, p3_black_color, level, 1)
+	end
+
+	target.bg.sprite_component.color = background_color
+	target.overlay.color = overlay_color
+	target.overlay.blend_color = overlay_blend_color
+	for i = 1, #panels do
+		local panel<const> = panels[i]
+		local visual<const> = target.panels[i]
+		local x<const> , y<const> , a<const> = panel_motion(frame_index, panel, transition_panel_in_frames, transition_panel_hold_frames, transition_panel_out_frames)
+		visual.visible = a > 0
+		visual.x = x
+		visual.y = y
+		visual.color = a > 0 and panel.color or 0
+	end
+
+	local ax<const> , ay<const> , aa<const> = panel_motion(frame_index, accent_panel, transition_accent_in_frames, transition_accent_hold_frames, transition_accent_out_frames)
+	target.accent.visible = aa > 0
+	target.accent.x = ax
+	target.accent.y = ay
+	target.accent.color = aa > 0 and accent_panel.color or 0
+
+	local text_x = end_x
+	if frame_index < transition_text_in_frames then
+		local u<const> = frame_index / (transition_text_in_frames - 1)
+		text_x = start_x + (center_x - start_x) * smoothstep(u)
+	elseif frame_index < text_out_start then
+		text_x = center_x
+	elseif frame_index < text_out_end then
+		local out_index<const> = frame_index - text_out_start
+		local u<const> = out_index / (transition_text_out_frames - 1)
+		text_x = center_x + (end_x - center_x) * smoothstep(u)
+	end
+	target.text.text_component.offset.x = text_x
 end
 
 function builders.build_transition_fade_in_frames()

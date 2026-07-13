@@ -305,6 +305,7 @@ function createRuntimeSaveState(): RuntimeSaveState {
 			instructionBudgetRemaining: 0,
 			haltedUntilIrq: false,
 			memoryWriteBlocked: false,
+			memoryWriteBlockedAddress: 0,
 			maskableInterruptsEnabled: true,
 			maskableInterruptsRestoreEnabled: true,
 			nonMaskableInterruptPending: false,

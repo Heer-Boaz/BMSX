@@ -1,27 +1,23 @@
 local gx_gpu<const> = require('system/gx_gpu')
 gx_gpu.reset_320x240_pal()
 require('cartlib/prelude')
+local texture_residency<const> = require('texture_residency')
 require('globals')
 local story<const> = require('story')
 local start_node<const> = 'title'
 -- local start_node<const> = 'combat_wekker'
 local irq_mask_register<const>: *word = 0x08000010
 local input_control_register<const>: *word = 0x0800006c
+local irq_dma_done<const> = 0x0001
 local irq_vblank<const> = 0x0004
 local irq_apu<const> = 0x0020
 local vblank_count = 0
-local gx_system_atlas_id<const> = 254
 
 local wait_vblank<const> = function()
 	repeat
 		halt_until_irq
 	until vblank_count ~= 0
 	vblank_count = vblank_count - 1
-end
-
-function upload_gx_atlas_on_vblank(atlas_id)
-	wait_vblank()
-	gx_upload_atlas(atlas_id)
 end
 
 local combat_module<const> = require('combat')
@@ -273,10 +269,11 @@ local register_director<const> = function()
 end
 
 function init()
+	on_irq(irq_dma_done, texture_residency.complete_upload)
 	on_irq(irq_vblank, function()
 		vblank_count = vblank_count + 1
 	end)
-	*irq_mask_register = irq_vblank | irq_apu
+	*irq_mask_register = irq_dma_done | irq_vblank | irq_apu
 	gx_clear_color(0xff000000)
 	combat_module.define_fsm()
 	build_director_fsm()
@@ -371,8 +368,7 @@ function new_game()
 end
 
 init()
-upload_gx_atlas_on_vblank(gx_system_atlas_id)
-upload_gx_atlas_on_vblank(gx_img_rect(story.title.bg).atlas_id)
+texture_residency.replace_background(story.title.bg)
 new_game()
 *input_control_register = 0x00000001
 while true do
@@ -381,6 +377,7 @@ while true do
 	update_world()
 	gx_clear_color(0xff000000)
 	draw_world()
+	texture_residency.submit_pending_background()
 
 	*input_control_register = 0x00000001
 end

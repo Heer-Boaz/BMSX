@@ -359,43 +359,47 @@ void testPublishedDisplayTimingAppliesAtFrameEnd() {
 	bmsx::GxGpu& gpu = runtime.machine.gxGpu;
 	const uint32_t range192 = ((35u + 192u) << 10u) | 35u;
 	const uint32_t range212 = ((35u + 212u) << 10u) | 35u;
+	bmsx::i64 frameEndCycle = runtime.timing.cycleBudgetPerFrame;
 
 	gpu.writeGp1((bmsx::GX_GPU_GP1_VERTICAL_DISPLAY_RANGE << 24u) | range192);
 	require(runtime.timing.gpuVerticalDisplayRangeWord == bmsx::GX_GPU_RESET_VERTICAL_DISPLAY_RANGE_WORD, "GP1 vertical range write should not change runtime timing before publication");
 	runtime.vblank.handleBeginTimer(runtime);
 	require(gpu.readDeviceOutput().verticalDisplayRangeWord == range192, "vblank begin should latch the live 192-line range for presentation");
 	require(runtime.timing.gpuVerticalDisplayRangeWord == bmsx::GX_GPU_RESET_VERTICAL_DISPLAY_RANGE_WORD, "vblank begin should not change current-frame timing");
-	runtime.machine.scheduler.reset();
+	runtime.machine.scheduler.setNowCycles(frameEndCycle + 1);
 	runtime.vblank.handleEndTimer(runtime);
 	require(runtime.timing.gpuVerticalDisplayRangeWord == range192, "vblank end should apply the published 192-line range to next-frame timing");
-	require(runtime.machine.scheduler.nextDeadline() == 61341, "PAL 192-line mode should expose 38659 vblank cycles at 5MHz");
+	require(runtime.machine.scheduler.nextDeadline() == frameEndCycle + 61341, "late frame-end service must not shift PAL 192-line scanout timing");
 
+	frameEndCycle += runtime.timing.cycleBudgetPerFrame;
 	gpu.writeGp1((bmsx::GX_GPU_GP1_VERTICAL_DISPLAY_RANGE << 24u) | range212);
 	require(runtime.timing.gpuVerticalDisplayRangeWord == range192, "pending 212-line GP1 write should leave 192-line timing active");
 	runtime.vblank.handleBeginTimer(runtime);
 	require(runtime.timing.gpuVerticalDisplayRangeWord == range192, "212-line range latch should wait until frame end before changing timing");
-	runtime.machine.scheduler.reset();
+	runtime.machine.scheduler.setNowCycles(frameEndCycle);
 	runtime.vblank.handleEndTimer(runtime);
 	require(runtime.timing.gpuVerticalDisplayRangeWord == range212, "frame end should activate published PAL 212-line timing");
-	require(runtime.machine.scheduler.nextDeadline() == 67731, "PAL 212-line frame scheduling should start vblank after 67731 active cycles");
+	require(runtime.machine.scheduler.nextDeadline() == frameEndCycle + 67731, "PAL 212-line frame scheduling should start vblank after 67731 active cycles");
 
+	frameEndCycle += runtime.timing.cycleBudgetPerFrame;
 	gpu.writeGp1(bmsx::GX_GPU_GP1_DISPLAY_MODE << 24u);
 	gpu.writeGp1((bmsx::GX_GPU_GP1_VERTICAL_DISPLAY_RANGE << 24u) | range192);
 	require(runtime.timing.gpuDisplayModeWord == bmsx::GX_GPU_RESET_DISPLAY_MODE_WORD, "GP1 display-mode write should not change runtime timing before publication");
 	runtime.vblank.handleBeginTimer(runtime);
 	require(runtime.timing.gpuDisplayModeWord == bmsx::GX_GPU_RESET_DISPLAY_MODE_WORD, "NTSC display-mode latch should wait until frame end before changing timing");
-	runtime.machine.scheduler.reset();
+	runtime.machine.scheduler.setNowCycles(frameEndCycle);
 	runtime.vblank.handleEndTimer(runtime);
 	require(runtime.timing.gpuDisplayModeWord == bmsx::PSX_GPU_DISPLAY_MODE_NTSC_WORD, "frame end should activate published NTSC timing");
 	require(runtime.timing.gpuVerticalDisplayRangeWord == range192, "frame end should activate published NTSC 192-line timing");
-	require(runtime.machine.scheduler.nextDeadline() == 61129, "NTSC 192-line mode should expose 22287 vblank cycles at 5MHz");
+	require(runtime.machine.scheduler.nextDeadline() == frameEndCycle + 61129, "NTSC 192-line mode should expose 22287 vblank cycles at 5MHz");
 
+	frameEndCycle += runtime.timing.cycleBudgetPerFrame;
 	gpu.writeGp1((bmsx::GX_GPU_GP1_VERTICAL_DISPLAY_RANGE << 24u) | range212);
 	runtime.vblank.handleBeginTimer(runtime);
-	runtime.machine.scheduler.reset();
+	runtime.machine.scheduler.setNowCycles(frameEndCycle);
 	runtime.vblank.handleEndTimer(runtime);
 	require(runtime.timing.gpuVerticalDisplayRangeWord == range212, "frame end should activate published NTSC 212-line timing");
-	require(runtime.machine.scheduler.nextDeadline() == 67496, "NTSC 212-line frame scheduling should start vblank after 67496 active cycles");
+	require(runtime.machine.scheduler.nextDeadline() == frameEndCycle + 67496, "NTSC 212-line frame scheduling should start vblank after 67496 active cycles");
 }
 
 } // namespace

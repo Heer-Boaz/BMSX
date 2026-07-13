@@ -229,23 +229,52 @@ relatief aan schedulertijd en de geexecuteerde commandofrontier.
 RAM-naar-GP0 DMA laat een eenmaal geaccepteerd 64-byte DMA-blok atomair door en
 stalt het volgende blok op de GPU-ready-edge. CPU-writes gebruiken de echte
 MMIO write-ready-lijn: de CPU bewaart het nog niet uitgevoerde store-instruction
-en de scheduler springt eenmaal naar de eerstvolgende device-deadline. Er is
-geen polling, busy-wait, gedropt woord, BIOS/cart-wachtroutine of hostfacade.
+plus het raw doeladres en houdt die instructie geblokkeerd totdat datzelfde
+MMIO-adres weer write-ready is. Device-deadlines voeren alleen de onderliggende
+DMA/GPU-datapaths uit; zij laten de CPU de store niet telkens opnieuw proberen.
+Er is geen polling, busy-wait, gedropt woord, BIOS/cart-wachtroutine of hostfacade.
 `bare_metal_cart` doorloopt daarmee alle frame-scan-scenes, inclusief idol en
 framebuffer echo, zonder producerwijzigingen.
 
-Nog te sluiten:
+RAM-naar-GP0 DMA bezit de CPU-commandopoort zolang zo'n transfer in de queue
+staat. Daardoor kan een gewone GP0-store nooit midden in een A0-payload belanden.
+Die ownershiplatch wordt uit de DMA-queue afgeleid bij restore en de geblokkeerde
+CPU-store bewaart zijn doeladres in current-format save-state. Een
+write-ready-probe synchroniseert eerst verstreken GPU-commandotijd en publiceert
+dan dezelfde CPU/DMA-ready-lijnen; zo kan een atomair te laat uitgevoerde probe
+de laatste GPU-timer niet annuleren met stale lage uitgangen. Ook closures die
+door de host worden aangeroepen, springen bij zo'n geblokkeerde store naar de
+volgende echte device-edge en pollen of retriën de instructie niet.
 
-- De langere `2025`-transitieregressie toont dat de eerste blauwe transition-
-  frame nu een frame later wordt gepubliceerd: frame 79 blijft zwart en frame
-  80 bevat de verwachte ink-kleur. De cart roept bij de backgroundwissel een
-  `upload_gx_atlas_on_vblank`-helper aan die vanuit een reeds door VBlank gewekte
-  update nóg een VBlank wacht; `gx_image.upload_atlas` brandt daarna CPU in een
-  lege DMA-statuslus. Het rechtstreeks verwijderen van de extra wait is geen
-  fix: de synchrone grote upload houdt dan frameproductie vast. De volgende
-  slice moet de targetwerkset vóór de swap bij de residencyowner laten laden en
-  op echte DMA-completion synchroniseren. Geen hogere fictieve GPU-klok,
-  captureverschuiving, cartpolling of nieuwe waitwrapper.
+De `2025`-transitiefout is aan dezelfde echte grens gesloten. De cart prelaadt
+de volgende achtergrond in de inactieve van twee raw VRAM-rechthoeken en start
+de DMA pas na de draw van het voorafgaande frame. De DMA-done-IRQ commit de
+nieuwe actieve rechthoek; de backgroundswitch zelf selecteert alleen de al
+geladen image. Dit is bewust geen poging om het oude onbeperkte atlasmodel te
+behouden: `2025` programmeert een expliciete 1024x512 VRAM-map. Boven staan de
+320x240 framebuffer, Maya B, de vaste systeempage en de naast elkaar geplaatste
+Maya A/V_S-textures; onder staan twee 384x256 backgroundbanken en een aparte
+monsterbank. De drie gemeenschappelijke combattextures blijven resident, een
+monsterswitch vervangt alleen de monsterbank en het opaque all-outbeeld vervangt
+bewust de linker backgroundbank. Geen van die bereiken overlapt framebuffer of
+systeempage. Numerieke atlas-ID's worden alleen door rompacker/cartlib en deze
+cart-owned residencycode gebruikt; ROM-directory, DMA, GPU en BIOS kennen geen
+semantische atlas of scene.
+
+Er is geen tweede VBlank-wait, DMA-statuspoll, semantische firmwareslotmanager of
+captureverschuiving. De volledige headless transitietijdlijn publiceert de
+eerste ink-frame weer op frame 79 en bewaart de authored fade/montagekleuren. De
+black-box cartsuite start daarnaast werkelijk `combat_wekker`, doorloopt de
+grote eerste combatworkset en bewijst Maya B, de klokscene en de keuze-prompt;
+een test die rechtstreeks naar combat-results springt geldt daarvoor niet als
+bewijs.
+
+CPU-instructies zijn atomair en kunnen de frame-endtimer na zijn deadline
+afhandelen. TS en C++ schuiven de frame-origin daarom door vanaf de vorige
+geplande framegrens, niet vanaf de actuele schedulertijd; incidentele lateness
+kan zo niet cumulatief de scanoutfase verschuiven of een hostframe herhalen.
+Tickcompletion blijft aan de VBlank-edge gekoppeld en de bestaande first-tick-
+semantiek van carttimelines is niet gewijzigd.
 
 ## Exacte GX raster- en VRAM-pariteit
 
@@ -719,27 +748,48 @@ Afgerond:
   TS en C++ verwijderd;
 - geen enkele host-presentatieroute consumeert nog VDP-, VOUT- of
   framebuffer-output;
-- de laatste actieve texture-aperturegebruiker is verwijderd: de ROM-producer
-  encodeert nu voor alle direct16- en palette4-atlassen native GP0-uploadwords,
-  waarna DMA de ROM-stream rechtstreeks aan GX GP0 levert. Runtime PNG-decode,
-  mapped RGBA-staging en `gx_load_atlas` zijn uit BIOS en carts verdwenen.
+- de laatste actieve texture-aperturegebruiker is verwijderd. De ROM-packer
+  encodeert system/palette4-atlassen als hun vaste native GP0-stream en
+  cart-direct16-atlassen als destination-free, row-major RGB555/STP-payload.
+  De cart-owner resolveert zijn eigen packerrecord en bindt de fysieke
+  VRAM-rechthoek; raw GX-firmware schrijft alleen het A0-pakket en de centrale
+  DMA-owner levert daarna de ROM-payload direct aan GP0. Firmware kent geen
+  atlas-ID, workset of scenesemantiek. Runtime PNG-decode, mapped RGBA-staging
+  en `gx_load_atlas` zijn uit BIOS en carts verdwenen.
 
 Texture-residency boundary resolved for the migrated carts:
 
+- `atlas` is uitsluitend een rompacker/cart-owner groepering. Het is geen GPU-,
+  DMA- of firmwareprimitive en cartlib publiceert geen universele
+  `gx_upload_atlas`-API;
+- de packer bewaart imageplaatsing als integer `atlas_x`/`atlas_y` en, waar de
+  plaatsing vastligt, als fysieke GX-texturecoordinaten. Cartlib, BIOS-fonts en
+  hosttools consumeren die woorden rechtstreeks; genormaliseerde image-
+  texcoordarrays en float-naar-pixelreconstructie zijn verwijderd. Model-mesh-
+  UV's blijven afzonderlijke meshdata en worden pas door de renderer
+  genormaliseerd;
+- de compacte BIOS-direct16-atlas past in één vaste 256x256 texturepage. De
+  producer emitteert daarvoor één A0-stream; er bestaat geen dode multislice-
+  systeemlayout of firmware-side pageherbouw. De palette4-cartregio begint op
+  de volgende page en hangt niet af van de actuele BIOS-atlashoogte;
+
 - `pietious` gebruikt een compacte native 4-bpp atlas plus CLUT en past daarmee
   bij een expliciete PSX-VRAM-residencyvorm;
-- `2025` behandelt de ROM-atlas niet langer als universele runtime-eenheid:
-  ieder actief full-screen direct16-achtergrondbeeld heeft een eigen producer-
-  owned bank, de gelijktijdig gebruikte combatsprites delen een expliciete bank
-  en het opaque all-outscherm heeft zijn eigen transitionbank. Daardoor uploadt
-  een sceneovergang alleen de actuele werkset in plaats van een toevallig door
-  de auto-packer samengestelde multi-backgroundatlas. De actieve background-
-  uploads dalen daarmee van 718.812--896.976 bytes naar 155.872--199.224 bytes;
-- de direct16-producent weigert brongeometrie die door de vaste PSX-VRAM-
-  plaatsing over andere texturedata heen of buiten VRAM zou schrijven;
+- `2025` behandelt de ROM-atlas niet als universele runtime-eenheid. De cart
+  bezit twee vaste achtergrondrechthoeken en één overlappende combat/all-out-
+  worksetrechthoek; alleen de cart kent die scenesemantiek. Daardoor uploadt een
+  sceneovergang alleen de actuele werkset in plaats van een toevallig door de
+  auto-packer samengestelde multi-backgroundatlas. De nearest-sampled GX-path
+  heeft geen geextrudeerde bilinear-bleedrand nodig, zodat de 256 pixels hoge
+  achtergronden page-aligned zonder verticale split passen. De actieve
+  backgrounduploads dalen daarmee van 718.812--896.976 bytes naar
+  153.600--196.608 bytes;
+- de direct16-ROM-packer weigert alleen een raw bronrechthoek groter dan de
+  1024x512 VRAM. Overlap en concrete plaatsing zijn bewust cartbeleid, geen
+  producer- of firmwaresemantiek;
 - een toekomstige cart met meerdere onafhankelijk wisselende texturewerksets
-  moet vaste VRAM-page/CLUT-slots bij de GPU-residencyowner toevoegen. Bouw zo'n
-  generieke cache niet speculatief en maak geen nieuwe atlas-swapwrapper.
+  moet zijn raw VRAM-page/CLUT-indeling eveneens zelf programmeren. Bouw geen
+  generieke semantische cache speculatief en maak geen nieuwe atlas-swapwrapper.
 
 - de residual staging-, texture- en framebuffer-apertures, VDP scheduler- en
   VBlank-hooks, registers, readback, save-state, tests en mirrored device trees

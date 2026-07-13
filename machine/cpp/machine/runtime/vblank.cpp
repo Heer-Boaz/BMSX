@@ -98,7 +98,10 @@ void VblankState::handleBeginTimer(Runtime& runtime) {
 }
 
 void VblankState::handleEndTimer(Runtime& runtime) {
-	m_frameStartCycle = runtime.machine.scheduler.nowCycles();
+	// CPU instructions are atomic and may service this timer after its deadline. Advance from
+	// the scheduled boundary: anchoring to nowCycles accumulates the lateness into scanout phase.
+	// Do not compensate by changing VBlank-edge tick completion or cart first-tick semantics.
+	m_frameStartCycle += runtime.timing.cycleBudgetPerFrame;
 	const GxGpuDeviceOutput& output = runtime.machine.gxGpu.readDeviceOutput();
 	runtime.applyPublishedPsxGpuDisplayTiming(output.displayModeWord, output.verticalDisplayRangeWord);
 	if (m_vblankStartCycle == 0) {

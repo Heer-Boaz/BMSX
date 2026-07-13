@@ -25,7 +25,7 @@ local aem<const> = require('cartlib/aem')
 local progression<const> = require('cartlib/progression')
 local font_module<const> = require('system/font')
 local gx_gpu<const> = require('system/gx_gpu')
-local gx_image<const> = require('system/gx_image')
+local gx_image<const> = require('cartlib/gx/image')
 local cart_input<const> = require('cartlib/input/player')
 local collision2d<const> = require('cartlib/collision2d')
 
@@ -198,7 +198,6 @@ end
 
 local system<const> = {}
 system.clear_map = clear_map
-system.gx_upload_atlas = gx_image.upload_atlas
 system.gx_upload_rgba8888_to_direct16_stride = gx_gpu.upload_rgba8888_to_direct16_stride
 system.gx_blit_img_color = gx_image.blit_img_color
 system.gx_blit_img_affine_color = gx_image.blit_img_affine_color

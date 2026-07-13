@@ -72,8 +72,9 @@ test('runtime timing resolves from the PSX GPU display mode word', () => {
 	assert.equal(resolveVblankCycles(5_000_000, NTSC_REFRESH_UFPS_SCALED, 262, 212), 15920);
 });
 
-test('runtime timing consumes published PSX GP1 display mode at the next frame boundary', () => {
+test('runtime timing consumes published PSX GP1 display mode without shifting a late-serviced frame boundary', () => {
 	const runtime = createTimingRuntime();
+	const frameEndCycle = runtime.timing.cycleBudgetPerFrame;
 
 	runtime.machine.memory.writeMappedU32LE(IO_GX_GPU_GP1, GX_GPU_GP1_DISPLAY_MODE << 24);
 
@@ -85,20 +86,24 @@ test('runtime timing consumes published PSX GP1 display mode at the next frame b
 	runtime.vblank.handleBeginTimer();
 	assert.equal(runtime.machine.gxGpu.readDeviceOutput().displayModeWord, PSX_GPU_DISPLAY_MODE_NTSC_WORD);
 	assert.equal(runtime.timing.gpuDisplayModeWord, GX_GPU_RESET_DISPLAY_MODE_WORD);
+	runtime.machine.scheduler.setNowCycles(frameEndCycle + 1);
 	runtime.vblank.handleEndTimer();
 
 	assert.equal(runtime.timing.gpuDisplayModeWord, PSX_GPU_DISPLAY_MODE_NTSC_WORD);
 	assert.equal(runtime.timing.ufpsScaled, NTSC_REFRESH_UFPS_SCALED);
 	assert.equal(runtime.timing.totalScanlines, 262);
-	assert.equal(runtime.machine.scheduler.nextDeadline(), 76411);
+	assert.equal(runtime.machine.scheduler.nextDeadline(), frameEndCycle + 76411);
 });
 
 test('runtime timing consumes PSX GP1 reset back to PAL at the next frame boundary', () => {
 	const runtime = createTimingRuntime();
+	let frameEndCycle = runtime.timing.cycleBudgetPerFrame;
 
 	runtime.machine.memory.writeMappedU32LE(IO_GX_GPU_GP1, GX_GPU_GP1_DISPLAY_MODE << 24);
 	runtime.vblank.handleBeginTimer();
+	runtime.machine.scheduler.setNowCycles(frameEndCycle);
 	runtime.vblank.handleEndTimer();
+	frameEndCycle += runtime.timing.cycleBudgetPerFrame;
 	runtime.machine.memory.writeMappedU32LE(IO_GX_GPU_GP1, GX_GPU_GP1_RESET << 24);
 
 	assert.equal(runtime.machine.gxGpu.readDisplayModeWord(), GX_GPU_RESET_DISPLAY_MODE_WORD);
@@ -106,6 +111,7 @@ test('runtime timing consumes PSX GP1 reset back to PAL at the next frame bounda
 	assert.equal(runtime.timing.gpuDisplayModeWord, PSX_GPU_DISPLAY_MODE_NTSC_WORD);
 	runtime.vblank.handleBeginTimer();
 	assert.equal(runtime.timing.gpuDisplayModeWord, PSX_GPU_DISPLAY_MODE_NTSC_WORD);
+	runtime.machine.scheduler.setNowCycles(frameEndCycle);
 	runtime.vblank.handleEndTimer();
 	assert.equal(runtime.timing.gpuDisplayModeWord, GX_GPU_RESET_DISPLAY_MODE_WORD);
 	assert.equal(runtime.timing.ufpsScaled, 50 * HZ_SCALE);
@@ -114,6 +120,7 @@ test('runtime timing consumes PSX GP1 reset back to PAL at the next frame bounda
 
 test('runtime timing switches 240, 192, and 212 native display ranges only after publication', () => {
 	const runtime = createTimingRuntime();
+	let frameEndCycle = runtime.timing.cycleBudgetPerFrame;
 
 	runtime.machine.memory.writeMappedU32LE(IO_GX_GPU_GP1, (GX_GPU_GP1_VERTICAL_DISPLAY_RANGE << 24) | GX_GPU_VERTICAL_DISPLAY_RANGE_192_WORD);
 	assert.equal(runtime.machine.gxGpu.readVerticalDisplayRangeWord(), GX_GPU_VERTICAL_DISPLAY_RANGE_192_WORD);
@@ -122,33 +129,42 @@ test('runtime timing switches 240, 192, and 212 native display ranges only after
 	runtime.vblank.handleBeginTimer();
 	assert.equal(runtime.machine.gxGpu.readDeviceOutput().verticalDisplayRangeWord, GX_GPU_VERTICAL_DISPLAY_RANGE_192_WORD);
 	assert.equal(runtime.timing.gpuVerticalDisplayRangeWord, GX_GPU_RESET_VERTICAL_DISPLAY_RANGE_WORD);
+	runtime.machine.scheduler.setNowCycles(frameEndCycle);
 	runtime.vblank.handleEndTimer();
 	assert.equal(runtime.timing.gpuVerticalDisplayRangeWord, GX_GPU_VERTICAL_DISPLAY_RANGE_192_WORD);
-	assert.equal(runtime.machine.scheduler.nextDeadline(), 61341);
+	assert.equal(runtime.machine.scheduler.nextDeadline(), frameEndCycle + 61341);
 
+	frameEndCycle += runtime.timing.cycleBudgetPerFrame;
 	runtime.machine.memory.writeMappedU32LE(IO_GX_GPU_GP1, (GX_GPU_GP1_VERTICAL_DISPLAY_RANGE << 24) | GX_GPU_VERTICAL_DISPLAY_RANGE_212_WORD);
 	runtime.vblank.handleBeginTimer();
 	assert.equal(runtime.timing.gpuVerticalDisplayRangeWord, GX_GPU_VERTICAL_DISPLAY_RANGE_192_WORD);
+	runtime.machine.scheduler.setNowCycles(frameEndCycle);
 	runtime.vblank.handleEndTimer();
 	assert.equal(runtime.timing.gpuVerticalDisplayRangeWord, GX_GPU_VERTICAL_DISPLAY_RANGE_212_WORD);
-	assert.equal(runtime.machine.scheduler.nextDeadline(), 67731);
+	assert.equal(runtime.machine.scheduler.nextDeadline(), frameEndCycle + 67731);
 
+	frameEndCycle += runtime.timing.cycleBudgetPerFrame;
 	runtime.machine.memory.writeMappedU32LE(IO_GX_GPU_GP1, (GX_GPU_GP1_VERTICAL_DISPLAY_RANGE << 24) | GX_GPU_RESET_VERTICAL_DISPLAY_RANGE_WORD);
 	runtime.vblank.handleBeginTimer();
+	runtime.machine.scheduler.setNowCycles(frameEndCycle);
 	runtime.vblank.handleEndTimer();
 	assert.equal(runtime.timing.gpuVerticalDisplayRangeWord, GX_GPU_RESET_VERTICAL_DISPLAY_RANGE_WORD);
-	assert.equal(runtime.machine.scheduler.nextDeadline(), 76677);
+	assert.equal(runtime.machine.scheduler.nextDeadline(), frameEndCycle + 76677);
 });
 
 test('runtime restore derives timing from published display raw while preserving a pending range write', () => {
 	const runtime = createTimingRuntime();
+	let frameEndCycle = runtime.timing.cycleBudgetPerFrame;
 	runtime.machine.memory.writeMappedU32LE(IO_GX_GPU_GP1, (GX_GPU_GP1_VERTICAL_DISPLAY_RANGE << 24) | GX_GPU_VERTICAL_DISPLAY_RANGE_192_WORD);
 	runtime.vblank.handleBeginTimer();
+	runtime.machine.scheduler.setNowCycles(frameEndCycle);
 	runtime.vblank.handleEndTimer();
 	runtime.machine.memory.writeMappedU32LE(IO_GX_GPU_GP1, (GX_GPU_GP1_VERTICAL_DISPLAY_RANGE << 24) | GX_GPU_VERTICAL_DISPLAY_RANGE_212_WORD);
 	const state = captureRuntimeMachineState(runtime);
 
+	frameEndCycle += runtime.timing.cycleBudgetPerFrame;
 	runtime.vblank.handleBeginTimer();
+	runtime.machine.scheduler.setNowCycles(frameEndCycle);
 	runtime.vblank.handleEndTimer();
 	assert.equal(runtime.timing.gpuVerticalDisplayRangeWord, GX_GPU_VERTICAL_DISPLAY_RANGE_212_WORD);
 	applyRuntimeMachineState(runtime, state);
@@ -157,5 +173,5 @@ test('runtime restore derives timing from published display raw while preserving
 	assert.equal(runtime.machine.gxGpu.readVerticalDisplayRangeWord(), GX_GPU_VERTICAL_DISPLAY_RANGE_212_WORD);
 	assert.equal(runtime.machine.gxGpu.readDeviceOutput().verticalDisplayRangeWord, GX_GPU_VERTICAL_DISPLAY_RANGE_192_WORD);
 	assert.equal(runtime.timing.gpuVerticalDisplayRangeWord, GX_GPU_VERTICAL_DISPLAY_RANGE_192_WORD);
-	assert.equal(runtime.machine.scheduler.nextDeadline(), 61341);
+	assert.equal(runtime.machine.scheduler.nextDeadline(), state.vblank.nowCycles + 61341);
 });

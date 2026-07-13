@@ -489,7 +489,7 @@ DISPATCH_LABEL(LOAD_MEM_D) {
 DISPATCH_LABEL(STORE_MEM_D) {
 	const uint32_t addr = static_cast<uint32_t>(asNumber(REG(b))) + (static_cast<uint32_t>(disp) << 2);
 	if (!m_memory.mappedWriteReady(addr)) {
-		blockMappedWrite(FRAME);
+		blockMappedWrite(FRAME, addr);
 		DISPATCH_BLOCKED();
 	}
 	const Value value = REG(a);
@@ -507,7 +507,7 @@ DISPATCH_LABEL(STORE_MEM_D) {
 DISPATCH_LABEL(STORE_MEM_WORDS_D) {
 	const uint32_t addr = static_cast<uint32_t>(asNumber(REG(b))) + (static_cast<uint32_t>(disp) << 2);
 	if (!m_memory.mappedWriteReady(addr)) {
-		blockMappedWrite(FRAME);
+		blockMappedWrite(FRAME, addr);
 		DISPATCH_BLOCKED();
 	}
 	CYCLES_ADD(ceilDiv4(c));
@@ -531,7 +531,7 @@ DISPATCH_LABEL(LOAD_MEM) {
 DISPATCH_LABEL(STORE_MEM) {
 	const uint32_t addr = static_cast<uint32_t>(asNumber(readRK(FRAME, rkB)));
 	if (!m_memory.mappedWriteReady(addr)) {
-		blockMappedWrite(FRAME);
+		blockMappedWrite(FRAME, addr);
 		DISPATCH_BLOCKED();
 	}
 	const Value value = REG(a);
@@ -549,7 +549,7 @@ DISPATCH_LABEL(STORE_MEM) {
 DISPATCH_LABEL(STORE_MEM_WORDS) {
 	const uint32_t addr = static_cast<uint32_t>(asNumber(readRK(FRAME, rkB)));
 	if (!m_memory.mappedWriteReady(addr)) {
-		blockMappedWrite(FRAME);
+		blockMappedWrite(FRAME, addr);
 		DISPATCH_BLOCKED();
 	}
 	CYCLES_ADD(ceilDiv4(c));

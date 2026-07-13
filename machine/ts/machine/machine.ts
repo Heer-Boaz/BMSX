@@ -49,7 +49,7 @@ export class Machine {
 		this.irqController = new IrqController(this.memory);
 		this.audioOutput = new ApuOutputMixer();
 		this.audioController = new AudioController(this.memory, this.audioOutput, this.irqController, this.scheduler);
-		this.dmaController = new DmaController(this.memory, this.irqController, this.scheduler);
+		this.dmaController = new DmaController(this.memory, this.cpu, this.irqController, this.scheduler);
 		this.geometryController = new GeometryController(this.memory, this.irqController, this.scheduler);
 		this.gxGpu = new GxGpu(this.memory, this.irqController, this.scheduler, this.dmaController);
 		this.gxGte = new GxGte(this.memory);

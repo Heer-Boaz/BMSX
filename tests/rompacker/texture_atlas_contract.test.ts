@@ -6,7 +6,7 @@ import { BIOS_ATLAS_ID } from '../../machine/ts/rompack/format';
 import { collectRomAssetPayloadRanges } from '../../machine/ts/rompack/asset_layout';
 import { resolveTargetAtlasId } from '../../scripts/rompacker/atlasbuilder';
 import { buildDirect16GxTextureAtlas, buildPalette4GxTextureAtlas } from '../../scripts/rompacker/gx_texture_atlas';
-import { createAtlasses } from '../../scripts/rompacker/rombuilder';
+import { buildImgMetaForAtlas, createAtlasses } from '../../scripts/rompacker/rombuilder';
 import type { ImageResource, Resource, TextureAtlasResource } from '../../scripts/rompacker/rompacker.rompack';
 import { GX_CART_ATLAS_ID_LIMIT } from '../../scripts/rompacker/texture_atlas_contract';
 
@@ -31,61 +31,57 @@ test('palette4 atlas production rejects a seventeenth RGB555 color', () => {
 	);
 });
 
-test('direct16 cart atlas production emits packed RGB555 STP words with odd-pixel padding', () => {
+test('direct16 cart atlas production emits packed RGB555 STP words with odd-pixel word padding', () => {
 	const rgba = new Uint8ClampedArray([
 		0xff, 0x00, 0x00, 0xff,
 		0xff, 0xff, 0xff, 0x00,
 		0x00, 0x00, 0xff, 0xff,
 	]);
 	const atlas = buildDirect16GxTextureAtlas(0, 3, 1, rgba);
-	assert.deepEqual(Array.from(atlas.stream), [
-		0x00, 0x00, 0x00, 0xa0,
-		0x00, 0x00, 0x00, 0x01,
-		0x03, 0x00, 0x01, 0x00,
+	assert.equal(atlas.placement, 'relocatable');
+	assert.deepEqual(Array.from(atlas.payload), [
 		0x1f, 0x80, 0x00, 0x00,
 		0x00, 0xfc, 0x00, 0x00,
 	]);
 });
 
-test('direct16 system atlas production emits a new upload header for each 256-pixel slice', () => {
-	const atlas = buildDirect16GxTextureAtlas(BIOS_ATLAS_ID, 257, 1, new Uint8ClampedArray(257 * 4));
-	assert.equal(atlas.stream.byteLength, 540);
-	assert.deepEqual(Array.from(atlas.stream.subarray(0, 12)), [
+test('direct16 system atlas production targets its fixed texture page', () => {
+	const atlas = buildDirect16GxTextureAtlas(BIOS_ATLAS_ID, 3, 1, new Uint8ClampedArray(3 * 4));
+	assert.equal(atlas.placement, 'fixed');
+	assert.equal(atlas.payload.byteLength, 20);
+	assert.deepEqual(Array.from(atlas.payload.subarray(0, 12)), [
 		0x00, 0x00, 0x00, 0xa0,
 		0x00, 0x02, 0x00, 0x00,
-		0x00, 0x01, 0x01, 0x00,
+		0x03, 0x00, 0x01, 0x00,
 	]);
-	assert.deepEqual(Array.from(atlas.stream.subarray(524, 536)), [
-		0x00, 0x00, 0x00, 0xa0,
-		0x00, 0x03, 0x00, 0x00,
-		0x01, 0x00, 0x01, 0x00,
-	]);
+	assert.throws(
+		() => buildDirect16GxTextureAtlas(BIOS_ATLAS_ID, 257, 1, new Uint8ClampedArray(257 * 4)),
+		/does not fit the fixed system texture page/,
+	);
 });
 
-test('direct16 cart atlas production places overflow rows in the right-half band', () => {
+test('direct16 cart atlas production keeps rows destination-free', () => {
 	const rgba = new Uint8ClampedArray(257 * 4);
 	const lastPixel = 256 * 4;
 	rgba[lastPixel + 1] = 0xff;
 	rgba[lastPixel + 3] = 0xff;
 	const atlas = buildDirect16GxTextureAtlas(0, 1, 257, rgba);
-	assert.equal(atlas.stream.byteLength, 540);
-	assert.deepEqual(Array.from(atlas.stream.subarray(524)), [
-		0x00, 0x00, 0x00, 0xa0,
-		0x00, 0x02, 0x88, 0x00,
-		0x01, 0x00, 0x01, 0x00,
+	assert.equal(atlas.payload.byteLength, 516);
+	assert.deepEqual(Array.from(atlas.payload.subarray(512)), [
 		0xe0, 0x83, 0x00, 0x00,
 	]);
 });
 
-test('direct16 cart atlas production rejects source geometry that aliases in VRAM', () => {
+test('direct16 cart atlas production rejects geometry larger than a relocatable VRAM rectangle', () => {
 	assert.throws(
 		() => buildDirect16GxTextureAtlas(0, 1025, 1, new Uint8ClampedArray(1025 * 4)),
-		/does not fit the fixed cart texture region/,
+		/does not fit in one relocatable VRAM rectangle/,
 	);
 	assert.throws(
-		() => buildDirect16GxTextureAtlas(0, 513, 377, new Uint8ClampedArray(513 * 377 * 4)),
-		/does not fit the fixed cart texture region/,
+		() => buildDirect16GxTextureAtlas(0, 1, 513, new Uint8ClampedArray(513 * 4)),
+		/does not fit in one relocatable VRAM rectangle/,
 	);
+	assert.equal(buildDirect16GxTextureAtlas(0, 513, 377, new Uint8ClampedArray(513 * 377 * 4)).payload.byteLength, 386804);
 });
 
 test('default atlas production keeps PNG tooling data out of the ROM payload', async () => {
@@ -93,26 +89,31 @@ test('default atlas production keeps PNG tooling data out of the ROM payload', a
 	const image = createCanvas(1, 1);
 	image.getContext('2d').fillStyle = '#ff0000';
 	image.getContext('2d').fillRect(0, 0, 1, 1);
+	const imageResource: ImageResource = {
+		type: 'image',
+		name: 'pixel',
+		id: 2,
+		collisionType: 'aabb',
+		targetAtlasId: 0,
+		img: image as unknown as ImageResource['img'],
+	};
 	const resources: Resource[] = [
 		atlas,
-		{
-			type: 'image',
-			name: 'pixel',
-			id: 2,
-			collisionType: 'aabb',
-			targetAtlasId: 0,
-			img: image as unknown as ImageResource['img'],
-		},
+		imageResource,
 	];
 	await createAtlasses(resources);
+	assert.equal(imageResource.atlasX, 0);
+	assert.equal(imageResource.atlasY, 0);
+	assert.equal(Object.hasOwn(imageResource, 'atlasTexcoords'), false);
 	assert.ok(atlas.buffer);
 	assert.ok(atlas.gxTexture);
-	assert.ok(atlas.gxTexture.stream.byteLength > 0);
+	assert.equal(buildImgMetaForAtlas(atlas).gx_texture_placement, 'relocatable');
+	assert.ok(atlas.gxTexture.payload.byteLength > 0);
 	const ranges = collectRomAssetPayloadRanges([{
 		resid: atlas.name,
 		type: 'atlas',
 		buffer: atlas.buffer,
-		texture_buffer: atlas.gxTexture.stream,
+		texture_buffer: atlas.gxTexture.payload,
 	}], true);
 	assert.deepEqual(ranges.map(range => range.kind), ['texture']);
 });

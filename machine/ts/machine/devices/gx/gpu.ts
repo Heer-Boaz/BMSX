@@ -1072,7 +1072,10 @@ export class GxGpu {
 			commandStatusBits |= GX_GPU_STATUS_GPU_IDLE;
 		}
 		this.statusWord = ((this.statusWord & ~GX_GPU_STATUS_COMMAND_STATE_MASK) | commandStatusBits) >>> 0;
-		this.dmaController.setGxGpuWriteReady(readyToReceive);
+		// CPU stores need one physical FIFO slot; DMA packet acceptance is a
+		// separate, stricter GPUSTAT line while a command is being assembled.
+		this.dmaController.setGxGpuCpuWriteReady(fifoWordCount < GX_GPU_COMMAND_FIFO_WORD_CAPACITY);
+		this.dmaController.setGxGpuDmaWriteReady(readyToReceive);
 	}
 
 	private updateDynamicStatusBits(): void {
@@ -1156,7 +1159,8 @@ export class GxGpu {
 
 	private gp0WriteReady(): boolean {
 		this.synchronizeCommandTiming(this.scheduler.currentNowCycles());
-		return this.gp0Fifo.count() < GX_GPU_COMMAND_FIFO_WORD_CAPACITY;
+		this.updateDynamicStatusBits();
+		return this.dmaController.isGxGpuCpuPortWriteReady();
 	}
 
 	// disable-next-line single_line_method_pattern -- MMIO read thunk is the Memory-owned device callback ABI for GP0.

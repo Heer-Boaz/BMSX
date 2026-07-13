@@ -29,6 +29,14 @@ function __bmsx_host_test.update(frame)
 	end
 	if frame == 13 then
 		local combat_director<const> = oget(combat_director_instance_id)
+		combat_director:start_combat('combat_wekker', true)
+		return
+	end
+	if frame == 23 or frame == 43 or frame == 73 then
+		return host.capture('combat_' .. tostring(frame - 13))
+	end
+	if frame == 74 then
+		local combat_director<const> = oget(combat_director_instance_id)
 		combat_director.node_id = 'combat_wekker'
 		combat_director.combat_node_id = 'combat_wekker'
 		combat_director.combat_monster_imgid = story.combat_wekker.monster_imgid
@@ -36,8 +44,11 @@ function __bmsx_host_test.update(frame)
 		combat_director.sc:switch_state(combat_director_fsm_id, '/combat_results_setup')
 		return host.capture('results_0')
 	end
-	if frame < 48 then
-		return host.capture('results_' .. tostring(frame - 13))
+	if frame > 74 and frame < 109 then
+		return host.capture('results_' .. tostring(frame - 74))
+	end
+	if frame < 109 then
+		return
 	end
 	return true
 end

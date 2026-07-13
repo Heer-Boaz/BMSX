@@ -110,45 +110,19 @@ function buildOverlayBuffer(imgW: number, imgH: number, polys: number[][]): Uint
 
 function extractSubimageAndSizeFromAtlasImage(imgToExtract: Buffer, imgmeta: ImgMeta): { subimage: Buffer; width: number; height: number } {
 	const atlas = PNG.sync.read(imgToExtract);
-	let imgW = atlas.width;
-	let imgH = atlas.height;
-	let offsetX = 0;
-	let offsetY = 0;
-	if (imgmeta.atlasid !== undefined && imgmeta.texcoords) {
-		const coords = Array.from(imgmeta.texcoords as number[]);
-		const xs: number[] = [];
-		const ys: number[] = [];
-		for (let i = 0; i + 1 < coords.length; i += 2) {
-			xs.push(coords[i]);
-			ys.push(coords[i + 1]);
-		}
-		const minU = Math.max(0, Math.min(...xs));
-		const maxU = Math.min(1, Math.max(...xs));
-		const minV = Math.max(0, Math.min(...ys));
-		const maxV = Math.min(1, Math.max(...ys));
-		offsetX = Math.round(minU * atlas.width);
-		offsetY = Math.round(minV * atlas.height);
-		imgW = Math.max(1, Math.min(atlas.width - offsetX, Math.round((maxU - minU) * atlas.width)));
-		imgH = Math.max(1, Math.min(atlas.height - offsetY, Math.round((maxV - minV) * atlas.height)));
-	}
-	const subimageData = new Uint8Array(imgW * imgH * 4);
+	const imgW = imgmeta.width;
+	const imgH = imgmeta.height;
+	const offsetX = imgmeta.atlas_x!;
+	const offsetY = imgmeta.atlas_y!;
+	const subimage = Buffer.allocUnsafe(imgW * imgH * 4);
 	const atlasW = atlas.width;
-	const atlasData = atlas.data as Uint8Array;
+	const rowBytes = imgW << 2;
 	for (let y = 0; y < imgH; y += 1) {
-		const srcRow = ((offsetY + y) * atlasW) << 2;
+		const srcRow = (((offsetY + y) * atlasW) + offsetX) << 2;
 		const destRow = (y * imgW) << 2;
-		for (let x = 0; x < imgW; x += 1) {
-			const srcIdx = srcRow + ((offsetX + x) << 2);
-			const dstIdx = destRow + (x << 2);
-			if (srcIdx + 3 < atlasData.length) {
-				subimageData[dstIdx] = atlasData[srcIdx];
-				subimageData[dstIdx + 1] = atlasData[srcIdx + 1];
-				subimageData[dstIdx + 2] = atlasData[srcIdx + 2];
-				subimageData[dstIdx + 3] = atlasData[srcIdx + 3];
-			}
-		}
+		atlas.data.copy(subimage, destRow, srcRow, srcRow + rowBytes);
 	}
-	return { subimage: Buffer.from(subimageData), width: imgW, height: imgH };
+	return { subimage, width: imgW, height: imgH };
 }
 
 function scaleImageNearest(data: Uint8Array, width: number, height: number, zoom: number): { data: Uint8Array; width: number; height: number } {
@@ -305,7 +279,7 @@ export async function buildAssetModalView(selected: RomAsset, ctx: BuildAssetMod
 
 	switch (selected.type) {
 			case 'image':
-				if (imgmeta.atlasid !== undefined && imgmeta.texcoords) {
+				if (imgmeta.atlasid !== undefined) {
 					const atlasName = generateAtlasAssetId(imgmeta.atlasid);
 					const atlasAsset = ctx.assetList.find(a => a.resid === atlasName && a.type === 'atlas');
 					if (atlasAsset) {

@@ -3,7 +3,7 @@ import { resolve as resolvePath, sep as pathSep } from 'path';
 import { commonResPath } from './rombuilder';
 import { BIOS_ATLAS_ID, generateAtlasAssetId } from '../../machine/ts/rompack/format';
 import { GX_CART_ATLAS_ID_LIMIT, GX_DIRECT16_ATLAS_RGBA_BYTE_LIMIT, TEXTURE_ATLAS_RGBA_BYTES_PER_PIXEL } from './texture_atlas_contract';
-import { AtlasTexcoords, ImageResource } from './rompacker.rompack';
+import { ImageResource } from './rompacker.rompack';
 export { generateAtlasAssetId };
 
 // @ts-ignore
@@ -12,15 +12,15 @@ const { createCanvas } = require('canvas');
 const ATLAS_MAX_SIZE_IN_PIXELS = 2048;
 const CROP_ATLAS = true;
 
-// Reserve and extrude a border around each image in the texture atlas.
-// This prevents gaps/bleeding when sampling the texture atlas (especially with subpixel
-// screen placement / scaling) while keeping the UVs mapped to the full image
-// area (no shrink/stretch of small sprites like glyphs).
-const ATLAS_IMAGE_PADDING = 1;
-
 export type Rect = { width: number; height: number; id: number; };
 export type Bin = { x: number; y: number; width: number; height: number; };
 type PackedAtlas = { items: { item: Rect, x: number, y: number; }[], width: number, height: number; };
+export type FixedAtlasPlacement = {
+	maxWidth: number;
+	maxHeight: number;
+	textureX: number;
+	textureY: number;
+};
 
 export function resolveTargetAtlasId(filepath: string, current = 0): number {
 	const abs = resolvePath(filepath);
@@ -416,8 +416,8 @@ function imageResourceRects(imageResources: ImageResource[]): Rect[] {
 		const resource = imageResources[index];
 		const img = resource.img!;
 		rects.push({
-			width: img.width + ATLAS_IMAGE_PADDING * 2,
-			height: img.height + ATLAS_IMAGE_PADDING * 2,
+			width: img.width,
+			height: img.height,
 			id: resource.id,
 		});
 	}
@@ -428,7 +428,7 @@ function packedAtlasByteLength(packed: PackedAtlas): number {
 	return packed.width * packed.height * TEXTURE_ATLAS_RGBA_BYTES_PER_PIXEL;
 }
 
-function packOptimizedAtlas(imageResources: ImageResource[]): PackedAtlas | false {
+function packOptimizedAtlas(imageResources: ImageResource[], maxWidth = ATLAS_MAX_SIZE_IN_PIXELS, maxHeight = ATLAS_MAX_SIZE_IN_PIXELS): PackedAtlas | false {
 	const rects = imageResourceRects(imageResources);
 	const results: PackedAtlas[] = [];
 	const packers: Array<{ name: string; fn: (rectangles: Rect[], width: number, height: number) => PackedAtlas | false; }> = [
@@ -439,7 +439,7 @@ function packOptimizedAtlas(imageResources: ImageResource[]): PackedAtlas | fals
 
 	for (const packer of packers) {
 		const clonedRects = rects.map(rect => ({ width: rect.width, height: rect.height, id: rect.id }));
-		const packed = packer.fn(clonedRects, ATLAS_MAX_SIZE_IN_PIXELS, ATLAS_MAX_SIZE_IN_PIXELS);
+		const packed = packer.fn(clonedRects, maxWidth, maxHeight);
 		if (packed && packed.items.length === rects.length) {
 			results.push(packed);
 		}
@@ -517,11 +517,17 @@ export function splitAtlasImagesByDirect16Capacity(imageResources: ImageResource
 	return groups;
 }
 
-export function createOptimizedAtlas(imageResources: ImageResource[], maxAtlasBytes = GX_DIRECT16_ATLAS_RGBA_BYTE_LIMIT): Canvas {
+export function createOptimizedAtlas(
+	imageResources: ImageResource[],
+	maxAtlasBytes = GX_DIRECT16_ATLAS_RGBA_BYTE_LIMIT,
+	fixedPlacement?: FixedAtlasPlacement,
+): Canvas {
 	if (imageResources.length === 0) {
 		return createCanvas(1, 1);
 	}
-	const packedAtlas = packOptimizedAtlas(imageResources);
+	const packedAtlas = fixedPlacement === undefined
+		? packOptimizedAtlas(imageResources)
+		: packOptimizedAtlas(imageResources, fixedPlacement.maxWidth, fixedPlacement.maxHeight);
 	if (!packedAtlas) {
 		throw new Error('All texture atlas packing algorithms failed to fit the provided images within the configured texture atlas dimensions.');
 	}
@@ -543,52 +549,17 @@ export function createOptimizedAtlas(imageResources: ImageResource[], maxAtlasBy
 	for (const packedRect of packedAtlas.items) {
 		const img_asset = imageById.get(packedRect.item.id)!;
 		const img = img_asset.img!;
-		const pad = ATLAS_IMAGE_PADDING;
-		const dx = packedRect.x + pad;
-		const dy = packedRect.y + pad;
+		const dx = packedRect.x;
+		const dy = packedRect.y;
 
 		ctx.drawImage(img, dx, dy);
 
-		if (pad > 0) {
-			ctx.drawImage(img, 0, 0, 1, img.height, packedRect.x, dy, pad, img.height);
-			ctx.drawImage(img, img.width - 1, 0, 1, img.height, dx + img.width, dy, pad, img.height);
-			ctx.drawImage(img, 0, 0, img.width, 1, dx, packedRect.y, img.width, pad);
-			ctx.drawImage(img, 0, img.height - 1, img.width, 1, dx, dy + img.height, img.width, pad);
-			ctx.drawImage(img, 0, 0, 1, 1, packedRect.x, packedRect.y, pad, pad);
-			ctx.drawImage(img, img.width - 1, 0, 1, 1, dx + img.width, packedRect.y, pad, pad);
-			ctx.drawImage(img, 0, img.height - 1, 1, 1, packedRect.x, dy + img.height, pad, pad);
-			ctx.drawImage(img, img.width - 1, img.height - 1, 1, 1, dx + img.width, dy + img.height, pad, pad);
+		if (fixedPlacement !== undefined) {
+			img_asset.gxTextureX = fixedPlacement.textureX + dx;
+			img_asset.gxTextureY = fixedPlacement.textureY + dy;
 		}
-
-		img_asset.atlasTexcoords = uvcoords(dx, dy, atlas_width, atlas_height, img.width, img.height);
+		img_asset.atlasX = dx;
+		img_asset.atlasY = dy;
 	}
 	return atlasCanvas;
-}
-
-/**
- * Calculates the UV coordinates of the inner image region that has been packed into a texture atlas.
- * Note: the texture atlas builder reserves a padded border around each image and extrudes edge pixels into it.
- * UVs must therefore address the *inner* (non-padded) rectangle using texel edges.
- * @param x The x-coordinate of the image in the texture atlas.
- * @param y The y-coordinate of the image in the texture atlas.
- * @param width The width of the texture atlas.
- * @param height The height of the texture atlas.
- * @param imageWidth The width of the image.
- * @param imageHeight The height of the image.
- * @returns An object containing the UV coordinates of the image in the texture atlas.
- */
-function uvcoords(x: number, y: number, width: number, height: number, imageWidth: number, imageHeight: number): AtlasTexcoords {
-	const left = x / width;
-	const top = y / height;
-	const right = (x + imageWidth) / width;
-	const bottom = (y + imageHeight) / height;
-
-	return [
-		left, top,
-		left, bottom,
-		right, top,
-		right, top,
-		left, bottom,
-		right, bottom,
-	] as AtlasTexcoords;
 }

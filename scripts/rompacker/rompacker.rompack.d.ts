@@ -33,15 +33,6 @@ export type resourcetype = asset_type;
 export type collisiontype = 'concave' | 'convex' | 'aabb';
 export type datatype = 'json' | 'yaml' | 'bin';
 
-export type AtlasTexcoords = [
-	number, number,
-	number, number,
-	number, number,
-	number, number,
-	number, number,
-	number, number
-];
-
 interface BaseResource<TType extends resourcetype> {
 	type: TType; // resource type
 	name: string; // logical name within the rompack.
@@ -57,10 +48,13 @@ export interface ImageResource extends BaseResource<'image'> {
 	collisionType: collisiontype;
 	targetAtlasId?: number;
 	img?: NodeCanvasImage;
-	atlasTexcoords?: AtlasTexcoords;
+	atlasX?: number;
+	atlasY?: number;
+	gxTextureX?: number;
+	gxTextureY?: number;
 }
 
-// Serialized as a ROM atlas asset with a native GX upload stream.
+// Serialized as a ROM atlas asset with a fixed upload stream or relocatable raw GX payload.
 export interface TextureAtlasResource extends BaseResource<'atlas'> {
 	id: number;
 	atlasId: number;

@@ -11,6 +11,7 @@
 namespace bmsx {
 
 class IrqController;
+class CPU;
 
 inline constexpr size_t DMA_JOB_QUEUE_CAPACITY = 16u;
 
@@ -38,11 +39,13 @@ struct DmaControllerState {
 
 class DmaController {
 public:
-	DmaController(Memory& memory, IrqController& irq, DeviceScheduler& scheduler);
+	DmaController(Memory& memory, CPU& cpu, IrqController& irq, DeviceScheduler& scheduler);
 
 	void setTiming(int64_t cpuHz, int64_t bytesPerSec, int64_t nowCycles);
 	void setGxGpuReadReady(bool ready);
-	void setGxGpuWriteReady(bool ready);
+	void setGxGpuDmaWriteReady(bool ready);
+	void setGxGpuCpuWriteReady(bool ready);
+	bool isGxGpuCpuPortWriteReady() const { return m_gxGpuCpuWriteReady && m_gxGpuWriteJobCount == 0u; }
 	void accrueCycles(int cycles, int64_t nowCycles);
 	void onService(int64_t nowCycles);
 	void startIo();
@@ -73,8 +76,11 @@ private:
 	uint32_t m_writtenValue = 0;
 	bool m_writtenDirty = false;
 	bool m_gxGpuReadReady = false;
-	bool m_gxGpuWriteReady = false;
+	bool m_gxGpuDmaWriteReady = false;
+	bool m_gxGpuCpuWriteReady = false;
+	size_t m_gxGpuWriteJobCount = 0;
 	Memory& m_memory;
+	CPU& m_cpu;
 	IrqController& m_irq;
 	DeviceScheduler& m_scheduler;
 	std::array<uint8_t, DMA_SERVICE_BATCH_BYTES> m_buffer{};

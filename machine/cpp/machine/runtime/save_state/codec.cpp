@@ -1247,6 +1247,7 @@ BinValue encodeCpuRuntimeState(const CpuRuntimeState& state) {
 	object["instructionBudgetRemaining"] = static_cast<i64>(state.instructionBudgetRemaining);
 	object["haltedUntilIrq"] = state.haltedUntilIrq;
 	object["memoryWriteBlocked"] = state.memoryWriteBlocked;
+	object["memoryWriteBlockedAddress"] = static_cast<i64>(state.memoryWriteBlockedAddress);
 	object["maskableInterruptsEnabled"] = state.maskableInterruptsEnabled;
 	object["maskableInterruptsRestoreEnabled"] = state.maskableInterruptsRestoreEnabled;
 	object["nonMaskableInterruptPending"] = state.nonMaskableInterruptPending;
@@ -1286,6 +1287,7 @@ CpuRuntimeState decodeCpuRuntimeState(const BinValue& value, const char* label) 
 	state.instructionBudgetRemaining = requireI32(requireField(object, "instructionBudgetRemaining", label), "cpuState.instructionBudgetRemaining");
 	state.haltedUntilIrq = requireBool(requireField(object, "haltedUntilIrq", label), "cpuState.haltedUntilIrq");
 	state.memoryWriteBlocked = requireBool(requireField(object, "memoryWriteBlocked", label), "cpuState.memoryWriteBlocked");
+	state.memoryWriteBlockedAddress = requireU32(requireField(object, "memoryWriteBlockedAddress", label), "cpuState.memoryWriteBlockedAddress");
 	state.maskableInterruptsEnabled = requireBool(requireField(object, "maskableInterruptsEnabled", label), "cpuState.maskableInterruptsEnabled");
 	state.maskableInterruptsRestoreEnabled = requireBool(requireField(object, "maskableInterruptsRestoreEnabled", label), "cpuState.maskableInterruptsRestoreEnabled");
 	state.nonMaskableInterruptPending = requireBool(requireField(object, "nonMaskableInterruptPending", label), "cpuState.nonMaskableInterruptPending");

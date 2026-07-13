@@ -10,7 +10,6 @@
 #include "rompack/format.h"
 #include "rompack/metadata.h"
 #include "rompack/toc.h"
-#include <cmath>
 #include <cstring>
 #include <stdexcept>
 #include <utility>
@@ -20,17 +19,6 @@
 #include <iostream>
 
 namespace bmsx {
-
-static void updateFlippedTexcoords(ImgMeta& meta) {
-	const f32 left = meta.texcoords[0];
-	const f32 top = meta.texcoords[1];
-	const f32 bottom = meta.texcoords[3];
-	const f32 right = meta.texcoords[4];
-
-	meta.texcoords_fliph = {right, top, right, bottom, left, top, left, top, right, bottom, left, bottom};
-	meta.texcoords_flipv = {left, bottom, left, top, right, bottom, right, bottom, left, top, right, top};
-	meta.texcoords_fliphv = {right, bottom, right, top, left, bottom, left, bottom, right, top, left, top};
-}
 
 static void updateFlippedBoundingBox(ImgMeta& meta) {
 	const auto& original = meta.boundingbox.original;
@@ -794,26 +782,9 @@ ImageAtlasRect resolveImageAtlasRectFromPackage(const RuntimeRomPackage& romPack
 	if (!meta.atlasid) {
 		throw BMSX_RUNTIME_ERROR("[RuntimeRomPackage] Image '" + imgId + "' is not atlas-backed.");
 	}
-	const i32 atlasId = *meta.atlasid;
-	const std::string atlasAssetId = generateAtlasAssetId(atlasId);
-	const ImgAsset* atlas = romPackage.getImg(atlasAssetId);
-	if (!atlas) {
-		throw BMSX_RUNTIME_ERROR("[RuntimeRomPackage] Atlas '" + atlasAssetId + "' for image '" + imgId + "' was not found.");
-	}
-	if (atlas->meta.width <= 0 || atlas->meta.height <= 0 || meta.width <= 0 || meta.height <= 0) {
-		throw BMSX_RUNTIME_ERROR("[RuntimeRomPackage] Image '" + imgId + "' has invalid atlas dimensions.");
-	}
-	f32 u0 = 0.0f;
-	f32 v0 = 0.0f;
-	f32 u1 = 0.0f;
-	f32 v1 = 0.0f;
-	meta.getUVRect(u0, v0, u1, v1);
-	(void)u1;
-	(void)v1;
 	return ImageAtlasRect{
-		atlasId,
-		static_cast<u32>(std::round(u0 * static_cast<f32>(atlas->meta.width))),
-		static_cast<u32>(std::round(v0 * static_cast<f32>(atlas->meta.height))),
+		static_cast<u32>(meta.atlasX),
+		static_cast<u32>(meta.atlasY),
 		static_cast<u32>(meta.width),
 		static_cast<u32>(meta.height),
 	};
@@ -1251,6 +1222,10 @@ static bool loadRomAssetPayloadInternal(const u8* romData,
 						if (imgMeta.count("atlasid")) {
 							imgAsset.meta.atlasid = imgMeta.at("atlasid").toI32();
 						}
+						if (sourceEntry.rom.type == "image") {
+							imgAsset.meta.atlasX = imgMeta.at("atlas_x").toI32();
+							imgAsset.meta.atlasY = imgMeta.at("atlas_y").toI32();
+						}
 						if (imgMeta.count("gx_texture_mode")) {
 							imgAsset.meta.gxTextureMode = imgMeta.at("gx_texture_mode").toI32();
 						}
@@ -1265,22 +1240,6 @@ static bool loadRomAssetPayloadInternal(const u8* romData,
 						}
 						if (imgMeta.count("gx_clut_y")) {
 							imgAsset.meta.gxClutY = imgMeta.at("gx_clut_y").toI32();
-						}
-
-						// Load texcoords
-						if (imgMeta.count("texcoords")) {
-							const auto& tcVal = imgMeta.at("texcoords");
-							if (tcVal.isArray()) {
-								const auto& tc = tcVal.asArray();
-								for (size_t i = 0; i < 12; ++i) {
-									imgAsset.meta.texcoords[i] = static_cast<f32>(tc.at(i).toNumber());
-								}
-								updateFlippedTexcoords(imgAsset.meta);
-							} else if (tcVal.isBinary()) {
-								const auto& tc = tcVal.asBinary();
-								std::memcpy(imgAsset.meta.texcoords.data(), tc.data(), sizeof(imgAsset.meta.texcoords));
-								updateFlippedTexcoords(imgAsset.meta);
-							}
 						}
 
 						// Load bounding box

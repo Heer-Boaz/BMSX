@@ -80,6 +80,27 @@ RunResult CpuExecutionState::runWithBudget(Runtime& runtime, FrameState& frameSt
 		return result;
 	}
 	while (remaining > 0) {
+		if (cpu.isMemoryWriteBlocked()) {
+			const i64 nextDeadline = scheduler.nextDeadline();
+			const i64 deadlineBudget = nextDeadline - scheduler.nowCycles();
+			if (deadlineBudget <= 0) {
+				tickCompleted = runDueRuntimeTimers(runtime);
+				if (tickCompleted) {
+					break;
+				}
+				continue;
+			}
+			// Device-ready edges release blocked MMIO stores. Advance to scheduled
+			// hardware events here; never poll readiness or retry the instruction.
+			const int waitCycles = static_cast<int>(std::min<i64>(deadlineBudget, remaining));
+			remaining -= waitCycles;
+			frameState.activeCpuUsedCycles += waitCycles;
+			tickCompleted = advanceRuntimeTime(runtime, waitCycles);
+			if (tickCompleted) {
+				break;
+			}
+			continue;
+		}
 		int sliceBudget = remaining;
 		const i64 nextDeadline = scheduler.nextDeadline();
 		if (nextDeadline != std::numeric_limits<i64>::max()) {
@@ -113,17 +134,6 @@ RunResult CpuExecutionState::runWithBudget(Runtime& runtime, FrameState& frameSt
 			break;
 		}
 		if (cpu.isMemoryWriteBlocked()) {
-			const i64 readyCycle = scheduler.nextDeadline();
-			const int waitCycles = static_cast<int>(std::min<i64>(readyCycle - scheduler.nowCycles(), remaining));
-			remaining -= waitCycles;
-			frameState.activeCpuUsedCycles += waitCycles;
-			tickCompleted = advanceRuntimeTime(runtime, waitCycles);
-			if (scheduler.nowCycles() >= readyCycle) {
-				cpu.resumeMemoryWrite();
-			}
-			if (tickCompleted) {
-				break;
-			}
 			continue;
 		}
 		if (cpu.isHaltedUntilIrq() || result == RunResult::Halted) {

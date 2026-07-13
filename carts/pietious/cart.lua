@@ -1,4 +1,6 @@
 local gx_gpu<const> = require('system/gx_gpu')
+local gx_image<const> = require('cartlib/gx/image')
+local dma<const> = require('system/dma')
 gx_gpu.reset_256x192_pal()
 require('cartlib/prelude')
 require('constants')
@@ -185,7 +187,8 @@ end
 -- GP0 submission happens in the next VBLANK, and the extra wait keeps the game
 -- tick at half the display refresh rate.
 init()
-gx_upload_atlas(0)
+local cart_texture<const> = gx_image.packed_texture(0)
+dma.copy_to_gp0(cart_texture.texture_addr, cart_texture.texture_len)
 mem[irq_mask_addr] = irq_vblank | irq_geo_done_error | irq_apu
 new_game()
 mem[0x0800006c] = 0x00000001

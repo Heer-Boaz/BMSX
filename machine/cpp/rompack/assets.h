@@ -5,7 +5,6 @@
 #include "rompack/format.h"
 #include "rompack/tokens.h"
 
-#include <algorithm>
 #include <array>
 #include <optional>
 #include <string>
@@ -44,18 +43,13 @@ struct ImgMeta {
 	i32 width = 0;
 	i32 height = 0;
 	std::optional<i32> atlasid;
+	i32 atlasX = 0;
+	i32 atlasY = 0;
 	std::optional<i32> gxTextureMode;
 	std::optional<i32> gxTextureX;
 	std::optional<i32> gxTextureY;
 	std::optional<i32> gxClutX;
 	std::optional<i32> gxClutY;
-
-	// Texture coordinates for sprite rendering.
-	// Each array is [u0, v0, u1, v1, u2, v2, u3, v3] for quad vertices
-	std::array<f32, 12> texcoords{0, 0, 0, 1, 1, 0, 1, 0, 0, 1, 1, 1};       // Normal
-	std::array<f32, 12> texcoords_fliph{1, 0, 1, 1, 0, 0, 0, 0, 1, 1, 0, 1};  // Flipped horizontal
-	std::array<f32, 12> texcoords_flipv{0, 1, 0, 0, 1, 1, 1, 1, 0, 0, 1, 0};  // Flipped vertical
-	std::array<f32, 12> texcoords_fliphv{1, 1, 1, 0, 0, 1, 0, 1, 1, 0, 0, 0}; // Flipped both
 
 	// Bounding box (for sprites with transparency, collision)
 	struct BoundingRect {
@@ -86,18 +80,6 @@ struct ImgMeta {
 
 	std::optional<HitPolygons> hitpolygons;
 	std::optional<std::string> collisionBlobId;
-
-	// Helper to get UV rect (u0, v0, u1, v1) for simple blitting
-	void getUVRect(f32& u0, f32& v0, f32& u1, f32& v1, bool flipH = false, bool flipV = false) const {
-		const auto& tc = flipH ? (flipV ? texcoords_fliphv : texcoords_fliph)
-								: (flipV ? texcoords_flipv : texcoords);
-		const f32 umin = std::min({tc[0], tc[2], tc[4], tc[6], tc[8], tc[10]});
-		const f32 umax = std::max({tc[0], tc[2], tc[4], tc[6], tc[8], tc[10]});
-		const f32 vmin = std::min({tc[1], tc[3], tc[5], tc[7], tc[9], tc[11]});
-		const f32 vmax = std::max({tc[1], tc[3], tc[5], tc[7], tc[9], tc[11]});
-		u0 = umin; v0 = vmin;
-		u1 = umax; v1 = vmax;
-	}
 };
 
 /* ============================================================================
@@ -118,7 +100,6 @@ struct ImgAsset {
 };
 
 struct ImageAtlasRect {
-	i32 atlasId = 0;
 	u32 u = 0;
 	u32 v = 0;
 	u32 w = 0;

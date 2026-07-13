@@ -1,9 +1,8 @@
-import { BIOS_ATLAS_ID, generateAtlasAssetId, type RuntimeRomPackage } from '../../rompack/format';
+import type { RuntimeRomPackage } from '../../rompack/format';
 
 export type GlyphMap = Record<string, string>;
 
 export type ImageAtlasRect = {
-	atlasId: number;
 	u: number;
 	v: number;
 	w: number;
@@ -233,29 +232,9 @@ export class RomPackageBitmapFontSource implements BitmapFontSource {
 		if (!meta) {
 			throw new Error(`[BFont] Image '${imgid}' is missing font metadata.`);
 		}
-		const atlasId = meta.atlasid ?? BIOS_ATLAS_ID;
-		const atlas = (atlasId === BIOS_ATLAS_ID ? this.systemPackage : this.romPackage).img[generateAtlasAssetId(atlasId)];
-		const atlasMeta = atlas?.imgmeta;
-		if (!atlasMeta || !meta.texcoords) {
-			throw new Error(`[BFont] Image '${imgid}' is missing atlas metadata.`);
-		}
-		const coords = meta.texcoords;
-		let minU = coords[0];
-		let maxU = coords[0];
-		let minV = coords[1];
-		let maxV = coords[1];
-		for (let index = 2; index < coords.length; index += 2) {
-			const u = coords[index];
-			const v = coords[index + 1];
-			if (u < minU) minU = u;
-			if (u > maxU) maxU = u;
-			if (v < minV) minV = v;
-			if (v > maxV) maxV = v;
-		}
 		return {
-			atlasId,
-			u: Math.round(minU * atlasMeta.width),
-			v: Math.round(minV * atlasMeta.height),
+			u: meta.atlas_x!,
+			v: meta.atlas_y!,
 			w: meta.width,
 			h: meta.height,
 		};

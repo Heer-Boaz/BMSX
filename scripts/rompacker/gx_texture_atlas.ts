@@ -1,4 +1,3 @@
-import { HOST_SYSTEM_ATLAS_HEIGHT, HOST_SYSTEM_ATLAS_WIDTH } from '../../machine/ts/rompack/host_system_atlas';
 import {
 	GX_GPU_TEXTURE_MODE_DIRECT16,
 	GX_GPU_TEXTURE_MODE_PALETTE4,
@@ -9,18 +8,18 @@ import { GX_GPU_GP0_CPU_TO_VRAM_FIRST } from '../../machine/ts/machine/devices/g
 import { BIOS_ATLAS_ID } from '../../machine/ts/rompack/format';
 import { TEXTURE_ATLAS_RGBA_BYTES_PER_PIXEL } from './texture_atlas_contract';
 
-const GX_GPU_VRAM_RIGHT_HALF_X = GX_GPU_VRAM_WIDTH >> 1;
-const GX_SYSTEM_DIRECT16_BAND_WIDTH = 512;
-const GX_DIRECT16_SLICE_WIDTH = 256;
-const GX_DIRECT16_PAGE_HEIGHT = GX_GPU_VRAM_HEIGHT >> 1;
-const GX_DIRECT16_CART_BASE_Y = GX_DIRECT16_PAGE_HEIGHT;
+export const GX_SYSTEM_TEXTURE_ASSET_ID = 'gx_system_texture';
+export const GX_SYSTEM_TEXTURE_X = GX_GPU_VRAM_WIDTH >> 1;
+export const GX_SYSTEM_TEXTURE_Y = 0;
+export const GX_SYSTEM_TEXTURE_SIZE = 256;
 const GX_PALETTE4_PIXELS_PER_WORD = 4;
 const GX_PALETTE4_CLUT_WORDS = 16;
-const GX_CART_TEXTURE_RIGHT_BAND_Y = ((HOST_SYSTEM_ATLAS_WIDTH + GX_SYSTEM_DIRECT16_BAND_WIDTH - 1) >> 9) * HOST_SYSTEM_ATLAS_HEIGHT;
+// Cart residency starts on the next hardware page; never derive it from the packed BIOS image height.
+const GX_PALETTE4_TEXTURE_Y = GX_SYSTEM_TEXTURE_SIZE;
 
 export const GX_PALETTE4_ATLAS_RGBA_BYTE_LIMIT =
-	(GX_GPU_VRAM_WIDTH - GX_GPU_VRAM_RIGHT_HALF_X)
-	* (GX_GPU_VRAM_HEIGHT - GX_CART_TEXTURE_RIGHT_BAND_Y - 1)
+	(GX_GPU_VRAM_WIDTH - GX_SYSTEM_TEXTURE_X)
+	* (GX_GPU_VRAM_HEIGHT - GX_PALETTE4_TEXTURE_Y - 1)
 	* GX_PALETTE4_PIXELS_PER_WORD
 	* TEXTURE_ATLAS_RGBA_BYTES_PER_PIXEL;
 
@@ -29,15 +28,24 @@ export type GxTextureAtlasBuildMode = 'palette4';
 export type GxTextureAtlas =
 	| {
 		mode: typeof GX_GPU_TEXTURE_MODE_DIRECT16;
-		stream: Buffer;
+		placement: 'fixed';
+		x: number;
+		y: number;
+		payload: Buffer;
+	}
+	| {
+		mode: typeof GX_GPU_TEXTURE_MODE_DIRECT16;
+		placement: 'relocatable';
+		payload: Buffer;
 	}
 	| {
 		mode: typeof GX_GPU_TEXTURE_MODE_PALETTE4;
+		placement: 'fixed';
 		x: number;
 		y: number;
 		clutX: number;
 		clutY: number;
-		stream: Buffer;
+		payload: Buffer;
 	};
 
 function rgbaToDirect16(r: number, g: number, b: number, a: number): number {
@@ -93,6 +101,20 @@ function writeDirect16Upload(
 	height: number,
 ): number {
 	let streamOffset = writeGp0UploadHeader(stream, offset, targetX, targetY, width, height);
+	return writeDirect16Pixels(stream, streamOffset, rgba, sourceX, sourceY, sourceStride, width, height);
+}
+
+function writeDirect16Pixels(
+	stream: Buffer,
+	offset: number,
+	rgba: Uint8ClampedArray,
+	sourceX: number,
+	sourceY: number,
+	sourceStride: number,
+	width: number,
+	height: number,
+): number {
+	let streamOffset = offset;
 	let pendingWord = 0;
 	let pendingHalf = 0;
 	for (let row = 0; row < height; row += 1) {
@@ -119,62 +141,25 @@ function writeDirect16Upload(
 
 export function buildDirect16GxTextureAtlas(atlasId: number, width: number, height: number, rgba: Uint8ClampedArray): GxTextureAtlas {
 	if (atlasId === BIOS_ATLAS_ID) {
-		const occupiedRows = ((width + GX_SYSTEM_DIRECT16_BAND_WIDTH - 1) >> 9) * height;
-		if (occupiedRows > GX_DIRECT16_PAGE_HEIGHT) {
-			throw new Error(`[RomPacker] GX system direct16 atlas ${atlasId} does not fit the fixed system texture region.`);
+		if (width > GX_SYSTEM_TEXTURE_SIZE || height > GX_SYSTEM_TEXTURE_SIZE) {
+			throw new Error(`[RomPacker] GX system direct16 atlas ${atlasId} does not fit the fixed system texture page.`);
 		}
-	} else {
-		const overflowHeight = height - GX_DIRECT16_PAGE_HEIGHT;
-		const overflowBottom = GX_CART_TEXTURE_RIGHT_BAND_Y
-			+ (((width + GX_GPU_VRAM_RIGHT_HALF_X - 1) >> 9) * overflowHeight);
-		const overflowLimit = width <= GX_GPU_VRAM_RIGHT_HALF_X ? GX_GPU_VRAM_HEIGHT : GX_DIRECT16_PAGE_HEIGHT;
-		if (width > GX_GPU_VRAM_WIDTH || (overflowHeight > 0 && overflowBottom > overflowLimit)) {
-			throw new Error(`[RomPacker] GX cart direct16 atlas ${atlasId} does not fit the fixed cart texture region.`);
-		}
+		const payload = Buffer.alloc(gp0UploadByteLength(width, height));
+		writeDirect16Upload(payload, 0, rgba, 0, 0, width, GX_SYSTEM_TEXTURE_X, GX_SYSTEM_TEXTURE_Y, width, height);
+		return {
+			mode: GX_GPU_TEXTURE_MODE_DIRECT16,
+			placement: 'fixed',
+			x: GX_SYSTEM_TEXTURE_X,
+			y: GX_SYSTEM_TEXTURE_Y,
+			payload,
+		};
 	}
-	let byteLength = 0;
-	for (let sourceX = 0; sourceX < width; sourceX += GX_DIRECT16_SLICE_WIDTH) {
-		const sliceWidth = width - sourceX < GX_DIRECT16_SLICE_WIDTH ? width - sourceX : GX_DIRECT16_SLICE_WIDTH;
-		if (atlasId === BIOS_ATLAS_ID) {
-			byteLength += gp0UploadByteLength(sliceWidth, height);
-		} else {
-			const firstHeight = height < GX_DIRECT16_PAGE_HEIGHT ? height : GX_DIRECT16_PAGE_HEIGHT;
-			byteLength += gp0UploadByteLength(sliceWidth, firstHeight);
-			if (height > firstHeight) {
-				byteLength += gp0UploadByteLength(sliceWidth, height - firstHeight);
-			}
-		}
+	if (width > GX_GPU_VRAM_WIDTH || height > GX_GPU_VRAM_HEIGHT) {
+		throw new Error(`[RomPacker] GX cart direct16 atlas ${atlasId} does not fit in one relocatable VRAM rectangle.`);
 	}
-
-	const stream = Buffer.alloc(byteLength);
-	let streamOffset = 0;
-	for (let sourceX = 0; sourceX < width; sourceX += GX_DIRECT16_SLICE_WIDTH) {
-		const sliceWidth = width - sourceX < GX_DIRECT16_SLICE_WIDTH ? width - sourceX : GX_DIRECT16_SLICE_WIDTH;
-		if (atlasId === BIOS_ATLAS_ID) {
-			streamOffset = writeDirect16Upload(
-				stream, streamOffset, rgba, sourceX, 0, width,
-				GX_GPU_VRAM_RIGHT_HALF_X + (((sourceX >> 8) & 1) << 8),
-				(sourceX >> 9) * height,
-				sliceWidth, height,
-			);
-			continue;
-		}
-		const firstHeight = height < GX_DIRECT16_PAGE_HEIGHT ? height : GX_DIRECT16_PAGE_HEIGHT;
-		streamOffset = writeDirect16Upload(
-			stream, streamOffset, rgba, sourceX, 0, width,
-			sourceX & (GX_GPU_VRAM_WIDTH - 1), GX_DIRECT16_CART_BASE_Y,
-			sliceWidth, firstHeight,
-		);
-		if (height > firstHeight) {
-			streamOffset = writeDirect16Upload(
-				stream, streamOffset, rgba, sourceX, firstHeight, width,
-				GX_GPU_VRAM_RIGHT_HALF_X + (((sourceX >> 8) & 1) << 8),
-				GX_CART_TEXTURE_RIGHT_BAND_Y + ((sourceX >> 9) * (height - firstHeight)),
-				sliceWidth, height - firstHeight,
-			);
-		}
-	}
-	return { mode: GX_GPU_TEXTURE_MODE_DIRECT16, stream };
+	const payload = Buffer.alloc(((width * height + 1) >> 1) * 4);
+	writeDirect16Pixels(payload, 0, rgba, 0, 0, width, width, height);
+	return { mode: GX_GPU_TEXTURE_MODE_DIRECT16, placement: 'relocatable', payload };
 }
 
 export function buildPalette4GxTextureAtlas(atlasId: number, width: number, height: number, rgba: Uint8ClampedArray): GxTextureAtlas {
@@ -184,8 +169,8 @@ export function buildPalette4GxTextureAtlas(atlasId: number, width: number, heig
 	}
 
 	const textureWordWidth = (width + GX_PALETTE4_PIXELS_PER_WORD - 1) >> 2;
-	const textureX = GX_GPU_VRAM_RIGHT_HALF_X;
-	const textureY = GX_CART_TEXTURE_RIGHT_BAND_Y;
+	const textureX = GX_SYSTEM_TEXTURE_X;
+	const textureY = GX_PALETTE4_TEXTURE_Y;
 	const clutX = textureX;
 	const clutY = textureY + height;
 	if (textureX + textureWordWidth > GX_GPU_VRAM_WIDTH || clutY >= GX_GPU_VRAM_HEIGHT) {
@@ -238,10 +223,11 @@ export function buildPalette4GxTextureAtlas(atlasId: number, width: number, heig
 
 	return {
 		mode: GX_GPU_TEXTURE_MODE_PALETTE4,
+		placement: 'fixed',
 		x: textureX,
 		y: textureY,
 		clutX,
 		clutY,
-		stream,
+		payload: stream,
 	};
 }

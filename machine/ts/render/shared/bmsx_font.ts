@@ -1,5 +1,4 @@
 import { BFont, GlyphMap, type ImageAtlasRect } from './bitmap_font';
-import { BIOS_ATLAS_ID } from '../../rompack/format';
 import { hostSystemAtlasImage } from '../../rompack/host_system_atlas';
 
 export const DEFAULT_FONT_VARIANT = 'msx' as const;
@@ -166,7 +165,6 @@ const HOST_SYSTEM_FONT_SOURCE = {
 	getGlyphRect(imgid: string): ImageAtlasRect {
 		const image = hostSystemAtlasImage(imgid);
 		return {
-			atlasId: BIOS_ATLAS_ID,
 			u: image.u,
 			v: image.v,
 			w: image.w,

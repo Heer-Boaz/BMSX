@@ -223,7 +223,6 @@ function apply_background(id)
 	if id == nil then
 		return
 	end
-	upload_gx_atlas_on_vblank(gx_img_rect(id).atlas_id)
 	local bg<const> = oget(bg_id)
 	bg:gfx(id)
 end
@@ -231,7 +230,6 @@ end
 function show_background(id)
 	local bg<const> = oget(bg_id)
 	if id ~= nil then
-		upload_gx_atlas_on_vblank(gx_img_rect(id).atlas_id)
 		bg:gfx(id)
 	end
 	bg.visible = true

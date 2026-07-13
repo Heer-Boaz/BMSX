@@ -1,68 +1,33 @@
-local round_to_nearest<const> = require('bios/util/round_to_nearest')
 local romdir<const> = require('system/romdir')
 local gx_gpu<const> = require('system/gx_gpu')
 
 local gx_image<const> = {}
 local cache<const> = {}
+local packed_texture_by_atlas<const> = {}
 
-local system_atlas_id<const> = 254
-local system_texture_band_width<const> = 512
-local system_atlas_meta<const> = romdir.atlas(system_atlas_id).imgmeta
-local system_texture_base_x<const> = 512
-local cart_texture_overflow_base_x<const> = 512
-local cart_texture_overflow_base_y<const> = ((system_atlas_meta.width + system_texture_band_width - 1) // system_texture_band_width) * system_atlas_meta.height
-local gpu_texture_base_y<const> = 256
 local gpu_texture_page_span<const> = gx_gpu.texture_page_span
 local gx_texture_mode_palette4<const> = gx_gpu.texture_mode_palette4
-local dma_source_addr<const> = 0x08000014
-local dma_target_addr<const> = 0x08000018
-local dma_length_addr<const> = 0x0800001c
-local dma_control_addr<const> = 0x08000020
-local dma_status_addr<const> = 0x08000024
-local irq_ack_addr<const> = 0x0800000c
-local gx_gp0_addr<const> = 0x08010240
-local dma_control_start_strict<const> = 0x00000003
-local dma_status_done<const> = 0x00000002
-local irq_dma_done_error<const> = 0x00000003
+local direct16_texture_x_by_atlas<const> = {}
+local direct16_texture_y_by_atlas<const> = {}
 
-local resident_cart_atlas_id
-
-local atlas_gpu_x<const> = function(rect, source_x, source_y)
-	if rect.atlas_id == system_atlas_id then
-		return system_texture_base_x + (((source_x >> 8) & 1) << 8) + (source_x & 0x000000ff)
+function gx_image.packed_texture(atlas_id)
+	local texture<const> = packed_texture_by_atlas[atlas_id]
+	if texture ~= nil then
+		return texture
 	end
-	if source_y >= gpu_texture_page_span then
-		return cart_texture_overflow_base_x + (((source_x >> 8) & 1) << 8) + (source_x & 0x000000ff)
-	end
-	return source_x & 0x000003ff
-end
-
-local atlas_gpu_y<const> = function(rect, source_x, source_y)
-	if rect.atlas_id == system_atlas_id then
-		return ((source_x >> 9) * rect.atlas_height) + source_y
-	end
-	if source_y >= gpu_texture_page_span then
-		return cart_texture_overflow_base_y + (((source_x >> 9) * (rect.atlas_height - gpu_texture_page_span)) + (source_y - gpu_texture_page_span))
-	end
-	return gpu_texture_base_y + source_y
+	local loaded<const> = romdir.resource(string.format('_atlas_%02d', atlas_id))
+	packed_texture_by_atlas[atlas_id] = loaded
+	return loaded
 end
 
 local direct16_gpu_span<const> = function(rect, source_x, source_y)
-	local gpu_x<const> = atlas_gpu_x(rect, source_x, source_y)
-	local gpu_y<const> = atlas_gpu_y(rect, source_x, source_y)
+	local gpu_x<const> = (rect.gx_texture_x + source_x) & 0x000003ff
+	local gpu_y<const> = (rect.gx_texture_y + source_y) & 0x000001ff
 	local source_page_x<const> = source_x - (gpu_x & 0x000000ff)
-	local source_page_y = source_y - (gpu_y & 0x000000ff)
-	local source_page_y_end = source_page_y + gpu_texture_page_span
-	if rect.atlas_id ~= system_atlas_id then
-		if source_y >= gpu_texture_page_span and source_page_y < gpu_texture_page_span then
-			source_page_y = gpu_texture_page_span
-		elseif source_y < gpu_texture_page_span and source_page_y_end > gpu_texture_page_span then
-			source_page_y_end = gpu_texture_page_span
-		end
-	end
+	local source_page_y<const> = source_y - (gpu_y & 0x000000ff)
 	return gpu_x, gpu_y,
 		source_page_x, source_page_x + gpu_texture_page_span,
-		source_page_y, source_page_y_end
+		source_page_y, source_page_y + gpu_texture_page_span
 end
 
 local palette4_gpu_span<const> = function(rect, source_x, source_y)
@@ -88,29 +53,15 @@ local resolve_rect_residency<const> = function(rect)
 	rect.gpu_single_span = rect.u + rect.w <= source_x_end and rect.v + rect.h <= source_y_end
 end
 
-local resolve_cached_atlas_residency<const> = function(atlas_id)
+function gx_image.bind_direct16_residency(atlas_id, texture_x, texture_y)
+	direct16_texture_x_by_atlas[atlas_id] = texture_x
+	direct16_texture_y_by_atlas[atlas_id] = texture_y
 	for _, rect in pairs(cache) do
 		if rect.atlas_id == atlas_id then
+			rect.gx_texture_x = texture_x
+			rect.gx_texture_y = texture_y
 			resolve_rect_residency(rect)
 		end
-	end
-end
-
-function gx_image.upload_atlas(atlas_id)
-	if atlas_id ~= system_atlas_id and resident_cart_atlas_id == atlas_id then
-		return
-	end
-	local atlas<const> = romdir.atlas(atlas_id)
-	mem[dma_source_addr] = atlas.texture_addr
-	mem[dma_target_addr] = gx_gp0_addr
-	mem[dma_length_addr] = atlas.texture_len
-	mem[dma_control_addr] = dma_control_start_strict
-	repeat
-	until (mem[dma_status_addr] & dma_status_done) ~= 0
-	mem[irq_ack_addr] = irq_dma_done_error
-	if atlas_id ~= system_atlas_id then
-		resident_cart_atlas_id = atlas_id
-		resolve_cached_atlas_residency(atlas_id)
 	end
 end
 
@@ -120,30 +71,26 @@ function gx_image.rect(imgid)
 		return cached
 	end
 	local meta<const> = romdir.image(imgid).imgmeta
-	local coords<const> = meta.texcoords
-	local min_u = coords[1]
-	local max_u = coords[1]
-	local min_v = coords[2]
-	local max_v = coords[2]
-	for i = 3, 11, 2 do
-		local u<const> = coords[i]
-		local v<const> = coords[i + 1]
-		if u < min_u then min_u = u end
-		if u > max_u then max_u = u end
-		if v < min_v then min_v = v end
-		if v > max_v then max_v = v end
+	local atlas_meta<const> = gx_image.packed_texture(meta.atlasid).meta
+	local u<const> = meta.atlas_x
+	local v<const> = meta.atlas_y
+	local texture_mode<const> = atlas_meta.gx_texture_mode
+	local texture_placement<const> = atlas_meta.gx_texture_placement
+	local texture_x
+	local texture_y
+	if texture_placement == 'fixed' then
+		texture_x = atlas_meta.gx_texture_x
+		texture_y = atlas_meta.gx_texture_y
+	else
+		texture_x = direct16_texture_x_by_atlas[meta.atlasid]
+		texture_y = direct16_texture_y_by_atlas[meta.atlasid]
 	end
-	local atlas<const> = romdir.atlas(meta.atlasid)
-	local atlas_meta<const> = atlas.imgmeta
-	local u<const> = round_to_nearest(min_u * atlas_meta.width)
-	local v<const> = round_to_nearest(min_v * atlas_meta.height)
 	local rect<const> = {
 		atlas_id = meta.atlasid,
-		atlas_width = atlas_meta.width,
-		atlas_height = atlas_meta.height,
-		gx_texture_mode = atlas_meta.gx_texture_mode,
-		gx_texture_x = atlas_meta.gx_texture_x,
-		gx_texture_y = atlas_meta.gx_texture_y,
+		gx_texture_mode = texture_mode,
+		gx_texture_placement = texture_placement,
+		gx_texture_x = texture_x,
+		gx_texture_y = texture_y,
 		gx_clut_x = atlas_meta.gx_clut_x,
 		gx_clut_y = atlas_meta.gx_clut_y,
 		u = u,
@@ -151,7 +98,7 @@ function gx_image.rect(imgid)
 		w = meta.width,
 		h = meta.height,
 	}
-	if meta.atlasid == system_atlas_id or meta.atlasid == resident_cart_atlas_id then
+	if texture_placement == 'fixed' or texture_x ~= nil then
 		resolve_rect_residency(rect)
 	end
 	cache[imgid] = rect

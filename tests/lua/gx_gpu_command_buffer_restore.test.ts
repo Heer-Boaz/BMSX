@@ -19,7 +19,7 @@ const commandBufferMemory = new Memory({ systemRom: new Uint8Array(0), cartRom: 
 const commandBufferCpu = new CPU(commandBufferMemory);
 const commandBufferScheduler = new DeviceScheduler(commandBufferCpu);
 const commandBufferIrq = new IrqController(commandBufferMemory);
-const commandBufferDma = new DmaController(commandBufferMemory, commandBufferIrq, commandBufferScheduler);
+const commandBufferDma = new DmaController(commandBufferMemory, commandBufferCpu, commandBufferIrq, commandBufferScheduler);
 
 function pushFillCommand(commandBuffer: GxGpuCommandBuffer): void {
 	const words = new Uint32Array([

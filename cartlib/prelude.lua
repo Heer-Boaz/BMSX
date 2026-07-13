@@ -23,7 +23,6 @@ enlist = system.enlist
 delist = system.delist
 grant_effect = system.grant_effect
 trigger_effect = system.trigger_effect
-gx_upload_atlas = system.gx_upload_atlas
 gx_upload_rgba8888_to_direct16_stride = system.gx_upload_rgba8888_to_direct16_stride
 gx_blit_img_color = system.gx_blit_img_color
 gx_blit_img_affine_color = system.gx_blit_img_affine_color

@@ -67,6 +67,27 @@ export class CpuExecutionState {
 		}
 		// start repeated-sequence-acceptable -- CPU scheduler loop mirrors external-call scheduling without extracting a callback-heavy helper.
 		while (remaining > 0) {
+			if (cpu.isMemoryWriteBlocked()) {
+				const nextDeadline = scheduler.nextDeadline();
+				const deadlineBudget = nextDeadline - scheduler.nowCycles;
+				if (deadlineBudget <= 0) {
+					tickCompleted = runDueRuntimeTimers(runtime);
+					if (tickCompleted) {
+						break;
+					}
+					continue;
+				}
+				// Device-ready edges release blocked MMIO stores. Advance to scheduled
+				// hardware events here; never poll readiness or retry the instruction.
+				const waitCycles = Math.min(deadlineBudget, remaining);
+				remaining -= waitCycles;
+				state.activeCpuUsedCycles += waitCycles;
+				tickCompleted = advanceRuntimeTime(runtime, waitCycles);
+				if (tickCompleted) {
+					break;
+				}
+				continue;
+			}
 			let sliceBudget = remaining;
 			const nextDeadline = scheduler.nextDeadline();
 			if (nextDeadline !== Number.MAX_SAFE_INTEGER) {
@@ -98,17 +119,6 @@ export class CpuExecutionState {
 				break;
 			}
 			if (cpu.isMemoryWriteBlocked()) {
-				const readyCycle = scheduler.nextDeadline();
-				const waitCycles = Math.min(readyCycle - scheduler.nowCycles, remaining);
-				remaining -= waitCycles;
-				state.activeCpuUsedCycles += waitCycles;
-				tickCompleted = advanceRuntimeTime(runtime, waitCycles);
-				if (scheduler.nowCycles >= readyCycle) {
-					cpu.resumeMemoryWrite();
-				}
-				if (tickCompleted) {
-					break;
-				}
 				continue;
 			}
 			if (cpu.isHaltedUntilIrq() || result === RunResult.Halted) {

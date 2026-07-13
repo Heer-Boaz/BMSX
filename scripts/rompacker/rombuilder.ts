@@ -9,7 +9,7 @@ import { SYSTEM_BOOT_ENTRY_PATH } from '../../machine/ts/core/system';
 import { encodeRomToc } from '../../machine/ts/rompack/tooling/toc_encode';
 import type { LuaChunk } from '../../machine/ts/lua/syntax/ast';
 import { encodeAudioAssetToAdpcm } from './adpcm';
-import { resolveTargetAtlasId, createOptimizedAtlas, generateAtlasAssetId, splitAtlasImagesByDirect16Capacity } from './atlasbuilder';
+import { resolveTargetAtlasId, createOptimizedAtlas, generateAtlasAssetId, splitAtlasImagesByDirect16Capacity, type FixedAtlasPlacement } from './atlasbuilder';
 import {
 	GX_CART_ATLAS_ID_LIMIT,
 	GX_CART_DIRECT16_ATLAS_RGBA_BYTE_LIMIT,
@@ -19,6 +19,10 @@ import {
 	buildDirect16GxTextureAtlas,
 	buildPalette4GxTextureAtlas,
 	GX_PALETTE4_ATLAS_RGBA_BYTE_LIMIT,
+	GX_SYSTEM_TEXTURE_ASSET_ID,
+	GX_SYSTEM_TEXTURE_SIZE,
+	GX_SYSTEM_TEXTURE_X,
+	GX_SYSTEM_TEXTURE_Y,
 	type GxTextureAtlasBuildMode,
 } from './gx_texture_atlas';
 import { GX_GPU_TEXTURE_MODE_PALETTE4 } from '../../machine/ts/machine/devices/gx/gpu_command_buffer';
@@ -76,6 +80,12 @@ const { createHash } = require('crypto');
 
 type ProgressNote = (message: string) => void;
 const ADPCM_NO_LOOP = 0xffffffff;
+const GX_SYSTEM_ATLAS_PLACEMENT: FixedAtlasPlacement = {
+	maxWidth: GX_SYSTEM_TEXTURE_SIZE,
+	maxHeight: GX_SYSTEM_TEXTURE_SIZE,
+	textureX: GX_SYSTEM_TEXTURE_X,
+	textureY: GX_SYSTEM_TEXTURE_Y,
+};
 const GEO_COLLISION_BIN_MAGIC = 0x32443247; // "G2D2" little-endian
 const GEO_COLLISION_BIN_VERSION = 2;
 const GEO_COLLISION_SHAPE_KIND_AABB = 1;
@@ -594,40 +604,6 @@ function generateFlippedBoundingBox(extractedBoundingBox: RectBounds, imgW: numb
 	};
 }
 
-function generateFlippedTexCoords(texcoords: number[]): { original: number[]; fliph: number[]; flipv: number[]; fliphv: number[] } {
-	const left = texcoords[0];
-	const top = texcoords[1];
-	const bottom = texcoords[3];
-	const right = texcoords[4];
-	return {
-		original: texcoords,
-		fliph: [
-			right, top,
-			right, bottom,
-			left, top,
-			left, top,
-			right, bottom,
-			left, bottom,
-		],
-		flipv: [
-			left, bottom,
-			left, top,
-			right, bottom,
-			right, bottom,
-			left, top,
-			right, top,
-		],
-		fliphv: [
-			right, bottom,
-			right, top,
-			left, bottom,
-			left, bottom,
-			right, top,
-			left, top,
-		],
-	};
-}
-
 function computePolyBounds(poly: Polygon): RectBounds {
 	let left = poly[0];
 	let top = poly[1];
@@ -773,16 +749,16 @@ function buildImgMetaFromCollisionBuild(res: ImageResource, collision: ImageColl
 	};
 	if (GENERATE_AND_USE_TEXTURE_ATLAS) {
 		const targetAtlasId = res.targetAtlasId;
-		const texcoords = res.atlasTexcoords;
-		const flippedTexcoords = texcoords ? generateFlippedTexCoords(texcoords) : undefined;
 		imgmeta = {
 			...imgmeta,
 			atlasid: targetAtlasId !== undefined ? targetAtlasId : undefined,
-			texcoords: flippedTexcoords?.original,
-			texcoords_fliph: flippedTexcoords?.fliph,
-			texcoords_flipv: flippedTexcoords?.flipv,
-			texcoords_fliphv: flippedTexcoords?.fliphv,
+			atlas_x: res.atlasX,
+			atlas_y: res.atlasY,
 		};
+		if (res.gxTextureX !== undefined) {
+			imgmeta.gx_texture_x = res.gxTextureX;
+			imgmeta.gx_texture_y = res.gxTextureY;
+		}
 	}
 	return imgmeta;
 }
@@ -1486,8 +1462,17 @@ export async function generateRomAssets(resources: Resource[], reportProgress?: 
 				break;
 			case 'atlas': {
 				const imgmeta = buildImgMetaForAtlas(res);
-				const atlasAsset: RomAsset = { resid, type, imgmeta, buffer, texture_buffer: res.gxTexture!.stream, source_path: sourcePath };
-				romAssets.push(atlasAsset);
+				if (res.atlasId === BIOS_ATLAS_ID) {
+					romAssets.push({ resid, type, imgmeta, buffer, source_path: sourcePath });
+					romAssets.push({
+						resid: GX_SYSTEM_TEXTURE_ASSET_ID,
+						type: 'bin',
+						buffer: res.gxTexture!.payload,
+						source_path: sourcePath,
+					});
+				} else {
+					romAssets.push({ resid, type, imgmeta, buffer, texture_buffer: res.gxTexture!.payload, source_path: sourcePath });
+				}
 				break;
 			}
 			case 'romlabel':
@@ -1661,12 +1646,16 @@ export function buildImgMetaForAtlas(res: TextureAtlasResource): ImgMeta {
 		width: res.img.width,
 		height: res.img.height,
 		gx_texture_mode: gxTexture.mode,
+		gx_texture_placement: gxTexture.placement,
 	};
 	if (gxTexture.mode === GX_GPU_TEXTURE_MODE_PALETTE4) {
 		meta.gx_texture_x = gxTexture.x;
 		meta.gx_texture_y = gxTexture.y;
 		meta.gx_clut_x = gxTexture.clutX;
 		meta.gx_clut_y = gxTexture.clutY;
+	} else if (gxTexture.placement === 'fixed') {
+		meta.gx_texture_x = gxTexture.x;
+		meta.gx_texture_y = gxTexture.y;
 	}
 	return meta;
 }
@@ -1758,7 +1747,9 @@ export async function createAtlasses(
 			const entry = atlasQueue[atlasIndex];
 			const atlas = entry.atlas;
 			reportProgress?.(`atlas ${atlas.name} (${entry.images.length} images)`);
-			const atlasCanvas = createOptimizedAtlas(entry.images, entry.byteLimit);
+			const atlasCanvas = entry.atlas.atlasId === BIOS_ATLAS_ID
+				? createOptimizedAtlas(entry.images, entry.byteLimit, GX_SYSTEM_ATLAS_PLACEMENT)
+				: createOptimizedAtlas(entry.images, entry.byteLimit);
 			atlas.img = atlasCanvas; // Store the canvas in the resource (to extract the image properties later during `processResources`)
 			if (entry.kind === 'direct16') {
 				const rgba = atlasCanvas.getContext('2d').getImageData(0, 0, atlasCanvas.width, atlasCanvas.height).data;

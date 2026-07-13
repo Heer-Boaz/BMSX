@@ -65,8 +65,13 @@ GX owners:
 - GLES2 backend: `machine/cpp/render/backend/gles2/gx_gpu.cpp`
 - TypeScript software/headless backend: `machine/ts/render/backend/software/gx_gpu*.ts`
 - C++ software backend: `machine/cpp/render/backend/software/gx_gpu*.cpp`
-- GX firmware helpers: `machine/firmware/system/gx_gpu.lua`,
-  `machine/firmware/system/gx_image.lua`
+- Raw GX/DMA firmware: `machine/firmware/system/gx_gpu.lua`,
+  `machine/firmware/system/dma.lua`
+- Cart image-layout owner: `cartlib/gx/image.lua`
+- ROM image-placement producer: `scripts/rompacker/atlasbuilder.ts`,
+  `scripts/rompacker/rombuilder.ts`
+- BIOS fixed system-texture consumers: `machine/firmware/bios/bootrom.lua`,
+  `machine/firmware/system/font.lua`
 
 Residual VDP/IMGDEC machine ownership has been removed from both runtimes.
 The ROM `vdp_class: psx` field remains a package-format compatibility marker;
@@ -196,42 +201,76 @@ Implemented or partially covered GX-GPU areas include:
 `GX_GPU_COMMAND_READ_VRAM_TO_CPU` is executed at its retained fence by software,
 WebGL2, GLES2, and WebGPU. Only live accelerated conformance remains deferred.
 
-Cart texture residency is owned by the ROM texture producer and PSX GPU
-firmware. It is independent of the active GP1 display dimensions, and the GTE
-does not participate in texture or atlas handling.
-`machine/firmware/system/gx_image.lua` supports the resident system atlas plus
-one resident cart atlas in PSX VRAM. Every system/cart atlas is emitted by the
-ROM producer as native RGB555/STP GP0 upload words and DMA streams those ROM
-words directly to GP0; runtime PNG decode and mapped RGBA texture staging are
-not part of atlas residency. Atlas PNGs remain tooling previews and are not
-packed as runtime ROM payloads.
-The `2025` cart owns explicit direct16 texture-bank upload points for its
-transitions, background changes, and combat working-set changes. Each active
-full-screen background is its own ROM-produced bank, the sprites that coexist
-through combat share one explicit bank, and the opaque all-out screen is a
-separate transition bank. It crosses a VBlank before a bank change so the
-preceding GX command buffer is presented before the new GP0 upload stream is
-submitted. `pietious` now uses a
+Cart texture residency is independent of the active GP1 display dimensions,
+and the GTE does not participate in texture or atlas handling. The ROM packer
+emits fixed system/palette4 GP0 streams, but cart-direct16 assets contain only
+destination-free row-major RGB555/STP payload. The cart chooses the raw VRAM
+rectangle, resolves its own packer atlas record and binds its retained image
+rects. `system/gx_gpu.lua` emits the raw A0 packet and `system/dma.lua` streams
+the payload directly from ROM to GP0. Neither firmware owner knows an atlas ID,
+workset or scene. Runtime PNG decode and mapped RGBA texture staging are not
+part of atlas residency. Atlas PNGs remain tooling previews and are not packed
+as runtime ROM payloads.
+
+The packer stores image placement as integer `atlas_x`/`atlas_y` metadata and,
+for fixed placement, physical GX texture coordinates. Cartlib, BIOS fonts, the
+ROM inspector, and host font loading consume those pixels directly; normalized
+image texcoord arrays and float-to-pixel reconstruction are gone. Model mesh
+UVs remain separate model data and are normalized only at the renderer.
+The compact BIOS direct16 atlas is constrained to one fixed 256x256 texture
+page and emits one A0 stream; no unreachable multislice system layout remains.
+The palette4 cart region starts on the following page rather than depending on
+the current BIOS atlas height.
+
+The `2025` cart deliberately replaces its pre-GX unlimited-atlas assumptions
+with an explicit 1024x512 VRAM map. The top half contains the 320x240
+framebuffer, Maya B, the fixed system page, and adjacent Maya A/V_S textures.
+The bottom half contains two 384x256 background banks and a separate monster
+bank. The common combat textures remain resident; a monster switch replaces
+only the monster bank, while the opaque all-out image deliberately replaces the
+left background bank. None of these ranges overlaps the framebuffer or system
+page. Background preload is queued before the authored swap, submitted after
+the preceding frame draw, and committed by the DMA-done IRQ.
+
+DMA owns the CPU GP0 command port until its payload is complete. The CPU keeps a
+blocked GP0 store latched against its raw MMIO address and resumes it only when
+that address is actually write-ready, rather than re-executing it on every
+64-byte DMA deadline. A late CPU write-ready probe first synchronizes expired
+GPU command time and republishes the CPU/DMA ready lines, so it cannot cancel the
+last GPU timer while leaving stale low outputs. Host-invoked closures use that
+same device edge rather than polling. The long `2025` black-box capture now
+starts the real `combat_wekker` flow and crosses the first common-plus-monster
+upload before checking Maya B, the clock scene and the choice prompt.
+
+`pietious` now uses a
 manifest-required, ROM-produced native PSX 4-bpp texture plus CLUT and GP0
 upload stream. Its atlas bypasses the legacy RGBA residency planner and has no
 CPU texture-staging allocation. It no longer decodes a whole RGBA atlas at boot
 or submits VDP tile streams.
 
-The ROM atlas is a packing artifact, not a universal runtime residency unit.
+The ROM atlas is strictly a rompacker/cart-owner packing artifact, not a GPU,
+DMA or firmware residency unit.
 `pietious` has a compact stable 4-bpp atlas/CLUT working set, while `2025` uses
-smaller producer-owned banks that match what is simultaneously visible. Its
+smaller cart-owned working sets that match what is simultaneously visible. Its
 full-screen direct16 backgrounds legitimately bulk-upload at scene transitions;
 they are no longer incidental members of multi-background auto-atlases. A cart
-that needs several independently changing texture sets must introduce explicit
-fixed VRAM page/CLUT slots at the GPU residency owner instead of growing another
-whole-atlas swap wrapper. No migrated cart currently requires that extra
-runtime mechanism.
+that needs several independently changing texture sets must program its own raw
+VRAM page/CLUT layout instead of growing a semantic firmware slot manager or
+another whole-atlas swap wrapper.
 
 For the current assets this changes a background transition from a generated
 718,812--896,976-byte multi-background upload to the active image's
-155,872--199,224-byte stream. The transition regression follows the authored
-fade/montage timing and no longer treats the duration of the oversized DMA as a
-required black-frame hold.
+153,600--196,608-byte stream. GX samples these integer texture rectangles with
+nearest filtering, so the old extruded bilinear-bleed border is gone and a
+256-pixel-high background stays page-aligned without a vertical split. The
+transition regression follows the authored fade/montage timing and no longer
+treats the duration of the oversized DMA as a required black-frame hold.
+
+CPU instructions can service the frame-end timer after its deadline. Both
+runtimes therefore advance the frame origin from the previous scheduled frame
+boundary instead of scheduler callback time. Late service cannot accumulate
+into scanout phase or repeat a host frame; VBlank-edge tick completion and cart
+first-tick semantics are unchanged.
 
 ## GPUREAD / VRAM-to-CPU implementation contract
 
@@ -630,12 +669,12 @@ and MAME
 - [x] Migrate `fade_probe` to GX blend primitives.
 - [x] Migrate `vblanktest` to GX/GPUSTAT-visible behavior.
 - [x] Migrate `nemesis_s` boot, atlas upload, clear, and sprite/tile draws to
-  GX/PSX. The ROM now carries the native GP0 upload stream; runtime atlas decode
-  is removed.
+  GX/PSX. Its cart programs the VRAM destination and the ROM carries the raw
+  direct16 payload; runtime atlas decode is removed.
 - [x] Migrate `renderhwtest` to direct GX primitive programming, including a
   cart-visible raw PSX textured affine quad smoke.
 - [x] Migrate `2025` engine/cart rendering to GX, including cart-owned
-  producer-owned working-set banks, background transition uploads, affine parallax
+  raw VRAM working sets, background transition uploads, affine parallax
   sprites, fixed-function PSX transition/combat blending, texture-modulated
   fades, and existing custom visual submission on the GX path. Transition and
   combat-result fades no longer pretend that the PSX GPU supports arbitrary

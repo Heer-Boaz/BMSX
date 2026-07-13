@@ -46,26 +46,7 @@ const GENERATED_FILE_HEADER = [
 	'',
 ].join('\n');
 
-function getUvExtents(texcoords: readonly number[]): { minU: number; minV: number } {
-	let minU = texcoords[0];
-	let minV = texcoords[1];
-	for (let index = 2; index < 12; index += 2) {
-		const u = texcoords[index];
-		const v = texcoords[index + 1];
-		if (u < minU) minU = u;
-		if (v < minV) minV = v;
-	}
-	return { minU, minV };
-}
-
-function requirePositiveDimension(value: number, label: string): number {
-	if (!Number.isSafeInteger(value) || value <= 0) {
-		throw new Error(`[HostSystemAtlas] ${label} must be a positive integer.`);
-	}
-	return value;
-}
-
-function resolveImageRecord(asset: RomAsset, atlasWidth: number, atlasHeight: number): HostAtlasImage | null {
+function resolveImageRecord(asset: RomAsset): HostAtlasImage | null {
 	if (asset.type !== 'image') {
 		return null;
 	}
@@ -73,20 +54,14 @@ function resolveImageRecord(asset: RomAsset, atlasWidth: number, atlasHeight: nu
 	if (!meta || meta.atlasid !== BIOS_ATLAS_ID) {
 		return null;
 	}
-	if (!meta.texcoords || meta.texcoords.length < 12) {
-		throw new Error(`[HostSystemAtlas] Image '${asset.resid}' is missing system-atlas texture coordinates.`);
-	}
-	const { minU, minV } = getUvExtents(meta.texcoords);
-	const width = requirePositiveDimension(meta.width, `${asset.resid}.width`);
-	const height = requirePositiveDimension(meta.height, `${asset.resid}.height`);
 	return {
 		id: asset.resid,
-		width,
-		height,
-		u: Math.round(minU * atlasWidth),
-		v: Math.round(minV * atlasHeight),
-		w: width,
-		h: height,
+		width: meta.width,
+		height: meta.height,
+		u: meta.atlas_x!,
+		v: meta.atlas_y!,
+		w: meta.width,
+		h: meta.height,
 	};
 }
 
@@ -102,14 +77,14 @@ function buildHostAtlasFromAssets(assets: readonly RomAsset[]): HostAtlasBuild {
 	const atlasAssetId = generateAtlasAssetId(BIOS_ATLAS_ID);
 	const atlasAsset = findAtlasAsset(assets, atlasAssetId);
 	const atlasMeta = atlasAsset.imgmeta as ImgMeta;
-	const atlasWidth = requirePositiveDimension(atlasMeta.width, `${atlasAssetId}.width`);
-	const atlasHeight = requirePositiveDimension(atlasMeta.height, `${atlasAssetId}.height`);
+	const atlasWidth = atlasMeta.width;
+	const atlasHeight = atlasMeta.height;
 	const atlasPng = PNG.sync.read(Buffer.from(atlasAsset.buffer!));
 	if (atlasPng.width !== atlasWidth || atlasPng.height !== atlasHeight) {
 		throw new Error(`[HostSystemAtlas] Atlas '${atlasAssetId}' PNG dimensions do not match metadata.`);
 	}
 	const images = assets
-		.map(asset => resolveImageRecord(asset, atlasWidth, atlasHeight))
+		.map(resolveImageRecord)
 		.filter((image): image is HostAtlasImage => image !== null)
 		.sort((a, b) => a.id.localeCompare(b.id));
 	if (images.length === 0) {

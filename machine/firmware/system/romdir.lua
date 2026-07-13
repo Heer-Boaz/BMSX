@@ -11,8 +11,6 @@ local toc_invalid_u32<const> = 0xffffffff
 local op_delete<const> = 1
 local hash_prime<const> = 0x1b3
 local u32_mod<const> = 0x100000000
-local atlas_id_prefix_len<const> = 7
-local ascii_zero<const> = 48
 
 local kind_image<const> = 1
 local kind_audio<const> = 2
@@ -43,14 +41,6 @@ local kind_name_by_id<const> = {
 	[kind_lua] = 'lua',
 	[kind_code] = 'code',
 }
-
-local atlas_id_from_name<const> = function(id)
-	local atlas_id = 0
-	for index = atlas_id_prefix_len + 1, #id do
-		atlas_id = atlas_id * 10 + string.byte(id, index) - ascii_zero
-	end
-	return atlas_id
-end
 
 local assert_range<const> = function(offset, length, limit, label)
 	if offset < 0 or length < 0 or offset + length > limit then
@@ -98,9 +88,6 @@ local register_token<const> = function(rom, entry)
 		error(rom.label .. ' ROM TOC has duplicate resource token.')
 	end
 	kind_map[entry.kind] = entry
-	if entry.kind == kind_atlas then
-		rom.atlases[atlas_id_from_name(entry.id)] = entry
-	end
 end
 
 local entry_span<const> = function(header, section_off, section_len, start, finish, label)
@@ -192,7 +179,6 @@ local parse_rom<const> = function(header, rom_id)
 		label = header.label,
 		header = header,
 		tokens = {},
-		atlases = {},
 		entries = {},
 	}
 	for index = 0, entry_count - 1 do
@@ -300,34 +286,6 @@ local find_in_roms<const> = function(roms, id, kind)
 	return nil, false
 end
 
-local find_atlas_in_roms<const> = function(roms, atlas_id)
-	for index = 1, #roms do
-		local entry<const> = roms[index].atlases[atlas_id]
-		if entry ~= nil then
-			if entry.op == op_delete then
-				return nil, true
-			end
-			return entry, false
-		end
-	end
-	return nil, false
-end
-
-local find_image_in_roms<const> = function(roms, id)
-	local token_lo<const>, token_hi<const> = hash_id(id)
-	for index = 1, #roms do
-		local rom<const> = roms[index]
-		local entry<const> = find_by_token(rom, token_lo, token_hi, kind_image) or find_by_token(rom, token_lo, token_hi, kind_atlas)
-		if entry ~= nil then
-			if entry.op == op_delete then
-				return nil, true
-			end
-			return entry, false
-		end
-	end
-	return nil, false
-end
-
 local decode_payload<const> = function(entry)
 	if entry.payload_loaded then
 		return entry.payload_value
@@ -395,7 +353,8 @@ local record_for_entry<const> = function(entry)
 		out.update_timestamp = entry.update_timestamp
 	end
 	local meta<const> = decode_meta(entry)
-	if entry.kind == kind_image or entry.kind == kind_atlas then
+	set_if_present(out, 'meta', meta)
+	if entry.kind == kind_image then
 		out.imgmeta = meta
 	elseif entry.kind == kind_audio then
 		out.audiometa = meta
@@ -447,53 +406,24 @@ end
 
 local system_roms<const> = { system_rom }
 
-function romdir.cart(id)
-	local entry<const> = find_in_roms(active_roms, id)
-	if entry == nil then
-		error('cart ROM entry "' .. tostring(id) .. '" was not found.')
-	end
-	return entry
-end
-
-function romdir.cart_atlas(id)
-	local entry<const> = find_atlas_in_roms(active_roms, id)
-	if entry == nil then
-		error('cart atlas ROM entry ' .. tostring(id) .. ' was not found.')
-	end
-	return record_for_entry(entry)
-end
-
-function romdir.system(id)
+function romdir.resource(id)
 	local entry<const> = find_in_roms(active_plus_system_roms, id)
 	if entry == nil then
-		error('system ROM entry "' .. tostring(id) .. '" was not found.')
-	end
-	return entry
-end
-
-function romdir.system_rom_atlas(id)
-	local entry<const> = find_atlas_in_roms(system_roms, id)
-	if entry == nil then
-		error('system ROM atlas entry ' .. tostring(id) .. ' was not found.')
-	end
-	return record_for_entry(entry)
-end
-
-function romdir.atlas(id)
-	local entry<const> = find_atlas_in_roms(active_plus_system_roms, id)
-	if entry == nil then
-		return nil
+		error('ROM resource "' .. tostring(id) .. '" was not found.')
 	end
 	return record_for_entry(entry)
 end
 
 function romdir.lookup(id)
 	local entry<const> = find_in_roms(active_plus_system_roms, id)
-	return entry
+	if entry == nil then
+		return nil
+	end
+	return record_for_entry(entry)
 end
 
 function romdir.image(id)
-	local entry<const> = find_image_in_roms(active_plus_system_roms, id)
+	local entry<const> = find_in_roms(active_plus_system_roms, id, kind_image)
 	if entry == nil then
 		return nil
 	end
@@ -501,7 +431,7 @@ function romdir.image(id)
 end
 
 function romdir.system_image(id)
-	local entry<const> = find_image_in_roms(system_roms, id)
+	local entry<const> = find_in_roms(system_roms, id, kind_image)
 	if entry == nil then
 		return nil
 	end

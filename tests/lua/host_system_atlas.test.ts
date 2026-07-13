@@ -10,10 +10,12 @@ import {
 
 test('host system atlas decodes generated RGBA bytes deterministically', () => {
 	const pixels = hostSystemAtlasPixels();
+	const whitePixel = hostSystemAtlasImage('whitepixel');
+	const whitePixelOffset = (whitePixel.v * HOST_SYSTEM_ATLAS_WIDTH + whitePixel.u) * 4;
 
 	assert.equal(pixels.byteLength, HOST_SYSTEM_ATLAS_WIDTH * HOST_SYSTEM_ATLAS_HEIGHT * 4);
+	assert.deepEqual(Array.from(pixels.subarray(whitePixelOffset, whitePixelOffset + 4)), [255, 255, 255, 255]);
 	assert.equal(hostSystemAtlasPixels(), pixels);
-	assert.deepEqual(Array.from(pixels.subarray(0, 4)), [204, 204, 204, 255]);
 });
 
 test('host system atlas image lookup is strict', () => {

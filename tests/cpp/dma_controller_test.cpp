@@ -30,7 +30,7 @@ struct DmaGpuHarness {
 		, cpu(memory)
 		, scheduler(cpu)
 		, irq(memory)
-		, dma(memory, irq, scheduler)
+		, dma(memory, cpu, irq, scheduler)
 		, gpu(memory, irq, scheduler, dma) {
 		dma.reset();
 		gpu.reset();
@@ -60,6 +60,7 @@ void testDmaStreamsRamWordsToGxGp0() {
 	memory.writeMappedU32LE(bmsx::IO_DMA_DST, bmsx::IO_GX_GPU_GP0);
 	memory.writeMappedU32LE(bmsx::IO_DMA_LEN, 12u);
 	memory.writeMappedU32LE(bmsx::IO_DMA_CTRL, bmsx::DMA_CTRL_START);
+	require(!memory.mappedWriteReady(bmsx::IO_GX_GPU_GP0), "DMA GP0 stream owns the CPU command port while active");
 	harness.dma.accrueCycles(12, 12);
 	harness.dma.onService(12);
 
@@ -67,6 +68,7 @@ void testDmaStreamsRamWordsToGxGp0() {
 	require(memory.readIoU32(bmsx::IO_DMA_STATUS) == bmsx::DMA_STATUS_DONE, "DMA GP0 stream completes");
 	require(memory.readIoU32(bmsx::IO_DMA_WRITTEN) == 12u, "DMA GP0 stream written count");
 	require((memory.readIoU32(bmsx::IO_IRQ_FLAGS) & bmsx::IRQ_DMA_DONE) == bmsx::IRQ_DMA_DONE, "DMA GP0 stream raises done IRQ");
+	require(memory.mappedWriteReady(bmsx::IO_GX_GPU_GP0), "DMA GP0 completion releases the CPU command port");
 	require(commands.commandCount == 1u, "GX-GPU DMA GP0 fill command count");
 	require(commands.commandKind[0] == bmsx::GX_GPU_COMMAND_FILL_RECTANGLE, "GX-GPU DMA GP0 fill command kind");
 	require(commands.commandWordCount[0] == 3u, "GX-GPU DMA GP0 fill command word count");
@@ -99,7 +101,7 @@ void testDmaAdmitsOneGp0FifoBlockAndResumesSuffixOnGpuReadyEdge() {
 	require(harness.scheduler.nextDeadline() == fillDeadline, "DMA GP0 FIFO backpressure cancels its own service deadline");
 
 	harness.scheduler.advanceTo(fillDeadline + 15);
-	harness.gpu.onService(fillDeadline + 15);
+	require(!memory.mappedWriteReady(bmsx::IO_GX_GPU_GP0), "DMA GP0 suffix retains CPU port ownership after the GPU deadline");
 	require(harness.scheduler.nextDeadline() == fillDeadline + 15, "GPU ready edge schedules the retained DMA suffix immediately");
 	harness.dma.onService(fillDeadline + 15);
 	require(memory.readIoU32(bmsx::IO_DMA_STATUS) == bmsx::DMA_STATUS_DONE, "DMA GP0 FIFO suffix completes on the ready edge");

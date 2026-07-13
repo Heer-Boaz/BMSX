@@ -25,9 +25,6 @@ constexpr size_t CART_ROM_METADATA_HEADER_SIZE = 72;
 constexpr size_t CART_ROM_HEADER_SIZE = 76;
 constexpr u32 CART_VDP_CLASS_PSX = 1;
 constexpr u32 PROGRAM_BOOT_HEADER_VERSION = 1;
-constexpr i32 BIOS_ATLAS_ID = 254;
-
-std::string generateAtlasAssetId(i32 atlasId);
 
 struct CartRomHeader {
 	u32 headerSize = 0;

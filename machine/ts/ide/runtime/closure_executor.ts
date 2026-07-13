@@ -48,6 +48,20 @@ export function callClosureIntoWithScheduler(runtime: Runtime, fn: Closure, args
 		let remaining = budgetSentinel;
 		runDueRuntimeTimers(runtime);
 		while (cpu.getFrameDepth() > depth) {
+			if (cpu.isMemoryWriteBlocked()) {
+				const nextDeadline = scheduler.nextDeadline();
+				const waitCycles = nextDeadline - scheduler.nowCycles;
+				if (waitCycles <= 0) {
+					runDueRuntimeTimers(runtime);
+					continue;
+				}
+				// Host-invoked closures obey the same hardware wait contract as the
+				// frame executor: only the device-ready edge releases the raw store.
+				remaining -= waitCycles;
+				spentBudget += waitCycles;
+				advanceRuntimeTime(runtime, waitCycles);
+				continue;
+			}
 			let sliceBudget = remaining;
 			const nextDeadline = scheduler.nextDeadline();
 			if (nextDeadline !== Number.MAX_SAFE_INTEGER) {

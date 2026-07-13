@@ -355,15 +355,14 @@ export interface ImgMeta {
 	atlasid?: number; // ROM atlas containing this image or identifying this atlas asset.
 	width: number; // The width of the image.
 	height: number; // The height of the image.
+	atlas_x?: number; // Image X in atlas pixels.
+	atlas_y?: number; // Image Y in atlas pixels.
 	gx_texture_mode?: number; // PSX GPU texture mode for atlas residency.
-	gx_texture_x?: number; // Native atlas base X in PSX VRAM words.
-	gx_texture_y?: number; // Native atlas base Y in PSX VRAM rows.
+	gx_texture_placement?: 'fixed' | 'relocatable'; // Whether GX coordinates are producer-owned or cart-bound.
+	gx_texture_x?: number; // Native texture source X in PSX VRAM words.
+	gx_texture_y?: number; // Native texture source Y in PSX VRAM rows.
 	gx_clut_x?: number; // Native atlas CLUT base X in PSX VRAM words.
 	gx_clut_y?: number; // Native atlas CLUT base Y in PSX VRAM rows.
-	texcoords?: number[]; // The texture coordinates for the image, used for rendering.
-	texcoords_fliph?: number[]; // The texture coordinates for the image, when flipped horizontally.
-	texcoords_flipv?: number[]; // The texture coordinates for the image, when flipped vertically.
-	texcoords_fliphv?: number[]; // The texture coordinates for the image, when flipped both horizontally and vertically.
 	boundingbox?: BoundingBoxPrecalc; // The bounding box of the image. Used for collision detection.
 	centerpoint?: vec2arr; // The center point of the image, based on the bounding box.
 	hitpolygons?: HitPolygonsPrecalc; // The concave hull polygons for collision detection, with flipped variants.

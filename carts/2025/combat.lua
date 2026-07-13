@@ -1,6 +1,7 @@
 local combat<const> = {}
 require('globals')
 local story<const> = require('story')
+local texture_residency<const> = require('texture_residency')
 local timeline_builders<const> = require('timeline_builders')
 local stagger<const> = require('stagger')
 local round_number<const> = require('bios/util/round_to_nearest')
@@ -353,6 +354,7 @@ function combat.define_fsm()
 		hide_combat_sprites()
 		local next_kind<const> = story[self.node_id].kind
 		if next_kind == 'transition' then
+			texture_residency.replace_background(story[story[self.node_id].next].bg)
 			self.skip_transition_fade = true
 			return '/combat_done'
 		end
@@ -361,6 +363,7 @@ function combat.define_fsm()
 		else
 			self.combat_exit_target_bg = story[self.node_id].bg
 		end
+		texture_residency.replace_background(self.combat_exit_target_bg)
 		return '/combat_exit_fade_in'
 	end
 
@@ -448,7 +451,7 @@ function combat.define_fsm()
 			self.combat_max_points = #node.rounds
 
 			local monster<const> = oget(combat_monster_id)
-			upload_gx_atlas_on_vblank(gx_img_rect(node.monster_imgid).atlas_id)
+			texture_residency.load_combat_workset(node.monster_imgid)
 			monster:gfx(node.monster_imgid)
 			monster.visible = false
 			monster.sprite_component.color = p3_white_color
@@ -458,11 +461,11 @@ function combat.define_fsm()
 			monster.x = (screen_width * 0.65) - (monster.sx / 2)
 			monster.y = (screen_height * 0.25) - (monster.sy / 3)
 
-				self.combat_monster_base_x = monster.x
-				self.combat_monster_base_y = monster.y
-				self.combat_monster_start_x = (screen_width * 0.2) - (monster.sx / 2)
-				self.combat_monster_start_y = self.combat_monster_base_y + combat_intro_monster_start_y_offset
-				self.combat_monster_start_scale = math.max(1, screen_width / monster.sx, screen_height / monster.sy)
+			self.combat_monster_base_x = monster.x
+			self.combat_monster_base_y = monster.y
+			self.combat_monster_start_x = (screen_width * 0.2) - (monster.sx / 2)
+			self.combat_monster_start_y = self.combat_monster_base_y + combat_intro_monster_start_y_offset
+			self.combat_monster_start_scale = math.max(1, screen_width / monster.sx, screen_height / monster.sy)
 
 			local maya_a<const> = oget(combat_maya_a_id)
 			maya_a:gfx('maya_a')
@@ -1045,7 +1048,7 @@ function combat.define_fsm()
 			self:disable_combat_parallax()
 			clear_texts(text_ids_all)
 			local all_out<const> = oget(combat_all_out_id)
-			upload_gx_atlas_on_vblank(gx_img_rect('all_out').atlas_id)
+			texture_residency.load_all_out()
 			all_out:gfx('all_out')
 			all_out.sprite_component.scale = { x = 1, y = 1 }
 			all_out.visible = true
@@ -1120,23 +1123,22 @@ function combat.define_fsm()
 	}
 
 	states.combat_focus = {
-			entering_state = function(self)
-				upload_gx_atlas_on_vblank(gx_img_rect(self.combat_monster_imgid).atlas_id)
-				local monster<const> = oget(combat_monster_id)
-				monster.visible = true
+		entering_state = function(self)
+			local monster<const> = oget(combat_monster_id)
+			monster.visible = true
 
-				self:play_timeline(combat_focus_timeline_id, {
-					rewind = true,
-					snap_to_start = true,
-					target = monster,
-					params = {
-						base_x = self.combat_monster_base_x,
-						base_y = self.combat_monster_base_y,
-						monster_sx = monster.sx,
-						monster_sy = monster.sy,
-					},
-				})
-			end,
+			self:play_timeline(combat_focus_timeline_id, {
+				rewind = true,
+				snap_to_start = true,
+				target = monster,
+				params = {
+					base_x = self.combat_monster_base_x,
+					base_y = self.combat_monster_base_y,
+					monster_sx = monster.sx,
+					monster_sy = monster.sy,
+				},
+			})
+		end,
 		input_eval = 'first',
 		input_event_handlers = {
 			['b[jp]'] = {

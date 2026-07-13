@@ -1,4 +1,4 @@
-local gx_image<const> = require('system/gx_image')
+local romdir<const> = require('system/romdir')
 
 local font<const> = {}
 
@@ -61,21 +61,25 @@ local build_descriptor<const> = function(definition)
 	local advance_padding<const> = definition.advance_padding or 0
 	local glyphs<const> = {}
 	for glyph, imgid in pairs(definition.glyphs) do
-		local rect<const> = gx_image.rect(imgid)
+		local image_meta<const> = romdir.image(imgid).imgmeta
 		glyphs[glyph] = {
 			imgid = imgid,
-			width = rect.w,
-			height = rect.h,
-			advance = rect.w + advance_padding,
+			width = image_meta.width,
+			height = image_meta.height,
+			advance = image_meta.width + advance_padding,
+			gx_texture_x = image_meta.gx_texture_x,
+			gx_texture_y = image_meta.gx_texture_y,
 		}
 	end
 	local space<const> = glyphs[' ']
 	if space ~= nil and glyphs['\t'] == nil then
 		glyphs['\t'] = {
 			imgid = space.imgid,
-			width = space.advance * 4,
+			width = space.width,
 			height = space.height,
 			advance = space.advance * 4,
+			gx_texture_x = space.gx_texture_x,
+			gx_texture_y = space.gx_texture_y,
 		}
 	end
 	local line_glyph<const> = glyphs['A'] or glyphs['a'] or glyphs['?']

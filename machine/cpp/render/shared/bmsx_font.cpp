@@ -5,7 +5,6 @@
 #include "render/shared/bmsx_font.h"
 
 #include "rompack/host_system_atlas.h"
-#include "rompack/format.h"
 
 #include <memory>
 
@@ -18,14 +17,12 @@ public:
 		const HostSystemAtlasGeneratedImage& image = hostSystemAtlasImage(imgid);
 		m_meta.width = image.width;
 		m_meta.height = image.height;
-		m_meta.atlasid = BIOS_ATLAS_ID;
 		return m_meta;
 	}
 
 	ImageAtlasRect itemRect(const std::string& imgid) const override {
 		const HostSystemAtlasGeneratedImage& image = hostSystemAtlasImage(imgid);
 		return ImageAtlasRect{
-			BIOS_ATLAS_ID,
 			image.u,
 			image.v,
 			image.w,

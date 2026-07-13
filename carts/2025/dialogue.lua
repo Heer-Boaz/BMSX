@@ -1,9 +1,18 @@
 local dialogue<const> = {}
 require('globals')
 local story<const> = require('story')
+local texture_residency<const> = require('texture_residency')
 local stagger<const> = require('stagger')
 local cart_input<const> = require('cartlib/input/player')
 local immediate_text_opts<const> = { typed = false, snap = true }
+
+local background_at_or_after<const> = function(node_id)
+	local node = story[node_id]
+	while node.bg == nil do
+		node = story[node.next]
+	end
+	return node.bg
+end
 local prompt_skip<const> = { '(B) skip' }
 local prompt_next<const> = { '(A) Next' }
 local prompt_continue<const> = { '(A) Continue' }
@@ -72,6 +81,10 @@ function dialogue.register_states(states)
 			local node<const> = story[self.node_id]
 			hide_transition_layers()
 			show_background(node.bg)
+			local next_background<const> = background_at_or_after(node.next)
+			if next_background ~= node.bg then
+				texture_residency.preload_background(next_background)
+			end
 			hide_combat_sprites()
 			clear_texts(text_ids_all)
 			reset_text_colors()
@@ -93,6 +106,12 @@ function dialogue.register_states(states)
 			local node<const> = story[self.node_id]
 			hide_transition_layers()
 			show_background(node.bg)
+			if node.kind ~= 'dialogue_inline' then
+				local next_background<const> = background_at_or_after(node.next)
+				if next_background ~= node.bg then
+					texture_residency.preload_background(next_background)
+				end
+			end
 			reset_text_colors()
 			if node.kind == 'dialogue_inline' then
 				self.pages = self.inline_pages
@@ -293,11 +312,15 @@ function dialogue.register_states(states)
 				end
 			},
 			['a[jp]'] = {
-					go = function(self)
-						if self.stagger_blocked then return end
-						if oget(text_main_id):is_typing() then return end
-						local node<const> = story[self.node_id]
+				go = function(self)
+					if self.stagger_blocked then return end
+					if oget(text_main_id):is_typing() then return end
+					local node<const> = story[self.node_id]
 					local option<const> = node.options[self.choice_index]
+					local next_background<const> = background_at_or_after(option.next)
+					if next_background ~= node.bg then
+						texture_residency.preload_background(next_background)
+					end
 					self:apply_effects(option.effects)
 					self.inline_pages = option.result_pages
 					self.inline_next = option.next

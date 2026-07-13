@@ -71,9 +71,10 @@ function clearBusFault(memory: Memory): void {
 
 function createDmaFixture(): { memory: Memory; controller: DmaController } {
 	const memory = new Memory({ systemRom: new Uint8Array(), cartRom: new Uint8Array(0) });
-	const scheduler = new DeviceScheduler(new CPU(memory));
+	const cpu = new CPU(memory);
+	const scheduler = new DeviceScheduler(cpu);
 	const irq = new IrqController(memory);
-	const controller = new DmaController(memory, irq, scheduler);
+	const controller = new DmaController(memory, cpu, irq, scheduler);
 	controller.reset();
 	irq.reset();
 	controller.setTiming(1, 64, 0);

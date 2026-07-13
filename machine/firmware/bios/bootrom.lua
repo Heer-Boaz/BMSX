@@ -11,7 +11,8 @@ easing = require('bios/easing')
 local clamp<const> = require('bios/util/clamp')
 local wrap_text_lines<const> = require('bios/util/wrap_text_lines').wrap_text_lines
 local gx_gpu<const> = require('system/gx_gpu')
-local gx_image<const> = require('system/gx_image')
+local dma<const> = require('system/dma')
+local romdir<const> = require('system/romdir')
 local font_module<const> = require('system/font')
 local system<const> = require('bios/system')
 
@@ -24,7 +25,7 @@ local reset_scroll_state<const> = function(state) state.top = 0 end
 local draw_glyph_line_color<const> = function(font, line, x, y, color)
 	local cursor_x = x
 	font_module.for_each_glyph(font, line, function(glyph)
-		gx_image.blit_img_color(glyph.imgid, cursor_x, y, color)
+		gx_gpu.draw_direct16_textured_rect_color(glyph.gx_texture_x, glyph.gx_texture_y, cursor_x, y, glyph.width, glyph.height, color)
 		cursor_x = cursor_x + glyph.advance
 	end)
 end
@@ -273,7 +274,8 @@ function init()
 	system.on_irq(irq_vblank, function()
 		*boot_vblank_count = *boot_vblank_count + 1
 	end)
-	gx_image.upload_atlas(254)
+	local system_texture<const> = romdir.resource('gx_system_texture')
+	dma.copy_to_gp0(system_texture.addr, system_texture.len)
 end
 
 function new_game()

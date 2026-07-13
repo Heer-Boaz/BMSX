@@ -123,7 +123,10 @@ export class VblankState {
 
 	public handleEndTimer(): void {
 		const runtime = this.runtime;
-		this.frameStartCycle = runtime.machine.scheduler.nowCycles;
+		// CPU instructions are atomic and may service this timer after its deadline. Advance from
+		// the scheduled boundary: anchoring to nowCycles accumulates the lateness into scanout phase.
+		// Do not compensate by changing VBlank-edge tick completion or cart first-tick semantics.
+		this.frameStartCycle += runtime.timing.cycleBudgetPerFrame;
 		const output = runtime.machine.gxGpu.readDeviceOutput();
 		runtime.applyPublishedPsxGpuDisplayTiming(output.displayModeWord, output.verticalDisplayRangeWord);
 		if (this.vblankStartCycle === 0) {

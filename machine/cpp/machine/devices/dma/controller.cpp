@@ -2,6 +2,7 @@
 
 #include "common/endian.h"
 #include "machine/bus/io.h"
+#include "machine/cpu/cpu.h"
 #include "machine/devices/irq/controller.h"
 #include "machine/memory/map.h"
 #include "machine/scheduler/budget.h"
@@ -10,8 +11,9 @@
 
 namespace bmsx {
 
-DmaController::DmaController(Memory& memory, IrqController& irq, DeviceScheduler& scheduler)
+DmaController::DmaController(Memory& memory, CPU& cpu, IrqController& irq, DeviceScheduler& scheduler)
 	: m_memory(memory)
+	, m_cpu(cpu)
 	, m_irq(irq)
 	, m_scheduler(scheduler) {
 	m_memory.mapIoWrite(IO_DMA_CTRL, this, &DmaController::onCtrlWriteThunk);
@@ -44,13 +46,25 @@ void DmaController::setGxGpuReadReady(bool ready) {
 	}
 }
 
-void DmaController::setGxGpuWriteReady(bool ready) {
-	if (m_gxGpuWriteReady == ready) {
+void DmaController::setGxGpuDmaWriteReady(bool ready) {
+	if (m_gxGpuDmaWriteReady == ready) {
 		return;
 	}
-	m_gxGpuWriteReady = ready;
+	m_gxGpuDmaWriteReady = ready;
 	if (m_queueCount != 0u && m_queue[m_queueHead].dst == IO_GX_GPU_GP0) {
 		scheduleNextService(m_scheduler.currentNowCycles());
+	}
+}
+
+void DmaController::setGxGpuCpuWriteReady(bool ready) {
+	if (m_gxGpuCpuWriteReady == ready) {
+		return;
+	}
+	m_gxGpuCpuWriteReady = ready;
+	if (ready && m_gxGpuWriteJobCount == 0u) {
+		// GP0 is a shared hardware port. Wake the CPU only on the combined
+		// GPU-ready/DMA-unowned edge, never once per DMA service chunk.
+		m_cpu.resumeMemoryWrite(IO_GX_GPU_GP0);
 	}
 }
 
@@ -105,7 +119,9 @@ void DmaController::reset() {
 	m_writtenValue = 0;
 	m_writtenDirty = false;
 	m_gxGpuReadReady = false;
-	m_gxGpuWriteReady = false;
+	m_gxGpuDmaWriteReady = false;
+	m_gxGpuCpuWriteReady = false;
+	m_gxGpuWriteJobCount = 0u;
 	m_scheduler.cancelDeviceService(DEVICE_SERVICE_DMA);
 	m_memory.writeValue(IO_DMA_SRC, valueNumber(0.0));
 	m_memory.writeValue(IO_DMA_DST, valueNumber(0.0));
@@ -125,6 +141,12 @@ void DmaController::tick() {
 		m_writtenDirty = true;
 		if (job.remaining == 0u) {
 			finishIoSuccess(job.clipped);
+			if (job.dst == IO_GX_GPU_GP0) {
+				m_gxGpuWriteJobCount -= 1u;
+				if (m_gxGpuWriteJobCount == 0u && m_gxGpuCpuWriteReady) {
+					m_cpu.resumeMemoryWrite(IO_GX_GPU_GP0);
+				}
+			}
 			m_queueHead = (m_queueHead + 1u) % DMA_JOB_QUEUE_CAPACITY;
 			m_queueCount -= 1u;
 			if (m_queueCount == 0u) {
@@ -144,7 +166,7 @@ void DmaController::tick() {
 }
 
 uint32_t DmaController::processJob(DmaJobState& job, int64_t budget) {
-	if (job.dst == IO_GX_GPU_GP0 && !m_gxGpuWriteReady) {
+	if (job.dst == IO_GX_GPU_GP0 && !m_gxGpuDmaWriteReady) {
 		return 0u;
 	}
 	uint32_t chunk = static_cast<int64_t>(job.remaining) > budget ? static_cast<uint32_t>(budget) : job.remaining;
@@ -241,6 +263,9 @@ void DmaController::startIo() {
 	m_writtenValue = 0;
 	m_writtenDirty = true;
 	m_queue[(m_queueHead + m_queueCount) % DMA_JOB_QUEUE_CAPACITY] = job;
+	if (dst == IO_GX_GPU_GP0) {
+		m_gxGpuWriteJobCount += 1u;
+	}
 	m_queueCount += 1u;
 	scheduleNextService(m_scheduler.currentNowCycles());
 }
@@ -275,8 +300,12 @@ DmaControllerState DmaController::captureState() const {
 }
 
 void DmaController::restoreState(const DmaControllerState& state, int64_t nowCycles) {
+	m_gxGpuWriteJobCount = 0u;
 	for (size_t index = 0u; index < state.queue.size(); index += 1u) {
 		m_queue[index] = state.queue[index];
+		if (state.queue[index].dst == IO_GX_GPU_GP0) {
+			m_gxGpuWriteJobCount += 1u;
+		}
 	}
 	m_queueHead = 0u;
 	m_queueCount = state.queue.size();
@@ -299,7 +328,7 @@ void DmaController::scheduleNextService(int64_t nowCycles) {
 		return;
 	}
 	if ((m_queue[m_queueHead].src == IO_GX_GPU_GP0 && !m_gxGpuReadReady)
-		|| (m_queue[m_queueHead].dst == IO_GX_GPU_GP0 && !m_gxGpuWriteReady)) {
+		|| (m_queue[m_queueHead].dst == IO_GX_GPU_GP0 && !m_gxGpuDmaWriteReady)) {
 		m_scheduler.cancelDeviceService(DEVICE_SERVICE_DMA);
 		return;
 	}

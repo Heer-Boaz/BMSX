@@ -1,8 +1,9 @@
 local transition<const> = {}
 require('globals')
+local texture_residency<const> = require('texture_residency')
 local story<const> = require('story')
 local timeline_builders<const> = require('timeline_builders')
-local build_transition_frames<const> = timeline_builders.build_transition_frames
+local apply_transition_frame<const> = timeline_builders.apply_transition_frame
 local build_transition_fade_in_frames<const> = timeline_builders.build_transition_fade_in_frames
 local build_fade_frames<const> = timeline_builders.build_fade_frames
 
@@ -150,6 +151,9 @@ function transition.register_states(states)
 			transition_text.text_component.offset.x = screen_width
 			self.transition_needs_post_fade = false
 			local next_node<const> = story[node.next]
+			if not self.skip_transition_fade and self.transition_target_bg ~= nil then
+				texture_residency.preload_background(self.transition_target_bg)
+			end
 			local style<const> = resolve_transition_style(node, next_node.kind)
 			self.transition_style = style
 			self.transition_palette = build_transition_palette(style)
@@ -193,7 +197,6 @@ function transition.register_states(states)
 			show_background(nil)
 			local overlay<const> = self.transition_visual.overlay
 			local background<const> = oget(bg_id)
-			local base<const> = self.transition_palette.overlay
 			overlay.visible = true
 			overlay.x = 0
 			overlay.y = 0
@@ -201,11 +204,7 @@ function transition.register_states(states)
 			overlay.height = screen_height
 			overlay.blend_mode = gx_draw_mode_blend_subtract
 			overlay.blend_color = 0
-			if self.skip_transition_fade then
-				overlay.color = base
-			else
-				overlay.color = 0
-			end
+			overlay.color = 0
 			for i = 1, #self.transition_panels do
 				local panel<const> = self.transition_panels[i]
 				local visual<const> = self.transition_visual.panels[i]
@@ -237,11 +236,10 @@ function transition.register_states(states)
 				accent = accent,
 				text = transition_text,
 			}
-			local frames<const> = build_transition_frames({
+			local transition_params<const> = {
 				fade_out_frames = overgang_fade_out_frames,
 				fade_in_frames = overgang_fade_in_frames,
 				fade_in_start = self.transition_fade_in_start,
-				finish_frame = self.transition_finish_frame,
 				skip_fade = self.skip_transition_fade,
 				palette = self.transition_palette,
 				panels = self.transition_panels,
@@ -249,19 +247,22 @@ function transition.register_states(states)
 				center_x = self.transition_center_x,
 				start_x = w,
 				end_x = -w,
-			})
+			}
 			self:define_timeline(timeline.new({
 				id = overgang_timeline_id,
-				frames = frames,
+				frames = timeline.range(self.transition_finish_frame + 1),
 				ticks_per_frame = overgang_ticks_per_frame,
 				playback_mode = 'once',
 				target = target,
-				apply = true,
+				params = transition_params,
+				apply = apply_transition_frame,
 				markers = {
 					{ frame = overgang_fade_out_frames - 1, event = 'transition.swap_bg' },
 				},
 			}))
-			self:play_timeline(overgang_timeline_id, { rewind = true, snap_to_start = true })
+			-- Keep the playhead at -1: the first scheduled tick must apply frame 0.
+			-- Snapping here consumes that frame during state entry and shifts the authored cadence.
+			self:play_timeline(overgang_timeline_id, { rewind = true, snap_to_start = false })
 		end,
 		input_eval = 'first',
 		input_event_handlers = {
@@ -354,6 +355,9 @@ function transition.register_states(states)
 				self.fade_target_bg = story[next_node.next].bg
 			else
 				self.fade_target_bg = next_node.bg
+			end
+			if self.fade_target_bg ~= nil then
+				texture_residency.preload_background(self.fade_target_bg)
 			end
 			show_background(nil)
 			hide_transition_layers()

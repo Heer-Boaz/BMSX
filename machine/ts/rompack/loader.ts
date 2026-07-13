@@ -290,47 +290,6 @@ async function loadRomAssetListFromHeader(rom: Uint8Array, header: CartRomHeader
 		};
 	}
 
-	function generateFlippedTexCoords(texcoords: number[]): { original: number[]; fliph: number[]; flipv: number[]; fliphv: number[] } {
-		const result = {
-			original: [...texcoords],
-			fliph: [],
-			flipv: [],
-			fliphv: []
-		} as { original: number[]; fliph: number[]; flipv: number[]; fliphv: number[] };
-
-		const left = texcoords[0];
-		const top = texcoords[1];
-		const bottom = texcoords[3];
-		const right = texcoords[4];
-
-		result.fliph.push(
-			right, top,
-			right, bottom,
-			left, top,
-			left, top,
-			right, bottom,
-			left, bottom
-		);
-		result.flipv.push(
-			left, bottom,
-			left, top,
-			right, bottom,
-			right, bottom,
-			left, top,
-			right, top
-		);
-		result.fliphv.push(
-			right, bottom,
-			right, top,
-			left, bottom,
-			left, bottom,
-			right, top,
-			left, top
-		);
-
-		return result;
-	}
-
 	for (const asset of entryList) {
 		if (asset.metabuffer_start != null && asset.metabuffer_end != null) {
 			const metaStart = asset.metabuffer_start;
@@ -355,13 +314,6 @@ async function loadRomAssetListFromHeader(rom: Uint8Array, header: CartRomHeader
 					if (asset.imgmeta.width && asset.imgmeta.height) {
 						if (asset.imgmeta.boundingbox && (!asset.imgmeta.boundingbox.fliph || !asset.imgmeta.boundingbox.flipv || !asset.imgmeta.boundingbox.fliphv)) {
 							asset.imgmeta.boundingbox = generateFlippedBoundingBox(asset.imgmeta.boundingbox.original, asset.imgmeta.width, asset.imgmeta.height);
-						}
-						if (asset.imgmeta.atlasid !== undefined && asset.imgmeta.texcoords && (!asset.imgmeta.texcoords_fliph || !asset.imgmeta.texcoords_flipv || !asset.imgmeta.texcoords_fliphv)) {
-							const { original, fliph, flipv, fliphv } = generateFlippedTexCoords(asset.imgmeta.texcoords);
-							asset.imgmeta.texcoords = original;
-							asset.imgmeta.texcoords_fliph = fliph;
-							asset.imgmeta.texcoords_flipv = flipv;
-							asset.imgmeta.texcoords_fliphv = fliphv;
 						}
 					}
 					break;

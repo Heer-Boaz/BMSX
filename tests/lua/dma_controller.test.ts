@@ -48,9 +48,10 @@ type DmaGpuFixture = {
 
 function createDmaGpuFixture(): DmaGpuFixture {
 	const memory = new Memory({ systemRom: new Uint8Array(), cartRom: new Uint8Array(0) });
-	const scheduler = new DeviceScheduler(new CPU(memory));
+	const cpu = new CPU(memory);
+	const scheduler = new DeviceScheduler(cpu);
 	const irq = new IrqController(memory);
-	const dma = new DmaController(memory, irq, scheduler);
+	const dma = new DmaController(memory, cpu, irq, scheduler);
 	const gpu = new GxGpu(memory, irq, scheduler, dma);
 	dma.reset();
 	gpu.reset();
@@ -73,6 +74,7 @@ test('DMA streams RAM words into the GX-GPU GP0 command port', () => {
 	memory.writeMappedU32LE(IO_DMA_DST, IO_GX_GPU_GP0);
 	memory.writeMappedU32LE(IO_DMA_LEN, 12);
 	memory.writeMappedU32LE(IO_DMA_CTRL, DMA_CTRL_START);
+	assert.equal(memory.mappedWriteReady(IO_GX_GPU_GP0), false);
 	dma.accrueCycles(12, 12);
 	dma.onService(12);
 
@@ -80,6 +82,7 @@ test('DMA streams RAM words into the GX-GPU GP0 command port', () => {
 	assert.equal(memory.readIoU32(IO_DMA_STATUS), DMA_STATUS_DONE);
 	assert.equal(memory.readIoU32(IO_DMA_WRITTEN), 12);
 	assert.equal((memory.readIoU32(IO_IRQ_FLAGS) & IRQ_DMA_DONE) >>> 0, IRQ_DMA_DONE);
+	assert.equal(memory.mappedWriteReady(IO_GX_GPU_GP0), true);
 	assert.equal(commands.commandCount, 1);
 	assert.equal(commands.commandKind[0], GX_GPU_COMMAND_FILL_RECTANGLE);
 	assert.equal(commands.commandWordCount[0], 3);
@@ -111,7 +114,7 @@ test('DMA admits one GP0 FIFO block and resumes the suffix on the GPU ready edge
 	assert.equal(scheduler.nextDeadline(), fillDeadline);
 
 	scheduler.advanceTo(fillDeadline + 15);
-	gpu.onService(fillDeadline + 15);
+	assert.equal(memory.mappedWriteReady(IO_GX_GPU_GP0), false);
 	assert.equal(scheduler.nextDeadline(), fillDeadline + 15);
 	dma.onService(fillDeadline + 15);
 	assert.equal(memory.readIoU32(IO_DMA_STATUS), DMA_STATUS_DONE);

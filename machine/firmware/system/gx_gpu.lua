@@ -1,5 +1,4 @@
 local round_to_nearest<const> = require('bios/util/round_to_nearest')
-
 local gx_gpu<const> = {}
 
 local gp0<const>: *word = 0x08010240
@@ -224,9 +223,7 @@ function gx_gpu.draw_gouraud_triangle_color(x0, y0, color0, x1, y1, color1, x2, 
 end
 
 function gx_gpu.upload_rgba8888_to_direct16_stride(source_addr, source_x, source_y, source_stride, target_x, target_y, width, height)
-	*gp0 = gp0_cpu_to_vram
-	*gp0 = xy(target_x, target_y)
-	*gp0 = wh(width, height)
+	gx_gpu.begin_direct16_upload(target_x, target_y, width, height)
 	local source_words<const>: *word = source_addr
 	local pending_word = 0
 	local pending_half = 0
@@ -246,6 +243,12 @@ function gx_gpu.upload_rgba8888_to_direct16_stride(source_addr, source_x, source
 	if pending_half ~= 0 then
 		*gp0 = pending_word
 	end
+end
+
+function gx_gpu.begin_direct16_upload(target_x, target_y, width, height)
+	*gp0 = gp0_cpu_to_vram
+	*gp0 = xy(target_x, target_y)
+	*gp0 = wh(width, height)
 end
 
 function gx_gpu.draw_direct16_textured_rect_color(source_x, source_y, x, y, width, height, color)

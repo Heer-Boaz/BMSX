@@ -1226,6 +1226,7 @@ void CPU::start(int entryProtoIndex, NativeArgsView args) {
 	clearCallStack();
 	m_haltedUntilIrq = false;
 	m_memoryWriteBlocked = false;
+	m_memoryWriteBlockedAddress = 0;
 	m_hardHalted = false;
 	m_maskableInterruptsEnabled = true;
 	m_maskableInterruptsRestoreEnabled = true;
@@ -1434,6 +1435,7 @@ CpuRuntimeState CPU::captureRuntimeState(const std::unordered_map<std::string, V
 	state.instructionBudgetRemaining = instructionBudgetRemaining;
 	state.haltedUntilIrq = m_haltedUntilIrq;
 	state.memoryWriteBlocked = m_memoryWriteBlocked;
+	state.memoryWriteBlockedAddress = m_memoryWriteBlockedAddress;
 	state.maskableInterruptsEnabled = m_maskableInterruptsEnabled;
 	state.maskableInterruptsRestoreEnabled = m_maskableInterruptsRestoreEnabled;
 	state.nonMaskableInterruptPending = m_nonMaskableInterruptPending;
@@ -1631,6 +1633,7 @@ void CPU::restoreRuntimeState(const CpuRuntimeState& state, std::unordered_map<s
 	instructionBudgetRemaining = state.instructionBudgetRemaining;
 	m_haltedUntilIrq = state.haltedUntilIrq;
 	m_memoryWriteBlocked = state.memoryWriteBlocked;
+	m_memoryWriteBlockedAddress = state.memoryWriteBlockedAddress;
 	m_maskableInterruptsEnabled = state.maskableInterruptsEnabled;
 	m_maskableInterruptsRestoreEnabled = state.maskableInterruptsRestoreEnabled;
 	m_nonMaskableInterruptPending = state.nonMaskableInterruptPending;
@@ -1983,9 +1986,17 @@ void CPU::clearHaltAfterAcceptedInterrupt() {
 	m_yieldRequested = false;
 }
 
-void CPU::blockMappedWrite(CallFrame& frame) {
+void CPU::blockMappedWrite(CallFrame& frame, uint32_t address) {
 	frame.pc = m_currentInstructionPc;
 	m_memoryWriteBlocked = true;
+	m_memoryWriteBlockedAddress = address;
+}
+
+void CPU::resumeMemoryWrite(uint32_t address) {
+	// A device-ready edge releases only the instruction stalled on that raw MMIO target.
+	if (m_memoryWriteBlocked && m_memoryWriteBlockedAddress == address) {
+		m_memoryWriteBlocked = false;
+	}
 }
 
 RunResult CPU::run(int instructionBudget, const IrqController* irqController, int irqProtoIndex) {

@@ -810,7 +810,10 @@ void GxGpu::updateCommandStatusBits() {
 		commandStatusBits |= GX_GPU_STATUS_GPU_IDLE;
 	}
 	m_statusWord = (m_statusWord & ~GX_GPU_STATUS_COMMAND_STATE_MASK) | commandStatusBits;
-	m_dmaController.setGxGpuWriteReady(readyToReceiveDma);
+	// CPU stores need one physical FIFO slot; DMA packet acceptance is a
+	// separate, stricter GPUSTAT line while a command is being assembled.
+	m_dmaController.setGxGpuCpuWriteReady(m_gp0Fifo.count() < GX_GPU_COMMAND_FIFO_WORD_CAPACITY);
+	m_dmaController.setGxGpuDmaWriteReady(readyToReceiveDma);
 }
 
 void GxGpu::updateDynamicStatusBits() {
@@ -894,7 +897,8 @@ void GxGpu::writeStatusIo() {
 
 bool GxGpu::gp0WriteReady() {
 	synchronizeCommandExecution(m_scheduler.currentNowCycles());
-	return m_gp0Fifo.count() < GX_GPU_COMMAND_FIFO_WORD_CAPACITY;
+	updateDynamicStatusBits();
+	return m_dmaController.isGxGpuCpuPortWriteReady();
 }
 
 u64 GxGpu::readGp0Thunk(void* context, u32 addr) {

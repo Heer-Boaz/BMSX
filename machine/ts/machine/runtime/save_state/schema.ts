@@ -24,6 +24,7 @@ export const RUNTIME_SAVE_STATE_PROP_NAMES = [
 	'globals',
 	'haltedUntilIrq',
 	'memoryWriteBlocked',
+	'memoryWriteBlockedAddress',
 	'hash',
 	'hashFree',
 	'id',

@@ -37,7 +37,7 @@ struct GpuHarness {
 		, cpu(memory)
 		, scheduler(cpu)
 		, irq(memory)
-		, dma(memory, irq, scheduler)
+		, dma(memory, cpu, irq, scheduler)
 		, gpu(memory, irq, scheduler, dma) {
 		dma.reset();
 		gpu.reset();
@@ -58,7 +58,7 @@ struct CommandBufferDmaHarness {
 		, cpu(memory)
 		, scheduler(cpu)
 		, irq(memory)
-		, dma(memory, irq, scheduler) {
+		, dma(memory, cpu, irq, scheduler) {
 		dma.reset();
 		irq.reset();
 	}

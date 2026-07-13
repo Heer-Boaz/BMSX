@@ -333,6 +333,7 @@ export type CpuRuntimeState = {
 	instructionBudgetRemaining: number;
 	haltedUntilIrq: boolean;
 	memoryWriteBlocked: boolean;
+	memoryWriteBlockedAddress: number;
 	maskableInterruptsEnabled: boolean;
 	maskableInterruptsRestoreEnabled: boolean;
 	nonMaskableInterruptPending: boolean;
@@ -1482,6 +1483,7 @@ export class CPU {
 	private indexKey: StringValue = null;
 	private haltedUntilIrq = false;
 	private memoryWriteBlocked = false;
+	private memoryWriteBlockedAddress = 0;
 	private currentInstructionPc = 0;
 	private hardHalted = false;
 	private maskableInterruptsEnabled = true;
@@ -2010,6 +2012,7 @@ export class CPU {
 		this.clearCallStack();
 		this.haltedUntilIrq = false;
 		this.memoryWriteBlocked = false;
+		this.memoryWriteBlockedAddress = 0;
 		this.hardHalted = false;
 		this.maskableInterruptsEnabled = true;
 		this.maskableInterruptsRestoreEnabled = true;
@@ -2078,13 +2081,17 @@ export class CPU {
 		return this.memoryWriteBlocked;
 	}
 
-	public resumeMemoryWrite(): void {
-		this.memoryWriteBlocked = false;
+	public resumeMemoryWrite(address: number): void {
+		// A device-ready edge releases only the instruction stalled on that raw MMIO target.
+		if (this.memoryWriteBlocked && this.memoryWriteBlockedAddress === address) {
+			this.memoryWriteBlocked = false;
+		}
 	}
 
-	private blockMappedWrite(frame: CallFrame): void {
+	private blockMappedWrite(frame: CallFrame, address: number): void {
 		frame.pc = this.currentInstructionPc;
 		this.memoryWriteBlocked = true;
+		this.memoryWriteBlockedAddress = address;
 	}
 
 
@@ -2774,7 +2781,7 @@ export class CPU {
 				case OpCode.STORE_MEM_WORDS_D: {
 					const addr = (registers.get(b) as number) + (disp << 2);
 					if (op !== OpCode.LOAD_MEM_D && !this.memory.mappedWriteReady(addr)) {
-						this.blockMappedWrite(frame);
+						this.blockMappedWrite(frame, addr);
 						return;
 					}
 					if (op === OpCode.STORE_MEM_WORDS_D) {
@@ -2856,7 +2863,7 @@ export class CPU {
 				case OpCode.STORE_MEM: {
 					const addr = this.readRK(frame, rkB) as number;
 					if (!this.memory.mappedWriteReady(addr)) {
-						this.blockMappedWrite(frame);
+						this.blockMappedWrite(frame, addr);
 						return;
 					}
 					const value = registers.get(a);
@@ -2886,7 +2893,7 @@ export class CPU {
 				case OpCode.STORE_MEM_WORDS: {
 					const addr = this.readRK(frame, rkB) as number;
 					if (!this.memory.mappedWriteReady(addr)) {
-						this.blockMappedWrite(frame);
+						this.blockMappedWrite(frame, addr);
 						return;
 					}
 					this.charge(ceilDiv4(c));
@@ -3645,6 +3652,7 @@ export class CPU {
 			instructionBudgetRemaining: this.instructionBudgetRemaining,
 			haltedUntilIrq: this.haltedUntilIrq,
 			memoryWriteBlocked: this.memoryWriteBlocked,
+			memoryWriteBlockedAddress: this.memoryWriteBlockedAddress,
 			maskableInterruptsEnabled: this.maskableInterruptsEnabled,
 			maskableInterruptsRestoreEnabled: this.maskableInterruptsRestoreEnabled,
 			nonMaskableInterruptPending: this.nonMaskableInterruptPending,
@@ -3815,6 +3823,7 @@ export class CPU {
 		this.instructionBudgetRemaining = state.instructionBudgetRemaining;
 		this.haltedUntilIrq = state.haltedUntilIrq;
 		this.memoryWriteBlocked = state.memoryWriteBlocked;
+		this.memoryWriteBlockedAddress = state.memoryWriteBlockedAddress;
 		this.maskableInterruptsEnabled = state.maskableInterruptsEnabled;
 		this.maskableInterruptsRestoreEnabled = state.maskableInterruptsRestoreEnabled;
 		this.nonMaskableInterruptPending = state.nonMaskableInterruptPending;

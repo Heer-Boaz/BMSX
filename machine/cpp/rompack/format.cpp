@@ -9,7 +9,6 @@
 #include "rompack/toc.h"
 #include <algorithm>
 #include <cstring>
-#include <cstdio>
 #include <utility>
 
 namespace bmsx {
@@ -65,12 +64,6 @@ std::vector<u8> encodeCartRom(const CartRomHeader& header,
 }
 
 } // namespace
-
-std::string generateAtlasAssetId(i32 atlasId) {
-	char buffer[32];
-	std::snprintf(buffer, sizeof(buffer), "_atlas_%02d", atlasId);
-	return std::string(buffer);
-}
 
 bool hasCartHeader(const u8* data, size_t size) {
 	if (size < CART_ROM_BASE_HEADER_SIZE) {
