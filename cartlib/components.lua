@@ -745,22 +745,28 @@ function textcomponent.new(opts)
 	self.text = nil
 	self.glyph_lines = {}
 	self.layout_line_widths = {}
+	self.glyph_line_count = 0
 	self:set_text(opts.text)
 	return self
 end
 
 function textcomponent:set_text(text)
 	self.text = text
-	local lines
 	if type(text) == 'string' then
 		if self.wrap_chars ~= nil and self.wrap_chars > 0 then
-			lines = wrap_text_lines(text, self.wrap_chars)
+			text = wrap_text_lines(text, self.wrap_chars)
 		else
-			lines = { text }
+			local glyph_line = self.glyph_lines[1]
+			if glyph_line == nil then
+				glyph_line = {}
+				self.glyph_lines[1] = glyph_line
+			end
+			self.layout_line_widths[1] = font_module.write_glyph_line(self.font, text, glyph_line)
+			self.glyph_line_count = 1
+			return
 		end
-	else
-		lines = text or empty_text_lines
 	end
+	local lines<const> = text or empty_text_lines
 	local glyph_lines<const> = self.glyph_lines
 	local layout_line_widths<const> = self.layout_line_widths
 	for i = 1, #lines do
@@ -771,10 +777,7 @@ function textcomponent:set_text(text)
 		end
 		layout_line_widths[i] = font_module.write_glyph_line(self.font, lines[i], glyph_line)
 	end
-	for i = #lines + 1, #glyph_lines do
-		glyph_lines[i] = nil
-		layout_line_widths[i] = nil
-	end
+	self.glyph_line_count = #lines
 end
 
 function textcomponent:set_font(font)
@@ -798,16 +801,17 @@ function textcomponent:draw()
 	local obj<const> = self.parent
 	local offset<const> = self.offset
 	local draw_offset<const> = self.draw_offset
-	self:render(obj.x + offset.x + draw_offset.x, obj.y + offset.y + draw_offset.y, self.glyph_lines)
+	self:render(obj.x + offset.x + draw_offset.x, obj.y + offset.y + draw_offset.y)
 end
 
-function textcomponent:render_glyphs(x, y, glyphs)
+function textcomponent:render_glyphs(x, y)
+	local glyphs<const> = self.glyph_lines
 	local cursor_y = y
 	local line_offsets<const> = self.line_offsets
 	local line_widths<const> = self.line_widths or self.layout_line_widths
 	local line_x_offsets<const> = self.line_x_offsets
 	local color<const> = self.color
-	for i = 1, #glyphs do
+	for i = 1, self.glyph_line_count do
 		local line<const> = glyphs[i]
 		local line_y<const> = line_offsets ~= nil and (y + line_offsets[i]) or cursor_y
 		local line_length<const> = #line
@@ -832,14 +836,15 @@ function textcomponent:render_glyphs(x, y, glyphs)
 	end
 end
 
-function textcomponent:render(x, y, glyphs)
+function textcomponent:render(x, y)
+	local glyphs<const> = self.glyph_lines
 	local background_color<const> = self.background_color
 	if background_color ~= nil then
 		local cursor_y = y
 		local line_offsets<const> = self.line_offsets
 		local line_widths<const> = self.line_widths or self.layout_line_widths
 		local line_x_offsets<const> = self.line_x_offsets
-		for i = 1, #glyphs do
+		for i = 1, self.glyph_line_count do
 			local line<const> = glyphs[i]
 			local line_y<const> = line_offsets ~= nil and (y + line_offsets[i]) or cursor_y
 			local line_length<const> = #line
@@ -863,7 +868,7 @@ function textcomponent:render(x, y, glyphs)
 			end
 		end
 	end
-	self:render_glyphs(x, y, glyphs)
+	self:render_glyphs(x, y)
 end
 
 -- customvisualcomponent: scripted render producer

@@ -28,7 +28,6 @@ function lithograph_screen:ctor()
 	text.offset.y = room_tile_origin_y + (room_tile_size * 6)
 	text.offset.z = 1
 	text.center_block_width = screen_width
-	text:set_text({})
 	self.text_component = text
 	self:get_component('customvisualcomponent').producer = draw_lithograph_visual
 end
@@ -46,7 +45,7 @@ local define_lithograph_screen_fsm<const> = function()
 			['room'] = {
 				emitter = 'd',
 				go = function(self)
-					self.text_component:set_text({})
+					self.text_component:set_text(nil)
 				end,
 			},
 		},

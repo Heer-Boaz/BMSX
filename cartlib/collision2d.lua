@@ -236,7 +236,6 @@ local submit_geo_overlap_candidate_batch<const> = function(instance_base, pair_b
 	param->stride0 = 0x00000014
 	param->stride1 = 0x0000000c
 	param->stride2 = instance_count
-	*geo_completion_irq_flags = 0
 	*geo_cmd_register = 0x00000022
 	wait_for_geo_completion('overlap batch')
 end
@@ -255,12 +254,11 @@ local submit_geo_overlap_full_pass<const> = function(instance_base, result_base,
 	param->stride0 = 0x00000014
 	param->stride1 = 0
 	param->stride2 = 0
-	*geo_completion_irq_flags = 0
 	*geo_cmd_register = 0x00000022
 end
 
 function collision2d.on_geo_irq(flags)
-	*geo_completion_irq_flags = *geo_completion_irq_flags | flags
+	*geo_completion_irq_flags = flags
 end
 
 function collision2d.collect_overlaps(colliders, collider_count, pairs)

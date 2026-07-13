@@ -21,13 +21,13 @@ function textobjectcomponent.new(opts)
 	return setmetatable(components.textcomponent.new(opts), textobjectcomponent)
 end
 
-function textobjectcomponent:render(x, y, glyphs)
+function textobjectcomponent:render(x, y)
 	local owner<const> = self.parent
 	owner:submit_highlight()
 	if self.background_color ~= nil then
-		owner:submit_text_background_lines(x, y, glyphs)
+		owner:submit_text_background_lines(x, y)
 	end
-	components.textcomponent.render_glyphs(self, x, y, glyphs)
+	components.textcomponent.render_glyphs(self, x, y)
 end
 
 local highlight_move_timeline_id<const> = 'hmove'
@@ -181,10 +181,6 @@ local write_glyph_lines<const> = function(font, lines, glyph_lines, widths)
 		end
 		widths[i] = font_module.write_glyph_line(font, lines[i], glyphs)
 	end
-	for i = #lines + 1, #glyph_lines do
-		glyph_lines[i] = nil
-		widths[i] = nil
-	end
 end
 
 fsmlibrary.register(textobject_fsm_id, {
@@ -280,8 +276,6 @@ function textobject.new(opts)
 	self.full_text_lines = { '' }
 	self.full_text_line_widths = { 0 }
 	self.full_glyph_lines = {}
-	self.display_glyph_lines = {}
-	self.displayed_line_widths = { 0 }
 	self.current_line_index = 0
 	self.current_char_index = 0
 	self.maximum_characters_per_line = 0
@@ -312,15 +306,17 @@ function textobject.new(opts)
 	self.blank_lines = opts.blank_lines or 0
 	local line_height<const> = line_advance(font, self.blank_lines)
 	self.text_component = textobjectcomponent.new({
-			text = nil,
-			font = font,
-			line_height = line_height,
-			line_offsets = self.wrapped_line_y_offsets,
-			line_widths = self.displayed_line_widths,
-			color = opts.text_color or 0xffffffff,
-			background_color = opts.normal_bg_color or 0xff000000,
-			offset = { x = 0, y = self.dimensions.top, z = 1 },
+		text = nil,
+		font = font,
+		line_height = line_height,
+		line_offsets = self.wrapped_line_y_offsets,
+		color = opts.text_color or 0xffffffff,
+		background_color = opts.normal_bg_color or 0xff000000,
+		offset = { x = 0, y = self.dimensions.top, z = 1 },
 	})
+	self.display_glyph_lines = self.text_component.glyph_lines
+	self.displayed_line_widths = self.text_component.layout_line_widths
+	self.text_component.line_widths = self.displayed_line_widths
 	self:add_component(self.text_component)
 	self:set_dimensions(self.dimensions)
 	return self
@@ -344,7 +340,7 @@ end
 function textobject:position_text_component()
 	local longest = 0
 	local widths<const> = self.full_text_line_widths
-	for i = 1, #widths do
+	for i = 1, #self.full_text_lines do
 		local width<const> = widths[i]
 		if width > longest then
 			longest = width
@@ -500,14 +496,11 @@ function textobject:reset_typing_buffer()
 		end
 		line_widths[i] = 0
 	end
-	for i = #self.full_text_lines + 1, #glyph_lines do
-		glyph_lines[i] = nil
-		line_widths[i] = nil
-	end
 	self.current_line_index = 0
 	self.current_char_index = 0
 	self.text_component.glyph_lines = glyph_lines
 	self.text_component.line_widths = line_widths
+	self.text_component.glyph_line_count = #self.full_text_lines
 end
 
 function textobject:apply_full_text()
@@ -515,6 +508,7 @@ function textobject:apply_full_text()
 	self.current_char_index = 0
 	self.text_component.glyph_lines = self.full_glyph_lines
 	self.text_component.line_widths = self.full_text_line_widths
+	self.text_component.glyph_line_count = #self.full_text_lines
 end
 
 function textobject:reveal_text()
@@ -555,8 +549,9 @@ function textobject:type_next()
 	self:dispatch_command(typing_command_step)
 end
 
-function textobject:submit_text_background_lines(x, y, glyphs)
+function textobject:submit_text_background_lines(x, y)
 	local tc<const> = self.text_component
+	local glyphs<const> = tc.glyph_lines
 	local highlighted_logical_line<const> = self.highlighted_line_index
 	local skip_logical_line<const> = highlighted_logical_line ~= nil and (highlighted_logical_line + 1) or 0
 	local line_offsets<const> = tc.line_offsets
@@ -564,7 +559,7 @@ function textobject:submit_text_background_lines(x, y, glyphs)
 	local background_color<const> = tc.background_color
 	local wrapped_line_to_logical_line<const> = self.wrapped_line_to_logical_line
 	local cursor_y = y
-	for i = 1, #glyphs do
+	for i = 1, tc.glyph_line_count do
 		local line<const> = glyphs[i]
 		if #line > 0 and wrapped_line_to_logical_line[i] ~= skip_logical_line then
 			local line_y<const> = line_offsets ~= nil and (y + line_offsets[i]) or cursor_y

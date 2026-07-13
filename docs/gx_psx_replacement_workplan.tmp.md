@@ -109,11 +109,8 @@ Implemented or partially covered GX-GPU areas include:
   a monotone sequence for stable equal-z order, add/remove preserves the ordered
   list, and the BIOS sort repairs runtime z changes in place. Its ordered
   pre-pass keeps unchanged frames O(n) without a second display list or
-  per-frame records. Focused Pietious tests cover cross-kind ordering, live z
-  changes, equal-z disable/re-enable, detach, space moves, the real room/player/
-  HUD/director order and authored environment-wall depth. The 2025 gate checks
-  sorted combat, slash, results and retained parallax-sprite relations; Nemesis
-  S proves its asset-authored stage depth through a normal custom visual.
+  per-frame records. A cartlib pixel gate covers cross-kind ordering and live z
+  changes through the normal tile, text, sprite and custom draw paths.
 - Text components retain wrapped lines, glyph references and widths at text,
   font, wrap or textobject-dimension mutation. The typewriter reveals retained
   glyph references directly, and prompt/highlight writes happen only at state,
@@ -128,8 +125,7 @@ Implemented or partially covered GX-GPU areas include:
   alternating pair-history rows, result/contact records and one synchronous
   event record at the system owner. Stable collider high-water frames allocate
   no pair rows or event DTOs; only the documented begin/stay/end events are
-  emitted. A focused Pietious headless regression proves the real GEO IRQ path,
-  retained event/contact identity and pair-row reuse after separation.
+  emitted.
 - Texture windows/CLUT-ish paths, texture disable, modulation math, mask/fill
   behavior, oversized primitive culling, and VRAM copy overlap chunking.
 - Raw PSX textured quad polygons are covered in TS/C++ software/headless tests

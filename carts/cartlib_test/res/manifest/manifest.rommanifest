@@ -1,0 +1,8 @@
+title: Cartlib Test
+short_name: 'cartlib_test'
+rom_name: 'cartlib_test'
+machine:
+    namespace: 'cartlib_test'
+    vdp_class: psx
+lua:
+    entry_path: entry.lua

@@ -108,13 +108,12 @@ local draw_combat_slash<const> = function(director)
 end
 
 function combat_director:ctor()
-	self.combat_hit_slash_rc = components.customvisualcomponent.new({
+	self:add_component(components.customvisualcomponent.new({
 		parent = self,
 		id_local = 'slash',
 		offset = { x = 0, y = 0, z = combat_hit_slash_z },
 		producer = draw_combat_slash,
-	})
-	self:add_component(self.combat_hit_slash_rc)
+	}))
 end
 
 local combat_parallax_scale<const> = function(weight)

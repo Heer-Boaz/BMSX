@@ -41,7 +41,6 @@ function transition:ctor()
 	text.offset.z = 1
 	text.visible = false
 	text.center_block_width = screen_width
-	text:set_text({})
 	self.text_component = text
 	self:get_component('customvisualcomponent').producer = draw_transition_visual
 	self:define_timeline(timeline.new({
@@ -64,7 +63,7 @@ local define_transition_fsm<const> = function()
 		['room'] = {
 			emitter = 'd',
 			go = function(self)
-				self.text_component:set_text({})
+				self.text_component:set_text(nil)
 				self.text_component.visible = false
 			end,
 		},
@@ -74,7 +73,7 @@ local define_transition_fsm<const> = function()
 		on[event_name] = {
 			emitter = 'd',
 			go = function(self)
-				self.text_component:set_text({})
+				self.text_component:set_text(nil)
 				self.text_component.visible = false
 				self:play_timeline('transition.timeline', { rewind = true, snap_to_start = true })
 			end,

@@ -92,9 +92,9 @@ local draw_director_visual<const> = function(parent)
 end
 
 function director:ctor()
-	self.transition_rc = self:get_component('customvisualcomponent')
-	self.transition_rc.offset.z = director_visual_z
-	self.transition_rc.producer = draw_director_visual
+	local transition_rc<const> = self:get_component('customvisualcomponent')
+	transition_rc.offset.z = director_visual_z
+	transition_rc.producer = draw_director_visual
 end
 
 function director:apply_effects(effects)

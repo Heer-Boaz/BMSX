@@ -18,7 +18,6 @@ function shrine:ctor()
 	text.offset.x = shrine_text_x
 	text.offset.y = shrine_text_y
 	text.offset.z = 1
-	text:set_text({})
 	self.text_component = text
 	self:get_component('customvisualcomponent').producer = draw_shrine_visual
 end
@@ -44,7 +43,7 @@ local define_shrine_fsm<const> = function()
 			['room'] = {
 				emitter = 'd',
 				go = function(self)
-					self.text_component:set_text({})
+					self.text_component:set_text(nil)
 				end,
 			},
 		},
