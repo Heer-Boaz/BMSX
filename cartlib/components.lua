@@ -2,16 +2,18 @@
 -- base component primitives for system rom
 
 local eventemitter_module<const> = require('cartlib/eventemitter')
+local wrap_text_lines<const> = require('bios/util/wrap_text_lines').wrap_text_lines
 local timeline_module<const> = require('cartlib/timeline/index')
 local timeline_dispatch<const> = require('cartlib/timeline/dispatch')
 local collision_profiles<const> = require('cartlib/collision_profiles')
-local font_module<const> = require('cartlib/font')
+local font_module<const> = require('system/font')
 local gx_image<const> = require('system/gx_image')
 local gx_gpu<const> = require('system/gx_gpu')
 local romdir<const> = require('system/romdir')
 local world_instance<const> = require('cartlib/world/index').instance
 local eventemitter<const> = eventemitter_module.eventemitter
 local timeline<const> = timeline_module.timeline
+local empty_text_lines<const> = {}
 
 local select_bounding_box<const> = function(flip_h, flip_v, box)
 	if box == nil then
@@ -62,6 +64,7 @@ function component.new(opts)
 	self.enabled = opts.enabled == nil or opts.enabled
 	self.tags = opts.tags or {}
 	self.unique = opts.unique or false
+	self._attached = false
 	return self
 end
 
@@ -97,8 +100,6 @@ function component:attach(new_parent)
 		error('component "' .. self.type_name .. '" is unique and already attached to "' .. self.parent.id .. '"')
 	end
 	self.parent:add_component(self)
-	self:bind()
-	self:on_attach()
 	return self
 end
 
@@ -140,27 +141,31 @@ function component:toggle_tag(tag)
 	self.tags[tag] = not self.tags[tag]
 end
 
-function component:draw()
+local visualcomponent<const> = {}
+visualcomponent.__index = visualcomponent
+visualcomponent.is_visual = true
+setmetatable(visualcomponent, { __index = component })
+
+function visualcomponent.new(opts)
+	local self<const> = setmetatable(component.new(opts), visualcomponent)
+	self.offset = opts.offset or { x = 0, y = 0, z = 0 }
+	self.draw_offset = opts.draw_offset or { x = 0, y = 0, z = 0 }
+	self.visible = opts.visible == nil or opts.visible
+	return self
 end
 
 -- spritecomponent: holds sprite metadata
 local spritecomponent<const> = {}
 spritecomponent.__index = spritecomponent
-setmetatable(spritecomponent, { __index = component })
+setmetatable(spritecomponent, { __index = visualcomponent })
 
 function spritecomponent.new(opts)
 	opts = opts or {}
 	opts.type_name = 'spritecomponent'
-	local self<const> = setmetatable(component.new(opts), spritecomponent)
-	self.layer = opts.layer or 0x00000000
+	local self<const> = setmetatable(visualcomponent.new(opts), spritecomponent)
 	self.flip = { flip_h = false, flip_v = false }
 	self.color = opts.color or 0xffffffff
-	-- colorize is a per-sprite RGBA multiplier used by various carts; ensure
-	-- it always exists as a table to avoid nil-field assignment errors.
-	self.colorize = opts.colorize or { r = 1, g = 1, b = 1, a = 1 }
 	self.scale = opts.scale or { x = 1, y = 1 }
-	self.offset = opts.offset or { x = 0, y = 0, z = 0 }
-	self.draw_offset = opts.draw_offset or { x = 0, y = 0, z = 0 }
 	self.draw_scale = opts.draw_scale or { x = 1, y = 1 }
 	self.collider_local_id = opts.collider_local_id
 	self:set_imgid(opts.imgid)
@@ -171,26 +176,59 @@ function spritecomponent:set_imgid(imgid)
 	self.imgid = imgid
 end
 
+function spritecomponent:draw()
+	if self.imgid == nil then
+		return
+	end
+	local obj<const> = self.parent
+	local offset<const> = self.offset
+	local draw_offset<const> = self.draw_offset
+	local x<const> = obj.x + offset.x + draw_offset.x
+	local y<const> = obj.y + offset.y + draw_offset.y
+	local flip_flags = 0
+	if self.flip.flip_h then
+		flip_flags = flip_flags | 1
+	end
+	if self.flip.flip_v then
+		flip_flags = flip_flags | 2
+	end
+	local draw_scale<const> = self.draw_scale
+	local scale_x<const> = self.scale.x * draw_scale.x
+	local scale_y<const> = self.scale.y * draw_scale.y
+	if flip_flags == 0 and scale_x == 1 and scale_y == 1 then
+		gx_image.blit_img_color(self.imgid, x, y, self.color)
+		return
+	end
+	local rect<const> = gx_image.rect(self.imgid)
+	gx_image.blit_rect_affine_color(rect, x, y, rect.w * scale_x, 0.0, 0.0, rect.h * scale_y, flip_flags, self.color)
+end
+
 local tilelayercomponent<const> = {}
 tilelayercomponent.__index = tilelayercomponent
-setmetatable(tilelayercomponent, { __index = component })
+setmetatable(tilelayercomponent, { __index = visualcomponent })
 
 function tilelayercomponent.new(opts)
 	opts = opts or {}
 	opts.type_name = 'tilelayercomponent'
-	local self<const> = setmetatable(component.new(opts), tilelayercomponent)
+	local self<const> = setmetatable(visualcomponent.new(opts), tilelayercomponent)
 	self.sources = opts.sources
 	self.tile_count = opts.tile_count or 0
 	self.columns = opts.columns or 1
 	self.tile_size = opts.tile_size or 0
-	self.offset_x = opts.offset_x or 0
-	self.offset_y = opts.offset_y or 0
 	self.empty_source = opts.empty_source
-	self.visible = opts.visible
-	if self.visible == nil then
-		self.visible = true
-	end
 	return self
+end
+
+function tilelayercomponent:draw()
+	local parent<const> = self.parent
+	gx_image.tile_run_sources(
+		self.sources,
+		self.tile_count,
+		self.columns,
+		self.tile_size,
+		parent.x + self.offset.x + self.draw_offset.x,
+		parent.y + self.offset.y + self.draw_offset.y,
+		self.empty_source)
 end
 
 -- collider2dcomponent: holds hit areas / polys
@@ -689,13 +727,12 @@ end
 -- textcomponent: lightweight render descriptor
 local textcomponent<const> = {}
 textcomponent.__index = textcomponent
-setmetatable(textcomponent, { __index = component })
+setmetatable(textcomponent, { __index = visualcomponent })
 
 function textcomponent.new(opts)
 	opts = opts or {}
 	opts.type_name = 'textcomponent'
-	local self<const> = setmetatable(component.new(opts), textcomponent)
-	self.text = (opts.text)
+	local self<const> = setmetatable(visualcomponent.new(opts), textcomponent)
 	self.font = opts.font or font_module.get('default')
 	self.line_height = opts.line_height or self.font.line_height
 	self.color = opts.color or 0xffffffff
@@ -705,36 +742,89 @@ function textcomponent.new(opts)
 	self.line_widths = opts.line_widths
 	self.line_x_offsets = opts.line_x_offsets
 	self.center_block_width = opts.center_block_width
-	self.align = opts.align
-	self.baseline = opts.baseline
-	self.offset = opts.offset or { x = 0, y = 0, z = 0 }
-	self.layer = opts.layer or 0x00000000
+	self.text = nil
+	self.glyph_lines = {}
+	self.layout_line_widths = {}
+	self:set_text(opts.text)
 	return self
 end
 
-function textcomponent:render_glyphs(x, y, z, glyphs)
+function textcomponent:set_text(text)
+	self.text = text
+	local lines
+	if type(text) == 'string' then
+		if self.wrap_chars ~= nil and self.wrap_chars > 0 then
+			lines = wrap_text_lines(text, self.wrap_chars)
+		else
+			lines = { text }
+		end
+	else
+		lines = text or empty_text_lines
+	end
+	local glyph_lines<const> = self.glyph_lines
+	local layout_line_widths<const> = self.layout_line_widths
+	for i = 1, #lines do
+		local glyph_line = glyph_lines[i]
+		if glyph_line == nil then
+			glyph_line = {}
+			glyph_lines[i] = glyph_line
+		end
+		layout_line_widths[i] = font_module.write_glyph_line(self.font, lines[i], glyph_line)
+	end
+	for i = #lines + 1, #glyph_lines do
+		glyph_lines[i] = nil
+		layout_line_widths[i] = nil
+	end
+end
+
+function textcomponent:set_font(font)
+	if self.font == font then
+		return
+	end
+	self.font = font
+	self.line_height = font.line_height
+	self:set_text(self.text)
+end
+
+function textcomponent:set_wrap_chars(wrap_chars)
+	if self.wrap_chars == wrap_chars then
+		return
+	end
+	self.wrap_chars = wrap_chars
+	self:set_text(self.text)
+end
+
+function textcomponent:draw()
+	local obj<const> = self.parent
+	local offset<const> = self.offset
+	local draw_offset<const> = self.draw_offset
+	self:render(obj.x + offset.x + draw_offset.x, obj.y + offset.y + draw_offset.y, self.glyph_lines)
+end
+
+function textcomponent:render_glyphs(x, y, glyphs)
 	local cursor_y = y
 	local line_offsets<const> = self.line_offsets
-	local line_widths<const> = self.line_widths
+	local line_widths<const> = self.line_widths or self.layout_line_widths
 	local line_x_offsets<const> = self.line_x_offsets
 	local color<const> = self.color
 	for i = 1, #glyphs do
 		local line<const> = glyphs[i]
 		local line_y<const> = line_offsets ~= nil and (y + line_offsets[i]) or cursor_y
-		local line_length<const> = string.len(line)
+		local line_length<const> = #line
 		if line_length > 0 then
 			local line_x = x
 			if line_x_offsets ~= nil then
 				line_x = x + line_x_offsets[i]
 			elseif self.center_block_width ~= nil then
-				local line_width<const> = line_widths ~= nil and line_widths[i] or font_module.measure_line_width(self.font, line)
-				line_x = x + ((self.center_block_width - line_width) / 2)
+				local line_width<const> = line_widths[i]
+				line_x = x + ((self.center_block_width - line_width) // 2)
 			end
 			local cursor_x = line_x
-			font_module.for_each_glyph(self.font, line, function(glyph)
+			for glyph_index = 1, line_length do
+				local glyph<const> = line[glyph_index]
 				gx_image.blit_img_color(glyph.imgid, cursor_x, line_y, color)
 				cursor_x = cursor_x + glyph.advance
-			end)
+			end
 		end
 		if line_offsets == nil then
 			cursor_y = cursor_y + self.line_height
@@ -742,156 +832,56 @@ function textcomponent:render_glyphs(x, y, z, glyphs)
 	end
 end
 
-function textcomponent:render(x, y, z, glyphs)
+function textcomponent:render(x, y, glyphs)
 	local background_color<const> = self.background_color
 	if background_color ~= nil then
 		local cursor_y = y
 		local line_offsets<const> = self.line_offsets
-		local line_widths<const> = self.line_widths
+		local line_widths<const> = self.line_widths or self.layout_line_widths
 		local line_x_offsets<const> = self.line_x_offsets
 		for i = 1, #glyphs do
 			local line<const> = glyphs[i]
 			local line_y<const> = line_offsets ~= nil and (y + line_offsets[i]) or cursor_y
-			local line_length<const> = string.len(line)
+			local line_length<const> = #line
 			if line_length > 0 then
 				local line_x = x
 				if line_x_offsets ~= nil then
 					line_x = x + line_x_offsets[i]
 				elseif self.center_block_width ~= nil then
-					local line_width<const> = line_widths ~= nil and line_widths[i] or font_module.measure_line_width(self.font, line)
-					line_x = x + ((self.center_block_width - line_width) / 2)
+					local line_width<const> = line_widths[i]
+					line_x = x + ((self.center_block_width - line_width) // 2)
 				end
 				local cursor_x = line_x
-				font_module.for_each_glyph(self.font, line, function(glyph)
+				for glyph_index = 1, line_length do
+					local glyph<const> = line[glyph_index]
 					gx_gpu.fill_rect_color(cursor_x, line_y, cursor_x + glyph.width, line_y + glyph.height, background_color)
 					cursor_x = cursor_x + glyph.advance
-				end)
+				end
 			end
 			if line_offsets == nil then
 				cursor_y = cursor_y + self.line_height
 			end
 		end
 	end
-	self:render_glyphs(x, y, z, glyphs)
-end
-
--- meshcomponent: minimal render descriptor
-local meshcomponent<const> = {}
-meshcomponent.__index = meshcomponent
-setmetatable(meshcomponent, { __index = component })
-
-function meshcomponent.new(opts)
-	opts = opts or {}
-	opts.type_name = 'meshcomponent'
-	local self<const> = setmetatable(component.new(opts), meshcomponent)
-	self.mesh = opts.mesh
-	self.matrix = opts.matrix
-	self.joint_matrices = opts.joint_matrices
-	self.morph_weights = opts.morph_weights
-	self.receive_shadow = opts.receive_shadow
-	self.layer = opts.layer or 0x00000000
-	return self
-end
-
-
-local ambientlightcomponent<const> = {}
-ambientlightcomponent.__index = ambientlightcomponent
-setmetatable(ambientlightcomponent, { __index = component })
-
-function ambientlightcomponent.new(opts)
-	opts = opts or {}
-	opts.type_name = 'ambientlightcomponent'
-	local self<const> = setmetatable(component.new(opts), ambientlightcomponent)
-	self.color = opts.color or { r = 1, g = 1, b = 1 }
-	self.intensity = opts.intensity or 1
-	return self
-end
-
-local directionallightcomponent<const> = {}
-directionallightcomponent.__index = directionallightcomponent
-setmetatable(directionallightcomponent, { __index = component })
-
-function directionallightcomponent.new(opts)
-	opts = opts or {}
-	opts.type_name = 'directionallightcomponent'
-	local self<const> = setmetatable(component.new(opts), directionallightcomponent)
-	self.orientation = opts.orientation or { x = 0, y = -1, z = 0 }
-	self.color = opts.color or { r = 1, g = 1, b = 1 }
-	self.intensity = opts.intensity or 1
-	return self
-end
-
-local pointlightcomponent<const> = {}
-pointlightcomponent.__index = pointlightcomponent
-setmetatable(pointlightcomponent, { __index = component })
-
-function pointlightcomponent.new(opts)
-	opts = opts or {}
-	opts.type_name = 'pointlightcomponent'
-	local self<const> = setmetatable(component.new(opts), pointlightcomponent)
-	self.offset = opts.offset or { x = 0, y = 0, z = 0 }
-	self.color = opts.color or { r = 1, g = 1, b = 1 }
-	self.range = opts.range or 6
-	self.intensity = opts.intensity or 1
-	return self
+	self:render_glyphs(x, y, glyphs)
 end
 
 -- customvisualcomponent: scripted render producer
 local customvisualcomponent<const> = {}
 customvisualcomponent.__index = customvisualcomponent
-setmetatable(customvisualcomponent, { __index = component })
+setmetatable(customvisualcomponent, { __index = visualcomponent })
 
 function customvisualcomponent.new(opts)
 	opts = opts or {}
 	opts.type_name = 'customvisualcomponent'
-	local self<const> = setmetatable(component.new(opts), customvisualcomponent)
+	local self<const> = setmetatable(visualcomponent.new(opts), customvisualcomponent)
 	self.producer = opts.producer
 	return self
 end
 
-function customvisualcomponent:add_producer(fn)
-	if not fn then
-		self.producer = nil
-		return
-	end
-	local prev<const> = self.producer
-	if prev then
-		self.producer = function(parent, rc)
-			prev(parent, rc)
-			fn(parent, rc)
-		end
-	else
-		self.producer = fn
-	end
-end
-
-function customvisualcomponent:flush()
-	if not self.producer then
-		error('customvisualcomponent: no producer for "' .. self.parent.id .. '"')
-	end
+function customvisualcomponent:draw()
 	self.producer(self.parent, self)
 end
-
-function customvisualcomponent:submit_rect(rect)
-	if not rect.visible or rect.width <= 0 or rect.height <= 0 then
-		return
-	end
-	gx_gpu.fill_rect_color(rect.x, rect.y, rect.x + rect.width, rect.y + rect.height, rect.color)
-end
-
--- function customvisualcomponent:submit_poly(desc)
--- 	local points<const> = desc.points
--- 	local z<const> = desc.z
--- 	local color<const> = desc.color
--- 	local thickness<const> = desc.thickness or 1
--- 	local n<const> = #points / 2
--- 	for i = 0, n - 1 do
--- 		local x0<const> = points[i * 2 + 1]
--- 		local y0<const> = points[i * 2 + 2]
--- 		local x1<const> = points[((i + 1) % n) * 2 + 1]
--- 		local y1<const> = points[((i + 1) % n) * 2 + 2]
--- 	end
--- end
 
 -- inputintentcomponent: declarative input -> state bindings
 local inputintentcomponent<const> = {}
@@ -1135,10 +1125,6 @@ local componentregistry<const> = {
 	timelinecomponent = timelinecomponent,
 	transformcomponent = transformcomponent,
 	textcomponent = textcomponent,
-	meshcomponent = meshcomponent,
-	ambientlightcomponent = ambientlightcomponent,
-	directionallightcomponent = directionallightcomponent,
-	pointlightcomponent = pointlightcomponent,
 	customvisualcomponent = customvisualcomponent,
 	inputintentcomponent = inputintentcomponent,
 	inputactioneffectcomponent = inputactioneffectcomponent,
@@ -1163,16 +1149,13 @@ end
 
 return {
 	component = component,
+	visualcomponent = visualcomponent,
 	spritecomponent = spritecomponent,
 	tilelayercomponent = tilelayercomponent,
 	collider2dcomponent = collider2dcomponent,
 	timelinecomponent = timelinecomponent,
 	transformcomponent = transformcomponent,
 	textcomponent = textcomponent,
-	meshcomponent = meshcomponent,
-	ambientlightcomponent = ambientlightcomponent,
-	directionallightcomponent = directionallightcomponent,
-	pointlightcomponent = pointlightcomponent,
 	customvisualcomponent = customvisualcomponent,
 	inputintentcomponent = inputintentcomponent,
 	inputactioneffectcomponent = inputactioneffectcomponent,

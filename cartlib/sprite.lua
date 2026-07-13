@@ -27,18 +27,12 @@
 --    No extra setup is needed in cart code — just ensure a collider2dcomponent
 --    exists on the object before gfx() is called.
 --
--- 3. WORLD ECS AND MANUAL DRAW PATHS CAN BOTH EXIST.
---    World-managed spriteobjects are normally rendered by spriterendersystem.
---    spriteobject:draw() still matters for manual draw paths (for example
---    subsystem-owned objects or other explicit owner:draw() flows).
---
--- 4. COLLISION PROFILES: after gfx(), call apply_collision_profile().
+-- 3. COLLISION PROFILES: after gfx(), call apply_collision_profile().
 --      self:gfx('enemy')
 --      self.collider:apply_collision_profile('enemy')  -- sets layer/mask
 
 local worldobject<const> = require('cartlib/world/object')
 local components<const> = require('cartlib/components')
-local gx_image<const> = require('system/gx_image')
 local romdir<const> = require('system/romdir')
 
 local spriteobject<const> = {}
@@ -69,7 +63,6 @@ function spriteobject.new(opts)
 	self.sprite_component = components.spritecomponent.new({
 		imgid = self.imgid,
 		id_local = spriteobject.base_sprite_id,
-		layer = opts.layer,
 	})
 	self.collider = components.collider2dcomponent.new({ id_local = spriteobject.primary_collider_id })
 
@@ -98,46 +91,6 @@ function spriteobject:gfx(id, meta)
 	else
 		apply_image_metadata(self, id)
 	end
-end
-
-function spriteobject:draw()
-	if not self.visible then
-		return
-	end
-	local sc<const> = self.sprite_component
-	if sc.imgid == nil then
-		return
-	end
-	local offset<const> = sc.offset
-	local draw_offset<const> = sc.draw_offset
-	local flip_flags = 0
-	if sc.flip.flip_h then
-		flip_flags = flip_flags | 1
-	end
-	if sc.flip.flip_v then
-		flip_flags = flip_flags | 2
-	end
-	local draw_scale<const> = sc.draw_scale
-	local x<const> = self.x + offset.x + draw_offset.x
-	local y<const> = self.y + offset.y + draw_offset.y
-	local scale_x<const> = sc.scale.x * draw_scale.x
-	local scale_y<const> = sc.scale.y * draw_scale.y
-	if flip_flags == 0 and scale_x == 1 and scale_y == 1 then
-		gx_image.blit_img_color(sc.imgid, x, y, sc.color)
-		return
-	end
-	local rect<const> = gx_image.rect(sc.imgid)
-	gx_image.blit_rect_affine_color(
-		rect,
-		x,
-		y,
-		rect.w * scale_x,
-		0.0,
-		0.0,
-		rect.h * scale_y,
-		flip_flags,
-		sc.color
-	)
 end
 
 return spriteobject

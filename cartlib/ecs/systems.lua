@@ -1,7 +1,6 @@
 -- ecs_systems.lua
 -- built-in ecs systems for the system ROM runtime
 
-local wrap_text_lines<const> = require('bios/util/wrap_text_lines').wrap_text_lines
 --
 -- DESIGN PRINCIPLES — collision handling via overlap2dsystem
 --
@@ -59,29 +58,17 @@ local clear_map<const> = require('bios/util/clear_map')
 local collision2d<const> = require('cartlib/collision2d')
 local scratchrecordbatch<const> = require('bios/util/scratchrecordbatch')
 local world_instance<const> = require('cartlib/world/index').instance
-local gx_image<const> = require('system/gx_image')
 
 local tickgroup<const> = ecs.tickgroup
 local ecsystem<const> = ecs.ecsystem
 
-local spritecomponent<const> = 'spritecomponent'
-local tilelayercomponent<const> = 'tilelayercomponent'
 local timelinecomponent<const> = 'timelinecomponent'
-local textcomponent<const> = 'textcomponent'
-local meshcomponent<const> = 'meshcomponent'
-local ambientlightcomponent<const> = 'ambientlightcomponent'
-local directionallightcomponent<const> = 'directionallightcomponent'
-local pointlightcomponent<const> = 'pointlightcomponent'
-local customvisualcomponent<const> = 'customvisualcomponent'
 local collider2dcomponent<const> = 'collider2dcomponent'
 local positionupdateaxiscomponent<const> = 'positionupdateaxiscomponent'
 local screenboundarycomponent<const> = 'screenboundarycomponent'
 local tilecollisioncomponent<const> = 'tilecollisioncomponent'
 local prohibitleavingscreencomponent<const> = 'prohibitleavingscreencomponent'
 local actioneffectcomponent<const> = 'actioneffectcomponent'
-local render_scratch_items<const> = scratchrecordbatch.new(2):reserve(2)
-local mesh_render_options<const> = render_scratch_items[1]
-local point_light_position<const> = render_scratch_items[2]
 
 local behaviortreesystem<const> = {}
 behaviortreesystem.__index = behaviortreesystem
@@ -461,214 +448,21 @@ function timelinesystem:update(dt_ms)
 	end
 end
 
-local tilelayerrendersystem<const> = {}
-tilelayerrendersystem.__index = tilelayerrendersystem
-setmetatable(tilelayerrendersystem, { __index = ecsystem })
+local visualrendersystem<const> = {}
+visualrendersystem.__index = visualrendersystem
+setmetatable(visualrendersystem, { __index = ecsystem })
 
-function tilelayerrendersystem.new(priority)
-	return setmetatable(ecsystem.new(tickgroup.presentation, priority), tilelayerrendersystem)
+function visualrendersystem.new(priority)
+	return setmetatable(ecsystem.new(tickgroup.presentation, priority), visualrendersystem)
 end
 
-function tilelayerrendersystem:update()
-	local components<const> = world_instance.active_space.active_components_by_type[tilelayercomponent]
+function visualrendersystem:update()
+	world_instance:sort_active_visuals()
+	local components<const> = world_instance.active_space.active_visual_components
 	for i = 1, #components do
-		local layer<const> = components[i]
-		if not layer.visible then
-			goto continue_tile_layer
-		end
-		local parent<const> = layer.parent
-		gx_image.tile_run_sources(
-			layer.sources,
-			layer.tile_count,
-			layer.columns,
-			layer.tile_size,
-			parent.x + layer.offset_x,
-			parent.y + layer.offset_y,
-			layer.empty_source)
-		::continue_tile_layer::
-	end
-end
-
-local textrendersystem<const> = {}
-textrendersystem.__index = textrendersystem
-setmetatable(textrendersystem, { __index = ecsystem })
-
-function textrendersystem.new(priority)
-	local self<const> = setmetatable(ecsystem.new(tickgroup.presentation, priority), textrendersystem)
-	return self
-end
-
-function textrendersystem:update()
-	local components<const> = world_instance.active_space.active_components_by_type[textcomponent]
-	for i = 1, #components do
-		local tc<const> = components[i]
-		tc:prepare_render()
-		local obj<const> = tc.parent
-		local offset<const> = tc.offset
-		local glyphs<const> = tc.text
-		local lines = glyphs
-		if type(glyphs) == 'string' then
-			if tc.wrap_chars ~= nil and tc.wrap_chars > 0 then
-				lines = wrap_text_lines(glyphs, tc.wrap_chars)
-			else
-				lines = { glyphs }
-			end
-		end
-		tc:render(obj.x + offset.x, obj.y + offset.y, obj.z + offset.z, lines)
-	end
-end
-
-local spriterendersystem<const> = {}
-spriterendersystem.__index = spriterendersystem
-setmetatable(spriterendersystem, { __index = ecsystem })
-
-local sprite_depth_less<const> = function(a, b)
-	local a_depth<const> = a.parent.z + a.offset.z + a.draw_offset.z
-	local b_depth<const> = b.parent.z + b.offset.z + b.draw_offset.z
-	if a_depth ~= b_depth then
-		return a_depth < b_depth
-	end
-	return a._active_component_index < b._active_component_index
-end
-
-function spriterendersystem.new(priority)
-	local self<const> = setmetatable(ecsystem.new(tickgroup.presentation, priority), spriterendersystem)
-	return self
-end
-
-function spriterendersystem:update()
-	local components<const> = world_instance.active_space.active_components_by_type[spritecomponent]
-	table.sort(components, sprite_depth_less)
-	for i = 1, #components do
-		components[i]._active_component_index = i
-	end
-	for i = 1, #components do
-		local sc<const> = components[i]
-		local obj<const> = sc.parent
-		if not obj.visible or sc.imgid == nil then
-			goto continue_sprite_render
-		end
-		local offset<const> = sc.offset
-		local draw_offset<const> = sc.draw_offset
-		local x<const> = obj.x + offset.x + draw_offset.x
-		local y<const> = obj.y + offset.y + draw_offset.y
-		local flip_flags = 0
-		if sc.flip.flip_h then
-			flip_flags = flip_flags | 1
-		end
-		if sc.flip.flip_v then
-			flip_flags = flip_flags | 2
-		end
-		local draw_scale<const> = sc.draw_scale
-		local scale_x<const> = sc.scale.x * draw_scale.x
-		local scale_y<const> = sc.scale.y * draw_scale.y
-		if flip_flags == 0 and scale_x == 1 and scale_y == 1 then
-			gx_image.blit_img_color(sc.imgid, x, y, sc.color)
-			goto continue_sprite_render
-		end
-		local rect<const> = gx_image.rect(sc.imgid)
-		gx_image.blit_rect_affine_color(rect, x, y, rect.w * scale_x, 0.0, 0.0, rect.h * scale_y, flip_flags, sc.color)
-		::continue_sprite_render::
-	end
-end
-
-local resolve_world_position<const> = function(obj, offset)
-	local x
-	local y
-	local z
-	local t<const> = obj.transform_component
-	if t then
-		x = t.position.x + offset.x
-		y = t.position.y + offset.y
-		z = t.position.z + offset.z
-	else
-		x = obj.x + offset.x
-		y = obj.y + offset.y
-		z = obj.z + offset.z
-	end
-	return x, y, z
-end
-
-local lightrendersystem<const> = {}
-lightrendersystem.__index = lightrendersystem
-setmetatable(lightrendersystem, { __index = ecsystem })
-
-function lightrendersystem.new(priority)
-	local self<const> = setmetatable(ecsystem.new(tickgroup.presentation, priority), lightrendersystem)
-	return self
-end
-
-function lightrendersystem:update()
-	local ambient_components<const> = world_instance.active_space.active_components_by_type[ambientlightcomponent]
-	for i = 1, #ambient_components do
-		local lc<const> = ambient_components[i]
-		local obj<const> = lc.parent
-		if obj.visible then
-			-- put_ambient_light(lc.id, lc.color, lc.intensity)
-		end
-	end
-
-	local directional_components<const> = world_instance.active_space.active_components_by_type[directionallightcomponent]
-	for i = 1, #directional_components do
-		local lc<const> = directional_components[i]
-		local obj<const> = lc.parent
-		if obj.visible then
-			-- put_directional_light(lc.id, lc.orientation, lc.color, lc.intensity)
-		end
-	end
-
-	local point_components<const> = world_instance.active_space.active_components_by_type[pointlightcomponent]
-	for i = 1, #point_components do
-		local lc<const> = point_components[i]
-		local obj<const> = lc.parent
-		if obj.visible then
-			local x<const>, y<const>, z<const> = resolve_world_position(obj, lc.offset)
-			point_light_position.x = x
-			point_light_position.y = y
-			point_light_position.z = z
-			-- put_point_light(lc.id, point_light_position, lc.color, lc.range, lc.intensity)
-		end
-	end
-end
-
-local meshrendersystem<const> = {}
-meshrendersystem.__index = meshrendersystem
-setmetatable(meshrendersystem, { __index = ecsystem })
-
-function meshrendersystem.new(priority)
-	local self<const> = setmetatable(ecsystem.new(tickgroup.presentation, priority), meshrendersystem)
-	return self
-end
-
-function meshrendersystem:update()
-	local components<const> = world_instance.active_space.active_components_by_type[meshcomponent]
-	for i = 1, #components do
-		local mc<const> = components[i]
-		local obj<const> = mc.parent
-		if obj.visible then
-			mesh_render_options.joint_matrices = mc.joint_matrices
-			mesh_render_options.morph_weights = mc.morph_weights
-			mesh_render_options.receive_shadow = mc.receive_shadow
-		end
-	end
-end
-
-local rendersubmitsystem<const> = {}
-rendersubmitsystem.__index = rendersubmitsystem
-setmetatable(rendersubmitsystem, { __index = ecsystem })
-
-function rendersubmitsystem.new(priority)
-	local self<const> = setmetatable(ecsystem.new(tickgroup.presentation, priority), rendersubmitsystem)
-	return self
-end
-
-function rendersubmitsystem:update()
-	local components<const> = world_instance.active_space.active_components_by_type[customvisualcomponent]
-	for i = 1, #components do
-		local rc<const> = components[i]
-		local obj<const> = rc.parent
-		if obj.visible then
-			rc:flush()
+		local component<const> = components[i]
+		if component.parent.visible and component.visible then
+			component:draw()
 		end
 	end
 end
@@ -682,10 +476,5 @@ return {
 	tilecollisionsystem = tilecollisionsystem,
 	overlap2dsystem = overlap2dsystem,
 	timelinesystem = timelinesystem,
-	tilelayerrendersystem = tilelayerrendersystem,
-	textrendersystem = textrendersystem,
-	spriterendersystem = spriterendersystem,
-	lightrendersystem = lightrendersystem,
-	meshrendersystem = meshrendersystem,
-	rendersubmitsystem = rendersubmitsystem,
+	visualrendersystem = visualrendersystem,
 }

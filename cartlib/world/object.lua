@@ -204,6 +204,7 @@ function worldobject:add_component(comp)
 	if comp.unique and #bucket > 0 then
 		error('component "' .. (comp.type_name or key) .. '" is unique and already attached to "' .. self.id .. '"')
 	end
+	comp._attached = true
 	table.insert(self.components, comp)
 	bucket[#bucket + 1] = comp
 	comp:bind()
@@ -317,6 +318,7 @@ function worldobject:remove_components(type_name)
 end
 
 function worldobject:remove_component_instance(comp)
+	comp._attached = false
 	local key<const> = component_key(comp.type_name or comp)
 	local list<const> = self.component_map[key]
 	if list then

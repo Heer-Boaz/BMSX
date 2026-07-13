@@ -49,37 +49,7 @@ function subsystemanimationsystem:update(dt_ms)
 	owner.timelines:update(dt_ms)
 end
 
-local subsystempresentationsystem<const> = {}
-subsystempresentationsystem.__index = subsystempresentationsystem
-setmetatable(subsystempresentationsystem, { __index = ecsystem })
-
-function subsystempresentationsystem.new(owner)
-	local self<const> = setmetatable(ecsystem.new(tickgroup.presentation, owner.presentation_priority), subsystempresentationsystem)
-	self.owner = owner
-	self.__ecs_id = 'subsystem_presentation:' .. owner.id
-	self.name = 'subsystem_presentation:' .. owner.id
-	self.id = 'ecs:subsystem_presentation:' .. owner.id
-	self.type_name = 'ecsystem'
-	return self
-end
-
-function subsystempresentationsystem:update()
-	local owner<const> = self.owner
-	if not owner.active or not owner.visible then
-		return
-	end
-	owner:draw()
-end
-
-local create_presentation_system<const> = function(owner)
-	if owner.draw == nil then
-		return nil
-	end
-	return subsystempresentationsystem.new(owner)
-end
-
 return {
 	create_update_system = subsystemupdatesystem.new,
 	create_animation_system = subsystemanimationsystem.new,
-	create_presentation_system = create_presentation_system,
 }

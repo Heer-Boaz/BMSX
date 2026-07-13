@@ -138,7 +138,7 @@ local spawn_enemies<const> = function(room)
 				local obj<const> = inst('enemy.' .. def.kind, {
 					id = def.id,
 					space_id = 'main',
-					pos = { x = def.x, y = def.y, z = 140 },
+					pos = { x = def.x, y = def.y, z = def.draw_z },
 					trigger = def.trigger,
 					conditions = def.conditions,
 					damage = def.damage,

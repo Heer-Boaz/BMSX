@@ -112,6 +112,9 @@ combat_hit_slash_peak_scale = 1.45
 combat_hit_slash_visibility = 0.9
 combat_hit_slash_taper_floor = 0.3
 combat_hit_slash_z = 650
+director_visual_z = 850
+combat_maya_z = 300
+combat_results_maya_z = 900
 
 combat_dodge_timeline_id = 'combat_dodge'
 combat_dodge_frame_count = 22
@@ -237,11 +240,11 @@ function show_background(id)
 end
 
 function reset_text_colors()
-	oget(text_main_id).text_color = p3_white_color
-	oget(text_choice_id).text_color = p3_white_color
-	oget(text_prompt_id).text_color = p3_white_color
-	oget(text_transition_id).text_color = p3_ink_color
-	oget(text_results_id).text_color = p3_white_color
+	oget(text_main_id).text_component.color = p3_white_color
+	oget(text_choice_id).text_component.color = p3_white_color
+	oget(text_prompt_id).text_component.color = p3_white_color
+	oget(text_transition_id).text_component.color = p3_ink_color
+	oget(text_results_id).text_component.color = p3_white_color
 end
 
 function hide_transition_layers()

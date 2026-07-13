@@ -247,34 +247,11 @@ Nog te sluiten:
   op echte DMA-completion synchroniseren. Geen hogere fictieve GPU-klok,
   captureverschuiving, cartpolling of nieuwe waitwrapper.
 
-## Cartlib visual submission en steady-frame allocaties
+## Cartlib collision submission en steady-frame allocaties
 
-Status: open; de eerdere sprite-only z-sortering is geen volledige painter's-
-orderowner.
+Status: open.
 
-- De presentationpipeline hardcodeert nog afzonderlijke tile-, sprite-, custom-,
-  text- en meshstages. Alleen de spritebucket sorteert op effectieve z; text,
-  custom en tiles kunnen dus niet op z tussen sprites vallen. De stageprioriteiten
-  zijn dezelfde afgewezen kind-volgorde in een andere vorm.
-- Equal-z gebruikt de actuele bucketindex als tie-break. Omdat componentverwijdering
-  swap-remove gebruikt, kan een siblingremove de volgorde van verder ongewijzigde
-  visuals veranderen. Spawnvolgorde moet een eigen stabiele activation sequence
-  zijn.
-- Iedere space moet één retained actieve visuallijst bezitten. Add/remove houdt
-  die lijst en de stabiele sequence bij; één visualrendersystem gebruikt de
-  bestaande BIOS-`table.sort`, waarvan de ordered pre-pass een reeds gesorteerde
-  lijst lineair afhandelt. Componenten tekenen polymorf vanaf dezelfde depth-
-  norm; geen kindmap, tweede displaylist of per-framelijst.
-- Text maakt nu bij onveranderde strings nog per frame line-tables, closures en
-  per-glyph substrings. Layout, wrap, widths en glyphrefs moeten bij text/font/
-  wrapmutatie retained worden opgebouwd; steady presentation loopt alleen die
-  arrays af. `cartlib/font.lua` dupliceert bovendien byte-identiek de centrale
-  system-fontowner en moet verdwijnen.
-- `spritecomponent.colorize` is dode legacy float-DTO-state: de GX-submitters
-  consumeren alleen het packed `color`-word, terwijl Pietious hit-blink en
-  Nootfoevarianten nog `colorize` muteren. Producers moeten direct het packed GX-
-  modulatiecolor schrijven; geen rendererfallback of lokale colorconverter.
-- Dezelfde ziekte zit in physics: `collision2d.collect_overlaps` busy-pollt per
+- `collision2d.collect_overlaps` busy-pollt per
   physicsframe de GEO-completionflags, waarna `overlap2dsystem` retained pairrows
   juist weggooit en voor iedere begin/stay-pair nieuwe rows en vier event-DTO's
   bouwt. Submit/completion hoort aan de GEO IRQ/HALT-grens; pairhistory, rows en

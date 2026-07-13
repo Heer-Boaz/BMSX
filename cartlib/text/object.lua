@@ -6,28 +6,44 @@ local components<const> = require('cartlib/components')
 local fsmlibrary<const> = require('cartlib/fsm/library')
 local wrap_text_lines<const> = require('bios/util/wrap_text_lines').wrap_text_lines
 local gx_gpu<const> = require('system/gx_gpu')
-local font_module<const> = require('cartlib/font')
+local font_module<const> = require('system/font')
 local smoothstep<const> = require('bios/easing').smoothstep
 
 local textobject<const> = {}
 textobject.__index = textobject
 setmetatable(textobject, { __index = worldobject })
 
+local textobjectcomponent<const> = {}
+textobjectcomponent.__index = textobjectcomponent
+setmetatable(textobjectcomponent, { __index = components.textcomponent })
+
+function textobjectcomponent.new(opts)
+	return setmetatable(components.textcomponent.new(opts), textobjectcomponent)
+end
+
+function textobjectcomponent:render(x, y, glyphs)
+	local owner<const> = self.parent
+	owner:submit_highlight()
+	if self.background_color ~= nil then
+		owner:submit_text_background_lines(x, y, glyphs)
+	end
+	components.textcomponent.render_glyphs(self, x, y, glyphs)
+end
+
 local highlight_move_timeline_id<const> = 'hmove'
 local highlight_vibe_timeline_id<const> = 'hvibe'
-local typing_timeline_id<const> = 'type'
 local textobject_fsm_id<const> = 'textobject'
 local textobject_state_idle<const> = 'idle'
 local textobject_state_typing<const> = 'typing'
 local typing_command_start<const> = 'type.start'
 local typing_command_step<const> = 'type.step'
 local typing_command_reveal<const> = 'type.reveal'
+local empty_text<const> = {}
+local immediate_text_opts<const> = { typed = false, snap = true }
 local highlight_move_in_frames<const> = 6
 local highlight_move_settle_frames<const> = 3
 local highlight_move_overshoot<const> = 0.12
 local highlight_move_ticks_per_frame<const> = 12
-local typing_step_emit_char<const> = 1
-local typing_step_finish_line<const> = 2
 local state_tags<const> = {
 	variant = {
 		idle = 'v.i',
@@ -37,10 +53,6 @@ local state_tags<const> = {
 		typing = 'g.t',
 	},
 }
-
-local measure_line_width<const> = function(font, line)
-	return font_module.measure_line_width(font, line)
-end
 
 local append_wrapped_logical_line<const> = function(wrapped_lines, wrapped_line_to_logical_line, logical_line_index, line, max_chars)
 	if string.len(line) == 0 then
@@ -112,27 +124,6 @@ local build_wrapped_lines<const> = function(text_or_lines, max_chars)
 	return wrapped_lines, wrapped_line_to_logical_line
 end
 
-local build_typing_steps<const> = function(lines)
-	local steps<const> = {}
-	for line_index = 1, #lines do
-		local line<const> = lines[line_index]
-		local line_length<const> = string.len(line)
-		for char_index = 1, line_length do
-			steps[#steps + 1] = {
-				op = typing_step_emit_char,
-				l = line_index,
-				c = char_index,
-				v = string.sub(line, char_index, char_index),
-			}
-		end
-		steps[#steps + 1] = {
-			op = typing_step_finish_line,
-			l = line_index,
-		}
-	end
-	return steps
-end
-
 local build_highlight_move_frames<const> = function(params)
 	local frames<const> = {}
 	local from_y<const> = params.from_y
@@ -181,12 +172,19 @@ local build_wrapped_line_y_offsets<const> = function(font, blank_lines, wrapped_
 	return wrapped_line_y_offsets
 end
 
-local build_line_widths<const> = function(font, lines)
-	local widths<const> = {}
+local write_glyph_lines<const> = function(font, lines, glyph_lines, widths)
 	for i = 1, #lines do
-		widths[i] = measure_line_width(font, lines[i])
+		local glyphs = glyph_lines[i]
+		if glyphs == nil then
+			glyphs = {}
+			glyph_lines[i] = glyphs
+		end
+		widths[i] = font_module.write_glyph_line(font, lines[i], glyphs)
 	end
-	return widths
+	for i = #lines + 1, #glyph_lines do
+		glyph_lines[i] = nil
+		widths[i] = nil
+	end
 end
 
 fsmlibrary.register(textobject_fsm_id, {
@@ -260,34 +258,12 @@ fsmlibrary.register(textobject_fsm_id, {
 		},
 		[textobject_state_typing] = {
 			tags = { state_tags.variant.typing },
-			entering_state = function(self)
-				self:play_timeline(typing_timeline_id, {
-					rewind = true,
-					snap_to_start = false,
-					params = self.full_text_lines,
-				})
-			end,
-			timelines = {
-				[typing_timeline_id] = {
-					def = {
-						frames = build_typing_steps,
-						playback_mode = 'once',
-						autotick = false,
-					},
-					autoplay = false,
-					stop_on_exit = true,
-					on_frame = function(self, _state, event)
-						self:apply_typing_step(event.frame_value)
-					end,
-					on_end = function(self)
-						self:finish_typing()
-						return '/' .. textobject_state_idle
-					end,
-				},
-			},
 			on = {
 				[typing_command_step] = function(self)
-					self:advance_timeline(typing_timeline_id)
+					if self:advance_typing() then
+						self:finish_typing()
+						return '/' .. textobject_state_idle
+					end
 				end,
 			},
 		},
@@ -303,7 +279,8 @@ function textobject.new(opts)
 	self.text = { '' }
 	self.full_text_lines = { '' }
 	self.full_text_line_widths = { 0 }
-	self.displayed_lines = { '' }
+	self.full_glyph_lines = {}
+	self.display_glyph_lines = {}
 	self.displayed_line_widths = { 0 }
 	self.current_line_index = 0
 	self.current_char_index = 0
@@ -317,64 +294,54 @@ function textobject.new(opts)
 	self.highlight_move_enabled = false
 	self.highlight_pulse_enabled = false
 	self.highlight_jitter_enabled = false
-	self.layer = opts.layer or 0x00000001
 	self.highlight_vibe_scale = 1
 	self.highlight_vibe_offset_x = 0
 	self.highlight_vibe_offset_y = 0
 	self.wrapped_line_to_logical_line = {}
 	self.wrapped_line_y_offsets = { 0 }
-	self.text_color = opts.text_color or 0xffffffff
-	self.normal_bg_color = opts.normal_bg_color or 0xff000000
 	self.highlight_bg_color = opts.highlight_bg_color or 0xff000080
-	self.font = opts.font or font_module.get('default')
+	local font<const> = opts.font or font_module.get('default')
 	local dimensions = opts.dimensions
 	if not dimensions then
 		local width<const>, height<const> = gx_gpu.display_size()
 		dimensions = { left = 0, top = 0, right = width, bottom = height }
 	end
 	self.dimensions = dimensions
-	self.centered_block_x = 0
-	self.char_width = opts.char_width or self.font.glyphs['a'].width
+	self.char_width_uses_font = opts.char_width == nil
+	self.char_width = opts.char_width or font.glyphs['a'].width
 	self.blank_lines = opts.blank_lines or 0
-	self.line_height = line_advance(self.font, self.blank_lines)
-	self.text_offset = { x = 0, y = self.dimensions.top, z = 1 }
-	self:set_dimensions(self.dimensions)
-	self.text_component = components.textcomponent.new({
-			text = self.text,
-			font = self.font,
-			line_height = self.line_height,
+	local line_height<const> = line_advance(font, self.blank_lines)
+	self.text_component = textobjectcomponent.new({
+			text = nil,
+			font = font,
+			line_height = line_height,
 			line_offsets = self.wrapped_line_y_offsets,
 			line_widths = self.displayed_line_widths,
-			color = self.text_color,
-			background_color = self.normal_bg_color,
-			offset = self.text_offset,
-		layer = self.layer,
+			color = opts.text_color or 0xffffffff,
+			background_color = opts.normal_bg_color or 0xff000000,
+			offset = { x = 0, y = self.dimensions.top, z = 1 },
 	})
-	self.text_component.prepare_render = function()
-		self:sync_text_component()
-	end
-	self.text_component.render = function(tc, x, y, z, glyphs)
-		self:submit_text_lines(tc, x, y, z, glyphs)
-	end
 	self:add_component(self.text_component)
-	self.custom_visual = components.customvisualcomponent.new({
-		producer = function()
-			self:submit_highlight()
-		end,
-	})
-	self:add_component(self.custom_visual)
-	self:sync_text_component()
+	self:set_dimensions(self.dimensions)
 	return self
+end
+
+function textobject:onspawn(_pos)
+	self:position_text_component()
 end
 
 function textobject:set_dimensions(rect)
 	self.dimensions = rect
 	self.maximum_characters_per_line = (rect.right - rect.left) // self.char_width
-	self.text_offset.y = rect.top - self.y
-	self:recenter_text_block()
+	self:rebuild_text_layout()
+	if self:is_typing() then
+		self:reset_typing_buffer()
+	else
+		self:apply_full_text()
+	end
 end
 
-function textobject:recenter_text_block()
+function textobject:position_text_component()
 	local longest = 0
 	local widths<const> = self.full_text_line_widths
 	for i = 1, #widths do
@@ -383,13 +350,18 @@ function textobject:recenter_text_block()
 			longest = width
 		end
 	end
-	self.centered_block_x = ((self.dimensions.right - self.dimensions.left) - longest) / 2 + self.dimensions.left
+	local dimensions<const> = self.dimensions
+	self.text_component.offset.x = ((dimensions.right - dimensions.left) - longest) / 2 + dimensions.left - self.x
+	self.text_component.offset.y = dimensions.top - self.y
 end
 
-function textobject:update_displayed_text()
-	self.text = self.displayed_lines
-	self.text_component.text = self.displayed_lines
-	self.text_component.line_widths = self.displayed_line_widths
+function textobject:rebuild_text_layout()
+	self.full_text_lines, self.wrapped_line_to_logical_line = build_wrapped_lines(self.text, self.maximum_characters_per_line)
+	write_glyph_lines(self.text_component.font, self.full_text_lines, self.full_glyph_lines, self.full_text_line_widths)
+	self.wrapped_line_y_offsets = build_wrapped_line_y_offsets(self.text_component.font, self.blank_lines, self.wrapped_line_to_logical_line)
+	self.text_component.line_offsets = self.wrapped_line_y_offsets
+	self:position_text_component()
+	self:update_highlight_animation()
 end
 
 function textobject:compute_highlight_block()
@@ -411,11 +383,12 @@ function textobject:compute_highlight_block()
 	if first == nil then
 		return nil
 	end
-	local highlight_padding_y<const> = (self.line_height - self.font.line_height) / 2
+	local font<const> = self.text_component.font
+	local highlight_padding_y<const> = (self.text_component.line_height - font.line_height) / 2
 	local first_y<const> = self.wrapped_line_y_offsets[first]
 	local last_y<const> = self.wrapped_line_y_offsets[last]
 	local y<const> = self.dimensions.top + first_y - highlight_padding_y
-	local h<const> = (last_y - first_y) + self.font.line_height + (highlight_padding_y * 2)
+	local h<const> = (last_y - first_y) + font.line_height + (highlight_padding_y * 2)
 	return y, h
 end
 
@@ -466,17 +439,25 @@ function textobject:update_highlight_animation()
 	end
 end
 
-function textobject:set_text(text_or_lines, opts)
-	opts = opts or {}
-	local typed = opts.typed
-	local snap<const> = (opts.snap)
-	if typed == nil then
-		typed = true
+function textobject:set_highlighted_line(index)
+	if self.highlighted_line_index == index then
+		return
 	end
-	self.full_text_lines, self.wrapped_line_to_logical_line = build_wrapped_lines(text_or_lines, self.maximum_characters_per_line)
-	self.full_text_line_widths = build_line_widths(self.font, self.full_text_lines)
-	self.wrapped_line_y_offsets = build_wrapped_line_y_offsets(self.font, self.blank_lines, self.wrapped_line_to_logical_line)
-	self:recenter_text_block()
+	self.highlighted_line_index = index
+	self:update_highlight_animation()
+end
+
+function textobject:set_text(text_or_lines, opts)
+	local typed = true
+	local snap
+	if opts ~= nil then
+		if opts.typed ~= nil then
+			typed = opts.typed
+		end
+		snap = opts.snap
+	end
+	self.text = text_or_lines
+	self:rebuild_text_layout()
 	if typed and not snap then
 		self:reset_typing_buffer()
 		self:dispatch_command(typing_command_start)
@@ -485,58 +466,85 @@ function textobject:set_text(text_or_lines, opts)
 	self:reveal_text()
 end
 
+function textobject:set_font(font)
+	self.text_component.font = font
+	self.text_component.line_height = line_advance(font, self.blank_lines)
+	if self.char_width_uses_font then
+		self.char_width = font.glyphs['a'].width
+	end
+	self.maximum_characters_per_line = (self.dimensions.right - self.dimensions.left) // self.char_width
+	self:rebuild_text_layout()
+	if self:is_typing() then
+		self:reset_typing_buffer()
+	else
+		self:apply_full_text()
+	end
+end
+
 function textobject:clear_text()
-	self:set_text({}, { typed = false, snap = true })
-	self.highlighted_line_index = nil
+	self:set_text(empty_text, immediate_text_opts)
+	self:set_highlighted_line(nil)
 end
 
 function textobject:reset_typing_buffer()
-	self.displayed_lines = {}
-	self.displayed_line_widths = {}
+	local glyph_lines<const> = self.display_glyph_lines
+	local line_widths<const> = self.displayed_line_widths
 	for i = 1, #self.full_text_lines do
-		self.displayed_lines[i] = ''
-		self.displayed_line_widths[i] = 0
+		local line = glyph_lines[i]
+		if line == nil then
+			line = {}
+			glyph_lines[i] = line
+		end
+		for glyph_index = 1, #line do
+			line[glyph_index] = nil
+		end
+		line_widths[i] = 0
+	end
+	for i = #self.full_text_lines + 1, #glyph_lines do
+		glyph_lines[i] = nil
+		line_widths[i] = nil
 	end
 	self.current_line_index = 0
 	self.current_char_index = 0
-	self:update_displayed_text()
+	self.text_component.glyph_lines = glyph_lines
+	self.text_component.line_widths = line_widths
 end
 
 function textobject:apply_full_text()
-	self.displayed_lines = {}
-	self.displayed_line_widths = {}
-	for i = 1, #self.full_text_lines do
-		self.displayed_lines[i] = self.full_text_lines[i]
-		self.displayed_line_widths[i] = self.full_text_line_widths[i]
-	end
 	self.current_line_index = #self.full_text_lines
 	self.current_char_index = 0
-	self:update_displayed_text()
+	self.text_component.glyph_lines = self.full_glyph_lines
+	self.text_component.line_widths = self.full_text_line_widths
 end
 
 function textobject:reveal_text()
 	self:dispatch_command(typing_command_reveal)
 end
 
-function textobject:apply_typing_step(step)
-	if step.op == typing_step_emit_char then
-		self.current_line_index = step.l - 1
-		self.current_char_index = step.c
-		self.displayed_lines[step.l] = self.displayed_lines[step.l] .. step.v
-		self.displayed_line_widths[step.l] = self.displayed_line_widths[step.l] + (self.font.glyphs[step.v] or self.font.glyphs['?']).advance
-		self:update_displayed_text()
-		self.events:emit('char', { char = step.v, lineindex = step.l - 1, charindex = step.c - 1 })
-		return
+function textobject:advance_typing()
+	local line_index = self.current_line_index
+	if line_index == 0 then
+		line_index = 1
 	end
-	self.current_line_index = step.l
+	local char_index<const> = self.current_char_index + 1
+	local source_glyphs<const> = self.full_glyph_lines[line_index]
+	if char_index <= #source_glyphs then
+		self.current_line_index = line_index
+		self.current_char_index = char_index
+		local glyph<const> = source_glyphs[char_index]
+		local display_glyphs<const> = self.display_glyph_lines[line_index]
+		display_glyphs[#display_glyphs + 1] = glyph
+		self.displayed_line_widths[line_index] = self.displayed_line_widths[line_index] + glyph.advance
+		return false
+	end
+	self.current_line_index = line_index + 1
 	self.current_char_index = 0
-	self:update_displayed_text()
+	return self.current_line_index > #self.full_text_lines
 end
 
 function textobject:finish_typing()
 	self.current_line_index = #self.full_text_lines
 	self.current_char_index = 0
-	self.events:emit('done', { totallines = #self.full_text_lines })
 end
 
 function textobject:is_typing()
@@ -547,20 +555,7 @@ function textobject:type_next()
 	self:dispatch_command(typing_command_step)
 end
 
-function textobject:sync_text_component()
-	self.text_offset.x = self.centered_block_x - self.x
-	self.text_offset.y = self.dimensions.top - self.y
-	self.text_component.text = self.text
-	self.text_component.font = self.font
-	self.text_component.line_height = self.line_height
-	self.text_component.line_offsets = self.wrapped_line_y_offsets
-	self.text_component.line_widths = self.displayed_line_widths
-	self.text_component.color = self.text_color
-	self.text_component.background_color = self.normal_bg_color
-	self.text_component.layer = self.layer
-end
-
-function textobject:submit_text_background_lines(x, y, z, glyphs)
+function textobject:submit_text_background_lines(x, y, glyphs)
 	local tc<const> = self.text_component
 	local highlighted_logical_line<const> = self.highlighted_line_index
 	local skip_logical_line<const> = highlighted_logical_line ~= nil and (highlighted_logical_line + 1) or 0
@@ -571,14 +566,14 @@ function textobject:submit_text_background_lines(x, y, z, glyphs)
 	local cursor_y = y
 	for i = 1, #glyphs do
 		local line<const> = glyphs[i]
-		if string.len(line) > 0 and wrapped_line_to_logical_line[i] ~= skip_logical_line then
+		if #line > 0 and wrapped_line_to_logical_line[i] ~= skip_logical_line then
 			local line_y<const> = line_offsets ~= nil and (y + line_offsets[i]) or cursor_y
 			local line_x = x
 			local line_width<const> = line_widths[i]
 			if tc.line_x_offsets ~= nil then
 				line_x = x + tc.line_x_offsets[i]
 			elseif tc.center_block_width ~= nil then
-				line_x = x + ((tc.center_block_width - line_width) / 2)
+					line_x = x + ((tc.center_block_width - line_width) // 2)
 			end
 			gx_gpu.fill_rect_color(line_x, line_y, line_x + line_width, line_y + tc.font.line_height, background_color)
 		end
@@ -588,15 +583,7 @@ function textobject:submit_text_background_lines(x, y, z, glyphs)
 	end
 end
 
-function textobject:submit_text_lines(tc, x, y, z, glyphs)
-	if tc.background_color ~= nil then
-		self:submit_text_background_lines(x, y, z - 1, glyphs)
-	end
-	components.textcomponent.render_glyphs(tc, x, y, z, glyphs)
-end
-
 function textobject:submit_highlight()
-	self:update_highlight_animation()
 	local dims<const> = self.dimensions
 	local highlighted_logical_line<const> = self.highlighted_line_index
 	if highlighted_logical_line ~= nil and self.highlight_anim_y ~= nil then

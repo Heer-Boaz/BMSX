@@ -45,14 +45,10 @@ world_class.__index = world_class
 
 local active_component_bucket_types<const> = {
 	'actioneffectcomponent',
-	'ambientlightcomponent',
 	'collider2dcomponent',
 	'customvisualcomponent',
-	'directionallightcomponent',
 	'inputactioneffectcomponent',
 	'inputintentcomponent',
-	'meshcomponent',
-	'pointlightcomponent',
 	'positionupdateaxiscomponent',
 	'prohibitleavingscreencomponent',
 	'screenboundarycomponent',
@@ -302,7 +298,13 @@ end
 
 local add_active_object<const> = function(obj, space)
 	local objects<const> = space.active_objects
-	local index<const> = #objects + 1
+	local index = #objects + 1
+	while index > 1 and objects[index - 1].z > obj.z do
+		local moved<const> = objects[index - 1]
+		objects[index] = moved
+		moved._active_object_index = index
+		index = index - 1
+	end
 	objects[index] = obj
 	obj._active_object_index = index
 	obj._active_object_space_id = space.id
@@ -318,10 +320,10 @@ local remove_active_object<const> = function(obj, space)
 	local objects<const> = space.active_objects
 	local index<const> = obj._active_object_index
 	local last_index<const> = #objects
-	if index < last_index then
-		local moved<const> = objects[last_index]
-		objects[index] = moved
-		moved._active_object_index = index
+	for moved_index = index + 1, last_index do
+		local moved<const> = objects[moved_index]
+		objects[moved_index - 1] = moved
+		moved._active_object_index = moved_index - 1
 	end
 	objects[last_index] = nil
 	obj._active_object_index = nil
@@ -340,15 +342,59 @@ local remove_active_object<const> = function(obj, space)
 	obj._active_object_tick_order_index = nil
 end
 
-local add_active_component<const> = function(comp, space)
+local visual_depth_less<const> = function(a, b)
+	local a_depth<const> = a.parent.z + a.offset.z + a.draw_offset.z
+	local b_depth<const> = b.parent.z + b.offset.z + b.draw_offset.z
+	if a_depth ~= b_depth then
+		return a_depth < b_depth
+	end
+	return a._visual_sequence < b._visual_sequence
+end
+
+local add_active_visual<const> = function(world, comp, space)
+	local visuals<const> = space.active_visual_components
+	world._visual_sequence = world._visual_sequence + 1
+	comp._visual_sequence = world._visual_sequence
+	local index = #visuals + 1
+	while index > 1 and visual_depth_less(comp, visuals[index - 1]) do
+		local moved<const> = visuals[index - 1]
+		visuals[index] = moved
+		moved._active_visual_index = index
+		index = index - 1
+	end
+	visuals[index] = comp
+	comp._active_visual_index = index
+end
+
+local remove_active_visual<const> = function(comp, space)
+	local visuals<const> = space.active_visual_components
+	local index<const> = comp._active_visual_index
+	local last_index<const> = #visuals
+	for moved_index = index + 1, last_index do
+		local moved<const> = visuals[moved_index]
+		visuals[moved_index - 1] = moved
+		moved._active_visual_index = moved_index - 1
+	end
+	visuals[last_index] = nil
+	comp._active_visual_index = nil
+	comp._visual_sequence = nil
+end
+
+local add_active_component<const> = function(world, comp, space)
 	local bucket<const> = space.active_components_by_type[comp.type_name]
 	local index<const> = #bucket + 1
 	bucket[index] = comp
 	comp._active_component_index = index
 	comp._active_component_space_id = space.id
+	if comp.is_visual then
+		add_active_visual(world, comp, space)
+	end
 end
 
 local remove_active_component<const> = function(comp, space)
+	if comp.is_visual then
+		remove_active_visual(comp, space)
+	end
 	local bucket<const> = space.active_components_by_type[comp.type_name]
 	local index<const> = comp._active_component_index
 	local last_index<const> = #bucket
@@ -379,6 +425,7 @@ function world_class.new()
 	self.active_space = nil
 	self.systems = ecs.ecsystemmanager.new()
 	self.current_phase = nil
+	self._visual_sequence = 0
 	-- id counter for unique id generation
 	self.idcounter = 0
 	self:add_space('main')
@@ -417,6 +464,7 @@ function world_class:add_space(space_id)
 		id = space_id,
 		objects = {},
 		active_objects = {},
+		active_visual_components = {},
 		active_objects_by_tick_order = {
 			early = {},
 			normal = {},
@@ -539,7 +587,7 @@ end
 local reconcile_active_component<const> = function(world, comp)
 	local parent<const> = comp.parent
 	local target_space_id = nil
-	if comp.enabled and parent.active and registry.instance:has(comp.id) then
+	if comp._attached and comp.enabled and parent.active then
 		target_space_id = parent.space_id
 	end
 	local active_space_id<const> = comp._active_component_space_id
@@ -548,7 +596,7 @@ local reconcile_active_component<const> = function(world, comp)
 			remove_active_component(comp, world._spaces[active_space_id])
 		end
 		if target_space_id ~= nil then
-			add_active_component(comp, world._spaces[target_space_id])
+			add_active_component(world, comp, world._spaces[target_space_id])
 		end
 	end
 end
@@ -589,6 +637,14 @@ function world_class:flush_active_objects()
 	end
 end
 
+function world_class:sort_active_visuals()
+	local visuals<const> = self.active_space.active_visual_components
+	table.sort(visuals, visual_depth_less)
+	for i = 1, #visuals do
+		visuals[i]._active_visual_index = i
+	end
+end
+
 -- Queue disposal work at mutation time so the frame loop only touches objects
 -- that actually requested teardown. Low-end hardware benefits much more from a
 -- short dirty list than from proving every frame that almost everything is alive.
@@ -625,7 +681,6 @@ function world_class:rebind_subsystem_systems(subsys)
 	local systems<const> = {
 		subsystem_systems.create_update_system(subsys),
 		subsystem_systems.create_animation_system(subsys),
-		subsystem_systems.create_presentation_system(subsys),
 	}
 	local registered<const> = {}
 	for i = 1, #systems do
@@ -906,6 +961,7 @@ function world_class:clear()
 	self._space_order = {}
 	self._obj_to_space = {}
 	self._pending_active_components = {}
+	self._visual_sequence = 0
 	self.current_phase = nil
 	registry.instance:clear()
 	self:add_space('main')

@@ -7,6 +7,7 @@ local smoothstep<const> = require('bios/easing').smoothstep
 local color<const> = require('bios/common/color')
 local round_number<const> = require('bios/util/round_to_nearest')
 local stagger_timeline_prefix<const> = 'p3.stagger.'
+local immediate_text_opts<const> = { typed = false, snap = true }
 
 local presets<const> = {
 	calm = {
@@ -120,8 +121,8 @@ local stagger_track<const> = function(target, params, event)
 		if params.text_choice_lines then
 			text_choice:set_text(params.text_choice_lines, { typed = false, snap = true })
 		end
-		if params.text_prompt_line then
-			text_prompt:set_text({ params.text_prompt_line }, { typed = false, snap = true })
+		if params.text_prompt_lines then
+			text_prompt:set_text(params.text_prompt_lines, immediate_text_opts)
 		end
 		params.text_started = true
 	end
@@ -130,13 +131,13 @@ local stagger_track<const> = function(target, params, event)
 	local text_brightness<const> = cfg.text_from + ((cfg.text_to - cfg.text_from) * text_u)
 	local text_level<const> = round_number(text_brightness * 255)
 	if text_main then
-		text_main.text_color = color.mix_rgb_with_alpha(p3_black_color, params.text_main_base_color, text_level, 1)
+		text_main.text_component.color = color.mix_rgb_with_alpha(p3_black_color, params.text_main_base_color, text_level, 1)
 	end
 	if text_choice then
-		text_choice.text_color = color.mix_rgb_with_alpha(p3_black_color, params.text_choice_base_color, text_level, 1)
+		text_choice.text_component.color = color.mix_rgb_with_alpha(p3_black_color, params.text_choice_base_color, text_level, 1)
 	end
 	if text_prompt then
-		text_prompt.text_color = color.mix_rgb_with_alpha(p3_black_color, params.text_prompt_base_color, text_level, 1)
+		text_prompt.text_component.color = color.mix_rgb_with_alpha(p3_black_color, params.text_prompt_base_color, text_level, 1)
 	end
 end
 
@@ -215,22 +216,22 @@ function stagger.play(owner, preset_id, opts)
 	end
 
 	if text_main then
-		text_main_base_color = text_main.text_color
-		text_main.text_color = p3_black_color
+		text_main_base_color = text_main.text_component.color
+		text_main.text_component.color = p3_black_color
 	end
 	if text_choice then
-		text_choice_base_color = text_choice.text_color
-		text_choice.text_color = p3_black_color
-		text_choice.highlighted_line_index = nil
+		text_choice_base_color = text_choice.text_component.color
+		text_choice.text_component.color = p3_black_color
+		text_choice:set_highlighted_line(nil)
 	end
 	if text_prompt then
-		text_prompt_base_color = text_prompt.text_color
-		text_prompt.text_color = p3_black_color
+		text_prompt_base_color = text_prompt.text_component.color
+		text_prompt.text_component.color = p3_black_color
 	end
 
 	if opts.text_lines == nil and text_main then
 		text_main:set_text({}, { typed = false, snap = true })
-		text_main.highlighted_line_index = nil
+		text_main:set_highlighted_line(nil)
 	end
 
 	owner.stagger_blocked = timeline_cfg.text_start > 0
@@ -248,7 +249,7 @@ function stagger.play(owner, preset_id, opts)
 			text_prompt = text_prompt,
 			text_lines = opts.text_lines,
 			text_choice_lines = opts.text_choice_lines,
-			text_prompt_line = opts.text_prompt_line,
+			text_prompt_lines = opts.text_prompt_lines,
 			text_typed = opts.text_typed,
 			text_started = false,
 			text_main_base_color = text_main_base_color,

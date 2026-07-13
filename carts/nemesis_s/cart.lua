@@ -27,7 +27,7 @@ function init()
 	stage_module.define_stage_fsm()
 	director_module.define_director_fsm()
 	player_module.define_player_fsm()
-	stage_module.register_stage_subsystem_definition()
+	stage_module.register_stage_definition()
 	director_module.register_director_definition()
 	player_module.register_player_definition()
 	gx_upload_atlas(0)
@@ -35,8 +35,9 @@ end
 
 function new_game()
 	reset()
-	inst_subsystem(stage_module.stage_def_id, {
+	inst(stage_module.stage_def_id, {
 		id = stage_module.stage_instance_id,
+		pos = { x = 0, y = 0, z = 0 },
 	})
 	inst(director_module.director_def_id, {
 		id = director_module.director_instance_id,

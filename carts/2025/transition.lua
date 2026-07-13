@@ -145,9 +145,9 @@ function transition.register_states(states)
 			oget(text_transition_id):set_text({ node.label }, { typed = false, snap = true })
 			reset_text_colors()
 			local transition_text<const> = oget(text_transition_id)
-			self.transition_center_x = transition_text.centered_block_x
+			self.transition_center_x = transition_text.text_component.offset.x
 			self.transition_target_bg = story[node.next].bg
-			transition_text.centered_block_x = screen_width
+			transition_text.text_component.offset.x = screen_width
 			self.transition_needs_post_fade = false
 			local next_node<const> = story[node.next]
 			local style<const> = resolve_transition_style(node, next_node.kind)
@@ -156,7 +156,7 @@ function transition.register_states(states)
 			local layout<const> = {
 				center_x = screen_width / 2,
 				text_top = transition_text.dimensions.top,
-				line_height = transition_text.line_height,
+				line_height = transition_text.text_component.line_height,
 			}
 			self.transition_panels, self.transition_accent = build_transition_layout(style, self.transition_palette, layout)
 			local swap_frame<const> = overgang_fade_out_frames - 1

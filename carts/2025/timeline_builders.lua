@@ -627,7 +627,6 @@ function builders.build_combat_hit_frames(params)
 				slash_points = slash_points,
 				slash_thickness = slash_thickness,
 				slash_color = slash_color,
-				slash_z = combat_hit_slash_z,
 			},
 		}
 	end
@@ -656,8 +655,10 @@ function builders.build_combat_results_fade_in_frames(params)
 				x = maya_start_x + (maya_target_x - maya_start_x) * a,
 			},
 			results = {
-				text_color = brightness,
-				centered_block_x = text_start_x + (text_target_x - text_start_x) * a,
+				text_component = {
+					color = brightness,
+					offset = { x = text_start_x + (text_target_x - text_start_x) * a },
+				},
 			},
 		}
 	end
@@ -680,7 +681,7 @@ function builders.build_combat_results_fade_out_frames()
 				sprite_component = { color = brightness },
 			},
 			results = {
-				text_color = brightness,
+				text_component = { color = brightness },
 			},
 		}
 	end
@@ -780,7 +781,7 @@ function builders.build_transition_frames(params)
 				y = ay,
 				color = aa > 0 and accent_panel.color or 0,
 			},
-			text = { centered_block_x = text_x },
+			text = { text_component = { offset = { x = text_x } } },
 		}
 	end
 

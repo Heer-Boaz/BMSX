@@ -27,13 +27,6 @@ local secondary_weapon_sprite_id<const> = function(item_type)
 	error('pietious ui invalid secondary_weapon=' .. tostring(item_type))
 end
 
-function ui:bind_visual()
-	local rc<const> = self:get_component('customvisualcomponent')
-	rc.producer = function()
-		self:draw_ui()
-	end
-end
-
 function ui:set_health_target(value)
 	self.hud_health_target = clamp(value // 1, 0, damage_max_health)
 end
@@ -43,7 +36,7 @@ function ui:set_weapon_target(value)
 end
 
 function ui:ctor()
-	self:bind_visual()
+	self:get_component('customvisualcomponent').producer = ui.draw_ui
 	local player<const> = oget('pietolon')
 	local health<const> = clamp(player.health // 1, 0, damage_max_health)
 	local weapon<const> = clamp(player.weapon_level // 1, 0, hud_weapon_level)

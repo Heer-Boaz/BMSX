@@ -102,19 +102,25 @@ Implemented or partially covered GX-GPU areas include:
   deferred. Current-format save-state retains the GPU-owned interlaced field,
   displayed-field, and active-line latches; this does not claim complete
   field-aware 480i scanout.
-- The sprite render system now submits its existing retained component bucket in
-  ascending effective z order, so the painter-ordered GX GPU draws higher-z
-  sprites last. Equal depths retain their previous bucket order, and component
-  indices are repaired after the in-place sort for ECS removal ownership. The
-  BIOS sort first scans an already sorted list once, keeping unchanged frames
-  O(n) without allocating or introducing a second display list. The focused
-  Pietious capture gate proves initial and runtime-mutated z order; the long
-  scene reaches the formerly inverted z=250 player/z=114 explosion overlap.
-  This is only the sprite regression fix, not the finished cartlib presentation
-  owner: tile, custom, text and mesh still run in hard-coded kind stages and
-  cannot interleave by z, while equal-z sprite order still depends on a swap-
-  removed bucket index. The open architecture slice replaces those stages with
-  one retained per-space visual list and a stable activation sequence.
+- Cartlib presentation owns one retained active visual-component list per world
+  space. Sprite, tile, text and custom visuals inherit the same depth contract
+  and draw polymorphically through one visual system; the old hard-coded kind
+  stages and the subsystem presentation escape path are gone. Activation uses
+  a monotone sequence for stable equal-z order, add/remove preserves the ordered
+  list, and the BIOS sort repairs runtime z changes in place. Its ordered
+  pre-pass keeps unchanged frames O(n) without a second display list or
+  per-frame records. Focused Pietious tests cover cross-kind ordering, live z
+  changes, equal-z disable/re-enable, detach, space moves, the real room/player/
+  HUD/director order and authored environment-wall depth. The 2025 gate checks
+  sorted combat, slash, results and retained parallax-sprite relations; Nemesis
+  S proves its asset-authored stage depth through a normal custom visual.
+- Text components retain wrapped lines, glyph references and widths at text,
+  font, wrap or textobject-dimension mutation. The typewriter reveals retained
+  glyph references directly, and prompt/highlight writes happen only at state,
+  input or typing boundaries. Steady draw walks retained arrays without line
+  tables, glyph substrings or callback closures. The duplicate cartlib font
+  module is removed in favor of the system-font owner. Sprite modulation is a
+  packed GX color word throughout; the dead float `colorize` DTO is removed.
 - Texture windows/CLUT-ish paths, texture disable, modulation math, mask/fill
   behavior, oversized primitive culling, and VRAM copy overlap chunking.
 - Raw PSX textured quad polygons are covered in TS/C++ software/headless tests

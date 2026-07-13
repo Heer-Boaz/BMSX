@@ -41,7 +41,7 @@ end
 
 function director:reset_runtime()
 	self.frame = 0
-	self.stage = subsystem(ids_stage_instance)
+	self.stage = oget(ids_stage_instance)
 end
 
 function director:update_runtime()

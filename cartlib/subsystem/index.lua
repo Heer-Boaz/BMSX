@@ -18,10 +18,6 @@ function subsystem.new(opts)
 	self.id = opts.id or world_instance:next_id(self.type_name)
 	self.active = false
 	self.fsm_dispatch_enabled = false
-	self.visible = true
-	if opts.visible ~= nil then
-		self.visible = opts.visible
-	end
 	self.player_index = opts.player_index
 	self.tags = opts.tags or {}
 	self.dispose_flag = false
@@ -33,7 +29,6 @@ function subsystem.new(opts)
 	self.update_group = opts.update_group or tickgroup.moderesolution
 	self.update_priority = opts.update_priority
 	self.animation_priority = opts.animation_priority
-	self.presentation_priority = opts.presentation_priority
 	return self
 end
 
@@ -157,5 +152,4 @@ return {
 	subsystem = subsystem,
 	create_update_system = subsystem_systems.create_update_system,
 	create_animation_system = subsystem_systems.create_animation_system,
-	create_presentation_system = subsystem_systems.create_presentation_system,
 }

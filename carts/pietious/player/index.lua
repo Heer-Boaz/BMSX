@@ -160,7 +160,7 @@ local player_in_water_by_state<const> = {
 	[water_surface] = true,
 	[water_body] = true,
 }
-local hit_blink_colorize<const> = { r = 1, g = 0.35, b = 0.35, a = 1 }
+local hit_blink_color<const> = 0xffff5959
 local vertical_exit_directions<const> = {
 	up = true,
 	down = true,
@@ -288,15 +288,9 @@ function player:update_collision_state()
 	self.right_wall_collision = self:collides_at_right_wall_profile(self.x, self.y, false)
 end
 
-function player:apply_colorize(r, g, b, a)
-	self.sprite_component.colorize.r = r
-	self.sprite_component.colorize.g = g
-	self.sprite_component.colorize.b = b
-	self.sprite_component.colorize.a = a
-	self.sword_sprite.colorize.r = r
-	self.sword_sprite.colorize.g = g
-	self.sword_sprite.colorize.b = b
-	self.sword_sprite.colorize.a = a
+function player:apply_color(color)
+	self.sprite_component.color = color
+	self.sword_sprite.color = color
 end
 
 function player:define_runtime_timelines()
@@ -432,13 +426,13 @@ end
 
 function player:apply_presentation_state()
 	if self:has_tag(state_tags.group.world_transition_waiting) then
-		self:apply_colorize(1, 1, 1, 1)
+		self:apply_color(0xffffffff)
 		self.visible = false
 		return
 	end
 
 	if self:has_tag(state_tags.group.world_transition) then
-		self:apply_colorize(1, 1, 1, 1)
+		self:apply_color(0xffffffff)
 		local imgid
 		if self:has_tag(state_tags.group.world_transition_down) then
 			if self.enter_leave_anim_frame == 0 then
@@ -460,11 +454,10 @@ function player:apply_presentation_state()
 		self.visible = true
 		return
 	end
-	self.sprite_component.offset.y = 0 -- Reset any stair cut offset when not in a world transition, to avoid visual bugs with exiting the shrine or similar effects that modify y offset (!= position!). UGLY DIRTY SHIT!!!!! BUT CODEX IS UNABLE TO WRITE PROPER CODE AND THUS HAVE TO FIX THIS MYSELF
 	if self.hit_invulnerability_timer > 0 and self.hit_blink_on and not self:has_tag(state_tags.variant.dying) then
-		self:apply_colorize(hit_blink_colorize.r, hit_blink_colorize.g, hit_blink_colorize.b, hit_blink_colorize.a)
+		self:apply_color(hit_blink_color)
 	else
-		self:apply_colorize(1, 1, 1, 1)
+		self:apply_color(0xffffffff)
 	end
 	self.visible = true
 	self.sprite_component.scale.x = 1
@@ -818,6 +811,7 @@ function player:reset_enter_leave_animation()
 	self.transition_step = 0
 	self.enter_leave_anim_frame = 0
 	self.to_enter_cut = 0
+	self.sprite_component.offset.y = 0
 end
 
 function player:update_enter_leave_anim_frame()

@@ -681,6 +681,21 @@ mapped RGBA staging aperture, or image-copy DMA channel.
 
 ### GX GPU/GTE
 
+Cartlib submits painter-ordered 2D work through one retained visual-component
+list per world space. Sprite, tile, text and custom visual components share the
+same effective depth `parent.z + offset.z + draw_offset.z`; lower depths submit
+first and higher depths submit last. Activation sequence is the stable equal-z
+tie-break. Add/remove updates that same list and its indices, while one in-place
+BIOS sort accounts for runtime depth changes before the visual system draws the
+components polymorphically. There are no kind-priority stages, subsystem draw
+escape paths, per-frame display-list records or backend-facing visual DTOs.
+
+Text layout is retained component state. Text, font, wrap or textobject-dimension
+mutation rebuilds wrapped lines, glyph references and widths. Typewriter state
+reveals those retained glyph references by index; neither typing nor steady
+presentation rescans strings. Sprite modulation remains one packed GX color
+word from cart producer through command submission.
+
 GX GPU/GTE is the cart graphics ABI and the only cart graphics path
 executed by host render backends. The old cart-visible VDP/RPU firmware ABI and
 the WebGL, GLES2, and software/headless RPU presentation executors are removed.

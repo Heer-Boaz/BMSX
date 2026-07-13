@@ -26,15 +26,8 @@
 --      function my_object:update()
 --          blit(self.x, self.y, self.sprite_id)  -- runs per-object
 --      end
---    RIGHT — register a render system in the presentation group:
---      local mysystem = ecsystem.new(tickgroup.presentation, priority)
---      function mysystem:update()
---          for obj in world_instance:objects() do
---              if obj.components['spritecomponent'] then
---                  blit(obj.x, obj.y, obj.sprite_id)
---              end
---          end
---      end
+--    RIGHT — attach a visual component. The retained visual list sorts all
+--    visual kinds by effective z and the single visual system submits them.
 --
 -- 3. OBJECT update() IS FOR OBJECT-SPECIFIC LOGIC ONLY.
 --    An object's update() method is called by the FSM (as the current state's

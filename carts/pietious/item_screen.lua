@@ -52,15 +52,8 @@ local item_screen_mode_exit_events<const> = {
 	'daemon_appearance',
 }
 
-function item_screen:bind_visual()
-	local rc<const> = self:get_component('customvisualcomponent')
-	rc.producer = function()
-		self:draw_screen()
-	end
-end
-
 function item_screen:ctor()
-	self:bind_visual()
+	self:get_component('customvisualcomponent').producer = item_screen.draw_screen
 	self.secondary_weapon_selection_index = 0
 	self.selector_hidden = false
 	self.map_highlight = true

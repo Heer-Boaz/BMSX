@@ -266,6 +266,7 @@ local build_enemies<const> = function(room_number, room_subtype, object_defs)
 					width_tiles = right - left,
 					height_tiles = bottom - top,
 					tiletype = resolve_wall_tiletype(room_subtype, object_def.tiletype),
+					draw_z = draw_z_environment_wall,
 				}
 			else
 				local enemy_x<const> = tile_x_to_world(object_def.x or 0)
@@ -285,6 +286,7 @@ local build_enemies<const> = function(room_number, room_subtype, object_defs)
 					speedy = object_def.speedy,
 					trigger = object_def.trigger,
 					conditions = conditions,
+					draw_z = draw_z_enemy,
 				}
 			end
 		end

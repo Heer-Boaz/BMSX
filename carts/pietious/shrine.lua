@@ -2,39 +2,25 @@
 -- shrine overlay renderer — displays text on the shrine screen.
 
 require('constants')
-local font_module<const> = require('cartlib/font')
-
-local draw_glyph_line_color<const> = function(font, line, x, y, color)
-	local cursor_x = x
-	font_module.for_each_glyph(font, line, function(glyph)
-		gx_blit_img_color(glyph.imgid, cursor_x, y, color)
-		cursor_x = cursor_x + glyph.advance
-	end)
-end
+local font_module<const> = require('system/font')
 
 local shrine<const> = {}
 shrine.__index = shrine
 
-function shrine:bind_visual()
-	local renderer<const> = self:get_component('customvisualcomponent')
-	renderer.producer = function()
-		self:render()
-	end
+local draw_shrine_visual<const> = function()
+	gx_blit_img_color('shrine_inside', 0, room_tile_origin_y, 0xffffffff)
 end
 
 function shrine:ctor()
-	self.text_font = font_module.get('pietious')
-	self.lines = {}
-	self:bind_visual()
-end
-
-function shrine:render()
-	gx_blit_img_color('shrine_inside', 0, room_tile_origin_y, 0xffffffff)
-	local lines<const> = self.lines
-	for i = 1, #lines do
-		local text_font<const> = self.text_font
-		draw_glyph_line_color(text_font, lines[i], shrine_text_x, shrine_text_y + ((i - 1) * room_tile_size), 0xffffffff)
-	end
+	local text<const> = self:get_component('textcomponent')
+	text:set_font(font_module.get('pietious'))
+	text.color = 0xffffffff
+	text.offset.x = shrine_text_x
+	text.offset.y = shrine_text_y
+	text.offset.z = 1
+	text:set_text({})
+	self.text_component = text
+	self:get_component('customvisualcomponent').producer = draw_shrine_visual
 end
 
 local room_shrine<const> = {}
@@ -52,13 +38,13 @@ local define_shrine_fsm<const> = function()
 			['shrine'] = {
 				emitter = 'd',
 				go = function(self, _state, event)
-					self.lines = event.lines
+					self.text_component:set_text(event.lines)
 				end,
 			},
 			['room'] = {
 				emitter = 'd',
 				go = function(self)
-					self.lines = {}
+					self.text_component:set_text({})
 				end,
 			},
 		},
@@ -73,7 +59,7 @@ local register_shrine_definition<const> = function()
 		def_id = 'shrine',
 		class = shrine,
 		fsms = { 'shrine' },
-		components = { 'customvisualcomponent' },
+		components = { 'customvisualcomponent', 'textcomponent' },
 		defaults = {
 			id = 'shrine',
 		},

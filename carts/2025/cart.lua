@@ -66,6 +66,37 @@ local create_transition_visuals<const> = function()
 	}
 end
 
+local draw_director_visual<const> = function(parent)
+	local results<const> = parent.combat_results_visual
+	if results.visible then
+		gx_fill_rect_color(results.x, results.y, results.x + results.width, results.y + results.height, results.color)
+	end
+	local overlay<const> = parent.transition_visual.overlay
+	if overlay.color ~= 0 and overlay.visible then
+		gx_fill_rect_color(overlay.x, overlay.y, overlay.x + overlay.width, overlay.y + overlay.height, overlay.color)
+	end
+	if overlay.blend_color ~= 0 then
+		gx_set_draw_mode(overlay.blend_mode)
+		gx_fill_rect_semitrans_color(overlay.x, overlay.y, overlay.x + overlay.width, overlay.y + overlay.height, overlay.blend_color)
+	end
+	for i = 1, #parent.transition_visual.panels do
+		local panel<const> = parent.transition_visual.panels[i]
+		if panel.visible then
+			gx_fill_rect_color(panel.x, panel.y, panel.x + panel.width, panel.y + panel.height, panel.color)
+		end
+	end
+	local accent<const> = parent.transition_visual.accent
+	if accent.visible then
+		gx_fill_rect_color(accent.x, accent.y, accent.x + accent.width, accent.y + accent.height, accent.color)
+	end
+end
+
+function director:ctor()
+	self.transition_rc = self:get_component('customvisualcomponent')
+	self.transition_rc.offset.z = director_visual_z
+	self.transition_rc.producer = draw_director_visual
+end
+
 function director:apply_effects(effects)
 	for i = 1, #effects do
 		local effect<const> = effects[i]
@@ -81,27 +112,6 @@ local build_director_fsm<const> = function()
 			entering_state = function(self)
 					self.transition_visual = create_transition_visuals()
 					self.combat_results_visual = create_rect_state()
-					self.combat_results_maya_visible = false
-					self.transition_rc = attach_component(self, 'customvisualcomponent')
-					self.transition_rc:add_producer(function(parent, rc)
-						rc:submit_rect(parent.combat_results_visual)
-						if parent.combat_results_maya_visible then
-							local maya_b<const> = oget(combat_maya_b_id)
-							gx_blit_img_color(maya_b.sprite_component.imgid, maya_b.x, maya_b.y, maya_b.sprite_component.color)
-						end
-						local overlay<const> = parent.transition_visual.overlay
-						if overlay.color ~= 0 then
-							rc:submit_rect(overlay)
-						end
-						if overlay.blend_color ~= 0 then
-							gx_set_draw_mode(overlay.blend_mode)
-							gx_fill_rect_semitrans_color(overlay.x, overlay.y, overlay.x + overlay.width, overlay.y + overlay.height, overlay.blend_color)
-						end
-						for i = 1, #parent.transition_visual.panels do
-							rc:submit_rect(parent.transition_visual.panels[i])
-						end
-						rc:submit_rect(parent.transition_visual.accent)
-					end)
 				self.stats = { planning = 0, opdekin = 0, rust = 0, makeup = 0 }
 				self.inline_pages = {}
 				self.inline_next = nil
@@ -176,6 +186,7 @@ local register_director<const> = function()
 		class = director,
 		type = 'object',
 		fsms = { director_fsm_id },
+		components = { 'customvisualcomponent' },
 		defaults = {
 			node_id = start_node,
 			page_index = 1,
@@ -297,7 +308,6 @@ function new_game()
 			dimensions = { left = horizontal_margin, right = w - horizontal_margin, top = main_top, bottom = choice_top },
 			blank_lines = 1,
 			pos = { z = 1000 },
-			layer = 0x00000001,
 		})
 		inst('p3.text.choice', {
 			id = text_choice_id,
@@ -307,14 +317,12 @@ function new_game()
 			highlight_move_enabled = true,
 			highlight_pulse_enabled = true,
 			highlight_jitter_enabled = false,
-			layer = 0x00000001,
 		})
 		inst('p3.text.prompt', {
 			id = text_prompt_id,
 			dimensions = { left = horizontal_margin, right = w - horizontal_margin, top = prompt_top, bottom = h },
 			blank_lines = 1,
 			pos = { z = 1002 },
-			layer = 0x00000001,
 		})
 		inst('p3.text.transition', {
 			id = text_transition_id,
@@ -323,14 +331,12 @@ function new_game()
 			pos = { z = 900 },
 			text_color = p3_ink_color,
 			normal_bg_color = p3_white_color,
-			layer = 0x00000001,
 		})
 		inst('p3.text.results', {
 			id = text_results_id,
 			dimensions = { left = horizontal_margin, right = w - (w / 3), top = line_height * 2, bottom = h - (h / 3) },
 			blank_lines = 1,
 			pos = { z = 1003 },
-			layer = 0x00000001,
 		})
 
 	clear_texts(text_ids_all)
@@ -343,13 +349,13 @@ function new_game()
 	})
 	inst('p3.combat.maya_a', {
 		id = combat_maya_a_id,
-		pos = { x = 0, y = 0, z = 300 },
+		pos = { x = 0, y = 0, z = combat_maya_z },
 		imgid = 'maya_a',
 		visible = false,
 	})
 	inst('p3.combat.maya_b', {
 		id = combat_maya_b_id,
-		pos = { x = 0, y = 0, z = 300 },
+		pos = { x = 0, y = 0, z = combat_maya_z },
 		imgid = 'maya_b',
 		visible = false,
 	})

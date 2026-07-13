@@ -114,7 +114,7 @@ function player:initialize_weapon_slots()
 end
 
 function player:reset_runtime()
-	self.stage = subsystem(ids_stage_instance)
+	self.stage = oget(ids_stage_instance)
 	self.frame = 0
 	self.x = player_start_x
 	self.y = player_start_y
@@ -679,9 +679,7 @@ end
 
 function player:ctor()
 	local rc<const> = self:get_component('customvisualcomponent')
-	rc.producer = function()
-		self:draw_visual()
-	end
+	rc.producer = player.draw_visual
 end
 
 local define_player_fsm<const> = function()

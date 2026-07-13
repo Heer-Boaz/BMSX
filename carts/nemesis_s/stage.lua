@@ -4,8 +4,8 @@ require('constants')
 local bin<const> = require('system/bin')
 local assets<const> = require('bmsx/assets')
 
-local stage_subsystem<const> = {}
-stage_subsystem.__index = stage_subsystem
+local stage<const> = {}
+stage.__index = stage
 
 local house_roof_base_chars<const> = { ['@'] = true, ['/'] = true, ['\\'] = true, ['^'] = true }
 local snow_surface_chars<const> = { ['='] = true, ['-'] = true }
@@ -371,10 +371,10 @@ local resolve_tile_material<const> = function(tile_key)
 	return tile_id, 1
 end
 
-function stage_subsystem:apply_stage_config(stage_data)
+function stage:apply_stage_config(stage_data)
 	self.tile_size = stage_data.tile_size
 	self.tile_columns = stage_data.tile_columns
-	self.draw_z = stage_data.draw_z
+	self.stage_visual.offset.z = stage_data.draw_z
 	self.scroll_mode_pause = stage_data.scroll_mode_pause
 	self.scroll_mode_forced = stage_data.scroll_mode_forced
 	self.scroll_mode_gated = stage_data.scroll_mode_gated
@@ -382,7 +382,7 @@ function stage_subsystem:apply_stage_config(stage_data)
 	self.scroll_rotator_initial = stage_data.scroll_rotator_initial
 end
 
-function stage_subsystem:build_tape()
+function stage:build_tape()
 	local stage_data<const> = bin.decode(assets.data_nemesis_s_stage_addr, assets.data_nemesis_s_stage_len, stage_asset_id)
 	self:apply_stage_config(stage_data)
 	local map_rows<const> = stage_data.map_rows
@@ -407,7 +407,7 @@ function stage_subsystem:build_tape()
 	end
 end
 
-function stage_subsystem:apply_star_scroll(stars, step)
+function stage:apply_star_scroll(stars, step)
 	for i = 1, #stars do
 		local star<const> = stars[i]
 		star.x = star.x - step
@@ -417,7 +417,7 @@ function stage_subsystem:apply_star_scroll(stars, step)
 	end
 end
 
-function stage_subsystem:reset_runtime()
+function stage:reset_runtime()
 	if #self.tile_tape == 0 then
 		self:build_tape()
 	end
@@ -439,7 +439,7 @@ function stage_subsystem:reset_runtime()
 	self.blink_turn = 'yellow'
 end
 
-function stage_subsystem:update_runtime()
+function stage:update_runtime()
 	local smooth_scroll_px = 0
 
 	if self.scrolling then
@@ -498,7 +498,7 @@ function stage_subsystem:update_runtime()
 	self.frame = self.frame + 1
 end
 
-function stage_subsystem:draw_star_particles(stars, imgid, hidden)
+function stage:draw_star_particles(stars, imgid, hidden)
 	if hidden then
 		return
 	end
@@ -508,7 +508,7 @@ function stage_subsystem:draw_star_particles(stars, imgid, hidden)
 	end
 end
 
-function stage_subsystem:draw()
+function stage:draw()
 	self:draw_star_particles(self.yellow_stars, assets_star_yellow, self.yellow_blink)
 	self:draw_star_particles(self.blue_stars, assets_star_blue, self.blue_blink)
 
@@ -531,7 +531,7 @@ function stage_subsystem:draw()
 	end
 end
 
-function stage_subsystem:is_solid_pixel(screen_x, screen_y)
+function stage:is_solid_pixel(screen_x, screen_y)
 	local map_x = ((screen_x + self.total_scroll_px) // self.tile_size) + 1
 	local map_y = (screen_y // self.tile_size) + 1
 
@@ -541,11 +541,13 @@ function stage_subsystem:is_solid_pixel(screen_x, screen_y)
 	return self.solid_tape[map_y][map_x] ~= 0
 end
 
-function stage_subsystem:ctor()
+function stage:ctor()
 	self.tile_tape = {}
 	self.solid_tape = {}
 	self.yellow_stars = {}
 	self.blue_stars = {}
+	self.stage_visual = self:get_component('customvisualcomponent')
+	self.stage_visual.producer = stage.draw
 end
 
 local define_stage_fsm<const> = function()
@@ -594,22 +596,18 @@ local define_stage_fsm<const> = function()
 		})
 end
 
-local register_stage_subsystem_definition<const> = function()
-	define_subsystem({
+local register_stage_definition<const> = function()
+	define_prefab({
 		def_id = ids_stage_def,
-		class = stage_subsystem,
+		class = stage,
 		fsms = { ids_stage_fsm },
-		defaults = {
-			update_priority = -10,
-			animation_priority = -10,
-			presentation_priority = -10,
-		},
+		components = { 'customvisualcomponent' },
 	})
 end
 
 return {
 	define_stage_fsm = define_stage_fsm,
-	register_stage_subsystem_definition = register_stage_subsystem_definition,
+	register_stage_definition = register_stage_definition,
 	stage_def_id = ids_stage_def,
 	stage_instance_id = ids_stage_instance,
 	stage_fsm_id = ids_stage_fsm,

@@ -5,10 +5,14 @@ local timeline_builders<const> = require('timeline_builders')
 local stagger<const> = require('stagger')
 local round_number<const> = require('bios/util/round_to_nearest')
 local cart_input<const> = require('cartlib/input/player')
+local components<const> = require('cartlib/components')
 local smoothstep<const> = require('bios/easing').smoothstep
 local pingpong01<const> = require('bios/easing').pingpong01
 local sin<const> = require('bios/math').sin
 local pi<const> = require('bios/math').pi
+local immediate_text_opts<const> = { typed = false, snap = true }
+local prompt_select<const> = { '(A) select' }
+local prompt_attack<const> = { '(A) ATTACK' }
 
 local stat_label<const> = function(stat_id)
 	if stat_id == 'planning' then
@@ -93,6 +97,26 @@ end
 local combat_director<const> = {}
 combat_director.__index = combat_director
 
+local draw_combat_slash<const> = function(director)
+	local frame<const> = director.combat_hit_slash_frame
+	if not frame.slash_active then
+		return
+	end
+	local points<const> = frame.slash_points
+	gx_set_draw_mode(gx_draw_mode_blend_half)
+	gx_draw_thick_line_semitrans_color(points[1], points[2], points[3], points[4], frame.slash_color, frame.slash_thickness)
+end
+
+function combat_director:ctor()
+	self.combat_hit_slash_rc = components.customvisualcomponent.new({
+		parent = self,
+		id_local = 'slash',
+		offset = { x = 0, y = 0, z = combat_hit_slash_z },
+		producer = draw_combat_slash,
+	})
+	self:add_component(self.combat_hit_slash_rc)
+end
+
 local combat_parallax_scale<const> = function(weight)
 	if weight < 0 then
 		return 1 - (combat_parallax_scale_delta * weight)
@@ -100,36 +124,29 @@ local combat_parallax_scale<const> = function(weight)
 	return 1 + (combat_parallax_scale_delta * weight)
 end
 
-local draw_combat_parallax_sprite<const> = function(obj, weight, offset_base_y)
+local apply_combat_parallax_sprite<const> = function(obj, weight, offset_base_y)
 	local sc<const> = obj.sprite_component
-	local offset<const> = sc.offset
 	local draw_offset<const> = sc.draw_offset
-	local scale<const> = sc.scale
 	local draw_scale<const> = sc.draw_scale
 	local parallax_scale<const> = combat_parallax_scale(weight)
-	local flip_flags = 0
-	if sc.flip.flip_h then
-		flip_flags = flip_flags | 1
-	end
-	if sc.flip.flip_v then
-		flip_flags = flip_flags | 2
-	end
-	gx_blit_img_affine_color(
-		sc.imgid,
-		obj.x + offset.x + draw_offset.x,
-		obj.y + offset.y + draw_offset.y + (offset_base_y * weight),
-		obj.sx * scale.x * draw_scale.x * parallax_scale,
-		0.0,
-		0.0,
-		obj.sy * scale.y * draw_scale.y * parallax_scale,
-		flip_flags,
-		sc.color
-	)
+	draw_offset.y = offset_base_y * weight
+	draw_scale.x = parallax_scale
+	draw_scale.y = parallax_scale
+end
+
+local apply_combat_parallax<const> = function(self)
+	local momentum<const> = self.combat_parallax_momentum_steps
+	local offset_base_y<const> = self.combat_parallax_offset_base_y
+	apply_combat_parallax_sprite(oget(combat_monster_id), -(10 + momentum) / 15, offset_base_y)
+	apply_combat_parallax_sprite(oget(combat_maya_a_id), (10 - momentum) / 15, offset_base_y)
 end
 
 local refresh_combat_parallax<const> = function(self)
 	local momentum<const> = self.combat_parallax_momentum_steps
 	self.combat_parallax_offset_base_y = (11 - momentum) / 10
+	if self.combat_parallax_transform_active then
+		apply_combat_parallax(self)
+	end
 end
 
 local combat_hover_track<const> = function(target, params, _event, time_seconds)
@@ -138,6 +155,9 @@ local combat_hover_track<const> = function(target, params, _event, time_seconds)
 	local momentum<const> = target.combat_parallax_momentum_steps
 	params.monster.y = params.monster_base_y + hover
 	target.combat_parallax_offset_base_y = ((11 - momentum) / 10) - hover
+	if target.combat_parallax_transform_active then
+		apply_combat_parallax(target)
+	end
 end
 
 function combat_director:start_combat(node_id, skip_fade_in)
@@ -171,6 +191,7 @@ function combat_director:apply_combat_round(node)
 		text_typed = true,
 	})
 	self.choice_index = 1
+	oget(text_prompt_id):clear_text()
 end
 
 function combat_director:reset_combat_parallax()
@@ -181,7 +202,30 @@ end
 
 function combat_director:disable_combat_parallax()
 	self.combat_parallax_enabled = false
-	self.combat_parallax_draw_active = false
+	self:clear_combat_parallax_transform()
+end
+
+function combat_director:activate_combat_parallax_transform()
+	self.combat_parallax_transform_active = true
+	local monster<const> = oget(combat_monster_id)
+	local maya_a<const> = oget(combat_maya_a_id)
+	monster.visible = true
+	maya_a.visible = true
+	apply_combat_parallax(self)
+end
+
+function combat_director:clear_combat_parallax_transform()
+	self.combat_parallax_transform_active = false
+	local monster<const> = oget(combat_monster_id)
+	local maya_a<const> = oget(combat_maya_a_id)
+	monster.sprite_component.draw_offset.y = 0
+	monster.sprite_component.draw_scale.x = 1
+	monster.sprite_component.draw_scale.y = 1
+	maya_a.sprite_component.draw_offset.y = 0
+	maya_a.sprite_component.draw_scale.x = 1
+	maya_a.sprite_component.draw_scale.y = 1
+	monster.visible = true
+	maya_a.visible = true
 end
 
 function combat_director:push_combat_momentum(side, power)
@@ -218,29 +262,7 @@ function combat.define_fsm()
 				slash_points = { 0, 0, 0, 0 },
 				slash_thickness = 0,
 				slash_color = p3_white_color,
-				slash_z = combat_hit_slash_z,
 			}
-			self.combat_hit_slash_rc = attach_component(self, 'customvisualcomponent')
-			self.combat_hit_slash_rc:add_producer(function(director)
-				if director.combat_parallax_draw_active then
-					local momentum<const> = director.combat_parallax_momentum_steps
-					local offset_base_y<const> = director.combat_parallax_offset_base_y
-					draw_combat_parallax_sprite(oget(combat_monster_id), -(10 + momentum) / 15, offset_base_y)
-					draw_combat_parallax_sprite(oget(combat_maya_a_id), (10 - momentum) / 15, offset_base_y)
-				end
-				local frame<const> = director.combat_hit_slash_frame
-				if not frame.slash_active then
-					return
-				end
-				local points<const> = frame.slash_points
-				local x0<const> = points[1]
-				local y0<const> = points[2]
-				local x1<const> = points[3]
-				local y1<const> = points[4]
-				local color<const> = frame.slash_color
-				gx_set_draw_mode(gx_draw_mode_blend_half)
-				gx_draw_thick_line_semitrans_color(x0, y0, x1, y1, color, frame.slash_thickness)
-			end)
 			hide_combat_sprites()
 			return '/idle'
 		end,
@@ -315,16 +337,17 @@ function combat.define_fsm()
 		maya_b.sprite_component.color = p3_white_color
 		maya_b.x = self.combat_results_maya_target_x
 		local results<const> = oget(text_results_id)
-		results.text_color = p3_white_color
-		results.centered_block_x = self.combat_results_text_target_x
+		results.text_component.color = p3_white_color
+		results.text_component.offset.x = self.combat_results_text_target_x
 		return '/combat_results'
 	end
 
 	local finish_combat_results_fade_out<const> = function(self)
-		oget(combat_maya_b_id).visible = false
+		local maya_b<const> = oget(combat_maya_b_id)
+		maya_b.visible = false
+		maya_b.z = combat_maya_z
 		oget(text_results_id):clear_text()
 		local director<const> = oget(director_instance_id)
-		director.combat_results_maya_visible = false
 		local bg<const> = director.combat_results_visual
 		bg.visible = false
 		bg.color = p3_black_color
@@ -447,7 +470,7 @@ function combat.define_fsm()
 			maya_a.visible = false
 			maya_a.x = 0
 			maya_a.y = screen_height - maya_a.sy
-			maya_a.z = 300
+			maya_a.z = combat_maya_z
 			self.combat_maya_a_base_x = maya_a.x
 			self.combat_maya_a_base_y = maya_a.y
 			self.combat_maya_a_start_x = screen_width
@@ -465,7 +488,7 @@ function combat.define_fsm()
 			maya_b.sprite_component.color = p3_white_color
 			maya_b.x = screen_width - maya_b.sx
 			maya_b.y = screen_height - maya_b.sy
-			maya_b.z = 300
+			maya_b.z = combat_maya_z
 			self.combat_maya_b_start_x = maya_b.x
 			self.combat_maya_b_base_y = maya_b.y
 			self.combat_maya_b_start_scale = combat_intro_maya_b_start_scale
@@ -522,9 +545,7 @@ function combat.define_fsm()
 					maya_b_base_y = self.combat_maya_b_base_y,
 				},
 			})
-			monster.visible = false
-			maya_a.visible = false
-			self.combat_parallax_draw_active = true
+			self:activate_combat_parallax_transform()
 		end,
 		input_eval = 'first',
 		input_event_handlers = {
@@ -576,9 +597,7 @@ function combat.define_fsm()
 					monster_base_y = self.combat_monster_base_y,
 				},
 			})
-			monster.visible = false
-			maya_a.visible = false
-			self.combat_parallax_draw_active = true
+			self:activate_combat_parallax_transform()
 		end,
 		update = function(self)
 			if self.stagger_blocked then
@@ -587,11 +606,12 @@ function combat.define_fsm()
 			local main<const> = oget(text_main_id)
 			if main:is_typing() then
 				main:type_next()
+				if not main:is_typing() then
+					oget(text_prompt_id):set_text(prompt_select, immediate_text_opts)
+					oget(text_choice_id):set_highlighted_line(self.choice_index - 1)
+				end
 				return
 			end
-			oget(text_prompt_id):set_text({ '(A) select' }, { typed = false, snap = true })
-			local choice_text<const> = oget(text_choice_id)
-			choice_text.highlighted_line_index = self.choice_index - 1
 		end,
 		input_eval = 'first',
 		input_event_handlers = {
@@ -599,6 +619,9 @@ function combat.define_fsm()
 				go = function(self)
 					if self.stagger_blocked then return end
 					self.choice_index = math.max(1, self.choice_index - 1)
+					if not oget(text_main_id):is_typing() then
+						oget(text_choice_id):set_highlighted_line(self.choice_index - 1)
+					end
 				end,
 			},
 			['down[jp]'] = {
@@ -607,12 +630,18 @@ function combat.define_fsm()
 					local node<const> = story[self.node_id]
 					local round<const> = node.rounds[self.combat_round_index]
 					self.choice_index = math.min(#round.options, self.choice_index + 1)
+					if not oget(text_main_id):is_typing() then
+						oget(text_choice_id):set_highlighted_line(self.choice_index - 1)
+					end
 				end,
 			},
 			['b[jp]'] = {
 				go = function(self)
 					if self.stagger_blocked then return end
-					self:skip_typing()
+					if self:skip_typing() then
+						oget(text_prompt_id):set_text(prompt_select, immediate_text_opts)
+						oget(text_choice_id):set_highlighted_line(self.choice_index - 1)
+					end
 				end,
 			},
 			['a[jp]'] = {
@@ -633,9 +662,7 @@ function combat.define_fsm()
 		},
 		leaving_state = function(self)
 			self:stop_timeline(combat_hover_timeline_id)
-			self.combat_parallax_draw_active = false
-			oget(combat_monster_id).visible = true
-			oget(combat_maya_a_id).visible = true
+			self:clear_combat_parallax_transform()
 			refresh_combat_parallax(self)
 		end,
 	}
@@ -676,9 +703,7 @@ function combat.define_fsm()
 					monster_sy = monster.sy,
 				},
 			})
-			monster.visible = false
-			maya_a.visible = false
-			self.combat_parallax_draw_active = true
+			self:activate_combat_parallax_transform()
 		end,
 		input_eval = 'first',
 		input_event_handlers = {
@@ -721,9 +746,7 @@ function combat.define_fsm()
 						base_x = self.combat_monster_base_x,
 				},
 			})
-			monster.visible = false
-			maya_a.visible = false
-			self.combat_parallax_draw_active = true
+			self:activate_combat_parallax_transform()
 		end,
 		input_eval = 'first',
 		input_event_handlers = {
@@ -804,9 +827,7 @@ function combat.define_fsm()
 					overlay_strength = combat_exchange_hit_overlay_strength,
 				},
 			})
-			monster.visible = false
-			maya_a.visible = false
-			self.combat_parallax_draw_active = true
+			self:activate_combat_parallax_transform()
 		end,
 		input_eval = 'first',
 		input_event_handlers = {
@@ -902,9 +923,7 @@ function combat.define_fsm()
 					overlay_strength = 0,
 				},
 			})
-			monster.visible = false
-			maya_a.visible = false
-			self.combat_parallax_draw_active = true
+			self:activate_combat_parallax_transform()
 		end,
 		input_eval = 'first',
 		input_event_handlers = {
@@ -974,23 +993,28 @@ function combat.define_fsm()
 					monster_base_y = self.combat_monster_base_y,
 				},
 			})
-			monster.visible = false
-			maya_a.visible = false
-			self.combat_parallax_draw_active = true
+			self:activate_combat_parallax_transform()
 		end,
 		update = function(self)
 			local main<const> = oget(text_main_id)
 			if main:is_typing() then
 				main:type_next()
+				if not main:is_typing() then
+					oget(text_prompt_id):set_text(prompt_attack, immediate_text_opts)
+					oget(text_choice_id):set_highlighted_line(0)
+				end
 				return
 			end
-			oget(text_prompt_id):set_text({ '(A) ATTACK' }, { typed = false, snap = true })
-			oget(text_choice_id).highlighted_line_index = 0
 		end,
 		input_eval = 'first',
 		input_event_handlers = {
 			['b[jp]'] = {
-				go = function(self) self:skip_typing() end
+				go = function(self)
+					if self:skip_typing() then
+						oget(text_prompt_id):set_text(prompt_attack, immediate_text_opts)
+						oget(text_choice_id):set_highlighted_line(0)
+					end
+				end
 			},
 				['a[jp]'] = {
 					go = function(self)
@@ -1002,9 +1026,7 @@ function combat.define_fsm()
 		leaving_state = function(self)
 			self:stop_timeline(combat_hover_timeline_id)
 			self:stop_timeline(combat_all_out_prompt_timeline_id)
-			self.combat_parallax_draw_active = false
-			oget(combat_monster_id).visible = true
-			oget(combat_maya_a_id).visible = true
+			self:clear_combat_parallax_transform()
 			local portrait<const> = oget(combat_all_out_id)
 			portrait.visible = false
 			portrait.sprite_component.scale = { x = 1, y = 1 }
@@ -1167,8 +1189,8 @@ function combat.define_fsm()
 
 			local maya_b<const> = oget(combat_maya_b_id)
 			maya_b:gfx('maya_b')
-			maya_b.visible = false
-			oget(director_instance_id).combat_results_maya_visible = true
+			maya_b.visible = true
+			maya_b.z = combat_results_maya_z
 			self.combat_results_maya_target_x = screen_width - maya_b.sx
 			self.combat_results_maya_start_x = screen_width
 			maya_b.x = self.combat_results_maya_start_x
@@ -1182,10 +1204,10 @@ function combat.define_fsm()
 			end
 			oget(text_results_id):set_text(lines, { typed = false, snap = true })
 			local results<const> = oget(text_results_id)
-			results.text_color = p3_black_color
-			self.combat_results_text_target_x = results.centered_block_x / 2
+			results.text_component.color = p3_black_color
+			self.combat_results_text_target_x = results.text_component.offset.x / 2
 			self.combat_results_text_start_x = -screen_width
-			results.centered_block_x = self.combat_results_text_start_x
+			results.text_component.offset.x = self.combat_results_text_start_x
 			return '/combat_results_fade_in'
 		end,
 	}
@@ -1513,7 +1535,7 @@ function combat.register_director()
 			combat_results_text_target_x = 0,
 			combat_results_text_start_x = 0,
 			combat_parallax_enabled = false,
-			combat_parallax_draw_active = false,
+			combat_parallax_transform_active = false,
 			combat_parallax_momentum_steps = 0,
 			combat_parallax_offset_base_y = 0,
 			skip_combat_fade_in = false,

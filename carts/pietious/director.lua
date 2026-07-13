@@ -78,15 +78,12 @@ local daemon_timeline_id<const> = 'director.daemon'
 local director<const> = {}
 director.__index = director
 
-function director:bind_visual()
-	local rc<const> = self:get_component('customvisualcomponent')
-	rc.producer = function()
-		if not self.seal_flash_on then
-			return
-		end
-		gx_set_draw_mode(gx_draw_mode_blend_half)
-		gx_fill_rect_semitrans_color(0, room_tile_origin_y, screen_width, screen_height, 0xffffffff)
+function director:draw_visual()
+	if not self.seal_flash_on then
+		return
 	end
+	gx_set_draw_mode(gx_draw_mode_blend_half)
+	gx_fill_rect_semitrans_color(0, room_tile_origin_y, screen_width, screen_height, 0xffffffff)
 end
 
 function director:activate_spaces()
@@ -228,7 +225,7 @@ function director:ctor()
 	self.shrine_text_lines = {}
 
 	self:activate_spaces()
-	self:bind_visual()
+	self:get_component('customvisualcomponent').producer = director.draw_visual
 	self:ensure_daemon_cloud_pool()
 end
 

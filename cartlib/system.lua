@@ -23,7 +23,7 @@ local swap_remove<const> = require('bios/util/swap_remove')
 local timeline<const> = require('cartlib/timeline/index')
 local aem<const> = require('cartlib/aem')
 local progression<const> = require('cartlib/progression')
-local font_module<const> = require('cartlib/font')
+local font_module<const> = require('system/font')
 local gx_gpu<const> = require('system/gx_gpu')
 local gx_image<const> = require('system/gx_image')
 local cart_input<const> = require('cartlib/input/player')
@@ -310,10 +310,6 @@ function system.inst(definition_id, addons)
 		local instance<const> = textobject.new(ctor_opts)
 		instance.type_name = definition_id
 		apply_definition(instance, def, addons, 'dimensions')
-		local dimensions<const> = (addons and addons.dimensions) or (defaults and defaults.dimensions)
-		if dimensions then
-			instance:set_dimensions(dimensions)
-		end
 		world_instance:spawn(instance, addons and addons.pos)
 		return instance
 	end

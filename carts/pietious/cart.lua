@@ -110,9 +110,9 @@ local create_world<const> = function(director_boot_mode)
 	inst('shrine', { id = 'shrine', space_id = 'shrine', })
 	inst('lithograph_screen', { id = 'lithograph', space_id = 'lithograph', })
 	inst('item_screen', { id = 'item_screen', space_id = 'item', })
-	inst('ui', { id = 'ui', })
+	inst('ui', { id = 'ui', pos = { z = draw_z_hud }, })
 	inst('title_screen', { id = 'title_screen', space_id = 'title', })
-	inst('director', { id = 'd', boot_mode = director_boot_mode, })
+	inst('director', { id = 'd', boot_mode = director_boot_mode, pos = { z = draw_z_director_effect }, })
 end
 
 function new_game()

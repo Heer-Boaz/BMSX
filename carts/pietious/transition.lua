@@ -3,31 +3,26 @@
 --
 -- CROSS-CUTTING SUBSCRIBER PATTERN:
 -- Subscribes to director broadcasts via FSM root `on`:
---   'transition'       (from 'd') — stores optional banner_lines from payload
---     and plays the fade mask timeline.
+--   'transition'       (from 'd') — rebuilds the retained banner text from
+--     event.lines and plays the fade mask timeline.
 --   transition-mode broadcasts ('halo', 'title', 'story', 'ending',
 --     'victory_dance', 'death') — also play the fade mask timeline. The mode
 --     broadcast itself is the canonical signal; no second relay event exists.
---   'room'             (from 'd') — clears banner_lines (self-clear).
+--   'room'             (from 'd') — clears and hides retained banner text.
 --
--- The banner text is only shown when the director tag 'd.bt' is active
--- (set by the banner_transition state).  draw_transition_overlay() checks
--- this tag before rendering, so the transition overlay can exist and play
--- its mask timeline without showing any text.
+-- Banner visibility follows those mode events directly. The retained text
+-- component is enabled by 'transition' and cleared/hidden by every other
+-- transition mode, so presentation performs no director-state polling.
 
 require('constants')
-local font_module<const> = require('cartlib/font')
-
-local draw_glyph_line_color<const> = function(font, line, x, y, color)
-	local cursor_x = x
-	font_module.for_each_glyph(font, line, function(glyph)
-		gx_blit_img_color(glyph.imgid, cursor_x, y, color)
-		cursor_x = cursor_x + glyph.advance
-	end)
-end
+local font_module<const> = require('system/font')
 
 local transition<const> = {}
 transition.__index = transition
+
+local draw_transition_visual<const> = function()
+	gx_fill_rect_color(0, 0, screen_width, screen_height, 0xff000000)
+end
 
 local transition_mode_events<const> = {
 	'halo',
@@ -38,35 +33,17 @@ local transition_mode_events<const> = {
 	'death',
 }
 
-function transition:bind_visual()
-	local rc<const> = self:get_component('customvisualcomponent')
-	rc.producer = function()
-		self:draw_transition_overlay()
-	end
-end
-
-function transition:draw_transition_overlay()
-	gx_fill_rect_color(0, 0, screen_width, screen_height, 0xff000000)
-	if not oget('d'):has_tag('d.bt') then
-		return
-	end
-	local lines<const> = self.banner_lines
-	if #lines > 0 then
-		local banner_font<const> = self.banner_font
-		local base_y<const> = room_tile_origin_y + (room_tile_size * 9)
-		for i = 1, #lines do
-			local line<const> = lines[i]
-			if string.len(line) > 0 then
-				draw_glyph_line_color(banner_font, line, (screen_width - font_module.measure_line_width(banner_font, line)) // 2, base_y + ((i - 1) * banner_font.line_height), 0xffffffff)
-			end
-		end
-	end
-end
-
 function transition:ctor()
-	self.banner_font = font_module.get('pietious')
-	self.banner_lines = {}
-	self:bind_visual()
+	local text<const> = self:get_component('textcomponent')
+	text:set_font(font_module.get('pietious'))
+	text.color = 0xffffffff
+	text.offset.y = room_tile_origin_y + (room_tile_size * 9)
+	text.offset.z = 1
+	text.visible = false
+	text.center_block_width = screen_width
+	text:set_text({})
+	self.text_component = text
+	self:get_component('customvisualcomponent').producer = draw_transition_visual
 	self:define_timeline(timeline.new({
 		id = 'transition.timeline',
 		frames = timeline.range(flow_room_transition_frames),
@@ -79,14 +56,16 @@ local define_transition_fsm<const> = function()
 		['transition'] = {
 			emitter = 'd',
 			go = function(self, _state, event)
-				self.banner_lines = event and event.lines or {}
+				self.text_component:set_text(event.lines)
+				self.text_component.visible = true
 				self:play_timeline('transition.timeline', { rewind = true, snap_to_start = true })
 			end,
 		},
 		['room'] = {
 			emitter = 'd',
 			go = function(self)
-				self.banner_lines = {}
+				self.text_component:set_text({})
+				self.text_component.visible = false
 			end,
 		},
 	}
@@ -95,7 +74,8 @@ local define_transition_fsm<const> = function()
 		on[event_name] = {
 			emitter = 'd',
 			go = function(self)
-				self.banner_lines = {}
+				self.text_component:set_text({})
+				self.text_component.visible = false
 				self:play_timeline('transition.timeline', { rewind = true, snap_to_start = true })
 			end,
 		}
@@ -114,7 +94,7 @@ local register_transition_definition<const> = function()
 		def_id = 'transition',
 		class = transition,
 		fsms = { 'transition' },
-		components = { 'customvisualcomponent' },
+		components = { 'customvisualcomponent', 'textcomponent' },
 		defaults = {
 			id = 'transition',
 		},

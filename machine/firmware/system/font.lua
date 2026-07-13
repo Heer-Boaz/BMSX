@@ -109,6 +109,22 @@ local glyph_item<const> = function(items, glyph)
 	return items['?']
 end
 
+function font.write_glyph_line(id_or_descriptor, line, target)
+	local descriptor<const> = type(id_or_descriptor) == 'table' and id_or_descriptor or font.get(id_or_descriptor)
+	local items<const> = descriptor.items
+	local length<const> = #line
+	local width = 0
+	for index = 1, length do
+		local glyph<const> = glyph_item(items, string.sub(line, index, index))
+		target[index] = glyph
+		width = width + glyph.advance
+	end
+	for index = length + 1, #target do
+		target[index] = nil
+	end
+	return width
+end
+
 function font.for_each_glyph(id_or_descriptor, line, fn)
 	local descriptor<const> = type(id_or_descriptor) == 'table' and id_or_descriptor or font.get(id_or_descriptor)
 	local items<const> = descriptor.items
