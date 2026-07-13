@@ -563,11 +563,23 @@ gooit achterstand niet meer via een 100-ms-resync weg en slaat bij catch-up alle
 de tussenliggende hostpresentatie over. Een generieke frame-timecallback van een
 andere core krijgt nog steeds de echte verstreken tijd zoals libretro voorschrijft.
 
-De GLES2 dependencyplanner is eveneens opgeschoond:
+CPU->VRAM en snapshotuploads zijn inmiddels aan de echte accelerated datapath
+gecorrigeerd. WebGL2 en GLES2 pakken raw VRAM in één vaste 2-MiB stagingbuffer,
+inverteren de rijen daar eenmaal en sturen iedere fysieke X/Y-wraprechthoek met
+één textureupload. WebGPU gebruikt dezelfde retained stagingvorm met een tight
+row pitch. Een volledige transfer kost daardoor maximaal vier hostuploads; een
+partiële laatste rij maximaal twee extra, in plaats van één of twee calls per
+VRAM-rij. De maskbittransfer maakt één quad per fysieke rechthoek. Er ontstaat
+geen typed array, subarray of descriptor per upload. Een verborgen GLES2-A/B op
+de volledige 93-frame `2025`-transitietimeline levert voor en na deze wijziging
+pixelidentieke beelden; de browserowners zijn gecompileerd maar blijven voor
+live conformance uitgesteld.
 
-- semitransparante lines/rectangles krijgen retained dependencylagen op basis van
-  hun reeds berekende clipped bounds; de tijdelijke derde implementatie van het
-  lijnraster en de `O(commands² * line_length)` pixelwandeling zijn verwijderd;
+De GLES2 dependencyplanner is functioneel opgeschoond, maar de boundsowner is
+nog niet correct:
+
+- de tijdelijke derde implementatie van het lijnraster en de
+  `O(commands² * line_length)` pixelwandeling zijn verwijderd;
 - per-layer linked indices voeren ieder command eenmaal uit in plaats van alle
   commands voor iedere laag opnieuw te scannen;
 - line-dither behoort tot de batchidentiteit en wordt aan de line-renderdatapath
@@ -575,7 +587,12 @@ De GLES2 dependencyplanner is eveneens opgeschoond:
 - alle plannerstate blijft in vaste retained arrays voor maximaal 1.024 commands;
   er is geen nieuwe heapallocatie of per-framecontainer in dit pad;
 - bounds zijn bewust conservatief: een false-positive overlap kost batching maar
-  kan nooit twee werkelijk afhankelijke raw-VRAM-writes omordenen.
+  kan nooit twee werkelijk afhankelijke raw-VRAM-writes omordenen;
+- de planner tesselleert een command nu nog eenmaal om bounds te bepalen,
+  vergelijkt die bounds lineair met alle eerdere commands en tesselleert daarna
+  opnieuw voor rendering. Verplaats clipped bounds eenmaal naar de prepared-
+  commandowner en consumeer ze rechtstreeks. Voeg pas spatial bins toe wanneer
+  meting aantoont dat de resterende `O(commands²)`-vergelijking dominant is.
 
 Reproduceerbare evidence:
 
@@ -643,10 +660,9 @@ Nog open:
    De overige GLES-programma-, buffer-, texture- en singletonstate heeft nog één
    expliciete teardown/init-owner nodig.
 9. Vervang herhaald `glBufferSubData` op dezelfde dynamische vertexbuffers door
-   een echte retained GLES2-streambufferowner en pak CPU->VRAM uploads als
-   maximaal de fysieke X/Y-wraprectangles in plaats van één textureupload per
-   rij. Gebruik geen lokale orphan-callwrapper of willekeurige drievoudige VBO-
-   roulette als vervanging voor gemeten resource-lifetimeownership.
+   een echte retained GLES2-streambufferowner. Gebruik geen lokale orphan-
+   callwrapper of willekeurige drievoudige VBO-roulette als vervanging voor
+   gemeten resource-lifetimeownership.
 10. Splits de directe host verder op bij echte stateowners. Core-options zijn nu
     een apart standaard libretro-register: V2/V1/legacy-definities leveren de
     defaults, CLI-overrides blijven behouden en de update-latch wordt werkelijk

@@ -51,7 +51,7 @@ constexpr size_t kGxGpuScanoutVertexFloats = 2u;
 constexpr size_t kGxGpuScanoutVertexCount = 3u;
 constexpr size_t kGxGpuScanoutFloatCount = kGxGpuScanoutVertexCount * kGxGpuScanoutVertexFloats;
 constexpr size_t kGxGpuRawVramBytesPerPixel = 4u;
-constexpr size_t kGxGpuRawVramUploadRowBytes = static_cast<size_t>(kGxGpuVramWidth) * kGxGpuRawVramBytesPerPixel;
+constexpr size_t kGxGpuRawVramUploadBytes = static_cast<size_t>(kGxGpuVramWidth) * static_cast<size_t>(kGxGpuVramHeight) * kGxGpuRawVramBytesPerPixel;
 constexpr size_t kGxGpuRawVramReadbackBytes = static_cast<size_t>(kGxGpuVramWidth) * static_cast<size_t>(kGxGpuVramHeight) * kGxGpuRawVramBytesPerPixel;
 constexpr i32 kGxGpuReadbackPackWidth = 512;
 constexpr u32 kGxGpuFullDrawingAreaTopLeftWord = 0u;
@@ -75,7 +75,7 @@ std::array<f32, kGxGpuTexturedFloatCapacity> g_texturedVertices{};
 std::array<i64, kGxGpuTexturedUvComponents * GX_GPU_TRIANGLE_ATTRIBUTE_PLANE_PHASES> g_texturedUvPlane{};
 std::array<i64, kGxGpuColorComponents * GX_GPU_TRIANGLE_ATTRIBUTE_PLANE_PHASES> g_colorPlane{};
 std::array<f32, kGxGpuTransferFloatCapacity> g_transferVertices{};
-std::array<u8, kGxGpuRawVramUploadRowBytes> g_rawVramUploadRow{};
+std::array<u8, kGxGpuRawVramUploadBytes> g_rawVramUpload{};
 std::array<u8, kGxGpuRawVramReadbackBytes> g_rawVramReadback{};
 std::array<u8, GX_GPU_VRAM_BYTE_COUNT> g_vramSnapshotScratch{};
 constexpr std::array<f32, kGxGpuScanoutFloatCount> g_scanoutVertices{
@@ -1067,35 +1067,27 @@ size_t appendTransferQuad(size_t vertexFloatCount, u32 x, u32 y, u32 width, u32 
 	return offset;
 }
 
-size_t writeRawVramUploadPixel(size_t rowByteOffset, u32 pixelWord) {
-	g_rawVramUploadRow[rowByteOffset] = static_cast<u8>(pixelWord & 0xffu);
-	g_rawVramUploadRow[rowByteOffset + 1u] = static_cast<u8>((pixelWord >> 8u) & 0xffu);
-	g_rawVramUploadRow[rowByteOffset + 2u] = 0u;
-	g_rawVramUploadRow[rowByteOffset + 3u] = 0xffu;
-	return rowByteOffset + kGxGpuRawVramBytesPerPixel;
-}
-
-void writeVramSnapshotUploadRow(const std::array<u8, GX_GPU_VRAM_BYTE_COUNT>& snapshotBytes, u32 logicalY) {
-	size_t rowByteOffset = 0u;
-	size_t snapshotByteOffset = static_cast<size_t>(logicalY) * static_cast<size_t>(kGxGpuVramWidth) * 2u;
-	for (i32 column = 0; column < kGxGpuVramWidth; column += 1) {
-		g_rawVramUploadRow[rowByteOffset] = snapshotBytes[snapshotByteOffset];
-		g_rawVramUploadRow[rowByteOffset + 1u] = snapshotBytes[snapshotByteOffset + 1u];
-		g_rawVramUploadRow[rowByteOffset + 2u] = 0u;
-		g_rawVramUploadRow[rowByteOffset + 3u] = 0xffu;
-		rowByteOffset += kGxGpuRawVramBytesPerPixel;
-		snapshotByteOffset += 2u;
+void writeVramSnapshotUpload(const std::array<u8, GX_GPU_VRAM_BYTE_COUNT>& snapshotBytes) {
+	for (i32 logicalY = 0; logicalY < kGxGpuVramHeight; logicalY += 1) {
+		size_t uploadByteOffset = static_cast<size_t>((kGxGpuVramHeight - 1) - logicalY) * static_cast<size_t>(kGxGpuVramWidth) * kGxGpuRawVramBytesPerPixel;
+		size_t snapshotByteOffset = static_cast<size_t>(logicalY) * static_cast<size_t>(kGxGpuVramWidth) * 2u;
+		for (i32 column = 0; column < kGxGpuVramWidth; column += 1) {
+			g_rawVramUpload[uploadByteOffset] = snapshotBytes[snapshotByteOffset];
+			g_rawVramUpload[uploadByteOffset + 1u] = snapshotBytes[snapshotByteOffset + 1u];
+			g_rawVramUpload[uploadByteOffset + 2u] = 0u;
+			g_rawVramUpload[uploadByteOffset + 3u] = 0xffu;
+			uploadByteOffset += kGxGpuRawVramBytesPerPixel;
+			snapshotByteOffset += 2u;
+		}
 	}
 }
 
 void uploadGxGpuVramSnapshot(const std::array<u8, GX_GPU_VRAM_BYTE_COUNT>& snapshotBytes) {
+	writeVramSnapshotUpload(snapshotBytes);
 	g_gxGpu.backend->setRenderTarget(0, kGxGpuVramWidth, kGxGpuVramHeight);
 	g_gxGpu.backend->setActiveTextureUnit(kGxGpuScanoutTextureUnit);
 	g_gxGpu.backend->bindTexture2D(&g_gxGpu.vramTexture);
-	for (i32 logicalY = 0; logicalY < kGxGpuVramHeight; logicalY += 1) {
-		writeVramSnapshotUploadRow(snapshotBytes, static_cast<u32>(logicalY));
-		glTexSubImage2D(GL_TEXTURE_2D, 0, 0, (kGxGpuVramHeight - 1) - logicalY, kGxGpuVramWidth, 1, GL_RGBA, GL_UNSIGNED_BYTE, g_rawVramUploadRow.data());
-	}
+	glTexSubImage2D(GL_TEXTURE_2D, 0, 0, 0, kGxGpuVramWidth, kGxGpuVramHeight, GL_RGBA, GL_UNSIGNED_BYTE, g_rawVramUpload.data());
 	g_sampleDirtyRect = {0, 0, kGxGpuVramWidth, kGxGpuVramHeight};
 }
 
@@ -1142,13 +1134,75 @@ void completeGxGpuReadback(const GxGpuCommandBuffer& commandBuffer, GxGpuReadbac
 	readback.completeReadback(readbackToken);
 }
 
-void writeCpuToVramUploadRow(const GxGpuCommandBuffer& commandBuffer, u32 payloadWordStart, u32 rowPixelStart, u32 width) {
-	size_t rowByteOffset = 0u;
-	for (u32 column = 0u; column < width; column += 1u) {
-		const u32 pixelIndex = rowPixelStart + column;
-		const u32 payloadWord = commandBuffer.words[payloadWordStart + (pixelIndex >> 1u)];
-		rowByteOffset = writeRawVramUploadPixel(rowByteOffset, gxGpuTransferPixelWord(payloadWord, pixelIndex));
+void writeCpuToVramUploadRun(
+	const GxGpuCommandBuffer& commandBuffer,
+	u32 payloadWordStart,
+	u32 sourceRowStart,
+	u32 sourceColumnStart,
+	u32 sourceStride,
+	u32 runWidth,
+	u32 runHeight) {
+	size_t uploadByteOffset = 0u;
+	for (u32 storageRow = 0u; storageRow < runHeight; storageRow += 1u) {
+		u32 pixelIndex = (sourceRowStart + (runHeight - 1u) - storageRow) * sourceStride + sourceColumnStart;
+		for (u32 column = 0u; column < runWidth; column += 1u) {
+			const u32 payloadWord = commandBuffer.words[payloadWordStart + (pixelIndex >> 1u)];
+			const u32 pixelWord = gxGpuTransferPixelWord(payloadWord, pixelIndex);
+			g_rawVramUpload[uploadByteOffset] = static_cast<u8>(pixelWord & 0xffu);
+			g_rawVramUpload[uploadByteOffset + 1u] = static_cast<u8>((pixelWord >> 8u) & 0xffu);
+			g_rawVramUpload[uploadByteOffset + 2u] = 0u;
+			g_rawVramUpload[uploadByteOffset + 3u] = 0xffu;
+			uploadByteOffset += kGxGpuRawVramBytesPerPixel;
+			pixelIndex += 1u;
+		}
 	}
+}
+
+size_t uploadCpuToVramRows(
+	const GxGpuCommandBuffer& commandBuffer,
+	u32 payloadWordStart,
+	u32 x,
+	u32 y,
+	u32 sourceStride,
+	u32 sourceRowStart,
+	u32 rowWidth,
+	u32 rowCount,
+	u32 maskBitModeWord,
+	size_t transferVertexFloatCount) {
+	u32 targetRunY = (y + sourceRowStart) & (static_cast<u32>(kGxGpuVramHeight) - 1u);
+	u32 sourceRunRow = sourceRowStart;
+	u32 remainingRows = rowCount;
+	while (remainingRows != 0u) {
+		const u32 runHeight = gxGpuVramWrappedHeight(targetRunY, remainingRows);
+		u32 targetRunX = x;
+		u32 sourceColumnStart = 0u;
+		u32 remainingWidth = rowWidth;
+		while (remainingWidth != 0u) {
+			const u32 runWidth = gxGpuVramWrappedWidth(targetRunX, remainingWidth);
+			writeCpuToVramUploadRun(commandBuffer, payloadWordStart, sourceRunRow, sourceColumnStart, sourceStride, runWidth, runHeight);
+			const u32 storageY = static_cast<u32>(kGxGpuVramHeight) - targetRunY - runHeight;
+			glTexSubImage2D(
+				GL_TEXTURE_2D,
+				0,
+				static_cast<GLint>(targetRunX),
+				static_cast<GLint>(storageY),
+				static_cast<GLsizei>(runWidth),
+				static_cast<GLsizei>(runHeight),
+				GL_RGBA,
+				GL_UNSIGNED_BYTE,
+				g_rawVramUpload.data());
+			if (maskBitModeWord != 0u) {
+				transferVertexFloatCount = appendTransferQuad(transferVertexFloatCount, targetRunX, targetRunY, runWidth, runHeight, targetRunX, targetRunY);
+			}
+			remainingWidth -= runWidth;
+			sourceColumnStart += runWidth;
+			targetRunX = 0u;
+		}
+		remainingRows -= runHeight;
+		sourceRunRow += runHeight;
+		targetRunY = 0u;
+	}
+	return transferVertexFloatCount;
 }
 
 void markGxGpuSampleTextureDirtyLogicalArea(u32 x, u32 y, u32 width, u32 height);
@@ -1174,31 +1228,11 @@ void uploadCpuToVram(const GxGpuCommandBuffer& commandBuffer, u32 commandIndex) 
 	g_gxGpu.backend->setRenderTarget(0, kGxGpuVramWidth, kGxGpuVramHeight);
 	g_gxGpu.backend->setActiveTextureUnit(maskBitModeWord == 0u ? kGxGpuScanoutTextureUnit : kGxGpuTextureTransferUnit);
 	g_gxGpu.backend->bindTexture2D(maskBitModeWord == 0u ? &g_gxGpu.vramTexture : &g_gxGpu.vramTransferTexture);
-	for (u32 row = 0u; row < uploadHeight; row += 1u) {
-		const u32 rowWidth = row == fullRows ? lastRowWidth : width;
-		writeCpuToVramUploadRow(commandBuffer, payloadWordStart, row * width, rowWidth);
-		const u32 targetY = (y + row) & (static_cast<u32>(kGxGpuVramHeight) - 1u);
-		const u32 storageY = (static_cast<u32>(kGxGpuVramHeight) - 1u) - targetY;
-		const u32 firstWidth = gxGpuVramWrappedWidth(x, rowWidth);
-		glTexSubImage2D(GL_TEXTURE_2D, 0, static_cast<GLint>(x), static_cast<GLint>(storageY), static_cast<GLsizei>(firstWidth), 1, GL_RGBA, GL_UNSIGNED_BYTE, g_rawVramUploadRow.data());
-		if (maskBitModeWord != 0u) {
-			transferVertexFloatCount = appendTransferQuad(transferVertexFloatCount, x, targetY, firstWidth, 1u, x, targetY);
-		}
-		if (firstWidth != rowWidth) {
-			glTexSubImage2D(
-				GL_TEXTURE_2D,
-				0,
-				0,
-				static_cast<GLint>(storageY),
-				static_cast<GLsizei>(rowWidth - firstWidth),
-				1,
-				GL_RGBA,
-				GL_UNSIGNED_BYTE,
-				g_rawVramUploadRow.data() + firstWidth * kGxGpuRawVramBytesPerPixel);
-			if (maskBitModeWord != 0u) {
-				transferVertexFloatCount = appendTransferQuad(transferVertexFloatCount, 0u, targetY, rowWidth - firstWidth, 1u, 0u, targetY);
-			}
-		}
+	if (fullRows != 0u) {
+		transferVertexFloatCount = uploadCpuToVramRows(commandBuffer, payloadWordStart, x, y, width, 0u, width, fullRows, maskBitModeWord, transferVertexFloatCount);
+	}
+	if (lastRowWidth != 0u) {
+		transferVertexFloatCount = uploadCpuToVramRows(commandBuffer, payloadWordStart, x, y, width, fullRows, lastRowWidth, 1u, maskBitModeWord, transferVertexFloatCount);
 	}
 	if (maskBitModeWord != 0u) {
 		if (gxGpuMaskBitCheckBeforeDraw(maskBitModeWord)) {
