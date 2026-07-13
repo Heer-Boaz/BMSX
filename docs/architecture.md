@@ -855,6 +855,17 @@ faults through GEO status/fault registers. Geometry math helpers are allowed onl
 under the GEO device boundary; cart-visible proof must use RAM/MMIO/status, not a
 private direct helper call.
 
+Cartlib submits both direct and full-pass overlap commands through the GEO
+doorbell and waits on the device DONE/ERROR interrupt with `halt_until_irq`.
+The cart IRQ dispatcher acknowledges the hardware line and latches the GEO
+completion bits for the suspended collision call; collision code does not read
+or acknowledge the global IRQ register itself. `overlap2dsystem` owns two
+alternating pair-history maps, a retained pool for their row tables, retained
+GEO result/contact records, and one synchronous overlap-event record. A stable
+collider high-water mark therefore performs no per-frame row or event-table
+allocation. `overlap.begin`, `overlap.stay`, and `overlap.end` handlers must
+consume the transient retained record during dispatch rather than storing it.
+
 GEO active-job latch records live in `machine/devices/geometry/job` on both
 runtimes. GEO save-state record shapes live in
 `machine/devices/geometry/save_state`; C++ keeps the aggregate GEO

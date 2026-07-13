@@ -5,7 +5,7 @@ This is **not** a stable ABI contract and is **not** more authoritative than the
 live checkout. It is a temporary execution checklist so agents can see the
 current direction, completed slices, known blockers, and next work.
 
-Last refreshed: 2026-07-12
+Last refreshed: 2026-07-13
 Do not duplicate recent commit history here. Use `git log --oneline` for that.
 
 ## Source of truth
@@ -121,6 +121,15 @@ Implemented or partially covered GX-GPU areas include:
   tables, glyph substrings or callback closures. The duplicate cartlib font
   module is removed in favor of the system-font owner. Sprite modulation is a
   packed GX color word throughout; the dead float `colorize` DTO is removed.
+- Cartlib overlap submission now follows the GEO hardware boundary: direct and
+  full-pass commands suspend on `halt_until_irq`, the central cart IRQ
+  dispatcher acknowledges DONE/ERROR, and collision code consumes a raw
+  completion latch instead of polling IRQ MMIO. `overlap2dsystem` retains its
+  alternating pair-history rows, result/contact records and one synchronous
+  event record at the system owner. Stable collider high-water frames allocate
+  no pair rows or event DTOs; only the documented begin/stay/end events are
+  emitted. A focused Pietious headless regression proves the real GEO IRQ path,
+  retained event/contact identity and pair-row reuse after separation.
 - Texture windows/CLUT-ish paths, texture disable, modulation math, mask/fill
   behavior, oversized primitive culling, and VRAM copy overlap chunking.
 - Raw PSX textured quad polygons are covered in TS/C++ software/headless tests

@@ -247,17 +247,6 @@ Nog te sluiten:
   op echte DMA-completion synchroniseren. Geen hogere fictieve GPU-klok,
   captureverschuiving, cartpolling of nieuwe waitwrapper.
 
-## Cartlib collision submission en steady-frame allocaties
-
-Status: open.
-
-- `collision2d.collect_overlaps` busy-pollt per
-  physicsframe de GEO-completionflags, waarna `overlap2dsystem` retained pairrows
-  juist weggooit en voor iedere begin/stay-pair nieuwe rows en vier event-DTO's
-  bouwt. Submit/completion hoort aan de GEO IRQ/HALT-grens; pairhistory, rows en
-  synchrone eventrecords horen retained systemscratch te zijn. Geen timeout,
-  hostwait of generieke eventpoolfacade.
-
 ## Exacte GX raster- en VRAM-pariteit
 
 Status: open.

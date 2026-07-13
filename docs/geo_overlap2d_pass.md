@@ -131,6 +131,13 @@ Command write latches the register bank. GEO enters BUSY or REJECTED. Scheduler
 service executes accepted work, writes result/summary records, updates
 `sys_geo_processed`, and finishes with DONE or ERROR.
 
+DONE raises `IRQ_GEO_DONE`; ERROR and REJECTED raise `IRQ_GEO_ERROR`. Cartlib
+registers one handler for both lines with the cart IRQ dispatcher. The dispatcher
+acknowledges the line, the handler latches its raw completion bits, and the
+suspended collision submission resumes from `halt_until_irq`. Neither direct
+queries nor full-pass overlap submissions poll or acknowledge the global IRQ
+register.
+
 Fault behavior:
 
 - bad command/register combination rejects before execution;

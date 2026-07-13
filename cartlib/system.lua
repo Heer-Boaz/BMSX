@@ -27,8 +27,10 @@ local font_module<const> = require('system/font')
 local gx_gpu<const> = require('system/gx_gpu')
 local gx_image<const> = require('system/gx_image')
 local cart_input<const> = require('cartlib/input/player')
+local collision2d<const> = require('cartlib/collision2d')
 
 local irq_ack_addr<const> = 0x0800000c
+local irq_geo_done_error<const> = 0x0018
 local irq_apu<const> = 0x0020
 
 local world_instance<const> = world_module.instance
@@ -515,6 +517,7 @@ function system.trigger_effect(object_id, effect_id, options)
 	return component:trigger(effect_id, options and options.payload)
 end
 
+system.on_irq(irq_geo_done_error, collision2d.on_geo_irq)
 system.on_irq(irq_apu, function()
 	aem.on_apu_irq()
 end)

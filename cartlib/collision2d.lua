@@ -3,14 +3,10 @@
 
 local collision2d<const> = {}
 
-local irq_flags_addr<const> = 0x08000008
-local irq_ack_addr<const> = 0x0800000c
-local irq_geo_done<const> = 0x0008
 local irq_geo_error<const> = 0x0010
 
 local geo_overlap_candidate_param0<const> = 0x00000001 | 0x00000000 | 0x00000000 | 0x00000000
 local geo_overlap_full_pass_param0<const> = 0x00000002 | 0x00000004 | 0x00000000 | 0x00000000
-local geo_irq_mask<const> = irq_geo_done | irq_geo_error
 local geo_direct_query_scratch_bytes<const> = 0x00000020 * 2 + 0x00000014 * 2 + 0x0000000c + 0x00000024 + 0x00000010
 local geo_direct_shape_base<const> = 0x08040000
 local geo_direct_instance_base<const> = geo_direct_shape_base + 0x00000020 * 2
@@ -78,11 +74,9 @@ struct geo_param_registers
 end
 
 bss geo_batch_token: word
+bss geo_completion_irq_flags: word
 local geo_fault_register<const>: *word = 0x08000068
-local irq_flags_register<const>: *word = irq_flags_addr
-local irq_ack_register<const>: *word = irq_ack_addr
 local geo_cmd_register<const>: *word = 0x08000044
-local geo_status_register<const>: *word = 0x0800004c
 local direct_query_contact<const> = {
 	normal = { x = 0, y = 0 },
 	depth = 0,
@@ -111,14 +105,6 @@ end
 local raise_geo_fault<const> = function(label)
 	local fault_u<const>, fault_code<const>, fault_index<const> = unpack_geo_fault()
 	error(string.format('GEO %s failed (fault=%08Xh hex=%08Xh code=%04Xh index=%08Xh)', label, fault_u, fault_u, fault_code, fault_index))
-end
-
-local ack_geo_irq_if_pending<const> = function()
-	local flags<const> = *irq_flags_register
-	local geo_flags<const> = flags & geo_irq_mask
-	if geo_flags ~= 0 then
-		*irq_ack_register = geo_flags
-	end
 end
 
 local stage_geo_aabb_shape<const> = function(collider, shape_addr)
@@ -154,16 +140,13 @@ end
 
 local wait_for_geo_completion<const> = function(label)
 	repeat
-		local flags<const> = *irq_flags_register
-		local geo_flags<const> = flags & geo_irq_mask
-		if geo_flags ~= 0 then
-			*irq_ack_register = geo_flags
-			if (geo_flags & irq_geo_error) ~= 0 then
-				raise_geo_fault(label)
-			end
-			return
-		end
-	until false
+		halt_until_irq
+	until *geo_completion_irq_flags ~= 0
+	local geo_flags<const> = *geo_completion_irq_flags
+	*geo_completion_irq_flags = 0
+	if (geo_flags & irq_geo_error) ~= 0 then
+		raise_geo_fault(label)
+	end
 end
 
 local ensure_pair_contacts<const> = function(pair)
@@ -253,6 +236,7 @@ local submit_geo_overlap_candidate_batch<const> = function(instance_base, pair_b
 	param->stride0 = 0x00000014
 	param->stride1 = 0x0000000c
 	param->stride2 = instance_count
+	*geo_completion_irq_flags = 0
 	*geo_cmd_register = 0x00000022
 	wait_for_geo_completion('overlap batch')
 end
@@ -271,12 +255,12 @@ local submit_geo_overlap_full_pass<const> = function(instance_base, result_base,
 	param->stride0 = 0x00000014
 	param->stride1 = 0
 	param->stride2 = 0
+	*geo_completion_irq_flags = 0
 	*geo_cmd_register = 0x00000022
-	local status<const> = *geo_status_register
-	if (status & 0x00000008) ~= 0 or (status & 0x00000004) ~= 0 then
-		ack_geo_irq_if_pending()
-		raise_geo_fault('overlap full pass')
-	end
+end
+
+function collision2d.on_geo_irq(flags)
+	*geo_completion_irq_flags = *geo_completion_irq_flags | flags
 end
 
 function collision2d.collect_overlaps(colliders, collider_count, pairs)
