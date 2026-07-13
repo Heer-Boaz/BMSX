@@ -31,8 +31,14 @@ Options:
 - `--no-game`: call `retro_load_game(NULL)` (requires `supports_no_game`)
 - `--system-dir <path>`: used for `RETRO_ENVIRONMENT_GET_SYSTEM_DIRECTORY`
 - `--save-dir <path>`: used for `RETRO_ENVIRONMENT_GET_SAVE_DIRECTORY`
-- `--backend software|gles2`: sets the `bmsx_render_backend` core option (host only provides software video)
-- `--video fb|sdl`: `fb` uses `/dev/fb0` + evdev, `sdl` opens a window and uses SDL input (software-only)
+- `--backend software|gles2`: sets the `bmsx_render_backend` core option
+- `--video fb|sdl`: `fb` uses `/dev/fb0` + evdev; `sdl` provides windowed software or GLES2 video and SDL input
+- `--hidden-window`: keeps the SDL window unmapped while retaining its GLES2 context for unattended runs
+- `--input-timeline <path>`: replays an explicit input timeline
+- `--paced-timeline`: keeps an active timeline on the normal host deadline instead of running it as fast as possible
+- `--max-frames <count>`: owns run lifetime explicitly, including when the timeline has ended
+- `--gles2-timing-report`: prints fixed-size `retro_run`, core-without-presentation, final-blit and swap histograms for the GLES2 callback path at shutdown
+- `--timing-warmup <count>`: excludes the first frames from the timing report
 - `--input-debug`: logs evdev events and the resulting RETRO_DEVICE_JOYPAD state
 - `--crt-postprocessing on|off`: sets the `bmsx_crt_postprocessing` core option
 - `--crt-noise on|off`: sets the `bmsx_crt_noise` core option

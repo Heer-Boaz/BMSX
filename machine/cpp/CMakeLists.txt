@@ -17,7 +17,6 @@ option(BMSX_BUILD_SDL "Build SDL standalone executable" OFF)
 option(BMSX_BUILD_TESTS "Build unit tests" OFF)
 option(BMSX_ENABLE_LTO "Enable Link Time Optimization" OFF)
 option(BMSX_ENABLE_ZLIB "Enable zlib-based ROM decompression" ON)
-option(BMSX_ENABLE_PERFORMANCE_LOGS "Enable per-frame performance logging" OFF)
 set(BMSX_ENABLE_GLES2_DEFAULT ON)
 # Previously GLES2 was disabled by default on Windows; enable by default on all platforms
 message(STATUS "BMSX: Default BMSX_ENABLE_GLES2=${BMSX_ENABLE_GLES2_DEFAULT}")
@@ -416,9 +415,6 @@ if(BMSX_BUILD_LIBRETRO)
 		${BMSX_LIBRETRO_DIR}
 	)
 
-	if(BMSX_ENABLE_PERFORMANCE_LOGS)
-		target_compile_definitions(bmsx_libretro PRIVATE ENABLE_PERFORMANCE_LOGS=1)
-	endif()
 endif()
 
 # =============================================================================
@@ -435,6 +431,10 @@ if(BMSX_BUILD_LIBRETRO_HOST)
 
 	add_executable(bmsx_libretro_host
 		${BMSX_LIBRETRO_HOST_DIR}/main.c
+		${BMSX_LIBRETRO_HOST_DIR}/audio_queue.c
+		${BMSX_LIBRETRO_HOST_DIR}/core_options.c
+		${BMSX_LIBRETRO_HOST_DIR}/frame_pacer.c
+		${BMSX_LIBRETRO_HOST_DIR}/frame_timing.c
 		${BMSX_LIBRETRO_HOST_DIR}/input_timeline.c
 		${BMSX_LIBRETRO_HOST_DIR}/screenshot.c
 	)
@@ -474,6 +474,40 @@ endif()
 
 if(BMSX_BUILD_TESTS)
 	enable_testing()
+
+	add_executable(bmsx_libretro_host_frame_pacer_tests
+		${CMAKE_CURRENT_SOURCE_DIR}/../../tests/cpp/libretro_host_frame_pacer_test.c
+		${BMSX_LIBRETRO_HOST_DIR}/frame_pacer.c
+	)
+	target_include_directories(bmsx_libretro_host_frame_pacer_tests PRIVATE ${BMSX_LIBRETRO_HOST_DIR})
+	add_test(NAME bmsx_libretro_host_frame_pacer_tests COMMAND bmsx_libretro_host_frame_pacer_tests)
+
+	add_executable(bmsx_libretro_host_frame_timing_tests
+		${CMAKE_CURRENT_SOURCE_DIR}/../../tests/cpp/libretro_host_frame_timing_test.c
+		${BMSX_LIBRETRO_HOST_DIR}/frame_timing.c
+	)
+	target_include_directories(bmsx_libretro_host_frame_timing_tests PRIVATE ${BMSX_LIBRETRO_HOST_DIR})
+	add_test(NAME bmsx_libretro_host_frame_timing_tests COMMAND bmsx_libretro_host_frame_timing_tests)
+
+	add_executable(bmsx_libretro_host_core_options_tests
+		${CMAKE_CURRENT_SOURCE_DIR}/../../tests/cpp/libretro_host_core_options_test.c
+		${BMSX_LIBRETRO_HOST_DIR}/core_options.c
+	)
+	target_include_directories(bmsx_libretro_host_core_options_tests PRIVATE
+		${BMSX_LIBRETRO_HOST_DIR}
+		${BMSX_LIBRETRO_DIR}
+	)
+	add_test(NAME bmsx_libretro_host_core_options_tests COMMAND bmsx_libretro_host_core_options_tests)
+
+	if(UNIX AND NOT APPLE)
+		add_executable(bmsx_libretro_host_audio_queue_tests
+			${CMAKE_CURRENT_SOURCE_DIR}/../../tests/cpp/libretro_host_audio_queue_test.c
+			${BMSX_LIBRETRO_HOST_DIR}/audio_queue.c
+		)
+		target_include_directories(bmsx_libretro_host_audio_queue_tests PRIVATE ${BMSX_LIBRETRO_HOST_DIR})
+		target_link_libraries(bmsx_libretro_host_audio_queue_tests PRIVATE pthread)
+		add_test(NAME bmsx_libretro_host_audio_queue_tests COMMAND bmsx_libretro_host_audio_queue_tests)
+	endif()
 	add_executable(bmsx_gx_gte_tests
 		${CMAKE_CURRENT_SOURCE_DIR}/../../tests/cpp/gx_gte_test.cpp
 	)

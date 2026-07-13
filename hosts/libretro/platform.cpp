@@ -20,7 +20,6 @@
 #if BMSX_ENABLE_GLES2
 #include "render/backend/gles2/backend.h"
 #endif
-#include <chrono>
 #include <cstring>
 #include <cstdarg>
 #include <algorithm>
@@ -31,10 +30,6 @@
 #include <vector>
 #if defined(__GLIBC__)
 #include <malloc.h>
-#endif
-
-#ifndef ENABLE_PERFORMANCE_LOGS
-#define ENABLE_PERFORMANCE_LOGS 0
 #endif
 
 namespace bmsx {
@@ -130,11 +125,6 @@ void appendSystemRomCandidates(std::vector<std::string>& paths, const std::strin
 LibretroPlatform::LibretroPlatform(BackendType backend_type, retro_system_av_info& av_info)
 	: m_frame_time_sec(static_cast<double>(HZ_SCALE) / static_cast<double>(PAL_REFRESH_UFPS_SCALED))
 	, m_backend_type(backend_type) {
-#if !BMSX_ENABLE_GLES2
-	if (m_backend_type == BackendType::OpenGLES2) {
-		m_backend_type = BackendType::Software;
-	}
-#endif
 	m_framebuffer.resize(
 		gxGpuDisplayModeScreenWidth(GX_GPU_RESET_DISPLAY_MODE_WORD),
 		static_cast<unsigned>(gxGpuVerticalVisibleLines(GX_GPU_RESET_VERTICAL_DISPLAY_RANGE_WORD, GX_GPU_RESET_DISPLAY_MODE_WORD))
@@ -184,12 +174,14 @@ LibretroPlatform::~LibretroPlatform() {
 	Input::instance().shutdown();
 
 	// Shutdown the machine manager before destroying platform components
-	if (m_machine_manager) {
-		m_machine_manager->shutdown();
-		m_machine_manager.reset();
-	}
+	m_machine_manager->shutdown();
+	m_machine_manager.reset();
 
 	log(RETRO_LOG_INFO, "[BMSX] Platform destroyed\n");
+}
+
+HostClock* LibretroPlatform::clock() {
+	return m_clock.get();
 }
 
 void LibretroPlatform::setInputPollCallback(retro_input_poll_t cb) {
@@ -260,6 +252,7 @@ void LibretroPlatform::onContextDestroy() {
 #if BMSX_ENABLE_GLES2
 	auto* view = m_machine_manager->view();
 	auto* backend = static_cast<OpenGLES2Backend*>(view->backend());
+	backend->captureGxGpuVramSnapshot(m_machine_manager->runtime().machine.gxGpu);
 	m_machine_manager->texmanager()->clear();
 	m_render_surfaces_need_refresh = true;
 	view->setPipelineRegistry(std::unique_ptr<RenderPassLibrary>());
@@ -323,14 +316,6 @@ void LibretroPlatform::requestShutdown() {
 	if (!m_environ_cb(RETRO_ENVIRONMENT_SHUTDOWN, nullptr)) {
 		return;
 	}
-}
-
-void LibretroPlatform::setFrameTimeUsec(retro_usec_t usec) {
-	if (usec == 0) {
-		return;
-	}
-	const double nextFrameTimeSec = static_cast<double>(usec) / 1000000.0;
-	m_frame_time_sec = nextFrameTimeSec;
 }
 
 void LibretroPlatform::setControllerDevice(unsigned port, unsigned device) {
@@ -516,11 +501,7 @@ void LibretroPlatform::reset() {
 }
 
 bool LibretroPlatform::runFrame() {
-	if (!m_rom_loaded || !m_machine_manager) return false;
-
-#if ENABLE_PERFORMANCE_LOGS
-	const auto frameStart = std::chrono::steady_clock::now();
-#endif
+	if (!m_rom_loaded) return false;
 
 	// Clear audio buffer
 	m_audio_buffer.clear();
@@ -528,9 +509,7 @@ bool LibretroPlatform::runFrame() {
 	const f64 dt = m_frame_time_sec;
 
 	// Advance clock
-	if (auto* clock = dynamic_cast<LibretroHostClock*>(m_clock.get())) {
-		clock->advanceFrame(1.0 / dt);
-	}
+	m_clock->advanceFrame(1.0 / dt);
 	static_cast<LibretroFrameLoop*>(m_frame_loop.get())->runPushedFrame(m_clock->now(), dt);
 
 	if (!m_platform_paused) {
@@ -551,9 +530,6 @@ void LibretroPlatform::setPlatformPaused(bool paused) {
 		return;
 	}
 	m_platform_paused = paused;
-	if (!m_machine_manager) {
-		return;
-	}
 	m_machine_manager->setHostPaused(paused, m_rom_loaded);
 }
 

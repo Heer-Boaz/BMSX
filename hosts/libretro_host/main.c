@@ -31,16 +31,15 @@
 #include <ucontext.h>
 
 #include "libretro.h"
+#include "audio_queue.h"
+#include "core_options.h"
+#include "frame_pacer.h"
+#include "frame_timing.h"
 #include "input_timeline.h"
 #include "screenshot.h"
 
-#define BMSX_HOST_HZ_SCALE 1000000ll
 #define BMSX_HOST_USEC_PER_SECOND 1000000ull
 #define BMSX_HOST_NSEC_PER_SECOND 1000000000ull
-#define BMSX_HOST_INITIAL_PAL_UFPS_SCALED (50ll * BMSX_HOST_HZ_SCALE)
-#define BMSX_HOST_INITIAL_PAL_TARGET_FPS ((double)BMSX_HOST_INITIAL_PAL_UFPS_SCALED / (double)BMSX_HOST_HZ_SCALE)
-#define BMSX_HOST_INITIAL_PAL_FRAME_USEC (BMSX_HOST_USEC_PER_SECOND * (uint64_t)BMSX_HOST_HZ_SCALE / (uint64_t)BMSX_HOST_INITIAL_PAL_UFPS_SCALED)
-#define BMSX_HOST_INITIAL_PAL_FRAME_NS (BMSX_HOST_NSEC_PER_SECOND * (uint64_t)BMSX_HOST_HZ_SCALE / (uint64_t)BMSX_HOST_INITIAL_PAL_UFPS_SCALED)
 
 typedef struct LibretroCore {
 	void* handle;
@@ -76,8 +75,6 @@ typedef struct LibretroCore {
 	void (*retro_cheat_reset)(void);
 	void (*retro_cheat_set)(unsigned, bool, const char*);
 
-	void (*bmsx_set_frame_time_usec)(retro_usec_t);
-	int64_t (*bmsx_get_ufps)(void);
 	void (*bmsx_keyboard_event)(const char* code, bool down);
 	void (*bmsx_keyboard_reset)(void);
 	void (*bmsx_focus_changed)(bool focused);
@@ -118,18 +115,6 @@ typedef struct InputDev {
 	uint16_t pad_state;
 } InputDev;
 
-typedef struct AudioQueue {
-	int16_t* data;
-	size_t capacity_frames;
-	size_t read_frame;
-	size_t write_frame;
-	size_t used_frames;
-	pthread_mutex_t mutex;
-	pthread_cond_t can_read;
-	pthread_cond_t can_write;
-	bool running;
-} AudioQueue;
-
 static volatile sig_atomic_t g_should_quit = 0;
 enum { kInputTimelineAutoQuitGraceFrames = 0 };
 static bool g_input_debug = false;
@@ -138,51 +123,11 @@ static const unsigned kAudioPeriodFrames = 1024;
 static const unsigned kAudioPeriodCount = 4;
 static const unsigned kAudioPrimePeriods = 4;
 static const unsigned kSdlAudioBufferFrames = 1024;
-static const double kAudioMixOverheadSec = 0.004;
-static const unsigned kAudioRefillMarginFrames = 128;
-static const unsigned kAudioRequestAheadFrames = 256;
-static const unsigned kAudioTargetMinFrames = 384;
-static const unsigned kAudioTargetMaxFrames = 4096;
 static const int kAudioThreadPriority = 20;
-static const unsigned kAudioRecoverMaxAttempts = 8;
-static const uint64_t kAudioRecoverSleepNs = 1000000ull;
-static const uint64_t kFrameScheduleResyncNs = 100000000ull;
-static const int64_t kHzScale = BMSX_HOST_HZ_SCALE;
-
 static char g_system_dir[1024] = "";
 static char g_save_dir[1024] = "";
-static char g_opt_render_backend[16] = "software";
-static char g_opt_crt_postprocessing[8] = "on";
-static char g_opt_crt_noise[8] = "on";
-static char g_opt_crt_color_bleed[8] = "on";
-static char g_opt_crt_scanlines[8] = "on";
-static char g_opt_crt_blur[8] = "on";
-static char g_opt_crt_glow[8] = "on";
-static char g_opt_crt_fringing[8] = "on";
-static char g_opt_crt_aperture[8] = "off";
-static char g_opt_dither[16] = "off";
-static char g_opt_host_show_usage_gizmo[8] = "off";
 static LibretroCore* g_core = NULL;
-
-typedef struct CoreOptionVar {
-	const char* key;
-	char* value;
-	size_t capacity;
-} CoreOptionVar;
-
-static CoreOptionVar g_core_option_vars[] = {
-	{"bmsx_render_backend", g_opt_render_backend, sizeof(g_opt_render_backend)},
-	{"bmsx_crt_postprocessing", g_opt_crt_postprocessing, sizeof(g_opt_crt_postprocessing)},
-	{"bmsx_crt_noise", g_opt_crt_noise, sizeof(g_opt_crt_noise)},
-	{"bmsx_crt_color_bleed", g_opt_crt_color_bleed, sizeof(g_opt_crt_color_bleed)},
-	{"bmsx_crt_scanlines", g_opt_crt_scanlines, sizeof(g_opt_crt_scanlines)},
-	{"bmsx_crt_blur", g_opt_crt_blur, sizeof(g_opt_crt_blur)},
-	{"bmsx_crt_glow", g_opt_crt_glow, sizeof(g_opt_crt_glow)},
-	{"bmsx_crt_fringing", g_opt_crt_fringing, sizeof(g_opt_crt_fringing)},
-	{"bmsx_crt_aperture", g_opt_crt_aperture, sizeof(g_opt_crt_aperture)},
-	{"bmsx_dither", g_opt_dither, sizeof(g_opt_dither)},
-	{"bmsx_host_show_usage_gizmo", g_opt_host_show_usage_gizmo, sizeof(g_opt_host_show_usage_gizmo)},
-};
+static BmsxCoreOptions g_core_options;
 
 #ifdef BMSX_LIBRETRO_HOST_SDL
 static bool g_use_sdl = false;
@@ -194,6 +139,7 @@ static SDL_GLContext g_sdl_gl_context = NULL;
 static SDL_GameController* g_sdl_gamepad = NULL;
 static SDL_JoystickID g_sdl_gamepad_id = -1;
 static uint16_t g_sdl_pad_state = 0;
+static bool g_sdl_focused = true;
 static SDL_AudioDeviceID g_sdl_audio_device = 0;
 #endif
 
@@ -212,11 +158,12 @@ static unsigned g_render_target_w = 0;
 static unsigned g_render_target_h = 0;
 static float g_geom_aspect = 0.0f;
 static bool g_geom_dirty = false;
-static uint64_t g_frame_usec = BMSX_HOST_INITIAL_PAL_FRAME_USEC;
-static uint64_t g_frame_ns = BMSX_HOST_INITIAL_PAL_FRAME_NS;
+static uint64_t g_frame_usec = 0;
+static uint64_t g_frame_ns = 0;
 static uint64_t g_max_run_frames = 0;
 static uint64_t g_run_frame_count = 0;
 static bool g_audio_disabled = false;
+static bool g_sdl_hidden_window = false;
 static struct retro_frame_time_callback g_frame_time_cb = {0};
 static bool g_has_frame_time_cb = false;
 static unsigned g_last_video_w = 0;
@@ -225,6 +172,10 @@ static bool g_drop_video = false;
 static uint64_t g_presented_cart_frame = 0;
 static bool g_core_presented_frame = false;
 static bool g_input_timeline_frame_pending = true;
+
+static BmsxFrameTimingState g_frame_timing = {
+	.warmup_frames = 500u,
+};
 
 static GLuint g_hw_fbo = 0;
 static GLuint g_hw_tex = 0;
@@ -245,7 +196,7 @@ struct fbdev_window {
 
 static struct fbdev_window g_fbwin;
 
-static double g_target_fps = BMSX_HOST_INITIAL_PAL_TARGET_FPS;
+static double g_target_fps = 0.0;
 
 #define MSG_MAX_TEXT 256
 #define MSG_MAX_LINES 4
@@ -435,10 +386,9 @@ static unsigned g_audio_period_frames = 0;
 static unsigned g_audio_period_count = 0;
 static unsigned g_audio_buffer_frames = 0;
 static bool g_audio_prepared = false;
-static bool g_audio_running = false;
 static unsigned g_audio_underruns = 0;
-static unsigned g_audio_overruns = 0;
-static AudioQueue g_audio_queue;
+static size_t g_sdl_audio_underrun_frames = 0;
+static BmsxAudioQueue g_audio_queue;
 static pthread_t g_audio_thread;
 static bool g_audio_thread_started = false;
 static int16_t* g_audio_thread_buf = NULL;
@@ -517,8 +467,10 @@ static void msg_render_hw(void);
 static void msg_tick(void);
 static uint64_t monotonic_ns(void);
 static uint64_t monotonic_ms(void);
+static void set_host_timing(const struct retro_system_timing* timing);
 static inline uint16_t rgb888_to_rgb565(uint8_t r, uint8_t g, uint8_t b);
 static inline uint32_t rgb565_to_xrgb8888(uint16_t p);
+
 #define ASSIGN_PROC(dst, src) do { \
 	void* _src = (src); \
 	memcpy(&(dst), &_src, sizeof(dst)); \
@@ -545,12 +497,8 @@ static void poll_input_devices_sdl(void);
 #endif
 
 static uintptr_t RETRO_CALLCONV hw_get_current_framebuffer(void) {
-	unsigned target_w = g_render_target_w ? g_render_target_w : g_geom_base_w;
-	unsigned target_h = g_render_target_h ? g_render_target_h : g_geom_base_h;
-	if (target_w == 0) target_w = g_last_video_w;
-	if (target_h == 0) target_h = g_last_video_h;
-	if (target_w == 0) target_w = 256;
-	if (target_h == 0) target_h = 240;
+	const unsigned target_w = g_render_target_w;
+	const unsigned target_h = g_render_target_h;
 	if (g_geom_dirty || g_hw_tex == 0 || g_hw_tex_w != target_w || g_hw_tex_h != target_h) {
 		if (!hw_ensure_fbo(target_w, target_h)) {
 			return 0;
@@ -1159,11 +1107,7 @@ static void msg_mark_dirty(void) {
 }
 
 static unsigned msg_default_frames(void) {
-	double fps = g_target_fps;
-	if (fps <= 1.0) {
-		fps = BMSX_HOST_INITIAL_PAL_TARGET_FPS;
-	}
-	unsigned frames = (unsigned)(fps * 2.0 + 0.5);
+	unsigned frames = (unsigned)(g_target_fps * 2.0 + 0.5);
 	if (frames < 60) {
 		frames = 60;
 	}
@@ -1351,6 +1295,7 @@ static void msg_render_hw(void) {
 }
 
 static bool hw_present_frame(unsigned src_w, unsigned src_h) {
+	const uint64_t timing_start_ns = g_frame_timing.record_frame ? monotonic_ns() : 0u;
 	if (!hw_init_blitter()) {
 		return false;
 	}
@@ -1372,14 +1317,17 @@ static bool hw_present_frame(unsigned src_w, unsigned src_h) {
 		if (input_timeline_consume_presented_capture(g_presented_cart_frame, &capture_frame)) {
 			fprintf(stderr, "[SCREENSHOT] Capturing frame %llu (%ux%u)\n", (unsigned long long)capture_frame, present_w, present_h);
 			uint8_t* pixels = malloc((size_t)present_w * (size_t)present_h * 4u);
-			if (pixels) {
-				glBindFramebuffer_ptr(GL_FRAMEBUFFER, g_hw_fbo);
-				glReadPixels_ptr(0, 0, (GLsizei)present_w, (GLsizei)present_h, GL_RGBA, GL_UNSIGNED_BYTE, pixels);
-				char filename[128];
-				snprintf(filename, sizeof(filename), "frame_%05llu.png", (unsigned long long)capture_frame);
-				screenshot_save_png(filename, present_w, present_h, pixels);
-				free(pixels);
+			if (!pixels) {
+				die("Screenshot allocation failed for %ux%u frame", present_w, present_h);
 			}
+			glBindFramebuffer_ptr(GL_FRAMEBUFFER, g_hw_fbo);
+			glReadPixels_ptr(0, 0, (GLsizei)present_w, (GLsizei)present_h, GL_RGBA, GL_UNSIGNED_BYTE, pixels);
+			char filename[128];
+			snprintf(filename, sizeof(filename), "frame_%05llu.png", (unsigned long long)capture_frame);
+			if (!screenshot_save_png(filename, present_w, present_h, pixels)) {
+				die("Screenshot save failed: %s", filename);
+			}
+			free(pixels);
 		}
 	}
 	int dst_x = 0, dst_y = 0, dst_w = 0, dst_h = 0;
@@ -1402,6 +1350,10 @@ static bool hw_present_frame(unsigned src_w, unsigned src_h) {
 
 	if (core_cart_program_active()) {
 		g_presented_cart_frame++;
+	}
+	if (g_frame_timing.record_frame) {
+		g_frame_timing.current_blit_ns += monotonic_ns() - timing_start_ns;
+		g_frame_timing.current_blit_ran = true;
 	}
 	return true;
 }
@@ -1446,18 +1398,21 @@ static void step_software_frame_capture(void) {
 	fprintf(stderr, "[SCREENSHOT] Capturing frame %llu (%ux%u)\n", (unsigned long long)capture_frame, g_fb.width, g_fb.height);
 	const size_t pixel_count = (size_t)g_fb.width * (size_t)g_fb.height;
 	uint8_t* pixels = (uint8_t*)malloc(pixel_count * 4u);
-	if (pixels) {
-		for (int y = 0; y < g_fb.height; ++y) {
-			const int src_y = g_fb.height - 1 - y;
-			const uint8_t* src_line = g_fb.map + (size_t)src_y * (size_t)g_fb.stride;
-			uint8_t* dst_line = pixels + (size_t)y * (size_t)g_fb.width * 4u;
-			copy_framebuffer_row_to_rgba(dst_line, src_line, g_fb.width);
-		}
-		char filename[128];
-		snprintf(filename, sizeof(filename), "frame_%05llu.png", (unsigned long long)capture_frame);
-		screenshot_save_png(filename, (uint32_t)g_fb.width, (uint32_t)g_fb.height, pixels);
-		free(pixels);
+	if (!pixels) {
+		die("Screenshot allocation failed for %dx%d frame", g_fb.width, g_fb.height);
 	}
+	for (int y = 0; y < g_fb.height; ++y) {
+		const int src_y = g_fb.height - 1 - y;
+		const uint8_t* src_line = g_fb.map + (size_t)src_y * (size_t)g_fb.stride;
+		uint8_t* dst_line = pixels + (size_t)y * (size_t)g_fb.width * 4u;
+		copy_framebuffer_row_to_rgba(dst_line, src_line, g_fb.width);
+	}
+	char filename[128];
+	snprintf(filename, sizeof(filename), "frame_%05llu.png", (unsigned long long)capture_frame);
+	if (!screenshot_save_png(filename, (uint32_t)g_fb.width, (uint32_t)g_fb.height, pixels)) {
+		die("Screenshot save failed: %s", filename);
+	}
+	free(pixels);
 	g_presented_cart_frame++;
 }
 
@@ -1567,8 +1522,8 @@ static bool egl_init(void) {
 		return false;
 	}
 
-	g_fbwin.width = (uint16_t)(g_fb.width > 0 ? g_fb.width : 1280);
-	g_fbwin.height = (uint16_t)(g_fb.height > 0 ? g_fb.height : 720);
+	g_fbwin.width = (uint16_t)g_fb.width;
+	g_fbwin.height = (uint16_t)g_fb.height;
 	g_egl_surface = eglCreateWindowSurface_ptr(
 		g_egl_display,
 		config,
@@ -1731,6 +1686,9 @@ static void sdl_init(void) {
 	if (window_w < 640) window_w = 640;
 	if (window_h < 480) window_h = 480;
 	uint32_t window_flags = SDL_WINDOW_RESIZABLE;
+	if (g_sdl_hidden_window) {
+		window_flags |= SDL_WINDOW_HIDDEN;
+	}
 	if (g_sdl_use_gl) {
 		SDL_GL_SetAttribute(SDL_GL_CONTEXT_PROFILE_MASK, SDL_GL_CONTEXT_PROFILE_ES);
 		SDL_GL_SetAttribute(SDL_GL_CONTEXT_MAJOR_VERSION, 2);
@@ -1745,6 +1703,7 @@ static void sdl_init(void) {
 	if (!g_sdl_window) {
 		die("SDL_CreateWindow failed: %s", SDL_GetError());
 	}
+	g_sdl_focused = !g_sdl_hidden_window;
 	if (g_sdl_use_gl) {
 		g_sdl_gl_context = SDL_GL_CreateContext(g_sdl_window);
 		if (!g_sdl_gl_context) {
@@ -1841,41 +1800,33 @@ static bool environ_cb(unsigned cmd, void* data) {
 			return true;
 		}
 		case RETRO_ENVIRONMENT_SET_CORE_OPTIONS_V2:
-		case RETRO_ENVIRONMENT_SET_CORE_OPTIONS_INTL:
-		case RETRO_ENVIRONMENT_SET_CORE_OPTIONS:
-		case RETRO_ENVIRONMENT_SET_VARIABLES:
-			return true;
-		case RETRO_ENVIRONMENT_SET_VARIABLE: {
-			const struct retro_variable* var = (const struct retro_variable*)data;
-			if (!var || !var->key || !var->value) {
-				return false;
-			}
-			for (size_t index = 0; index < sizeof(g_core_option_vars) / sizeof(g_core_option_vars[0]); index += 1) {
-				CoreOptionVar* option = &g_core_option_vars[index];
-				if (strcmp(var->key, option->key) == 0) {
-					snprintf(option->value, option->capacity, "%s", var->value);
-					return true;
-				}
-			}
+			bmsx_core_options_register_v2(&g_core_options, (const struct retro_core_options_v2*)data);
+			return false;
+		case RETRO_ENVIRONMENT_SET_CORE_OPTIONS_V2_INTL: {
+			const struct retro_core_options_v2_intl* definitions = (const struct retro_core_options_v2_intl*)data;
+			bmsx_core_options_register_v2(&g_core_options, definitions ? definitions->us : NULL);
 			return false;
 		}
+		case RETRO_ENVIRONMENT_SET_CORE_OPTIONS_INTL: {
+			const struct retro_core_options_intl* definitions = (const struct retro_core_options_intl*)data;
+			bmsx_core_options_register_v1(&g_core_options, definitions ? definitions->us : NULL);
+			return true;
+		}
+		case RETRO_ENVIRONMENT_SET_CORE_OPTIONS:
+			bmsx_core_options_register_v1(&g_core_options, (const struct retro_core_option_definition*)data);
+			return true;
+		case RETRO_ENVIRONMENT_SET_VARIABLES:
+			bmsx_core_options_register_legacy(&g_core_options, (const struct retro_variable*)data);
+			return true;
+		case RETRO_ENVIRONMENT_SET_VARIABLE: {
+			return bmsx_core_options_set_variable(&g_core_options, (const struct retro_variable*)data);
+		}
 		case RETRO_ENVIRONMENT_GET_VARIABLE: {
-			struct retro_variable* var = (struct retro_variable*)data;
-			if (!var || !var->key) {
-				return false;
-			}
-			for (size_t index = 0; index < sizeof(g_core_option_vars) / sizeof(g_core_option_vars[0]); index += 1) {
-				CoreOptionVar* option = &g_core_option_vars[index];
-				if (strcmp(var->key, option->key) == 0) {
-					var->value = option->value;
-					return true;
-				}
-			}
-			return false;
+			return bmsx_core_options_get(&g_core_options, (struct retro_variable*)data);
 		}
 		case RETRO_ENVIRONMENT_GET_VARIABLE_UPDATE: {
 			bool* updated = (bool*)data;
-			*updated = false;
+			*updated = bmsx_core_options_take_updated(&g_core_options);
 			return true;
 		}
 		case RETRO_ENVIRONMENT_SET_MESSAGE: {
@@ -1902,17 +1853,19 @@ static bool environ_cb(unsigned cmd, void* data) {
 				return false;
 			}
 			update_geometry(&info->geometry);
-			g_target_fps = info->timing.fps > 0.0 ? info->timing.fps : g_target_fps;
-			if (g_target_fps > 0.0) {
-				g_frame_usec = (uint64_t)((double)BMSX_HOST_USEC_PER_SECOND / g_target_fps + 0.5);
-				g_frame_ns = (uint64_t)((double)BMSX_HOST_NSEC_PER_SECOND / g_target_fps + 0.5);
-			}
+			set_host_timing(&info->timing);
 			return true;
 		}
 		case RETRO_ENVIRONMENT_SET_PIXEL_FORMAT: {
 			const enum retro_pixel_format* fmt = (const enum retro_pixel_format*)data;
-			g_core_pixel_format = *fmt;
-			return true;
+			switch (*fmt) {
+				case RETRO_PIXEL_FORMAT_XRGB8888:
+				case RETRO_PIXEL_FORMAT_RGB565:
+					g_core_pixel_format = *fmt;
+					return true;
+				default:
+					return false;
+			}
 		}
 		case RETRO_ENVIRONMENT_SET_HW_RENDER: {
 			struct retro_hw_render_callback* cb = (struct retro_hw_render_callback*)data;
@@ -1952,11 +1905,8 @@ static bool environ_cb(unsigned cmd, void* data) {
 		}
 		case RETRO_ENVIRONMENT_SET_FRAME_TIME_CALLBACK: {
 			const struct retro_frame_time_callback* cb = (const struct retro_frame_time_callback*)data;
-			if (!cb || !cb->callback) {
-				return false;
-			}
 			g_frame_time_cb = *cb;
-			g_has_frame_time_cb = true;
+			g_has_frame_time_cb = cb->callback != NULL;
 			return true;
 		}
 		case RETRO_ENVIRONMENT_SHUTDOWN:
@@ -2016,6 +1966,7 @@ static inline uint32_t rgb565_to_xrgb8888(uint16_t p) {
 }
 
 static void video_cb(const void* data, unsigned width, unsigned height, size_t pitch) {
+	g_frame_timing.current_video_frame_received = data != NULL;
 	if (g_msg_frames_left > 0) {
 		msg_tick();
 	}
@@ -2040,19 +1991,24 @@ static void video_cb(const void* data, unsigned width, unsigned height, size_t p
 				g_geom_dirty = true;
 			}
 		}
-			if (hw_present_frame(width, height)) {
-				g_core_presented_frame = true;
-			}
-#ifdef BMSX_LIBRETRO_HOST_SDL
-			if (g_use_sdl) {
-				SDL_GL_SwapWindow(g_sdl_window);
-			} else
-#endif
-			{
-				eglSwapBuffers_ptr(g_egl_display, g_egl_surface);
-			}
-			return;
+		if (hw_present_frame(width, height)) {
+			g_core_presented_frame = true;
 		}
+		const uint64_t swap_start_ns = g_frame_timing.record_frame ? monotonic_ns() : 0u;
+#ifdef BMSX_LIBRETRO_HOST_SDL
+		if (g_use_sdl) {
+			SDL_GL_SwapWindow(g_sdl_window);
+		} else
+#endif
+		{
+			eglSwapBuffers_ptr(g_egl_display, g_egl_surface);
+		}
+		if (g_frame_timing.record_frame) {
+			g_frame_timing.current_swap_ns += monotonic_ns() - swap_start_ns;
+			g_frame_timing.current_swap_ran = true;
+		}
+		return;
+	}
 	if (!data || width == 0 || height == 0) {
 		return;
 	}
@@ -2198,7 +2154,6 @@ static void audio_write_frames(const int16_t* data, size_t frames) {
 	}
 	size_t remaining = frames;
 	const int16_t* src = data;
-	unsigned recover_attempts = 0;
 	while (remaining > 0) {
 		struct snd_xferi xfer;
 		xfer.buf = (void*)src;
@@ -2206,16 +2161,8 @@ static void audio_write_frames(const int16_t* data, size_t frames) {
 		xfer.result = 0;
 		if (!g_audio_prepared) {
 			if (ioctl(g_audio_fd, SNDRV_PCM_IOCTL_PREPARE) != 0) {
-				if (errno == EINTR || errno == EPIPE || errno == ESTRPIPE) {
-					if (recover_attempts < kAudioRecoverMaxAttempts) {
-						++recover_attempts;
-						struct timespec ts;
-						ts.tv_sec = 0;
-						ts.tv_nsec = (long)kAudioRecoverSleepNs;
-						nanosleep(&ts, NULL);
-						continue;
-					}
-					return;
+				if (errno == EINTR) {
+					continue;
 				}
 				die("SNDRV_PCM_IOCTL_PREPARE failed: %s", strerror(errno));
 			}
@@ -2227,207 +2174,17 @@ static void audio_write_frames(const int16_t* data, size_t frames) {
 			}
 			if (errno == EPIPE || errno == ESTRPIPE) {
 				g_audio_prepared = false;
-				g_audio_running = false;
 				++g_audio_underruns;
-				if (recover_attempts < kAudioRecoverMaxAttempts) {
-					++recover_attempts;
-					struct timespec ts;
-					ts.tv_sec = 0;
-					ts.tv_nsec = (long)kAudioRecoverSleepNs;
-					nanosleep(&ts, NULL);
-					continue;
-				}
-				return;
+				continue;
 			}
 			die("SNDRV_PCM_IOCTL_WRITEI_FRAMES failed: %s", strerror(errno));
 		}
 		if (xfer.result <= 0) {
-			if (recover_attempts < kAudioRecoverMaxAttempts) {
-				++recover_attempts;
-				struct timespec ts;
-				ts.tv_sec = 0;
-				ts.tv_nsec = (long)kAudioRecoverSleepNs;
-				nanosleep(&ts, NULL);
-				continue;
-			}
-			return;
+			die("SNDRV_PCM_IOCTL_WRITEI_FRAMES made no progress");
 		}
-		g_audio_running = true;
 		remaining -= (size_t)xfer.result;
 		src += (size_t)xfer.result * g_audio_channels;
-		recover_attempts = 0;
 	}
-}
-
-static void audio_queue_init(size_t capacity_frames) {
-	if (capacity_frames == 0) {
-		die("Audio queue capacity must be > 0");
-	}
-	g_audio_queue.data = (int16_t*)malloc(capacity_frames * g_audio_channels * sizeof(int16_t));
-	if (!g_audio_queue.data) {
-		die("malloc(%zu) failed for audio queue", capacity_frames * g_audio_channels * sizeof(int16_t));
-	}
-	g_audio_queue.capacity_frames = capacity_frames;
-	g_audio_queue.read_frame = 0;
-	g_audio_queue.write_frame = 0;
-	g_audio_queue.used_frames = 0;
-	pthread_mutexattr_t mattr;
-	int err = pthread_mutexattr_init(&mattr);
-	if (err != 0) {
-		die("pthread_mutexattr_init failed: %s", strerror(err));
-	}
-	err = pthread_mutexattr_setprotocol(&mattr, PTHREAD_PRIO_INHERIT);
-	if (err != 0) {
-		die("pthread_mutexattr_setprotocol failed: %s", strerror(err));
-	}
-	err = pthread_mutex_init(&g_audio_queue.mutex, &mattr);
-	if (err != 0) {
-		die("pthread_mutex_init failed: %s", strerror(err));
-	}
-	err = pthread_mutexattr_destroy(&mattr);
-	if (err != 0) {
-		die("pthread_mutexattr_destroy failed: %s", strerror(err));
-	}
-	err = pthread_cond_init(&g_audio_queue.can_read, NULL);
-	if (err != 0) {
-		die("pthread_cond_init(can_read) failed: %s", strerror(err));
-	}
-	err = pthread_cond_init(&g_audio_queue.can_write, NULL);
-	if (err != 0) {
-		die("pthread_cond_init(can_write) failed: %s", strerror(err));
-	}
-	g_audio_queue.running = true;
-}
-
-static void audio_queue_destroy(void) {
-	if (g_audio_queue.data) {
-		free(g_audio_queue.data);
-		g_audio_queue.data = NULL;
-	}
-	int err = pthread_cond_destroy(&g_audio_queue.can_read);
-	if (err != 0) {
-		die("pthread_cond_destroy(can_read) failed: %s", strerror(err));
-	}
-	err = pthread_cond_destroy(&g_audio_queue.can_write);
-	if (err != 0) {
-		die("pthread_cond_destroy(can_write) failed: %s", strerror(err));
-	}
-	err = pthread_mutex_destroy(&g_audio_queue.mutex);
-	if (err != 0) {
-		die("pthread_mutex_destroy failed: %s", strerror(err));
-	}
-	memset(&g_audio_queue, 0, sizeof(g_audio_queue));
-}
-
-static void audio_queue_stop(void) {
-	int err = pthread_mutex_lock(&g_audio_queue.mutex);
-	if (err != 0) {
-		die("pthread_mutex_lock failed: %s", strerror(err));
-	}
-	g_audio_queue.running = false;
-	err = pthread_cond_broadcast(&g_audio_queue.can_read);
-	if (err != 0) {
-		die("pthread_cond_broadcast(can_read) failed: %s", strerror(err));
-	}
-	err = pthread_cond_broadcast(&g_audio_queue.can_write);
-	if (err != 0) {
-		die("pthread_cond_broadcast(can_write) failed: %s", strerror(err));
-	}
-	err = pthread_mutex_unlock(&g_audio_queue.mutex);
-	if (err != 0) {
-		die("pthread_mutex_unlock failed: %s", strerror(err));
-	}
-}
-
-static void audio_queue_push_frames(const int16_t* data, size_t frames) {
-	if (frames == 0) {
-		return;
-	}
-	if (frames > g_audio_queue.capacity_frames) {
-		const size_t skip = frames - g_audio_queue.capacity_frames;
-		data += skip * g_audio_channels;
-		frames = g_audio_queue.capacity_frames;
-	}
-	int err = pthread_mutex_lock(&g_audio_queue.mutex);
-	if (err != 0) {
-		die("pthread_mutex_lock failed: %s", strerror(err));
-	}
-	if (!g_audio_queue.running) {
-		err = pthread_mutex_unlock(&g_audio_queue.mutex);
-		if (err != 0) {
-			die("pthread_mutex_unlock failed: %s", strerror(err));
-		}
-		return;
-	}
-	const size_t capacity = g_audio_queue.capacity_frames;
-	const size_t space = capacity - g_audio_queue.used_frames;
-	if (frames > space) {
-		const size_t drop = frames - space;
-		g_audio_queue.read_frame = (g_audio_queue.read_frame + drop) % capacity;
-		g_audio_queue.used_frames -= drop;
-		g_audio_overruns += (unsigned)drop;
-	}
-	const size_t tail = capacity - g_audio_queue.write_frame;
-	const size_t first = frames < tail ? frames : tail;
-	memcpy(g_audio_queue.data + g_audio_queue.write_frame * g_audio_channels,
-			data, first * g_audio_channels * sizeof(int16_t));
-	if (frames > first) {
-		memcpy(g_audio_queue.data, data + first * g_audio_channels,
-				(frames - first) * g_audio_channels * sizeof(int16_t));
-	}
-	g_audio_queue.write_frame = (g_audio_queue.write_frame + frames) % capacity;
-	g_audio_queue.used_frames += frames;
-	err = pthread_cond_signal(&g_audio_queue.can_read);
-	if (err != 0) {
-		die("pthread_cond_signal(can_read) failed: %s", strerror(err));
-	}
-	err = pthread_mutex_unlock(&g_audio_queue.mutex);
-	if (err != 0) {
-		die("pthread_mutex_unlock failed: %s", strerror(err));
-	}
-}
-
-static size_t audio_queue_pop_frames(int16_t* out, size_t max_frames, size_t min_frames) {
-	if (min_frames > g_audio_queue.capacity_frames) {
-		die("Audio queue min_frames=%zu exceeds capacity=%zu", min_frames, g_audio_queue.capacity_frames);
-	}
-	int err = pthread_mutex_lock(&g_audio_queue.mutex);
-	if (err != 0) {
-		die("pthread_mutex_lock failed: %s", strerror(err));
-	}
-	while (g_audio_queue.used_frames < min_frames && g_audio_queue.running) {
-		err = pthread_cond_wait(&g_audio_queue.can_read, &g_audio_queue.mutex);
-		if (err != 0) {
-			die("pthread_cond_wait(can_read) failed: %s", strerror(err));
-		}
-	}
-	if (g_audio_queue.used_frames == 0 && !g_audio_queue.running) {
-		err = pthread_mutex_unlock(&g_audio_queue.mutex);
-		if (err != 0) {
-			die("pthread_mutex_unlock failed: %s", strerror(err));
-		}
-		return 0;
-	}
-	size_t frames = g_audio_queue.used_frames < max_frames ? g_audio_queue.used_frames : max_frames;
-	size_t tail = g_audio_queue.capacity_frames - g_audio_queue.read_frame;
-	size_t first = frames < tail ? frames : tail;
-	memcpy(out, g_audio_queue.data + g_audio_queue.read_frame * g_audio_channels,
-			first * g_audio_channels * sizeof(int16_t));
-	if (frames > first) {
-		memcpy(out + first * g_audio_channels, g_audio_queue.data,
-				(frames - first) * g_audio_channels * sizeof(int16_t));
-	}
-	g_audio_queue.read_frame = (g_audio_queue.read_frame + frames) % g_audio_queue.capacity_frames;
-	g_audio_queue.used_frames -= frames;
-	err = pthread_cond_signal(&g_audio_queue.can_write);
-	if (err != 0) {
-		die("pthread_cond_signal(can_write) failed: %s", strerror(err));
-	}
-	err = pthread_mutex_unlock(&g_audio_queue.mutex);
-	if (err != 0) {
-		die("pthread_mutex_unlock failed: %s", strerror(err));
-	}
-	return frames;
 }
 
 static void audio_thread_set_realtime(void) {
@@ -2448,7 +2205,8 @@ static void* audio_thread_main(void* arg) {
 	bool primed = false;
 	for (;;) {
 		size_t min_frames = primed ? g_audio_period_frames : prime_frames;
-		size_t frames = audio_queue_pop_frames(g_audio_thread_buf, g_audio_thread_buf_frames, min_frames);
+		size_t frames = bmsx_audio_queue_pop_wait(&g_audio_queue, g_audio_thread_buf,
+				g_audio_thread_buf_frames, min_frames);
 		if (frames == 0) {
 			break;
 		}
@@ -2461,64 +2219,11 @@ static void* audio_thread_main(void* arg) {
 	return NULL;
 }
 
-static unsigned audio_compute_sdl_queue_cap_frames(void) {
-	if (g_audio_sample_rate <= 0 || g_frame_usec == 0) {
-		return g_audio_buffer_frames;
-	}
-	const double frame_time_sec = (double)g_frame_usec / (double)BMSX_HOST_USEC_PER_SECOND;
-	const unsigned frames_per_frame = (unsigned)ceil((double)g_audio_sample_rate * frame_time_sec);
-	const unsigned requested = (unsigned)ceil((double)g_audio_sample_rate * (frame_time_sec + kAudioMixOverheadSec))
-		+ kAudioRequestAheadFrames
-		+ kAudioRefillMarginFrames;
-	unsigned browser_target_frames = requested;
-	if (browser_target_frames < kAudioTargetMinFrames) {
-		browser_target_frames = kAudioTargetMinFrames;
-	} else if (browser_target_frames > kAudioTargetMaxFrames) {
-		browser_target_frames = kAudioTargetMaxFrames;
-	}
-	const unsigned chunk_guard_frames = browser_target_frames + frames_per_frame;
-	return chunk_guard_frames > g_audio_buffer_frames ? chunk_guard_frames : g_audio_buffer_frames;
-}
-
-static void audio_push_frames(const int16_t* data, size_t frames) {
-	if (frames == 0) {
-		return;
-	}
-#ifdef BMSX_LIBRETRO_HOST_SDL
-	if (g_use_sdl) {
-		const size_t max_frames = audio_compute_sdl_queue_cap_frames();
-		if (frames > max_frames) {
-			const size_t drop = frames - max_frames;
-			frames = max_frames;
-			g_audio_overruns += (unsigned)drop;
-		}
-		const Uint32 bytes_per_frame = (Uint32)(g_audio_channels * sizeof(int16_t));
-		const Uint32 queued_bytes = SDL_GetQueuedAudioSize(g_sdl_audio_device);
-		const size_t queued_frames = queued_bytes / bytes_per_frame;
-		if (queued_frames >= max_frames) {
-			g_audio_overruns += (unsigned)frames;
-			return;
-		}
-		const size_t free_frames = max_frames - queued_frames;
-		if (frames > free_frames) {
-			g_audio_overruns += (unsigned)(frames - free_frames);
-			frames = free_frames;
-		}
-		if (SDL_QueueAudio(g_sdl_audio_device, data,
-				(Uint32)(frames * g_audio_channels * sizeof(int16_t))) != 0) {
-			die("SDL_QueueAudio failed: %s", SDL_GetError());
-		}
-		return;
-	}
-#endif
-	audio_queue_push_frames(data, frames);
-}
-
 static void audio_flush_sample_buffer(void) {
 	if (g_audio_sample_buf_frames == 0) {
 		return;
 	}
-	audio_push_frames(g_audio_sample_buf, g_audio_sample_buf_frames);
+	bmsx_audio_queue_push(&g_audio_queue, g_audio_sample_buf, g_audio_sample_buf_frames);
 	g_audio_sample_buf_frames = 0;
 }
 
@@ -2591,6 +2296,16 @@ static void audio_set_sw_params(void) {
 }
 
 #ifdef BMSX_LIBRETRO_HOST_SDL
+static void audio_sdl_callback(void* userdata, Uint8* stream, int byte_count) {
+	(void)userdata;
+	const size_t requested_frames = (size_t)byte_count / (g_audio_channels * sizeof(int16_t));
+	const size_t frames = bmsx_audio_queue_read(&g_audio_queue, (int16_t*)stream, requested_frames);
+	const size_t missing_frames = requested_frames - frames;
+	g_sdl_audio_underrun_frames += missing_frames;
+	memset(stream + frames * g_audio_channels * sizeof(int16_t), 0,
+			missing_frames * g_audio_channels * sizeof(int16_t));
+}
+
 static void audio_init_sdl(int sample_rate) {
 	SDL_AudioSpec want;
 	SDL_AudioSpec have;
@@ -2600,6 +2315,7 @@ static void audio_init_sdl(int sample_rate) {
 	want.format = AUDIO_S16SYS;
 	want.channels = (Uint8)g_audio_channels;
 	want.samples = (Uint16)kSdlAudioBufferFrames;
+	want.callback = audio_sdl_callback;
 	g_sdl_audio_device = SDL_OpenAudioDevice(NULL, 0, &want, &have, 0);
 	if (!g_sdl_audio_device) {
 		die("SDL_OpenAudioDevice failed: %s", SDL_GetError());
@@ -2610,22 +2326,25 @@ static void audio_init_sdl(int sample_rate) {
 	if (have.channels != g_audio_channels) {
 		die("SDL audio channel mismatch: requested %u got %u", g_audio_channels, have.channels);
 	}
-	SDL_PauseAudioDevice(g_sdl_audio_device, 0);
 	g_audio_sample_rate = have.freq;
 	g_audio_buffer_frames = have.samples;
 	g_audio_sample_buf_frames = 0;
-	fprintf(stderr, "[libretro-host] audio: sdl rate=%d ch=%u samples=%u queue_cap=%u\n",
-			have.freq, have.channels, have.samples, audio_compute_sdl_queue_cap_frames());
+	bmsx_audio_queue_init(&g_audio_queue, (size_t)have.samples * 2u, g_audio_channels,
+			g_frame_timing.enabled);
+	bmsx_audio_queue_prime_silence(&g_audio_queue);
+	g_sdl_audio_underrun_frames = 0;
+	SDL_PauseAudioDevice(g_sdl_audio_device, 0);
+	fprintf(stderr, "[libretro-host] audio: sdl rate=%d ch=%u samples=%u\n",
+			have.freq, have.channels, have.samples);
 }
 
 static void audio_shutdown_sdl(void) {
+	SDL_PauseAudioDevice(g_sdl_audio_device, 1);
 	SDL_CloseAudioDevice(g_sdl_audio_device);
 	g_sdl_audio_device = 0;
 	g_audio_sample_rate = 0;
 	g_audio_buffer_frames = 0;
 	g_audio_sample_buf_frames = 0;
-	g_audio_underruns = 0;
-	g_audio_overruns = 0;
 }
 #endif
 
@@ -2680,16 +2399,15 @@ static void audio_init(int sample_rate) {
 		die("SNDRV_PCM_IOCTL_PREPARE failed: %s", strerror(errno));
 	}
 	g_audio_prepared = true;
-	g_audio_running = false;
 	g_audio_underruns = 0;
-	g_audio_overruns = 0;
 	g_audio_thread_buf_frames = g_audio_period_frames;
 	g_audio_thread_buf = (int16_t*)malloc(g_audio_thread_buf_frames * g_audio_channels * sizeof(int16_t));
 	if (!g_audio_thread_buf) {
 		die("malloc(%zu) failed for audio thread buffer",
 				g_audio_thread_buf_frames * g_audio_channels * sizeof(int16_t));
 	}
-	audio_queue_init((size_t)g_audio_sample_rate);
+	bmsx_audio_queue_init(&g_audio_queue, g_audio_buffer_frames, g_audio_channels,
+			g_frame_timing.enabled);
 	int err = pthread_create(&g_audio_thread, NULL, audio_thread_main, NULL);
 	if (err != 0) {
 		die("pthread_create failed: %s", strerror(err));
@@ -2706,17 +2424,30 @@ static void audio_shutdown(void) {
 #ifdef BMSX_LIBRETRO_HOST_SDL
 	if (g_use_sdl) {
 		audio_shutdown_sdl();
+		if (g_frame_timing.enabled || g_sdl_audio_underrun_frames > 0u) {
+			fprintf(stderr,
+					"[libretro-host] audio stats: queue_capacity_frames=%zu queue_high_water_frames=%zu underrun_frames=%zu\n",
+					g_audio_queue.capacity_frames,
+					g_audio_queue.high_water_frames,
+					g_sdl_audio_underrun_frames);
+		}
+		bmsx_audio_queue_stop(&g_audio_queue);
+		bmsx_audio_queue_destroy(&g_audio_queue);
+		g_sdl_audio_underrun_frames = 0;
 		return;
 	}
 #endif
 	if (g_audio_thread_started) {
-		audio_queue_stop();
+		bmsx_audio_queue_stop(&g_audio_queue);
 		int err = pthread_join(g_audio_thread, NULL);
 		if (err != 0) {
 			die("pthread_join failed: %s", strerror(err));
 		}
 		g_audio_thread_started = false;
-		audio_queue_destroy();
+		bmsx_audio_queue_destroy(&g_audio_queue);
+	}
+	if (g_frame_timing.enabled || g_audio_underruns > 0u) {
+		fprintf(stderr, "[libretro-host] audio stats: underruns=%u\n", g_audio_underruns);
 	}
 	if (g_audio_thread_buf) {
 		free(g_audio_thread_buf);
@@ -2733,13 +2464,7 @@ static void audio_shutdown(void) {
 	g_audio_buffer_frames = 0;
 	g_audio_sample_buf_frames = 0;
 	g_audio_prepared = false;
-	g_audio_running = false;
-	if (g_audio_underruns > 0 || g_audio_overruns > 0) {
-		fprintf(stderr, "[libretro-host] audio stats: underruns=%u overruns=%u\n",
-				g_audio_underruns, g_audio_overruns);
-	}
 	g_audio_underruns = 0;
-	g_audio_overruns = 0;
 }
 
 static void audio_sample_cb(int16_t left, int16_t right) {
@@ -2751,7 +2476,7 @@ static void audio_sample_cb(int16_t left, int16_t right) {
 	g_audio_sample_buf[idx + 1] = right;
 	++g_audio_sample_buf_frames;
 	if (g_audio_sample_buf_frames >= kAudioSampleBufferFrames) {
-		audio_push_frames(g_audio_sample_buf, g_audio_sample_buf_frames);
+		bmsx_audio_queue_push(&g_audio_queue, g_audio_sample_buf, g_audio_sample_buf_frames);
 		g_audio_sample_buf_frames = 0;
 	}
 }
@@ -2761,7 +2486,7 @@ static size_t audio_batch_cb(const int16_t* data, size_t frames) {
 		return frames;
 	}
 	audio_flush_sample_buffer();
-	audio_push_frames(data, frames);
+	bmsx_audio_queue_push(&g_audio_queue, data, frames);
 	return frames;
 }
 
@@ -3155,16 +2880,10 @@ static uint8_t map_sdl_mouse_buttons(uint32_t buttons) {
 #endif
 
 static void core_keyboard_event(const char* code, bool down) {
-	if (!code || !g_core || !g_core->bmsx_keyboard_event) {
-		return;
-	}
 	g_core->bmsx_keyboard_event(code, down);
 }
 
 static void core_focus_changed(bool focused) {
-	if (!g_core || !g_core->bmsx_focus_changed) {
-		return;
-	}
 	g_core->bmsx_focus_changed(focused);
 }
 
@@ -3402,8 +3121,8 @@ static void poll_input_devices_sdl(void) {
 	SDL_PumpEvents();
 	uint16_t pad_state = 0;
 	reset_mouse_frame_state();
-	const Uint8* keystate = SDL_GetKeyboardState(NULL);
-	if (keystate) {
+	if (g_sdl_focused) {
+		const Uint8* keystate = SDL_GetKeyboardState(NULL);
 		static const SDL_Keycode keys[] = {
 			SDLK_UP,
 			SDLK_DOWN,
@@ -3430,27 +3149,27 @@ static void poll_input_devices_sdl(void) {
 				pad_state |= map_sdl_key_to_pad(keys[i]);
 			}
 		}
-	}
-	if (g_sdl_gamepad) {
-		static const SDL_GameControllerButton buttons[] = {
-			SDL_CONTROLLER_BUTTON_DPAD_UP,
-			SDL_CONTROLLER_BUTTON_DPAD_DOWN,
-			SDL_CONTROLLER_BUTTON_DPAD_LEFT,
-			SDL_CONTROLLER_BUTTON_DPAD_RIGHT,
-			SDL_CONTROLLER_BUTTON_LEFTSHOULDER,
-			SDL_CONTROLLER_BUTTON_RIGHTSHOULDER,
-			SDL_CONTROLLER_BUTTON_START,
-			SDL_CONTROLLER_BUTTON_BACK,
-			SDL_CONTROLLER_BUTTON_A,
-			SDL_CONTROLLER_BUTTON_B,
-			SDL_CONTROLLER_BUTTON_X,
-			SDL_CONTROLLER_BUTTON_Y,
-			SDL_CONTROLLER_BUTTON_LEFTSTICK,
-			SDL_CONTROLLER_BUTTON_RIGHTSTICK,
-		};
-		for (size_t i = 0; i < sizeof(buttons) / sizeof(buttons[0]); ++i) {
-			if (SDL_GameControllerGetButton(g_sdl_gamepad, buttons[i])) {
-				pad_state |= map_sdl_button_to_pad((uint8_t)buttons[i]);
+		if (g_sdl_gamepad) {
+			static const SDL_GameControllerButton buttons[] = {
+				SDL_CONTROLLER_BUTTON_DPAD_UP,
+				SDL_CONTROLLER_BUTTON_DPAD_DOWN,
+				SDL_CONTROLLER_BUTTON_DPAD_LEFT,
+				SDL_CONTROLLER_BUTTON_DPAD_RIGHT,
+				SDL_CONTROLLER_BUTTON_LEFTSHOULDER,
+				SDL_CONTROLLER_BUTTON_RIGHTSHOULDER,
+				SDL_CONTROLLER_BUTTON_START,
+				SDL_CONTROLLER_BUTTON_BACK,
+				SDL_CONTROLLER_BUTTON_A,
+				SDL_CONTROLLER_BUTTON_B,
+				SDL_CONTROLLER_BUTTON_X,
+				SDL_CONTROLLER_BUTTON_Y,
+				SDL_CONTROLLER_BUTTON_LEFTSTICK,
+				SDL_CONTROLLER_BUTTON_RIGHTSTICK,
+			};
+			for (size_t i = 0; i < sizeof(buttons) / sizeof(buttons[0]); ++i) {
+				if (SDL_GameControllerGetButton(g_sdl_gamepad, buttons[i])) {
+					pad_state |= map_sdl_button_to_pad((uint8_t)buttons[i]);
+				}
 			}
 		}
 	}
@@ -3472,8 +3191,15 @@ static void poll_input_devices_sdl(void) {
 			}
 			case SDL_WINDOWEVENT:
 				if (ev.window.event == SDL_WINDOWEVENT_FOCUS_LOST) {
+					g_sdl_focused = false;
+					pad_state = 0;
+					g_sdl_pad_state = 0;
+					g_mouse_buttons = 0;
+					g_mouse_wheel_y = 0;
+					g_core->bmsx_keyboard_reset();
 					core_focus_changed(false);
 				} else if (ev.window.event == SDL_WINDOWEVENT_FOCUS_GAINED) {
+					g_sdl_focused = true;
 					core_focus_changed(true);
 				}
 				break;
@@ -3507,7 +3233,9 @@ static void poll_input_devices_sdl(void) {
 				break;
 		}
 	}
-	sdl_update_mouse_position();
+	if (g_sdl_focused) {
+		sdl_update_mouse_position();
+	}
 	g_sdl_pad_state = pad_state;
 	input_finalize(g_sdl_pad_state);
 }
@@ -3535,18 +3263,10 @@ static uint64_t monotonic_ms(void) {
 	return (uint64_t)ts.tv_sec * 1000ull + (uint64_t)ts.tv_nsec / BMSX_HOST_USEC_PER_SECOND;
 }
 
-static uint64_t frame_time_from_scaled(int64_t hz_scaled, uint64_t units_per_second) {
-	const uint64_t numerator = (uint64_t)kHzScale * units_per_second;
-	const uint64_t hz = (uint64_t)hz_scaled;
-	return (numerator + hz / 2u) / hz;
-}
-
-static uint64_t frame_time_usec_from_scaled(int64_t hz_scaled) {
-	return frame_time_from_scaled(hz_scaled, BMSX_HOST_USEC_PER_SECOND);
-}
-
-static uint64_t frame_time_ns_from_scaled(int64_t hz_scaled) {
-	return frame_time_from_scaled(hz_scaled, BMSX_HOST_NSEC_PER_SECOND);
+static void set_host_timing(const struct retro_system_timing* timing) {
+	g_target_fps = timing->fps;
+	g_frame_usec = (uint64_t)((double)BMSX_HOST_USEC_PER_SECOND / timing->fps + 0.5);
+	g_frame_ns = (uint64_t)((double)BMSX_HOST_NSEC_PER_SECOND / timing->fps + 0.5);
 }
 
 static int16_t input_state_cb(unsigned port, unsigned device, unsigned index, unsigned id) {
@@ -3668,8 +3388,6 @@ static void load_core(LibretroCore* core, const char* path) {
 	load_symbol(core->handle, "retro_get_memory_size", &core->retro_get_memory_size);
 	load_symbol(core->handle, "retro_cheat_reset", &core->retro_cheat_reset);
 	load_symbol(core->handle, "retro_cheat_set", &core->retro_cheat_set);
-	load_symbol(core->handle, "bmsx_set_frame_time_usec", &core->bmsx_set_frame_time_usec);
-	load_symbol(core->handle, "bmsx_get_ufps", &core->bmsx_get_ufps);
 	load_symbol(core->handle, "bmsx_keyboard_event", &core->bmsx_keyboard_event);
 	load_symbol(core->handle, "bmsx_keyboard_reset", &core->bmsx_keyboard_reset);
 	load_symbol(core->handle, "bmsx_focus_changed", &core->bmsx_focus_changed);
@@ -3679,8 +3397,8 @@ static void load_core(LibretroCore* core, const char* path) {
 static void usage(const char* argv0) {
 	fprintf(stderr,
 			"Usage:\n"
-			"  %s --core ./libretro_bmsx.so --no-game [--backend software|gles2] [--video fb|sdl] [--system-dir PATH] [--save-dir PATH] [--rom-folder FOLDER] [--input-timeline FILE] [--auto-timeline] [--input-debug] [--no-audio] [--max-frames N] [--crt-postprocessing on|off] [--crt-noise on|off]\n"
-			"  %s --core ./libretro_bmsx.so GAME.rom [--backend software|gles2] [--video fb|sdl] [--system-dir PATH] [--save-dir PATH] [--rom-folder FOLDER] [--input-timeline FILE] [--auto-timeline] [--input-debug] [--no-audio] [--max-frames N] [--crt-postprocessing on|off] [--crt-noise on|off]\n",
+			"  %s --core ./libretro_bmsx.so --no-game [--backend software|gles2] [--video fb|sdl] [--hidden-window] [--system-dir PATH] [--save-dir PATH] [--rom-folder FOLDER] [--input-timeline FILE] [--paced-timeline] [--auto-timeline] [--input-debug] [--no-audio] [--max-frames N] [--gles2-timing-report] [--timing-warmup N] [--crt-postprocessing on|off] [--crt-noise on|off]\n"
+			"  %s --core ./libretro_bmsx.so GAME.rom [--backend software|gles2] [--video fb|sdl] [--hidden-window] [--system-dir PATH] [--save-dir PATH] [--rom-folder FOLDER] [--input-timeline FILE] [--paced-timeline] [--auto-timeline] [--input-debug] [--no-audio] [--max-frames N] [--gles2-timing-report] [--timing-warmup N] [--crt-postprocessing on|off] [--crt-noise on|off]\n",
 			argv0, argv0);
 	exit(2);
 }
@@ -3715,6 +3433,7 @@ int main(int argc, char** argv) {
 	const char* rom_folder = "";
 	const char* input_timeline = "";
 	bool use_input_timeline = false;
+	bool paced_timeline = false;
 	bool auto_timeline = false;
 	const char* backend = "software";
 	const char* video_backend = "fb";
@@ -3752,8 +3471,20 @@ int main(int argc, char** argv) {
 			g_audio_disabled = true;
 			continue;
 		}
+		if (strcmp(argv[i], "--hidden-window") == 0) {
+			g_sdl_hidden_window = true;
+			continue;
+		}
 		if (strcmp(argv[i], "--max-frames") == 0) {
 			g_max_run_frames = parse_positive_u64_arg(required_arg(argc, argv, &i), "--max-frames");
+			continue;
+		}
+		if (strcmp(argv[i], "--gles2-timing-report") == 0) {
+			g_frame_timing.enabled = true;
+			continue;
+		}
+		if (strcmp(argv[i], "--timing-warmup") == 0) {
+			g_frame_timing.warmup_frames = parse_positive_u64_arg(required_arg(argc, argv, &i), "--timing-warmup");
 			continue;
 		}
 		if (strcmp(argv[i], "--crt-postprocessing") == 0) {
@@ -3761,7 +3492,7 @@ int main(int argc, char** argv) {
 			if (strcmp(value, "on") != 0 && strcmp(value, "off") != 0) {
 				die("Invalid --crt-postprocessing %s (expected on|off)", value);
 			}
-			snprintf(g_opt_crt_postprocessing, sizeof(g_opt_crt_postprocessing), "%s", value);
+			bmsx_core_options_override(&g_core_options, "bmsx_crt_postprocessing", value);
 			continue;
 		}
 		if (strcmp(argv[i], "--crt-noise") == 0) {
@@ -3769,7 +3500,7 @@ int main(int argc, char** argv) {
 			if (strcmp(value, "on") != 0 && strcmp(value, "off") != 0) {
 				die("Invalid --crt-noise %s (expected on|off)", value);
 			}
-			snprintf(g_opt_crt_noise, sizeof(g_opt_crt_noise), "%s", value);
+			bmsx_core_options_override(&g_core_options, "bmsx_crt_noise", value);
 			continue;
 		}
 		if (strcmp(argv[i], "--rom-folder") == 0) {
@@ -3779,6 +3510,10 @@ int main(int argc, char** argv) {
 		if (strcmp(argv[i], "--input-timeline") == 0) {
 			use_input_timeline = true;
 			input_timeline = required_arg(argc, argv, &i);
+			continue;
+		}
+		if (strcmp(argv[i], "--paced-timeline") == 0) {
+			paced_timeline = true;
 			continue;
 		}
 		if (strcmp(argv[i], "--auto-timeline") == 0) {
@@ -3797,6 +3532,9 @@ int main(int argc, char** argv) {
 	if (strcmp(backend, "software") != 0 && strcmp(backend, "gles2") != 0) {
 		die("Invalid --backend %s (expected software|gles2)", backend);
 	}
+	if (g_frame_timing.enabled && strcmp(backend, "gles2") != 0) {
+		die("--gles2-timing-report requires --backend gles2");
+	}
 	if (strcmp(video_backend, "fb") != 0 && strcmp(video_backend, "sdl") != 0) {
 		die("Invalid --video %s (expected fb|sdl)", video_backend);
 	}
@@ -3813,7 +3551,7 @@ int main(int argc, char** argv) {
 
 	snprintf(g_system_dir, sizeof(g_system_dir), "%s", system_dir);
 	snprintf(g_save_dir, sizeof(g_save_dir), "%s", save_dir);
-	snprintf(g_opt_render_backend, sizeof(g_opt_render_backend), "%s", backend);
+	bmsx_core_options_override(&g_core_options, "bmsx_render_backend", backend);
 
 	signal(SIGINT, on_signal);
 	signal(SIGTERM, on_signal);
@@ -3842,6 +3580,11 @@ int main(int argc, char** argv) {
 #endif
 
 	core.retro_init();
+	struct retro_system_av_info av;
+	memset(&av, 0, sizeof(av));
+	core.retro_get_system_av_info(&av);
+	update_geometry(&av.geometry);
+	set_host_timing(&av.timing);
 	if (g_use_hw_render && g_hw_context_pending_reset && g_hw_render.context_reset) {
 		g_hw_render.context_reset();
 		g_hw_context_pending_reset = false;
@@ -3880,17 +3623,19 @@ int main(int argc, char** argv) {
 		die("retro_load_game failed");
 	}
 
-	struct retro_system_av_info av;
 	memset(&av, 0, sizeof(av));
 	core.retro_get_system_av_info(&av);
 	update_geometry(&av.geometry);
+	set_host_timing(&av.timing);
+	if (g_use_hw_render && g_hw_context_pending_reset && g_hw_render.context_reset) {
+		g_hw_render.context_reset();
+		g_hw_context_pending_reset = false;
+	}
 	fprintf(stderr, "[libretro-host] av: base=%ux%u max=%ux%u fps=%.2f sr=%.2f\n",
 			av.geometry.base_width, av.geometry.base_height,
 			av.geometry.max_width, av.geometry.max_height,
 			av.timing.fps, av.timing.sample_rate);
 
-	const int64_t ufps_scaled = core.bmsx_get_ufps();
-	g_target_fps = (double)ufps_scaled / (double)kHzScale;
 	int audio_rate = (int)(av.timing.sample_rate + 0.5);
 	if (audio_rate <= 0) {
 		die("Invalid audio sample rate: %.2f", av.timing.sample_rate);
@@ -3900,9 +3645,6 @@ int main(int argc, char** argv) {
 	} else {
 		audio_init(audio_rate);
 	}
-	g_frame_usec = frame_time_usec_from_scaled(ufps_scaled);
-	core.bmsx_set_frame_time_usec((retro_usec_t)g_frame_usec);
-	g_frame_ns = frame_time_ns_from_scaled(ufps_scaled);
 	input_timeline_bind_keyboard_event(core_keyboard_event);
 	/*
 	 * Configure input timelines only when explicitly requested:
@@ -3917,30 +3659,31 @@ int main(int argc, char** argv) {
 				(game_path && game_path[0]) ? game_path : NULL,
 				g_frame_usec);
 	}
-	const bool unpaced_timeline = input_timeline_is_active();
-	uint64_t next_frame_ns = monotonic_ns();
+	const bool unpaced_timeline = input_timeline_is_active() && !paced_timeline;
+	const bool audio_master = !g_audio_disabled && !unpaced_timeline;
+	BmsxFramePacer frame_pacer;
+	bmsx_frame_pacer_init(&frame_pacer, monotonic_ns(), g_frame_ns);
 
 	while (!g_should_quit) {
 		uint64_t now_ns = monotonic_ns();
-		if (!unpaced_timeline && now_ns < next_frame_ns) {
-			const uint64_t sleep_ns = next_frame_ns - now_ns;
+		if (!unpaced_timeline && !audio_master && now_ns < frame_pacer.next_deadline_ns) {
 			struct timespec ts;
-			ts.tv_sec = (time_t)(sleep_ns / BMSX_HOST_NSEC_PER_SECOND);
-			ts.tv_nsec = (long)(sleep_ns % BMSX_HOST_NSEC_PER_SECOND);
-			nanosleep(&ts, NULL);
-		}
-		now_ns = monotonic_ns();
-		if (!unpaced_timeline && now_ns > next_frame_ns) {
-			const uint64_t lag_ns = now_ns - next_frame_ns;
-			if (lag_ns > kFrameScheduleResyncNs) {
-				next_frame_ns = now_ns;
+			ts.tv_sec = (time_t)(frame_pacer.next_deadline_ns / BMSX_HOST_NSEC_PER_SECOND);
+			ts.tv_nsec = (long)(frame_pacer.next_deadline_ns % BMSX_HOST_NSEC_PER_SECOND);
+			while (clock_nanosleep(CLOCK_MONOTONIC, TIMER_ABSTIME, &ts, NULL) == EINTR) {
 			}
 		}
+		now_ns = monotonic_ns();
+		const BmsxFramePacerDecision pacing = bmsx_frame_pacer_begin(&frame_pacer, now_ns);
 		/* Missed deadlines are caught up by subsequent host-loop iterations.
 		 * Drop their presentation and advance exactly one machine frame per call. */
-		g_drop_video = !unpaced_timeline && now_ns > next_frame_ns + g_frame_ns;
+		g_drop_video = !unpaced_timeline && !audio_master && pacing.drop_presentation;
+		g_frame_timing.record_frame = g_frame_timing.enabled && g_run_frame_count >= g_frame_timing.warmup_frames;
 		if (g_has_frame_time_cb) {
-			g_frame_time_cb.callback((retro_usec_t)g_frame_usec);
+			const retro_usec_t frame_time_usec = !unpaced_timeline && pacing.has_elapsed
+				? (retro_usec_t)(pacing.elapsed_ns / 1000u)
+				: g_frame_time_cb.reference;
+			g_frame_time_cb.callback(frame_time_usec);
 		}
 		const bool cart_program_active = core_cart_program_active();
 		if (!cart_program_active) {
@@ -3949,13 +3692,30 @@ int main(int argc, char** argv) {
 			input_timeline_tick_frame();
 			g_input_timeline_frame_pending = false;
 		}
+		g_frame_timing.current_video_frame_received = false;
 		g_core_presented_frame = false;
+		g_frame_timing.current_blit_ns = 0u;
+		g_frame_timing.current_swap_ns = 0u;
+		g_frame_timing.current_blit_ran = false;
+		g_frame_timing.current_swap_ran = false;
+		const uint64_t run_start_ns = g_frame_timing.record_frame ? monotonic_ns() : 0u;
 		core.retro_run();
+		if (g_frame_timing.record_frame) {
+			const uint64_t run_ns = monotonic_ns() - run_start_ns;
+			bmsx_frame_timing_record(&g_frame_timing.report,
+					run_ns,
+					g_frame_timing.current_blit_ns,
+					g_frame_timing.current_blit_ran,
+					g_frame_timing.current_swap_ns,
+					g_frame_timing.current_swap_ran,
+					g_drop_video && g_frame_timing.current_video_frame_received,
+					!g_drop_video && g_core_presented_frame);
+		}
 		++g_run_frame_count;
 		if (core_cart_program_active() && g_core_presented_frame) {
 			g_input_timeline_frame_pending = true;
 		}
-		if (core_cart_program_active() && input_timeline_should_auto_quit(kInputTimelineAutoQuitGraceFrames)) {
+		if (g_max_run_frames == 0 && core_cart_program_active() && input_timeline_should_auto_quit(kInputTimelineAutoQuitGraceFrames)) {
 			fprintf(stderr, "[libretro-host] input timeline completed, exiting\n");
 			g_should_quit = 1;
 		}
@@ -3965,18 +3725,15 @@ int main(int argc, char** argv) {
 			g_should_quit = 1;
 		}
 		now_ns = monotonic_ns();
-		if (unpaced_timeline) {
-			next_frame_ns = now_ns;
-		} else {
-			const uint64_t scheduled_next_ns = next_frame_ns + g_frame_ns;
-			if (now_ns > scheduled_next_ns && now_ns - scheduled_next_ns > kFrameScheduleResyncNs) {
-				next_frame_ns = now_ns;
-			} else {
-				next_frame_ns = scheduled_next_ns;
-			}
-		}
+		bmsx_frame_pacer_complete(&frame_pacer, now_ns, !unpaced_timeline && !audio_master, g_frame_ns);
+	}
+	if (g_frame_timing.enabled) {
+		bmsx_frame_timing_print(&g_frame_timing.report, g_frame_timing.warmup_frames);
 	}
 
+	if (g_use_hw_render && g_hw_render.context_destroy) {
+		g_hw_render.context_destroy();
+	}
 	core.retro_unload_game();
 	core.retro_deinit();
 	if (!g_audio_disabled) {
@@ -4006,9 +3763,7 @@ int main(int argc, char** argv) {
 	if (core.handle) {
 		dlclose(core.handle);
 	}
-	if (g_use_hw_render && g_hw_render.context_destroy) {
-		g_hw_render.context_destroy();
-	}
+	bmsx_core_options_destroy(&g_core_options);
 	egl_shutdown();
 	return 0;
 }

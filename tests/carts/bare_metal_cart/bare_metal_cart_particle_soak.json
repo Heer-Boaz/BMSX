@@ -1,0 +1,56 @@
+[
+	{
+		"description": "cycle to exploding crystal shards",
+		"frame": 60,
+		"event": {
+			"type": "button",
+			"code": "ArrowRight",
+			"down": true
+		}
+	},
+	{
+		"description": "release exploding crystal shards cycle",
+		"frame": 62,
+		"event": {
+			"type": "button",
+			"code": "ArrowRight",
+			"down": false
+		}
+	},
+	{
+		"description": "cycle to Tera-Flare energy sphere",
+		"frame": 70,
+		"event": {
+			"type": "button",
+			"code": "ArrowRight",
+			"down": true
+		}
+	},
+	{
+		"description": "release Tera-Flare energy sphere cycle",
+		"frame": 72,
+		"event": {
+			"type": "button",
+			"code": "ArrowRight",
+			"down": false
+		}
+	},
+	{
+		"description": "cycle to depth-cued particle storm",
+		"frame": 80,
+		"event": {
+			"type": "button",
+			"code": "ArrowRight",
+			"down": true
+		}
+	},
+	{
+		"description": "release depth-cued particle storm cycle",
+		"frame": 82,
+		"event": {
+			"type": "button",
+			"code": "ArrowRight",
+			"down": false
+		}
+	}
+]

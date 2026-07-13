@@ -10,9 +10,7 @@
 #include <cstring>
 #include <cstdlib>
 #include <cstdint>
-#include <chrono>
 #include <exception>
-#include <limits>
 #include <stdexcept>
 #include <string>
 #include <cctype>
@@ -37,15 +35,10 @@ static retro_audio_sample_batch_t audio_batch_cb = nullptr;
 static retro_input_poll_t input_poll_cb = nullptr;
 static retro_input_state_t input_state_cb = nullptr;
 static retro_log_callback logging;
-static retro_usec_t g_pending_frame_time_usec = 0;
-static bool g_has_pending_frame_time = false;
-
-extern "C" void bmsx_set_frame_time_usec(retro_usec_t usec);
 extern "C" RETRO_API void bmsx_keyboard_event(const char* code, bool down);
 extern "C" RETRO_API void bmsx_keyboard_reset(void);
 extern "C" RETRO_API void bmsx_focus_changed(bool focused);
 extern "C" RETRO_API bool bmsx_is_cart_program_active(void);
-extern "C" int64_t bmsx_get_ufps(void);
 
 static retro_hw_render_callback g_hw_render;
 static bool g_hw_render_supported = false;
@@ -721,13 +714,16 @@ static void set_core_options(bool default_gles2) {
 	unsigned version = 0;
 	if (environ_cb(RETRO_ENVIRONMENT_GET_CORE_OPTIONS_VERSION, &version) && version >= 2) {
 		environ_cb(RETRO_ENVIRONMENT_SET_CORE_OPTIONS_V2, &g_options_us);
-	} else {
+		return;
+	}
+	if (version >= 1) {
 		retro_core_options_intl options_intl;
 		options_intl.us = g_option_defs_v1_us;
 		options_intl.local = nullptr;
 		if (!environ_cb(RETRO_ENVIRONMENT_SET_CORE_OPTIONS_INTL, &options_intl)) {
 			environ_cb(RETRO_ENVIRONMENT_SET_CORE_OPTIONS, g_option_defs_v1_us);
 		}
+		return;
 	}
 
 	environ_cb(RETRO_ENVIRONMENT_SET_VARIABLES, g_option_vars);
@@ -935,9 +931,6 @@ void retro_set_environment(retro_environment_t cb) {
 	uint64_t serialization_quirks = RETRO_SERIALIZATION_QUIRK_MUST_INITIALIZE;
 	cb(RETRO_ENVIRONMENT_SET_SERIALIZATION_QUIRKS, &serialization_quirks);
 
-	static retro_frame_time_callback frame_time = { bmsx_set_frame_time_usec, 0 };
-	cb(RETRO_ENVIRONMENT_SET_FRAME_TIME_CALLBACK, &frame_time);
-
 	// Set input descriptors
 	static constexpr unsigned kRetroMouseIdLeft = 2;
 	static constexpr unsigned kRetroMouseIdRight = 3;
@@ -1099,11 +1092,6 @@ void retro_init(void) {
 		}
 	}
 	g_platform->setAVInfo(g_cached_av_info);
-	if (g_has_pending_frame_time) {
-		g_platform->setFrameTimeUsec(g_pending_frame_time_usec);
-		g_has_pending_frame_time = false;
-	}
-
 	// Defer actual context reset to retro_run. Some frontends/devices (notably
 	// older embedded hosts) are not stable when heavy GL init work is done
 	// directly in the context_reset callback/init path.
@@ -1139,19 +1127,6 @@ void retro_get_system_av_info(struct retro_system_av_info* info) {
 		"[BMSX] System AV Info requested: %ux%u @ %.2fHz, Sample Rate: %.2fHz\n",
 		info->geometry.base_width, info->geometry.base_height, info->timing.fps,
 		info->timing.sample_rate);
-}
-
-extern "C" void bmsx_set_frame_time_usec(retro_usec_t usec) {
-	if (usec == 0) {
-		return;
-	}
-	g_pending_frame_time_usec = usec;
-	g_has_pending_frame_time = true;
-	g_platform->setFrameTimeUsec(usec);
-}
-
-extern "C" int64_t bmsx_get_ufps(void) {
-	return g_current_ufps_scaled;
 }
 
 void retro_set_controller_port_device(unsigned port, unsigned device) {
@@ -1327,62 +1302,6 @@ void retro_run(void) {
 			g_platform->setResourceUsageGizmo(g_resource_usage_gizmo_enabled);
 		}
 	}
-//   static auto lastFrameTime = std::chrono::steady_clock::now();
-//   static double accSec = 0.0;
-//   static double accMs = 0.0;
-//   static double minMs = std::numeric_limits<double>::infinity();
-//   static double maxMs = 0.0;
-//   static uint64_t accCalls = 0;
-#if BMSX_ENABLE_PERFORMANCE_LOGS
-	static auto perfStart = std::chrono::steady_clock::now();
-	static double accRunMs = 0.0;
-	static double accTickMs = 0.0;
-	static double accRenderMs = 0.0;
-	static double accOverheadMs = 0.0;
-	static double accRuntimeUpdateMs = 0.0;
-	static double accRuntimeDrawMs = 0.0;
-	static double maxRunMs = 0.0;
-	static double maxTickMs = 0.0;
-	static double maxRenderMs = 0.0;
-	static double maxOverheadMs = 0.0;
-	static double maxRuntimeUpdateMs = 0.0;
-	static double maxRuntimeDrawMs = 0.0;
-	static uint64_t perfFrames = 0;
-#endif
-
-	// const auto now = std::chrono::steady_clock::now();
-	// const double dtSec = std::chrono::duration<double>(now - lastFrameTime).count();
-	// const double dtMs = dtSec * 1000.0;
-	// lastFrameTime = now;
-
-	// accSec += dtSec;
-	// accMs += dtMs;
-	// accCalls += 1;
-	// if (dtMs < minMs) minMs = dtMs;
-	// if (dtMs > maxMs) maxMs = dtMs;
-	// if (accSec >= 1.0) {
-	// const double avgMs = accMs / static_cast<double>(accCalls);
-	// const double fps = static_cast<double>(accCalls) / accSec;
-	// const double targetMs = g_platform->frameTimeSec() * 1000.0;
-	// const double targetFps = 1.0 / g_platform->frameTimeSec();
-	// logging.log(RETRO_LOG_WARN,
-	// 			"[BMSX] host frame timing avg=%.2fms min=%.2f max=%.2f fps=%.1f target=%.2fms (%.1f fps) calls=%llu\n",
-	// 			avgMs,
-	// 			minMs,
-	// 			maxMs,
-	// 			fps,
-	// 			targetMs,
-	// 			targetFps,
-	// 			static_cast<unsigned long long>(accCalls));
-	// accSec = 0.0;
-	// accMs = 0.0;
-	// minMs = std::numeric_limits<double>::infinity();
-	// maxMs = 0.0;
-	// accCalls = 0;
-	// }
-
-	// Run one frame
-//   const auto runStart = std::chrono::steady_clock::now();
 	const bool video_frame_presented = g_platform->runFrame();
 	const int64_t runtime_ufps_scaled = g_platform->machineManager()->runtime().timing.ufpsScaled;
 	if (runtime_ufps_scaled != g_current_ufps_scaled) {
@@ -1390,73 +1309,23 @@ void retro_run(void) {
 		sync_current_av_info(runtime_ufps_scaled);
 		environ_cb(RETRO_ENVIRONMENT_SET_SYSTEM_AV_INFO, &g_cached_av_info);
 	}
-//   const auto runEnd = std::chrono::steady_clock::now();
-//   const double runMs = std::chrono::duration<double, std::milli>(runEnd - runStart).count();
-//   const auto& tickTiming = g_platform->machineManager()->lastTickTiming();
-//   const auto& renderTiming = g_platform->machineManager()->lastRenderTiming();
-//   const double overheadMs = runMs - tickTiming.totalMs - renderTiming.totalMs;
-
-//   accRunMs += runMs;
-//   accTickMs += tickTiming.totalMs;
-//   accRenderMs += renderTiming.totalMs;
-//   accOverheadMs += overheadMs;
-//   accRuntimeUpdateMs += tickTiming.runtimeUpdateMs;
-//   accRuntimeDrawMs += renderTiming.runtimeDrawMs;
-//   if (runMs > maxRunMs) maxRunMs = runMs;
-//   if (tickTiming.totalMs > maxTickMs) maxTickMs = tickTiming.totalMs;
-//   if (renderTiming.totalMs > maxRenderMs) maxRenderMs = renderTiming.totalMs;
-//   if (overheadMs > maxOverheadMs) maxOverheadMs = overheadMs;
-//   if (tickTiming.runtimeUpdateMs > maxRuntimeUpdateMs) maxRuntimeUpdateMs = tickTiming.runtimeUpdateMs;
-//   if (renderTiming.runtimeDrawMs > maxRuntimeDrawMs) maxRuntimeDrawMs = renderTiming.runtimeDrawMs;
-//   perfFrames += 1;
-
-//   const double perfSec = std::chrono::duration<double>(runEnd - perfStart).count();
-//   if (perfSec >= 1.0) {
-// 	const double invFrames = 1.0 / static_cast<double>(perfFrames);
-// 	logging.log(RETRO_LOG_WARN,
-// 				"[BMSX] run avg=%.2fms max=%.2f tick=%.2f render=%.2f overhead=%.2f frames=%llu\n",
-// 				accRunMs * invFrames,
-// 				maxRunMs,
-// 				accTickMs * invFrames,
-// 				accRenderMs * invFrames,
-// 				accOverheadMs * invFrames,
-// 				static_cast<unsigned long long>(perfFrames));
-// 	logging.log(RETRO_LOG_WARN,
-// 				"[BMSX] runtime avg update=%.2f draw=%.2f max_update=%.2f max_draw=%.2f\n",
-// 				accRuntimeUpdateMs * invFrames,
-// 				accRuntimeDrawMs * invFrames,
-// 				maxRuntimeUpdateMs,
-// 				maxRuntimeDrawMs);
-// 	perfStart = runEnd;
-// 	accRunMs = 0.0;
-// 	accTickMs = 0.0;
-// 	accRenderMs = 0.0;
-// 	accOverheadMs = 0.0;
-// 	accRuntimeUpdateMs = 0.0;
-// 	accRuntimeDrawMs = 0.0;
-// 	maxRunMs = 0.0;
-// 	maxTickMs = 0.0;
-// 	maxRenderMs = 0.0;
-// 	maxOverheadMs = 0.0;
-// 	maxRuntimeUpdateMs = 0.0;
-// 	maxRuntimeDrawMs = 0.0;
-// 	perfFrames = 0;
-//   }
 
 	// Output video
+	const auto& fb = g_platform->getFramebuffer();
 	if (video_frame_presented) {
-		const auto& fb = g_platform->getFramebuffer();
 		if (isHardwareBackendActive()) {
 			video_cb(RETRO_HW_FRAME_BUFFER_VALID, fb.width, fb.height, 0);
 		} else {
 			video_cb(fb.data, fb.width, fb.height, fb.pitch);
 		}
+	} else {
+		video_cb(nullptr, fb.width, fb.height, isHardwareBackendActive() ? 0 : fb.pitch);
 	}
 
 	// Output audio
 	const auto& audio = g_platform->getAudioBuffer();
 	if (audio_batch_cb && audio.samples > 0) {
-	audio_batch_cb(audio.data, audio.samples);
+		audio_batch_cb(audio.data, audio.samples);
 	}
 }
 
@@ -1535,8 +1404,8 @@ static void fallback_log(enum retro_log_level level, const char* fmt, ...) {
 static void hw_context_reset() {
 	logging.log(RETRO_LOG_INFO, "[BMSX] hw_context_reset called. g_platform=%p\n", g_platform);
 	if (!g_hw_render_requested) {
-	logging.log(RETRO_LOG_INFO, "[BMSX] hw_context_reset ignored (not requested)\n");
-	return;
+		logging.log(RETRO_LOG_INFO, "[BMSX] hw_context_reset ignored (not requested)\n");
+		return;
 	}
 	g_hw_context_pending = true;
 	g_hw_context_ready = false;
@@ -1545,10 +1414,10 @@ static void hw_context_reset() {
 static void hw_context_destroy() {
 	logging.log(RETRO_LOG_INFO, "[BMSX] hw_context_destroy called\n");
 	if (!g_hw_render_requested) {
-	return;
+		return;
 	}
-	if (g_platform) {
-	g_platform->onContextDestroy();
+	if (g_hw_context_ready && g_platform) {
+		g_platform->onContextDestroy();
 	}
 	g_hw_context_ready = false;
 	g_hw_context_pending = false;

@@ -110,6 +110,11 @@ Implemented or partially covered GX-GPU areas include:
   O(n) without allocating or introducing a second display list. The focused
   Pietious capture gate proves initial and runtime-mutated z order; the long
   scene reaches the formerly inverted z=250 player/z=114 explosion overlap.
+  This is only the sprite regression fix, not the finished cartlib presentation
+  owner: tile, custom, text and mesh still run in hard-coded kind stages and
+  cannot interleave by z, while equal-z sprite order still depends on a swap-
+  removed bucket index. The open architecture slice replaces those stages with
+  one retained per-space visual list and a stable activation sequence.
 - Texture windows/CLUT-ish paths, texture disable, modulation math, mask/fill
   behavior, oversized primitive culling, and VRAM copy overlap chunking.
 - Raw PSX textured quad polygons are covered in TS/C++ software/headless tests
@@ -538,6 +543,42 @@ and MAME
   982-frame capture-free slowdown timeline reduce mean user CPU from 6.37 s to
   6.23 s and total CPU from 6.75 s to 6.56 s; live browser execution remains
   deferred.
+- [x] Remove the paced-libretro feedback loop instead of feeding frontend wall
+  time into the hardware scheduler. The core no longer registers the optional
+  frame-time callback; one `retro_run()` advances one runtime-timed machine
+  frame. The direct host uses absolute monotonic deadlines and skips only an
+  overdue presentation while retaining machine and audio advancement. Its
+  reproducible 16,000-call particle profile and fixed-size, allocation-free
+  timing histograms measure 15,500 post-warm-up hidden GLES2 frames at 10.522 ms
+  average, 18 ms p95, 20 ms p99 and 115.980 ms maximum; 188 presentations were
+  skipped during catch-up. That run exposed 82,624 frames discarded by a copied
+  browser-style SDL queue cap. The cap and false full-consumption report are now
+  removed. A fixed callback FIFO owner blocks both SDL and ALSA producers until
+  every frame is retained, with no hot-path allocation. Its full 16k soak exposed
+  172,480 SDL underrun frames and 2,190 late presentation skips while both the
+  deadline clock and blocking audio were still pacing. Audio is now the sole
+  master when active; the current 1,000-call soak has zero underrun frames and
+  zero skipped presentations. A repeated full soak and live target audio remain
+  open rather than hidden by a drop policy. Hidden SDL avoids WSLg focus theft and
+  therefore does not prove visible compositor swap behavior. The GLES2 blend planner also no longer duplicates
+  the line rasterizer or walks `O(commands^2 * line_length)` pixels: conservative
+  clipped bounds preserve dependencies, retained per-layer links visit each
+  command once, and line dither remains part of batch identity. A clean
+  `e1bfd1a29` A/B keeps all 146 deterministic captures byte-identical.
+- [x] Restore direct-host protocol ownership instead of advertising ignored
+  capabilities. Pixel format requests now accept only the two implemented
+  layouts; AV geometry is established before hardware context reset without
+  invented 256x240/1280x720 fallback targets; context destruction runs while the
+  core and GL context are alive; and V2/V1/legacy core-option definitions feed a
+  retained option register that preserves explicit CLI overrides and update
+  state. These are cold configuration owners, not per-frame DTO validation.
+- [ ] Remove the remaining private keyboard/focus/cart-start direct-host ABI.
+  Standard libretro keyboard delivery and a frontend-owned timeline origin must
+  replace it without a boot-delay heuristic or a new compatibility facade.
+- [ ] Give GLES2 dynamic vertex submission a retained stream-buffer lifecycle
+  and coalesce CPU-to-VRAM uploads into bounded physical wrap rectangles. Do not
+  paper over repeated-buffer stalls with a cosmetic orphan helper or arbitrary
+  VBO rotation.
 - [ ] Keep WebGL2/GLES2 behavior synchronized for every new GX command.
 - [ ] Wire the existing TS/C++ software/headless renderer to the same GX/PSX
   contract as oracle/backend, not as a fallback inside GPU backends.

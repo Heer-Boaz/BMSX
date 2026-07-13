@@ -29,6 +29,7 @@ class KeyboardInput;
 class PointerInput;
 class LibretroInputHub;
 class LibretroAudioService;
+class LibretroHostClock;
 class MachineManager;
 
 /* ============================================================================
@@ -185,7 +186,6 @@ public:
 
 	// Configuration
 	void setAVInfo(const retro_system_av_info& info);
-	void setFrameTimeUsec(retro_usec_t usec);
 	void setControllerDevice(unsigned port, unsigned device);
 
 	// ROM management
@@ -202,7 +202,6 @@ public:
 	// State access
 	const Framebuffer& getFramebuffer() const { return m_framebuffer; }
 	const AudioBuffer& getAudioBuffer() const { return m_audio_buffer; }
-	double frameTimeSec() const { return m_frame_time_sec; }
 
 	// Machine manager access
 	MachineManager* machineManager() { return m_machine_manager.get(); }
@@ -223,7 +222,7 @@ public:
 	size_t getSystemRAMSize() const;
 
 	// Platform interface implementation
-	HostClock* clock() override { return m_clock.get(); }
+	HostClock* clock() override;
 	FrameLoop* frameLoop() override { return m_frame_loop.get(); }
 	Lifecycle* lifecycle() override { return m_lifecycle.get(); }
 	InputHub* inputHub() override { return m_input_hub.get(); }
@@ -262,7 +261,7 @@ private:
 	std::unique_ptr<MachineManager> m_machine_manager;
 
 	// Platform components
-	std::unique_ptr<HostClock> m_clock;
+	std::unique_ptr<LibretroHostClock> m_clock;
 	std::unique_ptr<FrameLoop> m_frame_loop;
 	std::unique_ptr<Lifecycle> m_lifecycle;
 	std::unique_ptr<InputHub> m_input_hub;
