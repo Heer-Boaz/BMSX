@@ -190,6 +190,13 @@ VBlank phase and frame-cycle timing remain runtime-scheduler state and are
 republished to the GPU during restore rather than duplicated in the device
 record.
 
+Frame deadlines advance from the preceding scheduled frame boundary, not from
+the scheduler time at which an overdue deadline is serviced. A CPU instruction
+is atomic and may cross that deadline, but such lateness must not accumulate
+into scanout-phase drift or duplicate a host frame. One runtime tick completes
+at the VBlank edge; the first tick after boot remains a real timeline tick and
+is not consumed as host warm-up.
+
 ## Runtime container vocabulary
 
 Ownership terms are architectural roles, not interchangeable directory labels:
@@ -538,6 +545,15 @@ dedicated `machine/devices/irq/save_state` and
 `machine/devices/input/save_state` files on both runtimes; C++ keeps those
 capture/restore bodies in the matching save-state translation units.
 
+TS and C++ codecs share a fixed 16 MiB wire capacity and reject an oversized
+current-format payload on encode or decode. Libretro exposes one fixed header
+plus that capacity, captures and encodes once, writes directly into the frontend
+buffer and clears its unused suffix; it does not retain another 16 MiB envelope.
+An asynchronous accelerated readback submission is backend infrastructure, not
+a wire phase: capture publishes only the corresponding machine request or its
+completed retained pixel bytes, and a completion from an older generation
+cannot mutate restored state.
+
 ## Device contracts
 
 ### Memory map and bus faults
@@ -690,6 +706,13 @@ state or abort the channel. Completion clears `BUSY`, sets `DONE` and raises
 there is no runtime IMGDEC, mapped RGBA staging aperture, descriptor queue or
 image-copy DMA channel.
 
+GX-read DREQ is the readback port's ready-to-send line, not a polled GPUSTAT
+copy. Backend completion raises that line and schedules a waiting channel at the
+current machine cycle; consuming the final available GPUREAD word lowers it.
+A longer transfer therefore remains `BUSY` when the GPU has no word available
+and resumes on a later readback completion without a timer, copied readiness
+latch, or software retry loop.
+
 ### GX GPU/GTE
 
 Cartlib submits painter-ordered 2D work through one retained visual-component
@@ -716,6 +739,17 @@ between GX command buffers and those backends. The mirrored VDP/RPU and IMGDEC
 device trees, mapped apertures, scheduler services, VBlank hooks, MMIO words,
 readback state and save-state fields are removed. The ROM package marker is the
 only remaining `vdp_class` name and must not be used as a compatibility route.
+
+The GP0 command processor has one fixed sixteen-word FIFO and one integer
+execution clock running at two GPU ticks per CPU cycle. Packet decode admits a
+command to the retained execution stream; the scheduler completes it at its
+absolute device deadline. GPUSTAT receive-ready, idle, DMA request and the
+published execution frontier derive from that same state. A CPU GP0 store that
+reaches a full FIFO remains the pending CPU instruction and resumes at the next
+device edge that makes its exact MMIO address writable; neither CPU nor host
+polls, retries, drops, or queues a replacement word. Save-state preserves FIFO,
+packet assembly, execution frontier, and the active deadline relative to
+scheduler time.
 
 GP0(1Fh) asserts the GPUSTAT interrupt-request source and raises `IRQ_GPU` only
 on its low-to-high transition. `IRQ_ACK` clears the IRQ controller's pending
@@ -744,6 +778,79 @@ suffix; already received image payload remains one partial upload command.
 Submitted or ready readback state is invalidated by generation, lowers the DMA
 ready line, and cannot be completed by a stale backend callback. The GPUREAD
 data latch and raw VRAM remain unchanged.
+
+GP0(C0h) is an execution-stream fence. Commands through that marker execute
+before the backend reads raw VRAM; later commands remain unpublished until the
+entire transfer has been consumed. `GxGpuReadbackPort` owns the request latches,
+fence, completion phase, fixed 512K-pixel exchange storage, and read cursor.
+Software backends copy directly from their raw-VRAM owner. Accelerated backends
+pack the logically wrapped 16-bit pixels on the GPU and perform one API
+readback into that retained exchange storage; they do not maintain a CPU VRAM
+shadow or run a per-pixel pack loop. GPUREAD emits the low pixel first, pads an
+odd final high halfword with zero, and leaves the final data latch unchanged
+after completion.
+
+#### Raster and store datapath
+
+GX rasterization uses raw PSX-style integer coordinates and state through the
+store boundary. Triangles use top-left edge ownership and half-open bounds;
+polygon coordinates wrap at the raster bucket after primitive-size rejection.
+Textured and Gouraud polygons use the shared signed fixed-gradient plane with
+twelve fractional bits, half-texel seed, and twenty-bit UV accumulator wrap.
+Lines use the integer DDA and wrap each emitted sample to signed eleven-bit
+coordinates. Drawing offset, inclusive drawing area, texture window/page,
+packed palette texels, CLUT addressing, STP, mask bits, four five-bit blend
+modes, dithering and RGB555 storage remain raw datapath stages rather than host
+float/color corrections.
+
+TS and C++ software renderers are the executable oracle for this contract, not
+a fallback inside accelerated backends. WebGL2, WebGPU and GLES2 consume the
+same command and raw-state representation and must run the same conformance
+vectors. Backend-specific vertex/shader representations may implement the
+datapath, but may not change coverage, intermediate precision, command order or
+VRAM-visible stores. New BMSX GPU extensions remain separate from this base
+command set and are added only after the affected PSX-style behavior is fixed.
+
+#### Texture production and VRAM residency
+
+The ROM producer encodes images as native direct16 or palette payloads plus
+integer texture-local coordinates, mode and optional CLUT offset. A filename
+`@atlas=N` suffix is only a producer packing-group directive: its numeric value
+is not serialized into the image ABI and is not visible to BIOS, cartlib, GPU or
+DMA. Images packed together share one ROM texture span; runtime code consumes
+that span and its raw metadata directly rather than reconstructing normalized
+coordinates or looking up an atlas object.
+
+Each cart declares physical VRAM destinations, reserved regions and simultaneous
+working sets in `gx_texture_layout`. The producer validates the complete layout
+and emits only each packed texture/CLUT slot's physical destination words. The
+cart decides when a raw texture payload is transferred and which region it
+replaces. Firmware only emits the GP0 transfer packet and DMA moves its ROM
+words. Ordinary sprite/tile images stay within one hardware texture page; the
+central rectangle primitive alone splits a surface that was authored to span
+pages. There is no runtime semantic slot manager, atlas cache, scene-aware
+firmware policy, runtime image decoder or mapped RGBA staging aperture.
+
+#### Accelerated backend execution
+
+The accelerated raw-VRAM texture is authoritative. CPU uploads, GPU draws,
+fills and VRAM copies enter one ordered backend command stream. A retained dirty
+coverage record tells a sample texture which raw-VRAM region must be copied
+before a source or destination read. A backend may use an attached-texture
+barrier only when the live context exposes the required procedure and the
+source/destination coverage satisfies that API's ordering rules; otherwise the
+concrete dependency-copy path remains the owner. Capability choice never leaks
+into cart or firmware code.
+
+Compatible solid, line and textured commands append to backend-owned retained
+arenas until render state, capacity or a real VRAM dependency forces submission.
+Mixed command order is retained and read-modify-write triangles remain ordered.
+GLES2 additionally uses one driver stream whose cursor survives frame boundaries
+and whose storage is orphaned only at capacity wrap; WebGL2 and WebGPU keep
+their own concrete upload lifecycles. CPU arenas, bounds, transfer staging,
+pack/readback storage, descriptors and backend state are retained owner data:
+steady rendering must not allocate per command, build a second vertex/VRAM
+representation, or copy an entire stream for presentation.
 
 Pixel parity is a machine contract at GX VRAM scanout. For the same ROM,
 timeline, model profile, and GX display registers, the TypeScript headless
@@ -975,6 +1082,34 @@ Terminal commands return explicit owner actions; workbench/editor owners apply
 those actions. Runtime faults must surface through the runtime/terminal error
 channel instead of being swallowed by deferred host code.
 
+## Host presentation and frontend lifecycle
+
+`overlay_queue` is the retained publication boundary between host-UI producers
+and render backends. Workbench and menu publish separate ordered lanes as
+references to their existing command kinds, payload references and counts.
+Backends consume only that pass state; they do not read a menu/workbench
+controller or clone the commands into a per-frame DTO. WebGPU and WebGL2 own
+their concrete pipelines, atlases, buffers and uploads behind that boundary.
+WebGPU is the default accelerated browser backend and WebGL2 is its fallback;
+host validation failures do not reverse that ownership or introduce a second
+presentation facade.
+
+One libretro `retro_run()` advances exactly one machine-timed frame. Frontend
+wall time is not fed back into the machine scheduler. A direct host may skip an
+overdue host presentation while catching up, but it still advances machine and
+audio state. When physical audio output is active, its fixed-capacity blocking
+queue is the host pacing master; a second deadline pacer must not compete with
+it, and push/pop/callback paths must not allocate or report dropped samples as
+consumed.
+
+The frontend that creates a GLES context owns the current-framebuffer callback
+and `get_proc_address` resolver and supplies both through the libretro hardware
+context boundary. The GLES backend resolves context procedures there rather
+than through process-global symbols. Context destruction runs while the core
+and context are still alive. Before destruction, the GPU commits accelerated
+VRAM to its retained snapshot; the first execution after context reset uploads
+that snapshot before reusing accelerated serial/frontier state.
+
 ## Validation policy
 
 A machine-boundary slice is not done without proof appropriate to the touched
@@ -988,6 +1123,13 @@ surface:
 - `npm run audit:core-parity` for mirrored runtime changes;
 - `git diff --check`;
 - headless run when cart-visible runtime behavior is touched.
+
+Render-visible GX changes keep TS headless and C++ software/headless execution
+green, run the same raw conformance vectors against both software owners, and
+keep WebGL2/GLES2 command behavior synchronized. Live accelerated proof is a
+separate gate: browser or frontend captures must exercise consecutive frames
+through the real backend and cannot be replaced by software parity, a black WSL
+swapchain, sparse screenshots or a hidden compositor window.
 
 Subagent review is useful at the slice boundary, not for every tiny edit. Review
 findings are blockers only when they identify ownership drift, stale docs,
