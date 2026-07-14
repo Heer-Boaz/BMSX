@@ -25,12 +25,12 @@ constexpr int IO_IRQ_MASK_INDEX = IO_IRQ_BASE_INDEX + 2;
 constexpr int IO_IRQ_SIZE = 3;
 
 constexpr int IO_DMA_BASE_INDEX = IO_IRQ_BASE_INDEX + IO_IRQ_SIZE;
-constexpr int IO_DMA_SRC_INDEX = IO_DMA_BASE_INDEX;
-constexpr int IO_DMA_DST_INDEX = IO_DMA_BASE_INDEX + 1;
-constexpr int IO_DMA_LEN_INDEX = IO_DMA_BASE_INDEX + 2;
-constexpr int IO_DMA_CTRL_INDEX = IO_DMA_BASE_INDEX + 3;
+constexpr int IO_DMA_READ_ADDR_INDEX = IO_DMA_BASE_INDEX;
+constexpr int IO_DMA_WRITE_ADDR_INDEX = IO_DMA_BASE_INDEX + 1;
+constexpr int IO_DMA_TRANSFER_COUNT_INDEX = IO_DMA_BASE_INDEX + 2;
+constexpr int IO_DMA_CONTROL_INDEX = IO_DMA_BASE_INDEX + 3;
 constexpr int IO_DMA_STATUS_INDEX = IO_DMA_BASE_INDEX + 4;
-constexpr int IO_DMA_WRITTEN_INDEX = IO_DMA_BASE_INDEX + 5;
+constexpr int IO_DMA_TRIGGER_INDEX = IO_DMA_BASE_INDEX + 5;
 constexpr int IO_DMA_SIZE = 6;
 
 constexpr int IO_GEO_BASE_INDEX = IO_DMA_BASE_INDEX + IO_DMA_SIZE;
@@ -166,12 +166,12 @@ constexpr uint32_t IO_IRQ_ACK = IO_BASE + IO_IRQ_ACK_INDEX * IO_WORD_SIZE;
 constexpr uint32_t IO_IRQ_MASK = IO_BASE + IO_IRQ_MASK_INDEX * IO_WORD_SIZE;
 
 constexpr uint32_t IO_DMA_BASE = IO_BASE + IO_DMA_BASE_INDEX * IO_WORD_SIZE;
-constexpr uint32_t IO_DMA_SRC = IO_BASE + IO_DMA_SRC_INDEX * IO_WORD_SIZE;
-constexpr uint32_t IO_DMA_DST = IO_BASE + IO_DMA_DST_INDEX * IO_WORD_SIZE;
-constexpr uint32_t IO_DMA_LEN = IO_BASE + IO_DMA_LEN_INDEX * IO_WORD_SIZE;
-constexpr uint32_t IO_DMA_CTRL = IO_BASE + IO_DMA_CTRL_INDEX * IO_WORD_SIZE;
+constexpr uint32_t IO_DMA_READ_ADDR = IO_BASE + IO_DMA_READ_ADDR_INDEX * IO_WORD_SIZE;
+constexpr uint32_t IO_DMA_WRITE_ADDR = IO_BASE + IO_DMA_WRITE_ADDR_INDEX * IO_WORD_SIZE;
+constexpr uint32_t IO_DMA_TRANSFER_COUNT = IO_BASE + IO_DMA_TRANSFER_COUNT_INDEX * IO_WORD_SIZE;
+constexpr uint32_t IO_DMA_CONTROL = IO_BASE + IO_DMA_CONTROL_INDEX * IO_WORD_SIZE;
 constexpr uint32_t IO_DMA_STATUS = IO_BASE + IO_DMA_STATUS_INDEX * IO_WORD_SIZE;
-constexpr uint32_t IO_DMA_WRITTEN = IO_BASE + IO_DMA_WRITTEN_INDEX * IO_WORD_SIZE;
+constexpr uint32_t IO_DMA_TRIGGER = IO_BASE + IO_DMA_TRIGGER_INDEX * IO_WORD_SIZE;
 
 constexpr uint32_t IO_GEO_BASE = IO_BASE + IO_GEO_BASE_INDEX * IO_WORD_SIZE;
 constexpr uint32_t IO_GEO_SRC0 = IO_BASE + IO_GEO_SRC0_INDEX * IO_WORD_SIZE;
@@ -296,7 +296,7 @@ constexpr uint32_t IO_APU_CMD_FREE = IO_BASE + IO_APU_CMD_FREE_INDEX * IO_WORD_S
 constexpr uint32_t IO_APU_CMD_CAPACITY = IO_BASE + IO_APU_CMD_CAPACITY_INDEX * IO_WORD_SIZE;
 
 constexpr uint32_t IRQ_DMA_DONE = 1 << 0;
-constexpr uint32_t IRQ_DMA_ERROR = 1 << 1;
+constexpr uint32_t IRQ_RESERVED_1 = 1 << 1;
 constexpr uint32_t IRQ_VBLANK = 1 << 2;
 constexpr uint32_t IRQ_GEO_DONE = 1 << 3;
 constexpr uint32_t IRQ_GEO_ERROR = 1 << 4;
@@ -304,14 +304,17 @@ constexpr uint32_t IRQ_APU = 1 << 5;
 constexpr uint32_t IRQ_GPU = 1 << 6;
 
 
-constexpr uint32_t DMA_CTRL_START = 1 << 0;
-constexpr uint32_t DMA_CTRL_STRICT = 1 << 1;
-constexpr uint32_t DMA_TICKET_SHIFT = 8u;
-constexpr uint32_t DMA_TICKET_MASK = 0x00ffffffu;
+constexpr uint32_t DMA_CONTROL_READ_INCREMENT = 1u << 0u;
+constexpr uint32_t DMA_CONTROL_WRITE_INCREMENT = 1u << 1u;
+constexpr uint32_t DMA_CONTROL_REQUEST_SHIFT = 2u;
+constexpr uint32_t DMA_CONTROL_REQUEST_MASK = 0x3u << DMA_CONTROL_REQUEST_SHIFT;
+constexpr uint32_t DMA_CONTROL_REQUEST_FORCE = 0u << DMA_CONTROL_REQUEST_SHIFT;
+constexpr uint32_t DMA_CONTROL_REQUEST_GX_WRITE = 1u << DMA_CONTROL_REQUEST_SHIFT;
+constexpr uint32_t DMA_CONTROL_REQUEST_GX_READ = 2u << DMA_CONTROL_REQUEST_SHIFT;
+constexpr uint32_t DMA_CONTROL_REQUEST_DISABLED = 3u << DMA_CONTROL_REQUEST_SHIFT;
 constexpr uint32_t DMA_STATUS_BUSY = 1 << 0;
 constexpr uint32_t DMA_STATUS_DONE = 1 << 1;
-constexpr uint32_t DMA_STATUS_ERROR = 1 << 2;
-constexpr uint32_t DMA_STATUS_CLIPPED = 1 << 3;
+constexpr uint32_t DMA_TRIGGER_START = 1u << 0u;
 
 constexpr uint32_t HOST_FAULT_FLAG_ACTIVE = 1u << 0u;
 constexpr uint32_t HOST_FAULT_FLAG_STARTUP_BLOCKING = 1u << 1u;

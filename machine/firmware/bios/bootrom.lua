@@ -275,7 +275,7 @@ function init()
 		*boot_vblank_count = *boot_vblank_count + 1
 	end)
 	local system_texture<const> = romdir.resource('gx_system_texture')
-	dma.copy_to_gp0(system_texture.addr, system_texture.len)
+	dma.copy_to_gp0(system_texture.addr, system_texture.len >> 2)
 end
 
 function new_game()

@@ -15,11 +15,11 @@ function gx_texture.from_image(image)
 	local meta<const> = image.imgmeta
 	local loaded<const> = {
 		source_addr = source_addr,
-		byte_length = image.texture_len,
+		word_count = image.texture_len >> 2,
 		mode = meta.gx_texture_mode,
 		word_width = meta.gx_texture_word_width,
 		height = meta.gx_texture_height,
-		clut_offset = meta.gx_clut_offset,
+		clut_word_offset = meta.gx_clut_offset >> 2,
 		x = 0,
 		y = 0,
 		clut_x = 0,
@@ -36,16 +36,17 @@ function gx_texture.upload(texture, destination, clut_destination)
 	texture.y = y
 	gx_gpu.begin_vram_upload(x, y, texture.word_width, texture.height)
 	if texture.mode ~= palette4_mode then
-		return dma.copy_to_gp0(texture.source_addr, texture.byte_length)
+		dma.copy_to_gp0(texture.source_addr, texture.word_count)
+		return
 	end
-	local clut_offset<const> = texture.clut_offset
-	dma.copy_to_gp0(texture.source_addr, clut_offset)
+	local clut_word_offset<const> = texture.clut_word_offset
+	dma.copy_to_gp0(texture.source_addr, clut_word_offset)
 	local clut_x<const> = clut_destination & 0x0000ffff
 	local clut_y<const> = clut_destination >> 16
 	texture.clut_x = clut_x
 	texture.clut_y = clut_y
 	gx_gpu.begin_vram_upload(clut_x, clut_y, palette4_clut_words, 1)
-	return dma.copy_to_gp0(texture.source_addr + clut_offset, texture.byte_length - clut_offset)
+	dma.copy_to_gp0(texture.source_addr + (clut_word_offset << 2), texture.word_count - clut_word_offset)
 end
 
 return gx_texture

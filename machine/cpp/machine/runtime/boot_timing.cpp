@@ -18,7 +18,7 @@ ResolvedRuntimeTiming resolveRuntimeTiming(
 		displayModeTiming.refreshUfpsScaled,
 		displayModeTiming.totalScanlines,
 		cpuHz,
-		PSX_MACHINE_SPEC.dmaBytesPerSec,
+		PSX_MACHINE_SPEC.dmaWordsPerSec,
 		static_cast<int>(PSX_MACHINE_SPEC.geoWorkUnitsPerSec),
 		static_cast<int>(calcCyclesPerFrameScaled(cpuHz, displayModeTiming.refreshUfpsScaled)),
 		static_cast<int>(resolveVblankCycles(cpuHz, displayModeTiming.refreshUfpsScaled, displayModeTiming.totalScanlines, activeHeight)),
@@ -33,7 +33,7 @@ void applyRuntimeTiming(Runtime& runtime, const ResolvedRuntimeTiming& timing) {
 	runtime.machine.gxGpu.writeDisplayModeWord(runtime.timing.gpuDisplayModeWord);
 	setFrameTiming(runtime, timing.cpuHz, timing.cycleBudgetPerFrame, timing.vblankCycles);
 	setTransferRates(runtime, {
-		timing.dmaBytesPerSec,
+		timing.dmaWordsPerSec,
 		timing.geoWorkUnitsPerSec,
 	});
 }

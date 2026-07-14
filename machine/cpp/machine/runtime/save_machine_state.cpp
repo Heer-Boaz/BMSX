@@ -5,7 +5,7 @@
 
 namespace bmsx {
 
-RuntimeSaveMachineState captureRuntimeSaveMachineState(const Runtime& runtime) {
+RuntimeSaveMachineState captureRuntimeSaveMachineState(Runtime& runtime) {
 	RuntimeSaveMachineState state;
 	state.machine = captureMachineSaveState(runtime.machine);
 	state.psxGpuDisplayModeWord = state.machine.gxGpu.presentDisplayModeWord;

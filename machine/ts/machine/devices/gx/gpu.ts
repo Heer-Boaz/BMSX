@@ -282,6 +282,7 @@ export class GxGpu {
 		this.gp1Word = 0;
 		this.displayModeWord = GX_GPU_RESET_DISPLAY_MODE_WORD;
 		this.statusWord = GX_GPU_STATUS_RESET_WORD;
+		this.dmaController.setGxGpuDmaDirection(GX_GPU_DMA_DIRECTION_OFF);
 		this.drawModeWord = 0;
 		this.textureWindowWord = 0;
 		this.drawingAreaTopLeftWord = 0;
@@ -372,6 +373,9 @@ export class GxGpu {
 		this.gp1Word = state.gp1Word >>> 0;
 		this.displayModeWord = state.displayModeWord >>> 0;
 		this.statusWord = state.statusWord >>> 0;
+		this.dmaController.setGxGpuDmaDirection(
+			(this.statusWord & GX_GPU_STATUS_DMA_DIRECTION_MASK) >>> GX_GPU_STATUS_DMA_DIRECTION_SHIFT,
+		);
 		this.gp0CommandWordCount = state.gp0CommandWordCount >>> 0;
 		this.gp0CommandTargetWordCount = state.gp0CommandTargetWordCount >>> 0;
 		this.gp0CommandWords.set(state.gp0CommandWords, 0);
@@ -1040,8 +1044,10 @@ export class GxGpu {
 	}
 
 	private writeDmaDirectionWord(word: number): void {
-		const dmaDirectionBits = (word & 0x3) << GX_GPU_STATUS_DMA_DIRECTION_SHIFT;
+		const dmaDirection = word & 0x3;
+		const dmaDirectionBits = dmaDirection << GX_GPU_STATUS_DMA_DIRECTION_SHIFT;
 		this.statusWord = ((this.statusWord & ~GX_GPU_STATUS_DMA_DIRECTION_MASK) | dmaDirectionBits) >>> 0;
+		this.dmaController.setGxGpuDmaDirection(dmaDirection);
 		this.writeStatusIo();
 	}
 

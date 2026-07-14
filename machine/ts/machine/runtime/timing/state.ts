@@ -11,7 +11,7 @@ export class TimingState {
 		public gpuDisplayModeWord: number,
 		public gpuVerticalDisplayRangeWord: number,
 		public totalScanlines: number,
-		public dmaBytesPerSec: number,
+		public dmaWordsPerSec: number,
 		public geoWorkUnitsPerSec: number,
 	) {
 		this.ufps = ufpsScaled / HZ_SCALE;

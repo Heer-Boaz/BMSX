@@ -11,15 +11,8 @@ import {
 	BUS_FAULT_READ_ONLY,
 	BUS_FAULT_UNALIGNED_IO,
 	BUS_FAULT_UNMAPPED,
-	DMA_CTRL_START,
-	DMA_STATUS_DONE,
-	DMA_TICKET_SHIFT,
-	IO_DMA_CTRL,
-	IO_DMA_DST,
-	IO_DMA_LEN,
-	IO_DMA_SRC,
+	IO_DMA_CONTROL,
 	IO_DMA_STATUS,
-	IO_DMA_WRITTEN,
 	IO_INP_KEYS,
 	IO_INP_OUTPUT_STATUS,
 	IO_INP_PADS,
@@ -28,18 +21,14 @@ import {
 	IO_INP_POINTER_X,
 	IO_INP_POINTER_Y,
 	IO_INP_STATUS,
-	IO_IRQ_FLAGS,
 	IO_SYS_BUS_FAULT_ACCESS,
 	IO_SYS_BUS_FAULT_ACK,
 	IO_SYS_BUS_FAULT_ADDR,
 	IO_SYS_BUS_FAULT_CODE,
-	IRQ_DMA_DONE,
 	IRQ_VBLANK,
 } from '../../machine/ts/machine/bus/io';
 import { transformFixed16 } from '../../machine/ts/machine/common/numeric';
 import { CPU } from '../../machine/ts/machine/cpu/cpu';
-import { DmaController } from '../../machine/ts/machine/devices/dma/controller';
-import { IrqController } from '../../machine/ts/machine/devices/irq/controller';
 import { Memory } from '../../machine/ts/machine/memory/memory';
 import { GEO_SCRATCH_BASE, PROGRAM_ROM_BASE, PROGRAM_ROM_SIZE, RAM_BASE, RAM_END, SYSTEM_ROM_BASE } from '../../machine/ts/machine/memory/map';
 import type { Runtime } from '../../machine/ts/machine/runtime/runtime';
@@ -70,18 +59,6 @@ function clearBusFault(memory: Memory): void {
 	assert.equal(memory.readIoU32(IO_SYS_BUS_FAULT_CODE), BUS_FAULT_NONE);
 }
 
-function createDmaFixture(): { memory: Memory; controller: DmaController } {
-	const memory = new Memory({ systemRom: new Uint8Array(), cartRom: new Uint8Array(0) });
-	const cpu = new CPU(memory);
-	const scheduler = new DeviceScheduler(cpu);
-	const irq = new IrqController(memory);
-	const controller = new DmaController(memory, cpu, irq, scheduler);
-	controller.reset();
-	irq.reset();
-	controller.setTiming(1, 64, 0);
-	return { memory, controller };
-}
-
 test('core golden: memory RAM, ROM, and numeric I/O words stay observable', () => {
 	const memory = new Memory({ systemRom: new Uint8Array([0x11, 0x22, 0x33, 0x44]), cartRom: new Uint8Array(0) });
 	assert.equal(memory.readU8(SYSTEM_ROM_BASE), 0x11);
@@ -94,8 +71,8 @@ test('core golden: memory RAM, ROM, and numeric I/O words stay observable', () =
 	memory.writeValue(IO_DMA_STATUS, 0xfeedcafe);
 	assert.equal(memory.readIoU32(IO_DMA_STATUS), 0xfeedcafe);
 	assert.equal(memory.readMappedU32LE(IO_DMA_STATUS), 0xfeedcafe);
-	memory.writeMappedU32LE(IO_DMA_CTRL, 0x13572468);
-	assert.equal(memory.readIoU32(IO_DMA_CTRL), 0x13572468);
+	memory.writeMappedU32LE(IO_DMA_CONTROL, 0x13572468);
+	assert.equal(memory.readIoU32(IO_DMA_CONTROL), 0x13572468);
 	assert.equal(memory.readMappedU16LE(IO_DMA_STATUS), 0);
 	assertBusFault(memory, BUS_FAULT_UNALIGNED_IO, IO_DMA_STATUS, BUS_FAULT_ACCESS_READ | BUS_FAULT_ACCESS_U16);
 	clearBusFault(memory);
@@ -141,20 +118,6 @@ test('core golden: raw memory byte paths latch bus faults instead of throwing', 
 	assertBusFault(memory, BUS_FAULT_UNMAPPED, RAM_END - 3, BUS_FAULT_ACCESS_WRITE | BUS_FAULT_ACCESS_U32);
 });
 
-test('core golden: DMA source bus faults latch on the memory bus while DMA progresses', () => {
-	const { memory, controller } = createDmaFixture();
-	memory.writeValue(IO_DMA_SRC, RAM_END - 1);
-	memory.writeValue(IO_DMA_DST, RAM_BASE);
-	memory.writeValue(IO_DMA_LEN, 4);
-	memory.writeValue(IO_DMA_CTRL, DMA_CTRL_START);
-	controller.accrueCycles(1, 1);
-	controller.onService(1);
-	assert.equal(memory.readIoU32(IO_DMA_STATUS), (1 << DMA_TICKET_SHIFT) | DMA_STATUS_DONE);
-	assert.equal(memory.readIoU32(IO_DMA_WRITTEN), 4);
-	assert.equal((memory.readIoU32(IO_IRQ_FLAGS) & IRQ_DMA_DONE) !== 0, true);
-	assertBusFault(memory, BUS_FAULT_UNMAPPED, RAM_END - 1, BUS_FAULT_ACCESS_READ | BUS_FAULT_ACCESS_U8);
-});
-
 test('core golden: budget and fixed16 datapaths match native integer semantics', () => {
 	assert.equal(cyclesUntilBudgetUnits(60, 7, 0, 1), 9);
 	assert.equal(cyclesUntilBudgetUnits(60, 7, 59, 1), 1);
@@ -181,7 +144,7 @@ test('core golden: runtime VBlank end publishes scanout at the new frame origin'
 			cpuHz: 5000,
 			cycleBudgetPerFrame: 100,
 			totalScanlines: 10,
-			dmaBytesPerSec: 0,
+			dmaWordsPerSec: 0,
 			geoWorkUnitsPerSec: 0,
 		},
 		machine: {

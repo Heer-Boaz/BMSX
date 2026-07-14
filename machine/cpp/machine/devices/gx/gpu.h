@@ -164,9 +164,9 @@ class GxGpu {
 public:
 	GxGpu(Memory& memory, IrqController& irq, DeviceScheduler& scheduler, DmaController& dmaController);
 	void reset();
-	GxGpuState captureState() const;
+	GxGpuState captureState();
 	void restoreState(const GxGpuState& state);
-	GxGpuSaveState captureSaveState() const;
+	GxGpuSaveState captureSaveState();
 	void restoreSaveState(const GxGpuSaveState& state);
 	void replaceVramSnapshotBytes(const u8* bytes);
 	u32 commitRenderedVramSnapshotBytes(const u8* bytes);

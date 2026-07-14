@@ -1,14 +1,14 @@
 import type { Runtime } from '../runtime';
 
 export type RuntimeTransferRates = {
-	dmaBytesPerSec: number;
+	dmaWordsPerSec: number;
 	geoWorkUnitsPerSec: number;
 };
 
 export function refreshDeviceTimings(runtime: Runtime, nowCycles: number): void {
 	runtime.machine.refreshDeviceTimings({
 		cpuHz: runtime.timing.cpuHz,
-		dmaBytesPerSec: runtime.timing.dmaBytesPerSec,
+		dmaWordsPerSec: runtime.timing.dmaWordsPerSec,
 		geoWorkUnitsPerSec: runtime.timing.geoWorkUnitsPerSec,
 	}, nowCycles);
 }
@@ -33,7 +33,7 @@ export function setFrameTiming(runtime: Runtime, cpuHz: number, cycleBudgetPerFr
 }
 
 export function setTransferRates(runtime: Runtime, rates: RuntimeTransferRates): void {
-	runtime.timing.dmaBytesPerSec = rates.dmaBytesPerSec;
+	runtime.timing.dmaWordsPerSec = rates.dmaWordsPerSec;
 	runtime.timing.geoWorkUnitsPerSec = rates.geoWorkUnitsPerSec;
 	refreshDeviceTimings(runtime, runtime.machine.scheduler.currentNowCycles());
 }

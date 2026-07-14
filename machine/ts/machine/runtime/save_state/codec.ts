@@ -3,8 +3,7 @@ import type { MachineSaveState } from '../../save_state';
 import type { BuiltinFunctionId, CpuFrameState, CpuObjectState, CpuRootValueState, CpuRuntimeState, CpuValueState } from '../../cpu/cpu';
 import type { IrqControllerState } from '../../devices/irq/save_state';
 import type { AudioControllerState } from '../../devices/audio/save_state';
-import { DMA_TICKET_MASK } from '../../bus/io';
-import { DMA_JOB_QUEUE_CAPACITY, type DmaControllerState, type DmaJobState } from '../../devices/dma/controller';
+import type { DmaControllerState } from '../../devices/dma/controller';
 import type {
 	ApuBadpDecoderSaveState,
 	ApuBiquadFilterState,
@@ -824,67 +823,30 @@ function decodeAudioControllerState(value: unknown, label: string): AudioControl
 	};
 }
 
-function encodeDmaJobState(state: DmaJobState): DmaJobState {
-	return {
-		src: state.src,
-		dst: state.dst,
-		remaining: state.remaining,
-		written: state.written,
-		clipped: state.clipped,
-		ticket: state.ticket,
-	};
-}
-
-function decodeDmaJobState(value: unknown, label: string): DmaJobState {
-	const object = requireObject(value, label);
-	return {
-		src: requireBoundedU32(requireObjectKey(object, 'src', label, `${label}.src`), `${label}.src`, 0, 0xffffffff),
-		dst: requireBoundedU32(requireObjectKey(object, 'dst', label, `${label}.dst`), `${label}.dst`, 0, 0xffffffff),
-		remaining: requireBoundedU32(requireObjectKey(object, 'remaining', label, `${label}.remaining`), `${label}.remaining`, 0, 0xffffffff),
-		written: requireBoundedU32(requireObjectKey(object, 'written', label, `${label}.written`), `${label}.written`, 0, 0xffffffff),
-		clipped: requireBooleanValue(requireObjectKey(object, 'clipped', label, `${label}.clipped`), `${label}.clipped`),
-		ticket: requireBoundedU32(requireObjectKey(object, 'ticket', label, `${label}.ticket`), `${label}.ticket`, 0, DMA_TICKET_MASK),
-	};
-}
-
 function encodeDmaControllerState(state: DmaControllerState): DmaControllerState {
 	return {
-		queue: encodeVector(state.queue, encodeDmaJobState),
-		budget: state.budget,
-		carry: state.carry,
-		writtenValue: state.writtenValue,
-		writtenDirty: state.writtenDirty,
-		sourceRegisterWord: state.sourceRegisterWord,
-		destinationRegisterWord: state.destinationRegisterWord,
-		lengthRegisterWord: state.lengthRegisterWord,
-		controlRegisterWord: state.controlRegisterWord,
-		statusRegisterWord: state.statusRegisterWord,
-		writtenRegisterWord: state.writtenRegisterWord,
+		readAddressWord: state.readAddressWord,
+		writeAddressWord: state.writeAddressWord,
+		transferCountWord: state.transferCountWord,
+		controlWord: state.controlWord,
+		statusWord: state.statusWord,
+		timingCarry: state.timingCarry,
+		scheduledGrantWords: state.scheduledGrantWords,
+		scheduledGrantCycles: state.scheduledGrantCycles,
 	};
 }
 
 function decodeDmaControllerState(value: unknown, label: string): DmaControllerState {
 	const object = requireObject(value, label);
-	const queueEntries = requireArray(requireObjectKey(object, 'queue', label, `${label}.queue`), `${label}.queue`);
-	if (queueEntries.length > DMA_JOB_QUEUE_CAPACITY) {
-		throw new Error(`${label}.queue exceeds the ${DMA_JOB_QUEUE_CAPACITY}-job DMA FIFO capacity.`);
-	}
-	const queue = new Array<DmaJobState>(queueEntries.length);
-	for (let index = 0; index < queueEntries.length; index += 1) {
-		queue[index] = decodeDmaJobState(queueEntries[index], `${label}.queue[${index}]`);
-	}
 	return {
-		queue,
-		budget: requireI64(requireObjectKey(object, 'budget', label, `${label}.budget`), `${label}.budget`),
-		carry: requireI64(requireObjectKey(object, 'carry', label, `${label}.carry`), `${label}.carry`),
-		writtenValue: requireBoundedU32(requireObjectKey(object, 'writtenValue', label, `${label}.writtenValue`), `${label}.writtenValue`, 0, 0xffffffff),
-		writtenDirty: requireBooleanValue(requireObjectKey(object, 'writtenDirty', label, `${label}.writtenDirty`), `${label}.writtenDirty`),
-		sourceRegisterWord: requireBoundedU32(requireObjectKey(object, 'sourceRegisterWord', label, `${label}.sourceRegisterWord`), `${label}.sourceRegisterWord`, 0, 0xffffffff),
-		destinationRegisterWord: requireBoundedU32(requireObjectKey(object, 'destinationRegisterWord', label, `${label}.destinationRegisterWord`), `${label}.destinationRegisterWord`, 0, 0xffffffff),
-		lengthRegisterWord: requireBoundedU32(requireObjectKey(object, 'lengthRegisterWord', label, `${label}.lengthRegisterWord`), `${label}.lengthRegisterWord`, 0, 0xffffffff),
-		controlRegisterWord: requireBoundedU32(requireObjectKey(object, 'controlRegisterWord', label, `${label}.controlRegisterWord`), `${label}.controlRegisterWord`, 0, 0xffffffff),
-		statusRegisterWord: requireBoundedU32(requireObjectKey(object, 'statusRegisterWord', label, `${label}.statusRegisterWord`), `${label}.statusRegisterWord`, 0, 0xffffffff),
-		writtenRegisterWord: requireBoundedU32(requireObjectKey(object, 'writtenRegisterWord', label, `${label}.writtenRegisterWord`), `${label}.writtenRegisterWord`, 0, 0xffffffff),
+		readAddressWord: requireBoundedU32(requireObjectKey(object, 'readAddressWord', label, `${label}.readAddressWord`), `${label}.readAddressWord`, 0, 0xffffffff),
+		writeAddressWord: requireBoundedU32(requireObjectKey(object, 'writeAddressWord', label, `${label}.writeAddressWord`), `${label}.writeAddressWord`, 0, 0xffffffff),
+		transferCountWord: requireBoundedU32(requireObjectKey(object, 'transferCountWord', label, `${label}.transferCountWord`), `${label}.transferCountWord`, 0, 0xffffffff),
+		controlWord: requireBoundedU32(requireObjectKey(object, 'controlWord', label, `${label}.controlWord`), `${label}.controlWord`, 0, 0xffffffff),
+		statusWord: requireBoundedU32(requireObjectKey(object, 'statusWord', label, `${label}.statusWord`), `${label}.statusWord`, 0, 0xffffffff),
+		timingCarry: requireI64(requireObjectKey(object, 'timingCarry', label, `${label}.timingCarry`), `${label}.timingCarry`),
+		scheduledGrantWords: requireBoundedU32(requireObjectKey(object, 'scheduledGrantWords', label, `${label}.scheduledGrantWords`), `${label}.scheduledGrantWords`, 0, 16),
+		scheduledGrantCycles: requireI64(requireObjectKey(object, 'scheduledGrantCycles', label, `${label}.scheduledGrantCycles`), `${label}.scheduledGrantCycles`),
 	};
 }
 

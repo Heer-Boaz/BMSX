@@ -172,7 +172,7 @@ export class MachineManager {
 			cpuHz: timing.cpuHz,
 			cycleBudgetPerFrame: timing.cycleBudgetPerFrame,
 			vblankCycles: timing.vblankCycles,
-			dmaBytesPerSec: timing.dmaBytesPerSec,
+			dmaWordsPerSec: timing.dmaWordsPerSec,
 			geoWorkUnitsPerSec: timing.geoWorkUnitsPerSec,
 		}, Input.instance);
 		applyRuntimeTiming(runtime, timing);

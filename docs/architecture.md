@@ -150,7 +150,7 @@ frontend executable. It never owns cart-observable machine semantics.
 ## Console model and timing
 
 The active machine model is `psx`. The model owns fixed hardware facts:
-50 MHz CPU clock, 4 MB RAM, a 26,214,400 byte/s DMA datapath, a 16,384,000
+50 MHz CPU clock, 4 MB RAM, a 6,553,600 word/s DMA datapath, a 16,384,000
 work-unit/s geometry unit, and a PSX-style GPU with 1 MiB of raw VRAM. GPU reset
 starts from a 320×240 PAL display configuration; that is a reset register state,
 not a fixed host scanout size.
@@ -663,7 +663,7 @@ hardware interrupt-storm semantics rather than being discarded by the emulator.
 | Name | Value | Meaning |
 | --- | ---: | --- |
 | `IRQ_DMA_DONE` | `0x0001` | DMA completion. |
-| `IRQ_DMA_ERROR` | `0x0002` | DMA error. |
+| `IRQ_RESERVED_1` | `0x0002` | Reserved; later IRQ bits retain their ABI positions. |
 | `IRQ_VBLANK` | `0x0004` | VBLANK entry. |
 | `IRQ_GEO_DONE` | `0x0008` | Geometry command completion. |
 | `IRQ_GEO_ERROR` | `0x0010` | Geometry command error. |
@@ -672,12 +672,22 @@ hardware interrupt-storm semantics rather than being discarded by the emulator.
 
 ### DMA
 
-DMA is one MMIO device with one retained queue and one bandwidth accumulator.
-It copies RAM-to-RAM bytes or streams aligned words from ROM/RAM directly to GX
-GP0. Command words latch work, status and written-count registers expose
-progress, and completion/error raises the corresponding IRQ. The ROM texture
-producer emits native RGB555/STP GP0 streams; there is no runtime IMGDEC,
-mapped RGBA staging aperture, or image-copy DMA channel.
+DMA is one register channel. `READ_ADDR`, `WRITE_ADDR`, `TRANSFER_COUNT` and
+`CONTROL` remain live while `STATUS.BUSY` is set; `TRIGGER` is a write-only,
+self-clearing start strobe. The count is expressed in 32-bit bus transfers.
+Control selects read/write address incrementing and one request input: forced,
+GX write, GX read or disabled. GX requests are GPU-owned lines gated by the GP1
+DMA-direction register.
+
+The scheduler grants at most sixteen word slots per DMA service deadline and
+the channel resamples DREQ before every word. A low request discards unused
+slots and a later edge begins a fresh timing interval. Every word is a mapped
+bus read followed by a mapped bus write and then live address/count writeback.
+Memory remains the sole bus-fault owner; a fault does not invent a DMA error
+state or abort the channel. Completion clears `BUSY`, sets `DONE` and raises
+`IRQ_DMA_DONE`. The ROM texture producer emits native RGB555/STP GP0 streams;
+there is no runtime IMGDEC, mapped RGBA staging aperture, descriptor queue or
+image-copy DMA channel.
 
 ### GX GPU/GTE
 

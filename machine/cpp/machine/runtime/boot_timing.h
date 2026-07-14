@@ -10,7 +10,7 @@ struct ResolvedRuntimeTiming {
 	i64 ufpsScaled;
 	i64 totalScanlines;
 	i64 cpuHz;
-	i64 dmaBytesPerSec;
+	i64 dmaWordsPerSec;
 	int geoWorkUnitsPerSec;
 	int cycleBudgetPerFrame;
 	int vblankCycles;

@@ -12,7 +12,7 @@ enum class MachineVdpClass { Psx };
 enum class PsxGpuVideoStandard { Pal, Ntsc };
 
 constexpr i64 PSX_CPU_FREQ_HZ = 50000000;
-constexpr i64 PSX_DMA_BYTES_PER_SEC = 26214400;
+constexpr i64 PSX_DMA_WORDS_PER_SEC = 6553600;
 constexpr i64 PSX_RAM_BYTES = 0x00400000;
 constexpr i32 PSX_GPU_MAX_DISPLAY_WIDTH = 640;
 constexpr i32 PSX_GPU_MAX_DISPLAY_HEIGHT = 480;
@@ -31,7 +31,7 @@ constexpr uint32_t PSX_GPU_DISPLAY_MODE_PAL_WORD = PSX_GPU_DISPLAY_MODE_PAL_BIT;
 
 struct MachineModelSpec {
 	i64 cpuFreqHz;
-	i64 dmaBytesPerSec;
+	i64 dmaWordsPerSec;
 	i64 ramBytes;
 	i64 geoWorkUnitsPerSec;
 };
@@ -44,7 +44,7 @@ struct PsxGpuDisplayModeTiming {
 
 inline constexpr MachineModelSpec PSX_MACHINE_SPEC = {
 	PSX_CPU_FREQ_HZ,
-	PSX_DMA_BYTES_PER_SEC,
+	PSX_DMA_WORDS_PER_SEC,
 	PSX_RAM_BYTES,
 	PSX_GEO_WORK_UNITS_PER_SEC,
 };

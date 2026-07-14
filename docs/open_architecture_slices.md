@@ -127,17 +127,16 @@ Geïmplementeerd contract:
   GPUREAD-latch en voltooit of verschuift de transfer niet.
 - De retained readbackport drijft dezelfde ready-to-send-toestand als een echte
   requestlijn naar de DMA-controller. Completion zet de lijn en plant een
-  wachtende GPUREAD-sourcejob direct op de huidige machinecyclus. De laatste
+  wachtend GPUREAD-channel direct op de huidige machinecyclus. De laatste
   geldige woordread maakt hem laag; reset en restore publiceren rechtstreeks de
   bijbehorende portfase. Een lage lijn annuleert de DMA-service volledig. Er
   bestaat geen periodieke statuspoll, polltimer of tweede geserialiseerde
   readinesslatch.
 - `IO_GX_GPU_GP0 -> RAM` is een woordgerichte device-to-memorydatapad in de
-  bestaande custom DMA-owner. De sourcepoort blijft vast, iedere geldige mapped
+  bestaande custom DMA-owner. Het live read-adres blijft vast, iedere mapped
   GP0-read schrijft één little-endian woord rechtstreeks naar de oplopende
-  RAM-destination en alleen echte woorden verhogen remaining/written/budget.
-  De 64-byte stagingbuffer van normale memory-sources wordt hiervoor niet
-  gebruikt. Een langere job blijft BUSY na het laatste woord en hervat op een
+  RAM-destination en alleen echte woorden verlagen de transfercount. Een langer
+  channel blijft BUSY na het laatste beschikbare woord en hervat op een
   volgende echte C0-completion zonder de retained GPUREAD-latch te kopiëren.
 - Iedere geldige read levert het lage pixelwoord eerst, daarna het hoge;
   transfer-X/Y wrappen per pixel over 1024x512 en een oneven laatste pixel vult
@@ -226,8 +225,10 @@ volgen diezelfde toestand in TS en C++. Readback wordt pas actief wanneer het
 C0-commando zijn uitvoering voltooit. Save-state bewaart FIFO, actieve deadline
 relatief aan schedulertijd en de geexecuteerde commandofrontier.
 
-RAM-naar-GP0 DMA laat een eenmaal geaccepteerd 64-byte DMA-blok atomair door en
-stalt het volgende blok op de GPU-ready-edge. CPU-writes gebruiken de echte
+RAM-naar-GP0 DMA krijgt per deadline maximaal zestien wordslots en bemonstert de
+GPU-requestlijn opnieuw vóór ieder woord. Ongebruikte slots vervallen zodra de
+lijn laag wordt; een volgende hoge edge begint een verse timingperiode.
+CPU-writes gebruiken de echte
 MMIO write-ready-lijn: de CPU bewaart het nog niet uitgevoerde store-instruction
 plus het raw doeladres en houdt die instructie geblokkeerd totdat datzelfde
 MMIO-adres weer write-ready is. Device-deadlines voeren alleen de onderliggende
@@ -236,10 +237,26 @@ Er is geen polling, busy-wait, gedropt woord, BIOS/cart-wachtroutine of hostfaca
 `bare_metal_cart` doorloopt daarmee alle frame-scan-scenes, inclusief idol en
 framebuffer echo, zonder producerwijzigingen.
 
-RAM-naar-GP0 DMA bezit de CPU-commandopoort zolang zo'n transfer in de queue
-staat. Daardoor kan een gewone GP0-store nooit midden in een A0-payload belanden.
-Die ownershiplatch wordt uit de DMA-queue afgeleid bij restore en de geblokkeerde
-CPU-store bewaart zijn doeladres in current-format save-state. Een
+De custom DMA-controller is één live hardwarechannel, geen softwarejobqueue.
+`READ_ADDR`, `WRITE_ADDR`, `TRANSFER_COUNT` en `CONTROL` blijven tijdens `BUSY`
+rechtstreeks programmeerbaar; `TRIGGER` is een write-only, self-clearing strobe.
+Een trigger tijdens `BUSY` wordt genegeerd en count nul voltooit synchroon met
+`DONE` en `IRQ_DMA_DONE`. Control kiest address-increment en forced, GX-write,
+GX-read of disabled DREQ. GP1 DMA-direction gate de GPU-owned write/readlijnen.
+
+Ieder verleend woord latched de vier live datapathregisters, doet vervolgens
+één mapped bus-read en één mapped bus-write en schrijft daarna address/count
+terug. Ook self-DMA naar DMA-MMIO heeft daardoor vaste ordering. Een busfault
+blijft volledig van Memory: de buswaarde stroomt door, het channel vordert en
+voltooit zonder verzonnen DMA-errorstatus of aparte error-IRQ. Save-state bevat
+alleen de vijf leesbare registerwoorden plus timingfase, pending grant en
+relatieve deadline. GPU restore drijft eerst zijn requestlijnen opnieuw; pas
+daarna wordt die opgeslagen DMA-deadline gearmd.
+
+RAM-naar-GP0 DMA bezit de CPU-commandopoort zolang `BUSY` hoog is en het live
+write-adres GP0 aanwijst. Daardoor kan een gewone GP0-store nooit midden in een
+A0-payload belanden. De ownership volgt rechtstreeks uit die registers en de
+geblokkeerde CPU-store bewaart zijn doeladres in current-format save-state. Een
 write-ready-probe synchroniseert eerst verstreken GPU-commandotijd en publiceert
 dan dezelfde CPU/DMA-ready-lijnen; zo kan een atomair te laat uitgevoerde probe
 de laatste GPU-timer niet annuleren met stale lage uitgangen. Ook closures die
@@ -248,12 +265,13 @@ volgende echte device-edge en pollen of retriën de instructie niet.
 
 De `2025`-transitiefout is aan dezelfde echte grens gesloten. De cart prelaadt
 de volgende achtergrond in de inactieve van twee raw VRAM-rechthoeken en start
-de DMA pas na de draw van het voorafgaande frame. Ieder geaccepteerd DMA-commando
-krijgt een 24-bit ticket in het controlregister; het statusregister publiceert
-het laatst voltooide ticket. Daardoor kan een samengevoegde IRQ meerdere
-voltooide queue-items vertegenwoordigen zonder dat de cart de verkeerde upload
-actief maakt. Het ticket commit de residencyboekhouding; de authored
-backgroundswitch vindt daarna op zijn vaste timelineframe plaats. Dit is bewust
+de DMA pas na de draw van het voorafgaande frame. Er kan maar één channel actief
+zijn. Een volgende texture-upload bereikt eerst zijn GP0 A0-header; zo'n CPU-store
+stalt op dezelfde portownership tot de voorgaande payload klaar is en programmeert
+pas daarna het volgende channelwerk. De cart houdt daarom één backgroundupload
+in flight en commit die rechtstreeks op `IRQ_DMA_DONE`; er zijn geen tickets,
+samengevoegde queue-items of Lua-wachtroutines. De authored backgroundswitch
+vindt daarna op zijn vaste timelineframe plaats. Dit is bewust
 geen poging om het oude onbeperkte atlasmodel te
 behouden: `2025` programmeert een expliciete 1024x512 VRAM-map. Boven staan de
 320x240 framebuffer, Maya B, de vaste systeempage en de naast elkaar geplaatste
@@ -817,8 +835,8 @@ Texture-residency boundary resolved for the migrated carts:
   zijn verwijderd. De ROM-producent blijft de enige atlas-codecgrens;
 - MMIO, IRQ en scheduler service-id's zijn compact gemaakt. Er zijn geen
   compatibility-gaten of lege devicefacades behouden;
-- DMA heeft één retained GP0/RAM-queue en één bandbreedtelatch; beëindigde work
-  lekt geen carry of budget naar een volgende transfer.
+- DMA heeft één live GP0/RAM-registerchannel en één pending wordgrant; een lage
+  requestlijn lekt geen timingcredit naar een volgende transfer.
 
 Resterend graphicswerk staat bij de GX-pariteitsslices hierboven: met name live
 accelerated GPUREAD-conformance zodra echte browser/GPU-runs weer beschikbaar

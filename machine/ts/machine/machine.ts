@@ -24,7 +24,7 @@ import {
 
 export type MachineTiming = {
 	cpuHz: number;
-	dmaBytesPerSec: number;
+	dmaWordsPerSec: number;
 	geoWorkUnitsPerSec: number;
 };
 
@@ -73,14 +73,13 @@ export class Machine {
 	}
 
 	public refreshDeviceTimings(timing: MachineTiming, nowCycles: number): void {
-		this.dmaController.setTiming(timing.cpuHz, timing.dmaBytesPerSec, nowCycles);
+		this.dmaController.setTiming(timing.cpuHz, timing.dmaWordsPerSec, nowCycles);
 		this.geometryController.setTiming(timing.cpuHz, timing.geoWorkUnitsPerSec, nowCycles);
 		this.audioController.setTiming(timing.cpuHz, nowCycles);
 	}
 
 	public advanceDevices(cycles: number): void {
 		const nextNow = this.scheduler.nowCycles + cycles;
-		this.dmaController.accrueCycles(cycles, nextNow);
 		this.geometryController.accrueCycles(cycles, nextNow);
 		this.audioController.accrueCycles(cycles, nextNow);
 		this.scheduler.advanceTo(nextNow);

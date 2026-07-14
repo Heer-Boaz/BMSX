@@ -9,7 +9,7 @@ export type ResolvedRuntimeTiming = {
 	ufpsScaled: number;
 	totalScanlines: number;
 	cpuHz: number;
-	dmaBytesPerSec: number;
+	dmaWordsPerSec: number;
 	geoWorkUnitsPerSec: number;
 	cycleBudgetPerFrame: number;
 	vblankCycles: number;
@@ -27,7 +27,7 @@ export function resolveRuntimeTiming(
 		ufpsScaled: refreshUfpsScaled,
 		totalScanlines: displayModeTiming.totalScanlines,
 		cpuHz,
-		dmaBytesPerSec: PSX_MACHINE_SPEC.dmaBytesPerSec,
+		dmaWordsPerSec: PSX_MACHINE_SPEC.dmaWordsPerSec,
 		geoWorkUnitsPerSec: PSX_MACHINE_SPEC.geoWorkUnitsPerSec,
 		cycleBudgetPerFrame: calcCyclesPerFrameScaled(cpuHz, refreshUfpsScaled),
 		vblankCycles: resolveVblankCycles(cpuHz, refreshUfpsScaled, displayModeTiming.totalScanlines, activeDisplayLines),
@@ -42,7 +42,7 @@ export function applyRuntimeTiming(runtime: Runtime, timing: ResolvedRuntimeTimi
 	runtime.machine.gxGpu.writeDisplayModeWord(runtime.timing.gpuDisplayModeWord);
 	setFrameTiming(runtime, timing.cpuHz, timing.cycleBudgetPerFrame, timing.vblankCycles);
 	setTransferRates(runtime, {
-		dmaBytesPerSec: timing.dmaBytesPerSec,
+		dmaWordsPerSec: timing.dmaWordsPerSec,
 		geoWorkUnitsPerSec: timing.geoWorkUnitsPerSec,
 	});
 }

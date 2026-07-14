@@ -7,7 +7,7 @@ export type MachineVdpClass = 'psx';
 export type PsxGpuVideoStandard = 'pal' | 'ntsc';
 
 export const PSX_CPU_FREQ_HZ = 50_000_000;
-export const PSX_DMA_BYTES_PER_SEC = 26_214_400;
+export const PSX_DMA_WORDS_PER_SEC = 6_553_600;
 export const PSX_RAM_BYTES = 0x00400000;
 export const PSX_GPU_MAX_DISPLAY_WIDTH = 640;
 export const PSX_GPU_MAX_DISPLAY_HEIGHT = 480;
@@ -26,7 +26,7 @@ export const PSX_GPU_DISPLAY_MODE_PAL_WORD = PSX_GPU_DISPLAY_MODE_PAL_BIT;
 
 export type MachineModelSpec = {
 	cpuFreqHz: number;
-	dmaBytesPerSec: number;
+	dmaWordsPerSec: number;
 	ramBytes: number;
 	geoWorkUnitsPerSec: number;
 };
@@ -39,7 +39,7 @@ export type PsxGpuDisplayModeTiming = {
 
 export const PSX_MACHINE_SPEC: MachineModelSpec = {
 	cpuFreqHz: PSX_CPU_FREQ_HZ,
-	dmaBytesPerSec: PSX_DMA_BYTES_PER_SEC,
+	dmaWordsPerSec: PSX_DMA_WORDS_PER_SEC,
 	ramBytes: PSX_RAM_BYTES,
 	geoWorkUnitsPerSec: PSX_GEO_WORK_UNITS_PER_SEC,
 };

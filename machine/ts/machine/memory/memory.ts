@@ -32,7 +32,6 @@ import {
 	IO_APU_FAULT_DETAIL,
 	IO_APU_STATUS,
 	IO_DMA_STATUS,
-	IO_DMA_WRITTEN,
 	IO_GEO_FAULT,
 	IO_GEO_PROCESSED,
 	IO_GEO_STATUS,
@@ -721,7 +720,6 @@ export class Memory {
 			case IO_SYS_CYCLES_PER_FRAME:
 			case IO_IRQ_FLAGS:
 			case IO_DMA_STATUS:
-			case IO_DMA_WRITTEN:
 			case IO_GEO_STATUS:
 			case IO_GEO_PROCESSED:
 			case IO_GEO_FAULT:

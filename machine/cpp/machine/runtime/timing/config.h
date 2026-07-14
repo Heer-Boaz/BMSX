@@ -7,7 +7,7 @@ namespace bmsx {
 class Runtime;
 
 struct RuntimeTransferRates {
-	i64 dmaBytesPerSec;
+	i64 dmaWordsPerSec;
 	int geoWorkUnitsPerSec;
 };
 

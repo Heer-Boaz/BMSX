@@ -32,10 +32,13 @@ export type MachineSaveState = {
 };
 
 export function captureMachineState(machine: Machine): MachineState {
+	// GPU capture first synchronizes overdue command time and publishes its DREQ
+	// edges; the dependent DMA grant must be captured after that transition.
+	const gxGpu = machine.gxGpu.captureState();
 	return {
 		dma: machine.dmaController.captureState(),
 		geometry: machine.geometryController.captureState(),
-		gxGpu: machine.gxGpu.captureState(),
+		gxGpu,
 		gxGte: machine.gxGte.captureState(),
 		irq: machine.irqController.captureState(),
 		audio: machine.audioController.captureState(),
@@ -46,15 +49,18 @@ export function captureMachineState(machine: Machine): MachineState {
 export function restoreMachineState(machine: Machine, state: MachineState): void {
 	restoreSharedDeviceState(machine, state);
 	machine.gxGpu.restoreState(state.gxGpu);
+	machine.dmaController.postLoad();
 	machine.gxGte.restoreState(state.gxGte);
 }
 
 export function captureMachineSaveState(machine: Machine): MachineSaveState {
+	// See captureMachineState: GPU command time owns the request-line edge.
+	const gxGpu = machine.gxGpu.captureSaveState();
 	return {
 		memory: machine.memory.captureSaveState(),
 		dma: machine.dmaController.captureState(),
 		geometry: machine.geometryController.captureState(),
-		gxGpu: machine.gxGpu.captureSaveState(),
+		gxGpu,
 		gxGte: machine.gxGte.captureState(),
 		irq: machine.irqController.captureState(),
 		audio: machine.audioController.captureState(),
@@ -68,6 +74,7 @@ export function restoreMachineSaveState(machine: Machine, state: MachineSaveStat
 	machine.cpu.stringPool.restoreState(state.stringPool);
 	restoreSharedDeviceState(machine, state);
 	machine.gxGpu.restoreSaveState(state.gxGpu);
+	machine.dmaController.postLoad();
 	machine.gxGte.restoreState(state.gxGte);
 }
 

@@ -335,7 +335,7 @@ Runtime& MachineManager::prepareRuntimeForActiveCart(const ResolvedRuntimeTiming
 		timing.cpuHz,
 		timing.cycleBudgetPerFrame,
 		timing.vblankCycles,
-		timing.dmaBytesPerSec,
+		timing.dmaWordsPerSec,
 		timing.geoWorkUnitsPerSec,
 	});
 	applyRuntimeTiming(runtime, timing);
@@ -357,7 +357,7 @@ void MachineManager::bootRuntimeFromProgram() {
 		timing.cpuHz,
 		timing.cycleBudgetPerFrame,
 		timing.vblankCycles,
-		timing.dmaBytesPerSec,
+		timing.dmaWordsPerSec,
 		timing.geoWorkUnitsPerSec,
 	});
 	applyRuntimeTiming(rt, timing);
@@ -403,7 +403,7 @@ bool MachineManager::bootSystemStartupProgram(const MachineManifest& runtimeMach
 		timing.cpuHz,
 		timing.cycleBudgetPerFrame,
 		timing.vblankCycles,
-		timing.dmaBytesPerSec,
+		timing.dmaWordsPerSec,
 		timing.geoWorkUnitsPerSec,
 	});
 	applyRuntimeTiming(rt, timing);

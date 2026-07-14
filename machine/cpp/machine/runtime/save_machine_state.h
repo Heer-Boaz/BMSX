@@ -16,7 +16,7 @@ struct RuntimeSaveMachineState {
 	RuntimeVblankSnapshot vblank;
 };
 
-RuntimeSaveMachineState captureRuntimeSaveMachineState(const Runtime& runtime);
+RuntimeSaveMachineState captureRuntimeSaveMachineState(Runtime& runtime);
 void applyRuntimeSaveMachineState(Runtime& runtime, const RuntimeSaveMachineState& state);
 
 } // namespace bmsx

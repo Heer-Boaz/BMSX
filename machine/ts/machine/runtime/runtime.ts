@@ -304,7 +304,7 @@ export class Runtime {
 			options.psxGpuDisplayModeWord,
 			GX_GPU_RESET_VERTICAL_DISPLAY_RANGE_WORD,
 			getPsxGpuDisplayModeTimingForWord(options.psxGpuDisplayModeWord).totalScanlines,
-			options.dmaBytesPerSec,
+			options.dmaWordsPerSec,
 			options.geoWorkUnitsPerSec,
 		);
 		this.input.setRuntimeInputFrameDurationMs(this.timing.frameDurationMs);

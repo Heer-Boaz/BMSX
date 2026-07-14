@@ -37,14 +37,13 @@ void Machine::resetDevices() {
 }
 
 void Machine::refreshDeviceTimings(const MachineTiming& timing, i64 nowCycles) {
-	dmaController.setTiming(timing.cpuHz, timing.dmaBytesPerSec, nowCycles);
+	dmaController.setTiming(timing.cpuHz, timing.dmaWordsPerSec, nowCycles);
 	geometryController.setTiming(timing.cpuHz, timing.geoWorkUnitsPerSec, nowCycles);
 	audioController.setTiming(timing.cpuHz, nowCycles);
 }
 
 void Machine::advanceDevices(int cycles) {
 	const i64 nextNow = scheduler.nowCycles() + cycles;
-	dmaController.accrueCycles(cycles, nextNow);
 	geometryController.accrueCycles(cycles, nextNow);
 	audioController.accrueCycles(cycles, nextNow);
 	scheduler.advanceTo(nextNow);

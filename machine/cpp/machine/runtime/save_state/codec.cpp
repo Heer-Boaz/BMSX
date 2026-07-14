@@ -898,66 +898,30 @@ AudioControllerState decodeAudioControllerState(const BinValue& value, const cha
 	return state;
 }
 
-BinValue encodeDmaJobState(const DmaJobState& state) {
-	BinObject object;
-	object["src"] = encodeScalar<f64>(state.src);
-	object["dst"] = encodeScalar<f64>(state.dst);
-	object["remaining"] = encodeScalar<f64>(state.remaining);
-	object["written"] = encodeScalar<f64>(state.written);
-	object["clipped"] = BinValue(state.clipped);
-	object["ticket"] = encodeScalar<f64>(state.ticket);
-	return BinValue(std::move(object));
-}
-
-DmaJobState decodeDmaJobState(const BinValue& value, const char* label) {
-	const BinObject& object = requireObject(value, label);
-	DmaJobState state;
-	state.src = requireU32(requireField(object, "src", label), "machine.dma.queue.src");
-	state.dst = requireU32(requireField(object, "dst", label), "machine.dma.queue.dst");
-	state.remaining = requireU32(requireField(object, "remaining", label), "machine.dma.queue.remaining");
-	state.written = requireU32(requireField(object, "written", label), "machine.dma.queue.written");
-	state.clipped = requireBool(requireField(object, "clipped", label), "machine.dma.queue.clipped");
-	state.ticket = requireBoundedU32(requireField(object, "ticket", label), "machine.dma.queue.ticket", 0u, DMA_TICKET_MASK);
-	return state;
-}
-
 BinValue encodeDmaControllerState(const DmaControllerState& state) {
 	BinObject object;
-	object["queue"] = encodeVector<DmaJobState>(state.queue, encodeDmaJobState);
-	object["budget"] = encodeScalar<f64>(state.budget);
-	object["carry"] = encodeScalar<f64>(state.carry);
-	object["writtenValue"] = encodeScalar<f64>(state.writtenValue);
-	object["writtenDirty"] = BinValue(state.writtenDirty);
-	object["sourceRegisterWord"] = encodeScalar<f64>(state.sourceRegisterWord);
-	object["destinationRegisterWord"] = encodeScalar<f64>(state.destinationRegisterWord);
-	object["lengthRegisterWord"] = encodeScalar<f64>(state.lengthRegisterWord);
-	object["controlRegisterWord"] = encodeScalar<f64>(state.controlRegisterWord);
-	object["statusRegisterWord"] = encodeScalar<f64>(state.statusRegisterWord);
-	object["writtenRegisterWord"] = encodeScalar<f64>(state.writtenRegisterWord);
+	object["readAddressWord"] = encodeScalar<f64>(state.readAddressWord);
+	object["writeAddressWord"] = encodeScalar<f64>(state.writeAddressWord);
+	object["transferCountWord"] = encodeScalar<f64>(state.transferCountWord);
+	object["controlWord"] = encodeScalar<f64>(state.controlWord);
+	object["statusWord"] = encodeScalar<f64>(state.statusWord);
+	object["timingCarry"] = encodeScalar<f64>(state.timingCarry);
+	object["scheduledGrantWords"] = encodeScalar<f64>(state.scheduledGrantWords);
+	object["scheduledGrantCycles"] = encodeScalar<f64>(state.scheduledGrantCycles);
 	return BinValue(std::move(object));
 }
 
 DmaControllerState decodeDmaControllerState(const BinValue& value, const char* label) {
 	const BinObject& object = requireObject(value, label);
 	DmaControllerState state;
-	const BinArray& queue = requireArray(requireField(object, "queue", label), "machine.dma.queue");
-	if (queue.size() > DMA_JOB_QUEUE_CAPACITY) {
-		throw BMSX_RUNTIME_ERROR("machine.dma.queue exceeds the DMA FIFO capacity.");
-	}
-	state.queue.reserve(queue.size());
-	for (const BinValue& entry : queue) {
-		state.queue.push_back(decodeDmaJobState(entry, "machine.dma.queue[]"));
-	}
-	state.budget = requireI64(requireField(object, "budget", label), "machine.dma.budget");
-	state.carry = requireI64(requireField(object, "carry", label), "machine.dma.carry");
-	state.writtenValue = requireU32(requireField(object, "writtenValue", label), "machine.dma.writtenValue");
-	state.writtenDirty = requireBool(requireField(object, "writtenDirty", label), "machine.dma.writtenDirty");
-	state.sourceRegisterWord = requireU32(requireField(object, "sourceRegisterWord", label), "machine.dma.sourceRegisterWord");
-	state.destinationRegisterWord = requireU32(requireField(object, "destinationRegisterWord", label), "machine.dma.destinationRegisterWord");
-	state.lengthRegisterWord = requireU32(requireField(object, "lengthRegisterWord", label), "machine.dma.lengthRegisterWord");
-	state.controlRegisterWord = requireU32(requireField(object, "controlRegisterWord", label), "machine.dma.controlRegisterWord");
-	state.statusRegisterWord = requireU32(requireField(object, "statusRegisterWord", label), "machine.dma.statusRegisterWord");
-	state.writtenRegisterWord = requireU32(requireField(object, "writtenRegisterWord", label), "machine.dma.writtenRegisterWord");
+	state.readAddressWord = requireU32(requireField(object, "readAddressWord", label), "machine.dma.readAddressWord");
+	state.writeAddressWord = requireU32(requireField(object, "writeAddressWord", label), "machine.dma.writeAddressWord");
+	state.transferCountWord = requireU32(requireField(object, "transferCountWord", label), "machine.dma.transferCountWord");
+	state.controlWord = requireU32(requireField(object, "controlWord", label), "machine.dma.controlWord");
+	state.statusWord = requireU32(requireField(object, "statusWord", label), "machine.dma.statusWord");
+	state.timingCarry = requireI64(requireField(object, "timingCarry", label), "machine.dma.timingCarry");
+	state.scheduledGrantWords = requireBoundedU32(requireField(object, "scheduledGrantWords", label), "machine.dma.scheduledGrantWords", 0u, 16u);
+	state.scheduledGrantCycles = requireI64(requireField(object, "scheduledGrantCycles", label), "machine.dma.scheduledGrantCycles");
 	return state;
 }
 

@@ -620,7 +620,6 @@ bool Memory::isLuaReadOnlyIoAddress(uint32_t addr) const {
 		case IO_SYS_CYCLES_PER_FRAME:
 		case IO_IRQ_FLAGS:
 		case IO_DMA_STATUS:
-		case IO_DMA_WRITTEN:
 		case IO_GEO_STATUS:
 		case IO_GEO_PROCESSED:
 		case IO_GEO_FAULT:

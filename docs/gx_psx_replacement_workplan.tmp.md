@@ -231,14 +231,14 @@ bank. The common combat textures remain resident; a monster switch replaces
 only the monster bank, while the opaque all-out image deliberately replaces the
 left background bank. None of these ranges overlaps the framebuffer or system
 page. Background preload is queued before the authored swap, submitted after
-the preceding frame draw, and committed only when the DMA status has published
-that upload's exact 24-bit completion ticket. Coalesced DMA IRQs therefore
-cannot publish a later queue entry early.
+the preceding frame draw, and committed on that single channel's completion
+IRQ. A later upload cannot overtake it: its CPU-written A0 header stalls on GP0
+ownership until the preceding DMA payload has completed.
 
 DMA owns the CPU GP0 command port until its payload is complete. The CPU keeps a
 blocked GP0 store latched against its raw MMIO address and resumes it only when
 that address is actually write-ready, rather than re-executing it on every
-64-byte DMA deadline. A late CPU write-ready probe first synchronizes expired
+DMA deadline. A late CPU write-ready probe first synchronizes expired
 GPU command time and republishes the CPU/DMA ready lines, so it cannot cancel the
 last GPU timer while leaving stale low outputs. Host-invoked closures use that
 same device edge rather than polling. The long `2025` black-box capture now
@@ -303,16 +303,14 @@ WebGPU, including GPUREAD-to-RAM DMA. Live accelerated conformance remains open.
   GPUREAD packs low/high RGB555 words, wraps each coordinate, zero-fills an odd
   high pixel and leaves the final word latched after transfer completion.
 - The retained readback port drives the DMA ready line directly. A valid backend
-  completion wakes a waiting source job at the current machine cycle; final-word
+  completion wakes a waiting channel at the current machine cycle; final-word
   consumption, reset, and restore publish the matching low/derived state. A low
   line cancels DMA service instead of scheduling a status poll.
-- A custom DMA job with `IO_GX_GPU_GP0` as source keeps that device address fixed,
-  consumes the same mapped GPUREAD word datapath as the CPU, and writes each real
-  little-endian word directly to ascending RAM. It bypasses the ordinary
-  64-byte memory-source staging buffer. If its requested length outlives one C0
-  transfer, the job remains BUSY and resumes on a later completion without ever
-  treating the retained latch as payload. Strict/non-strict length handling is
-  word-oriented on both GP0 directions.
+- A channel with `IO_GX_GPU_GP0` as its live read address keeps that address
+  fixed, consumes the same mapped GPUREAD word datapath as the CPU, and writes
+  each real little-endian word directly to RAM. If its word count outlives one
+  C0 transfer, it remains BUSY and resumes on a later completion without ever
+  treating the retained latch as payload.
 - Save-state capture drains an already submitted accelerated readback where the
   host API permits it. Device capture otherwise stores backend-only SUBMITTED as
   logical PENDING; the current-format codec stores phase/fence/cursor/latch and
@@ -402,7 +400,8 @@ and MAME
     the full assert, system-ack, no-retrigger, GPU-ack and retrigger sequence.
   - [x] Model command execution time and FIFO-capacity-visible readiness with a
     central integer GPU scheduler, fixed FIFO, execution frontier and mirrored
-    save-state. DMA stalls between admitted 64-byte blocks; CPU GP0 stores use
+    save-state. DMA grants at most sixteen word slots and resamples DREQ before
+    each word; CPU GP0 stores use
     the MMIO write-ready line and jump to the device completion edge without
     polling, dropped words or producer-side waits.
 - [ ] Complete GP0/GP1 command decode edge cases and command-buffer ordering.
@@ -420,12 +419,17 @@ and MAME
     command processing. Abandoned image headers and partial polylines also
     truncate their uncommitted word suffix, while received image payload remains
     a partial upload command.
-- [ ] DMA interaction behavior beyond the currently tested register/status paths.
+- [x] DMA interaction behavior beyond the register/status paths.
   - [x] RAM-to-GP0 DMA word streams feed the memory-mapped GX-GPU GP0 command
     port in TS and C++.
   - [x] GP0-to-RAM DMA consumes retained GPUREAD words only while the
-    producer-driven ready line is high and resumes a paused job on the next
+    producer-driven ready line is high and resumes a paused channel on the next
     completion edge.
+  - [x] Replace descriptor admission, tickets, queue progress and byte budgets
+    with one live word-transfer channel. GP1 gates the GPU-owned DREQ lines;
+    request-low discards unused grant slots, direct bus faults remain
+    Memory-owned, and current-format save-state stores raw registers plus the
+    real timing/grant latches.
 
 ### 3. Raster and VRAM behavior
 

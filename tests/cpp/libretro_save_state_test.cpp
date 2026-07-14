@@ -1,4 +1,5 @@
 #include "core/machine_manager.h"
+#include "common/endian.h"
 #include "input/manager.h"
 #include "input/player.h"
 #include "machine/bus/io.h"
@@ -17,7 +18,9 @@
 #include "support/program_cart_fixture.h"
 
 #include <algorithm>
+#include <array>
 #include <cstdint>
+#include <cstring>
 #include <limits>
 #include <stdexcept>
 #include <vector>
@@ -86,36 +89,48 @@ void testLibretroSaveStateRoundTrip() {
 	expectedVram.back() = 0x56u;
 	runtime.machine.gxGpu.replaceVramSnapshotBytes(expectedVram.data());
 	const uint32_t dmaSource = bmsx::GEO_SCRATCH_BASE + 0x100u;
-	const uint32_t dmaWords[] = {
-		bmsx::GX_GPU_GP0_CPU_TO_VRAM_FIRST << 24u,
-		0x00020010u,
-		0x00020003u,
-		0x22221111u,
-		0x44443333u,
-		0x66665555u,
-	};
-	for (size_t index = 0; index < std::size(dmaWords); index += 1u) {
+	std::array<uint32_t, 20> dmaWords{};
+	dmaWords[0] = bmsx::GX_GPU_GP0_CPU_TO_VRAM_FIRST << 24u;
+	dmaWords[1] = 0x00020010u;
+	dmaWords[2] = (1u << 16u) | 34u;
+	for (size_t index = 3u; index < dmaWords.size(); index += 1u) {
+		dmaWords[index] = static_cast<uint32_t>(index * 0x11111111u);
+	}
+	for (size_t index = 0; index < dmaWords.size(); index += 1u) {
 		memory.writeMappedU32LE(dmaSource + static_cast<uint32_t>(index * 4u), dmaWords[index]);
 	}
-	runtime.machine.dmaController.setTiming(1, 8, runtime.machine.scheduler.currentNowCycles());
-	memory.writeMappedU32LE(bmsx::IO_DMA_SRC, dmaSource);
-	memory.writeMappedU32LE(bmsx::IO_DMA_DST, bmsx::IO_GX_GPU_GP0);
-	memory.writeMappedU32LE(bmsx::IO_DMA_LEN, sizeof(dmaWords));
-	memory.writeMappedU32LE(bmsx::IO_DMA_CTRL, bmsx::DMA_CTRL_START);
-	const uint32_t firstDmaTicketWord = 1u << bmsx::DMA_TICKET_SHIFT;
-	runtime.machine.dmaController.accrueCycles(1, runtime.machine.scheduler.currentNowCycles() + 1);
-	runtime.machine.dmaController.onService(runtime.machine.scheduler.currentNowCycles() + 1);
-	runtime.machine.gxGpu.onService(runtime.machine.scheduler.currentNowCycles() + 1);
+	runtime.machine.dmaController.setTiming(1, 16, runtime.machine.scheduler.currentNowCycles());
+	runtime.machine.gxGpu.writeGp1((bmsx::GX_GPU_GP1_DMA_DIRECTION << 24u) | bmsx::GX_GPU_DMA_DIRECTION_CPU_TO_GP0);
+	memory.writeMappedU32LE(bmsx::IO_DMA_READ_ADDR, dmaSource);
+	memory.writeMappedU32LE(bmsx::IO_DMA_WRITE_ADDR, bmsx::IO_GX_GPU_GP0);
+	memory.writeMappedU32LE(bmsx::IO_DMA_TRANSFER_COUNT, static_cast<uint32_t>(dmaWords.size()));
+	memory.writeMappedU32LE(bmsx::IO_DMA_CONTROL, bmsx::DMA_CONTROL_READ_INCREMENT | bmsx::DMA_CONTROL_REQUEST_GX_WRITE);
+	memory.writeMappedU32LE(bmsx::IO_DMA_TRIGGER, bmsx::DMA_TRIGGER_START);
+	const bmsx::i64 firstDmaServiceCycle = runtime.machine.scheduler.currentNowCycles() + 1;
+	runtime.machine.scheduler.advanceTo(firstDmaServiceCycle);
+	runtime.machine.dmaController.onService(firstDmaServiceCycle);
 	require(memory.readIoU32(bmsx::IO_DMA_STATUS) == bmsx::DMA_STATUS_BUSY, "DMA should remain in flight at saveState");
-	require(memory.readIoU32(bmsx::IO_DMA_WRITTEN) == 8u, "DMA should save after the first GP0 packet slice");
+	require(memory.readIoU32(bmsx::IO_DMA_TRANSFER_COUNT) == 4u, "DMA should save with four live word transfers remaining");
+	require(memory.readIoU32(bmsx::IO_DMA_READ_ADDR) == dmaSource + 64u, "DMA should save its live read address");
+	require(!memory.mappedWriteReady(bmsx::IO_GX_GPU_GP0), "in-flight DMA should own GP0 at saveState");
 	const uint32_t savedGp0Latch = runtime.machine.gxGpu.captureState().gp0Word;
 	const size_t gpuStateSize = platform.getStateSize();
 	std::vector<bmsx::u8> saved(gpuStateSize);
 	require(platform.saveState(saved.data(), saved.size()), "libretro saveState should serialize initialized runtime state");
-	runtime.machine.dmaController.accrueCycles(100, runtime.machine.scheduler.currentNowCycles() + 100);
-	runtime.machine.dmaController.onService(runtime.machine.scheduler.currentNowCycles() + 100);
-	require(memory.readIoU32(bmsx::IO_DMA_STATUS) == (firstDmaTicketWord | bmsx::DMA_STATUS_DONE), "DMA mutation should complete before loadState");
-	require(memory.readIoU32(bmsx::IO_DMA_WRITTEN) == sizeof(dmaWords), "DMA mutation should publish complete progress before loadState");
+	const size_t savedPayloadBytes = bmsx::readLE32(saved.data() + 4u);
+	bmsx::RuntimeSaveState savedState = bmsx::decodeRuntimeSaveState(saved.data() + 8u, savedPayloadBytes);
+	savedState.cpuState.memoryWriteBlocked = true;
+	savedState.cpuState.memoryWriteBlockedAddress = bmsx::IO_GX_GPU_GP0;
+	const std::vector<bmsx::u8> blockedPayload = bmsx::encodeRuntimeSaveState(savedState);
+	bmsx::writeLE32(saved.data() + 4u, static_cast<uint32_t>(blockedPayload.size()));
+	std::memcpy(saved.data() + 8u, blockedPayload.data(), blockedPayload.size());
+	std::memset(saved.data() + 8u + blockedPayload.size(), 0, saved.size() - 8u - blockedPayload.size());
+	const bmsx::DmaControllerState mutatingDmaState = runtime.machine.dmaController.captureState();
+	const bmsx::i64 dmaMutationCycle = runtime.machine.scheduler.currentNowCycles() + mutatingDmaState.scheduledGrantCycles;
+	runtime.machine.scheduler.advanceTo(dmaMutationCycle);
+	runtime.machine.dmaController.onService(dmaMutationCycle);
+	require(memory.readIoU32(bmsx::IO_DMA_STATUS) == bmsx::DMA_STATUS_DONE, "DMA mutation should complete before loadState");
+	require(memory.readIoU32(bmsx::IO_DMA_TRANSFER_COUNT) == 0u, "DMA mutation should consume the live word count");
 
 	memory.writeMappedU32LE(bmsx::GEO_SCRATCH_BASE, 0xaabbccddu);
 	memory.writeMappedU32LE(bmsx::IO_GX_GPU_GP1, bmsx::GX_GPU_GP1_RESET << 24u);
@@ -149,33 +164,20 @@ void testLibretroSaveStateRoundTrip() {
 	require(runtime.machine.gxGte.readControlRegister(0u) == 1u, "libretro loadState should restore GX-GTE control register words");
 	require(memory.readMappedU32LE(bmsx::IO_GX_GTE_CYCLES) == bmsx::GX_GTE_CYCLES_DPCS, "libretro loadState should restore GX-GTE CYCLES latch");
 	require(memory.readIoU32(bmsx::IO_DMA_STATUS) == bmsx::DMA_STATUS_BUSY, "libretro loadState should restore in-flight DMA status");
-	require(memory.readIoU32(bmsx::IO_DMA_WRITTEN) == 8u, "libretro loadState should restore in-flight DMA progress");
-	const int64_t dmaResumeCycle = runtime.machine.scheduler.currentNowCycles() + 100;
-	runtime.machine.dmaController.accrueCycles(100, dmaResumeCycle);
+	require(memory.readIoU32(bmsx::IO_DMA_TRANSFER_COUNT) == 4u, "libretro loadState should restore the live DMA word count");
+	require(memory.readIoU32(bmsx::IO_DMA_READ_ADDR) == dmaSource + 64u, "libretro loadState should restore the live DMA read address");
+	require(!memory.mappedWriteReady(bmsx::IO_GX_GPU_GP0), "restored DMA should retain GP0 ownership");
+	require(runtime.machine.cpu.isMemoryWriteBlocked(), "restored GP0 store should remain blocked while DMA owns the port");
+	const bmsx::DmaControllerState restoredDmaState = runtime.machine.dmaController.captureState();
+	const int64_t dmaResumeCycle = runtime.machine.scheduler.currentNowCycles() + restoredDmaState.scheduledGrantCycles;
+	runtime.machine.scheduler.advanceTo(dmaResumeCycle);
 	runtime.machine.dmaController.onService(dmaResumeCycle);
-	require(memory.readIoU32(bmsx::IO_DMA_STATUS) == (firstDmaTicketWord | bmsx::DMA_STATUS_DONE), "restored DMA should complete the GP0 packet");
-	require(memory.readIoU32(bmsx::IO_DMA_WRITTEN) == sizeof(dmaWords), "restored DMA should publish the complete byte count");
+	require(memory.readIoU32(bmsx::IO_DMA_STATUS) == bmsx::DMA_STATUS_DONE, "restored DMA should complete the GP0 packet");
+	require(memory.readIoU32(bmsx::IO_DMA_TRANSFER_COUNT) == 0u, "restored DMA should consume its retained word count");
+	require(!runtime.machine.cpu.isMemoryWriteBlocked(), "DMA completion should release the restored GP0 store");
 	const bmsx::GxGpuCommandBuffer& restoredCommands = *runtime.machine.gxGpu.readDeviceOutput().commandBuffer;
 	require(restoredCommands.commandKind[restoredCommands.commandCount - 1u] == bmsx::GX_GPU_COMMAND_UPLOAD_CPU_TO_VRAM, "restored DMA should complete the retained GX-GPU packet");
 
-}
-
-void testDmaCodecRejectsQueuesBeyondHardwareCapacity() {
-	retro_system_av_info avInfo{};
-	bmsx::LibretroPlatform platform(bmsx::BackendType::Software, avInfo);
-	platform.setLogCallback(discardRetroLog);
-	const std::vector<bmsx::u8> rom = bmsx::test::makeMinimalProgramCartRom();
-	require(platform.loadRom(rom.data(), rom.size()), "libretro should load a program cart ROM for codec validation");
-	bmsx::RuntimeSaveState state = bmsx::captureRuntimeSaveState(platform.machineManager()->runtime());
-	state.machineState.machine.dma.queue.resize(bmsx::DMA_JOB_QUEUE_CAPACITY + 1u);
-	const std::vector<bmsx::u8> encoded = bmsx::encodeRuntimeSaveState(state);
-	bool rejected = false;
-	try {
-		(void)bmsx::decodeRuntimeSaveState(encoded);
-	} catch (const std::runtime_error&) {
-		rejected = true;
-	}
-	require(rejected, "save-state codec should reject DMA queues beyond the hardware FIFO capacity");
 }
 
 void testGpureadCodecStoresReadyBytesAndRejectsBackendPhase() {
@@ -407,7 +409,6 @@ void testPublishedDisplayTimingAppliesAtFrameEnd() {
 
 int main() {
 	testLibretroSaveStateRoundTrip();
-	testDmaCodecRejectsQueuesBeyondHardwareCapacity();
 	testGpureadCodecStoresReadyBytesAndRejectsBackendPhase();
 	testLibretroStateEnvelopeSupportsMaximumGpuread();
 	testInputSnapshotReflectsHeldKey();

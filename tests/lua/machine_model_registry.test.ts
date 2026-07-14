@@ -14,7 +14,7 @@ import { HZ_SCALE } from '../../machine/ts/machine/runtime/timing/constants';
 test('machine registry exposes the psx fixed hardware model', () => {
 	assert.deepEqual(PSX_MACHINE_SPEC, {
 		cpuFreqHz: 50_000_000,
-		dmaBytesPerSec: 26_214_400,
+		dmaWordsPerSec: 6_553_600,
 		ramBytes: 0x00400000,
 		geoWorkUnitsPerSec: 16_384_000,
 	});

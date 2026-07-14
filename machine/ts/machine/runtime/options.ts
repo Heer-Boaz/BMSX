@@ -7,6 +7,6 @@ export type RuntimeOptions = {
 	cpuHz: number;
 	cycleBudgetPerFrame: number;
 	vblankCycles: number;
-	dmaBytesPerSec: number;
+	dmaWordsPerSec: number;
 	geoWorkUnitsPerSec: number;
 };

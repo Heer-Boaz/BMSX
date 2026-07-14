@@ -37,6 +37,7 @@ void GxGpu::resetGpuRegisters() {
 	m_gp1Word = 0u;
 	m_displayModeWord = GX_GPU_RESET_DISPLAY_MODE_WORD;
 	m_statusWord = GX_GPU_STATUS_RESET_WORD;
+	m_dmaController.setGxGpuDmaDirection(GX_GPU_DMA_DIRECTION_OFF);
 	m_drawModeWord = 0u;
 	m_textureWindowWord = 0u;
 	m_drawingAreaTopLeftWord = 0u;
@@ -64,8 +65,10 @@ void GxGpu::resetGpuRegisters() {
 	writeStatusIo();
 }
 
-GxGpuState GxGpu::captureState() const {
+GxGpuState GxGpu::captureState() {
 	const i64 nowCycles = m_scheduler.currentNowCycles();
+	synchronizeCommandExecution(nowCycles);
+	updateDynamicStatusBits();
 	GxGpuState state;
 	state.gp0Word = m_gp0Word;
 	state.gp1Word = m_gp1Word;
@@ -119,6 +122,7 @@ void GxGpu::restoreState(const GxGpuState& state) {
 	m_gp1Word = state.gp1Word;
 	m_displayModeWord = state.displayModeWord;
 	m_statusWord = state.statusWord;
+	m_dmaController.setGxGpuDmaDirection((m_statusWord & GX_GPU_STATUS_DMA_DIRECTION_MASK) >> GX_GPU_STATUS_DMA_DIRECTION_SHIFT);
 	m_gp0Fifo.reset();
 	for (size_t index = 0u; index < state.gp0FifoWordCount; index += 1u) {
 		m_gp0Fifo.push(state.gp0FifoWords[index]);
@@ -170,7 +174,7 @@ void GxGpu::restoreState(const GxGpuState& state) {
 	writeStatusIo();
 }
 
-GxGpuSaveState GxGpu::captureSaveState() const {
+GxGpuSaveState GxGpu::captureSaveState() {
 	GxGpuSaveState state;
 	static_cast<GxGpuState&>(state) = captureState();
 	state.vramBytes.assign(m_vramSnapshotBytes.begin(), m_vramSnapshotBytes.end());
@@ -775,8 +779,10 @@ void GxGpu::writeGpuInfoQuery(u32 word) {
 }
 
 void GxGpu::writeDmaDirectionWord(u32 word) {
-	const u32 dmaDirectionBits = (word & 0x3u) << GX_GPU_STATUS_DMA_DIRECTION_SHIFT;
+	const u32 dmaDirection = word & 0x3u;
+	const u32 dmaDirectionBits = dmaDirection << GX_GPU_STATUS_DMA_DIRECTION_SHIFT;
 	m_statusWord = (m_statusWord & ~GX_GPU_STATUS_DMA_DIRECTION_MASK) | dmaDirectionBits;
+	m_dmaController.setGxGpuDmaDirection(dmaDirection);
 	writeStatusIo();
 }
 

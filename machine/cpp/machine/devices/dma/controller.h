@@ -1,92 +1,74 @@
 #pragma once
 
-#include "machine/memory/memory.h"
-#include "machine/scheduler/device.h"
-
-#include <array>
-#include <cstddef>
-#include <cstdint>
-#include <vector>
+#include "common/primitives.h"
 
 namespace bmsx {
 
-class IrqController;
 class CPU;
-
-inline constexpr size_t DMA_JOB_QUEUE_CAPACITY = 16u;
-
-struct DmaJobState {
-	uint32_t src = 0;
-	uint32_t dst = 0;
-	uint32_t remaining = 0;
-	uint32_t written = 0;
-	uint32_t ticket = 0;
-	bool clipped = false;
-};
+class DeviceScheduler;
+class IrqController;
+class Memory;
 
 struct DmaControllerState {
-	std::vector<DmaJobState> queue;
-	int64_t budget = 0;
-	int64_t carry = 0;
-	uint32_t writtenValue = 0;
-	bool writtenDirty = false;
-	uint32_t sourceRegisterWord = 0;
-	uint32_t destinationRegisterWord = 0;
-	uint32_t lengthRegisterWord = 0;
-	uint32_t controlRegisterWord = 0;
-	uint32_t statusRegisterWord = 0;
-	uint32_t writtenRegisterWord = 0;
+	u32 readAddressWord = 0;
+	u32 writeAddressWord = 0;
+	u32 transferCountWord = 0;
+	u32 controlWord = 0;
+	u32 statusWord = 0;
+	i64 timingCarry = 0;
+	u32 scheduledGrantWords = 0;
+	i64 scheduledGrantCycles = 0;
 };
 
 class DmaController {
 public:
 	DmaController(Memory& memory, CPU& cpu, IrqController& irq, DeviceScheduler& scheduler);
 
-	void setTiming(int64_t cpuHz, int64_t bytesPerSec, int64_t nowCycles);
+	void setTiming(i64 cpuHz, i64 wordsPerSec, i64 nowCycles);
 	void setGxGpuReadReady(bool ready);
 	void setGxGpuDmaWriteReady(bool ready);
 	void setGxGpuCpuWriteReady(bool ready);
-	bool isGxGpuCpuPortWriteReady() const { return m_gxGpuCpuWriteReady && m_gxGpuWriteJobCount == 0u; }
-	void accrueCycles(int cycles, int64_t nowCycles);
-	void onService(int64_t nowCycles);
-	void startIo();
+	void setGxGpuDmaDirection(u32 direction);
+	bool isGxGpuCpuPortWriteReady() const;
+	void onService(i64 nowCycles);
 	void reset();
 	DmaControllerState captureState() const;
-	void restoreState(const DmaControllerState& state, int64_t nowCycles);
+	void restoreState(const DmaControllerState& state, i64 nowCycles);
+	void postLoad();
 
 private:
-	static constexpr uint32_t DMA_SERVICE_BATCH_BYTES = 64u;
-	static void onCtrlWriteThunk(void* context, uint32_t addr, Value value);
+	static constexpr u32 DMA_SERVICE_GRANT_WORDS = 16u;
 
-	void scheduleNextService(int64_t nowCycles);
-	bool hasPendingTransfer() const;
-	void tick();
-	uint32_t processJob(DmaJobState& job, int64_t budget);
-	void finishIoSuccess(bool clipped, uint32_t ticket);
-	void finishIoError(bool clipped);
-	uint32_t resolveMaxWritable(uint32_t dst) const;
-	int64_t getPendingBytes() const;
+	static void onControlWriteThunk(void* context, u32 addr, u64 value);
+	static void onWriteAddressWriteThunk(void* context, u32 addr, u64 value);
+	static void onTriggerWriteThunk(void* context, u32 addr, u64 value);
 
-	std::array<DmaJobState, DMA_JOB_QUEUE_CAPACITY> m_queue{};
-	size_t m_queueHead = 0;
-	size_t m_queueCount = 0;
-	int64_t m_cpuHz = 1;
-	int64_t m_bytesPerSec = 1;
-	int64_t m_carry = 0;
-	int64_t m_budget = 0;
-	uint32_t m_writtenValue = 0;
-	bool m_writtenDirty = false;
+	void onTriggerWrite(u32 value);
+	void transferWord();
+	void finishTransfer();
+	void scheduleGrant(i64 anchorCycle);
+	void cancelGrant();
+	void requestInputChanged();
+	bool requestAsserted() const;
+	bool busy() const;
+	bool ownsGxGpuWritePort() const;
+	void resumeGxGpuCpuWrite();
+
+	i64 m_cpuHz = 1;
+	i64 m_wordsPerSec = 1;
+	i64 m_timingCarry = 0;
+	u32 m_scheduledGrantWords = 0;
+	i64 m_serviceDeadline = 0;
 	bool m_gxGpuReadReady = false;
 	bool m_gxGpuDmaWriteReady = false;
 	bool m_gxGpuCpuWriteReady = false;
-	size_t m_gxGpuWriteJobCount = 0;
-	uint32_t m_submittedTicket = 0;
-	uint32_t m_completedTicket = 0;
+	u32 m_gxGpuDmaDirection = 0;
+	bool m_serviceActive = false;
+	bool m_restorePending = false;
 	Memory& m_memory;
 	CPU& m_cpu;
 	IrqController& m_irq;
 	DeviceScheduler& m_scheduler;
-	std::array<uint8_t, DMA_SERVICE_BATCH_BYTES> m_buffer{};
 };
 
 } // namespace bmsx

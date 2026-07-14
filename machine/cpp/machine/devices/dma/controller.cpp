@@ -1,13 +1,13 @@
 #include "machine/devices/dma/controller.h"
 
-#include "common/endian.h"
 #include "machine/bus/io.h"
 #include "machine/cpu/cpu.h"
+#include "machine/devices/gx/gpu.h"
 #include "machine/devices/irq/controller.h"
 #include "machine/memory/map.h"
+#include "machine/memory/memory.h"
 #include "machine/scheduler/budget.h"
-
-#include <limits>
+#include "machine/scheduler/device.h"
 
 namespace bmsx {
 
@@ -16,24 +16,56 @@ DmaController::DmaController(Memory& memory, CPU& cpu, IrqController& irq, Devic
 	, m_cpu(cpu)
 	, m_irq(irq)
 	, m_scheduler(scheduler) {
-	m_memory.mapIoWrite(IO_DMA_CTRL, this, &DmaController::onCtrlWriteThunk);
+	m_memory.mapIoWrite(IO_DMA_CONTROL, this, &DmaController::onControlWriteThunk);
+	m_memory.mapIoWrite(IO_DMA_WRITE_ADDR, this, &DmaController::onWriteAddressWriteThunk);
+	m_memory.mapIoWrite(IO_DMA_TRIGGER, this, &DmaController::onTriggerWriteThunk);
 }
 
-// disable-next-line single_line_method_pattern -- memory-map callbacks require a C-style thunk back into the DMA device instance.
-void DmaController::onCtrlWriteThunk(void* context, uint32_t, Value) {
-	static_cast<DmaController*>(context)->startIo();
+void DmaController::onControlWriteThunk(void* context, u32, Value) {
+	static_cast<DmaController*>(context)->requestInputChanged();
 }
 
-bool DmaController::hasPendingTransfer() const {
-	return m_queueCount != 0u;
+void DmaController::onWriteAddressWriteThunk(void* context, u32, Value) {
+	static_cast<DmaController*>(context)->resumeGxGpuCpuWrite();
 }
 
-void DmaController::setTiming(int64_t cpuHz, int64_t bytesPerSec, int64_t nowCycles) {
+void DmaController::onTriggerWriteThunk(void* context, u32, u64 value) {
+	static_cast<DmaController*>(context)->onTriggerWrite(toU32(value));
+}
+
+void DmaController::onTriggerWrite(u32 value) {
+	m_memory.writeIoValue(IO_DMA_TRIGGER, valueNumber(0.0));
+	if ((value & DMA_TRIGGER_START) == 0u || busy()) {
+		return;
+	}
+	m_scheduler.cancelDeviceService(DEVICE_SERVICE_DMA);
+	m_scheduledGrantWords = 0u;
+	m_serviceDeadline = 0;
+	m_timingCarry = 0;
+	m_memory.writeIoValue(IO_DMA_STATUS, valueNumber(static_cast<f64>(DMA_STATUS_BUSY)));
+	if (m_memory.readIoU32(IO_DMA_TRANSFER_COUNT) == 0u) {
+		finishTransfer();
+		return;
+	}
+	if (requestAsserted()) {
+		scheduleGrant(m_scheduler.currentNowCycles());
+	}
+}
+
+void DmaController::setTiming(i64 cpuHz, i64 wordsPerSec, i64 nowCycles) {
+	if (m_cpuHz == cpuHz && m_wordsPerSec == wordsPerSec) {
+		return;
+	}
 	m_cpuHz = cpuHz;
-	m_bytesPerSec = bytesPerSec;
-	m_carry = 0;
-	m_budget = 0;
-	scheduleNextService(nowCycles);
+	m_wordsPerSec = wordsPerSec;
+	cancelGrant();
+	if (busy() && requestAsserted()) {
+		if (m_memory.readIoU32(IO_DMA_TRANSFER_COUNT) == 0u) {
+			finishTransfer();
+		} else {
+			scheduleGrant(nowCycles);
+		}
+	}
 }
 
 void DmaController::setGxGpuReadReady(bool ready) {
@@ -41,9 +73,7 @@ void DmaController::setGxGpuReadReady(bool ready) {
 		return;
 	}
 	m_gxGpuReadReady = ready;
-	if (m_queueCount != 0u && m_queue[m_queueHead].src == IO_GX_GPU_GP0) {
-		scheduleNextService(m_scheduler.currentNowCycles());
-	}
+	requestInputChanged();
 }
 
 void DmaController::setGxGpuDmaWriteReady(bool ready) {
@@ -51,9 +81,7 @@ void DmaController::setGxGpuDmaWriteReady(bool ready) {
 		return;
 	}
 	m_gxGpuDmaWriteReady = ready;
-	if (m_queueCount != 0u && m_queue[m_queueHead].dst == IO_GX_GPU_GP0) {
-		scheduleNextService(m_scheduler.currentNowCycles());
-	}
+	requestInputChanged();
 }
 
 void DmaController::setGxGpuCpuWriteReady(bool ready) {
@@ -61,313 +89,200 @@ void DmaController::setGxGpuCpuWriteReady(bool ready) {
 		return;
 	}
 	m_gxGpuCpuWriteReady = ready;
-	if (ready && m_gxGpuWriteJobCount == 0u) {
-		// GP0 is a shared hardware port. Wake the CPU only on the combined
-		// GPU-ready/DMA-unowned edge, never once per DMA service chunk.
-		m_cpu.resumeMemoryWrite(IO_GX_GPU_GP0);
-	}
+	resumeGxGpuCpuWrite();
 }
 
-void DmaController::accrueCycles(int cycles, int64_t nowCycles) {
-	if (cycles <= 0) {
+void DmaController::setGxGpuDmaDirection(u32 direction) {
+	if (m_gxGpuDmaDirection == direction) {
 		return;
 	}
-	const int64_t pendingBytes = getPendingBytes();
-	if (pendingBytes == 0) {
-		m_carry = 0;
-		m_budget = 0;
-		scheduleNextService(nowCycles);
-		return;
-	}
-	BudgetAccrual accrual;
-	accrueBudgetUnits(accrual, m_cpuHz, m_bytesPerSec, m_carry, cycles);
-	m_carry = accrual.carry;
-	if (accrual.wholeUnits > 0) {
-		const int64_t maxGrant = pendingBytes - m_budget;
-		const int64_t granted = accrual.wholeUnits > maxGrant ? maxGrant : accrual.wholeUnits;
-		m_budget += granted;
-	}
-	scheduleNextService(nowCycles);
+	m_gxGpuDmaDirection = direction;
+	requestInputChanged();
 }
 
-void DmaController::onService(int64_t nowCycles) {
-	if (!hasPendingTransfer()) {
-		m_scheduler.cancelDeviceService(DEVICE_SERVICE_DMA);
-		return;
-	}
-	tick();
-	if (m_writtenDirty) {
-		m_memory.writeValue(IO_DMA_WRITTEN, valueNumber(static_cast<double>(m_writtenValue)));
-		m_writtenDirty = false;
-	}
-	scheduleNextService(nowCycles);
-}
-
-int64_t DmaController::getPendingBytes() const {
-	int64_t pendingBytes = 0;
-	for (size_t offset = 0u; offset < m_queueCount; offset += 1u) {
-		pendingBytes += m_queue[(m_queueHead + offset) % DMA_JOB_QUEUE_CAPACITY].remaining;
-	}
-	return pendingBytes;
+bool DmaController::isGxGpuCpuPortWriteReady() const {
+	return m_gxGpuCpuWriteReady && !ownsGxGpuWritePort();
 }
 
 void DmaController::reset() {
-	m_carry = 0;
-	m_queueHead = 0;
-	m_queueCount = 0;
-	m_budget = 0;
-	m_writtenValue = 0;
-	m_writtenDirty = false;
+	m_scheduler.cancelDeviceService(DEVICE_SERVICE_DMA);
+	m_timingCarry = 0;
+	m_scheduledGrantWords = 0u;
+	m_serviceDeadline = 0;
 	m_gxGpuReadReady = false;
 	m_gxGpuDmaWriteReady = false;
 	m_gxGpuCpuWriteReady = false;
-	m_gxGpuWriteJobCount = 0u;
-	m_submittedTicket = 0u;
-	m_completedTicket = 0u;
+	m_gxGpuDmaDirection = 0u;
+	m_serviceActive = false;
+	m_restorePending = false;
+	m_memory.writeIoValue(IO_DMA_READ_ADDR, valueNumber(0.0));
+	m_memory.writeIoValue(IO_DMA_WRITE_ADDR, valueNumber(0.0));
+	m_memory.writeIoValue(IO_DMA_TRANSFER_COUNT, valueNumber(0.0));
+	m_memory.writeIoValue(IO_DMA_CONTROL, valueNumber(0.0));
+	m_memory.writeIoValue(IO_DMA_STATUS, valueNumber(0.0));
+	m_memory.writeIoValue(IO_DMA_TRIGGER, valueNumber(0.0));
+}
+
+void DmaController::onService(i64) {
+	const u32 grantWords = m_scheduledGrantWords;
+	const i64 grantDeadline = m_serviceDeadline;
 	m_scheduler.cancelDeviceService(DEVICE_SERVICE_DMA);
-	m_memory.writeValue(IO_DMA_SRC, valueNumber(0.0));
-	m_memory.writeValue(IO_DMA_DST, valueNumber(0.0));
-	m_memory.writeValue(IO_DMA_LEN, valueNumber(0.0));
-	m_memory.writeIoValue(IO_DMA_CTRL, valueNumber(0.0));
-	m_memory.writeValue(IO_DMA_STATUS, valueNumber(0.0));
-	m_memory.writeValue(IO_DMA_WRITTEN, valueNumber(0.0));
-}
-
-void DmaController::tick() {
-	int64_t budget = m_budget;
-	while (m_queueCount != 0u) {
-		DmaJobState& job = m_queue[m_queueHead];
-		uint32_t written = 0u;
-		if (job.remaining != 0u) {
-			if (budget == 0) {
-				break;
-			}
-			written = processJob(job, budget);
-			budget -= written;
-		}
-		m_writtenValue = job.written;
-		m_writtenDirty = true;
-		if (job.remaining == 0u) {
-			finishIoSuccess(job.clipped, job.ticket);
-			if (job.dst == IO_GX_GPU_GP0) {
-				m_gxGpuWriteJobCount -= 1u;
-				if (m_gxGpuWriteJobCount == 0u && m_gxGpuCpuWriteReady) {
-					m_cpu.resumeMemoryWrite(IO_GX_GPU_GP0);
-				}
-			}
-			m_queueHead = (m_queueHead + 1u) % DMA_JOB_QUEUE_CAPACITY;
-			m_queueCount -= 1u;
-			if (m_queueCount == 0u) {
-				m_queueHead = 0;
-				m_carry = 0;
-				m_budget = 0;
-				return;
-			}
-			continue;
-		}
-		if (written == 0u) {
-			m_budget = budget;
-			return;
-		}
+	m_scheduledGrantWords = 0u;
+	m_serviceDeadline = 0;
+	m_serviceActive = true;
+	for (u32 slot = 0u;
+		slot < grantWords
+			&& busy()
+			&& m_memory.readIoU32(IO_DMA_TRANSFER_COUNT) != 0u
+			&& requestAsserted();
+		slot += 1u) {
+		transferWord();
 	}
-	m_budget = budget;
-}
-
-uint32_t DmaController::processJob(DmaJobState& job, int64_t budget) {
-	if (job.dst == IO_GX_GPU_GP0 && !m_gxGpuDmaWriteReady) {
-		return 0u;
-	}
-	uint32_t chunk = static_cast<int64_t>(job.remaining) > budget ? static_cast<uint32_t>(budget) : job.remaining;
-	if (job.src == IO_GX_GPU_GP0 || job.dst == IO_GX_GPU_GP0) {
-		chunk &= ~(IO_WORD_SIZE - 1u);
-		if (chunk == 0u) {
-			return 0u;
-		}
-	}
-	if (chunk > m_buffer.size()) {
-		chunk = static_cast<uint32_t>(m_buffer.size());
-	}
-	if (job.src == IO_GX_GPU_GP0) {
-		uint32_t transferred = 0u;
-		while (transferred < chunk && m_gxGpuReadReady) {
-			const uint32_t word = m_memory.readMappedU32LE(IO_GX_GPU_GP0);
-			if (job.dst == IO_GX_GPU_GP0) {
-				m_memory.writeMappedU32LE(IO_GX_GPU_GP0, word);
-			} else {
-				m_memory.writeMappedU32LE(job.dst + transferred, word);
-			}
-			transferred += IO_WORD_SIZE;
-		}
-		if (job.dst != IO_GX_GPU_GP0) {
-			job.dst += transferred;
-		}
-		job.remaining -= transferred;
-		job.written += transferred;
-		return transferred;
-	}
-	m_memory.readBytes(job.src, m_buffer.data(), chunk);
-	if (job.dst == IO_GX_GPU_GP0) {
-		for (uint32_t offset = 0u; offset < chunk; offset += IO_WORD_SIZE) {
-			m_memory.writeMappedU32LE(IO_GX_GPU_GP0, readLE32(m_buffer.data() + offset));
-		}
-	} else {
-		m_memory.writeBytes(job.dst, m_buffer.data(), chunk);
-		job.dst += chunk;
-	}
-	job.src += chunk;
-	job.remaining -= chunk;
-	job.written += chunk;
-	return chunk;
-}
-
-void DmaController::startIo() {
-	const uint32_t ctrlValue = m_memory.readIoU32(IO_DMA_CTRL);
-	const uint32_t controlFlags = ctrlValue & 0xffu & ~DMA_CTRL_START;
-	m_memory.writeIoValue(IO_DMA_CTRL, valueNumber(static_cast<double>(controlFlags | (m_submittedTicket << DMA_TICKET_SHIFT))));
-	if ((ctrlValue & DMA_CTRL_START) == 0u) {
+	m_serviceActive = false;
+	if (!busy()) {
 		return;
 	}
-	const uint32_t src = m_memory.readIoU32(IO_DMA_SRC);
-	const uint32_t dst = m_memory.readIoU32(IO_DMA_DST);
-	const uint32_t len = m_memory.readIoU32(IO_DMA_LEN);
-	const bool strict = (ctrlValue & DMA_CTRL_STRICT) != 0u;
-	m_memory.writeValue(IO_DMA_WRITTEN, valueNumber(0.0));
-	const uint32_t maxWritable = resolveMaxWritable(dst);
-	if (maxWritable == 0u) {
-		finishIoError(false);
+	if (m_memory.readIoU32(IO_DMA_TRANSFER_COUNT) == 0u) {
+		finishTransfer();
 		return;
 	}
-	uint32_t transferLen = len;
-	bool clipped = false;
-	if (transferLen > maxWritable) {
-		clipped = true;
-		if (strict) {
-			finishIoError(true);
-			return;
-		}
-		transferLen = maxWritable;
-	}
-	if ((src == IO_GX_GPU_GP0 || dst == IO_GX_GPU_GP0) && (transferLen & (IO_WORD_SIZE - 1u)) != 0u) {
-		clipped = true;
-		if (strict) {
-			finishIoError(true);
-			return;
-		}
-		transferLen &= ~(IO_WORD_SIZE - 1u);
-	}
-	if (m_queueCount == DMA_JOB_QUEUE_CAPACITY) {
-		finishIoError(false);
+	if (!requestAsserted()) {
+		m_timingCarry = 0;
 		return;
 	}
-	m_submittedTicket = (m_submittedTicket + 1u) & DMA_TICKET_MASK;
-	const uint32_t ticket = m_submittedTicket;
-	m_memory.writeIoValue(IO_DMA_CTRL, valueNumber(static_cast<double>(controlFlags | (ticket << DMA_TICKET_SHIFT))));
-	m_memory.writeValue(IO_DMA_STATUS, valueNumber(static_cast<double>((m_completedTicket << DMA_TICKET_SHIFT) | DMA_STATUS_BUSY | (clipped ? DMA_STATUS_CLIPPED : 0u))));
-	if (transferLen == 0u && m_queueCount == 0u) {
-		finishIoSuccess(clipped, ticket);
-		return;
-	}
-	DmaJobState job;
-	job.src = src;
-	job.dst = dst;
-	job.remaining = transferLen;
-	job.ticket = ticket;
-	job.clipped = clipped;
-	m_writtenValue = 0;
-	m_writtenDirty = true;
-	m_queue[(m_queueHead + m_queueCount) % DMA_JOB_QUEUE_CAPACITY] = job;
-	if (dst == IO_GX_GPU_GP0) {
-		m_gxGpuWriteJobCount += 1u;
-	}
-	m_queueCount += 1u;
-	scheduleNextService(m_scheduler.currentNowCycles());
+	scheduleGrant(grantDeadline);
 }
 
-void DmaController::finishIoSuccess(bool clipped, uint32_t ticket) {
-	m_completedTicket = ticket;
-	m_memory.writeValue(IO_DMA_STATUS, valueNumber(static_cast<double>((ticket << DMA_TICKET_SHIFT) | DMA_STATUS_DONE | (m_queueCount > 1u ? DMA_STATUS_BUSY : 0u) | (clipped ? DMA_STATUS_CLIPPED : 0u))));
+void DmaController::transferWord() {
+	const u32 readAddress = m_memory.readIoU32(IO_DMA_READ_ADDR);
+	const u32 writeAddress = m_memory.readIoU32(IO_DMA_WRITE_ADDR);
+	const u32 transferCount = m_memory.readIoU32(IO_DMA_TRANSFER_COUNT);
+	const u32 control = m_memory.readIoU32(IO_DMA_CONTROL);
+	const u32 word = m_memory.readMappedU32LE(readAddress);
+	m_memory.writeMappedU32LE(writeAddress, word);
+	m_memory.writeIoValue(
+		IO_DMA_READ_ADDR,
+		valueNumber(static_cast<f64>((control & DMA_CONTROL_READ_INCREMENT) != 0u ? readAddress + IO_WORD_SIZE : readAddress))
+	);
+	m_memory.writeIoValue(
+		IO_DMA_WRITE_ADDR,
+		valueNumber(static_cast<f64>((control & DMA_CONTROL_WRITE_INCREMENT) != 0u ? writeAddress + IO_WORD_SIZE : writeAddress))
+	);
+	m_memory.writeIoValue(IO_DMA_TRANSFER_COUNT, valueNumber(static_cast<f64>(transferCount - 1u)));
+	if (writeAddress == IO_GX_GPU_GP0 && (control & DMA_CONTROL_WRITE_INCREMENT) != 0u) {
+		resumeGxGpuCpuWrite();
+	}
+}
+
+void DmaController::finishTransfer() {
+	m_scheduler.cancelDeviceService(DEVICE_SERVICE_DMA);
+	m_scheduledGrantWords = 0u;
+	m_serviceDeadline = 0;
+	m_timingCarry = 0;
+	m_memory.writeIoValue(IO_DMA_STATUS, valueNumber(static_cast<f64>(DMA_STATUS_DONE)));
 	m_irq.raise(IRQ_DMA_DONE);
-}
-
-void DmaController::finishIoError(bool clipped) {
-	m_memory.writeValue(IO_DMA_STATUS, valueNumber(static_cast<double>((m_completedTicket << DMA_TICKET_SHIFT) | DMA_STATUS_DONE | DMA_STATUS_ERROR | (m_queueCount != 0u ? DMA_STATUS_BUSY : 0u) | (clipped ? DMA_STATUS_CLIPPED : 0u))));
-	m_irq.raise(IRQ_DMA_ERROR);
+	resumeGxGpuCpuWrite();
 }
 
 DmaControllerState DmaController::captureState() const {
 	DmaControllerState state;
-	state.queue.reserve(m_queueCount);
-	for (size_t offset = 0u; offset < m_queueCount; offset += 1u) {
-		state.queue.push_back(m_queue[(m_queueHead + offset) % DMA_JOB_QUEUE_CAPACITY]);
-	}
-	state.budget = m_budget;
-	state.carry = m_carry;
-	state.writtenValue = m_writtenValue;
-	state.writtenDirty = m_writtenDirty;
-	state.sourceRegisterWord = m_memory.readIoU32(IO_DMA_SRC);
-	state.destinationRegisterWord = m_memory.readIoU32(IO_DMA_DST);
-	state.lengthRegisterWord = m_memory.readIoU32(IO_DMA_LEN);
-	state.controlRegisterWord = m_memory.readIoU32(IO_DMA_CTRL);
-	state.statusRegisterWord = m_memory.readIoU32(IO_DMA_STATUS);
-	state.writtenRegisterWord = m_memory.readIoU32(IO_DMA_WRITTEN);
+	state.readAddressWord = m_memory.readIoU32(IO_DMA_READ_ADDR);
+	state.writeAddressWord = m_memory.readIoU32(IO_DMA_WRITE_ADDR);
+	state.transferCountWord = m_memory.readIoU32(IO_DMA_TRANSFER_COUNT);
+	state.controlWord = m_memory.readIoU32(IO_DMA_CONTROL);
+	state.statusWord = m_memory.readIoU32(IO_DMA_STATUS);
+	state.timingCarry = m_timingCarry;
+	state.scheduledGrantWords = m_scheduledGrantWords;
+	state.scheduledGrantCycles = m_scheduledGrantWords == 0u ? 0 : m_serviceDeadline - m_scheduler.currentNowCycles();
 	return state;
 }
 
-void DmaController::restoreState(const DmaControllerState& state, int64_t nowCycles) {
-	m_gxGpuWriteJobCount = 0u;
-	for (size_t index = 0u; index < state.queue.size(); index += 1u) {
-		m_queue[index] = state.queue[index];
-		if (state.queue[index].dst == IO_GX_GPU_GP0) {
-			m_gxGpuWriteJobCount += 1u;
+void DmaController::restoreState(const DmaControllerState& state, i64 nowCycles) {
+	m_scheduler.cancelDeviceService(DEVICE_SERVICE_DMA);
+	m_memory.writeIoValue(IO_DMA_READ_ADDR, valueNumber(static_cast<f64>(state.readAddressWord)));
+	m_memory.writeIoValue(IO_DMA_WRITE_ADDR, valueNumber(static_cast<f64>(state.writeAddressWord)));
+	m_memory.writeIoValue(IO_DMA_TRANSFER_COUNT, valueNumber(static_cast<f64>(state.transferCountWord)));
+	m_memory.writeIoValue(IO_DMA_CONTROL, valueNumber(static_cast<f64>(state.controlWord)));
+	m_memory.writeIoValue(IO_DMA_STATUS, valueNumber(static_cast<f64>(state.statusWord)));
+	m_memory.writeIoValue(IO_DMA_TRIGGER, valueNumber(0.0));
+	m_timingCarry = state.timingCarry;
+	m_scheduledGrantWords = state.scheduledGrantWords;
+	m_serviceDeadline = nowCycles + state.scheduledGrantCycles;
+	m_serviceActive = false;
+	m_restorePending = true;
+}
+
+void DmaController::postLoad() {
+	m_restorePending = false;
+	if (m_scheduledGrantWords != 0u) {
+		if (requestAsserted()) {
+			m_scheduler.scheduleDeviceService(DEVICE_SERVICE_DMA, m_serviceDeadline);
+		} else {
+			cancelGrant();
 		}
 	}
-	m_queueHead = 0u;
-	m_queueCount = state.queue.size();
-	m_budget = state.budget;
-	m_carry = state.carry;
-	m_writtenValue = state.writtenValue;
-	m_writtenDirty = state.writtenDirty;
-	m_submittedTicket = (state.controlRegisterWord >> DMA_TICKET_SHIFT) & DMA_TICKET_MASK;
-	m_completedTicket = (state.statusRegisterWord >> DMA_TICKET_SHIFT) & DMA_TICKET_MASK;
-	m_memory.writeValue(IO_DMA_SRC, valueNumber(static_cast<double>(state.sourceRegisterWord)));
-	m_memory.writeValue(IO_DMA_DST, valueNumber(static_cast<double>(state.destinationRegisterWord)));
-	m_memory.writeValue(IO_DMA_LEN, valueNumber(static_cast<double>(state.lengthRegisterWord)));
-	m_memory.writeIoValue(IO_DMA_CTRL, valueNumber(static_cast<double>(state.controlRegisterWord)));
-	m_memory.writeValue(IO_DMA_STATUS, valueNumber(static_cast<double>(state.statusRegisterWord)));
-	m_memory.writeValue(IO_DMA_WRITTEN, valueNumber(static_cast<double>(state.writtenRegisterWord)));
-	scheduleNextService(nowCycles);
+	resumeGxGpuCpuWrite();
 }
 
-void DmaController::scheduleNextService(int64_t nowCycles) {
-	if (!hasPendingTransfer()) {
-		m_scheduler.cancelDeviceService(DEVICE_SERVICE_DMA);
-		return;
-	}
-	if ((m_queue[m_queueHead].src == IO_GX_GPU_GP0 && !m_gxGpuReadReady)
-		|| (m_queue[m_queueHead].dst == IO_GX_GPU_GP0 && !m_gxGpuDmaWriteReady)) {
-		m_scheduler.cancelDeviceService(DEVICE_SERVICE_DMA);
-		return;
-	}
-	const int64_t pendingBytes = getPendingBytes();
-	const int64_t targetBytes = pendingBytes < DMA_SERVICE_BATCH_BYTES ? pendingBytes : DMA_SERVICE_BATCH_BYTES;
-	if (m_budget >= targetBytes) {
-		m_scheduler.scheduleDeviceService(DEVICE_SERVICE_DMA, nowCycles);
-		return;
-	}
-	m_scheduler.scheduleDeviceService(
-		DEVICE_SERVICE_DMA,
-		nowCycles + cyclesUntilBudgetUnits(m_cpuHz, m_bytesPerSec, m_carry, targetBytes - m_budget)
-	);
+void DmaController::scheduleGrant(i64 anchorCycle) {
+	const u32 remaining = m_memory.readIoU32(IO_DMA_TRANSFER_COUNT);
+	const u32 grantWords = remaining < DMA_SERVICE_GRANT_WORDS ? remaining : DMA_SERVICE_GRANT_WORDS;
+	const i64 grantCycles = cyclesUntilBudgetUnits(m_cpuHz, m_wordsPerSec, m_timingCarry, grantWords);
+	m_timingCarry = (m_wordsPerSec * grantCycles + m_timingCarry) % m_cpuHz;
+	m_scheduledGrantWords = grantWords;
+	m_serviceDeadline = anchorCycle + grantCycles;
+	m_scheduler.scheduleDeviceService(DEVICE_SERVICE_DMA, m_serviceDeadline);
 }
 
-uint32_t DmaController::resolveMaxWritable(uint32_t dst) const {
-	if (dst == IO_GX_GPU_GP0) {
-		return std::numeric_limits<uint32_t>::max();
+void DmaController::cancelGrant() {
+	m_scheduler.cancelDeviceService(DEVICE_SERVICE_DMA);
+	m_scheduledGrantWords = 0u;
+	m_serviceDeadline = 0;
+	m_timingCarry = 0;
+}
+
+void DmaController::requestInputChanged() {
+	if (m_restorePending || !busy()) {
+		return;
 	}
-	if (dst >= RAM_BASE && dst < RAM_END) {
-		return RAM_END - dst;
+	if (!requestAsserted()) {
+		cancelGrant();
+		return;
 	}
-	return 0u;
+	if (m_memory.readIoU32(IO_DMA_TRANSFER_COUNT) == 0u) {
+		finishTransfer();
+		return;
+	}
+	if (!m_serviceActive && m_scheduledGrantWords == 0u) {
+		scheduleGrant(m_scheduler.currentNowCycles());
+	}
+}
+
+bool DmaController::requestAsserted() const {
+	switch (m_memory.readIoU32(IO_DMA_CONTROL) & DMA_CONTROL_REQUEST_MASK) {
+	case DMA_CONTROL_REQUEST_FORCE:
+		return true;
+	case DMA_CONTROL_REQUEST_GX_WRITE:
+		return m_gxGpuDmaDirection == GX_GPU_DMA_DIRECTION_CPU_TO_GP0 && m_gxGpuDmaWriteReady;
+	case DMA_CONTROL_REQUEST_GX_READ:
+		return m_gxGpuDmaDirection == GX_GPU_DMA_DIRECTION_GPUREAD_TO_CPU && m_gxGpuReadReady;
+	default:
+		return false;
+	}
+}
+
+bool DmaController::busy() const {
+	return (m_memory.readIoU32(IO_DMA_STATUS) & DMA_STATUS_BUSY) != 0u;
+}
+
+bool DmaController::ownsGxGpuWritePort() const {
+	return busy() && m_memory.readIoU32(IO_DMA_WRITE_ADDR) == IO_GX_GPU_GP0;
+}
+
+void DmaController::resumeGxGpuCpuWrite() {
+	if (m_gxGpuCpuWriteReady && !ownsGxGpuWritePort()) {
+		m_cpu.resumeMemoryWrite(IO_GX_GPU_GP0);
+	}
 }
 
 } // namespace bmsx

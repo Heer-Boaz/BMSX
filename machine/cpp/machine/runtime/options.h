@@ -21,7 +21,7 @@ struct RuntimeOptions {
 	i64 cpuHz;
 	int cycleBudgetPerFrame;
 	int vblankCycles;
-	i64 dmaBytesPerSec;
+	i64 dmaWordsPerSec;
 	int geoWorkUnitsPerSec;
 };
 

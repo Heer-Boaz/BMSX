@@ -6,6 +6,7 @@ local gp1<const>: *word = 0x08010244
 
 local gp1_reset<const> = 0x00000000
 local gp1_display_enable<const> = 0x03000000
+local gp1_dma_direction_cpu_to_gp0<const> = 0x04000002
 local gp1_display_start<const> = 0x05000000
 local gp1_horizontal_display_range<const> = 0x06c60260
 local gp1_vertical_display_range<const> = 0x07000000
@@ -106,6 +107,7 @@ local program_display<const> = function(horizontal_resolution, video_standard, v
 	*gp1 = gp1_display_start
 	*gp1 = gp1_horizontal_display_range
 	*gp1 = gp1_vertical_display_range | vertical_start | ((vertical_start + height) << 10)
+	*gp1 = gp1_dma_direction_cpu_to_gp0
 	current_display_size_word = width | (height << 16)
 	current_draw_mode = draw_mode_blend_half
 	*gp0 = gp0_draw_mode | current_draw_mode

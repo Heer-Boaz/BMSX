@@ -39,7 +39,7 @@ function createTimingRuntime(): Runtime {
 		cpuHz: timing.cpuHz,
 		cycleBudgetPerFrame: timing.cycleBudgetPerFrame,
 		vblankCycles: timing.vblankCycles,
-		dmaBytesPerSec: timing.dmaBytesPerSec,
+		dmaWordsPerSec: timing.dmaWordsPerSec,
 		geoWorkUnitsPerSec: timing.geoWorkUnitsPerSec,
 	}, new TimingInputSource());
 }

@@ -16,7 +16,6 @@ import {
 	apuSlotRegisterWordIndex,
 } from '../../machine/ts/machine/devices/audio/contracts';
 import { GEOMETRY_CONTROLLER_PHASE_BUSY, GEOMETRY_CONTROLLER_REGISTER_COUNT } from '../../machine/ts/machine/devices/geometry/contracts';
-import { DMA_JOB_QUEUE_CAPACITY } from '../../machine/ts/machine/devices/dma/controller';
 import { GX_GPU_READBACK_READY, GX_GPU_READBACK_SUBMITTED, GX_GPU_VRAM_BYTE_COUNT } from '../../machine/ts/machine/devices/gx/gpu_command_buffer';
 import { GX_GTE_CONTROL_REGISTER_COUNT, GX_GTE_DATA_REGISTER_COUNT } from '../../machine/ts/machine/devices/gx/gte';
 import { INPUT_CONTROLLER_KEY_WORD_COUNT, INPUT_CONTROLLER_PAD_AXIS_COUNT, INPUT_CONTROLLER_PAD_COUNT } from '../../machine/ts/machine/devices/input/contracts';
@@ -27,7 +26,7 @@ import { RUNTIME_SAVE_STATE_WIRE_CAPACITY, decodeRuntimeSaveState, encodeRuntime
 import { decodeBinaryWithPropTable } from '../../machine/ts/common/serializer/binencoder';
 import { RUNTIME_SAVE_STATE_PROP_NAMES } from '../../machine/ts/machine/runtime/save_state/schema';
 import { BuiltinFunctionId } from '../../machine/ts/machine/cpu/cpu';
-import { DMA_STATUS_BUSY, DMA_TICKET_SHIFT } from '../../machine/ts/machine/bus/io';
+import { DMA_STATUS_BUSY } from '../../machine/ts/machine/bus/io';
 import { RAM_BASE, RAM_END } from '../../machine/ts/machine/memory/map';
 
 const codecTestGxVram = new Uint8Array(GX_GPU_VRAM_BYTE_COUNT);
@@ -65,19 +64,14 @@ function createRuntimeSaveState(): RuntimeSaveState {
 					busFaultAccess: 0x400,
 				},
 				dma: {
-					queue: [
-						{ src: 0x01002010, dst: 0x08010240, remaining: 20, written: 12, clipped: false, ticket: 6 },
-					],
-					budget: 4,
-					carry: 12345,
-					writtenValue: 12,
-					writtenDirty: true,
-					sourceRegisterWord: 0x01002010,
-					destinationRegisterWord: 0x08010240,
-					lengthRegisterWord: 32,
-					controlRegisterWord: 6 << DMA_TICKET_SHIFT,
-					statusRegisterWord: (5 << DMA_TICKET_SHIFT) | DMA_STATUS_BUSY,
-					writtenRegisterWord: 12,
+					readAddressWord: 0x01002010,
+					writeAddressWord: 0x08010240,
+					transferCountWord: 5,
+					controlWord: 5,
+					statusWord: DMA_STATUS_BUSY,
+					timingCarry: 12345,
+					scheduledGrantWords: 5,
+					scheduledGrantCycles: 17,
 				},
 				geometry: {
 					phase: GEOMETRY_CONTROLLER_PHASE_BUSY,
@@ -371,17 +365,6 @@ test('runtime save-state codec stores READY GPUREAD bytes and rejects backend-on
 	assert.throws(
 		() => decodeRuntimeSaveState(new Uint8Array(RUNTIME_SAVE_STATE_WIRE_CAPACITY + 1)),
 		/current-format wire capacity/,
-	);
-});
-
-test('runtime save-state codec rejects DMA queues beyond the hardware FIFO capacity', () => {
-	const state = createRuntimeSaveState();
-	const job = state.machineState.machine.dma.queue[0]!;
-	state.machineState.machine.dma.queue = Array.from({ length: DMA_JOB_QUEUE_CAPACITY + 1 }, () => ({ ...job }));
-
-	assert.throws(
-		() => decodeRuntimeSaveState(encodeRuntimeSaveState(state)),
-		/DMA FIFO capacity/,
 	);
 });
 

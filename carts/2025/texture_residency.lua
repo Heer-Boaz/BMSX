@@ -1,5 +1,4 @@
 local texture_residency<const> = {}
-local dma<const> = require('system/dma')
 local gx_image<const> = require('cartlib/gx/image')
 local gx_texture<const> = require('cartlib/gx/texture')
 local texture_layout<const> = require('bmsx/gx_texture_layout')
@@ -10,7 +9,6 @@ local pending_background_texture
 local pending_background_destination
 local in_flight_background_texture
 local in_flight_background_destination
-local in_flight_background_ticket
 local combat_common_submitted = false
 
 local invalidate_background_residency<const> = function()
@@ -20,7 +18,6 @@ local invalidate_background_residency<const> = function()
 	pending_background_destination = nil
 	in_flight_background_texture = nil
 	in_flight_background_destination = nil
-	in_flight_background_ticket = nil
 end
 
 function texture_residency.preload_background(imgid)
@@ -41,9 +38,10 @@ end
 function texture_residency.replace_background(imgid)
 	pending_background_texture = nil
 	pending_background_destination = nil
-	in_flight_background_texture = gx_image.rect(imgid).texture
+	local texture<const> = gx_image.rect(imgid).texture
+	gx_texture.upload(texture, texture_layout.background_left)
+	in_flight_background_texture = texture
 	in_flight_background_destination = texture_layout.background_left
-	in_flight_background_ticket = gx_texture.upload(in_flight_background_texture, in_flight_background_destination)
 end
 
 function texture_residency.load_combat_workset(monster_imgid)
@@ -66,20 +64,21 @@ function texture_residency.submit_pending_background()
 	if not pending_background_texture or in_flight_background_texture then
 		return
 	end
-	in_flight_background_texture = pending_background_texture
-	in_flight_background_destination = pending_background_destination
-	in_flight_background_ticket = gx_texture.upload(in_flight_background_texture, in_flight_background_destination)
+	local texture<const> = pending_background_texture
+	local destination<const> = pending_background_destination
+	gx_texture.upload(texture, destination)
+	in_flight_background_texture = texture
+	in_flight_background_destination = destination
 	pending_background_texture = nil
 	pending_background_destination = nil
 end
 
 function texture_residency.complete_upload()
-	if in_flight_background_ticket and dma.has_completed(in_flight_background_ticket) then
+	if in_flight_background_texture then
 		active_background_texture = in_flight_background_texture
 		active_background_destination = in_flight_background_destination
 		in_flight_background_texture = nil
 		in_flight_background_destination = nil
-		in_flight_background_ticket = nil
 	end
 end
 

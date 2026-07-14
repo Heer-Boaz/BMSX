@@ -1939,26 +1939,32 @@
 		{
 			"file": "machine/ts/machine/devices/dma/controller.ts",
 			"functions": [
-				"startIoThunk",
+				"triggerWriteThunk",
 				"setGxGpuReadReady",
-				"accrueCycles",
+				"setGxGpuDmaWriteReady",
+				"setGxGpuDmaDirection",
 				"onService",
-				"processJob",
-				"scheduleNextService"
+				"transferWord",
+				"scheduleGrant",
+				"requestInputChanged",
+				"resumeGxGpuCpuWrite"
 			],
-			"reason": "dma_transfer_and_service_hot_path_must_reuse_queue_columns_and_scratch"
+			"reason": "dma_live_channel_service_and_request_lines_must_remain_heap_free"
 		},
 		{
 			"file": "machine/cpp/machine/devices/dma/controller.cpp",
 			"functions": [
-				"startIo",
+				"onTriggerWrite",
 				"setGxGpuReadReady",
-				"accrueCycles",
+				"setGxGpuDmaWriteReady",
+				"setGxGpuDmaDirection",
 				"onService",
-				"processJob",
-				"scheduleNextService"
+				"transferWord",
+				"scheduleGrant",
+				"requestInputChanged",
+				"resumeGxGpuCpuWrite"
 			],
-			"reason": "dma_transfer_and_service_hot_path_must_reuse_queue_and_scratch"
+			"reason": "dma_live_channel_service_and_request_lines_must_remain_heap_free"
 		},
 		{
 			"file": "machine/ts/machine/devices/gx/gpu_command_buffer.ts",

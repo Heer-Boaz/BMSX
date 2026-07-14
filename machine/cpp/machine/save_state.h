@@ -36,9 +36,9 @@ struct MachineSaveState {
 	InputControllerState input;
 };
 
-MachineState captureMachineState(const Machine& machine);
+MachineState captureMachineState(Machine& machine);
 void restoreMachineState(Machine& machine, const MachineState& state);
-MachineSaveState captureMachineSaveState(const Machine& machine);
+MachineSaveState captureMachineSaveState(Machine& machine);
 void restoreMachineSaveState(Machine& machine, const MachineSaveState& state);
 
 } // namespace bmsx

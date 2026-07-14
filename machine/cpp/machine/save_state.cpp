@@ -22,11 +22,13 @@ void restoreSharedDeviceState(
 
 } // namespace
 
-MachineState captureMachineState(const Machine& machine) {
+MachineState captureMachineState(Machine& machine) {
 	MachineState state;
+	// GPU capture first synchronizes overdue command time and publishes its DREQ
+	// edges; the dependent DMA grant must be captured after that transition.
+	state.gxGpu = machine.gxGpu.captureState();
 	state.dma = machine.dmaController.captureState();
 	state.geometry = machine.geometryController.captureState();
-	state.gxGpu = machine.gxGpu.captureState();
 	state.gxGte = machine.gxGte.captureState();
 	state.irq = machine.irqController.captureState();
 	state.audio = machine.audioController.captureState();
@@ -37,15 +39,17 @@ MachineState captureMachineState(const Machine& machine) {
 void restoreMachineState(Machine& machine, const MachineState& state) {
 	restoreSharedDeviceState(machine, state.dma, state.geometry, state.irq, state.audio, state.input);
 	machine.gxGpu.restoreState(state.gxGpu);
+	machine.dmaController.postLoad();
 	machine.gxGte.restoreState(state.gxGte);
 }
 
-MachineSaveState captureMachineSaveState(const Machine& machine) {
+MachineSaveState captureMachineSaveState(Machine& machine) {
 	MachineSaveState state;
+	// See captureMachineState: GPU command time owns the request-line edge.
+	state.gxGpu = machine.gxGpu.captureSaveState();
 	state.memory = machine.memory.captureSaveState();
 	state.dma = machine.dmaController.captureState();
 	state.geometry = machine.geometryController.captureState();
-	state.gxGpu = machine.gxGpu.captureSaveState();
 	state.gxGte = machine.gxGte.captureState();
 	state.irq = machine.irqController.captureState();
 	state.audio = machine.audioController.captureState();
@@ -59,6 +63,7 @@ void restoreMachineSaveState(Machine& machine, const MachineSaveState& state) {
 	machine.cpu.stringPool().restoreState(state.stringPool);
 	restoreSharedDeviceState(machine, state.dma, state.geometry, state.irq, state.audio, state.input);
 	machine.gxGpu.restoreSaveState(state.gxGpu);
+	machine.dmaController.postLoad();
 	machine.gxGte.restoreState(state.gxGte);
 }
 
