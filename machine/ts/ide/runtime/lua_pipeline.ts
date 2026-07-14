@@ -8,7 +8,7 @@ import { linkBootProgramImages } from '../../machine/program/linker';
 import { readWorkspaceLuaSourceText } from '../workspace/files';
 import type { RuntimeSymbolEntry, RuntimeSymbolKind } from './symbols';
 import { resolveLuaSourceRecord, type LuaSourceRegistry } from '../../lua/source_registry';
-import { ROM_ASSET_SYMBOL_MODULE_PATH } from '../../rompack/asset_symbols';
+import { ROM_GENERATED_CONST_MODULE_PATHS } from '../../rompack/format';
 import { logDebugState } from './debug_state';
 import { PROGRAM_STATIC_RAM_BASE } from '../../machine/memory/map';
 import { resetHandledLuaErrors } from './fault_state';
@@ -208,7 +208,7 @@ function compileRegistryProgramImage(
 		optLevel: machineManager.sourceState.realtimeCompileOptLevel,
 		entrySource,
 		externalModules,
-		constModulePaths: [ROM_ASSET_SYMBOL_MODULE_PATH],
+		constModulePaths: ROM_GENERATED_CONST_MODULE_PATHS,
 	});
 	return {
 		image: encodeCompiledProgramImage(compiled),
@@ -320,7 +320,7 @@ function bootLuaProgram(runtime: Runtime, options?: { preserveState?: boolean; s
 		const compiled = compileLuaChunkToProgram(entryChunk, modules, {
 			optLevel: machineManager.sourceState.realtimeCompileOptLevel,
 			entrySource,
-			constModulePaths: [ROM_ASSET_SYMBOL_MODULE_PATH],
+			constModulePaths: ROM_GENERATED_CONST_MODULE_PATHS,
 		});
 		const programImage = encodeCompiledProgramImage(compiled);
 		runtime.moduleCache.clear();

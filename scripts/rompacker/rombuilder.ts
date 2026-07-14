@@ -1,7 +1,7 @@
 import { glsl } from "esbuild-plugin-glsl";
 // @ts-ignore
 import type { Stats } from 'fs';
-import { BIOS_ATLAS_ID, CART_ROM_HEADER_SIZE, CART_ROM_MAGIC_BYTES, CART_VDP_CLASS_PSX, PROGRAM_BOOT_HEADER_VERSION } from '../../machine/ts/rompack/format';
+import { CART_ROM_HEADER_SIZE, CART_ROM_MAGIC_BYTES, CART_VDP_CLASS_PSX, PROGRAM_BOOT_HEADER_VERSION, ROM_GENERATED_CONST_MODULE_PATHS } from '../../machine/ts/rompack/format';
 import { assertRomAssetSymbolsMatchToc, type RomAssetSymbol } from '../../machine/ts/rompack/asset_symbols';
 import type { asset_type, AudioMeta, BoundingBoxPrecalc, CartridgeLayerId, GLTFMesh, HitPolygonsPrecalc, ImgMeta, Polygon, ProgramBootHeader, RectBounds, RomAsset, RomManifest, vec2arr } from '../../machine/ts/rompack/format';
 import { collectRomAssetPayloadRanges } from '../../machine/ts/rompack/asset_layout';
@@ -9,23 +9,28 @@ import { SYSTEM_BOOT_ENTRY_PATH } from '../../machine/ts/core/system';
 import { encodeRomToc } from '../../machine/ts/rompack/tooling/toc_encode';
 import type { LuaChunk } from '../../machine/ts/lua/syntax/ast';
 import { encodeAudioAssetToAdpcm } from './adpcm';
-import { resolveTargetAtlasId, createOptimizedAtlas, generateAtlasAssetId, splitAtlasImagesByDirect16Capacity, type FixedAtlasPlacement } from './atlasbuilder';
+import { createTextureAtlas, resolveTextureGroupId } from './atlasbuilder';
 import {
-	GX_CART_ATLAS_ID_LIMIT,
-	GX_CART_DIRECT16_ATLAS_RGBA_BYTE_LIMIT,
-	GX_SYSTEM_DIRECT16_ATLAS_RGBA_BYTE_LIMIT,
+	GX_CART_TEXTURE_GROUP_ID_LIMIT,
+	GX_SYSTEM_TEXTURE_GROUP_ID,
+	GX_TEXTURE_PAGE_PIXELS,
+	textureGroupResourceName,
 } from './texture_atlas_contract';
 import {
-	buildDirect16GxTextureAtlas,
-	buildPalette4GxTextureAtlas,
-	GX_PALETTE4_ATLAS_RGBA_BYTE_LIMIT,
+	buildDirect16GxTexture,
+	buildFixedDirect16Upload,
+	buildPalette4GxTexture,
 	GX_SYSTEM_TEXTURE_ASSET_ID,
 	GX_SYSTEM_TEXTURE_SIZE,
 	GX_SYSTEM_TEXTURE_X,
 	GX_SYSTEM_TEXTURE_Y,
-	type GxTextureAtlasBuildMode,
-} from './gx_texture_atlas';
-import { GX_GPU_TEXTURE_MODE_PALETTE4 } from '../../machine/ts/machine/devices/gx/gpu_command_buffer';
+} from './gx_texture';
+import {
+	type GxTextureGroupLayout,
+	type GxTextureLayout,
+	type GxTextureSlot,
+	validateGxTextureLayout,
+} from './gx_texture_layout';
 import { BoundingBoxExtractor } from './boundingbox_extractor';
 import { collectGLTFExternalBufferFileSet, loadGLTFModel } from './gltfloader';
 import type { TextureAtlasResource, ImageResource, Resource, resourcetype, RomPackerTarget } from './rompacker.rompack';
@@ -80,12 +85,6 @@ const { createHash } = require('crypto');
 
 type ProgressNote = (message: string) => void;
 const ADPCM_NO_LOOP = 0xffffffff;
-const GX_SYSTEM_ATLAS_PLACEMENT: FixedAtlasPlacement = {
-	maxWidth: GX_SYSTEM_TEXTURE_SIZE,
-	maxHeight: GX_SYSTEM_TEXTURE_SIZE,
-	textureX: GX_SYSTEM_TEXTURE_X,
-	textureY: GX_SYSTEM_TEXTURE_Y,
-};
 const GEO_COLLISION_BIN_MAGIC = 0x32443247; // "G2D2" little-endian
 const GEO_COLLISION_BIN_VERSION = 2;
 const GEO_COLLISION_SHAPE_KIND_AABB = 1;
@@ -112,7 +111,6 @@ type ImageCollisionBuild = {
 	collisionbin: Buffer;
 };
 
-export const DONT_PACK_IMAGES_WHEN_USING_ATLAS = true;
 export const BOOTROM_TS_FILENAME = 'bootrom.ts';
 export const BOOTROM_JS_FILENAME = 'bootrom.js';
 export const BOOTROM_TS_RELATIVE_PATH = `../../scripts/bootrom/${BOOTROM_TS_FILENAME}`;
@@ -278,7 +276,7 @@ export async function getFiles(dirPath: string, arrayOfFiles?: string[], filterE
 }
 
 export type RomBuildManifest = RomManifest & {
-	gx_texture_atlases?: Record<string, GxTextureAtlasBuildMode>;
+	gx_texture_layout?: GxTextureLayout;
 };
 
 export async function getRomManifest(dirPath: string): Promise<RomBuildManifest | null> {
@@ -532,7 +530,7 @@ export function parseAudioMeta(filename: string) {
 export function parseImageMeta(filenameWithoutExt: string): {
 	sanitizedName: string,
 	collisionType: 'concave' | 'convex' | 'aabb',
-	targetAtlasId?: number,
+	targetAtlasId: number,
 } {
 	// Match @cc or @cx for collision type, and @atlas=n for texture atlas assignment (order-insensitive)
 	const collisionMatch = filenameWithoutExt.match(/@(cc|cx)/i);
@@ -541,11 +539,8 @@ export function parseImageMeta(filenameWithoutExt: string): {
 		const code = collisionMatch[1].toLowerCase();
 		collisionType = code === 'cc' ? 'concave' : code === 'cx' ? 'convex' : 'aabb';
 	}
-	let targetAtlasId = undefined;
-	if (GENERATE_AND_USE_TEXTURE_ATLAS && DONT_PACK_IMAGES_WHEN_USING_ATLAS) {
-		const atlasMatch = filenameWithoutExt.match(/@atlas=(\d+)/i);
-		targetAtlasId = atlasMatch ? parseInt(atlasMatch[1], 10) : undefined;
-	}
+	const atlasMatch = filenameWithoutExt.match(/@atlas=(\d+)/i);
+	const targetAtlasId = atlasMatch ? parseInt(atlasMatch[1], 10) : 0;
 
 	// Remove all @cc, @cx, and @atlas=n (in any order)
 	const sanitizedName = filenameWithoutExt
@@ -740,31 +735,27 @@ function buildImgMetaFromCollisionBuild(res: ImageResource, collision: ImageColl
 	if (!img) {
 		throw new Error(`Image resource "${res.name}" is missing its decoded image data.`);
 	}
-	let imgmeta: ImgMeta = {
+	const texture = res.gxTexture!;
+	const imgmeta: ImgMeta = {
 		width: img.width,
 		height: img.height,
+		texture_u: res.textureU!,
+		texture_v: res.textureV!,
+		gx_texture_mode: texture.mode,
+		gx_texture_word_width: texture.wordWidth,
+		gx_texture_height: texture.height,
 		boundingbox: collision.boundingbox,
 		centerpoint: collision.centerpoint,
 		hitpolygons: collision.hitpolygons,
 	};
-	if (GENERATE_AND_USE_TEXTURE_ATLAS) {
-		const targetAtlasId = res.targetAtlasId;
-		imgmeta = {
-			...imgmeta,
-			atlasid: targetAtlasId !== undefined ? targetAtlasId : undefined,
-			atlas_x: res.atlasX,
-			atlas_y: res.atlasY,
-		};
-		if (res.gxTextureX !== undefined) {
-			imgmeta.gx_texture_x = res.gxTextureX;
-			imgmeta.gx_texture_y = res.gxTextureY;
-		}
+	if (texture.clutOffset) {
+		imgmeta.gx_clut_offset = texture.clutOffset;
+	}
+	if (res.targetAtlasId === GX_SYSTEM_TEXTURE_GROUP_ID) {
+		imgmeta.gx_source_x = GX_SYSTEM_TEXTURE_X + res.textureU!;
+		imgmeta.gx_source_y = GX_SYSTEM_TEXTURE_Y + res.textureV!;
 	}
 	return imgmeta;
-}
-
-export function buildImgMeta(res: ImageResource): ImgMeta {
-	return buildImgMetaFromCollisionBuild(res, buildImageCollisionBuild(res));
 }
 
 /**
@@ -788,7 +779,7 @@ function formatLuaCompileError(error: { path: string; message: string; line: num
 	return `${error.path}:${error.line}:${error.column}: ${error.message}\n${gutter}${sourceLine}\n${' '.repeat(gutter.length + caret)}^`;
 }
 
-function compileLuaChunkBuffer(source: string, path: string): Buffer {
+export function compileLuaChunkBuffer(source: string, path: string): Buffer {
 	const lexer = new LuaLexer(source, path);
 	const tokens = lexer.scanTokens();
 	const parser = new LuaParser(tokens, path, splitText(source));
@@ -906,7 +897,6 @@ export function getResMetaByFilename(filepath: string): { name: string, ext: str
 export type ResourceScanOptions = {
 	extraLuaPaths?: string[];
 	virtualRoot?: string;
-	resolveAtlasId?: boolean;
 	/**
 	 * When set, rebuild checks use the debug ROM output (`dist/<romname>.debug.rom`).
 	 */
@@ -1066,7 +1056,7 @@ export async function getResMetaList(respaths: string[], _romname?: string, opti
 		let name = meta.name;
 		const ext = meta.ext;
 		const virtualSourcePath = resolveVirtualSourcePath(filepath, virtualRoot);
-		const sourcePath = virtualSourcePath ?? toWorkspaceRelativePath(filepath);
+		const sourcePath = virtualSourcePath || toWorkspaceRelativePath(filepath);
 		switch (type) {
 			case 'image':
 				const imgMeta = parseImageMeta(name);
@@ -1084,20 +1074,8 @@ export async function getResMetaList(respaths: string[], _romname?: string, opti
 					}
 					throw new Error(`[RomPacker] Duplicate image resource "${name}" defined by "${existingImage.filepath}" and "${filepath}".`);
 				}
-				let targetAtlasId = imgMeta.targetAtlasId;
-				if (options.resolveAtlasId) {
-					const resolvedAtlasId = resolveTargetAtlasId(filepath, targetAtlasId);
-					if (typeof resolvedAtlasId === 'number') {
-						imgMeta.targetAtlasId = resolvedAtlasId;
-						targetAtlasId = resolvedAtlasId;
-					}
-				}
-				// If we are generating texture atlases, this image contributes to its target atlas.
-				if (GENERATE_AND_USE_TEXTURE_ATLAS && DONT_PACK_IMAGES_WHEN_USING_ATLAS) {
-					if (imgMeta.targetAtlasId !== undefined) {
-						targetAtlasIdSet.add(imgMeta.targetAtlasId);
-					}
-				}
+				const targetAtlasId = resolveTextureGroupId(filepath, commonResPath, imgMeta.targetAtlasId);
+				targetAtlasIdSet.add(targetAtlasId);
 				result.push({
 					filepath,
 					name,
@@ -1147,7 +1125,7 @@ export async function getResMetaList(respaths: string[], _romname?: string, opti
 	}
 
 	for (const id of Array.from(targetAtlasIdSet).sort((a, b) => a - b)) {
-		const name = generateAtlasAssetId(id);
+		const name = textureGroupResourceName(id);
 		result.push({ name, ext: '.atlas', type: 'atlas', id: imgid++, atlasId: id });
 	}
 
@@ -1244,6 +1222,7 @@ export async function getResourcesList(resMetaList: Resource[]): Promise<Resourc
 			case 'model':
 			case 'romlabel':
 			case 'atlas':
+			case 'bin':
 				return {
 					...metaObject,
 					buffer,
@@ -1257,11 +1236,6 @@ export async function getResourcesList(resMetaList: Resource[]): Promise<Resourc
 					buffer,
 				} as Resource;
 			}
-			default:
-				return {
-					...metaObject,
-					buffer,
-				} as Resource;
 		}
 	});
 
@@ -1274,9 +1248,8 @@ export async function getResourcesList(resMetaList: Resource[]): Promise<Resourc
  * Processes an array of resources to produce asset metadata and allocate buffer ranges.
  *
  * This function processes each loaded resource, extracting relevant metadata and buffer data,
- * and constructs a RomAsset for each. It handles different resource types such as images,
- * audio, code, atlases, and romlabels, and attaches the appropriate metadata to each asset.
- * For images and atlases, it generates image metadata; for audio, it parses audio metadata.
+ * and constructs a RomAsset for each. Producer-only image packing groups are omitted;
+ * image records reference their shared native texture payload directly.
  * The resulting RomAsset array is used for ROM packing and serialization.
  *
  * @param resources - The array of resources to process.
@@ -1288,19 +1261,22 @@ export async function getResourcesList(resMetaList: Resource[]): Promise<Resourc
 export async function generateRomAssets(resources: Resource[], reportProgress?: ProgressNote) {
 	const romAssets: RomAsset[] = [];
 	const compileErrors: string[] = [];
+	const systemTextureGroup = resources.find((resource): resource is TextureAtlasResource => (
+		resource.type === 'atlas' && resource.atlasId === GX_SYSTEM_TEXTURE_GROUP_ID
+	));
+	if (systemTextureGroup) {
+		romAssets.push({
+			resid: GX_SYSTEM_TEXTURE_ASSET_ID,
+			type: 'bin',
+			buffer: buildFixedDirect16Upload(systemTextureGroup.gxTexture!, GX_SYSTEM_TEXTURE_X, GX_SYSTEM_TEXTURE_Y),
+		});
+	}
 	// @ts-ignore
 	let romlabel_buffer: Buffer;
 
 	for (const res of resources) {
 		const type = res.type;
-		let sourcePath: string;
-		if (res.sourcePath && res.sourcePath.length > 0) {
-			sourcePath = res.sourcePath;
-		} else if (res.filepath && res.filepath.length > 0) {
-			sourcePath = toWorkspaceRelativePath(res.filepath);
-		} else {
-			sourcePath = undefined;
-		}
+		const sourcePath = res.sourcePath || (res.filepath && toWorkspaceRelativePath(res.filepath));
 		let resid = res.name;
 		let buffer = res.buffer; // NOTE that we will remove the buffer during the finalization of the ROM pack. To do proper finalization, we need to store the buffer here right now. N.B. the bootrom will also add the buffer to the RomAsset, so that's why the property is relevant in the first place and we are now using it to temporarily hold the buffer per asset.
 		reportProgress?.(`asset ${res.type}:${resid}`);
@@ -1308,19 +1284,22 @@ export async function generateRomAssets(resources: Resource[], reportProgress?: 
 		switch (type) {
 			case 'romlabel':
 				romlabel_buffer = res.buffer;
-				romAssets.push({ resid, type, imgmeta: undefined, buffer: romlabel_buffer, source_path: sourcePath });
+				romAssets.push({ resid, type, buffer: romlabel_buffer, source_path: sourcePath });
 				break;
 			case 'image': {
 				const collision = buildImageCollisionBuild(res);
 				const imgmeta = buildImgMetaFromCollisionBuild(res, collision);
-				let baseAsset: RomAsset;
-				if (GENERATE_AND_USE_TEXTURE_ATLAS && DONT_PACK_IMAGES_WHEN_USING_ATLAS) {
-					baseAsset = { resid, type, imgmeta, buffer: undefined, source_path: sourcePath };
-				} else {
-					baseAsset = { resid, type, imgmeta, buffer, source_path: sourcePath };
+				const baseAsset: RomAsset = {
+					resid,
+					type,
+					imgmeta,
+					source_path: sourcePath,
+				};
+				if (res.targetAtlasId !== GX_SYSTEM_TEXTURE_GROUP_ID) {
+					baseAsset.texture_buffer = res.gxTexture!.payload;
 				}
 				baseAsset.collision_bin_buffer = collision.collisionbin;
-				romAssets.push({ ...baseAsset, });
+				romAssets.push(baseAsset);
 			}
 				break;
 			case 'audio': {
@@ -1340,7 +1319,7 @@ export async function generateRomAssets(resources: Resource[], reportProgress?: 
 				if (!res.filepath || res.filepath.length === 0) {
 					throw new Error(`[RomPacker] Lua resource "${resid}" is missing its source file path.`);
 				}
-				const luaSourcePath = sourcePath && sourcePath.length > 0 ? sourcePath : toWorkspaceRelativePath(res.filepath);
+				const luaSourcePath = sourcePath || toWorkspaceRelativePath(res.filepath);
 				const normalizedPath = normalizeWorkspacePath(luaSourcePath);
 				const modulePath = toLuaModulePath(normalizedPath);
 				const source = buffer.toString('utf8');
@@ -1460,26 +1439,7 @@ export async function generateRomAssets(resources: Resource[], reportProgress?: 
 				romAssets.push({ resid, type, buffer, texture_buffer, source_path: sourcePath });
 			}
 				break;
-			case 'atlas': {
-				const imgmeta = buildImgMetaForAtlas(res);
-				if (res.atlasId === BIOS_ATLAS_ID) {
-					romAssets.push({ resid, type, imgmeta, buffer, source_path: sourcePath });
-					romAssets.push({
-						resid: GX_SYSTEM_TEXTURE_ASSET_ID,
-						type: 'bin',
-						buffer: res.gxTexture!.payload,
-						source_path: sourcePath,
-					});
-				} else {
-					romAssets.push({ resid, type, imgmeta, buffer, texture_buffer: res.gxTexture!.payload, source_path: sourcePath });
-				}
-				break;
-			}
-			case 'romlabel':
-				romAssets.push({ resid, type, buffer, source_path: sourcePath });
-				break;
-			default:
-				// Skip unknown resource types without failing
+			case 'atlas':
 				break;
 		}
 	}
@@ -1537,6 +1497,10 @@ export function appendProgramImage(
 	const modulePaths: string[] = [];
 	let entryChunk: LuaChunk = null;
 	for (const asset of luaAssets) {
+		const path = toLuaModulePath(asset.source_path);
+		if (chunksByPath.has(path)) {
+			throw new Error(`[RomPacker] ROM Lua module '${path}' is defined more than once.`);
+		}
 		if (!asset.compiled_buffer || asset.compiled_buffer.length === 0) {
 			throw new Error(`[RomPacker] Lua asset '${asset.resid}' is missing its compiled buffer.`);
 		}
@@ -1549,7 +1513,6 @@ export function appendProgramImage(
 			const pathLabel = asset.source_path ?? asset.resid;
 			throw new Error(`[RomPacker] Failed to decode compiled Lua chunk for "${pathLabel}". First bytes: ${previewHex}. ${error?.message ?? error}`);
 		}
-		const path = toLuaModulePath(asset.source_path);
 		chunksByPath.set(path, decoded);
 		modulePaths.push(path);
 		if (asset === entryAsset) {
@@ -1566,37 +1529,38 @@ export function appendProgramImage(
 		const chunk = chunksByPath.get(path);
 		modules.push({ path, chunk, source: asset.buffer.toString('utf8') });
 	}
-	const generatedLuaModules = options.generatedLuaModules ?? [];
-	// Generated Lua modules in this pipeline are const symbol modules (e.g. the
-	// `bmsx/assets` ROM address/length table). The compiler inlines their exports as
-	// constants and emits no proto/slots/require for them.
-	const constModulePaths: string[] = [];
-	for (const generated of generatedLuaModules) {
-		if (chunksByPath.has(generated.path)) {
-			throw new Error(`[RomPacker] Generated Lua module '${generated.path}' conflicts with a ROM Lua asset.`);
+	// Packer-owned modules are compile-time constants whether their source is kept
+	// as a debug ROM asset (GX layout) or supplied only to this compile (asset symbols).
+	const constModulePaths = modulePaths.filter(path => ROM_GENERATED_CONST_MODULE_PATHS.includes(path));
+	if (options.generatedLuaModules) {
+		for (const generated of options.generatedLuaModules) {
+			if (chunksByPath.has(generated.path)) {
+				throw new Error(`[RomPacker] Generated Lua module '${generated.path}' conflicts with a ROM Lua asset.`);
+			}
+			const lexer = new LuaLexer(generated.source, `${generated.path}.lua`);
+			const tokens = lexer.scanTokens();
+			const parser = new LuaParser(tokens, `${generated.path}.lua`, splitText(generated.source));
+			const chunk = parser.parseChunk();
+			chunksByPath.set(generated.path, chunk);
+			modules.push({ path: generated.path, chunk, source: generated.source });
+			if (!constModulePaths.includes(generated.path)) {
+				constModulePaths.push(generated.path);
+			}
 		}
-		const lexer = new LuaLexer(generated.source, `${generated.path}.lua`);
-		const tokens = lexer.scanTokens();
-		const parser = new LuaParser(tokens, `${generated.path}.lua`, splitText(generated.source));
-		const chunk = parser.parseChunk();
-		chunksByPath.set(generated.path, chunk);
-		modules.push({ path: generated.path, chunk, source: generated.source });
-		constModulePaths.push(generated.path);
 	}
 	const externalModules: Array<{ path: string; chunk: LuaChunk; source: string }> = [];
-	const externalModulePaths: string[] = [];
-	const externalLuaAssets = options.externalLuaAssets ?? [];
-	for (const asset of externalLuaAssets) {
-		if (!asset.compiled_buffer || asset.compiled_buffer.length === 0) {
-			throw new Error(`[RomPacker] External Lua asset '${asset.resid}' is missing its compiled buffer.`);
+	if (options.externalLuaAssets) {
+		for (const asset of options.externalLuaAssets) {
+			if (!asset.compiled_buffer || asset.compiled_buffer.length === 0) {
+				throw new Error(`[RomPacker] External Lua asset '${asset.resid}' is missing its compiled buffer.`);
+			}
+			const path = toLuaModulePath(asset.source_path);
+			if (!path || chunksByPath.has(path)) {
+				continue;
+			}
+			const chunk = decodeBinary(new Uint8Array(asset.compiled_buffer)) as LuaChunk;
+			externalModules.push({ path, chunk, source: asset.buffer.toString('utf8') });
 		}
-		const path = toLuaModulePath(asset.source_path);
-		if (!path || chunksByPath.has(path)) {
-			continue;
-		}
-		const chunk = decodeBinary(new Uint8Array(asset.compiled_buffer)) as LuaChunk;
-		externalModules.push({ path, chunk, source: asset.buffer.toString('utf8') });
-		externalModulePaths.push(path);
 	}
 
 	const optLevel = options.optLevel ?? 3;
@@ -1639,136 +1603,115 @@ export function appendProgramImage(
 	};
 }
 
-export function buildImgMetaForAtlas(res: TextureAtlasResource): ImgMeta {
-	const gxTexture = res.gxTexture!;
-	const meta: ImgMeta = {
-		atlasid: res.atlasId,
-		width: res.img.width,
-		height: res.img.height,
-		gx_texture_mode: gxTexture.mode,
-		gx_texture_placement: gxTexture.placement,
+function textureGroupBuild(
+	groupId: number,
+	layout?: GxTextureLayout,
+): { group: GxTextureGroupLayout; slots: GxTextureSlot[]; maxPixelWidth: number; maxHeight: number } {
+	if (groupId === GX_SYSTEM_TEXTURE_GROUP_ID) {
+		return {
+			group: { mode: 'direct16', slots: [], page_local: true },
+			slots: [],
+			maxPixelWidth: GX_SYSTEM_TEXTURE_SIZE,
+			maxHeight: GX_SYSTEM_TEXTURE_SIZE,
+		};
+	}
+	if (groupId >= GX_CART_TEXTURE_GROUP_ID_LIMIT) {
+		throw new Error(`[RomPacker] Cart texture group id ${groupId} collides with reserved system texture group id ${GX_SYSTEM_TEXTURE_GROUP_ID}.`);
+	}
+	if (!layout) {
+		throw new Error(`[RomPacker] Cart images require a gx_texture_layout in the ROM manifest.`);
+	}
+	const group = layout.groups[String(groupId)];
+	if (!group) {
+		throw new Error(`[RomPacker] GX texture group ${groupId} has no entry in gx_texture_layout.groups.`);
+	}
+	const slots = group.slots.map(slotName => layout.slots[slotName]);
+	let maxWordWidth = slots[0].texture.width;
+	let maxHeight = slots[0].texture.height;
+	for (let slotIndex = 1; slotIndex < slots.length; slotIndex += 1) {
+		const slot = slots[slotIndex];
+		if (slot.texture.width < maxWordWidth) maxWordWidth = slot.texture.width;
+		if (slot.texture.height < maxHeight) maxHeight = slot.texture.height;
+	}
+	return {
+		group,
+		slots,
+		maxPixelWidth: group.mode === 'palette4' ? maxWordWidth * 4 : maxWordWidth,
+		maxHeight,
 	};
-	if (gxTexture.mode === GX_GPU_TEXTURE_MODE_PALETTE4) {
-		meta.gx_texture_x = gxTexture.x;
-		meta.gx_texture_y = gxTexture.y;
-		meta.gx_clut_x = gxTexture.clutX;
-		meta.gx_clut_y = gxTexture.clutY;
-	} else if (gxTexture.placement === 'fixed') {
-		meta.gx_texture_x = gxTexture.x;
-		meta.gx_texture_y = gxTexture.y;
-	}
-	return meta;
 }
 
-function assertCartAtlasId(atlasId: number, atlasName: string): void {
-	if (atlasId >= GX_CART_ATLAS_ID_LIMIT) {
-		throw new Error(`[RomPacker] Cart atlas ${atlasName} uses id ${atlasId}, colliding with reserved system atlas id ${BIOS_ATLAS_ID}.`);
+function assertTextureFitsSlots(
+	groupId: number,
+	group: GxTextureGroupLayout,
+	slots: GxTextureSlot[],
+	images: ImageResource[],
+): void {
+	const texture = images[0].gxTexture!;
+	for (let slotIndex = 0; slotIndex < slots.length; slotIndex += 1) {
+		const slot = slots[slotIndex];
+		if (texture.wordWidth > slot.texture.width || texture.height > slot.texture.height) {
+			throw new Error(`[RomPacker] GX texture group ${groupId} does not fit slot '${group.slots[slotIndex]}'.`);
+		}
+		if (!group.page_local) {
+			continue;
+		}
+		for (let imageIndex = 0; imageIndex < images.length; imageIndex += 1) {
+			const image = images[imageIndex];
+			const sourceX = group.mode === 'palette4' ? image.textureU! : slot.texture.x + image.textureU!;
+			const sourceY = slot.texture.y + image.textureV!;
+			if ((sourceX & 0xff) + image.img!.width > GX_TEXTURE_PAGE_PIXELS
+				|| (sourceY & 0xff) + image.img!.height > GX_TEXTURE_PAGE_PIXELS) {
+				throw new Error(`[RomPacker] GX image '${image.name}' crosses a texture page in slot '${group.slots[slotIndex]}'.`);
+			}
+		}
 	}
 }
 
-/**
- * Generates texture atlases from the loaded image resources.
- *
- * @param resources - An array of resources, including the texture atlas to be processed.
- * @returns A Promise that resolves once the texture atlas image is written to disk and metadata is updated.
- */
-type AtlasBuildQueueEntry =
-	| { kind: 'direct16'; atlas: TextureAtlasResource; images: ImageResource[]; byteLimit: number }
-	| { kind: 'palette4'; atlas: TextureAtlasResource; images: ImageResource[]; byteLimit: number };
-
-export async function createAtlasses(
+/** Builds producer-only image packing groups and destination-free GX texture payloads. */
+export async function createTextureAtlases(
 	resources: Resource[],
+	layout?: GxTextureLayout,
 	reportProgress?: ProgressNote,
-	gxTextureAtlasModes?: Readonly<Record<string, GxTextureAtlasBuildMode>>,
-) {
-	if (GENERATE_AND_USE_TEXTURE_ATLAS) {
-		const atlases = resources.filter((res): res is TextureAtlasResource => res.type === 'atlas');
-		const image_assets = resources.filter((resource): resource is ImageResource => resource.type === 'image');
-		if (image_assets.length === 0) {
-			return;
-		}
-		if (atlases.length === 0) throw new Error('No texture atlas resources found in the "resources"-list. The process of preparing the list of all resources (assets) should also add any texture atlases that are to be generated. Thus, this is a bug in the code that prepares the list of resources :-(');
-		let nextAtlasResourceId = resources.reduce((maxId, resource) => resource.id && resource.id > maxId ? resource.id : maxId, 0) + 1;
-		let nextAtlasId = atlases.reduce((maxId, atlas) => atlas.atlasId > maxId ? atlas.atlasId : maxId, 0) + 1;
-		const direct16Atlases: TextureAtlasResource[] = [];
-		const atlasQueue: AtlasBuildQueueEntry[] = [];
-		for (let atlasIndex = 0; atlasIndex < atlases.length; atlasIndex += 1) {
-			const atlas = atlases[atlasIndex];
-			const filteredImages = image_assets.filter(resource => resource.targetAtlasId === atlas.atlasId);
-			if (atlas.atlasId === BIOS_ATLAS_ID) {
-				direct16Atlases.push(atlas);
-				atlasQueue.push({ kind: 'direct16', atlas, images: filteredImages, byteLimit: GX_SYSTEM_DIRECT16_ATLAS_RGBA_BYTE_LIMIT });
-				continue;
-			}
-			const gxTextureMode = gxTextureAtlasModes === undefined ? undefined : gxTextureAtlasModes[atlas.atlasId];
-			if (gxTextureMode === undefined) {
-				direct16Atlases.push(atlas);
-				continue;
-			}
-			assertCartAtlasId(atlas.atlasId, atlas.name);
-			if (gxTextureMode !== 'palette4') {
-				throw new Error(`[RomPacker] GX atlas ${atlas.atlasId} uses unsupported texture mode ${gxTextureMode}.`);
-			}
-			atlasQueue.push({ kind: 'palette4', atlas, images: filteredImages, byteLimit: GX_PALETTE4_ATLAS_RGBA_BYTE_LIMIT });
-		}
-		for (let directAtlasIndex = 0; directAtlasIndex < direct16Atlases.length; directAtlasIndex += 1) {
-			const sourceAtlas = direct16Atlases[directAtlasIndex];
-			if (sourceAtlas.atlasId === BIOS_ATLAS_ID) {
-				continue;
-			}
-			assertCartAtlasId(sourceAtlas.atlasId, sourceAtlas.name);
-			const sourceImages = image_assets.filter(resource => resource.targetAtlasId === sourceAtlas.atlasId);
-			const pages = splitAtlasImagesByDirect16Capacity(sourceImages, GX_CART_DIRECT16_ATLAS_RGBA_BYTE_LIMIT);
-			for (let pageIndex = 0; pageIndex < pages.length; pageIndex += 1) {
-				const page = pages[pageIndex];
-				let atlas = sourceAtlas;
-				if (pageIndex !== 0) {
-					const splitAtlasId = nextAtlasId;
-					const splitAtlasName = generateAtlasAssetId(splitAtlasId);
-					assertCartAtlasId(splitAtlasId, splitAtlasName);
-					nextAtlasId += 1;
-					atlas = {
-						name: splitAtlasName,
-						ext: '.atlas',
-						type: 'atlas',
-						id: nextAtlasResourceId,
-						atlasId: splitAtlasId,
-					};
-					nextAtlasResourceId += 1;
-					resources.push(atlas);
-					for (let imageIndex = 0; imageIndex < page.length; imageIndex += 1) {
-						page[imageIndex].targetAtlasId = splitAtlasId;
-					}
-				}
-				atlasQueue.push({ kind: 'direct16', atlas, images: page, byteLimit: GX_CART_DIRECT16_ATLAS_RGBA_BYTE_LIMIT });
-			}
-		}
-		for (let atlasIndex = 0; atlasIndex < atlasQueue.length; atlasIndex += 1) {
-			const entry = atlasQueue[atlasIndex];
-			const atlas = entry.atlas;
-			reportProgress?.(`atlas ${atlas.name} (${entry.images.length} images)`);
-			const atlasCanvas = entry.atlas.atlasId === BIOS_ATLAS_ID
-				? createOptimizedAtlas(entry.images, entry.byteLimit, GX_SYSTEM_ATLAS_PLACEMENT)
-				: createOptimizedAtlas(entry.images, entry.byteLimit);
-			atlas.img = atlasCanvas; // Store the canvas in the resource (to extract the image properties later during `processResources`)
-			if (entry.kind === 'direct16') {
-				const rgba = atlasCanvas.getContext('2d').getImageData(0, 0, atlasCanvas.width, atlasCanvas.height).data;
-				atlas.gxTexture = buildDirect16GxTextureAtlas(atlas.atlasId, atlasCanvas.width, atlasCanvas.height, rgba);
-			} else {
-				atlas.gxTexture = buildPalette4GxTextureAtlas(
-					atlas.atlasId,
-					atlasCanvas.width,
-					atlasCanvas.height,
-					atlasCanvas.getContext('2d').getImageData(0, 0, atlasCanvas.width, atlasCanvas.height).data);
-			}
-			const previewPng = atlasCanvas.toBuffer('image/png');
-			atlas.buffer = previewPng;
-			reportProgress?.(`write atlas ${atlas.name}`);
-			await writeFile(`./rom/_ignore/${generateAtlasAssetId(atlas.atlasId)}.png`, previewPng);
-		}
+): Promise<void> {
+	const atlases = resources.filter((resource): resource is TextureAtlasResource => resource.type === 'atlas');
+	const images = resources.filter((resource): resource is ImageResource => resource.type === 'image');
+	if (images.length === 0) {
+		return;
 	}
-	else {
-		throw new Error('No images found to generate texture atlases from. Please ensure you have images in your resource directory.');
+	if (layout) {
+		validateGxTextureLayout(layout);
+	}
+	for (let atlasIndex = 0; atlasIndex < atlases.length; atlasIndex += 1) {
+		const atlas = atlases[atlasIndex];
+		const groupImages = images.filter(image => image.targetAtlasId === atlas.atlasId);
+		const build = textureGroupBuild(atlas.atlasId, layout);
+		reportProgress?.(`texture group ${atlas.atlasId} (${groupImages.length} images)`);
+		const canvas = createTextureAtlas(groupImages, {
+			maxPixelWidth: build.maxPixelWidth,
+			maxHeight: build.maxHeight,
+			pageLocal: build.group.page_local,
+		});
+		atlas.img = canvas;
+		const rgba = canvas.getContext('2d').getImageData(0, 0, canvas.width, canvas.height).data;
+		atlas.gxTexture = build.group.mode === 'palette4'
+			? buildPalette4GxTexture(canvas.width, canvas.height, rgba)
+			: buildDirect16GxTexture(canvas.width, canvas.height, rgba);
+		for (let imageIndex = 0; imageIndex < groupImages.length; imageIndex += 1) {
+			groupImages[imageIndex].gxTexture = atlas.gxTexture;
+		}
+		assertTextureFitsSlots(atlas.atlasId, build.group, build.slots, groupImages);
+		const previewPng = canvas.toBuffer('image/png');
+		atlas.buffer = previewPng;
+		reportProgress?.(`write texture group ${atlas.atlasId}`);
+		await writeFile(`./rom/_ignore/${textureGroupResourceName(atlas.atlasId)}.png`, previewPng);
+	}
+	if (layout) {
+		for (const groupId of Object.keys(layout.groups)) {
+			if (!atlases.some(atlas => atlas.atlasId === Number(groupId))) {
+				throw new Error(`[RomPacker] gx_texture_layout.groups.${groupId} has no images.`);
+			}
+		}
 	}
 }
 
@@ -1857,6 +1800,13 @@ export async function finalizeRompack(
 					case 'texture':
 						asset.texture_start = range.start;
 						asset.texture_end = range.end;
+						if (range.sharedAssets) {
+							for (let sharedIndex = 0; sharedIndex < range.sharedAssets.length; sharedIndex += 1) {
+								const sharedAsset = range.sharedAssets[sharedIndex];
+								sharedAsset.texture_start = range.start;
+								sharedAsset.texture_end = range.end;
+							}
+						}
 						break;
 					case 'collision_bin':
 						asset.collision_bin_start = range.start;
@@ -1880,7 +1830,7 @@ export async function finalizeRompack(
 
 		const dataLength = offset - dataOffset;
 		const assetSymbolVerification = options.assetSymbolVerification;
-		if (assetSymbolVerification !== undefined) {
+		if (assetSymbolVerification) {
 			assertRomAssetSymbolsMatchToc(
 				assetSymbolVerification.expected,
 				assetList,
@@ -2255,11 +2205,6 @@ export async function isBrowserHostRebuildRequired(outFilePath: string = `./dist
 		'machine/ts',
 	], CODE_FILE_EXTENSION_SET), outputStats.mtimeMs);
 }
-export function setAtlasFlag(enabled: boolean): void {
-	GENERATE_AND_USE_TEXTURE_ATLAS = enabled;
-}
-
-export let GENERATE_AND_USE_TEXTURE_ATLAS = true;
 // Define common assets path
 export const commonResPath = `./machine/firmware/res`;
 export const biosLuaPath = './machine/firmware/bios';

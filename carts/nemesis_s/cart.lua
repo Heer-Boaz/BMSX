@@ -1,6 +1,7 @@
 local gx_gpu<const> = require('system/gx_gpu')
 local gx_image<const> = require('cartlib/gx/image')
-local dma<const> = require('system/dma')
+local gx_texture<const> = require('cartlib/gx/texture')
+local texture_layout<const> = require('bmsx/gx_texture_layout')
 gx_gpu.reset_256x192_pal()
 require('cartlib/prelude')
 require('constants')
@@ -32,11 +33,7 @@ function init()
 	stage_module.register_stage_definition()
 	director_module.register_director_definition()
 	player_module.register_player_definition()
-	local cart_texture<const> = gx_image.packed_texture(0)
-	local texture_meta<const> = cart_texture.meta
-	gx_image.bind_direct16_residency(0, 0, 256)
-	gx_gpu.begin_direct16_upload(0, 256, texture_meta.width, texture_meta.height)
-	dma.copy_to_gp0(cart_texture.texture_addr, cart_texture.texture_len)
+	gx_texture.upload(gx_image.rect('ground').texture, texture_layout.stage)
 end
 
 function new_game()

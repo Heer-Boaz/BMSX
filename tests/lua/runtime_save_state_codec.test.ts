@@ -27,6 +27,7 @@ import { RUNTIME_SAVE_STATE_WIRE_CAPACITY, decodeRuntimeSaveState, encodeRuntime
 import { decodeBinaryWithPropTable } from '../../machine/ts/common/serializer/binencoder';
 import { RUNTIME_SAVE_STATE_PROP_NAMES } from '../../machine/ts/machine/runtime/save_state/schema';
 import { BuiltinFunctionId } from '../../machine/ts/machine/cpu/cpu';
+import { DMA_STATUS_BUSY, DMA_TICKET_SHIFT } from '../../machine/ts/machine/bus/io';
 import { RAM_BASE, RAM_END } from '../../machine/ts/machine/memory/map';
 
 const codecTestGxVram = new Uint8Array(GX_GPU_VRAM_BYTE_COUNT);
@@ -65,7 +66,7 @@ function createRuntimeSaveState(): RuntimeSaveState {
 				},
 				dma: {
 					queue: [
-						{ src: 0x01002010, dst: 0x08010240, remaining: 20, written: 12, clipped: false },
+						{ src: 0x01002010, dst: 0x08010240, remaining: 20, written: 12, clipped: false, ticket: 6 },
 					],
 					budget: 4,
 					carry: 12345,
@@ -74,8 +75,8 @@ function createRuntimeSaveState(): RuntimeSaveState {
 					sourceRegisterWord: 0x01002010,
 					destinationRegisterWord: 0x08010240,
 					lengthRegisterWord: 32,
-					controlRegisterWord: 0,
-					statusRegisterWord: 1,
+					controlRegisterWord: 6 << DMA_TICKET_SHIFT,
+					statusRegisterWord: (5 << DMA_TICKET_SHIFT) | DMA_STATUS_BUSY,
 					writtenRegisterWord: 12,
 				},
 				geometry: {

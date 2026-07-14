@@ -5,27 +5,11 @@ import { clampQuickInputDisplayOffset, advanceQuickInputSelection } from '../../
 import { resetBlink } from '../../../../editor/render/caret';
 import { resourceSearchWindowCapacity } from '../../../../editor/ui/view/view';
 import { resourceSearchState } from '../widget_state';
-import { machineManager } from '../../../../../core/machine_manager';
 
 export function refreshResourceCatalog(): void {
 	try {
 		const descriptors = listResourcesStrict();
-		const augmented = descriptors.slice();
-		const imageRecords = Object.values(machineManager.sourceState.activePackage.img);
-		for (const record of imageRecords) {
-			if (record.type !== 'atlas') {
-				continue;
-			}
-			const key = record.resid;
-			if (!key.startsWith('_atlas_')) {
-				continue;
-			}
-			if (augmented.some(entry => entry.asset_id === key)) {
-				continue;
-			}
-			augmented.push({ path: `atlas/${key}`, type: 'atlas', asset_id: key });
-		}
-		resourceSearchState.catalog = augmented.map((descriptor) => {
+		resourceSearchState.catalog = descriptors.map((descriptor) => {
 			const displayPathSource = descriptor.path.length > 0 ? descriptor.path : (descriptor.asset_id ?? '');
 			const displayPath = displayPathSource.length > 0 ? displayPathSource : '<unnamed>';
 			const typeLabel = descriptor.type ? descriptor.type.toUpperCase() : '';

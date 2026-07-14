@@ -3,7 +3,6 @@ import { measureTextRange } from '../../../../editor/common/text/layout';
 import type { ResourceBrowserItem } from '../../../../common/models';
 import { listResourcesStrict } from '../catalog';
 import type { CallHierarchyView, CallHierarchyViewNode } from '../../../../editor/contrib/call_hierarchy/view';
-import { machineManager } from '../../../../../core/machine_manager';
 
 export type ResourcePanelFilterMode = 'lua_only' | 'all';
 
@@ -70,26 +69,7 @@ export function findResourcePanelIndexByCallHierarchyNodeId(items: readonly Reso
 }
 
 function collectResourcePanelDescriptors(): ResourceDescriptor[] {
-	const descriptors = listResourcesStrict();
-	const augmented = descriptors.slice();
-	for (const record of Object.values(machineManager.sourceState.activePackage.img)) {
-		if (record.type !== 'atlas') {
-			continue;
-		}
-		const assetId = record.resid;
-		let alreadyPresent = false;
-		for (let index = 0; index < augmented.length; index += 1) {
-			if (augmented[index].asset_id === assetId) {
-				alreadyPresent = true;
-				break;
-			}
-		}
-		if (alreadyPresent) {
-			continue;
-		}
-		augmented.push({ path: `atlas/${assetId}`, type: 'atlas', asset_id: assetId });
-	}
-	return augmented;
+	return listResourcesStrict();
 }
 
 function matchesResourcePanelFilter(descriptor: ResourceDescriptor, filterMode: ResourcePanelFilterMode): boolean {

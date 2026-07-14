@@ -1,10 +1,10 @@
-import { PNG } from 'pngjs';
-import { generateAtlasAssetId, type GLTFModel, type ImgMeta, type RomAsset, type RomManifest } from '../../machine/ts/rompack/format';
+import { type GLTFModel, type RomAsset, type RomManifest } from '../../machine/ts/rompack/format';
 import { decodeBinary } from '../../machine/ts/common/serializer/binencoder';
 import { loadModelFromBuffer as loadGLTFModelFromBuffer } from '../../machine/ts/rompack/loader';
 import { PROGRAM_IMAGE_ID, PROGRAM_SYMBOLS_IMAGE_ID, ProgramSymbolsImage } from '../../machine/ts/machine/program/loader';
 import { asciiWaveBraille, generateBrailleAsciiArt, generatePixelPerfectAsciiArt, renderBufferBar } from './asciiart';
 import { decodeAudioPreviewToPcm } from './audio_preview';
+import { decodeGxTextureImage, GX_SYSTEM_TEXTURE_ASSET_ID } from '../rompacker/gx_texture';
 import {
 	disassembleProgramImage,
 	loadProgramFromAssets,
@@ -106,23 +106,6 @@ function buildOverlayBuffer(imgW: number, imgH: number, polys: number[][]): Uint
 		}
 	}
 	return buf;
-}
-
-function extractSubimageAndSizeFromAtlasImage(imgToExtract: Buffer, imgmeta: ImgMeta): { subimage: Buffer; width: number; height: number } {
-	const atlas = PNG.sync.read(imgToExtract);
-	const imgW = imgmeta.width;
-	const imgH = imgmeta.height;
-	const offsetX = imgmeta.atlas_x!;
-	const offsetY = imgmeta.atlas_y!;
-	const subimage = Buffer.allocUnsafe(imgW * imgH * 4);
-	const atlasW = atlas.width;
-	const rowBytes = imgW << 2;
-	for (let y = 0; y < imgH; y += 1) {
-		const srcRow = (((offsetY + y) * atlasW) + offsetX) << 2;
-		const destRow = (y * imgW) << 2;
-		atlas.data.copy(subimage, destRow, srcRow, srcRow + rowBytes);
-	}
-	return { subimage, width: imgW, height: imgH };
 }
 
 function scaleImageNearest(data: Uint8Array, width: number, height: number, zoom: number): { data: Uint8Array; width: number; height: number } {
@@ -246,24 +229,8 @@ export function renderPreviewSectionWindow(section: AssetPreviewSection, startCo
 	};
 }
 
-function decodePngSection(buf: Buffer): { rgba: Uint8Array; width: number; height: number } {
-	const png = PNG.sync.read(buf);
-	return {
-		rgba: new Uint8Array(png.data.buffer, png.data.byteOffset, png.data.byteLength),
-		width: png.width,
-		height: png.height,
-	};
-}
-
 function isGLTFModel(obj: unknown): obj is GLTFModel {
 	return !!obj && typeof obj === 'object' && Array.isArray((obj as { meshes?: unknown }).meshes);
-}
-
-function errorText(error: unknown): string {
-	if (error instanceof Error) {
-		return error.message;
-	}
-	return String(error);
 }
 
 export async function buildAssetModalView(selected: RomAsset, ctx: BuildAssetModalViewContext): Promise<AssetModalView> {
@@ -278,65 +245,19 @@ export async function buildAssetModalView(selected: RomAsset, ctx: BuildAssetMod
 	const modalHeight = Math.max(8, ctx.modalHeight);
 
 	switch (selected.type) {
-			case 'image':
-				if (imgmeta.atlasid !== undefined) {
-					const atlasName = generateAtlasAssetId(imgmeta.atlasid);
-					const atlasAsset = ctx.assetList.find(a => a.resid === atlasName && a.type === 'atlas');
-					if (atlasAsset) {
-						try {
-							const atlasBuf = atlasAsset.buffer instanceof Uint8Array ? Buffer.from(atlasAsset.buffer) : Buffer.from(ctx.rombin.slice(atlasAsset.start, atlasAsset.end));
-							const imagePreview = extractSubimageAndSizeFromAtlasImage(atlasBuf, imgmeta);
-						previewSections.push(buildPreviewSection('', new Uint8Array(imagePreview.subimage.buffer, imagePreview.subimage.byteOffset, imagePreview.subimage.byteLength), imagePreview.width, imagePreview.height, ctx.previewZoom));
-						previewFixedLines.push(previewFixedLine(imagePreview.width, imagePreview.height, ctx.previewZoom));
-					} catch (e: unknown) {
-						preview = `[Error generating ASCII art from image: ${errorText(e)}]`;
-					}
-				} else {
-					preview = '[Texture atlas asset not found]';
-				}
-				if (imgmeta.hitpolygons?.original && imgmeta.width && imgmeta.height) {
-					previewSections.push(buildPreviewSection('HitPolygons (convex pieces) overlay:', buildOverlayBuffer(imgmeta.width, imgmeta.height, imgmeta.hitpolygons.original), imgmeta.width, imgmeta.height, ctx.previewZoom));
-				}
-				for (const [key, value] of Object.entries(imgmeta)) metadataLines.push(`${key}: ${JSON.stringify(value)}`);
-			} else {
-				let rendered = false;
-				let decodeError = '';
-				if (typeof selected.start === 'number' && typeof selected.end === 'number') {
-					try {
-						const buf = Buffer.from(ctx.rombin.slice(selected.start, selected.end));
-						const png = decodePngSection(buf);
-						previewSections.push(buildPreviewSection('', png.rgba, png.width, png.height, ctx.previewZoom));
-						previewFixedLines.push(previewFixedLine(png.width, png.height, ctx.previewZoom));
-						rendered = true;
-					} catch (e: unknown) {
-						decodeError = errorText(e);
-					}
-				}
-				if (!rendered && selected.buffer) {
-					try {
-						const png = decodePngSection(Buffer.from(selected.buffer));
-						previewSections.push(buildPreviewSection('', png.rgba, png.width, png.height, ctx.previewZoom));
-						previewFixedLines.push(previewFixedLine(png.width, png.height, ctx.previewZoom));
-						rendered = true;
-					} catch (e: unknown) {
-						decodeError = errorText(e);
-					}
-				}
-				if (!rendered) {
-					preview = decodeError ? `[Error generating ASCII art from image: ${decodeError}]` : '[No PNG buffer in ROM for this image.]';
-				}
+	case 'image': {
+			const textureStart = imgmeta.gx_source_x
+				? ctx.assetList.find(asset => asset.resid === GX_SYSTEM_TEXTURE_ASSET_ID)!.start! + 12
+				: selected.texture_start!;
+			const imagePreview = decodeGxTextureImage(ctx.rombin, textureStart, imgmeta);
+			previewSections.push(buildPreviewSection('', imagePreview.rgba, imagePreview.width, imagePreview.height, ctx.previewZoom));
+			previewFixedLines.push(previewFixedLine(imagePreview.width, imagePreview.height, ctx.previewZoom));
+			if (imgmeta.hitpolygons?.original && imgmeta.width && imgmeta.height) {
+				previewSections.push(buildPreviewSection('HitPolygons (convex pieces) overlay:', buildOverlayBuffer(imgmeta.width, imgmeta.height, imgmeta.hitpolygons.original), imgmeta.width, imgmeta.height, ctx.previewZoom));
 			}
-			break;
-		case 'atlas':
 			for (const [key, value] of Object.entries(imgmeta)) metadataLines.push(`${key}: ${JSON.stringify(value)}`);
-			try {
-				const atlasPreview = decodePngSection(selected.buffer instanceof Uint8Array ? Buffer.from(selected.buffer) : Buffer.from(ctx.rombin.slice(selected.start, selected.end)));
-				previewSections.push(buildPreviewSection('', atlasPreview.rgba, atlasPreview.width, atlasPreview.height, ctx.previewZoom));
-				previewFixedLines.push(previewFixedLine(atlasPreview.width, atlasPreview.height, ctx.previewZoom));
-			} catch (e: unknown) {
-				preview = `[Error generating ASCII art from image: ${errorText(e)}]`;
-			}
 			break;
+		}
 		case 'audio':
 			if (audiometa.audiotype === 'music') {
 				metadataLines.push('Audio type: Music');

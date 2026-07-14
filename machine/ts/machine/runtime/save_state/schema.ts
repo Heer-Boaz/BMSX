@@ -293,4 +293,5 @@ export const RUNTIME_SAVE_STATE_PROP_NAMES = [
 	'dst',
 	'written',
 	'clipped',
+	'ticket',
 ] as const;

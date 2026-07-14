@@ -773,23 +773,6 @@ const ImgAsset* RuntimeRomPackage::getImg(const AssetId& id) const {
 	return findAssetValue(img, id);
 }
 
-ImageAtlasRect resolveImageAtlasRectFromPackage(const RuntimeRomPackage& romPackage, const std::string& imgId) {
-	const ImgAsset* image = romPackage.getImg(imgId);
-	if (!image) {
-		throw BMSX_RUNTIME_ERROR("[RuntimeRomPackage] Image '" + imgId + "' was not found.");
-	}
-	const ImgMeta& meta = image->meta;
-	if (!meta.atlasid) {
-		throw BMSX_RUNTIME_ERROR("[RuntimeRomPackage] Image '" + imgId + "' is not atlas-backed.");
-	}
-	return ImageAtlasRect{
-		static_cast<u32>(meta.atlasX),
-		static_cast<u32>(meta.atlasY),
-		static_cast<u32>(meta.width),
-		static_cast<u32>(meta.height),
-	};
-}
-
 AudioAsset* RuntimeRomPackage::getAudio(const AssetId& id) {
 	return findAssetValue(audio, id);
 }
@@ -1205,7 +1188,7 @@ static bool loadRomAssetPayloadInternal(const u8* romData,
 			static_cast<size_t>(metaBufEnd) <= sharedMetadataEndOffset;
 
 		switch (resolveAssetTypeKind(sourceEntry.rom.type)) {
-			case AssetTypeKind::ImageAtlas: {
+			case AssetTypeKind::Image: {
 				ImgAsset imgAsset;
 				imgAsset.id = assetId;
 				imgAsset.rom = romInfo;
@@ -1219,27 +1202,19 @@ static bool loadRomAssetPayloadInternal(const u8* romData,
 						const auto& imgMeta = metaVal.asObject();
 						imgAsset.meta.width = imgMeta.count("width") ? imgMeta.at("width").toI32() : 0;
 						imgAsset.meta.height = imgMeta.count("height") ? imgMeta.at("height").toI32() : 0;
-						if (imgMeta.count("atlasid")) {
-							imgAsset.meta.atlasid = imgMeta.at("atlasid").toI32();
+						imgAsset.meta.textureU = imgMeta.at("texture_u").toI32();
+						imgAsset.meta.textureV = imgMeta.at("texture_v").toI32();
+						imgAsset.meta.gxTextureMode = imgMeta.at("gx_texture_mode").toI32();
+						imgAsset.meta.gxTextureWordWidth = imgMeta.at("gx_texture_word_width").toI32();
+						imgAsset.meta.gxTextureHeight = imgMeta.at("gx_texture_height").toI32();
+						if (imgMeta.count("gx_clut_offset")) {
+							imgAsset.meta.gxClutOffset = imgMeta.at("gx_clut_offset").toI32();
 						}
-						if (sourceEntry.rom.type == "image") {
-							imgAsset.meta.atlasX = imgMeta.at("atlas_x").toI32();
-							imgAsset.meta.atlasY = imgMeta.at("atlas_y").toI32();
+						if (imgMeta.count("gx_source_x")) {
+							imgAsset.meta.gxSourceX = imgMeta.at("gx_source_x").toI32();
 						}
-						if (imgMeta.count("gx_texture_mode")) {
-							imgAsset.meta.gxTextureMode = imgMeta.at("gx_texture_mode").toI32();
-						}
-						if (imgMeta.count("gx_texture_x")) {
-							imgAsset.meta.gxTextureX = imgMeta.at("gx_texture_x").toI32();
-						}
-						if (imgMeta.count("gx_texture_y")) {
-							imgAsset.meta.gxTextureY = imgMeta.at("gx_texture_y").toI32();
-						}
-						if (imgMeta.count("gx_clut_x")) {
-							imgAsset.meta.gxClutX = imgMeta.at("gx_clut_x").toI32();
-						}
-						if (imgMeta.count("gx_clut_y")) {
-							imgAsset.meta.gxClutY = imgMeta.at("gx_clut_y").toI32();
+						if (imgMeta.count("gx_source_y")) {
+							imgAsset.meta.gxSourceY = imgMeta.at("gx_source_y").toI32();
 						}
 
 						// Load bounding box
@@ -1284,7 +1259,7 @@ static bool loadRomAssetPayloadInternal(const u8* romData,
 					}
 				}
 
-				// Store atlas records as regular images for render lookup.
+				// Store the decoded image record for render lookup.
 				romPackage.img[assetToken] = std::move(imgAsset);
 				break;
 			}

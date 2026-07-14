@@ -3,7 +3,7 @@
  */
 import { Buffer } from 'buffer';
 import type { Canvas, Image as NodeCanvasImage } from 'canvas';
-import type { GxTextureAtlas } from './gx_texture_atlas';
+import type { GxTexture } from './gx_texture';
 import type { asset_type } from '../../machine/ts/rompack/format';
 
 export type RomPackerTarget = 'browser' | 'cli' | 'headless' | 'libretro-wsl' | 'libretro-win' | 'libretro-snesmini';
@@ -16,7 +16,6 @@ export interface RomPackerOptions {
 	respath: string;
 	force: boolean;
 	debug: boolean;
-	useTextureAtlas: boolean;
 	platform: RomPackerTarget;
 	/** Accepted for CLI parity; rompack mode no longer type-checks TypeScript games. */
 	skipTypecheck?: boolean;
@@ -29,7 +28,7 @@ export interface RomPackerOptions {
 	libraryLuaRoots: string[];
 }
 
-export type resourcetype = asset_type;
+export type resourcetype = asset_type | 'atlas';
 export type collisiontype = 'concave' | 'convex' | 'aabb';
 export type datatype = 'json' | 'yaml' | 'bin';
 
@@ -46,19 +45,18 @@ interface BaseResource<TType extends resourcetype> {
 export interface ImageResource extends BaseResource<'image'> {
 	id: number;
 	collisionType: collisiontype;
-	targetAtlasId?: number;
+	targetAtlasId: number;
 	img?: NodeCanvasImage;
-	atlasX?: number;
-	atlasY?: number;
-	gxTextureX?: number;
-	gxTextureY?: number;
+	textureU?: number;
+	textureV?: number;
+	gxTexture?: GxTexture;
 }
 
-// Serialized as a ROM atlas asset with a fixed upload stream or relocatable raw GX payload.
+// Rombuilder-only packing group. It is never serialized as a ROM resource.
 export interface TextureAtlasResource extends BaseResource<'atlas'> {
 	id: number;
 	atlasId: number;
-	gxTexture?: GxTextureAtlas;
+	gxTexture?: GxTexture;
 	img?: Canvas & { toBuffer?: (format: string) => Buffer; };
 }
 

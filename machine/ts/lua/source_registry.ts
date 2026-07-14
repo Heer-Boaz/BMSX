@@ -1,12 +1,20 @@
 import type { RawRomSource } from '../rompack/source';
-import type { CartridgeIndex, CartridgeLayerId, RomAsset, RomLuaAsset } from '../rompack/format';
+import {
+	ROM_ASSET_SYMBOL_MODULE_PATH,
+	ROM_ASSET_SYMBOL_SOURCE_PATH,
+	ROM_GENERATED_CONST_MODULE_PATHS,
+	type CartridgeIndex,
+	type CartridgeLayerId,
+	type RomAsset,
+	type RomLuaAsset,
+} from '../rompack/format';
 import { utf8FatalDecoder } from '../common/serializer/binencoder';
-import { buildRomAssetSymbolModuleSource, ROM_ASSET_SYMBOL_MODULE_PATH, ROM_ASSET_SYMBOL_SOURCE_PATH } from '../rompack/asset_symbols';
+import { buildRomAssetSymbolModuleSource } from '../rompack/asset_symbols';
 import { PROGRAM_IMAGE_ID, toLuaModulePath } from '../machine/program/loader';
 
 export const DEFAULT_SYSTEM_PROJECT_ROOT_PATH = 'machine/ts';
 
-export type LuaSourceRecord = RomLuaAsset & { base_src: string; base_update_timestamp: number; module_path: string };
+export type LuaSourceRecord = RomLuaAsset & { base_src: string; base_update_timestamp: number; module_path: string; generated: boolean };
 type PackedLuaSourceAsset = RomLuaAsset & { source_path: string; payload_id: CartridgeLayerId };
 
 export type LuaSourceRegistry = {
@@ -87,6 +95,7 @@ export function buildLuaSources(cartSource: RawRomSource, romSource: RawRomSourc
 		luaRecord.base_src = baseSrc;
 		luaRecord.base_update_timestamp = entry.update_timestamp ?? 0;
 		luaRecord.module_path = toLuaModulePath(entry.source_path);
+		luaRecord.generated = ROM_GENERATED_CONST_MODULE_PATHS.includes(luaRecord.module_path);
 		registerLuaSourceRecord(registry, luaRecord);
 	}
 	registry.can_boot_from_source = sourceCount > 0;
@@ -110,6 +119,7 @@ export function buildLuaSources(cartSource: RawRomSource, romSource: RawRomSourc
 			source_path: ROM_ASSET_SYMBOL_SOURCE_PATH,
 			module_path: ROM_ASSET_SYMBOL_MODULE_PATH,
 			update_timestamp: 0,
+			generated: true,
 		};
 		registerLuaSourceRecord(registry, assetSymbols);
 	}
@@ -127,6 +137,7 @@ export function buildLuaSources(cartSource: RawRomSource, romSource: RawRomSourc
 				source_path: entryPath,
 				module_path: toLuaModulePath(entryPath),
 				update_timestamp: 0,
+				generated: false,
 			};
 			registerLuaSourceRecord(registry, stub);
 		}

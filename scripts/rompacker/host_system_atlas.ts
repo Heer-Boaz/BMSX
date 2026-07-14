@@ -1,20 +1,12 @@
-import { PNG } from 'pngjs';
-
-import {
-	BIOS_ATLAS_ID,
-	generateAtlasAssetId,
-	type ImgMeta,
-	type RomAsset,
-} from '../../machine/ts/rompack/format';
 import { SYSTEM_ROM_NAME } from '../../machine/ts/core/system';
 import {
 	commonResPath,
-	createAtlasses,
-	generateRomAssets,
+	createTextureAtlases,
 	getResMetaList,
 	getResourcesList,
-	setAtlasFlag,
 } from './rombuilder';
+import type { Resource, TextureAtlasResource } from './rompacker.rompack';
+import { GX_SYSTEM_TEXTURE_GROUP_ID } from './texture_atlas_contract';
 
 import { mkdir, readFile, writeFile } from 'node:fs/promises';
 import { dirname, join } from 'node:path';
@@ -46,54 +38,34 @@ const GENERATED_FILE_HEADER = [
 	'',
 ].join('\n');
 
-function resolveImageRecord(asset: RomAsset): HostAtlasImage | null {
-	if (asset.type !== 'image') {
-		return null;
+function buildHostAtlasFromResources(resources: readonly Resource[]): HostAtlasBuild {
+	const atlas = resources.find((resource): resource is TextureAtlasResource => (
+		resource.type === 'atlas' && resource.atlasId === GX_SYSTEM_TEXTURE_GROUP_ID
+	))!;
+	const rgba = atlas.img!.getContext('2d').getImageData(0, 0, atlas.img!.width, atlas.img!.height).data;
+	const images: HostAtlasImage[] = [];
+	for (let index = 0; index < resources.length; index += 1) {
+		const resource = resources[index];
+		if (resource.type === 'image' && resource.targetAtlasId === GX_SYSTEM_TEXTURE_GROUP_ID) {
+			images.push({
+				id: resource.name,
+				width: resource.img!.width,
+				height: resource.img!.height,
+				u: resource.textureU!,
+				v: resource.textureV!,
+				w: resource.img!.width,
+				h: resource.img!.height,
+			});
+		}
 	}
-	const meta = asset.imgmeta;
-	if (!meta || meta.atlasid !== BIOS_ATLAS_ID) {
-		return null;
-	}
-	return {
-		id: asset.resid,
-		width: meta.width,
-		height: meta.height,
-		u: meta.atlas_x!,
-		v: meta.atlas_y!,
-		w: meta.width,
-		h: meta.height,
-	};
-}
-
-function findAtlasAsset(assets: readonly RomAsset[], atlasAssetId: string): RomAsset {
-	const atlasAsset = assets.find(asset => asset.resid === atlasAssetId && asset.type === 'atlas');
-	if (!atlasAsset || !atlasAsset.imgmeta || !atlasAsset.buffer || atlasAsset.buffer.length === 0) {
-		throw new Error(`[HostSystemAtlas] Atlas '${atlasAssetId}' was not generated.`);
-	}
-	return atlasAsset;
-}
-
-function buildHostAtlasFromAssets(assets: readonly RomAsset[]): HostAtlasBuild {
-	const atlasAssetId = generateAtlasAssetId(BIOS_ATLAS_ID);
-	const atlasAsset = findAtlasAsset(assets, atlasAssetId);
-	const atlasMeta = atlasAsset.imgmeta as ImgMeta;
-	const atlasWidth = atlasMeta.width;
-	const atlasHeight = atlasMeta.height;
-	const atlasPng = PNG.sync.read(Buffer.from(atlasAsset.buffer!));
-	if (atlasPng.width !== atlasWidth || atlasPng.height !== atlasHeight) {
-		throw new Error(`[HostSystemAtlas] Atlas '${atlasAssetId}' PNG dimensions do not match metadata.`);
-	}
-	const images = assets
-		.map(resolveImageRecord)
-		.filter((image): image is HostAtlasImage => image !== null)
-		.sort((a, b) => a.id.localeCompare(b.id));
+	images.sort((a, b) => a.id.localeCompare(b.id));
 	if (images.length === 0) {
 		throw new Error('[HostSystemAtlas] No system-atlas images were generated.');
 	}
 	return {
-		width: atlasWidth,
-		height: atlasHeight,
-		rgbaBase64: Buffer.from(atlasPng.data).toString('base64'),
+		width: atlas.img!.width,
+		height: atlas.img!.height,
+		rgbaBase64: Buffer.from(rgba.buffer, rgba.byteOffset, rgba.byteLength).toString('base64'),
 		images,
 	};
 }
@@ -216,21 +188,18 @@ async function writeHostSystemAtlasArtifacts(build: HostAtlasBuild): Promise<boo
 	return writes.some(Boolean);
 }
 
-export async function generateHostSystemAtlasArtifactsFromAssets(assets: readonly RomAsset[]): Promise<boolean> {
-	return writeHostSystemAtlasArtifacts(buildHostAtlasFromAssets(assets));
+export async function generateHostSystemAtlasArtifactsFromResources(resources: readonly Resource[]): Promise<boolean> {
+	return writeHostSystemAtlasArtifacts(buildHostAtlasFromResources(resources));
 }
 
 export async function ensureHostSystemAtlasArtifacts(): Promise<boolean> {
-	setAtlasFlag(true);
 	const biosProjectRoot = join(commonResPath, '..');
 	const biosVirtualRoot = biosProjectRoot.replace(/^\.\//, '');
 	const resMeta = await getResMetaList([commonResPath], SYSTEM_ROM_NAME, {
 		extraLuaPaths: [],
 		virtualRoot: biosVirtualRoot,
-		resolveAtlasId: true,
 	});
 	const resources = await getResourcesList(resMeta);
-	await createAtlasses(resources);
-	const assets = await generateRomAssets(resources);
-	return generateHostSystemAtlasArtifactsFromAssets(assets);
+	await createTextureAtlases(resources);
+	return generateHostSystemAtlasArtifactsFromResources(resources);
 }

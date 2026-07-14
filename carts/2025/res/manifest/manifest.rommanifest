@@ -6,3 +6,50 @@ machine:
     vdp_class: psx
 lua:
     entry_path: cart.lua
+gx_texture_layout:
+    reserved:
+        framebuffer: { x: 0, y: 0, width: 320, height: 240 }
+        system: { x: 512, y: 0, width: 256, height: 256 }
+    slots:
+        background_left:
+            texture: { x: 0, y: 256, width: 384, height: 256 }
+        background_right:
+            texture: { x: 512, y: 256, width: 384, height: 256 }
+        maya_b:
+            texture: { x: 320, y: 0, width: 177, height: 240 }
+        maya_a:
+            texture: { x: 768, y: 0, width: 79, height: 138 }
+        maya_vs:
+            texture: { x: 847, y: 0, width: 93, height: 171 }
+        monster:
+            texture: { x: 768, y: 256, width: 192, height: 192 }
+        all_out:
+            texture: { x: 0, y: 256, width: 320, height: 240 }
+    groups:
+        10: { mode: direct16, slots: [maya_a], page_local: true }
+        11: { mode: direct16, slots: [monster], page_local: true }
+        12: { mode: direct16, slots: [monster], page_local: true }
+        13: { mode: direct16, slots: [monster], page_local: true }
+        14: { mode: direct16, slots: [maya_b], page_local: true }
+        15: { mode: direct16, slots: [maya_vs], page_local: true }
+        20: { mode: direct16, slots: [background_left, background_right], page_local: false }
+        21: { mode: direct16, slots: [background_left, background_right], page_local: false }
+        22: { mode: direct16, slots: [background_left, background_right], page_local: false }
+        23: { mode: direct16, slots: [background_left, background_right], page_local: false }
+        24: { mode: direct16, slots: [background_left, background_right], page_local: false }
+        25: { mode: direct16, slots: [background_left, background_right], page_local: false }
+        26: { mode: direct16, slots: [background_left, background_right], page_local: false }
+        27: { mode: direct16, slots: [background_left, background_right], page_local: false }
+        28: { mode: direct16, slots: [background_left, background_right], page_local: false }
+        29: { mode: direct16, slots: [background_left, background_right], page_local: false }
+        30: { mode: direct16, slots: [background_left, background_right], page_local: false }
+        31: { mode: direct16, slots: [background_left, background_right], page_local: false }
+        32: { mode: direct16, slots: [background_left, background_right], page_local: false }
+        33: { mode: direct16, slots: [background_left, background_right], page_local: false }
+        34: { mode: direct16, slots: [background_left, background_right], page_local: false }
+        35: { mode: direct16, slots: [background_left, background_right], page_local: false }
+        36: { mode: direct16, slots: [all_out], page_local: false }
+    working_sets:
+        story: [background_left, background_right]
+        combat: [maya_b, maya_a, maya_vs, monster]
+        all_out: [all_out]

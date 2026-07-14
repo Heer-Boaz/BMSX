@@ -5,15 +5,29 @@
 #ifndef BMSX_FONT_H
 #define BMSX_FONT_H
 
-#include "rompack/loader.h"
 #include "common/primitives.h"
-#include <memory>
 #include <string>
 #include <unordered_map>
 
 namespace bmsx {
 
 using GlyphMap = std::unordered_map<u32, std::string>;
+
+struct ImageAtlasRect {
+	u32 u = 0;
+	u32 v = 0;
+	u32 w = 0;
+	u32 h = 0;
+};
+
+struct BitmapFontSourceGlyph {
+	i32 width = 0;
+	i32 height = 0;
+	u32 u = 0;
+	u32 v = 0;
+	u32 w = 0;
+	u32 h = 0;
+};
 
 struct FontGlyph {
 	std::string imgid;
@@ -28,15 +42,12 @@ constexpr int TAB_SPACES = 2;
 class BitmapFontSource {
 public:
 	virtual ~BitmapFontSource() = default;
-	virtual const ImgMeta& itemMeta(const std::string& imgid) const = 0;
-	virtual ImageAtlasRect itemRect(const std::string& imgid) const = 0;
+	virtual BitmapFontSourceGlyph resolveGlyph(const std::string& imgid) const = 0;
 };
 
 class BFont {
 public:
-	explicit BFont(RuntimeRomPackage& romPackage, i32 advancePadding = 0);
-	BFont(RuntimeRomPackage& romPackage, GlyphMap itemmap, i32 advancePadding = 0);
-	BFont(std::shared_ptr<const BitmapFontSource> source, GlyphMap itemmap, i32 advancePadding = 0);
+	BFont(const BitmapFontSource& source, GlyphMap itemmap, i32 advancePadding = 0);
 
 	i32 char_width(char c);
 	i32 char_height(char c);
@@ -55,14 +66,12 @@ public:
 	i32 measure(const std::string& text);
 
 private:
-	std::shared_ptr<const BitmapFontSource> m_source;
+	const BitmapFontSource& m_source;
 	GlyphMap m_letter_to_img;
 	std::unordered_map<u32, FontGlyph> m_items;
 	i32 m_advance_padding = 0;
 	i32 m_line_height = 0;
 };
-
-GlyphMap buildKonamiGlyphMap();
 
 } // namespace bmsx
 

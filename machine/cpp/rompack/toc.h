@@ -19,7 +19,6 @@ constexpr u32 ROM_TOC_ASSET_TYPE_IMAGE = 1;
 constexpr u32 ROM_TOC_ASSET_TYPE_AUDIO = 2;
 constexpr u32 ROM_TOC_ASSET_TYPE_DATA = 3;
 constexpr u32 ROM_TOC_ASSET_TYPE_BIN = 4;
-constexpr u32 ROM_TOC_ASSET_TYPE_ATLAS = 5;
 constexpr u32 ROM_TOC_ASSET_TYPE_ROMLABEL = 6;
 constexpr u32 ROM_TOC_ASSET_TYPE_MODEL = 7;
 constexpr u32 ROM_TOC_ASSET_TYPE_AEM = 8;
@@ -32,7 +31,7 @@ struct RomTocPayload {
 };
 
 enum class AssetTypeKind {
-	ImageAtlas,
+	Image,
 	Audio,
 	Model,
 	Aem,

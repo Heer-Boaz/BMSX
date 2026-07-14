@@ -1,6 +1,8 @@
 import {
 	DMA_CTRL_START,
 	DMA_CTRL_STRICT,
+	DMA_TICKET_MASK,
+	DMA_TICKET_SHIFT,
 	DMA_STATUS_BUSY,
 	DMA_STATUS_CLIPPED,
 	DMA_STATUS_DONE,
@@ -36,6 +38,7 @@ export type DmaJobState = {
 	remaining: number;
 	written: number;
 	clipped: boolean;
+	ticket: number;
 };
 
 export type DmaControllerState = {
@@ -58,6 +61,7 @@ export class DmaController {
 	private readonly queueRemaining = new Uint32Array(DMA_JOB_QUEUE_CAPACITY);
 	private readonly queueWritten = new Uint32Array(DMA_JOB_QUEUE_CAPACITY);
 	private readonly queueClipped = new Uint8Array(DMA_JOB_QUEUE_CAPACITY);
+	private readonly queueTicket = new Uint32Array(DMA_JOB_QUEUE_CAPACITY);
 	private queueCount = 0;
 	private queueHead = 0;
 	private budget = 0;
@@ -71,6 +75,8 @@ export class DmaController {
 	private gxGpuDmaWriteReady = false;
 	private gxGpuCpuWriteReady = false;
 	private gxGpuWriteJobCount = 0;
+	private submittedTicket = 0;
+	private completedTicket = 0;
 	private readonly buffer = new Uint8Array(DMA_SERVICE_BATCH_BYTES);
 
 	public constructor(
@@ -84,15 +90,15 @@ export class DmaController {
 
 	private static startIoThunk(context: DmaController): void {
 		const ctrlValue = context.memory.readIoU32(IO_DMA_CTRL);
+		const controlFlags = ctrlValue & 0xff & ~DMA_CTRL_START;
+		context.memory.writeIoValue(IO_DMA_CTRL, ((context.submittedTicket << DMA_TICKET_SHIFT) | controlFlags) >>> 0);
 		if ((ctrlValue & DMA_CTRL_START) === 0) {
 			return;
 		}
-		const ctrl = ctrlValue >>> 0;
 		const src = context.memory.readIoU32(IO_DMA_SRC);
 		const dst = context.memory.readIoU32(IO_DMA_DST);
 		const len = context.memory.readIoU32(IO_DMA_LEN);
-		const strict = (ctrl & DMA_CTRL_STRICT) !== 0;
-		context.memory.writeIoValue(IO_DMA_CTRL, ctrl & ~DMA_CTRL_START);
+		const strict = (ctrlValue & DMA_CTRL_STRICT) !== 0;
 		context.memory.writeValue(IO_DMA_WRITTEN, 0);
 		const maxWritable = context.resolveMaxWritable(dst);
 		if (maxWritable <= 0) {
@@ -117,13 +123,16 @@ export class DmaController {
 			}
 			transferLen &= ~(IO_WORD_SIZE - 1);
 		}
-		context.memory.writeValue(IO_DMA_STATUS, DMA_STATUS_BUSY | (clipped ? DMA_STATUS_CLIPPED : 0));
-		if (transferLen === 0) {
-			context.finishIoSuccess(clipped);
-			return;
-		}
 		if (context.queueCount === DMA_JOB_QUEUE_CAPACITY) {
 			context.finishIoError(false);
+			return;
+		}
+		context.submittedTicket = (context.submittedTicket + 1) & DMA_TICKET_MASK;
+		const ticket = context.submittedTicket;
+		context.memory.writeIoValue(IO_DMA_CTRL, ((ticket << DMA_TICKET_SHIFT) | controlFlags) >>> 0);
+		context.memory.writeValue(IO_DMA_STATUS, ((context.completedTicket << DMA_TICKET_SHIFT) | DMA_STATUS_BUSY | (clipped ? DMA_STATUS_CLIPPED : 0)) >>> 0);
+		if (transferLen === 0 && context.queueCount === 0) {
+			context.finishIoSuccess(clipped, ticket);
 			return;
 		}
 		context.ioWrittenValue = 0;
@@ -134,6 +143,7 @@ export class DmaController {
 		context.queueRemaining[jobIndex] = transferLen;
 		context.queueWritten[jobIndex] = 0;
 		context.queueClipped[jobIndex] = clipped ? 1 : 0;
+		context.queueTicket[jobIndex] = ticket;
 		if (dst === IO_GX_GPU_GP0) {
 			context.gxGpuWriteJobCount += 1;
 		}
@@ -229,6 +239,8 @@ export class DmaController {
 		this.gxGpuDmaWriteReady = false;
 		this.gxGpuCpuWriteReady = false;
 		this.gxGpuWriteJobCount = 0;
+		this.submittedTicket = 0;
+		this.completedTicket = 0;
 		this.scheduler.cancelDeviceService(DEVICE_SERVICE_DMA);
 		this.memory.writeValue(IO_DMA_SRC, 0);
 		this.memory.writeValue(IO_DMA_DST, 0);
@@ -244,17 +256,20 @@ export class DmaController {
 			return;
 		}
 		let budget = this.budget;
-		while (budget > 0) {
-			if (!this.hasPendingTransfer()) {
-				break;
-			}
+		while (this.hasPendingTransfer()) {
 			const jobIndex = this.queueHead;
-			const written = this.processJob(jobIndex, budget);
-			budget -= written;
+			let written = 0;
+			if (this.queueRemaining[jobIndex] !== 0) {
+				if (budget === 0) {
+					break;
+				}
+				written = this.processJob(jobIndex, budget);
+				budget -= written;
+			}
 			this.ioWrittenValue = this.queueWritten[jobIndex]!;
 			this.ioWrittenDirty = true;
 			if (this.queueRemaining[jobIndex] === 0) {
-				this.finishIoSuccess(this.queueClipped[jobIndex] !== 0);
+				this.finishIoSuccess(this.queueClipped[jobIndex] !== 0, this.queueTicket[jobIndex]!);
 				if (this.queueDst[jobIndex] === IO_GX_GPU_GP0) {
 					this.gxGpuWriteJobCount -= 1;
 					if (this.gxGpuWriteJobCount === 0 && this.gxGpuCpuWriteReady) {
@@ -343,13 +358,14 @@ export class DmaController {
 		return 0;
 	}
 
-	private finishIoSuccess(clipped: boolean): void {
-		this.memory.writeValue(IO_DMA_STATUS, DMA_STATUS_DONE | (clipped ? DMA_STATUS_CLIPPED : 0));
+	private finishIoSuccess(clipped: boolean, ticket: number): void {
+		this.completedTicket = ticket;
+		this.memory.writeValue(IO_DMA_STATUS, ((ticket << DMA_TICKET_SHIFT) | DMA_STATUS_DONE | (this.queueCount > 1 ? DMA_STATUS_BUSY : 0) | (clipped ? DMA_STATUS_CLIPPED : 0)) >>> 0);
 		this.irq.raise(IRQ_DMA_DONE);
 	}
 
 	private finishIoError(clipped: boolean): void {
-		this.memory.writeValue(IO_DMA_STATUS, DMA_STATUS_DONE | DMA_STATUS_ERROR | (clipped ? DMA_STATUS_CLIPPED : 0));
+		this.memory.writeValue(IO_DMA_STATUS, ((this.completedTicket << DMA_TICKET_SHIFT) | DMA_STATUS_DONE | DMA_STATUS_ERROR | (this.queueCount !== 0 ? DMA_STATUS_BUSY : 0) | (clipped ? DMA_STATUS_CLIPPED : 0)) >>> 0);
 		this.irq.raise(IRQ_DMA_ERROR);
 	}
 
@@ -363,6 +379,7 @@ export class DmaController {
 				remaining: this.queueRemaining[index]!,
 				written: this.queueWritten[index]!,
 				clipped: this.queueClipped[index] !== 0,
+				ticket: this.queueTicket[index]!,
 			};
 		}
 		return {
@@ -389,6 +406,7 @@ export class DmaController {
 			this.queueRemaining[index] = source.remaining;
 			this.queueWritten[index] = source.written;
 			this.queueClipped[index] = source.clipped ? 1 : 0;
+			this.queueTicket[index] = source.ticket;
 			if (source.dst === IO_GX_GPU_GP0) {
 				this.gxGpuWriteJobCount += 1;
 			}
@@ -399,6 +417,8 @@ export class DmaController {
 		this.carry = state.carry;
 		this.ioWrittenValue = state.writtenValue;
 		this.ioWrittenDirty = state.writtenDirty;
+		this.submittedTicket = (state.controlRegisterWord >>> DMA_TICKET_SHIFT) & DMA_TICKET_MASK;
+		this.completedTicket = (state.statusRegisterWord >>> DMA_TICKET_SHIFT) & DMA_TICKET_MASK;
 		this.memory.writeValue(IO_DMA_SRC, state.sourceRegisterWord);
 		this.memory.writeValue(IO_DMA_DST, state.destinationRegisterWord);
 		this.memory.writeValue(IO_DMA_LEN, state.lengthRegisterWord);

@@ -20,6 +20,7 @@ struct DmaJobState {
 	uint32_t dst = 0;
 	uint32_t remaining = 0;
 	uint32_t written = 0;
+	uint32_t ticket = 0;
 	bool clipped = false;
 };
 
@@ -61,7 +62,7 @@ private:
 	bool hasPendingTransfer() const;
 	void tick();
 	uint32_t processJob(DmaJobState& job, int64_t budget);
-	void finishIoSuccess(bool clipped);
+	void finishIoSuccess(bool clipped, uint32_t ticket);
 	void finishIoError(bool clipped);
 	uint32_t resolveMaxWritable(uint32_t dst) const;
 	int64_t getPendingBytes() const;
@@ -79,6 +80,8 @@ private:
 	bool m_gxGpuDmaWriteReady = false;
 	bool m_gxGpuCpuWriteReady = false;
 	size_t m_gxGpuWriteJobCount = 0;
+	uint32_t m_submittedTicket = 0;
+	uint32_t m_completedTicket = 0;
 	Memory& m_memory;
 	CPU& m_cpu;
 	IrqController& m_irq;

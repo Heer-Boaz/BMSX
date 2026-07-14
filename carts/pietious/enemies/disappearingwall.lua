@@ -24,7 +24,6 @@ function disappearingwall:ctor()
 	tile_layer.tile_size = room_tile_size
 	tile_layer.offset.x = 0
 	tile_layer.offset.y = 0
-	tile_layer.empty_source = false
 end
 
 function disappearingwall.register_enemy_fsm()

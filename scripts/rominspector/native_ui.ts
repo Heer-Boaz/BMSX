@@ -50,12 +50,11 @@ type NativeUiContext = {
 type SummaryMetrics = {
 	totalSize: number;
 	imageCount: number;
-	atlasCount: number;
 	audioCount: number;
 	dataCount: number;
 	modelCount: number;
 	imageSize: number;
-	atlasSize: number;
+	textureSize: number;
 	audioSize: number;
 	dataSize: number;
 	modelSize: number;
@@ -657,18 +656,17 @@ function makeRegionLabel(asset: RomAsset): string {
 function makeRegionColorTag(label: string): string {
 	switch (label) {
 		case 'image': return '{light-yellow-fg}';
-		case 'atlas': return '{light-cyan-fg}';
 		case 'audio': return '{light-blue-fg}';
-	case 'data': return '{light-green-fg}';
-	case 'lua': return '{#6EE7B7-fg}';
-	case 'model': return '{light-magenta-fg}';
-	case 'program': return '{#FFB000-fg}';
-	case 'symbols': return '{#FF6FAE-fg}';
-	case 'texture': return '{#14B8A6-fg}';
-	case 'manifest': return '{light-red-fg}';
-	case 'metadata': return '{#F97316-fg}';
-	case 'toc': return '{#C084FC-fg}';
-	default: return '{light-magenta-fg}';
+		case 'data': return '{light-green-fg}';
+		case 'lua': return '{#6EE7B7-fg}';
+		case 'model': return '{light-magenta-fg}';
+		case 'program': return '{#FFB000-fg}';
+		case 'symbols': return '{#FF6FAE-fg}';
+		case 'texture': return '{#14B8A6-fg}';
+		case 'manifest': return '{light-red-fg}';
+		case 'metadata': return '{#F97316-fg}';
+		case 'toc': return '{#C084FC-fg}';
+		default: return '{light-magenta-fg}';
 	}
 }
 
@@ -680,7 +678,7 @@ function totalSummarySegments(ctx: NativeUiContext, metrics: SummaryMetrics): st
 		`Audio: ${ctx.formatByteSize(metrics.audioSize)} (${pct(metrics.audioSize)}%)`,
 		`Data: ${ctx.formatByteSize(metrics.dataSize)} (${pct(metrics.dataSize)}%)`,
 		`Models: ${ctx.formatByteSize(metrics.modelSize)} (${pct(metrics.modelSize)}%)`,
-		`Texture atlas: ${ctx.formatByteSize(metrics.atlasSize)} (${pct(metrics.atlasSize)}%)`,
+		`Textures: ${ctx.formatByteSize(metrics.textureSize)} (${pct(metrics.textureSize)}%)`,
 		`Metadata: ${ctx.formatByteSize(metrics.metadataSize)} (${pct(metrics.metadataSize)}%)`,
 	];
 }
@@ -702,26 +700,23 @@ function buildSummaryMetrics(ctx: NativeUiContext): SummaryMetrics {
 	const metrics: SummaryMetrics = {
 		totalSize: ctx.rombin.byteLength,
 		imageCount: 0,
-		atlasCount: 0,
 		audioCount: 0,
 		dataCount: 0,
 		modelCount: 0,
 		imageSize: 0,
-		atlasSize: 0,
+		textureSize: 0,
 		audioSize: 0,
 		dataSize: 0,
 		modelSize: 0,
 		metadataSize: header.tocLength + header.manifestLength + metadataHeaderSize,
 		regions: [],
 	};
+	const textureStarts = new Set<number>();
 	for (const asset of ctx.assets) {
 		const size = assetSize(asset);
 		if (asset.type === 'image') {
 			metrics.imageCount += 1;
 			metrics.imageSize += size;
-		} else if (asset.type === 'atlas') {
-			metrics.atlasCount += 1;
-			metrics.atlasSize += size;
 		} else if (asset.type === 'audio') {
 			metrics.audioCount += 1;
 			metrics.audioSize += size;
@@ -736,7 +731,11 @@ function buildSummaryMetrics(ctx: NativeUiContext): SummaryMetrics {
 		pushSummaryRegion(metrics.regions, asset.start, asset.end, label);
 		pushSummaryRegion(metrics.regions, asset.compiled_start, asset.compiled_end, label);
 		pushSummaryRegion(metrics.regions, asset.metabuffer_start, asset.metabuffer_end, label);
-		pushSummaryRegion(metrics.regions, asset.texture_start, asset.texture_end, 'texture');
+		if (asset.texture_start && asset.texture_end && !textureStarts.has(asset.texture_start)) {
+			textureStarts.add(asset.texture_start);
+			metrics.textureSize += asset.texture_end - asset.texture_start;
+			pushSummaryRegion(metrics.regions, asset.texture_start, asset.texture_end, 'texture');
+		}
 	}
 	if (header.manifestLength > 0) {
 		pushSummaryRegion(metrics.regions, header.manifestOffset, header.manifestOffset + header.manifestLength, 'manifest');
@@ -1269,7 +1268,7 @@ export async function runNativeInspectorUI(ctx: NativeUiContext): Promise<void> 
 		const totalLines = wrapSummarySegments(totalSummarySegments(ctx, summaryMetrics), width);
 		summaryViewWidth = width;
 		summaryViewCache = {
-			titleLine: `${ctx.romfile} | assets: ${ctx.assets.length} | image: ${summaryMetrics.imageCount} | atlas: ${summaryMetrics.atlasCount} | audio: ${summaryMetrics.audioCount} | data: ${summaryMetrics.dataCount} | model: ${summaryMetrics.modelCount}`,
+			titleLine: `${ctx.romfile} | assets: ${ctx.assets.length} | image: ${summaryMetrics.imageCount} | audio: ${summaryMetrics.audioCount} | data: ${summaryMetrics.dataCount} | model: ${summaryMetrics.modelCount}`,
 			barModel,
 			totalLines,
 			lineCount: 1 + 1 + barModel.legendRows.length + totalLines.length,
@@ -1409,7 +1408,7 @@ export async function runNativeInspectorUI(ctx: NativeUiContext): Promise<void> 
 
 	const imagePreviewActive = () => modalView !== null
 		&& modalTab === 0
-		&& (filteredAssets[selectedIndex].type === 'atlas' || filteredAssets[selectedIndex].type === 'image');
+		&& filteredAssets[selectedIndex].type === 'image';
 
 	const computeLayout = (width: number, height: number, summaryLineCount: number): UiLayout => {
 		const tableTop = summaryLineCount + 1;

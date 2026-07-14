@@ -25,7 +25,7 @@ local reset_scroll_state<const> = function(state) state.top = 0 end
 local draw_glyph_line_color<const> = function(font, line, x, y, color)
 	local cursor_x = x
 	font_module.for_each_glyph(font, line, function(glyph)
-		gx_gpu.draw_direct16_textured_rect_color(glyph.gx_texture_x, glyph.gx_texture_y, cursor_x, y, glyph.width, glyph.height, color)
+		gx_gpu.draw_direct16_textured_rect_color(glyph.gx_source_x, glyph.gx_source_y, cursor_x, y, glyph.width, glyph.height, color)
 		cursor_x = cursor_x + glyph.advance
 	end)
 end

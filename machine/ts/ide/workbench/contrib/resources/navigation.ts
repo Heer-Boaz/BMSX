@@ -1,6 +1,4 @@
 import { machineManager } from '../../../../core/machine_manager';
-import { showEditorMessage } from '../../../common/feedback_state';
-import * as constants from '../../../common/constants';
 import type { ResourceDescriptor } from '../../../common/models';
 import { prepareEditorForSourceFocus, releaseResourcePanelFocus } from '../../../navigation/source_focus';
 import { findResourceDescriptorForChunk } from './lookup';
@@ -15,11 +13,6 @@ export function openResourceDescriptor(descriptor: ResourceDescriptor): void {
 		if (resourcePanel.isVisible()) {
 			resourcePanel.applyPendingSelection();
 		}
-	}
-	if (descriptor.type === 'atlas') {
-		showEditorMessage('Atlas resources cannot be previewed in the IDE.', constants.COLOR_STATUS_WARNING, 3.2);
-		releaseResourcePanelFocus(resourcePanel);
-		return;
 	}
 	if (descriptor.type === 'lua' || descriptor.type === 'aem') {
 		void openCodeTabForDescriptor(descriptor);

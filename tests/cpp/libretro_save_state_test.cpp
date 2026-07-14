@@ -102,6 +102,7 @@ void testLibretroSaveStateRoundTrip() {
 	memory.writeMappedU32LE(bmsx::IO_DMA_DST, bmsx::IO_GX_GPU_GP0);
 	memory.writeMappedU32LE(bmsx::IO_DMA_LEN, sizeof(dmaWords));
 	memory.writeMappedU32LE(bmsx::IO_DMA_CTRL, bmsx::DMA_CTRL_START);
+	const uint32_t firstDmaTicketWord = 1u << bmsx::DMA_TICKET_SHIFT;
 	runtime.machine.dmaController.accrueCycles(1, runtime.machine.scheduler.currentNowCycles() + 1);
 	runtime.machine.dmaController.onService(runtime.machine.scheduler.currentNowCycles() + 1);
 	runtime.machine.gxGpu.onService(runtime.machine.scheduler.currentNowCycles() + 1);
@@ -113,7 +114,7 @@ void testLibretroSaveStateRoundTrip() {
 	require(platform.saveState(saved.data(), saved.size()), "libretro saveState should serialize initialized runtime state");
 	runtime.machine.dmaController.accrueCycles(100, runtime.machine.scheduler.currentNowCycles() + 100);
 	runtime.machine.dmaController.onService(runtime.machine.scheduler.currentNowCycles() + 100);
-	require(memory.readIoU32(bmsx::IO_DMA_STATUS) == bmsx::DMA_STATUS_DONE, "DMA mutation should complete before loadState");
+	require(memory.readIoU32(bmsx::IO_DMA_STATUS) == (firstDmaTicketWord | bmsx::DMA_STATUS_DONE), "DMA mutation should complete before loadState");
 	require(memory.readIoU32(bmsx::IO_DMA_WRITTEN) == sizeof(dmaWords), "DMA mutation should publish complete progress before loadState");
 
 	memory.writeMappedU32LE(bmsx::GEO_SCRATCH_BASE, 0xaabbccddu);
@@ -152,7 +153,7 @@ void testLibretroSaveStateRoundTrip() {
 	const int64_t dmaResumeCycle = runtime.machine.scheduler.currentNowCycles() + 100;
 	runtime.machine.dmaController.accrueCycles(100, dmaResumeCycle);
 	runtime.machine.dmaController.onService(dmaResumeCycle);
-	require(memory.readIoU32(bmsx::IO_DMA_STATUS) == bmsx::DMA_STATUS_DONE, "restored DMA should complete the GP0 packet");
+	require(memory.readIoU32(bmsx::IO_DMA_STATUS) == (firstDmaTicketWord | bmsx::DMA_STATUS_DONE), "restored DMA should complete the GP0 packet");
 	require(memory.readIoU32(bmsx::IO_DMA_WRITTEN) == sizeof(dmaWords), "restored DMA should publish the complete byte count");
 	const bmsx::GxGpuCommandBuffer& restoredCommands = *runtime.machine.gxGpu.readDeviceOutput().commandBuffer;
 	require(restoredCommands.commandKind[restoredCommands.commandCount - 1u] == bmsx::GX_GPU_COMMAND_UPLOAD_CPU_TO_VRAM, "restored DMA should complete the retained GX-GPU packet");

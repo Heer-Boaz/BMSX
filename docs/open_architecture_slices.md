@@ -248,18 +248,22 @@ volgende echte device-edge en pollen of retriën de instructie niet.
 
 De `2025`-transitiefout is aan dezelfde echte grens gesloten. De cart prelaadt
 de volgende achtergrond in de inactieve van twee raw VRAM-rechthoeken en start
-de DMA pas na de draw van het voorafgaande frame. De DMA-done-IRQ commit de
-nieuwe actieve rechthoek; de backgroundswitch zelf selecteert alleen de al
-geladen image. Dit is bewust geen poging om het oude onbeperkte atlasmodel te
+de DMA pas na de draw van het voorafgaande frame. Ieder geaccepteerd DMA-commando
+krijgt een 24-bit ticket in het controlregister; het statusregister publiceert
+het laatst voltooide ticket. Daardoor kan een samengevoegde IRQ meerdere
+voltooide queue-items vertegenwoordigen zonder dat de cart de verkeerde upload
+actief maakt. Het ticket commit de residencyboekhouding; de authored
+backgroundswitch vindt daarna op zijn vaste timelineframe plaats. Dit is bewust
+geen poging om het oude onbeperkte atlasmodel te
 behouden: `2025` programmeert een expliciete 1024x512 VRAM-map. Boven staan de
 320x240 framebuffer, Maya B, de vaste systeempage en de naast elkaar geplaatste
 Maya A/V_S-textures; onder staan twee 384x256 backgroundbanken en een aparte
-monsterbank. De drie gemeenschappelijke combattextures blijven resident, een
-monsterswitch vervangt alleen de monsterbank en het opaque all-outbeeld vervangt
-bewust de linker backgroundbank. Geen van die bereiken overlapt framebuffer of
-systeempage. Numerieke atlas-ID's worden alleen door rompacker/cartlib en deze
-cart-owned residencycode gebruikt; ROM-directory, DMA, GPU en BIOS kennen geen
-semantische atlas of scene.
+monsterbank. De drie gemeenschappelijke combattextures worden eenmaal
+ingediend, een monsterswitch vervangt alleen de monsterbank en het opaque
+all-outbeeld vervangt bewust de linker backgroundbank. Geen van die bereiken
+overlapt framebuffer of systeempage. Numerieke packing-group-ID's bestaan
+uitsluitend tijdens ROM-productie; cartlib, carts, ROM-directory, DMA, GPU en
+BIOS consumeren raw texturebronnen en fysieke VRAM-bestemmingen.
 
 Er is geen tweede VBlank-wait, DMA-statuspoll, semantische firmwareslotmanager of
 captureverschuiving. De volledige headless transitietijdlijn publiceert de
@@ -749,47 +753,62 @@ Afgerond:
 - geen enkele host-presentatieroute consumeert nog VDP-, VOUT- of
   framebuffer-output;
 - de laatste actieve texture-aperturegebruiker is verwijderd. De ROM-packer
-  encodeert system/palette4-atlassen als hun vaste native GP0-stream en
-  cart-direct16-atlassen als destination-free, row-major RGB555/STP-payload.
-  De cart-owner resolveert zijn eigen packerrecord en bindt de fysieke
-  VRAM-rechthoek; raw GX-firmware schrijft alleen het A0-pakket en de centrale
-  DMA-owner levert daarna de ROM-payload direct aan GP0. Firmware kent geen
-  atlas-ID, workset of scenesemantiek. Runtime PNG-decode, mapped RGBA-staging
-  en `gx_load_atlas` zijn uit BIOS en carts verdwenen.
+  encodeert de vaste BIOS-systemtexture als native GP0-stream en carttextures
+  als destination-free direct16- of palette4-payload, inclusief een eventuele
+  CLUT achter de texelwoorden. Iedere runtime-image verwijst rechtstreeks naar
+  die gedeelde ROM-span plus integer texture-lokale coordinaten. De cart-owner
+  kiest de fysieke VRAM-rechthoek; raw GX-firmware schrijft alleen het A0-pakket
+  en de centrale DMA-owner levert de ROM-payload direct aan GP0. Firmware kent
+  geen packing-group-ID, workset of scenesemantiek. Runtime PNG-decode, mapped
+  RGBA-staging en `gx_load_atlas` zijn uit BIOS en carts verdwenen.
 
 Texture-residency boundary resolved for the migrated carts:
 
-- `atlas` is uitsluitend een rompacker/cart-owner groepering. Het is geen GPU-,
-  DMA- of firmwareprimitive en cartlib publiceert geen universele
-  `gx_upload_atlas`-API;
-- de packer bewaart imageplaatsing als integer `atlas_x`/`atlas_y` en, waar de
-  plaatsing vastligt, als fysieke GX-texturecoordinaten. Cartlib, BIOS-fonts en
-  hosttools consumeren die woorden rechtstreeks; genormaliseerde image-
+- `@atlas=N` is uitsluitend een rompacker-groeperingsdirective. De numerieke ID
+  en het interne packing-group-record worden niet in de ROM-TOC of image-ABI
+  geserialiseerd. Cartlib publiceert geen universele atlas- of slotcache. GX-
+  textureproductie is verplicht; de onbruikbare legacyoptie om imagepacking uit
+  te schakelen bestaat niet meer;
+- de packer bewaart imageplaatsing als integer `texture_u`/`texture_v`, samen
+  met mode, raw texturebreedte/-hoogte en een eventuele CLUT-offset. Alle images
+  uit één packinggroep delen exact dezelfde ROM-texturespan. Cartlib, BIOS-
+  fonts en hosttools consumeren die woorden rechtstreeks; genormaliseerde image-
   texcoordarrays en float-naar-pixelreconstructie zijn verwijderd. Model-mesh-
   UV's blijven afzonderlijke meshdata en worden pas door de renderer
   genormaliseerd;
-- de compacte BIOS-direct16-atlas past in één vaste 256x256 texturepage. De
+- carts declareren in `gx_texture_layout` hun reserved regions, fysieke slots,
+  mogelijke groupbestemmingen en gelijktijdige working sets. De rompacker
+  valideert VRAM-grenzen en overlap in die working sets, pakt binnen de kleinste
+  toegestane slot en genereert alleen compile-time raw destinationwords voor de
+  cart;
+- gewone sprites en tiles worden met een deterministische skylinepacker binnen
+  één 256x256 hardwarepage gehouden. Een surface die fysiek groter is dan één
+  page mag pages overspannen; alleen de centrale rectangleprimitief splitst die
+  onvermijdelijke draw. De normale rect- en affine-hot-path doet geen pagewalk,
+  stringlookup, cache-scan of allocatie;
+- de compacte BIOS-direct16-texture past in één vaste 256x256 texturepage. De
   producer emitteert daarvoor één A0-stream; er bestaat geen dode multislice-
-  systeemlayout of firmware-side pageherbouw. De palette4-cartregio begint op
-  de volgende page en hangt niet af van de actuele BIOS-atlashoogte;
+  systeemlayout of firmware-side pageherbouw. De host-systematlas blijft een
+  afzonderlijke host-UI-renderresource en is geen cart/GPU-residencyprimitive;
 
-- `pietious` gebruikt een compacte native 4-bpp atlas plus CLUT en past daarmee
-  bij een expliciete PSX-VRAM-residencyvorm;
-- `2025` behandelt de ROM-atlas niet als universele runtime-eenheid. De cart
+- `pietious` gebruikt één destination-free native 4-bpp texture plus CLUT in
+  een expliciete cart-owned VRAM-slot. De acht permanent buiten beeld vallende
+  zwarte kolommen van de oude 264-pixels-header zijn verwijderd; daardoor past
+  iedere glyph, sprite, tile en HUD-image in één samplingpage en blijft iedere
+  blit één primitive;
+- `2025` behandelt een producerpackinggroep niet als runtime-eenheid. De cart
   bezit twee vaste achtergrondrechthoeken en één overlappende combat/all-out-
   worksetrechthoek; alleen de cart kent die scenesemantiek. Daardoor uploadt een
   sceneovergang alleen de actuele werkset in plaats van een toevallig door de
-  auto-packer samengestelde multi-backgroundatlas. De nearest-sampled GX-path
+  producer samengestelde multi-backgroundtexture. De nearest-sampled GX-path
   heeft geen geextrudeerde bilinear-bleedrand nodig, zodat de 256 pixels hoge
   achtergronden page-aligned zonder verticale split passen. De actieve
   backgrounduploads dalen daarmee van 718.812--896.976 bytes naar
   153.600--196.608 bytes;
-- de direct16-ROM-packer weigert alleen een raw bronrechthoek groter dan de
-  1024x512 VRAM. Overlap en concrete plaatsing zijn bewust cartbeleid, geen
-  producer- of firmwaresemantiek;
 - een toekomstige cart met meerdere onafhankelijk wisselende texturewerksets
-  moet zijn raw VRAM-page/CLUT-indeling eveneens zelf programmeren. Bouw geen
-  generieke semantische cache speculatief en maak geen nieuwe atlas-swapwrapper.
+  moet zijn raw VRAM-page/CLUT-indeling eveneens declareren en programmeren.
+  Bouw geen generieke semantische cache speculatief en maak geen nieuwe
+  atlas-swapwrapper.
 
 - de residual staging-, texture- en framebuffer-apertures, VDP scheduler- en
   VBlank-hooks, registers, readback, save-state, tests en mirrored device trees

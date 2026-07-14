@@ -67,19 +67,19 @@ local build_descriptor<const> = function(definition)
 			width = image_meta.width,
 			height = image_meta.height,
 			advance = image_meta.width + advance_padding,
-			gx_texture_x = image_meta.gx_texture_x,
-			gx_texture_y = image_meta.gx_texture_y,
+			gx_source_x = image_meta.gx_source_x,
+			gx_source_y = image_meta.gx_source_y,
 		}
 	end
 	local space<const> = glyphs[' ']
-	if space ~= nil and glyphs['\t'] == nil then
+	if space and not glyphs['\t'] then
 		glyphs['\t'] = {
 			imgid = space.imgid,
 			width = space.width,
 			height = space.height,
 			advance = space.advance * 4,
-			gx_texture_x = space.gx_texture_x,
-			gx_texture_y = space.gx_texture_y,
+			gx_source_x = space.gx_source_x,
+			gx_source_y = space.gx_source_y,
 		}
 	end
 	local line_glyph<const> = glyphs['A'] or glyphs['a'] or glyphs['?']
@@ -107,7 +107,7 @@ end
 
 local glyph_item<const> = function(items, glyph)
 	local item<const> = items[glyph]
-	if item ~= nil then
+	if item then
 		return item
 	end
 	return items['?']

@@ -42,14 +42,14 @@ struct RomAssetInfo {
 struct ImgMeta {
 	i32 width = 0;
 	i32 height = 0;
-	std::optional<i32> atlasid;
-	i32 atlasX = 0;
-	i32 atlasY = 0;
-	std::optional<i32> gxTextureMode;
-	std::optional<i32> gxTextureX;
-	std::optional<i32> gxTextureY;
-	std::optional<i32> gxClutX;
-	std::optional<i32> gxClutY;
+	i32 textureU = 0;
+	i32 textureV = 0;
+	i32 gxTextureMode = 0;
+	i32 gxTextureWordWidth = 0;
+	i32 gxTextureHeight = 0;
+	std::optional<i32> gxClutOffset;
+	std::optional<i32> gxSourceX;
+	std::optional<i32> gxSourceY;
 
 	// Bounding box (for sprites with transparency, collision)
 	struct BoundingRect {
@@ -97,13 +97,6 @@ struct ImgAsset {
 	// GPU texture handle (set by renderer)
 	uintptr_t textureHandle = 0;
 	bool uploaded = false;
-};
-
-struct ImageAtlasRect {
-	u32 u = 0;
-	u32 v = 0;
-	u32 w = 0;
-	u32 h = 0;
 };
 
 /* ============================================================================

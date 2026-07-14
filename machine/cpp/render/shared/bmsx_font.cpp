@@ -6,33 +6,25 @@
 
 #include "rompack/host_system_atlas.h"
 
-#include <memory>
-
 namespace bmsx {
 namespace {
 
 class HostSystemBitmapFontSource final : public BitmapFontSource {
 public:
-	const ImgMeta& itemMeta(const std::string& imgid) const override {
+	BitmapFontSourceGlyph resolveGlyph(const std::string& imgid) const override {
 		const HostSystemAtlasGeneratedImage& image = hostSystemAtlasImage(imgid);
-		m_meta.width = image.width;
-		m_meta.height = image.height;
-		return m_meta;
-	}
-
-	ImageAtlasRect itemRect(const std::string& imgid) const override {
-		const HostSystemAtlasGeneratedImage& image = hostSystemAtlasImage(imgid);
-		return ImageAtlasRect{
+		return BitmapFontSourceGlyph{
+			image.width,
+			image.height,
 			image.u,
 			image.v,
 			image.w,
 			image.h,
 		};
 	}
-
-private:
-	mutable ImgMeta m_meta;
 };
+
+const HostSystemBitmapFontSource HOST_SYSTEM_FONT_SOURCE;
 
 void addDigitAndLetterGlyphs(GlyphMap& map, const std::string& prefix) {
 	auto withPrefix = [&](const std::string& suffix) {
@@ -166,7 +158,7 @@ GlyphMap buildTinyCharMap() {
 } // namespace
 
 Font::Font(FontVariant variant)
-	: BFont(std::make_shared<HostSystemBitmapFontSource>(), variant == FontVariant::Tiny ? buildTinyCharMap() : buildMsxCharMap()) {
+	: BFont(HOST_SYSTEM_FONT_SOURCE, variant == FontVariant::Tiny ? buildTinyCharMap() : buildMsxCharMap()) {
 }
 
 } // namespace bmsx

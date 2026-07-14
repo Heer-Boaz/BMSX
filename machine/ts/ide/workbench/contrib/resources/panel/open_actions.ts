@@ -1,18 +1,11 @@
-import { machineManager } from '../../../../../core/machine_manager';
 import type { ResourceBrowserItem } from '../../../../common/models';
-import * as constants from '../../../../common/constants';
-import { showEditorMessage } from '../../../../common/feedback_state';
 import { openResourceDescriptor, focusChunkSource } from '../navigation';
 import { applyDefinitionSelection } from '../../../../editor/contrib/intellisense/engine';
-import { releaseResourcePanelFocus } from '../../../../navigation/source_focus';
 import { toggleSelectedCallHierarchyExpansion } from './navigation';
 import type { Runtime } from '../../../../../machine/runtime/runtime';
 
 export function openResourcePanelDescriptorItem(item: ResourceBrowserItem): boolean {
 	if (!item?.descriptor) {
-		return false;
-	}
-	if (item.descriptor.type === 'atlas') {
 		return false;
 	}
 	openResourceDescriptor(item.descriptor);
@@ -31,10 +24,6 @@ export function openSelectedResourcePanelItem(items: readonly ResourceBrowserIte
 	const item = items[selectionIndex];
 	if (openResourcePanelDescriptorItem(item)) {
 		return;
-	}
-	if (item?.descriptor?.type === 'atlas') {
-		showEditorMessage('Atlas resources cannot be previewed in the IDE.', constants.COLOR_STATUS_WARNING, 3.2);
-		releaseResourcePanelFocus(machineManager.ideState.editor.resourcePanel);
 	}
 }
 

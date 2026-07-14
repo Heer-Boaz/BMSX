@@ -174,10 +174,16 @@ end
 
 function spritecomponent:set_imgid(imgid)
 	self.imgid = imgid
+	if imgid then
+		self.image = gx_image.rect(imgid)
+	else
+		self.image = nil
+	end
 end
 
 function spritecomponent:draw()
-	if self.imgid == nil then
+	local rect<const> = self.image
+	if not rect then
 		return
 	end
 	local obj<const> = self.parent
@@ -196,10 +202,9 @@ function spritecomponent:draw()
 	local scale_x<const> = self.scale.x * draw_scale.x
 	local scale_y<const> = self.scale.y * draw_scale.y
 	if flip_flags == 0 and scale_x == 1 and scale_y == 1 then
-		gx_image.blit_img_color(self.imgid, x, y, self.color)
+		gx_image.blit_rect_color(rect, x, y, self.color)
 		return
 	end
-	local rect<const> = gx_image.rect(self.imgid)
 	gx_image.blit_rect_affine_color(rect, x, y, rect.w * scale_x, 0.0, 0.0, rect.h * scale_y, flip_flags, self.color)
 end
 
@@ -215,7 +220,6 @@ function tilelayercomponent.new(opts)
 	self.tile_count = opts.tile_count or 0
 	self.columns = opts.columns or 1
 	self.tile_size = opts.tile_size or 0
-	self.empty_source = opts.empty_source
 	return self
 end
 
@@ -227,8 +231,7 @@ function tilelayercomponent:draw()
 		self.columns,
 		self.tile_size,
 		parent.x + self.offset.x + self.draw_offset.x,
-		parent.y + self.offset.y + self.draw_offset.y,
-		self.empty_source)
+		parent.y + self.offset.y + self.draw_offset.y)
 end
 
 -- collider2dcomponent: holds hit areas / polys
@@ -725,6 +728,17 @@ end
 
 
 -- textcomponent: lightweight render descriptor
+local gx_bound_fonts<const> = {}
+local bind_gx_font<const> = function(descriptor)
+	if gx_bound_fonts[descriptor] then
+		return
+	end
+	for _, glyph in pairs(descriptor.items) do
+		glyph.gx_image = gx_image.rect(glyph.imgid)
+	end
+	gx_bound_fonts[descriptor] = true
+end
+
 local textcomponent<const> = {}
 textcomponent.__index = textcomponent
 setmetatable(textcomponent, { __index = visualcomponent })
@@ -734,6 +748,7 @@ function textcomponent.new(opts)
 	opts.type_name = 'textcomponent'
 	local self<const> = setmetatable(visualcomponent.new(opts), textcomponent)
 	self.font = opts.font or font_module.get('default')
+	bind_gx_font(self.font)
 	self.line_height = opts.line_height or self.font.line_height
 	self.color = opts.color or 0xffffffff
 	self.background_color = opts.background_color
@@ -784,6 +799,7 @@ function textcomponent:set_font(font)
 	if self.font == font then
 		return
 	end
+	bind_gx_font(font)
 	self.font = font
 	self.line_height = font.line_height
 	self:set_text(self.text)
@@ -826,7 +842,7 @@ function textcomponent:render_glyphs(x, y)
 			local cursor_x = line_x
 			for glyph_index = 1, line_length do
 				local glyph<const> = line[glyph_index]
-				gx_image.blit_img_color(glyph.imgid, cursor_x, line_y, color)
+				gx_image.blit_rect_color(glyph.gx_image, cursor_x, line_y, color)
 				cursor_x = cursor_x + glyph.advance
 			end
 		end

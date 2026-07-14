@@ -8,6 +8,14 @@ export const CART_ROM_METADATA_HEADER_SIZE = 72;
 export const CART_ROM_HEADER_SIZE = 76;
 export const CART_VDP_CLASS_PSX = 1;
 export const PROGRAM_BOOT_HEADER_VERSION = 1;
+export const ROM_ASSET_SYMBOL_MODULE_PATH = 'bmsx/assets';
+export const ROM_ASSET_SYMBOL_SOURCE_PATH = `${ROM_ASSET_SYMBOL_MODULE_PATH}.lua`;
+export const GX_TEXTURE_LAYOUT_MODULE_PATH = 'bmsx/gx_texture_layout';
+export const GX_TEXTURE_LAYOUT_SOURCE_PATH = `${GX_TEXTURE_LAYOUT_MODULE_PATH}.lua`;
+export const ROM_GENERATED_CONST_MODULE_PATHS: ReadonlyArray<string> = [
+	ROM_ASSET_SYMBOL_MODULE_PATH,
+	GX_TEXTURE_LAYOUT_MODULE_PATH,
+];
 
 export type CartRomHeader = {
 	headerSize: number;
@@ -58,7 +66,7 @@ export interface RuntimeRomPackage {
 	entry_path: string; // Entry Lua path for this program.
 }
 
-export type asset_type = 'image' | 'audio' | 'data' | 'bin' | 'atlas' | 'romlabel' | 'model' | 'aem' | 'lua' | 'code';
+export type asset_type = 'image' | 'audio' | 'data' | 'bin' | 'romlabel' | 'model' | 'aem' | 'lua' | 'code';
 export type asset_id = string;
 
 /**
@@ -70,8 +78,8 @@ export interface RomAsset {
 	id_token_lo?: number; // 64-bit exact-id token (low 32)
 	id_token_hi?: number; // 64-bit exact-id token (high 32)
 	op?: RomAssetOp; // Optional patch operation for this ROM entry.
-	start?: number; // Optional start offset in the ROM. (e.g., atlas-backed images don't own ROM bytes)
-	end?: number; // Optional end offset in the ROM. (e.g., atlas-backed images don't own ROM bytes)
+	start?: number; // Optional start offset in the ROM.
+	end?: number; // Optional end offset in the ROM.
 	compiled_start?: number; // Optional start offset of precompiled Lua chunk data in the ROM
 	compiled_end?: number; // Optional end offset of precompiled Lua chunk data in the ROM
 	metabuffer_start?: number; // Optional start offset of binary-encoded per-entry metadata in the buffer
@@ -145,23 +153,6 @@ export interface Registerable extends Identifiable, Bindable {
 
 export interface RegisterablePersistent extends Registerable {
 	registrypersistent: true;
-}
-
-/**
- * Reserved ROM atlas identity for system ROM graphics.
- */
-export const BIOS_ATLAS_ID = 254;
-
-const atlasAssetIdCache = new Map<number, string>();
-
-export function generateAtlasAssetId(atlasId: number): string {
-	if (atlasAssetIdCache.has(atlasId)) {
-		return atlasAssetIdCache.get(atlasId)!;
-	}
-	const idxStr = atlasId.toString().padStart(2, '0');
-	const assetId = `_atlas_${idxStr}`;
-	atlasAssetIdCache.set(atlasId, assetId);
-	return assetId;
 }
 
 /*
@@ -352,17 +343,16 @@ export interface GLTFModel {
  * Metadata for an image asset.
  */
 export interface ImgMeta {
-	atlasid?: number; // ROM atlas containing this image or identifying this atlas asset.
 	width: number; // The width of the image.
 	height: number; // The height of the image.
-	atlas_x?: number; // Image X in atlas pixels.
-	atlas_y?: number; // Image Y in atlas pixels.
-	gx_texture_mode?: number; // PSX GPU texture mode for atlas residency.
-	gx_texture_placement?: 'fixed' | 'relocatable'; // Whether GX coordinates are producer-owned or cart-bound.
-	gx_texture_x?: number; // Native texture source X in PSX VRAM words.
-	gx_texture_y?: number; // Native texture source Y in PSX VRAM rows.
-	gx_clut_x?: number; // Native atlas CLUT base X in PSX VRAM words.
-	gx_clut_y?: number; // Native atlas CLUT base Y in PSX VRAM rows.
+	texture_u: number; // Image X within its packed texture, in source pixels.
+	texture_v: number; // Image Y within its packed texture, in source pixels.
+	gx_texture_mode: number; // PSX GPU texture mode for the image-owned texture payload.
+	gx_texture_word_width: number; // Width of the texture upload in native VRAM words.
+	gx_texture_height: number; // Height of the texture upload in native VRAM rows.
+	gx_clut_offset?: number; // Byte offset of palette words within the texture payload.
+	gx_source_x?: number; // Fixed resident source X for system-ROM images.
+	gx_source_y?: number; // Fixed resident source Y for system-ROM images.
 	boundingbox?: BoundingBoxPrecalc; // The bounding box of the image. Used for collision detection.
 	centerpoint?: vec2arr; // The center point of the image, based on the bounding box.
 	hitpolygons?: HitPolygonsPrecalc; // The concave hull polygons for collision detection, with flipped variants.

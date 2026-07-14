@@ -122,6 +122,8 @@ void DmaController::reset() {
 	m_gxGpuDmaWriteReady = false;
 	m_gxGpuCpuWriteReady = false;
 	m_gxGpuWriteJobCount = 0u;
+	m_submittedTicket = 0u;
+	m_completedTicket = 0u;
 	m_scheduler.cancelDeviceService(DEVICE_SERVICE_DMA);
 	m_memory.writeValue(IO_DMA_SRC, valueNumber(0.0));
 	m_memory.writeValue(IO_DMA_DST, valueNumber(0.0));
@@ -133,14 +135,20 @@ void DmaController::reset() {
 
 void DmaController::tick() {
 	int64_t budget = m_budget;
-	while (budget > 0) {
+	while (m_queueCount != 0u) {
 		DmaJobState& job = m_queue[m_queueHead];
-		const uint32_t written = processJob(job, budget);
-		budget -= written;
+		uint32_t written = 0u;
+		if (job.remaining != 0u) {
+			if (budget == 0) {
+				break;
+			}
+			written = processJob(job, budget);
+			budget -= written;
+		}
 		m_writtenValue = job.written;
 		m_writtenDirty = true;
 		if (job.remaining == 0u) {
-			finishIoSuccess(job.clipped);
+			finishIoSuccess(job.clipped, job.ticket);
 			if (job.dst == IO_GX_GPU_GP0) {
 				m_gxGpuWriteJobCount -= 1u;
 				if (m_gxGpuWriteJobCount == 0u && m_gxGpuCpuWriteReady) {
@@ -213,15 +221,16 @@ uint32_t DmaController::processJob(DmaJobState& job, int64_t budget) {
 }
 
 void DmaController::startIo() {
-	const uint32_t ctrl = m_memory.readIoU32(IO_DMA_CTRL);
-	if ((ctrl & DMA_CTRL_START) == 0u) {
+	const uint32_t ctrlValue = m_memory.readIoU32(IO_DMA_CTRL);
+	const uint32_t controlFlags = ctrlValue & 0xffu & ~DMA_CTRL_START;
+	m_memory.writeIoValue(IO_DMA_CTRL, valueNumber(static_cast<double>(controlFlags | (m_submittedTicket << DMA_TICKET_SHIFT))));
+	if ((ctrlValue & DMA_CTRL_START) == 0u) {
 		return;
 	}
 	const uint32_t src = m_memory.readIoU32(IO_DMA_SRC);
 	const uint32_t dst = m_memory.readIoU32(IO_DMA_DST);
 	const uint32_t len = m_memory.readIoU32(IO_DMA_LEN);
-	const bool strict = (ctrl & DMA_CTRL_STRICT) != 0u;
-	m_memory.writeIoValue(IO_DMA_CTRL, valueNumber(static_cast<double>(ctrl & ~DMA_CTRL_START)));
+	const bool strict = (ctrlValue & DMA_CTRL_STRICT) != 0u;
 	m_memory.writeValue(IO_DMA_WRITTEN, valueNumber(0.0));
 	const uint32_t maxWritable = resolveMaxWritable(dst);
 	if (maxWritable == 0u) {
@@ -246,20 +255,24 @@ void DmaController::startIo() {
 		}
 		transferLen &= ~(IO_WORD_SIZE - 1u);
 	}
-	m_memory.writeValue(IO_DMA_STATUS, valueNumber(static_cast<double>(DMA_STATUS_BUSY | (clipped ? DMA_STATUS_CLIPPED : 0u))));
-	if (transferLen == 0u) {
-		finishIoSuccess(clipped);
+	if (m_queueCount == DMA_JOB_QUEUE_CAPACITY) {
+		finishIoError(false);
+		return;
+	}
+	m_submittedTicket = (m_submittedTicket + 1u) & DMA_TICKET_MASK;
+	const uint32_t ticket = m_submittedTicket;
+	m_memory.writeIoValue(IO_DMA_CTRL, valueNumber(static_cast<double>(controlFlags | (ticket << DMA_TICKET_SHIFT))));
+	m_memory.writeValue(IO_DMA_STATUS, valueNumber(static_cast<double>((m_completedTicket << DMA_TICKET_SHIFT) | DMA_STATUS_BUSY | (clipped ? DMA_STATUS_CLIPPED : 0u))));
+	if (transferLen == 0u && m_queueCount == 0u) {
+		finishIoSuccess(clipped, ticket);
 		return;
 	}
 	DmaJobState job;
 	job.src = src;
 	job.dst = dst;
 	job.remaining = transferLen;
+	job.ticket = ticket;
 	job.clipped = clipped;
-	if (m_queueCount == DMA_JOB_QUEUE_CAPACITY) {
-		finishIoError(false);
-		return;
-	}
 	m_writtenValue = 0;
 	m_writtenDirty = true;
 	m_queue[(m_queueHead + m_queueCount) % DMA_JOB_QUEUE_CAPACITY] = job;
@@ -270,13 +283,14 @@ void DmaController::startIo() {
 	scheduleNextService(m_scheduler.currentNowCycles());
 }
 
-void DmaController::finishIoSuccess(bool clipped) {
-	m_memory.writeValue(IO_DMA_STATUS, valueNumber(static_cast<double>(DMA_STATUS_DONE | (clipped ? DMA_STATUS_CLIPPED : 0u))));
+void DmaController::finishIoSuccess(bool clipped, uint32_t ticket) {
+	m_completedTicket = ticket;
+	m_memory.writeValue(IO_DMA_STATUS, valueNumber(static_cast<double>((ticket << DMA_TICKET_SHIFT) | DMA_STATUS_DONE | (m_queueCount > 1u ? DMA_STATUS_BUSY : 0u) | (clipped ? DMA_STATUS_CLIPPED : 0u))));
 	m_irq.raise(IRQ_DMA_DONE);
 }
 
 void DmaController::finishIoError(bool clipped) {
-	m_memory.writeValue(IO_DMA_STATUS, valueNumber(static_cast<double>(DMA_STATUS_DONE | DMA_STATUS_ERROR | (clipped ? DMA_STATUS_CLIPPED : 0u))));
+	m_memory.writeValue(IO_DMA_STATUS, valueNumber(static_cast<double>((m_completedTicket << DMA_TICKET_SHIFT) | DMA_STATUS_DONE | DMA_STATUS_ERROR | (m_queueCount != 0u ? DMA_STATUS_BUSY : 0u) | (clipped ? DMA_STATUS_CLIPPED : 0u))));
 	m_irq.raise(IRQ_DMA_ERROR);
 }
 
@@ -313,6 +327,8 @@ void DmaController::restoreState(const DmaControllerState& state, int64_t nowCyc
 	m_carry = state.carry;
 	m_writtenValue = state.writtenValue;
 	m_writtenDirty = state.writtenDirty;
+	m_submittedTicket = (state.controlRegisterWord >> DMA_TICKET_SHIFT) & DMA_TICKET_MASK;
+	m_completedTicket = (state.statusRegisterWord >> DMA_TICKET_SHIFT) & DMA_TICKET_MASK;
 	m_memory.writeValue(IO_DMA_SRC, valueNumber(static_cast<double>(state.sourceRegisterWord)));
 	m_memory.writeValue(IO_DMA_DST, valueNumber(static_cast<double>(state.destinationRegisterWord)));
 	m_memory.writeValue(IO_DMA_LEN, valueNumber(static_cast<double>(state.lengthRegisterWord)));

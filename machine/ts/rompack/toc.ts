@@ -10,7 +10,6 @@ export const ROM_TOC_ASSET_TYPE_IMAGE = 1;
 export const ROM_TOC_ASSET_TYPE_AUDIO = 2;
 export const ROM_TOC_ASSET_TYPE_DATA = 3;
 export const ROM_TOC_ASSET_TYPE_BIN = 4;
-export const ROM_TOC_ASSET_TYPE_ATLAS = 5;
 export const ROM_TOC_ASSET_TYPE_ROMLABEL = 6;
 export const ROM_TOC_ASSET_TYPE_MODEL = 7;
 export const ROM_TOC_ASSET_TYPE_AEM = 8;
@@ -24,7 +23,7 @@ export type RomTocPayload = {
 };
 
 export enum AssetTypeKind {
-	ImageAtlas,
+	Image,
 	Audio,
 	Model,
 	Aem,
@@ -41,7 +40,6 @@ const ASSET_TYPE_IDS: Record<asset_type, number> = {
 	audio: ROM_TOC_ASSET_TYPE_AUDIO,
 	data: ROM_TOC_ASSET_TYPE_DATA,
 	bin: ROM_TOC_ASSET_TYPE_BIN,
-	atlas: ROM_TOC_ASSET_TYPE_ATLAS,
 	romlabel: ROM_TOC_ASSET_TYPE_ROMLABEL,
 	model: ROM_TOC_ASSET_TYPE_MODEL,
 	aem: ROM_TOC_ASSET_TYPE_AEM,
@@ -63,7 +61,6 @@ export function assetTypeFromId(id: number): asset_type {
 		case ROM_TOC_ASSET_TYPE_AUDIO: return 'audio';
 		case ROM_TOC_ASSET_TYPE_DATA: return 'data';
 		case ROM_TOC_ASSET_TYPE_BIN: return 'bin';
-		case ROM_TOC_ASSET_TYPE_ATLAS: return 'atlas';
 		case ROM_TOC_ASSET_TYPE_ROMLABEL: return 'romlabel';
 		case ROM_TOC_ASSET_TYPE_MODEL: return 'model';
 		case ROM_TOC_ASSET_TYPE_AEM: return 'aem';
@@ -77,10 +74,9 @@ export function assetTypeFromId(id: number): asset_type {
 export function resolveAssetTypeKind(assetType: asset_type): AssetTypeKind {
 	switch (assetType[0]) {
 		case 'i':
-			if (assetType === 'image') return AssetTypeKind.ImageAtlas;
+			if (assetType === 'image') return AssetTypeKind.Image;
 			break;
 		case 'a':
-			if (assetType === 'atlas') return AssetTypeKind.ImageAtlas;
 			if (assetType === 'audio') return AssetTypeKind.Audio;
 			if (assetType === 'aem') return AssetTypeKind.Aem;
 			break;

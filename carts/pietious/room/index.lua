@@ -6,7 +6,6 @@ local components<const> = require('cartlib/components')
 
 local room<const> = {}
 local water_surface_timeline_id<const> = 'r.ws'
-local empty_tile_source<const> = false
 local water_surface_frame_imgids<const> = {
 	'water_surface_msx',
 }
@@ -877,7 +876,6 @@ function room_object:ctor()
 		columns = 1,
 		tile_size = room_tile_size,
 		offset = { x = room_tile_origin_x, y = room_tile_origin_y, z = 0 },
-		empty_source = empty_tile_source,
 		visible = false,
 	})
 	self:add_component(self.room_tile_layer)
@@ -888,7 +886,6 @@ function room_object:ctor()
 		columns = 1,
 		tile_size = room_tile_size,
 		offset = { x = room_tile_origin_x, y = room_tile_origin_y, z = 0 },
-		empty_source = empty_tile_source,
 		visible = false,
 	})
 	self:add_component(self.water_tile_layer)
@@ -911,7 +908,7 @@ function room_object:show_room_tiles()
 end
 
 function room_object:rebuild_room_tiles()
-	-- Build the persistent Lua-side atlas-rect caches once for the current room
+	-- Build the persistent Lua-side image-rect caches once for the current room
 	-- geometry/state. This is the expensive path and should only run when room
 	-- data actually changes: room load, row patch, rock destruction, dissolve
 	-- phase change, etc.
@@ -932,19 +929,19 @@ function room_object:rebuild_room_tiles()
 				local dissolve_index<const> = dissolve_step - 1
 				if self.room_subtype == 'world' and string.byte(map_row, x) == tile_chars.breakable_wall then
 					if dissolve_index >= 6 then
-						room_tile_sources[tile_index] = empty_tile_source
+						room_tile_sources[tile_index] = nil
 						goto continue
 					end
 					local wall_phase<const> = ((x + (y * 3)) % 6) + 1
 					if dissolve_index >= wall_phase then
-						room_tile_sources[tile_index] = empty_tile_source
+						room_tile_sources[tile_index] = nil
 						goto continue
 					end
 				end
 				local dissolve_prefix<const> = world_dissolve_prefix_by_tile_id[tile_id]
 				if dissolve_prefix ~= nil then
 					if dissolve_index >= 6 then
-						room_tile_sources[tile_index] = empty_tile_source
+						room_tile_sources[tile_index] = nil
 						goto continue
 					end
 					tile_id = dissolve_prefix .. tostring(dissolve_index)
@@ -987,7 +984,7 @@ function room_object:rebuild_room_tiles()
 			local tile_index<const> = row_base + x
 			local kind<const> = water_kind_at_tile(self, x, y)
 			if kind == water_none then
-				water_tile_sources[tile_index] = empty_tile_source
+				water_tile_sources[tile_index] = nil
 			elseif kind == water_surface then
 				water_tile_sources[tile_index] = water_surface_source
 				water_surface_tile_count = water_surface_tile_count + 1

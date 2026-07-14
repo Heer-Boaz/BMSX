@@ -3,6 +3,7 @@ import type { MachineSaveState } from '../../save_state';
 import type { BuiltinFunctionId, CpuFrameState, CpuObjectState, CpuRootValueState, CpuRuntimeState, CpuValueState } from '../../cpu/cpu';
 import type { IrqControllerState } from '../../devices/irq/save_state';
 import type { AudioControllerState } from '../../devices/audio/save_state';
+import { DMA_TICKET_MASK } from '../../bus/io';
 import { DMA_JOB_QUEUE_CAPACITY, type DmaControllerState, type DmaJobState } from '../../devices/dma/controller';
 import type {
 	ApuBadpDecoderSaveState,
@@ -830,6 +831,7 @@ function encodeDmaJobState(state: DmaJobState): DmaJobState {
 		remaining: state.remaining,
 		written: state.written,
 		clipped: state.clipped,
+		ticket: state.ticket,
 	};
 }
 
@@ -841,6 +843,7 @@ function decodeDmaJobState(value: unknown, label: string): DmaJobState {
 		remaining: requireBoundedU32(requireObjectKey(object, 'remaining', label, `${label}.remaining`), `${label}.remaining`, 0, 0xffffffff),
 		written: requireBoundedU32(requireObjectKey(object, 'written', label, `${label}.written`), `${label}.written`, 0, 0xffffffff),
 		clipped: requireBooleanValue(requireObjectKey(object, 'clipped', label, `${label}.clipped`), `${label}.clipped`),
+		ticket: requireBoundedU32(requireObjectKey(object, 'ticket', label, `${label}.ticket`), `${label}.ticket`, 0, DMA_TICKET_MASK),
 	};
 }
 

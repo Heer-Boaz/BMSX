@@ -2,9 +2,6 @@ import { type CartridgeLayerId, type RomAsset } from './format';
 import { CART_ROM_BASE, SYSTEM_ROM_BASE } from '../machine/memory/map';
 import { collectRomAssetPayloadRanges } from './asset_layout';
 
-export const ROM_ASSET_SYMBOL_MODULE_PATH = 'bmsx/assets';
-export const ROM_ASSET_SYMBOL_SOURCE_PATH = `${ROM_ASSET_SYMBOL_MODULE_PATH}.lua`;
-
 export type RomAssetSymbol = {
 	name: string;
 	assetId: string;

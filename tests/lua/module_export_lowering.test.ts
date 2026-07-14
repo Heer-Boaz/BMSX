@@ -5,6 +5,7 @@ import { test } from 'node:test';
 import { splitText } from '../../machine/ts/common/text_lines';
 import { LuaLexer } from '../../machine/ts/lua/syntax/lexer';
 import { LuaParser } from '../../machine/ts/lua/syntax/parser';
+import type { OptimizationLevel } from '../../machine/ts/lua/compiler/optimizer';
 import { CPU, RunResult } from '../../machine/ts/machine/cpu/cpu';
 import { disassembleProgram } from '../../machine/ts/machine/cpu/disassembler';
 import { Memory } from '../../machine/ts/machine/memory/memory';
@@ -31,6 +32,7 @@ function compileWithModule(
 	modulePath: string,
 	moduleSource: string,
 	extraModules: ReadonlyArray<{ path: string; source: string }> = [],
+	optLevel: OptimizationLevel = 0,
 ): { compiled: CompiledProgram; disasm: string; constRelocs: ProgramConstReloc[] } {
 	const entryChunk = parseSource(entrySource, 'entry.lua');
 	const moduleChunk = parseSource(moduleSource, `${modulePath}.lua`);
@@ -44,7 +46,7 @@ function compileWithModule(
 				source: module.source,
 			})),
 		],
-		{ entrySource },
+		{ entrySource, optLevel },
 	);
 	return {
 		compiled,
@@ -176,6 +178,30 @@ test('dynamic module function value reads use module slots, not export-proto rel
 	cpu.start(image.vectors.resetProtoIndex);
 	assert.equal(cpu.runUntilDepth(0, 100000), RunResult.Halted);
 	assert.deepEqual(Array.from(cpu.lastReturnValues), [7]);
+});
+
+test('optimizer preserves a sibling closure upvalue environment', () => {
+	const moduleSource = [
+		'local value',
+		'local clear<const> = function() value = nil end',
+		'local api = {}',
+		'function api.apply(input)',
+		'\tvalue = input',
+		'\tclear()',
+		'\treturn input, value',
+		'end',
+		'return api',
+	].join('\n');
+	const { compiled } = compileWithModule('local api<const> = require("foo")\nreturn api.apply(41)', 'foo', moduleSource, [], 3);
+	const image = encodeCompiledProgramImage(compiled);
+	const cpu = new CPU(new Memory({ systemRom: new Uint8Array(0), cartRom: new Uint8Array(0) }));
+	cpu.setProgram(inflateExecutableProgramImage(image), image.link.symbols, compiled.metadata);
+	cpu.start(image.vectors.sectionInitProtoIndex);
+	assert.equal(cpu.runUntilDepth(0, 100000), RunResult.Halted);
+	runStaticModuleInitializers(cpu, compiled);
+	cpu.start(image.vectors.resetProtoIndex);
+	assert.equal(cpu.runUntilDepth(0, 100000), RunResult.Halted);
+	assert.deepEqual(Array.from(cpu.lastReturnValues), [41, null]);
 });
 
 // Nested namespaces are runtime tables; flat export slots only represent direct fields.

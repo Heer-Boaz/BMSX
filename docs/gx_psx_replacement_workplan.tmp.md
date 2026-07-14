@@ -203,24 +203,25 @@ WebGL2, GLES2, and WebGPU. Only live accelerated conformance remains deferred.
 
 Cart texture residency is independent of the active GP1 display dimensions,
 and the GTE does not participate in texture or atlas handling. The ROM packer
-emits fixed system/palette4 GP0 streams, but cart-direct16 assets contain only
-destination-free row-major RGB555/STP payload. The cart chooses the raw VRAM
-rectangle, resolves its own packer atlas record and binds its retained image
-rects. `system/gx_gpu.lua` emits the raw A0 packet and `system/dma.lua` streams
-the payload directly from ROM to GP0. Neither firmware owner knows an atlas ID,
-workset or scene. Runtime PNG decode and mapped RGBA texture staging are not
-part of atlas residency. Atlas PNGs remain tooling previews and are not packed
-as runtime ROM payloads.
+emits one fixed system GP0 stream and destination-free cart texture payloads.
+Direct16 payloads are row-major RGB555/STP words; palette4 payloads contain raw
+packed texels followed by their CLUT. Every runtime image points directly at
+the shared ROM span plus integer-local `texture_u`/`texture_v` metadata. The cart
+chooses the physical VRAM rectangle. `system/gx_gpu.lua` emits the raw A0 packet
+and `system/dma.lua` streams the payload directly from ROM to GP0. Neither
+firmware owner, cartlib nor a cart knows the producer's numeric packing-group
+ID. Runtime PNG decode and mapped RGBA texture staging are not part of texture
+residency; generated PNGs remain tooling previews only.
 
-The packer stores image placement as integer `atlas_x`/`atlas_y` metadata and,
-for fixed placement, physical GX texture coordinates. Cartlib, BIOS fonts, the
-ROM inspector, and host font loading consume those pixels directly; normalized
-image texcoord arrays and float-to-pixel reconstruction are gone. Model mesh
-UVs remain separate model data and are normalized only at the renderer.
-The compact BIOS direct16 atlas is constrained to one fixed 256x256 texture
-page and emits one A0 stream; no unreachable multislice system layout remains.
-The palette4 cart region starts on the following page rather than depending on
-the current BIOS atlas height.
+Each cart declares reserved VRAM, physical texture/CLUT slots, possible group
+destinations and simultaneous working sets in `gx_texture_layout`. The producer
+validates those regions, packs within the smallest legal slot, and generates
+compile-time raw destination words. Its deterministic skyline packer keeps every
+ordinary image inside one 256x256 sampling page. A physically larger surface may
+span pages and is split only by the central rectangle primitive; ordinary rect
+and affine draws perform no runtime page discovery. The compact BIOS direct16
+texture remains one fixed 256x256 page and emits one A0 stream. The independent
+host-systematlas remains a host UI renderresource, not cart residency.
 
 The `2025` cart deliberately replaces its pre-GX unlimited-atlas assumptions
 with an explicit 1024x512 VRAM map. The top half contains the 320x240
@@ -230,7 +231,9 @@ bank. The common combat textures remain resident; a monster switch replaces
 only the monster bank, while the opaque all-out image deliberately replaces the
 left background bank. None of these ranges overlaps the framebuffer or system
 page. Background preload is queued before the authored swap, submitted after
-the preceding frame draw, and committed by the DMA-done IRQ.
+the preceding frame draw, and committed only when the DMA status has published
+that upload's exact 24-bit completion ticket. Coalesced DMA IRQs therefore
+cannot publish a later queue entry early.
 
 DMA owns the CPU GP0 command port until its payload is complete. The CPU keeps a
 blocked GP0 store latched against its raw MMIO address and resumes it only when
@@ -242,21 +245,25 @@ same device edge rather than polling. The long `2025` black-box capture now
 starts the real `combat_wekker` flow and crosses the first common-plus-monster
 upload before checking Maya B, the clock scene and the choice prompt.
 
-`pietious` now uses a
-manifest-required, ROM-produced native PSX 4-bpp texture plus CLUT and GP0
-upload stream. Its atlas bypasses the legacy RGBA residency planner and has no
-CPU texture-staging allocation. It no longer decodes a whole RGBA atlas at boot
-or submits VDP tile streams.
+`pietious` now uses a manifest-required, destination-free native PSX 4-bpp
+texture plus CLUT in one cart-owned slot. It has no CPU texture-staging
+allocation, whole-texture RGBA decode or VDP tile stream. The legacy header's
+eight permanently off-screen black columns are removed, so every Pietious image
+fits one hardware sampling page and every blit remains one primitive.
 
-The ROM atlas is strictly a rompacker/cart-owner packing artifact, not a GPU,
-DMA or firmware residency unit.
-`pietious` has a compact stable 4-bpp atlas/CLUT working set, while `2025` uses
+`@atlas=N` is strictly a ROM-producer grouping directive, not a serialized
+runtime asset or a GPU, DMA, cartlib or firmware residency unit. `pietious` has
+a compact stable 4-bpp texture/CLUT working set, while `2025` uses
 smaller cart-owned working sets that match what is simultaneously visible. Its
 full-screen direct16 backgrounds legitimately bulk-upload at scene transitions;
-they are no longer incidental members of multi-background auto-atlases. A cart
+they are no longer incidental members of multi-background producer groups. A cart
 that needs several independently changing texture sets must program its own raw
 VRAM page/CLUT layout instead of growing a semantic firmware slot manager or
 another whole-atlas swap wrapper.
+
+GX image production is the only supported ROM path. The old mutable
+`--textureatlas no` switch is removed rather than retaining a PNG-backed image
+fallback that the GX runtime cannot consume.
 
 For the current assets this changes a background transition from a generated
 718,812--896,976-byte multi-background upload to the active image's
@@ -668,9 +675,9 @@ and MAME
 - [x] Migrate `emptycart` to GX.
 - [x] Migrate `fade_probe` to GX blend primitives.
 - [x] Migrate `vblanktest` to GX/GPUSTAT-visible behavior.
-- [x] Migrate `nemesis_s` boot, atlas upload, clear, and sprite/tile draws to
-  GX/PSX. Its cart programs the VRAM destination and the ROM carries the raw
-  direct16 payload; runtime atlas decode is removed.
+- [x] Migrate `nemesis_s` boot, texture upload, clear, and sprite/tile draws to
+  GX/PSX. Its cart programs the VRAM destination and the ROM carries one shared
+  raw direct16 texture span; runtime atlas identity and decode are removed.
 - [x] Migrate `renderhwtest` to direct GX primitive programming, including a
   cart-visible raw PSX textured affine quad smoke.
 - [x] Migrate `2025` engine/cart rendering to GX, including cart-owned
@@ -689,12 +696,12 @@ and MAME
   exact RGB555 scanout in TS headless, C++ software, and GLES2/llvmpipe. The
   montage overlay also reaches black before the separate post-fade state when
   the incoming fade is skipped, instead of ending in a full-screen hard cut.
-- [x] Migrate `pietious` engine/cart rendering. Its cart atlas is packed at ROM
-  build time under an explicit Palette4 asset contract as native PSX 4-bpp
-  texture data plus CLUT and GP0 upload commands, DMA-uploaded directly to GPU
-  VRAM, and consumed by retained GX tile sources. The per-frame tile path emits
-  raw textured rectangles without rebuilding tables, decoding RGBA pixels, or
-  using a VDP stream shim.
+- [x] Migrate `pietious` engine/cart rendering. Its producer-only image group is
+  packed at ROM build time under an explicit Palette4 asset contract as native
+  PSX 4-bpp texture data plus CLUT, DMA-uploaded into a cart-authored VRAM slot,
+  and consumed by retained GX tile sources. The per-frame tile path emits raw
+  textured rectangles without rebuilding tables, decoding RGBA pixels, or using
+  a VDP stream shim. Every image is page-local and each blit emits one primitive.
 - [x] Replace the current `bare_metal_cart` RPU descriptor smoke path with
   GX/GTE-owned PSX-style primitives. `bare_metal_cart` now programs raw GP0,
   GP1, and GTE registers directly instead of going through BIOS/system GX

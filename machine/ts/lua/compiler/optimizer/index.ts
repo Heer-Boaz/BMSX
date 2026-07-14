@@ -2070,10 +2070,15 @@ const inlineFunctionCalls = (
 			for (let index = block.start; index < block.end; index += 1) {
 				const instruction = instructions[index];
 				if (instruction.op === OpCode.CALL && instruction.b > 0 && instruction.c > 0) {
-					const protoIndex = instruction.callProtoIndex ?? closures.get(instruction.a);
+					const closureProtoIndex = closures.get(instruction.a);
+					const protoIndex = instruction.callProtoIndex ?? closureProtoIndex;
 					if (protoIndex !== undefined) {
 						const callee = getInlineCallee(protoIndex);
-						if (callee && decodeCallArgCount(instruction.b, 0) <= callee.meta.numParams && callee.meta.maxStack <= Math.max(instruction.b, instruction.c)) {
+						// A linked proto identifies the code, not the closure instance that owns its upvalues.
+						if (callee
+							&& (closureProtoIndex === protoIndex || callee.meta.upvalueDescs.length === 0)
+							&& decodeCallArgCount(instruction.b, 0) <= callee.meta.numParams
+							&& callee.meta.maxStack <= Math.max(instruction.b, instruction.c)) {
 							const expansion = buildInlineExpansion(instruction, ranges[index], callee);
 							if (expansion) {
 								const nextCount = instructions.length - 1 + expansion.instructions.length;

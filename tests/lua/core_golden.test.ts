@@ -13,6 +13,7 @@ import {
 	BUS_FAULT_UNMAPPED,
 	DMA_CTRL_START,
 	DMA_STATUS_DONE,
+	DMA_TICKET_SHIFT,
 	IO_DMA_CTRL,
 	IO_DMA_DST,
 	IO_DMA_LEN,
@@ -148,7 +149,7 @@ test('core golden: DMA source bus faults latch on the memory bus while DMA progr
 	memory.writeValue(IO_DMA_CTRL, DMA_CTRL_START);
 	controller.accrueCycles(1, 1);
 	controller.onService(1);
-	assert.equal(memory.readIoU32(IO_DMA_STATUS), DMA_STATUS_DONE);
+	assert.equal(memory.readIoU32(IO_DMA_STATUS), (1 << DMA_TICKET_SHIFT) | DMA_STATUS_DONE);
 	assert.equal(memory.readIoU32(IO_DMA_WRITTEN), 4);
 	assert.equal((memory.readIoU32(IO_IRQ_FLAGS) & IRQ_DMA_DONE) !== 0, true);
 	assertBusFault(memory, BUS_FAULT_UNMAPPED, RAM_END - 1, BUS_FAULT_ACCESS_READ | BUS_FAULT_ACCESS_U8);

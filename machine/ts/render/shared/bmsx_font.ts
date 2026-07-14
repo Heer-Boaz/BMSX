@@ -1,4 +1,4 @@
-import { BFont, GlyphMap, type ImageAtlasRect } from './bitmap_font';
+import { BFont, GlyphMap } from './bitmap_font';
 import { hostSystemAtlasImage } from '../../rompack/host_system_atlas';
 
 export const DEFAULT_FONT_VARIANT = 'msx' as const;
@@ -153,22 +153,7 @@ export class Font extends BFont {
 }
 
 const HOST_SYSTEM_FONT_SOURCE = {
-	getGlyphRecord(imgid: string) {
-		const image = hostSystemAtlasImage(imgid);
-		return {
-			imgmeta: {
-				width: image.width,
-				height: image.height,
-			},
-		};
-	},
-	getGlyphRect(imgid: string): ImageAtlasRect {
-		const image = hostSystemAtlasImage(imgid);
-		return {
-			u: image.u,
-			v: image.v,
-			w: image.w,
-			h: image.h,
-		};
+	resolveGlyph(imgid: string) {
+		return hostSystemAtlasImage(imgid);
 	},
 };

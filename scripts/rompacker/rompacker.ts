@@ -7,12 +7,18 @@ import { findExistingDirectory, getParamOrEnv, normalizePathKey, parseArgsVector
 import { createCliUi } from './display';
 import { validateAudioEventReferences } from './audioeventvalidator';
 import { lintCartSources } from './cart_lua_linter_runtime';
-import { appendProgramImage, biosLuaPath, buildLuaProgramContextAssets, commonResPath, cartlibLuaPath, systemLuaPath, createAtlasses, finalizeRompack, GENERATE_AND_USE_TEXTURE_ATLAS, generateRomAssets, getResMetaList, getResourcesList, getRomManifest, isRebuildRequired, setAtlasFlag } from './rombuilder';
-import { generateHostSystemAtlasArtifactsFromAssets } from './host_system_atlas';
+import { appendProgramImage, biosLuaPath, buildLuaProgramContextAssets, commonResPath, cartlibLuaPath, systemLuaPath, compileLuaChunkBuffer, createTextureAtlases, finalizeRompack, generateRomAssets, getResMetaList, getResourcesList, getRomManifest, isRebuildRequired } from './rombuilder';
+import { generateHostSystemAtlasArtifactsFromResources } from './host_system_atlas';
+import { buildGxTextureLayoutModuleSource } from './gx_texture_layout';
 import type { TaskProgressReporter as ProgressReporter } from './progress';
 import type { RomPackerOptions } from './rompacker.rompack';
 import type { RomAsset } from '../../machine/ts/rompack/format';
-import { buildRomAssetSymbolModuleSourceFromSymbols, collectRomAssetSymbols, ROM_ASSET_SYMBOL_MODULE_PATH } from '../../machine/ts/rompack/asset_symbols';
+import { buildRomAssetSymbolModuleSourceFromSymbols, collectRomAssetSymbols } from '../../machine/ts/rompack/asset_symbols';
+import {
+	GX_TEXTURE_LAYOUT_MODULE_PATH,
+	GX_TEXTURE_LAYOUT_SOURCE_PATH,
+	ROM_ASSET_SYMBOL_MODULE_PATH,
+} from '../../machine/ts/rompack/format';
 import { LuaError } from '../../machine/ts/lua/errors';
 
 import { join } from 'node:path';
@@ -36,7 +42,6 @@ const KNOWN_FLAGS = new Set<string>([
 	'-respath',
 	'--debug',
 	'--force',
-	'--textureatlas',
 	'--skiptypecheck',
 	'--mode',
 	'-h',
@@ -48,7 +53,6 @@ const FLAGS_WITH_VALUES = new Set<string>([
 	'-title',
 	'-bootloaderpath',
 	'-respath',
-	'--textureatlas',
 ]);
 const OPT_LEVEL_RE = /^-O([0-3])$/;
 
@@ -58,7 +62,7 @@ const TASK = {
 	CART_LUA_LINT: 'Cart Lua linten',
 	RESOURCE_LIST: 'Resources scannen',
 	RESOURCE_LOAD: 'Resources laden en metadata genereren',
-	ATLAS_BUILD: 'Texture atlases bouwen (indien nodig)',
+	TEXTURE_BUILD: 'GX textures bouwen',
 	ROM_ASSETS: 'Rom-assets genereren',
 	ROM_FINALIZE: 'Rompakket finaliseren',
 	BIOS_REBUILD_CHECK: 'Checken of BIOS rebuild nodig is',
@@ -74,7 +78,7 @@ const taskList: TaskName[] = [
 	TASK.MANIFEST_SCAN,
 	TASK.RESOURCE_LIST,
 	TASK.RESOURCE_LOAD,
-	TASK.ATLAS_BUILD,
+	TASK.TEXTURE_BUILD,
 	TASK.ROM_ASSETS,
 	TASK.CART_LUA_LINT,
 	TASK.ROM_FINALIZE,
@@ -100,7 +104,7 @@ const biosBuildTasks: TaskName[] = [
 	TASK.BIOS_LINT,
 	TASK.MANIFEST_SCAN,
 	TASK.RESOURCE_LIST,
-	TASK.ATLAS_BUILD,
+	TASK.TEXTURE_BUILD,
 	TASK.ROM_ASSETS,
 	TASK.BIOS_FINALIZE,
 	TASK.DONE,
@@ -188,26 +192,12 @@ function parseOptions(args: string[]): ParsedOptions {
 		writeOut(`  -respath <path>          Resource path override\n`, 'warning');
 		writeOut(`  --debug                  Build debug artifacts\n`, 'warning');
 		writeOut(`  --force                  Force the compilation and build of the rompack\n`, 'warning');
-		writeOut(`  --textureatlas <yes|no>  Enable or disable texture atlas packing (default: yes)\n`, 'warning');
 		writeOut(`  --mode <rompack|bios>  What to build (default: rompack)\n`, 'warning');
 		writeOut(`  -O0|-O1|-O2|-O3          Bytecode optimizer level (default: -O3)\n`, 'warning');
 		process.exit(0);
 	}
 
 	const optLevel = parseOptLevel(args);
-
-	const textureSetting = getOptionalParam(args, '--textureatlas', 'ROM_TEXTURE_ATLAS');
-	let useTextureAtlas = true;
-	if (textureSetting !== undefined) {
-		const raw = textureSetting.toLowerCase();
-		if (raw === 'yes' || raw === 'true' || raw === '1') {
-			useTextureAtlas = true;
-		} else if (raw === 'no' || raw === 'false' || raw === '0') {
-			useTextureAtlas = false;
-		} else {
-			throw new Error(`Unsupported value "${raw}" for --textureatlas. Expected one of: yes, no, true, false, 1, 0.`);
-		}
-	}
 
 	const force = seenFlags.has('--force');
 	const debug = seenFlags.has('--debug');
@@ -258,7 +248,6 @@ function parseOptions(args: string[]): ParsedOptions {
 		respath,
 		force,
 		debug,
-		useTextureAtlas,
 		skipTypecheck,
 		platform: 'browser',
 		optLevel,
@@ -332,9 +321,7 @@ function formatLuaBuildError(err: LuaError, virtualRoots: ReadonlyArray<string>)
 }
 
 async function runBIOSBuild(options: ParsedOptions, progress?: ProgressReporter): Promise<void> {
-	const { respath, bootloader_path, force, debug, optLevel, useTextureAtlas } = options;
-
-	setAtlasFlag(useTextureAtlas);
+	const { respath, bootloader_path, force, debug, optLevel } = options;
 
 	const BIOSResPath = respath || commonResPath;
 	if (!BIOSResPath) {
@@ -362,7 +349,6 @@ async function runBIOSBuild(options: ParsedOptions, progress?: ProgressReporter)
 	} else {
 		const checkBuild = () => isRebuildRequired(BIOSRomName, bootloader_path, BIOSResPath, {
 			extraLuaPaths: [biosLuaPath, systemLuaPath],
-			resolveAtlasId: false,
 			debug,
 		});
 		assetsNeedRebuild = progress ? await progress.runWithDetail(TASK.BIOS_REBUILD_CHECK, checkBuild) : await checkBuild();
@@ -392,17 +378,12 @@ async function runBIOSBuild(options: ParsedOptions, progress?: ProgressReporter)
 	const BIOSResMetaList = await runBIOSStep(TASK.MANIFEST_SCAN, () => getResMetaList([BIOSResPath, biosLuaPath, systemLuaPath], BIOSRomName, {
 		extraLuaPaths: [],
 		virtualRoot: BIOSVirtualRoot,
-		resolveAtlasId: true,
 	}));
 	const BIOSResources = await runBIOSStep(TASK.RESOURCE_LIST, () => getResourcesList(BIOSResMetaList));
-	if (GENERATE_AND_USE_TEXTURE_ATLAS) {
-		await runBIOSStep(TASK.ATLAS_BUILD, () => createAtlasses(BIOSResources));
-	} else if (progress) {
-		progress.skipTasks(1);
-	}
+	await runBIOSStep(TASK.TEXTURE_BUILD, () => createTextureAtlases(BIOSResources));
 	validateAudioEventReferences(BIOSResources);
 	const BIOSRomAssets = await runBIOSStep(TASK.ROM_ASSETS, () => generateRomAssets(BIOSResources, message => progress?.setDetail(message)));
-	await generateHostSystemAtlasArtifactsFromAssets(BIOSRomAssets);
+	await generateHostSystemAtlasArtifactsFromResources(BIOSResources);
 	const BIOSProgramBoot = appendProgramImage(BIOSRomAssets, SYSTEM_BOOT_ENTRY_PATH, { includeSymbols: debug, optLevel });
 	stripLuaAssets(BIOSRomAssets, debug);
 	await runBIOSStep(TASK.BIOS_FINALIZE, () => finalizeRompack(BIOSRomAssets, BIOSRomName, { projectRootPath: '', manifest: null, zipRom: false, debug, programBoot: BIOSProgramBoot }));
@@ -423,7 +404,7 @@ async function main() {
 		const args = process.argv.slice(2);
 		const options = parseOptions(args);
 
-		let { title, rom_name, bootloader_path, respath, force, debug, useTextureAtlas, optLevel, mode, extraLuaRoots, libraryLuaRoots } = options;
+		let { title, rom_name, bootloader_path, respath, force, debug, optLevel, mode, extraLuaRoots, libraryLuaRoots } = options;
 
 		if (mode === 'bios') {
 			progress = ui.createProgress(biosBuildTasks);
@@ -445,8 +426,6 @@ async function main() {
 		const virtualRoot = projectRootPath;
 		luaErrorVirtualRoots = [virtualRoot];
 
-		setAtlasFlag(useTextureAtlas);
-
 		const resourceRoots = isBIOSMode
 			? [respath || commonResPath, biosLuaPath, systemLuaPath]
 			: [respath || commonResPath, commonResPath];
@@ -467,7 +446,7 @@ async function main() {
 		if (!title && !isBIOSMode) throw new Error("Missing parameter for title ('title', e.g. 'Sintervania'.");
 		const romManifest = await getRomManifest(respath);
 		if (!romManifest) throw new Error(`Rom manifest not found at "${respath}"!`);
-		const { gx_texture_atlases, ...runtimeRomManifest } = romManifest;
+		const { gx_texture_layout, ...runtimeRomManifest } = romManifest;
 		rom_name = romManifest.rom_name ?? rom_name;
 		title = romManifest.title ?? title;
 		romOutputPath = `dist/${rom_name}${romPackDebug ? '.debug' : ''}.rom`;
@@ -483,7 +462,7 @@ async function main() {
 
 		logDivider('Options');
 		logBullet('Rebuild', force ? pc.yellow('force') : pc.green('auto (mtime check)'));
-		logBullet('Texture atlas', useTextureAtlas ? pc.green('enabled') : pc.red('disabled'));
+		logBullet('GX textures', pc.green('enabled'));
 		logBullet('Lua case', pc.green('lower-case identifiers required'));
 		logBullet('Build', debug ? pc.cyan('DEBUG') : pc.blue('NON-DEBUG'));
 		logBullet('Opt level', pc.white(`-O${optLevel}`));
@@ -505,12 +484,12 @@ async function main() {
 		logInfo(`Starting for ${pc.bold(pc.blue(`${rom_name}`))}`);
 
 		if (!force) {
-			rebuildRequired = await progress.runWithDetail('Check timestamps', () => isRebuildRequired(rom_name, bootloader_path, respath, { extraLuaPaths: [...extraLuaPathSet, ...libraryLuaPathSet], resolveAtlasId: false, debug }));
+			rebuildRequired = await progress.runWithDetail('Check timestamps', () => isRebuildRequired(rom_name, bootloader_path, respath, { extraLuaPaths: [...extraLuaPathSet, ...libraryLuaPathSet], debug }));
 			if (!rebuildRequired && resourceRoots.length > 1) {
 				for (let i = 1; i < resourceRoots.length; i++) {
 					const candidate = resourceRoots[i];
 					if (!candidate || candidate === respath) continue;
-					const needs = await progress.runWithDetail('Check timestamps (shared)', () => isRebuildRequired(rom_name, bootloader_path, candidate, { extraLuaPaths: [...extraLuaPathSet, ...libraryLuaPathSet], resolveAtlasId: true, debug }));
+					const needs = await progress.runWithDetail('Check timestamps (shared)', () => isRebuildRequired(rom_name, bootloader_path, candidate, { extraLuaPaths: [...extraLuaPathSet, ...libraryLuaPathSet], debug }));
 					rebuildRequired = rebuildRequired || needs;
 					if (rebuildRequired) break;
 				}
@@ -533,26 +512,34 @@ async function main() {
 				extraLuaPaths: Array.from(extraLuaPathSet),
 				libraryLuaPaths: Array.from(libraryLuaPathSet),
 				virtualRoot,
-				resolveAtlasId: true,
 			}));
 			await progress.taskCompleted();
 			// Build resources
 			let resources = await progress.runWithDetail('Load resources', () => getResourcesList(romResMetaList));
 			await progress.taskCompleted();
 
-			if (GENERATE_AND_USE_TEXTURE_ATLAS) {
-				await progress.runWithDetail('Generate texture atlases', () => createAtlasses(
-					resources,
-					message => progress.setDetail(message),
-					gx_texture_atlases,
-				));
-			}
+			await progress.runWithDetail('Generate GX textures', () => createTextureAtlases(
+				resources,
+				gx_texture_layout,
+				message => progress.setDetail(message),
+			));
 			await progress.taskCompleted();
 
 			// Validate AEM references against loaded resources
 			validateAudioEventReferences(resources);
 
 			const romAssets = await progress.runWithDetail('Generate ROM assets', () => generateRomAssets(resources, message => progress.setDetail(message)));
+			if (gx_texture_layout) {
+				const source = buildGxTextureLayoutModuleSource(gx_texture_layout);
+				romAssets.push({
+					resid: GX_TEXTURE_LAYOUT_MODULE_PATH,
+					type: 'lua',
+					buffer: Buffer.from(source),
+					compiled_buffer: compileLuaChunkBuffer(source, GX_TEXTURE_LAYOUT_MODULE_PATH),
+					source_path: GX_TEXTURE_LAYOUT_SOURCE_PATH,
+					update_timestamp: 0,
+				});
+			}
 			const biosProgramContextAssets = await buildLuaProgramContextAssets([biosLuaPath, systemLuaPath], '');
 			const assetSymbols = collectRomAssetSymbols(romAssets, romPackDebug, 'cart');
 			const assetSymbolModuleSource = buildRomAssetSymbolModuleSourceFromSymbols(assetSymbols);

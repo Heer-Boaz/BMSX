@@ -119,8 +119,6 @@ bool loadSystemRomPackageFromRom(const u8* buffer,
 // Equivalent to TypeScript's parseCartridgeIndex — lightweight, no asset allocation.
 MachineManifest peekCartMachineManifest(const u8* buffer, size_t size);
 
-ImageAtlasRect resolveImageAtlasRectFromPackage(const RuntimeRomPackage& romPackage, const std::string& imgId);
-
 } // namespace bmsx
 
 #endif // BMSX_ROMPACK_PACKAGE_H

@@ -80,7 +80,6 @@ export function buildResourceViewerState(descriptor: ResourceDescriptor): Resour
 			break;
 		}
 		case 'image':
-		case 'atlas':
 		case 'romlabel': {
 			const image = activePackage.img?.[descriptor.asset_id];
 			if (!image) {
@@ -92,19 +91,14 @@ export function buildResourceViewerState(descriptor: ResourceDescriptor): Resour
 				asset_id: descriptor.asset_id,
 				width: meta.width,
 				height: meta.height,
-				atlasId: meta.atlasid,
 			};
 			appendResourceViewerLine(lines, '-- Image Metadata --');
 			appendResourceViewerLine(lines, `Dimensions: ${meta.width}x${meta.height}`);
-			if (meta.atlasid !== undefined) {
-				appendResourceViewerLine(lines, `Atlas ID: ${meta.atlasid}`);
-			}
 			const metadata = meta as unknown as Record<string, unknown>;
 			for (const key in metadata) {
 				switch (key) {
 					case 'width':
 					case 'height':
-					case 'atlasid':
 						continue;
 				}
 				appendResourceViewerLine(lines, `${key}: ${describeMetadataValue(metadata[key])}`);

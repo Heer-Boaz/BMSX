@@ -300,7 +300,6 @@ async function loadRomAssetListFromHeader(rom: Uint8Array, header: CartRomHeader
 				: decodeBinary(metaSlice);
 			switch (asset.type) {
 				case 'image':
-				case 'atlas':
 					asset.imgmeta = decodedMeta as ImgMeta;
 					if (asset.imgmeta.hitpolygons?.original && (!asset.imgmeta.hitpolygons.fliph || !asset.imgmeta.hitpolygons.flipv || !asset.imgmeta.hitpolygons.fliphv)) {
 						const extracted_hitpolygon = asset.imgmeta.hitpolygons.original;
@@ -489,8 +488,7 @@ async function load(source: RawRomSource, res: RomAsset, romPackage: RuntimeRomP
 	const baseAsset = res;
 	const assetKey = baseAsset.resid;
 	switch (res.type) {
-		case 'image':
-		case 'atlas': {
+		case 'image': {
 			const imgAsset = {
 				...baseAsset,
 			} as RomImgAsset;

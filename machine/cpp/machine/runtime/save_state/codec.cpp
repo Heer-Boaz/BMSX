@@ -1,6 +1,7 @@
 #include "machine/runtime/save_state/codec.h"
 
 #include "common/serializer/binencoder.h"
+#include "machine/bus/io.h"
 #include "machine/devices/dma/controller.h"
 #include "machine/devices/gx/gpu.h"
 #include "machine/devices/gx/gte.h"
@@ -904,6 +905,7 @@ BinValue encodeDmaJobState(const DmaJobState& state) {
 	object["remaining"] = encodeScalar<f64>(state.remaining);
 	object["written"] = encodeScalar<f64>(state.written);
 	object["clipped"] = BinValue(state.clipped);
+	object["ticket"] = encodeScalar<f64>(state.ticket);
 	return BinValue(std::move(object));
 }
 
@@ -915,6 +917,7 @@ DmaJobState decodeDmaJobState(const BinValue& value, const char* label) {
 	state.remaining = requireU32(requireField(object, "remaining", label), "machine.dma.queue.remaining");
 	state.written = requireU32(requireField(object, "written", label), "machine.dma.queue.written");
 	state.clipped = requireBool(requireField(object, "clipped", label), "machine.dma.queue.clipped");
+	state.ticket = requireBoundedU32(requireField(object, "ticket", label), "machine.dma.queue.ticket", 0u, DMA_TICKET_MASK);
 	return state;
 }
 

@@ -85,7 +85,6 @@ std::string assetTypeFromId(u32 id) {
 		case ROM_TOC_ASSET_TYPE_AUDIO: return "audio";
 		case ROM_TOC_ASSET_TYPE_DATA: return "data";
 		case ROM_TOC_ASSET_TYPE_BIN: return "bin";
-		case ROM_TOC_ASSET_TYPE_ATLAS: return "atlas";
 		case ROM_TOC_ASSET_TYPE_ROMLABEL: return "romlabel";
 		case ROM_TOC_ASSET_TYPE_MODEL: return "model";
 		case ROM_TOC_ASSET_TYPE_AEM: return "aem";
@@ -101,7 +100,6 @@ u32 assetTypeToId(std::string_view type) {
 	if (type == "audio") return ROM_TOC_ASSET_TYPE_AUDIO;
 	if (type == "data") return ROM_TOC_ASSET_TYPE_DATA;
 	if (type == "bin") return ROM_TOC_ASSET_TYPE_BIN;
-	if (type == "atlas") return ROM_TOC_ASSET_TYPE_ATLAS;
 	if (type == "romlabel") return ROM_TOC_ASSET_TYPE_ROMLABEL;
 	if (type == "model") return ROM_TOC_ASSET_TYPE_MODEL;
 	if (type == "aem") return ROM_TOC_ASSET_TYPE_AEM;
@@ -116,10 +114,9 @@ AssetTypeKind resolveAssetTypeKind(std::string_view assetType) {
 	}
 	switch (assetType[0]) {
 		case 'i':
-			if (assetType == "image") return AssetTypeKind::ImageAtlas;
+			if (assetType == "image") return AssetTypeKind::Image;
 			break;
 		case 'a':
-			if (assetType == "atlas") return AssetTypeKind::ImageAtlas;
 			if (assetType == "audio") return AssetTypeKind::Audio;
 			if (assetType == "aem") return AssetTypeKind::Aem;
 			break;

@@ -4,6 +4,8 @@ import { test } from 'node:test';
 import {
 	DMA_CTRL_START,
 	DMA_CTRL_STRICT,
+	DMA_TICKET_MASK,
+	DMA_TICKET_SHIFT,
 	DMA_STATUS_BUSY,
 	DMA_STATUS_CLIPPED,
 	DMA_STATUS_DONE,
@@ -46,6 +48,8 @@ type DmaGpuFixture = {
 	scheduler: DeviceScheduler;
 };
 
+const FIRST_DMA_TICKET_WORD = 1 << DMA_TICKET_SHIFT;
+
 function createDmaGpuFixture(): DmaGpuFixture {
 	const memory = new Memory({ systemRom: new Uint8Array(), cartRom: new Uint8Array(0) });
 	const cpu = new CPU(memory);
@@ -79,7 +83,7 @@ test('DMA streams RAM words into the GX-GPU GP0 command port', () => {
 	dma.onService(12);
 
 	const commands = gpu.readDeviceOutput().commandBuffer;
-	assert.equal(memory.readIoU32(IO_DMA_STATUS), DMA_STATUS_DONE);
+	assert.equal(memory.readIoU32(IO_DMA_STATUS), FIRST_DMA_TICKET_WORD | DMA_STATUS_DONE);
 	assert.equal(memory.readIoU32(IO_DMA_WRITTEN), 12);
 	assert.equal((memory.readIoU32(IO_IRQ_FLAGS) & IRQ_DMA_DONE) >>> 0, IRQ_DMA_DONE);
 	assert.equal(memory.mappedWriteReady(IO_GX_GPU_GP0), true);
@@ -89,6 +93,98 @@ test('DMA streams RAM words into the GX-GPU GP0 command port', () => {
 	assert.equal(commands.words[commands.commandWordStart[0]], command0 >>> 0);
 	assert.equal(commands.words[commands.commandWordStart[0] + 1], command1);
 	assert.equal(commands.words[commands.commandWordStart[0] + 2], command2);
+});
+
+test('DMA keeps BUSY asserted until the final queued ticket retires', () => {
+	const { memory, dma } = createDmaGpuFixture();
+	dma.setTiming(1, 1, 0);
+	const source = PROGRAM_STATIC_RAM_BASE + 0x500;
+	const destination = PROGRAM_STATIC_RAM_BASE + 0x600;
+	memory.writeMappedU32LE(source, 0x11223344);
+	memory.writeMappedU32LE(source + 4, 0x55667788);
+
+	memory.writeMappedU32LE(IO_DMA_SRC, source);
+	memory.writeMappedU32LE(IO_DMA_DST, destination);
+	memory.writeMappedU32LE(IO_DMA_LEN, 4);
+	memory.writeMappedU32LE(IO_DMA_CTRL, DMA_CTRL_START);
+	assert.equal(memory.readIoU32(IO_DMA_CTRL), FIRST_DMA_TICKET_WORD);
+	memory.writeMappedU32LE(IO_DMA_SRC, source + 4);
+	memory.writeMappedU32LE(IO_DMA_DST, destination + 4);
+	memory.writeMappedU32LE(IO_DMA_LEN, 4);
+	memory.writeMappedU32LE(IO_DMA_CTRL, DMA_CTRL_START);
+	assert.equal(memory.readIoU32(IO_DMA_CTRL), 2 << DMA_TICKET_SHIFT);
+
+	dma.accrueCycles(4, 4);
+	dma.onService(4);
+
+	assert.equal(memory.readIoU32(IO_DMA_STATUS), FIRST_DMA_TICKET_WORD | DMA_STATUS_DONE | DMA_STATUS_BUSY);
+	assert.equal(memory.readMappedU32LE(destination), 0x11223344);
+	assert.equal(memory.readMappedU32LE(destination + 4), 0);
+	assert.equal(dma.captureState().queue.length, 1);
+
+	dma.accrueCycles(4, 8);
+	dma.onService(8);
+
+	assert.equal(memory.readIoU32(IO_DMA_STATUS), (2 << DMA_TICKET_SHIFT) | DMA_STATUS_DONE);
+	assert.equal(memory.readMappedU32LE(destination + 4), 0x55667788);
+	const state = dma.captureState();
+	assert.equal(state.controlRegisterWord, 2 << DMA_TICKET_SHIFT);
+	assert.equal(state.statusRegisterWord, (2 << DMA_TICKET_SHIFT) | DMA_STATUS_DONE);
+	assert.equal(state.queue.length, 0);
+});
+
+test('DMA retires a wrapped zero-length ticket after the older FIFO entry', () => {
+	const { memory, dma } = createDmaGpuFixture();
+	const source = PROGRAM_STATIC_RAM_BASE + 0x680;
+	const destination = PROGRAM_STATIC_RAM_BASE + 0x6c0;
+	const maximumTicketWord = (DMA_TICKET_MASK << DMA_TICKET_SHIFT) >>> 0;
+	memory.writeMappedU32LE(source, 0x12345678);
+	dma.restoreState({
+		queue: [{
+			src: source,
+			dst: destination,
+			remaining: 4,
+			written: 0,
+			clipped: false,
+			ticket: DMA_TICKET_MASK,
+		}],
+		budget: 0,
+		carry: 0,
+		writtenValue: 0,
+		writtenDirty: false,
+		sourceRegisterWord: source,
+		destinationRegisterWord: destination,
+		lengthRegisterWord: 4,
+		controlRegisterWord: maximumTicketWord,
+		statusRegisterWord: (((DMA_TICKET_MASK - 1) << DMA_TICKET_SHIFT) | DMA_STATUS_BUSY) >>> 0,
+		writtenRegisterWord: 0,
+	}, 0);
+
+	memory.writeMappedU32LE(IO_DMA_LEN, 0);
+	memory.writeMappedU32LE(IO_DMA_CTRL, DMA_CTRL_START);
+	assert.equal(memory.readIoU32(IO_DMA_CTRL), 0);
+	assert.equal(dma.captureState().queue.length, 2);
+	dma.accrueCycles(4, 4);
+	dma.onService(4);
+
+	assert.equal(memory.readMappedU32LE(destination), 0x12345678);
+	assert.equal(memory.readIoU32(IO_DMA_STATUS), DMA_STATUS_DONE);
+	assert.equal(memory.readIoU32(IO_DMA_WRITTEN), 0);
+	assert.equal(dma.captureState().queue.length, 0);
+});
+
+test('DMA control writes preserve the device-owned submitted ticket bits', () => {
+	const { memory } = createDmaGpuFixture();
+	const source = PROGRAM_STATIC_RAM_BASE + 0x700;
+	const destination = PROGRAM_STATIC_RAM_BASE + 0x740;
+	memory.writeMappedU32LE(IO_DMA_SRC, source);
+	memory.writeMappedU32LE(IO_DMA_DST, destination);
+	memory.writeMappedU32LE(IO_DMA_LEN, 4);
+	memory.writeMappedU32LE(IO_DMA_CTRL, DMA_CTRL_START);
+
+	memory.writeMappedU32LE(IO_DMA_CTRL, 0x12345602);
+
+	assert.equal(memory.readIoU32(IO_DMA_CTRL), FIRST_DMA_TICKET_WORD | DMA_CTRL_STRICT);
 });
 
 test('DMA admits one GP0 FIFO block and resumes the suffix on the GPU ready edge', () => {
@@ -117,7 +213,7 @@ test('DMA admits one GP0 FIFO block and resumes the suffix on the GPU ready edge
 	assert.equal(memory.mappedWriteReady(IO_GX_GPU_GP0), false);
 	assert.equal(scheduler.nextDeadline(), fillDeadline + 15);
 	dma.onService(fillDeadline + 15);
-	assert.equal(memory.readIoU32(IO_DMA_STATUS), DMA_STATUS_DONE);
+	assert.equal(memory.readIoU32(IO_DMA_STATUS), FIRST_DMA_TICKET_WORD | DMA_STATUS_DONE);
 	assert.equal(memory.readIoU32(IO_DMA_WRITTEN), 80);
 });
 
@@ -160,7 +256,7 @@ test('DMA preserves GP0 CPU-to-VRAM packet assembly across service slices', () =
 
 	dma.accrueCycles(1, 3);
 	dma.onService(3);
-	assert.equal(memory.readIoU32(IO_DMA_STATUS), DMA_STATUS_DONE);
+	assert.equal(memory.readIoU32(IO_DMA_STATUS), FIRST_DMA_TICKET_WORD | DMA_STATUS_DONE);
 	assert.equal(memory.readIoU32(IO_DMA_WRITTEN), 24);
 	assert.equal((memory.readIoU32(IO_IRQ_FLAGS) & IRQ_DMA_DONE) >>> 0, IRQ_DMA_DONE);
 	assert.equal(commands.commandCount, 1);
@@ -178,7 +274,7 @@ test('DMA preserves GP0 CPU-to-VRAM packet assembly across service slices', () =
 	assert.equal(memory.readIoU32(IO_DMA_SRC), source);
 	assert.equal(memory.readIoU32(IO_DMA_DST), IO_GX_GPU_GP0);
 	assert.equal(memory.readIoU32(IO_DMA_LEN), 24);
-	assert.equal(memory.readIoU32(IO_DMA_CTRL), 0);
+	assert.equal(memory.readIoU32(IO_DMA_CTRL), FIRST_DMA_TICKET_WORD);
 	assert.equal(memory.readIoU32(IO_DMA_STATUS), DMA_STATUS_BUSY);
 	assert.equal(memory.readIoU32(IO_DMA_WRITTEN), 8);
 });
@@ -268,7 +364,7 @@ test('DMA consumes GPUREAD words into RAM only while the readback ready line is 
 	assert.equal(scheduler.nextDeadline(), 13);
 	dma.onService(13);
 
-	assert.equal(memory.readIoU32(IO_DMA_STATUS), DMA_STATUS_DONE);
+	assert.equal(memory.readIoU32(IO_DMA_STATUS), FIRST_DMA_TICKET_WORD | DMA_STATUS_DONE);
 	assert.equal(memory.readIoU32(IO_DMA_WRITTEN), 12);
 	assert.equal(memory.readMappedU32LE(destination + 8), 0x66665555);
 	assert.equal((memory.readIoU32(IO_IRQ_FLAGS) & IRQ_DMA_DONE) >>> 0, IRQ_DMA_DONE);
@@ -311,6 +407,7 @@ test('DMA full-FIFO rejection preserves the queued progress latch', () => {
 		remaining: 4,
 		written: 0,
 		clipped: false,
+		ticket: index + 8,
 	}));
 	dma.restoreState({
 		queue,
@@ -321,8 +418,8 @@ test('DMA full-FIFO rejection preserves the queued progress latch', () => {
 		sourceRegisterWord: source,
 		destinationRegisterWord: IO_GX_GPU_GP0,
 		lengthRegisterWord: 4,
-		controlRegisterWord: 0,
-		statusRegisterWord: DMA_STATUS_BUSY,
+		controlRegisterWord: 23 << DMA_TICKET_SHIFT,
+		statusRegisterWord: (7 << DMA_TICKET_SHIFT) | DMA_STATUS_BUSY,
 		writtenRegisterWord: 37,
 	}, 0);
 
@@ -335,7 +432,7 @@ test('DMA full-FIFO rejection preserves the queued progress latch', () => {
 	assert.equal(state.queue.length, DMA_JOB_QUEUE_CAPACITY);
 	assert.equal(state.writtenValue, 37);
 	assert.equal(state.writtenDirty, false);
-	assert.equal(memory.readIoU32(IO_DMA_STATUS), DMA_STATUS_DONE | DMA_STATUS_ERROR);
+	assert.equal(memory.readIoU32(IO_DMA_STATUS), (7 << DMA_TICKET_SHIFT) | DMA_STATUS_DONE | DMA_STATUS_ERROR | DMA_STATUS_BUSY);
 	assert.equal(memory.readIoU32(IO_DMA_WRITTEN), 0);
 });
 
@@ -352,7 +449,7 @@ test('DMA clips non-strict GX-GPU GP0 stream lengths to whole words', () => {
 	dma.accrueCycles(6, 6);
 	dma.onService(6);
 
-	assert.equal(memory.readIoU32(IO_DMA_STATUS), DMA_STATUS_DONE | DMA_STATUS_CLIPPED);
+	assert.equal(memory.readIoU32(IO_DMA_STATUS), FIRST_DMA_TICKET_WORD | DMA_STATUS_DONE | DMA_STATUS_CLIPPED);
 	assert.equal(memory.readIoU32(IO_DMA_WRITTEN), 4);
 	assert.equal((memory.readIoU32(IO_IRQ_FLAGS) & IRQ_DMA_DONE) >>> 0, IRQ_DMA_DONE);
 	assert.equal(gpu.readDrawModeWord(), 0x000123);

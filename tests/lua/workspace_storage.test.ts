@@ -14,6 +14,7 @@ import {
 	buildWorkspaceDirtyEntryPath,
 	buildWorkspaceStorageKey,
 	joinWorkspacePaths,
+	readWorkspaceLuaSourceText,
 } from '../../machine/ts/ide/workspace/files';
 import {
 	clearOpenWorkspacePathDirtyState,
@@ -347,6 +348,53 @@ test('workspace override application keeps dirty and canonical in separate names
 	assert.equal(asset.src, '-- saved source');
 	assert.equal(workspaceSourceCache.get(dirtyPath), undefined);
 	assert.equal(workspaceSourceCache.get('src/foo.lua'), '-- saved source');
+});
+
+test('generated compiler sources ignore workspace state', async () => {
+	const storage = new MockStorage();
+	const registry: LuaSourceRegistry = {
+		records: [],
+		path2lua: {},
+		module2lua: {},
+		entry_path: 'src/foo.lua',
+		namespace: 'test',
+		projectRootPath: 'offline-cart',
+		can_boot_from_source: true,
+	};
+	const asset = {
+		resid: 'bmsx/gx_texture_layout',
+		type: 'lua' as const,
+		src: 'return { source_addr = 1 }',
+		base_src: 'return { source_addr = 1 }',
+		base_update_timestamp: 0,
+		source_path: 'bmsx/gx_texture_layout.lua',
+		module_path: 'bmsx/gx_texture_layout',
+		update_timestamp: 0,
+		generated: true,
+	};
+	registerLuaSourceRecord(registry, asset);
+	const dirtyPath = buildWorkspaceDirtyEntryPath('offline-cart', asset.source_path);
+	storage.setItem(buildWorkspaceStorageKey('offline-cart', asset.source_path), JSON.stringify({
+		contents: 'return { source_addr = 2 }',
+		updatedAt: 1,
+	}));
+	storage.setItem(buildWorkspaceStorageKey('offline-cart', dirtyPath), JSON.stringify({
+		contents: 'return { source_addr = 3 }',
+		updatedAt: 2,
+	}));
+	workspaceSourceCache.set(dirtyPath, 'return { source_addr = 4 }');
+
+	await applyWorkspaceSourceOverrides({
+		registry,
+		storage,
+		includeServer: false,
+		projectRootPath: 'offline-cart',
+		timestampNow: 3,
+	});
+
+	assert.equal(asset.src, 'return { source_addr = 1 }');
+	assert.equal(readWorkspaceLuaSourceText(registry, asset), 'return { source_addr = 1 }');
+	workspaceSourceCache.clear();
 });
 
 test('stale dirty buffers never win over newer cart code', async () => {

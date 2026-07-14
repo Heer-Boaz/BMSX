@@ -306,6 +306,8 @@ constexpr uint32_t IRQ_GPU = 1 << 6;
 
 constexpr uint32_t DMA_CTRL_START = 1 << 0;
 constexpr uint32_t DMA_CTRL_STRICT = 1 << 1;
+constexpr uint32_t DMA_TICKET_SHIFT = 8u;
+constexpr uint32_t DMA_TICKET_MASK = 0x00ffffffu;
 constexpr uint32_t DMA_STATUS_BUSY = 1 << 0;
 constexpr uint32_t DMA_STATUS_DONE = 1 << 1;
 constexpr uint32_t DMA_STATUS_ERROR = 1 << 2;

@@ -1,5 +1,3 @@
-import type { RuntimeRomPackage } from '../../rompack/format';
-
 export type GlyphMap = Record<string, string>;
 
 export type ImageAtlasRect = {
@@ -17,16 +15,17 @@ export type FontGlyph = {
 	advance: number;
 };
 
-export type BitmapFontGlyphRecord = {
-	imgmeta: {
-		width: number;
-		height: number;
-	};
+export type BitmapFontSourceGlyph = {
+	width: number;
+	height: number;
+	u: number;
+	v: number;
+	w: number;
+	h: number;
 };
 
 export interface BitmapFontSource {
-	getGlyphRecord(imgid: string): BitmapFontGlyphRecord;
-	getGlyphRect(imgid: string): ImageAtlasRect;
+	resolveGlyph(imgid: string): BitmapFontSourceGlyph;
 }
 
 export const TAB_SPACES: number = 2;
@@ -151,32 +150,35 @@ export class BFont {
 
 	public getGlyph(char: string): FontGlyph {
 		const item = this.items.get(char);
-		if (item !== undefined) {
+		if (item) {
 			return item;
 		}
-		if (char === '\t' && this.letter_to_img[char] === undefined) {
+		if (char === '\t' && !this.letter_to_img[char]) {
 			const space = this.getGlyph(' ');
 			const tabAdvance = space.advance * TAB_SPACES;
-				const computed: FontGlyph = {
-					imgid: space.imgid,
-					rect: space.rect,
-					width: tabAdvance,
-					height: space.height,
-					advance: tabAdvance,
+			const computed: FontGlyph = {
+				imgid: space.imgid,
+				rect: space.rect,
+				width: tabAdvance,
+				height: space.height,
+				advance: tabAdvance,
 			};
 			this.items.set(char, computed);
 			return computed;
 		}
 		const imgid = this.char_to_img(char);
-		const record = this.source.getGlyphRecord(imgid);
-		const width = record.imgmeta.width;
-		const height = record.imgmeta.height;
-			const computed: FontGlyph = {
-				imgid,
-				rect: this.source.getGlyphRect(imgid),
-				width,
-				height,
-				advance: width + this.advancePadding,
+		const sourceGlyph = this.source.resolveGlyph(imgid);
+		const computed: FontGlyph = {
+			imgid,
+			rect: {
+				u: sourceGlyph.u,
+				v: sourceGlyph.v,
+				w: sourceGlyph.w,
+				h: sourceGlyph.h,
+			},
+			width: sourceGlyph.width,
+			height: sourceGlyph.height,
+			advance: sourceGlyph.width + this.advancePadding,
 		};
 		this.items.set(char, computed);
 		return computed;
@@ -208,35 +210,5 @@ export class BFont {
 			width += this.advance(ch);
 		}
 		return width;
-	}
-}
-
-export class RomPackageBitmapFontSource implements BitmapFontSource {
-	constructor(
-		private readonly romPackage: RuntimeRomPackage,
-		private readonly systemPackage: RuntimeRomPackage,
-	) {
-	}
-
-	public getGlyphRecord(imgid: string): BitmapFontGlyphRecord {
-		const record = this.romPackage.img[imgid] ?? this.systemPackage.img[imgid];
-		if (!record.imgmeta) {
-			throw new Error(`[BFont] Image '${imgid}' is missing font metadata.`);
-		}
-		return { imgmeta: record.imgmeta };
-	}
-
-	public getGlyphRect(imgid: string): ImageAtlasRect {
-		const record = this.romPackage.img[imgid] ?? this.systemPackage.img[imgid];
-		const meta = record?.imgmeta;
-		if (!meta) {
-			throw new Error(`[BFont] Image '${imgid}' is missing font metadata.`);
-		}
-		return {
-			u: meta.atlas_x!,
-			v: meta.atlas_y!,
-			w: meta.width,
-			h: meta.height,
-		};
 	}
 }

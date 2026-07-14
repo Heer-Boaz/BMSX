@@ -16,6 +16,8 @@
 
 namespace {
 
+constexpr uint32_t FIRST_DMA_TICKET_WORD = 1u << bmsx::DMA_TICKET_SHIFT;
+
 struct DmaGpuHarness {
 	std::array<uint8_t, 1> emptyRom{{0}};
 	bmsx::Memory memory;
@@ -65,7 +67,7 @@ void testDmaStreamsRamWordsToGxGp0() {
 	harness.dma.onService(12);
 
 	const bmsx::GxGpuCommandBuffer& commands = *harness.gpu.readDeviceOutput().commandBuffer;
-	require(memory.readIoU32(bmsx::IO_DMA_STATUS) == bmsx::DMA_STATUS_DONE, "DMA GP0 stream completes");
+	require(memory.readIoU32(bmsx::IO_DMA_STATUS) == (FIRST_DMA_TICKET_WORD | bmsx::DMA_STATUS_DONE), "DMA GP0 stream completes");
 	require(memory.readIoU32(bmsx::IO_DMA_WRITTEN) == 12u, "DMA GP0 stream written count");
 	require((memory.readIoU32(bmsx::IO_IRQ_FLAGS) & bmsx::IRQ_DMA_DONE) == bmsx::IRQ_DMA_DONE, "DMA GP0 stream raises done IRQ");
 	require(memory.mappedWriteReady(bmsx::IO_GX_GPU_GP0), "DMA GP0 completion releases the CPU command port");
@@ -75,6 +77,88 @@ void testDmaStreamsRamWordsToGxGp0() {
 	require(commands.words[commands.commandWordStart[0]] == command0, "GX-GPU DMA GP0 first command word");
 	require(commands.words[commands.commandWordStart[0] + 1u] == command1, "GX-GPU DMA GP0 second command word");
 	require(commands.words[commands.commandWordStart[0] + 2u] == command2, "GX-GPU DMA GP0 third command word");
+}
+
+void testDmaKeepsBusyAssertedUntilFinalQueuedTicketRetires() {
+	DmaGpuHarness harness;
+	bmsx::Memory& memory = harness.memory;
+	harness.dma.setTiming(1, 1, 0);
+	const uint32_t source = bmsx::PROGRAM_STATIC_RAM_BASE + 0x500u;
+	const uint32_t destination = bmsx::PROGRAM_STATIC_RAM_BASE + 0x600u;
+	memory.writeMappedU32LE(source, 0x11223344u);
+	memory.writeMappedU32LE(source + 4u, 0x55667788u);
+
+	memory.writeMappedU32LE(bmsx::IO_DMA_SRC, source);
+	memory.writeMappedU32LE(bmsx::IO_DMA_DST, destination);
+	memory.writeMappedU32LE(bmsx::IO_DMA_LEN, 4u);
+	memory.writeMappedU32LE(bmsx::IO_DMA_CTRL, bmsx::DMA_CTRL_START);
+	require(memory.readIoU32(bmsx::IO_DMA_CTRL) == FIRST_DMA_TICKET_WORD, "DMA first accepted ticket");
+	memory.writeMappedU32LE(bmsx::IO_DMA_SRC, source + 4u);
+	memory.writeMappedU32LE(bmsx::IO_DMA_DST, destination + 4u);
+	memory.writeMappedU32LE(bmsx::IO_DMA_LEN, 4u);
+	memory.writeMappedU32LE(bmsx::IO_DMA_CTRL, bmsx::DMA_CTRL_START);
+	require(memory.readIoU32(bmsx::IO_DMA_CTRL) == (2u << bmsx::DMA_TICKET_SHIFT), "DMA second accepted ticket");
+
+	harness.dma.accrueCycles(4, 4);
+	harness.dma.onService(4);
+
+	require(memory.readIoU32(bmsx::IO_DMA_STATUS) == (FIRST_DMA_TICKET_WORD | bmsx::DMA_STATUS_DONE | bmsx::DMA_STATUS_BUSY), "DMA remains busy after the first queued ticket retires");
+	require(memory.readMappedU32LE(destination) == 0x11223344u, "DMA first queued RAM copy");
+	require(memory.readMappedU32LE(destination + 4u) == 0u, "DMA second queued RAM copy remains pending");
+	require(harness.dma.captureState().queue.size() == 1u, "DMA retains the second queued job");
+
+	harness.dma.accrueCycles(4, 8);
+	harness.dma.onService(8);
+
+	require(memory.readIoU32(bmsx::IO_DMA_STATUS) == ((2u << bmsx::DMA_TICKET_SHIFT) | bmsx::DMA_STATUS_DONE), "DMA publishes the final retired ticket");
+	require(memory.readMappedU32LE(destination + 4u) == 0x55667788u, "DMA second queued RAM copy");
+	const bmsx::DmaControllerState state = harness.dma.captureState();
+	require(state.controlRegisterWord == (2u << bmsx::DMA_TICKET_SHIFT), "DMA control register retains the submitted ticket");
+	require(state.statusRegisterWord == ((2u << bmsx::DMA_TICKET_SHIFT) | bmsx::DMA_STATUS_DONE), "DMA status register retains the completed ticket");
+	require(state.queue.empty(), "DMA retires both queued jobs");
+}
+
+void testDmaRetiresWrappedZeroLengthTicketAfterOlderFifoEntry() {
+	DmaGpuHarness harness;
+	bmsx::Memory& memory = harness.memory;
+	const uint32_t source = bmsx::PROGRAM_STATIC_RAM_BASE + 0x680u;
+	const uint32_t destination = bmsx::PROGRAM_STATIC_RAM_BASE + 0x6c0u;
+	memory.writeMappedU32LE(source, 0x12345678u);
+	bmsx::DmaControllerState restored;
+	restored.queue.push_back({ source, destination, 4u, 0u, bmsx::DMA_TICKET_MASK, false });
+	restored.sourceRegisterWord = source;
+	restored.destinationRegisterWord = destination;
+	restored.lengthRegisterWord = 4u;
+	restored.controlRegisterWord = bmsx::DMA_TICKET_MASK << bmsx::DMA_TICKET_SHIFT;
+	restored.statusRegisterWord = ((bmsx::DMA_TICKET_MASK - 1u) << bmsx::DMA_TICKET_SHIFT) | bmsx::DMA_STATUS_BUSY;
+	harness.dma.restoreState(restored, 0);
+
+	memory.writeMappedU32LE(bmsx::IO_DMA_LEN, 0u);
+	memory.writeMappedU32LE(bmsx::IO_DMA_CTRL, bmsx::DMA_CTRL_START);
+	require(memory.readIoU32(bmsx::IO_DMA_CTRL) == 0u, "DMA submitted ticket wraps to zero");
+	require(harness.dma.captureState().queue.size() == 2u, "DMA zero-length ticket queues behind the older transfer");
+	harness.dma.accrueCycles(4, 4);
+	harness.dma.onService(4);
+
+	require(memory.readMappedU32LE(destination) == 0x12345678u, "DMA retires the older transfer before the wrapped ticket");
+	require(memory.readIoU32(bmsx::IO_DMA_STATUS) == bmsx::DMA_STATUS_DONE, "DMA wrapped zero ticket retires last");
+	require(memory.readIoU32(bmsx::IO_DMA_WRITTEN) == 0u, "DMA wrapped zero ticket publishes zero written bytes");
+	require(harness.dma.captureState().queue.empty(), "DMA retires the wrapped zero ticket");
+}
+
+void testDmaControlWritesPreserveDeviceOwnedSubmittedTicketBits() {
+	DmaGpuHarness harness;
+	bmsx::Memory& memory = harness.memory;
+	const uint32_t source = bmsx::PROGRAM_STATIC_RAM_BASE + 0x700u;
+	const uint32_t destination = bmsx::PROGRAM_STATIC_RAM_BASE + 0x740u;
+	memory.writeMappedU32LE(bmsx::IO_DMA_SRC, source);
+	memory.writeMappedU32LE(bmsx::IO_DMA_DST, destination);
+	memory.writeMappedU32LE(bmsx::IO_DMA_LEN, 4u);
+	memory.writeMappedU32LE(bmsx::IO_DMA_CTRL, bmsx::DMA_CTRL_START);
+
+	memory.writeMappedU32LE(bmsx::IO_DMA_CTRL, 0x12345602u);
+
+	require(memory.readIoU32(bmsx::IO_DMA_CTRL) == (FIRST_DMA_TICKET_WORD | bmsx::DMA_CTRL_STRICT), "DMA masks guest ticket bits on every control write");
 }
 
 void testDmaAdmitsOneGp0FifoBlockAndResumesSuffixOnGpuReadyEdge() {
@@ -104,7 +188,7 @@ void testDmaAdmitsOneGp0FifoBlockAndResumesSuffixOnGpuReadyEdge() {
 	require(!memory.mappedWriteReady(bmsx::IO_GX_GPU_GP0), "DMA GP0 suffix retains CPU port ownership after the GPU deadline");
 	require(harness.scheduler.nextDeadline() == fillDeadline + 15, "GPU ready edge schedules the retained DMA suffix immediately");
 	harness.dma.onService(fillDeadline + 15);
-	require(memory.readIoU32(bmsx::IO_DMA_STATUS) == bmsx::DMA_STATUS_DONE, "DMA GP0 FIFO suffix completes on the ready edge");
+	require(memory.readIoU32(bmsx::IO_DMA_STATUS) == (FIRST_DMA_TICKET_WORD | bmsx::DMA_STATUS_DONE), "DMA GP0 FIFO suffix completes on the ready edge");
 	require(memory.readIoU32(bmsx::IO_DMA_WRITTEN) == 80u, "DMA GP0 FIFO suffix publishes the complete byte count");
 }
 
@@ -147,7 +231,7 @@ void testDmaPreservesCpuToVramPacketAcrossServiceSlices() {
 
 	harness.dma.accrueCycles(1, 3);
 	harness.dma.onService(3);
-	require(memory.readIoU32(bmsx::IO_DMA_STATUS) == bmsx::DMA_STATUS_DONE, "DMA CPU-to-VRAM stream completes");
+	require(memory.readIoU32(bmsx::IO_DMA_STATUS) == (FIRST_DMA_TICKET_WORD | bmsx::DMA_STATUS_DONE), "DMA CPU-to-VRAM stream completes");
 	require(memory.readIoU32(bmsx::IO_DMA_WRITTEN) == 24u, "DMA CPU-to-VRAM final written count");
 	require((memory.readIoU32(bmsx::IO_IRQ_FLAGS) & bmsx::IRQ_DMA_DONE) == bmsx::IRQ_DMA_DONE, "DMA CPU-to-VRAM stream raises done IRQ");
 	require(commands.commandCount == 1u, "GX-GPU CPU-to-VRAM command count");
@@ -250,7 +334,7 @@ void testDmaConsumesGpureadOnlyWhileReadbackReady() {
 	require(harness.scheduler.nextDeadline() == 13, "DMA GPUREAD second ready edge resumes the retained job");
 	harness.dma.onService(13);
 
-	require(memory.readIoU32(bmsx::IO_DMA_STATUS) == bmsx::DMA_STATUS_DONE, "DMA GPUREAD source completes across ready requests");
+	require(memory.readIoU32(bmsx::IO_DMA_STATUS) == (FIRST_DMA_TICKET_WORD | bmsx::DMA_STATUS_DONE), "DMA GPUREAD source completes across ready requests");
 	require(memory.readIoU32(bmsx::IO_DMA_WRITTEN) == 12u, "DMA GPUREAD source publishes final written count");
 	require(memory.readMappedU32LE(destination + 8u) == 0x66665555u, "DMA GPUREAD resumed source writes the next real word");
 	require((memory.readIoU32(bmsx::IO_IRQ_FLAGS) & bmsx::IRQ_DMA_DONE) == bmsx::IRQ_DMA_DONE, "DMA GPUREAD source raises done IRQ");
@@ -300,7 +384,7 @@ void testDmaClipsNonStrictGxGp0StreamToWholeWords() {
 	harness.dma.accrueCycles(6, 6);
 	harness.dma.onService(6);
 
-	require(memory.readIoU32(bmsx::IO_DMA_STATUS) == (bmsx::DMA_STATUS_DONE | bmsx::DMA_STATUS_CLIPPED), "DMA GP0 stream clips non-word length");
+	require(memory.readIoU32(bmsx::IO_DMA_STATUS) == (FIRST_DMA_TICKET_WORD | bmsx::DMA_STATUS_DONE | bmsx::DMA_STATUS_CLIPPED), "DMA GP0 stream clips non-word length");
 	require(memory.readIoU32(bmsx::IO_DMA_WRITTEN) == 4u, "DMA GP0 clipped stream written count");
 	require((memory.readIoU32(bmsx::IO_IRQ_FLAGS) & bmsx::IRQ_DMA_DONE) == bmsx::IRQ_DMA_DONE, "DMA GP0 clipped stream raises done IRQ");
 	require(harness.gpu.readDrawModeWord() == 0x000123u, "GX-GPU GP0 executes only the complete clipped word");
@@ -334,12 +418,14 @@ void testDmaFullFifoRejectionPreservesQueuedProgressLatch() {
 		restored.queue[index].src = source + static_cast<uint32_t>(index * 4u);
 		restored.queue[index].dst = bmsx::IO_GX_GPU_GP0;
 		restored.queue[index].remaining = 4u;
+		restored.queue[index].ticket = static_cast<uint32_t>(index) + 8u;
 	}
 	restored.writtenValue = 37u;
 	restored.sourceRegisterWord = source;
 	restored.destinationRegisterWord = bmsx::IO_GX_GPU_GP0;
 	restored.lengthRegisterWord = 4u;
-	restored.statusRegisterWord = bmsx::DMA_STATUS_BUSY;
+	restored.controlRegisterWord = 23u << bmsx::DMA_TICKET_SHIFT;
+	restored.statusRegisterWord = (7u << bmsx::DMA_TICKET_SHIFT) | bmsx::DMA_STATUS_BUSY;
 	restored.writtenRegisterWord = 37u;
 	harness.dma.restoreState(restored, 0);
 
@@ -352,7 +438,7 @@ void testDmaFullFifoRejectionPreservesQueuedProgressLatch() {
 	require(state.queue.size() == bmsx::DMA_JOB_QUEUE_CAPACITY, "DMA full-FIFO rejection should retain the existing jobs");
 	require(state.writtenValue == 37u, "DMA full-FIFO rejection should preserve the queued progress latch value");
 	require(!state.writtenDirty, "DMA full-FIFO rejection should preserve the queued progress latch dirty bit");
-	require(memory.readIoU32(bmsx::IO_DMA_STATUS) == (bmsx::DMA_STATUS_DONE | bmsx::DMA_STATUS_ERROR), "DMA full-FIFO rejection should publish an error");
+	require(memory.readIoU32(bmsx::IO_DMA_STATUS) == ((7u << bmsx::DMA_TICKET_SHIFT) | bmsx::DMA_STATUS_DONE | bmsx::DMA_STATUS_ERROR | bmsx::DMA_STATUS_BUSY), "DMA full-FIFO rejection should retain busy state");
 	require(memory.readIoU32(bmsx::IO_DMA_WRITTEN) == 0u, "DMA full-FIFO rejection should publish zero bytes for the rejected request");
 }
 
@@ -360,6 +446,9 @@ void testDmaFullFifoRejectionPreservesQueuedProgressLatch() {
 
 int main() {
 	testDmaStreamsRamWordsToGxGp0();
+	testDmaKeepsBusyAssertedUntilFinalQueuedTicketRetires();
+	testDmaRetiresWrappedZeroLengthTicketAfterOlderFifoEntry();
+	testDmaControlWritesPreserveDeviceOwnedSubmittedTicketBits();
 	testDmaAdmitsOneGp0FifoBlockAndResumesSuffixOnGpuReadyEdge();
 	testDmaPreservesCpuToVramPacketAcrossServiceSlices();
 	testDmaConsumesGpureadOnlyWhileReadbackReady();

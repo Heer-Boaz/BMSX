@@ -27,7 +27,7 @@ export function buildWorkspaceDirtyEntryPath(projectRootPath: string, resourcePa
 }
 
 export function readWorkspaceLuaSourceText(registry: LuaSourceRegistry, record: LuaSourceRecord): string {
-	if (workspaceSourceCache.size !== 0) {
+	if (!record.generated && workspaceSourceCache.size !== 0) {
 		const dirty = workspaceSourceCache.get(buildWorkspaceDirtyEntryPath(registry.projectRootPath, record.source_path));
 		if (dirty !== undefined) {
 			return dirty;
@@ -88,6 +88,9 @@ function collectWorkspaceDirtyOverrides(params: { cart: LuaSourceRegistry; proje
 	const root = params.projectRootPath;
 	const storage = params.storage;
 	for (const asset of params.cart.records) {
+		if (asset.generated) {
+			continue;
+		}
 		const cartPath = asset.source_path;
 		const dirtyPath = buildWorkspaceDirtyEntryPath(root, cartPath);
 		const storageKey = buildWorkspaceStorageKey(root, dirtyPath);
@@ -109,6 +112,9 @@ export function collectWorkspaceOverrides(params: { cart: LuaSourceRegistry; pro
 	const root = params.projectRootPath;
 	const storage = params.storage;
 	for (const asset of params.cart.records) {
+		if (asset.generated) {
+			continue;
+		}
 		const cartPath = asset.source_path;
 		const canonicalKey = buildWorkspaceStorageKey(root, cartPath);
 		const storedCanonical = readWorkspaceStoragePayload(storage, canonicalKey);
@@ -172,6 +178,9 @@ export async function fetchWorkspaceDirtyLuaOverrides(cart: LuaSourceRegistry, r
 	// Fetching dirty files from backend is best-effort. Missing files do NOT mean we should
 	// discard in-memory dirty edits; they simply yield no extra overrides.
 	for (const asset of cart.records) {
+		if (asset.generated) {
+			continue;
+		}
 		const filePath = asset.source_path;
 		const dirtyPath = buildWorkspaceDirtyEntryPath(root, filePath);
 		tasks.push(fetchWorkspaceFile(dirtyPath).then((result) => {
@@ -196,6 +205,9 @@ export async function fetchWorkspaceDirtyLuaOverrides(cart: LuaSourceRegistry, r
 async function fetchWorkspaceCanonicalLua(cart: LuaSourceRegistry, root: string): Promise<Map<string, WorkspaceOverrideRecord>> {
 	const tasks: Array<Promise<WorkspaceOverrideRecord>> = [];
 	for (const asset of cart.records) {
+		if (asset.generated) {
+			continue;
+		}
 		const canonicalPath = resolveWorkspacePath(asset.source_path, root);
 		tasks.push(fetchWorkspaceFile(canonicalPath).then((result) => {
 			if (!result) {
@@ -398,6 +410,9 @@ export async function applyWorkspaceSourceOverrides(params: { registry: LuaSourc
 	}
 
 	for (const asset of registry.records) {
+		if (asset.generated) {
+			continue;
+		}
 		const filePath = asset.source_path;
 		const persistedBaselineTimestamp = asset.base_update_timestamp;
 		const localDirty = localDirtyOverrides.get(filePath);

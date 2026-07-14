@@ -246,7 +246,6 @@ export type ResourceViewerState = {
 		asset_id: string;
 		width: number;
 		height: number;
-		atlasId?: number;
 	};
 };
 

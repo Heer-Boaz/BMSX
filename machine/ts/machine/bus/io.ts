@@ -290,6 +290,8 @@ export const IRQ_GPU = 1 << 6;
 
 export const DMA_CTRL_START = 1 << 0;
 export const DMA_CTRL_STRICT = 1 << 1;
+export const DMA_TICKET_SHIFT = 8;
+export const DMA_TICKET_MASK = 0x00ff_ffff;
 export const DMA_STATUS_BUSY = 1 << 0;
 export const DMA_STATUS_DONE = 1 << 1;
 export const DMA_STATUS_ERROR = 1 << 2;
