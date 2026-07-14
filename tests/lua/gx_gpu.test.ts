@@ -104,6 +104,7 @@ import {
 } from '../../machine/ts/render/backend/gx_gpu_render_rules';
 import {
 	GX_GPU_DMA_DIRECTION_CPU_TO_GP0,
+	GX_GPU_DMA_DIRECTION_FIFO,
 	GX_GPU_DMA_DIRECTION_GPUREAD_TO_CPU,
 	GX_GPU_DISPLAY_START_MASK,
 	GX_GPU_DISPLAY_MODE_MASK,
@@ -1001,6 +1002,10 @@ test('GX-GPU handles PSX GP1 display disable and DMA direction status bits', () 
 	assert.equal((gpu.readDeviceOutput().statusWord & GX_GPU_STATUS_DISPLAY_DISABLE) >>> 0, GX_GPU_STATUS_DISPLAY_DISABLE);
 	assert.equal(gpu.lastFrameCommitted(), true);
 
+	gpu.writeGp1((GX_GPU_GP1_DMA_DIRECTION << 24) | GX_GPU_DMA_DIRECTION_FIFO);
+	assert.equal((gpu.readStatus() & GX_GPU_STATUS_DMA_DIRECTION_MASK) >>> 0, GX_GPU_DMA_DIRECTION_FIFO << GX_GPU_STATUS_DMA_DIRECTION_SHIFT);
+	assert.equal((gpu.readStatus() & GX_GPU_STATUS_DMA_DATA_REQUEST) >>> 0, GX_GPU_STATUS_DMA_DATA_REQUEST);
+
 	gpu.writeGp1((GX_GPU_GP1_DMA_DIRECTION << 24) | GX_GPU_DMA_DIRECTION_CPU_TO_GP0);
 	assert.equal((gpu.readStatus() & GX_GPU_STATUS_DMA_DIRECTION_MASK) >>> 0, GX_GPU_DMA_DIRECTION_CPU_TO_GP0 << GX_GPU_STATUS_DMA_DIRECTION_SHIFT);
 	assert.equal((gpu.readStatus() & GX_GPU_STATUS_DMA_DATA_REQUEST) >>> 0, GX_GPU_STATUS_DMA_DATA_REQUEST);
@@ -1034,8 +1039,12 @@ test('GX-GPU GPUSTAT readiness tracks GP0 packet assembly and payload phases', (
 	gpu.writeGp0(0x00000000);
 	gpu.writeGp0(0x00000001);
 	gpu.writeGp0(0x00000002);
+	gpu.writeGp1((GX_GPU_GP1_DMA_DIRECTION << 24) | GX_GPU_DMA_DIRECTION_FIFO);
+	gpu.writeGp0(0x00000000);
 	status = gpu.readStatus();
 	assert.equal((status & GX_GPU_STATUS_GPU_IDLE) >>> 0, 0);
+	assert.equal((status & GX_GPU_STATUS_READY_TO_RECEIVE_DMA) >>> 0, 0);
+	assert.equal((status & GX_GPU_STATUS_DMA_DATA_REQUEST) >>> 0, 0);
 	assert.equal(commands.commandCount, 1);
 	assert.equal(commands.executedCommandCount, 0);
 	completeGpuCommands(gpu);

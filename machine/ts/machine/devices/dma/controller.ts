@@ -25,6 +25,7 @@ import { cyclesUntilBudgetUnits } from '../../scheduler/budget';
 import { DEVICE_SERVICE_DMA, type DeviceScheduler } from '../../scheduler/device';
 import {
 	GX_GPU_DMA_DIRECTION_CPU_TO_GP0,
+	GX_GPU_DMA_DIRECTION_FIFO,
 	GX_GPU_DMA_DIRECTION_GPUREAD_TO_CPU,
 } from '../gx/gpu';
 
@@ -305,7 +306,9 @@ export class DmaController {
 			case DMA_CONTROL_REQUEST_FORCE:
 				return true;
 			case DMA_CONTROL_REQUEST_GX_WRITE:
-				return this.gxGpuDmaDirection === GX_GPU_DMA_DIRECTION_CPU_TO_GP0 && this.gxGpuDmaWriteReady;
+				return (this.gxGpuDmaDirection === GX_GPU_DMA_DIRECTION_CPU_TO_GP0
+					|| this.gxGpuDmaDirection === GX_GPU_DMA_DIRECTION_FIFO)
+					&& this.gxGpuDmaWriteReady;
 			case DMA_CONTROL_REQUEST_GX_READ:
 				return this.gxGpuDmaDirection === GX_GPU_DMA_DIRECTION_GPUREAD_TO_CPU && this.gxGpuReadReady;
 			default:

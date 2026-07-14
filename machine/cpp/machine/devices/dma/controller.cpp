@@ -263,7 +263,9 @@ bool DmaController::requestAsserted() const {
 	case DMA_CONTROL_REQUEST_FORCE:
 		return true;
 	case DMA_CONTROL_REQUEST_GX_WRITE:
-		return m_gxGpuDmaDirection == GX_GPU_DMA_DIRECTION_CPU_TO_GP0 && m_gxGpuDmaWriteReady;
+		return (m_gxGpuDmaDirection == GX_GPU_DMA_DIRECTION_CPU_TO_GP0
+			|| m_gxGpuDmaDirection == GX_GPU_DMA_DIRECTION_FIFO)
+			&& m_gxGpuDmaWriteReady;
 	case DMA_CONTROL_REQUEST_GX_READ:
 		return m_gxGpuDmaDirection == GX_GPU_DMA_DIRECTION_GPUREAD_TO_CPU && m_gxGpuReadReady;
 	default:

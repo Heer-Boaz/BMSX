@@ -250,7 +250,8 @@ De custom DMA-controller is één live hardwarechannel, geen softwarejobqueue.
 rechtstreeks programmeerbaar; `TRIGGER` is een write-only, self-clearing strobe.
 Een trigger tijdens `BUSY` wordt genegeerd en count nul voltooit synchroon met
 `DONE` en `IRQ_DMA_DONE`. Control kiest address-increment en forced, GX-write,
-GX-read of disabled DREQ. GP1 DMA-direction gate de GPU-owned write/readlijnen.
+GX-read of disabled DREQ. GP1 DMA-direction gate de GPU-owned write/readlijnen;
+FIFO en CPU-naar-GP0 gebruiken beide rechtstreeks de receive-ready write-DREQ.
 
 Ieder verleend woord latched de vier live datapathregisters, doet vervolgens
 één mapped bus-read en één mapped bus-write en schrijft daarna address/count

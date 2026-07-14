@@ -29,6 +29,7 @@ import { DmaController } from '../../machine/ts/machine/devices/dma/controller';
 import { GX_GPU_COMMAND_FILL_RECTANGLE } from '../../machine/ts/machine/devices/gx/gpu_command_buffer';
 import {
 	GX_GPU_DMA_DIRECTION_CPU_TO_GP0,
+	GX_GPU_DMA_DIRECTION_FIFO,
 	GX_GPU_DMA_DIRECTION_GPUREAD_TO_CPU,
 	GX_GPU_DMA_DIRECTION_OFF,
 	GX_GPU_GP0_FILL_RECTANGLE,
@@ -107,7 +108,7 @@ test('DMA executes one live register channel as timed word bus transactions', ()
 	assert.equal(memory.readIoU32(IO_IRQ_FLAGS) & IRQ_DMA_DONE, IRQ_DMA_DONE);
 });
 
-test('GX write DREQ follows GP1 direction and owns the shared GP0 port while BUSY', () => {
+test('GX FIFO DREQ feeds GP0 and owns the shared port while BUSY', () => {
 	const fixture = createDmaGpuFixture();
 	const { memory, gpu, scheduler } = fixture;
 	const source = PROGRAM_STATIC_RAM_BASE + 0x300;
@@ -122,7 +123,7 @@ test('GX write DREQ follows GP1 direction and owns the shared GP0 port while BUS
 	memory.writeMappedU32LE(IO_DMA_TRIGGER, DMA_TRIGGER_START);
 	assert.equal(memory.readIoU32(IO_DMA_STATUS), DMA_STATUS_BUSY);
 
-	gpu.writeGp1((GX_GPU_GP1_DMA_DIRECTION << 24) | GX_GPU_DMA_DIRECTION_CPU_TO_GP0);
+	gpu.writeGp1((GX_GPU_GP1_DMA_DIRECTION << 24) | GX_GPU_DMA_DIRECTION_FIFO);
 	runNextDmaService(fixture);
 
 	const commands = gpu.readDeviceOutput().commandBuffer;

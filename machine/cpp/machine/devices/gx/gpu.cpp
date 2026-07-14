@@ -848,11 +848,6 @@ void GxGpu::updateDmaRequestStatusBit() {
 	u32 dmaRequest = 0u;
 	switch (dmaDirection) {
 	case GX_GPU_DMA_DIRECTION_FIFO:
-		dmaRequest = m_commandBuffer.readback.phase() == GX_GPU_READBACK_IDLE
-			&& m_gp0Fifo.count() < GX_GPU_COMMAND_FIFO_WORD_CAPACITY
-			? GX_GPU_STATUS_DMA_DATA_REQUEST
-			: 0u;
-		break;
 	case GX_GPU_DMA_DIRECTION_CPU_TO_GP0:
 		dmaRequest = m_statusWord & GX_GPU_STATUS_READY_TO_RECEIVE_DMA;
 		break;
