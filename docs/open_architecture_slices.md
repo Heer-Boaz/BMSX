@@ -441,10 +441,9 @@ Richting:
 
 Status: concrete retained ownerfixes en de libretro-contextresolver zijn
 afgerond; de live gepacete libretro/SNES-mini-performance blijft open. De
-huidige worktree bevat een C++-experiment dat de cumulatieve slowdown sterk
-vermindert, maar de gemeten frametime-staart is nog zichtbaar en dus niet
-geaccepteerd. Echte Windows-RetroArch- en live WebGL2/WebGPU-capabilityvalidatie
-blijven eveneens open.
+cumulatieve slowdown is sterk verminderd, maar de gemeten frametime-staart is
+nog zichtbaar en dus niet geaccepteerd. Echte Windows-RetroArch- en live
+WebGL2/WebGPU-capabilityvalidatie blijven eveneens open.
 
 Een capture-vrije 1100-frame libretro/GLES2-run is nu lang genoeg om de echte
 `bare_metal_cart`-slowdownscenes te bereiken. De eerdere korte meting miste die.
@@ -635,6 +634,31 @@ de volledige 93-frame `2025`-transitietimeline levert voor en na deze wijziging
 pixelidentieke beelden; de browserowners zijn gecompileerd maar blijven voor
 live conformance uitgesteld.
 
+De GLES2 vertexsubmission heeft nu eveneens één echte retained streambuffer in
+plaats van vier dynamische buffers die ieder vanaf offset nul werden
+overschreven. Solid- en linevertices blijven append-only in hun bestaande vaste
+CPU-arenas tot een VRAM-/sampledependency werkelijk moet worden uitgevoerd. Een
+vaste packetarena bewaart daarbij de oorspronkelijke gemengde drawvolgorde en
+laat iedere gebruikte arena per submissionepoch eenmaal uploaden. Textured en
+transferdraws blijven direct, maar append ook aan dezelfde driverstream. Er is
+geen tweede vertexscratch, heapcontainer, VBO-roulette of per-frame orphan.
+
+De stream behoudt zijn cursor over frames en invalideert de 2.654.208-byte
+storage uitsluitend wanneer de resterende capaciteit te klein is. In de
+1.000-frame particle-soak gebeurde dat veertien keer. Een instrumented A/B tegen
+`8905288ce` verlaagt `glBufferSubData` van 32.982 naar 7.563 calls (77,1%), met
+exact dezelfde 38.396.184 vertexbytes, 36.647 draws en 1.035.015 vertices. Drie
+Release-runs gaan van 6,79 s naar 6,32 s mediane walltime; peak RSS blijft binnen
+de baseline-envelop. De volledige 1.100-frame GLES2-timeline levert opnieuw alle
+146 captures byte-identiek aan de baseline.
+
+Dit volgt de bewezen GLES-streamgrens: Dolphins
+[`MapAndOrphan`](https://github.com/dolphin-emu/dolphin/blob/00beaa84a550fe35755910d96182d04e0996450b/Source/Core/VideoBackends/OGL/OGLStreamBuffer.cpp#L127-L163)
+append totdat de storage vol is en orphaned alleen bij wrap, terwijl PPSSPPs
+[`GLPushBuffer::Flush`](https://github.com/hrydgard/ppsspp/blob/b719323f1629775dd5c1c932286ac14759ea18bc/Common/GPU/OpenGL/GLMemory.cpp#L90-L125)
+de retained CPU-range in één bufferupload publiceert voordat de bekende draws
+worden ingediend.
+
 De GLES2 dependencyplanner is functioneel opgeschoond, maar de boundsowner is
 nog niet correct:
 
@@ -719,11 +743,7 @@ Nog open:
    uploadt die snapshot voordat oude serial/frontierstate kan worden hergebruikt.
    De overige GLES-programma-, buffer-, texture- en singletonstate heeft nog één
    expliciete teardown/init-owner nodig.
-9. Vervang herhaald `glBufferSubData` op dezelfde dynamische vertexbuffers door
-   een echte retained GLES2-streambufferowner. Gebruik geen lokale orphan-
-   callwrapper of willekeurige drievoudige VBO-roulette als vervanging voor
-   gemeten resource-lifetimeownership.
-10. Splits de directe host verder op bij echte stateowners. Core-options zijn nu
+9. Splits de directe host verder op bij echte stateowners. Core-options zijn nu
     een apart standaard libretro-register: V2/V1/legacy-definities leveren de
     defaults, CLI-overrides blijven behouden en de update-latch wordt werkelijk
     geconsumeerd. Audio, video/context en input/environment zitten nog grotendeels

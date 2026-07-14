@@ -5,7 +5,7 @@ This is **not** a stable ABI contract and is **not** more authoritative than the
 live checkout. It is a temporary execution checklist so agents can see the
 current direction, completed slices, known blockers, and next work.
 
-Last refreshed: 2026-07-13
+Last refreshed: 2026-07-14
 Do not duplicate recent commit history here. Use `git log --oneline` for that.
 
 ## Source of truth
@@ -665,10 +665,22 @@ and MAME
 - [ ] Remove the remaining private keyboard/focus/cart-start direct-host ABI.
   Standard libretro keyboard delivery and a frontend-owned timeline origin must
   replace it without a boot-delay heuristic or a new compatibility facade.
-- [ ] Give GLES2 dynamic vertex submission a retained stream-buffer lifecycle
-  and coalesce CPU-to-VRAM uploads into bounded physical wrap rectangles. Do not
-  paper over repeated-buffer stalls with a cosmetic orphan helper or arbitrary
-  VBO rotation.
+- [x] Give GLES2 dynamic vertex submission a retained stream-buffer lifecycle.
+  One 2,654,208-byte driver stream now serves solid, line, textured and transfer
+  vertices. Existing fixed solid/line CPU arenas append until a real dependency
+  boundary, bulk-upload once per submission epoch and replay a fixed packet arena
+  in original order. The cursor survives frame boundaries and storage is
+  orphaned only at capacity wrap: fourteen times in the 1,000-frame particle
+  soak, never once per frame. Against `8905288ce`, `glBufferSubData` falls from
+  32,982 to 7,563 calls with identical uploaded bytes/draws/vertices, the median
+  of three Release runs falls from 6.79 s to 6.32 s, and all 146 full-timeline
+  captures remain byte-identical. No heap allocation, second vertex copy, VBO
+  rotation or cosmetic orphan wrapper was added.
+- [ ] Re-profile CPU-to-VRAM submission with an upload-heavy cart workload before
+  changing it again. The existing owner already packs raw VRAM in one retained
+  staging buffer and emits bounded physical wrap rectangles; the particle soak
+  issues only three texture uploads in 1,000 frames and therefore cannot justify
+  or validate further cross-command coalescing.
 - [ ] Keep WebGL2/GLES2 behavior synchronized for every new GX command.
 - [ ] Wire the existing TS/C++ software/headless renderer to the same GX/PSX
   contract as oracle/backend, not as a fallback inside GPU backends.
