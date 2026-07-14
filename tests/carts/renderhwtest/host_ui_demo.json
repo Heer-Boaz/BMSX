@@ -1,4 +1,5 @@
 [
+	{ "description": "game frame before terminal", "frame": 119, "capture": true },
 	{
 		"description": "open terminal",
 		"frame": 120,

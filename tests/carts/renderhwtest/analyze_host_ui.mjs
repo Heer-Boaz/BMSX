@@ -23,12 +23,22 @@ function countPixels(png, left, top, right, bottom, predicate) {
 	return count;
 }
 
+const game = frame(119);
 const terminal = frame(124);
 const menu = frame(164);
+assert.equal(game.width, 320);
+assert.equal(game.height, 240);
 assert.equal(terminal.width, 320);
 assert.equal(terminal.height, 240);
 assert.equal(menu.width, terminal.width);
 assert.equal(menu.height, terminal.height);
+
+const retainedGameStart = 32 * game.width * 4;
+assert.equal(
+	Buffer.compare(game.data.subarray(retainedGameStart), terminal.data.subarray(retainedGameStart)),
+	0,
+	'terminal obscures the retained game scanout below its content',
+);
 
 const terminalTextPixels = countPixels(terminal, 0, 0, 120, 24, (r, g, b) => r > 120 && g > 120 && b > 120);
 assert(terminalTextPixels > 20, `terminal overlay text is missing: ${terminalTextPixels} bright top pixels`);
@@ -37,4 +47,4 @@ assert(menuTextPixels > 100, `quick menu option text is missing: ${menuTextPixel
 const menuTitlePixels = countPixels(menu, 94, 48, 190, 70, (r, g, b) => r > 80 && r < 110 && g > 180 && g < 215 && b > 240);
 assert(menuTitlePixels > 30, `quick menu title is missing: ${menuTitlePixels} cyan title pixels`);
 
-console.log(JSON.stringify({ terminalTextPixels, menuTextPixels, menuTitlePixels }, null, 2));
+console.log(JSON.stringify({ retainedGameRows: game.height - 32, terminalTextPixels, menuTextPixels, menuTitlePixels }, null, 2));

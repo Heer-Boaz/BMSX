@@ -137,7 +137,6 @@ export class OverlayRenderer {
 		this.frameLogicalHeight = logical.y;
 		this.frameRenderWidth = renderWidth;
 		this.frameRenderHeight = renderHeight;
-		this.fillRect(0, 0, renderWidth, renderHeight, 0, 0xff000000, LAYER_2D_IDE);
 	}
 
 	public fillRect(left: number, top: number, right: number, bottom: number, z: number, color: color, layer: Layer2D): void {

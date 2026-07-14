@@ -1110,6 +1110,9 @@ references to their existing command kinds, payload references and counts.
 Backends consume only that pass state; they do not read a menu/workbench
 controller or clone the commands into a per-frame DTO. WebGPU and WebGL2 own
 their concrete pipelines, atlases, buffers and uploads behind that boundary.
+The terminal lane draws only its own content over the retained game scanout;
+the generic overlay renderer does not manufacture an opaque full-frame base.
+The full-screen IDE owns and emits its own frame background.
 WebGPU is the default accelerated browser backend and WebGL2 is its fallback;
 host validation failures do not reverse that ownership or introduce a second
 presentation facade.

@@ -379,8 +379,9 @@ and MAME
   Retained host modes are RGB565 and MSX10 3:4:3; RGB777 is removed. WebGL,
   GLES2, WebGPU, TS headless and C++ software execute the same mode contract.
 - [x] Remove host-only IDE/terminal framebuffer presentation ownership. The
-  workbench overlay owns its opaque base through the existing retained rect
-  pool; the VDP framebuffer texture and pass no longer exist.
+  full-screen IDE owns its frame background while the terminal publishes only
+  its content over the retained game scanout; the VDP framebuffer texture and
+  pass no longer exist.
 - [x] Complete the retained host-UI publication boundary. Workbench and menu
   publish separate retained lanes rather than exposing the menu controller to
   render backends; WebGPU now renders both lanes natively and WebGL2 consumes
@@ -715,8 +716,9 @@ PSX discrepancy or to start the GTE+ ABI early.
 - [x] Move output quantization from VDP MMIO/VOUT into the host presentation
   owner and remove the mirrored VDP view-snapshot consumers.
 - [x] Move host-only framebuffer presentation to its real owner without a
-  compatibility facade. The workbench overlay seeds a pooled opaque base rect;
-  the mirrored framebuffer texture/pass plumbing is removed.
+  compatibility facade. The full-screen IDE emits its own background and the
+  terminal remains transparent outside its content; the mirrored framebuffer
+  texture/pass plumbing is removed.
 - [x] Remove mapped VDP memory and its timing/register/readback/save-state
   ownership, then delete the mirrored VDP and IMGDEC devices without a facade.
 - [x] Retire old VDP/RPU firmware/system paths after cart migration planning.
