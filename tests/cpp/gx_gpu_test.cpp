@@ -93,6 +93,11 @@ void testGp0RawDrawWordDecoders() {
 	require(bmsx::gxGpuVertexY(0x07ff0000u) == -1, "GX-GPU vertex y decode");
 	require(bmsx::gxGpuDisplayStartX(123u | (456u << 10u)) == 123u, "GX-GPU display start x decode");
 	require(bmsx::gxGpuDisplayStartY(123u | (456u << 10u)) == 456u, "GX-GPU display start y decode");
+	require(bmsx::gxGpuScanoutField(bmsx::GX_GPU_STATUS_INTERLACED_FIELD) == 0u, "GX-GPU GPUSTAT field zero decode");
+	require(bmsx::gxGpuScanoutField(0u) == 1u, "GX-GPU GPUSTAT field one decode");
+	require(bmsx::gxGpuScanoutSourceLineStep(0u) == 0u, "GX-GPU progressive scanout line step");
+	require(bmsx::gxGpuScanoutSourceLineStep(bmsx::GX_GPU_DISPLAY_MODE_VERTICAL_INTERLACE_BIT) == 1u, "GX-GPU low-resolution interlaced scanout line step");
+	require(bmsx::gxGpuScanoutSourceLineStep(bmsx::GX_GPU_DISPLAY_MODE_VERTICAL_INTERLACE_BIT | bmsx::GX_GPU_DISPLAY_MODE_VERTICAL_RESOLUTION_BIT) == 2u, "GX-GPU 480i scanout line step");
 	require(bmsx::gxGpuDisplayModeScreenWidth(0u) == 256u, "GX-GPU 256-wide display mode");
 	require(bmsx::gxGpuDisplayModeScreenWidth(1u) == 320u, "GX-GPU 320-wide display mode");
 	require(bmsx::gxGpuDisplayModeScreenWidth(2u) == 512u, "GX-GPU 512-wide display mode");
@@ -339,11 +344,14 @@ void testInterlacedScanoutStatusBits() {
 
 	gpu.writeGp1((bmsx::GX_GPU_GP1_DISPLAY_START << 24u) | (7u << 10u));
 	gpu.writeGp1((bmsx::GX_GPU_GP1_DISPLAY_MODE << 24u) | 0x00000024u);
+	gpu.presentReadyFrameOnVblankEdge();
 	gpu.setScanoutTiming(true, 90, 100, 10);
 	require((gpu.readStatus() & bmsx::GX_GPU_STATUS_DISPLAY_LINE_LSB) == bmsx::GX_GPU_STATUS_DISPLAY_LINE_LSB, "GX-GPU 480i vblank display line bit uses display start");
 	gpu.setScanoutTiming(false, 0, 100, 10);
 	require((gpu.readStatus() & bmsx::GX_GPU_STATUS_INTERLACED_FIELD) == 0u, "GX-GPU GPUSTAT interlaced field toggles on next frame");
 	require((gpu.readStatus() & bmsx::GX_GPU_STATUS_DISPLAY_LINE_LSB) == 0u, "GX-GPU 480i active display line bit follows display field");
+	gpu.presentReadyFrameOnVblankEdge();
+	require(gpu.lastFrameCommitted(), "GX-GPU field-only transition commits a presentation frame");
 }
 
 void testStateRestorePreservesInterlacedFieldLatches() {
@@ -2440,6 +2448,68 @@ void testSoftwareScanoutUsesNativeOutputDimensions() {
 	require(framebuffer[211u * 256u] == 0xffffffffu, "GX-GPU native 212-line scanout reaches source row 211 without scaling");
 }
 
+void testSoftwareScanoutWeavesCurrent480iFieldIntoRetainedOutputLines() {
+	std::array<uint32_t, 4u> framebuffer{};
+	bmsx::SoftwareBackend backend(framebuffer.data(), 1, 4, static_cast<int32_t>(sizeof(uint32_t)));
+	bmsx::GxGpuPipelineState state{};
+	state.width = 1;
+	state.height = 4;
+	state.statusWord = bmsx::GX_GPU_STATUS_INTERLACED_FIELD;
+	state.displayModeWord = bmsx::GX_GPU_DISPLAY_MODE_VERTICAL_INTERLACE_BIT | bmsx::GX_GPU_DISPLAY_MODE_VERTICAL_RESOLUTION_BIT;
+	state.displayStartWord = 1023u | (510u << 10u);
+	state.vramSnapshotSerial = 1u;
+	bmsx::g_gxGpuSoftwareVram.fill(0u);
+	bmsx::g_gxGpuSoftwareVram[bmsx::gxGpuSoftwareVramIndex(1023, 510)] = 0x001fu;
+	bmsx::g_gxGpuSoftwareVram[bmsx::gxGpuSoftwareVramIndex(1023, 511)] = 0x7c00u;
+	bmsx::g_gxGpuSoftwareVram[bmsx::gxGpuSoftwareVramIndex(1023, 0)] = 0x03e0u;
+	bmsx::g_gxGpuSoftwareVram[bmsx::gxGpuSoftwareVramIndex(1023, 1)] = 0x7fffu;
+	bmsx::scanoutGxGpuSoftwareVram(backend, state);
+
+	require(framebuffer == std::array<uint32_t, 4u>{
+		0xffff0000u,
+		0xff0000ffu,
+		0xff00ff00u,
+		0xffffffffu,
+	}, "GX-GPU 480i scanout initially assembles both wrapped source fields");
+
+	bmsx::g_gxGpuSoftwareVram[bmsx::gxGpuSoftwareVramIndex(1023, 510)] = 0x7fffu;
+	bmsx::g_gxGpuSoftwareVram[bmsx::gxGpuSoftwareVramIndex(1023, 0)] = 0x7fffu;
+	bmsx::g_gxGpuSoftwareVram[bmsx::gxGpuSoftwareVramIndex(1023, 511)] = 0x001fu;
+	bmsx::g_gxGpuSoftwareVram[bmsx::gxGpuSoftwareVramIndex(1023, 1)] = 0x03e0u;
+	state.statusWord = 0u;
+	bmsx::scanoutGxGpuSoftwareVram(backend, state);
+
+	require(framebuffer == std::array<uint32_t, 4u>{
+		0xffff0000u,
+		0xffff0000u,
+		0xff00ff00u,
+		0xff00ff00u,
+	}, "GX-GPU 480i scanout updates only the current field lines");
+
+	state.statusWord = bmsx::GX_GPU_STATUS_DISPLAY_DISABLE | bmsx::GX_GPU_STATUS_INTERLACED_FIELD;
+	bmsx::scanoutGxGpuSoftwareVram(backend, state);
+	require(framebuffer == std::array<uint32_t, 4u>{
+		0xff000000u,
+		0xffff0000u,
+		0xff000000u,
+		0xff00ff00u,
+	}, "GX-GPU disabled interlaced scanout blacks only the current field");
+
+	bmsx::g_gxGpuSoftwareVram[bmsx::gxGpuSoftwareVramIndex(1023, 510)] = 0x7c00u;
+	bmsx::g_gxGpuSoftwareVram[bmsx::gxGpuSoftwareVramIndex(1023, 511)] = 0x7fffu;
+	bmsx::g_gxGpuSoftwareVram[bmsx::gxGpuSoftwareVramIndex(1023, 0)] = 0x7fffu;
+	bmsx::g_gxGpuSoftwareVram[bmsx::gxGpuSoftwareVramIndex(1023, 1)] = 0x7c00u;
+	state.statusWord = 0u;
+	state.vramSnapshotSerial = 2u;
+	bmsx::scanoutGxGpuSoftwareVram(backend, state);
+	require(framebuffer == std::array<uint32_t, 4u>{
+		0xff0000ffu,
+		0xffffffffu,
+		0xffffffffu,
+		0xff0000ffu,
+	}, "GX-GPU snapshot replacement rebuilds both retained fields");
+}
+
 void testSoftwareBackendRetiresCommandLogWithoutClearingVram() {
 	bmsx::GxGpuCommandBuffer commandBuffer(commandBufferDmaHarness.dma);
 	commandBuffer.reset();
@@ -3014,6 +3084,7 @@ int main() {
 	testSoftwareFillBypassesDrawingAreaAndMaskBitDrawingState();
 	testSoftwareScanoutConsumesTransfersAndFill();
 	testSoftwareScanoutUsesNativeOutputDimensions();
+	testSoftwareScanoutWeavesCurrent480iFieldIntoRetainedOutputLines();
 	testSoftwareBackendRetiresCommandLogWithoutClearingVram();
 	testCommandBufferRestoreRepublishesRetainedStream();
 	testCommandBufferRetireCompactsPresentedCommandStream();

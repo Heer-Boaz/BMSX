@@ -728,8 +728,10 @@ export class GxGpu {
 		this.synchronizeCommandTiming(this.scheduler.currentNowCycles());
 		this.updateScanoutStatusBits();
 		this.updateDynamicStatusBits();
-		const visibleStatusWord = this.statusWord & GX_GPU_STATUS_DISPLAY_DISABLE;
-		const scanoutStateChanged = (this.presentStatusWord & GX_GPU_STATUS_DISPLAY_DISABLE) !== visibleStatusWord
+		// A field edge exposes the other retained scanout field even when no GP0 work completed.
+		const visibleStatusMask = GX_GPU_STATUS_DISPLAY_DISABLE | GX_GPU_STATUS_INTERLACED_FIELD;
+		const visibleStatusWord = this.statusWord & visibleStatusMask;
+		const scanoutStateChanged = (this.presentStatusWord & visibleStatusMask) !== visibleStatusWord
 			|| this.presentDisplayModeWord !== this.displayModeWord
 			|| this.presentDisplayStartWord !== this.displayStartWord
 			|| this.presentHorizontalDisplayRangeWord !== this.horizontalDisplayRangeWord

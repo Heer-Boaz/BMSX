@@ -104,9 +104,20 @@ Implemented or partially covered GX-GPU areas include:
   wrap, 192/212 timing, restore, and one-shot libretro geometry transitions;
   software pixel data matches at Pietious frame 620, and GLES2/llvmpipe captures
   prove 320x240, 256x192, and 256x212 targets. Live browser proof remains
-  deferred. Current-format save-state retains the GPU-owned interlaced field,
-  displayed-field, and active-line latches; this does not claim complete
-  field-aware 480i scanout.
+  deferred. Field-aware interlaced scanout now retains the opposite field while
+  updating the GPUSTAT-selected current field in TS/C++ software, WebGL2,
+  WebGPU, and GLES2. True 480i consumes alternating VRAM source rows; low-line
+  interlace consumes the same source rows in alternating temporal fields. The
+  retained host pixel storage is allocated only on first interlaced use or an
+  output-size change, is rebuilt after a display interpretation or VRAM snapshot
+  replacement, and is not save-state data. Progressive scanout stays on its
+  original direct path behind one mode dispatch and allocates no field storage.
+  GPU field edges publish a presentation frame even without new GP0 work, so the
+  opposite retained field and the second disabled field cannot remain hidden.
+  Mirrored software vectors cover wrapped source rows, current-field retention,
+  display disable, and snapshot reprime; all GLES2/WebGL2 shader variants compile
+  and link with Mesa's surfaceless GLES drivers. Live WebGPU browser proof remains
+  deferred.
 - Cartlib presentation owns one retained active visual-component list per world
   space. Sprite, tile, text and custom visuals inherit the same depth contract
   and draw polymorphically through one visual system; the old hard-coded kind
@@ -377,6 +388,11 @@ and MAME
 - [x] GPU info command range behavior.
 - [x] Interlaced field drawing behavior in accelerated backends, including
   current-format restore of the three GPU-owned field/parity latches.
+- [x] Weave interlaced scanout from a retained backend-owned field buffer in
+  TS/C++ software, WebGL2, WebGPU, and GLES2. Only the current field is updated
+  during steady-state scanout; progressive scanout does not allocate or execute
+  the retained-field path. Mirrored vectors prove 480i source-row stepping,
+  temporal retention, display disable, VRAM wrapping, and snapshot reprime.
 - [x] Present 320x240, 256x192, and 256x212 directly from the latched
   GP1 display configuration in every software and accelerated backend. Do not
   scale an active range over a fixed host target and do not modify cart assets.

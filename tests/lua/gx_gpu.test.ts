@@ -36,12 +36,16 @@ import {
 } from '../../machine/ts/machine/devices/gx/gpu_command_buffer';
 import { GX_GPU_COMMAND_FIFO_WORD_CAPACITY } from '../../machine/ts/machine/devices/gx/gpu_command_fifo';
 import {
+	GX_GPU_DISPLAY_MODE_VERTICAL_INTERLACE_BIT,
+	GX_GPU_DISPLAY_MODE_VERTICAL_RESOLUTION_BIT,
 	GX_GPU_RESET_HORIZONTAL_DISPLAY_RANGE_WORD,
 	GX_GPU_RESET_DISPLAY_MODE_WORD,
 	GX_GPU_RESET_VERTICAL_DISPLAY_RANGE_WORD,
 	gxGpuDisplayStartX,
 	gxGpuDisplayStartY,
 	gxGpuDisplayModeScreenWidth,
+	gxGpuScanoutField,
+	gxGpuScanoutSourceLineStep,
 	gxGpuVerticalDisplayRangeEnd,
 	gxGpuVerticalDisplayRangeStart,
 	gxGpuVerticalVisibleLines,
@@ -509,6 +513,11 @@ test('GX-GPU decodes PSX GP0 signed vertex and rectangle size words', () => {
 	assert.equal(gxGpuVertexY(0x07ff0000), -1);
 	assert.equal(gxGpuDisplayStartX(123 | (456 << 10)), 123);
 	assert.equal(gxGpuDisplayStartY(123 | (456 << 10)), 456);
+	assert.equal(gxGpuScanoutField(GX_GPU_STATUS_INTERLACED_FIELD), 0);
+	assert.equal(gxGpuScanoutField(0), 1);
+	assert.equal(gxGpuScanoutSourceLineStep(0), 0);
+	assert.equal(gxGpuScanoutSourceLineStep(GX_GPU_DISPLAY_MODE_VERTICAL_INTERLACE_BIT), 1);
+	assert.equal(gxGpuScanoutSourceLineStep(GX_GPU_DISPLAY_MODE_VERTICAL_INTERLACE_BIT | GX_GPU_DISPLAY_MODE_VERTICAL_RESOLUTION_BIT), 2);
 	assert.equal(gxGpuDisplayModeScreenWidth(0), 256);
 	assert.equal(gxGpuDisplayModeScreenWidth(1), 320);
 	assert.equal(gxGpuDisplayModeScreenWidth(2), 512);
@@ -816,11 +825,14 @@ test('GX-GPU mirrors PSX GPUSTAT interlaced field and scanout line bits', () => 
 
 	gpu.writeGp1((GX_GPU_GP1_DISPLAY_START << 24) | (7 << 10));
 	gpu.writeGp1((GX_GPU_GP1_DISPLAY_MODE << 24) | 0x00000024);
+	gpu.presentReadyFrameOnVblankEdge();
 	gpu.setScanoutTiming(true, 90, 100, 10);
 	assert.equal((gpu.readStatus() & GX_GPU_STATUS_DISPLAY_LINE_LSB) >>> 0, GX_GPU_STATUS_DISPLAY_LINE_LSB >>> 0);
 	gpu.setScanoutTiming(false, 0, 100, 10);
 	assert.equal((gpu.readStatus() & GX_GPU_STATUS_INTERLACED_FIELD) >>> 0, 0);
 	assert.equal((gpu.readStatus() & GX_GPU_STATUS_DISPLAY_LINE_LSB) >>> 0, 0);
+	gpu.presentReadyFrameOnVblankEdge();
+	assert.equal(gpu.lastFrameCommitted(), true);
 });
 
 test('GX-GPU state restore preserves interlaced field latches', () => {
@@ -2286,6 +2298,72 @@ test('GX-GPU software scanout renders the native target without host scaling', (
 	state.height = 212;
 	scanoutGxGpuSoftwareVram(state, pixels);
 	assertRgbaPixel(pixels, 0, 211, 255, 255, 255);
+});
+
+test('GX-GPU software scanout weaves the current 480i field into retained output lines', () => {
+	const commandBuffer = new GxGpuCommandBuffer(standaloneCommandBufferDma);
+	const pixels = new Uint8Array(4 * 4);
+	const state = {
+		width: 1,
+		height: 4,
+		commandBuffer,
+		readbackPort: commandBuffer.readback,
+		statusWord: GX_GPU_STATUS_INTERLACED_FIELD,
+		displayModeWord: GX_GPU_DISPLAY_MODE_VERTICAL_INTERLACE_BIT | GX_GPU_DISPLAY_MODE_VERTICAL_RESOLUTION_BIT,
+		displayStartWord: 1023 | (510 << 10),
+		vramSnapshotBytes: GX_GPU_SOFTWARE_TEST_VRAM_SNAPSHOT,
+		vramSnapshotSerial: 1n,
+	};
+	gxGpuSoftwareVram.fill(0);
+	gxGpuSoftwareVram[gxGpuSoftwareVramIndex(1023, 510)] = 0x001f;
+	gxGpuSoftwareVram[gxGpuSoftwareVramIndex(1023, 511)] = 0x7c00;
+	gxGpuSoftwareVram[gxGpuSoftwareVramIndex(1023, 0)] = 0x03e0;
+	gxGpuSoftwareVram[gxGpuSoftwareVramIndex(1023, 1)] = 0x7fff;
+	scanoutGxGpuSoftwareVram(state, pixels);
+
+	assert.deepEqual(Array.from(pixels), [
+		255, 0, 0, 255,
+		0, 0, 255, 255,
+		0, 255, 0, 255,
+		255, 255, 255, 255,
+	]);
+
+	gxGpuSoftwareVram[gxGpuSoftwareVramIndex(1023, 510)] = 0x7fff;
+	gxGpuSoftwareVram[gxGpuSoftwareVramIndex(1023, 0)] = 0x7fff;
+	gxGpuSoftwareVram[gxGpuSoftwareVramIndex(1023, 511)] = 0x001f;
+	gxGpuSoftwareVram[gxGpuSoftwareVramIndex(1023, 1)] = 0x03e0;
+	state.statusWord = 0;
+	scanoutGxGpuSoftwareVram(state, pixels);
+
+	assert.deepEqual(Array.from(pixels), [
+		255, 0, 0, 255,
+		255, 0, 0, 255,
+		0, 255, 0, 255,
+		0, 255, 0, 255,
+	]);
+
+	state.statusWord = GX_GPU_STATUS_DISPLAY_DISABLE | GX_GPU_STATUS_INTERLACED_FIELD;
+	scanoutGxGpuSoftwareVram(state, pixels);
+	assert.deepEqual(Array.from(pixels), [
+		0, 0, 0, 255,
+		255, 0, 0, 255,
+		0, 0, 0, 255,
+		0, 255, 0, 255,
+	]);
+
+	gxGpuSoftwareVram[gxGpuSoftwareVramIndex(1023, 510)] = 0x7c00;
+	gxGpuSoftwareVram[gxGpuSoftwareVramIndex(1023, 511)] = 0x7fff;
+	gxGpuSoftwareVram[gxGpuSoftwareVramIndex(1023, 0)] = 0x7fff;
+	gxGpuSoftwareVram[gxGpuSoftwareVramIndex(1023, 1)] = 0x7c00;
+	state.statusWord = 0;
+	state.vramSnapshotSerial = 2n;
+	scanoutGxGpuSoftwareVram(state, pixels);
+	assert.deepEqual(Array.from(pixels), [
+		0, 0, 255, 255,
+		255, 255, 255, 255,
+		255, 255, 255, 255,
+		0, 0, 255, 255,
+	]);
 });
 
 test('GX-GPU software backend retires consumed command logs without clearing VRAM', () => {

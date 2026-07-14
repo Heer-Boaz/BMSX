@@ -1,7 +1,8 @@
 struct ScanoutUniforms {
 	display_start_word: u32,
 	display_mode_word: u32,
-	padding: vec2<u32>,
+	field_height: u32,
+	display_disable_word: u32,
 };
 
 @group(0) @binding(0) var<uniform> u: ScanoutUniforms;
@@ -59,4 +60,32 @@ fn fs_main(@builtin(position) position: vec4<f32>) -> @location(0) vec4<f32> {
 		rgb8 = rgb555ToRgb8(rawWordAtLogical(displayStartX() + sourceX, sourceY));
 	}
 	return vec4<f32>(rgb8 / 255.0, 1.0);
+}
+
+@fragment
+fn fs_interlaced_field(@builtin(position) position: vec4<f32>) -> @location(0) vec4<f32> {
+	if (u.display_disable_word != 0u) {
+		return vec4<f32>(0.0, 0.0, 0.0, 1.0);
+	}
+	let storedY = u32(position.y);
+	let field = select(0u, 1u, storedY >= u.field_height);
+	let fieldLine = storedY - field * u.field_height;
+	let sourceLineStep = 1u + ((u.display_mode_word >> 2u) & 1u);
+	let sourceX = u32(position.x);
+	let sourceY = displayStartY() + field * (sourceLineStep - 1u) + fieldLine * sourceLineStep;
+	var rgb8: vec3<f32>;
+	if ((u.display_mode_word & 0x10u) != 0u) {
+		rgb8 = rgb888AtSourcePixel(sourceX, sourceY);
+	} else {
+		rgb8 = rgb555ToRgb8(rawWordAtLogical(displayStartX() + sourceX, sourceY));
+	}
+	return vec4<f32>(rgb8 / 255.0, 1.0);
+}
+
+@fragment
+fn fs_interlaced_weave(@builtin(position) position: vec4<f32>) -> @location(0) vec4<f32> {
+	let outputY = u32(position.y);
+	let field = outputY & 1u;
+	let fieldLine = outputY >> 1u;
+	return textureLoad(u_vram, vec2<i32>(i32(u32(position.x)), i32(field * u.field_height + fieldLine)), 0);
 }

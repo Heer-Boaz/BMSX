@@ -472,8 +472,10 @@ void GxGpu::presentReadyFrameOnVblankEdge() {
 	synchronizeCommandExecution(m_scheduler.currentNowCycles());
 	updateScanoutStatusBits();
 	updateDynamicStatusBits();
-	const u32 visibleStatusWord = m_statusWord & GX_GPU_STATUS_DISPLAY_DISABLE;
-	const bool scanoutStateChanged = (m_presentStatusWord & GX_GPU_STATUS_DISPLAY_DISABLE) != visibleStatusWord
+	// A field edge exposes the other retained scanout field even when no GP0 work completed.
+	constexpr u32 visibleStatusMask = GX_GPU_STATUS_DISPLAY_DISABLE | GX_GPU_STATUS_INTERLACED_FIELD;
+	const u32 visibleStatusWord = m_statusWord & visibleStatusMask;
+	const bool scanoutStateChanged = (m_presentStatusWord & visibleStatusMask) != visibleStatusWord
 		|| m_presentDisplayModeWord != m_displayModeWord
 		|| m_presentDisplayStartWord != m_displayStartWord
 		|| m_presentHorizontalDisplayRangeWord != m_horizontalDisplayRangeWord

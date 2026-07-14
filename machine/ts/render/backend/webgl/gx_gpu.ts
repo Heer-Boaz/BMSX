@@ -26,8 +26,11 @@ import {
 } from '../../../machine/devices/gx/gpu_command_buffer';
 import {
 	GX_GPU_DISPLAY_MODE_RGB24_BIT,
+	GX_GPU_SCANOUT_INTERPRETATION_MASK,
 	gxGpuDisplayStartX,
 	gxGpuDisplayStartY,
+	gxGpuScanoutField,
+	gxGpuScanoutSourceLineStep,
 } from '../../../machine/devices/gx/gpu_display';
 import {
 	GX_GPU_TEXTURE_SOURCE_BATCH_OVERLAP,
@@ -102,6 +105,7 @@ import readbackFragmentShader from './shaders/gx_gpu_readback.frag.glsl';
 const GX_GPU_SCANOUT_TEXTURE_UNIT = 0;
 const GX_GPU_TEXTURE_SAMPLE_UNIT = 1;
 const GX_GPU_TEXTURE_TRANSFER_UNIT = 2;
+const GX_GPU_SCANOUT_FIELDS_TEXTURE_UNIT = 3;
 const GX_GPU_POLYGON_VERTICES_PER_COMMAND = 6;
 const GX_GPU_SOLID_VERTEX_FLOATS = 6;
 const GX_GPU_SOLID_TRIANGLE_FLOATS = 3 * GX_GPU_SOLID_VERTEX_FLOATS;
@@ -137,6 +141,8 @@ const GX_GPU_READBACK_PACK_WIDTH = 512;
 const GX_GPU_FULL_DRAWING_AREA_TOP_LEFT_WORD = 0;
 const GX_GPU_FULL_DRAWING_AREA_BOTTOM_RIGHT_WORD = (GX_GPU_VRAM_WIDTH - 1) | ((GX_GPU_VRAM_HEIGHT - 1) << 10);
 const GX_GPU_FIXED_COLOR_PLANE_SHADER_DEFINE = '#define GX_GPU_FIXED_COLOR_PLANE 1\n';
+const GX_GPU_INTERLACED_FIELD_SHADER_DEFINE = '#define GX_GPU_INTERLACED_FIELD 1\n';
+const GX_GPU_INTERLACED_WEAVE_SHADER_DEFINE = '#define GX_GPU_INTERLACED_WEAVE 1\n';
 
 const gxGpuSolidVertices = new Float32Array(GX_GPU_SOLID_FLOAT_CAPACITY);
 const gxGpuLineVertices = new Float32Array(GX_GPU_LINE_FLOAT_CAPACITY);
@@ -256,13 +262,17 @@ type GxGpuState = {
 	fixedTexturedProgram: WebGLProgram;
 	transferProgram: WebGLProgram;
 	scanoutProgram: WebGLProgram;
+	scanoutFieldProgram: WebGLProgram;
+	scanoutWeaveProgram: WebGLProgram;
 	readbackProgram: WebGLProgram;
 	vramTexture: WebGLTexture;
 	vramSampleTexture: WebGLTexture;
 	vramTransferTexture: WebGLTexture;
 	vramFramebuffer: WebGLFramebuffer;
 	readbackTexture: WebGLTexture;
+	scanoutFieldsTexture: WebGLTexture;
 	readbackFramebuffer: WebGLFramebuffer;
+	scanoutFieldsFramebuffer: WebGLFramebuffer;
 	solidVertexBuffer: WebGLBuffer;
 	lineVertexBuffer: WebGLBuffer;
 	texturedVertexBuffer: WebGLBuffer;
@@ -351,12 +361,25 @@ type GxGpuState = {
 	scanoutPositionAttrib: number;
 	scanoutVramUniform: WebGLUniformLocation;
 	scanoutDisplayUniform: WebGLUniformLocation;
+	scanoutFieldPositionAttrib: number;
+	scanoutFieldVramUniform: WebGLUniformLocation;
+	scanoutFieldDisplayUniform: WebGLUniformLocation;
+	scanoutFieldInterlaceUniform: WebGLUniformLocation;
+	scanoutWeavePositionAttrib: number;
+	scanoutWeaveVramUniform: WebGLUniformLocation;
+	scanoutWeaveInterlaceUniform: WebGLUniformLocation;
 	readbackPositionAttrib: number;
 	readbackVramUniform: WebGLUniformLocation;
 	readbackParamsUniform: WebGLUniformLocation;
 	scanoutUniformDisplayModeWord: number;
 	scanoutUniformDisplayStartWord: number;
 	scanoutUniformHeight: number;
+	scanoutFieldsWidth: number;
+	scanoutFieldsHeight: number;
+	scanoutFieldsDisplayStartWord: number;
+	scanoutFieldsInterpretationWord: number;
+	scanoutFieldsVramSnapshotSerial: bigint;
+	scanoutFieldsValid: boolean;
 	processedCommandCount: number;
 	processedCommandSerial: number;
 	vramSnapshotSerial: bigint;
@@ -381,6 +404,8 @@ function bootstrapGxGpuPass(backend: WebGLBackend): void {
 	const fixedTexturedProgram = backend.buildProgram(texturedVertexShader, texturedFragmentShader, 'gx_gpu_fixed_textured', GX_GPU_FIXED_COLOR_PLANE_SHADER_DEFINE);
 	const transferProgram = backend.buildProgram(transferVertexShader, transferFragmentShader, 'gx_gpu_transfer');
 	const scanoutProgram = backend.buildProgram(scanoutVertexShader, scanoutFragmentShader, 'gx_gpu_scanout');
+	const scanoutFieldProgram = backend.buildProgram(scanoutVertexShader, scanoutFragmentShader, 'gx_gpu_scanout_field', GX_GPU_INTERLACED_FIELD_SHADER_DEFINE);
+	const scanoutWeaveProgram = backend.buildProgram(scanoutVertexShader, scanoutFragmentShader, 'gx_gpu_scanout_weave', GX_GPU_INTERLACED_WEAVE_SHADER_DEFINE);
 	const readbackProgram = backend.buildProgram(scanoutVertexShader, readbackFragmentShader, 'gx_gpu_readback');
 	const vramTexture = gl.createTexture() as WebGLTexture;
 	initializeGxGpuTexture(backend, vramTexture, GX_GPU_SCANOUT_TEXTURE_UNIT);
@@ -408,6 +433,13 @@ function bootstrapGxGpuPass(backend: WebGLBackend): void {
 	const readbackFramebuffer = gl.createFramebuffer() as WebGLFramebuffer;
 	gl.bindFramebuffer(gl.FRAMEBUFFER, readbackFramebuffer);
 	gl.framebufferTexture2D(gl.FRAMEBUFFER, gl.COLOR_ATTACHMENT0, gl.TEXTURE_2D, readbackTexture, 0);
+	const scanoutFieldsTexture = gl.createTexture() as WebGLTexture;
+	backend.setActiveTexture(GX_GPU_SCANOUT_FIELDS_TEXTURE_UNIT);
+	backend.bindTexture2D(scanoutFieldsTexture);
+	glSetTexture2DParams(gl, RGBA8_LINEAR_TEXTURE_PARAMS);
+	const scanoutFieldsFramebuffer = gl.createFramebuffer() as WebGLFramebuffer;
+	gl.bindFramebuffer(gl.FRAMEBUFFER, scanoutFieldsFramebuffer);
+	gl.framebufferTexture2D(gl.FRAMEBUFFER, gl.COLOR_ATTACHMENT0, gl.TEXTURE_2D, scanoutFieldsTexture, 0);
 
 	const solidVertexBuffer = gl.createBuffer() as WebGLBuffer;
 	backend.bindArrayBuffer(solidVertexBuffer);
@@ -439,13 +471,17 @@ function bootstrapGxGpuPass(backend: WebGLBackend): void {
 		fixedTexturedProgram,
 		transferProgram,
 		scanoutProgram,
+		scanoutFieldProgram,
+		scanoutWeaveProgram,
 		readbackProgram,
 		vramTexture,
 		vramSampleTexture,
 		vramTransferTexture,
 		vramFramebuffer,
 		readbackTexture,
+		scanoutFieldsTexture,
 		readbackFramebuffer,
+		scanoutFieldsFramebuffer,
 		solidVertexBuffer,
 		lineVertexBuffer,
 		texturedVertexBuffer,
@@ -534,12 +570,25 @@ function bootstrapGxGpuPass(backend: WebGLBackend): void {
 		scanoutPositionAttrib: gl.getAttribLocation(scanoutProgram, 'a_position'),
 		scanoutVramUniform: gl.getUniformLocation(scanoutProgram, 'u_vram') as WebGLUniformLocation,
 		scanoutDisplayUniform: gl.getUniformLocation(scanoutProgram, 'u_display') as WebGLUniformLocation,
+		scanoutFieldPositionAttrib: gl.getAttribLocation(scanoutFieldProgram, 'a_position'),
+		scanoutFieldVramUniform: gl.getUniformLocation(scanoutFieldProgram, 'u_vram') as WebGLUniformLocation,
+		scanoutFieldDisplayUniform: gl.getUniformLocation(scanoutFieldProgram, 'u_display') as WebGLUniformLocation,
+		scanoutFieldInterlaceUniform: gl.getUniformLocation(scanoutFieldProgram, 'u_interlace') as WebGLUniformLocation,
+		scanoutWeavePositionAttrib: gl.getAttribLocation(scanoutWeaveProgram, 'a_position'),
+		scanoutWeaveVramUniform: gl.getUniformLocation(scanoutWeaveProgram, 'u_vram') as WebGLUniformLocation,
+		scanoutWeaveInterlaceUniform: gl.getUniformLocation(scanoutWeaveProgram, 'u_interlace') as WebGLUniformLocation,
 		readbackPositionAttrib: gl.getAttribLocation(readbackProgram, 'a_position'),
 		readbackVramUniform: gl.getUniformLocation(readbackProgram, 'u_vram') as WebGLUniformLocation,
 		readbackParamsUniform: gl.getUniformLocation(readbackProgram, 'u_readback') as WebGLUniformLocation,
 		scanoutUniformDisplayModeWord: 0xffffffff,
 		scanoutUniformDisplayStartWord: 0xffffffff,
 		scanoutUniformHeight: 0,
+		scanoutFieldsWidth: 0,
+		scanoutFieldsHeight: 0,
+		scanoutFieldsDisplayStartWord: 0,
+		scanoutFieldsInterpretationWord: 0,
+		scanoutFieldsVramSnapshotSerial: 0n,
+		scanoutFieldsValid: false,
 		processedCommandCount: 0,
 		processedCommandSerial: 0,
 		vramSnapshotSerial: 0n,
@@ -2464,7 +2513,7 @@ function flushTexturedCommands(commandBuffer: GxGpuCommandBufferView, vertexFloa
 	return 0;
 }
 
-function scanoutGxGpuVram(fbo: WebGLFramebuffer, state: RenderPassStateRegistry['gx_gpu']): void {
+function scanoutProgressiveGxGpuVram(fbo: WebGLFramebuffer, state: RenderPassStateRegistry['gx_gpu']): void {
 	const backend = gxGpuState.backend;
 	const gl = gxGpuState.gl;
 	gl.bindFramebuffer(gl.FRAMEBUFFER, fbo);
@@ -2502,6 +2551,89 @@ function scanoutGxGpuVram(fbo: WebGLFramebuffer, state: RenderPassStateRegistry[
 	gl.enableVertexAttribArray(gxGpuState.scanoutPositionAttrib);
 	gl.vertexAttribPointer(gxGpuState.scanoutPositionAttrib, 2, gl.FLOAT, false, GX_GPU_SCANOUT_VERTEX_FLOATS * 4, 0);
 	gl.drawArrays(gl.TRIANGLES, 0, 3);
+}
+
+function scanoutInterlacedGxGpuVram(fbo: WebGLFramebuffer, state: RenderPassStateRegistry['gx_gpu'], sourceLineStep: number): void {
+	const backend = gxGpuState.backend;
+	const gl = gxGpuState.gl;
+	const width = state.width;
+	const height = state.height;
+	const fieldHeight = height >> 1;
+	const interpretationWord = state.displayModeWord & GX_GPU_SCANOUT_INTERPRETATION_MASK;
+	const sizeChanged = gxGpuState.scanoutFieldsWidth !== width || gxGpuState.scanoutFieldsHeight !== height;
+	const invalid = !gxGpuState.scanoutFieldsValid
+		|| sizeChanged
+		|| gxGpuState.scanoutFieldsDisplayStartWord !== state.displayStartWord
+		|| gxGpuState.scanoutFieldsInterpretationWord !== interpretationWord
+		|| gxGpuState.scanoutFieldsVramSnapshotSerial !== state.vramSnapshotSerial;
+	if (sizeChanged) {
+		backend.setActiveTexture(GX_GPU_SCANOUT_FIELDS_TEXTURE_UNIT);
+		backend.bindTexture2D(gxGpuState.scanoutFieldsTexture);
+		gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, width, height, 0, gl.RGBA, gl.UNSIGNED_BYTE, null);
+	}
+
+	gl.bindFramebuffer(gl.FRAMEBUFFER, gxGpuState.scanoutFieldsFramebuffer);
+	gl.disable(gl.SCISSOR_TEST);
+	backend.setDepthTestEnabled(false);
+	backend.setDepthMask(false);
+	backend.setCullEnabled(false);
+	backend.setBlendEnabled(false);
+	backend.useProgram(gxGpuState.scanoutFieldProgram);
+	gl.uniform1i(gxGpuState.scanoutFieldVramUniform, GX_GPU_SCANOUT_TEXTURE_UNIT);
+	if (invalid) {
+		gl.uniform4f(
+			gxGpuState.scanoutFieldDisplayUniform,
+			gxGpuDisplayStartX(state.displayStartWord),
+			gxGpuDisplayStartY(state.displayStartWord),
+			height,
+			(state.displayModeWord & GX_GPU_DISPLAY_MODE_RGB24_BIT) !== 0 ? 1 : 0,
+		);
+	}
+	backend.setActiveTexture(GX_GPU_SCANOUT_TEXTURE_UNIT);
+	backend.bindTexture2D(gxGpuState.vramTexture);
+	backend.bindVertexArray(null);
+	backend.bindArrayBuffer(gxGpuState.scanoutVertexBuffer);
+	gl.enableVertexAttribArray(gxGpuState.scanoutFieldPositionAttrib);
+	gl.vertexAttribPointer(gxGpuState.scanoutFieldPositionAttrib, 2, gl.FLOAT, false, GX_GPU_SCANOUT_VERTEX_FLOATS * 4, 0);
+	const displayDisabled = (state.statusWord & GX_GPU_STATUS_DISPLAY_DISABLE) !== 0;
+	const firstField = invalid ? 0 : gxGpuScanoutField(state.statusWord);
+	const fieldEnd = invalid ? 2 : firstField + 1;
+	for (let field = firstField; field < fieldEnd; field += 1) {
+		backend.setViewportRect(0, field * fieldHeight, width, fieldHeight);
+		gl.uniform4f(gxGpuState.scanoutFieldInterlaceUniform, fieldHeight, sourceLineStep, field, displayDisabled ? 1 : 0);
+		gl.drawArrays(gl.TRIANGLES, 0, 3);
+	}
+	if (invalid) {
+		gxGpuState.scanoutFieldsWidth = width;
+		gxGpuState.scanoutFieldsHeight = height;
+		gxGpuState.scanoutFieldsDisplayStartWord = state.displayStartWord;
+		gxGpuState.scanoutFieldsInterpretationWord = interpretationWord;
+		gxGpuState.scanoutFieldsVramSnapshotSerial = state.vramSnapshotSerial;
+		gxGpuState.scanoutFieldsValid = true;
+	}
+
+	gl.bindFramebuffer(gl.FRAMEBUFFER, fbo);
+	backend.setViewportRect(0, 0, width, height);
+	backend.useProgram(gxGpuState.scanoutWeaveProgram);
+	gl.uniform1i(gxGpuState.scanoutWeaveVramUniform, GX_GPU_SCANOUT_FIELDS_TEXTURE_UNIT);
+	if (sizeChanged) {
+		gl.uniform4f(gxGpuState.scanoutWeaveInterlaceUniform, fieldHeight, height, width, 0);
+	}
+	backend.setActiveTexture(GX_GPU_SCANOUT_FIELDS_TEXTURE_UNIT);
+	backend.bindTexture2D(gxGpuState.scanoutFieldsTexture);
+	gl.enableVertexAttribArray(gxGpuState.scanoutWeavePositionAttrib);
+	gl.vertexAttribPointer(gxGpuState.scanoutWeavePositionAttrib, 2, gl.FLOAT, false, GX_GPU_SCANOUT_VERTEX_FLOATS * 4, 0);
+	gl.drawArrays(gl.TRIANGLES, 0, 3);
+}
+
+function scanoutGxGpuVram(fbo: WebGLFramebuffer, state: RenderPassStateRegistry['gx_gpu']): void {
+	const sourceLineStep = gxGpuScanoutSourceLineStep(state.displayModeWord);
+	if (sourceLineStep !== 0) {
+		scanoutInterlacedGxGpuVram(fbo, state, sourceLineStep);
+		return;
+	}
+	gxGpuState.scanoutFieldsValid = false;
+	scanoutProgressiveGxGpuVram(fbo, state);
 }
 
 function executeGxGpuVramCommands(source: GxGpuVramSource): void {

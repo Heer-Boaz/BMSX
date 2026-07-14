@@ -27,6 +27,11 @@ import {
 	gxGpuSigned11,
 } from '../../../machine/devices/gx/gpu_command_buffer';
 import {
+	GX_GPU_SCANOUT_INTERPRETATION_MASK,
+	gxGpuScanoutField,
+	gxGpuScanoutSourceLineStep,
+} from '../../../machine/devices/gx/gpu_display';
+import {
 	GX_GPU_TEXTURE_SOURCE_BATCH_OVERLAP,
 	GX_GPU_TEXTURE_SOURCE_COMMAND_OVERLAP,
 	GX_GPU_TRIANGLE_ATTRIBUTE_ACCUMULATOR_MASK,
@@ -184,6 +189,8 @@ type WebGpuGxGpuState = {
 	vramDrawPassDescriptor: GPURenderPassDescriptor;
 	scanoutPassDescriptor: GPURenderPassDescriptor;
 	scanoutColorAttachment: GPURenderPassColorAttachment;
+	scanoutFieldsPassDescriptor?: GPURenderPassDescriptor;
+	scanoutFieldsColorAttachment?: GPURenderPassColorAttachment;
 	vramCopySource: GPUTexelCopyTextureInfo;
 	vramCopySourceOrigin: GPUOrigin3DDict;
 	vramCopyDestination: GPUTexelCopyTextureInfo;
@@ -217,6 +224,7 @@ type WebGpuGxGpuState = {
 	vramSampleView: GPUTextureView;
 	vramTransferView: GPUTextureView;
 	sampler: GPUSampler;
+	scanoutBindGroupLayout: GPUBindGroupLayout;
 	solidPipeline: GPURenderPipeline;
 	fixedSolidPipeline: GPURenderPipeline;
 	linePipeline: GPURenderPipeline;
@@ -224,6 +232,8 @@ type WebGpuGxGpuState = {
 	fixedTexturedPipeline: GPURenderPipeline;
 	transferPipeline: GPURenderPipeline;
 	scanoutPipeline: GPURenderPipeline;
+	scanoutFieldPipeline: GPURenderPipeline;
+	scanoutWeavePipeline: GPURenderPipeline;
 	solidVertexBuffer: GPUBuffer;
 	lineVertexBuffer: GPUBuffer;
 	texturedVertexBuffer: GPUBuffer;
@@ -245,10 +255,20 @@ type WebGpuGxGpuState = {
 	transferFromSampleBindGroup: GPUBindGroup;
 	transferFromUploadBindGroup: GPUBindGroup;
 	scanoutBindGroup: GPUBindGroup;
+	scanoutFieldsTexture?: GPUTexture;
+	scanoutFieldsBindGroup?: GPUBindGroup;
 	scanoutTargetTexture?: GPUTexture;
 	scanoutTargetView: GPUTextureView;
 	scanoutUniformDisplayStartWord: number;
 	scanoutUniformDisplayModeWord: number;
+	scanoutUniformFieldHeight: number;
+	scanoutUniformDisplayDisableWord: number;
+	scanoutFieldsWidth: number;
+	scanoutFieldsHeight: number;
+	scanoutFieldsDisplayStartWord: number;
+	scanoutFieldsInterpretationWord: number;
+	scanoutFieldsVramSnapshotSerial: bigint;
+	scanoutFieldsValid: boolean;
 	processedCommandCount: number;
 	processedCommandSerial: number;
 	vramSnapshotSerial: bigint;
@@ -350,13 +370,12 @@ function createPipeline(device: GPUDevice, label: string, module: GPUShaderModul
 	});
 }
 
-function createScanoutPipeline(device: GPUDevice, bindGroupLayout: GPUBindGroupLayout): GPURenderPipeline {
-	const module = device.createShaderModule({ label: 'gx_gpu_scanout', code: scanoutShaderCode });
+function createScanoutPipeline(device: GPUDevice, module: GPUShaderModule, bindGroupLayout: GPUBindGroupLayout, label: string, fragmentEntryPoint: string): GPURenderPipeline {
 	return device.createRenderPipeline({
-		label: 'gx_gpu_scanout',
+		label,
 		layout: device.createPipelineLayout({ bindGroupLayouts: [bindGroupLayout] }),
 		vertex: { module, entryPoint: 'vs_main' },
-		fragment: { module, entryPoint: 'fs_main', targets: [{ format: 'bgra8unorm' }] },
+		fragment: { module, entryPoint: fragmentEntryPoint, targets: [{ format: 'bgra8unorm' }] },
 		primitive: { topology: 'triangle-list' },
 	});
 }
@@ -399,6 +418,7 @@ function bootstrapGxGpuPass(backend: WebGPUBackend): void {
 	const lineModule = device.createShaderModule({ label: 'gx_gpu_line', code: lineShaderCode });
 	const texturedModule = device.createShaderModule({ label: 'gx_gpu_textured', code: texturedShaderCode });
 	const transferModule = device.createShaderModule({ label: 'gx_gpu_transfer', code: transferShaderCode });
+	const scanoutModule = device.createShaderModule({ label: 'gx_gpu_scanout', code: scanoutShaderCode });
 	const solidPipeline = createPipeline(device, 'gx_gpu_solid', solidModule, primitiveLayout, {
 		arrayStride: GX_GPU_SOLID_VERTEX_FLOATS * 4,
 		attributes: [
@@ -456,7 +476,9 @@ function bootstrapGxGpuPass(backend: WebGPUBackend): void {
 			{ shaderLocation: 1, offset: 2 * 4, format: 'float32x2' },
 		],
 	}, 'rgba8unorm', 'vs_main', 'fs_main');
-	const scanoutPipeline = createScanoutPipeline(device, primitiveLayout);
+	const scanoutPipeline = createScanoutPipeline(device, scanoutModule, primitiveLayout, 'gx_gpu_scanout', 'fs_main');
+	const scanoutFieldPipeline = createScanoutPipeline(device, scanoutModule, primitiveLayout, 'gx_gpu_scanout_field', 'fs_interlaced_field');
+	const scanoutWeavePipeline = createScanoutPipeline(device, scanoutModule, primitiveLayout, 'gx_gpu_scanout_weave', 'fs_interlaced_weave');
 	const gpureadPipeline = createReadbackPipeline(device, readbackLayout);
 	const solidVertexBuffer = device.createBuffer({ size: gxGpuSolidVertices.byteLength, usage: GPUBufferUsage.VERTEX | GPUBufferUsage.COPY_DST });
 	const lineVertexBuffer = device.createBuffer({ size: gxGpuLineVertices.byteLength, usage: GPUBufferUsage.VERTEX | GPUBufferUsage.COPY_DST });
@@ -520,6 +542,7 @@ function bootstrapGxGpuPass(backend: WebGPUBackend): void {
 		vramSampleView,
 		vramTransferView,
 		sampler,
+		scanoutBindGroupLayout: primitiveLayout,
 		solidPipeline,
 		fixedSolidPipeline,
 		linePipeline,
@@ -527,6 +550,8 @@ function bootstrapGxGpuPass(backend: WebGPUBackend): void {
 		fixedTexturedPipeline,
 		transferPipeline,
 		scanoutPipeline,
+		scanoutFieldPipeline,
+		scanoutWeavePipeline,
 		solidVertexBuffer,
 		lineVertexBuffer,
 		texturedVertexBuffer,
@@ -551,6 +576,14 @@ function bootstrapGxGpuPass(backend: WebGPUBackend): void {
 		scanoutTargetView: vramView,
 		scanoutUniformDisplayStartWord: 0xffffffff,
 		scanoutUniformDisplayModeWord: 0xffffffff,
+		scanoutUniformFieldHeight: 0,
+		scanoutUniformDisplayDisableWord: 0xffffffff,
+		scanoutFieldsWidth: 0,
+		scanoutFieldsHeight: 0,
+		scanoutFieldsDisplayStartWord: 0,
+		scanoutFieldsInterpretationWord: 0,
+		scanoutFieldsVramSnapshotSerial: 0n,
+		scanoutFieldsValid: false,
 		processedCommandCount: 0,
 		processedCommandSerial: 0,
 		vramSnapshotSerial: 0n,
@@ -1968,7 +2001,7 @@ function completeGxGpuReadback(): void {
 	gxGpuState.gpureadCompletion = null;
 }
 
-function scanoutGxGpuVram(state: RenderPassStateRegistry['gx_gpu']): void {
+function scanoutProgressiveGxGpuVram(state: RenderPassStateRegistry['gx_gpu']): void {
 	const target = state.targetColorTex as GPUTexture;
 	const device = gxGpuState.backend.device;
 	const clearOnly = (state.statusWord & GX_GPU_STATUS_DISPLAY_DISABLE) !== 0;
@@ -1997,6 +2030,106 @@ function scanoutGxGpuVram(state: RenderPassStateRegistry['gx_gpu']): void {
 	pass.end();
 	gxGpuState.submitCommandBuffers[0] = encoder.finish();
 	device.queue.submit(gxGpuState.submitCommandBuffers);
+}
+
+function scanoutInterlacedGxGpuVram(state: RenderPassStateRegistry['gx_gpu']): void {
+	const target = state.targetColorTex as GPUTexture;
+	const device = gxGpuState.backend.device;
+	const width = state.width;
+	const height = state.height;
+	const fieldHeight = height >> 1;
+	const displayDisableWord = state.statusWord & GX_GPU_STATUS_DISPLAY_DISABLE;
+	const interpretationWord = state.displayModeWord & GX_GPU_SCANOUT_INTERPRETATION_MASK;
+	const sizeChanged = gxGpuState.scanoutFieldsWidth !== width || gxGpuState.scanoutFieldsHeight !== height;
+	const invalid = !gxGpuState.scanoutFieldsValid
+		|| sizeChanged
+		|| gxGpuState.scanoutFieldsDisplayStartWord !== state.displayStartWord
+		|| gxGpuState.scanoutFieldsInterpretationWord !== interpretationWord
+		|| gxGpuState.scanoutFieldsVramSnapshotSerial !== state.vramSnapshotSerial;
+	if (sizeChanged) {
+		if (gxGpuState.scanoutFieldsTexture) {
+			gxGpuState.scanoutFieldsTexture.destroy();
+		}
+		const fieldsTexture = device.createTexture({
+			size: { width, height, depthOrArrayLayers: 1 },
+			format: 'bgra8unorm',
+			usage: GPUTextureUsage.RENDER_ATTACHMENT | GPUTextureUsage.TEXTURE_BINDING,
+		});
+		const fieldsView = fieldsTexture.createView();
+		gxGpuState.scanoutFieldsTexture = fieldsTexture;
+		if (gxGpuState.scanoutFieldsColorAttachment) {
+			gxGpuState.scanoutFieldsColorAttachment.view = fieldsView;
+		} else {
+			const fieldsColorAttachment: GPURenderPassColorAttachment = { view: fieldsView, clearValue: [0, 0, 0, 1], loadOp: 'clear', storeOp: 'store' };
+			gxGpuState.scanoutFieldsColorAttachment = fieldsColorAttachment;
+			gxGpuState.scanoutFieldsPassDescriptor = { colorAttachments: [fieldsColorAttachment] };
+		}
+		gxGpuState.scanoutFieldsBindGroup = createBindGroup(
+			device,
+			gxGpuState.scanoutBindGroupLayout,
+			gxGpuState.scanoutUniformBuffer,
+			scanoutUniformScratch.byteLength,
+			fieldsView,
+			gxGpuState.sampler,
+		);
+		gxGpuState.scanoutFieldsWidth = width;
+		gxGpuState.scanoutFieldsHeight = height;
+	}
+	if (gxGpuState.scanoutUniformDisplayStartWord !== state.displayStartWord
+		|| gxGpuState.scanoutUniformDisplayModeWord !== state.displayModeWord
+		|| gxGpuState.scanoutUniformFieldHeight !== fieldHeight
+		|| gxGpuState.scanoutUniformDisplayDisableWord !== displayDisableWord) {
+		scanoutUniformScratch[0] = state.displayStartWord;
+		scanoutUniformScratch[1] = state.displayModeWord;
+		scanoutUniformScratch[2] = fieldHeight;
+		scanoutUniformScratch[3] = displayDisableWord;
+		device.queue.writeBuffer(gxGpuState.scanoutUniformBuffer, 0, scanoutUniformScratch);
+		gxGpuState.scanoutUniformDisplayStartWord = state.displayStartWord;
+		gxGpuState.scanoutUniformDisplayModeWord = state.displayModeWord;
+		gxGpuState.scanoutUniformFieldHeight = fieldHeight;
+		gxGpuState.scanoutUniformDisplayDisableWord = displayDisableWord;
+	}
+	if (gxGpuState.scanoutTargetTexture !== target) {
+		gxGpuState.scanoutTargetTexture = target;
+		gxGpuState.scanoutTargetView = target.createView();
+	}
+
+	const encoder = device.createCommandEncoder();
+	gxGpuState.scanoutFieldsColorAttachment!.loadOp = invalid ? 'clear' : 'load';
+	const fieldPass = encoder.beginRenderPass(gxGpuState.scanoutFieldsPassDescriptor!);
+	fieldPass.setPipeline(gxGpuState.scanoutFieldPipeline);
+	gxGpuDynamicUniformOffsets[0] = 0;
+	fieldPass.setBindGroup(0, gxGpuState.scanoutBindGroup, gxGpuDynamicUniformOffsets);
+	if (invalid) {
+		fieldPass.setViewport(0, 0, width, height, 0, 1);
+		gxGpuState.scanoutFieldsDisplayStartWord = state.displayStartWord;
+		gxGpuState.scanoutFieldsInterpretationWord = interpretationWord;
+		gxGpuState.scanoutFieldsVramSnapshotSerial = state.vramSnapshotSerial;
+		gxGpuState.scanoutFieldsValid = true;
+	} else {
+		fieldPass.setViewport(0, gxGpuScanoutField(state.statusWord) * fieldHeight, width, fieldHeight, 0, 1);
+	}
+	fieldPass.draw(3);
+	fieldPass.end();
+
+	gxGpuState.scanoutColorAttachment.view = gxGpuState.scanoutTargetView;
+	gxGpuState.scanoutColorAttachment.loadOp = 'load';
+	const weavePass = encoder.beginRenderPass(gxGpuState.scanoutPassDescriptor);
+	weavePass.setPipeline(gxGpuState.scanoutWeavePipeline);
+	weavePass.setBindGroup(0, gxGpuState.scanoutFieldsBindGroup!, gxGpuDynamicUniformOffsets);
+	weavePass.draw(3);
+	weavePass.end();
+	gxGpuState.submitCommandBuffers[0] = encoder.finish();
+	device.queue.submit(gxGpuState.submitCommandBuffers);
+}
+
+function scanoutGxGpuVram(state: RenderPassStateRegistry['gx_gpu']): void {
+	if (gxGpuScanoutSourceLineStep(state.displayModeWord) !== 0) {
+		scanoutInterlacedGxGpuVram(state);
+		return;
+	}
+	gxGpuState.scanoutFieldsValid = false;
+	scanoutProgressiveGxGpuVram(state);
 }
 
 function renderGxGpuPass(state: RenderPassStateRegistry['gx_gpu']): void {
