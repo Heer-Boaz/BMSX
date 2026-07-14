@@ -1,6 +1,6 @@
 # BMSX Architecture Contract
 
-Last checked: 2026-07-02.
+Last checked: 2026-07-15.
 
 This document is the current machine/host boundary contract. It is not a work
 log, a prompt, or a migration diary. If implementation changes land, this file
@@ -18,6 +18,26 @@ MMIO registers, registerfiles, FIFOs, IRQ lines, status/fault latches, device
 memory, command packets, fixed-point formats, opcodes, and timing edges. A cart
 may use BIOS or cart-library helpers, but those helpers must ultimately program
 the same machine-visible bytes and registers the cart could use directly.
+
+### BSX end state and PSX foundation
+
+`BMSX` is the current repository and runtime name. The intended console is
+`BSX`: a fantasy descendant of the PlayStation architecture with the Lua CPU
+and its own native GTE+ and GPU. It is not intended to remain a PSX emulator or
+to accumulate compatibility wrappers around PSX command packets.
+
+The PSX GTE emulation is nevertheless the deliberate hardware foundation for
+GTE+. The active phase finishes and preserves exact PSX register, opcode,
+fixed-point, saturation, flag, timing, and pipeline behavior before any GTE+
+contract is designed or exposed. GTE+ must extend that raw model explicitly;
+it may not replace unfinished PSX behavior with host geometry, material,
+morphing, or renderer objects.
+
+The later BSX hardware may add native depth-buffered rendering, morphing, and
+other geometry or raster capabilities. Their GPU-local-memory, register,
+packet, and datapath contracts are intentionally deferred until the PSX GTE
+foundation is accepted. The retired VDP/RPU ABI is not a design source or a
+compatibility route for that work.
 
 Host wall clocks, browser performance counters, UI timers, and process scheduling
 are host services. Cart-visible time is BMSX machine time derived from emulated
@@ -808,7 +828,7 @@ a fallback inside accelerated backends. WebGL2, WebGPU and GLES2 consume the
 same command and raw-state representation and must run the same conformance
 vectors. Backend-specific vertex/shader representations may implement the
 datapath, but may not change coverage, intermediate precision, command order or
-VRAM-visible stores. New BMSX GPU extensions remain separate from this base
+VRAM-visible stores. New BSX GPU/GTE+ extensions remain separate from this base
 command set and are added only after the affected PSX-style behavior is fixed.
 
 #### Texture production and VRAM residency

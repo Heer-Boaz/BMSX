@@ -5,7 +5,7 @@ This is **not** a stable ABI contract and is **not** more authoritative than the
 live checkout. It is a temporary execution checklist so agents can see the
 current direction, completed slices, known blockers, and next work.
 
-Last refreshed: 2026-07-14
+Last refreshed: 2026-07-15
 Do not duplicate recent commit history here. Use `git log --oneline` for that.
 
 ## Source of truth
@@ -20,7 +20,15 @@ software-renderer requirement.
 ## Active goal
 
 Replace the current BMSX VDP/RPU direction with a PSX-style GX GPU/GTE machine.
-The target is real PSX-GTE/GPU parity first, then BMSX fantasy extensions later.
+The active target is real PSX-GTE/GPU parity, with completion of the PSX-GTE
+emulation as the current hardware-foundation focus. The PSX GTE is the
+deliberate basis for the eventual BSX GTE+, not a temporary implementation to
+discard once fantasy extensions start.
+
+The long-term console identity is BSX: a fantasy descendant of the PlayStation
+architecture with the Lua CPU and its own native GTE+ and GPU. That end state is
+recorded in `docs/architecture.md`; it is not active implementation scope until
+the PSX-GTE foundation is accepted.
 
 Completion means all of these are true:
 
@@ -48,8 +56,9 @@ Completion means all of these are true:
 - Do not add defensive require/ensure/fallback/provider/adapter/injection
   patterns.
 - Do not keep adding features to the old VDP/RPU spectacle path.
-- Do not expose BMSX fantasy extensions through the ABI yet. Preserve useful
-  ideas for later, after PSX parity is real.
+- Do not design or expose BSX GTE+, depth, morphing, local-memory, or native
+  surface extensions through the ABI yet. Preserve the goals for later, after
+  the PSX-GTE foundation is real and accepted.
 
 ## Current implementation owners
 
@@ -519,6 +528,10 @@ and MAME
 
 ### 4. GTE parity
 
+This is the foundation gate for the later BSX GTE+. Checked coverage records
+the current evidence; it is not permission to route around a newly discovered
+PSX discrepancy or to start the GTE+ ABI early.
+
 - [x] Broad raw COP2/GTE register and opcode implementation exists.
 - [x] RTPS/RTPT, NCLIP, OP, MVMVA, depth, lighting/color, SQR, GPF/GPL families
   have focused coverage.
@@ -711,8 +724,9 @@ and MAME
   residual machine implementation is removed.
 - [x] Remove old VDP/RPU and IMGDEC tests that only protected the failed
   renderer-descriptor and runtime decode ABIs.
-- [ ] Keep useful BMSX fantasy hardware ideas documented for later GX extensions,
-  but do not preserve the old ABI.
+- [x] Record BSX with its own native GTE+/GPU as the long-term hardware goal,
+  while keeping its depth, morphing, local-memory and surface contracts deferred
+  behind the accepted PSX-GTE foundation. Do not preserve the old VDP/RPU ABI.
 
 ### 7. Cart migration
 
@@ -780,7 +794,7 @@ and MAME
   programming. Cartlib/prelude no longer publishes the old VDP/RPU ABI, the
   seven Lua VDP/RPU firmware modules are removed, and carts consume GX-owned
   display metrics instead of retired VDP MMIO words.
-- [ ] Keep BMSX extensions separate and post-parity.
+- [ ] Keep BSX extensions separate and post-parity.
 
 ## Recommended next functional slices
 
