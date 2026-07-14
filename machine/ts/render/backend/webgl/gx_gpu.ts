@@ -359,8 +359,7 @@ type GxGpuState = {
 	scanoutUniformHeight: number;
 	processedCommandCount: number;
 	processedCommandSerial: number;
-	vramClearSerial: number;
-	vramSnapshotSerial: number;
+	vramSnapshotSerial: bigint;
 };
 
 let gxGpuState: GxGpuState;
@@ -543,24 +542,9 @@ function bootstrapGxGpuPass(backend: WebGLBackend): void {
 		scanoutUniformHeight: 0,
 		processedCommandCount: 0,
 		processedCommandSerial: 0,
-		vramClearSerial: 0,
-		vramSnapshotSerial: 0,
+		vramSnapshotSerial: 0n,
 	};
 	gl.bindFramebuffer(gl.FRAMEBUFFER, null);
-}
-
-function clearGxGpuVram(): void {
-	const backend = gxGpuState.backend;
-	const gl = gxGpuState.gl;
-	gl.bindFramebuffer(gl.FRAMEBUFFER, gxGpuState.vramFramebuffer);
-	backend.setViewportRect(0, 0, GX_GPU_VRAM_WIDTH, GX_GPU_VRAM_HEIGHT);
-	gl.disable(gl.SCISSOR_TEST);
-	gl.clearColor(0, 0, 0, 1);
-	gl.clear(gl.COLOR_BUFFER_BIT);
-	gxGpuSampleDirtyRect.left = 0;
-	gxGpuSampleDirtyRect.top = 0;
-	gxGpuSampleDirtyRect.right = GX_GPU_VRAM_WIDTH;
-	gxGpuSampleDirtyRect.bottom = GX_GPU_VRAM_HEIGHT;
 }
 
 function writeSolidVertex(offset: number, x: number, y: number, r: number, g: number, b: number): number {
@@ -2523,18 +2507,11 @@ function scanoutGxGpuVram(fbo: WebGLFramebuffer, state: RenderPassStateRegistry[
 function executeGxGpuVramCommands(source: GxGpuVramSource): void {
 	const commandBuffer = source.commandBuffer;
 	const commandSerial = commandBuffer.serial;
-	const vramClearSerial = commandBuffer.vramClearSerial;
 	if (gxGpuState.vramSnapshotSerial !== source.vramSnapshotSerial) {
 		uploadGxGpuVramSnapshot(source.vramSnapshotBytes);
 		gxGpuState.processedCommandCount = 0;
 		gxGpuState.processedCommandSerial = commandSerial;
-		gxGpuState.vramClearSerial = vramClearSerial;
 		gxGpuState.vramSnapshotSerial = source.vramSnapshotSerial;
-	} else if (gxGpuState.vramClearSerial !== vramClearSerial) {
-		clearGxGpuVram();
-		gxGpuState.processedCommandCount = 0;
-		gxGpuState.processedCommandSerial = commandSerial;
-		gxGpuState.vramClearSerial = vramClearSerial;
 	} else if (gxGpuState.processedCommandSerial !== commandSerial) {
 		gxGpuState.processedCommandCount = 0;
 		gxGpuState.processedCommandSerial = commandSerial;

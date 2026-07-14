@@ -4,6 +4,7 @@
 #include "machine/cpu/cpu.h"
 #include "machine/devices/irq/controller.h"
 #include "machine/devices/gx/gpu_command_timing.h"
+#include "machine/devices/gx/vram_power_on.h"
 #include "machine/memory/memory.h"
 #include "machine/scheduler/device.h"
 
@@ -28,6 +29,8 @@ void GxGpu::reset() {
 	m_textureDisableAllowedWord = 0u;
 	m_gpuReadWord = 0u;
 	m_commandBuffer.reset();
+	initializeGxGpuVramPowerOn(m_vramSnapshotBytes.data());
+	publishVramSnapshotRevision();
 	clearGp0CommandState();
 	resetGpuRegisters();
 }
@@ -188,14 +191,19 @@ void GxGpu::restoreSaveState(const GxGpuSaveState& state) {
 
 void GxGpu::replaceVramSnapshotBytes(const u8* bytes) {
 	std::copy(bytes, bytes + GX_GPU_VRAM_BYTE_COUNT, m_vramSnapshotBytes.begin());
-	m_vramSnapshotSerial += 1u;
+	publishVramSnapshotRevision();
 }
 
-u32 GxGpu::commitRenderedVramSnapshotBytes(const u8* bytes) {
+u64 GxGpu::commitRenderedVramSnapshotBytes(const u8* bytes) {
 	std::copy(bytes, bytes + GX_GPU_VRAM_BYTE_COUNT, m_vramSnapshotBytes.begin());
-	m_vramSnapshotSerial += 1u;
+	publishVramSnapshotRevision();
 	retirePresentedCommands();
 	return m_vramSnapshotSerial;
+}
+
+void GxGpu::publishVramSnapshotRevision() {
+	nextVramSnapshotSerial += 1u;
+	m_vramSnapshotSerial = nextVramSnapshotSerial;
 }
 
 u32 GxGpu::readGp0() {

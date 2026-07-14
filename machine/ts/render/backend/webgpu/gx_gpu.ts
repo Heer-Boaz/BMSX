@@ -182,7 +182,6 @@ type WebGpuGxGpuState = {
 	activeEncoder?: GPUCommandEncoder;
 	submitCommandBuffers: GPUCommandBuffer[];
 	vramDrawPassDescriptor: GPURenderPassDescriptor;
-	vramClearPassDescriptor: GPURenderPassDescriptor;
 	scanoutPassDescriptor: GPURenderPassDescriptor;
 	scanoutColorAttachment: GPURenderPassColorAttachment;
 	vramCopySource: GPUTexelCopyTextureInfo;
@@ -252,8 +251,7 @@ type WebGpuGxGpuState = {
 	scanoutUniformDisplayModeWord: number;
 	processedCommandCount: number;
 	processedCommandSerial: number;
-	vramClearSerial: number;
-	vramSnapshotSerial: number;
+	vramSnapshotSerial: bigint;
 };
 
 const gxGpuVramCopyRectScratch: GxGpuVramCopyRect = { left: 0, top: 0, right: 0, bottom: 0 };
@@ -472,7 +470,6 @@ function bootstrapGxGpuPass(backend: WebGPUBackend): void {
 	const vramReadbackBuffer = device.createBuffer({ size: GX_GPU_RAW_VRAM_UPLOAD_BYTES, usage: GPUBufferUsage.COPY_DST | GPUBufferUsage.MAP_READ });
 	const gpureadBuffer = device.createBuffer({ size: GX_GPU_VRAM_BYTE_COUNT, usage: GPUBufferUsage.COPY_DST | GPUBufferUsage.MAP_READ });
 	const vramDrawColorAttachment: GPURenderPassColorAttachment = { view: vramView, loadOp: 'load', storeOp: 'store' };
-	const vramClearColorAttachment: GPURenderPassColorAttachment = { view: vramView, clearValue: [0, 0, 0, 1], loadOp: 'clear', storeOp: 'store' };
 	const scanoutColorAttachment: GPURenderPassColorAttachment = { view: vramView, clearValue: [0, 0, 0, 1], loadOp: 'load', storeOp: 'store' };
 	const gpureadColorAttachment: GPURenderPassColorAttachment = { view: gpureadView, loadOp: 'load', storeOp: 'store' };
 	const vramCopySourceOrigin: GPUOrigin3DDict = { x: 0, y: 0, z: 0 };
@@ -482,7 +479,6 @@ function bootstrapGxGpuPass(backend: WebGPUBackend): void {
 		backend,
 		submitCommandBuffers: [],
 		vramDrawPassDescriptor: { colorAttachments: [vramDrawColorAttachment] },
-		vramClearPassDescriptor: { colorAttachments: [vramClearColorAttachment] },
 		scanoutPassDescriptor: { colorAttachments: [scanoutColorAttachment] },
 		scanoutColorAttachment,
 		vramCopySource: { texture: vramTexture, origin: vramCopySourceOrigin },
@@ -557,22 +553,8 @@ function bootstrapGxGpuPass(backend: WebGPUBackend): void {
 		scanoutUniformDisplayModeWord: 0xffffffff,
 		processedCommandCount: 0,
 		processedCommandSerial: 0,
-		vramClearSerial: 0,
-		vramSnapshotSerial: 0,
+		vramSnapshotSerial: 0n,
 	};
-	clearGxGpuVram();
-}
-
-function clearGxGpuVram(): void {
-	const encoder = gxGpuState.backend.device.createCommandEncoder();
-	const pass = encoder.beginRenderPass(gxGpuState.vramClearPassDescriptor);
-	pass.end();
-	gxGpuState.submitCommandBuffers[0] = encoder.finish();
-	gxGpuState.backend.device.queue.submit(gxGpuState.submitCommandBuffers);
-	gxGpuSampleDirtyRect.left = 0;
-	gxGpuSampleDirtyRect.top = 0;
-	gxGpuSampleDirtyRect.right = GX_GPU_VRAM_WIDTH;
-	gxGpuSampleDirtyRect.bottom = GX_GPU_VRAM_HEIGHT;
 }
 
 function writeSolidVertex(offset: number, x: number, y: number, r: number, g: number, b: number): number {
@@ -1959,18 +1941,11 @@ function executeNewGxGpuCommands(commandBuffer: GxGpuCommandBufferView, readback
 function executeGxGpuVramCommands(source: GxGpuVramSource): void {
 	const commandBuffer = source.commandBuffer;
 	const commandSerial = commandBuffer.serial;
-	const vramClearSerial = commandBuffer.vramClearSerial;
 	if (gxGpuState.vramSnapshotSerial !== source.vramSnapshotSerial) {
 		uploadGxGpuVramSnapshot(source.vramSnapshotBytes);
 		gxGpuState.processedCommandCount = 0;
 		gxGpuState.processedCommandSerial = commandSerial;
-		gxGpuState.vramClearSerial = vramClearSerial;
 		gxGpuState.vramSnapshotSerial = source.vramSnapshotSerial;
-	} else if (gxGpuState.vramClearSerial !== vramClearSerial) {
-		clearGxGpuVram();
-		gxGpuState.processedCommandCount = 0;
-		gxGpuState.processedCommandSerial = commandSerial;
-		gxGpuState.vramClearSerial = vramClearSerial;
 	} else if (gxGpuState.processedCommandSerial !== commandSerial) {
 		gxGpuState.processedCommandCount = 0;
 		gxGpuState.processedCommandSerial = commandSerial;

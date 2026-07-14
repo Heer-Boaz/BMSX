@@ -239,8 +239,7 @@ struct GxGpuRuntime {
 	i32 scanoutUniformHeight = -1;
 	u32 processedCommandCount = 0;
 	u32 processedCommandSerial = 0;
-	u32 vramClearSerial = 0u;
-	u32 vramSnapshotSerial = 0u;
+	u64 vramSnapshotSerial = 0u;
 	bool vramSnapshotValid = false;
 	bool textureBarrier = false;
 };
@@ -261,7 +260,6 @@ void initGxGpu(OpenGLES2Backend& backend) {
 	g_gxGpu.backend = &backend;
 	g_gxGpu.processedCommandCount = 0u;
 	g_gxGpu.processedCommandSerial = 0u;
-	g_gxGpu.vramClearSerial = 0u;
 	g_gxGpu.vramSnapshotSerial = 0u;
 	g_gxGpu.vramSnapshotValid = false;
 	g_gxGpu.textureBarrier = backend.textureBarrierAvailable();
@@ -400,14 +398,6 @@ void initGxGpu(OpenGLES2Backend& backend) {
 	g_gxGpu.scanoutUniformDisplayStartWord = 0xffffffffu;
 	g_gxGpu.scanoutUniformHeight = -1;
 	glBindFramebuffer(GL_FRAMEBUFFER, 0);
-}
-
-void clearGxGpuVram() {
-	g_gxGpu.backend->setRenderTarget(g_gxGpu.vramFramebuffer, kGxGpuVramWidth, kGxGpuVramHeight);
-	glDisable(GL_SCISSOR_TEST);
-	glClearColor(0.0f, 0.0f, 0.0f, 1.0f);
-	glClear(GL_COLOR_BUFFER_BIT);
-	g_sampleDirtyRect = {0, 0, kGxGpuVramWidth, kGxGpuVramHeight};
 }
 
 size_t writeSolidVertex(size_t offset, f32 x, f32 y, f32 r, f32 g, f32 b) {
@@ -2470,19 +2460,13 @@ void scanoutGxGpuVram(GLuint frameFbo, const GxGpuPipelineState& state) {
 	glDrawArrays(GL_TRIANGLES, 0, static_cast<GLsizei>(kGxGpuScanoutVertexCount));
 }
 
-void executeGxGpuVramCommands(const GxGpuCommandBuffer& commandBuffer, GxGpuReadbackPort& readback, const std::array<u8, GX_GPU_VRAM_BYTE_COUNT>& snapshotBytes, u32 snapshotSerial) {
+void executeGxGpuVramCommands(const GxGpuCommandBuffer& commandBuffer, GxGpuReadbackPort& readback, const std::array<u8, GX_GPU_VRAM_BYTE_COUNT>& snapshotBytes, u64 snapshotSerial) {
 	if (!g_gxGpu.vramSnapshotValid || g_gxGpu.vramSnapshotSerial != snapshotSerial) {
 		uploadGxGpuVramSnapshot(snapshotBytes);
 		g_gxGpu.processedCommandCount = 0u;
 		g_gxGpu.processedCommandSerial = commandBuffer.serial;
-		g_gxGpu.vramClearSerial = commandBuffer.vramClearSerial;
 		g_gxGpu.vramSnapshotSerial = snapshotSerial;
 		g_gxGpu.vramSnapshotValid = true;
-	} else if (g_gxGpu.vramClearSerial != commandBuffer.vramClearSerial) {
-		clearGxGpuVram();
-		g_gxGpu.processedCommandCount = 0u;
-		g_gxGpu.processedCommandSerial = commandBuffer.serial;
-		g_gxGpu.vramClearSerial = commandBuffer.vramClearSerial;
 	} else if (g_gxGpu.processedCommandSerial != commandBuffer.serial) {
 		g_gxGpu.processedCommandCount = 0u;
 		g_gxGpu.processedCommandSerial = commandBuffer.serial;

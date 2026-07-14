@@ -1787,7 +1787,6 @@
 		{
 			"file": "machine/ts/render/backend/webgl/gx_gpu.ts",
 			"functions": [
-				"clearGxGpuVram",
 				"writeSolidVertex",
 				"writeSolidColorVertex",
 				"appendSolidTriangle",
@@ -1840,7 +1839,6 @@
 		{
 			"file": "machine/ts/render/backend/webgpu/gx_gpu.ts",
 			"functions": [
-				"clearGxGpuVram",
 				"writeSolidVertex",
 				"writeSolidColorVertex",
 				"appendSolidTriangle",
@@ -1887,7 +1885,6 @@
 		{
 			"file": "machine/cpp/render/backend/gles2/gx_gpu.cpp",
 			"functions": [
-				"clearGxGpuVram",
 				"writeSolidVertex",
 				"writeSolidColorVertex",
 				"appendSolidTriangle",

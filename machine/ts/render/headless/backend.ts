@@ -13,8 +13,7 @@ import { createSolidRgba8Pixels, writeColorRgba8Pixels } from '../shared/solid_p
 import type { RenderPassLibrary } from '../backend/pass/library';
 import { registerHeadlessPasses, registerHeadlessPresentPass } from './passes';
 import { registerHostOverlayPass_Headless, registerHostMenuPass_Headless } from '../host_overlay/headless/pipeline';
-import { executeGxGpuSoftwareVramCommands } from '../backend/software/gx_gpu';
-import { GX_GPU_SOFTWARE_VRAM_WORDS, gxGpuSoftwareVram } from '../backend/software/gx_gpu_vram';
+import { captureGxGpuVramSnapshot } from '../backend/software/gx_gpu';
 import type { GxGpu } from '../../machine/devices/gx/gpu';
 import { GX_GPU_VRAM_BYTE_COUNT } from '../../machine/devices/gx/gpu_command_buffer';
 
@@ -417,15 +416,7 @@ export class HeadlessGPUBackend implements GPUBackend {
 	}
 
 	captureGxGpuVramSnapshot(gxGpu: GxGpu): void {
-		const output = gxGpu.readDeviceOutput();
-		executeGxGpuSoftwareVramCommands(output);
-		for (let wordIndex = 0; wordIndex < GX_GPU_SOFTWARE_VRAM_WORDS; wordIndex += 1) {
-			const byteIndex = wordIndex << 1;
-			const word = gxGpuSoftwareVram[wordIndex];
-			this.gxGpuVramSnapshotScratch[byteIndex] = word & 0xff;
-			this.gxGpuVramSnapshotScratch[byteIndex + 1] = word >>> 8;
-		}
-		gxGpu.commitRenderedVramSnapshotBytes(this.gxGpuVramSnapshotScratch);
+		captureGxGpuVramSnapshot(gxGpu, this.gxGpuVramSnapshotScratch);
 	}
 
 	accountUpload(kind: 'vertex' | 'index' | 'uniform' | 'texture', bytes: number): void {

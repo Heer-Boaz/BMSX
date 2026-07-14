@@ -45,10 +45,9 @@ function pushFillCommand(commandBuffer: GxGpuCommandBuffer): void {
 	commandBuffer.sealCommandsForPresentation();
 }
 
-test('GX-GPU command-buffer restore republishes command stream without clearing VRAM revision', () => {
+test('GX-GPU command-buffer restore republishes the retained command stream', () => {
 	const commandBuffer = new GxGpuCommandBuffer(commandBufferDma);
 	commandBuffer.reset();
-	const vramClearSerial = commandBuffer.vramClearSerial;
 	pushFillCommand(commandBuffer);
 	const state = commandBuffer.captureState();
 	const commandSerial = commandBuffer.serial;
@@ -56,7 +55,6 @@ test('GX-GPU command-buffer restore republishes command stream without clearing 
 	commandBuffer.retireCommandsPreservingVram();
 	commandBuffer.restoreState(state);
 
-	assert.equal(commandBuffer.vramClearSerial, vramClearSerial);
 	assert.notEqual(commandBuffer.serial, commandSerial);
 	assert.equal(commandBuffer.commandCount, 1);
 	assert.equal(commandBuffer.presentCommandCount, 1);

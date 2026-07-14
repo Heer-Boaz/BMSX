@@ -18,7 +18,7 @@ struct GxGpuDeviceOutput {
 	u32 horizontalDisplayRangeWord = 0u;
 	u32 verticalDisplayRangeWord = 0u;
 	const std::array<u8, GX_GPU_VRAM_BYTE_COUNT>* vramSnapshotBytes = nullptr;
-	u32 vramSnapshotSerial = 0u;
+	u64 vramSnapshotSerial = 0u;
 };
 
 } // namespace bmsx

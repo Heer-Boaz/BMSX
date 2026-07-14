@@ -269,7 +269,7 @@ export type GxGpuPipelineState = {
 	displayModeWord: number;
 	displayStartWord: number;
 	vramSnapshotBytes: Uint8Array;
-	vramSnapshotSerial: number;
+	vramSnapshotSerial: bigint;
 	targetColorTex?: TextureHandle;
 };
 
@@ -309,7 +309,7 @@ export interface RenderContext {
 	gxGpuHorizontalDisplayRangeWord: number;
 	gxGpuVerticalDisplayRangeWord: number;
 	gxGpuVramSnapshotBytes: Uint8Array;
-	gxGpuVramSnapshotSerial: number;
+	gxGpuVramSnapshotSerial: bigint;
 }
 
 export type RenderingViewportType = 'viewport' | 'offscreen';

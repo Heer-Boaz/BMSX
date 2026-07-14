@@ -127,7 +127,6 @@ export type GxGpuCommandBufferState = {
 
 export type GxGpuCommandBufferView = {
 	readonly serial: number;
-	readonly vramClearSerial: number;
 	readonly commandCount: number;
 	readonly executedCommandCount: number;
 	readonly presentCommandCount: number;
@@ -244,17 +243,12 @@ class GxGpuReadbackPort implements GxGpuReadbackPortView {
 }
 
 let gxGpuCommandBufferNextSerial = 0;
-let gxGpuCommandBufferNextVramClearSerial = 0;
 const gxGpuEmptyReadbackPixelBytes = new Uint8Array(0);
 
 export class GxGpuCommandBuffer implements GxGpuCommandBufferView {
-	private publishRevision(vramCleared: boolean): void {
+	private publishRevision(): void {
 		gxGpuCommandBufferNextSerial = (gxGpuCommandBufferNextSerial + 1) >>> 0;
 		this.serial = gxGpuCommandBufferNextSerial;
-		if (vramCleared) {
-			gxGpuCommandBufferNextVramClearSerial = (gxGpuCommandBufferNextVramClearSerial + 1) >>> 0;
-			this.vramClearSerial = gxGpuCommandBufferNextVramClearSerial;
-		}
 	}
 
 	private activateReadback(commandIndex: number): void {
@@ -271,7 +265,6 @@ export class GxGpuCommandBuffer implements GxGpuCommandBufferView {
 	}
 
 	public serial = 0;
-	public vramClearSerial = 0;
 	public commandCount = 0;
 	public executedCommandCount = 0;
 	public presentCommandCount = 0;
@@ -295,7 +288,7 @@ export class GxGpuCommandBuffer implements GxGpuCommandBufferView {
 	}
 
 	public reset(): void {
-		this.publishRevision(true);
+		this.publishRevision();
 		this.clearCommandState();
 	}
 
@@ -315,7 +308,7 @@ export class GxGpuCommandBuffer implements GxGpuCommandBufferView {
 			this.readback.reset();
 			return;
 		}
-		this.publishRevision(false);
+		this.publishRevision();
 		this.clearCommandState();
 	}
 
@@ -353,7 +346,7 @@ export class GxGpuCommandBuffer implements GxGpuCommandBufferView {
 	}
 
 	public restoreState(state: GxGpuCommandBufferState): void {
-		this.publishRevision(false);
+		this.publishRevision();
 		this.commandCount = state.commandCount;
 		this.executedCommandCount = state.executedCommandCount;
 		this.presentCommandCount = state.presentCommandCount;
@@ -416,7 +409,7 @@ export class GxGpuCommandBuffer implements GxGpuCommandBufferView {
 		this.readback.fenceCommandCount = retiredCommands < this.readback.fenceCommandCount
 			? this.readback.fenceCommandCount - retiredCommands
 			: 0;
-		this.publishRevision(false);
+		this.publishRevision();
 		return retiredWords;
 	}
 

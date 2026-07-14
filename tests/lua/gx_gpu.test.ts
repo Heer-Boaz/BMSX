@@ -312,6 +312,7 @@ test('GX-GPU does not claim a C0 appended after the published frame fence', () =
 
 test('GX-GPU GP1 clear FIFO aborts a pending GPUREAD without dropping prior commands', () => {
 	const { gpu } = createGpu();
+	const powerOnWord16 = gpu.readVramSnapshotBytes()[32]! | (gpu.readVramSnapshotBytes()[33]! << 8);
 	gpu.writeGp1((GX_GPU_GP1_GET_GPU_INFO << 24) | 0x07);
 	gpu.writeGp0((GX_GPU_GP0_FILL_RECTANGLE << 24) | 0x0000ff);
 	gpu.writeGp0(0);
@@ -331,7 +332,7 @@ test('GX-GPU GP1 clear FIFO aborts a pending GPUREAD without dropping prior comm
 	const commandBuffer = output.commandBuffer;
 	const readback = output.readbackPort;
 	const commandSerial = commandBuffer.serial;
-	const vramClearSerial = commandBuffer.vramClearSerial;
+	const vramSnapshotSerial = output.vramSnapshotSerial;
 	const readbackToken = readback.token;
 	assert.equal(commandBuffer.commandCount, 2);
 	assert.equal(readback.phase, GX_GPU_READBACK_PENDING);
@@ -342,7 +343,7 @@ test('GX-GPU GP1 clear FIFO aborts a pending GPUREAD without dropping prior comm
 	assert.equal(commandBuffer.presentCommandCount, 1);
 	assert.equal(commandBuffer.wordCount, 3);
 	assert.equal(commandBuffer.serial, commandSerial);
-	assert.equal(commandBuffer.vramClearSerial, vramClearSerial);
+	assert.equal(gpu.readVramSnapshotSerial(), vramSnapshotSerial);
 	assert.equal(readback.phase, GX_GPU_READBACK_IDLE);
 	assert.notEqual(readback.token, readbackToken);
 	assert.equal(gpu.readGp0(), GX_GPU_INFO_GPU_TYPE_208PIN);
@@ -354,11 +355,12 @@ test('GX-GPU GP1 clear FIFO aborts a pending GPUREAD without dropping prior comm
 	assert.equal(readback.phase, GX_GPU_READBACK_IDLE);
 	executeGxGpuSoftwareVramCommands(gpu.readDeviceOutput());
 	assert.equal(gxGpuSoftwareVram[gxGpuSoftwareVramIndex(0, 0)], 0x001f);
-	assert.equal(gxGpuSoftwareVram[gxGpuSoftwareVramIndex(16, 0)], 0);
+	assert.equal(gxGpuSoftwareVram[gxGpuSoftwareVramIndex(16, 0)], powerOnWord16);
 });
 
 test('GX-GPU GP1 clear FIFO aborts a ready GPUREAD and its queued suffix', () => {
 	const { gpu } = createGpu();
+	const powerOnWord16 = gpu.readVramSnapshotBytes()[32]! | (gpu.readVramSnapshotBytes()[33]! << 8);
 	gpu.writeGp1((GX_GPU_GP1_GET_GPU_INFO << 24) | 0x07);
 	gpu.writeGp0((GX_GPU_GP0_FILL_RECTANGLE << 24) | 0x0000ff);
 	gpu.writeGp0(0);
@@ -384,7 +386,7 @@ test('GX-GPU GP1 clear FIFO aborts a ready GPUREAD and its queued suffix', () =>
 	assert.equal(commandBuffer.commandCount, 0);
 	assert.equal(readback.fenceCommandCount, 0);
 	const commandSerialBeforeAbort = commandBuffer.serial;
-	const vramClearSerial = commandBuffer.vramClearSerial;
+	const vramSnapshotSerial = gpu.readVramSnapshotSerial();
 
 	gpu.writeGp1(GX_GPU_GP1_CLEAR_FIFO << 24);
 
@@ -392,7 +394,7 @@ test('GX-GPU GP1 clear FIFO aborts a ready GPUREAD and its queued suffix', () =>
 	assert.equal(commandBuffer.presentCommandCount, 0);
 	assert.equal(commandBuffer.wordCount, 0);
 	assert.notEqual(commandBuffer.serial, commandSerialBeforeAbort);
-	assert.equal(commandBuffer.vramClearSerial, vramClearSerial);
+	assert.equal(gpu.readVramSnapshotSerial(), vramSnapshotSerial);
 	assert.equal(readback.phase, GX_GPU_READBACK_IDLE);
 	assert.equal((gpu.readStatus() & GX_GPU_STATUS_READY_TO_SEND_VRAM) >>> 0, 0);
 	assert.equal((gpu.readStatus() & GX_GPU_STATUS_DMA_DATA_REQUEST) >>> 0, 0);
@@ -421,7 +423,7 @@ test('GX-GPU GP1 clear FIFO aborts a ready GPUREAD and its queued suffix', () =>
 	output = gpu.readDeviceOutput();
 	executeGxGpuSoftwareVramCommands(output);
 	assert.equal(gxGpuSoftwareVram[gxGpuSoftwareVramIndex(0, 0)], 0x001f);
-	assert.equal(gxGpuSoftwareVram[gxGpuSoftwareVramIndex(16, 0)], 0);
+	assert.equal(gxGpuSoftwareVram[gxGpuSoftwareVramIndex(16, 0)], powerOnWord16);
 	assert.equal(gxGpuSoftwareVram[gxGpuSoftwareVramIndex(32, 0)], 0x7c00);
 });
 
@@ -473,6 +475,14 @@ test('GX-GPU restore re-arms submitted GPUREAD and reset clears its retained req
 
 function completeGpuCommands(gpu: GxGpu): void {
 	gpu.onService(Number.MAX_SAFE_INTEGER);
+}
+
+function gxGpuVramDigest(bytes: Uint8Array): number {
+	let digest = 0x811c9dc5;
+	for (let index = 0; index < bytes.byteLength; index += 1) {
+		digest = Math.imul((digest ^ bytes[index]!) >>> 0, 0x01000193) >>> 0;
+	}
+	return digest;
 }
 
 function createGpu(): { memory: Memory; cpu: CPU; scheduler: DeviceScheduler; dma: DmaController; gpu: GxGpu } {
@@ -666,11 +676,64 @@ test('GX-GPU exposes PSX GP1 display mode instead of a VDP profile register', ()
 	assert.equal((gpu.readStatus() & GX_GPU_STATUS_PAL_MODE) >>> 0, 0);
 });
 
+test('GX-GPU owns deterministic power-on VRAM across reset, save-state, and machine recreation', () => {
+	const first = createGpu().gpu;
+	const firstBytes = first.readVramSnapshotBytes();
+	const firstSerial = first.readVramSnapshotSerial();
+	const powerOnWord0 = firstBytes[0]! | (firstBytes[1]! << 8);
+
+	assert.equal(firstBytes[0], 38);
+	assert.equal(firstBytes[31], 144);
+	assert.equal(firstBytes[32], 185);
+	assert.equal(firstBytes[255], 162);
+	assert.equal(firstBytes[256], 51);
+	assert.equal(firstBytes[4095], 83);
+	assert.equal(firstBytes[4096], 130);
+	assert.equal(firstBytes[65535], 92);
+	assert.equal(firstBytes[65536], 58);
+	assert.equal(firstBytes[GX_GPU_VRAM_BYTE_COUNT - 1], 26);
+	assert.equal(gxGpuVramDigest(firstBytes), 0xd1dc1ded);
+
+	executeGxGpuSoftwareVramCommands(first.readDeviceOutput());
+	assert.equal(gxGpuSoftwareVram[gxGpuSoftwareVramIndex(0, 0)], powerOnWord0);
+	first.writeGp0(GX_GPU_GP0_CPU_TO_VRAM_FIRST << 24);
+	first.writeGp0(0);
+	first.writeGp0((1 << 16) | 1);
+	first.writeGp0(0x00001234);
+	completeGpuCommands(first);
+	first.presentReadyFrameOnVblankEdge();
+	executeGxGpuSoftwareVramCommands(first.readDeviceOutput());
+	assert.equal(gxGpuSoftwareVram[gxGpuSoftwareVramIndex(0, 0)], 0x1234);
+
+	const second = createGpu().gpu;
+	assert.ok(second.readVramSnapshotSerial() > firstSerial);
+	executeGxGpuSoftwareVramCommands(second.readDeviceOutput());
+	assert.equal(gxGpuSoftwareVram[gxGpuSoftwareVramIndex(0, 0)], powerOnWord0);
+
+	const gp1Serial = second.readVramSnapshotSerial();
+	second.writeGp1(GX_GPU_GP1_RESET << 24);
+	assert.equal(second.readVramSnapshotSerial(), gp1Serial);
+	assert.equal(gxGpuVramDigest(second.readVramSnapshotBytes()), 0xd1dc1ded);
+	second.reset();
+	assert.ok(second.readVramSnapshotSerial() > gp1Serial);
+	assert.equal(gxGpuVramDigest(second.readVramSnapshotBytes()), 0xd1dc1ded);
+
+	const restoredBytes = second.readVramSnapshotBytes().slice();
+	restoredBytes[0] = 0x5a;
+	second.replaceVramSnapshotBytes(restoredBytes);
+	const saveState = second.captureSaveState();
+	const savedSerial = second.readVramSnapshotSerial();
+	second.reset();
+	second.restoreSaveState(saveState);
+	assert.ok(second.readVramSnapshotSerial() > savedSerial);
+	assert.equal(second.readVramSnapshotBytes()[0], 0x5a);
+});
+
 test('GX-GPU GP1 reset restores registers and preserves accepted GPU work', () => {
 	const { gpu } = createGpu();
 	const commandBuffer = gpu.readDeviceOutput().commandBuffer;
 	const commandSerial = commandBuffer.serial;
-	const vramClearSerial = commandBuffer.vramClearSerial;
+	const vramSnapshotSerial = gpu.readVramSnapshotSerial();
 
 	gpu.writeGp1((GX_GPU_GP1_ALLOW_TEXTURE_DISABLE << 24) | 1);
 	gpu.writeGp1((GX_GPU_GP1_DISPLAY_MODE << 24) | 0x00000000);
@@ -692,7 +755,7 @@ test('GX-GPU GP1 reset restores registers and preserves accepted GPU work', () =
 
 	assert.equal(commandBuffer.commandCount, 2);
 	assert.equal(commandBuffer.serial, commandSerial);
-	assert.equal(commandBuffer.vramClearSerial, vramClearSerial);
+	assert.equal(gpu.readVramSnapshotSerial(), vramSnapshotSerial);
 	assert.equal(gpu.readGp0(), 0x00054321);
 	assert.equal(gpu.readTextureDisableAllowedWord(), 1);
 	assert.equal((gpu.readStatus() & GX_GPU_STATUS_TEXTURE_DISABLE) >>> 0, 0);
@@ -710,7 +773,7 @@ test('GX-GPU GP1 reset restores registers and preserves accepted GPU work', () =
 
 	gpu.reset();
 	assert.equal(commandBuffer.commandCount, 0);
-	assert.notEqual(commandBuffer.vramClearSerial, vramClearSerial);
+	assert.ok(gpu.readVramSnapshotSerial() > vramSnapshotSerial);
 	assert.equal(gpu.readGp0(), 0);
 });
 
@@ -2107,7 +2170,7 @@ test('GX-GPU software scanout consumes CPU upload, VRAM copy, and fill commands'
 		displayModeWord: PSX_GPU_DISPLAY_MODE_PAL_WORD,
 		displayStartWord: 0,
 		vramSnapshotBytes: GX_GPU_SOFTWARE_TEST_VRAM_SNAPSHOT,
-		vramSnapshotSerial: 0,
+		vramSnapshotSerial: 0n,
 	}, pixels);
 
 	assertRgbaPixel(pixels, 0, 0, 255, 0, 0);
@@ -2131,7 +2194,7 @@ test('GX-GPU software scanout renders the native target without host scaling', (
 		displayModeWord: PSX_GPU_DISPLAY_MODE_PAL_WORD,
 		displayStartWord: 900 | (400 << 10),
 		vramSnapshotBytes: GX_GPU_SOFTWARE_TEST_VRAM_SNAPSHOT,
-		vramSnapshotSerial: 0,
+		vramSnapshotSerial: 0n,
 	};
 	gxGpuSoftwareVram.fill(0);
 	gxGpuSoftwareVram[gxGpuSoftwareVramIndex(900, 400)] = 0x001f;
@@ -2166,7 +2229,7 @@ test('GX-GPU software backend retires consumed command logs without clearing VRA
 		displayModeWord: PSX_GPU_DISPLAY_MODE_PAL_WORD,
 		displayStartWord: 0,
 		vramSnapshotBytes: GX_GPU_SOFTWARE_TEST_VRAM_SNAPSHOT,
-		vramSnapshotSerial: 0,
+		vramSnapshotSerial: 0n,
 	};
 	const pixels = new Uint8Array(GX_GPU_SOFTWARE_TEST_WIDTH * GX_GPU_SOFTWARE_TEST_HEIGHT * 4);
 	renderGxGpuSoftwareFrame(state, pixels);
@@ -2187,8 +2250,8 @@ test('GX-GPU software backend retires consumed command logs without clearing VRA
 
 	commandBuffer.reset();
 	renderGxGpuSoftwareFrame(state, pixels);
-	assertRgbaPixel(pixels, 0, 0, 0, 0, 0);
-	assertRgbaPixel(pixels, 16, 1, 0, 0, 0);
+	assertRgbaPixel(pixels, 0, 0, 255, 0, 0);
+	assertRgbaPixel(pixels, 16, 1, 0, 255, 0);
 });
 
 test('GX-GPU software scanout consumes solid polygon, rectangle, and line commands', () => {
@@ -2221,7 +2284,7 @@ test('GX-GPU software scanout consumes solid polygon, rectangle, and line comman
 		displayModeWord: PSX_GPU_DISPLAY_MODE_PAL_WORD,
 		displayStartWord: 0,
 		vramSnapshotBytes: GX_GPU_SOFTWARE_TEST_VRAM_SNAPSHOT,
-		vramSnapshotSerial: 0,
+		vramSnapshotSerial: 0n,
 	}, pixels);
 
 	assertRgbaPixel(pixels, 5, 5, 255, 0, 0);
@@ -2325,7 +2388,7 @@ test('GX-GPU software scanout consumes textured primitives', () => {
 		displayModeWord: PSX_GPU_DISPLAY_MODE_PAL_WORD,
 		displayStartWord: 0,
 		vramSnapshotBytes: GX_GPU_SOFTWARE_TEST_VRAM_SNAPSHOT,
-		vramSnapshotSerial: 0,
+		vramSnapshotSerial: 0n,
 	}, pixels);
 
 	assertRgbaPixel(pixels, 40, 10, 255, 0, 0);

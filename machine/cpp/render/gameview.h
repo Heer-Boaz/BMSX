@@ -97,7 +97,7 @@ public:
 	u32 gxGpuHorizontalDisplayRangeWord = 0u;
 	u32 gxGpuVerticalDisplayRangeWord = 0u;
 	const std::array<u8, GX_GPU_VRAM_BYTE_COUNT>* gxGpuVramSnapshotBytes = nullptr;
-	u32 gxGpuVramSnapshotSerial = 0u;
+	u64 gxGpuVramSnapshotSerial = 0u;
 
 	// ─────────────────────────────────────────────────────────────────────────
 	// Pipeline registry

@@ -9,5 +9,5 @@ export type GxGpuDeviceOutput = Readonly<{
 	horizontalDisplayRangeWord: number;
 	verticalDisplayRangeWord: number;
 	vramSnapshotBytes: Uint8Array;
-	vramSnapshotSerial: number;
+	vramSnapshotSerial: bigint;
 }>;

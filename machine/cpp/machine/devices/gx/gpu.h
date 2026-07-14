@@ -169,9 +169,9 @@ public:
 	GxGpuSaveState captureSaveState();
 	void restoreSaveState(const GxGpuSaveState& state);
 	void replaceVramSnapshotBytes(const u8* bytes);
-	u32 commitRenderedVramSnapshotBytes(const u8* bytes);
+	u64 commitRenderedVramSnapshotBytes(const u8* bytes);
 	const std::array<u8, GX_GPU_VRAM_BYTE_COUNT>& readVramSnapshotBytes() const { return m_vramSnapshotBytes; }
-	u32 readVramSnapshotSerial() const { return m_vramSnapshotSerial; }
+	u64 readVramSnapshotSerial() const { return m_vramSnapshotSerial; }
 	u32 readGp0();
 	void writeGp0(u32 word);
 	u32 readStatus();
@@ -247,8 +247,10 @@ private:
 	int m_scanoutCyclesPerFrame = 1;
 	int m_scanoutTotalScanlines = 313;
 	std::array<u8, GX_GPU_VRAM_BYTE_COUNT> m_vramSnapshotBytes{};
-	u32 m_vramSnapshotSerial = 0u;
+	u64 m_vramSnapshotSerial = 0u;
+	inline static u64 nextVramSnapshotSerial = 0u;
 
+	void publishVramSnapshotRevision();
 	void resetGpuRegisters();
 	void writeDisplayDisableWord(u32 word);
 	void clearGp0CommandState();

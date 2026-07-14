@@ -151,7 +151,8 @@ frontend executable. It never owns cart-observable machine semantics.
 
 The active machine model is `psx`. The model owns fixed hardware facts:
 50 MHz CPU clock, 4 MB RAM, a 6,553,600 word/s DMA datapath, a 16,384,000
-work-unit/s geometry unit, and a PSX-style GPU with 1 MiB of raw VRAM. GPU reset
+work-unit/s geometry unit, and a PSX-style GPU with 1 MiB of raw VRAM. Machine
+reset initializes that VRAM with the fixed GX power-on bit pattern. GPU reset
 starts from a 320×240 PAL display configuration; that is a reset register state,
 not a fixed host scanout size.
 
@@ -725,14 +726,15 @@ through `IRQ_ACK`. This keeps the GPU source latch and the system interrupt
 pending latch as two distinct hardware words.
 
 Machine/device reset and GP1(00h) are distinct GPU transitions. A machine reset
-publishes a raw-VRAM clear revision and clears the retained command stream;
-GP1(00h) resets GPU registers and applies the same packet/FIFO transition as
-GP1(01h). Already accepted backend commands and received image payload remain
-in the retained execution log, while an incomplete packet/polyline and an
-active readback suffix are discarded. GP1(00h) preserves both the GPUREAD data
-latch and the 1 MiB VRAM contents; machine reset clears the latch to zero. Every
-render backend consumes the same command-stream and VRAM-clear revisions, so
-this distinction is not backend-specific.
+regenerates the deterministic raw-VRAM power-on contents, advances the shared
+unsigned 64-bit snapshot revision, and clears the retained command stream. GP1(00h)
+resets GPU registers and applies the same packet/FIFO transition as GP1(01h).
+Already accepted backend commands and received image payload remain in the
+retained execution log, while an incomplete packet/polyline and an active
+readback suffix are discarded. GP1(00h) preserves both the GPUREAD data latch
+and the 1 MiB VRAM contents; machine reset clears the latch to zero. Every render
+backend consumes the same raw snapshot revision; the command buffer has no
+second VRAM-clear signal or backend-specific reset route.
 
 GP1(01h) clears in-progress GP0 packet/FIFO state and aborts an active
 VRAM-to-CPU transfer. Commands before a still-pending C0 fence remain in their

@@ -14,28 +14,20 @@ namespace {
 
 size_t g_gxGpuSoftwareProcessedCommandCount = 0u;
 u32 g_gxGpuSoftwareProcessedCommandSerial = 0u;
-u32 g_gxGpuSoftwareVramClearSerial = 0u;
-u32 g_gxGpuSoftwareVramSnapshotSerial = 0u;
+u64 g_gxGpuSoftwareVramSnapshotSerial = 0u;
 std::array<u8, GX_GPU_VRAM_BYTE_COUNT> g_gxGpuSoftwareVramSnapshotScratch{};
 
 void executeGxGpuSoftwarePass(GPUBackend* backend, GameView*, void*, RenderPassStateStorage& stateStorage, void*) {
 	renderGxGpuSoftwareFrame(static_cast<SoftwareBackend&>(*backend), stateStorage.gxGpu);
 }
 
-void executeGxGpuSoftwareVramCommands(const GxGpuCommandBuffer& commandBuffer, GxGpuReadbackPort& readback, const std::array<u8, GX_GPU_VRAM_BYTE_COUNT>& snapshotBytes, u32 snapshotSerial) {
+void executeGxGpuSoftwareVramCommands(const GxGpuCommandBuffer& commandBuffer, GxGpuReadbackPort& readback, const std::array<u8, GX_GPU_VRAM_BYTE_COUNT>& snapshotBytes, u64 snapshotSerial) {
 	const u32 commandSerial = commandBuffer.serial;
-	const u32 vramClearSerial = commandBuffer.vramClearSerial;
 	if (g_gxGpuSoftwareVramSnapshotSerial != snapshotSerial) {
 		loadGxGpuSoftwareVramBytes(snapshotBytes.data());
 		g_gxGpuSoftwareProcessedCommandCount = 0u;
 		g_gxGpuSoftwareProcessedCommandSerial = commandSerial;
-		g_gxGpuSoftwareVramClearSerial = vramClearSerial;
 		g_gxGpuSoftwareVramSnapshotSerial = snapshotSerial;
-	} else if (g_gxGpuSoftwareVramClearSerial != vramClearSerial) {
-		g_gxGpuSoftwareVram.fill(0u);
-		g_gxGpuSoftwareProcessedCommandCount = 0u;
-		g_gxGpuSoftwareProcessedCommandSerial = commandSerial;
-		g_gxGpuSoftwareVramClearSerial = vramClearSerial;
 	} else if (g_gxGpuSoftwareProcessedCommandSerial != commandSerial) {
 		g_gxGpuSoftwareProcessedCommandCount = 0u;
 		g_gxGpuSoftwareProcessedCommandSerial = commandSerial;

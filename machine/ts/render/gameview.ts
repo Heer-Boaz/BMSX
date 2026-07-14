@@ -76,7 +76,7 @@ export class GameView implements RenderContext {
 	public gxGpuHorizontalDisplayRangeWord = 0;
 	public gxGpuVerticalDisplayRangeWord = 0;
 	public gxGpuVramSnapshotBytes!: Uint8Array;
-	public gxGpuVramSnapshotSerial = 0;
+	public gxGpuVramSnapshotSerial = 0n;
 	public pipelineRegistry?: RenderPassLibrary;
 	private presentationEnabled = true;
 	// CRT/post flags (used by passes)

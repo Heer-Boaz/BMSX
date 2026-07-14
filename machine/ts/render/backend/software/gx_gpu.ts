@@ -1,37 +1,30 @@
 import type { GxGpuPipelineState } from '../backend';
+import type { GxGpu } from '../../../machine/devices/gx/gpu';
 import { GX_GPU_VRAM_HEIGHT, GX_GPU_VRAM_WIDTH, type GxGpuCommandBufferView, type GxGpuReadbackPortView } from '../../../machine/devices/gx/gpu_command_buffer';
 import { executeGxGpuSoftwareCommands } from './gx_gpu_commands';
 import { scanoutGxGpuSoftwareVram } from './gx_gpu_scanout';
-import { gxGpuSoftwareVram, loadGxGpuSoftwareVramBytes } from './gx_gpu_vram';
+import { GX_GPU_SOFTWARE_VRAM_WORDS, gxGpuSoftwareVram, loadGxGpuSoftwareVramBytes } from './gx_gpu_vram';
 
 let gxGpuSoftwareProcessedCommandCount = 0;
 let gxGpuSoftwareProcessedCommandSerial = 0;
-let gxGpuSoftwareVramClearSerial = 0;
-export let gxGpuSoftwareVramSnapshotSerial = 0;
+export let gxGpuSoftwareVramSnapshotSerial = 0n;
 
 type GxGpuSoftwareVramSource = {
 	commandBuffer: GxGpuCommandBufferView;
 	readbackPort: GxGpuReadbackPortView;
 	vramSnapshotBytes: Uint8Array;
-	vramSnapshotSerial: number;
+	vramSnapshotSerial: bigint;
 };
 
 export function executeGxGpuSoftwareVramCommands(source: GxGpuSoftwareVramSource): void {
 	const commandBuffer = source.commandBuffer;
 	const readback = source.readbackPort;
 	const commandSerial = commandBuffer.serial;
-	const vramClearSerial = commandBuffer.vramClearSerial;
 	if (gxGpuSoftwareVramSnapshotSerial !== source.vramSnapshotSerial) {
 		loadGxGpuSoftwareVramBytes(source.vramSnapshotBytes);
 		gxGpuSoftwareProcessedCommandCount = 0;
 		gxGpuSoftwareProcessedCommandSerial = commandSerial;
-		gxGpuSoftwareVramClearSerial = vramClearSerial;
 		gxGpuSoftwareVramSnapshotSerial = source.vramSnapshotSerial;
-	} else if (gxGpuSoftwareVramClearSerial !== vramClearSerial) {
-		gxGpuSoftwareVram.fill(0);
-		gxGpuSoftwareProcessedCommandCount = 0;
-		gxGpuSoftwareProcessedCommandSerial = commandSerial;
-		gxGpuSoftwareVramClearSerial = vramClearSerial;
 	} else if (gxGpuSoftwareProcessedCommandSerial !== commandSerial) {
 		gxGpuSoftwareProcessedCommandCount = 0;
 		gxGpuSoftwareProcessedCommandSerial = commandSerial;
@@ -57,4 +50,16 @@ export function executeGxGpuSoftwareVramCommands(source: GxGpuSoftwareVramSource
 export function renderGxGpuSoftwareFrame(state: GxGpuPipelineState, target: Uint8Array): void {
 	executeGxGpuSoftwareVramCommands(state);
 	scanoutGxGpuSoftwareVram(state, target);
+}
+
+export function captureGxGpuVramSnapshot(gxGpu: GxGpu, snapshotBytes: Uint8Array): void {
+	const output = gxGpu.readDeviceOutput();
+	executeGxGpuSoftwareVramCommands(output);
+	for (let wordIndex = 0; wordIndex < GX_GPU_SOFTWARE_VRAM_WORDS; wordIndex += 1) {
+		const byteIndex = wordIndex << 1;
+		const word = gxGpuSoftwareVram[wordIndex];
+		snapshotBytes[byteIndex] = word & 0xff;
+		snapshotBytes[byteIndex + 1] = word >>> 8;
+	}
+	gxGpuSoftwareVramSnapshotSerial = gxGpu.commitRenderedVramSnapshotBytes(snapshotBytes);
 }

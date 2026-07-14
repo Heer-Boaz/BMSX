@@ -42,6 +42,9 @@ import {
 	GX_GPU_RESET_VERTICAL_DISPLAY_RANGE_WORD,
 	gxGpuDisplayStartY,
 } from './gpu_display';
+import { initializeGxGpuVramPowerOn } from './vram_power_on';
+
+let gxGpuNextVramSnapshotSerial = 0n;
 
 export {
 	GX_GPU_DRAW_MODE_DITHER_ENABLED,
@@ -241,7 +244,7 @@ export class GxGpu {
 	private scanoutTotalScanlines = 313;
 	private m_lastFrameCommitted = false;
 	private readonly vramSnapshotBytes = new Uint8Array(GX_GPU_VRAM_BYTE_COUNT);
-	private vramSnapshotSerial = 0;
+	private vramSnapshotSerial = 0n;
 	private readonly deviceOutput: { -readonly [Key in keyof GxGpuDeviceOutput]: GxGpuDeviceOutput[Key] };
 
 	public constructor(
@@ -260,7 +263,7 @@ export class GxGpu {
 			horizontalDisplayRangeWord: GX_GPU_RESET_HORIZONTAL_DISPLAY_RANGE_WORD,
 			verticalDisplayRangeWord: GX_GPU_RESET_VERTICAL_DISPLAY_RANGE_WORD,
 			vramSnapshotBytes: this.vramSnapshotBytes,
-			vramSnapshotSerial: 0,
+			vramSnapshotSerial: 0n,
 		};
 		this.memory.mapIoRead(IO_GX_GPU_GP0, this, GxGpu.readGp0Thunk);
 		this.memory.mapIoWrite(IO_GX_GPU_GP0, this, GxGpu.writeGp0Thunk);
@@ -273,6 +276,8 @@ export class GxGpu {
 		this.textureDisableAllowedWord = 0;
 		this.gpuReadWord = 0;
 		this.commandBuffer.reset();
+		initializeGxGpuVramPowerOn(this.vramSnapshotBytes);
+		this.publishVramSnapshotRevision();
 		this.clearGp0CommandState();
 		this.resetGpuRegisters();
 	}
@@ -438,21 +443,26 @@ export class GxGpu {
 
 	public replaceVramSnapshotBytes(bytes: Uint8Array): void {
 		this.vramSnapshotBytes.set(bytes);
-		this.vramSnapshotSerial = (this.vramSnapshotSerial + 1) >>> 0;
+		this.publishVramSnapshotRevision();
 	}
 
-	public commitRenderedVramSnapshotBytes(bytes: Uint8Array): number {
+	public commitRenderedVramSnapshotBytes(bytes: Uint8Array): bigint {
 		this.vramSnapshotBytes.set(bytes);
-		this.vramSnapshotSerial = (this.vramSnapshotSerial + 1) >>> 0;
+		this.publishVramSnapshotRevision();
 		this.retirePresentedCommands();
 		return this.vramSnapshotSerial;
+	}
+
+	private publishVramSnapshotRevision(): void {
+		gxGpuNextVramSnapshotSerial = BigInt.asUintN(64, gxGpuNextVramSnapshotSerial + 1n);
+		this.vramSnapshotSerial = gxGpuNextVramSnapshotSerial;
 	}
 
 	public readVramSnapshotBytes(): Uint8Array {
 		return this.vramSnapshotBytes;
 	}
 
-	public readVramSnapshotSerial(): number {
+	public readVramSnapshotSerial(): bigint {
 		return this.vramSnapshotSerial;
 	}
 

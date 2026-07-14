@@ -236,15 +236,10 @@ private:
 struct GxGpuCommandBuffer {
 private:
 	inline static u32 nextSerial = 0u;
-	inline static u32 nextVramClearSerial = 0u;
 
-	void publishRevision(bool vramCleared) {
+	void publishRevision() {
 		nextSerial += 1u;
 		serial = nextSerial;
-		if (vramCleared) {
-			nextVramClearSerial += 1u;
-			vramClearSerial = nextVramClearSerial;
-		}
 	}
 
 	void activateReadback(size_t commandIndex) {
@@ -266,7 +261,6 @@ public:
 	}
 
 	u32 serial = 0u;
-	u32 vramClearSerial = 0u;
 	size_t commandCount = 0u;
 	size_t executedCommandCount = 0u;
 	size_t presentCommandCount = 0u;
@@ -286,7 +280,7 @@ public:
 	GxGpuReadbackPort readback;
 
 	void reset() {
-		publishRevision(true);
+		publishRevision();
 		clearCommandState();
 	}
 
@@ -306,7 +300,7 @@ public:
 			readback.reset();
 			return;
 		}
-		publishRevision(false);
+		publishRevision();
 		clearCommandState();
 	}
 
@@ -343,7 +337,7 @@ public:
 	}
 
 	void restoreState(const GxGpuCommandBufferState& state) {
-		publishRevision(false);
+		publishRevision();
 		commandCount = state.commandCount;
 		executedCommandCount = state.executedCommandCount;
 		presentCommandCount = state.presentCommandCount;
@@ -411,7 +405,7 @@ public:
 		readback.m_fenceCommandCount = retiredCommands < readback.m_fenceCommandCount
 			? readback.m_fenceCommandCount - retiredCommands
 			: 0u;
-		publishRevision(false);
+		publishRevision();
 		return retiredWords;
 	}
 

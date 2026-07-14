@@ -149,7 +149,7 @@ Geïmplementeerd contract:
   publiceert een nieuwe commandstreamrevision. Beide paden maken de readbackport
   idle, trekken DMA-ready laag en verhogen de bestaande generationtoken, zodat
   een late WebGPU-completion geen nieuwe request kan voltooien. GPUREAD-datalatch,
-  eerdere VRAM-writes en de VRAM-clear-revision blijven behouden.
+  eerdere VRAM-writes en de raw-VRAM-snapshotrevision blijven behouden.
 - Diezelfde GP1(01h)-transitie laat geen onbereikbare woorden in de retained
   commandbuffer achter. Een imageheader zonder payload en een onafgesloten
   polyline truncaten hun nog niet gecommitte suffix rechtstreeks naar het
@@ -208,14 +208,17 @@ volgorde. Er is geen callbackfacade of tweede interruptstatus toegevoegd.
 
 GP1(00h) is daarnaast losgetrokken van machine/device reset. Beide wissen de
 registers en packet/FIFO-state, maar alleen machine reset wist de retained
-backendcommandlog, publiceert een VRAM-clear-revision en maakt de GPUREAD-
-datalatch nul. GP1 reset gebruikt dezelfde FIFO-transitie als GP1(01h): reeds
+backendcommandlog, genereert opnieuw het vaste raw-VRAM-power-on-bitpatroon,
+verhoogt de gedeelde unsigned 64-bit snapshotrevision en maakt de GPUREAD-datalatch
+nul. GP1 reset gebruikt dezelfde FIFO-transitie als GP1(01h): reeds
 geaccepteerde commands en ontvangen A0-payload blijven in de execution log,
 terwijl een incomplete packet/polyline en actieve C0-suffix verdwijnen. Net als
 DuckStation en Mednafen behoudt GP1 reset de bestaande GPUREAD-datalatch en de
 echte 1 MiB backend-VRAM in TS/C++ software, WebGL2, GLES2 en WebGPU. De
-gespiegelde raw-VRAM-vector bewijst pre-reset fill/upload, latch/revision en de
-harde-resettransitie; er is geen backend-uitzondering of CPU-VRAM-shadow.
+gespiegelde raw-VRAM-vector bewijst block/row/page/macrogrenzen, de volledige
+1-MiB-digest, pre-reset writes, GP1-behoud, save-stateherstel en machine-
+recreation tegen een persistente backend. De commandbuffer bezit geen tweede
+VRAM-clear-signaal; er is geen backend-uitzondering of CPU-VRAM-shadow.
 
 De GPU bezit nu daarnaast een centrale, integer commandotimingdatapath met twee
 GPU-ticks per CPU-cycle. GP0 packets komen in een vaste 16-word hardware-FIFO;

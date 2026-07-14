@@ -407,14 +407,17 @@ and MAME
 - [ ] Complete GP0/GP1 command decode edge cases and command-buffer ordering.
   - [x] Distinguish machine/device reset from GP1(00h): both clear GPU
     registers, packet/FIFO state and the active readback request, while only
-    machine reset clears the accepted backend log, advances the shared
-    VRAM-clear revision and clears GPUREAD to zero. GP1 reset retains accepted
-    commands and received A0 payload alongside the GPUREAD latch and raw VRAM.
-    Mirrored TS/C++ raw-VRAM tests cover the distinction.
+    machine reset clears the accepted backend log, regenerates the fixed raw
+    VRAM power-on pattern, advances the shared unsigned 64-bit snapshot revision
+    and clears GPUREAD to zero. GP1 reset retains accepted commands and received
+    A0 payload alongside the GPUREAD latch and raw VRAM. The command buffer owns
+    no separate VRAM-clear signal. Mirrored TS/C++ raw-VRAM tests cover the
+    pattern digest, reset/save-state distinction and persistent-backend machine
+    recreation.
   - [x] Make GP1(01h) abort active C0 readback state and its queued suffix.
     Pending fences retain the stable command prefix without a revision; a
     submitted/ready transfer invalidates its backend generation and publishes a
-    non-VRAM-clearing stream revision. Mirrored tests cover ready/DMA lowering,
+    command-stream revision. Mirrored tests cover ready/DMA lowering,
     stale completion rejection, queued-C0 removal, prior VRAM writes and resumed
     command processing. Abandoned image headers and partial polylines also
     truncate their uncommitted word suffix, while received image payload remains
@@ -433,6 +436,9 @@ and MAME
 
 ### 3. Raster and VRAM behavior
 
+- [x] Deterministic 1 MiB raw-VRAM power-on contents owned by GX device reset;
+  every backend consumes the same retained snapshot and save-state restores the
+  stored bytes rather than regenerating them.
 - [x] Texture modulation math aligned to PSX behavior.
 - [x] Fill rectangle masking and fill geometry wrapping.
 - [x] Oversized primitive culling.
