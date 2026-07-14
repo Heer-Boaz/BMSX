@@ -422,6 +422,13 @@ and MAME
     command processing. Abandoned image headers and partial polylines also
     truncate their uncommitted word suffix, while received image payload remains
     a partial upload command.
+  - [x] Make GP1(00h/01h) also cut C0 during its decoded-but-not-yet-active
+    device cycle. The command buffer truncates that marker at the existing
+    execution frontier and the GPU cancels only its now-ownerless deadline;
+    accepted draws and their deadlines, the GPUREAD latch, raw VRAM, and a C0
+    still waiting behind a draw in the physical FIFO keep their direct hardware
+    semantics. Mirrored immediate, queued, and save/restore regressions cover
+    both GP1 transitions.
 - [x] DMA interaction behavior beyond the register/status paths.
   - [x] RAM-to-GP0 DMA word streams feed the memory-mapped GX-GPU GP0 command
     port in TS and C++.

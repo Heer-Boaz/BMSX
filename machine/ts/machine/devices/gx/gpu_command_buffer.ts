@@ -294,6 +294,16 @@ export class GxGpuCommandBuffer implements GxGpuCommandBufferView {
 
 	public abortReadbackAndQueuedCommands(): void {
 		if (this.readback.phase === GX_GPU_READBACK_IDLE) {
+			// C0 is retained before its execution deadline activates the readback port.
+			const commandIndex = this.executedCommandCount;
+			if (commandIndex === this.commandCount || this.commandKind[commandIndex] !== GX_GPU_COMMAND_READ_VRAM_TO_CPU) {
+				return;
+			}
+			this.commandCount = commandIndex;
+			this.wordCount = this.commandWordStart[commandIndex];
+			if (this.presentCommandCount > commandIndex) {
+				this.presentCommandCount = commandIndex;
+			}
 			return;
 		}
 		if (this.readback.phase === GX_GPU_READBACK_PENDING && this.readback.fenceCommandCount !== 0) {

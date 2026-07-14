@@ -1453,6 +1453,82 @@ test('GX-GPU save-state restores command time and FIFO suffix relative to schedu
 	assert.equal((restored.gpu.readStatus() & GX_GPU_STATUS_GPU_IDLE) >>> 0, GX_GPU_STATUS_GPU_IDLE);
 });
 
+test('GX-GPU GP1 clear cuts an active C0 at the execution frontier without canceling draws', () => {
+	const active = createGpu();
+	active.gpu.writeGp1((GX_GPU_GP1_GET_GPU_INFO << 24) | 0x07);
+	active.gpu.writeGp0((GX_GPU_GP0_FILL_RECTANGLE << 24) | 0x0000ff);
+	active.gpu.writeGp0(0);
+	active.gpu.writeGp0((1 << 16) | 1);
+	active.gpu.writeGp0(GX_GPU_GP0_VRAM_TO_CPU_FIRST << 24);
+	active.gpu.writeGp0(0);
+	active.gpu.writeGp0((1 << 16) | 1);
+	const fillDeadline = active.scheduler.nextDeadline();
+	active.scheduler.advanceTo(fillDeadline);
+	active.gpu.onService(fillDeadline);
+	const activeCommands = active.gpu.readDeviceOutput().commandBuffer;
+	assert.equal(activeCommands.commandCount, 2);
+	assert.equal(activeCommands.executedCommandCount, 1);
+	assert.equal(activeCommands.readback.phase, GX_GPU_READBACK_IDLE);
+	assert.equal(active.scheduler.nextDeadline(), fillDeadline + 1);
+
+	active.gpu.writeGp1(GX_GPU_GP1_CLEAR_FIFO << 24);
+	assert.equal(activeCommands.commandCount, 1);
+	assert.equal(activeCommands.executedCommandCount, 1);
+	assert.equal(activeCommands.wordCount, 3);
+	assert.equal(activeCommands.readback.phase, GX_GPU_READBACK_IDLE);
+	assert.equal(active.scheduler.nextDeadline(), Number.MAX_SAFE_INTEGER);
+	assert.equal(active.gpu.readGp0(), GX_GPU_INFO_GPU_TYPE_208PIN);
+	const status = active.gpu.readStatus();
+	assert.equal((status & GX_GPU_STATUS_GPU_IDLE) >>> 0, GX_GPU_STATUS_GPU_IDLE);
+	assert.equal((status & GX_GPU_STATUS_READY_TO_SEND_VRAM) >>> 0, 0);
+	assert.equal((status & GX_GPU_STATUS_READY_TO_RECEIVE_DMA) >>> 0, GX_GPU_STATUS_READY_TO_RECEIVE_DMA);
+
+	const queued = createGpu();
+	queued.gpu.writeGp0((GX_GPU_GP0_FILL_RECTANGLE << 24) | 0x0000ff);
+	queued.gpu.writeGp0(0);
+	queued.gpu.writeGp0((1 << 16) | 1);
+	queued.gpu.writeGp0(GX_GPU_GP0_VRAM_TO_CPU_FIRST << 24);
+	queued.gpu.writeGp0(0);
+	queued.gpu.writeGp0((1 << 16) | 1);
+	const queuedFillDeadline = queued.scheduler.nextDeadline();
+	queued.gpu.writeGp1(GX_GPU_GP1_CLEAR_FIFO << 24);
+	const queuedCommands = queued.gpu.readDeviceOutput().commandBuffer;
+	assert.equal(queuedCommands.commandCount, 1);
+	assert.equal(queuedCommands.executedCommandCount, 0);
+	assert.equal(queued.gpu.captureState().gp0FifoWordCount, 0);
+	assert.equal(queued.scheduler.nextDeadline(), queuedFillDeadline);
+	queued.scheduler.advanceTo(queuedFillDeadline);
+	queued.gpu.onService(queuedFillDeadline);
+	assert.equal(queuedCommands.executedCommandCount, 1);
+	assert.equal(queuedCommands.readback.phase, GX_GPU_READBACK_IDLE);
+});
+
+test('GX-GPU GP1 reset cancels a restored active C0 deadline', () => {
+	const source = createGpu();
+	source.gpu.writeGp1((GX_GPU_GP1_GET_GPU_INFO << 24) | 0x07);
+	source.gpu.writeGp0(GX_GPU_GP0_VRAM_TO_CPU_FIRST << 24);
+	source.gpu.writeGp0(0);
+	source.gpu.writeGp0((1 << 16) | 1);
+	const saved = source.gpu.captureState();
+	assert.equal(saved.commandBuffer.commandCount, 1);
+	assert.equal(saved.commandBuffer.executedCommandCount, 0);
+
+	const restored = createGpu();
+	restored.scheduler.advanceTo(100);
+	restored.gpu.restoreState(saved);
+	const snapshotSerial = restored.gpu.readVramSnapshotSerial();
+	assert.equal(restored.scheduler.nextDeadline(), 101);
+	restored.gpu.writeGp1(GX_GPU_GP1_RESET << 24);
+	const reset = restored.gpu.captureState();
+	assert.equal(reset.commandBuffer.commandCount, 0);
+	assert.equal(reset.commandBuffer.executedCommandCount, 0);
+	assert.equal(reset.commandBuffer.readbackPhase, GX_GPU_READBACK_IDLE);
+	assert.equal(restored.scheduler.nextDeadline(), Number.MAX_SAFE_INTEGER);
+	assert.equal(restored.gpu.readGp0(), GX_GPU_INFO_GPU_TYPE_208PIN);
+	assert.equal(restored.gpu.readVramSnapshotSerial(), snapshotSerial);
+	assert.equal((restored.gpu.readStatus() & GX_GPU_STATUS_RESET_WORD) >>> 0, GX_GPU_STATUS_RESET_WORD);
+});
+
 test('GX-GPU GP1 clear FIFO clears partial GP0 packets and flushes partial CPU-to-VRAM uploads', () => {
 	const { gpu } = createGpu();
 	const commands = gpu.readDeviceOutput().commandBuffer;

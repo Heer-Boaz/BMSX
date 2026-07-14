@@ -286,6 +286,16 @@ public:
 
 	void abortReadbackAndQueuedCommands() {
 		if (readback.m_phase == GX_GPU_READBACK_IDLE) {
+			// C0 is retained before its execution deadline activates the readback port.
+			const size_t commandIndex = executedCommandCount;
+			if (commandIndex == commandCount || commandKind[commandIndex] != GX_GPU_COMMAND_READ_VRAM_TO_CPU) {
+				return;
+			}
+			commandCount = commandIndex;
+			wordCount = commandWordStart[commandIndex];
+			if (presentCommandCount > commandIndex) {
+				presentCommandCount = commandIndex;
+			}
 			return;
 		}
 		if (readback.m_phase == GX_GPU_READBACK_PENDING && readback.m_fenceCommandCount != 0u) {
