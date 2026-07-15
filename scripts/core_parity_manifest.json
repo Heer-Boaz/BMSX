@@ -181,11 +181,6 @@
 			"reason": "host_device_quantize_present_state_mirrored_by_cpp_render_backend_pass_library"
 		},
 		{
-			"pattern": "machine/ts/render/gx/character_plane_state.ts",
-			"category": "host",
-			"reason": "browser_render_graph_state_mirrored_by_cpp_render_backend_pass_library"
-		},
-		{
 			"pattern": "machine/ts/render/post/device_quantize/webgpu/pipeline.ts",
 			"category": "host",
 			"reason": "webgpu_device_quantize_postprocess_backend"
@@ -299,8 +294,7 @@
 		"machine/ts/machine/devices/audio/biquad_filter.ts",
 		"machine/ts/machine/devices/audio/output.ts",
 		"machine/ts/machine/devices/gx/gpu_display.ts",
-		"machine/ts/machine/devices/gx/character_plane.ts",
-		"machine/ts/render/gx/character_plane_resources.ts",
+		"machine/ts/machine/devices/gx/system_vram_port.ts",
 		"machine/ts/machine/devices/gx/gte.ts",
 		"machine/ts/machine/memory/access_kind.ts",
 		"machine/ts/machine/cpu/string_pool.ts",
@@ -322,20 +316,12 @@
 			"reason": "gx_gpu_raw_display_register_decode_contract"
 		},
 		{
-			"ts": "machine/ts/machine/devices/gx/character_plane.ts",
+			"ts": "machine/ts/machine/devices/gx/system_vram_port.ts",
 			"cpp": [
-				"machine/cpp/machine/devices/gx/character_plane.h",
-				"machine/cpp/machine/devices/gx/character_plane.cpp"
+				"machine/cpp/machine/devices/gx/system_vram_port.h",
+				"machine/cpp/machine/devices/gx/system_vram_port.cpp"
 			],
-			"reason": "gx_character_plane_registerfile_contract"
-		},
-		{
-			"ts": "machine/ts/render/gx/character_plane_resources.ts",
-			"cpp": [
-				"machine/cpp/render/gx/character_plane_resources.h",
-				"machine/cpp/render/gx/character_plane_resources.cpp"
-			],
-			"reason": "gx_character_plane_backend_resource_encoding_contract"
+			"reason": "gx_system_vram_transfer_registerfile_and_bounded_queue_contract"
 		},
 		{
 			"ts": "machine/ts/machine/devices/gx/gte.ts",
@@ -1687,59 +1673,38 @@
 	],
 	"strict_runtime_no_heap_functions": [
 		{
-			"file": "machine/ts/machine/devices/gx/character_plane.ts",
+			"file": "machine/ts/machine/devices/gx/system_vram_port.ts",
 			"functions": [
-				"readRegister",
-				"writeRegister"
+				"writeRegister",
+				"beginTransfer",
+				"writeData",
+				"retirePresentedCommands"
 			],
-			"reason": "gx_character_plane_mmio_handlers_must_mutate_raw_retained_sram_without_gc_churn"
+			"reason": "gx_system_vram_transfer_mmio_and_queue_service_must_mutate_fixed_storage_without_gc_churn"
 		},
 		{
-			"file": "machine/cpp/machine/devices/gx/character_plane.cpp",
+			"file": "machine/cpp/machine/devices/gx/system_vram_port.cpp",
 			"functions": [
-				"readRegister",
-				"writeRegister"
+				"writeRegister",
+				"beginTransfer",
+				"writeData",
+				"retirePresentedCommands"
 			],
-			"reason": "gx_character_plane_mmio_handlers_must_mutate_raw_retained_sram_without_heap_allocation"
+			"reason": "gx_system_vram_transfer_mmio_and_queue_service_must_mutate_fixed_storage_without_heap_allocation"
 		},
 		{
-			"file": "machine/ts/render/gx/character_plane_resources.ts",
+			"file": "machine/ts/render/backend/software/gx_gpu.ts",
 			"functions": [
-				"writeGxCharacterPlanePaletteTexture",
-				"writeGxCharacterPlaneGlyphTexture",
-				"writeGxCharacterPlaneCellTexture"
+				"executeGxGpuSoftwareVramTransfers"
 			],
-			"reason": "gx_character_plane_revision_upload_encoding_must_write_caller_owned_scratch_without_gc_churn"
+			"reason": "software_system_vram_transfer_execution_must_write_retained_vram_without_gc_churn"
 		},
 		{
-			"file": "machine/cpp/render/gx/character_plane_resources.cpp",
+			"file": "machine/cpp/render/backend/software/gx_gpu.cpp",
 			"functions": [
-				"writeGxCharacterPlanePaletteTexture",
-				"writeGxCharacterPlaneGlyphTexture",
-				"writeGxCharacterPlaneCellTexture"
+				"executeGxGpuSoftwareVramTransfers"
 			],
-			"reason": "gx_character_plane_revision_upload_encoding_must_write_caller_owned_scratch_without_heap_allocation"
-		},
-		{
-			"file": "machine/ts/render/backend/software/gx_character_plane.ts",
-			"functions": [
-				"renderGxCharacterPlaneSoftware"
-			],
-			"reason": "gx_character_plane_software_composition_must_remain_gc_free"
-		},
-		{
-			"file": "machine/cpp/render/backend/software/gx_character_plane.cpp",
-			"functions": [
-				"renderGxCharacterPlaneSoftware"
-			],
-			"reason": "gx_character_plane_software_composition_must_remain_heap_free"
-		},
-		{
-			"file": "machine/cpp/render/backend/gles2/gx_character_plane.cpp",
-			"functions": [
-				"renderGxCharacterPlaneGLES2"
-			],
-			"reason": "gx_character_plane_gles2_composition_must_only_upload_changed_sram_banks_and_remain_heap_free"
+			"reason": "software_system_vram_transfer_execution_must_write_retained_vram_without_heap_allocation"
 		},
 		{
 			"file": "machine/ts/render/post/crt/webgl/pipeline.ts",
@@ -1875,9 +1840,11 @@
 				"appendTexturedPolygon",
 				"appendTexturedRectangle",
 				"writeVramSnapshotUpload",
-				"writeCpuToVramUploadRun",
-				"uploadCpuToVramRows",
+				"writeCpuWordsToVramUploadRun",
+				"uploadCpuWordsToVramRows",
 				"uploadCpuToVram",
+				"uploadSystemVramTransfer",
+				"executeNewGxGpuSystemVramTransfers",
 				"copyVramToVramArea",
 				"copyVramToVram",
 				"applyGxGpuDrawingAreaScissor",
@@ -1974,9 +1941,11 @@
 				"appendTexturedPolygon",
 				"appendTexturedRectangle",
 				"writeVramSnapshotUpload",
-				"writeCpuToVramUploadRun",
-				"uploadCpuToVramRows",
+				"writeCpuWordsToVramUploadRun",
+				"uploadCpuWordsToVramRows",
 				"uploadCpuToVram",
+				"uploadSystemVramTransfer",
+				"executeNewGxGpuSystemVramTransfers",
 				"copyVramToVramArea",
 				"copyVramToVram",
 				"applyGxGpuDrawingAreaScissor",

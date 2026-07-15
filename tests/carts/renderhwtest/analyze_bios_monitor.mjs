@@ -53,6 +53,6 @@ const helpTextPixels = countTerminalPixels(help, 36, 48);
 const resumedTextPixels = countTerminalPixels(resumed, 0, 48);
 assert(entryTextPixels > 80, `BIOS monitor entry text is missing: ${entryTextPixels} pixels`);
 assert(helpTextPixels > 30, `BIOS HELP output is missing: ${helpTextPixels} pixels`);
-assert.equal(resumedTextPixels, 0, 'BIOS character plane remained enabled after CONT');
+assert.equal(resumedTextPixels, 0, 'BIOS display circuit 2 remained enabled after CONT');
 
 console.log(JSON.stringify({ entryTextPixels, helpTextPixels, resumedTextPixels }, null, 2));

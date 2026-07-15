@@ -819,30 +819,41 @@ and waits on the BIOS IRQ/VBlank path. The cart receives no input because its
 frames are not executing. The host continues to sample the physical devices
 into ICU words; it does not edit a terminal buffer or dispatch commands.
 
-The monitor uses the GX character plane, a machine-visible scanout unit that is
-independent of GP0, VRAM, the drawing environment, DMA and the cart's display
-mode. Its fixed SRAM consists of 256 packed 4x6 one-bit glyph words, 160x80 cell
-words and sixteen A1RGB555 palette words. A cell selects one glyph byte plus
-four-bit foreground and background palette indexes; unused cell bits remain raw
-and have no datapath effect. Palette bit 15 controls coverage, so transparent
-foreground or background samples preserve the GX scanout pixel below them.
+The monitor uses a second GX display circuit over the same physical VRAM as the
+primary circuit. GX VRAM remains one 1024x512 A1RGB555 word array: 524,288 words,
+exactly 1 MiB. There is no terminal VRAM bank, host framebuffer, character-plane
+SRAM or terminal-owned backend texture. Display circuit 2 has raw start, size and
+compositor-control registers. It scans one VRAM word per output pixel at 1:1
+scale; bit 15 selects coverage and uncovered pixels preserve the primary output.
+Composition happens after progressive scanout or interlaced field weave and
+before device quantization, presentation history and CRT processing.
 
-The registerfile exposes raw control and indexed address/data ports for the
-three SRAM banks. Data access advances the corresponding address latch; palette
-and glyph addresses wrap by their register width and cell addresses wrap over
-the 12,800-word bank. The plane is composed after native GX scanout and before
-device quantization, presentation history and CRT processing. Disabled control
-means the pass does not execute. Backends retain their expanded cell, glyph and
-palette resources and upload a bank only when its device revision changes;
-software composition writes directly into the retained frame buffer without a
-display list or per-frame allocation.
+The physical rectangle x=512..767, y=0..255 is reserved as the system window
+inside that same VRAM. The system texture occupies y=0..63 and the BIOS terminal
+framebuffer occupies y=64..255. The ROM producer caps the system texture at
+256x64, while cart texture-layout validation excludes the complete 256x256
+window from cart slots and CLUTs. Display circuit 2 itself is not tied to that
+rectangle; its start register addresses the ordinary 1024x512 VRAM datapath.
 
-BIOS therefore writes only glyph, palette and cell SRAM and never captures
-framebuffer pixels or saves/restores a GP0 context. Outstanding GPU/DMA work
-continues independently through its normal FIFO, DREQ and scheduler rules. A
-manual `CONT` clears the character-plane enable bit before `RFE`, revealing the
-unchanged game scanout immediately. Character-plane control, address latches
-and raw SRAM are machine state and participate in mirrored save-state replay.
+Firmware writes the reserved window through a dedicated GX system-write port so
+an NMI does not capture, clear or reconstruct a partially assembled cart GP0
+packet. The port exposes local eight-bit X/Y destination lines, eight-bit width
+and height count fields, control/status latches and a 32-bit data register that
+packs two A1RGB555 words. Destination coordinates wrap within the 256x256 system
+window. Its command descriptors and payload lane are fixed-capacity retained
+storage; an incomplete payload is not publishable, completed transfers seal at
+VBlank, and the renderer retires only the sealed prefix. Software, WebGL2,
+WebGPU and GLES2 consume that same ordered transfer stream into their existing
+raw-VRAM owner without per-frame allocation.
+
+The BIOS keeps terminal cells and dirty ranges in its ordinary `.bss`, expands
+the packed 4x6 tiny-font ROM resource into dirty A1RGB555 rectangles, and enables
+display circuit 2 only after the initial framebuffer upload is complete. `CONT`
+disables the compositor before `RFE`, immediately revealing the retained game
+scanout. Outstanding cart GPU/DMA work remains in its existing FIFO and
+scheduler state; firmware neither saves/restores GP0 context nor reads pixels
+back through the host. Display-2 registers, write-port latches, retained command
+prefixes and payload words participate in mirrored save-state replay.
 
 The machine-visible monitor command set starts with hardware operations such as
 `HELP`, `FAULT`, `REGS`, `MEM`, `CONT`, and `REBOOT`. It does not expose the
@@ -1240,13 +1251,14 @@ heap budget outside the machine.
 
 The compact 4x6 `tiny_3b_font_*` glyph set is the BIOS-owned
 `font.get('default')` descriptor for boot and firmware text. The ROM producer
-also packs those source glyphs into the character plane's 256-word raw glyph
-bank; BIOS code transfers that bank through the device dataport rather than
-reading an atlas layout. It is the only standard font in the BIOS resource
-package. The MSX 6-pixel font is an aesthetic cart/host asset, not a machine or
-BIOS primitive: carts that want that style ship the glyph resources and define
-the font explicitly. Firmware retains no compatibility alias, automatic MSX
-resource inclusion, or missing-glyph fallback into the removed set.
+also packs those source glyphs into a 256-word terminal-font ROM resource. BIOS
+code reads those packed words directly and expands dirty glyph rows through the
+GX system-VRAM write port; it does not inspect an atlas layout. Tiny is the only
+standard font in the BIOS resource package. The MSX 6-pixel font is an
+aesthetic cart/host asset, not a machine or BIOS primitive: carts that want that
+style ship the glyph resources, reserve their own VRAM slot and define the font
+explicitly. Firmware retains no compatibility alias, automatic MSX resource
+inclusion, or missing-glyph fallback into the removed set.
 
 ## IDE, editor, and host tooling
 
@@ -1265,9 +1277,9 @@ references to their existing command kinds, payload references and counts.
 Backends consume only that pass state; they do not read a menu/workbench
 controller or clone the commands into a per-frame DTO. WebGPU and WebGL2 own
 their concrete pipelines, atlases, buffers and uploads behind that boundary.
-The BIOS character plane is not an overlay-queue lane. The full-screen IDE owns
-and emits its own frame background; the quick menu publishes only its own host
-commands over the retained game scanout.
+The BIOS display-2 circuit is not an overlay-queue lane. The full-screen IDE
+owns and emits its own frame background; the quick menu publishes only its own
+host commands over the retained game scanout.
 WebGPU is the default accelerated browser backend and WebGL2 is its fallback;
 host validation failures do not reverse that ownership or introduce a second
 presentation facade.

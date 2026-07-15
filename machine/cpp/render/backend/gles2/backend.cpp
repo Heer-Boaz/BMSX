@@ -9,7 +9,6 @@
 #include "render/host_overlay/gles2/pipeline.h"
 #include "render/backend/pass/library.h"
 #include "render/backend/gles2/gx_gpu.h"
-#include "render/backend/gles2/gx_character_plane.h"
 #include "core/machine_manager.h"
 #include "render/shared/solid_pixels.h"
 
@@ -118,7 +117,6 @@ void applyGLES2TextureParams(const TextureParams& params) {
 }
 
 struct OpenGLES2PostPipelines {
-	GxCharacterPlaneGLES2Pipeline gxCharacterPlane;
 	DeviceQuantizePipeline::GLES2::State deviceQuantize;
 	CRTPipeline::PresentGLES2State present;
 	CRTPipeline::CRTGLES2State crt;
@@ -165,7 +163,6 @@ void OpenGLES2Backend::registerBuiltinPasses(RenderPassLibrary& registry) {
 	registerFrameResolvePass(registry);
 
 	registerGxGpuPass(registry);
-	registerGxCharacterPlanePassGLES2(registry, m_post_pipelines->gxCharacterPlane);
 	DeviceQuantizePipeline::GLES2::registerPass(registry, m_post_pipelines->deviceQuantize);
 
 	CRTPipeline::registerPresentationHistoryGLES2Passes(registry, m_post_pipelines->present);
@@ -547,7 +544,6 @@ void OpenGLES2Backend::onContextReset() {
 		? resolveProcAddress("glTextureBarrierNV")
 		: nullptr;
 	glGenFramebuffers(1, &m_readback_fbo);
-	initGxCharacterPlaneGLES2(*this, m_post_pipelines->gxCharacterPlane);
 	DeviceQuantizePipeline::GLES2::init(*this, m_post_pipelines->deviceQuantize);
 	CRTPipeline::initPresentGLES2(*this, m_post_pipelines->present);
 	CRTPipeline::initCRTGLES2(*this, m_post_pipelines->crt);
@@ -563,7 +559,6 @@ void OpenGLES2Backend::onContextDestroy() {
 	CRTPipeline::shutdownCRTGLES2(m_post_pipelines->crt);
 	CRTPipeline::shutdownPresentGLES2(m_post_pipelines->present);
 	DeviceQuantizePipeline::GLES2::shutdown(m_post_pipelines->deviceQuantize);
-	shutdownGxCharacterPlaneGLES2(*this, m_post_pipelines->gxCharacterPlane);
 	m_context_ready = false;
 	m_context_generation += 1u;
 	invalidateTextureBindingCache();

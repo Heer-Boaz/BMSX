@@ -23,6 +23,8 @@ gx_texture_layout:
             texture: { x: 847, y: 0, width: 93, height: 171 }
         monster:
             texture: { x: 768, y: 256, width: 192, height: 192 }
+        font:
+            texture: { x: 960, y: 0, width: 64, height: 256 }
         all_out:
             texture: { x: 0, y: 256, width: 320, height: 240 }
     groups:
@@ -49,7 +51,8 @@ gx_texture_layout:
         34: { mode: direct16, slots: [background_left, background_right], page_local: false }
         35: { mode: direct16, slots: [background_left, background_right], page_local: false }
         36: { mode: direct16, slots: [all_out], page_local: false }
+        37: { mode: direct16, slots: [font], page_local: true }
     working_sets:
-        story: [background_left, background_right]
-        combat: [maya_b, maya_a, maya_vs, monster]
-        all_out: [all_out]
+        story: [font, background_left, background_right]
+        combat: [font, maya_b, maya_a, maya_vs, monster]
+        all_out: [font, all_out]

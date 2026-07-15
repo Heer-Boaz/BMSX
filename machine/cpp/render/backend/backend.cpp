@@ -7,7 +7,6 @@
 #include "render/shared/software_pixels.h"
 #include "render/backend/pass/library.h"
 #include "render/backend/software/gx_gpu.h"
-#include "render/backend/software/gx_character_plane.h"
 #include "render/host_overlay/pass_registration.h"
 #include "render/host_overlay/software/renderer.h"
 #include "render/post/crt/software/pipeline.h"
@@ -248,8 +247,7 @@ SoftwareBackend::SoftwareBackend(u32* framebuffer, i32 width, i32 height, i32 pi
 	, m_framebuffer(framebuffer)
 	, m_width(width)
 	, m_height(height)
-	, m_pitch(pitch)
-	, m_gxCharacterPlanePipeline(std::make_unique<GxCharacterPlaneSoftwarePipeline>()) {
+	, m_pitch(pitch) {
 	m_depthBuffer.resize(width * height, 1.0f);
 }
 
@@ -258,7 +256,6 @@ SoftwareBackend::~SoftwareBackend() = default;
 void SoftwareBackend::registerBuiltinPasses(RenderPassLibrary& registry) {
 	registerFrameResolvePass(registry);
 	registerGxGpuPassSoftware(registry);
-	registerGxCharacterPlanePassSoftware(registry, *m_gxCharacterPlanePipeline);
 	DeviceQuantizePipeline::Software::registerPass(registry);
 	CRTPipeline::registerCRTPostSoftwarePass(registry);
 	registerHostOverlayBackendPasses<SoftwareBackend, nullptr, beginHostOverlaySoftware, renderHost2DEntrySoftware, endHostOverlaySoftware>(registry);

@@ -300,13 +300,19 @@ struct GxGpuRuntime {
 	GLint transferSetMaskBitUniform = -1;
 	GLint scanoutPositionAttrib = -1;
 	GLint scanoutVramUniform = -1;
+	GLint scanoutDisplay2VramUniform = -1;
 	GLint scanoutDisplayUniform = -1;
+	GLint scanoutDisplay2Uniform = -1;
+	GLint scanoutDisplay2SizeUniform = -1;
 	GLint scanoutFieldPositionAttrib = -1;
 	GLint scanoutFieldVramUniform = -1;
 	GLint scanoutFieldDisplayUniform = -1;
 	GLint scanoutFieldInterlaceUniform = -1;
 	GLint scanoutWeavePositionAttrib = -1;
 	GLint scanoutWeaveVramUniform = -1;
+	GLint scanoutWeaveDisplay2VramUniform = -1;
+	GLint scanoutWeaveDisplay2Uniform = -1;
+	GLint scanoutWeaveDisplay2SizeUniform = -1;
 	GLint scanoutWeaveInterlaceUniform = -1;
 	GLint readbackPositionAttrib = -1;
 	GLint readbackVramUniform = -1;
@@ -314,12 +320,22 @@ struct GxGpuRuntime {
 	u32 scanoutUniformDisplayModeWord = 0xffffffffu;
 	u32 scanoutUniformDisplayStartWord = 0xffffffffu;
 	i32 scanoutUniformHeight = -1;
+	u32 scanoutUniformDisplay2StartWord = 0xffffffffu;
+	u32 scanoutUniformDisplay2SizeWord = 0xffffffffu;
+	u32 scanoutUniformCompositorControlWord = 0xffffffffu;
+	u32 scanoutUniformDisplayDisableWord = 0xffffffffu;
+	u32 scanoutWeaveUniformDisplay2StartWord = 0xffffffffu;
+	u32 scanoutWeaveUniformDisplay2SizeWord = 0xffffffffu;
+	u32 scanoutWeaveUniformCompositorControlWord = 0xffffffffu;
 	u32 scanoutFieldsDisplayStartWord = 0u;
 	u32 scanoutFieldsInterpretationWord = 0u;
+	u32 scanoutFieldsDisplayDisableWord = 0u;
 	u64 scanoutFieldsVramSnapshotSerial = 0u;
 	bool scanoutFieldsValid = false;
 	u32 processedCommandCount = 0;
 	u32 processedCommandSerial = 0;
+	u32 processedTransferCount = 0;
+	u32 processedTransferSerial = 0;
 	u64 vramSnapshotSerial = 0u;
 	bool vramSnapshotValid = false;
 	bool textureBarrier = false;
@@ -346,6 +362,8 @@ void initGxGpu(OpenGLES2Backend& backend) {
 	g_primitiveSubmission.lineBatchStart = 0u;
 	g_gxGpu.processedCommandCount = 0u;
 	g_gxGpu.processedCommandSerial = 0u;
+	g_gxGpu.processedTransferCount = 0u;
+	g_gxGpu.processedTransferSerial = 0u;
 	g_gxGpu.vramSnapshotSerial = 0u;
 	g_gxGpu.vramSnapshotValid = false;
 	g_gxGpu.textureBarrier = backend.textureBarrierAvailable();
@@ -473,13 +491,19 @@ void initGxGpu(OpenGLES2Backend& backend) {
 	g_gxGpu.transferSetMaskBitUniform = glGetUniformLocation(g_gxGpu.transferProgram, "u_setMaskBit");
 	g_gxGpu.scanoutPositionAttrib = glGetAttribLocation(g_gxGpu.scanoutProgram, "a_position");
 	g_gxGpu.scanoutVramUniform = glGetUniformLocation(g_gxGpu.scanoutProgram, "u_vram");
+	g_gxGpu.scanoutDisplay2VramUniform = glGetUniformLocation(g_gxGpu.scanoutProgram, "u_display2_vram");
 	g_gxGpu.scanoutDisplayUniform = glGetUniformLocation(g_gxGpu.scanoutProgram, "u_display");
+	g_gxGpu.scanoutDisplay2Uniform = glGetUniformLocation(g_gxGpu.scanoutProgram, "u_display2");
+	g_gxGpu.scanoutDisplay2SizeUniform = glGetUniformLocation(g_gxGpu.scanoutProgram, "u_display2_size");
 	g_gxGpu.scanoutFieldPositionAttrib = glGetAttribLocation(g_gxGpu.scanoutFieldProgram, "a_position");
 	g_gxGpu.scanoutFieldVramUniform = glGetUniformLocation(g_gxGpu.scanoutFieldProgram, "u_vram");
 	g_gxGpu.scanoutFieldDisplayUniform = glGetUniformLocation(g_gxGpu.scanoutFieldProgram, "u_display");
 	g_gxGpu.scanoutFieldInterlaceUniform = glGetUniformLocation(g_gxGpu.scanoutFieldProgram, "u_interlace");
 	g_gxGpu.scanoutWeavePositionAttrib = glGetAttribLocation(g_gxGpu.scanoutWeaveProgram, "a_position");
 	g_gxGpu.scanoutWeaveVramUniform = glGetUniformLocation(g_gxGpu.scanoutWeaveProgram, "u_vram");
+	g_gxGpu.scanoutWeaveDisplay2VramUniform = glGetUniformLocation(g_gxGpu.scanoutWeaveProgram, "u_display2_vram");
+	g_gxGpu.scanoutWeaveDisplay2Uniform = glGetUniformLocation(g_gxGpu.scanoutWeaveProgram, "u_display2");
+	g_gxGpu.scanoutWeaveDisplay2SizeUniform = glGetUniformLocation(g_gxGpu.scanoutWeaveProgram, "u_display2_size");
 	g_gxGpu.scanoutWeaveInterlaceUniform = glGetUniformLocation(g_gxGpu.scanoutWeaveProgram, "u_interlace");
 	g_gxGpu.readbackPositionAttrib = glGetAttribLocation(g_gxGpu.readbackProgram, "a_position");
 	g_gxGpu.readbackVramUniform = glGetUniformLocation(g_gxGpu.readbackProgram, "u_vram");
@@ -487,8 +511,16 @@ void initGxGpu(OpenGLES2Backend& backend) {
 	g_gxGpu.scanoutUniformDisplayModeWord = 0xffffffffu;
 	g_gxGpu.scanoutUniformDisplayStartWord = 0xffffffffu;
 	g_gxGpu.scanoutUniformHeight = -1;
+	g_gxGpu.scanoutUniformDisplay2StartWord = 0xffffffffu;
+	g_gxGpu.scanoutUniformDisplay2SizeWord = 0xffffffffu;
+	g_gxGpu.scanoutUniformCompositorControlWord = 0xffffffffu;
+	g_gxGpu.scanoutUniformDisplayDisableWord = 0xffffffffu;
+	g_gxGpu.scanoutWeaveUniformDisplay2StartWord = 0xffffffffu;
+	g_gxGpu.scanoutWeaveUniformDisplay2SizeWord = 0xffffffffu;
+	g_gxGpu.scanoutWeaveUniformCompositorControlWord = 0xffffffffu;
 	g_gxGpu.scanoutFieldsDisplayStartWord = 0u;
 	g_gxGpu.scanoutFieldsInterpretationWord = 0u;
+	g_gxGpu.scanoutFieldsDisplayDisableWord = 0u;
 	g_gxGpu.scanoutFieldsVramSnapshotSerial = 0u;
 	g_gxGpu.scanoutFieldsValid = false;
 	glBindFramebuffer(GL_FRAMEBUFFER, 0);
@@ -1218,8 +1250,8 @@ void completeGxGpuReadback(const GxGpuCommandBuffer& commandBuffer, GxGpuReadbac
 	readback.completeReadback(readbackToken);
 }
 
-void writeCpuToVramUploadRun(
-	const GxGpuCommandBuffer& commandBuffer,
+void writeCpuWordsToVramUploadRun(
+	const u32* words,
 	u32 payloadWordStart,
 	u32 sourceRowStart,
 	u32 sourceColumnStart,
@@ -1230,7 +1262,7 @@ void writeCpuToVramUploadRun(
 	for (u32 storageRow = 0u; storageRow < runHeight; storageRow += 1u) {
 		u32 pixelIndex = (sourceRowStart + (runHeight - 1u) - storageRow) * sourceStride + sourceColumnStart;
 		for (u32 column = 0u; column < runWidth; column += 1u) {
-			const u32 payloadWord = commandBuffer.words[payloadWordStart + (pixelIndex >> 1u)];
+			const u32 payloadWord = words[payloadWordStart + (pixelIndex >> 1u)];
 			const u32 pixelWord = gxGpuTransferPixelWord(payloadWord, pixelIndex);
 			g_rawVramUpload[uploadByteOffset] = static_cast<u8>(pixelWord & 0xffu);
 			g_rawVramUpload[uploadByteOffset + 1u] = static_cast<u8>((pixelWord >> 8u) & 0xffu);
@@ -1242,8 +1274,8 @@ void writeCpuToVramUploadRun(
 	}
 }
 
-size_t uploadCpuToVramRows(
-	const GxGpuCommandBuffer& commandBuffer,
+size_t uploadCpuWordsToVramRows(
+	const u32* words,
 	u32 payloadWordStart,
 	u32 x,
 	u32 y,
@@ -1251,19 +1283,25 @@ size_t uploadCpuToVramRows(
 	u32 sourceRowStart,
 	u32 rowWidth,
 	u32 rowCount,
+	u32 targetBankX,
+	u32 targetBankWidth,
+	u32 targetBankY,
+	u32 targetBankHeight,
 	u32 maskBitModeWord,
 	size_t transferVertexFloatCount) {
-	u32 targetRunY = (y + sourceRowStart) & (static_cast<u32>(kGxGpuVramHeight) - 1u);
+	u32 targetRunY = targetBankY + ((y - targetBankY + sourceRowStart) & (targetBankHeight - 1u));
 	u32 sourceRunRow = sourceRowStart;
 	u32 remainingRows = rowCount;
 	while (remainingRows != 0u) {
-		const u32 runHeight = gxGpuVramWrappedHeight(targetRunY, remainingRows);
-		u32 targetRunX = x;
+		const u32 edgeHeight = targetBankY + targetBankHeight - targetRunY;
+		const u32 runHeight = remainingRows <= edgeHeight ? remainingRows : edgeHeight;
+		u32 targetRunX = targetBankX + ((x - targetBankX) & (targetBankWidth - 1u));
 		u32 sourceColumnStart = 0u;
 		u32 remainingWidth = rowWidth;
 		while (remainingWidth != 0u) {
-			const u32 runWidth = gxGpuVramWrappedWidth(targetRunX, remainingWidth);
-			writeCpuToVramUploadRun(commandBuffer, payloadWordStart, sourceRunRow, sourceColumnStart, sourceStride, runWidth, runHeight);
+			const u32 columnsToBankEdge = targetBankX + targetBankWidth - targetRunX;
+			const u32 runWidth = remainingWidth <= columnsToBankEdge ? remainingWidth : columnsToBankEdge;
+			writeCpuWordsToVramUploadRun(words, payloadWordStart, sourceRunRow, sourceColumnStart, sourceStride, runWidth, runHeight);
 			const u32 storageY = static_cast<u32>(kGxGpuVramHeight) - targetRunY - runHeight;
 			glTexSubImage2D(
 				GL_TEXTURE_2D,
@@ -1280,15 +1318,16 @@ size_t uploadCpuToVramRows(
 			}
 			remainingWidth -= runWidth;
 			sourceColumnStart += runWidth;
-			targetRunX = 0u;
+			targetRunX = targetBankX;
 		}
 		remainingRows -= runHeight;
 		sourceRunRow += runHeight;
-		targetRunY = 0u;
+		targetRunY = targetBankY;
 	}
 	return transferVertexFloatCount;
 }
 
+void markGxGpuSampleTextureDirtyArea(i32 left, i32 top, i32 right, i32 bottom);
 void markGxGpuSampleTextureDirtyLogicalArea(u32 x, u32 y, u32 width, u32 height);
 void syncGxGpuSampleTextureLogicalArea(u32 x, u32 y, u32 width, u32 height);
 void renderTransferCommands(size_t vertexFloatCount, GLES2Texture& sourceTexture, i32 sourceTextureUnit, u32 maskBitModeWord);
@@ -1314,10 +1353,10 @@ void uploadCpuToVram(const GxGpuCommandBuffer& commandBuffer, u32 commandIndex) 
 	g_gxGpu.backend->setActiveTextureUnit(maskBitModeWord == 0u ? kGxGpuScanoutTextureUnit : kGxGpuTextureTransferUnit);
 	g_gxGpu.backend->bindTexture2D(maskBitModeWord == 0u ? &g_gxGpu.vramTexture : &g_gxGpu.vramTransferTexture);
 	if (fullRows != 0u) {
-		transferVertexFloatCount = uploadCpuToVramRows(commandBuffer, payloadWordStart, x, y, width, 0u, width, fullRows, maskBitModeWord, transferVertexFloatCount);
+		transferVertexFloatCount = uploadCpuWordsToVramRows(commandBuffer.words.data(), payloadWordStart, x, y, width, 0u, width, fullRows, 0u, GX_GPU_VRAM_WIDTH, 0u, GX_GPU_VRAM_HEIGHT, maskBitModeWord, transferVertexFloatCount);
 	}
 	if (lastRowWidth != 0u) {
-		transferVertexFloatCount = uploadCpuToVramRows(commandBuffer, payloadWordStart, x, y, width, fullRows, lastRowWidth, 1u, maskBitModeWord, transferVertexFloatCount);
+		transferVertexFloatCount = uploadCpuWordsToVramRows(commandBuffer.words.data(), payloadWordStart, x, y, width, fullRows, lastRowWidth, 1u, 0u, GX_GPU_VRAM_WIDTH, 0u, GX_GPU_VRAM_HEIGHT, maskBitModeWord, transferVertexFloatCount);
 	}
 	if (maskBitModeWord != 0u) {
 		if (gxGpuMaskBitCheckBeforeDraw(maskBitModeWord)) {
@@ -1331,6 +1370,61 @@ void uploadCpuToVram(const GxGpuCommandBuffer& commandBuffer, u32 commandIndex) 
 	if (lastRowWidth != 0u) {
 		markGxGpuSampleTextureDirtyLogicalArea(x, y + fullRows, lastRowWidth, 1u);
 	}
+}
+
+void uploadSystemVramTransfer(const GxGpuSystemVramPort& transfer, size_t commandIndex) {
+	const u32 positionWord = transfer.commandPositionWord[commandIndex];
+	const u32 sizeWord = transfer.commandSizeWord[commandIndex];
+	const u32 width = gxGpuSystemVramWidth(sizeWord);
+	const u32 height = gxGpuSystemVramHeight(sizeWord);
+	const u32 x = gxGpuSystemVramX(positionWord);
+	const u32 y = gxGpuSystemVramY(positionWord);
+	g_gxGpu.backend->setRenderTarget(0, kGxGpuVramWidth, kGxGpuVramHeight);
+	g_gxGpu.backend->setActiveTextureUnit(kGxGpuScanoutTextureUnit);
+	g_gxGpu.backend->bindTexture2D(&g_gxGpu.vramTexture);
+	uploadCpuWordsToVramRows(
+		transfer.words.data(),
+		transfer.commandWordStart[commandIndex],
+		x,
+		y,
+		width,
+		0u,
+		width,
+		height,
+		GX_GPU_SYSTEM_VRAM_X,
+		GX_GPU_SYSTEM_VRAM_WIDTH,
+		GX_GPU_SYSTEM_VRAM_Y,
+		GX_GPU_SYSTEM_VRAM_HEIGHT,
+		0u,
+		0u);
+	u32 rowY = y;
+	u32 remainingHeight = height;
+	while (remainingHeight != 0u) {
+		const u32 heightBeforeWrap = GX_GPU_SYSTEM_VRAM_Y + GX_GPU_SYSTEM_VRAM_HEIGHT - rowY;
+		const u32 runHeight = heightBeforeWrap < remainingHeight ? heightBeforeWrap : remainingHeight;
+		u32 columnX = x;
+		u32 remainingWidth = width;
+		while (remainingWidth != 0u) {
+			const u32 widthBeforeWrap = GX_GPU_SYSTEM_VRAM_X + GX_GPU_SYSTEM_VRAM_WIDTH - columnX;
+			const u32 runWidth = widthBeforeWrap < remainingWidth ? widthBeforeWrap : remainingWidth;
+			markGxGpuSampleTextureDirtyArea(
+				static_cast<i32>(columnX),
+				static_cast<i32>(rowY),
+				static_cast<i32>(columnX + runWidth),
+				static_cast<i32>(rowY + runHeight));
+			columnX = GX_GPU_SYSTEM_VRAM_X;
+			remainingWidth -= runWidth;
+		}
+		rowY = GX_GPU_SYSTEM_VRAM_Y;
+		remainingHeight -= runHeight;
+	}
+}
+
+void executeNewGxGpuSystemVramTransfers(const GxGpuSystemVramPort& transfer) {
+	for (size_t commandIndex = g_gxGpu.processedTransferCount; commandIndex < transfer.presentCommandCount; commandIndex += 1u) {
+		uploadSystemVramTransfer(transfer, commandIndex);
+	}
+	g_gxGpu.processedTransferCount = static_cast<u32>(transfer.presentCommandCount);
 }
 
 void copyVramToVramArea(
@@ -2620,17 +2714,13 @@ size_t flushTexturedCommands(const GxGpuCommandBuffer& commandBuffer, size_t ver
 void scanoutProgressiveGxGpuVram(GLuint frameFbo, const GxGpuPipelineState& state) {
 	g_gxGpu.backend->setRenderTarget(frameFbo, state.width, state.height);
 	glDisable(GL_SCISSOR_TEST);
-	if ((state.statusWord & GX_GPU_STATUS_DISPLAY_DISABLE) != 0u) {
-		glClearColor(0.0f, 0.0f, 0.0f, 1.0f);
-		glClear(GL_COLOR_BUFFER_BIT);
-		return;
-	}
 	glDisable(GL_DEPTH_TEST);
 	glDepthMask(GL_FALSE);
 	glDisable(GL_CULL_FACE);
 	glDisable(GL_BLEND);
 	glUseProgram(g_gxGpu.scanoutProgram);
 	glUniform1i(g_gxGpu.scanoutVramUniform, kGxGpuScanoutTextureUnit);
+	glUniform1i(g_gxGpu.scanoutDisplay2VramUniform, kGxGpuScanoutTextureUnit);
 	if (g_gxGpu.scanoutUniformDisplayModeWord != state.displayModeWord
 		|| g_gxGpu.scanoutUniformDisplayStartWord != state.displayStartWord
 		|| g_gxGpu.scanoutUniformHeight != state.height) {
@@ -2643,6 +2733,26 @@ void scanoutProgressiveGxGpuVram(GLuint frameFbo, const GxGpuPipelineState& stat
 		g_gxGpu.scanoutUniformDisplayModeWord = state.displayModeWord;
 		g_gxGpu.scanoutUniformDisplayStartWord = state.displayStartWord;
 		g_gxGpu.scanoutUniformHeight = state.height;
+	}
+	const u32 displayDisableWord = state.statusWord & GX_GPU_STATUS_DISPLAY_DISABLE;
+	if (g_gxGpu.scanoutUniformDisplay2StartWord != state.display2StartWord
+		|| g_gxGpu.scanoutUniformDisplay2SizeWord != state.display2SizeWord
+		|| g_gxGpu.scanoutUniformCompositorControlWord != state.compositorControlWord
+		|| g_gxGpu.scanoutUniformDisplayDisableWord != displayDisableWord) {
+		glUniform4f(
+			g_gxGpu.scanoutDisplay2Uniform,
+			static_cast<f32>(gxGpuDisplayStartX(state.display2StartWord)),
+			static_cast<f32>(gxGpuDisplayStartY(state.display2StartWord)),
+			(state.compositorControlWord & GX_GPU_COMPOSITOR_DISPLAY2_ENABLE) != 0u ? 1.0f : 0.0f,
+			displayDisableWord != 0u ? 1.0f : 0.0f);
+		glUniform2f(
+			g_gxGpu.scanoutDisplay2SizeUniform,
+			static_cast<f32>(gxGpuDisplay2Width(state.display2SizeWord)),
+			static_cast<f32>(gxGpuDisplay2Height(state.display2SizeWord)));
+		g_gxGpu.scanoutUniformDisplay2StartWord = state.display2StartWord;
+		g_gxGpu.scanoutUniformDisplay2SizeWord = state.display2SizeWord;
+		g_gxGpu.scanoutUniformCompositorControlWord = state.compositorControlWord;
+		g_gxGpu.scanoutUniformDisplayDisableWord = displayDisableWord;
 	}
 	g_gxGpu.backend->setActiveTextureUnit(kGxGpuScanoutTextureUnit);
 	g_gxGpu.backend->bindTexture2D(&g_gxGpu.vramTexture);
@@ -2662,6 +2772,7 @@ void scanoutInterlacedGxGpuVram(GLuint frameFbo, const GxGpuPipelineState& state
 		|| sizeChanged
 		|| g_gxGpu.scanoutFieldsDisplayStartWord != state.displayStartWord
 		|| g_gxGpu.scanoutFieldsInterpretationWord != interpretationWord
+		|| g_gxGpu.scanoutFieldsDisplayDisableWord != (state.statusWord & GX_GPU_STATUS_DISPLAY_DISABLE)
 		|| g_gxGpu.scanoutFieldsVramSnapshotSerial != state.vramSnapshotSerial;
 	if (sizeChanged) {
 		g_gxGpu.backend->setActiveTextureUnit(kGxGpuScanoutFieldsTextureUnit);
@@ -2708,6 +2819,7 @@ void scanoutInterlacedGxGpuVram(GLuint frameFbo, const GxGpuPipelineState& state
 	if (invalid) {
 		g_gxGpu.scanoutFieldsDisplayStartWord = state.displayStartWord;
 		g_gxGpu.scanoutFieldsInterpretationWord = interpretationWord;
+		g_gxGpu.scanoutFieldsDisplayDisableWord = state.statusWord & GX_GPU_STATUS_DISPLAY_DISABLE;
 		g_gxGpu.scanoutFieldsVramSnapshotSerial = state.vramSnapshotSerial;
 		g_gxGpu.scanoutFieldsValid = true;
 	}
@@ -2715,6 +2827,7 @@ void scanoutInterlacedGxGpuVram(GLuint frameFbo, const GxGpuPipelineState& state
 	g_gxGpu.backend->setRenderTarget(frameFbo, width, height);
 	glUseProgram(g_gxGpu.scanoutWeaveProgram);
 	glUniform1i(g_gxGpu.scanoutWeaveVramUniform, kGxGpuScanoutFieldsTextureUnit);
+	glUniform1i(g_gxGpu.scanoutWeaveDisplay2VramUniform, kGxGpuScanoutTextureUnit);
 	if (sizeChanged) {
 		glUniform4f(
 			g_gxGpu.scanoutWeaveInterlaceUniform,
@@ -2722,6 +2835,23 @@ void scanoutInterlacedGxGpuVram(GLuint frameFbo, const GxGpuPipelineState& state
 			static_cast<f32>(height),
 			static_cast<f32>(width),
 			0.0f);
+	}
+	if (g_gxGpu.scanoutWeaveUniformDisplay2StartWord != state.display2StartWord
+		|| g_gxGpu.scanoutWeaveUniformDisplay2SizeWord != state.display2SizeWord
+		|| g_gxGpu.scanoutWeaveUniformCompositorControlWord != state.compositorControlWord) {
+		glUniform4f(
+			g_gxGpu.scanoutWeaveDisplay2Uniform,
+			static_cast<f32>(gxGpuDisplayStartX(state.display2StartWord)),
+			static_cast<f32>(gxGpuDisplayStartY(state.display2StartWord)),
+			(state.compositorControlWord & GX_GPU_COMPOSITOR_DISPLAY2_ENABLE) != 0u ? 1.0f : 0.0f,
+			0.0f);
+		glUniform2f(
+			g_gxGpu.scanoutWeaveDisplay2SizeUniform,
+			static_cast<f32>(gxGpuDisplay2Width(state.display2SizeWord)),
+			static_cast<f32>(gxGpuDisplay2Height(state.display2SizeWord)));
+		g_gxGpu.scanoutWeaveUniformDisplay2StartWord = state.display2StartWord;
+		g_gxGpu.scanoutWeaveUniformDisplay2SizeWord = state.display2SizeWord;
+		g_gxGpu.scanoutWeaveUniformCompositorControlWord = state.compositorControlWord;
 	}
 	g_gxGpu.backend->setActiveTextureUnit(kGxGpuScanoutFieldsTextureUnit);
 	g_gxGpu.backend->bindTexture2D(&g_gxGpu.scanoutFieldsTexture);
@@ -2740,23 +2870,30 @@ void scanoutGxGpuVram(GLuint frameFbo, const GxGpuPipelineState& state) {
 	scanoutProgressiveGxGpuVram(frameFbo, state);
 }
 
-void executeGxGpuVramCommands(const GxGpuCommandBuffer& commandBuffer, GxGpuReadbackPort& readback, const std::array<u8, GX_GPU_VRAM_BYTE_COUNT>& snapshotBytes, u64 snapshotSerial) {
+void executeGxGpuVramCommands(const GxGpuCommandBuffer& commandBuffer, const GxGpuSystemVramPort& systemVramPort, GxGpuReadbackPort& readback, const std::array<u8, GX_GPU_VRAM_BYTE_COUNT>& snapshotBytes, u64 snapshotSerial) {
 	if (!g_gxGpu.vramSnapshotValid || g_gxGpu.vramSnapshotSerial != snapshotSerial) {
 		uploadGxGpuVramSnapshot(snapshotBytes);
 		g_gxGpu.processedCommandCount = 0u;
 		g_gxGpu.processedCommandSerial = commandBuffer.serial;
+		g_gxGpu.processedTransferCount = 0u;
+		g_gxGpu.processedTransferSerial = systemVramPort.serial;
 		g_gxGpu.vramSnapshotSerial = snapshotSerial;
 		g_gxGpu.vramSnapshotValid = true;
 	} else if (g_gxGpu.processedCommandSerial != commandBuffer.serial) {
 		g_gxGpu.processedCommandCount = 0u;
 		g_gxGpu.processedCommandSerial = commandBuffer.serial;
 	}
+	if (g_gxGpu.processedTransferSerial != systemVramPort.serial) {
+		g_gxGpu.processedTransferCount = 0u;
+		g_gxGpu.processedTransferSerial = systemVramPort.serial;
+	}
 	executeNewGxGpuCommands(commandBuffer);
+	executeNewGxGpuSystemVramTransfers(systemVramPort);
 	completeGxGpuReadback(commandBuffer, readback);
 }
 
 void renderGxGpu(GLuint frameFbo, const GxGpuPipelineState& state) {
-	executeGxGpuVramCommands(*state.commandBuffer, *state.readbackPort, *state.vramSnapshotBytes, state.vramSnapshotSerial);
+	executeGxGpuVramCommands(*state.commandBuffer, *state.systemVramPort, *state.readbackPort, *state.vramSnapshotBytes, state.vramSnapshotSerial);
 	scanoutGxGpuVram(frameFbo, state);
 }
 
@@ -2769,7 +2906,7 @@ void executeGxGpuPass(GPUBackend*, GameView*, void* fbo, RenderPassStateStorage&
 
 void OpenGLES2Backend::captureGxGpuVramSnapshot(GxGpu& gxGpu) {
 	const GxGpuDeviceOutput& output = gxGpu.readDeviceOutput();
-	executeGxGpuVramCommands(output.commandBuffer, output.readbackPort, output.vramSnapshotBytes, output.vramSnapshotSerial);
+	executeGxGpuVramCommands(output.commandBuffer, output.systemVramPort, output.readbackPort, output.vramSnapshotBytes, output.vramSnapshotSerial);
 	setRenderTarget(g_gxGpu.vramFramebuffer, kGxGpuVramWidth, kGxGpuVramHeight);
 	glReadPixels(0, 0, kGxGpuVramWidth, kGxGpuVramHeight, GL_RGBA, GL_UNSIGNED_BYTE, g_rawVramReadback.data());
 	writeGxGpuVramSnapshotFromReadback();

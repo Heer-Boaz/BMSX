@@ -3,18 +3,23 @@ local romdir<const> = require('system/romdir')
 local byte<const> = __bmsx_string_byte
 local terminal<const> = {}
 
-local character_control<const>: *word = 0x08010350
-local character_palette_address<const>: *word = 0x08010354
-local character_palette_data<const>: *word = 0x08010358
-local character_glyph_address<const>: *word = 0x0801035c
-local character_glyph_data<const>: *word = 0x08010360
-local character_cell_address<const>: *word = 0x08010364
-local character_cell_data<const>: *word = 0x08010368
-local character_font<const>: *word = romdir.resource('gx_character_font').addr
+local display2_start<const>: *word = 0x08010350
+local display2_size<const>: *word = 0x08010354
+local compositor_control<const>: *word = 0x08010358
+local system_vram_position<const>: *word = 0x0801035c
+local system_vram_size<const>: *word = 0x08010360
+local system_vram_control<const>: *word = 0x08010364
+local system_vram_data<const>: *word = 0x08010368
+local terminal_font<const>: *word = romdir.resource('bios_terminal_font').addr
 
-local character_enable<const> = 0x00000001
-local plane_columns<const> = 160
-local plane_rows<const> = 80
+local system_vram_start<const> = 0x00000001
+local system_vram_reset<const> = 0x00000002
+local compositor_display2_enable<const> = 0x00000001
+local terminal_system_vram_y<const> = 64
+local terminal_display2_start<const> = 0x00010200
+local terminal_display2_size<const> = 0x00c00100
+local glyph_width<const> = 4
+local glyph_height<const> = 6
 local terminal_columns<const> = 64
 local terminal_rows<const> = 32
 local ascii_newline<const> = 10
@@ -27,6 +32,7 @@ terminal.palette_error = 2
 terminal.palette_accent = 3
 
 bss terminal_cells: word[2048]
+bss terminal_palette: word[4]
 bss terminal_dirty_first_columns: word[32]
 bss terminal_dirty_last_columns: word[32]
 bss terminal_dirty_rows: word
@@ -34,6 +40,7 @@ bss terminal_first_row: word
 bss terminal_cursor_row: word
 bss terminal_cursor_column: word
 bss terminal_cursor_visible: word
+bss terminal_display_enabled: word
 
 local mark_cell_dirty<const> = function(row, column)
 	local row_bit<const> = 1 << row
@@ -122,30 +129,20 @@ end
 
 function terminal.open()
 	reset_screen()
-	*character_control = 0
-	*character_palette_address = 0
-	*character_palette_data = 0
-	*character_palette_data = 0x0000ffff
-	*character_palette_data = 0x0000801f
-	*character_palette_data = 0x0000ffe0
-	for index = 4, 15 do
-		*character_palette_data = 0
-	end
-	*character_glyph_address = 0
-	for index = 0, 255 do
-		*character_glyph_data = character_font[index]
-	end
-	-- A cart may have programmed any cell while the BIOS was inactive. Clear the
-	-- entire hardware plane, not merely the 64x32 cells visible in 256x192 mode.
-	*character_cell_address = 0
-	for index = 0, plane_columns * plane_rows - 1 do
-		*character_cell_data = 0
-	end
-	*character_control = character_enable
+	*terminal_display_enabled = 0
+	local palette<const>: *word = terminal_palette
+	palette[0] = 0x0000
+	palette[1] = 0xffff
+	palette[2] = 0x801f
+	palette[3] = 0xffe0
+	*compositor_control = 0
+	*system_vram_control = system_vram_reset
+	mark_screen_dirty()
 end
 
 function terminal.close()
-	*character_control = 0
+	*compositor_control = 0
+	*terminal_display_enabled = 0
 	*terminal_dirty_rows = 0
 end
 
@@ -209,6 +206,7 @@ function terminal.flush()
 		return
 	end
 	local cells<const>: *word = terminal_cells
+	local palette<const>: *word = terminal_palette
 	local first_columns<const>: *word = terminal_dirty_first_columns
 	local last_columns<const>: *word = terminal_dirty_last_columns
 	for row = 0, terminal_rows - 1 do
@@ -216,17 +214,37 @@ function terminal.flush()
 			local first_column<const> = first_columns[row]
 			local last_column<const> = last_columns[row]
 			local source<const> = buffer_row(row) * terminal_columns
-			*character_cell_address = row * plane_columns + first_column
-			for column = first_column, last_column - 1 do
-				if *terminal_cursor_visible ~= 0 and row == *terminal_cursor_row and column == *terminal_cursor_column then
-					*character_cell_data = cursor_cell
-				else
-					*character_cell_data = cells[source + column]
+			local transfer_width<const> = (last_column - first_column) * glyph_width
+			*system_vram_position = first_column * glyph_width | ((terminal_system_vram_y + row * glyph_height) << 16)
+			*system_vram_size = transfer_width | (glyph_height << 16)
+			*system_vram_control = system_vram_start
+			for glyph_row = 0, glyph_height - 1 do
+				for column = first_column, last_column - 1 do
+					local cell = cells[source + column]
+					if *terminal_cursor_visible ~= 0 and row == *terminal_cursor_row and column == *terminal_cursor_column then
+						cell = cursor_cell
+					end
+					local bits<const> = (terminal_font[cell & 0xff] >> (glyph_row << 2)) & 0x0f
+					local color<const> = palette[(cell >> 8) & 0x03]
+					local pixel0<const> = (bits & 0x01) ~= 0 and color or 0
+					local pixel1<const> = (bits & 0x02) ~= 0 and color or 0
+					local pixel2<const> = (bits & 0x04) ~= 0 and color or 0
+					local pixel3<const> = (bits & 0x08) ~= 0 and color or 0
+					*system_vram_data = pixel0 | (pixel1 << 16)
+					*system_vram_data = pixel2 | (pixel3 << 16)
 				end
 			end
 		end
 	end
 	*terminal_dirty_rows = 0
+	if *terminal_display_enabled == 0 then
+		-- Both register writes latch on the same VBlank as the completed first
+		-- framebuffer upload, so scanout never observes uninitialized terminal VRAM.
+		*display2_start = terminal_display2_start
+		*display2_size = terminal_display2_size
+		*compositor_control = compositor_display2_enable
+		*terminal_display_enabled = 1
+	end
 end
 
 return terminal

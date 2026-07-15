@@ -9,6 +9,7 @@ local pending_background_texture
 local pending_background_destination
 local in_flight_background_texture
 local in_flight_background_destination
+local font_upload_in_flight
 local combat_common_submitted = false
 
 local invalidate_background_residency<const> = function()
@@ -39,9 +40,21 @@ function texture_residency.replace_background(imgid)
 	pending_background_texture = nil
 	pending_background_destination = nil
 	local texture<const> = gx_image.rect(imgid).texture
+	if font_upload_in_flight then
+		pending_background_texture = texture
+		pending_background_destination = texture_layout.background_left
+		return
+	end
 	gx_texture.upload(texture, texture_layout.background_left)
 	in_flight_background_texture = texture
 	in_flight_background_destination = texture_layout.background_left
+end
+
+function texture_residency.load_font(imgid)
+	-- The DMA channel accepts one transfer at a time. The initial background is
+	-- queued until this persistent texture has reached its dedicated VRAM slot.
+	font_upload_in_flight = true
+	gx_texture.upload(gx_image.rect(imgid).texture, texture_layout.font)
 end
 
 function texture_residency.load_combat_workset(monster_imgid)
@@ -61,7 +74,7 @@ function texture_residency.load_all_out()
 end
 
 function texture_residency.submit_pending_background()
-	if not pending_background_texture or in_flight_background_texture then
+	if font_upload_in_flight or not pending_background_texture or in_flight_background_texture then
 		return
 	end
 	local texture<const> = pending_background_texture
@@ -74,6 +87,11 @@ function texture_residency.submit_pending_background()
 end
 
 function texture_residency.complete_upload()
+	if font_upload_in_flight then
+		font_upload_in_flight = false
+		texture_residency.submit_pending_background()
+		return
+	end
 	if in_flight_background_texture then
 		active_background_texture = in_flight_background_texture
 		active_background_destination = in_flight_background_destination

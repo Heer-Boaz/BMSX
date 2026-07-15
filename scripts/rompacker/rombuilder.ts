@@ -22,11 +22,12 @@ import {
 	buildFixedDirect16Upload,
 	buildPalette4GxTexture,
 	GX_SYSTEM_TEXTURE_ASSET_ID,
-	GX_SYSTEM_TEXTURE_SIZE,
+	GX_SYSTEM_TEXTURE_HEIGHT,
+	GX_SYSTEM_TEXTURE_WIDTH,
 	GX_SYSTEM_TEXTURE_X,
 	GX_SYSTEM_TEXTURE_Y,
 } from './gx_texture';
-import { buildGxCharacterFont, GX_CHARACTER_FONT_ASSET_ID } from './gx_character_font';
+import { BIOS_TERMINAL_FONT_ASSET_ID, buildBiosTerminalFont } from './bios_terminal_font';
 import {
 	type GxTextureGroupLayout,
 	type GxTextureLayout,
@@ -1275,9 +1276,9 @@ export async function generateRomAssets(resources: Resource[], reportProgress?: 
 			buffer: buildFixedDirect16Upload(systemTextureGroup.gxTexture!, GX_SYSTEM_TEXTURE_X, GX_SYSTEM_TEXTURE_Y),
 		});
 		romAssets.push({
-			resid: GX_CHARACTER_FONT_ASSET_ID,
+			resid: BIOS_TERMINAL_FONT_ASSET_ID,
 			type: 'bin',
-			buffer: buildGxCharacterFont(resources),
+			buffer: buildBiosTerminalFont(resources),
 		});
 	}
 	// @ts-ignore
@@ -1622,8 +1623,8 @@ function textureGroupBuild(
 		return {
 			group: { mode: 'direct16', slots: [], page_local: true },
 			slots: [],
-			maxPixelWidth: GX_SYSTEM_TEXTURE_SIZE,
-			maxHeight: GX_SYSTEM_TEXTURE_SIZE,
+			maxPixelWidth: GX_SYSTEM_TEXTURE_WIDTH,
+			maxHeight: GX_SYSTEM_TEXTURE_HEIGHT,
 		};
 	}
 	if (groupId >= GX_CART_TEXTURE_GROUP_ID_LIMIT) {

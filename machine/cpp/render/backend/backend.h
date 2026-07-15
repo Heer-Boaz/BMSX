@@ -64,7 +64,6 @@ using TextureHandle = void*;
 
 class RenderPassLibrary;
 class GxGpu;
-struct GxCharacterPlaneSoftwarePipeline;
 
 const std::array<u8, 256>& srgbToLinearLut();
 const std::array<u8, 256>& linearToSrgbLut();
@@ -292,8 +291,6 @@ class SoftwareBackend : public GPUBackend {
 	i32 m_width;
 	i32 m_height;
 	i32 m_pitch;  // Bytes per row
-	std::unique_ptr<GxCharacterPlaneSoftwarePipeline> m_gxCharacterPlanePipeline;
-
 	FrameStats m_stats;
 
 	// Texture storage

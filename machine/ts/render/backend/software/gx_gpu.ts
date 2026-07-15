@@ -1,20 +1,59 @@
 import type { GxGpuPipelineState } from '../backend';
 import type { GxGpu } from '../../../machine/devices/gx/gpu';
-import { GX_GPU_VRAM_HEIGHT, GX_GPU_VRAM_WIDTH, type GxGpuCommandBufferView, type GxGpuReadbackPortView } from '../../../machine/devices/gx/gpu_command_buffer';
+import {
+	GX_GPU_VRAM_HEIGHT,
+	GX_GPU_VRAM_WIDTH,
+	type GxGpuCommandBufferView,
+	type GxGpuReadbackPortView,
+} from '../../../machine/devices/gx/gpu_command_buffer';
+import {
+	gxGpuSystemVramColumnX,
+	gxGpuSystemVramHeight,
+	gxGpuSystemVramRowY,
+	gxGpuSystemVramWidth,
+	type GxGpuSystemVramPortView,
+} from '../../../machine/devices/gx/system_vram_port';
+import { gxGpuTransferPixelWord } from '../gx_gpu_render_rules';
 import { executeGxGpuSoftwareCommands } from './gx_gpu_commands';
 import { scanoutGxGpuSoftwareVram } from './gx_gpu_scanout';
-import { GX_GPU_SOFTWARE_VRAM_WORDS, gxGpuSoftwareVram, loadGxGpuSoftwareVramBytes } from './gx_gpu_vram';
+import { GX_GPU_SOFTWARE_VRAM_WORDS, gxGpuSoftwareVram, gxGpuSoftwareVramIndex, loadGxGpuSoftwareVramBytes } from './gx_gpu_vram';
 
 let gxGpuSoftwareProcessedCommandCount = 0;
 let gxGpuSoftwareProcessedCommandSerial = 0;
+let gxGpuSoftwareProcessedTransferCount = 0;
+let gxGpuSoftwareProcessedTransferSerial = 0;
 export let gxGpuSoftwareVramSnapshotSerial = 0n;
 
 type GxGpuSoftwareVramSource = {
 	commandBuffer: GxGpuCommandBufferView;
+	systemVramPort: GxGpuSystemVramPortView;
 	readbackPort: GxGpuReadbackPortView;
 	vramSnapshotBytes: Uint8Array;
 	vramSnapshotSerial: bigint;
 };
+
+function executeGxGpuSoftwareVramTransfers(transfer: GxGpuSystemVramPortView): void {
+	if (gxGpuSoftwareProcessedTransferSerial !== transfer.serial) {
+		gxGpuSoftwareProcessedTransferCount = 0;
+		gxGpuSoftwareProcessedTransferSerial = transfer.serial;
+	}
+	for (let commandIndex = gxGpuSoftwareProcessedTransferCount; commandIndex < transfer.presentCommandCount; commandIndex += 1) {
+		const positionWord = transfer.commandPositionWord[commandIndex];
+		const width = gxGpuSystemVramWidth(transfer.commandSizeWord[commandIndex]);
+		const height = gxGpuSystemVramHeight(transfer.commandSizeWord[commandIndex]);
+		const payloadWordStart = transfer.commandWordStart[commandIndex];
+		let pixelIndex = 0;
+		for (let row = 0; row < height; row += 1) {
+			const targetY = gxGpuSystemVramRowY(positionWord, row);
+			for (let column = 0; column < width; column += 1) {
+				const payloadWord = transfer.words[payloadWordStart + (pixelIndex >>> 1)];
+				gxGpuSoftwareVram[gxGpuSoftwareVramIndex(gxGpuSystemVramColumnX(positionWord, column), targetY)] = gxGpuTransferPixelWord(payloadWord, pixelIndex);
+				pixelIndex += 1;
+			}
+		}
+	}
+	gxGpuSoftwareProcessedTransferCount = transfer.presentCommandCount;
+}
 
 export function executeGxGpuSoftwareVramCommands(source: GxGpuSoftwareVramSource): void {
 	const commandBuffer = source.commandBuffer;
@@ -24,12 +63,15 @@ export function executeGxGpuSoftwareVramCommands(source: GxGpuSoftwareVramSource
 		loadGxGpuSoftwareVramBytes(source.vramSnapshotBytes);
 		gxGpuSoftwareProcessedCommandCount = 0;
 		gxGpuSoftwareProcessedCommandSerial = commandSerial;
+		gxGpuSoftwareProcessedTransferCount = 0;
+		gxGpuSoftwareProcessedTransferSerial = source.systemVramPort.serial;
 		gxGpuSoftwareVramSnapshotSerial = source.vramSnapshotSerial;
 	} else if (gxGpuSoftwareProcessedCommandSerial !== commandSerial) {
 		gxGpuSoftwareProcessedCommandCount = 0;
 		gxGpuSoftwareProcessedCommandSerial = commandSerial;
 	}
 	gxGpuSoftwareProcessedCommandCount = executeGxGpuSoftwareCommands(commandBuffer, gxGpuSoftwareProcessedCommandCount);
+	executeGxGpuSoftwareVramTransfers(source.systemVramPort);
 	if (readback.claimReadback(commandBuffer.presentCommandCount)) {
 		const readbackToken = readback.token;
 		let pixel = 0;

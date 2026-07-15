@@ -13,7 +13,6 @@ import { registerDeviceQuantize } from '../../post/device_quantize/webgl/pipelin
 import { FRAME_UNIFORM_BINDING, updateAndBindFrameUniforms } from '../frame_uniforms';
 import type { RenderPassLibrary } from '../pass/library';
 import { captureRenderedVramSnapshot, registerGxGpuPass } from './gx_gpu';
-import { registerGxCharacterPlanePass } from './gx_character_plane';
 import type { GxGpu } from '../../../machine/devices/gx/gpu';
 
 // (Texture units sourced from render_view constants to avoid duplication.)
@@ -81,7 +80,6 @@ export class WebGLBackend implements GPUBackend {
 			},
 		});
 		registerGxGpuPass(registry);
-		registerGxCharacterPlanePass(registry);
 		registerDeviceQuantize(registry);
 		registerCRT(registry);
 		registerHostOverlayPass(registry);

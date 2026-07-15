@@ -42,8 +42,8 @@ end
 
 function exception()
 	monitor.enter()
-	-- The monitor owns and then disables the character plane. If execution
-	-- returns to the boot loop, that loop must start a fresh firmware session.
+	-- The monitor owns display circuit 2 while active. If execution returns to
+	-- the boot loop, that loop must start a fresh firmware terminal session.
 	*boot_screen_started = 0
 end
 

@@ -66,6 +66,7 @@ struct CommandBufferDmaHarness {
 };
 
 CommandBufferDmaHarness commandBufferDmaHarness;
+bmsx::GxGpuSystemVramPort emptySystemVramPort(commandBufferDmaHarness.memory);
 
 void require(bool condition, const char* message) {
 	if (!condition) {
@@ -1231,11 +1232,15 @@ struct SoftwareFrameHarness {
 	bmsx::SoftwareBackend backend;
 	bmsx::GxGpuPipelineState state;
 
-	SoftwareFrameHarness(const bmsx::GxGpuCommandBuffer& commandBuffer, bmsx::GxGpuReadbackPort& readback)
+	SoftwareFrameHarness(
+		const bmsx::GxGpuCommandBuffer& commandBuffer,
+		bmsx::GxGpuReadbackPort& readback,
+		const bmsx::GxGpuSystemVramPort& systemVramPort = emptySystemVramPort)
 		: backend(framebuffer.data(), 256, 256, 256 * static_cast<int32_t>(sizeof(uint32_t))) {
 		state.width = 256;
 		state.height = 256;
 		state.commandBuffer = &commandBuffer;
+		state.systemVramPort = &systemVramPort;
 		state.readbackPort = &readback;
 		state.vramSnapshotBytes = vramSnapshot.get();
 		state.statusWord = 0u;
@@ -2481,6 +2486,14 @@ void testSoftwareScanoutWeavesCurrent480iFieldIntoRetainedOutputLines() {
 		0xffffffffu,
 	}, "GX-GPU 480i scanout initially assembles both wrapped source fields");
 
+	state.display2StartWord = bmsx::GX_GPU_SYSTEM_VRAM_X | (64u << 10u);
+	state.display2SizeWord = (4u << 16u) | 1u;
+	state.compositorControlWord = bmsx::GX_GPU_COMPOSITOR_DISPLAY2_ENABLE;
+	bmsx::g_gxGpuSoftwareVram[bmsx::gxGpuSoftwareVramIndex(bmsx::GX_GPU_SYSTEM_VRAM_X, 65u)] = 0x83e0u;
+	bmsx::scanoutGxGpuSoftwareVram(backend, state);
+	require(framebuffer[1u] == 0xff00ff00u, "GX display2 composes after interlaced field weave");
+	state.compositorControlWord = 0u;
+
 	bmsx::g_gxGpuSoftwareVram[bmsx::gxGpuSoftwareVramIndex(1023, 510)] = 0x7fffu;
 	bmsx::g_gxGpuSoftwareVram[bmsx::gxGpuSoftwareVramIndex(1023, 0)] = 0x7fffu;
 	bmsx::g_gxGpuSoftwareVram[bmsx::gxGpuSoftwareVramIndex(1023, 511)] = 0x001fu;
@@ -2496,13 +2509,15 @@ void testSoftwareScanoutWeavesCurrent480iFieldIntoRetainedOutputLines() {
 	}, "GX-GPU 480i scanout updates only the current field lines");
 
 	state.statusWord = bmsx::GX_GPU_STATUS_DISPLAY_DISABLE | bmsx::GX_GPU_STATUS_INTERLACED_FIELD;
+	state.compositorControlWord = bmsx::GX_GPU_COMPOSITOR_DISPLAY2_ENABLE;
 	bmsx::scanoutGxGpuSoftwareVram(backend, state);
 	require(framebuffer == std::array<uint32_t, 4u>{
 		0xff000000u,
-		0xffff0000u,
-		0xff000000u,
 		0xff00ff00u,
-	}, "GX-GPU disabled interlaced scanout blacks only the current field");
+		0xff000000u,
+		0xff000000u,
+	}, "GX display2 composes over a disabled interlaced primary after field weave");
+	state.compositorControlWord = 0u;
 
 	bmsx::g_gxGpuSoftwareVram[bmsx::gxGpuSoftwareVramIndex(1023, 510)] = 0x7c00u;
 	bmsx::g_gxGpuSoftwareVram[bmsx::gxGpuSoftwareVramIndex(1023, 511)] = 0x7fffu;
@@ -3040,39 +3055,43 @@ void testMmioGp0Gp1() {
 	require((memory.readMappedU32LE(bmsx::IO_GX_GPU_GP1) & bmsx::GX_GPU_STATUS_PAL_MODE) == 0u, "GX-GPU GP1 MMIO GPUSTAT PAL bit");
 }
 
-void testCharacterPlaneOwnership() {
+void testSystemVramTransferAndDisplay2Ownership() {
 	GpuHarness harness;
 	harness.gpu.writeGp0(bmsx::GX_GPU_GP0_POLYGON_FIRST << 24u);
 	const bmsx::GxGpuState gp0Before = harness.gpu.captureState();
 
-	harness.memory.writeMappedU32LE(bmsx::IO_GX_CHARACTER_CONTROL, 0xf0000001u);
-	harness.memory.writeMappedU32LE(bmsx::IO_GX_CHARACTER_PALETTE_ADDRESS, 3u);
-	harness.memory.writeMappedU32LE(bmsx::IO_GX_CHARACTER_PALETTE_DATA, 0x80007c00u);
-	harness.memory.writeMappedU32LE(bmsx::IO_GX_CHARACTER_GLYPH_ADDRESS, 65u);
-	harness.memory.writeMappedU32LE(bmsx::IO_GX_CHARACTER_GLYPH_DATA, 0x00f99f90u);
-	harness.memory.writeMappedU32LE(bmsx::IO_GX_CHARACTER_CELL_ADDRESS, 321u);
-	harness.memory.writeMappedU32LE(bmsx::IO_GX_CHARACTER_CELL_DATA, 0x00001241u);
+	harness.memory.writeMappedU32LE(bmsx::IO_GX_GPU_DISPLAY2_START, bmsx::GX_GPU_SYSTEM_VRAM_X | (64u << 10u));
+	harness.memory.writeMappedU32LE(bmsx::IO_GX_GPU_DISPLAY2_SIZE, (2u << 16u) | 2u);
+	harness.memory.writeMappedU32LE(bmsx::IO_GX_GPU_COMPOSITOR_CONTROL, bmsx::GX_GPU_COMPOSITOR_DISPLAY2_ENABLE);
+	harness.memory.writeMappedU32LE(bmsx::IO_GX_GPU_SYSTEM_VRAM_POSITION, 64u << 16u);
+	harness.memory.writeMappedU32LE(bmsx::IO_GX_GPU_SYSTEM_VRAM_SIZE, (2u << 16u) | 2u);
+	harness.memory.writeMappedU32LE(bmsx::IO_GX_GPU_SYSTEM_VRAM_CONTROL, bmsx::GX_GPU_SYSTEM_VRAM_PORT_CONTROL_START);
+	harness.memory.writeMappedU32LE(bmsx::IO_GX_GPU_SYSTEM_VRAM_DATA, 0xfc00801fu);
+	harness.memory.writeMappedU32LE(bmsx::IO_GX_GPU_SYSTEM_VRAM_DATA, 0xffff83e0u);
 	const bmsx::GxGpuState state = harness.gpu.captureState();
-	require(state.gp0CommandWordCount == gp0Before.gp0CommandWordCount, "GX character MMIO preserves GP0 word count");
-	require(state.gp0CommandTargetWordCount == gp0Before.gp0CommandTargetWordCount, "GX character MMIO preserves GP0 target word count");
-	require(state.gp0CommandWords == gp0Before.gp0CommandWords, "GX character MMIO preserves GP0 assembly words");
-	const bmsx::GxGpuDeviceOutput& output = harness.gpu.readDeviceOutput();
-	const bmsx::GxCharacterPlaneOutput& characterPlaneOutput = output.characterPlane;
-	require(characterPlaneOutput.controlWord == 0xf0000001u, "GX-GPU publishes character control");
-	require(bmsx::readLE32(characterPlaneOutput.paletteBytes.data() + 3u * bmsx::GX_CHARACTER_PLANE_WORD_BYTES) == 0x80007c00u, "GX-GPU publishes character palette SRAM");
-	require(bmsx::readLE32(characterPlaneOutput.glyphBytes.data() + 65u * bmsx::GX_CHARACTER_PLANE_WORD_BYTES) == 0x00f99f90u, "GX-GPU publishes character glyph SRAM");
-	require(bmsx::readLE32(characterPlaneOutput.cellBytes.data() + 321u * bmsx::GX_CHARACTER_PLANE_WORD_BYTES) == 0x00001241u, "GX-GPU publishes character cell SRAM");
+	require(state.gp0CommandWordCount == gp0Before.gp0CommandWordCount
+		&& state.gp0CommandTargetWordCount == gp0Before.gp0CommandTargetWordCount
+		&& state.gp0CommandWords == gp0Before.gp0CommandWords,
+		"GX system transfer MMIO preserves interrupted GP0 assembly");
 
-	harness.gpu.reset();
-	require(&harness.gpu.readDeviceOutput().characterPlane == &characterPlaneOutput, "GX-GPU retains character output identity");
-	require(characterPlaneOutput.controlWord == 0u, "GX-GPU reset disables character plane");
-	require(bmsx::readLE32(characterPlaneOutput.paletteBytes.data() + 3u * bmsx::GX_CHARACTER_PLANE_WORD_BYTES) == 0u, "GX-GPU reset clears character palette SRAM");
-	harness.gpu.restoreState(state);
-	harness.gpu.readDeviceOutput();
-	require(characterPlaneOutput.controlWord == 0xf0000001u, "GX-GPU restores character control");
-	require(bmsx::readLE32(characterPlaneOutput.paletteBytes.data() + 3u * bmsx::GX_CHARACTER_PLANE_WORD_BYTES) == 0x80007c00u, "GX-GPU restores character palette SRAM");
-	require(bmsx::readLE32(characterPlaneOutput.glyphBytes.data() + 65u * bmsx::GX_CHARACTER_PLANE_WORD_BYTES) == 0x00f99f90u, "GX-GPU restores character glyph SRAM");
-	require(bmsx::readLE32(characterPlaneOutput.cellBytes.data() + 321u * bmsx::GX_CHARACTER_PLANE_WORD_BYTES) == 0x00001241u, "GX-GPU restores character cell SRAM");
+	harness.gpu.presentReadyFrameOnVblankEdge();
+	const bmsx::GxGpuDeviceOutput& output = harness.gpu.readDeviceOutput();
+	require(harness.gpu.lastFrameCommitted(), "GX-GPU commits a frame containing only system-display work");
+
+	SoftwareFrameHarness frame(output.commandBuffer, output.readbackPort, output.systemVramPort);
+	*frame.vramSnapshot = output.vramSnapshotBytes;
+	frame.state.vramSnapshotSerial = output.vramSnapshotSerial;
+	frame.state.statusWord = output.statusWord;
+	frame.state.displayModeWord = output.displayModeWord;
+	frame.state.displayStartWord = output.displayStartWord;
+	frame.state.display2StartWord = output.display2StartWord;
+	frame.state.display2SizeWord = output.display2SizeWord;
+	frame.state.compositorControlWord = output.compositorControlWord;
+	bmsx::renderGxGpuSoftwareFrame(frame.backend, frame.state);
+	require(frame.framebuffer[0u] == 0xffff0000u && frame.framebuffer[1u] == 0xff0000ffu
+		&& frame.framebuffer[256u] == 0xff00ff00u && frame.framebuffer[257u] == 0xffffffffu,
+		"GX display2 composes A1RGB555 from the shared system VRAM window");
+	require(frame.framebuffer[2u] == 0xff000000u, "GX display2 geometry excludes VRAM outside its programmed window");
 }
 
 } // namespace
@@ -3138,6 +3157,6 @@ int main() {
 	testSoftwareCommandsPreserveTextureMaskBlendAndMaskTestStoreSemantics();
 	testSoftwareCommandsSamplePalette8RectangleFlipAndDitheredModulation();
 	testMmioGp0Gp1();
-	testCharacterPlaneOwnership();
+	testSystemVramTransferAndDisplay2Ownership();
 	return 0;
 }

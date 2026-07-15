@@ -17,11 +17,6 @@ import {
 } from '../../machine/ts/machine/devices/audio/contracts';
 import { GEOMETRY_CONTROLLER_PHASE_BUSY, GEOMETRY_CONTROLLER_REGISTER_COUNT } from '../../machine/ts/machine/devices/geometry/contracts';
 import { GX_GPU_READBACK_READY, GX_GPU_READBACK_SUBMITTED, GX_GPU_VRAM_BYTE_COUNT } from '../../machine/ts/machine/devices/gx/gpu_command_buffer';
-import {
-	GX_CHARACTER_PLANE_CELL_BYTES,
-	GX_CHARACTER_PLANE_GLYPH_BYTES,
-	GX_CHARACTER_PLANE_PALETTE_BYTES,
-} from '../../machine/ts/machine/devices/gx/character_plane';
 import { GX_GTE_CONTROL_REGISTER_COUNT, GX_GTE_DATA_REGISTER_COUNT } from '../../machine/ts/machine/devices/gx/gte';
 import { INPUT_CONTROLLER_KEY_WORD_COUNT, INPUT_CONTROLLER_PAD_AXIS_COUNT, INPUT_CONTROLLER_PAD_COUNT } from '../../machine/ts/machine/devices/input/contracts';
 import { PSX_GPU_DISPLAY_MODE_PAL_WORD } from '../../machine/ts/machine/model_registry';
@@ -40,12 +35,6 @@ codecTestGxVram[0] = 0x34;
 codecTestGxVram[1] = 0x12;
 codecTestGxVram[1024] = 0xcd;
 codecTestGxVram[1025] = 0xab;
-const codecTestGxCharacterPalette = new Uint8Array(GX_CHARACTER_PLANE_PALETTE_BYTES);
-const codecTestGxCharacterGlyphs = new Uint8Array(GX_CHARACTER_PLANE_GLYPH_BYTES);
-const codecTestGxCharacterCells = new Uint8Array(GX_CHARACTER_PLANE_CELL_BYTES);
-codecTestGxCharacterPalette[7] = 0x80;
-codecTestGxCharacterGlyphs[260] = 0x5a;
-codecTestGxCharacterCells[1284] = 0xa5;
 
 function numberedWords(count: number): number[] {
 	const words = new Array<number>(count);
@@ -149,6 +138,12 @@ function createRuntimeSaveState(): RuntimeSaveState {
 					presentDisplayStartWord: 0x00011844,
 					presentHorizontalDisplayRangeWord: 0x00c60260,
 					presentVerticalDisplayRangeWord: 0x0003fc10,
+					display2StartWord: 0x00080000,
+					display2SizeWord: 0x00c00100,
+					compositorControlWord: 1,
+					presentDisplay2StartWord: 0x00080000,
+					presentDisplay2SizeWord: 0x00c00100,
+					presentCompositorControlWord: 1,
 					commandBuffer: {
 						commandCount: 2,
 						executedCommandCount: 1,
@@ -175,14 +170,23 @@ function createRuntimeSaveState(): RuntimeSaveState {
 						readbackPixelCursor: 0,
 						readbackPixelBytes: new Uint8Array(),
 					},
-					characterPlane: {
-						controlWord: 0x80000001,
-						paletteAddressWord: 7,
-						glyphAddressWord: 65,
-						cellAddressWord: 321,
-						paletteBytes: codecTestGxCharacterPalette,
-						glyphBytes: codecTestGxCharacterGlyphs,
-						cellBytes: codecTestGxCharacterCells,
+					systemVramPort: {
+						positionWord: 0x00030008,
+						sizeWord: 0x00010004,
+						controlWord: 1,
+						dataWord: 0x80008000,
+						statusWord: 0x0000010b,
+						commandCount: 1,
+						presentCommandCount: 1,
+						wordCount: 3,
+						activePositionWord: 0x00040008,
+						activeSizeWord: 0x00010004,
+						activeWordStart: 2,
+						activeWordsRemaining: 1,
+						commandPositionWord: [0x00030008],
+						commandSizeWord: [0x00010004],
+						commandWordStart: [0],
+						words: [0x801f8000, 0xffff83e0, 0x80008000],
 					},
 					vramBytes: codecTestGxVram,
 				},

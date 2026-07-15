@@ -1,5 +1,5 @@
 import type { RenderPassLibrary } from '../backend/pass/library';
-import type { GxCharacterPlanePipelineState, GxGpuPipelineState } from '../backend/backend';
+import type { GxGpuPipelineState } from '../backend/backend';
 import type { GameView } from '../gameview';
 import type { Host2DSubmission } from '../shared/submissions';
 import type { HeadlessPresentHost, HeadlessPresentedFrameBuffer } from './view';
@@ -8,17 +8,10 @@ import { renderHeadlessHost2DEntry, renderHeadlessHost2DSubmission } from './hos
 import { renderGxGpuSoftwareFrame } from '../backend/software/gx_gpu';
 import { applyHeadlessDeviceQuantize } from '../post/device_quantize/headless/pipeline';
 import { DeviceQuantizeMode } from '../post/device_quantize/mode';
-import { GxCharacterPlaneSoftwarePipeline, renderGxCharacterPlaneSoftware } from '../backend/software/gx_character_plane';
-import {
-	createGxCharacterPlanePipelineState,
-	shouldRenderGxCharacterPlane,
-	writeGxCharacterPlanePipelineState,
-} from '../gx/character_plane_state';
 
-export function registerHeadlessPasses(registry: RenderPassLibrary, characterPlanePipeline: GxCharacterPlaneSoftwarePipeline): void {
+export function registerHeadlessPasses(registry: RenderPassLibrary): void {
 	registerFramePasses(registry);
 	registerHeadlessGxGpuPass(registry);
-	registerHeadlessGxCharacterPlanePass(registry, characterPlanePipeline);
 	registerHeadlessDeviceQuantizePass(registry);
 }
 
@@ -70,10 +63,14 @@ function registerHeadlessGxGpuPass(registry: RenderPassLibrary): void {
 		width: 0,
 		height: 0,
 		commandBuffer: registry.view.gxGpuCommandBuffer,
+		systemVramPort: registry.view.gxGpuSystemVram,
 		readbackPort: registry.view.gxGpuReadbackPort,
 		statusWord: registry.view.gxGpuStatusWord,
 		displayModeWord: registry.view.gxGpuDisplayModeWord,
 		displayStartWord: registry.view.gxGpuDisplayStartWord,
+		display2StartWord: registry.view.gxGpuDisplay2StartWord,
+		display2SizeWord: registry.view.gxGpuDisplay2SizeWord,
+		compositorControlWord: registry.view.gxGpuCompositorControlWord,
 		vramSnapshotBytes: registry.view.gxGpuVramSnapshotBytes,
 		vramSnapshotSerial: registry.view.gxGpuVramSnapshotSerial,
 	};
@@ -89,33 +86,20 @@ function registerHeadlessGxGpuPass(registry: RenderPassLibrary): void {
 				gxGpuState.width = view.offscreenCanvasSize.x;
 				gxGpuState.height = view.offscreenCanvasSize.y;
 				gxGpuState.commandBuffer = view.gxGpuCommandBuffer;
+				gxGpuState.systemVramPort = view.gxGpuSystemVram;
 				gxGpuState.readbackPort = view.gxGpuReadbackPort;
 				gxGpuState.statusWord = view.gxGpuStatusWord;
 				gxGpuState.displayModeWord = view.gxGpuDisplayModeWord;
 				gxGpuState.displayStartWord = view.gxGpuDisplayStartWord;
+				gxGpuState.display2StartWord = view.gxGpuDisplay2StartWord;
+				gxGpuState.display2SizeWord = view.gxGpuDisplay2SizeWord;
+				gxGpuState.compositorControlWord = view.gxGpuCompositorControlWord;
 				gxGpuState.vramSnapshotBytes = view.gxGpuVramSnapshotBytes;
 				gxGpuState.vramSnapshotSerial = view.gxGpuVramSnapshotSerial;
 			},
 		},
 		exec: (_backend, _fbo, state) => {
 			renderGxGpuSoftwareFrame(state, headlessCompositePixels);
-		},
-	});
-}
-
-function registerHeadlessGxCharacterPlanePass(registry: RenderPassLibrary, pipeline: GxCharacterPlaneSoftwarePipeline): void {
-	registry.register<GxCharacterPlanePipelineState>({
-		id: 'gx_character_plane',
-		name: 'HeadlessGXCharacterPlane',
-		stateOnly: true,
-		initialState: createGxCharacterPlanePipelineState(registry.view as GameView),
-		graph: {
-			writes: ['frame_color'],
-			writeState: writeGxCharacterPlanePipelineState,
-		},
-		shouldExecute: shouldRenderGxCharacterPlane,
-		exec: (_backend, _fbo, state) => {
-			renderGxCharacterPlaneSoftware(pipeline, state, headlessCompositePixels);
 		},
 	});
 }

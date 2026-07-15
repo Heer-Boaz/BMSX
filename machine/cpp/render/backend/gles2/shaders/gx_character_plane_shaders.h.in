@@ -1,8 +1,0 @@
-#pragma once
-
-namespace bmsx {
-
-inline constexpr const char* kGxCharacterPlaneVertexShader = R"glsl(@BMSX_POST_GLES2_FULLSCREEN_VERTEX_SHADER@)glsl";
-inline constexpr const char* kGxCharacterPlaneFragmentShader = R"glsl(@BMSX_GX_CHARACTER_PLANE_FRAGMENT_SHADER@)glsl";
-
-} // namespace bmsx

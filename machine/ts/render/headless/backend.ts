@@ -16,7 +16,6 @@ import { registerHostOverlayPass_Headless, registerHostMenuPass_Headless } from 
 import { captureGxGpuVramSnapshot } from '../backend/software/gx_gpu';
 import type { GxGpu } from '../../machine/devices/gx/gpu';
 import { GX_GPU_VRAM_BYTE_COUNT } from '../../machine/devices/gx/gpu_command_buffer';
-import { GxCharacterPlaneSoftwarePipeline } from '../backend/software/gx_character_plane';
 
 type HeadlessTextureRecord = {
 	id: number;
@@ -92,7 +91,6 @@ export class HeadlessGPUBackend implements GPUBackend {
 	private readonly uniformBuffers = new Map<number, HeadlessBufferRecord>();
 	private readonly vaos = new Set<number>();
 	private readonly gxGpuVramSnapshotScratch = new Uint8Array(GX_GPU_VRAM_BYTE_COUNT);
-	private readonly gxCharacterPlanePipeline = new GxCharacterPlaneSoftwarePipeline();
 	private readonly bound2DByUnit = new Map<number, TextureHandle>();
 	private readonly boundCubeByUnit = new Map<number, TextureHandle>();
 	private activeTextureUnit = 0;
@@ -100,7 +98,7 @@ export class HeadlessGPUBackend implements GPUBackend {
 	private readonly passEncoderScratch: PassEncoder = { fbo: null, desc: {} };
 
 	registerBuiltinPasses(registry: RenderPassLibrary): void {
-		registerHeadlessPasses(registry, this.gxCharacterPlanePipeline);
+		registerHeadlessPasses(registry);
 		registerHostOverlayPass_Headless(registry);
 		registerHostMenuPass_Headless(registry);
 		registerHeadlessPresentPass(registry);

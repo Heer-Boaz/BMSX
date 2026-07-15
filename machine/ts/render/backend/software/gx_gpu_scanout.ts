@@ -1,7 +1,11 @@
 import { GX_GPU_STATUS_DISPLAY_DISABLE } from '../../../machine/devices/gx/gpu';
+import { GX_GPU_VRAM_HEIGHT } from '../../../machine/devices/gx/gpu_command_buffer';
 import {
 	GX_GPU_DISPLAY_MODE_RGB24_BIT,
+	GX_GPU_COMPOSITOR_DISPLAY2_ENABLE,
 	GX_GPU_SCANOUT_INTERPRETATION_MASK,
+	gxGpuDisplay2Height,
+	gxGpuDisplay2Width,
 	gxGpuDisplayStartX,
 	gxGpuDisplayStartY,
 	gxGpuScanoutField,
@@ -19,24 +23,29 @@ let interlacedWidth = 0;
 let interlacedHeight = 0;
 let interlacedDisplayStartWord = 0;
 let interlacedInterpretationWord = 0;
+let interlacedDisplayDisableWord = 0;
 let interlacedVramSnapshotSerial = 0n;
 let interlacedValid = false;
 
 function rgb888AtSourcePixel(sourceX: number, sourceY: number, displayStartX: number): number {
 	const wordX = displayStartX + ((sourceX * 3) >> 1);
-	const word0 = gxGpuSoftwareVram[gxGpuSoftwareVramIndex(wordX, sourceY)];
-	const word1 = gxGpuSoftwareVram[gxGpuSoftwareVramIndex(wordX + 1, sourceY)];
+	const gp0Y = sourceY & (GX_GPU_VRAM_HEIGHT - 1);
+	const word0 = gxGpuSoftwareVram[gxGpuSoftwareVramIndex(wordX, gp0Y)];
+	const word1 = gxGpuSoftwareVram[gxGpuSoftwareVramIndex(wordX + 1, gp0Y)];
 	if ((sourceX & 1) === 0) {
 		return (word0 & 0xff) | ((word0 >>> 8) << 8) | ((word1 & 0xff) << 16);
 	}
 	return (word0 >>> 8) | ((word1 & 0xff) << 8) | (((word1 >>> 8) & 0xff) << 16);
 }
 
-function rgb555AtSourcePixel(sourceX: number, sourceY: number): number {
-	const word = gxGpuSoftwareVram[gxGpuSoftwareVramIndex(sourceX, sourceY)];
+function rgb555WordToRgb8(word: number): number {
 	return gxGpuSoftwareRgb555ChannelTo8(word & 0x1f)
 		| (gxGpuSoftwareRgb555ChannelTo8((word >>> 5) & 0x1f) << 8)
 		| (gxGpuSoftwareRgb555ChannelTo8((word >>> 10) & 0x1f) << 16);
+}
+
+function rgb555AtSourcePixel(sourceX: number, sourceY: number): number {
+	return rgb555WordToRgb8(gxGpuSoftwareVram[gxGpuSoftwareVramIndex(sourceX, sourceY & (GX_GPU_VRAM_HEIGHT - 1))]);
 }
 
 function writeOutputRgb(target: Uint8Array, offset: number, rgb: number): void {
@@ -44,6 +53,28 @@ function writeOutputRgb(target: Uint8Array, offset: number, rgb: number): void {
 	target[offset + 1] = (rgb >>> 8) & 0xff;
 	target[offset + 2] = (rgb >>> 16) & 0xff;
 	target[offset + 3] = 255;
+}
+
+function composeDisplay2(state: GxGpuPipelineState, target: Uint8Array): void {
+	if ((state.compositorControlWord & GX_GPU_COMPOSITOR_DISPLAY2_ENABLE) === 0) {
+		return;
+	}
+	const displayStartX = gxGpuDisplayStartX(state.display2StartWord);
+	const displayStartY = gxGpuDisplayStartY(state.display2StartWord);
+	const displayWidth = gxGpuDisplay2Width(state.display2SizeWord);
+	const displayHeight = gxGpuDisplay2Height(state.display2SizeWord);
+	const outputWidth = state.width < displayWidth ? state.width : displayWidth;
+	const outputHeight = state.height < displayHeight ? state.height : displayHeight;
+	for (let outputY = 0; outputY < outputHeight; outputY += 1) {
+		let offset = outputY * state.width * 4;
+		for (let outputX = 0; outputX < outputWidth; outputX += 1) {
+			const word = gxGpuSoftwareVram[gxGpuSoftwareVramIndex(displayStartX + outputX, displayStartY + outputY)];
+			if ((word & 0x8000) !== 0) {
+				writeOutputRgb(target, offset, rgb555WordToRgb8(word));
+			}
+			offset += 4;
+		}
+	}
 }
 
 function writeInterlacedField(
@@ -93,6 +124,7 @@ function scanoutInterlacedVram(state: GxGpuPipelineState, target: Uint8Array, so
 		|| interlacedHeight !== height
 		|| interlacedDisplayStartWord !== displayStartWord
 		|| interlacedInterpretationWord !== interpretationWord
+		|| interlacedDisplayDisableWord !== (state.statusWord & GX_GPU_STATUS_DISPLAY_DISABLE)
 		|| interlacedVramSnapshotSerial !== state.vramSnapshotSerial;
 	if (interlacedPixels.byteLength !== byteLength) {
 		interlacedPixels = new Uint8Array(byteLength);
@@ -108,12 +140,14 @@ function scanoutInterlacedVram(state: GxGpuPipelineState, target: Uint8Array, so
 		interlacedHeight = height;
 		interlacedDisplayStartWord = displayStartWord;
 		interlacedInterpretationWord = interpretationWord;
+		interlacedDisplayDisableWord = state.statusWord & GX_GPU_STATUS_DISPLAY_DISABLE;
 		interlacedVramSnapshotSerial = state.vramSnapshotSerial;
 		interlacedValid = true;
 	} else {
 		writeInterlacedField(state, gxGpuScanoutField(state.statusWord), sourceLineStep, displayStartX, displayStartY, rgb24, displayDisabled);
 	}
 	target.set(interlacedPixels);
+	composeDisplay2(state, target);
 }
 
 export function scanoutGxGpuSoftwareVram(state: GxGpuPipelineState, target: Uint8Array): void {
@@ -129,18 +163,19 @@ export function scanoutGxGpuSoftwareVram(state: GxGpuPipelineState, target: Uint
 		for (let offset = 3; offset < target.length; offset += 4) {
 			target[offset] = 255;
 		}
-		return;
-	}
-	const displayStartX = gxGpuDisplayStartX(state.displayStartWord);
-	const displayStartY = gxGpuDisplayStartY(state.displayStartWord);
-	const rgb24 = (displayModeWord & GX_GPU_DISPLAY_MODE_RGB24_BIT) !== 0;
-	let offset = 0;
-	for (let outputY = 0; outputY < state.height; outputY += 1) {
-		const sourceY = displayStartY + outputY;
-		for (let outputX = 0; outputX < state.width; outputX += 1) {
-			const rgb = rgb24 ? rgb888AtSourcePixel(outputX, sourceY, displayStartX) : rgb555AtSourcePixel(displayStartX + outputX, sourceY);
-			writeOutputRgb(target, offset, rgb);
-			offset += 4;
+	} else {
+		const displayStartX = gxGpuDisplayStartX(state.displayStartWord);
+		const displayStartY = gxGpuDisplayStartY(state.displayStartWord);
+		const rgb24 = (displayModeWord & GX_GPU_DISPLAY_MODE_RGB24_BIT) !== 0;
+		let offset = 0;
+		for (let outputY = 0; outputY < state.height; outputY += 1) {
+			const sourceY = displayStartY + outputY;
+			for (let outputX = 0; outputX < state.width; outputX += 1) {
+				const rgb = rgb24 ? rgb888AtSourcePixel(outputX, sourceY, displayStartX) : rgb555AtSourcePixel(displayStartX + outputX, sourceY);
+				writeOutputRgb(target, offset, rgb);
+				offset += 4;
+			}
 		}
 	}
+	composeDisplay2(state, target);
 }
