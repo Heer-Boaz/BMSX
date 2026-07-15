@@ -163,6 +163,9 @@ public:
 	// Poll all inputs (call once per frame)
 	void pollInput();
 
+	// Sample the raw HID keyboard matrix without advancing cart input frame state.
+	void sampleInputControllerKeyWords(std::array<u32, INPUT_CONTROLLER_KEY_WORD_COUNT>& keyWords) override;
+
 	// Latch the raw input snapshot for one cart-visible simulation frame
 	void sampleInputControllerSnapshot(f64 currentTimeMs, InputControllerSnapshot& snapshot) override;
 	

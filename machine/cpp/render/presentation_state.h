@@ -15,7 +15,6 @@ struct RenderPresentation {
 	bool commitFrame = false;
 	f64 runtimeDrawMs = 0.0;
 	f64 workbenchModeDrawMs = 0.0;
-	f64 runtimeTerminalDrawMs = 0.0;
 };
 
 class RenderPresentationState {

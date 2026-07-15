@@ -1,4 +1,4 @@
-import { flushRuntimeLuaOutputToTerminal, type RuntimeIdeState } from '../ide/runtime/state';
+import type { RuntimeIdeState } from '../ide/runtime/state';
 import type { RuntimeFaultState } from '../ide/runtime/fault_state';
 import { SoundMaster } from "../audio/soundmaster";
 import { Input } from "../input/manager";
@@ -6,7 +6,7 @@ import { GameView } from "../render/gameview";
 import { Font } from '../render/shared/bmsx_font';
 import { TextureManager } from "../render/texture_manager";
 import { RenderPassLibrary } from "../render/backend/pass/library";
-import { setMicrotaskQueue } from '../platform';
+import { LogLevel, setMicrotaskQueue } from '../platform';
 import type { GameViewHost, Platform } from '../platform';
 import { PAL_REFRESH_UFPS_SCALED, PSX_MACHINE_SPEC } from '../machine/model_registry';
 import { HZ_SCALE } from '../machine/runtime/timing/constants';
@@ -121,6 +121,13 @@ export class MachineManager {
 		this.audioUfpsScaled = ufpsScaled;
 	}
 
+	public flushRuntimeLuaOutput(runtime: Runtime): void {
+		for (let index = 0; index < runtime.luaOutputLines.length; index += 1) {
+			this.platform.log(LogLevel.Info, runtime.luaOutputLines[index]);
+		}
+		runtime.luaOutputLines.length = 0;
+	}
+
 	public syncRuntimeAudioTiming(): void {
 		if (this.runtime.timing.ufpsScaled !== this.audioUfpsScaled) {
 			this.syncAudioTiming();
@@ -211,7 +218,7 @@ export class MachineManager {
 		await gview.initializeDefaultTextures();
 		this.view.default_font = new Font();
 		await startPreparedRuntime(runtime);
-		flushRuntimeLuaOutputToTerminal(runtime, this.ideState);
+		this.flushRuntimeLuaOutput(runtime);
 
 		if (this.debug) {
 			Input.instance.enableDebugMode(this.view.surface);
@@ -238,7 +245,7 @@ export class MachineManager {
 				handleLuaError(this.runtime, error);
 				throw error;
 			}
-			flushRuntimeLuaOutputToTerminal(this.runtime, this.ideState);
+			this.flushRuntimeLuaOutput(this.runtime);
 		}
 		finally {
 			this.ideState.luaGate.end(gateToken);

@@ -9,6 +9,7 @@ Machine::Machine(Memory& memoryRef, InputControllerInputSource& input)
 	: memory(memoryRef)
 	, irqController(memory)
 	, cpu(memory, irqController)
+	, systemController(memory, cpu)
 	, scheduler(cpu)
 	, audioOutput()
 	, audioController(memory, audioOutput, irqController, scheduler)
@@ -16,7 +17,7 @@ Machine::Machine(Memory& memoryRef, InputControllerInputSource& input)
 	, geometryController(memory, irqController, scheduler)
 	, gxGpu(memory, irqController, scheduler, dmaController)
 	, gxGte(memory)
-	, inputController(memory, input)
+	, inputController(memory, input, cpu)
 {
 }
 
@@ -27,6 +28,7 @@ void Machine::initializeSystemIo() {
 }
 
 void Machine::resetDevices() {
+	systemController.reset();
 	irqController.reset();
 	inputController.reset();
 	dmaController.reset();

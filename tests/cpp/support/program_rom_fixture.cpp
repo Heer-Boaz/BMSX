@@ -2,6 +2,8 @@
 
 #include "machine/cpu/instruction_format.h"
 #include "machine/cpu/opcode_info.h"
+#include "machine/firmware/boot_primitives.h"
+#include "machine/program/linker.h"
 #include "machine/program/loader.h"
 #include "rompack/format.h"
 
@@ -10,7 +12,7 @@
 namespace bmsx::test {
 namespace {
 
-ProgramImage makeMinimalProgramImage() {
+ProgramImage makeMinimalProgramImage(ProgramBootTarget target) {
 	ProgramImage image;
 	image.vectors.resetProtoIndex = 0;
 	image.vectors.sectionInitProtoIndex = 0;
@@ -24,6 +26,11 @@ ProgramImage makeMinimalProgramImage() {
 	proto.codeLen = INSTRUCTION_BYTES;
 	proto.maxStack = 1;
 	image.sections.text.protos.push_back(proto);
+	if (target == ProgramBootTarget::System) {
+		for (const LuaBootPrimitive& primitive : LUA_BOOT_PRIMITIVES) {
+			image.link.symbols.systemGlobalNames.emplace_back(primitive.name);
+		}
+	}
 	return image;
 }
 
@@ -42,8 +49,8 @@ MachineManifest makeMinimalMachineManifest() {
 
 } // namespace
 
-std::vector<u8> makeMinimalProgramRom() {
-	return encodeProgramCartRom(makeMinimalCartManifest(), makeMinimalMachineManifest(), makeMinimalProgramImage());
+std::vector<u8> makeMinimalProgramRom(ProgramBootTarget target) {
+	return encodeProgramCartRom(makeMinimalCartManifest(), makeMinimalMachineManifest(), makeMinimalProgramImage(target));
 }
 
 } // namespace bmsx::test

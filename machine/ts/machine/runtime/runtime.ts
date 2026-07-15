@@ -95,6 +95,9 @@ export class Runtime {
 	public programVectors: ProgramVectorTable | null = null;
 	public systemVectors!: ProgramVectorTable;
 	public cartVectors!: ProgramVectorTable;
+	private systemDataBaseAddress = PROGRAM_STATIC_RAM_BASE;
+	private systemBssBaseAddress = PROGRAM_STATIC_RAM_BASE;
+	private systemStaticModulePaths: ReadonlyArray<string> = EMPTY_STATIC_MODULE_PATHS;
 	public programDataBaseAddress = PROGRAM_STATIC_RAM_BASE;
 	public programBssBaseAddress = PROGRAM_STATIC_RAM_BASE;
 	public cartDataBaseAddress = PROGRAM_STATIC_RAM_BASE;
@@ -145,8 +148,7 @@ export class Runtime {
 		this.luaOutputLineBuffer = '';
 		this.hostFault.clear();
 		this.moduleCache.clear();
-		this.machine.cpu.clearGlobalSlots();
-		this.machine.cpu.globals.clear();
+		this.machine.cpu.clearProgramEnvironment();
 		this.machine.memory.clearIoSlots();
 		this.machine.initializeSystemIo();
 		this.resetHardwareState();
@@ -162,13 +164,17 @@ export class Runtime {
 		cartVectors: ProgramVectorTable,
 		dataBaseAddress: number,
 		bssBaseAddress: number,
+		systemDataBaseAddress: number,
+		systemBssBaseAddress: number,
 		systemStaticModulePaths: ReadonlyArray<string>,
 		cartStaticModulePaths: ReadonlyArray<string>,
 	): void {
 		this.programDataBaseAddress = dataBaseAddress;
 		this.programBssBaseAddress = bssBaseAddress;
+		this.systemDataBaseAddress = systemDataBaseAddress;
+		this.systemBssBaseAddress = systemBssBaseAddress;
+		this.systemStaticModulePaths = systemStaticModulePaths;
 		const program = inflateExecutableProgramImage(image, dataBaseAddress, bssBaseAddress);
-		seedLuaGlobals(this);
 		this.systemVectors = systemVectors;
 		this.cartVectors = cartVectors;
 		this.machine.cpu.setProgram(
@@ -179,6 +185,7 @@ export class Runtime {
 			cartVectors.irqProtoIndex,
 			systemVectors.exceptionProtoIndex,
 		);
+		seedLuaGlobals(this);
 		this.programRuntimeSymbols = image.link.symbols;
 		this.programMetadata = metadata;
 		this.startLoadedProgram(vectors, systemStaticModulePaths, cartStaticModulePaths);
@@ -194,6 +201,8 @@ export class Runtime {
 			linked.cartVectors,
 			linked.dataBaseAddress,
 			linked.bssBaseAddress,
+			linked.systemDataBaseAddress,
+			linked.systemBssBaseAddress,
 			linked.systemStaticModulePaths,
 			this.cartProgramStarted ? linked.cartStaticModulePaths : EMPTY_STATIC_MODULE_PATHS,
 		);
@@ -212,6 +221,35 @@ export class Runtime {
 		this.programBssBaseAddress = this.cartBssBaseAddress;
 		this.enterCartProgram();
 		this.startLoadedProgram(this.cartVectors, EMPTY_STATIC_MODULE_PATHS, this.cartStaticModulePaths);
+	}
+
+	public rebootSystemProgram(): void {
+		this.enterSystemFirmware();
+		this.luaRuntimeFailed = false;
+		this.luaInitialized = false;
+		this.pendingCall = null;
+		this.programVectors = null;
+		this.luaOutputLineBuffer = '';
+		this.hostFault.clear();
+		this.moduleCache.clear();
+		this.machine.cpu.clearProgramEnvironment();
+		this.machine.memory.clearIoSlots();
+		this.machine.initializeSystemIo();
+		this.resetHardwareState();
+		resetTrackedLuaHeapBytes();
+		addTrackedLuaHeapBytes(this.machine.cpu.globals.getTrackedHeapBytes());
+		this.programDataBaseAddress = this.systemDataBaseAddress;
+		this.programBssBaseAddress = this.systemBssBaseAddress;
+		this.machine.cpu.setProgram(
+			this.machine.cpu.program,
+			this.programRuntimeSymbols,
+			this.programMetadata,
+			this.systemVectors.irqProtoIndex,
+			this.cartVectors.irqProtoIndex,
+			this.systemVectors.exceptionProtoIndex,
+		);
+		seedLuaGlobals(this);
+		this.startLoadedProgram(this.systemVectors, this.systemStaticModulePaths, EMPTY_STATIC_MODULE_PATHS);
 	}
 
 	public startLoadedProgram(vectors: ProgramVectorTable, systemStaticModulePaths: ReadonlyArray<string>, cartStaticModulePaths: ReadonlyArray<string>): void {

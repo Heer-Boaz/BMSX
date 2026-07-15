@@ -10,7 +10,7 @@ end)
 local expected_width<const> = descriptor.glyphs['A'].advance + descriptor.glyphs['?'].advance + descriptor.glyphs['?'].advance
 return seen[1], seen[2], seen[3], font.measure_line_width(descriptor, 'A?€'), expected_width
 `);
-t.assert(result[0] === 'msx_6b_font_a', `font.for_each_glyph first glyph mismatch: ${result[0]}`);
-t.assert(result[1] === 'msx_6b_font_question', `font.for_each_glyph second glyph mismatch: ${result[1]}`);
-t.assert(result[2] === 'msx_6b_font_question', `font.for_each_glyph fallback glyph mismatch: ${result[2]}`);
+t.assert(result[0] === 'tiny_3b_font_code_0x41', `font.for_each_glyph first glyph mismatch: ${result[0]}`);
+t.assert(result[1] === 'tiny_3b_font_code_0x3f', `font.for_each_glyph second glyph mismatch: ${result[1]}`);
+t.assert(result[2] === 'tiny_3b_font_code_0x3f', `font.for_each_glyph fallback glyph mismatch: ${result[2]}`);
 t.assert(result[3] === result[4], `font.measure_line_width mismatch: ${result[3]} !== ${result[4]}`);

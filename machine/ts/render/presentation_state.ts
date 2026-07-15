@@ -119,7 +119,6 @@ export class RenderPresentationState {
 		out.mode = this.presentationMode;
 		out.commitFrame = overlayActive ? false : this.presentationCommitFrame;
 		workbenchMode.tickIDEDraw(runtime);
-		workbenchMode.tickTerminalModeDraw(runtime);
 		this.clearPresentation();
 		return true;
 	}
@@ -152,7 +151,6 @@ export class RenderPresentationState {
 		}
 		runtime.frameScheduler.clearQueuedTime();
 		workbenchMode.tickIDE(runtime);
-		workbenchMode.tickTerminalMode(runtime);
 		this.markPresentation('completed', false);
 	}
 

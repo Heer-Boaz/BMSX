@@ -17,6 +17,11 @@ import {
 } from '../../machine/ts/machine/devices/audio/contracts';
 import { GEOMETRY_CONTROLLER_PHASE_BUSY, GEOMETRY_CONTROLLER_REGISTER_COUNT } from '../../machine/ts/machine/devices/geometry/contracts';
 import { GX_GPU_READBACK_READY, GX_GPU_READBACK_SUBMITTED, GX_GPU_VRAM_BYTE_COUNT } from '../../machine/ts/machine/devices/gx/gpu_command_buffer';
+import {
+	GX_CHARACTER_PLANE_CELL_BYTES,
+	GX_CHARACTER_PLANE_GLYPH_BYTES,
+	GX_CHARACTER_PLANE_PALETTE_BYTES,
+} from '../../machine/ts/machine/devices/gx/character_plane';
 import { GX_GTE_CONTROL_REGISTER_COUNT, GX_GTE_DATA_REGISTER_COUNT } from '../../machine/ts/machine/devices/gx/gte';
 import { INPUT_CONTROLLER_KEY_WORD_COUNT, INPUT_CONTROLLER_PAD_AXIS_COUNT, INPUT_CONTROLLER_PAD_COUNT } from '../../machine/ts/machine/devices/input/contracts';
 import { PSX_GPU_DISPLAY_MODE_PAL_WORD } from '../../machine/ts/machine/model_registry';
@@ -35,6 +40,12 @@ codecTestGxVram[0] = 0x34;
 codecTestGxVram[1] = 0x12;
 codecTestGxVram[1024] = 0xcd;
 codecTestGxVram[1025] = 0xab;
+const codecTestGxCharacterPalette = new Uint8Array(GX_CHARACTER_PLANE_PALETTE_BYTES);
+const codecTestGxCharacterGlyphs = new Uint8Array(GX_CHARACTER_PLANE_GLYPH_BYTES);
+const codecTestGxCharacterCells = new Uint8Array(GX_CHARACTER_PLANE_CELL_BYTES);
+codecTestGxCharacterPalette[7] = 0x80;
+codecTestGxCharacterGlyphs[260] = 0x5a;
+codecTestGxCharacterCells[1284] = 0xa5;
 
 function numberedWords(count: number): number[] {
 	const words = new Array<number>(count);
@@ -164,6 +175,15 @@ function createRuntimeSaveState(): RuntimeSaveState {
 						readbackPixelCursor: 0,
 						readbackPixelBytes: new Uint8Array(),
 					},
+					characterPlane: {
+						controlWord: 0x80000001,
+						paletteAddressWord: 7,
+						glyphAddressWord: 65,
+						cellAddressWord: 321,
+						paletteBytes: codecTestGxCharacterPalette,
+						glyphBytes: codecTestGxCharacterGlyphs,
+						cellBytes: codecTestGxCharacterCells,
+					},
 					vramBytes: codecTestGxVram,
 				},
 				gxGte: {
@@ -251,6 +271,7 @@ function createRuntimeSaveState(): RuntimeSaveState {
 					sampleArmed: false,
 					sampleSequence: 3,
 					lastSampleCycle: 77,
+					systemNmiLineHigh: true,
 					registers: {
 						ctrl: 1,
 						keyWords: numberedWords(INPUT_CONTROLLER_KEY_WORD_COUNT),
@@ -265,6 +286,9 @@ function createRuntimeSaveState(): RuntimeSaveState {
 						outputDurationMs: 120,
 						outputStatus: 4,
 					},
+				},
+				systemControl: {
+					resetRequested: true,
 				},
 			},
 			frameScheduler: {
@@ -288,6 +312,9 @@ function createRuntimeSaveState(): RuntimeSaveState {
 			vblank: { nowCycles: 0, cyclesIntoFrame: 0 },
 		},
 		cpuState: {
+			systemGlobals: [
+				{ name: 'irq', value: { tag: 'number', value: 7 } },
+			],
 			globals: [
 				{ name: 'answer', value: { tag: 'number', value: 42 } },
 			],
@@ -330,7 +357,9 @@ test('runtime save-state codec preserves string pool ROM/runtime ownership', () 
 	assert.deepEqual(decoded.machineState.machine.gxGte, state.machineState.machine.gxGte);
 	assert.deepEqual(decoded.machineState.machine.audio, state.machineState.machine.audio);
 	assert.deepEqual(decoded.machineState.machine.input, state.machineState.machine.input);
+	assert.deepEqual(decoded.machineState.machine.systemControl, state.machineState.machine.systemControl);
 	assert.deepEqual(decoded.machineState.frameScheduler, state.machineState.frameScheduler);
+	assert.deepEqual(decoded.cpuState.systemGlobals, state.cpuState.systemGlobals);
 });
 
 test('runtime save-state codec stores READY GPUREAD bytes and rejects backend-only phases', () => {

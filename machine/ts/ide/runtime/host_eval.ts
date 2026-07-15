@@ -62,6 +62,7 @@ export function runHostEvalChunk(runtime: Runtime, source: string): Value[] {
 	const compiled = appendLuaChunkToProgram(currentProgram, baseMetadata, chunk, {
 		optLevel: machineManager.sourceState.realtimeCompileOptLevel,
 		entrySource: source,
+		programDomain: 'cart',
 	});
 	resolveRuntimeProgramValueRelocations(
 		compiled.program,

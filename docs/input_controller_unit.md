@@ -63,7 +63,7 @@ Each pad block starts at `sys_inp_pads + pad * inp_pad_stride`.
 | `inp_ctrl_reset` | 2 | Resets all registers to default state. |
 | `inp_output_ctrl_apply` | 1 | Applies the latched output effect to `sys_inp_output_port`. |
 
-## VBlank sample edge
+## VBlank sample edge and system NMI line
 
 Cart code writes `inp_ctrl_arm` to `sys_inp_ctrl`, then waits for the VBlank
 IRQ. On the VBlank edge the ICU asks the host input owner to fill one raw
@@ -71,10 +71,19 @@ IRQ. On the VBlank edge the ICU asks the host input owner to fill one raw
 mirrors the latched registerfile. Reads for the remainder of the frame return
 those stable raw words. There are no computed-on-read action queries.
 
+Independently of the cart-visible sample latch, every VBlank scans the retained
+raw HID keyboard words for the physical F2 line. A low-to-high transition
+requests the CPU's non-maskable system interrupt. An unarmed scan neither
+advances host PlayerInput frame state nor changes any guest-visible ICU word;
+it only aggregates the existing keyboard bitmap. The ICU saves the previous
+line level so a held key cannot become a second edge after save-state restore.
+`inp_ctrl_reset` resets the guest register/sample latch, not that physical edge
+history.
+
 ## High-level input owners
 
 Host UI code keeps using the host PlayerInput implementations in
-`machine/ts/input` and `machine/cpp/input` for IDE, terminal, quick menu,
+`machine/ts/input` and `machine/cpp/input` for IDE, quick menu,
 onscreen controls, host shortcuts, device assignment, and complex host-side
 input behavior.
 
@@ -94,7 +103,8 @@ boundary and calls the host output hardware for the selected pad.
 
 ## Save state
 
-The ICU save state contains only the sample latch state and the raw registerfile:
-control, keyboard words, pointer words, pad words, output port, output latch
-words, and output support mirror. It does not serialize host PlayerInput state,
-Lua action contexts, parser caches, consume state, or runtime scratch buffers.
+The ICU save state contains the sample latch state, the previous system-NMI
+line level, and the raw registerfile: control, keyboard words, pointer words,
+pad words, output port, output latch words, and output support mirror. It does
+not serialize host PlayerInput state, Lua action contexts, parser caches,
+consume state, or runtime scratch buffers.

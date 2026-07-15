@@ -15,6 +15,7 @@ import { APU_COMMAND_FIFO_CAPACITY, APU_COMMAND_FIFO_REGISTER_WORD_COUNT, APU_PA
 import type { StringPoolState, StringPoolStateEntry } from '../../cpu/string_pool';
 import type { InputControllerState } from '../../devices/input/save_state';
 import { INPUT_CONTROLLER_KEY_WORD_COUNT, INPUT_CONTROLLER_PAD_AXIS_COUNT, INPUT_CONTROLLER_PAD_COUNT } from '../../devices/input/contracts';
+import type { SystemControllerState } from '../../devices/system/controller';
 import {
 	GEOMETRY_CONTROLLER_PHASE_REJECTED,
 	GEOMETRY_CONTROLLER_REGISTER_COUNT,
@@ -23,6 +24,12 @@ import {
 import { GX_GPU_GP0_COMMAND_BUFFER_WORDS, type GxGpuSaveState, type GxGpuState } from '../../devices/gx/gpu';
 import { GX_GPU_COMMAND_CAPACITY, GX_GPU_COMMAND_WORD_CAPACITY, GX_GPU_READBACK_READY, GX_GPU_READBACK_SUBMITTED, GX_GPU_VRAM_BYTE_COUNT, type GxGpuCommandBufferState } from '../../devices/gx/gpu_command_buffer';
 import { GX_GPU_COMMAND_FIFO_STORAGE_WORD_CAPACITY } from '../../devices/gx/gpu_command_fifo';
+import {
+	GX_CHARACTER_PLANE_CELL_BYTES,
+	GX_CHARACTER_PLANE_GLYPH_BYTES,
+	GX_CHARACTER_PLANE_PALETTE_BYTES,
+	type GxCharacterPlaneState,
+} from '../../devices/gx/character_plane';
 import type { GxGteState } from '../../devices/gx/gte';
 import { GX_GTE_CONTROL_REGISTER_COUNT, GX_GTE_DATA_REGISTER_COUNT } from '../../devices/gx/gte';
 import type { GeometryJobState } from '../../devices/geometry/job';
@@ -318,6 +325,7 @@ function encodeInputControllerState(state: InputControllerState): InputControlle
 		sampleArmed: state.sampleArmed,
 		sampleSequence: state.sampleSequence >>> 0,
 		lastSampleCycle: state.lastSampleCycle >>> 0,
+		systemNmiLineHigh: state.systemNmiLineHigh,
 		registers: {
 			ctrl: state.registers.ctrl >>> 0,
 			keyWords: encodeVector(state.registers.keyWords, (word) => word >>> 0),
@@ -355,6 +363,7 @@ function decodeInputControllerState(value: unknown, label: string): InputControl
 		sampleArmed: requireBooleanValue(requireObjectKey(object, 'sampleArmed', label, 'machine.input.sampleArmed'), 'machine.input.sampleArmed'),
 		sampleSequence: requireBoundedU32(requireObjectKey(object, 'sampleSequence', label, 'machine.input.sampleSequence'), 'machine.input.sampleSequence', 0, 0xffffffff),
 		lastSampleCycle: requireBoundedU32(requireObjectKey(object, 'lastSampleCycle', label, 'machine.input.lastSampleCycle'), 'machine.input.lastSampleCycle', 0, 0xffffffff),
+		systemNmiLineHigh: requireBooleanValue(requireObjectKey(object, 'systemNmiLineHigh', label, 'machine.input.systemNmiLineHigh'), 'machine.input.systemNmiLineHigh'),
 		registers: {
 			ctrl: registerWord('ctrl'),
 			keyWords: registerWordVector('keyWords', INPUT_CONTROLLER_KEY_WORD_COUNT),
@@ -507,6 +516,31 @@ function decodeGxGpuCommandBufferState(value: unknown, label: string): GxGpuComm
 	};
 }
 
+function encodeGxCharacterPlaneState(state: GxCharacterPlaneState): GxCharacterPlaneState {
+	return {
+		controlWord: state.controlWord >>> 0,
+		paletteAddressWord: state.paletteAddressWord >>> 0,
+		glyphAddressWord: state.glyphAddressWord >>> 0,
+		cellAddressWord: state.cellAddressWord >>> 0,
+		paletteBytes: state.paletteBytes,
+		glyphBytes: state.glyphBytes,
+		cellBytes: state.cellBytes,
+	};
+}
+
+function decodeGxCharacterPlaneState(value: unknown, label: string): GxCharacterPlaneState {
+	const object = requireObject(value, label);
+	return {
+		controlWord: requireBoundedU32(requireObjectKey(object, 'controlWord', label, `${label}.controlWord`), `${label}.controlWord`, 0, 0xffffffff),
+		paletteAddressWord: requireBoundedU32(requireObjectKey(object, 'paletteAddressWord', label, `${label}.paletteAddressWord`), `${label}.paletteAddressWord`, 0, 0xffffffff),
+		glyphAddressWord: requireBoundedU32(requireObjectKey(object, 'glyphAddressWord', label, `${label}.glyphAddressWord`), `${label}.glyphAddressWord`, 0, 0xffffffff),
+		cellAddressWord: requireBoundedU32(requireObjectKey(object, 'cellAddressWord', label, `${label}.cellAddressWord`), `${label}.cellAddressWord`, 0, 0xffffffff),
+		paletteBytes: requireBinaryFixedLength(requireObjectKey(object, 'paletteBytes', label, `${label}.paletteBytes`), `${label}.paletteBytes`, GX_CHARACTER_PLANE_PALETTE_BYTES),
+		glyphBytes: requireBinaryFixedLength(requireObjectKey(object, 'glyphBytes', label, `${label}.glyphBytes`), `${label}.glyphBytes`, GX_CHARACTER_PLANE_GLYPH_BYTES),
+		cellBytes: requireBinaryFixedLength(requireObjectKey(object, 'cellBytes', label, `${label}.cellBytes`), `${label}.cellBytes`, GX_CHARACTER_PLANE_CELL_BYTES),
+	};
+}
+
 function encodeGxGpuState(state: GxGpuState): GxGpuState {
 	return {
 		gp0Word: state.gp0Word >>> 0,
@@ -549,6 +583,7 @@ function encodeGxGpuState(state: GxGpuState): GxGpuState {
 		presentHorizontalDisplayRangeWord: state.presentHorizontalDisplayRangeWord >>> 0,
 		presentVerticalDisplayRangeWord: state.presentVerticalDisplayRangeWord >>> 0,
 		commandBuffer: encodeGxGpuCommandBufferState(state.commandBuffer),
+		characterPlane: encodeGxCharacterPlaneState(state.characterPlane),
 	};
 }
 
@@ -557,6 +592,7 @@ function decodeGxGpuState(value: unknown, label: string): GxGpuState {
 	const gp0CommandWordCount = requireBoundedU32(requireObjectKey(object, 'gp0CommandWordCount', label, `${label}.gp0CommandWordCount`), `${label}.gp0CommandWordCount`, 0, GX_GPU_GP0_COMMAND_BUFFER_WORDS);
 	const gp0FifoWordCount = requireBoundedU32(requireObjectKey(object, 'gp0FifoWordCount', label, `${label}.gp0FifoWordCount`), `${label}.gp0FifoWordCount`, 0, GX_GPU_COMMAND_FIFO_STORAGE_WORD_CAPACITY);
 	const commandBuffer = decodeGxGpuCommandBufferState(requireObjectKey(object, 'commandBuffer', label, `${label}.commandBuffer`), `${label}.commandBuffer`);
+	const characterPlane = decodeGxCharacterPlaneState(requireObjectKey(object, 'characterPlane', label, `${label}.characterPlane`), `${label}.characterPlane`);
 	return {
 		gp0Word: requireBoundedU32(requireObjectKey(object, 'gp0Word', label, `${label}.gp0Word`), `${label}.gp0Word`, 0, 0xffffffff),
 		gp1Word: requireBoundedU32(requireObjectKey(object, 'gp1Word', label, `${label}.gp1Word`), `${label}.gp1Word`, 0, 0xffffffff),
@@ -598,6 +634,7 @@ function decodeGxGpuState(value: unknown, label: string): GxGpuState {
 		presentHorizontalDisplayRangeWord: requireBoundedU32(requireObjectKey(object, 'presentHorizontalDisplayRangeWord', label, `${label}.presentHorizontalDisplayRangeWord`), `${label}.presentHorizontalDisplayRangeWord`, 0, 0xffffffff),
 		presentVerticalDisplayRangeWord: requireBoundedU32(requireObjectKey(object, 'presentVerticalDisplayRangeWord', label, `${label}.presentVerticalDisplayRangeWord`), `${label}.presentVerticalDisplayRangeWord`, 0, 0xffffffff),
 		commandBuffer,
+		characterPlane,
 	};
 }
 
@@ -850,6 +887,19 @@ function decodeDmaControllerState(value: unknown, label: string): DmaControllerS
 	};
 }
 
+function encodeSystemControllerState(state: SystemControllerState): SystemControllerState {
+	return {
+		resetRequested: state.resetRequested,
+	};
+}
+
+function decodeSystemControllerState(value: unknown, label: string): SystemControllerState {
+	const object = requireObject(value, label);
+	return {
+		resetRequested: requireBooleanValue(requireObjectKey(object, 'resetRequested', label, `${label}.resetRequested`), `${label}.resetRequested`),
+	};
+}
+
 function encodeMachineSaveState(state: MachineSaveState): MachineSaveState {
 	return {
 		memory: encodeMemorySaveState(state.memory),
@@ -861,6 +911,7 @@ function encodeMachineSaveState(state: MachineSaveState): MachineSaveState {
 		audio: encodeAudioControllerState(state.audio),
 		stringPool: encodeStringPoolState(state.stringPool),
 		input: encodeInputControllerState(state.input),
+		systemControl: encodeSystemControllerState(state.systemControl),
 	};
 }
 
@@ -876,6 +927,7 @@ function decodeMachineSaveState(value: unknown, label: string): MachineSaveState
 		audio: decodeAudioControllerState(requireObjectKey(object, 'audio', label, 'machineState.machine.audio'), 'machineState.machine.audio'),
 		stringPool: decodeStringPoolState(requireObjectKey(object, 'stringPool', label, 'machineState.machine.stringPool'), 'machineState.machine.stringPool'),
 		input: decodeInputControllerState(requireObjectKey(object, 'input', label, 'machineState.machine.input'), 'machineState.machine.input'),
+		systemControl: decodeSystemControllerState(requireObjectKey(object, 'systemControl', label, 'machineState.machine.systemControl'), 'machineState.machine.systemControl'),
 	};
 }
 
@@ -1087,6 +1139,7 @@ function decodeCpuRootValueState(value: unknown, label: string): CpuRootValueSta
 
 function encodeCpuRuntimeState(state: CpuRuntimeState): CpuRuntimeState {
 	return {
+		systemGlobals: encodeVector(state.systemGlobals, encodeCpuRootValueState),
 		globals: encodeVector(state.globals, encodeCpuRootValueState),
 		moduleCache: encodeVector(state.moduleCache, encodeCpuRootValueState),
 		frames: encodeVector(state.frames, encodeCpuFrameState),
@@ -1111,6 +1164,11 @@ function encodeCpuRuntimeState(state: CpuRuntimeState): CpuRuntimeState {
 function decodeCpuRuntimeState(value: unknown, label: string): CpuRuntimeState {
 	const object = requireObject(value, label);
 	return {
+		systemGlobals: decodeVector(
+			requireObjectKey(object, 'systemGlobals', label, 'cpuState.systemGlobals'),
+			'cpuState.systemGlobals',
+			(entry) => decodeCpuRootValueState(entry, 'cpuState.systemGlobals[]'),
+		),
 		globals: decodeVector(
 			requireObjectKey(object, 'globals', label, 'cpuState.globals'),
 			'cpuState.globals',

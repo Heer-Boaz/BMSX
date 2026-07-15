@@ -13,6 +13,7 @@ import { GxGte } from './devices/gx/gte';
 import { InputController } from './devices/input/controller';
 import type { InputControllerInputSource } from './devices/input/contracts';
 import { IrqController } from './devices/irq/controller';
+import { SystemController } from './devices/system/controller';
 import { Memory } from './memory/memory';
 import {
 	DEVICE_SERVICE_APU,
@@ -32,6 +33,7 @@ export class Machine {
 	public readonly cpu: CPU;
 	public readonly scheduler: DeviceScheduler;
 	public readonly irqController: IrqController;
+	public readonly systemController: SystemController;
 	public readonly dmaController: DmaController;
 	public readonly geometryController: GeometryController;
 	public readonly gxGpu: GxGpu;
@@ -46,6 +48,7 @@ export class Machine {
 	) {
 		this.irqController = new IrqController(this.memory);
 		this.cpu = new CPU(this.memory, this.irqController);
+		this.systemController = new SystemController(this.memory, this.cpu);
 		this.scheduler = new DeviceScheduler(this.cpu);
 		this.audioOutput = new ApuOutputMixer();
 		this.audioController = new AudioController(this.memory, this.audioOutput, this.irqController, this.scheduler);
@@ -53,7 +56,7 @@ export class Machine {
 		this.geometryController = new GeometryController(this.memory, this.irqController, this.scheduler);
 		this.gxGpu = new GxGpu(this.memory, this.irqController, this.scheduler, this.dmaController);
 		this.gxGte = new GxGte(this.memory);
-		this.inputController = new InputController(this.memory, input);
+		this.inputController = new InputController(this.memory, input, this.cpu);
 	}
 
 	public initializeSystemIo(): void {
@@ -63,6 +66,7 @@ export class Machine {
 	}
 
 	public resetDevices(): void {
+		this.systemController.reset();
 		this.irqController.reset();
 		this.inputController.reset();
 		this.dmaController.reset();

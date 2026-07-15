@@ -1,3 +1,4 @@
+#include "common/endian.h"
 #include "machine/devices/gx/gpu.h"
 #include "machine/devices/gx/gpu_command_fifo.h"
 #include "machine/devices/dma/controller.h"
@@ -268,7 +269,7 @@ void testGp1DisplayModeOwnsPalNtsc() {
 void testGp1ResetRestoresRegistersAndPreservesAcceptedGpuWork() {
 	GpuHarness harness;
 	bmsx::GxGpu& gpu = harness.gpu;
-	const bmsx::GxGpuCommandBuffer& commandBuffer = *gpu.readDeviceOutput().commandBuffer;
+	const bmsx::GxGpuCommandBuffer& commandBuffer = gpu.readDeviceOutput().commandBuffer;
 	const uint32_t commandSerial = commandBuffer.serial;
 	const bmsx::u64 vramSnapshotSerial = gpu.readVramSnapshotSerial();
 
@@ -357,7 +358,7 @@ void testInterlacedScanoutStatusBits() {
 void testStateRestorePreservesInterlacedFieldLatches() {
 	GpuHarness harness;
 	bmsx::GxGpu& gpu = harness.gpu;
-	const bmsx::GxGpuCommandBuffer& commands = *gpu.readDeviceOutput().commandBuffer;
+	const bmsx::GxGpuCommandBuffer& commands = gpu.readDeviceOutput().commandBuffer;
 	constexpr uint32_t scanoutMask = bmsx::GX_GPU_STATUS_INTERLACED_FIELD | bmsx::GX_GPU_STATUS_DISPLAY_LINE_LSB;
 
 	gpu.writeGp1((bmsx::GX_GPU_GP1_DISPLAY_START << 24u) | (7u << 10u));
@@ -383,7 +384,7 @@ void testStateRestorePreservesInterlacedFieldLatches() {
 void testInterlacedRenderCommandWords() {
 	GpuHarness harness;
 	bmsx::GxGpu& gpu = harness.gpu;
-	const bmsx::GxGpuCommandBuffer& commands = *gpu.readDeviceOutput().commandBuffer;
+	const bmsx::GxGpuCommandBuffer& commands = gpu.readDeviceOutput().commandBuffer;
 
 	require(bmsx::gxGpuSkipDrawingToActiveField(bmsx::GX_GPU_STATUS_VERTICAL_RESOLUTION | bmsx::GX_GPU_STATUS_VERTICAL_INTERLACE), "GX-GPU detects PSX skip-active-field mode");
 	require(!bmsx::gxGpuSkipDrawingToActiveField(bmsx::GX_GPU_STATUS_VERTICAL_RESOLUTION | bmsx::GX_GPU_STATUS_VERTICAL_INTERLACE | (1u << 10u)), "GX-GPU displayed-field draw bit disables skip-active-field mode");
@@ -415,7 +416,7 @@ void testInterlacedRenderCommandWords() {
 void testCommandLogIsPresentableOnlyAfterVblankFrameSeal() {
 	GpuHarness harness;
 	bmsx::GxGpu& gpu = harness.gpu;
-	const bmsx::GxGpuCommandBuffer& commands = *gpu.readDeviceOutput().commandBuffer;
+	const bmsx::GxGpuCommandBuffer& commands = gpu.readDeviceOutput().commandBuffer;
 
 	gpu.writeGp0((bmsx::GX_GPU_GP0_POLYGON_FIRST << 24u) | 0x00010203u);
 	gpu.writeGp0(0x00000000u);
@@ -460,7 +461,7 @@ void testPartialPresentationSnapshotDoesNotExposeQueuedCommands() {
 	gpu.writeGp0((1u << 16u) | 1u);
 
 	const bmsx::GxGpuDeviceOutput& output = gpu.readDeviceOutput();
-	const bmsx::GxGpuCommandBuffer& commands = *output.commandBuffer;
+	const bmsx::GxGpuCommandBuffer& commands = output.commandBuffer;
 	require(commands.commandCount == 1u, "GX-GPU partial presentation snapshot keeps queued command");
 	require(commands.presentCommandCount == 0u, "GX-GPU partial presentation snapshot exposes no presentable command");
 
@@ -483,7 +484,7 @@ void testPartialPresentationSnapshotDoesNotExposeQueuedCommands() {
 void testRetirePreservesCommandsAppendedAfterSealedVblankSnapshot() {
 	GpuHarness harness;
 	bmsx::GxGpu& gpu = harness.gpu;
-	const bmsx::GxGpuCommandBuffer& commands = *gpu.readDeviceOutput().commandBuffer;
+	const bmsx::GxGpuCommandBuffer& commands = gpu.readDeviceOutput().commandBuffer;
 
 	gpu.writeGp0((bmsx::GX_GPU_GP0_FILL_RECTANGLE << 24u) | 0x0000ffu);
 	gpu.writeGp0(0u);
@@ -548,7 +549,7 @@ void testDisplayDisableAndDmaDirectionStatusBits() {
 void testGpustatReadinessTracksGp0PacketAssemblyAndPayloadPhases() {
 	GpuHarness harness;
 	bmsx::GxGpu& gpu = harness.gpu;
-	const bmsx::GxGpuCommandBuffer& commands = *gpu.readDeviceOutput().commandBuffer;
+	const bmsx::GxGpuCommandBuffer& commands = gpu.readDeviceOutput().commandBuffer;
 
 	uint32_t status = gpu.readStatus();
 	require((status & bmsx::GX_GPU_STATUS_GPU_IDLE) == bmsx::GX_GPU_STATUS_GPU_IDLE, "GX-GPU GPUSTAT reset idle");
@@ -622,7 +623,7 @@ void testGpustatReadinessTracksGp0PacketAssemblyAndPayloadPhases() {
 void testCommandTimingGatesGpustatIdleAndVblankExecutionFrontier() {
 	GpuHarness harness;
 	bmsx::GxGpu& gpu = harness.gpu;
-	const bmsx::GxGpuCommandBuffer& commands = *gpu.readDeviceOutput().commandBuffer;
+	const bmsx::GxGpuCommandBuffer& commands = gpu.readDeviceOutput().commandBuffer;
 
 	gpu.writeGp0((bmsx::GX_GPU_GP0_FILL_RECTANGLE << 24u) | 0x0000ffu);
 	gpu.writeGp0(0u);
@@ -794,7 +795,7 @@ void testGp0EnvironmentRegistersAndGpuInfoQueries() {
 void testGp0FixedLengthRenderAndBlitPacketAssembly() {
 	GpuHarness harness;
 	bmsx::GxGpu& gpu = harness.gpu;
-	const bmsx::GxGpuCommandBuffer& commands = *harness.gpu.readDeviceOutput().commandBuffer;
+	const bmsx::GxGpuCommandBuffer& commands = harness.gpu.readDeviceOutput().commandBuffer;
 
 	gpu.writeGp0((bmsx::GX_GPU_GP0_POLYGON_FIRST << 24u) | 0x0000ffu);
 	gpu.writeGp0((bmsx::GX_GPU_GP0_DRAW_MODE << 24u) | 0x123456u);
@@ -872,7 +873,7 @@ void testGp0FixedLengthRenderAndBlitPacketAssembly() {
 void testGp0CpuToVramImagePayloadConsumption() {
 	GpuHarness harness;
 	bmsx::GxGpu& gpu = harness.gpu;
-	const bmsx::GxGpuCommandBuffer& commands = *gpu.readDeviceOutput().commandBuffer;
+	const bmsx::GxGpuCommandBuffer& commands = gpu.readDeviceOutput().commandBuffer;
 
 	gpu.writeGp0(bmsx::GX_GPU_GP0_CPU_TO_VRAM_FIRST << 24u);
 	gpu.writeGp0(0x00010002u);
@@ -902,7 +903,7 @@ void testGp0CpuToVramImagePayloadConsumption() {
 void testGp0PolylineConsumesPayloadUntilTerminator() {
 	GpuHarness harness;
 	bmsx::GxGpu& gpu = harness.gpu;
-	const bmsx::GxGpuCommandBuffer& commands = *gpu.readDeviceOutput().commandBuffer;
+	const bmsx::GxGpuCommandBuffer& commands = gpu.readDeviceOutput().commandBuffer;
 
 	gpu.writeGp0((0x48u << 24u) | 0x0000ffu);
 	gpu.writeGp0(0x00010002u);
@@ -952,7 +953,7 @@ void testSaveStateRestoresPartialFixedGp0Command() {
 	bmsx::GxGpu& restoredPacketGpu = restoredPacketHarness.gpu;
 	restoredPacketGpu.restoreState(packetGpu.captureState());
 	restoredPacketGpu.writeGp0(0x00050006u);
-	const bmsx::GxGpuCommandBuffer& packetCommands = *restoredPacketGpu.readDeviceOutput().commandBuffer;
+	const bmsx::GxGpuCommandBuffer& packetCommands = restoredPacketGpu.readDeviceOutput().commandBuffer;
 	require(packetCommands.commandCount == 1u, "GX-GPU save-state restores partial fixed GP0 command");
 	require(packetCommands.commandKind[0] == bmsx::GX_GPU_COMMAND_DRAW_POLYGON, "GX-GPU restored fixed GP0 command kind");
 	require(packetCommands.commandWordCount[0] == 4u, "GX-GPU restored fixed GP0 command word count");
@@ -971,7 +972,7 @@ void testSaveStateRestoresPartialCpuToVramUpload() {
 	bmsx::GxGpu& restoredImageGpu = restoredImageHarness.gpu;
 	restoredImageGpu.restoreState(imageGpu.captureState());
 	restoredImageGpu.writeGp0(0x7c00ffffu);
-	const bmsx::GxGpuCommandBuffer& imageCommands = *restoredImageGpu.readDeviceOutput().commandBuffer;
+	const bmsx::GxGpuCommandBuffer& imageCommands = restoredImageGpu.readDeviceOutput().commandBuffer;
 	require(imageCommands.commandCount == 1u, "GX-GPU save-state restores partial CPU-to-VRAM upload");
 	require(imageCommands.commandKind[0] == bmsx::GX_GPU_COMMAND_UPLOAD_CPU_TO_VRAM, "GX-GPU restored upload command kind");
 	require(imageCommands.commandWordCount[0] == 5u, "GX-GPU restored upload command word count");
@@ -990,7 +991,7 @@ void testSaveStateRestoresPartialPolylineCommand() {
 	bmsx::GxGpu& restoredPolylineGpu = restoredPolylineHarness.gpu;
 	restoredPolylineGpu.restoreState(polylineGpu.captureState());
 	restoredPolylineGpu.writeGp0(0x50005000u);
-	const bmsx::GxGpuCommandBuffer& polylineCommands = *restoredPolylineGpu.readDeviceOutput().commandBuffer;
+	const bmsx::GxGpuCommandBuffer& polylineCommands = restoredPolylineGpu.readDeviceOutput().commandBuffer;
 	require(polylineCommands.commandCount == 1u, "GX-GPU save-state restores partial polyline command");
 	require(polylineCommands.commandKind[0] == bmsx::GX_GPU_COMMAND_DRAW_POLYLINE, "GX-GPU restored polyline command kind");
 	require(polylineCommands.commandWordCount[0] == 3u, "GX-GPU restored polyline command word count");
@@ -1020,7 +1021,7 @@ void testSaveStateRestoresCommandTimeAndFifoSuffixRelativeToSchedulerTime() {
 	restored.scheduler.advanceTo(119);
 	restored.gpu.onService(119);
 	require(restored.gpu.readDrawModeWord() == 0x000123u, "GX-GPU restore consumes the FIFO suffix at prior command completion");
-	require(restored.gpu.readDeviceOutput().commandBuffer->executedCommandCount == 1u, "GX-GPU restore advances the restored execution frontier");
+	require(restored.gpu.readDeviceOutput().commandBuffer.executedCommandCount == 1u, "GX-GPU restore advances the restored execution frontier");
 	require(restored.scheduler.nextDeadline() == 120, "GX-GPU restore schedules the FIFO suffix command");
 	restored.scheduler.advanceTo(120);
 	restored.gpu.onService(120);
@@ -1040,7 +1041,7 @@ void testGp1ClearCutsActiveC0AtExecutionFrontierWithoutCancelingDraws() {
 	const bmsx::i64 fillDeadline = activeScheduler.nextDeadline();
 	activeScheduler.advanceTo(fillDeadline);
 	active.gpu.onService(fillDeadline);
-	const bmsx::GxGpuCommandBuffer& activeCommands = *active.gpu.readDeviceOutput().commandBuffer;
+	const bmsx::GxGpuCommandBuffer& activeCommands = active.gpu.readDeviceOutput().commandBuffer;
 	require(activeCommands.commandCount == 2u, "GX-GPU active C0 clear test retains fill and C0 before clear");
 	require(activeCommands.executedCommandCount == 1u, "GX-GPU active C0 clear test executes its fill prefix");
 	require(activeCommands.readback.phase() == bmsx::GX_GPU_READBACK_IDLE, "GX-GPU active C0 waits for its execution deadline");
@@ -1067,7 +1068,7 @@ void testGp1ClearCutsActiveC0AtExecutionFrontierWithoutCancelingDraws() {
 	queued.gpu.writeGp0((1u << 16u) | 1u);
 	const bmsx::i64 queuedFillDeadline = queued.scheduler.nextDeadline();
 	queued.gpu.writeGp1(bmsx::GX_GPU_GP1_CLEAR_FIFO << 24u);
-	const bmsx::GxGpuCommandBuffer& queuedCommands = *queued.gpu.readDeviceOutput().commandBuffer;
+	const bmsx::GxGpuCommandBuffer& queuedCommands = queued.gpu.readDeviceOutput().commandBuffer;
 	require(queuedCommands.commandCount == 1u, "GX-GPU GP1 clear preserves an active fill");
 	require(queuedCommands.executedCommandCount == 0u, "GX-GPU active fill remains timed after GP1 clear");
 	require(queued.gpu.captureState().gp0FifoWordCount == 0u, "GX-GPU GP1 clear discards C0 still queued behind a draw");
@@ -1109,7 +1110,7 @@ void testGp1ClearFifoClearsPartialGp0PacketsAndFlushesPartialCpuToVramUploads() 
 	harness.gpu.writeGp0((bmsx::GX_GPU_GP0_POLYGON_FIRST << 24u) | 0x0000ffu);
 	harness.gpu.writeGp0((bmsx::GX_GPU_GP0_DRAW_MODE << 24u) | 0x000111u);
 	bmsx::GxGpu& gpu = harness.gpu;
-	const bmsx::GxGpuCommandBuffer& commands = *harness.gpu.readDeviceOutput().commandBuffer;
+	const bmsx::GxGpuCommandBuffer& commands = harness.gpu.readDeviceOutput().commandBuffer;
 
 	gpu.writeGp1(bmsx::GX_GPU_GP1_CLEAR_FIFO << 24u);
 	require(commands.commandCount == 0u, "GX-GPU GP1 clear FIFO does not emit abandoned partial GP0 command");
@@ -1266,8 +1267,8 @@ void testPowerOnVramResetSaveStateAndMachineRecreation() {
 		require(gxGpuVramDigest(bytes) == 0xd1dc1dedu, "GX-GPU power-on VRAM full digest");
 
 		const bmsx::GxGpuDeviceOutput& output = first.readDeviceOutput();
-		SoftwareFrameHarness frame(*output.commandBuffer, *output.readbackPort);
-		*frame.vramSnapshot = *output.vramSnapshotBytes;
+		SoftwareFrameHarness frame(output.commandBuffer, output.readbackPort);
+		*frame.vramSnapshot = output.vramSnapshotBytes;
 		frame.state.vramSnapshotSerial = output.vramSnapshotSerial;
 		bmsx::renderGxGpuSoftwareFrame(frame.backend, frame.state);
 		require(bmsx::g_gxGpuSoftwareVram[bmsx::gxGpuSoftwareVramIndex(0, 0)] == powerOnWord0, "GX-GPU software backend loads power-on VRAM");
@@ -1287,8 +1288,8 @@ void testPowerOnVramResetSaveStateAndMachineRecreation() {
 		bmsx::GxGpu& second = harness.gpu;
 		require(second.readVramSnapshotSerial() > firstSerial, "GX-GPU recreated machine publishes a newer VRAM snapshot revision");
 		const bmsx::GxGpuDeviceOutput& output = second.readDeviceOutput();
-		SoftwareFrameHarness frame(*output.commandBuffer, *output.readbackPort);
-		*frame.vramSnapshot = *output.vramSnapshotBytes;
+		SoftwareFrameHarness frame(output.commandBuffer, output.readbackPort);
+		*frame.vramSnapshot = output.vramSnapshotBytes;
 		frame.state.vramSnapshotSerial = output.vramSnapshotSerial;
 		bmsx::renderGxGpuSoftwareFrame(frame.backend, frame.state);
 		require(bmsx::g_gxGpuSoftwareVram[bmsx::gxGpuSoftwareVramIndex(0, 0)] == powerOnWord0, "GX-GPU recreated machine replaces persistent backend VRAM");
@@ -1340,8 +1341,8 @@ void testGpureadFencesBackendWorkAndPacksWrappedOddPixels() {
 	completeGpuCommands(harness);
 	gpu.presentReadyFrameOnVblankEdge();
 	const bmsx::GxGpuDeviceOutput& output = gpu.readDeviceOutput();
-	SoftwareFrameHarness frame(*output.commandBuffer, *output.readbackPort);
-	*frame.vramSnapshot = *output.vramSnapshotBytes;
+	SoftwareFrameHarness frame(output.commandBuffer, output.readbackPort);
+	*frame.vramSnapshot = output.vramSnapshotBytes;
 	frame.state.vramSnapshotSerial = output.vramSnapshotSerial;
 	bmsx::renderGxGpuSoftwareFrame(frame.backend, frame.state);
 	require((gpu.readStatus() & bmsx::GX_GPU_STATUS_READY_TO_SEND_VRAM) != 0u, "GX-GPU GPUREAD becomes ready after backend completion");
@@ -1379,8 +1380,8 @@ void testGpureadPreservesRowMajorOrderAcrossXAndYWrap() {
 	completeGpuCommands(harness);
 	gpu.presentReadyFrameOnVblankEdge();
 	const bmsx::GxGpuDeviceOutput& output = gpu.readDeviceOutput();
-	SoftwareFrameHarness frame(*output.commandBuffer, *output.readbackPort);
-	*frame.vramSnapshot = *output.vramSnapshotBytes;
+	SoftwareFrameHarness frame(output.commandBuffer, output.readbackPort);
+	*frame.vramSnapshot = output.vramSnapshotBytes;
 	frame.state.vramSnapshotSerial = output.vramSnapshotSerial;
 	bmsx::renderGxGpuSoftwareFrame(frame.backend, frame.state);
 	require(gpu.readGp0() == 0x22221111u, "GX-GPU GPUREAD preserves wrapped first row");
@@ -1403,14 +1404,14 @@ void testGpureadQueuesLaterC0BehindActiveFence() {
 	gpu.writeGp0(sizeWord);
 	completeGpuCommands(harness);
 	const bmsx::GxGpuDeviceOutput& queuedOutput = gpu.readDeviceOutput();
-	require(queuedOutput.readbackPort->x() == 0u, "GX-GPU later C0 does not overwrite active readback X");
-	require(queuedOutput.readbackPort->phase() == bmsx::GX_GPU_READBACK_PENDING, "GX-GPU first queued C0 owns pending readback");
+	require(queuedOutput.readbackPort.x() == 0u, "GX-GPU later C0 does not overwrite active readback X");
+	require(queuedOutput.readbackPort.phase() == bmsx::GX_GPU_READBACK_PENDING, "GX-GPU first queued C0 owns pending readback");
 
 	completeGpuCommands(harness);
 	gpu.presentReadyFrameOnVblankEdge();
 	const bmsx::GxGpuDeviceOutput& firstOutput = gpu.readDeviceOutput();
-	SoftwareFrameHarness frame(*firstOutput.commandBuffer, *firstOutput.readbackPort);
-	*frame.vramSnapshot = *firstOutput.vramSnapshotBytes;
+	SoftwareFrameHarness frame(firstOutput.commandBuffer, firstOutput.readbackPort);
+	*frame.vramSnapshot = firstOutput.vramSnapshotBytes;
 	frame.state.vramSnapshotSerial = firstOutput.vramSnapshotSerial;
 	bmsx::renderGxGpuSoftwareFrame(frame.backend, frame.state);
 	gpu.retirePresentedCommands();
@@ -1443,14 +1444,14 @@ void testGpureadDoesNotClaimC0AppendedAfterPublishedFence() {
 	gpu.writeGp0((1u << 16u) | 1u);
 	completeGpuCommands(harness);
 	const bmsx::GxGpuDeviceOutput& firstOutput = gpu.readDeviceOutput();
-	SoftwareFrameHarness frame(*firstOutput.commandBuffer, *firstOutput.readbackPort);
-	*frame.vramSnapshot = *firstOutput.vramSnapshotBytes;
+	SoftwareFrameHarness frame(firstOutput.commandBuffer, firstOutput.readbackPort);
+	*frame.vramSnapshot = firstOutput.vramSnapshotBytes;
 	frame.state.vramSnapshotSerial = firstOutput.vramSnapshotSerial;
 	bmsx::renderGxGpuSoftwareFrame(frame.backend, frame.state);
-	require(firstOutput.readbackPort->phase() == bmsx::GX_GPU_READBACK_PENDING, "GX-GPU post-seal C0 remains pending on old frame");
+	require(firstOutput.readbackPort.phase() == bmsx::GX_GPU_READBACK_PENDING, "GX-GPU post-seal C0 remains pending on old frame");
 	require((gpu.readStatus() & bmsx::GX_GPU_STATUS_READY_TO_SEND_VRAM) == 0u, "GX-GPU post-seal C0 is not ready before its fence");
 	gpu.retirePresentedCommands();
-	require(firstOutput.readbackPort->fenceCommandCount() == 2u, "GX-GPU retire shifts post-seal C0 fence");
+	require(firstOutput.readbackPort.fenceCommandCount() == 2u, "GX-GPU retire shifts post-seal C0 fence");
 
 	completeGpuCommands(harness);
 	gpu.presentReadyFrameOnVblankEdge();
@@ -1481,8 +1482,8 @@ void testGp1ClearFifoAbortsPendingGpureadWithoutDroppingPriorCommands() {
 	completeGpuCommands(harness);
 	gpu.presentReadyFrameOnVblankEdge();
 	const bmsx::GxGpuDeviceOutput& output = gpu.readDeviceOutput();
-	const bmsx::GxGpuCommandBuffer& commandBuffer = *output.commandBuffer;
-	bmsx::GxGpuReadbackPort& readback = *output.readbackPort;
+	const bmsx::GxGpuCommandBuffer& commandBuffer = output.commandBuffer;
+	bmsx::GxGpuReadbackPort& readback = output.readbackPort;
 	const uint32_t commandSerial = commandBuffer.serial;
 	const bmsx::u64 vramSnapshotSerial = output.vramSnapshotSerial;
 	const uint32_t readbackToken = readback.token();
@@ -1506,7 +1507,7 @@ void testGp1ClearFifoAbortsPendingGpureadWithoutDroppingPriorCommands() {
 	gpu.presentReadyFrameOnVblankEdge();
 	require(readback.phase() == bmsx::GX_GPU_READBACK_IDLE, "GX-GPU aborted queued C0 does not reactivate on frame seal");
 	SoftwareFrameHarness frame(commandBuffer, readback);
-	*frame.vramSnapshot = *output.vramSnapshotBytes;
+	*frame.vramSnapshot = output.vramSnapshotBytes;
 	frame.state.vramSnapshotSerial = output.vramSnapshotSerial;
 	bmsx::renderGxGpuSoftwareFrame(frame.backend, frame.state);
 	require(bmsx::g_gxGpuSoftwareVram[bmsx::gxGpuSoftwareVramIndex(0, 0)] == 0x001fu, "GX-GPU pending readback abort executes the prior fill");
@@ -1532,10 +1533,10 @@ void testGp1ClearFifoAbortsReadyGpureadAndQueuedSuffix() {
 	completeGpuCommands(harness);
 	gpu.presentReadyFrameOnVblankEdge();
 	const bmsx::GxGpuDeviceOutput& output = gpu.readDeviceOutput();
-	const bmsx::GxGpuCommandBuffer& commandBuffer = *output.commandBuffer;
-	bmsx::GxGpuReadbackPort& readback = *output.readbackPort;
+	const bmsx::GxGpuCommandBuffer& commandBuffer = output.commandBuffer;
+	bmsx::GxGpuReadbackPort& readback = output.readbackPort;
 	SoftwareFrameHarness frame(commandBuffer, readback);
-	*frame.vramSnapshot = *output.vramSnapshotBytes;
+	*frame.vramSnapshot = output.vramSnapshotBytes;
 	frame.state.vramSnapshotSerial = output.vramSnapshotSerial;
 	bmsx::renderGxGpuSoftwareFrame(frame.backend, frame.state);
 	const uint32_t readbackToken = readback.token();
@@ -1599,8 +1600,8 @@ void testGpureadRestoreRearmsSubmittedAndResetClearsRequest() {
 	completeGpuCommands(harness);
 	gpu.presentReadyFrameOnVblankEdge();
 	const bmsx::GxGpuDeviceOutput& submittedOutput = gpu.readDeviceOutput();
-	const bmsx::GxGpuCommandBuffer& commandBuffer = *submittedOutput.commandBuffer;
-	bmsx::GxGpuReadbackPort& readback = *submittedOutput.readbackPort;
+	const bmsx::GxGpuCommandBuffer& commandBuffer = submittedOutput.commandBuffer;
+	bmsx::GxGpuReadbackPort& readback = submittedOutput.readbackPort;
 	require(readback.claimReadback(commandBuffer.presentCommandCount), "GX-GPU test submits pending readback");
 	require(readback.phase() == bmsx::GX_GPU_READBACK_SUBMITTED, "GX-GPU readback enters submitted phase");
 	const uint32_t staleToken = readback.token();
@@ -1617,8 +1618,8 @@ void testGpureadRestoreRearmsSubmittedAndResetClearsRequest() {
 	gpu.presentReadyFrameOnVblankEdge();
 	require(gpu.lastFrameCommitted(), "GX-GPU restored zero-fence readback schedules backend work");
 	const bmsx::GxGpuDeviceOutput& output = gpu.readDeviceOutput();
-	SoftwareFrameHarness frame(*output.commandBuffer, *output.readbackPort);
-	*frame.vramSnapshot = *output.vramSnapshotBytes;
+	SoftwareFrameHarness frame(output.commandBuffer, output.readbackPort);
+	*frame.vramSnapshot = output.vramSnapshotBytes;
 	frame.state.vramSnapshotSerial = output.vramSnapshotSerial;
 	bmsx::renderGxGpuSoftwareFrame(frame.backend, frame.state);
 	require(gpu.readGp0() == 0x00001234u, "GX-GPU restored submitted readback completes");
@@ -3039,6 +3040,41 @@ void testMmioGp0Gp1() {
 	require((memory.readMappedU32LE(bmsx::IO_GX_GPU_GP1) & bmsx::GX_GPU_STATUS_PAL_MODE) == 0u, "GX-GPU GP1 MMIO GPUSTAT PAL bit");
 }
 
+void testCharacterPlaneOwnership() {
+	GpuHarness harness;
+	harness.gpu.writeGp0(bmsx::GX_GPU_GP0_POLYGON_FIRST << 24u);
+	const bmsx::GxGpuState gp0Before = harness.gpu.captureState();
+
+	harness.memory.writeMappedU32LE(bmsx::IO_GX_CHARACTER_CONTROL, 0xf0000001u);
+	harness.memory.writeMappedU32LE(bmsx::IO_GX_CHARACTER_PALETTE_ADDRESS, 3u);
+	harness.memory.writeMappedU32LE(bmsx::IO_GX_CHARACTER_PALETTE_DATA, 0x80007c00u);
+	harness.memory.writeMappedU32LE(bmsx::IO_GX_CHARACTER_GLYPH_ADDRESS, 65u);
+	harness.memory.writeMappedU32LE(bmsx::IO_GX_CHARACTER_GLYPH_DATA, 0x00f99f90u);
+	harness.memory.writeMappedU32LE(bmsx::IO_GX_CHARACTER_CELL_ADDRESS, 321u);
+	harness.memory.writeMappedU32LE(bmsx::IO_GX_CHARACTER_CELL_DATA, 0x00001241u);
+	const bmsx::GxGpuState state = harness.gpu.captureState();
+	require(state.gp0CommandWordCount == gp0Before.gp0CommandWordCount, "GX character MMIO preserves GP0 word count");
+	require(state.gp0CommandTargetWordCount == gp0Before.gp0CommandTargetWordCount, "GX character MMIO preserves GP0 target word count");
+	require(state.gp0CommandWords == gp0Before.gp0CommandWords, "GX character MMIO preserves GP0 assembly words");
+	const bmsx::GxGpuDeviceOutput& output = harness.gpu.readDeviceOutput();
+	const bmsx::GxCharacterPlaneOutput& characterPlaneOutput = output.characterPlane;
+	require(characterPlaneOutput.controlWord == 0xf0000001u, "GX-GPU publishes character control");
+	require(bmsx::readLE32(characterPlaneOutput.paletteBytes.data() + 3u * bmsx::GX_CHARACTER_PLANE_WORD_BYTES) == 0x80007c00u, "GX-GPU publishes character palette SRAM");
+	require(bmsx::readLE32(characterPlaneOutput.glyphBytes.data() + 65u * bmsx::GX_CHARACTER_PLANE_WORD_BYTES) == 0x00f99f90u, "GX-GPU publishes character glyph SRAM");
+	require(bmsx::readLE32(characterPlaneOutput.cellBytes.data() + 321u * bmsx::GX_CHARACTER_PLANE_WORD_BYTES) == 0x00001241u, "GX-GPU publishes character cell SRAM");
+
+	harness.gpu.reset();
+	require(&harness.gpu.readDeviceOutput().characterPlane == &characterPlaneOutput, "GX-GPU retains character output identity");
+	require(characterPlaneOutput.controlWord == 0u, "GX-GPU reset disables character plane");
+	require(bmsx::readLE32(characterPlaneOutput.paletteBytes.data() + 3u * bmsx::GX_CHARACTER_PLANE_WORD_BYTES) == 0u, "GX-GPU reset clears character palette SRAM");
+	harness.gpu.restoreState(state);
+	harness.gpu.readDeviceOutput();
+	require(characterPlaneOutput.controlWord == 0xf0000001u, "GX-GPU restores character control");
+	require(bmsx::readLE32(characterPlaneOutput.paletteBytes.data() + 3u * bmsx::GX_CHARACTER_PLANE_WORD_BYTES) == 0x80007c00u, "GX-GPU restores character palette SRAM");
+	require(bmsx::readLE32(characterPlaneOutput.glyphBytes.data() + 65u * bmsx::GX_CHARACTER_PLANE_WORD_BYTES) == 0x00f99f90u, "GX-GPU restores character glyph SRAM");
+	require(bmsx::readLE32(characterPlaneOutput.cellBytes.data() + 321u * bmsx::GX_CHARACTER_PLANE_WORD_BYTES) == 0x00001241u, "GX-GPU restores character cell SRAM");
+}
+
 } // namespace
 
 int main() {
@@ -3102,5 +3138,6 @@ int main() {
 	testSoftwareCommandsPreserveTextureMaskBlendAndMaskTestStoreSemantics();
 	testSoftwareCommandsSamplePalette8RectangleFlipAndDitheredModulation();
 	testMmioGp0Gp1();
+	testCharacterPlaneOwnership();
 	return 0;
 }

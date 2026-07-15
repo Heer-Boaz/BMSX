@@ -4,6 +4,13 @@ import type { MicrotaskQueue } from '../machine/scheduler/microtask_queue';
 export type { MicrotaskQueue } from '../machine/scheduler/microtask_queue';
 export type MonoTime = number;
 
+export const enum LogLevel {
+	Debug,
+	Info,
+	Warn,
+	Error,
+}
+
 export interface StorageService {
 	getItem(k: string): string;
 	setItem(k: string, v: string): void;
@@ -128,6 +135,7 @@ export interface Platform {
 	storage: StorageService;
 	microtasks: MicrotaskQueue;
 	requestShutdown(): void;
+	log(level: LogLevel, message: string): void;
 	clipboard: ClipboardService;
 	hid: HIDService;
 	onscreenGamepad: OnscreenGamepadPlatform;

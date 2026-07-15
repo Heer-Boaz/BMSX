@@ -11,8 +11,10 @@ void restoreSharedDeviceState(
 	const GeometryControllerState& geometry,
 	const IrqControllerState& irq,
 	const AudioControllerState& audio,
-	const InputControllerState& input
+	const InputControllerState& input,
+	const SystemControllerState& systemControl
 ) {
+	machine.systemController.restoreState(systemControl);
 	machine.dmaController.restoreState(dma, machine.scheduler.nowCycles());
 	machine.geometryController.restoreState(geometry, machine.scheduler.nowCycles());
 	machine.irqController.restoreState(irq);
@@ -33,11 +35,12 @@ MachineState captureMachineState(Machine& machine) {
 	state.irq = machine.irqController.captureState();
 	state.audio = machine.audioController.captureState();
 	state.input = machine.inputController.captureState();
+	state.systemControl = machine.systemController.captureState();
 	return state;
 }
 
 void restoreMachineState(Machine& machine, const MachineState& state) {
-	restoreSharedDeviceState(machine, state.dma, state.geometry, state.irq, state.audio, state.input);
+	restoreSharedDeviceState(machine, state.dma, state.geometry, state.irq, state.audio, state.input, state.systemControl);
 	machine.gxGpu.restoreState(state.gxGpu);
 	machine.dmaController.postLoad();
 	machine.gxGte.restoreState(state.gxGte);
@@ -55,13 +58,14 @@ MachineSaveState captureMachineSaveState(Machine& machine) {
 	state.audio = machine.audioController.captureState();
 	state.stringPool = machine.cpu.stringPool().captureState();
 	state.input = machine.inputController.captureState();
+	state.systemControl = machine.systemController.captureState();
 	return state;
 }
 
 void restoreMachineSaveState(Machine& machine, const MachineSaveState& state) {
 	machine.memory.restoreSaveState(state.memory);
 	machine.cpu.stringPool().restoreState(state.stringPool);
-	restoreSharedDeviceState(machine, state.dma, state.geometry, state.irq, state.audio, state.input);
+	restoreSharedDeviceState(machine, state.dma, state.geometry, state.irq, state.audio, state.input, state.systemControl);
 	machine.gxGpu.restoreSaveState(state.gxGpu);
 	machine.dmaController.postLoad();
 	machine.gxGte.restoreState(state.gxGte);

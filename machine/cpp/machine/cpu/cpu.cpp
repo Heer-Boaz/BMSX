@@ -1021,9 +1021,13 @@ Closure* CPU::createTrackedClosure(int protoIndex, size_t upvalueCount) {
 }
 
 void CPU::setProgram(Program* program, const ProgramRuntimeSymbols& runtimeSymbols, ProgramMetadata* metadata, int systemIrqProtoIndex, int cartIrqProtoIndex, int systemExceptionProtoIndex) {
-	// Keep slot-backed globals materialized in the globals table before swapping programs.
-	// SETGL/SETSYS write into the slot arrays directly, and append/reload paths rebuild the next
-	// slot layout from `globals`, so without this sync flattened module exports can fall back to nil.
+	std::unordered_map<StringId, Value> previousSystemGlobals;
+	previousSystemGlobals.reserve(m_systemGlobalNames.size());
+	for (size_t index = 0; index < m_systemGlobalNames.size(); ++index) {
+		previousSystemGlobals.emplace(m_systemGlobalNames[index], m_systemGlobalValues[index]);
+	}
+	// Ordinary globals remain Lua-table-visible across program replacement. System globals
+	// are a distinct CPU registerfile and are carried by slot name above instead.
 	syncGlobalSlotsToTable();
 	m_program = program;
 	m_systemIrqProtoIndex = systemIrqProtoIndex;
@@ -1062,26 +1066,37 @@ void CPU::setProgram(Program* program, const ProgramRuntimeSymbols& runtimeSymbo
 	}
 	m_indexKey = valueString(m_stringPool.intern("__index"));
 	materializeStaticClosures();
-	initializeGlobalSlots(runtimeSymbols);
+	initializeGlobalSlots(runtimeSymbols, previousSystemGlobals);
 	decodeProgram();
 }
 
-void CPU::initializeGlobalSlots(const ProgramRuntimeSymbols& runtimeSymbols) {
+void CPU::initializeGlobalSlots(const ProgramRuntimeSymbols& runtimeSymbols, const std::unordered_map<StringId, Value>& previousSystemGlobals) {
 	clearGlobalSlots();
-	initializeGlobalSlotList(m_systemGlobalNames, m_systemGlobalValues, m_systemGlobalSlotByKey, runtimeSymbols.systemGlobalNames);
-	initializeGlobalSlotList(m_globalNames, m_globalValues, m_globalSlotByKey, runtimeSymbols.globalNames);
+	m_systemGlobalNames.resize(runtimeSymbols.systemGlobalNames.size());
+	m_systemGlobalValues.resize(runtimeSymbols.systemGlobalNames.size());
+	for (size_t index = 0; index < runtimeSymbols.systemGlobalNames.size(); ++index) {
+		const StringId key = m_stringPool.intern(runtimeSymbols.systemGlobalNames[index], false);
+		m_systemGlobalNames[index] = key;
+		m_systemGlobalSlotByKey.emplace(key, index);
+		const auto previous = previousSystemGlobals.find(key);
+		m_systemGlobalValues[index] = previous == previousSystemGlobals.end() ? valueNil() : previous->second;
+	}
+	m_globalNames.resize(runtimeSymbols.globalNames.size());
+	m_globalValues.resize(runtimeSymbols.globalNames.size());
+	for (size_t index = 0; index < runtimeSymbols.globalNames.size(); ++index) {
+		const StringId key = m_stringPool.intern(runtimeSymbols.globalNames[index], false);
+		m_globalNames[index] = key;
+		m_globalSlotByKey.emplace(key, index);
+		m_globalValues[index] = globals->get(valueString(key));
+	}
 }
 
-void CPU::initializeGlobalSlotList(std::vector<StringId>& names, std::vector<Value>& values, std::unordered_map<StringId, size_t>& slotByKey, const std::vector<std::string>& source) {
-	names.resize(source.size());
-	values.resize(source.size());
-	slotByKey.clear();
-	for (size_t index = 0; index < source.size(); ++index) {
-		const StringId key = m_stringPool.intern(source[index], false);
-		names[index] = key;
-		slotByKey.emplace(key, index);
-		values[index] = globals->get(valueString(key));
-	}
+void CPU::clearProgramEnvironment() {
+	lastReturnValues.clear();
+	clearCallStack();
+	m_externalReturnSink = nullptr;
+	clearGlobalSlots();
+	globals->clear();
 }
 
 void CPU::clearGlobalSlots() {
@@ -1096,23 +1111,23 @@ void CPU::clearGlobalSlots() {
 void CPU::setGlobalByKey(const Value& key, const Value& value) {
 	globals->set(key, value);
 	const StringId keyId = asStringId(key);
-	const auto systemIt = m_systemGlobalSlotByKey.find(keyId);
-	if (systemIt != m_systemGlobalSlotByKey.end()) {
-		m_systemGlobalValues[systemIt->second] = value;
-		return;
-	}
 	const auto globalIt = m_globalSlotByKey.find(keyId);
 	if (globalIt != m_globalSlotByKey.end()) {
 		m_globalValues[globalIt->second] = value;
 	}
 }
 
+void CPU::setSystemGlobalByKey(const Value& key, const Value& value) {
+	const StringId keyId = asStringId(key);
+	const auto slot = m_systemGlobalSlotByKey.find(keyId);
+	if (slot == m_systemGlobalSlotByKey.end()) {
+		throw BMSX_RUNTIME_ERROR("[CPU] System global '" + m_stringPool.toString(keyId) + "' has no register slot.");
+	}
+	m_systemGlobalValues[slot->second] = value;
+}
+
 Value CPU::getGlobalByKey(const Value& key) const {
 	const StringId keyId = asStringId(key);
-	const auto systemIt = m_systemGlobalSlotByKey.find(keyId);
-	if (systemIt != m_systemGlobalSlotByKey.end()) {
-		return m_systemGlobalValues[systemIt->second];
-	}
 	const auto globalIt = m_globalSlotByKey.find(keyId);
 	if (globalIt != m_globalSlotByKey.end()) {
 		return m_globalValues[globalIt->second];
@@ -1121,9 +1136,6 @@ Value CPU::getGlobalByKey(const Value& key) const {
 }
 
 void CPU::syncGlobalSlotsToTable() {
-	for (size_t index = 0; index < m_systemGlobalNames.size(); ++index) {
-		globals->set(valueString(m_systemGlobalNames[index]), m_systemGlobalValues[index]);
-	}
 	for (size_t index = 0; index < m_globalNames.size(); ++index) {
 		globals->set(valueString(m_globalNames[index]), m_globalValues[index]);
 	}
@@ -1385,6 +1397,17 @@ CpuRuntimeState CPU::captureRuntimeState(const std::unordered_map<std::string, V
 	};
 
 	CpuRuntimeState state;
+	state.systemGlobals.reserve(m_systemGlobalNames.size());
+	for (size_t index = 0; index < m_systemGlobalNames.size(); ++index) {
+		const Value value = m_systemGlobalValues[index];
+		if (valueIsNativeFunction(value) || valueIsNativeObject(value)) {
+			continue;
+		}
+		state.systemGlobals.push_back(CpuRootValueState{
+			m_stringPool.toString(m_systemGlobalNames[index]),
+			captureValueState(value),
+		});
+	}
 	globals->forEachEntry([&](Value key, Value value) {
 		if (!valueIsString(key)) {
 			return;
@@ -1624,6 +1647,9 @@ void CPU::restoreRuntimeState(const CpuRuntimeState& state, std::unordered_map<s
 		m_openUpvalues.push_back(OpenUpvalueSlot{ frame, upvalue->index, upvalue });
 	}
 
+	for (const CpuRootValueState& entry : state.systemGlobals) {
+		setSystemGlobalByKey(valueString(m_stringPool.intern(entry.name)), restoreValue(entry.value));
+	}
 	for (const CpuRootValueState& entry : state.globals) {
 		setGlobalByKey(valueString(m_stringPool.intern(entry.name)), restoreValue(entry.value));
 	}

@@ -7,6 +7,7 @@ import type { GxGpu } from '../../../machine/devices/gx/gpu';
 import { registerCRT } from '../../post/crt/webgpu/pipeline';
 import { registerDeviceQuantize } from '../../post/device_quantize/webgpu/pipeline';
 import { captureRenderedVramSnapshot, registerGxGpuPass } from './gx_gpu';
+import { registerGxCharacterPlanePass } from './gx_character_plane';
 import { updateAndBindFrameUniforms } from '../frame_uniforms';
 import type { RenderPassLibrary } from '../pass/library';
 import { registerHostOverlayPassesWebGPU } from '../../host_overlay/webgpu/pipeline';
@@ -76,6 +77,7 @@ export class WebGPUBackend implements GPUBackend {
 			},
 		});
 		registerGxGpuPass(registry);
+		registerGxCharacterPlanePass(registry);
 		registerDeviceQuantize(registry);
 		registerCRT(registry);
 		registerHostOverlayPassesWebGPU(registry);

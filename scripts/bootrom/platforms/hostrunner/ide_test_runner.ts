@@ -68,9 +68,6 @@ export async function runIdeTest(options: IdeTestRunnerOptions): Promise<void> {
 		frames: waitFrames,
 		hotResume: (preserveSystemModules?: boolean) => options.ide.hotResumeCore(preserveSystemModules),
 		performHotResume: () => options.ide.performHotResume(),
-		activateTerminal: () => options.ide.activateTerminal(),
-		deactivateTerminal: () => options.ide.deactivateTerminal(),
-		isTerminalActive: () => options.ide.isTerminalActive(),
 	};
 
 	log('starting');

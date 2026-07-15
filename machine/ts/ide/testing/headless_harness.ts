@@ -3,7 +3,6 @@ import { getTrackedLuaHeapBytes } from '../../machine/memory/lua_heap_usage';
 import { captureRuntimeResumeSnapshot } from '../runtime/resume_snapshot';
 import { resumeFromSnapshot } from '../runtime/hot_resume';
 import { performHotResume } from '../commands/actions';
-import { activateTerminalMode, deactivateTerminalMode } from '../workbench/overlay_modes';
 import type { Runtime } from '../../machine/runtime/runtime';
 import { installNativeGlobal, runHostEvalChunkToNative } from '../runtime/host_eval';
 
@@ -31,9 +30,6 @@ export type HeadlessIdeHarness = {
 	performHotResume(): void;
 	evaluateLua(source: string): unknown[];
 	installNativeGlobal(name: string, value: unknown): void;
-	activateTerminal(): void;
-	deactivateTerminal(): void;
-	isTerminalActive(): boolean;
 	/** Diagnostic breakdown of tracked-heap contributors, for leak hunting. */
 	debugStats(): HeadlessIdeHeapStats;
 };
@@ -74,9 +70,6 @@ export const headlessIdeHarness: HeadlessIdeHarness = {
 	},
 	evaluateLua: (source) => runHostEvalChunkToNative(requireRuntime(), source),
 	installNativeGlobal: (name, value) => installNativeGlobal(requireRuntime(), name, value),
-	activateTerminal: () => activateTerminalMode(),
-	deactivateTerminal: () => deactivateTerminalMode(),
-	isTerminalActive: () => machineManager.ideState.terminal.isActive,
 	debugStats: () => {
 		const runtime = requireRuntime();
 		const cpu = runtime.machine.cpu;

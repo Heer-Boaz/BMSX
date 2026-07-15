@@ -65,6 +65,9 @@ export class FrameLoopState {
 
 	public tickUpdate(): boolean {
 		const runtime = this.runtime;
+		if (this.consumeSystemReset()) {
+			return true;
+		}
 		const previousFrameActive = this.frameActive;
 		const previousRemaining = previousFrameActive ? this.frameState.cycleBudgetRemaining : -1;
 		const frameScheduler = runtime.frameScheduler;
@@ -106,6 +109,16 @@ export class FrameLoopState {
 		this.frameActive = false;
 		const runtime = this.runtime;
 		runtime.vblank.abandonTick();
+	}
+
+	private consumeSystemReset(): boolean {
+		const runtime = this.runtime;
+		if (!runtime.machine.systemController.takeResetRequest()) {
+			return false;
+		}
+		this.resetFrameState();
+		runtime.rebootSystemProgram();
+		return true;
 	}
 
 	private runActiveFrameState(): void {
@@ -150,6 +163,9 @@ export class FrameLoopState {
 					return;
 				}
 				const result = runtime.cpuExecution.runWithBudget(state);
+				if (this.consumeSystemReset()) {
+					return;
+				}
 				if (result === RunResult.Halted && cpu.getFrameDepth() === 0 && !runtime.cartProgramStarted) {
 					runtime.frameScheduler.clearQueuedTime();
 					this.abandonFrameState();

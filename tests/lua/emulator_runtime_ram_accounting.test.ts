@@ -223,6 +223,7 @@ test('restored static closures reuse the static proto cache', () => {
 	const staticProtoIndex = cpu.program.protos.findIndex(proto => proto.staticClosure);
 	assert.notEqual(staticProtoIndex, -1);
 	const state: CpuRuntimeState = {
+		systemGlobals: [],
 		globals: [],
 		moduleCache: [],
 		frames: [],

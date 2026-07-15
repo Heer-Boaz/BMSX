@@ -1,0 +1,164 @@
+[
+	{
+		"description": "game frame before quick menu",
+		"frame": 119,
+		"capture": true
+	},
+	{
+		"description": "quick menu start down",
+		"frame": 120,
+		"event": {
+			"type": "button",
+			"deviceId": "keyboard:0",
+			"code": "Enter",
+			"down": true,
+			"value": 1,
+			"timestamp": 2400,
+			"pressId": 1,
+			"modifiers": {
+				"ctrl": false,
+				"shift": false,
+				"alt": false,
+				"meta": false
+			}
+		}
+	},
+	{
+		"description": "quick menu select down",
+		"frame": 120,
+		"event": {
+			"type": "button",
+			"deviceId": "keyboard:0",
+			"code": "Backspace",
+			"down": true,
+			"value": 1,
+			"timestamp": 2400,
+			"pressId": 2,
+			"modifiers": {
+				"ctrl": false,
+				"shift": false,
+				"alt": false,
+				"meta": false
+			}
+		}
+	},
+	{
+		"description": "quick menu left shoulder down",
+		"frame": 120,
+		"event": {
+			"type": "button",
+			"deviceId": "keyboard:0",
+			"code": "ShiftLeft",
+			"down": true,
+			"value": 1,
+			"timestamp": 2400,
+			"pressId": 3,
+			"modifiers": {
+				"ctrl": false,
+				"shift": false,
+				"alt": false,
+				"meta": false
+			}
+		}
+	},
+	{
+		"description": "quick menu right shoulder down",
+		"frame": 120,
+		"event": {
+			"type": "button",
+			"deviceId": "keyboard:0",
+			"code": "ShiftRight",
+			"down": true,
+			"value": 1,
+			"timestamp": 2400,
+			"pressId": 4,
+			"modifiers": {
+				"ctrl": false,
+				"shift": false,
+				"alt": false,
+				"meta": false
+			}
+		}
+	},
+	{
+		"description": "quick menu frame",
+		"frame": 124,
+		"capture": true
+	},
+	{
+		"description": "quick menu start up",
+		"frame": 126,
+		"event": {
+			"type": "button",
+			"deviceId": "keyboard:0",
+			"code": "Enter",
+			"down": false,
+			"value": 0,
+			"timestamp": 2520,
+			"pressId": 1,
+			"modifiers": {
+				"ctrl": false,
+				"shift": false,
+				"alt": false,
+				"meta": false
+			}
+		}
+	},
+	{
+		"description": "quick menu select up",
+		"frame": 126,
+		"event": {
+			"type": "button",
+			"deviceId": "keyboard:0",
+			"code": "Backspace",
+			"down": false,
+			"value": 0,
+			"timestamp": 2520,
+			"pressId": 2,
+			"modifiers": {
+				"ctrl": false,
+				"shift": false,
+				"alt": false,
+				"meta": false
+			}
+		}
+	},
+	{
+		"description": "quick menu left shoulder up",
+		"frame": 126,
+		"event": {
+			"type": "button",
+			"deviceId": "keyboard:0",
+			"code": "ShiftLeft",
+			"down": false,
+			"value": 0,
+			"timestamp": 2520,
+			"pressId": 3,
+			"modifiers": {
+				"ctrl": false,
+				"shift": false,
+				"alt": false,
+				"meta": false
+			}
+		}
+	},
+	{
+		"description": "quick menu right shoulder up",
+		"frame": 126,
+		"event": {
+			"type": "button",
+			"deviceId": "keyboard:0",
+			"code": "ShiftRight",
+			"down": false,
+			"value": 0,
+			"timestamp": 2520,
+			"pressId": 4,
+			"modifiers": {
+				"ctrl": false,
+				"shift": false,
+				"alt": false,
+				"meta": false
+			}
+		}
+	}
+]

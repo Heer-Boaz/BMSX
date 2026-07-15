@@ -1,11 +1,6 @@
 {
 	"patterns": [
 		{
-			"pattern": "machine/ts/ide/terminal/**",
-			"category": "terminal",
-			"reason": "terminal_ui_not_core"
-		},
-		{
 			"pattern": "machine/ts/ide/language/**",
 			"category": "language",
 			"reason": "language_tooling"
@@ -186,6 +181,11 @@
 			"reason": "host_device_quantize_present_state_mirrored_by_cpp_render_backend_pass_library"
 		},
 		{
+			"pattern": "machine/ts/render/gx/character_plane_state.ts",
+			"category": "host",
+			"reason": "browser_render_graph_state_mirrored_by_cpp_render_backend_pass_library"
+		},
+		{
 			"pattern": "machine/ts/render/post/device_quantize/webgpu/pipeline.ts",
 			"category": "host",
 			"reason": "webgpu_device_quantize_postprocess_backend"
@@ -299,6 +299,8 @@
 		"machine/ts/machine/devices/audio/biquad_filter.ts",
 		"machine/ts/machine/devices/audio/output.ts",
 		"machine/ts/machine/devices/gx/gpu_display.ts",
+		"machine/ts/machine/devices/gx/character_plane.ts",
+		"machine/ts/render/gx/character_plane_resources.ts",
 		"machine/ts/machine/devices/gx/gte.ts",
 		"machine/ts/machine/memory/access_kind.ts",
 		"machine/ts/machine/cpu/string_pool.ts",
@@ -318,6 +320,22 @@
 				"machine/cpp/machine/devices/gx/gpu_display.h"
 			],
 			"reason": "gx_gpu_raw_display_register_decode_contract"
+		},
+		{
+			"ts": "machine/ts/machine/devices/gx/character_plane.ts",
+			"cpp": [
+				"machine/cpp/machine/devices/gx/character_plane.h",
+				"machine/cpp/machine/devices/gx/character_plane.cpp"
+			],
+			"reason": "gx_character_plane_registerfile_contract"
+		},
+		{
+			"ts": "machine/ts/render/gx/character_plane_resources.ts",
+			"cpp": [
+				"machine/cpp/render/gx/character_plane_resources.h",
+				"machine/cpp/render/gx/character_plane_resources.cpp"
+			],
+			"reason": "gx_character_plane_backend_resource_encoding_contract"
 		},
 		{
 			"ts": "machine/ts/machine/devices/gx/gte.ts",
@@ -1668,6 +1686,61 @@
 		}
 	],
 	"strict_runtime_no_heap_functions": [
+		{
+			"file": "machine/ts/machine/devices/gx/character_plane.ts",
+			"functions": [
+				"readRegister",
+				"writeRegister"
+			],
+			"reason": "gx_character_plane_mmio_handlers_must_mutate_raw_retained_sram_without_gc_churn"
+		},
+		{
+			"file": "machine/cpp/machine/devices/gx/character_plane.cpp",
+			"functions": [
+				"readRegister",
+				"writeRegister"
+			],
+			"reason": "gx_character_plane_mmio_handlers_must_mutate_raw_retained_sram_without_heap_allocation"
+		},
+		{
+			"file": "machine/ts/render/gx/character_plane_resources.ts",
+			"functions": [
+				"writeGxCharacterPlanePaletteTexture",
+				"writeGxCharacterPlaneGlyphTexture",
+				"writeGxCharacterPlaneCellTexture"
+			],
+			"reason": "gx_character_plane_revision_upload_encoding_must_write_caller_owned_scratch_without_gc_churn"
+		},
+		{
+			"file": "machine/cpp/render/gx/character_plane_resources.cpp",
+			"functions": [
+				"writeGxCharacterPlanePaletteTexture",
+				"writeGxCharacterPlaneGlyphTexture",
+				"writeGxCharacterPlaneCellTexture"
+			],
+			"reason": "gx_character_plane_revision_upload_encoding_must_write_caller_owned_scratch_without_heap_allocation"
+		},
+		{
+			"file": "machine/ts/render/backend/software/gx_character_plane.ts",
+			"functions": [
+				"renderGxCharacterPlaneSoftware"
+			],
+			"reason": "gx_character_plane_software_composition_must_remain_gc_free"
+		},
+		{
+			"file": "machine/cpp/render/backend/software/gx_character_plane.cpp",
+			"functions": [
+				"renderGxCharacterPlaneSoftware"
+			],
+			"reason": "gx_character_plane_software_composition_must_remain_heap_free"
+		},
+		{
+			"file": "machine/cpp/render/backend/gles2/gx_character_plane.cpp",
+			"functions": [
+				"renderGxCharacterPlaneGLES2"
+			],
+			"reason": "gx_character_plane_gles2_composition_must_only_upload_changed_sram_banks_and_remain_heap_free"
+		},
 		{
 			"file": "machine/ts/render/post/crt/webgl/pipeline.ts",
 			"functions": [

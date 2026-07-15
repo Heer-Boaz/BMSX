@@ -13,9 +13,10 @@ import type {
 } from '../platform';
 import type { GxGpu } from '../machine/devices/gx/gpu';
 import type { GxGpuCommandBufferView, GxGpuReadbackPortView } from '../machine/devices/gx/gpu_command_buffer';
+import type { GxCharacterPlaneOutput } from '../machine/devices/gx/character_plane';
 import { renderGate } from '../common/taskgate';
 
-const PRESENTATION_PASS_IDS = ['gx_gpu', 'device_quantize', 'presentation_history_a', 'presentation_history_b', 'crt', 'host_overlay', 'host_menu'];
+const PRESENTATION_PASS_IDS = ['gx_gpu', 'gx_character_plane', 'device_quantize', 'presentation_history_a', 'presentation_history_b', 'crt', 'host_overlay', 'host_menu'];
 
 interface GameViewOpts {
 	host: GameViewHost;
@@ -77,6 +78,7 @@ export class GameView implements RenderContext {
 	public gxGpuVerticalDisplayRangeWord = 0;
 	public gxGpuVramSnapshotBytes!: Uint8Array;
 	public gxGpuVramSnapshotSerial = 0n;
+	public gxCharacterPlaneOutput!: GxCharacterPlaneOutput;
 	public pipelineRegistry?: RenderPassLibrary;
 	private presentationEnabled = true;
 	// CRT/post flags (used by passes)

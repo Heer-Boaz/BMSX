@@ -1087,22 +1087,26 @@ export class Input implements RegisterablePersistent, RuntimeInputSource {
 			const player = this.playerInputs[playerIndex];
 			player.beginFrame(currentTime);
 		}
-		for (let i = 0; i < INPUT_CONTROLLER_KEY_WORD_COUNT; i += 1) {
-			snapshot.keyWords[i] = 0;
-		}
+		this.sampleInputControllerKeyWords(snapshot.keyWords);
 		snapshot.pointerButtons = 0;
 		snapshot.pointerX = 0;
 		snapshot.pointerY = 0;
 		snapshot.pointerWheel = 0;
 		snapshot.rumbleSupportMask = 0;
-		for (let i = 0; i < this.inputControllerKeyboardHandlers.length; i += 1) {
-			this.inputControllerKeyboardHandlers[i].writeInputControllerKeyWords(snapshot.keyWords);
-		}
 		for (let i = 0; i < this.inputControllerPointerHandlers.length; i += 1) {
 			this.inputControllerPointerHandlers[i].writeInputControllerPointerSnapshot(snapshot);
 		}
 		for (let pad = 0; pad < INPUT_CONTROLLER_PAD_COUNT; pad += 1) {
 			this.samplePadSnapshot(pad, snapshot);
+		}
+	}
+
+	public sampleInputControllerKeyWords(keyWords: Uint32Array): void {
+		for (let i = 0; i < INPUT_CONTROLLER_KEY_WORD_COUNT; i += 1) {
+			keyWords[i] = 0;
+		}
+		for (let i = 0; i < this.inputControllerKeyboardHandlers.length; i += 1) {
+			this.inputControllerKeyboardHandlers[i].writeInputControllerKeyWords(keyWords);
 		}
 	}
 

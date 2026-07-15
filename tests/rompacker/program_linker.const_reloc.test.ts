@@ -159,6 +159,58 @@ test('ProgramCompiler emits a dedicated IRQ vector proto', () => {
 	assert.deepEqual(irqOps, [OpCode.WIDE, OpCode.LOADK, OpCode.LOAD_MEM, OpCode.K0, OpCode.EQ, OpCode.JMP, OpCode.GETGL, OpCode.MOV, OpCode.CALL, OpCode.RFE]);
 });
 
+test('ProgramCompiler isolates system vector handlers from cart globals', () => {
+	const source = [
+		'function irq(flags) return flags end',
+		'function exception() return 1 end',
+		'return 0',
+	].join('\n');
+	const system = compileLuaChunkToProgram(parseChunk(source, 'system.lua'), [], {
+		entrySource: source,
+		programDomain: 'system',
+	});
+	const cart = compileLuaChunkToProgram(parseChunk(source, 'cart.lua'), [], {
+		entrySource: source,
+		programDomain: 'cart',
+	});
+
+	assert.deepEqual(collectProtoGlobalNames(system.program, system.metadata.systemGlobalNames, system.entryProtoIndex, OpCode.SETSYS), ['irq', 'exception']);
+	assert.deepEqual(collectProtoGlobalNames(system.program, system.metadata.systemGlobalNames, system.irqProtoIndex, OpCode.GETSYS), ['irq']);
+	assert.deepEqual(collectProtoGlobalNames(system.program, system.metadata.systemGlobalNames, system.exceptionProtoIndex, OpCode.GETSYS), ['exception']);
+	assert.deepEqual(collectProtoGlobalNames(cart.program, cart.metadata.globalNames, cart.entryProtoIndex, OpCode.SETGL), ['irq', 'exception']);
+	assert.deepEqual(collectProtoGlobalNames(cart.program, cart.metadata.globalNames, cart.irqProtoIndex, OpCode.GETGL), ['irq']);
+	assert.deepEqual(collectProtoGlobalNames(cart.program, cart.metadata.globalNames, cart.exceptionProtoIndex, OpCode.GETGL), ['exception']);
+});
+
+test('cart compilation does not inherit system vector access from base metadata', () => {
+	const systemSource = [
+		'function irq(flags) return flags end',
+		'function exception() return 1 end',
+		'return 0',
+	].join('\n');
+	const system = compileLuaChunkToProgram(parseChunk(systemSource, 'system.lua'), [], {
+		entrySource: systemSource,
+		programDomain: 'system',
+	});
+	const cartSource = [
+		'function irq(flags) return flags + 1 end',
+		'function exception() return 2 end',
+		'return 0',
+	].join('\n');
+	const cart = compileLuaChunkToProgram(parseChunk(cartSource, 'cart.lua'), [], {
+		baseProgram: system.program,
+		baseMetadata: system.metadata,
+		entrySource: cartSource,
+		programDomain: 'cart',
+	});
+
+	assert.equal(cart.metadata.systemGlobalNames.includes('irq'), true);
+	assert.equal(cart.metadata.globalNames.includes('irq'), true);
+	assert.deepEqual(collectProtoGlobalNames(cart.program, cart.metadata.globalNames, cart.entryProtoIndex, OpCode.SETGL), ['irq', 'exception']);
+	assert.deepEqual(collectProtoGlobalNames(cart.program, cart.metadata.globalNames, cart.irqProtoIndex, OpCode.GETGL), ['irq']);
+	assert.deepEqual(collectProtoGlobalNames(cart.program, cart.metadata.globalNames, cart.exceptionProtoIndex, OpCode.GETGL), ['exception']);
+});
+
 function makeProgramSymbols(protoId: string, instructionCount: number): ProgramSymbolsImage {
 	return {
 		debugRanges: new Array(instructionCount).fill(null),

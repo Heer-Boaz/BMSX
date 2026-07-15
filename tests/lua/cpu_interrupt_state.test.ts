@@ -8,16 +8,18 @@ import {
 	CPU_CAUSE_CODE_COPROCESSOR_UNUSABLE,
 	CPU_CAUSE_NMI,
 	CPU_STATUS_CART_ENTRY,
+	CPU_STATUS_SYSTEM_ENTRY,
 } from '../../machine/ts/machine/cpu/cop0';
 import { IO_IRQ_MASK, IO_IRQ_FLAGS, IRQ_VBLANK } from '../../machine/ts/machine/bus/io';
 import { IrqController } from '../../machine/ts/machine/devices/irq/controller';
+import { SystemController } from '../../machine/ts/machine/devices/system/controller';
 import { Machine } from '../../machine/ts/machine/machine';
 import type { MicrotaskQueue } from '../../machine/ts/machine/scheduler/microtask_queue';
 import { captureMachineSaveState, captureMachineState, restoreMachineSaveState, restoreMachineState } from '../../machine/ts/machine/save_state';
 import { Memory } from '../../machine/ts/machine/memory/memory';
 import { compileLuaChunkToProgram, encodeCompiledProgramImage } from '../../machine/ts/lua/compiler';
 import { callClosureIntoWithScheduler } from '../../machine/ts/ide/runtime/closure_executor';
-import { inflateExecutableProgramImage } from '../../machine/ts/machine/program/linker';
+import { inflateExecutableProgramImage, linkProgramImages } from '../../machine/ts/machine/program/linker';
 import { CpuExecutionState } from '../../machine/ts/machine/runtime/cpu_executor';
 import { FrameLoopState } from '../../machine/ts/machine/runtime/frame/loop';
 import { FrameSchedulerState } from '../../machine/ts/machine/scheduler/frame';
@@ -194,6 +196,8 @@ function makeHaltFrameRuntime(): Runtime {
 	const memory = new Memory({ systemRom: new Uint8Array(0), cartRom: new Uint8Array(0) });
 	const irqController = new IrqController(memory);
 	const cpu = new CPU(memory, irqController);
+	const systemController = new SystemController(memory, cpu);
+	systemController.reset();
 	const program = makeProgram(cpu);
 	const metadata = makeMetadata(program.protos.length);
 	cpu.setProgram(program, metadata, metadata, 2, 2, 2);
@@ -210,6 +214,7 @@ function makeHaltFrameRuntime(): Runtime {
 			cpu,
 			memory,
 			irqController,
+			systemController,
 			scheduler,
 			advanceDevices: (cycles: number) => {
 				scheduler.nowCycles += cycles;
@@ -564,6 +569,88 @@ end
 	const irqSeen = cpu.getGlobalByKey(StringValue.get(cpu.stringPool.intern('irq_seen')));
 	assert.equal(irqSeen, IRQ_VBLANK);
 	assert.equal((irqController.captureState().pendingFlags & IRQ_VBLANK) === 0, true);
+});
+
+test('linked system and cart handlers remain distinct across CPU save-state', () => {
+	const systemSource = `
+local irq_ack_addr<const> = 0x0800000c
+local irq_mask_addr<const> = 0x08000010
+local irq_vblank<const> = 0x0004
+system_seen = 0
+function irq(flags)
+	system_seen = flags
+	mem[irq_ack_addr] = flags
+end
+function exception() end
+function wait_system()
+	mem[irq_mask_addr] = irq_vblank
+	halt_until_irq
+end
+`;
+	const cartSource = `
+local irq_ack_addr<const> = 0x0800000c
+local irq_mask_addr<const> = 0x08000010
+local irq_vblank<const> = 0x0004
+cart_seen = 0
+function irq(flags)
+	cart_seen = flags
+	mem[irq_ack_addr] = flags
+end
+function exception() end
+function wait_cart()
+	mem[irq_mask_addr] = irq_vblank
+	halt_until_irq
+end
+`;
+	const system = compileLuaChunkToProgram(parseLuaChunk(systemSource, 'system.lua'), [], {
+		entrySource: systemSource,
+		programDomain: 'system',
+	});
+	const cart = compileLuaChunkToProgram(parseLuaChunk(cartSource, 'cart.lua'), [], {
+		entrySource: cartSource,
+		programDomain: 'cart',
+	});
+	const linked = linkProgramImages(
+		encodeCompiledProgramImage(system),
+		system.metadata,
+		encodeCompiledProgramImage(cart),
+		cart.metadata,
+	);
+	const memory = new Memory({ systemRom: new Uint8Array(0), cartRom: new Uint8Array(0) });
+	const irqController = new IrqController(memory);
+	const cpu = new CPU(memory, irqController);
+	cpu.setProgram(
+		inflateExecutableProgramImage(linked.programImage),
+		linked.programImage.link.symbols,
+		linked.metadata,
+		linked.systemVectors.irqProtoIndex,
+		linked.cartVectors.irqProtoIndex,
+		linked.systemVectors.exceptionProtoIndex,
+	);
+	cpu.start(linked.systemVectors.resetProtoIndex, EMPTY_CALL_ARGS, CPU_STATUS_SYSTEM_ENTRY);
+	assert.equal(cpu.runUntilDepth(0, 100000), RunResult.Halted);
+	cpu.start(linked.cartVectors.resetProtoIndex, EMPTY_CALL_ARGS, CPU_STATUS_CART_ENTRY);
+	assert.equal(cpu.runUntilDepth(0, 100000), RunResult.Halted);
+	const moduleCache = new Map<string, Value>();
+	const saved = cpu.captureRuntimeState(moduleCache);
+	assert.equal(saved.systemGlobals.some(entry => entry.name === 'irq'), true);
+	assert.equal(saved.globals.some(entry => entry.name === 'irq'), true);
+	cpu.restoreRuntimeState(saved, moduleCache);
+
+	const runWaiter = (name: string, statusWord: number): void => {
+		const waiter = cpu.getGlobalByKey(StringValue.get(cpu.stringPool.intern(name))) as Closure;
+		cpu.start(waiter.protoIndex, EMPTY_CALL_ARGS, statusWord);
+		assert.equal(cpu.runUntilDepth(0, 1000), RunResult.Halted);
+		irqController.raise(IRQ_VBLANK);
+		assert.equal(cpu.enterPendingInterrupt(), true);
+		assert.equal(cpu.runUntilDepth(0, 1000), RunResult.Halted);
+	};
+
+	runWaiter('wait_system', CPU_STATUS_SYSTEM_ENTRY);
+	assert.equal(cpu.getGlobalByKey(StringValue.get(cpu.stringPool.intern('system_seen'))), IRQ_VBLANK);
+	assert.equal(cpu.getGlobalByKey(StringValue.get(cpu.stringPool.intern('cart_seen'))), 0);
+	runWaiter('wait_cart', CPU_STATUS_CART_ENTRY);
+	assert.equal(cpu.getGlobalByKey(StringValue.get(cpu.stringPool.intern('cart_seen'))), IRQ_VBLANK);
 });
 
 test('compiled IRQ vector storms on an unacknowledged level line', () => {

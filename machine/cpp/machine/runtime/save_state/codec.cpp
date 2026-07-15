@@ -70,6 +70,19 @@ std::vector<u8> requireBinaryWithLength(const BinValue& value, const char* label
 	return bytes;
 }
 
+template<size_t N>
+std::array<u8, N> requireBinaryArray(const BinValue& value, const char* label) {
+	const BinBinary& bytes = requireBinary(value, label);
+	if (bytes.size() != N) {
+		throw BMSX_RUNTIME_ERROR(std::string(label) + " must contain " + std::to_string(N) + " bytes.");
+	}
+	std::array<u8, N> out{};
+	for (size_t index = 0u; index < N; index += 1u) {
+		out[index] = bytes[index];
+	}
+	return out;
+}
+
 const BinValue& requireField(const BinObject& object, const char* key, const char* label) {
 	auto it = object.find(key);
 	if (it == object.end()) {
@@ -376,6 +389,7 @@ BinValue encodeInputControllerState(const InputControllerState& state) {
 	object["sampleArmed"] = state.sampleArmed;
 	object["sampleSequence"] = static_cast<i64>(state.sampleSequence);
 	object["lastSampleCycle"] = static_cast<i64>(state.lastSampleCycle);
+	object["systemNmiLineHigh"] = state.systemNmiLineHigh;
 	BinObject registers;
 	registers["ctrl"] = static_cast<i64>(state.registers.ctrl);
 	BinArray keyWords;
@@ -412,6 +426,7 @@ InputControllerState decodeInputControllerState(const BinValue& value, const cha
 	state.sampleArmed = requireBool(requireField(object, "sampleArmed", label), "machine.input.sampleArmed");
 	state.sampleSequence = requireU32(requireField(object, "sampleSequence", label), "machine.input.sampleSequence");
 	state.lastSampleCycle = requireU32(requireField(object, "lastSampleCycle", label), "machine.input.lastSampleCycle");
+	state.systemNmiLineHigh = requireBool(requireField(object, "systemNmiLineHigh", label), "machine.input.systemNmiLineHigh");
 	state.registers.ctrl = requireU32(requireField(registers, "ctrl", "machine.input.registers"), "machine.input.registers.ctrl");
 	const auto decodeWordArray = [&registers](const char* key, u32* out, size_t count) {
 		const BinArray& array = requireArray(requireField(registers, key, "machine.input.registers"), key);
@@ -570,6 +585,31 @@ GxGpuCommandBufferState decodeGxGpuCommandBufferState(const BinValue& value, con
 	return state;
 }
 
+BinValue encodeGxCharacterPlaneState(const GxCharacterPlaneState& state) {
+	BinObject object;
+	object["controlWord"] = static_cast<i64>(state.controlWord);
+	object["paletteAddressWord"] = static_cast<i64>(state.paletteAddressWord);
+	object["glyphAddressWord"] = static_cast<i64>(state.glyphAddressWord);
+	object["cellAddressWord"] = static_cast<i64>(state.cellAddressWord);
+	object["paletteBytes"] = BinBinary(state.paletteBytes.begin(), state.paletteBytes.end());
+	object["glyphBytes"] = BinBinary(state.glyphBytes.begin(), state.glyphBytes.end());
+	object["cellBytes"] = BinBinary(state.cellBytes.begin(), state.cellBytes.end());
+	return BinValue(std::move(object));
+}
+
+GxCharacterPlaneState decodeGxCharacterPlaneState(const BinValue& value, const char* label) {
+	const BinObject& object = requireObject(value, label);
+	GxCharacterPlaneState state;
+	state.controlWord = requireU32(requireField(object, "controlWord", label), "machine.gxGpu.characterPlane.controlWord");
+	state.paletteAddressWord = requireU32(requireField(object, "paletteAddressWord", label), "machine.gxGpu.characterPlane.paletteAddressWord");
+	state.glyphAddressWord = requireU32(requireField(object, "glyphAddressWord", label), "machine.gxGpu.characterPlane.glyphAddressWord");
+	state.cellAddressWord = requireU32(requireField(object, "cellAddressWord", label), "machine.gxGpu.characterPlane.cellAddressWord");
+	state.paletteBytes = requireBinaryArray<GX_CHARACTER_PLANE_PALETTE_BYTES>(requireField(object, "paletteBytes", label), "machine.gxGpu.characterPlane.paletteBytes");
+	state.glyphBytes = requireBinaryArray<GX_CHARACTER_PLANE_GLYPH_BYTES>(requireField(object, "glyphBytes", label), "machine.gxGpu.characterPlane.glyphBytes");
+	state.cellBytes = requireBinaryArray<GX_CHARACTER_PLANE_CELL_BYTES>(requireField(object, "cellBytes", label), "machine.gxGpu.characterPlane.cellBytes");
+	return state;
+}
+
 BinValue encodeGxGpuState(const GxGpuState& state) {
 	BinObject object;
 	BinArray gp0FifoWords;
@@ -617,6 +657,7 @@ BinValue encodeGxGpuState(const GxGpuState& state) {
 	object["presentHorizontalDisplayRangeWord"] = static_cast<i64>(state.presentHorizontalDisplayRangeWord);
 	object["presentVerticalDisplayRangeWord"] = static_cast<i64>(state.presentVerticalDisplayRangeWord);
 	object["commandBuffer"] = encodeGxGpuCommandBufferState(state.commandBuffer);
+	object["characterPlane"] = encodeGxCharacterPlaneState(state.characterPlane);
 	return BinValue(std::move(object));
 }
 
@@ -669,6 +710,7 @@ GxGpuState decodeGxGpuState(const BinValue& value, const char* label) {
 	state.presentDisplayStartWord = requireU32(requireField(object, "presentDisplayStartWord", label), "machine.gxGpu.presentDisplayStartWord");
 	state.presentHorizontalDisplayRangeWord = requireU32(requireField(object, "presentHorizontalDisplayRangeWord", label), "machine.gxGpu.presentHorizontalDisplayRangeWord");
 	state.presentVerticalDisplayRangeWord = requireU32(requireField(object, "presentVerticalDisplayRangeWord", label), "machine.gxGpu.presentVerticalDisplayRangeWord");
+	state.characterPlane = decodeGxCharacterPlaneState(requireField(object, "characterPlane", label), "machine.gxGpu.characterPlane");
 	return state;
 }
 
@@ -925,6 +967,19 @@ DmaControllerState decodeDmaControllerState(const BinValue& value, const char* l
 	return state;
 }
 
+BinValue encodeSystemControllerState(const SystemControllerState& state) {
+	BinObject object;
+	object["resetRequested"] = state.resetRequested;
+	return BinValue(std::move(object));
+}
+
+SystemControllerState decodeSystemControllerState(const BinValue& value, const char* label) {
+	const BinObject& object = requireObject(value, label);
+	SystemControllerState state;
+	state.resetRequested = requireBool(requireField(object, "resetRequested", label), "machineState.machine.systemControl.resetRequested");
+	return state;
+}
+
 BinValue encodeMachineSaveState(const MachineSaveState& state) {
 	BinObject object;
 	object["memory"] = encodeMemorySaveState(state.memory);
@@ -936,6 +991,7 @@ BinValue encodeMachineSaveState(const MachineSaveState& state) {
 	object["audio"] = encodeAudioControllerState(state.audio);
 	object["stringPool"] = encodeStringPoolState(state.stringPool);
 	object["input"] = encodeInputControllerState(state.input);
+	object["systemControl"] = encodeSystemControllerState(state.systemControl);
 	return BinValue(std::move(object));
 }
 
@@ -951,6 +1007,7 @@ MachineSaveState decodeMachineSaveState(const BinValue& value, const char* label
 	state.audio = decodeAudioControllerState(requireField(object, "audio", label), "machineState.machine.audio");
 	state.stringPool = decodeStringPoolState(requireField(object, "stringPool", label), "machineState.machine.stringPool");
 	state.input = decodeInputControllerState(requireField(object, "input", label), "machineState.machine.input");
+	state.systemControl = decodeSystemControllerState(requireField(object, "systemControl", label), "machineState.machine.systemControl");
 	return state;
 }
 
@@ -1189,6 +1246,9 @@ CpuRootValueState decodeCpuRootValueState(const BinValue& value, const char* lab
 
 BinValue encodeCpuRuntimeState(const CpuRuntimeState& state) {
 	BinObject object;
+	object["systemGlobals"] = encodeVector(state.systemGlobals, [](const CpuRootValueState& value) {
+		return encodeCpuRootValueState(value);
+	});
 	object["globals"] = encodeVector(state.globals, [](const CpuRootValueState& value) {
 		return encodeCpuRootValueState(value);
 	});
@@ -1225,6 +1285,10 @@ BinValue encodeCpuRuntimeState(const CpuRuntimeState& state) {
 CpuRuntimeState decodeCpuRuntimeState(const BinValue& value, const char* label) {
 	const BinObject& object = requireObject(value, label);
 	CpuRuntimeState state;
+	state.systemGlobals = decodeVector<CpuRootValueState>(requireField(object, "systemGlobals", label), "cpuState.systemGlobals",
+		[](const BinValue& entryValue, size_t) {
+			return decodeCpuRootValueState(entryValue, "cpuState.systemGlobals[]");
+		});
 	state.globals = decodeVector<CpuRootValueState>(requireField(object, "globals", label), "cpuState.globals",
 		[](const BinValue& entryValue, size_t) {
 			return decodeCpuRootValueState(entryValue, "cpuState.globals[]");

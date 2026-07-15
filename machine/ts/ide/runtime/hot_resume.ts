@@ -12,6 +12,7 @@ import { machineManager } from '../../core/machine_manager';
 import { clearRuntimeDebuggerPause } from './debug_pause';
 import { clearFaultSnapshot, resetHandledLuaErrors } from './fault_state';
 import { toLuaModulePath } from '../../machine/program/loader';
+import { resolveRuntimeLuaSource } from './sources';
 import {
 	buildModuleChunks,
 	refreshLuaHandlersForChunk,
@@ -87,12 +88,17 @@ export function hotResumeProgramEntry(runtime: Runtime, params: { path: string; 
 	if (!baseProgram) {
 		throw new Error('hot reload requires active program.');
 	}
+	const sourceMatch = resolveRuntimeLuaSource(machineManager.sourceState, toLuaModulePath(binding));
+	if (sourceMatch === null) {
+		throw new Error(`hot reload source '${binding}' is not registered.`);
+	}
 	const compiled = compileLuaChunkToProgram(chunk, modules, {
 		baseProgram,
 		baseMetadata,
 		optLevel: machineManager.sourceState.realtimeCompileOptLevel,
 		entrySource: source,
 		constModulePaths: ROM_GENERATED_CONST_MODULE_PATHS,
+		programDomain: sourceMatch.registry === machineManager.sourceState.systemLuaSources ? 'system' : 'cart',
 	});
 	const programImage = encodeCompiledProgramImage(compiled);
 	const program = inflateExecutableProgramImage(programImage, runtime.programDataBaseAddress, runtime.programBssBaseAddress);

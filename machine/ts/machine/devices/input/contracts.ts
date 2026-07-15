@@ -8,6 +8,7 @@ import { FIX16_ONE } from '../../common/numeric';
 export const INPUT_CONTROLLER_KEY_WORD_COUNT = 8; // 256 HID usage bits
 export const INPUT_CONTROLLER_PAD_COUNT = 4;
 export const INPUT_CONTROLLER_PAD_AXIS_COUNT = 6; // lx, ly, rx, ry, lt, rt
+export const INPUT_CONTROLLER_SYSTEM_NMI_HID_USAGE = 59; // Keyboard F2
 
 // Canonical pad button bit order: bit i in the pad buttons word.
 export const INPUT_CONTROLLER_GAMEPAD_BUTTON_BIT_IDS = [
@@ -83,6 +84,7 @@ export function createInputControllerSnapshot(): InputControllerSnapshot {
 }
 
 export interface InputControllerInputSource {
+	sampleInputControllerKeyWords(keyWords: Uint32Array): void;
 	sampleInputControllerSnapshot(currentTimeMs: number, snapshot: InputControllerSnapshot): void;
 	applyInputControllerVibrationEffect(padIndex: number, durationMs: number, intensity: number): void;
 }

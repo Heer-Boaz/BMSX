@@ -3,7 +3,7 @@ import type { LuaChunk } from '../../lua/syntax/ast';
 import { LuaInterpreter } from '../../lua/runtime';
 import { convertToError } from '../../lua/value';
 import { getReservedLuaIdentifiers, registerLuaInterpreterBuiltins } from './lua_builtins';
-import { compileLuaChunkToProgram, encodeCompiledProgramImage } from '../../lua/compiler';
+import { compileLuaChunkToProgram, encodeCompiledProgramImage, type ProgramCompileDomain } from '../../lua/compiler';
 import { linkBootProgramImages } from '../../machine/program/linker';
 import { readWorkspaceLuaSourceText } from '../workspace/files';
 import type { RuntimeSymbolEntry, RuntimeSymbolKind } from './symbols';
@@ -28,6 +28,7 @@ import { EMPTY_STATIC_MODULE_PATHS, type Runtime } from '../../machine/runtime/r
 import { runtimeSemanticCache } from '../editor/contrib/intellisense/semantic/workspace/runtime';
 import { clearHostEvalMetadata } from './host_eval';
 import { resolveRuntimeLuaSource } from './sources';
+import { LogLevel } from '../../platform/platform';
 
 function installFreshLuaInterpreter(runtime: Runtime): LuaInterpreter {
 	resetLuaInteroperabilityState();
@@ -108,7 +109,7 @@ function collectHiddenSymbolPrefixes(): Set<string> {
 	return prefixes;
 }
 
-function shouldHideTerminalSymbolName(name: string, hiddenPrefixes: ReadonlySet<string>): boolean {
+function shouldHideGeneratedModuleSymbolName(name: string, hiddenPrefixes: ReadonlySet<string>): boolean {
 	for (const prefix of hiddenPrefixes) {
 		if (name === prefix || name.startsWith(`${prefix}__`)) {
 			return true;
@@ -126,7 +127,7 @@ export function listSymbols(runtime: Runtime): RuntimeSymbolEntry[] {
 			return;
 		}
 		const name = runtime.machine.cpu.stringPool.toString(asStringId(key));
-		if (shouldHideTerminalSymbolName(name, hiddenPrefixes) || symbolsByName.has(name)) {
+		if (shouldHideGeneratedModuleSymbolName(name, hiddenPrefixes) || symbolsByName.has(name)) {
 			return;
 		}
 		const classification = describeSymbolValue(value);
@@ -194,6 +195,7 @@ export function buildModuleChunks(
 function compileRegistryProgramImage(
 	registry: LuaSourceRegistry,
 	interpreter: LuaInterpreter,
+	programDomain: ProgramCompileDomain,
 	externalModules: ReadonlyArray<{ path: string; chunk: LuaChunk; source: string }> = [],
 	sourceOverride?: { path: string; source: string },
 ): { image: ProgramImage; symbols: ProgramSymbolsImage; entryPath: string; modules: Array<{ path: string; chunk: LuaChunk; source: string }> } {
@@ -210,6 +212,7 @@ function compileRegistryProgramImage(
 		entrySource,
 		externalModules,
 		constModulePaths: ROM_GENERATED_CONST_MODULE_PATHS,
+		programDomain,
 	});
 	return {
 		image: encodeCompiledProgramImage(compiled),
@@ -221,12 +224,12 @@ function compileRegistryProgramImage(
 
 function bootSystemSourceProgram(runtime: Runtime, interpreter: LuaInterpreter, preserveState = false, sourceOverride?: { path: string; source: string }): boolean {
 	const sources = machineManager.sourceState;
-	const system = compileRegistryProgramImage(sources.systemLuaSources, interpreter, [], sourceOverride);
+	const system = compileRegistryProgramImage(sources.systemLuaSources, interpreter, 'system', [], sourceOverride);
 	runtime.clearLinkedCartProgram(system.image.sections.data.bytes.byteLength);
 	let cartProgramImage: ProgramImage | null = null;
 	let cartSymbols: ProgramSymbolsImage | null = null;
 	if (sources.cartLuaSources?.can_boot_from_source) {
-		const cart = compileRegistryProgramImage(sources.cartLuaSources, interpreter, system.modules);
+		const cart = compileRegistryProgramImage(sources.cartLuaSources, interpreter, 'cart', system.modules);
 		cartProgramImage = cart.image;
 		cartSymbols = cart.symbols;
 	} else if (sources.cartRomSource && sources.cartRomSource.getEntry(PROGRAM_IMAGE_ID)) {
@@ -244,7 +247,20 @@ function bootSystemSourceProgram(runtime: Runtime, interpreter: LuaInterpreter, 
 		runtime.bootLinkedProgramImage(linkBootProgramImages(system.image, system.symbols, cartProgramImage, cartSymbols, 'system'));
 		return true;
 	}
-	runtime.boot(system.image, system.symbols, system.image.vectors, system.image.vectors, system.image.vectors, PROGRAM_STATIC_RAM_BASE, PROGRAM_STATIC_RAM_BASE + system.image.sections.data.bytes.byteLength, system.image.sections.rodata.staticModulePaths, EMPTY_STATIC_MODULE_PATHS);
+	const systemBssBaseAddress = PROGRAM_STATIC_RAM_BASE + system.image.sections.data.bytes.byteLength;
+	runtime.boot(
+		system.image,
+		system.symbols,
+		system.image.vectors,
+		system.image.vectors,
+		system.image.vectors,
+		PROGRAM_STATIC_RAM_BASE,
+		systemBssBaseAddress,
+		PROGRAM_STATIC_RAM_BASE,
+		systemBssBaseAddress,
+		system.image.sections.rodata.staticModulePaths,
+		EMPTY_STATIC_MODULE_PATHS,
+	);
 	return true;
 }
 
@@ -272,11 +288,24 @@ function bootProgramImage(runtime: Runtime, preserveState = false): boolean {
 			}
 		}
 		runtime.cartEntryAvailable = false;
-		runtime.boot(systemImages.program, systemImages.symbols, systemImages.program.vectors, systemImages.program.vectors, systemImages.program.vectors, PROGRAM_STATIC_RAM_BASE, PROGRAM_STATIC_RAM_BASE + systemImages.program.sections.data.bytes.byteLength, systemImages.program.sections.rodata.staticModulePaths, EMPTY_STATIC_MODULE_PATHS);
+		const systemBssBaseAddress = PROGRAM_STATIC_RAM_BASE + systemImages.program.sections.data.bytes.byteLength;
+		runtime.boot(
+			systemImages.program,
+			systemImages.symbols,
+			systemImages.program.vectors,
+			systemImages.program.vectors,
+			systemImages.program.vectors,
+			PROGRAM_STATIC_RAM_BASE,
+			systemBssBaseAddress,
+			PROGRAM_STATIC_RAM_BASE,
+			systemBssBaseAddress,
+			systemImages.program.sections.rodata.staticModulePaths,
+			EMPTY_STATIC_MODULE_PATHS,
+		);
 		return true;
 	} catch (error) {
-		console.info('Program-image boot failed.');
-		logDebugState(runtime);
+		machineManager.platform.log(LogLevel.Error, 'Program-image boot failed.');
+		logDebugState(runtime, machineManager.platform);
 		throw error;
 	}
 }
@@ -314,7 +343,7 @@ function bootLuaProgram(runtime: Runtime, options?: { preserveState?: boolean; s
 		let systemSymbols: ProgramSymbolsImage | null;
 		let systemModules: ReadonlyArray<{ path: string; chunk: LuaChunk; source: string }> = [];
 		if (sources.systemLuaSources.can_boot_from_source) {
-			const system = compileRegistryProgramImage(sources.systemLuaSources, interpreter);
+			const system = compileRegistryProgramImage(sources.systemLuaSources, interpreter, 'system');
 			systemImage = system.image;
 			systemSymbols = system.symbols;
 			systemModules = system.modules;
@@ -323,13 +352,13 @@ function bootLuaProgram(runtime: Runtime, options?: { preserveState?: boolean; s
 			systemImage = system.program;
 			systemSymbols = system.symbols;
 		}
-		const cart = compileRegistryProgramImage(sources.activeLuaSources, interpreter, systemModules, options?.sourceOverride);
+		const cart = compileRegistryProgramImage(sources.activeLuaSources, interpreter, 'cart', systemModules, options?.sourceOverride);
 		machineManager.sourceState.currentPath = cart.entryPath;
 		runtime.moduleCache.clear();
 		runtime.bootLinkedProgramImage(linkBootProgramImages(systemImage, systemSymbols, cart.image, cart.symbols, 'cart'));
 		return true;
 	} catch (error) {
-		logDebugState(runtime);
+		logDebugState(runtime, machineManager.platform);
 		throw convertToError(error);
 	}
 }

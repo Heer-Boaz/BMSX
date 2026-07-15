@@ -2769,7 +2769,7 @@ void executeGxGpuPass(GPUBackend*, GameView*, void* fbo, RenderPassStateStorage&
 
 void OpenGLES2Backend::captureGxGpuVramSnapshot(GxGpu& gxGpu) {
 	const GxGpuDeviceOutput& output = gxGpu.readDeviceOutput();
-	executeGxGpuVramCommands(*output.commandBuffer, *output.readbackPort, *output.vramSnapshotBytes, output.vramSnapshotSerial);
+	executeGxGpuVramCommands(output.commandBuffer, output.readbackPort, output.vramSnapshotBytes, output.vramSnapshotSerial);
 	setRenderTarget(g_gxGpu.vramFramebuffer, kGxGpuVramWidth, kGxGpuVramHeight);
 	glReadPixels(0, 0, kGxGpuVramWidth, kGxGpuVramHeight, GL_RGBA, GL_UNSIGNED_BYTE, g_rawVramReadback.data());
 	writeGxGpuVramSnapshotFromReadback();

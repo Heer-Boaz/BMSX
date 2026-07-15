@@ -6,9 +6,11 @@
 #include "machine/devices/input/save_state.h"
 
 namespace bmsx {
+class CPU;
+
 class InputController {
 public:
-	InputController(Memory& memory, InputControllerInputSource& input);
+	InputController(Memory& memory, InputControllerInputSource& input, CPU& cpu);
 	void reset();
 	void onVblankEdge(f64 currentTimeMs, u32 nowCycles);
 	void cancelSampleArm();
@@ -20,10 +22,12 @@ private:
 
 	Memory& m_memory;
 	InputControllerInputSource& m_input;
+	CPU& m_cpu;
 	InputControllerRegisterFile m_registers;
 	bool m_sampleArmed = false;
 	u32 m_sampleSequence = 0;
 	u32 m_lastSampleCycle = 0;
+	bool m_systemNmiLineHigh = false;
 	InputControllerSnapshot m_snapshot;
 	InputControllerOutputPort m_outputPort;
 };

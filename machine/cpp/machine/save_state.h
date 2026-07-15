@@ -8,6 +8,7 @@
 #include "machine/devices/gx/gte.h"
 #include "machine/devices/input/save_state.h"
 #include "machine/devices/irq/save_state.h"
+#include "machine/devices/system/controller.h"
 #include "machine/memory/memory.h"
 
 namespace bmsx {
@@ -22,6 +23,7 @@ struct MachineState {
 	IrqControllerState irq;
 	AudioControllerState audio;
 	InputControllerState input;
+	SystemControllerState systemControl;
 };
 
 struct MachineSaveState {
@@ -34,6 +36,7 @@ struct MachineSaveState {
 	AudioControllerState audio;
 	StringPoolState stringPool;
 	InputControllerState input;
+	SystemControllerState systemControl;
 };
 
 MachineState captureMachineState(Machine& machine);

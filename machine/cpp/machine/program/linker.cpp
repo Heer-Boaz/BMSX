@@ -950,6 +950,8 @@ LinkedBootProgramImage linkBootProgramImages(
 	LinkedBootProgramImage output;
 	output.cartVectors = linked.cartVectors;
 	output.systemVectors = linked.systemVectors;
+	output.systemDataBaseAddress = linked.systemDataBaseAddress;
+	output.systemBssBaseAddress = linked.systemBssBaseAddress;
 	output.cartDataBaseAddress = linked.cartDataBaseAddress;
 	output.cartBssBaseAddress = linked.cartBssBaseAddress;
 	output.cartStaticModulePaths = std::move(linked.cartStaticModulePaths);

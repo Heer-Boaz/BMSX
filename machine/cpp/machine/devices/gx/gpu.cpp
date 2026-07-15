@@ -17,6 +17,7 @@ GxGpu::GxGpu(Memory& memory, IrqController& irq, DeviceScheduler& scheduler, Dma
 	, m_irq(irq)
 	, m_scheduler(scheduler)
 	, m_dmaController(dmaController)
+	, m_characterPlane(memory)
 	, m_commandBuffer(dmaController) {
 	m_memory.mapIoRead(IO_GX_GPU_GP0, this, &GxGpu::readGp0Thunk);
 	m_memory.mapIoWrite(IO_GX_GPU_GP0, this, &GxGpu::writeGp0Thunk);
@@ -29,6 +30,7 @@ void GxGpu::reset() {
 	m_textureDisableAllowedWord = 0u;
 	m_gpuReadWord = 0u;
 	m_commandBuffer.reset();
+	m_characterPlane.reset();
 	initializeGxGpuVramPowerOn(m_vramSnapshotBytes.data());
 	publishVramSnapshotRevision();
 	clearGp0CommandState();
@@ -117,6 +119,7 @@ GxGpuState GxGpu::captureState() {
 	state.presentHorizontalDisplayRangeWord = m_presentHorizontalDisplayRangeWord;
 	state.presentVerticalDisplayRangeWord = m_presentVerticalDisplayRangeWord;
 	state.commandBuffer = m_commandBuffer.captureState();
+	state.characterPlane = m_characterPlane.captureState();
 	return state;
 }
 
@@ -165,6 +168,7 @@ void GxGpu::restoreState(const GxGpuState& state) {
 	m_presentHorizontalDisplayRangeWord = state.presentHorizontalDisplayRangeWord;
 	m_presentVerticalDisplayRangeWord = state.presentVerticalDisplayRangeWord;
 	m_commandBuffer.restoreState(state.commandBuffer);
+	m_characterPlane.restoreState(state.characterPlane);
 	if (state.pendingCommandCycles != 0) {
 		m_pendingCommandCompletionCycle = m_scheduler.currentNowCycles() + state.pendingCommandCycles;
 		m_scheduler.scheduleDeviceService(DEVICE_SERVICE_GPU, m_pendingCommandCompletionCycle);
@@ -463,8 +467,8 @@ const GxGpuDeviceOutput& GxGpu::readDeviceOutput() {
 	m_deviceOutput.displayStartWord = m_presentDisplayStartWord;
 	m_deviceOutput.horizontalDisplayRangeWord = m_presentHorizontalDisplayRangeWord;
 	m_deviceOutput.verticalDisplayRangeWord = m_presentVerticalDisplayRangeWord;
-	m_deviceOutput.vramSnapshotBytes = &m_vramSnapshotBytes;
 	m_deviceOutput.vramSnapshotSerial = m_vramSnapshotSerial;
+	m_characterPlane.readDeviceOutput();
 	return m_deviceOutput;
 }
 

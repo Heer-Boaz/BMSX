@@ -335,6 +335,7 @@ export type CpuRootValueState = {
 };
 
 export type CpuRuntimeState = {
+	systemGlobals: CpuRootValueState[];
 	globals: CpuRootValueState[];
 	moduleCache: CpuRootValueState[];
 	frames: CpuFrameState[];
@@ -1870,9 +1871,12 @@ export class CPU {
 		cartIrqProtoIndex: number,
 		systemExceptionProtoIndex: number,
 	): void {
-		// Keep slot-backed globals materialized in the globals table before swapping programs.
-		// SETGL/SETSYS mutate the slot arrays directly, and append/reload paths rebuild the next
-		// slot layout from `globals`, so without this sync flattened module exports can fall back to nil.
+		const previousSystemGlobals = new Map<StringId, Value>();
+		for (let slot = 0; slot < this.systemGlobalNames.length; slot += 1) {
+			previousSystemGlobals.set(this.systemGlobalNames[slot], this.systemGlobalValues[slot]);
+		}
+		// Ordinary globals remain Lua-table-visible across program replacement. System globals
+		// are a distinct CPU registerfile and are carried by slot name above instead.
 		this.syncGlobalSlotsToTable();
 		this.program = program;
 		this.systemIrqProtoIndex = systemIrqProtoIndex;
@@ -1892,13 +1896,21 @@ export class CPU {
 		program.constPoolStringPool = this.stringPool;
 		this.indexKey = StringValue.get(this.stringPool.intern('__index'));
 		this.materializeStaticClosures(program);
-		this.initializeGlobalSlots(runtimeSymbols);
+		this.initializeGlobalSlots(runtimeSymbols, previousSystemGlobals);
 		this.decodeProgram(program);
 		this.profilerRuntimeSymbols = runtimeSymbols;
 		this.profilerConfigured = false;
 		if (this.profilerEnabled) {
 			this.configureProfiler();
 		}
+	}
+
+	public clearProgramEnvironment(): void {
+		this.lastReturnValues.length = 0;
+		this.clearCallStack();
+		this.externalReturnSink = null;
+		this.clearGlobalSlots();
+		this.globals.clear();
 	}
 
 	private materializeStaticClosures(program: Program): void {
@@ -1919,7 +1931,7 @@ export class CPU {
 		}
 	}
 
-	private initializeGlobalSlots(runtimeSymbols: ProgramRuntimeSymbols): void {
+	private initializeGlobalSlots(runtimeSymbols: ProgramRuntimeSymbols, previousSystemGlobals: ReadonlyMap<StringId, Value>): void {
 		const systemNames = runtimeSymbols.systemGlobalNames;
 		const globalNames = runtimeSymbols.globalNames;
 		this.systemGlobalNames = new Array(systemNames.length);
@@ -1929,7 +1941,8 @@ export class CPU {
 			const key = this.stringPool.intern(systemNames[index], false);
 			this.systemGlobalNames[index] = key;
 			this.systemGlobalSlotByKey.set(key, index);
-			this.systemGlobalValues[index] = this.globals.get(StringValue.get(key));
+			const previousValue = previousSystemGlobals.get(key);
+			this.systemGlobalValues[index] = previousValue === undefined ? null : previousValue;
 		}
 		this.globalNames = new Array(globalNames.length);
 		this.globalValues = new Array(globalNames.length);
@@ -2417,15 +2430,18 @@ export class CPU {
 
 	public setGlobalByKey(key: StringValue, value: Value): void {
 		this.globals.set(key, value);
-		const systemSlot = this.systemGlobalSlotByKey.get(key.id);
-		if (systemSlot !== undefined) {
-			this.systemGlobalValues[systemSlot] = value;
-			return;
-		}
 		const globalSlot = this.globalSlotByKey.get(key.id);
 		if (globalSlot !== undefined) {
 			this.globalValues[globalSlot] = value;
 		}
+	}
+
+	public setSystemGlobalByKey(key: StringValue, value: Value): void {
+		const slot = this.systemGlobalSlotByKey.get(key.id);
+		if (slot === undefined) {
+			throw new Error(`[CPU] System global '${this.stringPool.toString(key.id)}' has no register slot.`);
+		}
+		this.systemGlobalValues[slot] = value;
 	}
 
 	public clearGlobalSlots(): void {
@@ -2438,19 +2454,12 @@ export class CPU {
 	}
 
 	public syncGlobalSlotsToTable(): void {
-		for (let slot = 0; slot < this.systemGlobalNames.length; slot += 1) {
-			this.globals.set(StringValue.get(this.systemGlobalNames[slot]), this.systemGlobalValues[slot]);
-		}
 		for (let slot = 0; slot < this.globalNames.length; slot += 1) {
 			this.globals.set(StringValue.get(this.globalNames[slot]), this.globalValues[slot]);
 		}
 	}
 
 	public getGlobalByKey(key: StringValue): Value {
-		const systemSlot = this.systemGlobalSlotByKey.get(key.id);
-		if (systemSlot !== undefined) {
-			return this.systemGlobalValues[systemSlot];
-		}
 		const globalSlot = this.globalSlotByKey.get(key.id);
 		if (globalSlot !== undefined) {
 			return this.globalValues[globalSlot];
@@ -3660,6 +3669,18 @@ export class CPU {
 			}
 		};
 
+		const systemGlobals: CpuRootValueState[] = [];
+		for (let slot = 0; slot < this.systemGlobalNames.length; slot += 1) {
+			const value = this.systemGlobalValues[slot];
+			if (isNativeFunction(value) || isNativeObject(value)) {
+				continue;
+			}
+			systemGlobals.push({
+				name: this.stringPool.toString(this.systemGlobalNames[slot]),
+				value: captureValueState(value),
+			});
+		}
+
 		const globals: CpuRootValueState[] = [];
 		this.globals.forEachEntry((key, value) => {
 			if (!valueIsString(key)) {
@@ -3722,6 +3743,7 @@ export class CPU {
 		}
 
 		return {
+			systemGlobals,
 			globals,
 			moduleCache: moduleCacheState,
 			frames,
@@ -3888,6 +3910,10 @@ export class CPU {
 			this.openUpvalues.push({ frame, index: upvalue.index, upvalue });
 		}
 
+		for (let index = 0; index < state.systemGlobals.length; index += 1) {
+			const entry = state.systemGlobals[index];
+			this.setSystemGlobalByKey(StringValue.get(this.stringPool.intern(entry.name)), restoreValue(entry.value));
+		}
 		for (let index = 0; index < state.globals.length; index += 1) {
 			const entry = state.globals[index];
 			this.setGlobalByKey(StringValue.get(this.stringPool.intern(entry.name)), restoreValue(entry.value));

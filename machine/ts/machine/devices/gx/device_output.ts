@@ -1,4 +1,5 @@
 import type { GxGpuCommandBufferView, GxGpuReadbackPortView } from './gpu_command_buffer';
+import type { GxCharacterPlaneOutput } from './character_plane';
 
 export type GxGpuDeviceOutput = Readonly<{
 	commandBuffer: GxGpuCommandBufferView;
@@ -10,4 +11,5 @@ export type GxGpuDeviceOutput = Readonly<{
 	verticalDisplayRangeWord: number;
 	vramSnapshotBytes: Uint8Array;
 	vramSnapshotSerial: bigint;
+	characterPlane: GxCharacterPlaneOutput;
 }>;

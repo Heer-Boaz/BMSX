@@ -1,8 +1,7 @@
 [
 	{
-		"description": "press F2 (toggle terminal)",
+		"description": "assert BIOS monitor NMI",
 		"frame": 120,
-		"capture": true,
 		"event": {
 			"type": "button",
 			"deviceId": "keyboard:0",
@@ -11,22 +10,427 @@
 			"value": 1,
 			"timestamp": 2400,
 			"pressId": 1,
-			"modifiers": { "ctrl": false, "shift": false, "alt": false, "meta": false }
-		}
+			"modifiers": {
+				"ctrl": false,
+				"shift": false,
+				"alt": false,
+				"meta": false
+			}
+		},
+		"capture": true
 	},
 	{
-		"description": "release F2",
-		"frame": 124,
-		"capture": true,
+		"description": "release BIOS monitor NMI key",
+		"frame": 122,
 		"event": {
 			"type": "button",
 			"deviceId": "keyboard:0",
 			"code": "F2",
 			"down": false,
 			"value": 0,
-			"timestamp": 2480,
+			"timestamp": 2440,
 			"pressId": 1,
-			"modifiers": { "ctrl": false, "shift": false, "alt": false, "meta": false }
+			"modifiers": {
+				"ctrl": false,
+				"shift": false,
+				"alt": false,
+				"meta": false
+			}
 		}
+	},
+	{
+		"description": "BIOS monitor entry",
+		"frame": 126,
+		"capture": true
+	},
+	{
+		"description": "type HELP H",
+		"frame": 130,
+		"event": {
+			"type": "button",
+			"deviceId": "keyboard:0",
+			"code": "KeyH",
+			"down": true,
+			"value": 1,
+			"timestamp": 2600,
+			"pressId": 2,
+			"modifiers": {
+				"ctrl": false,
+				"shift": false,
+				"alt": false,
+				"meta": false
+			}
+		}
+	},
+	{
+		"description": "release HELP H",
+		"frame": 132,
+		"event": {
+			"type": "button",
+			"deviceId": "keyboard:0",
+			"code": "KeyH",
+			"down": false,
+			"value": 0,
+			"timestamp": 2640,
+			"pressId": 2,
+			"modifiers": {
+				"ctrl": false,
+				"shift": false,
+				"alt": false,
+				"meta": false
+			}
+		}
+	},
+	{
+		"description": "type HELP E",
+		"frame": 136,
+		"event": {
+			"type": "button",
+			"deviceId": "keyboard:0",
+			"code": "KeyE",
+			"down": true,
+			"value": 1,
+			"timestamp": 2720,
+			"pressId": 3,
+			"modifiers": {
+				"ctrl": false,
+				"shift": false,
+				"alt": false,
+				"meta": false
+			}
+		}
+	},
+	{
+		"description": "release HELP E",
+		"frame": 138,
+		"event": {
+			"type": "button",
+			"deviceId": "keyboard:0",
+			"code": "KeyE",
+			"down": false,
+			"value": 0,
+			"timestamp": 2760,
+			"pressId": 3,
+			"modifiers": {
+				"ctrl": false,
+				"shift": false,
+				"alt": false,
+				"meta": false
+			}
+		}
+	},
+	{
+		"description": "type HELP L",
+		"frame": 142,
+		"event": {
+			"type": "button",
+			"deviceId": "keyboard:0",
+			"code": "KeyL",
+			"down": true,
+			"value": 1,
+			"timestamp": 2840,
+			"pressId": 4,
+			"modifiers": {
+				"ctrl": false,
+				"shift": false,
+				"alt": false,
+				"meta": false
+			}
+		}
+	},
+	{
+		"description": "release HELP L",
+		"frame": 144,
+		"event": {
+			"type": "button",
+			"deviceId": "keyboard:0",
+			"code": "KeyL",
+			"down": false,
+			"value": 0,
+			"timestamp": 2880,
+			"pressId": 4,
+			"modifiers": {
+				"ctrl": false,
+				"shift": false,
+				"alt": false,
+				"meta": false
+			}
+		}
+	},
+	{
+		"description": "type HELP P",
+		"frame": 148,
+		"event": {
+			"type": "button",
+			"deviceId": "keyboard:0",
+			"code": "KeyP",
+			"down": true,
+			"value": 1,
+			"timestamp": 2960,
+			"pressId": 5,
+			"modifiers": {
+				"ctrl": false,
+				"shift": false,
+				"alt": false,
+				"meta": false
+			}
+		}
+	},
+	{
+		"description": "release HELP P",
+		"frame": 150,
+		"event": {
+			"type": "button",
+			"deviceId": "keyboard:0",
+			"code": "KeyP",
+			"down": false,
+			"value": 0,
+			"timestamp": 3000,
+			"pressId": 5,
+			"modifiers": {
+				"ctrl": false,
+				"shift": false,
+				"alt": false,
+				"meta": false
+			}
+		}
+	},
+	{
+		"description": "submit HELP",
+		"frame": 154,
+		"event": {
+			"type": "button",
+			"deviceId": "keyboard:0",
+			"code": "Enter",
+			"down": true,
+			"value": 1,
+			"timestamp": 3080,
+			"pressId": 6,
+			"modifiers": {
+				"ctrl": false,
+				"shift": false,
+				"alt": false,
+				"meta": false
+			}
+		}
+	},
+	{
+		"description": "release HELP submit",
+		"frame": 155,
+		"event": {
+			"type": "button",
+			"deviceId": "keyboard:0",
+			"code": "Enter",
+			"down": false,
+			"value": 0,
+			"timestamp": 3100,
+			"pressId": 6,
+			"modifiers": {
+				"ctrl": false,
+				"shift": false,
+				"alt": false,
+				"meta": false
+			}
+		}
+	},
+	{
+		"description": "BIOS monitor HELP output",
+		"frame": 160,
+		"capture": true
+	},
+	{
+		"description": "type CONT C",
+		"frame": 166,
+		"event": {
+			"type": "button",
+			"deviceId": "keyboard:0",
+			"code": "KeyC",
+			"down": true,
+			"value": 1,
+			"timestamp": 3320,
+			"pressId": 7,
+			"modifiers": {
+				"ctrl": false,
+				"shift": false,
+				"alt": false,
+				"meta": false
+			}
+		}
+	},
+	{
+		"description": "release CONT C",
+		"frame": 168,
+		"event": {
+			"type": "button",
+			"deviceId": "keyboard:0",
+			"code": "KeyC",
+			"down": false,
+			"value": 0,
+			"timestamp": 3360,
+			"pressId": 7,
+			"modifiers": {
+				"ctrl": false,
+				"shift": false,
+				"alt": false,
+				"meta": false
+			}
+		}
+	},
+	{
+		"description": "type CONT O",
+		"frame": 172,
+		"event": {
+			"type": "button",
+			"deviceId": "keyboard:0",
+			"code": "KeyO",
+			"down": true,
+			"value": 1,
+			"timestamp": 3440,
+			"pressId": 8,
+			"modifiers": {
+				"ctrl": false,
+				"shift": false,
+				"alt": false,
+				"meta": false
+			}
+		}
+	},
+	{
+		"description": "release CONT O",
+		"frame": 174,
+		"event": {
+			"type": "button",
+			"deviceId": "keyboard:0",
+			"code": "KeyO",
+			"down": false,
+			"value": 0,
+			"timestamp": 3480,
+			"pressId": 8,
+			"modifiers": {
+				"ctrl": false,
+				"shift": false,
+				"alt": false,
+				"meta": false
+			}
+		}
+	},
+	{
+		"description": "type CONT N",
+		"frame": 178,
+		"event": {
+			"type": "button",
+			"deviceId": "keyboard:0",
+			"code": "KeyN",
+			"down": true,
+			"value": 1,
+			"timestamp": 3560,
+			"pressId": 9,
+			"modifiers": {
+				"ctrl": false,
+				"shift": false,
+				"alt": false,
+				"meta": false
+			}
+		}
+	},
+	{
+		"description": "release CONT N",
+		"frame": 180,
+		"event": {
+			"type": "button",
+			"deviceId": "keyboard:0",
+			"code": "KeyN",
+			"down": false,
+			"value": 0,
+			"timestamp": 3600,
+			"pressId": 9,
+			"modifiers": {
+				"ctrl": false,
+				"shift": false,
+				"alt": false,
+				"meta": false
+			}
+		}
+	},
+	{
+		"description": "type CONT T",
+		"frame": 184,
+		"event": {
+			"type": "button",
+			"deviceId": "keyboard:0",
+			"code": "KeyT",
+			"down": true,
+			"value": 1,
+			"timestamp": 3680,
+			"pressId": 10,
+			"modifiers": {
+				"ctrl": false,
+				"shift": false,
+				"alt": false,
+				"meta": false
+			}
+		}
+	},
+	{
+		"description": "release CONT T",
+		"frame": 186,
+		"event": {
+			"type": "button",
+			"deviceId": "keyboard:0",
+			"code": "KeyT",
+			"down": false,
+			"value": 0,
+			"timestamp": 3720,
+			"pressId": 10,
+			"modifiers": {
+				"ctrl": false,
+				"shift": false,
+				"alt": false,
+				"meta": false
+			}
+		}
+	},
+	{
+		"description": "submit CONT",
+		"frame": 190,
+		"event": {
+			"type": "button",
+			"deviceId": "keyboard:0",
+			"code": "Enter",
+			"down": true,
+			"value": 1,
+			"timestamp": 3800,
+			"pressId": 11,
+			"modifiers": {
+				"ctrl": false,
+				"shift": false,
+				"alt": false,
+				"meta": false
+			}
+		}
+	},
+	{
+		"description": "release CONT submit",
+		"frame": 191,
+		"event": {
+			"type": "button",
+			"deviceId": "keyboard:0",
+			"code": "Enter",
+			"down": false,
+			"value": 0,
+			"timestamp": 3820,
+			"pressId": 11,
+			"modifiers": {
+				"ctrl": false,
+				"shift": false,
+				"alt": false,
+				"meta": false
+			}
+		}
+	},
+	{
+		"description": "cart scanout after BIOS CONT",
+		"frame": 198,
+		"capture": true
 	}
 ]

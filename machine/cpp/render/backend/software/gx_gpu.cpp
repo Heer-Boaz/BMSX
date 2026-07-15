@@ -60,7 +60,7 @@ void renderGxGpuSoftwareFrame(SoftwareBackend& backend, const GxGpuPipelineState
 
 void SoftwareBackend::captureGxGpuVramSnapshot(GxGpu& gxGpu) {
 	const GxGpuDeviceOutput& output = gxGpu.readDeviceOutput();
-	executeGxGpuSoftwareVramCommands(*output.commandBuffer, *output.readbackPort, *output.vramSnapshotBytes, output.vramSnapshotSerial);
+	executeGxGpuSoftwareVramCommands(output.commandBuffer, output.readbackPort, output.vramSnapshotBytes, output.vramSnapshotSerial);
 	for (size_t wordIndex = 0u; wordIndex < kGxGpuSoftwareVramWords; wordIndex += 1u) {
 		const size_t byteIndex = wordIndex << 1u;
 		const u16 word = g_gxGpuSoftwareVram[wordIndex];

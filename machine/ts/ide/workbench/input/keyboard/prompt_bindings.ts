@@ -57,15 +57,6 @@ function handleDefinitionAndReferenceBinding(): boolean {
 	return true;
 }
 
-function handleRenameBinding(): boolean {
-	if (isInlineWidgetFocused() || !isCodeTabActive() || !isKeyJustPressed('F2')) {
-		return false;
-	}
-	consumeIdeKey('F2');
-	machineManager.ideState.editor.commands.execute('rename');
-	return true;
-}
-
 function handleSelectAllBinding(): boolean {
 	if (!(isCtrlDown() || isMetaDown()) || isInlineWidgetFocused() || !isCodeTabActive() || !isKeyJustPressed('KeyA')) {
 		return false;
@@ -98,7 +89,6 @@ export function handleEditorPromptBindings(): boolean {
 		|| handleLocalFindBinding()
 		|| handleCycleTabBinding()
 		|| handleDefinitionAndReferenceBinding()
-		|| handleRenameBinding()
 		|| handleSelectAllBinding()
 		|| handleLineJumpBinding();
 }

@@ -108,7 +108,7 @@ void testGxWriteRequestAndPortOwnership() {
 	harness.gpu.writeGp1((bmsx::GX_GPU_GP1_DMA_DIRECTION << 24u) | bmsx::GX_GPU_DMA_DIRECTION_FIFO);
 	runNextDmaService(harness);
 
-	const bmsx::GxGpuCommandBuffer& commands = *harness.gpu.readDeviceOutput().commandBuffer;
+	const bmsx::GxGpuCommandBuffer& commands = harness.gpu.readDeviceOutput().commandBuffer;
 	require(commands.commandCount == 1u, "DMA emits one GX command");
 	require(commands.commandKind[0] == bmsx::GX_GPU_COMMAND_FILL_RECTANGLE, "DMA emits the fill command");
 	require(commands.words[commands.commandWordStart[0]] == command0, "DMA emits the first command word");
@@ -157,14 +157,14 @@ void testFiniteGxReadRequest() {
 	gpu.onService(1);
 	gpu.presentReadyFrameOnVblankEdge();
 	const bmsx::GxGpuDeviceOutput& firstOutput = gpu.readDeviceOutput();
-	bmsx::GxGpuReadbackPort& firstReadback = *firstOutput.readbackPort;
+	bmsx::GxGpuReadbackPort& firstReadback = firstOutput.readbackPort;
 	firstReadback.pixelBytes()[0u] = 0x11u;
 	firstReadback.pixelBytes()[1u] = 0x11u;
 	firstReadback.pixelBytes()[2u] = 0x22u;
 	firstReadback.pixelBytes()[3u] = 0x22u;
 	firstReadback.pixelBytes()[4u] = 0x33u;
 	firstReadback.pixelBytes()[5u] = 0x33u;
-	require(firstReadback.claimReadback(firstOutput.commandBuffer->presentCommandCount), "first readback claims its fence");
+	require(firstReadback.claimReadback(firstOutput.commandBuffer.presentCommandCount), "first readback claims its fence");
 	firstReadback.completeReadback(firstReadback.token());
 	runNextDmaService(harness);
 
@@ -183,12 +183,12 @@ void testFiniteGxReadRequest() {
 	gpu.onService(3);
 	gpu.presentReadyFrameOnVblankEdge();
 	const bmsx::GxGpuDeviceOutput& secondOutput = gpu.readDeviceOutput();
-	bmsx::GxGpuReadbackPort& secondReadback = *secondOutput.readbackPort;
+	bmsx::GxGpuReadbackPort& secondReadback = secondOutput.readbackPort;
 	secondReadback.pixelBytes()[0u] = 0x55u;
 	secondReadback.pixelBytes()[1u] = 0x55u;
 	secondReadback.pixelBytes()[2u] = 0x66u;
 	secondReadback.pixelBytes()[3u] = 0x66u;
-	require(secondReadback.claimReadback(secondOutput.commandBuffer->presentCommandCount), "second readback claims its fence");
+	require(secondReadback.claimReadback(secondOutput.commandBuffer.presentCommandCount), "second readback claims its fence");
 	secondReadback.completeReadback(secondReadback.token());
 	runNextDmaService(harness);
 	require(memory.readMappedU32LE(destination + 8u) == 0x66665555u, "DMA resumes on the next read request");

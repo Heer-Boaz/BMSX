@@ -2,6 +2,7 @@ import { describeInstructionAtPc, type InstructionOperandDebugInfo } from '../..
 import { valueToString } from '../../machine/firmware/globals';
 import type { SourceRange, Value } from '../../machine/cpu/cpu';
 import type { Runtime } from '../../machine/runtime/runtime';
+import { LogLevel, type Platform } from '../../platform/platform';
 
 function formatInstructionOperandDebug(runtime: Runtime, operand: InstructionOperandDebugInfo, registers: ReadonlyArray<Value>): string {
 	let text = `${operand.label}=${operand.text}`;
@@ -15,7 +16,7 @@ function formatDebugSourceLine(range: SourceRange): string {
 	return `${range.path}:${range.start.line}:${range.start.column}`;
 }
 
-export function logDebugState(runtime: Runtime): void {
+export function logDebugState(runtime: Runtime, platform: Platform): void {
 	const program = runtime.machine.cpu.program;
 	if (!program || program.code.length === 0) {
 		return;
@@ -27,9 +28,9 @@ export function logDebugState(runtime: Runtime): void {
 	const instruction = describeInstructionAtPc(program, debug.pc, runtime.programMetadata);
 	const operandSummary = instruction.operands.map(operand => formatInstructionOperandDebug(runtime, operand, debug.registers)).join(' ');
 
-	console.error(`\tpc=${instruction.pcText} op=${instruction.opName}${operandSummary.length > 0 ? ` ${operandSummary}` : ''}`);
-	console.error(`\tinstr=${instruction.pcText}: ${instruction.instructionText}`);
+	platform.log(LogLevel.Error, `\tpc=${instruction.pcText} op=${instruction.opName}${operandSummary.length > 0 ? ` ${operandSummary}` : ''}`);
+	platform.log(LogLevel.Error, `\tinstr=${instruction.pcText}: ${instruction.instructionText}`);
 	if (instruction.sourceRange) {
-		console.error(`\tsource=${formatDebugSourceLine(instruction.sourceRange)}`);
+		platform.log(LogLevel.Error, `\tsource=${formatDebugSourceLine(instruction.sourceRange)}`);
 	}
 }

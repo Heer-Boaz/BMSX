@@ -60,10 +60,8 @@ public:
 		f64 totalMs = 0.0;
 		f64 inputMs = 0.0;
 		f64 workbenchModeInputMs = 0.0;
-		f64 runtimeTerminalInputMs = 0.0;
 		f64 runtimeUpdateMs = 0.0;
 		f64 workbenchModeMs = 0.0;
-		f64 runtimeTerminalMs = 0.0;
 		f64 microtaskMs = 0.0;
 	};
 
@@ -73,7 +71,6 @@ public:
 		f64 testPatternMs = 0.0;
 		f64 runtimeDrawMs = 0.0;
 		f64 workbenchModeDrawMs = 0.0;
-		f64 runtimeTerminalDrawMs = 0.0;
 		f64 endFrameMs = 0.0;
 	};
 

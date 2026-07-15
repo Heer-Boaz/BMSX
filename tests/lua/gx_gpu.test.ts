@@ -1,7 +1,22 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 
-import { IO_GX_GPU_GP0, IO_GX_GPU_GP1, IO_IRQ_ACK, IO_IRQ_FLAGS, IRQ_GPU } from '../../machine/ts/machine/bus/io';
+import { readLE32 } from '../../machine/ts/common/endian';
+import {
+	IO_GX_CHARACTER_CELL_ADDRESS,
+	IO_GX_CHARACTER_CELL_DATA,
+	IO_GX_CHARACTER_CONTROL,
+	IO_GX_CHARACTER_GLYPH_ADDRESS,
+	IO_GX_CHARACTER_GLYPH_DATA,
+	IO_GX_CHARACTER_PALETTE_ADDRESS,
+	IO_GX_CHARACTER_PALETTE_DATA,
+	IO_GX_GPU_GP0,
+	IO_GX_GPU_GP1,
+	IO_IRQ_ACK,
+	IO_IRQ_FLAGS,
+	IRQ_GPU,
+} from '../../machine/ts/machine/bus/io';
+import { GX_CHARACTER_PLANE_WORD_BYTES } from '../../machine/ts/machine/devices/gx/character_plane';
 import {
 	GX_GPU_COMMAND_COPY_VRAM_TO_VRAM,
 	GX_GPU_COMMAND_DRAW_POLYGON,
@@ -2729,4 +2744,39 @@ test('GX-GPU MMIO uses PSX GP0 data and GP1 status addresses', () => {
 	assert.equal(memory.readMappedU32LE(IO_GX_GPU_GP0), 0);
 	assert.equal((memory.readMappedU32LE(IO_GX_GPU_GP1) & GX_GPU_STATUS_READY_TO_RECEIVE_DMA) >>> 0, GX_GPU_STATUS_READY_TO_RECEIVE_DMA);
 	assert.equal((memory.readMappedU32LE(IO_GX_GPU_GP1) & GX_GPU_STATUS_PAL_MODE) >>> 0, 0);
+});
+
+test('GX-GPU owns character-plane reset, state, and device output without disturbing GP0 assembly', () => {
+	const { memory, gpu } = createGpu();
+	gpu.writeGp0(GX_GPU_GP0_POLYGON_FIRST << 24);
+	const gp0Before = gpu.captureState();
+
+	memory.writeMappedU32LE(IO_GX_CHARACTER_CONTROL, 0xf0000001);
+	memory.writeMappedU32LE(IO_GX_CHARACTER_PALETTE_ADDRESS, 3);
+	memory.writeMappedU32LE(IO_GX_CHARACTER_PALETTE_DATA, 0x80007c00);
+	memory.writeMappedU32LE(IO_GX_CHARACTER_GLYPH_ADDRESS, 65);
+	memory.writeMappedU32LE(IO_GX_CHARACTER_GLYPH_DATA, 0x00f99f90);
+	memory.writeMappedU32LE(IO_GX_CHARACTER_CELL_ADDRESS, 321);
+	memory.writeMappedU32LE(IO_GX_CHARACTER_CELL_DATA, 0x00001241);
+	const state = gpu.captureState();
+	assert.equal(state.gp0CommandWordCount, gp0Before.gp0CommandWordCount);
+	assert.equal(state.gp0CommandTargetWordCount, gp0Before.gp0CommandTargetWordCount);
+	assert.deepEqual(state.gp0CommandWords, gp0Before.gp0CommandWords);
+	const output = gpu.readDeviceOutput();
+	const characterPlaneOutput = output.characterPlane;
+	assert.equal(characterPlaneOutput.controlWord, 0xf0000001);
+	assert.equal(readLE32(characterPlaneOutput.paletteBytes, 3 * GX_CHARACTER_PLANE_WORD_BYTES), 0x80007c00);
+	assert.equal(readLE32(characterPlaneOutput.glyphBytes, 65 * GX_CHARACTER_PLANE_WORD_BYTES), 0x00f99f90);
+	assert.equal(readLE32(characterPlaneOutput.cellBytes, 321 * GX_CHARACTER_PLANE_WORD_BYTES), 0x00001241);
+
+	gpu.reset();
+	assert.equal(gpu.readDeviceOutput().characterPlane, characterPlaneOutput);
+	assert.equal(characterPlaneOutput.controlWord, 0);
+	assert.equal(readLE32(characterPlaneOutput.paletteBytes, 3 * GX_CHARACTER_PLANE_WORD_BYTES), 0);
+	gpu.restoreState(state);
+	gpu.readDeviceOutput();
+	assert.equal(characterPlaneOutput.controlWord, 0xf0000001);
+	assert.equal(readLE32(characterPlaneOutput.paletteBytes, 3 * GX_CHARACTER_PLANE_WORD_BYTES), 0x80007c00);
+	assert.equal(readLE32(characterPlaneOutput.glyphBytes, 65 * GX_CHARACTER_PLANE_WORD_BYTES), 0x00f99f90);
+	assert.equal(readLE32(characterPlaneOutput.cellBytes, 321 * GX_CHARACTER_PLANE_WORD_BYTES), 0x00001241);
 });

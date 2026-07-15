@@ -755,6 +755,7 @@ struct CpuRootValueState {
 };
 
 struct CpuRuntimeState {
+	std::vector<CpuRootValueState> systemGlobals;
 	std::vector<CpuRootValueState> globals;
 	std::vector<CpuRootValueState> moduleCache;
 	std::vector<CpuFrameState> frames;
@@ -921,6 +922,7 @@ public:
 	CPU(Memory& memory, IrqController& irqController);
 
 	void setProgram(Program* program, const ProgramRuntimeSymbols& runtimeSymbols, ProgramMetadata* metadata, int systemIrqProtoIndex, int cartIrqProtoIndex, int systemExceptionProtoIndex);
+	void clearProgramEnvironment();
 	Program* getProgram() const { return m_program; }
 	StringPool& stringPool() { return m_stringPool; }
 	const StringPool& stringPool() const { return m_stringPool; }
@@ -929,6 +931,7 @@ public:
 	void setExternalRootMarker(std::function<void(GcHeap&)> marker) { m_externalRootMarker = std::move(marker); }
 	void setStringIndexTable(Table* table) { m_stringIndexTable = table; }
 	void setGlobalByKey(const Value& key, const Value& value);
+	void setSystemGlobalByKey(const Value& key, const Value& value);
 	Value getGlobalByKey(const Value& key) const;
 	void clearGlobalSlots();
 	void syncGlobalSlotsToTable();
@@ -1024,8 +1027,7 @@ private:
 	bool callValueInto(Value callee, NativeArgsView args, NativeResults& out);
 	void runHousekeeping();
 	void tickHotLoopHousekeeping();
-	void initializeGlobalSlots(const ProgramRuntimeSymbols& runtimeSymbols);
-	void initializeGlobalSlotList(std::vector<StringId>& names, std::vector<Value>& values, std::unordered_map<StringId, size_t>& slotByKey, const std::vector<std::string>& source);
+	void initializeGlobalSlots(const ProgramRuntimeSymbols& runtimeSymbols, const std::unordered_map<StringId, Value>& previousSystemGlobals);
 	void materializeStaticClosures();
 	CallFrame* pushFrame(CallFrame& caller, Closure* closure, int argBase, int argCount,
 		int returnBase, int returnCount, bool captureReturns, int callSitePc);

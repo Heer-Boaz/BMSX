@@ -98,6 +98,8 @@ set_property(DIRECTORY APPEND PROPERTY CMAKE_CONFIGURE_DEPENDS
 	"${CMAKE_CURRENT_SOURCE_DIR}/render/backend/gles2/shaders/gx_gpu_scanout.frag.glsl"
 	"${CMAKE_CURRENT_SOURCE_DIR}/render/backend/gles2/shaders/gx_gpu_readback.frag.glsl"
 	"${CMAKE_CURRENT_SOURCE_DIR}/render/backend/gles2/shaders/gx_gpu_shaders.h.in"
+	"${CMAKE_CURRENT_SOURCE_DIR}/render/backend/gles2/shaders/gx_character_plane.frag.glsl"
+	"${CMAKE_CURRENT_SOURCE_DIR}/render/backend/gles2/shaders/gx_character_plane_shaders.h.in"
 	"${CMAKE_CURRENT_SOURCE_DIR}/render/post/gles2/shaders/fullscreen.vert.glsl"
 	"${CMAKE_CURRENT_SOURCE_DIR}/render/post/crt/gles2/shaders/present.frag.glsl"
 	"${CMAKE_CURRENT_SOURCE_DIR}/render/post/crt/gles2/shaders/crt.frag.glsl"
@@ -171,6 +173,15 @@ configure_file(
 file(READ
 	"${CMAKE_CURRENT_SOURCE_DIR}/render/post/gles2/shaders/fullscreen.vert.glsl"
 	BMSX_POST_GLES2_FULLSCREEN_VERTEX_SHADER
+)
+file(READ
+	"${CMAKE_CURRENT_SOURCE_DIR}/render/backend/gles2/shaders/gx_character_plane.frag.glsl"
+	BMSX_GX_CHARACTER_PLANE_FRAGMENT_SHADER
+)
+configure_file(
+	"${CMAKE_CURRENT_SOURCE_DIR}/render/backend/gles2/shaders/gx_character_plane_shaders.h.in"
+	"${CMAKE_CURRENT_BINARY_DIR}/generated/render/backend/gles2/shaders/gx_character_plane_shaders.h"
+	@ONLY
 )
 file(READ
 	"${CMAKE_CURRENT_SOURCE_DIR}/render/post/crt/gles2/shaders/present.frag.glsl"
@@ -257,6 +268,8 @@ add_library(bmsx_core STATIC
 	# Render systems
 	render/backend/backend.cpp
 	render/backend/software/gx_gpu.cpp
+	render/backend/software/gx_character_plane.cpp
+	render/backend/gles2/gx_character_plane.cpp
 	render/backend/software/gx_gpu_commands.cpp
 	render/backend/software/gx_gpu_rasterizer.cpp
 	render/backend/software/gx_gpu_scanout.cpp
@@ -271,6 +284,7 @@ add_library(bmsx_core STATIC
 	render/host_overlay/software/renderer.cpp
 	render/host_overlay/gles2/pipeline.cpp
 	render/gx/view_snapshot.cpp
+	render/gx/character_plane_resources.cpp
 	render/texture_manager.cpp
 	render/backend/pass/library.cpp
 	render/graph/graph.cpp
@@ -295,6 +309,7 @@ add_library(bmsx_core STATIC
 	machine/devices/input/output_port.cpp
 	machine/devices/input/registers.cpp
 	machine/devices/input/save_state.cpp
+	machine/devices/system/controller.cpp
 	machine/devices/audio/controller.cpp
 	machine/devices/irq/controller.cpp
 	machine/devices/irq/save_state.cpp
@@ -330,6 +345,7 @@ add_library(bmsx_core STATIC
 	machine/memory/access_kind.cpp
 	machine/memory/memory.cpp
 	machine/memory/map.cpp
+	machine/devices/gx/character_plane.cpp
 	machine/devices/gx/gpu.cpp
 	machine/devices/gx/gpu_command_timing.cpp
 	machine/devices/gx/vram_power_on.cpp
@@ -521,6 +537,12 @@ if(BMSX_BUILD_TESTS)
 	target_link_libraries(bmsx_gx_gpu_tests PRIVATE bmsx_core)
 	add_test(NAME bmsx_gx_gpu_tests COMMAND bmsx_gx_gpu_tests)
 
+	add_executable(bmsx_gx_character_plane_tests
+		${CMAKE_CURRENT_SOURCE_DIR}/../../tests/cpp/gx_character_plane_test.cpp
+	)
+	target_link_libraries(bmsx_gx_character_plane_tests PRIVATE bmsx_core)
+	add_test(NAME bmsx_gx_character_plane_tests COMMAND bmsx_gx_character_plane_tests)
+
 	add_executable(bmsx_dma_controller_tests
 		${CMAKE_CURRENT_SOURCE_DIR}/../../tests/cpp/dma_controller_test.cpp
 	)
@@ -532,6 +554,18 @@ if(BMSX_BUILD_TESTS)
 	)
 	target_link_libraries(bmsx_cpu_supervisor_tests PRIVATE bmsx_core)
 	add_test(NAME bmsx_cpu_supervisor_tests COMMAND bmsx_cpu_supervisor_tests)
+
+	add_executable(bmsx_input_controller_tests
+		${CMAKE_CURRENT_SOURCE_DIR}/../../tests/cpp/input_controller_test.cpp
+	)
+	target_link_libraries(bmsx_input_controller_tests PRIVATE bmsx_core)
+	add_test(NAME bmsx_input_controller_tests COMMAND bmsx_input_controller_tests)
+
+	add_executable(bmsx_system_controller_tests
+		${CMAKE_CURRENT_SOURCE_DIR}/../../tests/cpp/system_controller_test.cpp
+	)
+	target_link_libraries(bmsx_system_controller_tests PRIVATE bmsx_core)
+	add_test(NAME bmsx_system_controller_tests COMMAND bmsx_system_controller_tests)
 
 	add_executable(bmsx_host_overlay_queue_tests
 		${CMAKE_CURRENT_SOURCE_DIR}/../../tests/cpp/host_overlay_queue_test.cpp

@@ -73,7 +73,7 @@ import { EXT_A_BITS, EXT_B_BITS, EXT_BX_BITS, EXT_C_BITS, INSTRUCTION_BYTES, MAX
 import { buildLuaSemanticFrontend, type LuaBoundReference, type LuaSemanticFrontend, type LuaSemanticFrontendFile } from './semantic/frontend';
 import { MMIO_REGISTER_SPEC_BY_ADDRESS, MMIO_REGISTER_SPEC_BY_NAME, type MmioWriteRequirement } from '../machine/bus/registers';
 import { ValueKindFlowAnalyzer, type SymbolFlowState } from './compiler/compile_value_flow';
-import { SYSTEM_ROM_BOOT_SYMBOL_NAMES, SYSTEM_ROM_BOOT_SYMBOL_NAME_SET } from './compiler/system_boot_symbols';
+import { SYSTEM_ROM_BOOT_PRIMITIVE_NAMES, SYSTEM_ROM_BOOT_SYMBOL_NAMES, SYSTEM_ROM_BOOT_SYMBOL_NAME_SET, SYSTEM_ROM_VECTOR_HANDLER_NAME_SET } from './compiler/system_boot_symbols';
 import { LuaSyntaxError } from './errors';
 import { Decl } from './semantic/model';
 import {
@@ -167,6 +167,8 @@ type CompileError = {
 export const isLuaCompileError = (value: unknown): value is LuaCompileError =>
 	value instanceof LuaSyntaxError;
 
+export type ProgramCompileDomain = 'cart' | 'system';
+
 type CompileOptions = {
 	baseProgram?: Program;
 	baseMetadata?: ProgramMetadata;
@@ -174,6 +176,7 @@ type CompileOptions = {
 	entrySource?: string;
 	externalModules?: ReadonlyArray<ProgramModule>;
 	constModulePaths?: ReadonlyArray<string>;
+	programDomain?: ProgramCompileDomain;
 };
 
 const EMPTY_PROGRAM_MODULES: ReadonlyArray<ProgramModule> = [];
@@ -414,11 +417,13 @@ class ProgramBuilder {
 	private readonly baseProgramRom: Uint8Array<ArrayBuffer> | null;
 	private readonly baseProgramRomTextByteLength: number;
 	private readonly canDeclareStaticStorage: boolean;
+	private readonly programDomain: ProgramCompileDomain;
 
 	public constructor(
 		baseConstPool: ReadonlyArray<Value> | null = null,
 		stringPool: StringPool | null = null,
 		optLevel: OptimizationLevel = 0,
+		programDomain: ProgramCompileDomain = 'cart',
 		baseMetadata: ProgramMetadata | null = null,
 		baseCode: Uint8Array | null = null,
 		baseProgramRom: Uint8Array<ArrayBuffer> | null = null,
@@ -442,6 +447,7 @@ class ProgramBuilder {
 		this.baseProgramRom = baseProgramRom;
 		this.baseProgramRomTextByteLength = baseProgramRomTextByteLength;
 		this.canDeclareStaticStorage = canDeclareStaticStorage;
+		this.programDomain = programDomain;
 		this.constSlotByKey = new Map<string, number>();
 		this.systemGlobalNameSet = new Set(SYSTEM_ROM_BOOT_SYMBOL_NAME_SET);
 		for (let index = 0; index < baseModuleProtos.length; index += 1) {
@@ -457,6 +463,11 @@ class ProgramBuilder {
 			this.constSlotByKey.set(this.makeConstKey(value), index + 1);
 		}
 		this.seedGlobalSlots(baseMetadata);
+		if (programDomain === 'system') {
+			for (let index = 0; index < SYSTEM_ROM_BOOT_PRIMITIVE_NAMES.length; index += 1) {
+				this.resolveSystemGlobalSlot(SYSTEM_ROM_BOOT_PRIMITIVE_NAMES[index]);
+			}
+		}
 	}
 
 	private seedGlobalSlots(metadata: ProgramMetadata | null): void {
@@ -518,6 +529,11 @@ class ProgramBuilder {
 	}
 
 	public resolveGlobalAccess(name: string): { system: boolean; slot: number } {
+		if (SYSTEM_ROM_VECTOR_HANDLER_NAME_SET.has(name)) {
+			return this.programDomain === 'system'
+				? { system: true, slot: this.resolveSystemGlobalSlot(name) }
+				: { system: false, slot: this.resolveGlobalSlot(name) };
+		}
 		const systemSlot = this.systemGlobalSlotByName.get(name);
 		if (systemSlot) {
 			return { system: true, slot: systemSlot - 1 };
@@ -3633,7 +3649,12 @@ class FunctionBuilder {
 					continue;
 				}
 				if (expr.kind === LuaSyntaxKind.UnaryExpression) {
-					throw new Error('[Compiler] Pointer dereference assignment requires a typed pointer.');
+					throw new LuaSyntaxError(
+						'Pointer dereference assignment requires a typed pointer.',
+						expr.range.path,
+						expr.range.start.line,
+						expr.range.start.column,
+					);
 				}
 			}
 			const targetPreparation = classifyAssignmentTargetPreparation(this.semantics, expr);
@@ -4755,7 +4776,12 @@ class FunctionBuilder {
 		if (expression.operator === LuaUnaryOperator.Dereference) {
 			const structAddress = this.resolveStructScalarAddress(expression);
 			if (!structAddress) {
-				throw new Error('[Compiler] Pointer dereference requires a typed pointer.');
+				throw new LuaSyntaxError(
+					'Pointer dereference requires a typed pointer.',
+					expression.range.path,
+					expression.range.start.line,
+					expression.range.start.column,
+				);
 			}
 			this.emitMemoryLoad(target, structAddress.type.accessKind!, undefined, structAddress.baseReg, structAddress.byteOffset);
 			if (resultCount > 1) {
@@ -5123,6 +5149,12 @@ const buildAssignmentHint = (path: ReadonlyArray<string>): string =>
 	`assign:${buildNamePath(path)}`;
 
 const extractCompileErrorMessage = (error: unknown, path: string): string => {
+	if (error instanceof LuaSyntaxError) {
+		const location = error.path === path
+			? `${error.line}:${error.column}`
+			: `${error.path}:${error.line}:${error.column}`;
+		return `${location}: ${error.message}`;
+	}
 	if (error instanceof Error) {
 		return error.message;
 	}
@@ -5368,11 +5400,13 @@ function createProgramBuilderFromProgram(
 	metadata: ProgramMetadata,
 	optLevel: OptimizationLevel,
 	preserveProgramRom: boolean,
+	programDomain: ProgramCompileDomain,
 ): ProgramBuilder {
 	const builder = new ProgramBuilder(
 		base.constPool,
 		base.constPoolStringPool,
 		optLevel,
+		programDomain,
 		metadata,
 		base.code,
 		preserveProgramRom ? base.programRom : null,
@@ -5420,9 +5454,9 @@ export function compileLuaChunkToProgram(chunk: LuaChunk, modules: ReadonlyArray
 		if (!options.baseMetadata) {
 			throw new Error('[ProgramBuilder] Base program metadata is required.');
 		}
-		programBuilder = createProgramBuilderFromProgram(options.baseProgram, options.baseMetadata, optLevel, false);
+		programBuilder = createProgramBuilderFromProgram(options.baseProgram, options.baseMetadata, optLevel, false, options.programDomain ?? 'cart');
 	} else {
-		programBuilder = new ProgramBuilder(null, null, optLevel);
+		programBuilder = new ProgramBuilder(null, null, optLevel, options.programDomain ?? 'cart');
 	}
 	for (let index = 0; index < canonicalModules.length; index += 1) {
 		const module = canonicalModules[index];
@@ -5613,7 +5647,7 @@ export function appendLuaChunkToProgram(base: Program, programMetadata: ProgramM
 	if (semanticErrors.length > 0) {
 		throw new Error(buildCompileFailureMessage(semanticErrors));
 	}
-	const programBuilder = createProgramBuilderFromProgram(base, programMetadata, optLevel, true);
+	const programBuilder = createProgramBuilderFromProgram(base, programMetadata, optLevel, true, options.programDomain ?? 'cart');
 	const compileErrors: CompileError[] = [];
 	const moduleId = chunk.range.path;
 	const entryProtoId = buildEntryProtoId(moduleId);

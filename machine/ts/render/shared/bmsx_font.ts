@@ -92,43 +92,8 @@ function buildTinyCharMap(): GlyphMap {
 	const prefix = 'tiny_3b_font';
 	const withPrefix = fontImagePrefix(prefix);
 	const map: GlyphMap = {
-		' ': withPrefix('space'),
-		'!': withPrefix('exclamation'),
-		'@': withPrefix('at_sign'),
-		'#': withPrefix('hash'),
-		'$': withPrefix('dollar'),
-		'%': withPrefix('percent'),
-		'&': withPrefix('ampersand'),
-		'"': withPrefix('quote'),
-		'\'': withPrefix('apostroph'),
-		'(': withPrefix('parenopen'),
-		')': withPrefix('parenclose'),
-		'*': withPrefix('asterisk'),
-		'+': withPrefix('plus'),
-		',': withPrefix('comma'),
-		'-': withPrefix('streep'),
-		'–': withPrefix('streep'),
-		'—': withPrefix('streep'),
-		'.': withPrefix('dot'),
-		'/': withPrefix('slash'),
-		':': withPrefix('colon'),
-		';': withPrefix('semicolon'),
-		'~': withPrefix('tilde'),
-		'<': withPrefix('lessthan'),
-		'=': withPrefix('equals'),
-		'>': withPrefix('greaterthan'),
-		'?': withPrefix('question'),
-		'[': withPrefix('bracketopen'),
-		'\\': withPrefix('backslash'),
-		']': withPrefix('bracketclose'),
-		'^': withPrefix('caret'),
-		'_': withPrefix('line'),
-		'`': withPrefix('backtick'),
-		'{': withPrefix('braceopen'),
-		'|': withPrefix('pipe'),
-		'}': withPrefix('braceclose'),
 		'•': withPrefix('bullet'),
-		'█': withPrefix('line'),
+		'█': withPrefix('code_0x5f'),
 		'¡': withPrefix('inverted_exclamation'),
 		'¤': withPrefix('flower'),
 		'¦': withPrefix('brokenbar'),
@@ -140,7 +105,11 @@ function buildTinyCharMap(): GlyphMap {
 		'ĳ': withPrefix('low_ij'),
 		'Ĳ': withPrefix('ij'),
 	};
-	addAsciiAlphaNumericGlyphs(map, withPrefix);
+	for (let codepoint = 0x20; codepoint <= 0x7e; codepoint += 1) {
+		map[String.fromCharCode(codepoint)] = withPrefix(`code_0x${codepoint.toString(16).padStart(2, '0')}`);
+	}
+	map['–'] = withPrefix('code_0x2d');
+	map['—'] = withPrefix('code_0x2d');
 	return map;
 }
 

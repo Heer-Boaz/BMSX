@@ -6,6 +6,7 @@ import { DEVICE_SERVICE_GPU } from '../../scheduler/device';
 import type { DmaController } from '../dma/controller';
 import type { IrqController } from '../irq/controller';
 import type { GxGpuDeviceOutput } from './device_output';
+import { GxCharacterPlane, type GxCharacterPlaneState } from './character_plane';
 import {
 	GX_GPU_COMMAND_COPY_VRAM_TO_VRAM,
 	GX_GPU_COMMAND_DRAW_LINE,
@@ -192,6 +193,7 @@ export type GxGpuState = {
 	presentHorizontalDisplayRangeWord: number;
 	presentVerticalDisplayRangeWord: number;
 	commandBuffer: GxGpuCommandBufferState;
+	characterPlane: GxCharacterPlaneState;
 };
 
 export type GxGpuSaveState = GxGpuState & {
@@ -204,6 +206,7 @@ export class GxGpu {
 	private displayModeWord = GX_GPU_RESET_DISPLAY_MODE_WORD;
 	private statusWord = GX_GPU_STATUS_RESET_WORD;
 	private readonly commandBuffer: GxGpuCommandBuffer;
+	private readonly characterPlane: GxCharacterPlane;
 	private readonly gp0CommandWords = new Uint32Array(GX_GPU_GP0_COMMAND_BUFFER_WORDS);
 	private readonly gp0Fifo = new GxGpuCommandFifo();
 	private gp0CommandWordCount = 0;
@@ -254,6 +257,7 @@ export class GxGpu {
 		private readonly dmaController: DmaController,
 	) {
 		this.commandBuffer = new GxGpuCommandBuffer(dmaController);
+		this.characterPlane = new GxCharacterPlane(memory);
 		this.deviceOutput = {
 			commandBuffer: this.commandBuffer,
 			readbackPort: this.commandBuffer.readback,
@@ -264,6 +268,7 @@ export class GxGpu {
 			verticalDisplayRangeWord: GX_GPU_RESET_VERTICAL_DISPLAY_RANGE_WORD,
 			vramSnapshotBytes: this.vramSnapshotBytes,
 			vramSnapshotSerial: 0n,
+			characterPlane: this.characterPlane.readDeviceOutput(),
 		};
 		this.memory.mapIoRead(IO_GX_GPU_GP0, this, GxGpu.readGp0Thunk);
 		this.memory.mapIoWrite(IO_GX_GPU_GP0, this, GxGpu.writeGp0Thunk);
@@ -276,6 +281,7 @@ export class GxGpu {
 		this.textureDisableAllowedWord = 0;
 		this.gpuReadWord = 0;
 		this.commandBuffer.reset();
+		this.characterPlane.reset();
 		initializeGxGpuVramPowerOn(this.vramSnapshotBytes);
 		this.publishVramSnapshotRevision();
 		this.clearGp0CommandState();
@@ -369,6 +375,7 @@ export class GxGpu {
 			presentHorizontalDisplayRangeWord: this.presentHorizontalDisplayRangeWord,
 			presentVerticalDisplayRangeWord: this.presentVerticalDisplayRangeWord,
 			commandBuffer: this.commandBuffer.captureState(),
+			characterPlane: this.characterPlane.captureState(),
 		};
 	}
 
@@ -421,6 +428,7 @@ export class GxGpu {
 		this.presentHorizontalDisplayRangeWord = state.presentHorizontalDisplayRangeWord >>> 0;
 		this.presentVerticalDisplayRangeWord = state.presentVerticalDisplayRangeWord >>> 0;
 		this.commandBuffer.restoreState(state.commandBuffer);
+		this.characterPlane.restoreState(state.characterPlane);
 		this.m_lastFrameCommitted = false;
 		if (this.pendingCommandCompletionCycle !== 0) {
 			this.scheduler.scheduleDeviceService(DEVICE_SERVICE_GPU, this.pendingCommandCompletionCycle);
@@ -721,6 +729,7 @@ export class GxGpu {
 		this.deviceOutput.horizontalDisplayRangeWord = this.presentHorizontalDisplayRangeWord;
 		this.deviceOutput.verticalDisplayRangeWord = this.presentVerticalDisplayRangeWord;
 		this.deviceOutput.vramSnapshotSerial = this.vramSnapshotSerial;
+		this.deviceOutput.characterPlane = this.characterPlane.readDeviceOutput();
 		return this.deviceOutput;
 	}
 

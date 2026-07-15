@@ -2,6 +2,7 @@ import {
 	HostClock,
 	FrameLoop,
 	Lifecycle,
+	LogLevel,
 	StorageService,
 	ClipboardService,
 	ClipboardPermissionState,
@@ -39,7 +40,7 @@ import {
 import { HZ_SCALE } from 'bmsx/machine/runtime/timing/constants';
 import { PSX_GPU_DISPLAY_ASPECT_HEIGHT, PSX_GPU_DISPLAY_ASPECT_WIDTH } from 'bmsx/machine/model_registry';
 import { WorkerStreamingAudioService } from './worker_audio';
-import type { GamepadControlHandle, GameViewCanvas, GameViewHost, HostEventListenerTarget, HostEventOptions, HostWindowEventType, OnscreenGamepadHandles, OverlayHandle, SurfaceBounds, ViewportDimensions } from 'bmsx/platform';
+import { type GamepadControlHandle, type GameViewCanvas, type GameViewHost, type HostEventListenerTarget, type HostEventOptions, type HostWindowEventType, type OnscreenGamepadHandles, type OverlayHandle, type SurfaceBounds, type ViewportDimensions } from 'bmsx/platform';
 import { type vec2 } from 'bmsx/rompack/format';
 
 declare const machineManager: any; // avoid circular dependency issues
@@ -66,6 +67,14 @@ export class BrowserPlatform implements Platform {
 		target.close();
 		if (!target.closed) {
 			throw new Error('[BrowserPlatform] Window refused to close; close the tab manually.');
+		}
+	}
+	log(level: LogLevel, message: string): void {
+		switch (level) {
+			case LogLevel.Debug: console.debug(message); break;
+			case LogLevel.Info: console.info(message); break;
+			case LogLevel.Warn: console.warn(message); break;
+			case LogLevel.Error: console.error(message); break;
 		}
 	}
 	clipboard: ClipboardService;

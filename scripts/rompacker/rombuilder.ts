@@ -8,6 +8,7 @@ import { collectRomAssetPayloadRanges } from '../../machine/ts/rompack/asset_lay
 import { SYSTEM_BOOT_ENTRY_PATH } from '../../machine/ts/core/system';
 import { encodeRomToc } from '../../machine/ts/rompack/tooling/toc_encode';
 import type { LuaChunk } from '../../machine/ts/lua/syntax/ast';
+import type { ProgramCompileDomain } from '../../machine/ts/lua/compiler';
 import { encodeAudioAssetToAdpcm } from './adpcm';
 import { createTextureAtlas, resolveTextureGroupId } from './atlasbuilder';
 import {
@@ -25,6 +26,7 @@ import {
 	GX_SYSTEM_TEXTURE_X,
 	GX_SYSTEM_TEXTURE_Y,
 } from './gx_texture';
+import { buildGxCharacterFont, GX_CHARACTER_FONT_ASSET_ID } from './gx_character_font';
 import {
 	type GxTextureGroupLayout,
 	type GxTextureLayout,
@@ -897,6 +899,7 @@ export function getResMetaByFilename(filepath: string): { name: string, ext: str
 export type ResourceScanOptions = {
 	extraLuaPaths?: string[];
 	virtualRoot?: string;
+	systemResourceRoots?: readonly string[];
 	/**
 	 * When set, rebuild checks use the debug ROM output (`dist/<romname>.debug.rom`).
 	 */
@@ -1002,6 +1005,7 @@ export async function getResMetaList(respaths: string[], _romname?: string, opti
 		? respaths.filter(path => !isFirmwareResPath(path))
 		: respaths;
 	const extraLuaRoots = options.extraLuaPaths;
+	const systemResourceRoots = options.systemResourceRoots ?? DEFAULT_SYSTEM_RESOURCE_ROOTS;
 	const seenPaths = new Set<string>();
 
 	const pushFile = (filepath: string) => {
@@ -1074,7 +1078,7 @@ export async function getResMetaList(respaths: string[], _romname?: string, opti
 					}
 					throw new Error(`[RomPacker] Duplicate image resource "${name}" defined by "${existingImage.filepath}" and "${filepath}".`);
 				}
-				const targetAtlasId = resolveTextureGroupId(filepath, commonResPath, imgMeta.targetAtlasId);
+				const targetAtlasId = resolveTextureGroupId(filepath, systemResourceRoots, imgMeta.targetAtlasId);
 				targetAtlasIdSet.add(targetAtlasId);
 				result.push({
 					filepath,
@@ -1270,6 +1274,11 @@ export async function generateRomAssets(resources: Resource[], reportProgress?: 
 			type: 'bin',
 			buffer: buildFixedDirect16Upload(systemTextureGroup.gxTexture!, GX_SYSTEM_TEXTURE_X, GX_SYSTEM_TEXTURE_Y),
 		});
+		romAssets.push({
+			resid: GX_CHARACTER_FONT_ASSET_ID,
+			type: 'bin',
+			buffer: buildGxCharacterFont(resources),
+		});
 	}
 	// @ts-ignore
 	let romlabel_buffer: Buffer;
@@ -1458,6 +1467,7 @@ export function appendProgramImage(
 	generatedLuaModules?: Array<{ path: string; source: string }>;
 	includeSymbols?: boolean;
 	optLevel?: 0 | 1 | 2 | 3;
+	programDomain?: ProgramCompileDomain;
 	} = {},
 ): ProgramBootHeader {
 	const hasProgramImage = assetList.some(asset => asset.resid === PROGRAM_IMAGE_ID);
@@ -1570,6 +1580,7 @@ export function appendProgramImage(
 		entrySource: entryAsset.buffer.toString('utf8'),
 		externalModules,
 		constModulePaths,
+		programDomain: options.programDomain,
 	});
 	const programImage = encodeCompiledProgramImage(compiled);
 
@@ -2207,6 +2218,7 @@ export async function isBrowserHostRebuildRequired(outFilePath: string = `./dist
 }
 // Define common assets path
 export const commonResPath = `./machine/firmware/res`;
+const DEFAULT_SYSTEM_RESOURCE_ROOTS: readonly string[] = [commonResPath];
 export const biosLuaPath = './machine/firmware/bios';
 export const systemLuaPath = './machine/firmware/system';
 export const cartlibLuaPath = './cartlib';

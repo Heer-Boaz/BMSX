@@ -58,6 +58,8 @@ export type LinkedBootProgramImage = {
 	bssBaseAddress: number;
 	systemStaticModulePaths: ReadonlyArray<string>;
 	systemVectors: ProgramVectorTable;
+	systemDataBaseAddress: number;
+	systemBssBaseAddress: number;
 	cartVectors: ProgramVectorTable;
 	cartDataBaseAddress: number;
 	cartBssBaseAddress: number;
@@ -1041,6 +1043,8 @@ export const linkBootProgramImages = (
 		bssBaseAddress,
 		systemStaticModulePaths: linked.systemStaticModulePaths,
 		systemVectors: linked.systemVectors,
+		systemDataBaseAddress: linked.systemDataBaseAddress,
+		systemBssBaseAddress: linked.systemBssBaseAddress,
 		cartVectors: linked.cartVectors,
 		cartDataBaseAddress: linked.cartDataBaseAddress,
 		cartBssBaseAddress: linked.cartBssBaseAddress,

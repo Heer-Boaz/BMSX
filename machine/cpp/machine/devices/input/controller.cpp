@@ -1,12 +1,19 @@
 #include "machine/devices/input/controller.h"
 
 #include "machine/bus/io.h"
+#include "machine/cpu/cpu.h"
 
 namespace bmsx {
 
-InputController::InputController(Memory& memory, InputControllerInputSource& input)
+namespace {
+constexpr size_t SYSTEM_NMI_KEY_WORD = INPUT_CONTROLLER_SYSTEM_NMI_HID_USAGE >> 5u;
+constexpr u32 SYSTEM_NMI_KEY_MASK = 1u << (INPUT_CONTROLLER_SYSTEM_NMI_HID_USAGE & 31u);
+}
+
+InputController::InputController(Memory& memory, InputControllerInputSource& input, CPU& cpu)
 	: m_memory(memory)
 	, m_input(input)
+	, m_cpu(cpu)
 	, m_outputPort(input, m_registers, memory) {
 	m_memory.mapIoWrite<&InputController::writeControl>(IO_INP_CTRL, *this);
 	m_memory.mapIoWrite<&InputControllerRegisterFile::write>(IO_INP_OUTPUT_PORT, m_registers);
@@ -19,6 +26,7 @@ void InputController::reset() {
 	m_sampleArmed = false;
 	m_sampleSequence = 0u;
 	m_lastSampleCycle = 0u;
+	m_systemNmiLineHigh = false;
 	m_registers.reset();
 	m_memory.writeIoValue(IO_INP_OUTPUT_CTRL, valueNumber(0.0));
 	m_registers.mirror(m_memory);
@@ -43,13 +51,22 @@ void InputController::writeControl([[maybe_unused]] u32 addr, Value value) {
 }
 
 void InputController::onVblankEdge(f64 currentTimeMs, u32 nowCycles) {
+	if (m_sampleArmed) {
+		m_input.sampleInputControllerSnapshot(currentTimeMs, m_snapshot);
+	} else {
+		m_input.sampleInputControllerKeyWords(m_snapshot.keyWords);
+	}
+	const bool systemNmiLineHigh = (m_snapshot.keyWords[SYSTEM_NMI_KEY_WORD] & SYSTEM_NMI_KEY_MASK) != 0u;
+	if (systemNmiLineHigh && !m_systemNmiLineHigh) {
+		m_cpu.requestNonMaskableInterrupt();
+	}
+	m_systemNmiLineHigh = systemNmiLineHigh;
 	if (!m_sampleArmed) {
 		return;
 	}
 	m_sampleSequence += 1u;
 	m_lastSampleCycle = nowCycles;
 	m_sampleArmed = false;
-	m_input.sampleInputControllerSnapshot(currentTimeMs, m_snapshot);
 	m_registers.latchSnapshot(m_snapshot);
 	m_registers.mirror(m_memory);
 	m_memory.writeIoValue(IO_INP_STATUS, valueNumber(static_cast<double>(m_sampleSequence)));

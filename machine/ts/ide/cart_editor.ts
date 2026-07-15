@@ -1,5 +1,6 @@
 import { machineManager } from '../core/machine_manager';
 import type { Runtime } from '../machine/runtime/runtime';
+import { LogLevel } from '../platform';
 import { resolveRuntimeLuaSource } from './runtime/sources';
 import type { Viewport } from '../rompack/format';
 import { api } from './runtime/overlay_api';
@@ -463,7 +464,7 @@ class RuntimeCartEditor implements CartEditor {
 		machineManager.paused = true;
 		this.activate();
 		const message = `${fallbackMessage}: ${errormsg}`;
-		machineManager.ideState.terminal.appendStderr(message);
+		machineManager.platform.log(LogLevel.Error, message);
 		showEditorMessage(message, constants.COLOR_STATUS_ERROR, 2.0);
 	}
 

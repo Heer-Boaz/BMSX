@@ -28,11 +28,13 @@ type SkylineNode = {
 	width: number;
 };
 
-export function resolveTextureGroupId(filepath: string, systemResourceRoot: string, current = 0): number {
+export function resolveTextureGroupId(filepath: string, systemResourceRoots: readonly string[], current = 0): number {
 	const absolutePath = resolvePath(filepath);
-	const absoluteSystemRoot = resolvePath(systemResourceRoot);
-	if (absolutePath === absoluteSystemRoot || absolutePath.startsWith(absoluteSystemRoot + pathSep)) {
-		return GX_SYSTEM_TEXTURE_GROUP_ID;
+	for (let index = 0; index < systemResourceRoots.length; index += 1) {
+		const absoluteSystemRoot = resolvePath(systemResourceRoots[index]);
+		if (absolutePath === absoluteSystemRoot || absolutePath.startsWith(absoluteSystemRoot + pathSep)) {
+			return GX_SYSTEM_TEXTURE_GROUP_ID;
+		}
 	}
 	if (current >= GX_CART_TEXTURE_GROUP_ID_LIMIT) {
 		throw new Error(`[RomPacker] Cart texture group id ${current} collides with reserved system texture group id ${GX_SYSTEM_TEXTURE_GROUP_ID}.`);

@@ -8,12 +8,19 @@ import {
 	IO_INP_OUTPUT_PORT,
 	IO_INP_STATUS,
 } from '../../bus/io';
-import type { Value } from '../../cpu/cpu';
+import type { CPU, Value } from '../../cpu/cpu';
 import { Memory } from '../../memory/memory';
 import type { InputControllerState } from './save_state';
 import { InputControllerRegisterFile } from './registers';
 import { InputControllerOutputPort } from './output_port';
-import { createInputControllerSnapshot, type InputControllerInputSource } from './contracts';
+import {
+	createInputControllerSnapshot,
+	INPUT_CONTROLLER_SYSTEM_NMI_HID_USAGE,
+	type InputControllerInputSource,
+} from './contracts';
+
+const SYSTEM_NMI_KEY_WORD = INPUT_CONTROLLER_SYSTEM_NMI_HID_USAGE >>> 5;
+const SYSTEM_NMI_KEY_MASK = 1 << (INPUT_CONTROLLER_SYSTEM_NMI_HID_USAGE & 31);
 
 const INPUT_OUTPUT_REGISTER_WRITE_ADDRS = [
 	IO_INP_OUTPUT_PORT,
@@ -25,6 +32,7 @@ export class InputController {
 	private sampleArmed = false;
 	private sampleSequence = 0;
 	private lastSampleCycle = 0;
+	private systemNmiLineHigh = false;
 	private readonly snapshot = createInputControllerSnapshot();
 	private readonly outputPort: InputControllerOutputPort;
 	private readonly registers = new InputControllerRegisterFile();
@@ -32,6 +40,7 @@ export class InputController {
 	public constructor(
 		private readonly memory: Memory,
 		private readonly input: InputControllerInputSource,
+		private readonly cpu: CPU,
 	) {
 		this.outputPort = new InputControllerOutputPort(input, this.registers, memory);
 		this.memory.mapIoWrite(IO_INP_CTRL, this, InputController.writeControl);
@@ -45,6 +54,7 @@ export class InputController {
 		this.sampleArmed = false;
 		this.sampleSequence = 0;
 		this.lastSampleCycle = 0;
+		this.systemNmiLineHigh = false;
 		this.registers.reset();
 		this.memory.writeIoValue(IO_INP_OUTPUT_CTRL, 0);
 		this.registers.mirror(this.memory);
@@ -69,13 +79,22 @@ export class InputController {
 	}
 
 	public onVblankEdge(currentTimeMs: number, nowCycles: number): void {
+		if (this.sampleArmed) {
+			this.input.sampleInputControllerSnapshot(currentTimeMs, this.snapshot);
+		} else {
+			this.input.sampleInputControllerKeyWords(this.snapshot.keyWords);
+		}
+		const systemNmiLineHigh = (this.snapshot.keyWords[SYSTEM_NMI_KEY_WORD] & SYSTEM_NMI_KEY_MASK) !== 0;
+		if (systemNmiLineHigh && !this.systemNmiLineHigh) {
+			this.cpu.requestNonMaskableInterrupt();
+		}
+		this.systemNmiLineHigh = systemNmiLineHigh;
 		if (!this.sampleArmed) {
 			return;
 		}
 		this.sampleSequence = (this.sampleSequence + 1) >>> 0;
 		this.lastSampleCycle = nowCycles >>> 0;
 		this.sampleArmed = false;
-		this.input.sampleInputControllerSnapshot(currentTimeMs, this.snapshot);
 		this.registers.latchSnapshot(this.snapshot);
 		this.registers.mirror(this.memory);
 		this.memory.writeIoValue(IO_INP_STATUS, this.sampleSequence);
@@ -90,6 +109,7 @@ export class InputController {
 			sampleArmed: this.sampleArmed,
 			sampleSequence: this.sampleSequence,
 			lastSampleCycle: this.lastSampleCycle,
+			systemNmiLineHigh: this.systemNmiLineHigh,
 			registers: this.registers.captureState(),
 		};
 	}
@@ -98,6 +118,7 @@ export class InputController {
 		this.sampleArmed = state.sampleArmed;
 		this.sampleSequence = state.sampleSequence;
 		this.lastSampleCycle = state.lastSampleCycle;
+		this.systemNmiLineHigh = state.systemNmiLineHigh;
 		this.registers.restoreState(state.registers);
 		this.memory.writeIoValue(IO_INP_OUTPUT_CTRL, 0);
 		this.registers.mirror(this.memory);

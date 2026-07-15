@@ -45,7 +45,7 @@ export function isManagedOverlayEditorActive(): boolean {
 
 export function updateGamePipelineExts(): void {
 	const state = machineManager.ideState;
-	const overlayActive = state.terminal.isActive || (state.editor.blocksRuntimePipeline && state.editor.isActive);
+	const overlayActive = state.editor.blocksRuntimePipeline && state.editor.isActive;
 	state.overlayActive = overlayActive;
 	Input.instance.setGameplayCaptureEnabled(!overlayActive);
 	updateOverlayAudioSuspension();
@@ -60,39 +60,6 @@ function updateOverlayAudioSuspension(): void {
 	} else {
 		machineManager.sndmaster.resumeAll('overlay');
 	}
-}
-
-export function toggleTerminalMode(): void {
-	const state = machineManager.ideState;
-	if (state.terminal.isActive) {
-		deactivateTerminalMode();
-		return;
-	}
-	activateTerminalMode();
-}
-
-export function activateTerminalMode(): void {
-	const state = machineManager.ideState;
-	const terminal = state.terminal;
-	if (terminal.isActive) {
-		return;
-	}
-	deactivateEditor();
-	terminal.activate();
-	updateGamePipelineExts();
-}
-
-export function deactivateTerminalMode(): void {
-	const state = machineManager.ideState;
-	const terminal = state.terminal;
-	if (!terminal.isActive) {
-		return;
-	}
-	terminal.deactivate();
-	if (state.overlayDrawFrameOwner === 'terminal') {
-		state.overlayDrawFrameOwner = null;
-	}
-	updateGamePipelineExts();
 }
 
 function isOverlayActive(): boolean {
@@ -113,9 +80,6 @@ export function activateEditor(runtime: Runtime): void {
 		return;
 	}
 	const state = machineManager.ideState;
-	if (state.terminal.isActive) {
-		state.terminal.deactivate();
-	}
 	const editor = state.editor;
 	const wasActive = editor.isActive;
 	if (!wasActive) {

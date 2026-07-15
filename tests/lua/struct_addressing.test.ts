@@ -219,3 +219,14 @@ local matrices<const>: *q16_matrix = base
 		/Whole-struct assignment is not supported/,
 	);
 });
+
+test('compiler pointer diagnostics retain their source location', () => {
+	assert.throws(
+		() => compileSource(`local address = ${TEST_RAM_BASE}\n*address = 1`),
+		/entry struct_addressing\.lua: 2:1: Pointer dereference assignment requires a typed pointer\./,
+	);
+	assert.throws(
+		() => compileSource(`local address = ${TEST_RAM_BASE}\nreturn *address`),
+		/entry struct_addressing\.lua: 2:8: Pointer dereference requires a typed pointer\./,
+	);
+});

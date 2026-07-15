@@ -6,6 +6,8 @@
 
 #include "rompack/host_system_atlas.h"
 
+#include <utility>
+
 namespace bmsx {
 namespace {
 
@@ -80,65 +82,39 @@ GlyphMap buildMsxCharMap() {
 	map[static_cast<u32>('^')] = withPrefix("code_0x5e");
 	map[static_cast<u32>('_')] = withPrefix("line");
 	map[static_cast<u32>('`')] = withPrefix("code_0x60");
-    map[static_cast<u32>('{')] = withPrefix("code_0x7b");
-    map[static_cast<u32>('|')] = withPrefix("code_0x7c");
-    map[static_cast<u32>('}')] = withPrefix("code_0x7d");
+	map[static_cast<u32>('{')] = withPrefix("code_0x7b");
+	map[static_cast<u32>('|')] = withPrefix("code_0x7c");
+	map[static_cast<u32>('}')] = withPrefix("code_0x7d");
 	map[static_cast<u32>('~')] = withPrefix("code_0x7e");
 	map[static_cast<u32>(L'█')] = withPrefix("code_0xc8");
 
 	map[0x2014] = withPrefix("ctrl_etb"); // etb = "extended dash/break" and the associated ASCII control code is 0x17
-    // map[0x2022] = withPrefix("ctrl_bel");
-    map[0x00A1] = withPrefix("code_0x80");
+	// map[0x2022] = withPrefix("ctrl_bel");
+	map[0x00A1] = withPrefix("code_0x80");
 
 	addDigitAndLetterGlyphs(map, prefix);
 
-    return map;
+	return map;
 }
 
 GlyphMap buildTinyCharMap() {
-    const std::string prefix = "tiny_3b_font";
-    auto withPrefix = [&](const std::string& suffix) {
-        return prefix + "_" + suffix;
-    };
+	constexpr char HEX_DIGITS[] = "0123456789abcdef";
+	const std::string prefix = "tiny_3b_font";
+	auto withPrefix = [&](const std::string& suffix) {
+		return prefix + "_" + suffix;
+	};
 
-    GlyphMap map;
-    map[static_cast<u32>(' ')] = withPrefix("space");
-    map[static_cast<u32>('!')] = withPrefix("exclamation");
-    map[static_cast<u32>('@')] = withPrefix("at_sign");
-    map[static_cast<u32>('#')] = withPrefix("hash");
-    map[static_cast<u32>('$')] = withPrefix("dollar");
-    map[static_cast<u32>('%')] = withPrefix("percent");
-    map[static_cast<u32>('&')] = withPrefix("ampersand");
-    map[static_cast<u32>('\"')] = withPrefix("quote");
-    map[static_cast<u32>('\'')] = withPrefix("apostroph");
-    map[static_cast<u32>('(')] = withPrefix("parenopen");
-    map[static_cast<u32>(')')] = withPrefix("parenclose");
-    map[static_cast<u32>('*')] = withPrefix("asterisk");
-    map[static_cast<u32>('+')] = withPrefix("plus");
-    map[static_cast<u32>(',')] = withPrefix("comma");
-    map[static_cast<u32>('-')] = withPrefix("streep");
-    map[0x2013] = withPrefix("streep");
-    map[0x2014] = withPrefix("streep");
-    map[static_cast<u32>('.')] = withPrefix("dot");
-    map[static_cast<u32>('/')] = withPrefix("slash");
-    map[static_cast<u32>(':')] = withPrefix("colon");
-    map[static_cast<u32>(';')] = withPrefix("semicolon");
-    map[static_cast<u32>('~')] = withPrefix("tilde");
-    map[static_cast<u32>('<')] = withPrefix("lessthan");
-    map[static_cast<u32>('=')] = withPrefix("equals");
-    map[static_cast<u32>('>')] = withPrefix("greaterthan");
-    map[static_cast<u32>('?')] = withPrefix("question");
-    map[static_cast<u32>('[')] = withPrefix("bracketopen");
-    map[static_cast<u32>('\\')] = withPrefix("backslash");
-    map[static_cast<u32>(']')] = withPrefix("bracketclose");
-    map[static_cast<u32>('^')] = withPrefix("caret");
-    map[static_cast<u32>('_')] = withPrefix("line");
-    map[static_cast<u32>('`')] = withPrefix("backtick");
-	map[static_cast<u32>('{')] = withPrefix("braceopen");
-	map[static_cast<u32>('|')] = withPrefix("pipe");
-	map[static_cast<u32>('}')] = withPrefix("braceclose");
+	GlyphMap map;
+	for (u32 codepoint = 0x20; codepoint <= 0x7e; ++codepoint) {
+		std::string id = prefix + "_code_0x00";
+		id[id.size() - 2] = HEX_DIGITS[(codepoint >> 4u) & 0x0fu];
+		id[id.size() - 1] = HEX_DIGITS[codepoint & 0x0fu];
+		map[codepoint] = std::move(id);
+	}
+	map[0x2013] = withPrefix("code_0x2d");
+	map[0x2014] = withPrefix("code_0x2d");
 	map[0x2022] = withPrefix("bullet");
-	map[0x2588] = withPrefix("line");
+	map[0x2588] = withPrefix("code_0x5f");
 	map[0x00A1] = withPrefix("inverted_exclamation");
 	map[0x00A4] = withPrefix("flower");
 	map[0x00A6] = withPrefix("brokenbar");
@@ -149,8 +125,6 @@ GlyphMap buildTinyCharMap() {
 	map[0x00B5] = withPrefix("euler");
 	map[0x0133] = withPrefix("low_ij");
 	map[0x0132] = withPrefix("ij");
-
-	addDigitAndLetterGlyphs(map, prefix);
 
 	return map;
 }

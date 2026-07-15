@@ -700,7 +700,7 @@ void Input::sampleInputControllerSnapshot(f64 currentTimeMs, InputControllerSnap
 			player->beginFrame(currentTimeMs);
 		}
 	}
-	snapshot.keyWords.fill(0u);
+	sampleInputControllerKeyWords(snapshot.keyWords);
 	snapshot.pointerButtons = 0u;
 	snapshot.pointerX = 0.0F;
 	snapshot.pointerY = 0.0F;
@@ -708,14 +708,22 @@ void Input::sampleInputControllerSnapshot(f64 currentTimeMs, InputControllerSnap
 	snapshot.rumbleSupportMask = 0u;
 	for (auto& [deviceId, binding] : m_deviceBindings) {
 		(void)deviceId;
-		if (binding.source == InputSource::Keyboard) {
-			binding.handler->writeInputControllerKeyWords(snapshot.keyWords);
-		} else if (binding.source == InputSource::Pointer) {
+		if (binding.source == InputSource::Pointer) {
 			binding.handler->writeInputControllerPointerSnapshot(snapshot);
 		}
 	}
 	for (i32 pad = 0; pad < INPUT_CONTROLLER_PAD_COUNT; pad += 1) {
 		samplePadSnapshot(pad, snapshot);
+	}
+}
+
+void Input::sampleInputControllerKeyWords(std::array<u32, INPUT_CONTROLLER_KEY_WORD_COUNT>& keyWords) {
+	keyWords.fill(0u);
+	for (auto& [deviceId, binding] : m_deviceBindings) {
+		(void)deviceId;
+		if (binding.source == InputSource::Keyboard) {
+			binding.handler->writeInputControllerKeyWords(keyWords);
+		}
 	}
 }
 

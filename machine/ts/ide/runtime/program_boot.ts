@@ -2,7 +2,7 @@ import { machineManager } from '../../core/machine_manager';
 import type { Runtime } from '../../machine/runtime/runtime';
 import { applyWorkspaceOverridesToCart, applyWorkspaceOverridesToRegistry } from '../workspace/workspace';
 import * as workbenchMode from '../workbench/mode';
-import { deactivateEditor, deactivateTerminalMode } from '../workbench/overlay_modes';
+import { deactivateEditor } from '../workbench/overlay_modes';
 import { handleLuaError } from '../workbench/runtime_errors';
 import { clearRuntimeFault } from './fault_state';
 import { bootActiveProgram, invalidateModuleLookups } from './lua_pipeline';
@@ -38,7 +38,6 @@ export async function startPreparedRuntime(runtime: Runtime): Promise<void> {
 
 export async function prepareRebootToBootRom(runtime: Runtime): Promise<void> {
 	clearBootFaults(runtime);
-	deactivateTerminalMode();
 	deactivateEditor();
 	clearLuaBootState(runtime);
 	const sources = machineManager.sourceState;

@@ -36,6 +36,15 @@ void FrameLoopState::abandonFrameState(Runtime& runtime) {
 	runtime.vblank.abandonTick();
 }
 
+bool FrameLoopState::consumeSystemReset(Runtime& runtime) {
+	if (!runtime.machine.systemController.takeResetRequest()) {
+		return false;
+	}
+	resetFrameState(runtime);
+	runtime.rebootSystemProgram();
+	return true;
+}
+
 void FrameLoopState::finalizeUpdateSlice(Runtime& runtime) {
 	if (runtime.m_pendingCall == Runtime::PendingCall::Entry && !runtime.vblank.tickCompleted()) {
 		return;
@@ -68,6 +77,9 @@ void FrameLoopState::runUpdatePhase(Runtime& runtime) {
 				return;
 			}
 			const RunResult result = runtime.cpuExecution.runWithBudget(runtime, frameState);
+			if (consumeSystemReset(runtime)) {
+				return;
+			}
 			if (result == RunResult::Halted && cpu.getFrameDepth() == 0 && !runtime.cartProgramStarted) {
 				runtime.frameScheduler.clearQueuedTime();
 				abandonFrameState(runtime);
@@ -89,6 +101,9 @@ void FrameLoopState::runUpdatePhase(Runtime& runtime) {
 
 bool FrameLoopState::tickUpdate(Runtime& runtime) {
 	using PendingCall = Runtime::PendingCall;
+	if (consumeSystemReset(runtime)) {
+		return true;
+	}
 	if (!runtime.m_luaInitialized || runtime.m_runtimeFailed) {
 		return false;
 	}

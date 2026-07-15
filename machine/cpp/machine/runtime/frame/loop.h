@@ -23,6 +23,7 @@ public:
 private:
 	void runActiveFrameState(Runtime& runtime);
 	void runUpdatePhase(Runtime& runtime);
+	bool consumeSystemReset(Runtime& runtime);
 	void finalizeUpdateSlice(Runtime& runtime);
 };
 

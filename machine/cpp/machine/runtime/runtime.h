@@ -68,7 +68,7 @@ public:
 	/**
 	 * Boot the runtime with a compiled program.
 	 */
-	void boot(const ProgramImage& image, std::unique_ptr<ProgramMetadata> metadata, ProgramVectorTable vectors, ProgramVectorTable systemVectors, ProgramVectorTable cartVectors, uint32_t dataBaseAddress, uint32_t bssBaseAddress, std::span<const std::string> systemStaticModulePaths, std::span<const std::string> cartStaticModulePaths);
+	void boot(const ProgramImage& image, std::unique_ptr<ProgramMetadata> metadata, ProgramVectorTable vectors, ProgramVectorTable systemVectors, ProgramVectorTable cartVectors, uint32_t dataBaseAddress, uint32_t bssBaseAddress, uint32_t systemDataBaseAddress, uint32_t systemBssBaseAddress, std::span<const std::string> systemStaticModulePaths, std::span<const std::string> cartStaticModulePaths);
 	void bootLinkedProgramImage(LinkedBootProgramImage&& linked);
 	void handleLuaError(const std::string& message);
 
@@ -86,6 +86,7 @@ public:
 	void enterSystemFirmware();
 	void enterCartProgram();
 	void startCartProgram();
+	void rebootSystemProgram();
 
 	auto machineTimeMs() const -> uint32_t;
 	auto machineElapsedMs() const -> f64;
@@ -169,6 +170,9 @@ private:
 
 	ProgramVectorTable m_systemVectors;
 	ProgramVectorTable m_cartVectors;
+	uint32_t m_systemDataBaseAddress = PROGRAM_STATIC_RAM_BASE;
+	uint32_t m_systemBssBaseAddress = PROGRAM_STATIC_RAM_BASE;
+	std::vector<std::string> m_systemStaticModulePaths;
 	uint32_t m_programDataBaseAddress = PROGRAM_STATIC_RAM_BASE;
 	uint32_t m_programBssBaseAddress = PROGRAM_STATIC_RAM_BASE;
 	uint32_t m_cartDataBaseAddress = PROGRAM_STATIC_RAM_BASE;

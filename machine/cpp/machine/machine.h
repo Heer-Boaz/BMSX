@@ -9,6 +9,7 @@
 #include "machine/devices/gx/gte.h"
 #include "machine/devices/input/controller.h"
 #include "machine/devices/irq/controller.h"
+#include "machine/devices/system/controller.h"
 #include "machine/memory/memory.h"
 #include "machine/scheduler/device.h"
 
@@ -29,6 +30,7 @@ public:
 	Memory& memory;
 	IrqController irqController;
 	CPU cpu;
+	SystemController systemController;
 	DeviceScheduler scheduler;
 	ApuOutputMixer audioOutput;
 	AudioController audioController;

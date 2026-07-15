@@ -13,6 +13,7 @@ import { registerDeviceQuantize } from '../../post/device_quantize/webgl/pipelin
 import { FRAME_UNIFORM_BINDING, updateAndBindFrameUniforms } from '../frame_uniforms';
 import type { RenderPassLibrary } from '../pass/library';
 import { captureRenderedVramSnapshot, registerGxGpuPass } from './gx_gpu';
+import { registerGxCharacterPlanePass } from './gx_character_plane';
 import type { GxGpu } from '../../../machine/devices/gx/gpu';
 
 // (Texture units sourced from render_view constants to avoid duplication.)
@@ -80,6 +81,7 @@ export class WebGLBackend implements GPUBackend {
 			},
 		});
 		registerGxGpuPass(registry);
+		registerGxCharacterPlanePass(registry);
 		registerDeviceQuantize(registry);
 		registerCRT(registry);
 		registerHostOverlayPass(registry);
@@ -110,8 +112,9 @@ export class WebGLBackend implements GPUBackend {
 
 	private bindTexture2DForUpload(texture: WebGLTexture, desc: TextureParams): void {
 		const gl = this.gl;
-		gl.activeTexture(gl.TEXTURE0 + TEXTURE_UNIT_UPLOAD);
+		this.setActiveTexture(TEXTURE_UNIT_UPLOAD);
 		gl.bindTexture(gl.TEXTURE_2D, texture);
+		this.boundTex2D[TEXTURE_UNIT_UPLOAD] = null;
 		GLR.glSetTexture2DParams(gl, desc);
 	}
 

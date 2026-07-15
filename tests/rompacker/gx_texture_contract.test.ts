@@ -17,11 +17,11 @@ import {
 } from '../../scripts/rompacker/texture_atlas_contract';
 
 test('texture group 254 belongs exclusively to the system producer', () => {
-	assert.equal(resolveTextureGroupId('/workspace/system/font.png', '/workspace/system'), GX_SYSTEM_TEXTURE_GROUP_ID);
-	assert.equal(resolveTextureGroupId('/workspace/cart/player.png', '/workspace/system'), 0);
+	assert.equal(resolveTextureGroupId('/workspace/system/font.png', ['/workspace/system']), GX_SYSTEM_TEXTURE_GROUP_ID);
+	assert.equal(resolveTextureGroupId('/workspace/cart/player.png', ['/workspace/system']), 0);
 	assert.equal(GX_CART_TEXTURE_GROUP_ID_LIMIT, GX_SYSTEM_TEXTURE_GROUP_ID);
 	assert.throws(
-		() => resolveTextureGroupId('/workspace/cart/player@atlas=254.png', '/workspace/system', GX_SYSTEM_TEXTURE_GROUP_ID),
+		() => resolveTextureGroupId('/workspace/cart/player@atlas=254.png', ['/workspace/system'], GX_SYSTEM_TEXTURE_GROUP_ID),
 		/collides with reserved system texture group id/,
 	);
 });

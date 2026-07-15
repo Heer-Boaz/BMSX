@@ -16,7 +16,7 @@ import {
 } from '../machine/ts/lua/syntax/ast';
 import { parseLuaChunk } from '../machine/ts/lua/analysis/parse';
 
-type Category = 'core' | 'host' | 'ide' | 'terminal' | 'language' | 'compiler_tooling' | 'rompacker_tooling' | 'cpu_interpreter_exception' | 'barrel';
+type Category = 'core' | 'host' | 'ide' | 'language' | 'compiler_tooling' | 'rompacker_tooling' | 'cpu_interpreter_exception' | 'barrel';
 type ManifestPattern = { pattern: string; category: Category; reason: string };
 type StrictRuntimeSymbolParityEntry = { ts: string; cpp: string[]; reason: string };
 type StrictRuntimeShapeParityEntry = { ts: string; cpp: string[]; symbols: string[]; reason: string };
@@ -1323,7 +1323,7 @@ function main(): void {
 
 	const counts = new Map<Category, number>();
 	for (const entry of classified) counts.set(entry.category, (counts.get(entry.category) ?? 0) + 1);
-	for (const category of ['core', 'host', 'ide', 'terminal', 'language', 'compiler_tooling', 'rompacker_tooling', 'cpu_interpreter_exception', 'barrel'] as Category[]) {
+	for (const category of ['core', 'host', 'ide', 'language', 'compiler_tooling', 'rompacker_tooling', 'cpu_interpreter_exception', 'barrel'] as Category[]) {
 		console.log(`${category},${counts.get(category) ?? 0}`);
 	}
 

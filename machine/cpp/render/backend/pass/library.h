@@ -11,6 +11,7 @@
 #include "../../graph/graph.h"
 #include "../../shared/submissions.h"
 #include "machine/devices/gx/gpu_command_buffer.h"
+#include "machine/devices/gx/character_plane.h"
 #include "render/post/device_quantize/mode.h"
 #include <array>
 #include <string>
@@ -47,6 +48,12 @@ struct GxGpuPipelineState {
 	u32 displayStartWord = 0u;
 	const std::array<u8, GX_GPU_VRAM_BYTE_COUNT>* vramSnapshotBytes = nullptr;
 	u64 vramSnapshotSerial = 0u;
+};
+
+struct GxCharacterPlanePipelineState {
+	i32 width = 0;
+	i32 height = 0;
+	const GxCharacterPlaneOutput* output = nullptr;
 };
 
 struct CRTPipelineOptions {
@@ -116,6 +123,7 @@ struct HostMenuPipelineState : Host2DPipelineState {
 
 struct RenderPassStateStorage {
 	GxGpuPipelineState gxGpu;
+	GxCharacterPlanePipelineState gxCharacterPlane;
 	PresentPipelineState present;
 	CRTPipelineState crt;
 	DeviceQuantizePipelineState deviceQuantize;
@@ -194,12 +202,14 @@ void setPresentationHistoryGraph(RenderPassDef& desc, RenderPassDef::RenderGraph
 bool shouldUpdatePresentationHistoryA(GameView* view, void* context);
 bool shouldUpdatePresentationHistoryB(GameView* view, void* context);
 void setGxGpuGraph(RenderPassDef& desc);
+void setGxCharacterPlaneGraph(RenderPassDef& desc);
 void setAutoPresentGraph(RenderPassDef& desc);
 void setAutoCRTGraph(RenderPassDef& desc);
 void setDeviceQuantizeGraph(RenderPassDef& desc);
 bool shouldExecuteAutoPresentPass(GameView* view, void*);
 bool shouldExecuteAutoCRTPass(GameView* view, void*);
 bool shouldExecuteDeviceQuantizePass(GameView* view, void*);
+bool shouldExecuteGxCharacterPlanePass(GameView* view, void*);
 void registerFrameResolvePass(RenderPassLibrary& registry);
 
 /* ============================================================================

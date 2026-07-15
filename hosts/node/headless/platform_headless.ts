@@ -9,6 +9,7 @@ import {
 	InputEvt,
 	InputHub,
 	Lifecycle,
+	LogLevel,
 	MonoTime,
 	OnscreenGamepadPlatform,
 	OnscreenGamepadPlatformHooks,
@@ -371,6 +372,14 @@ export class HeadlessPlatformServices implements Platform {
 	readonly ufpsScaled: number;
 	requestShutdown(): void {
 		process.exit(0);
+	}
+	log(level: LogLevel, message: string): void {
+		switch (level) {
+			case LogLevel.Debug: console.debug(message); break;
+			case LogLevel.Info: console.info(message); break;
+			case LogLevel.Warn: console.warn(message); break;
+			case LogLevel.Error: console.error(message); break;
+		}
 	}
 	readonly clipboard: ClipboardService;
 	readonly hid: HIDService;

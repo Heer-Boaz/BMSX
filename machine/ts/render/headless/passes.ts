@@ -1,5 +1,5 @@
 import type { RenderPassLibrary } from '../backend/pass/library';
-import type { GxGpuPipelineState } from '../backend/backend';
+import type { GxCharacterPlanePipelineState, GxGpuPipelineState } from '../backend/backend';
 import type { GameView } from '../gameview';
 import type { Host2DSubmission } from '../shared/submissions';
 import type { HeadlessPresentHost, HeadlessPresentedFrameBuffer } from './view';
@@ -8,10 +8,17 @@ import { renderHeadlessHost2DEntry, renderHeadlessHost2DSubmission } from './hos
 import { renderGxGpuSoftwareFrame } from '../backend/software/gx_gpu';
 import { applyHeadlessDeviceQuantize } from '../post/device_quantize/headless/pipeline';
 import { DeviceQuantizeMode } from '../post/device_quantize/mode';
+import { GxCharacterPlaneSoftwarePipeline, renderGxCharacterPlaneSoftware } from '../backend/software/gx_character_plane';
+import {
+	createGxCharacterPlanePipelineState,
+	shouldRenderGxCharacterPlane,
+	writeGxCharacterPlanePipelineState,
+} from '../gx/character_plane_state';
 
-export function registerHeadlessPasses(registry: RenderPassLibrary): void {
+export function registerHeadlessPasses(registry: RenderPassLibrary, characterPlanePipeline: GxCharacterPlaneSoftwarePipeline): void {
 	registerFramePasses(registry);
 	registerHeadlessGxGpuPass(registry);
+	registerHeadlessGxCharacterPlanePass(registry, characterPlanePipeline);
 	registerHeadlessDeviceQuantizePass(registry);
 }
 
@@ -92,6 +99,23 @@ function registerHeadlessGxGpuPass(registry: RenderPassLibrary): void {
 		},
 		exec: (_backend, _fbo, state) => {
 			renderGxGpuSoftwareFrame(state, headlessCompositePixels);
+		},
+	});
+}
+
+function registerHeadlessGxCharacterPlanePass(registry: RenderPassLibrary, pipeline: GxCharacterPlaneSoftwarePipeline): void {
+	registry.register<GxCharacterPlanePipelineState>({
+		id: 'gx_character_plane',
+		name: 'HeadlessGXCharacterPlane',
+		stateOnly: true,
+		initialState: createGxCharacterPlanePipelineState(registry.view as GameView),
+		graph: {
+			writes: ['frame_color'],
+			writeState: writeGxCharacterPlanePipelineState,
+		},
+		shouldExecute: shouldRenderGxCharacterPlane,
+		exec: (_backend, _fbo, state) => {
+			renderGxCharacterPlaneSoftware(pipeline, state, headlessCompositePixels);
 		},
 	});
 }

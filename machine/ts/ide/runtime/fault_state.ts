@@ -12,7 +12,6 @@ import {
 	buildErrorStackString,
 	buildLuaFrameRawLabel,
 	convertLuaCallFrames,
-	parseJsStackFrames,
 	sanitizeLuaErrorMessage,
 } from '../common/runtime_error_format';
 import { buildLuaStackFrames } from './stack_trace';
@@ -32,6 +31,7 @@ export type RuntimeFaultState = {
 };
 
 const EMPTY_LUA_CALL_FRAMES: ReadonlyArray<LuaCallFrame> = [];
+const EMPTY_STACK_TRACE_FRAMES: StackTraceFrame[] = [];
 
 export function createRuntimeFaultState(): RuntimeFaultState {
 	return {
@@ -186,7 +186,7 @@ export function recordLuaError(runtime: Runtime, whatever: unknown): RecordedRun
 		error instanceof Error && error.name ? error.name : 'Error',
 		message,
 		runtimeDetails,
-		machineManager.ideState.includeJsStackTraces,
+		false,
 	);
 	setRuntimeFault(runtime, {
 		message,
@@ -231,17 +231,12 @@ function buildRuntimeErrorDetailsForEditor(error: unknown, message: string, call
 			frame.pathPath = resolveEditorSourceWorkspacePath(source);
 		}
 	}
-	let stackText: string = null;
-	if (machineManager.ideState.includeJsStackTraces && error instanceof Error && typeof error.stack === 'string') {
-		stackText = error.stack;
-	}
-	const jsFrames = machineManager.ideState.includeJsStackTraces ? parseJsStackFrames(stackText) : [];
-	if (luaFrames.length === 0 && jsFrames.length === 0) {
+	if (luaFrames.length === 0) {
 		return null;
 	}
 	return {
 		message,
 		luaStack: luaFrames,
-		jsStack: jsFrames,
+		jsStack: EMPTY_STACK_TRACE_FRAMES,
 	};
 }

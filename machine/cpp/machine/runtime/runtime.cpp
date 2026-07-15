@@ -217,14 +217,15 @@ void Runtime::startCartProgram() {
 	startLoadedProgram(m_cartVectors, std::span<const std::string>{}, m_cartStaticModulePaths);
 }
 
-void Runtime::boot(const ProgramImage& image, std::unique_ptr<ProgramMetadata> metadata, ProgramVectorTable vectors, ProgramVectorTable systemVectors, ProgramVectorTable cartVectors, uint32_t dataBaseAddress, uint32_t bssBaseAddress, std::span<const std::string> systemStaticModulePaths, std::span<const std::string> cartStaticModulePaths) {
+void Runtime::boot(const ProgramImage& image, std::unique_ptr<ProgramMetadata> metadata, ProgramVectorTable vectors, ProgramVectorTable systemVectors, ProgramVectorTable cartVectors, uint32_t dataBaseAddress, uint32_t bssBaseAddress, uint32_t systemDataBaseAddress, uint32_t systemBssBaseAddress, std::span<const std::string> systemStaticModulePaths, std::span<const std::string> cartStaticModulePaths) {
 	m_moduleCache.clear();
 	m_programDataBaseAddress = dataBaseAddress;
 	m_programBssBaseAddress = bssBaseAddress;
+	m_systemDataBaseAddress = systemDataBaseAddress;
+	m_systemBssBaseAddress = systemBssBaseAddress;
+	m_systemStaticModulePaths.assign(systemStaticModulePaths.begin(), systemStaticModulePaths.end());
 	m_programStorage = inflateExecutableProgramImage(image, m_programDataBaseAddress, m_programBssBaseAddress);
 	try {
-		setupBuiltins();
-		enforceLuaHeapBudget();
 		m_program = m_programStorage.get();
 		m_programRuntimeSymbols = image.link.symbols;
 		m_programMetadataStorage = std::move(metadata);
@@ -239,6 +240,8 @@ void Runtime::boot(const ProgramImage& image, std::unique_ptr<ProgramMetadata> m
 			m_cartVectors.irqProtoIndex,
 			m_systemVectors.exceptionProtoIndex
 		);
+		setupBuiltins();
+		enforceLuaHeapBudget();
 		startLoadedProgram(vectors, systemStaticModulePaths, cartStaticModulePaths);
 	} catch (const std::exception& e) {
 		handleLuaError(e.what());
@@ -258,6 +261,8 @@ void Runtime::bootLinkedProgramImage(LinkedBootProgramImage&& linked) {
 		linked.cartVectors,
 		linked.dataBaseAddress,
 		linked.bssBaseAddress,
+		linked.systemDataBaseAddress,
+		linked.systemBssBaseAddress,
 		linked.systemStaticModulePaths,
 		cartStaticModulePaths
 	);
@@ -277,6 +282,34 @@ void Runtime::startLoadedProgram(ProgramVectorTable vectors, std::span<const std
 	enforceLuaHeapBudget();
 	m_pendingCall = PendingCall::Entry;
 	m_luaInitialized = true;
+}
+
+void Runtime::rebootSystemProgram() {
+	enterSystemFirmware();
+	m_runtimeFailed = false;
+	m_luaInitialized = false;
+	m_pendingCall = PendingCall::None;
+	programVectors = nullptr;
+	luaOutputLineBuffer.clear();
+	hostFault.clear();
+	m_moduleCache.clear();
+	machine.cpu.clearProgramEnvironment();
+	machine.memory.clearIoSlots();
+	machine.initializeSystemIo();
+	resetHardwareState();
+	m_programDataBaseAddress = m_systemDataBaseAddress;
+	m_programBssBaseAddress = m_systemBssBaseAddress;
+	machine.cpu.setProgram(
+		m_program,
+		m_programRuntimeSymbols,
+		m_programMetadata,
+		m_systemVectors.irqProtoIndex,
+		m_cartVectors.irqProtoIndex,
+		m_systemVectors.exceptionProtoIndex
+	);
+	setupBuiltins();
+	enforceLuaHeapBudget();
+	startLoadedProgram(m_systemVectors, m_systemStaticModulePaths, std::span<const std::string>{});
 }
 
 void Runtime::runSectionInitializer(int protoIndex, u32 statusWord) {
@@ -364,8 +397,7 @@ void Runtime::resetRuntimeForProgramReload() {
 	luaOutputLineBuffer.clear();
 	hostFault.clear();
 	m_moduleCache.clear();
-	machine.cpu.clearGlobalSlots();
-	machine.cpu.globals->clear();
+	machine.cpu.clearProgramEnvironment();
 	machine.memory.clearIoSlots();
 	machine.initializeSystemIo();
 	resetHardwareState();

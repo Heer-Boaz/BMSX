@@ -365,7 +365,20 @@ bool MachineManager::bootSystemStartupProgram(const MachineManifest& runtimeMach
 		);
 		rt.bootLinkedProgramImage(std::move(linked));
 	} else {
-		rt.boot(*systemImages.image, std::move(systemImages.metadata), systemImages.image->vectors, systemImages.image->vectors, systemImages.image->vectors, PROGRAM_STATIC_RAM_BASE, PROGRAM_STATIC_RAM_BASE + static_cast<uint32_t>(systemImages.image->sections.data.bytes.size()), systemImages.image->sections.rodata.staticModulePaths, std::span<const std::string>{});
+		const uint32_t systemBssBaseAddress = PROGRAM_STATIC_RAM_BASE + static_cast<uint32_t>(systemImages.image->sections.data.bytes.size());
+		rt.boot(
+			*systemImages.image,
+			std::move(systemImages.metadata),
+			systemImages.image->vectors,
+			systemImages.image->vectors,
+			systemImages.image->vectors,
+			PROGRAM_STATIC_RAM_BASE,
+			systemBssBaseAddress,
+			PROGRAM_STATIC_RAM_BASE,
+			systemBssBaseAddress,
+			systemImages.image->sections.rodata.staticModulePaths,
+			std::span<const std::string>{}
+		);
 	}
 	flushRuntimeLuaOutput(rt);
 	return true;

@@ -94,6 +94,13 @@ void writeGxGpuPipelineState(const RenderPassDef::RenderGraphPassContext& ctx, R
 	gxGpuState.vramSnapshotSerial = ctx.view->gxGpuVramSnapshotSerial;
 }
 
+void writeGxCharacterPlanePipelineState(const RenderPassDef::RenderGraphPassContext& ctx, RenderPassStateStorage& state) {
+	GxCharacterPlanePipelineState& characterPlaneState = state.gxCharacterPlane;
+	characterPlaneState.width = static_cast<i32>(ctx.view->offscreenCanvasSize.x);
+	characterPlaneState.height = static_cast<i32>(ctx.view->offscreenCanvasSize.y);
+	characterPlaneState.output = ctx.view->gxCharacterPlaneOutput;
+}
+
 void writeAutoCRTPipelineState(const RenderPassDef::RenderGraphPassContext& ctx, RenderPassStateStorage& state) {
 	auto* view = ctx.view;
 	CRTPipelineState& crtState = state.crt;
@@ -158,6 +165,12 @@ void setGxGpuGraph(RenderPassDef& desc) {
 	desc.graph->writeState = writeGxGpuPipelineState;
 }
 
+void setGxCharacterPlaneGraph(RenderPassDef& desc) {
+	desc.graph = RenderPassDef::RenderPassGraphDef{};
+	desc.graph->writes = { RenderPassDef::RenderGraphSlot::FrameColor };
+	desc.graph->writeState = writeGxCharacterPlanePipelineState;
+}
+
 void setAutoPresentGraph(RenderPassDef& desc) {
 	RenderPassDef::RenderPassGraphDef& graph = resetAutoPresentGraph(desc);
 	graph.writeState = writeAutoPresentPipelineState;
@@ -199,6 +212,10 @@ bool shouldExecuteAutoCRTPass(GameView* view, void*) {
 
 bool shouldExecuteDeviceQuantizePass(GameView* view, void*) {
 	return view->deviceQuantizeMode != DeviceQuantizeMode::None;
+}
+
+bool shouldExecuteGxCharacterPlanePass(GameView* view, void*) {
+	return (view->gxCharacterPlaneOutput->controlWord & GX_CHARACTER_PLANE_CONTROL_ENABLE) != 0u;
 }
 
 void registerFrameResolvePass(RenderPassLibrary& registry) {

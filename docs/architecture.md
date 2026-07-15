@@ -664,8 +664,8 @@ maskable IRQ line makes the CPU push the selected generated IRQ root above the
 interrupted frame. That root calls the program's `irq(flags)` handler and ends
 in `RFE`; an ordinary Lua return only returns to the root. Host/debugger closure
 calls may wake from a pending IRQ, but they do not consume or vector it. The NMI
-line and system exception vector exist at the CPU boundary; a physical input
-producer remains part of `BIOS-TERM-01`.
+line and system exception vector exist at the CPU boundary; the ICU asserts the
+manual system line from the physical F2 edge at VBlank.
 
 The cart-facing IRQ gate is `IRQ_MASK`, a per-source bitmask with the same bit
 layout as `IRQ_FLAGS`. It resets to `0`, so cold boot starts with no source
@@ -680,16 +680,29 @@ instruction boundary after its mask bit is written, with no delayed-EI extra
 instruction.
 
 The compiler-generated IRQ vector reads `IRQ_FLAGS` and calls the program's
-global `irq(flags)` handler when bits are pending. The shipped handler belongs
-to firmware/cart code: BIOS and cartlib expose `system.irq` / `on_irq` as
-convenience dispatch over registered masks, and bare-metal carts may define
-`irq(flags)` directly. Dispatch code acknowledges only the masks it owns. An
-asynchronous source is unmasked and has exactly one vector-handler owner that
-acknowledges it. A synchronous waiter leaves its source masked, polls
-`IRQ_FLAGS` directly while running, and writes `IRQ_ACK` itself; masked pending
-bits remain visible but do not vector or wake `HALT`. An unmasked unacknowledged
-level bit will vector again at the next eligible guest boundary, matching
-hardware interrupt-storm semantics rather than being discarded by the emulator.
+`irq(flags)` handler when bits are pending. System-ROM compilation binds the
+BIOS `irq` and `exception` handlers through `SETSYS`/`GETSYS`; cart compilation
+binds the same source names through ordinary `SETGL`/`GETGL`. The compile domain
+is explicit at every BIOS, cart, hot-resume and host-eval producer. Existing
+linked metadata cannot grant a cart access to a system slot.
+
+The CPU stores system and ordinary global slots in distinct registerfiles.
+Ordinary slots synchronize with the Lua globals table; system slots do not.
+Program replacement preserves system slots by interned name, and save-state
+serializes both registerfiles independently. This permits BIOS and cart code to
+use the natural handler names without renaming, a dispatcher facade, or the
+cart overwriting a supervisor vector after linking.
+
+The shipped handler belongs to firmware/cart code: BIOS and cartlib expose
+`system.irq` / `on_irq` as convenience dispatch over registered masks, and
+bare-metal carts may define `irq(flags)` directly. Dispatch code acknowledges
+only the masks it owns. An asynchronous source is unmasked and has exactly one
+vector-handler owner that acknowledges it. A synchronous waiter leaves its
+source masked, polls `IRQ_FLAGS` directly while running, and writes `IRQ_ACK`
+itself; masked pending bits remain visible but do not vector or wake `HALT`. An
+unmasked unacknowledged level bit will vector again at the next eligible guest
+boundary, matching hardware interrupt-storm semantics rather than being
+discarded by the emulator.
 
 | Register | Address | Meaning |
 | --- | ---: | --- |
@@ -707,11 +720,10 @@ hardware interrupt-storm semantics rather than being discarded by the emulator.
 | `IRQ_APU` | `0x0020` | APU voice event. |
 | `IRQ_GPU` | `0x0040` | Rising edge of the GX-GPU GP0 interrupt-request source. |
 
-### Supervisor exceptions and planned BIOS terminal
+### Supervisor exceptions and BIOS terminal
 
-The CPU supervisor exception foundation is implemented. The BIOS terminal is
-still planned machine firmware, not a permanent host overlay; `BIOS-TERM-01`
-in the open-slice matrix tracks that remaining boundary. The first version
+The CPU supervisor exception path and BIOS terminal are machine-owned. The
+terminal is system-ROM firmware, not a host overlay. This first hardware version
 deliberately uses a compact R3000-style exception model without an MMU, MPU,
 protected heap, or supervisor-only RAM.
 
@@ -786,8 +798,9 @@ explicit IRQ-mask/context switch and system handlers acknowledge only their
 sources. Machine schedulers and devices continue advancing normally. The
 existing NMI request latch is not a terminal implementation by itself: the CPU
 consumes it into the system vector and preserves the latch, raw CP0 words, and
-exception-frame state in the mirrored TS/C++ save-state contract. The physical
-F2 producer and BIOS exception handler remain part of `BIOS-TERM-01`.
+exception-frame state in the mirrored TS/C++ save-state contract. The ICU
+samples the physical F2 edge and requests that NMI; the BIOS exception handler
+owns monitor entry.
 Privilege gates system vectors, CP0 writes, exception return, and other
 explicitly privileged CPU/system-control operations; it does not make ordinary
 RAM inaccessible to carts.
@@ -806,25 +819,30 @@ and waits on the BIOS IRQ/VBlank path. The cart receives no input because its
 frames are not executing. The host continues to sample the physical devices
 into ICU words; it does not edit a terminal buffer or dispatch commands.
 
-The monitor programs the existing GX GPU over the currently displayed VRAM.
-It does not reset the cart's display mode or clear the framebuffer: it emits
-only the terminal background cells and tiny-font glyphs, so untouched game
-pixels remain visible. This requires machine-visible raw GPU context, not the
-current firmware helper's cached display-size word. The GPU information query
-already exposes texture-window, drawing-area, and drawing-offset words; the
-terminal slice must define matching raw readback for the active display origin
-and display-range words before BIOS code is written. BIOS saves the queried draw
-environment in its ordinary RAM workspace, installs its own draw environment,
-and restores those raw GPU words before manual exception return. This is an
-explicit supervisor context switch; framebuffer pixels are never captured.
+The monitor uses the GX character plane, a machine-visible scanout unit that is
+independent of GP0, VRAM, the drawing environment, DMA and the cart's display
+mode. Its fixed SRAM consists of 256 packed 4x6 one-bit glyph words, 160x80 cell
+words and sixteen A1RGB555 palette words. A cell selects one glyph byte plus
+four-bit foreground and background palette indexes; unused cell bits remain raw
+and have no datapath effect. Palette bit 15 controls coverage, so transparent
+foreground or background samples preserve the GX scanout pixel below them.
 
-Outstanding GPU/DMA work continues through the normal FIFO, DREQ, and scheduler
-rules. Monitor submission uses that ordering and existing mapped-write
-backpressure rather than busy-polling a host readiness flag. A manual `CONT`
-returns through the exception-return operation and the resumed cart's next
-frame replaces terminal pixels. If BSX later requires independently removable
-system graphics, that is a new explicit GPU scanout-overlay plane, not a
-concealed backup/restore workaround.
+The registerfile exposes raw control and indexed address/data ports for the
+three SRAM banks. Data access advances the corresponding address latch; palette
+and glyph addresses wrap by their register width and cell addresses wrap over
+the 12,800-word bank. The plane is composed after native GX scanout and before
+device quantization, presentation history and CRT processing. Disabled control
+means the pass does not execute. Backends retain their expanded cell, glyph and
+palette resources and upload a bank only when its device revision changes;
+software composition writes directly into the retained frame buffer without a
+display list or per-frame allocation.
+
+BIOS therefore writes only glyph, palette and cell SRAM and never captures
+framebuffer pixels or saves/restores a GP0 context. Outstanding GPU/DMA work
+continues independently through its normal FIFO, DREQ and scheduler rules. A
+manual `CONT` clears the character-plane enable bit before `RFE`, revealing the
+unchanged game scanout immediately. Character-plane control, address latches
+and raw SRAM are machine state and participate in mirrored save-state replay.
 
 The machine-visible monitor command set starts with hardware operations such as
 `HELP`, `FAULT`, `REGS`, `MEM`, `CONT`, and `REBOOT`. It does not expose the
@@ -832,6 +850,8 @@ workspace, host filesystem, JavaScript stack, real-time compiler options, host
 process shutdown, IDE symbol browser, or other current workbench services.
 `CONT` is valid for manual entry and explicitly resumable exception causes;
 unrecoverable guest faults may expose only inspection and reset/reboot.
+Its layout and colors are firmware policy and intentionally do not emulate the
+removed host terminal's appearance.
 
 ### DMA
 
@@ -1173,7 +1193,7 @@ or a high-level event FIFO.
 ICU device code consumes only `machine/devices/input/contracts` source ports.
 The host input manager/player layer implements those ports and remains outside
 the device. The host side may keep its richer keyboard/gamepad/pointer mapping,
-shortcut, IDE, terminal, quick-menu, onscreen gamepad, and device-assignment
+shortcut, IDE, quick-menu, onscreen gamepad, and device-assignment
 logic under `machine/{ts,cpp}/input`; that complexity is not exposed as ICU
 hardware.
 
@@ -1218,28 +1238,24 @@ fallbacks locally.
 Lua heap counts as RAM. Public accounting should talk about RAM, not a separate
 heap budget outside the machine.
 
-The planned supervisor-terminal slice makes the compact 4x6
-`tiny_3b_font_*` glyph set the BIOS-owned `font.get('default')` descriptor for
-boot and monitor text. It is the only standard font that must be present in the
-BIOS system texture. The MSX 6-pixel font is an aesthetic cart asset, not a
-machine or BIOS primitive: its glyphs leave the common BIOS resource package,
-and carts that want that style ship the glyph resources and define the font
-explicitly. Existing carts either accept the tiny default or take ownership of
-their MSX font. Firmware must not retain a compatibility alias, automatic
-resource inclusion, or missing-glyph fallback into the removed MSX set.
+The compact 4x6 `tiny_3b_font_*` glyph set is the BIOS-owned
+`font.get('default')` descriptor for boot and firmware text. The ROM producer
+also packs those source glyphs into the character plane's 256-word raw glyph
+bank; BIOS code transfers that bank through the device dataport rather than
+reading an atlas layout. It is the only standard font in the BIOS resource
+package. The MSX 6-pixel font is an aesthetic cart/host asset, not a machine or
+BIOS primitive: carts that want that style ship the glyph resources and define
+the font explicitly. Firmware retains no compatibility alias, automatic MSX
+resource inclusion, or missing-glyph fallback into the removed set.
 
 ## IDE, editor, and host tooling
 
 IDE/editor/workspace code is host tooling. It may compile source, inspect debug
-symbols, display terminals, and patch ROM/workspace inputs at host edges. It must
-not be imported by machine devices or become the cart-visible source of truth.
-
-Terminal commands return explicit owner actions; workbench/editor owners apply
-those actions. Runtime faults must surface through the runtime/terminal error
-channel instead of being swallowed by deferred host code.
-This describes the current host terminal only. It is transitional tooling and
-does not define the planned BIOS monitor's command, input, fault, or rendering
-semantics.
+symbols, retain workspace operations, and patch ROM/workspace inputs at host
+edges. It must not be imported by machine devices or become the cart-visible
+source of truth. Runtime and tooling diagnostics use the platform logging and
+IDE error owners; they are not BIOS monitor commands and must not be swallowed
+by deferred host code.
 
 ## Host presentation and frontend lifecycle
 
@@ -1249,9 +1265,9 @@ references to their existing command kinds, payload references and counts.
 Backends consume only that pass state; they do not read a menu/workbench
 controller or clone the commands into a per-frame DTO. WebGPU and WebGL2 own
 their concrete pipelines, atlases, buffers and uploads behind that boundary.
-The terminal lane draws only its own content over the retained game scanout;
-the generic overlay renderer does not manufacture an opaque full-frame base.
-The full-screen IDE owns and emits its own frame background.
+The BIOS character plane is not an overlay-queue lane. The full-screen IDE owns
+and emits its own frame background; the quick menu publishes only its own host
+commands over the retained game scanout.
 WebGPU is the default accelerated browser backend and WebGL2 is its fallback;
 host validation failures do not reverse that ownership or introduce a second
 presentation facade.

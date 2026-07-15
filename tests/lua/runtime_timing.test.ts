@@ -23,6 +23,9 @@ class TimingInputSource implements RuntimeInputSource {
 		this.frameDurationMs = frameDurationMs;
 	}
 
+	public sampleInputControllerKeyWords(): void {
+	}
+
 	public sampleInputControllerSnapshot(): void {
 	}
 

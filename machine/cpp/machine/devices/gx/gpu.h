@@ -3,6 +3,7 @@
 #include "common/primitives.h"
 #include "machine/devices/gx/device_output.h"
 #include "machine/devices/gx/gpu_command_buffer.h"
+#include "machine/devices/gx/character_plane.h"
 #include "machine/devices/gx/gpu_command_fifo.h"
 #include "machine/devices/gx/gpu_display.h"
 
@@ -154,6 +155,7 @@ struct GxGpuState {
 	u32 presentHorizontalDisplayRangeWord = 0;
 	u32 presentVerticalDisplayRangeWord = 0;
 	GxGpuCommandBufferState commandBuffer;
+	GxCharacterPlaneState characterPlane;
 };
 
 struct GxGpuSaveState : GxGpuState {
@@ -201,6 +203,7 @@ private:
 	IrqController& m_irq;
 	DeviceScheduler& m_scheduler;
 	DmaController& m_dmaController;
+	GxCharacterPlane m_characterPlane;
 	u32 m_gp0Word = 0;
 	u32 m_gp1Word = 0;
 	u32 m_displayModeWord = GX_GPU_RESET_DISPLAY_MODE_WORD;
@@ -209,7 +212,8 @@ private:
 	i64 m_pendingCommandCompletionCycle = 0;
 	size_t m_pendingCommandTargetCount = 0u;
 	GxGpuCommandBuffer m_commandBuffer;
-	mutable GxGpuDeviceOutput m_deviceOutput{&m_commandBuffer, &m_commandBuffer.readback};
+	std::array<u8, GX_GPU_VRAM_BYTE_COUNT> m_vramSnapshotBytes{};
+	mutable GxGpuDeviceOutput m_deviceOutput{m_commandBuffer, m_vramSnapshotBytes, m_characterPlane.readDeviceOutput()};
 	std::array<u32, GX_GPU_GP0_COMMAND_BUFFER_WORDS> m_gp0CommandWords{};
 	u32 m_gp0CommandWordCount = 0u;
 	u32 m_gp0CommandTargetWordCount = 0u;
@@ -246,7 +250,6 @@ private:
 	i64 m_scanoutFrameStartCycle = 0;
 	int m_scanoutCyclesPerFrame = 1;
 	int m_scanoutTotalScanlines = 313;
-	std::array<u8, GX_GPU_VRAM_BYTE_COUNT> m_vramSnapshotBytes{};
 	u64 m_vramSnapshotSerial = 0u;
 	inline static u64 nextVramSnapshotSerial = 0u;
 

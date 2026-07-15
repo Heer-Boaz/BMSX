@@ -133,10 +133,34 @@ void testPrivilegeVectorRoutingAndCp0Fault() {
 	require(systemState.epcWord == bmsx::CPU_STATUS_SYSTEM_ENTRY, "MTC0 writes the raw EPC word");
 }
 
+void testSystemAndOrdinaryGlobalRegisterfilesStayDistinct() {
+	CpuSupervisorHarness harness;
+	harness.runtimeSymbols.systemGlobalNames = { "irq" };
+	harness.runtimeSymbols.globalNames = { "irq" };
+	harness.cpu.setProgram(&harness.program, harness.runtimeSymbols, nullptr, SYSTEM_IRQ_PROTO, CART_IRQ_PROTO, SYSTEM_EXCEPTION_PROTO);
+	const bmsx::Value irqKey = bmsx::valueString(harness.cpu.stringPool().intern("irq"));
+	harness.cpu.setSystemGlobalByKey(irqKey, bmsx::valueNumber(11.0));
+	harness.cpu.setGlobalByKey(irqKey, bmsx::valueNumber(22.0));
+
+	harness.cpu.setProgram(&harness.program, harness.runtimeSymbols, nullptr, SYSTEM_IRQ_PROTO, CART_IRQ_PROTO, SYSTEM_EXCEPTION_PROTO);
+	const bmsx::CpuRuntimeState saved = harness.cpu.captureRuntimeState(harness.moduleCache);
+	require(saved.systemGlobals.size() == 1u && saved.systemGlobals[0].name == "irq" && saved.systemGlobals[0].value.numberValue == 11.0, "program replacement preserves the system registerfile");
+	require(saved.globals.size() == 1u && saved.globals[0].name == "irq" && saved.globals[0].value.numberValue == 22.0, "program replacement preserves the ordinary global table");
+	require(bmsx::asNumber(harness.cpu.getGlobalByKey(irqKey)) == 22.0, "ordinary global lookup does not expose the system slot");
+
+	harness.cpu.setSystemGlobalByKey(irqKey, bmsx::valueNumber(33.0));
+	harness.cpu.setGlobalByKey(irqKey, bmsx::valueNumber(44.0));
+	harness.cpu.restoreRuntimeState(saved, harness.moduleCache);
+	const bmsx::CpuRuntimeState restored = harness.cpu.captureRuntimeState(harness.moduleCache);
+	require(restored.systemGlobals.size() == 1u && restored.systemGlobals[0].name == "irq" && restored.systemGlobals[0].value.numberValue == 11.0, "save-state restores the system registerfile independently");
+	require(bmsx::asNumber(harness.cpu.getGlobalByKey(irqKey)) == 22.0, "save-state restores the ordinary global independently");
+}
+
 } // namespace
 
 int main() {
 	testManualNmiAndSaveStateReturn();
 	testPrivilegeVectorRoutingAndCp0Fault();
+	testSystemAndOrdinaryGlobalRegisterfilesStayDistinct();
 	return 0;
 }

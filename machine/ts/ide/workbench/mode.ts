@@ -2,9 +2,9 @@ import { machineManager } from '../../core/machine_manager';
 import { Input } from '../../input/manager';
 import { KeyModifier } from '../../input/player';
 import type { ExecutionSignal } from '../../lua/runtime';
-import { extractErrorMessage, type LuaDebuggerPauseSignal } from '../../lua/value';
+import type { LuaDebuggerPauseSignal } from '../../lua/value';
 import * as constants from '../common/constants';
-import { TERMINAL_TOGGLE_KEY, EDITOR_TOGGLE_GAMEPAD_BUTTONS, EDITOR_TOGGLE_KEY, GAME_PAUSE_KEY } from '../common/constants';
+import { EDITOR_TOGGLE_GAMEPAD_BUTTONS, EDITOR_TOGGLE_KEY, GAME_PAUSE_KEY } from '../common/constants';
 import { editorDebuggerState } from './contrib/debugger/state';
 import { seedDefaultLuaBuiltins } from '../runtime/lua_builtins';
 import type { Runtime } from '../../machine/runtime/runtime';
@@ -14,18 +14,14 @@ import type { Viewport } from '../../rompack/format';
 import { api as overlay_api } from '../runtime/overlay_api';
 import { clearExecutionStopHighlights, setExecutionStopHighlightForCurrentContext } from '../runtime_error/navigation';
 import { toggleDebuggerControls } from '../debugger_activation';
-import { nukeWorkspaceState, resetWorkspaceDirtyBuffersAndStorage } from '../workspace/workspace';
-import { clearWorkspaceSessionState } from './workspace/storage';
 import { clearRuntimeFault, createRuntimeFaultState, recordDebuggerExceptionFault } from '../runtime/fault_state';
 import { clearRuntimeDebuggerPause } from '../runtime/debug_pause';
 import { createRuntimeIdeState, type RuntimeIdeState } from '../runtime/state';
 import { handleLuaError } from './runtime_errors';
 import {
-	deactivateTerminalMode,
 	editorBlocksRuntimePipeline,
 	isManagedOverlayEditorActive,
 	toggleEditor,
-	toggleTerminalMode,
 	updateGamePipelineExts,
 } from './overlay_modes';
 
@@ -45,7 +41,6 @@ export function initializeIdeFeatures(runtime: Runtime, viewport: Viewport): voi
 export function setActiveIdeFontVariant(variant: FontVariant): void {
 	const state = machineManager.ideState;
 	state.activeFontVariant = variant;
-	state.terminal.setFontVariant(variant);
 	state.editor.setFontVariant(variant);
 }
 
@@ -57,7 +52,6 @@ export function registerRuntimeShortcuts(runtime: Runtime): void {
 		Input.instance.getPlayerInput(1).consumeRawButton(EDITOR_TOGGLE_KEY, 'keyboard');
 		toggleEditor(runtime);
 	}));
-	disposers.push(registry.registerKeyboardShortcut(1, TERMINAL_TOGGLE_KEY, () => toggleTerminalMode()));
 	disposers.push(registry.registerGamepadChord(1, EDITOR_TOGGLE_GAMEPAD_BUTTONS, () => toggleEditor(runtime)));
 	disposers.push(registry.registerKeyboardShortcut(1, GAME_PAUSE_KEY, () => toggleDebuggerControls()));
 	disposers.push(registry.registerKeyboardShortcut(1, 'KeyT', () => {
@@ -90,16 +84,7 @@ export function disposeShortcutHandlers(): void {
 }
 
 export function tickIdeInput(): void {
-	// The terminal overlay draws on top of the editor and, during a fault, both
-	// can be active at once (handleLuaError opens the terminal while the fault
-	// overlay re-activates the editor via showRuntimeErrorInChunk). Keyboard
-	// input must follow the same precedence as drawing: the terminal owns it.
-	// Without this guard, characters typed into the terminal (e.g. "reboot") are
-	// also processed by the editor and inserted into the open source file.
 	const state = machineManager.ideState;
-	if (state.terminal.isActive) {
-		return;
-	}
 	if (!editorBlocksRuntimePipeline() || !state.editor.isActive) {
 		return;
 	}
@@ -109,56 +94,6 @@ export function tickIdeInput(): void {
 	}
 	state.lastIdeInputFrame = pollFrame;
 	state.editor.tickInput();
-}
-
-export function tickTerminalInput(runtime: Runtime): void {
-	const state = machineManager.ideState;
-	const terminal = state.terminal;
-	if (!terminal.isActive) {
-		return;
-	}
-	const pollFrame = machineManager.input.getPlayerInput(1).pollFrame;
-	if (pollFrame === state.lastTerminalInputFrame) {
-		return;
-	}
-	state.lastTerminalInputFrame = pollFrame;
-	void terminal.handleInput()
-		.then(async action => {
-			switch (action) {
-				case 'deactivate_terminal':
-					deactivateTerminalMode();
-					return;
-				case 'clear_fault': {
-					const result = clearFaultState(runtime);
-					if (!result.cleared) {
-						terminal.appendStderr('No fault to clear');
-						return;
-					}
-					if (result.resumedDebugger) {
-						terminal.appendStdout('Fault cleared; debugger resumed');
-						return;
-					}
-					terminal.appendStdout('Fault state cleared');
-					return;
-				}
-				case null:
-					return;
-				case 'workspace_reset':
-					terminal.appendStdout('Discarding dirty files...');
-					await resetWorkspaceDirtyBuffersAndStorage();
-					terminal.appendStdout('Dirty workspace buffers cleared');
-					return;
-				case 'workspace_nuke':
-					terminal.appendStdout('Warning: this will erase workspace!');
-					await nukeWorkspaceState();
-					clearWorkspaceSessionState();
-					terminal.appendStdout('Workspace data wiped');
-					return;
-			}
-		})
-		.catch(error => {
-			terminal.appendStderr(extractErrorMessage(error));
-		});
 }
 
 export function setDebuggerPaused(paused: boolean): void {
@@ -285,33 +220,6 @@ export function surfaceHostFrameError(runtime: Runtime, error: unknown, hostDelt
 	screen.presentErrorOverlay(runtime, hostDeltaMs);
 }
 
-export function tickTerminalMode(runtime: Runtime): void {
-	const state = machineManager.ideState;
-	if (!state.terminal.isActive) {
-		return;
-	}
-	if (!beginOverlayUpdateFrame(runtime, state)) {
-		return;
-	}
-	const deltaSeconds = runtime.frameLoop.frameDeltaMs / 1000;
-	state.terminal.update(deltaSeconds);
-	finishOverlayUpdateFrame(runtime, state, 'terminal');
-}
-
-export function tickTerminalModeDraw(runtime: Runtime): void {
-	const state = machineManager.ideState;
-	if (!state.terminal.isActive) {
-		return;
-	}
-	try {
-		drawTerminal(runtime);
-	} finally {
-		if (state.overlayDrawFrameOwner === 'terminal') {
-			state.overlayDrawFrameOwner = null;
-		}
-	}
-}
-
 export function tickIDE(runtime: Runtime): void {
 	const state = machineManager.ideState;
 	if (!editorBlocksRuntimePipeline() || !state.editor.isActive) {
@@ -322,7 +230,7 @@ export function tickIDE(runtime: Runtime): void {
 	}
 	const deltaSeconds = runtime.frameLoop.frameDeltaMs / 1000;
 	state.editor.update(deltaSeconds);
-	finishOverlayUpdateFrame(runtime, state, 'ide');
+	finishOverlayUpdateFrame(runtime, state);
 }
 
 function beginOverlayUpdateFrame(runtime: Runtime, state: RuntimeIdeState): boolean {
@@ -333,8 +241,8 @@ function beginOverlayUpdateFrame(runtime: Runtime, state: RuntimeIdeState): bool
 	return true;
 }
 
-function finishOverlayUpdateFrame(runtime: Runtime, state: RuntimeIdeState, owner: 'terminal' | 'ide'): void {
-	state.overlayDrawFrameOwner = owner;
+function finishOverlayUpdateFrame(runtime: Runtime, state: RuntimeIdeState): void {
+	state.overlayDrawFrameOwner = 'ide';
 	runtime.frameLoop.abandonFrameState();
 }
 
@@ -359,20 +267,6 @@ export function drawIde(runtime: Runtime): void {
 		overlayRenderer.beginFrame();
 		overlay_api.beginFrame(overlayRenderer);
 		state.editor.draw();
-	} catch (error) {
-		handleLuaError(runtime, error);
-	} finally {
-		overlayRenderer.endFrame();
-	}
-}
-
-export function drawTerminal(runtime: Runtime): void {
-	const state = machineManager.ideState;
-	const overlayRenderer = state.overlayRenderer;
-	try {
-		overlayRenderer.beginFrame();
-		overlay_api.beginFrame(overlayRenderer);
-		state.terminal.draw(overlayRenderer, overlayRenderer.viewportSize);
 	} catch (error) {
 		handleLuaError(runtime, error);
 	} finally {

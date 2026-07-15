@@ -1,6 +1,7 @@
 import { type color_arr, type TextureSource, type vec2 } from '../../rompack/format';
 import type { GxGpu } from '../../machine/devices/gx/gpu';
 import type { GxGpuCommandBufferView, GxGpuReadbackPortView } from '../../machine/devices/gx/gpu_command_buffer';
+import type { GxCharacterPlaneOutput } from '../../machine/devices/gx/character_plane';
 import type { Host2DKind, Host2DRef, Host2DSubmission } from '../shared/submissions';
 import type { GameView } from '../gameview';
 import type { DeviceQuantizeMode } from '../post/device_quantize/mode';
@@ -78,6 +79,7 @@ export type RenderTargetHandle = WebGLFramebuffer | HeadlessRenderTargetHandle |
 // High-level render pass identifiers
 export type RenderPassId =
 	| 'gx_gpu'
+	| 'gx_character_plane'
 	| 'host_overlay'
 	| 'host_menu'
 	| 'device_quantize'
@@ -248,6 +250,7 @@ export interface GPUBackend {
 
 export interface RenderPassStateRegistry {
 	['gx_gpu']: GxGpuPipelineState;
+	['gx_character_plane']: GxCharacterPlanePipelineState;
 	['host_overlay']: HostOverlayPipelineState;
 	['host_menu']: HostMenuPipelineState;
 	['device_quantize']: DeviceQuantizePipelineState;
@@ -271,6 +274,12 @@ export type GxGpuPipelineState = {
 	vramSnapshotBytes: Uint8Array;
 	vramSnapshotSerial: bigint;
 	targetColorTex?: TextureHandle;
+};
+
+export type GxCharacterPlanePipelineState = {
+	width: number;
+	height: number;
+	output: GxCharacterPlaneOutput;
 };
 
 export type Host2DPipelineState = {
@@ -310,6 +319,7 @@ export interface RenderContext {
 	gxGpuVerticalDisplayRangeWord: number;
 	gxGpuVramSnapshotBytes: Uint8Array;
 	gxGpuVramSnapshotSerial: bigint;
+	gxCharacterPlaneOutput: GxCharacterPlaneOutput;
 }
 
 export type RenderingViewportType = 'viewport' | 'offscreen';

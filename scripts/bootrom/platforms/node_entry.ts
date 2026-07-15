@@ -318,7 +318,7 @@ function printHelp(): void {
 	console.log('  --ttl <seconds>          Auto-terminate after the given number of seconds (default 10).');
 	console.log('  --input-timeline <file>  JSON timeline of InputEvt entries to schedule; headless capture markers write screenshots next to the timeline.');
 	console.log('  --test <file>            Host test file executed by the headless test runner.');
-	console.log('  --ide-test <file>        Host-side IDE test (JS) driving editor/terminal/hot-resume.');
+	console.log('  --ide-test <file>        Host-side IDE test (JS) driving editor and hot-resume.');
 	console.log('  --machine-runtime <path> JS machine runtime bundle (defaults to dist/libbmsx(.debug).js).');
 	console.log('  --system-rom <path>      System ROM (defaults to dist/bmsx-bios(.debug).rom).');
 	console.log('  --cpu-profile            Enable fantasy CPU profiling and print a report on exit.');
