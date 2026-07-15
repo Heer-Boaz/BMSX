@@ -707,6 +707,74 @@ hardware interrupt-storm semantics rather than being discarded by the emulator.
 | `IRQ_APU` | `0x0020` | APU voice event. |
 | `IRQ_GPU` | `0x0040` | Rising edge of the GX-GPU GP0 interrupt-request source. |
 
+### Planned supervisor exceptions and BIOS terminal
+
+The planned BIOS terminal is machine firmware, not a permanent host overlay.
+This boundary is not implemented yet; `CPU-SUP-01` and `BIOS-TERM-01` in the
+open-slice matrix track it. The first version deliberately uses a compact
+R3000-style exception model without an MMU, MPU, protected heap, or
+supervisor-only RAM.
+
+The CPU will own current and previous privilege/interrupt state, `CAUSE`,
+`EPC`, and `BAD_ADDRESS`, a fixed system exception vector, and a privileged
+return-from-exception operation. Exception entry occurs at a guest instruction
+boundary, switches to supervisor mode, disables maskable cart IRQ entry, and
+pushes the BIOS handler above the stopped cart frames. It does not serialize,
+copy, unwind, or reconstruct the cart call stack. Manual terminal entry uses a
+physical system/NMI line; synchronous guest faults use the same supervisor
+entry with a different raw cause word. Only faults defined by the machine
+contract enter this path. Emulator invariant failures remain host failures.
+
+System and cart program vectors remain distinct after linking. User execution
+vectors maskable IRQs through the cart IRQ vector; supervisor execution uses
+the BIOS IRQ and exception vectors. The existing NMI request latch is not a
+terminal implementation by itself: the CPU must consume it into the system
+vector and preserve that state in the mirrored TS/C++ save-state contract.
+Privilege gates system vectors, exception return, and other explicitly
+privileged CPU/system-control operations; it does not make ordinary RAM
+inaccessible to carts.
+
+The BIOS monitor code lives in system program ROM. Its line buffer, fixed-size
+output/history rings, and other mutable state use reserved ordinary `.bss`/RAM.
+A cart can therefore corrupt that workspace, and a heap-corruption or
+out-of-memory fault need not leave a working monitor. That is an explicit
+property of the first hardware model, not a condition for host-side repair or
+a hidden fallback VM.
+
+F2 is translated by the physical-input edge into the system/NMI line rather
+than a host UI toggle. While the BIOS monitor owns the CPU, it reads the raw
+ICU USB-HID bitmap, performs its own modifier, repeat, and character mapping,
+and waits on the BIOS IRQ/VBlank path. The cart receives no input because its
+frames are not executing. The host continues to sample the physical devices
+into ICU words; it does not edit a terminal buffer or dispatch commands.
+
+The monitor programs the existing GX GPU over the currently displayed VRAM.
+It does not reset the cart's display mode or clear the framebuffer: it emits
+only the terminal background cells and tiny-font glyphs, so untouched game
+pixels remain visible. This requires machine-visible raw GPU context, not the
+current firmware helper's cached display-size word. The GPU information query
+already exposes texture-window, drawing-area, and drawing-offset words; the
+terminal slice must define matching raw readback for the active display origin
+and display-range words before BIOS code is written. BIOS saves the queried draw
+environment in its ordinary RAM workspace, installs its own draw environment,
+and restores those raw GPU words before manual exception return. This is an
+explicit supervisor context switch; framebuffer pixels are never captured.
+
+Outstanding GPU/DMA work continues through the normal FIFO, DREQ, and scheduler
+rules. Monitor submission uses that ordering and existing mapped-write
+backpressure rather than busy-polling a host readiness flag. A manual `CONT`
+returns through the exception-return operation and the resumed cart's next
+frame replaces terminal pixels. If BSX later requires independently removable
+system graphics, that is a new explicit GPU scanout-overlay plane, not a
+concealed backup/restore workaround.
+
+The machine-visible monitor command set starts with hardware operations such as
+`HELP`, `FAULT`, `REGS`, `MEM`, `CONT`, and `REBOOT`. It does not expose the
+workspace, host filesystem, JavaScript stack, real-time compiler options, host
+process shutdown, IDE symbol browser, or other current workbench services.
+`CONT` is valid for manual entry and explicitly resumable exception causes;
+unrecoverable guest faults may expose only inspection and reset/reboot.
+
 ### DMA
 
 DMA is one register channel. `READ_ADDR`, `WRITE_ADDR`, `TRANSFER_COUNT` and
@@ -1092,6 +1160,16 @@ fallbacks locally.
 Lua heap counts as RAM. Public accounting should talk about RAM, not a separate
 heap budget outside the machine.
 
+The planned supervisor-terminal slice makes the compact 4x6
+`tiny_3b_font_*` glyph set the BIOS-owned `font.get('default')` descriptor for
+boot and monitor text. It is the only standard font that must be present in the
+BIOS system texture. The MSX 6-pixel font is an aesthetic cart asset, not a
+machine or BIOS primitive: its glyphs leave the common BIOS resource package,
+and carts that want that style ship the glyph resources and define the font
+explicitly. Existing carts either accept the tiny default or take ownership of
+their MSX font. Firmware must not retain a compatibility alias, automatic
+resource inclusion, or missing-glyph fallback into the removed MSX set.
+
 ## IDE, editor, and host tooling
 
 IDE/editor/workspace code is host tooling. It may compile source, inspect debug
@@ -1101,6 +1179,9 @@ not be imported by machine devices or become the cart-visible source of truth.
 Terminal commands return explicit owner actions; workbench/editor owners apply
 those actions. Runtime faults must surface through the runtime/terminal error
 channel instead of being swallowed by deferred host code.
+This describes the current host terminal only. It is transitional tooling and
+does not define the planned BIOS monitor's command, input, fault, or rendering
+semantics.
 
 ## Host presentation and frontend lifecycle
 
